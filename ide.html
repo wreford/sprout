@@ -1,0 +1,1066 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Sprout IDE</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.css">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #1e1f29;
+    color: #f8f8f2;
+    font-family: 'Fira Code', 'Cascadia Code', monospace;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 16px;
+    background: #282a36;
+    border-bottom: 1px solid #44475a;
+    flex-shrink: 0;
+  }
+
+  header h1 {
+    font-size: 15px;
+    font-weight: 600;
+    color: #bd93f9;
+    letter-spacing: 0.05em;
+  }
+
+  button#run {
+    margin-left: auto;
+    background: #50fa7b;
+    color: #282a36;
+    border: none;
+    padding: 5px 16px;
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    letter-spacing: 0.03em;
+  }
+  button#run:hover { background: #69ff94; }
+  @keyframes run-ok { 0%{background:#69ff94;box-shadow:0 0 0 4px #50fa7b44} 100%{background:#50fa7b;box-shadow:none} }
+  button#run.flash { animation: run-ok 0.5s ease-out; }
+
+  .hint {
+    font-size: 11px;
+    color: #6272a4;
+  }
+
+  main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  #editor-wrap {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid #44475a;
+    overflow: hidden;
+  }
+
+  .CodeMirror {
+    flex: 1;
+    height: 100%;
+    font-size: 14px;
+    line-height: 1.6;
+    font-family: inherit;
+  }
+
+  .CodeMirror-scroll { height: 100%; }
+
+  #output-wrap {
+    width: 420px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    background: #1a1b26;
+  }
+
+  #output-header {
+    padding: 6px 12px;
+    font-size: 11px;
+    color: #6272a4;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    border-bottom: 1px solid #44475a;
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
+  #clear-btn {
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: #6272a4;
+    cursor: pointer;
+    font-size: 11px;
+  }
+  #clear-btn:hover { color: #f8f8f2; }
+
+  #output {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+    font-size: 13px;
+    line-height: 1.7;
+  }
+
+  .out-line   { color: #f8f8f2; white-space: pre-wrap; }
+  .out-result { color: #50fa7b; white-space: pre-wrap; }
+  .out-result::before { content: '=> '; color: #6272a4; }
+  .out-error  { color: #ff5555; white-space: pre-wrap; }
+  .out-error::before  { content: '!! '; }
+
+  /* ── examples sidebar ── */
+  #examples {
+    width: 170px;
+    flex-shrink: 0;
+    background: #21222c;
+    border-right: 1px solid #44475a;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  #examples h2 {
+    padding: 7px 12px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #6272a4;
+    border-bottom: 1px solid #44475a;
+    flex-shrink: 0;
+  }
+  #example-list { overflow-y: auto; flex: 1; }
+  .cat-header {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 8px 10px 4px;
+    font-size: 10px;
+    color: #6272a4;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    user-select: none;
+    border-top: 1px solid #2d2f3f;
+  }
+  .cat-header:first-child { border-top: none; }
+  .cat-header:hover { color: #bd93f9; }
+  .cat-arrow { font-size: 7px; transition: transform 0.15s; display: inline-block; }
+  .cat-group.open .cat-arrow { transform: rotate(90deg); }
+  .cat-items { display: none; list-style: none; padding: 0; }
+  .cat-group.open .cat-items { display: block; }
+  .cat-items li {
+    padding: 5px 10px 5px 22px;
+    font-size: 12px;
+    color: #cdd6f4;
+    cursor: pointer;
+    border-left: 2px solid transparent;
+  }
+  .cat-items li:hover { background: #2d2f3f; }
+  .cat-items li.active { border-left-color: #bd93f9; color: #bd93f9; }
+
+  /* ── Sprout syntax colours (extend dracula) ── */
+  .cm-s-dracula .cm-sp-builtin { color: #8be9fd; }
+  .cm-s-dracula .cm-sp-op     { color: #ff79c6; }
+  .cm-s-dracula .cm-sp-at     { color: #ffb86c; font-weight: bold; }
+  .cm-s-dracula .cm-sp-meta   { color: #6272a4; font-style: italic; }
+  .cm-s-dracula .cm-sp-colon  { color: #ff79c6; }
+  .cm-s-dracula .cm-sp-bracket{ color: #f1fa8c; }
+
+  /* autocomplete dropdown — dark theme */
+  .CodeMirror-hints { background:#282a36!important; border:1px solid #44475a!important; border-radius:6px!important; box-shadow:0 6px 24px rgba(0,0,0,0.6)!important; font-family:inherit!important; font-size:13px!important; padding:4px 0!important; z-index:9999!important; }
+  .CodeMirror-hint { color:#f8f8f2!important; padding:4px 14px!important; border-radius:0!important; }
+  li.CodeMirror-hint-active { background:#44475a!important; color:#bd93f9!important; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🌱 Sprout</h1>
+  <span class="hint">ctrl+enter to run</span>
+  <button id="run">Run</button>
+</header>
+
+<main>
+  <div id="examples">
+    <h2>Examples</h2>
+    <ul id="example-list"></ul>
+  </div>
+  <div id="editor-wrap"></div>
+  <div id="output-wrap">
+    <div id="output-header">
+      Output
+      <button id="clear-btn">clear</button>
+    </div>
+    <div id="output"></div>
+  </div>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+
+<!-- ── Sprout runtime ─────────────────────────────────────────── -->
+<script>
+// ── cell.js ──────────────────────────────────────────────────────
+const OP = { PUSH_CONST:0, PUSH_SELF:1, LOAD:2, STORE:3, SEND:4, MAKE_CELL:5, MAKE_BLOCK:6, JUMP:7, JUMP_FALSE:8, RETURN:9, POP:10 };
+
+class Chunk {
+  constructor(name='<main>') { this.name=name; this.code=[]; this.constants=[]; this.chunks=[]; }
+  addConst(v) { const i=this.constants.indexOf(v); if(i!==-1)return i; this.constants.push(v); return this.constants.length-1; }
+  emit(...ops) { for(const o of ops)this.code.push(o); return this.code.length-1; }
+  patch(i,v) { this.code[i]=v; }
+}
+
+class Cell {
+  constructor() { this.array=[undefined]; this.fields=new Map(); this.block=null; this.parent=null; }
+  get(key) {
+    if(typeof key==='number') return this.array[key]!==undefined?this.array[key]:EMPTY;
+    if(this.fields.has(key)) return this.fields.get(key);
+    if(this.parent!==null) return this.parent.get(key);
+    return undefined;
+  }
+  set(key,val) { if(typeof key==='number') this.array[key]=val; else this.fields.set(key,val); }
+  isEmpty() { return this===EMPTY; }
+  isTruthy() { return this!==EMPTY; }
+  clone() { const c=new Cell(); c.array=[...this.array]; c.fields=new Map(this.fields); c.block=this.block; c.parent=this.parent; return c; }
+  length() { return this.array.length-1; }
+}
+const EMPTY = new Cell();
+
+function makeNum(n) { const c=new Cell(); c._num=n; c.array[1]=n; return c; }
+function makeStr(s) { const c=new Cell(); c._str=s; c.array[1]=s; return c; }
+function makeBlock(params,chunk,closure) { const c=new Cell(); c.block={params,chunk,closure}; return c; }
+function unwrap(cell) { if(cell===EMPTY)return null; if(cell._num!==undefined)return cell._num; if(cell._str!==undefined)return cell._str; return cell; }
+
+// ── compiler.js ───────────────────────────────────────────────────
+const T = { NUM:'NUM',STR:'STR',IDENT:'IDENT',OP:'OP',COLON:'COLON',COMMA:'COMMA',NL:'NL',INDENT:'INDENT',DEDENT:'DEDENT',LBRACK:'LBRACK',RBRACK:'RBRACK',PIPE:'PIPE',AT:'AT',QMARK:'QMARK',EOF:'EOF' };
+
+class Scanner {
+  constructor(src) { this.src=src; this.queue=[]; this.qi=0; this._scanAll(); }
+  _scanAll() {
+    const src=this.src, len=src.length, toks=[], stack=[0]; let i=0;
+    const p2=()=>i+1<len?src[i+1]:'';
+    while(i<len) {
+      while(i<len&&(src[i]===' '||src[i]==='\t')&&(toks.length===0||toks[toks.length-1].type!==T.NL)) i++;
+      if(i>=len) break;
+      const c=src[i];
+      if(c==='-'&&p2()==='-') { while(i<len&&src[i]!=='\n')i++; continue; }
+      if(c==='\n') {
+        i++; let ind=0;
+        while(i<len&&(src[i]===' '||src[i]==='\t')) { ind+=src[i]==='\t'?2:1; i++; }
+        if(i<len&&src[i]==='\n') continue;
+        if(i>=len) break;
+        const cur=stack[stack.length-1];
+        if(ind>cur) { stack.push(ind); toks.push({type:T.INDENT}); }
+        else if(ind<cur) { while(stack[stack.length-1]>ind){stack.pop();toks.push({type:T.DEDENT});} toks.push({type:T.NL}); }
+        else toks.push({type:T.NL});
+        continue;
+      }
+      if(c>='0'&&c<='9') { let s=''; while(i<len&&((src[i]>='0'&&src[i]<='9')||src[i]==='.'))s+=src[i++]; toks.push({type:T.NUM,val:parseFloat(s)}); continue; }
+      if(c==='"') { i++; let s=''; while(i<len&&src[i]!=='"'){if(src[i]==='\\'){i++;s+=src[i++];}else s+=src[i++];} i++; toks.push({type:T.STR,val:s}); continue; }
+      if(c==='#') { i++; let s='#'; while(i<len&&/[a-zA-Z0-9_]/.test(src[i]))s+=src[i++]; toks.push({type:T.IDENT,val:s,meta:true}); continue; }
+      if(/[a-zA-Z_]/.test(c)) { let s=''; while(i<len&&/[a-zA-Z0-9_]/.test(src[i]))s+=src[i++]; toks.push({type:T.IDENT,val:s}); continue; }
+      if((c==='>'||c==='<'||c==='!')&&p2()==='=') { toks.push({type:T.OP,val:c+'='}); i+=2; continue; }
+      switch(c) {
+        case '+':case '-':case '*':case '/': toks.push({type:T.OP,val:c});i++;break;
+        case '=': toks.push({type:T.OP,val:'='});i++;break;
+        case '>': toks.push({type:T.OP,val:'>'});i++;break;
+        case '<': toks.push({type:T.OP,val:'<'});i++;break;
+        case ':': toks.push({type:T.COLON});i++;break;
+        case ',': toks.push({type:T.COMMA});i++;break;
+        case '[': toks.push({type:T.LBRACK});i++;break;
+        case ']': toks.push({type:T.RBRACK});i++;break;
+        case '|': toks.push({type:T.PIPE});i++;break;
+        case '@': toks.push({type:T.AT});i++;break;
+        case '?': toks.push({type:T.QMARK});i++;break;
+        default: i++;
+      }
+    }
+    while(stack.length>1){stack.pop();toks.push({type:T.DEDENT});}
+    toks.push({type:T.EOF});
+    this.queue=toks; this.qi=0;
+  }
+  peek(o=0){const i=this.qi+o;return i<this.queue.length?this.queue[i]:{type:T.EOF};}
+  next(){const t=this.queue[this.qi];if(this.qi<this.queue.length-1)this.qi++;return t;}
+  check(type,val){const t=this.peek();if(t.type!==type)return false;if(val!==undefined&&t.val!==val)return false;return true;}
+  eat(type,val){if(!this.check(type,val))return false;this.next();return true;}
+}
+
+class Compiler {
+  constructor(src,name='<main>'){this.sc=new Scanner(src);this.chunk=new Chunk(name);}
+  compile(){this.compileBody(this.chunk);this.chunk.emit(OP.RETURN);return this.chunk;}
+  compileBody(chunk){
+    this.skipNL();
+    while(true){
+      const t=this.sc.peek();
+      if(t.type===T.EOF||t.type===T.DEDENT||t.type===T.RBRACK)break;
+      this.compileExpr(chunk);
+      const sep=this.sc.peek();
+      if(sep.type===T.NL||sep.type===T.COMMA){
+        this.sc.next();
+        const nx=this.sc.peek();
+        if(nx.type!==T.EOF&&nx.type!==T.DEDENT&&nx.type!==T.RBRACK)chunk.emit(OP.POP);
+        this.skipNL();
+      } else break;
+    }
+  }
+  skipNL(){while(this.sc.check(T.NL))this.sc.next();}
+  compileExpr(chunk){
+    const t=this.sc.peek();
+    if(t.type===T.IDENT&&this.sc.peek(1).type===T.COLON){
+      const name=t.val; this.sc.next(); this.sc.next();
+      this.compileChain(chunk);
+      chunk.emit(OP.STORE,chunk.addConst(name));
+      chunk.emit(OP.LOAD,chunk.addConst(name));
+      return;
+    }
+    this.compileChain(chunk);
+  }
+  compileChain(chunk){
+    this.compileAtom(chunk);
+    while(true){
+      const t=this.sc.peek();
+      if(t.type===T.OP){const op=t.val;this.sc.next();this.compileAtom(chunk);chunk.emit(OP.SEND,chunk.addConst(op),1);continue;}
+      if(t.type===T.QMARK){this.sc.next();this.compileAtom(chunk);this.compileAtom(chunk);chunk.emit(OP.SEND,chunk.addConst('?'),2);continue;}
+      if(t.type===T.IDENT&&this.sc.peek(1).type!==T.COLON){
+        const name=t.val; this.sc.next();
+        if(this.sc.peek().type===T.LBRACK){this.compileBlockOrCell(chunk);chunk.emit(OP.SEND,chunk.addConst(name),1);}
+        else chunk.emit(OP.SEND,chunk.addConst(name),0);
+        continue;
+      }
+      if(t.type===T.LBRACK){this.compileBlockOrCell(chunk);chunk.emit(OP.SEND,chunk.addConst('call'),1);continue;}
+      if(t.type===T.NUM){this.sc.next();chunk.emit(OP.PUSH_CONST,chunk.addConst(makeNum(t.val)));chunk.emit(OP.SEND,chunk.addConst('call'),1);continue;}
+      if(t.type===T.STR){this.sc.next();chunk.emit(OP.PUSH_CONST,chunk.addConst(makeStr(t.val)));chunk.emit(OP.SEND,chunk.addConst('call'),1);continue;}
+      break;
+    }
+  }
+  compileAtom(chunk){
+    const t=this.sc.peek();
+    if(t.type===T.NUM){this.sc.next();chunk.emit(OP.PUSH_CONST,chunk.addConst(makeNum(t.val)));return;}
+    if(t.type===T.STR){this.sc.next();chunk.emit(OP.PUSH_CONST,chunk.addConst(makeStr(t.val)));return;}
+    if(t.type===T.AT){this.sc.next();chunk.emit(OP.LOAD,chunk.addConst('@'));return;}
+    if(t.type===T.IDENT){this.sc.next();chunk.emit(OP.LOAD,chunk.addConst(t.val));return;}
+    if(t.type===T.LBRACK){this.compileBlockOrCell(chunk);return;}
+    chunk.emit(OP.PUSH_CONST,chunk.addConst(null));
+  }
+  compileBlockOrCell(chunk){
+    this.sc.next();
+    if(this.sc.eat(T.RBRACK)){chunk.emit(OP.PUSH_CONST,chunk.addConst(null));return;}
+    if(this._looksLikeBlock()) this._compileBlock(chunk);
+    else this._compileCellBody(chunk);
+  }
+  _looksLikeBlock(){
+    if(this.sc.peek().type===T.PIPE)return true;  // [| ...]
+    if(this.sc.peek().type===T.AT)return true;    // [@ ...]
+    // [ident | ...] or [ident, ident | ...]
+    let i=0;
+    while(this.sc.peek(i).type===T.IDENT){
+      i++;
+      if(this.sc.peek(i).type===T.PIPE)return true;
+      if(this.sc.peek(i).type===T.COMMA){i++;continue;}
+      break;
+    }
+    // Scan top-level: , or : → cell literal; >1 token with no , or : → zero-arg block
+    let depth=0,n=0;
+    for(let j=0;;j++){
+      const t=this.sc.peek(j);
+      if(t.type===T.EOF)break;
+      if(t.type===T.LBRACK){depth++;n++;continue;}
+      if(t.type===T.RBRACK){if(depth===0)break;depth--;n++;continue;}
+      if(depth>0)continue;
+      if(t.type===T.COMMA||t.type===T.NL)return false;
+      if(t.type===T.COLON)return false;
+      n++;
+    }
+    return n>1;
+  }
+  _compileBlock(chunk){
+    let params=[];
+    if(this.sc.peek().type===T.AT) params=['@'];
+    else if(this.sc.peek().type===T.PIPE) this.sc.next();
+    else {
+      while(!this.sc.check(T.PIPE)&&!this.sc.check(T.RBRACK)&&!this.sc.check(T.EOF)){
+        if(this.sc.check(T.IDENT))params.push(this.sc.next().val);
+        this.sc.eat(T.COMMA);
+      }
+      if(this.sc.check(T.PIPE))this.sc.next();
+    }
+    if(params.length>1){this._compileCurried(chunk,params,0);this.sc.eat(T.RBRACK);return;}
+    const bc=new Chunk('<block>'); bc._params=params.length===1?params:[]; chunk.chunks.push(bc);
+    const bi=chunk.chunks.length-1;
+    this.compileBody(bc); bc.emit(OP.RETURN);
+    this.sc.eat(T.RBRACK);
+    chunk.emit(OP.MAKE_BLOCK,bi);
+  }
+  _compileCurried(chunk,params,idx){
+    if(idx===params.length-1){
+      const bc=new Chunk('<block>'); bc._params=[params[idx]]; chunk.chunks.push(bc);
+      const bi=chunk.chunks.length-1; this.compileBody(bc); bc.emit(OP.RETURN); chunk.emit(OP.MAKE_BLOCK,bi);
+    } else {
+      const oc=new Chunk('<block>'); oc._params=[params[idx]]; chunk.chunks.push(oc);
+      const oi=chunk.chunks.length-1; this._compileCurried(oc,params,idx+1); oc.emit(OP.RETURN); chunk.emit(OP.MAKE_BLOCK,oi);
+    }
+  }
+  _compileCellBody(chunk){
+    let count=0;
+    while(!this.sc.check(T.RBRACK)&&!this.sc.check(T.EOF)){
+      this.skipNL(); if(this.sc.check(T.RBRACK))break;
+      const t=this.sc.peek(),t1=this.sc.peek(1);
+      if((t.type===T.IDENT||t.type===T.NUM||t.type===T.STR)&&t1.type===T.COLON){
+        if(t.type===T.NUM) chunk.emit(OP.PUSH_CONST,chunk.addConst(makeNum(t.val)));
+        else chunk.emit(OP.PUSH_CONST,chunk.addConst(makeStr(t.val)));
+        this.sc.next();this.sc.next();this.compileChain(chunk);
+      } else {
+        chunk.emit(OP.PUSH_CONST,chunk.addConst(null)); this.compileChain(chunk);
+      }
+      count++; this.sc.eat(T.COMMA); this.skipNL();
+    }
+    this.sc.eat(T.RBRACK); chunk.emit(OP.MAKE_CELL,count);
+  }
+}
+function compile(src,name){return new Compiler(src,name).compile();}
+
+// ── vm.js ─────────────────────────────────────────────────────────
+class Frame {
+  constructor(chunk,self,closure=null){this.chunk=chunk;this.ip=0;this.stack=[];this.self=self;this.closure=closure;}
+  push(v){this.stack.push(v);}
+  pop(){return this.stack.pop()??EMPTY;}
+  peek(){return this.stack[this.stack.length-1]??EMPTY;}
+}
+
+class VM {
+  constructor(builtins){this.builtins=builtins;this.globals=new Cell();}
+  run(chunk){return this._exec(new Frame(chunk,this.globals));}
+  _exec(frame){
+    const {chunk}=frame,{code,constants,chunks}=chunk;
+    while(frame.ip<code.length){
+      const op=code[frame.ip++];
+      switch(op){
+        case OP.PUSH_CONST:{const v=constants[code[frame.ip++]];frame.push(v===null?EMPTY:v);break;}
+        case OP.PUSH_SELF:{frame.push(frame.self);break;}
+        case OP.LOAD:{const name=constants[code[frame.ip++]];const v=this._lookup(name,frame);frame.push(v!==undefined?v:EMPTY);break;}
+        case OP.STORE:{const name=constants[code[frame.ip++]];frame.self.set(name,frame.peek());break;}
+        case OP.SEND:{
+          const msg=constants[code[frame.ip++]],nargs=code[frame.ip++];
+          const args=[];for(let i=0;i<nargs;i++)args.unshift(frame.pop());
+          frame.push(this._send(msg,frame.pop(),args,frame));break;
+        }
+        case OP.MAKE_CELL:{
+          const n=code[frame.ip++],cell=new Cell();let ai=1;
+          const pairs=[];for(let i=0;i<n;i++){const v=frame.pop(),k=frame.pop();pairs.unshift([k,v]);}
+          for(const[k,v]of pairs){
+            if(k===EMPTY||k===null){cell.array[ai++]=v;}
+            else{const kk=unwrap(k);if(typeof kk==='number'){cell.array[kk]=v;if(kk>=ai)ai=kk+1;}else cell.fields.set(String(kk),v);}
+          }
+          if(cell.array.length===2&&cell.fields.size===0&&cell.array[1]!==undefined)frame.push(cell.array[1]);
+          else frame.push(cell);
+          break;
+        }
+        case OP.MAKE_BLOCK:{const bi=code[frame.ip++],bc=chunks[bi];frame.push(makeBlock(bc._params||[],bc,frame));break;}
+        case OP.JUMP:{frame.ip=code[frame.ip];break;}
+        case OP.JUMP_FALSE:{const t=code[frame.ip++];if(!frame.pop().isTruthy())frame.ip=t;break;}
+        case OP.RETURN:{return frame.pop();}
+        case OP.POP:{frame.pop();break;}
+        default:throw new Error(`Unknown opcode ${op}`);
+      }
+    }
+    return EMPTY;
+  }
+  _lookup(name,frame){
+    const own=frame.self.get(name);if(own!==undefined)return own;
+    let cl=frame.closure;while(cl){const v=cl.self.get(name);if(v!==undefined)return v;cl=cl.closure;}
+    return this.globals.get(name);
+  }
+  _send(msg,receiver,args,frame){
+    if(msg==='?')return receiver.isTruthy()?args[0]:args[1];
+    if(msg==='call')return this._call(receiver,args[0],frame);
+    const field=receiver.get(msg);
+    if(field!==undefined){if(field instanceof Cell&&field.block)return this._callBlock(field,args,receiver,frame);if(args.length===0)return field;}
+    const b=this.builtins.get(msg);if(b)return b(receiver,args,this,frame);
+    if(args.length===0&&receiver.block)return this._callBlock(receiver,[makeStr(msg)],frame.self,frame);
+    return EMPTY;
+  }
+  _call(receiver,arg,frame){
+    if(receiver.block)return this._callBlock(receiver,[arg],frame.self,frame);
+    if(arg instanceof Cell){
+      const yes=arg.get(1),no=arg.get(2);
+      if(receiver.isTruthy())return(yes instanceof Cell&&yes.block)?this._callBlock(yes,[],frame.self,frame):(yes??EMPTY);
+      return(no instanceof Cell&&no.block)?this._callBlock(no,[],frame.self,frame):(no??EMPTY);
+    }
+    return EMPTY;
+  }
+  _callBlock(block,args,self,frame){
+    const{params,chunk,closure}=block.block;
+    const bs=new Cell();bs.parent=self;
+    for(let i=0;i<params.length;i++)bs.set(params[i],args[i]!==undefined?args[i]:EMPTY);
+    return this._exec(new Frame(chunk,bs,closure??frame));
+  }
+}
+
+// ── builtins.js ───────────────────────────────────────────────────
+function sproutNum(c){if(c&&c._num!==undefined)return c._num;if(c&&c.array&&typeof c.array[1]==='number')return c.array[1];return NaN;}
+function sproutStr(c){if(c&&c._str!==undefined)return c._str;return sproutDisplay(c);}
+function sproutDisplay(c){
+  if(!c||c===EMPTY)return'[]';
+  if(c._num!==undefined)return String(c._num);
+  if(c._str!==undefined)return c._str;
+  const parts=[];
+  for(let i=1;i<c.array.length;i++)if(c.array[i]!==undefined)parts.push(sproutDisplay(c.array[i]));
+  for(const[k,v]of c.fields)if(!k.startsWith('#'))parts.push(`${k} : ${sproutDisplay(v)}`);
+  return parts.length===0?'[]':'['+parts.join(', ')+']';
+}
+
+function makeBuiltins(io){
+  const B=new Map();
+  const def=(n,f)=>B.set(n,f);
+  const bool=b=>b?makeNum(1):EMPTY;
+  const eq=(a,b)=>a===b||(a._num!==undefined&&b._num!==undefined&&a._num===b._num)||(a._str!==undefined&&b._str!==undefined&&a._str===b._str);
+  def('+',(r,[a])=>r._str!==undefined||a._str!==undefined?makeStr(sproutStr(r)+sproutStr(a)):makeNum(sproutNum(r)+sproutNum(a)));
+  def('-',(r,[a])=>makeNum(sproutNum(r)-sproutNum(a)));
+  def('*',(r,[a])=>makeNum(sproutNum(r)*sproutNum(a)));
+  def('/',(r,[a])=>makeNum(sproutNum(r)/sproutNum(a)));
+  def('%',(r,[a])=>makeNum(sproutNum(r)%sproutNum(a)));
+  def('=',(r,[a])=>bool(eq(r,a)));
+  def('!=',(r,[a])=>bool(!eq(r,a)));
+  def('>',(r,[a])=>bool(sproutNum(r)>sproutNum(a)));
+  def('<',(r,[a])=>bool(sproutNum(r)<sproutNum(a)));
+  def('>=',(r,[a])=>bool(sproutNum(r)>=sproutNum(a)));
+  def('<=',(r,[a])=>bool(sproutNum(r)<=sproutNum(a)));
+  def('and',(r,[a])=>r.isTruthy()?a:EMPTY);
+  def('or',(r,[a])=>r.isTruthy()?r:a);
+  def('not',r=>r.isTruthy()?EMPTY:makeNum(1));
+  def('say',r=>{io.print(sproutDisplay(r));return r;});
+  def('print',r=>{io.print(sproutDisplay(r));return r;});
+  def('reverse',r=>makeStr(sproutStr(r).split('').reverse().join('')));
+  def('upper',r=>makeStr(sproutStr(r).toUpperCase()));
+  def('lower',r=>makeStr(sproutStr(r).toLowerCase()));
+  def('trim',r=>makeStr(sproutStr(r).trim()));
+  def('length',r=>r._str!==undefined?makeNum(r._str.length):makeNum(r.length()));
+  def('asStr',r=>makeStr(sproutDisplay(r)));
+  def('asNum',r=>makeNum(parseFloat(sproutStr(r))));
+  def('abs',r=>makeNum(Math.abs(sproutNum(r))));
+  def('floor',r=>makeNum(Math.floor(sproutNum(r))));
+  def('ceil',r=>makeNum(Math.ceil(sproutNum(r))));
+  def('round',r=>makeNum(Math.round(sproutNum(r))));
+  def('sqrt',r=>makeNum(Math.sqrt(sproutNum(r))));
+  def('neg',r=>makeNum(-sproutNum(r)));
+  def('count',r=>{
+    let n=0;
+    for(let i=1;i<r.array.length;i++)if(r.array[i]!==undefined)n++;
+    for(const[k]of r.fields)if(!k.startsWith('#'))n++;
+    return makeNum(n);
+  });
+  def('first',r=>r.array[1]!==undefined?r.array[1]:EMPTY);
+  def('last',r=>{const l=r.array.length-1;return l>=1?r.array[l]:EMPTY;});
+  def('rest',r=>{const c=new Cell();for(let i=2;i<r.array.length;i++)c.array[i-1]=r.array[i];return c;});
+  def('push',(r,[v])=>{const c=r.clone();c.array[c.array.length]=v;return c;});
+  def('at',(r,[k])=>{const kk=unwrap(k);const v=r.get(typeof kk==='number'?kk:String(kk));return v!==undefined?v:EMPTY;});
+  def('mixin',(r,[src])=>{
+    const c=r.clone();
+    if(src instanceof Cell){
+      for(let i=1;i<src.array.length;i++)if(src.array[i]!==undefined)c.array[i]=src.array[i];
+      for(const[k,v]of src.fields)if(!k.startsWith('#'))c.fields.set(k,v);
+    }
+    return c;
+  });
+  def('each',(r,[block],vm,frame)=>{
+    if(r._str!==undefined){
+      for(const ch of r._str)vm._callBlock(block,[makeStr(ch)],frame.self,frame);
+      return r;
+    }
+    for(let i=1;i<r.array.length;i++)if(r.array[i]!==undefined)vm._callBlock(block,[r.array[i]],frame.self,frame);
+    for(const[k,v]of r.fields)if(!k.startsWith('#'))vm._callBlock(block,[v],frame.self,frame);
+    return r;
+  });
+  def('map',(r,[block],vm,frame)=>{
+    const c=new Cell();let idx=1;
+    for(let i=1;i<r.array.length;i++)if(r.array[i]!==undefined)c.array[idx++]=vm._callBlock(block,[r.array[i]],frame.self,frame);
+    return c;
+  });
+  def('filter',(r,[block],vm,frame)=>{
+    const c=new Cell();let idx=1;
+    for(let i=1;i<r.array.length;i++){const v=r.array[i];if(v!==undefined&&vm._callBlock(block,[v],frame.self,frame).isTruthy())c.array[idx++]=v;}
+    return c;
+  });
+  def('times',(r,[block],vm,frame)=>{
+    const n=Math.floor(sproutNum(r));
+    for(let i=1;i<=n;i++)vm._callBlock(block,[makeNum(i)],frame.self,frame);
+    return r;
+  });
+  def('isNum',r=>r._num!==undefined?makeNum(1):EMPTY);
+  def('isStr',r=>r._str!==undefined?makeNum(1):EMPTY);
+  def('isEmpty',r=>r===EMPTY?makeNum(1):EMPTY);
+  const toData=r=>{const d=[];for(let i=1;i<r.array.length;i++)if(r.array[i]!==undefined)d.push(sproutNum(r.array[i]));return d;};
+  const toStrs=r=>{const d=[];for(let i=1;i<r.array.length;i++)if(r.array[i]!==undefined)d.push(sproutStr(r.array[i]));return d;};
+  def('chart',r=>{if(io.chart)io.chart(toData(r),'bar');return r;});
+  def('line', r=>{if(io.chart)io.chart(toData(r),'line');return r;});
+  def('pie',  r=>{if(io.chart)io.chart(toData(r),'pie');return r;});
+  // ── Tone.js music ───────────────────────────────────────────────
+  def('play', r=>{
+    if(typeof Tone==='undefined')return r;
+    Tone.start().then(()=>{
+      const s=new Tone.Synth().toDestination();
+      s.triggerAttackRelease(sproutStr(r),'8n',Tone.now());
+      setTimeout(()=>s.dispose(),1000);
+    });
+    return r;
+  });
+  def('melody', r=>{
+    if(typeof Tone==='undefined')return r;
+    const notes=toStrs(r);
+    Tone.start().then(()=>{
+      const s=new Tone.Synth().toDestination();
+      let t=Tone.now()+0.05;
+      notes.forEach(n=>{s.triggerAttackRelease(n,'8n',t);t+=0.3;});
+      setTimeout(()=>s.dispose(),(notes.length*0.3+1.5)*1000);
+    });
+    return r;
+  });
+  def('beat', r=>{
+    if(typeof Tone==='undefined')return r;
+    const pattern=toStrs(r);
+    Tone.start().then(()=>{
+      const s=new Tone.MembraneSynth().toDestination();
+      let t=Tone.now()+0.05;
+      pattern.forEach(p=>{if(p!=='.')s.triggerAttackRelease('C1','16n',t);t+=0.15;});
+      setTimeout(()=>s.dispose(),(pattern.length*0.15+1.5)*1000);
+    });
+    return r;
+  });
+  // ── Matter.js physics ───────────────────────────────────────────
+  def('bounce', r=>{
+    if(typeof Matter==='undefined'||!io.physics)return r;
+    io.physics(Math.max(1,Math.min(20,Math.floor(sproutNum(r)))));
+    return r;
+  });
+  return B;
+}
+</script>
+
+<!-- ── IDE glue ───────────────────────────────────────────────────── -->
+<script>
+// ── Sprout syntax mode ────────────────────────────────────────────
+const BUILTINS = new Set([
+  'say','print','reverse','upper','lower','trim','length','concat',
+  'each','map','filter','reduce','times','count','first','last','rest','push','at',
+  'mixin','clone','keys',
+  'abs','floor','ceil','round','sqrt','neg',
+  'asStr','asNum','isNum','isStr','isEmpty','isTruthy',
+  'and','or','not',
+  'chart','line','pie',
+  'play','melody','beat','bounce',
+]);
+
+CodeMirror.defineMode('sprout', () => ({
+  startState: () => ({ inString: false }),
+  token(stream, state) {
+    if (state.inString) {
+      while (!stream.eol()) {
+        const ch = stream.next();
+        if (ch === '\\') { stream.next(); continue; }
+        if (ch === '"') { state.inString = false; break; }
+      }
+      return 'string';
+    }
+    if (stream.match(/^--.*$/)) return 'comment';
+    if (stream.peek() === '"') { stream.next(); state.inString = true; return 'string'; }
+    if (stream.match(/^#[a-zA-Z_][a-zA-Z0-9_]*/)) return 'sp-meta';
+    if (stream.match(/^[0-9]+(\.[0-9]+)?/)) return 'number';
+    if (stream.peek() === '@') { stream.next(); return 'sp-at'; }
+    if (stream.peek() === '?') { stream.next(); return 'sp-op'; }
+    if (stream.peek() === ':') { stream.next(); return 'sp-colon'; }
+    if (stream.peek() === '|') { stream.next(); return 'sp-op'; }
+    if (stream.match(/^(>=|<=|!=|[+\-*\/=><])/)) return 'sp-op';
+    if (stream.peek() === '[' || stream.peek() === ']') { stream.next(); return 'sp-bracket'; }
+    if (stream.match(/^[a-zA-Z_][a-zA-Z0-9_]*/)) {
+      const word = stream.current();
+      return BUILTINS.has(word) ? 'sp-builtin' : 'variable';
+    }
+    stream.next();
+    return null;
+  }
+}));
+
+// ── Autocomplete ──────────────────────────────────────────────────
+const HINT_WORDS = [...BUILTINS].sort();
+
+CodeMirror.registerHelper('hint', 'sprout', cm => {
+  const cur = cm.getCursor(), line = cm.getLine(cur.line);
+  let start = cur.ch;
+  while (start > 0 && /[a-zA-Z0-9_]/.test(line[start - 1])) start--;
+  const word = line.slice(start, cur.ch).toLowerCase();
+  const list = word ? HINT_WORDS.filter(w => w.startsWith(word)) : HINT_WORDS;
+  return { list, from: CodeMirror.Pos(cur.line, start), to: CodeMirror.Pos(cur.line, cur.ch) };
+});
+
+// ── Examples ─────────────────────────────────────────────────────
+const EXAMPLES = [
+  { cat: 'Basics' },
+  { name: 'Hello', code:
+`"Hello, Sprout!" say
+` },
+  { name: 'Numbers', code:
+`42 say
+3.14 say
+100 / 3 say
+` },
+  { name: 'Arithmetic', code:
+`-- No precedence — pure left to right
+1 + 2 * 3        -- 9, not 7
+10 - 3 - 2       -- 5
+` },
+  { name: 'Conditional', code:
+`x : 10
+x > 5 ? "big" "small"
+` },
+  { name: 'Lazy branches', code:
+`x : 7
+x > 5 [[x say], ["nope" say]]
+` },
+  { name: 'Fizzbuzz', code:
+`15 times [n |
+  n % 15 = [] ? "FizzBuzz"
+  [n % 3 = [] ? "Fizz"
+  [n % 5 = [] ? "Buzz"
+  [n]]] say
+]
+` },
+
+  { cat: 'Functions' },
+  { name: 'Block', code:
+`double : [x | x * 2]
+double 7
+` },
+  { name: 'Currying', code:
+`add : [x, y | x + y]
+add 3 4
+` },
+  { name: 'Implicit @', code:
+`[1, 2, 3, 4, 5] each [@ say]
+` },
+  { name: 'Zero-arg block', code:
+`greet : ["Hello!" say]
+greet call
+` },
+  { name: 'Fibonacci', code:
+`fib : [n | n < 2 ? n [fib [n - 1] + fib [n - 2]]]
+8 times [fib @ say]
+` },
+
+  { cat: 'Collections' },
+  { name: 'Map / Filter', code:
+`nums : [1, 2, 3, 4, 5, 6]
+evens : nums filter [@ % 2 = []]
+evens map [@ * @] each [@ say]
+` },
+  { name: 'Times loop', code:
+`5 times [@ say]
+` },
+  { name: 'Reduce', code:
+`sum : [1, 2, 3, 4, 5] reduce [acc | [n | acc + n]] 0
+sum say
+` },
+
+  { cat: 'Strings' },
+  { name: 'String ops', code:
+`"Sprout" reverse say
+"hello world" upper say
+"  trim me  " trim say
+"hello" length say
+` },
+  { name: 'Each char', code:
+`-- iterate over every character
+"hello" each [@ say]
+` },
+  { name: 'Count vowels', code:
+`vowels : "aeiou"
+count : 0
+"sprout language" each [c |
+  vowels each [v |
+    c = v [[count : count + 1]]
+  ]
+]
+count say
+` },
+
+  { cat: 'Cells' },
+  { name: 'Mixin', code:
+`base : [x : 1, y : 2]
+ext  : [] mixin [base] mixin [z : 3]
+ext x say
+ext z say
+` },
+  { name: 'Methods on cells', code:
+`Dog : [
+  name : "Rex"
+  bark : ["Woof! I am " + name say]
+]
+Dog bark
+` },
+
+  { cat: 'Charts' },
+  { name: 'Bar chart', code:
+`[4, 8, 2, 7, 5, 9, 3, 6] chart
+` },
+  { name: 'Line chart', code:
+`[1, 1, 2, 3, 5, 8, 13, 21, 34, 55] line
+` },
+  { name: 'Pie chart', code:
+`[30, 20, 15, 35] pie
+` },
+  { name: 'Squares', code:
+`[1, 2, 3, 4, 5, 6, 7, 8] map [@ * @] chart
+` },
+
+  { cat: 'Music' },
+  { name: 'Play a note', code:
+`"C4" play
+` },
+  { name: 'Twinkle Twinkle', code:
+`["C4","C4","G4","G4","A4","A4","G4",
+  "F4","F4","E4","E4","D4","D4","C4"] melody
+` },
+  { name: 'Happy Birthday', code:
+`["G3","G3","A3","G3","C4","B3",
+  "G3","G3","A3","G3","D4","C4"] melody
+` },
+  { name: 'Ode to Joy', code:
+`["E4","E4","F4","G4","G4","F4","E4","D4",
+  "C4","C4","D4","E4","E4","D4","D4"] melody
+` },
+  { name: 'Mary Had a Lamb', code:
+`["E4","D4","C4","D4","E4","E4","E4",
+  "D4","D4","D4","E4","G4","G4"] melody
+` },
+  { name: 'Scale', code:
+`["C4","D4","E4","F4","G4","A4","B4","C5"] melody
+` },
+  { name: 'Minor scale', code:
+`["A3","B3","C4","D4","E4","F4","G4","A4"] melody
+` },
+  { name: 'Drum beat', code:
+`["x","x",".","x","x",".","x","."] beat
+` },
+
+  { cat: 'Physics' },
+  { name: '5 balls', code:
+`5 bounce
+` },
+  { name: '15 balls', code:
+`15 bounce
+` },
+
+  { cat: 'Reference' },
+  { name: 'Python → Sprout', code:
+`-- ── Python → Sprout idioms ─────────────────
+
+-- Variables  (x = 5)
+x : 5
+
+-- Print  (print(x))
+x say
+
+-- Arithmetic  (no precedence!)
+1 + 2 * 3 say   -- 9
+
+-- Function  (def double(n): return n*2)
+double : [x | x * 2]
+double 7 say
+
+-- Lambda  (lambda x: x*2)
+-- same: [x | x * 2]
+
+-- Conditional  (x if c else y)
+x > 3 ? "big" "small" say
+
+-- List  ([1,2,3])
+nums : [1, 2, 3, 4, 5]
+
+-- len(nums)
+nums count say
+
+-- for x in nums: print(x)
+nums each [@ say]
+
+-- [x*2 for x in nums]
+nums map [@ * 2] each [@ say]
+
+-- [x for x in nums if x > 2]
+nums filter [@ > 2] each [@ say]
+
+-- range(5) loop
+5 times [@ say]
+
+-- Dict  ({'x': 1, 'y': 2})
+d : [x : 1, y : 2]
+d x say
+
+-- Merge dicts  ({**a, **b})
+a : [x : 1]
+b : [y : 2]
+c : a mixin [b]
+c x say
+c y say
+` },
+];
+
+const DEMO = EXAMPLES.find(e => e.name).code;
+
+// Build collapsible sidebar
+const exList = document.getElementById('example-list');
+let firstLi = null;
+let currentGroup = null;
+EXAMPLES.forEach((ex, i) => {
+  if (ex.cat) {
+    const group = document.createElement('div');
+    group.className = 'cat-group open';
+    const hdr = document.createElement('div');
+    hdr.className = 'cat-header';
+    hdr.innerHTML = `<span class="cat-arrow">▶</span>${ex.cat}`;
+    hdr.addEventListener('click', () => group.classList.toggle('open'));
+    const ul = document.createElement('ul');
+    ul.className = 'cat-items';
+    group.appendChild(hdr);
+    group.appendChild(ul);
+    exList.appendChild(group);
+    currentGroup = ul;
+  } else if (currentGroup) {
+    const li = document.createElement('li');
+    li.textContent = ex.name;
+    li.dataset.i = i;
+    currentGroup.appendChild(li);
+    if (!firstLi) firstLi = li;
+  }
+});
+if (firstLi) firstLi.classList.add('active');
+
+exList.addEventListener('click', e => {
+  const li = e.target.closest('li[data-i]');
+  if (!li) return;
+  exList.querySelectorAll('li[data-i]').forEach(el => el.classList.remove('active'));
+  li.classList.add('active');
+  editor.setValue(EXAMPLES[+li.dataset.i].code);
+  editor.focus();
+});
+
+const output = document.getElementById('output');
+
+function printOut(text, cls='out-line') {
+  const div = document.createElement('div');
+  div.className = cls;
+  div.textContent = text;
+  output.appendChild(div);
+  output.scrollTop = output.scrollHeight;
+}
+
+function outEl(el) {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'background:#282a36;border-radius:6px;padding:10px;margin:4px 0;overflow:hidden';
+  wrap.appendChild(el);
+  output.appendChild(wrap);
+  output.scrollTop = output.scrollHeight;
+}
+
+// Chart.js
+const CC = ['#bd93f9','#50fa7b','#ff79c6','#8be9fd','#ffb86c','#ff5555','#f1fa8c'];
+function renderChart(data, type) {
+  const canvas = document.createElement('canvas');
+  canvas.style.maxHeight = '180px';
+  outEl(canvas);
+  const colors = type==='pie' ? data.map((_,i)=>CC[i%CC.length]) : CC[0];
+  new Chart(canvas, {
+    type,
+    data: { labels: data.map((_,i)=>i+1), datasets: [{ data, backgroundColor: colors, borderColor: type==='line'?CC[0]:colors, fill: type==='line', tension: 0.4, borderWidth: 2, borderRadius: type==='bar'?4:0 }] },
+    options: { responsive:true, animation:{duration:600}, plugins:{legend:{display:false}}, scales: type==='pie'?{}:{ x:{grid:{color:'#44475a55'},ticks:{color:'#6272a4'}}, y:{grid:{color:'#44475a55'},ticks:{color:'#6272a4'}} } }
+  });
+}
+
+// Matter.js physics
+function renderPhysics(n) {
+  const W=380, H=220;
+  const canvas = document.createElement('canvas');
+  canvas.width=W; canvas.height=H;
+  outEl(canvas);
+  const { Engine, Render, Runner, Bodies, Body, World } = Matter;
+  const engine = Engine.create();
+  const render = Render.create({ canvas, engine, options:{ width:W, height:H, background:'#1a1b26', wireframes:false } });
+  const balls = Array.from({length:n}, (_,i) => {
+    const r = 8 + Math.random()*14;
+    return Bodies.circle(60+i*(W-120)/Math.max(n-1,1)+Math.random()*20-10, -r-i*30, r, { restitution:0.7, friction:0.01, render:{ fillStyle:CC[i%CC.length] } });
+  });
+  const ground = Bodies.rectangle(W/2, H+25, W+100, 50, { isStatic:true, render:{fillStyle:'#44475a'} });
+  const wallL  = Bodies.rectangle(-25, H/2, 50, H*2, { isStatic:true, render:{fillStyle:'#44475a'} });
+  const wallR  = Bodies.rectangle(W+25, H/2, 50, H*2, { isStatic:true, render:{fillStyle:'#44475a'} });
+  World.add(engine.world, [...balls, ground, wallL, wallR]);
+  const runner = Runner.create();
+  Runner.run(runner, engine);
+  Render.run(render);
+  setTimeout(() => { Render.stop(render); Runner.stop(runner); }, 6000);
+}
+
+const editor = CodeMirror(document.getElementById('editor-wrap'), {
+  value: DEMO,
+  mode: 'sprout',
+  theme: 'dracula',
+  lineNumbers: true,
+  autofocus: true,
+  indentUnit: 2,
+  tabSize: 2,
+  lineWrapping: false,
+  extraKeys: {
+    'Ctrl-Enter': run,
+    'Cmd-Enter':  run,
+    'Ctrl-Space': cm => cm.showHint({ hint: CodeMirror.hint.sprout, completeSingle: false }),
+  },
+  hintOptions: { hint: CodeMirror.hint.sprout, completeSingle: false, closeCharacters: /[\s\[\]{};,]/ },
+});
+
+editor.on('inputRead', (cm, change) => {
+  if (cm.state.completionActive) return;
+  const ch = change.text[0];
+  if (!ch || !/[a-zA-Z_]/.test(ch)) return;
+  const cur = cm.getCursor(), line = cm.getLine(cur.line);
+  let s = cur.ch; while (s > 0 && /[a-zA-Z0-9_]/.test(line[s-1])) s--;
+  if (cur.ch - s < 2) return;
+  cm.showHint({ hint: CodeMirror.hint.sprout, completeSingle: false, closeCharacters: /[\s\[\]{};,]/ });
+});
+
+function run() {
+  const src = editor.getValue();
+  if (!src.trim()) return;
+  output.appendChild(document.createElement('hr')).style.cssText='border:none;border-top:1px solid #44475a;margin:6px 0';
+  const vm = new VM(makeBuiltins({ print: printOut, chart: renderChart, physics: renderPhysics }));
+  try {
+    const chunk  = compile(src);
+    const result = vm.run(chunk);
+    if (result !== EMPTY) printOut(sproutDisplay(result), 'out-result');
+    const btn = document.getElementById('run');
+    btn.classList.remove('flash'); void btn.offsetWidth; btn.classList.add('flash');
+  } catch(e) {
+    printOut(e.message, 'out-error');
+  }
+}
+
+document.getElementById('run').addEventListener('click', run);
+document.getElementById('clear-btn').addEventListener('click', () => output.innerHTML = '');
+</script>
+</body>
+</html>
