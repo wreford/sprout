@@ -645,36 +645,84 @@ function makeBuiltins(io){
   def('chart',r=>{if(io.chart)io.chart(toData(r),'bar');return r;});
   def('line', r=>{if(io.chart)io.chart(toData(r),'line');return r;});
   def('pie',  r=>{if(io.chart)io.chart(toData(r),'pie');return r;});
-  // ── Tone.js music ───────────────────────────────────────────────
+  // ── Tone.js music (iOS: context pre-unlocked by run()) ──────────
   def('play', r=>{
     if(typeof Tone==='undefined')return r;
-    Tone.start().then(()=>{
-      const s=new Tone.Synth().toDestination();
-      s.triggerAttackRelease(sproutStr(r),'8n',Tone.now());
-      setTimeout(()=>s.dispose(),1000);
-    });
+    const s=new Tone.Synth().toDestination();
+    s.triggerAttackRelease(sproutStr(r),'8n',Tone.now()+0.05);
+    setTimeout(()=>s.dispose(),1500);
     return r;
   });
   def('melody', r=>{
     if(typeof Tone==='undefined')return r;
     const notes=toStrs(r);
-    Tone.start().then(()=>{
-      const s=new Tone.Synth().toDestination();
-      let t=Tone.now()+0.05;
-      notes.forEach(n=>{s.triggerAttackRelease(n,'8n',t);t+=0.3;});
-      setTimeout(()=>s.dispose(),(notes.length*0.3+1.5)*1000);
-    });
+    const s=new Tone.Synth().toDestination();
+    let t=Tone.now()+0.05;
+    notes.forEach(n=>{s.triggerAttackRelease(n,'8n',t);t+=0.3;});
+    setTimeout(()=>s.dispose(),(notes.length*0.3+2)*1000);
     return r;
   });
   def('beat', r=>{
     if(typeof Tone==='undefined')return r;
     const pattern=toStrs(r);
-    Tone.start().then(()=>{
-      const s=new Tone.MembraneSynth().toDestination();
-      let t=Tone.now()+0.05;
-      pattern.forEach(p=>{if(p!=='.')s.triggerAttackRelease('C1','16n',t);t+=0.15;});
-      setTimeout(()=>s.dispose(),(pattern.length*0.15+1.5)*1000);
-    });
+    const s=new Tone.MembraneSynth().toDestination();
+    let t=Tone.now()+0.05;
+    pattern.forEach(p=>{if(p!=='.')s.triggerAttackRelease('C1','16n',t);t+=0.15;});
+    setTimeout(()=>s.dispose(),(pattern.length*0.15+2)*1000);
+    return r;
+  });
+  // ── Canvas drawing ───────────────────────────────────────────────
+  def('canvas',(r)=>{
+    const w=r.array[1]!==undefined?Math.floor(sproutNum(r.array[1])):300;
+    const h=r.array[2]!==undefined?Math.floor(sproutNum(r.array[2])):220;
+    io.initCanvas(w,h); return r;
+  });
+  def('wipe',r=>{
+    if(!io.ctx)io.initCanvas(300,220);
+    const prev=io.ctx.fillStyle;
+    io.ctx.fillStyle=(r!==EMPTY&&r._str!==undefined)?r._str:'#1a1b26';
+    io.ctx.fillRect(0,0,io.canvas.width,io.canvas.height);
+    io.ctx.fillStyle=prev; return r;
+  });
+  def('ink',r=>{if(io.ctx){io.ctx.fillStyle=sproutStr(r);io.ctx.strokeStyle=sproutStr(r);}return r;});
+  def('box',r=>{
+    if(!io.ctx)io.initCanvas(300,220);
+    io.ctx.fillRect(sproutNum(r.array[1]),sproutNum(r.array[2]),sproutNum(r.array[3]),sproutNum(r.array[4]));
+    return r;
+  });
+  def('dot',r=>{
+    if(!io.ctx)io.initCanvas(300,220);
+    io.ctx.beginPath();io.ctx.arc(sproutNum(r.array[1]),sproutNum(r.array[2]),sproutNum(r.array[3]),0,Math.PI*2);io.ctx.fill();
+    return r;
+  });
+  def('label',r=>{
+    if(!io.ctx)io.initCanvas(300,220);
+    io.ctx.fillText(sproutStr(r.array[3]),sproutNum(r.array[1]),sproutNum(r.array[2]));
+    return r;
+  });
+  def('size',r=>{if(io.ctx)io.ctx.font=sproutNum(r)+'px monospace';return r;});
+  def('animate',(r,[block],vm,frame)=>{
+    if(!io.ctx)io.initCanvas(300,220);
+    const ms=sproutNum(r)*1000; const end=Date.now()+ms; let n=0;
+    const tick=()=>{if(Date.now()>end)return;vm._callBlock(block,[makeNum(++n)],frame.self,frame);requestAnimationFrame(tick);};
+    requestAnimationFrame(tick); return r;
+  });
+  // ── Misc ─────────────────────────────────────────────────────────
+  def('random',r=>{
+    if(r===EMPTY||sproutNum(r)!==sproutNum(r))return makeNum(Math.random());
+    return makeNum(Math.floor(Math.random()*sproutNum(r))+1);
+  });
+  def('speak',r=>{
+    if('speechSynthesis' in window){const u=new SpeechSynthesisUtterance(sproutStr(r));window.speechSynthesis.speak(u);}
+    return r;
+  });
+  def('tilt',(r,[block],vm,frame)=>{
+    const go=()=>window.addEventListener('deviceorientation',e=>{
+      vm._callBlock(block,[makeNum(Math.round(e.gamma||0)),makeNum(Math.round(e.beta||0))],frame.self,frame);
+    },{once:true});
+    if(typeof DeviceOrientationEvent!=='undefined'&&typeof DeviceOrientationEvent.requestPermission==='function'){
+      DeviceOrientationEvent.requestPermission().then(p=>{if(p==='granted')go();});
+    } else go();
     return r;
   });
   // ── Matter.js physics ───────────────────────────────────────────
@@ -699,6 +747,8 @@ const BUILTINS = new Set([
   'and','or','not',
   'chart','line','pie',
   'play','melody','beat','bounce',
+  'canvas','wipe','ink','box','dot','label','size','animate',
+  'random','speak','tilt',
 ]);
 
 CodeMirror.defineMode('sprout', () => ({
@@ -892,6 +942,100 @@ Dog bark
 `["x","x",".","x","x",".","x","."] beat
 ` },
 
+  { cat: 'Games' },
+  { name: 'Guess the number', code:
+`secret : 7 random
+guess : 4
+guess = secret ? "You got it!" [
+  guess < secret ? "Too low!" "Too high!"
+] say
+` },
+  { name: 'Dice roller', code:
+`3 times [
+  "Roll: " + 6 random asStr say
+]
+` },
+  { name: 'Bouncing ball', code:
+`[300, 220] canvas
+"#1a1b26" wipe
+x : 150, y : 110
+vx : 3, vy : 2, r : 12
+8 animate [
+  "#1a1b26" wipe
+  "#bd93f9" ink
+  [x, y, r] dot
+  x : x + vx
+  y : y + vy
+  x < r [[vx : vx neg]]
+  x > 300 - r [[vx : vx neg]]
+  y < r [[vy : vy neg]]
+  y > 220 - r [[vy : vy neg]]
+]
+` },
+  { name: 'Rainbow dots', code:
+`colors : ["#ff5555","#ffb86c","#f1fa8c","#50fa7b","#8be9fd","#bd93f9","#ff79c6"]
+[300, 220] canvas
+"#1a1b26" wipe
+5 animate [
+  n : 120 random
+  c : colors at [n % 7 + 1]
+  c ink
+  [300 random, 220 random, 5 + 15 random] dot
+]
+` },
+  { name: 'Starfield', code:
+`[300, 220] canvas
+"#1a1b26" wipe
+8 animate [
+  "#ffffff" ink
+  20 times [
+    [300 random, 220 random, 2 random] dot
+  ]
+]
+` },
+  { name: 'Bar race', code:
+`[300, 220] canvas
+a : 10, b : 10, c : 10
+5 animate [
+  "#1a1b26" wipe
+  a : a + 5 random
+  b : b + 5 random
+  c : c + 5 random
+  "#ff5555" ink  [0, 30, a, 40] box
+  "#50fa7b" ink  [0, 90, b, 40] box
+  "#bd93f9" ink  [0, 150, c, 40] box
+]
+` },
+
+  { cat: 'iOS' },
+  { name: 'Speak text', code:
+`"Hello from Sprout!" speak
+` },
+  { name: 'Fortune teller', code:
+`fortunes : [
+  "Something amazing is coming"
+  "Trust your instincts today"
+  "A surprise awaits you"
+  "The best is yet to come"
+  "Take the leap"
+]
+fortunes at [5 random] speak say
+` },
+  { name: 'Tilt detector', code:
+`-- Shake or tilt your phone!
+-- (tap Allow when prompted)
+"Tilt me!" say
+[] tilt [x, y |
+  "x: " + x asStr + "  y: " + y asStr say
+]
+` },
+  { name: 'Speak numbers', code:
+`5 times [n |
+  n say
+  n asStr speak
+]
+` },
+
   { cat: 'Physics' },
   { name: '5 balls', code:
 `5 bounce
@@ -1025,6 +1169,28 @@ function renderChart(data, type) {
   });
 }
 
+// Canvas drawing
+let _drawCanvas = null, _drawCtx = null;
+const drawIO = {
+  get canvas() { return _drawCanvas; },
+  get ctx() { return _drawCtx; },
+  initCanvas(w, h) {
+    if (_drawCanvas) { _drawCanvas.width = w; _drawCanvas.height = h; }
+    else {
+      _drawCanvas = document.createElement('canvas');
+      _drawCanvas.style.cssText = 'border-radius:6px;display:block;touch-action:none;';
+      outEl(_drawCanvas);
+    }
+    _drawCanvas.width = w; _drawCanvas.height = h;
+    _drawCtx = _drawCanvas.getContext('2d');
+    _drawCtx.fillStyle = '#f8f8f2';
+    _drawCtx.strokeStyle = '#f8f8f2';
+    _drawCtx.font = '14px monospace';
+    _drawCtx.fillRect(0, 0, w, h); // white bg default? no — transparent
+    _drawCtx.clearRect(0, 0, w, h);
+  }
+};
+
 // Matter.js physics
 function renderPhysics(n) {
   const W=380, H=220;
@@ -1078,8 +1244,12 @@ editor.on('inputRead', (cm, change) => {
 function run() {
   const src = editor.getValue();
   if (!src.trim()) return;
+  // Pre-unlock Web Audio on iOS (must happen synchronously inside user gesture)
+  if (typeof Tone !== 'undefined') Tone.start();
+  // Reset canvas each run
+  _drawCanvas = null; _drawCtx = null;
   output.appendChild(document.createElement('hr')).style.cssText='border:none;border-top:1px solid #44475a;margin:6px 0';
-  const vm = new VM(makeBuiltins({ print: printOut, chart: renderChart, physics: renderPhysics }));
+  const vm = new VM(makeBuiltins({ print: printOut, chart: renderChart, physics: renderPhysics, ...drawIO }));
   try {
     const chunk  = compile(src);
     const result = vm.run(chunk);
