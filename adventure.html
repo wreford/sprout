@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Cellar — Sprout</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #0d0d0d; color: #c9b99a; font-family: Georgia, serif; min-height: 100vh; display: flex; flex-direction: column; align-items: center; }
+#back { position: fixed; top: 14px; left: 16px; font-size: 12px; color: #444; text-decoration: none; font-family: monospace; }
+#back:hover { color: #888; }
+#title { margin-top: 60px; text-align: center; }
+#title h1 { font-size: 28px; color: #8b0000; letter-spacing: 0.15em; text-transform: uppercase; }
+#title p { font-size: 12px; color: #444; margin-top: 6px; letter-spacing: 0.1em; font-family: monospace; }
+#story {
+  max-width: 560px; width: 100%; margin: 40px 16px 80px;
+  min-height: 200px;
+}
+.line {
+  line-height: 1.8; font-size: 16px; margin-bottom: 6px;
+  animation: fadein 0.6s ease;
+}
+.line.em { color: #e8d5b0; }
+.line.dim { color: #555; font-style: italic; font-size: 13px; }
+.line.end { color: #8b0000; margin-top: 20px; font-size: 13px; letter-spacing: 0.12em; font-family: monospace; }
+.line.hr { border-top: 1px solid #1e1e1e; margin: 20px 0; }
+@keyframes fadein { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.choices { margin-top: 22px; display: flex; flex-direction: column; gap: 8px; }
+.choice-btn {
+  background: none; border: 1px solid #2a2a2a; color: #8b7355;
+  padding: 10px 16px; font-family: Georgia, serif; font-size: 15px;
+  cursor: pointer; text-align: left; border-radius: 2px;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.choice-btn:hover { background: #1a0a0a; border-color: #8b0000; color: #c9b99a; }
+#restart { display: none; margin-top: 30px; background: none; border: 1px solid #333; color: #444; padding: 8px 20px; font-family: monospace; font-size: 12px; cursor: pointer; border-radius: 2px; }
+#restart:hover { color: #888; border-color: #666; }
+</style>
+</head>
+<body>
+<a href="index.html" id="back">← sprout</a>
+<div id="title">
+  <h1>The Cellar</h1>
+  <p>a horror text adventure · written in sprout</p>
+</div>
+<div id="story"></div>
+<button id="restart">start over</button>
+
+<script>
+// ── Sprout runtime ────────────────────────────────────────────────
+const OP={PUSH_CONST:0,PUSH_SELF:1,LOAD:2,STORE:3,SEND:4,MAKE_CELL:5,MAKE_BLOCK:6,JUMP:7,JUMP_FALSE:8,RETURN:9,POP:10};
+class Chunk{constructor(n='<main>'){this.name=n;this.code=[];this.constants=[];this.chunks=[];}addConst(v){const i=this.constants.indexOf(v);if(i!==-1)return i;this.constants.push(v);return this.constants.length-1;}emit(...ops){for(const o of ops)this.code.push(o);return this.code.length-1;}patch(i,v){this.code[i]=v;}}
+class Cell{constructor(){this.array=[undefined];this.fields=new Map();this.block=null;this.parent=null;}get(key){if(typeof key==='number')return this.array[key]!==undefined?this.array[key]:EMPTY;if(this.fields.has(key))return this.fields.get(key);if(this.parent!==null)return this.parent.get(key);return undefined;}set(key,val){if(typeof key==='number')this.array[key]=val;else this.fields.set(key,val);}isEmpty(){return this===EMPTY;}isTruthy(){return this!==EMPTY;}clone(){const c=new Cell();c.array=[...this.array];c.fields=new Map(this.fields);c.block=this.block;c.parent=this.parent;return c;}length(){return this.array.length-1;}}
+const EMPTY=new Cell();
+function makeNum(n){const c=new Cell();c._num=n;c.array[1]=n;return c;}
+function makeStr(s){const c=new Cell();c._str=s;c.array[1]=s;return c;}
+function makeBlock(params,chunk,closure){const c=new Cell();c.block={params,chunk,closure};return c;}
+function unwrap(cell){if(cell===EMPTY)return null;if(cell._num!==undefined)return cell._num;if(cell._str!==undefined)return cell._str;return cell;}
+const T={NUM:'NUM',STR:'STR',IDENT:'IDENT',OP:'OP',COLON:'COLON',COMMA:'COMMA',NL:'NL',INDENT:'INDENT',DEDENT:'DEDENT',LBRACK:'LBRACK',RBRACK:'RBRACK',PIPE:'PIPE',AT:'AT',QMARK:'QMARK',EOF:'EOF'};
+class Scanner{constructor(src){this.src=src;this.queue=[];this.qi=0;this._scanAll();}
+_scanAll(){const src=this.src,len=src.length,toks=[],stack=[0];let i=0;const p2=()=>i+1<len?src[i+1]:'';
+while(i<len){while(i<len&&(src[i]===' '||src[i]==='\t')&&(toks.length===0||toks[toks.length-1].type!==T.NL))i++;if(i>=len)break;const c=src[i];
+if(c==='-'&&p2()==='-'){while(i<len&&src[i]!=='\n')i++;continue;}
+if(c==='\n'){i++;let ind=0;while(i<len&&(src[i]===' '||src[i]==='\t')){ind+=src[i]==='\t'?2:1;i++;}if(i<len&&src[i]==='\n')continue;if(i>=len)break;const cur=stack[stack.length-1];if(ind>cur){stack.push(ind);toks.push({type:T.INDENT});}else if(ind<cur){while(stack[stack.length-1]>ind){stack.pop();toks.push({type:T.DEDENT});}toks.push({type:T.NL});}else toks.push({type:T.NL});continue;}
+if(c>='0'&&c<='9'){let s='';while(i<len&&((src[i]>='0'&&src[i]<='9')||src[i]==='.'))s+=src[i++];toks.push({type:T.NUM,val:parseFloat(s)});continue;}
+if(c==='"'){i++;let s='';while(i<len&&src[i]!=='"'){if(src[i]==='\\'){i++;s+=src[i++];}else s+=src[i++];}i++;toks.push({type:T.STR,val:s});continue;}
+if(c==='#'){i++;let s='#';while(i<len&&/[a-zA-Z0-9_]/.test(src[i]))s+=src[i++];toks.push({type:T.IDENT,val:s,meta:true});continue;}
+if(/[a-zA-Z_]/.test(c)){let s='';while(i<len&&/[a-zA-Z0-9_]/.test(src[i]))s+=src[i++];toks.push({type:T.IDENT,val:s});continue;}
+if((c==='>'||c==='<'||c==='!')&&p2()==='='){toks.push({type:T.OP,val:c+'='});i+=2;continue;}
+switch(c){case '+':case '-':case '*':case '/':toks.push({type:T.OP,val:c});i++;break;case '=':toks.push({type:T.OP,val:'='});i++;break;case '>':toks.push({type:T.OP,val:'>'});i++;break;case '<':toks.push({type:T.OP,val:'<'});i++;break;case ':':toks.push({type:T.COLON});i++;break;case ',':toks.push({type:T.COMMA});i++;break;case '[':toks.push({type:T.LBRACK});i++;break;case ']':toks.push({type:T.RBRACK});i++;break;case '|':toks.push({type:T.PIPE});i++;break;case '@':toks.push({type:T.AT});i++;break;case '?':toks.push({type:T.QMARK});i++;break;default:i++;}}
+while(stack.length>1){stack.pop();toks.push({type:T.DEDENT});}toks.push({type:T.EOF});this.queue=toks;this.qi=0;}
+peek(o=0){const i=this.qi+o;return i<this.queue.length?this.queue[i]:{type:T.EOF};}
+next(){const t=this.queue[this.qi];if(this.qi<this.queue.length-1)this.qi++;return t;}
+check(type,val){const t=this.peek();if(t.type!==type)return false;if(val!==undefined&&t.val!==val)return false;return true;}
+eat(type,val){if(!this.check(type,val))return false;this.next();return true;}}
+class Compiler{constructor(src,name='<main>'){this.sc=new Scanner(src);this.chunk=new Chunk(name);}
+compile(){this.compileBody(this.chunk);this.chunk.emit(OP.RETURN);return this.chunk;}
+compileBody(chunk){this.skipNL();while(true){const t=this.sc.peek();if(t.type===T.EOF||t.type===T.DEDENT||t.type===T.RBRACK)break;this.compileExpr(chunk);const sep=this.sc.peek();if(sep.type===T.NL||sep.type===T.COMMA){this.sc.next();const nx=this.sc.peek();if(nx.type!==T.EOF&&nx.type!==T.DEDENT&&nx.type!==T.RBRACK)chunk.emit(OP.POP);this.skipNL();}else break;}}
+skipNL(){while(this.sc.check(T.NL))this.sc.next();}
+compileExpr(chunk){const t=this.sc.peek();if(t.type===T.IDENT&&this.sc.peek(1).type===T.COLON){const name=t.val;this.sc.next();this.sc.next();this.compileChain(chunk);chunk.emit(OP.STORE,chunk.addConst(name));chunk.emit(OP.LOAD,chunk.addConst(name));return;}this.compileChain(chunk);}
+compileChain(chunk){this.compileAtom(chunk);while(true){const t=this.sc.peek();if(t.type===T.OP){const op=t.val;this.sc.next();this.compileAtom(chunk);chunk.emit(OP.SEND,chunk.addConst(op),1);continue;}if(t.type===T.QMARK){this.sc.next();this.compileAtom(chunk);this.compileAtom(chunk);chunk.emit(OP.SEND,chunk.addConst('?'),2);continue;}if(t.type===T.IDENT&&this.sc.peek(1).type!==T.COLON){const name=t.val;this.sc.next();if(this.sc.peek().type===T.LBRACK){this.compileBlockOrCell(chunk);chunk.emit(OP.SEND,chunk.addConst(name),1);}else chunk.emit(OP.SEND,chunk.addConst(name),0);continue;}if(t.type===T.LBRACK){this.compileBlockOrCell(chunk);chunk.emit(OP.SEND,chunk.addConst('call'),1);continue;}if(t.type===T.NUM){this.sc.next();chunk.emit(OP.PUSH_CONST,chunk.addConst(makeNum(t.val)));chunk.emit(OP.SEND,chunk.addConst('call'),1);continue;}if(t.type===T.STR){this.sc.next();chunk.emit(OP.PUSH_CONST,chunk.addConst(makeStr(t.val)));chunk.emit(OP.SEND,chunk.addConst('call'),1);continue;}break;}}
+compileAtom(chunk){const t=this.sc.peek();if(t.type===T.NUM){this.sc.next();chunk.emit(OP.PUSH_CONST,chunk.addConst(makeNum(t.val)));return;}if(t.type===T.STR){this.sc.next();chunk.emit(OP.PUSH_CONST,chunk.addConst(makeStr(t.val)));return;}if(t.type===T.AT){this.sc.next();chunk.emit(OP.LOAD,chunk.addConst('@'));return;}if(t.type===T.IDENT){this.sc.next();chunk.emit(OP.LOAD,chunk.addConst(t.val));return;}if(t.type===T.LBRACK){this.compileBlockOrCell(chunk);return;}chunk.emit(OP.PUSH_CONST,chunk.addConst(null));}
+compileBlockOrCell(chunk){this.sc.next();if(this.sc.eat(T.RBRACK)){chunk.emit(OP.PUSH_CONST,chunk.addConst(null));return;}if(this._looksLikeBlock())this._compileBlock(chunk);else this._compileCellBody(chunk);}
+_looksLikeBlock(){if(this.sc.peek().type===T.PIPE)return true;if(this.sc.peek().type===T.AT)return true;let i=0;while(this.sc.peek(i).type===T.IDENT){i++;if(this.sc.peek(i).type===T.PIPE)return true;if(this.sc.peek(i).type===T.COMMA){i++;continue;}break;}let depth=0,n=0;for(let j=0;;j++){const t=this.sc.peek(j);if(t.type===T.EOF)break;if(t.type===T.LBRACK){depth++;n++;continue;}if(t.type===T.RBRACK){if(depth===0)break;depth--;n++;continue;}if(depth>0)continue;if(t.type===T.COMMA||t.type===T.NL)return false;if(t.type===T.COLON)return false;n++;}return n>1;}
+_compileBlock(chunk){let params=[];if(this.sc.peek().type===T.AT)params=['@'];else if(this.sc.peek().type===T.PIPE)this.sc.next();else{while(!this.sc.check(T.PIPE)&&!this.sc.check(T.RBRACK)&&!this.sc.check(T.EOF)){if(this.sc.check(T.IDENT))params.push(this.sc.next().val);this.sc.eat(T.COMMA);}if(this.sc.check(T.PIPE))this.sc.next();}if(params.length>1){this._compileCurried(chunk,params,0);this.sc.eat(T.RBRACK);return;}const bc=new Chunk('<block>');bc._params=params.length===1?params:[];chunk.chunks.push(bc);const bi=chunk.chunks.length-1;this.compileBody(bc);bc.emit(OP.RETURN);this.sc.eat(T.RBRACK);chunk.emit(OP.MAKE_BLOCK,bi);}
+_compileCurried(chunk,params,idx){if(idx===params.length-1){const bc=new Chunk('<block>');bc._params=[params[idx]];chunk.chunks.push(bc);const bi=chunk.chunks.length-1;this.compileBody(bc);bc.emit(OP.RETURN);chunk.emit(OP.MAKE_BLOCK,bi);}else{const oc=new Chunk('<block>');oc._params=[params[idx]];chunk.chunks.push(oc);const oi=chunk.chunks.length-1;this._compileCurried(oc,params,idx+1);oc.emit(OP.RETURN);chunk.emit(OP.MAKE_BLOCK,oi);}}
+_compileCellBody(chunk){let count=0;while(!this.sc.check(T.RBRACK)&&!this.sc.check(T.EOF)){this.skipNL();if(this.sc.check(T.RBRACK))break;const t=this.sc.peek(),t1=this.sc.peek(1);if((t.type===T.IDENT||t.type===T.NUM||t.type===T.STR)&&t1.type===T.COLON){if(t.type===T.NUM)chunk.emit(OP.PUSH_CONST,chunk.addConst(makeNum(t.val)));else chunk.emit(OP.PUSH_CONST,chunk.addConst(makeStr(t.val)));this.sc.next();this.sc.next();this.compileChain(chunk);}else{chunk.emit(OP.PUSH_CONST,chunk.addConst(null));this.compileChain(chunk);}count++;this.sc.eat(T.COMMA);this.skipNL();}this.sc.eat(T.RBRACK);chunk.emit(OP.MAKE_CELL,count);}}
+function compile(src,name){return new Compiler(src,name).compile();}
+class Frame{constructor(chunk,self,closure=null){this.chunk=chunk;this.ip=0;this.stack=[];this.self=self;this.closure=closure;}push(v){this.stack.push(v);}pop(){return this.stack.pop()??EMPTY;}peek(){return this.stack[this.stack.length-1]??EMPTY;}}
+class VM{constructor(builtins){this.builtins=builtins;this.globals=new Cell();}run(chunk){return this._exec(new Frame(chunk,this.globals));}
+_exec(frame){const{chunk}=frame,{code,constants,chunks}=chunk;while(frame.ip<code.length){const op=code[frame.ip++];switch(op){case OP.PUSH_CONST:{const v=constants[code[frame.ip++]];frame.push(v===null?EMPTY:v);break;}case OP.PUSH_SELF:{frame.push(frame.self);break;}case OP.LOAD:{const name=constants[code[frame.ip++]];const v=this._lookup(name,frame);frame.push(v!==undefined?v:EMPTY);break;}case OP.STORE:{const name=constants[code[frame.ip++]];frame.self.set(name,frame.peek());break;}case OP.SEND:{const msg=constants[code[frame.ip++]],nargs=code[frame.ip++];const args=[];for(let i=0;i<nargs;i++)args.unshift(frame.pop());frame.push(this._send(msg,frame.pop(),args,frame));break;}case OP.MAKE_CELL:{const n=code[frame.ip++],cell=new Cell();let ai=1;const pairs=[];for(let i=0;i<n;i++){const v=frame.pop(),k=frame.pop();pairs.unshift([k,v]);}for(const[k,v]of pairs){if(k===EMPTY||k===null){cell.array[ai++]=v;}else{const kk=unwrap(k);if(typeof kk==='number'){cell.array[kk]=v;if(kk>=ai)ai=kk+1;}else cell.fields.set(String(kk),v);}}if(cell.array.length===2&&cell.fields.size===0&&cell.array[1]!==undefined)frame.push(cell.array[1]);else frame.push(cell);break;}case OP.MAKE_BLOCK:{const bi=code[frame.ip++],bc=chunks[bi];frame.push(makeBlock(bc._params||[],bc,frame));break;}case OP.JUMP:{frame.ip=code[frame.ip];break;}case OP.JUMP_FALSE:{const t=code[frame.ip++];if(!frame.pop().isTruthy())frame.ip=t;break;}case OP.RETURN:{return frame.pop();}case OP.POP:{frame.pop();break;}default:throw new Error(`Unknown opcode ${op}`);}}return EMPTY;}
+_lookup(name,frame){const own=frame.self.get(name);if(own!==undefined)return own;let cl=frame.closure;while(cl){const v=cl.self.get(name);if(v!==undefined)return v;cl=cl.closure;}return this.globals.get(name);}
+_send(msg,receiver,args,frame){if(msg==='?')return receiver.isTruthy()?args[0]:args[1];if(msg==='call')return this._call(receiver,args[0],frame);const field=receiver.get(msg);if(field!==undefined){if(field instanceof Cell&&field.block)return this._callBlock(field,args,receiver,frame);if(args.length===0)return field;}const b=this.builtins.get(msg);if(b)return b(receiver,args,this,frame);if(args.length===0&&receiver.block)return this._callBlock(receiver,[makeStr(msg)],frame.self,frame);return EMPTY;}
+_call(receiver,arg,frame){if(receiver.block)return this._callBlock(receiver,[arg],frame.self,frame);if(arg instanceof Cell){const yes=arg.get(1),no=arg.get(2);if(receiver.isTruthy())return(yes instanceof Cell&&yes.block)?this._callBlock(yes,[],frame.self,frame):(yes??EMPTY);return(no instanceof Cell&&no.block)?this._callBlock(no,[],frame.self,frame):(no??EMPTY);}return EMPTY;}
+_callBlock(block,args,self,frame){const{params,chunk,closure}=block.block;const bs=new Cell();bs.parent=self;for(let i=0;i<params.length;i++)bs.set(params[i],args[i]!==undefined?args[i]:EMPTY);return this._exec(new Frame(chunk,bs,closure??frame));}}
+
+// ── Adventure engine ──────────────────────────────────────────────
+const story = document.getElementById('story');
+const restartBtn = document.getElementById('restart');
+
+function print(text, cls='line') {
+  if (text === '---') { const d = document.createElement('div'); d.className='line hr'; story.appendChild(d); return; }
+  const d = document.createElement('p');
+  d.className = cls;
+  d.textContent = text;
+  story.appendChild(d);
+  story.scrollTop = story.scrollHeight;
+  window.scrollTo(0, document.body.scrollHeight);
+}
+
+function makeBuiltins() {
+  const B = new Map();
+  const def = (n,f) => B.set(n,f);
+  const bool = b => b ? makeNum(1) : EMPTY;
+  const eq = (a,b) => a===b||(a._num!==undefined&&b._num!==undefined&&a._num===b._num)||(a._str!==undefined&&b._str!==undefined&&a._str===b._str);
+  def('+',(r,[a])=>r._str!==undefined||a?._str!==undefined?makeStr((r._str||String(r._num||''))+(a._str||String(a._num||''))):makeNum((r._num||0)+(a._num||0)));
+  def('=',(r,[a])=>bool(eq(r,a)));
+  def('!=',(r,[a])=>bool(!eq(r,a)));
+  def('say', r => { print(r===EMPTY?'':r._str!==undefined?r._str:String(r._num??'[]')); return r; });
+  def('em',  r => { print(r._str||'', 'line em'); return r; });
+  def('dim', r => { print(r._str||'', 'line dim'); return r; });
+  def('end', r => { print(r._str||'★ THE END', 'line end'); restartBtn.style.display='block'; return r; });
+  def('hr',  r => { print('---'); return r; });
+  def('choice', (r, [block], vm, frame) => {
+    const opts = [];
+    for (let i = 1; i < r.array.length; i++) if (r.array[i] !== undefined) opts.push(r.array[i]._str || '');
+    const div = document.createElement('div');
+    div.className = 'choices';
+    opts.forEach((opt, i) => {
+      const btn = document.createElement('button');
+      btn.className = 'choice-btn';
+      btn.textContent = opt;
+      btn.onclick = () => { div.remove(); vm._callBlock(block, [makeNum(i+1)], frame.self, frame); };
+      div.appendChild(btn);
+    });
+    story.appendChild(div);
+    window.scrollTo(0, document.body.scrollHeight);
+  });
+  return B;
+}
+
+const GAME = `
+nl : ["" say]
+
+-- ── endings ──────────────────────────────────────────────────────
+
+end_wait : [
+  nl call
+  "You put your phone in your pocket." say
+  "You sit down on the cold floor." say
+  "You wait." say
+  nl call
+  "You have been here before." say
+  "★  END: THE PATIENT ONE" end
+]
+
+end_scream : [
+  nl call
+  "Silence. Then slow footsteps overhead." say
+  "The cellar door rattles once. Stops." say
+  nl call
+  "Something slides under the door." say
+  "A key." say
+  nl call
+  "You don't use it." say
+  "★  END: THE KEY" end
+]
+
+end_behind : [
+  nl call
+  "You turn around." say
+  nl call
+  "★  END: DON'T TURN AROUND" end
+]
+
+end_ringing : [
+  nl call
+  "You walk toward the sound." say
+  "The ringing gets louder." say
+  "Then you find it — your other phone." say
+  "Same case. Same cracked corner." say
+  nl call
+  "Same everything." say
+  "★  END: THE OTHER YOU" end
+]
+
+end_escape : [
+  nl call
+  "You run. She follows. Up the stairs, into the blue pre-dawn." say
+  "She runs toward the road without looking back." say
+  nl call
+  "You start walking home." say
+  "Halfway there, you stop." say
+  "You don't know why. But you know the way back to that cellar." say
+  nl call
+  "You keep walking." say
+  "★  END: THE LONG WAY HOME" end
+]
+
+end_manstory : [
+  nl call
+  "He shows you a journal in your handwriting." say
+  "47 entries. Each one starts: I don't remember last time." say
+  nl call
+  "You made him a prisoner to keep him safe." say
+  "From something upstairs." say
+  "From something wearing your face." say
+  nl call
+  "Upstairs: knock knock knock." say
+  "★  END: THE THING WITH YOUR FACE" end
+]
+
+end_door : [
+  nl call
+  "You say nothing. The footsteps walk away." say
+  nl call
+  "You sit against the wall until morning." say
+  "When the light comes through the crack, you find the stairs." say
+  "The kitchen. Warm. Coffee smell." say
+  nl call
+  "On the counter: a padlock. You don't own one." say
+  "On the inside of the cellar door: scratch marks." say
+  "Made from the inside." say
+  "★  END: THE SCRATCH MARKS" end
+]
+
+end_photo : [
+  nl call
+  "You drop the phone. The screen cracks." say
+  "The light goes out." say
+  nl call
+  "In the dark, from somewhere very close:" say
+  "\\"I told you not to look.\\"" say
+  "★  END: DON'T LOOK" end
+]
+
+-- ── scenes ───────────────────────────────────────────────────────
+
+scene_girlwho : [
+  nl call
+  "She grabs your arm." say
+  "\\"You come here every night. You never remember me.\\"" say
+  "\\"But YOU put me here.\\"" say
+  nl call
+  "Her eyes. You recognize them." say
+  "They're yours." say
+  end_escape call
+]
+
+scene_girl : [
+  nl call
+  "A girl, maybe sixteen, presses close in the dark." say
+  "\\"We have to go. Before she comes back.\\"" say
+  nl call
+  ["Who is she?", "Run with her"] choice [c |
+    c = 1 [[scene_girlwho call], []]
+    c = 2 [[end_escape call], []]
+  ]
+]
+
+scene_man : [
+  nl call
+  "There's a lantern. And a man." say
+  "He hasn't eaten in days. He raises his hands: please." say
+  nl call
+  ["Listen to him", "Run past him to the stairs"] choice [c |
+    c = 1 [[end_manstory call], []]
+    c = 2 [[end_escape call], []]
+  ]
+]
+
+scene_photo2 : [
+  nl call
+  "You zoom in." say
+  "The other person has their face turned away." say
+  "But you recognise the jacket. The shoes." say
+  nl call
+  "It's yours. There are two of you in this photo." say
+  nl call
+  "In the last photo, taken four minutes ago:" say
+  "you are standing behind yourself." say
+  end_photo call
+]
+
+scene_nosignal : [
+  nl call
+  "No signal." say
+  "As you lower the phone, you see it — the camera roll." say
+  nl call
+  "A photo. You, smiling, in this exact cellar. Taken three days ago." say
+  "You don't remember taking it." say
+  "You are not alone in the photo." say
+  nl call
+  ["Look at who's with you", "Try the cellar door"] choice [c |
+    c = 1 [[scene_photo2 call], []]
+    c = 2 [[end_door call], []]
+  ]
+]
+
+scene_room : [
+  nl call
+  "Concrete walls. A rusty drain. Scratch marks on the floor." say
+  "They spell one phrase, repeated dozens of times:" say
+  nl call
+  "\\"I WANT TO GO HOME\\"" em
+  nl call
+  "One in fresh blood, in handwriting you recognize. Your own:" say
+  "\\"I\\'M STILL HERE. BEHIND YOU.\\"" em
+  nl call
+  ["Scream", "Turn around"] choice [c |
+    c = 1 [[end_scream call], []]
+    c = 2 [[end_behind call], []]
+  ]
+]
+
+scene_twist1 : [
+  nl call
+  "The last text. From an unknown number, three days ago:" say
+  nl call
+  "\\"Don\\'t come home. You won\\'t recognise yourself.\\"" em
+  nl call
+  "You check the sender." say
+  "It's your own number." say
+  "You sent it to yourself." say
+  nl call
+  ["Call yourself", "Check the photo reel"] choice [c |
+    c = 1 [[end_ringing call], []]
+    c = 2 [[scene_photo2 call], []]
+  ]
+]
+
+scene_phone : [
+  nl call
+  "Your screen flickers on." say
+  "3:47 AM. Battery: 4%." say
+  "You are in a cellar." say
+  nl call
+  ["Call for help", "Use the flashlight", "Read last text"] choice [c |
+    c = 1 [[scene_nosignal call], []]
+    c = 2 [[scene_room call], []]
+    c = 3 [[scene_twist1 call], []]
+  ]
+]
+
+scene_listen : [
+  nl call
+  "You hear breathing. Not yours." say
+  "Then a whisper, very close:" say
+  "\\"She\\'s awake.\\"" em
+  nl call
+  ["Run toward a faint light", "Keep perfectly still"] choice [c |
+    c = 1 [[scene_man call], []]
+    c = 2 [[scene_girl call], []]
+  ]
+]
+
+scene_wake : [
+  "You wake on cold stone." say
+  "Blood on your teeth. Darkness everywhere." say
+  nl call
+  ["Check your phone", "Stay very still"] choice [c |
+    c = 1 [[scene_phone call], []]
+    c = 2 [[scene_listen call], []]
+  ]
+]
+
+hr call
+"THE CELLAR" em
+"Two choices. Five endings. All wrong." dim
+hr call
+nl call
+scene_wake call
+`;
+
+function startGame() {
+  story.innerHTML = '';
+  restartBtn.style.display = 'none';
+  const vm = new VM(makeBuiltins());
+  try { vm.run(compile(GAME)); }
+  catch(e) { print('Error: ' + e.message, 'line dim'); }
+}
+
+restartBtn.addEventListener('click', startGame);
+startGame();
+</script>
+</body>
+</html>

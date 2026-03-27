@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Keira's Mancala — Sprout</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #1e1f29; color: #f8f8f2; font-family: 'Fira Code', monospace; min-height: 100vh; display: flex; flex-direction: column; align-items: center; }
+#back { position: fixed; top: 14px; left: 16px; font-size: 12px; color: #6272a4; text-decoration: none; }
+#back:hover { color: #f8f8f2; }
+h1 { margin-top: 48px; font-size: 22px; color: #bd93f9; letter-spacing: 0.05em; }
+#subtitle { font-size: 12px; color: #6272a4; margin-top: 4px; }
+#board-wrap { margin: 28px 0 0; }
+canvas { border-radius: 10px; display: block; cursor: pointer; touch-action: none; }
+#status { margin-top: 14px; font-size: 13px; color: #8be9fd; min-height: 20px; text-align: center; }
+#msg { margin-top: 6px; font-size: 12px; color: #6272a4; min-height: 18px; text-align: center; }
+#restart { margin-top: 18px; background: none; border: 1px solid #44475a; color: #6272a4; padding: 7px 20px; font-family: inherit; font-size: 12px; cursor: pointer; border-radius: 4px; }
+#restart:hover { color: #f8f8f2; border-color: #bd93f9; }
+#rules { max-width: 420px; margin: 24px 16px 60px; font-size: 11px; color: #44475a; line-height: 1.8; }
+</style>
+</head>
+<body>
+<a href="index.html" id="back">← sprout</a>
+<h1>🔵 Keira's Mancala</h1>
+<p id="subtitle">play against the computer</p>
+<div id="board-wrap">
+  <canvas id="c" width="420" height="176"></canvas>
+</div>
+<div id="status">Your turn</div>
+<div id="msg"></div>
+<button id="restart">New Game</button>
+<div id="rules">
+  Pick a pit on the bottom row. Stones distribute counter-clockwise.<br>
+  Land in your store (right) → extra turn. Land in an empty pit on your side → capture opposite.<br>
+  Game ends when one side is empty. Most stones in your store wins.
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const statusEl = document.getElementById('status');
+const msgEl = document.getElementById('msg');
+const W = 420, H = 176;
+
+// Board: indices 1-14
+// 1-6: player pits (bottom), 7: player store (right)
+// 8-13: AI pits (top, 8 is rightmost = opposite pit 6), 14: AI store (left)
+let board, turn, gameOver, animating;
+
+const CC = ['#bd93f9','#50fa7b','#ff79c6','#8be9fd','#ffb86c','#ff5555'];
+
+// Pit screen positions
+function pitX(i) {
+  if (i >= 1 && i <= 6) return 75 + (i-1)*50;
+  if (i >= 8 && i <= 13) return 75 + (13-i)*50; // 8→right(325), 13→left(75)
+  return i === 7 ? 385 : 35; // stores
+}
+function pitY(i) {
+  if (i === 7 || i === 14) return H/2;
+  return i >= 1 && i <= 6 ? 130 : 46;
+}
+function pitR(i) { return i === 7 || i === 14 ? 32 : 22; }
+
+function drawBoard() {
+  ctx.clearRect(0, 0, W, H);
+  // background
+  ctx.fillStyle = '#282a36';
+  ctx.beginPath(); ctx.roundRect(2, 2, W-4, H-4, 12); ctx.fill();
+
+  // board track
+  ctx.strokeStyle = '#44475a'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.roundRect(6, 6, W-12, H-12, 8); ctx.stroke();
+
+  // divider lines
+  ctx.strokeStyle = '#383a4a'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(60, 10); ctx.lineTo(60, H-10); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(W-60, 10); ctx.lineTo(W-60, H-10); ctx.stroke();
+
+  // labels
+  ctx.fillStyle = '#44475a'; ctx.font = '9px monospace'; ctx.textAlign = 'center';
+  ctx.fillText('YOU', W/2, H-6);
+  ctx.fillText('AI', W/2, 13);
+
+  for (let i = 1; i <= 14; i++) {
+    const x = pitX(i), y = pitY(i), r = pitR(i);
+    const isStore = i === 7 || i === 14;
+    const isAI = i >= 8 && i <= 14;
+    const stones = board[i];
+
+    // pit shadow
+    ctx.fillStyle = '#1a1b26';
+    ctx.beginPath(); ctx.ellipse(x, y+2, r, r*0.6, 0, 0, Math.PI*2); ctx.fill();
+
+    // pit
+    const isClickable = !gameOver && !animating && turn === 1 && i >= 1 && i <= 6 && stones > 0;
+    ctx.fillStyle = isStore ? '#21223a' : '#21222c';
+    ctx.strokeStyle = isStore
+      ? (i===7 ? '#6272a4' : '#bd93f9')
+      : isClickable ? '#50fa7b' : (isAI ? '#44355a' : '#3a3d54');
+    ctx.lineWidth = isClickable ? 2 : 1.5;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+
+    // stones count
+    ctx.fillStyle = stones === 0 ? '#383a4a' : (isStore ? '#f8f8f2' : (isAI ? '#bd93f9' : '#50fa7b'));
+    ctx.font = isStore ? 'bold 16px monospace' : '13px monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(stones, x, y);
+
+    // pit number (small)
+    if (!isStore) {
+      ctx.fillStyle = '#383a4a'; ctx.font = '8px monospace';
+      ctx.fillText(i <= 6 ? i : (21-i), x, isAI ? y+r+8 : y-r-6);
+    }
+  }
+}
+
+function nextPit(pos, player) {
+  let p = pos % 14 + 1;
+  // skip opponent's store
+  if (player === 1 && p === 14) p = 1;
+  if (player === 2 && p === 7) p = 8;
+  return p;
+}
+
+function sow(pitIdx, player) {
+  let stones = board[pitIdx];
+  board[pitIdx] = 0;
+  let pos = pitIdx;
+  while (stones > 0) {
+    pos = nextPit(pos, player);
+    board[pos]++;
+    stones--;
+  }
+  // capture
+  const myPits = player === 1 ? [1,2,3,4,5,6] : [8,9,10,11,12,13];
+  const myStore = player === 1 ? 7 : 14;
+  if (myPits.includes(pos) && board[pos] === 1) {
+    const opp = 14 - pos;
+    if (board[opp] > 0) {
+      board[myStore] += 1 + board[opp];
+      board[pos] = 0; board[opp] = 0;
+      return 'capture';
+    }
+  }
+  // extra turn
+  if (pos === (player === 1 ? 7 : 14)) return 'extra';
+  return 'normal';
+}
+
+function checkEnd() {
+  const p1empty = [1,2,3,4,5,6].every(i => board[i] === 0);
+  const p2empty = [8,9,10,11,12,13].every(i => board[i] === 0);
+  if (p1empty || p2empty) {
+    [1,2,3,4,5,6].forEach(i => { board[7] += board[i]; board[i] = 0; });
+    [8,9,10,11,12,13].forEach(i => { board[14] += board[i]; board[i] = 0; });
+    return true;
+  }
+  return false;
+}
+
+function aiMove() {
+  animating = true;
+  statusEl.textContent = 'AI thinking…';
+  setTimeout(() => {
+    const valid = [8,9,10,11,12,13].filter(i => board[i] > 0);
+    if (!valid.length) { endGame(); return; }
+    // prefer extra turn
+    let chosen = valid.find(i => {
+      let pos = i, s = board[i];
+      while (s-- > 0) pos = nextPit(pos, 2);
+      return pos === 14;
+    });
+    // prefer capture
+    if (!chosen) chosen = valid.find(i => {
+      let pos = i, s = board[i];
+      while (s-- > 0) pos = nextPit(pos, 2);
+      const opp = 14 - pos;
+      return [8,9,10,11,12,13].includes(pos) && board[pos] === 0 && board[opp] > 0;
+    });
+    if (!chosen) chosen = valid[Math.floor(Math.random() * valid.length)];
+
+    const result = sow(chosen, 2);
+    drawBoard();
+    if (checkEnd()) { endGame(); return; }
+    if (result === 'extra') {
+      msgEl.textContent = 'AI gets another turn!';
+      setTimeout(() => { msgEl.textContent = ''; aiMove(); }, 900);
+    } else {
+      turn = 1;
+      animating = false;
+      statusEl.textContent = 'Your turn';
+      msgEl.textContent = result === 'capture' ? 'AI captured!' : '';
+    }
+  }, 700);
+}
+
+function playerMove(pitIdx) {
+  if (gameOver || animating || turn !== 1) return;
+  if (pitIdx < 1 || pitIdx > 6 || board[pitIdx] === 0) return;
+  const result = sow(pitIdx, 1);
+  drawBoard();
+  if (checkEnd()) { endGame(); return; }
+  if (result === 'extra') {
+    msgEl.textContent = 'Extra turn!';
+    statusEl.textContent = 'Your turn';
+  } else {
+    msgEl.textContent = result === 'capture' ? 'Captured!' : '';
+    turn = 2;
+    aiMove();
+  }
+}
+
+function endGame() {
+  gameOver = true; animating = false;
+  drawBoard();
+  const you = board[7], ai = board[14];
+  if (you > ai) statusEl.textContent = `You win! ${you} vs ${ai} 🎉`;
+  else if (ai > you) statusEl.textContent = `AI wins. ${ai} vs ${you}`;
+  else statusEl.textContent = `Tie! ${you} each`;
+  msgEl.textContent = '';
+}
+
+function newGame() {
+  board = [0, 4,4,4,4,4,4,0, 4,4,4,4,4,4,0]; // 1-indexed
+  turn = 1; gameOver = false; animating = false;
+  statusEl.textContent = 'Your turn';
+  msgEl.textContent = '';
+  drawBoard();
+}
+
+// Click / touch
+function handleClick(cx, cy) {
+  if (gameOver || animating || turn !== 1) return;
+  for (let i = 1; i <= 6; i++) {
+    const dx = cx - pitX(i), dy = cy - pitY(i);
+    if (Math.sqrt(dx*dx+dy*dy) <= pitR(i) + 4) { playerMove(i); return; }
+  }
+}
+canvas.addEventListener('click', e => {
+  const r = canvas.getBoundingClientRect();
+  const scale = W / r.width;
+  handleClick((e.clientX - r.left) * scale, (e.clientY - r.top) * scale);
+});
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const r = canvas.getBoundingClientRect();
+  const scale = W / r.width;
+  const t = e.touches[0];
+  handleClick((t.clientX - r.left) * scale, (t.clientY - r.top) * scale);
+}, { passive: false });
+
+document.getElementById('restart').addEventListener('click', newGame);
+newGame();
+</script>
+</body>
+</html>

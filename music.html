@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Beat Drop — Sprout</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #1e1f29; color: #f8f8f2; font-family: 'Fira Code', monospace; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+#back { position: fixed; top: 14px; left: 16px; font-size: 12px; color: #6272a4; text-decoration: none; }
+#back:hover { color: #f8f8f2; }
+h1 { font-size: 24px; color: #bd93f9; letter-spacing: 0.05em; margin-bottom: 4px; }
+#tagline { font-size: 12px; color: #6272a4; margin-bottom: 36px; }
+#status { font-size: 14px; color: #8be9fd; min-height: 22px; margin-bottom: 8px; text-align: center; }
+#score-wrap { font-size: 12px; color: #6272a4; margin-bottom: 28px; }
+#score { color: #f8f8f2; }
+#buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 32px; }
+.pad {
+  width: 130px; height: 130px;
+  border-radius: 16px; border: none; cursor: pointer;
+  font-size: 28px; display: flex; align-items: center; justify-content: center;
+  transition: filter 0.08s, transform 0.08s;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+.pad:active, .pad.lit { filter: brightness(1.5); transform: scale(0.96); }
+.pad.dim { filter: brightness(0.35); }
+#pad0 { background: #bd93f9; }
+#pad1 { background: #50fa7b; }
+#pad2 { background: #ff79c6; }
+#pad3 { background: #ffb86c; }
+#start { background: #bd93f9; color: #282a36; border: none; padding: 10px 32px; border-radius: 6px; font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer; }
+#start:hover { background: #caa5ff; }
+#best { font-size: 11px; color: #44475a; margin-top: 10px; }
+</style>
+</head>
+<body>
+<a href="index.html" id="back">← sprout</a>
+<h1>🎵 Beat Drop</h1>
+<p id="tagline">remember the sequence</p>
+<div id="status">tap start</div>
+<div id="score-wrap">round <span id="score">0</span></div>
+<div id="buttons">
+  <button class="pad dim" id="pad0">♪</button>
+  <button class="pad dim" id="pad1">♫</button>
+  <button class="pad dim" id="pad2">♩</button>
+  <button class="pad dim" id="pad3">♬</button>
+</div>
+<button id="start">Start</button>
+<div id="best"></div>
+
+<script>
+const NOTES = ['C4','E4','G4','A4'];
+const pads = [0,1,2,3].map(i => document.getElementById('pad'+i));
+const statusEl = document.getElementById('status');
+const scoreEl = document.getElementById('score');
+const bestEl = document.getElementById('best');
+const startBtn = document.getElementById('start');
+
+let synth, seq = [], step = 0, playing = false, accepting = false, best = 0;
+
+function initSynth() {
+  if (!synth) synth = new Tone.Synth({ oscillator: { type: 'triangle' }, envelope: { attack: 0.02, decay: 0.1, sustain: 0.3, release: 0.4 } }).toDestination();
+}
+
+function flash(i, duration = 350) {
+  pads.forEach(p => p.classList.add('dim'));
+  pads[i].classList.remove('dim');
+  pads[i].classList.add('lit');
+  return new Promise(res => setTimeout(() => {
+    pads[i].classList.remove('lit');
+    pads.forEach(p => p.classList.add('dim'));
+    setTimeout(res, 80);
+  }, duration));
+}
+
+function playSequence() {
+  accepting = false;
+  statusEl.textContent = 'watch…';
+  pads.forEach(p => { p.classList.add('dim'); p.style.pointerEvents = 'none'; });
+  let i = 0;
+  function next() {
+    if (i >= seq.length) {
+      pads.forEach(p => { p.classList.remove('dim'); p.style.pointerEvents = ''; });
+      step = 0; accepting = true;
+      statusEl.textContent = 'your turn!';
+      return;
+    }
+    const idx = seq[i++];
+    synth.triggerAttackRelease(NOTES[idx], '8n', Tone.now());
+    flash(idx, 400).then(() => setTimeout(next, 100));
+  }
+  setTimeout(next, 400);
+}
+
+function nextRound() {
+  seq.push(Math.floor(Math.random() * 4));
+  scoreEl.textContent = seq.length;
+  statusEl.textContent = `round ${seq.length}`;
+  setTimeout(playSequence, 600);
+}
+
+function gameOver() {
+  accepting = false; playing = false;
+  pads.forEach(p => { p.classList.add('dim'); p.style.pointerEvents = 'none'; });
+  statusEl.textContent = `wrong! score: ${seq.length - 1}`;
+  if (seq.length - 1 > best) { best = seq.length - 1; bestEl.textContent = `best: ${best}`; }
+  scoreEl.textContent = 0;
+  startBtn.textContent = 'Try Again';
+  startBtn.style.display = '';
+  setTimeout(() => pads.forEach(p => p.classList.remove('dim')), 500);
+}
+
+function handlePad(idx) {
+  if (!accepting) return;
+  synth.triggerAttackRelease(NOTES[idx], '8n', Tone.now());
+  flash(idx, 200);
+  if (idx !== seq[step]) { gameOver(); return; }
+  step++;
+  if (step === seq.length) { accepting = false; setTimeout(nextRound, 700); }
+}
+
+pads.forEach((pad, i) => {
+  pad.addEventListener('click', () => handlePad(i));
+  pad.addEventListener('touchstart', e => { e.preventDefault(); handlePad(i); }, { passive: false });
+});
+
+startBtn.addEventListener('click', async () => {
+  await Tone.start();
+  initSynth();
+  seq = []; step = 0; playing = true;
+  startBtn.style.display = 'none';
+  pads.forEach(p => p.style.pointerEvents = '');
+  nextRound();
+});
+</script>
+</body>
+</html>
