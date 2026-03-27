@@ -629,18 +629,34 @@ function makeBuiltins(io){
   });
   def('map',(r,[block],vm,frame)=>{
     const c=new Cell();let idx=1;
+    if(r._str!==undefined){for(const ch of r._str)c.array[idx++]=vm._callBlock(block,[makeStr(ch)],frame.self,frame);return c;}
     for(let i=1;i<r.array.length;i++)if(r.array[i]!==undefined)c.array[idx++]=vm._callBlock(block,[r.array[i]],frame.self,frame);
     return c;
   });
   def('filter',(r,[block],vm,frame)=>{
     const c=new Cell();let idx=1;
+    if(r._str!==undefined){for(const ch of r._str){const v=makeStr(ch);if(vm._callBlock(block,[v],frame.self,frame).isTruthy())c.array[idx++]=v;}return c;}
     for(let i=1;i<r.array.length;i++){const v=r.array[i];if(v!==undefined&&vm._callBlock(block,[v],frame.self,frame).isTruthy())c.array[idx++]=v;}
     return c;
   });
   def('times',(r,[block],vm,frame)=>{
     const n=Math.floor(sproutNum(r));
-    for(let i=1;i<=n;i++)vm._callBlock(block,[makeNum(i)],frame.self,frame);
+    const{params,chunk,closure}=block.block;
+    const bs=new Cell();bs.parent=frame.self;
+    for(let i=1;i<=n;i++){if(params.length>0)bs.set(params[0],makeNum(i));vm._exec(new Frame(chunk,bs,closure??frame));}
     return r;
+  });
+  def('reduce',(r,[arg],vm,frame)=>{
+    let block,acc;
+    if(arg instanceof Cell&&arg.block){block=arg;acc=EMPTY;}
+    else if(arg instanceof Cell){block=arg.array[1];acc=arg.array[2]!==undefined?arg.array[2]:EMPTY;}
+    else return r;
+    if(!block||!block.block)return r;
+    const items=[];
+    if(r._str!==undefined){for(const ch of r._str)items.push(makeStr(ch));}
+    else for(let i=1;i<r.array.length;i++)if(r.array[i]!==undefined)items.push(r.array[i]);
+    for(const v of items){const step=vm._callBlock(block,[acc],frame.self,frame);acc=(step instanceof Cell&&step.block)?vm._callBlock(step,[v],frame.self,frame):step;}
+    return acc;
   });
   def('isNum',r=>r._num!==undefined?makeNum(1):EMPTY);
   def('isStr',r=>r._str!==undefined?makeNum(1):EMPTY);
@@ -709,7 +725,9 @@ function makeBuiltins(io){
   def('animate',(r,[block],vm,frame)=>{
     if(!io.ctx)io.initCanvas(300,220);
     const ms=sproutNum(r)*1000; const end=Date.now()+ms; let n=0;
-    const tick=()=>{if(Date.now()>end)return;vm._callBlock(block,[makeNum(++n)],frame.self,frame);requestAnimationFrame(tick);};
+    const{params,chunk,closure}=block.block;
+    const bs=new Cell(); bs.parent=frame.self;
+    const tick=()=>{if(Date.now()>end)return;if(params.length>0)bs.set(params[0],makeNum(++n));vm._exec(new Frame(chunk,bs,closure??frame));requestAnimationFrame(tick);};
     requestAnimationFrame(tick); return r;
   });
   // ── Misc ─────────────────────────────────────────────────────────
@@ -848,8 +866,11 @@ add 3 4
 greet call
 ` },
   { name: 'Fibonacci', code:
-`fib : [n | n < 2 ? n [fib [n - 1] + fib [n - 2]]]
-8 times [fib @ say]
+`fib : [n |
+  m : n - 1, p : n - 2
+  n < 2 [[n], [| a : fib [m], b : fib [p], a + b]]
+]
+8 times [i | r : fib [i], r say]
 ` },
 
   { cat: 'Collections' },
@@ -862,8 +883,7 @@ evens map [@ * @] each [@ say]
 `5 times [@ say]
 ` },
   { name: 'Reduce', code:
-`sum : [1, 2, 3, 4, 5] reduce [acc | [n | acc + n]] 0
-sum say
+`[1, 2, 3, 4, 5] reduce [[acc, n | acc + n], 0] say
 ` },
 
   { cat: 'Strings' },
@@ -878,14 +898,9 @@ sum say
 "hello" each [@ say]
 ` },
   { name: 'Count vowels', code:
-`vowels : "aeiou"
-count : 0
-"sprout language" each [c |
-  vowels each [v |
-    c = v [[count : count + 1]]
-  ]
-]
-count say
+`"sprout language" filter [c |
+  "aeiou" filter [@ = c] count > 0
+] count say
 ` },
 
   { cat: 'Cells' },
@@ -951,9 +966,8 @@ Dog bark
   { name: 'Guess the number', code:
 `secret : 7 random
 guess : 4
-guess = secret ? "You got it!" [
-  guess < secret ? "Too low!" "Too high!"
-] say
+cmp : guess < secret ? "Too low!" "Too high!"
+guess = secret ? "You got it!" cmp say
 ` },
   { name: 'Dice roller', code:
 `3 times [
@@ -965,16 +979,18 @@ guess = secret ? "You got it!" [
 "#1a1b26" wipe
 x : 150, y : 110
 vx : 3, vy : 2, r : 12
+xmax : 300 - r
+ymax : 220 - r
 8 animate [
   "#1a1b26" wipe
   "#bd93f9" ink
   [x, y, r] dot
   x : x + vx
   y : y + vy
-  x < r [[vx : vx neg]]
-  x > 300 - r [[vx : vx neg]]
-  y < r [[vy : vy neg]]
-  y > 220 - r [[vy : vy neg]]
+  vx : x < r [vx neg, vx]
+  vx : x > xmax [vx neg, vx]
+  vy : y < r [vy neg, vy]
+  vy : y > ymax [vy neg, vy]
 ]
 ` },
   { name: 'Rainbow dots', code:
@@ -982,10 +998,10 @@ vx : 3, vy : 2, r : 12
 [300, 220] canvas
 "#1a1b26" wipe
 5 animate [
-  n : 120 random
-  c : colors at [n % 7 + 1]
+  idx : 120 random % 7 + 1
+  c : colors at [idx]
   c ink
-  [300 random, 220 random, 5 + 15 random] dot
+  [300 random, 220 random, 15 random + 5] dot
 ]
 ` },
   { name: 'Starfield', code:
@@ -1019,13 +1035,11 @@ t : 0
 t : 0
 20 animate [
   "#1a1b26" wipe
-  i : 0
-  60 times [
+  "#bd93f9" ink
+  60 times [i |
     x : i * 5
     y : t + i * 0.4 sin * 60 + 110
-    "#bd93f9" ink
     [x, y, 4] dot
-    i : i + 1
   ]
   t : t + 0.08
 ]
@@ -1314,15 +1328,16 @@ editor.on('inputRead', (cm, change) => {
   cm.showHint({ hint: CodeMirror.hint.sprout, completeSingle: false, closeCharacters: /[\s\[\]{};,]/ });
 });
 
-function run() {
+async function run() {
   const src = editor.getValue();
   if (!src.trim()) return;
   // Pre-unlock Web Audio on iOS (must happen synchronously inside user gesture)
-  if (typeof Tone !== 'undefined') Tone.start();
+  if (typeof Tone !== 'undefined') await Tone.start();
   // Reset canvas each run
   _drawCanvas = null; _drawCtx = null;
   output.appendChild(document.createElement('hr')).style.cssText='border:none;border-top:1px solid #44475a;margin:6px 0';
-  const vm = new VM(makeBuiltins({ print: printOut, chart: renderChart, physics: renderPhysics, ...drawIO }));
+  drawIO.print = printOut; drawIO.chart = renderChart; drawIO.physics = renderPhysics;
+  const vm = new VM(makeBuiltins(drawIO));
   try {
     const chunk  = compile(src);
     const result = vm.run(chunk);
