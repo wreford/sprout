@@ -210,57 +210,70 @@ var LINES_RANDOM = [
   "Your father couldn't do this. He can barely use the remote."
 ];
 
-var speechReady = false;
-var pendingSpeech = null;
+var speechUnlocked = false;
+var cachedVoice = null;
 
-// Preload voices — some browsers need this
+// Preload voices
 if (window.speechSynthesis) {
-  speechSynthesis.getVoices();
-  speechSynthesis.onvoiceschanged = function() { speechReady = true; };
-  setTimeout(function() { speechReady = true; }, 1000);
+  speechSynthesis.onvoiceschanged = function() { findVoice(); };
+  setTimeout(findVoice, 500);
+}
+
+function findVoice() {
+  if (cachedVoice) return;
+  try {
+    var voices = speechSynthesis.getVoices();
+    if (!voices || voices.length === 0) return;
+    // Try female English
+    for (var i = 0; i < voices.length; i++) {
+      var v = voices[i];
+      if (!v.lang || v.lang.indexOf('en') !== 0) continue;
+      if (v.name && (v.name.indexOf('Samantha') > -1 || v.name.indexOf('Google UK English Female') > -1 ||
+          v.name.indexOf('Karen') > -1 || v.name.indexOf('Female') > -1 || v.name.indexOf('Fiona') > -1)) {
+        cachedVoice = v; return;
+      }
+    }
+    // Fallback: any English
+    for (var j = 0; j < voices.length; j++) {
+      if (voices[j].lang && voices[j].lang.indexOf('en') === 0) { cachedVoice = voices[j]; return; }
+    }
+  } catch(e) {}
+}
+
+// Unlock speech on first user gesture (required on mobile)
+function unlockSpeech() {
+  if (speechUnlocked) return;
+  speechUnlocked = true;
+  try {
+    // Speak a silent utterance to unlock the API
+    var silent = new SpeechSynthesisUtterance('');
+    silent.volume = 0;
+    speechSynthesis.speak(silent);
+  } catch(e) {}
 }
 
 function speak(text, priority) {
   try {
     if (!window.speechSynthesis) return;
+    if (!speechUnlocked) return; // Wait until user gesture unlocks it
+
     var now = Date.now();
-    // Priority lines always go through; non-priority respect gap and speaking state
     if (!priority) {
       if (now - lastSpeechTime < MIN_SPEECH_GAP) return;
-      if (speechSynthesis.speaking || speechSynthesis.pending) return;
+      // On some mobile browsers, .speaking stays true — use time-based fallback
+      if (speechSynthesis.speaking && now - lastSpeechTime < 8000) return;
     }
-    // If priority and something is playing, cancel it first
-    if (priority && speechSynthesis.speaking) {
-      try { speechSynthesis.cancel(); } catch(e) {}
-    }
+
+    // Don't cancel — let current speech finish
+    if (speechSynthesis.speaking && !priority) return;
+
+    findVoice(); // Make sure we have a voice
 
     var utter = new SpeechSynthesisUtterance(text);
     utter.rate = 1.05;
     utter.pitch = 1.25;
     utter.volume = 1.0;
-
-    try {
-      var voices = speechSynthesis.getVoices();
-      if (voices && voices.length > 0) {
-        var female = null;
-        for (var i = 0; i < voices.length; i++) {
-          var v = voices[i];
-          if (!v.lang || v.lang.indexOf('en') !== 0) continue;
-          if (v.name && (v.name.indexOf('Samantha') !== -1 || v.name.indexOf('Google UK English Female') !== -1 ||
-              v.name.indexOf('Karen') !== -1 || v.name.indexOf('Victoria') !== -1 ||
-              v.name.indexOf('Female') !== -1 || v.name.indexOf('Fiona') !== -1)) {
-            female = v; break;
-          }
-        }
-        // Fallback: any English voice
-        if (!female) {
-          for (var j = 0; j < voices.length; j++) {
-            if (voices[j].lang && voices[j].lang.indexOf('en') === 0) { female = voices[j]; break; }
-          }
-        }
-        if (female) utter.voice = female;
-      }
-    } catch(e) {}
+    if (cachedVoice) utter.voice = cachedVoice;
 
     speechSynthesis.speak(utter);
     lastSpeechTime = now;
@@ -714,6 +727,7 @@ requestAnimationFrame(gameLoop);
 // ═══════════════════════════════════════════════════════════
 
 function startGame() {
+  unlockSpeech();
   STATE = "playing";
   resetGame();
   speak(randomLine(LINES_START), true);
