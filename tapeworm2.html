@@ -123,6 +123,50 @@ function sfxWaveStart() { [330,430,530].forEach(function(f,i){setTimeout(functio
 function sfxDeath() { playTone(180,0.25,0.025); setTimeout(function(){playTone(120,0.25,0.02);},130); }
 function sfxBuy() { playTone(550,0.07,0.015); setTimeout(function(){playTone(720,0.08,0.015);},60); }
 
+// ============ MUSIC ============
+var musicInterval = null;
+var musicMode = '';
+function startMusic(mode) {
+  if (musicMode === mode) return;
+  stopMusic();
+  musicMode = mode;
+  if (!audioCtx) return;
+  var beat = 0;
+  if (mode === 'game') {
+    // Ominous body bass + heartbeat
+    var bpm = 110;
+    var ms = 60000 / bpm;
+    var bassNotes = [55,55,65,55, 55,73,65,55]; // low A minor groove
+    musicInterval = setInterval(function() {
+      var note = bassNotes[beat % bassNotes.length];
+      playTone(note, 0.2, 0.02, 'sine');
+      // Kick on 1,3
+      if (beat % 2 === 0) playTone(45, 0.08, 0.025, 'sine');
+      // Hi-hat
+      playTone(6000 + Math.random()*2000, 0.02, 0.008, 'sine');
+      beat++;
+    }, ms);
+  } else if (mode === 'shop') {
+    // Chill elevator music
+    var shopNotes = [262,330,392,330, 349,440,523,440]; // C major arpeggio
+    musicInterval = setInterval(function() {
+      playTone(shopNotes[beat % shopNotes.length], 0.3, 0.015, 'sine');
+      if (beat % 4 === 0) playTone(131, 0.4, 0.012, 'sine'); // bass
+      beat++;
+    }, 300);
+  } else if (mode === 'boss') {
+    // Intense
+    var bossNotes = [82,82,98,82, 110,82,98,73];
+    musicInterval = setInterval(function() {
+      playTone(bossNotes[beat % bossNotes.length], 0.15, 0.025, 'sine');
+      playTone(45, 0.06, 0.02, 'sine'); // kick every beat
+      if (beat % 2 === 1) playTone(5000+Math.random()*3000, 0.02, 0.01, 'sine'); // hat
+      beat++;
+    }, 200);
+  }
+}
+function stopMusic() { clearInterval(musicInterval); musicInterval = null; musicMode = ''; }
+
 // ============ INPUT ============
 const keys = {};
 window.addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; e.preventDefault(); });
@@ -278,7 +322,10 @@ const ENEMY_DEFS = {
   hotdog: { name: 'Suspicious Hotdog', emoji: '🌭', color: '#cd853f', hp: 35, speed: 70, radius: 14, xp: 6, coins: 3, behavior: 'chase' },
   mushroom: { name: 'Magic Mushroom', emoji: '🍄', color: '#8b0000', hp: 25, speed: 60, radius: 16, xp: 8, coins: 4, behavior: 'chase' },
   ghost: { name: 'Ghost Pepper', emoji: '👻', color: '#dcdcdc', hp: 15, speed: 100, radius: 12, xp: 5, coins: 2, behavior: 'chase', shoots: true },
-  peanut: { name: 'Allergic Reaction', emoji: '🥜', color: '#deb887', hp: 150, speed: 20, radius: 26, xp: 15, coins: 6, behavior: 'chase' }
+  // Trump Clone enemies
+  trumpclone: { name: 'Trump Clone', emoji: '🍊', color: '#ff8c00', hp: 40, speed: 55, radius: 16, xp: 8, coins: 5, behavior: 'chase', splits: true },
+  trumpmini: { name: 'Mini Trump', emoji: '🍊', color: '#ffaa33', hp: 15, speed: 90, radius: 10, xp: 4, coins: 2, behavior: 'chase' },
+  megamaga: { name: 'MEGA MAGA POOP', emoji: '💩', color: '#ffd700', hp: 400, speed: 20, radius: 45, xp: 60, coins: 25, behavior: 'boss', isBoss: true, shoots: true, buildsWalls: true }
 };
 
 // ============ WAVE GENERATION ============
@@ -306,9 +353,11 @@ function generateWaveEnemies(w) {
   if (w >= 4) available.push('macro', 'broccoli', 'cheese');
   if (w >= 5) available.push('fever', 'taco', 'sushi');
   if (w >= 6) available.push('donut', 'mushroom');
-  if (w >= 8) available.push('ghost', 'peanut');
+  if (w >= 8) available.push('ghost', 'peanut', 'trumpclone');
   // Kiwi mini-boss every 10 waves
   if (w >= 10 && w % 10 === 0) list.push('kiwi');
+  // MEGA MAGA POOP boss every 15 waves
+  if (w >= 15 && w % 15 === 0) list.push('megamaga');
 
   while (budget > 0) {
     let type = available[rngI(0, available.length - 1)];
@@ -478,6 +527,7 @@ function getShopOffering() {
 
 function showShop() {
   state = 'shop';
+  startMusic('shop');
   let overlay = document.getElementById('shop-overlay');
   overlay.classList.add('active');
   document.getElementById('shop-coins').textContent = '🪙 ' + player.coins;
@@ -494,6 +544,13 @@ function showShop() {
     el.addEventListener('click', () => {
       if (player.coins >= scaledCost) {
         player.coins -= scaledCost;
+        if (item.id === 'reroll') {
+          // Reroll: close and reopen shop with new items
+          sfxBuy();
+          document.getElementById('shop-coins').textContent = '🪙 ' + player.coins;
+          showShop();
+          return;
+        }
         item.apply();
         if (item.once) boughtOnce.add(item.id);
         el.classList.add('bought');
@@ -546,6 +603,9 @@ const DEATH_MSGS = [
 
 function startWave() {
   state = 'playing';
+  // Pick music based on wave type
+  var isBoss = wave % 5 === 0 || (wave >= 15 && wave % 15 === 0);
+  startMusic(isBoss ? 'boss' : 'game');
   waveSpawnQueue = generateWaveEnemies(wave);
   waveEnemiesLeft = waveSpawnQueue.length;
   waveSpawnTimer = 0;
@@ -971,6 +1031,26 @@ function killEnemy(idx) {
   for (let k = 0; k < Math.ceil(e.xp / 3); k++) {
     spawnDrop(e.x, e.y, 'xp', Math.min(3, e.xp));
   }
+
+  // Trump clone splits into 2 minis
+  if (def.splits) {
+    var TRUMP_QUOTES = ["You're fired!","Sad!","FAKE POOS!","Tremendous death!","Nobody dies better than me!","Very unfair!","Big league mistake!","Wrong!","Believe me!","Covfefe!"];
+    announceText = '🍊 ' + TRUMP_QUOTES[rngI(0, TRUMP_QUOTES.length - 1)];
+    announceTimer = 1.5;
+    for (let s = 0; s < 2; s++) {
+      spawnEnemy('trumpmini');
+      let mini = enemies[enemies.length - 1];
+      mini.x = e.x + (Math.random()-0.5)*30;
+      mini.y = e.y + (Math.random()-0.5)*30;
+    }
+  }
+
+  // MEGA MAGA boss death
+  if (e.type === 'megamaga') {
+    announceText = '💩 THE WALL HAS FALLEN! DRAINED THE SWAMP!';
+    announceTimer = 3;
+    for (let b = 0; b < 30; b++) spawnDrop(e.x + (Math.random()-0.5)*80, e.y + (Math.random()-0.5)*80, 'coin', 1);
+  }
   // Drop coins
   for (let k = 0; k < e.coins; k++) {
     spawnDrop(e.x, e.y, 'coin', 1);
@@ -992,6 +1072,7 @@ function killEnemy(idx) {
 
 function die() {
   state = 'dead';
+  stopMusic();
   sfxDeath();
   if (wave > bestWave) {
     bestWave = wave;
