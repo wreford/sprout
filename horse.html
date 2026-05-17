@@ -33,17 +33,139 @@ function loadHorse() {
 }
 function saveHorse(h) { localStorage.setItem("lily-horse", JSON.stringify(h)); }
 
-// ── Sound
+// ── Sound (softened — sine waves only, max volume 0.02)
 var audioCtx=null;
 function getAudio(){if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();return audioCtx;}
-function tone(f,d,t,v){try{var c=getAudio(),o=c.createOscillator(),g=c.createGain();o.type=t||"sine";o.frequency.value=f;g.gain.setValueAtTime(v||0.04,c.currentTime);g.gain.exponentialRampToValueAtTime(0.001,c.currentTime+d);o.connect(g);g.connect(c.destination);o.start();o.stop(c.currentTime+d);}catch(e){}}
-function sndNeigh(){tone(400,0.15,"sawtooth",0.04);setTimeout(function(){tone(500,0.2,"sawtooth",0.04);},100);setTimeout(function(){tone(350,0.15,"sawtooth",0.03);},250);}
-function sndMunch(){tone(200,0.06,"square",0.03);setTimeout(function(){tone(250,0.06,"square",0.03);},80);setTimeout(function(){tone(180,0.06,"square",0.03);},160);}
-function sndBrush(){for(var i=0;i<4;i++){(function(j){setTimeout(function(){tone(800+j*50,0.04,"triangle",0.02);},j*60);})(i);}}
-function sndHappy(){[440,550,660,880].forEach(function(f,i){setTimeout(function(){tone(f,0.15,"sine",0.05);},i*100);});}
-function sndSad(){tone(220,0.3,"sine",0.03);setTimeout(function(){tone(180,0.3,"sine",0.03);},200);}
-function sndTrot(){tone(100,0.04,"triangle",0.03);setTimeout(function(){tone(120,0.04,"triangle",0.03);},120);}
-function sndSleep(){tone(150,0.3,"sine",0.02);}
+function tone(f,d,t,v){try{var c=getAudio(),o=c.createOscillator(),g=c.createGain();o.type="sine";o.frequency.value=f;g.gain.setValueAtTime(Math.min(v||0.02,0.02),c.currentTime);g.gain.exponentialRampToValueAtTime(0.001,c.currentTime+d);o.connect(g);g.connect(c.destination);o.start();o.stop(c.currentTime+d);}catch(e){}}
+function sndNeigh(){tone(400,0.15,"sine",0.02);setTimeout(function(){tone(500,0.2,"sine",0.02);},100);setTimeout(function(){tone(350,0.15,"sine",0.015);},250);}
+function sndMunch(){tone(200,0.06,"sine",0.02);setTimeout(function(){tone(250,0.06,"sine",0.02);},80);setTimeout(function(){tone(180,0.06,"sine",0.015);},160);}
+function sndBrush(){for(var i=0;i<4;i++){(function(j){setTimeout(function(){tone(800+j*50,0.04,"sine",0.015);},j*60);})(i);}}
+function sndHappy(){[440,550,660,880].forEach(function(f,i){setTimeout(function(){tone(f,0.15,"sine",0.02);},i*100);});}
+function sndSad(){tone(220,0.3,"sine",0.015);setTimeout(function(){tone(180,0.3,"sine",0.015);},200);}
+function sndTrot(){tone(100,0.04,"sine",0.015);setTimeout(function(){tone(120,0.04,"sine",0.015);},120);}
+function sndSleep(){tone(150,0.3,"sine",0.01);}
+
+// ── Narration (Web Speech API)
+var narratorSpeaking = false;
+var lastNarrationTime = 0;
+var NARRATION_GAP = 4000; // 4 second gap between lines
+
+var NARRATIONS = {
+  feed: [
+    "Mmm, carrots! {name} loves those.",
+    "{name} munches happily on the food.",
+    "Yummy! {name} licks their lips.",
+    "What a tasty treat for {name}!",
+    "{name} nickers softly, wanting more.",
+    "Good nutrition keeps {name} strong."
+  ],
+  brush: [
+    "{name} looks so shiny now!",
+    "What a beautiful coat {name} has.",
+    "{name} stands still, enjoying the brushing.",
+    "Smooth and silky, just like {name} deserves.",
+    "Every stroke makes {name} happier.",
+    "{name} gleams in the sunlight."
+  ],
+  pet: [
+    "Aww, {name} nuzzles your hand.",
+    "{name} leans into your gentle touch.",
+    "Such a sweet moment with {name}.",
+    "{name} closes their eyes, so content.",
+    "You can feel {name}'s warmth.",
+    "{name} loves when you pet them."
+  ],
+  play: [
+    "{name} gallops around happily!",
+    "Look at {name} go! So full of energy!",
+    "{name} tosses their mane with joy.",
+    "Playtime is {name}'s favorite time!",
+    "{name} kicks up their hooves playfully.",
+    "What a spirited horse {name} is!"
+  ],
+  ride: [
+    "Giddy up! What a ride!",
+    "The wind rushes past as {name} gallops.",
+    "{name} runs with such grace.",
+    "You and {name} make a great team!",
+    "What an adventure with {name}!",
+    "Riding {name} feels like flying."
+  ],
+  sleep: [
+    "Goodnight, {name}. Sweet dreams.",
+    "{name} curls up for a cozy rest.",
+    "Shhh, {name} is drifting off to sleep.",
+    "Rest well, dear {name}.",
+    "Time for {name} to recharge.",
+    "{name} yawns and closes their eyes."
+  ],
+  wake: [
+    "Good morning, {name}!",
+    "{name} stretches and greets the new day.",
+    "Rise and shine, sleepy {name}!",
+    "{name} blinks awake, ready for fun.",
+    "A brand new day for {name}!",
+    "{name} whinnies a cheerful hello."
+  ],
+  lowHunger: [
+    "{name} looks hungry...",
+    "{name}'s tummy is rumbling.",
+    "Poor {name} could really use some food.",
+    "{name} noses around, looking for snacks.",
+    "Time to feed {name}, don't you think?"
+  ],
+  lowClean: [
+    "{name} needs a bath...",
+    "{name}'s coat is looking a bit dusty.",
+    "A good brushing would make {name} feel better.",
+    "{name} could use some grooming love.",
+    "Time to clean up {name}!"
+  ]
+};
+
+function narrate(action, horseName) {
+  if (narratorSpeaking) return;
+  var now = Date.now();
+  if (now - lastNarrationTime < NARRATION_GAP) return;
+  if (!window.speechSynthesis) return;
+
+  var lines = NARRATIONS[action];
+  if (!lines || lines.length === 0) return;
+
+  var text = lines[Math.floor(Math.random() * lines.length)];
+  text = text.replace(/\{name\}/g, horseName);
+
+  var utterance = new SpeechSynthesisUtterance(text);
+  utterance.rate = 0.95;
+  utterance.pitch = 1.1;
+  utterance.volume = 0.8;
+
+  // Try to pick a female voice
+  var voices = window.speechSynthesis.getVoices();
+  var femaleVoice = voices.find(function(v) {
+    return v.name.toLowerCase().indexOf("female") !== -1 || v.name.indexOf("Samantha") !== -1 || v.name.indexOf("Karen") !== -1 || v.name.indexOf("Victoria") !== -1 || v.name.indexOf("Fiona") !== -1;
+  });
+  if (femaleVoice) utterance.voice = femaleVoice;
+
+  utterance.onstart = function() { narratorSpeaking = true; };
+  utterance.onend = function() { narratorSpeaking = false; lastNarrationTime = Date.now(); };
+  utterance.onerror = function() { narratorSpeaking = false; };
+
+  window.speechSynthesis.speak(utterance);
+}
+
+// Preload voices
+if (window.speechSynthesis) {
+  window.speechSynthesis.getVoices();
+  window.speechSynthesis.onvoiceschanged = function() { window.speechSynthesis.getVoices(); };
+}
+
+// ── Days survived counter
+function getDaysSurvived(horse) {
+  if (!horse || !horse.created) return 0;
+  var diff = Date.now() - horse.created;
+  return Math.floor(diff / (1000 * 60 * 60 * 24));
+}
 
 // ── Horse moods & expressions
 var HORSE_COLORS = {
@@ -243,7 +365,16 @@ function Game(props) {
         return next;
       });
     }, 3000);
-    return function() { clearInterval(iv); };
+    // Low stat narration (every 15s check)
+    var lowStatIv = setInterval(function() {
+      setHorse(function(h) {
+        if (h.sleeping) return h;
+        if (h.hunger < 25) narrate("lowHunger", h.name);
+        else if (h.clean < 25) narrate("lowClean", h.name);
+        return h;
+      });
+    }, 15000);
+    return function() { clearInterval(iv); clearInterval(lowStatIv); };
   }, []);
 
   var spawnParticle = function(emoji) {
@@ -267,11 +398,13 @@ function Game(props) {
         sndMunch();
         spawnParticle("🥕"); spawnParticle("🌾");
         next.happiness = Math.min(100, next.happiness + 5);
+        narrate("feed", next.name);
       } else if (type === "brush") {
         next.clean = Math.min(100, next.clean + 30);
         sndBrush();
         spawnParticle("✨"); spawnParticle("💫");
         next.happiness = Math.min(100, next.happiness + 8);
+        narrate("brush", next.name);
       } else if (type === "play") {
         next.happiness = Math.min(100, next.happiness + 20);
         next.energy = Math.max(0, next.energy - 15);
@@ -279,24 +412,29 @@ function Game(props) {
         sndHappy(); sndTrot();
         spawnParticle("💕"); spawnParticle("🏇");
         next.coins = (next.coins || 0) + 2;
+        narrate("play", next.name);
       } else if (type === "treat") {
         next.happiness = Math.min(100, next.happiness + 15);
         next.hunger = Math.min(100, next.hunger + 10);
         next.coins = (next.coins || 0) - 2;
         sndMunch();
         spawnParticle("🍎"); spawnParticle("😋");
+        narrate("feed", next.name);
       } else if (type === "sleep") {
         next.sleeping = true;
         sndSleep();
         spawnParticle("💤"); spawnParticle("🌙");
+        narrate("sleep", next.name);
       } else if (type === "wake") {
         next.sleeping = false;
         sndNeigh();
         spawnParticle("☀️"); spawnParticle("🐴");
+        narrate("wake", next.name);
       } else if (type === "pet") {
         next.happiness = Math.min(100, next.happiness + 12);
         sndNeigh();
         spawnParticle("❤️"); spawnParticle("💕"); spawnParticle("🥰");
+        narrate("pet", next.name);
       } else if (type === "ride") {
         next.happiness = Math.min(100, next.happiness + 25);
         next.energy = Math.max(0, next.energy - 25);
@@ -304,6 +442,7 @@ function Game(props) {
         next.coins = (next.coins || 0) + 5;
         sndTrot(); sndHappy();
         spawnParticle("🏇"); spawnParticle("💨"); spawnParticle("🌟");
+        narrate("ride", next.name);
       }
       saveHorse(next);
       return next;
@@ -319,6 +458,7 @@ function Game(props) {
       <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",borderBottom:"1.5px solid var(--border)",background:"var(--bg2)"}}>
         <span style={{fontSize:"1.2rem"}}>🐴</span>
         <span style={{fontFamily:"var(--font-mono)",fontSize:"1rem",fontWeight:800,color:"var(--brown)"}}>Lily's Horse</span>
+        <span style={{fontSize:"0.6rem",fontFamily:"var(--font-mono)",color:"var(--dim)",marginLeft:4}}>Day {getDaysSurvived(horse) + 1}</span>
         <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:4}}>
           <span style={{fontSize:"0.8rem"}}>🪙</span>
           <span style={{fontFamily:"var(--font-mono)",fontSize:"0.8rem",fontWeight:700,color:"var(--gold)"}}>{coins}</span>

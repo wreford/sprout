@@ -18,11 +18,16 @@ h1 { font-size: 24px; color: #bd93f9; letter-spacing: 0.05em; margin-bottom: 4px
 #buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 32px; }
 .pad {
   width: 130px; height: 130px;
+  min-width: 60px; min-height: 60px;
   border-radius: 16px; border: none; cursor: pointer;
   font-size: 28px; display: flex; align-items: center; justify-content: center;
   transition: filter 0.08s, transform 0.08s;
   -webkit-tap-highlight-color: transparent;
   user-select: none;
+}
+@media (max-width: 480px) {
+  .pad { width: 70px; height: 70px; min-width: 60px; min-height: 60px; font-size: 22px; }
+  #buttons { gap: 10px; }
 }
 .pad:active, .pad.lit { filter: brightness(1.5); transform: scale(0.96); }
 .pad.dim { filter: brightness(0.35); }
@@ -33,12 +38,17 @@ h1 { font-size: 24px; color: #bd93f9; letter-spacing: 0.05em; margin-bottom: 4px
 #start { background: #bd93f9; color: #282a36; border: none; padding: 10px 32px; border-radius: 6px; font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer; }
 #start:hover { background: #caa5ff; }
 #best { font-size: 11px; color: #44475a; margin-top: 10px; }
+#high-score { font-size: 12px; color: #ffb86c; margin-bottom: 8px; min-height: 18px; }
+#speed-toggle { background: #44475a; color: #f8f8f2; border: none; padding: 6px 16px; border-radius: 4px; font-family: inherit; font-size: 11px; cursor: pointer; margin-top: 10px; }
+#speed-toggle:hover { background: #6272a4; }
+#speed-toggle.active { background: #ff79c6; color: #282a36; }
 </style>
 </head>
 <body>
 <a href="index.html" id="back">← sprout</a>
 <h1>🎵 Beat Drop</h1>
 <p id="tagline">remember the sequence</p>
+<div id="high-score"></div>
 <div id="status">tap start</div>
 <div id="score-wrap">round <span id="score">0</span></div>
 <div id="buttons">
@@ -48,6 +58,7 @@ h1 { font-size: 24px; color: #bd93f9; letter-spacing: 0.05em; margin-bottom: 4px
   <button class="pad dim" id="pad3">♬</button>
 </div>
 <button id="start">Start</button>
+<button id="speed-toggle">Speed Up Mode: OFF</button>
 <div id="best"></div>
 
 <script>
@@ -57,8 +68,24 @@ const statusEl = document.getElementById('status');
 const scoreEl = document.getElementById('score');
 const bestEl = document.getElementById('best');
 const startBtn = document.getElementById('start');
+const highScoreEl = document.getElementById('high-score');
+const speedToggleBtn = document.getElementById('speed-toggle');
 
 let synth, seq = [], step = 0, playing = false, accepting = false, best = 0;
+let speedMode = false;
+
+// Load high score from localStorage
+let highScore = parseInt(localStorage.getItem('beatdrop-highscore')) || 0;
+if (highScore > 0) {
+  highScoreEl.textContent = 'High Score: ' + highScore;
+}
+
+// Speed toggle
+speedToggleBtn.addEventListener('click', () => {
+  speedMode = !speedMode;
+  speedToggleBtn.textContent = 'Speed Up Mode: ' + (speedMode ? 'ON' : 'OFF');
+  speedToggleBtn.classList.toggle('active', speedMode);
+});
 
 function initSynth() {
   if (!synth) synth = new Tone.Synth({ oscillator: { type: 'triangle' }, envelope: { attack: 0.02, decay: 0.1, sustain: 0.3, release: 0.4 } }).toDestination();
@@ -71,7 +98,7 @@ function flash(i, duration = 350) {
   return new Promise(res => setTimeout(() => {
     pads[i].classList.remove('lit');
     pads.forEach(p => p.classList.add('dim'));
-    setTimeout(res, 80);
+    setTimeout(res, speedMode ? 40 : 80);
   }, duration));
 }
 
@@ -80,6 +107,8 @@ function playSequence() {
   statusEl.textContent = 'watch…';
   pads.forEach(p => { p.classList.add('dim'); p.style.pointerEvents = 'none'; });
   let i = 0;
+  const flashDur = speedMode ? 220 : 400;
+  const gapDur = speedMode ? 50 : 100;
   function next() {
     if (i >= seq.length) {
       pads.forEach(p => { p.classList.remove('dim'); p.style.pointerEvents = ''; });
@@ -89,9 +118,9 @@ function playSequence() {
     }
     const idx = seq[i++];
     synth.triggerAttackRelease(NOTES[idx], '8n', Tone.now());
-    flash(idx, 400).then(() => setTimeout(next, 100));
+    flash(idx, flashDur).then(() => setTimeout(next, gapDur));
   }
-  setTimeout(next, 400);
+  setTimeout(next, speedMode ? 200 : 400);
 }
 
 function nextRound() {
@@ -104,8 +133,16 @@ function nextRound() {
 function gameOver() {
   accepting = false; playing = false;
   pads.forEach(p => { p.classList.add('dim'); p.style.pointerEvents = 'none'; });
-  statusEl.textContent = `wrong! score: ${seq.length - 1}`;
-  if (seq.length - 1 > best) { best = seq.length - 1; bestEl.textContent = `best: ${best}`; }
+  const finalScore = seq.length - 1;
+  statusEl.textContent = `wrong! score: ${finalScore}`;
+  if (finalScore > best) { best = finalScore; bestEl.textContent = `session best: ${best}`; }
+  if (finalScore > highScore) {
+    highScore = finalScore;
+    localStorage.setItem('beatdrop-highscore', highScore);
+    highScoreEl.textContent = 'High Score: ' + highScore + ' (NEW!)';
+  } else {
+    highScoreEl.textContent = 'High Score: ' + highScore;
+  }
   scoreEl.textContent = 0;
   startBtn.textContent = 'Try Again';
   startBtn.style.display = '';

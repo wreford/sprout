@@ -8,10 +8,33 @@
     *{margin:0;padding:0;box-sizing:border-box}
     html,body{height:100%;background:#0a1a0a;overflow:hidden;touch-action:manipulation;user-select:none}
     canvas{display:block;width:100%;height:100%}
+    #dpad{position:fixed;bottom:20px;left:20px;width:160px;height:160px;z-index:10;display:none}
+    .dpad-btn{position:absolute;width:50px;height:50px;border-radius:50%;background:rgba(30,30,30,0.7);border:2px solid rgba(100,100,100,0.5);display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;-webkit-tap-highlight-color:transparent;user-select:none}
+    .dpad-btn:active{background:rgba(60,60,60,0.9)}
+    #dpad-up{top:0;left:55px}
+    #dpad-down{bottom:0;left:55px}
+    #dpad-left{top:55px;left:0}
+    #dpad-right{top:55px;right:0}
+    #action-btns{position:fixed;bottom:20px;right:20px;display:none;flex-direction:column;gap:12px;z-index:10}
+    .action-btn{width:60px;height:44px;border-radius:8px;background:rgba(30,30,30,0.7);border:2px solid rgba(100,100,100,0.5);color:#22c55e;font-size:11px;font-family:monospace;font-weight:700;display:flex;align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent;user-select:none}
+    .action-btn:active{background:rgba(60,60,60,0.9)}
+    #days-display{position:fixed;top:78px;left:10px;font:bold 10px monospace;color:rgba(255,255,255,0.5);z-index:5;display:none}
   </style>
 </head>
 <body>
 <canvas id="c"></canvas>
+<div id="dpad">
+  <div class="dpad-btn" id="dpad-up">&#9650;</div>
+  <div class="dpad-btn" id="dpad-down">&#9660;</div>
+  <div class="dpad-btn" id="dpad-left">&#9668;</div>
+  <div class="dpad-btn" id="dpad-right">&#9658;</div>
+</div>
+<div id="action-btns">
+  <div class="action-btn" id="btn-craft">CRAFT</div>
+  <div class="action-btn" id="btn-chop">CHOP</div>
+  <div class="action-btn" id="btn-use">USE</div>
+</div>
+<div id="days-display"></div>
 <script>
 var canvas = document.getElementById('c');
 var ctx = canvas.getContext('2d');
@@ -218,6 +241,8 @@ function reset() {
   // [10] Tutorial on first play
   if (!tutorialShown) {
     showTutorial = true;
+    // Auto-dismiss tutorial after 5 seconds
+    setTimeout(function() { if (showTutorial) { showTutorial = false; tutorialShown = true; } }, 5000);
   } else {
     showTutorial = false;
   }
@@ -745,6 +770,12 @@ function draw() {
   ctx.font="bold 10px monospace";ctx.fillStyle=day?"#eab308":"#6080a8";
   ctx.fillText(timeStr+" ("+pct+"%)",10,hudY+8);
 
+  // Days survived counter
+  hudY += 14;
+  var daysSurvived = Math.ceil(((night * 2) + (day ? 1 : 2)) / 2);
+  ctx.font = "bold 10px monospace";ctx.fillStyle = "#aaa";
+  ctx.fillText("Survived: " + daysSurvived + " day" + (daysSurvived !== 1 ? "s" : ""), 10, hudY + 8);
+
   // [4] Compass direction to helipad after night 3
   if (night >= 3) {
     hudY += 18;
@@ -985,7 +1016,68 @@ window.addEventListener('keydown',function(e){
 // Initialize tutorial flag
 tutorialShown = false;
 
-function loop(){update();draw();requestAnimationFrame(loop);}
+// ── On-screen D-pad and action buttons for mobile
+var dpadEl = document.getElementById('dpad');
+var actionBtnsEl = document.getElementById('action-btns');
+var daysDisplayEl = document.getElementById('days-display');
+var dpadDir = {x:0, y:0};
+
+if ('ontouchstart' in window) {
+  dpadEl.style.display = 'block';
+  actionBtnsEl.style.display = 'flex';
+  daysDisplayEl.style.display = 'block';
+
+  function setupDpadBtn(id, dx, dy) {
+    var el = document.getElementById(id);
+    el.addEventListener('touchstart', function(e) {
+      e.preventDefault(); e.stopPropagation();
+      dpadDir.x = dx; dpadDir.y = dy;
+      touchActive = true; touchDir.x = dx; touchDir.y = dy;
+    }, {passive:false});
+    el.addEventListener('touchend', function(e) {
+      e.preventDefault(); e.stopPropagation();
+      dpadDir.x = 0; dpadDir.y = 0;
+      touchActive = false; touchDir.x = 0; touchDir.y = 0;
+    }, {passive:false});
+    el.addEventListener('touchcancel', function(e) {
+      dpadDir.x = 0; dpadDir.y = 0;
+      touchActive = false; touchDir.x = 0; touchDir.y = 0;
+    });
+  }
+  setupDpadBtn('dpad-up', 0, -1);
+  setupDpadBtn('dpad-down', 0, 1);
+  setupDpadBtn('dpad-left', -1, 0);
+  setupDpadBtn('dpad-right', 1, 0);
+
+  document.getElementById('btn-craft').addEventListener('touchstart', function(e) {
+    e.preventDefault(); e.stopPropagation(); craftMenu = !craftMenu;
+  }, {passive:false});
+  document.getElementById('btn-chop').addEventListener('touchstart', function(e) {
+    e.preventDefault(); e.stopPropagation(); chopTree();
+  }, {passive:false});
+  document.getElementById('btn-use').addEventListener('touchstart', function(e) {
+    e.preventDefault(); e.stopPropagation(); useItem();
+  }, {passive:false});
+}
+
+// Show/hide mobile controls based on state
+function updateMobileControls() {
+  if (!('ontouchstart' in window)) return;
+  var show = STATE === 'playing' && !showTutorial;
+  dpadEl.style.display = show ? 'block' : 'none';
+  actionBtnsEl.style.display = show ? 'flex' : 'none';
+  daysDisplayEl.style.display = show ? 'block' : 'none';
+}
+
+// ── Days survived display
+function updateDaysDisplay() {
+  if (STATE === 'playing') {
+    var dayNum = (night * 2) + (day ? 1 : 2);
+    daysDisplayEl.textContent = 'Days survived: ' + Math.ceil(dayNum / 2);
+  }
+}
+
+function loop(){update();draw();updateDaysDisplay();updateMobileControls();requestAnimationFrame(loop);}
 loop();
 </script>
 </body>
