@@ -45,16 +45,7 @@ canvas{display:block}
 #start-btn{padding:16px 48px;font-size:20px;font-weight:800;background:linear-gradient(135deg,#4ade80,#22c55e);color:#0a0a0a;border:none;border-radius:12px;cursor:pointer;letter-spacing:1px;transition:all .15s}
 #start-btn:hover{transform:scale(1.07);box-shadow:0 4px 30px rgba(74,222,128,.4)}
 #controls-hint{font-size:12px;color:#555;margin-top:16px}
-#narrator-display{position:fixed;bottom:0;left:0;right:0;background:rgba(0,0,0,0.85);pointer-events:none;z-index:60;opacity:0;transition:opacity 0.3s;font-size:12px;color:#ccc;line-height:1.4;white-space:nowrap;overflow:hidden;height:28px;display:flex;align-items:center;font-family:monospace;border-top:1px solid rgba(255,255,255,0.06)}
-#narrator-display.show{opacity:1}
-#narrator-display .narrator-text{display:inline-block;padding-left:100%;animation:tickerScroll 12s linear forwards}
-@keyframes tickerScroll{0%{transform:translateX(0)}100%{transform:translateX(-100%)}}
-#narrator-display .narrator-name{font-weight:800;font-size:11px;letter-spacing:1px;text-transform:uppercase;margin-right:8px}
-#narrator-display .narrator-name.norm{color:#999}
-#narrator-display .narrator-name.maya{color:#ff69b4}
-#narrator-display .narrator-name.madden{color:#ffd700}
-#narrator-display .narrator-name.dave{color:#b388ff}
-#narrator-display .narrator-name.brit{color:#4fc3f7}
+/* narrator is voice-only, no UI */
 </style>
 </head>
 <body>
@@ -69,7 +60,7 @@ canvas{display:block}
   <div style="pointer-events:auto;cursor:pointer;font-size:16px" id="narrator-toggle" title="Toggle narrator">🎙️</div>
 </div>
 
-<div id="narrator-display"></div>
+<!-- narrator is voice-only -->
 <div id="wave-announce"></div>
 
 <div id="shop-overlay">
@@ -135,79 +126,33 @@ function sfxWaveStart() { [330,430,530].forEach(function(f,i){setTimeout(functio
 function sfxDeath() { playTone(180,0.25,0.025); setTimeout(function(){playTone(120,0.25,0.02);},130); }
 function sfxBuy() { playTone(550,0.07,0.015); setTimeout(function(){playTone(720,0.08,0.015);},60); }
 
-// ============ NARRATOR PANEL (4 Narrators, Text-to-Speech) ============
+// ============ NARRATOR — Sir David only, no UI ============
 var narratorEnabled = true;
 var lastNarration = 0;
-var narratorIndex = 0; // rotation: 0=Norm, 1=Maya, 2=Madden, 3=Dave
-var narratorDisplayTimer = null;
 var lastActionTime = 0;
-
-var NARRATORS = [
-  { name: 'SIR DAVID', cssClass: 'brit', rate: 0.88, pitch: 0.75, lang: 'en-GB' },
-  { name: 'NORM', cssClass: 'norm', rate: 0.85, pitch: 0.7 },
-  { name: 'MAYA', cssClass: 'maya', rate: 1.1, pitch: 1.2 },
-  { name: 'MADDEN', cssClass: 'madden', rate: 1.0, pitch: 0.9 },
-  { name: 'DAVE', cssClass: 'dave', rate: 0.95, pitch: 0.8 }
-];
-
-function showNarratorDisplay(narratorObj, text) {
-  var el = document.getElementById('narrator-display');
-  var speed = Math.max(8, text.length * 0.12);
-  el.innerHTML = '<span class="narrator-text"><span class="narrator-name ' + narratorObj.cssClass + '">[' + narratorObj.name + ']</span> ' + text + '</span>';
-  // Reset animation
-  var inner = el.querySelector('.narrator-text');
-  inner.style.animation = 'none';
-  inner.offsetHeight; // trigger reflow
-  inner.style.animation = 'tickerScroll ' + speed + 's linear forwards';
-  el.classList.add('show');
-  clearTimeout(narratorDisplayTimer);
-  narratorDisplayTimer = setTimeout(function() {
-    el.classList.remove('show');
-  }, speed * 1000 + 500);
-}
 
 function narrate(text, priority) {
   if (!narratorEnabled || !window.speechSynthesis) return;
   var now = Date.now();
-  if (!priority && now - lastNarration < 3000) return;
+  if (!priority && now - lastNarration < 4000) return;
+  if (!priority && speechSynthesis.speaking) return;
   lastNarration = now;
   lastActionTime = now;
-
-  if (priority && speechSynthesis.speaking) speechSynthesis.cancel();
-
-  // Sir David narrates ~60% of the time
-  var narrator;
-  if (Math.random() < 0.6) {
-    narrator = NARRATORS[0]; // Sir David
-  } else {
-    var others = [1,2,3,4];
-    narrator = NARRATORS[others[Math.floor(Math.random() * others.length)]];
-  }
-
-  showNarratorDisplay(narrator, text);
-
-  var utter = new SpeechSynthesisUtterance(text);
-  utter.rate = narrator.rate;
-  utter.pitch = narrator.pitch;
-  var voices = speechSynthesis.getVoices();
-  var preferred = null;
-  if (narrator.lang === 'en-GB') {
-    preferred = voices.find(function(v){return v.lang==='en-GB'&&v.name.indexOf('Daniel')>-1;})
-      || voices.find(function(v){return v.lang==='en-GB'&&v.name.indexOf('Google UK English Male')>-1;})
-      || voices.find(function(v){return v.lang==='en-GB';});
-  } else if (narrator.cssClass === 'maya') {
-    preferred = voices.find(function(v){return v.lang.indexOf('en')===0&&(v.name.indexOf('Samantha')>-1||v.name.indexOf('Female')>-1);})
-      || voices.find(function(v){return v.lang.indexOf('en')===0;});
-  } else {
-    preferred = voices.find(function(v){return v.lang.indexOf('en-US')===0;})
-      || voices.find(function(v){return v.lang.indexOf('en')===0;});
-  }
-  if (preferred) utter.voice = preferred;
-  if (narrator.lang) utter.lang = narrator.lang;
-  speechSynthesis.speak(utter);
+  if (priority) { try { speechSynthesis.cancel(); } catch(e){} }
+  try {
+    var utter = new SpeechSynthesisUtterance(text);
+    utter.rate = 0.88;
+    utter.pitch = 0.75;
+    utter.lang = 'en-GB';
+    var voices = speechSynthesis.getVoices();
+    if (voices && voices.length > 0) {
+      var brit = voices.find(function(v){return v.lang==='en-GB';})
+        || voices.find(function(v){return v.lang.indexOf('en')===0;});
+      if (brit) utter.voice = brit;
+    }
+    speechSynthesis.speak(utter);
+  } catch(e) {}
 }
-
-if (window.speechSynthesis) speechSynthesis.onvoiceschanged = function(){};
 
 
 // === SIR DAVID lines (British nature documentary narrator — main narrator) ===
@@ -796,15 +741,16 @@ var DAVE_IDLE = [
 ];
 
 // Combined line arrays indexed by narrator (0=Norm, 1=Maya, 2=Madden, 3=Dave)
-var ALL_WAVE_START = [NORM_WAVE_START, MAYA_WAVE_START, MADDEN_WAVE_START, DAVE_WAVE_START];
-var ALL_KILL_STREAK = [NORM_KILL_STREAK, MAYA_KILL_STREAK, MADDEN_KILL_STREAK, DAVE_KILL_STREAK];
-var ALL_BOSS = [NORM_BOSS, MAYA_BOSS, MADDEN_BOSS, DAVE_BOSS];
-var ALL_SHOP = [NORM_SHOP, MAYA_SHOP, MADDEN_SHOP, DAVE_SHOP];
-var ALL_DAMAGE = [NORM_DAMAGE, MAYA_DAMAGE, MADDEN_DAMAGE, DAVE_DAMAGE];
-var ALL_DEATH = [NORM_DEATH, MAYA_DEATH, MADDEN_DEATH, DAVE_DEATH];
-var ALL_TRUMP = [NORM_TRUMP, MAYA_TRUMP, MADDEN_TRUMP, DAVE_TRUMP];
-var ALL_POWERUP = [NORM_POWERUP, MAYA_POWERUP, MADDEN_POWERUP, DAVE_POWERUP];
-var ALL_IDLE = [NORM_IDLE, MAYA_IDLE, MADDEN_IDLE, DAVE_IDLE];
+// All narration is Sir David only
+var ALL_WAVE_START = [BRIT_WAVE_START];
+var ALL_KILL_STREAK = [BRIT_KILL_STREAK];
+var ALL_BOSS = [BRIT_BOSS];
+var ALL_SHOP = [BRIT_SHOP];
+var ALL_DAMAGE = [BRIT_DAMAGE];
+var ALL_DEATH = [BRIT_DEATH];
+var ALL_TRUMP = [BRIT_TRUMP];
+var ALL_POWERUP = [BRIT_POWERUP];
+var ALL_IDLE = [BRIT_IDLE];
 
 function pickNarr(categoryArrays, replacements) {
   var idx = narratorIndex;
