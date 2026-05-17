@@ -131,6 +131,8 @@ var narratorEnabled = true;
 var lastNarration = 0;
 var lastActionTime = 0;
 
+var useNorm = false; // toggles when Norm speaks
+
 function narrate(text, priority) {
   if (!narratorEnabled || !window.speechSynthesis) return;
   var now = Date.now();
@@ -139,16 +141,34 @@ function narrate(text, priority) {
   lastNarration = now;
   lastActionTime = now;
   if (priority) { try { speechSynthesis.cancel(); } catch(e){} }
+
+  // Check if this is a Norm line (from the second array in ALL_ sets)
+  // We flag it before calling narrate via pickNarr
+  var isNorm = useNorm;
+  useNorm = false;
+
   try {
     var utter = new SpeechSynthesisUtterance(text);
-    utter.rate = 0.88;
-    utter.pitch = 0.75;
-    utter.lang = 'en-GB';
+    if (isNorm) {
+      utter.rate = 0.85;
+      utter.pitch = 0.7;
+      utter.lang = 'en-US';
+    } else {
+      utter.rate = 0.88;
+      utter.pitch = 0.75;
+      utter.lang = 'en-GB';
+    }
     var voices = speechSynthesis.getVoices();
     if (voices && voices.length > 0) {
-      var brit = voices.find(function(v){return v.lang==='en-GB';})
-        || voices.find(function(v){return v.lang.indexOf('en')===0;});
-      if (brit) utter.voice = brit;
+      var voice;
+      if (isNorm) {
+        voice = voices.find(function(v){return v.lang.indexOf('en-US')===0;})
+          || voices.find(function(v){return v.lang.indexOf('en')===0;});
+      } else {
+        voice = voices.find(function(v){return v.lang==='en-GB';})
+          || voices.find(function(v){return v.lang.indexOf('en')===0;});
+      }
+      if (voice) utter.voice = voice;
     }
     speechSynthesis.speak(utter);
   } catch(e) {}
@@ -741,19 +761,26 @@ var DAVE_IDLE = [
 ];
 
 // Combined line arrays indexed by narrator (0=Norm, 1=Maya, 2=Madden, 3=Dave)
-// All narration is Sir David only
-var ALL_WAVE_START = [BRIT_WAVE_START];
-var ALL_KILL_STREAK = [BRIT_KILL_STREAK];
-var ALL_BOSS = [BRIT_BOSS];
-var ALL_SHOP = [BRIT_SHOP];
-var ALL_DAMAGE = [BRIT_DAMAGE];
-var ALL_DEATH = [BRIT_DEATH];
-var ALL_TRUMP = [BRIT_TRUMP];
-var ALL_POWERUP = [BRIT_POWERUP];
-var ALL_IDLE = [BRIT_IDLE];
+// Sir David is primary, Norm gets the B-side lines
+var ALL_WAVE_START = [BRIT_WAVE_START, NORM_WAVE_START];
+var ALL_KILL_STREAK = [BRIT_KILL_STREAK, NORM_KILL_STREAK];
+var ALL_BOSS = [BRIT_BOSS, NORM_BOSS];
+var ALL_SHOP = [BRIT_SHOP, NORM_SHOP];
+var ALL_DAMAGE = [BRIT_DAMAGE, NORM_DAMAGE];
+var ALL_DEATH = [BRIT_DEATH, NORM_DEATH];
+var ALL_TRUMP = [BRIT_TRUMP, NORM_TRUMP];
+var ALL_POWERUP = [BRIT_POWERUP, NORM_POWERUP];
+var ALL_IDLE = [BRIT_IDLE, NORM_IDLE];
 
 function pickNarr(categoryArrays, replacements) {
-  var idx = narratorIndex;
+  // 75% Sir David (index 0), 25% Norm (index 1) if available
+  var idx = 0;
+  if (categoryArrays.length > 1 && Math.random() < 0.25) {
+    idx = 1;
+    useNorm = true;
+  } else {
+    useNorm = false;
+  }
   var arr = categoryArrays[idx];
   var line = arr[Math.floor(Math.random() * arr.length)];
   if (replacements) {
