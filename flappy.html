@@ -36,21 +36,41 @@ function sndScore(){tone(660,0.06,"sine",0.04);setTimeout(function(){tone(880,0.
 // ── Mom Narrator (angry mom with a flip flop)
 var momEnabled = true;
 var momLastSpoke = 0;
+var momVoice = null;
+var momVoicesLoaded = false;
+
+function loadMomVoice() {
+  if (momVoicesLoaded) return;
+  var voices = speechSynthesis.getVoices();
+  if (!voices || voices.length === 0) return;
+  momVoicesLoaded = true;
+  // Try to find a female English voice
+  momVoice = voices.find(function(v){return v.name.indexOf('Samantha')>-1;})
+    || voices.find(function(v){return v.name.indexOf('Google UK English Female')>-1;})
+    || voices.find(function(v){return v.name.indexOf('Karen')>-1;})
+    || voices.find(function(v){return v.name.indexOf('Fiona')>-1;})
+    || voices.find(function(v){return v.lang.indexOf('en')===0&&(v.name.indexOf('Female')>-1||v.name.indexOf('female')>-1);})
+    || voices.find(function(v){return v.lang.indexOf('en')===0;})
+    || null;
+}
+
+// Load voices — browsers fire this async
+if (window.speechSynthesis) {
+  speechSynthesis.onvoiceschanged = loadMomVoice;
+  loadMomVoice();
+}
 
 function momSpeak(text, priority) {
   if (!momEnabled || !window.speechSynthesis) return;
+  if (!momVoicesLoaded) loadMomVoice();
   var now = Date.now();
   if (!priority && now - momLastSpoke < 4000) return;
   momLastSpoke = now;
-  if (priority && speechSynthesis.speaking) speechSynthesis.cancel();
+  if (priority) speechSynthesis.cancel();
   var utter = new SpeechSynthesisUtterance(text);
   utter.rate = 1.1;
   utter.pitch = 1.3;
-  var voices = speechSynthesis.getVoices();
-  var fem = voices.find(function(v){return v.name.indexOf('Samantha')>-1||v.name.indexOf('Karen')>-1||v.name.indexOf('Google UK English Female')>-1;});
-  if (!fem) fem = voices.find(function(v){return v.lang.indexOf('en')===0&&v.name.indexOf('Female')>-1;});
-  if (!fem) fem = voices.find(function(v){return v.lang.indexOf('en')===0&&v.pitch>1;});
-  if (fem) utter.voice = fem;
+  if (momVoice) utter.voice = momVoice;
   speechSynthesis.speak(utter);
 }
 
@@ -170,7 +190,7 @@ var parallaxOffset2 = 0; // mid buildings
 var groundOffset = 0;    // ground dashes
 
 // Faces to smack
-var FACE_EMOJIS = ["😏","🤨","😤","🙄","😒","🤪","😬","🥴","😮‍💨","🫠","😑","🤡","👁️","😐","🫤","😶","🧒","👦","👧","👶","🧒","🤓","😜","😝","🤭","🫢"];
+var FACE_EMOJIS = ["😏","🤨","😤","🙄","😒","🤪","😬","🥴","😮‍💨","🫠","😑","🤡","👁️","😐","🫤","😶","🧒","👦","👧","👶","🧒","🤓","😜","😝","🤭","🫢","🪱"];
 var SMACK_MSGS = ["SMACK!","THWACK!","POW!","SLAP!","WHACK!","FLOP'D!","EAT RUBBER!","FLIP FLOP'D!","TAKE THAT!","CHANCLA'D!","LA CHANCLA!","MOM MODE!","SANDAL JUSTICE!","THONG SLAP!","DESERVED IT!"];
 
 function pick(a){return a[Math.floor(Math.random()*a.length)];}
@@ -258,6 +278,8 @@ function triggerDeath() {
 
 // Simple: death just goes to menu. Menu tap starts fresh.
 
+var deadSince = 0;
+
 function flap() {
   if (STATE === "menu") {
     STATE = "playing";
@@ -270,8 +292,10 @@ function flap() {
     flipflop.rotation = -0.4;
     return;
   }
-  // During dead: tap to restart immediately
+  // Dead: require 1.5 seconds before accepting restart tap
   if (STATE === "dead") {
+    if (Date.now() - deadSince < 1500) return;
+    if (speechSynthesis.speaking) speechSynthesis.cancel();
     STATE = "playing";
     reset();
     deathFlashAlpha = 0;
@@ -291,8 +315,7 @@ canvas.addEventListener('mousedown', function() {
 window.addEventListener('keydown', function(e) {
   if (e.code==="Space"||e.code==="ArrowUp") {
     e.preventDefault();
-    if (STATE === "dead") { restartBtn.click(); }
-    else flap();
+    flap();
   }
 });
 
@@ -327,6 +350,7 @@ function update() {
     }
     if (deathTimer >= DEATH_TUMBLE_DURATION) {
       STATE = "dead";
+      deadSince = Date.now();
     }
     return;
   }
@@ -401,7 +425,18 @@ function update() {
         score++;
         sndSmack();
         momSmackCount++;
-        if (momSmackCount === 5) momSpeak(MOM_STREAK[0]);
+        // Tyler crossover!
+        if (f.emoji === "🪱") {
+          var TYLER_LINES = [
+            "Hi Tyler! Sorry about this! La chancla has no friends!",
+            "Tyler?! What are you doing outside the body?!",
+            "Oh no, Tyler from Tapeworm! Small world! Well, small intestine!",
+            "TYLER! I slapped Tyler! He's from the other game! I feel bad! ...No I don't!",
+            "Tyler the Tapeworm?! This is a CROSSOVER EVENT, people!",
+          ];
+          momSpeak(pickMom(TYLER_LINES), true);
+        }
+        else if (momSmackCount === 5) momSpeak(MOM_STREAK[0]);
         else if (momSmackCount === 10) momSpeak(MOM_STREAK[2]);
         else if (momSmackCount % 3 === 0) momSpeak(pickMom(MOM_SMACK));
         momIdleTimer = 0;
