@@ -56,6 +56,7 @@ canvas{display:block}
   <div>🪙<span id="hud-coins">0</span></div>
   <div>🏆<span id="hud-score">0</span></div>
   <div style="margin-left:auto">Best: Wave <span id="hud-best">1</span></div>
+  <div style="pointer-events:auto;cursor:pointer;font-size:16px" id="narrator-toggle" title="Toggle narrator">🎙️</div>
 </div>
 
 <div id="wave-announce"></div>
@@ -122,6 +123,108 @@ function sfxExplosion() { playTone(70, 0.15, 0.025); }
 function sfxWaveStart() { [330,430,530].forEach(function(f,i){setTimeout(function(){playTone(f,0.12,0.02);},i*80);}); }
 function sfxDeath() { playTone(180,0.25,0.025); setTimeout(function(){playTone(120,0.25,0.02);},130); }
 function sfxBuy() { playTone(550,0.07,0.015); setTimeout(function(){playTone(720,0.08,0.015);},60); }
+
+// ============ NARRATOR (Text-to-Speech) ============
+var narratorQueue = [];
+var narratorSpeaking = false;
+var narratorEnabled = true;
+var lastNarration = 0;
+
+function narrate(text, priority) {
+  if (!narratorEnabled || !window.speechSynthesis) return;
+  var now = Date.now();
+  // Don't spam narration — at least 3s between low-priority lines
+  if (!priority && now - lastNarration < 3000) return;
+  lastNarration = now;
+
+  // Cancel non-priority if new priority comes in
+  if (priority && speechSynthesis.speaking) speechSynthesis.cancel();
+
+  var utter = new SpeechSynthesisUtterance(text);
+  utter.rate = 0.95;
+  utter.pitch = 0.85;
+  // Try to find a deep/narrator-like voice
+  var voices = speechSynthesis.getVoices();
+  var preferred = voices.find(function(v){return v.name.indexOf('Daniel')>-1||v.name.indexOf('Alex')>-1||v.name.indexOf('Google UK English Male')>-1;});
+  if (!preferred) preferred = voices.find(function(v){return v.lang.indexOf('en')===0&&v.name.indexOf('Male')>-1;});
+  if (preferred) utter.voice = preferred;
+  speechSynthesis.speak(utter);
+}
+
+// Narration lines — half sports commentary, half existential literary narrator
+var NARR_WAVE_START = [
+  "And we're back, folks. Wave {w}. Tyler looks focused. Or terrified. Hard to tell with a worm.",
+  "Wave {w}. The immune system has called in reinforcements. Tyler didn't sign up for this.",
+  "Here comes wave {w}. You can feel the tension. You can also feel the stomach acid.",
+  "Tyler enters wave {w} with the confidence of a tapeworm who has never once questioned his life choices.",
+  "Wave {w}. The body is angry. Tyler is small. The math doesn't favor him.",
+  "And just like that, wave {w} begins. Tyler wonders, briefly, if this is all there is.",
+  "Wave {w}, ladies and gentlemen. Tyler's still alive. Statistically improbable, but here we are.",
+  "The scoreboard reads wave {w}. Tyler reads nothing, because he is a worm, and worms cannot read.",
+  "Wave {w}. The crowd goes wild. There is no crowd. Tyler is alone inside a man named Greg.",
+  "Here we go. Wave {w}. Tyler tightens his... segments? Do worms tighten? Let's say he braces himself.",
+];
+
+var NARR_KILL_STREAK = [
+  "Tyler is on FIRE! Not literally. That would be bad for a worm.",
+  "BOOM! What a play! John Madden would weep!",
+  "And the crowd goes— oh wait, there's no crowd. Just intestinal walls.",
+  "Tyler's really putting together a highlight reel here, folks.",
+  "That's what I call a PRO worm move!",
+  "Unbelievable! Tyler just doesn't quit! Unlike Greg's digestive system!",
+];
+
+var NARR_BOSS = [
+  "A boss approaches. Tyler feels something he can only describe as dread. Or maybe that's the bile.",
+  "BOSS FIGHT! This is what Tyler trained for. Tyler has never trained for anything.",
+  "Ladies and gentlemen, we have a situation. A big, angry, situation.",
+  "The boss enters. Tyler considers his options. There aren't many. There never are, for a tapeworm.",
+];
+
+var NARR_SHOP = [
+  "Tyler surveys the shop like a man at a flea market. A very gross, internal flea market.",
+  "Shopping time. Tyler has coins. Where does a tapeworm keep coins? Nobody asks. Nobody wants to know.",
+  "The shop opens. Tyler feels a brief moment of joy. Consumer capitalism has reached the small intestine.",
+  "Spend wisely, Tyler. Or don't. You're a worm. Financial literacy was never in the cards.",
+];
+
+var NARR_DAMAGE = [
+  "Ooh, that's gonna leave a mark. Or a... segment dent?",
+  "Tyler takes a hit! Shake it off, big guy!",
+  "CONTACT! Tyler's HP drops, and so does his will to live!",
+  "That hurt. Tyler felt that in his... entire body. He's all body.",
+];
+
+var NARR_DEATH = [
+  "And just like that, Tyler's journey ends. Not with a bang, but with a squelch.",
+  "Tyler is gone. The intestine is quiet. Greg feels slightly better and doesn't know why.",
+  "Game over. Tyler fought bravely. Or at least he wiggled bravely. Same thing, really.",
+  "Tyler has been defeated. Somewhere, a gastroenterologist smiles and doesn't know why.",
+  "And so concludes the brief, disgusting, oddly moving story of Tyler the Tapeworm.",
+];
+
+var NARR_TRUMP = [
+  "An orange clone appears. Tyler is confused. Greg is confused. Everyone is confused.",
+  "The clone splits! Like a political party! Or a cell! Or both!",
+  "MEGA MAGA POOP enters the arena. Tyler has seen a lot of things inside this body. This is the worst.",
+];
+
+var NARR_POWERUP = [
+  "Tyler grabs a power-up! Things are looking up! For a worm! In a colon!",
+  "Power-up acquired! Tyler briefly feels invincible. It won't last. Nothing does.",
+];
+
+function pickNarr(arr, replacements) {
+  var line = arr[Math.floor(Math.random() * arr.length)];
+  if (replacements) {
+    for (var k in replacements) line = line.replace('{'+k+'}', replacements[k]);
+  }
+  return line;
+}
+
+// Track kill streaks for narration
+var killStreakCount = 0;
+var killStreakTimer = 0;
 
 // ============ MUSIC ============
 var musicInterval = null;
@@ -528,6 +631,7 @@ function getShopOffering() {
 function showShop() {
   state = 'shop';
   startMusic('shop');
+  narrate(pickNarr(NARR_SHOP), true);
   let overlay = document.getElementById('shop-overlay');
   overlay.classList.add('active');
   document.getElementById('shop-coins').textContent = '🪙 ' + player.coins;
@@ -603,9 +707,12 @@ const DEATH_MSGS = [
 
 function startWave() {
   state = 'playing';
-  // Pick music based on wave type
   var isBoss = wave % 5 === 0 || (wave >= 15 && wave % 15 === 0);
   startMusic(isBoss ? 'boss' : 'game');
+  killStreakCount = 0;
+  // Narrate wave start
+  if (isBoss) narrate(pickNarr(NARR_BOSS), true);
+  else narrate(pickNarr(NARR_WAVE_START, {w: wave}), true);
   waveSpawnQueue = generateWaveEnemies(wave);
   waveEnemiesLeft = waveSpawnQueue.length;
   waveSpawnTimer = 0;
@@ -966,6 +1073,7 @@ function update(dt) {
         player.powerups.magnet = 10;
         sfxPowerup();
       }
+      if (d.type !== 'coin' && d.type !== 'xp') narrate(pickNarr(NARR_POWERUP));
       drops.splice(i, 1);
       score += d.value;
       updateHUD();
@@ -999,6 +1107,8 @@ function damagePlayer(amount) {
   player.iframes = 0.3;
   spawnParticles(player.x, player.y, '#e74c3c', 5, 80);
   sfxHit();
+  if (player.hp > 0 && player.hp < player.maxHp * 0.3) narrate(pickNarr(NARR_DAMAGE));
+  if (player.hp > 0 && player.hp < player.maxHp * 0.15) narrate("Tyler is barely holding on! This is it, folks! The final segments!");
   if (player.hp <= 0) {
     player.hp = 0;
     die();
@@ -1032,6 +1142,12 @@ function killEnemy(idx) {
     spawnDrop(e.x, e.y, 'xp', Math.min(3, e.xp));
   }
 
+  // Kill streak narration
+  killStreakCount++;
+  if (killStreakCount === 5) narrate(pickNarr(NARR_KILL_STREAK));
+  if (killStreakCount === 10) narrate("TEN kills! Tyler is a MACHINE! A gross, segmented machine!");
+  if (killStreakCount === 20) narrate("TWENTY! Someone call ESPN! Do they cover intestinal combat?!");
+
   // Trump clone splits into 2 minis
   if (def.splits) {
     var TRUMP_QUOTES = ["You're fired!","Sad!","FAKE POOS!","Tremendous death!","Nobody dies better than me!","Very unfair!","Big league mistake!","Wrong!","Believe me!","Covfefe!"];
@@ -1043,6 +1159,7 @@ function killEnemy(idx) {
       mini.x = e.x + (Math.random()-0.5)*30;
       mini.y = e.y + (Math.random()-0.5)*30;
     }
+    narrate(pickNarr(NARR_TRUMP));
   }
 
   // MEGA MAGA boss death
@@ -1073,6 +1190,7 @@ function killEnemy(idx) {
 function die() {
   state = 'dead';
   stopMusic();
+  narrate(pickNarr(NARR_DEATH), true);
   sfxDeath();
   if (wave > bestWave) {
     bestWave = wave;
@@ -1373,8 +1491,19 @@ document.getElementById('start-btn').addEventListener('click', () => {
 
 document.getElementById('restart-btn').addEventListener('click', () => {
   document.getElementById('death-screen').classList.remove('active');
+  if (speechSynthesis.speaking) speechSynthesis.cancel();
   startGame();
 });
+
+// Narrator toggle
+document.getElementById('narrator-toggle').addEventListener('click', function() {
+  narratorEnabled = !narratorEnabled;
+  this.textContent = narratorEnabled ? '🎙️' : '🔇';
+  if (!narratorEnabled && speechSynthesis.speaking) speechSynthesis.cancel();
+});
+
+// Load voices (needed on some browsers)
+speechSynthesis.onvoiceschanged = function() {};
 
 // Show best wave on start
 document.getElementById('hud-best').textContent = bestWave;
