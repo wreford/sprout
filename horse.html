@@ -8,7 +8,7 @@
     :root{--font-sans:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,sans-serif;--font-mono:ui-monospace,"SF Mono",Menlo,Monaco,Consolas,monospace;--bg:#faf5ef;--bg2:#f0e8dc;--bg3:#e6dac8;--border:#d4c4a8;--text:#3a2a1a;--dim:#8a7a5a;--brown:#8B4513;--gold:#d4a017;--green:#4a8c3f;--red:#c44;--pink:#e88da0;--sky:#87CEEB}
     *{box-sizing:border-box;margin:0;padding:0}
     html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--font-sans);overflow-x:hidden;touch-action:manipulation}
-    #root{height:100%}
+    #root{height:100%;overflow-y:auto}
     @keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
     @keyframes wiggle{0%,100%{transform:rotate(0)}25%{transform:rotate(-5deg)}75%{transform:rotate(5deg)}}
     @keyframes fadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
@@ -16,6 +16,8 @@
     @keyframes munch{0%,100%{transform:scaleY(1)}50%{transform:scaleY(0.85)}}
     @keyframes sparkle{0%,100%{opacity:0;transform:scale(0)}50%{opacity:1;transform:scale(1)}}
     @keyframes sleepBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+    @keyframes runAcross{0%{left:-60px}100%{left:calc(100% + 60px)}}
+    @keyframes jumpUp{0%,100%{transform:translateY(0)}50%{transform:translateY(-40px)}}
     .bounce{animation:bounce 0.5s ease}.wiggle{animation:wiggle 0.4s ease}.fade-in{animation:fadeIn 0.3s ease}
   </style>
 </head>
@@ -33,7 +35,7 @@ function loadHorse() {
 }
 function saveHorse(h) { localStorage.setItem("lily-horse", JSON.stringify(h)); }
 
-// ── Sound (softened — sine waves only, max volume 0.02)
+// ── Sound (softened)
 var audioCtx=null;
 function getAudio(){if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();return audioCtx;}
 function tone(f,d,t,v){try{var c=getAudio(),o=c.createOscillator(),g=c.createGain();o.type="sine";o.frequency.value=f;g.gain.setValueAtTime(Math.min(v||0.02,0.02),c.currentTime);g.gain.exponentialRampToValueAtTime(0.001,c.currentTime+d);o.connect(g);g.connect(c.destination);o.start();o.stop(c.currentTime+d);}catch(e){}}
@@ -44,11 +46,54 @@ function sndHappy(){[440,550,660,880].forEach(function(f,i){setTimeout(function(
 function sndSad(){tone(220,0.3,"sine",0.015);setTimeout(function(){tone(180,0.3,"sine",0.015);},200);}
 function sndTrot(){tone(100,0.04,"sine",0.015);setTimeout(function(){tone(120,0.04,"sine",0.015);},120);}
 function sndSleep(){tone(150,0.3,"sine",0.01);}
+function sndCoin(){tone(600,0.08,"sine",0.02);setTimeout(function(){tone(800,0.06,"sine",0.02);},60);}
 
-// ── Narration (Web Speech API)
+// ── Weather system
+var WEATHERS = [
+  { name: 'Sunny', emoji: '☀️', happinessBonus: 5, cleanBonus: 0, warmthBonus: 0 },
+  { name: 'Rainy', emoji: '🌧️', happinessBonus: -5, cleanBonus: -10, warmthBonus: 0 },
+  { name: 'Snowy', emoji: '❄️', happinessBonus: 0, cleanBonus: 0, warmthBonus: -15 },
+  { name: 'Rainbow', emoji: '🌈', happinessBonus: 15, cleanBonus: 0, warmthBonus: 0 }
+];
+
+function getSessionWeather() {
+  if (!window._horseWeather) {
+    window._horseWeather = WEATHERS[Math.floor(Math.random() * WEATHERS.length)];
+  }
+  return window._horseWeather;
+}
+
+// ── Adventures
+var ADVENTURES = [
+  { text: "{name} found a golden apple!", coins: 5, happiness: 10, energy: 0 },
+  { text: "{name} got lost in the forest!", coins: 0, happiness: -10, energy: -10 },
+  { text: "{name} discovered a hidden stream!", coins: 3, happiness: 15, energy: 5 },
+  { text: "{name} met a friendly deer!", coins: 2, happiness: 12, energy: 0 },
+  { text: "{name} found buried treasure!", coins: 10, happiness: 8, energy: -5 },
+  { text: "{name} got spooked by a rabbit!", coins: 0, happiness: -5, energy: -5 },
+  { text: "{name} raced the wind and won!", coins: 4, happiness: 20, energy: -15 },
+  { text: "{name} found a four-leaf clover!", coins: 7, happiness: 10, energy: 0 },
+  { text: "{name} helped a lost foal find its mother!", coins: 3, happiness: 18, energy: -8 },
+  { text: "{name} stumbled into a mud puddle!", coins: 0, happiness: -8, energy: -5 },
+  { text: "{name} discovered a meadow of wildflowers!", coins: 2, happiness: 15, energy: 5 },
+  { text: "{name} outran a thunderstorm!", coins: 6, happiness: 5, energy: -12 },
+  { text: "{name} found a shiny horseshoe!", coins: 8, happiness: 10, energy: 0 },
+  { text: "{name} splashed through a rainbow puddle!", coins: 4, happiness: 14, energy: -3 },
+  { text: "{name} napped under a big oak tree.", coins: 1, happiness: 8, energy: 10 }
+];
+
+// ── Accessories
+var ACCESSORIES = [
+  { id: 'hat', name: 'Hat', emoji: '🎩', cost: 5 },
+  { id: 'bow', name: 'Bow', emoji: '🎀', cost: 3 },
+  { id: 'sunglasses', name: 'Sunglasses', emoji: '😎', cost: 8 },
+  { id: 'crown', name: 'Crown', emoji: '👑', cost: 15 }
+];
+
+// ── Narration
 var narratorSpeaking = false;
 var lastNarrationTime = 0;
-var NARRATION_GAP = 4000; // 4 second gap between lines
+var NARRATION_GAP = 4000;
 
 var NARRATIONS = {
   feed: [
@@ -56,71 +101,35 @@ var NARRATIONS = {
     "{name} munches happily on the food.",
     "Yummy! {name} licks their lips.",
     "What a tasty treat for {name}!",
-    "{name} nickers softly, wanting more.",
-    "Good nutrition keeps {name} strong."
   ],
   brush: [
     "{name} looks so shiny now!",
     "What a beautiful coat {name} has.",
     "{name} stands still, enjoying the brushing.",
-    "Smooth and silky, just like {name} deserves.",
-    "Every stroke makes {name} happier.",
-    "{name} gleams in the sunlight."
   ],
   pet: [
     "Aww, {name} nuzzles your hand.",
     "{name} leans into your gentle touch.",
     "Such a sweet moment with {name}.",
-    "{name} closes their eyes, so content.",
-    "You can feel {name}'s warmth.",
-    "{name} loves when you pet them."
   ],
   play: [
     "{name} gallops around happily!",
     "Look at {name} go! So full of energy!",
     "{name} tosses their mane with joy.",
-    "Playtime is {name}'s favorite time!",
-    "{name} kicks up their hooves playfully.",
-    "What a spirited horse {name} is!"
   ],
   ride: [
     "Giddy up! What a ride!",
     "The wind rushes past as {name} gallops.",
-    "{name} runs with such grace.",
     "You and {name} make a great team!",
-    "What an adventure with {name}!",
-    "Riding {name} feels like flying."
   ],
   sleep: [
     "Goodnight, {name}. Sweet dreams.",
     "{name} curls up for a cozy rest.",
-    "Shhh, {name} is drifting off to sleep.",
-    "Rest well, dear {name}.",
-    "Time for {name} to recharge.",
-    "{name} yawns and closes their eyes."
   ],
   wake: [
     "Good morning, {name}!",
     "{name} stretches and greets the new day.",
-    "Rise and shine, sleepy {name}!",
-    "{name} blinks awake, ready for fun.",
-    "A brand new day for {name}!",
-    "{name} whinnies a cheerful hello."
   ],
-  lowHunger: [
-    "{name} looks hungry...",
-    "{name}'s tummy is rumbling.",
-    "Poor {name} could really use some food.",
-    "{name} noses around, looking for snacks.",
-    "Time to feed {name}, don't you think?"
-  ],
-  lowClean: [
-    "{name} needs a bath...",
-    "{name}'s coat is looking a bit dusty.",
-    "A good brushing would make {name} feel better.",
-    "{name} could use some grooming love.",
-    "Time to clean up {name}!"
-  ]
 };
 
 function narrate(action, horseName) {
@@ -128,33 +137,18 @@ function narrate(action, horseName) {
   var now = Date.now();
   if (now - lastNarrationTime < NARRATION_GAP) return;
   if (!window.speechSynthesis) return;
-
   var lines = NARRATIONS[action];
   if (!lines || lines.length === 0) return;
-
   var text = lines[Math.floor(Math.random() * lines.length)];
   text = text.replace(/\{name\}/g, horseName);
-
   var utterance = new SpeechSynthesisUtterance(text);
-  utterance.rate = 0.95;
-  utterance.pitch = 1.1;
-  utterance.volume = 0.8;
-
-  // Try to pick a female voice
-  var voices = window.speechSynthesis.getVoices();
-  var femaleVoice = voices.find(function(v) {
-    return v.name.toLowerCase().indexOf("female") !== -1 || v.name.indexOf("Samantha") !== -1 || v.name.indexOf("Karen") !== -1 || v.name.indexOf("Victoria") !== -1 || v.name.indexOf("Fiona") !== -1;
-  });
-  if (femaleVoice) utterance.voice = femaleVoice;
-
+  utterance.rate = 0.95; utterance.pitch = 1.1; utterance.volume = 0.8;
   utterance.onstart = function() { narratorSpeaking = true; };
   utterance.onend = function() { narratorSpeaking = false; lastNarrationTime = Date.now(); };
   utterance.onerror = function() { narratorSpeaking = false; };
-
   window.speechSynthesis.speak(utterance);
 }
 
-// Preload voices
 if (window.speechSynthesis) {
   window.speechSynthesis.getVoices();
   window.speechSynthesis.onvoiceschanged = function() { window.speechSynthesis.getVoices(); };
@@ -163,20 +157,14 @@ if (window.speechSynthesis) {
 // ── Days survived counter
 function getDaysSurvived(horse) {
   if (!horse || !horse.created) return 0;
-  var diff = Date.now() - horse.created;
-  return Math.floor(diff / (1000 * 60 * 60 * 24));
+  return Math.floor((Date.now() - horse.created) / (1000 * 60 * 60 * 24));
 }
 
 // ── Horse moods & expressions
-var HORSE_COLORS = {
-  "Lady":"#C4956A","Sebastian":"#8B6914","Tonka":"#D2691E",
-  "Boots":"#2F1B14","Chester":"#CD853F","Cruisin":"#A0522D"
-};
-var DEFAULT_COLOR = "#B8860B";
-
 function getHorseMood(horse) {
   var avg = (horse.hunger + horse.happiness + horse.energy + horse.clean) / 4;
   if (horse.sleeping) return "sleeping";
+  if (horse.hunger < 20 || horse.happiness < 20 || horse.energy < 20 || horse.clean < 20) return "stressed";
   if (avg >= 80) return "ecstatic";
   if (avg >= 60) return "happy";
   if (avg >= 40) return "okay";
@@ -186,7 +174,8 @@ function getHorseMood(horse) {
 
 function getHorseEmoji(mood) {
   if (mood === "sleeping") return "😴";
-  if (mood === "ecstatic") return "🥰";
+  if (mood === "stressed") return "😰";
+  if (mood === "ecstatic") return "🐎";
   if (mood === "happy") return "😊";
   if (mood === "okay") return "😐";
   if (mood === "sad") return "😢";
@@ -195,12 +184,13 @@ function getHorseEmoji(mood) {
 
 function getHorseQuote(mood, name) {
   var quotes = {
-    sleeping: [name+" is dreaming of open fields...", "Zzz... *happy horse noises*...", "Shhh... "+name+" is resting."],
-    ecstatic: [name+" loves you SO much! 💕", name+" is the happiest horse alive!", name+" wants to go for a gallop! 🏇", name+" nuzzles your hand."],
-    happy: [name+" swishes their tail happily.", name+" neighs softly at you.", name+" is feeling great today!", name+" trots around proudly."],
-    okay: [name+" could use some attention.", name+" looks at you expectantly.", name+" paws at the ground.", "Maybe "+name+" needs something?"],
-    sad: [name+" looks at you with big eyes.", name+" hangs their head.", name+" needs some love.", "Please take care of "+name+"..."],
-    miserable: [name+" is really struggling!", "PLEASE help "+name+"!", name+" needs food and care NOW!", name+" whimpers softly..."]
+    sleeping: [name+" is dreaming of open fields...", "Zzz... *happy horse noises*..."],
+    stressed: [name+" looks uncomfortable...", "Poor "+name+" needs some care!"],
+    ecstatic: [name+" loves you SO much!", name+" is the happiest horse alive!", name+" wants to gallop!"],
+    happy: [name+" swishes their tail happily.", name+" neighs softly at you.", name+" trots around proudly."],
+    okay: [name+" could use some attention.", name+" looks at you expectantly."],
+    sad: [name+" looks at you with big eyes.", name+" hangs their head."],
+    miserable: [name+" is really struggling!", "PLEASE help "+name+"!"]
   };
   var arr = quotes[mood] || quotes.okay;
   return arr[Math.floor(Math.random() * arr.length)];
@@ -232,8 +222,8 @@ function FloatingParticle(props) {
 function HorseDisplay(props) {
   var horse = props.horse;
   var mood = getHorseMood(horse);
-  var color = HORSE_COLORS[horse.name] || DEFAULT_COLOR;
   var moodEmoji = getHorseEmoji(mood);
+  var accessories = horse.accessories || [];
 
   var bodyAnim = "";
   if (props.action === "feed") bodyAnim = "munch 0.3s ease 3";
@@ -243,14 +233,20 @@ function HorseDisplay(props) {
 
   return (
     <div style={{position:"relative",textAlign:"center",padding:"16px 0"}}>
-      {/* Sky background */}
       <div style={{position:"absolute",top:0,left:0,right:0,height:120,background:"linear-gradient(180deg, var(--sky), #B8E8B0)",borderRadius:16,zIndex:0}}/>
-      {/* Ground */}
       <div style={{position:"absolute",bottom:0,left:0,right:0,height:50,background:"linear-gradient(180deg, #7CB342, #558B2F)",borderRadius:"0 0 16px 16px",zIndex:0}}/>
+
+      {/* Accessories above horse */}
+      <div style={{position:"relative",zIndex:2,display:"flex",justifyContent:"center",gap:4,marginBottom:-10}}>
+        {accessories.map(function(accId) {
+          var acc = ACCESSORIES.find(function(a){return a.id===accId;});
+          return acc ? <span key={accId} style={{fontSize:"1.5rem"}}>{acc.emoji}</span> : null;
+        })}
+      </div>
 
       {/* Horse body */}
       <div style={{position:"relative",zIndex:1,fontSize:"5rem",lineHeight:1,animation:bodyAnim,display:"inline-block",filter:horse.sleeping?"brightness(0.7)":"none"}}>
-        🐴
+        {"🐴"}
       </div>
 
       {/* Mood face */}
@@ -258,7 +254,7 @@ function HorseDisplay(props) {
 
       {/* Sleep Zzzs */}
       {horse.sleeping && (
-        <div style={{position:"absolute",top:20,right:40,fontSize:"1.2rem",animation:"sleepBob 1.5s ease infinite",zIndex:2}}>💤</div>
+        <div style={{position:"absolute",top:20,right:40,fontSize:"1.2rem",animation:"sleepBob 1.5s ease infinite",zIndex:2}}>{"💤"}</div>
       )}
 
       {/* Name plate */}
@@ -282,10 +278,185 @@ function ActionBtn(props) {
       style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"10px 4px",
         background:props.disabled?"var(--bg3)":"var(--bg2)",border:"1.5px solid "+(props.disabled?"var(--bg3)":"var(--border)"),
         borderRadius:10,cursor:props.disabled?"default":"pointer",opacity:props.disabled?0.5:1,transition:"all 0.15s",
-        fontFamily:"var(--font-sans)"}}>
+        fontFamily:"var(--font-sans)",minWidth:0}}>
       <span style={{fontSize:"1.5rem"}}>{props.icon}</span>
-      <span style={{fontSize:"0.65rem",fontWeight:600,color:"var(--text)"}}>{props.label}</span>
+      <span style={{fontSize:"0.6rem",fontWeight:600,color:"var(--text)"}}>{props.label}</span>
     </button>
+  );
+}
+
+// ── Race Mini-Game
+function RaceGame(props) {
+  var [running, setRunning] = useState(false);
+  var [horsePos, setHorsePos] = useState(0);
+  var [obstacles, setObstacles] = useState([]);
+  var [jumping, setJumping] = useState(false);
+  var [score, setScore] = useState(0);
+  var [gameOver, setGameOver] = useState(false);
+  var frameRef = useRef(null);
+  var obstacleRef = useRef([]);
+  var jumpRef = useRef(false);
+  var scoreRef = useRef(0);
+  var posRef = useRef(0);
+
+  function startRace() {
+    setRunning(true); setGameOver(false); setScore(0); setHorsePos(50);
+    obstacleRef.current = [{x: 320}];
+    jumpRef.current = false;
+    scoreRef.current = 0;
+    posRef.current = 50;
+    setObstacles([{x:320}]);
+    runLoop();
+  }
+
+  function runLoop() {
+    frameRef.current = setInterval(function() {
+      var obs = obstacleRef.current;
+      for (var i = obs.length - 1; i >= 0; i--) {
+        obs[i].x -= 5;
+        if (obs[i].x < -30) {
+          obs.splice(i, 1);
+          scoreRef.current++;
+        }
+      }
+      // Check collision
+      var hit = false;
+      for (var i = 0; i < obs.length; i++) {
+        if (obs[i].x > 30 && obs[i].x < 80 && !jumpRef.current) {
+          hit = true;
+        }
+      }
+      if (hit) {
+        clearInterval(frameRef.current);
+        setGameOver(true); setRunning(false);
+        setScore(scoreRef.current);
+        props.onFinish(scoreRef.current);
+        return;
+      }
+      // Add new obstacles
+      if (obs.length === 0 || obs[obs.length-1].x < 200) {
+        if (Math.random() < 0.03) obs.push({x: 320});
+      }
+      obstacleRef.current = obs;
+      setObstacles(obs.slice());
+      setScore(scoreRef.current);
+    }, 50);
+  }
+
+  function jump() {
+    if (!running || jumpRef.current) return;
+    jumpRef.current = true;
+    setJumping(true);
+    setTimeout(function() { jumpRef.current = false; setJumping(false); }, 500);
+  }
+
+  useEffect(function() {
+    return function() { if (frameRef.current) clearInterval(frameRef.current); };
+  }, []);
+
+  if (!running && !gameOver) {
+    return (
+      <div style={{textAlign:"center",padding:12}}>
+        <div style={{fontSize:"0.85rem",fontWeight:700,marginBottom:8}}>Race Mini-Game</div>
+        <div style={{fontSize:"0.7rem",color:"var(--dim)",marginBottom:8}}>Tap to jump over obstacles! Earn 10 coins per obstacle.</div>
+        <button onClick={startRace} style={{padding:"8px 20px",borderRadius:8,border:"none",background:"var(--brown)",color:"#fff",fontWeight:600,cursor:"pointer"}}>Start Race</button>
+      </div>
+    );
+  }
+
+  if (gameOver) {
+    return (
+      <div style={{textAlign:"center",padding:12}}>
+        <div style={{fontSize:"1rem",fontWeight:700}}>Race Over!</div>
+        <div style={{fontSize:"0.85rem",color:"var(--gold)",marginTop:4}}>Cleared {score} obstacles = {score * 10} coins!</div>
+        <button onClick={function(){setGameOver(false);}} style={{marginTop:8,padding:"6px 16px",borderRadius:8,border:"1px solid var(--border)",background:"var(--bg2)",cursor:"pointer",fontSize:"0.75rem"}}>Close</button>
+      </div>
+    );
+  }
+
+  return (
+    <div onClick={jump} style={{position:"relative",height:100,background:"linear-gradient(180deg,var(--sky),#c8e6c9)",borderRadius:12,overflow:"hidden",cursor:"pointer",userSelect:"none"}}>
+      <div style={{position:"absolute",bottom:0,left:0,right:0,height:20,background:"#558B2F"}}/>
+      <div style={{position:"absolute",bottom:jumping?50:20,left:50,fontSize:"2rem",transition:"bottom 0.15s"}}>🐴</div>
+      {obstacles.map(function(o,i){
+        return <div key={i} style={{position:"absolute",bottom:20,left:o.x,fontSize:"1.5rem"}}>🌵</div>;
+      })}
+      <div style={{position:"absolute",top:4,right:8,fontSize:"0.7rem",fontFamily:"var(--font-mono)",color:"var(--brown)"}}>Cleared: {score}</div>
+      <div style={{position:"absolute",top:4,left:8,fontSize:"0.65rem",color:"var(--dim)"}}>TAP TO JUMP</div>
+    </div>
+  );
+}
+
+// ── Grooming Challenge
+function GroomingGame(props) {
+  var [playing, setPlaying] = useState(false);
+  var [taps, setTaps] = useState(0);
+  var [timeLeft, setTimeLeft] = useState(5);
+  var [done, setDone] = useState(false);
+  var timerRef = useRef(null);
+  var tapsRef = useRef(0);
+
+  function startGame() {
+    setPlaying(true); setDone(false); setTaps(0); setTimeLeft(5);
+    tapsRef.current = 0;
+    timerRef.current = setInterval(function() {
+      setTimeLeft(function(t) {
+        if (t <= 0.1) {
+          clearInterval(timerRef.current);
+          setPlaying(false); setDone(true);
+          props.onFinish(tapsRef.current);
+          return 0;
+        }
+        return t - 0.1;
+      });
+    }, 100);
+  }
+
+  function tap() {
+    if (!playing) return;
+    tapsRef.current++;
+    setTaps(tapsRef.current);
+  }
+
+  useEffect(function() {
+    return function() { if (timerRef.current) clearInterval(timerRef.current); };
+  }, []);
+
+  var progress = Math.min(taps / 30, 1);
+  var reward = Math.floor(progress * 15);
+
+  if (!playing && !done) {
+    return (
+      <div style={{textAlign:"center",padding:12}}>
+        <div style={{fontSize:"0.85rem",fontWeight:700,marginBottom:8}}>Grooming Challenge</div>
+        <div style={{fontSize:"0.7rem",color:"var(--dim)",marginBottom:8}}>Tap as fast as you can in 5 seconds to brush your horse!</div>
+        <button onClick={startGame} style={{padding:"8px 20px",borderRadius:8,border:"none",background:"var(--brown)",color:"#fff",fontWeight:600,cursor:"pointer"}}>Start Grooming</button>
+      </div>
+    );
+  }
+
+  if (done) {
+    return (
+      <div style={{textAlign:"center",padding:12}}>
+        <div style={{fontSize:"1rem",fontWeight:700}}>Grooming Done!</div>
+        <div style={{fontSize:"0.85rem",color:"var(--gold)",marginTop:4}}>{taps} taps = {reward} coins!</div>
+        <button onClick={function(){setDone(false);}} style={{marginTop:8,padding:"6px 16px",borderRadius:8,border:"1px solid var(--border)",background:"var(--bg2)",cursor:"pointer",fontSize:"0.75rem"}}>Close</button>
+      </div>
+    );
+  }
+
+  return (
+    <div onClick={tap} style={{textAlign:"center",padding:16,background:"var(--bg2)",borderRadius:12,cursor:"pointer",userSelect:"none"}}>
+      <div style={{fontSize:"0.7rem",color:"var(--dim)"}}>TAP RAPIDLY!</div>
+      <div style={{fontSize:"2.5rem",margin:"8px 0"}}>🧹</div>
+      <div style={{width:"100%",height:12,background:"var(--bg3)",borderRadius:6,overflow:"hidden",margin:"4px 0"}}>
+        <div style={{width:(progress*100)+"%",height:"100%",background:"var(--green)",borderRadius:6,transition:"width 0.1s"}}/>
+      </div>
+      <div style={{display:"flex",justifyContent:"space-between",fontSize:"0.7rem",color:"var(--dim)"}}>
+        <span>Taps: {taps}</span>
+        <span>Time: {timeLeft.toFixed(1)}s</span>
+      </div>
+    </div>
   );
 }
 
@@ -295,7 +466,7 @@ function NamePicker(props) {
   var names = ["Lady","Sebastian","Tonka","Boots","Chester","Cruisin"];
   return (
     <div style={{height:"100%",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"2rem",gap:"1rem"}}>
-      <div style={{fontSize:"4rem"}}>🐴</div>
+      <div style={{fontSize:"4rem"}}>{"🐴"}</div>
       <div style={{fontFamily:"var(--font-mono)",fontSize:"clamp(1.5rem,6vw,2rem)",fontWeight:800,color:"var(--brown)"}}>Lily's Horse</div>
       <div style={{fontSize:"0.85rem",color:"var(--dim)",textAlign:"center",maxWidth:280}}>Choose your horse's name!</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,width:"100%",maxWidth:280}}>
@@ -303,9 +474,7 @@ function NamePicker(props) {
           return (
             <button key={n} onClick={function(){props.onPick(n);}}
               style={{background:"var(--bg2)",border:"1.5px solid var(--border)",borderRadius:10,padding:"12px",
-                fontFamily:"var(--font-mono)",fontSize:"0.9rem",fontWeight:600,color:"var(--brown)",cursor:"pointer",transition:"all 0.15s"}}
-              onMouseEnter={function(e){e.currentTarget.style.borderColor="var(--gold)";e.currentTarget.style.transform="scale(1.03)";}}
-              onMouseLeave={function(e){e.currentTarget.style.borderColor="var(--border)";e.currentTarget.style.transform="scale(1)";}}>
+                fontFamily:"var(--font-mono)",fontSize:"0.9rem",fontWeight:600,color:"var(--brown)",cursor:"pointer",transition:"all 0.15s"}}>
               {n}
             </button>
           );
@@ -320,7 +489,6 @@ function NamePicker(props) {
           style={{padding:"10px 16px",borderRadius:8,border:"none",background:"var(--brown)",color:"#fff",
             fontFamily:"var(--font-mono)",fontSize:"0.85rem",fontWeight:600,cursor:"pointer"}}>Go</button>
       </div>
-      <a href="index.html" style={{marginTop:8,fontSize:"0.6rem",color:"var(--dim)",fontFamily:"var(--font-mono)",textDecoration:"none"}}>← taskiap.com</a>
     </div>
   );
 }
@@ -332,9 +500,11 @@ function Game(props) {
   var [particles, setParticles] = useState([]);
   var [quote, setQuote] = useState("");
   var [showShop, setShowShop] = useState(false);
+  var [showMiniGame, setShowMiniGame] = useState(null);
+  var [adventureResult, setAdventureResult] = useState(null);
   var particleId = useRef(0);
+  var weather = getSessionWeather();
 
-  // Update quote periodically
   useEffect(function() {
     setQuote(getHorseQuote(getHorseMood(horse), horse.name));
     var iv = setInterval(function() {
@@ -343,38 +513,39 @@ function Game(props) {
     return function() { clearInterval(iv); };
   }, [horse.hunger, horse.happiness, horse.energy, horse.clean, horse.sleeping]);
 
-  // Stat decay over time
+  // Stat decay over time - SLOWER for more relaxing gameplay
   useEffect(function() {
     var iv = setInterval(function() {
       setHorse(function(h) {
         var next = Object.assign({}, h);
         if (!next.sleeping) {
-          next.hunger = Math.max(0, next.hunger - 0.8);
-          next.happiness = Math.max(0, next.happiness - 0.4);
-          next.clean = Math.max(0, next.clean - 0.3);
-          next.energy = Math.max(0, next.energy - 0.5);
+          next.hunger = Math.max(0, next.hunger - 0.3);
+          next.happiness = Math.max(0, next.happiness - 0.15);
+          next.clean = Math.max(0, next.clean - 0.12);
+          next.energy = Math.max(0, next.energy - 0.2);
         } else {
           next.energy = Math.min(100, next.energy + 1.5);
-          next.hunger = Math.max(0, next.hunger - 0.3);
+          next.hunger = Math.max(0, next.hunger - 0.1);
           if (next.energy >= 100) next.sleeping = false;
         }
-        // Age up every ~5 min of play
-        next.playTime = (next.playTime || 0) + 3;
+        next.playTime = (next.playTime || 0) + 5;
         if (next.playTime >= 300) { next.playTime = 0; next.age = (next.age || 1) + 1; }
         saveHorse(next);
         return next;
       });
-    }, 3000);
-    // Low stat narration (every 15s check)
-    var lowStatIv = setInterval(function() {
-      setHorse(function(h) {
-        if (h.sleeping) return h;
-        if (h.hunger < 25) narrate("lowHunger", h.name);
-        else if (h.clean < 25) narrate("lowClean", h.name);
-        return h;
-      });
-    }, 15000);
-    return function() { clearInterval(iv); clearInterval(lowStatIv); };
+    }, 5000);
+    return function() { clearInterval(iv); };
+  }, []);
+
+  // Apply weather effects once on mount
+  useEffect(function() {
+    setHorse(function(h) {
+      var next = Object.assign({}, h);
+      next.happiness = Math.max(0, Math.min(100, next.happiness + weather.happinessBonus));
+      next.clean = Math.max(0, Math.min(100, next.clean + weather.cleanBonus));
+      saveHorse(next);
+      return next;
+    });
   }, []);
 
   var spawnParticle = function(emoji) {
@@ -395,53 +566,45 @@ function Game(props) {
       if (type === "feed") {
         next.hunger = Math.min(100, next.hunger + 25);
         next.coins = (next.coins || 0) - 1;
-        sndMunch();
-        spawnParticle("🥕"); spawnParticle("🌾");
+        sndMunch(); spawnParticle("🥕"); spawnParticle("🌾");
         next.happiness = Math.min(100, next.happiness + 5);
         narrate("feed", next.name);
       } else if (type === "brush") {
         next.clean = Math.min(100, next.clean + 30);
-        sndBrush();
-        spawnParticle("✨"); spawnParticle("💫");
+        sndBrush(); spawnParticle("✨"); spawnParticle("💫");
         next.happiness = Math.min(100, next.happiness + 8);
         narrate("brush", next.name);
       } else if (type === "play") {
         next.happiness = Math.min(100, next.happiness + 20);
         next.energy = Math.max(0, next.energy - 15);
         next.hunger = Math.max(0, next.hunger - 8);
-        sndHappy(); sndTrot();
-        spawnParticle("💕"); spawnParticle("🏇");
+        sndHappy(); sndTrot(); spawnParticle("💕"); spawnParticle("🏇");
         next.coins = (next.coins || 0) + 2;
         narrate("play", next.name);
       } else if (type === "treat") {
         next.happiness = Math.min(100, next.happiness + 15);
         next.hunger = Math.min(100, next.hunger + 10);
         next.coins = (next.coins || 0) - 2;
-        sndMunch();
-        spawnParticle("🍎"); spawnParticle("😋");
+        sndMunch(); spawnParticle("🍎"); spawnParticle("😋");
         narrate("feed", next.name);
       } else if (type === "sleep") {
         next.sleeping = true;
-        sndSleep();
-        spawnParticle("💤"); spawnParticle("🌙");
+        sndSleep(); spawnParticle("💤"); spawnParticle("🌙");
         narrate("sleep", next.name);
       } else if (type === "wake") {
         next.sleeping = false;
-        sndNeigh();
-        spawnParticle("☀️"); spawnParticle("🐴");
+        sndNeigh(); spawnParticle("☀️"); spawnParticle("🐴");
         narrate("wake", next.name);
       } else if (type === "pet") {
         next.happiness = Math.min(100, next.happiness + 12);
-        sndNeigh();
-        spawnParticle("❤️"); spawnParticle("💕"); spawnParticle("🥰");
+        sndNeigh(); spawnParticle("❤️"); spawnParticle("💕"); spawnParticle("🥰");
         narrate("pet", next.name);
       } else if (type === "ride") {
         next.happiness = Math.min(100, next.happiness + 25);
         next.energy = Math.max(0, next.energy - 25);
         next.hunger = Math.max(0, next.hunger - 12);
         next.coins = (next.coins || 0) + 5;
-        sndTrot(); sndHappy();
-        spawnParticle("🏇"); spawnParticle("💨"); spawnParticle("🌟");
+        sndTrot(); sndHappy(); spawnParticle("🏇"); spawnParticle("💨"); spawnParticle("🌟");
         narrate("ride", next.name);
       }
       saveHorse(next);
@@ -449,20 +612,91 @@ function Game(props) {
     });
   };
 
+  var doAdventure = function() {
+    if (horse.energy < 20) return;
+    var adv = ADVENTURES[Math.floor(Math.random() * ADVENTURES.length)];
+    var text = adv.text.replace("{name}", horse.name);
+    setAdventureResult({ text: text, coins: adv.coins, happiness: adv.happiness });
+    sndTrot();
+    setHorse(function(h) {
+      var next = Object.assign({}, h);
+      next.energy = Math.max(0, next.energy - 20);
+      next.coins = Math.max(0, (next.coins || 0) + adv.coins);
+      next.happiness = Math.max(0, Math.min(100, next.happiness + adv.happiness));
+      if (adv.energy) next.energy = Math.max(0, Math.min(100, next.energy + adv.energy));
+      saveHorse(next);
+      return next;
+    });
+    if (adv.coins > 0) spawnParticle("🪙");
+    if (adv.happiness > 0) spawnParticle("💕");
+    if (adv.happiness < 0) spawnParticle("😰");
+  };
+
+  var handleRaceFinish = function(obstacles) {
+    var earned = obstacles * 10;
+    sndCoin();
+    setHorse(function(h) {
+      var next = Object.assign({}, h);
+      next.coins = (next.coins || 0) + earned;
+      next.energy = Math.max(0, next.energy - 10);
+      saveHorse(next);
+      return next;
+    });
+  };
+
+  var handleGroomFinish = function(taps) {
+    var progress = Math.min(taps / 30, 1);
+    var earned = Math.floor(progress * 15);
+    sndCoin();
+    setHorse(function(h) {
+      var next = Object.assign({}, h);
+      next.coins = (next.coins || 0) + earned;
+      next.clean = Math.min(100, next.clean + 20);
+      saveHorse(next);
+      return next;
+    });
+  };
+
+  var buyAccessory = function(acc) {
+    setHorse(function(h) {
+      var next = Object.assign({}, h);
+      if ((next.coins || 0) < acc.cost) return h;
+      var accessories = next.accessories || [];
+      if (accessories.indexOf(acc.id) >= 0) return h;
+      next.coins -= acc.cost;
+      next.accessories = accessories.concat([acc.id]);
+      sndHappy(); spawnParticle(acc.emoji);
+      saveHorse(next);
+      return next;
+    });
+  };
+
+  var resetHorse = function() {
+    localStorage.removeItem("lily-horse");
+    window.location.reload();
+  };
+
   var mood = getHorseMood(horse);
   var coins = horse.coins || 0;
+  var accessories = horse.accessories || [];
 
   return (
-    <div style={{height:"100%",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+    <div style={{minHeight:"100%",display:"flex",flexDirection:"column",paddingBottom:16}}>
       {/* Header */}
       <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",borderBottom:"1.5px solid var(--border)",background:"var(--bg2)"}}>
-        <span style={{fontSize:"1.2rem"}}>🐴</span>
+        <span style={{fontSize:"1.2rem"}}>{"🐴"}</span>
         <span style={{fontFamily:"var(--font-mono)",fontSize:"1rem",fontWeight:800,color:"var(--brown)"}}>Lily's Horse</span>
         <span style={{fontSize:"0.6rem",fontFamily:"var(--font-mono)",color:"var(--dim)",marginLeft:4}}>Day {getDaysSurvived(horse) + 1}</span>
-        <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:4}}>
-          <span style={{fontSize:"0.8rem"}}>🪙</span>
-          <span style={{fontFamily:"var(--font-mono)",fontSize:"0.8rem",fontWeight:700,color:"var(--gold)"}}>{coins}</span>
+        <span style={{fontSize:"0.75rem",marginLeft:4}} title={weather.name}>{weather.emoji}</span>
+        <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontFamily:"var(--font-mono)",fontSize:"0.8rem",fontWeight:700,color:"var(--gold)"}}>🪙 {coins}</span>
+          <button onClick={resetHorse} style={{fontSize:"0.6rem",padding:"3px 8px",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg3)",color:"var(--dim)",cursor:"pointer",fontFamily:"var(--font-mono)"}}>New Horse</button>
         </div>
+      </div>
+
+      {/* Weather banner */}
+      <div style={{textAlign:"center",padding:"4px 12px",fontSize:"0.7rem",color:"var(--dim)",background:"var(--bg2)",borderBottom:"1px solid var(--border)"}}>
+        {weather.emoji} {weather.name} today! {weather.happinessBonus > 0 ? "+"+weather.happinessBonus+" happiness" : weather.happinessBonus < 0 ? weather.happinessBonus+" happiness" : ""} {weather.cleanBonus < 0 ? weather.cleanBonus+" clean" : ""} {weather.warmthBonus < 0 ? weather.warmthBonus+" warmth" : ""}
       </div>
 
       {/* Horse display */}
@@ -471,8 +705,8 @@ function Game(props) {
       </div>
 
       {/* Quote */}
-      <div className="fade-in" key={quote} style={{textAlign:"center",padding:"0 16px",minHeight:36}}>
-        <span style={{fontSize:"0.78rem",color:"var(--dim)",fontStyle:"italic"}}>{quote}</span>
+      <div className="fade-in" key={quote} style={{textAlign:"center",padding:"0 16px",minHeight:30}}>
+        <span style={{fontSize:"0.75rem",color:"var(--dim)",fontStyle:"italic"}}>{quote}</span>
       </div>
 
       {/* Stats */}
@@ -484,7 +718,7 @@ function Game(props) {
       </div>
 
       {/* Actions */}
-      <div style={{padding:"8px 12px",marginTop:"auto",display:"flex",flexDirection:"column",gap:6}}>
+      <div style={{padding:"8px 12px",display:"flex",flexDirection:"column",gap:6}}>
         <div style={{display:"flex",gap:6}}>
           <ActionBtn icon="🥕" label="Feed" onClick={function(){doAction("feed");}} disabled={horse.sleeping||coins<1}/>
           <ActionBtn icon="🧹" label="Brush" onClick={function(){doAction("brush");}} disabled={horse.sleeping}/>
@@ -497,44 +731,94 @@ function Game(props) {
           <ActionBtn icon={horse.sleeping?"☀️":"🌙"} label={horse.sleeping?"Wake":"Sleep"} onClick={function(){doAction(horse.sleeping?"wake":"sleep");}}/>
           <ActionBtn icon="🏪" label="Shop" onClick={function(){setShowShop(!showShop);}}/>
         </div>
+        <div style={{display:"flex",gap:6}}>
+          <ActionBtn icon="🗺️" label="Adventure" onClick={doAdventure} disabled={horse.sleeping||horse.energy<20}/>
+          <ActionBtn icon="🏁" label="Race" onClick={function(){setShowMiniGame("race");}} disabled={horse.sleeping||horse.energy<10}/>
+          <ActionBtn icon="🧹" label="Groom" onClick={function(){setShowMiniGame("groom");}} disabled={horse.sleeping}/>
+        </div>
       </div>
+
+      {/* Adventure result */}
+      {adventureResult && (
+        <div className="fade-in" style={{margin:"0 12px",padding:12,background:"var(--bg2)",borderRadius:10,border:"1px solid var(--border)",textAlign:"center"}}>
+          <div style={{fontSize:"0.8rem",fontWeight:600,marginBottom:4}}>{adventureResult.text}</div>
+          <div style={{fontSize:"0.7rem",color:"var(--gold)"}}>
+            {adventureResult.coins > 0 ? "+"+adventureResult.coins+" coins " : ""}
+            {adventureResult.happiness > 0 ? "+"+adventureResult.happiness+" happiness" : adventureResult.happiness < 0 ? adventureResult.happiness+" happiness" : ""}
+          </div>
+          <button onClick={function(){setAdventureResult(null);}} style={{marginTop:6,fontSize:"0.65rem",padding:"4px 12px",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg3)",cursor:"pointer"}}>OK</button>
+        </div>
+      )}
+
+      {/* Mini-game overlay */}
+      {showMiniGame && (
+        <div style={{margin:"0 12px",border:"1px solid var(--border)",borderRadius:12,overflow:"hidden",background:"var(--bg2)"}}>
+          {showMiniGame === "race" && <RaceGame onFinish={handleRaceFinish}/>}
+          {showMiniGame === "groom" && <GroomingGame onFinish={handleGroomFinish}/>}
+          <div style={{textAlign:"center",padding:6}}>
+            <button onClick={function(){setShowMiniGame(null);}} style={{fontSize:"0.65rem",padding:"4px 12px",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg3)",cursor:"pointer"}}>Close</button>
+          </div>
+        </div>
+      )}
 
       {/* Shop overlay */}
       {showShop && (
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100}}
           onClick={function(){setShowShop(false);}}>
           <div className="fade-in" onClick={function(e){e.stopPropagation();}}
-            style={{background:"var(--bg)",border:"1.5px solid var(--border)",borderRadius:16,padding:20,width:"90%",maxWidth:320}}>
+            style={{background:"var(--bg)",border:"1.5px solid var(--border)",borderRadius:16,padding:20,width:"90%",maxWidth:340,maxHeight:"80vh",overflowY:"auto"}}>
             <div style={{fontFamily:"var(--font-mono)",fontSize:"0.9rem",fontWeight:700,color:"var(--brown)",marginBottom:12,textAlign:"center"}}>🏪 Horse Shop</div>
             <div style={{fontSize:"0.75rem",color:"var(--dim)",textAlign:"center",marginBottom:12}}>You have 🪙 {coins} coins</div>
-            <div style={{display:"flex",flexDirection:"column",gap:8}}>
-              <button onClick={function(){if(coins>=5){setHorse(function(h){var n=Object.assign({},h);n.coins=(n.coins||0)-5;n.hunger=100;n.happiness=Math.min(100,n.happiness+10);saveHorse(n);return n;});spawnParticle("🥕");spawnParticle("🌾");spawnParticle("🍎");}}}
+
+            {/* Stat items */}
+            <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16}}>
+              <button onClick={function(){if(coins>=5){setHorse(function(h){var n=Object.assign({},h);n.coins=(n.coins||0)-5;n.hunger=100;n.happiness=Math.min(100,n.happiness+10);saveHorse(n);return n;});spawnParticle("🥕");}}}
                 disabled={coins<5}
                 style={{padding:"10px 14px",borderRadius:8,border:"1.5px solid var(--border)",background:coins>=5?"var(--bg2)":"var(--bg3)",cursor:coins>=5?"pointer":"default",opacity:coins>=5?1:0.5,textAlign:"left",fontFamily:"var(--font-sans)"}}>
-                <span style={{fontSize:"0.85rem"}}>🪣 Premium Feed — Full hunger + happiness</span>
+                <span style={{fontSize:"0.85rem"}}>🪣 Premium Feed</span>
                 <span style={{float:"right",fontFamily:"var(--font-mono)",color:"var(--gold)"}}>🪙 5</span>
               </button>
-              <button onClick={function(){if(coins>=3){setHorse(function(h){var n=Object.assign({},h);n.coins=(n.coins||0)-3;n.clean=100;saveHorse(n);return n;});spawnParticle("🛁");spawnParticle("✨");}}}
+              <button onClick={function(){if(coins>=3){setHorse(function(h){var n=Object.assign({},h);n.coins=(n.coins||0)-3;n.clean=100;saveHorse(n);return n;});spawnParticle("🛁");}}}
                 disabled={coins<3}
                 style={{padding:"10px 14px",borderRadius:8,border:"1.5px solid var(--border)",background:coins>=3?"var(--bg2)":"var(--bg3)",cursor:coins>=3?"pointer":"default",opacity:coins>=3?1:0.5,textAlign:"left",fontFamily:"var(--font-sans)"}}>
-                <span style={{fontSize:"0.85rem"}}>🛁 Spa Day — Full cleanliness</span>
+                <span style={{fontSize:"0.85rem"}}>🛁 Spa Day</span>
                 <span style={{float:"right",fontFamily:"var(--font-mono)",color:"var(--gold)"}}>🪙 3</span>
               </button>
-              <button onClick={function(){if(coins>=8){setHorse(function(h){var n=Object.assign({},h);n.coins=(n.coins||0)-8;n.hunger=100;n.happiness=100;n.energy=100;n.clean=100;saveHorse(n);return n;});sndHappy();spawnParticle("🌟");spawnParticle("👑");spawnParticle("💎");}}}
+              <button onClick={function(){if(coins>=8){setHorse(function(h){var n=Object.assign({},h);n.coins=(n.coins||0)-8;n.hunger=100;n.happiness=100;n.energy=100;n.clean=100;saveHorse(n);return n;});sndHappy();spawnParticle("👑");}}}
                 disabled={coins<8}
                 style={{padding:"10px 14px",borderRadius:8,border:"1.5px solid var(--border)",background:coins>=8?"var(--bg2)":"var(--bg3)",cursor:coins>=8?"pointer":"default",opacity:coins>=8?1:0.5,textAlign:"left",fontFamily:"var(--font-sans)"}}>
-                <span style={{fontSize:"0.85rem"}}>👑 Royal Treatment — Max ALL stats</span>
+                <span style={{fontSize:"0.85rem"}}>👑 Royal Treatment — Max ALL</span>
                 <span style={{float:"right",fontFamily:"var(--font-mono)",color:"var(--gold)"}}>🪙 8</span>
               </button>
             </div>
-            <div style={{textAlign:"center",marginTop:12,fontSize:"0.65rem",color:"var(--dim)"}}>Earn coins by playing and riding!</div>
+
+            {/* Accessories */}
+            <div style={{fontFamily:"var(--font-mono)",fontSize:"0.75rem",fontWeight:700,color:"var(--brown)",marginBottom:8}}>Accessories</div>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              {ACCESSORIES.map(function(acc) {
+                var owned = accessories.indexOf(acc.id) >= 0;
+                return (
+                  <button key={acc.id} onClick={function(){buyAccessory(acc);}} disabled={owned || coins < acc.cost}
+                    style={{padding:"8px 14px",borderRadius:8,border:"1.5px solid var(--border)",
+                      background:owned?"var(--bg3)":coins>=acc.cost?"var(--bg2)":"var(--bg3)",
+                      cursor:owned||coins<acc.cost?"default":"pointer",opacity:owned||coins<acc.cost?0.5:1,
+                      textAlign:"left",fontFamily:"var(--font-sans)",display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontSize:"1.2rem"}}>{acc.emoji}</span>
+                    <span style={{fontSize:"0.8rem",flex:1}}>{acc.name} {owned ? "(owned)" : ""}</span>
+                    {!owned && <span style={{fontFamily:"var(--font-mono)",color:"var(--gold)",fontSize:"0.8rem"}}>🪙 {acc.cost}</span>}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div style={{textAlign:"center",marginTop:12,fontSize:"0.65rem",color:"var(--dim)"}}>Earn coins by playing, riding, racing, and adventuring!</div>
           </div>
         </div>
       )}
 
       {/* Footer */}
-      <div style={{textAlign:"center",padding:"4px",fontSize:"0.55rem",color:"var(--dim)",fontFamily:"var(--font-mono)"}}>
-        made for Lily 💕 · taskiap.com
+      <div style={{textAlign:"center",padding:"8px",fontSize:"0.55rem",color:"var(--dim)",fontFamily:"var(--font-mono)",marginTop:"auto"}}>
+        made for Lily {"💕"}
       </div>
     </div>
   );
@@ -555,7 +839,8 @@ function App() {
       age: 1,
       coins: 10,
       playTime: 0,
-      created: Date.now()
+      created: Date.now(),
+      accessories: []
     };
     saveHorse(h);
     setHorse(h);
