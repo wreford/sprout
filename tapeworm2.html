@@ -108,7 +108,7 @@ function playTone(freq, dur, vol, type) {
   try {
     var o = audioCtx.createOscillator(); var g = audioCtx.createGain();
     o.type = type; o.frequency.value = freq;
-    g.gain.setValueAtTime(Math.min(vol, 0.04), audioCtx.currentTime);
+    g.gain.setValueAtTime(Math.min(vol, 0.02), audioCtx.currentTime);
     g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + dur);
     o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime + dur);
   } catch(e) {}
@@ -227,48 +227,131 @@ var killStreakCount = 0;
 var killStreakTimer = 0;
 
 // ============ MUSIC ============
+// "Bohemian Rhap-wormy" — original parody composition in the style of dramatic rock opera
+// All original melody, just has the same ENERGY
 var musicInterval = null;
 var musicMode = '';
+var musicBeat = 0;
+
+function playChord(notes, dur, vol) {
+  notes.forEach(function(n) { playTone(n, dur, vol || 0.008, 'sine'); });
+}
+
 function startMusic(mode) {
   if (musicMode === mode) return;
   stopMusic();
   musicMode = mode;
   if (!audioCtx) return;
-  var beat = 0;
+  musicBeat = 0;
+
   if (mode === 'game') {
-    // Ominous body bass + heartbeat
-    var bpm = 110;
-    var ms = 60000 / bpm;
-    var bassNotes = [55,55,65,55, 55,73,65,55]; // low A minor groove
+    // Dramatic rock opera — piano-style arpeggios with bass
+    // Original progression: Gm - Bb - Eb - F (i - III - VI - VII in G minor)
+    var sections = [
+      // Verse — gentle arpeggiated piano
+      {beats: 32, fn: function(b) {
+        var progressions = [
+          [196, 233, 294], // Gm
+          [233, 294, 349], // Bb
+          [156, 196, 233], // Eb
+          [175, 220, 262], // F
+        ];
+        var chord = progressions[Math.floor(b/8) % 4];
+        var noteIdx = b % 4;
+        var arpNote = chord[noteIdx % chord.length];
+        playTone(arpNote, 0.3, 0.012, 'sine');
+        // Gentle bass on beat 1
+        if (b % 8 === 0) playTone(chord[0] / 2, 0.5, 0.01, 'sine');
+      }},
+      // Chorus — fuller, building chords
+      {beats: 32, fn: function(b) {
+        var chords = [
+          [294, 349, 440],    // Bb maj
+          [262, 330, 392],    // C maj
+          [220, 262, 330],    // Am
+          [196, 247, 294],    // G
+        ];
+        var ch = chords[Math.floor(b/8) % 4];
+        if (b % 4 === 0) {
+          playChord(ch, 0.4, 0.01);
+          playTone(ch[0] / 2, 0.5, 0.01, 'sine');
+        }
+        if (b % 2 === 1) {
+          playTone(ch[1] * 2, 0.15, 0.006, 'sine'); // high melody note
+        }
+      }},
+      // Bridge — dramatic descending line
+      {beats: 16, fn: function(b) {
+        var descend = [440,415,392,370,349,330,311,294,277,262,247,233,220,208,196,185];
+        playTone(descend[b % 16], 0.25, 0.015, 'sine');
+        if (b % 4 === 0) playTone(98, 0.4, 0.012, 'sine'); // bass drum feel
+      }},
+      // Build-up — faster arpeggios
+      {beats: 16, fn: function(b) {
+        var buildNotes = [196,233,294,349,392,440,523,587];
+        playTone(buildNotes[b % 8], 0.15, 0.012, 'sine');
+        playTone(buildNotes[b % 8] / 2, 0.2, 0.008, 'sine');
+      }},
+    ];
+    var totalBeats = 0;
+    sections.forEach(function(s) { totalBeats += s.beats; });
+
     musicInterval = setInterval(function() {
-      var note = bassNotes[beat % bassNotes.length];
-      playTone(note, 0.2, 0.02, 'sine');
-      // Kick on 1,3
-      if (beat % 2 === 0) playTone(45, 0.08, 0.025, 'sine');
-      // Hi-hat
-      playTone(6000 + Math.random()*2000, 0.02, 0.008, 'sine');
-      beat++;
-    }, ms);
+      var pos = musicBeat % totalBeats;
+      var acc = 0;
+      for (var i = 0; i < sections.length; i++) {
+        if (pos < acc + sections[i].beats) {
+          sections[i].fn(pos - acc);
+          break;
+        }
+        acc += sections[i].beats;
+      }
+      musicBeat++;
+    }, 220);
+
   } else if (mode === 'shop') {
-    // Chill elevator music
-    var shopNotes = [262,330,392,330, 349,440,523,440]; // C major arpeggio
+    // Laid-back jazzy lounge — soft piano + walking bass
+    var shopChords = [
+      [262, 330, 392], // Cmaj
+      [220, 277, 330], // Am
+      [196, 247, 294], // Dm (approx)
+      [196, 247, 392], // G7
+    ];
     musicInterval = setInterval(function() {
-      playTone(shopNotes[beat % shopNotes.length], 0.3, 0.015, 'sine');
-      if (beat % 4 === 0) playTone(131, 0.4, 0.012, 'sine'); // bass
-      beat++;
-    }, 300);
+      var ch = shopChords[Math.floor(musicBeat / 8) % shopChords.length];
+      var noteIdx = musicBeat % 4;
+      // Soft arpeggio
+      playTone(ch[noteIdx % ch.length], 0.4, 0.008, 'sine');
+      // Walking bass every other beat
+      if (musicBeat % 2 === 0) playTone(ch[0] / 2, 0.5, 0.007, 'sine');
+      // Occasional high tinkle
+      if (musicBeat % 6 === 3) playTone(ch[2] * 2, 0.2, 0.005, 'sine');
+      musicBeat++;
+    }, 350);
+
   } else if (mode === 'boss') {
-    // Intense
-    var bossNotes = [82,82,98,82, 110,82,98,73];
+    // Dramatic opera villain — heavy bass, dissonant, building tension
+    var bossProgression = [
+      [98, 123, 147],  // Gb power
+      [104, 131, 156], // Ab power
+      [87, 110, 131],  // F power
+      [93, 117, 139],  // Gb dim
+    ];
     musicInterval = setInterval(function() {
-      playTone(bossNotes[beat % bossNotes.length], 0.15, 0.025, 'sine');
-      playTone(45, 0.06, 0.02, 'sine'); // kick every beat
-      if (beat % 2 === 1) playTone(5000+Math.random()*3000, 0.02, 0.01, 'sine'); // hat
-      beat++;
-    }, 200);
+      var ch = bossProgression[Math.floor(musicBeat / 4) % 4];
+      // Heavy bass pulse
+      playTone(ch[0], 0.18, 0.015, 'sine');
+      // Stabs on every beat
+      if (musicBeat % 2 === 0) playChord(ch, 0.12, 0.01);
+      // Tremolo high note for tension
+      if (musicBeat % 3 === 0) playTone(ch[2] * 4, 0.08, 0.006, 'sine');
+      // Kick drum feel
+      if (musicBeat % 2 === 0) playTone(40, 0.06, 0.015, 'sine');
+      musicBeat++;
+    }, 160);
   }
 }
-function stopMusic() { clearInterval(musicInterval); musicInterval = null; musicMode = ''; }
+function stopMusic() { clearInterval(musicInterval); musicInterval = null; musicMode = ''; musicBeat = 0; }
 
 // ============ INPUT ============
 const keys = {};
