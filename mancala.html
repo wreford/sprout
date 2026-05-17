@@ -11,11 +11,23 @@ a#back { position: fixed; top: 14px; left: 16px; font-size: 12px; color: #555; t
 a#back:hover { color: #aaa; }
 h1 { margin-top: 48px; font-size: 22px; color: #7c5cbf; letter-spacing: 0.04em; }
 #subtitle { font-size: 11px; color: #555; margin-top: 4px; }
+#controls { display: flex; gap: 10px; margin-top: 12px; align-items: center; }
+#controls label { font-size: 11px; color: #666; }
+#controls select { background: #16213e; color: #e0e0e0; border: 1px solid #333; border-radius: 4px; padding: 4px 8px; font-family: inherit; font-size: 11px; cursor: pointer; }
+#controls select:hover { border-color: #7c5cbf; }
 canvas { display: block; margin: 24px auto 0; border-radius: 12px; cursor: pointer; touch-action: none; max-width: 100%; }
-#status { margin-top: 14px; font-size: 13px; color: #6ec1e4; min-height: 20px; text-align: center; font-weight: bold; }
+#scores { display: flex; justify-content: space-between; width: 480px; max-width: 100%; margin: 6px auto 0; padding: 0 8px; }
+#scores .score-box { font-size: 13px; font-weight: bold; padding: 2px 10px; border-radius: 4px; }
+#scores .score-you { color: #6ec1e4; }
+#scores .score-ai { color: #c678dd; }
+#status { margin-top: 8px; font-size: 13px; color: #6ec1e4; min-height: 20px; text-align: center; font-weight: bold; }
 #msg { margin-top: 4px; font-size: 12px; color: #777; min-height: 18px; text-align: center; }
-button#restart { margin-top: 14px; background: none; border: 1px solid #333; color: #666; padding: 8px 20px; font-family: inherit; font-size: 12px; cursor: pointer; border-radius: 6px; }
-button#restart:hover { color: #fff; border-color: #7c5cbf; }
+#btn-row { display: flex; gap: 10px; margin-top: 14px; align-items: center; }
+button.game-btn { background: none; border: 1px solid #333; color: #666; padding: 8px 20px; font-family: inherit; font-size: 12px; cursor: pointer; border-radius: 6px; }
+button.game-btn:hover:not(:disabled) { color: #fff; border-color: #7c5cbf; }
+button.game-btn:disabled { opacity: 0.3; cursor: default; }
+#streak-display { margin-top: 8px; font-size: 11px; color: #555; }
+#streak-display span { color: #e5c07b; font-weight: bold; }
 #rules { max-width: 400px; margin: 20px 16px 40px; font-size: 10px; color: #444; line-height: 1.9; text-align: center; }
 </style>
 </head>
@@ -23,10 +35,26 @@ button#restart:hover { color: #fff; border-color: #7c5cbf; }
 <a href="index.html" id="back">← home</a>
 <h1>🔵 Keira's Mancala</h1>
 <p id="subtitle">animated · play vs AI</p>
+<div id="controls">
+  <label>Difficulty:</label>
+  <select id="difficulty">
+    <option value="easy">Easy</option>
+    <option value="medium" selected>Medium</option>
+    <option value="hard">Hard</option>
+  </select>
+</div>
 <canvas id="c" width="480" height="200"></canvas>
+<div id="scores">
+  <div class="score-box score-you">You: <span id="score-you">0</span></div>
+  <div class="score-box score-ai">AI: <span id="score-ai">0</span></div>
+</div>
 <div id="status">Your turn — pick a pit</div>
 <div id="msg"></div>
-<button id="restart">New Game</button>
+<div id="btn-row">
+  <button class="game-btn" id="restart">New Game</button>
+  <button class="game-btn" id="undo-btn" disabled>Undo</button>
+</div>
+<div id="streak-display">Win streak: <span id="streak-count">0</span></div>
 <div id="rules">
   Pick a pit on the bottom row. Stones drop counter-clockwise one by one.<br>
   Land in your store (right) → extra turn. Land in empty pit on your side → capture opposite.<br>
@@ -38,11 +66,26 @@ var canvas = document.getElementById('c');
 var ctx = canvas.getContext('2d');
 var statusEl = document.getElementById('status');
 var msgEl = document.getElementById('msg');
+var scoreYouEl = document.getElementById('score-you');
+var scoreAiEl = document.getElementById('score-ai');
+var undoBtn = document.getElementById('undo-btn');
+var difficultySelect = document.getElementById('difficulty');
+var streakCountEl = document.getElementById('streak-count');
 var W = 480, H = 200;
 
 var board, turn, gameOver, animating;
 var particles = [];
-var floatingStones = []; // for sow animation
+var floatingStones = [];
+var hoveredPit = -1; // for hover highlight
+
+// Undo state
+var undoState = null;
+var undoUsed = false;
+
+// Win streak from localStorage
+var winStreak = 0;
+try { winStreak = parseInt(localStorage.getItem('mancala_win_streak')) || 0; } catch(e) {}
+streakCountEl.textContent = winStreak;
 
 // Sound
 var audioCtx = null;
@@ -82,7 +125,6 @@ function drawStone(x, y, color, radius) {
   ctx.strokeStyle = 'rgba(0,0,0,0.3)';
   ctx.lineWidth = 0.5;
   ctx.stroke();
-  // highlight
   ctx.beginPath();
   ctx.arc(x - radius*0.3, y - radius*0.3, radius*0.3, 0, Math.PI*2);
   ctx.fillStyle = 'rgba(255,255,255,0.25)';
@@ -105,6 +147,11 @@ function stonePositions(pitIdx, count) {
     }
   }
   return positions;
+}
+
+function updateScoreDisplay() {
+  scoreYouEl.textContent = board[7];
+  scoreAiEl.textContent = board[14];
 }
 
 function drawBoard() {
@@ -136,18 +183,26 @@ function drawBoard() {
     ctx.fillStyle = '#0f1629';
     ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.fill();
 
-    // Pit border
     var isClickable = !gameOver && !animating && turn === 1 && i >= 1 && i <= 6 && stones > 0;
+    var isHovered = hoveredPit === i && isClickable;
+
+    // Hover highlight
+    if (isHovered) {
+      ctx.fillStyle = 'rgba(80,200,120,0.1)';
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.fill();
+    }
+
+    // Pit border
     ctx.strokeStyle = isStore
       ? (i===7 ? '#3a6080' : '#5a3a80')
-      : isClickable ? '#50c878' : '#2a2a4a';
-    ctx.lineWidth = isClickable ? 2.5 : 1.5;
+      : isHovered ? '#80e8a8' : isClickable ? '#50c878' : '#2a2a4a';
+    ctx.lineWidth = isHovered ? 3 : isClickable ? 2.5 : 1.5;
     ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.stroke();
 
     // Clickable glow
     if (isClickable) {
-      ctx.shadowColor = '#50c878';
-      ctx.shadowBlur = 8;
+      ctx.shadowColor = isHovered ? '#80e8a8' : '#50c878';
+      ctx.shadowBlur = isHovered ? 14 : 8;
       ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.stroke();
       ctx.shadowBlur = 0;
     }
@@ -159,7 +214,6 @@ function drawBoard() {
         drawStone(positions[s][0], positions[s][1], stoneColor(i * 7 + s), 4.5);
       }
     } else if (stones > 12) {
-      // Too many, just show count with a few stones
       for (var s = 0; s < 8; s++) {
         var angle = (s / 8) * Math.PI * 2;
         drawStone(x + Math.cos(angle) * (r*0.5), y + Math.sin(angle) * (r*0.5), stoneColor(i * 7 + s), 4);
@@ -223,6 +277,7 @@ function animateSow(pitIdx, player, callback) {
   animating = true;
   var stones = board[pitIdx];
   board[pitIdx] = 0;
+  updateScoreDisplay();
   drawBoard();
 
   var positions = [];
@@ -242,6 +297,7 @@ function animateSow(pitIdx, player, callback) {
     board[target]++;
     sndDrop();
     spawnParticles(pitX(target), pitY(target), null, 3);
+    updateScoreDisplay();
     drawBoard();
     idx++;
     setTimeout(dropNext, 150);
@@ -267,6 +323,7 @@ function checkCapture(lastPit, player) {
       board[lastPit] = 0; board[opp] = 0;
       spawnParticles(pitX(opp), pitY(opp), '#e5c07b', 12);
       sndCapture();
+      updateScoreDisplay();
       drawBoard();
       return true;
     }
@@ -289,21 +346,49 @@ function checkEnd() {
   return false;
 }
 
-function endGame() {
-  gameOver = true; animating = false;
-  drawBoard();
-  var you = board[7], ai = board[14];
-  if (you > ai) { statusEl.textContent = 'You win! ' + you + ' vs ' + ai + ' 🎉'; sndWin(); spawnParticles(W/2,H/2,'#50c878',20); }
-  else if (ai > you) { statusEl.textContent = 'AI wins. ' + ai + ' vs ' + you; sndLose(); }
-  else { statusEl.textContent = 'Tie! ' + you + ' each'; }
-  msgEl.textContent = '';
+function saveStreak() {
+  try { localStorage.setItem('mancala_win_streak', winStreak); } catch(e) {}
+  streakCountEl.textContent = winStreak;
 }
 
-function aiChoose() {
+function endGame() {
+  gameOver = true; animating = false;
+  updateScoreDisplay();
+  drawBoard();
+  var you = board[7], ai = board[14];
+  if (you > ai) {
+    statusEl.textContent = 'You win! ' + you + ' vs ' + ai + ' 🎉';
+    sndWin(); spawnParticles(W/2,H/2,'#50c878',20);
+    winStreak++;
+    saveStreak();
+  } else if (ai > you) {
+    statusEl.textContent = 'AI wins. ' + ai + ' vs ' + you;
+    sndLose();
+    winStreak = 0;
+    saveStreak();
+  } else {
+    statusEl.textContent = 'Tie! ' + you + ' each';
+    // streak unchanged on tie
+  }
+  msgEl.textContent = '';
+  undoBtn.disabled = true;
+}
+
+// ── AI difficulty modes ──
+
+// Easy: random valid move
+function aiChooseEasy() {
   var valid = [8,9,10,11,12,13].filter(function(i){return board[i]>0;});
   if (!valid.length) return -1;
-  // Prefer extra turn
+  return valid[Math.floor(Math.random()*valid.length)];
+}
+
+// Medium: original heuristic (prefer extra turn, then capture, then most stones)
+function aiChooseMedium() {
+  var valid = [8,9,10,11,12,13].filter(function(i){return board[i]>0;});
+  if (!valid.length) return -1;
   var chosen = null;
+  // Prefer extra turn
   for (var v = 0; v < valid.length; v++) {
     var pos = valid[v], s = board[valid[v]];
     while (s-- > 0) pos = nextPit(pos, 2);
@@ -322,6 +407,119 @@ function aiChoose() {
     chosen = valid[0];
   }
   return chosen;
+}
+
+// Hard: minimax with alpha-beta pruning
+function aiChooseHard() {
+  var valid = [8,9,10,11,12,13].filter(function(i){return board[i]>0;});
+  if (!valid.length) return -1;
+
+  var bestMove = valid[0];
+  var bestScore = -Infinity;
+
+  for (var v = 0; v < valid.length; v++) {
+    var simBoard = board.slice();
+    var result = simulateMove(simBoard, valid[v], 2);
+    var score = minimax(simBoard, 5, -Infinity, Infinity, result.extraTurn, 2);
+    if (score > bestScore) {
+      bestScore = score;
+      bestMove = valid[v];
+    }
+  }
+  return bestMove;
+}
+
+function simulateMove(b, pitIdx, player) {
+  var stones = b[pitIdx];
+  b[pitIdx] = 0;
+  var pos = pitIdx;
+  for (var i = 0; i < stones; i++) {
+    pos = pos % 14 + 1;
+    if (player === 1 && pos === 14) pos = 1;
+    if (player === 2 && pos === 7) pos = 8;
+    b[pos]++;
+  }
+  var lastPit = pos;
+  var extraTurn = false;
+
+  // Check extra turn
+  if (lastPit === (player === 1 ? 7 : 14)) {
+    extraTurn = true;
+  }
+
+  // Check capture
+  var myPits = player === 1 ? [1,2,3,4,5,6] : [8,9,10,11,12,13];
+  var myStore = player === 1 ? 7 : 14;
+  if (myPits.indexOf(lastPit) !== -1 && b[lastPit] === 1) {
+    var opp = 14 - lastPit;
+    if (b[opp] > 0) {
+      b[myStore] += 1 + b[opp];
+      b[lastPit] = 0;
+      b[opp] = 0;
+    }
+  }
+
+  // Check end
+  var p1empty = true, p2empty = true;
+  for (var i = 1; i <= 6; i++) if (b[i] > 0) p1empty = false;
+  for (var i = 8; i <= 13; i++) if (b[i] > 0) p2empty = false;
+  if (p1empty || p2empty) {
+    for (var i = 1; i <= 6; i++) { b[7] += b[i]; b[i] = 0; }
+    for (var i = 8; i <= 13; i++) { b[14] += b[i]; b[i] = 0; }
+  }
+
+  return { extraTurn: extraTurn, ended: p1empty || p2empty };
+}
+
+function minimax(b, depth, alpha, beta, isAiTurn, currentPlayer) {
+  // Terminal check
+  var p1empty = true, p2empty = true;
+  for (var i = 1; i <= 6; i++) if (b[i] > 0) p1empty = false;
+  for (var i = 8; i <= 13; i++) if (b[i] > 0) p2empty = false;
+  if (p1empty || p2empty || depth === 0) {
+    return b[14] - b[7]; // AI store minus player store
+  }
+
+  if (isAiTurn) {
+    var valid = [];
+    for (var i = 8; i <= 13; i++) if (b[i] > 0) valid.push(i);
+    if (!valid.length) return b[14] - b[7];
+
+    var maxEval = -Infinity;
+    for (var v = 0; v < valid.length; v++) {
+      var simBoard = b.slice();
+      var result = simulateMove(simBoard, valid[v], 2);
+      var nextIsAi = result.extraTurn;
+      var ev = minimax(simBoard, depth - 1, alpha, beta, nextIsAi, 2);
+      if (ev > maxEval) maxEval = ev;
+      if (maxEval > alpha) alpha = maxEval;
+      if (beta <= alpha) break;
+    }
+    return maxEval;
+  } else {
+    var valid = [];
+    for (var i = 1; i <= 6; i++) if (b[i] > 0) valid.push(i);
+    if (!valid.length) return b[14] - b[7];
+
+    var minEval = Infinity;
+    for (var v = 0; v < valid.length; v++) {
+      var simBoard = b.slice();
+      var result = simulateMove(simBoard, valid[v], 1);
+      var nextIsAi = !result.extraTurn;
+      var ev = minimax(simBoard, depth - 1, alpha, beta, nextIsAi, 1);
+      if (ev < minEval) minEval = ev;
+      if (minEval < beta) beta = minEval;
+      if (beta <= alpha) break;
+    }
+    return minEval;
+  }
+}
+
+function aiChoose() {
+  var diff = difficultySelect.value;
+  if (diff === 'easy') return aiChooseEasy();
+  if (diff === 'hard') return aiChooseHard();
+  return aiChooseMedium();
 }
 
 function aiMove() {
@@ -347,9 +545,25 @@ function aiMove() {
   }, 600);
 }
 
+function saveUndoState() {
+  undoState = {
+    board: board.slice(),
+    turn: turn,
+    statusText: statusEl.textContent,
+    msgText: msgEl.textContent
+  };
+}
+
 function playerMove(pitIdx) {
   if (gameOver || animating || turn !== 1) return;
   if (pitIdx < 1 || pitIdx > 6 || board[pitIdx] === 0) return;
+
+  // Save state for undo before the move
+  if (!undoUsed) {
+    saveUndoState();
+    undoBtn.disabled = false;
+  }
+
   animateSow(pitIdx, 1, function(lastPit) {
     if (checkEnd()) { endGame(); return; }
     var captured = checkCapture(lastPit, 1);
@@ -358,20 +572,40 @@ function playerMove(pitIdx) {
       sndExtra();
       animating = false;
       statusEl.textContent = 'Your turn';
+      // After an extra turn, undo would go back to before the first move
     } else {
       msgEl.textContent = captured ? 'Captured! 💎' : '';
       turn = 2;
+      // Disable undo once AI starts moving
+      undoBtn.disabled = true;
       setTimeout(aiMove, 400);
     }
   });
+}
+
+function performUndo() {
+  if (!undoState || undoUsed || gameOver || animating) return;
+  board = undoState.board;
+  turn = undoState.turn;
+  statusEl.textContent = undoState.statusText;
+  msgEl.textContent = 'Undo used!';
+  undoUsed = true;
+  undoBtn.disabled = true;
+  undoState = null;
+  updateScoreDisplay();
+  drawBoard();
 }
 
 function newGame() {
   board = [0, 4,4,4,4,4,4,0, 4,4,4,4,4,4,0];
   turn = 1; gameOver = false; animating = false;
   particles = []; floatingStones = [];
+  undoState = null; undoUsed = false;
+  undoBtn.disabled = true;
+  hoveredPit = -1;
   statusEl.textContent = 'Your turn — pick a pit';
   msgEl.textContent = '';
+  updateScoreDisplay();
   drawBoard();
 }
 
@@ -383,10 +617,16 @@ function handleClick(cx, cy) {
     if (Math.sqrt(dx*dx+dy*dy) <= pitR(i) + 6) { playerMove(i); return; }
   }
 }
-canvas.addEventListener('click', function(e) {
+
+function getCanvasCoords(e) {
   var r = canvas.getBoundingClientRect();
   var scale = W / r.width;
-  handleClick((e.clientX - r.left) * scale, (e.clientY - r.top) * scale);
+  return { x: (e.clientX - r.left) * scale, y: (e.clientY - r.top) * scale };
+}
+
+canvas.addEventListener('click', function(e) {
+  var c = getCanvasCoords(e);
+  handleClick(c.x, c.y);
 });
 canvas.addEventListener('touchstart', function(e) {
   e.preventDefault();
@@ -396,7 +636,33 @@ canvas.addEventListener('touchstart', function(e) {
   handleClick((t.clientX - r.left) * scale, (t.clientY - r.top) * scale);
 }, { passive: false });
 
+// Mouse hover for pit highlight
+canvas.addEventListener('mousemove', function(e) {
+  var c = getCanvasCoords(e);
+  var newHovered = -1;
+  for (var i = 1; i <= 6; i++) {
+    var dx = c.x - pitX(i), dy = c.y - pitY(i);
+    if (Math.sqrt(dx*dx+dy*dy) <= pitR(i) + 6) { newHovered = i; break; }
+  }
+  if (newHovered !== hoveredPit) {
+    hoveredPit = newHovered;
+    drawBoard();
+  }
+});
+canvas.addEventListener('mouseleave', function() {
+  if (hoveredPit !== -1) {
+    hoveredPit = -1;
+    drawBoard();
+  }
+});
+
 document.getElementById('restart').addEventListener('click', newGame);
+undoBtn.addEventListener('click', performUndo);
+
+// Restart when difficulty changes
+difficultySelect.addEventListener('change', function() {
+  newGame();
+});
 
 // Animation loop for particles
 function gameLoop() {
