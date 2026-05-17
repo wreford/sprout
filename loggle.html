@@ -304,6 +304,8 @@ function Game(props) {
   var [showMissed, setShowMissed] = useState(false);
   var [finalScores, setFinalScores] = useState(null);
   var [isNewHS, setIsNewHS] = useState(false);
+  var [shuffleMap, setShuffleMap] = useState(null);
+  var [submitFlash, setSubmitFlash] = useState(false);
   var cellRefs = useRef([]);
 
   // Timer
@@ -354,6 +356,8 @@ function Game(props) {
     setMessage(pick(POOP_MSGS) + " +" + pts);
     setMsgClass("plop");
     sndGood(); sndPlop();
+    setSubmitFlash(true);
+    setTimeout(function(){setSubmitFlash(false);},400);
     setTimeout(function(){setMsgClass("");},400);
 
     // Haptic ripple: light up selected tiles in sequence
@@ -506,8 +510,20 @@ function Game(props) {
       </div>
 
       {/* Board info */}
-      <div style={{fontFamily:"var(--font-mono)",fontSize:"0.6rem",color:"var(--dim)",margin:"2px 0",opacity:0.5}}>
-        {allWords.length} words hiding on this board
+      <div style={{display:"flex",alignItems:"center",gap:8,margin:"2px 0"}}>
+        <div style={{fontFamily:"var(--font-mono)",fontSize:"0.6rem",color:"var(--dim)",opacity:0.7}}>
+          {found.length}/{allWords.length} possible words found
+        </div>
+        <button onClick={function(){
+          if (shuffleMap) { setShuffleMap(null); return; }
+          var indices = Array.from({length:16},function(_,i){return i;});
+          for(var i=indices.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=indices[i];indices[i]=indices[j];indices[j]=t;}
+          setShuffleMap(indices);
+        }} style={{background:"none",border:"1px solid var(--border)",borderRadius:4,padding:"2px 6px",color:"var(--dim)",fontFamily:"var(--font-mono)",fontSize:"0.55rem",cursor:"pointer",transition:"all 0.15s"}}
+          onMouseEnter={function(e){e.currentTarget.style.borderColor="var(--gold)";e.currentTarget.style.color="var(--gold)";}}
+          onMouseLeave={function(e){e.currentTarget.style.borderColor="var(--border)";e.currentTarget.style.color="var(--dim)";}}>
+          {shuffleMap ? "Reset" : "Shuffle"} view
+        </button>
       </div>
 
       {/* Current word */}
@@ -517,29 +533,33 @@ function Game(props) {
 
       {/* Board */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6,margin:"4px 0",touchAction:"none",userSelect:"none"}}>
-        {board.map(function(letter, idx) {
-          var isSelected = selected.includes(idx);
-          var isGlowing = glowTiles[idx];
-          return (
-            <div key={idx} data-idx={idx}
-              className={isGlowing ? "tile-glow" : ""}
-              onMouseDown={function(){handleCellStart(idx);}}
-              onMouseEnter={function(){if(dragging)handleCellMove(idx);}}
-              onTouchStart={function(e){e.preventDefault();handleCellStart(idx);}}
-              style={{
-                width:cellSize, height:cellSize, display:"flex", alignItems:"center", justifyContent:"center",
-                fontSize:(cellSize*0.45)+"px", fontWeight:800, fontFamily:"var(--font-mono)",
-                background:isGlowing?"var(--gold)":isSelected?"var(--poop)":"var(--bg2)",
-                border:isSelected||isGlowing?"2px solid var(--gold)":"2px solid var(--border)",
-                borderRadius:10, color:isGlowing?"var(--bg)":isSelected?"var(--gold)":"var(--text)",
-                cursor:"pointer", transition:"background 0.15s, color 0.15s, border 0.15s",
-                boxShadow:isGlowing?"0 0 18px rgba(212,160,23,0.7)":isSelected?"0 0 12px rgba(212,160,23,0.3)":"none",
-                transform:isGlowing?"scale(1.1)":isSelected?"scale(1.05)":"scale(1)"
-              }}>
-              {letter === "Q" ? "Qu" : letter}
-            </div>
-          );
-        })}
+        {(function(){
+          var displayOrder = shuffleMap ? shuffleMap : Array.from({length:16},function(_,i){return i;});
+          return displayOrder.map(function(idx, displayPos) {
+            var letter = board[idx];
+            var isSelected = selected.includes(idx);
+            var isGlowing = glowTiles[idx];
+            return (
+              <div key={displayPos} data-idx={idx}
+                className={isGlowing ? "tile-glow" : ""}
+                onMouseDown={function(){handleCellStart(idx);}}
+                onMouseEnter={function(){if(dragging)handleCellMove(idx);}}
+                onTouchStart={function(e){e.preventDefault();handleCellStart(idx);}}
+                style={{
+                  width:cellSize, height:cellSize, display:"flex", alignItems:"center", justifyContent:"center",
+                  fontSize:(cellSize*0.45)+"px", fontWeight:800, fontFamily:"var(--font-mono)",
+                  background:isGlowing?"var(--gold)":isSelected?"var(--poop)":"var(--bg2)",
+                  border:isSelected||isGlowing?"2px solid var(--gold)":"2px solid var(--border)",
+                  borderRadius:10, color:isGlowing?"var(--bg)":isSelected?"var(--gold)":"var(--text)",
+                  cursor:"pointer", transition:"background 0.15s, color 0.15s, border 0.15s",
+                  boxShadow:isGlowing?"0 0 18px rgba(212,160,23,0.7)":isSelected?"0 0 12px rgba(212,160,23,0.3)":"none",
+                  transform:isGlowing?"scale(1.1)":isSelected?"scale(1.05)":"scale(1)"
+                }}>
+                {letter === "Q" ? "Qu" : letter}
+              </div>
+            );
+          });
+        })()}
       </div>
 
       {/* Gif */}
@@ -553,7 +573,7 @@ function Game(props) {
       {/* Bottom keyboard row for quick typing */}
       <div style={{display:"flex",gap:4,paddingBottom:8,width:"100%",maxWidth:380}}>
         <button onClick={function(){onKey("BACKSPACE");}} style={{flex:1,height:44,borderRadius:6,border:"none",background:"var(--bg3)",color:"var(--red)",fontFamily:"var(--font-mono)",fontSize:"0.8rem",fontWeight:700,cursor:"pointer"}}>⌫</button>
-        <button onClick={function(){if(current.length>=3)submitWord(current);setCurrent("");setSelected([]);}} style={{flex:3,height:44,borderRadius:6,border:"2px solid var(--gold)",background:"var(--poop)",color:"var(--gold)",fontFamily:"var(--font-mono)",fontSize:"0.95rem",fontWeight:800,letterSpacing:"0.1em",cursor:"pointer"}}>SUBMIT 💩</button>
+        <button onClick={function(){if(current.length>=3)submitWord(current);setCurrent("");setSelected([]);}} style={{flex:3,height:44,borderRadius:6,border:submitFlash?"2px solid var(--green)":"2px solid var(--gold)",background:submitFlash?"rgba(74,222,128,0.2)":"var(--poop)",color:submitFlash?"var(--green)":"var(--gold)",fontFamily:"var(--font-mono)",fontSize:"0.95rem",fontWeight:800,letterSpacing:"0.1em",cursor:"pointer",transition:"all 0.15s"}}>SUBMIT 💩</button>
         <button onClick={function(){setCurrent("");setSelected([]);}} style={{flex:1,height:44,borderRadius:6,border:"none",background:"var(--bg3)",color:"var(--dim)",fontFamily:"var(--font-mono)",fontSize:"0.7rem",fontWeight:700,cursor:"pointer"}}>CLR</button>
       </div>
     </div>

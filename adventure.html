@@ -50,36 +50,132 @@ body { background: #0d0d0d; color: #c9b99a; font-family: Georgia, serif; min-hei
 var story = document.getElementById('story');
 var restartBtn = document.getElementById('restart');
 
+// ── Web Audio atmospheric sounds
+var audioCtx = null;
+var heartbeatInterval = null;
+function getAudio() { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); return audioCtx; }
+
+function startHeartbeat() {
+  if (heartbeatInterval) return;
+  function beat() {
+    try {
+      var ctx = getAudio();
+      var osc = ctx.createOscillator();
+      var gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = 40;
+      gain.gain.setValueAtTime(0.04, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(); osc.stop(ctx.currentTime + 0.15);
+      setTimeout(function() {
+        var osc2 = ctx.createOscillator();
+        var gain2 = ctx.createGain();
+        osc2.type = 'sine';
+        osc2.frequency.value = 35;
+        gain2.gain.setValueAtTime(0.03, ctx.currentTime);
+        gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12);
+        osc2.connect(gain2); gain2.connect(ctx.destination);
+        osc2.start(); osc2.stop(ctx.currentTime + 0.12);
+      }, 120);
+    } catch(e) {}
+  }
+  beat();
+  heartbeatInterval = setInterval(beat, 1400);
+}
+
+function stopHeartbeat() {
+  if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
+}
+
+function playCreak() {
+  try {
+    var ctx = getAudio();
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(80, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(120, ctx.currentTime + 0.15);
+    osc.frequency.exponentialRampToValueAtTime(60, ctx.currentTime + 0.3);
+    gain.gain.setValueAtTime(0.02, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.start(); osc.stop(ctx.currentTime + 0.3);
+  } catch(e) {}
+}
+
+// ── Typewriter effect
+var typewriterQueue = [];
+var typewriterRunning = false;
+
+function typewrite(el, text, callback) {
+  typewriterQueue.push({ el: el, text: text, callback: callback });
+  if (!typewriterRunning) processTypewriterQueue();
+}
+
+function processTypewriterQueue() {
+  if (typewriterQueue.length === 0) { typewriterRunning = false; return; }
+  typewriterRunning = true;
+  var item = typewriterQueue.shift();
+  var i = 0;
+  var timer = setInterval(function() {
+    item.el.textContent = item.text.slice(0, i + 1);
+    i++;
+    if (i >= item.text.length) {
+      clearInterval(timer);
+      if (item.callback) item.callback();
+      processTypewriterQueue();
+    }
+  }, 30);
+}
+
 function say(text) {
   var d = document.createElement('p');
   d.className = 'line';
-  d.textContent = text;
   story.appendChild(d);
+  typewrite(d, text, function() { window.scrollTo(0, document.body.scrollHeight); });
   window.scrollTo(0, document.body.scrollHeight);
 }
 
 function em(text) {
   var d = document.createElement('p');
   d.className = 'line em';
-  d.textContent = text;
   story.appendChild(d);
+  typewrite(d, text, function() { window.scrollTo(0, document.body.scrollHeight); });
   window.scrollTo(0, document.body.scrollHeight);
 }
 
 function dim(text) {
   var d = document.createElement('p');
   d.className = 'line dim';
-  d.textContent = text;
   story.appendChild(d);
+  typewrite(d, text, function() { window.scrollTo(0, document.body.scrollHeight); });
   window.scrollTo(0, document.body.scrollHeight);
 }
 
 function ending(text) {
   var d = document.createElement('p');
   d.className = 'line end';
-  d.textContent = text;
   story.appendChild(d);
+  typewrite(d, text, function() { window.scrollTo(0, document.body.scrollHeight); });
+  stopHeartbeat();
   restartBtn.style.display = 'block';
+  // Add share ending button
+  var shareBtn = document.createElement('button');
+  shareBtn.textContent = 'Share ending';
+  shareBtn.style.cssText = 'display:inline-block;margin-top:14px;background:none;border:1px solid #333;color:#555;padding:6px 14px;font-family:monospace;font-size:11px;cursor:pointer;border-radius:2px;transition:all 0.15s;';
+  shareBtn.onmouseenter = function() { shareBtn.style.borderColor='#8b0000'; shareBtn.style.color='#8b0000'; };
+  shareBtn.onmouseleave = function() { shareBtn.style.borderColor='#333'; shareBtn.style.color='#555'; };
+  shareBtn.onclick = function() {
+    var endingName = text.replace(/^[^A-Z]*/, '');
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(endingName).then(function() {
+        shareBtn.textContent = 'Copied!';
+        setTimeout(function() { shareBtn.textContent = 'Share ending'; }, 1500);
+      });
+    }
+  };
+  story.appendChild(shareBtn);
   window.scrollTo(0, document.body.scrollHeight);
 }
 
@@ -99,6 +195,7 @@ function choice(options, callback) {
     btn.className = 'choice-btn';
     btn.textContent = opt;
     btn.onclick = function() {
+      playCreak();
       div.remove();
       callback(i + 1);
     };
@@ -323,6 +420,9 @@ function scene_listen() {
 function startGame() {
   story.innerHTML = '';
   restartBtn.style.display = 'none';
+  typewriterQueue = [];
+  typewriterRunning = false;
+  startHeartbeat();
   hr();
   em('THE CELLAR');
   dim('Two choices. Five endings. All wrong.');
