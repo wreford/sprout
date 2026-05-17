@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+  <title>'Tism Trail 🟦</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    html,body{height:100%;background:#0a0a14;overflow:hidden;touch-action:manipulation;user-select:none}
+    canvas{display:block;width:100%;height:100%}
+  </style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+var canvas = document.getElementById('c');
+var ctx = canvas.getContext('2d');
+var W, H, groundY;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  groundY = H - 60;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ── Sound
+var audioCtx=null;
+function getAudio(){if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();return audioCtx;}
+function tone(f,d,t,v){try{var c=getAudio(),o=c.createOscillator(),g=c.createGain();o.type=t||"sine";o.frequency.value=f;g.gain.setValueAtTime(v||0.04,c.currentTime);g.gain.exponentialRampToValueAtTime(0.001,c.currentTime+d);o.connect(g);g.connect(c.destination);o.start();o.stop(c.currentTime+d);}catch(e){}}
+function sndJump(){tone(500,0.06,"square",0.04);setTimeout(function(){tone(600,0.06,"square",0.03);},40);}
+function sndDie(){tone(200,0.3,"sawtooth",0.06);setTimeout(function(){tone(100,0.2,"sawtooth",0.04);},150);}
+function sndOrb(){tone(880,0.08,"sine",0.05);setTimeout(function(){tone(1100,0.08,"sine",0.04);},50);}
+function sndBeat(){tone(150,0.04,"square",0.02);}
+
+// ── Colors & visuals
+var NEON_COLORS = ["#00ffff","#ff00ff","#00ff88","#ff6600","#ffff00","#ff0066","#6644ff","#00ccff"];
+var bgHue = 0;
+
+// ── Game state
+var STATE = "menu";
+var player = {x:0,y:0,vy:0,size:22,rotation:0,onGround:false,trail:[]};
+var obstacles = [];
+var orbs = [];
+var particles = [];
+var bgStars = [];
+var score = 0;
+var highScore = parseInt(localStorage.getItem("tism-high")) || 0;
+var distance = 0;
+var speed = 5;
+var frame = 0;
+var gravity = 0.55;
+var jumpPower = -10.5;
+var neonIdx = 0;
+var beatTimer = 0;
+var pulseScale = 1;
+
+// Generate stars
+for (var i = 0; i < 80; i++) {
+  bgStars.push({x:Math.random()*2000,y:Math.random()*1000,s:0.5+Math.random()*2,b:Math.random()});
+}
+
+// ── Obstacle types
+function spawnObstacle() {
+  var type = Math.random();
+  var x = W + 50;
+  if (type < 0.35) {
+    // Spike
+    obstacles.push({x:x,y:groundY,w:20,h:30,type:"spike"});
+  } else if (type < 0.55) {
+    // Double spike
+    obstacles.push({x:x,y:groundY,w:20,h:30,type:"spike"});
+    obstacles.push({x:x+30,y:groundY,w:20,h:30,type:"spike"});
+  } else if (type < 0.75) {
+    // Block
+    var bh = 30 + Math.random()*30;
+    obstacles.push({x:x,y:groundY-bh,w:30,h:bh,type:"block"});
+  } else if (type < 0.88) {
+    // Floating block (jump over or under)
+    obstacles.push({x:x,y:groundY-70-Math.random()*40,w:50,h:20,type:"block"});
+  } else {
+    // Saw blade
+    obstacles.push({x:x,y:groundY-15,w:30,h:30,type:"saw",rot:0});
+  }
+  // Orb chance
+  if (Math.random() < 0.4) {
+    orbs.push({x:x+40+Math.random()*60, y:groundY-50-Math.random()*60, collected:false});
+  }
+}
+
+function reset() {
+  player = {x:W*0.2, y:groundY-22, vy:0, size:22, rotation:0, onGround:true, trail:[]};
+  obstacles = [];
+  orbs = [];
+  particles = [];
+  score = 0;
+  distance = 0;
+  speed = 5;
+  frame = 0;
+  neonIdx = 0;
+  // Pre-spawn some obstacles
+  for (var i = 0; i < 3; i++) {
+    spawnObstacle();
+    obstacles.forEach(function(o){o.x+=i*250+300;});
+    orbs.forEach(function(o){o.x+=i*250+300;});
+  }
+}
+
+function jump() {
+  if (STATE === "menu") { STATE = "playing"; reset(); sndJump(); return; }
+  if (STATE === "dead") { STATE = "menu"; return; }
+  if (player.onGround) { player.vy = jumpPower; player.onGround = false; sndJump(); }
+}
+
+canvas.addEventListener('mousedown', jump);
+canvas.addEventListener('touchstart', function(e){e.preventDefault();jump();},{passive:false});
+window.addEventListener('keydown', function(e){if(e.code==="Space"||e.code==="ArrowUp"){e.preventDefault();jump();}});
+
+function spawnParticles(x,y,color,count) {
+  for(var i=0;i<(count||8);i++){
+    particles.push({x:x,y:y,vx:(Math.random()-0.5)*8,vy:(Math.random()-0.5)*8-3,life:1,color:color||NEON_COLORS[neonIdx],size:2+Math.random()*4});
+  }
+}
+
+function update() {
+  if (STATE !== "playing") return;
+  frame++;
+  distance += speed;
+  bgHue = (bgHue + 0.3) % 360;
+
+  // Beat pulse
+  beatTimer++;
+  if (beatTimer >= 15) { beatTimer = 0; pulseScale = 1.06; sndBeat(); }
+  pulseScale += (1 - pulseScale) * 0.15;
+
+  // Speed ramp
+  if (frame % 400 === 0) speed = Math.min(10, speed + 0.3);
+
+  // Neon color cycle
+  if (frame % 120 === 0) neonIdx = (neonIdx + 1) % NEON_COLORS.length;
+
+  // Player physics
+  player.vy += gravity;
+  player.y += player.vy;
+  player.rotation += speed * 0.04;
+
+  if (player.y >= groundY - player.size) {
+    player.y = groundY - player.size;
+    player.vy = 0;
+    player.onGround = true;
+  }
+
+  // Trail
+  player.trail.push({x:player.x, y:player.y+player.size/2, life:1});
+  if (player.trail.length > 20) player.trail.shift();
+  for (var t = 0; t < player.trail.length; t++) player.trail[t].life -= 0.05;
+
+  // Spawn obstacles
+  var lastObs = obstacles.length > 0 ? obstacles[obstacles.length-1].x : 0;
+  if (lastObs < W) {
+    var gap = 180 + Math.random()*120 - Math.min(frame*0.02, 60);
+    spawnObstacle();
+    obstacles.forEach(function(o,i){if(o.x>W)o.x=Math.max(o.x, lastObs+gap);});
+    orbs.forEach(function(o){if(o.x>W+100)o.x=Math.max(o.x,lastObs+gap+40);});
+  }
+
+  // Move obstacles
+  for (var i = obstacles.length-1; i >= 0; i--) {
+    var o = obstacles[i];
+    o.x -= speed;
+    if (o.type === "saw") o.rot += 0.15;
+    if (o.x < -60) { obstacles.splice(i,1); continue; }
+
+    // Collision
+    var px = player.x, py = player.y, ps = player.size;
+    if (o.type === "spike") {
+      // Triangle collision (simplified as rectangle)
+      if (px+ps > o.x+3 && px < o.x+o.w-3 && py+ps > o.y-o.h+5) {
+        die(); return;
+      }
+    } else if (o.type === "saw") {
+      var dx = (px+ps/2)-(o.x+o.w/2), dy = (py+ps/2)-(o.y-o.h/2);
+      if (Math.sqrt(dx*dx+dy*dy) < ps/2+o.w/2-4) { die(); return; }
+    } else {
+      if (px+ps > o.x+2 && px < o.x+o.w-2 && py+ps > o.y+2 && py < o.y+o.h-2) {
+        die(); return;
+      }
+    }
+  }
+
+  // Orbs
+  for (var i = orbs.length-1; i >= 0; i--) {
+    var o = orbs[i];
+    o.x -= speed;
+    if (o.x < -30) { orbs.splice(i,1); continue; }
+    if (!o.collected) {
+      var dx = (player.x+player.size/2)-o.x, dy = (player.y+player.size/2)-o.y;
+      if (Math.sqrt(dx*dx+dy*dy) < 24) {
+        o.collected = true;
+        score += 10;
+        sndOrb();
+        spawnParticles(o.x, o.y, NEON_COLORS[neonIdx], 12);
+        orbs.splice(i,1);
+      }
+    }
+  }
+
+  // Score from distance
+  score = Math.max(score, Math.floor(distance / 20));
+
+  // Particles
+  for (var i = particles.length-1; i >= 0; i--) {
+    var p = particles[i];
+    p.x += p.vx; p.y += p.vy; p.vy += 0.1; p.life -= 0.03;
+    if (p.life <= 0) particles.splice(i,1);
+  }
+}
+
+function die() {
+  STATE = "dead";
+  if (score > highScore) { highScore = score; localStorage.setItem("tism-high", highScore); }
+  sndDie();
+  spawnParticles(player.x+player.size/2, player.y+player.size/2, "#ff0044", 20);
+}
+
+function draw() {
+  // Background
+  var bgGrad = ctx.createLinearGradient(0,0,0,H);
+  bgGrad.addColorStop(0, "hsl("+(bgHue%360)+",30%,5%)");
+  bgGrad.addColorStop(1, "hsl("+((bgHue+60)%360)+",20%,3%)");
+  ctx.fillStyle = bgGrad;
+  ctx.fillRect(0,0,W,H);
+
+  // Stars
+  for (var i = 0; i < bgStars.length; i++) {
+    var s = bgStars[i];
+    var sx = ((s.x - distance*0.3) % (W+100) + W+100) % (W+100);
+    var sy = s.y % (groundY-20);
+    ctx.fillStyle = "rgba(255,255,255,"+(0.2+s.b*0.5)+")";
+    ctx.fillRect(sx, sy, s.s, s.s);
+  }
+
+  // Ground
+  var neon = NEON_COLORS[neonIdx];
+  ctx.fillStyle = "#0f0f1a";
+  ctx.fillRect(0, groundY, W, H-groundY);
+  ctx.strokeStyle = neon;
+  ctx.lineWidth = 2;
+  ctx.shadowColor = neon;
+  ctx.shadowBlur = 8;
+  ctx.beginPath(); ctx.moveTo(0,groundY); ctx.lineTo(W,groundY); ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // Ground grid lines
+  ctx.strokeStyle = "rgba(255,255,255,0.04)";
+  ctx.lineWidth = 1;
+  for (var gx = -(distance*2 % 40); gx < W; gx += 40) {
+    ctx.beginPath(); ctx.moveTo(gx, groundY); ctx.lineTo(gx, H); ctx.stroke();
+  }
+
+  if (STATE === "menu") {
+    ctx.textAlign = "center";
+    ctx.font = "bold 36px monospace";
+    ctx.fillStyle = neon;
+    ctx.shadowColor = neon;
+    ctx.shadowBlur = 15;
+    ctx.fillText("'TISM TRAIL", W/2, H*0.28);
+    ctx.shadowBlur = 0;
+    ctx.font = "48px serif";
+    ctx.fillText("🟦", W/2, H*0.42);
+    ctx.font = "13px monospace";
+    ctx.fillStyle = "#888";
+    ctx.fillText("Tap / Space to jump", W/2, H*0.54);
+    ctx.fillText("Dodge spikes & saws, collect orbs", W/2, H*0.59);
+    ctx.fillText("Rhythm. Timing. Vibes.", W/2, H*0.64);
+    if (highScore > 0) {
+      ctx.fillStyle = neon;
+      ctx.fillText("Best: " + highScore, W/2, H*0.72);
+    }
+    ctx.font = "10px monospace";
+    ctx.fillStyle = "#444";
+    ctx.fillText("taskiap.com", W/2, H*0.85);
+    return;
+  }
+
+  // Trail
+  for (var t = 0; t < player.trail.length; t++) {
+    var tr = player.trail[t];
+    if (tr.life <= 0) continue;
+    ctx.globalAlpha = tr.life * 0.4;
+    ctx.fillStyle = neon;
+    ctx.shadowColor = neon;
+    ctx.shadowBlur = 6;
+    var ts = player.size * tr.life * 0.5;
+    ctx.fillRect(tr.x - ts/2, tr.y - ts/2, ts, ts);
+    ctx.shadowBlur = 0;
+  }
+  ctx.globalAlpha = 1;
+
+  // Obstacles
+  for (var i = 0; i < obstacles.length; i++) {
+    var o = obstacles[i];
+    if (o.type === "spike") {
+      ctx.fillStyle = "#ff2244";
+      ctx.shadowColor = "#ff2244";
+      ctx.shadowBlur = 6;
+      ctx.beginPath();
+      ctx.moveTo(o.x, o.y);
+      ctx.lineTo(o.x + o.w/2, o.y - o.h);
+      ctx.lineTo(o.x + o.w, o.y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      // Outline
+      ctx.strokeStyle = "#ff6677";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    } else if (o.type === "saw") {
+      ctx.save();
+      ctx.translate(o.x + o.w/2, o.y - o.h/2);
+      ctx.rotate(o.rot);
+      ctx.fillStyle = "#ff4400";
+      ctx.shadowColor = "#ff4400";
+      ctx.shadowBlur = 8;
+      // Draw saw as circle with teeth
+      ctx.beginPath();
+      for (var tooth = 0; tooth < 8; tooth++) {
+        var angle = (tooth/8)*Math.PI*2;
+        var r1 = o.w/2;
+        var r2 = o.w/2 + 6;
+        ctx.lineTo(Math.cos(angle)*r2, Math.sin(angle)*r2);
+        var mid = angle + Math.PI/8;
+        ctx.lineTo(Math.cos(mid)*r1, Math.sin(mid)*r1);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = "#ff8844";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      // Center
+      ctx.fillStyle = "#220800";
+      ctx.beginPath(); ctx.arc(0,0,6,0,Math.PI*2); ctx.fill();
+      ctx.restore();
+    } else {
+      // Block
+      ctx.fillStyle = "#2a2a4a";
+      ctx.shadowColor = neon;
+      ctx.shadowBlur = 4;
+      ctx.fillRect(o.x, o.y, o.w, o.h);
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = neon;
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(o.x, o.y, o.w, o.h);
+      // Inner pattern
+      ctx.strokeStyle = "rgba(255,255,255,0.06)";
+      ctx.lineWidth = 0.5;
+      ctx.strokeRect(o.x+4, o.y+4, o.w-8, o.h-8);
+    }
+  }
+
+  // Orbs
+  for (var i = 0; i < orbs.length; i++) {
+    var o = orbs[i];
+    if (o.collected) continue;
+    ctx.fillStyle = neon;
+    ctx.shadowColor = neon;
+    ctx.shadowBlur = 12;
+    ctx.beginPath();
+    ctx.arc(o.x, o.y, 8 + Math.sin(frame*0.1)*2, 0, Math.PI*2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "#fff";
+    ctx.beginPath();
+    ctx.arc(o.x-2, o.y-2, 3, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  // Player
+  ctx.save();
+  ctx.translate(player.x + player.size/2, player.y + player.size/2);
+  ctx.rotate(player.rotation);
+  ctx.scale(pulseScale, pulseScale);
+  ctx.fillStyle = neon;
+  ctx.shadowColor = neon;
+  ctx.shadowBlur = 12;
+  ctx.fillRect(-player.size/2, -player.size/2, player.size, player.size);
+  ctx.shadowBlur = 0;
+  // Inner glow
+  ctx.fillStyle = "rgba(255,255,255,0.15)";
+  ctx.fillRect(-player.size/2+3, -player.size/2+3, player.size-6, player.size/2-3);
+  // Border
+  ctx.strokeStyle = "rgba(255,255,255,0.4)";
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(-player.size/2, -player.size/2, player.size, player.size);
+  ctx.restore();
+
+  // Particles
+  for (var i = 0; i < particles.length; i++) {
+    var p = particles[i];
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.shadowColor = p.color;
+    ctx.shadowBlur = 4;
+    ctx.fillRect(p.x-p.size/2, p.y-p.size/2, p.size, p.size);
+    ctx.shadowBlur = 0;
+  }
+  ctx.globalAlpha = 1;
+
+  // HUD
+  ctx.font = "bold 20px monospace";
+  ctx.fillStyle = "#fff";
+  ctx.textAlign = "center";
+  ctx.shadowColor = neon;
+  ctx.shadowBlur = 6;
+  ctx.fillText(score, W/2, 36);
+  ctx.shadowBlur = 0;
+
+  // Percentage bar (visual flair)
+  var pct = Math.min(1, distance / 5000);
+  ctx.fillStyle = "rgba(255,255,255,0.08)";
+  ctx.fillRect(20, H-20, W-40, 4);
+  ctx.fillStyle = neon;
+  ctx.shadowColor = neon;
+  ctx.shadowBlur = 4;
+  ctx.fillRect(20, H-20, (W-40)*pct, 4);
+  ctx.shadowBlur = 0;
+
+  // Dead screen
+  if (STATE === "dead") {
+    ctx.fillStyle = "rgba(0,0,0,0.65)";
+    ctx.fillRect(0,0,W,H);
+    ctx.textAlign = "center";
+    ctx.font = "bold 28px monospace";
+    ctx.fillStyle = "#ff2244";
+    ctx.shadowColor = "#ff2244";
+    ctx.shadowBlur = 12;
+    ctx.fillText("CRASHED", W/2, H*0.32);
+    ctx.shadowBlur = 0;
+    ctx.font = "32px serif";
+    ctx.fillText("💥🟦💥", W/2, H*0.42);
+    ctx.font = "bold 18px monospace";
+    ctx.fillStyle = neon;
+    ctx.fillText("Score: " + score, W/2, H*0.55);
+    if (score >= highScore && score > 0) {
+      ctx.fillStyle = "#22c55e";
+      ctx.font = "13px monospace";
+      ctx.fillText("NEW BEST!", W/2, H*0.61);
+    } else {
+      ctx.font = "13px monospace";
+      ctx.fillStyle = "#888";
+      ctx.fillText("Best: " + highScore, W/2, H*0.61);
+    }
+    ctx.font = "12px monospace";
+    ctx.fillStyle = "#666";
+    ctx.fillText("Tap to restart", W/2, H*0.72);
+  }
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
