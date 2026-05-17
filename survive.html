@@ -27,10 +27,52 @@ function tone(f,d,t,v){try{var c=getAudio(),o=c.createOscillator(),g=c.createGai
 function sndPickup(){tone(600,0.06,"sine",0.05);setTimeout(function(){tone(800,0.06,"sine",0.04);},50);}
 function sndHurt(){tone(150,0.2,"square",0.06);}
 function sndCraft(){tone(440,0.1,"triangle",0.04);setTimeout(function(){tone(660,0.1,"triangle",0.04);},80);}
-function sndStep(){tone(80+Math.random()*40,0.04,"triangle",0.02);}
+// [3] Footstep sounds with variation
+function sndStep(){
+  var baseFreq = 70 + Math.random()*60;
+  var dur = 0.03 + Math.random()*0.03;
+  var vol = 0.015 + Math.random()*0.01;
+  var types = ["triangle","sine","square"];
+  tone(baseFreq, dur, types[Math.floor(Math.random()*types.length)], vol);
+}
 function sndWolf(){tone(200,0.3,"sawtooth",0.05);setTimeout(function(){tone(150,0.2,"sawtooth",0.04);},200);}
 function sndFire(){tone(100+Math.random()*50,0.05,"sawtooth",0.01);}
 function sndWin(){[523,659,784,1047].forEach(function(f,i){setTimeout(function(){tone(f,0.3,"sine",0.07);},i*120);});}
+// [2] Chop sound
+function sndChop(){tone(200,0.05,"square",0.05);setTimeout(function(){tone(150,0.08,"square",0.04);},40);}
+// [6] Wolf howl sound effect
+function sndWolfHowl(){
+  try{
+    var c=getAudio();
+    var o=c.createOscillator();var g=c.createGain();
+    o.type="sawtooth";
+    o.frequency.setValueAtTime(180,c.currentTime);
+    o.frequency.linearRampToValueAtTime(400,c.currentTime+0.3);
+    o.frequency.linearRampToValueAtTime(350,c.currentTime+0.8);
+    o.frequency.linearRampToValueAtTime(250,c.currentTime+1.2);
+    g.gain.setValueAtTime(0.0,c.currentTime);
+    g.gain.linearRampToValueAtTime(0.06,c.currentTime+0.15);
+    g.gain.setValueAtTime(0.06,c.currentTime+0.8);
+    g.gain.exponentialRampToValueAtTime(0.001,c.currentTime+1.4);
+    o.connect(g);g.connect(c.destination);
+    o.start();o.stop(c.currentTime+1.5);
+    // Second howl layered
+    setTimeout(function(){
+      var o2=c.createOscillator();var g2=c.createGain();
+      o2.type="sine";
+      o2.frequency.setValueAtTime(220,c.currentTime);
+      o2.frequency.linearRampToValueAtTime(500,c.currentTime+0.25);
+      o2.frequency.linearRampToValueAtTime(380,c.currentTime+0.7);
+      o2.frequency.linearRampToValueAtTime(280,c.currentTime+1.0);
+      g2.gain.setValueAtTime(0.0,c.currentTime);
+      g2.gain.linearRampToValueAtTime(0.04,c.currentTime+0.1);
+      g2.gain.setValueAtTime(0.04,c.currentTime+0.6);
+      g2.gain.exponentialRampToValueAtTime(0.001,c.currentTime+1.1);
+      o2.connect(g2);g2.connect(c.destination);
+      o2.start();o2.stop(c.currentTime+1.2);
+    },400);
+  }catch(e){}
+}
 
 // ── Game constants
 var TILE = 32;
@@ -41,13 +83,20 @@ var TOTAL_NIGHTS = 5;
 
 // ── State
 var STATE = "menu";
-var player, map, items, enemies, campfires, particles;
+var player, map, items, enemies, campfires, particles, shelters;
 var keys = {};
 var day, timeOfDay, night, health, hunger, warmth;
 var inventory, craftMenu;
 var camX, camY;
 var frame, stepTimer;
 var rescued;
+var explored; // [1] minimap explored tiles
+var heliFound; // [1] has player seen helipad
+var heliMapX, heliMapY; // helipad location
+var respawnSlots; // [8] item respawn tracking
+var tutorialShown; // [10] tutorial overlay flag
+var showTutorial; // [10] currently showing tutorial
+var damageNumbers; // [9] floating damage numbers
 
 // ── Map generation
 function genMap() {
@@ -103,29 +152,75 @@ function spawnEnemies() {
   return e;
 }
 
+// [8] Record respawnable item positions during initial spawn
+function recordRespawnSlots(itemsList) {
+  var slots = [];
+  for (var i = 0; i < itemsList.length; i++) {
+    var it = itemsList[i];
+    if (it.type === "berries" || it.type === "mushroom") {
+      slots.push({x: it.x, y: it.y, type: it.type, emoji: it.emoji});
+    }
+  }
+  return slots;
+}
+
+// [8] Respawn berries/mushrooms at dawn
+function respawnFood() {
+  for (var i = 0; i < respawnSlots.length; i++) {
+    var slot = respawnSlots[i];
+    // Check if an item already exists at that position
+    var exists = false;
+    for (var j = 0; j < items.length; j++) {
+      if (items[j].x === slot.x && items[j].y === slot.y) { exists = true; break; }
+    }
+    // Also check if tile is still grass (tree might have been removed, still grass)
+    if (!exists && map[slot.y][slot.x] === "grass") {
+      items.push({x: slot.x, y: slot.y, type: slot.type, emoji: slot.emoji});
+    }
+  }
+}
+
 function reset() {
   var mapData = genMap();
   map = mapData.tiles;
+  heliMapX = mapData.heliX;
+  heliMapY = mapData.heliY;
   player = {x:Math.floor(MAP_W/2),y:Math.floor(MAP_H/2),px:0,py:0,dir:0};
   player.px = player.x*TILE+TILE/2;
   player.py = player.y*TILE+TILE/2;
   items = spawnItems(map);
+  respawnSlots = recordRespawnSlots(items);
   campfires = [];
   enemies = [];
   particles = [];
+  shelters = [];
+  damageNumbers = [];
   day = true;
   timeOfDay = 0;
   night = 0;
   health = 100;
   hunger = 100;
   warmth = 100;
-  inventory = {wood:2,stone:0,berries:2,cloth:0,mushroom:0,medkit:0,flare:0,torch:0,axe:0,bandage:0};
+  inventory = {wood:2,stone:0,berries:2,cloth:0,mushroom:0,medkit:0,flare:0,torch:0,axe:0,bandage:0,shelter:0};
   craftMenu = false;
   frame = 0;
   stepTimer = 0;
   rescued = false;
   camX = player.px - W/2;
   camY = player.py - H/2;
+  // [1] Minimap explored tracking
+  explored = [];
+  for (var y = 0; y < MAP_H; y++) {
+    explored[y] = [];
+    for (var x = 0; x < MAP_W; x++) explored[y][x] = false;
+  }
+  heliFound = false;
+  // [10] Tutorial on first play
+  if (!tutorialShown) {
+    showTutorial = true;
+  } else {
+    showTutorial = false;
+  }
 }
 
 // ── Crafting recipes
@@ -134,6 +229,8 @@ var RECIPES = [
   {name:"Campfire",emoji:"🔥",needs:{wood:3,stone:2},gives:"campfire",desc:"Warmth + safe zone"},
   {name:"Bandage",emoji:"🩹",needs:{cloth:2,berries:1},gives:"bandage",desc:"Heal 30 HP"},
   {name:"Axe",emoji:"🪓",needs:{wood:2,stone:2},gives:"axe",desc:"Fight enemies, chop trees"},
+  // [5] Shelter craftable
+  {name:"Shelter",emoji:"⛺",needs:{wood:5,cloth:3},gives:"shelter",desc:"Warmth + wolf protection"},
 ];
 
 function canCraft(recipe) {
@@ -147,14 +244,57 @@ function craft(recipe) {
   if (recipe.gives === "campfire") {
     campfires.push({x:player.px,y:player.py,fuel:600,light:120});
     sndCraft();
+  } else if (recipe.gives === "shelter") {
+    // [5] Place shelter at player position
+    shelters.push({x:player.px,y:player.py,hp:100});
+    sndCraft();
+    particles.push({x:player.px,y:player.py-20,text:"Shelter built!",life:1.5,color:"#22c55e"});
   } else {
     inventory[recipe.gives] = (inventory[recipe.gives]||0) + 1;
     sndCraft();
   }
 }
 
+// [2] Chop tree with axe
+function chopTree() {
+  if (inventory.axe <= 0) return false;
+  // Check adjacent tiles for trees
+  var dirs = [{dx:1,dy:0},{dx:-1,dy:0},{dx:0,dy:1},{dx:0,dy:-1},{dx:1,dy:1},{dx:-1,dy:-1},{dx:1,dy:-1},{dx:-1,dy:1}];
+  // Also check tile the player is facing
+  var bestDist = 999;
+  var bestTile = null;
+  for (var i = 0; i < dirs.length; i++) {
+    var tx = player.x + dirs[i].dx;
+    var ty = player.y + dirs[i].dy;
+    if (tx >= 0 && ty >= 0 && tx < MAP_W && ty < MAP_H && map[ty][tx] === "tree") {
+      var d = Math.sqrt(dirs[i].dx*dirs[i].dx + dirs[i].dy*dirs[i].dy);
+      if (d < bestDist) { bestDist = d; bestTile = {x:tx, y:ty}; }
+    }
+  }
+  if (bestTile) {
+    map[bestTile.y][bestTile.x] = "grass";
+    inventory.wood = (inventory.wood||0) + 1;
+    sndChop();
+    particles.push({x:bestTile.x*TILE+TILE/2, y:bestTile.y*TILE, text:"+1 🪵", life:1.2, color:"#c4a35a"});
+    return true;
+  }
+  return false;
+}
+
 // ── Input
-window.addEventListener('keydown',function(e){keys[e.code]=true;if(e.code==="KeyC")craftMenu=!craftMenu;if(e.code==="KeyE")useItem();if(e.code==="Digit1"||e.code==="Digit2"||e.code==="Digit3"||e.code==="Digit4"){var idx=parseInt(e.key)-1;if(craftMenu&&idx<RECIPES.length)craft(RECIPES[idx]);}});
+window.addEventListener('keydown',function(e){
+  keys[e.code]=true;
+  // [10] Dismiss tutorial on any key
+  if (showTutorial) { showTutorial = false; tutorialShown = true; return; }
+  if(e.code==="KeyC")craftMenu=!craftMenu;
+  if(e.code==="KeyE")useItem();
+  // [2] F to chop tree
+  if(e.code==="KeyF")chopTree();
+  if(e.code==="Digit1"||e.code==="Digit2"||e.code==="Digit3"||e.code==="Digit4"||e.code==="Digit5"){
+    var idx=parseInt(e.key)-1;
+    if(craftMenu&&idx<RECIPES.length)craft(RECIPES[idx]);
+  }
+});
 window.addEventListener('keyup',function(e){keys[e.code]=false;});
 
 // Touch controls
@@ -166,9 +306,13 @@ canvas.addEventListener('touchstart',function(e){
   var t=e.touches[0];
   touchStartX=t.clientX;touchStartY=t.clientY;
   touchActive=true;
+  // [10] Dismiss tutorial on tap
+  if (showTutorial) { showTutorial = false; tutorialShown = true; touchActive = false; return; }
   // Tap right side = use item, top-right = craft
   if(t.clientX>W*0.8&&t.clientY<H*0.3){craftMenu=!craftMenu;touchActive=false;return;}
   if(t.clientX>W*0.8&&t.clientY>H*0.7){useItem();touchActive=false;return;}
+  // Tap middle-right = chop
+  if(t.clientX>W*0.8&&t.clientY>H*0.3&&t.clientY<H*0.7){chopTree();touchActive=false;return;}
 },{passive:false});
 canvas.addEventListener('touchmove',function(e){
   e.preventDefault();
@@ -186,18 +330,37 @@ function useItem() {
   if(inventory.torch>0){inventory.torch--;campfires.push({x:player.px,y:player.py,fuel:300,light:80});sndCraft();return;}
   if(inventory.flare>0&&night>=TOTAL_NIGHTS-1){
     // Check if near helipad
-    var mapData = null;
-    for(var y=0;y<MAP_H;y++)for(var x=0;x<MAP_W;x++){if(map[y][x]==="helipad"){mapData={x:x,y:y};break;}}
-    if(mapData){
-      var dx=player.px-(mapData.x*TILE+TILE/2),dy=player.py-(mapData.y*TILE+TILE/2);
-      if(Math.sqrt(dx*dx+dy*dy)<TILE*3){inventory.flare--;rescued=true;STATE="win";sndWin();return;}
-    }
+    var dx=player.px-(heliMapX*TILE+TILE/2),dy=player.py-(heliMapY*TILE+TILE/2);
+    if(Math.sqrt(dx*dx+dy*dy)<TILE*3){inventory.flare--;rescued=true;STATE="win";sndWin();return;}
   }
+}
+
+// [5] Check if player is near a shelter
+function nearShelter() {
+  for (var i = 0; i < shelters.length; i++) {
+    var s = shelters[i];
+    var d = Math.sqrt((player.px-s.x)*(player.px-s.x)+(player.py-s.y)*(player.py-s.y));
+    if (d < TILE*2) return true;
+  }
+  return false;
+}
+
+// [9] Add floating damage number
+function addDamageNumber(x, y, amount) {
+  damageNumbers.push({
+    x: x + (Math.random()-0.5)*20,
+    y: y - 10,
+    text: "-" + amount,
+    life: 1.0,
+    vy: -1.5 - Math.random()*0.5,
+    scale: amount >= 15 ? 1.4 : 1.0
+  });
 }
 
 // ── Update
 function update() {
   if(STATE!=="playing") return;
+  if(showTutorial) return; // [10] pause while tutorial is shown
   frame++;
   timeOfDay++;
 
@@ -205,8 +368,17 @@ function update() {
   if(timeOfDay>=DAY_LENGTH){
     timeOfDay=0;
     day=!day;
-    if(!day){night++;enemies=spawnEnemies();if(night>0)sndWolf();}
-    else{enemies=[];} // enemies leave at dawn
+    if(!day){
+      night++;
+      enemies=spawnEnemies();
+      // [6] Wolf howl when night begins
+      if(night>0) sndWolfHowl();
+    }
+    else{
+      enemies=[];
+      // [8] Respawn berries and mushrooms at dawn
+      respawnFood();
+    }
     if(night>TOTAL_NIGHTS){STATE="win";rescued=true;sndWin();return;}
   }
 
@@ -239,6 +411,19 @@ function update() {
   player.x=Math.floor(player.px/TILE);
   player.y=Math.floor(player.py/TILE);
 
+  // [1] Update explored tiles (reveal area around player)
+  var revealRadius = 5;
+  for (var ry = -revealRadius; ry <= revealRadius; ry++) {
+    for (var rx = -revealRadius; rx <= revealRadius; rx++) {
+      var ex = player.x + rx, ey = player.y + ry;
+      if (ex >= 0 && ey >= 0 && ex < MAP_W && ey < MAP_H) {
+        explored[ey][ex] = true;
+        // [1] Check if helipad discovered
+        if (map[ey][ex] === "helipad") heliFound = true;
+      }
+    }
+  }
+
   // Camera
   camX+=(player.px-W/2-camX)*0.1;
   camY+=(player.py-H/2-camY)*0.1;
@@ -264,10 +449,15 @@ function update() {
     }
   }
 
-  // Hunger/warmth drain
-  if(frame%90===0){hunger=Math.max(0,hunger-1);if(!day)warmth=Math.max(0,warmth-2);}
-  if(hunger<=0&&frame%60===0)health-=2;
-  if(warmth<=0&&frame%45===0)health-=3;
+  // [7] Hunger/warmth drain slowed ~30% (was frame%90 -> frame%128, night warmth was 2 -> 1.4)
+  if(frame%128===0){hunger=Math.max(0,hunger-1);if(!day)warmth=Math.max(0,warmth-1.4);}
+  if(hunger<=0&&frame%85===0)health-=2;
+  if(warmth<=0&&frame%64===0)health-=3;
+
+  // [5] Shelter warmth bonus
+  if (nearShelter()) {
+    warmth = Math.min(100, warmth + 0.15);
+  }
 
   // Campfire warmth
   var nearFire=false;
@@ -291,6 +481,18 @@ function update() {
       var cd=Math.sqrt((e.x-campfires[j].x)*(e.x-campfires[j].x)+(e.y-campfires[j].y)*(e.y-campfires[j].y));
       if(cd<campfires[j].light+20){fleeing=true;edx=-edx;edy=-edy;break;}
     }
+    // [5] Wolves avoid shelters (partial protection)
+    if (!fleeing && e.type === "wolf") {
+      for (var si = 0; si < shelters.length; si++) {
+        var sd = Math.sqrt((e.x-shelters[si].x)*(e.x-shelters[si].x)+(e.y-shelters[si].y)*(e.y-shelters[si].y));
+        if (sd < TILE*3) {
+          fleeing = true;
+          edx = e.x - shelters[si].x;
+          edy = e.y - shelters[si].y;
+          break;
+        }
+      }
+    }
     if(dist<TILE*8||fleeing){
       var elen=Math.sqrt(edx*edx+edy*edy)||1;
       e.x+=edx/elen*e.speed;
@@ -299,10 +501,14 @@ function update() {
     // Attack
     if(dist<TILE&&e.cooldown<=0){
       var dmg=e.type==="bear"?15:8;
+      // [5] Shelter reduces wolf damage by half
+      if (e.type === "wolf" && nearShelter()) dmg = Math.floor(dmg * 0.5);
       health-=dmg;
       e.cooldown=60;
       sndHurt();
       particles.push({x:player.px,y:player.py-20,text:"-"+dmg+" HP",life:1,color:"#ff4444"});
+      // [9] Floating damage number
+      addDamageNumber(player.px, player.py, dmg);
       // Fight back with axe
       if(inventory.axe>0){e.hp--;if(e.hp<=0){enemies.splice(i,1);i--;particles.push({x:e.x,y:e.y-10,text:"💀",life:1});}}
     }
@@ -313,6 +519,15 @@ function update() {
 
   // Particles
   for(var i=particles.length-1;i>=0;i--){particles[i].life-=0.02;particles[i].y-=0.5;if(particles[i].life<=0)particles.splice(i,1);}
+
+  // [9] Update damage numbers
+  for (var i = damageNumbers.length-1; i >= 0; i--) {
+    var dn = damageNumbers[i];
+    dn.life -= 0.018;
+    dn.y += dn.vy;
+    dn.vy *= 0.98;
+    if (dn.life <= 0) damageNumbers.splice(i, 1);
+  }
 }
 
 // ── Draw
@@ -329,7 +544,7 @@ function draw() {
     ctx.fillText("Wolves come at night. Stay warm. Stay fed.",W/2,H*0.57);
     ctx.fillText("",W/2,H*0.62);
     ctx.fillStyle="#666";
-    ctx.fillText("WASD/Arrow keys to move | C = Craft | E = Use item",W/2,H*0.67);
+    ctx.fillText("WASD/Arrow keys to move | C = Craft | E = Use item | F = Chop",W/2,H*0.67);
     ctx.fillText("Mobile: drag to move | tap top-right = craft | bottom-right = use",W/2,H*0.72);
     ctx.fillStyle="#22c55e";ctx.font="14px monospace";
     ctx.fillText("[ Tap / Press any key to start ]",W/2,H*0.82);
@@ -363,7 +578,7 @@ function draw() {
     else if(tile==="tree"){ctx.fillStyle="#1a3a1a";ctx.fillRect(sx,sy,TILE,TILE);ctx.font="24px serif";ctx.fillText("🌲",sx+4,sy+26);}
     else if(tile==="rock"){ctx.fillStyle="#2a2a2a";ctx.fillRect(sx,sy,TILE,TILE);ctx.font="20px serif";ctx.fillText("🪨",sx+6,sy+24);}
     else if(tile==="bush"){ctx.fillStyle="#1a3a1a";ctx.fillRect(sx,sy,TILE,TILE);ctx.font="18px serif";ctx.fillText("🌿",sx+6,sy+22);}
-    else if(tile==="helipad"){ctx.fillStyle="#333";ctx.fillRect(sx,sy,TILE,TILE);ctx.strokeStyle="#ffcc00";ctx.lineWidth=1;ctx.strokeRect(sx+2,sy+2,TILE-4,TILE-4);if(x===Math.floor((startX+endX)/2)&&y===Math.floor((startY+endY)/2)){ctx.font="10px monospace";ctx.fillStyle="#ffcc00";ctx.textAlign="center";ctx.fillText("H",sx+TILE/2,sy+TILE/2+4);}}
+    else if(tile==="helipad"){ctx.fillStyle="#333";ctx.fillRect(sx,sy,TILE,TILE);ctx.strokeStyle="#ffcc00";ctx.lineWidth=1;ctx.strokeRect(sx+2,sy+2,TILE-4,TILE-4);if(x===heliMapX&&y===heliMapY){ctx.font="14px monospace";ctx.fillStyle="#ffcc00";ctx.textAlign="center";ctx.fillText("H",sx+TILE/2,sy+TILE/2+5);ctx.textAlign="left";}}
   }
 
   // Items
@@ -387,6 +602,14 @@ function draw() {
     ctx.fillRect(sx-cf.light,sy-cf.light,cf.light*2,cf.light*2);
     ctx.font="20px serif";
     ctx.fillText("🔥",sx-10,sy+8);
+  }
+
+  // [5] Shelters
+  for (var i = 0; i < shelters.length; i++) {
+    var s = shelters[i];
+    var sx = s.x - camX, sy = s.y - camY;
+    ctx.font = "24px serif";
+    ctx.fillText("⛺", sx-12, sy+10);
   }
 
   // Enemies
@@ -457,6 +680,22 @@ function draw() {
   }
   ctx.globalAlpha=1;
 
+  // [9] Draw floating damage numbers
+  for (var i = 0; i < damageNumbers.length; i++) {
+    var dn = damageNumbers[i];
+    ctx.globalAlpha = Math.max(0, dn.life);
+    ctx.font = "bold " + Math.floor(14 * dn.scale) + "px monospace";
+    ctx.fillStyle = "#ff2222";
+    ctx.textAlign = "center";
+    // Draw outline for readability
+    ctx.strokeStyle = "#000";
+    ctx.lineWidth = 3;
+    ctx.strokeText(dn.text, dn.x - camX, dn.y - camY);
+    ctx.fillText(dn.text, dn.x - camX, dn.y - camY);
+  }
+  ctx.globalAlpha = 1;
+  ctx.lineWidth = 1;
+
   // ── HUD
   ctx.textAlign="left";
   var hudY=12;
@@ -487,6 +726,27 @@ function draw() {
   ctx.font="bold 10px monospace";ctx.fillStyle=day?"#eab308":"#6080a8";
   ctx.fillText(timeStr+" ("+pct+"%)",10,hudY+8);
 
+  // [4] Compass direction to helipad after night 3
+  if (night >= 3) {
+    hudY += 18;
+    var hdx = heliMapX * TILE + TILE/2 - player.px;
+    var hdy = heliMapY * TILE + TILE/2 - player.py;
+    var angle = Math.atan2(hdy, hdx);
+    var compassDir = "";
+    if (angle > -Math.PI/8 && angle <= Math.PI/8) compassDir = "E";
+    else if (angle > Math.PI/8 && angle <= 3*Math.PI/8) compassDir = "SE";
+    else if (angle > 3*Math.PI/8 && angle <= 5*Math.PI/8) compassDir = "S";
+    else if (angle > 5*Math.PI/8 && angle <= 7*Math.PI/8) compassDir = "SW";
+    else if (angle > 7*Math.PI/8 || angle <= -7*Math.PI/8) compassDir = "W";
+    else if (angle > -7*Math.PI/8 && angle <= -5*Math.PI/8) compassDir = "NW";
+    else if (angle > -5*Math.PI/8 && angle <= -3*Math.PI/8) compassDir = "N";
+    else if (angle > -3*Math.PI/8 && angle <= -Math.PI/8) compassDir = "NE";
+    var helDist = Math.floor(Math.sqrt(hdx*hdx+hdy*hdy)/TILE);
+    ctx.font = "bold 10px monospace";
+    ctx.fillStyle = "#ffcc00";
+    ctx.fillText("🚁 Helipad: " + compassDir + " (" + helDist + " tiles)", 10, hudY + 8);
+  }
+
   // Inventory (right side)
   ctx.textAlign="right";
   var invY=14;
@@ -499,17 +759,18 @@ function draw() {
   // Controls hint
   ctx.textAlign="center";
   ctx.font="9px monospace";ctx.fillStyle="rgba(255,255,255,0.3)";
-  ctx.fillText("[C] Craft  [E] Use Item",W/2,H-8);
+  ctx.fillText("[C] Craft  [E] Use Item  [F] Chop Tree",W/2,H-8);
 
   // Craft menu
   if(craftMenu){
-    ctx.fillStyle="rgba(0,0,0,0.8)";ctx.fillRect(W/2-140,H/2-100,280,200);
-    ctx.strokeStyle="#22c55e";ctx.lineWidth=1;ctx.strokeRect(W/2-140,H/2-100,280,200);
+    var menuH = 40 + RECIPES.length * 42 + 20;
+    ctx.fillStyle="rgba(0,0,0,0.8)";ctx.fillRect(W/2-140,H/2-menuH/2,280,menuH);
+    ctx.strokeStyle="#22c55e";ctx.lineWidth=1;ctx.strokeRect(W/2-140,H/2-menuH/2,280,menuH);
     ctx.textAlign="center";ctx.font="bold 13px monospace";ctx.fillStyle="#22c55e";
-    ctx.fillText("CRAFT (press 1-4)",W/2,H/2-80);
+    ctx.fillText("CRAFT (press 1-"+RECIPES.length+")",W/2,H/2-menuH/2+20);
     for(var i=0;i<RECIPES.length;i++){
       var r=RECIPES[i];var can=canCraft(r);
-      var ry=H/2-55+i*42;
+      var ry=H/2-menuH/2+35+i*42;
       ctx.fillStyle=can?"rgba(34,197,94,0.15)":"rgba(50,50,50,0.3)";
       ctx.fillRect(W/2-125,ry,250,36);
       ctx.textAlign="left";
@@ -520,7 +781,15 @@ function draw() {
       ctx.fillText(needStr+"→ "+r.desc,W/2-115,ry+28);
     }
     ctx.textAlign="center";ctx.font="9px monospace";ctx.fillStyle="#666";
-    ctx.fillText("[C] to close",W/2,H/2+95);
+    ctx.fillText("[C] to close",W/2,H/2+menuH/2-8);
+  }
+
+  // [1] Minimap
+  drawMinimap();
+
+  // [10] Tutorial overlay
+  if (showTutorial) {
+    drawTutorial();
   }
 
   // Dead
@@ -545,17 +814,137 @@ function draw() {
   }
 }
 
+// [1] Minimap drawing function
+function drawMinimap() {
+  var mmSize = Math.min(130, Math.floor(W * 0.2));
+  var mmX = W - mmSize - 10;
+  var mmY = H - mmSize - 10;
+  var cellW = mmSize / MAP_W;
+  var cellH = mmSize / MAP_H;
+
+  // Background
+  ctx.fillStyle = "rgba(0,0,0,0.6)";
+  ctx.fillRect(mmX - 2, mmY - 2, mmSize + 4, mmSize + 4);
+  ctx.strokeStyle = "rgba(100,100,100,0.5)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(mmX - 2, mmY - 2, mmSize + 4, mmSize + 4);
+
+  // Draw explored tiles
+  for (var y = 0; y < MAP_H; y++) {
+    for (var x = 0; x < MAP_W; x++) {
+      if (!explored[y][x]) continue;
+      var tile = map[y][x];
+      if (tile === "tree") ctx.fillStyle = "#0a4a0a";
+      else if (tile === "rock") ctx.fillStyle = "#3a3a3a";
+      else if (tile === "grass") ctx.fillStyle = "#1a3a1a";
+      else if (tile === "bush") ctx.fillStyle = "#1a4a1a";
+      else if (tile === "helipad") ctx.fillStyle = "#ffcc00";
+      else ctx.fillStyle = "#1a3a1a";
+      ctx.fillRect(mmX + x * cellW, mmY + y * cellH, Math.ceil(cellW), Math.ceil(cellH));
+    }
+  }
+
+  // Draw shelters on minimap
+  for (var i = 0; i < shelters.length; i++) {
+    var s = shelters[i];
+    var sx = Math.floor(s.x / TILE);
+    var sy = Math.floor(s.y / TILE);
+    ctx.fillStyle = "#88cc44";
+    ctx.fillRect(mmX + sx * cellW - 1, mmY + sy * cellH - 1, 3, 3);
+  }
+
+  // Draw campfires on minimap
+  for (var i = 0; i < campfires.length; i++) {
+    var cf = campfires[i];
+    var cx = Math.floor(cf.x / TILE);
+    var cy = Math.floor(cf.y / TILE);
+    ctx.fillStyle = "#ff8800";
+    ctx.fillRect(mmX + cx * cellW - 1, mmY + cy * cellH - 1, 3, 3);
+  }
+
+  // [1] Draw helipad marker if discovered
+  if (heliFound) {
+    ctx.fillStyle = frame % 40 < 20 ? "#ffcc00" : "#ff8800"; // blinking
+    ctx.fillRect(mmX + heliMapX * cellW - 2, mmY + heliMapY * cellH - 2, 5, 5);
+  }
+
+  // Player position (blinking dot)
+  ctx.fillStyle = frame % 30 < 15 ? "#22ff22" : "#88ff88";
+  ctx.fillRect(mmX + player.x * cellW - 1, mmY + player.y * cellH - 1, 3, 3);
+
+  // Label
+  ctx.font = "bold 8px monospace";
+  ctx.fillStyle = "rgba(255,255,255,0.5)";
+  ctx.textAlign = "right";
+  ctx.fillText("MAP", W - 12, mmY - 5);
+  ctx.textAlign = "left";
+}
+
+// [10] Tutorial overlay
+function drawTutorial() {
+  ctx.fillStyle = "rgba(0,0,0,0.85)";
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.textAlign = "center";
+  ctx.font = "bold 22px monospace";
+  ctx.fillStyle = "#22c55e";
+  ctx.fillText("HOW TO SURVIVE", W/2, H*0.12);
+
+  var lines = [
+    {icon:"🕹️", title:"MOVE",        desc:"WASD or Arrow keys to walk around"},
+    {icon:"🫐", title:"GATHER",      desc:"Walk over items to pick them up automatically"},
+    {icon:"🔧", title:"CRAFT",       desc:"Press [C] to open crafting menu, then 1-5 to craft"},
+    {icon:"🪓", title:"CHOP TREES",  desc:"Craft an axe, then press [F] next to a tree for wood"},
+    {icon:"🔥", title:"CAMPFIRE",    desc:"Craft fires for warmth and to scare wolves at night"},
+    {icon:"⛺", title:"SHELTER",     desc:"Build a shelter for warmth and wolf protection"},
+    {icon:"🩹", title:"USE ITEMS",   desc:"Press [E] to use bandages, torches, or signal flares"},
+    {icon:"🍖", title:"STAY FED",    desc:"Eat berries and mushrooms (watch out for poison!)"},
+    {icon:"🚁", title:"ESCAPE",      desc:"Find the helipad and use a flare on the final night"},
+    {icon:"🐺", title:"BEWARE",      desc:"Wolves and bears attack at night. Stay near fire!"},
+  ];
+
+  var lineH = Math.min(28, (H*0.7) / lines.length);
+  var startY = H*0.18;
+
+  for (var i = 0; i < lines.length; i++) {
+    var ly = startY + i * lineH;
+    ctx.font = "14px serif";
+    ctx.fillText(lines[i].icon, W/2 - 160, ly + 4);
+    ctx.font = "bold 11px monospace";
+    ctx.fillStyle = "#22c55e";
+    ctx.textAlign = "left";
+    ctx.fillText(lines[i].title, W/2 - 140, ly + 4);
+    ctx.font = "10px monospace";
+    ctx.fillStyle = "#aaa";
+    ctx.fillText(lines[i].desc, W/2 - 70, ly + 4);
+    ctx.textAlign = "center";
+  }
+
+  ctx.font = "bold 12px monospace";
+  ctx.fillStyle = "#22c55e";
+  var pulse = 0.5 + 0.5 * Math.sin(Date.now() * 0.005);
+  ctx.globalAlpha = 0.5 + pulse * 0.5;
+  ctx.fillText("[ Press any key or tap to begin ]", W/2, H*0.92);
+  ctx.globalAlpha = 1;
+}
+
 // Menu start
 function startGame(e){
   if(STATE==="menu"){STATE="playing";reset();}
   else if(STATE==="dead"||STATE==="win"){STATE="menu";}
 }
-canvas.addEventListener('click',startGame);
+canvas.addEventListener('click',function(e){
+  if (showTutorial) { showTutorial = false; tutorialShown = true; return; }
+  startGame(e);
+});
 window.addEventListener('keydown',function(e){
   if(STATE==="menu"||STATE==="dead"||STATE==="win"){
-    if(e.code!=="KeyC"&&e.code!=="KeyE")startGame();
+    if(e.code!=="KeyC"&&e.code!=="KeyE"&&e.code!=="KeyF")startGame();
   }
 });
+
+// Initialize tutorial flag
+tutorialShown = false;
 
 function loop(){update();draw();requestAnimationFrame(loop);}
 loop();
