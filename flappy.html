@@ -28,10 +28,10 @@ window.addEventListener('resize', resize);
 var audioCtx = null;
 function getAudio(){if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();return audioCtx;}
 function tone(f,d,t,v){try{var c=getAudio(),o=c.createOscillator(),g=c.createGain();o.type=t||"sine";o.frequency.value=f;g.gain.setValueAtTime(v||0.05,c.currentTime);g.gain.exponentialRampToValueAtTime(0.001,c.currentTime+d);o.connect(g);g.connect(c.destination);o.start();o.stop(c.currentTime+d);}catch(e){}}
-function sndFlap(){tone(400,0.06,"triangle",0.04);}
-function sndSmack(){tone(100,0.12,"square",0.08);setTimeout(function(){tone(80,0.08,"sawtooth",0.06);},50);}
-function sndDie(){[300,200,120].forEach(function(f,i){setTimeout(function(){tone(f,0.2,"sawtooth",0.05);},i*100);});}
-function sndScore(){tone(600,0.08,"sine",0.05);setTimeout(function(){tone(800,0.08,"sine",0.05);},60);}
+function sndFlap(){tone(520,0.05,"sine",0.03);}
+function sndSmack(){tone(300,0.06,"sine",0.04);setTimeout(function(){tone(400,0.06,"sine",0.03);},50);}
+function sndDie(){tone(250,0.15,"sine",0.04);setTimeout(function(){tone(180,0.15,"sine",0.03);},120);}
+function sndScore(){tone(660,0.06,"sine",0.04);setTimeout(function(){tone(880,0.06,"sine",0.03);},50);}
 
 // ── Game state
 var STATE = "menu"; // menu, playing, dying, dead
@@ -141,25 +141,24 @@ function triggerDeath() {
   spawnParticles(flipflop.x, flipflop.y, "💀");
 }
 
-var deadCooldown = 0;
+var inputCooldown = 0;
 function flap() {
+  if (inputCooldown > 0) return;
   if (STATE === "menu") {
     STATE = "playing";
     reset();
     deathFlashAlpha = 0;
-    sndFlap();
     return;
   }
   if (STATE === "dead") {
-    if (deadCooldown > 0) return;
     STATE = "menu";
     deathFlashAlpha = 0;
+    inputCooldown = 15;
     return;
   }
   if (STATE === "dying") return;
   flipflop.vy = flapPower;
   flipflop.rotation = -0.4;
-  sndFlap();
 }
 
 // Input
@@ -168,7 +167,7 @@ canvas.addEventListener('touchstart', function(e){e.preventDefault();flap();},{p
 window.addEventListener('keydown', function(e){if(e.code==="Space"||e.code==="ArrowUp"){e.preventDefault();flap();}});
 
 function update() {
-  if (deadCooldown > 0) deadCooldown--;
+  if (inputCooldown > 0) inputCooldown--;
   // Update parallax even in menu for ambiance
   if (STATE === "menu") {
     parallaxOffset1 = (parallaxOffset1 + 0.3) % W;
@@ -198,7 +197,7 @@ function update() {
     }
     if (deathTimer >= DEATH_TUMBLE_DURATION) {
       STATE = "dead";
-      deadCooldown = 30;
+      inputCooldown = 30;
     }
     return;
   }
@@ -248,27 +247,49 @@ function update() {
       f.y += Math.sin(frame * 0.05 + f.bobOffset) * 0.5;
     }
 
-    // Collision with flip flop
-    var dx = flipflop.x - f.x;
-    var dy = flipflop.y - f.y;
-    var dist = Math.sqrt(dx*dx + dy*dy);
-    var hitDist = f.type === "bonus" ? 28 : 30;
+    // Collision
+    var ps = 14; // flip flop half-size
+    var px = flipflop.x;
+    var py = flipflop.y;
 
-    if (!f.hit && dist < hitDist) {
-      if (f.type === "bonus") {
-        // Smack bonus face for spite!
+    if (f.type === "bonus") {
+      // Circle collision for bonus faces
+      var bdx = px - f.x;
+      var bdy = py - f.y;
+      if (!f.hit && Math.sqrt(bdx*bdx + bdy*bdy) < 28) {
         f.hit = true;
         flipflop.spite = Math.min(100, flipflop.spite + spiteGain);
         score++;
         sndSmack();
         spawnParticles(f.x, f.y, pick(SMACK_MSGS));
-        sndScore();
         faces.splice(i, 1);
         continue;
+      }
+    } else {
+      // Rectangle collision for pipes (full pipe body + cap)
+      var pipeW = 44;
+      var capW = 54;
+      var capH = 16;
+      if (f.type === "top") {
+        var pipeBottom = f.y - 10;
+        // Check pipe body: from top of screen to pipeBottom
+        if (px + ps > f.x - pipeW/2 && px - ps < f.x + pipeW/2 && py - ps < pipeBottom) {
+          triggerDeath(); return;
+        }
+        // Check cap
+        if (px + ps > f.x - capW/2 && px - ps < f.x + capW/2 && py - ps < pipeBottom && py + ps > pipeBottom - capH) {
+          triggerDeath(); return;
+        }
       } else {
-        // Hit a pipe face = death
-        triggerDeath();
-        return;
+        var pipeTop = f.y + 25;
+        // Check pipe body: from pipeTop+capH to bottom of screen
+        if (px + ps > f.x - pipeW/2 && px - ps < f.x + pipeW/2 && py + ps > pipeTop + capH) {
+          triggerDeath(); return;
+        }
+        // Check cap
+        if (px + ps > f.x - capW/2 && px - ps < f.x + capW/2 && py + ps > pipeTop && py - ps < pipeTop + capH) {
+          triggerDeath(); return;
+        }
       }
     }
 
