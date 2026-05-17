@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
 <title>Tyler Tapeworm</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
@@ -14,13 +14,13 @@ canvas{display:block}
 .hud-bar-fill{height:100%;border-radius:5px;transition:width .2s}
 #hp-fill{background:linear-gradient(90deg,#e74c3c,#ff6b6b);width:100%}
 #xp-fill{background:linear-gradient(90deg,#2ecc71,#a8ff78);width:0%}
-#shop-overlay{position:absolute;inset:0;background:rgba(10,5,5,.92);display:none;flex-direction:column;align-items:center;justify-content:center;z-index:100;backdrop-filter:blur(4px)}
+#shop-overlay{position:fixed;inset:0;background:rgba(10,5,5,.92);display:none;flex-direction:column;align-items:center;justify-content:flex-start;z-index:100;backdrop-filter:blur(4px);overflow-y:auto;padding:12px 0}
 #shop-overlay.active{display:flex}
 #shop-title{font-size:28px;color:#ff6b6b;font-weight:800;margin-bottom:4px;text-shadow:0 0 20px rgba(255,80,80,.4)}
 #shop-subtitle{font-size:14px;color:#888;margin-bottom:20px}
 #shop-coins{font-size:18px;color:#ffd700;margin-bottom:16px;text-shadow:0 0 10px rgba(255,215,0,.3)}
 #shop-items{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;max-width:700px;padding:0 12px}
-.shop-item{background:rgba(40,20,20,.9);border:2px solid #333;border-radius:12px;padding:14px;width:200px;cursor:pointer;transition:all .15s;text-align:center}
+.shop-item{background:rgba(40,20,20,.9);border:2px solid #333;border-radius:12px;padding:10px;width:160px;cursor:pointer;transition:all .15s;text-align:center}
 .shop-item:hover{border-color:#ff6b6b;transform:translateY(-3px);box-shadow:0 6px 20px rgba(255,80,80,.2)}
 .shop-item.bought{opacity:.4;pointer-events:none;border-color:#555}
 .shop-item .si-icon{font-size:32px;margin-bottom:6px}
@@ -30,14 +30,14 @@ canvas{display:block}
 #next-wave-btn{margin-top:20px;padding:14px 40px;font-size:18px;font-weight:800;background:linear-gradient(135deg,#e74c3c,#ff6b6b);color:#fff;border:none;border-radius:10px;cursor:pointer;letter-spacing:1px;transition:all .15s;text-transform:uppercase}
 #next-wave-btn:hover{transform:scale(1.05);box-shadow:0 4px 20px rgba(255,80,80,.4)}
 #wave-announce{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:32px;font-weight:800;color:#ff6b6b;text-shadow:0 0 30px rgba(255,80,80,.6);pointer-events:none;opacity:0;z-index:50;text-align:center;white-space:nowrap}
-#death-screen{position:absolute;inset:0;background:rgba(5,0,0,.95);display:none;flex-direction:column;align-items:center;justify-content:center;z-index:200}
+#death-screen{position:fixed;inset:0;background:rgba(5,0,0,.95);display:none;flex-direction:column;align-items:center;justify-content:center;z-index:200;overflow:hidden}
 #death-screen.active{display:flex}
 #death-screen h1{font-size:36px;color:#e74c3c;margin-bottom:8px}
 #death-msg{font-size:16px;color:#888;margin-bottom:20px}
 #death-stats{font-size:14px;color:#aaa;margin-bottom:20px;text-align:center;line-height:2}
 #restart-btn{padding:14px 40px;font-size:18px;font-weight:700;background:#e74c3c;color:#fff;border:none;border-radius:10px;cursor:pointer;transition:all .15s}
 #restart-btn:hover{transform:scale(1.05)}
-#start-screen{position:absolute;inset:0;background:rgba(10,5,5,.97);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:300}
+#start-screen{position:fixed;inset:0;background:rgba(10,5,5,.97);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:300;overflow:hidden}
 #start-screen.hidden{display:none}
 #start-screen h1{font-size:42px;color:#4ade80;font-weight:900;text-shadow:0 0 30px rgba(74,222,128,.4);margin-bottom:4px}
 #start-screen .worm-art{font-size:64px;margin-bottom:16px}
@@ -100,69 +100,59 @@ let audioCtx;
 function initAudio() {
   if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 }
-function playTone(freq, dur, vol = 0.1, type = 'square') {
+function playTone(freq, dur, vol, type) {
   if (!audioCtx) return;
+  vol = vol || 0.02; type = type || 'sine';
   try {
-    const o = audioCtx.createOscillator();
-    const g = audioCtx.createGain();
-    o.type = type;
-    o.frequency.value = freq;
-    g.gain.value = vol;
-    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
-    o.connect(g);
-    g.connect(audioCtx.destination);
-    o.start();
-    o.stop(audioCtx.currentTime + dur);
+    var o = audioCtx.createOscillator(); var g = audioCtx.createGain();
+    o.type = type; o.frequency.value = freq;
+    g.gain.setValueAtTime(Math.min(vol, 0.04), audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + dur);
+    o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime + dur);
   } catch(e) {}
 }
-function sfxShoot() { playTone(800, 0.05, 0.06); }
-function sfxHit() { playTone(200, 0.1, 0.08, 'sawtooth'); }
-function sfxKill() { playTone(600, 0.15, 0.07); playTone(900, 0.1, 0.05); }
-function sfxCoin() { playTone(1200, 0.08, 0.05, 'sine'); playTone(1600, 0.08, 0.04, 'sine'); }
-function sfxPowerup() { playTone(500, 0.1, 0.06, 'sine'); playTone(700, 0.1, 0.05, 'sine'); playTone(1000, 0.15, 0.05, 'sine'); }
-function sfxExplosion() { playTone(80, 0.3, 0.1, 'sawtooth'); playTone(60, 0.4, 0.08, 'sawtooth'); }
-function sfxWaveStart() { playTone(400, 0.15, 0.07, 'sine'); setTimeout(()=>playTone(600, 0.15, 0.07, 'sine'), 100); setTimeout(()=>playTone(800, 0.2, 0.07, 'sine'), 200); }
-function sfxDeath() { playTone(300, 0.3, 0.1, 'sawtooth'); playTone(200, 0.4, 0.1, 'sawtooth'); playTone(100, 0.5, 0.1, 'sawtooth'); }
-function sfxBuy() { playTone(1000, 0.1, 0.06, 'sine'); playTone(1400, 0.15, 0.06, 'sine'); }
+var _sp = 0;
+function sfxShoot() { _sp = (_sp+1)%6; playTone(350+_sp*25, 0.04, 0.012); }
+function sfxHit() { playTone(220+Math.random()*80, 0.07, 0.015); }
+function sfxKill() { playTone(450+Math.random()*150, 0.1, 0.02); setTimeout(function(){playTone(600+Math.random()*200,0.08,0.015);},50); }
+function sfxCoin() { playTone(700+Math.random()*300, 0.05, 0.015); }
+function sfxPowerup() { [450,580,720].forEach(function(f,i){setTimeout(function(){playTone(f,0.1,0.02);},i*60);}); }
+function sfxExplosion() { playTone(70, 0.15, 0.025); }
+function sfxWaveStart() { [330,430,530].forEach(function(f,i){setTimeout(function(){playTone(f,0.12,0.02);},i*80);}); }
+function sfxDeath() { playTone(180,0.25,0.025); setTimeout(function(){playTone(120,0.25,0.02);},130); }
+function sfxBuy() { playTone(550,0.07,0.015); setTimeout(function(){playTone(720,0.08,0.015);},60); }
 
 // ============ INPUT ============
 const keys = {};
 window.addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; e.preventDefault(); });
 window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+// Touch: hold finger anywhere, player moves toward it
 let touchJoy = null;
-let touchJoyStart = null;
+let touchActive = false;
+let fingerX = 0, fingerY = 0;
 canvas.addEventListener('touchstart', e => {
   e.preventDefault();
-  for (let t of e.changedTouches) {
-    if (t.clientX < W / 2) {
-      touchJoyStart = { x: t.clientX, y: t.clientY, id: t.identifier };
-      touchJoy = { x: 0, y: 0 };
-    }
-  }
+  initAudio();
+  touchActive = true;
+  fingerX = e.touches[0].clientX;
+  fingerY = e.touches[0].clientY;
+  let dx = fingerX - W/2, dy = fingerY - H/2;
+  let len = Math.sqrt(dx*dx+dy*dy);
+  if (len > 15) touchJoy = {x: dx/len, y: dy/len};
 }, { passive: false });
 canvas.addEventListener('touchmove', e => {
   e.preventDefault();
-  if (!touchJoyStart) return;
-  for (let t of e.changedTouches) {
-    if (t.identifier === touchJoyStart.id) {
-      let dx = t.clientX - touchJoyStart.x;
-      let dy = t.clientY - touchJoyStart.y;
-      let d = Math.sqrt(dx * dx + dy * dy);
-      let maxR = 60;
-      if (d > maxR) { dx = dx / d * maxR; dy = dy / d * maxR; }
-      touchJoy = { x: dx / maxR, y: dy / maxR };
-    }
-  }
+  if (!touchActive) return;
+  fingerX = e.touches[0].clientX;
+  fingerY = e.touches[0].clientY;
+  let dx = fingerX - W/2, dy = fingerY - H/2;
+  let len = Math.sqrt(dx*dx+dy*dy);
+  if (len > 15) touchJoy = {x: dx/len, y: dy/len};
 }, { passive: false });
 canvas.addEventListener('touchend', e => {
   e.preventDefault();
-  if (!touchJoyStart) return;
-  for (let t of e.changedTouches) {
-    if (t.identifier === touchJoyStart.id) {
-      touchJoyStart = null;
-      touchJoy = null;
-    }
-  }
+  touchActive = false;
+  touchJoy = null;
 }, { passive: false });
 
 function getInput() {
