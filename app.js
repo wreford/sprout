@@ -1,61 +1,136 @@
-const { useState } = React
+const { useState, useEffect, useCallback } = React
+
+const WORDS = ["CRANE","SLATE","TRAIL","PLUMB","FORGE","BRINE","SHALE","DRAFT","GLOBE","STOMP","BLAZE","FROST","GRIND","CLAMP","SWIRL","PLUME","STARK","DWELL","POISE","CHUNK","GLYPH","QUERY","VIVID","WALTZ","NEXUS","ADEPT","BLURT","CRYPT","FJORD","KNELT"]
+const ANSWER = WORDS[Math.floor(Math.random() * WORDS.length)]
+const ROWS = 6
+const COLS = 5
+
+function getColor(letter, idx, guess) {
+  if (ANSWER[idx] === letter) return "#6aaa64"
+  if (ANSWER.includes(letter)) return "#c9b458"
+  return "#787c7e"
+}
 
 function App() {
-  const [screen, setScreen] = useState("lobby")
-  const [hostName, setHostName] = useState("")
-  const [joinCode, setJoinCode] = useState("")
-  const [joinName, setJoinName] = useState("")
-  const [err, setErr] = useState("")
+  const [guesses, setGuesses] = useState([])
+  const [current, setCurrent] = useState("")
+  const [gameOver, setGameOver] = useState(false)
+  const [message, setMessage] = useState("")
+
+  const submit = useCallback(() => {
+    if (current.length !== 5) return
+    const next = [...guesses, current]
+    setGuesses(next)
+    setCurrent("")
+    if (current === ANSWER) {
+      setGameOver(true)
+      setMessage("Nice! You got it!")
+    } else if (next.length >= ROWS) {
+      setGameOver(true)
+      setMessage(`Game over — the word was ${ANSWER}`)
+    }
+  }, [current, guesses])
+
+  const onKey = useCallback((key) => {
+    if (gameOver) return
+    if (key === "ENTER") return submit()
+    if (key === "BACKSPACE" || key === "⌫") return setCurrent(c => c.slice(0, -1))
+    if (/^[A-Z]$/.test(key) && current.length < 5) setCurrent(c => c + key)
+  }, [current, gameOver, submit])
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.ctrlKey || e.metaKey) return
+      const k = e.key.toUpperCase()
+      if (k === "ENTER" || k === "BACKSPACE" || (/^[A-Z]$/.test(k) && k.length === 1)) {
+        e.preventDefault()
+        onKey(k)
+      }
+    }
+    window.addEventListener("keydown", handler)
+    return () => window.removeEventListener("keydown", handler)
+  }, [onKey])
+
+  const usedColors = {}
+  guesses.forEach(g => {
+    for (let i = 0; i < 5; i++) {
+      const c = getColor(g[i], i, g)
+      const prev = usedColors[g[i]]
+      if (c === "#6aaa64" || (!prev)) usedColors[g[i]] = c
+      else if (c === "#c9b458" && prev !== "#6aaa64") usedColors[g[i]] = c
+    }
+  })
 
   const S = {
-    wrap: { minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "var(--color-background-tertiary)", padding: "2rem" },
-    tag: { fontFamily: "var(--font-mono)", fontSize: "0.68rem", letterSpacing: "0.3em", textTransform: "uppercase", color: "var(--color-text-secondary)", marginBottom: 6 },
-    brand: { fontFamily: "var(--font-mono)", fontSize: "2.4rem", fontWeight: 700, letterSpacing: "0.08em", color: "var(--color-text-primary)", marginBottom: "2.5rem" },
-    card: { display: "grid", gridTemplateColumns: "1fr 0.5px 1fr", maxWidth: 580, width: "100%", background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: "var(--border-radius-lg)", overflow: "hidden" },
-    col: { padding: "1.75rem 2rem" },
-    h: { fontSize: "0.68rem", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--color-text-secondary)", marginBottom: "1rem" },
-    inp: { background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: "var(--border-radius-md)", padding: "6px 10px", fontSize: "0.85rem", color: "var(--color-text-primary)", fontFamily: "var(--font-sans)", outline: "none", width: "100%" },
-    inpC: { background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: "var(--border-radius-md)", padding: 8, fontSize: "2rem", fontFamily: "var(--font-mono)", fontWeight: 600, letterSpacing: "0.25em", textTransform: "uppercase", textAlign: "center", color: "var(--color-text-primary)", outline: "none", width: "100%" },
-    btnA: { background: "#EF9F27", border: "none", borderRadius: "var(--border-radius-md)", padding: 8, fontSize: "0.85rem", cursor: "pointer", color: "#412402", fontWeight: 500, fontFamily: "var(--font-sans)", width: "100%" },
-    btn: { background: "var(--color-background-secondary)", border: "0.5px solid var(--color-border-secondary)", borderRadius: "var(--border-radius-md)", padding: 8, fontSize: "0.82rem", cursor: "pointer", color: "var(--color-text-primary)", fontFamily: "var(--font-sans)", width: "100%" },
-    err: { fontSize: "0.8rem", color: "var(--color-text-danger)", fontFamily: "var(--font-mono)", marginTop: "0.75rem" },
+    wrap: { minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", background: "var(--color-background-tertiary)", padding: "1.5rem" },
+    tag: { fontFamily: "var(--font-mono)", fontSize: "0.68rem", letterSpacing: "0.3em", textTransform: "uppercase", color: "var(--color-text-secondary)", marginBottom: 4 },
+    brand: { fontFamily: "var(--font-mono)", fontSize: "2rem", fontWeight: 700, letterSpacing: "0.08em", color: "var(--color-text-primary)", marginBottom: "1.5rem" },
+    grid: { display: "grid", gridTemplateRows: `repeat(${ROWS}, 1fr)`, gap: 6, marginBottom: "1.5rem" },
+    row: { display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 6 },
+    cell: { width: 56, height: 56, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.6rem", fontWeight: 700, fontFamily: "var(--font-mono)", border: "2px solid var(--color-border-secondary)", borderRadius: "var(--border-radius-md)", textTransform: "uppercase" },
+    filled: { borderColor: "#878a8c" },
+    revealed: (color) => ({ background: color, borderColor: color, color: "#fff" }),
+    msg: { fontFamily: "var(--font-mono)", fontSize: "0.9rem", marginBottom: "1rem", color: "var(--color-text-primary)", fontWeight: 600 },
+    kb: { display: "flex", flexDirection: "column", gap: 6, alignItems: "center" },
+    kbRow: { display: "flex", gap: 5 },
+    key: (color) => ({ minWidth: 36, height: 52, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: "var(--border-radius-md)", fontSize: "0.82rem", fontWeight: 600, fontFamily: "var(--font-mono)", cursor: "pointer", border: "none", background: color || "#d3d6da", color: color ? "#fff" : "var(--color-text-primary)", padding: "0 8px" }),
+    wide: { minWidth: 60 },
     hint: { marginTop: "1.5rem", fontFamily: "var(--font-mono)", fontSize: "0.7rem", color: "var(--color-text-secondary)", letterSpacing: "0.05em" },
   }
 
-  const onCreate = () => {
-    if (!hostName.trim()) return setErr("Enter your name")
-    setErr(""); alert("Room creation coming next — this is v1 deploy.")
-  }
-  const onJoin = () => {
-    if (!joinName.trim()) return setErr("Enter your name")
-    if (joinCode.trim().length !== 4) return setErr("4-letter code required")
-    setErr(""); alert("Join flow coming next — this is v1 deploy.")
-  }
+  const kbRows = [
+    "QWERTYUIOP".split(""),
+    "ASDFGHJKL".split(""),
+    ["ENTER", ..."ZXCVBNM".split(""), "⌫"]
+  ]
 
   return (
     <div style={S.wrap}>
-      <div style={S.tag}>Interactive Work Planning</div>
+      <div style={S.tag}>taskiap.com</div>
       <div style={S.brand}>TASK IAP</div>
-      <div style={S.card}>
-        <div style={S.col}>
-          <div style={S.h}>Lead a Session</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
-            <input style={S.inp} placeholder="Your name" value={hostName} onChange={e => setHostName(e.target.value)} onKeyDown={e => e.key === "Enter" && onCreate()} />
-            <button style={S.btnA} onClick={onCreate}>Create Room</button>
-          </div>
-        </div>
-        <div style={{ background: "var(--color-border-tertiary)" }} />
-        <div style={S.col}>
-          <div style={S.h}>Join a Session</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
-            <input style={S.inpC} placeholder="CODE" maxLength={4} value={joinCode} onChange={e => setJoinCode(e.target.value.toUpperCase())} onKeyDown={e => e.key === "Enter" && onJoin()} />
-            <input style={S.inp} placeholder="Your name" value={joinName} onChange={e => setJoinName(e.target.value)} onKeyDown={e => e.key === "Enter" && onJoin()} />
-            <button style={S.btn} onClick={onJoin}>Join Room</button>
-          </div>
-        </div>
+
+      {message && <div style={S.msg}>{message}</div>}
+
+      <div style={S.grid}>
+        {Array.from({ length: ROWS }).map((_, row) => {
+          const guess = guesses[row]
+          const isCurrentRow = row === guesses.length && !gameOver
+          return (
+            <div key={row} style={S.row}>
+              {Array.from({ length: COLS }).map((_, col) => {
+                let letter = ""
+                let style = { ...S.cell }
+                if (guess) {
+                  letter = guess[col]
+                  Object.assign(style, S.revealed(getColor(letter, col, guess)))
+                } else if (isCurrentRow && current[col]) {
+                  letter = current[col]
+                  Object.assign(style, S.filled)
+                }
+                return <div key={col} style={style}>{letter}</div>
+              })}
+            </div>
+          )
+        })}
       </div>
-      {err && <div style={S.err}>{err}</div>}
-      <div style={S.hint}>taskiap.com · v0.1</div>
+
+      <div style={S.kb}>
+        {kbRows.map((row, ri) => (
+          <div key={ri} style={S.kbRow}>
+            {row.map(k => {
+              const isWide = k === "ENTER" || k === "⌫"
+              const color = usedColors[k] || null
+              return (
+                <button key={k} style={{ ...S.key(color), ...(isWide ? S.wide : {}) }} onClick={() => onKey(k === "⌫" ? "BACKSPACE" : k)}>
+                  {k}
+                </button>
+              )
+            })}
+          </div>
+        ))}
+      </div>
+
+      <div style={S.hint}>v0.2 · wordle</div>
     </div>
   )
 }
