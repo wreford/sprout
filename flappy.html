@@ -210,35 +210,56 @@ var LINES_RANDOM = [
   "Your father couldn't do this. He can barely use the remote."
 ];
 
+var speechReady = false;
+var pendingSpeech = null;
+
+// Preload voices — some browsers need this
+if (window.speechSynthesis) {
+  speechSynthesis.getVoices();
+  speechSynthesis.onvoiceschanged = function() { speechReady = true; };
+  setTimeout(function() { speechReady = true; }, 1000);
+}
+
 function speak(text, priority) {
   try {
     if (!window.speechSynthesis) return;
-    if (speechSynthesis.speaking) return;
     var now = Date.now();
-    if (!priority && (now - lastSpeechTime < MIN_SPEECH_GAP)) return;
+    // Priority lines always go through; non-priority respect gap and speaking state
+    if (!priority) {
+      if (now - lastSpeechTime < MIN_SPEECH_GAP) return;
+      if (speechSynthesis.speaking || speechSynthesis.pending) return;
+    }
+    // If priority and something is playing, cancel it first
+    if (priority && speechSynthesis.speaking) {
+      try { speechSynthesis.cancel(); } catch(e) {}
+    }
 
     var utter = new SpeechSynthesisUtterance(text);
-    utter.rate = 1.1;
-    utter.pitch = 1.3;
+    utter.rate = 1.05;
+    utter.pitch = 1.25;
     utter.volume = 1.0;
 
-    // Try to find English female voice
     try {
       var voices = speechSynthesis.getVoices();
-      var female = null;
-      for (var i = 0; i < voices.length; i++) {
-        var v = voices[i];
-        if (v.lang && v.lang.indexOf('en') === 0) {
-          if (v.name && (v.name.indexOf('Female') !== -1 || v.name.indexOf('Samantha') !== -1 ||
-              v.name.indexOf('Victoria') !== -1 || v.name.indexOf('Karen') !== -1 ||
-              v.name.indexOf('Moira') !== -1 || v.name.indexOf('Fiona') !== -1 ||
-              v.name.indexOf('woman') !== -1 || v.name.indexOf('Girl') !== -1)) {
-            female = v;
-            break;
+      if (voices && voices.length > 0) {
+        var female = null;
+        for (var i = 0; i < voices.length; i++) {
+          var v = voices[i];
+          if (!v.lang || v.lang.indexOf('en') !== 0) continue;
+          if (v.name && (v.name.indexOf('Samantha') !== -1 || v.name.indexOf('Google UK English Female') !== -1 ||
+              v.name.indexOf('Karen') !== -1 || v.name.indexOf('Victoria') !== -1 ||
+              v.name.indexOf('Female') !== -1 || v.name.indexOf('Fiona') !== -1)) {
+            female = v; break;
           }
         }
+        // Fallback: any English voice
+        if (!female) {
+          for (var j = 0; j < voices.length; j++) {
+            if (voices[j].lang && voices[j].lang.indexOf('en') === 0) { female = voices[j]; break; }
+          }
+        }
+        if (female) utter.voice = female;
       }
-      if (female) utter.voice = female;
     } catch(e) {}
 
     speechSynthesis.speak(utter);
