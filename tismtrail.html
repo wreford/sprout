@@ -33,10 +33,49 @@ function sndJump(){tone(500,0.06,"square",0.04);setTimeout(function(){tone(600,0
 function sndDie(){tone(200,0.3,"sawtooth",0.06);setTimeout(function(){tone(100,0.2,"sawtooth",0.04);},150);}
 function sndOrb(){tone(880,0.08,"sine",0.05);setTimeout(function(){tone(1100,0.08,"sine",0.04);},50);}
 function sndBeat(){tone(150,0.04,"square",0.02);}
+function sndCheckpoint(){tone(660,0.1,"sine",0.05);setTimeout(function(){tone(880,0.1,"sine",0.04);},80);setTimeout(function(){tone(1100,0.12,"sine",0.05);},160);}
+function sndNearMiss(){tone(1200,0.04,"sine",0.02);}
 
 // ── Colors & visuals
 var NEON_COLORS = ["#00ffff","#ff00ff","#00ff88","#ff6600","#ffff00","#ff0066","#6644ff","#00ccff"];
 var bgHue = 0;
+
+// ── Death counter (localStorage)
+var deathCount = parseInt(localStorage.getItem("tism-deaths")) || 0;
+
+// ── Screen shake state
+var shakeX = 0, shakeY = 0, shakeDuration = 0, shakeIntensity = 0;
+
+// ── Near-miss flash
+var nearMissFlash = 0;
+
+// ── Ground pulse
+var groundPulseOffset = 0;
+
+// ── Checkpoint system (every ~2000 distance)
+var CHECKPOINT_INTERVAL = 2000;
+var lastCheckpoint = 0;  // distance of last reached checkpoint
+var checkpointFlash = 0; // visual flash timer for checkpoint
+var checkpointMarkers = []; // visible checkpoint markers on screen
+
+// ── Parallax background shapes
+var bgShapes = [];
+function initBgShapes() {
+  bgShapes = [];
+  for (var i = 0; i < 30; i++) {
+    bgShapes.push({
+      x: Math.random() * 3000,
+      y: Math.random() * (groundY - 40) * 0.95 + 10,
+      size: 10 + Math.random() * 40,
+      type: Math.floor(Math.random() * 4), // 0=triangle, 1=circle, 2=diamond, 3=square
+      speed: 0.1 + Math.random() * 0.5,    // parallax speed multiplier
+      alpha: 0.02 + Math.random() * 0.05,
+      hueOffset: Math.random() * 360,
+      rotSpeed: (Math.random() - 0.5) * 0.01
+    });
+  }
+}
+initBgShapes();
 
 // ── Game state
 var STATE = "menu";
@@ -56,6 +95,9 @@ var neonIdx = 0;
 var beatTimer = 0;
 var pulseScale = 1;
 
+// ── Minimum gap enforcement
+var MIN_OBSTACLE_GAP = 160;
+
 // Generate stars
 for (var i = 0; i < 80; i++) {
   bgStars.push({x:Math.random()*2000,y:Math.random()*1000,s:0.5+Math.random()*2,b:Math.random()});
@@ -65,6 +107,21 @@ for (var i = 0; i < 80; i++) {
 function spawnObstacle() {
   var type = Math.random();
   var x = W + 50;
+
+  // (1) Enforce minimum gap: find rightmost edge of existing obstacles
+  var rightmostEdge = 0;
+  for (var i = 0; i < obstacles.length; i++) {
+    var oRight = obstacles[i].x + (obstacles[i].w || 30);
+    if (oRight > rightmostEdge) rightmostEdge = oRight;
+  }
+  // Make sure new obstacle is at least MIN_OBSTACLE_GAP away from rightmost edge
+  var adjustedGap = MIN_OBSTACLE_GAP + Math.random() * 80;
+  // Scale gap down slightly at higher speeds to keep difficulty fair
+  adjustedGap = Math.max(MIN_OBSTACLE_GAP, adjustedGap - Math.min(frame * 0.005, 30));
+  if (x < rightmostEdge + adjustedGap) {
+    x = rightmostEdge + adjustedGap;
+  }
+
   if (type < 0.35) {
     // Spike
     obstacles.push({x:x,y:groundY,w:20,h:30,type:"spike"});
@@ -94,21 +151,25 @@ function reset() {
   obstacles = [];
   orbs = [];
   particles = [];
+  checkpointMarkers = [];
   score = 0;
-  distance = 0;
-  speed = 5;
-  frame = 0;
+  // If we have a checkpoint, start from there
+  distance = lastCheckpoint;
+  speed = 5 + Math.min(5, lastCheckpoint / 2000 * 0.3 * (2000 / 400)); // approximate speed ramp to checkpoint
+  // Clamp speed to sane range
+  speed = Math.min(10, Math.max(5, 5 + Math.floor(lastCheckpoint / 400) * 0.3));
+  frame = Math.floor(lastCheckpoint / speed) || 0;
   neonIdx = 0;
-  // Pre-spawn some obstacles
+  shakeX = 0; shakeY = 0; shakeDuration = 0;
+  nearMissFlash = 0;
+  // Pre-spawn some obstacles ahead
   for (var i = 0; i < 3; i++) {
     spawnObstacle();
-    obstacles.forEach(function(o){o.x+=i*250+300;});
-    orbs.forEach(function(o){o.x+=i*250+300;});
   }
 }
 
 function jump() {
-  if (STATE === "menu") { STATE = "playing"; reset(); sndJump(); return; }
+  if (STATE === "menu") { STATE = "playing"; lastCheckpoint = 0; reset(); sndJump(); return; }
   if (STATE === "dead") { STATE = "menu"; return; }
   if (player.onGround) { player.vy = jumpPower; player.onGround = false; sndJump(); }
 }
@@ -123,6 +184,30 @@ function spawnParticles(x,y,color,count) {
   }
 }
 
+// ── Near-miss detection: check if player barely avoided an obstacle
+function checkNearMiss(o) {
+  var px = player.x, py = player.y, ps = player.size;
+  var nearDist = 8; // how close counts as a "near miss"
+
+  if (o.type === "spike") {
+    // Expand the collision zone by nearDist and check if player is in the expanded zone but NOT in the kill zone
+    var inKill = (px+ps > o.x+5 && px < o.x+o.w-5 && py+ps > o.y-o.h+8);
+    var inNear = (px+ps > o.x+5-nearDist && px < o.x+o.w-5+nearDist && py+ps > o.y-o.h+8-nearDist);
+    if (inNear && !inKill) return true;
+  } else if (o.type === "saw") {
+    var dx = (px+ps/2)-(o.x+o.w/2), dy = (py+ps/2)-(o.y-o.h/2);
+    var dist = Math.sqrt(dx*dx+dy*dy);
+    var killRadius = ps/2 + o.w/2 - 8;
+    var nearRadius = killRadius + nearDist;
+    if (dist < nearRadius && dist >= killRadius) return true;
+  } else {
+    var inKill = (px+ps > o.x+3 && px < o.x+o.w-3 && py+ps > o.y+3 && py < o.y+o.h-3);
+    var inNear = (px+ps > o.x+3-nearDist && px < o.x+o.w-3+nearDist && py+ps > o.y+3-nearDist && py < o.y+o.h-3+nearDist);
+    if (inNear && !inKill) return true;
+  }
+  return false;
+}
+
 function update() {
   if (STATE !== "playing") return;
   frame++;
@@ -134,19 +219,62 @@ function update() {
   if (beatTimer >= 15) { beatTimer = 0; pulseScale = 1.06; sndBeat(); }
   pulseScale += (1 - pulseScale) * 0.15;
 
+  // Ground pulse (subtle height oscillation to the beat)
+  groundPulseOffset = Math.sin(frame * 0.21) * 2.5 + Math.sin(frame * 0.1) * 1.5;
+
   // Speed ramp
   if (frame % 400 === 0) speed = Math.min(10, speed + 0.3);
 
   // Neon color cycle
   if (frame % 120 === 0) neonIdx = (neonIdx + 1) % NEON_COLORS.length;
 
+  // (8) Checkpoint system
+  var currentCheckpointZone = Math.floor(distance / CHECKPOINT_INTERVAL) * CHECKPOINT_INTERVAL;
+  if (currentCheckpointZone > lastCheckpoint && currentCheckpointZone > 0) {
+    lastCheckpoint = currentCheckpointZone;
+    checkpointFlash = 1.0;
+    sndCheckpoint();
+    // Spawn a burst of green particles
+    spawnParticles(player.x + player.size/2, player.y + player.size/2, "#22ff88", 16);
+  }
+  if (checkpointFlash > 0) checkpointFlash -= 0.02;
+
+  // Update checkpoint markers (visual pillars on ground)
+  // Spawn upcoming checkpoint markers
+  var nextCPDist = (Math.floor(distance / CHECKPOINT_INTERVAL) + 1) * CHECKPOINT_INTERVAL;
+  var cpScreenX = player.x + (nextCPDist - distance);
+  if (cpScreenX < W + 200) {
+    var alreadyExists = false;
+    for (var ci = 0; ci < checkpointMarkers.length; ci++) {
+      if (checkpointMarkers[ci].dist === nextCPDist) { alreadyExists = true; break; }
+    }
+    if (!alreadyExists) {
+      checkpointMarkers.push({dist: nextCPDist, flash: 0});
+    }
+  }
+  // Remove old markers
+  for (var ci = checkpointMarkers.length - 1; ci >= 0; ci--) {
+    if (checkpointMarkers[ci].dist < distance - 200) checkpointMarkers.splice(ci, 1);
+  }
+
+  // Screen shake decay
+  if (shakeDuration > 0) {
+    shakeDuration--;
+    shakeX = (Math.random() - 0.5) * shakeIntensity * 2;
+    shakeY = (Math.random() - 0.5) * shakeIntensity * 2;
+    shakeIntensity *= 0.9;
+  } else {
+    shakeX = 0; shakeY = 0;
+  }
+
   // Player physics
   player.vy += gravity;
   player.y += player.vy;
   player.rotation += speed * 0.04;
 
-  if (player.y >= groundY - player.size) {
-    player.y = groundY - player.size;
+  var currentGroundY = groundY + groundPulseOffset;
+  if (player.y >= currentGroundY - player.size) {
+    player.y = currentGroundY - player.size;
     player.vy = 0;
     player.onGround = true;
   }
@@ -156,14 +284,14 @@ function update() {
   if (player.trail.length > 20) player.trail.shift();
   for (var t = 0; t < player.trail.length; t++) player.trail[t].life -= 0.05;
 
-  // Spawn obstacles
+  // Spawn obstacles with minimum gap enforcement (already handled in spawnObstacle)
   var lastObs = obstacles.length > 0 ? obstacles[obstacles.length-1].x : 0;
   if (lastObs < W) {
-    var gap = 180 + Math.random()*120 - Math.min(frame*0.02, 60);
     spawnObstacle();
-    obstacles.forEach(function(o,i){if(o.x>W)o.x=Math.max(o.x, lastObs+gap);});
-    orbs.forEach(function(o){if(o.x>W+100)o.x=Math.max(o.x,lastObs+gap+40);});
   }
+
+  // Near-miss flash decay
+  if (nearMissFlash > 0) nearMissFlash -= 0.06;
 
   // Move obstacles
   for (var i = obstacles.length-1; i >= 0; i--) {
@@ -172,18 +300,26 @@ function update() {
     if (o.type === "saw") o.rot += 0.15;
     if (o.x < -60) { obstacles.splice(i,1); continue; }
 
-    // Collision
+    // (5) Near-miss check
+    if (checkNearMiss(o) && nearMissFlash <= 0) {
+      nearMissFlash = 1.0;
+      sndNearMiss();
+    }
+
+    // Collision with tightened hitboxes
     var px = player.x, py = player.y, ps = player.size;
     if (o.type === "spike") {
-      // Triangle collision (simplified as rectangle)
-      if (px+ps > o.x+3 && px < o.x+o.w-3 && py+ps > o.y-o.h+5) {
+      // Tighter spike collision: more forgiving on the sides
+      if (px+ps > o.x+5 && px < o.x+o.w-5 && py+ps > o.y-o.h+8) {
         die(); return;
       }
     } else if (o.type === "saw") {
+      // (4) Tightened saw hitbox: increased tolerance from -4 to -8
       var dx = (px+ps/2)-(o.x+o.w/2), dy = (py+ps/2)-(o.y-o.h/2);
-      if (Math.sqrt(dx*dx+dy*dy) < ps/2+o.w/2-4) { die(); return; }
+      if (Math.sqrt(dx*dx+dy*dy) < ps/2+o.w/2-8) { die(); return; }
     } else {
-      if (px+ps > o.x+2 && px < o.x+o.w-2 && py+ps > o.y+2 && py < o.y+o.h-2) {
+      // Block collision
+      if (px+ps > o.x+3 && px < o.x+o.w-3 && py+ps > o.y+3 && py < o.y+o.h-3) {
         die(); return;
       }
     }
@@ -219,18 +355,78 @@ function update() {
 
 function die() {
   STATE = "dead";
+  // (2) Increment death counter
+  deathCount++;
+  localStorage.setItem("tism-deaths", deathCount);
   if (score > highScore) { highScore = score; localStorage.setItem("tism-high", highScore); }
+  // (3) Screen shake on death
+  shakeDuration = 20;
+  shakeIntensity = 12;
   sndDie();
   spawnParticles(player.x+player.size/2, player.y+player.size/2, "#ff0044", 20);
 }
 
+function drawBgShapes() {
+  for (var i = 0; i < bgShapes.length; i++) {
+    var s = bgShapes[i];
+    // Parallax scroll: different shapes at different speeds
+    var sx = ((s.x - distance * s.speed) % (W + 200) + W + 200) % (W + 200) - 100;
+    var sy = s.y;
+    var hue = (bgHue + s.hueOffset) % 360;
+    var rot = frame * s.rotSpeed;
+
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.rotate(rot);
+    ctx.globalAlpha = s.alpha;
+    ctx.strokeStyle = "hsl(" + hue + ",60%,40%)";
+    ctx.lineWidth = 1;
+
+    if (s.type === 0) {
+      // Triangle
+      ctx.beginPath();
+      ctx.moveTo(0, -s.size/2);
+      ctx.lineTo(-s.size/2, s.size/2);
+      ctx.lineTo(s.size/2, s.size/2);
+      ctx.closePath();
+      ctx.stroke();
+    } else if (s.type === 1) {
+      // Circle
+      ctx.beginPath();
+      ctx.arc(0, 0, s.size/2, 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (s.type === 2) {
+      // Diamond
+      ctx.beginPath();
+      ctx.moveTo(0, -s.size/2);
+      ctx.lineTo(s.size/2, 0);
+      ctx.lineTo(0, s.size/2);
+      ctx.lineTo(-s.size/2, 0);
+      ctx.closePath();
+      ctx.stroke();
+    } else {
+      // Square
+      ctx.strokeRect(-s.size/2, -s.size/2, s.size, s.size);
+    }
+
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+}
+
 function draw() {
+  // Apply screen shake
+  ctx.save();
+  if (shakeDuration > 0) {
+    ctx.translate(shakeX, shakeY);
+  }
+
   // Background
   var bgGrad = ctx.createLinearGradient(0,0,0,H);
   bgGrad.addColorStop(0, "hsl("+(bgHue%360)+",30%,5%)");
   bgGrad.addColorStop(1, "hsl("+((bgHue+60)%360)+",20%,3%)");
   ctx.fillStyle = bgGrad;
-  ctx.fillRect(0,0,W,H);
+  ctx.fillRect(-20,-20,W+40,H+40); // Slightly oversized to cover shake edges
 
   // Stars
   for (var i = 0; i < bgStars.length; i++) {
@@ -241,22 +437,58 @@ function draw() {
     ctx.fillRect(sx, sy, s.s, s.s);
   }
 
-  // Ground
+  // (6) Background parallax geometric shapes
+  drawBgShapes();
+
+  // Ground with pulse
   var neon = NEON_COLORS[neonIdx];
+  var currentGroundY = groundY + groundPulseOffset;
   ctx.fillStyle = "#0f0f1a";
-  ctx.fillRect(0, groundY, W, H-groundY);
+  ctx.fillRect(0, currentGroundY, W, H - currentGroundY + 20);
   ctx.strokeStyle = neon;
   ctx.lineWidth = 2;
   ctx.shadowColor = neon;
   ctx.shadowBlur = 8;
-  ctx.beginPath(); ctx.moveTo(0,groundY); ctx.lineTo(W,groundY); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0,currentGroundY); ctx.lineTo(W,currentGroundY); ctx.stroke();
   ctx.shadowBlur = 0;
 
   // Ground grid lines
   ctx.strokeStyle = "rgba(255,255,255,0.04)";
   ctx.lineWidth = 1;
   for (var gx = -(distance*2 % 40); gx < W; gx += 40) {
-    ctx.beginPath(); ctx.moveTo(gx, groundY); ctx.lineTo(gx, H); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(gx, currentGroundY); ctx.lineTo(gx, H+20); ctx.stroke();
+  }
+
+  // (8) Checkpoint markers on ground
+  if (STATE === "playing" || STATE === "dead") {
+    for (var ci = 0; ci < checkpointMarkers.length; ci++) {
+      var cm = checkpointMarkers[ci];
+      var cmx = player.x + (cm.dist - distance);
+      if (cmx < -50 || cmx > W + 50) continue;
+      var reached = distance >= cm.dist;
+      var markerColor = reached ? "#22ff88" : "#335544";
+      ctx.save();
+      ctx.globalAlpha = reached ? 0.6 : 0.3;
+      ctx.strokeStyle = markerColor;
+      ctx.shadowColor = markerColor;
+      ctx.shadowBlur = reached ? 10 : 0;
+      ctx.lineWidth = 2;
+      // Draw a flag/pillar
+      ctx.beginPath();
+      ctx.moveTo(cmx, currentGroundY);
+      ctx.lineTo(cmx, currentGroundY - 40);
+      ctx.stroke();
+      // Flag triangle
+      ctx.fillStyle = markerColor;
+      ctx.beginPath();
+      ctx.moveTo(cmx, currentGroundY - 40);
+      ctx.lineTo(cmx + 16, currentGroundY - 33);
+      ctx.lineTo(cmx, currentGroundY - 26);
+      ctx.closePath();
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.restore();
+    }
   }
 
   if (STATE === "menu") {
@@ -265,22 +497,35 @@ function draw() {
     ctx.fillStyle = neon;
     ctx.shadowColor = neon;
     ctx.shadowBlur = 15;
-    ctx.fillText("'TISM TRAIL", W/2, H*0.28);
+    ctx.fillText("'TISM TRAIL", W/2, H*0.25);
     ctx.shadowBlur = 0;
     ctx.font = "48px serif";
-    ctx.fillText("🟦", W/2, H*0.42);
+    ctx.fillText("🟦", W/2, H*0.38);
     ctx.font = "13px monospace";
     ctx.fillStyle = "#888";
-    ctx.fillText("Tap / Space to jump", W/2, H*0.54);
-    ctx.fillText("Dodge spikes & saws, collect orbs", W/2, H*0.59);
-    ctx.fillText("Rhythm. Timing. Vibes.", W/2, H*0.64);
+    ctx.fillText("Tap / Space to jump", W/2, H*0.49);
+    ctx.fillText("Dodge spikes & saws, collect orbs", W/2, H*0.54);
+    ctx.fillText("Rhythm. Timing. Vibes.", W/2, H*0.59);
     if (highScore > 0) {
       ctx.fillStyle = neon;
-      ctx.fillText("Best: " + highScore, W/2, H*0.72);
+      ctx.fillText("Best: " + highScore, W/2, H*0.66);
+    }
+    // (2) Show death count on menu
+    if (deathCount > 0) {
+      ctx.fillStyle = "#ff4466";
+      ctx.font = "11px monospace";
+      ctx.fillText("Attempts: " + deathCount, W/2, H*0.72);
+    }
+    // Checkpoint hint
+    if (lastCheckpoint > 0) {
+      ctx.fillStyle = "#22ff88";
+      ctx.font = "11px monospace";
+      ctx.fillText("Checkpoint: " + lastCheckpoint + " (tap to resume)", W/2, H*0.77);
     }
     ctx.font = "10px monospace";
     ctx.fillStyle = "#444";
     ctx.fillText("taskiap.com", W/2, H*0.85);
+    ctx.restore(); // end shake
     return;
   }
 
@@ -408,6 +653,38 @@ function draw() {
   }
   ctx.globalAlpha = 1;
 
+  // (5) Near-miss flash overlay
+  if (nearMissFlash > 0) {
+    ctx.fillStyle = "rgba(255,255,255," + (nearMissFlash * 0.18) + ")";
+    ctx.fillRect(-20, -20, W+40, H+40);
+    // "CLOSE!" text that fades
+    if (nearMissFlash > 0.5) {
+      ctx.globalAlpha = (nearMissFlash - 0.5) * 2;
+      ctx.font = "bold 14px monospace";
+      ctx.fillStyle = "#ffffff";
+      ctx.textAlign = "center";
+      ctx.fillText("CLOSE!", player.x + player.size/2, player.y - 20);
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // (8) Checkpoint flash overlay
+  if (checkpointFlash > 0) {
+    ctx.fillStyle = "rgba(34,255,136," + (checkpointFlash * 0.12) + ")";
+    ctx.fillRect(-20, -20, W+40, H+40);
+    if (checkpointFlash > 0.5) {
+      ctx.globalAlpha = (checkpointFlash - 0.5) * 2;
+      ctx.font = "bold 16px monospace";
+      ctx.fillStyle = "#22ff88";
+      ctx.textAlign = "center";
+      ctx.shadowColor = "#22ff88";
+      ctx.shadowBlur = 10;
+      ctx.fillText("CHECKPOINT!", W/2, H*0.15);
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+    }
+  }
+
   // HUD
   ctx.font = "bold 20px monospace";
   ctx.fillStyle = "#fff";
@@ -416,6 +693,22 @@ function draw() {
   ctx.shadowBlur = 6;
   ctx.fillText(score, W/2, 36);
   ctx.shadowBlur = 0;
+
+  // (2) Death counter in HUD (top-right)
+  ctx.font = "11px monospace";
+  ctx.fillStyle = "#666";
+  ctx.textAlign = "right";
+  ctx.fillText("Attempts: " + deathCount, W - 16, 24);
+  ctx.textAlign = "center";
+
+  // Checkpoint indicator in HUD (top-left)
+  if (lastCheckpoint > 0) {
+    ctx.font = "11px monospace";
+    ctx.fillStyle = "#22ff88";
+    ctx.textAlign = "left";
+    ctx.fillText("CP: " + lastCheckpoint, 16, 24);
+    ctx.textAlign = "center";
+  }
 
   // Percentage bar (visual flair)
   var pct = Math.min(1, distance / 5000);
@@ -430,32 +723,44 @@ function draw() {
   // Dead screen
   if (STATE === "dead") {
     ctx.fillStyle = "rgba(0,0,0,0.65)";
-    ctx.fillRect(0,0,W,H);
+    ctx.fillRect(-20,-20,W+40,H+40);
     ctx.textAlign = "center";
     ctx.font = "bold 28px monospace";
     ctx.fillStyle = "#ff2244";
     ctx.shadowColor = "#ff2244";
     ctx.shadowBlur = 12;
-    ctx.fillText("CRASHED", W/2, H*0.32);
+    ctx.fillText("CRASHED", W/2, H*0.28);
     ctx.shadowBlur = 0;
     ctx.font = "32px serif";
-    ctx.fillText("💥🟦💥", W/2, H*0.42);
+    ctx.fillText("💥🟦💥", W/2, H*0.38);
     ctx.font = "bold 18px monospace";
     ctx.fillStyle = neon;
-    ctx.fillText("Score: " + score, W/2, H*0.55);
+    ctx.fillText("Score: " + score, W/2, H*0.50);
     if (score >= highScore && score > 0) {
       ctx.fillStyle = "#22c55e";
       ctx.font = "13px monospace";
-      ctx.fillText("NEW BEST!", W/2, H*0.61);
+      ctx.fillText("NEW BEST!", W/2, H*0.56);
     } else {
       ctx.font = "13px monospace";
       ctx.fillStyle = "#888";
-      ctx.fillText("Best: " + highScore, W/2, H*0.61);
+      ctx.fillText("Best: " + highScore, W/2, H*0.56);
+    }
+    // (2) Show death count on death screen
+    ctx.fillStyle = "#ff4466";
+    ctx.font = "12px monospace";
+    ctx.fillText("Attempt #" + deathCount, W/2, H*0.63);
+    // (8) Checkpoint info
+    if (lastCheckpoint > 0) {
+      ctx.fillStyle = "#22ff88";
+      ctx.font = "11px monospace";
+      ctx.fillText("Restart from checkpoint: " + lastCheckpoint, W/2, H*0.68);
     }
     ctx.font = "12px monospace";
     ctx.fillStyle = "#666";
-    ctx.fillText("Tap to restart", W/2, H*0.72);
+    ctx.fillText("Tap to continue", W/2, H*0.76);
   }
+
+  ctx.restore(); // end shake transform
 }
 
 function loop() {
