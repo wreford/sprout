@@ -33,8 +33,8 @@ const { useState, useEffect, useCallback, useRef } = React;
 // ── Load words
 var ALL_WORDS = JSON.parse(document.getElementById("words-data").textContent);
 var DICT = new Set(ALL_WORDS);
-// Answer pool: common-ish words (first 2000 in frequency-sorted list)
-var ANSWER_POOL = ALL_WORDS.slice(0, 2000);
+// Answer pool: common-ish words (first 2000 in frequency-sorted list), deduplicated
+var ANSWER_POOL = Array.from(new Set(ALL_WORDS.slice(0, 2000)));
 
 var COLS = 5;
 var ROWS = 7;
@@ -45,9 +45,31 @@ var STARTERS = [
   { name: "Jacky", code: "JACKY" },
   { name: "Troy", code: "TROYW" },
 ];
+var STARTER_CODES = new Set(STARTERS.map(function(s){ return s.code; }));
 STARTERS.forEach(function(s) { DICT.add(s.code); });
 
-function pickAnswer() { return ANSWER_POOL[Math.floor(Math.random() * ANSWER_POOL.length)]; }
+// ── Daily mode: deterministic seed from date string
+function mulberry32(a) {
+  return function() {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    var t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function dateSeed(dateStr) {
+  var h = 0;
+  for (var i = 0; i < dateStr.length; i++) { h = Math.imul(31, h) + dateStr.charCodeAt(i) | 0; }
+  return h;
+}
+function getDailyWord() {
+  var today = new Date();
+  var ds = today.getFullYear() + "-" + String(today.getMonth()+1).padStart(2,"0") + "-" + String(today.getDate()).padStart(2,"0");
+  var rng = mulberry32(dateSeed(ds));
+  return ANSWER_POOL[Math.floor(rng() * ANSWER_POOL.length)];
+}
+
+function pickAnswer(daily) { if (daily) return getDailyWord(); return ANSWER_POOL[Math.floor(Math.random() * ANSWER_POOL.length)]; }
 
 // ── Stats
 function loadStats() {
@@ -199,7 +221,7 @@ var STREAK_MSGS = {
 function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 
 // ── Share
-function shareResult(guesses, answer, starter, won) {
+function shareResult(guesses, answer, starter, won, daily) {
   var rows = guesses.map(function(g) {
     var line = "";
     for (var i = 0; i < 5; i++) {
@@ -209,7 +231,9 @@ function shareResult(guesses, answer, starter, won) {
     }
     return line;
   });
-  var text = "Wrefle " + (won ? guesses.length : "X") + "/7 (" + starter.name + ")\n" + rows.join("\n") + "\ntaskiap.com";
+  var label = daily ? "Daily" : starter.name;
+  var starterLine = starter.code + " (" + starter.name + ")";
+  var text = "Wrefle " + (won ? guesses.length : "X") + "/7 [" + label + "]\nStarter: " + starterLine + "\n" + rows.join("\n") + "\ntaskiap.com";
   if (navigator.share) { navigator.share({ text: text }); }
   else if (navigator.clipboard) { navigator.clipboard.writeText(text); return "Copied to clipboard!"; }
   return "Shared!";
@@ -219,11 +243,31 @@ function shareResult(guesses, answer, starter, won) {
 function PickerScreen(props) {
   var stats = props.stats;
   var [lobbyGif, setLobbyGif] = useState(null);
+  var [showHelp, setShowHelp] = useState(false);
   useEffect(function(){ fetchGif("cute cat waving").then(setLobbyGif); },[]);
   return (
-    <div style={{height:"100%",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"1.5rem",gap:"0.8rem"}}>
+    <div style={{height:"100%",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"1.5rem",gap:"0.8rem",position:"relative"}}>
       {lobbyGif ? <img src={lobbyGif} alt="" style={{width:160,height:120,objectFit:"cover",borderRadius:12,border:"1px solid var(--border)"}}/> : <Jackson mood="love" size="3rem" />}
-      <div style={{fontFamily:"var(--font-mono)",fontSize:"clamp(2rem,10vw,3rem)",fontWeight:800,letterSpacing:"0.08em",background:"linear-gradient(135deg,var(--green),var(--yellow))",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>WREFLE</div>
+      <div style={{display:"flex",alignItems:"center",gap:10}}>
+        <div style={{fontFamily:"var(--font-mono)",fontSize:"clamp(2rem,10vw,3rem)",fontWeight:800,letterSpacing:"0.08em",background:"linear-gradient(135deg,var(--green),var(--yellow))",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>WREFLE</div>
+        <button onClick={function(){setShowHelp(!showHelp);}} style={{width:28,height:28,borderRadius:"50%",border:"1.5px solid var(--dim)",background:"transparent",color:"var(--dim)",fontSize:"0.85rem",fontWeight:700,fontFamily:"var(--font-mono)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"all 0.15s"}}
+          onMouseEnter={function(e){e.currentTarget.style.borderColor="var(--green)";e.currentTarget.style.color="var(--green)";}}
+          onMouseLeave={function(e){e.currentTarget.style.borderColor="var(--dim)";e.currentTarget.style.color="var(--dim)";}}>?</button>
+      </div>
+      {showHelp && (
+        <div style={{background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:10,padding:"14px 18px",maxWidth:320,fontSize:"0.78rem",lineHeight:1.65,color:"var(--text)",fontFamily:"var(--font-sans)",textAlign:"left"}}>
+          <div style={{fontWeight:700,marginBottom:6,fontFamily:"var(--font-mono)",fontSize:"0.82rem"}}>How to Play</div>
+          <div style={{color:"var(--dim)"}}>
+            <div style={{marginBottom:4}}>Guess the 5-letter word in <strong style={{color:"var(--text)"}}>7 tries</strong>.</div>
+            <div style={{marginBottom:4}}>Your <strong style={{color:"var(--text)"}}>starter</strong> makes the first guess for you.</div>
+            <div style={{marginBottom:6}}>After each guess, tiles change color:</div>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:3}}><span style={{display:"inline-block",width:22,height:22,borderRadius:4,background:"var(--green-d)",border:"2px solid var(--green)"}}></span> <span>Correct letter, correct spot</span></div>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:3}}><span style={{display:"inline-block",width:22,height:22,borderRadius:4,background:"var(--yellow-d)",border:"2px solid var(--yellow)"}}></span> <span>Correct letter, wrong spot</span></div>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}><span style={{display:"inline-block",width:22,height:22,borderRadius:4,background:"var(--gray)",border:"2px solid var(--gray)"}}></span> <span>Letter not in the word</span></div>
+            <div>Try <strong style={{color:"var(--green)"}}>Daily Mode</strong> for a shared daily puzzle!</div>
+          </div>
+        </div>
+      )}
       <div style={{fontSize:"0.82rem",color:"var(--dim)",maxWidth:300,textAlign:"center",lineHeight:1.5}}>Pick your starter. It guesses first. (Don't blame it if it's wrong.)</div>
       <div style={{display:"flex",flexDirection:"column",gap:8,width:"100%",maxWidth:280,marginTop:4}}>
         {STARTERS.map(function(s){return(
@@ -235,6 +279,12 @@ function PickerScreen(props) {
           </button>
         );})}
       </div>
+      {/* Daily Mode button */}
+      <button onClick={function(){sndType();props.onPickDaily();}} style={{width:"100%",maxWidth:280,marginTop:2,background:"linear-gradient(135deg,var(--green-d),var(--yellow-d))",border:"1.5px solid var(--green)",borderRadius:10,padding:"12px 16px",color:"var(--green)",fontFamily:"var(--font-mono)",fontSize:"0.9rem",fontWeight:700,letterSpacing:"0.1em",cursor:"pointer",textAlign:"center",transition:"all 0.15s"}}
+        onMouseEnter={function(e){e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow="0 4px 16px rgba(74,222,128,0.2)";}}
+        onMouseLeave={function(e){e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="none";}}>
+        DAILY MODE
+      </button>
       {stats.played > 0 && (
         <div style={{marginTop:8,background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:10,padding:"12px 20px",display:"flex",gap:20,fontSize:"0.7rem",fontFamily:"var(--font-mono)",color:"var(--dim)"}}>
           <div style={{textAlign:"center"}}><div style={{fontSize:"1.3rem",color:"var(--text)",fontWeight:700}}>{stats.played}</div>played</div>
@@ -252,7 +302,8 @@ function PickerScreen(props) {
 function Game(props) {
   var starter = props.starter;
   var stats = props.stats;
-  var answerRef = useRef(pickAnswer());
+  var daily = props.daily;
+  var answerRef = useRef(pickAnswer(daily));
   var answer = answerRef.current;
   var [guesses, setGuesses] = useState([starter.code]);
   var [current, setCurrent] = useState("");
@@ -268,6 +319,7 @@ function Game(props) {
 
   useEffect(function(){
     if(starter.code===answer){
+      setFlipRow(-1);setRevealedRows([true]);
       setGameOver(true);setMessage("WHAT. First try?! Jackson fainted.");setCatMood("scream");sndWin();spawnConfetti();
       var s={played:stats.played+1,won:stats.won+1,streak:stats.streak+1,maxStreak:Math.max(stats.maxStreak,stats.streak+1)};
       saveStats(s);setShowStats(true);fetchGif("cat mind blown").then(setGif);
@@ -282,7 +334,7 @@ function Game(props) {
     var guess=current.toUpperCase();
     if(guess==="MEOWS"){setMessage("Jackson says hi! 😺 ...but that's not the answer.");setCatMood("love");fetchGif("cat meowing").then(setGif);setShakeRow(guesses.length);setTimeout(function(){setShakeRow(-1);setMessage("");},2500);return;}
     if(guess==="CATTY"){setMessage("Jackson takes that personally.");setCatMood("smirk");}
-    if(!DICT.has(guess)){setMessage(pick(INVALID_MSGS));setShakeRow(guesses.length);sndError();setTimeout(function(){setShakeRow(-1);setMessage("");},2000);return;}
+    if(!DICT.has(guess)&&!STARTER_CODES.has(guess)){setMessage(pick(INVALID_MSGS));setShakeRow(guesses.length);sndError();setTimeout(function(){setShakeRow(-1);setMessage("");},2000);return;}
     var next=guesses.concat([guess]);
     setGuesses(next);setCurrent("");setFlipRow(next.length-1);
     for(var i=0;i<5;i++)(function(j){setTimeout(function(){sndFlip(j);},j*70);})(i);
@@ -292,6 +344,8 @@ function Game(props) {
       setTimeout(function(){
         var newStreak = stats.streak+1;
         var msg = STREAK_MSGS[newStreak] || pick(WIN_MSGS);
+        setFlipRow(-1);
+        setRevealedRows(function(r){var n=[];for(var i=0;i<next.length;i++)n[i]=true;return n;});
         setGameOver(true);setMessage(msg);setCatMood("happy");setBounceRow(next.length-1);sndWin();spawnConfetti();
         var s={played:stats.played+1,won:stats.won+1,streak:newStreak,maxStreak:Math.max(stats.maxStreak,newStreak)};
         saveStats(s);setShowStats(true);
@@ -300,6 +354,8 @@ function Game(props) {
       },500);
     } else if(next.length>=ROWS){
       setTimeout(function(){
+        setFlipRow(-1);
+        setRevealedRows(function(r){var n=[];for(var i=0;i<next.length;i++)n[i]=true;return n;});
         setGameOver(true);setMessage(pick(LOSE_MSGS)+" ("+answer+")");setCatMood("sad");sndLose();
         var s={played:stats.played+1,won:stats.won,streak:0,maxStreak:stats.maxStreak};
         saveStats(s);setShowStats(true);fetchGif("cat disappointed dramatic").then(setGif);
@@ -358,7 +414,7 @@ function Game(props) {
       <div style={{display:"flex",alignItems:"center",gap:8,width:"100%",maxWidth:380,padding:"4px 6px",marginBottom:4}}>
         <Jackson mood={catMood} size="1.3rem"/>
         <span style={{fontFamily:"var(--font-mono)",fontSize:"1rem",fontWeight:800,letterSpacing:"0.06em",background:"linear-gradient(90deg,var(--green),var(--yellow))",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>WREFLE</span>
-        <span style={{fontSize:"0.55rem",color:"var(--dim)",fontFamily:"var(--font-mono)",marginLeft:"auto"}}>{starter.name} · {guesses.length}/{ROWS}</span>
+        <span style={{fontSize:"0.55rem",color:"var(--dim)",fontFamily:"var(--font-mono)",marginLeft:"auto"}}>{daily?"Daily · ":""}{starter.name} · {guesses.length}/{ROWS}</span>
       </div>
 
       {/* Message */}
@@ -408,7 +464,7 @@ function Game(props) {
       {gameOver&&(
         <div style={{display:"flex",gap:8,margin:"4px 0"}}>
           <button onClick={props.onDone} style={{background:"var(--green-d)",border:"2px solid var(--green)",borderRadius:8,padding:"10px 24px",color:"var(--green)",fontFamily:"var(--font-mono)",fontSize:"0.85rem",fontWeight:700,cursor:"pointer",animation:"glow 2s infinite"}}>PLAY AGAIN</button>
-          <button onClick={function(){var r=shareResult(guesses,answer,starter,guesses[guesses.length-1]===answer);if(r)setMessage(r);setTimeout(function(){setMessage("");},2000);}} style={{background:"var(--bg3)",border:"2px solid var(--border)",borderRadius:8,padding:"10px 18px",color:"var(--text)",fontFamily:"var(--font-mono)",fontSize:"0.85rem",fontWeight:700,cursor:"pointer"}}>SHARE 📋</button>
+          <button onClick={function(){var r=shareResult(guesses,answer,starter,guesses[guesses.length-1]===answer,daily);if(r)setMessage(r);setTimeout(function(){setMessage("");},2000);}} style={{background:"var(--bg3)",border:"2px solid var(--border)",borderRadius:8,padding:"10px 18px",color:"var(--text)",fontFamily:"var(--font-mono)",fontSize:"0.85rem",fontWeight:700,cursor:"pointer"}}>SHARE 📋</button>
         </div>
       )}
 
@@ -447,11 +503,21 @@ function Game(props) {
 // ── Root
 function App(){
   var [starter,setStarter]=useState(null);
+  var [daily,setDaily]=useState(false);
   var [stats,setStats]=useState(loadStats);
   var [key,setKey]=useState(0);
-  var reset=function(){setStarter(null);setStats(loadStats());setKey(function(k){return k+1;});};
-  if(!starter)return <PickerScreen onPick={setStarter} stats={stats}/>;
-  return <Game key={key} starter={starter} onDone={reset} stats={stats}/>;
+  var reset=function(){setStarter(null);setDaily(false);setStats(loadStats());setKey(function(k){return k+1;});};
+  var handlePickDaily=function(){
+    var randomStarter=STARTERS[Math.floor(Math.random()*STARTERS.length)];
+    // Use date seed to pick a consistent starter for the day too
+    var today=new Date();
+    var ds=today.getFullYear()+"-"+String(today.getMonth()+1).padStart(2,"0")+"-"+String(today.getDate()).padStart(2,"0");
+    var rng=mulberry32(dateSeed(ds+"starter"));
+    var dailyStarter=STARTERS[Math.floor(rng()*STARTERS.length)];
+    setDaily(true);setStarter(dailyStarter);
+  };
+  if(!starter)return <PickerScreen onPick={function(s){setDaily(false);setStarter(s);}} onPickDaily={handlePickDaily} stats={stats}/>;
+  return <Game key={key} starter={starter} daily={daily} onDone={reset} stats={stats}/>;
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
