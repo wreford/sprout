@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+  <title>Flappy Thong 🩴</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    html,body{height:100%;background:#1a0a0a;overflow:hidden;touch-action:manipulation;user-select:none}
+    canvas{display:block;width:100%;height:100%}
+  </style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+var canvas = document.getElementById('c');
+var ctx = canvas.getContext('2d');
+var W, H;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ── Sound
+var audioCtx = null;
+function getAudio(){if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();return audioCtx;}
+function tone(f,d,t,v){try{var c=getAudio(),o=c.createOscillator(),g=c.createGain();o.type=t||"sine";o.frequency.value=f;g.gain.setValueAtTime(v||0.05,c.currentTime);g.gain.exponentialRampToValueAtTime(0.001,c.currentTime+d);o.connect(g);g.connect(c.destination);o.start();o.stop(c.currentTime+d);}catch(e){}}
+function sndFlap(){tone(400,0.06,"triangle",0.04);}
+function sndSmack(){tone(100,0.12,"square",0.08);setTimeout(function(){tone(80,0.08,"sawtooth",0.06);},50);}
+function sndDie(){[300,200,120].forEach(function(f,i){setTimeout(function(){tone(f,0.2,"sawtooth",0.05);},i*100);});}
+function sndScore(){tone(600,0.08,"sine",0.05);setTimeout(function(){tone(800,0.08,"sine",0.05);},60);}
+
+// ── Game state
+var STATE = "menu"; // menu, playing, dead
+var flipflop = {x:0, y:0, vy:0, rotation:0, spite:100};
+var faces = [];
+var particles = [];
+var score = 0;
+var highScore = parseInt(localStorage.getItem("flappy-high")) || 0;
+var frame = 0;
+var gravity = 0.4;
+var flapPower = -7;
+var spiteDrain = 0.12; // per frame
+var spiteGain = 35; // per smack
+var scrollSpeed = 3;
+var faceSpawnTimer = 0;
+var faceSpawnInterval = 90; // frames
+
+// Faces to smack
+var FACE_EMOJIS = ["😏","🤨","😤","🙄","😒","🤪","😬","🥴","😮‍💨","🫠","😑","🤡","👁️","😐","🫤","😶"];
+var SMACK_MSGS = ["SMACK!","THWACK!","POW!","SLAP!","WHACK!","THONG'D!","EAT RUBBER!","FLIP FLOP'D!"];
+
+function pick(a){return a[Math.floor(Math.random()*a.length)];}
+
+function spawnFace() {
+  var gap = 120 + Math.random() * 80;
+  var centerY = H * 0.2 + Math.random() * H * 0.6;
+  // Top face and bottom face with gap
+  faces.push({
+    x: W + 40,
+    y: centerY - gap/2 - 30,
+    emoji: pick(FACE_EMOJIS),
+    scored: false,
+    hit: false,
+    size: 40 + Math.random() * 15,
+    type: "top"
+  });
+  faces.push({
+    x: W + 40,
+    y: centerY + gap/2 + 10,
+    emoji: pick(FACE_EMOJIS),
+    scored: false,
+    hit: false,
+    size: 40 + Math.random() * 15,
+    type: "bottom"
+  });
+  // Bonus face in the gap (smackable for spite)
+  if (Math.random() < 0.6) {
+    faces.push({
+      x: W + 60,
+      y: centerY + (Math.random() - 0.5) * gap * 0.5,
+      emoji: pick(FACE_EMOJIS),
+      scored: false,
+      hit: false,
+      size: 30,
+      type: "bonus",
+      bobOffset: Math.random() * Math.PI * 2
+    });
+  }
+}
+
+function spawnParticles(x, y, text) {
+  for (var i = 0; i < 6; i++) {
+    particles.push({
+      x: x, y: y,
+      vx: (Math.random()-0.5)*6,
+      vy: (Math.random()-0.5)*6 - 2,
+      life: 1,
+      text: i === 0 ? text : "💥",
+      size: i === 0 ? 14 : 8 + Math.random()*8
+    });
+  }
+}
+
+function reset() {
+  flipflop = {x: W * 0.25, y: H * 0.5, vy: 0, rotation: 0, spite: 100};
+  faces = [];
+  particles = [];
+  score = 0;
+  frame = 0;
+  faceSpawnTimer = 0;
+  scrollSpeed = 3;
+  spiteDrain = 0.12;
+}
+
+function flap() {
+  if (STATE === "menu") {
+    STATE = "playing";
+    reset();
+    sndFlap();
+    return;
+  }
+  if (STATE === "dead") {
+    STATE = "menu";
+    return;
+  }
+  flipflop.vy = flapPower;
+  flipflop.rotation = -0.4;
+  sndFlap();
+}
+
+// Input
+canvas.addEventListener('mousedown', flap);
+canvas.addEventListener('touchstart', function(e){e.preventDefault();flap();},{passive:false});
+window.addEventListener('keydown', function(e){if(e.code==="Space"||e.code==="ArrowUp"){e.preventDefault();flap();}});
+
+function update() {
+  if (STATE !== "playing") return;
+  frame++;
+
+  // Difficulty ramp
+  if (frame % 300 === 0) {
+    scrollSpeed = Math.min(6, scrollSpeed + 0.2);
+    spiteDrain = Math.min(0.25, spiteDrain + 0.01);
+  }
+
+  // Flip flop physics
+  flipflop.vy += gravity;
+  flipflop.y += flipflop.vy;
+  flipflop.rotation = Math.min(1.2, flipflop.rotation + 0.04);
+  flipflop.spite -= spiteDrain;
+
+  // Die conditions
+  if (flipflop.y > H - 20 || flipflop.y < -20 || flipflop.spite <= 0) {
+    STATE = "dead";
+    if (score > highScore) { highScore = score; localStorage.setItem("flappy-high", highScore); }
+    sndDie();
+    return;
+  }
+
+  // Spawn faces
+  faceSpawnTimer++;
+  if (faceSpawnTimer >= faceSpawnInterval) {
+    faceSpawnTimer = 0;
+    faceSpawnInterval = Math.max(50, 90 - Math.floor(frame / 500) * 5);
+    spawnFace();
+  }
+
+  // Update faces
+  for (var i = faces.length - 1; i >= 0; i--) {
+    var f = faces[i];
+    f.x -= scrollSpeed;
+
+    // Bob bonus faces
+    if (f.type === "bonus") {
+      f.y += Math.sin(frame * 0.05 + f.bobOffset) * 0.5;
+    }
+
+    // Collision with flip flop
+    var dx = flipflop.x - f.x;
+    var dy = flipflop.y - f.y;
+    var dist = Math.sqrt(dx*dx + dy*dy);
+    var hitDist = f.type === "bonus" ? 28 : 30;
+
+    if (!f.hit && dist < hitDist) {
+      if (f.type === "bonus") {
+        // Smack bonus face for spite!
+        f.hit = true;
+        flipflop.spite = Math.min(100, flipflop.spite + spiteGain);
+        score++;
+        sndSmack();
+        spawnParticles(f.x, f.y, pick(SMACK_MSGS));
+        sndScore();
+        faces.splice(i, 1);
+        continue;
+      } else {
+        // Hit a pipe face = death
+        STATE = "dead";
+        if (score > highScore) { highScore = score; localStorage.setItem("flappy-high", highScore); }
+        sndDie();
+        spawnParticles(flipflop.x, flipflop.y, "💀");
+        return;
+      }
+    }
+
+    // Score when passing pipe faces
+    if (f.type === "top" && !f.scored && f.x + 20 < flipflop.x) {
+      f.scored = true;
+    }
+
+    // Remove off-screen
+    if (f.x < -60) faces.splice(i, 1);
+  }
+
+  // Update particles
+  for (var p = particles.length - 1; p >= 0; p--) {
+    var pt = particles[p];
+    pt.x += pt.vx; pt.y += pt.vy; pt.vy += 0.1; pt.life -= 0.025;
+    if (pt.life <= 0) particles.splice(p, 1);
+  }
+}
+
+function draw() {
+  // Background gradient
+  var grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, "#1a0505");
+  grad.addColorStop(0.5, "#2a0a0a");
+  grad.addColorStop(1, "#0a0505");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Ground
+  ctx.fillStyle = "#1a0808";
+  ctx.fillRect(0, H - 10, W, 10);
+  ctx.strokeStyle = "#3a1515";
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, H-10); ctx.lineTo(W, H-10); ctx.stroke();
+
+  if (STATE === "menu") {
+    // Title
+    ctx.textAlign = "center";
+    ctx.font = "bold 42px monospace";
+    ctx.fillStyle = "#f59e0b";
+    ctx.fillText("FLAPPY THONG", W/2, H*0.3);
+    ctx.font = "60px serif";
+    ctx.fillText("🩴", W/2, H*0.45);
+    ctx.font = "14px monospace";
+    ctx.fillStyle = "#888";
+    ctx.fillText("Tap / Space to flap", W/2, H*0.58);
+    ctx.fillText("Smack faces to refuel spite", W/2, H*0.63);
+    ctx.fillText("Run out of spite = dead", W/2, H*0.68);
+    if (highScore > 0) {
+      ctx.fillStyle = "#f59e0b";
+      ctx.fillText("Best: " + highScore, W/2, H*0.76);
+    }
+    ctx.font = "11px monospace";
+    ctx.fillStyle = "#444";
+    ctx.fillText("taskiap.com", W/2, H*0.88);
+    return;
+  }
+
+  // Draw faces
+  for (var i = 0; i < faces.length; i++) {
+    var f = faces[i];
+    ctx.font = f.size + "px serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    if (f.type === "bonus") {
+      // Glowing bonus face
+      ctx.shadowColor = "#f59e0b";
+      ctx.shadowBlur = 10;
+      ctx.fillText(f.emoji, f.x, f.y);
+      ctx.shadowBlur = 0;
+    } else {
+      // Pipe faces (obstacles)
+      // Draw column above/below
+      ctx.fillStyle = "#2a1010";
+      if (f.type === "top") {
+        ctx.fillRect(f.x - 20, 0, 40, f.y - 10);
+      } else {
+        ctx.fillRect(f.x - 20, f.y + 25, 40, H - f.y);
+      }
+      ctx.strokeStyle = "#4a2020";
+      ctx.lineWidth = 2;
+      if (f.type === "top") {
+        ctx.strokeRect(f.x - 20, 0, 40, f.y - 10);
+      } else {
+        ctx.strokeRect(f.x - 20, f.y + 25, 40, H - f.y);
+      }
+      ctx.fillText(f.emoji, f.x, f.y + (f.type==="top"?10:-5));
+    }
+  }
+
+  // Draw flip flop
+  ctx.save();
+  ctx.translate(flipflop.x, flipflop.y);
+  ctx.rotate(flipflop.rotation);
+  ctx.font = "32px serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("🩴", 0, 0);
+  ctx.restore();
+
+  // Particles
+  for (var p = 0; p < particles.length; p++) {
+    var pt = particles[p];
+    ctx.globalAlpha = pt.life;
+    ctx.font = pt.size + "px monospace";
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#f59e0b";
+    ctx.fillText(pt.text, pt.x, pt.y);
+    ctx.globalAlpha = 1;
+  }
+
+  // Spite meter
+  var meterW = 120;
+  var meterH = 12;
+  var meterX = W/2 - meterW/2;
+  var meterY = 16;
+  ctx.fillStyle = "#1a0808";
+  ctx.fillRect(meterX - 1, meterY - 1, meterW + 2, meterH + 2);
+  var spiteColor = flipflop.spite > 50 ? "#f59e0b" : flipflop.spite > 25 ? "#ef4444" : "#7f1d1d";
+  ctx.fillStyle = spiteColor;
+  ctx.fillRect(meterX, meterY, meterW * (flipflop.spite / 100), meterH);
+  ctx.strokeStyle = "#4a2020";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(meterX - 1, meterY - 1, meterW + 2, meterH + 2);
+  ctx.font = "bold 9px monospace";
+  ctx.fillStyle = "#fff";
+  ctx.textAlign = "center";
+  ctx.fillText("SPITE: " + Math.ceil(flipflop.spite) + "%", W/2, meterY + meterH - 2);
+
+  // Score
+  ctx.font = "bold 24px monospace";
+  ctx.fillStyle = "#f59e0b";
+  ctx.textAlign = "center";
+  ctx.fillText(score, W/2, meterY + meterH + 28);
+
+  // Dead screen
+  if (STATE === "dead") {
+    ctx.fillStyle = "rgba(0,0,0,0.6)";
+    ctx.fillRect(0, 0, W, H);
+    ctx.font = "bold 32px monospace";
+    ctx.fillStyle = "#ef4444";
+    ctx.textAlign = "center";
+    ctx.fillText("OUT OF SPITE", W/2, H*0.35);
+    ctx.font = "40px serif";
+    ctx.fillText("🩴💀", W/2, H*0.45);
+    ctx.font = "bold 20px monospace";
+    ctx.fillStyle = "#f59e0b";
+    ctx.fillText("Score: " + score, W/2, H*0.58);
+    if (score >= highScore && score > 0) {
+      ctx.fillStyle = "#22c55e";
+      ctx.font = "14px monospace";
+      ctx.fillText("NEW HIGH SCORE!", W/2, H*0.64);
+    } else {
+      ctx.font = "14px monospace";
+      ctx.fillStyle = "#888";
+      ctx.fillText("Best: " + highScore, W/2, H*0.64);
+    }
+    ctx.font = "13px monospace";
+    ctx.fillStyle = "#666";
+    ctx.fillText("Tap to restart", W/2, H*0.74);
+  }
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
