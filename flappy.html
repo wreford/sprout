@@ -34,8 +34,8 @@ function sndDie(){[300,200,120].forEach(function(f,i){setTimeout(function(){tone
 function sndScore(){tone(600,0.08,"sine",0.05);setTimeout(function(){tone(800,0.08,"sine",0.05);},60);}
 
 // ── Game state
-var STATE = "menu"; // menu, playing, dead
-var flipflop = {x:0, y:0, vy:0, rotation:0, spite:100};
+var STATE = "menu"; // menu, playing, dying, dead
+var flipflop = {x:0, y:0, vy:0, rotation:0, spite:100, spinSpeed:0};
 var faces = [];
 var particles = [];
 var score = 0;
@@ -45,9 +45,20 @@ var gravity = 0.4;
 var flapPower = -7;
 var spiteDrain = 0.12; // per frame
 var spiteGain = 35; // per smack
+var baseScrollSpeed = 3;
 var scrollSpeed = 3;
 var faceSpawnTimer = 0;
 var faceSpawnInterval = 90; // frames
+
+// Death animation state
+var deathTimer = 0;
+var deathFlashAlpha = 0;
+var DEATH_TUMBLE_DURATION = 60; // frames of tumbling before game over
+
+// Parallax layer offsets
+var parallaxOffset1 = 0; // far mountains
+var parallaxOffset2 = 0; // mid buildings
+var groundOffset = 0;    // ground dashes
 
 // Faces to smack
 var FACE_EMOJIS = ["😏","🤨","😤","🙄","😒","🤪","😬","🥴","😮‍💨","🫠","😑","🤡","👁️","😐","🫤","😶"];
@@ -106,14 +117,28 @@ function spawnParticles(x, y, text) {
 }
 
 function reset() {
-  flipflop = {x: W * 0.25, y: H * 0.5, vy: 0, rotation: 0, spite: 100};
+  flipflop = {x: W * 0.25, y: H * 0.5, vy: 0, rotation: 0, spite: 100, spinSpeed: 0};
   faces = [];
   particles = [];
   score = 0;
   frame = 0;
   faceSpawnTimer = 0;
+  baseScrollSpeed = 3;
   scrollSpeed = 3;
   spiteDrain = 0.12;
+  deathTimer = 0;
+  deathFlashAlpha = 0;
+}
+
+function triggerDeath() {
+  STATE = "dying";
+  deathTimer = 0;
+  deathFlashAlpha = 0.6;
+  flipflop.spinSpeed = 0.25 + Math.random() * 0.15;
+  flipflop.vy = -5; // pop up before tumbling down
+  if (score > highScore) { highScore = score; localStorage.setItem("flappy-high", highScore); }
+  sndDie();
+  spawnParticles(flipflop.x, flipflop.y, "💀");
 }
 
 function flap() {
@@ -127,6 +152,7 @@ function flap() {
     STATE = "menu";
     return;
   }
+  if (STATE === "dying") return;
   flipflop.vy = flapPower;
   flipflop.rotation = -0.4;
   sndFlap();
@@ -138,14 +164,53 @@ canvas.addEventListener('touchstart', function(e){e.preventDefault();flap();},{p
 window.addEventListener('keydown', function(e){if(e.code==="Space"||e.code==="ArrowUp"){e.preventDefault();flap();}});
 
 function update() {
-  if (STATE !== "playing") return;
+  // Update parallax even in menu for ambiance
+  if (STATE === "menu") {
+    parallaxOffset1 = (parallaxOffset1 + 0.3) % W;
+    parallaxOffset2 = (parallaxOffset2 + 0.6) % W;
+    groundOffset = (groundOffset + 1.5) % 40;
+    return;
+  }
+
+  // Dying animation: tumble/spin before showing game over
+  if (STATE === "dying") {
+    deathTimer++;
+    deathFlashAlpha = Math.max(0, deathFlashAlpha - 0.015);
+    flipflop.vy += gravity * 0.8;
+    flipflop.y += flipflop.vy;
+    flipflop.rotation += flipflop.spinSpeed;
+    // Keep on screen during tumble
+    if (flipflop.y > H - 40) {
+      flipflop.y = H - 40;
+      flipflop.vy = -Math.abs(flipflop.vy) * 0.3;
+      flipflop.spinSpeed *= 0.7;
+    }
+    // Update particles during death
+    for (var p = particles.length - 1; p >= 0; p--) {
+      var pt = particles[p];
+      pt.x += pt.vx; pt.y += pt.vy; pt.vy += 0.1; pt.life -= 0.025;
+      if (pt.life <= 0) particles.splice(p, 1);
+    }
+    if (deathTimer >= DEATH_TUMBLE_DURATION) {
+      STATE = "dead";
+    }
+    return;
+  }
+
+  // STATE === "playing"
   frame++;
 
-  // Difficulty ramp
+  // Speed increase over time
   if (frame % 300 === 0) {
-    scrollSpeed = Math.min(6, scrollSpeed + 0.2);
+    baseScrollSpeed = Math.min(7, baseScrollSpeed + 0.25);
     spiteDrain = Math.min(0.25, spiteDrain + 0.01);
   }
+  scrollSpeed = baseScrollSpeed;
+
+  // Update parallax offsets
+  parallaxOffset1 = (parallaxOffset1 + scrollSpeed * 0.2) % W;
+  parallaxOffset2 = (parallaxOffset2 + scrollSpeed * 0.4) % W;
+  groundOffset = (groundOffset + scrollSpeed) % 40;
 
   // Flip flop physics
   flipflop.vy += gravity;
@@ -155,9 +220,7 @@ function update() {
 
   // Die conditions
   if (flipflop.y > H - 20 || flipflop.y < -20 || flipflop.spite <= 0) {
-    STATE = "dead";
-    if (score > highScore) { highScore = score; localStorage.setItem("flappy-high", highScore); }
-    sndDie();
+    triggerDeath();
     return;
   }
 
@@ -198,10 +261,7 @@ function update() {
         continue;
       } else {
         // Hit a pipe face = death
-        STATE = "dead";
-        if (score > highScore) { highScore = score; localStorage.setItem("flappy-high", highScore); }
-        sndDie();
-        spawnParticles(flipflop.x, flipflop.y, "💀");
+        triggerDeath();
         return;
       }
     }
@@ -223,6 +283,170 @@ function update() {
   }
 }
 
+// ── Drawing helpers
+
+function drawParallaxBackground() {
+  // Layer 1: Distant mountains (far, slow)
+  var mountainColor1 = "#120505";
+  var mountainColor2 = "#1a0808";
+  ctx.fillStyle = mountainColor1;
+  var baseY1 = H * 0.65;
+  ctx.beginPath();
+  ctx.moveTo(-parallaxOffset1 - W, H);
+  for (var mx = -parallaxOffset1 - W; mx < W + 200; mx += 180) {
+    var peakH = 40 + Math.abs(Math.sin(mx * 0.005 + 1.2)) * 80;
+    ctx.lineTo(mx, baseY1 - peakH);
+    ctx.lineTo(mx + 90, baseY1 - peakH * 0.3);
+  }
+  ctx.lineTo(W + 200, H);
+  ctx.closePath();
+  ctx.fill();
+
+  // Layer 2: Mid-ground buildings/structures (medium speed)
+  var baseY2 = H * 0.75;
+  for (var bx = -parallaxOffset2 - W; bx < W + 120; bx += 100) {
+    var bw = 30 + Math.abs(Math.sin(bx * 0.01 + 3.7)) * 30;
+    var bh = 20 + Math.abs(Math.sin(bx * 0.013 + 0.5)) * 60;
+    ctx.fillStyle = mountainColor2;
+    ctx.fillRect(bx, baseY2 - bh, bw, bh + (H - baseY2));
+    // Window dots
+    ctx.fillStyle = "#2a1010";
+    for (var wy = baseY2 - bh + 8; wy < baseY2; wy += 12) {
+      for (var wx = bx + 6; wx < bx + bw - 4; wx += 10) {
+        if (Math.sin(wx * 0.7 + wy * 0.3) > 0.2) {
+          ctx.fillRect(wx, wy, 4, 4);
+        }
+      }
+    }
+  }
+}
+
+function drawScrollingGround() {
+  var groundY = H - 14;
+  // Ground fill
+  ctx.fillStyle = "#1a0808";
+  ctx.fillRect(0, groundY, W, 14);
+
+  // Top border line
+  ctx.strokeStyle = "#4a2020";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, groundY);
+  ctx.lineTo(W, groundY);
+  ctx.stroke();
+
+  // Scrolling dashes on the ground
+  ctx.strokeStyle = "#3a1515";
+  ctx.lineWidth = 1;
+  for (var gx = -groundOffset; gx < W + 40; gx += 40) {
+    ctx.beginPath();
+    ctx.moveTo(gx, groundY + 5);
+    ctx.lineTo(gx + 18, groundY + 5);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(gx + 10, groundY + 10);
+    ctx.lineTo(gx + 28, groundY + 10);
+    ctx.stroke();
+  }
+}
+
+function drawPipe(f) {
+  var pipeW = 40;
+  var capW = 52;
+  var capH = 18;
+
+  if (f.type === "top") {
+    var pipeBottom = f.y - 10;
+    // Pipe body with gradient
+    var pipeGrad = ctx.createLinearGradient(f.x - pipeW/2, 0, f.x + pipeW/2, 0);
+    pipeGrad.addColorStop(0, "#1a0808");
+    pipeGrad.addColorStop(0.3, "#3a1818");
+    pipeGrad.addColorStop(0.5, "#4a2222");
+    pipeGrad.addColorStop(0.7, "#3a1818");
+    pipeGrad.addColorStop(1, "#1a0808");
+    ctx.fillStyle = pipeGrad;
+    ctx.fillRect(f.x - pipeW/2, 0, pipeW, pipeBottom);
+
+    // Pipe cap with gradient
+    var capGrad = ctx.createLinearGradient(f.x - capW/2, 0, f.x + capW/2, 0);
+    capGrad.addColorStop(0, "#2a0e0e");
+    capGrad.addColorStop(0.15, "#4a2222");
+    capGrad.addColorStop(0.4, "#5c2e2e");
+    capGrad.addColorStop(0.5, "#6a3535");
+    capGrad.addColorStop(0.6, "#5c2e2e");
+    capGrad.addColorStop(0.85, "#4a2222");
+    capGrad.addColorStop(1, "#2a0e0e");
+    ctx.fillStyle = capGrad;
+    ctx.fillRect(f.x - capW/2, pipeBottom - capH, capW, capH);
+
+    // Highlight on cap top edge
+    ctx.strokeStyle = "#6a3535";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(f.x - capW/2 + 2, pipeBottom - capH);
+    ctx.lineTo(f.x + capW/2 - 2, pipeBottom - capH);
+    ctx.stroke();
+
+    // Shadow on cap bottom edge
+    ctx.strokeStyle = "#1a0808";
+    ctx.beginPath();
+    ctx.moveTo(f.x - capW/2 + 2, pipeBottom);
+    ctx.lineTo(f.x + capW/2 - 2, pipeBottom);
+    ctx.stroke();
+
+    // Outline
+    ctx.strokeStyle = "#4a2020";
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(f.x - pipeW/2, 0, pipeW, pipeBottom);
+    ctx.strokeRect(f.x - capW/2, pipeBottom - capH, capW, capH);
+
+  } else {
+    var pipeTop = f.y + 25;
+    // Pipe body with gradient
+    var pipeGrad2 = ctx.createLinearGradient(f.x - pipeW/2, 0, f.x + pipeW/2, 0);
+    pipeGrad2.addColorStop(0, "#1a0808");
+    pipeGrad2.addColorStop(0.3, "#3a1818");
+    pipeGrad2.addColorStop(0.5, "#4a2222");
+    pipeGrad2.addColorStop(0.7, "#3a1818");
+    pipeGrad2.addColorStop(1, "#1a0808");
+    ctx.fillStyle = pipeGrad2;
+    ctx.fillRect(f.x - pipeW/2, pipeTop + capH, pipeW, H - pipeTop - capH);
+
+    // Pipe cap with gradient
+    var capGrad2 = ctx.createLinearGradient(f.x - capW/2, 0, f.x + capW/2, 0);
+    capGrad2.addColorStop(0, "#2a0e0e");
+    capGrad2.addColorStop(0.15, "#4a2222");
+    capGrad2.addColorStop(0.4, "#5c2e2e");
+    capGrad2.addColorStop(0.5, "#6a3535");
+    capGrad2.addColorStop(0.6, "#5c2e2e");
+    capGrad2.addColorStop(0.85, "#4a2222");
+    capGrad2.addColorStop(1, "#2a0e0e");
+    ctx.fillStyle = capGrad2;
+    ctx.fillRect(f.x - capW/2, pipeTop, capW, capH);
+
+    // Highlight on cap top edge
+    ctx.strokeStyle = "#6a3535";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(f.x - capW/2 + 2, pipeTop);
+    ctx.lineTo(f.x + capW/2 - 2, pipeTop);
+    ctx.stroke();
+
+    // Shadow on cap bottom edge
+    ctx.strokeStyle = "#1a0808";
+    ctx.beginPath();
+    ctx.moveTo(f.x - capW/2 + 2, pipeTop + capH);
+    ctx.lineTo(f.x + capW/2 - 2, pipeTop + capH);
+    ctx.stroke();
+
+    // Outline
+    ctx.strokeStyle = "#4a2020";
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(f.x - pipeW/2, pipeTop + capH, pipeW, H - pipeTop - capH);
+    ctx.strokeRect(f.x - capW/2, pipeTop, capW, capH);
+  }
+}
+
 function draw() {
   // Background gradient
   var grad = ctx.createLinearGradient(0, 0, 0, H);
@@ -232,12 +456,11 @@ function draw() {
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, W, H);
 
-  // Ground
-  ctx.fillStyle = "#1a0808";
-  ctx.fillRect(0, H - 10, W, 10);
-  ctx.strokeStyle = "#3a1515";
-  ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(0, H-10); ctx.lineTo(W, H-10); ctx.stroke();
+  // Parallax background layers
+  drawParallaxBackground();
+
+  // Ground with scrolling dashes
+  drawScrollingGround();
 
   if (STATE === "menu") {
     // Title
@@ -262,45 +485,35 @@ function draw() {
     return;
   }
 
-  // Draw faces
+  // Draw faces (pipes + bonus)
   for (var i = 0; i < faces.length; i++) {
     var f = faces[i];
-    ctx.font = f.size + "px serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
 
     if (f.type === "bonus") {
+      // Collection radius indicator ring
+      var ringPulse = 0.3 + Math.sin(frame * 0.06 + (f.bobOffset || 0)) * 0.15;
+      ctx.beginPath();
+      ctx.arc(f.x, f.y, 28, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(245, 158, 11, " + ringPulse + ")";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
       // Glowing bonus face
+      ctx.font = f.size + "px serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
       ctx.shadowColor = "#f59e0b";
       ctx.shadowBlur = 10;
       ctx.fillText(f.emoji, f.x, f.y);
       ctx.shadowBlur = 0;
     } else {
-      // Pipe obstacles
-      ctx.fillStyle = "#2a1010";
-      var capH = 14;
-      if (f.type === "top") {
-        ctx.fillRect(f.x - 20, 0, 40, f.y - 10);
-        ctx.fillStyle = "#3a1818";
-        ctx.fillRect(f.x - 24, f.y - 10 - capH, 48, capH);
-      } else {
-        ctx.fillRect(f.x - 20, f.y + 25, 40, H - f.y);
-        ctx.fillStyle = "#3a1818";
-        ctx.fillRect(f.x - 24, f.y + 25, 48, capH);
-      }
-      ctx.strokeStyle = "#4a2020";
-      ctx.lineWidth = 2;
-      if (f.type === "top") {
-        ctx.strokeRect(f.x - 20, 0, 40, f.y - 10);
-        ctx.strokeRect(f.x - 24, f.y - 10 - capH, 48, capH);
-      } else {
-        ctx.strokeRect(f.x - 20, f.y + 25, 40, H - f.y);
-        ctx.strokeRect(f.x - 24, f.y + 25, 48, capH);
-      }
+      drawPipe(f);
     }
   }
 
-  // Draw flip flop
+  // Draw flip flop (visible in playing and dying states)
   ctx.save();
   ctx.translate(flipflop.x, flipflop.y);
   ctx.rotate(flipflop.rotation);
@@ -321,31 +534,51 @@ function draw() {
     ctx.globalAlpha = 1;
   }
 
-  // Spite meter
-  var meterW = 120;
-  var meterH = 12;
-  var meterX = W/2 - meterW/2;
-  var meterY = 16;
-  ctx.fillStyle = "#1a0808";
-  ctx.fillRect(meterX - 1, meterY - 1, meterW + 2, meterH + 2);
-  var spiteColor = flipflop.spite > 50 ? "#f59e0b" : flipflop.spite > 25 ? "#ef4444" : "#7f1d1d";
-  ctx.fillStyle = spiteColor;
-  ctx.fillRect(meterX, meterY, meterW * (flipflop.spite / 100), meterH);
-  ctx.strokeStyle = "#4a2020";
-  ctx.lineWidth = 1;
-  ctx.strokeRect(meterX - 1, meterY - 1, meterW + 2, meterH + 2);
-  ctx.font = "bold 9px monospace";
-  ctx.fillStyle = "#fff";
-  ctx.textAlign = "center";
-  ctx.fillText("SPITE: " + Math.ceil(flipflop.spite) + "%", W/2, meterY + meterH - 2);
+  // Death red flash overlay
+  if (deathFlashAlpha > 0) {
+    ctx.fillStyle = "rgba(200, 20, 20, " + deathFlashAlpha + ")";
+    ctx.fillRect(0, 0, W, H);
+  }
 
-  // Score
-  ctx.font = "bold 24px monospace";
-  ctx.fillStyle = "#f59e0b";
-  ctx.textAlign = "center";
-  ctx.fillText(score, W/2, meterY + meterH + 28);
+  // HUD: Spite meter (only during playing or dying)
+  if (STATE === "playing" || STATE === "dying") {
+    var meterW = 120;
+    var meterH = 12;
+    var meterX = W/2 - meterW/2;
+    var meterY = 16;
+    ctx.fillStyle = "#1a0808";
+    ctx.fillRect(meterX - 1, meterY - 1, meterW + 2, meterH + 2);
+    var spiteColor = flipflop.spite > 50 ? "#f59e0b" : flipflop.spite > 25 ? "#ef4444" : "#7f1d1d";
+    ctx.fillStyle = spiteColor;
+    ctx.fillRect(meterX, meterY, meterW * (Math.max(0, flipflop.spite) / 100), meterH);
+    ctx.strokeStyle = "#4a2020";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(meterX - 1, meterY - 1, meterW + 2, meterH + 2);
+    ctx.font = "bold 9px monospace";
+    ctx.fillStyle = "#fff";
+    ctx.textAlign = "center";
+    ctx.fillText("SPITE: " + Math.max(0, Math.ceil(flipflop.spite)) + "%", W/2, meterY + meterH - 2);
 
-  // Dead screen
+    // Score (center)
+    ctx.font = "bold 24px monospace";
+    ctx.fillStyle = "#f59e0b";
+    ctx.textAlign = "center";
+    ctx.fillText(score, W/2, meterY + meterH + 28);
+
+    // Best score (top right)
+    ctx.font = "bold 11px monospace";
+    ctx.fillStyle = "#666";
+    ctx.textAlign = "right";
+    ctx.fillText("BEST: " + highScore, W - 14, 26);
+
+    // Speed indicator (top left)
+    ctx.font = "9px monospace";
+    ctx.fillStyle = "#444";
+    ctx.textAlign = "left";
+    ctx.fillText("SPD " + baseScrollSpeed.toFixed(1) + "x", 14, 26);
+  }
+
+  // Dead screen (after tumble animation)
   if (STATE === "dead") {
     ctx.fillStyle = "rgba(0,0,0,0.6)";
     ctx.fillRect(0, 0, W, H);
