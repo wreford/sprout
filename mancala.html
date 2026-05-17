@@ -26,7 +26,9 @@ canvas { display: block; margin: 24px auto 0; border-radius: 12px; cursor: point
 button.game-btn { background: none; border: 1px solid #333; color: #666; padding: 8px 20px; font-family: inherit; font-size: 12px; cursor: pointer; border-radius: 6px; }
 button.game-btn:hover:not(:disabled) { color: #fff; border-color: #7c5cbf; }
 button.game-btn:disabled { opacity: 0.3; cursor: default; }
-#streak-display { margin-top: 8px; font-size: 11px; color: #555; }
+#move-counter { margin-top: 8px; font-size: 11px; color: #555; }
+#move-counter span { color: #6ec1e4; font-weight: bold; }
+#streak-display { margin-top: 4px; font-size: 11px; color: #555; }
 #streak-display span { color: #e5c07b; font-weight: bold; }
 #rules { max-width: 400px; margin: 20px 16px 40px; font-size: 10px; color: #444; line-height: 1.9; text-align: center; }
 </style>
@@ -53,7 +55,9 @@ button.game-btn:disabled { opacity: 0.3; cursor: default; }
 <div id="btn-row">
   <button class="game-btn" id="restart">New Game</button>
   <button class="game-btn" id="undo-btn" disabled>Undo</button>
+  <button class="game-btn" id="hint-btn">Hint</button>
 </div>
+<div id="move-counter">Moves this game: <span id="move-count">0</span></div>
 <div id="streak-display">Win streak: <span id="streak-count">0</span></div>
 <div id="rules">
   Pick a pit on the bottom row. Stones drop counter-clockwise one by one.<br>
@@ -77,6 +81,9 @@ var board, turn, gameOver, animating;
 var particles = [];
 var floatingStones = [];
 var hoveredPit = -1; // for hover highlight
+var hintPit = -1; // for hint highlight
+var moveCount = 0;
+var moveCountEl = document.getElementById('move-count');
 
 // Undo state
 var undoState = null;
@@ -192,17 +199,19 @@ function drawBoard() {
       ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.fill();
     }
 
+    var isHint = hintPit === i;
+
     // Pit border
     ctx.strokeStyle = isStore
       ? (i===7 ? '#3a6080' : '#5a3a80')
-      : isHovered ? '#80e8a8' : isClickable ? '#50c878' : '#2a2a4a';
-    ctx.lineWidth = isHovered ? 3 : isClickable ? 2.5 : 1.5;
+      : isHint ? '#ffd700' : isHovered ? '#80e8a8' : isClickable ? '#50c878' : '#2a2a4a';
+    ctx.lineWidth = isHint ? 4 : isHovered ? 3 : isClickable ? 2.5 : 1.5;
     ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.stroke();
 
     // Clickable glow
     if (isClickable) {
-      ctx.shadowColor = isHovered ? '#80e8a8' : '#50c878';
-      ctx.shadowBlur = isHovered ? 14 : 8;
+      ctx.shadowColor = isHint ? '#ffd700' : isHovered ? '#80e8a8' : '#50c878';
+      ctx.shadowBlur = isHint ? 18 : isHovered ? 14 : 8;
       ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.stroke();
       ctx.shadowBlur = 0;
     }
@@ -357,17 +366,22 @@ function endGame() {
   drawBoard();
   var you = board[7], ai = board[14];
   if (you > ai) {
-    statusEl.textContent = 'You win! ' + you + ' vs ' + ai + ' 🎉';
+    statusEl.style.fontSize = '18px';
+    statusEl.textContent = '🎉🏆 YOU WIN! ' + you + ' vs ' + ai + ' 🏆🎉';
     sndWin(); spawnParticles(W/2,H/2,'#50c878',20);
+    spawnParticles(W/4,H/2,'#e5c07b',12);
+    spawnParticles(3*W/4,H/2,'#e5c07b',12);
     winStreak++;
     saveStreak();
   } else if (ai > you) {
-    statusEl.textContent = 'AI wins. ' + ai + ' vs ' + you;
+    statusEl.style.fontSize = '18px';
+    statusEl.textContent = '😤 AI wins... ' + ai + ' vs ' + you + ' 💔';
     sndLose();
     winStreak = 0;
     saveStreak();
   } else {
-    statusEl.textContent = 'Tie! ' + you + ' each';
+    statusEl.style.fontSize = '18px';
+    statusEl.textContent = '🤝 Tie! ' + you + ' each 🤝';
     // streak unchanged on tie
   }
   msgEl.textContent = '';
@@ -558,6 +572,10 @@ function playerMove(pitIdx) {
   if (gameOver || animating || turn !== 1) return;
   if (pitIdx < 1 || pitIdx > 6 || board[pitIdx] === 0) return;
 
+  // Increment move counter
+  moveCount++;
+  moveCountEl.textContent = moveCount;
+
   // Save state for undo before the move
   if (!undoUsed) {
     saveUndoState();
@@ -603,6 +621,10 @@ function newGame() {
   undoState = null; undoUsed = false;
   undoBtn.disabled = true;
   hoveredPit = -1;
+  hintPit = -1;
+  moveCount = 0;
+  moveCountEl.textContent = '0';
+  statusEl.style.fontSize = '13px';
   statusEl.textContent = 'Your turn — pick a pit';
   msgEl.textContent = '';
   updateScoreDisplay();
@@ -658,6 +680,45 @@ canvas.addEventListener('mouseleave', function() {
 
 document.getElementById('restart').addEventListener('click', newGame);
 undoBtn.addEventListener('click', performUndo);
+
+// Hint button — only works in Easy mode
+var hintBtn = document.getElementById('hint-btn');
+hintBtn.addEventListener('click', function() {
+  if (gameOver || animating || turn !== 1) return;
+  if (difficultySelect.value !== 'easy') {
+    msgEl.textContent = 'Hints only available in Easy mode!';
+    return;
+  }
+  // Find the best pit: prefer extra turn, then capture, then most stones
+  var valid = [1,2,3,4,5,6].filter(function(i){return board[i]>0;});
+  if (!valid.length) return;
+  var best = null;
+  // Prefer extra turn
+  for (var v = 0; v < valid.length; v++) {
+    var pos = valid[v], s = board[valid[v]];
+    while (s-- > 0) pos = nextPit(pos, 1);
+    if (pos === 7) { best = valid[v]; break; }
+  }
+  // Prefer capture
+  if (!best) for (var v = 0; v < valid.length; v++) {
+    var pos = valid[v], s = board[valid[v]];
+    while (s-- > 0) pos = nextPit(pos, 1);
+    var opp = 14 - pos;
+    if ([1,2,3,4,5,6].indexOf(pos) !== -1 && board[pos] === 0 && board[opp] > 0) { best = valid[v]; break; }
+  }
+  // Fallback: most stones
+  if (!best) {
+    valid.sort(function(a,b){return board[b]-board[a];});
+    best = valid[0];
+  }
+  hintPit = best;
+  drawBoard();
+  msgEl.textContent = 'Try pit ' + best + '!';
+  setTimeout(function() {
+    hintPit = -1;
+    drawBoard();
+  }, 2000);
+});
 
 // Restart when difficulty changes
 difficultySelect.addEventListener('change', function() {

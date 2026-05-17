@@ -117,9 +117,53 @@ function Game(props) {
   var [usedQuestions, setUsedQuestions] = useState([]);
   var [eliminateMode, setEliminateMode] = useState(false);
   var [flashResults, setFlashResults] = useState(null); // {matches: {id:true}, nonMatches: {id:true}}
+  var [elapsed, setElapsed] = useState(0);
+  var timerRef = useRef(null);
+
+  // Timer
+  useEffect(function() {
+    timerRef.current = setInterval(function() {
+      setElapsed(function(e) { return e + 1; });
+    }, 1000);
+    return function() { clearInterval(timerRef.current); };
+  }, []);
+
+  useEffect(function() {
+    if (gameOver && timerRef.current) clearInterval(timerRef.current);
+  }, [gameOver]);
+
+  var formatTime = function(secs) {
+    var m = Math.floor(secs / 60);
+    var s = secs % 60;
+    return (m < 10 ? "0" + m : m) + ":" + (s < 10 ? "0" + s : s);
+  };
 
   var remaining = CHARACTERS.filter(function(c){return !eliminated[c.id];});
   var aiRemaining = CHARACTERS.filter(function(c){return !aiEliminated[c.id];});
+
+  // Confidence meter
+  var confidence = Math.round(((24 - remaining.length) / 23) * 100);
+
+  // Keyboard shortcuts
+  useEffect(function() {
+    var handleKey = function(e) {
+      if (gameOver) return;
+      // 1-9 to ask the first 9 questions
+      var num = parseInt(e.key);
+      if (num >= 1 && num <= 9 && showQuestions) {
+        var idx = num - 1;
+        if (idx < QUESTIONS.length && usedQuestions.indexOf(idx) === -1) {
+          askQuestion(QUESTIONS[idx], idx);
+        }
+      }
+      // Enter to confirm guess (if only one remaining)
+      if (e.key === "Enter" && !showQuestions && turn === "player" && remaining.length === 1) {
+        guessCharacter(remaining[0]);
+      }
+    };
+    document.addEventListener("keydown", handleKey);
+    return function() { document.removeEventListener("keydown", handleKey); };
+  }, [gameOver, showQuestions, usedQuestions, turn, remaining]);
 
   // Player asks a question
   var askQuestion = function(q, idx) {
@@ -279,7 +323,9 @@ function Game(props) {
       <div style={{display:"flex",alignItems:"center",gap:8,padding:"6px 12px",borderBottom:"1px solid var(--border)",flexShrink:0}}>
         <span style={{fontSize:"1.2rem"}}>🤔</span>
         <span style={{fontFamily:"var(--font-mono)",fontSize:"1rem",fontWeight:800,color:"var(--accent)"}}>WHO DAT?!</span>
-        <span style={{fontSize:"0.6rem",color:"var(--dim)",fontFamily:"var(--font-mono)",marginLeft:"auto"}}>Q:{questionsAsked} · {remaining.length} left</span>
+        <span style={{fontSize:"0.6rem",color:"var(--dim)",fontFamily:"var(--font-mono)",marginLeft:"auto"}}>
+          {formatTime(elapsed)} · Q:{questionsAsked} · {remaining.length} left · {confidence}% confident
+        </span>
       </div>
 
       {/* Your secret character */}
@@ -346,7 +392,7 @@ function Game(props) {
           onClick={function(){setShowQuestions(false);}}>
           <div className="fade-in" onClick={function(e){e.stopPropagation();}}
             style={{background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:"16px 16px 0 0",padding:"16px",width:"100%",maxWidth:500,maxHeight:"70vh",overflowY:"auto"}}>
-            <div style={{fontFamily:"var(--font-mono)",fontSize:"0.75rem",color:"var(--dim)",marginBottom:12,textAlign:"center"}}>Ask a yes/no question</div>
+            <div style={{fontFamily:"var(--font-mono)",fontSize:"0.75rem",color:"var(--dim)",marginBottom:12,textAlign:"center"}}>Ask a yes/no question (press 1-9 for shortcuts)</div>
             <div style={{display:"flex",flexDirection:"column",gap:6}}>
               {QUESTIONS.map(function(q,i){
                 var used = usedQuestions.indexOf(i) !== -1;
@@ -354,6 +400,7 @@ function Game(props) {
                   <button key={i} disabled={used}
                     onClick={used?undefined:function(){askQuestion(q,i);}}
                     style={{background:used?"var(--bg)":"var(--bg3)",border:"1px solid "+(used?"var(--bg)":"var(--border)"),borderRadius:8,padding:"10px 14px",color:used?"var(--dim)":"var(--text)",fontFamily:"var(--font-sans)",fontSize:"0.82rem",cursor:used?"default":"pointer",textAlign:"left",opacity:used?0.4:1}}>
+                    {i < 9 ? <span style={{fontFamily:"var(--font-mono)",fontSize:"0.65rem",color:"var(--accent)",marginRight:6}}>[{i+1}]</span> : null}
                     {q.text} {used?"✓":""}
                   </button>
                 );
