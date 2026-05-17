@@ -78,7 +78,7 @@ var smackCount, streakAnnounced5, streakAnnounced10;
 bestScore = parseInt(localStorage.getItem('flappyBest')) || 0;
 
 // ── Bonus Face Emojis ─────────────────────────────────────
-var FACE_EMOJIS = ['😤','😡','🤬','👿','💀','🪱','😈','🤡','💩','👺'];
+var FACE_EMOJIS = ['😤','😡','🍑','👿','🍑','🪱','😈','🍑','🍑','👺','😏','🍑','😜','🍑','🤨','🍑','😬','🍑','👶','🍑'];
 
 // ── Audio Context (Web Audio) ─────────────────────────────
 var audioCtx = null;
@@ -210,74 +210,64 @@ var LINES_RANDOM = [
   "Your father couldn't do this. He can barely use the remote."
 ];
 
-var speechUnlocked = false;
-var cachedVoice = null;
-
-// Preload voices
-if (window.speechSynthesis) {
-  speechSynthesis.onvoiceschanged = function() { findVoice(); };
-  setTimeout(findVoice, 500);
-}
-
-function findVoice() {
-  if (cachedVoice) return;
-  try {
-    var voices = speechSynthesis.getVoices();
-    if (!voices || voices.length === 0) return;
-    // Try female English
-    for (var i = 0; i < voices.length; i++) {
-      var v = voices[i];
-      if (!v.lang || v.lang.indexOf('en') !== 0) continue;
-      if (v.name && (v.name.indexOf('Samantha') > -1 || v.name.indexOf('Google UK English Female') > -1 ||
-          v.name.indexOf('Karen') > -1 || v.name.indexOf('Female') > -1 || v.name.indexOf('Fiona') > -1)) {
-        cachedVoice = v; return;
-      }
-    }
-    // Fallback: any English
-    for (var j = 0; j < voices.length; j++) {
-      if (voices[j].lang && voices[j].lang.indexOf('en') === 0) { cachedVoice = voices[j]; return; }
-    }
-  } catch(e) {}
-}
-
-// Unlock speech on first user gesture (required on mobile)
-function unlockSpeech() {
-  if (speechUnlocked) return;
-  speechUnlocked = true;
-  try {
-    // Speak a silent utterance to unlock the API
-    var silent = new SpeechSynthesisUtterance('');
-    silent.volume = 0;
-    speechSynthesis.speak(silent);
-  } catch(e) {}
-}
+// NARRATION ENGINE — aggressive approach that actually works on mobile
+// The trick: cancel + speak immediately, don't check .speaking (it lies on Safari)
+var speechQueue = [];
+var speechBusy = false;
 
 function speak(text, priority) {
   try {
     if (!window.speechSynthesis) return;
-    if (!speechUnlocked) return; // Wait until user gesture unlocks it
-
     var now = Date.now();
-    if (!priority) {
-      if (now - lastSpeechTime < MIN_SPEECH_GAP) return;
-      // On some mobile browsers, .speaking stays true — use time-based fallback
-      if (speechSynthesis.speaking && now - lastSpeechTime < 8000) return;
-    }
+    // Non-priority: respect cooldown
+    if (!priority && now - lastSpeechTime < MIN_SPEECH_GAP) return;
+    // Non-priority: don't queue if something recent was said
+    if (!priority && speechBusy && now - lastSpeechTime < 10000) return;
 
-    // Don't cancel — let current speech finish
-    if (speechSynthesis.speaking && !priority) return;
+    // Always cancel whatever's playing and speak fresh
+    try { speechSynthesis.cancel(); } catch(e) {}
+    speechBusy = true;
 
-    findVoice(); // Make sure we have a voice
+    // Small delay after cancel (some browsers need this)
+    setTimeout(function() {
+      try {
+        var utter = new SpeechSynthesisUtterance(text);
+        utter.rate = 1.05;
+        utter.pitch = 1.25;
+        utter.volume = 1.0;
 
-    var utter = new SpeechSynthesisUtterance(text);
-    utter.rate = 1.05;
-    utter.pitch = 1.25;
-    utter.volume = 1.0;
-    if (cachedVoice) utter.voice = cachedVoice;
+        // Pick voice
+        var voices = speechSynthesis.getVoices();
+        if (voices && voices.length > 0) {
+          var pick = null;
+          for (var i = 0; i < voices.length; i++) {
+            var v = voices[i];
+            if (!v.lang || v.lang.indexOf('en') !== 0) continue;
+            if (!pick) pick = v; // first English voice as fallback
+            if (v.name && (v.name.indexOf('Samantha') > -1 || v.name.indexOf('Female') > -1 ||
+                v.name.indexOf('Google') > -1 || v.name.indexOf('Karen') > -1)) {
+              pick = v; break;
+            }
+          }
+          if (pick) utter.voice = pick;
+        }
 
-    speechSynthesis.speak(utter);
-    lastSpeechTime = now;
+        utter.onend = function() { speechBusy = false; };
+        utter.onerror = function() { speechBusy = false; };
+        // Safety timeout — force speechBusy false after 15s
+        setTimeout(function() { speechBusy = false; }, 15000);
+
+        speechSynthesis.speak(utter);
+        lastSpeechTime = Date.now();
+      } catch(e) { speechBusy = false; }
+    }, 50);
   } catch(e) {}
+}
+
+// Voices load async — prime them
+if (window.speechSynthesis) {
+  speechSynthesis.getVoices();
+  speechSynthesis.onvoiceschanged = function() {};
 }
 
 function randomLine(arr) {
@@ -727,7 +717,6 @@ requestAnimationFrame(gameLoop);
 // ═══════════════════════════════════════════════════════════
 
 function startGame() {
-  unlockSpeech();
   STATE = "playing";
   resetGame();
   speak(randomLine(LINES_START), true);
