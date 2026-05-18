@@ -291,7 +291,7 @@ function update(){
   pwTimer++;if(pwTimer>=600&&powerups.length<6){pwTimer=0;spawnPowerup();}
   // Particles
   for(var i=particles.length-1;i>=0;i--){var p=particles[i];p.x+=p.vx;p.y+=p.vy;p.life-=.025;if(p.life<=0)particles.splice(i,1);}
-  for(var i=sparkles.length-1;i>=0;i--){var s=sparkles[i];s.y+=s.vy;s.life-=.03;if(s.life<=0)sparkles.splice(i,1);}
+  for(var i=sparkles.length-1;i>=0;i--){var s=sparkles[i];s.y+=s.vy;s.x+=(s.vx||0)*0.3;s.life-=.025;if(s.life<=0)sparkles.splice(i,1);}
 }
 
 // ── Draw ──
@@ -336,11 +336,21 @@ function draw(){
     if(cell>0)drawGradHex(sx,sy2,HEX-1,cell,.25);
     else drawHex(sx,sy2,HEX-1,'#ede6f5','rgba(200,190,215,0.25)');
   }
-  // Territory glow
+  // Territory glow — subtle pulsing border glow
+  var glowPulse=0.6+0.4*Math.sin(frame*0.03);
   for(var gy=sy;gy<ey;gy++)for(var gx=sg;gx<eg;gx++){
     var cell=gC(gx,gy);if(cell<=0)continue;
     var nb=hexN(gx,gy),border=false;for(var n=0;n<nb.length;n++){if(gC(nb[n].gx,nb[n].gy)!==cell){border=true;break;}}
-    if(border){var p=h2p(gx,gy);drawHex(p.x-camX,p.y-camY,HEX-1,null,null,PCOL[cell]);}
+    if(border){var p=h2p(gx,gy),sx3=p.x-camX,sy3=p.y-camY;
+      // Outer glow
+      ctx.save();ctx.shadowColor=PCOL[cell];ctx.shadowBlur=8*glowPulse;
+      drawHex(sx3,sy3,HEX-1,null,PCOL[cell]);
+      ctx.restore();
+      // Inner highlight
+      var rr=PCOL_RGB[cell];
+      ctx.beginPath();for(var ii=0;ii<6;ii++){var aa=Math.PI/180*(60*ii-30),xx=sx3+(HEX-2)*Math.cos(aa),yy=sy3+(HEX-2)*Math.sin(aa);ii===0?ctx.moveTo(xx,yy):ctx.lineTo(xx,yy);}ctx.closePath();
+      ctx.strokeStyle='rgba('+rr[0]+','+rr[1]+','+rr[2]+','+(0.15+0.1*glowPulse)+')';ctx.lineWidth=1.5;ctx.stroke();
+    }
   }
   // Trails with shimmer
   function drawTrail(ent){
@@ -371,12 +381,17 @@ function draw(){
     if(ent.pw==='Speed'&&Date.now()<ent.pwEnd){ctx.beginPath();ctx.arc(sx,sy2,11,0,Math.PI*2);ctx.strokeStyle='rgba(255,200,50,0.5)';ctx.lineWidth=2;ctx.setLineDash([3,3]);ctx.stroke();ctx.setLineDash([]);}
   }
   drawEnt(player);for(var i=0;i<ais.length;i++)drawEnt(ais[i]);
-  // Sparkles
-  for(var i=0;i<sparkles.length;i++){var s=sparkles[i];ctx.globalAlpha=s.life;ctx.fillStyle=s.color;ctx.beginPath();
+  // Sparkles — enhanced with twinkle, glow, and drift
+  for(var i=0;i<sparkles.length;i++){var s=sparkles[i];
+    var twinkleAlpha=0.5+0.5*Math.sin((s.twinkle||0)+frame*0.15);
+    ctx.globalAlpha=s.life*twinkleAlpha;ctx.fillStyle=s.color;ctx.beginPath();
     var sz=s.size*s.life;
-    // Star shape
-    for(var j=0;j<5;j++){var a=Math.PI*2/5*j-Math.PI/2,ax=s.x-camX+Math.cos(a)*sz,ay=s.y-camY+Math.sin(a)*sz;j===0?ctx.moveTo(ax,ay):ctx.lineTo(ax,ay);var a2=a+Math.PI/5;ctx.lineTo(s.x-camX+Math.cos(a2)*sz*.4,s.y-camY+Math.sin(a2)*sz*.4);}
-    ctx.closePath();ctx.fill();}
+    var sx4=s.x-camX+(s.vx||0)*Math.sin(frame*0.05)*3,sy4=s.y-camY;
+    // Star shape with slow rotation
+    for(var j=0;j<5;j++){var a=Math.PI*2/5*j-Math.PI/2+frame*0.02,ax=sx4+Math.cos(a)*sz,ay=sy4+Math.sin(a)*sz;j===0?ctx.moveTo(ax,ay):ctx.lineTo(ax,ay);var a2=a+Math.PI/5;ctx.lineTo(sx4+Math.cos(a2)*sz*.4,sy4+Math.sin(a2)*sz*.4);}
+    ctx.closePath();ctx.fill();
+    // Soft glow around sparkle
+    if(sz>1.5){ctx.globalAlpha=s.life*twinkleAlpha*0.25;ctx.beginPath();ctx.arc(sx4,sy4,sz*2,0,Math.PI*2);ctx.fill();}}
   ctx.globalAlpha=1;
   // Particles
   for(var i=0;i<particles.length;i++){var p=particles[i];ctx.globalAlpha=p.life;ctx.fillStyle=p.color;ctx.fillRect(p.x-camX-p.size/2,p.y-camY-p.size/2,p.size,p.size);}

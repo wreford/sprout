@@ -1,0 +1,1103 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+  <title>Flappy Flip Flop 2: La Chancla Returns 🩴</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    html,body{height:100%;background:#81D4FA;overflow:hidden;touch-action:manipulation;user-select:none;-webkit-user-select:none}
+    #wrap{position:relative;width:100%;height:100%}
+    canvas{display:block;width:100%;height:100%}
+    #restartBtn{
+      position:absolute;top:55%;left:50%;transform:translate(-50%,-50%);
+      display:none;pointer-events:none;
+      padding:16px 40px;font-size:22px;font-weight:bold;
+      background:#FF5722;color:#fff;border:none;border-radius:12px;
+      box-shadow:0 4px 12px rgba(0,0,0,0.3);
+      cursor:pointer;z-index:100;
+      touch-action:manipulation;
+    }
+    #restartBtn:active{background:#E64A19}
+  </style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c"></canvas>
+  <button id="restartBtn">TRY AGAIN</button>
+</div>
+<script>
+// ═══════════════════════════════════════════════════════════
+// FLAPPY FLIP FLOP 2: LA CHANCLA RETURNS
+// ═══════════════════════════════════════════════════════════
+
+var canvas = document.getElementById('c');
+var ctx = canvas.getContext('2d');
+var restartBtn = document.getElementById('restartBtn');
+var W, H;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+var isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+
+// ── State Machine ─────────────────────────────────────
+var STATE = "skinselect"; // skinselect, menu, playing, dying, dead
+
+// ── Skins ─────────────────────────────────────────────
+var SKINS = [
+  { emoji: '🩴', name: 'Classic' },
+  { emoji: '👟', name: 'Sneaker' },
+  { emoji: '👢', name: 'Boot' },
+  { emoji: '🥾', name: 'Hiking' },
+  { emoji: '👠', name: 'Heel' }
+];
+var selectedSkin = 0;
+var skinBtnRects = [];
+
+// ── Game Constants ────────────────────────────────────
+var GRAVITY = 0.55;
+var FLAP_FORCE = -9;
+var BASE_PIPE_SPEED = 3;
+var PIPE_SPEED = 3;
+var PIPE_WIDTH = 60;
+var PIPE_CAP_H = 20;
+var PIPE_GAP = 180;
+var PIPE_SPACING = 220;
+var GROUND_H = 60;
+var PLAYER_SIZE = 36;
+var SPITE_MAX = 100;
+var SPITE_DRAIN = 1.8;
+var FACE_SIZE = 30;
+var TUMBLE_DURATION = 1200;
+var DEAD_DELAY = 1500;
+
+// ── Game Variables ────────────────────────────────────
+var playerX, playerY, playerVel, playerAngle;
+var pipes, faces, powerups, score, bestScore, spite;
+var lastTime, lastSmackTime, lastIdleNarration, lastRandomNarration;
+var tumbleTimer, deadTimer;
+var smackCount;
+var pipesPassed;
+var combo, bestCombo;
+var shieldActive, speedActive, megaSpiteActive;
+var shieldTimer, speedTimer;
+
+// Background cycle
+var bgPhase; // 0=sunrise, 1=day, 2=sunset, 3=night
+var BG_COLORS = [
+  { top: '#FF9800', bot: '#FFCC80' },  // sunrise
+  { top: '#81D4FA', bot: '#B3E5FC' },  // day
+  { top: '#FF7043', bot: '#FFAB91' },  // sunset
+  { top: '#1A237E', bot: '#3949AB' }   // night
+];
+
+// Leaderboard
+var leaderboard = JSON.parse(localStorage.getItem('flappy2board') || '[]');
+bestScore = parseInt(localStorage.getItem('flappy2Best')) || 0;
+var bestComboRecord = parseInt(localStorage.getItem('flappy2BestCombo')) || 0;
+
+// ── Bonus Face Emojis ─────────────────────────────────
+var FACE_EMOJIS = ['😤','😡','🍑','👿','🍑','🪱','😈','🍑','🍑','👺','😏','🍑','😜','🍑','🤨','🍑','😬','🍑','👶','🍑'];
+
+// ── Power-up Types ────────────────────────────────────
+var POWERUP_TYPES = [
+  { emoji: '⚡', type: 'speed', name: 'Speed' },
+  { emoji: '🛡️', type: 'shield', name: 'Shield' },
+  { emoji: '💪', type: 'megaspite', name: 'Mega Spite' }
+];
+
+// ── Audio Context ─────────────────────────────────────
+var audioCtx = null;
+function getAudio() {
+  if (!audioCtx) {
+    try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {}
+  }
+  return audioCtx;
+}
+
+function playTone(freq, duration, type, vol) {
+  try {
+    var c = getAudio();
+    if (!c) return;
+    var o = c.createOscillator();
+    var g = c.createGain();
+    o.type = type || 'sine';
+    o.frequency.value = freq;
+    g.gain.setValueAtTime(Math.min(vol || 0.025, 0.025), c.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + duration);
+    o.connect(g);
+    g.connect(c.destination);
+    o.start();
+    o.stop(c.currentTime + duration);
+  } catch(e) {}
+}
+
+function sndFlap() { playTone(400, 0.12, 'sine', 0.025); setTimeout(function(){playTone(600, 0.08, 'sine', 0.02);}, 40); }
+function sndSmack() { playTone(800, 0.1, 'sine', 0.025); setTimeout(function(){playTone(1200, 0.08, 'sine', 0.025);}, 50); }
+function sndDie() { playTone(400, 0.15, 'sine', 0.025); setTimeout(function(){playTone(200, 0.3, 'sine', 0.025);}, 80); }
+function sndPowerup() { playTone(600, 0.1, 'sine', 0.02); setTimeout(function(){playTone(900, 0.1, 'sine', 0.02);}, 60); setTimeout(function(){playTone(1200, 0.15, 'sine', 0.02);}, 120); }
+function sndCombo(level) {
+  var baseFreq = 500 + level * 150;
+  playTone(baseFreq, 0.1, 'sine', 0.02);
+  setTimeout(function(){ playTone(baseFreq + 200, 0.1, 'sine', 0.02); }, 50);
+  setTimeout(function(){ playTone(baseFreq + 400, 0.15, 'sine', 0.02); }, 100);
+}
+function sndBoss() { playTone(300, 0.2, 'sine', 0.025); setTimeout(function(){playTone(400, 0.2, 'sine', 0.025);}, 100); setTimeout(function(){playTone(500, 0.3, 'sine', 0.025);}, 200); }
+
+// ═══════════════════════════════════════════════════════════
+// NARRATION — Mom Voice Returns
+// ═══════════════════════════════════════════════════════════
+var lastSpeechTime = 0;
+var MIN_SPEECH_GAP = 5000;
+
+var LINES_START = [
+  "Round two! Mama's BACK!",
+  "La chancla never retires!",
+  "Let's do this AGAIN!",
+  "The flip flop returns!",
+  "Nobody asked for a sequel! Here it is anyway!"
+];
+
+var LINES_SMACK = [
+  "BOOM! That's for waking me up early!",
+  "SMACKED into next week!",
+  "My ARM is getting tired but my SPITE is not!",
+  "Two words: FLIP. FLOP.",
+  "That one was personal!",
+  "Direct hit! I should have been a pitcher!",
+  "POW! Right in the disrespect!",
+  "You felt that one, didn't you?!",
+  "La chancla has no off switch!",
+  "SMACK! That's from your grandmother!"
+];
+
+var LINES_COMBO = [
+  "COMBO! I'm on FIRE!",
+  "Three in a ROW! That's a TURBO CHANCLA!",
+  "Keep it going mama!",
+  "UNSTOPPABLE!",
+  "The combo is BUILDING!"
+];
+
+var LINES_DEATH = [
+  "Not AGAIN!",
+  "I blame your father!",
+  "That pipe came out of NOWHERE!",
+  "We were doing SO WELL!",
+  "My blood pressure!",
+  "I need a moment.",
+  "This is why I drink wine.",
+  "UNBELIEVABLE.",
+  "The pipes are CHEATING!",
+  "I'm calling the manager of this game!"
+];
+
+var LINES_BOSS = [
+  "BOSS PIPE! THREE faces! Let's GO!",
+  "Triple smack time! BRING IT!",
+  "OH it's the BIG one! MAMA'S READY!",
+  "Three faces?! That's a FAMILY REUNION!",
+  "BOSS MODE ACTIVATED!"
+];
+
+var LINES_POWERUP = [
+  "Ooh a power-up! Don't mind if I do!",
+  "Shield! I'm INVINCIBLE! For like 3 seconds!",
+  "Speed boost! Everything in slow motion!",
+  "Mega spite! I am RECHARGED!",
+  "A gift! For ME! How thoughtful!"
+];
+
+var LINES_LOW_SPITE = [
+  "Think about how your husband loads the dishwasher!",
+  "SMACK SOMEONE! Your spite is almost gone!",
+  "The spite meter is LOW! Just like my patience!",
+  "Remember what he said at Thanksgiving! GET MAD!",
+  "You're running out of ANGER! Think about the in-laws!"
+];
+
+var LINES_RANDOM = [
+  "This sequel is BETTER than the original.",
+  "I've been training since the last game.",
+  "The pipes got bigger but so did my ANGER.",
+  "Where's the pause button? I need my wine.",
+  "If this was the Olympics I'd get GOLD in chancla throwing.",
+  "These power-ups are like Christmas but VIOLENT.",
+  "My therapist said this game is NOT helping. I disagree.",
+  "I told your father about this game. He fell asleep.",
+  "The combo meter is my new favorite thing.",
+  "La chancla sequel nobody asked for but everyone NEEDED."
+];
+
+var speechBusy = false;
+
+function speak(text, priority) {
+  try {
+    if (!window.speechSynthesis) return;
+    var now = Date.now();
+    if (!priority && now - lastSpeechTime < MIN_SPEECH_GAP) return;
+    if (!priority && speechBusy && now - lastSpeechTime < 10000) return;
+    try { speechSynthesis.cancel(); } catch(e) {}
+    speechBusy = true;
+    setTimeout(function() {
+      try {
+        var utter = new SpeechSynthesisUtterance(text);
+        utter.rate = 1.05;
+        utter.pitch = 1.25;
+        utter.volume = 1.0;
+        var voices = speechSynthesis.getVoices();
+        if (voices && voices.length > 0) {
+          var pick = null;
+          for (var i = 0; i < voices.length; i++) {
+            var v = voices[i];
+            if (!v.lang || v.lang.indexOf('en') !== 0) continue;
+            if (!pick) pick = v;
+            if (v.name && (v.name.indexOf('Samantha') > -1 || v.name.indexOf('Female') > -1 ||
+                v.name.indexOf('Google') > -1 || v.name.indexOf('Karen') > -1)) {
+              pick = v; break;
+            }
+          }
+          if (pick) utter.voice = pick;
+        }
+        utter.onend = function() { speechBusy = false; };
+        utter.onerror = function() { speechBusy = false; };
+        setTimeout(function() { speechBusy = false; }, 15000);
+        speechSynthesis.speak(utter);
+        lastSpeechTime = Date.now();
+      } catch(e) { speechBusy = false; }
+    }, 50);
+  } catch(e) {}
+}
+
+if (window.speechSynthesis) {
+  speechSynthesis.getVoices();
+  speechSynthesis.onvoiceschanged = function() {};
+}
+
+function randomLine(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+// ═══════════════════════════════════════════════════════════
+// GAME LOGIC
+// ═══════════════════════════════════════════════════════════
+
+function resetGame() {
+  playerX = W * 0.2;
+  playerY = H * 0.4;
+  playerVel = 0;
+  playerAngle = 0;
+  pipes = [];
+  faces = [];
+  powerups = [];
+  score = 0;
+  spite = SPITE_MAX;
+  smackCount = 0;
+  pipesPassed = 0;
+  combo = 0;
+  bestCombo = 0;
+  shieldActive = false;
+  speedActive = false;
+  megaSpiteActive = false;
+  shieldTimer = 0;
+  speedTimer = 0;
+  bgPhase = 0;
+  PIPE_SPEED = BASE_PIPE_SPEED;
+  lastSmackTime = Date.now();
+  lastIdleNarration = Date.now();
+  lastRandomNarration = Date.now();
+  lastTime = performance.now();
+  tumbleTimer = 0;
+  deadTimer = 0;
+
+  var startX = W + 100;
+  for (var i = 0; i < 5; i++) {
+    addPipe(startX + i * PIPE_SPACING, false);
+  }
+}
+
+function addPipe(x, checkBoss) {
+  var minGapY = PIPE_GAP / 2 + 60;
+  var maxGapY = H - GROUND_H - PIPE_GAP / 2 - 60;
+  var gapCenter = minGapY + Math.random() * (maxGapY - minGapY);
+
+  var isBoss = checkBoss && (pipesPassed + 1) % 10 === 0;
+  var pipeW = isBoss ? PIPE_WIDTH * 1.8 : PIPE_WIDTH;
+  var gap = isBoss ? PIPE_GAP * 1.3 : PIPE_GAP;
+
+  pipes.push({ x: x, gapCenter: gapCenter, scored: false, isBoss: isBoss, width: pipeW, gap: gap });
+
+  if (isBoss) {
+    // Boss pipe: 3 faces in the gap
+    for (var f = 0; f < 3; f++) {
+      var faceEmoji = FACE_EMOJIS[Math.floor(Math.random() * FACE_EMOJIS.length)];
+      var spread = gap * 0.5;
+      var fy = gapCenter + (f - 1) * (spread / 2);
+      var fx = x + pipeW / 2 + (f - 1) * 20;
+      faces.push({ x: fx, y: fy, emoji: faceEmoji, alive: true, ring: 0, isBoss: true });
+    }
+  } else {
+    // Normal: 80% chance of face
+    if (Math.random() < 0.8) {
+      var faceEmoji = FACE_EMOJIS[Math.floor(Math.random() * FACE_EMOJIS.length)];
+      faces.push({
+        x: x + pipeW / 2,
+        y: gapCenter + (Math.random() - 0.5) * (gap * 0.4),
+        emoji: faceEmoji,
+        alive: true,
+        ring: 0,
+        isBoss: false
+      });
+    }
+
+    // 15% chance of power-up in the gap (not on boss pipes)
+    if (Math.random() < 0.15) {
+      var pu = POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)];
+      powerups.push({
+        x: x + pipeW / 2,
+        y: gapCenter + (Math.random() - 0.5) * (gap * 0.3),
+        emoji: pu.emoji,
+        type: pu.type,
+        alive: true,
+        ring: 0
+      });
+    }
+  }
+}
+
+function flap() {
+  playerVel = FLAP_FORCE;
+  sndFlap();
+}
+
+function checkCollision() {
+  var px = playerX;
+  var py = playerY;
+  var r = PLAYER_SIZE / 2 - 4;
+
+  if (py + r > H - GROUND_H) return true;
+  if (py - r < 0) return true;
+
+  for (var i = 0; i < pipes.length; i++) {
+    var p = pipes[i];
+    var pipeLeft = p.x;
+    var pipeRight = p.x + p.width;
+    var gapTop = p.gapCenter - p.gap / 2;
+    var gapBottom = p.gapCenter + p.gap / 2;
+
+    if (px + r > pipeLeft && px - r < pipeRight) {
+      if (py - r < gapTop || py + r > gapBottom) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function checkFaceCollision() {
+  var px = playerX;
+  var py = playerY;
+  var hitDist = PLAYER_SIZE / 2 + FACE_SIZE / 2;
+
+  for (var i = 0; i < faces.length; i++) {
+    var f = faces[i];
+    if (!f.alive) continue;
+    var dx = px - f.x;
+    var dy = py - f.y;
+    if (Math.sqrt(dx * dx + dy * dy) < hitDist) {
+      f.alive = false;
+      var comboMult = Math.min(combo + 1, 4);
+      var points = f.isBoss ? 5 * comboMult : 1 * comboMult;
+      score += points;
+      smackCount++;
+      combo++;
+      if (combo > bestCombo) bestCombo = combo;
+      spite = Math.min(SPITE_MAX, spite + 20);
+      lastSmackTime = Date.now();
+      sndSmack();
+
+      // Combo announcements
+      if (combo >= 3 && combo % 3 === 0) {
+        sndCombo(Math.min(combo / 3, 4));
+        speak(randomLine(LINES_COMBO), true);
+      } else if (smackCount % 3 === 0) {
+        speak(randomLine(LINES_SMACK), true);
+      }
+
+      if (score > bestScore) {
+        bestScore = score;
+        localStorage.setItem('flappy2Best', bestScore);
+      }
+    }
+  }
+}
+
+function checkPowerupCollision() {
+  var px = playerX;
+  var py = playerY;
+  var hitDist = PLAYER_SIZE / 2 + 20;
+
+  for (var i = 0; i < powerups.length; i++) {
+    var pu = powerups[i];
+    if (!pu.alive) continue;
+    var dx = px - pu.x;
+    var dy = py - pu.y;
+    if (Math.sqrt(dx * dx + dy * dy) < hitDist) {
+      pu.alive = false;
+      sndPowerup();
+      speak(randomLine(LINES_POWERUP), true);
+
+      if (pu.type === 'speed') {
+        speedActive = true;
+        speedTimer = Date.now();
+        PIPE_SPEED = BASE_PIPE_SPEED * 0.5;
+      } else if (pu.type === 'shield') {
+        shieldActive = true;
+        shieldTimer = Date.now();
+      } else if (pu.type === 'megaspite') {
+        spite = Math.min(SPITE_MAX, spite + 50);
+      }
+    }
+  }
+}
+
+function die() {
+  if (shieldActive) {
+    shieldActive = false;
+    // Shield absorbs the hit
+    playerVel = FLAP_FORCE * 0.5;
+    speak("Shield SAVED me! Thank the LORD!", true);
+    return;
+  }
+  STATE = "dying";
+  sndDie();
+  speak(randomLine(LINES_DEATH), true);
+  tumbleTimer = performance.now();
+
+  // Update leaderboard
+  updateLeaderboard(score, bestCombo);
+}
+
+function updateLeaderboard(sc, cb) {
+  leaderboard.push({ score: sc, combo: cb, date: new Date().toLocaleDateString() });
+  leaderboard.sort(function(a, b) { return b.score - a.score; });
+  if (leaderboard.length > 5) leaderboard = leaderboard.slice(0, 5);
+  localStorage.setItem('flappy2board', JSON.stringify(leaderboard));
+  if (cb > bestComboRecord) {
+    bestComboRecord = cb;
+    localStorage.setItem('flappy2BestCombo', bestComboRecord);
+  }
+}
+
+function transitionToDead() {
+  STATE = "dead";
+  setTimeout(function() {
+    if (STATE === "dead") {
+      restartBtn.style.display = 'block';
+      restartBtn.style.pointerEvents = 'auto';
+    }
+  }, DEAD_DELAY);
+}
+
+// ═══════════════════════════════════════════════════════════
+// UPDATE LOOP
+// ═══════════════════════════════════════════════════════════
+
+function update(now) {
+  var dt = Math.min((now - lastTime) / 1000, 0.05);
+  lastTime = now;
+
+  if (STATE === "playing") {
+    // Check power-up timers
+    var nowMs = Date.now();
+    if (speedActive && nowMs - speedTimer > 3000) {
+      speedActive = false;
+      PIPE_SPEED = BASE_PIPE_SPEED;
+    }
+    if (shieldActive && nowMs - shieldTimer > 10000) {
+      shieldActive = false;
+    }
+
+    // Physics
+    playerVel += GRAVITY;
+    playerY += playerVel;
+    playerAngle = Math.max(-30, Math.min(60, playerVel * 3));
+
+    // Spite drain
+    spite -= SPITE_DRAIN * dt;
+    if (spite <= 0) {
+      spite = 0;
+      die();
+      if (STATE === "dying") return;
+    }
+
+    // Move pipes
+    for (var i = pipes.length - 1; i >= 0; i--) {
+      pipes[i].x -= PIPE_SPEED;
+
+      // Score when player passes pipe
+      if (!pipes[i].scored && pipes[i].x + pipes[i].width < playerX) {
+        pipes[i].scored = true;
+        pipesPassed++;
+
+        // Background phase shift every 10 pipes
+        bgPhase = Math.floor(pipesPassed / 10) % 4;
+
+        // Boss pipe announcement
+        if (pipesPassed % 10 === 9) {
+          speak(randomLine(LINES_BOSS), true);
+          sndBoss();
+        }
+
+        // Missed face resets combo
+        // (combo resets handled separately when missing pipes — we track via face smacking)
+      }
+
+      if (pipes[i].x + pipes[i].width < -20) {
+        // Check if any alive face was in this pipe — if missed, reset combo
+        var pipe = pipes[i];
+        for (var fi = faces.length - 1; fi >= 0; fi--) {
+          if (faces[fi].alive && faces[fi].x < pipe.x + pipe.width + 50 && faces[fi].x > pipe.x - 50) {
+            combo = 0; // missed a face, reset combo
+          }
+        }
+        pipes.splice(i, 1);
+      }
+    }
+
+    // Move faces
+    for (var i = faces.length - 1; i >= 0; i--) {
+      faces[i].x -= PIPE_SPEED;
+      faces[i].ring += dt * 3;
+      if (faces[i].x < -50) {
+        faces.splice(i, 1);
+      }
+    }
+
+    // Move powerups
+    for (var i = powerups.length - 1; i >= 0; i--) {
+      powerups[i].x -= PIPE_SPEED;
+      powerups[i].ring += dt * 4;
+      if (powerups[i].x < -50) {
+        powerups.splice(i, 1);
+      }
+    }
+
+    // Add new pipes
+    var lastPipeX = 0;
+    for (var i = 0; i < pipes.length; i++) {
+      if (pipes[i].x > lastPipeX) lastPipeX = pipes[i].x;
+    }
+    if (lastPipeX < W) {
+      addPipe(lastPipeX + PIPE_SPACING, true);
+    }
+
+    // Collision
+    if (checkCollision()) {
+      die();
+      if (STATE === "dying") return;
+    }
+
+    // Face smack
+    checkFaceCollision();
+
+    // Power-up collision
+    checkPowerupCollision();
+
+    // Narration triggers
+    if (nowMs - lastSmackTime > 10000 && nowMs - lastIdleNarration > 12000) {
+      speak("Are we playing or staring at the screen? La chancla waits for NO ONE!", false);
+      lastIdleNarration = nowMs;
+    }
+
+    if (spite < SPITE_MAX * 0.3) {
+      speak(randomLine(LINES_LOW_SPITE), false);
+    }
+
+    if (nowMs - lastRandomNarration > 15000) {
+      speak(randomLine(LINES_RANDOM), false);
+      lastRandomNarration = nowMs;
+    }
+
+  } else if (STATE === "dying") {
+    playerVel += GRAVITY * 0.8;
+    playerY += playerVel;
+    playerAngle += 15;
+    if (playerY > H - GROUND_H) playerY = H - GROUND_H;
+    if (now - tumbleTimer > TUMBLE_DURATION) {
+      transitionToDead();
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// RENDER
+// ═══════════════════════════════════════════════════════════
+
+function getBgColors() {
+  var c = BG_COLORS[bgPhase || 0];
+  return c;
+}
+
+function render() {
+  ctx.clearRect(0, 0, W, H);
+
+  // Sky — gradient based on phase
+  var bgC = getBgColors();
+  var grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, bgC.top);
+  grad.addColorStop(1, bgC.bot);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Stars at night
+  if (bgPhase === 3) {
+    ctx.fillStyle = '#fff';
+    for (var s = 0; s < 30; s++) {
+      var sx = (s * 137.5 + performance.now() * 0.001) % W;
+      var sy = (s * 53.7) % (H * 0.6);
+      var ss = 1 + Math.sin(performance.now() * 0.003 + s) * 0.5;
+      ctx.beginPath();
+      ctx.arc(sx, sy, ss, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // Pipes
+  for (var i = 0; i < pipes.length; i++) {
+    var p = pipes[i];
+    var gapTop = p.gapCenter - p.gap / 2;
+    var gapBottom = p.gapCenter + p.gap / 2;
+    var pw = p.width;
+
+    var pipeColor = p.isBoss ? '#8B0000' : '#2E7D32';
+    var capColor = p.isBoss ? '#B22222' : '#388E3C';
+    var highlightColor = p.isBoss ? '#CD5C5C' : '#43A047';
+
+    // Top pipe body
+    ctx.fillStyle = pipeColor;
+    ctx.fillRect(p.x, 0, pw, gapTop - PIPE_CAP_H);
+    ctx.fillStyle = capColor;
+    ctx.fillRect(p.x - 4, gapTop - PIPE_CAP_H, pw + 8, PIPE_CAP_H);
+    ctx.fillStyle = highlightColor;
+    ctx.fillRect(p.x + 6, 0, 6, gapTop - PIPE_CAP_H);
+
+    // Bottom pipe body
+    ctx.fillStyle = pipeColor;
+    ctx.fillRect(p.x, gapBottom + PIPE_CAP_H, pw, H - GROUND_H - gapBottom - PIPE_CAP_H);
+    ctx.fillStyle = capColor;
+    ctx.fillRect(p.x - 4, gapBottom, pw + 8, PIPE_CAP_H);
+    ctx.fillStyle = highlightColor;
+    ctx.fillRect(p.x + 6, gapBottom + PIPE_CAP_H, 6, H - GROUND_H - gapBottom - PIPE_CAP_H);
+
+    // Boss pipe glow
+    if (p.isBoss) {
+      ctx.strokeStyle = 'rgba(255,0,0,' + (0.3 + Math.sin(performance.now() * 0.005) * 0.2) + ')';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(p.x - 6, gapTop - PIPE_CAP_H - 2, pw + 12, gapBottom - gapTop + PIPE_CAP_H * 2 + 4);
+    }
+  }
+
+  // Faces
+  for (var i = 0; i < faces.length; i++) {
+    var f = faces[i];
+    if (!f.alive) continue;
+
+    ctx.beginPath();
+    ctx.arc(f.x, f.y, FACE_SIZE / 2 + 6 + Math.sin(f.ring) * 2, 0, Math.PI * 2);
+    ctx.strokeStyle = f.isBoss ? 'rgba(255, 0, 0, 0.8)' : 'rgba(255, 215, 0, 0.7)';
+    ctx.lineWidth = f.isBoss ? 4 : 3;
+    ctx.stroke();
+
+    ctx.font = FACE_SIZE + 'px serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(f.emoji, f.x, f.y);
+  }
+
+  // Power-ups
+  for (var i = 0; i < powerups.length; i++) {
+    var pu = powerups[i];
+    if (!pu.alive) continue;
+
+    // Pulsing glow
+    var glowR = 18 + Math.sin(pu.ring) * 4;
+    ctx.beginPath();
+    ctx.arc(pu.x, pu.y, glowR, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0, 255, 255, 0.2)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0, 255, 255, 0.7)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.font = '24px serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(pu.emoji, pu.x, pu.y);
+  }
+
+  // Ground
+  ctx.fillStyle = bgPhase === 3 ? '#2E7D32' : '#4CAF50';
+  ctx.fillRect(0, H - GROUND_H, W, GROUND_H);
+  ctx.fillStyle = bgPhase === 3 ? '#1B5E20' : '#388E3C';
+  ctx.fillRect(0, H - GROUND_H, W, 3);
+
+  // Shield visual
+  if (shieldActive && (STATE === "playing")) {
+    ctx.beginPath();
+    ctx.arc(playerX, playerY, PLAYER_SIZE / 2 + 12, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(0, 200, 255, ' + (0.5 + Math.sin(performance.now() * 0.01) * 0.3) + ')';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+  }
+
+  // Speed visual
+  if (speedActive && (STATE === "playing")) {
+    ctx.fillStyle = 'rgba(255, 255, 0, 0.15)';
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  // Player
+  ctx.save();
+  ctx.translate(playerX, playerY);
+  ctx.rotate(playerAngle * Math.PI / 180);
+  ctx.font = PLAYER_SIZE + 'px serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(SKINS[selectedSkin].emoji, 0, 0);
+  ctx.restore();
+
+  // ── UI Overlays ──
+  if (STATE === "playing" || STATE === "dying" || STATE === "dead") {
+    // Spite meter
+    var meterW = W * 0.5;
+    var meterH = 14;
+    var meterX = (W - meterW) / 2;
+    var meterY = 18;
+
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.fillRect(meterX, meterY, meterW, meterH);
+
+    var pct = spite / SPITE_MAX;
+    var fillColor = pct > 0.5 ? '#4CAF50' : (pct > 0.25 ? '#FF9800' : '#F44336');
+    ctx.fillStyle = fillColor;
+    ctx.fillRect(meterX, meterY, meterW * pct, meterH);
+
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 10px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('SPITE', W / 2, meterY + meterH / 2);
+
+    // Score
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 28px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.shadowColor = 'rgba(0,0,0,0.3)';
+    ctx.shadowBlur = 4;
+    ctx.fillText(score, W / 2, meterY + meterH + 8);
+    ctx.shadowBlur = 0;
+
+    // Combo display
+    if (combo >= 2) {
+      var comboMult = Math.min(combo, 4);
+      ctx.fillStyle = combo >= 4 ? '#FF4081' : combo >= 3 ? '#FF9800' : '#FFEB3B';
+      ctx.font = 'bold 16px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('x' + comboMult + ' COMBO! (' + combo + ')', W / 2, meterY + meterH + 42);
+    }
+
+    // Power-up indicators (top left)
+    var puY = 18;
+    if (shieldActive) {
+      ctx.fillStyle = '#00BCD4';
+      ctx.font = 'bold 11px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText('🛡️ SHIELD', 10, puY);
+      puY += 16;
+    }
+    if (speedActive) {
+      ctx.fillStyle = '#FFEB3B';
+      ctx.font = 'bold 11px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText('⚡ SLOW-MO', 10, puY);
+      puY += 16;
+    }
+
+    // Pipes passed + Best
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.font = '12px sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText('BEST: ' + bestScore, W - 12, 16);
+    ctx.fillText('PIPES: ' + pipesPassed, W - 12, 32);
+  }
+
+  // Skin Select screen
+  if (STATE === "skinselect") {
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 28px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('🩴 LA CHANCLA RETURNS', W / 2, H * 0.15);
+
+    ctx.font = '16px sans-serif';
+    ctx.fillText('Choose Your Weapon:', W / 2, H * 0.25);
+
+    // Skin buttons
+    skinBtnRects = [];
+    var btnW = Math.min(80, (W - 60) / 5);
+    var totalW = btnW * 5 + 10 * 4;
+    var startBtnX = (W - totalW) / 2;
+    for (var i = 0; i < SKINS.length; i++) {
+      var bx = startBtnX + i * (btnW + 10);
+      var by = H * 0.32;
+      var bh = btnW + 30;
+      skinBtnRects.push({ x: bx, y: by, w: btnW, h: bh, idx: i });
+
+      // Button bg
+      ctx.fillStyle = i === selectedSkin ? 'rgba(255,87,34,0.8)' : 'rgba(255,255,255,0.15)';
+      ctx.beginPath();
+      ctx.roundRect(bx, by, btnW, bh, 10);
+      ctx.fill();
+
+      // Border if selected
+      if (i === selectedSkin) {
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.roundRect(bx, by, btnW, bh, 10);
+        ctx.stroke();
+      }
+
+      // Emoji
+      ctx.font = '32px serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(SKINS[i].emoji, bx + btnW / 2, by + btnW / 2);
+
+      // Name
+      ctx.fillStyle = '#fff';
+      ctx.font = '10px sans-serif';
+      ctx.fillText(SKINS[i].name, bx + btnW / 2, by + btnW + 16);
+    }
+
+    // Leaderboard
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('TOP 5 SCORES', W / 2, H * 0.58);
+
+    if (leaderboard.length === 0) {
+      ctx.font = '12px sans-serif';
+      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+      ctx.fillText('No scores yet!', W / 2, H * 0.63);
+    } else {
+      for (var i = 0; i < leaderboard.length; i++) {
+        ctx.font = '12px sans-serif';
+        ctx.fillStyle = i === 0 ? '#FFD700' : 'rgba(255,255,255,0.7)';
+        var medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '  ';
+        ctx.fillText(medal + ' ' + leaderboard[i].score + ' pts  (x' + leaderboard[i].combo + ' combo)', W / 2, H * 0.63 + i * 18);
+      }
+    }
+
+    if (bestComboRecord > 0) {
+      ctx.fillStyle = '#FF9800';
+      ctx.font = '12px sans-serif';
+      ctx.fillText('Best Combo Record: x' + bestComboRecord, W / 2, H * 0.63 + Math.max(leaderboard.length, 1) * 18 + 10);
+    }
+
+    // Start prompt
+    ctx.fillStyle = '#FFEB3B';
+    ctx.font = 'bold 18px sans-serif';
+    ctx.fillText('Tap / Space to START', W / 2, H * 0.88);
+
+    ctx.font = '11px sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.fillText('Tap a shoe to select, then tap to play!', W / 2, H * 0.93);
+  }
+
+  // Death overlay
+  if (STATE === "dead") {
+    ctx.fillStyle = 'rgba(0,0,0,0.65)';
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.fillStyle = '#F44336';
+    ctx.font = 'bold 28px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('OUT OF SPITE', W / 2, H * 0.2);
+
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 48px sans-serif';
+    ctx.fillText(score, W / 2, H * 0.30);
+
+    ctx.font = '16px sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.fillText('BEST: ' + bestScore, W / 2, H * 0.38);
+
+    ctx.fillStyle = '#FF9800';
+    ctx.font = '14px sans-serif';
+    ctx.fillText('Best Combo: x' + bestCombo + '  |  Pipes: ' + pipesPassed, W / 2, H * 0.44);
+
+    // Mini leaderboard
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.fillText('LEADERBOARD', W / 2, H * 0.52);
+    for (var i = 0; i < leaderboard.length; i++) {
+      ctx.font = '11px sans-serif';
+      ctx.fillStyle = i === 0 ? '#FFD700' : 'rgba(255,255,255,0.6)';
+      var medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '  ';
+      ctx.fillText(medal + ' ' + leaderboard[i].score + ' pts', W / 2, H * 0.56 + i * 16);
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// MAIN LOOP
+// ═══════════════════════════════════════════════════════════
+
+function gameLoop(now) {
+  if (STATE === "playing" || STATE === "dying") {
+    update(now);
+  }
+  // Menu bob for skin select
+  if (STATE === "skinselect") {
+    playerX = W * 0.5;
+    playerY = H * 0.15 + Math.sin(now / 500) * 8;
+  }
+  render();
+  requestAnimationFrame(gameLoop);
+}
+
+// Initial state
+playerX = W * 0.5;
+playerY = H * 0.15;
+playerVel = 0;
+playerAngle = 0;
+pipes = [];
+faces = [];
+powerups = [];
+score = 0;
+spite = SPITE_MAX;
+smackCount = 0;
+pipesPassed = 0;
+combo = 0;
+bestCombo = 0;
+bgPhase = 0;
+lastSmackTime = Date.now();
+lastIdleNarration = Date.now();
+lastRandomNarration = Date.now();
+lastTime = performance.now();
+tumbleTimer = 0;
+deadTimer = 0;
+
+requestAnimationFrame(gameLoop);
+
+// ═══════════════════════════════════════════════════════════
+// INPUT HANDLERS
+// ═══════════════════════════════════════════════════════════
+
+function startGame() {
+  STATE = "playing";
+  resetGame();
+  try { if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); } catch(e) {}
+  try {
+    var silent = new SpeechSynthesisUtterance(' ');
+    silent.volume = 0.01;
+    speechSynthesis.speak(silent);
+  } catch(e) {}
+  setTimeout(function() { speak(randomLine(LINES_START), true); }, 300);
+}
+
+function handleSkinSelect(x, y) {
+  for (var i = 0; i < skinBtnRects.length; i++) {
+    var r = skinBtnRects[i];
+    if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
+      selectedSkin = r.idx;
+      return true; // consumed as skin selection
+    }
+  }
+  return false;
+}
+
+function doRestart() {
+  restartBtn.style.display = 'none';
+  restartBtn.style.pointerEvents = 'none';
+  STATE = "skinselect";
+}
+
+restartBtn.addEventListener('click', function(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  doRestart();
+});
+
+restartBtn.addEventListener('touchstart', function(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  doRestart();
+}, { passive: false });
+
+// Track last skin tap so double-tap starts game
+var lastSkinTapTime = 0;
+
+if (isTouchDevice) {
+  canvas.addEventListener('touchstart', function(e) {
+    e.preventDefault();
+    var tx = e.touches[0].clientX;
+    var ty = e.touches[0].clientY;
+    initAudioOnTouch();
+    if (STATE === "skinselect") {
+      var wasSkinTap = handleSkinSelect(tx, ty);
+      if (!wasSkinTap) {
+        startGame();
+      }
+    } else if (STATE === "playing") {
+      flap();
+    }
+  }, { passive: false });
+} else {
+  canvas.addEventListener('mousedown', function(e) {
+    e.preventDefault();
+    initAudioOnTouch();
+    if (STATE === "skinselect") {
+      var wasSkinTap = handleSkinSelect(e.clientX, e.clientY);
+      if (!wasSkinTap) {
+        startGame();
+      }
+    } else if (STATE === "playing") {
+      flap();
+    }
+  });
+
+  document.addEventListener('keydown', function(e) {
+    if (e.code === 'Space' || e.key === ' ') {
+      e.preventDefault();
+      if (STATE === "skinselect") {
+        startGame();
+      } else if (STATE === "playing") {
+        flap();
+      }
+    }
+  });
+}
+
+function initAudioOnTouch() {
+  try {
+    if (!audioCtx) getAudio();
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  } catch(e) {}
+}
+
+</script>
+</body>
+</html>
