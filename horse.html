@@ -39,6 +39,151 @@ function saveHorse(h) { localStorage.setItem("lily-horse", JSON.stringify(h)); }
 var audioCtx=null;
 function getAudio(){if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();return audioCtx;}
 function tone(f,d,t,v){try{var c=getAudio(),o=c.createOscillator(),g=c.createGain();o.type="sine";o.frequency.value=f;g.gain.setValueAtTime(Math.min(v||0.02,0.02),c.currentTime);g.gain.exponentialRampToValueAtTime(0.001,c.currentTime+d);o.connect(g);g.connect(c.destination);o.start();o.stop(c.currentTime+d);}catch(e){}}
+
+// ── Procedural Background Music (Web Audio API)
+var bgMusic = {
+  ctx: null,
+  melodyOsc: null,
+  bassOsc: null,
+  melodyGain: null,
+  bassGain: null,
+  masterGain: null,
+  playing: false,
+  muted: false,
+  intervalId: null,
+  noteIndex: 0,
+  baseVolume: 0.01,
+  // Pentatonic scale in C major: C4, D4, E4, G4, A4, C5, D5, E5
+  melodyNotes: [261.63, 293.66, 329.63, 392.00, 440.00, 523.25, 587.33, 659.25],
+  // Bass notes (lower octave): C3, D3, E3, G3, A3
+  bassNotes: [130.81, 146.83, 164.81, 196.00, 220.00],
+  // Pre-composed gentle melody pattern (indices into melodyNotes)
+  melodyPattern: [0, 2, 4, 3, 2, 0, 1, 3, 4, 5, 4, 2, 3, 1, 0, 2],
+  // Bass pattern (indices into bassNotes)
+  bassPattern: [0, 0, 3, 3, 4, 4, 2, 0],
+};
+
+function startBgMusic() {
+  if (bgMusic.playing) return;
+  try {
+    var c = getAudio();
+    bgMusic.ctx = c;
+
+    // Master gain
+    bgMusic.masterGain = c.createGain();
+    bgMusic.masterGain.gain.setValueAtTime(bgMusic.muted ? 0 : bgMusic.baseVolume, c.currentTime);
+    bgMusic.masterGain.connect(c.destination);
+
+    bgMusic.playing = true;
+    bgMusic.noteIndex = 0;
+
+    // 80 BPM = 750ms per beat
+    var beatMs = 750;
+
+    function playNote() {
+      if (!bgMusic.playing) return;
+      try {
+        var c = bgMusic.ctx;
+        var now = c.currentTime;
+
+        // Melody note (sine wave)
+        var mIdx = bgMusic.melodyPattern[bgMusic.noteIndex % bgMusic.melodyPattern.length];
+        var mFreq = bgMusic.melodyNotes[mIdx];
+        var mOsc = c.createOscillator();
+        var mGain = c.createGain();
+        mOsc.type = "sine";
+        mOsc.frequency.setValueAtTime(mFreq, now);
+        mGain.gain.setValueAtTime(0, now);
+        mGain.gain.linearRampToValueAtTime(0.7, now + 0.05);
+        mGain.gain.setValueAtTime(0.7, now + 0.3);
+        mGain.gain.exponentialRampToValueAtTime(0.001, now + 0.7);
+        mOsc.connect(mGain);
+        mGain.connect(bgMusic.masterGain);
+        mOsc.start(now);
+        mOsc.stop(now + 0.75);
+
+        // Bass note every 2 beats (triangle wave, soft)
+        if (bgMusic.noteIndex % 2 === 0) {
+          var bIdx = bgMusic.bassPattern[Math.floor(bgMusic.noteIndex / 2) % bgMusic.bassPattern.length];
+          var bFreq = bgMusic.bassNotes[bIdx];
+          var bOsc = c.createOscillator();
+          var bGain = c.createGain();
+          bOsc.type = "triangle";
+          bOsc.frequency.setValueAtTime(bFreq, now);
+          bGain.gain.setValueAtTime(0, now);
+          bGain.gain.linearRampToValueAtTime(0.5, now + 0.08);
+          bGain.gain.setValueAtTime(0.5, now + 0.8);
+          bGain.gain.exponentialRampToValueAtTime(0.001, now + 1.45);
+          bOsc.connect(bGain);
+          bGain.connect(bgMusic.masterGain);
+          bOsc.start(now);
+          bOsc.stop(now + 1.5);
+        }
+
+        bgMusic.noteIndex++;
+      } catch(e) {}
+    }
+
+    playNote();
+    bgMusic.intervalId = setInterval(playNote, beatMs);
+  } catch(e) {}
+}
+
+function stopBgMusic() {
+  bgMusic.playing = false;
+  if (bgMusic.intervalId) { clearInterval(bgMusic.intervalId); bgMusic.intervalId = null; }
+}
+
+function setBgMusicVolume(vol) {
+  if (bgMusic.masterGain && bgMusic.ctx) {
+    try { bgMusic.masterGain.gain.setValueAtTime(vol, bgMusic.ctx.currentTime); } catch(e) {}
+  }
+}
+
+function toggleBgMusicMute() {
+  bgMusic.muted = !bgMusic.muted;
+  setBgMusicVolume(bgMusic.muted ? 0 : bgMusic.baseVolume);
+}
+
+// ── Streak Counter
+function getStreak() {
+  try {
+    var data = JSON.parse(localStorage.getItem("lily-horse-streak") || "{}");
+    return data;
+  } catch(e) { return {}; }
+}
+function updateStreak() {
+  var data = getStreak();
+  var today = new Date().toDateString();
+  var yesterday = new Date(Date.now() - 86400000).toDateString();
+  if (data.lastVisit === today) {
+    // Already visited today
+    return data.streak || 1;
+  }
+  if (data.lastVisit === yesterday) {
+    // Consecutive day
+    data.streak = (data.streak || 1) + 1;
+  } else {
+    // Streak broken or first visit
+    data.streak = 1;
+  }
+  data.lastVisit = today;
+  localStorage.setItem("lily-horse-streak", JSON.stringify(data));
+  return data.streak;
+}
+
+// ── Daily Bonus
+function checkDailyBonus(horse) {
+  if (!horse || !horse.created) return { earned: false };
+  var now = Date.now();
+  var lastBonusDate = horse.lastBonusDate || "";
+  var today = new Date().toDateString();
+  if (lastBonusDate === today) return { earned: false };
+  // Horse must have been created before today (survived overnight)
+  var createdDate = new Date(horse.created).toDateString();
+  if (createdDate === today) return { earned: false };
+  return { earned: true };
+}
 function sndNeigh(){tone(400,0.15,"sine",0.02);setTimeout(function(){tone(500,0.2,"sine",0.02);},100);setTimeout(function(){tone(350,0.15,"sine",0.015);},250);}
 function sndMunch(){tone(200,0.06,"sine",0.02);setTimeout(function(){tone(250,0.06,"sine",0.02);},80);setTimeout(function(){tone(180,0.06,"sine",0.015);},160);}
 function sndBrush(){for(var i=0;i<4;i++){(function(j){setTimeout(function(){tone(800+j*50,0.04,"sine",0.015);},j*60);})(i);}}
