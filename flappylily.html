@@ -1,0 +1,877 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+  <title>Flappy Lily</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    html,body{height:100%;background:#87CEEB;overflow:hidden;touch-action:manipulation;user-select:none;-webkit-user-select:none}
+    #wrap{position:relative;width:100%;height:100%}
+    canvas{display:block;width:100%;height:100%}
+    #restartBtn{
+      position:absolute;top:62%;left:50%;transform:translate(-50%,-50%);
+      display:none;pointer-events:none;
+      padding:16px 40px;font-size:22px;font-weight:bold;
+      background:#8B4513;color:#fff;border:none;border-radius:12px;
+      box-shadow:0 4px 12px rgba(0,0,0,0.3);
+      cursor:pointer;z-index:100;
+      touch-action:manipulation;
+    }
+    #restartBtn:active{background:#6B3410}
+  </style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c"></canvas>
+  <button id="restartBtn">RIDE AGAIN</button>
+</div>
+<script>
+// ================================================================
+// FLAPPY LILY — Lily the horse jumping over fences
+// ================================================================
+
+// -- Canvas Setup ------------------------------------------------
+var canvas = document.getElementById('c');
+var ctx = canvas.getContext('2d');
+var restartBtn = document.getElementById('restartBtn');
+var W, H;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// -- Touch Detection ---------------------------------------------
+var isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+
+// -- State Machine -----------------------------------------------
+// States: "menu", "playing", "dying", "dead"
+var STATE = "menu";
+
+// -- Game Constants ----------------------------------------------
+var GRAVITY = 0.48;
+var JUMP_FORCE = -9.5;
+var FENCE_SPEED = 3.2;
+var FENCE_WIDTH = 50;
+var FENCE_GAP = 175;
+var FENCE_SPACING = 240;
+var GROUND_H = 55;
+var PLAYER_SIZE = 40;
+var GALLOP_MAX = 100;
+var GALLOP_DRAIN = 1.2;
+var TUMBLE_DURATION = 1200;
+var DEAD_DELAY = 1500;
+
+// -- Game Variables ----------------------------------------------
+var playerX, playerY, playerVel, playerAngle;
+var fences, collectibles, score, fencesPassed, carrotsCollected, applesCollected;
+var gallop, lastTime, lastFenceNarration, lastIdleTime, fenceCount;
+var tumbleTimer, deadTimer;
+var clouds, dustParticles, hearts, flowers;
+var isNewHighScore;
+
+// -- Leaderboard -------------------------------------------------
+function loadScores() {
+  try { return JSON.parse(localStorage.getItem('flappylily-scores')) || []; } catch(e) { return []; }
+}
+function saveScores(arr) {
+  try { localStorage.setItem('flappylily-scores', JSON.stringify(arr)); } catch(e) {}
+}
+function addScore(entry) {
+  var scores = loadScores();
+  scores.push(entry);
+  scores.sort(function(a,b) { return b.score - a.score; });
+  if (scores.length > 5) scores.length = 5;
+  saveScores(scores);
+  return scores;
+}
+function getBestScore() {
+  var s = loadScores();
+  return s.length > 0 ? s[0].score : 0;
+}
+
+// -- Audio Context -----------------------------------------------
+var audioCtx = null;
+function getAudio() {
+  if (!audioCtx) {
+    try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {}
+  }
+  return audioCtx;
+}
+
+function playTone(freq, duration, type, vol) {
+  try {
+    var c = getAudio();
+    if (!c) return;
+    var o = c.createOscillator();
+    var g = c.createGain();
+    o.type = type || 'sine';
+    o.frequency.value = freq;
+    g.gain.setValueAtTime(vol || 0.025, c.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + duration);
+    o.connect(g);
+    g.connect(c.destination);
+    o.start();
+    o.stop(c.currentTime + duration);
+  } catch(e) {}
+}
+
+function sndJump() { playTone(440, 0.1, 'sine', 0.025); setTimeout(function(){playTone(660, 0.08, 'sine', 0.02);}, 40); }
+function sndCollect() { playTone(880, 0.08, 'sine', 0.025); setTimeout(function(){playTone(1100, 0.1, 'sine', 0.02);}, 50); }
+function sndDie() { playTone(440, 0.15, 'sine', 0.025); setTimeout(function(){playTone(220, 0.3, 'sine', 0.02);}, 80); }
+function sndHighScore() {
+  playTone(523, 0.12, 'sine', 0.025);
+  setTimeout(function(){playTone(659, 0.12, 'sine', 0.025);}, 120);
+  setTimeout(function(){playTone(784, 0.12, 'sine', 0.025);}, 240);
+  setTimeout(function(){playTone(1047, 0.2, 'sine', 0.025);}, 360);
+}
+
+// ================================================================
+// NARRATION — gentle girl voice (Lily's owner)
+// ================================================================
+var lastSpeechTime = 0;
+var MIN_SPEECH_GAP = 5000;
+var speechBusy = false;
+
+var LINES_START = [
+  "Let's go Lily!", "Giddy up girl!", "You can do it!",
+  "Run like the wind!", "Best horse ever!"
+];
+var LINES_FENCE = [
+  "Good jump!", "Beautiful!", "Over the fence!", "So graceful!",
+  "Perfect form!", "You're amazing!", "That's my girl!", "Wheeee!"
+];
+var LINES_CARROT = [
+  "Yummy carrot!", "Nom nom!", "Tasty!", "Lily loves carrots!", "Good fuel!"
+];
+var LINES_DEATH = [
+  "Oops! It's okay Lily!", "Oh no! Again!", "You almost had it!",
+  "Shake it off!", "That fence!", "Don't worry!", "Poor Lily!", "More practice!"
+];
+var LINES_IDLE = [
+  "Come on Lily!", "You've got this!", "Keep going!", "Carrots ahead!"
+];
+
+function speak(text, priority) {
+  try {
+    if (!window.speechSynthesis) return;
+    var now = Date.now();
+    if (!priority && now - lastSpeechTime < MIN_SPEECH_GAP) return;
+    if (!priority && speechBusy && now - lastSpeechTime < 10000) return;
+    try { speechSynthesis.cancel(); } catch(e) {}
+    speechBusy = true;
+    setTimeout(function() {
+      try {
+        var utter = new SpeechSynthesisUtterance(text);
+        utter.rate = 1.0;
+        utter.pitch = 1.15;
+        utter.volume = 0.8;
+        var voices = speechSynthesis.getVoices();
+        if (voices && voices.length > 0) {
+          var pick = null;
+          for (var i = 0; i < voices.length; i++) {
+            var v = voices[i];
+            if (!v.lang || v.lang.indexOf('en') !== 0) continue;
+            if (!pick) pick = v;
+            if (v.name && (v.name.indexOf('Samantha') > -1 || v.name.indexOf('Female') > -1 ||
+                v.name.indexOf('Google') > -1 || v.name.indexOf('Karen') > -1)) {
+              pick = v; break;
+            }
+          }
+          if (pick) utter.voice = pick;
+        }
+        utter.onend = function() { speechBusy = false; };
+        utter.onerror = function() { speechBusy = false; };
+        setTimeout(function() { speechBusy = false; }, 15000);
+        speechSynthesis.speak(utter);
+        lastSpeechTime = Date.now();
+      } catch(e) { speechBusy = false; }
+    }, 50);
+  } catch(e) {}
+}
+
+if (window.speechSynthesis) {
+  speechSynthesis.getVoices();
+  speechSynthesis.onvoiceschanged = function() {};
+}
+
+function randomLine(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+// ================================================================
+// DECORATIVE ELEMENTS
+// ================================================================
+function initClouds() {
+  clouds = [];
+  for (var i = 0; i < 4; i++) {
+    clouds.push({
+      x: Math.random() * W * 1.5,
+      y: 30 + Math.random() * (H * 0.25),
+      w: 80 + Math.random() * 60,
+      h: 30 + Math.random() * 20,
+      speed: 0.3 + Math.random() * 0.4
+    });
+  }
+}
+
+function initFlowers() {
+  flowers = [];
+  for (var i = 0; i < 6; i++) {
+    flowers.push({
+      x: Math.random() * W,
+      y: H - GROUND_H - 8 + Math.random() * 4,
+      size: 14 + Math.random() * 8
+    });
+  }
+}
+
+// ================================================================
+// GAME LOGIC
+// ================================================================
+function resetGame() {
+  playerX = W * 0.2;
+  playerY = H * 0.4;
+  playerVel = 0;
+  playerAngle = 0;
+  fences = [];
+  collectibles = [];
+  score = 0;
+  fencesPassed = 0;
+  carrotsCollected = 0;
+  applesCollected = 0;
+  gallop = GALLOP_MAX;
+  fenceCount = 0;
+  lastFenceNarration = 0;
+  lastIdleTime = Date.now();
+  lastTime = performance.now();
+  tumbleTimer = 0;
+  deadTimer = 0;
+  dustParticles = [];
+  hearts = [];
+  isNewHighScore = false;
+  initClouds();
+  initFlowers();
+
+  var startX = W + 120;
+  for (var i = 0; i < 5; i++) {
+    addFence(startX + i * FENCE_SPACING);
+  }
+}
+
+function addFence(x) {
+  var minGapY = FENCE_GAP / 2 + 70;
+  var maxGapY = H - GROUND_H - FENCE_GAP / 2 - 70;
+  var gapCenter = minGapY + Math.random() * (maxGapY - minGapY);
+  fences.push({ x: x, gapCenter: gapCenter, scored: false });
+
+  // Collectible in gap
+  var rand = Math.random();
+  if (rand < 0.6) {
+    // Carrot (60%)
+    collectibles.push({
+      x: x + FENCE_WIDTH / 2,
+      y: gapCenter + (Math.random() - 0.5) * (FENCE_GAP * 0.3),
+      type: 'carrot', alive: true, bob: Math.random() * Math.PI * 2
+    });
+  } else if (rand < 0.8) {
+    // Apple (20%)
+    collectibles.push({
+      x: x + FENCE_WIDTH / 2,
+      y: gapCenter + (Math.random() - 0.5) * (FENCE_GAP * 0.3),
+      type: 'apple', alive: true, bob: Math.random() * Math.PI * 2
+    });
+  }
+}
+
+function jump() {
+  playerVel = JUMP_FORCE;
+  sndJump();
+}
+
+function spawnDust() {
+  for (var i = 0; i < 2; i++) {
+    dustParticles.push({
+      x: playerX - 15,
+      y: playerY + 12,
+      vx: -1 - Math.random() * 2,
+      vy: (Math.random() - 0.5) * 1.5,
+      life: 0.6 + Math.random() * 0.4,
+      size: 3 + Math.random() * 4
+    });
+  }
+}
+
+function spawnHeart(x, y) {
+  hearts.push({
+    x: x, y: y,
+    vy: -1.5 - Math.random(),
+    life: 1.2,
+    size: 18 + Math.random() * 6
+  });
+}
+
+function checkCollision() {
+  var px = playerX, py = playerY;
+  var r = PLAYER_SIZE / 2 - 5;
+
+  if (py + r > H - GROUND_H) return true;
+  if (py - r < 0) return true;
+
+  for (var i = 0; i < fences.length; i++) {
+    var f = fences[i];
+    var fLeft = f.x, fRight = f.x + FENCE_WIDTH;
+    var gapTop = f.gapCenter - FENCE_GAP / 2;
+    var gapBottom = f.gapCenter + FENCE_GAP / 2;
+    if (px + r > fLeft && px - r < fRight) {
+      if (py - r < gapTop || py + r > gapBottom) return true;
+    }
+  }
+  return false;
+}
+
+function checkCollectibles() {
+  var px = playerX, py = playerY;
+  var hitDist = PLAYER_SIZE / 2 + 16;
+
+  for (var i = 0; i < collectibles.length; i++) {
+    var c = collectibles[i];
+    if (!c.alive) continue;
+    var dx = px - c.x, dy = py - c.y;
+    if (Math.sqrt(dx * dx + dy * dy) < hitDist) {
+      c.alive = false;
+      sndCollect();
+      spawnHeart(c.x, c.y);
+
+      if (c.type === 'carrot') {
+        score += 1;
+        carrotsCollected++;
+        gallop = Math.min(GALLOP_MAX, gallop + 20);
+        if (carrotsCollected % 3 === 0) speak(randomLine(LINES_CARROT), true);
+      } else if (c.type === 'apple') {
+        score += 3;
+        applesCollected++;
+      }
+    }
+  }
+}
+
+function die() {
+  STATE = "dying";
+  sndDie();
+  speak(randomLine(LINES_DEATH), true);
+  tumbleTimer = performance.now();
+}
+
+function transitionToDead() {
+  STATE = "dead";
+  // Check leaderboard
+  var best = getBestScore();
+  var entry = {
+    score: score,
+    date: new Date().toLocaleDateString(),
+    fences: fencesPassed,
+    carrots: carrotsCollected,
+    apples: applesCollected
+  };
+  var scores = addScore(entry);
+  if (score > best && score > 0) {
+    isNewHighScore = true;
+    sndHighScore();
+  }
+
+  setTimeout(function() {
+    if (STATE === "dead") {
+      restartBtn.style.display = 'block';
+      restartBtn.style.pointerEvents = 'auto';
+    }
+  }, DEAD_DELAY);
+}
+
+// ================================================================
+// UPDATE LOOP
+// ================================================================
+function update(now) {
+  var dt = Math.min((now - lastTime) / 1000, 0.05);
+  lastTime = now;
+
+  if (STATE === "playing") {
+    // Physics
+    playerVel += GRAVITY;
+    playerY += playerVel;
+    playerAngle = Math.max(-25, Math.min(55, playerVel * 3));
+
+    // Gallop drain
+    gallop -= GALLOP_DRAIN * dt;
+    if (gallop <= 0) { gallop = 0; die(); return; }
+
+    // Dust trail
+    if (Math.random() < 0.4) spawnDust();
+
+    // Move fences
+    for (var i = fences.length - 1; i >= 0; i--) {
+      fences[i].x -= FENCE_SPEED;
+      // Score when fence passes player
+      if (!fences[i].scored && fences[i].x + FENCE_WIDTH < playerX) {
+        fences[i].scored = true;
+        score++;
+        fencesPassed++;
+        fenceCount++;
+        // Narrate every 5th fence
+        if (fenceCount % 5 === 0) speak(randomLine(LINES_FENCE), true);
+      }
+      if (fences[i].x + FENCE_WIDTH < -20) fences.splice(i, 1);
+    }
+
+    // Move collectibles
+    for (var i = collectibles.length - 1; i >= 0; i--) {
+      collectibles[i].x -= FENCE_SPEED;
+      collectibles[i].bob += dt * 3;
+      if (collectibles[i].x < -50) collectibles.splice(i, 1);
+    }
+
+    // Add new fences
+    var lastFX = 0;
+    for (var i = 0; i < fences.length; i++) {
+      if (fences[i].x > lastFX) lastFX = fences[i].x;
+    }
+    if (lastFX < W) addFence(lastFX + FENCE_SPACING);
+
+    // Collision
+    if (checkCollision()) { die(); return; }
+    checkCollectibles();
+
+    // Idle narration
+    var nowMs = Date.now();
+    if (nowMs - lastIdleTime > 10000) {
+      speak(randomLine(LINES_IDLE), false);
+      lastIdleTime = nowMs;
+    }
+
+    // Update clouds
+    for (var i = 0; i < clouds.length; i++) {
+      clouds[i].x -= clouds[i].speed;
+      if (clouds[i].x + clouds[i].w < 0) {
+        clouds[i].x = W + 20;
+        clouds[i].y = 30 + Math.random() * (H * 0.25);
+      }
+    }
+
+    // Update dust
+    for (var i = dustParticles.length - 1; i >= 0; i--) {
+      var d = dustParticles[i];
+      d.x += d.vx; d.y += d.vy; d.life -= dt;
+      if (d.life <= 0) dustParticles.splice(i, 1);
+    }
+
+    // Update hearts
+    for (var i = hearts.length - 1; i >= 0; i--) {
+      var h = hearts[i];
+      h.y += h.vy; h.life -= dt;
+      if (h.life <= 0) hearts.splice(i, 1);
+    }
+
+    // Move flowers with ground
+    for (var i = 0; i < flowers.length; i++) {
+      flowers[i].x -= FENCE_SPEED * 0.5;
+      if (flowers[i].x < -20) {
+        flowers[i].x = W + 20;
+        flowers[i].y = H - GROUND_H - 8 + Math.random() * 4;
+      }
+    }
+
+  } else if (STATE === "dying") {
+    playerVel += GRAVITY * 0.8;
+    playerY += playerVel;
+    playerAngle += 12;
+    if (playerY > H - GROUND_H) playerY = H - GROUND_H;
+    if (now - tumbleTimer > TUMBLE_DURATION) transitionToDead();
+  }
+}
+
+// ================================================================
+// RENDER
+// ================================================================
+function drawFence(x, topY, bottomY) {
+  // Top fence (hangs from top)
+  var postW = 10;
+  var plankH = 7;
+
+  // Posts
+  ctx.fillStyle = '#8B4513';
+  ctx.fillRect(x + 6, 0, postW, topY);
+  ctx.fillRect(x + FENCE_WIDTH - 16, 0, postW, topY);
+  // Planks
+  for (var p = 0; p < 3; p++) {
+    var py = topY - 14 - p * 18;
+    ctx.fillStyle = '#A0522D';
+    ctx.fillRect(x, py, FENCE_WIDTH, plankH);
+    ctx.fillStyle = '#8B4513';
+    ctx.fillRect(x, py + plankH, FENCE_WIDTH, 2);
+  }
+  // Cap
+  ctx.fillStyle = '#CD853F';
+  ctx.fillRect(x - 3, topY - 6, FENCE_WIDTH + 6, 8);
+
+  // Bottom fence (rises from ground)
+  ctx.fillStyle = '#8B4513';
+  ctx.fillRect(x + 6, bottomY, postW, H - GROUND_H - bottomY);
+  ctx.fillRect(x + FENCE_WIDTH - 16, bottomY, postW, H - GROUND_H - bottomY);
+  for (var p = 0; p < 3; p++) {
+    var py2 = bottomY + 8 + p * 18;
+    ctx.fillStyle = '#A0522D';
+    ctx.fillRect(x, py2, FENCE_WIDTH, plankH);
+    ctx.fillStyle = '#8B4513';
+    ctx.fillRect(x, py2 + plankH, FENCE_WIDTH, 2);
+  }
+  // Cap
+  ctx.fillStyle = '#CD853F';
+  ctx.fillRect(x - 3, bottomY - 2, FENCE_WIDTH + 6, 8);
+}
+
+function drawLeaderboard(cx, startY, compact) {
+  var scores = loadScores();
+  if (scores.length === 0) return;
+  var medals = ['🥇', '🥈', '🥉']; // gold, silver, bronze
+  var lineH = compact ? 18 : 22;
+  ctx.font = compact ? '12px sans-serif' : '14px sans-serif';
+  ctx.textAlign = 'center';
+
+  for (var i = 0; i < scores.length; i++) {
+    var s = scores[i];
+    var prefix = i < 3 ? medals[i] + ' ' : (i + 1) + '. ';
+    var txt = prefix + s.score + ' pts';
+    if (!compact) txt += '  (' + s.fences + 'F ' + s.carrots + 'C ' + s.apples + 'A)';
+    ctx.fillStyle = i === 0 ? '#FFD700' : 'rgba(255,255,255,0.8)';
+    ctx.fillText(txt, cx, startY + i * lineH);
+  }
+}
+
+function render() {
+  ctx.clearRect(0, 0, W, H);
+
+  // Sky gradient
+  var grad = ctx.createLinearGradient(0, 0, 0, H - GROUND_H);
+  grad.addColorStop(0, '#87CEEB');
+  grad.addColorStop(1, '#B8E8B0');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H - GROUND_H);
+
+  // Clouds
+  if (clouds) {
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    for (var i = 0; i < clouds.length; i++) {
+      var cl = clouds[i];
+      ctx.beginPath();
+      ctx.ellipse(cl.x, cl.y, cl.w / 2, cl.h / 2, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(cl.x - cl.w * 0.25, cl.y + 4, cl.w * 0.3, cl.h * 0.4, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(cl.x + cl.w * 0.25, cl.y + 2, cl.w * 0.35, cl.h * 0.45, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // Flowers (background, before fences)
+  if (flowers) {
+    ctx.font = '16px serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (var i = 0; i < flowers.length; i++) {
+      ctx.fillText('🌸', flowers[i].x, flowers[i].y);
+    }
+  }
+
+  // Fences
+  for (var i = 0; i < fences.length; i++) {
+    var f = fences[i];
+    var gapTop = f.gapCenter - FENCE_GAP / 2;
+    var gapBottom = f.gapCenter + FENCE_GAP / 2;
+    drawFence(f.x, gapTop, gapBottom);
+  }
+
+  // Collectibles
+  for (var i = 0; i < collectibles.length; i++) {
+    var c = collectibles[i];
+    if (!c.alive) continue;
+    var bobY = Math.sin(c.bob) * 5;
+    ctx.font = '26px serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(c.type === 'carrot' ? '🥕' : '🍎', c.x, c.y + bobY);
+  }
+
+  // Dust particles
+  if (dustParticles) {
+    for (var i = 0; i < dustParticles.length; i++) {
+      var d = dustParticles[i];
+      ctx.beginPath();
+      ctx.arc(d.x, d.y, d.size, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(180,160,120,' + (d.life * 0.6) + ')';
+      ctx.fill();
+    }
+  }
+
+  // Hearts floating up
+  if (hearts) {
+    ctx.font = '20px serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (var i = 0; i < hearts.length; i++) {
+      var h = hearts[i];
+      ctx.globalAlpha = Math.min(1, h.life);
+      ctx.fillText('❤️', h.x, h.y);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Ground
+  // Dirt
+  ctx.fillStyle = '#8B6914';
+  ctx.fillRect(0, H - GROUND_H, W, GROUND_H);
+  // Grass line on top
+  ctx.fillStyle = '#4CAF50';
+  ctx.fillRect(0, H - GROUND_H, W, 8);
+  ctx.fillStyle = '#388E3C';
+  ctx.fillRect(0, H - GROUND_H, W, 3);
+
+  // Player (horse emoji)
+  ctx.save();
+  ctx.translate(playerX, playerY);
+  ctx.rotate(playerAngle * Math.PI / 180);
+  ctx.font = PLAYER_SIZE + 'px serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('🐴', 0, 0);
+  ctx.restore();
+
+  // -- UI Overlays --
+
+  if (STATE === "playing" || STATE === "dying" || STATE === "dead") {
+    // Gallop energy meter
+    var mW = W * 0.55;
+    var mH = 14;
+    var mX = (W - mW) / 2;
+    var mY = 18;
+
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    roundRect(ctx, mX, mY, mW, mH, 7);
+    ctx.fill();
+
+    var pct = gallop / GALLOP_MAX;
+    var fc = pct > 0.5 ? '#4CAF50' : (pct > 0.25 ? '#FF9800' : '#F44336');
+    ctx.fillStyle = fc;
+    roundRect(ctx, mX, mY, mW * pct, mH, 7);
+    ctx.fill();
+
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 9px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('GALLOP ENERGY', W / 2, mY + mH / 2);
+
+    // Score
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 28px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.shadowColor = 'rgba(0,0,0,0.3)';
+    ctx.shadowBlur = 4;
+    ctx.fillText(score, W / 2, mY + mH + 8);
+    ctx.shadowBlur = 0;
+
+    // Best score top right
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.font = '13px sans-serif';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'top';
+    ctx.fillText('BEST: ' + getBestScore(), W - 14, 14);
+  }
+
+  // Menu screen
+  if (STATE === "menu") {
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 32px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('🐴 FLAPPY LILY', W / 2, H * 0.22);
+
+    ctx.font = '16px sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.fillText('Tap or Press Space to Gallop!', W / 2, H * 0.33);
+
+    ctx.font = '13px sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.fillText('Jump fences, collect carrots & apples!', W / 2, H * 0.40);
+
+    // Leaderboard on menu
+    var scores = loadScores();
+    if (scores.length > 0) {
+      ctx.fillStyle = 'rgba(255,255,255,0.7)';
+      ctx.font = 'bold 13px sans-serif';
+      ctx.fillText('LEADERBOARD', W / 2, H * 0.50);
+      drawLeaderboard(W / 2, H * 0.55, true);
+    }
+  }
+
+  // Death overlay
+  if (STATE === "dead") {
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(0, 0, W, H);
+
+    // New high score flash
+    if (isNewHighScore) {
+      var flash = Math.sin(performance.now() / 200) * 0.5 + 0.5;
+      ctx.fillStyle = 'rgba(255,215,0,' + (0.5 + flash * 0.5) + ')';
+      ctx.font = 'bold 22px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('NEW HIGH SCORE!', W / 2, H * 0.15);
+    }
+
+    ctx.fillStyle = '#F44336';
+    ctx.font = 'bold 24px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('WHOA THERE!', W / 2, H * 0.22);
+
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 42px sans-serif';
+    ctx.fillText(score, W / 2, H * 0.30);
+
+    // Summary
+    ctx.font = '14px sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    ctx.fillText('Fences: ' + fencesPassed + '   Carrots: ' + carrotsCollected + '   Apples: ' + applesCollected, W / 2, H * 0.37);
+
+    // Leaderboard
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.font = 'bold 13px sans-serif';
+    ctx.fillText('TOP SCORES', W / 2, H * 0.44);
+    drawLeaderboard(W / 2, H * 0.49, false);
+  }
+}
+
+function roundRect(c, x, y, w, h, r) {
+  if (w <= 0) return;
+  c.beginPath();
+  c.moveTo(x + r, y);
+  c.lineTo(x + w - r, y);
+  c.quadraticCurveTo(x + w, y, x + w, y + r);
+  c.lineTo(x + w, y + h - r);
+  c.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  c.lineTo(x + r, y + h);
+  c.quadraticCurveTo(x, y + h, x, y + h - r);
+  c.lineTo(x, y + r);
+  c.quadraticCurveTo(x, y, x + r, y);
+  c.closePath();
+}
+
+// ================================================================
+// MAIN LOOP
+// ================================================================
+function gameLoop(now) {
+  if (STATE !== "menu") update(now);
+  // Menu bob
+  if (STATE === "menu") {
+    playerX = W * 0.2;
+    playerY = H * 0.4 + Math.sin(now / 500) * 12;
+  }
+  render();
+  requestAnimationFrame(gameLoop);
+}
+
+// Init for menu
+playerX = W * 0.2;
+playerY = H * 0.4;
+playerVel = 0;
+playerAngle = 0;
+fences = [];
+collectibles = [];
+score = 0;
+fencesPassed = 0;
+carrotsCollected = 0;
+applesCollected = 0;
+gallop = GALLOP_MAX;
+fenceCount = 0;
+dustParticles = [];
+hearts = [];
+isNewHighScore = false;
+lastTime = performance.now();
+lastIdleTime = Date.now();
+initClouds();
+initFlowers();
+
+requestAnimationFrame(gameLoop);
+
+// ================================================================
+// INPUT HANDLERS
+// ================================================================
+function startGame() {
+  STATE = "playing";
+  resetGame();
+  try { if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); } catch(e) {}
+  try {
+    var silent = new SpeechSynthesisUtterance(' ');
+    silent.volume = 0.01;
+    speechSynthesis.speak(silent);
+  } catch(e) {}
+  setTimeout(function() { speak(randomLine(LINES_START), true); }, 300);
+}
+
+function handlePlayInput() {
+  if (STATE === "playing") {
+    jump();
+    lastIdleTime = Date.now();
+  }
+}
+
+// -- Restart Button ----------------------------------------------
+function doRestart() {
+  restartBtn.style.display = 'none';
+  restartBtn.style.pointerEvents = 'none';
+  startGame();
+}
+
+restartBtn.addEventListener('click', function(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  doRestart();
+});
+
+restartBtn.addEventListener('touchstart', function(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  doRestart();
+}, { passive: false });
+
+// -- Canvas Input ------------------------------------------------
+if (isTouchDevice) {
+  canvas.addEventListener('touchstart', function(e) {
+    e.preventDefault();
+    if (STATE === "menu") startGame();
+    else if (STATE === "playing") handlePlayInput();
+  }, { passive: false });
+} else {
+  canvas.addEventListener('mousedown', function(e) {
+    e.preventDefault();
+    if (STATE === "menu") startGame();
+    else if (STATE === "playing") handlePlayInput();
+  });
+  document.addEventListener('keydown', function(e) {
+    if (e.code === 'Space' || e.key === ' ') {
+      e.preventDefault();
+      if (STATE === "menu") startGame();
+      else if (STATE === "playing") handlePlayInput();
+    }
+  });
+}
+</script>
+</body>
+</html>

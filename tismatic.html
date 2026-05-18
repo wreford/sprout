@@ -1,0 +1,784 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+  <title>Tismatic 🟪</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    html,body{height:100%;background:#1a0a2a;overflow:hidden;touch-action:manipulation;user-select:none}
+    canvas{display:block;width:100%;height:100%}
+  </style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+var canvas = document.getElementById('c');
+var ctx = canvas.getContext('2d');
+var W, H, groundY, horizonY;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  groundY = H - 60;
+  horizonY = H * 0.38;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ── Color palette
+var PINK = "#ff71ce";
+var CYAN = "#01cdfe";
+var MINT = "#05ffa1";
+var PURPLE = "#b967ff";
+var YELLOW = "#fffb96";
+var DARK_BG = "#1a0a2a";
+
+// ── Audio
+var audioCtx = null;
+function getAudio() { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); return audioCtx; }
+
+function tone(f, d, t, v) {
+  try {
+    var c = getAudio(), o = c.createOscillator(), g = c.createGain();
+    o.type = t || "sine"; o.frequency.value = f;
+    g.gain.setValueAtTime(v || 0.015, c.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + d);
+    o.connect(g); g.connect(c.destination);
+    o.start(); o.stop(c.currentTime + d);
+  } catch (e) {}
+}
+
+function sndJump() { tone(523, 0.3, "sine", 0.012); tone(659, 0.25, "sine", 0.008); }
+function sndDie() { tone(220, 0.8, "sine", 0.01); tone(165, 1.0, "sine", 0.008); }
+function sndOrb() { tone(880, 0.4, "sine", 0.012); tone(1100, 0.35, "sine", 0.008); }
+function sndBeat() { tone(55, 0.08, "sine", 0.01); }
+function sndCheckpoint() { tone(660, 0.3, "sine", 0.012); setTimeout(function(){tone(880, 0.3, "sine", 0.01);}, 120); setTimeout(function(){tone(1047, 0.4, "sine", 0.012);}, 240); }
+
+// ── Procedural lo-fi music
+var musicPlaying = false;
+var musicNodes = [];
+var musicInterval = null;
+// A minor pentatonic: A C D E G (across octaves)
+var PENTA = [220, 261.6, 293.7, 329.6, 392, 440, 523.3, 587.3, 659.3, 784];
+var chordIdx = 0;
+var CHORDS = [
+  [0, 2, 4],  // A D G
+  [1, 3, 5],  // C E A
+  [2, 4, 6],  // D G C
+  [0, 3, 5]   // A E A
+];
+
+function playMusicNote(freq, dur, vol, delay) {
+  try {
+    var c = getAudio();
+    var o = c.createOscillator();
+    var g = c.createGain();
+    o.type = "triangle";
+    o.frequency.value = freq;
+    g.gain.setValueAtTime(0, c.currentTime + delay);
+    g.gain.linearRampToValueAtTime(vol, c.currentTime + delay + 0.05);
+    g.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + delay + dur);
+    o.connect(g); g.connect(c.destination);
+    o.start(c.currentTime + delay);
+    o.stop(c.currentTime + delay + dur);
+    musicNodes.push(o);
+  } catch (e) {}
+}
+
+function playChord() {
+  if (!musicPlaying) return;
+  var chord = CHORDS[chordIdx % CHORDS.length];
+  var beatDur = 60 / 75; // 0.8s per beat at 75 BPM
+  // Arpeggiate the chord
+  for (var i = 0; i < chord.length; i++) {
+    playMusicNote(PENTA[chord[i]], beatDur * 1.8, 0.008, i * beatDur * 0.33);
+  }
+  // Add a high melodic note from pentatonic
+  var melIdx = Math.floor(Math.random() * 4) + 6;
+  playMusicNote(PENTA[melIdx], beatDur * 1.5, 0.005, beatDur * 0.5);
+  // Soft kick on beats 1 and 3
+  playMusicNote(55, 0.15, 0.012, 0);
+  playMusicNote(55, 0.15, 0.01, beatDur);
+  chordIdx++;
+}
+
+function startMusic() {
+  if (musicPlaying) return;
+  musicPlaying = true;
+  chordIdx = 0;
+  var beatDur = 60 / 75;
+  playChord();
+  musicInterval = setInterval(playChord, beatDur * 2000); // every 2 beats
+}
+
+function stopMusic() {
+  musicPlaying = false;
+  if (musicInterval) { clearInterval(musicInterval); musicInterval = null; }
+  musicNodes = [];
+}
+
+// ── Stars
+var bgStars = [];
+for (var i = 0; i < 120; i++) {
+  bgStars.push({
+    x: Math.random() * 3000,
+    y: Math.random() * 600,
+    s: 0.3 + Math.random() * 1.8,
+    b: 0.2 + Math.random() * 0.6,
+    drift: 0.05 + Math.random() * 0.15
+  });
+}
+
+// ── Game state
+var STATE = "menu";
+var player = {x:0, y:0, vy:0, size:22, rotation:0, onGround:false, ghosts:[]};
+var obstacles = [];
+var orbs = [];
+var particles = [];
+var score = 0;
+var highScore = parseInt(localStorage.getItem("tismatic-high")) || 0;
+var distance = 0;
+var speed = 3;
+var frame = 0;
+var gravity = 0.5;
+var jumpPower = -10;
+var doubleJumpAvailable = true;
+var beatTimer = 0;
+var pulseScale = 1;
+
+// ── Checkpoint
+var CHECKPOINT_INTERVAL = 1500;
+var lastCheckpoint = 0;
+var checkpointFlash = 0;
+var checkpointMarkers = [];
+
+// ── Death
+var deathSlowMo = 0; // frames of slow-mo before actual death
+var deathFade = 0;
+var DEATH_MSGS = ["Rest now.", "Try again when ready.", "The grid awaits.", "No rush.", "Breathe.", "Take your time.", "It's okay.", "The sunset will wait."];
+var deathMsgIdx = 0;
+
+// ── Pattern spawning
+var patternIdx = 0;
+var patternCooldown = 0;
+// Pattern types: sequences of obstacles
+var PATTERNS = [
+  // Single spike + orb above
+  [{type:"spike", dx:0}, {type:"orb", dx:10, dy:-55}],
+  // Platform with orb on top
+  [{type:"block", dx:0, bh:35, bw:60}, {type:"orb", dx:30, dy:-55}],
+  // Gap (just orbs floating)
+  [{type:"orb", dx:0, dy:-40}, {type:"orb", dx:40, dy:-60}, {type:"orb", dx:80, dy:-40}],
+  // Double spike with gap
+  [{type:"spike", dx:0}, {type:"spike", dx:28}],
+  // Tall platform with orb
+  [{type:"block", dx:0, bh:55, bw:40}, {type:"orb", dx:60, dy:-50}],
+  // Spike then platform
+  [{type:"spike", dx:0}, {type:"block", dx:70, bh:30, bw:50}, {type:"orb", dx:95, dy:-50}],
+  // Just orbs (rest section)
+  [{type:"orb", dx:0, dy:-35}, {type:"orb", dx:50, dy:-55}, {type:"orb", dx:100, dy:-35}],
+  // Low platform
+  [{type:"block", dx:0, bh:20, bw:80}],
+  // Single spike
+  [{type:"spike", dx:0}],
+  // Staircase platforms
+  [{type:"block", dx:0, bh:25, bw:35}, {type:"block", dx:55, bh:50, bw:35}, {type:"orb", dx:70, dy:-70}]
+];
+
+// ── Grid scroll offset
+var gridScroll = 0;
+
+function spawnPattern() {
+  var x = W + 60;
+  // Find rightmost edge
+  var rightmost = 0;
+  for (var i = 0; i < obstacles.length; i++) {
+    var r = obstacles[i].x + (obstacles[i].w || 30);
+    if (r > rightmost) rightmost = r;
+  }
+  var gap = 200 + Math.random() * 100;
+  if (x < rightmost + gap) x = rightmost + gap;
+
+  var pat = PATTERNS[patternIdx % PATTERNS.length];
+  patternIdx++;
+
+  for (var i = 0; i < pat.length; i++) {
+    var p = pat[i];
+    var px = x + (p.dx || 0);
+    if (p.type === "spike") {
+      obstacles.push({x: px, y: groundY, w: 20, h: 28, type: "spike"});
+    } else if (p.type === "block") {
+      var bh = p.bh || 30;
+      var bw = p.bw || 40;
+      obstacles.push({x: px, y: groundY - bh, w: bw, h: bh, type: "block"});
+    } else if (p.type === "orb") {
+      orbs.push({x: px, y: groundY + (p.dy || -50), collected: false});
+    }
+  }
+  // Extra orb chance
+  if (Math.random() < 0.5) {
+    orbs.push({x: x + 120 + Math.random() * 60, y: groundY - 40 - Math.random() * 50, collected: false});
+  }
+}
+
+function reset() {
+  player = {x: W * 0.2, y: groundY - 22, vy: 0, size: 22, rotation: 0, onGround: true, ghosts: []};
+  obstacles = [];
+  orbs = [];
+  particles = [];
+  checkpointMarkers = [];
+  score = 0;
+  distance = lastCheckpoint;
+  speed = Math.min(6, Math.max(3, 3 + Math.floor(lastCheckpoint / 800) * 0.15));
+  frame = Math.floor(lastCheckpoint / speed) || 0;
+  deathSlowMo = 0;
+  deathFade = 0;
+  patternIdx = Math.floor(lastCheckpoint / 300) || 0;
+  for (var i = 0; i < 3; i++) spawnPattern();
+}
+
+function jump() {
+  if (STATE === "menu") {
+    STATE = "playing"; lastCheckpoint = 0; reset(); startMusic(); sndJump();
+    return;
+  }
+  if (STATE === "dead") { STATE = "menu"; return; }
+  if (STATE === "dying") return;
+  if (player.onGround) {
+    player.vy = jumpPower; player.onGround = false; doubleJumpAvailable = true; sndJump();
+  } else if (doubleJumpAvailable) {
+    player.vy = jumpPower * 0.85; doubleJumpAvailable = false; sndJump();
+    spawnParticles(player.x + player.size / 2, player.y + player.size, PURPLE, 5);
+  }
+}
+
+canvas.addEventListener('mousedown', jump);
+canvas.addEventListener('touchstart', function(e) { e.preventDefault(); jump(); }, {passive: false});
+window.addEventListener('keydown', function(e) {
+  if (e.code === "Space" || e.code === "ArrowUp") { e.preventDefault(); jump(); }
+});
+
+function spawnParticles(x, y, color, count) {
+  for (var i = 0; i < (count || 6); i++) {
+    particles.push({x:x, y:y, vx:(Math.random()-0.5)*4, vy:(Math.random()-0.5)*4-2, life:1, color:color||PINK, size:2+Math.random()*3});
+  }
+}
+
+function update() {
+  if (STATE === "dying") {
+    deathSlowMo--;
+    // Slow-mo physics
+    player.vy += gravity * 0.1;
+    player.y += player.vy * 0.1;
+    player.rotation += 0.02;
+    deathFade = Math.min(1, deathFade + 0.04);
+    if (deathSlowMo <= 0) {
+      STATE = "dead";
+      stopMusic();
+      if (score > highScore) { highScore = score; localStorage.setItem("tismatic-high", highScore); }
+      spawnParticles(player.x + player.size/2, player.y + player.size/2, PINK, 15);
+    }
+    // Still update particles
+    for (var i = particles.length-1; i >= 0; i--) {
+      var p = particles[i];
+      p.x += p.vx * 0.2; p.y += p.vy * 0.2; p.vy += 0.05; p.life -= 0.015;
+      if (p.life <= 0) particles.splice(i, 1);
+    }
+    return;
+  }
+  if (STATE !== "playing") return;
+  frame++;
+  distance += speed;
+  gridScroll += speed;
+
+  // Beat pulse (75 BPM = beat every ~21.3 frames at 60fps)
+  beatTimer++;
+  if (beatTimer >= 21) { beatTimer = 0; pulseScale = 1.04; sndBeat(); }
+  pulseScale += (1 - pulseScale) * 0.1;
+
+  // Speed ramp — very gradual
+  if (frame % 800 === 0) speed = Math.min(6, speed + 0.15);
+
+  // Checkpoint
+  var cpZone = Math.floor(distance / CHECKPOINT_INTERVAL) * CHECKPOINT_INTERVAL;
+  if (cpZone > lastCheckpoint && cpZone > 0) {
+    lastCheckpoint = cpZone;
+    checkpointFlash = 1.0;
+    sndCheckpoint();
+    spawnParticles(player.x + player.size/2, player.y + player.size/2, MINT, 12);
+  }
+  if (checkpointFlash > 0) checkpointFlash -= 0.015;
+
+  // Checkpoint markers
+  var nextCP = (Math.floor(distance / CHECKPOINT_INTERVAL) + 1) * CHECKPOINT_INTERVAL;
+  var cpScreenX = player.x + (nextCP - distance);
+  if (cpScreenX < W + 200) {
+    var exists = false;
+    for (var ci = 0; ci < checkpointMarkers.length; ci++) {
+      if (checkpointMarkers[ci].dist === nextCP) { exists = true; break; }
+    }
+    if (!exists) checkpointMarkers.push({dist: nextCP, flash: 0});
+  }
+  for (var ci = checkpointMarkers.length - 1; ci >= 0; ci--) {
+    if (checkpointMarkers[ci].dist < distance - 200) checkpointMarkers.splice(ci, 1);
+  }
+
+  // Player physics
+  player.vy += gravity;
+  player.y += player.vy;
+  player.rotation += speed * 0.03;
+
+  if (player.y >= groundY - player.size) {
+    player.y = groundY - player.size;
+    player.vy = 0;
+    player.onGround = true;
+  }
+
+  // Ghost trail (afterimages)
+  if (frame % 3 === 0) {
+    player.ghosts.push({x: player.x, y: player.y, rot: player.rotation, life: 1});
+  }
+  if (player.ghosts.length > 8) player.ghosts.shift();
+  for (var g = 0; g < player.ghosts.length; g++) player.ghosts[g].life -= 0.04;
+
+  // Spawn patterns
+  var lastObs = obstacles.length > 0 ? obstacles[obstacles.length-1].x : 0;
+  if (lastObs < W + 100) spawnPattern();
+
+  // Move obstacles & collision
+  for (var i = obstacles.length - 1; i >= 0; i--) {
+    var o = obstacles[i];
+    o.x -= speed;
+    if (o.x < -80) { obstacles.splice(i, 1); continue; }
+
+    var px = player.x, py = player.y, ps = player.size;
+    if (o.type === "spike") {
+      // Forgiving hitbox — larger insets
+      if (px+ps > o.x+7 && px < o.x+o.w-7 && py+ps > o.y-o.h+10) {
+        die(); return;
+      }
+    } else {
+      // Block = platform
+      if (px+ps > o.x+3 && px < o.x+o.w-3 && py+ps > o.y+3 && py+ps < o.y+14 && player.vy >= 0) {
+        player.y = o.y - ps;
+        player.vy = 0;
+        player.onGround = true;
+      }
+    }
+  }
+
+  // Orbs
+  for (var i = orbs.length - 1; i >= 0; i--) {
+    var o = orbs[i];
+    o.x -= speed;
+    if (o.x < -30) { orbs.splice(i, 1); continue; }
+    if (!o.collected) {
+      var dx = (player.x + player.size/2) - o.x;
+      var dy = (player.y + player.size/2) - o.y;
+      if (Math.sqrt(dx*dx + dy*dy) < 26) {
+        o.collected = true;
+        score += 10;
+        sndOrb();
+        spawnParticles(o.x, o.y, PINK, 8);
+        orbs.splice(i, 1);
+      }
+    }
+  }
+
+  // Score from distance
+  score = Math.max(score, Math.floor(distance / 25));
+
+  // Particles
+  for (var i = particles.length - 1; i >= 0; i--) {
+    var p = particles[i];
+    p.x += p.vx; p.y += p.vy; p.vy += 0.08; p.life -= 0.025;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+}
+
+function die() {
+  STATE = "dying";
+  deathSlowMo = 30; // ~0.5 seconds of slow-mo
+  deathFade = 0;
+  deathMsgIdx = Math.floor(Math.random() * DEATH_MSGS.length);
+  sndDie();
+}
+
+// ── Drawing
+
+function drawSunset() {
+  // Big gradient sky
+  var grad = ctx.createLinearGradient(0, 0, 0, horizonY + 40);
+  grad.addColorStop(0, "#1a0a2a");
+  grad.addColorStop(0.4, "#2d1b4e");
+  grad.addColorStop(0.7, "#6b2fa0");
+  grad.addColorStop(0.85, "#d4458b");
+  grad.addColorStop(1, "#ff71ce");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, horizonY + 40);
+
+  // Sun
+  var sunX = W * 0.5;
+  var sunY = horizonY - 10;
+  var sunR = Math.min(W, H) * 0.12;
+  var sunGrad = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, sunR);
+  sunGrad.addColorStop(0, "#fffb96");
+  sunGrad.addColorStop(0.3, "#ff71ce");
+  sunGrad.addColorStop(0.7, "#b967ff");
+  sunGrad.addColorStop(1, "rgba(185,103,255,0)");
+  ctx.fillStyle = sunGrad;
+  ctx.beginPath(); ctx.arc(sunX, sunY, sunR, 0, Math.PI * 2); ctx.fill();
+
+  // Sun horizontal lines (retro effect)
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, sunY - sunR, W, sunR * 2);
+  ctx.clip();
+  ctx.fillStyle = DARK_BG;
+  for (var ly = sunY - sunR * 0.6; ly < sunY + sunR; ly += 8) {
+    var lineH = 2 + (ly - sunY + sunR) * 0.03;
+    ctx.fillRect(sunX - sunR, ly, sunR * 2, lineH);
+  }
+  ctx.restore();
+}
+
+function drawRetroGrid() {
+  // Dark ground fill
+  ctx.fillStyle = "#0d0520";
+  ctx.fillRect(0, groundY, W, H - groundY);
+
+  // Perspective grid
+  var vanishX = W / 2;
+  var vanishY = horizonY;
+  var gridLines = 20;
+
+  ctx.strokeStyle = "rgba(185,103,255,0.2)";
+  ctx.lineWidth = 1;
+
+  // Vertical perspective lines
+  for (var i = -gridLines; i <= gridLines; i++) {
+    var baseX = vanishX + i * (W / gridLines) * 1.5;
+    ctx.beginPath();
+    ctx.moveTo(vanishX + (baseX - vanishX) * 0.01, vanishY);
+    ctx.lineTo(baseX, H);
+    ctx.stroke();
+  }
+
+  // Horizontal lines (scrolling)
+  var scrollOffset = (gridScroll * 2) % 60;
+  for (var row = 0; row < 15; row++) {
+    var t = (row * 60 + scrollOffset) / (H - vanishY);
+    if (t <= 0 || t > 1.2) continue;
+    var yy = vanishY + t * (H - vanishY);
+    var alpha = Math.min(0.35, t * 0.4);
+    ctx.strokeStyle = "rgba(185,103,255," + alpha + ")";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, yy);
+    ctx.lineTo(W, yy);
+    ctx.stroke();
+  }
+
+  // Glowing neon ground line
+  ctx.strokeStyle = PINK;
+  ctx.lineWidth = 2;
+  ctx.shadowColor = PINK;
+  ctx.shadowBlur = 12;
+  ctx.beginPath(); ctx.moveTo(0, groundY); ctx.lineTo(W, groundY); ctx.stroke();
+  ctx.shadowBlur = 0;
+}
+
+function drawStars() {
+  for (var i = 0; i < bgStars.length; i++) {
+    var s = bgStars[i];
+    var sx = ((s.x - distance * s.drift) % (W + 200) + W + 200) % (W + 200);
+    var sy = s.y % (horizonY - 30);
+    var twinkle = 0.3 + Math.sin(frame * 0.02 + i) * 0.3;
+    ctx.fillStyle = "rgba(255,251,150," + (s.b * twinkle) + ")";
+    ctx.shadowColor = YELLOW;
+    ctx.shadowBlur = s.s * 2;
+    ctx.beginPath();
+    ctx.arc(sx, sy, s.s, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+}
+
+function drawCheckpointMarkers() {
+  for (var ci = 0; ci < checkpointMarkers.length; ci++) {
+    var cm = checkpointMarkers[ci];
+    var cmx = player.x + (cm.dist - distance);
+    if (cmx < -50 || cmx > W + 50) continue;
+    var reached = distance >= cm.dist;
+    var col = reached ? MINT : "rgba(5,255,161,0.3)";
+    ctx.save();
+    ctx.globalAlpha = reached ? 0.7 : 0.3;
+    ctx.strokeStyle = col;
+    ctx.shadowColor = MINT;
+    ctx.shadowBlur = reached ? 10 : 0;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cmx, groundY);
+    ctx.lineTo(cmx, groundY - 35);
+    ctx.stroke();
+    // Diamond marker
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    ctx.moveTo(cmx, groundY - 40);
+    ctx.lineTo(cmx + 8, groundY - 33);
+    ctx.lineTo(cmx, groundY - 26);
+    ctx.lineTo(cmx - 8, groundY - 33);
+    ctx.closePath();
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.restore();
+  }
+}
+
+function draw() {
+  ctx.save();
+
+  // Background
+  ctx.fillStyle = DARK_BG;
+  ctx.fillRect(0, 0, W, H);
+
+  // Sunset + stars + grid
+  drawSunset();
+  drawStars();
+  drawRetroGrid();
+
+  if (STATE === "menu") {
+    ctx.textAlign = "center";
+    ctx.font = "bold 38px monospace";
+    ctx.fillStyle = PINK;
+    ctx.shadowColor = PINK;
+    ctx.shadowBlur = 20;
+    ctx.fillText("TISMATIC", W/2, H * 0.2);
+    ctx.shadowBlur = 0;
+    ctx.font = "48px serif";
+    ctx.fillText("\u{1F7EA}", W/2, H * 0.32);
+    ctx.font = "12px monospace";
+    ctx.fillStyle = "rgba(255,113,206,0.5)";
+    ctx.fillText("Tap / Space to begin", W/2, H * 0.43);
+    ctx.fillText("Double jump. Collect orbs. Feel the vibe.", W/2, H * 0.48);
+    if (highScore > 0) {
+      ctx.fillStyle = PURPLE;
+      ctx.font = "11px monospace";
+      ctx.fillText("Best: " + highScore, W/2, H * 0.56);
+    }
+    if (lastCheckpoint > 0) {
+      ctx.fillStyle = MINT;
+      ctx.font = "11px monospace";
+      ctx.fillText("Checkpoint: " + lastCheckpoint, W/2, H * 0.62);
+    }
+    ctx.font = "10px monospace";
+    ctx.fillStyle = "rgba(185,103,255,0.3)";
+    ctx.fillText("taskiap.com", W/2, H * 0.75);
+    ctx.restore();
+    return;
+  }
+
+  // Checkpoint markers
+  drawCheckpointMarkers();
+
+  // Ghost trail (afterimages)
+  for (var g = 0; g < player.ghosts.length; g++) {
+    var gh = player.ghosts[g];
+    if (gh.life <= 0) continue;
+    ctx.save();
+    ctx.globalAlpha = gh.life * 0.25;
+    ctx.translate(gh.x + player.size/2, gh.y + player.size/2);
+    ctx.rotate(gh.rot);
+    ctx.fillStyle = PURPLE;
+    ctx.shadowColor = PURPLE;
+    ctx.shadowBlur = 6;
+    ctx.fillRect(-player.size/2, -player.size/2, player.size, player.size);
+    ctx.shadowBlur = 0;
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+
+  // Obstacles
+  for (var i = 0; i < obstacles.length; i++) {
+    var o = obstacles[i];
+    if (o.type === "spike") {
+      // Cyan/teal spike
+      ctx.fillStyle = CYAN;
+      ctx.shadowColor = CYAN;
+      ctx.shadowBlur = 8;
+      ctx.beginPath();
+      ctx.moveTo(o.x, o.y);
+      ctx.lineTo(o.x + o.w/2, o.y - o.h);
+      ctx.lineTo(o.x + o.w, o.y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = "rgba(1,205,254,0.5)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    } else {
+      // Semi-transparent block with neon border
+      ctx.fillStyle = "rgba(185,103,255,0.15)";
+      ctx.shadowColor = PURPLE;
+      ctx.shadowBlur = 6;
+      ctx.fillRect(o.x, o.y, o.w, o.h);
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = PURPLE;
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(o.x, o.y, o.w, o.h);
+      // Inner line
+      ctx.strokeStyle = "rgba(185,103,255,0.2)";
+      ctx.lineWidth = 0.5;
+      ctx.strokeRect(o.x + 3, o.y + 3, o.w - 6, o.h - 6);
+    }
+  }
+
+  // Orbs — glowing pink spheres
+  for (var i = 0; i < orbs.length; i++) {
+    var o = orbs[i];
+    if (o.collected) continue;
+    var orbPulse = 7 + Math.sin(frame * 0.06 + i) * 2;
+    ctx.fillStyle = PINK;
+    ctx.shadowColor = PINK;
+    ctx.shadowBlur = 16;
+    ctx.beginPath();
+    ctx.arc(o.x, o.y, orbPulse, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    // Inner highlight
+    ctx.fillStyle = "rgba(255,255,255,0.3)";
+    ctx.beginPath();
+    ctx.arc(o.x - 2, o.y - 2, orbPulse * 0.35, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Player — pink/purple cube
+  ctx.save();
+  ctx.translate(player.x + player.size/2, player.y + player.size/2);
+  ctx.rotate(player.rotation);
+  ctx.scale(pulseScale, pulseScale);
+  // Glow
+  ctx.shadowColor = PINK;
+  ctx.shadowBlur = 14;
+  // Gradient fill
+  var pGrad = ctx.createLinearGradient(-player.size/2, -player.size/2, player.size/2, player.size/2);
+  pGrad.addColorStop(0, PINK);
+  pGrad.addColorStop(1, PURPLE);
+  ctx.fillStyle = pGrad;
+  ctx.fillRect(-player.size/2, -player.size/2, player.size, player.size);
+  ctx.shadowBlur = 0;
+  // Highlight
+  ctx.fillStyle = "rgba(255,255,255,0.15)";
+  ctx.fillRect(-player.size/2 + 3, -player.size/2 + 3, player.size - 6, player.size/2 - 3);
+  // Border
+  ctx.strokeStyle = "rgba(255,255,255,0.3)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(-player.size/2, -player.size/2, player.size, player.size);
+  ctx.restore();
+
+  // Particles
+  for (var i = 0; i < particles.length; i++) {
+    var p = particles[i];
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.shadowColor = p.color;
+    ctx.shadowBlur = 4;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+  ctx.globalAlpha = 1;
+
+  // Checkpoint flash overlay
+  if (checkpointFlash > 0) {
+    ctx.fillStyle = "rgba(5,255,161," + (checkpointFlash * 0.08) + ")";
+    ctx.fillRect(0, 0, W, H);
+    if (checkpointFlash > 0.5) {
+      ctx.globalAlpha = (checkpointFlash - 0.5) * 2;
+      ctx.font = "bold 14px monospace";
+      ctx.fillStyle = MINT;
+      ctx.textAlign = "center";
+      ctx.shadowColor = MINT;
+      ctx.shadowBlur = 10;
+      ctx.fillText("checkpoint", W/2, H * 0.14);
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // HUD — minimal
+  ctx.font = "16px monospace";
+  ctx.fillStyle = "rgba(255,255,255,0.5)";
+  ctx.textAlign = "center";
+  ctx.fillText(score, W/2, 30);
+
+  if (highScore > 0) {
+    ctx.font = "10px monospace";
+    ctx.fillStyle = "rgba(255,255,255,0.25)";
+    ctx.textAlign = "right";
+    ctx.fillText("best " + highScore, W - 14, 22);
+    ctx.textAlign = "center";
+  }
+
+  // Subtle checkpoint distance
+  if (lastCheckpoint > 0 && STATE === "playing") {
+    ctx.font = "9px monospace";
+    ctx.fillStyle = "rgba(5,255,161,0.3)";
+    ctx.textAlign = "left";
+    ctx.fillText("cp " + lastCheckpoint, 12, 22);
+    ctx.textAlign = "center";
+  }
+
+  // Death slow-mo overlay
+  if (STATE === "dying") {
+    ctx.fillStyle = "rgba(255,113,206," + (deathFade * 0.35) + ")";
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  // Dead screen
+  if (STATE === "dead") {
+    ctx.fillStyle = "rgba(26,10,42,0.75)";
+    ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = "center";
+    ctx.font = "22px monospace";
+    ctx.fillStyle = PINK;
+    ctx.shadowColor = PINK;
+    ctx.shadowBlur = 15;
+    ctx.fillText(DEATH_MSGS[deathMsgIdx], W/2, H * 0.3);
+    ctx.shadowBlur = 0;
+    ctx.font = "14px monospace";
+    ctx.fillStyle = "rgba(255,255,255,0.5)";
+    ctx.fillText("Score: " + score, W/2, H * 0.44);
+    if (score >= highScore && score > 0) {
+      ctx.fillStyle = MINT;
+      ctx.font = "11px monospace";
+      ctx.fillText("new best", W/2, H * 0.50);
+    } else if (highScore > 0) {
+      ctx.fillStyle = "rgba(255,255,255,0.3)";
+      ctx.font = "11px monospace";
+      ctx.fillText("best: " + highScore, W/2, H * 0.50);
+    }
+    if (lastCheckpoint > 0) {
+      ctx.fillStyle = "rgba(5,255,161,0.4)";
+      ctx.font = "10px monospace";
+      ctx.fillText("restart from " + lastCheckpoint, W/2, H * 0.57);
+    }
+    ctx.font = "11px monospace";
+    ctx.fillStyle = "rgba(255,255,255,0.25)";
+    ctx.fillText("tap to continue", W/2, H * 0.68);
+  }
+
+  ctx.restore();
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
