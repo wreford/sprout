@@ -189,8 +189,9 @@ select{-webkit-appearance:none;appearance:none;background-image:url("data:image/
     <div id="participantList" class="topbar-participants"></div>
     <div class="topbar-actions">
       <button class="btn btn-dim summary-toggle" onclick="toggleSummary()">Summary</button>
+      <button class="btn btn-dim" id="clearDoneBtn" onclick="clearDone()" style="display:none">Clear Done</button>
       <button class="btn btn-dim" onclick="exportSprout()">Export .sprout</button>
-      <button class="btn btn-dim" onclick="leaveRoom()" style="color:var(--red)">Leave</button>
+      <button class="btn btn-dim" onclick="confirmLeave()" style="color:var(--red)">Leave</button>
     </div>
   </div>
   <div class="main-area">
@@ -199,6 +200,10 @@ select{-webkit-appearance:none;appearance:none;background-image:url("data:image/
         <input id="taskTitle" placeholder="Task title..." maxlength="80"/>
         <textarea id="taskDesc" placeholder="Description (optional)..." maxlength="200"></textarea>
         <button class="btn btn-green" onclick="addTask()">Add Task</button>
+        <div style="width:100%;font-size:0.6rem;color:var(--dim);font-family:var(--font-mono);margin-top:-4px">Press Enter to add quickly</div>
+      </div>
+      <div id="hostBanner" style="display:none;font-size:0.72rem;color:var(--dim);background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:8px 14px;text-align:center">
+        You are the <strong style="color:var(--yellow)">host</strong>. Share the room code with your team to start planning.
       </div>
       <div class="controls-row">
         <select id="sortBy" onchange="renderTasks()">
@@ -282,6 +287,7 @@ function hostRoom(){
   roomState={code:code,host:myId,participants:[{id:myId,name:myName,color:AVATAR_COLORS[0]}],tasks:[],_lastHB:Date.now()};
   initPubNub();
   showBoard();
+  document.getElementById("hostBanner").style.display="block";
   heartbeatTimer=setInterval(()=>{
     pubnub.publish({channel:channel,message:{type:"heartbeat",from:myId}});
   },8000);
@@ -339,6 +345,11 @@ function onStateUpdate(){
   renderTasks();
   renderSummary();
   updateAssigneeFilter();
+  var clearBtn=document.getElementById("clearDoneBtn");
+  if(clearBtn){
+    var hasDone=(roomState.tasks||[]).some(t=>t.status==="done");
+    clearBtn.style.display=(isHost&&hasDone)?"inline-block":"none";
+  }
 }
 
 function renderParticipants(){
@@ -606,6 +617,22 @@ function copyCode(){
   }).catch(()=>{});
 }
 
+function clearDone(){
+  if(!isHost)return;
+  var count=roomState.tasks.filter(t=>t.status==="done").length;
+  if(count===0){showToast("No done tasks to clear");return}
+  if(!confirm("Remove "+count+" completed task"+(count>1?"s":"")+"?"))return;
+  roomState.tasks=roomState.tasks.filter(t=>t.status!=="done");
+  publishState();onStateUpdate();
+  showToast("Cleared "+count+" done task"+(count>1?"s":""));
+}
+
+function confirmLeave(){
+  var tasks=(roomState&&roomState.tasks||[]).length;
+  if(tasks>0&&!confirm("Leave room? "+(isHost?"The room will close for everyone.":"Your unsaved changes will be lost.")))return;
+  leaveRoom();
+}
+
 function leaveRoom(){
   if(pubnub){pubnub.unsubscribeAll()}
   clearInterval(heartbeatTimer);
@@ -634,8 +661,26 @@ function esc(s){
 
 // Keyboard shortcuts
 document.addEventListener("keydown",function(e){
-  if(e.key==="Enter"&&document.activeElement===document.getElementById("taskTitle")){addTask()}
-  if(e.key==="Enter"&&document.activeElement===document.getElementById("joinCode")){document.getElementById("joinName").focus()}
+  if(e.key==="Enter"&&document.activeElement===document.getElementById("taskTitle")){e.preventDefault();addTask()}
+  if(e.key==="Enter"&&document.activeElement===document.getElementById("hostName")){e.preventDefault();hostRoom()}
+  if(e.key==="Enter"&&document.activeElement===document.getElementById("joinCode")){e.preventDefault();document.getElementById("joinName").focus()}
+  if(e.key==="Enter"&&document.activeElement===document.getElementById("joinName")){e.preventDefault();joinRoom()}
+  if(e.key==="Escape"){
+    var sp=document.getElementById("summaryPanel");
+    if(sp.classList.contains("mobile-show"))toggleSummary();
+  }
+});
+
+// Auto-uppercase room code input
+document.getElementById("joinCode").addEventListener("input",function(){
+  this.value=this.value.toUpperCase().replace(/[^ACDEFGHJKLMNPQRTUVWXY3479]/g,"");
+});
+
+// Warn before closing with active room
+window.addEventListener("beforeunload",function(e){
+  if(roomState&&(roomState.tasks||[]).length>0){
+    e.preventDefault();e.returnValue="";
+  }
 });
 </script>
 </body>
