@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no"/>
+<title>Flounder Flicker</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0a1628;--panel:#0d1f3c;--border:#1a3a5c;--text:#e0eaff;--dim:#5a7a9a;--green:#4ade80;--gold:#ffd700;--blue:#3b82f6}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;overflow-x:hidden}
+body{display:flex;flex-direction:column;align-items:center}
+
+/* Header */
+.header{width:100%;padding:12px 20px;display:flex;justify-content:space-between;align-items:center;background:var(--panel);border-bottom:1px solid var(--border);flex-shrink:0;z-index:10}
+.header-left{display:flex;align-items:center;gap:12px}
+.title{font-size:1.2rem;font-weight:800;background:linear-gradient(135deg,#4ade80,#3b82f6);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.prestige-badge{font-size:0.75rem;color:var(--gold)}
+.achieve-badge{font-size:0.75rem;color:var(--dim)}
+.prestige-btn{background:linear-gradient(135deg,var(--gold),#ff8c00);color:#000;border:none;padding:6px 14px;border-radius:8px;font-weight:700;font-size:0.75rem;cursor:pointer;display:none;animation:glow 2s ease-in-out infinite}
+@keyframes glow{0%,100%{box-shadow:0 0 8px rgba(255,215,0,0.4)}50%{box-shadow:0 0 20px rgba(255,215,0,0.8)}}
+
+/* Main layout */
+.main{display:flex;flex:1;width:100%;max-width:1100px;overflow:hidden}
+.game-area{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;position:relative;min-height:0}
+.upgrade-panel{width:320px;background:var(--panel);border-left:1px solid var(--border);overflow-y:auto;padding:12px;flex-shrink:0}
+
+/* Fish counter */
+.fish-count{font-size:clamp(2rem,6vw,3.5rem);font-weight:900;text-align:center;color:#fff;text-shadow:0 0 20px rgba(59,130,246,0.5)}
+.fps-display{font-size:0.9rem;color:var(--dim);margin-top:4px;text-align:center}
+.click-power{font-size:0.75rem;color:var(--dim);margin-top:2px;text-align:center}
+
+/* Flounder */
+.flounder-wrap{position:relative;margin:30px 0;cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent}
+.flounder{font-size:100px;transition:transform 0.1s;display:block;filter:drop-shadow(0 0 30px rgba(59,130,246,0.4))}
+.flounder:active{transform:scale(0.92)}
+.flounder.wiggle{animation:wiggle 0.3s ease}
+@keyframes wiggle{0%{transform:rotate(0)}20%{transform:rotate(-15deg) scale(1.1)}40%{transform:rotate(12deg)}60%{transform:rotate(-8deg)}80%{transform:rotate(5deg)}100%{transform:rotate(0)}}
+
+/* Particles */
+.particle{position:absolute;pointer-events:none;border-radius:50%;animation:splash 0.6s ease-out forwards}
+@keyframes splash{0%{opacity:1;transform:translate(0,0) scale(1)}100%{opacity:0;transform:translate(var(--dx),var(--dy)) scale(0.3)}}
+
+/* Click text */
+.click-text{position:absolute;pointer-events:none;font-weight:800;font-size:1.2rem;color:var(--green);animation:floatUp 0.8s ease-out forwards}
+@keyframes floatUp{0%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-60px)}}
+
+/* Bubbles background */
+.bubble-bg{position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:0}
+.bubble{position:absolute;border-radius:50%;background:rgba(59,130,246,0.06);border:1px solid rgba(59,130,246,0.08);animation:rise linear infinite}
+@keyframes rise{0%{transform:translateY(100vh) scale(1)}100%{transform:translateY(-100px) scale(0.5)}}
+
+/* Upgrades */
+.upgrade-section-title{font-size:0.65rem;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:var(--blue);margin:12px 0 6px;padding-left:4px}
+.upgrade-btn{width:100%;background:var(--bg);border:2px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:6px;cursor:pointer;display:flex;align-items:center;gap:10px;color:var(--text);transition:all 0.15s;text-align:left}
+.upgrade-btn:hover:not(:disabled){border-color:var(--blue);transform:translateX(2px)}
+.upgrade-btn.affordable{border-color:var(--green)}
+.upgrade-btn.affordable:hover{border-color:#6ee7a0;box-shadow:0 0 12px rgba(74,222,128,0.2)}
+.upgrade-btn:disabled{opacity:0.35;cursor:not-allowed}
+.upgrade-btn.purchased{border-color:var(--gold);opacity:0.5;cursor:default}
+.upg-icon{font-size:1.6rem;flex-shrink:0}
+.upg-info{flex:1;min-width:0}
+.upg-name{font-size:0.85rem;font-weight:700}
+.upg-desc{font-size:0.65rem;color:var(--dim);margin-top:2px}
+.upg-cost{font-size:0.75rem;font-weight:700;color:var(--green);margin-top:2px}
+.upg-count{font-size:0.85rem;font-weight:800;color:var(--blue);flex-shrink:0;min-width:24px;text-align:right}
+
+/* Toast */
+.toast{position:fixed;top:60px;left:50%;transform:translateX(-50%);background:var(--gold);color:#000;padding:10px 20px;border-radius:10px;font-weight:700;font-size:0.85rem;z-index:100;animation:toastIn 0.3s ease,toastOut 0.3s ease 2.5s forwards;box-shadow:0 4px 20px rgba(255,215,0,0.4)}
+@keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(-20px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+@keyframes toastOut{to{opacity:0;transform:translateX(-50%) translateY(-20px)}}
+
+/* Mobile */
+@media(max-width:768px){
+  .main{flex-direction:column}
+  .upgrade-panel{width:100%;border-left:none;border-top:1px solid var(--border);max-height:45vh}
+  .game-area{padding:15px;justify-content:flex-start;padding-top:20px}
+  .flounder{font-size:80px}
+  .fish-count{font-size:2rem}
+  .flounder-wrap{margin:15px 0}
+}
+</style>
+</head>
+<body>
+
+<!-- Background bubbles -->
+<div class="bubble-bg" id="bubbleBg"></div>
+
+<!-- Header -->
+<div class="header">
+  <div class="header-left">
+    <span class="title">Flounder Flicker</span>
+    <span class="prestige-badge" id="prestigeBadge"></span>
+    <span class="achieve-badge" id="achieveBadge">🏆 0/15</span>
+  </div>
+  <button class="prestige-btn" id="prestigeBtn" onclick="prestige()">⭐ Prestige</button>
+</div>
+
+<!-- Main -->
+<div class="main">
+  <div class="game-area" id="gameArea">
+    <div class="fish-count" id="fishCount">0 fish</div>
+    <div class="fps-display" id="fpsDisplay">0.0 fish/sec</div>
+    <div class="click-power" id="clickPower">+1 per flick</div>
+    <div class="flounder-wrap" id="flounderWrap">
+      <span class="flounder" id="flounder" role="button" aria-label="Flick the flounder">🐟</span>
+    </div>
+  </div>
+  <div class="upgrade-panel" id="upgradePanel"></div>
+</div>
+
+<script>
+// ── State ──
+let state = {
+  fish: 0,
+  totalFish: 0,
+  totalFlicks: 0,
+  clickPower: 1,
+  fps: 0,
+  prestigeLevel: 0,
+  prestigeMultiplier: 1,
+  autoUpgrades: [0,0,0,0,0,0,0,0],
+  clickUpgrades: [false,false,false,false,false],
+  achievements: new Set(),
+  lastSave: Date.now()
+};
+
+// ── Definitions ──
+const autoUpgradeDefs = [
+  {icon:'🦐',name:'Shrimp Helper',baseCost:15,fps:0.1},
+  {icon:'🦀',name:'Crab Assistant',baseCost:100,fps:1},
+  {icon:'🐙',name:'Octopus Worker',baseCost:500,fps:5},
+  {icon:'🐬',name:'Dolphin Manager',baseCost:3000,fps:20},
+  {icon:'🐳',name:'Whale Executive',baseCost:15000,fps:100},
+  {icon:'🦈',name:'Shark CEO',baseCost:100000,fps:500},
+  {icon:'🧜',name:'Mermaid Queen',baseCost:500000,fps:2000},
+  {icon:'🔱',name:'Poseidon',baseCost:5000000,fps:10000}
+];
+const clickUpgradeDefs = [
+  {icon:'🫧',name:'Bubble Fingers',cost:50,power:1},
+  {icon:'🌊',name:'Wave Hands',cost:500,power:5},
+  {icon:'⚡',name:'Lightning Flick',cost:5000,power:25},
+  {icon:'🌀',name:'Tsunami Touch',cost:50000,power:100},
+  {icon:'💎',name:'Diamond Flick',cost:500000,power:500}
+];
+const achievementDefs = [
+  {id:'first_flick',name:'First Flick',desc:'Flick 1 time',check:()=>state.totalFlicks>=1},
+  {id:'hundred_flicker',name:'Hundred Flicker',desc:'Flick 100 times',check:()=>state.totalFlicks>=100},
+  {id:'thousand_flicker',name:'Thousand Flicker',desc:'Flick 1000 times',check:()=>state.totalFlicks>=1000},
+  {id:'first_fish',name:'First Fish',desc:'Earn 10 total fish',check:()=>state.totalFish>=10},
+  {id:'school_of_fish',name:'School of Fish',desc:'Earn 1,000 fish',check:()=>state.totalFish>=1000},
+  {id:'ocean_full',name:'Ocean Full',desc:'Earn 1,000,000 fish',check:()=>state.totalFish>=1000000},
+  {id:'first_helper',name:'First Helper',desc:'Buy first upgrade',check:()=>state.autoUpgrades.some(c=>c>0)||state.clickUpgrades.some(c=>c)},
+  {id:'full_staff',name:'Full Staff',desc:'Buy all 8 auto-flicker types',check:()=>state.autoUpgrades.every(c=>c>0)},
+  {id:'speed_demon',name:'Speed Demon',desc:'Reach 10+ FPS',check:()=>state.fps>=10},
+  {id:'fish_factory',name:'Fish Factory',desc:'Reach 100+ FPS',check:()=>state.fps>=100},
+  {id:'fish_empire',name:'Fish Empire',desc:'Reach 10,000+ FPS',check:()=>state.fps>=10000},
+  {id:'click_king',name:'Click King',desc:'+10 per click',check:()=>getClickPower()>=10},
+  {id:'click_god',name:'Click God',desc:'+100 per click',check:()=>getClickPower()>=100},
+  {id:'whale_watcher',name:'Whale Watcher',desc:'Buy a Whale Executive',check:()=>state.autoUpgrades[4]>0},
+  {id:'poseidon_blessing',name:"Poseidon's Blessing",desc:'Buy Poseidon',check:()=>state.autoUpgrades[7]>0}
+];
+const narratorLines = [
+  "Another fish flicked.","The ocean provides.","That's a lot of fish.",
+  "Flick. Flick. Flick.","The flounder is pleased.","You're really going at it.",
+  "Fish counter: impressive.","The shrimp are working hard.","Poseidon would be proud. Maybe.",
+  "This is peak entertainment.","The ocean grows restless.","Your fish empire expands.",
+  "The crabs send their regards.","Something stirs in the deep.","Flick with purpose.",
+  "The dolphins approve.","A whale of a time, truly.","The mermaids are singing.",
+  "Fish. Fish everywhere.","The flounder demands more flicks."
+];
+
+// ── Audio ──
+let audioCtx = null;
+function getAudio(){if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();return audioCtx;}
+function playFlick(){try{const c=getAudio(),o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(c.destination);o.frequency.value=600;o.type='sine';g.gain.value=0.015;o.start();g.gain.exponentialRampToValueAtTime(0.001,c.currentTime+0.04);o.stop(c.currentTime+0.05);}catch(e){}}
+function playBuy(){try{const c=getAudio(),o1=c.createOscillator(),o2=c.createOscillator(),g=c.createGain();o1.connect(g);o2.connect(g);g.connect(c.destination);o1.frequency.value=440;o2.frequency.value=660;o1.type='sine';o2.type='sine';g.gain.value=0.015;o1.start(c.currentTime);o2.start(c.currentTime+0.08);g.gain.exponentialRampToValueAtTime(0.001,c.currentTime+0.2);o1.stop(c.currentTime+0.15);o2.stop(c.currentTime+0.25);}catch(e){}}
+function playAchieve(){try{const c=getAudio(),notes=[523,659,784];notes.forEach((f,i)=>{const o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(c.destination);o.frequency.value=f;o.type='sine';g.gain.value=0.015;o.start(c.currentTime+i*0.12);g.gain.exponentialRampToValueAtTime(0.001,c.currentTime+i*0.12+0.3);o.stop(c.currentTime+i*0.12+0.35);});}catch(e){}}
+
+// ── Helpers ──
+function fmt(n){if(n>=1e12)return (n/1e12).toFixed(1)+'T';if(n>=1e9)return (n/1e9).toFixed(1)+'B';if(n>=1e6)return (n/1e6).toFixed(1)+'M';if(n>=1e3)return n.toLocaleString('en-US',{maximumFractionDigits:0});return Math.floor(n).toString();}
+function getAutoCost(i){return Math.floor(autoUpgradeDefs[i].baseCost*Math.pow(1.15,state.autoUpgrades[i]));}
+function getClickPower(){let p=1;clickUpgradeDefs.forEach((d,i)=>{if(state.clickUpgrades[i])p+=d.power;});return p*state.prestigeMultiplier;}
+function calcFPS(){let f=0;autoUpgradeDefs.forEach((d,i)=>{f+=d.fps*state.autoUpgrades[i];});return f*state.prestigeMultiplier;}
+
+// ── Flick ──
+const flounderEl=document.getElementById('flounder');
+const flounderWrap=document.getElementById('flounderWrap');
+function flick(e){
+  e.preventDefault();
+  const power=getClickPower();
+  state.fish+=power;
+  state.totalFish+=power;
+  state.totalFlicks++;
+  playFlick();
+  // Wiggle
+  flounderEl.classList.remove('wiggle');
+  void flounderEl.offsetWidth;
+  flounderEl.classList.add('wiggle');
+  // Click text
+  const ct=document.createElement('div');
+  ct.className='click-text';
+  ct.textContent='+'+fmt(power);
+  const rect=flounderWrap.getBoundingClientRect();
+  const gRect=document.getElementById('gameArea').getBoundingClientRect();
+  ct.style.left=(rect.left-gRect.left+rect.width/2-20)+'px';
+  ct.style.top=(rect.top-gRect.top-10)+'px';
+  document.getElementById('gameArea').appendChild(ct);
+  setTimeout(()=>ct.remove(),800);
+  // Particles
+  spawnParticles(e.clientX||e.touches?.[0]?.clientX||rect.left+rect.width/2,e.clientY||e.touches?.[0]?.clientY||rect.top+rect.height/2);
+  updateDisplay();
+  checkAchievements();
+}
+flounderWrap.addEventListener('click',flick);
+flounderWrap.addEventListener('touchstart',function(e){e.preventDefault();flick(e);},{passive:false});
+
+function spawnParticles(cx,cy){
+  const ga=document.getElementById('gameArea');
+  const gr=ga.getBoundingClientRect();
+  for(let i=0;i<8;i++){
+    const p=document.createElement('div');
+    p.className='particle';
+    const angle=Math.random()*Math.PI*2;
+    const dist=40+Math.random()*60;
+    const dx=Math.cos(angle)*dist;
+    const dy=Math.sin(angle)*dist-20;
+    p.style.cssText=`left:${cx-gr.left}px;top:${cy-gr.top}px;width:${4+Math.random()*6}px;height:${4+Math.random()*6}px;background:${Math.random()>0.5?'rgba(59,130,246,0.8)':'rgba(255,255,255,0.7)'};--dx:${dx}px;--dy:${dy}px`;
+    ga.appendChild(p);
+    setTimeout(()=>p.remove(),600);
+  }
+}
+
+// ── Buy upgrades ──
+function buyAuto(i){
+  const cost=getAutoCost(i);
+  if(state.fish>=cost){
+    state.fish-=cost;
+    state.autoUpgrades[i]++;
+    state.fps=calcFPS();
+    playBuy();
+    renderUpgrades();
+    updateDisplay();
+    checkAchievements();
+  }
+}
+function buyClick(i){
+  if(state.clickUpgrades[i])return;
+  const cost=clickUpgradeDefs[i].cost;
+  if(state.fish>=cost){
+    state.fish-=cost;
+    state.clickUpgrades[i]=true;
+    playBuy();
+    renderUpgrades();
+    updateDisplay();
+    checkAchievements();
+  }
+}
+
+// ── Prestige ──
+function prestige(){
+  if(state.totalFish<1000000)return;
+  state.prestigeLevel++;
+  state.prestigeMultiplier=Math.pow(2,state.prestigeLevel);
+  state.fish=0;
+  state.totalFish=0;
+  state.totalFlicks=0;
+  state.autoUpgrades=[0,0,0,0,0,0,0,0];
+  state.clickUpgrades=[false,false,false,false,false];
+  state.fps=0;
+  // Keep achievements
+  playAchieve();
+  showToast('⭐ Prestige! '+state.prestigeMultiplier+'x multiplier!');
+  renderUpgrades();
+  updateDisplay();
+  saveGame();
+}
+
+// ── Achievements ──
+function checkAchievements(){
+  achievementDefs.forEach(a=>{
+    if(!state.achievements.has(a.id)&&a.check()){
+      state.achievements.add(a.id);
+      playAchieve();
+      showToast('🏆 '+a.name+'!');
+    }
+  });
+  document.getElementById('achieveBadge').textContent='🏆 '+state.achievements.size+'/15';
+}
+
+function showToast(msg){
+  const t=document.createElement('div');
+  t.className='toast';
+  t.textContent=msg;
+  document.body.appendChild(t);
+  setTimeout(()=>t.remove(),3000);
+}
+
+// ── Display ──
+function updateDisplay(){
+  document.getElementById('fishCount').textContent=fmt(state.fish)+' fish';
+  document.getElementById('fpsDisplay').textContent=fmt(state.fps)+' fish/sec';
+  document.getElementById('clickPower').textContent='+'+fmt(getClickPower())+' per flick';
+  // Prestige
+  const pb=document.getElementById('prestigeBtn');
+  pb.style.display=state.totalFish>=1000000?'block':'none';
+  document.getElementById('prestigeBadge').textContent=state.prestigeLevel>0?'⭐'.repeat(Math.min(state.prestigeLevel,5))+' '+state.prestigeMultiplier+'x':'';
+  // Update upgrade affordability
+  document.querySelectorAll('.auto-upg').forEach((btn,i)=>{
+    const cost=getAutoCost(i);
+    btn.classList.toggle('affordable',state.fish>=cost);
+    btn.disabled=state.fish<cost;
+    btn.querySelector('.upg-cost').textContent=fmt(cost)+' fish';
+    btn.querySelector('.upg-count').textContent=state.autoUpgrades[i];
+  });
+  document.querySelectorAll('.click-upg').forEach((btn,i)=>{
+    if(state.clickUpgrades[i]){
+      btn.classList.add('purchased');
+      btn.classList.remove('affordable');
+      btn.disabled=true;
+      btn.querySelector('.upg-cost').textContent='Owned';
+    }else{
+      btn.classList.toggle('affordable',state.fish>=clickUpgradeDefs[i].cost);
+      btn.disabled=state.fish<clickUpgradeDefs[i].cost;
+    }
+  });
+}
+
+function renderUpgrades(){
+  const panel=document.getElementById('upgradePanel');
+  panel.innerHTML='';
+  // Auto upgrades
+  const h1=document.createElement('div');
+  h1.className='upgrade-section-title';
+  h1.textContent='Auto-Flickers (fish/sec)';
+  panel.appendChild(h1);
+  autoUpgradeDefs.forEach((d,i)=>{
+    const btn=document.createElement('button');
+    btn.className='upgrade-btn auto-upg';
+    const cost=getAutoCost(i);
+    btn.innerHTML=`<span class="upg-icon">${d.icon}</span><div class="upg-info"><div class="upg-name">${d.name}</div><div class="upg-desc">+${d.fps} fish/sec each</div><div class="upg-cost">${fmt(cost)} fish</div></div><span class="upg-count">${state.autoUpgrades[i]}</span>`;
+    btn.onclick=()=>buyAuto(i);
+    panel.appendChild(btn);
+  });
+  // Click upgrades
+  const h2=document.createElement('div');
+  h2.className='upgrade-section-title';
+  h2.textContent='Click Power (permanent)';
+  panel.appendChild(h2);
+  clickUpgradeDefs.forEach((d,i)=>{
+    const btn=document.createElement('button');
+    btn.className='upgrade-btn click-upg';
+    if(state.clickUpgrades[i])btn.classList.add('purchased');
+    btn.innerHTML=`<span class="upg-icon">${d.icon}</span><div class="upg-info"><div class="upg-name">${d.name}</div><div class="upg-desc">+${d.power} fish per flick</div><div class="upg-cost">${state.clickUpgrades[i]?'Owned':fmt(d.cost)+' fish'}</div></div><span class="upg-count">${state.clickUpgrades[i]?'✓':''}</span>`;
+    btn.onclick=()=>buyClick(i);
+    if(state.clickUpgrades[i])btn.disabled=true;
+    panel.appendChild(btn);
+  });
+}
+
+// ── Game loop ──
+let lastTick=Date.now();
+function gameTick(){
+  const now=Date.now();
+  const dt=(now-lastTick)/1000;
+  lastTick=now;
+  if(state.fps>0){
+    const earned=state.fps*dt;
+    state.fish+=earned;
+    state.totalFish+=earned;
+  }
+  updateDisplay();
+  checkAchievements();
+  requestAnimationFrame(gameTick);
+}
+
+// ── Save/Load ──
+function saveGame(){
+  const data={
+    fish:state.fish,totalFish:state.totalFish,totalFlicks:state.totalFlicks,
+    clickPower:state.clickPower,autoUpgrades:state.autoUpgrades,
+    clickUpgrades:state.clickUpgrades,prestigeLevel:state.prestigeLevel,
+    prestigeMultiplier:state.prestigeMultiplier,
+    achievements:[...state.achievements],lastSave:Date.now()
+  };
+  try{localStorage.setItem('flounderFlicker',JSON.stringify(data));}catch(e){}
+}
+function loadGame(){
+  try{
+    const raw=localStorage.getItem('flounderFlicker');
+    if(!raw)return;
+    const d=JSON.parse(raw);
+    state.fish=d.fish||0;
+    state.totalFish=d.totalFish||0;
+    state.totalFlicks=d.totalFlicks||0;
+    state.autoUpgrades=d.autoUpgrades||[0,0,0,0,0,0,0,0];
+    state.clickUpgrades=d.clickUpgrades||[false,false,false,false,false];
+    state.prestigeLevel=d.prestigeLevel||0;
+    state.prestigeMultiplier=d.prestigeMultiplier||1;
+    state.achievements=new Set(d.achievements||[]);
+    state.fps=calcFPS();
+    // Offline progress
+    if(d.lastSave&&state.fps>0){
+      const elapsed=(Date.now()-d.lastSave)/1000;
+      const maxOffline=3600*8;// 8 hours max
+      const secs=Math.min(elapsed,maxOffline);
+      if(secs>5){
+        const earned=state.fps*secs;
+        state.fish+=earned;
+        state.totalFish+=earned;
+        showToast('Welcome back! +'+fmt(earned)+' fish ('+Math.floor(secs/60)+'m offline)');
+      }
+    }
+  }catch(e){}
+}
+setInterval(saveGame,10000);
+
+// ── Bubbles ──
+function createBubbles(){
+  const bg=document.getElementById('bubbleBg');
+  for(let i=0;i<15;i++){
+    const b=document.createElement('div');
+    b.className='bubble';
+    const size=10+Math.random()*30;
+    b.style.cssText=`width:${size}px;height:${size}px;left:${Math.random()*100}%;animation-duration:${8+Math.random()*12}s;animation-delay:${Math.random()*10}s`;
+    bg.appendChild(b);
+  }
+}
+
+// ── Narrator ──
+let lastNarration=0;
+function tryNarrate(){
+  if(!window.speechSynthesis)return;
+  const now=Date.now();
+  if(now-lastNarration<25000)return;
+  if(state.totalFlicks<3)return;
+  lastNarration=now;
+  const line=narratorLines[Math.floor(Math.random()*narratorLines.length)];
+  const u=new SpeechSynthesisUtterance(line);
+  u.rate=0.85;u.pitch=0.8;u.volume=0.4;
+  const voices=speechSynthesis.getVoices();
+  const brit=voices.find(v=>/en.GB/i.test(v.lang))||voices.find(v=>/en/i.test(v.lang));
+  if(brit)u.voice=brit;
+  speechSynthesis.speak(u);
+}
+setInterval(tryNarrate,25000);
+
+// ── Init ──
+loadGame();
+createBubbles();
+renderUpgrades();
+updateDisplay();
+requestAnimationFrame(gameTick);
+</script>
+</body>
+</html>
