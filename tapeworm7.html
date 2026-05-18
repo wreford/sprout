@@ -408,6 +408,18 @@ var lastNarration = 0;
 var lastActionTime = 0;
 var usedLines = new Set();
 
+// Character voice profiles
+var CHAR_VOICES = {
+  tyler:   { rate:0.88, pitch:0.75, lang:'en-GB', gender:'male' },   // British male, Sir David style
+  max:     { rate:0.9,  pitch:0.85, lang:'en-GB', gender:'male' },   // British male, more energetic
+  chancla: { rate:1.1,  pitch:1.25, lang:'en',    gender:'female' }, // Angry mom style
+  jesus:   { rate:0.8,  pitch:0.7,  lang:'en',    gender:'male' },   // Deep male, solemn
+  lily:    { rate:1.0,  pitch:1.15, lang:'en',    gender:'female' }, // Gentle female, sweet
+  david:   { rate:0.85, pitch:0.75, lang:'en-GB', gender:'male' },   // The original Sir David
+  karen:   { rate:1.2,  pitch:1.3,  lang:'en',    gender:'female' }, // Fast female, demanding
+  matrix:  { rate:0.75, pitch:0.6,  lang:'en',    gender:'male' }    // Monotone, deadpan boring
+};
+
 function narrate(text, priority) {
   if (!narratorEnabled || !window.speechSynthesis) return;
   var now = Date.now();
@@ -419,13 +431,30 @@ function narrate(text, priority) {
     try {
       var cleanText = text.replace(/\. /g, '... ').replace(/! /g, '!... ').replace(/\? /g, '?... ');
       var utter = new SpeechSynthesisUtterance(cleanText);
-      utter.rate = 0.82; utter.pitch = 0.8; utter.volume = 1.0; utter.lang = 'en-GB';
+      // Apply character-specific voice settings
+      var vp = CHAR_VOICES[selectedCharId] || CHAR_VOICES.tyler;
+      utter.rate = vp.rate; utter.pitch = vp.pitch; utter.volume = 1.0; utter.lang = vp.lang;
       var voices = speechSynthesis.getVoices();
       if (voices && voices.length > 0) {
-        var voice = voices.find(function(v){return v.name.indexOf('Google UK English Male')>-1;})
-          || voices.find(function(v){return v.name.indexOf('Daniel')>-1;})
-          || voices.find(function(v){return v.lang==='en-GB';})
-          || voices.find(function(v){return v.lang.indexOf('en')===0;});
+        var voice = null;
+        if (vp.gender === 'female') {
+          // Try to find a female voice
+          voice = voices.find(function(v){return v.name.indexOf('Google UK English Female')>-1;})
+            || voices.find(function(v){return v.name.indexOf('Samantha')>-1;})
+            || voices.find(function(v){return v.name.indexOf('Victoria')>-1;})
+            || voices.find(function(v){return v.name.indexOf('Karen')>-1;})
+            || voices.find(function(v){return v.name.indexOf('Female')>-1;})
+            || voices.find(function(v){return v.lang && v.lang.indexOf(vp.lang)===0 && v.name.toLowerCase().indexOf('female')>-1;})
+            || voices.find(function(v){return v.lang && v.lang.indexOf(vp.lang)===0;});
+        } else if (vp.lang === 'en-GB') {
+          voice = voices.find(function(v){return v.name.indexOf('Google UK English Male')>-1;})
+            || voices.find(function(v){return v.name.indexOf('Daniel')>-1;})
+            || voices.find(function(v){return v.lang==='en-GB';})
+            || voices.find(function(v){return v.lang && v.lang.indexOf('en')===0;});
+        } else {
+          voice = voices.find(function(v){return v.lang && v.lang.indexOf('en')===0 && v.name.toLowerCase().indexOf('male')>-1;})
+            || voices.find(function(v){return v.lang && v.lang.indexOf('en')===0;});
+        }
         if (voice) utter.voice = voice;
       }
       speechSynthesis.speak(utter);
@@ -568,6 +597,35 @@ var BRIT_DAVID_SELF = [
   "Sir David enters the shop. Sir David buys an upgrade. Sir David narrates the purchase.",
   "Sir David freezes the enemies with a monologue. Even his special ability is narration."
 ];
+
+// Character-specific wave start lines
+var CHAR_WAVE_LINES = {
+  chancla: [
+    "La Chancla enters wave {w}. The pipes are not ready.",
+    "La Chancla smacks into wave {w}. Every enemy is a naughty child.",
+    "La Chancla has arrived at wave {w}. The chancletazo is coming."
+  ],
+  jesus: [
+    "Jesus enters wave {w}. Divinely.",
+    "Jesus walks into wave {w}. On water, presumably.",
+    "Jesus blesses wave {w} with his presence. And his stick save."
+  ],
+  lily: [
+    "Lily gallops into wave {w}. Neighhhh!",
+    "Lily trots through wave {w}. Carrots would be appreciated.",
+    "Lily canters into wave {w}. Hooves of fury."
+  ],
+  karen: [
+    "Karen demands to see wave {w}'s manager.",
+    "Karen has a complaint about wave {w}. Several, actually.",
+    "Karen enters wave {w}. She wants a refund on wave {w0}."
+  ],
+  matrix: [
+    "The Matrix arrives at wave {w}. Eventually.",
+    "The Matrix parallel parks into wave {w}. It takes a while.",
+    "The Matrix enters wave {w}. The GPS said wave {w0}."
+  ]
+};
 
 // ============ MUSIC ============
 var musicInterval = null;
@@ -971,6 +1029,8 @@ function startWave() {
     narrate(pickLine(BRIT_BOSS), true);
   } else if (selectedCharId === 'david' && Math.random() < 0.3) {
     narrate(pickLine(BRIT_DAVID_SELF), true);
+  } else if (CHAR_WAVE_LINES[selectedCharId] && Math.random() < 0.5) {
+    narrate(pickLine(CHAR_WAVE_LINES[selectedCharId]).replace(/\{w\}/g, String(wave)).replace(/\{w0\}/g, String(Math.max(1,wave-1))), true);
   } else {
     narrate(pickLine(BRIT_WAVE_START).replace(/\{w\}/g, String(wave)), true);
   }
