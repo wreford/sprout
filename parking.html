@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no"/>
+<title>Matrix Parking Mayhem</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#222;font-family:monospace;color:#fff;touch-action:none}
+canvas{display:block}
+#ui{position:absolute;top:0;left:0;width:100%;pointer-events:none}
+#hud{display:flex;justify-content:space-between;padding:10px 16px;font-size:14px;background:rgba(0,0,0,0.6)}
+#hud span{display:inline-block}
+#msg{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:28px;font-weight:bold;text-align:center;text-shadow:0 2px 8px #000;opacity:0;transition:opacity 0.4s;pointer-events:none;max-width:90%}
+#msg.show{opacity:1}
+#startScreen{position:absolute;inset:0;background:rgba(0,0,0,0.85);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;z-index:10;pointer-events:all}
+#startScreen h1{font-size:clamp(24px,6vw,42px);color:#c8b89a}
+#startScreen p{font-size:14px;color:#888;max-width:320px;text-align:center;line-height:1.5}
+#startScreen button{padding:14px 36px;font-size:18px;background:#4a4;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:monospace}
+#joystick{position:absolute;bottom:30px;left:30px;width:120px;height:120px;pointer-events:all}
+#brakeBtn{position:absolute;bottom:50px;right:30px;width:70px;height:70px;border-radius:50%;background:rgba(200,60,60,0.7);border:2px solid #f66;pointer-events:all;font-size:12px;color:#fff;display:flex;align-items:center;justify-content:center}
+.touch-hide{display:none}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div id="hud">
+    <span id="levelLabel">Level 1</span>
+    <span id="timer">Time: 30s</span>
+    <span id="damage">Hits: 0/3</span>
+  </div>
+  <div id="msg"></div>
+</div>
+<div id="startScreen">
+  <h1>🚗 Matrix Parking Mayhem</h1>
+  <p>Park the world's most boring car through 10 increasingly absurd challenges.<br><br>WASD/Arrows to drive. Space to brake.<br>Touch: joystick + brake button.</p>
+  <button id="startBtn">Start Engine</button>
+</div>
+<div id="joystick" class="touch-hide"><canvas id="joyC" width="120" height="120"></canvas></div>
+<div id="brakeBtn" class="touch-hide">BRAKE</div>
+
+<script>
+const C=document.getElementById('c'),X=C.getContext('2d');
+const hud={level:document.getElementById('levelLabel'),timer:document.getElementById('timer'),damage:document.getElementById('damage')};
+const msgEl=document.getElementById('msg');
+let W,H,dpr;
+function resize(){dpr=window.devicePixelRatio||1;W=window.innerWidth;H=window.innerHeight;C.width=W*dpr;C.height=H*dpr;C.style.width=W+'px';C.style.height=H+'px';X.setTransform(dpr,0,0,dpr,0,0)}
+resize();window.addEventListener('resize',resize);
+
+// Touch detection
+const isTouch='ontouchstart'in window;
+if(isTouch){document.querySelectorAll('.touch-hide').forEach(e=>e.classList.remove('touch-hide'))}
+
+// Audio context
+let audioCtx;
+function initAudio(){if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)()}
+function playTone(freq,dur,vol=0.1,type='sine'){if(!audioCtx)return;const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type=type;o.frequency.value=freq;g.gain.value=vol;o.connect(g);g.connect(audioCtx.destination);o.start();g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+dur);o.stop(audioCtx.currentTime+dur)}
+function playCrash(){playTone(60,0.3,0.15,'sawtooth');playTone(40,0.4,0.1,'square')}
+function playChime(){playTone(523,0.15,0.08);setTimeout(()=>playTone(659,0.15,0.08),100);setTimeout(()=>playTone(784,0.3,0.08),200)}
+function playTick(){playTone(800,0.05,0.05,'square')}
+
+// Engine hum
+let engineOsc,engineGain;
+function startEngine(){if(!audioCtx)return;engineOsc=audioCtx.createOscillator();engineGain=audioCtx.createGain();engineOsc.type='sine';engineOsc.frequency.value=80;engineGain.gain.value=0;engineOsc.connect(engineGain);engineGain.connect(audioCtx.destination);engineOsc.start()}
+function updateEngine(speed,turning){if(!engineOsc)return;const s=Math.abs(speed);engineGain.gain.value=s>0.1?0.012:0;engineOsc.frequency.value=80+s*30+(turning?10:0)}
+
+// Speech
+let speechQueue=[],lastSpeech=0;
+const SPEECH_GAP=8000;
+function speak(text){if(!window.speechSynthesis)return;window.speechSynthesis.cancel();setTimeout(()=>{const u=new SpeechSynthesisUtterance(text);u.rate=0.85;u.pitch=0.8;u.lang='en-GB';window.speechSynthesis.speak(u)},60);lastSpeech=Date.now()}
+const jokes={
+start:["The Matrix. Not the movie. The car.","Zero to sixty in... eventually.","The official car of giving up on your dreams.","Beige. The colour of surrender.","The Matrix. For when a Camry is too exciting.","Ah. The Matrix. No one's dream car.","Fun fact. The Matrix has never been in a car chase.","The resale value of this car is a rounding error.","Parking a Matrix. Peak adulting.","The car nobody Instagrammed. Ever."],
+success:["Parked. Your Matrix blends in perfectly. With everything.","The Matrix is parked. Nobody noticed.","Spot claimed. The Matrix continues to exist.","Parked. The Matrix achieves its only purpose.","Success. The crowd goes mild.","In the spot. The Matrix's greatest achievement.","Parked. Invisibly. As nature intended.","The spot is taken. By the world's least exciting car.","Nailed it. The Matrix is home.","Parked. Somewhere, an accountant smiles."],
+crash:["Scratch. The Matrix's value drops from low to lower.","Hit something. The damage is cosmetic. So is the car.","Bump. That'll buff out. Like everything about this car.","Collision. The insurance claim isn't worth the paperwork.","Scraped. The Matrix now has character. Finally.","Dent. The repair costs more than the car.","Hit. Even the parking lot is disappointed.","Bump. The Matrix takes damage and somehow looks the same.","Crashed. The tow truck driver will laugh.","Impact. The other car is fine. It's always the Matrix."],
+random:["The Matrix. Proof that cars can be beige in every way.","A Honda Civic just drove past. Even it looked excited by comparison.","Your Matrix has a CD player. It plays Enya. Only Enya.","The Matrix's top feature. It starts. Usually.","Legend says a Matrix once went on a road trip. Nobody remembers it.","The GPS says arriving at destination. The destination is mediocrity.","Other cars have names like Mustang and Corvette. This one is named after a math concept.","The Matrix's airbag deploys with a sigh.","Fun fact. The Matrix comes standard with disappointment.","Somewhere, a car designer looks at the Matrix and whispers I'm sorry."]
+};
+let jokeIdx={start:0,success:0,crash:0,random:0};
+function joke(cat){const arr=jokes[cat];const t=arr[jokeIdx[cat]%arr.length];jokeIdx[cat]++;return t}
+
+// Levels
+const CW=30,CH=50; // car width, height (the Matrix)
+const levels=[
+  {name:"Empty Lot",walls:[{x:0,y:0,w:800,h:10},{x:0,y:0,w:10,h:600},{x:790,y:0,w:10,h:600},{x:0,y:590,w:800,h:10}],cars:[],spot:{x:400,y:300,w:44,h:64,a:0},start:{x:200,y:500,a:-Math.PI/2},time:30},
+  {name:"Normal Lot",walls:[{x:0,y:0,w:800,h:10},{x:0,y:0,w:10,h:600},{x:790,y:0,w:10,h:600},{x:0,y:590,w:800,h:10}],cars:[{x:300,y:100,w:36,h:56,c:'#c33'},{x:370,y:100,w:36,h:56,c:'#33c'},{x:510,y:100,w:36,h:56,c:'#333'},{x:580,y:100,w:36,h:56,c:'#fff'},{x:300,y:300,w:36,h:56,c:'#c33'},{x:510,y:300,w:36,h:56,c:'#33c'}],spot:{x:440,y:100,w:44,h:64,a:0},start:{x:400,y:500,a:-Math.PI/2},time:30},
+  {name:"Parallel Parking",walls:[{x:0,y:0,w:800,h:10},{x:0,y:0,w:10,h:600},{x:790,y:0,w:10,h:600},{x:0,y:590,w:800,h:10},{x:0,y:350,w:800,h:10}],cars:[{x:250,y:400,w:36,h:60,c:'#c33'},{x:250,y:530,w:36,h:60,c:'#33c'}],spot:{x:250,y:468,w:44,h:62,a:0},start:{x:500,y:470,a:-Math.PI/2},time:40},
+  {name:"Crowded Lot",walls:[{x:0,y:0,w:800,h:10},{x:0,y:0,w:10,h:600},{x:790,y:0,w:10,h:600},{x:0,y:590,w:800,h:10}],cars:[{x:100,y:80,w:36,h:56,c:'#c33'},{x:170,y:80,w:36,h:56,c:'#33c'},{x:240,y:80,w:36,h:56,c:'#555'},{x:310,y:80,w:36,h:56,c:'#fff'},{x:380,y:80,w:36,h:56,c:'#c33'},{x:520,y:80,w:36,h:56,c:'#33c'},{x:590,y:80,w:36,h:56,c:'#555'},{x:660,y:80,w:36,h:56,c:'#c33'},{x:100,y:250,w:36,h:56,c:'#33c'},{x:170,y:250,w:36,h:56,c:'#c33'},{x:240,y:250,w:36,h:56,c:'#fff'},{x:310,y:250,w:36,h:56,c:'#555'},{x:380,y:250,w:36,h:56,c:'#33c'},{x:520,y:250,w:36,h:56,c:'#c33'},{x:590,y:250,w:36,h:56,c:'#fff'},{x:660,y:250,w:36,h:56,c:'#555'}],spot:{x:450,y:80,w:42,h:60,a:0},start:{x:400,y:500,a:-Math.PI/2},time:35},
+  {name:"Angled Parking",walls:[{x:0,y:0,w:800,h:10},{x:0,y:0,w:10,h:600},{x:790,y:0,w:10,h:600},{x:0,y:590,w:800,h:10}],cars:[{x:200,y:120,w:36,h:56,c:'#c33',a:Math.PI/6},{x:300,y:120,w:36,h:56,c:'#33c',a:Math.PI/6},{x:500,y:120,w:36,h:56,c:'#fff',a:Math.PI/6},{x:600,y:120,w:36,h:56,c:'#555',a:Math.PI/6}],spot:{x:400,y:120,w:44,h:62,a:Math.PI/6},start:{x:400,y:480,a:-Math.PI/2},time:35},
+  {name:"Maze Ramp",walls:[{x:0,y:0,w:800,h:10},{x:0,y:0,w:10,h:600},{x:790,y:0,w:10,h:600},{x:0,y:590,w:800,h:10},{x:150,y:0,w:10,h:420},{x:300,y:180,w:10,h:420},{x:450,y:0,w:10,h:420},{x:600,y:180,w:10,h:420}],cars:[{x:80,y:200,w:36,h:56,c:'#555'},{x:230,y:350,w:36,h:56,c:'#c33'},{x:380,y:200,w:36,h:56,c:'#33c'},{x:530,y:400,w:36,h:56,c:'#fff'}],spot:{x:700,y:80,w:44,h:64,a:0},start:{x:60,y:530,a:-Math.PI/2},time:50},
+  {name:"Hill Slide",walls:[{x:0,y:0,w:800,h:10},{x:0,y:0,w:10,h:600},{x:790,y:0,w:10,h:600},{x:0,y:590,w:800,h:10},{x:0,y:350,w:800,h:10}],cars:[{x:300,y:420,w:36,h:60,c:'#c33'},{x:300,y:540,w:36,h:60,c:'#33c'}],spot:{x:300,y:480,w:44,h:62,a:0},start:{x:600,y:480,a:-Math.PI/2},time:40,slide:{x:0.3,y:0}},
+  {name:"Between Ferraris",walls:[{x:0,y:0,w:800,h:10},{x:0,y:0,w:10,h:600},{x:790,y:0,w:10,h:600},{x:0,y:590,w:800,h:10}],cars:[{x:360,y:150,w:34,h:58,c:'#e22',label:'F'},{x:440,y:150,w:34,h:58,c:'#ee2',label:'F'},{x:200,y:150,w:36,h:56,c:'#555'},{x:580,y:150,w:36,h:56,c:'#333'}],spot:{x:400,y:150,w:42,h:62,a:0},start:{x:400,y:500,a:-Math.PI/2},time:40},
+  {name:"Moving Spot",walls:[{x:0,y:0,w:800,h:10},{x:0,y:0,w:10,h:600},{x:790,y:0,w:10,h:600},{x:0,y:590,w:800,h:10}],cars:[{x:150,y:200,w:36,h:56,c:'#c33'},{x:650,y:200,w:36,h:56,c:'#33c'},{x:150,y:400,w:36,h:56,c:'#fff'},{x:650,y:400,w:36,h:56,c:'#555'}],spot:{x:400,y:300,w:44,h:64,a:0},start:{x:400,y:530,a:-Math.PI/2},time:45,moving:true},
+  {name:"The Final Spot",walls:[{x:0,y:0,w:800,h:10},{x:0,y:0,w:10,h:600},{x:790,y:0,w:10,h:600},{x:0,y:590,w:800,h:10},{x:200,y:100,w:10,h:200},{x:200,y:380,w:10,h:200},{x:600,y:100,w:10,h:200},{x:600,y:380,w:10,h:200},{x:300,y:200,w:200,h:10},{x:300,y:400,w:200,h:10}],cars:[{x:250,y:120,w:36,h:56,c:'#c33'},{x:550,y:120,w:36,h:56,c:'#33c'},{x:250,y:450,w:36,h:56,c:'#fff'},{x:550,y:450,w:36,h:56,c:'#555'},{x:350,y:130,w:36,h:56,c:'#c33'},{x:450,y:130,w:36,h:56,c:'#33c'},{x:350,y:450,w:36,h:56,c:'#fff'},{x:450,y:450,w:36,h:56,c:'#555'}],spot:{x:400,y:305,w:38,h:58,a:0},start:{x:100,y:530,a:-Math.PI/2},time:60}
+];
+
+// Game state
+let state='menu',curLevel=0,car,timeLeft,hits,hitCooldown=0,levelT=0,camX=0,camY=0;
+let keys={};
+let spotPhase=0;
+
+// Car object
+function resetCar(lv){
+  const s=lv.start;
+  car={x:s.x,y:s.y,a:s.a,speed:0,steer:0,scratches:[]};
+  hits=0;timeLeft=lv.time;hitCooldown=0;levelT=0;spotPhase=0;
+}
+
+// Input
+document.addEventListener('keydown',e=>{keys[e.key]=true;if(e.key===' ')e.preventDefault()});
+document.addEventListener('keyup',e=>{keys[e.key]=false});
+
+// Joystick
+const joyC=document.getElementById('joyC'),joyX2=joyC.getContext('2d');
+let joyActive=false,joyDX=0,joyDY=0;
+const joyCenterX=60,joyCenterY=60,joyR=50;
+function drawJoy(){joyX2.clearRect(0,0,120,120);joyX2.beginPath();joyX2.arc(60,60,50,0,Math.PI*2);joyX2.fillStyle='rgba(255,255,255,0.15)';joyX2.fill();joyX2.strokeStyle='rgba(255,255,255,0.3)';joyX2.stroke();const tx=60+joyDX*35,ty=60+joyDY*35;joyX2.beginPath();joyX2.arc(tx,ty,18,0,Math.PI*2);joyX2.fillStyle='rgba(255,255,255,0.5)';joyX2.fill()}
+drawJoy();
+const joyEl=document.getElementById('joystick');
+joyEl.addEventListener('touchstart',e=>{e.preventDefault();joyActive=true;updateJoy(e)});
+joyEl.addEventListener('touchmove',e=>{e.preventDefault();updateJoy(e)});
+joyEl.addEventListener('touchend',()=>{joyActive=false;joyDX=0;joyDY=0;drawJoy()});
+function updateJoy(e){const r=joyEl.getBoundingClientRect();const t=e.touches[0];let dx=(t.clientX-r.left-60)/50,dy=(t.clientY-r.top-60)/50;const d=Math.sqrt(dx*dx+dy*dy);if(d>1){dx/=d;dy/=d}joyDX=dx;joyDY=dy;drawJoy()}
+
+// Brake button
+let braking=false;
+const brakeEl=document.getElementById('brakeBtn');
+brakeEl.addEventListener('touchstart',e=>{e.preventDefault();braking=true});
+brakeEl.addEventListener('touchend',()=>{braking=false});
+
+// Collision helpers
+function rotRect(cx,cy,w,h,a){
+  const cos=Math.cos(a),sin=Math.sin(a);
+  const hw=w/2,hh=h/2;
+  return[[-hw,-hh],[hw,-hh],[hw,hh],[-hw,hh]].map(([px,py])=>({x:cx+px*cos-py*sin,y:cy+px*sin+py*cos}));
+}
+function project(verts,ax){let mn=Infinity,mx=-Infinity;for(const v of verts){const d=v.x*ax.x+v.y*ax.y;if(d<mn)mn=d;if(d>mx)mx=d}return{min:mn,max:mx}}
+function axes(verts){const a=[];for(let i=0;i<verts.length;i++){const j=(i+1)%verts.length;const dx=verts[j].x-verts[i].x,dy=verts[j].y-verts[i].y;const len=Math.sqrt(dx*dx+dy*dy);a.push({x:-dy/len,y:dx/len})}return a}
+function satOverlap(v1,v2){const ax=[...axes(v1),...axes(v2)];for(const a of ax){const p1=project(v1,a),p2=project(v2,a);if(p1.max<p2.min||p2.max<p1.min)return false}return true}
+function carVerts(){return rotRect(car.x,car.y,CW,CH,car.a)}
+function wallVerts(w){return[{x:w.x,y:w.y},{x:w.x+w.w,y:w.y},{x:w.x+w.w,y:w.y+w.h},{x:w.x,y:w.y+w.h}]}
+function objVerts(o){return rotRect(o.x,o.y,o.w,o.h,o.a||0)}
+function spotVerts(s){return rotRect(s.x,s.y,s.w,s.h,s.a||0)}
+
+function checkCollisions(lv){
+  if(hitCooldown>0)return false;
+  const cv=carVerts();
+  for(const w of lv.walls){if(satOverlap(cv,wallVerts(w))){return true}}
+  for(const o of lv.cars){if(satOverlap(cv,objVerts(o))){return true}}
+  return false;
+}
+function checkParked(lv){
+  const s=lv.spot;
+  const da=Math.abs(((car.a-( s.a||0))%(Math.PI*2)+Math.PI*3)%(Math.PI*2)-Math.PI);
+  const angleOk=da<0.35||Math.abs(da-Math.PI)<0.35;
+  const dx=car.x-s.x,dy=car.y-s.y;
+  const dist=Math.sqrt(dx*dx+dy*dy);
+  return dist<12&&angleOk&&Math.abs(car.speed)<0.3;
+}
+
+// Show message
+function showMsg(t,dur=2000){msgEl.textContent=t;msgEl.classList.add('show');setTimeout(()=>msgEl.classList.remove('show'),dur)}
+
+// Narration scheduling
+let lastRandomJoke=0;
+function maybeRandomJoke(){
+  if(Date.now()-lastSpeech<SPEECH_GAP)return;
+  if(Date.now()-lastRandomJoke<15000)return;
+  if(Math.random()>0.3)return;
+  speak(joke('random'));lastRandomJoke=Date.now();
+}
+
+// Start
+document.getElementById('startBtn').onclick=()=>{
+  initAudio();startEngine();
+  document.getElementById('startScreen').style.display='none';
+  startLevel(0);
+};
+
+function startLevel(n){
+  curLevel=n;
+  const lv=levels[n];
+  resetCar(lv);
+  state='play';
+  showMsg('Level '+(n+1)+': '+lv.name,2500);
+  hud.level.textContent='Level '+(n+1);
+  setTimeout(()=>speak(joke('start')),800);
+}
+
+// Main loop
+let lastTime=0;
+function loop(ts){
+  const dt=Math.min((ts-lastTime)/1000,0.05);
+  lastTime=ts;
+  if(state==='play')update(dt);
+  draw();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+function update(dt){
+  const lv=levels[curLevel];
+  levelT+=dt;
+  timeLeft-=dt;
+  if(timeLeft<=0){timeLeft=0;state='fail';showMsg('Time\'s up! The Matrix remains unparked.',2500);setTimeout(()=>startLevel(curLevel),3000);return}
+  if(timeLeft<5&&timeLeft>0&&Math.floor(timeLeft*4)%2===0)playTick();
+  hud.timer.textContent='Time: '+Math.ceil(timeLeft)+'s';
+  hud.damage.textContent='Hits: '+hits+'/3';
+
+  // Input
+  let gas=0,turn=0,brake=keys[' ']||braking;
+  if(keys['ArrowUp']||keys['w']||keys['W'])gas=1;
+  if(keys['ArrowDown']||keys['s']||keys['S'])gas=-1;
+  if(keys['ArrowLeft']||keys['a']||keys['A'])turn=-1;
+  if(keys['ArrowRight']||keys['d']||keys['D'])turn=1;
+  if(joyActive){
+    if(joyDY<-0.2)gas=1;
+    if(joyDY>0.2)gas=-1;
+    if(joyDX<-0.2)turn=joyDX;
+    if(joyDX>0.2)turn=joyDX;
+  }
+
+  // Physics
+  if(brake){car.speed*=0.9}
+  else if(gas!==0){car.speed+=gas*80*dt}
+  else{car.speed*=0.97}
+  car.speed=Math.max(-60,Math.min(120,car.speed));
+  if(Math.abs(car.speed)>1){
+    car.a+=turn*2.5*dt*(car.speed>0?1:-1)*Math.min(Math.abs(car.speed)/30,1);
+  }
+
+  // Hill slide
+  if(lv.slide){car.speed+=lv.slide.x*20*dt;car.x+=lv.slide.y*10*dt}
+
+  // Moving spot
+  if(lv.moving){spotPhase+=dt;lv.spot.x=400+Math.sin(spotPhase*0.8)*150;lv.spot.y=300+Math.cos(spotPhase*0.6)*100}
+
+  car.x+=Math.sin(car.a)*car.speed*dt;
+  car.y-=Math.cos(car.a)*car.speed*dt;
+
+  updateEngine(car.speed,turn!==0);
+
+  // Collisions
+  if(hitCooldown>0)hitCooldown-=dt;
+  if(checkCollisions(lv)){
+    hits++;hitCooldown=0.5;
+    car.speed*=-0.3;
+    car.x-=Math.sin(car.a)*car.speed*dt*3;
+    car.y+=Math.cos(car.a)*car.speed*dt*3;
+    car.scratches.push({x:(Math.random()-0.5)*CW*0.8,y:(Math.random()-0.5)*CH*0.8});
+    playCrash();
+    speak(joke('crash'));
+    if(hits>=3){state='fail';showMsg('Too much damage! The Matrix gives up.',2500);setTimeout(()=>startLevel(curLevel),3000);return}
+  }
+
+  // Check parked
+  if(checkParked(lv)){
+    state='win';playChime();
+    showMsg(curLevel<9?'Parked! Level '+(curLevel+2)+' next...':'YOU WIN! The Matrix is finally at rest.',3000);
+    speak(joke('success'));
+    setTimeout(()=>{if(curLevel<9)startLevel(curLevel+1);else{state='menu';document.getElementById('startScreen').style.display='flex'}},3500);
+    return;
+  }
+
+  maybeRandomJoke();
+
+  // Camera
+  camX=car.x-W/2;
+  camY=car.y-H/2;
+}
+
+function draw(){
+  X.clearRect(0,0,W,H);
+  X.save();
+  if(state==='play'||state==='win'||state==='fail'){
+    X.translate(-camX,-camY);
+    const lv=levels[curLevel];
+    // Asphalt
+    X.fillStyle='#3a3a3a';
+    X.fillRect(-200,-200,1200,1000);
+    // Parking lines
+    X.strokeStyle='#555';X.lineWidth=1;
+    for(let i=0;i<20;i++){for(let j=0;j<15;j++){if((i+j)%3===0){X.strokeRect(i*70-100,j*70-50,60,8)}}}
+
+    // Walls
+    X.fillStyle='#1a1a1a';
+    for(const w of lv.walls)X.fillRect(w.x,w.y,w.w,w.h);
+
+    // Parking spot (pulsing green dashed)
+    const sp=lv.spot;
+    X.save();
+    X.translate(sp.x,sp.y);
+    X.rotate(sp.a||0);
+    const pulse=0.5+0.5*Math.sin(levelT*4);
+    X.strokeStyle=`rgba(80,220,80,${0.5+pulse*0.5})`;
+    X.lineWidth=3;
+    X.setLineDash([8,6]);
+    X.strokeRect(-sp.w/2,-sp.h/2,sp.w,sp.h);
+    X.setLineDash([]);
+    X.fillStyle=`rgba(80,220,80,${0.08+pulse*0.05})`;
+    X.fillRect(-sp.w/2,-sp.h/2,sp.w,sp.h);
+    X.restore();
+
+    // Other cars
+    for(const o of lv.cars)drawCar(o.x,o.y,o.w,o.h,o.a||0,o.c,o.label||'');
+
+    // Player car
+    drawPlayer();
+
+    // Arrow to spot
+    if(state==='play'){
+      const dx=sp.x-car.x,dy=sp.y-car.y;
+      const dist=Math.sqrt(dx*dx+dy*dy);
+      if(dist>100){
+        const aa=Math.atan2(dx,-dy);
+        const ax=car.x+Math.sin(aa)*60,ay=car.y-Math.cos(aa)*60;
+        X.save();X.translate(ax,ay);X.rotate(aa);
+        X.fillStyle='rgba(80,220,80,0.6)';
+        X.beginPath();X.moveTo(0,-10);X.lineTo(6,4);X.lineTo(-6,4);X.closePath();X.fill();
+        X.restore();
+      }
+    }
+  }
+  X.restore();
+}
+
+function drawCar(cx,cy,w,h,a,color,label){
+  X.save();
+  X.translate(cx,cy);
+  X.rotate(a);
+  // Body
+  X.fillStyle=color;
+  X.fillRect(-w/2,-h/2,w,h);
+  // Windows
+  X.fillStyle='rgba(0,0,0,0.3)';
+  X.fillRect(-w/2+4,-h/2+6,w-8,h*0.2);
+  X.fillRect(-w/2+4,h/2-h*0.25,w-8,h*0.18);
+  // Label
+  if(label){X.fillStyle='#fff';X.font='bold 10px monospace';X.textAlign='center';X.fillText(label,0,3)}
+  X.restore();
+}
+
+function drawPlayer(){
+  X.save();
+  X.translate(car.x,car.y);
+  X.rotate(car.a);
+  // Body — beige/champagne, the most boring color
+  X.fillStyle='#c8b89a';
+  X.fillRect(-CW/2,-CH/2,CW,CH);
+  // Slight outline
+  X.strokeStyle='#a89878';X.lineWidth=1.5;
+  X.strokeRect(-CW/2,-CH/2,CW,CH);
+  // Windshield
+  X.fillStyle='rgba(150,200,220,0.5)';
+  X.fillRect(-CW/2+4,-CH/2+6,CW-8,12);
+  // Rear window
+  X.fillStyle='rgba(150,200,220,0.4)';
+  X.fillRect(-CW/2+5,CH/2-14,CW-10,10);
+  // MATRIX text
+  X.fillStyle='#666';X.font='bold 7px monospace';X.textAlign='center';
+  X.fillText('MATRIX',0,4);
+  // Scratches (damage)
+  X.strokeStyle='#c33';X.lineWidth=2;
+  for(const s of car.scratches){
+    X.beginPath();X.moveTo(s.x-4,s.y-4);X.lineTo(s.x+4,s.y+4);X.stroke();
+    X.beginPath();X.moveTo(s.x+4,s.y-4);X.lineTo(s.x-4,s.y+4);X.stroke();
+  }
+  X.restore();
+}
+</script>
+</body>
+</html>
