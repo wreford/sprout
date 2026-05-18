@@ -462,8 +462,8 @@ Compiler.prototype.compileChain = function(chunk) {
     if (t.type === T.IDENT && this.sc.peek(1).type !== T.COLON) {
       var name = t.val;
       this.sc.next();
-      if (this.sc.peek().type === T.LBRACK) {
-        this.compileBlockOrCell(chunk);
+      if (this.sc.peek().type === T.LBRACK || this.sc.peek().type === T.LPAREN) {
+        this.compileAtom(chunk);
         chunk.emit(OP.SEND, chunk.addConst(name), 1);
       } else {
         chunk.emit(OP.SEND, chunk.addConst(name), 0);
@@ -474,6 +474,13 @@ Compiler.prototype.compileChain = function(chunk) {
     // Bare [ after expression
     if (t.type === T.LBRACK) {
       this.compileBlockOrCell(chunk);
+      chunk.emit(OP.SEND, chunk.addConst('call'), 1);
+      continue;
+    }
+
+    // Bare (expr) after expression — call with it
+    if (t.type === T.LPAREN) {
+      this.compileAtom(chunk);
       chunk.emit(OP.SEND, chunk.addConst('call'), 1);
       continue;
     }
@@ -851,7 +858,12 @@ VM.prototype._lookup = function(name, frame) {
 
 VM.prototype._send = function(msg, receiver, args, callerFrame) {
   if (msg === '?') {
-    return receiver.isTruthy() ? args[0] : args[1];
+    var chosen = receiver.isTruthy() ? args[0] : args[1];
+    // If the chosen branch is a zero-arg block, call it (lazy evaluation)
+    if (chosen instanceof Cell && chosen.block && chosen.block.params.length === 0) {
+      return this._callBlock(chosen, [], callerFrame.self, callerFrame);
+    }
+    return chosen;
   }
 
   if (msg === 'call') {
@@ -1236,9 +1248,9 @@ var EXAMPLES = {
 
   blocks: '-- Blocks (functions) and currying\nadd : [a, b | a + b]\nadd 3 4 say\ninc : add 1\ninc 41 say',
 
-  fizzbuzz: '-- FizzBuzz\n20 times [i |\n  (i % 15 = 0) ? "FizzBuzz" ((i % 3 = 0) ? "Fizz" ((i % 5 = 0) ? "Buzz" i)) say\n]',
+  fizzbuzz: '-- FizzBuzz\n20 times [i | (i % 15 = 0) ? "FizzBuzz" ((i % 3 = 0) ? "Fizz" ((i % 5 = 0) ? "Buzz" i)) say]',
 
-  fibonacci: '-- Fibonacci sequence\nfib : [n |\n  (n < 2) ? n ((fib (n - 1)) + (fib (n - 2)))\n]\n15 times [i | fib (i - 1) say]',
+  fibonacci: '-- Fibonacci sequence (recursive)\nfib : [n | (n < 2) ? n [| (fib (n - 1)) + (fib (n - 2))]]\n15 times [i | fib (i - 1) say]',
 
   filter: '-- Filter & Fold\nnums : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]\nevens : nums filter [n | n % 2 = 0]\nevens say\ntotal : nums fold [acc, x | acc + x]\ntotal say',
 
