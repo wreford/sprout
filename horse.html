@@ -408,8 +408,19 @@ function HorseDisplay(props) {
         {"🐴"}
       </div>
 
-      {/* Mood face */}
+      {/* Mood face indicator */}
       <div style={{position:"absolute",top:8,right:16,fontSize:"1.5rem",zIndex:2}}>{moodEmoji}</div>
+      {/* Mood indicator next to horse */}
+      {(function(){
+        var avg = (horse.hunger + horse.happiness + horse.energy + horse.clean) / 4;
+        var moodFace = avg >= 60 ? "\u{1F60A}" : avg >= 35 ? "\u{1F610}" : "\u{1F622}";
+        if (horse.sleeping) moodFace = "\u{1F634}";
+        return (
+          <div style={{position:"absolute",top:"40%",left:16,fontSize:"1.8rem",zIndex:2,filter:"drop-shadow(0 1px 2px rgba(0,0,0,0.3))"}}>
+            {moodFace}
+          </div>
+        );
+      })()}
 
       {/* Sleep Zzzs */}
       {horse.sleeping && (
@@ -661,8 +672,45 @@ function Game(props) {
   var [showShop, setShowShop] = useState(false);
   var [showMiniGame, setShowMiniGame] = useState(null);
   var [adventureResult, setAdventureResult] = useState(null);
+  var [musicMuted, setMusicMuted] = useState(false);
+  var [streak, setStreak] = useState(1);
+  var [welcomeMsg, setWelcomeMsg] = useState(null);
   var particleId = useRef(0);
   var weather = getSessionWeather();
+
+  // Start music and check streak/daily bonus on mount
+  useEffect(function() {
+    // Start background music
+    startBgMusic();
+
+    // Update streak
+    var currentStreak = updateStreak();
+    setStreak(currentStreak);
+
+    // Check daily bonus
+    var bonus = checkDailyBonus(horse);
+    if (bonus.earned) {
+      setHorse(function(h) {
+        var next = Object.assign({}, h);
+        next.coins = (next.coins || 0) + 5;
+        next.lastBonusDate = new Date().toDateString();
+        saveHorse(next);
+        return next;
+      });
+      setWelcomeMsg("Welcome back! +5 bonus coins! 🌟");
+      sndCoin();
+      setTimeout(function() { setWelcomeMsg(null); }, 4000);
+    }
+
+    return function() { stopBgMusic(); };
+  }, []);
+
+  // Adjust music volume based on sleeping state
+  useEffect(function() {
+    if (!bgMusic.muted) {
+      setBgMusicVolume(horse.sleeping ? bgMusic.baseVolume * 0.3 : bgMusic.baseVolume);
+    }
+  }, [horse.sleeping]);
 
   useEffect(function() {
     setQuote(getHorseQuote(getHorseMood(horse), horse.name));
@@ -847,7 +895,9 @@ function Game(props) {
         <span style={{fontFamily:"var(--font-mono)",fontSize:"1rem",fontWeight:800,color:"var(--brown)"}}>Lily's Horse</span>
         <span style={{fontSize:"0.6rem",fontFamily:"var(--font-mono)",color:"var(--dim)",marginLeft:4}}>Day {getDaysSurvived(horse) + 1}</span>
         <span style={{fontSize:"0.75rem",marginLeft:4}} title={weather.name}>{weather.emoji}</span>
+        <span style={{fontSize:"0.55rem",fontFamily:"var(--font-mono)",color:"var(--pink)",marginLeft:4}} title="Consecutive days visiting">{"🔥"} {streak}d</span>
         <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:8}}>
+          <button onClick={function(){ setMusicMuted(function(m){ var newM = !m; bgMusic.muted = newM; setBgMusicVolume(newM ? 0 : (horse.sleeping ? bgMusic.baseVolume * 0.3 : bgMusic.baseVolume)); return newM; }); }} style={{fontSize:"1rem",padding:"2px 6px",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg3)",cursor:"pointer",lineHeight:1}} title={musicMuted?"Unmute music":"Mute music"}>{musicMuted ? "🔇" : "🔊"}</button>
           <span style={{fontFamily:"var(--font-mono)",fontSize:"0.8rem",fontWeight:700,color:"var(--gold)"}}>🪙 {coins}</span>
           <button onClick={resetHorse} style={{fontSize:"0.6rem",padding:"3px 8px",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg3)",color:"var(--dim)",cursor:"pointer",fontFamily:"var(--font-mono)"}}>New Horse</button>
         </div>
@@ -857,6 +907,13 @@ function Game(props) {
       <div style={{textAlign:"center",padding:"4px 12px",fontSize:"0.7rem",color:"var(--dim)",background:"var(--bg2)",borderBottom:"1px solid var(--border)"}}>
         {weather.emoji} {weather.name} today! {weather.happinessBonus > 0 ? "+"+weather.happinessBonus+" happiness" : weather.happinessBonus < 0 ? weather.happinessBonus+" happiness" : ""} {weather.cleanBonus < 0 ? weather.cleanBonus+" clean" : ""} {weather.warmthBonus < 0 ? weather.warmthBonus+" warmth" : ""}
       </div>
+
+      {/* Welcome back / daily bonus message */}
+      {welcomeMsg && (
+        <div className="fade-in" style={{textAlign:"center",padding:"6px 12px",fontSize:"0.8rem",fontWeight:700,color:"var(--gold)",background:"linear-gradient(90deg,transparent,rgba(212,160,23,0.1),transparent)"}}>
+          {welcomeMsg}
+        </div>
+      )}
 
       {/* Horse display */}
       <div style={{background:"var(--bg2)",margin:"8px",borderRadius:16,overflow:"hidden",position:"relative",minHeight:180}}>
