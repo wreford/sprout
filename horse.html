@@ -91,9 +91,7 @@ var ACCESSORIES = [
 ];
 
 // ── Narration
-var narratorSpeaking = false;
 var lastNarrationTime = 0;
-var NARRATION_GAP = 4000;
 
 var NARRATIONS = {
   feed: [
@@ -133,26 +131,42 @@ var NARRATIONS = {
 };
 
 function narrate(action, horseName) {
-  if (narratorSpeaking) return;
-  var now = Date.now();
-  if (now - lastNarrationTime < NARRATION_GAP) return;
-  if (!window.speechSynthesis) return;
-  var lines = NARRATIONS[action];
-  if (!lines || lines.length === 0) return;
-  var text = lines[Math.floor(Math.random() * lines.length)];
-  text = text.replace(/\{name\}/g, horseName);
-  var utterance = new SpeechSynthesisUtterance(text);
-  utterance.rate = 0.95; utterance.pitch = 1.1; utterance.volume = 0.8;
-  utterance.onstart = function() { narratorSpeaking = true; };
-  utterance.onend = function() { narratorSpeaking = false; lastNarrationTime = Date.now(); };
-  utterance.onerror = function() { narratorSpeaking = false; };
-  window.speechSynthesis.speak(utterance);
+  try {
+    if (!window.speechSynthesis) return;
+    var now = Date.now();
+    if (now - lastNarrationTime < 4000) return;
+    lastNarrationTime = now;
+    var lines = NARRATIONS[action];
+    if (!lines || lines.length === 0) return;
+    var text = lines[Math.floor(Math.random() * lines.length)];
+    text = text.replace(/\{name\}/g, horseName);
+    try { speechSynthesis.cancel(); } catch(e) {}
+    setTimeout(function() {
+      try {
+        var utter = new SpeechSynthesisUtterance(text);
+        utter.rate = 0.95;
+        utter.pitch = 1.1;
+        utter.volume = 1.0;
+        var voices = speechSynthesis.getVoices();
+        if (voices && voices.length > 0) {
+          var voice = null;
+          for (var i = 0; i < voices.length; i++) {
+            var v = voices[i];
+            if (!v.lang || v.lang.indexOf('en') !== 0) continue;
+            if (!voice) voice = v;
+            if (v.name && (v.name.indexOf('Samantha') > -1 || v.name.indexOf('Female') > -1 ||
+                v.name.indexOf('Google') > -1 || v.name.indexOf('Karen') > -1)) {
+              voice = v; break;
+            }
+          }
+          if (voice) utter.voice = voice;
+        }
+        speechSynthesis.speak(utter);
+      } catch(e) {}
+    }, 60);
+  } catch(e) {}
 }
-
-if (window.speechSynthesis) {
-  window.speechSynthesis.getVoices();
-  window.speechSynthesis.onvoiceschanged = function() { window.speechSynthesis.getVoices(); };
-}
+if (window.speechSynthesis) { speechSynthesis.getVoices(); speechSynthesis.onvoiceschanged = function(){}; }
 
 // ── Days survived counter
 function getDaysSurvived(horse) {
