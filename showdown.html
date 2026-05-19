@@ -1275,8 +1275,15 @@ function startRound(){
   fightStarted=false;
   roundTimer=300*60; // 5 minutes
   // Set matchup tagline
-  var key1=p1.char.id+'_'+p2.char.id,key2=p2.char.id+'_'+p1.char.id;
-  matchupTagline=TAGLINES[key1]||TAGLINES[key2]||p1.char.name+' vs '+p2.char.name;
+  // Pick tagline from any interesting pair
+  matchupTagline='';
+  var f4=[p1,p2,p3,p4].filter(function(f){return f&&f.hp>0;});
+  for(var ti=0;ti<f4.length&&!matchupTagline;ti++){for(var tj=ti+1;tj<f4.length;tj++){
+    var tk1=f4[ti].char.id+'_'+f4[tj].char.id,tk2=f4[tj].char.id+'_'+f4[ti].char.id;
+    if(TAGLINES[tk1]){matchupTagline=TAGLINES[tk1];break;}
+    if(TAGLINES[tk2]){matchupTagline=TAGLINES[tk2];break;}
+  }}
+  if(!matchupTagline)matchupTagline=f4.map(function(f){return f.char.name;}).join(' vs ');
   introZoom=60;
   // Slide characters in from edges
   p1.x=-50;p2.x=W+50;
@@ -2796,7 +2803,7 @@ function update(){
   // Player 1 movement (AI in spectator mode)
   if(spectatorMode){
     if(p1.stunTimer>0){p1.stunTimer--;}
-    else{updateAI(p1,p2);}
+    else{var t1=nearestEnemy(p1);if(t1)updateAI(p1,t1);}
   }else if(p1.stunTimer>0){p1.stunTimer--;}
   else{
     var spd=p1.char.speed*SCALE*(p1.speedBoostTimer>0?2:1);
@@ -2829,24 +2836,24 @@ function update(){
           emojiPopups.push({x:p1.x,y:p1.y,text:'💨',life:25,vy:-1*SCALE});
         }
       }
-      p1.facing=p2.x>p1.x?1:-1;
+      var nearest1=nearestEnemy(p1);if(nearest1)p1.facing=nearest1.x>p1.x?1:-1;
     }
     // Aerial attack: punch/kick in air does more damage
-    if(input.punch&&input.kick&&Math.abs(p1.x-p2.x)<40*SCALE&&p1.grounded&&p2.stunTimer<=0){
-      // GRAB/THROW — punch+kick together when close
-      p2.x=p1.x+(-p1.facing)*80*SCALE;p2.vy=-8*SCALE;p2.grounded=false;p2.hp-=12;
-      p2.flashTimer=15;shakeTimer=12;sfxHeavyHit();
+    var grabTarget=nearestEnemy(p1);
+    if(input.punch&&input.kick&&grabTarget&&Math.abs(p1.x-grabTarget.x)<40*SCALE&&p1.grounded&&grabTarget.stunTimer<=0){
+      grabTarget.x=p1.x+(-p1.facing)*80*SCALE;grabTarget.vy=-8*SCALE;grabTarget.grounded=false;grabTarget.hp-=12;
+      grabTarget.flashTimer=15;shakeTimer=12;sfxHeavyHit();
       spawnParticles(p1.x,p1.y-50*SCALE,'#ff6b35',10);
-      dmgNumbers.push({x:p2.x,y:p2.y-70*SCALE,text:'THROW!',life:50,vy:-2*SCALE,big:true,color:'#ff6b35'});
+      dmgNumbers.push({x:grabTarget.x,y:grabTarget.y-70*SCALE,text:'THROW!',life:50,vy:-2*SCALE,big:true,color:'#ff6b35'});
       emojiPopups.push({x:p1.x,y:p1.y-90*SCALE,text:'🤜',life:30,vy:-1.5*SCALE});
-      speak('Grab! Throw!');
     }else if(input.punch&&input.down&&p1.grounded&&p1.state!=='attacking'){
       // UPPERCUT — down+punch = launcher
-      doAttack(p1,p2,'punch');
-      if(Math.abs(p1.x-p2.x)<70*SCALE){
-        p2.vy=-12*SCALE;p2.grounded=false;
-        dmgNumbers.push({x:p2.x,y:p2.y-80*SCALE,text:'UPPERCUT!',life:50,vy:-2*SCALE,big:true,color:'#ffcc00'});
-        emojiPopups.push({x:p2.x,y:p2.y-60*SCALE,text:'⬆️',life:30,vy:-3*SCALE});
+      var upTarget=nearestEnemy(p1);
+      if(upTarget)doAttack(p1,upTarget,'punch');
+      if(upTarget&&Math.abs(p1.x-upTarget.x)<70*SCALE){
+        upTarget.vy=-12*SCALE;upTarget.grounded=false;
+        dmgNumbers.push({x:upTarget.x,y:upTarget.y-80*SCALE,text:'UPPERCUT!',life:50,vy:-2*SCALE,big:true,color:'#ffcc00'});
+        emojiPopups.push({x:upTarget.x,y:upTarget.y-60*SCALE,text:'⬆️',life:30,vy:-3*SCALE});
         sfxHeavyHit();
       }
     }else if(input.kick&&input.down&&!p1.grounded){
