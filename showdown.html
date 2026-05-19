@@ -192,6 +192,9 @@ function sfxVictory(){[523,659,784,1047].forEach(function(f,i){setTimeout(functi
 function sfxPickup(){playTone(523,0.08,'sine',0.015);playTone(784,0.1,'sine',0.012);playTone(1047,0.12,'sine',0.01);}
 function sfxShoot(){playTone(600,0.1,'sawtooth',0.015);playTone(800,0.08,'sine',0.012);playNoise(0.05,0.008);}
 function sfxPowerUp(){playTone(400,0.1,'sine',0.015);playTone(600,0.1,'sine',0.012);playTone(800,0.1,'sine',0.01);playTone(1000,0.1,'sine',0.008);}
+function sfxHeavyHit(){playNoise(0.15,0.02);playTone(120,0.15,'square',0.018);playTone(80,0.2,'sine',0.012);setTimeout(function(){playNoise(0.05,0.01);},50);}
+function sfxCombo(n){playTone(300+n*80,0.06,'sine',0.015);playTone(400+n*80,0.05,'triangle',0.01);}
+function sfxDash(){playNoise(0.06,0.01);playTone(500,0.04,'sine',0.008);}
 
 // Background music — dynamic intensity
 var bgmInterval=null,bgmBeat=0,bgmTempo=150;
@@ -815,6 +818,7 @@ var vignetteAlpha=0.3;
 var slowMoTimer=0;
 var afterImages=[];
 var introZoom=0;
+var winStreak=0;
 var bgSigns=['COBRA KAI NEVER DIES','GO HECKS!','EMILY GILMORE FOR PRESIDENT','FREE COFFEE','SHIRTS ARE OPTIONAL - Axl','I READ DURING FIGHTS - Brick','AY JAY!','BITE MY SHINY METAL ASS','DINER > DOJO','SUE SUE HECK!','NO MERCY','WAX ON WAX OFF','COOL DAD CLUB','DAR APPROVED','*whisper* signs','CHANCLA NATION','FLANNEL POWER','TEAM JACKSON','PAGE 347','TOUCH THE ROCK','WE ALL FLOAT','THINK OUTSIDE THE BUN','HELLOOOO!','NEIGH!','I\'M IN DANGER'];
 var input={left:false,right:false,up:false,down:false,punch:false,kick:false,shoot:false,special:false};
 var lastInput={punch:false,kick:false,special:false};
@@ -1142,6 +1146,13 @@ function startRound(){
   var key1=p1.char.id+'_'+p2.char.id,key2=p2.char.id+'_'+p1.char.id;
   matchupTagline=TAGLINES[key1]||TAGLINES[key2]||p1.char.name+' vs '+p2.char.name;
   introZoom=60;
+  // Slide characters in from edges
+  p1.x=-50;p2.x=W+50;
+  var slideIn=setInterval(function(){
+    if(p1.x<W*0.3)p1.x+=W*0.02;
+    if(p2.x>W*0.7)p2.x-=W*0.02;
+    if(p1.x>=W*0.3&&p2.x<=W*0.7)clearInterval(slideIn);
+  },16);
   p1.hp=100;p1.meter=Math.min(p1.meter,50);p1.state='idle';p1.stateTimer=0;p1.stunTimer=0;p1.crouching=false;p1.speedBoostTimer=0;p1.counterActive=false;p1.invincibleTimer=0;p1.phaseTimer=0;p1.floatTimer=0;
   p2.hp=100;p2.meter=Math.min(p2.meter,50);p2.state='idle';p2.stateTimer=0;p2.stunTimer=0;p2.crouching=false;p2.speedBoostTimer=0;p2.counterActive=false;p2.invincibleTimer=0;p2.phaseTimer=0;p2.floatTimer=0;
   p1.x=W*0.3;p2.x=W*0.7;
@@ -2221,7 +2232,10 @@ function checkHit(attacker,defender){
     if(attacker.attackType==='punch')sfxPunch();
     else if(attacker.attackType==='kick')sfxKick();
     else sfxSpecial();
-    defender.x+=attacker.facing*(attacker.attackType==='special'?25:18)*SCALE;
+    var kb=attacker.attackType==='special'?25:18;
+    defender.x+=attacker.facing*kb*SCALE;
+    // Launch into air on big hits
+    if(dmg>=12&&defender.grounded){defender.vy=-4*SCALE;defender.grounded=false;}
   }
 
   // Kreese chokehold
@@ -2253,14 +2267,17 @@ function checkHit(attacker,defender){
   hitStopTimer=attacker.attackType==='special'?8:3;
   if(attacker.attackType==='special')slowMoTimer=20;
   dmgNumbers.push({x:defender.x+(Math.random()-0.5)*20*SCALE,y:defender.y-70*SCALE,text:'-'+dmg,life:50,vy:-2*SCALE,big:attacker.attackType==='special',color:isBlocking?'#8888ff':'#ff4444'});
-  if(dmg>=15){sfxCrowdOoh();emojiPopups.push({x:defender.x+(Math.random()-0.5)*30*SCALE,y:defender.y-80*SCALE,text:'💀',life:45,vy:-2*SCALE});}
+  if(dmg>=15){sfxHeavyHit();sfxCrowdOoh();emojiPopups.push({x:defender.x+(Math.random()-0.5)*30*SCALE,y:defender.y-80*SCALE,text:'💀',life:45,vy:-2*SCALE});}
   if(isBlocking){emojiPopups.push({x:defender.x,y:defender.y-70*SCALE,text:'🛡️',life:30,vy:-1.5*SCALE});}
   if(attacker.attackType==='special'){emojiPopups.push({x:attacker.x,y:attacker.y-90*SCALE,text:'💥',life:40,vy:-2*SCALE});}
+  if(attacker===p1&&comboCount>=2)sfxCombo(comboCount);
   if(attacker===p1){comboCount++;comboTimer=90;if(comboCount>=3)dmgNumbers.push({x:attacker.x,y:attacker.y-90*SCALE,text:comboCount+'x COMBO!',life:60,vy:-1.5*SCALE,big:true,color:'#f7c948'});}
   if(dmg>=15)dmgNumbers.push({x:defender.x,y:defender.y-95*SCALE,text:'CRITICAL!',life:50,vy:-1*SCALE,big:true,color:'#ff6b35'});
   crowdReaction=Math.min(10,crowdReaction+(attacker.attackType==='special'?6:3));
-  spawnParticles(defender.x+attacker.facing*(-10)*SCALE,defender.y-45*SCALE,'#ff6b35',attacker.attackType==='special'?16:8);
-  if(attacker.attackType==='special')spawnParticles(defender.x,defender.y-55*SCALE,'#f7c948',8);
+  spawnParticles(defender.x+attacker.facing*(-10)*SCALE,defender.y-45*SCALE,'#ff6b35',attacker.attackType==='special'?20:10);
+  if(attacker.attackType==='special'){spawnParticles(defender.x,defender.y-55*SCALE,'#f7c948',10);spawnParticles(defender.x,defender.y-35*SCALE,'#fff',5);}
+  // Extra impact particles for big hits
+  if(dmg>=12){spawnParticles(defender.x,defender.y-50*SCALE,'#fff',6);emojiPopups.push({x:defender.x+(Math.random()-0.5)*20*SCALE,y:defender.y-85*SCALE,text:'💥',life:30,vy:-2*SCALE});}
 
   var atkMeterBonus=(attacker.hp>0&&attacker.hp<=20)?20:10;
   var defMeterBonus=(defender.hp>0&&defender.hp<=20)?10:5;
@@ -2502,7 +2519,10 @@ function update(){
       var moving=false;
       if(input.left){p1.x-=spd;moving=true;}
       if(input.right){p1.x+=spd;moving=true;}
-      if(moving&&p1.grounded&&bgmBeat%4===0)sfxStep();
+      if(moving&&p1.grounded){
+        if(bgmBeat%4===0)sfxStep();
+        if(bgmBeat%6===0)spawnParticles(p1.x,p1.y,'#444',1);
+      }
       p1.crouching=input.down;
       // Jump + double jump with diagonal momentum
       if(input.up){
@@ -2690,8 +2710,8 @@ function update(){
   maybeAutoTaunt();
 
   // KO check
-  if(p1.hp<=0){endRound(p2,p1);}
-  else if(p2.hp<=0){endRound(p1,p2);}
+  if(p1.hp<=0){hitStopTimer=15;slowMoTimer=30;setTimeout(function(){endRound(p2,p1);},250);}
+  else if(p2.hp<=0){hitStopTimer=15;slowMoTimer=30;setTimeout(function(){endRound(p1,p2);},250);}
 }
 
 var screenFlash=0;
@@ -2741,6 +2761,11 @@ function doEndRoundLogic(winner,loser){
     setTimeout(function(){
       saveStats(winner.char.id,true);
       saveStats(loser.char.id,false);
+      if(winner===p1){winStreak++;
+        if(winStreak===3)setTimeout(function(){speak('Three wins in a row! Impressive!');},2000);
+        if(winStreak===5)setTimeout(function(){speak('FIVE WIN STREAK! You are UNSTOPPABLE!');},2000);
+        if(winStreak===10)setTimeout(function(){speak('TEN WINS! You are the GREATEST fighter in TV Showdown HISTORY!');},2000);
+      }else{winStreak=0;}
       if(tournamentMode&&winner===p1&&tournamentQueue.length>0){
         tournamentWins++;
         var nextIdx=tournamentQueue.shift();
@@ -3832,7 +3857,26 @@ function drawHUD(){
   ctx.strokeStyle=timerUrgent?'#ff4444':'#f7c948';ctx.lineWidth=2;
   ctx.beginPath();ctx.arc(W/2,barY+barH-8,16*SCALE,-Math.PI/2,-Math.PI/2+Math.PI*2*(timeLeft/25));ctx.stroke();
   ctx.font='bold '+Math.round(11*SCALE)+'px sans-serif';ctx.fillStyle='#888';
-  if(tournamentMode){ctx.textAlign='center';ctx.fillStyle='#f7c948';ctx.fillText('TOURNAMENT - Win '+(tournamentWins+1)+'/'+(CHARS.length-1),W/2,barY+barH+30);}
+  if(tournamentMode){ctx.textAlign='center';ctx.fillStyle='#f7c948';ctx.fillText('🏆 TOURNAMENT — Fight '+(tournamentWins+1)+'/'+(CHARS.length-1),W/2,barY+barH+30);}
+  // Combo counter (persistent, top-center when active)
+  if(comboCount>=2){
+    var comboSize=Math.min(30,14+comboCount*2);
+    ctx.textAlign='center';ctx.font='bold '+Math.round(comboSize*SCALE)+'px sans-serif';
+    ctx.fillStyle='rgba(0,0,0,0.5)';ctx.fillText(comboCount+'x',W/2+2,H*0.42+2);
+    var comboColor=comboCount>=10?'#ff4444':comboCount>=5?'#f7c948':'#ff6b35';
+    ctx.fillStyle=comboColor;ctx.globalAlpha=0.7+Math.sin(Date.now()*0.01)*0.3;
+    ctx.fillText(comboCount+'x',W/2,H*0.42);
+    ctx.font='bold '+Math.round(8*SCALE)+'px sans-serif';ctx.fillStyle='#fff';ctx.globalAlpha=0.5;
+    ctx.fillText('COMBO',W/2,H*0.42+14*SCALE);
+    ctx.globalAlpha=1;
+  }
+  // Win streak display
+  if(winStreak>=3){
+    ctx.textAlign='right';ctx.font='bold '+Math.round(9*SCALE)+'px monospace';
+    ctx.fillStyle='#f7c948';ctx.globalAlpha=0.6;
+    ctx.fillText('🔥 '+winStreak+' WIN STREAK',W-margin,barY+barH+30);
+    ctx.globalAlpha=1;
+  }
   // Matchup tagline at bottom of screen
   if(matchupTagline){
     ctx.globalAlpha=0.6;
