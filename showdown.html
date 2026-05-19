@@ -53,6 +53,8 @@ canvas{display:block;position:absolute;top:0;left:0;}
 #btnPunch:active{background:rgba(255,80,80,0.6);box-shadow:0 0 16px rgba(255,80,80,0.5);}
 #btnKick{background:rgba(80,150,255,0.3);border-color:rgba(80,150,255,0.5);}
 #btnKick:active{background:rgba(80,150,255,0.6);box-shadow:0 0 16px rgba(80,150,255,0.5);}
+#btnShoot{background:rgba(50,200,100,0.3);border-color:rgba(50,200,100,0.5);}
+#btnShoot:active{background:rgba(50,200,100,0.6);box-shadow:0 0 16px rgba(50,200,100,0.5);}
 #btnSpecial{background:rgba(255,200,50,0.2);border-color:rgba(255,200,50,0.3);}
 #btnSpecial.ready{background:rgba(255,200,50,0.5);border-color:#f7c948;box-shadow:0 0 20px rgba(255,200,50,0.5);animation:pulse 0.5s infinite alternate;}
 @keyframes pulse{from{box-shadow:0 0 12px rgba(255,200,50,0.4);}to{box-shadow:0 0 30px rgba(255,200,50,0.8);}}
@@ -110,6 +112,7 @@ canvas{display:block;position:absolute;top:0;left:0;}
   <div id="actionBtns">
     <div class="act-btn" id="btnPunch">👊</div>
     <div class="act-btn" id="btnKick">🦵</div>
+    <div class="act-btn" id="btnShoot" style="background:rgba(50,200,100,0.3);border-color:rgba(50,200,100,0.5)">💫</div>
     <div class="act-btn" id="btnSpecial">⚡</div>
   </div>
 </div>
@@ -180,6 +183,8 @@ function sfxLand(){playNoise(0.04,0.012);playTone(100,0.04,'square',0.008);}
 function sfxCrowdOoh(){playNoise(0.2,0.01);playTone(250,0.15,'sine',0.006);playTone(300,0.12,'sine',0.005);}
 function sfxVictory(){[523,659,784,1047].forEach(function(f,i){setTimeout(function(){playTone(f,0.25,'sine',0.015);},i*120);});}
 function sfxPickup(){playTone(523,0.08,'sine',0.015);playTone(784,0.1,'sine',0.012);playTone(1047,0.12,'sine',0.01);}
+function sfxShoot(){playTone(600,0.1,'sawtooth',0.015);playTone(800,0.08,'sine',0.012);playNoise(0.05,0.008);}
+function sfxPowerUp(){playTone(400,0.1,'sine',0.015);playTone(600,0.1,'sine',0.012);playTone(800,0.1,'sine',0.01);playTone(1000,0.1,'sine',0.008);}
 
 // Background music — dynamic intensity
 var bgmInterval=null,bgmBeat=0,bgmTempo=150;
@@ -474,11 +479,18 @@ var secretsUnlocked=true;
 var finisherFrame=0,finisherWinner=null,finisherLoser=null;
 var autoTauntTimer=0;
 var healthPickup=null,pickupTimer=0;
+var powerUpDrop=null,powerUpDropTimer=0;
+var POWERUPS=[
+  {id:'speed',emoji:'⚡',color:'#ffcc00',name:'SPEED BOOST',apply:function(f){f.speedBoostTimer=300;}},
+  {id:'damage',emoji:'💪',color:'#ff4444',name:'DAMAGE UP',apply:function(f){f.powerUp='damage';f.powerUpTimer=300;}},
+  {id:'meter',emoji:'🔋',color:'#44aaff',name:'METER FULL',apply:function(f){f.meter=100;}},
+  {id:'shield',emoji:'🛡️',color:'#44ff44',name:'SHIELD',apply:function(f){f.blanketShield=180;}}
+];
 var emojiPopups=[];
 var koSpin={active:false,x:0,y:0,angle:0,vy:0,char:null};
 var victoryDanceFrame=0;
 var bgSigns=['COBRA KAI NEVER DIES','GO HECKS!','EMILY GILMORE FOR PRESIDENT','FREE COFFEE','SHIRTS ARE OPTIONAL - Axl','I READ DURING FIGHTS - Brick','AY JAY!','BITE MY SHINY METAL ASS','DINER > DOJO','SUE SUE HECK!','NO MERCY','WAX ON WAX OFF','COOL DAD CLUB','DAR APPROVED','*whisper* signs','CHANCLA NATION','FLANNEL POWER','TEAM JACKSON','PAGE 347','TOUCH THE ROCK','WE ALL FLOAT','THINK OUTSIDE THE BUN','HELLOOOO!','NEIGH!','I\'M IN DANGER'];
-var input={left:false,right:false,up:false,down:false,punch:false,kick:false,special:false};
+var input={left:false,right:false,up:false,down:false,punch:false,kick:false,shoot:false,special:false};
 var lastInput={punch:false,kick:false,special:false};
 var bannerTimer=0,bannerText='';
 var commentaryTimer=0,commentaryText='';
@@ -689,7 +701,8 @@ function createFighter(charData,x,facing){
     speedBoostTimer:0,counterActive:false,
     invincibleTimer:0,phaseTimer:0,floatTimer:0,
     width:40*SCALE,height:90*SCALE,
-    flashTimer:0,
+    flashTimer:0,shootCooldown:0,doubleJump:false,airAttack:false,
+    powerUp:null,powerUpTimer:0,
     wins:0
   };
 }
@@ -1298,15 +1311,17 @@ function updateKeyboardInput(){
   input.down=!!keys['s'];
   if(keys['j']&&!lastInput.punch)input.punch=true;
   if(keys['k']&&!lastInput.kick)input.kick=true;
+  if(keys['i']&&!lastInput.shoot)input.shoot=true;
   if(keys['l']&&!lastInput.special)input.special=true;
   lastInput.punch=!!keys['j'];
   lastInput.kick=!!keys['k'];
+  lastInput.shoot=!!keys['i'];
   lastInput.special=!!keys['l'];
 }
 
 // Touch controls
 var touchDpad={left:false,right:false,up:false,down:false};
-var touchBtns={punch:false,kick:false,special:false};
+var touchBtns={punch:false,kick:false,shoot:false,special:false};
 var prevTouchBtns={punch:false,kick:false,special:false};
 
 function setupTouch(id,obj,key){
@@ -1324,6 +1339,7 @@ setupTouch('dLeft',touchDpad,'left');
 setupTouch('dRight',touchDpad,'right');
 setupTouch('btnPunch',touchBtns,'punch');
 setupTouch('btnKick',touchBtns,'kick');
+setupTouch('btnShoot',touchBtns,'shoot');
 setupTouch('btnSpecial',touchBtns,'special');
 
 function updateTouchInput(){
@@ -1333,9 +1349,11 @@ function updateTouchInput(){
   input.down=input.down||touchDpad.down;
   if(touchBtns.punch&&!prevTouchBtns.punch)input.punch=true;
   if(touchBtns.kick&&!prevTouchBtns.kick)input.kick=true;
+  if(touchBtns.shoot&&!prevTouchBtns.shoot)input.shoot=true;
   if(touchBtns.special&&!prevTouchBtns.special)input.special=true;
   prevTouchBtns.punch=touchBtns.punch;
   prevTouchBtns.kick=touchBtns.kick;
+  prevTouchBtns.shoot=touchBtns.shoot;
   prevTouchBtns.special=touchBtns.special;
 }
 
@@ -1380,7 +1398,12 @@ function updateAI(ai,target){
         ai.x-=dirToTarget*ai.char.speed*SCALE*0.5;
       }
     }
-    if(ai.grounded&&Math.random()<0.005)ai.vy=-(ai.char.jump||10)*SCALE;
+    if(ai.grounded&&Math.random()<0.008)ai.vy=-(ai.char.jump||10)*1.2*SCALE;
+    // AI shoots projectiles occasionally
+    if(ai.shootCooldown<=0&&Math.random()<0.01*aggressiveness){
+      ai.shootCooldown=60;sfxShoot();
+      projectiles.push({x:ai.x+ai.facing*25*SCALE,y:ai.y-45*SCALE,vx:ai.facing*8*SCALE,vy:0,dmg:8,owner:ai,life:80,type:'energy'});
+    }
     if(difficulty===2&&target.state==='attacking'&&!target.crouching&&Math.random()<0.1){
       ai.crouching=true;
       setTimeout(function(){ai.crouching=false;},500);
@@ -1801,6 +1824,10 @@ function checkHit(attacker,defender){
   }
   // Rage mode: 1.5x damage when below 20% HP
   if(attacker.hp>0&&attacker.hp<=20){dmg=Math.ceil(dmg*1.5);}
+  // Damage power-up: 2x damage
+  if(attacker.powerUp==='damage'){dmg=Math.ceil(dmg*2);}
+  // Aerial attack bonus: 1.5x
+  if(attacker.airAttack&&!attacker.grounded){dmg=Math.ceil(dmg*1.5);}
   defender.hp-=dmg;
   defender.flashTimer=15;
   shakeTimer=attacker.attackType==='special'?18:10;
@@ -2004,7 +2031,7 @@ function update(){
 
   if(comboTimer>0){comboTimer--;}else{comboCount=0;}
 
-  input.punch=false;input.kick=false;input.special=false;
+  input.punch=false;input.kick=false;input.shoot=false;input.special=false;
   updateKeyboardInput();
   updateTouchInput();
 
@@ -2028,11 +2055,23 @@ function update(){
       if(input.right){p1.x+=spd;moving=true;}
       if(moving&&p1.grounded&&bgmBeat%4===0)sfxStep();
       p1.crouching=input.down;
-      if(input.up&&p1.grounded){p1.vy=-(p1.char.jump||11)*SCALE;p1.grounded=false;sfxJump();}
+      // Jump + double jump
+      if(input.up){
+        if(p1.grounded){p1.vy=-(p1.char.jump||11)*1.2*SCALE;p1.grounded=false;p1.doubleJump=true;sfxJump();}
+        else if(p1.doubleJump){p1.vy=-(p1.char.jump||11)*0.8*SCALE;p1.doubleJump=false;sfxJump();spawnParticles(p1.x,p1.y,'#aaa',4);}
+      }
       p1.facing=p2.x>p1.x?1:-1;
     }
-    if(input.punch)doAttack(p1,p2,'punch');
-    if(input.kick)doAttack(p1,p2,'kick');
+    // Aerial attack: punch/kick in air does more damage
+    if(input.punch){if(!p1.grounded){doAttack(p1,p2,'punch');p1.airAttack=true;}else{doAttack(p1,p2,'punch');}}
+    if(input.kick){if(!p1.grounded){doAttack(p1,p2,'kick');p1.airAttack=true;}else{doAttack(p1,p2,'kick');}}
+    // Projectile button
+    if(input.shoot&&p1.shootCooldown<=0){
+      p1.shootCooldown=45;
+      sfxShoot();
+      projectiles.push({x:p1.x+p1.facing*25*SCALE,y:p1.y-45*SCALE,vx:p1.facing*8*SCALE,vy:0,dmg:8,owner:p1,life:80,type:'energy'});
+      spawnParticles(p1.x+p1.facing*20*SCALE,p1.y-45*SCALE,p1.char.color||'#ff6b35',5);
+    }
     if(input.special)doAttack(p1,p2,'special');
   }
 
@@ -2078,6 +2117,9 @@ function update(){
     if(f.speedBoostTimer>0)f.speedBoostTimer--;
     if(f.blanketShield&&f.blanketShield>0)f.blanketShield--;
     if(f.invincibleTimer&&f.invincibleTimer>0)f.invincibleTimer--;
+    if(f.shootCooldown>0)f.shootCooldown--;
+    if(f.powerUpTimer>0){f.powerUpTimer--;if(f.powerUpTimer<=0)f.powerUp=null;}
+    if(f.grounded)f.airAttack=false;
     if(f.phaseTimer&&f.phaseTimer>0)f.phaseTimer--;
     if(f.floatTimer&&f.floatTimer>0){f.floatTimer--;if(f.floatTimer<=0&&!f.grounded){f.vy=0;}}
   });
@@ -2147,6 +2189,30 @@ function update(){
         spawnParticles(healthPickup.x,healthPickup.y,'#44ff44',10);
         dmgNumbers.push({x:healthPickup.x,y:healthPickup.y-20,text:'+15 HP',life:50,vy:-2*SCALE,big:true,color:'#44ff44'});
         healthPickup=null;
+      }
+    });}
+  }
+
+  // Power-up drops
+  powerUpDropTimer++;
+  if(!powerUpDrop&&powerUpDropTimer>900&&Math.random()<0.02){
+    powerUpDropTimer=0;
+    var pu=POWERUPS[Math.floor(Math.random()*POWERUPS.length)];
+    var pux=W*0.15+Math.random()*W*0.7,puy=FLOOR_Y-10;
+    if(platforms.length>0&&Math.random()>0.5){var rpl=platforms[Math.floor(Math.random()*platforms.length)];pux=rpl.x+rpl.w/2;puy=rpl.y-10;}
+    powerUpDrop={x:pux,y:puy,life:480,pu:pu};
+  }
+  if(powerUpDrop){
+    powerUpDrop.life--;
+    if(powerUpDrop.life<=0){powerUpDrop=null;}
+    else{[p1,p2].forEach(function(f){
+      if(!powerUpDrop)return;
+      if(Math.abs(f.x-powerUpDrop.x)<30*SCALE&&Math.abs(f.y-powerUpDrop.y)<40*SCALE){
+        powerUpDrop.pu.apply(f);sfxPowerUp();
+        spawnParticles(powerUpDrop.x,powerUpDrop.y,powerUpDrop.pu.color,12);
+        dmgNumbers.push({x:powerUpDrop.x,y:powerUpDrop.y-20,text:powerUpDrop.pu.name,life:50,vy:-2*SCALE,big:true,color:powerUpDrop.pu.color});
+        emojiPopups.push({x:powerUpDrop.x,y:powerUpDrop.y-30,text:powerUpDrop.pu.emoji,life:40,vy:-2*SCALE});
+        powerUpDrop=null;
       }
     });}
   }
@@ -3282,6 +3348,17 @@ function drawProjectiles(){
       ctx.rotate(Date.now()*0.01);ctx.fillStyle='#cc8844';
       ctx.fillRect(-8*SCALE,-4*SCALE,16*SCALE,8*SCALE);
       ctx.fillStyle='#aa6633';ctx.fillRect(-6*SCALE,-2*SCALE,4*SCALE,4*SCALE);
+    }else if(pr.type==='energy'){
+      var ePulse=0.6+Math.sin(Date.now()*0.02)*0.4;
+      ctx.fillStyle='rgba(255,200,50,'+ePulse+')';
+      ctx.beginPath();ctx.arc(0,0,6*SCALE,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='rgba(255,255,200,0.8)';
+      ctx.beginPath();ctx.arc(0,0,3*SCALE,0,Math.PI*2);ctx.fill();
+      // Trail
+      ctx.globalAlpha=0.3;ctx.fillStyle='rgba(255,200,50,0.5)';
+      ctx.beginPath();ctx.arc(-pr.vx*0.3,0,4*SCALE,0,Math.PI*2);ctx.fill();
+      ctx.beginPath();ctx.arc(-pr.vx*0.6,0,2*SCALE,0,Math.PI*2);ctx.fill();
+      ctx.globalAlpha=1;
     }else if(pr.type==='coconut'){
       ctx.rotate(Date.now()*0.01);ctx.fillStyle='#8B6914';ctx.beginPath();ctx.arc(0,0,7*SCALE,0,Math.PI*2);ctx.fill();
       ctx.fillStyle='#6B4914';ctx.beginPath();ctx.arc(-2*SCALE,-2*SCALE,2*SCALE,0,Math.PI*2);ctx.fill();
@@ -3346,6 +3423,16 @@ function draw(){
         ctx.fillText('❤️',hpx,hpy);
         ctx.strokeStyle='rgba(50,255,50,'+(0.3+Math.sin(Date.now()*0.008)*0.2)+')';ctx.lineWidth=2;
         ctx.beginPath();ctx.arc(hpx,hpy-6,14*SCALE,0,Math.PI*2);ctx.stroke();
+        ctx.globalAlpha=1;ctx.textAlign='left';
+      }
+      // Power-up drop
+      if(powerUpDrop){
+        var pux2=powerUpDrop.x,puy2=powerUpDrop.y+Math.sin(Date.now()*0.006)*6;
+        ctx.globalAlpha=powerUpDrop.life<60?powerUpDrop.life/60:1;
+        ctx.font=Math.round(22*SCALE)+'px sans-serif';ctx.textAlign='center';
+        ctx.fillText(powerUpDrop.pu.emoji,pux2,puy2);
+        ctx.strokeStyle=powerUpDrop.pu.color;ctx.lineWidth=2;ctx.globalAlpha*=0.4+Math.sin(Date.now()*0.01)*0.2;
+        ctx.beginPath();ctx.arc(pux2,puy2-6,16*SCALE,0,Math.PI*2);ctx.stroke();
         ctx.globalAlpha=1;ctx.textAlign='left';
       }
       drawProjectiles();drawParticles();drawDmgNumbers();
