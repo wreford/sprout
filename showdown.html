@@ -1070,7 +1070,7 @@ function createFighter(charData,x,facing){
     speedBoostTimer:0,counterActive:false,
     invincibleTimer:0,phaseTimer:0,floatTimer:0,
     width:40*SCALE,height:90*SCALE,
-    flashTimer:0,shootCooldown:0,doubleJump:false,airAttack:false,
+    flashTimer:0,shootCooldown:0,doubleJump:false,airAttack:false,spinTimer:0,
     powerUp:null,powerUpTimer:0,
     wins:0
   };
@@ -1785,7 +1785,14 @@ function updateAI(ai,target){
         ai.x-=dirToTarget*ai.char.speed*SCALE*0.5;
       }
     }
-    if(ai.grounded&&Math.random()<0.008)ai.vy=-(ai.char.jump||10)*1.2*SCALE;
+    if(ai.grounded&&Math.random()<0.01){
+      ai.vy=-(ai.char.jump||10)*1.2*SCALE;ai.grounded=false;ai.doubleJump=true;
+      ai.x+=dirToTarget*3*SCALE;
+    }else if(!ai.grounded&&ai.doubleJump&&Math.random()<0.02){
+      ai.vy=-(ai.char.jump||10)*0.85*SCALE;ai.doubleJump=false;ai.spinTimer=20;
+      ai.x+=dirToTarget*4*SCALE;
+      spawnParticles(ai.x,ai.y,'#aaddff',4);
+    }
     // AI shoots projectiles occasionally
     if(ai.shootCooldown<=0&&Math.random()<0.01*aggressiveness){
       ai.shootCooldown=60;sfxShoot();
@@ -2486,10 +2493,25 @@ function update(){
       if(input.right){p1.x+=spd;moving=true;}
       if(moving&&p1.grounded&&bgmBeat%4===0)sfxStep();
       p1.crouching=input.down;
-      // Jump + double jump
+      // Jump + double jump with diagonal momentum
       if(input.up){
-        if(p1.grounded){p1.vy=-(p1.char.jump||11)*1.2*SCALE;p1.grounded=false;p1.doubleJump=true;sfxJump();}
-        else if(p1.doubleJump){p1.vy=-(p1.char.jump||11)*0.8*SCALE;p1.doubleJump=false;sfxJump();spawnParticles(p1.x,p1.y,'#aaa',4);}
+        var diagBoost=0;
+        if(input.left)diagBoost=-3*SCALE;
+        if(input.right)diagBoost=3*SCALE;
+        if(p1.grounded){
+          p1.vy=-(p1.char.jump||11)*1.2*SCALE;p1.grounded=false;p1.doubleJump=true;
+          if(diagBoost)p1.x+=diagBoost*2;
+          sfxJump();
+          spawnParticles(p1.x,p1.y,'#555',3);
+        }else if(p1.doubleJump){
+          p1.vy=-(p1.char.jump||11)*0.85*SCALE;p1.doubleJump=false;
+          if(diagBoost)p1.x+=diagBoost*3;
+          p1.spinTimer=20;
+          sfxJump();sfxStep();
+          spawnParticles(p1.x,p1.y,'#aaddff',6);
+          spawnParticles(p1.x,p1.y,'#fff',3);
+          emojiPopups.push({x:p1.x,y:p1.y,text:'💨',life:25,vy:-1*SCALE});
+        }
       }
       p1.facing=p2.x>p1.x?1:-1;
     }
@@ -2550,7 +2572,8 @@ function update(){
     if(f.invincibleTimer&&f.invincibleTimer>0)f.invincibleTimer--;
     if(f.shootCooldown>0)f.shootCooldown--;
     if(f.powerUpTimer>0){f.powerUpTimer--;if(f.powerUpTimer<=0)f.powerUp=null;}
-    if(f.grounded)f.airAttack=false;
+    if(f.grounded){f.airAttack=false;f.spinTimer=0;}
+    if(f.spinTimer>0)f.spinTimer--;
     // After-image trail on speed boost
     if(f.speedBoostTimer>0&&bgFrame%3===0){afterImages.push({x:f.x,y:f.y,char:f.char,facing:f.facing,life:12,cs:f.char.size||1});}
     if(f.phaseTimer&&f.phaseTimer>0)f.phaseTimer--;
@@ -3268,6 +3291,8 @@ function drawCharacter(f,isP1){
 
   ctx.translate(x,y+bob);
   if(walkLean)ctx.rotate(walkLean);
+  // Double jump spin
+  if(f.spinTimer>0)ctx.rotate((20-f.spinTimer)/20*Math.PI*2*f.facing);
   if(facing<0)ctx.scale(-1,1);
   ctx.scale(cs,cs);
   ctx.translate(0,(1-cs)*80*s);
@@ -3987,9 +4012,20 @@ function draw(){
         }
       }
       drawHUD();
-      // Draw finisher overlay
+      // Draw finisher overlay with ZOOM
       if(gameState==='finisher'&&finisherWinner&&FINISHERS[finisherWinner.char.id]){
+        // Zoom into the action during finisher
+        var fzoom=1+Math.min(finisherFrame/60,1)*0.5;
+        var fCx=(finisherWinner.x+finisherLoser.x)/2;
+        var fCy=(finisherWinner.y+finisherLoser.y)/2-40*SCALE;
+        ctx.save();
+        ctx.translate(fCx,fCy);ctx.scale(fzoom,fzoom);ctx.translate(-fCx,-fCy);
+        // Letterbox bars for cinematic feel
+        ctx.fillStyle='#000';
+        var barH2=Math.min(finisherFrame,30)*H*0.003;
+        ctx.fillRect(-W,-H,W*3,barH2);ctx.fillRect(-W,H-barH2,W*3,barH2+H);
         FINISHERS[finisherWinner.char.id](ctx,finisherWinner,finisherLoser,SCALE,W,H,finisherFrame);
+        ctx.restore();
       }
     }
     ctx.restore();
