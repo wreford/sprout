@@ -1831,7 +1831,12 @@ function updateAI(ai,target){
       ai.state='walking';
     }else if(dist>50*SCALE){
       if(Math.random()<reactChance*aggressiveness){
-        doAttack(ai,target,Math.random()>0.4?'punch':'kick');
+        var atkChoice=Math.random();
+        if(atkChoice<0.15&&ai.grounded){
+          // AI uppercut
+          doAttack(ai,target,'punch');
+          if(Math.abs(ai.x-target.x)<70*SCALE){target.vy=-12*SCALE;target.grounded=false;sfxHeavyHit();}
+        }else{doAttack(ai,target,atkChoice>0.5?'punch':'kick');}
       }else if(Math.random()<0.02){
         if(ai.grounded){ai.vy=-(ai.char.jump||10)*SCALE;ai.grounded=false;}
       }else{
@@ -1851,6 +1856,10 @@ function updateAI(ai,target){
       ai.vy=-(ai.char.jump||10)*0.85*SCALE;ai.doubleJump=false;ai.spinTimer=20;
       ai.x+=dirToTarget*4*SCALE;
       spawnParticles(ai.x,ai.y,'#aaddff',4);
+    }else if(!ai.grounded&&dist<60*SCALE&&ai.y<target.y&&Math.random()<0.03){
+      // AI ground pound
+      ai.vy=15*SCALE;ai.state='attacking';ai.attackType='kick';ai.attackDur=20;ai.attackFrame=0;ai.hitDealt=false;ai.airAttack=true;
+      spawnParticles(ai.x,ai.y,'#ff4444',4);
     }
     // AI shoots projectiles occasionally
     if(ai.shootCooldown<=0&&Math.random()<0.01*aggressiveness){
@@ -2586,13 +2595,35 @@ function update(){
       p1.facing=p2.x>p1.x?1:-1;
     }
     // Aerial attack: punch/kick in air does more damage
-    if(input.punch){if(!p1.grounded){doAttack(p1,p2,'punch');p1.airAttack=true;}else{doAttack(p1,p2,'punch');}}
-    if(input.kick){if(!p1.grounded){doAttack(p1,p2,'kick');p1.airAttack=true;}else{doAttack(p1,p2,'kick');}}
+    if(input.punch&&input.kick&&Math.abs(p1.x-p2.x)<40*SCALE&&p1.grounded&&p2.stunTimer<=0){
+      // GRAB/THROW — punch+kick together when close
+      p2.x=p1.x+(-p1.facing)*80*SCALE;p2.vy=-8*SCALE;p2.grounded=false;p2.hp-=12;
+      p2.flashTimer=15;shakeTimer=12;sfxHeavyHit();
+      spawnParticles(p1.x,p1.y-50*SCALE,'#ff6b35',10);
+      dmgNumbers.push({x:p2.x,y:p2.y-70*SCALE,text:'THROW!',life:50,vy:-2*SCALE,big:true,color:'#ff6b35'});
+      emojiPopups.push({x:p1.x,y:p1.y-90*SCALE,text:'🤜',life:30,vy:-1.5*SCALE});
+      speak('Grab! Throw!');
+    }else if(input.punch&&input.down&&p1.grounded&&p1.state!=='attacking'){
+      // UPPERCUT — down+punch = launcher
+      doAttack(p1,p2,'punch');
+      if(Math.abs(p1.x-p2.x)<70*SCALE){
+        p2.vy=-12*SCALE;p2.grounded=false;
+        dmgNumbers.push({x:p2.x,y:p2.y-80*SCALE,text:'UPPERCUT!',life:50,vy:-2*SCALE,big:true,color:'#ffcc00'});
+        emojiPopups.push({x:p2.x,y:p2.y-60*SCALE,text:'⬆️',life:30,vy:-3*SCALE});
+        sfxHeavyHit();
+      }
+    }else if(input.kick&&input.down&&!p1.grounded){
+      // GROUND POUND — down+kick in air = slam down
+      p1.vy=15*SCALE;p1.state='attacking';p1.attackType='kick';p1.attackDur=20;p1.attackFrame=0;p1.hitDealt=false;p1.airAttack=true;
+      spawnParticles(p1.x,p1.y,'#ff4444',6);
+      emojiPopups.push({x:p1.x,y:p1.y,text:'⬇️',life:25,vy:2*SCALE});
+    }else if(input.punch){if(!p1.grounded){doAttack(p1,p2,'punch');p1.airAttack=true;}else{doAttack(p1,p2,'punch');}}
+    else if(input.kick){if(!p1.grounded){doAttack(p1,p2,'kick');p1.airAttack=true;}else{doAttack(p1,p2,'kick');}}
     // Projectile button
     if(input.shoot&&p1.shootCooldown<=0){
-      p1.shootCooldown=45;
+      p1.shootCooldown=40;
       sfxShoot();
-      projectiles.push({x:p1.x+p1.facing*25*SCALE,y:p1.y-45*SCALE,vx:p1.facing*8*SCALE,vy:0,dmg:8,owner:p1,life:80,type:'energy'});
+      projectiles.push({x:p1.x+p1.facing*25*SCALE,y:p1.y-45*SCALE,vx:p1.facing*9*SCALE,vy:0,dmg:8,owner:p1,life:80,type:'energy'});
       spawnParticles(p1.x+p1.facing*20*SCALE,p1.y-45*SCALE,p1.char.color||'#ff6b35',5);
     }
     if(input.special)doAttack(p1,p2,'special');
@@ -2617,6 +2648,19 @@ function update(){
       if(f.y>=FLOOR_Y){
         f.y=FLOOR_Y;f.vy=0;f.grounded=true;f.onPlatform=-1;
         sfxLand();spawnParticles(f.x-15*SCALE,f.y,'#555',3);spawnParticles(f.x+15*SCALE,f.y,'#555',3);
+        // Ground pound landing impact
+        if(f.airAttack&&f.attackType==='kick'&&f.state==='attacking'){
+          var target2=f===p1?p2:p1;
+          if(Math.abs(f.x-target2.x)<80*SCALE){
+            target2.hp-=15;target2.flashTimer=15;target2.vy=-6*SCALE;target2.grounded=false;
+            shakeTimer=15;sfxHeavyHit();
+            spawnParticles(f.x,f.y,'#ff4444',15);spawnParticles(f.x,f.y,'#ffcc00',8);
+            dmgNumbers.push({x:target2.x,y:target2.y-70*SCALE,text:'GROUND POUND!',life:50,vy:-2*SCALE,big:true,color:'#ff4444'});
+            emojiPopups.push({x:f.x,y:f.y-20*SCALE,text:'💥',life:35,vy:-2*SCALE});
+          }
+          // Always spawn impact dust
+          for(var di=0;di<8;di++){spawnParticles(f.x+(Math.random()-0.5)*60*SCALE,f.y,'#888',2);}
+        }
         if(f.jacksonPounce){
           f.jacksonPounce=false;
           var t=f===p1?p2:p1;
@@ -2664,21 +2708,37 @@ function update(){
   if(p1.state==='attacking')checkHit(p1,p2);
   if(p2.state==='attacking')checkHit(p2,p1);
 
+  // Projectile vs projectile clash
+  for(var i=projectiles.length-1;i>=0;i--){
+    for(var j=i-1;j>=0;j--){
+      var a=projectiles[i],b=projectiles[j];
+      if(!a||!b)continue;
+      if(a.owner!==b.owner&&Math.abs(a.x-b.x)<20*SCALE&&Math.abs(a.y-b.y)<20*SCALE){
+        spawnParticles((a.x+b.x)/2,(a.y+b.y)/2,'#fff',12);
+        spawnParticles((a.x+b.x)/2,(a.y+b.y)/2,'#ffcc00',8);
+        emojiPopups.push({x:(a.x+b.x)/2,y:(a.y+b.y)/2-20*SCALE,text:'💫',life:30,vy:-2*SCALE});
+        sfxBlock();shakeTimer=5;
+        projectiles.splice(i,1);if(j<projectiles.length)projectiles.splice(j,1);
+        break;
+      }
+    }
+  }
   // Projectiles
   for(var i=projectiles.length-1;i>=0;i--){
     var pr=projectiles[i];
     pr.x+=pr.vx;pr.y+=pr.vy;pr.life--;
     if(pr.life<=0){projectiles.splice(i,1);continue;}
     var target=pr.owner===p1?p2:p1;
-    // Phase/invincible check
     if(target.phaseTimer&&target.phaseTimer>0)continue;
     if(target.invincibleTimer&&target.invincibleTimer>0)continue;
+    if(target.blanketShield&&target.blanketShield>0){spawnParticles(pr.x,pr.y,'#4488ff',6);sfxBlock();projectiles.splice(i,1);continue;}
     if(Math.abs(pr.x-target.x)<40*SCALE&&Math.abs(pr.y-(target.y-45*SCALE))<50*SCALE){
       target.hp-=pr.dmg;target.flashTimer=15;shakeTimer=12;
       target.meter=Math.min(100,target.meter+5);
       pr.owner.meter=Math.min(100,pr.owner.meter+10);
-      spawnParticles(pr.x,pr.y,'#ff6b35',8);
-      sfxPunch();
+      spawnParticles(pr.x,pr.y,'#ff6b35',10);
+      if(pr.dmg>=12)sfxHeavyHit();else sfxPunch();
+      dmgNumbers.push({x:pr.x,y:pr.y-15*SCALE,text:'-'+pr.dmg,life:40,vy:-2*SCALE,big:false,color:'#ff4444'});
       if(pr.stuns)target.stunTimer=60;
       if(target.hp<0)target.hp=0;
       projectiles.splice(i,1);
