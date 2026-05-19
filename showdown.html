@@ -878,7 +878,10 @@ STAGE_BG['Slenderman']={sky1:'#020202',sky2:'#080808',floor:'#0a0a0a',accent:'#4
 var canvas,ctx,W,H,FLOOR_Y,SCALE;
 var gameState='title'; // title,select,fight,victory,roundEnd,finisher
 var selectedChar=null,difficulty=0;
-var p1=null,p2=null;
+var p1=null,p2=null,p3=null,p4=null;
+function allFighters(){var a=[];if(p1&&p1.hp>0)a.push(p1);if(p2&&p2.hp>0)a.push(p2);if(p3&&p3.hp>0)a.push(p3);if(p4&&p4.hp>0)a.push(p4);return a;}
+function aliveFighters(){return[p1,p2,p3,p4].filter(function(f){return f&&f.hp>0;});}
+function nearestEnemy(me){var best=null,bestD=99999;[p1,p2,p3,p4].forEach(function(f){if(!f||f===me||f.hp<=0)return;var d=Math.abs(f.x-me.x);if(d<bestD){bestD=d;best=f;}});return best;}
 var round=1,p1Rounds=0,p2Rounds=0,roundTimer=0;
 var shakeTimer=0,shakeX=0,shakeY=0;
 var hitStopTimer=0;
@@ -1208,10 +1211,12 @@ function startGame(){
   showScreen(null);
   document.getElementById('controls').style.display='block';
   document.getElementById('btnShoot').textContent=PROJ_EMOJI[CHARS[selectedChar].id]||'💫';
-  var aiIdx;
-  do{aiIdx=Math.floor(Math.random()*CHARS.length);}while(aiIdx===selectedChar);
-  p1=createFighter(CHARS[selectedChar],W*0.3,1);
-  p2=createFighter(CHARS[aiIdx],W*0.7,-1);
+  var used=[selectedChar];
+  function randChar(){var idx;do{idx=Math.floor(Math.random()*CHARS.length);}while(used.indexOf(idx)>-1);used.push(idx);return idx;}
+  p1=createFighter(CHARS[selectedChar],W*0.2,1);
+  p2=createFighter(CHARS[randChar()],W*0.4,-1);
+  p3=createFighter(CHARS[randChar()],W*0.6,1);
+  p4=createFighter(CHARS[randChar()],W*0.8,-1);
   round=1;p1Rounds=0;p2Rounds=0;
   particles=[];projectiles=[];
   autoTauntTimer=0;
@@ -1240,13 +1245,15 @@ function startSpectator(){
   initAudio();spectatorMode=true;spectatorKills=0;tournamentMode=false;
   gameState='fight';showScreen(null);
   document.getElementById('controls').style.display='none';
-  var i1=Math.floor(Math.random()*CHARS.length),i2;
-  do{i2=Math.floor(Math.random()*CHARS.length);}while(i2===i1);
-  p1=createFighter(CHARS[i1],W*0.3,1);
-  p2=createFighter(CHARS[i2],W*0.7,-1);
+  var used2=[];
+  function rc2(){var idx;do{idx=Math.floor(Math.random()*CHARS.length);}while(used2.indexOf(idx)>-1);used2.push(idx);return idx;}
+  p1=createFighter(CHARS[rc2()],W*0.2,1);
+  p2=createFighter(CHARS[rc2()],W*0.4,-1);
+  p3=createFighter(CHARS[rc2()],W*0.6,1);
+  p4=createFighter(CHARS[rc2()],W*0.8,-1);
   round=1;p1Rounds=0;p2Rounds=0;particles=[];projectiles=[];
-  showBanner('👁️ SPECTATOR MODE',100);
-  speak('Spectator mode! Sit back and watch the chaos!');
+  showBanner('👁️ 4-PLAYER CHAOS!',100);
+  speak('Spectator mode! 4 fighters! Sit back and watch the chaos!');
   setTimeout(function(){startRound();},1500);
 }
 
@@ -1285,12 +1292,16 @@ function startRound(){
   particles=[];projectiles=[];dmgNumbers=[];
   autoTauntTimer=0;
   platforms=[
-    {x:W*0.2,y:FLOOR_Y-100*SCALE,w:80*SCALE,h:8*SCALE},
-    {x:W*0.5-40*SCALE,y:FLOOR_Y-140*SCALE,w:80*SCALE,h:8*SCALE},
-    {x:W*0.8-80*SCALE,y:FLOOR_Y-100*SCALE,w:80*SCALE,h:8*SCALE}
+    {x:W*0.1,y:FLOOR_Y-80*SCALE,w:70*SCALE,h:8*SCALE},
+    {x:W*0.3,y:FLOOR_Y-130*SCALE,w:70*SCALE,h:8*SCALE},
+    {x:W*0.5-35*SCALE,y:FLOOR_Y-170*SCALE,w:70*SCALE,h:8*SCALE},
+    {x:W*0.7-70*SCALE,y:FLOOR_Y-130*SCALE,w:70*SCALE,h:8*SCALE},
+    {x:W*0.9-70*SCALE,y:FLOOR_Y-80*SCALE,w:70*SCALE,h:8*SCALE}
   ];
   crowdReaction=0;
-  showBanner(p1.char.emoji+' VS '+p2.char.emoji,60);
+  [p1,p2,p3,p4].forEach(function(f){if(f)f.koHandled=false;});
+  var vsText=[p1,p2,p3,p4].filter(function(f){return f&&f.hp>0;}).map(function(f){return f.char.emoji;}).join(' vs ');
+  showBanner(vsText,60);
   setTimeout(function(){showBanner('FIGHT!',50);},1000);
   sfxGong();
   if(round===1){
@@ -2844,12 +2855,16 @@ function update(){
     if(input.special)doAttack(p1,p2,'special');
   }
 
-  // Player 2 AI
-  if(p2.stunTimer>0){p2.stunTimer--;}
-  else{updateAI(p2,p1);}
+  // AI for p2, p3, p4 (and p1 in spectator mode is handled above)
+  [p2,p3,p4].forEach(function(ai){
+    if(!ai||ai.hp<=0)return;
+    if(ai.stunTimer>0){ai.stunTimer--;}
+    else{var tgt=nearestEnemy(ai);if(tgt)updateAI(ai,tgt);}
+  });
 
-  // Physics for both
-  [p1,p2].forEach(function(f){
+  // Physics for all fighters
+  [p1,p2,p3,p4].forEach(function(f){
+    if(!f||f.hp<=0)return;
     if(!f.grounded){
       f.vy+=0.6*SCALE;f.y+=f.vy;
       if(f.vy>0){
@@ -2911,17 +2926,22 @@ function update(){
     if(f.floatTimer&&f.floatTimer>0){f.floatTimer--;if(f.floatTimer<=0&&!f.grounded){f.vy=0;}}
   });
 
-  // Prevent overlap
-  var overlap=60*SCALE-Math.abs(p1.x-p2.x);
-  if(overlap>0){
-    var push=overlap/2;
-    if(p1.x<p2.x){p1.x-=push;p2.x+=push;}
-    else{p1.x+=push;p2.x-=push;}
-  }
+  // Prevent overlap between all fighters
+  var allFight=[p1,p2,p3,p4];
+  for(var oi=0;oi<4;oi++){for(var oj=oi+1;oj<4;oj++){
+    var fa=allFight[oi],fb=allFight[oj];
+    if(!fa||!fb||fa.hp<=0||fb.hp<=0)continue;
+    var ov=50*SCALE-Math.abs(fa.x-fb.x);
+    if(ov>0){var pu=ov/2;if(fa.x<fb.x){fa.x-=pu;fb.x+=pu;}else{fa.x+=pu;fb.x-=pu;}}
+  }}
 
-  // Hit detection
-  if(p1.state==='attacking')checkHit(p1,p2);
-  if(p2.state==='attacking')checkHit(p2,p1);
+  // Hit detection — all fighters vs all others
+  var allF=[p1,p2,p3,p4];
+  for(var hi=0;hi<4;hi++){for(var hj=0;hj<4;hj++){
+    if(hi===hj)continue;
+    var a=allF[hi],d=allF[hj];
+    if(a&&d&&a.hp>0&&d.hp>0&&a.state==='attacking')checkHit(a,d);
+  }}
 
   // Projectile vs projectile clash
   for(var i=projectiles.length-1;i>=0;i--){
@@ -2943,21 +2963,25 @@ function update(){
     var pr=projectiles[i];
     pr.x+=pr.vx;pr.y+=pr.vy;pr.life--;
     if(pr.life<=0){projectiles.splice(i,1);continue;}
-    var target=pr.owner===p1?p2:p1;
-    if(target.phaseTimer&&target.phaseTimer>0)continue;
-    if(target.invincibleTimer&&target.invincibleTimer>0)continue;
-    if(target.blanketShield&&target.blanketShield>0){spawnParticles(pr.x,pr.y,'#4488ff',6);sfxBlock();projectiles.splice(i,1);continue;}
-    if(Math.abs(pr.x-target.x)<40*SCALE&&Math.abs(pr.y-(target.y-45*SCALE))<50*SCALE){
-      target.hp-=pr.dmg;target.flashTimer=15;shakeTimer=12;
-      target.meter=Math.min(100,target.meter+5);
-      pr.owner.meter=Math.min(100,pr.owner.meter+10);
-      spawnParticles(pr.x,pr.y,'#ff6b35',10);
-      if(pr.dmg>=12)sfxHeavyHit();else sfxPunch();
-      dmgNumbers.push({x:pr.x,y:pr.y-15*SCALE,text:'-'+pr.dmg,life:40,vy:-2*SCALE,big:false,color:'#ff4444'});
-      if(pr.stuns)target.stunTimer=60;
-      if(target.hp<0)target.hp=0;
-      projectiles.splice(i,1);
-    }
+    var prHit=false;
+    [p1,p2,p3,p4].forEach(function(target){
+      if(prHit||!target||target===pr.owner||target.hp<=0)return;
+      if(target.phaseTimer&&target.phaseTimer>0)return;
+      if(target.invincibleTimer&&target.invincibleTimer>0)return;
+      if(target.blanketShield&&target.blanketShield>0){spawnParticles(pr.x,pr.y,'#4488ff',6);sfxBlock();prHit=true;return;}
+      if(Math.abs(pr.x-target.x)<40*SCALE&&Math.abs(pr.y-(target.y-45*SCALE))<50*SCALE){
+        target.hp-=pr.dmg;target.flashTimer=15;shakeTimer=12;
+        target.meter=Math.min(100,target.meter+5);
+        pr.owner.meter=Math.min(100,pr.owner.meter+10);
+        spawnParticles(pr.x,pr.y,'#ff6b35',10);
+        if(pr.dmg>=12)sfxHeavyHit();else sfxPunch();
+        dmgNumbers.push({x:pr.x,y:pr.y-15*SCALE,text:'-'+pr.dmg,life:40,vy:-2*SCALE,big:false,color:'#ff4444'});
+        if(pr.stuns)target.stunTimer=60;
+        if(target.hp<0)target.hp=0;
+        prHit=true;
+      }
+    });
+    if(prHit){projectiles.splice(i,1);}
   }
 
   // Particles
@@ -3024,8 +3048,27 @@ function update(){
   maybeAutoTaunt();
 
   // KO check
-  if(p1.hp<=0){hitStopTimer=15;slowMoTimer=30;setTimeout(function(){endRound(p2,p1);},250);}
-  else if(p2.hp<=0){hitStopTimer=15;slowMoTimer=30;setTimeout(function(){endRound(p1,p2);},250);}
+  // KO check — find dead fighters, last alive wins
+  var alive=aliveFighters();
+  [p1,p2,p3,p4].forEach(function(f){
+    if(!f||f.hp>0||f.koHandled)return;
+    f.koHandled=true;
+    hitStopTimer=12;slowMoTimer=20;
+    spawnParticles(f.x,f.y-50*SCALE,'#ff4444',15);
+    koSpin={active:true,x:f.x,y:f.y-40*SCALE,angle:0,vy:-6*SCALE,vx:f.facing*(-3)*SCALE,char:f.char,timer:90};
+    sfxKO();screenFlash=10;
+    showDeathCaption();
+    var koEmojis=['💀','⭐','💫','😵'];
+    for(var ei2=0;ei2<3;ei2++){emojiPopups.push({x:f.x+(Math.random()-0.5)*40*SCALE,y:f.y-(50+Math.random()*30)*SCALE,text:koEmojis[Math.floor(Math.random()*koEmojis.length)],life:50,vy:(-1-Math.random()*2)*SCALE});}
+  });
+  alive=aliveFighters();
+  if(alive.length<=1&&!fightStarted)return;
+  if(alive.length<=1&&fightStarted){
+    fightStarted=false;stopBGM();
+    var winner=alive[0]||p1;
+    var loser=[p1,p2,p3,p4].filter(function(f){return f&&f!==winner;})[0]||p2;
+    setTimeout(function(){endRound(winner,loser);},300);
+  }
 }
 
 var screenFlash=0;
@@ -3078,17 +3121,24 @@ function doEndRoundLogic(winner,loser){
       // Spectator infinite mode — replace loser with new random fighter
       if(spectatorMode){
         spectatorKills++;
-        var newIdx;do{newIdx=Math.floor(Math.random()*CHARS.length);}while(CHARS[newIdx].id===winner.char.id||CHARS[newIdx].id===loser.char.id);
-        if(loser===p1){p1=createFighter(CHARS[newIdx],W*0.3,1);}
-        else{p2=createFighter(CHARS[newIdx],W*0.7,-1);}
-        winner.hp=Math.min(100,winner.hp+25);winner.meter=Math.min(50,winner.meter);
-        winner.state='idle';winner.stunTimer=0;winner.speedBoostTimer=0;
-        round=1;p1Rounds=0;p2Rounds=0;particles=[];projectiles=[];
+        // Replace ALL dead fighters with new ones
+        var usedIds=[p1,p2,p3,p4].filter(function(f){return f&&f.hp>0;}).map(function(f){return f.char.id;});
+        [['p1',0.2],['p2',0.4],['p3',0.6],['p4',0.8]].forEach(function(slot){
+          var f=eval(slot[0]);
+          if(f&&f.hp<=0){
+            var ni;do{ni=Math.floor(Math.random()*CHARS.length);}while(usedIds.indexOf(CHARS[ni].id)>-1);
+            usedIds.push(CHARS[ni].id);
+            var nf=createFighter(CHARS[ni],W*slot[1],Math.random()>0.5?1:-1);
+            if(slot[0]==='p1')p1=nf;else if(slot[0]==='p2')p2=nf;else if(slot[0]==='p3')p3=nf;else p4=nf;
+          }
+        });
+        // Heal survivors slightly
+        [p1,p2,p3,p4].forEach(function(f){if(f&&f.hp>0){f.hp=Math.min(100,f.hp+15);f.state='idle';f.stunTimer=0;f.koHandled=false;}});
+        round=1;p1Rounds=0;p2Rounds=0;
         gameState='fight';showScreen(null);
-        var newChar=CHARS[newIdx];
-        showBanner(newChar.emoji+' NEW CHALLENGER!',80);
-        speak('Kill '+spectatorKills+'! New challenger: '+newChar.name+'!');
-        setTimeout(function(){startRound();},2000);
+        showBanner('💀 Kill #'+spectatorKills+'!',60);
+        speak('Kill '+spectatorKills+'! New fighters entering!');
+        setTimeout(function(){fightStarted=true;startBGM();},1500);
         return;
       }
       if(winner===p1){winStreak++;
@@ -4396,11 +4446,18 @@ function drawCharacter(f,isP1){
 }
 
 function drawHUD(){
-  var barW=W*0.42;var barH=Math.max(32,36*SCALE);var barY=15;var margin=15;
-  drawHealthBar(margin,barY,barW,barH,p1.hp/p1.maxHp,p1.char.name,p1.char.emoji,true);
-  drawHealthBar(W-margin-barW,barY,barW,barH,p2.hp/p2.maxHp,p2.char.name,p2.char.emoji,false);
-  drawMeter(margin,barY+barH+8,barW*0.6,8*SCALE,p1.meter/100,'#f7c948');
-  drawMeter(W-margin-barW*0.6,barY+barH+8,barW*0.6,8*SCALE,p2.meter/100,'#f7c948');
+  var fighters=[p1,p2,p3,p4].filter(function(f){return f;});
+  var numF=fighters.length;
+  var barW=Math.min(W*0.22,(W-40)/numF-8);var barH=Math.max(22,24*SCALE);var barY=8;var margin=8;
+  fighters.forEach(function(f,i){
+    var bx=margin+i*(barW+6);
+    if(f.hp>0){
+      drawHealthBar(bx,barY,barW,barH,f.hp/f.maxHp,f.char.name,f.char.emoji,true);
+      drawMeter(bx,barY+barH+4,barW*0.7,5*SCALE,f.meter/100,'#f7c948');
+    }else{
+      ctx.globalAlpha=0.3;drawHealthBar(bx,barY,barW,barH,0,f.char.name,f.char.emoji,true);ctx.globalAlpha=1;
+    }
+  });
   var timeLeft=Math.ceil(roundTimer/60);
   var timerUrgent=timeLeft<=10;
   var timerSize=timerUrgent?Math.round(24*SCALE+Math.sin(Date.now()*0.01)*3):Math.round(20*SCALE);
@@ -4580,8 +4637,8 @@ function draw(){
     if(p1&&p2){
       // Floor reflections (subtle, upside down, faded)
       ctx.save();ctx.translate(0,FLOOR_Y*2);ctx.scale(1,-1);
-      ctx.globalAlpha=0.08;
-      drawCharacter(p1,true);drawCharacter(p2,false);
+      ctx.globalAlpha=0.06;
+      [p1,p2,p3,p4].forEach(function(f){if(f&&f.hp>0)drawCharacter(f,f===p1);});
       ctx.restore();ctx.globalAlpha=1;
       // After-images
       for(var ai2=afterImages.length-1;ai2>=0;ai2--){
@@ -4593,9 +4650,10 @@ function draw(){
         ctx.beginPath();ctx.ellipse(aim.x,aim.y-40*SCALE*acs,15*SCALE*acs,40*SCALE*acs,0,0,Math.PI*2);ctx.fill();
       }
       ctx.globalAlpha=1;
-      // Characters
-      if(p1.y>p2.y){drawCharacter(p2,false);drawCharacter(p1,true);}
-      else{drawCharacter(p1,true);drawCharacter(p2,false);}
+      // Draw all fighters sorted by Y (back to front)
+      var drawOrder=[p1,p2,p3,p4].filter(function(f){return f&&f.hp>0;});
+      drawOrder.sort(function(a,b){return a.y-b.y;});
+      drawOrder.forEach(function(f){drawCharacter(f,f===p1);});
       // Health pickup
       if(healthPickup){
         var hpx=healthPickup.x,hpy=healthPickup.y+Math.sin(Date.now()*0.005)*5;
