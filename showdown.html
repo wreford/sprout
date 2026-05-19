@@ -44,13 +44,9 @@ canvas{display:block;position:absolute;top:0;left:0;}
 #fightBtn{margin:8px 0 20px 0;}
 #controls{position:fixed;bottom:0;left:0;width:100%;display:none;z-index:50;pointer-events:none;}
 #controls>*{pointer-events:auto;}
-#dpad{position:fixed;bottom:20px;left:15px;width:clamp(120px,30vw,160px);height:clamp(120px,30vw,160px);}
-.dpad-btn{position:absolute;background:rgba(255,107,53,0.15);border:2px solid rgba(255,107,53,0.4);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:clamp(18px,4.5vw,24px);color:rgba(255,255,255,0.8);transition:background 0.05s;}
-.dpad-btn:active{background:rgba(255,107,53,0.5);border-color:rgba(255,107,53,0.8);box-shadow:0 0 12px rgba(255,107,53,0.4);}
-#dUp{top:0;left:50%;transform:translateX(-50%);width:40%;height:35%;}
-#dDown{bottom:0;left:50%;transform:translateX(-50%);width:40%;height:35%;}
-#dLeft{left:0;top:50%;transform:translateY(-50%);width:35%;height:40%;}
-#dRight{right:0;top:50%;transform:translateY(-50%);width:35%;height:40%;}
+#dpad{position:fixed;bottom:0;left:0;width:50%;height:50%;z-index:49;touch-action:none;}
+#joystickBase{position:fixed;display:none;width:100px;height:100px;border-radius:50%;border:3px solid rgba(255,107,53,0.3);background:rgba(255,107,53,0.06);z-index:51;pointer-events:none;transform:translate(-50%,-50%);}
+#joystickThumb{position:fixed;display:none;width:44px;height:44px;border-radius:50%;background:rgba(255,107,53,0.5);border:2px solid rgba(255,107,53,0.8);z-index:52;pointer-events:none;transform:translate(-50%,-50%);box-shadow:0 0 12px rgba(255,107,53,0.4);}
 #actionBtns{position:fixed;bottom:20px;right:15px;display:flex;flex-direction:column;gap:8px;align-items:center;}
 .act-btn{width:clamp(58px,15vw,74px);height:clamp(58px,15vw,74px);border-radius:50%;border:3px solid rgba(255,255,255,0.25);display:flex;align-items:center;justify-content:center;font-size:clamp(22px,5.5vw,30px);cursor:pointer;transition:transform 0.05s,box-shadow 0.1s;}
 .act-btn:active{transform:scale(0.9);}
@@ -136,12 +132,9 @@ canvas{display:block;position:absolute;top:0;left:0;}
   </div>
 </div>
 <div id="controls">
-  <div id="dpad">
-    <div class="dpad-btn" id="dUp">▲</div>
-    <div class="dpad-btn" id="dDown">▼</div>
-    <div class="dpad-btn" id="dLeft">◀</div>
-    <div class="dpad-btn" id="dRight">▶</div>
-  </div>
+  <div id="dpad"></div>
+  <div id="joystickBase"></div>
+  <div id="joystickThumb"></div>
   <div id="actionBtns">
     <div class="act-btn" id="btnPunch">👊</div>
     <div class="act-btn" id="btnKick">🦵</div>
@@ -2174,33 +2167,74 @@ function updateKeyboardInput(){
 }
 
 // Touch controls
-var touchDpad={left:false,right:false,up:false,down:false};
+// ==================== PUBG-STYLE FLOATING JOYSTICK ====================
+var joyBase=document.getElementById('joystickBase');
+var joyThumb=document.getElementById('joystickThumb');
+var joyActive=false,joyCx=0,joyCy=0,joyDx=0,joyDy=0,joyTouchId=null;
+var JOY_RADIUS=50,JOY_DEAD=12;
 var touchBtns={punch:false,kick:false,shoot:false,special:false};
-var prevTouchBtns={punch:false,kick:false,special:false};
+var prevTouchBtns={punch:false,kick:false,shoot:false,special:false};
 
-function setupTouch(id,obj,key){
-  var el=document.getElementById(id);
-  el.addEventListener('touchstart',function(e){e.preventDefault();obj[key]=true;initAudio();},{passive:false});
-  el.addEventListener('touchend',function(e){e.preventDefault();obj[key]=false;},{passive:false});
-  el.addEventListener('touchcancel',function(e){obj[key]=false;});
-  el.addEventListener('mousedown',function(e){e.preventDefault();obj[key]=true;initAudio();});
-  el.addEventListener('mouseup',function(e){e.preventDefault();obj[key]=false;});
-  el.addEventListener('mouseleave',function(e){obj[key]=false;});
+// Left half of screen = joystick zone
+document.getElementById('dpad').addEventListener('touchstart',function(e){
+  e.preventDefault();initAudio();
+  if(joyActive)return;
+  var t=e.changedTouches[0];
+  joyTouchId=t.identifier;
+  joyCx=t.clientX;joyCy=t.clientY;joyDx=0;joyDy=0;joyActive=true;
+  joyBase.style.display='block';joyBase.style.left=joyCx+'px';joyBase.style.top=joyCy+'px';
+  joyThumb.style.display='block';joyThumb.style.left=joyCx+'px';joyThumb.style.top=joyCy+'px';
+},{passive:false});
+document.addEventListener('touchmove',function(e){
+  if(!joyActive)return;
+  for(var i=0;i<e.changedTouches.length;i++){
+    var t=e.changedTouches[i];
+    if(t.identifier===joyTouchId){
+      var dx=t.clientX-joyCx,dy=t.clientY-joyCy;
+      var dist=Math.sqrt(dx*dx+dy*dy);
+      if(dist>JOY_RADIUS){dx=dx/dist*JOY_RADIUS;dy=dy/dist*JOY_RADIUS;}
+      joyDx=dx;joyDy=dy;
+      joyThumb.style.left=(joyCx+dx)+'px';joyThumb.style.top=(joyCy+dy)+'px';
+      break;
+    }
+  }
+},{passive:true});
+function endJoy(e){
+  for(var i=0;i<e.changedTouches.length;i++){
+    if(e.changedTouches[i].identifier===joyTouchId){
+      joyActive=false;joyDx=0;joyDy=0;joyTouchId=null;
+      joyBase.style.display='none';joyThumb.style.display='none';
+      break;
+    }
+  }
 }
-setupTouch('dUp',touchDpad,'up');
-setupTouch('dDown',touchDpad,'down');
-setupTouch('dLeft',touchDpad,'left');
-setupTouch('dRight',touchDpad,'right');
-setupTouch('btnPunch',touchBtns,'punch');
-setupTouch('btnKick',touchBtns,'kick');
-setupTouch('btnShoot',touchBtns,'shoot');
-setupTouch('btnSpecial',touchBtns,'special');
+document.addEventListener('touchend',endJoy);
+document.addEventListener('touchcancel',endJoy);
+
+// Action buttons (same as before but with setup helper)
+function setupBtn(id,key){
+  var el=document.getElementById(id);
+  el.addEventListener('touchstart',function(e){e.preventDefault();e.stopPropagation();touchBtns[key]=true;initAudio();},{passive:false});
+  el.addEventListener('touchend',function(e){e.preventDefault();e.stopPropagation();touchBtns[key]=false;},{passive:false});
+  el.addEventListener('touchcancel',function(){touchBtns[key]=false;});
+  el.addEventListener('mousedown',function(e){e.preventDefault();touchBtns[key]=true;initAudio();});
+  el.addEventListener('mouseup',function(){touchBtns[key]=false;});
+  el.addEventListener('mouseleave',function(){touchBtns[key]=false;});
+}
+setupBtn('btnPunch','punch');
+setupBtn('btnKick','kick');
+setupBtn('btnShoot','shoot');
+setupBtn('btnSpecial','special');
 
 function updateTouchInput(){
-  input.left=input.left||touchDpad.left;
-  input.right=input.right||touchDpad.right;
-  input.up=input.up||touchDpad.up;
-  input.down=input.down||touchDpad.down;
+  // Joystick → directional input
+  if(joyActive){
+    if(joyDx<-JOY_DEAD)input.left=true;
+    if(joyDx>JOY_DEAD)input.right=true;
+    if(joyDy<-JOY_DEAD)input.up=true;
+    if(joyDy>JOY_DEAD)input.down=true;
+  }
+  // Buttons
   if(touchBtns.punch&&!prevTouchBtns.punch)input.punch=true;
   if(touchBtns.kick&&!prevTouchBtns.kick)input.kick=true;
   if(touchBtns.shoot&&!prevTouchBtns.shoot)input.shoot=true;
