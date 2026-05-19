@@ -1520,26 +1520,27 @@ function startRound(){
   p1.y=FLOOR_Y;p2.y=FLOOR_Y;p1.vy=0;p2.vy=0;
   particles=[];projectiles=[];dmgNumbers=[];
   autoTauntTimer=0;
+  // Smash Bros inspired asymmetric platform layout
+  // Each platform has a life timer — disappears after 30s, respawns after 5s
+  var pw=SCALE,ph=8*SCALE;
   platforms=[
-    // Ground level stepping stones (4)
-    {x:W*0.02,y:FLOOR_Y-45*SCALE,w:65*SCALE,h:8*SCALE},
-    {x:W*0.25,y:FLOOR_Y-45*SCALE,w:65*SCALE,h:8*SCALE},
-    {x:W*0.75-65*SCALE,y:FLOOR_Y-45*SCALE,w:65*SCALE,h:8*SCALE},
-    {x:W*0.98-65*SCALE,y:FLOOR_Y-45*SCALE,w:65*SCALE,h:8*SCALE},
-    // Low tier (3)
-    {x:W*0.08,y:FLOOR_Y-95*SCALE,w:70*SCALE,h:8*SCALE},
-    {x:W*0.5-35*SCALE,y:FLOOR_Y-85*SCALE,w:70*SCALE,h:8*SCALE},
-    {x:W*0.92-70*SCALE,y:FLOOR_Y-95*SCALE,w:70*SCALE,h:8*SCALE},
-    // Mid tier (2)
-    {x:W*0.22,y:FLOOR_Y-140*SCALE,w:60*SCALE,h:8*SCALE},
-    {x:W*0.78-60*SCALE,y:FLOOR_Y-140*SCALE,w:60*SCALE,h:8*SCALE},
-    // Upper tier (2 — vertical walls on sides)
-    {x:W*0.04,y:FLOOR_Y-185*SCALE,w:50*SCALE,h:8*SCALE},
-    {x:W*0.96-50*SCALE,y:FLOOR_Y-185*SCALE,w:50*SCALE,h:8*SCALE},
-    // High mid (1)
-    {x:W*0.5-30*SCALE,y:FLOOR_Y-190*SCALE,w:60*SCALE,h:8*SCALE},
-    // Crown (1 tiny)
-    {x:W*0.5-25*SCALE,y:FLOOR_Y-240*SCALE,w:50*SCALE,h:8*SCALE}
+    // Main stage (wide, always present, no timer)
+    {x:W*0.15,y:FLOOR_Y-50*pw,w:W*0.7,h:ph,permanent:true},
+    // Left tower (staircase up)
+    {x:W*0.02,y:FLOOR_Y-100*pw,w:55*pw,h:ph,life:1800,maxLife:1800,respawn:0},
+    {x:W*0.08,y:FLOOR_Y-155*pw,w:50*pw,h:ph,life:1800,maxLife:1800,respawn:0},
+    {x:W*0.02,y:FLOOR_Y-210*pw,w:45*pw,h:ph,life:1800,maxLife:1800,respawn:0},
+    // Right tower (staircase up)
+    {x:W*0.98-55*pw,y:FLOOR_Y-100*pw,w:55*pw,h:ph,life:1800,maxLife:1800,respawn:0},
+    {x:W*0.92-50*pw,y:FLOOR_Y-155*pw,w:50*pw,h:ph,life:1800,maxLife:1800,respawn:0},
+    {x:W*0.98-45*pw,y:FLOOR_Y-210*pw,w:45*pw,h:ph,life:1800,maxLife:1800,respawn:0},
+    // Center floating (3 tiers)
+    {x:W*0.35,y:FLOOR_Y-120*pw,w:60*pw,h:ph,life:1800,maxLife:1800,respawn:0},
+    {x:W*0.65-60*pw,y:FLOOR_Y-120*pw,w:60*pw,h:ph,life:1800,maxLife:1800,respawn:0},
+    {x:W*0.42,y:FLOOR_Y-185*pw,w:55*pw,h:ph,life:1800,maxLife:1800,respawn:0},
+    {x:W*0.58-55*pw,y:FLOOR_Y-185*pw,w:55*pw,h:ph,life:1800,maxLife:1800,respawn:0},
+    // Crown (tiny, high)
+    {x:W*0.5-22*pw,y:FLOOR_Y-250*pw,w:44*pw,h:ph,life:1800,maxLife:1800,respawn:0}
   ];
   crowdReaction=0;
   [p1,p2,p3,p4].forEach(function(f){if(f)f.koHandled=false;});
@@ -3156,6 +3157,7 @@ function update(){
       if(f.vy>0){
         for(var pi=0;pi<platforms.length;pi++){
           var pl=platforms[pi];
+          if(pl.respawn&&pl.respawn>0)continue;
           if(f.x>pl.x&&f.x<pl.x+pl.w&&f.y>=pl.y&&f.y-f.vy<pl.y+2*SCALE){
             f.y=pl.y;f.vy=0;f.grounded=true;f.onPlatform=pi;break;
           }
@@ -3657,34 +3659,55 @@ function drawBackground(){
 
   if(crowdReaction>0)crowdReaction-=0.5;
 
-  // Middle platform drifts slowly
-  if(platforms.length>=3){
-    platforms[1].x=W*0.5-40*SCALE+Math.sin(bgFrame*0.008)*30*SCALE;
-  }
-
   for(var pi=0;pi<platforms.length;pi++){
     var pl=platforms[pi];
+    // Platform life cycle (skip permanent ones)
+    if(!pl.permanent){
+      if(pl.respawn>0){pl.respawn--;continue;}
+      if(pl.life!==undefined){
+        pl.life--;
+        if(pl.life<=0){
+          // Disappear — drop anyone standing on it
+          [p1,p2,p3,p4].forEach(function(f){if(f&&f.onPlatform===pi){f.grounded=false;f.onPlatform=-1;}});
+          pl.respawn=300; // 5 seconds to respawn
+          pl.life=pl.maxLife;
+          spawnParticles(pl.x+pl.w/2,pl.y,'#555',8);
+          continue;
+        }
+      }
+    }
+    // Fade warning when about to disappear (last 3 seconds)
+    var platAlpha=1;
+    if(!pl.permanent&&pl.life!==undefined&&pl.life<180){
+      platAlpha=0.3+Math.sin(Date.now()*0.015)*0.3+pl.life/180*0.4;
+    }
+    ctx.globalAlpha=platAlpha;
     // Underglow
-    ctx.globalAlpha=0.06;
-    var ug=ctx.createRadialGradient(pl.x+pl.w/2,pl.y+pl.h,0,pl.x+pl.w/2,pl.y+pl.h+30*SCALE,pl.w*0.6);
-    ug.addColorStop(0,'#ff6b35');ug.addColorStop(1,'transparent');
-    ctx.fillStyle=ug;ctx.fillRect(pl.x-20,pl.y+pl.h,pl.w+40,40*SCALE);
-    ctx.globalAlpha=1;
+    var ugA=0.06*platAlpha;ctx.globalAlpha=ugA;
+    var ug=ctx.createRadialGradient(pl.x+pl.w/2,pl.y+pl.h,0,pl.x+pl.w/2,pl.y+pl.h+25*SCALE,pl.w*0.5);
+    ug.addColorStop(0,pl.permanent?'#4488ff':'#ff6b35');ug.addColorStop(1,'transparent');
+    ctx.fillStyle=ug;ctx.fillRect(pl.x-15,pl.y+pl.h,pl.w+30,30*SCALE);
+    ctx.globalAlpha=platAlpha;
     // Platform body
+    var plColor1=pl.permanent?'#3a4a60':'#404060';
+    var plColor2=pl.permanent?'#2a3a50':'#2a2a45';
     var plGrad=ctx.createLinearGradient(pl.x,pl.y,pl.x,pl.y+pl.h);
-    plGrad.addColorStop(0,'#404060');plGrad.addColorStop(0.5,'#353555');plGrad.addColorStop(1,'#2a2a45');
+    plGrad.addColorStop(0,plColor1);plGrad.addColorStop(1,plColor2);
     ctx.fillStyle=plGrad;
     ctx.beginPath();ctx.roundRect(pl.x,pl.y,pl.w,pl.h,4);ctx.fill();
-    // Edge highlight
-    ctx.strokeStyle='rgba(255,200,100,0.25)';ctx.lineWidth=1;
+    // Top edge shine
+    ctx.strokeStyle=pl.permanent?'rgba(100,180,255,0.3)':'rgba(255,200,100,0.25)';ctx.lineWidth=1;
     ctx.beginPath();ctx.moveTo(pl.x+4,pl.y);ctx.lineTo(pl.x+pl.w-4,pl.y);ctx.stroke();
-    // Side glow
-    ctx.strokeStyle='rgba(255,107,53,0.2)';ctx.lineWidth=1;
+    // Border
+    ctx.strokeStyle=pl.permanent?'rgba(100,150,255,0.2)':'rgba(255,107,53,0.15)';ctx.lineWidth=1;
     ctx.beginPath();ctx.roundRect(pl.x,pl.y,pl.w,pl.h,4);ctx.stroke();
-    // Support chains
-    ctx.strokeStyle='#2a2a3a';ctx.lineWidth=2;
-    ctx.beginPath();ctx.moveTo(pl.x+8,pl.y+pl.h);ctx.lineTo(pl.x+8,pl.y+pl.h+15*SCALE);ctx.stroke();
-    ctx.beginPath();ctx.moveTo(pl.x+pl.w-8,pl.y+pl.h);ctx.lineTo(pl.x+pl.w-8,pl.y+pl.h+15*SCALE);ctx.stroke();
+    // Life indicator bar (thin line under platform showing remaining time)
+    if(!pl.permanent&&pl.life!==undefined&&pl.maxLife){
+      var lifeP=pl.life/pl.maxLife;
+      ctx.fillStyle=lifeP>0.3?'rgba(74,222,128,0.4)':lifeP>0.1?'rgba(255,200,50,0.5)':'rgba(255,50,50,0.6)';
+      ctx.fillRect(pl.x,pl.y+pl.h+1,pl.w*lifeP,2);
+    }
+    ctx.globalAlpha=1;
   }
 
   // ── CHARACTER-THEMED BACKGROUND OVERLAYS ──
