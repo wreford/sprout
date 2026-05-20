@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Deadline Doom Clock</title>
+<style>
+:root{--bg:#0f0f10;--bg2:#1a1a1c;--border:#2a2a2d;--text:#f0f0f0;--dim:#6e6e73;--accent:#ff6b35;--green:#4ade80}
+*{margin:0;box-sizing:border-box}body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;padding:12px;max-width:900px;margin:0 auto}
+a.home{color:var(--dim);text-decoration:none;font-size:14px}a.home:hover{color:var(--accent)}
+h1{font-size:1.4em;margin:8px 0 12px;color:var(--accent)}
+.tabs{display:flex;gap:4px;flex-wrap:wrap;margin:8px 0}.tab{background:var(--bg2);border:1px solid var(--border);color:var(--dim);padding:6px 14px;border-radius:6px;cursor:pointer;font-size:13px}
+.tab.active{background:var(--accent);color:var(--text);border-color:var(--accent)}.tab.add{color:var(--accent)}
+input,button{background:var(--bg2);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:14px}
+button{background:var(--accent);border:none;cursor:pointer;font-weight:600}button:hover{opacity:.85}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px;margin:8px 0}
+.countdown{font-size:3.2em;font-weight:900;text-align:center;font-variant-numeric:tabular-nums;letter-spacing:2px}
+.countdown span{display:inline-block;min-width:70px}.countdown .unit{font-size:12px;color:var(--dim);font-weight:400;display:block}
+.defcon{text-align:center;font-size:1.5em;font-weight:800;padding:10px;border-radius:8px;margin:8px 0}
+.quote{text-align:center;font-style:italic;color:var(--dim);font-size:14px;padding:10px;min-height:50px}
+.milestone{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px}
+.milestone .dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin:6px 0}
+.row label{font-size:12px;color:var(--dim)}
+.fs-btn{position:fixed;bottom:12px;right:12px;z-index:99;background:var(--bg2);border:1px solid var(--border);color:var(--dim);padding:6px 10px;border-radius:6px;cursor:pointer;font-size:12px}
+body.fullscreen{padding:0;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;max-width:100%}
+body.fullscreen .card,body.fullscreen .tabs,body.fullscreen .row,body.fullscreen h1,body.fullscreen a.home,body.fullscreen #milestones,body.fullscreen #audioToggle{display:none}
+body.fullscreen .countdown{font-size:6vw}body.fullscreen .defcon{font-size:3vw}body.fullscreen .quote{font-size:2vw}
+</style>
+</head>
+<body>
+<a class="home" href="index.html">&larr; home</a>
+<h1>Deadline Doom Clock</h1>
+<div class="tabs" id="tabs"></div>
+<div class="row">
+<label>Project<br><input id="pName" placeholder="Project name"></label>
+<label>Deadline<br><input id="pDate" type="datetime-local"></label>
+<button onclick="saveProject()">Save</button>
+<button style="background:var(--bg);border:1px solid var(--border)" onclick="delProject()">Del</button>
+<label id="audioToggle"><input type="checkbox" id="audioOn"> Audio alerts (last 24h)</label>
+</div>
+<div class="card"><div class="countdown" id="cd">--</div></div>
+<div class="defcon" id="defcon">DEFCON 5</div>
+<div class="quote" id="quote"></div>
+<div class="card" id="milestones">
+<h3 style="font-size:14px;margin-bottom:8px">Milestones</h3>
+<div id="msList"></div>
+<div class="row" style="margin-top:8px">
+<input id="msName" placeholder="Milestone name" style="flex:1">
+<input id="msDate" type="date" style="width:auto">
+<button onclick="addMilestone()">+ Add</button>
+</div>
+</div>
+<button class="fs-btn" onclick="toggleFS()">Fullscreen</button>
+<script>
+let projects=JSON.parse(localStorage.getItem('dd_projects')||'[]');
+let cur=0,audioCtx=null,lastBeep=0;
+const $=id=>document.getElementById(id);
+const quotes={
+far:["Plenty of time. Don't get cocky.","The journey of a thousand miles begins with a single permit.","Today's planning prevents tomorrow's panic.","You've got runway. Use it wisely."],
+mid:["The clock is ticking. Can you hear it?","Half the time is gone. Is half the work done?","Comfortable is the enemy of complete.","Momentum matters more than motivation now."],
+close:["Every hour counts now.","Sleep is optional. Delivery is not.","This is where heroes are made. Or blamed.","The light at the end of the tunnel might be a train."],
+imminent:["This is fine. Everything is fine.","Panic is just excitement without breathing.","You will remember this week forever.","The schedule has entered the chat."],
+past:["The deadline was not a suggestion.","Congratulations, you've entered the time debt zone.","Every day late costs more than the last.","Liquidated damages have entered the chat."]
+};
+
+function renderTabs(){
+  $('tabs').innerHTML=projects.map((p,i)=>`<div class="tab ${i===cur?'active':''}" onclick="cur=${i};load();renderTabs();renderMs()">${p.name||'Project '+(i+1)}</div>`).join('')+`<div class="tab add" onclick="addProject()">+ Add</div>`;
+}
+function addProject(){projects.push({name:'',deadline:'',milestones:[]});cur=projects.length-1;save();renderTabs();load();}
+function delProject(){if(projects.length<2)return;projects.splice(cur,1);cur=0;save();renderTabs();load();renderMs();}
+function saveProject(){if(!projects.length)addProject();projects[cur].name=$('pName').value;projects[cur].deadline=$('pDate').value;save();renderTabs();}
+function save(){localStorage.setItem('dd_projects',JSON.stringify(projects));}
+function load(){if(!projects.length)return;const p=projects[cur];$('pName').value=p.name||'';$('pDate').value=p.deadline||'';renderMs();}
+
+function addMilestone(){
+  const name=$('msName').value,date=$('msDate').value;if(!name||!date)return;
+  projects[cur].milestones.push({name,date});projects[cur].milestones.sort((a,b)=>a.date.localeCompare(b.date));
+  save();$('msName').value='';renderMs();
+}
+function delMs(i){projects[cur].milestones.splice(i,1);save();renderMs();}
+function renderMs(){
+  if(!projects.length){$('msList').innerHTML='';return;}
+  const now=new Date();
+  $('msList').innerHTML=(projects[cur].milestones||[]).map((m,i)=>{
+    const d=new Date(m.date),past=d<now,color=past?'#f87171':'var(--green)';
+    return`<div class="milestone"><div class="dot" style="background:${color}"></div><span>${m.name}</span><span style="color:var(--dim);margin-left:auto">${m.date}</span><span style="color:#f87171;cursor:pointer" onclick="delMs(${i})">x</span></div>`;
+  }).join('');
+}
+
+function tick(){
+  if(!projects.length||!projects[cur].deadline){$('cd').textContent='Set a deadline above';return;}
+  const now=new Date(),dl=new Date(projects[cur].deadline),diff=dl-now;
+  const past=diff<0,abs=Math.abs(diff);
+  const d=Math.floor(abs/864e5),h=Math.floor(abs%864e5/36e5),m=Math.floor(abs%36e5/6e4),s=Math.floor(abs%6e4/1e3);
+  $('cd').innerHTML=(past?'<span style="color:#f87171">OVERDUE </span>':'')+
+    `<span>${d}<span class="unit">days</span></span> <span>${h}<span class="unit">hrs</span></span> <span>${m}<span class="unit">min</span></span> <span>${s}<span class="unit">sec</span></span>`;
+
+  const totalDur=dl-new Date(projects[cur].deadline.split('T')[0].replace(/-\d+$/,'-01'));
+  const pct=past?1.1:1-(diff/(dl-Date.now()+diff+1));
+  const daysLeft=diff/864e5;
+
+  // DEFCON
+  let defcon,defconColor,defconBg;
+  if(past){defcon='DEFCON 0 — PAST DUE';defconColor='#f87171';defconBg='#7f1d1d';}
+  else if(daysLeft<1){defcon='DEFCON 1 — IMMINENT';defconColor='#f87171';defconBg='#7f1d1d';}
+  else if(daysLeft<7){defcon='DEFCON 2 — CRITICAL';defconColor='#fb923c';defconBg='#713f12';}
+  else if(daysLeft<30){defcon='DEFCON 3 — ELEVATED';defconColor='#fbbf24';defconBg='#422006';}
+  else if(daysLeft<90){defcon='DEFCON 4 — GUARDED';defconColor='#a3e635';defconBg='#1a2e05';}
+  else{defcon='DEFCON 5 — CHILL';defconColor='var(--green)';defconBg='#052e16';}
+  const el=$('defcon');el.textContent=defcon;el.style.color=defconColor;el.style.background=defconBg;
+
+  // Background shift
+  let bg;
+  if(past)bg='#1a0505';else if(daysLeft<1)bg='#1a0808';else if(daysLeft<7)bg='#1a1005';else if(daysLeft<30)bg='#151505';else bg='#0f0f10';
+  document.body.style.background=bg;
+
+  // Quote
+  let pool;if(past)pool=quotes.past;else if(daysLeft<1)pool=quotes.imminent;else if(daysLeft<7)pool=quotes.close;else if(daysLeft<30)pool=quotes.mid;else pool=quotes.far;
+  const qi=Math.floor(Date.now()/15000)%pool.length;
+  $('quote').textContent='"'+pool[qi]+'"';
+
+  // Audio alert last 24h
+  if($('audioOn').checked&&!past&&daysLeft<1){
+    const now2=Date.now();if(now2-lastBeep>36e5){lastBeep=now2;beep();}
+  }
+}
+
+function beep(){
+  if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+  const o=audioCtx.createOscillator(),g=audioCtx.createGain();
+  o.connect(g);g.connect(audioCtx.destination);o.frequency.value=880;g.gain.value=0.02;
+  o.start();o.stop(audioCtx.currentTime+0.15);
+}
+
+function toggleFS(){document.body.classList.toggle('fullscreen');}
+
+if(!projects.length)addProject();
+renderTabs();load();renderMs();
+setInterval(tick,1000);tick();
+</script>
+</body>
+</html>

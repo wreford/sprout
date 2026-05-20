@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Project Vibe Check</title>
+<style>
+:root{--bg:#0f0f10;--bg2:#1a1a1c;--border:#2a2a2d;--text:#f0f0f0;--dim:#6e6e73;--accent:#ff6b35;--green:#4ade80}
+*{margin:0;box-sizing:border-box}body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;padding:12px;max-width:900px;margin:0 auto}
+a.home{color:var(--dim);text-decoration:none;font-size:14px}a.home:hover{color:var(--accent)}
+h1{font-size:1.4em;margin:8px 0 12px;color:var(--accent)}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px;margin:8px 0}
+.slider-row{display:flex;align-items:center;gap:10px;margin:8px 0}
+.slider-row label{flex:0 0 160px;font-size:13px}.slider-row input[type=range]{flex:1;accent-color:var(--accent)}
+.slider-row .val{flex:0 0 30px;text-align:right;font-weight:700;font-size:14px}
+.big{font-size:3.2em;font-weight:900;text-align:center}.vibe-label{text-align:center;font-size:1.3em;margin:4px 0}
+canvas{width:100%;display:block;margin:4px 0;border-radius:8px}
+button{background:var(--accent);border:none;color:var(--text);padding:8px 18px;border-radius:6px;cursor:pointer;font-weight:600;font-size:14px}
+button:hover{opacity:.85}button.sec{background:var(--bg);border:1px solid var(--border)}
+.recs{font-size:13px;line-height:1.6;color:var(--dim)}.recs strong{color:var(--accent)}
+.summary{font-size:13px;line-height:1.6;font-style:italic;color:var(--dim)}
+.hist{font-size:12px;color:var(--dim);max-height:120px;overflow-y:auto}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0}
+</style>
+</head>
+<body>
+<a class="home" href="index.html">&larr; home</a>
+<h1>Project Vibe Check</h1>
+<div class="card" id="sliders"></div>
+<div class="card"><div class="big" id="score">--</div><div class="vibe-label" id="vibeLabel">--</div>
+<canvas id="gauge" height="140"></canvas></div>
+<div class="card"><canvas id="radar" height="300"></canvas></div>
+<div class="card"><div class="summary" id="summaryText"></div></div>
+<div class="card"><h3 style="font-size:14px;margin-bottom:6px">Recommendations</h3><div class="recs" id="recs"></div></div>
+<div class="row"><button onclick="saveSnapshot()">Save Snapshot</button><button class="sec" onclick="copyVibe()">Copy Vibe Score</button></div>
+<div class="card"><h3 style="font-size:14px;margin-bottom:6px">History</h3><canvas id="trend" height="120"></canvas><div class="hist" id="histList"></div></div>
+<script>
+const dims=['Team Morale','Client Relationship','Schedule Confidence','Budget Health','Quality of Work','Safety Culture','Communication Flow','Site Organization'];
+const recs={
+'Team Morale':['Hold a team appreciation event','Address workload distribution','Create anonymous feedback channel'],
+'Client Relationship':['Schedule a face-to-face check-in','Send proactive progress updates','Clarify expectations in writing'],
+'Schedule Confidence':['Review critical path and float','Add buffer to at-risk activities','Increase look-ahead planning frequency'],
+'Budget Health':['Conduct cost-to-complete review','Identify value engineering opportunities','Tighten change order process'],
+'Quality of Work':['Increase inspection frequency','Review ITP compliance','Conduct quality stand-down meeting'],
+'Safety Culture':['Run a safety stand-down','Review near-miss reports','Refresh toolbox talks'],
+'Communication Flow':['Implement daily huddles','Create shared dashboard','Reduce email, increase face-to-face'],
+'Site Organization':['5S audit the laydown areas','Update site logistics plan','Improve signage and wayfinding']
+};
+let vals=dims.map(()=>5);
+const $=id=>document.getElementById(id);
+let history=JSON.parse(localStorage.getItem('vc_hist')||'[]');
+
+// Build sliders
+$('sliders').innerHTML=dims.map((d,i)=>`<div class="slider-row"><label>${d}</label><input type="range" min="0" max="10" value="5" oninput="vals[${i}]=+this.value;this.nextElementSibling.textContent=this.value;render()"><span class="val">5</span></div>`).join('');
+
+function render(){
+  const avg=vals.reduce((a,b)=>a+b,0)/dims.length, score=Math.round(avg*10);
+  let label,color;
+  if(score>=90){label='Immaculate Vibes ✨';color='var(--green)';}
+  else if(score>=70){label='Good Vibes 🤙';color='#a3e635';}
+  else if(score>=50){label='Mid 😐';color='#fbbf24';}
+  else if(score>=30){label='Bad Vibes 💀';color='#fb923c';}
+  else{label='Catastrophic ☠️';color='#f87171';}
+  $('score').textContent=score;$('score').style.color=color;
+  $('vibeLabel').textContent=label;$('vibeLabel').style.color=color;
+  drawGauge(score,color);drawRadar();genSummary(score);genRecs();drawTrend();
+}
+
+function drawGauge(score,color){
+  const c=$('gauge'),ctx=c.getContext('2d');c.width=c.offsetWidth;c.height=140;
+  const cx=c.width/2,cy=110,r=90;
+  ctx.lineWidth=14;ctx.lineCap='round';
+  ctx.beginPath();ctx.arc(cx,cy,r,Math.PI,0);ctx.strokeStyle='var(--border)';ctx.stroke();
+  const angle=Math.PI+Math.PI*(score/100);
+  ctx.beginPath();ctx.arc(cx,cy,r,Math.PI,angle);ctx.strokeStyle=color;ctx.stroke();
+  // Needle
+  const nx=cx+r*0.7*Math.cos(angle),ny=cy+r*0.7*Math.sin(angle);
+  ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(nx,ny);ctx.strokeStyle=color;ctx.lineWidth=3;ctx.stroke();
+  ctx.beginPath();ctx.arc(cx,cy,6,0,Math.PI*2);ctx.fillStyle=color;ctx.fill();
+}
+
+function drawRadar(){
+  const c=$('radar'),ctx=c.getContext('2d');c.width=c.offsetWidth;c.height=300;
+  const cx=c.width/2,cy=155,r=120,n=dims.length;
+  ctx.fillStyle='#0f0f10';ctx.fillRect(0,0,c.width,c.height);
+  // Grid
+  for(let ring=1;ring<=5;ring++){
+    ctx.beginPath();const rr=r*ring/5;
+    for(let i=0;i<=n;i++){const a=-Math.PI/2+2*Math.PI*(i%n)/n;const x=cx+rr*Math.cos(a),y=cy+rr*Math.sin(a);i?ctx.lineTo(x,y):ctx.moveTo(x,y);}
+    ctx.strokeStyle='var(--border)';ctx.lineWidth=1;ctx.stroke();
+  }
+  // Labels
+  ctx.fillStyle='var(--dim)';ctx.font='11px system-ui';ctx.textAlign='center';
+  dims.forEach((d,i)=>{const a=-Math.PI/2+2*Math.PI*i/n;const x=cx+(r+22)*Math.cos(a),y=cy+(r+22)*Math.sin(a);ctx.fillText(d,x,y+4);});
+  // Data
+  ctx.beginPath();
+  vals.forEach((v,i)=>{const a=-Math.PI/2+2*Math.PI*i/n;const x=cx+r*(v/10)*Math.cos(a),y=cy+r*(v/10)*Math.sin(a);i?ctx.lineTo(x,y):ctx.moveTo(x,y);});
+  ctx.closePath();ctx.fillStyle='rgba(255,107,53,0.2)';ctx.fill();ctx.strokeStyle='var(--accent)';ctx.lineWidth=2;ctx.stroke();
+  vals.forEach((v,i)=>{const a=-Math.PI/2+2*Math.PI*i/n;const x=cx+r*(v/10)*Math.cos(a),y=cy+r*(v/10)*Math.sin(a);
+    ctx.beginPath();ctx.arc(x,y,4,0,Math.PI*2);ctx.fillStyle='var(--accent)';ctx.fill();});
+}
+
+function genSummary(score){
+  const low=dims.map((d,i)=>({d,v:vals[i]})).sort((a,b)=>a.v-b.v);
+  const high=dims.map((d,i)=>({d,v:vals[i]})).sort((a,b)=>b.v-a.v);
+  let txt=`This project scores ${score}/100. `;
+  txt+=high[0].v>=8?`The strongest area is ${high[0].d} (${high[0].v}/10). `:`No dimension is particularly strong. `;
+  txt+=low[0].v<=4?`The most concerning area is ${low[0].d} (${low[0].v}/10), which needs immediate attention. `:'All dimensions are at acceptable levels. ';
+  if(score>=70)txt+='Overall project health is positive.';else if(score>=50)txt+='The project shows mixed signals and warrants close monitoring.';else txt+='This project is in a critical state and requires intervention.';
+  $('summaryText').textContent=txt;
+}
+
+function genRecs(){
+  const sorted=dims.map((d,i)=>({d,v:vals[i]})).sort((a,b)=>a.v-b.v).slice(0,3).filter(x=>x.v<8);
+  $('recs').innerHTML=sorted.map(s=>`<div style="margin:6px 0"><strong>${s.d} (${s.v}/10):</strong> ${recs[s.d][Math.min(Math.floor((10-s.v)/3),2)]}</div>`).join('')||'<div>All dimensions healthy!</div>';
+}
+
+function saveSnapshot(){
+  history.push({date:new Date().toISOString().slice(0,10),vals:[...vals],score:Math.round(vals.reduce((a,b)=>a+b,0)/dims.length*10)});
+  localStorage.setItem('vc_hist',JSON.stringify(history));render();
+}
+
+function copyVibe(){
+  const score=Math.round(vals.reduce((a,b)=>a+b,0)/dims.length*10);
+  const txt=`Project Vibe Score: ${score}/100\n`+dims.map((d,i)=>`${d}: ${vals[i]}/10`).join('\n');
+  navigator.clipboard.writeText(txt).then(()=>alert('Copied!'));
+}
+
+function drawTrend(){
+  const c=$('trend'),ctx=c.getContext('2d');c.width=c.offsetWidth;c.height=120;
+  ctx.fillStyle='#0f0f10';ctx.fillRect(0,0,c.width,c.height);
+  if(history.length<2){ctx.fillStyle='var(--dim)';ctx.font='12px system-ui';ctx.textAlign='center';ctx.fillText('Save 2+ snapshots to see trend',c.width/2,60);
+  }else{const pad=30,w=c.width-2*pad,h=c.height-2*pad;
+    ctx.beginPath();ctx.strokeStyle='var(--accent)';ctx.lineWidth=2;
+    history.forEach((p,i)=>{const x=pad+w*i/(history.length-1),y=pad+h*(1-p.score/100);i?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.stroke();
+    history.forEach((p,i)=>{const x=pad+w*i/(history.length-1),y=pad+h*(1-p.score/100);ctx.beginPath();ctx.arc(x,y,4,0,Math.PI*2);ctx.fillStyle='var(--accent)';ctx.fill();
+      ctx.fillStyle='var(--dim)';ctx.font='9px system-ui';ctx.textAlign='center';ctx.fillText(p.date.slice(5),x,c.height-4);});
+  }
+  $('histList').innerHTML=history.slice().reverse().map(h=>`<div>${h.date}: ${h.score}/100</div>`).join('');
+}
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Project Burn Rate Visualizer</title>
+<style>
+:root{--bg:#0f0f10;--bg2:#1a1a1c;--border:#2a2a2d;--text:#f0f0f0;--dim:#6e6e73;--accent:#ff6b35;--green:#4ade80}
+*{margin:0;box-sizing:border-box}body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;padding:12px;max-width:900px;margin:0 auto}
+a.home{color:var(--dim);text-decoration:none;font-size:14px}a.home:hover{color:var(--accent)}
+h1{font-size:1.4em;margin:8px 0 12px;color:var(--accent)}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.row label{flex:1;min-width:140px}
+.row label span{font-size:12px;color:var(--dim);display:block}
+input,select,button{background:var(--bg2);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:14px;width:100%}
+button{background:var(--accent);border:none;cursor:pointer;font-weight:600;width:auto;padding:8px 18px}
+button:hover{opacity:.85}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px;margin:8px 0}
+.big{font-size:2.8em;font-weight:800;text-align:center;padding:10px 0}
+.status{display:inline-block;padding:4px 14px;border-radius:20px;font-weight:700;font-size:13px}
+.status.green{background:#065f46;color:var(--green)}.status.yellow{background:#713f12;color:#fbbf24}.status.red{background:#7f1d1d;color:#f87171}
+canvas{width:100%;border-radius:8px;display:block;margin:4px 0}
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin:8px 0}
+.metric{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px;text-align:center}
+.metric .val{font-size:1.6em;font-weight:700}.metric .lbl{font-size:11px;color:var(--dim)}
+table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+th,td{padding:6px 8px;border-bottom:1px solid var(--border);text-align:right}th{color:var(--dim);font-size:11px}td:first-child,th:first-child{text-align:left}
+.entries{max-height:150px;overflow-y:auto}
+</style>
+</head>
+<body>
+<a class="home" href="index.html">&larr; home</a>
+<h1>Project Burn Rate Visualizer</h1>
+<div class="row">
+<label><span>Total Budget ($)</span><input id="budget" type="number" value="500000"></label>
+<label><span>Start Date</span><input id="startD" type="date"></label>
+<label><span>End Date</span><input id="endD" type="date"></label>
+</div>
+<div class="row">
+<label><span>Add Spend: Amount ($)</span><input id="spendAmt" type="number" placeholder="25000"></label>
+<label><span>Spend Date</span><input id="spendDate" type="date"></label>
+<button onclick="addSpend()">+ Add Spend</button>
+</div>
+<div class="entries card" id="entryList"></div>
+<div class="card"><div class="big" id="runway">--</div><div style="text-align:center;color:var(--dim);font-size:13px">Months of Runway Remaining</div></div>
+<div class="metrics" id="metrics"></div>
+<div class="card"><canvas id="fireCanvas" height="100"></canvas></div>
+<div class="card"><canvas id="curveCanvas" height="200"></canvas></div>
+<div class="card"><h3 style="font-size:14px;margin-bottom:4px">Monthly Cash Flow</h3><div id="cashTable"></div></div>
+<script>
+const $ = id => document.getElementById(id);
+let entries = JSON.parse(localStorage.getItem('br_entries')||'[]');
+const today = new Date();
+$('startD').value = fmt(new Date(today.getFullYear(), today.getMonth()-3, 1));
+$('endD').value = fmt(new Date(today.getFullYear(), today.getMonth()+9, 0));
+$('spendDate').value = fmt(today);
+
+function fmt(d){return d.toISOString().slice(0,10)}
+function addSpend(){
+  const a=parseFloat($('spendAmt').value), d=$('spendDate').value;
+  if(!a||!d)return; entries.push({amount:a,date:d}); entries.sort((a,b)=>a.date.localeCompare(b.date));
+  localStorage.setItem('br_entries',JSON.stringify(entries)); $('spendAmt').value=''; render();
+}
+function delSpend(i){entries.splice(i,1);localStorage.setItem('br_entries',JSON.stringify(entries));render();}
+
+function render(){
+  const budget=parseFloat($('budget').value)||1, start=new Date($('startD').value), end=new Date($('endD').value);
+  const totalDays=Math.max(1,(end-start)/864e5), elapsed=Math.max(0,(today-start)/864e5);
+  const spent=entries.reduce((s,e)=>s+e.amount,0), pctTime=Math.min(elapsed/totalDays,1), pctBudget=spent/budget;
+  const plannedSpend=pctTime*budget, dailyRate=elapsed>0?spent/elapsed:0;
+  const daysLeft=dailyRate>0?(budget-spent)/dailyRate:Infinity;
+  const runwayMonths=daysLeft===Infinity?99:Math.max(0,daysLeft/30.44);
+  const burnoutDate=dailyRate>0?new Date(today.getTime()+daysLeft*864e5):null;
+  const daysEarlyLate=burnoutDate?Math.round((end-burnoutDate)/864e5):null;
+  const CPI=spent>0?plannedSpend/spent:1, SPI=pctTime>0?pctBudget/pctTime:1;
+  let status='green',statusTxt='On Track';
+  if(CPI<0.85||SPI>1.15){status='red';statusTxt='Over Budget / Behind';}
+  else if(CPI<0.95||SPI>1.05){status='yellow';statusTxt='Watch Closely';}
+
+  $('runway').textContent=runwayMonths>24?'24+':runwayMonths.toFixed(1);
+  $('runway').style.color=status==='green'?'var(--green)':status==='yellow'?'#fbbf24':'#f87171';
+
+  let html=`<div class="metric"><div class="val" style="color:${CPI>=1?'var(--green)':'#f87171'}">${CPI.toFixed(2)}</div><div class="lbl">CPI</div></div>`;
+  html+=`<div class="metric"><div class="val" style="color:${SPI<=1.05?'var(--green)':'#f87171'}">${SPI.toFixed(2)}</div><div class="lbl">SPI</div></div>`;
+  html+=`<div class="metric"><div class="val">$${(spent/1000).toFixed(0)}k</div><div class="lbl">Spent</div></div>`;
+  html+=`<div class="metric"><div class="val">$${((budget-spent)/1000).toFixed(0)}k</div><div class="lbl">Remaining</div></div>`;
+  html+=`<div class="metric"><div class="val">${(pctBudget*100).toFixed(0)}%</div><div class="lbl">Budget Used</div></div>`;
+  html+=`<div class="metric"><div class="status ${status}">${statusTxt}</div><div class="lbl" style="margin-top:4px">Status</div></div>`;
+  if(daysEarlyLate!==null) html+=`<div class="metric"><div class="val" style="color:${daysEarlyLate>=0?'var(--green)':'#f87171'}">${daysEarlyLate>=0?daysEarlyLate+' early':Math.abs(daysEarlyLate)+' late'}</div><div class="lbl">Days vs Deadline</div></div>`;
+  $('metrics').innerHTML=html;
+
+  let ehtml='';entries.forEach((e,i)=>ehtml+=`<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border)"><span>${e.date}</span><span>$${e.amount.toLocaleString()}</span><span style="color:#f87171;cursor:pointer" onclick="delSpend(${i})">x</span></div>`);
+  $('entryList').innerHTML=ehtml||'<div style="color:var(--dim);text-align:center;padding:8px">No spend entries yet</div>';
+
+  drawFire(Math.min(pctBudget/Math.max(pctTime,.01),3));
+  drawCurve(start,end,budget,entries);
+  drawTable(start,end,budget,entries);
+}
+
+function drawFire(intensity){
+  const c=$('fireCanvas'),ctx=c.getContext('2d');c.width=c.offsetWidth;c.height=100;
+  const w=c.width,h=c.height,t=performance.now()/200;
+  ctx.fillStyle='#0f0f10';ctx.fillRect(0,0,w,h);
+  const cols=Math.floor(w/6);
+  for(let i=0;i<cols;i++){
+    const x=i*6,flicker=Math.sin(t+i*0.5)*0.3+Math.cos(t*1.7+i*0.3)*0.2;
+    const fh=Math.max(5,(20+flicker*30)*intensity);
+    const grad=ctx.createLinearGradient(x,h,x,h-fh);
+    grad.addColorStop(0,'#ff6b35');grad.addColorStop(0.4,'#ff4500');grad.addColorStop(0.7,'#ff0000');grad.addColorStop(1,'transparent');
+    ctx.fillStyle=grad;ctx.fillRect(x,h-fh,5,fh);
+  }
+  ctx.fillStyle='var(--text)';ctx.font='bold 14px system-ui';ctx.textAlign='center';
+  ctx.fillText(`Burn Intensity: ${(intensity*100).toFixed(0)}%`,w/2,20);
+}
+
+function drawCurve(start,end,budget,entries){
+  const c=$('curveCanvas'),ctx=c.getContext('2d');c.width=c.offsetWidth;c.height=200;
+  const w=c.width,h=c.height,pad=40,totalDays=(end-start)/864e5;
+  ctx.fillStyle='#0f0f10';ctx.fillRect(0,0,w,h);
+  ctx.strokeStyle='var(--border)';ctx.lineWidth=1;
+  for(let i=0;i<=4;i++){const y=pad+(h-2*pad)*(1-i/4);ctx.beginPath();ctx.moveTo(pad,y);ctx.lineTo(w-10,y);ctx.stroke();
+    ctx.fillStyle='var(--dim)';ctx.font='10px system-ui';ctx.textAlign='right';ctx.fillText('$'+(budget*i/4/1000).toFixed(0)+'k',pad-4,y+3);}
+  // Planned S-curve
+  ctx.beginPath();ctx.strokeStyle='var(--dim)';ctx.lineWidth=2;ctx.setLineDash([5,5]);
+  for(let d=0;d<=totalDays;d+=1){const t=d/totalDays,s=t<0.5?2*t*t:(1-Math.pow(-2*t+2,2)/2);
+    const x=pad+(w-pad-10)*t,y=pad+(h-2*pad)*(1-s);d===0?ctx.moveTo(x,y):ctx.lineTo(x,y);}
+  ctx.stroke();ctx.setLineDash([]);
+  // Actual curve
+  let cumulative=[];entries.forEach(e=>{const d=(new Date(e.date)-start)/864e5;cumulative.push({day:d,total:(cumulative.length?cumulative[cumulative.length-1].total:0)+e.amount});});
+  if(cumulative.length){ctx.beginPath();ctx.strokeStyle='var(--accent)';ctx.lineWidth=2.5;
+    ctx.moveTo(pad,pad+(h-2*pad));
+    cumulative.forEach(p=>{const x=pad+(w-pad-10)*(p.day/totalDays),y=pad+(h-2*pad)*(1-p.total/budget);ctx.lineTo(x,y);});ctx.stroke();
+    cumulative.forEach(p=>{const x=pad+(w-pad-10)*(p.day/totalDays),y=pad+(h-2*pad)*(1-p.total/budget);ctx.beginPath();ctx.arc(x,y,3,0,Math.PI*2);ctx.fillStyle='var(--accent)';ctx.fill();});}
+  ctx.fillStyle='var(--dim)';ctx.font='10px system-ui';ctx.textAlign='center';
+  ctx.fillText('Planned (dashed) vs Actual (orange)',w/2,h-4);
+}
+
+function drawTable(start,end,budget,entries){
+  const months=[];let d=new Date(start);
+  while(d<=end){months.push(new Date(d));d=new Date(d.getFullYear(),d.getMonth()+1,1);}
+  const totalMonths=months.length,planned=budget/totalMonths;
+  let html='<table><tr><th>Month</th><th>Planned</th><th>Actual</th><th>Variance</th></tr>';
+  months.forEach(m=>{
+    const key=m.toISOString().slice(0,7),actual=entries.filter(e=>e.date.startsWith(key)).reduce((s,e)=>s+e.amount,0);
+    const v=planned-actual,vc=v>=0?'var(--green)':'#f87171';
+    html+=`<tr><td>${key}</td><td>$${planned.toFixed(0)}</td><td>$${actual.toFixed(0)}</td><td style="color:${vc}">$${v.toFixed(0)}</td></tr>`;
+  });
+  $('cashTable').innerHTML=html+'</table>';
+}
+
+['budget','startD','endD'].forEach(id=>$(id).addEventListener('change',render));
+render();
+let fireAnim;(function loop(){drawFire(Math.min((entries.reduce((s,e)=>s+e.amount,0)/(parseFloat($('budget').value)||1))/Math.max((today-new Date($('startD').value))/864e5/((new Date($('endD').value)-new Date($('startD').value))/864e5),.01),3));fireAnim=requestAnimationFrame(loop)})();
+</script>
+</body>
+</html>
