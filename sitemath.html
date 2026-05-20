@@ -1,0 +1,178 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Construction Math Trainer</title>
+<style>
+:root{--bg:#0f0f10;--bg2:#1a1a1c;--border:#2a2a2d;--text:#f0f0f0;--dim:#6e6e73;--accent:#ff6b35;--green:#4ade80}
+*{margin:0;padding:0;box-sizing:border-box}body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;padding:12px;max-width:700px;margin:auto}
+a.home{color:var(--accent);text-decoration:none;font-size:14px}a.home:hover{text-decoration:underline}
+h1{font-size:20px;margin:8px 0 12px;display:flex;align-items:center;gap:8px}h1 span{font-size:24px}
+.top{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;align-items:center}
+.top select,.top button{background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 12px;font-size:13px;cursor:pointer}
+.top button{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+.stats{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.stat{background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:8px 14px;text-align:center;flex:1;min-width:80px}
+.stat .v{font-size:22px;font-weight:700}.stat .l{font-size:11px;color:var(--dim)}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:12px}
+.cat{font-size:11px;color:var(--accent);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}
+.question{font-size:18px;line-height:1.5;margin-bottom:16px;min-height:60px}
+.choices{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.choice{background:var(--bg);border:2px solid var(--border);border-radius:8px;padding:12px;font-size:15px;cursor:pointer;text-align:center;transition:all .15s;user-select:none}
+.choice:hover{border-color:var(--accent);color:var(--accent)}
+.choice.correct{background:rgba(74,222,128,0.15);border-color:var(--green);color:var(--green)}
+.choice.wrong{background:rgba(239,68,68,0.1);border-color:#ef4444;color:#ef4444}
+.choice.reveal{border-color:var(--green);opacity:0.5}
+.explanation{background:rgba(96,165,250,0.08);border:1px solid rgba(96,165,250,0.2);border-radius:8px;padding:12px;font-size:13px;line-height:1.5;margin-top:12px;display:none}
+.timer{font-size:28px;font-weight:700;font-variant-numeric:tabular-nums}
+.streak-anim{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);font-size:48px;font-weight:800;color:var(--accent);opacity:0;pointer-events:none;transition:all .5s}
+.progress{height:4px;background:var(--border);border-radius:2px;margin-bottom:12px;overflow:hidden}
+.progress div{height:100%;background:var(--accent);transition:width .3s;border-radius:2px}
+</style></head><body>
+<a class="home" href="index.html">&larr; home</a>
+<h1><span>🧮</span> Construction Math Trainer</h1>
+<div class="top">
+<select id="diff"><option value="0">Apprentice</option><option value="1">Journeyman</option><option value="2" >Foreman</option></select>
+<select id="cat"><option value="all">All Categories</option><option value="area">Area / Volume</option><option value="convert">Unit Conversion</option><option value="markup">Markup / Cost</option><option value="slope">Slope / Grade</option><option value="material">Material Qty</option></select>
+<button id="startBtn" onclick="startQuiz()">Start Quiz (10 Qs)</button>
+</div>
+<div class="progress"><div id="prog"></div></div>
+<div class="stats">
+<div class="stat"><div class="v timer" id="time">0:00</div><div class="l">Time</div></div>
+<div class="stat"><div class="v" id="score" style="color:var(--green)">0</div><div class="l">Score</div></div>
+<div class="stat"><div class="v" id="streak" style="color:var(--accent)">0</div><div class="l">Streak</div></div>
+<div class="stat"><div class="v" id="best">—</div><div class="l">Best Time</div></div>
+</div>
+<div class="card">
+<div class="cat" id="qCat">Ready to start</div>
+<div class="question" id="qText">Choose a difficulty and category, then hit Start. Answer 10 construction math questions as fast as you can!</div>
+<div class="choices" id="choices"></div>
+<div class="explanation" id="explain"></div>
+</div>
+<div class="streak-anim" id="streakAnim"></div>
+<script>
+const $=id=>document.getElementById(id);
+let questions=[],qIdx=0,scoreVal=0,streakVal=0,bestTime=null,timer=null,seconds=0,answered=false;
+const rand=(a,b)=>Math.floor(Math.random()*(b-a+1))+a;
+const shuffle=a=>{for(let i=a.length-1;i>0;i--){const j=rand(0,i);[a[i],a[j]]=[a[j],a[i]]}return a};
+const fmtTime=s=>`${Math.floor(s/60)}:${(s%60).toString().padStart(2,'0')}`;
+const feetInch=(ft,inch)=>`${ft}'${inch}"`;
+const toFrac=n=>Math.round(n*100)/100;
+
+function genArea(d){
+const problems=[];
+// room area
+let ft1=rand(10,30),in1=rand(0,11),ft2=rand(10,40),in2=rand(0,11);
+if(d===0){in1=0;in2=0}
+const a1=(ft1+in1/12)*(ft2+in2/12);
+problems.push({cat:'Area / Volume',q:`A room is ${feetInch(ft1,in1)} x ${feetInch(ft2,in2)}. How many sq ft?`,
+ans:toFrac(a1),unit:'sq ft',explain:`Convert to decimal feet: ${(ft1+in1/12).toFixed(2)} x ${(ft2+in2/12).toFixed(2)} = ${a1.toFixed(2)} sq ft`});
+// concrete volume
+const l=rand(8,40),w=rand(4,20),thick=d>0?rand(4,8):6;
+const vol=l*w*(thick/12)/27;
+problems.push({cat:'Area / Volume',q:`How many cubic yards of concrete for a ${l}' x ${w}' slab, ${thick}" thick?`,
+ans:toFrac(vol),unit:'cu yd',explain:`Volume = ${l} x ${w} x ${thick}/12 = ${(l*w*thick/12).toFixed(1)} cu ft / 27 = ${vol.toFixed(2)} cu yd`});
+// triangle area
+const base=rand(10,50),ht=rand(6,30);
+problems.push({cat:'Area / Volume',q:`What is the area of a triangular gable with base ${base}' and height ${ht}'?`,
+ans:toFrac(base*ht/2),unit:'sq ft',explain:`Area = 1/2 x ${base} x ${ht} = ${(base*ht/2).toFixed(1)} sq ft`});
+return problems}
+function genConvert(d){
+const problems=[];
+const cy=rand(2,20)+rand(0,1)*0.5;
+problems.push({cat:'Unit Conversion',q:`Convert ${cy} cubic yards to cubic feet.`,ans:toFrac(cy*27),unit:'cu ft',explain:`1 cu yd = 27 cu ft. ${cy} x 27 = ${(cy*27).toFixed(1)} cu ft`});
+const meters=rand(5,100);
+problems.push({cat:'Unit Conversion',q:`Convert ${meters} meters to feet.`,ans:toFrac(meters*3.281),unit:'ft',explain:`1 m = 3.281 ft. ${meters} x 3.281 = ${(meters*3.281).toFixed(1)} ft`});
+const psi=rand(2000,6000);
+problems.push({cat:'Unit Conversion',q:`Convert ${psi} PSI to MPa.`,ans:toFrac(psi*0.006895),unit:'MPa',explain:`1 PSI = 0.006895 MPa. ${psi} x 0.006895 = ${(psi*0.006895).toFixed(2)} MPa`});
+const gal=rand(50,500);
+problems.push({cat:'Unit Conversion',q:`How many liters in ${gal} gallons?`,ans:toFrac(gal*3.785),unit:'L',explain:`1 gal = 3.785 L. ${gal} x 3.785 = ${(gal*3.785).toFixed(1)} L`});
+return problems}
+function genMarkup(d){
+const problems=[];
+const cost=rand(10,200)*250;const pct=d===0?rand(1,3)*5:rand(5,35);
+const markup=cost*(1+pct/100);
+problems.push({cat:'Markup / Cost',q:`What's ${pct}% markup on $${cost.toLocaleString()}?`,
+ans:toFrac(markup),unit:'$',explain:`$${cost.toLocaleString()} x ${(1+pct/100).toFixed(2)} = $${markup.toLocaleString(undefined,{minimumFractionDigits:2})}`});
+const units=rand(50,500);const unitCost=rand(2,25)+rand(0,1)*0.5;const waste=d>0?rand(5,15):10;
+const total=units*(1+waste/100)*unitCost;
+problems.push({cat:'Markup / Cost',q:`${units} LF of material at $${unitCost}/LF with ${waste}% waste factor. Total cost?`,
+ans:toFrac(total),unit:'$',explain:`${units} x 1.${waste.toString().padStart(2,'0')} = ${(units*(1+waste/100)).toFixed(0)} LF. x $${unitCost} = $${total.toFixed(2)}`});
+return problems}
+function genSlope(d){
+const problems=[];
+const rise=rand(1,12);const run=rand(10,100);
+const pct=rise/run*100;
+problems.push({cat:'Slope / Grade',q:`A pipe drops ${rise}" over ${run} feet of run. What is the grade percentage?`,
+ans:toFrac(rise/12/run*100),unit:'%',explain:`Rise = ${rise}" = ${(rise/12).toFixed(3)} ft. Grade = ${(rise/12).toFixed(3)}/${run} x 100 = ${(rise/12/run*100).toFixed(2)}%`});
+const angle=rand(15,45);
+const slope=Math.tan(angle*Math.PI/180);
+problems.push({cat:'Slope / Grade',q:`A roof has a ${angle}-degree pitch. What is the rise per 12" of run (slope ratio)?`,
+ans:toFrac(slope*12),unit:'in per 12in',explain:`tan(${angle}°) = ${slope.toFixed(3)}. Rise per 12" = ${(slope*12).toFixed(2)}"`});
+return problems}
+function genMaterial(d){
+const problems=[];
+const sqft=rand(100,2000);const coverage=rand(80,120);
+const bags=Math.ceil(sqft/coverage);
+problems.push({cat:'Material Qty',q:`A floor is ${sqft} sq ft. Self-leveler covers ${coverage} sq ft/bag. How many bags needed?`,
+ans:bags,unit:'bags',explain:`${sqft} / ${coverage} = ${(sqft/coverage).toFixed(1)} → round up = ${bags} bags`});
+const wallH=rand(8,12);const wallL=rand(20,80);const brickPer=d>0?rand(6,8):7;
+const bricks=Math.ceil(wallH*wallL*brickPer);
+problems.push({cat:'Material Qty',q:`A wall is ${wallH}' tall x ${wallL}' long. At ${brickPer} bricks/sq ft, how many bricks?`,
+ans:bricks,unit:'bricks',explain:`${wallH} x ${wallL} = ${wallH*wallL} sq ft. x ${brickPer} = ${bricks} bricks`});
+const sheets=rand(10,60);const w=4,h=8;
+problems.push({cat:'Material Qty',q:`How many 4'x8' drywall sheets to cover ${sheets*32} sq ft?`,
+ans:sheets,unit:'sheets',explain:`Each sheet = 32 sq ft. ${sheets*32} / 32 = ${sheets} sheets`});
+return problems}
+function generateQuestions(){
+const d=+$('diff').value;const cat=$('cat').value;
+let pool=[];
+if(cat==='all'||cat==='area')pool.push(...genArea(d));
+if(cat==='all'||cat==='convert')pool.push(...genConvert(d));
+if(cat==='all'||cat==='markup')pool.push(...genMarkup(d));
+if(cat==='all'||cat==='slope')pool.push(...genSlope(d));
+if(cat==='all'||cat==='material')pool.push(...genMaterial(d));
+// add more if needed
+while(pool.length<10){
+if(cat==='all')pool.push(...genArea(d),...genMarkup(d),...genConvert(d));
+else pool.push(...genArea(d))}
+shuffle(pool);return pool.slice(0,10)}
+function makeChoices(correct){
+const choices=[correct];const mag=Math.max(Math.abs(correct)*0.3,1);
+while(choices.length<4){
+const off=(Math.random()-0.3)*mag*(1+Math.random());
+let c=correct>=100?Math.round(correct+off):toFrac(correct+off);
+if(c<=0&&correct>0)c=toFrac(correct*0.5+Math.random()*correct*0.3);
+if(!choices.some(x=>Math.abs(x-c)<0.01)&&c!==correct)choices.push(c)}
+return shuffle(choices)}
+function showQuestion(){
+if(qIdx>=questions.length){endQuiz();return}
+answered=false;const q=questions[qIdx];
+$('qCat').textContent=q.cat;$('qText').textContent=q.q;$('explain').style.display='none';
+$('prog').style.width=((qIdx)/10*100)+'%';
+const choices=makeChoices(q.ans);const cdiv=$('choices');cdiv.innerHTML='';
+choices.forEach(c=>{const btn=document.createElement('div');btn.className='choice';
+const display=q.unit==='$'?'$'+c.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}):c.toLocaleString(undefined,{maximumFractionDigits:2})+' '+q.unit;
+btn.textContent=display;btn.dataset.val=c;
+btn.onclick=()=>answer(btn,c,q);cdiv.appendChild(btn)})}
+function answer(btn,chosen,q){
+if(answered)return;answered=true;
+const correct=Math.abs(chosen-q.ans)<0.015;
+if(correct){btn.classList.add('correct');scoreVal++;streakVal++;
+$('score').textContent=scoreVal;$('streak').textContent=streakVal;
+if(streakVal>=3)flashStreak(streakVal)}
+else{btn.classList.add('wrong');streakVal=0;$('streak').textContent=0;
+document.querySelectorAll('.choice').forEach(c=>{if(Math.abs(+c.dataset.val-q.ans)<0.015)c.classList.add('correct')})}
+$('explain').textContent=q.explain;$('explain').style.display='block';
+setTimeout(()=>{qIdx++;showQuestion()},1800)}
+function flashStreak(n){const el=$('streakAnim');el.textContent=n+'x STREAK!';el.style.opacity='1';el.style.transform='translate(-50%,-50%) scale(1.2)';
+setTimeout(()=>{el.style.opacity='0';el.style.transform='translate(-50%,-50%) scale(0.8)'},800)}
+function startQuiz(){
+questions=generateQuestions();qIdx=0;scoreVal=0;streakVal=0;seconds=0;
+$('score').textContent='0';$('streak').textContent='0';
+if(timer)clearInterval(timer);timer=setInterval(()=>{seconds++;$('time').textContent=fmtTime(seconds)},1000);
+$('time').textContent='0:00';showQuestion()}
+function endQuiz(){
+clearInterval(timer);timer=null;$('prog').style.width='100%';
+if(bestTime===null||seconds<bestTime){bestTime=seconds;$('best').textContent=fmtTime(bestTime);$('best').style.color='var(--green)'}
+$('qCat').textContent='Quiz Complete!';
+$('qText').innerHTML=`You scored <strong style="color:var(--green)">${scoreVal}/10</strong> in <strong style="color:var(--accent)">${fmtTime(seconds)}</strong>. ${scoreVal>=8?'Excellent work!':scoreVal>=5?'Good effort!':'Keep practicing!'} Hit Start to try again.`;
+$('choices').innerHTML='';$('explain').style.display='none'}
+</script></body></html>
