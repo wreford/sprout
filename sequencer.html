@@ -1,0 +1,525 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sequencer - Multiplayer Task Planning Game</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0a0a12;--card:#14142a;--accent:#6c5ce7;--accent2:#00cec9;--red:#ff4757;--green:#2ed573;--gold:#ffa502;--text:#e8e8f0;--dim:#555580;--border:#2a2a4a}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;overflow-x:hidden;min-height:100vh}
+.hidden{display:none!important}
+button{background:var(--accent);color:#fff;border:none;padding:10px 24px;border-radius:8px;font-size:15px;cursor:pointer;transition:.2s}
+button:hover{filter:brightness(1.2);transform:scale(1.03)}
+button.secondary{background:var(--border)}
+input,select{background:var(--card);color:var(--text);border:1px solid var(--border);padding:10px 14px;border-radius:8px;font-size:15px;width:100%}
+/* Phase bar */
+#phaseBar{display:flex;gap:4px;padding:12px 20px;background:#0d0d1a;position:sticky;top:0;z-index:100}
+.phase-dot{flex:1;height:6px;border-radius:3px;background:var(--border);transition:.4s}
+.phase-dot.active{background:var(--accent)}
+.phase-dot.done{background:var(--green)}
+#phaseLabel{text-align:center;font-size:12px;color:var(--dim);padding:4px}
+/* Lobby */
+#lobby{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 20px;min-height:90vh}
+#roomCode{font-size:100px;font-weight:900;letter-spacing:20px;color:var(--accent);text-shadow:0 0 40px rgba(108,92,231,.4);margin:20px 0}
+#playerList{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin:20px 0}
+.player-tag{background:var(--card);padding:8px 16px;border-radius:20px;border:1px solid var(--border);font-size:14px}
+.player-tag::before{content:'';display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);margin-right:8px}
+/* Timer */
+#timer{position:fixed;top:60px;right:20px;font-size:28px;font-weight:700;color:var(--gold);z-index:99;text-shadow:0 0 10px rgba(255,165,2,.3)}
+/* Task cards */
+.task-grid{display:flex;flex-wrap:wrap;gap:12px;padding:20px;justify-content:center}
+.task-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;min-width:180px;max-width:240px;animation:cardIn .3s ease}
+.task-card.critical{border-color:var(--red);box-shadow:0 0 12px rgba(255,71,87,.2)}
+@keyframes cardIn{from{opacity:0;transform:translateY(-30px) scale(.9)}to{opacity:1;transform:none}}
+/* Sections */
+.section{padding:20px;max-width:1200px;margin:0 auto}
+.section h2{font-size:22px;margin-bottom:16px;color:var(--accent2)}
+/* Gantt */
+#ganttWrap{overflow-x:auto;padding:20px}
+canvas{border-radius:8px}
+/* Estimates */
+.est-row{display:flex;gap:8px;align-items:center;margin:6px 0}
+.est-row input{width:70px;text-align:center}
+.est-result{color:var(--gold);font-weight:700;min-width:60px;text-align:center}
+/* Dependencies */
+.dep-row{display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap}
+.dep-row select{width:auto;min-width:120px}
+/* Resources */
+.res-badge{display:inline-block;background:var(--accent);padding:4px 12px;border-radius:12px;font-size:12px;margin:2px}
+/* Scores */
+.leaderboard{display:flex;flex-direction:column;gap:6px;margin:16px 0}
+.lb-row{display:flex;justify-content:space-between;padding:8px 16px;background:var(--card);border-radius:8px}
+.lb-row .pts{color:var(--gold);font-weight:700}
+/* Export buttons */
+.export-bar{display:flex;flex-wrap:wrap;gap:10px;margin:20px 0;justify-content:center}
+.export-bar button{font-size:14px;padding:10px 20px}
+/* Templates */
+.template-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin:20px 0}
+.template-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;cursor:pointer;transition:.2s;text-align:center}
+.template-card:hover{border-color:var(--accent);transform:translateY(-2px)}
+.template-card h3{color:var(--accent2);margin-bottom:8px}
+.template-card p{color:var(--dim);font-size:13px}
+/* Join panel */
+#joinPanel{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:30px;max-width:360px;width:100%;margin:0 auto}
+/* Stats bar */
+.stats-bar{display:flex;gap:16px;flex-wrap:wrap;justify-content:center;margin:16px 0}
+.stat-box{background:var(--card);padding:12px 20px;border-radius:10px;text-align:center}
+.stat-box .val{font-size:24px;font-weight:700;color:var(--accent2)}
+.stat-box .lbl{font-size:11px;color:var(--dim);margin-top:4px}
+/* Mobile */
+@media(max-width:600px){#roomCode{font-size:60px;letter-spacing:12px}.task-card{min-width:140px}}
+/* Fun facts */
+.fun-fact{text-align:center;color:var(--dim);font-style:italic;padding:12px;font-size:13px;max-width:600px;margin:10px auto}
+</style></head><body>
+<div id="phaseBar"></div>
+<div id="phaseLabel"></div>
+<div id="timer" class="hidden"></div>
+
+<!-- LOBBY -->
+<div id="lobby" class="section">
+  <h1 style="font-size:36px;margin-bottom:8px">SEQUENCER</h1>
+  <p style="color:var(--dim);margin-bottom:30px">Multiplayer Task Sequencing Game</p>
+  <div id="hostPanel">
+    <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;justify-content:center">
+      <input id="projName" placeholder="Project Name" style="max-width:280px">
+      <button onclick="createRoom()">Create Room</button>
+    </div>
+    <p style="color:var(--dim);text-align:center;margin:10px 0">Or use a template:</p>
+    <div class="template-grid" id="templates"></div>
+  </div>
+  <div id="joinPanel" class="hidden">
+    <h3 style="margin-bottom:12px;text-align:center">Join a Room</h3>
+    <input id="joinCode" placeholder="4-letter room code" maxlength="4" style="text-transform:uppercase;text-align:center;font-size:24px;margin-bottom:10px">
+    <input id="playerName" placeholder="Your Name" style="margin-bottom:10px">
+    <button onclick="joinRoom()" style="width:100%">Join</button>
+  </div>
+  <div id="roomDisplay" class="hidden" style="text-align:center">
+    <p style="color:var(--dim)">Room Code</p>
+    <div id="roomCode"></div>
+    <input id="projNameLive" placeholder="Project Name" style="max-width:300px;text-align:center;margin-bottom:16px">
+    <div id="playerList"></div>
+    <div style="margin-top:20px;display:flex;gap:10px;justify-content:center">
+      <button onclick="startGame()">Start Planning</button>
+      <button class="secondary" onclick="toggleJoin()">Join as Player</button>
+    </div>
+  </div>
+</div>
+
+<!-- BRAINSTORM -->
+<div id="brainstorm" class="section hidden">
+  <h2>Phase 1: Task Brainstorm</h2>
+  <div style="display:flex;gap:10px;margin-bottom:16px"><input id="newTask" placeholder="Type a task name and press Enter" autofocus><button onclick="addTask()">Add</button></div>
+  <div class="task-grid" id="taskGrid"></div>
+  <div style="text-align:center;margin-top:16px"><button onclick="endBrainstorm()">End Brainstorm &rarr;</button></div>
+</div>
+
+<!-- ESTIMATION -->
+<div id="estimation" class="section hidden">
+  <h2>Phase 2: Duration Estimation</h2>
+  <div id="estList"></div>
+  <div style="text-align:center;margin-top:16px"><button onclick="endEstimation()">Continue &rarr;</button></div>
+</div>
+
+<!-- SEQUENCING -->
+<div id="sequencing" class="section hidden">
+  <h2>Phase 3: Sequencing &amp; Dependencies</h2>
+  <p style="color:var(--dim);margin-bottom:12px">Set predecessor relationships for each task.</p>
+  <div id="depList"></div>
+  <div style="text-align:center;margin-top:16px"><button onclick="endSequencing()">Continue &rarr;</button></div>
+</div>
+
+<!-- RESOURCES -->
+<div id="resources" class="section hidden">
+  <h2>Phase 4: Resource Assignment</h2>
+  <div style="display:flex;gap:10px;margin-bottom:16px"><input id="newRes" placeholder="Resource name"><button onclick="addResource()">Add Resource</button></div>
+  <div id="resList" style="margin-bottom:16px"></div>
+  <div id="resAssign"></div>
+  <div style="text-align:center;margin-top:16px"><button onclick="endResources()">Continue &rarr;</button></div>
+</div>
+
+<!-- REVIEW & EXPORT -->
+<div id="review" class="section hidden">
+  <h2>Phase 5: Review &amp; Export</h2>
+  <div class="stats-bar" id="statsBar"></div>
+  <div id="ganttWrap"><canvas id="gantt"></canvas></div>
+  <div class="export-bar">
+    <button onclick="exportCSV()">Export P6 CSV</button>
+    <button onclick="exportXER()">Export XER</button>
+    <button onclick="exportXML()">Export MS Project XML</button>
+    <button onclick="copyText()">Copy as Text</button>
+    <button onclick="printGantt()">Print Gantt</button>
+  </div>
+  <div class="leaderboard" id="leaderboard"></div>
+</div>
+
+<div class="fun-fact" id="funFact"></div>
+
+<script>
+// ── State ──
+let S={room:'',project:'',phase:0,players:[],tasks:[],resources:[],scores:{},timerInt:null,channel:null,isHost:false,myName:'Host'};
+const PHASES=['Lobby','Brainstorm','Estimation','Sequencing','Resources','Review'];
+const VIEWS=['lobby','brainstorm','estimation','sequencing','resources','review'];
+const FACTS=["The Empire State Building was built in just 410 days.","PERT was invented for the Polaris missile program in 1958.","The critical path method (CPM) was developed by DuPont in 1957.","A 'float' of zero means the task is critical — any delay delays the project.","Primavera P6 can handle projects with over 100,000 activities.","The Channel Tunnel took 6 years to build with 13,000 workers.","Planning Poker was first described by James Grenning in 2002.","The Gantt chart was popularized by Henry Gantt around 1910-1915.","Resource leveling can extend a project's duration to resolve over-allocation.","The Iron Triangle: scope, time, cost — pick two."];
+
+// ── Templates ──
+const TEMPLATES={
+  residential:{name:'Residential Construction',count:12,tasks:[
+    {name:'Site Survey',dur:3,wbs:'1.1'},{name:'Permits & Approvals',dur:10,wbs:'1.1'},{name:'Site Preparation',dur:5,wbs:'1.2'},
+    {name:'Foundation Excavation',dur:4,wbs:'1.2',pred:[2]},{name:'Pour Foundation',dur:6,wbs:'1.2',pred:[3]},
+    {name:'Framing',dur:12,wbs:'1.3',pred:[4]},{name:'Roofing',dur:5,wbs:'1.3',pred:[5]},
+    {name:'Electrical Rough-In',dur:6,wbs:'1.4',pred:[5]},{name:'Plumbing Rough-In',dur:6,wbs:'1.4',pred:[5]},
+    {name:'Insulation & Drywall',dur:8,wbs:'1.5',pred:[6,7,8]},{name:'Finishing & Paint',dur:10,wbs:'1.5',pred:[9]},
+    {name:'Final Inspection',dur:2,wbs:'1.6',pred:[10]}]},
+  commercial:{name:'Commercial Build-Out',count:14,tasks:[
+    {name:'Lease Review',dur:3,wbs:'1.1'},{name:'Design & Permits',dur:15,wbs:'1.1',pred:[0]},
+    {name:'Demolition',dur:5,wbs:'1.2',pred:[1]},{name:'Structural Mods',dur:8,wbs:'1.2',pred:[2]},
+    {name:'MEP Rough-In',dur:10,wbs:'1.3',pred:[3]},{name:'Fire Protection',dur:5,wbs:'1.3',pred:[3]},
+    {name:'Framing & Drywall',dur:8,wbs:'1.4',pred:[4,5]},{name:'Ceiling Grid',dur:4,wbs:'1.4',pred:[6]},
+    {name:'Flooring',dur:5,wbs:'1.5',pred:[7]},{name:'Painting',dur:4,wbs:'1.5',pred:[7]},
+    {name:'MEP Trim-Out',dur:5,wbs:'1.5',pred:[8,9]},{name:'Millwork & Fixtures',dur:6,wbs:'1.5',pred:[10]},
+    {name:'Punch List',dur:3,wbs:'1.6',pred:[11]},{name:'Final Inspection',dur:2,wbs:'1.6',pred:[12]}]},
+  road:{name:'Road Construction',count:10,tasks:[
+    {name:'Survey & Staking',dur:5,wbs:'1.1'},{name:'Environmental Clear',dur:8,wbs:'1.1'},
+    {name:'Clearing & Grubbing',dur:6,wbs:'1.2',pred:[0,1]},{name:'Earthwork & Grading',dur:15,wbs:'1.2',pred:[2]},
+    {name:'Drainage Installation',dur:10,wbs:'1.3',pred:[3]},{name:'Sub-base Layer',dur:8,wbs:'1.3',pred:[4]},
+    {name:'Base Course',dur:6,wbs:'1.4',pred:[5]},{name:'Asphalt Paving',dur:8,wbs:'1.4',pred:[6]},
+    {name:'Striping & Signs',dur:4,wbs:'1.5',pred:[7]},{name:'Final Inspection',dur:2,wbs:'1.5',pred:[8]}]},
+  bridge:{name:'Bridge Project',count:11,tasks:[
+    {name:'Geotechnical Study',dur:10,wbs:'1.1'},{name:'Design Engineering',dur:20,wbs:'1.1',pred:[0]},
+    {name:'Cofferdam Construction',dur:12,wbs:'1.2',pred:[1]},{name:'Pile Driving',dur:15,wbs:'1.2',pred:[2]},
+    {name:'Pier Construction',dur:18,wbs:'1.3',pred:[3]},{name:'Abutment Construction',dur:14,wbs:'1.3',pred:[3]},
+    {name:'Girder Fabrication',dur:20,wbs:'1.4',pred:[1]},{name:'Girder Erection',dur:10,wbs:'1.4',pred:[4,5,6]},
+    {name:'Deck Pour',dur:12,wbs:'1.5',pred:[7]},{name:'Railing & Barriers',dur:6,wbs:'1.5',pred:[8]},
+    {name:'Load Testing',dur:5,wbs:'1.6',pred:[9]}]}
+};
+
+// ── Audio ──
+const AC=new(window.AudioContext||window.webkitAudioContext)();
+function beep(freq,dur,type='sine'){const o=AC.createOscillator(),g=AC.createGain();o.type=type;o.frequency.value=freq;g.gain.value=0.1;o.connect(g);g.connect(AC.destination);o.start();g.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+dur);o.stop(AC.currentTime+dur)}
+function sfxAdd(){beep(880,.1);beep(1100,.1)}
+function sfxBuzz(){beep(200,.3,'square')}
+function sfxTick(){beep(600,.05)}
+function announce(msg){if('speechSynthesis' in window){const u=new SpeechSynthesisUtterance(msg);u.rate=1.1;u.pitch=1;speechSynthesis.speak(u)}}
+
+// ── BroadcastChannel ──
+function initChannel(){
+  if(S.channel)S.channel.close();
+  S.channel=new BroadcastChannel('seq-'+S.room);
+  S.channel.onmessage=e=>{
+    const d=e.data;
+    if(d.type==='join'&&S.isHost){
+      if(!S.players.find(p=>p.name===d.name)){S.players.push({name:d.name});S.scores[d.name]=0;renderPlayers();announce(d.name+' joined!')}
+      S.channel.postMessage({type:'state',state:JSON.parse(JSON.stringify(S))});
+    }
+    if(d.type==='task'&&S.isHost){addTaskDirect(d.name,d.from);S.channel.postMessage({type:'state',state:JSON.parse(JSON.stringify(S))})}
+    if(d.type==='state'&&!S.isHost){Object.assign(S,d.state);renderAll()}
+  };
+}
+
+// ── Room ──
+function genCode(){const c='ABCDEFGHJKLMNPQRSTUVWXYZ';let r='';for(let i=0;i<4;i++)r+=c[Math.floor(Math.random()*c.length)];return r}
+function createRoom(){
+  S.room=genCode();S.project=document.getElementById('projName').value||'New Project';S.isHost=true;S.myName='Host';
+  S.players=[{name:'Host'}];S.scores={Host:0};initChannel();showRoom()
+}
+function showRoom(){
+  document.getElementById('hostPanel').classList.add('hidden');
+  document.getElementById('roomDisplay').classList.remove('hidden');
+  document.getElementById('roomCode').textContent=S.room;
+  document.getElementById('projNameLive').value=S.project;
+  renderPlayers();showFact()
+}
+function toggleJoin(){
+  document.getElementById('roomDisplay').classList.add('hidden');
+  document.getElementById('joinPanel').classList.remove('hidden');
+}
+function joinRoom(){
+  S.room=document.getElementById('joinCode').value.toUpperCase();S.myName=document.getElementById('playerName').value||'Player';
+  S.isHost=false;initChannel();S.channel.postMessage({type:'join',name:S.myName});
+  document.getElementById('joinPanel').classList.add('hidden');
+  document.getElementById('roomDisplay').classList.remove('hidden');
+  document.getElementById('roomCode').textContent=S.room;renderPlayers()
+}
+function renderPlayers(){
+  document.getElementById('playerList').innerHTML=S.players.map(p=>`<span class="player-tag">${p.name}</span>`).join('')
+}
+
+// ── Phase Nav ──
+function setPhase(p){
+  S.phase=p;
+  document.getElementById('phaseBar').innerHTML=PHASES.map((_,i)=>`<div class="phase-dot ${i<p?'done':i===p?'active':''}"></div>`).join('');
+  document.getElementById('phaseLabel').textContent=PHASES[p];
+  VIEWS.forEach((v,i)=>{document.getElementById(v).classList.toggle('hidden',i!==p)});
+  showFact()
+}
+
+// ── Start ──
+function startGame(){S.project=document.getElementById('projNameLive').value||S.project;setPhase(1);startTimer(60);announce("Brainstorm phase! Add your tasks!")}
+function loadTemplate(key){
+  const t=TEMPLATES[key];S.project=t.name;S.room=genCode();S.isHost=true;S.myName='Host';
+  S.players=[{name:'Host'}];S.scores={Host:0};S.resources=[];
+  S.tasks=t.tasks.map((tk,i)=>({id:'A'+(1000+i*10),name:tk.name,dur:tk.dur,o:Math.max(1,tk.dur-2),m:tk.dur,p:tk.dur+3,wbs:tk.wbs,preds:(tk.pred||[]).map(pi=>({task:pi,type:'FS',lag:0})),resource:'',es:0,ef:0,ls:0,lf:0,float:0}));
+  initChannel();setPhase(2);buildEstimation();announce("Template loaded! Review estimates.")
+}
+
+// ── Timer ──
+function startTimer(sec){
+  clearInterval(S.timerInt);const el=document.getElementById('timer');el.classList.remove('hidden');let t=sec;
+  el.textContent=fmtTime(t);
+  S.timerInt=setInterval(()=>{t--;el.textContent=fmtTime(t);if(t<=5&&t>0)sfxTick();if(t<=0){clearInterval(S.timerInt);el.classList.add('hidden');sfxBuzz();announce("Time's up!")}},1000)
+}
+function fmtTime(s){return Math.floor(s/60)+':'+(s%60+'').padStart(2,'0')}
+
+// ── Phase 1: Brainstorm ──
+document.getElementById('newTask').addEventListener('keydown',e=>{if(e.key==='Enter')addTask()});
+function addTask(){
+  const inp=document.getElementById('newTask'),name=inp.value.trim();if(!name)return;inp.value='';
+  if(S.channel&&!S.isHost){S.channel.postMessage({type:'task',name,from:S.myName});return}
+  addTaskDirect(name,S.myName)
+}
+function addTaskDirect(name,from){
+  const dup=S.tasks.find(t=>t.name.toLowerCase()===name.toLowerCase());
+  if(dup){beep(300,.2);return}
+  const id='A'+(1000+S.tasks.length*10);
+  S.tasks.push({id,name,dur:5,o:3,m:5,p:8,wbs:'1.'+(Math.floor(S.tasks.length/5)+1),preds:[],resource:'',es:0,ef:0,ls:0,lf:0,float:0});
+  if(from&&S.scores[from]!==undefined)S.scores[from]+=10;
+  sfxAdd();renderTasks()
+}
+function renderTasks(){
+  document.getElementById('taskGrid').innerHTML=S.tasks.map(t=>`<div class="task-card"><strong>${t.id}</strong><br>${t.name}<br><span style="color:var(--dim);font-size:12px">${t.wbs}</span></div>`).join('')
+}
+function endBrainstorm(){clearInterval(S.timerInt);document.getElementById('timer').classList.add('hidden');if(!S.tasks.length){alert('Add at least one task.');return}setPhase(2);buildEstimation();announce("Estimation phase!")}
+
+// ── Phase 2: Estimation ──
+function buildEstimation(){
+  const el=document.getElementById('estList');
+  el.innerHTML=S.tasks.map((t,i)=>`<div class="est-row"><span style="min-width:200px"><strong>${t.id}</strong> ${t.name}</span>
+    <label style="font-size:12px;color:var(--dim)">O</label><input type="number" min="1" value="${t.o}" onchange="updEst(${i},'o',this.value)">
+    <label style="font-size:12px;color:var(--dim)">M</label><input type="number" min="1" value="${t.m}" onchange="updEst(${i},'m',this.value)">
+    <label style="font-size:12px;color:var(--dim)">P</label><input type="number" min="1" value="${t.p}" onchange="updEst(${i},'p',this.value)">
+    <span class="est-result" id="pert${i}">${pert(t.o,t.m,t.p)}d</span></div>`).join('')
+}
+function updEst(i,f,v){S.tasks[i][f]=Math.max(1,+v);const t=S.tasks[i];t.dur=pert(t.o,t.m,t.p);document.getElementById('pert'+i).textContent=t.dur+'d'}
+function pert(o,m,p){return Math.round((+o+4*(+m)+(+p))/6)}
+function endEstimation(){setPhase(3);buildDeps();announce("Set your dependencies!")}
+
+// ── Phase 3: Sequencing ──
+function buildDeps(){
+  const el=document.getElementById('depList');
+  el.innerHTML=S.tasks.map((t,i)=>{
+    const opts=S.tasks.filter((_,j)=>j!==i).map(p=>`<option value="${S.tasks.indexOf(p)}">${p.id} ${p.name}</option>`).join('');
+    const existing=t.preds.map((pr,pi)=>`<span class="dep-row"><select onchange="updPredTask(${i},${pi},this.value)">${S.tasks.filter((_,j)=>j!==i).map(p=>`<option value="${S.tasks.indexOf(p)}" ${S.tasks.indexOf(p)===pr.task?'selected':''}>${p.id} ${p.name}</option>`).join('')}</select>
+      <select onchange="updPredType(${i},${pi},this.value)">${['FS','SS','FF','SF'].map(tp=>`<option ${tp===pr.type?'selected':''}>${tp}</option>`).join('')}</select>
+      <input type="number" value="${pr.lag}" style="width:60px" placeholder="Lag" onchange="updPredLag(${i},${pi},this.value)">
+      <button class="secondary" onclick="rmPred(${i},${pi})" style="padding:4px 10px;font-size:12px">X</button></span>`).join('');
+    return `<div style="margin-bottom:12px;padding:12px;background:var(--card);border-radius:8px"><strong>${t.id} ${t.name}</strong> (${t.dur}d)${existing}<br><button class="secondary" onclick="addPred(${i})" style="margin-top:6px;font-size:12px;padding:4px 12px">+ Add Predecessor</button></div>`
+  }).join('')
+}
+function addPred(i){const avail=S.tasks.findIndex((_,j)=>j!==i);if(avail>=0){S.tasks[i].preds.push({task:avail===i?avail+1:avail,type:'FS',lag:0});buildDeps()}}
+function rmPred(i,pi){S.tasks[i].preds.splice(pi,1);buildDeps()}
+function updPredTask(i,pi,v){S.tasks[i].preds[pi].task=+v;buildDeps()}
+function updPredType(i,pi,v){S.tasks[i].preds[pi].type=v}
+function updPredLag(i,pi,v){S.tasks[i].preds[pi].lag=+v}
+function endSequencing(){calcSchedule();setPhase(4);buildResources();announce("Assign your resources!")}
+
+// ── Schedule Calculation ──
+function calcSchedule(){
+  // Reset
+  S.tasks.forEach(t=>{t.es=0;t.ef=0;t.ls=0;t.lf=0;t.float=0});
+  // Forward pass
+  for(let i=0;i<S.tasks.length;i++){
+    const t=S.tasks[i];let es=0;
+    t.preds.forEach(pr=>{
+      const p=S.tasks[pr.task];if(!p)return;
+      if(pr.type==='FS')es=Math.max(es,p.ef+pr.lag);
+      else if(pr.type==='SS')es=Math.max(es,p.es+pr.lag);
+      else if(pr.type==='FF')es=Math.max(es,p.ef+pr.lag-t.dur);
+      else if(pr.type==='SF')es=Math.max(es,p.es+pr.lag-t.dur);
+    });
+    t.es=Math.max(0,es);t.ef=t.es+t.dur
+  }
+  // Backward pass
+  const projEnd=Math.max(...S.tasks.map(t=>t.ef));
+  S.tasks.forEach(t=>{t.lf=projEnd;t.ls=projEnd-t.dur});
+  for(let i=S.tasks.length-1;i>=0;i--){
+    const t=S.tasks[i];
+    S.tasks.forEach((succ,si)=>{
+      succ.preds.forEach(pr=>{
+        if(pr.task===i){
+          if(pr.type==='FS'){t.lf=Math.min(t.lf,succ.ls-pr.lag);t.ls=t.lf-t.dur}
+          else if(pr.type==='SS'){t.ls=Math.min(t.ls,succ.ls-pr.lag);t.lf=t.ls+t.dur}
+          else if(pr.type==='FF'){t.lf=Math.min(t.lf,succ.lf-pr.lag);t.ls=t.lf-t.dur}
+          else if(pr.type==='SF'){t.ls=Math.min(t.ls,succ.lf-pr.lag+succ.dur);t.lf=t.ls+t.dur}
+        }
+      })
+    })
+  }
+  S.tasks.forEach(t=>{t.float=t.ls-t.es})
+}
+
+// ── Working Day Calc ──
+function addWorkingDays(start,days){
+  const d=new Date(start);let added=0;
+  while(added<days){d.setDate(d.getDate()+1);const dow=d.getDay();if(dow!==0&&dow!==6)added++}
+  return d
+}
+function fmtDate(d){return d.getFullYear()+'-'+(d.getMonth()+1+'').padStart(2,'0')+'-'+(d.getDate()+'').padStart(2,'0')}
+function fmtDateP6(d){const m=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];return (d.getDate()+'').padStart(2,'0')+'-'+m[d.getMonth()]+'-'+(d.getFullYear()+'').slice(2)}
+
+// ── Phase 4: Resources ──
+function buildResources(){
+  renderResources();
+  document.getElementById('resAssign').innerHTML=S.tasks.map((t,i)=>`<div class="dep-row"><strong>${t.id}</strong> ${t.name}
+    <select onchange="S.tasks[${i}].resource=this.value"><option value="">-- None --</option>${S.resources.map(r=>`<option ${t.resource===r?'selected':''}>${r}</option>`).join('')}</select></div>`).join('')
+}
+function addResource(){const n=document.getElementById('newRes').value.trim();if(n&&!S.resources.includes(n)){S.resources.push(n);document.getElementById('newRes').value='';buildResources()}}
+function renderResources(){document.getElementById('resList').innerHTML=S.resources.map(r=>`<span class="res-badge">${r}</span>`).join(' ')}
+function endResources(){calcSchedule();setPhase(5);buildReview();announce("Review your project schedule!")}
+
+// ── Phase 5: Review ──
+function buildReview(){
+  calcSchedule();
+  const projEnd=Math.max(...S.tasks.map(t=>t.ef));
+  const critCount=S.tasks.filter(t=>t.float===0).length;
+  const baseDate=new Date('2026-06-01');
+  const endDate=addWorkingDays(baseDate,projEnd);
+  document.getElementById('statsBar').innerHTML=`
+    <div class="stat-box"><div class="val">${S.tasks.length}</div><div class="lbl">Tasks</div></div>
+    <div class="stat-box"><div class="val">${projEnd}d</div><div class="lbl">Duration</div></div>
+    <div class="stat-box"><div class="val">${critCount}</div><div class="lbl">Critical Tasks</div></div>
+    <div class="stat-box"><div class="val">${fmtDate(baseDate)}</div><div class="lbl">Start</div></div>
+    <div class="stat-box"><div class="val">${fmtDate(endDate)}</div><div class="lbl">Finish</div></div>
+    <div class="stat-box"><div class="val">${S.resources.length}</div><div class="lbl">Resources</div></div>`;
+  drawGantt();
+  // Leaderboard
+  const lb=document.getElementById('leaderboard');
+  const sorted=Object.entries(S.scores).sort((a,b)=>b[1]-a[1]);
+  lb.innerHTML='<h3 style="text-align:center;margin-bottom:8px">Leaderboard</h3>'+sorted.map(([n,p],i)=>`<div class="lb-row"><span>${i===0?'&#x1f3c6; ':''}${n}</span><span class="pts">${p} pts</span></div>`).join('')
+}
+
+// ── Gantt Chart ──
+function drawGantt(){
+  const canvas=document.getElementById('gantt'),ctx=canvas.getContext('2d');
+  const rowH=32,labelW=220,padR=40,padTop=40;
+  const projEnd=Math.max(...S.tasks.map(t=>t.ef),1);
+  const dayW=Math.max(12,Math.min(40,(window.innerWidth-labelW-padR-80)/projEnd));
+  canvas.width=labelW+projEnd*dayW+padR;canvas.height=padTop+S.tasks.length*rowH+20;
+  const dpr=window.devicePixelRatio||1;canvas.style.width=canvas.width+'px';canvas.style.height=canvas.height+'px';
+  canvas.width*=dpr;canvas.height*=dpr;ctx.scale(dpr,dpr);
+  const W=canvas.width/dpr,H=canvas.height/dpr;
+  // BG
+  ctx.fillStyle='#0d0d1a';ctx.fillRect(0,0,W,H);
+  // Grid
+  ctx.strokeStyle='#1a1a35';ctx.lineWidth=0.5;
+  for(let d=0;d<=projEnd;d++){const x=labelW+d*dayW;ctx.beginPath();ctx.moveTo(x,padTop);ctx.lineTo(x,H);ctx.stroke()}
+  // Day labels
+  ctx.fillStyle='#555580';ctx.font='10px system-ui';
+  for(let d=0;d<=projEnd;d+=Math.max(1,Math.floor(projEnd/20))){ctx.fillText('D'+d,labelW+d*dayW,padTop-8)}
+  // Header
+  ctx.fillStyle='#6c5ce7';ctx.font='bold 13px system-ui';ctx.fillText(S.project+' — Gantt Chart',10,20);
+  // Dependency arrows
+  ctx.strokeStyle='#555580';ctx.lineWidth=1.5;
+  S.tasks.forEach((t,i)=>{
+    t.preds.forEach(pr=>{
+      const p=S.tasks[pr.task];if(!p)return;
+      const pi=S.tasks.indexOf(p);
+      const x1=labelW+p.ef*dayW,y1=padTop+pi*rowH+rowH/2;
+      const x2=labelW+t.es*dayW,y2=padTop+i*rowH+rowH/2;
+      ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x1+6,y1);ctx.lineTo(x1+6,y2);ctx.lineTo(x2,y2);ctx.stroke();
+      // Arrowhead
+      ctx.beginPath();ctx.moveTo(x2,y2);ctx.lineTo(x2-5,y2-3);ctx.lineTo(x2-5,y2+3);ctx.closePath();ctx.fillStyle='#555580';ctx.fill()
+    })
+  });
+  // Bars
+  S.tasks.forEach((t,i)=>{
+    const y=padTop+i*rowH;const isCrit=t.float===0;
+    // Label
+    ctx.fillStyle=isCrit?'#ff4757':'#e8e8f0';ctx.font=(isCrit?'bold ':'')+'12px system-ui';
+    ctx.fillText(t.id+' '+t.name.slice(0,18),8,y+rowH/2+4);
+    // Bar
+    const bx=labelW+t.es*dayW,bw=t.dur*dayW;
+    ctx.fillStyle=isCrit?'#ff4757':'#6c5ce7';
+    ctx.beginPath();ctx.roundRect(bx,y+6,Math.max(bw,4),rowH-12,4);ctx.fill();
+    // Float
+    if(t.float>0){ctx.fillStyle='rgba(46,213,115,0.2)';ctx.fillRect(bx+bw,y+6,t.float*dayW,rowH-12)}
+    // Duration text
+    if(bw>30){ctx.fillStyle='#fff';ctx.font='bold 10px system-ui';ctx.fillText(t.dur+'d',bx+4,y+rowH/2+3)}
+  })
+}
+
+// ── Exports ──
+function getScheduleDates(){
+  const base=new Date('2026-06-01');
+  return S.tasks.map(t=>{const s=addWorkingDays(base,t.es);const f=addWorkingDays(s,t.dur);return{start:s,finish:f}})
+}
+function exportCSV(){
+  const dates=getScheduleDates();
+  let csv='Task ID,Task Name,WBS,Duration,Start,Finish,Predecessor,Resource,Calendar\n';
+  S.tasks.forEach((t,i)=>{
+    const preds=t.preds.map(pr=>S.tasks[pr.task].id+pr.type+(pr.lag?'+'+pr.lag+'d':'')).join(';');
+    csv+=`${t.id},${q(t.name)},${t.wbs},${t.dur},${fmtDate(dates[i].start)},${fmtDate(dates[i].finish)},${preds},${t.resource||''},5d/w\n`
+  });
+  download(csv,S.project.replace(/\s+/g,'_')+'_P6.csv','text/csv')
+}
+function q(s){return s.includes(',')?'"'+s+'"':s}
+function exportXER(){
+  const dates=getScheduleDates();
+  let xer='ERMHDR\t12.0\n%T\tPROJECT\nproj_id\tproj_short_name\n1\t'+S.project+'\n';
+  xer+='%T\tTASK\ntask_id\ttask_code\ttask_name\torig_dur\tearly_start_date\tearly_end_date\ttotal_float\n';
+  S.tasks.forEach((t,i)=>{xer+=`${i+1}\t${t.id}\t${t.name.replace(/\s+/g,'_')}\t${t.dur}\t${fmtDateP6(dates[i].start)}\t${fmtDateP6(dates[i].finish)}\t${t.float}\n`});
+  xer+='%T\tTASKPRED\ntask_id\tpred_task_id\tpred_type\tlag_qty\n';
+  S.tasks.forEach((t,i)=>{t.preds.forEach(pr=>{xer+=`${i+1}\t${pr.task+1}\tPR_${pr.type}\t${pr.lag}\n`})});
+  xer+='%T\tTASKRSRC\ntask_id\trsrc_name\n';
+  S.tasks.forEach((t,i)=>{if(t.resource)xer+=`${i+1}\t${t.resource}\n`});
+  xer+='%E';
+  download(xer,S.project.replace(/\s+/g,'_')+'.xer','text/plain')
+}
+function exportXML(){
+  const dates=getScheduleDates();
+  let xml='<?xml version="1.0" encoding="UTF-8"?>\n<Project xmlns="http://schemas.microsoft.com/project">\n';
+  xml+=`  <Name>${esc(S.project)}</Name>\n  <StartDate>${fmtDate(dates[0].start)}T08:00:00</StartDate>\n  <Tasks>\n`;
+  S.tasks.forEach((t,i)=>{
+    xml+=`    <Task>\n      <UID>${i+1}</UID>\n      <ID>${i+1}</ID>\n      <Name>${esc(t.name)}</Name>\n      <Duration>PT${t.dur*8}H0M0S</Duration>\n`;
+    xml+=`      <Start>${fmtDate(dates[i].start)}T08:00:00</Start>\n      <Finish>${fmtDate(dates[i].finish)}T17:00:00</Finish>\n`;
+    xml+=`      <WBS>${t.wbs}</WBS>\n      <TotalSlack>${t.float}</TotalSlack>\n`;
+    t.preds.forEach(pr=>{xml+=`      <PredecessorLink><PredecessorUID>${pr.task+1}</PredecessorUID><Type>${{FS:1,FF:0,SS:2,SF:3}[pr.type]}</Type><LinkLag>${pr.lag*4800}</LinkLag></PredecessorLink>\n`});
+    xml+=`    </Task>\n`
+  });
+  xml+='  </Tasks>\n  <Resources>\n';
+  S.resources.forEach((r,i)=>{xml+=`    <Resource><UID>${i+1}</UID><Name>${esc(r)}</Name></Resource>\n`});
+  xml+='  </Resources>\n  <Assignments>\n';
+  S.tasks.forEach((t,i)=>{
+    if(t.resource){const ri=S.resources.indexOf(t.resource);if(ri>=0)xml+=`    <Assignment><TaskUID>${i+1}</TaskUID><ResourceUID>${ri+1}</ResourceUID></Assignment>\n`}
+  });
+  xml+='  </Assignments>\n</Project>';
+  download(xml,S.project.replace(/\s+/g,'_')+'.xml','application/xml')
+}
+function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+function copyText(){
+  const dates=getScheduleDates();const projEnd=Math.max(...S.tasks.map(t=>t.ef));
+  let txt=`PROJECT: ${S.project}\nDuration: ${projEnd} working days\nTasks: ${S.tasks.length}\n\n`;
+  txt+='ID       | Task Name            | Dur | Start      | Finish     | Float | Pred         | Resource\n';
+  txt+='-'.repeat(105)+'\n';
+  S.tasks.forEach((t,i)=>{
+    const pr=t.preds.map(p=>S.tasks[p.task].id+p.type).join(',');
+    txt+=`${t.id.padEnd(9)}| ${t.name.padEnd(21).slice(0,21)}| ${(t.dur+'d').padEnd(4)}| ${fmtDate(dates[i].start)} | ${fmtDate(dates[i].finish)} | ${(t.float+'d').padEnd(6)}| ${pr.padEnd(13)}| ${t.resource}\n`
+  });
+  txt+='\nCritical Path: '+S.tasks.filter(t=>t.float===0).map(t=>t.id+' '+t.name).join(' -> ');
+  navigator.clipboard.writeText(txt);announce('Copied to clipboard!')
+}
+function printGantt(){window.print()}
+function download(data,name,type){const b=new Blob([data],{type});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=name;a.click();URL.revokeObjectURL(u)}
+
+// ── Fun Facts ──
+function showFact(){document.getElementById('funFact').textContent=FACTS[Math.floor(Math.random()*FACTS.length)]}
+
+// ── Render All (for sync) ──
+function renderAll(){renderPlayers();renderTasks()}
+
+// ── Init ──
+(function(){
+  // Build template cards
+  document.getElementById('templates').innerHTML=Object.entries(TEMPLATES).map(([k,v])=>`<div class="template-card" onclick="loadTemplate('${k}')"><h3>${v.name}</h3><p>${v.tasks.length} tasks with dependencies</p></div>`).join('');
+  setPhase(0);showFact();
+  // Check URL for join
+  const params=new URLSearchParams(location.search);
+  if(params.get('room')){document.getElementById('joinCode').value=params.get('room');toggleJoin()}
+})();
+</script></body></html>
