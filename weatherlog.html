@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Weather Impact Logger</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0f0f10;--bg2:#1a1a1c;--border:#2a2a2d;--text:#f0f0f0;--dim:#6e6e73;--accent:#ff6b35;--green:#4ade80}
+body{font-family:-apple-system,system-ui,sans-serif;background:var(--bg);color:var(--text);padding:16px;max-width:600px;margin:0 auto}
+a.home{color:var(--accent);text-decoration:none;font-size:14px;display:inline-block;margin-bottom:12px}
+h1{font-size:20px;margin-bottom:16px}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:12px}
+.card h2{font-size:15px;color:var(--dim);margin-bottom:12px;text-transform:uppercase;letter-spacing:.5px}
+label{display:block;font-size:13px;color:var(--dim);margin-bottom:4px;margin-top:10px}
+label:first-child{margin-top:0}
+input,select,textarea{width:100%;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:15px;font-family:inherit}
+textarea{resize:vertical;min-height:60px}
+.row{display:flex;gap:10px}.row>*{flex:1}
+.result{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;margin-top:10px}
+.result .val{font-size:22px;font-weight:700;color:var(--accent)}.result .lbl{font-size:12px;color:var(--dim)}
+.result.green .val{color:var(--green)}
+.grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+button{padding:10px 16px;background:var(--accent);color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer}
+.qbtns{display:flex;flex-wrap:wrap;gap:6px}
+.qb{padding:6px 12px;font-size:13px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--dim);cursor:pointer}
+.qb.active{border-color:var(--accent);color:var(--accent)}
+.impact-btns{display:flex;gap:8px;margin-top:10px}
+.ib{flex:1;padding:10px;border-radius:6px;border:2px solid var(--border);background:var(--bg);color:var(--dim);cursor:pointer;text-align:center;font-size:13px}
+.ib.g.active{border-color:var(--green);color:var(--green)}
+.ib.y.active{border-color:#facc15;color:#facc15}
+.ib.r.active{border-color:#ef4444;color:#ef4444}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-top:10px}
+.cal .dh{font-size:11px;color:var(--dim);text-align:center;padding:4px}
+.cal .d{text-align:center;padding:6px 2px;border-radius:4px;font-size:12px;background:var(--bg);cursor:pointer;border:1px solid transparent}
+.cal .d.today{border-color:var(--accent)}
+.cal .d.g{background:#16a34a33;color:var(--green)}.cal .d.y{background:#a1620733;color:#facc15}.cal .d.r{background:#dc262633;color:#ef4444}
+.nav-month{display:flex;align-items:center;justify-content:space-between}
+.nav-month span{font-size:14px;font-weight:600}
+.nav-month button{background:none;border:1px solid var(--border);color:var(--dim);padding:4px 10px;font-size:14px;border-radius:4px;cursor:pointer}
+</style>
+</head>
+<body>
+<a class="home" href="index.html">← home</a>
+<h1>Weather Impact Logger</h1>
+
+<div class="card">
+<h2>Log Conditions</h2>
+<label>Date</label>
+<input type="date" id="logDate">
+<div class="row">
+<div><label>Temp (°F)</label><input type="number" id="temp" value="75"></div>
+<div><label>Wind (mph)</label><input type="number" id="wind" value="10"></div>
+<div><label>Humidity %</label><input type="number" id="hum" value="50"></div>
+</div>
+<label>Precipitation</label>
+<div class="qbtns" id="precip">
+<span class="qb" onclick="pickQ(this,'precip')">None</span>
+<span class="qb" onclick="pickQ(this,'precip')">Light Rain</span>
+<span class="qb" onclick="pickQ(this,'precip')">Heavy Rain</span>
+<span class="qb" onclick="pickQ(this,'precip')">Snow</span>
+<span class="qb" onclick="pickQ(this,'precip')">Ice</span>
+</div>
+<label>Work Impact</label>
+<div class="impact-btns">
+<div class="ib g" onclick="pickImpact(this,'full')">Full Day</div>
+<div class="ib y" onclick="pickImpact(this,'partial')">Partial Day</div>
+<div class="ib r" onclick="pickImpact(this,'no')">No Work</div>
+</div>
+<label>Notes</label>
+<textarea id="notes" rows="2" placeholder="Site conditions, delays..."></textarea>
+<button onclick="saveDay()" style="width:100%;margin-top:10px">Save Entry</button>
+</div>
+
+<div class="card">
+<h2>Calendar</h2>
+<div class="nav-month"><button onclick="changeMonth(-1)">‹</button><span id="monthLabel"></span><button onclick="changeMonth(1)">›</button></div>
+<div class="cal" id="cal"></div>
+</div>
+
+<div class="card">
+<h2>Summary</h2>
+<div class="grid">
+<div class="result green"><div class="lbl">Full Days</div><div class="val" id="fullD">0</div></div>
+<div class="result"><div class="lbl">Partial Days</div><div class="val" id="partD">0</div></div>
+<div class="result"><div class="lbl">No-Work Days</div><div class="val" id="noD">0</div></div>
+</div>
+</div>
+
+<script>
+let data=JSON.parse(localStorage.getItem('weatherLog')||'{}');
+let impact='full',precipVal='None',viewDate=new Date();
+document.getElementById('logDate').valueAsDate=new Date();
+
+function pickQ(el){
+  el.parentElement.querySelectorAll('.qb').forEach(e=>e.classList.remove('active'));
+  el.classList.add('active'); precipVal=el.textContent;
+}
+function pickImpact(el,val){
+  document.querySelectorAll('.ib').forEach(e=>e.classList.remove('active'));
+  el.classList.add('active'); impact=val;
+}
+function saveDay(){
+  const d=document.getElementById('logDate').value;
+  if(!d)return;
+  data[d]={temp:+document.getElementById('temp').value,wind:+document.getElementById('wind').value,
+    hum:+document.getElementById('hum').value,precip:precipVal,impact,notes:document.getElementById('notes').value};
+  localStorage.setItem('weatherLog',JSON.stringify(data));
+  renderCal(); updateSummary();
+}
+function changeMonth(dir){viewDate.setMonth(viewDate.getMonth()+dir);renderCal();updateSummary();}
+function renderCal(){
+  const y=viewDate.getFullYear(),m=viewDate.getMonth();
+  document.getElementById('monthLabel').textContent=new Date(y,m).toLocaleDateString('en',{month:'long',year:'numeric'});
+  const first=new Date(y,m,1).getDay(),days=new Date(y,m+1,0).getDate();
+  const today=new Date().toISOString().slice(0,10);
+  let html='';
+  ['Su','Mo','Tu','We','Th','Fr','Sa'].forEach(d=>html+=`<div class="dh">${d}</div>`);
+  for(let i=0;i<first;i++)html+='<div></div>';
+  for(let d=1;d<=days;d++){
+    const key=`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const entry=data[key];
+    let cls='d';
+    if(key===today)cls+=' today';
+    if(entry){cls+=' '+(entry.impact==='full'?'g':entry.impact==='partial'?'y':'r');}
+    html+=`<div class="${cls}" onclick="loadDay('${key}')">${d}</div>`;
+  }
+  document.getElementById('cal').innerHTML=html;
+}
+function loadDay(key){
+  document.getElementById('logDate').value=key;
+  const e=data[key];
+  if(!e)return;
+  document.getElementById('temp').value=e.temp;document.getElementById('wind').value=e.wind;
+  document.getElementById('hum').value=e.hum;document.getElementById('notes').value=e.notes||'';
+  impact=e.impact;precipVal=e.precip;
+  document.querySelectorAll('.ib').forEach(el=>el.classList.remove('active'));
+  document.querySelectorAll('#precip .qb').forEach(el=>{el.classList.remove('active');if(el.textContent===precipVal)el.classList.add('active');});
+  document.querySelector(`.ib.${impact==='full'?'g':impact==='partial'?'y':'r'}`).classList.add('active');
+}
+function updateSummary(){
+  const y=viewDate.getFullYear(),m=viewDate.getMonth();
+  let f=0,p=0,n=0;
+  Object.keys(data).forEach(k=>{
+    const d=new Date(k);
+    if(d.getFullYear()===y&&d.getMonth()===m){
+      if(data[k].impact==='full')f++;else if(data[k].impact==='partial')p++;else n++;
+    }
+  });
+  document.getElementById('fullD').textContent=f;
+  document.getElementById('partD').textContent=p;
+  document.getElementById('noD').textContent=n;
+}
+document.querySelector('.ib.g').classList.add('active');
+document.querySelector('#precip .qb').classList.add('active');
+renderCal();updateSummary();
+</script>
+</body>
+</html>

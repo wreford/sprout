@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Safety Checklist Generator</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0f0f10;--bg2:#1a1a1c;--border:#2a2a2d;--text:#f0f0f0;--dim:#6e6e73;--accent:#ff6b35;--green:#4ade80}
+body{font-family:-apple-system,system-ui,sans-serif;background:var(--bg);color:var(--text);padding:16px;max-width:600px;margin:0 auto}
+a.home{color:var(--accent);text-decoration:none;font-size:14px;display:inline-block;margin-bottom:12px}
+h1{font-size:20px;margin-bottom:16px}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:12px}
+.card h2{font-size:15px;color:var(--dim);margin-bottom:12px;text-transform:uppercase;letter-spacing:.5px}
+label{display:block;font-size:13px;color:var(--dim);margin-bottom:4px;margin-top:10px}
+input,select,textarea{width:100%;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:15px;font-family:inherit}
+button{padding:10px 16px;background:var(--accent);color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer}
+.acts{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.act{padding:8px 14px;font-size:13px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--dim);cursor:pointer}
+.act.active{border-color:var(--accent);color:var(--accent);background:rgba(255,107,53,.08)}
+.item{display:flex;gap:10px;align-items:flex-start;padding:10px;background:var(--bg);border-radius:6px;margin-top:6px}
+.item input[type=checkbox]{width:18px;height:18px;margin-top:2px;accent-color:var(--green);flex-shrink:0}
+.item .txt{flex:1;font-size:14px;line-height:1.4}
+.item .txt.done{text-decoration:line-through;color:var(--dim)}
+.item textarea{margin-top:4px;font-size:12px;padding:6px;min-height:30px}
+.pbar{height:6px;background:var(--border);border-radius:3px;margin-top:10px;overflow:hidden}
+.pbar div{height:100%;background:var(--green);transition:width .3s;border-radius:3px}
+.pct{text-align:right;font-size:13px;color:var(--green);margin-top:4px}
+.row{display:flex;gap:10px}.row>*{flex:1}
+.sign{border-top:1px solid var(--border);padding-top:12px;margin-top:12px}
+@media print{body{background:#fff;color:#000}.card{border:1px solid #ccc;background:#fff}
+a.home,button,.acts{display:none}.item{border:1px solid #eee}.pbar div{background:#000}
+.result .val,.pct{color:#000}}
+</style>
+</head>
+<body>
+<a class="home" href="index.html">← home</a>
+<h1>Safety Checklist</h1>
+
+<div class="card">
+<h2>Activity Type</h2>
+<div class="acts" id="acts"></div>
+</div>
+
+<div class="card" id="checkCard" style="display:none">
+<h2>Checklist <span id="actLabel" style="color:var(--accent)"></span></h2>
+<div class="pbar"><div id="pbarFill" style="width:0%"></div></div>
+<div class="pct" id="pctTxt">0%</div>
+<div id="items"></div>
+<div class="sign">
+<h2>Sign-Off</h2>
+<div class="row">
+<div><label>Name</label><input id="sName" oninput="saveState()"></div>
+<div><label>Role</label><input id="sRole" oninput="saveState()"></div>
+</div>
+<label>Date</label><input type="date" id="sDate" oninput="saveState()">
+<button onclick="window.print()" style="width:100%;margin-top:10px">Print Checklist</button>
+</div>
+</div>
+
+<script>
+const CL={
+excavation:["Locate underground utilities marked","Shoring/sloping adequate for depth","Competent person on site","Egress ladder within 25ft of workers","Spoil pile 2ft+ from edge","Daily trench inspection completed","Protective systems in place","Heavy equipment away from edge","Water accumulation managed","Atmospheric testing done"],
+scaffolding:["Base plates and mudsills in place","All cross-bracing installed","Guardrails on all open sides","Toe boards installed","Access ladder provided","Scaffold inspected by competent person","Capacity posted and not exceeded","Planking secured and full width","Tied to structure at intervals","Fall protection available above 10ft"],
+"hot work":["Fire watch assigned (30 min post)","Combustibles removed 35ft radius","Fire extinguisher within reach","Hot work permit posted","Sprinkler system active","Flashback arrestors on torch","Ventilation adequate","Welding screens in place","PPE: face shield, gloves, leathers","Gas cylinders secured upright"],
+"confined space":["Entry permit completed","Atmospheric testing done","Ventilation running","Attendant posted at entry","Rescue plan in place","Communication system working","Energy sources locked out","Entrant training verified","Retrieval system ready","Emergency services notified"],
+electrical:["LOTO procedures followed","Voltage tested before work","Proper PPE arc flash rated","Barricades and signage up","Ground fault protection active","Qualified personnel only","Rubber insulating gloves inspected","Single-line diagram reviewed","Energized work permit if needed","Tools insulated and inspected"],
+"crane/rigging":["Daily crane inspection done","Load chart reviewed","Rigging inspected","Outriggers fully extended","Swing radius barricaded","Signal person designated","Power lines 20ft+ clearance","Anti-two-block device working","Wind speed within limits","Lift plan for critical picks"],
+"concrete pour":["Formwork shoring inspected","Rebar caps on exposed ends","Pump truck outriggers set","Chute/hose secured","PPE: boots, gloves, eye protection","Traffic plan for trucks","Cure method planned","Finish crew fall protection","Washout area designated","Vibrator GFCI protected"],
+roofing:["Fall protection at 6ft+","Guardrails/warning lines set","Roof edge marked","Materials secured from wind","Ladder access points safe","Hot kettle area clear","Weather conditions checked","Emergency plan reviewed","Hole covers secured/marked","Harness inspections current"]
+};
+const types=Object.keys(CL);
+let current=null,state={};
+
+function init(){
+  const saved=JSON.parse(localStorage.getItem('safetyChecks')||'{}');
+  state=saved;
+  const el=document.getElementById('acts');
+  el.innerHTML=types.map(t=>`<span class="act" onclick="pick('${t}')">${t.charAt(0).toUpperCase()+t.slice(1)}</span>`).join('');
+}
+function pick(type){
+  current=type;
+  document.querySelectorAll('.act').forEach(a=>{a.classList.toggle('active',a.textContent.toLowerCase()===type)});
+  document.getElementById('checkCard').style.display='block';
+  document.getElementById('actLabel').textContent=' — '+type.charAt(0).toUpperCase()+type.slice(1);
+  if(!state[type])state[type]={checks:{},notes:{},sign:{name:'',role:'',date:''}};
+  render();
+}
+function render(){
+  const s=state[current],items=CL[current];
+  let html='';
+  items.forEach((item,i)=>{
+    const checked=s.checks[i]?'checked':'';
+    const cls=s.checks[i]?'txt done':'txt';
+    html+=`<div class="item"><input type="checkbox" ${checked} onchange="toggle(${i})"><div><div class="${cls}">${item}</div><textarea placeholder="Notes..." oninput="setNote(${i},this.value)">${s.notes[i]||''}</textarea></div></div>`;
+  });
+  document.getElementById('items').innerHTML=html;
+  document.getElementById('sName').value=s.sign.name;
+  document.getElementById('sRole').value=s.sign.role;
+  document.getElementById('sDate').value=s.sign.date;
+  updatePct();
+}
+function toggle(i){state[current].checks[i]=!state[current].checks[i];saveState();render();}
+function setNote(i,v){state[current].notes[i]=v;saveState();}
+function updatePct(){
+  const items=CL[current],done=items.filter((_,i)=>state[current].checks[i]).length;
+  const pct=Math.round(done/items.length*100);
+  document.getElementById('pbarFill').style.width=pct+'%';
+  document.getElementById('pctTxt').textContent=pct+'% complete ('+done+'/'+items.length+')';
+}
+function saveState(){
+  if(current){
+    state[current].sign={name:document.getElementById('sName').value,role:document.getElementById('sRole').value,date:document.getElementById('sDate').value};
+  }
+  localStorage.setItem('safetyChecks',JSON.stringify(state));
+  if(current)updatePct();
+}
+init();
+</script>
+</body>
+</html>
