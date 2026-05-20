@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kanban Board</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0f0f10;color:#e0e0e0;font-family:system-ui,-apple-system,sans-serif;min-height:100vh}
+a{color:#ff6b35;text-decoration:none}
+.top-bar{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #2a2a2d}
+.top-bar h1{font-size:1.2rem;color:#ff6b35}
+.top-bar a:hover{text-decoration:underline}
+.controls{display:flex;gap:8px;padding:10px 16px;flex-wrap:wrap;align-items:center}
+.controls select,.controls button{background:#1a1a1c;color:#e0e0e0;border:1px solid #2a2a2d;border-radius:6px;padding:8px 12px;font-size:.85rem;cursor:pointer}
+.controls button{background:#ff6b35;color:#fff;border:none;font-weight:600}
+.board{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding:10px 16px;flex:1;min-height:0}
+@media(max-width:800px){.board{grid-template-columns:1fr;grid-template-rows:auto}}
+.column{background:#1a1a1c;border:1px solid #2a2a2d;border-radius:10px;display:flex;flex-direction:column;min-height:200px;max-height:calc(100vh - 140px);overflow:hidden}
+.col-header{padding:12px;font-weight:700;font-size:.9rem;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #2a2a2d;position:sticky;top:0;background:#1a1a1c;z-index:1}
+.col-count{background:#2a2a2d;border-radius:12px;padding:2px 9px;font-size:.75rem;color:#aaa}
+.col-cards{flex:1;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:8px;min-height:60px}
+.col-cards.drag-over{background:rgba(255,107,53,.08)}
+.card{background:#232326;border:1px solid #2a2a2d;border-radius:8px;padding:10px 12px;cursor:grab;transition:transform .15s,opacity .15s,box-shadow .15s;position:relative}
+.card:active{cursor:grabbing}
+.card.dragging{opacity:.4;transform:scale(.95)}
+.card-title{font-size:.88rem;font-weight:600;margin-bottom:4px}
+.card-desc{font-size:.78rem;color:#999;margin-bottom:6px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.card-meta{display:flex;gap:8px;align-items:center;font-size:.72rem;color:#777}
+.priority-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.priority-low{background:#4ade80}
+.priority-med{background:#facc15}
+.priority-high{background:#ef4444}
+.card-due{color:#999}
+.card-due.overdue{color:#ef4444}
+/* Modal */
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100;justify-content:center;align-items:center}
+.modal-bg.active{display:flex}
+.modal{background:#1a1a1c;border:1px solid #2a2a2d;border-radius:12px;padding:20px;width:90%;max-width:400px;max-height:90vh;overflow-y:auto}
+.modal h2{font-size:1rem;margin-bottom:14px;color:#ff6b35}
+.modal label{display:block;font-size:.8rem;color:#aaa;margin:10px 0 4px}
+.modal input,.modal textarea,.modal select{width:100%;background:#232326;color:#e0e0e0;border:1px solid #2a2a2d;border-radius:6px;padding:8px 10px;font-size:.85rem;font-family:inherit}
+.modal textarea{height:70px;resize:vertical}
+.modal-actions{display:flex;gap:8px;margin-top:16px}
+.modal-actions button{flex:1;padding:10px;border:none;border-radius:6px;font-size:.85rem;font-weight:600;cursor:pointer}
+.btn-save{background:#ff6b35;color:#fff}
+.btn-cancel{background:#2a2a2d;color:#e0e0e0}
+.btn-delete{background:#ef4444;color:#fff}
+@keyframes cardIn{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}
+.card-enter{animation:cardIn .2s ease}
+</style>
+</head>
+<body>
+<div class="top-bar">
+  <a href="index.html">&larr; Home</a>
+  <h1>Kanban Board</h1>
+  <div></div>
+</div>
+<div class="controls">
+  <button onclick="openAdd()">+ Add Card</button>
+  <select id="filterPriority" onchange="renderAll()">
+    <option value="">All Priorities</option>
+    <option value="low">Low</option>
+    <option value="med">Medium</option>
+    <option value="high">High</option>
+  </select>
+</div>
+<div class="board" id="board"></div>
+<div class="modal-bg" id="modalBg">
+  <div class="modal">
+    <h2 id="modalTitle">Add Card</h2>
+    <label>Title *</label>
+    <input id="fTitle" placeholder="Card title">
+    <label>Description</label>
+    <textarea id="fDesc" placeholder="Optional details"></textarea>
+    <label>Priority</label>
+    <select id="fPriority"><option value="low">Low</option><option value="med" selected>Medium</option><option value="high">High</option></select>
+    <label>Due Date</label>
+    <input id="fDue" type="date">
+    <label>Column</label>
+    <select id="fCol"><option value="backlog">Backlog</option><option value="progress">In Progress</option><option value="review">Review</option><option value="done">Done</option></select>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-delete" id="btnDel" style="display:none" onclick="deleteCard()">Delete</button>
+      <button class="btn-save" onclick="saveCard()">Save</button>
+    </div>
+  </div>
+</div>
+<script>
+const COLS=[{id:'backlog',name:'Backlog'},{id:'progress',name:'In Progress'},{id:'review',name:'Review'},{id:'done',name:'Done'}];
+const KEY='kanban-data';
+let data=JSON.parse(localStorage.getItem(KEY)||'[]');
+let editId=null, dragId=null, dragGhost=null;
+
+function save(){localStorage.setItem(KEY,JSON.stringify(data))}
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
+
+function renderAll(){
+  const board=document.getElementById('board');
+  const filter=document.getElementById('filterPriority').value;
+  board.innerHTML='';
+  COLS.forEach(col=>{
+    const div=document.createElement('div');
+    div.className='column';
+    const cards=data.filter(c=>c.col===col.id&&(!filter||c.priority===filter));
+    div.innerHTML=`<div class="col-header"><span>${col.name}</span><span class="col-count">${cards.length}</span></div>`;
+    const cardArea=document.createElement('div');
+    cardArea.className='col-cards';
+    cardArea.dataset.col=col.id;
+    cards.forEach(c=>{
+      const el=document.createElement('div');
+      el.className='card card-enter';
+      el.draggable=true;
+      el.dataset.id=c.id;
+      const isOverdue=c.due&&new Date(c.due)<new Date()&&col.id!=='done';
+      el.innerHTML=`<div class="card-title">${esc(c.title)}</div>${c.desc?`<div class="card-desc">${esc(c.desc)}</div>`:''}<div class="card-meta"><span class="priority-dot priority-${c.priority}"></span><span>${c.priority}</span>${c.due?`<span class="card-due${isOverdue?' overdue':''}">${c.due}</span>`:''}</div>`;
+      el.addEventListener('click',()=>openEdit(c.id));
+      el.addEventListener('dragstart',e=>{dragId=c.id;el.classList.add('dragging');e.dataTransfer.effectAllowed='move'});
+      el.addEventListener('dragend',()=>{el.classList.remove('dragging');dragId=null});
+      setupTouch(el,c.id);
+      cardArea.appendChild(el);
+    });
+    cardArea.addEventListener('dragover',e=>{e.preventDefault();cardArea.classList.add('drag-over')});
+    cardArea.addEventListener('dragleave',()=>cardArea.classList.remove('drag-over'));
+    cardArea.addEventListener('drop',e=>{e.preventDefault();cardArea.classList.remove('drag-over');if(dragId)moveCard(dragId,col.id)});
+    div.appendChild(cardArea);
+    board.appendChild(div);
+  });
+}
+
+function setupTouch(el,id){
+  let sx,sy,moved=false;
+  el.addEventListener('touchstart',e=>{const t=e.touches[0];sx=t.clientX;sy=t.clientY;moved=false},{passive:true});
+  el.addEventListener('touchmove',e=>{
+    const t=e.touches[0];
+    if(Math.abs(t.clientX-sx)>15||Math.abs(t.clientY-sy)>15)moved=true;
+    if(!moved)return;
+    e.preventDefault();
+    if(!dragGhost){dragGhost=el.cloneNode(true);dragGhost.style.cssText='position:fixed;pointer-events:none;opacity:.7;z-index:200;width:'+el.offsetWidth+'px';document.body.appendChild(dragGhost);el.classList.add('dragging');dragId=id}
+    if(dragGhost){dragGhost.style.left=(t.clientX-60)+'px';dragGhost.style.top=(t.clientY-20)+'px'}
+  },{passive:false});
+  el.addEventListener('touchend',e=>{
+    if(dragGhost){dragGhost.remove();dragGhost=null;el.classList.remove('dragging');
+      const t=e.changedTouches[0];const target=document.elementFromPoint(t.clientX,t.clientY);
+      const colEl=target?.closest('.col-cards');if(colEl&&dragId)moveCard(dragId,colEl.dataset.col);dragId=null}
+    else if(!moved)openEdit(id);
+  });
+}
+
+function moveCard(id,col){const c=data.find(x=>x.id===id);if(c&&c.col!==col){c.col=col;save();renderAll()}}
+function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
+
+function openAdd(){
+  editId=null;document.getElementById('modalTitle').textContent='Add Card';
+  document.getElementById('btnDel').style.display='none';
+  ['fTitle','fDesc'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('fPriority').value='med';document.getElementById('fDue').value='';
+  document.getElementById('fCol').value='backlog';
+  document.getElementById('modalBg').classList.add('active');
+}
+
+function openEdit(id){
+  const c=data.find(x=>x.id===id);if(!c)return;
+  editId=id;document.getElementById('modalTitle').textContent='Edit Card';
+  document.getElementById('btnDel').style.display='';
+  document.getElementById('fTitle').value=c.title;
+  document.getElementById('fDesc').value=c.desc||'';
+  document.getElementById('fPriority').value=c.priority;
+  document.getElementById('fDue').value=c.due||'';
+  document.getElementById('fCol').value=c.col;
+  document.getElementById('modalBg').classList.add('active');
+}
+
+function closeModal(){document.getElementById('modalBg').classList.remove('active')}
+
+function saveCard(){
+  const title=document.getElementById('fTitle').value.trim();
+  if(!title)return;
+  const obj={title,desc:document.getElementById('fDesc').value.trim(),priority:document.getElementById('fPriority').value,due:document.getElementById('fDue').value,col:document.getElementById('fCol').value};
+  if(editId){const c=data.find(x=>x.id===editId);if(c)Object.assign(c,obj)}
+  else{obj.id=uid();data.push(obj)}
+  save();closeModal();renderAll();
+}
+
+function deleteCard(){if(editId){data=data.filter(c=>c.id!==editId);save();closeModal();renderAll()}}
+
+document.getElementById('modalBg').addEventListener('click',e=>{if(e.target===e.currentTarget)closeModal()});
+renderAll();
+</script>
+</body>
+</html>
