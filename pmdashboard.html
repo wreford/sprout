@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PM Dashboard</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0f0f10;color:#e0e0e0;font-family:system-ui,-apple-system,sans-serif;min-height:100vh}
+a{color:#ff6b35;text-decoration:none}
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;background:#1a1a1c;border-bottom:1px solid #2a2a2d;flex-wrap:wrap;gap:8px}
+.topbar h1{font-size:1.1rem;color:#ff6b35;white-space:nowrap}
+.topbar-right{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.topbar select{background:#2a2a2d;color:#e0e0e0;border:1px solid #3a3a3d;padding:4px 8px;border-radius:6px;font-size:.8rem}
+.topbar .ts{font-size:.7rem;color:#888}
+.btn{background:#ff6b35;color:#fff;border:none;padding:5px 12px;border-radius:6px;cursor:pointer;font-size:.75rem}
+.btn:hover{opacity:.85}
+.btn-dim{background:#2a2a2d;color:#ccc}
+.container{padding:16px;max-width:1400px;margin:0 auto}
+.row{display:grid;gap:12px;margin-bottom:12px}
+.row-4{grid-template-columns:repeat(4,1fr)}
+.row-2{grid-template-columns:1fr 1fr}
+.row-3{grid-template-columns:repeat(3,1fr)}
+.card{background:#1a1a1c;border:1px solid #2a2a2d;border-radius:10px;padding:16px;transition:box-shadow .2s}
+.card:hover{box-shadow:0 0 16px rgba(255,107,53,.1)}
+.card-link{cursor:pointer}
+.card h3{font-size:.75rem;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
+.metric-val{font-size:1.8rem;font-weight:700;line-height:1.1}
+.metric-sub{font-size:.75rem;color:#888;margin-top:4px}
+.health-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:.7rem;font-weight:600}
+.h-green{background:rgba(74,222,128,.15);color:#4ade80}
+.h-yellow{background:rgba(247,201,72,.15);color:#f7c948}
+.h-red{background:rgba(239,68,68,.15);color:#ef4444}
+.feed{max-height:300px;overflow-y:auto}
+.feed-item{padding:8px 0;border-bottom:1px solid #2a2a2d;font-size:.8rem;display:flex;gap:8px}
+.feed-item:last-child{border:none}
+.feed-icon{font-size:1rem;flex-shrink:0}
+.feed-text{color:#ccc}
+.feed-time{color:#666;font-size:.7rem;margin-top:2px}
+.stat-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #2a2a2d;font-size:.8rem}
+.stat-row:last-child{border:none}
+.stat-label{color:#aaa}
+.stat-val{font-weight:600}
+.pbar{background:#2a2a2d;border-radius:4px;height:6px;overflow:hidden;margin-top:3px;flex:1;margin-left:8px;min-width:60px}
+.pbar-fill{height:100%;border-radius:4px;transition:width .6s}
+.mini-bars{display:flex;align-items:flex-end;gap:3px;height:40px;margin-top:6px}
+.mini-bar{flex:1;border-radius:2px 2px 0 0;transition:height .4s;min-width:12px}
+.mini-bar-label{font-size:.6rem;color:#888;text-align:center;margin-top:2px}
+.canvas-wrap{position:relative;width:100%;display:flex;justify-content:center}
+canvas{max-width:100%}
+.links-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.link-btn{display:flex;align-items:center;gap:6px;background:#1a1a1c;border:1px solid #2a2a2d;border-radius:8px;padding:10px 12px;font-size:.75rem;color:#ccc;text-decoration:none;transition:all .2s}
+.link-btn:hover{border-color:#ff6b35;color:#ff6b35;box-shadow:0 0 12px rgba(255,107,53,.1)}
+.link-btn span{font-size:1.1rem}
+.gauge-section{display:flex;flex-direction:column;align-items:center;padding:20px}
+.gauge-label{font-size:.85rem;color:#888;margin-top:8px}
+@media(max-width:900px){.row-4{grid-template-columns:repeat(2,1fr)}.row-2,.row-3{grid-template-columns:1fr}.links-grid{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:500px){.row-4{grid-template-columns:1fr}.links-grid{grid-template-columns:repeat(2,1fr)}}
+@media print{body{background:#fff;color:#111}.topbar{background:#f5f5f5;border-color:#ddd}.card{background:#fff;border-color:#ddd;box-shadow:none}.card h3{color:#555}.metric-sub,.feed-time,.stat-label{color:#777}.feed-item{border-color:#eee}.stat-row{border-color:#eee}}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <h1>PM DASHBOARD</h1>
+  <div class="topbar-right">
+    <select id="projSelect" onchange="refresh()"><option value="">All Projects</option></select>
+    <span class="ts" id="lastUpdated"></span>
+    <button class="btn" onclick="refresh()">Refresh</button>
+    <button class="btn btn-dim" onclick="exportSummary()">Export</button>
+    <a href="index.html">&larr; Home</a>
+  </div>
+</div>
+<div class="container">
+  <div class="row row-4" id="metricsRow"></div>
+  <div class="row row-2">
+    <div class="card"><h3>Recent Activity</h3><div class="feed" id="activityFeed"></div></div>
+    <div class="card"><h3>Quick Stats</h3><div id="quickStats"></div></div>
+  </div>
+  <div class="row row-3">
+    <div class="card"><h3>Risk Heat Map</h3><div class="canvas-wrap"><canvas id="cvRisk" width="240" height="240"></canvas></div></div>
+    <div class="card"><h3>Budget Breakdown</h3><div class="canvas-wrap"><canvas id="cvBudget" width="240" height="240"></canvas></div></div>
+    <div class="card"><h3>Schedule Overview</h3><div class="canvas-wrap"><canvas id="cvSchedule" width="360" height="200"></canvas></div></div>
+  </div>
+  <div class="card" style="margin-bottom:12px"><h3>Quick Links</h3>
+    <div class="links-grid" id="linksGrid"></div>
+  </div>
+  <div class="card">
+    <h3>Project Health Score</h3>
+    <div class="gauge-section"><canvas id="cvGauge" width="200" height="130"></canvas><div class="gauge-label" id="gaugeLabel">Calculating...</div></div>
+  </div>
+</div>
+<script>
+const KEYS={
+  estimates:'estimate-projects',kanban:'kanban-data',timeline:'timeline-data',
+  standup:'standup-data',retro:'retro-data',risks:'risk-register',
+  requirements:'requirements-data',assumptions:'assumptions-log',
+  punchlist:'punchlist-data',rfi:'rfi-tracker',dailylog:'daily-log-data',
+  bidcompare:'bidcompare-data',lessons:'lessons-learned',
+  montecarlo:'montecarlo-data',materials:'materials-calc'
+};
+const LINKS=[
+  {icon:'🏗️',name:'Estimator',href:'estimate.html'},{icon:'🧮',name:'Materials',href:'materials.html'},
+  {icon:'📋',name:'Daily Log',href:'dailylog.html'},{icon:'✅',name:'Punch List',href:'punchlist.html'},
+  {icon:'⚖️',name:'Bid Compare',href:'bidcompare.html'},{icon:'⚠️',name:'Risks',href:'risks.html'},
+  {icon:'📐',name:'Requirements',href:'requirements.html'},{icon:'💭',name:'Assumptions',href:'assumptions.html'},
+  {icon:'📚',name:'Lessons',href:'lessons.html'},{icon:'❓',name:'RFIs',href:'rfi.html'},
+  {icon:'🎲',name:'Monte Carlo',href:'montecarlo.html'},{icon:'📋',name:'Kanban',href:'kanban.html'},
+  {icon:'📊',name:'Timeline',href:'timeline.html'},{icon:'📝',name:'Standup',href:'standup.html'},
+  {icon:'🔄',name:'Retro',href:'retro.html'}
+];
+const COLORS={accent:'#ff6b35',green:'#4ade80',gold:'#f7c948',red:'#ef4444',blue:'#60a5fa',purple:'#c084fc',pink:'#f472b6'};
+const PIE_COLORS=['#ff6b35','#4ade80','#60a5fa','#c084fc','#f472b6','#f7c948','#34d399'];
+
+let D={};
+let prevMetrics={budget:0,tasks:0,risks:0,days:0};
+
+function load(key){try{return JSON.parse(localStorage.getItem(key))}catch(e){return null}}
+
+function gatherData(){
+  D.estimates=load(KEYS.estimates)||[];
+  D.kanban=load(KEYS.kanban)||[];
+  D.timeline=load(KEYS.timeline)||[];
+  D.standup=load(KEYS.standup)||{};
+  D.retro=load(KEYS.retro)||{well:[],improve:[],actions:[]};
+  D.risks=load(KEYS.risks)||[];
+  D.requirements=load(KEYS.requirements)||[];
+  D.assumptions=load(KEYS.assumptions)||[];
+  D.punchlist=load(KEYS.punchlist)||[];
+  D.rfi=load(KEYS.rfi)||[];
+  D.dailylog=load(KEYS.dailylog)||{};
+  D.bidcompare=load(KEYS.bidcompare)||{comparisons:[]};
+  D.lessons=load(KEYS.lessons)||[];
+  D.montecarlo=load(KEYS.montecarlo)||[];
+  D.materials=load(KEYS.materials)||{};
+}
+
+function populateProjectSelect(){
+  const sel=document.getElementById('projSelect');
+  const cur=sel.value;
+  sel.innerHTML='<option value="">All Projects</option>';
+  D.estimates.forEach(p=>{
+    const o=document.createElement('option');
+    o.value=p.id;o.textContent=p.name||'Untitled';
+    sel.appendChild(o);
+  });
+  sel.value=cur;
+}
+
+function getSelectedProject(){
+  const id=document.getElementById('projSelect').value;
+  return id?D.estimates.find(p=>p.id===id):null;
+}
+
+function animateNum(el,from,to,dur=600){
+  const start=performance.now();
+  const isUSD=el.dataset.usd==='1';
+  function tick(now){
+    const t=Math.min((now-start)/dur,1);
+    const ease=1-Math.pow(1-t,3);
+    const v=Math.round(from+(to-from)*ease);
+    el.textContent=isUSD?'$'+v.toLocaleString():v.toLocaleString();
+    if(t<1)requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
+
+function renderMetrics(){
+  const proj=getSelectedProject();
+  const items=proj?proj.items||[]:D.estimates.flatMap(p=>p.items||[]);
+  const grandTotal=items.reduce((s,i)=>s+i.qty*i.price,0);
+
+  const tasks=D.kanban;
+  const done=tasks.filter(c=>c.col==='done').length;
+  const totalTasks=tasks.length;
+  const pct=totalTasks?Math.round(done/totalTasks*100):0;
+
+  const openRisks=D.risks.filter(r=>r.status==='Open');
+  const highScore=D.risks.length?Math.max(...D.risks.map(r=>r.score)):0;
+
+  const tl=D.timeline;
+  let totalDays=0,daysRemain=0;
+  if(tl.length){
+    const mn=tl.reduce((a,b)=>a.start<b.start?a:b).start;
+    const mx=tl.reduce((a,b)=>a.end>b.end?a:b).end;
+    totalDays=Math.round((new Date(mx)-new Date(mn))/864e5);
+    daysRemain=Math.max(0,Math.round((new Date(mx)-new Date())/864e5));
+  }
+
+  const row=document.getElementById('metricsRow');
+  row.innerHTML=[
+    {emoji:'💰',label:'Budget',val:grandTotal,sub:grandTotal>0?(proj?'Project: '+(proj.name||''):'All estimates combined'):'No estimates yet',usd:true,cls:grandTotal>0?'h-green':'h-yellow',badge:grandTotal>0?'On Track':'No Data',href:'estimate.html'},
+    {emoji:'📅',label:'Schedule',val:totalDays,sub:daysRemain>0?daysRemain+' days remaining':'No timeline data',usd:false,cls:daysRemain>10?'h-green':daysRemain>0?'h-yellow':'h-red',badge:daysRemain>10?'On Track':daysRemain>0?'Tight':'No Data',href:'timeline.html'},
+    {emoji:'⚠️',label:'Risks',val:openRisks.length,sub:highScore>0?'Highest score: '+highScore:'No risks logged',usd:false,cls:openRisks.length>5?'h-red':openRisks.length>0?'h-yellow':'h-green',badge:openRisks.length>5?'Elevated':openRisks.length>0?'Monitor':'Clear',href:'risks.html'},
+    {emoji:'✅',label:'Tasks',val:done+'/'+totalTasks,sub:pct+'% complete',usd:false,cls:pct>=75?'h-green':pct>=40?'h-yellow':'h-red',badge:pct+'%',href:'kanban.html'}
+  ].map(m=>{
+    const isNum=typeof m.val==='number';
+    return `<div class="card card-link" onclick="location.href='${m.href}'">
+      <h3>${m.emoji} ${m.label}</h3>
+      <div class="metric-val" ${isNum?`id="mv-${m.label}" data-usd="${m.usd?1:0}"`:''}>${isNum?(m.usd?'$'+m.val.toLocaleString():m.val):m.val}</div>
+      <div class="metric-sub">${m.sub} <span class="health-badge ${m.cls}">${m.badge}</span></div>
+    </div>`;
+  }).join('');
+}
+
+function renderActivityFeed(){
+  const feed=[];
+  const today=new Date().toISOString().slice(0,10);
+
+  // Latest standup
+  const standupDates=Object.keys(D.standup).sort().reverse();
+  if(standupDates.length){
+    const d=standupDates[0],e=D.standup[d];
+    feed.push({icon:'📝',text:'Standup logged'+(e.today?' — '+truncate(e.today,60):''),time:d,sort:d});
+  }
+
+  // Recent kanban (infer from data — cards in progress/review/done)
+  D.kanban.filter(c=>c.col==='done').slice(-2).forEach(c=>{
+    feed.push({icon:'✅',text:'Task completed: '+truncate(c.title,50),time:c.due||'',sort:c.due||'2000-01-01'});
+  });
+  D.kanban.filter(c=>c.col==='progress').slice(-2).forEach(c=>{
+    feed.push({icon:'🔄',text:'In progress: '+truncate(c.title,50),time:c.due||'',sort:c.due||'2000-01-01'});
+  });
+
+  // Latest daily log
+  const logDates=Object.keys(D.dailylog).sort().reverse();
+  if(logDates.length){
+    const d=logDates[0],l=D.dailylog[d];
+    feed.push({icon:'📋',text:'Daily log'+(l.workPerformed?' — '+truncate(l.workPerformed,50):''),time:d,sort:d});
+  }
+
+  // Recent RFIs
+  D.rfi.slice(-2).forEach(r=>{
+    feed.push({icon:'❓',text:'RFI-'+String(r.num).padStart(3,'0')+': '+truncate(r.subj,40),time:r.dateSubmit||'',sort:r.dateSubmit||''});
+  });
+
+  // Recent risks
+  D.risks.filter(r=>r.status==='Open').slice(-2).forEach(r=>{
+    feed.push({icon:'⚠️',text:'Risk: '+truncate(r.desc,50)+' (Score '+r.score+')',time:'',sort:''});
+  });
+
+  // Punch items closed
+  D.punchlist.filter(i=>i.status==='Closed').slice(-2).forEach(i=>{
+    feed.push({icon:'🔨',text:'Punch closed: '+truncate(i.description,50),time:i.date||'',sort:i.date||''});
+  });
+
+  feed.sort((a,b)=>b.sort.localeCompare(a.sort));
+  const el=document.getElementById('activityFeed');
+  if(!feed.length){el.innerHTML='<div style="color:#666;font-size:.8rem;padding:20px 0;text-align:center">No activity yet. Start using the PM tools to see data here.</div>';return}
+  el.innerHTML=feed.slice(0,10).map(f=>`<div class="feed-item"><div class="feed-icon">${f.icon}</div><div><div class="feed-text">${f.text}</div>${f.time?`<div class="feed-time">${f.time}</div>`:''}</div></div>`).join('');
+}
+
+function renderQuickStats(){
+  const el=document.getElementById('quickStats');
+  let html='';
+
+  // Kanban per column
+  const cols=[{id:'backlog',name:'Backlog'},{id:'progress',name:'In Progress'},{id:'review',name:'Review'},{id:'done',name:'Done'}];
+  const colCounts=cols.map(c=>({name:c.name,count:D.kanban.filter(k=>k.col===c.id).length}));
+  const maxC=Math.max(1,...colCounts.map(c=>c.count));
+  html+=`<div class="stat-row"><span class="stat-label">Kanban Board</span></div>`;
+  html+=`<div class="mini-bars">${colCounts.map(c=>`<div style="flex:1;text-align:center"><div class="mini-bar" style="height:${Math.max(2,c.count/maxC*40)}px;background:${COLORS.accent};margin:0 auto;width:80%"></div><div class="mini-bar-label">${c.name.slice(0,3)} (${c.count})</div></div>`).join('')}</div>`;
+  html+='<div style="height:12px"></div>';
+
+  // Punch list progress
+  const pTotal=D.punchlist.length;
+  const pClosed=D.punchlist.filter(i=>i.status==='Closed').length;
+  const pPct=pTotal?Math.round(pClosed/pTotal*100):0;
+  html+=`<div class="stat-row"><span class="stat-label">Punch List</span><span class="stat-val">${pClosed}/${pTotal} (${pPct}%)</span></div>`;
+  html+=`<div class="pbar" style="margin:4px 0 8px"><div class="pbar-fill" style="width:${pPct}%;background:${COLORS.green}"></div></div>`;
+
+  // RFIs
+  const rfiOpen=D.rfi.filter(r=>r.status==='Open').length;
+  const rfiAnswered=D.rfi.filter(r=>r.status==='Answered').length;
+  const rfiOverdue=D.rfi.filter(r=>r.status==='Open'&&r.dateNeed&&new Date()>new Date(r.dateNeed)).length;
+  html+=`<div class="stat-row"><span class="stat-label">RFIs</span><span class="stat-val">Open ${rfiOpen} | Answered ${rfiAnswered} | Overdue ${rfiOverdue}</span></div>`;
+
+  // Requirements coverage
+  const rTotal=D.requirements.length;
+  const rApproved=D.requirements.filter(r=>['Approved','Implemented','Verified'].includes(r.status)).length;
+  const rImpl=D.requirements.filter(r=>['Implemented','Verified'].includes(r.status)).length;
+  const rVer=D.requirements.filter(r=>r.status==='Verified').length;
+  const apPct=rTotal?Math.round(rApproved/rTotal*100):0;
+  const imPct=rTotal?Math.round(rImpl/rTotal*100):0;
+  const vePct=rTotal?Math.round(rVer/rTotal*100):0;
+  html+=`<div class="stat-row" style="margin-top:6px"><span class="stat-label">Requirements (${rTotal})</span></div>`;
+  html+=`<div style="font-size:.75rem;margin:4px 0"><div style="display:flex;align-items:center;gap:6px;margin:3px 0"><span style="color:#aaa;width:80px">Approved+</span><div class="pbar" style="margin:0"><div class="pbar-fill" style="width:${apPct}%;background:${COLORS.green}"></div></div><span style="color:#aaa">${apPct}%</span></div>`;
+  html+=`<div style="display:flex;align-items:center;gap:6px;margin:3px 0"><span style="color:#aaa;width:80px">Implemented+</span><div class="pbar" style="margin:0"><div class="pbar-fill" style="width:${imPct}%;background:${COLORS.gold}"></div></div><span style="color:#aaa">${imPct}%</span></div>`;
+  html+=`<div style="display:flex;align-items:center;gap:6px;margin:3px 0"><span style="color:#aaa;width:80px">Verified</span><div class="pbar" style="margin:0"><div class="pbar-fill" style="width:${vePct}%;background:${COLORS.blue}"></div></div><span style="color:#aaa">${vePct}%</span></div></div>`;
+
+  // Assumptions
+  const aActive=D.assumptions.filter(a=>a.status==='Active').length;
+  const aValid=D.assumptions.filter(a=>a.status==='Validated').length;
+  const aInvalid=D.assumptions.filter(a=>a.status==='Invalid').length;
+  html+=`<div class="stat-row" style="margin-top:6px"><span class="stat-label">Assumptions</span><span class="stat-val">Active ${aActive} | Valid ${aValid} | Invalid ${aInvalid}</span></div>`;
+
+  el.innerHTML=html;
+}
+
+function drawRiskHeatMap(){
+  const cv=document.getElementById('cvRisk'),ctx=cv.getContext('2d');
+  const dpr=window.devicePixelRatio||1;
+  cv.width=240*dpr;cv.height=240*dpr;
+  ctx.scale(dpr,dpr);
+  const S=40,OFF=40;
+  ctx.clearRect(0,0,240,240);
+  ctx.fillStyle='#1a1a1c';ctx.fillRect(0,0,240,240);
+
+  const grid=Array.from({length:5},()=>Array(5).fill(0));
+  D.risks.filter(r=>r.status==='Open').forEach(r=>{
+    const li=Math.min(5,Math.max(1,r.lik))-1;
+    const ii=Math.min(5,Math.max(1,r.imp))-1;
+    grid[li][ii]++;
+  });
+
+  for(let y=0;y<5;y++){
+    for(let x=0;x<5;x++){
+      const score=(5-y)*(x+1);
+      const alpha=score>=15?0.8:score>=8?0.5:0.25;
+      const base=score>=15?COLORS.red:score>=8?COLORS.gold:COLORS.green;
+      ctx.fillStyle=base;ctx.globalAlpha=alpha;
+      ctx.fillRect(OFF+x*S,OFF+y*S,S-2,S-2);
+      ctx.globalAlpha=1;
+      if(grid[4-y][x]>0){
+        ctx.fillStyle='#fff';ctx.font='bold 13px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';
+        ctx.fillText(grid[4-y][x],OFF+x*S+S/2-1,OFF+y*S+S/2-1);
+      }
+    }
+  }
+  ctx.fillStyle='#888';ctx.font='10px system-ui';ctx.textAlign='center';
+  for(let i=1;i<=5;i++){
+    ctx.fillText(i,OFF+((i-1)*S)+S/2-1,OFF+5*S+12);
+    ctx.save();ctx.translate(OFF-12,OFF+(5-i)*S+S/2-1);ctx.fillText(i,0,0);ctx.restore();
+  }
+  ctx.fillStyle='#888';ctx.font='9px system-ui';
+  ctx.fillText('Impact →',OFF+2.5*S,OFF+5*S+26);
+  ctx.save();ctx.translate(10,OFF+2.5*S);ctx.rotate(-Math.PI/2);ctx.fillText('Likelihood →',0,0);ctx.restore();
+}
+
+function drawBudgetChart(){
+  const cv=document.getElementById('cvBudget'),ctx=cv.getContext('2d');
+  const dpr=window.devicePixelRatio||1;
+  cv.width=240*dpr;cv.height=240*dpr;
+  ctx.scale(dpr,dpr);
+  ctx.clearRect(0,0,240,240);
+  ctx.fillStyle='#1a1a1c';ctx.fillRect(0,0,240,240);
+
+  const proj=getSelectedProject();
+  const items=proj?proj.items||[]:D.estimates.flatMap(p=>p.items||[]);
+  const cats={};
+  items.forEach(i=>{const c=i.cat||'Other';cats[c]=(cats[c]||0)+i.qty*i.price});
+  const entries=Object.entries(cats).filter(e=>e[1]>0).sort((a,b)=>b[1]-a[1]);
+  const total=entries.reduce((s,e)=>s+e[1],0);
+
+  if(!total){
+    ctx.fillStyle='#666';ctx.font='12px system-ui';ctx.textAlign='center';
+    ctx.fillText('No budget data',120,120);return;
+  }
+  const cx=120,cy=105,R=70,r=40;
+  let angle=-Math.PI/2;
+  entries.forEach(([cat,val],idx)=>{
+    const sweep=val/total*Math.PI*2;
+    ctx.beginPath();ctx.moveTo(cx+r*Math.cos(angle),cy+r*Math.sin(angle));
+    ctx.arc(cx,cy,R,angle,angle+sweep);ctx.arc(cx,cy,r,angle+sweep,angle,true);
+    ctx.closePath();ctx.fillStyle=PIE_COLORS[idx%PIE_COLORS.length];ctx.fill();
+    angle+=sweep;
+  });
+  // Legend
+  let ly=195;
+  ctx.font='10px system-ui';ctx.textAlign='left';
+  entries.slice(0,5).forEach(([cat,val],idx)=>{
+    ctx.fillStyle=PIE_COLORS[idx%PIE_COLORS.length];
+    ctx.fillRect(20,ly-6,8,8);
+    ctx.fillStyle='#ccc';
+    ctx.fillText(`${cat}: $${Math.round(val).toLocaleString()}`,32,ly);
+    ly+=14;
+  });
+}
+
+function drawScheduleChart(){
+  const cv=document.getElementById('cvSchedule'),ctx=cv.getContext('2d');
+  const dpr=window.devicePixelRatio||1;
+  cv.width=360*dpr;cv.height=200*dpr;
+  ctx.scale(dpr,dpr);
+  ctx.clearRect(0,0,360,200);
+  ctx.fillStyle='#1a1a1c';ctx.fillRect(0,0,360,200);
+
+  const tl=D.timeline;
+  if(!tl.length){
+    ctx.fillStyle='#666';ctx.font='12px system-ui';ctx.textAlign='center';
+    ctx.fillText('No timeline data',180,100);return;
+  }
+  const mn=tl.reduce((a,b)=>a.start<b.start?a:b).start;
+  const mx=tl.reduce((a,b)=>a.end>b.end?a:b).end;
+  const totalDays=Math.max(1,Math.round((new Date(mx)-new Date(mn))/864e5));
+  const LEFT=10,TOP=20,W=340,barH=Math.min(20,Math.max(10,(170-TOP)/tl.length-4));
+  const gap=barH+4;
+
+  ctx.fillStyle='#888';ctx.font='9px system-ui';ctx.textAlign='left';
+  ctx.fillText(new Date(mn+'T00:00:00').toLocaleDateString('en',{month:'short',day:'numeric'}),LEFT,14);
+  ctx.textAlign='right';
+  ctx.fillText(new Date(mx+'T00:00:00').toLocaleDateString('en',{month:'short',day:'numeric'}),LEFT+W,14);
+
+  // Today line
+  const nowPct=(new Date()-new Date(mn))/864e5/totalDays;
+  if(nowPct>=0&&nowPct<=1){
+    ctx.strokeStyle='rgba(255,107,53,0.5)';ctx.lineWidth=1;ctx.setLineDash([3,3]);
+    ctx.beginPath();ctx.moveTo(LEFT+nowPct*W,TOP);ctx.lineTo(LEFT+nowPct*W,TOP+tl.length*gap);ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  const showTasks=tl.slice(0,Math.floor(170/gap));
+  showTasks.forEach((t,i)=>{
+    const s=(new Date(t.start)-new Date(mn))/864e5/totalDays;
+    const e=(new Date(t.end)-new Date(mn))/864e5/totalDays;
+    const x=LEFT+s*W,w=Math.max(4,(e-s)*W),y=TOP+i*gap;
+    ctx.fillStyle=t.color||PIE_COLORS[i%PIE_COLORS.length];ctx.globalAlpha=0.85;
+    ctx.beginPath();ctx.roundRect(x,y,w,barH,3);ctx.fill();
+    ctx.globalAlpha=1;
+    if(w>30){
+      ctx.fillStyle='#fff';ctx.font='bold 9px system-ui';ctx.textAlign='left';ctx.textBaseline='middle';
+      ctx.fillText(truncate(t.name,Math.floor(w/5.5)),x+4,y+barH/2);
+    }
+  });
+}
+
+function calcHealthScore(){
+  // Budget variance (25%) — assume on-budget if estimate exists
+  const proj=getSelectedProject();
+  const items=proj?proj.items||[]:D.estimates.flatMap(p=>p.items||[]);
+  const budgetTotal=items.reduce((s,i)=>s+i.qty*i.price,0);
+  const budgetScore=budgetTotal>0?85:0; // on track if we have a budget
+
+  // Schedule variance (25%)
+  const tl=D.timeline;
+  let schedScore=0;
+  if(tl.length){
+    const mx=tl.reduce((a,b)=>a.end>b.end?a:b).end;
+    const remain=Math.round((new Date(mx)-new Date())/864e5);
+    const totalD=Math.round((new Date(mx)-new Date(tl.reduce((a,b)=>a.start<b.start?a:b).start))/864e5);
+    schedScore=remain>0?Math.min(100,Math.round(remain/Math.max(1,totalD)*120)):10;
+  }
+
+  // Risk exposure (20%)
+  const openRisks=D.risks.filter(r=>r.status==='Open');
+  const maxScore=D.risks.length?Math.max(...D.risks.map(r=>r.score)):0;
+  const riskScore=D.risks.length===0?50:Math.max(0,100-openRisks.length*8-maxScore*2);
+
+  // Punch list completion (15%)
+  const pTotal=D.punchlist.length;
+  const pClosed=D.punchlist.filter(i=>i.status==='Closed').length;
+  const punchScore=pTotal?Math.round(pClosed/pTotal*100):50;
+
+  // RFI response rate (15%)
+  const rfiTotal=D.rfi.length;
+  const rfiAnswered=D.rfi.filter(r=>r.status==='Answered'||r.status==='Closed').length;
+  const rfiScore=rfiTotal?Math.round(rfiAnswered/rfiTotal*100):50;
+
+  return Math.round(budgetScore*0.25+schedScore*0.25+riskScore*0.20+punchScore*0.15+rfiScore*0.15);
+}
+
+function drawGauge(score){
+  const cv=document.getElementById('cvGauge'),ctx=cv.getContext('2d');
+  const dpr=window.devicePixelRatio||1;
+  cv.width=200*dpr;cv.height=130*dpr;
+  ctx.scale(dpr,dpr);
+  ctx.clearRect(0,0,200,130);
+
+  const cx=100,cy=105,R=80,r=55;
+  const startA=Math.PI,endA=2*Math.PI;
+  // Background arc
+  ctx.beginPath();ctx.arc(cx,cy,R,startA,endA);ctx.arc(cx,cy,r,endA,startA,true);ctx.closePath();
+  ctx.fillStyle='#2a2a2d';ctx.fill();
+
+  // Score arc
+  const pct=Math.max(0,Math.min(100,score))/100;
+  const scoreEnd=startA+pct*Math.PI;
+  const color=score>=80?COLORS.green:score>=50?COLORS.gold:COLORS.red;
+  ctx.beginPath();ctx.arc(cx,cy,R,startA,scoreEnd);ctx.arc(cx,cy,r,scoreEnd,startA,true);ctx.closePath();
+  ctx.fillStyle=color;ctx.fill();
+
+  // Score text
+  ctx.fillStyle='#fff';ctx.font='bold 28px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillText(score,cx,cy-10);
+  ctx.fillStyle='#888';ctx.font='11px system-ui';
+  ctx.fillText('/100',cx,cy+12);
+
+  const label=document.getElementById('gaugeLabel');
+  const cls=score>=80?'h-green':score>=50?'h-yellow':'h-red';
+  const text=score>=80?'Healthy':score>=50?'Needs Attention':'At Risk';
+  label.innerHTML=`<span class="health-badge ${cls}">${text}</span>`;
+}
+
+function renderLinks(){
+  document.getElementById('linksGrid').innerHTML=LINKS.map(l=>`<a class="link-btn" href="${l.href}"><span>${l.icon}</span>${l.name}</a>`).join('');
+}
+
+function truncate(s,n){return s&&s.length>n?s.slice(0,n)+'...':s||''}
+
+function refresh(){
+  gatherData();
+  populateProjectSelect();
+  renderMetrics();
+  renderActivityFeed();
+  renderQuickStats();
+  drawRiskHeatMap();
+  drawBudgetChart();
+  drawScheduleChart();
+  const score=calcHealthScore();
+  drawGauge(score);
+  renderLinks();
+  document.getElementById('lastUpdated').textContent='Updated: '+new Date().toLocaleTimeString();
+}
+
+function exportSummary(){
+  const proj=getSelectedProject();
+  const items=proj?proj.items||[]:D.estimates.flatMap(p=>p.items||[]);
+  const total=items.reduce((s,i)=>s+i.qty*i.price,0);
+  const done=D.kanban.filter(c=>c.col==='done').length;
+  const score=calcHealthScore();
+  const lines=[
+    'PM DASHBOARD SUMMARY','='.repeat(40),'Date: '+new Date().toLocaleString(),'',
+    'BUDGET: $'+total.toLocaleString(),
+    'TASKS: '+done+'/'+D.kanban.length+' complete',
+    'OPEN RISKS: '+D.risks.filter(r=>r.status==='Open').length,
+    'OPEN RFIs: '+D.rfi.filter(r=>r.status==='Open').length,
+    'PUNCH LIST: '+D.punchlist.filter(i=>i.status==='Closed').length+'/'+D.punchlist.length+' closed',
+    'REQUIREMENTS: '+D.requirements.length+' total',
+    'ASSUMPTIONS: Active '+D.assumptions.filter(a=>a.status==='Active').length+', Validated '+D.assumptions.filter(a=>a.status==='Validated').length,
+    '','HEALTH SCORE: '+score+'/100','',
+    'RECENT RFIs:',
+    ...D.rfi.slice(-5).map(r=>'  RFI-'+String(r.num).padStart(3,'0')+' ['+r.status+'] '+r.subj),
+    '','TOP RISKS:',
+    ...D.risks.filter(r=>r.status==='Open').sort((a,b)=>b.score-a.score).slice(0,5).map(r=>'  Score '+r.score+': '+r.desc)
+  ];
+  const blob=new Blob([lines.join('\n')],{type:'text/plain'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download='pm-dashboard-'+new Date().toISOString().slice(0,10)+'.txt';a.click();
+}
+
+refresh();
+setInterval(refresh,30000);
+</script>
+</body>
+</html>
