@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PM CLI</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--t:#33ff33;--prompt:#ff6b35;--bg:#0a0a0a;--err:#ff4444;--warn:#ffaa00;--dim:#555}
+body{background:var(--bg);color:var(--t);font-family:'Fira Code',Consolas,'Courier New',monospace;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+a.home{position:fixed;top:8px;right:14px;color:#666;font-size:.7rem;text-decoration:none;z-index:99}
+a.home:hover{color:var(--prompt)}
+#output{flex:1;overflow-y:auto;padding:12px 14px 0;white-space:pre-wrap;word-break:break-word;font-size:13px;line-height:1.45;scrollbar-width:thin;scrollbar-color:#222 transparent}
+#output::-webkit-scrollbar{width:6px}
+#output::-webkit-scrollbar-thumb{background:#222;border-radius:3px}
+.line{animation:fadein .06s}
+@keyframes fadein{from{opacity:0}to{opacity:1}}
+.err{color:var(--err)}.warn{color:var(--warn)}.ok{color:#4ade80}.dim{color:var(--dim)}.bold{font-weight:bold}.accent{color:var(--prompt)}
+#inputRow{display:flex;align-items:center;padding:4px 14px 10px;font-size:13px;position:relative}
+#prompt{color:var(--prompt);margin-right:6px;white-space:nowrap}
+#input{background:none;border:none;color:var(--t);font:inherit;flex:1;outline:none;caret-color:var(--t)}
+#ac{position:absolute;bottom:100%;left:0;background:#181818;border:1px solid #333;border-radius:4px;display:none;max-height:180px;overflow-y:auto;font-size:12px;margin-left:14px;z-index:10;min-width:260px}
+#ac div{padding:3px 10px;cursor:pointer}
+#ac div.sel{background:#2a2a2a;color:var(--prompt)}
+#ac div:hover{background:#222}
+.tbl{border-collapse:collapse;margin:4px 0;font-size:12px}
+.tbl td,.tbl th{padding:1px 10px 1px 0;text-align:left;white-space:nowrap}
+.tbl th{color:var(--prompt);border-bottom:1px solid #333}
+.bar-g{color:#4ade80}.bar-y{color:#ffaa00}.bar-r{color:var(--err)}
+</style>
+</head>
+<body>
+<a class="home" href="index.html">&larr; Home</a>
+<div id="output"></div>
+<div id="inputRow"><span id="prompt">pm&gt; </span><input id="input" autofocus autocomplete="off" spellcheck="false"><div id="ac"></div></div>
+<script>
+const $=s=>document.getElementById(s),out=$('output'),inp=$('input'),acEl=$('ac');
+let history=[],hIdx=-1,acItems=[],acIdx=-1,themeColor='green';
+const themes={green:'#33ff33',orange:'#ff6b35',blue:'#60a5fa'};
+// helpers
+function ld(k){try{return JSON.parse(localStorage.getItem(k))}catch(e){return null}}
+function d(n){const d=new Date();d.setDate(d.getDate()+n);return d.toISOString().split('T')[0]}
+const today=new Date().toISOString().split('T')[0];
+const yesterday=(()=>{const d=new Date();d.setDate(d.getDate()-1);return d.toISOString().split('T')[0]})();
+function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+function print(html,cls=''){const div=document.createElement('div');div.className='line '+(cls||'');div.innerHTML=html;out.appendChild(div);out.scrollTop=out.scrollHeight}
+function printLines(arr){arr.forEach(l=>print(l))}
+function table(headers,rows,opts={}){
+  if(!rows.length)return print('<span class="dim">  No results.</span>');
+  const ws=headers.map((h,i)=>Math.max(h.length,...rows.map(r=>String(r[i]??'').length)));
+  const hdr=headers.map((h,i)=>h.padEnd(ws[i])).join('  ');
+  const sep=ws.map(w=>'─'.repeat(w)).join('──');
+  print('<span class="accent bold">  '+esc(hdr)+'</span>');
+  print('<span class="dim">  '+sep+'</span>');
+  rows.forEach(r=>{const line=r.map((c,i)=>{
+    let s=String(c??'').padEnd(ws[i]);
+    if(opts.colorCol!==undefined&&i===opts.colorCol){
+      const v=String(c).toLowerCase();
+      if(/done|fixed|validated|answered|approved|implemented|mitigated/.test(v))s='<span class="ok">'+esc(s)+'</span>';
+      else if(/critical|overdue|urgent|high|invalid/.test(v))s='<span class="err">'+esc(s)+'</span>';
+      else if(/open|active|in progress|doing|review|draft|major/.test(v))s='<span class="warn">'+esc(s)+'</span>';
+      else s=esc(s);
+    }else s=esc(s);
+    return s;
+  }).join('  ');print('  '+line)});
+}
+function bar(val,max,w=20){
+  const filled=Math.round(val/max*w),cls=val/max>.7?'bar-g':val/max>.4?'bar-y':'bar-r';
+  return '<span class="'+cls+'">'+('█'.repeat(filled))+'</span><span class="dim">'+('░'.repeat(w-filled))+'</span>';
+}
+// data loaders
+function kanban(){const d=ld('kanban-data');if(!d)return null;const map={};(d.columns||[]).forEach(c=>{const key=c.name.toLowerCase().replace(/\s+/g,'');map[key]=c.cards||[]});return{raw:d,map,all:(d.columns||[]).flatMap(c=>(c.cards||[]).map(card=>({...card,column:c.name})))}}
+function risks(){return ld('risk-register')||[]}
+function rfis(){return ld('rfi-tracker')||[]}
+function punchlist(){return ld('punchlist-data')||[]}
+function timeline(){return ld('timeline-data')||[]}
+function budget(){return ld('estimate-projects')||[]}
+function reqs(){return ld('requirements-data')||[]}
+function assumptions(){return ld('assumptions-log')||[]}
+function lessons(){return ld('lessons-learned')||[]}
+function standups(){return ld('standup-data')||{}}
+function dailylog(){return ld('daily-log-data')||{}}
+// parse
+function parse(input){const parts=[];let cur='',inQ=false;for(const ch of input){if(ch==='"'){inQ=!inQ;continue}if(ch===' '&&!inQ){if(cur)parts.push(cur);cur=''}else cur+=ch}if(cur)parts.push(cur);const cmd=parts[0]||'';const args=[],flags={};for(let i=1;i<parts.length;i++){if(parts[i].startsWith('--')){const k=parts[i].slice(2);flags[k]=parts[i+1]&&!parts[i+1].startsWith('--')?parts[++i]:true}else args.push(parts[i])}return{cmd,args,flags}}
+// commands
+const CMDS={
+tasks(a,f){
+  const k=kanban();if(!k)return print('  No kanban data. Run <span class="accent">sample</span> to load.','warn');
+  if(f.json)return print(esc(JSON.stringify(k.raw,null,2)));
+  if(f.count){const cols=k.raw.columns||[];print('');cols.forEach(c=>{const n=(c.cards||[]).length;print('  <span class="accent">'+esc(c.name).padEnd(14)+'</span> '+n+' '+bar(n,Math.max(...cols.map(x=>(x.cards||[]).length)||[1])))} );return}
+  let items=k.all;
+  if(f.status){const sa={doing:'in progress',todo:'backlog'};const s=(sa[f.status.toLowerCase()]||f.status).toLowerCase();items=items.filter(t=>t.column.toLowerCase().includes(s))}
+  if(f.priority){const p=f.priority.toLowerCase();items=items.filter(t=>(t.priority||'').toLowerCase()===p)}
+  table(['ID','Title','Priority','Column','Due'],items.map(t=>[t.id,t.title,t.priority||'-',t.column,t.due||'-']),{colorCol:2});
+},
+risks(a,f){
+  let r=risks();if(!r.length)return print('  No risk data.','warn');
+  if(f.json)return print(esc(JSON.stringify(r,null,2)));
+  if(f.open)r=r.filter(x=>x.status==='Open');
+  if(f.critical)r=r.filter(x=>x.score>=15);
+  if(f.sort==='score')r.sort((a,b)=>b.score-a.score);
+  table(['Score','Cat','Description','Owner','Status'],r.map(x=>[x.score,x.cat,x.desc.slice(0,50),x.owner,x.status]),{colorCol:4});
+},
+rfis(a,f){
+  let r=rfis();if(!r.length)return print('  No RFI data.','warn');
+  if(f.json)return print(esc(JSON.stringify(r,null,2)));
+  if(f.open)r=r.filter(x=>x.status==='Open');
+  if(f.overdue)r=r.filter(x=>x.status==='Open'&&x.needed<today);
+  table(['#','Subject','By','Status','Priority','Needed'],r.map(x=>[x.num,x.subject.slice(0,40),x.by,x.status,x.priority,x.needed||'-']),{colorCol:3});
+},
+punchlist(a,f){
+  let p=punchlist();if(!p.length)return print('  No punchlist data.','warn');
+  if(f.json)return print(esc(JSON.stringify(p,null,2)));
+  if(f.open)p=p.filter(x=>x.status==='Open');
+  if(f.critical)p=p.filter(x=>x.priority==='Critical');
+  if(f.progress){const total=punchlist().length,fixed=punchlist().filter(x=>x.status==='Fixed').length,pct=total?Math.round(fixed/total*100):0;
+    print('');print('  Completion: <span class="bold">'+pct+'%</span> ('+fixed+'/'+total+') '+bar(fixed,total));return}
+  table(['Location','Description','Priority','Assignee','Status'],p.map(x=>[x.loc,x.desc.slice(0,40),x.priority,x.assignee,x.status]),{colorCol:4});
+},
+schedule(a,f){
+  let t=timeline();if(!t.length)return print('  No timeline data.','warn');
+  if(f.json)return print(esc(JSON.stringify(t,null,2)));
+  if(f.critical)t=t.filter(x=>/structure|mep/i.test(x.cat));
+  if(f.late)t=t.filter(x=>x.end<today);
+  if(f.next){const n=parseInt(f.next)||7;const limit=d(n);t=t.filter(x=>x.start>=today&&x.start<=limit)}
+  table(['Task','Category','Start','End','Days'],t.map(x=>{const days=Math.round((new Date(x.end)-new Date(x.start))/86400000);return[x.name,x.cat,x.start,x.end,days]}),{colorCol:1});
+},
+budget(a,f){
+  const b=budget();if(!b.length)return print('  No estimate data.','warn');
+  if(f.json)return print(esc(JSON.stringify(b,null,2)));
+  if(f.total){let gt=0;b.forEach(p=>{const s=(p.items||[]).reduce((a,i)=>a+(i.qty||0)*(i.cost||0),0);gt+=s*(1+(p.markup||0)/100)});print('  Grand Total: <span class="bold accent">$'+gt.toLocaleString('en',{minimumFractionDigits:2})+'</span>');return}
+  b.forEach(proj=>{
+    print('\n  <span class="accent bold">'+esc(proj.name)+'</span> <span class="dim">('+esc(proj.client)+')</span>');
+    const items=proj.items||[];
+    if(f.breakdown){const cats={};items.forEach(i=>{const t=(i.qty||0)*(i.cost||0);cats[i.cat]=(cats[i.cat]||0)+t});
+      const total=Object.values(cats).reduce((a,b)=>a+b,0);
+      Object.entries(cats).sort((a,b)=>b[1]-a[1]).forEach(([c,v])=>{print('    '+c.padEnd(16)+' $'+v.toLocaleString().padStart(12)+' '+bar(v,total))});
+      const markup=total*(proj.markup||0)/100;
+      print('    <span class="dim">'+('─'.repeat(42))+'</span>');
+      print('    Subtotal'.padEnd(17)+' $'+total.toLocaleString().padStart(12));
+      print('    Markup ('+proj.markup+'%)'.padEnd(17)+' $'+Math.round(markup).toLocaleString().padStart(12));
+      print('    <span class="bold">Total'.padEnd(17)+' $'+Math.round(total+markup).toLocaleString().padStart(12)+'</span>');
+    }else{const total=items.reduce((a,i)=>a+(i.qty||0)*(i.cost||0),0);print('    Items: '+items.length+'  |  Subtotal: $'+total.toLocaleString()+'  |  Markup: '+proj.markup+'%')}
+  });
+},
+requirements(a,f){
+  let r=reqs();if(!r.length)return print('  No requirements data.','warn');
+  if(f.json)return print(esc(JSON.stringify(r,null,2)));
+  if(f.status)r=r.filter(x=>x.status.toLowerCase()===f.status.toLowerCase());
+  if(f.must)r=r.filter(x=>x.priority==='Must');
+  table(['ID','Title','Priority','Status','Source'],r.map(x=>[x.id,x.title.slice(0,35),x.priority,x.status,x.source]),{colorCol:3});
+},
+assumptions(a,f){
+  let a2=assumptions();if(!a2.length)return print('  No assumptions data.','warn');
+  if(f.json)return print(esc(JSON.stringify(a2,null,2)));
+  if(f.active)a2=a2.filter(x=>x.status==='Active');
+  if(f.invalid)a2=a2.filter(x=>x.status==='Invalidated');
+  table(['Description','Category','Status','Impact','Owner'],a2.map(x=>[x.desc.slice(0,40),x.cat,x.status,x.impact,x.owner]),{colorCol:2});
+},
+lessons(a,f){
+  let l=lessons();if(!l.length)return print('  No lessons data.','warn');
+  if(f.json)return print(esc(JSON.stringify(l,null,2)));
+  if(f.search)l=l.filter(x=>(x.title+x.desc+x.recommendation).toLowerCase().includes(f.search.toLowerCase()));
+  if(f.top)l.sort((a,b)=>(b.votes||0)-(a.votes||0));
+  table(['Votes','Title','Category','Phase','Impact'],l.map(x=>[x.votes||0,x.title.slice(0,35),x.cat,x.phase,x.impact]),{colorCol:2});
+},
+standup(a,f){
+  const s=standups();if(!Object.keys(s).length)return print('  No standup data.','warn');
+  if(f.json)return print(esc(JSON.stringify(s,null,2)));
+  if(f.blockers){Object.entries(s).sort().forEach(([dt,v])=>{if(v.blockers)print('  <span class="dim">'+dt+'</span>  <span class="err">'+esc(v.blockers)+'</span>')});return}
+  const dates=f.week?Object.keys(s).filter(dt=>{const diff=(new Date(today)-new Date(dt))/86400000;return diff>=0&&diff<7}).sort():[today];
+  dates.forEach(dt=>{const v=s[dt];if(!v)return print('  <span class="dim">No standup for '+dt+'</span>');
+    print('\n  <span class="accent bold">Standup: '+dt+'</span>');
+    print('  <span class="ok">Yesterday:</span> '+esc(v.yesterday||'-'));
+    print('  <span class="warn">Today:</span>     '+esc(v.today||'-'));
+    print('  <span class="err">Blockers:</span>  '+esc(v.blockers||'None'));
+  });
+},
+log(a,f){
+  const logs=dailylog();if(!Object.keys(logs).length)return print('  No daily log data.','warn');
+  if(f.json)return print(esc(JSON.stringify(logs,null,2)));
+  const dt=f.yesterday?yesterday:today;
+  if(f.crew){const lg=logs[dt];if(!lg)return print('  No log for '+dt,'warn');
+    const crew=lg.crew||[];table(['Name','Trade','Hours'],crew.map(c=>[c.name,c.trade,c.hours]),{colorCol:1});
+    print('  <span class="bold">Total hours: '+(crew.reduce((a,c)=>a+c.hours,0))+'</span>');return}
+  const lg=logs[dt];if(!lg)return print('  No log for '+dt+'. Try <span class="accent">log --yesterday</span>','warn');
+  print('\n  <span class="accent bold">Daily Log: '+dt+'</span>');
+  print('  Project:    '+esc(lg.project||'-'));
+  print('  Weather:    '+esc(lg.weather||'-')+' '+esc(lg.temp?lg.temp+'°C':''));
+  print('  Work:       '+esc(lg.work||'-'));
+  print('  Materials:  '+esc(lg.materials||'-'));
+  print('  Equipment:  '+esc(lg.equipment||'-'));
+  print('  Issues:     '+(lg.issues?'<span class="warn">'+esc(lg.issues)+'</span>':'None'));
+  print('  Safety:     '+(lg.safety?'<span class="ok">'+esc(lg.safety)+'</span>':'-'));
+},
+// analysis
+health(){
+  let score=100,notes=[];
+  const r=risks().filter(x=>x.status==='Open');const crit=r.filter(x=>x.score>=15);
+  if(crit.length){score-=crit.length*8;notes.push(crit.length+' critical risk(s)')}
+  if(r.length>5){score-=5;notes.push(r.length+' open risks')}
+  const rfi=rfis().filter(x=>x.status==='Open'&&x.needed<today);
+  if(rfi.length){score-=rfi.length*5;notes.push(rfi.length+' overdue RFI(s)')}
+  const pl=punchlist();const plOpen=pl.filter(x=>x.status==='Open'||x.status==='In Progress');
+  if(plOpen.length>pl.length*.5){score-=10;notes.push('Punchlist >50% open')}
+  const t=timeline().filter(x=>x.end<today&&!/(done|complete)/i.test(x.name));
+  if(t.length){score-=t.length*3;notes.push(t.length+' overdue schedule task(s)')}
+  const s=standups()[today];if(s&&s.blockers&&s.blockers.toLowerCase()!=='none'){score-=5;notes.push('Active blockers')}
+  score=Math.max(0,Math.min(100,score));
+  const cls=score>=70?'ok':score>=40?'warn':'err';
+  print('\n  <span class="'+cls+' bold">PROJECT HEALTH: '+score+'/100</span>  '+bar(score,100,30));
+  if(notes.length)notes.forEach(n=>print('  <span class="dim">  - '+n+'</span>'));
+},
+dashboard(){
+  print('\n  <span class="accent bold">╔══════════════════════════════════════════╗</span>');
+  print('  <span class="accent bold">║         PROJECT DASHBOARD                ║</span>');
+  print('  <span class="accent bold">╚══════════════════════════════════════════╝</span>\n');
+  const k=kanban();if(k){const cols=k.raw.columns||[];print('  <span class="bold">TASKS</span>');cols.forEach(c=>{const n=(c.cards||[]).length;print('    '+esc(c.name).padEnd(14)+' '+String(n).padStart(2)+' '+bar(n,Math.max(...cols.map(x=>(x.cards||[]).length)||[1]),15))})}
+  const r=risks();if(r.length){const open=r.filter(x=>x.status==='Open').length;print('\n  <span class="bold">RISKS</span>  '+r.length+' total, <span class="warn">'+open+' open</span>, <span class="err">'+r.filter(x=>x.score>=15).length+' critical</span>')}
+  const rfi=rfis();if(rfi.length){const open=rfi.filter(x=>x.status==='Open').length;print('\n  <span class="bold">RFIs</span>   '+rfi.length+' total, <span class="warn">'+open+' open</span>, <span class="err">'+rfi.filter(x=>x.status==='Open'&&x.needed<today).length+' overdue</span>')}
+  const pl=punchlist();if(pl.length){const fixed=pl.filter(x=>x.status==='Fixed').length;print('\n  <span class="bold">PUNCH</span>  '+pl.length+' items, <span class="ok">'+fixed+' fixed</span> ('+Math.round(fixed/pl.length*100)+'%) '+bar(fixed,pl.length,15))}
+  const tl=timeline();if(tl.length){const late=tl.filter(x=>x.end<today).length;print('\n  <span class="bold">SCHED</span>  '+tl.length+' tasks, <span class="'+(late?'err':'ok')+'">'+late+' past end date</span>')}
+  this.health();
+},
+'critical-path'(){
+  let t=timeline();if(!t.length)return print('  No timeline data.','warn');
+  t=t.filter(x=>/structure|mep|specialty/i.test(x.cat));
+  t.sort((a,b)=>new Date(a.start)-new Date(b.start));
+  print('\n  <span class="accent bold">CRITICAL PATH</span>\n');
+  t.forEach(x=>{const days=Math.round((new Date(x.end)-new Date(x.start))/86400000);
+    const late=x.end<today?'<span class="err"> [LATE]</span>':'';
+    const active=x.start<=today&&x.end>=today?' <span class="ok">[ACTIVE]</span>':'';
+    print('  '+esc(x.start)+' → '+esc(x.end)+' ('+days+'d)  <span class="bold">'+esc(x.name)+'</span> <span class="dim">['+esc(x.cat)+']</span>'+late+active)});
+},
+overdue(){
+  print('\n  <span class="err bold">OVERDUE ITEMS</span>\n');let any=false;
+  const rfi=rfis().filter(x=>x.status==='Open'&&x.needed<today);
+  if(rfi.length){any=true;print('  <span class="bold">RFIs:</span>');rfi.forEach(r=>print('    <span class="err">'+esc(r.num)+'</span> '+esc(r.subject)+' <span class="dim">(needed '+r.needed+')</span>'))}
+  const k=kanban();if(k){const ov=k.all.filter(t=>t.due<today&&t.column!=='Done');if(ov.length){any=true;print('  <span class="bold">Tasks:</span>');ov.forEach(t=>print('    <span class="err">#'+t.id+'</span> '+esc(t.title)+' <span class="dim">(due '+t.due+')</span>'))}}
+  const tl=timeline().filter(x=>x.end<today);if(tl.length){any=true;print('  <span class="bold">Schedule:</span>');tl.forEach(t=>print('    <span class="err">'+esc(t.name)+'</span> <span class="dim">(ended '+t.end+')</span>'))}
+  if(!any)print('  <span class="ok">Nothing overdue!</span>');
+},
+alerts(){
+  print('\n  <span class="warn bold">ALERTS & WARNINGS</span>\n');let any=false;
+  const cr=risks().filter(x=>x.status==='Open'&&x.score>=15);if(cr.length){any=true;cr.forEach(r=>print('  <span class="err">⚠ CRITICAL RISK:</span> '+esc(r.desc.slice(0,60))+' <span class="dim">(score '+r.score+')</span>'))}
+  const rfi=rfis().filter(x=>x.status==='Open'&&x.needed<today);if(rfi.length){any=true;rfi.forEach(r=>print('  <span class="err">⚠ OVERDUE RFI:</span> '+esc(r.num)+' - '+esc(r.subject.slice(0,50))))}
+  const pl=punchlist().filter(x=>x.priority==='Critical'&&x.status!=='Fixed');if(pl.length){any=true;pl.forEach(p=>print('  <span class="err">⚠ CRITICAL PUNCH:</span> '+esc(p.desc.slice(0,55))))}
+  const s=standups()[today];if(s&&s.blockers&&!/none/i.test(s.blockers)){any=true;print('  <span class="warn">⚠ BLOCKER:</span> '+esc(s.blockers))}
+  const inv=assumptions().filter(x=>x.status==='Invalidated');if(inv.length){any=true;inv.forEach(a=>print('  <span class="warn">⚠ INVALID ASSUMPTION:</span> '+esc(a.desc.slice(0,50))))}
+  if(!any)print('  <span class="ok">No alerts. All clear.</span>');
+},
+summary(){
+  print('\n  <span class="accent bold">EXECUTIVE SUMMARY</span>');print('  <span class="dim">'+today+'</span>\n');
+  const k=kanban();if(k){const cols=k.raw.columns||[];const tot=k.all.length;const done=cols.find(c=>c.name==='Done');const doneN=done?(done.cards||[]).length:0;print('  Tasks: '+tot+' total, '+doneN+' done ('+Math.round(doneN/tot*100)+'%)')}
+  const r=risks();print('  Risks: '+r.length+' total, '+r.filter(x=>x.status==='Open').length+' open, '+r.filter(x=>x.score>=15).length+' critical');
+  const rfi=rfis();print('  RFIs: '+rfi.length+' total, '+rfi.filter(x=>x.status==='Open').length+' open');
+  const pl=punchlist();const fixed=pl.filter(x=>x.status==='Fixed').length;print('  Punch: '+pl.length+' items, '+fixed+' fixed ('+Math.round(pl.length?fixed/pl.length*100:0)+'%)');
+  const b=budget();if(b.length){let gt=0;b.forEach(p=>{const s=(p.items||[]).reduce((a,i)=>a+(i.qty||0)*(i.cost||0),0);gt+=s*(1+(p.markup||0)/100)});print('  Budget: $'+Math.round(gt).toLocaleString()+' across '+b.length+' project(s)')}
+  this.health();
+},
+search(a,f){
+  const q=(a[0]||'').toLowerCase();if(!q)return print('  Usage: search &lt;text&gt;','err');
+  print('\n  <span class="accent bold">Search: "'+esc(q)+'"</span>\n');let found=0;
+  const k=kanban();if(k)k.all.filter(t=>(t.title+t.desc).toLowerCase().includes(q)).forEach(t=>{found++;print('  <span class="dim">[Task]</span> #'+t.id+' '+esc(t.title))});
+  risks().filter(r=>r.desc.toLowerCase().includes(q)).forEach(r=>{found++;print('  <span class="dim">[Risk]</span> '+esc(r.desc.slice(0,60)))});
+  rfis().filter(r=>(r.subject+r.question).toLowerCase().includes(q)).forEach(r=>{found++;print('  <span class="dim">[RFI]</span> '+esc(r.num)+' '+esc(r.subject.slice(0,50)))});
+  punchlist().filter(p=>(p.desc+p.loc).toLowerCase().includes(q)).forEach(p=>{found++;print('  <span class="dim">[Punch]</span> '+esc(p.desc.slice(0,55)))});
+  reqs().filter(r=>(r.title+r.desc).toLowerCase().includes(q)).forEach(r=>{found++;print('  <span class="dim">[Req]</span> '+esc(r.id)+' '+esc(r.title.slice(0,50)))});
+  lessons().filter(l=>(l.title+l.desc+l.recommendation).toLowerCase().includes(q)).forEach(l=>{found++;print('  <span class="dim">[Lesson]</span> '+esc(l.title.slice(0,50)))});
+  print('\n  <span class="dim">'+found+' result(s)</span>');
+},
+export(){
+  const data={kanban:ld('kanban-data'),risks:ld('risk-register'),rfis:ld('rfi-tracker'),punchlist:ld('punchlist-data'),timeline:ld('timeline-data'),estimates:ld('estimate-projects'),requirements:ld('requirements-data'),assumptions:ld('assumptions-log'),lessons:ld('lessons-learned'),standups:ld('standup-data'),dailylog:ld('daily-log-data')};
+  const json=JSON.stringify(data,null,2);
+  const blob=new Blob([json],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='pm-export-'+today+'.json';a.click();
+  print('  <span class="ok">Exported all data to pm-export-'+today+'.json</span>');
+},
+// utility
+help(a){
+  if(a[0]){
+    const h={'tasks':'tasks [--status backlog|doing|review|done] [--priority high|med|low] [--count] [--json]','risks':'risks [--open] [--critical] [--sort score] [--json]','rfis':'rfis [--open] [--overdue] [--json]','punchlist':'punchlist [--open] [--critical] [--progress] [--json]','schedule':'schedule [--critical] [--late] [--next N] [--json]','budget':'budget [--breakdown] [--total] [--json]','requirements':'requirements [--status approved|draft|implemented] [--must] [--json]','assumptions':'assumptions [--active] [--invalid] [--json]','lessons':'lessons [--search text] [--top] [--json]','standup':'standup [--week] [--blockers] [--json]','log':'log [--yesterday] [--crew] [--json]','health':'health — project health score 0-100','dashboard':'dashboard — text dashboard with key metrics','critical-path':'critical-path — show critical path schedule items','overdue':'overdue — all overdue items across tools','alerts':'alerts — warnings and red flags','summary':'summary — executive project summary','search':'search <text> — search across all tools','export':'export — download all data as JSON','sample':'sample — load sample project data','theme':'theme green|orange|blue — change terminal color','clear':'clear — clear the screen','history':'history — show command history'};
+    return print('  '+(h[a[0]]||'Unknown command: '+esc(a[0])));
+  }
+  print('\n  <span class="accent bold">PM CLI — Command Reference</span>\n');
+  print('  <span class="bold">DATA QUERIES</span>');
+  ['tasks','risks','rfis','punchlist','schedule','budget','requirements','assumptions','lessons','standup','log'].forEach(c=>print('    <span class="accent">'+c.padEnd(16)+'</span> <span class="dim">'+{tasks:'list kanban tasks',risks:'list risks',rfis:'list RFIs',punchlist:'list punch items',schedule:'show timeline',budget:'show estimates',requirements:'list requirements',assumptions:'list assumptions',lessons:'list lessons learned',standup:'today\'s standup',log:'today\'s daily log'}[c]+'</span>'));
+  print('\n  <span class="bold">ANALYSIS</span>');
+  ['health','dashboard','critical-path','overdue','alerts','summary','search','export'].forEach(c=>print('    <span class="accent">'+c.padEnd(16)+'</span> <span class="dim">'+{health:'project health score',dashboard:'text dashboard overview','critical-path':'critical path tasks',overdue:'all overdue items',alerts:'warnings & red flags',summary:'executive summary',search:'search all tools',export:'export data as JSON'}[c]+'</span>'));
+  print('\n  <span class="bold">UTILITY</span>');
+  ['help','clear','history','sample','theme','about'].forEach(c=>print('    <span class="accent">'+c.padEnd(16)+'</span> <span class="dim">'+{help:'show this help',clear:'clear screen',history:'command history',sample:'load sample data',theme:'change color theme',about:'about PM CLI'}[c]+'</span>'));
+  print('\n  <span class="dim">Add --json to any data command for raw JSON output.</span>');
+  print('  <span class="dim">Use TAB for autocomplete. Up/Down for history.</span>\n');
+},
+clear(){out.innerHTML=''},
+history(){history.forEach((c,i)=>print('  <span class="dim">'+String(i+1).padStart(4)+'</span>  '+esc(c)))},
+sample(){
+  // re-use pmdashboard's sample data logic
+  const d=n=>{const dt=new Date();dt.setDate(dt.getDate()+n);return dt.toISOString().split('T')[0]};
+  localStorage.setItem('estimate-projects',JSON.stringify([{name:'Oakwood Office Complex',client:'Meridian Development Corp',address:'450 Oakwood Blvd',type:'Commercial',startDate:d(-30),duration:'6 months',taxRate:13,markup:15,items:[{desc:'Site Prep & Grading',cat:'Labor',qty:1,unit:'each',cost:45000},{desc:'Excavation & Shoring',cat:'Subcontractor',qty:1,unit:'each',cost:120000},{desc:'Concrete Foundation',cat:'Materials',qty:850,unit:'sqft',cost:22},{desc:'Structural Steel',cat:'Materials',qty:40,unit:'each',cost:3200},{desc:'Framing Lumber',cat:'Materials',qty:12000,unit:'linear ft',cost:3.50},{desc:'Electrical Rough-In',cat:'Subcontractor',qty:1,unit:'each',cost:95000},{desc:'Plumbing Rough-In',cat:'Subcontractor',qty:1,unit:'each',cost:78000},{desc:'HVAC Systems',cat:'Subcontractor',qty:1,unit:'each',cost:145000},{desc:'Drywall & Taping',cat:'Materials',qty:22000,unit:'sqft',cost:2.80},{desc:'Interior Paint',cat:'Labor',qty:22000,unit:'sqft',cost:1.50},{desc:'Flooring',cat:'Subcontractor',qty:15000,unit:'sqft',cost:8},{desc:'Elevator Installation',cat:'Subcontractor',qty:2,unit:'each',cost:85000},{desc:'Fire Suppression',cat:'Subcontractor',qty:1,unit:'each',cost:62000},{desc:'Building Permits',cat:'Permits',qty:1,unit:'each',cost:18500},{desc:'Project Management',cat:'Overhead',qty:6,unit:'each',cost:12000},{desc:'Contingency (8%)',cat:'Contingency',qty:1,unit:'each',cost:85000}]}]));
+  localStorage.setItem('kanban-data',JSON.stringify({columns:[{name:'Backlog',cards:[{id:1,title:'Order elevator components',desc:'Long lead 12 weeks',priority:'High',due:d(5)},{id:2,title:'Submit HVAC shop drawings',desc:'Mechanical engineer review',priority:'Med',due:d(7)},{id:3,title:'Landscape design approval',desc:'Client to sign off',priority:'Low',due:d(14)}]},{name:'In Progress',cards:[{id:4,title:'2nd floor concrete pour',desc:'Scheduled for Thursday',priority:'High',due:d(2)},{id:5,title:'Electrical conduit - Level 1',desc:'Roughing in main runs',priority:'Med',due:d(4)},{id:6,title:'Rebar inspection - Foundation B',desc:'Inspector booked',priority:'High',due:d(1)}]},{name:'Review',cards:[{id:7,title:'Fire suppression layout',desc:'Awaiting fire marshal review',priority:'High',due:d(-2)},{id:8,title:'Parking garage waterproofing spec',desc:'Consultant reviewing',priority:'Med',due:d(3)}]},{name:'Done',cards:[{id:9,title:'Demolition complete',desc:'Site cleared',priority:'High',due:d(-20)},{id:10,title:'Foundation A poured',desc:'28-day cure started',priority:'High',due:d(-10)},{id:11,title:'Temporary power connected',desc:'200A service',priority:'Med',due:d(-15)},{id:12,title:'Site fencing installed',desc:'6ft chain link',priority:'Low',due:d(-25)}]}]}));
+  localStorage.setItem('timeline-data',JSON.stringify([{name:'Site Prep & Grading',start:d(-30),end:d(-20),color:'#ff6b35',cat:'Sitework'},{name:'Excavation & Shoring',start:d(-22),end:d(-10),color:'#ff6b35',cat:'Sitework'},{name:'Foundation A',start:d(-12),end:d(-2),color:'#4ade80',cat:'Structure'},{name:'Foundation B',start:d(-5),end:d(8),color:'#4ade80',cat:'Structure'},{name:'Steel Erection',start:d(5),end:d(35),color:'#f7c948',cat:'Structure'},{name:'2nd Floor Slab',start:d(20),end:d(30),color:'#f7c948',cat:'Structure'},{name:'Roof Structure',start:d(32),end:d(50),color:'#f7c948',cat:'Structure'},{name:'Electrical Rough-In',start:d(25),end:d(55),color:'#a78bfa',cat:'MEP'},{name:'Plumbing Rough-In',start:d(25),end:d(50),color:'#60a5fa',cat:'MEP'},{name:'HVAC Install',start:d(35),end:d(65),color:'#f472b6',cat:'MEP'},{name:'Drywall',start:d(55),end:d(75),color:'#fb923c',cat:'Finishes'},{name:'Painting',start:d(70),end:d(85),color:'#fb923c',cat:'Finishes'},{name:'Flooring',start:d(80),end:d(95),color:'#fb923c',cat:'Finishes'},{name:'Elevator Install',start:d(40),end:d(80),color:'#ef4444',cat:'Specialty'},{name:'Final Inspections',start:d(90),end:d(100),color:'#ef4444',cat:'Closeout'}]));
+  localStorage.setItem('risk-register',JSON.stringify([{desc:'Steel delivery delayed due to supplier backlog',cat:'Schedule',likelihood:4,impact:4,score:16,mitigation:'Pre-order 2 weeks early.',owner:'Mike R.',status:'Open'},{desc:'Underground water table higher than expected',cat:'Technical',likelihood:3,impact:5,score:15,mitigation:'Additional dewatering pumps on standby.',owner:'Sarah L.',status:'Open'},{desc:'Labour shortage for concrete crew',cat:'Schedule',likelihood:4,impact:3,score:12,mitigation:'Book crew 3 weeks ahead.',owner:'Dave K.',status:'Mitigated'},{desc:'Building permit amendment required',cat:'Legal',likelihood:2,impact:4,score:8,mitigation:'Submit amendment ASAP.',owner:'Amy T.',status:'Open'},{desc:'Winter weather delays concrete pours',cat:'Environmental',likelihood:3,impact:3,score:9,mitigation:'Heated enclosures budgeted.',owner:'Mike R.',status:'Open'},{desc:'Client scope creep on finishes',cat:'Financial',likelihood:4,impact:3,score:12,mitigation:'Change order process enforced.',owner:'Amy T.',status:'Open'},{desc:'Safety incident on site',cat:'Safety',likelihood:2,impact:5,score:10,mitigation:'Daily toolbox talks. Full PPE.',owner:'Dave K.',status:'Open'},{desc:'Elevator lead time exceeds schedule',cat:'Schedule',likelihood:3,impact:4,score:12,mitigation:'Order placed. Weekly status calls.',owner:'Sarah L.',status:'Mitigated'}]));
+  localStorage.setItem('requirements-data',JSON.stringify([{id:'REQ-001',title:'LEED Silver Certification',desc:'Building must achieve LEED Silver minimum',cat:'Performance',priority:'Must',status:'Approved',source:'Client',criteria:'LEED scorecard 50+ points'},{id:'REQ-002',title:'Parking - 120 spaces',desc:'Underground parking for 120 vehicles',cat:'Functional',priority:'Must',status:'Implemented',source:'Zoning',criteria:'Parking count verified'},{id:'REQ-003',title:'Fire Code Compliance',desc:'Full sprinkler system per OBC',cat:'Code',priority:'Must',status:'Approved',source:'Fire Marshal',criteria:'Fire marshal sign-off'},{id:'REQ-004',title:'Rooftop Patio',desc:'Green roof patio on 4th floor',cat:'Client',priority:'Should',status:'Draft',source:'Client',criteria:'Client approval'},{id:'REQ-005',title:'EV Charging Stations',desc:'Rough-in for 20 EV charging stations',cat:'Design',priority:'Should',status:'Approved',source:'Client',criteria:'Conduit confirmed'},{id:'REQ-006',title:'Noise Attenuation',desc:'STC 50 between office suites',cat:'Performance',priority:'Must',status:'Approved',source:'Acoustic Consultant',criteria:'Field test STC 50+'}]));
+  localStorage.setItem('assumptions-log',JSON.stringify([{desc:'Soil conditions match geotech report',cat:'Technical',status:'Validated',impact:'High',owner:'Sarah L.',notes:'Confirmed during excavation'},{desc:'Steel prices stable within 5%',cat:'Cost',status:'Active',impact:'High',owner:'Amy T.',notes:'Monitoring weekly'},{desc:'Client selects finishes by Week 8',cat:'Schedule',status:'Active',impact:'Medium',owner:'Amy T.',notes:'Client aware'},{desc:'Municipal water/sewer capacity available',cat:'Technical',status:'Validated',impact:'High',owner:'Mike R.',notes:'Confirmed with city'},{desc:'Subcontractors available for summer',cat:'Resource',status:'Active',impact:'Medium',owner:'Dave K.',notes:'Contracts signed'}]));
+  localStorage.setItem('punchlist-data',JSON.stringify([{loc:'Level 1 - Lobby',desc:'Drywall crack at column C3 junction',priority:'Minor',assignee:'Drywall Sub',status:'Open'},{loc:'Level 2 - Suite 201',desc:'Electrical outlet cover plate missing',priority:'Minor',assignee:'Electrician',status:'Fixed'},{loc:'Parking Level P1',desc:'Water pooling at drain near space #45',priority:'Major',assignee:'Plumber',status:'In Progress'},{loc:'Level 3 - Washroom',desc:'Tile grout discolored at shower base',priority:'Minor',assignee:'Tile Sub',status:'Open'},{loc:'Roof',desc:'Flashing not sealed at RTU penetration',priority:'Critical',assignee:'Roofer',status:'Open'},{loc:'Level 1 - Suite 102',desc:'Door closer adjustment needed',priority:'Minor',assignee:'Carpenter',status:'Fixed'},{loc:'Exterior',desc:'Grading slopes toward building NE corner',priority:'Major',assignee:'Site Crew',status:'Open'},{loc:'Level 4 - Mech Room',desc:'HVAC duct not insulated per spec',priority:'Major',assignee:'HVAC Sub',status:'In Progress'}]));
+  localStorage.setItem('rfi-tracker',JSON.stringify([{num:'RFI-001',subject:'Foundation wall thickness at parking ramp',question:'A-101 shows 10" wall but structural shows 12". Confirm.',by:'Mike R.',to:'Structural Engineer',submitted:d(-20),needed:d(-15),status:'Answered',priority:'Urgent',answer:'Use 12" per structural.',answeredBy:'J. Chen',answerDate:d(-18)},{num:'RFI-002',subject:'Ceiling height at Level 2 corridor',question:'Ductwork conflicts with 9ft ceiling. Lower to 8ft-6in?',by:'Dave K.',to:'Architect',submitted:d(-10),needed:d(-5),status:'Answered',priority:'Normal',answer:'8ft-8in minimum in corridors.',answeredBy:'L. Park',answerDate:d(-7)},{num:'RFI-003',subject:'Waterproofing membrane for planter boxes',question:'Spec section 07 missing planter waterproofing detail.',by:'Sarah L.',to:'Architect',submitted:d(-5),needed:d(2),status:'Open',priority:'Normal'},{num:'RFI-004',subject:'Electrical panel location - Suite 301',question:'Panel conflicts with window on A-301.',by:'Electrician',to:'Electrical Engineer',submitted:d(-3),needed:d(4),status:'Open',priority:'Urgent'}]));
+  const logData={};logData[d(-1)]={project:'Oakwood Office Complex',weather:'Clear',temp:'22',crew:[{name:'Mike R.',trade:'Superintendent',hours:10},{name:'Carlos',trade:'Concrete',hours:8},{name:'Jim',trade:'Concrete',hours:8},{name:'Tyler',trade:'Laborer',hours:8},{name:'Dave',trade:'Electrician',hours:6}],work:'Poured 2nd floor slab section A. Electrician started conduit.',materials:'40 cu yd concrete, 2 loads rebar',equipment:'Concrete pump (8 hrs), Boom lift (4 hrs)',issues:'Minor delay — concrete truck 45 min late.',safety:'No incidents.'};
+  const td=d(0);logData[td]={project:'Oakwood Office Complex',weather:'Cloudy',temp:'18',crew:[{name:'Mike R.',trade:'Superintendent',hours:8},{name:'Sarah',trade:'Foreman',hours:8},{name:'Rebar crew (4)',trade:'Ironworker',hours:32}],work:'Rebar placement for Foundation B. Form inspection.',materials:'Rebar delivery — 4 tons #5 and #6',equipment:'Crane (6 hrs)',issues:'Rebar delivery 2 hours late.',safety:'Toolbox talk: open excavation. No incidents.'};
+  localStorage.setItem('daily-log-data',JSON.stringify(logData));
+  const standupData={};standupData[d(-1)]={yesterday:'Completed 2nd floor slab pour.',today:'Foundation B rebar placement.',blockers:'Waiting on architect for RFI-003.'};
+  standupData[td]={yesterday:'Foundation B rebar started. Elevator ordered.',today:'Continue rebar. Form inspection 2pm.',blockers:'Steel shop drawing review overdue 3 days.'};
+  localStorage.setItem('standup-data',JSON.stringify(standupData));
+  localStorage.setItem('lessons-learned',JSON.stringify([{title:'Order long-lead items in design phase',desc:'Elevator had 16-week lead time.',cat:'What went wrong',phase:'Planning',impact:'Schedule',recommendation:'Create long-lead list at project start.',tags:['procurement'],votes:5},{title:'Weekly client meetings prevent scope creep',desc:'Regular check-ins caught finish changes early.',cat:'What went well',phase:'Construction',impact:'Cost',recommendation:'Weekly 30-min client calls.',tags:['communication'],votes:8},{title:'Digital daily logs save 30 min/day',desc:'Switching from paper to digital saved time.',cat:'What went well',phase:'Construction',impact:'Schedule',recommendation:'Use TaskIAP daily log from day 1.',tags:['technology'],votes:12}]));
+  print('  <span class="ok">Sample data loaded for Oakwood Office Complex.</span>');
+  print('  <span class="dim">Try: dashboard, tasks, risks, health</span>');
+},
+theme(a){
+  const c=a[0];if(!c||!themes[c])return print('  Usage: theme green|orange|blue','err');
+  themeColor=c;document.documentElement.style.setProperty('--t',themes[c]);inp.style.color=themes[c];
+  print('  Theme set to <span class="bold">'+c+'</span>');
+},
+about(){
+  print('\n  <span class="accent bold">PM CLI v1.0</span>');
+  print('  <span class="dim">Command-line interface for TaskIAP project management suite.</span>');
+  print('  <span class="dim">Query kanban, risks, RFIs, punchlist, schedule, budget,</span>');
+  print('  <span class="dim">requirements, assumptions, lessons, standups, and daily logs.</span>');
+  print('  <span class="dim">All data stored locally in your browser.</span>\n');
+}
+};
+// autocomplete
+const cmdList=['tasks','risks','rfis','punchlist','schedule','budget','requirements','assumptions','lessons','standup','log','health','dashboard','critical-path','overdue','alerts','summary','search','export','help','clear','history','sample','theme','about'];
+const flagMap={tasks:['--status','--priority','--count','--json'],risks:['--open','--critical','--sort','--json'],rfis:['--open','--overdue','--json'],punchlist:['--open','--critical','--progress','--json'],schedule:['--critical','--late','--next','--json'],budget:['--breakdown','--total','--json'],requirements:['--status','--must','--json'],assumptions:['--active','--invalid','--json'],lessons:['--search','--top','--json'],standup:['--week','--blockers','--json'],log:['--yesterday','--crew','--json'],theme:['green','orange','blue']};
+function getCompletions(text){
+  const parts=text.split(/\s+/);
+  if(parts.length<=1){return cmdList.filter(c=>c.startsWith(parts[0]))}
+  const cmd=parts[0];const last=parts[parts.length-1];
+  const flags=flagMap[cmd]||[];
+  if(last.startsWith('-'))return flags.filter(f=>f.startsWith(last));
+  if(parts.length===2&&flags.length)return flags.filter(f=>f.startsWith(last||''));
+  return[];
+}
+function showAC(items){
+  acEl.innerHTML='';acItems=items;acIdx=-1;
+  if(!items.length){acEl.style.display='none';return}
+  items.forEach((it,i)=>{const d=document.createElement('div');d.textContent=it;acEl.appendChild(d)});
+  acEl.style.display='block';
+}
+function hideAC(){acEl.style.display='none';acItems=[];acIdx=-1}
+function selectAC(idx){
+  acEl.querySelectorAll('div').forEach((d,i)=>d.classList.toggle('sel',i===idx));
+}
+function applyAC(val){
+  const parts=inp.value.split(/\s+/);parts[parts.length-1]=val;
+  inp.value=parts.join(' ')+' ';hideAC();
+}
+// exec
+function exec(input){
+  const trimmed=input.trim();if(!trimmed)return;
+  print('<span class="accent">pm&gt;</span> '+esc(trimmed));
+  history.push(trimmed);hIdx=history.length;
+  const{cmd,args,flags}=parse(trimmed);
+  if(CMDS[cmd])CMDS[cmd].call(CMDS,args,flags);
+  else print('  Unknown command: <span class="err">'+esc(cmd)+'</span>. Type <span class="accent">help</span> for commands.','err');
+  print('');
+}
+// input handler
+inp.addEventListener('keydown',e=>{
+  if(e.key==='Enter'){e.preventDefault();hideAC();exec(inp.value);inp.value=''}
+  else if(e.key==='Tab'){
+    e.preventDefault();
+    if(acItems.length&&acIdx>=0){applyAC(acItems[acIdx])}
+    else{const items=getCompletions(inp.value);if(items.length===1)applyAC(items[0]);else showAC(items)}
+  }else if(e.key==='ArrowUp'){
+    if(acItems.length){e.preventDefault();acIdx=Math.max(0,(acIdx<0?acItems.length:acIdx)-1);selectAC(acIdx)}
+    else{e.preventDefault();if(hIdx>0){hIdx--;inp.value=history[hIdx]||''}}
+  }else if(e.key==='ArrowDown'){
+    if(acItems.length){e.preventDefault();acIdx=Math.min(acItems.length-1,acIdx+1);selectAC(acIdx)}
+    else{e.preventDefault();if(hIdx<history.length){hIdx++;inp.value=history[hIdx]||''}}
+  }else if(e.key==='Escape'){hideAC()}
+  else{setTimeout(()=>{const items=getCompletions(inp.value);if(inp.value&&items.length>1&&items.length<12)showAC(items);else hideAC()},0)}
+});
+document.addEventListener('click',e=>{if(!acEl.contains(e.target))hideAC()});
+// boot
+print('<span class="accent bold">  ╔═══════════════════════════════════════════════╗</span>');
+print('<span class="accent bold">  ║  PM CLI — Project Management Command Line    ║</span>');
+print('<span class="accent bold">  ╚═══════════════════════════════════════════════╝</span>');
+print('');
+print('  <span class="dim">Type <span class="accent">help</span> for commands, <span class="accent">sample</span> to load demo data.</span>');
+print('  <span class="dim">TAB to autocomplete. Up/Down for history.</span>\n');
+inp.focus();
+document.addEventListener('click',()=>inp.focus());
+</script>
+</body>
+</html>
