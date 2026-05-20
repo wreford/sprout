@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Daily Standup</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0f0f10;color:#e0e0e0;font-family:system-ui,-apple-system,sans-serif;min-height:100vh}
+a{color:#ff6b35;text-decoration:none}
+.top-bar{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #2a2a2d}
+.top-bar h1{font-size:1.2rem;color:#ff6b35}
+.streak{background:#1a1a1c;border:1px solid #2a2a2d;border-radius:8px;padding:8px 14px;margin:12px 16px;display:flex;align-items:center;gap:8px;font-size:.88rem}
+.streak-num{color:#4ade80;font-weight:700;font-size:1.3rem}
+.calendar{padding:8px 16px}
+.cal-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.cal-header button{background:none;border:none;color:#ff6b35;font-size:1.1rem;cursor:pointer;padding:6px 10px}
+.cal-header span{font-weight:600;font-size:.9rem}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center}
+.cal-day-label{font-size:.7rem;color:#666;padding:4px}
+.cal-day{padding:8px 4px;border-radius:6px;font-size:.8rem;cursor:pointer;position:relative;transition:background .15s}
+.cal-day:hover{background:#1a1a1c}
+.cal-day.today{border:1px solid #ff6b35}
+.cal-day.selected{background:#ff6b35;color:#fff}
+.cal-day.empty{cursor:default}
+.cal-day .dot{width:6px;height:6px;border-radius:50%;margin:2px auto 0;display:block}
+.dot-filled{background:#4ade80}
+.dot-empty{background:#333}
+.form-section{padding:12px 16px}
+.form-section h2{font-size:.92rem;margin-bottom:12px;color:#aaa}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:.82rem;color:#ff6b35;margin-bottom:4px;font-weight:600}
+.field textarea{width:100%;background:#1a1a1c;color:#e0e0e0;border:1px solid #2a2a2d;border-radius:8px;padding:10px;font-size:.85rem;font-family:inherit;resize:vertical;min-height:60px}
+.actions{display:flex;gap:8px;padding:0 16px 20px}
+.actions button{padding:10px 18px;border:none;border-radius:8px;font-size:.85rem;font-weight:600;cursor:pointer}
+.btn-save{background:#ff6b35;color:#fff;flex:1}
+.btn-export{background:#1a1a1c;color:#e0e0e0;border:1px solid #2a2a2d!important}
+.past-view{background:#1a1a1c;border:1px solid #2a2a2d;border-radius:8px;padding:14px;margin:12px 16px}
+.past-view h3{font-size:.85rem;color:#ff6b35;margin-bottom:8px}
+.past-view p{font-size:.82rem;color:#ccc;white-space:pre-wrap;margin-bottom:8px}
+.past-view .label{color:#777;font-size:.75rem;font-weight:600;margin-bottom:2px}
+.export-box{background:#232326;border:1px solid #2a2a2d;border-radius:8px;padding:12px;font-size:.8rem;white-space:pre-wrap;max-height:300px;overflow-y:auto;margin:12px 16px;font-family:monospace}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.fade-in{animation:fadeIn .2s ease}
+</style>
+</head>
+<body>
+<div class="top-bar">
+  <a href="index.html">&larr; Home</a>
+  <h1>Daily Standup</h1>
+  <div></div>
+</div>
+<div class="streak"><span class="streak-num" id="streakNum">0</span> day streak</div>
+<div class="calendar">
+  <div class="cal-header">
+    <button onclick="navMonth(-1)">&larr;</button>
+    <span id="calLabel"></span>
+    <button onclick="navMonth(1)">&rarr;</button>
+  </div>
+  <div class="cal-grid" id="calGrid"></div>
+</div>
+<div id="mainContent"></div>
+<script>
+const KEY='standup-data';
+let data=JSON.parse(localStorage.getItem(KEY)||'{}');
+let viewMonth=new Date().getMonth(),viewYear=new Date().getFullYear();
+let selectedDate=new Date().toISOString().slice(0,10);
+
+function save(){localStorage.setItem(KEY,JSON.stringify(data))}
+function dateKey(d){return d}
+function today(){return new Date().toISOString().slice(0,10)}
+
+function calcStreak(){
+  let count=0,d=new Date();
+  // check today first
+  if(!data[today()]){d.setDate(d.getDate()-1)}
+  while(true){
+    const k=d.toISOString().slice(0,10);
+    const e=data[k];
+    if(e&&(e.yesterday||e.today||e.blockers))count++;
+    else break;
+    d.setDate(d.getDate()-1);
+  }
+  return count;
+}
+
+function renderCalendar(){
+  document.getElementById('calLabel').textContent=new Date(viewYear,viewMonth).toLocaleDateString('en',{month:'long',year:'numeric'});
+  const grid=document.getElementById('calGrid');
+  const labels=['Su','Mo','Tu','We','Th','Fr','Sa'];
+  let html=labels.map(l=>`<div class="cal-day-label">${l}</div>`).join('');
+  const first=new Date(viewYear,viewMonth,1).getDay();
+  const days=new Date(viewYear,viewMonth+1,0).getDate();
+  const todayStr=today();
+  for(let i=0;i<first;i++)html+=`<div class="cal-day empty"></div>`;
+  for(let d=1;d<=days;d++){
+    const ds=`${viewYear}-${String(viewMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const filled=data[ds]&&(data[ds].yesterday||data[ds].today||data[ds].blockers);
+    const cls=['cal-day'];
+    if(ds===todayStr)cls.push('today');
+    if(ds===selectedDate)cls.push('selected');
+    html+=`<div class="${cls.join(' ')}" onclick="selectDate('${ds}')">${d}<span class="dot ${filled?'dot-filled':'dot-empty'}"></span></div>`;
+  }
+  grid.innerHTML=html;
+  document.getElementById('streakNum').textContent=calcStreak();
+}
+
+function navMonth(dir){viewMonth+=dir;if(viewMonth>11){viewMonth=0;viewYear++}if(viewMonth<0){viewMonth=11;viewYear--}renderCalendar()}
+
+function selectDate(ds){
+  selectedDate=ds;renderCalendar();renderContent();
+}
+
+function renderContent(){
+  const el=document.getElementById('mainContent');
+  const isToday=selectedDate===today();
+  const entry=data[selectedDate];
+  if(isToday||!entry){
+    el.innerHTML=`<div class="form-section fade-in">
+      <h2>${isToday?'Today\'s Standup':selectedDate}</h2>
+      <div class="field"><label>Yesterday</label><textarea id="fYesterday" placeholder="What did you do yesterday?">${entry?.yesterday||''}</textarea></div>
+      <div class="field"><label>Today</label><textarea id="fToday" placeholder="What will you do today?">${entry?.today||''}</textarea></div>
+      <div class="field"><label>Blockers</label><textarea id="fBlockers" placeholder="Any blockers?">${entry?.blockers||''}</textarea></div>
+    </div>
+    <div class="actions">
+      <button class="btn-save" onclick="saveEntry()">Save</button>
+      <button class="btn-export" onclick="exportWeek()">Export Week</button>
+    </div>`;
+  } else {
+    el.innerHTML=`<div class="past-view fade-in">
+      <h3>${new Date(selectedDate+'T00:00:00').toLocaleDateString('en',{weekday:'long',month:'long',day:'numeric'})}</h3>
+      <div class="label">YESTERDAY</div><p>${esc(entry.yesterday||'—')}</p>
+      <div class="label">TODAY</div><p>${esc(entry.today||'—')}</p>
+      <div class="label">BLOCKERS</div><p>${esc(entry.blockers||'—')}</p>
+    </div>
+    <div class="actions"><button class="btn-export" onclick="editPast()">Edit</button><button class="btn-export" onclick="exportWeek()">Export Week</button></div>`;
+  }
+}
+
+function editPast(){
+  const entry=data[selectedDate]||{};
+  const el=document.getElementById('mainContent');
+  el.innerHTML=`<div class="form-section fade-in">
+    <h2>Edit: ${selectedDate}</h2>
+    <div class="field"><label>Yesterday</label><textarea id="fYesterday">${entry.yesterday||''}</textarea></div>
+    <div class="field"><label>Today</label><textarea id="fToday">${entry.today||''}</textarea></div>
+    <div class="field"><label>Blockers</label><textarea id="fBlockers">${entry.blockers||''}</textarea></div>
+  </div>
+  <div class="actions"><button class="btn-save" onclick="saveEntry()">Save</button></div>`;
+}
+
+function saveEntry(){
+  const y=document.getElementById('fYesterday').value.trim();
+  const t=document.getElementById('fToday').value.trim();
+  const b=document.getElementById('fBlockers').value.trim();
+  if(y||t||b){data[selectedDate]={yesterday:y,today:t,blockers:b}}
+  else{delete data[selectedDate]}
+  save();renderCalendar();renderContent();
+}
+
+function exportWeek(){
+  const d=new Date(selectedDate+'T00:00:00');
+  const day=d.getDay();
+  const mon=new Date(d);mon.setDate(mon.getDate()-((day+6)%7));
+  let txt='WEEKLY STANDUP REPORT\n'+('='.repeat(30))+'\n';
+  for(let i=0;i<7;i++){
+    const ds=new Date(mon);ds.setDate(ds.getDate()+i);
+    const k=ds.toISOString().slice(0,10);
+    const e=data[k];
+    txt+=`\n${ds.toLocaleDateString('en',{weekday:'long',month:'short',day:'numeric'})}\n`;
+    if(e){
+      txt+=`  Yesterday: ${e.yesterday||'—'}\n  Today: ${e.today||'—'}\n  Blockers: ${e.blockers||'—'}\n`;
+    } else txt+=`  No entry\n`;
+  }
+  document.getElementById('mainContent').innerHTML+=`<div class="export-box fade-in">${esc(txt)}</div>`;
+}
+
+function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
+
+renderCalendar();renderContent();
+</script>
+</body>
+</html>

@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Team Retrospective</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0f0f10;color:#e0e0e0;font-family:system-ui,-apple-system,sans-serif;min-height:100vh}
+a{color:#ff6b35;text-decoration:none}
+.top-bar{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #2a2a2d}
+.top-bar h1{font-size:1.2rem;color:#ff6b35}
+.controls{display:flex;gap:8px;padding:10px 16px;flex-wrap:wrap;align-items:center}
+.controls button,.controls select{background:#1a1a1c;color:#e0e0e0;border:1px solid #2a2a2d;border-radius:6px;padding:8px 12px;font-size:.85rem;cursor:pointer}
+.controls button.primary{background:#ff6b35;color:#fff;border:none;font-weight:600}
+.timer{background:#1a1a1c;border:1px solid #2a2a2d;border-radius:8px;padding:6px 14px;display:flex;align-items:center;gap:8px;font-size:.9rem}
+.timer-display{font-weight:700;font-variant-numeric:tabular-nums;min-width:48px;color:#ff6b35;font-size:1.1rem}
+.timer.done .timer-display{color:#ef4444}
+.board{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;padding:12px 16px;flex:1}
+@media(max-width:700px){.board{grid-template-columns:1fr}}
+.column{background:#1a1a1c;border:1px solid #2a2a2d;border-radius:10px;display:flex;flex-direction:column;min-height:200px}
+.col-header{padding:12px;font-weight:700;font-size:.92rem;border-bottom:1px solid #2a2a2d;display:flex;justify-content:space-between;align-items:center}
+.col-header span:last-child{font-size:.75rem;color:#777}
+.add-row{display:flex;gap:6px;padding:8px}
+.add-row input{flex:1;background:#232326;color:#e0e0e0;border:1px solid #2a2a2d;border-radius:6px;padding:8px 10px;font-size:.82rem;font-family:inherit}
+.add-row button{background:#ff6b35;color:#fff;border:none;border-radius:6px;padding:8px 14px;font-weight:700;cursor:pointer;font-size:.9rem}
+.cards{flex:1;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:8px}
+.sticky{border-radius:8px;padding:10px 12px;position:relative;cursor:pointer;transition:transform .15s;font-size:.84rem;line-height:1.4}
+.sticky:hover{transform:translateY(-1px)}
+.sticky-text{margin-bottom:6px;word-break:break-word}
+.sticky-footer{display:flex;justify-content:space-between;align-items:center}
+.vote-btn{background:rgba(0,0,0,.2);border:none;color:#fff;border-radius:12px;padding:3px 10px;font-size:.78rem;cursor:pointer;display:flex;align-items:center;gap:4px}
+.vote-btn:hover{background:rgba(0,0,0,.4)}
+.del-btn{background:none;border:none;color:rgba(0,0,0,.4);cursor:pointer;font-size:.9rem;padding:2px 6px}
+.del-btn:hover{color:rgba(0,0,0,.7)}
+.sort-btn{background:none;border:none;color:#ff6b35;cursor:pointer;font-size:.75rem;padding:2px 6px}
+.export-box{background:#232326;border:1px solid #2a2a2d;border-radius:8px;padding:12px;font-size:.8rem;white-space:pre-wrap;max-height:300px;overflow-y:auto;margin:12px 16px;font-family:monospace}
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100;justify-content:center;align-items:center}
+.modal-bg.active{display:flex}
+.modal{background:#1a1a1c;border:1px solid #2a2a2d;border-radius:12px;padding:20px;width:90%;max-width:420px}
+.modal h2{font-size:1rem;margin-bottom:10px;color:#ff6b35}
+.modal-actions{display:flex;gap:8px;margin-top:12px}
+.modal-actions button{flex:1;padding:10px;border:none;border-radius:6px;font-size:.85rem;font-weight:600;cursor:pointer}
+.btn-cancel{background:#2a2a2d;color:#e0e0e0}
+@keyframes stickyIn{from{opacity:0;transform:scale(.9) rotate(-2deg)}to{opacity:1;transform:scale(1) rotate(0)}}
+.sticky-enter{animation:stickyIn .2s ease}
+</style>
+</head>
+<body>
+<div class="top-bar">
+  <a href="index.html">&larr; Home</a>
+  <h1>Retrospective</h1>
+  <div></div>
+</div>
+<div class="controls">
+  <button class="primary" onclick="newRetro()">New Retro</button>
+  <button onclick="exportText()">Export</button>
+  <button onclick="shareURL()">Share</button>
+  <div class="timer" id="timerBox">
+    <select id="timerSelect" onchange="resetTimer()">
+      <option value="5">5 min</option>
+      <option value="10" selected>10 min</option>
+      <option value="15">15 min</option>
+    </select>
+    <span class="timer-display" id="timerDisplay">10:00</span>
+    <button style="background:none;border:none;color:#4ade80;cursor:pointer;font-size:.9rem" onclick="toggleTimer()" id="timerBtn">Start</button>
+  </div>
+</div>
+<div class="board" id="board"></div>
+<div class="modal-bg" id="modalBg">
+  <div class="modal" id="modalContent"></div>
+</div>
+<script>
+const KEY='retro-data';
+const COLS=[{id:'well',name:'What went well \u{1F389}'},{id:'improve',name:'What could improve \u{1F527}'},{id:'actions',name:'Action items ✅'}];
+const PASTELS=['#ff9a9e','#fecfef','#a18cd1','#fbc2eb','#a6c1ee','#84fab0','#ffd1ff','#fdcb6e','#fab1a0','#81ecec','#dfe6e9','#b8e994','#f8c291','#e056fd','#7ed6df'];
+let data=load();
+let timerInt=null,timerSec=600,timerRunning=false;
+
+function load(){
+  const hash=location.hash.slice(1);
+  if(hash){try{const d=JSON.parse(atob(hash));if(d&&d.well)return d}catch(e){}}
+  return JSON.parse(localStorage.getItem(KEY)||'null')||{well:[],improve:[],actions:[]};
+}
+function save(){localStorage.setItem(KEY,JSON.stringify(data))}
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
+function randPastel(){return PASTELS[Math.floor(Math.random()*PASTELS.length)]}
+
+function render(){
+  const board=document.getElementById('board');
+  board.innerHTML='';
+  COLS.forEach(col=>{
+    const items=data[col.id]||[];
+    const div=document.createElement('div');
+    div.className='column';
+    div.innerHTML=`<div class="col-header"><span>${col.name}</span><span>${items.length} cards</span></div>
+      <div class="add-row"><input placeholder="Add a note..." id="input-${col.id}" onkeydown="if(event.key==='Enter')addCard('${col.id}')"><button onclick="addCard('${col.id}')">+</button></div>`;
+    const cards=document.createElement('div');
+    cards.className='cards';
+    items.forEach(item=>{
+      const s=document.createElement('div');
+      s.className='sticky sticky-enter';
+      s.style.background=item.color;
+      s.style.color='#1a1a1c';
+      s.innerHTML=`<div class="sticky-text">${esc(item.text)}</div><div class="sticky-footer"><button class="vote-btn" onclick="event.stopPropagation();vote('${col.id}','${item.id}')">&#9650; ${item.votes||0}</button><button class="del-btn" onclick="event.stopPropagation();delCard('${col.id}','${item.id}')">&times;</button></div>`;
+      cards.appendChild(s);
+    });
+    div.appendChild(cards);
+    board.appendChild(div);
+  });
+}
+
+function addCard(colId){
+  const input=document.getElementById('input-'+colId);
+  const text=input.value.trim();if(!text)return;
+  data[colId].push({id:uid(),text,votes:0,color:randPastel()});
+  save();render();
+  setTimeout(()=>{const inp=document.getElementById('input-'+colId);if(inp)inp.focus()},50);
+}
+
+function vote(colId,cardId){
+  const card=(data[colId]||[]).find(c=>c.id===cardId);
+  if(card){card.votes=(card.votes||0)+1;save();render()}
+}
+
+function delCard(colId,cardId){
+  data[colId]=(data[colId]||[]).filter(c=>c.id!==cardId);save();render();
+}
+
+function sortByVotes(){
+  COLS.forEach(col=>{data[col.id].sort((a,b)=>(b.votes||0)-(a.votes||0))});
+  save();render();
+}
+
+function newRetro(){
+  showModal(`<h2>New Retrospective?</h2><p style="font-size:.85rem;color:#aaa;margin-bottom:10px">This will clear all current cards.</p><div class="modal-actions"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button style="background:#ef4444;color:#fff" onclick="confirmNew()">Clear Board</button></div>`);
+}
+function confirmNew(){data={well:[],improve:[],actions:[]};save();closeModal();render()}
+
+function exportText(){
+  let txt='RETROSPECTIVE\n'+('='.repeat(30))+'\n';
+  COLS.forEach(col=>{
+    txt+=`\n${col.name}\n${'-'.repeat(20)}\n`;
+    (data[col.id]||[]).forEach(c=>{txt+=`  [${c.votes||0} votes] ${c.text}\n`});
+  });
+  showModal(`<h2>Export</h2><div class="export-box" style="background:#232326;border:1px solid #2a2a2d;border-radius:8px;padding:12px;font-size:.8rem;white-space:pre-wrap;max-height:300px;overflow-y:auto;font-family:monospace">${esc(txt)}</div><div class="modal-actions"><button class="btn-cancel" onclick="closeModal()">Close</button></div>`);
+}
+
+function shareURL(){
+  const encoded=btoa(JSON.stringify(data));
+  const url=location.origin+location.pathname+'#'+encoded;
+  navigator.clipboard.writeText(url).then(()=>{
+    showModal(`<h2>Link Copied!</h2><p style="font-size:.82rem;color:#aaa;word-break:break-all;margin:8px 0">${esc(url)}</p><div class="modal-actions"><button class="btn-cancel" onclick="closeModal()">OK</button></div>`);
+  }).catch(()=>{
+    showModal(`<h2>Share Link</h2><p style="font-size:.82rem;color:#aaa;word-break:break-all;margin:8px 0;user-select:all">${esc(url)}</p><div class="modal-actions"><button class="btn-cancel" onclick="closeModal()">Close</button></div>`);
+  });
+}
+
+function showModal(html){document.getElementById('modalContent').innerHTML=html;document.getElementById('modalBg').classList.add('active')}
+function closeModal(){document.getElementById('modalBg').classList.remove('active')}
+document.getElementById('modalBg').addEventListener('click',e=>{if(e.target===e.currentTarget)closeModal()});
+
+// Timer
+function resetTimer(){
+  timerRunning=false;clearInterval(timerInt);
+  timerSec=parseInt(document.getElementById('timerSelect').value)*60;
+  updateTimerDisplay();
+  document.getElementById('timerBtn').textContent='Start';
+  document.getElementById('timerBox').classList.remove('done');
+}
+function toggleTimer(){
+  if(timerRunning){timerRunning=false;clearInterval(timerInt);document.getElementById('timerBtn').textContent='Resume'}
+  else{timerRunning=true;document.getElementById('timerBtn').textContent='Pause';
+    timerInt=setInterval(()=>{
+      timerSec--;updateTimerDisplay();
+      if(timerSec<=0){clearInterval(timerInt);timerRunning=false;document.getElementById('timerBtn').textContent='Done';document.getElementById('timerBox').classList.add('done')}
+    },1000);
+  }
+}
+function updateTimerDisplay(){
+  const m=Math.floor(Math.max(0,timerSec)/60);const s=Math.max(0,timerSec)%60;
+  document.getElementById('timerDisplay').textContent=`${m}:${String(s).padStart(2,'0')}`;
+}
+
+function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
+
+// Add sort button to controls
+document.querySelector('.controls').insertAdjacentHTML('beforeend','<button onclick="sortByVotes()">Sort by Votes</button>');
+
+resetTimer();render();
+</script>
+</body>
+</html>
