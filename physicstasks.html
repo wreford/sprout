@@ -27,6 +27,7 @@ canvas{display:block;width:100%;height:100%}
 #editBox .ebtn{display:flex;gap:8px}
 #editBox button{flex:1;padding:8px;border-radius:6px;border:none;font-size:13px;cursor:pointer;font-weight:600}
 #editBox .save{background:#4ade80;color:#000}
+#editBox .del{background:#ef4444;color:#fff}
 #editBox .cancel{background:rgba(255,255,255,.1);color:#ccc}
 </style>
 </head>
@@ -49,24 +50,26 @@ canvas{display:block;width:100%;height:100%}
 <button id="taskSubmit">Add</button>
 </div>
 </div>
-<div id="editOverlay"><div id="editBox"><input id="editInput" maxlength="60" autocomplete="off"><div class="ebtn"><button class="save" id="editSave">Save</button><button class="cancel" id="editCancel">Cancel</button></div></div></div>
+<div id="editOverlay"><div id="editBox"><input id="editInput" maxlength="60" autocomplete="off"><div class="ebtn"><button class="save" id="editSave">Save</button><button class="del" id="editDel">Delete</button><button class="cancel" id="editCancel">Cancel</button></div></div></div>
 <script>
 const canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
 const SIZES=[[30,25],[50,35],[70,45]],GRAVITY=0.5,FRICTION=0.85,REST=0.3,SLEEP_T=0.1,TERM_V=15;
 const PRIORITY_ORDER={'#ef4444':0,'#f97316':1,'#f7c948':2,'#4ade80':3,'#60a5fa':4};
 const ZONE_COLORS=['#3b82f6','#f97316','#4ade80'],ZONE_NAMES=['TO DO','DOING','DONE'];
 let W,H,TOP=44,BOT=50,blocks=[],particles=[],gravDir=1,shakeOff={x:0,y:0},dpr=1;
-let dragBlock=null,dragOff={x:0,y:0},lastMouse={x:0,y:0},prevMouse={x:0,y:0};
+let dragBlock=null,dragOff={x:0,y:0},lastMouse={x:0,y:0},prevMouse={x:0,y:0},dragMoved=false;
 let addFormOpen=false,editBlock=null,longPressTimer=null,flipTimer=null;
+let collisionCooldown=0; // throttle collision sounds
 
 // Audio
 const audioCtx=new(window.AudioContext||window.webkitAudioContext)();
 function playSound(type){
+  if(audioCtx.state==='suspended')audioCtx.resume();
   const g=audioCtx.createGain(),o=audioCtx.createOscillator();
-  g.connect(audioCtx.destination);o.connect(g);g.gain.value=0.02;
+  g.connect(audioCtx.destination);o.connect(g);
   const t=audioCtx.currentTime;
   if(type==='thud'){o.frequency.value=80;o.type='sine';g.gain.setValueAtTime(0.02,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.15);o.start(t);o.stop(t+0.15)}
-  else if(type==='tap'){o.frequency.value=200;o.type='triangle';g.gain.setValueAtTime(0.015,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.05);o.start(t);o.stop(t+0.05)}
+  else if(type==='tap'){o.frequency.value=200;o.type='triangle';g.gain.setValueAtTime(0.012,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.04);o.start(t);o.stop(t+0.04)}
   else if(type==='shatter'){o.frequency.value=400;o.type='sawtooth';g.gain.setValueAtTime(0.02,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.25);o.start(t);o.stop(t+0.25)}
   else if(type==='rumble'){o.frequency.value=50;o.type='sawtooth';g.gain.setValueAtTime(0.02,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.3);o.start(t);o.stop(t+0.3)}
   else if(type==='chime'){o.frequency.value=523;o.type='sine';g.gain.setValueAtTime(0.02,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.4);o.start(t);o.stop(t+0.4)}
@@ -85,7 +88,8 @@ function getZone(x){return x<W/3?0:x<2*W/3?1:2}
 
 function makeBlock(title,color,sizeIdx,x,y){
   const s=SIZES[sizeIdx];
-  return{id:Date.now()+Math.random(),title,color,sizeIdx,w:s[0],h:s[1],x:x??W/2-s[0]/2,y:y??TOP+5,vx:0,vy:0,sleeping:false,mass:sizeIdx+1};
+  return{id:Date.now()+Math.random(),title,color,sizeIdx,w:s[0],h:s[1],
+    x:x??W/2-s[0]/2,y:y??TOP+5,vx:0,vy:0,sleeping:false,mass:sizeIdx+1};
 }
 
 function addBlock(title,color,sizeIdx){
@@ -96,62 +100,89 @@ function addBlock(title,color,sizeIdx){
 
 function spawnParticles(b,count){
   for(let i=0;i<count;i++){
-    particles.push({x:b.x+b.w/2,y:b.y+b.h/2,vx:(Math.random()-0.5)*8,vy:(Math.random()-0.5)*8-3,life:1,color:b.color,size:3+Math.random()*4});
+    particles.push({x:b.x+b.w/2,y:b.y+b.h/2,
+      vx:(Math.random()-0.5)*10,vy:(Math.random()-0.5)*10-4,
+      life:1,color:b.color,size:2+Math.random()*5,rot:Math.random()*6.28});
   }
 }
 
 function deleteBlock(b){
-  spawnParticles(b,20);playSound('shatter');
+  spawnParticles(b,25);playSound('shatter');
   blocks=blocks.filter(bl=>bl!==b);save();
 }
 
 // Physics
 function updatePhysics(){
-  const floor=H-BOT, left=0, right=W;
+  const floor=H-BOT,left=0,right=W;
+  collisionCooldown=Math.max(0,collisionCooldown-1);
   for(const b of blocks){
     if(b===dragBlock)continue;
     if(b.sleeping)continue;
     b.vy+=GRAVITY*gravDir;
     if(b.vy>TERM_V)b.vy=TERM_V;if(b.vy<-TERM_V)b.vy=-TERM_V;
+    if(b.vx>TERM_V)b.vx=TERM_V;if(b.vx<-TERM_V)b.vx=-TERM_V;
     b.vx*=FRICTION;
     b.x+=b.vx;b.y+=b.vy;
     // Floor/ceiling
-    if(gravDir>0&&b.y+b.h>floor){b.y=floor-b.h;b.vy*=-REST;b.vx*=0.9;if(Math.abs(b.vy)<SLEEP_T)b.vy=0}
-    if(gravDir<0&&b.y<TOP){b.y=TOP;b.vy*=-REST;if(Math.abs(b.vy)<SLEEP_T)b.vy=0}
-    if(gravDir>0&&b.y<TOP){b.y=TOP;b.vy*=-REST}
-    if(gravDir<0&&b.y+b.h>floor){b.y=floor-b.h;b.vy*=-REST}
+    if(gravDir>0){
+      if(b.y+b.h>floor){b.y=floor-b.h;b.vy*=-REST;b.vx*=0.9;if(Math.abs(b.vy)<1)b.vy=0}
+      if(b.y<TOP){b.y=TOP;b.vy*=-REST}
+    }else{
+      if(b.y<TOP){b.y=TOP;b.vy*=-REST;b.vx*=0.9;if(Math.abs(b.vy)<1)b.vy=0}
+      if(b.y+b.h>floor){b.y=floor-b.h;b.vy*=-REST}
+    }
     // Walls
     if(b.x<left){b.x=left;b.vx*=-REST}
     if(b.x+b.w>right){b.x=right-b.w;b.vx*=-REST}
     // Sleep check
     if(Math.abs(b.vx)<SLEEP_T&&Math.abs(b.vy)<SLEEP_T){
       const onFloor=gravDir>0?(b.y+b.h>=floor-1):(b.y<=TOP+1);
-      if(onFloor||isOnBlock(b))b.sleeping=true;
+      if(onFloor||isOnBlock(b)){b.sleeping=true;b.vx=0;b.vy=0}
     }
   }
   // Block-block collisions
   for(let i=0;i<blocks.length;i++){
     for(let j=i+1;j<blocks.length;j++){
-      const a=blocks[i],b=blocks[j];
-      if(a===dragBlock||b===dragBlock)continue;
-      resolveCollision(a,b);
+      const a=blocks[i],bb=blocks[j];
+      if(a===dragBlock||bb===dragBlock)continue;
+      resolveCollision(a,bb);
+    }
+  }
+  // Drag block pushes others
+  if(dragBlock){
+    for(const b of blocks){
+      if(b===dragBlock)continue;
+      const ox=Math.min(dragBlock.x+dragBlock.w,b.x+b.w)-Math.max(dragBlock.x,b.x);
+      const oy=Math.min(dragBlock.y+dragBlock.h,b.y+b.h)-Math.max(dragBlock.y,b.y);
+      if(ox>0&&oy>0){
+        b.sleeping=false;
+        if(ox<oy){
+          const dir=dragBlock.x<b.x?1:-1;
+          b.x+=dir*ox;b.vx+=dir*2;
+        }else{
+          const dir=dragBlock.y<b.y?1:-1;
+          b.y+=dir*oy;b.vy+=dir*2;
+        }
+      }
     }
   }
   // Particles
   for(let i=particles.length-1;i>=0;i--){
-    const p=particles[i];p.x+=p.vx;p.y+=p.vy;p.vy+=0.3;p.life-=0.025;
+    const p=particles[i];p.x+=p.vx;p.y+=p.vy;p.vy+=0.3;p.life-=0.02;p.rot+=0.1;
     if(p.life<=0)particles.splice(i,1);
   }
   // Shake decay
-  shakeOff.x*=0.85;shakeOff.y*=0.85;if(Math.abs(shakeOff.x)<0.1)shakeOff.x=0;
+  shakeOff.x*=0.85;shakeOff.y*=0.85;
+  if(Math.abs(shakeOff.x)<0.5)shakeOff.x=0;
+  if(Math.abs(shakeOff.y)<0.5)shakeOff.y=0;
 }
 
 function isOnBlock(a){
   for(const b of blocks){
     if(a===b)continue;
-    if(a.x+a.w>b.x&&a.x<b.x+b.w){
-      if(gravDir>0&&Math.abs((a.y+a.h)-b.y)<2)return true;
-      if(gravDir<0&&Math.abs(a.y-(b.y+b.h))<2)return true;
+    if(a.x+a.w>b.x+1&&a.x<b.x+b.w-1){
+      if(gravDir>0&&Math.abs((a.y+a.h)-b.y)<3)return true;
+      if(gravDir<0&&Math.abs(a.y-(b.y+b.h))<3)return true;
     }
   }
   return false;
@@ -166,76 +197,87 @@ function resolveCollision(a,b){
   if(ox<oy){
     const dir=a.x<b.x?-1:1;
     a.x+=dir*ox*ar;b.x-=dir*ox*br;
-    const rv=a.vx-b.vx;a.vx-=rv*ar*(1+REST)*0.5;b.vx+=rv*br*(1+REST)*0.5;
-    playSound('tap');
+    const rv=a.vx-b.vx;
+    a.vx-=rv*ar*(1+REST)*0.5;b.vx+=rv*br*(1+REST)*0.5;
   }else{
     const dir=a.y<b.y?-1:1;
     a.y+=dir*oy*ar;b.y-=dir*oy*br;
-    const rv=a.vy-b.vy;a.vy-=rv*ar*(1+REST)*0.5;b.vy+=rv*br*(1+REST)*0.5;
-    playSound('tap');
+    const rv=a.vy-b.vy;
+    a.vy-=rv*ar*(1+REST)*0.5;b.vy+=rv*br*(1+REST)*0.5;
   }
+  if(collisionCooldown===0){playSound('tap');collisionCooldown=4}
 }
 
 // Rendering
 function draw(){
   ctx.save();ctx.translate(shakeOff.x,shakeOff.y);
-  ctx.clearRect(-10,-10,W+20,H+20);
+  ctx.clearRect(-20,-20,W+40,H+40);
   // Grid
-  ctx.strokeStyle='rgba(255,255,255,0.03)';ctx.lineWidth=1;
+  ctx.strokeStyle='rgba(255,255,255,0.025)';ctx.lineWidth=1;
   for(let x=0;x<W;x+=30){ctx.beginPath();ctx.moveTo(x,TOP);ctx.lineTo(x,H-BOT);ctx.stroke()}
   for(let y=TOP;y<H-BOT;y+=30){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke()}
   // Zones
   const zw=W/3,zBot=H-BOT;
   for(let i=0;i<3;i++){
-    const grd=ctx.createLinearGradient(0,zBot-80,0,zBot);
+    const grd=ctx.createLinearGradient(0,zBot-100,0,zBot);
     grd.addColorStop(0,'transparent');grd.addColorStop(1,ZONE_COLORS[i]+'18');
     ctx.fillStyle=grd;ctx.fillRect(zoneX(i),TOP,zw,zBot-TOP);
-    // Zone label
-    ctx.fillStyle=ZONE_COLORS[i]+'30';ctx.font='bold 22px system-ui';ctx.textAlign='center';
-    ctx.fillText(ZONE_NAMES[i],zoneX(i)+zw/2,zBot-14);
-    // Dividers
-    if(i>0){ctx.setLineDash([6,6]);ctx.strokeStyle=ZONE_COLORS[i]+'25';ctx.lineWidth=1;
-    ctx.beginPath();ctx.moveTo(zoneX(i),TOP);ctx.lineTo(zoneX(i),zBot);ctx.stroke();ctx.setLineDash([])}
+    ctx.fillStyle=ZONE_COLORS[i]+'28';ctx.font='bold 24px system-ui';ctx.textAlign='center';
+    ctx.fillText(ZONE_NAMES[i],zoneX(i)+zw/2,zBot-16);
+    if(i>0){
+      ctx.setLineDash([6,6]);ctx.strokeStyle=ZONE_COLORS[i]+'22';ctx.lineWidth=1;
+      ctx.beginPath();ctx.moveTo(zoneX(i),TOP);ctx.lineTo(zoneX(i),zBot);ctx.stroke();ctx.setLineDash([]);
+    }
   }
-  // Blocks
-  for(const b of blocks){
+  // Blocks (sorted so dragged block is on top visually)
+  const drawOrder=dragBlock?[...blocks.filter(b=>b!==dragBlock),dragBlock]:blocks;
+  for(const b of drawOrder){
     ctx.save();
+    const isDrag=b===dragBlock;
+    const scale=isDrag?1.05:1;
+    const cx=b.x+b.w/2,cy=b.y+b.h/2;
+    if(isDrag){ctx.translate(cx,cy);ctx.scale(scale,scale);ctx.translate(-cx,-cy)}
     // Shadow
-    ctx.fillStyle='rgba(0,0,0,0.35)';
-    roundRect(ctx,b.x+3,b.y+3,b.w,b.h,4);ctx.fill();
+    ctx.fillStyle=isDrag?'rgba(0,0,0,0.5)':'rgba(0,0,0,0.3)';
+    const sh=isDrag?5:3;
+    roundRect(ctx,b.x+sh,b.y+sh,b.w,b.h,5);ctx.fill();
     // Block body
     ctx.fillStyle=b.color;
-    roundRect(ctx,b.x,b.y,b.w,b.h,4);ctx.fill();
-    // Light border
-    ctx.strokeStyle='rgba(255,255,255,0.2)';ctx.lineWidth=1;
-    roundRect(ctx,b.x,b.y,b.w,b.h,4);ctx.stroke();
+    roundRect(ctx,b.x,b.y,b.w,b.h,5);ctx.fill();
+    // Highlight edge
+    const lg=ctx.createLinearGradient(b.x,b.y,b.x,b.y+b.h);
+    lg.addColorStop(0,'rgba(255,255,255,0.18)');lg.addColorStop(1,'rgba(0,0,0,0.1)');
+    ctx.fillStyle=lg;roundRect(ctx,b.x,b.y,b.w,b.h,5);ctx.fill();
+    // Border
+    ctx.strokeStyle='rgba(255,255,255,0.15)';ctx.lineWidth=1;
+    roundRect(ctx,b.x,b.y,b.w,b.h,5);ctx.stroke();
     // Text
     ctx.fillStyle='#fff';ctx.textAlign='center';ctx.textBaseline='middle';
-    const fs=b.sizeIdx===0?7:b.sizeIdx===1?9:11;ctx.font=`bold ${fs}px system-ui`;
-    const maxW=b.w-6,txt=truncText(b.title,maxW);
-    ctx.fillText(txt,b.x+b.w/2,b.y+b.h/2-fs*0.4);
+    const fs=b.sizeIdx===0?7:b.sizeIdx===1?9:11;
+    ctx.font=`bold ${fs}px system-ui`;
+    const maxTW=b.w-6;
+    let txt=b.title;
+    if(ctx.measureText(txt).width>maxTW){
+      while(txt.length>1&&ctx.measureText(txt+'..').width>maxTW)txt=txt.slice(0,-1);
+      txt+='..';
+    }
+    ctx.fillText(txt,b.x+b.w/2,b.y+b.h/2-(b.sizeIdx===0?2:3));
     // Emoji
     const zone=getZone(b.x+b.w/2);
-    const emoji=b===dragBlock?'🔥':zone===2?'😊':zone===0?'😤':'🔥';
-    const efs=b.sizeIdx===0?7:b.sizeIdx===1?10:13;
+    const emoji=isDrag?'🔥':zone===2?'😊':zone===0?'😤':'💪';
+    const efs=b.sizeIdx===0?6:b.sizeIdx===1?9:12;
     ctx.font=`${efs}px system-ui`;
-    ctx.fillText(b===dragBlock?'🔥':zone===2?'😊':zone===0?'😤':'💪',b.x+b.w/2,b.y+b.h/2+fs*0.55);
+    ctx.fillText(emoji,b.x+b.w/2,b.y+b.h/2+(b.sizeIdx===0?4:fs*0.7));
     ctx.restore();
   }
   // Particles
   for(const p of particles){
-    ctx.globalAlpha=p.life;ctx.fillStyle=p.color;
-    ctx.fillRect(p.x-p.size/2,p.y-p.size/2,p.size,p.size);
+    ctx.save();ctx.globalAlpha=p.life;ctx.fillStyle=p.color;
+    ctx.translate(p.x,p.y);ctx.rotate(p.rot);
+    ctx.fillRect(-p.size/2,-p.size/2,p.size,p.size);
+    ctx.restore();
   }
-  ctx.globalAlpha=1;
   ctx.restore();
-}
-
-function truncText(t,maxW){
-  ctx.save();const m=ctx.measureText(t);ctx.restore();
-  if(m.width<=maxW)return t;
-  while(t.length>1&&ctx.measureText(t+'..').width>maxW)t=t.slice(0,-1);
-  return t+'..';
 }
 
 function roundRect(c,x,y,w,h,r){
@@ -247,10 +289,11 @@ function roundRect(c,x,y,w,h,r){
 
 function updateCounts(){
   const zc=[0,0,0];blocks.forEach(b=>zc[getZone(b.x+b.w/2)]++);
-  document.getElementById('counts').textContent=`TO DO: ${zc[0]} | DOING: ${zc[1]} | DONE: ${zc[2]} | Total: ${blocks.length}`;
+  document.getElementById('counts').textContent=
+    `TO DO: ${zc[0]} | DOING: ${zc[1]} | DONE: ${zc[2]} | Total: ${blocks.length}`;
 }
 
-// Input
+// Input handling
 function getPos(e){
   const t=e.touches?e.touches[0]:e;
   return{x:t.clientX,y:t.clientY};
@@ -269,42 +312,64 @@ function startDrag(e){
   if(audioCtx.state==='suspended')audioCtx.resume();
   const p=getPos(e);const b=hitTest(p.x,p.y);
   if(!b)return;
-  dragBlock=b;b.sleeping=false;b.vx=0;b.vy=0;
+  dragBlock=b;dragMoved=false;b.sleeping=false;b.vx=0;b.vy=0;
   dragOff.x=p.x-b.x;dragOff.y=p.y-b.y;
-  lastMouse={x:p.x,y:p.y};prevMouse={x:p.x,y:p.y};
+  lastMouse={x:p.x,y:p.y,t:Date.now()};prevMouse={x:p.x,y:p.y,t:Date.now()};
   // Bring to front
   blocks=blocks.filter(bl=>bl!==b);blocks.push(b);
   // Long press for delete
-  longPressTimer=setTimeout(()=>{if(dragBlock===b){deleteBlock(b);dragBlock=null}},800);
+  longPressTimer=setTimeout(()=>{
+    if(dragBlock===b&&!dragMoved){deleteBlock(b);dragBlock=null}
+  },800);
 }
 
 function moveDrag(e){
   if(!dragBlock)return;e.preventDefault();
   const p=getPos(e);
-  prevMouse={...lastMouse};lastMouse={x:p.x,y:p.y};
+  const dx=p.x-lastMouse.x,dy=p.y-lastMouse.y;
+  if(Math.abs(dx)>3||Math.abs(dy)>3)dragMoved=true;
+  prevMouse={...lastMouse};lastMouse={x:p.x,y:p.y,t:Date.now()};
   dragBlock.x=p.x-dragOff.x;dragBlock.y=p.y-dragOff.y;
-  // Wake nearby blocks
-  blocks.forEach(b=>{if(b!==dragBlock&&b.sleeping){
-    const ox=Math.min(dragBlock.x+dragBlock.w,b.x+b.w)-Math.max(dragBlock.x,b.x);
-    const oy=Math.min(dragBlock.y+dragBlock.h,b.y+b.h)-Math.max(dragBlock.y,b.y);
-    if(ox>0&&oy>0)b.sleeping=false;
-  }});
-  if(longPressTimer){clearTimeout(longPressTimer);longPressTimer=null}
+  // Clamp to canvas
+  dragBlock.x=Math.max(0,Math.min(W-dragBlock.w,dragBlock.x));
+  dragBlock.y=Math.max(TOP,Math.min(H-BOT-dragBlock.h,dragBlock.y));
+  if(longPressTimer&&dragMoved){clearTimeout(longPressTimer);longPressTimer=null}
 }
 
 function endDrag(e){
   if(longPressTimer){clearTimeout(longPressTimer);longPressTimer=null}
   if(!dragBlock)return;
-  // Throw velocity
-  dragBlock.vx=(lastMouse.x-prevMouse.x)*0.8;
-  dragBlock.vy=(lastMouse.y-prevMouse.y)*0.8;
+  // Throw velocity based on recent movement
+  const dt=Math.max(1,Date.now()-prevMouse.t);
+  const vScale=Math.min(1,16/dt); // scale down if frame was slow
+  dragBlock.vx=(lastMouse.x-prevMouse.x)*vScale*1.2;
+  dragBlock.vy=(lastMouse.y-prevMouse.y)*vScale*1.2;
+  // Cap throw velocity
+  dragBlock.vx=Math.max(-TERM_V,Math.min(TERM_V,dragBlock.vx));
+  dragBlock.vy=Math.max(-TERM_V,Math.min(TERM_V,dragBlock.vy));
   dragBlock.sleeping=false;
-  playSound('thud');dragBlock=null;save();
+  playSound('thud');
+  const released=dragBlock;dragBlock=null;save();
+  // If barely moved, treat as click for edit on double-tap
+  if(!dragMoved)lastTapBlock=released;
 }
 
-canvas.addEventListener('mousedown',startDrag);canvas.addEventListener('mousemove',moveDrag);
+let lastTapBlock=null,lastTapTime=0;
+canvas.addEventListener('mousedown',e=>{
+  const now=Date.now();
+  const p={x:e.clientX,y:e.clientY};const b=hitTest(p.x,p.y);
+  if(b&&b===lastTapBlock&&now-lastTapTime<400){openEdit(b);lastTapBlock=null;return}
+  lastTapTime=now;startDrag(e);
+});
+canvas.addEventListener('mousemove',moveDrag);
 canvas.addEventListener('mouseup',endDrag);canvas.addEventListener('mouseleave',endDrag);
-canvas.addEventListener('touchstart',startDrag,{passive:false});canvas.addEventListener('touchmove',moveDrag,{passive:false});
+canvas.addEventListener('touchstart',e=>{
+  const now=Date.now();
+  const p=getPos(e);const b=hitTest(p.x,p.y);
+  if(b&&b===lastTapBlock&&now-lastTapTime<400){openEdit(b);lastTapBlock=null;e.preventDefault();return}
+  lastTapTime=now;startDrag(e);
+},{passive:false});
+canvas.addEventListener('touchmove',moveDrag,{passive:false});
 canvas.addEventListener('touchend',endDrag);
 
 // Double click to edit
@@ -322,16 +387,26 @@ canvas.addEventListener('contextmenu',e=>{
 function openEdit(b){
   editBlock=b;document.getElementById('editInput').value=b.title;
   document.getElementById('editOverlay').classList.add('open');
-  setTimeout(()=>document.getElementById('editInput').focus(),100);
+  setTimeout(()=>document.getElementById('editInput').focus(),50);
 }
 document.getElementById('editSave').onclick=()=>{
-  if(editBlock){editBlock.title=document.getElementById('editInput').value||editBlock.title;save()}
+  if(editBlock){editBlock.title=document.getElementById('editInput').value.trim()||editBlock.title;save()}
+  document.getElementById('editOverlay').classList.remove('open');editBlock=null;
+};
+document.getElementById('editDel').onclick=()=>{
+  if(editBlock){deleteBlock(editBlock)}
   document.getElementById('editOverlay').classList.remove('open');editBlock=null;
 };
 document.getElementById('editCancel').onclick=()=>{
   document.getElementById('editOverlay').classList.remove('open');editBlock=null;
 };
-document.getElementById('editInput').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('editSave').click()});
+document.getElementById('editInput').addEventListener('keydown',e=>{
+  if(e.key==='Enter')document.getElementById('editSave').click();
+  if(e.key==='Escape')document.getElementById('editCancel').click();
+});
+document.getElementById('editOverlay').addEventListener('click',e=>{
+  if(e.target===e.currentTarget)document.getElementById('editCancel').click();
+});
 
 // Buttons
 document.getElementById('btnAdd').onclick=()=>{
@@ -345,21 +420,27 @@ document.getElementById('taskSubmit').onclick=()=>{
   document.getElementById('taskTitle').value='';
   addFormOpen=false;document.getElementById('addform').classList.remove('open');
 };
-document.getElementById('taskTitle').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('taskSubmit').click()});
+document.getElementById('taskTitle').addEventListener('keydown',e=>{
+  if(e.key==='Enter')document.getElementById('taskSubmit').click();
+  if(e.key==='Escape'){addFormOpen=false;document.getElementById('addform').classList.remove('open')}
+});
 
 document.getElementById('btnShake').onclick=()=>{
-  blocks.forEach(b=>{b.sleeping=false;b.vy=-6-Math.random()*8;b.vx=(Math.random()-0.5)*10});
-  shakeOff.x=8;shakeOff.y=5;playSound('rumble');
+  blocks.forEach(b=>{b.sleeping=false;b.vy=-6-Math.random()*8;b.vx=(Math.random()-0.5)*12});
+  shakeOff.x=10;shakeOff.y=6;playSound('rumble');
 };
 
 document.getElementById('btnExplode').onclick=()=>{
   const done=blocks.filter(b=>getZone(b.x+b.w/2)===2);
-  done.forEach(b=>{spawnParticles(b,30)});
+  done.forEach(b=>spawnParticles(b,30));
   blocks=blocks.filter(b=>getZone(b.x+b.w/2)!==2);
-  if(done.length)playSound('shatter');save();
+  if(done.length){playSound('shatter');shakeOff.x=6;shakeOff.y=4}
+  save();
 };
 
-const TASK_NAMES=['Fix bug','Write tests','Code review','Deploy','Design UI','Refactor','Meeting','Docs','Plan sprint','API work','Optimize','Research','Prototype','Ship it','Debug'];
+const TASK_NAMES=['Fix bug','Write tests','Code review','Deploy','Design UI','Refactor','Meeting',
+  'Write docs','Plan sprint','API work','Optimize','Research','Prototype','Ship it','Debug',
+  'Update deps','Add logging','Setup CI','Write RFC','User testing'];
 document.getElementById('btnRain').onclick=()=>{
   const colors=['#ef4444','#f97316','#f7c948','#4ade80','#60a5fa'];
   for(let i=0;i<10;i++){
@@ -368,29 +449,32 @@ document.getElementById('btnRain').onclick=()=>{
       const c=colors[Math.floor(Math.random()*colors.length)];
       const s=Math.floor(Math.random()*3);
       const b=addBlock(t,c,s);
-      b.x=30+Math.random()*(W-100);b.y=TOP+5+Math.random()*20;
-      b.vx=(Math.random()-0.5)*4;
-    },i*120);
+      b.x=20+Math.random()*(W-80);b.y=TOP+2+Math.random()*15;
+      b.vx=(Math.random()-0.5)*3;
+    },i*100);
   }
 };
 
 document.getElementById('btnSort').onclick=()=>{
   playSound('chime');
-  const sorted=[...blocks].sort((a,b)=>(PRIORITY_ORDER[a.color]||4)-(PRIORITY_ORDER[b.color]||4));
-  const zoneW=W/3,margin=8;
-  sorted.forEach((b,i)=>{
+  const sorted=[...blocks].sort((a,b)=>(PRIORITY_ORDER[a.color]??4)-(PRIORITY_ORDER[b.color]??4));
+  const margin=6;
+  let cx=margin,cy=H-BOT;
+  sorted.forEach(b=>{
     b.sleeping=false;
-    const col=i%Math.floor(zoneW/(b.w+margin));
-    const row=Math.floor(i/Math.max(1,Math.floor(W/(b.w+margin))));
-    const tx=margin+col*(b.w+margin);
-    b.vx=(tx-b.x)*0.1;b.vy=-5-Math.random()*3;
+    if(cx+b.w+margin>W){cx=margin;cy-=50}
+    const tx=cx,ty=cy-b.h-margin;
+    b.vx=(tx-b.x)*0.12;b.vy=(ty-b.y)*0.08-3;
+    cx+=b.w+margin;
   });
 };
 
 document.getElementById('btnFlip').onclick=()=>{
   if(flipTimer)return;
   gravDir=-1;blocks.forEach(b=>{b.sleeping=false});playSound('rumble');
-  flipTimer=setTimeout(()=>{gravDir=1;blocks.forEach(b=>{b.sleeping=false});flipTimer=null},2500);
+  flipTimer=setTimeout(()=>{
+    gravDir=1;blocks.forEach(b=>{b.sleeping=false});playSound('rumble');flipTimer=null;
+  },2500);
 };
 
 // Persistence
@@ -404,7 +488,8 @@ function load(){
     const d=JSON.parse(localStorage.getItem('physics-tasks'));
     if(d&&Array.isArray(d)){
       blocks=d.map(s=>{
-        const b=makeBlock(s.title,s.color,s.sizeIdx,s.x,s.y);b.id=s.id;b.sleeping=true;return b;
+        const b=makeBlock(s.title,s.color,s.sizeIdx,s.x,s.y);
+        b.id=s.id;b.sleeping=true;return b;
       });
     }
   }catch(e){}
