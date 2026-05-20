@@ -1,0 +1,147 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Daily Site Diary</title><style>
+:root{--bg:#0f0f10;--bg2:#1a1a1c;--border:#2a2a2d;--text:#f0f0f0;--dim:#6e6e73;--accent:#ff6b35;--green:#4ade80}
+*{margin:0;box-sizing:border-box}body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;padding:12px;max-width:800px;margin:0 auto}
+a.home{color:var(--accent);text-decoration:none;font-size:14px}h1{font-size:1.3em;margin:8px 0 10px}
+.row{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}.field{flex:1;min-width:110px}
+label{display:block;font-size:12px;color:var(--dim);margin-bottom:2px}
+input,select,textarea{width:100%;padding:7px;background:var(--bg2);border:1px solid var(--border);color:var(--text);border-radius:6px;font-size:13px}
+textarea{resize:vertical}
+button{padding:7px 14px;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;margin:3px 2px}
+button:hover{opacity:.85}button.sec{background:var(--bg2);border:1px solid var(--border)}
+.mic{width:44px;height:44px;border-radius:50%;background:var(--accent);border:none;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;font-size:20px;vertical-align:middle;transition:background .3s}
+.mic.active{background:#ef4444;animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.4)}50%{box-shadow:0 0 0 12px rgba(239,68,68,0)}}
+.diary-nav{display:flex;align-items:center;gap:8px;margin:10px 0}
+.diary-nav button{padding:5px 10px;font-size:13px}
+.entry-card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px;margin:8px 0}
+.entry-card .date-hdr{color:var(--accent);font-weight:700;font-size:14px;margin-bottom:6px}
+.entry-card .meta{font-size:12px;color:var(--dim);margin-bottom:6px}
+.entry-card .body{font-size:13px;white-space:pre-wrap}
+.entry-card img{max-width:200px;border-radius:6px;margin-top:6px}
+.search-bar{display:flex;gap:6px;margin:8px 0;align-items:center}
+.search-bar input{flex:1}
+.status{font-size:11px;color:var(--dim);font-style:italic;margin-left:8px}
+@media print{button,.mic,.no-print,.search-bar{display:none!important}}
+</style></head><body>
+<a href="index.html" class="home">← home</a>
+<h1>Daily Site Diary</h1>
+<div id="editor">
+ <div class="row">
+  <div class="field"><label>Date</label><input id="eDate" type="date"></div>
+  <div class="field"><label>Weather</label><select id="eWeather"><option>Sunny</option><option>Partly Cloudy</option><option>Overcast</option><option>Rain</option><option>Snow</option><option>Fog</option></select></div>
+  <div class="field"><label>Temp (°C)</label><input id="eTemp" type="number" value="18"></div>
+  <div class="field"><label>Wind</label><select id="eWind"><option>Calm</option><option>Light</option><option>Moderate</option><option>Strong</option><option>Extreme</option></select></div>
+ </div>
+ <div class="row">
+  <div class="field"><label>Crew Count</label><input id="eCrew" type="number" value="0"></div>
+  <div class="field"><label>Visitors</label><input id="eVisitors" placeholder="None"></div>
+  <div class="field"><label>Deliveries</label><input id="eDeliveries" placeholder="Rebar, formwork"></div>
+ </div>
+ <label>Equipment On Site</label>
+ <input id="eEquip" placeholder="Crane, excavator, concrete pump" style="margin-bottom:8px">
+ <label>Diary Entry <button class="mic no-print" id="micBtn" onclick="toggleMic()" title="Voice-to-text">🎤</button><span class="status" id="micStatus"></span></label>
+ <textarea id="eNotes" rows="5" placeholder="Type or tap the mic to dictate..."></textarea>
+ <label class="no-print">Attach Photo</label>
+ <input type="file" id="ePhoto" accept="image/*" class="no-print" style="margin-bottom:8px">
+ <div><button onclick="saveEntry()">Save Entry</button><button onclick="window.print()">Print</button></div>
+</div>
+<div class="search-bar no-print">
+ <input id="searchBox" placeholder="Search all entries..." oninput="renderList()">
+</div>
+<div class="diary-nav no-print">
+ <button class="sec" onclick="navDay(-1)">◀ Prev</button>
+ <span id="navDate" style="font-size:14px"></span>
+ <button class="sec" onclick="navDay(1)">Next ▶</button>
+ <button class="sec" onclick="showAll()">All Entries</button>
+</div>
+<div id="entries"></div>
+<script>
+let diary=JSON.parse(localStorage.getItem('sd_diary')||'[]');
+let currentDate=new Date().toISOString().slice(0,10);
+let showAllMode=false;
+let recognition=null;let isListening=false;
+
+document.getElementById('eDate').value=currentDate;
+
+// Web Speech API
+if('webkitSpeechRecognition' in window||'SpeechRecognition' in window){
+ const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+ recognition=new SR();recognition.continuous=true;recognition.interimResults=true;recognition.lang='en-CA';
+ recognition.onresult=e=>{
+  let final='',interim='';
+  for(let i=e.resultIndex;i<e.results.length;i++){
+   if(e.results[i].isFinal)final+=e.results[i][0].transcript+' ';
+   else interim=e.results[i][0].transcript;
+  }
+  if(final){document.getElementById('eNotes').value+=final;}
+  document.getElementById('micStatus').textContent=interim?'...'+interim:'Listening...';
+ };
+ recognition.onend=()=>{if(isListening){recognition.start();}};
+ recognition.onerror=e=>{document.getElementById('micStatus').textContent='Error: '+e.error;isListening=false;updateMicUI();};
+}
+
+function toggleMic(){
+ if(!recognition)return alert('Speech recognition not supported in this browser.');
+ if(isListening){recognition.stop();isListening=false;document.getElementById('micStatus').textContent='Stopped';}
+ else{recognition.start();isListening=true;document.getElementById('micStatus').textContent='Listening...';}
+ updateMicUI();
+}
+function updateMicUI(){document.getElementById('micBtn').classList.toggle('active',isListening);}
+
+function saveEntry(){
+ const date=document.getElementById('eDate').value;
+ const entry={id:Date.now(),date,weather:document.getElementById('eWeather').value,
+  temp:document.getElementById('eTemp').value,wind:document.getElementById('eWind').value,
+  crew:document.getElementById('eCrew').value,visitors:document.getElementById('eVisitors').value,
+  deliveries:document.getElementById('eDeliveries').value,equip:document.getElementById('eEquip').value,
+  notes:document.getElementById('eNotes').value,photo:null};
+ const file=document.getElementById('ePhoto').files[0];
+ if(file){
+  const reader=new FileReader();
+  reader.onload=e=>{
+   // Resize
+   const img=new Image();img.onload=()=>{
+    const c=document.createElement('canvas'),cx=c.getContext('2d');
+    let w=img.width,h=img.height;const mx=400;
+    if(w>mx){h*=mx/w;w=mx;}c.width=w;c.height=h;cx.drawImage(img,0,0,w,h);
+    entry.photo=c.toDataURL('image/jpeg',0.6);finishSave(entry);
+   };img.src=e.target.result;
+  };reader.readAsDataURL(file);
+ } else finishSave(entry);
+}
+function finishSave(entry){
+ diary.push(entry);
+ try{localStorage.setItem('sd_diary',JSON.stringify(diary));}catch(e){alert('Storage full');}
+ document.getElementById('eNotes').value='';document.getElementById('ePhoto').value='';
+ currentDate=entry.date;renderList();
+}
+
+function renderList(){
+ const q=document.getElementById('searchBox').value.toLowerCase();
+ const div=document.getElementById('entries');div.innerHTML='';
+ let list=diary.filter(e=>!q||e.notes.toLowerCase().includes(q)||e.deliveries.toLowerCase().includes(q)||e.date.includes(q));
+ if(!showAllMode)list=list.filter(e=>e.date===currentDate);
+ list.sort((a,b)=>b.date.localeCompare(a.date)||b.id-a.id);
+ document.getElementById('navDate').textContent=showAllMode?`All (${list.length})`:currentDate;
+ if(!list.length){div.innerHTML='<div style="color:var(--dim);padding:20px;text-align:center">No entries'+(showAllMode?'':' for '+currentDate)+'</div>';return;}
+ list.forEach(e=>{
+  let html=`<div class="entry-card"><div class="date-hdr">${e.date}</div>`;
+  html+=`<div class="meta">${e.weather} · ${e.temp}°C · Wind: ${e.wind} · Crew: ${e.crew}</div>`;
+  if(e.visitors)html+=`<div class="meta">Visitors: ${e.visitors}</div>`;
+  if(e.deliveries)html+=`<div class="meta">Deliveries: ${e.deliveries}</div>`;
+  if(e.equip)html+=`<div class="meta">Equipment: ${e.equip}</div>`;
+  html+=`<div class="body">${e.notes}</div>`;
+  if(e.photo)html+=`<img src="${e.photo}">`;
+  html+=`</div>`;div.innerHTML+=html;
+ });
+}
+
+function navDay(dir){
+ showAllMode=false;
+ const d=new Date(currentDate);d.setDate(d.getDate()+dir);
+ currentDate=d.toISOString().slice(0,10);
+ document.getElementById('eDate').value=currentDate;renderList();
+}
+function showAll(){showAllMode=true;renderList();}
+renderList();
+</script></body></html>

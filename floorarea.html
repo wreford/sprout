@@ -1,0 +1,81 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Floor Area Calculator</title>
+<style>
+:root{--bg:#0f0f10;--bg2:#1a1a1c;--border:#2a2a2d;--text:#f0f0f0;--dim:#6e6e73;--accent:#ff6b35;--green:#4ade80}
+*{box-sizing:border-box;margin:0;padding:0}body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;padding:12px}
+a{color:var(--accent);text-decoration:none}h1{font-size:1.3rem}.bar{display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap}
+canvas{background:var(--bg2);border:1px solid var(--border);border-radius:8px;width:100%;max-width:800px;display:block;margin:0 auto 10px;cursor:crosshair}
+.form{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:end}
+label{font-size:.75rem;color:var(--dim);display:flex;flex-direction:column;gap:2px}
+input,select{background:var(--bg2);color:var(--text);border:1px solid var(--border);padding:5px 7px;border-radius:6px;font-size:.83rem;width:100px}
+button{background:var(--accent);color:#fff;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:.83rem}
+button.sec{background:var(--bg2);border:1px solid var(--border);color:var(--text)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:10px}
+.stat{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px;text-align:center}
+.stat span{display:block;font-size:1.1rem;font-weight:700;color:var(--accent)}.stat small{color:var(--dim);font-size:.72rem}
+table{width:100%;border-collapse:collapse;font-size:.8rem;margin-top:8px}th,td{border:1px solid var(--border);padding:5px 7px;text-align:left}
+th{background:var(--bg2);color:var(--accent);font-weight:600}tr:nth-child(even){background:rgba(26,26,28,0.5)}
+.ref{font-size:.72rem;color:var(--dim);margin-top:10px;line-height:1.5}
+</style></head><body>
+<div class="bar"><a href="index.html">← home</a><h1>Floor Area Calculator</h1></div>
+<div class="form">
+<label>Room Label<input id="rLabel" value="Room 1" style="width:90px"></label>
+<label>Type<select id="rType" style="width:110px"><option>Office</option><option>Corridor</option><option>Mechanical</option><option>Washroom</option><option>Storage</option><option>Lobby</option><option>Stairwell</option><option>Conference</option><option>Kitchen</option><option>Other</option></select></label>
+<label>Usable?<select id="rUsable" style="width:60px"><option value="1">Yes</option><option value="0">No</option></select></label>
+<button onclick="finishRoom()">Finish Room</button>
+<button class="sec" onclick="undoPoint()">Undo Point</button>
+<button class="sec" onclick="clearAll()">Clear All</button>
+<button class="sec" onclick="exportTable()">Print Schedule</button>
+</div>
+<p style="font-size:.78rem;color:var(--dim);margin-bottom:6px">Click on the grid to place polygon corners. Grid = 1m squares. Click "Finish Room" to close the polygon.</p>
+<canvas id="cv" width="800" height="500"></canvas>
+<div class="stats">
+<div class="stat"><small>Gross Floor Area</small><span id="sGross">0.0 m²</span></div>
+<div class="stat"><small>Net Usable Area</small><span id="sNet">0.0 m²</span></div>
+<div class="stat"><small>Efficiency Ratio</small><span id="sEff">0%</span></div>
+<div class="stat"><small>Rooms</small><span id="sRooms">0</span></div>
+</div>
+<div id="tableOut"></div>
+<div class="ref">Building Code Area Limits (reference): Group C Residential up to 3 storeys = combustible up to 2400 m² per floor. Group D Business = noncombustible up to 7200 m². Check OBC SB-2 or NBC 3.2.2 for specific limits.</div>
+<script>
+const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+const GRID=20,W=800,H=500;let rooms=[],curPts=[],colors=['#ff6b35','#4ade80','#60a5fa','#f472b6','#a78bfa','#fbbf24','#34d399','#fb923c','#818cf8','#f87171'];
+function snap(v){return Math.round(v/GRID)*GRID}
+cv.addEventListener('click',e=>{const rect=cv.getBoundingClientRect(),sx=W/rect.width,sy=H/rect.height;
+const x=snap((e.clientX-rect.left)*sx),y=snap((e.clientY-rect.top)*sy);curPts.push({x,y});draw()});
+function draw(){ctx.clearRect(0,0,W,H);ctx.strokeStyle='#1e1e22';ctx.lineWidth=0.5;
+for(let x=0;x<=W;x+=GRID){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke()}
+for(let y=0;y<=H;y+=GRID){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke()}
+rooms.forEach((r,i)=>drawRoom(r,colors[i%colors.length],true));
+if(curPts.length>0){ctx.beginPath();ctx.moveTo(curPts[0].x,curPts[0].y);
+for(let i=1;i<curPts.length;i++)ctx.lineTo(curPts[i].x,curPts[i].y);
+ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.stroke();
+curPts.forEach(p=>{ctx.beginPath();ctx.arc(p.x,p.y,4,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill()})}}
+function drawRoom(r,color,filled){if(r.pts.length<3)return;ctx.beginPath();ctx.moveTo(r.pts[0].x,r.pts[0].y);
+r.pts.forEach(p=>ctx.lineTo(p.x,p.y));ctx.closePath();
+if(filled){ctx.fillStyle=color+'33';ctx.fill()}ctx.strokeStyle=color;ctx.lineWidth=2;ctx.stroke();
+const cx=r.pts.reduce((s,p)=>s+p.x,0)/r.pts.length,cy=r.pts.reduce((s,p)=>s+p.y,0)/r.pts.length;
+ctx.fillStyle='#fff';ctx.font='bold 11px system-ui';ctx.textAlign='center';ctx.fillText(r.label,cx,cy-6);
+ctx.font='10px system-ui';ctx.fillStyle=color;ctx.fillText(r.area.toFixed(1)+' m²',cx,cy+8)}
+function polyArea(pts){let a=0;const n=pts.length;for(let i=0;i<n;i++){const j=(i+1)%n;a+=pts[i].x*pts[j].y;a-=pts[j].x*pts[i].y}
+return Math.abs(a/2)/(GRID*GRID)}
+function finishRoom(){if(curPts.length<3){alert('Need at least 3 points');return}
+const area=polyArea(curPts);rooms.push({label:gv('rLabel'),type:gv('rType'),usable:gv('rUsable')==='1',pts:[...curPts],area});
+curPts=[];autoLabel();draw();updateStats();renderTable()}
+function autoLabel(){const n=rooms.length+1;document.getElementById('rLabel').value='Room '+n}
+function undoPoint(){curPts.pop();draw()}
+function gv(id){return document.getElementById(id).value}
+function updateStats(){const gross=rooms.reduce((s,r)=>s+r.area,0),net=rooms.filter(r=>r.usable).reduce((s,r)=>s+r.area,0);
+document.getElementById('sGross').textContent=gross.toFixed(1)+' m²';
+document.getElementById('sNet').textContent=net.toFixed(1)+' m²';
+document.getElementById('sEff').textContent=gross>0?(net/gross*100).toFixed(1)+'%':'0%';
+document.getElementById('sRooms').textContent=rooms.length}
+function renderTable(){let html='<table><tr><th>#</th><th>Label</th><th>Type</th><th>Area (m²)</th><th>Usable</th></tr>';
+rooms.forEach((r,i)=>{html+=`<tr><td>${i+1}</td><td>${r.label}</td><td>${r.type}</td><td>${r.area.toFixed(1)}</td><td>${r.usable?'Yes':'No'}</td></tr>`});
+const gross=rooms.reduce((s,r)=>s+r.area,0),net=rooms.filter(r=>r.usable).reduce((s,r)=>s+r.area,0);
+html+=`<tr style="font-weight:bold"><td colspan="3">TOTAL</td><td>${gross.toFixed(1)}</td><td>Net: ${net.toFixed(1)}</td></tr></table>`;
+document.getElementById('tableOut').innerHTML=html}
+function clearAll(){rooms=[];curPts=[];draw();updateStats();document.getElementById('tableOut').innerHTML='';document.getElementById('rLabel').value='Room 1'}
+function exportTable(){const w=window.open('');w.document.write('<html><head><style>body{font-family:system-ui;padding:20px;font-size:12px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #333;padding:5px}th{background:#eee}</style></head><body><h2>Room Schedule</h2>'+document.getElementById('tableOut').innerHTML+'</body></html>');w.document.close();w.print()}
+draw()
+</script></body></html>

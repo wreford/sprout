@@ -1,0 +1,73 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Concrete Pour Logger</title>
+<style>
+:root{--bg:#0f0f10;--bg2:#1a1a1c;--border:#2a2a2d;--text:#f0f0f0;--dim:#6e6e73;--accent:#ff6b35;--green:#4ade80}
+*{box-sizing:border-box;margin:0;padding:0}body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;padding:12px}
+a{color:var(--accent);text-decoration:none}h1{font-size:1.3rem}.bar{display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:10px}
+.stat{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px;text-align:center}
+.stat span{display:block;font-size:1.3rem;font-weight:700}.stat small{color:var(--dim);font-size:.7rem}
+.timer span{color:var(--accent)}.rate span{color:var(--green)}
+label{font-size:.75rem;color:var(--dim);display:flex;flex-direction:column;gap:2px}
+input,select,textarea{background:var(--bg2);color:var(--text);border:1px solid var(--border);padding:5px 7px;border-radius:6px;font-size:.83rem;font-family:inherit}
+.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:10px}
+button{background:var(--accent);color:#fff;border:none;padding:7px 14px;border-radius:6px;cursor:pointer;font-size:.83rem}
+button.sec{background:var(--bg2);border:1px solid var(--border);color:var(--text)}
+button.go{background:var(--green);color:#000}
+.log{max-height:260px;overflow-y:auto;margin-bottom:10px}
+.entry{background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:4px;font-size:.8rem}
+.entry time{color:var(--accent);font-weight:600}.entry .vals{color:var(--dim);margin-top:3px}
+@media(max-width:500px){.form{grid-template-columns:1fr 1fr}}
+</style></head><body>
+<div class="bar"><a href="index.html">← home</a><h1>Concrete Pour Logger</h1></div>
+<div class="grid">
+<div class="stat timer"><small>Pour Duration</small><span id="dur">00:00:00</span></div>
+<div class="stat rate"><small>Pour Rate</small><span id="rate">0.0 m³/hr</span></div>
+<div class="stat"><small>Total Placed</small><span id="total" style="color:var(--accent)">0.0 m³</span></div>
+<div class="stat"><small>Target Rate</small><span id="tgtDisp" style="color:var(--dim)">— m³/hr</span></div>
+</div>
+<div class="form">
+<label>Target Vol (m³)<input id="tgtVol" type="number" value="50"></label>
+<label>Target Rate (m³/hr)<input id="tgtRate" type="number" value="20"></label>
+<label>Placement<input id="place" placeholder="Footing F1"></label>
+<label>Mix Design<input id="mix" placeholder="30 MPa, 150mm slump"></label>
+<label>Slump (mm)<input id="slump" type="number" placeholder="150"></label>
+<label>Air Content (%)<input id="air" type="number" step="0.1" placeholder="6.0"></label>
+<label>Temp (°C)<input id="temp" type="number" placeholder="18"></label>
+<label>Cylinders Taken<input id="cyl" type="number" placeholder="4"></label>
+<label>Volume This Load (m³)<input id="vol" type="number" step="0.5" value="7"></label>
+<label>Weather<select id="wx"><option>Clear</option><option>Overcast</option><option>Light Rain</option><option>Rain</option><option>Hot >30°C</option><option>Cold <5°C</option></select></label>
+<label>Notes<input id="notes" placeholder="Optional"></label>
+</div>
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+<button class="go" onclick="startPour()">Start Pour</button>
+<button onclick="logEntry()">Log Entry</button>
+<button class="sec" onclick="stopPour()">End Pour</button>
+<button class="sec" onclick="genReport()">Generate Report</button>
+<button class="sec" onclick="clearData()">Clear</button>
+</div>
+<div class="log" id="logDiv"></div>
+<pre id="report" style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px;font-size:.78rem;white-space:pre-wrap;display:none"></pre>
+<script>
+let pourStart=null,timer=null,entries=JSON.parse(localStorage.getItem('pourEntries')||'[]'),totalVol=0;
+entries.forEach(e=>totalVol+=e.vol||0);renderLog();updateTotal();
+function startPour(){if(pourStart)return;pourStart=Date.now();document.getElementById('tgtDisp').textContent=gv('tgtRate')+' m³/hr';
+timer=setInterval(()=>{const el=Date.now()-pourStart,s=Math.floor(el/1000),h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=s%60;
+document.getElementById('dur').textContent=pad(h)+':'+pad(m)+':'+pad(sec);
+if(totalVol>0){const hrs=el/3600000;document.getElementById('rate').textContent=(totalVol/hrs).toFixed(1)+' m³/hr'}},1000)}
+function pad(n){return String(n).padStart(2,'0')}
+function stopPour(){if(timer)clearInterval(timer);timer=null}
+function logEntry(){const e={time:new Date().toLocaleTimeString(),place:gv('place'),mix:gv('mix'),slump:gv('slump'),air:gv('air'),temp:gv('temp'),cyl:gv('cyl'),vol:parseFloat(gv('vol'))||0,wx:gv('wx'),notes:gv('notes')};
+entries.push(e);totalVol+=e.vol;localStorage.setItem('pourEntries',JSON.stringify(entries));renderLog();updateTotal()}
+function updateTotal(){document.getElementById('total').textContent=totalVol.toFixed(1)+' m³'}
+function gv(id){return document.getElementById(id).value.trim()}
+function renderLog(){const d=document.getElementById('logDiv');d.innerHTML='';entries.slice().reverse().forEach(e=>{
+d.innerHTML+=`<div class="entry"><time>${e.time}</time> — ${e.place} — <strong>${e.vol} m³</strong><div class="vals">Mix: ${e.mix} | Slump: ${e.slump}mm | Air: ${e.air}% | Temp: ${e.temp}°C | Cyl: ${e.cyl} | Wx: ${e.wx}${e.notes?' | '+e.notes:''}</div></div>`})}
+function genReport(){const r=document.getElementById('report');r.style.display='block';
+let txt=`CONCRETE POUR REPORT\n${'='.repeat(50)}\nDate: ${new Date().toLocaleDateString()}\nPlacement: ${gv('place')}\nMix Design: ${gv('mix')}\nTarget Volume: ${gv('tgtVol')} m³\nActual Volume: ${totalVol.toFixed(1)} m³\nDuration: ${document.getElementById('dur').textContent}\nPour Rate: ${document.getElementById('rate').textContent}\n${'─'.repeat(50)}\nLOAD LOG:\n`;
+entries.forEach((e,i)=>{txt+=`\n${i+1}. ${e.time} — ${e.vol} m³ — Slump ${e.slump}mm — Air ${e.air}% — ${e.temp}°C — Cyl: ${e.cyl} — ${e.wx}`});
+txt+=`\n\n${'─'.repeat(50)}\nTotal Cylinders: ${entries.reduce((s,e)=>s+(+e.cyl||0),0)}\nWeather: ${gv('wx')}\n\nQC Inspector: ________________  Date: __________\nContractor:   ________________  Date: __________`;
+r.textContent=txt}
+function clearData(){entries=[];totalVol=0;pourStart=null;stopPour();localStorage.removeItem('pourEntries');renderLog();updateTotal();
+document.getElementById('dur').textContent='00:00:00';document.getElementById('rate').textContent='0.0 m³/hr';document.getElementById('report').style.display='none'}
+</script></body></html>

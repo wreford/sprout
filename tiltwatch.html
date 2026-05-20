@@ -1,0 +1,90 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Device Tilt Monitor</title><style>
+:root{--bg:#0f0f10;--bg2:#1a1a1c;--border:#2a2a2d;--text:#f0f0f0;--dim:#6e6e73;--accent:#ff6b35;--green:#4ade80}
+*{margin:0;padding:0;box-sizing:border-box}body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;padding:16px;max-width:600px;margin:auto;text-align:center}
+a.home{color:var(--accent);text-decoration:none;font-size:14px;float:left}h1{font-size:20px;margin:8px 0 12px;clear:both}
+button{background:var(--accent);color:var(--text);border:none;padding:10px 18px;border-radius:6px;font-size:14px;cursor:pointer;font-weight:600;margin:4px}
+button:hover{opacity:.85}button.sec{background:var(--border)}
+canvas{border:1px solid var(--border);border-radius:50%;background:var(--bg2);margin:12px auto;display:block}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:16px;margin:8px 0;text-align:center}
+.angle{font-size:42px;font-weight:700;font-family:monospace;color:var(--accent)}
+.slope{font-size:18px;color:var(--dim);margin:4px 0}
+.level{color:var(--green);font-weight:700;font-size:16px;display:none}
+.readings{text-align:left;margin-top:12px;font-size:13px}
+.readings div{padding:6px 8px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between}
+.cal{font-size:12px;color:var(--dim);margin:6px 0}
+input[type=range]{width:80%;accent-color:var(--accent)}
+.no-sensor{background:#ef444430;border:1px solid #ef4444;border-radius:8px;padding:16px;margin:12px 0;display:none}
+</style></head><body>
+<a class="home" href="index.html">&larr; home</a><h1>Device Tilt Monitor</h1>
+<div class="no-sensor" id="nosensor">Device orientation sensor not available. This tool requires a mobile device or laptop with accelerometer.<br><br>
+<button onclick="simulate()">Use Simulated Mode</button></div>
+<canvas id="cv" width="280" height="280"></canvas>
+<div class="card">
+<div class="angle" id="ax">0.0&deg;</div>
+<div style="color:var(--dim);font-size:13px">X-axis (left/right tilt)</div>
+<div class="angle" id="ay" style="font-size:28px;margin-top:4px">0.0&deg;</div>
+<div style="color:var(--dim);font-size:13px">Y-axis (front/back tilt)</div>
+<div class="slope" id="slope">Slope: 0.0%</div>
+<div class="level" id="lvl">LEVEL</div>
+</div>
+<div>
+<button onclick="lockReading()">Lock Reading</button>
+<button onclick="calibrate()" class="sec">Calibrate Zero</button>
+<button onclick="clearReadings()" class="sec">Clear Saved</button>
+</div>
+<div class="cal">
+<label>Tolerance: <span id="tolv">1.0</span>&deg;</label><br>
+<input type="range" id="tol" min="0.1" max="5" step="0.1" value="1" oninput="document.getElementById('tolv').textContent=this.value">
+</div>
+<div class="card readings" id="readings"><b>Locked Readings</b></div>
+<p style="font-size:12px;color:var(--dim);margin-top:12px">Uses: checking grade, pipe slope (1/4" per foot = 2.08%), formwork plumb, equipment leveling.</p>
+<script>
+const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+let beta=0,gamma=0,offB=0,offG=0,audioCtx=null,locked=[],simMode=false,simB=0,simG=0;
+function requestSensor(){if(typeof DeviceOrientationEvent!=='undefined'&&typeof DeviceOrientationEvent.requestPermission==='function'){
+DeviceOrientationEvent.requestPermission().then(r=>{if(r==='granted')startListening();else showNoSensor()}).catch(showNoSensor)}
+else if('DeviceOrientationEvent' in window){startListening();setTimeout(()=>{if(beta===0&&gamma===0)showNoSensor()},2000)}
+else showNoSensor()}
+function startListening(){window.addEventListener('deviceorientation',e=>{if(e.beta!==null){beta=e.beta;gamma=e.gamma}})}
+function showNoSensor(){document.getElementById('nosensor').style.display='block'}
+function simulate(){simMode=true;document.getElementById('nosensor').style.display='none';
+document.addEventListener('mousemove',e=>{const cx=window.innerWidth/2,cy=window.innerHeight/2;
+simB=((e.clientY-cy)/cy)*45;simG=((e.clientX-cx)/cx)*45});
+document.addEventListener('touchmove',e=>{const t=e.touches[0],cx=window.innerWidth/2,cy=window.innerHeight/2;
+simB=((t.clientY-cy)/cy)*45;simG=((t.clientX-cx)/cx)*45})}
+function calibrate(){offB=simMode?simB:beta;offG=simMode?simG:gamma}
+function drawBubble(){const cx=140,cy=140,R=120;ctx.clearRect(0,0,280,280);
+ctx.fillStyle='#1a1a1c';ctx.beginPath();ctx.arc(cx,cy,R+5,0,Math.PI*2);ctx.fill();
+ctx.strokeStyle='#2a2a2d';ctx.lineWidth=2;ctx.beginPath();ctx.arc(cx,cy,R,0,Math.PI*2);ctx.stroke();
+for(let r=30;r<=R;r+=30){ctx.strokeStyle='#2a2a2d';ctx.lineWidth=1;ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.stroke()}
+ctx.strokeStyle='#333';ctx.beginPath();ctx.moveTo(cx-R,cy);ctx.lineTo(cx+R,cy);ctx.stroke();
+ctx.beginPath();ctx.moveTo(cx,cy-R);ctx.lineTo(cx,cy+R);ctx.stroke();
+const b=simMode?simB-offB:beta-offB,g=simMode?simG-offG:gamma-offG;
+const bx=Math.max(-R+15,Math.min(R-15,(g/45)*R)),by=Math.max(-R+15,Math.min(R-15,(b/45)*R));
+const dist=Math.sqrt(bx*bx+by*by);const tol=+document.getElementById('tol').value;
+const isLevel=Math.abs(b)<tol&&Math.abs(g)<tol;
+const grad=ctx.createRadialGradient(cx+bx,cy+by,2,cx+bx,cy+by,15);
+grad.addColorStop(0,isLevel?'#4ade80':'#ff6b35');grad.addColorStop(1,isLevel?'#4ade8060':'#ff6b3560');
+ctx.beginPath();ctx.arc(cx+bx,cy+by,15,0,Math.PI*2);ctx.fillStyle=grad;ctx.fill();
+ctx.strokeStyle=isLevel?'#4ade80':'#ff6b35';ctx.lineWidth=2;ctx.stroke();
+ctx.beginPath();ctx.arc(cx,cy,5,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();
+document.getElementById('ax').textContent=g.toFixed(1)+'°';
+document.getElementById('ay').textContent=b.toFixed(1)+'°';
+const slopePct=Math.tan(Math.abs(b)*Math.PI/180)*100;
+document.getElementById('slope').textContent='Slope: '+slopePct.toFixed(1)+'% ('+((Math.abs(b)*Math.PI/180)*12).toFixed(2)+' in/ft)';
+const lvl=document.getElementById('lvl');if(isLevel){lvl.style.display='block';beepLevel()}else lvl.style.display='none'}
+let lastBeep=0;function beepLevel(){if(Date.now()-lastBeep<2000)return;lastBeep=Date.now();
+try{audioCtx=audioCtx||new(window.AudioContext||window.webkitAudioContext)();
+const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.connect(g);g.connect(audioCtx.destination);
+o.frequency.value=1200;g.gain.value=0.1;o.start();o.stop(audioCtx.currentTime+0.08)}catch(e){}}
+function lockReading(){const b=simMode?simB-offB:beta-offB,g=simMode?simG-offG:gamma-offG;
+const s=Math.tan(Math.abs(b)*Math.PI/180)*100;
+locked.push({x:g.toFixed(1),y:b.toFixed(1),s:s.toFixed(1),t:new Date().toLocaleTimeString()});renderLocked()}
+function renderLocked(){let h='<b>Locked Readings</b>';locked.slice(-10).reverse().forEach(r=>{
+h+=`<div><span>X: ${r.x}° / Y: ${r.y}° / Slope: ${r.s}%</span><span style="color:var(--dim)">${r.t}</span></div>`});
+document.getElementById('readings').innerHTML=h||'<b>No readings</b>'}
+function clearReadings(){locked=[];renderLocked()}
+function loop(){drawBubble();requestAnimationFrame(loop)}
+requestSensor();loop();renderLocked();
+</script></body></html>

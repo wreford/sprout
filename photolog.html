@@ -1,0 +1,142 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Construction Photo Log</title><style>
+:root{--bg:#0f0f10;--bg2:#1a1a1c;--border:#2a2a2d;--text:#f0f0f0;--dim:#6e6e73;--accent:#ff6b35;--green:#4ade80}
+*{margin:0;box-sizing:border-box}body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;padding:12px}
+a.home{color:var(--accent);text-decoration:none;font-size:14px}h1{font-size:1.3em;margin:8px 0 10px}
+button{padding:7px 14px;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;margin:3px 2px}
+button:hover{opacity:.85}button.sec{background:var(--bg2);border:1px solid var(--border)}
+.toolbar{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;align-items:center}
+.toolbar select,.toolbar input{padding:6px;background:var(--bg2);border:1px solid var(--border);color:var(--text);border-radius:6px;font-size:13px}
+.timeline{overflow-x:auto;white-space:nowrap;padding:10px 0;background:var(--bg2);border:1px solid var(--border);border-radius:8px;margin-bottom:12px}
+.timeline .strip{display:inline-flex;gap:8px;padding:8px 12px;min-width:100%}
+.tcard{display:inline-block;width:140px;flex-shrink:0;cursor:pointer;border-radius:6px;overflow:hidden;border:2px solid transparent;transition:border .2s}
+.tcard:hover,.tcard.sel{border-color:var(--accent)}
+.tcard img{width:140px;height:100px;object-fit:cover;display:block}
+.tcard .cap{padding:4px 6px;font-size:10px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:var(--bg)}
+.grid{display:flex;flex-wrap:wrap;gap:8px}
+.gcard{width:180px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;overflow:hidden;cursor:pointer}
+.gcard img{width:100%;height:130px;object-fit:cover}
+.gcard .info{padding:6px;font-size:11px}.gcard .info .dt{color:var(--accent);font-weight:700}
+.form{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:10px;display:none}
+.form label{font-size:12px;color:var(--dim);display:block;margin-top:6px}
+.form input,.form select,.form textarea{width:100%;padding:6px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:4px;font-size:13px;margin-top:2px}
+.row{display:flex;gap:8px;flex-wrap:wrap}.row>*{flex:1;min-width:120px}
+.preview{max-width:100%;max-height:200px;border-radius:6px;margin-top:6px}
+.empty{text-align:center;color:var(--dim);padding:40px;font-size:14px}
+#viewer{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.85);z-index:10;justify-content:center;align-items:center;flex-direction:column}
+#viewer.open{display:flex}
+#viewer img{max-width:90%;max-height:70vh;border-radius:8px}
+#viewer .det{color:var(--text);margin-top:10px;text-align:center;font-size:13px;max-width:90%}
+</style></head><body>
+<a href="index.html" class="home">← home</a>
+<h1>Construction Photo Log</h1>
+<div class="toolbar">
+ <button onclick="toggleForm()">+ Add Photo</button>
+ <button class="sec" id="viewBtn" onclick="toggleView()">Grid View</button>
+ <select id="fTrade" onchange="render()"><option value="">All Trades</option><option>Concrete</option><option>Steel</option><option>Electrical</option><option>Mechanical</option><option>General</option></select>
+ <input type="text" id="fSearch" placeholder="Search..." oninput="render()">
+ <button onclick="genReport()">Daily Report</button>
+</div>
+<div class="form" id="form">
+ <label>Photo</label><input type="file" id="fileIn" accept="image/*" onchange="previewFile()">
+ <img id="prevImg" class="preview" style="display:none">
+ <div class="row">
+  <div><label>Date</label><input id="pDate" type="date"></div>
+  <div><label>Trade</label><select id="pTrade"><option>General</option><option>Concrete</option><option>Steel</option><option>Electrical</option><option>Mechanical</option></select></div>
+  <div><label>Phase</label><select id="pPhase"><option>Foundation</option><option>Structure</option><option>Envelope</option><option>Interior</option><option>Commissioning</option></select></div>
+ </div>
+ <label>Location</label><input id="pLoc" placeholder="Grid B-3, Level 2">
+ <label>Description</label><textarea id="pDesc" rows="2" placeholder="Rebar placement complete..."></textarea>
+ <button onclick="savePhoto()" style="margin-top:8px">Save Photo</button>
+</div>
+<div id="timelineWrap"><div class="timeline"><div class="strip" id="strip"></div></div></div>
+<div id="gridWrap" style="display:none"><div class="grid" id="grid"></div></div>
+<div id="viewer" onclick="this.classList.remove('open')"><img id="vImg"><div class="det" id="vDet"></div></div>
+<script>
+let photos=JSON.parse(localStorage.getItem('pl_photos')||'[]');
+let viewMode='timeline';
+document.getElementById('pDate').value=new Date().toISOString().slice(0,10);
+
+function toggleForm(){const f=document.getElementById('form');f.style.display=f.style.display==='none'?'block':'none';}
+function toggleView(){
+ viewMode=viewMode==='timeline'?'grid':'timeline';
+ document.getElementById('viewBtn').textContent=viewMode==='timeline'?'Grid View':'Timeline View';
+ document.getElementById('timelineWrap').style.display=viewMode==='timeline'?'':'none';
+ document.getElementById('gridWrap').style.display=viewMode==='grid'?'':'none';
+ render();
+}
+
+function previewFile(){
+ const f=document.getElementById('fileIn').files[0];if(!f)return;
+ const img=document.getElementById('prevImg');
+ const reader=new FileReader();
+ reader.onload=e=>{img.src=e.target.result;img.style.display='block';};
+ reader.readAsDataURL(f);
+ // Try EXIF date
+ if(f.lastModified){document.getElementById('pDate').value=new Date(f.lastModified).toISOString().slice(0,10);}
+}
+
+function savePhoto(){
+ const img=document.getElementById('prevImg');
+ if(!img.src||img.style.display==='none')return alert('Select a photo first');
+ // Resize for storage
+ const canvas=document.createElement('canvas');const ctx=canvas.getContext('2d');
+ const max=600;let w=img.naturalWidth,h=img.naturalHeight;
+ if(w>max){h=h*(max/w);w=max;}if(h>max){w=w*(max/h);h=max;}
+ canvas.width=w;canvas.height=h;ctx.drawImage(img,0,0,w,h);
+ const data=canvas.toDataURL('image/jpeg',0.7);
+ photos.push({id:Date.now(),src:data,date:document.getElementById('pDate').value,
+  trade:document.getElementById('pTrade').value,phase:document.getElementById('pPhase').value,
+  loc:document.getElementById('pLoc').value,desc:document.getElementById('pDesc').value});
+ try{localStorage.setItem('pl_photos',JSON.stringify(photos));}catch(e){alert('Storage full — photo saved this session only');}
+ document.getElementById('form').style.display='none';
+ document.getElementById('prevImg').style.display='none';
+ render();
+}
+
+function filtered(){
+ const t=document.getElementById('fTrade').value;
+ const q=document.getElementById('fSearch').value.toLowerCase();
+ return photos.filter(p=>(!t||p.trade===t)&&(!q||p.desc.toLowerCase().includes(q)||p.loc.toLowerCase().includes(q)))
+  .sort((a,b)=>a.date.localeCompare(b.date));
+}
+
+function render(){
+ const list=filtered();
+ // Timeline
+ const strip=document.getElementById('strip');strip.innerHTML='';
+ if(!list.length){strip.innerHTML='<div class="empty">No photos yet — add one above</div>';}
+ list.forEach(p=>{
+  const d=document.createElement('div');d.className='tcard';
+  d.innerHTML=`<img src="${p.src}"><div class="cap">${p.date} · ${p.loc||p.trade}</div>`;
+  d.onclick=()=>viewPhoto(p);strip.appendChild(d);
+ });
+ // Grid
+ const grid=document.getElementById('grid');grid.innerHTML='';
+ list.forEach(p=>{
+  const d=document.createElement('div');d.className='gcard';
+  d.innerHTML=`<img src="${p.src}"><div class="info"><div class="dt">${p.date}</div>${p.trade} · ${p.phase}<br>${p.loc}<br>${p.desc}</div>`;
+  d.onclick=()=>viewPhoto(p);grid.appendChild(d);
+ });
+}
+
+function viewPhoto(p){
+ document.getElementById('vImg').src=p.src;
+ document.getElementById('vDet').innerHTML=`<b>${p.date}</b> · ${p.trade} · ${p.phase}<br>${p.loc}<br>${p.desc}`;
+ document.getElementById('viewer').classList.add('open');
+}
+
+function genReport(){
+ const today=new Date().toISOString().slice(0,10);
+ const dayPhotos=photos.filter(p=>p.date===today);
+ if(!dayPhotos.length)return alert('No photos for today');
+ const w=window.open('','_blank');
+ w.document.write(`<html><head><title>Photo Report ${today}</title><style>body{font-family:system-ui;padding:20px}img{max-width:300px;margin:8px}
+  .entry{page-break-inside:avoid;margin:12px 0;border-bottom:1px solid #ccc;padding-bottom:12px}</style></head><body>`);
+ w.document.write(`<h1>Daily Photo Report — ${today}</h1>`);
+ dayPhotos.forEach((p,i)=>{
+  w.document.write(`<div class="entry"><img src="${p.src}"><p><b>#${i+1}</b> ${p.trade} · ${p.phase} · ${p.loc}</p><p>${p.desc}</p></div>`);
+ });
+ w.document.write('</body></html>');w.document.close();w.print();
+}
+render();
+</script></body></html>

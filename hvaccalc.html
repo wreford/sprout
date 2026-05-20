@@ -1,0 +1,71 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HVAC Load Estimator</title><style>
+:root{--bg:#0f0f10;--bg2:#1a1a1c;--border:#2a2a2d;--text:#f0f0f0;--dim:#6e6e73;--accent:#ff6b35;--green:#4ade80}
+*{margin:0;padding:0;box-sizing:border-box}body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;padding:16px;max-width:900px;margin:auto}
+a.home{color:var(--accent);text-decoration:none;font-size:14px}h1{font-size:20px;margin:8px 0 12px}h2{font-size:16px;margin:12px 0 8px;color:var(--accent)}
+input,select,button{background:var(--bg2);color:var(--text);border:1px solid var(--border);padding:8px 12px;border-radius:6px;font-size:14px}
+button{background:var(--accent);border:none;cursor:pointer;font-weight:600}button:hover{opacity:.85}
+.g{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin:8px 0}
+label{font-size:12px;color:var(--dim);display:block;margin-bottom:2px}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px;margin:8px 0}
+.res{font-size:22px;font-weight:700;color:var(--accent)}
+canvas{border:1px solid var(--border);border-radius:8px;width:100%;max-width:400px;background:var(--bg2);margin:8px 0}
+table{width:100%;border-collapse:collapse;font-size:13px;margin:8px 0}th,td{padding:6px 8px;border:1px solid var(--border);text-align:left}th{background:var(--bg2)}
+.rooms{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}.rm{padding:6px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:13px}.rm.active{border-color:var(--accent)}
+</style></head><body>
+<a class="home" href="index.html">&larr; home</a><h1>HVAC Load Estimator</h1>
+<div class="row" style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+<button onclick="addRoom()">+ Add Room</button><button onclick="calc()">Calculate All</button></div>
+<div class="rooms" id="tabs"></div>
+<div class="card" id="inputs">
+<div class="g">
+<div><label>Room Name</label><input id="rn" value="Room 1" style="width:100%"></div>
+<div><label>Length (ft)</label><input id="rl" type="number" value="20" style="width:100%"></div>
+<div><label>Width (ft)</label><input id="rw" type="number" value="15" style="width:100%"></div>
+<div><label>Ceiling Height (ft)</label><input id="rh" type="number" value="9" style="width:100%"></div>
+<div><label>Orientation</label><select id="ro" style="width:100%"><option>North</option><option>South</option><option>East</option><option>West</option></select></div>
+<div><label>Window Area (sq ft)</label><input id="wa" type="number" value="30" style="width:100%"></div>
+<div><label>Wall Insulation R-value</label><input id="ri" type="number" value="19" style="width:100%"></div>
+<div><label>Occupants</label><input id="occ" type="number" value="4" style="width:100%"></div>
+<div><label>Equipment Heat (BTU/hr)</label><input id="eq" type="number" value="1000" style="width:100%"></div>
+<div><label>Design Temp Diff (°F)</label><input id="dt" type="number" value="30" style="width:100%"></div>
+</div></div>
+<canvas id="cv"></canvas>
+<h2>Results</h2><div id="res"></div>
+<h2>Room Summary</h2><table><thead><tr><th>Room</th><th>Area</th><th>Heating BTU/hr</th><th>Cooling Tons</th><th>CFM</th><th>Duct Size</th></tr></thead><tbody id="tbl"></tbody></table>
+<p style="font-size:11px;color:var(--dim);margin-top:12px">Reference: ASHRAE Fundamentals. Simplified estimates — consult engineer for final design.</p>
+<script>
+let rooms=[],cur=0;
+function addRoom(){const n='Room '+(rooms.length+1);rooms.push({n,l:20,w:15,h:9,o:'North',wa:30,ri:19,occ:4,eq:1000,dt:30});cur=rooms.length-1;loadRoom();renderTabs()}
+function loadRoom(){const r=rooms[cur]||{};document.getElementById('rn').value=r.n||'';document.getElementById('rl').value=r.l||20;
+document.getElementById('rw').value=r.w||15;document.getElementById('rh').value=r.h||9;document.getElementById('ro').value=r.o||'North';
+document.getElementById('wa').value=r.wa||30;document.getElementById('ri').value=r.ri||19;document.getElementById('occ').value=r.occ||4;
+document.getElementById('eq').value=r.eq||1000;document.getElementById('dt').value=r.dt||30}
+function saveRoom(){if(!rooms[cur])return;const r=rooms[cur];r.n=document.getElementById('rn').value;r.l=+document.getElementById('rl').value;
+r.w=+document.getElementById('rw').value;r.h=+document.getElementById('rh').value;r.o=document.getElementById('ro').value;
+r.wa=+document.getElementById('wa').value;r.ri=+document.getElementById('ri').value;r.occ=+document.getElementById('occ').value;
+r.eq=+document.getElementById('eq').value;r.dt=+document.getElementById('dt').value}
+function renderTabs(){document.getElementById('tabs').innerHTML=rooms.map((r,i)=>`<div class="rm ${i===cur?'active':''}" onclick="switchRoom(${i})">${r.n}</div>`).join('')}
+function switchRoom(i){saveRoom();cur=i;loadRoom();renderTabs()}
+function calc(){saveRoom();let html='',tbody='',totH=0,totC=0,totCFM=0;
+rooms.forEach(r=>{const area=r.l*r.w,vol=area*r.h,wallArea=2*(r.l+r.w)*r.h-r.wa;
+const solarFactor={North:0.35,South:1.0,East:0.75,West:0.85}[r.o]||0.7;
+const wallLoss=wallArea*(1/r.ri)*r.dt;const winLoss=r.wa*1.1*r.dt;const infilt=vol*0.5*0.018*r.dt;
+const heatLoad=Math.round(wallLoss+winLoss+infilt);
+const solarGain=r.wa*200*solarFactor;const pplGain=r.occ*400;const equipGain=r.eq;
+const coolBTU=Math.round(wallLoss+winLoss+infilt+solarGain+pplGain+equipGain);const coolTon=+(coolBTU/12000).toFixed(2);
+const cfm=Math.round(coolBTU/(1.08*20));const ductArea=cfm/800;const ductDia=+(Math.sqrt(ductArea*4/Math.PI)*Math.sqrt(144)).toFixed(0);
+totH+=heatLoad;totC+=coolBTU;totCFM+=cfm;
+tbody+=`<tr><td>${r.n}</td><td>${area} sqft</td><td>${heatLoad.toLocaleString()}</td><td>${coolTon}</td><td>${cfm}</td><td>${ductDia}" round</td></tr>`});
+const totTon=+(totC/12000).toFixed(1);
+document.getElementById('res').innerHTML=`<div class="card"><span class="res">${totH.toLocaleString()} BTU/hr</span> heating &nbsp;|&nbsp; <span class="res">${totTon} tons</span> cooling &nbsp;|&nbsp; <span class="res">${totCFM}</span> CFM total<br><br>
+Equipment: ${totTon<=2?'Mini-split or small':''}${totTon>2&&totTon<=5?'Packaged rooftop unit':''}${totTon>5?'Split system / chiller':''} recommended</div>`;
+document.getElementById('tbl').innerHTML=tbody;drawLayout()}
+function drawLayout(){const cv=document.getElementById('cv'),ctx=cv.getContext('2d');cv.width=400;cv.height=300;ctx.fillStyle='#1a1a1c';ctx.fillRect(0,0,400,300);
+const pad=30,maxL=Math.max(...rooms.map(r=>r.l)),maxW=Math.max(...rooms.map(r=>r.w));
+let x=pad;rooms.forEach((r,i)=>{const w=((r.l/maxL)*120),h=((r.w/maxW)*100);
+ctx.strokeStyle=i===cur?'#ff6b35':'#4a4a4d';ctx.lineWidth=2;ctx.strokeRect(x,pad,w,h);
+ctx.fillStyle='#ff6b3540';ctx.fillRect(x,pad,w,h);ctx.fillStyle='#f0f0f0';ctx.font='11px system-ui';ctx.textAlign='center';
+ctx.fillText(r.n,x+w/2,pad+h/2);ctx.fillStyle='#6e6e73';ctx.font='9px system-ui';ctx.fillText(r.l+"x"+r.w,x+w/2,pad+h/2+14);x+=w+10})}
+addRoom();renderTabs();
+</script></body></html>
