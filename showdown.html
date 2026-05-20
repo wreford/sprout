@@ -2457,20 +2457,22 @@ setupBtn('btnPunch','punch');
 setupBtn('btnKick','kick');
 setupBtn('btnSpecial','special');
 
-// ==================== RIGHT AIM JOYSTICK (projectile aiming) ====================
+// ==================== RIGHT AIM JOYSTICK (projectile + grab) ====================
 var aimBase2=document.getElementById('aimBase');
 var aimThumb2=document.getElementById('aimThumb');
 var aimActive=false,aimCx=0,aimCy=0,aimDx=0,aimDy=0,aimTouchId=null;
-var AIM_RADIUS=40,AIM_DEAD=10;
+var AIM_RADIUS=45,AIM_DEAD=8;
+var pendingShot=null; // {aimX, aimY} queued for next frame
 
 document.getElementById('aimZone').addEventListener('touchstart',function(e){
-  e.preventDefault();initAudio();
+  e.preventDefault();e.stopPropagation();initAudio();
   if(aimActive)return;
   var t=e.changedTouches[0];
   aimTouchId=t.identifier;aimCx=t.clientX;aimCy=t.clientY;aimDx=0;aimDy=0;aimActive=true;
   aimBase2.style.display='block';aimBase2.style.left=aimCx+'px';aimBase2.style.top=aimCy+'px';
   aimThumb2.style.display='block';aimThumb2.style.left=aimCx+'px';aimThumb2.style.top=aimCy+'px';
-},{passive:false});
+},{passive:false,capture:true});
+
 document.addEventListener('touchmove',function(e){
   if(!aimActive)return;
   for(var i=0;i<e.changedTouches.length;i++){
@@ -2485,14 +2487,17 @@ document.addEventListener('touchmove',function(e){
     }
   }
 },{passive:true});
+
 function endAim(e){
   for(var i=0;i<e.changedTouches.length;i++){
     if(e.changedTouches[i].identifier===aimTouchId){
-      // Fire projectile in aimed direction on release
-      if(Math.sqrt(aimDx*aimDx+aimDy*aimDy)>AIM_DEAD){
-        input.shoot=true;
-        input.aimX=aimDx/AIM_RADIUS;
-        input.aimY=aimDy/AIM_RADIUS;
+      var dragDist=Math.sqrt(aimDx*aimDx+aimDy*aimDy);
+      if(dragDist>AIM_DEAD){
+        // Queue shot for next frame (avoids timing issues)
+        pendingShot={aimX:aimDx/AIM_RADIUS,aimY:aimDy/AIM_RADIUS};
+      }else{
+        // Short tap near opponent = grab attempt
+        pendingShot={grab:true};
       }
       aimActive=false;aimDx=0;aimDy=0;aimTouchId=null;
       aimBase2.style.display='none';aimThumb2.style.display='none';
@@ -2500,7 +2505,8 @@ function endAim(e){
     }
   }
 }
-document.addEventListener('touchend',endAim);
+document.addEventListener('touchend',endAim,{passive:true});
+document.addEventListener('touchcancel',endAim,{passive:true});
 
 function updateTouchInput(){
   // Joystick → directional input
@@ -3400,13 +3406,33 @@ function update(){
       emojiPopups.push({x:p1.x,y:p1.y,text:'⬇️',life:25,vy:2*SCALE});
     }else if(input.punch){var pt=nearestEnemy(p1)||p2;if(!p1.grounded){doAttack(p1,pt,'punch');p1.airAttack=true;}else{doAttack(p1,pt,'punch');}}
     else if(input.kick){var kt=nearestEnemy(p1)||p2;if(!p1.grounded){doAttack(p1,kt,'kick');p1.airAttack=true;}else{doAttack(p1,kt,'kick');}}
+    // Right joystick: shoot or grab
+    if(pendingShot){
+      if(pendingShot.grab){
+        // Grab attempt — if near an enemy, throw them
+        var gt=nearestEnemy(p1);
+        if(gt&&Math.abs(p1.x-gt.x)<50*SCALE&&gt.stunTimer<=0){
+          gt.x=p1.x+(-p1.facing)*80*SCALE;gt.vy=-8*SCALE;gt.grounded=false;gt.hp-=12;
+          gt.flashTimer=15;shakeTimer=12;sfxHeavyHit();
+          spawnParticles(p1.x,p1.y-50*SCALE,'#ff6b35',10);
+          dmgNumbers.push({x:gt.x,y:gt.y-70*SCALE,text:'THROW!',life:50,vy:-2*SCALE,big:true,color:'#ff6b35'});
+          emojiPopups.push({x:p1.x,y:p1.y-90*SCALE,text:'🤜',life:30,vy:-1.5*SCALE});
+        }
+      }else if(p1.shootCooldown<=0){
+        // Aimed projectile
+        p1.shootCooldown=35;sfxShoot();
+        var pvx=pendingShot.aimX*10*SCALE,pvy=pendingShot.aimY*10*SCALE;
+        if(Math.abs(pvx)<1*SCALE&&Math.abs(pvy)<1*SCALE)pvx=p1.facing*9*SCALE;
+        projectiles.push({x:p1.x+Math.sign(pvx)*25*SCALE,y:p1.y-45*SCALE,vx:pvx,vy:pvy,dmg:8,owner:p1,life:80,type:'energy'});
+        spawnParticles(p1.x+Math.sign(pvx)*20*SCALE,p1.y-45*SCALE,p1.char.color||'#ff6b35',5);
+      }
+      pendingShot=null;
+    }
+    // Keyboard shoot (I key)
     if(input.shoot&&p1.shootCooldown<=0){
       p1.shootCooldown=35;sfxShoot();
-      var pvx=p1.facing*9*SCALE,pvy=0;
-      if(input.aimX!==undefined){pvx=input.aimX*10*SCALE;pvy=input.aimY*10*SCALE;}
-      projectiles.push({x:p1.x+Math.sign(pvx)*25*SCALE,y:p1.y-45*SCALE,vx:pvx,vy:pvy,dmg:8,owner:p1,life:80,type:'energy'});
-      spawnParticles(p1.x+Math.sign(pvx)*20*SCALE,p1.y-45*SCALE,p1.char.color||'#ff6b35',5);
-      input.aimX=undefined;input.aimY=undefined;
+      projectiles.push({x:p1.x+p1.facing*25*SCALE,y:p1.y-45*SCALE,vx:p1.facing*9*SCALE,vy:0,dmg:8,owner:p1,life:80,type:'energy'});
+      spawnParticles(p1.x+p1.facing*20*SCALE,p1.y-45*SCALE,p1.char.color||'#ff6b35',5);
     }
     if(input.special){var st=nearestEnemy(p1)||p2;doAttack(p1,st,'special');}
   }
