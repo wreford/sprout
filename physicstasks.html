@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no">
+<title>Physics Tasks</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{background:#0a0a12;color:#fff;font-family:system-ui,-apple-system,sans-serif;overflow:hidden;height:100vh;touch-action:none}
+#topbar{position:fixed;top:0;left:0;right:0;height:44px;background:rgba(10,10,18,.95);backdrop-filter:blur(8px);display:flex;align-items:center;padding:0 12px;z-index:100;border-bottom:1px solid rgba(255,255,255,.08)}
+#topbar a{color:#888;text-decoration:none;font-size:20px;margin-right:10px}
+#topbar h1{font-size:15px;font-weight:700;letter-spacing:1px;color:#ccc;flex:1}
+#topbar .counts{font-size:11px;color:#888;white-space:nowrap}
+#bottombar{position:fixed;bottom:0;left:0;right:0;height:50px;background:rgba(10,10,18,.95);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;gap:6px;z-index:100;border-top:1px solid rgba(255,255,255,.08);padding:0 8px;flex-wrap:nowrap}
+#bottombar button{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.1);color:#ccc;padding:6px 10px;border-radius:8px;font-size:12px;cursor:pointer;white-space:nowrap}
+#bottombar button:active{background:rgba(255,255,255,.18);transform:scale(.95)}
+canvas{display:block;width:100%;height:100%}
+#addform{position:fixed;bottom:50px;left:0;right:0;background:rgba(16,16,28,.98);border-top:1px solid rgba(255,255,255,.12);padding:12px;z-index:110;transform:translateY(100%);transition:transform .25s ease}
+#addform.open{transform:translateY(0)}
+#addform .row{display:flex;gap:8px;margin-bottom:8px}
+#addform input,#addform select{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);color:#fff;padding:8px;border-radius:6px;font-size:14px;flex:1}
+#addform button{background:#60a5fa;border:none;color:#fff;padding:8px 16px;border-radius:6px;font-size:14px;cursor:pointer;font-weight:600}
+#editOverlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:200;display:none;align-items:center;justify-content:center}
+#editOverlay.open{display:flex}
+#editBox{background:#1a1a2e;border:1px solid rgba(255,255,255,.15);border-radius:12px;padding:20px;width:280px}
+#editBox input{width:100%;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);color:#fff;padding:10px;border-radius:6px;font-size:15px;margin-bottom:10px}
+#editBox .ebtn{display:flex;gap:8px}
+#editBox button{flex:1;padding:8px;border-radius:6px;border:none;font-size:13px;cursor:pointer;font-weight:600}
+#editBox .save{background:#4ade80;color:#000}
+#editBox .cancel{background:rgba(255,255,255,.1);color:#ccc}
+</style>
+</head>
+<body>
+<div id="topbar"><a href="index.html">&larr;</a><h1>PHYSICS TASKS</h1><span class="counts" id="counts"></span></div>
+<canvas id="c"></canvas>
+<div id="bottombar">
+<button id="btnAdd">+ Add</button>
+<button id="btnShake">&#x1f500; Shake</button>
+<button id="btnExplode">&#x1f4a5; Done</button>
+<button id="btnRain">&#x1f327; Rain</button>
+<button id="btnSort">&#x2b06; Sort</button>
+<button id="btnFlip">&#x1f504; Flip</button>
+</div>
+<div id="addform">
+<div class="row"><input id="taskTitle" placeholder="Task title..." maxlength="60" autocomplete="off"></div>
+<div class="row">
+<select id="taskPriority"><option value="#ef4444">Urgent</option><option value="#f97316">High</option><option value="#f7c948" selected>Medium</option><option value="#4ade80">Low</option><option value="#60a5fa">Info</option></select>
+<select id="taskSize"><option value="0">Small</option><option value="1" selected>Medium</option><option value="2">Large</option></select>
+<button id="taskSubmit">Add</button>
+</div>
+</div>
+<div id="editOverlay"><div id="editBox"><input id="editInput" maxlength="60" autocomplete="off"><div class="ebtn"><button class="save" id="editSave">Save</button><button class="cancel" id="editCancel">Cancel</button></div></div></div>
+<script>
+const canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
+const SIZES=[[30,25],[50,35],[70,45]],GRAVITY=0.5,FRICTION=0.85,REST=0.3,SLEEP_T=0.1,TERM_V=15;
+const PRIORITY_ORDER={'#ef4444':0,'#f97316':1,'#f7c948':2,'#4ade80':3,'#60a5fa':4};
+const ZONE_COLORS=['#3b82f6','#f97316','#4ade80'],ZONE_NAMES=['TO DO','DOING','DONE'];
+let W,H,TOP=44,BOT=50,blocks=[],particles=[],gravDir=1,shakeOff={x:0,y:0},dpr=1;
+let dragBlock=null,dragOff={x:0,y:0},lastMouse={x:0,y:0},prevMouse={x:0,y:0};
+let addFormOpen=false,editBlock=null,longPressTimer=null,flipTimer=null;
+
+// Audio
+const audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+function playSound(type){
+  const g=audioCtx.createGain(),o=audioCtx.createOscillator();
+  g.connect(audioCtx.destination);o.connect(g);g.gain.value=0.02;
+  const t=audioCtx.currentTime;
+  if(type==='thud'){o.frequency.value=80;o.type='sine';g.gain.setValueAtTime(0.02,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.15);o.start(t);o.stop(t+0.15)}
+  else if(type==='tap'){o.frequency.value=200;o.type='triangle';g.gain.setValueAtTime(0.015,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.05);o.start(t);o.stop(t+0.05)}
+  else if(type==='shatter'){o.frequency.value=400;o.type='sawtooth';g.gain.setValueAtTime(0.02,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.25);o.start(t);o.stop(t+0.25)}
+  else if(type==='rumble'){o.frequency.value=50;o.type='sawtooth';g.gain.setValueAtTime(0.02,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.3);o.start(t);o.stop(t+0.3)}
+  else if(type==='chime'){o.frequency.value=523;o.type='sine';g.gain.setValueAtTime(0.02,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.4);o.start(t);o.stop(t+0.4)}
+  else if(type==='pop'){o.frequency.value=600;o.type='sine';g.gain.setValueAtTime(0.02,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.08);o.start(t);o.stop(t+0.08)}
+}
+
+function resize(){
+  dpr=window.devicePixelRatio||1;W=window.innerWidth;H=window.innerHeight;
+  canvas.width=W*dpr;canvas.height=H*dpr;canvas.style.width=W+'px';canvas.style.height=H+'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+window.addEventListener('resize',resize);resize();
+
+function zoneX(i){return i*W/3}
+function getZone(x){return x<W/3?0:x<2*W/3?1:2}
+
+function makeBlock(title,color,sizeIdx,x,y){
+  const s=SIZES[sizeIdx];
+  return{id:Date.now()+Math.random(),title,color,sizeIdx,w:s[0],h:s[1],x:x??W/2-s[0]/2,y:y??TOP+5,vx:0,vy:0,sleeping:false,mass:sizeIdx+1};
+}
+
+function addBlock(title,color,sizeIdx){
+  const x=50+Math.random()*(W-100);
+  const b=makeBlock(title,color,sizeIdx,x,TOP+5);
+  blocks.push(b);playSound('pop');save();return b;
+}
+
+function spawnParticles(b,count){
+  for(let i=0;i<count;i++){
+    particles.push({x:b.x+b.w/2,y:b.y+b.h/2,vx:(Math.random()-0.5)*8,vy:(Math.random()-0.5)*8-3,life:1,color:b.color,size:3+Math.random()*4});
+  }
+}
+
+function deleteBlock(b){
+  spawnParticles(b,20);playSound('shatter');
+  blocks=blocks.filter(bl=>bl!==b);save();
+}
+
+// Physics
+function updatePhysics(){
+  const floor=H-BOT, left=0, right=W;
+  for(const b of blocks){
+    if(b===dragBlock)continue;
+    if(b.sleeping)continue;
+    b.vy+=GRAVITY*gravDir;
+    if(b.vy>TERM_V)b.vy=TERM_V;if(b.vy<-TERM_V)b.vy=-TERM_V;
+    b.vx*=FRICTION;
+    b.x+=b.vx;b.y+=b.vy;
+    // Floor/ceiling
+    if(gravDir>0&&b.y+b.h>floor){b.y=floor-b.h;b.vy*=-REST;b.vx*=0.9;if(Math.abs(b.vy)<SLEEP_T)b.vy=0}
+    if(gravDir<0&&b.y<TOP){b.y=TOP;b.vy*=-REST;if(Math.abs(b.vy)<SLEEP_T)b.vy=0}
+    if(gravDir>0&&b.y<TOP){b.y=TOP;b.vy*=-REST}
+    if(gravDir<0&&b.y+b.h>floor){b.y=floor-b.h;b.vy*=-REST}
+    // Walls
+    if(b.x<left){b.x=left;b.vx*=-REST}
+    if(b.x+b.w>right){b.x=right-b.w;b.vx*=-REST}
+    // Sleep check
+    if(Math.abs(b.vx)<SLEEP_T&&Math.abs(b.vy)<SLEEP_T){
+      const onFloor=gravDir>0?(b.y+b.h>=floor-1):(b.y<=TOP+1);
+      if(onFloor||isOnBlock(b))b.sleeping=true;
+    }
+  }
+  // Block-block collisions
+  for(let i=0;i<blocks.length;i++){
+    for(let j=i+1;j<blocks.length;j++){
+      const a=blocks[i],b=blocks[j];
+      if(a===dragBlock||b===dragBlock)continue;
+      resolveCollision(a,b);
+    }
+  }
+  // Particles
+  for(let i=particles.length-1;i>=0;i--){
+    const p=particles[i];p.x+=p.vx;p.y+=p.vy;p.vy+=0.3;p.life-=0.025;
+    if(p.life<=0)particles.splice(i,1);
+  }
+  // Shake decay
+  shakeOff.x*=0.85;shakeOff.y*=0.85;if(Math.abs(shakeOff.x)<0.1)shakeOff.x=0;
+}
+
+function isOnBlock(a){
+  for(const b of blocks){
+    if(a===b)continue;
+    if(a.x+a.w>b.x&&a.x<b.x+b.w){
+      if(gravDir>0&&Math.abs((a.y+a.h)-b.y)<2)return true;
+      if(gravDir<0&&Math.abs(a.y-(b.y+b.h))<2)return true;
+    }
+  }
+  return false;
+}
+
+function resolveCollision(a,b){
+  const ox=Math.min(a.x+a.w,b.x+b.w)-Math.max(a.x,b.x);
+  const oy=Math.min(a.y+a.h,b.y+b.h)-Math.max(a.y,b.y);
+  if(ox<=0||oy<=0)return;
+  a.sleeping=false;b.sleeping=false;
+  const totalM=a.mass+b.mass,ar=b.mass/totalM,br=a.mass/totalM;
+  if(ox<oy){
+    const dir=a.x<b.x?-1:1;
+    a.x+=dir*ox*ar;b.x-=dir*ox*br;
+    const rv=a.vx-b.vx;a.vx-=rv*ar*(1+REST)*0.5;b.vx+=rv*br*(1+REST)*0.5;
+    playSound('tap');
+  }else{
+    const dir=a.y<b.y?-1:1;
+    a.y+=dir*oy*ar;b.y-=dir*oy*br;
+    const rv=a.vy-b.vy;a.vy-=rv*ar*(1+REST)*0.5;b.vy+=rv*br*(1+REST)*0.5;
+    playSound('tap');
+  }
+}
+
+// Rendering
+function draw(){
+  ctx.save();ctx.translate(shakeOff.x,shakeOff.y);
+  ctx.clearRect(-10,-10,W+20,H+20);
+  // Grid
+  ctx.strokeStyle='rgba(255,255,255,0.03)';ctx.lineWidth=1;
+  for(let x=0;x<W;x+=30){ctx.beginPath();ctx.moveTo(x,TOP);ctx.lineTo(x,H-BOT);ctx.stroke()}
+  for(let y=TOP;y<H-BOT;y+=30){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke()}
+  // Zones
+  const zw=W/3,zBot=H-BOT;
+  for(let i=0;i<3;i++){
+    const grd=ctx.createLinearGradient(0,zBot-80,0,zBot);
+    grd.addColorStop(0,'transparent');grd.addColorStop(1,ZONE_COLORS[i]+'18');
+    ctx.fillStyle=grd;ctx.fillRect(zoneX(i),TOP,zw,zBot-TOP);
+    // Zone label
+    ctx.fillStyle=ZONE_COLORS[i]+'30';ctx.font='bold 22px system-ui';ctx.textAlign='center';
+    ctx.fillText(ZONE_NAMES[i],zoneX(i)+zw/2,zBot-14);
+    // Dividers
+    if(i>0){ctx.setLineDash([6,6]);ctx.strokeStyle=ZONE_COLORS[i]+'25';ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(zoneX(i),TOP);ctx.lineTo(zoneX(i),zBot);ctx.stroke();ctx.setLineDash([])}
+  }
+  // Blocks
+  for(const b of blocks){
+    ctx.save();
+    // Shadow
+    ctx.fillStyle='rgba(0,0,0,0.35)';
+    roundRect(ctx,b.x+3,b.y+3,b.w,b.h,4);ctx.fill();
+    // Block body
+    ctx.fillStyle=b.color;
+    roundRect(ctx,b.x,b.y,b.w,b.h,4);ctx.fill();
+    // Light border
+    ctx.strokeStyle='rgba(255,255,255,0.2)';ctx.lineWidth=1;
+    roundRect(ctx,b.x,b.y,b.w,b.h,4);ctx.stroke();
+    // Text
+    ctx.fillStyle='#fff';ctx.textAlign='center';ctx.textBaseline='middle';
+    const fs=b.sizeIdx===0?7:b.sizeIdx===1?9:11;ctx.font=`bold ${fs}px system-ui`;
+    const maxW=b.w-6,txt=truncText(b.title,maxW);
+    ctx.fillText(txt,b.x+b.w/2,b.y+b.h/2-fs*0.4);
+    // Emoji
+    const zone=getZone(b.x+b.w/2);
+    const emoji=b===dragBlock?'🔥':zone===2?'😊':zone===0?'😤':'🔥';
+    const efs=b.sizeIdx===0?7:b.sizeIdx===1?10:13;
+    ctx.font=`${efs}px system-ui`;
+    ctx.fillText(b===dragBlock?'🔥':zone===2?'😊':zone===0?'😤':'💪',b.x+b.w/2,b.y+b.h/2+fs*0.55);
+    ctx.restore();
+  }
+  // Particles
+  for(const p of particles){
+    ctx.globalAlpha=p.life;ctx.fillStyle=p.color;
+    ctx.fillRect(p.x-p.size/2,p.y-p.size/2,p.size,p.size);
+  }
+  ctx.globalAlpha=1;
+  ctx.restore();
+}
+
+function truncText(t,maxW){
+  ctx.save();const m=ctx.measureText(t);ctx.restore();
+  if(m.width<=maxW)return t;
+  while(t.length>1&&ctx.measureText(t+'..').width>maxW)t=t.slice(0,-1);
+  return t+'..';
+}
+
+function roundRect(c,x,y,w,h,r){
+  c.beginPath();c.moveTo(x+r,y);c.lineTo(x+w-r,y);c.quadraticCurveTo(x+w,y,x+w,y+r);
+  c.lineTo(x+w,y+h-r);c.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  c.lineTo(x+r,y+h);c.quadraticCurveTo(x,y+h,x,y+h-r);
+  c.lineTo(x,y+r);c.quadraticCurveTo(x,y,x+r,y);c.closePath();
+}
+
+function updateCounts(){
+  const zc=[0,0,0];blocks.forEach(b=>zc[getZone(b.x+b.w/2)]++);
+  document.getElementById('counts').textContent=`TO DO: ${zc[0]} | DOING: ${zc[1]} | DONE: ${zc[2]} | Total: ${blocks.length}`;
+}
+
+// Input
+function getPos(e){
+  const t=e.touches?e.touches[0]:e;
+  return{x:t.clientX,y:t.clientY};
+}
+
+function hitTest(x,y){
+  for(let i=blocks.length-1;i>=0;i--){
+    const b=blocks[i];
+    if(x>=b.x&&x<=b.x+b.w&&y>=b.y&&y<=b.y+b.h)return b;
+  }
+  return null;
+}
+
+function startDrag(e){
+  e.preventDefault();
+  if(audioCtx.state==='suspended')audioCtx.resume();
+  const p=getPos(e);const b=hitTest(p.x,p.y);
+  if(!b)return;
+  dragBlock=b;b.sleeping=false;b.vx=0;b.vy=0;
+  dragOff.x=p.x-b.x;dragOff.y=p.y-b.y;
+  lastMouse={x:p.x,y:p.y};prevMouse={x:p.x,y:p.y};
+  // Bring to front
+  blocks=blocks.filter(bl=>bl!==b);blocks.push(b);
+  // Long press for delete
+  longPressTimer=setTimeout(()=>{if(dragBlock===b){deleteBlock(b);dragBlock=null}},800);
+}
+
+function moveDrag(e){
+  if(!dragBlock)return;e.preventDefault();
+  const p=getPos(e);
+  prevMouse={...lastMouse};lastMouse={x:p.x,y:p.y};
+  dragBlock.x=p.x-dragOff.x;dragBlock.y=p.y-dragOff.y;
+  // Wake nearby blocks
+  blocks.forEach(b=>{if(b!==dragBlock&&b.sleeping){
+    const ox=Math.min(dragBlock.x+dragBlock.w,b.x+b.w)-Math.max(dragBlock.x,b.x);
+    const oy=Math.min(dragBlock.y+dragBlock.h,b.y+b.h)-Math.max(dragBlock.y,b.y);
+    if(ox>0&&oy>0)b.sleeping=false;
+  }});
+  if(longPressTimer){clearTimeout(longPressTimer);longPressTimer=null}
+}
+
+function endDrag(e){
+  if(longPressTimer){clearTimeout(longPressTimer);longPressTimer=null}
+  if(!dragBlock)return;
+  // Throw velocity
+  dragBlock.vx=(lastMouse.x-prevMouse.x)*0.8;
+  dragBlock.vy=(lastMouse.y-prevMouse.y)*0.8;
+  dragBlock.sleeping=false;
+  playSound('thud');dragBlock=null;save();
+}
+
+canvas.addEventListener('mousedown',startDrag);canvas.addEventListener('mousemove',moveDrag);
+canvas.addEventListener('mouseup',endDrag);canvas.addEventListener('mouseleave',endDrag);
+canvas.addEventListener('touchstart',startDrag,{passive:false});canvas.addEventListener('touchmove',moveDrag,{passive:false});
+canvas.addEventListener('touchend',endDrag);
+
+// Double click to edit
+canvas.addEventListener('dblclick',e=>{
+  const p={x:e.clientX,y:e.clientY};const b=hitTest(p.x,p.y);
+  if(b)openEdit(b);
+});
+
+// Right click to delete
+canvas.addEventListener('contextmenu',e=>{
+  e.preventDefault();const p={x:e.clientX,y:e.clientY};const b=hitTest(p.x,p.y);
+  if(b)deleteBlock(b);
+});
+
+function openEdit(b){
+  editBlock=b;document.getElementById('editInput').value=b.title;
+  document.getElementById('editOverlay').classList.add('open');
+  setTimeout(()=>document.getElementById('editInput').focus(),100);
+}
+document.getElementById('editSave').onclick=()=>{
+  if(editBlock){editBlock.title=document.getElementById('editInput').value||editBlock.title;save()}
+  document.getElementById('editOverlay').classList.remove('open');editBlock=null;
+};
+document.getElementById('editCancel').onclick=()=>{
+  document.getElementById('editOverlay').classList.remove('open');editBlock=null;
+};
+document.getElementById('editInput').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('editSave').click()});
+
+// Buttons
+document.getElementById('btnAdd').onclick=()=>{
+  addFormOpen=!addFormOpen;
+  document.getElementById('addform').classList.toggle('open',addFormOpen);
+  if(addFormOpen)setTimeout(()=>document.getElementById('taskTitle').focus(),100);
+};
+document.getElementById('taskSubmit').onclick=()=>{
+  const t=document.getElementById('taskTitle').value.trim();if(!t)return;
+  addBlock(t,document.getElementById('taskPriority').value,+document.getElementById('taskSize').value);
+  document.getElementById('taskTitle').value='';
+  addFormOpen=false;document.getElementById('addform').classList.remove('open');
+};
+document.getElementById('taskTitle').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('taskSubmit').click()});
+
+document.getElementById('btnShake').onclick=()=>{
+  blocks.forEach(b=>{b.sleeping=false;b.vy=-6-Math.random()*8;b.vx=(Math.random()-0.5)*10});
+  shakeOff.x=8;shakeOff.y=5;playSound('rumble');
+};
+
+document.getElementById('btnExplode').onclick=()=>{
+  const done=blocks.filter(b=>getZone(b.x+b.w/2)===2);
+  done.forEach(b=>{spawnParticles(b,30)});
+  blocks=blocks.filter(b=>getZone(b.x+b.w/2)!==2);
+  if(done.length)playSound('shatter');save();
+};
+
+const TASK_NAMES=['Fix bug','Write tests','Code review','Deploy','Design UI','Refactor','Meeting','Docs','Plan sprint','API work','Optimize','Research','Prototype','Ship it','Debug'];
+document.getElementById('btnRain').onclick=()=>{
+  const colors=['#ef4444','#f97316','#f7c948','#4ade80','#60a5fa'];
+  for(let i=0;i<10;i++){
+    setTimeout(()=>{
+      const t=TASK_NAMES[Math.floor(Math.random()*TASK_NAMES.length)];
+      const c=colors[Math.floor(Math.random()*colors.length)];
+      const s=Math.floor(Math.random()*3);
+      const b=addBlock(t,c,s);
+      b.x=30+Math.random()*(W-100);b.y=TOP+5+Math.random()*20;
+      b.vx=(Math.random()-0.5)*4;
+    },i*120);
+  }
+};
+
+document.getElementById('btnSort').onclick=()=>{
+  playSound('chime');
+  const sorted=[...blocks].sort((a,b)=>(PRIORITY_ORDER[a.color]||4)-(PRIORITY_ORDER[b.color]||4));
+  const zoneW=W/3,margin=8;
+  sorted.forEach((b,i)=>{
+    b.sleeping=false;
+    const col=i%Math.floor(zoneW/(b.w+margin));
+    const row=Math.floor(i/Math.max(1,Math.floor(W/(b.w+margin))));
+    const tx=margin+col*(b.w+margin);
+    b.vx=(tx-b.x)*0.1;b.vy=-5-Math.random()*3;
+  });
+};
+
+document.getElementById('btnFlip').onclick=()=>{
+  if(flipTimer)return;
+  gravDir=-1;blocks.forEach(b=>{b.sleeping=false});playSound('rumble');
+  flipTimer=setTimeout(()=>{gravDir=1;blocks.forEach(b=>{b.sleeping=false});flipTimer=null},2500);
+};
+
+// Persistence
+function save(){
+  const data=blocks.map(b=>({id:b.id,title:b.title,color:b.color,sizeIdx:b.sizeIdx,x:b.x,y:b.y}));
+  try{localStorage.setItem('physics-tasks',JSON.stringify(data))}catch(e){}
+}
+
+function load(){
+  try{
+    const d=JSON.parse(localStorage.getItem('physics-tasks'));
+    if(d&&Array.isArray(d)){
+      blocks=d.map(s=>{
+        const b=makeBlock(s.title,s.color,s.sizeIdx,s.x,s.y);b.id=s.id;b.sleeping=true;return b;
+      });
+    }
+  }catch(e){}
+}
+load();
+
+// Main loop
+let lastSave=0;
+function loop(){
+  updatePhysics();draw();updateCounts();
+  if(Date.now()-lastSave>3000){save();lastSave=Date.now()}
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
