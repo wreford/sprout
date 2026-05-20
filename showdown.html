@@ -7000,7 +7000,7 @@ function renderStoryPage(){
   document.getElementById('storyProgress').textContent='Page '+(storyPage+1)+' / '+STORY_PAGES.length;
   // Hide choices initially
   document.getElementById('storyChoices').style.display='none';
-  document.getElementById('storyFightNotice').style.display='none';
+  var sfn=document.getElementById('storyFightNotice');if(sfn)sfn.style.display='none';
   // Show continue button
   document.getElementById('storyContinueBtn').style.display='';
 }
@@ -7044,10 +7044,9 @@ function showStoryActions(page){
     });
     document.getElementById('storyContinueBtn').style.display='none';
   }
-  // If fight
   if(page.fight){
-    document.getElementById('storyFightNotice').style.display='block';
-    document.getElementById('storyContinueBtn').textContent='⚔️ FIGHT!';
+    var sfn2=document.getElementById('storyFightNotice');if(sfn2)sfn2.style.display='none';
+    document.getElementById('storyContinueBtn').textContent='⚡ Continue';
   }
 }
 
@@ -7063,10 +7062,8 @@ function storyAdvance(){
     return;
   }
   var page=STORY_PAGES[storyPage];
-  // If this page has a fight, launch it
   if(page.fight){
-    storyReturnPage=storyPage+1;
-    launchStoryFight(page.fight.p1,page.fight.p2);
+    launchStoryCutscene(page.fight.p1,page.fight.p2);
     return;
   }
   // Otherwise advance
@@ -7074,85 +7071,79 @@ function storyAdvance(){
   renderStoryPage();
 }
 
-function launchStoryFight(id1,id2){
-  // Find character indices
-  var idx1=-1,idx2=-1;
+function launchStoryCutscene(id1,id2){
+  var c1=null,c2=null,idx1=-1,idx2=-1;
   for(var i=0;i<CHARS.length;i++){
-    if(CHARS[i].id===id1)idx1=i;
-    if(CHARS[i].id===id2)idx2=i;
+    if(CHARS[i].id===id1){c1=CHARS[i];idx1=i;}
+    if(CHARS[i].id===id2){c2=CHARS[i];idx2=i;}
   }
-  if(idx1<0||idx2<0){storyPage++;renderStoryPage();return;}
-  // Setup a 1v1-ish fight but still 4 player
-  initAudio();stopMenuMusic();
-  try{speechSynthesis.cancel();}catch(e){}
-  tournamentMode=false;spectatorMode=false;
-  selectedChar=idx1;
-  gameState='fight';
-  showScreen(null);
-  document.getElementById('controls').style.display='block';
-  var shootBtn=document.getElementById('btnShoot');if(shootBtn)shootBtn.textContent=PROJ_EMOJI[CHARS[idx1].id]||'💫';
-  // Create fighters — the story fighters as p1 and p2, plus 2 random
-  var used=[idx1,idx2];
-  function randChar(){var idx;do{idx=Math.floor(Math.random()*CHARS.length);}while(used.indexOf(idx)>-1);used.push(idx);return idx;}
-  // Story fights: 2 fighters only, low HP, short timer, AI controls both
-  p1=createFighter(CHARS[idx1],W*0.3,1);
-  p2=createFighter(CHARS[idx2],W*0.7,-1);
-  p1.hp=50;p1.maxHp=50;p2.hp=50;p2.maxHp=50;
-  p3=null;p4=null;
-  // Force spectator-like AI for both so fight resolves fast
-  spectatorMode=true;
-  round=1;p1Rounds=0;p2Rounds=0;
-  particles=[];projectiles=[];autoTauntTimer=0;
-  var c1=CHARS[idx1],c2=CHARS[idx2];
-  showBanner(c1.emoji+' VS '+c2.emoji,60);
+  if(!c1||!c2){storyPage++;renderStoryPage();return;}
+  var cv=document.getElementById('storyCanvas');
+  var ctx=cv.getContext('2d');
+  var w=cv.width,h=cv.height;
+  var frame=0,totalFrames=180;
+  var impactFrame=90;
+  initAudio();
   speak(c1.name+' versus '+c2.name+'!');
-  // Override round timer to 15 seconds for story fights
-  setTimeout(function(){
-    startRound();
-    roundTimer=15*60;
-  },1200);
-}
-
-// Override victory to return to story if story fight
-var _origShowVictoryScreen=null;
-(function(){
-  // Intercept the victory screen to check for story mode return
-  var origInterval=setInterval(function(){
-    var vb=document.getElementById('victoryBtns');
-    if(!vb)return;
-    clearInterval(origInterval);
-    // We'll add our hook via a MutationObserver on the victory screen
-    var observer=new MutationObserver(function(mutations){
-      mutations.forEach(function(m){
-        if(m.target.classList&&m.target.classList.contains('active')&&m.target.id==='victoryScreen'&&storyReturnPage>=0){
-          // Story fight ended — add "Continue Story" button
-          var vbtns=document.getElementById('victoryBtns');
-          // Remove existing story continue button if any
-          var existing=document.getElementById('storyContinueFromFight');
-          if(existing)existing.remove();
-          var btn=document.createElement('button');
-          btn.className='btn btn-sm';
-          btn.id='storyContinueFromFight';
-          btn.textContent='📖 Continue Story';
-          btn.style.cssText='background:linear-gradient(180deg,#aa66dd,#7733aa)';
-          btn.onclick=function(){
-            storyPage=storyReturnPage;
-            storyReturnPage=-1;
-            storyActive=true;
-            gameState='story';
-            showScreen('storyScreen');
-            document.getElementById('controls').style.display='none';
-            stopBGM();
-            renderStoryPage();
-            requestAnimationFrame(storyCanvasLoop);
-          };
-          vbtns.insertBefore(btn,vbtns.firstChild);
+  function drawCutscene(){
+    ctx.fillStyle='#111';ctx.fillRect(0,0,w,h);
+    var t=frame/totalFrames;
+    var x1,x2,shake=0;
+    if(frame<impactFrame){
+      var approach=frame/impactFrame;
+      x1=w*0.1+approach*(w*0.35);
+      x2=w*0.9-approach*(w*0.35);
+    } else {
+      x1=w*0.45;x2=w*0.55;
+      shake=Math.max(0,(1-(frame-impactFrame)/30))*8;
+      if(frame===impactFrame){
+        beep(200,.3,'square');
+        for(var p=0;p<20;p++){
+          particles.push({x:w/2+Math.random()*40-20,y:h*0.5+Math.random()*40-20,vx:(Math.random()-0.5)*6,vy:(Math.random()-0.5)*6,life:40+Math.random()*20,color:['#ff0','#f80','#f00','#fff'][Math.floor(Math.random()*4)],r:2+Math.random()*3});
         }
-      });
-    });
-    observer.observe(document.getElementById('victoryScreen'),{attributes:true,attributeFilter:['class']});
-  },100);
-})();
+      }
+    }
+    var sx=shake?(Math.random()-0.5)*shake:0;
+    var sy=shake?(Math.random()-0.5)*shake:0;
+    ctx.save();ctx.translate(sx,sy);
+    var charY=h*0.55;
+    var charH=h*0.35;
+    try{drawCharacter(ctx,idx1,x1,charY,charH,1,frame*0.1,false);}catch(e){}
+    try{drawCharacter(ctx,idx2,x2,charY,charH,-1,frame*0.1,false);}catch(e){}
+    for(var pi=particles.length-1;pi>=0;pi--){
+      var pp=particles[pi];
+      pp.x+=pp.vx;pp.y+=pp.vy;pp.life--;
+      if(pp.life<=0){particles.splice(pi,1);continue;}
+      ctx.globalAlpha=pp.life/60;
+      ctx.fillStyle=pp.color;
+      ctx.beginPath();ctx.arc(pp.x,pp.y,pp.r,0,Math.PI*2);ctx.fill();
+    }
+    ctx.globalAlpha=1;
+    ctx.restore();
+    if(frame>=impactFrame&&frame<impactFrame+40){
+      ctx.fillStyle='#fff';ctx.font='bold '+Math.min(w*0.12,48)+'px sans-serif';
+      ctx.textAlign='center';
+      ctx.globalAlpha=Math.max(0,1-(frame-impactFrame)/40);
+      var bannerTexts=['⚡ CLASH! ⚡','💥 BOOM! 💥','🔥 IMPACT! 🔥','⭐ CRASH! ⭐'];
+      ctx.fillText(bannerTexts[Math.floor(Math.random()*bannerTexts.length)],w/2,h*0.3);
+      ctx.globalAlpha=1;
+    }
+    ctx.fillStyle='#fff';ctx.font='bold '+Math.min(w*0.06,24)+'px sans-serif';
+    ctx.textAlign='left';ctx.fillText(c1.emoji+' '+c1.name,10,30);
+    ctx.textAlign='right';ctx.fillText(c2.name+' '+c2.emoji,w-10,30);
+    ctx.textAlign='left';
+    frame++;
+    if(frame<totalFrames){
+      requestAnimationFrame(drawCutscene);
+    } else {
+      particles=[];
+      storyPage++;
+      renderStoryPage();
+    }
+  }
+  particles=[];
+  drawCutscene();
+}
 
 // Also handle homeLink for story mode
 var _origShowScreen=showScreen;
