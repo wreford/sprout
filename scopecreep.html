@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Scope Creep Monster</title>
+<style>
+:root{--bg:#0f0f10;--bg2:#1a1a1c;--border:#2a2a2d;--text:#f0f0f0;--dim:#6e6e73;--accent:#ff6b35;--green:#4ade80}
+*{margin:0;box-sizing:border-box}body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;padding:12px;max-width:900px;margin:0 auto;user-select:none}
+a.home{color:var(--dim);text-decoration:none;font-size:14px}a.home:hover{color:var(--accent)}
+h1{font-size:1.4em;margin:8px 0 8px;color:var(--accent)}
+canvas{width:100%;border-radius:10px;display:block;background:var(--bg2);border:1px solid var(--border);touch-action:none}
+.hud{display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;margin:6px 0;font-size:13px}
+.hud .stat{background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:6px 12px;flex:1;min-width:80px;text-align:center}
+.hud .stat .v{font-size:1.3em;font-weight:700}.hud .stat .l{font-size:10px;color:var(--dim)}
+button{background:var(--accent);border:none;color:var(--text);padding:10px 24px;border-radius:8px;cursor:pointer;font-weight:700;font-size:16px;display:block;margin:10px auto}
+button:hover{opacity:.85}
+.hi{font-size:12px;color:var(--dim);text-align:center;margin:4px 0}
+.legend{font-size:11px;color:var(--dim);text-align:center;margin:4px}
+</style>
+</head>
+<body>
+<a class="home" href="index.html">&larr; home</a>
+<h1>Scope Creep Monster</h1>
+<div class="legend">Tap ORANGE bubbles to reject scope creep. <span style="color:var(--green)">GREEN</span> changes are legitimate -- let them pass!</div>
+<canvas id="c"></canvas>
+<div class="hud">
+<div class="stat"><div class="v" id="scoreV">0</div><div class="l">Score</div></div>
+<div class="stat"><div class="v" id="budgetV">100%</div><div class="l">Budget</div></div>
+<div class="stat"><div class="v" id="schedV">0</div><div class="l">Schedule +wks</div></div>
+<div class="stat"><div class="v" id="repV">100</div><div class="l">Reputation</div></div>
+<div class="stat"><div class="v" id="timerV">60</div><div class="l">Time</div></div>
+</div>
+<button id="startBtn" onclick="startGame()">Start Round</button>
+<div class="hi" id="hiScore"></div>
+<script>
+const canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
+let W,H,bubbles=[],particles=[],score=0,budget=100,schedule=0,reputation=100,timer=60,running=false,spawnRate=2000,lastSpawn=0,difficulty=1,hiScores=JSON.parse(localStorage.getItem('sc_hi')||'[]');
+const $=id=>document.getElementById(id);
+
+const badRequests=[
+"Client wants marble countertops","Can we add a rooftop patio?","My wife thinks the entrance should face east",
+"What about a koi pond in the lobby?","Can the parking be underground instead?","Add a helipad on the roof",
+"We need a wine cellar now","Can we move the stairs to the other side?","Make all the doors wider. All of them.",
+"I saw a really nice building in Dubai...","Can the building rotate to follow the sun?","I want the elevator to play my mixtape",
+"Add a secret room behind the bookshelf","Can we get gold-plated fixtures?","My feng shui consultant says flip the floorplan",
+"What if we add another floor?","The client's dog needs a dedicated room","Can we add a moat?",
+"Replace all windows with stained glass","I want the lobby to smell like fresh cookies forever","Add a bowling alley in the basement",
+"Can we make it look like a castle?","My astrologer says move the entrance 15 degrees","Add a waterfall feature wall",
+"What about retractable walls everywhere?","Can we put a lazy river around the building?","I need a panic room. Actually, three.",
+"Can we add a greenhouse on every floor?","The CEO wants a fireman's pole between floors","Make the whole facade a screen that plays ads"
+];
+const goodRequests=[
+"Add code-required fire exits","Upgrade to higher-rated seismic ties","Include accessible washrooms per code",
+"Add proper vapor barrier per spec","Upgrade electrical panel per load calc","Add required backflow preventer",
+"Include AODA-compliant signage","Add smoke seals on fire doors","Upgrade to required R-value insulation",
+"Add emergency lighting per code","Include proper grounding per ESA","Add required handrails to ramps"
+];
+
+function resize(){W=canvas.offsetWidth;H=Math.min(500,window.innerHeight*0.5);canvas.width=W;canvas.height=H;}
+resize();window.addEventListener('resize',resize);
+
+function spawn(){
+  const isGood=Math.random()<0.25;
+  const pool=isGood?goodRequests:badRequests;
+  const text=pool[Math.floor(Math.random()*pool.length)];
+  const side=Math.random()<0.5?-1:1;
+  const bw=Math.min(220,W*0.5),bh=50;
+  bubbles.push({
+    x:side<0?-bw:W+10,y:40+Math.random()*(H-100),
+    vx:(0.5+Math.random()*0.5+difficulty*0.15)*(-side),vy:(Math.random()-0.5)*0.3,
+    w:bw,h:bh,text,isGood,alive:true,alpha:1,
+    budgetCost:isGood?0:(5+Math.random()*10*difficulty),
+    schedCost:isGood?0:(0.5+Math.random()*difficulty),
+    repCost:isGood?-5:0
+  });
+}
+
+function explode(x,y,color){
+  for(let i=0;i<12;i++){
+    const a=Math.random()*Math.PI*2,sp=2+Math.random()*3;
+    particles.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:1,color});
+  }
+}
+
+function handleTap(ex,ey){
+  if(!running)return;
+  const rect=canvas.getBoundingClientRect();
+  const x=(ex-rect.left)*(W/rect.width),y=(ey-rect.top)*(H/rect.height);
+  for(let i=bubbles.length-1;i>=0;i--){
+    const b=bubbles[i];if(!b.alive)continue;
+    if(x>=b.x&&x<=b.x+b.w&&y>=b.y&&y<=b.y+b.h){
+      b.alive=false;
+      if(b.isGood){reputation=Math.max(0,reputation-15);score-=20;explode(b.x+b.w/2,b.y+b.h/2,'#f87171');}
+      else{score+=10+Math.floor(difficulty*5);explode(b.x+b.w/2,b.y+b.h/2,'var(--accent)');}
+      return;
+    }
+  }
+}
+canvas.addEventListener('pointerdown',e=>handleTap(e.clientX,e.clientY));
+
+function update(dt){
+  bubbles.forEach(b=>{if(!b.alive)return;b.x+=b.vx;b.y+=b.vy;
+    // Check if passed through
+    if((b.vx>0&&b.x>W)||(b.vx<0&&b.x+b.w<0)){
+      b.alive=false;
+      if(b.isGood){reputation=Math.min(100,reputation+5);score+=5;}
+      else{budget=Math.max(0,budget-b.budgetCost);schedule+=b.schedCost;score-=5;}
+    }
+  });
+  bubbles=bubbles.filter(b=>b.alive);
+  particles.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.vy+=0.1;p.life-=0.03;});
+  particles=particles.filter(p=>p.life>0);
+}
+
+function draw(){
+  ctx.fillStyle='#0f0f10';ctx.fillRect(0,0,W,H);
+  // Draw zone lines
+  ctx.strokeStyle='rgba(255,107,53,0.1)';ctx.setLineDash([5,5]);
+  ctx.beginPath();ctx.moveTo(W*0.15,0);ctx.lineTo(W*0.15,H);ctx.moveTo(W*0.85,0);ctx.lineTo(W*0.85,H);ctx.stroke();
+  ctx.setLineDash([]);
+
+  bubbles.forEach(b=>{
+    if(!b.alive)return;
+    const col=b.isGood?'rgba(74,222,128,0.15)':'rgba(255,107,53,0.15)';
+    const bdr=b.isGood?'#4ade80':'#ff6b35';
+    ctx.fillStyle=col;ctx.strokeStyle=bdr;ctx.lineWidth=2;
+    ctx.beginPath();ctx.roundRect(b.x,b.y,b.w,b.h,8);ctx.fill();ctx.stroke();
+    ctx.fillStyle=b.isGood?'#4ade80':'#f0f0f0';ctx.font='bold 11px system-ui';ctx.textAlign='left';
+    // Word wrap
+    const words=b.text.split(' ');let line='',ly=b.y+18;
+    words.forEach(w=>{const test=line+w+' ';if(ctx.measureText(test).width>b.w-16){ctx.fillText(line.trim(),b.x+8,ly);ly+=14;line=w+' ';}else line=test;});
+    ctx.fillText(line.trim(),b.x+8,ly);
+  });
+
+  particles.forEach(p=>{
+    ctx.globalAlpha=p.life;ctx.fillStyle=p.color||'#ff6b35';
+    ctx.fillRect(p.x-2,p.y-2,4,4);
+  });
+  ctx.globalAlpha=1;
+
+  if(!running&&timer<=0){
+    ctx.fillStyle='rgba(15,15,16,0.7)';ctx.fillRect(0,0,W,H);
+    ctx.fillStyle='#ff6b35';ctx.font='bold 28px system-ui';ctx.textAlign='center';
+    ctx.fillText('TIME\'S UP!',W/2,H/2-10);
+    ctx.fillStyle='#f0f0f0';ctx.font='18px system-ui';
+    ctx.fillText('Score: '+score,W/2,H/2+25);
+  }
+}
+
+function gameLoop(ts){
+  if(!running){draw();return;}
+  const dt=16;
+  timer=Math.max(0,timer-dt/1000);
+  difficulty=1+(60-timer)/20;
+  spawnRate=Math.max(600,2000-difficulty*250);
+  if(ts-lastSpawn>spawnRate){spawn();lastSpawn=ts;}
+  update(dt);draw();
+  $('scoreV').textContent=score;$('budgetV').textContent=Math.round(budget)+'%';
+  $('schedV').textContent='+'+schedule.toFixed(1);$('repV').textContent=Math.round(reputation);
+  $('timerV').textContent=Math.ceil(timer);
+  $('budgetV').style.color=budget>60?'var(--green)':budget>30?'#fbbf24':'#f87171';
+  $('repV').style.color=reputation>60?'var(--green)':reputation>30?'#fbbf24':'#f87171';
+  if(timer<=0||budget<=0){endGame();return;}
+  requestAnimationFrame(gameLoop);
+}
+
+function startGame(){
+  score=0;budget=100;schedule=0;reputation=100;timer=60;difficulty=1;
+  bubbles=[];particles=[];running=true;lastSpawn=0;
+  $('startBtn').textContent='Playing...';$('startBtn').disabled=true;
+  requestAnimationFrame(gameLoop);
+}
+
+function endGame(){
+  running=false;
+  // Bonus for remaining budget & reputation
+  const finalScore=score+Math.round(budget/2)+Math.round(reputation/2);
+  score=finalScore;$('scoreV').textContent=finalScore;
+  hiScores.push(finalScore);hiScores.sort((a,b)=>b-a);hiScores=hiScores.slice(0,5);
+  localStorage.setItem('sc_hi',JSON.stringify(hiScores));
+  $('startBtn').textContent='Play Again';$('startBtn').disabled=false;
+  renderHi();draw();
+}
+
+function renderHi(){
+  $('hiScore').innerHTML='High Scores: '+hiScores.map((s,i)=>`<strong>${s}</strong>`).join(' | ');
+}
+renderHi();draw();
+
+// roundRect polyfill
+if(!CanvasRenderingContext2D.prototype.roundRect){
+  CanvasRenderingContext2D.prototype.roundRect=function(x,y,w,h,r){
+    this.moveTo(x+r,y);this.lineTo(x+w-r,y);this.quadraticCurveTo(x+w,y,x+w,y+r);
+    this.lineTo(x+w,y+h-r);this.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+    this.lineTo(x+r,y+h);this.quadraticCurveTo(x,y+h,x,y+h-r);
+    this.lineTo(x,y+r);this.quadraticCurveTo(x,y,x+r,y);this.closePath();
+  };
+}
+</script>
+</body>
+</html>

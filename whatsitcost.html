@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>What's It Cost?</title>
+<style>
+:root{--bg:#0f0f10;--bg2:#1a1a1c;--border:#2a2a2d;--text:#f0f0f0;--dim:#6e6e73;--accent:#ff6b35;--green:#4ade80}
+*{margin:0;box-sizing:border-box}body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;padding:12px;max-width:900px;margin:0 auto}
+a.home{color:var(--dim);text-decoration:none;font-size:14px}a.home:hover{color:var(--accent)}
+h1{font-size:1.4em;margin:8px 0 4px;color:var(--accent)}
+.disc{font-size:11px;color:var(--dim);margin-bottom:10px;padding:6px;background:var(--bg2);border-radius:6px;border-left:3px solid var(--accent)}
+.cats{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
+.cat{background:var(--bg2);border:1px solid var(--border);padding:6px 14px;border-radius:20px;font-size:13px;cursor:pointer}
+.cat.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;margin:8px 0}
+.item{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px;cursor:pointer;transition:border .2s}
+.item:hover,.item.sel{border-color:var(--accent)}
+.item .name{font-size:14px;font-weight:600;margin-bottom:4px}
+.item .range{font-size:12px;color:var(--accent)}
+.item .time{font-size:11px;color:var(--dim);margin-top:2px}
+.detail{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px;margin:8px 0;display:none}
+.detail.show{display:block}
+.detail h2{font-size:1.1em;color:var(--accent);margin-bottom:8px}
+.bar{height:24px;border-radius:4px;margin:4px 0;position:relative;overflow:hidden}
+.bar .fill{height:100%;border-radius:4px}.bar .lbl{position:absolute;top:3px;left:8px;font-size:11px;font-weight:600}
+.est{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px;margin:8px 0}
+.est h3{font-size:14px;margin-bottom:8px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin:6px 0}
+label{font-size:12px;color:var(--dim)}
+input,select{background:var(--bg2);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:14px}
+.result{font-size:1.8em;font-weight:800;color:var(--accent);text-align:center;padding:10px}
+.result .sub{font-size:14px;color:var(--dim);font-weight:400}
+.drivers{font-size:12px;color:var(--dim);line-height:1.6;margin-top:8px}
+</style>
+</head>
+<body>
+<a class="home" href="index.html">&larr; home</a>
+<h1>What's It Cost?</h1>
+<div class="disc">These are rough order of magnitude estimates only, based on 2024-2026 Ontario construction costs (CAD). Not for bidding or budgeting. Consult a QS for real numbers.</div>
+<div class="row">
+<label>Location Multiplier<br>
+<select id="loc" onchange="render()">
+<option value="1.00">Toronto (1.00x)</option>
+<option value="0.92">Ottawa (0.92x)</option>
+<option value="0.88">Hamilton (0.88x)</option>
+<option value="0.95">Sudbury (0.95x)</option>
+<option value="0.85">London (0.85x)</option>
+<option value="1.05">Thunder Bay (1.05x)</option>
+</select></label>
+</div>
+<div class="cats" id="cats"></div>
+<div class="grid" id="grid"></div>
+<div class="detail" id="detail"></div>
+<div class="est">
+<h3>Quick Project Estimator</h3>
+<div class="row">
+<label>Type<br><select id="estType" onchange="estimate()"></select></label>
+<label>Size (sqft)<br><input id="estSize" type="number" value="5000" oninput="estimate()"></label>
+</div>
+<div class="result" id="estResult">Select a type above</div>
+</div>
+<script>
+const data={
+Residential:[
+{name:'Single Family',low:200,mid:300,high:500,time:'8-14 months',drivers:'Finishes, foundation type, lot conditions, mechanical complexity'},
+{name:'Townhouse',low:180,mid:260,high:380,time:'12-18 months',drivers:'Unit count, shared walls efficiency, site density, parking'},
+{name:'Apartment Low-Rise',low:220,mid:310,high:430,time:'14-22 months',drivers:'Underground parking, unit mix, amenities, soil conditions'},
+{name:'Apartment High-Rise',low:320,mid:450,high:650,time:'24-36 months',drivers:'Height, structural system, curtain wall, elevator count'}
+],
+Commercial:[
+{name:'Office',low:200,mid:320,high:500,time:'12-24 months',drivers:'Class A/B/C fit-out, HVAC complexity, facade, floor count'},
+{name:'Retail',low:150,mid:250,high:400,time:'6-14 months',drivers:'Tenant improvements, grease traps, signage, accessibility'},
+{name:'Warehouse',low:80,mid:140,high:220,time:'6-12 months',drivers:'Clear height, slab thickness, dock doors, fire suppression'},
+{name:'Restaurant',low:300,mid:450,high:700,time:'4-8 months',drivers:'Kitchen equipment, grease interceptors, HVAC, finishes'}
+],
+Industrial:[
+{name:'Factory',low:120,mid:200,high:350,time:'10-18 months',drivers:'Process equipment, floor loads, crane rails, power supply'},
+{name:'Clean Room',low:500,mid:800,high:1400,time:'14-24 months',drivers:'Classification level, HEPA systems, gowning, monitoring'},
+{name:'Data Center',low:600,mid:1000,high:1800,time:'18-30 months',drivers:'Power density, redundancy (N+1), cooling, security'}
+],
+Infrastructure:[
+{name:'Parking Garage',low:90,mid:140,high:200,time:'10-16 months',drivers:'Precast vs cast-in-place, levels, soil, waterproofing'},
+{name:'Bridge (per sqm deck)',low:350,mid:550,high:900,time:'12-30 months',drivers:'Span, foundation, material, traffic management'},
+{name:'Road (per lane-km)',low:800,mid:1500,high:3000,time:'3-12 months',drivers:'Terrain, drainage, utilities relocation, base conditions',unit:'$/lane-km (x1000)'}
+],
+Institutional:[
+{name:'School (K-12)',low:280,mid:380,high:520,time:'14-22 months',drivers:'Gymnasium, lab facilities, accessibility, energy code'},
+{name:'Hospital',low:500,mid:750,high:1200,time:'30-48 months',drivers:'Operating rooms, imaging, infection control, redundancy'},
+{name:'Rec Center',low:250,mid:370,high:520,time:'14-22 months',drivers:'Pool, arena, gym size, change rooms, spectator capacity'}
+]
+};
+const cats=Object.keys(data);let activeCat=cats[0],selItem=null;
+const $=id=>document.getElementById(id);
+const loc=()=>parseFloat($('loc').value);
+
+function render(){
+  $('cats').innerHTML=cats.map(c=>`<div class="cat ${c===activeCat?'active':''}" onclick="activeCat='${c}';selItem=null;render()">${c}</div>`).join('');
+  const m=loc();
+  $('grid').innerHTML=data[activeCat].map((it,i)=>{
+    const u=it.unit||'$/sqft';
+    return`<div class="item ${selItem===i?'sel':''}" onclick="selItem=${i};render()">
+      <div class="name">${it.name}</div>
+      <div class="range">$${Math.round(it.low*m)} - $${Math.round(it.high*m)} ${u}</div>
+      <div class="time">${it.time}</div></div>`;
+  }).join('');
+  if(selItem!==null){
+    const it=data[activeCat][selItem],m2=loc(),range=it.high-it.low;
+    const u=it.unit||'$/sqft';
+    $('detail').className='detail show';
+    $('detail').innerHTML=`<h2>${it.name}</h2>
+      <div style="margin:8px 0">
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--dim)"><span>Low: $${Math.round(it.low*m2)}</span><span>Mid: $${Math.round(it.mid*m2)}</span><span>High: $${Math.round(it.high*m2)}</span></div>
+        <div class="bar" style="background:var(--border)">
+          <div class="fill" style="background:linear-gradient(90deg,var(--green),var(--accent),#f87171);width:100%"></div>
+          <div class="lbl">${u}</div>
+        </div>
+      </div>
+      <div style="font-size:13px"><strong>Timeline:</strong> ${it.time}</div>
+      <div class="drivers"><strong>Key Cost Drivers:</strong> ${it.drivers}</div>`;
+  }else{$('detail').className='detail';}
+  buildEstDropdown();estimate();
+}
+
+function buildEstDropdown(){
+  const sel=$('estType');const prev=sel.value;sel.innerHTML='';
+  cats.forEach(c=>data[c].forEach(it=>{if(!it.unit){const o=document.createElement('option');o.value=c+'|'+it.name;o.textContent=it.name;sel.appendChild(o);}}));
+  if(prev)sel.value=prev;
+}
+
+function estimate(){
+  const v=$('estType').value;if(!v){$('estResult').innerHTML='Select a type';return;}
+  const [cat,name]=v.split('|'),it=data[cat].find(x=>x.name===name);if(!it)return;
+  const sz=parseFloat($('estSize').value)||0,m=loc();
+  const lo=Math.round(it.low*m*sz),mid=Math.round(it.mid*m*sz),hi=Math.round(it.high*m*sz);
+  const fmt=n=>n>=1e6?'$'+(n/1e6).toFixed(1)+'M':'$'+(n/1e3).toFixed(0)+'k';
+  $('estResult').innerHTML=`${fmt(lo)} &mdash; <span style="color:var(--accent)">${fmt(mid)}</span> &mdash; ${fmt(hi)}<div class="sub">${it.name} | ${sz.toLocaleString()} sqft | ${$('loc').selectedOptions[0].text}</div>`;
+}
+
+render();
+</script>
+</body>
+</html>
