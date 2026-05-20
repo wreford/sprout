@@ -1716,19 +1716,21 @@ function startGame(){
 
 function startTournament(){
   if(selectedChar===null)return;
-  initAudio();tournamentMode=true;tournamentWins=0;
+  initAudio();stopMenuMusic();tournamentMode=true;tournamentWins=0;spectatorMode=false;
   tournamentQueue=[];
   for(var i=0;i<CHARS.length;i++){if(i!==selectedChar)tournamentQueue.push(i);}
   for(var i=tournamentQueue.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var tmp=tournamentQueue[i];tournamentQueue[i]=tournamentQueue[j];tournamentQueue[j]=tmp;}
-  var firstIdx=tournamentQueue.shift();
+  var i1=tournamentQueue.shift(),i2=tournamentQueue.shift(),i3=tournamentQueue.shift();
   gameState='fight';showScreen(null);
   document.getElementById('controls').style.display='block';
-  p1=createFighter(CHARS[selectedChar],W*0.3,1);
-  p2=createFighter(CHARS[firstIdx],W*0.7,-1);
+  p1=createFighter(CHARS[selectedChar],W*0.2,1);
+  p2=createFighter(CHARS[i1],W*0.4,-1);
+  p3=createFighter(CHARS[i2],W*0.6,1);
+  p4=createFighter(CHARS[i3],W*0.8,-1);
   round=1;p1Rounds=0;p2Rounds=0;particles=[];projectiles=[];
   autoTauntTimer=0;
-  showBanner('TOURNAMENT!',120);
-  speak('Tournament mode! '+CHARS[selectedChar].name+' versus all '+(CHARS.length-1)+' opponents! First up: '+CHARS[firstIdx].name+'!');
+  showBanner('🏆 TOURNAMENT!',120);
+  speak('Tournament mode! '+CHARS[selectedChar].name+' versus the world! 4-player chaos!');
   setTimeout(function(){startRound();},2500);
 }
 
@@ -3857,31 +3859,41 @@ function doEndRoundLogic(winner,loser){
         if(winStreak===5)setTimeout(function(){speak('FIVE WIN STREAK! You are UNSTOPPABLE!');},2000);
         if(winStreak===10)setTimeout(function(){speak('TEN WINS! You are the GREATEST fighter in Crossover Chaos HISTORY!');},2000);
       }else{winStreak=0;}
-      if(tournamentMode&&winner===p1&&tournamentQueue.length>0){
+      if(tournamentMode&&winner===p1){
         tournamentWins++;
-        var nextIdx=tournamentQueue.shift();
-        gameState='fight';showScreen(null);
-        document.getElementById('controls').style.display='block';
-        p2=createFighter(CHARS[nextIdx],W*0.7,-1);
-        p1.hp=Math.min(100,p1.hp+30);p1.meter=Math.min(50,p1.meter);
-        p1.state='idle';p1.stateTimer=0;p1.stunTimer=0;p1.speedBoostTimer=0;p1.counterActive=false;
-        round=1;p1Rounds=0;p2Rounds=0;
-        showBanner('OPPONENT '+(tournamentWins+1)+'/'+CHARS.length,120);
-        speak('Next opponent! '+CHARS[nextIdx].name+'! You have '+tournamentWins+' wins!');
-        setTimeout(function(){startRound();},2000);
-        return;
+        // Replace all dead fighters from queue
+        var replaced=0;
+        [['p2',0.4],['p3',0.6],['p4',0.8]].forEach(function(slot){
+          var f=slot[0]==='p2'?p2:slot[0]==='p3'?p3:p4;
+          if(f&&f.hp<=0&&tournamentQueue.length>0){
+            var ni=tournamentQueue.shift();
+            var nf=createFighter(CHARS[ni],W*slot[1],Math.random()>0.5?1:-1);
+            if(slot[0]==='p2')p2=nf;else if(slot[0]==='p3')p3=nf;else p4=nf;
+            replaced++;
+          }
+        });
+        if(replaced>0||aliveFighters().length<=1){
+          if(tournamentQueue.length===0&&aliveFighters().length<=1){
+            tournamentMode=false;
+            gameState='victory';showScreen('victoryScreen');
+            document.getElementById('controls').style.display='none';
+            document.getElementById('winnerName').textContent='🏆 CHAMPION! 🏆';
+            document.getElementById('winEmoji').textContent=winner.char.emoji;
+            document.getElementById('winQuote').textContent=winner.char.name+' defeated ALL '+tournamentWins+' opponents!';
+            speak(winner.char.name+' is the Crossover Chaos CHAMPION! '+tournamentWins+' victories!');
+            return;
+          }
+          p1.hp=Math.min(100,p1.hp+20);p1.state='idle';p1.stunTimer=0;p1.speedBoostTimer=0;
+          [p1,p2,p3,p4].forEach(function(f){if(f)f.koHandled=false;});
+          round=1;p1Rounds=0;p2Rounds=0;gameState='fight';showScreen(null);
+          document.getElementById('controls').style.display='block';
+          showBanner('🏆 WIN #'+tournamentWins+'!',80);
+          speak('Win number '+tournamentWins+'! '+tournamentQueue.length+' opponents remaining!');
+          setTimeout(function(){fightStarted=true;startBGM();},1500);
+          return;
+        }
       }
-      if(tournamentMode&&winner===p1&&tournamentQueue.length===0){
-        tournamentWins++;tournamentMode=false;
-        gameState='victory';showScreen('victoryScreen');
-        document.getElementById('controls').style.display='none';
-        document.getElementById('winnerName').textContent='CHAMPION!';
-        document.getElementById('winEmoji').textContent=winner.char.emoji;
-        document.getElementById('winQuote').textContent=winner.char.name+' defeated ALL '+tournamentWins+' opponents!';
-        speak(winner.char.name+' is the Crossover Chaos CHAMPION! '+tournamentWins+' victories! Unbelievable!');
-        return;
-      }
-      if(tournamentMode&&winner===p2){tournamentMode=false;}
+      if(tournamentMode&&winner!==p1){tournamentMode=false;}
       gameState='victory';
       showScreen('victoryScreen');
       document.getElementById('controls').style.display='none';
