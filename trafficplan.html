@@ -4,8 +4,9 @@
 a.home{color:var(--accent);text-decoration:none;font-size:14px}h1{font-size:1.2em;margin:6px 0 8px}
 .top{display:flex;flex-wrap:wrap;gap:8px;align-items:start;margin-bottom:8px}
 .palette{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:8px;min-width:140px}
-.palette-item{display:flex;align-items:center;gap:6px;padding:5px;cursor:grab;border-radius:4px;font-size:12px;margin:2px 0}
+.palette-item{display:flex;align-items:center;gap:6px;padding:6px;cursor:pointer;border-radius:6px;font-size:12px;margin:2px 0;border:2px solid transparent;transition:all .15s;user-select:none;-webkit-user-select:none}
 .palette-item:hover{background:var(--border)}
+.palette-item.active{border-color:var(--accent);background:rgba(255,107,53,.12)}
 .palette-item .icon{width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:18px}
 canvas{background:var(--bg2);border:1px solid var(--border);border-radius:8px;cursor:crosshair;flex:1;min-width:300px}
 .side{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px;min-width:180px;font-size:12px}
@@ -20,17 +21,17 @@ button:hover{opacity:.85}
 <h1>Traffic Control Plan Builder</h1>
 <div class="top">
 <div class="palette no-print">
- <div style="font-size:12px;color:var(--dim);margin-bottom:4px">Drag to canvas:</div>
- <div class="palette-item" draggable="true" data-type="cone"><div class="icon">🔶</div>Cone</div>
- <div class="palette-item" draggable="true" data-type="barrel"><div class="icon">🛢️</div>Barrel</div>
- <div class="palette-item" draggable="true" data-type="barricade"><div class="icon">🚧</div>Barricade</div>
- <div class="palette-item" draggable="true" data-type="sign_ahead"><div class="icon">⚠️</div>Construction Ahead</div>
- <div class="palette-item" draggable="true" data-type="sign_lane"><div class="icon">🚫</div>Lane Closed</div>
- <div class="palette-item" draggable="true" data-type="sign_detour"><div class="icon">↩️</div>Detour</div>
- <div class="palette-item" draggable="true" data-type="sign_speed"><div class="icon">🔻</div>Speed Reduced</div>
- <div class="palette-item" draggable="true" data-type="flagger"><div class="icon">🧑</div>Flagger</div>
- <div class="palette-item" draggable="true" data-type="arrow_r"><div class="icon">➡️</div>Arrow Right</div>
- <div class="palette-item" draggable="true" data-type="arrow_l"><div class="icon">⬅️</div>Arrow Left</div>
+ <div style="font-size:11px;color:var(--dim);margin-bottom:4px">Tap item, then tap canvas to place:</div>
+ <div class="palette-item" data-type="cone"><div class="icon">🔶</div>Cone</div>
+ <div class="palette-item" data-type="barrel"><div class="icon">🛢️</div>Barrel</div>
+ <div class="palette-item" data-type="barricade"><div class="icon">🚧</div>Barricade</div>
+ <div class="palette-item" data-type="sign_ahead"><div class="icon">⚠️</div>Construction Ahead</div>
+ <div class="palette-item" data-type="sign_lane"><div class="icon">🚫</div>Lane Closed</div>
+ <div class="palette-item" data-type="sign_detour"><div class="icon">↩️</div>Detour</div>
+ <div class="palette-item" data-type="sign_speed"><div class="icon">🔻</div>Speed Reduced</div>
+ <div class="palette-item" data-type="flagger"><div class="icon">🧑</div>Flagger</div>
+ <div class="palette-item" data-type="arrow_r"><div class="icon">➡️</div>Arrow Right</div>
+ <div class="palette-item" data-type="arrow_l"><div class="icon">⬅️</div>Arrow Left</div>
 </div>
 <canvas id="cv" width="640" height="500"></canvas>
 <div class="side">
@@ -52,7 +53,7 @@ button:hover{opacity:.85}
 </div>
 <script>
 const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
-let items=[],dragging=null,dragType=null,selIdx=-1,offsetX=0,offsetY=0;
+let items=[],selectedTool=null,selIdx=-1,offsetX=0,offsetY=0,isDragging=false;
 const typeLabels={cone:'Cone',barrel:'Drum Barrel',barricade:'Barricade',sign_ahead:'Construction Ahead Sign',sign_lane:'Lane Closed Sign',sign_detour:'Detour Sign',sign_speed:'Speed Reduced Sign',flagger:'Flagger',arrow_r:'Arrow Board (R)',arrow_l:'Arrow Board (L)'};
 const typeSymbols={cone:'▲',barrel:'●',barricade:'═',sign_ahead:'⚠',sign_lane:'✕',sign_detour:'↩',sign_speed:'▼',flagger:'🧑',arrow_r:'→',arrow_l:'←'};
 const typeColors={cone:'#ff6b35',barrel:'#f59e0b',barricade:'#ef4444',sign_ahead:'#facc15',sign_lane:'#ef4444',sign_detour:'#3b82f6',sign_speed:'#facc15',flagger:'#4ade80',arrow_r:'#ff6b35',arrow_l:'#ff6b35'};
@@ -60,33 +61,64 @@ const typeColors={cone:'#ff6b35',barrel:'#f59e0b',barricade:'#ef4444',sign_ahead
 function resize(){cv.width=cv.offsetWidth*2;cv.height=500*2;ctx.scale(2,2);draw();}
 window.onresize=resize;
 
+// Palette: tap to select tool
 document.querySelectorAll('.palette-item').forEach(el=>{
- el.addEventListener('dragstart',e=>{dragType=el.dataset.type;});
+ el.addEventListener('click',()=>{
+  if(selectedTool===el.dataset.type){selectedTool=null;}
+  else{selectedTool=el.dataset.type;}
+  document.querySelectorAll('.palette-item').forEach(p=>p.classList.toggle('active',p.dataset.type===selectedTool));
+ });
 });
-cv.ondragover=e=>e.preventDefault();
-cv.ondrop=e=>{
- e.preventDefault();if(!dragType)return;
+
+function getPos(e){
  const r=cv.getBoundingClientRect();
- const x=(e.clientX-r.left),y=(e.clientY-r.top);
- items.push({type:dragType,x,y});dragType=null;draw();updateList();
-};
-cv.onmousedown=e=>{
- const r=cv.getBoundingClientRect();const mx=e.clientX-r.left,my=e.clientY-r.top;
+ const t=e.touches?e.touches[0]:e;
+ return{x:t.clientX-r.left,y:t.clientY-r.top};
+}
+function hitTest(mx,my){
  for(let i=items.length-1;i>=0;i--){
-  if(Math.hypot(items[i].x-mx,items[i].y-my)<18){selIdx=i;offsetX=mx-items[i].x;offsetY=my-items[i].y;return;}
- }selIdx=-1;
-};
-cv.onmousemove=e=>{
- if(selIdx<0)return;const r=cv.getBoundingClientRect();
- items[selIdx].x=e.clientX-r.left-offsetX;items[selIdx].y=e.clientY-r.top-offsetY;draw();
-};
-cv.onmouseup=()=>{selIdx=-1;};
-cv.ondblclick=e=>{
- const r=cv.getBoundingClientRect();const mx=e.clientX-r.left,my=e.clientY-r.top;
- for(let i=items.length-1;i>=0;i--){
-  if(Math.hypot(items[i].x-mx,items[i].y-my)<18){items.splice(i,1);draw();updateList();return;}
+  if(Math.hypot(items[i].x-mx,items[i].y-my)<22)return i;
+ }return -1;
+}
+
+// Pointer down: either start dragging existing item, or place new one
+function onDown(e){
+ e.preventDefault();
+ const{x,y}=getPos(e);
+ const hit=hitTest(x,y);
+ if(hit>=0){
+  selIdx=hit;offsetX=x-items[hit].x;offsetY=y-items[hit].y;isDragging=true;
+ } else if(selectedTool){
+  items.push({type:selectedTool,x,y});draw();updateList();
  }
-};
+}
+function onMove(e){
+ if(!isDragging||selIdx<0)return;
+ e.preventDefault();
+ const{x,y}=getPos(e);
+ items[selIdx].x=x-offsetX;items[selIdx].y=y-offsetY;draw();
+}
+function onUp(){isDragging=false;selIdx=-1;}
+
+// Mouse events
+cv.addEventListener('mousedown',onDown);
+cv.addEventListener('mousemove',onMove);
+cv.addEventListener('mouseup',onUp);
+// Touch events
+cv.addEventListener('touchstart',onDown,{passive:false});
+cv.addEventListener('touchmove',onMove,{passive:false});
+cv.addEventListener('touchend',onUp);
+
+// Double-tap / double-click to delete
+let lastTap=0;
+cv.addEventListener('click',e=>{
+ const now=Date.now();
+ if(now-lastTap<350){
+  const{x,y}=getPos(e);const hit=hitTest(x,y);
+  if(hit>=0){items.splice(hit,1);draw();updateList();}
+ }
+ lastTap=now;
+});
 
 function draw(){
  const W=cv.offsetWidth,H=500;
