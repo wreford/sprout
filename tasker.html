@@ -179,20 +179,25 @@ button.primary:hover{background:linear-gradient(180deg,#ff8855,#e85a2a);box-shad
 #dashboard-charts canvas{background:var(--bg3);border:1px solid var(--border);border-radius:6px}
 
 @media print{
-  #topbar,#bottom-panel,#statusbar,#resize-h,#resize-v,#mobile-tabs,#filter-bar,#toast-container,.ctx-menu,.modal-overlay,.gantt-tooltip{display:none!important}
+  #topbar,#bottom-panel,#statusbar,#resize-h,#resize-v,#mobile-tabs,#filter-bar,#toast-container,#card-view,.ctx-menu,.modal-overlay,.gantt-tooltip,.dropdown-content{display:none!important}
   body{overflow:visible!important;background:#fff!important;color:#111!important;font-size:11px}
   *{color:#111!important;border-color:#ccc!important}
-  #main,#workspace{overflow:visible!important;height:auto!important;flex-direction:column!important}
-  #table-panel{width:100%!important;border:none!important;page-break-after:always}
-  #gantt-panel{width:100%!important;min-height:400px}
-  #activity-table{width:100%!important}
-  #activity-table th{background:#eee!important;color:#333!important;border:1px solid #999!important;padding:4px 6px!important}
-  #activity-table td{border:1px solid #ccc!important;padding:3px 6px!important;background:#fff!important}
+  #main,#workspace{overflow:visible!important;height:auto!important;flex-direction:column!important;display:block!important}
+  #table-panel{width:100%!important;border:none!important;page-break-after:always;overflow:visible!important;display:block!important}
+  #table-wrap{overflow:visible!important}
+  #gantt-panel{width:100%!important;min-height:400px;display:block!important}
+  #gantt-toolbar{display:none!important}
+  #activity-table{width:100%!important;border:2px solid #333!important}
+  #activity-table th{background:#eee!important;color:#333!important;border:1px solid #999!important;padding:5px 7px!important;font-size:9px!important;font-weight:700!important}
+  #activity-table td{border:1px solid #ccc!important;padding:4px 7px!important;background:#fff!important;font-size:10px!important}
   #activity-table tr.selected{outline:none!important;background:#fff!important}
   #activity-table tr:hover{background:#fff!important}
-  @page{margin:1cm}
-  body::before{content:attr(data-print-title);display:block;font-size:18px;font-weight:bold;text-align:center;margin-bottom:6px;color:#111!important}
-  body::after{content:attr(data-print-date);display:block;font-size:10px;text-align:center;margin-bottom:12px;color:#666!important}
+  #activity-table tr.critical td.name-cell{color:#c00!important;font-weight:700!important}
+  #activity-table tr.milestone td.name-cell{color:#996600!important;font-weight:700!important}
+  #activity-table tr:nth-child(even) td{background:#f8f8f8!important}
+  @page{margin:1.5cm;size:landscape}
+  body::before{content:attr(data-print-title);display:block;font-size:20px;font-weight:bold;text-align:center;margin-bottom:4px;color:#111!important;border-bottom:2px solid #333;padding-bottom:6px}
+  body::after{content:attr(data-print-date);display:block;font-size:10px;text-align:center;margin-bottom:14px;color:#666!important}
 }
 
 /* ── MOBILE ── */
@@ -357,11 +362,12 @@ button.primary:hover{background:linear-gradient(180deg,#ff8855,#e85a2a);box-shad
   <!-- BOTTOM -->
   <div id="bottom-panel">
     <div id="bottom-tabs">
-      <button class="active" onclick="switchBottomTab('details')">Activity Details</button>
-      <button onclick="switchBottomTab('relationships')">Relationships</button>
-      <button onclick="switchBottomTab('resources')">Resources</button>
-      <button onclick="switchBottomTab('ev')">Earned Value</button>
-      <button onclick="switchBottomTab('log')">Log</button>
+      <button class="active" data-tab="details" onclick="switchBottomTab('details')">Activity Details</button>
+      <button data-tab="relationships" onclick="switchBottomTab('relationships')">Relationships</button>
+      <button data-tab="resources" onclick="switchBottomTab('resources')">Resources</button>
+      <button data-tab="ev" onclick="switchBottomTab('ev')">Earned Value</button>
+      <button data-tab="dashboard" onclick="switchBottomTab('dashboard')">Dashboard</button>
+      <button data-tab="log" onclick="switchBottomTab('log')">Log</button>
     </div>
     <div id="bottom-content"></div>
   </div>
@@ -379,6 +385,12 @@ button.primary:hover{background:linear-gradient(180deg,#ff8855,#e85a2a);box-shad
 
 <!-- TOOLTIP -->
 <div class="gantt-tooltip" id="tooltip" style="display:none"></div>
+
+<!-- TOAST CONTAINER -->
+<div id="toast-container"></div>
+
+<!-- CARD VIEW (for mobile) -->
+<div id="card-view"></div>
 
 <!-- HIDDEN FILE INPUT -->
 <input type="file" id="file-input" style="display:none" accept=".json,.csv">
@@ -436,6 +448,8 @@ let STATE = {
   selectedRows: new Set(),
   activeCell: null,
   wbsFilter: '',
+  quickFilter: 'all',
+  ganttColorMode: 'status',
   bottomTab: 'details',
   zoomLevel: DAY_PX
 };
@@ -986,11 +1000,12 @@ function pushUndo() {
 }
 
 function doUndo() {
-  if (!STATE.undoStack.length) return;
+  if (!STATE.undoStack.length) { showToast('Nothing to undo', 'warning'); return; }
   const snap = JSON.parse(STATE.undoStack.pop());
   STATE.activities = snap;
   schedule();
   render();
+  showToast('Undo', 'success');
 }
 
 // ============================================================
@@ -1052,6 +1067,22 @@ function getFilteredActivities() {
   let acts = STATE.activities;
   if (STATE.wbsFilter) {
     acts = acts.filter(a => a.wbs === STATE.wbsFilter || a.wbs.startsWith(STATE.wbsFilter + '.'));
+  }
+  // Quick filter
+  const todayStr = today();
+  switch (STATE.quickFilter) {
+    case 'critical':
+      acts = acts.filter(a => a.tf === 0 && a.pct < 100);
+      break;
+    case 'incomplete':
+      acts = acts.filter(a => a.pct < 100);
+      break;
+    case 'overdue':
+      acts = acts.filter(a => a.pct < 100 && a.finish && a.finish < todayStr);
+      break;
+    case 'milestones':
+      acts = acts.filter(a => a.actType === 'Milestone');
+      break;
   }
   if (STATE.sortCol) {
     acts = [...acts].sort((a, b) => {
@@ -1420,6 +1451,7 @@ function deleteActivity(act) {
   STATE.selectedRows.delete(act.uid);
   addLog(`Deleted activity ${act.id}`);
   schedule(); render(); autoSave();
+  showToast('Deleted ' + act.id, 'success');
 }
 
 // ============================================================
@@ -1696,19 +1728,25 @@ function renderGantt() {
         ctx.lineWidth = 2;
         ctx.stroke();
       }
+      // Name to the right of milestone diamond
+      if (zoomLevel >= 14) {
+        ctx.fillStyle = '#f0f0f0';
+        ctx.font = '10px system-ui';
+        ctx.textAlign = 'left';
+        ctx.fillText(act.name, cx + s + 4, cy + 3);
+      }
     } else {
       const barW = Math.max(finishX - startX, 4);
-      const isCritical = act.tf === 0 && act.pct < 100;
-      const isComplete = act.pct >= 100;
+      const colors = getBarColor(act);
 
       // Bar background
-      ctx.fillStyle = isComplete ? '#3a3a4d' : (isCritical ? 'rgba(239,68,68,0.3)' : 'rgba(96,165,250,0.3)');
+      ctx.fillStyle = colors.fill;
       ctx.beginPath();
       ctx.roundRect(startX, barY, barW, barH, 2);
       ctx.fill();
 
       // Bar border
-      ctx.strokeStyle = isComplete ? '#6e6e80' : (isCritical ? '#ef4444' : '#60a5fa');
+      ctx.strokeStyle = colors.stroke;
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.roundRect(startX, barY, barW, barH, 2);
@@ -1717,7 +1755,7 @@ function renderGantt() {
       // Progress fill
       if (act.pct > 0) {
         const pW = barW * (act.pct / 100);
-        ctx.fillStyle = isComplete ? '#6e6e80' : (isCritical ? '#ef4444' : '#60a5fa');
+        ctx.fillStyle = colors.progress;
         ctx.beginPath();
         ctx.roundRect(startX, barY, pW, barH, 2);
         ctx.fill();
@@ -1732,17 +1770,22 @@ function renderGantt() {
         ctx.stroke();
       }
 
-      // Activity name if zoomed in enough
-      if (zoomLevel >= 16 && barW > 50) {
+      // Activity name: inside bar if wide enough, to the right if bar is short
+      if (zoomLevel >= 14) {
         ctx.fillStyle = '#f0f0f0';
         ctx.font = '10px system-ui';
         ctx.textAlign = 'left';
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(startX + 2, barY, barW - 4, barH);
-        ctx.clip();
-        ctx.fillText(act.name, startX + 4, barY + barH - 2);
-        ctx.restore();
+        if (barW > 50) {
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(startX + 2, barY, barW - 4, barH);
+          ctx.clip();
+          ctx.fillText(act.name, startX + 4, barY + barH - 2);
+          ctx.restore();
+        } else {
+          // Name to the right of short bars
+          ctx.fillText(act.name, finishX + 4, barY + barH - 2);
+        }
       }
     }
   });
@@ -1958,6 +2001,37 @@ function setupGanttInteractions() {
     }
   };
 
+  // Double-click to open details in bottom panel
+  canvas.ondblclick = (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const my = e.clientY - rect.top + container.scrollTop;
+    const ri = Math.floor(my / ROW_H);
+    if (ri >= 0 && ri < filteredActivities.length) {
+      const act = filteredActivities[ri];
+      STATE.selectedRows = new Set([act.uid]);
+      switchBottomTab('details');
+      renderTable();
+      renderGantt();
+      const tableRow = document.querySelector(`tr[data-uid="${act.uid}"]`);
+      if (tableRow) tableRow.scrollIntoView({block: 'nearest'});
+    }
+  };
+
+  // Right-click for context menu
+  canvas.oncontextmenu = (e) => {
+    e.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const my = e.clientY - rect.top + container.scrollTop;
+    const ri = Math.floor(my / ROW_H);
+    if (ri >= 0 && ri < filteredActivities.length) {
+      const act = filteredActivities[ri];
+      STATE.selectedRows = new Set([act.uid]);
+      renderTable();
+      renderGantt();
+      showContextMenu(e.clientX, e.clientY, act, ri);
+    }
+  };
+
   // Zoom
   container.addEventListener('wheel', (e) => {
     if (e.ctrlKey || e.metaKey) {
@@ -1985,9 +2059,8 @@ function setupGanttInteractions() {
 // ============================================================
 function switchBottomTab(tab) {
   STATE.bottomTab = tab;
-  const tabMap = {details:0, relationships:1, resources:2, ev:3, log:4};
-  document.querySelectorAll('#bottom-tabs button').forEach((b, i) => {
-    b.classList.toggle('active', i === tabMap[tab]);
+  document.querySelectorAll('#bottom-tabs button').forEach(b => {
+    b.classList.toggle('active', b.dataset.tab === tab);
   });
   renderBottomPanel();
 }
@@ -2165,6 +2238,10 @@ function renderBottomPanel() {
       }
       break;
 
+    case 'dashboard':
+      renderDashboard(content);
+      return;
+
     case 'log':
       content.innerHTML = `
         <table id="log-table"><thead><tr><th style="width:160px">Time</th><th>Action</th></tr></thead><tbody>
@@ -2313,6 +2390,17 @@ function applyWBSFilter() {
 }
 
 // ============================================================
+// QUICK FILTER
+// ============================================================
+function setQuickFilter(f) {
+  STATE.quickFilter = f;
+  document.querySelectorAll('#filter-bar .filter-chip').forEach(chip => {
+    chip.classList.toggle('active', chip.dataset.filter === f);
+  });
+  render();
+}
+
+// ============================================================
 // DROPDOWN
 // ============================================================
 function toggleDropdown(id) {
@@ -2370,7 +2458,7 @@ function setupResizers() {
 // ============================================================
 // SAVE / LOAD
 // ============================================================
-function saveProject() {
+function saveProject(silent) {
   const projects = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
   if (!STATE.projectId) STATE.projectId = 'proj_' + Date.now();
   projects[STATE.projectId] = {
@@ -2392,11 +2480,12 @@ function saveProject() {
   addLog('Project saved');
   updateProjectsDropdown();
   renderBottomPanel();
+  if (!silent) showToast('Project saved', 'success');
 }
 
 function autoSave() {
   clearTimeout(autoSave._timer);
-  autoSave._timer = setTimeout(saveProject, 2000);
+  autoSave._timer = setTimeout(function() { saveProject(true); }, 2000);
 }
 
 function loadProject(pid) {
@@ -2488,6 +2577,7 @@ function exportJSON() {
     resources: STATE.resources
   };
   downloadFile(STATE.projectName + '.json', JSON.stringify(data, null, 2), 'application/json');
+  showToast('Exported JSON', 'success');
 }
 
 function importJSON() {
@@ -2518,8 +2608,9 @@ function importJSON() {
         render();
         addLog('Imported JSON project');
         autoSave();
+        showToast('Imported JSON project with ' + STATE.activities.length + ' activities', 'success');
       } catch (err) {
-        alert('Error parsing JSON: ' + err.message);
+        showToast('Error parsing JSON: ' + err.message, 'error');
       }
     };
     reader.readAsText(f);
@@ -2566,8 +2657,9 @@ function importCSV() {
         render();
         addLog('Imported CSV with ' + STATE.activities.length + ' activities');
         autoSave();
+        showToast('Imported CSV with ' + STATE.activities.length + ' activities', 'success');
       } catch (err) {
-        alert('Error parsing CSV: ' + err.message);
+        showToast('Error parsing CSV: ' + err.message, 'error');
       }
     };
     reader.readAsText(f);
@@ -2596,6 +2688,7 @@ function exportCSV() {
     csv += `"${a.id}","${a.name}",${a.od},${a.rd},${a.pct},"${fmtDate(a.start)}","${fmtDate(a.finish)}",${a.tf},"${a.preds}","${a.resource}",${a.cost||0},"${a.wbs}"\n`;
   });
   downloadFile(STATE.projectName + '.csv', csv, 'text/csv');
+  showToast('Exported P6 CSV', 'success');
 }
 
 function exportXER() {
@@ -2637,6 +2730,7 @@ function exportXER() {
 
   xer += '%E\n';
   downloadFile(STATE.projectName + '.xer', xer, 'text/plain');
+  showToast('Exported XER', 'success');
 }
 
 function exportMSXML() {
@@ -2682,6 +2776,7 @@ function exportMSXML() {
   xml += '  </Links>\n';
   xml += '</Project>\n';
   downloadFile(STATE.projectName + '.xml', xml, 'application/xml');
+  showToast('Exported MS Project XML', 'success');
 }
 
 function copyClipboard() {
@@ -2689,7 +2784,7 @@ function copyClipboard() {
   STATE.activities.forEach(a => {
     text += `${a.id}\t${a.name}\t${a.od}d\t${fmtDateShort(a.start)}\t${fmtDateShort(a.finish)}\t${a.tf}d\t${a.preds}\t${a.resource}\t${a.wbs}\n`;
   });
-  navigator.clipboard.writeText(text).then(() => addLog('Copied to clipboard'));
+  navigator.clipboard.writeText(text).then(() => { addLog('Copied to clipboard'); showToast('Copied to clipboard', 'success'); });
 }
 
 function downloadFile(name, content, type) {
@@ -2995,6 +3090,22 @@ function setupKeyboard() {
       doUndo();
     }
 
+    if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
+      e.preventDefault();
+      addActivity();
+    }
+
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+      e.preventDefault();
+      saveProject();
+    }
+
+    if (e.key === 'Escape') {
+      // Close any open modals
+      const modal = document.querySelector('.modal-overlay');
+      if (modal) modal.remove();
+    }
+
     // Arrow nav
     if (e.key === 'ArrowDown' && STATE.selectedRows.size === 1) {
       e.preventDefault();
@@ -3031,6 +3142,8 @@ function render() {
   renderBottomPanel();
   updateStatusBar();
   updateWBSFilter();
+  renderCardView();
+  preparePrint();
 }
 
 // ============================================================
@@ -3042,13 +3155,19 @@ function showMobileView(view) {
   var tp = document.getElementById('table-panel');
   var gp = document.getElementById('gantt-panel');
   var bp = document.getElementById('bottom-panel');
+  var cv = document.getElementById('card-view');
   tp.classList.toggle('mob-hidden', view !== 'table');
   gp.classList.toggle('mob-hidden', view !== 'gantt');
   bp.classList.toggle('mob-hidden', view !== 'details');
+  if (cv) {
+    cv.classList.toggle('mob-active', view === 'cards');
+    cv.style.display = view === 'cards' ? 'flex' : 'none';
+  }
   document.querySelectorAll('#mobile-tabs button').forEach(function(b, i) {
-    b.classList.toggle('active', ['table','gantt','details'][i] === view);
+    b.classList.toggle('active', ['table','gantt','details','cards'][i] === view);
   });
   if (view === 'gantt') { setTimeout(renderGantt, 50); }
+  if (view === 'cards') { renderCardView(); }
 }
 
 // ============================================================
@@ -3086,6 +3205,7 @@ function setAllBaselines() {
   addLog('Set baselines for all activities');
   renderGantt();
   autoSave();
+  showToast('Baselines set for all activities', 'success');
 }
 
 function clearAllBaselines() {
@@ -3093,6 +3213,528 @@ function clearAllBaselines() {
   addLog('Cleared all baselines');
   renderGantt();
   autoSave();
+  showToast('All baselines cleared', 'warning');
+}
+
+// ============================================================
+// TOAST NOTIFICATION SYSTEM
+// ============================================================
+function showToast(msg, type) {
+  type = type || 'success';
+  let container = document.getElementById('toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toast-container';
+    document.body.appendChild(container);
+  }
+  const toast = document.createElement('div');
+  toast.className = 'toast ' + type;
+  toast.textContent = msg;
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.classList.add('dismissing');
+    setTimeout(() => toast.remove(), 200);
+  }, 2500);
+}
+
+// ============================================================
+// AUTO-SCHEDULE BUTTON
+// ============================================================
+function runScheduleBtn() {
+  schedule();
+  render();
+  autoSave();
+  const total = STATE.activities.length;
+  const critCount = STATE.activities.filter(a => a.tf === 0 && a.pct < 100).length;
+  // Compute project duration
+  let minS = null, maxF = null;
+  STATE.activities.forEach(a => {
+    if (a.start) { const d = parseDate(a.start); if (!minS || d < minS) minS = d; }
+    if (a.finish) { const d = parseDate(a.finish); if (!maxF || d > maxF) maxF = d; }
+  });
+  const dur = (minS && maxF) ? workdaysBetween(minS, maxF, STATE.calendarDays) : 0;
+  // Check for issues
+  const issues = [];
+  const byId = {};
+  STATE.activities.forEach(a => { byId[a.id] = a; });
+  STATE.activities.forEach(a => {
+    if (a.tf === -999) issues.push(a.id + ': circular dependency');
+    const preds = parsePreds(a.preds);
+    preds.forEach(p => {
+      if (!byId[p.id]) issues.push(a.id + ': missing predecessor ' + p.id);
+    });
+  });
+  const noPredsNonStart = STATE.activities.filter(a => {
+    return !a.preds && STATE.activities.indexOf(a) > 0 && a.actType !== 'Milestone';
+  });
+  if (noPredsNonStart.length > 0 && noPredsNonStart.length < STATE.activities.length) {
+    issues.push(noPredsNonStart.length + ' activit' + (noPredsNonStart.length === 1 ? 'y has' : 'ies have') + ' no predecessors');
+  }
+  showToast('Scheduled: ' + total + ' activities, ' + dur + ' days, ' + critCount + ' critical', 'success');
+  if (issues.length > 0) {
+    showToast('Issues: ' + issues.slice(0, 3).join('; '), 'warning');
+  }
+}
+
+// ============================================================
+// PROGRESS UPDATE MODAL
+// ============================================================
+function openUpdateModal() {
+  closeAllMenus();
+  const incomplete = STATE.activities.filter(a => a.pct < 100);
+  if (!incomplete.length) { showToast('No incomplete activities', 'warning'); return; }
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+  modal.style.minWidth = '600px';
+  modal.innerHTML = '<h3>Progress Update</h3>';
+  const listDiv = document.createElement('div');
+  listDiv.className = 'update-modal-list';
+  incomplete.forEach(a => {
+    const row = document.createElement('div');
+    row.className = 'update-row';
+    row.innerHTML = `
+      <span class="update-name" title="${esc(a.name)}">${esc(a.id)} - ${esc(a.name)}</span>
+      <input type="range" class="update-slider" min="0" max="100" value="${a.pct}" data-uid="${a.uid}" oninput="this.parentElement.querySelector('.update-pct').value=this.value">
+      <input type="number" class="update-pct" min="0" max="100" value="${a.pct}" data-uid="${a.uid}" oninput="this.parentElement.querySelector('.update-slider').value=this.value">
+      <span style="font-size:10px;color:var(--dim)">%</span>
+      <label style="font-size:10px;color:var(--dim);display:flex;align-items:center;gap:2px">RD: <input type="number" class="update-rd" min="0" value="${a.rd}" data-uid="${a.uid}"></label>
+      <div class="quick-btns">
+        <button onclick="this.closest('.update-row').querySelector('.update-slider').value=0;this.closest('.update-row').querySelector('.update-pct').value=0">0%</button>
+        <button onclick="(function(r){r.querySelector('.update-slider').value=50;r.querySelector('.update-pct').value=50})(this.closest('.update-row'))">50%</button>
+        <button onclick="(function(r){r.querySelector('.update-slider').value=100;r.querySelector('.update-pct').value=100;r.querySelector('.update-rd').value=0})(this.closest('.update-row'))">100%</button>
+        <button onclick="(function(r){var s=r.querySelector('.update-slider');var p=r.querySelector('.update-pct');if(+s.value===0){s.value=1;p.value=1}})(this.closest('.update-row'))" title="Mark started today">Start</button>
+      </div>
+    `;
+    listDiv.appendChild(row);
+  });
+  modal.appendChild(listDiv);
+  const actions = document.createElement('div');
+  actions.className = 'modal-actions';
+  actions.innerHTML = `<button onclick="this.closest('.modal-overlay').remove()">Cancel</button><button class="primary" onclick="applyProgressUpdate(this.closest('.modal-overlay'))">Apply All</button>`;
+  modal.appendChild(actions);
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+}
+
+function applyProgressUpdate(overlay) {
+  pushUndo();
+  const rows = overlay.querySelectorAll('.update-row');
+  let count = 0;
+  rows.forEach(row => {
+    const pctInput = row.querySelector('.update-pct');
+    const rdInput = row.querySelector('.update-rd');
+    const uid = parseInt(pctInput.dataset.uid);
+    const act = STATE.activities.find(a => a.uid === uid);
+    if (!act) return;
+    const newPct = Math.min(100, Math.max(0, parseInt(pctInput.value) || 0));
+    const newRd = Math.max(0, parseInt(rdInput.value) || 0);
+    if (newPct !== act.pct || newRd !== act.rd) {
+      act.pct = newPct;
+      act.rd = newRd;
+      if (newRd !== Math.round(act.od * (1 - newPct / 100))) act._rdManual = true;
+      if (newPct > 0 && !act.actualStart) act.actualStart = today();
+      if (newPct >= 100) { act.rd = 0; act.actualFinish = act.actualFinish || today(); }
+      count++;
+    }
+  });
+  overlay.remove();
+  schedule();
+  render();
+  autoSave();
+  showToast('Updated ' + count + ' activit' + (count === 1 ? 'y' : 'ies'), 'success');
+}
+
+// ============================================================
+// KEYBOARD SHORTCUTS MODAL
+// ============================================================
+function showKBShortcuts() {
+  closeAllMenus();
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+  modal.style.minWidth = '360px';
+  modal.innerHTML = `
+    <h3>Keyboard Shortcuts</h3>
+    <div class="kb-grid">
+      <span class="kb-key">Ctrl+Z</span><span class="kb-desc">Undo last action</span>
+      <span class="kb-key">Delete</span><span class="kb-desc">Remove selected activity</span>
+      <span class="kb-key">Enter</span><span class="kb-desc">Edit selected cell</span>
+      <span class="kb-key">Tab</span><span class="kb-desc">Next editable cell</span>
+      <span class="kb-key">Shift+Tab</span><span class="kb-desc">Previous editable cell</span>
+      <span class="kb-key">&uarr; / &darr;</span><span class="kb-desc">Navigate activities</span>
+      <span class="kb-key">Ctrl+N</span><span class="kb-desc">New activity</span>
+      <span class="kb-key">Ctrl+S</span><span class="kb-desc">Save project</span>
+      <span class="kb-key">Ctrl+P</span><span class="kb-desc">Print</span>
+      <span class="kb-key">Escape</span><span class="kb-desc">Cancel edit / close modal</span>
+      <span class="kb-key">Ctrl+Scroll</span><span class="kb-desc">Zoom Gantt chart</span>
+      <span class="kb-key">Click</span><span class="kb-desc">Select activity (table or Gantt)</span>
+      <span class="kb-key">Shift+Click</span><span class="kb-desc">Range select activities</span>
+      <span class="kb-key">Ctrl+Click</span><span class="kb-desc">Toggle selection</span>
+      <span class="kb-key">Dbl-Click Cell</span><span class="kb-desc">Edit cell value</span>
+      <span class="kb-key">Dbl-Click Bar</span><span class="kb-desc">Show activity details</span>
+      <span class="kb-key">Right-Click</span><span class="kb-desc">Context menu</span>
+    </div>
+    <div class="modal-actions"><button onclick="this.closest('.modal-overlay').remove()">Close</button></div>
+  `;
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+}
+
+// ============================================================
+// GANTT COLOR MODE
+// ============================================================
+let _wbsColorMap = {};
+let _resColorMap = {};
+const _colorPalette = ['#60a5fa','#f472b6','#34d399','#fbbf24','#a78bfa','#fb923c','#22d3ee','#e879f9','#4ade80','#f87171','#38bdf8','#c084fc','#facc15','#2dd4bf','#fb7185','#818cf8'];
+
+function getWBSColor(wbs) {
+  if (!_wbsColorMap[wbs]) {
+    const idx = Object.keys(_wbsColorMap).length % _colorPalette.length;
+    _wbsColorMap[wbs] = _colorPalette[idx];
+  }
+  return _wbsColorMap[wbs];
+}
+
+function getResourceColor(res) {
+  if (!res) return '#60a5fa';
+  if (!_resColorMap[res]) {
+    const idx = Object.keys(_resColorMap).length % _colorPalette.length;
+    _resColorMap[res] = _colorPalette[idx];
+  }
+  return _resColorMap[res];
+}
+
+function setGanttColorMode(mode) {
+  STATE.ganttColorMode = mode;
+  _wbsColorMap = {};
+  _resColorMap = {};
+  renderGantt();
+}
+
+function getBarColor(act) {
+  const isComplete = act.pct >= 100;
+  const isCritical = act.tf === 0 && act.pct < 100;
+  if (isComplete) return {fill: '#3a3a4d', stroke: '#6e6e80', progress: '#6e6e80'};
+  switch (STATE.ganttColorMode) {
+    case 'wbs': {
+      const c = getWBSColor(act.wbs);
+      return {fill: c + '4d', stroke: c, progress: c};
+    }
+    case 'resource': {
+      const c = getResourceColor(act.resource);
+      return {fill: c + '4d', stroke: c, progress: c};
+    }
+    default: // status
+      if (isCritical) return {fill: 'rgba(239,68,68,0.3)', stroke: '#ef4444', progress: '#ef4444'};
+      return {fill: 'rgba(96,165,250,0.3)', stroke: '#60a5fa', progress: '#60a5fa'};
+  }
+}
+
+// ============================================================
+// DASHBOARD TAB
+// ============================================================
+function switchBottomTabDashboard() {
+  STATE.bottomTab = 'dashboard';
+  document.querySelectorAll('#bottom-tabs button').forEach(b => b.classList.remove('active'));
+  document.querySelector('#bottom-tabs button[data-tab="dashboard"]').classList.add('active');
+  renderBottomPanel();
+}
+
+function renderDashboard(content) {
+  const acts = STATE.activities;
+  // Key metrics
+  let minS = null, maxF = null;
+  acts.forEach(a => {
+    if (a.start) { const d = parseDate(a.start); if (!minS || d < minS) minS = d; }
+    if (a.finish) { const d = parseDate(a.finish); if (!maxF || d > maxF) maxF = d; }
+  });
+  const projDur = (minS && maxF) ? workdaysBetween(minS, maxF, STATE.calendarDays) : 0;
+  const critCount = acts.filter(a => a.tf === 0 && a.pct < 100).length;
+  // Critical path length: sum of OD on critical path
+  const critPath = acts.filter(a => a.tf === 0 && a.pct < 100);
+  let critLen = 0;
+  critPath.forEach(a => { critLen += (a.od || 0); });
+  const totalW = acts.reduce((s, a) => s + (a.od || 0), 0);
+  const doneW = acts.reduce((s, a) => s + (a.od || 0) * (a.pct / 100), 0);
+  const overallPct = totalW ? Math.round(doneW / totalW * 100) : 0;
+  const totalFloat = acts.reduce((s, a) => s + Math.max(0, a.tf || 0), 0);
+  const totalBudget = acts.reduce((s, a) => s + (a.cost || 0), 0);
+  const totalAC = acts.reduce((s, a) => s + (a.actualCost || 0), 0);
+  const totalEV = acts.reduce((s, a) => s + (a.cost || 0) * (a.pct / 100), 0);
+  let totalPV = 0;
+  if (STATE.dataDate) {
+    acts.forEach(a => {
+      if (a.cost && a.start && a.finish) {
+        const dd = parseDate(STATE.dataDate), s = parseDate(a.start), f = parseDate(a.finish);
+        if (dd >= f) totalPV += a.cost;
+        else if (dd > s) { totalPV += a.cost * (daysBetween(s, dd) / (daysBetween(s, f) || 1)); }
+      }
+    });
+  }
+  const CPI = totalAC ? (totalEV / totalAC) : (totalEV > 0 ? 1 : 0);
+  const SPI = totalPV ? (totalEV / totalPV) : (totalEV > 0 ? 1 : 0);
+
+  let html = '<div id="dashboard-content">';
+  html += `<div class="dash-card"><div class="dash-val">${projDur}d</div><div class="dash-label">Total Duration</div></div>`;
+  html += `<div class="dash-card"><div class="dash-val">${critLen}d</div><div class="dash-label">Critical Path</div></div>`;
+  html += `<div class="dash-card"><div class="dash-val">${totalFloat}d</div><div class="dash-label">Total Float</div></div>`;
+  html += `<div class="dash-card"><div class="dash-val">$${totalBudget.toLocaleString()}</div><div class="dash-label">Budget</div></div>`;
+  html += `<div class="dash-card"><div class="dash-val">${overallPct}%</div><div class="dash-label">% Complete</div></div>`;
+  html += `<div class="dash-card"><div class="dash-val" style="color:${CPI>=1?'var(--green)':'var(--red)'}">${CPI.toFixed(2)}</div><div class="dash-label">CPI</div></div>`;
+  html += `<div class="dash-card"><div class="dash-val" style="color:${SPI>=1?'var(--green)':'var(--red)'}">${SPI.toFixed(2)}</div><div class="dash-label">SPI</div></div>`;
+  html += '</div>';
+  html += '<div id="dashboard-charts"><canvas id="dash-scurve" width="360" height="160"></canvas><canvas id="dash-histogram" width="360" height="160"></canvas><canvas id="dash-costbar" width="360" height="160"></canvas></div>';
+  content.innerHTML = html;
+
+  // Draw after DOM is ready
+  setTimeout(() => drawDashboardCharts(), 30);
+}
+
+function drawDashboardCharts() {
+  drawSCurve();
+  drawResourceHistogram();
+  drawCostBreakdown();
+}
+
+function drawSCurve() {
+  const canvas = document.getElementById('dash-scurve');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  const acts = STATE.activities.filter(a => a.start && a.finish && a.od > 0);
+  if (!acts.length) { ctx.fillStyle = '#6e6e80'; ctx.font = '11px system-ui'; ctx.fillText('No data', W/2-20, H/2); return; }
+
+  let minS = parseDate(acts[0].start), maxF = parseDate(acts[0].finish);
+  acts.forEach(a => {
+    const s = parseDate(a.start), f = parseDate(a.finish);
+    if (s < minS) minS = s;
+    if (f > maxF) maxF = f;
+  });
+  const totalDays = daysBetween(minS, maxF) || 1;
+  const totalOD = acts.reduce((s, a) => s + a.od, 0);
+
+  // Build cumulative planned progress by day
+  const padL = 40, padR = 10, padT = 24, padB = 24;
+  const chartW = W - padL - padR, chartH = H - padT - padB;
+
+  // Sample N points
+  const N = Math.min(totalDays, 60);
+  const planned = [];
+  for (let i = 0; i <= N; i++) {
+    const d = dateAdd(minS, Math.round(i * totalDays / N));
+    let cumPlan = 0;
+    acts.forEach(a => {
+      const s = parseDate(a.start), f = parseDate(a.finish);
+      const dur = daysBetween(s, f) || 1;
+      if (d >= f) cumPlan += a.od;
+      else if (d > s) cumPlan += a.od * (daysBetween(s, d) / dur);
+    });
+    planned.push(cumPlan / totalOD * 100);
+  }
+
+  // Title
+  ctx.fillStyle = '#6e6e80'; ctx.font = 'bold 10px system-ui'; ctx.fillText('S-Curve (Planned Progress %)', padL, 14);
+
+  // Axes
+  ctx.strokeStyle = '#2a2a3d'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(padL, padT); ctx.lineTo(padL, padT+chartH); ctx.lineTo(padL+chartW, padT+chartH); ctx.stroke();
+
+  // Y labels
+  ctx.fillStyle = '#6e6e80'; ctx.font = '9px monospace'; ctx.textAlign = 'right';
+  for (let p = 0; p <= 100; p += 25) {
+    const y = padT + chartH - (p / 100 * chartH);
+    ctx.fillText(p + '%', padL - 4, y + 3);
+    ctx.strokeStyle = 'rgba(42,42,61,0.4)'; ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL+chartW, y); ctx.stroke();
+  }
+
+  // Line
+  ctx.strokeStyle = '#60a5fa'; ctx.lineWidth = 2; ctx.beginPath();
+  planned.forEach((v, i) => {
+    const x = padL + (i / N) * chartW;
+    const y = padT + chartH - (v / 100 * chartH);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  // Fill under
+  ctx.lineTo(padL + chartW, padT + chartH);
+  ctx.lineTo(padL, padT + chartH);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(96,165,250,0.1)'; ctx.fill();
+}
+
+function drawResourceHistogram() {
+  const canvas = document.getElementById('dash-histogram');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  const acts = STATE.activities.filter(a => a.resource && a.start && a.finish);
+  if (!acts.length) { ctx.fillStyle = '#6e6e80'; ctx.font = '11px system-ui'; ctx.fillText('No resource data', W/2-40, H/2); return; }
+
+  let minS = parseDate(acts[0].start), maxF = parseDate(acts[0].finish);
+  acts.forEach(a => {
+    const s = parseDate(a.start), f = parseDate(a.finish);
+    if (s < minS) minS = s;
+    if (f > maxF) maxF = f;
+  });
+  const totalDays = daysBetween(minS, maxF) || 1;
+  const weeks = Math.ceil(totalDays / 7);
+  const resources = [...new Set(acts.map(a => a.resource))];
+  const resColors = {};
+  resources.forEach((r, i) => { resColors[r] = _colorPalette[i % _colorPalette.length]; });
+
+  // Build weekly loading
+  const weekData = [];
+  let maxLoad = 0;
+  for (let w = 0; w < weeks; w++) {
+    const weekStart = dateAdd(minS, w * 7);
+    const weekEnd = dateAdd(minS, (w + 1) * 7);
+    const loads = {};
+    resources.forEach(r => { loads[r] = 0; });
+    acts.forEach(a => {
+      const s = parseDate(a.start), f = parseDate(a.finish);
+      if (f >= weekStart && s < weekEnd) loads[a.resource] = (loads[a.resource] || 0) + 1;
+    });
+    let total = 0;
+    resources.forEach(r => { total += loads[r]; });
+    if (total > maxLoad) maxLoad = total;
+    weekData.push(loads);
+  }
+  if (maxLoad === 0) maxLoad = 1;
+
+  const padL = 30, padR = 10, padT = 24, padB = 20;
+  const chartW = W - padL - padR, chartH = H - padT - padB;
+
+  ctx.fillStyle = '#6e6e80'; ctx.font = 'bold 10px system-ui'; ctx.fillText('Resource Histogram (weekly)', padL, 14);
+
+  // Axes
+  ctx.strokeStyle = '#2a2a3d'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(padL, padT); ctx.lineTo(padL, padT+chartH); ctx.lineTo(padL+chartW, padT+chartH); ctx.stroke();
+
+  const barW = Math.max(2, chartW / weeks - 1);
+  weekData.forEach((loads, w) => {
+    const x = padL + w * (chartW / weeks);
+    let accY = 0;
+    resources.forEach(r => {
+      const h = (loads[r] / maxLoad) * chartH;
+      ctx.fillStyle = resColors[r] || '#60a5fa';
+      ctx.fillRect(x, padT + chartH - accY - h, barW, h);
+      accY += h;
+    });
+  });
+
+  // Y labels
+  ctx.fillStyle = '#6e6e80'; ctx.font = '9px monospace'; ctx.textAlign = 'right';
+  for (let i = 0; i <= 4; i++) {
+    const v = Math.round(maxLoad * i / 4);
+    const y = padT + chartH - (i / 4 * chartH);
+    ctx.fillText(v + '', padL - 4, y + 3);
+  }
+}
+
+function drawCostBreakdown() {
+  const canvas = document.getElementById('dash-costbar');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  // Group costs by top-level WBS
+  const wbsCosts = {};
+  STATE.activities.forEach(a => {
+    if (a.cost) {
+      const topWbs = a.wbs ? a.wbs.split('.').slice(0, 2).join('.') : '1.0';
+      wbsCosts[topWbs] = (wbsCosts[topWbs] || 0) + a.cost;
+    }
+  });
+  const codes = Object.keys(wbsCosts).sort();
+  if (!codes.length) { ctx.fillStyle = '#6e6e80'; ctx.font = '11px system-ui'; ctx.fillText('No cost data', W/2-30, H/2); return; }
+
+  const maxCost = Math.max(...codes.map(c => wbsCosts[c]));
+  const padL = 50, padR = 40, padT = 24, padB = 10;
+  const chartW = W - padL - padR, chartH = H - padT - padB;
+
+  ctx.fillStyle = '#6e6e80'; ctx.font = 'bold 10px system-ui'; ctx.textAlign = 'left'; ctx.fillText('Cost by WBS', padL, 14);
+
+  const barH = Math.max(10, Math.min(20, chartH / codes.length - 3));
+  codes.forEach((code, i) => {
+    const y = padT + i * (chartH / codes.length);
+    const w = (wbsCosts[code] / maxCost) * chartW;
+    const color = _colorPalette[i % _colorPalette.length];
+    ctx.fillStyle = color;
+    ctx.fillRect(padL, y, w, barH);
+    ctx.fillStyle = '#6e6e80'; ctx.font = '9px monospace'; ctx.textAlign = 'right';
+    ctx.fillText(code, padL - 4, y + barH - 2);
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#f0f0f0'; ctx.font = '9px monospace';
+    ctx.fillText('$' + wbsCosts[code].toLocaleString(), padL + w + 4, y + barH - 2);
+  });
+}
+
+// ============================================================
+// CARD VIEW (Mobile)
+// ============================================================
+function renderCardView() {
+  let container = document.getElementById('card-view');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'card-view';
+    // Insert after bottom-panel, before statusbar
+    const main = document.getElementById('main');
+    main.parentElement.insertBefore(container, document.getElementById('statusbar'));
+  }
+  container.innerHTML = '';
+  const todayStr = today();
+  filteredActivities.forEach(act => {
+    const isCritical = act.tf === 0 && act.pct < 100;
+    const isComplete = act.pct >= 100;
+    const isMilestone = act.actType === 'Milestone';
+    let cls = 'activity-card';
+    if (isCritical) cls += ' card-critical';
+    else if (isComplete) cls += ' card-complete';
+    else if (isMilestone) cls += ' card-milestone';
+    if (STATE.selectedRows.has(act.uid)) cls += ' selected';
+
+    const pctColor = isComplete ? 'var(--dim)' : (isCritical ? 'var(--red)' : 'var(--blue)');
+    const card = document.createElement('div');
+    card.className = cls;
+    card.onclick = () => {
+      STATE.selectedRows = new Set([act.uid]);
+      renderCardView();
+      renderBottomPanel();
+    };
+    card.innerHTML = `
+      <div class="card-header">
+        <span class="card-id">${esc(act.id)}</span>
+        <span class="card-tf" style="color:${act.tf===0?'var(--red)':'var(--dim)'}">TF: ${act.tf}d</span>
+      </div>
+      <div class="card-name">${esc(act.name)}</div>
+      <div class="card-dates">${fmtDateShort(act.start)} → ${fmtDateShort(act.finish)}${act.od ? '  (' + act.od + 'd)' : ''}</div>
+      <div class="card-progress"><div class="card-progress-fill" style="width:${act.pct}%;background:${pctColor}"></div></div>
+      <div class="card-footer">
+        <span>${act.resource || '-'}</span>
+        <span>${act.pct}%</span>
+      </div>
+    `;
+    container.appendChild(card);
+  });
+}
+
+// ============================================================
+// BETTER PRINT SUPPORT
+// ============================================================
+function preparePrint() {
+  document.body.setAttribute('data-print-title', STATE.projectName);
+  document.body.setAttribute('data-print-date', 'Printed: ' + new Date().toLocaleDateString() + ' | Start: ' + fmtDateShort(STATE.projectStart) + ' | Data Date: ' + fmtDateShort(STATE.dataDate));
 }
 
 function init() {
