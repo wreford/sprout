@@ -612,7 +612,7 @@ function render() {
       }
       html += `<div class="card-actions">`;
       html += `<button class="btn btn-sm" onclick="openModal('${r.id}')">✏️ Edit</button>`;
-      html += `<button class="btn btn-sm btn-ghost" onclick="showConvertMenu(event,'${r.id}')">🔄 Convert</button>`;
+      html += `<button class="btn btn-sm btn-ghost" onclick="showConvertMenu(event,'${r.id}')">🔗 Create from</button>`;
       html += `<button class="btn btn-sm btn-ghost" onclick="duplicateRecord('${r.id}')">📄 Duplicate</button>`;
       html += `<button class="btn btn-sm btn-red" onclick="deleteRecord('${r.id}')">🗑️ Delete</button>`;
       html += `</div></div>`;
@@ -1327,40 +1327,83 @@ function duplicateRecord(id) {
 /* ── Convert Type ── */
 function showConvertMenu(event, id) {
   event.stopPropagation();
-  // Remove any existing
   document.querySelectorAll('.convert-menu').forEach(m=>m.remove());
-  const rec = state.records.find(r=>r.id===id);
+  var rec = state.records.find(r=>r.id===id);
   if (!rec) return;
-  const menu = document.createElement('div');
+  var guide = TYPE_GUIDE[rec.type];
+  var suggested = guide && guide.converts ? guide.converts : [];
+  var menu = document.createElement('div');
   menu.className = 'convert-menu';
-  Object.keys(TYPES).filter(t=>t!==rec.type).forEach(t => {
-    const btn = document.createElement('button');
-    btn.innerHTML = `${TYPES[t].icon} Convert to ${t}`;
-    btn.onclick = (e) => { e.stopPropagation(); convertRecord(id, t); menu.remove(); };
+
+  // Header
+  var hdr = document.createElement('div');
+  hdr.style.cssText = 'padding:6px 12px;font-size:.7rem;color:var(--dim);font-weight:700;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--border);margin-bottom:4px';
+  hdr.textContent = 'Create linked record from ' + rec.id;
+  menu.appendChild(hdr);
+
+  // Suggested types first
+  if (suggested.length) {
+    suggested.forEach(function(t) {
+      if (t === rec.type || !TYPES[t]) return;
+      var btn = document.createElement('button');
+      btn.innerHTML = TYPES[t].icon + ' Create ' + t + ' <span style="font-size:.65rem;color:var(--dim);margin-left:4px">★ suggested</span>';
+      btn.onclick = function(e) { e.stopPropagation(); spawnLinkedRecord(id, t); menu.remove(); };
+      menu.appendChild(btn);
+    });
+    var sep = document.createElement('div');
+    sep.style.cssText = 'height:1px;background:var(--border);margin:4px 0';
+    menu.appendChild(sep);
+  }
+
+  // All other types
+  Object.keys(TYPES).filter(function(t) { return t !== rec.type && suggested.indexOf(t) === -1; }).forEach(function(t) {
+    var btn = document.createElement('button');
+    btn.innerHTML = TYPES[t].icon + ' Create ' + t;
+    btn.onclick = function(e) { e.stopPropagation(); spawnLinkedRecord(id, t); menu.remove(); };
     menu.appendChild(btn);
   });
-  // Position near button
-  const rect = event.target.getBoundingClientRect();
+
+  var rect = event.target.getBoundingClientRect();
   menu.style.position = 'fixed';
   var menuTop = rect.bottom + 4;
   if (menuTop + 300 > window.innerHeight) menuTop = Math.max(8, rect.top - 300);
   menu.style.top = menuTop + 'px';
   menu.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - 200)) + 'px';
   document.body.appendChild(menu);
-  setTimeout(() => {
-    const closer = () => { menu.remove(); document.removeEventListener('click', closer); };
+  setTimeout(function() {
+    var closer = function() { menu.remove(); document.removeEventListener('click', closer); };
     document.addEventListener('click', closer);
   }, 10);
 }
 
-function convertRecord(id, newType) {
-  const rec = state.records.find(r=>r.id===id);
-  if (!rec) return;
-  rec.type = newType;
-  rec.status = TYPES[newType].statuses[0];
-  rec.updated = new Date().toISOString();
+function spawnLinkedRecord(sourceId, newType) {
+  var src = state.records.find(function(r) { return r.id === sourceId; });
+  if (!src) return;
+  var now = new Date().toISOString();
+  var newRec = {
+    id: genId(),
+    typeId: genTypeId(newType),
+    title: src.title,
+    description: 'Created from ' + src.id + ' (' + src.type + '): ' + src.title,
+    type: newType,
+    status: TYPES[newType].statuses[0],
+    priority: src.priority || 'Medium',
+    owner: src.owner || '',
+    tags: src.tags || '',
+    created: now,
+    updated: now,
+    linkedRecords: [sourceId],
+    extra: {}
+  };
+  // Add reverse link on source
+  if (!src.linkedRecords) src.linkedRecords = [];
+  src.linkedRecords.push(newRec.id);
+  src.updated = now;
+  state.records.push(newRec);
   save(); renderFilterBar(); render();
-  toast(`Converted ${rec.id} to ${newType}`);
+  toast(newType + ' ' + newRec.typeId + ' created from ' + src.id + ' — linked both ways');
+  // Scroll to new record
+  setTimeout(function() { scrollToRecord(newRec.id); }, 100);
 }
 
 /* ── RAID Mode ── */
