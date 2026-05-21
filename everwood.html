@@ -24,6 +24,29 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);display:flex
 #hint-btn:disabled{opacity:.4;cursor:not-allowed}
 
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+@keyframes invBounce{0%{transform:scale(1)}30%{transform:scale(1.35)}50%{transform:scale(.9)}70%{transform:scale(1.15)}100%{transform:scale(1)}}
+.inv-item.bounce{animation:invBounce .45s ease}
+@keyframes starSparkle{0%{transform:scale(0) rotate(-30deg);opacity:0}50%{transform:scale(1.3) rotate(10deg);opacity:1}100%{transform:scale(1) rotate(0deg);opacity:1}}
+.star-anim{display:inline-block;opacity:0;animation:starSparkle .5s ease forwards}
+#room-transition{position:absolute;inset:0;background:#000;opacity:0;pointer-events:none;z-index:50;transition:opacity .18s ease}
+#room-transition.active{opacity:1}
+#timer.urgent-vignette ~ #game-area,
+body.timer-urgent #game-area{box-shadow:inset 0 0 60px 10px rgba(192,50,40,.12)}
+body.timer-urgent #timer{animation:pulse .7s infinite}
+#topbar .tb-icon-btn{background:none;border:1px solid var(--border);border-radius:4px;padding:3px 7px;font-size:1rem;cursor:pointer;line-height:1;color:var(--dim)}
+#topbar .tb-icon-btn:hover{border-color:var(--accent);color:var(--text)}
+#particle-canvas{position:absolute;inset:0;pointer-events:none;z-index:5;width:100%;height:100%}
+.share-btn{background:var(--green);color:#000;border:none;border-radius:6px;padding:10px 24px;font-family:var(--font);font-weight:bold;font-size:1rem;cursor:pointer;margin:8px 4px}
+.share-btn:hover{background:var(--accent)}
+.share-btn:active{transform:scale(.96)}
+
+/* Red vignette overlay for timer urgency */
+#urgency-vignette{position:fixed;inset:0;pointer-events:none;z-index:49;opacity:0;transition:opacity .5s ease;background:radial-gradient(ellipse at center,transparent 50%,rgba(192,50,40,.18) 100%)}
+body.timer-urgent #urgency-vignette{opacity:1}
+
+/* Shake fall rocks */
+@keyframes rockFall{0%{transform:translateY(-30px) rotate(0deg);opacity:1}100%{transform:translateY(110vh) rotate(120deg);opacity:0}}
+.falling-rock{position:absolute;font-size:1.2rem;pointer-events:none;z-index:6;animation:rockFall 1.8s ease-in forwards}
 
 /* Canvas Area */
 #game-area{flex:1;position:relative;overflow:hidden;background:#0c1218}
@@ -151,6 +174,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);display:flex
 <h1 id="end-title">YOU ESCAPED EVERWOOD!</h1>
 <div class="stars" id="end-stars"></div>
 <div class="stats" id="end-stats"></div>
+<button class="share-btn" id="share-btn" onclick="shareScore()" style="display:none">Share Score</button>
 <button class="start-btn" onclick="location.reload()">Play Again</button>
 </div>
 </div>
@@ -162,6 +186,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);display:flex
 <a href="index.html" class="home-link">&larr; home</a>
 <span id="score-display">0 pts</span>
 <button id="hint-btn" disabled onclick="showHint()">Hint</button>
+<button class="tb-icon-btn" id="sound-btn" onclick="toggleSound()" title="Toggle sound">&#x1F50A;</button>
+<button class="tb-icon-btn" id="fs-btn" onclick="toggleFullscreen()" title="Toggle fullscreen">&#x26F6;</button>
 <div id="timer">45:00</div>
 </div>
 </div>
@@ -169,7 +195,10 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);display:flex
 <!-- Game Area -->
 <div id="game-area">
 <canvas id="game-canvas"></canvas>
+<canvas id="particle-canvas"></canvas>
+<div id="room-transition"></div>
 </div>
+<div id="urgency-vignette"></div>
 
 <!-- Dialogue Box -->
 <div id="dialogue-box">
@@ -1532,7 +1561,13 @@ function checkFinal(){
 function addItem(id,emoji,desc){
   if(GS.inventory.find(i=>i.id===id))return;
   GS.inventory.push({id,emoji,desc});
+  playPickup();
   updateInventoryUI();
+  // Bounce the newly added item
+  setTimeout(()=>{
+    const items=document.querySelectorAll('.inv-item');
+    if(items.length){const last=items[items.length-1];last.classList.add('bounce');last.addEventListener('animationend',()=>last.classList.remove('bounce'),{once:true});}
+  },30);
 }
 
 function removeItem(id){
@@ -1587,7 +1622,7 @@ function showDialogue(speaker,text){
   spEl.textContent=speaker||'';
   txEl.textContent='';
   let i=0;
-  function type(){if(i<text.length){txEl.textContent+=text[i];i++;setTimeout(type,15);}}
+  function type(){if(i<text.length){txEl.textContent+=text[i];if(text[i]!==' ')playTypeClick();i++;setTimeout(type,15);}}
   type();
 }
 
@@ -1709,15 +1744,34 @@ function updateScoreDisplay(){
   document.getElementById('score-display').textContent=GS.score+' pts';
 }
 
-// ─── AUDIO ───────────────────────────────────
+// ─── SOUND SYSTEM ────────────────────────────
+let soundMuted=false;
+try{soundMuted=localStorage.getItem('everwood-muted')==='1';}catch(e){}
+
 function initAudio(){
   try{audioCtx=new(window.AudioContext||window.webkitAudioContext)();}catch(e){}
+  updateSoundBtn();
+  if(!soundMuted) startAmbient();
 }
 
-function playTone(freq,dur,vol){
-  if(!audioCtx)return;
+function updateSoundBtn(){
+  const btn=document.getElementById('sound-btn');
+  if(btn) btn.innerHTML=soundMuted?'&#x1F507;':'&#x1F50A;';
+}
+
+function toggleSound(){
+  soundMuted=!soundMuted;
+  try{localStorage.setItem('everwood-muted',soundMuted?'1':'0');}catch(e){}
+  updateSoundBtn();
+  if(soundMuted) stopAmbient();
+  else startAmbient();
+}
+
+function playTone(freq,dur,vol,type){
+  if(!audioCtx||soundMuted)return;
   try{
     const osc=audioCtx.createOscillator(),g=audioCtx.createGain();
+    osc.type=type||'sine';
     osc.connect(g);g.connect(audioCtx.destination);
     osc.frequency.setValueAtTime(freq,audioCtx.currentTime);
     g.gain.setValueAtTime(Math.min(vol||.02,.02),audioCtx.currentTime);
@@ -1726,33 +1780,176 @@ function playTone(freq,dur,vol){
   }catch(e){}
 }
 
-function playNoteSound(note){
-  const freqs={C:262,D:294,E:330,F:349,G:392,A:440,B:494};
-  playTone(freqs[note]||440,.3,.02);
+function playToneAt(freq,dur,vol,type,delay){
+  if(!audioCtx||soundMuted)return;
+  try{
+    const t=audioCtx.currentTime+(delay||0);
+    const osc=audioCtx.createOscillator(),g=audioCtx.createGain();
+    osc.type=type||'sine';
+    osc.connect(g);g.connect(audioCtx.destination);
+    osc.frequency.setValueAtTime(freq,t);
+    g.gain.setValueAtTime(0,t);
+    g.gain.linearRampToValueAtTime(Math.min(vol||.02,.02),t+.005);
+    g.gain.exponentialRampToValueAtTime(.001,t+(dur||.2));
+    osc.start(t);osc.stop(t+(dur||.2)+.05);
+  }catch(e){}
 }
 
+// Piano notes with proper oscillators
+function playNoteSound(note){
+  const freqs={C:261.63,D:293.66,E:329.63,F:349.23,G:392.00,A:440.00,B:493.88};
+  if(!audioCtx||soundMuted)return;
+  try{
+    const f=freqs[note]||440;
+    const osc=audioCtx.createOscillator(),g=audioCtx.createGain();
+    osc.type='triangle';
+    osc.connect(g);g.connect(audioCtx.destination);
+    osc.frequency.setValueAtTime(f,audioCtx.currentTime);
+    g.gain.setValueAtTime(.02,audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(.001,audioCtx.currentTime+.6);
+    osc.start();osc.stop(audioCtx.currentTime+.65);
+    // add a harmonic for richness
+    const osc2=audioCtx.createOscillator(),g2=audioCtx.createGain();
+    osc2.type='sine';osc2.connect(g2);g2.connect(audioCtx.destination);
+    osc2.frequency.setValueAtTime(f*2,audioCtx.currentTime);
+    g2.gain.setValueAtTime(.008,audioCtx.currentTime);
+    g2.gain.exponentialRampToValueAtTime(.001,audioCtx.currentTime+.4);
+    osc2.start();osc2.stop(audioCtx.currentTime+.45);
+  }catch(e){}
+}
+
+// Item pickup ding
+function playPickup(){
+  playTone(1200,.08,.02);
+  setTimeout(()=>playTone(1600,.1,.015),80);
+  hapticShort();
+}
+
+// Puzzle solve chord
+function playSuccess(){
+  if(!audioCtx||soundMuted)return;
+  [523,659,784].forEach((f,i)=>playToneAt(f,.35,.02,'sine',i*.12));
+  hapticPattern();
+}
+
+// Wrong answer buzz
+function playWrong(){
+  playTone(150,.25,.02,'square');
+  hapticLong();
+}
+
+// Door/transition whoosh
+function playWhoosh(){
+  if(!audioCtx||soundMuted)return;
+  try{
+    const bufSize=audioCtx.sampleRate*0.3;
+    const buf=audioCtx.createBuffer(1,bufSize,audioCtx.sampleRate);
+    const d=buf.getChannelData(0);
+    for(let i=0;i<bufSize;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/bufSize,2);
+    const src=audioCtx.createBufferSource();
+    src.buffer=buf;
+    const flt=audioCtx.createBiquadFilter();
+    flt.type='bandpass';flt.frequency.setValueAtTime(800,audioCtx.currentTime);
+    flt.frequency.exponentialRampToValueAtTime(200,audioCtx.currentTime+.3);
+    flt.Q.value=1;
+    const g=audioCtx.createGain();
+    g.gain.setValueAtTime(.02,audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(.001,audioCtx.currentTime+.3);
+    src.connect(flt);flt.connect(g);g.connect(audioCtx.destination);
+    src.start();
+  }catch(e){}
+}
+
+// Typewriter click for dialogue
+function playTypeClick(){
+  if(!audioCtx||soundMuted)return;
+  try{
+    const osc=audioCtx.createOscillator(),g=audioCtx.createGain();
+    osc.type='square';osc.connect(g);g.connect(audioCtx.destination);
+    osc.frequency.setValueAtTime(1800+Math.random()*400,audioCtx.currentTime);
+    g.gain.setValueAtTime(.006,audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(.001,audioCtx.currentTime+.02);
+    osc.start();osc.stop(audioCtx.currentTime+.025);
+  }catch(e){}
+}
+
+// Timer tick
 function startTicking(){
   if(!audioCtx)return;
   function tick(){
     if(!GS.timerRunning||GS.finished||!tickingActive)return;
-    playTone(800,.1,.015);
+    if(!soundMuted) playTone(800,.05,.012);
     setTimeout(tick,1000);
   }
   tick();
 }
 
-function playDramaticCue(){
-  if(!audioCtx)return;
-  [220,277,330,220].forEach((f,i)=>{
-    setTimeout(()=>playTone(f,.25,.02),i*300);
-  });
+// Hint penalty descending tone
+function playHintPenalty(){
+  if(!audioCtx||soundMuted)return;
+  [880,660,440].forEach((f,i)=>playToneAt(f,.15,.018,'sine',i*.1));
 }
 
-function playSuccess(){
-  if(!audioCtx)return;
-  [523,659,784].forEach((f,i)=>{
-    setTimeout(()=>playTone(f,.3,.02),i*150);
-  });
+// Victory melody (5-note ascending)
+function playVictoryMelody(){
+  if(!audioCtx||soundMuted)return;
+  [523,587,659,784,1047].forEach((f,i)=>playToneAt(f,.3,.02,'sine',i*.18));
+}
+
+// Pie plate ceramic clink
+function playPieFlip(){
+  if(!audioCtx||soundMuted)return;
+  playTone(2400,.04,.015);
+  setTimeout(()=>playTone(3200,.06,.01),40);
+}
+
+// Inventory click
+function playInvClick(){
+  playTone(1000,.04,.012);
+}
+
+// Inventory remove click
+function playInvRemove(){
+  playTone(600,.06,.01);
+}
+
+// Dramatic cue at 2 min
+function playDramaticCue(){
+  if(!audioCtx||soundMuted)return;
+  [220,277,330,220].forEach((f,i)=>playToneAt(f,.25,.02,'sine',i*.3));
+}
+
+// Ambient wind loop
+let ambientNode=null, ambientGain=null;
+function startAmbient(){
+  if(!audioCtx||soundMuted||ambientNode)return;
+  try{
+    const bufSize=2*audioCtx.sampleRate;
+    const buf=audioCtx.createBuffer(1,bufSize,audioCtx.sampleRate);
+    const d=buf.getChannelData(0);
+    for(let i=0;i<bufSize;i++) d[i]=Math.random()*2-1;
+    ambientNode=audioCtx.createBufferSource();
+    ambientNode.buffer=buf;ambientNode.loop=true;
+    const flt=audioCtx.createBiquadFilter();
+    flt.type='lowpass';flt.frequency.value=250;flt.Q.value=.7;
+    ambientGain=audioCtx.createGain();
+    ambientGain.gain.value=.005;
+    ambientNode.connect(flt);flt.connect(ambientGain);ambientGain.connect(audioCtx.destination);
+    ambientNode.start();
+  }catch(e){}
+}
+function stopAmbient(){
+  try{if(ambientNode){ambientNode.stop();ambientNode=null;ambientGain=null;}}catch(e){ambientNode=null;ambientGain=null;}
+}
+
+// Mine echo: wrap playTone to add delay in room 3
+const _origPlayTone=playTone;
+// We handle mine reverb by playing a quieter echo for room 3
+function playMineEcho(freq,dur,vol,type){
+  if(GS.room===3){
+    setTimeout(()=>playToneAt(freq,dur,(vol||.02)*.4,type,.15),150);
+    setTimeout(()=>playToneAt(freq,dur,(vol||.02)*.15,type,.35),350);
+  }
 }
 
 // ─── GAME FLOW ───────────────────────────────
