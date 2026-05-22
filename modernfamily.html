@@ -138,7 +138,13 @@ body{background:#d8d0c0;font-family:-apple-system,system-ui,sans-serif;touch-act
 <canvas id="game-canvas"></canvas>
 <svg id="svg-layer" xmlns="http://www.w3.org/2000/svg"></svg>
 <!-- Watch is OUTSIDE ui-layer so iOS touch events work -->
-<div id="watch-hud" style="pointer-events:all"><svg id="watch-face" viewBox="0 0 110 140" style="pointer-events:all;cursor:pointer;touch-action:manipulation"></svg></div>
+<div id="watch-hud" style="pointer-events:all" onclick="openWatch()" ontouchend="event.preventDefault();openWatch();">
+  <div id="watch-face" style="width:60px;height:70px;background:#1c1c1e;border-radius:16px;border:2px solid #48484a;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;pointer-events:all;touch-action:manipulation;box-shadow:0 2px 10px rgba(0,0,0,0.6)">
+    <div id="wf-time" style="color:#fff;font-size:14px;font-weight:700;font-family:-apple-system,system-ui,sans-serif"></div>
+    <div id="wf-room" style="color:rgba(255,255,255,0.4);font-size:7px;font-family:-apple-system,system-ui,sans-serif;margin-top:2px"></div>
+    <div id="wf-items" style="color:#ff9f0a;font-size:8px;font-family:-apple-system,system-ui,sans-serif;margin-top:2px"></div>
+  </div>
+</div>
 <div id="watch-expanded">
   <button class="we-close" onclick="closeWatch()" ontouchend="event.preventDefault();closeWatch();" aria-label="Close">&times;</button>
   <div class="watch-time" id="we-time"></div>
@@ -4148,76 +4154,21 @@ function updateHintBtn(){
 
 // ── Apple Watch HUD ──
 function drawWatch(){
-  var W=110, H=140;
-  var svg = '';
-  // Band (dark sport band)
-  svg += '<rect x="25" y="2" width="60" height="14" rx="4" fill="#3a3a3c"/>';
-  svg += '<rect x="25" y="124" width="60" height="14" rx="4" fill="#3a3a3c"/>';
-  // Case (space gray aluminum)
-  svg += '<rect x="12" y="14" width="86" height="112" rx="20" fill="#1c1c1e" stroke="#48484a" stroke-width="2"/>';
-  // Digital crown
-  svg += '<rect x="98" y="50" width="6" height="18" rx="3" fill="#48484a"/>';
-  svg += '<rect x="98" y="80" width="5" height="8" rx="2.5" fill="#48484a"/>';
-  // Screen
-  svg += '<rect x="18" y="22" width="74" height="96" rx="14" fill="#000"/>';
-
-  // Time (iOS style — large bold white)
-  var now = new Date();
-  var h=now.getHours()%12||12;var m=now.getMinutes();
-  svg += '<text x="55" y="52" text-anchor="middle" font-size="22" fill="#fff" font-family="-apple-system,system-ui,sans-serif" font-weight="700">'+h+':'+String(m).padStart(2,'0')+'</text>';
-
-  // Timer (game countdown)
-  if(G.gameStarted && !G.gameWon){
-    var elapsed = G.elapsed + (G.paused?0:(Date.now()-G.startTime));
-    var remaining = Math.max(0, 1800000 - elapsed);
-    var mins = Math.floor(remaining/60000);
-    var secs = Math.floor((remaining%60000)/1000);
-    var timerColor = mins < 5 ? '#ff453a' : '#ff9f0a';
-    svg += '<text x="55" y="68" text-anchor="middle" font-size="12" fill="'+timerColor+'" font-family="-apple-system,system-ui,sans-serif" font-weight="600">'+String(mins).padStart(2,'0')+':'+String(secs).padStart(2,'0')+'</text>';
-    if(remaining <= 0 && !G.gameWon) timeUp();
+  var now=new Date();var h=now.getHours()%12||12;var m=now.getMinutes();
+  var timeEl=document.getElementById('wf-time');
+  var roomEl=document.getElementById('wf-room');
+  var itemsEl=document.getElementById('wf-items');
+  if(timeEl)timeEl.textContent=h+':'+(m<10?'0':'')+m;
+  if(roomEl&&ROOMS[G.room])roomEl.textContent=ROOMS[G.room].name;
+  if(itemsEl)itemsEl.textContent=G.inventory.length+' items';
+  if(G.gameStarted&&!G.gameWon){
+    var elapsed=G.elapsed+(G.paused?0:(Date.now()-G.startTime));
+    var remaining=Math.max(0,1800000-elapsed);
+    var mins=Math.floor(remaining/60000);var secs=Math.floor((remaining%60000)/1000);
+    if(timeEl)timeEl.textContent=mins+':'+(secs<10?'0':'')+secs;
+    if(timeEl)timeEl.style.color=mins<5?'#ff453a':'#fff';
+    if(remaining<=0&&!G.gameWon)timeUp();
   }
-
-  // Room name
-  var roomName=ROOMS[G.room]?ROOMS[G.room].name:'';
-  svg += '<text x="55" y="82" text-anchor="middle" font-size="7" fill="rgba(255,255,255,0.5)" font-family="-apple-system,system-ui,sans-serif" font-weight="500">'+roomName+'</text>';
-
-  // Inventory dots (iOS-style colored circles)
-  var invCount = G.inventory.length;
-  svg += '<text x="55" y="96" text-anchor="middle" font-size="9" fill="rgba(255,255,255,0.7)" font-family="-apple-system,system-ui,sans-serif" font-weight="500">'+invCount+' item'+(invCount!==1?'s':'')+'</text>';
-
-  // Activity rings (decorative, Apple Watch style)
-  svg += '<circle cx="55" cy="108" r="6" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="2"/>';
-  svg += '<circle cx="55" cy="108" r="6" fill="none" stroke="#ff2d55" stroke-width="2" stroke-dasharray="'+(invCount*4)+' 40" stroke-linecap="round" transform="rotate(-90 55 108)"/>';
-
-  // Tiny item icons on watch wrist (show last 4 found items as tiny pixel icons)
-  const itemIcons = {
-    'tv-remote':     '<rect x="0" y="0" width="6" height="3" fill="#555" rx="0.5"/><rect x="1" y="0.5" width="1" height="0.8" fill="#f00"/>',
-    'family-photo':  '<rect x="0" y="0" width="5" height="4" fill="#f0d890" stroke="#840" stroke-width="0.5"/><circle cx="2.5" cy="2" r="1" fill="#c0a0f0"/>',
-    'tally-chart':   '<rect x="0" y="0" width="5" height="4" fill="#fff"/><line x1="1" y1="1" x2="1" y2="3" stroke="#222" stroke-width="0.5"/><line x1="2" y1="1" x2="2" y2="3" stroke="#222" stroke-width="0.5"/><line x1="3" y1="1" x2="3" y2="3" stroke="#222" stroke-width="0.5"/>',
-    'recipe-card':   '<rect x="0" y="0" width="5" height="3.5" fill="#fff8e0" stroke="#a80" stroke-width="0.4"/><line x1="1" y1="1" x2="4" y2="1" stroke="#a80" stroke-width="0.3"/>',
-    'poetry-book':   '<rect x="0" y="0" width="4" height="5" fill="#604080" rx="0.3"/><rect x="0.5" y="0.5" width="3" height="0.5" fill="#c0a0f0"/>',
-    'glorias-purse': '<rect x="0" y="1" width="5" height="3" fill="#d02060" rx="0.5"/><path d="M1,1 Q2.5,0 4,1" fill="none" stroke="#d02060" stroke-width="0.6"/>',
-    'law-books':     '<rect x="0" y="0" width="3" height="5" fill="#800020" rx="0.2"/><rect x="0.3" y="0.5" width="2.4" height="0.4" fill="#ffd700"/>',
-    'vinyl-record':  '<circle cx="2.5" cy="2.5" r="2.5" fill="#111"/><circle cx="2.5" cy="2.5" r="0.8" fill="#ffd700"/>',
-    'lily-drawing':  '<rect x="0" y="0" width="5" height="4" fill="#fff"/><path d="M1,3 L2,1 L3,2 L4,1" stroke="#f0a" stroke-width="0.5" fill="none"/>',
-    'periodic-table':'<rect x="0" y="0" width="5" height="4" fill="#fff"/><rect x="0.5" y="0.5" width="1" height="1" fill="#4a4" stroke="#222" stroke-width="0.2"/><rect x="2" y="0.5" width="1" height="1" fill="#a44" stroke="#222" stroke-width="0.2"/>',
-    'homework-note': '<rect x="0" y="0" width="4" height="5" fill="#fff8e0"/><text x="2" y="3" text-anchor="middle" font-size="3" fill="#222">01</text>',
-    'default':       '<circle cx="2.5" cy="2.5" r="2" fill="#ff9f0a" opacity="0.6"/>'
-  };
-  const recentItems = Object.keys(G.itemsFound).slice(-4);
-  if(recentItems.length>0){
-    recentItems.forEach((key,idx)=>{
-      const ix=22+idx*16;
-      const ic=itemIcons[key]||itemIcons['default'];
-      svg+=`<g transform="translate(${ix},100) scale(1.8)">${ic}</g>`;
-    });
-  }
-
-  // Watch face expression
-  const expr = G.gameWon ? '(^_^)' : (G.puzzleOpen ? '(o_o)' : G.solved[G.room] ? '(^-^)' : '(-_-)');
-  svg += `<text x="55" y="110" text-anchor="middle" font-size="12" fill="#ff9f0a" font-family="Courier New,monospace">${expr}</text>`;
-
-  watchFace.innerHTML = svg;
 }
 
 function updateWatchExpanded(){
