@@ -298,6 +298,21 @@ function saveState(){
 try{localStorage.setItem(STORAGE_KEY,JSON.stringify(state));}catch(e){}
 }
 
+// Sports announcer TTS
+var announceOn=true;
+function announce(text){
+if(!announceOn||!('speechSynthesis' in window))return;
+try{speechSynthesis.cancel();setTimeout(function(){
+var u=new SpeechSynthesisUtterance(text);u.rate=1.15;u.pitch=0.9;u.volume=0.6;
+var voices=speechSynthesis.getVoices();
+var male=voices.find(function(v){return v.lang.startsWith('en')&&v.name.toLowerCase().includes('male');});
+if(male)u.voice=male;
+speechSynthesis.speak(u);},60);}catch(e){}
+}
+var CORRECT_CALLS=["And that one is OUTTA HERE!","He connects! That's a base hit!","Right down the middle! STRIKE THREE on the batter!","And the crowd goes WILD!","That's a GRAND SLAM answer!","Swinging for the fences and he GOT IT!","What a PLAY! Unbelievable!","He's safe at home! The run SCORES!","A diving catch! SPECTACULAR!","Right on the money! What a throw!"];
+var WRONG_CALLS=["Swing and a miss!","Oh! He went down looking! Called strike three!","That one's foul, way outta here!","Caught looking! The umpire rings him up!","Ground ball to short... and he's OUT at first!","Fly ball... caught! That's the third out!","And he pops it up! Easy out!","Picked off at second! He wasn't paying attention!"];
+var STREAK_CALLS=["He's on FIRE! That's {n} in a row!","What a hitting streak! {n} consecutive!","Can ANYBODY stop this guy? {n} straight!","This kid is the REAL DEAL! {n} in a row!"];
+
 // Audio
 const actx=new (window.AudioContext||window.webkitAudioContext)();
 function playCorrect(){
@@ -331,6 +346,24 @@ g.gain.linearRampToValueAtTime(0,t+i*0.1+0.2);
 o.start(t+i*0.1);o.stop(t+i*0.1+0.2);
 });
 }
+
+// Baseball organ theme (Take Me Out to the Ball Game style)
+var _ballgameTimer=null;
+function playBallgame(){
+if(!actx||actx.state==='suspended')actx.resume();
+stopBallgame();
+var notes=[262,262,330,262,349,330,262,196,262,262,330,262,392,349,330,262];
+var durs=[.25,.25,.25,.25,.5,.25,.25,.5,.25,.25,.25,.25,.5,.25,.25,1];
+var bpm=140;var beat=60/bpm;var idx=0;
+function pn(){
+if(idx>=notes.length)idx=0;
+try{var o=actx.createOscillator(),g=actx.createGain();o.type='square';o.frequency.value=notes[idx];
+g.gain.setValueAtTime(0.015,actx.currentTime);g.gain.exponentialRampToValueAtTime(0.001,actx.currentTime+durs[idx]*beat*0.8);
+o.connect(g);g.connect(actx.destination);o.start();o.stop(actx.currentTime+durs[idx]*beat*0.8);}catch(e){}
+_ballgameTimer=setTimeout(pn,durs[idx]*beat*1000);idx++;}
+_ballgameTimer=setTimeout(pn,300);
+}
+function stopBallgame(){if(_ballgameTimer){clearTimeout(_ballgameTimer);_ballgameTimer=null;}}
 
 function getDiffForQ(i){
 if(i<50)return 1;if(i<100)return 2;if(i<150)return 3;return 4;
@@ -369,7 +402,7 @@ ${resumeHTML}
 </div>`;
 document.getElementById("start-btn").onclick=()=>{
 state={qi:0,score:0,streak:0,bestStreak:0,correct:0,wrong:0,answered:false,highScore:saved?saved.highScore||0:0,byDiff:[0,0,0,0,0],started:true};
-saveState();renderQ();
+saveState();playBallgame();announce("Play ball! Let's see what you've got!");renderQ();
 };
 const rb=document.getElementById("resume-btn");
 if(rb){rb.onclick=()=>{state=saved;state.answered=false;renderQ();};}
@@ -426,12 +459,14 @@ if(state.streak>=3)pts+=5;
 state.score+=pts;
 state.byDiff[q.d]++;
 if(actx.state==="suspended")actx.resume();
-if(state.streak>=3)playStreak();else playCorrect();
+if(state.streak>=3){playStreak();announce(STREAK_CALLS[Math.floor(Math.random()*STREAK_CALLS.length)].replace('{n}',state.streak));}
+else{playCorrect();announce(CORRECT_CALLS[Math.floor(Math.random()*CORRECT_CALLS.length)]);}
 }else{
 state.wrong++;
 state.streak=0;
 if(actx.state==="suspended")actx.resume();
 playWrong();
+announce(WRONG_CALLS[Math.floor(Math.random()*WRONG_CALLS.length)]);
 }
 
 const fb=document.getElementById("feedback");
