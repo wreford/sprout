@@ -2,14 +2,24 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Modern Family Escape Room</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:#f0e8d8;font-family:'Comic Sans MS','Chalkboard SE','Marker Felt',cursive;overflow:hidden;width:100vw;height:100vh;touch-action:none}
+
+/* Lock to portrait — show rotate message in landscape */
+#rotate-msg{display:none;position:fixed;inset:0;z-index:9999;background:#f0e8d8;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:40px;font-size:24px;color:#804020}
+#rotate-msg .icon{font-size:60px;margin-bottom:16px;animation:rotSpin 2s ease-in-out infinite}
+@keyframes rotSpin{0%,100%{transform:rotate(0)}50%{transform:rotate(90deg)}}
+@media(orientation:landscape) and (max-height:500px){
+  #rotate-msg{display:flex!important}
+  #game-canvas,#svg-layer,#ui-layer,#start-screen,#victory-screen{display:none!important}
+}
 #game-canvas{position:absolute;top:0;left:0;width:100%;height:100%;z-index:0}
-#svg-layer{position:absolute;top:0;left:0;width:100%;height:100%;z-index:1}
+#svg-layer{position:absolute;top:0;left:0;width:100%;height:100%;z-index:1;pointer-events:none}
 .clickable{pointer-events:all!important;cursor:pointer;-webkit-tap-highlight-color:rgba(255,215,0,0.3)}
+.item-glow,.item-bg{pointer-events:none!important}
 #ui-layer{position:absolute;top:0;left:0;width:100%;height:100%;z-index:2;pointer-events:none}
 #ui-layer #dialogue-box,#ui-layer #monologue-box,#ui-layer #watch-hud,#ui-layer #watch-expanded,#ui-layer #arrow-left,#ui-layer #arrow-right,#ui-layer #notification,#ui-layer #hint-btn,#ui-layer .close-btn{pointer-events:auto}
 #dialogue-box{position:absolute;bottom:20px;left:50%;transform:translateX(-50%);width:min(90vw,600px);background:rgba(255,255,240,0.95);border:4px solid #333;border-radius:18px;padding:16px 20px;font-size:16px;line-height:1.5;display:none;z-index:10;box-shadow:4px 4px 0 rgba(0,0,0,0.15);cursor:pointer}
@@ -61,6 +71,8 @@ body{background:#f0e8d8;font-family:'Comic Sans MS','Chalkboard SE','Marker Felt
 </style>
 </head>
 <body>
+
+<div id="rotate-msg"><div class="icon">📱</div>Please rotate to portrait mode!<div style="font-size:14px;color:#aaa;margin-top:12px">This game is designed for portrait</div></div>
 
 <canvas id="game-canvas"></canvas>
 <svg id="svg-layer" xmlns="http://www.w3.org/2000/svg"></svg>
@@ -1300,13 +1312,17 @@ function drawSimpleChar(cx,cy,scale,opts){
 }
 
 function addClickHandler(el, charName){
-  el.addEventListener('click',(e)=>{
-    e.stopPropagation();
-    getAudio();
-    playClick();
-    talkToCharacter(charName);
-  });
-  el.style.cursor='pointer';
+  // Invisible hit rect inside group for reliable touch on iOS
+  setTimeout(function(){try{
+    var bb=el.getBBox();
+    var hr=svgEl('rect',{x:String(bb.x-8),y:String(bb.y-8),width:String(bb.width+16),height:String(bb.height+16),fill:'rgba(255,215,0,0.01)',stroke:'none'});
+    el.insertBefore(hr,el.firstChild);
+  }catch(e){}},50);
+  el.setAttribute('style','cursor:pointer;pointer-events:all');
+  el.setAttribute('class','clickable');
+  function handler(e){e.stopPropagation();e.preventDefault();getAudio();playClick();talkToCharacter(charName);}
+  el.addEventListener('click',handler);
+  el.addEventListener('touchend',function(e){e.stopPropagation();e.preventDefault();getAudio();playClick();talkToCharacter(charName);},{passive:false});
 }
 
 // ── Room 0: Dunphy Living Room Characters ──
@@ -1740,15 +1756,10 @@ function drawClickableItem(x,y,w,h,id,label){
 
   // Clickable rect
   var rect = svgEl('rect',{x:x,y:y,width:w,height:h,fill:'rgba(255,215,0,0.01)',stroke:'none','class':'clickable','data-item':id});
-  rect.addEventListener('click',function(e){
-    e.stopPropagation();
-    getAudio();
-    playClick();
-    // Visual flash feedback
-    glow.setAttribute('opacity','1');
-    setTimeout(function(){glow.setAttribute('opacity','0');},200);
-    interactItem(id,label);
-  });
+  rect.setAttribute('style','pointer-events:all;cursor:pointer');
+  function itemHandler(e){e.stopPropagation();e.preventDefault();getAudio();playClick();glow.setAttribute('opacity','1');setTimeout(function(){glow.setAttribute('opacity','0');},200);interactItem(id,label);}
+  rect.addEventListener('click',itemHandler);
+  rect.addEventListener('touchend',itemHandler,{passive:false});
   svgLayer.appendChild(rect);
 }
 
