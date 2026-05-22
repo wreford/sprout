@@ -487,7 +487,7 @@ var defaultState={
   // Click upgrades: [count for each]
   clickUpgrades:[0,0,0,0,0],
   // Buildings: [count for each]
-  buildings:[0,0,0,0,0,0,0],
+  buildings:[0,0,0,0,0,0,0,0,0,0],
   // Powerups (one-time purchases): booleans
   powerups:{},
   // Prestige
@@ -761,10 +761,14 @@ function getPrestigeMultiplier(){
   mult*=Math.pow(2,S.superPrestigeLevel);
   // Layer 3: x5 per ultra prestige
   mult*=Math.pow(5,S.ultraPrestigeLevel);
+  // Layer 4: x10 per omega prestige
+  mult*=Math.pow(10,S.omegaPrestigeLevel);
   // PP Production Boost
   mult*=(1+getUpgradeCount(S.ppUpgrades,'productionBoost')*0.1);
   // SP Time Warp
   mult*=Math.pow(2,getUpgradeCount(S.spUpgrades,'timeWarp'));
+  // Omega Ascend: all multipliers cubed
+  if(getUpgradeCount(S.opUpgrades,'omegaAscend'))mult=Math.pow(mult,3);
   return mult;
 }
 
@@ -789,6 +793,8 @@ function getSPS(){
   if(getUpgradeCount(S.ppUpgrades,'speedBoost')&&(Date.now()-S.prestigeStartTime)<30000)sps*=1.5;
   // Time dilation
   if(getUpgradeCount(S.upUpgrades,'timeDilation'))sps*=1.5;
+  // Omega Time: 3x speed
+  if(getUpgradeCount(S.opUpgrades,'omegaTime'))sps*=3;
   // Auto-clicker contribution
   var autoClicks=0;
   if(S.powerups.autoClicker)autoClicks+=1;
@@ -837,7 +843,10 @@ function doClick(e){
   if(S.powerups.comboExtender)comboDelay=3000;
   if(S.powerups.infiniteCombo)comboDelay=Math.max(comboDelay,1500);
   var superComboLvl=getUpgradeCount(S.spUpgrades,'superCombo');
-  doClick._comboTimer=setTimeout(function(){S.combo=0;},comboDelay);
+  // Omega Combo: combo never decays
+  if(!getUpgradeCount(S.opUpgrades,'omegaCombo')){
+    doClick._comboTimer=setTimeout(function(){S.combo=0;},comboDelay);
+  }
 
   // Combo multiplier
   var comboMult=1+Math.floor(S.combo/5)*0.1;
@@ -853,6 +862,8 @@ function doClick(e){
   // Critical Chancla
   var critMult=S.powerups.critMaster?25:10;
   if(S.clickUpgrades[3]>0&&Math.random()<0.02*S.clickUpgrades[3]){multiplier*=critMult;}
+  // Omega Crit: 25% chance of 1000x
+  if(getUpgradeCount(S.opUpgrades,'omegaCrit')&&Math.random()<0.25)multiplier*=1000;
   // Lucky Chancla powerup
   if(S.powerups.luckyChancla&&Math.random()<0.05)multiplier*=5;
   // Golden Touch (SP)
@@ -870,13 +881,18 @@ function doClick(e){
   addPoints(total);
 
   // Spite meter
-  var spiteGain=0.3;
-  if(S.powerups.rageAccumulator)spiteGain*=2;
-  var ppSpite=getUpgradeCount(S.ppUpgrades,'spiteSurge');
-  spiteGain*=Math.pow(2,ppSpite);
-  S.spiteMeter=Math.min(100,S.spiteMeter+spiteGain);
-  if(S.spiteMeter>=100){
-    triggerSpiteExplosion();
+  if(getUpgradeCount(S.opUpgrades,'omegaSpite')){
+    S.spiteMeter=100;
+    if(!S.spiteExplosionEnd||Date.now()>=S.spiteExplosionEnd)triggerSpiteExplosion();
+  }else{
+    var spiteGain=0.3;
+    if(S.powerups.rageAccumulator)spiteGain*=2;
+    var ppSpite=getUpgradeCount(S.ppUpgrades,'spiteSurge');
+    spiteGain*=Math.pow(2,ppSpite);
+    S.spiteMeter=Math.min(100,S.spiteMeter+spiteGain);
+    if(S.spiteMeter>=100){
+      triggerSpiteExplosion();
+    }
   }
 
   // Visual effects
@@ -992,9 +1008,13 @@ function activateFrenzy(){
 var goldenTimer=null;
 function scheduleGolden(){
   var baseDelay=30000;
-  if(S.powerups.goldenLure)baseDelay/=2;
-  var ppGold=getUpgradeCount(S.ppUpgrades,'goldenFrequency');
-  baseDelay*=Math.pow(0.75,ppGold);
+  // Omega Golden: every 10s
+  if(getUpgradeCount(S.opUpgrades,'omegaGolden')){baseDelay=10000;}
+  else{
+    if(S.powerups.goldenLure)baseDelay/=2;
+    var ppGold=getUpgradeCount(S.ppUpgrades,'goldenFrequency');
+    baseDelay*=Math.pow(0.75,ppGold);
+  }
   var delay=baseDelay*(0.5+Math.random());
   goldenTimer=setTimeout(spawnGolden,delay);
 }
@@ -1042,7 +1062,7 @@ function doPrestige(){
   S.prestigeLevel++;
   S.prestigePoints++;
   S.points=0;S.totalPoints=0;
-  S.buildings=[0,0,0,0,0,0,0];
+  S.buildings=[0,0,0,0,0,0,0,0,0,0];
   S.clickUpgrades=[0,0,0,0,0];
   S.powerups={};
   S.combo=0;S.spiteMeter=0;
@@ -1076,7 +1096,7 @@ function doSuperPrestige(){
   S.ppUpgrades={};
   // Also reset normal stuff
   S.points=0;S.totalPoints=0;
-  S.buildings=[0,0,0,0,0,0,0];
+  S.buildings=[0,0,0,0,0,0,0,0,0,0];
   S.clickUpgrades=[0,0,0,0,0];
   S.powerups={};
   S.combo=0;S.spiteMeter=0;
@@ -1100,7 +1120,7 @@ function doUltraPrestige(){
   S.superPrestigeLevel=0;S.superPoints=0;
   S.ppUpgrades={};S.spUpgrades={};
   S.points=0;S.totalPoints=0;
-  S.buildings=[0,0,0,0,0,0,0];
+  S.buildings=[0,0,0,0,0,0,0,0,0,0];
   S.clickUpgrades=[0,0,0,0,0];
   S.powerups={};
   S.combo=0;S.spiteMeter=0;
@@ -1114,6 +1134,32 @@ function doUltraPrestige(){
 
   showPrestigeWave('ULTRA PRESTIGE '+S.ultraPrestigeLevel+'!','p3');
   narrate('ultraPrestige');
+  prestigeSound();
+  saveGame();
+}
+
+function doOmegaPrestige(){
+  if(!canOmegaPrestige())return;
+  S.omegaPrestigeLevel++;
+  S.omegaPoints++;
+  // Reset EVERYTHING except omega stuff and achievements
+  S.ultraPrestigeLevel=0;S.ultraPoints=0;
+  S.prestigeLevel=0;S.prestigePoints=0;
+  S.superPrestigeLevel=0;S.superPoints=0;
+  S.ppUpgrades={};S.spUpgrades={};S.upUpgrades={};
+  S.points=0;S.totalPoints=0;
+  S.buildings=[0,0,0,0,0,0,0,0,0,0];
+  S.clickUpgrades=[0,0,0,0,0];
+  S.powerups={};
+  S.combo=0;S.spiteMeter=0;
+  S.frenzyActive=false;S.frenzyEnd=0;S.frenzyCooldownEnd=0;
+  S.spiteExplosionEnd=0;
+  S.prestigeStartTime=Date.now();
+  S.fastestPrestige=Infinity;
+  S.transcendenceActive=false;
+
+  showPrestigeWave('OMEGA PRESTIGE '+S.omegaPrestigeLevel+'!','p4');
+  narrate('omegaPrestige');
   prestigeSound();
   saveGame();
 }
@@ -1150,7 +1196,7 @@ function loadGame(){
       if(typeof S.clickUpgrades[ci]==='boolean')S.clickUpgrades[ci]=S.clickUpgrades[ci]?1:0;
       S.clickUpgrades[ci]=Number(S.clickUpgrades[ci])||0;
     }
-    while(S.buildings.length<7)S.buildings.push(0);
+    while(S.buildings.length<10)S.buildings.push(0);
     for(var bi=0;bi<S.buildings.length;bi++){
       if(typeof S.buildings[bi]==='boolean')S.buildings[bi]=S.buildings[bi]?1:0;
       S.buildings[bi]=Number(S.buildings[bi])||0;
@@ -1159,6 +1205,9 @@ function loadGame(){
     if(!S.ppUpgrades)S.ppUpgrades={};
     if(!S.spUpgrades)S.spUpgrades={};
     if(!S.upUpgrades)S.upUpgrades={};
+    if(!S.opUpgrades)S.opUpgrades={};
+    if(S.omegaPrestigeLevel===undefined)S.omegaPrestigeLevel=0;
+    if(S.omegaPoints===undefined)S.omegaPoints=0;
     if(!S.powerups)S.powerups={};
     if(!S.clickTimestamps)S.clickTimestamps=[];
 
@@ -1290,7 +1339,7 @@ function renderPrestigeSection(){
   html+='<div class="prestige-card'+(superReady?' super-ready':'')+'">';
   html+='<div class="prestige-title" style="color:var(--purple)">&#128142; Super Prestige (Level '+S.superPrestigeLevel+')</div>';
   html+='<div class="prestige-info">Reset prestige levels + PP. Gain x2 all production permanently.</div>';
-  html+='<div class="prestige-info">Requires: 10 prestige levels (current: '+S.prestigeLevel+')</div>';
+  html+='<div class="prestige-info">Requires: 8 prestige levels (current: '+S.prestigeLevel+')</div>';
   html+='<div class="prestige-info">Current SP: <b style="color:var(--purple)">'+S.superPoints+'</b></div>';
   html+='<button class="prestige-btn p2" onclick="doSuperPrestige()"'+(superReady?'':' disabled')+'>SUPER PRESTIGE</button>';
   html+='<div class="prestige-stats">Bonus: x'+Math.pow(2,S.superPrestigeLevel)+' production</div>';
@@ -1301,10 +1350,21 @@ function renderPrestigeSection(){
   html+='<div class="prestige-card'+(ultraReady?' ultra-ready':'')+'">';
   html+='<div class="prestige-title" style="color:var(--cyan)">&#127776; Ultra Prestige (Level '+S.ultraPrestigeLevel+')</div>';
   html+='<div class="prestige-info">Reset EVERYTHING except ultra bonuses. Gain x5 all production permanently.</div>';
-  html+='<div class="prestige-info">Requires: 5 super prestige levels (current: '+S.superPrestigeLevel+')</div>';
+  html+='<div class="prestige-info">Requires: 4 super prestige levels (current: '+S.superPrestigeLevel+')</div>';
   html+='<div class="prestige-info">Current UP: <b style="color:var(--cyan)">'+S.ultraPoints+'</b></div>';
   html+='<button class="prestige-btn p3" onclick="doUltraPrestige()"'+(ultraReady?'':' disabled')+'>ULTRA PRESTIGE</button>';
   html+='<div class="prestige-stats">Bonus: x'+Math.pow(5,S.ultraPrestigeLevel)+' production</div>';
+  html+='</div>';
+
+  // Layer 4: Omega Prestige
+  var omegaReady=canOmegaPrestige();
+  html+='<div class="prestige-card'+(omegaReady?' omega-ready':'')+'">';
+  html+='<div class="prestige-title" style="color:#ff2d55">&#9764;&#65039; Omega Prestige (Level '+S.omegaPrestigeLevel+')</div>';
+  html+='<div class="prestige-info">Reset EVERYTHING including ultra. Gain x10 all production permanently.</div>';
+  html+='<div class="prestige-info">Requires: 3 ultra prestige levels (current: '+S.ultraPrestigeLevel+')</div>';
+  html+='<div class="prestige-info">Current OP: <b style="color:#ff2d55">'+S.omegaPoints+'</b></div>';
+  html+='<button class="prestige-btn p4" onclick="doOmegaPrestige()"'+(omegaReady?'':' disabled')+'>OMEGA PRESTIGE</button>';
+  html+='<div class="prestige-stats">Bonus: x'+fmt(Math.pow(10,S.omegaPrestigeLevel))+' production</div>';
   html+='</div>';
 
   document.getElementById('prestigeSection').innerHTML=html;
@@ -1315,6 +1375,8 @@ function renderPrestigeSection(){
   renderMetaShop('spShop','spShopLabel',SP_UPGRADES,S.spUpgrades,S.superPoints,'SP','sp-cost','buySP');
   // UP Shop
   renderMetaShop('upShop','upShopLabel',UP_UPGRADES,S.upUpgrades,S.ultraPoints,'UP','up-cost','buyUP');
+  // OP Shop
+  renderMetaShop('opShop','opShopLabel',OP_UPGRADES,S.opUpgrades,S.omegaPoints,'OP','op-cost','buyOP');
 }
 
 function renderMetaShop(containerId,labelId,upgrades,owned,currency,currName,costClass,buyFn){
@@ -1387,6 +1449,7 @@ function renderStats(){
     ['Prestige Level',S.prestigeLevel+' ('+S.prestigePoints+' PP)'],
     ['Super Prestige',S.superPrestigeLevel+' ('+S.superPoints+' SP)'],
     ['Ultra Prestige',S.ultraPrestigeLevel+' ('+S.ultraPoints+' UP)'],
+    ['Omega Prestige',S.omegaPrestigeLevel+' ('+S.omegaPoints+' OP)'],
     ['Highest Combo',S.highestCombo+'x'],
     ['Fastest Prestige',S.fastestPrestige<Infinity?Math.floor(S.fastestPrestige)+'s':'--'],
     ['Golden Chanclas Clicked',S.goldenClicked],
@@ -1543,6 +1606,17 @@ function buyUP(id){
   afterBuy();
 }
 
+function buyOP(id){
+  var u=OP_UPGRADES.find(function(x){return x.id===id;});
+  if(!u)return;
+  var count=getUpgradeCount(S.opUpgrades,id);
+  if(count>=u.max||S.omegaPoints<u.cost)return;
+  S.omegaPoints-=u.cost;
+  S.opUpgrades[id]=(count+1);
+  purchaseSound();
+  afterBuy();
+}
+
 // ══════════════════════════════════════
 // GAME LOOP
 // ══════════════════════════════════════
@@ -1554,6 +1628,8 @@ function gameLoop(){
   var dt=(now-lastTick)/1000;
   lastTick=now;
   if(dt>5)dt=5; // cap
+  // Omega Time: 3x game speed
+  if(getUpgradeCount(S.opUpgrades,'omegaTime'))dt*=3;
 
   // Time played
   S.totalTimePlayed+=dt;
@@ -1599,6 +1675,25 @@ function gameLoop(){
     }
   }
 
+  // Omega Auto: auto-upgrade buildings every 30s
+  if(getUpgradeCount(S.opUpgrades,'omegaAuto')){
+    if(!gameLoop._omegaAutoTimer)gameLoop._omegaAutoTimer=0;
+    gameLoop._omegaAutoTimer+=dt;
+    if(gameLoop._omegaAutoTimer>=30){
+      gameLoop._omegaAutoTimer=0;
+      for(var obi=0;obi<BUILDINGS.length;obi++){
+        var obc=getBuildingCost(obi);
+        if(S.points>=obc){S.points-=obc;S.buildings[obi]++;}
+      }
+    }
+  }
+
+  // Omega Spite: keep spite permanently full
+  if(getUpgradeCount(S.opUpgrades,'omegaSpite')){
+    S.spiteMeter=100;
+    if(!S.spiteExplosionEnd||now>=S.spiteExplosionEnd)triggerSpiteExplosion();
+  }
+
   // Check achievements
   checkAchievements();
 
@@ -1630,6 +1725,7 @@ function updateHUD(){
   if(S.prestigeLevel>0)ml+='P'+S.prestigeLevel+' ';
   if(S.superPrestigeLevel>0)ml+='SP'+S.superPrestigeLevel+' ';
   if(S.ultraPrestigeLevel>0)ml+='UP'+S.ultraPrestigeLevel+' ';
+  if(S.omegaPrestigeLevel>0)ml+='OP'+S.omegaPrestigeLevel+' ';
   if(S.spiteExplosionEnd&&Date.now()<S.spiteExplosionEnd){
     var spiteMult=getUpgradeCount(S.spUpgrades,'spiteMastery')?10:5;
     ml+='| SPITE '+spiteMult+'x! ';
@@ -1675,6 +1771,7 @@ function checkAchievements(){
         if(a.bonusPP)S.prestigePoints+=a.bonusPP;
         if(a.bonusSP)S.superPoints+=a.bonusSP;
         if(a.bonusUP)S.ultraPoints+=a.bonusUP;
+        if(a.bonusOP)S.omegaPoints+=a.bonusOP;
         showToast('🏆 '+a.name+'! '+a.reward);
         narrate('milestone');
       }
