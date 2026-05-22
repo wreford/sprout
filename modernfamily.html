@@ -740,6 +740,7 @@ let G = {
   clickCounts: {},
   watchOpen: false,
   keira: {x: 0.3, y: 0.65, facing: 1, frame: 0, targetX: null, walking: false},
+  chippy: {x: 0.25, y: 0.65},
   itemsFound: {},
   puzzleOpen: false,
   currentPuzzle: null,
@@ -901,6 +902,9 @@ function drawRoom(){
     case 7: drawAquarium(W,H,ps); break;
     case 8: drawBackToReality(W,H,ps); break;
   }
+
+  // Draw locked/unlocked door on right side (escape room feel)
+  drawLockedDoor(W,H);
 }
 
 function pixRect(x,y,w,h,color,ps){
@@ -1645,6 +1649,74 @@ function drawBackToReality(W,H,ps){
   ctx.strokeStyle='#c04020';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(W-U*0.5,floorY*0.43,U*0.08,0,Math.PI);ctx.stroke();
 }
 
+// ── Locked Door Overlay (escape room feel) ──
+function drawLockedDoor(W,H){
+  if(!G.gameStarted) return;
+  var room = G.room;
+  // Don't draw on last room of each act or aquarium
+  if(room === 4 || room === 8 || room === 7) return;
+  var floorY = (room===6) ? H*0.6 : H*0.55;
+  var doorX = W - W*0.08;
+  var doorW = W*0.06;
+  var doorH = floorY * 0.6;
+  var doorY = floorY - doorH;
+  var solved = G.solved[room];
+
+  // Door frame
+  ctx.fillStyle = '#604020';
+  ctx.fillRect(doorX - 3, doorY - 3, doorW + 6, doorH + 6);
+
+  if(solved){
+    // Door slightly ajar (open gap)
+    ctx.fillStyle = '#2a1a0a';
+    ctx.fillRect(doorX, doorY, doorW * 0.3, doorH);
+    ctx.fillStyle = '#8B6914';
+    ctx.fillRect(doorX + doorW * 0.25, doorY, doorW * 0.75, doorH);
+    // Open gap shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.fillRect(doorX, doorY, doorW * 0.28, doorH);
+  } else {
+    // Solid closed door
+    ctx.fillStyle = '#8B6914';
+    ctx.fillRect(doorX, doorY, doorW, doorH);
+    // Door panels
+    ctx.strokeStyle = '#6a4e10';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(doorX + doorW*0.15, doorY + doorH*0.1, doorW*0.7, doorH*0.35);
+    ctx.strokeRect(doorX + doorW*0.15, doorY + doorH*0.55, doorW*0.7, doorH*0.35);
+    // Padlock
+    var lockCX = doorX + doorW/2;
+    var lockCY = doorY + doorH*0.5;
+    var lockW = Math.min(doorW*0.5, 16);
+    var lockH = lockW * 0.8;
+    // Padlock body
+    ctx.fillStyle = '#c0c0c0';
+    ctx.strokeStyle = '#888';
+    ctx.lineWidth = 1.5;
+    ctx.fillRect(lockCX - lockW/2, lockCY, lockW, lockH);
+    ctx.strokeRect(lockCX - lockW/2, lockCY, lockW, lockH);
+    // Padlock shackle
+    ctx.strokeStyle = '#999';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(lockCX, lockCY, lockW*0.35, Math.PI, 0);
+    ctx.stroke();
+    // Keyhole
+    ctx.fillStyle = '#333';
+    ctx.beginPath();
+    ctx.arc(lockCX, lockCY + lockH*0.4, lockW*0.12, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillRect(lockCX - lockW*0.05, lockCY + lockH*0.4, lockW*0.1, lockH*0.3);
+  }
+  // Door knob
+  ctx.fillStyle = '#ffd700';
+  ctx.strokeStyle = '#b8960c';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(doorX + doorW*0.8, doorY + doorH*0.5, Math.min(doorW*0.12, 5), 0, Math.PI*2);
+  ctx.fill();ctx.stroke();
+}
+
 // ── SVG Character Drawing ──
 // Wobbly line helper
 function wobbly(x1,y1,x2,y2,wobble=3){
@@ -1690,6 +1762,17 @@ function drawCharacters(){
   var keiraScale = Math.min(W,H)*0.0011;
   var keiraGroundedY = groundY(keiraFloorY, keiraScale, 93);
   drawKeira(W*G.keira.x, keiraGroundedY, W, H);
+
+  // Chippy the hamster — trails behind Keira
+  var chippyIsMoving = Math.abs(G.chippy.x - (G.keira.x - 0.05 * G.keira.facing)) > 0.003;
+  var chippyBounce = chippyIsMoving ? Math.sin(Date.now()/150)*3 : 0;
+  var chippyX = W * G.chippy.x;
+  var chippyY = keiraGroundedY + keiraScale * 80 + chippyBounce;
+  var chippyG = svgEl('g',{transform:'translate('+chippyX+','+chippyY+')'});
+  var chippyText = svgEl('text',{x:'0',y:'0','text-anchor':'middle','font-size':'14','font-family':'-apple-system,system-ui,sans-serif',fill:'#000'});
+  chippyText.textContent = '\u{1F439}';
+  chippyG.appendChild(chippyText);
+  svgLayer.appendChild(chippyG);
 
   // Luke in every room doing something absurd (#35)
   if(G.room !== 0 && G.room <= 4){
@@ -4111,7 +4194,17 @@ watchFace.addEventListener('touchend',function(e){e.preventDefault();e.stopPropa
 
 // ── Room Navigation ──
 function navLeft(e){if(e){e.preventDefault();e.stopPropagation();}getAudio();if(G.room>0){showRoomFade();G.room--;enterRoom();playBleep(440,0.06);}}
-function navRight(e){if(e){e.preventDefault();e.stopPropagation();}getAudio();if(G.room<8){showRoomFade();G.room++;enterRoom();playBleep(520,0.06);}}
+function navRight(e){if(e){e.preventDefault();e.stopPropagation();}getAudio();
+  // Locked door check: room 0 always allows (no prerequisite), otherwise must solve current room
+  if(G.room<8){
+    if(G.room > 0 && !G.solved[G.room]){
+      showDialogue('Keira',"The door won't budge! There must be a puzzle to solve first.");
+      playWrong();
+      return;
+    }
+    showRoomFade();G.room++;enterRoom();playBleep(520,0.06);
+  }
+}
 arrowLeft.addEventListener('click',navLeft);
 arrowLeft.addEventListener('touchend',navLeft,{passive:false});
 arrowRight.addEventListener('click',navRight);
@@ -4281,6 +4374,12 @@ function gameLoop(){
     var settleElapsed = Date.now() - G.keira._settleStart;
     if(settleElapsed > 300) G.keira._settling = false;
   }
+
+  // Chippy the hamster — lerp toward Keira's position (slower, cute lag)
+  var chippyTargetX = G.keira.x - 0.05 * G.keira.facing;
+  var chippyTargetY = G.keira.y;
+  G.chippy.x += (chippyTargetX - G.chippy.x) * 0.06;
+  G.chippy.y += (chippyTargetY - G.chippy.y) * 0.06;
 
   drawRoom();
   drawCharacters();
