@@ -828,6 +828,46 @@ function playVictoryFanfare(){if(!soundOn)return;var notes=[523,523,523,659,784,
 function playDoorUnlock(){if(!soundOn)return;playBleep(330,0.08);setTimeout(function(){playBleep(440,0.08);},100);setTimeout(function(){playBleep(550,0.08);},200);setTimeout(function(){playBleep(660,0.15);},300);}
 function playItemCombine(){if(!soundOn)return;[392,494,588,784].forEach(function(f,i){setTimeout(function(){playBleep(f,0.1,'triangle');},i*80);});}
 function playHintChime(){if(!soundOn)return;playBleep(880,0.1,'sine');setTimeout(function(){playBleep(660,0.12,'sine');},120);}
+// TTS — limited, character voices
+var ttsOn=true;
+var VOICE_PROFILES={
+  'Phil':{rate:1.1,pitch:1.1},
+  'Claire':{rate:1.0,pitch:1.2},
+  'Gloria':{rate:1.15,pitch:1.4,lang:'en'},
+  'Cam':{rate:0.95,pitch:0.9},
+  'Mitchell':{rate:1.05,pitch:1.0},
+  'Luke':{rate:1.2,pitch:1.3},
+  'Lily':{rate:0.9,pitch:1.1},
+  'Manny':{rate:0.85,pitch:0.95},
+  'Jay':{rate:0.9,pitch:0.8},
+  'Alex':{rate:1.0,pitch:1.2},
+  'Keira':{rate:1.05,pitch:1.15},
+  'Pee-wee':{rate:1.3,pitch:1.5},
+  'Satan/Jay':{rate:0.8,pitch:0.7},
+  'Kyle':{rate:0.85,pitch:0.9}
+};
+function speak(speaker,text){
+  if(!ttsOn||!soundOn||!('speechSynthesis' in window))return;
+  try{
+    speechSynthesis.cancel();
+    setTimeout(function(){
+      var u=new SpeechSynthesisUtterance(text);
+      var p=VOICE_PROFILES[speaker]||{rate:1,pitch:1};
+      u.rate=p.rate||1;u.pitch=p.pitch||1;u.volume=0.5;
+      if(p.lang)u.lang=p.lang;
+      speechSynthesis.speak(u);
+    },60);
+  }catch(e){}
+}
+// Gloria speaks Spanish sometimes
+function speakSpanish(text){
+  if(!ttsOn||!soundOn||!('speechSynthesis' in window))return;
+  try{speechSynthesis.cancel();setTimeout(function(){
+    var u=new SpeechSynthesisUtterance(text);u.rate=1.1;u.pitch=1.4;u.volume=0.5;u.lang='es';
+    speechSynthesis.speak(u);
+  },60);}catch(e){}
+}
+
 var _roomMusicTimer=null;
 function stopRoomMusic(){if(_roomMusicTimer){clearTimeout(_roomMusicTimer);_roomMusicTimer=null;}}
 function playRoomAmbient(room){
@@ -4692,10 +4732,12 @@ function showCutscene(character, action, dialogue, duration){
   document.getElementById('cs-bubble').textContent=dialogue;
   el.style.display='flex';
   playCharacterVoice(character.toLowerCase());
+  speak(character,dialogue);
   clearTimeout(_cutsceneTimer);
   _cutsceneTimer=setTimeout(function(){dismissCutscene();},duration);
 }
 function dismissCutscene(){
+  try{speechSynthesis.cancel();}catch(e){}
   var el=document.getElementById('cutscene-overlay');
   el.style.display='none';
   clearTimeout(_cutsceneTimer);
@@ -6320,45 +6362,25 @@ var _kyleLines = [
       drawClickableItem(W*pos.x, H*pos.y, W*pos.w, H*pos.h, 'kyle-closet', 'Closet');
     };
   });
-  // Also update the drawCharacters switch to use window references
-  var _origDrawCharacters = drawCharacters;
+  // Patch drawCharacters to add Tyler the Tapeworm drawing
+  var _origDrawCharsForTyler = drawCharacters;
   drawCharacters = function(){
-    if(!G.gameStarted) return;
-    svgLayer.innerHTML='';
-    var W=window.innerWidth, H=window.innerHeight;
-    switch(G.room){
-      case 0: window.drawRoom0Chars(W,H); break;
-      case 1: window.drawRoom1Chars(W,H); break;
-      case 2: window.drawRoom2Chars(W,H); break;
-      case 3: window.drawRoom3Chars(W,H); break;
-      case 4: window.drawRoom4Chars(W,H); break;
-      case 5: window.drawRoom5Chars(W,H); break;
-      case 6: window.drawRoom6Chars(W,H); break;
-      case 7: window.drawRoom7Chars(W,H); break;
-      case 8: window.drawRoom8Chars(W,H); break;
-    }
-    // Keira
-    var keiraFloorY = (G.room===6) ? H*0.6 : (G.room===7 ? H*0.7 : H*0.55);
-    var keiraScale = Math.min(W,H)*0.0011;
-    var keiraGroundedY = groundY(keiraFloorY, keiraScale, 93);
-    drawKeira(W*G.keira.x, keiraGroundedY, W, H);
-    // Chippy
-    var chippyIsMoving = Math.abs(G.chippy.x - (G.keira.x - 0.05 * G.keira.facing)) > 0.003;
-    var chippyBounce = chippyIsMoving ? Math.sin(Date.now()/150)*3 : 0;
-    var chippyX = W * G.chippy.x;
-    var chippyY = keiraGroundedY + keiraScale * 80 + chippyBounce;
-    var chippyG = svgEl('g',{transform:'translate('+chippyX+','+chippyY+')'});
-    var chippyText = svgEl('text',{x:'0',y:'0','text-anchor':'middle','font-size':'14','font-family':'-apple-system,system-ui,sans-serif',fill:'#000'});
-    chippyText.textContent = '\u{1F439}';
-    chippyG.appendChild(chippyText);
-    svgLayer.appendChild(chippyG);
+    _origDrawCharsForTyler();
     // Tyler the Tapeworm (after Room 2 cutscene)
-    if(G.tylerActive){
+    if(G.tylerActive && G.gameStarted){
+      var W=window.innerWidth, H=window.innerHeight;
+      var keiraFloorY = (G.room===6) ? H*0.6 : (G.room===7 ? H*0.7 : H*0.55);
+      var keiraScale = Math.min(W,H)*0.0011;
+      var keiraGroundedY = groundY(keiraFloorY, keiraScale, 93);
+      var chippyIsMoving = Math.abs(G.chippy.x - (G.keira.x - 0.05 * G.keira.facing)) > 0.003;
+      var chippyBounce = chippyIsMoving ? Math.sin(Date.now()/150)*3 : 0;
+      var chippyX = W * G.chippy.x;
+      var chippyY = keiraGroundedY + keiraScale * 80 + chippyBounce;
       var t = Date.now()/300;
       var tylerX = chippyX + Math.sin(t)*4 + 10;
       var tylerY = chippyY + Math.cos(t*1.3)*3 + 2;
       var tylerG = svgEl('g',{transform:'translate('+tylerX+','+tylerY+')'});
-      // Squiggly worm path
+      // Squiggly worm path (~8px)
       var tylerPath = 'M-4,0';
       for(var ti=0;ti<8;ti++){
         tylerPath += ' Q'+(ti*2-3)+','+(Math.sin(t+ti)*2)+' '+(ti*2-2)+','+(Math.cos(t+ti*0.7)*1.5);
@@ -6369,14 +6391,6 @@ var _kyleLines = [
       tylerG.appendChild(svgEl('circle',{cx:'4',cy:'-1',r:'1',fill:'#000'}));
       tylerG.appendChild(svgEl('circle',{cx:'6',cy:'-1',r:'1',fill:'#000'}));
       svgLayer.appendChild(tylerG);
-    }
-    // Luke in every room
-    if(G.room !== 0 && G.room <= 4){
-      var lukeFloorY2 = (G.room===6) ? H*0.6 : H*0.55;
-      var lukeTinyScale2 = Math.min(W*0.4,H*0.4)*0.001;
-      var lukeTinyGroundY2 = groundY(lukeFloorY2, lukeTinyScale2);
-      var lukePositions2=[[0,0],[W*0.88,lukeTinyGroundY2],[W*0.92,lukeTinyGroundY2],[W*0.08,lukeTinyGroundY2],[W*0.9,lukeTinyGroundY2]];
-      drawLuke(lukePositions2[G.room][0], lukePositions2[G.room][1], W*0.4, H*0.4, true);
     }
   };
 })();
