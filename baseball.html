@@ -291,6 +291,7 @@ const STORAGE_KEY="donnys-baseball";
 const app=document.getElementById("app");
 
 let state={qi:0,score:0,streak:0,bestStreak:0,correct:0,wrong:0,answered:false,highScore:0,byDiff:[0,0,0,0,0],started:false};
+var activeQ=Q.slice();
 
 function loadState(){
 try{const s=localStorage.getItem(STORAGE_KEY);if(s){const p=JSON.parse(s);return p;}}catch(e){}return null;
@@ -385,8 +386,8 @@ setTimeout(()=>b.remove(),2600);
 function renderStart(){
 const saved=loadState();
 let resumeHTML="";
-if(saved&&saved.qi>0&&saved.qi<Q.length&&saved.started){
-resumeHTML=`<button class="start-btn resume-btn" id="resume-btn">Resume (Q${saved.qi+1}/${Q.length}, Score: ${saved.score})</button>`;
+if(saved&&saved.qi>0&&saved.qi<activeQ.length&&saved.started){
+resumeHTML=`<button class="start-btn resume-btn" id="resume-btn">Resume (Q${saved.qi+1}/${activeQ.length}, Score: ${saved.score})</button>`;
 }
 app.innerHTML=`
 <div class="start-screen">
@@ -414,6 +415,15 @@ ${resumeHTML}
 </div>`;
 document.getElementById("start-btn").onclick=()=>{
 state={qi:0,score:0,streak:0,bestStreak:0,correct:0,wrong:0,answered:false,highScore:saved?saved.highScore||0:0,byDiff:[0,0,0,0,0],started:true};
+// Filter questions by difficulty if specific mode chosen
+if(gameDifficulty>=1&&gameDifficulty<=4){
+  activeQ=Q.filter(function(q){return q.d===gameDifficulty;});
+}else if(gameDifficulty===5){
+  activeQ=Q.filter(function(q){return q.d>=3;});
+  activeQ.sort(function(){return Math.random()-0.5;});
+}else{
+  activeQ=Q.slice();
+}
 saveState();playBallgame();announce("Play ball! Let's see what you've got!");renderQ();
 };
 const rb=document.getElementById("resume-btn");
@@ -421,19 +431,19 @@ if(rb){rb.onclick=()=>{state=saved;state.answered=false;renderQ();};}
 }
 
 function renderQ(){
-if(state.qi>=Q.length){renderEnd();return;}
+if(state.qi>=activeQ.length){renderEnd();return;}
 // Check difficulty transitions
 if(state.qi===50)showBanner("Difficulty Up: Medium!","#f7c948");
 if(state.qi===100)showBanner("Difficulty Up: Hard!","#f59e0b");
 if(state.qi===150)showBanner("Difficulty Up: Expert!","#ef4444");
 
-const q=Q[state.qi];
-const d=q.d;
+const q=activeQ[state.qi];
+const d=gameDifficulty>=1?gameDifficulty:q.d;
 app.innerHTML=`
 <div class="score-bar">
 <span>Score: <strong>${state.score}</strong></span>
 <span class="streak-fire">${state.streak>=3?"🔥 ":""}Streak: ${state.streak}</span>
-<span>Q ${state.qi+1}/${Q.length}</span>
+<span>Q ${state.qi+1}/${activeQ.length}</span>
 </div>
 <div class="q-header">
 <span class="q-number">Question ${state.qi+1}</span>
@@ -452,7 +462,7 @@ btns.forEach(b=>{b.onclick=()=>handleAnswer(parseInt(b.dataset.i));});
 function handleAnswer(idx){
 if(state.answered)return;
 state.answered=true;
-const q=Q[state.qi];
+const q=activeQ[state.qi];
 const correct=idx===q.a;
 const btns=document.querySelectorAll(".opt-btn");
 btns.forEach(b=>{
@@ -489,7 +499,7 @@ ${!correct?`<p>The answer was: <strong>${q.o[q.a]}</strong></p>`:""}
 ${state.streak>=3&&correct?`<p style="font-size:13px;color:var(--green)">+5 streak bonus!</p>`:""}
 <p class="fact">${q.fact}</p>
 </div>
-<button class="next-btn" id="next-btn">${state.qi+1>=Q.length?"See Results":"Next Question →"}</button>`;
+<button class="next-btn" id="next-btn">${state.qi+1>=activeQ.length?"See Results":"Next Question →"}</button>`;
 document.getElementById("next-btn").onclick=()=>{
 state.qi++;state.answered=false;saveState();renderQ();
 };
@@ -499,7 +509,7 @@ saveState();
 function renderEnd(){
 if(state.score>state.highScore)state.highScore=state.score;
 saveState();
-const pct=Math.round(state.correct/Q.length*100);
+const pct=Math.round(state.correct/activeQ.length*100);
 const maxScore=50*10+50*20+50*30+50*50;
 app.innerHTML=`
 <div class="end-screen">
