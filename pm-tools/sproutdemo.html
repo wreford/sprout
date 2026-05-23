@@ -1,0 +1,1310 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Sprout Language Demo 🌱</title>
+  <style>
+    :root{--bg:#1e1f29;--bg2:#282a36;--bg3:#383a4a;--text:#f8f8f2;--dim:#6272a4;--accent:#bd93f9;--green:#50fa7b;--pink:#ff79c6;--yellow:#f1fa8c;--orange:#ffb86c;--red:#ff5555;--cyan:#8be9fd;--font:ui-monospace,"SF Mono","Cascadia Code","Fira Code",Consolas,monospace}
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--font);overflow:hidden}
+    body{display:flex;flex-direction:column}
+    header{display:flex;align-items:center;gap:12px;padding:8px 16px;background:var(--bg2);border-bottom:1px solid var(--bg3)}
+    header h1{font-size:16px;color:var(--accent);letter-spacing:0.05em}
+    header a{color:var(--dim);font-size:11px;text-decoration:none}
+    header a:hover{color:var(--text)}
+    .main{flex:1;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr auto;overflow:hidden}
+    .editor-pane{display:flex;flex-direction:column;border-right:1px solid var(--bg3);overflow:hidden}
+    .output-pane{display:flex;flex-direction:column;overflow:hidden}
+    .pane-header{display:flex;align-items:center;justify-content:space-between;padding:6px 12px;background:var(--bg2);font-size:11px;color:var(--dim);letter-spacing:0.08em;text-transform:uppercase;border-bottom:1px solid var(--bg3)}
+    textarea{flex:1;background:var(--bg);color:var(--text);border:none;padding:12px;font-family:var(--font);font-size:13px;line-height:1.6;resize:none;outline:none;tab-size:2}
+    #output{flex:1;background:#1a1b26;color:var(--green);padding:12px;font-family:var(--font);font-size:13px;line-height:1.6;overflow-y:auto;white-space:pre-wrap}
+    .error{color:var(--red)}
+    .toolbar{display:flex;gap:6px;padding:8px 12px;background:var(--bg2);border-top:1px solid var(--bg3);grid-column:1/-1;flex-wrap:wrap}
+    .btn{background:var(--bg3);border:1px solid rgba(255,255,255,0.1);color:var(--text);padding:6px 14px;border-radius:6px;font-family:var(--font);font-size:11px;cursor:pointer}
+    .btn:hover{border-color:var(--accent)}
+    .btn.run{background:var(--green);color:#1a1b26;font-weight:700;border:none}
+    .btn.run:hover{filter:brightness(1.1)}
+    .examples{display:flex;gap:4px;margin-left:auto;flex-wrap:wrap}
+    .examples .btn{font-size:10px;padding:4px 10px;color:var(--cyan)}
+    @media(max-width:600px){.main{grid-template-columns:1fr;grid-template-rows:1fr 1fr auto}}
+  </style>
+</head>
+<body>
+<header>
+  <a href="../index.html">&larr; home</a>
+  <span style="font-size:20px">🌱</span>
+  <h1>Sprout Language Demo</h1>
+  <span style="font-size:10px;color:var(--dim);margin-left:auto">Full Sprout Language &middot; Tokenizer + Parser + Compiler + Runtime</span>
+</header>
+<div class="main">
+  <div class="editor-pane">
+    <div class="pane-header"><span>Sprout Code</span></div>
+    <textarea id="code" spellcheck="false">-- Hello World in Sprout
+name : "Sprout"
+("Hello, " + name) say</textarea>
+  </div>
+  <div class="output-pane">
+    <div class="pane-header"><span>Output</span><span id="time"></span></div>
+    <div id="output">Click &#9654; Run to execute Sprout code...</div>
+  </div>
+  <div class="toolbar">
+    <button class="btn run" id="run-btn">&#9654; Run</button>
+    <button class="btn" id="clear-btn">Clear</button>
+    <div class="examples">
+      <button class="btn" onclick="loadExample('hello')">Hello</button>
+      <button class="btn" onclick="loadExample('math')">Math</button>
+      <button class="btn" onclick="loadExample('loops')">Loops</button>
+      <button class="btn" onclick="loadExample('lists')">Lists</button>
+      <button class="btn" onclick="loadExample('blocks')">Blocks</button>
+      <button class="btn" onclick="loadExample('fizzbuzz')">FizzBuzz</button>
+      <button class="btn" onclick="loadExample('fibonacci')">Fibonacci</button>
+      <button class="btn" onclick="loadExample('filter')">Filter &amp; Fold</button>
+      <button class="btn" onclick="loadExample('errors')">Errors</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════════
+// Sprout Full Runtime — cell.js
+// ═══════════════════════════════════════════════════════════════════════════════
+
+var OP = {
+  PUSH_CONST:  0,
+  PUSH_SELF:   1,
+  LOAD:        2,
+  STORE:       3,
+  SEND:        4,
+  MAKE_CELL:   5,
+  MAKE_BLOCK:  6,
+  JUMP:        7,
+  JUMP_FALSE:  8,
+  RETURN:      9,
+  POP:        10,
+};
+
+function Chunk(name) {
+  this.name = name || '<main>';
+  this.code = [];
+  this.constants = [];
+  this.chunks = [];
+}
+Chunk.prototype.addConst = function(val) {
+  var i = this.constants.indexOf(val);
+  if (i !== -1) return i;
+  this.constants.push(val);
+  return this.constants.length - 1;
+};
+Chunk.prototype.emit = function() {
+  for (var i = 0; i < arguments.length; i++) this.code.push(arguments[i]);
+  return this.code.length - 1;
+};
+Chunk.prototype.emitJump = function(op) {
+  this.code.push(op, 0);
+  return this.code.length - 1;
+};
+Chunk.prototype.patch = function(idx, val) {
+  this.code[idx] = val;
+};
+
+function Cell() {
+  this.array = [undefined]; // 1-based
+  this.fields = new Map();
+  this.block = null;
+  this.parent = null;
+}
+Cell.prototype.get = function(key) {
+  if (typeof key === 'number') {
+    return this.array[key] !== undefined ? this.array[key] : EMPTY;
+  }
+  if (this.fields.has(key)) return this.fields.get(key);
+  if (this.parent !== null) return this.parent.get(key);
+  return undefined;
+};
+Cell.prototype.set = function(key, val) {
+  if (typeof key === 'number') {
+    this.array[key] = val;
+  } else {
+    this.fields.set(key, val);
+  }
+};
+Cell.prototype.isEmpty = function() { return this === EMPTY; };
+Cell.prototype.isTruthy = function() { return this !== EMPTY; };
+Cell.prototype.clone = function() {
+  var c = new Cell();
+  c.array = this.array.slice();
+  c.fields = new Map(this.fields);
+  c.block = this.block;
+  c.parent = this.parent;
+  return c;
+};
+Cell.prototype.length = function() { return this.array.length - 1; };
+
+var EMPTY = new Cell();
+
+function wrap(val) {
+  if (val instanceof Cell) return val;
+  if (val === null || val === undefined) return EMPTY;
+  if (typeof val === 'boolean') return val ? makeNum(1) : EMPTY;
+  if (typeof val === 'number') return makeNum(val);
+  if (typeof val === 'string') return makeStr(val);
+  return EMPTY;
+}
+
+function unwrap(cell) {
+  if (cell === EMPTY) return null;
+  if (cell._num !== undefined) return cell._num;
+  if (cell._str !== undefined) return cell._str;
+  return cell;
+}
+
+function makeNum(n) {
+  var c = new Cell();
+  c._num = n;
+  c.array[1] = n;
+  return c;
+}
+
+function makeStr(s) {
+  var c = new Cell();
+  c._str = s;
+  c.array[1] = s;
+  return c;
+}
+
+function makeBlock(params, chunk, closure) {
+  var c = new Cell();
+  c.block = { params: params, chunk: chunk, closure: closure };
+  return c;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Sprout Full Runtime — compiler.js (Scanner + Compiler)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+var T = {
+  NUM:     'NUM',
+  STR:     'STR',
+  IDENT:   'IDENT',
+  OP:      'OP',
+  COLON:   'COLON',
+  COMMA:   'COMMA',
+  NL:      'NL',
+  INDENT:  'INDENT',
+  DEDENT:  'DEDENT',
+  LBRACK:  'LBRACK',
+  RBRACK:  'RBRACK',
+  LPAREN:  'LPAREN',
+  RPAREN:  'RPAREN',
+  PIPE:    'PIPE',
+  AT:      'AT',
+  QMARK:   'QMARK',
+  HASH:    'HASH',
+  EOF:     'EOF',
+};
+
+var BINARY_OPS = new Set(['+','-','*','/','=','>','<','>=','<=','!=','%']);
+
+function Scanner(src) {
+  this.src = src;
+  this.pos = 0;
+  this.line = 1;
+  this.col = 1;
+  this.indent = [0];
+  this.queue = [];
+  this.qi = 0;
+  this._scanAll();
+}
+
+Scanner.prototype._scanAll = function() {
+  var src = this.src;
+  var len = src.length;
+  var toks = [];
+  var indentStack = [0];
+  var i = 0;
+
+  while (i < len) {
+    // Skip inline spaces (not newlines)
+    while (i < len && (src[i] === ' ' || src[i] === '\t') && (toks.length === 0 || toks[toks.length-1].type !== T.NL)) {
+      i++;
+    }
+    if (i >= len) break;
+
+    var c = src[i];
+
+    // Comment: --
+    if (c === '-' && i+1 < len && src[i+1] === '-') {
+      while (i < len && src[i] !== '\n') i++;
+      continue;
+    }
+
+    // Newline handling with indent tracking
+    if (c === '\n') {
+      i++;
+      var indent = 0;
+      while (i < len && (src[i] === ' ' || src[i] === '\t')) {
+        indent += src[i] === '\t' ? 2 : 1;
+        i++;
+      }
+      if (i < len && src[i] === '\n') continue;
+      if (i >= len) break;
+
+      var curIndent = indentStack[indentStack.length - 1];
+      if (indent > curIndent) {
+        indentStack.push(indent);
+        toks.push({ type: T.INDENT });
+      } else if (indent < curIndent) {
+        while (indentStack[indentStack.length - 1] > indent) {
+          indentStack.pop();
+          toks.push({ type: T.DEDENT });
+        }
+        toks.push({ type: T.NL });
+      } else {
+        toks.push({ type: T.NL });
+      }
+      continue;
+    }
+
+    // Number
+    if (c >= '0' && c <= '9') {
+      var s = '';
+      while (i < len && ((src[i] >= '0' && src[i] <= '9') || src[i] === '.')) s += src[i++];
+      toks.push({ type: T.NUM, val: parseFloat(s) });
+      continue;
+    }
+
+    // String
+    if (c === '"') {
+      i++;
+      var s = '';
+      while (i < len && src[i] !== '"') {
+        if (src[i] === '\\') { i++; s += src[i++]; }
+        else s += src[i++];
+      }
+      i++; // closing "
+      toks.push({ type: T.STR, val: s });
+      continue;
+    }
+
+    // Hash ident: #foo
+    if (c === '#') {
+      i++;
+      var s = '#';
+      while (i < len && /[a-zA-Z0-9_]/.test(src[i])) s += src[i++];
+      toks.push({ type: T.IDENT, val: s, meta: true });
+      continue;
+    }
+
+    // Parentheses (grouping)
+    if (c === '(') {
+      toks.push({ type: T.LPAREN });
+      i++;
+      continue;
+    }
+    if (c === ')') {
+      toks.push({ type: T.RPAREN });
+      i++;
+      continue;
+    }
+
+    // Identifier or keyword
+    if (/[a-zA-Z_]/.test(c)) {
+      var s = '';
+      while (i < len && /[a-zA-Z0-9_?]/.test(src[i])) s += src[i++];
+      // "mod" is sugar for %
+      if (s === 'mod') {
+        toks.push({ type: T.OP, val: '%' });
+      } else {
+        toks.push({ type: T.IDENT, val: s });
+      }
+      continue;
+    }
+
+    // Two-char ops
+    if ((c === '>' || c === '<' || c === '!') && i+1 < len && src[i+1] === '=') {
+      toks.push({ type: T.OP, val: c + '=' });
+      i += 2;
+      continue;
+    }
+
+    // Single-char ops and punctuation
+    switch (c) {
+      case '+': case '-': case '*': case '/': case '%':
+        toks.push({ type: T.OP, val: c }); i++; break;
+      case '=': toks.push({ type: T.OP, val: '=' }); i++; break;
+      case '>': toks.push({ type: T.OP, val: '>' }); i++; break;
+      case '<': toks.push({ type: T.OP, val: '<' }); i++; break;
+      case ':': toks.push({ type: T.COLON }); i++; break;
+      case ',': toks.push({ type: T.COMMA }); i++; break;
+      case '[': toks.push({ type: T.LBRACK }); i++; break;
+      case ']': toks.push({ type: T.RBRACK }); i++; break;
+      case '|': toks.push({ type: T.PIPE }); i++; break;
+      case '@': toks.push({ type: T.AT }); i++; break;
+      case '?': toks.push({ type: T.QMARK }); i++; break;
+      case ' ': case '\t': case '\r': i++; break;
+      default: i++; // skip unknown
+    }
+  }
+
+  // Close any open indents
+  while (indentStack.length > 1) {
+    indentStack.pop();
+    toks.push({ type: T.DEDENT });
+  }
+
+  toks.push({ type: T.EOF });
+  this.queue = toks;
+  this.qi = 0;
+};
+
+Scanner.prototype.peek = function(offset) {
+  var idx = this.qi + (offset || 0);
+  return idx < this.queue.length ? this.queue[idx] : { type: T.EOF };
+};
+Scanner.prototype.next = function() {
+  var t = this.queue[this.qi];
+  if (this.qi < this.queue.length - 1) this.qi++;
+  return t;
+};
+Scanner.prototype.check = function(type, val) {
+  var t = this.peek();
+  if (t.type !== type) return false;
+  if (val !== undefined && t.val !== val) return false;
+  return true;
+};
+Scanner.prototype.eat = function(type, val) {
+  if (!this.check(type, val)) return false;
+  this.next();
+  return true;
+};
+
+// ─── Compiler ─────────────────────────────────────────────────────────────────
+
+function Compiler(src, name) {
+  this.sc = new Scanner(src);
+  this.chunk = new Chunk(name || '<main>');
+}
+
+Compiler.prototype.compile = function() {
+  this.compileBody(this.chunk);
+  this.chunk.emit(OP.RETURN);
+  return this.chunk;
+};
+
+Compiler.prototype.compileBody = function(chunk) {
+  this.skipNL();
+  while (true) {
+    var t = this.sc.peek();
+    if (t.type === T.EOF || t.type === T.DEDENT || t.type === T.RBRACK) break;
+    this.compileExpr(chunk);
+    var sep = this.sc.peek();
+    if (sep.type === T.NL || sep.type === T.COMMA) {
+      this.sc.next();
+      var next = this.sc.peek();
+      if (next.type !== T.EOF && next.type !== T.DEDENT && next.type !== T.RBRACK) {
+        chunk.emit(OP.POP);
+      }
+      this.skipNL();
+    } else {
+      break;
+    }
+  }
+};
+
+Compiler.prototype.skipNL = function() {
+  while (this.sc.check(T.NL)) this.sc.next();
+};
+
+Compiler.prototype.compileExpr = function(chunk) {
+  var t = this.sc.peek();
+  if (t.type === T.IDENT && this.sc.peek(1).type === T.COLON) {
+    var name = t.val;
+    this.sc.next(); // ident
+    this.sc.next(); // colon
+    this.compileGreedy(chunk);
+    chunk.emit(OP.STORE, chunk.addConst(name));
+    chunk.emit(OP.LOAD, chunk.addConst(name));
+    return;
+  }
+  this.compileChain(chunk);
+};
+
+Compiler.prototype.compileGreedy = function(chunk) {
+  this.compileChain(chunk);
+};
+
+Compiler.prototype.compileChain = function(chunk) {
+  this.compileAtom(chunk);
+
+  while (true) {
+    var t = this.sc.peek();
+
+    // Binary op
+    if (t.type === T.OP) {
+      var op = t.val;
+      this.sc.next();
+      this.compileAtom(chunk);
+      chunk.emit(OP.SEND, chunk.addConst(op), 1);
+      continue;
+    }
+
+    // Ternary ?
+    if (t.type === T.QMARK) {
+      this.sc.next();
+      this.compileAtom(chunk);
+      this.compileAtom(chunk);
+      chunk.emit(OP.SEND, chunk.addConst('?'), 2);
+      continue;
+    }
+
+    // Message: IDENT (not followed by COLON)
+    if (t.type === T.IDENT && this.sc.peek(1).type !== T.COLON) {
+      var name = t.val;
+      this.sc.next();
+      if (this.sc.peek().type === T.LBRACK || this.sc.peek().type === T.LPAREN) {
+        this.compileAtom(chunk);
+        chunk.emit(OP.SEND, chunk.addConst(name), 1);
+      } else {
+        chunk.emit(OP.SEND, chunk.addConst(name), 0);
+      }
+      continue;
+    }
+
+    // Bare [ after expression
+    if (t.type === T.LBRACK) {
+      this.compileBlockOrCell(chunk);
+      chunk.emit(OP.SEND, chunk.addConst('call'), 1);
+      continue;
+    }
+
+    // Bare (expr) after expression — call with it
+    if (t.type === T.LPAREN) {
+      this.compileAtom(chunk);
+      chunk.emit(OP.SEND, chunk.addConst('call'), 1);
+      continue;
+    }
+
+    // Bare num/str literal — call with it
+    if (t.type === T.NUM) {
+      this.sc.next();
+      chunk.emit(OP.PUSH_CONST, chunk.addConst(makeNum(t.val)));
+      chunk.emit(OP.SEND, chunk.addConst('call'), 1);
+      continue;
+    }
+    if (t.type === T.STR) {
+      this.sc.next();
+      chunk.emit(OP.PUSH_CONST, chunk.addConst(makeStr(t.val)));
+      chunk.emit(OP.SEND, chunk.addConst('call'), 1);
+      continue;
+    }
+
+    break;
+  }
+};
+
+Compiler.prototype.compileAtom = function(chunk) {
+  var t = this.sc.peek();
+
+  if (t.type === T.NUM) {
+    this.sc.next();
+    chunk.emit(OP.PUSH_CONST, chunk.addConst(makeNum(t.val)));
+    return;
+  }
+  if (t.type === T.STR) {
+    this.sc.next();
+    chunk.emit(OP.PUSH_CONST, chunk.addConst(makeStr(t.val)));
+    return;
+  }
+  if (t.type === T.AT) {
+    this.sc.next();
+    chunk.emit(OP.LOAD, chunk.addConst('@'));
+    return;
+  }
+  if (t.type === T.IDENT) {
+    this.sc.next();
+    chunk.emit(OP.LOAD, chunk.addConst(t.val));
+    return;
+  }
+  if (t.type === T.LBRACK) {
+    this.compileBlockOrCell(chunk);
+    return;
+  }
+  // Parenthesized expression: (expr)
+  if (t.type === T.LPAREN) {
+    this.sc.next(); // consume (
+    this.compileChain(chunk);
+    this.sc.eat(T.RPAREN); // consume )
+    return;
+  }
+  // Unexpected
+  chunk.emit(OP.PUSH_CONST, chunk.addConst(null));
+};
+
+Compiler.prototype.compileBlockOrCell = function(chunk) {
+  this.sc.next(); // consume [
+
+  if (this.sc.eat(T.RBRACK)) {
+    chunk.emit(OP.PUSH_CONST, chunk.addConst(null));
+    return;
+  }
+
+  var isBlock = this.looksLikeBlock();
+  if (isBlock) {
+    this.compileBlock(chunk);
+  } else {
+    this.compileCellLiteralBody(chunk);
+  }
+};
+
+Compiler.prototype.looksLikeBlock = function() {
+  if (this.sc.peek().type === T.PIPE) return true;
+  if (this.sc.peek().type === T.AT) return true;
+  var i = 0;
+  while (this.sc.peek(i).type === T.IDENT) {
+    i++;
+    if (this.sc.peek(i).type === T.PIPE) return true;
+    if (this.sc.peek(i).type === T.COMMA) { i++; continue; }
+    break;
+  }
+  var depth = 0, n = 0;
+  for (var j = 0; ; j++) {
+    var t = this.sc.peek(j);
+    if (t.type === T.EOF) break;
+    if (t.type === T.LBRACK) { depth++; n++; continue; }
+    if (t.type === T.RBRACK) { if (depth === 0) break; depth--; n++; continue; }
+    if (depth > 0) continue;
+    if (t.type === T.COMMA || t.type === T.NL) return false;
+    if (t.type === T.COLON) return false;
+    n++;
+  }
+  return n > 1;
+};
+
+Compiler.prototype.compileBlock = function(chunk) {
+  var params = [];
+
+  if (this.sc.peek().type === T.AT) {
+    params = ['@'];
+  } else if (this.sc.peek().type === T.PIPE) {
+    this.sc.next();
+  } else {
+    while (!this.sc.check(T.PIPE) && !this.sc.check(T.RBRACK) && !this.sc.check(T.EOF)) {
+      if (this.sc.check(T.IDENT)) {
+        params.push(this.sc.next().val);
+      }
+      this.sc.eat(T.COMMA);
+    }
+    if (this.sc.check(T.PIPE)) this.sc.next();
+  }
+
+  if (params.length > 1) {
+    this._compileCurried(chunk, params, 0);
+    this.sc.eat(T.RBRACK);
+    return;
+  }
+
+  var blockChunk = new Chunk('<block>');
+  chunk.chunks.push(blockChunk);
+  var blockIdx = chunk.chunks.length - 1;
+
+  if (params.length === 1) {
+    blockChunk._params = params;
+  } else {
+    blockChunk._params = [];
+  }
+
+  this.compileBody(blockChunk);
+  blockChunk.emit(OP.RETURN);
+
+  this.sc.eat(T.RBRACK);
+  chunk.emit(OP.MAKE_BLOCK, blockIdx);
+};
+
+Compiler.prototype._compileCurried = function(chunk, params, idx) {
+  if (idx === params.length - 1) {
+    var blockChunk = new Chunk('<block>');
+    blockChunk._params = [params[idx]];
+    chunk.chunks.push(blockChunk);
+    var blockIdx = chunk.chunks.length - 1;
+    this.compileBody(blockChunk);
+    blockChunk.emit(OP.RETURN);
+    chunk.emit(OP.MAKE_BLOCK, blockIdx);
+  } else {
+    var outerChunk = new Chunk('<block>');
+    outerChunk._params = [params[idx]];
+    chunk.chunks.push(outerChunk);
+    var outerIdx = chunk.chunks.length - 1;
+    this._compileCurried(outerChunk, params, idx + 1);
+    outerChunk.emit(OP.RETURN);
+    chunk.emit(OP.MAKE_BLOCK, outerIdx);
+  }
+};
+
+Compiler.prototype.compileCellLiteral = function(chunk) {
+  this.sc.next();
+  if (this.sc.eat(T.RBRACK)) {
+    chunk.emit(OP.PUSH_CONST, chunk.addConst(null));
+    return;
+  }
+  this.compileCellLiteralBody(chunk);
+};
+
+Compiler.prototype.compileCellLiteralBody = function(chunk) {
+  var count = 0;
+
+  while (!this.sc.check(T.RBRACK) && !this.sc.check(T.EOF)) {
+    this.skipNL();
+    if (this.sc.check(T.RBRACK)) break;
+
+    var t = this.sc.peek();
+    var t1 = this.sc.peek(1);
+
+    if ((t.type === T.IDENT || t.type === T.NUM || t.type === T.STR) && t1.type === T.COLON) {
+      if (t.type === T.IDENT || t.type === T.STR) {
+        chunk.emit(OP.PUSH_CONST, chunk.addConst(makeStr(t.val)));
+      } else {
+        chunk.emit(OP.PUSH_CONST, chunk.addConst(makeNum(t.val)));
+      }
+      this.sc.next(); // key
+      this.sc.next(); // colon
+      this.compileGreedy(chunk);
+      count++;
+    } else {
+      chunk.emit(OP.PUSH_CONST, chunk.addConst(null)); // positional
+      this.compileGreedy(chunk);
+      count++;
+    }
+
+    this.sc.eat(T.COMMA);
+    this.skipNL();
+  }
+
+  this.sc.eat(T.RBRACK);
+  chunk.emit(OP.MAKE_CELL, count);
+};
+
+function sproutCompile(src, name) {
+  return new Compiler(src, name).compile();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Sprout Full Runtime — vm.js (Frame + VM)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function Frame(chunk, self, closure) {
+  this.chunk = chunk;
+  this.ip = 0;
+  this.stack = [];
+  this.self = self;
+  this.closure = closure || null;
+}
+Frame.prototype.push = function(v) { this.stack.push(v); };
+Frame.prototype.pop = function() { return this.stack.pop() || EMPTY; };
+Frame.prototype.peek = function() { return this.stack[this.stack.length - 1] || EMPTY; };
+
+function VM(builtins) {
+  this.builtins = builtins;
+  this.globals = new Cell();
+  this._steps = 0;
+  this._maxSteps = 500000; // safety limit for browser
+}
+
+VM.prototype.run = function(chunk) {
+  var frame = new Frame(chunk, this.globals);
+  return this._exec(frame);
+};
+
+VM.prototype._exec = function(frame) {
+  var chunk = frame.chunk;
+  var code = chunk.code;
+  var constants = chunk.constants;
+  var chunks = chunk.chunks;
+
+  while (frame.ip < code.length) {
+    this._steps++;
+    if (this._steps > this._maxSteps) throw new Error('execution limit exceeded (possible infinite loop)');
+
+    var op = code[frame.ip++];
+
+    switch (op) {
+
+      case OP.PUSH_CONST: {
+        var val = constants[code[frame.ip++]];
+        frame.push(val === null ? EMPTY : val);
+        break;
+      }
+
+      case OP.PUSH_SELF: {
+        frame.push(frame.self);
+        break;
+      }
+
+      case OP.LOAD: {
+        var name = constants[code[frame.ip++]];
+        var val = this._lookup(name, frame);
+        frame.push(val !== undefined ? val : EMPTY);
+        break;
+      }
+
+      case OP.STORE: {
+        var name = constants[code[frame.ip++]];
+        var val = frame.peek();
+        frame.self.set(name, val);
+        break;
+      }
+
+      case OP.SEND: {
+        var msgIdx = code[frame.ip++];
+        var nargs = code[frame.ip++];
+        var msg = constants[msgIdx];
+
+        var args = [];
+        for (var i = 0; i < nargs; i++) args.unshift(frame.pop());
+        var receiver = frame.pop();
+
+        var result = this._send(msg, receiver, args, frame);
+        frame.push(result);
+        break;
+      }
+
+      case OP.MAKE_CELL: {
+        var n = code[frame.ip++];
+        var cell = new Cell();
+        var arrayIdx = 1;
+        var pairs = [];
+        for (var i = 0; i < n; i++) {
+          var val = frame.pop();
+          var key = frame.pop();
+          pairs.unshift([key, val]);
+        }
+        for (var i = 0; i < pairs.length; i++) {
+          var key = pairs[i][0], val = pairs[i][1];
+          if (key === EMPTY || key === null) {
+            cell.array[arrayIdx++] = val;
+          } else {
+            var k = unwrap(key);
+            if (typeof k === 'number') {
+              cell.array[k] = val;
+              if (k >= arrayIdx) arrayIdx = k + 1;
+            } else {
+              cell.fields.set(String(k), val);
+            }
+          }
+        }
+        // [x] = x semantics
+        if (cell.array.length === 2 && cell.fields.size === 0 && cell.array[1] !== undefined) {
+          frame.push(cell.array[1]);
+        } else {
+          frame.push(cell);
+        }
+        break;
+      }
+
+      case OP.MAKE_BLOCK: {
+        var blockIdx = code[frame.ip++];
+        var blockChunk = chunks[blockIdx];
+        var params = blockChunk._params || [];
+        var block = makeBlock(params, blockChunk, frame);
+        frame.push(block);
+        break;
+      }
+
+      case OP.JUMP: {
+        frame.ip = code[frame.ip];
+        break;
+      }
+
+      case OP.JUMP_FALSE: {
+        var target = code[frame.ip++];
+        var cond = frame.pop();
+        if (!cond.isTruthy()) frame.ip = target;
+        break;
+      }
+
+      case OP.RETURN: {
+        return frame.pop();
+      }
+
+      case OP.POP: {
+        frame.pop();
+        break;
+      }
+
+      default:
+        throw new Error('Unknown opcode ' + op + ' at ip ' + (frame.ip - 1));
+    }
+  }
+
+  return EMPTY;
+};
+
+VM.prototype._lookup = function(name, frame) {
+  var own = frame.self.get(name);
+  if (own !== undefined) return own;
+
+  var cl = frame.closure;
+  while (cl) {
+    var v = cl.self.get(name);
+    if (v !== undefined) return v;
+    cl = cl.closure;
+  }
+
+  var g = this.globals.get(name);
+  if (g !== undefined) return g;
+
+  return undefined;
+};
+
+VM.prototype._send = function(msg, receiver, args, callerFrame) {
+  if (msg === '?') {
+    var chosen = receiver.isTruthy() ? args[0] : args[1];
+    // If the chosen branch is a zero-arg block, call it (lazy evaluation)
+    if (chosen instanceof Cell && chosen.block && chosen.block.params.length === 0) {
+      return this._callBlock(chosen, [], callerFrame.self, callerFrame);
+    }
+    return chosen;
+  }
+
+  if (msg === 'call') {
+    var arg = args[0];
+    return this._call(receiver, arg, callerFrame);
+  }
+
+  // Check receiver's own fields for the message
+  var field = receiver.get(msg);
+  if (field !== undefined) {
+    if (field instanceof Cell && field.block) {
+      return this._callBlock(field, args, receiver, callerFrame);
+    }
+    if (args.length === 0) return field;
+  }
+
+  // Built-in methods
+  var builtin = this.builtins.get(msg);
+  if (builtin) {
+    return builtin(receiver, args, this, callerFrame);
+  }
+
+  // No field found — if receiver is a block, call with message as string
+  if (args.length === 0 && receiver.block) {
+    return this._callBlock(receiver, [makeStr(msg)], callerFrame.self, callerFrame);
+  }
+
+  return EMPTY;
+};
+
+VM.prototype._call = function(receiver, arg, callerFrame) {
+  if (receiver.block) {
+    return this._callBlock(receiver, [arg], callerFrame.self, callerFrame);
+  }
+
+  if (arg instanceof Cell) {
+    var yes = arg.get(1);
+    var no = arg.get(2);
+    if (receiver.isTruthy()) {
+      if (yes instanceof Cell && yes.block) {
+        return this._callBlock(yes, [], callerFrame.self, callerFrame);
+      }
+      return yes || EMPTY;
+    } else {
+      if (no instanceof Cell && no.block) {
+        return this._callBlock(no, [], callerFrame.self, callerFrame);
+      }
+      return no || EMPTY;
+    }
+  }
+
+  return EMPTY;
+};
+
+VM.prototype._callBlock = function(block, args, self, callerFrame) {
+  var params = block.block.params;
+  var chunk = block.block.chunk;
+  var closure = block.block.closure;
+
+  var blockSelf = new Cell();
+  blockSelf.parent = self;
+
+  for (var i = 0; i < params.length; i++) {
+    blockSelf.set(params[i], args[i] !== undefined ? args[i] : EMPTY);
+  }
+
+  var newFrame = new Frame(chunk, blockSelf, closure || callerFrame);
+  var result = this._exec(newFrame);
+  return result;
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Sprout Full Runtime — builtins.js (redirected for browser output)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+var outputLines = [];
+
+function num(c) {
+  if (c && c._num !== undefined) return c._num;
+  if (c && c.array && c.array[1] !== undefined && typeof c.array[1] === 'number') return c.array[1];
+  return NaN;
+}
+
+function str(c) {
+  if (c && c._str !== undefined) return c._str;
+  if (c && c.array && c.array[1] !== undefined && typeof c.array[1] === 'string') return c.array[1];
+  return display(c);
+}
+
+function display(c) {
+  if (c === EMPTY) return '[]';
+  if (c._num !== undefined) return String(c._num);
+  if (c._str !== undefined) return c._str;
+  var parts = [];
+  for (var i = 1; i < c.array.length; i++) {
+    if (c.array[i] !== undefined) parts.push(display(c.array[i]));
+  }
+  for (var entry of c.fields) {
+    var k = entry[0], v = entry[1];
+    if (!k.startsWith('#')) parts.push(k + ' : ' + display(v));
+  }
+  if (parts.length === 0) return '[]';
+  return '[' + parts.join(', ') + ']';
+}
+
+function makeBuiltins() {
+  var B = new Map();
+
+  function def(name, fn) { B.set(name, fn); }
+
+  // ── Arithmetic ──
+  def('+', function(r, a) {
+    if (r._str !== undefined || (a[0] && a[0]._str !== undefined)) {
+      return makeStr(str(r) + str(a[0]));
+    }
+    return makeNum(num(r) + num(a[0]));
+  });
+  def('-', function(r, a) { return makeNum(num(r) - num(a[0])); });
+  def('*', function(r, a) { return makeNum(num(r) * num(a[0])); });
+  def('/', function(r, a) { return makeNum(num(r) / num(a[0])); });
+  def('%', function(r, a) { return makeNum(num(r) % num(a[0])); });
+
+  // ── Comparison ──
+  function boolCell(b) { return b ? makeNum(1) : EMPTY; }
+
+  def('=',  function(r, a) { return boolCell(sproutEq(r, a[0])); });
+  def('!=', function(r, a) { return boolCell(!sproutEq(r, a[0])); });
+  def('>',  function(r, a) { return boolCell(num(r) >  num(a[0])); });
+  def('<',  function(r, a) { return boolCell(num(r) <  num(a[0])); });
+  def('>=', function(r, a) { return boolCell(num(r) >= num(a[0])); });
+  def('<=', function(r, a) { return boolCell(num(r) <= num(a[0])); });
+
+  // ── Logic ──
+  def('and', function(r, a) { return r.isTruthy() ? a[0] : EMPTY; });
+  def('or',  function(r, a) { return r.isTruthy() ? r : a[0]; });
+  def('not', function(r)    { return r.isTruthy() ? EMPTY : makeNum(1); });
+
+  // ── String ──
+  def('reverse', function(r) { return makeStr(str(r).split('').reverse().join('')); });
+  def('upper',   function(r) { return makeStr(str(r).toUpperCase()); });
+  def('lower',   function(r) { return makeStr(str(r).toLowerCase()); });
+  def('length',  function(r) {
+    if (r._str !== undefined) return makeNum(r._str.length);
+    return makeNum(r.length());
+  });
+  def('trim',   function(r) { return makeStr(str(r).trim()); });
+  def('split',  function(r, a) {
+    var parts = str(r).split(str(a[0]));
+    var c = new Cell();
+    parts.forEach(function(p, i) { c.array[i + 1] = makeStr(p); });
+    return c;
+  });
+  def('join', function(r, a) {
+    var parts = [];
+    for (var i = 1; i < r.array.length; i++) {
+      if (r.array[i] !== undefined) parts.push(str(r.array[i]));
+    }
+    return makeStr(parts.join(str(a[0])));
+  });
+  def('concat', function(r, a) { return makeStr(str(r) + str(a[0])); });
+
+  // ── I/O (redirected to output panel) ──
+  def('say',   function(r) { outputLines.push(display(r)); return r; });
+  def('print', function(r) { outputLines.push(display(r)); return r; });
+  def('show',  function(r) { outputLines.push(display(r)); return r; });
+
+  // ── Cell / collection ──
+  def('count', function(r) {
+    var n = 0;
+    for (var i = 1; i < r.array.length; i++) {
+      if (r.array[i] !== undefined) n++;
+    }
+    for (var entry of r.fields) {
+      if (!entry[0].startsWith('#')) n++;
+    }
+    return makeNum(n);
+  });
+
+  def('at', function(r, a) {
+    var key = unwrap(a[0]);
+    var v = r.get(typeof key === 'number' ? key : String(key));
+    return v !== undefined ? v : EMPTY;
+  });
+
+  def('set', function(r, a) {
+    var c = r.clone();
+    var key = unwrap(a[0]);
+    c.set(typeof key === 'number' ? key : String(key), a[1]);
+    return c;
+  });
+
+  def('push', function(r, a) {
+    var c = r.clone();
+    c.array[c.array.length] = a[0];
+    return c;
+  });
+
+  def('each', function(r, a, vm, callerFrame) {
+    var block = a[0];
+    for (var i = 1; i < r.array.length; i++) {
+      if (r.array[i] !== undefined) {
+        vm._callBlock(block, [r.array[i]], callerFrame.self, callerFrame);
+      }
+    }
+    for (var entry of r.fields) {
+      if (!entry[0].startsWith('#')) {
+        vm._callBlock(block, [entry[1]], callerFrame.self, callerFrame);
+      }
+    }
+    return r;
+  });
+
+  def('map', function(r, a, vm, callerFrame) {
+    var block = a[0];
+    var result = new Cell();
+    var idx = 1;
+    for (var i = 1; i < r.array.length; i++) {
+      if (r.array[i] !== undefined) {
+        result.array[idx++] = vm._callBlock(block, [r.array[i]], callerFrame.self, callerFrame);
+      }
+    }
+    return result;
+  });
+
+  def('filter', function(r, a, vm, callerFrame) {
+    var block = a[0];
+    var result = new Cell();
+    var idx = 1;
+    for (var i = 1; i < r.array.length; i++) {
+      var v = r.array[i];
+      if (v !== undefined) {
+        var keep = vm._callBlock(block, [v], callerFrame.self, callerFrame);
+        if (keep.isTruthy()) result.array[idx++] = v;
+      }
+    }
+    return result;
+  });
+
+  def('reduce', function(r, a, vm, callerFrame) {
+    var block = a[0];
+    var acc = a[1] || EMPTY;
+    for (var i = 1; i < r.array.length; i++) {
+      if (r.array[i] !== undefined) {
+        var step = vm._callBlock(block, [acc], callerFrame.self, callerFrame);
+        if (step instanceof Cell && step.block) {
+          step = vm._callBlock(step, [r.array[i]], callerFrame.self, callerFrame);
+        }
+        acc = step;
+      }
+    }
+    return acc;
+  });
+
+  def('fold', function(r, a, vm, callerFrame) {
+    // fold is an alias for reduce: list fold init [acc, x | ...]
+    // But in the message-send model, fold gets 1 arg (the init value or block)
+    // So we handle: receiver=list, a[0]=init (passed via bare literal after 'fold')
+    // The block comes as a separate call. We need to handle fold differently.
+    // Actually fold with 2 args won't work in current syntax. Make it work as:
+    // list fold [acc, x | ...] with initial value being first element
+    var block = a[0];
+    var acc = EMPTY;
+    var started = false;
+    for (var i = 1; i < r.array.length; i++) {
+      if (r.array[i] !== undefined) {
+        if (!started) {
+          acc = r.array[i];
+          started = true;
+          continue;
+        }
+        var step = vm._callBlock(block, [acc], callerFrame.self, callerFrame);
+        if (step instanceof Cell && step.block) {
+          step = vm._callBlock(step, [r.array[i]], callerFrame.self, callerFrame);
+        }
+        acc = step;
+      }
+    }
+    return acc;
+  });
+
+  def('first', function(r) { return r.array[1] !== undefined ? r.array[1] : EMPTY; });
+  def('last',  function(r) {
+    var len = r.array.length - 1;
+    return len >= 1 ? r.array[len] : EMPTY;
+  });
+  def('rest',  function(r) {
+    var c = new Cell();
+    for (var i = 2; i < r.array.length; i++) c.array[i - 1] = r.array[i];
+    return c;
+  });
+
+  // ── Mixin ──
+  def('mixin', function(r, a) {
+    var src = a[0];
+    var c = r.clone();
+    if (src instanceof Cell) {
+      for (var i = 1; i < src.array.length; i++) {
+        if (src.array[i] !== undefined) c.array[i] = src.array[i];
+      }
+      for (var entry of src.fields) {
+        if (!entry[0].startsWith('#')) c.fields.set(entry[0], entry[1]);
+      }
+    }
+    return c;
+  });
+
+  // ── Type checks ──
+  def('isNum',    function(r) { return r._num !== undefined ? makeNum(1) : EMPTY; });
+  def('isStr',    function(r) { return r._str !== undefined ? makeNum(1) : EMPTY; });
+  def('isBlock',  function(r) { return r.block ? makeNum(1) : EMPTY; });
+  def('isEmpty',  function(r) { return r === EMPTY ? makeNum(1) : EMPTY; });
+  def('isTruthy', function(r) { return r.isTruthy() ? makeNum(1) : EMPTY; });
+
+  // ── Number utils ──
+  def('abs',   function(r) { return makeNum(Math.abs(num(r))); });
+  def('floor', function(r) { return makeNum(Math.floor(num(r))); });
+  def('ceil',  function(r) { return makeNum(Math.ceil(num(r))); });
+  def('round', function(r) { return makeNum(Math.round(num(r))); });
+  def('sqrt',  function(r) { return makeNum(Math.sqrt(num(r))); });
+  def('neg',   function(r) { return makeNum(-num(r)); });
+
+  // ── Repetition ──
+  def('times', function(r, a, vm, callerFrame) {
+    var block = a[0];
+    var n = Math.floor(num(r));
+    for (var i = 1; i <= n; i++) {
+      vm._callBlock(block, [makeNum(i)], callerFrame.self, callerFrame);
+    }
+    return r;
+  });
+
+  // ── String conversion ──
+  def('asStr', function(r) { return makeStr(display(r)); });
+  def('asNum', function(r) { return makeNum(parseFloat(str(r))); });
+
+  // ── Range ──
+  def('to', function(r, a) {
+    var start = Math.floor(num(r));
+    var end = Math.floor(num(a[0]));
+    var c = new Cell();
+    var idx = 1;
+    for (var i = start; i <= end; i++) {
+      c.array[idx++] = makeNum(i);
+    }
+    return c;
+  });
+
+  return B;
+}
+
+function sproutEq(a, b) {
+  if (a === b) return true;
+  if (a === EMPTY && b === EMPTY) return true;
+  if (a._num !== undefined && b._num !== undefined) return a._num === b._num;
+  if (a._str !== undefined && b._str !== undefined) return a._str === b._str;
+  return false;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Top-level run() function
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function run(src) {
+  var chunk = sproutCompile(src, '<input>');
+  var builtins = makeBuiltins();
+  var vm = new VM(builtins);
+  return vm.run(chunk);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Examples (actual Sprout source code)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+var EXAMPLES = {
+  hello: '-- Hello World in Sprout\nname : "Sprout"\n("Hello, " + name) say',
+
+  math: '-- Math operations\na : 42\nb : 13\n(a + b) say\n(a * b) say\n(a > b) say',
+
+  loops: '-- Loops: print 1 to 10 using times\n10 times [i | i say]',
+
+  lists: '-- List operations\ncolors : ["red", "green", "blue", "yellow"]\ncolors each [c | c say]\ndoubled : [1, 2, 3, 4, 5] map [n | n * 2]\ndoubled say',
+
+  blocks: '-- Blocks (functions) and currying\nadd : [a, b | a + b]\nadd 3 4 say\ninc : add 1\ninc 41 say',
+
+  fizzbuzz: '-- FizzBuzz\n20 times [i | (i % 15 = 0) ? "FizzBuzz" ((i % 3 = 0) ? "Fizz" ((i % 5 = 0) ? "Buzz" i)) say]',
+
+  fibonacci: '-- Fibonacci sequence (recursive)\nfib : [n | (n < 2) ? n [| (fib (n - 1)) + (fib (n - 2))]]\n15 times [i | fib (i - 1) say]',
+
+  filter: '-- Filter & Fold\nnums : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]\nevens : nums filter [n | n % 2 = 0]\nevens say\ntotal : nums fold [acc, x | acc + x]\ntotal say',
+
+  errors: '-- Error handling with or\nresult : [] or ["default"]\nresult say\n[] isEmpty say\n42 isEmpty say\n42 isTruthy say',
+};
+
+function loadExample(name) {
+  document.getElementById('code').value = EXAMPLES[name];
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Run button handler
+// ═══════════════════════════════════════════════════════════════════════════════
+
+var outputEl = document.getElementById('output');
+
+document.getElementById('run-btn').addEventListener('click', function() {
+  var code = document.getElementById('code').value;
+  outputLines = [];
+  outputEl.innerHTML = '';
+  var start = performance.now();
+  try {
+    run(code);
+    var elapsed = (performance.now() - start).toFixed(1);
+    document.getElementById('time').textContent = elapsed + 'ms';
+    outputEl.innerHTML = outputLines.map(function(line) {
+      return '<div>' + line.replace(/</g, '&lt;') + '</div>';
+    }).join('');
+    if (outputLines.length === 0) outputEl.innerHTML = '<div style="color:var(--dim)">(no output -- use say to print)</div>';
+  } catch(e) {
+    outputEl.innerHTML = '<div class="error">Error: ' + e.message.replace(/</g, '&lt;') + '</div>';
+    document.getElementById('time').textContent = '';
+  }
+});
+
+document.getElementById('clear-btn').addEventListener('click', function() {
+  outputEl.innerHTML = '';
+  document.getElementById('time').textContent = '';
+});
+
+// Ctrl+Enter to run
+document.getElementById('code').addEventListener('keydown', function(e) {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    e.preventDefault();
+    document.getElementById('run-btn').click();
+  }
+  // Tab inserts 2 spaces
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    var start = this.selectionStart;
+    this.value = this.value.substring(0, start) + '  ' + this.value.substring(this.selectionEnd);
+    this.selectionStart = this.selectionEnd = start + 2;
+  }
+});
+</script>
+</body>
+</html>

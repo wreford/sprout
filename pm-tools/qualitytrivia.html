@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Quality Program Trivia — Construction QA/QC</title>
+<style>
+:root{--bg:#0f0f10;--bg2:#1a1a1c;--border:#2a2a2d;--text:#f0f0f0;--dim:#6e6e73;--accent:#ff6b35;--green:#4ade80}
+*{box-sizing:border-box;margin:0;padding:0}body{background:var(--bg);color:var(--text);font-family:-apple-system,system-ui,sans-serif;min-height:100dvh;padding:12px}
+a{color:var(--accent);text-decoration:none}.home{display:inline-block;margin-bottom:12px;font-size:.95rem}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:12px;max-width:700px;margin-left:auto;margin-right:auto}
+h1{font-size:1.4rem;margin-bottom:4px}h2{font-size:1.1rem;color:var(--dim);font-weight:400;margin-bottom:16px}
+.stats{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px}.stat{text-align:center}.stat b{display:block;font-size:1.5rem}.stat span{font-size:.75rem;color:var(--dim)}
+button{background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:10px 16px;cursor:pointer;font-size:.95rem;transition:.15s}
+button:hover{border-color:var(--accent)}button.sel{border-color:var(--accent);background:#ff6b3518}
+.opt{display:block;width:100%;text-align:left;margin-bottom:8px;padding:12px 16px}.opt.correct{border-color:var(--green);background:#4ade8018;color:var(--green)}.opt.wrong{border-color:#ef4444;background:#ef444418;color:#ef4444}.opt:disabled{cursor:default}
+.ref{margin-top:12px;padding:10px;background:var(--bg);border-radius:8px;font-size:.85rem;color:var(--dim);border-left:3px solid var(--accent)}
+.bar{height:6px;background:var(--border);border-radius:3px;margin-bottom:12px;overflow:hidden}.bar div{height:100%;background:var(--accent);border-radius:3px;transition:width .3s}
+.timer{font-size:1.8rem;font-weight:700;text-align:center;margin-bottom:8px}.timer.warn{color:#ef4444}
+.cats{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}.cat{font-size:.75rem;padding:4px 10px;border-radius:20px;border:1px solid var(--border);cursor:pointer}.cat.on{border-color:var(--accent);background:#ff6b3518}
+.diff{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}.diff.easy{background:var(--green)}.diff.med{background:#facc15}.diff.hard{background:#ef4444}
+.hidden{display:none}#wrap{max-width:700px;margin:0 auto}
+</style>
+</head>
+<body>
+<div id="wrap"><a href="../index.html" class="home">&larr; home</a>
+<div class="card"><h1>Quality Program Trivia</h1><h2>Construction QA/QC &amp; Standards</h2>
+<div class="stats"><div class="stat"><b id="hs">0</b><span>High Score</span></div><div class="stat"><b id="tp">0</b><span>Total Played</span></div><div class="stat"><b id="pct">0%</b><span>Accuracy</span></div></div>
+<div id="setup">
+<p style="margin-bottom:8px;font-size:.9rem;color:var(--dim)">Categories:</p>
+<div class="cats" id="cats"></div>
+<p style="margin:12px 0 8px;font-size:.9rem;color:var(--dim)">Mode:</p>
+<div style="display:flex;gap:8px;margin-bottom:16px"><button id="btnTimed" class="sel" onclick="setMode(true)">Timed (30s)</button><button id="btnPractice" onclick="setMode(false)">Practice</button></div>
+<button style="width:100%;background:var(--accent);color:#000;font-weight:600;border-color:var(--accent);padding:14px" onclick="startGame()">Start Quiz</button>
+</div>
+<div id="game" class="hidden">
+<div class="bar"><div id="prog"></div></div>
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><span id="qnum" style="font-size:.85rem;color:var(--dim)"></span><span id="streak" style="font-size:.85rem">🔥 0</span></div>
+<div id="timerWrap" class="timer"></div>
+<p id="qlabel" style="margin-bottom:4px;font-size:.75rem"></p>
+<p id="qtxt" style="font-size:1.05rem;margin-bottom:16px;line-height:1.5"></p>
+<div id="opts"></div>
+<div id="refBox" class="ref hidden"></div>
+<button id="nxt" class="hidden" style="width:100%;margin-top:10px;border-color:var(--accent);color:var(--accent)" onclick="nextQ()">Next Question &rarr;</button>
+</div>
+<div id="results" class="hidden">
+<h2 style="color:var(--text);font-weight:600;font-size:1.2rem;text-align:center;margin-bottom:12px">Quiz Complete!</h2>
+<div class="stats" style="justify-content:center"><div class="stat"><b id="rScore" style="color:var(--green)">0</b><span>Score</span></div><div class="stat"><b id="rTotal">0</b><span>Questions</span></div><div class="stat"><b id="rStreak">0</b><span>Best Streak</span></div></div>
+<button style="width:100%;border-color:var(--accent);color:var(--accent);margin-top:8px" onclick="resetUI()">Play Again</button>
+</div></div></div>
+<script>
+const CATS=["ISO 9001","Nuclear Quality (N299/N286/NQA-1)","Welding Standards","Audit & Inspection","General Quality Concepts"];
+const Q=[
+{q:"In ISO 9001:2015, which clause covers 'Context of the Organization'?",o:["Clause 4","Clause 5","Clause 6","Clause 7"],a:0,ref:"ISO 9001:2015 Clause 4",c:"ISO 9001",d:"easy"},
+{q:"What does NCR stand for?",o:["Non-Compliance Record","Non-Conformance Report","National Code Requirement","New Change Request"],a:1,ref:"General QMS terminology",c:"General Quality Concepts",d:"easy"},
+{q:"Under CSA N299, what are the four quality categories?",o:["Cat A, B, C, D","Cat 1, 2, 3, 4 based on nuclear safety significance","Level I, II, III, IV","Grade 1, 2, 3, 4"],a:1,ref:"CSA N299 Series",c:"Nuclear Quality (N299/N286/NQA-1)",d:"med"},
+{q:"What is a hold point in an ITP?",o:["A pause for coffee break","A point where work cannot proceed until inspection/verification is complete","A financial checkpoint","A design review stage"],a:1,ref:"ITP / Inspection Test Plan practice",c:"Audit & Inspection",d:"easy"},
+{q:"ISO 9001:2015 requires a quality manual. True or false?",o:["True — it is mandatory","False — no longer mandatory in the 2015 revision","Only for large organizations","Only for construction"],a:1,ref:"ISO 9001:2015 (removed from Clause 7.5)",c:"ISO 9001",d:"med"},
+{q:"What is the PDCA cycle?",o:["Plan-Do-Check-Act","Prepare-Deliver-Control-Adjust","Plan-Design-Create-Audit","Process-Document-Check-Approve"],a:0,ref:"ISO 9001:2015 Introduction 0.3.2",c:"General Quality Concepts",d:"easy"},
+{q:"Under CSA N286, who is ultimately responsible for nuclear safety?",o:["The contractor","The CNSC","The licensee","The constructor"],a:2,ref:"CSA N286-12 Clause 3",c:"Nuclear Quality (N299/N286/NQA-1)",d:"med"},
+{q:"What CWB standard governs company certification for welding?",o:["CSA W59","CSA W47.1","CSA W178.2","CWB W55"],a:1,ref:"CSA W47.1",c:"Welding Standards",d:"easy"},
+{q:"A witness point differs from a hold point because:",o:["It costs more","Work may proceed if the witness does not attend","It requires government approval","It applies only to welding"],a:1,ref:"ITP / Inspection practice",c:"Audit & Inspection",d:"easy"},
+{q:"ISO 9001:2015 Clause 7.1.5 covers:",o:["Human resources","Infrastructure","Monitoring and measuring resources (calibration)","Communication"],a:2,ref:"ISO 9001:2015 Clause 7.1.5",c:"ISO 9001",d:"med"},
+{q:"What does CAR stand for in quality management?",o:["Corrective Action Request","Construction Audit Report","Change Approval Record","Compliance Assessment Review"],a:0,ref:"General QMS terminology",c:"General Quality Concepts",d:"easy"},
+{q:"ISO 19011 provides guidelines for:",o:["Environmental testing","Auditing management systems","Product design","Supply chain management"],a:1,ref:"ISO 19011:2018",c:"Audit & Inspection",d:"easy"},
+{q:"In ISO 9001:2015, risk-based thinking replaces which concept?",o:["Corrective action","Preventive action as a standalone requirement","Management review","Document control"],a:1,ref:"ISO 9001:2015 Introduction 0.3.3",c:"ISO 9001",d:"med"},
+{q:"What is the '5 Why' technique used for?",o:["Planning meetings","Root cause analysis","Scheduling","Budget estimation"],a:1,ref:"Root Cause Analysis tools",c:"General Quality Concepts",d:"easy"},
+{q:"A fishbone diagram is also known as:",o:["Pareto chart","Ishikawa or cause-and-effect diagram","Gantt chart","Flow diagram"],a:1,ref:"Root Cause Analysis tools",c:"General Quality Concepts",d:"easy"},
+{q:"Under ASME NQA-1, which requirement covers document control?",o:["Requirement 3","Requirement 6","Requirement 10","Requirement 17"],a:1,ref:"ASME NQA-1 Requirement 6",c:"Nuclear Quality (N299/N286/NQA-1)",d:"hard"},
+{q:"CSA W178.2 covers:",o:["Welding design","Welding inspection organizations","Welding consumables","Welding safety"],a:1,ref:"CSA W178.2",c:"Welding Standards",d:"med"},
+{q:"ISO 14001 is the standard for:",o:["Quality management","Environmental management systems","Occupational health and safety","Information security"],a:1,ref:"ISO 14001:2015",c:"General Quality Concepts",d:"easy"},
+{q:"ISO 45001 replaced which standard?",o:["ISO 9001","OHSAS 18001","ISO 14001","ISO 27001"],a:1,ref:"ISO 45001:2018",c:"General Quality Concepts",d:"med"},
+{q:"In ISO 9001:2015, Clause 5 covers:",o:["Planning","Leadership","Support","Operation"],a:1,ref:"ISO 9001:2015 Clause 5",c:"ISO 9001",d:"easy"},
+{q:"What is a 'process approach' in ISO 9001?",o:["Using only one process","Managing activities and resources as interrelated processes to achieve results","A software methodology","A hiring strategy"],a:1,ref:"ISO 9001:2015 Introduction 0.3",c:"ISO 9001",d:"med"},
+{q:"Under CSA N299, Cat 1 items are those with:",o:["Lowest safety significance","Highest nuclear safety significance","Medium importance","No safety relevance"],a:1,ref:"CSA N299.1",c:"Nuclear Quality (N299/N286/NQA-1)",d:"med"},
+{q:"What does ITP stand for?",o:["Internal Testing Protocol","Inspection Test Plan","Integrated Training Program","Independent Technical Procedure"],a:1,ref:"QA/QC practice",c:"Audit & Inspection",d:"easy"},
+{q:"In an ITP, what does 'R' (review point) mean?",o:["Results are rejected","The inspector reviews documentation but does not need to be present","The work must stop for review","Rework is required"],a:1,ref:"ITP conventions",c:"Audit & Inspection",d:"med"},
+{q:"ISO 9001:2015 Clause 8.5.2 covers:",o:["Design and development","Identification and traceability","Monitoring and measurement","Customer satisfaction"],a:1,ref:"ISO 9001:2015 Clause 8.5.2",c:"ISO 9001",d:"hard"},
+{q:"What is the purpose of management review in ISO 9001?",o:["Replace audits","Ensure continuing suitability, adequacy, effectiveness of the QMS","Fire underperformers","Approve purchase orders"],a:1,ref:"ISO 9001:2015 Clause 9.3",c:"ISO 9001",d:"easy"},
+{q:"Calibration ensures that measuring equipment:",o:["Looks clean","Provides results traceable to measurement standards","Is expensive","Is stored properly"],a:1,ref:"ISO 9001:2015 Clause 7.1.5.2",c:"General Quality Concepts",d:"easy"},
+{q:"Under NQA-1, how many basic requirements are there?",o:["10","14","18","22"],a:2,ref:"ASME NQA-1",c:"Nuclear Quality (N299/N286/NQA-1)",d:"hard"},
+{q:"CSA W59 is the standard for:",o:["Welded steel construction (general requirements)","Aluminum welding","Welding inspection","Welder qualification"],a:0,ref:"CSA W59",c:"Welding Standards",d:"med"},
+{q:"A CWB-certified company must be re-audited at what interval?",o:["Every year","Every 2 years","Every 3 years","Every 5 years"],a:1,ref:"CSA W47.1 certification cycle",c:"Welding Standards",d:"med"},
+{q:"What type of audit is conducted by the organization on itself?",o:["External audit","Third-party audit","Internal audit (first-party)","Surveillance audit"],a:2,ref:"ISO 19011:2018",c:"Audit & Inspection",d:"easy"},
+{q:"A second-party audit is conducted by:",o:["The organization itself","A customer or interested party","An independent body","A government regulator"],a:1,ref:"ISO 19011:2018",c:"Audit & Inspection",d:"med"},
+{q:"ISO 9001 Clause 10 covers:",o:["Support","Operation","Performance evaluation","Improvement"],a:3,ref:"ISO 9001:2015 Clause 10",c:"ISO 9001",d:"easy"},
+{q:"What is 'documented information' in ISO 9001:2015?",o:["Only paper records","The term replacing 'documents' and 'records' from earlier versions","Meeting minutes only","Only digital files"],a:1,ref:"ISO 9001:2015 Clause 7.5",c:"ISO 9001",d:"med"},
+{q:"Under CSA N286, management system documentation must demonstrate:",o:["Only cost tracking","How safety is achieved and maintained","Marketing strategy","Staff birthdays"],a:1,ref:"CSA N286-12",c:"Nuclear Quality (N299/N286/NQA-1)",d:"easy"},
+{q:"OPSS stands for:",o:["Ontario Project Safety Standards","Ontario Provincial Standard Specifications","Ontario Professional Standards System","Ontario Public Safety Specifications"],a:1,ref:"OPSS (MTO)",c:"General Quality Concepts",d:"easy"},
+{q:"In a quality management system, 'traceability' means:",o:["Tracking employee attendance","Ability to trace the history, application, or location of an item","Finding lost tools","GPS tracking"],a:1,ref:"ISO 9000:2015 Clause 3.6.13",c:"General Quality Concepts",d:"easy"},
+{q:"NQA-1 Requirement 1 covers:",o:["Procurement","Organization","Design control","Corrective action"],a:1,ref:"ASME NQA-1 Req. 1",c:"Nuclear Quality (N299/N286/NQA-1)",d:"hard"},
+{q:"A quality policy must be communicated and understood within the organization per:",o:["ISO 14001 only","ISO 9001 Clause 5.2","ISO 45001 only","None of the above"],a:1,ref:"ISO 9001:2015 Clause 5.2.2",c:"ISO 9001",d:"med"},
+{q:"What is the purpose of a corrective action?",o:["To blame someone","To eliminate the cause of a non-conformity and prevent recurrence","To write more reports","To increase costs"],a:1,ref:"ISO 9001:2015 Clause 10.2",c:"General Quality Concepts",d:"easy"},
+{q:"Quality objectives must be measurable and consistent with the quality policy per:",o:["Clause 4","Clause 5","Clause 6.2","Clause 9"],a:2,ref:"ISO 9001:2015 Clause 6.2",c:"ISO 9001",d:"med"},
+{q:"The CNSC requires nuclear facilities to have a management system per:",o:["ISO 9001 only","CSA N286","OHSAS 18001","No specific standard"],a:1,ref:"CNSC REGDOC-2.1.1 / CSA N286",c:"Nuclear Quality (N299/N286/NQA-1)",d:"med"},
+{q:"A Pareto chart is based on what principle?",o:["50/50 rule","80/20 rule (vital few vs trivial many)","100% inspection","Zero defects"],a:1,ref:"Quality tools",c:"General Quality Concepts",d:"easy"},
+{q:"Under CSA W47.1, welding procedures must be qualified by:",o:["Anyone","Destructive testing to prove the procedure produces acceptable welds","Visual inspection only","The client's preference"],a:1,ref:"CSA W47.1",c:"Welding Standards",d:"med"},
+{q:"What does WPS stand for?",o:["Workplace Safety Plan","Welding Procedure Specification","Work Planning System","Weld Process Sheet"],a:1,ref:"Welding terminology",c:"Welding Standards",d:"easy"},
+{q:"A PQR (Procedure Qualification Record) documents:",o:["Employee qualifications","Results of welding procedure qualification tests","Project quality ratings","Purchase quotation records"],a:1,ref:"Welding terminology",c:"Welding Standards",d:"med"},
+{q:"ISO 9001 Clause 8.4 covers:",o:["Design and development","Control of externally provided processes, products, and services","Monitoring and measurement","Management review"],a:1,ref:"ISO 9001:2015 Clause 8.4",c:"ISO 9001",d:"hard"},
+{q:"A surveillance audit is typically:",o:["A full recertification audit","A focused periodic check between certification cycles","An internal audit","A customer audit"],a:1,ref:"ISO 17021 / certification practice",c:"Audit & Inspection",d:"med"},
+{q:"Under ISO 19011, auditor competence includes:",o:["Only technical knowledge","Personal behaviour, knowledge, and skills appropriate to the audit","Only a university degree","Only years of experience"],a:1,ref:"ISO 19011:2018 Clause 7",c:"Audit & Inspection",d:"easy"},
+{q:"NQA-1 Requirement 15 covers:",o:["Nonconforming items","Control of nonconforming items","Corrective action","Audits"],a:1,ref:"ASME NQA-1 Req. 15",c:"Nuclear Quality (N299/N286/NQA-1)",d:"hard"},
+{q:"What is a 'graded approach' in nuclear quality?",o:["A marking system for students","Applying QA controls proportional to the item's importance to safety","Using colour-coded folders","A construction slope technique"],a:1,ref:"CSA N299 / NQA-1",c:"Nuclear Quality (N299/N286/NQA-1)",d:"med"},
+{q:"ISO 9001 Clause 9.1 requires the organization to monitor:",o:["Only customer complaints","Customer satisfaction, plus process and product performance","Only financial data","Employee morale only"],a:1,ref:"ISO 9001:2015 Clause 9.1",c:"ISO 9001",d:"med"},
+{q:"In document control, a 'controlled copy' means:",o:["A copy that is locked away","A copy that is maintained current and updated when revisions occur","A photocopy","An archived copy"],a:1,ref:"ISO 9001:2015 Clause 7.5.3",c:"General Quality Concepts",d:"easy"},
+{q:"What is the difference between verification and validation?",o:["They are identical","Verification checks conformance to specs; validation confirms the product meets intended use","Verification is for documents only","Validation is for audits only"],a:1,ref:"ISO 9000:2015 Clause 3.8",c:"General Quality Concepts",d:"med"},
+{q:"NQA-1 Requirement 7 covers:",o:["Procurement document control","Control of purchased items and services","Design control","Quality planning"],a:1,ref:"ASME NQA-1 Req. 7",c:"Nuclear Quality (N299/N286/NQA-1)",d:"hard"},
+{q:"Welder qualification tests under CWB prove:",o:["The welder's speed","The welder's ability to produce sound welds following a specific WPS","The welder's education","The welder's management skills"],a:1,ref:"CSA W47.1 / W59",c:"Welding Standards",d:"easy"},
+{q:"What does NDE stand for in quality inspection?",o:["Non-Destructive Evaluation","New Design Engineering","Nuclear Design Estimate","National Defence Examination"],a:0,ref:"Inspection terminology",c:"Audit & Inspection",d:"easy"},
+{q:"Common NDE methods include:",o:["Visual, UT, RT, MT, PT","Tasting, smelling, listening","Surveys and interviews","Financial analysis"],a:0,ref:"NDE/NDT methods",c:"Audit & Inspection",d:"easy"},
+{q:"ISO 9001:2015 Clause 6 covers:",o:["Context","Leadership","Planning","Support"],a:2,ref:"ISO 9001:2015 Clause 6",c:"ISO 9001",d:"easy"},
+{q:"A quality audit finding of 'major non-conformance' typically means:",o:["A minor paperwork error","A systemic failure or absence of a required process","A positive observation","An opportunity for improvement"],a:1,ref:"ISO 19011 / audit practice",c:"Audit & Inspection",d:"med"},
+{q:"CSA N299.2 applies to quality category:",o:["Cat 1","Cat 2","Cat 3","Cat 4"],a:1,ref:"CSA N299.2",c:"Nuclear Quality (N299/N286/NQA-1)",d:"hard"},
+{q:"Under ISO 9001, 'interested parties' include:",o:["Only employees","Customers, regulators, suppliers, and others affected by the QMS","Only shareholders","Only the CEO"],a:1,ref:"ISO 9001:2015 Clause 4.2",c:"ISO 9001",d:"easy"},
+{q:"A control chart is used to:",o:["Control employees","Monitor process stability over time","Track attendance","Schedule meetings"],a:1,ref:"Statistical quality tools",c:"General Quality Concepts",d:"med"},
+];
+let timed=true,cats=new Set(CATS),pool=[],qi=0,score=0,streak=0,best=0,answered=false,timer=null,timeLeft=30;
+let LS=JSON.parse(localStorage.getItem("qtrivia")||'{"hs":0,"tp":0,"tc":0}');
+function saveLS(){localStorage.setItem("qtrivia",JSON.stringify(LS))}
+function updStats(){document.getElementById("hs").textContent=LS.hs;document.getElementById("tp").textContent=LS.tp;document.getElementById("pct").textContent=LS.tp?Math.round(LS.tc/LS.tp*100)+"%":"0%"}
+updStats();
+const cDiv=document.getElementById("cats");CATS.forEach(c=>{const b=document.createElement("button");b.className="cat on";b.textContent=c;b.onclick=()=>{cats.has(c)?cats.delete(c):cats.add(c);b.classList.toggle("on")};cDiv.appendChild(b)});
+function setMode(t){timed=t;document.getElementById("btnTimed").classList.toggle("sel",t);document.getElementById("btnPractice").classList.toggle("sel",!t)}
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
+function startGame(){pool=shuffle(Q.filter(q=>cats.has(q.c)));if(!pool.length)return alert("Select at least one category.");qi=0;score=0;streak=0;best=0;answered=false;document.getElementById("setup").classList.add("hidden");document.getElementById("results").classList.add("hidden");document.getElementById("game").classList.remove("hidden");showQ()}
+function showQ(){if(qi>=pool.length){endGame();return}answered=false;const q=pool[qi],dc={easy:"green",med:"#facc15",hard:"#ef4444"},dn={easy:"Easy",med:"Medium",hard:"Hard"};
+document.getElementById("prog").style.width=(qi/pool.length*100)+"%";document.getElementById("qnum").textContent=`${qi+1} / ${pool.length}`;document.getElementById("streak").textContent=`\u{1F525} ${streak}`;
+document.getElementById("qlabel").innerHTML=`<span class="diff ${q.d}" style="background:${dc[q.d]}"></span>${dn[q.d]} — ${q.c}`;
+document.getElementById("qtxt").textContent=q.q;document.getElementById("refBox").classList.add("hidden");document.getElementById("nxt").classList.add("hidden");
+const od=document.getElementById("opts");od.innerHTML="";q.o.forEach((o,i)=>{const b=document.createElement("button");b.className="opt";b.textContent=o;b.onclick=()=>answer(i);od.appendChild(b)});
+if(timed){timeLeft=30;document.getElementById("timerWrap").classList.remove("hidden","warn");document.getElementById("timerWrap").textContent=timeLeft;timer=setInterval(()=>{timeLeft--;document.getElementById("timerWrap").textContent=timeLeft;if(timeLeft<=10)document.getElementById("timerWrap").classList.add("warn");if(timeLeft<=0){clearInterval(timer);answer(-1)}},1000)}else{document.getElementById("timerWrap").classList.add("hidden")}}
+function answer(i){if(answered)return;answered=true;clearInterval(timer);const q=pool[qi],btns=document.getElementById("opts").children;
+for(let j=0;j<btns.length;j++){btns[j].disabled=true;if(j===q.a)btns[j].classList.add("correct");if(j===i&&i!==q.a)btns[j].classList.add("wrong")}
+if(i===q.a){score++;streak++;if(streak>best)best=streak;LS.tc++}else{streak=0}LS.tp++;saveLS();updStats();
+document.getElementById("streak").textContent=`\u{1F525} ${streak}`;document.getElementById("refBox").innerHTML=`<b>Reference:</b> ${q.ref}`;document.getElementById("refBox").classList.remove("hidden");document.getElementById("nxt").classList.remove("hidden")}
+function nextQ(){qi++;showQ()}
+function endGame(){document.getElementById("game").classList.add("hidden");document.getElementById("results").classList.remove("hidden");document.getElementById("rScore").textContent=score;document.getElementById("rTotal").textContent=pool.length;document.getElementById("rStreak").textContent=best;if(score>LS.hs){LS.hs=score;saveLS();updStats()}}
+function resetUI(){document.getElementById("results").classList.add("hidden");document.getElementById("game").classList.add("hidden");document.getElementById("setup").classList.remove("hidden");updStats()}
+</script>
+</body>
+</html>

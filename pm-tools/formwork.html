@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Formwork Pressure Calculator</title>
+<style>
+:root{--bg:#0f0f10;--bg2:#1a1a1c;--border:#2a2a2d;--text:#f0f0f0;--dim:#6e6e73;--accent:#ff6b35;--green:#4ade80}
+*{box-sizing:border-box;margin:0;padding:0}body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;padding:16px;max-width:600px;margin:0 auto}
+a.home{color:var(--accent);text-decoration:none;font-size:14px}h1{font-size:22px;margin:8px 0 16px}
+h2{font-size:15px;color:var(--accent);margin:14px 0 8px;border-bottom:1px solid var(--border);padding-bottom:4px}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:12px}
+label{display:block;font-size:13px;color:var(--dim);margin-bottom:4px}
+input,select{width:100%;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px;margin-bottom:10px}
+.row{display:flex;gap:10px}.row>*{flex:1}
+.out{background:var(--bg);border-left:3px solid var(--green);padding:10px;border-radius:4px;margin-top:8px;font-size:14px;line-height:1.6}
+.out b{color:var(--green)}.out .warn{color:var(--accent)}
+canvas{width:100%;height:260px;border-radius:8px;background:var(--bg);margin-top:10px}
+.tabs{display:flex;gap:4px;margin-bottom:10px}.tab{padding:6px 14px;border-radius:6px;background:var(--bg);border:1px solid var(--border);color:var(--dim);cursor:pointer;font-size:13px}
+.tab.act{background:var(--accent);color:#fff;border-color:var(--accent)}
+table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}th,td{padding:6px 8px;border-bottom:1px solid var(--border);text-align:left}th{color:var(--accent);font-size:12px}
+.note{font-size:12px;color:var(--dim);margin-top:6px;font-style:italic}
+</style>
+</head>
+<body>
+<a class="home" href="../index.html">← home</a>
+<h1>🏗️ Formwork Pressure Calculator</h1>
+<div class="card">
+<h2>Pour Parameters</h2>
+<label>Element Type</label>
+<div class="tabs" id="etabs"><div class="tab act" onclick="setE(0)">Wall</div><div class="tab" onclick="setE(1)">Column</div></div>
+<div class="row"><div><label>Pour Rate (ft/hr)</label><input id="rate" type="number" value="5" step="0.5" oninput="calc()"></div><div><label>Concrete Temp (°F)</label><input id="temp" type="number" value="70" oninput="calc()"></div></div>
+<div class="row"><div><label>Form Height (ft)</label><input id="fh" type="number" value="12" oninput="calc()"></div><div><label>Unit Weight (pcf)</label><input id="uw" type="number" value="150" oninput="calc()"></div></div>
+<div class="out" id="pout"></div>
+<canvas id="diagram" height="260"></canvas>
+<p class="note">Pressure per ACI 347R. Cw=1.0, Cc=1.0 (no retarders, Type I/II cement).</p>
+</div>
+<div class="card">
+<h2>Tie Spacing Calculator</h2>
+<div class="row"><div><label>Max Pressure (psf)</label><input id="tp" type="number" value="900" oninput="ties()"></div><div><label>Tie Capacity (lbs)</label><input id="tc" type="number" value="3000" oninput="ties()"></div></div>
+<div class="row"><div><label>Horizontal Spacing (in)</label><input id="ths" type="number" value="24" oninput="ties()"></div></div>
+<div class="out" id="tout"></div>
+</div>
+<div class="card">
+<h2>Form Material Reference</h2>
+<table>
+<tr><th>Material</th><th>Allowable Pressure</th><th>Reuses</th><th>Weight</th></tr>
+<tr><td>3/4" Plyform Class I</td><td>600 psf</td><td>5–10</td><td>2.2 psf</td></tr>
+<tr><td>HDO Plywood</td><td>800 psf</td><td>20–50</td><td>2.4 psf</td></tr>
+<tr><td>Steel Panel</td><td>1,200 psf</td><td>200+</td><td>12 psf</td></tr>
+<tr><td>Aluminum Panel</td><td>1,000 psf</td><td>150+</td><td>5 psf</td></tr>
+<tr><td>Fiberglass</td><td>700 psf</td><td>50+</td><td>3 psf</td></tr>
+</table>
+</div>
+<div class="card">
+<h2>Pour Rate Recommendations</h2>
+<table>
+<tr><th>Form Type</th><th>Max Pour Rate</th><th>Notes</th></tr>
+<tr><td>Standard Wall</td><td>5–7 ft/hr</td><td>Gang forms, typical</td></tr>
+<tr><td>Column (&lt;7ft wide)</td><td>7–10 ft/hr</td><td>Full hydrostatic often used</td></tr>
+<tr><td>Mass Pour (&gt;4ft thick)</td><td>2–3 ft/hr</td><td>Heat of hydration concern</td></tr>
+<tr><td>Slip Form</td><td>6–12 in/hr</td><td>Continuous, different calc</td></tr>
+<tr><td>Jump/Climbing Form</td><td>5–8 ft/hr</td><td>Per lift height</td></tr>
+</table>
+</div>
+<script>
+let etype=0;
+function setE(i){etype=i;document.querySelectorAll('#etabs .tab').forEach((t,k)=>t.classList.toggle('act',k===i));calc()}
+function calc(){
+  const R=+document.getElementById('rate').value,T=+document.getElementById('temp').value,H=+document.getElementById('fh').value,w=+document.getElementById('uw').value;
+  const Cw=1.0,Cc=1.0;
+  const hydro=w*H;
+  let Pmax,formula,hBreak;
+  if(etype===1){
+    Pmax=Cw*Cc*(150+9000*R/T);
+    Pmax=Math.min(Pmax,hydro);
+    Pmax=Math.max(Pmax,600*Cw);
+    formula=`P = Cw×Cc×(150 + 9000R/T) = ${(Cw*Cc*(150+9000*R/T)).toFixed(0)} psf`;
+    hBreak=Pmax/w;
+  } else {
+    if(R<7){
+      Pmax=Cw*Cc*(150+9000*R/T);
+      formula=`P = Cw×Cc×(150 + 9000R/T) = ${(Cw*Cc*(150+9000*R/T)).toFixed(0)} psf (R<7)`;
+    } else {
+      Pmax=Cw*Cc*(150+43400/T+2800*R/T);
+      formula=`P = Cw×Cc×(150 + 43400/T + 2800R/T) = ${(Cw*Cc*(150+43400/T+2800*R/T)).toFixed(0)} psf (R≥7)`;
+    }
+    Pmax=Math.min(Pmax,hydro);
+    Pmax=Math.max(Pmax,600*Cw);
+    hBreak=Pmax/w;
+  }
+  const tempF= T<50?'<span class="warn">⚠ Low temp increases pressure & slows set</span>':'OK';
+  const corrFactor=T<50?1.2:T>90?0.85:1.0;
+  document.getElementById('pout').innerHTML=
+    `Formula: ${formula}<br>Hydrostatic: <b>${hydro.toFixed(0)} psf</b> | Design: <b>${Pmax.toFixed(0)} psf</b><br>Pressure head height: <b>${hBreak.toFixed(1)} ft</b><br>Temp correction factor: <b>${corrFactor}</b> — ${tempF}<br>Adjusted pressure: <b>${(Pmax*corrFactor).toFixed(0)} psf</b>`;
+  document.getElementById('tp').value=Math.round(Pmax*corrFactor);
+  ties();
+  drawDiagram(H,hBreak,Pmax*corrFactor,w);
+}
+function drawDiagram(H,hBreak,Pmax,w){
+  const c=document.getElementById('diagram'),ctx=c.getContext('2d');
+  c.width=c.offsetWidth;c.height=260;ctx.clearRect(0,0,c.width,c.height);
+  const pad=40,left=pad+40,right=c.width-pad,top=pad,bot=c.height-pad;
+  const formH=bot-top;
+  // Form outline
+  ctx.strokeStyle='#6e6e73';ctx.lineWidth=2;
+  ctx.strokeRect(left,top,30,formH);
+  ctx.fillStyle='#1a1a1c';ctx.fillRect(left,top,30,formH);
+  // Labels
+  ctx.fillStyle='#f0f0f0';ctx.font='12px system-ui';ctx.textAlign='right';
+  ctx.fillText('0 ft',left-8,top+4);ctx.fillText(H+' ft',left-8,bot+4);
+  ctx.fillText('Top',left-8,top+16);ctx.fillText('Bottom',left-8,bot-6);
+  // Pressure diagram
+  const pLeft=left+40,pRight=right-20;
+  const maxW=pRight-pLeft;
+  ctx.strokeStyle=var_accent='#ff6b35';ctx.lineWidth=2;ctx.fillStyle='#ff6b3530';
+  const hbPx=Math.min(hBreak/H,1)*formH;
+  ctx.beginPath();ctx.moveTo(pLeft,top);
+  if(hBreak<H){
+    ctx.lineTo(pLeft+maxW,top+hbPx);
+    ctx.lineTo(pLeft+maxW,bot);
+    ctx.lineTo(pLeft,bot);
+  } else {
+    ctx.lineTo(pLeft+maxW*(Pmax/(w*H)),bot);
+    ctx.lineTo(pLeft,bot);
+  }
+  ctx.closePath();ctx.fill();ctx.stroke();
+  // Pressure labels
+  ctx.fillStyle='#ff6b35';ctx.textAlign='left';ctx.font='11px system-ui';
+  ctx.fillText('0 psf',pLeft+4,top-4);
+  ctx.fillText(Pmax.toFixed(0)+' psf',pLeft+maxW+4,top+hbPx+(hBreak<H?0:0));
+  if(hBreak<H){
+    ctx.fillStyle='#4ade80';ctx.setLineDash([4,4]);ctx.beginPath();
+    ctx.moveTo(pLeft,top+hbPx);ctx.lineTo(pLeft+maxW+2,top+hbPx);ctx.stroke();ctx.setLineDash([]);
+    ctx.fillText(hBreak.toFixed(1)+' ft',left-36,top+hbPx+4);
+  }
+  // Legend
+  ctx.fillStyle='var(--dim)';ctx.font='11px system-ui';ctx.textAlign='left';
+  ctx.fillStyle='#6e6e73';
+  ctx.fillText('← Form',left+2,bot+16);ctx.fillText('Lateral Pressure →',pLeft,bot+16);
+  ctx.fillStyle='#ff6b35';ctx.fillText(etype?'Column (hydrostatic)':'Wall (bilinear)',pLeft,top-14);
+}
+function ties(){
+  const P=+document.getElementById('tp').value,cap=+document.getElementById('tc').value,hs=+document.getElementById('ths').value;
+  const trib=P*(hs/12);
+  const vs=cap/trib*12;
+  document.getElementById('tout').innerHTML=
+    `Tributary load per tie row: <b>${trib.toFixed(0)} lbs/ft</b><br>Required vertical spacing: <b>${vs.toFixed(1)} in</b> (${(vs/12).toFixed(2)} ft)<br>Recommended: <b>${Math.floor(vs/3)*3} in</b> (round down to nearest 3")`;
+}
+calc();
+</script>
+</body>
+</html>

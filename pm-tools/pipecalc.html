@@ -1,0 +1,94 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pipe Flow Calculator</title><style>
+:root{--bg:#0f0f10;--bg2:#1a1a1c;--border:#2a2a2d;--text:#f0f0f0;--dim:#6e6e73;--accent:#ff6b35;--green:#4ade80}
+*{margin:0;padding:0;box-sizing:border-box}body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;padding:16px;max-width:900px;margin:auto}
+a.home{color:var(--accent);text-decoration:none;font-size:14px}h1{font-size:20px;margin:8px 0 12px}h2{font-size:16px;color:var(--accent);margin:12px 0 6px}
+input,select,button{background:var(--bg2);color:var(--text);border:1px solid var(--border);padding:8px 12px;border-radius:6px;font-size:14px}
+button{background:var(--accent);border:none;cursor:pointer;font-weight:600}button:hover{opacity:.85}
+.g{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;margin:8px 0}
+label{font-size:12px;color:var(--dim);display:block;margin-bottom:2px}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px;margin:8px 0}
+canvas{border:1px solid var(--border);border-radius:8px;width:100%;background:var(--bg2);cursor:crosshair}
+table{width:100%;border-collapse:collapse;font-size:13px;margin:8px 0}th,td{padding:5px 8px;border:1px solid var(--border);text-align:left}th{background:var(--bg2)}
+.res{font-size:18px;font-weight:700;color:var(--green)}
+.seg{padding:6px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:12px;display:inline-block;margin:2px}
+.seg.active{border-color:var(--accent)}
+</style></head><body>
+<a class="home" href="../index.html">&larr; home</a><h1>Pipe Flow Calculator</h1>
+<canvas id="cv" height="250"></canvas>
+<p style="font-size:11px;color:var(--dim);margin:4px 0">Click canvas to place pipe nodes. Nodes connect sequentially to form a network.</p>
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0">
+<button onclick="addSegment()">+ Add Segment</button>
+<button onclick="calcAll()">Calculate All</button>
+<button onclick="clearNet()" style="background:var(--border)">Clear Network</button></div>
+<div id="segtabs" style="margin:6px 0"></div>
+<div class="card" id="form">
+<div class="g">
+<div><label>Label</label><input id="sl" value="Seg 1" style="width:100%"></div>
+<div><label>Diameter (in)</label><input id="sd" type="number" value="4" step="0.5" style="width:100%"></div>
+<div><label>Length (ft)</label><input id="slen" type="number" value="100" style="width:100%"></div>
+<div><label>Flow Rate (GPM)</label><input id="sq" type="number" value="50" style="width:100%"></div>
+<div><label>Material</label><select id="sm" style="width:100%" onchange="updateC()"><option>PVC (C=150)</option><option>Copper (C=140)</option><option>Steel (C=120)</option><option>Cast Iron (C=100)</option><option>Concrete (C=130)</option><option>HDPE (C=150)</option></select></div>
+<div><label>Hazen-Williams C</label><input id="sc" type="number" value="150" style="width:100%"></div>
+</div></div>
+<h2>Results</h2><div id="results"></div>
+<h2>Segment Summary</h2>
+<table><thead><tr><th>Seg</th><th>Dia</th><th>Length</th><th>GPM</th><th>Vel (ft/s)</th><th>Re</th><th>Head Loss (ft)</th><th>PSI Drop</th></tr></thead><tbody id="tbl"></tbody></table>
+<h2>Pipe Sizing Tool</h2>
+<div class="card">
+<div class="g">
+<div><label>Required Flow (GPM)</label><input id="rq" type="number" value="100" style="width:100%"></div>
+<div><label>Max Velocity (ft/s)</label><input id="rv" type="number" value="8" style="width:100%"></div>
+</div>
+<button onclick="sizePipe()" style="margin-top:8px">Calculate Min Diameter</button>
+<div id="sizeRes" style="margin-top:8px"></div>
+</div>
+<h2>Common Pipe Materials</h2>
+<table><thead><tr><th>Material</th><th>Hazen-Williams C</th><th>Typical Use</th><th>Max PSI</th></tr></thead><tbody>
+<tr><td>PVC Sch 40</td><td>150</td><td>Water, drainage</td><td>220</td></tr>
+<tr><td>Copper Type L</td><td>140</td><td>Domestic water</td><td>200</td></tr>
+<tr><td>Carbon Steel</td><td>120</td><td>Fire protection, HVAC</td><td>300+</td></tr>
+<tr><td>Ductile Iron</td><td>100</td><td>Water mains</td><td>350</td></tr>
+<tr><td>Concrete</td><td>130</td><td>Storm/sanitary sewer</td><td>varies</td></tr>
+<tr><td>HDPE DR11</td><td>150</td><td>Water, gas, force main</td><td>200</td></tr>
+</tbody></table>
+<script>
+let segs=[],cur=0,nodes=[];
+const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+function resizeCv(){cv.width=cv.clientWidth}
+function addSegment(){segs.push({label:'Seg '+(segs.length+1),d:4,len:100,q:50,c:150,mat:'PVC (C=150)'});cur=segs.length-1;loadSeg();renderTabs()}
+function loadSeg(){const s=segs[cur];if(!s)return;document.getElementById('sl').value=s.label;document.getElementById('sd').value=s.d;
+document.getElementById('slen').value=s.len;document.getElementById('sq').value=s.q;document.getElementById('sm').value=s.mat;document.getElementById('sc').value=s.c}
+function saveSeg(){const s=segs[cur];if(!s)return;s.label=document.getElementById('sl').value;s.d=+document.getElementById('sd').value;
+s.len=+document.getElementById('slen').value;s.q=+document.getElementById('sq').value;s.c=+document.getElementById('sc').value;s.mat=document.getElementById('sm').value}
+function renderTabs(){document.getElementById('segtabs').innerHTML=segs.map((s,i)=>`<span class="seg ${i===cur?'active':''}" onclick="switchSeg(${i})">${s.label}</span>`).join('')}
+function switchSeg(i){saveSeg();cur=i;loadSeg();renderTabs()}
+function updateC(){const v=document.getElementById('sm').value;const m=v.match(/C=(\d+)/);if(m)document.getElementById('sc').value=m[1]}
+function calcSeg(s){const dFt=s.d/12,area=Math.PI*dFt*dFt/4,qCfs=s.q/449;
+const vel=qCfs/area;const Re=vel*dFt/1.08e-5;
+const hL=10.67*s.len*Math.pow(s.q/449,1.852)/(Math.pow(s.c,1.852)*Math.pow(dFt,4.87));
+const psi=hL*0.433;return{vel:+vel.toFixed(2),Re:Math.round(Re),hL:+hL.toFixed(3),psi:+psi.toFixed(2)}}
+function calcAll(){saveSeg();let html='',tbody='',totHL=0,totPSI=0;
+segs.forEach((s,i)=>{const r=calcSeg(s);totHL+=r.hL;totPSI+=r.psi;
+const warn=r.vel>10?' style="color:#ef4444"':'';
+tbody+=`<tr><td>${s.label}</td><td>${s.d}"</td><td>${s.len} ft</td><td>${s.q}</td><td${warn}>${r.vel}</td><td>${r.Re.toLocaleString()}</td><td>${r.hL}</td><td>${r.psi}</td></tr>`});
+tbody+=`<tr style="font-weight:700;background:var(--bg2)"><td colspan="6">TOTAL</td><td>${totHL.toFixed(3)}</td><td>${totPSI.toFixed(2)}</td></tr>`;
+if(segs.length){const s=segs[cur],r=calcSeg(s);
+html=`<div class="card"><span class="res">${r.vel} ft/s</span> velocity &nbsp;|&nbsp; <span class="res">${r.hL} ft</span> head loss &nbsp;|&nbsp; <span class="res">${r.psi} psi</span> drop<br>
+<small style="color:var(--dim)">Re = ${r.Re.toLocaleString()} | Flow: ${r.vel<2?'Laminar':r.vel<8?'Turbulent (OK)':'Turbulent (HIGH — consider larger pipe)'}</small></div>`}
+document.getElementById('results').innerHTML=html;document.getElementById('tbl').innerHTML=tbody;drawNet()}
+function sizePipe(){const q=+document.getElementById('rq').value,vMax=+document.getElementById('rv').value;
+const qCfs=q/449;const aMin=qCfs/vMax;const dMin=Math.sqrt(4*aMin/Math.PI)*12;
+const std=[0.5,0.75,1,1.25,1.5,2,2.5,3,4,6,8,10,12,14,16,18,20,24];const pick=std.find(d=>d>=dMin)||Math.ceil(dMin);
+document.getElementById('sizeRes').innerHTML=`Min diameter: <b>${dMin.toFixed(2)}"</b> — Use <span class="res">${pick}" nominal</span> pipe`}
+cv.onclick=e=>{const rect=cv.getBoundingClientRect();nodes.push({x:(e.clientX-rect.left)*(cv.width/rect.width),y:(e.clientY-rect.top)*(cv.height/rect.height)});drawNet()};
+function drawNet(){resizeCv();ctx.clearRect(0,0,cv.width,cv.height);ctx.fillStyle='#1a1a1c';ctx.fillRect(0,0,cv.width,cv.height);
+for(let i=1;i<nodes.length;i++){const a=nodes[i-1],b=nodes[i],s=segs[i-1];
+ctx.strokeStyle=s?'var(--accent)':'#555';ctx.lineWidth=s?Math.min(s.d,16):3;
+ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
+if(s){const mx=(a.x+b.x)/2,my=(a.y+b.y)/2;ctx.fillStyle='#fff';ctx.font='11px system-ui';ctx.textAlign='center';ctx.fillText(s.label+' ('+s.d+'")',mx,my-8)}}
+nodes.forEach((n,i)=>{ctx.beginPath();ctx.arc(n.x,n.y,6,0,Math.PI*2);ctx.fillStyle=i===0?'var(--green)':'var(--accent)';ctx.fill();
+ctx.fillStyle='#fff';ctx.font='10px system-ui';ctx.textAlign='center';ctx.fillText('N'+(i+1),n.x,n.y-10)})}
+function clearNet(){segs=[];nodes=[];cur=0;renderTabs();drawNet();document.getElementById('tbl').innerHTML='';document.getElementById('results').innerHTML=''}
+addSegment();renderTabs();resizeCv();drawNet();
+</script></body></html>

@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Weld Calculator</title>
+<style>
+:root{--bg:#0f0f10;--bg2:#1a1a1c;--border:#2a2a2d;--text:#f0f0f0;--dim:#6e6e73;--accent:#ff6b35;--green:#4ade80}
+*{box-sizing:border-box;margin:0;padding:0}body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;padding:16px;max-width:600px;margin:0 auto}
+a.home{color:var(--accent);text-decoration:none;font-size:14px}h1{font-size:22px;margin:8px 0 16px}
+h2{font-size:15px;color:var(--accent);margin:14px 0 8px;border-bottom:1px solid var(--border);padding-bottom:4px}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:12px}
+label{display:block;font-size:13px;color:var(--dim);margin-bottom:4px}
+input,select{width:100%;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px;margin-bottom:10px}
+.row{display:flex;gap:10px}.row>*{flex:1}
+.out{background:var(--bg);border-left:3px solid var(--green);padding:10px;border-radius:4px;margin-top:8px;font-size:14px}
+.out b{color:var(--green)}
+canvas{width:100%;height:120px;border-radius:6px;background:var(--bg)}
+.tabs{display:flex;gap:4px;margin-bottom:10px}.tab{padding:6px 12px;border-radius:6px;background:var(--bg);border:1px solid var(--border);color:var(--dim);cursor:pointer;font-size:13px}
+.tab.act{background:var(--accent);color:#fff;border-color:var(--accent)}
+table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}th,td{padding:6px 8px;border-bottom:1px solid var(--border);text-align:left}th{color:var(--accent);font-size:12px}
+</style>
+</head>
+<body>
+<a class="home" href="../index.html">← home</a>
+<h1>🔥 Weld Calculator</h1>
+<div class="card">
+<h2>Fillet Weld Sizing</h2>
+<div class="row"><div><label>Thinner Plate (in)</label><input id="t1" type="number" value="0.5" step="0.0625" oninput="fillet()"></div><div><label>Thicker Plate (in)</label><input id="t2" type="number" value="0.75" step="0.0625" oninput="fillet()"></div></div>
+<div class="out" id="fout"></div>
+</div>
+<div class="card">
+<h2>Weld Volume & Electrode</h2>
+<label>Joint Type</label>
+<div class="tabs" id="jtabs"></div>
+<canvas id="jcanvas" height="120"></canvas>
+<div class="row"><div><label>Weld Length (in)</label><input id="wl" type="number" value="24" oninput="vol()"></div><div><label>Size / Gap (in)</label><input id="ws" type="number" value="0.25" step="0.0625" oninput="vol()"></div></div>
+<div id="vgroove" style="display:none"><div class="row"><div><label>Plate Thickness (in)</label><input id="vt" type="number" value="0.5" step="0.0625" oninput="vol()"></div><div><label>Groove Angle (°)</label><input id="va" type="number" value="60" oninput="vol()"></div></div></div>
+<label>Electrode</label>
+<select id="erod" onchange="vol()"><option value="E6010">E6010 (6010)</option><option value="E7018" selected>E7018 (7018)</option></select>
+<div class="out" id="vout"></div>
+</div>
+<div class="card">
+<h2>Preheat Reference (Carbon Equivalent)</h2>
+<div class="row"><div><label>%C</label><input id="pc" type="number" value="0.25" step="0.01" oninput="preheat()"></div><div><label>%Mn</label><input id="pmn" type="number" value="1.0" step="0.01" oninput="preheat()"></div></div>
+<div class="row"><div><label>%Cr</label><input id="pcr" type="number" value="0" step="0.01" oninput="preheat()"></div><div><label>%Mo</label><input id="pmo" type="number" value="0" step="0.01" oninput="preheat()"></div><div><label>%Ni</label><input id="pni" type="number" value="0" step="0.01" oninput="preheat()"></div></div>
+<div class="out" id="phout"></div>
+</div>
+<div class="card">
+<h2>WPS Quick Reference</h2>
+<table><tr><th>Param</th><th>SMAW</th><th>GMAW</th><th>FCAW</th></tr>
+<tr><td>Current</td><td>DC+/DC−</td><td>DC+ (DCEP)</td><td>DC+ (DCEP)</td></tr>
+<tr><td>Amps (typical)</td><td>90–180</td><td>150–300</td><td>200–350</td></tr>
+<tr><td>Volts</td><td>20–30</td><td>18–30</td><td>24–32</td></tr>
+<tr><td>Travel Speed</td><td>4–8 ipm</td><td>10–25 ipm</td><td>12–30 ipm</td></tr>
+<tr><td>Shielding</td><td>Flux coating</td><td>75Ar/25CO₂</td><td>CO₂ or dual</td></tr>
+<tr><td>Deposition</td><td>1–3 lb/hr</td><td>3–8 lb/hr</td><td>5–12 lb/hr</td></tr></table>
+</div>
+<script>
+const joints=['Fillet','Butt','V-Groove'];let jtype=0;
+const eData={E6010:{dep:0.5,density:0.283,len:14,wt:0.12},E7018:{dep:0.65,density:0.283,len:14,wt:0.15}};
+function init(){const t=document.getElementById('jtabs');joints.forEach((j,i)=>{t.innerHTML+=`<div class="tab${i===0?' act':''}" onclick="setJ(${i})">${j}</div>`});fillet();vol();preheat();drawJoint()}
+function setJ(i){jtype=i;document.querySelectorAll('#jtabs .tab').forEach((t,k)=>t.classList.toggle('act',k===i));document.getElementById('vgroove').style.display=i===2?'':'none';vol();drawJoint()}
+function drawJoint(){const c=document.getElementById('jcanvas'),ctx=c.getContext('2d');c.width=c.offsetWidth;c.height=120;ctx.clearRect(0,0,c.width,c.height);ctx.strokeStyle='#ff6b35';ctx.lineWidth=2;ctx.fillStyle='#2a2a2d';
+const cx=c.width/2,cy=60;
+if(jtype===0){ctx.fillRect(cx-60,cy,120,30);ctx.strokeRect(cx-60,cy,120,30);ctx.fillRect(cx-10,cy-40,30,40);ctx.strokeRect(cx-10,cy-40,30,40);ctx.fillStyle='#ff6b35';ctx.beginPath();ctx.moveTo(cx-10,cy);ctx.lineTo(cx-10,cy-15);ctx.lineTo(cx+5,cy);ctx.fill();ctx.fillStyle='#fff';ctx.font='11px system-ui';ctx.fillText('Fillet',cx+30,cy-10)}
+else if(jtype===1){ctx.fillRect(cx-70,cy,60,30);ctx.strokeRect(cx-70,cy,60,30);ctx.fillRect(cx+10,cy,60,30);ctx.strokeRect(cx+10,cy,60,30);ctx.fillStyle='#ff6b35';ctx.fillRect(cx-8,cy,16,30);ctx.fillStyle='#fff';ctx.font='11px system-ui';ctx.fillText('Butt',cx-14,cy-8)}
+else{ctx.fillRect(cx-70,cy,60,30);ctx.strokeRect(cx-70,cy,60,30);ctx.fillRect(cx+10,cy,60,30);ctx.strokeRect(cx+10,cy,60,30);ctx.fillStyle='#ff6b35';ctx.beginPath();ctx.moveTo(cx-8,cy+30);ctx.lineTo(cx,cy);ctx.lineTo(cx+8,cy+30);ctx.fill();ctx.fillStyle='#fff';ctx.font='11px system-ui';ctx.fillText('V-Groove',cx-24,cy-8)}}
+function fillet(){const t=Math.min(+document.getElementById('t1').value,+document.getElementById('t2').value);let min;if(t<=0.25)min=0.125;else if(t<=0.5)min=0.1875;else if(t<=0.75)min=0.25;else min=0.3125;const max=Math.min(t,0.75);document.getElementById('fout').innerHTML=`Min fillet: <b>${min}"</b> (${(min*25.4).toFixed(1)}mm) — Max recommended: <b>${max.toFixed(4)}"</b><br>AWS D1.1 Table 5.8 reference`}
+function vol(){const L=+document.getElementById('wl').value,s=+document.getElementById('ws').value;let area;
+if(jtype===0)area=0.5*s*s;else if(jtype===1)area=s*0.5;else{const t=+document.getElementById('vt').value,a=(+document.getElementById('va').value)*Math.PI/180;area=t*t*Math.tan(a/2)+s*t}
+const v=area*L,wt=v*0.283,e=document.getElementById('erod').value,ed=eData[e],lbs=wt/ed.dep,rods=Math.ceil(lbs/ed.wt);
+document.getElementById('vout').innerHTML=`Volume: <b>${v.toFixed(3)} in³</b> — Weight: <b>${wt.toFixed(2)} lbs</b><br>${e}: ~<b>${lbs.toFixed(1)} lbs</b> electrode, <b>${rods} rods</b> (at ${(ed.dep*100).toFixed(0)}% deposition eff.)`}
+function preheat(){const C=+document.getElementById('pc').value,Mn=+document.getElementById('pmn').value,Cr=+document.getElementById('pcr').value,Mo=+document.getElementById('pmo').value,Ni=+document.getElementById('pni').value;
+const CE=C+Mn/6+(Cr+Mo)/5+Ni/15;let temp,risk;if(CE<0.35){temp='None (optional)';risk='Low'}else if(CE<0.45){temp='200–300 °F';risk='Moderate'}else if(CE<0.55){temp='300–400 °F';risk='High'}else{temp='400–500 °F';risk='Very High'}
+document.getElementById('phout').innerHTML=`CE (IIW) = <b>${CE.toFixed(3)}</b> — Crack risk: <b>${risk}</b><br>Recommended preheat: <b>${temp}</b>`}
+init();window.addEventListener('resize',drawJoint);
+</script>
+</body>
+</html>

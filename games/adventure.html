@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Cellar</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #0d0d0d; color: #c9b99a; font-family: Georgia, serif; min-height: 100vh; display: flex; flex-direction: column; align-items: center; }
+#back { position: fixed; top: 14px; left: 16px; font-size: 12px; color: #444; text-decoration: none; font-family: monospace; }
+#back:hover { color: #888; }
+#title { margin-top: 60px; text-align: center; }
+#title h1 { font-size: 28px; color: #8b0000; letter-spacing: 0.15em; text-transform: uppercase; }
+#title p { font-size: 12px; color: #444; margin-top: 6px; letter-spacing: 0.1em; font-family: monospace; }
+#story {
+  max-width: 560px; width: 100%; margin: 40px 16px 80px; padding: 0 16px;
+  min-height: 200px;
+}
+.line {
+  line-height: 1.8; font-size: 16px; margin-bottom: 6px;
+  animation: fadein 0.6s ease;
+}
+.line.em { color: #e8d5b0; font-weight: bold; }
+.line.dim { color: #555; font-style: italic; font-size: 13px; }
+.line.end { color: #8b0000; margin-top: 20px; font-size: 13px; letter-spacing: 0.12em; font-family: monospace; }
+.line.hr { border-top: 1px solid #1e1e1e; margin: 20px 0; }
+@keyframes fadein { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.choices { margin-top: 22px; display: flex; flex-direction: column; gap: 8px; }
+.choice-btn {
+  background: none; border: 1px solid #2a2a2a; color: #8b7355;
+  padding: 10px 16px; font-family: Georgia, serif; font-size: 15px;
+  cursor: pointer; text-align: left; border-radius: 2px;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.choice-btn:hover { background: #1a0a0a; border-color: #8b0000; color: #c9b99a; }
+#restart { display: none; margin-top: 30px; background: none; border: 1px solid #333; color: #444; padding: 8px 20px; font-family: monospace; font-size: 12px; cursor: pointer; border-radius: 2px; }
+#restart:hover { color: #888; border-color: #666; }
+</style>
+</head>
+<body>
+<a href="../index.html" id="back">← home</a>
+<div id="title">
+  <h1>The Cellar</h1>
+  <p>a horror text adventure</p>
+</div>
+<div id="story"></div>
+<button id="restart">start over</button>
+
+<script>
+var story = document.getElementById('story');
+var restartBtn = document.getElementById('restart');
+
+// ── Web Audio atmospheric sounds
+var audioCtx = null;
+var heartbeatInterval = null;
+function getAudio() { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); return audioCtx; }
+
+function startHeartbeat() {
+  if (heartbeatInterval) return;
+  function beat() {
+    try {
+      var ctx = getAudio();
+      var osc = ctx.createOscillator();
+      var gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = 40;
+      gain.gain.setValueAtTime(0.04, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(); osc.stop(ctx.currentTime + 0.15);
+      setTimeout(function() {
+        var osc2 = ctx.createOscillator();
+        var gain2 = ctx.createGain();
+        osc2.type = 'sine';
+        osc2.frequency.value = 35;
+        gain2.gain.setValueAtTime(0.03, ctx.currentTime);
+        gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12);
+        osc2.connect(gain2); gain2.connect(ctx.destination);
+        osc2.start(); osc2.stop(ctx.currentTime + 0.12);
+      }, 120);
+    } catch(e) {}
+  }
+  beat();
+  heartbeatInterval = setInterval(beat, 1400);
+}
+
+function stopHeartbeat() {
+  if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
+}
+
+function playCreak() {
+  try {
+    var ctx = getAudio();
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(80, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(120, ctx.currentTime + 0.15);
+    osc.frequency.exponentialRampToValueAtTime(60, ctx.currentTime + 0.3);
+    gain.gain.setValueAtTime(0.02, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.start(); osc.stop(ctx.currentTime + 0.3);
+  } catch(e) {}
+}
+
+// ── Typewriter effect
+var typewriterQueue = [];
+var typewriterRunning = false;
+
+function typewrite(el, text, callback) {
+  typewriterQueue.push({ el: el, text: text, callback: callback });
+  if (!typewriterRunning) processTypewriterQueue();
+}
+
+function processTypewriterQueue() {
+  if (typewriterQueue.length === 0) { typewriterRunning = false; return; }
+  typewriterRunning = true;
+  var item = typewriterQueue.shift();
+  var i = 0;
+  var timer = setInterval(function() {
+    item.el.textContent = item.text.slice(0, i + 1);
+    i++;
+    if (i >= item.text.length) {
+      clearInterval(timer);
+      if (item.callback) item.callback();
+      processTypewriterQueue();
+    }
+  }, 30);
+}
+
+function say(text) {
+  var d = document.createElement('p');
+  d.className = 'line';
+  story.appendChild(d);
+  typewrite(d, text, function() { window.scrollTo(0, document.body.scrollHeight); });
+  window.scrollTo(0, document.body.scrollHeight);
+}
+
+function em(text) {
+  var d = document.createElement('p');
+  d.className = 'line em';
+  story.appendChild(d);
+  typewrite(d, text, function() { window.scrollTo(0, document.body.scrollHeight); });
+  window.scrollTo(0, document.body.scrollHeight);
+}
+
+function dim(text) {
+  var d = document.createElement('p');
+  d.className = 'line dim';
+  story.appendChild(d);
+  typewrite(d, text, function() { window.scrollTo(0, document.body.scrollHeight); });
+  window.scrollTo(0, document.body.scrollHeight);
+}
+
+function ending(text) {
+  var d = document.createElement('p');
+  d.className = 'line end';
+  story.appendChild(d);
+  typewrite(d, text, function() { window.scrollTo(0, document.body.scrollHeight); });
+  stopHeartbeat();
+  restartBtn.style.display = 'block';
+  // Add share ending button
+  var shareBtn = document.createElement('button');
+  shareBtn.textContent = 'Share ending';
+  shareBtn.style.cssText = 'display:inline-block;margin-top:14px;background:none;border:1px solid #333;color:#555;padding:6px 14px;font-family:monospace;font-size:11px;cursor:pointer;border-radius:2px;transition:all 0.15s;';
+  shareBtn.onmouseenter = function() { shareBtn.style.borderColor='#8b0000'; shareBtn.style.color='#8b0000'; };
+  shareBtn.onmouseleave = function() { shareBtn.style.borderColor='#333'; shareBtn.style.color='#555'; };
+  shareBtn.onclick = function() {
+    var endingName = text.replace(/^[^A-Z]*/, '');
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(endingName).then(function() {
+        shareBtn.textContent = 'Copied!';
+        setTimeout(function() { shareBtn.textContent = 'Share ending'; }, 1500);
+      });
+    }
+  };
+  story.appendChild(shareBtn);
+  window.scrollTo(0, document.body.scrollHeight);
+}
+
+function hr() {
+  var d = document.createElement('div');
+  d.className = 'line hr';
+  story.appendChild(d);
+}
+
+function nl() { say(''); }
+
+function choice(options, callback) {
+  var div = document.createElement('div');
+  div.className = 'choices';
+  options.forEach(function(opt, i) {
+    var btn = document.createElement('button');
+    btn.className = 'choice-btn';
+    btn.textContent = opt;
+    btn.onclick = function() {
+      playCreak();
+      div.remove();
+      callback(i + 1);
+    };
+    div.appendChild(btn);
+  });
+  story.appendChild(div);
+  window.scrollTo(0, document.body.scrollHeight);
+}
+
+// ── Endings
+
+function end_wait() {
+  nl();
+  say('You put your phone in your pocket.');
+  say('You sit down on the cold floor.');
+  say('You wait.');
+  nl();
+  say('You have been here before.');
+  ending('★  END: THE PATIENT ONE');
+}
+
+function end_scream() {
+  nl();
+  say('Silence. Then slow footsteps overhead.');
+  say('The cellar door rattles once. Stops.');
+  nl();
+  say('Something slides under the door.');
+  say('A key.');
+  nl();
+  say("You don't use it.");
+  ending('★  END: THE KEY');
+}
+
+function end_behind() {
+  nl();
+  say('You turn around.');
+  nl();
+  ending("★  END: DON'T TURN AROUND");
+}
+
+function end_ringing() {
+  nl();
+  say('You walk toward the sound.');
+  say('The ringing gets louder.');
+  say('Then you find it — your other phone.');
+  say('Same case. Same cracked corner.');
+  nl();
+  say('Same everything.');
+  ending('★  END: THE OTHER YOU');
+}
+
+function end_escape() {
+  nl();
+  say('You run. She follows. Up the stairs, into the blue pre-dawn.');
+  say('She runs toward the road without looking back.');
+  nl();
+  say('You start walking home.');
+  say('Halfway there, you stop.');
+  say("You don't know why. But you know the way back to that cellar.");
+  nl();
+  say('You keep walking.');
+  ending('★  END: THE LONG WAY HOME');
+}
+
+function end_manstory() {
+  nl();
+  say('He shows you a journal in your handwriting.');
+  say("47 entries. Each one starts: I don't remember last time.");
+  nl();
+  say('You made him a prisoner to keep him safe.');
+  say('From something upstairs.');
+  say('From something wearing your face.');
+  nl();
+  say('Upstairs: knock knock knock.');
+  ending('★  END: THE THING WITH YOUR FACE');
+}
+
+function end_door() {
+  nl();
+  say('You say nothing. The footsteps walk away.');
+  nl();
+  say('You sit against the wall until morning.');
+  say('When the light comes through the crack, you find the stairs.');
+  say('The kitchen. Warm. Coffee smell.');
+  nl();
+  say("On the counter: a padlock. You don't own one.");
+  say('On the inside of the cellar door: scratch marks.');
+  say('Made from the inside.');
+  ending('★  END: THE SCRATCH MARKS');
+}
+
+function end_photo() {
+  nl();
+  say('You drop the phone. The screen cracks.');
+  say('The light goes out.');
+  nl();
+  say('In the dark, from somewhere very close:');
+  em('"I told you not to look."');
+  ending("★  END: DON'T LOOK");
+}
+
+// ── Scenes
+
+function scene_girlwho() {
+  nl();
+  say('She grabs your arm.');
+  em('"You come here every night. You never remember me."');
+  em('"But YOU put me here."');
+  nl();
+  say('Her eyes. You recognize them.');
+  say("They're yours.");
+  end_escape();
+}
+
+function scene_girl() {
+  nl();
+  say('A girl, maybe sixteen, presses close in the dark.');
+  em('"We have to go. Before she comes back."');
+  nl();
+  choice(['Who is she?', 'Run with her'], function(c) {
+    if (c === 1) scene_girlwho();
+    else end_escape();
+  });
+}
+
+function scene_man() {
+  nl();
+  say("There's a lantern. And a man.");
+  say("He hasn't eaten in days. He raises his hands: please.");
+  nl();
+  choice(['Listen to him', 'Run past him to the stairs'], function(c) {
+    if (c === 1) end_manstory();
+    else end_escape();
+  });
+}
+
+function scene_photo2() {
+  nl();
+  say('You zoom in.');
+  say('The other person has their face turned away.');
+  say('But you recognise the jacket. The shoes.');
+  nl();
+  say("It's yours. There are two of you in this photo.");
+  nl();
+  say('In the last photo, taken four minutes ago:');
+  say('you are standing behind yourself.');
+  end_photo();
+}
+
+function scene_nosignal() {
+  nl();
+  say('No signal.');
+  say('As you lower the phone, you see it — the camera roll.');
+  nl();
+  say('A photo. You, smiling, in this exact cellar. Taken three days ago.');
+  say("You don't remember taking it.");
+  say('You are not alone in the photo.');
+  nl();
+  choice(["Look at who's with you", 'Try the cellar door'], function(c) {
+    if (c === 1) scene_photo2();
+    else end_door();
+  });
+}
+
+function scene_room() {
+  nl();
+  say('Concrete walls. A rusty drain. Scratch marks on the floor.');
+  say('They spell one phrase, repeated dozens of times:');
+  nl();
+  em('"I WANT TO GO HOME"');
+  nl();
+  say('One in fresh blood, in handwriting you recognize. Your own:');
+  em('"I\'M STILL HERE. BEHIND YOU."');
+  nl();
+  choice(['Scream', 'Turn around'], function(c) {
+    if (c === 1) end_scream();
+    else end_behind();
+  });
+}
+
+function scene_twist1() {
+  nl();
+  say('The last text. From an unknown number, three days ago:');
+  nl();
+  em('"Don\'t come home. You won\'t recognise yourself."');
+  nl();
+  say('You check the sender.');
+  say("It's your own number.");
+  say('You sent it to yourself.');
+  nl();
+  choice(['Call yourself', 'Check the photo reel'], function(c) {
+    if (c === 1) end_ringing();
+    else scene_photo2();
+  });
+}
+
+function scene_phone() {
+  nl();
+  say('Your screen flickers on.');
+  say('3:47 AM. Battery: 4%.');
+  say('You are in a cellar.');
+  nl();
+  choice(['Call for help', 'Use the flashlight', 'Read last text'], function(c) {
+    if (c === 1) scene_nosignal();
+    else if (c === 2) scene_room();
+    else scene_twist1();
+  });
+}
+
+function scene_listen() {
+  nl();
+  say('You hear breathing. Not yours.');
+  say('Then a whisper, very close:');
+  em('"She\'s awake."');
+  nl();
+  choice(['Run toward a faint light', 'Keep perfectly still'], function(c) {
+    if (c === 1) scene_man();
+    else scene_girl();
+  });
+}
+
+function startGame() {
+  story.innerHTML = '';
+  restartBtn.style.display = 'none';
+  typewriterQueue = [];
+  typewriterRunning = false;
+  startHeartbeat();
+  hr();
+  em('THE CELLAR');
+  dim('Two choices. Five endings. All wrong.');
+  hr();
+  nl();
+  say('You wake on cold stone.');
+  say('Blood on your teeth. Darkness everywhere.');
+  nl();
+  choice(['Check your phone', 'Stay very still'], function(c) {
+    if (c === 1) scene_phone();
+    else scene_listen();
+  });
+}
+
+restartBtn.addEventListener('click', startGame);
+startGame();
+</script>
+</body>
+</html>

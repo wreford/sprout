@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no"/>
+<title>Jesus Dunks</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#1a1a2e;font-family:-apple-system,BlinkMacSystemFont,sans-serif;touch-action:none;user-select:none}
+canvas{display:block;width:100%;height:100%}
+#ui{position:absolute;top:0;left:0;width:100%;pointer-events:none}
+#score-bar{display:flex;justify-content:space-between;align-items:center;padding:10px 16px;background:rgba(0,0,0,0.6);color:#fff;font-size:14px;font-weight:700}
+#score-bar span{font-family:monospace}
+#commentary{position:absolute;bottom:60px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.8);color:#fff;padding:8px 16px;border-radius:20px;font-size:13px;font-style:italic;opacity:0;transition:opacity 0.3s;white-space:nowrap;max-width:90vw;overflow:hidden;text-overflow:ellipsis}
+#commentary.show{opacity:1}
+#crowd{position:absolute;top:50px;left:0;width:100%;text-align:center;font-size:20px;letter-spacing:4px;opacity:0;transition:opacity 0.3s}
+#crowd.show{opacity:1}
+#power-bar{position:absolute;bottom:20px;left:50%;transform:translateX(-50%);width:150px;height:12px;background:rgba(0,0,0,0.5);border-radius:6px;border:1px solid rgba(255,255,255,0.3);overflow:hidden;opacity:0;transition:opacity 0.2s}
+#power-bar.show{opacity:1}
+#power-fill{height:100%;width:0%;background:linear-gradient(90deg,#4ade80,#facc15,#ef4444);border-radius:6px;transition:none}
+#start-screen,#end-screen{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,0.85);color:#fff;text-align:center;gap:12px}
+#start-screen h1,#end-screen h1{font-size:2.2rem;margin-bottom:4px}
+#start-screen p,#end-screen p{color:#aaa;font-size:0.9rem;max-width:280px}
+.btn{pointer-events:all;background:#4ade80;color:#000;border:none;padding:12px 32px;border-radius:8px;font-size:1rem;font-weight:700;cursor:pointer}
+.btn:hover{background:#22c55e}
+#end-screen .stat{font-size:1.4rem;color:#facc15}
+.hidden{display:none!important}
+#dunk-prompt{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:1.6rem;font-weight:900;color:#facc15;text-shadow:0 0 10px #facc15;opacity:0;transition:opacity 0.2s}
+#dunk-prompt.show{opacity:1}
+</style>
+</head>
+<body>
+<a href="../index.html" style="position:fixed;top:4px;left:8px;z-index:9999;font-size:0.7rem;color:#6e6e73;text-decoration:none;font-family:ui-monospace,monospace;opacity:0.7;transition:opacity 0.2s" onmouseover="this.style.opacity=1;this.style.color=\x27#4ade80\x27" onmouseout="this.style.opacity=0.7;this.style.color=\x27#6e6e73\x27">&larr; home</a>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div id="score-bar">
+    <span id="quarter-display">Q1</span>
+    <span id="score-display">0</span>
+    <span id="clock-display">24.0</span>
+  </div>
+  <div id="crowd"></div>
+  <div id="commentary"></div>
+  <div id="power-bar"><div id="power-fill"></div></div>
+  <div id="dunk-prompt">🏀 TAP NOW TO DUNK! 🏀</div>
+</div>
+<div id="start-screen">
+  <h1>🏀 Jesus Dunks</h1>
+  <p>Hold to charge, release to shoot. Swish = 3pts, Rim = 2pts. Every 10 makes = dunk chance (5pts). 4 quarters, 24s each.</p>
+  <button class="btn" id="start-btn">Play Ball</button>
+</div>
+<div id="end-screen" class="hidden">
+  <h1>Final Score</h1>
+  <div class="stat" id="final-score">0</div>
+  <p id="final-stats"></p>
+  <button class="btn" id="restart-btn">Play Again</button>
+</div>
+<script>
+const canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
+const $ =id=>document.getElementById(id);
+let W,H;function resize(){canvas.width=W=window.innerWidth;canvas.height=H=window.innerHeight}
+resize();window.addEventListener('resize',resize);
+
+// Audio
+var AC=null;
+function initAC(){if(!AC)try{AC=new(window.AudioContext||window.webkitAudioContext)();}catch(e){}}
+function beep(freq,dur,type,vol){initAC();if(!AC)return;type=type||'sine';vol=vol||0.025;
+  const o=AC.createOscillator(),g=AC.createGain();
+  o.type=type;o.frequency.value=freq;g.gain.value=vol;
+  o.connect(g);g.connect(AC.destination);
+  o.start();g.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+dur);
+  o.stop(AC.currentTime+dur);
+}
+function sndShoot(){beep(400,0.1);setTimeout(()=>beep(600,0.08),50)}
+function sndSwish(){beep(800,0.15);setTimeout(()=>beep(1000,0.12),60);setTimeout(()=>beep(1200,0.1),120)}
+function sndRim(){beep(300,0.08,'triangle');setTimeout(()=>beep(350,0.06,'triangle'),70)}
+function sndMiss(){beep(150,0.2,'triangle')}
+function sndDunk(){beep(200,0.15);setTimeout(()=>beep(400,0.12),50);setTimeout(()=>beep(800,0.2),100);setTimeout(()=>beep(1000,0.15),180)}
+function sndCrowd(){for(let i=0;i<5;i++)setTimeout(()=>beep(300+Math.random()*400,0.1,'sawtooth',0.01),i*30)}
+
+// Commentary
+const makeJokes=["Nothing but net. And holiness.","Swish. The lord provides.","In. Three points. Three persons.","Bucket. Blessed bucket.","Splash. Holy water splash.","Money. Thirty pieces of silver money.","Cash. The temple money changers approve.","Drained it. Like the Red Sea.","Clean. Cleaner than the temple.","In. The basket runneth over.","Pure. Like the driven snow.","Wet. Like walking on water.","Bang. The good book didn't cover this.","Score. The meek inherit the basket.","Smooth. Smoother than a sermon.","Perfect. Like day seven.","In. The hoop has been saved.","Yes. Let there be points.","Splash. Baptism by three pointer.","Downtown. From Nazareth."];
+const missJokes=["Brick. Even Peter would deny that shot.","Air ball. The spirit was unwilling.","Missed. Not a miracle today.","Off. Way off. Nazareth off.","Nope. The hoop rejects.","Brick. Solid as a commandment tablet.","Wide. Wider than the parting sea.","Clank. The rim has spoken.","Short. Shorter than Zacchaeus.","No good. Even faith can't fix that.","Off the backboard. Off the planet.","Miss. The crowd forgives. Barely.","Rejected. Like a money changer.","Nah. Try again. Turn the other cheek.","Brick. That shot needs a resurrection."];
+const dunkJokes=["SLAM! Jesus takes flight!","DUNKED! No sandals needed!","POSTER! The rim has been baptized!","HAMMER! The temple is shaking!","OH MY. The hoop needs a blessing now.","THREW IT DOWN! From heaven!","JAMMED! The crowd goes apostolic!","SLAMMED! That rim found religion!","TOMAHAWK! Moses couldn't part THAT!","DESTROYED! The backboard needs prayer!"];
+const randomJokes=["The scoreboard operator is Matthew. He's good with numbers.","Team mascot: a lamb. Again.","The cheerleaders are seraphim.","Coach's timeout snack: bread. Just bread.","The ref calls traveling. Jesus walks everywhere.","Half-court shot attempt from Galilee.","The away team is Pharisees United.","Jersey sponsor: Fisher of Men Inc.","Arena music: harps only.","The shot clock is an hourglass.","Water break. Upgraded to wine.","The bench is twelve deep.","Foul trouble: turn the other cheek.","Halftime show: water to wine demo.","The coach's clipboard has parables.","Free throw routine: prayer, then shoot.","Timeout called. Loaves and fishes for everyone.","The announcer is a burning bush.","Player of the game: obvious choice.","Stat line: miraculous.","Scout report: can walk on water. Good footwork.","Arena concessions: fish and bread only.","The jumbotron shows parables.","Press conference will be a sermon.","Post-game interview on a mountain."];
+
+let lastCommentary=0,commentaryTimeout=null;
+if(window.speechSynthesis){speechSynthesis.getVoices();speechSynthesis.onvoiceschanged=function(){};}
+function speak(text){
+  try{
+    if(!window.speechSynthesis)return;
+    var now=Date.now();
+    if(now-lastCommentary<8000)return;
+    lastCommentary=now;
+    try{speechSynthesis.cancel();}catch(e){}
+    setTimeout(function(){
+      try{
+        var u=new SpeechSynthesisUtterance(text);
+        u.rate=0.85;u.pitch=0.8;u.volume=1.0;
+        var voices=speechSynthesis.getVoices();
+        if(voices&&voices.length>0){
+          var v=null;
+          for(var i=0;i<voices.length;i++){if(voices[i].lang&&voices[i].lang.indexOf('en-GB')===0){v=voices[i];break;}}
+          if(!v)for(var i=0;i<voices.length;i++){if(voices[i].lang&&voices[i].lang.indexOf('en')===0){v=voices[i];break;}}
+          if(v)u.voice=v;
+        }
+        speechSynthesis.speak(u);
+      }catch(e){}
+    },60);
+    const el=$('commentary');el.textContent=text;el.classList.add('show');
+    clearTimeout(commentaryTimeout);
+    commentaryTimeout=setTimeout(()=>el.classList.remove('show'),4000);
+  }catch(e){}
+}
+function randomFrom(arr){return arr[Math.floor(Math.random()*arr.length)]}
+
+// Game state
+let state='start',score=0,quarter=1,clock=24,makes=0,shots=0;
+let jesusX,jesusY,hoopX,hoopY,hoopRimY;
+let ball=null,balls=[],charging=false,chargeStart=0,power=0;
+let dunkMode=false,dunkTimer=0,dunkSuccess=false;
+let lastRandom=0,particles=[];
+
+function setupCourt(){
+  hoopX=W*0.78;hoopY=H*0.32;hoopRimY=hoopY+10;
+  setJesusPosition();
+}
+function setJesusPosition(){
+  const positions=[
+    {x:W*0.25,y:H*0.55},
+    {x:W*0.35,y:H*0.5},
+    {x:W*0.2,y:H*0.6},
+    {x:W*0.4,y:H*0.45},
+    {x:W*0.15,y:H*0.5}
+  ];
+  const p=positions[Math.floor(Math.random()*positions.length)];
+  jesusX=p.x;jesusY=p.y;
+}
+
+// Ball physics
+function shootBall(pwr){
+  try{if(AC&&AC.state==='suspended')AC.resume();}catch(e){}
+  const dx=hoopX-jesusX,dy=hoopY-jesusY;
+  const dist=Math.sqrt(dx*dx+dy*dy);
+  const speed=pwr*0.012*dist;
+  const angle=Math.atan2(dy-dist*0.3,dx);
+  const vx=Math.cos(angle)*speed;
+  const vy=Math.sin(angle)*speed;
+  ball={x:jesusX+20,y:jesusY-30,vx,vy,trail:[],active:true,scored:false,checked:false};
+  balls.push(ball);
+  shots++;
+  sndShoot();
+}
+
+function updateBalls(dt){
+  for(let i=balls.length-1;i>=0;i--){
+    const b=balls[i];
+    if(!b.active){balls.splice(i,1);continue}
+    b.vy+=980*dt;
+    b.x+=b.vx*dt;
+    b.y+=b.vy*dt;
+    b.trail.push({x:b.x,y:b.y,a:1});
+    if(b.trail.length>20)b.trail.shift();
+    b.trail.forEach(t=>t.a*=0.92);
+    // Check hoop collision
+    if(!b.checked&&b.y>hoopY-5&&b.y<hoopY+30&&Math.abs(b.x-hoopX)<25){
+      b.checked=true;
+      const dist=Math.abs(b.x-hoopX);
+      if(dist<10&&b.vy>0){
+        // Swish
+        score+=3;makes++;
+        sndSwish();sndCrowd();
+        showCrowd('😲🔥🙌');
+        speak(randomFrom(makeJokes));
+        addParticles(hoopX,hoopY,'#4ade80');
+        checkDunk();
+      } else if(dist<22){
+        // Rim bounce
+        if(Math.random()<0.6){
+          score+=2;makes++;
+          b.vy=-Math.abs(b.vy)*0.4;b.vx*=0.3;
+          sndRim();setTimeout(sndSwish,200);sndCrowd();
+          showCrowd('🙌🔥');
+          speak(randomFrom(makeJokes));
+          addParticles(hoopX,hoopY,'#facc15');
+          checkDunk();
+        } else {
+          b.vy=-Math.abs(b.vy)*0.5;b.vx=b.vx>0?-3:3;
+          sndRim();
+          speak(randomFrom(missJokes));
+          showCrowd('😬');
+        }
+      }
+    }
+    // Off screen
+    if(b.y>H+50||b.x>W+50||b.x<-50){
+      if(!b.checked){speak(randomFrom(missJokes));sndMiss();showCrowd('😬')}
+      b.active=false;
+    }
+  }
+}
+
+function checkDunk(){
+  if(makes>0&&makes%10===0&&!dunkMode){
+    dunkMode=true;dunkTimer=3;
+    $('dunk-prompt').classList.add('show');
+  }
+}
+
+function doDunk(){
+  dunkMode=false;dunkTimer=0;
+  $('dunk-prompt').classList.remove('show');
+  score+=5;
+  sndDunk();sndCrowd();
+  showCrowd('😲😲🔥🔥🙌🙌');
+  speak(randomFrom(dunkJokes));
+  addParticles(hoopX,hoopY,'#ef4444');
+  addParticles(hoopX,hoopY+10,'#facc15');
+}
+
+function showCrowd(emojis){
+  const el=$('crowd');el.textContent=emojis;el.classList.add('show');
+  setTimeout(()=>el.classList.remove('show'),1500);
+}
+
+function addParticles(x,y,color){
+  for(let i=0;i<12;i++){
+    particles.push({x,y,vx:(Math.random()-0.5)*200,vy:(Math.random()-1)*250,life:1,color});
+  }
+}
+
+// Drawing
+function drawCourt(){
+  // Floor
+  const floorGrad=ctx.createLinearGradient(0,H*0.35,0,H);
+  floorGrad.addColorStop(0,'#c8956c');floorGrad.addColorStop(1,'#a0714a');
+  ctx.fillStyle=floorGrad;ctx.fillRect(0,H*0.3,W,H*0.7);
+  // Floor lines
+  ctx.strokeStyle='rgba(255,255,255,0.15)';ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(W*0.5,H*0.3);ctx.lineTo(W*0.5,H);ctx.stroke();
+  ctx.beginPath();ctx.arc(W*0.5,H*0.65,60,0,Math.PI*2);ctx.stroke();
+  // 3pt line
+  ctx.beginPath();ctx.arc(hoopX+20,hoopY+80,W*0.35,Math.PI*0.6,Math.PI*1.4);ctx.stroke();
+  // Wall
+  ctx.fillStyle='#2d1b4e';ctx.fillRect(0,0,W,H*0.3);
+  // Crowd seats
+  for(let i=0;i<20;i++){
+    const cx=W*0.05+i*(W*0.9/20);
+    ctx.font='16px sans-serif';
+    ctx.fillText(['👤','👦','👧','👨','👩','🧑'][i%6],cx,H*0.12+Math.sin(i)*5);
+    ctx.fillText(['👤','👩','👦','🧑','👨','👧'][(i+3)%6],cx,H*0.22+Math.cos(i)*4);
+  }
+}
+
+function drawHoop(){
+  // Backboard
+  ctx.fillStyle='#fff';ctx.fillRect(hoopX+30,hoopY-30,8,70);
+  ctx.strokeStyle='#333';ctx.lineWidth=2;ctx.strokeRect(hoopX+30,hoopY-30,8,70);
+  // Square on backboard
+  ctx.strokeStyle='#e44';ctx.lineWidth=1.5;ctx.strokeRect(hoopX+22,hoopY-10,16,20);
+  // Rim
+  ctx.strokeStyle='#f60';ctx.lineWidth=4;
+  ctx.beginPath();ctx.moveTo(hoopX-15,hoopY+5);ctx.lineTo(hoopX+30,hoopY+5);ctx.stroke();
+  // Rim front circle
+  ctx.beginPath();ctx.arc(hoopX-15,hoopY+5,3,0,Math.PI*2);ctx.fillStyle='#f60';ctx.fill();
+  // Net
+  ctx.strokeStyle='rgba(255,255,255,0.6)';ctx.lineWidth=1;
+  for(let i=0;i<5;i++){
+    const nx=hoopX-12+i*10;
+    ctx.beginPath();ctx.moveTo(nx,hoopY+8);
+    ctx.quadraticCurveTo(nx+(i%2?3:-3),hoopY+30,hoopX+5,hoopY+45);
+    ctx.stroke();
+  }
+  // Cross nets
+  for(let j=0;j<3;j++){
+    const ny=hoopY+12+j*11;
+    ctx.beginPath();ctx.moveTo(hoopX-12,ny);ctx.lineTo(hoopX+28,ny);ctx.stroke();
+  }
+}
+
+function drawJesus(){
+  const jx=jesusX,jy=jesusY;
+  // Body (simple stick figure with jersey)
+  // Halo
+  ctx.beginPath();ctx.arc(jx,jy-52,14,0,Math.PI*2);
+  ctx.strokeStyle='#facc15';ctx.lineWidth=2.5;ctx.stroke();
+  // Head
+  ctx.font='28px sans-serif';ctx.fillText('🧔',jx-14,jy-28);
+  // Jersey body
+  ctx.fillStyle='#fff';ctx.fillRect(jx-12,jy-10,24,30);
+  ctx.strokeStyle='#1d4ed8';ctx.lineWidth=1;ctx.strokeRect(jx-12,jy-10,24,30);
+  // Number
+  ctx.fillStyle='#1d4ed8';ctx.font='bold 12px monospace';ctx.textAlign='center';
+  ctx.fillText('33',jx,jy+10);ctx.textAlign='left';
+  // Arms
+  ctx.strokeStyle='#d4a574';ctx.lineWidth=3;
+  ctx.beginPath();ctx.moveTo(jx-12,jy-5);ctx.lineTo(jx-25,jy-20);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(jx+12,jy-5);ctx.lineTo(jx+25,jy-25);ctx.stroke();
+  // Legs
+  ctx.beginPath();ctx.moveTo(jx-5,jy+20);ctx.lineTo(jx-8,jy+42);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(jx+5,jy+20);ctx.lineTo(jx+8,jy+42);ctx.stroke();
+  // Sandals
+  ctx.fillStyle='#8B4513';
+  ctx.fillRect(jx-14,jy+40,12,5);ctx.fillRect(jx+2,jy+40,12,5);
+  // Basketball in hand (if not shooting)
+  if(!charging&&balls.filter(b=>b.active).length===0&&!dunkMode){
+    drawBall(jx+28,jy-28,10);
+  }
+}
+
+function drawBall(x,y,r){
+  ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);
+  ctx.fillStyle='#f97316';ctx.fill();
+  ctx.strokeStyle='#92400e';ctx.lineWidth=1.5;ctx.stroke();
+  // Lines on ball
+  ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(x-r,y);ctx.lineTo(x+r,y);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(x,y-r);ctx.quadraticCurveTo(x+r*0.5,y,x,y+r);ctx.stroke();
+}
+
+function drawBalls(){
+  balls.forEach(b=>{
+    if(!b.active)return;
+    // Trail
+    b.trail.forEach(t=>{
+      ctx.beginPath();ctx.arc(t.x,t.y,3,0,Math.PI*2);
+      ctx.fillStyle=`rgba(249,115,22,${t.a*0.4})`;ctx.fill();
+    });
+    drawBall(b.x,b.y,11);
+  });
+}
+
+function drawParticles(){
+  particles.forEach(p=>{
+    ctx.beginPath();ctx.arc(p.x,p.y,4*p.life,0,Math.PI*2);
+    ctx.fillStyle=p.color+Math.floor(p.life*255).toString(16).padStart(2,'0');
+    ctx.fill();
+  });
+}
+
+// Game loop
+let lastTime=0;
+function gameLoop(ts){
+  const dt=Math.min((ts-lastTime)/1000,0.05);lastTime=ts;
+  ctx.clearRect(0,0,W,H);
+  drawCourt();drawHoop();
+
+  if(state==='playing'){
+    // Clock
+    clock-=dt;
+    if(clock<=0){
+      clock=0;
+      if(quarter<4){quarter++;clock=24;setJesusPosition();speak(`Quarter ${quarter}. New position.`)}
+      else{endGame()}
+    }
+    $('clock-display').textContent=clock.toFixed(1);
+    $('score-display').textContent=score;
+    $('quarter-display').textContent='Q'+quarter;
+
+    // Charging
+    if(charging){
+      power=Math.min((performance.now()-chargeStart)/1000,1);
+      $('power-fill').style.width=(power*100)+'%';
+    }
+
+    // Dunk mode
+    if(dunkMode){
+      dunkTimer-=dt;
+      if(dunkTimer<=0){dunkMode=false;$('dunk-prompt').classList.remove('show')}
+    }
+
+    // Random commentary
+    if(performance.now()-lastRandom>25000&&performance.now()-lastCommentary>8000){
+      speak(randomFrom(randomJokes));lastRandom=performance.now();
+    }
+
+    updateBalls(dt);
+
+    // Particles
+    particles.forEach(p=>{p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=400*dt;p.life-=dt*1.5});
+    particles=particles.filter(p=>p.life>0);
+  }
+
+  drawJesus();drawBalls();drawParticles();
+  requestAnimationFrame(gameLoop);
+}
+
+function endGame(){
+  state='end';
+  $('end-screen').classList.remove('hidden');
+  $('final-score').textContent=score+' pts';
+  $('final-stats').textContent=`${makes}/${shots} shots made (${shots?Math.round(makes/shots*100):0}%)`;
+  speak(`Final score: ${score}. Amen.`);
+}
+
+function startGame(){
+  state='playing';score=0;quarter=1;clock=24;makes=0;shots=0;
+  balls=[];particles=[];dunkMode=false;
+  $('start-screen').classList.add('hidden');
+  $('end-screen').classList.add('hidden');
+  setupCourt();
+  try{if(AC&&AC.state==='suspended')AC.resume();}catch(e){}
+  speak("Tip off. Let there be basketball.");
+  lastRandom=performance.now();lastCommentary=performance.now();
+}
+
+// Input
+function pointerDown(e){
+  if(state!=='playing')return;
+  try{if(AC&&AC.state==='suspended')AC.resume();}catch(e){}
+  if(dunkMode){doDunk();return}
+  charging=true;chargeStart=performance.now();
+  $('power-bar').classList.add('show');
+}
+function pointerUp(e){
+  if(!charging)return;
+  charging=false;
+  $('power-bar').classList.remove('show');
+  if(state==='playing'&&power>0.05){shootBall(power)}
+  power=0;$('power-fill').style.width='0%';
+}
+
+// Use both pointer and touch events for maximum compatibility
+canvas.addEventListener('pointerdown',pointerDown);
+canvas.addEventListener('pointerup',pointerUp);
+canvas.addEventListener('pointerleave',pointerUp);
+canvas.addEventListener('touchstart',function(e){e.preventDefault();pointerDown(e);},{passive:false});
+canvas.addEventListener('touchend',function(e){e.preventDefault();pointerUp(e);},{passive:false});
+// Also allow canvas tap to start game
+canvas.addEventListener('click',function(){
+  if(state==='start'){startGame();}
+  if(state==='end'){startGame();}
+});
+
+$('start-btn').addEventListener('click',startGame);
+$('restart-btn').addEventListener('click',startGame);
+
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>

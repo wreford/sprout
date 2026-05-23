@@ -1,0 +1,88 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hot Work Permit Generator</title><style>
+:root{--bg:#0f0f10;--bg2:#1a1a1c;--border:#2a2a2d;--text:#f0f0f0;--dim:#6e6e73;--accent:#ff6b35;--green:#4ade80}
+*{margin:0;padding:0;box-sizing:border-box}body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;padding:16px;max-width:800px;margin:auto}
+a.home{color:var(--accent);text-decoration:none;font-size:14px}h1{font-size:20px;margin:8px 0 12px}h2{font-size:16px;color:var(--accent);margin:10px 0 6px}
+input,select,button,textarea{background:var(--bg2);color:var(--text);border:1px solid var(--border);padding:8px 12px;border-radius:6px;font-size:14px;width:100%}
+button{background:var(--accent);border:none;cursor:pointer;font-weight:600;width:auto}button:hover{opacity:.85}
+.g{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0}
+label{font-size:12px;color:var(--dim);display:block;margin-bottom:2px}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px;margin:8px 0}
+.chk{display:flex;align-items:center;gap:8px;margin:4px 0;font-size:14px}
+.chk input{width:auto}
+.timer-display{font-size:48px;font-weight:700;text-align:center;padding:20px;font-family:monospace}
+.timer-active{color:var(--accent);animation:pulse 1s infinite alternate}.timer-done{color:var(--green)}
+@keyframes pulse{from{opacity:1}to{opacity:.5}}
+.alarm{background:#ef4444;color:#fff;text-align:center;padding:12px;border-radius:8px;font-size:18px;font-weight:700;display:none}
+.permits{margin-top:12px}
+@media print{button,a.home,#timer-section,.no-print{display:none!important}.card{break-inside:avoid;color:#000;background:#fff;border:1px solid #ccc}h2{color:#000}}
+</style></head><body>
+<a class="home" href="../index.html">&larr; home</a><h1>Hot Work Permit Generator</h1>
+<div class="card">
+<h2>Permit Details</h2>
+<div class="g">
+<div><label>Permit #</label><input id="pnum" value="HWP-001"></div>
+<div><label>Date</label><input id="pdate" type="date"></div>
+<div><label>Location</label><input id="ploc" placeholder="Floor/Area"></div>
+<div><label>Work Description</label><input id="pdesc" placeholder="Welding, cutting, grinding..."></div>
+<div><label>Welder/Operator</label><input id="pwelder"></div>
+<div><label>Fire Watch Person</label><input id="pfwatch"></div>
+<div><label>Start Time</label><input id="pstart" type="time"></div>
+<div><label>End Time</label><input id="pend" type="time"></div>
+</div>
+<h2>Pre-Work Checklist (NFPA 51B)</h2>
+<div class="chk"><input type="checkbox" id="c1"><label for="c1">Combustibles moved 35ft or protected with fire-resistant covers</label></div>
+<div class="chk"><input type="checkbox" id="c2"><label for="c2">Fire extinguisher (min 2A:10B:C) within 10ft</label></div>
+<div class="chk"><input type="checkbox" id="c3"><label for="c3">Fire blankets/welding curtains in place</label></div>
+<div class="chk"><input type="checkbox" id="c4"><label for="c4">Sprinkler system operational</label></div>
+<div class="chk"><input type="checkbox" id="c5"><label for="c5">Floor openings/cracks covered</label></div>
+<div class="chk"><input type="checkbox" id="c6"><label for="c6">Adjacent rooms checked for combustibles</label></div>
+<div class="chk"><input type="checkbox" id="c7"><label for="c7">Fire alarm system notified</label></div>
+<div class="chk"><input type="checkbox" id="c8"><label for="c8">Fire watch person trained and equipped</label></div>
+<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+<button onclick="savePermit()">Save Permit</button>
+<button onclick="window.print()" style="background:var(--green);color:#000">Print Permit</button>
+</div></div>
+<div class="card" id="timer-section">
+<h2>Post-Work Fire Watch Timer</h2>
+<p style="font-size:13px;color:var(--dim);margin-bottom:8px">NFPA 51B requires 60-minute fire watch after hot work completion.</p>
+<div class="timer-display" id="timer">60:00</div>
+<div class="alarm" id="alarm">FIRE WATCH COMPLETE — Area cleared!</div>
+<div style="display:flex;gap:8px;justify-content:center;margin-top:8px">
+<button onclick="startTimer()">Start 60min Watch</button>
+<button onclick="startTimer(30)">Start 30min</button>
+<button onclick="stopTimer()" style="background:var(--border)">Stop</button>
+<button onclick="resetTimer()" style="background:var(--border)">Reset</button>
+</div></div>
+<h2 class="no-print">Saved Permits</h2>
+<div class="permits no-print" id="permits"></div>
+<p style="font-size:11px;color:var(--dim);margin-top:12px">References: OSHA 29 CFR 1926.352, NFPA 51B Standard for Fire Prevention During Welding, Cutting, and Other Hot Work.</p>
+<script>
+let permits=JSON.parse(localStorage.getItem('hw_permits')||'[]'),interval=null,remaining=3600,audioCtx=null;
+document.getElementById('pdate').value=new Date().toISOString().slice(0,10);
+function savePermit(){const checks=[];for(let i=1;i<=8;i++)if(document.getElementById('c'+i).checked)checks.push(i);
+const p={num:document.getElementById('pnum').value,date:document.getElementById('pdate').value,
+loc:document.getElementById('ploc').value,desc:document.getElementById('pdesc').value,
+welder:document.getElementById('pwelder').value,fwatch:document.getElementById('pfwatch').value,
+start:document.getElementById('pstart').value,end:document.getElementById('pend').value,checks,
+checkedAll:checks.length===8};permits.push(p);localStorage.setItem('hw_permits',JSON.stringify(permits));
+renderPermits();document.getElementById('pnum').value='HWP-'+(permits.length+1).toString().padStart(3,'0')}
+function renderPermits(){let h='';permits.forEach((p,i)=>{h+=`<div class="card">
+<b>${p.num}</b> — ${p.date} — ${p.loc}<br>
+<span style="color:var(--dim)">${p.desc} | Welder: ${p.welder} | Watch: ${p.fwatch} | ${p.start}-${p.end}</span><br>
+<small>${p.checkedAll?'<span style="color:var(--green)">All checks passed</span>':'<span style="color:#ef4444">Incomplete checklist ('+p.checks.length+'/8)</span>'}</small>
+<button onclick="removePermit(${i})" style="font-size:11px;padding:2px 8px;background:var(--border);margin-left:8px">Delete</button></div>`});
+document.getElementById('permits').innerHTML=h||'<span style="color:var(--dim)">No saved permits.</span>'}
+function removePermit(i){permits.splice(i,1);localStorage.setItem('hw_permits',JSON.stringify(permits));renderPermits()}
+function startTimer(mins){remaining=(mins||60)*60;stopTimer();document.getElementById('alarm').style.display='none';
+const el=document.getElementById('timer');el.className='timer-display timer-active';
+interval=setInterval(()=>{remaining--;if(remaining<=0){stopTimer();el.textContent='00:00';el.className='timer-display timer-done';
+document.getElementById('alarm').style.display='block';beep();return}
+const m=Math.floor(remaining/60).toString().padStart(2,'0'),s=(remaining%60).toString().padStart(2,'0');el.textContent=m+':'+s},1000)}
+function stopTimer(){if(interval){clearInterval(interval);interval=null}document.getElementById('timer').className='timer-display'}
+function resetTimer(){stopTimer();remaining=3600;document.getElementById('timer').textContent='60:00';document.getElementById('alarm').style.display='none'}
+function beep(){try{audioCtx=audioCtx||new(window.AudioContext||window.webkitAudioContext)();
+for(let i=0;i<3;i++){setTimeout(()=>{const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.connect(g);g.connect(audioCtx.destination);
+o.frequency.value=880;g.gain.value=0.3;o.start();o.stop(audioCtx.currentTime+0.3)},i*500)}}catch(e){}}
+renderPermits();
+</script></body></html>

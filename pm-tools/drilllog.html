@@ -1,0 +1,78 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Borehole / Drill Log Generator</title><style>
+:root{--bg:#0f0f10;--bg2:#1a1a1c;--border:#2a2a2d;--text:#f0f0f0;--dim:#6e6e73;--accent:#ff6b35;--green:#4ade80}
+*{margin:0;padding:0;box-sizing:border-box}body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;padding:16px;max-width:960px;margin:auto}
+a.home{color:var(--accent);text-decoration:none;font-size:14px}h1{font-size:20px;margin:8px 0 12px}h2{font-size:16px;color:var(--accent);margin:12px 0 6px}
+input,select,button{background:var(--bg2);color:var(--text);border:1px solid var(--border);padding:8px 12px;border-radius:6px;font-size:14px}
+button{background:var(--accent);border:none;cursor:pointer;font-weight:600}button:hover{opacity:.85}
+.g{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:6px;margin:6px 0}
+label{font-size:11px;color:var(--dim);display:block;margin-bottom:2px}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px;margin:8px 0}
+canvas{border:1px solid var(--border);border-radius:8px;background:var(--bg2)}
+.tabs{display:flex;gap:4px;flex-wrap:wrap;margin:8px 0}.tab{padding:6px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:13px}.tab.active{border-color:var(--accent);color:var(--accent)}
+table{width:100%;border-collapse:collapse;font-size:12px;margin:6px 0}th,td{padding:4px 6px;border:1px solid var(--border);text-align:left}th{background:var(--bg2)}
+@media print{button,.tabs,#form,a.home{display:none!important}.card{break-inside:avoid;color:#000;background:#fff;border:1px solid #ccc}}
+</style></head><body>
+<a class="home" href="../index.html">&larr; home</a><h1>Borehole / Drill Log Generator</h1>
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+<button onclick="addBH()">+ New Borehole</button><button onclick="window.print()" style="background:var(--green);color:#000">Print Logs</button></div>
+<div class="tabs" id="tabs"></div>
+<div class="card" id="form">
+<div class="g">
+<div><label>Borehole ID</label><input id="bhid" style="width:100%"></div>
+<div><label>Location</label><input id="bhloc" style="width:100%"></div>
+<div><label>Water Table (ft)</label><input id="bhwt" type="number" style="width:100%"></div>
+<div><label>Total Depth (ft)</label><input id="bhtd" type="number" style="width:100%"></div>
+</div>
+<h2>Add Layer</h2>
+<div class="g">
+<div><label>Depth From (ft)</label><input id="df" type="number" value="0" style="width:100%"></div>
+<div><label>Depth To (ft)</label><input id="dto" type="number" value="5" style="width:100%"></div>
+<div><label>Soil Type</label><select id="st" style="width:100%"><option>Topsoil</option><option>Sand</option><option>Gravel</option><option>Silt</option><option>Clay</option><option>Sandy Clay</option><option>Silty Sand</option><option>Clayey Silt</option><option>Fill</option><option>Bedrock</option><option>Shale</option><option>Limestone</option></select></div>
+<div><label>Color</label><select id="sc" style="width:100%"><option>Brown</option><option>Dark Brown</option><option>Grey</option><option>Red-Brown</option><option>Tan</option><option>Black</option><option>White</option></select></div>
+<div><label>Moisture</label><select id="sm" style="width:100%"><option>Dry</option><option>Damp</option><option>Moist</option><option>Wet</option><option>Saturated</option></select></div>
+<div><label>SPT N-value</label><input id="sn" type="number" style="width:100%"></div>
+<div style="grid-column:1/-1"><label>Description</label><input id="sd" style="width:100%" placeholder="Fine-grained, trace organics..."></div>
+</div>
+<button onclick="addLayer()" style="margin-top:8px">Add Layer</button>
+</div>
+<div id="display" style="display:flex;gap:16px;flex-wrap:wrap;margin-top:12px"></div>
+<table id="tbl" style="margin-top:8px"><thead><tr><th>Depth</th><th>Type</th><th>Color</th><th>Moisture</th><th>N</th><th>Description</th><th></th></tr></thead><tbody id="tbody"></tbody></table>
+<p style="font-size:11px;color:var(--dim);margin-top:12px">Per ASTM D2488 Visual-Manual Classification. Simplified log — verify with lab testing.</p>
+<script>
+const SOIL_COLORS={Topsoil:'#5a3e28',Sand:'#e8d5a3',Gravel:'#b8a88a',Silt:'#c4b89c',Clay:'#8b7355',
+'Sandy Clay':'#a0845c','Silty Sand':'#d4c49a','Clayey Silt':'#9c8a6e',Fill:'#7a7a7a',Bedrock:'#6b6b6b',Shale:'#555555',Limestone:'#d0d0c0'};
+let boreholes=JSON.parse(localStorage.getItem('bh_data')||'[]'),cur=0;
+function addBH(){boreholes.push({id:'BH-'+(boreholes.length+1),loc:'',wt:10,td:30,layers:[]});cur=boreholes.length-1;save();loadBH();renderTabs()}
+function loadBH(){const b=boreholes[cur];if(!b)return;document.getElementById('bhid').value=b.id;document.getElementById('bhloc').value=b.loc;
+document.getElementById('bhwt').value=b.wt;document.getElementById('bhtd').value=b.td;renderTable();drawAll()}
+function saveBH(){const b=boreholes[cur];if(!b)return;b.id=document.getElementById('bhid').value;b.loc=document.getElementById('bhloc').value;
+b.wt=+document.getElementById('bhwt').value;b.td=+document.getElementById('bhtd').value}
+function renderTabs(){document.getElementById('tabs').innerHTML=boreholes.map((b,i)=>`<div class="tab ${i===cur?'active':''}" onclick="switchBH(${i})">${b.id}</div>`).join('')}
+function switchBH(i){saveBH();cur=i;loadBH();renderTabs()}
+function addLayer(){saveBH();const b=boreholes[cur];if(!b)return;
+b.layers.push({df:+document.getElementById('df').value,dto:+document.getElementById('dto').value,
+type:document.getElementById('st').value,color:document.getElementById('sc').value,
+moisture:document.getElementById('sm').value,n:document.getElementById('sn').value,desc:document.getElementById('sd').value});
+b.layers.sort((a,b)=>a.df-b.df);document.getElementById('df').value=document.getElementById('dto').value;
+document.getElementById('dto').value=+document.getElementById('dto').value+5;save();renderTable();drawAll()}
+function removeLayer(i){boreholes[cur].layers.splice(i,1);save();renderTable();drawAll()}
+function renderTable(){const b=boreholes[cur];if(!b)return;
+document.getElementById('tbody').innerHTML=b.layers.map((l,i)=>`<tr><td>${l.df}-${l.dto}'</td><td>${l.type}</td><td>${l.color}</td><td>${l.moisture}</td><td>${l.n||'-'}</td><td>${l.desc}</td><td><button onclick="removeLayer(${i})" style="font-size:11px;padding:2px 8px;background:var(--border)">X</button></td></tr>`).join('')}
+function drawColumn(ctx,b,x,w,h,pad){const maxD=b.td||30,scale=(h-2*pad)/maxD;
+ctx.fillStyle='#2a2a2d';ctx.fillRect(x,pad,w,h-2*pad);
+b.layers.forEach(l=>{const y1=pad+l.df*scale,y2=pad+l.dto*scale;
+ctx.fillStyle=SOIL_COLORS[l.type]||'#888';ctx.fillRect(x,y1,w,y2-y1);
+ctx.strokeStyle='#000';ctx.lineWidth=0.5;ctx.strokeRect(x,y1,w,y2-y1);
+ctx.fillStyle='#fff';ctx.font='10px system-ui';ctx.textAlign='left';ctx.fillText(l.type,x+w+6,y1+(y2-y1)/2+4);
+ctx.fillStyle='#aaa';ctx.font='9px system-ui';ctx.textAlign='right';ctx.fillText(l.df+"'",x-4,y1+10);ctx.fillText(l.dto+"'",x-4,y2+4)});
+if(b.wt){const wy=pad+b.wt*scale;ctx.strokeStyle='#3b82f6';ctx.lineWidth=2;ctx.setLineDash([4,4]);
+ctx.beginPath();ctx.moveTo(x-10,wy);ctx.lineTo(x+w+10,wy);ctx.stroke();ctx.setLineDash([]);
+ctx.fillStyle='#3b82f6';ctx.font='10px system-ui';ctx.textAlign='left';ctx.fillText('WT '+b.wt+"'",x+w+6,wy-2)}
+ctx.fillStyle='#f0f0f0';ctx.font='bold 12px system-ui';ctx.textAlign='center';ctx.fillText(b.id,x+w/2,pad-8)}
+function drawAll(){const el=document.getElementById('display');el.innerHTML='';
+boreholes.forEach((b,i)=>{const cv=document.createElement('canvas');cv.width=180;cv.height=360;cv.style.cssText='border:1px solid var(--border);border-radius:8px;background:var(--bg2)';
+const ctx=cv.getContext('2d');ctx.fillStyle='#1a1a1c';ctx.fillRect(0,0,180,360);drawColumn(ctx,b,50,50,360,30);el.appendChild(cv)})}
+function save(){localStorage.setItem('bh_data',JSON.stringify(boreholes))}
+if(!boreholes.length)addBH();else{renderTabs();loadBH()}
+</script></body></html>

@@ -1,0 +1,506 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+  <title>MIDI Visualizer 🎵</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    html,body{height:100%;background:#000;overflow:hidden;font-family:ui-monospace,"SF Mono",monospace;color:#fff}
+    canvas{display:block;position:fixed;top:0;left:0}
+    #ui{position:fixed;bottom:0;left:0;right:0;z-index:10;background:rgba(0,0,0,0.85);border-top:1px solid #222;padding:12px 16px}
+    #title-bar{position:fixed;top:0;left:0;right:0;z-index:10;background:rgba(0,0,0,0.7);padding:10px 16px;display:flex;align-items:center;gap:12px}
+    #title-bar a{color:#555;text-decoration:none;font-size:12px}
+    #title-bar a:hover{color:#aaa}
+    #title-bar h1{font-size:16px;color:#8b5cf6;letter-spacing:0.08em;font-weight:700}
+    #song-name{font-size:12px;color:#888;margin-left:auto}
+    .controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .btn{background:#1a1a2e;border:1px solid #333;color:#ccc;padding:8px 16px;border-radius:6px;font-family:inherit;font-size:12px;cursor:pointer}
+    .btn:hover{border-color:#8b5cf6;color:#fff}
+    .btn.active{background:#8b5cf6;border-color:#8b5cf6;color:#fff}
+    .btn.play{background:#22c55e;border-color:#22c55e;color:#000;font-weight:700}
+    .btn.stop{background:#ef4444;border-color:#ef4444;color:#fff}
+    select{background:#1a1a2e;border:1px solid #333;color:#ccc;padding:8px 12px;border-radius:6px;font-family:inherit;font-size:12px}
+    #tempo-display{font-size:11px;color:#666;min-width:60px}
+    input[type=range]{width:100px;accent-color:#8b5cf6}
+  </style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="title-bar">
+  <a href="../index.html">← home</a>
+  <h1>🎵 MIDI Visualizer</h1>
+  <span id="song-name">Select a song</span>
+</div>
+<div id="ui">
+  <div class="controls">
+    <select id="song-select">
+      <option value="">-- Pick a Song --</option>
+      <option value="fur_elise">Für Elise — Beethoven</option>
+      <option value="ode_to_joy">Ode to Joy — Beethoven</option>
+      <option value="canon">Canon in D — Pachelbel</option>
+      <option value="moonlight">Moonlight Sonata — Beethoven</option>
+      <option value="twinkle">Twinkle Twinkle Little Star</option>
+      <option value="greensleeves">Greensleeves — Traditional</option>
+      <option value="entertainer">The Entertainer — Joplin</option>
+      <option value="swan_lake">Swan Lake Theme — Tchaikovsky</option>
+      <option value="minuet_g">Minuet in G — Bach</option>
+      <option value="hungarian">Hungarian Dance — Brahms</option>
+    </select>
+    <button class="btn play" id="play-btn">▶ Play</button>
+    <button class="btn stop" id="stop-btn">■ Stop</button>
+    <input type="range" id="tempo" min="40" max="200" value="100"/>
+    <span id="tempo-display">100 BPM</span>
+    <select id="viz-select">
+      <option value="bars">3D Bars</option>
+      <option value="rings">Rings</option>
+      <option value="stars">Starfield</option>
+      <option value="tunnel">Tunnel</option>
+      <option value="wave">Wave</option>
+    </select>
+  </div>
+</div>
+<script>
+var canvas = document.getElementById('c');
+var ctx = canvas.getContext('2d');
+var W, H;
+function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; }
+resize();
+window.addEventListener('resize', resize);
+
+// ═══ Tone.js-style synth using Web Audio ═══
+var audioCtx = null;
+function initAudio() { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+
+// Piano-like tone with envelope
+function playNote(freq, dur, vel) {
+  if (!audioCtx) return;
+  vel = vel || 0.08;
+  var osc = audioCtx.createOscillator();
+  var osc2 = audioCtx.createOscillator();
+  var gain = audioCtx.createGain();
+  var t = audioCtx.currentTime;
+
+  // Main tone + slight detuned for richness
+  osc.type = 'sine';
+  osc.frequency.value = freq;
+  osc2.type = 'triangle';
+  osc2.frequency.value = freq * 1.002;
+
+  // Piano envelope: quick attack, gradual decay
+  gain.gain.setValueAtTime(0, t);
+  gain.gain.linearRampToValueAtTime(vel, t + 0.01);
+  gain.gain.exponentialRampToValueAtTime(vel * 0.3, t + dur * 0.4);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+
+  osc.connect(gain);
+  osc2.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start(t);
+  osc2.start(t);
+  osc.stop(t + dur);
+  osc2.stop(t + dur);
+
+  // Track for visualization
+  activeNotes.push({ freq: freq, vel: vel, time: Date.now(), dur: dur * 1000 });
+}
+
+// Note name to frequency
+var NOTE_FREQS = {};
+(function() {
+  var names = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+  for (var oct = 0; oct <= 8; oct++) {
+    for (var n = 0; n < 12; n++) {
+      var midi = oct * 12 + n;
+      var freq = 440 * Math.pow(2, (midi - 69) / 12);
+      NOTE_FREQS[names[n] + oct] = freq;
+      NOTE_FREQS[midi] = freq;
+    }
+  }
+})();
+
+function noteFreq(name) {
+  return NOTE_FREQS[name] || 440;
+}
+
+// ═══ Song data — public domain classical pieces as note arrays ═══
+// Format: [note, duration_in_beats]  (duration: 1=quarter, 0.5=eighth, 2=half, etc.)
+
+var SONGS = {
+  fur_elise: {
+    name: "Für Elise — Beethoven",
+    tempo: 100,
+    notes: [
+      ['E5',0.5],['D#5',0.5],['E5',0.5],['D#5',0.5],['E5',0.5],['B4',0.5],['D5',0.5],['C5',0.5],
+      ['A4',1],['R',0.5],['C4',0.5],['E4',0.5],['A4',0.5],
+      ['B4',1],['R',0.5],['E4',0.5],['G#4',0.5],['B4',0.5],
+      ['C5',1],['R',0.5],['E4',0.5],['E5',0.5],['D#5',0.5],
+      ['E5',0.5],['D#5',0.5],['E5',0.5],['B4',0.5],['D5',0.5],['C5',0.5],
+      ['A4',1],['R',0.5],['C4',0.5],['E4',0.5],['A4',0.5],
+      ['B4',1],['R',0.5],['E4',0.5],['C5',0.5],['B4',0.5],
+      ['A4',1.5],['R',0.5],
+      ['E5',0.5],['D#5',0.5],['E5',0.5],['D#5',0.5],['E5',0.5],['B4',0.5],['D5',0.5],['C5',0.5],
+      ['A4',1],['R',0.5],['C4',0.5],['E4',0.5],['A4',0.5],
+      ['B4',1],['R',0.5],['E4',0.5],['G#4',0.5],['B4',0.5],
+      ['C5',1],['R',0.5],['E4',0.5],['E5',0.5],['D#5',0.5],
+      ['E5',0.5],['D#5',0.5],['E5',0.5],['B4',0.5],['D5',0.5],['C5',0.5],
+      ['A4',1],['R',0.5],['C4',0.5],['E4',0.5],['A4',0.5],
+      ['B4',1],['R',0.5],['E4',0.5],['C5',0.5],['B4',0.5],
+      ['A4',2],
+    ]
+  },
+  ode_to_joy: {
+    name: "Ode to Joy — Beethoven",
+    tempo: 110,
+    notes: [
+      ['E4',1],['E4',1],['F4',1],['G4',1],['G4',1],['F4',1],['E4',1],['D4',1],
+      ['C4',1],['C4',1],['D4',1],['E4',1],['E4',1.5],['D4',0.5],['D4',2],
+      ['E4',1],['E4',1],['F4',1],['G4',1],['G4',1],['F4',1],['E4',1],['D4',1],
+      ['C4',1],['C4',1],['D4',1],['E4',1],['D4',1.5],['C4',0.5],['C4',2],
+      ['D4',1],['D4',1],['E4',1],['C4',1],['D4',1],['E4',0.5],['F4',0.5],['E4',1],['C4',1],
+      ['D4',1],['E4',0.5],['F4',0.5],['E4',1],['D4',1],['C4',1],['D4',1],['G3',2],
+      ['E4',1],['E4',1],['F4',1],['G4',1],['G4',1],['F4',1],['E4',1],['D4',1],
+      ['C4',1],['C4',1],['D4',1],['E4',1],['D4',1.5],['C4',0.5],['C4',2],
+    ]
+  },
+  canon: {
+    name: "Canon in D — Pachelbel",
+    tempo: 80,
+    notes: [
+      ['F#5',1],['E5',1],['D5',1],['C#5',1],['B4',1],['A4',1],['B4',1],['C#5',1],
+      ['D5',1],['C#5',1],['B4',1],['A4',1],['G4',1],['F#4',1],['G4',1],['A4',1],
+      ['F#5',0.5],['G5',0.5],['A5',0.5],['G5',0.5],['F#5',0.5],['E5',0.5],['D5',0.5],['E5',0.5],
+      ['F#5',0.5],['E5',0.5],['D5',0.5],['C#5',0.5],['B4',0.5],['A4',0.5],['G4',0.5],['A4',0.5],
+      ['B4',0.5],['C#5',0.5],['D5',0.5],['E5',0.5],['F#5',0.5],['G5',0.5],['A5',0.5],['F#5',0.5],
+      ['D5',1],['D5',0.5],['C#5',0.5],['B4',0.5],['C#5',0.5],['A4',0.5],['B4',0.5],
+      ['G4',1],['F#4',0.5],['G4',0.5],['A4',1],['D4',1],
+      ['D5',2],['R',2],
+    ]
+  },
+  moonlight: {
+    name: "Moonlight Sonata — Beethoven",
+    tempo: 60,
+    notes: [
+      ['C#4',0.33],['E4',0.33],['G#4',0.33],['C#4',0.33],['E4',0.33],['G#4',0.33],
+      ['C#4',0.33],['E4',0.33],['G#4',0.33],['C#4',0.33],['E4',0.33],['G#4',0.33],
+      ['B3',0.33],['E4',0.33],['G#4',0.33],['B3',0.33],['E4',0.33],['G#4',0.33],
+      ['A3',0.33],['E4',0.33],['A4',0.33],['A3',0.33],['E4',0.33],['A4',0.33],
+      ['A3',0.33],['D4',0.33],['F#4',0.33],['A3',0.33],['D4',0.33],['F#4',0.33],
+      ['G#3',0.33],['D4',0.33],['E4',0.33],['G#3',0.33],['B3',0.33],['E4',0.33],
+      ['A3',0.33],['C#4',0.33],['E4',0.33],['A3',0.33],['C#4',0.33],['E4',0.33],
+      ['A3',0.33],['C#4',0.33],['E4',0.33],['A3',0.33],['C#4',0.33],['E4',0.33],
+    ]
+  },
+  twinkle: {
+    name: "Twinkle Twinkle Little Star",
+    tempo: 100,
+    notes: [
+      ['C4',1],['C4',1],['G4',1],['G4',1],['A4',1],['A4',1],['G4',2],
+      ['F4',1],['F4',1],['E4',1],['E4',1],['D4',1],['D4',1],['C4',2],
+      ['G4',1],['G4',1],['F4',1],['F4',1],['E4',1],['E4',1],['D4',2],
+      ['G4',1],['G4',1],['F4',1],['F4',1],['E4',1],['E4',1],['D4',2],
+      ['C4',1],['C4',1],['G4',1],['G4',1],['A4',1],['A4',1],['G4',2],
+      ['F4',1],['F4',1],['E4',1],['E4',1],['D4',1],['D4',1],['C4',2],
+    ]
+  },
+  greensleeves: {
+    name: "Greensleeves — Traditional",
+    tempo: 90,
+    notes: [
+      ['A4',1],['C5',2],['D5',1],['E5',1.5],['F5',0.5],['E5',1],['D5',2],['B4',1],
+      ['G4',1.5],['A4',0.5],['B4',1],['C5',2],['A4',1],['A4',1.5],['G#4',0.5],['A4',1],
+      ['B4',2],['G#4',1],['E4',3],
+      ['A4',1],['C5',2],['D5',1],['E5',1.5],['F5',0.5],['E5',1],['D5',2],['B4',1],
+      ['G4',1.5],['A4',0.5],['B4',1],['C5',1.5],['B4',0.5],['A4',1],['G#4',1.5],['F#4',0.5],['G#4',1],
+      ['A4',3],['A4',3],
+    ]
+  },
+  entertainer: {
+    name: "The Entertainer — Joplin",
+    tempo: 120,
+    notes: [
+      ['D5',0.25],['D#5',0.25],['E5',0.5],['C6',1],['E5',0.5],['C6',1],['E5',0.5],['C6',1.5],
+      ['R',0.5],['C6',0.5],['D6',0.25],['D#6',0.25],['E6',0.5],['C6',0.5],['D6',0.5],['E6',1],
+      ['B5',0.5],['D6',1],['C6',2],
+      ['D5',0.25],['D#5',0.25],['E5',0.5],['C6',1],['E5',0.5],['C6',1],['E5',0.5],['C6',1.5],
+      ['R',0.5],['A5',0.5],['G5',0.5],['F#5',0.5],['A5',0.5],['C6',0.5],['E6',1],
+      ['D6',0.5],['C6',0.5],['A5',0.5],['D6',1],['C6',2],
+    ]
+  },
+  swan_lake: {
+    name: "Swan Lake Theme — Tchaikovsky",
+    tempo: 75,
+    notes: [
+      ['A4',1],['B4',0.5],['C5',0.5],['D5',1],['F5',0.5],['E5',0.5],['D5',1],['C5',1],
+      ['B4',1],['A4',0.5],['B4',0.5],['C5',2],['R',1],
+      ['A4',1],['B4',0.5],['C5',0.5],['D5',1],['F5',0.5],['E5',0.5],['D5',1],['C5',1],
+      ['B4',0.5],['C5',0.5],['A4',2],['R',1],
+      ['E5',1],['F5',0.5],['E5',0.5],['D5',1],['C5',1],
+      ['B4',1],['A4',0.5],['B4',0.5],['C5',1],['D5',1],
+      ['E5',2],['R',1],
+    ]
+  },
+  minuet_g: {
+    name: "Minuet in G — Bach",
+    tempo: 110,
+    notes: [
+      ['D5',1],['G4',0.5],['A4',0.5],['B4',0.5],['C5',0.5],['D5',1],['G4',1],['G4',1],
+      ['E5',1],['C5',0.5],['D5',0.5],['E5',0.5],['F#5',0.5],['G5',1],['G4',1],['G4',1],
+      ['C5',1],['D5',0.5],['C5',0.5],['B4',0.5],['A4',0.5],['B4',1],['C5',0.5],['B4',0.5],['A4',0.5],['G4',0.5],
+      ['F#4',1],['G4',0.5],['A4',0.5],['B4',0.5],['G4',0.5],['A4',2],['D4',1],
+      ['D5',1],['G4',0.5],['A4',0.5],['B4',0.5],['C5',0.5],['D5',1],['G4',1],['G4',1],
+    ]
+  },
+  hungarian: {
+    name: "Hungarian Dance — Brahms",
+    tempo: 130,
+    notes: [
+      ['F#4',0.5],['G4',0.5],['A4',1],['A4',0.5],['B4',0.5],['A4',0.5],['G4',0.5],['F#4',1],
+      ['D4',0.5],['E4',0.5],['F#4',1],['F#4',0.5],['G4',0.5],['F#4',0.5],['E4',0.5],['D4',1],
+      ['E4',0.5],['F#4',0.5],['G4',1],['G4',0.5],['A4',0.5],['G4',0.5],['F#4',0.5],['E4',1],
+      ['F#4',0.5],['G4',0.5],['A4',1],['D5',2],['R',1],
+      ['D5',0.5],['C#5',0.5],['D5',1],['D5',0.5],['E5',0.5],['D5',0.5],['C#5',0.5],['B4',1],
+      ['A4',0.5],['B4',0.5],['C#5',1],['D5',0.5],['E5',0.5],['D5',0.5],['C#5',0.5],['B4',1],
+      ['A4',2],['R',1],
+    ]
+  },
+};
+
+// ═══ Playback ═══
+var playing = false;
+var currentSong = null;
+var noteIndex = 0;
+var playTimer = null;
+var tempo = 100;
+var activeNotes = [];
+
+function playSong(songKey) {
+  stopSong();
+  initAudio();
+  currentSong = SONGS[songKey];
+  if (!currentSong) return;
+  noteIndex = 0;
+  playing = true;
+  document.getElementById('song-name').textContent = currentSong.name;
+  tempo = currentSong.tempo;
+  document.getElementById('tempo').value = tempo;
+  document.getElementById('tempo-display').textContent = tempo + ' BPM';
+  playNextNote();
+}
+
+function playNextNote() {
+  if (!playing || !currentSong || noteIndex >= currentSong.notes.length) {
+    if (playing) { noteIndex = 0; playNextNote(); } // Loop
+    return;
+  }
+  var note = currentSong.notes[noteIndex];
+  var noteName = note[0];
+  var beats = note[1];
+  var msPerBeat = 60000 / tempo;
+  var dur = beats * msPerBeat / 1000;
+
+  if (noteName !== 'R') {
+    var freq = noteFreq(noteName);
+    playNote(freq, dur, 0.06);
+  }
+
+  noteIndex++;
+  playTimer = setTimeout(playNextNote, beats * msPerBeat);
+}
+
+function stopSong() {
+  playing = false;
+  clearTimeout(playTimer);
+  activeNotes = [];
+}
+
+// ═══ Controls ═══
+document.getElementById('play-btn').addEventListener('click', function() {
+  var sel = document.getElementById('song-select').value;
+  if (sel) playSong(sel);
+});
+document.getElementById('stop-btn').addEventListener('click', stopSong);
+document.getElementById('tempo').addEventListener('input', function() {
+  tempo = parseInt(this.value);
+  document.getElementById('tempo-display').textContent = tempo + ' BPM';
+});
+document.getElementById('song-select').addEventListener('change', function() {
+  if (this.value && playing) playSong(this.value);
+});
+
+// ═══ Visualization ═══
+var vizMode = 'bars';
+document.getElementById('viz-select').addEventListener('change', function() { vizMode = this.value; });
+
+var stars = [];
+for (var i = 0; i < 200; i++) stars.push({ x: Math.random()*2-1, y: Math.random()*2-1, z: Math.random(), s: Math.random()*2+0.5 });
+
+var frame = 0;
+var hue = 0;
+
+function draw() {
+  frame++;
+  hue = (hue + 0.3) % 360;
+
+  // Clean up old notes
+  var now = Date.now();
+  activeNotes = activeNotes.filter(function(n) { return now - n.time < n.dur + 200; });
+
+  // Background
+  ctx.fillStyle = 'rgba(0,0,0,0.15)';
+  ctx.fillRect(0, 0, W, H);
+
+  var cx = W / 2, cy = H / 2;
+  var intensity = 0;
+  for (var i = 0; i < activeNotes.length; i++) {
+    var age = (now - activeNotes[i].time) / activeNotes[i].dur;
+    intensity += (1 - age) * activeNotes[i].vel * 10;
+  }
+  intensity = Math.min(1, intensity);
+
+  if (vizMode === 'bars') {
+    // 3D perspective bars
+    var barCount = 32;
+    for (var b = 0; b < barCount; b++) {
+      var freq = 100 + b * 60;
+      var height = 0;
+      for (var n = 0; n < activeNotes.length; n++) {
+        var diff = Math.abs(activeNotes[n].freq - freq);
+        if (diff < 80) {
+          var age2 = 1 - (now - activeNotes[n].time) / activeNotes[n].dur;
+          height += age2 * 200 * activeNotes[n].vel * (1 - diff / 80);
+        }
+      }
+      height = Math.max(5, height);
+      var x = (b / barCount) * W;
+      var bw = W / barCount - 2;
+      // 3D perspective effect
+      var depth = 0.5 + Math.sin(frame * 0.02 + b * 0.3) * 0.2;
+      var perspX = cx + (x - cx) * depth;
+      var perspW = bw * depth;
+      var h2 = (hue + b * 10) % 360;
+      ctx.fillStyle = 'hsl(' + h2 + ',80%,' + (30 + height * 0.2) + '%)';
+      ctx.fillRect(perspX, H - 60 - height * depth, perspW, height * depth);
+      // Reflection
+      ctx.globalAlpha = 0.15;
+      ctx.fillRect(perspX, H - 60, perspW, height * depth * 0.3);
+      ctx.globalAlpha = 1;
+      // Glow on top
+      if (height > 30) {
+        ctx.fillStyle = 'hsl(' + h2 + ',100%,70%)';
+        ctx.fillRect(perspX, H - 60 - height * depth, perspW, 3);
+      }
+    }
+  } else if (vizMode === 'rings') {
+    for (var n2 = 0; n2 < activeNotes.length; n2++) {
+      var note3 = activeNotes[n2];
+      var age3 = (now - note3.time) / note3.dur;
+      var radius = 20 + age3 * Math.min(W, H) * 0.4;
+      var alpha = Math.max(0, 1 - age3);
+      var noteHue = (note3.freq * 0.5) % 360;
+      ctx.strokeStyle = 'hsla(' + noteHue + ',80%,60%,' + alpha + ')';
+      ctx.lineWidth = 2 + note3.vel * 20 * (1 - age3);
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    // Center pulse
+    ctx.fillStyle = 'hsl(' + hue + ',80%,' + (20 + intensity * 50) + '%)';
+    ctx.beginPath();
+    ctx.arc(cx, cy, 10 + intensity * 30, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (vizMode === 'stars') {
+    for (var s = 0; s < stars.length; s++) {
+      var star = stars[s];
+      star.z -= 0.003 + intensity * 0.02;
+      if (star.z <= 0) { star.z = 1; star.x = Math.random()*2-1; star.y = Math.random()*2-1; }
+      var sx = cx + star.x / star.z * W * 0.5;
+      var sy = cy + star.y / star.z * H * 0.5;
+      var size = (1 - star.z) * 4 + intensity * 3;
+      var starHue = (hue + star.s * 100) % 360;
+      ctx.fillStyle = 'hsl(' + starHue + ',70%,' + (50 + intensity * 40) + '%)';
+      ctx.fillRect(sx - size/2, sy - size/2, size, size);
+      // Trail
+      var tx = cx + star.x / (star.z + 0.05) * W * 0.5;
+      var ty = cy + star.y / (star.z + 0.05) * H * 0.5;
+      ctx.strokeStyle = 'hsla(' + starHue + ',70%,50%,0.3)';
+      ctx.lineWidth = size * 0.5;
+      ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(tx, ty); ctx.stroke();
+    }
+  } else if (vizMode === 'tunnel') {
+    var segments = 20;
+    for (var t = segments - 1; t >= 0; t--) {
+      var depth2 = t / segments;
+      var tunnelR = 30 + depth2 * Math.min(W, H) * 0.6;
+      var offset = frame * 0.02 + t * 0.1;
+      var wobble = Math.sin(offset) * 10 * intensity;
+      var tHue = (hue + t * 15) % 360;
+      ctx.strokeStyle = 'hsla(' + tHue + ',80%,' + (30 + intensity * 40) + ',' + (0.3 + (1 - depth2) * 0.5) + ')';
+      ctx.lineWidth = 2 + (1 - depth2) * 3;
+      ctx.beginPath();
+      ctx.arc(cx + wobble, cy + wobble * 0.5, tunnelR, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    // Flash on note
+    if (intensity > 0.3) {
+      ctx.fillStyle = 'hsla(' + hue + ',80%,70%,' + (intensity * 0.15) + ')';
+      ctx.beginPath();
+      ctx.arc(cx, cy, 50 + intensity * 100, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else if (vizMode === 'wave') {
+    ctx.beginPath();
+    ctx.moveTo(0, cy);
+    for (var wx = 0; wx < W; wx++) {
+      var y = cy;
+      for (var n4 = 0; n4 < activeNotes.length; n4++) {
+        var note4 = activeNotes[n4];
+        var age4 = 1 - (now - note4.time) / note4.dur;
+        if (age4 > 0) {
+          y += Math.sin(wx * note4.freq * 0.001 + frame * 0.05) * age4 * 60 * note4.vel;
+        }
+      }
+      y += Math.sin(wx * 0.01 + frame * 0.02) * 20 * intensity;
+      ctx.lineTo(wx, y);
+    }
+    ctx.strokeStyle = 'hsl(' + hue + ',80%,60%)';
+    ctx.lineWidth = 2 + intensity * 3;
+    ctx.stroke();
+    // Mirror wave
+    ctx.globalAlpha = 0.3;
+    ctx.beginPath();
+    ctx.moveTo(0, cy);
+    for (var wx2 = 0; wx2 < W; wx2++) {
+      var y2 = cy;
+      for (var n5 = 0; n5 < activeNotes.length; n5++) {
+        var note5 = activeNotes[n5];
+        var age5 = 1 - (now - note5.time) / note5.dur;
+        if (age5 > 0) y2 -= Math.sin(wx2 * note5.freq * 0.001 + frame * 0.05) * age5 * 60 * note5.vel;
+      }
+      ctx.lineTo(wx2, y2);
+    }
+    ctx.strokeStyle = 'hsl(' + ((hue + 180) % 360) + ',80%,60%)';
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  // Note sparks
+  for (var ns = 0; ns < activeNotes.length; ns++) {
+    var nn = activeNotes[ns];
+    var nAge = (now - nn.time) / nn.dur;
+    if (nAge < 0.3) {
+      var sparkX = cx + Math.cos(nn.freq * 0.01 + frame * 0.1) * 100;
+      var sparkY = cy + Math.sin(nn.freq * 0.01 + frame * 0.1) * 100;
+      ctx.fillStyle = 'hsla(' + (nn.freq * 0.5 % 360) + ',100%,80%,' + (1 - nAge * 3) + ')';
+      ctx.beginPath();
+      ctx.arc(sparkX, sparkY, 3 + nn.vel * 30, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  requestAnimationFrame(draw);
+}
+draw();
+</script>
+</body>
+</html>

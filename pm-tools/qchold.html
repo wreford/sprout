@@ -1,0 +1,94 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>QC Hold Point Tracker</title><style>
+:root{--bg:#0f0f10;--bg2:#1a1a1c;--border:#2a2a2d;--text:#f0f0f0;--dim:#6e6e73;--accent:#ff6b35;--green:#4ade80}
+*{margin:0;box-sizing:border-box}body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;padding:12px}
+a.home{color:var(--accent);text-decoration:none;font-size:14px}a.home:hover{text-decoration:underline}
+h1{font-size:1.3em;margin:8px 0 10px}
+.board{display:flex;gap:8px;overflow-x:auto;min-height:60vh;padding-bottom:12px}
+.col{flex:1;min-width:200px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:8px}
+.col-title{font-size:13px;font-weight:700;padding:6px;text-align:center;border-radius:6px;margin-bottom:8px}
+.card{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:6px;cursor:grab;font-size:12px}
+.card.overdue{border-color:#ef4444}
+.card .act{font-weight:700;color:var(--accent);margin-bottom:3px}
+.card .desc{color:var(--dim);margin-bottom:3px}
+.card .meta{font-size:11px;color:var(--dim)}
+.badge{display:inline-block;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700}
+.badge.H{background:#ef4444;color:#fff}.badge.W{background:#f59e0b;color:#000}.badge.R{background:var(--green);color:#000}
+.signoff{font-size:11px;color:var(--green);margin-top:4px}
+button{padding:6px 14px;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;margin:4px 2px}
+button:hover{opacity:.85}button.sm{padding:3px 8px;font-size:11px}
+.form{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:10px}
+.form input,.form select,.form textarea{width:100%;padding:6px;margin:3px 0 8px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:4px;font-size:13px}
+.form label{font-size:12px;color:var(--dim)}
+.row{display:flex;gap:8px;flex-wrap:wrap}.row>*{flex:1;min-width:120px}
+@media print{.no-print{display:none!important}.board{flex-direction:column}}
+</style></head><body>
+<a href="../index.html" class="home">← home</a>
+<h1>QC Hold Point Tracker</h1>
+<div class="no-print">
+<button onclick="showForm()">+ Add Hold Point</button>
+<button onclick="printReport()">Print ITP Report</button>
+<div class="form" id="form" style="display:none">
+ <div class="row">
+  <div><label>Activity</label><input id="f_act" placeholder="Concrete pour"></div>
+  <div><label>ITP Ref</label><input id="f_itp" placeholder="ITP-003-R1"></div>
+ </div>
+ <label>Hold Point Description</label><textarea id="f_desc" rows="2" placeholder="Rebar inspection before pour"></textarea>
+ <div class="row">
+  <div><label>Designation</label><select id="f_des"><option value="H">Hold (H)</option><option value="W">Witness (W)</option><option value="R">Review (R)</option></select></div>
+  <div><label>Due Date</label><input id="f_due" type="date"></div>
+  <div><label>Standard</label><select id="f_std"><option>ISO 9001</option><option>CSA N299</option><option>CSA W47.1</option><option>CSA A23.1</option></select></div>
+ </div>
+ <button onclick="addCard()">Add</button><button onclick="document.getElementById('form').style.display='none'" style="background:var(--border)">Cancel</button>
+</div>
+</div>
+<div class="board" id="board"></div>
+<script>
+const COLS=['upcoming','ready','inspected','released'];
+const COL_NAMES=['Upcoming','Ready for Inspection','Inspected','Released'];
+const COL_COLORS=['var(--dim)','var(--accent)','#3b82f6','var(--green)'];
+let cards=JSON.parse(localStorage.getItem('qc_cards')||'[]');
+if(!cards.length){cards=[
+ {id:1,act:'Rebar Placement',desc:'Verify rebar spacing and cover before pour',itp:'ITP-001',des:'H',due:'2026-05-18',std:'CSA A23.1',col:'upcoming',sign:null},
+ {id:2,act:'Concrete Pour',desc:'Slump test and air content verification',itp:'ITP-002',des:'W',due:'2026-05-20',std:'ISO 9001',col:'ready',sign:null},
+ {id:3,act:'Structural Steel',desc:'Bolt torque verification on moment connections',itp:'ITP-003',des:'H',due:'2026-05-15',std:'CSA W47.1',col:'upcoming',sign:null}
+];}
+let dragId=null;
+function save(){localStorage.setItem('qc_cards',JSON.stringify(cards))}
+function showForm(){document.getElementById('form').style.display='block'}
+function addCard(){
+ const c={id:Date.now(),act:document.getElementById('f_act').value||'Activity',desc:document.getElementById('f_desc').value,
+  itp:document.getElementById('f_itp').value,des:document.getElementById('f_des').value,
+  due:document.getElementById('f_due').value,std:document.getElementById('f_std').value,col:'upcoming',sign:null};
+ cards.push(c);save();render();document.getElementById('form').style.display='none';
+}
+function signOff(id){
+ const name=prompt('Inspector name:');if(!name)return;
+ const c=cards.find(x=>x.id===id);if(c){c.sign={name,date:new Date().toISOString().slice(0,10)};save();render();}
+}
+function render(){
+ const board=document.getElementById('board');board.innerHTML='';
+ COLS.forEach((col,ci)=>{
+  const div=document.createElement('div');div.className='col';
+  div.innerHTML=`<div class="col-title" style="background:${COL_COLORS[ci]}20;color:${COL_COLORS[ci]}">${COL_NAMES[ci]}</div>`;
+  div.ondragover=e=>{e.preventDefault();div.style.outline='2px solid var(--accent)'};
+  div.ondragleave=()=>div.style.outline='none';
+  div.ondrop=e=>{e.preventDefault();div.style.outline='none';const c=cards.find(x=>x.id==dragId);if(c){c.col=col;save();render();}};
+  const colCards=cards.filter(c=>c.col===col);
+  colCards.forEach(c=>{
+   const today=new Date().toISOString().slice(0,10);
+   const overdue=c.due&&c.due<today&&col!=='released';
+   const el=document.createElement('div');el.className='card'+(overdue?' overdue':'');el.draggable=true;
+   el.ondragstart=()=>dragId=c.id;
+   let html=`<div class="act">${c.act}</div><div class="desc">${c.desc}</div>`;
+   html+=`<div class="meta"><span class="badge ${c.des}">${c.des}</span> ${c.itp} · ${c.std}</div>`;
+   if(c.due)html+=`<div class="meta"${overdue?' style="color:#ef4444"':''}>Due: ${c.due}${overdue?' ⚠ OVERDUE':''}</div>`;
+   if(c.sign)html+=`<div class="signoff">✓ ${c.sign.name} — ${c.sign.date}</div>`;
+   else if(col==='inspected'||col==='released')html+=`<button class="sm no-print" onclick="signOff(${c.id})">Sign Off</button>`;
+   el.innerHTML=html;div.appendChild(el);
+  });
+  board.appendChild(div);
+ });
+}
+function printReport(){window.print()}
+render();
+</script></body></html>

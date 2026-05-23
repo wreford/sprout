@@ -1,0 +1,171 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Cost Code Manager</title><style>
+:root{--bg:#0f0f10;--bg2:#1a1a1c;--border:#2a2a2d;--text:#f0f0f0;--dim:#6e6e73;--accent:#ff6b35;--green:#4ade80}
+*{margin:0;box-sizing:border-box}body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;padding:12px;max-width:960px;margin:0 auto}
+a.home{color:var(--accent);text-decoration:none;font-size:14px}h1{font-size:1.3em;margin:8px 0 10px}
+button{padding:6px 14px;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;margin:4px 2px}
+button:hover{opacity:.85}button.sm{padding:3px 8px;font-size:11px;border-radius:4px}button.g{background:var(--green);color:#000}
+.toolbar{margin-bottom:10px;display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.search{padding:6px 10px;background:var(--bg2);border:1px solid var(--border);color:var(--text);border-radius:6px;font-size:13px;width:200px}
+.tree{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:8px;overflow:auto;max-height:70vh}
+.node{margin-left:18px}.node-row{display:flex;align-items:center;padding:4px 6px;border-radius:4px;cursor:pointer;font-size:13px;gap:6px}
+.node-row:hover{background:var(--border)}
+.toggle{width:16px;text-align:center;color:var(--dim);font-size:12px;flex-shrink:0;cursor:pointer}
+.code{color:var(--accent);font-weight:700;min-width:60px}.name{flex:1;min-width:100px}
+.budget,.actual,.variance{min-width:80px;text-align:right;font-size:12px}
+.over{color:#ef4444}.under{color:var(--green)}
+.summary{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px;margin:10px 0;display:flex;flex-wrap:wrap;gap:16px;font-size:14px}
+.summary div{text-align:center}.summary .lbl{font-size:11px;color:var(--dim)}.summary .val{font-size:1.3em;font-weight:700}
+.modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.6);z-index:10;justify-content:center;align-items:center}
+.modal.open{display:flex}
+.modal-box{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px;width:90%;max-width:380px}
+.modal-box label{font-size:12px;color:var(--dim);display:block;margin-top:8px}
+.modal-box input,.modal-box select{width:100%;padding:6px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:4px;font-size:13px;margin-top:3px}
+</style></head><body>
+<a href="../index.html" class="home">← home</a>
+<h1>Cost Code Manager</h1>
+<div class="summary" id="summary"></div>
+<div class="toolbar">
+ <input class="search" id="search" placeholder="Search codes..." oninput="render()">
+ <button onclick="openAdd()">+ Add Code</button>
+ <button onclick="expandAll()">Expand All</button>
+ <button onclick="collapseAll()">Collapse All</button>
+ <button onclick="exportCSV()">Export CSV</button>
+</div>
+<div class="tree" id="tree">
+ <div style="display:flex;padding:4px 6px 8px;font-size:11px;color:var(--dim);font-weight:700">
+  <span style="width:16px"></span><span style="min-width:60px;margin-left:6px">Code</span><span style="flex:1">Description</span>
+  <span style="min-width:80px;text-align:right">Budget</span><span style="min-width:80px;text-align:right">Actual</span><span style="min-width:80px;text-align:right">Variance</span>
+ </div>
+ <div id="treeBody"></div>
+</div>
+<div class="modal" id="modal">
+ <div class="modal-box">
+  <h3 style="font-size:14px;margin-bottom:4px" id="modalTitle">Add Cost Code</h3>
+  <label>Parent</label><select id="m_parent"></select>
+  <label>Code</label><input id="m_code" placeholder="03 30 00">
+  <label>Description</label><input id="m_name" placeholder="Cast-in-Place Concrete">
+  <label>Budget ($)</label><input id="m_budget" type="number" placeholder="0">
+  <label>Actual ($)</label><input id="m_actual" type="number" placeholder="0">
+  <div style="margin-top:12px"><button onclick="saveCode()">Save</button><button onclick="closeModal()" style="background:var(--border)">Cancel</button></div>
+ </div>
+</div>
+<script>
+let codes=JSON.parse(localStorage.getItem('cc_codes')||'null');
+let expanded=new Set();
+if(!codes){
+ codes=[
+  {id:'01',name:'General Requirements',parent:null,budget:50000,actual:42000},
+  {id:'01 10',name:'Summary of Work',parent:'01',budget:10000,actual:9500},
+  {id:'01 50',name:'Temporary Facilities',parent:'01',budget:25000,actual:22000},
+  {id:'02',name:'Existing Conditions',parent:null,budget:30000,actual:28000},
+  {id:'03',name:'Concrete',parent:null,budget:180000,actual:195000},
+  {id:'03 10',name:'Concrete Forming',parent:'03',budget:60000,actual:58000},
+  {id:'03 20',name:'Concrete Reinforcing',parent:'03',budget:45000,actual:52000},
+  {id:'03 30',name:'Cast-in-Place Concrete',parent:'03',budget:75000,actual:85000},
+  {id:'04',name:'Masonry',parent:null,budget:45000,actual:40000},
+  {id:'05',name:'Metals',parent:null,budget:120000,actual:110000},
+  {id:'05 10',name:'Structural Steel',parent:'05',budget:90000,actual:82000},
+  {id:'05 50',name:'Metal Fabrications',parent:'05',budget:30000,actual:28000},
+  {id:'06',name:'Wood/Plastics/Composites',parent:null,budget:35000,actual:33000},
+  {id:'07',name:'Thermal & Moisture',parent:null,budget:55000,actual:48000},
+  {id:'08',name:'Openings',parent:null,budget:42000,actual:44000},
+  {id:'09',name:'Finishes',parent:null,budget:65000,actual:60000},
+  {id:'22',name:'Plumbing',parent:null,budget:80000,actual:75000},
+  {id:'23',name:'HVAC',parent:null,budget:110000,actual:105000},
+  {id:'26',name:'Electrical',parent:null,budget:95000,actual:90000},
+  {id:'31',name:'Earthwork',parent:null,budget:70000,actual:68000},
+  {id:'32',name:'Exterior Improvements',parent:null,budget:40000,actual:38000},
+ ];
+ expanded=new Set(codes.filter(c=>!c.parent).map(c=>c.id));
+}
+function save(){localStorage.setItem('cc_codes',JSON.stringify(codes))}
+
+function getChildren(pid){return codes.filter(c=>c.parent===pid)}
+function calcTotals(id){
+ const ch=getChildren(id);
+ if(!ch.length){const c=codes.find(x=>x.id===id);return{budget:c.budget,actual:c.actual};}
+ let b=0,a=0;ch.forEach(c=>{const t=calcTotals(c.id);b+=t.budget;a+=t.actual;});
+ return{budget:b,actual:a};
+}
+
+function render(){
+ const q=document.getElementById('search').value.toLowerCase();
+ const body=document.getElementById('treeBody');body.innerHTML='';
+ const roots=codes.filter(c=>!c.parent).sort((a,b)=>a.id.localeCompare(b.id));
+ let totalB=0,totalA=0;
+ roots.forEach(r=>{const t=calcTotals(r.id);totalB+=t.budget;totalA+=t.actual;});
+ document.getElementById('summary').innerHTML=`
+  <div><div class="lbl">Total Budget</div><div class="val">$${fmt(totalB)}</div></div>
+  <div><div class="lbl">Total Actual</div><div class="val">$${fmt(totalA)}</div></div>
+  <div><div class="lbl">Variance</div><div class="val ${totalA>totalB?'over':'under'}">$${fmt(totalB-totalA)}</div></div>
+  <div><div class="lbl">% Spent</div><div class="val">${(totalA/totalB*100).toFixed(1)}%</div></div>`;
+ roots.forEach(r=>renderNode(r,body,0,q));
+}
+
+function renderNode(node,parent,depth,q){
+ const ch=getChildren(node.id);const hasCh=ch.length>0;
+ const t=hasCh?calcTotals(node.id):{budget:node.budget,actual:node.actual};
+ const v=t.budget-t.actual;const isOver=v<0;
+ const matches=!q||node.id.toLowerCase().includes(q)||node.name.toLowerCase().includes(q);
+ const childMatches=ch.some(c=>c.id.toLowerCase().includes(q)||c.name.toLowerCase().includes(q));
+ if(q&&!matches&&!childMatches)return;
+ const row=document.createElement('div');row.className='node-row';
+ row.style.paddingLeft=(depth*18+4)+'px';
+ const isExp=expanded.has(node.id);
+ row.innerHTML=`<span class="toggle" onclick="event.stopPropagation();toggleExp('${node.id}')">${hasCh?(isExp?'▼':'▶'):' '}</span>
+  <span class="code">${node.id}</span><span class="name">${node.name}</span>
+  <span class="budget">$${fmt(t.budget)}</span><span class="actual">$${fmt(t.actual)}</span>
+  <span class="variance ${isOver?'over':'under'}">${isOver?'-':''}$${fmt(Math.abs(v))}</span>`;
+ row.ondblclick=()=>openEdit(node.id);
+ parent.appendChild(row);
+ if(hasCh&&(isExp||q)){
+  ch.sort((a,b)=>a.id.localeCompare(b.id)).forEach(c=>renderNode(c,parent,depth+1,q));
+ }
+}
+
+function toggleExp(id){if(expanded.has(id))expanded.delete(id);else expanded.add(id);render();}
+function expandAll(){codes.forEach(c=>expanded.add(c.id));render();}
+function collapseAll(){expanded.clear();render();}
+function fmt(n){return n.toLocaleString();}
+
+function openAdd(){
+ document.getElementById('modalTitle').textContent='Add Cost Code';
+ const sel=document.getElementById('m_parent');
+ sel.innerHTML='<option value="">— Top Level —</option>'+codes.map(c=>`<option value="${c.id}">${c.id} ${c.name}</option>`).join('');
+ document.getElementById('m_code').value='';document.getElementById('m_name').value='';
+ document.getElementById('m_budget').value='';document.getElementById('m_actual').value='0';
+ document.getElementById('modal').classList.add('open');
+ document.getElementById('modal').dataset.edit='';
+}
+function openEdit(id){
+ const c=codes.find(x=>x.id===id);if(!c)return;
+ document.getElementById('modalTitle').textContent='Edit: '+c.id;
+ const sel=document.getElementById('m_parent');
+ sel.innerHTML='<option value="">— Top Level —</option>'+codes.filter(x=>x.id!==id).map(x=>`<option value="${x.id}"${x.id===c.parent?' selected':''}>${x.id} ${x.name}</option>`).join('');
+ document.getElementById('m_code').value=c.id;document.getElementById('m_name').value=c.name;
+ document.getElementById('m_budget').value=c.budget;document.getElementById('m_actual').value=c.actual;
+ document.getElementById('modal').classList.add('open');
+ document.getElementById('modal').dataset.edit=id;
+}
+function closeModal(){document.getElementById('modal').classList.remove('open');}
+function saveCode(){
+ const editId=document.getElementById('modal').dataset.edit;
+ const id=document.getElementById('m_code').value.trim();
+ const name=document.getElementById('m_name').value.trim();
+ const parent=document.getElementById('m_parent').value||null;
+ const budget=+document.getElementById('m_budget').value||0;
+ const actual=+document.getElementById('m_actual').value||0;
+ if(!id||!name)return alert('Code and name required');
+ if(editId){const c=codes.find(x=>x.id===editId);if(c){c.id=id;c.name=name;c.parent=parent;c.budget=budget;c.actual=actual;}}
+ else codes.push({id,name,parent,budget,actual});
+ if(parent)expanded.add(parent);
+ save();closeModal();render();
+}
+function exportCSV(){
+ let csv='Code,Description,Parent,Budget,Actual,Variance\n';
+ codes.forEach(c=>{const v=c.budget-c.actual;csv+=`"${c.id}","${c.name}","${c.parent||''}",${c.budget},${c.actual},${v}\n`;});
+ const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
+ a.download='cost_codes.csv';a.click();
+}
+render();
+</script></body></html>

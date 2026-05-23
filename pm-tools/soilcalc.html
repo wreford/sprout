@@ -1,0 +1,129 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Soil Classification Tool</title>
+<style>
+:root{--bg:#0f0f10;--bg2:#1a1a1c;--border:#2a2a2d;--text:#f0f0f0;--dim:#6e6e73;--accent:#ff6b35;--green:#4ade80}
+*{margin:0;padding:0;box-sizing:border-box}body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;padding:12px;max-width:900px;margin:auto}
+a.home{color:var(--accent);text-decoration:none;font-size:14px}a.home:hover{text-decoration:underline}
+h1{font-size:20px;margin:8px 0 12px;display:flex;align-items:center;gap:8px}h1 span{font-size:24px}
+.grid{display:flex;flex-wrap:wrap;gap:10px}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px;flex:1;min-width:260px}
+.card h2{font-size:13px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px}
+label.f{display:flex;align-items:center;gap:8px;margin:8px 0;font-size:13px}
+label.f span{min-width:90px;color:var(--dim)}
+label.f input{flex:1;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:5px;padding:5px 8px;font-size:14px}
+.pct-bar{height:6px;border-radius:3px;margin-top:4px;display:flex;overflow:hidden}
+.pct-bar div{height:100%;transition:width .3s}
+.result{text-align:center;padding:16px;margin:10px 0;border-radius:8px;background:var(--bg)}
+.result .symbol{font-size:42px;font-weight:800;color:var(--accent)}
+.result .name{font-size:15px;color:var(--text);margin-top:4px}
+canvas{width:100%;border-radius:8px;display:block}
+.props{font-size:13px;margin-top:8px}.props tr{border-bottom:1px solid var(--border)}.props td{padding:5px 8px}
+.props td:first-child{color:var(--dim);width:45%}
+.rec{background:rgba(74,222,128,0.08);border:1px solid rgba(74,222,128,0.2);border-radius:6px;padding:10px;font-size:12px;margin-top:10px;line-height:1.5}
+.warn{color:#facc15;font-size:12px;margin:4px 0}
+</style></head><body>
+<a class="home" href="../index.html">&larr; home</a>
+<h1><span>🪨</span> Soil Classification Tool (USCS)</h1>
+<div class="grid">
+<div class="card">
+<h2>Grain Size Distribution</h2>
+<label class="f"><span>% Gravel</span><input type="number" id="gravel" value="10" min="0" max="100" step="1"></label>
+<label class="f"><span>% Sand</span><input type="number" id="sand" value="50" min="0" max="100" step="1"></label>
+<label class="f"><span>% Fines</span><input type="number" id="fines" value="40" min="0" max="100" step="1"></label>
+<div class="pct-bar" id="pctBar"><div style="background:#a78bfa"></div><div style="background:#f59e0b"></div><div style="background:#6b7280"></div></div>
+<div class="warn" id="warn"></div>
+<h2 style="margin-top:14px">Atterberg Limits (for fines)</h2>
+<label class="f"><span>Liquid Limit</span><input type="number" id="ll" value="35" min="0" max="120" step="1"></label>
+<label class="f"><span>Plasticity Index</span><input type="number" id="pi" value="15" min="0" max="80" step="1"></label>
+<div class="result"><div class="symbol" id="sym">—</div><div class="name" id="className">Enter values above</div></div>
+<h2>Plasticity Chart</h2>
+<canvas id="cv" height="200"></canvas>
+</div>
+<div class="card">
+<h2>Typical Properties</h2>
+<table class="props" id="propsTable"><tbody></tbody></table>
+<div class="rec" id="rec"></div>
+</div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const soilData={
+GW:{name:'Well-graded Gravel',bearing:'300-600 kPa',perm:'High (>1 cm/s)',frost:'None to very slight',compact:'Easy, 6-10% OMC',found:'Excellent for spread footings, shallow foundations'},
+GP:{name:'Poorly-graded Gravel',bearing:'250-500 kPa',perm:'High (>1 cm/s)',frost:'None to very slight',compact:'Moderate, 6-10% OMC',found:'Good for foundations with proper compaction'},
+GM:{name:'Silty Gravel',bearing:'200-400 kPa',perm:'Medium (10⁻³ cm/s)',frost:'Slight to medium',compact:'Good, 8-12% OMC',found:'Good with drainage provisions'},
+GC:{name:'Clayey Gravel',bearing:'200-400 kPa',perm:'Low (10⁻⁵ cm/s)',frost:'Slight',compact:'Good, 8-12% OMC',found:'Fair; check for expansion potential'},
+SW:{name:'Well-graded Sand',bearing:'200-400 kPa',perm:'High (10⁻¹ cm/s)',frost:'None to very slight',compact:'Easy, 9-15% OMC',found:'Good for spread footings'},
+SP:{name:'Poorly-graded Sand',bearing:'150-300 kPa',perm:'High (10⁻¹ cm/s)',frost:'None to very slight',compact:'Moderate, 9-15% OMC',found:'Fair; may require densification'},
+SM:{name:'Silty Sand',bearing:'100-250 kPa',perm:'Medium (10⁻³ cm/s)',frost:'Slight to high',compact:'Good, 11-16% OMC',found:'Fair; provide drainage'},
+SC:{name:'Clayey Sand',bearing:'100-250 kPa',perm:'Low (10⁻⁵ cm/s)',frost:'Slight to medium',compact:'Good to fair, 11-19% OMC',found:'Fair; check expansion, use deepened footings'},
+CL:{name:'Lean Clay',bearing:'100-200 kPa',perm:'Very low (10⁻⁷ cm/s)',frost:'Medium to high',compact:'Fair, 12-24% OMC',found:'Fair to poor; consider mat or piles for heavy loads'},
+CH:{name:'Fat Clay',bearing:'75-150 kPa',perm:'Very low (10⁻⁸ cm/s)',frost:'Medium',compact:'Poor, 19-36% OMC',found:'Poor; high expansion risk, use drilled piers or piles'},
+ML:{name:'Silt',bearing:'75-150 kPa',perm:'Medium (10⁻⁴ cm/s)',frost:'Very high',compact:'Fair to poor, 12-24% OMC',found:'Poor; frost heave concern, improve or bypass'},
+MH:{name:'Elastic Silt',bearing:'50-125 kPa',perm:'Low (10⁻⁵ cm/s)',frost:'High',compact:'Poor, 20-35% OMC',found:'Poor; high compressibility, consider deep foundations'},
+OL:{name:'Organic Clay/Silt (Low)',bearing:'50-100 kPa',perm:'Low',frost:'High',compact:'Poor',found:'Very poor; remove or bypass with deep foundations'},
+OH:{name:'Organic Clay/Silt (High)',bearing:'25-75 kPa',perm:'Very low',frost:'Medium',compact:'Very poor',found:'Very poor; not suitable, must excavate and replace'},
+Pt:{name:'Peat',bearing:'<25 kPa',perm:'Variable',frost:'Slight',compact:'Not feasible',found:'Unsuitable; must be removed entirely'}
+};
+function classify(){
+let g=+$('gravel').value,s=+$('sand').value,f=+$('fines').value;
+const total=g+s+f;const ll=+$('ll').value,pi=+$('pi').value;
+$('warn').textContent=Math.abs(total-100)>0.5?`⚠ Total is ${total}%, should be 100%`:'';
+// normalize
+if(total>0){g=g/total*100;s=s/total*100;f=f/total*100}
+const bars=$('pctBar').children;bars[0].style.width=g+'%';bars[1].style.width=s+'%';bars[2].style.width=f+'%';
+let sym='';
+if(f<50){// coarse-grained
+if(g>s){// gravel
+if(f<5)sym=pi>4?'GW':'GP'; // simplified Cu/Cc check
+else if(f<=12)sym=pi>=7?'GC':'GM';
+else sym=pi>=7?'GC':'GM';
+}else{// sand
+if(f<5)sym='SW';
+else if(f<=12)sym=pi>=7?'SC':'SM';
+else sym=pi>=7?'SC':'SM';
+}}else{// fine-grained
+if(ll<50){sym=pi>=7&&pi>(0.73*(ll-20))?'CL':'ML'}
+else{sym=pi>(0.73*(ll-20))?'CH':'MH'}}
+const data=soilData[sym]||soilData.ML;
+$('sym').textContent=sym;$('sym').style.color=f<50?'#a78bfa':'var(--accent)';
+$('className').textContent=data.name;
+const tbody=$('propsTable').querySelector('tbody');
+tbody.innerHTML=[['Bearing Capacity',data.bearing],['Permeability',data.perm],['Frost Susceptibility',data.frost],['Compaction',data.compact],['Group Symbol',sym],['Coarse Fraction',`G:${g.toFixed(0)}% S:${s.toFixed(0)}%`],['Fines Content',f.toFixed(0)+'%'],['Liquid Limit',ll],['Plasticity Index',pi]].map(([k,v])=>`<tr><td>${k}</td><td>${v}</td></tr>`).join('');
+$('rec').innerHTML=`<strong>Foundation Recommendation:</strong><br>${data.found}`;
+drawChart(ll,pi,sym)}
+function drawChart(ll,pi,sym){
+const cv=$('cv'),ctx=cv.getContext('2d');const r=cv.getBoundingClientRect();
+cv.width=r.width*devicePixelRatio;cv.height=200*devicePixelRatio;ctx.scale(devicePixelRatio,devicePixelRatio);
+const W=r.width,H=200,mx=40,my=25,cw=W-mx-20,ch=H-my-20;
+ctx.fillStyle='var(--bg2)';ctx.fillRect(0,0,W,H);
+// axes
+ctx.strokeStyle='#333';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(mx,my);ctx.lineTo(mx,H-my);ctx.lineTo(W-20,H-my);ctx.stroke();
+ctx.fillStyle='#6e6e73';ctx.font='10px system-ui';ctx.textAlign='center';
+for(let i=0;i<=120;i+=20){const x=mx+i/120*cw;ctx.fillText(i,x,H-my+14);ctx.beginPath();ctx.moveTo(x,my);ctx.lineTo(x,H-my);ctx.strokeStyle='#222';ctx.stroke()}
+ctx.textAlign='right';for(let i=0;i<=60;i+=10){const y=H-my-i/60*ch;ctx.fillText(i,mx-5,y+3);ctx.beginPath();ctx.moveTo(mx,y);ctx.lineTo(W-20,y);ctx.strokeStyle='#222';ctx.stroke()}
+ctx.fillStyle='#6e6e73';ctx.textAlign='center';ctx.fillText('Liquid Limit',W/2,H-2);
+ctx.save();ctx.translate(12,H/2);ctx.rotate(-Math.PI/2);ctx.fillText('Plasticity Index',0,0);ctx.restore();
+// A-line: PI = 0.73(LL-20)
+ctx.beginPath();ctx.moveTo(mx+20/120*cw,H-my);
+ctx.lineTo(mx+120/120*cw,H-my-0.73*100/60*ch);
+ctx.strokeStyle='#ef4444';ctx.lineWidth=1.5;ctx.setLineDash([4,3]);ctx.stroke();ctx.setLineDash([]);
+ctx.fillStyle='#ef4444';ctx.font='9px system-ui';ctx.textAlign='left';ctx.fillText('A-line',mx+100/120*cw+4,H-my-0.73*80/60*ch);
+// U-line: PI = 0.9(LL-8)
+ctx.beginPath();ctx.moveTo(mx+8/120*cw,H-my);
+ctx.lineTo(mx+120/120*cw,H-my-0.9*112/60*ch);
+ctx.strokeStyle='#60a5fa';ctx.lineWidth=1;ctx.setLineDash([2,3]);ctx.stroke();ctx.setLineDash([]);
+ctx.fillStyle='#60a5fa';ctx.fillText('U-line',mx+85/120*cw+4,H-my-0.9*65/60*ch);
+// LL=50 line
+const x50=mx+50/120*cw;ctx.beginPath();ctx.moveTo(x50,my);ctx.lineTo(x50,H-my);ctx.strokeStyle='#555';ctx.lineWidth=1;ctx.setLineDash([3,3]);ctx.stroke();ctx.setLineDash([]);
+// zone labels
+ctx.fillStyle='rgba(255,255,255,0.15)';ctx.font='12px system-ui';ctx.textAlign='center';
+ctx.fillText('CL',mx+35/120*cw,H-my-25/60*ch);ctx.fillText('ML/OL',mx+35/120*cw,H-my-5/60*ch);
+ctx.fillText('CH',mx+80/120*cw,H-my-40/60*ch);ctx.fillText('MH/OH',mx+80/120*cw,H-my-8/60*ch);
+// plot point
+const px=mx+Math.min(ll,120)/120*cw,py=H-my-Math.min(pi,60)/60*ch;
+ctx.beginPath();ctx.arc(px,py,7,0,Math.PI*2);ctx.fillStyle='var(--accent)';ctx.fill();
+ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.stroke();
+ctx.fillStyle='#fff';ctx.font='bold 11px system-ui';ctx.textAlign='left';ctx.fillText(sym,px+12,py+4)}
+['gravel','sand','fines','ll','pi'].forEach(id=>$(id).addEventListener('input',classify));
+classify();
+</script></body></html>

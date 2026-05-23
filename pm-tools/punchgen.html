@@ -1,0 +1,59 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Punch List Photo Logger</title><style>
+:root{--bg:#0f0f10;--bg2:#1a1a1c;--border:#2a2a2d;--text:#f0f0f0;--dim:#6e6e73;--accent:#ff6b35;--green:#4ade80}
+*{margin:0;padding:0;box-sizing:border-box}body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;padding:16px;max-width:800px;margin:auto}
+a.home{color:var(--accent);text-decoration:none;font-size:14px}h1{font-size:20px;margin:8px 0 12px}
+input,select,textarea,button{background:var(--bg2);color:var(--text);border:1px solid var(--border);padding:8px 12px;border-radius:6px;font-size:14px;width:100%}
+button{background:var(--accent);border:none;cursor:pointer;font-weight:600;width:auto}button:hover{opacity:.85}
+.row{display:flex;gap:8px;margin:6px 0;flex-wrap:wrap;align-items:center}
+video,canvas{border-radius:8px;max-width:100%;background:#000}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px;margin:8px 0}
+.card img{width:80px;height:60px;object-fit:cover;border-radius:4px;cursor:pointer}
+.pri-H{border-left:3px solid #ef4444}.pri-M{border-left:3px solid var(--accent)}.pri-L{border-left:3px solid var(--green)}
+.done{opacity:.5}.done .status{color:var(--green)}
+.warn{color:#ef4444;font-size:12px;margin:4px 0}
+@media print{button,.row,video,#cam,a.home,.warn{display:none!important}.card{break-inside:avoid;border:1px solid #ccc;color:#000;background:#fff}}
+</style></head><body>
+<a class="home" href="../index.html">&larr; home</a><h1>Punch List Photo Logger</h1>
+<div id="warn" class="warn"></div>
+<div id="cam" style="display:none"><video id="vid" autoplay playsinline style="width:100%;max-height:240px"></video>
+<div class="row"><button onclick="snap()">Capture Photo</button><button onclick="stopCam()" style="background:var(--border)">Close Camera</button></div></div>
+<canvas id="cap" style="display:none"></canvas>
+<div class="row"><button onclick="startCam()">Open Camera</button>
+<button onclick="window.print()">Print Report</button>
+<button onclick="clearAll()" style="background:var(--border)">Clear All</button></div>
+<div id="form" style="display:none" class="card">
+<img id="preview" style="width:120px;height:90px;object-fit:cover;border-radius:4px;margin-bottom:8px"><br>
+<input id="loc" placeholder="Location (e.g. Floor 3, Unit 302)"><br><br>
+<textarea id="desc" rows="2" placeholder="Deficiency description"></textarea><br><br>
+<div class="row"><select id="trade"><option>Electrical</option><option>Plumbing</option><option>HVAC</option><option>Framing</option><option>Drywall</option><option>Paint</option><option>Flooring</option><option>Roofing</option><option>General</option></select>
+<select id="pri"><option value="H">High</option><option value="M" selected>Medium</option><option value="L">Low</option></select>
+<button onclick="addItem()">Add Item</button></div></div>
+<div id="list"></div>
+<script>
+let items=JSON.parse(localStorage.getItem('pl_items')||'[]'),stream=null,photoData='';
+function checkSize(){const s=JSON.stringify(items).length;const el=document.getElementById('warn');
+if(s>3e6)el.textContent='Warning: Storage is '+(s/1e6).toFixed(1)+'MB. Photos use significant space. Consider clearing completed items.';else el.textContent=''}
+function startCam(){navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}}).then(s=>{stream=s;document.getElementById('vid').srcObject=s;document.getElementById('cam').style.display='block'}).catch(e=>alert('Camera access denied: '+e.message))}
+function stopCam(){if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}document.getElementById('cam').style.display='none'}
+function snap(){const v=document.getElementById('vid'),c=document.getElementById('cap');c.width=320;c.height=240;
+c.getContext('2d').drawImage(v,0,0,320,240);photoData=c.toDataURL('image/jpeg',0.6);
+document.getElementById('preview').src=photoData;document.getElementById('form').style.display='block';stopCam()}
+function addItem(){const loc=document.getElementById('loc').value.trim(),desc=document.getElementById('desc').value.trim();
+if(!loc||!desc){alert('Location and description required');return}
+items.push({id:items.length+1,photo:photoData,loc,desc,trade:document.getElementById('trade').value,
+pri:document.getElementById('pri').value,done:false,afterPhoto:'',date:new Date().toLocaleDateString()});
+save();render();document.getElementById('form').style.display='none';document.getElementById('loc').value='';document.getElementById('desc').value='';photoData=''}
+function complete(i){if(items[i].done)return;
+if(confirm('Mark as complete? You can attach an after-photo by opening camera first.')){items[i].done=true;items[i].doneDate=new Date().toLocaleDateString();save();render()}}
+function save(){localStorage.setItem('pl_items',JSON.stringify(items));checkSize()}
+function clearAll(){if(confirm('Delete all items?')){items=[];save();render()}}
+function render(){let h='';items.forEach((it,i)=>{h+=`<div class="card ${it.done?'done':''} pri-${it.pri}">
+<div class="row" style="align-items:flex-start"><img src="${it.photo}">
+<div style="flex:1"><b>#${it.id}</b> — ${it.loc}<br><span style="color:var(--dim)">${it.desc}</span><br>
+<small>${it.trade} | Priority: ${it.pri} | ${it.date}</small>
+${it.done?'<br><span class="status">Completed '+it.doneDate+'</span>':''}
+</div>${it.done?'':'<button onclick="complete('+i+')" style="white-space:nowrap">Complete</button>'}
+</div></div>`});document.getElementById('list').innerHTML=h||'<p style="color:var(--dim)">No items yet. Open camera to start.</p>'}
+render();checkSize();
+</script></body></html>

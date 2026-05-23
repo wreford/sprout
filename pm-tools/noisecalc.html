@@ -1,0 +1,102 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Construction Noise Calculator</title>
+<style>
+:root{--bg:#0f0f10;--bg2:#1a1a1c;--border:#2a2a2d;--text:#f0f0f0;--dim:#6e6e73;--accent:#ff6b35;--green:#4ade80}
+*{margin:0;padding:0;box-sizing:border-box}body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;padding:12px;max-width:900px;margin:auto}
+a.home{color:var(--accent);text-decoration:none;font-size:14px}a.home:hover{text-decoration:underline}
+h1{font-size:20px;margin:8px 0 12px;display:flex;align-items:center;gap:8px}h1 span{font-size:24px}
+.row{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px;flex:1;min-width:260px}
+.card h2{font-size:14px;color:var(--dim);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px}
+.eq-list{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px}
+.eq-btn{background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:5px 10px;font-size:12px;cursor:pointer;transition:all .15s}
+.eq-btn:hover{border-color:var(--accent);color:var(--accent)}.eq-btn.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.active-list{margin:8px 0;font-size:13px}.active-item{display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid var(--border)}
+.active-item .rm{color:#ef4444;cursor:pointer;font-size:16px;padding:0 6px}
+.combined{font-size:28px;font-weight:700;text-align:center;padding:12px;border-radius:8px;margin:8px 0}
+canvas{width:100%;border-radius:8px;background:var(--bg2);border:1px solid var(--border);display:block}
+.dist-table{width:100%;font-size:13px;border-collapse:collapse;margin-top:8px}
+.dist-table th,.dist-table td{padding:5px 8px;text-align:left;border-bottom:1px solid var(--border)}
+.dist-table th{color:var(--dim);font-weight:500}
+.barrier{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.bar-btn{background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:5px 10px;font-size:12px;cursor:pointer}
+.bar-btn.on{background:#2563eb;border-color:#2563eb;color:#fff}
+label.sl{font-size:13px;display:flex;align-items:center;gap:6px;margin:6px 0}
+label.sl input{flex:1}
+.osha{background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:6px;padding:8px;font-size:12px;margin-top:8px}
+.twa{margin-top:8px;font-size:13px}.twa b{color:var(--accent)}
+</style></head><body>
+<a class="home" href="../index.html">&larr; home</a>
+<h1><span>🔊</span> Construction Noise Calculator</h1>
+<div class="row">
+<div class="card" style="min-width:300px">
+<h2>Equipment Sources</h2>
+<div class="eq-list" id="eqList"></div>
+<div class="active-list" id="activeList"></div>
+<div class="combined" id="combinedDb">—</div>
+<h2>Barrier Reduction</h2>
+<div class="barrier" id="barriers"></div>
+<label class="sl">Exposure hours <input type="range" id="hours" min="1" max="12" value="8"><span id="hoursVal">8h</span></label>
+<div class="twa" id="twa"></div>
+<div class="osha">⚠️ OSHA PEL: 90 dB TWA / 8hr. Action level: 85 dB. Hearing protection required above 85 dB.</div>
+</div>
+<div class="card">
+<h2>Noise Zone Map</h2>
+<canvas id="cv" height="280"></canvas>
+<h2 style="margin-top:12px">Distance Attenuation</h2>
+<table class="dist-table" id="distTable"><thead><tr><th>Distance</th><th>Level</th><th>Status</th></tr></thead><tbody></tbody></table>
+</div>
+</div>
+<script>
+const equipment=[{n:'Pile Driver',db:105},{n:'Concrete Saw',db:100},{n:'Jackhammer',db:95},{n:'Rock Drill',db:98},{n:'Excavator',db:85},{n:'Bulldozer',db:87},{n:'Generator',db:82},{n:'Crane',db:75},{n:'Backhoe',db:84},{n:'Compactor',db:88},{n:'Dump Truck',db:76},{n:'Concrete Mixer',db:79},{n:'Air Compressor',db:81},{n:'Chainsaw',db:110},{n:'Pneumatic Wrench',db:85}];
+const barrierTypes=[{n:'Solid Wall',r:-10},{n:'Wood Fence',r:-5},{n:'Sound Blanket',r:-8},{n:'Earth Berm',r:-12},{n:'Plywood Barrier',r:-7}];
+let active=[],selBarrier=null;
+const $=id=>document.getElementById(id);
+const eqDiv=$('eqList'),barDiv=$('barriers');
+equipment.forEach((eq,i)=>{const b=document.createElement('button');b.className='eq-btn';b.textContent=`${eq.n} (${eq.db}dB)`;
+b.onclick=()=>{active.push({...eq});update()};eqDiv.appendChild(b)});
+barrierTypes.forEach((bt,i)=>{const b=document.createElement('button');b.className='bar-btn';b.textContent=`${bt.n} (${bt.r}dB)`;
+b.onclick=()=>{if(selBarrier===i){selBarrier=null;b.classList.remove('on')}else{barDiv.querySelectorAll('.bar-btn').forEach(x=>x.classList.remove('on'));selBarrier=i;b.classList.add('on')}update()};barDiv.appendChild(b)});
+$('hours').oninput=function(){$('hoursVal').textContent=this.value+'h';update()};
+function combinedDb(){if(!active.length)return 0;let sum=0;active.forEach(a=>sum+=Math.pow(10,a.db/10));return 10*Math.log10(sum)}
+function atDistance(db,d){return db-20*Math.log10(d/50)} // ref 50ft
+function update(){
+const al=$('activeList');al.innerHTML='';
+active.forEach((a,i)=>{const d=document.createElement('div');d.className='active-item';
+d.innerHTML=`<span>${a.n} — ${a.db} dB</span><span class="rm" data-i="${i}">&times;</span>`;al.appendChild(d)});
+al.querySelectorAll('.rm').forEach(b=>b.onclick=function(){active.splice(+this.dataset.i,1);update()});
+let cdb=combinedDb();const barrier=selBarrier!==null?barrierTypes[selBarrier].r:0;
+cdb+=barrier;
+const cd=$('combinedDb');
+if(!active.length){cd.textContent='—';cd.style.background='var(--bg)';cd.style.color='var(--text)'}
+else{cd.textContent=cdb.toFixed(1)+' dB';
+cd.style.background=cdb>=90?'rgba(239,68,68,0.2)':cdb>=85?'rgba(250,204,21,0.2)':'rgba(74,222,128,0.15)';
+cd.style.color=cdb>=90?'#ef4444':cdb>=85?'#facc15':'#4ade80'}
+// distance table
+const dists=[50,100,200,500,1000];const tbody=$('distTable').querySelector('tbody');tbody.innerHTML='';
+dists.forEach(d=>{const lv=active.length?atDistance(cdb,d):0;const tr=document.createElement('tr');
+const st=lv>=90?'🔴 PPE Required':lv>=85?'🟡 Action Level':lv>=70?'🟢 Acceptable':'🟢 Low';
+tr.innerHTML=`<td>${d} ft</td><td style="color:${lv>=90?'#ef4444':lv>=85?'#facc15':'#4ade80'}">${active.length?lv.toFixed(1):'-'} dB</td><td>${active.length?st:'-'}</td>`;
+tbody.appendChild(tr)});
+// TWA
+const hrs=+$('hours').value;if(active.length){const dose=hrs/8*Math.pow(2,(cdb-90)/5)*100;
+const twa=90+16.61*Math.log10(dose/100);
+$('twa').innerHTML=`TWA (${hrs}h): <b>${twa.toFixed(1)} dB</b> | Dose: <b>${dose.toFixed(0)}%</b>${dose>100?' ⚠️ EXCEEDS LIMIT':dose>50?' ⚡ Above action level':' ✓ OK'}`}
+else $('twa').innerHTML='';
+drawMap(cdb)}
+function drawMap(cdb){const cv=$('cv'),ctx=cv.getContext('2d');
+const r=cv.getBoundingClientRect();cv.width=r.width*devicePixelRatio;cv.height=280*devicePixelRatio;
+ctx.scale(devicePixelRatio,devicePixelRatio);const W=r.width,H=280;
+ctx.clearRect(0,0,W,H);if(!active.length){ctx.fillStyle='#6e6e73';ctx.font='14px system-ui';ctx.textAlign='center';ctx.fillText('Add equipment to see noise zones',W/2,H/2);return}
+const cx=W/2,cy=H/2,maxR=Math.min(W,H)/2-20;
+const zones=[{db:90,color:'rgba(239,68,68,0.3)',label:'90dB+'},{db:85,color:'rgba(250,204,21,0.2)',label:'85dB'},{db:70,color:'rgba(74,222,128,0.15)',label:'70dB'},{db:55,color:'rgba(96,165,250,0.1)',label:'55dB'}];
+zones.reverse().forEach(z=>{if(cdb<z.db)return;const dist=50*Math.pow(10,(cdb-z.db)/20);const maxDist=50*Math.pow(10,(cdb-55)/20);
+const rad=Math.min(maxR,(dist/maxDist)*maxR);
+ctx.beginPath();ctx.arc(cx,cy,Math.max(rad,8),0,Math.PI*2);ctx.fillStyle=z.color;ctx.fill();
+ctx.strokeStyle=z.color.replace(/[\d.]+\)$/,'0.6)');ctx.lineWidth=1;ctx.stroke();
+if(rad>25){ctx.fillStyle='#f0f0f0';ctx.font='10px system-ui';ctx.textAlign='center';ctx.fillText(z.label,cx,cy-rad+12);
+ctx.fillStyle='#6e6e73';ctx.fillText(Math.round(dist)+'ft',cx,cy-rad+23)}});
+ctx.fillStyle='#ff6b35';ctx.beginPath();ctx.arc(cx,cy,5,0,Math.PI*2);ctx.fill();
+ctx.fillStyle='#f0f0f0';ctx.font='bold 11px system-ui';ctx.textAlign='center';ctx.fillText('SOURCE',cx,cy+16)}
+update();
+</script></body></html>

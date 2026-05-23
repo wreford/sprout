@@ -1,0 +1,117 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LOTO Procedure Generator</title>
+<style>
+:root{--bg:#0f0f10;--bg2:#1a1a1c;--border:#2a2a2d;--text:#f0f0f0;--dim:#6e6e73;--accent:#ff6b35;--green:#4ade80}
+*{box-sizing:border-box;margin:0;padding:0}body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;padding:12px}
+a{color:var(--accent);text-decoration:none}h1{font-size:1.3rem}.bar{display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap}
+.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-bottom:10px}
+label{font-size:.75rem;color:var(--dim);display:flex;flex-direction:column;gap:2px}
+input,select{background:var(--bg2);color:var(--text);border:1px solid var(--border);padding:5px 7px;border-radius:6px;font-size:.83rem}
+button{background:var(--accent);color:#fff;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:.83rem}
+button.sec{background:var(--bg2);border:1px solid var(--border);color:var(--text)}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.chip{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:4px 12px;font-size:.78rem;cursor:pointer;user-select:none}
+.chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.iso{background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:4px;font-size:.82rem;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.iso button{font-size:.7rem;padding:3px 8px}
+.doc{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:16px;font-size:.82rem;line-height:1.7;white-space:pre-wrap;display:none;margin-top:10px}
+.check{display:flex;align-items:center;gap:6px;margin:3px 0;font-size:.82rem}
+.check input{width:auto}
+</style></head><body>
+<div class="bar"><a href="../index.html">← home</a><h1>Lock-Out/Tag-Out Procedure Generator</h1></div>
+<div class="form">
+<label>Equipment Name<input id="equip" placeholder="Air Handling Unit AHU-3"></label>
+<label>Equipment ID / Tag<input id="eqID" placeholder="AHU-003"></label>
+<label>Location<input id="loc" placeholder="Mechanical Room 2B"></label>
+<label>Prepared By<input id="prep" placeholder="J. Smith"></label>
+<label>Date<input id="dt" type="date"></label>
+<label>Equipment Type<select id="eqType" onchange="autoSources()">
+<option value="">Select...</option><option>Pump</option><option>Motor/Fan</option><option>Compressor</option><option>Conveyor</option><option>Press</option><option>Boiler</option><option>Electrical Panel</option><option>Hydraulic System</option><option>Pneumatic System</option><option>Process Piping</option></select></label>
+</div>
+<h3 style="font-size:.9rem;margin-bottom:6px">Energy Sources Identified</h3>
+<div class="chips" id="sources"></div>
+<h3 style="font-size:.9rem;margin-bottom:6px">Isolation Points</h3>
+<div class="row">
+<label>Description<input id="isoDesc" placeholder="Main disconnect SW-3" style="width:200px"></label>
+<label>Method<select id="isoMethod"><option>Lockout</option><option>Valve Closed</option><option>Blind/Blank</option><option>Disconnect</option><option>Block/Restrain</option><option>Bleed/Vent</option></select></label>
+<label>Energy Type<select id="isoEnergy"><option>Electrical</option><option>Pneumatic</option><option>Hydraulic</option><option>Mechanical</option><option>Thermal</option><option>Chemical</option><option>Gravity</option></select></label>
+<button onclick="addIso()">Add Point</button>
+</div>
+<div id="isoList"></div>
+<div class="row"><button onclick="generate()">Generate Procedure</button><button class="sec" onclick="printDoc()">Print</button><button class="sec" onclick="clearAll()">Clear</button></div>
+<div class="doc" id="doc"></div>
+<script>
+const allSources=['Electrical','Pneumatic','Hydraulic','Mechanical','Thermal','Chemical','Gravity'];
+const presets={Pump:['Electrical','Mechanical','Hydraulic'],'Motor/Fan':['Electrical','Mechanical'],Compressor:['Electrical','Pneumatic','Thermal'],Conveyor:['Electrical','Mechanical','Gravity'],Press:['Electrical','Hydraulic','Mechanical','Gravity'],Boiler:['Electrical','Thermal','Chemical','Pneumatic'],'Electrical Panel':['Electrical'],'Hydraulic System':['Electrical','Hydraulic'],'Pneumatic System':['Electrical','Pneumatic'],'Process Piping':['Pneumatic','Chemical','Thermal']};
+let activeSources=new Set(),isoPoints=[];
+document.getElementById('dt').valueAsDate=new Date();
+function renderSources(){const el=document.getElementById('sources');el.innerHTML='';
+allSources.forEach(s=>{const c=document.createElement('div');c.className='chip'+(activeSources.has(s)?' on':'');c.textContent=s;
+c.onclick=()=>{activeSources.has(s)?activeSources.delete(s):activeSources.add(s);renderSources()};el.appendChild(c)})}
+function autoSources(){const t=document.getElementById('eqType').value;activeSources=new Set(presets[t]||[]);renderSources()}
+renderSources();
+function addIso(){const desc=document.getElementById('isoDesc').value.trim();if(!desc)return;
+isoPoints.push({desc,method:document.getElementById('isoMethod').value,energy:document.getElementById('isoEnergy').value});
+document.getElementById('isoDesc').value='';renderIso()}
+function renderIso(){const el=document.getElementById('isoList');el.innerHTML='';
+isoPoints.forEach((p,i)=>{el.innerHTML+=`<div class="iso"><span>${i+1}. <strong>${p.desc}</strong> — ${p.method} (${p.energy})</span><button class="sec" onclick="isoPoints.splice(${i},1);renderIso()">Remove</button></div>`})}
+function generate(){const doc=document.getElementById('doc');doc.style.display='block';
+const eq=gv('equip'),id=gv('eqID'),loc=gv('loc'),prep=gv('prep'),dt=gv('dt');
+let txt=`LOCKOUT/TAGOUT PROCEDURE
+${'='.repeat(55)}
+Ref: OHSA R.R.O. 1990, Reg. 851 s.76 | CSA Z460
+${'='.repeat(55)}
+Equipment:    ${eq}
+Equipment ID: ${id}
+Location:     ${loc}
+Prepared By:  ${prep}
+Date:         ${dt}
+
+${'─'.repeat(55)}
+ENERGY SOURCES IDENTIFIED:
+${[...activeSources].map((s,i)=>`  ${i+1}. ${s}`).join('\n')}
+
+${'─'.repeat(55)}
+LOCKOUT PROCEDURE — SHUTDOWN SEQUENCE:
+
+Step 1: NOTIFY all affected personnel of the impending
+        shutdown of ${eq}.
+
+Step 2: IDENTIFY all energy sources listed above.
+
+Step 3: SHUT DOWN equipment using normal stopping procedure.
+
+Step 4: ISOLATE all energy sources:\n`;
+isoPoints.forEach((p,i)=>{txt+=`\n  ${i+1}. ${p.desc}\n     Method: ${p.method}\n     Energy: ${p.energy}\n     Lock #: ______  Key #: ______\n`});
+txt+=`
+Step 5: APPLY lockout/tagout devices at each isolation point.
+
+Step 6: RELEASE/RESTRAIN stored energy:
+${activeSources.has('Pneumatic')?'  - Bleed pneumatic lines to 0 PSI\n':''}${activeSources.has('Hydraulic')?'  - Relieve hydraulic pressure\n':''}${activeSources.has('Gravity')?'  - Block/support against gravity\n':''}${activeSources.has('Thermal')?'  - Allow thermal cool-down or insulate\n':''}${activeSources.has('Chemical')?'  - Purge/drain chemical lines\n':''}${activeSources.has('Electrical')?'  - Test for zero energy state\n':''}
+Step 7: VERIFY zero energy state — attempt to start equipment.
+
+${'─'.repeat(55)}
+RESTORATION PROCEDURE:
+
+Step 1: Inspect work area — ensure all tools/personnel clear.
+Step 2: Reinstall all guards and safety devices.
+Step 3: Remove locks/tags in REVERSE order.
+Step 4: Notify affected personnel.
+Step 5: Restart equipment per normal procedure.
+
+${'─'.repeat(55)}
+SIGN-OFF:
+
+Authorized Employee: _______________ Date: ________
+Supervisor:          _______________ Date: ________
+Affected Employee:   _______________ Date: ________
+
+${'='.repeat(55)}
+Retain this document per CSA Z460 record requirements.`;
+doc.textContent=txt}
+function gv(id){return document.getElementById(id).value.trim()}
+function printDoc(){const w=window.open('');w.document.write('<pre style="font-family:monospace;font-size:11px;padding:20px">'+document.getElementById('doc').textContent+'</pre>');w.document.close();w.print()}
+function clearAll(){activeSources=new Set();isoPoints=[];renderSources();renderIso();document.getElementById('doc').style.display='none';
+['equip','eqID','loc','prep'].forEach(id=>document.getElementById(id).value='')}
+</script></body></html>

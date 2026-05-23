@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Keira's Mancala 2</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100vh;overflow:hidden}
+body{background:#1a1a2e;color:#e0e0e0;font-family:'SF Mono',monospace;display:flex;flex-direction:column;align-items:center}
+a#back{position:fixed;top:14px;left:16px;font-size:12px;color:#555;text-decoration:none;z-index:10}
+a#back:hover{color:#aaa}
+canvas{display:block;margin:0 auto;cursor:pointer;touch-action:none}
+#start-screen{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#1a1a2e;color:#fff;text-align:center;gap:10px;z-index:20}
+#start-screen h1{font-size:24px;color:#7c5cbf;letter-spacing:0.04em}
+#start-screen p{font-size:11px;color:#666;max-width:300px}
+#start-screen .opts{display:flex;flex-direction:column;gap:8px;margin:10px 0;width:260px}
+#start-screen label{font-size:11px;color:#888;display:flex;justify-content:space-between;align-items:center}
+#start-screen select{background:#16213e;color:#e0e0e0;border:1px solid #333;border-radius:4px;padding:4px 8px;font-family:inherit;font-size:11px}
+.btn{background:#7c5cbf;color:#fff;border:none;padding:10px 28px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit}
+.btn:hover{background:#9b7fd4}
+#status{position:fixed;bottom:10px;left:50%;transform:translateX(-50%);font-size:12px;color:#6ec1e4;font-weight:bold;text-align:center;z-index:10}
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+<a href="../index.html" id="back">← home</a>
+<div id="start-screen">
+  <h1>Keira's Mancala 2</h1>
+  <p>Vertical layout. Custom boards. Smarter AI.</p>
+  <div class="opts">
+    <label>Board: <select id="board-type">
+      <option value="classic">Classic (6 pits, 4 stones)</option>
+      <option value="speed">Speed (4 pits, 3 stones)</option>
+      <option value="epic">Epic (8 pits, 4 stones)</option>
+      <option value="avalanche">Avalanche (6 pits, 4 stones)</option>
+    </select></label>
+    <label>Difficulty: <select id="difficulty">
+      <option value="easy">Easy</option>
+      <option value="medium" selected>Medium</option>
+      <option value="hard">Hard</option>
+    </select></label>
+  </div>
+  <button class="btn" id="start-btn">Play</button>
+  <p style="font-size:10px;color:#444;margin-top:8px">Tap a pit on YOUR side (right column) to sow stones counter-clockwise. Land in your store = extra turn. Land in empty pit on your side = capture opposite.</p>
+</div>
+<canvas id="c"></canvas>
+<div id="status"></div>
+<script>
+var canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
+var startScreen=document.getElementById('start-screen');
+var statusEl=document.getElementById('status');
+var boardTypeEl=document.getElementById('board-type');
+var diffEl=document.getElementById('difficulty');
+var W,H;
+
+// Sound
+var audioCtx=null;
+function getAudio(){if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();return audioCtx;}
+function playTone(freq,dur,type,vol){
+  try{var c=getAudio(),o=c.createOscillator(),g=c.createGain();o.type=type||"sine";o.frequency.value=freq;g.gain.setValueAtTime(vol||0.04,c.currentTime);g.gain.exponentialRampToValueAtTime(0.001,c.currentTime+dur);o.connect(g);g.connect(c.destination);o.start();o.stop(c.currentTime+dur);}catch(e){}
+}
+function sndDrop(){playTone(200+Math.random()*200,0.08,"triangle",0.05);}
+function sndCapture(){playTone(523,0.15,"sine",0.07);setTimeout(function(){playTone(659,0.15,"sine",0.07);},80);}
+function sndExtra(){playTone(784,0.2,"sine",0.06);}
+function sndWin(){[523,659,784,1047].forEach(function(f,i){setTimeout(function(){playTone(f,0.25,"sine",0.08);},i*100);});}
+function sndLose(){[300,250,200].forEach(function(f,i){setTimeout(function(){playTone(f,0.3,"sawtooth",0.04);},i*150);});}
+
+// Game vars
+var PITS=6,STONES=4,MODE="classic";
+var board,turn,gameOver,animating;
+var particles=[];
+var winStreak=0;
+try{winStreak=parseInt(localStorage.getItem('mancala2_streak'))||0;}catch(e){}
+
+// Stone colors
+var STONE_COLORS=['#7c5cbf','#50c878','#e06c75','#6ec1e4','#e5c07b','#c678dd','#56b6c2','#ff9f43'];
+function stoneColor(seed){return STONE_COLORS[seed%STONE_COLORS.length];}
+
+function resize(){
+  W=Math.min(window.innerWidth,400);
+  H=Math.max(window.innerHeight-60, 400);
+  canvas.width=W;canvas.height=H;
+  canvas.style.width=W+'px';canvas.style.height=H+'px';
+  if(board){calcLayout2();drawBoard();}
+}
+window.addEventListener('resize',resize);
+
+// Board layout: vertical
+// AI store at top (index: PITS*2+1), player store at bottom (index: PITS)
+// AI pits: left column, indices PITS+1 to PITS*2 (top to bottom)
+// Player pits: right column, indices 1 to PITS (bottom to top)
+// Board array: [0, p1, p2, ..., pN, playerStore, a1, a2, ..., aN, aiStore]
+
+var storeW,storeH,pitR,colLeft,colRight,storeX;
+var pitPositions={}; // index -> {x,y}
+
+// Board indexing (standard mancala):
+// 0=unused, 1..PITS = player pits, PITS+1 = player store
+// PITS+2 .. PITS*2+1 = AI pits, PITS*2+2 = AI store
+
+function initBoard(){
+  var bt=boardTypeEl.value;
+  MODE=bt;
+  if(bt==="classic"){PITS=6;STONES=4;}
+  else if(bt==="speed"){PITS=4;STONES=3;}
+  else if(bt==="epic"){PITS=8;STONES=4;}
+  else if(bt==="avalanche"){PITS=6;STONES=4;}
+
+  // Standard mancala indexing (like original):
+  // 0=unused, 1..PITS = player pits, PITS+1 = player store
+  // PITS+2 .. PITS*2+1 = AI pits, PITS*2+2 = AI store
+  var total=PITS*2+3;
+  board=new Array(total).fill(0);
+  for(var i=1;i<=PITS;i++)board[i]=STONES;
+  for(var i=PITS+2;i<=PITS*2+1;i++)board[i]=STONES;
+  // stores start at 0
+  return total;
+}
+
+// Redefine constants
+var PSTORE,ASTORE,PPITS,APITS;
+function setIndices(){
+  PSTORE=PITS+1;
+  ASTORE=PITS*2+2;
+  PPITS=[];for(var i=1;i<=PITS;i++)PPITS.push(i);
+  APITS=[];for(var i=PITS+2;i<=PITS*2+1;i++)APITS.push(i);
+}
+
+function newGame(){
+  initBoard();setIndices();
+  turn=1;gameOver=false;animating=false;particles=[];
+  resize();calcLayout2();
+  statusEl.textContent="Your turn - tap a pit on the right";
+  drawBoard();
+};
+
+function calcLayout2(){
+  var margin=20;
+  storeW=W*0.5;storeH=45;
+  pitR=Math.min(26,(H-storeH*2-margin*4)/(PITS+1)*0.42);
+  colLeft=W*0.26;colRight=W*0.74;
+
+  pitPositions={};
+  var pitAreaH=H-storeH*2-margin*4;
+  var spacing=pitAreaH/(PITS+1);
+  var topY=storeH+margin*2;
+
+  // AI pits: left column, top to bottom
+  for(var i=0;i<PITS;i++){
+    var idx=PITS+2+i;
+    pitPositions[idx]={x:colLeft,y:topY+spacing*(i+1)};
+  }
+  // Player pits: right column, bottom to top
+  for(var i=0;i<PITS;i++){
+    var idx=PITS-i; // pit PITS at top, pit 1 at bottom
+    pitPositions[idx]={x:colRight,y:topY+spacing*(i+1)};
+  }
+  // Stores
+  pitPositions[PSTORE]={x:W/2,y:H-storeH/2-8}; // player store bottom
+  pitPositions[ASTORE]={x:W/2,y:storeH/2+8}; // AI store top
+}
+
+function nextPit2(pos,player){
+  var max=PITS*2+2;
+  var p=pos+1;
+  if(p>max)p=1;
+  if(player===1&&p===ASTORE)p=1;
+  if(player===2&&p===PSTORE){p=PSTORE+1;}
+  return p;
+}
+
+function spawnParticles(x,y,color,count){
+  for(var i=0;i<(count||8);i++){
+    particles.push({x:x,y:y,vx:(Math.random()-0.5)*4,vy:(Math.random()-0.5)*4-2,r:2+Math.random()*3,life:1,color:color||stoneColor(Math.floor(Math.random()*8))});
+  }
+}
+
+function drawStone(x,y,color,radius){
+  radius=radius||5;
+  ctx.beginPath();ctx.arc(x,y,radius,0,Math.PI*2);ctx.fillStyle=color;ctx.fill();
+  ctx.strokeStyle='rgba(0,0,0,0.3)';ctx.lineWidth=0.5;ctx.stroke();
+  ctx.beginPath();ctx.arc(x-radius*0.3,y-radius*0.3,radius*0.3,0,Math.PI*2);
+  ctx.fillStyle='rgba(255,255,255,0.25)';ctx.fill();
+}
+
+function stonePositions(px,py,r,count){
+  var positions=[];
+  if(count<=4){
+    var off=[[0,0],[-r*0.4,-r*0.4],[r*0.4,-r*0.4],[-r*0.4,r*0.4],[r*0.4,r*0.4]];
+    for(var i=0;i<count;i++)positions.push([px+off[i][0],py+off[i][1]]);
+  } else {
+    for(var i=0;i<count;i++){
+      var angle=(i/count)*Math.PI*2+count;
+      var dist=r*0.55*(0.5+(i%3)*0.2);
+      positions.push([px+Math.cos(angle)*dist,py+Math.sin(angle)*dist]);
+    }
+  }
+  return positions;
+}
+
+function drawBoard(){
+  ctx.clearRect(0,0,W,H);
+  // Background
+  ctx.fillStyle='#1a1a2e';ctx.fillRect(0,0,W,H);
+
+  // Board panel
+  ctx.fillStyle='#16213e';
+  ctx.beginPath();ctx.roundRect(10,10,W-20,H-20,16);ctx.fill();
+  ctx.strokeStyle='#2a2a4a';ctx.lineWidth=2;
+  ctx.beginPath();ctx.roundRect(10,10,W-20,H-20,16);ctx.stroke();
+
+  // Labels
+  ctx.fillStyle='#555';ctx.font='10px monospace';ctx.textAlign='center';
+  ctx.fillText('AI',colLeft,pitPositions[ASTORE].y+storeH/2+18);
+  ctx.fillText('YOU',colRight,pitPositions[PSTORE].y-storeH/2-8);
+
+  // Connection lines
+  ctx.strokeStyle='#1e2a4a';ctx.lineWidth=1;
+  // Left column line
+  if(APITS.length>1){
+    ctx.beginPath();ctx.moveTo(colLeft,pitPositions[APITS[0]].y);ctx.lineTo(colLeft,pitPositions[APITS[APITS.length-1]].y);ctx.stroke();
+  }
+  // Right column line
+  if(PPITS.length>1){
+    ctx.beginPath();ctx.moveTo(colRight,pitPositions[PPITS[0]].y);ctx.lineTo(colRight,pitPositions[PPITS[PPITS.length-1]].y);ctx.stroke();
+  }
+
+  // Draw all pits and stores
+  var allIndices=PPITS.concat(APITS).concat([PSTORE,ASTORE]);
+  for(var q=0;q<allIndices.length;q++){
+    var idx=allIndices[q];
+    var pos=pitPositions[idx];
+    if(!pos)continue;
+    var isStore=idx===PSTORE||idx===ASTORE;
+    var isPlayer=PPITS.indexOf(idx)!==-1;
+    var isAI=APITS.indexOf(idx)!==-1;
+    var stones=board[idx];
+    var isClickable=!gameOver&&!animating&&turn===1&&isPlayer&&stones>0;
+
+    if(isStore){
+      // Draw store as tall rounded rect
+      var sw=storeW*0.8,sh=storeH;
+      ctx.fillStyle='#0f1629';
+      ctx.beginPath();ctx.roundRect(pos.x-sw/2,pos.y-sh/2,sw,sh,12);ctx.fill();
+      ctx.strokeStyle=idx===PSTORE?'#3a6080':'#5a3a80';ctx.lineWidth=2;
+      ctx.beginPath();ctx.roundRect(pos.x-sw/2,pos.y-sh/2,sw,sh,12);ctx.stroke();
+      // Stones in store
+      if(stones>0&&stones<=10){
+        var spos=stonePositions(pos.x,pos.y,sw/3,stones);
+        for(var s=0;s<spos.length;s++)drawStone(spos[s][0],spos[s][1],stoneColor(idx*7+s),4);
+      } else if(stones>10){
+        for(var s=0;s<8;s++){
+          var ang=(s/8)*Math.PI*2;
+          drawStone(pos.x+Math.cos(ang)*sw*0.25,pos.y+Math.sin(ang)*sh*0.25,stoneColor(idx*7+s),3.5);
+        }
+      }
+      // Count
+      ctx.fillStyle=stones>0?'#fff':'#333';ctx.font='bold 14px monospace';ctx.textAlign='center';ctx.textBaseline='middle';
+      ctx.fillText(stones,pos.x,pos.y);
+      ctx.textBaseline='alphabetic';
+      // Label
+      ctx.fillStyle='#444';ctx.font='9px monospace';
+      ctx.fillText(idx===PSTORE?'YOUR STORE':'AI STORE',pos.x,pos.y+(sh/2)+14);
+    } else {
+      // Draw pit as circle
+      ctx.fillStyle='#0f1629';
+      ctx.beginPath();ctx.arc(pos.x,pos.y,pitR,0,Math.PI*2);ctx.fill();
+
+      // Glow for clickable
+      if(isClickable){
+        ctx.shadowColor='#50c878';ctx.shadowBlur=12;
+        ctx.strokeStyle='#50c878';ctx.lineWidth=2.5;
+        ctx.beginPath();ctx.arc(pos.x,pos.y,pitR,0,Math.PI*2);ctx.stroke();
+        ctx.shadowBlur=0;
+      } else {
+        ctx.strokeStyle=isPlayer?'#2a4a6a':'#4a2a6a';ctx.lineWidth=1.5;
+        ctx.beginPath();ctx.arc(pos.x,pos.y,pitR,0,Math.PI*2);ctx.stroke();
+      }
+
+      // Stones
+      var sr=4;
+      if(stones>0&&stones<=8){
+        var spos=stonePositions(pos.x,pos.y,pitR*0.65,stones);
+        for(var s=0;s<spos.length;s++)drawStone(spos[s][0],spos[s][1],stoneColor(idx*7+s),sr);
+      } else if(stones>8){
+        for(var s=0;s<6;s++){
+          var ang=(s/6)*Math.PI*2;
+          drawStone(pos.x+Math.cos(ang)*pitR*0.45,pos.y+Math.sin(ang)*pitR*0.45,stoneColor(idx*7+s),3.5);
+        }
+        ctx.fillStyle='#fff';ctx.font='bold 10px monospace';ctx.textAlign='center';ctx.textBaseline='middle';
+        ctx.fillText(stones,pos.x,pos.y);ctx.textBaseline='alphabetic';
+      }
+
+      // Pit number (for player)
+      if(isPlayer){
+        ctx.fillStyle='#333';ctx.font='8px monospace';ctx.textAlign='center';
+        ctx.fillText(idx,pos.x+pitR+10,pos.y+3);
+      }
+    }
+  }
+
+  // Score display
+  ctx.fillStyle='#6ec1e4';ctx.font='bold 12px monospace';ctx.textAlign='left';
+  ctx.fillText('You: '+board[PSTORE],16,H-6);
+  ctx.fillStyle='#c678dd';ctx.textAlign='right';
+  ctx.fillText('AI: '+board[ASTORE],W-16,H-6);
+  ctx.fillStyle='#e5c07b';ctx.textAlign='center';
+  ctx.fillText('Streak: '+winStreak,W/2,H-6);
+
+  // Arrow indicators showing flow direction
+  ctx.fillStyle='rgba(255,255,255,0.08)';ctx.font='14px monospace';ctx.textAlign='center';
+  // Left column: flows downward (AI side)
+  ctx.fillText('v',colLeft-pitR-12,H/2);
+  // Right column: flows upward (player side)
+  ctx.fillText('^',colRight+pitR+12,H/2);
+
+  // Particles
+  for(var i=0;i<particles.length;i++){
+    var pt=particles[i];
+    ctx.globalAlpha=pt.life;ctx.fillStyle=pt.color;
+    ctx.beginPath();ctx.arc(pt.x,pt.y,pt.r,0,Math.PI*2);ctx.fill();
+  }
+  ctx.globalAlpha=1;
+}
+
+function updateParticles(){
+  for(var i=particles.length-1;i>=0;i--){
+    var p=particles[i];p.x+=p.vx;p.y+=p.vy;p.vy+=0.15;p.life-=0.03;
+    if(p.life<=0)particles.splice(i,1);
+  }
+}
+
+// Animated sowing
+function animateSow(pitIdx,player,callback){
+  animating=true;
+  var stones=board[pitIdx];
+  board[pitIdx]=0;
+  drawBoard();
+  var positions=[];
+  var pos=pitIdx;
+  for(var i=0;i<stones;i++){
+    pos=nextPit2(pos,player);
+    positions.push(pos);
+  }
+  var idx=0;
+  function dropNext(){
+    if(idx>=positions.length){
+      // Avalanche mode: if last stone lands on non-empty pit on your side (not store), keep sowing
+      var lastPit=positions[positions.length-1];
+      if(MODE==="avalanche"&&lastPit!==PSTORE&&lastPit!==ASTORE){
+        var myPits=player===1?PPITS:APITS;
+        if(myPits.indexOf(lastPit)!==-1&&board[lastPit]>1){
+          // Keep sowing from that pit
+          animateSow(lastPit,player,callback);
+          return;
+        }
+      }
+      callback(positions[positions.length-1]);
+      return;
+    }
+    var target=positions[idx];
+    board[target]++;
+    sndDrop();
+    var tp=pitPositions[target];
+    if(tp)spawnParticles(tp.x,tp.y,null,3);
+    drawBoard();
+    idx++;
+    setTimeout(dropNext,120);
+  }
+  dropNext();
+}
+
+function checkCapture(lastPit,player){
+  var myPits=player===1?PPITS:APITS;
+  var myStore=player===1?PSTORE:ASTORE;
+  if(myPits.indexOf(lastPit)!==-1&&board[lastPit]===1){
+    // Opposite pit: for player pit i (1-based offset), opposite is AI pit at same position
+    var myIdx=myPits.indexOf(lastPit);
+    var oppPits=player===1?APITS:PPITS;
+    var oppIdx=oppPits.length-1-myIdx;
+    if(oppIdx>=0&&oppIdx<oppPits.length){
+      var opp=oppPits[oppIdx];
+      if(board[opp]>0){
+        var captured=1+board[opp];
+        board[myStore]+=captured;
+        board[lastPit]=0;board[opp]=0;
+        var op=pitPositions[opp];
+        if(op)spawnParticles(op.x,op.y,'#e5c07b',12);
+        sndCapture();
+        drawBoard();
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function checkExtra(lastPit,player){
+  return lastPit===(player===1?PSTORE:ASTORE);
+}
+
+function checkEnd(){
+  var p1empty=PPITS.every(function(i){return board[i]===0;});
+  var p2empty=APITS.every(function(i){return board[i]===0;});
+  if(p1empty||p2empty){
+    PPITS.forEach(function(i){board[PSTORE]+=board[i];board[i]=0;});
+    APITS.forEach(function(i){board[ASTORE]+=board[i];board[i]=0;});
+    return true;
+  }
+  return false;
+}
+
+function endGame(){
+  gameOver=true;animating=false;
+  drawBoard();
+  var you=board[PSTORE],ai=board[ASTORE];
+  if(you>ai){
+    statusEl.textContent='YOU WIN! '+you+' vs '+ai;
+    sndWin();
+    var cp=pitPositions[PSTORE];
+    spawnParticles(cp.x,cp.y,'#50c878',20);
+    winStreak++;
+  } else if(ai>you){
+    statusEl.textContent='AI wins... '+ai+' vs '+you;
+    sndLose();
+    winStreak=0;
+  } else {
+    statusEl.textContent='Tie! '+you+' each';
+  }
+  try{localStorage.setItem('mancala2_streak',winStreak);}catch(e){}
+  // Show restart prompt
+  setTimeout(function(){
+    statusEl.textContent+=' (tap to play again)';
+  },1500);
+}
+
+// AI
+function aiChoose(){
+  var diff=diffEl.value;
+  var valid=APITS.filter(function(i){return board[i]>0;});
+  if(!valid.length)return -1;
+  if(diff==='easy'){return valid[Math.floor(Math.random()*valid.length)];}
+  if(diff==='hard'){return aiHard(valid);}
+  return aiMedium(valid);
+}
+
+function aiMedium(valid){
+  // Prefer extra turn
+  for(var v=0;v<valid.length;v++){
+    var pos=valid[v],s=board[valid[v]];
+    while(s-->0)pos=nextPit2(pos,2);
+    if(pos===ASTORE)return valid[v];
+  }
+  // Prefer capture
+  for(var v=0;v<valid.length;v++){
+    var pos=valid[v],s=board[valid[v]];
+    while(s-->0)pos=nextPit2(pos,2);
+    var myIdx=APITS.indexOf(pos);
+    if(myIdx!==-1&&board[pos]===0){
+      var oppIdx=PPITS.length-1-myIdx;
+      if(oppIdx>=0&&oppIdx<PPITS.length&&board[PPITS[oppIdx]]>0)return valid[v];
+    }
+  }
+  valid.sort(function(a,b){return board[b]-board[a];});
+  return valid[0];
+}
+
+function aiHard(valid){
+  var best=valid[0],bestScore=-Infinity;
+  for(var v=0;v<valid.length;v++){
+    var sim=board.slice();
+    var res=simMove(sim,valid[v],2);
+    var score=minimax(sim,5,-Infinity,Infinity,res.extra,2);
+    if(score>bestScore){bestScore=score;best=valid[v];}
+  }
+  return best;
+}
+
+function simMove(b,pitIdx,player){
+  var stones=b[pitIdx];b[pitIdx]=0;
+  var pos=pitIdx;
+  for(var i=0;i<stones;i++){
+    pos=pos+1;if(pos>PITS*2+2)pos=1;
+    if(player===1&&pos===ASTORE)pos=1;
+    if(player===2&&pos===PSTORE)pos=PSTORE+1;
+    b[pos]++;
+  }
+  var extra=pos===(player===1?PSTORE:ASTORE);
+  // Capture
+  var myPits=player===1?PPITS:APITS;
+  var myStore=player===1?PSTORE:ASTORE;
+  var myIdx=myPits.indexOf(pos);
+  if(myIdx!==-1&&b[pos]===1){
+    var oppPits=player===1?APITS:PPITS;
+    var oppIdx=oppPits.length-1-myIdx;
+    if(oppIdx>=0&&oppIdx<oppPits.length&&b[oppPits[oppIdx]]>0){
+      b[myStore]+=1+b[oppPits[oppIdx]];b[pos]=0;b[oppPits[oppIdx]]=0;
+    }
+  }
+  // Check end
+  var p1e=PPITS.every(function(i){return b[i]===0;});
+  var p2e=APITS.every(function(i){return b[i]===0;});
+  if(p1e||p2e){
+    PPITS.forEach(function(i){b[PSTORE]+=b[i];b[i]=0;});
+    APITS.forEach(function(i){b[ASTORE]+=b[i];b[i]=0;});
+  }
+  return{extra:extra};
+}
+
+function minimax(b,depth,alpha,beta,isAI){
+  var p1e=PPITS.every(function(i){return b[i]===0;});
+  var p2e=APITS.every(function(i){return b[i]===0;});
+  if(p1e||p2e||depth===0)return b[ASTORE]-b[PSTORE];
+  if(isAI){
+    var valid=APITS.filter(function(i){return b[i]>0;});
+    if(!valid.length)return b[ASTORE]-b[PSTORE];
+    var maxE=-Infinity;
+    for(var v=0;v<valid.length;v++){
+      var sim=b.slice();var r=simMove(sim,valid[v],2);
+      var ev=minimax(sim,depth-1,alpha,beta,r.extra);
+      if(ev>maxE)maxE=ev;if(maxE>alpha)alpha=maxE;if(beta<=alpha)break;
+    }
+    return maxE;
+  } else {
+    var valid=PPITS.filter(function(i){return b[i]>0;});
+    if(!valid.length)return b[ASTORE]-b[PSTORE];
+    var minE=Infinity;
+    for(var v=0;v<valid.length;v++){
+      var sim=b.slice();var r=simMove(sim,valid[v],1);
+      var ev=minimax(sim,depth-1,alpha,beta,!r.extra);
+      if(ev<minE)minE=ev;if(minE<beta)beta=minE;if(beta<=alpha)break;
+    }
+    return minE;
+  }
+}
+
+function aiMove(){
+  animating=true;
+  statusEl.textContent='AI thinking...';
+  setTimeout(function(){
+    var pit=aiChoose();
+    if(pit===-1){endGame();return;}
+    animateSow(pit,2,function(lastPit){
+      if(checkEnd()){endGame();return;}
+      var cap=checkCapture(lastPit,2);
+      if(checkExtra(lastPit,2)){
+        statusEl.textContent='AI gets another turn!';
+        sndExtra();
+        setTimeout(aiMove,600);
+      } else {
+        turn=1;animating=false;
+        statusEl.textContent='Your turn';
+        if(cap)statusEl.textContent='AI captured! Your turn';
+      }
+    });
+  },500);
+}
+
+function playerMove(pitIdx){
+  if(gameOver||animating||turn!==1)return;
+  if(PPITS.indexOf(pitIdx)===-1||board[pitIdx]===0)return;
+  animateSow(pitIdx,1,function(lastPit){
+    if(checkEnd()){endGame();return;}
+    var cap=checkCapture(lastPit,1);
+    if(checkExtra(lastPit,1)){
+      statusEl.textContent='Extra turn!';
+      sndExtra();animating=false;
+    } else {
+      statusEl.textContent=cap?'Captured!':'';
+      turn=2;
+      setTimeout(aiMove,400);
+    }
+  });
+}
+
+// Input
+function handleClick(cx,cy){
+  if(gameOver){
+    startScreen.classList.remove('hidden');
+    return;
+  }
+  if(animating||turn!==1)return;
+  for(var i=0;i<PPITS.length;i++){
+    var idx=PPITS[i];
+    var pos=pitPositions[idx];
+    if(!pos)continue;
+    var dx=cx-pos.x,dy=cy-pos.y;
+    if(Math.sqrt(dx*dx+dy*dy)<=pitR+8){
+      playerMove(idx);return;
+    }
+  }
+}
+
+function getCanvasCoords(e){
+  var r=canvas.getBoundingClientRect();
+  var scaleX=W/r.width,scaleY=H/r.height;
+  return{x:(e.clientX-r.left)*scaleX,y:(e.clientY-r.top)*scaleY};
+}
+
+canvas.addEventListener('click',function(e){
+  try{if(audioCtx&&audioCtx.state==='suspended')audioCtx.resume();}catch(ex){}
+  var c=getCanvasCoords(e);handleClick(c.x,c.y);
+});
+canvas.addEventListener('touchstart',function(e){
+  e.preventDefault();
+  try{if(audioCtx&&audioCtx.state==='suspended')audioCtx.resume();}catch(ex){}
+  var r=canvas.getBoundingClientRect();
+  var t=e.touches[0];
+  var scaleX=W/r.width,scaleY=H/r.height;
+  handleClick((t.clientX-r.left)*scaleX,(t.clientY-r.top)*scaleY);
+},{passive:false});
+
+document.getElementById('start-btn').addEventListener('click',function(){
+  try{if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();}catch(e){}
+  startScreen.classList.add('hidden');
+  resize();
+  setTimeout(function(){ newGame(); }, 50);
+});
+
+// Also init canvas size on load so it's ready
+resize();
+
+// Animation loop
+function gameLoop(){
+  updateParticles();
+  if(particles.length>0&&board)drawBoard();
+  requestAnimationFrame(gameLoop);
+}
+
+resize();
+gameLoop();
+</script>
+</body>
+</html>
