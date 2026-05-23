@@ -399,6 +399,7 @@ var SproutCompiler = (function() {
     COLON: 'COLON', COMMA: 'COMMA', NL: 'NL',
     INDENT: 'INDENT', DEDENT: 'DEDENT',
     LBRACK: 'LBRACK', RBRACK: 'RBRACK',
+    LPAREN: 'LPAREN', RPAREN: 'RPAREN',
     PIPE: 'PIPE', AT: 'AT', QMARK: 'QMARK', HASH: 'HASH', EOF: 'EOF',
   };
 
@@ -477,10 +478,22 @@ var SproutCompiler = (function() {
           toks.push({ type: T.IDENT, val: s, meta: true });
           continue;
         }
+        if (c === '(') {
+          toks.push({ type: T.LPAREN }); i++;
+          continue;
+        }
+        if (c === ')') {
+          toks.push({ type: T.RPAREN }); i++;
+          continue;
+        }
         if (/[a-zA-Z_]/.test(c)) {
           let s = '';
-          while (i < len && /[a-zA-Z0-9_]/.test(src[i])) s += src[i++];
-          toks.push({ type: T.IDENT, val: s });
+          while (i < len && /[a-zA-Z0-9_?]/.test(src[i])) s += src[i++];
+          if (s === 'mod') {
+            toks.push({ type: T.OP, val: '%' });
+          } else {
+            toks.push({ type: T.IDENT, val: s });
+          }
           continue;
         }
         if ((c === '>' || c === '<' || c === '!') && peek2() === '=') {
@@ -489,7 +502,7 @@ var SproutCompiler = (function() {
           continue;
         }
         switch (c) {
-          case '+': case '-': case '*': case '/':
+          case '+': case '-': case '*': case '/': case '%':
             toks.push({ type: T.OP, val: c }); i++; break;
           case '=': toks.push({ type: T.OP, val: '=' }); i++; break;
           case '>': toks.push({ type: T.OP, val: '>' }); i++; break;
@@ -546,19 +559,19 @@ var SproutCompiler = (function() {
       return this.chunk;
     }
     compileBody(chunk) {
-      this.skipNL();
+      this.skipNLIndent();
       while (true) {
         const t = this.sc.peek();
         if (t.type === T.EOF || t.type === T.DEDENT || t.type === T.RBRACK) break;
         this.compileExpr(chunk);
         const sep = this.sc.peek();
-        if (sep.type === T.NL || sep.type === T.COMMA) {
+        if (sep.type === T.NL || sep.type === T.COMMA || sep.type === T.INDENT) {
           this.sc.next();
           const next = this.sc.peek();
           if (next.type !== T.EOF && next.type !== T.DEDENT && next.type !== T.RBRACK) {
             chunk.emit(OP.POP);
           }
-          this.skipNL();
+          this.skipNLIndent();
         } else {
           break;
         }
@@ -566,6 +579,9 @@ var SproutCompiler = (function() {
     }
     skipNL() {
       while (this.sc.check(T.NL)) this.sc.next();
+    }
+    skipNLIndent() {
+      while (this.sc.check(T.NL) || this.sc.check(T.INDENT)) this.sc.next();
     }
     compileExpr(chunk) {
       const t = this.sc.peek();
@@ -604,8 +620,8 @@ var SproutCompiler = (function() {
         if (t.type === T.IDENT && this.sc.peek(1).type !== T.COLON) {
           const name = t.val;
           this.sc.next();
-          if (this.sc.peek().type === T.LBRACK) {
-            this.compileBlockOrCell(chunk);
+          if (this.sc.peek().type === T.LBRACK || this.sc.peek().type === T.LPAREN) {
+            this.compileAtom(chunk);
             chunk.emit(OP.SEND, chunk.addConst(name), 1);
           } else {
             chunk.emit(OP.SEND, chunk.addConst(name), 0);
@@ -614,6 +630,11 @@ var SproutCompiler = (function() {
         }
         if (t.type === T.LBRACK) {
           this.compileBlockOrCell(chunk);
+          chunk.emit(OP.SEND, chunk.addConst('call'), 1);
+          continue;
+        }
+        if (t.type === T.LPAREN) {
+          this.compileAtom(chunk);
           chunk.emit(OP.SEND, chunk.addConst('call'), 1);
           continue;
         }
@@ -656,6 +677,12 @@ var SproutCompiler = (function() {
       }
       if (t.type === T.LBRACK) {
         this.compileBlockOrCell(chunk);
+        return;
+      }
+      if (t.type === T.LPAREN) {
+        this.sc.next();
+        this.compileChain(chunk);
+        this.sc.eat(T.RPAREN);
         return;
       }
       chunk.emit(OP.PUSH_CONST, chunk.addConst(null));
@@ -713,6 +740,7 @@ var SproutCompiler = (function() {
       }
       if (params.length > 1) {
         this._compileCurried(chunk, params, 0);
+        while (this.sc.check(T.DEDENT) || this.sc.check(T.NL)) this.sc.next();
         this.sc.eat(T.RBRACK);
         return;
       }
@@ -726,6 +754,7 @@ var SproutCompiler = (function() {
       }
       this.compileBody(blockChunk);
       blockChunk.emit(OP.RETURN);
+      while (this.sc.check(T.DEDENT) || this.sc.check(T.NL)) this.sc.next();
       this.sc.eat(T.RBRACK);
       chunk.emit(OP.MAKE_BLOCK, blockIdx);
     }
@@ -759,7 +788,8 @@ var SproutCompiler = (function() {
     compileCellLiteralBody(chunk) {
       let count = 0;
       while (!this.sc.check(T.RBRACK) && !this.sc.check(T.EOF)) {
-        this.skipNL();
+        this.skipNLIndent();
+        while (this.sc.check(T.DEDENT)) this.sc.next();
         if (this.sc.check(T.RBRACK)) break;
         const t = this.sc.peek();
         const t1 = this.sc.peek(1);
@@ -779,7 +809,8 @@ var SproutCompiler = (function() {
           count++;
         }
         this.sc.eat(T.COMMA);
-        this.skipNL();
+        this.skipNLIndent();
+        while (this.sc.check(T.DEDENT)) this.sc.next();
       }
       this.sc.eat(T.RBRACK);
       chunk.emit(OP.MAKE_CELL, count);
