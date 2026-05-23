@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no,maximum-scale=1">
-<title>Who's Faking It?</title>
+<title>Imposter67</title>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
@@ -103,6 +103,9 @@ input{font-family:inherit;outline:none}
 
 /* ─── MUTE BTN ─── */
 .mute-btn{position:fixed;top:1rem;right:1rem;background:var(--surface);border:1px solid var(--border);color:var(--text);font-size:1.2rem;width:2.5rem;height:2.5rem;border-radius:50%;display:flex;align-items:center;justify-content:center;z-index:100;cursor:pointer}
+
+/* ─── TEST MODE BADGE ─── */
+.test-mode-badge{position:fixed;top:1rem;left:1rem;background:rgba(155,89,182,.85);color:#fff;font-weight:800;font-size:clamp(.7rem,1.2vw,.95rem);padding:.4rem 1rem;border-radius:8px;z-index:100;letter-spacing:2px;pointer-events:none}
 </style>
 </head>
 <body>
@@ -113,13 +116,16 @@ input{font-family:inherit;outline:none}
 
 <!-- TV: Lobby -->
 <div id="tvLobby" class="tv-wrap">
-  <div class="tv-title">WHO'S FAKING IT?</div>
+  <div class="tv-title">IMPOSTER67</div>
   <div class="tv-subtitle">A party game of deception</div>
   <div class="tv-join-url">Join at <span id="tvJoinUrl">taskiap.com/games/imposter.html?join=----</span></div>
   <div class="tv-room-code" id="tvRoomCode">----</div>
   <div class="tv-players-label">PLAYERS (<span id="tvPlayerCount">0</span>/6)</div>
   <div class="tv-player-list" id="tvPlayerList"></div>
-  <button class="tv-start-btn" id="tvStartBtn" disabled onclick="hostStartGame()">START GAME</button>
+  <div style="display:flex;gap:1rem;flex-wrap:wrap;justify-content:center">
+    <button class="tv-start-btn" id="tvStartBtn" disabled onclick="hostStartGame()">START GAME</button>
+    <button class="tv-start-btn" id="tvTestBtn" onclick="hostStartTestMode()" style="background:#9b59b6;box-shadow:0 4px 30px rgba(155,89,182,.3)">TEST MODE</button>
+  </div>
   <div class="tv-status" id="tvLobbyStatus">Need at least 3 players</div>
 </div>
 
@@ -148,7 +154,7 @@ input{font-family:inherit;outline:none}
 
 <!-- Phone: Join -->
 <div id="phoneJoin" class="phone-wrap">
-  <div class="phone-title">WHO'S FAKING IT?</div>
+  <div class="phone-title">IMPOSTER67</div>
   <div class="phone-sub">Enter your name to join</div>
   <input class="phone-input" id="phoneName" placeholder="Your name" maxlength="16" autocomplete="off" autocorrect="off" autocapitalize="words">
   <button class="phone-btn" id="phoneJoinBtn" onclick="phoneDoJoin()">JOIN GAME</button>
@@ -157,7 +163,7 @@ input{font-family:inherit;outline:none}
 
 <!-- Phone: Waiting -->
 <div id="phoneWaiting" class="phone-wrap hidden">
-  <div class="phone-title">WHO'S FAKING IT?</div>
+  <div class="phone-title">IMPOSTER67</div>
   <div class="phone-sub">You're in! Waiting for the game to start...</div>
   <div class="phone-waiting pulsing">Sit tight</div>
 </div>
@@ -259,6 +265,7 @@ let muted = false;
 let audioCtx = null;
 
 // Host state
+let testMode = false;
 let hostConns = {};       // peerId -> {conn, name, id}
 let players = [];         // [{id, name, score, conn}]
 let roomCode = '';
@@ -1048,6 +1055,87 @@ function phoneShowScreen(id){
   ['phoneJoin','phoneWaiting','phoneRole','phoneVote','phoneResult'].forEach(s=>{
     document.getElementById(s).classList.toggle('hidden', s!==id);
   });
+}
+
+// ════════════════════════════════════════════════
+// TEST MODE (BOTS)
+// ════════════════════════════════════════════════
+const BOT_NAMES = ['Bot Steve','Bot Karen','Bot Chad','Bot Brenda','Bot Derek','Bot Linda','Bot Gary','Bot Tiffany','Bot Doug','Bot Sheila'];
+
+const BOT_ANSWERS = [
+  'a spoon','my ex','literally anything','a sense of dread','cheese','Kevin','regret',
+  'a small angry dog','the concept of time','vibes','a burrito','suspicion','my left shoe',
+  'anxiety','a haunted doll','Jeff Bezos','a mystery','pure chaos','a wet sock','disappointment',
+  'a kazoo','someone else\'s lunch','the void','a strongly worded letter','a raccoon in a trenchcoat',
+  'unresolved trauma','a potato','sheer willpower','denial','a rubber duck','the IRS','a conspiracy',
+  'emotional baggage','a questionable life choice','a trombone','that one guy from high school',
+  'cold pizza','an existential crisis','a parking ticket','too much confidence','a velvet rope',
+  'someone\'s mom','a suspicious casserole','WiFi','a participation trophy','the audacity',
+  'socks with sandals','a strongly worded email','a time bomb','plausible deniability',
+  'a coupon','a secret handshake','a llama','bad decisions','a haunted toaster','passive aggression',
+  'a fake mustache','uncooked pasta','main character energy','a broken promise','a fortune cookie'
+];
+
+// Fake conn object for bots — mimics PeerJS conn interface
+function makeBotConn(botId){
+  return {
+    peer: botId,
+    send: function(msg){ botHandleMessage(botId, msg); },
+    open: true
+  };
+}
+
+function botHandleMessage(botId, msg){
+  // Bots react to messages from the host the same way a phone client would
+  if(msg.type==='round_start'){
+    // Bot submits an answer after a random delay
+    const delay = 2000 + Math.random()*3000;
+    setTimeout(()=>{
+      if(roundPhase!=='answer') return;
+      if(answers[botId]) return;
+      const answer = BOT_ANSWERS[Math.floor(Math.random()*BOT_ANSWERS.length)];
+      answers[botId] = answer;
+      checkAllAnswered();
+    }, delay);
+  }
+  else if(msg.type==='vote_start'){
+    // Bot votes for a random player (not themselves)
+    const delay = 2000 + Math.random()*3000;
+    setTimeout(()=>{
+      if(roundPhase!=='vote') return;
+      if(votes[botId]) return;
+      const candidates = players.filter(p=>p.id!==botId);
+      if(candidates.length===0) return;
+      const target = candidates[Math.floor(Math.random()*candidates.length)];
+      votes[botId] = target.id;
+      checkAllVoted();
+    }, delay);
+  }
+  // Other message types (answer_ack, vote_ack, round_result, game_over, etc.) — bots ignore
+}
+
+function hostStartTestMode(){
+  testMode = true;
+  // Add 3-5 bot players
+  const numBots = 3 + Math.floor(Math.random()*3); // 3, 4, or 5
+  const shuffledNames = shuffle(BOT_NAMES.slice());
+  for(let i=0;i<numBots;i++){
+    const botId = 'bot-'+i+'-'+Math.random().toString(36).slice(2,8);
+    const botName = shuffledNames[i];
+    const botConn = makeBotConn(botId);
+    players.push({id:botId, name:botName, score:0, conn:botConn});
+    hostConns[botId] = {conn:botConn, name:botName, id:botId};
+  }
+  updateTVLobby();
+  // Show test mode badge on TV
+  const badge = document.createElement('div');
+  badge.className='test-mode-badge';
+  badge.textContent='(TEST MODE)';
+  document.getElementById('tvApp').appendChild(badge);
+  // Auto-start game if enough players
+  if(players.length >= 3){
+    hostStartGame();
+  }
 }
 
 // ════════════════════════════════════════════════
