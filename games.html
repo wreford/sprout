@@ -400,6 +400,93 @@ body {
 
 }
 
+/* ── Join Bar ── */
+.join-bar {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 1.5rem 2rem 0;
+}
+.join-inner {
+  background: linear-gradient(135deg, rgba(255,107,53,0.08), rgba(167,139,250,0.08));
+  border: 1px solid rgba(255,107,53,0.25);
+  border-radius: 14px;
+  padding: 20px 24px;
+  text-align: center;
+}
+.join-label {
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  color: var(--accent);
+  margin-bottom: 12px;
+  text-transform: uppercase;
+}
+.join-row {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  align-items: center;
+}
+.join-input {
+  width: 160px;
+  padding: 14px 20px;
+  background: var(--bg);
+  border: 2px solid var(--border);
+  border-radius: 12px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 1.4rem;
+  font-weight: 800;
+  text-align: center;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.join-input::placeholder {
+  color: #444;
+  font-size: 0.8rem;
+  letter-spacing: 0.15em;
+  font-weight: 600;
+}
+.join-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 20px rgba(255,107,53,0.15);
+}
+.join-btn {
+  padding: 14px 28px;
+  background: var(--accent);
+  border: none;
+  border-radius: 12px;
+  color: #fff;
+  font-family: var(--font);
+  font-size: 1rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.2s;
+  letter-spacing: 0.05em;
+}
+.join-btn:hover {
+  background: #ff8c5a;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(255,107,53,0.3);
+}
+.join-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+.join-status {
+  font-size: 0.75rem;
+  margin-top: 10px;
+  min-height: 20px;
+  color: var(--dim);
+  transition: color 0.2s;
+}
+.join-status.error { color: var(--red); }
+.join-status.success { color: var(--green); }
+.join-status.searching { color: var(--gold); }
+
 /* ── Multiplayer Section ── */
 .mp-section {
   margin-bottom: 2rem;
@@ -594,6 +681,18 @@ body {
   <div class="hero-vignette"></div>
   <div class="hero-dots" id="heroDots"></div>
 </section>
+
+<!-- ── Join Code Input ── -->
+<div class="join-bar" id="joinBar">
+  <div class="join-inner">
+    <div class="join-label">JOIN A GAME</div>
+    <div class="join-row">
+      <input type="text" id="joinCode" class="join-input" placeholder="ROOM CODE" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false"/>
+      <button class="join-btn" id="joinBtn" onclick="joinGame()">GO</button>
+    </div>
+    <div class="join-status" id="joinStatus"></div>
+  </div>
+</div>
 
 <!-- ── Content Warning ── -->
 <div style="max-width:720px;margin:0 auto;padding:1rem 2rem 0">
@@ -1067,6 +1166,120 @@ function catRain() {
       document.body.appendChild(el);
       el.addEventListener('animationend', () => el.remove());
     }, i * 50);
+  }
+}
+
+// ─── Join Game by Room Code ───
+const GAME_MAP = [
+  { prefix: 'taskiap-sportstrivia-', url: 'games/sportstrivia.html' },
+  { prefix: 'taskiap-hockeytrivia-', url: 'games/hockey.html' },
+  { prefix: 'taskiap-baseballtrivia-', url: 'games/baseball.html' },
+  { prefix: 'taskiap-brunotrivia-', url: 'games/brunotrivia.html' },
+  { prefix: 'taskiap-swifttrivia-', url: 'games/swifttrivia.html' },
+  { prefix: 'taskiap-pythontrivia-', url: 'games/pythontrivia.html' },
+  { prefix: 'taskiap-wrefle-', url: 'games/wrefle5.html' },
+  { prefix: 'taskiap-imposter-', url: 'games/imposter.html' },
+  { prefix: 'taskiap-drawbattle-', url: 'games/drawbattle.html' },
+  { prefix: 'taskiap-sevens-', url: 'games/sevens.html' },
+  { prefix: 'taskiap-truthordare-', url: 'games/truthordare.html' },
+];
+
+let peerJSLoaded = false;
+function loadPeerJS() {
+  return new Promise((resolve, reject) => {
+    if (peerJSLoaded) return resolve();
+    const s = document.createElement('script');
+    s.src = 'https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js';
+    s.onload = () => { peerJSLoaded = true; resolve(); };
+    s.onerror = () => reject(new Error('Failed to load PeerJS'));
+    document.head.appendChild(s);
+  });
+}
+
+document.getElementById('joinCode').addEventListener('input', function() {
+  this.value = this.value.toUpperCase().replace(/[^A-Z]/g, '');
+});
+document.getElementById('joinCode').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' && this.value.length === 4) joinGame();
+});
+
+async function joinGame() {
+  const code = document.getElementById('joinCode').value.trim().toUpperCase();
+  const status = document.getElementById('joinStatus');
+  const btn = document.getElementById('joinBtn');
+  if (code.length !== 4) {
+    status.textContent = 'Enter a 4-letter code';
+    status.className = 'join-status error';
+    return;
+  }
+  btn.disabled = true;
+  status.textContent = 'Searching for game...';
+  status.className = 'join-status searching';
+
+  try {
+    await loadPeerJS();
+  } catch(e) {
+    status.textContent = 'Network error. Try again.';
+    status.className = 'join-status error';
+    btn.disabled = false;
+    return;
+  }
+
+  let found = false;
+  let checked = 0;
+  const total = GAME_MAP.length;
+
+  for (const game of GAME_MAP) {
+    if (found) break;
+    try {
+      const result = await new Promise((resolve) => {
+        const tempId = 'probe-' + Math.random().toString(36).slice(2, 10);
+        const peer = new Peer(tempId, { debug: 0 });
+        const timeout = setTimeout(() => {
+          peer.destroy();
+          resolve(false);
+        }, 3000);
+
+        peer.on('open', () => {
+          const conn = peer.connect(game.prefix + code, { reliable: true });
+          conn.on('open', () => {
+            clearTimeout(timeout);
+            conn.close();
+            peer.destroy();
+            resolve(true);
+          });
+          conn.on('error', () => {
+            clearTimeout(timeout);
+            peer.destroy();
+            resolve(false);
+          });
+        });
+        peer.on('error', () => {
+          clearTimeout(timeout);
+          peer.destroy();
+          resolve(false);
+        });
+      });
+
+      checked++;
+      if (result) {
+        found = true;
+        status.textContent = 'Found! Joining...';
+        status.className = 'join-status success';
+        setTimeout(() => {
+          window.location.href = game.url + '?join=' + code;
+        }, 400);
+        return;
+      }
+    } catch(e) {
+      checked++;
+    }
+  }
+
+  if (!found) {
+    status.textContent = 'No game found with code ' + code;
+    status.className = 'join-status error';
+    btn.disabled = false;
   }
 }
 </script>
