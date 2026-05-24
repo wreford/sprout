@@ -24,9 +24,9 @@ canvas{display:block;width:100%;height:100%}
 #joystick-thumb{width:50px;height:50px;border-radius:50%;background:rgba(255,255,255,.5);position:absolute;bottom:50px;left:50px;transform:translate(-50%,-50%);pointer-events:none}
 .mobile-btn{position:absolute;width:70px;height:70px;border-radius:50%;background:rgba(255,255,255,.2);border:2px solid rgba(255,255,255,.4);color:#fff;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;pointer-events:auto;-webkit-tap-highlight-color:transparent}
 .mobile-btn:active{background:rgba(255,255,255,.4)}
-#btn-jump{bottom:20px;right:20px;width:80px;height:80px;font-size:15px}
-#btn-sprint{bottom:110px;right:25px;width:65px;height:65px}
-#btn-dash{bottom:190px;right:30px;width:60px;height:60px}
+#btn-jump{bottom:20px;right:20px;width:100px;height:100px;font-size:18px}
+#btn-sprint{bottom:130px;right:25px;width:75px;height:75px}
+#btn-dash{bottom:220px;right:30px;width:70px;height:70px}
 #btn-restart{top:60px;right:12px;width:50px;height:50px;font-size:11px}
 /* Menu */
 #menu-screen{position:fixed;top:0;left:0;width:100%;height:100%;z-index:500;display:flex;flex-direction:column;align-items:center;justify-content:center;background:linear-gradient(180deg,#1a1a3e 0%,#0d0d2b 100%)}
@@ -95,6 +95,8 @@ canvas{display:block;width:100%;height:100%}
 </div>
 
 <div id="checkpoint-msg"></div>
+<div id="click-prompt" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:250;pointer-events:none;text-align:center;color:#fff;font-size:18px;font-weight:600;text-shadow:0 2px 8px rgba(0,0,0,.8);animation:promptPulse 1.5s ease-in-out infinite"><div style="font-size:36px;margin-bottom:8px">🖱️</div>Click to control camera<br><span style="font-size:13px;color:#aaa">WASD move · Space jump · Shift sprint</span></div>
+<style>@keyframes promptPulse{0%,100%{opacity:.7}50%{opacity:1}}</style>
 <div id="death-overlay"></div>
 
 <div id="mobile-controls">
@@ -115,24 +117,24 @@ import * as THREE from 'three';
 // ============================================================
 // CONSTANTS
 // ============================================================
-const GRAVITY = -32;
-const WALK_SPEED = 8;
-const SPRINT_MULT = 1.5;
-const JUMP_VEL = 13;
-const JUMP_HOLD_EXTRA = 8;
-const JUMP_HOLD_TIME = 0.2;
-const DOUBLE_JUMP_VEL = 11;
+const GRAVITY = -26;
+const WALK_SPEED = 9;
+const SPRINT_MULT = 1.6;
+const JUMP_VEL = 14.5;
+const JUMP_HOLD_EXTRA = 10;
+const JUMP_HOLD_TIME = 0.3;
+const DOUBLE_JUMP_VEL = 12.5;
 const DASH_SPEED = 30;
 const DASH_DURATION = 0.2;
 const DASH_COOLDOWN = 3;
-const COYOTE_TIME = 0.15;
-const JUMP_BUFFER = 0.15;
+const COYOTE_TIME = 0.2;
+const JUMP_BUFFER = 0.2;
 const PLAYER_W = 0.8;
 const PLAYER_H = 1.8;
 const PLAYER_D = 0.8;
 const CAM_DIST = 7;
 const CAM_HEIGHT = 3;
-const CAM_LERP = 0.08;
+const CAM_LERP = 0.12;
 const KILL_Y = -20;
 const MAX_VOL = 0.02;
 
@@ -153,7 +155,7 @@ function writeSave(){localStorage.setItem(SAVE_KEY,JSON.stringify(saveData))}
 // ============================================================
 // SETTINGS
 // ============================================================
-let musicVol = 0.5, sfxVol = 0.7, camSens = 0.003;
+let musicVol = 0.5, sfxVol = 0.7, camSens = 0.004;
 const volMusic = document.getElementById('vol-music');
 const volSfx = document.getElementById('vol-sfx');
 const camSensEl = document.getElementById('cam-sens');
@@ -332,9 +334,9 @@ function generateStage(n){
 
   for(let i=0; i<stageLen; i++){
     // Move forward — gaps scale with difficulty but stay jumpable
-    const gapX = rngRange(2.5, 3.5 + diff*2);
-    const gapY = rngRange(-2, 1.5 + diff*1);
-    const gapZ = rngRange(-2.5, 2.5);
+    const gapX = rngRange(2, 3 + diff*1.5);
+    const gapY = rngRange(-1.5, 1.2 + diff*0.8);
+    const gapZ = rngRange(-2, 2);
     cx += gapX;
     cy += gapY;
     cz += gapZ;
@@ -344,8 +346,8 @@ function generateStage(n){
     // Keep z from going too far
     if(Math.abs(cz)>15) cz = Math.sign(cz)*10;
 
-    const pw = rngRange(Math.max(1.8, 2.5-diff), 4 - diff*1.2);
-    const pd = rngRange(Math.max(1.8, 2.5-diff), 4 - diff*1.2);
+    const pw = rngRange(Math.max(2.2, 3-diff*0.5), 4.5 - diff*0.8);
+    const pd = rngRange(Math.max(2.2, 3-diff*0.5), 4.5 - diff*0.8);
     const ph = rngRange(0.5, 1);
 
     // Decide element type based on difficulty
@@ -638,24 +640,27 @@ document.addEventListener('keydown',e=>{
 });
 document.addEventListener('keyup',e=>{keys[e.code]=false;});
 
-// Roblox-style: left click can also jump (when not dragging camera)
+// Left click also jumps (when pointer is locked)
 renderer.domElement.addEventListener('mousedown',e=>{
-  if(e.button === 0 && gameActive && !rightMouseDown){
+  if(e.button === 0 && gameActive && document.pointerLockElement){
     player.jumpBufferTimer = JUMP_BUFFER;
   }
 });
 
-// Roblox-style: right-click drag to orbit camera (no pointer lock)
-let rightMouseDown = false;
-renderer.domElement.addEventListener('mousedown',e=>{
-  if(e.button === 2 || e.button === 1) { rightMouseDown = true; e.preventDefault(); }
-});
-document.addEventListener('mouseup',e=>{
-  if(e.button === 2 || e.button === 1) rightMouseDown = false;
-});
+// Camera: click to lock pointer, move mouse to orbit (standard 3D game style)
 renderer.domElement.addEventListener('contextmenu',e=>e.preventDefault());
+renderer.domElement.addEventListener('click',()=>{
+  if(!isMobile && gameActive && !document.pointerLockElement){
+    renderer.domElement.requestPointerLock();
+  }
+});
+document.addEventListener('pointerlockchange',()=>{
+  pointerLocked = !!document.pointerLockElement;
+  const prompt = document.getElementById('click-prompt');
+  if(prompt) prompt.style.display = (gameActive && !pointerLocked && !isMobile) ? 'block' : 'none';
+});
 document.addEventListener('mousemove',e=>{
-  if(rightMouseDown && gameActive){
+  if(document.pointerLockElement && gameActive){
     camYaw -= e.movementX * camSens;
     camPitch -= e.movementY * camSens;
     camPitch = Math.max(-1.2, Math.min(0.5, camPitch));
@@ -924,6 +929,7 @@ function startStage(n){
   gameActive = true;
   inMenu = false;
   hudEl.style.display = 'block';
+  if(!isMobile) document.getElementById('click-prompt').style.display = 'block';
 
   buildStage(n);
   createClouds();
