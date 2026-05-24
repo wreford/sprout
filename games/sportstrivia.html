@@ -1277,8 +1277,785 @@ saveState();playBallgame();playCrowdAmbient();renderQ();
 };
 }
 
-// Init
-renderStart();
+// Init — mode detection
+var _mpParams = new URLSearchParams(window.location.search);
+var _mpMode = _mpParams.has('host') ? 'host' : (_mpParams.has('join') ? 'join' : null);
+
+if (!_mpMode) {
+  // Single-player mode — existing behavior
+  renderStart();
+} else {
+  // Multiplayer mode — load PeerJS and run MP code
+  (function() {
+    var script = document.createElement('script');
+    script.src = 'https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js';
+    script.onload = function() { initMultiplayer(); };
+    document.head.appendChild(script);
+  })();
+}
+
+function initMultiplayer() {
+  // === MP Audio ===
+  var mpActx = new (window.AudioContext || window.webkitAudioContext)();
+  function mpPlayCorrect() {
+    try {
+      var o = mpActx.createOscillator(), g = mpActx.createGain();
+      o.connect(g); g.connect(mpActx.destination);
+      o.frequency.setValueAtTime(880, mpActx.currentTime);
+      o.frequency.setValueAtTime(1100, mpActx.currentTime + 0.08);
+      g.gain.setValueAtTime(0.02, mpActx.currentTime);
+      g.gain.linearRampToValueAtTime(0, mpActx.currentTime + 0.25);
+      o.start(mpActx.currentTime); o.stop(mpActx.currentTime + 0.25);
+    } catch(e) {}
+  }
+  function mpPlayWrong() {
+    try {
+      var o = mpActx.createOscillator(), g = mpActx.createGain();
+      o.connect(g); g.connect(mpActx.destination);
+      o.type = 'sawtooth';
+      o.frequency.setValueAtTime(200, mpActx.currentTime);
+      o.frequency.setValueAtTime(150, mpActx.currentTime + 0.15);
+      g.gain.setValueAtTime(0.02, mpActx.currentTime);
+      g.gain.linearRampToValueAtTime(0, mpActx.currentTime + 0.3);
+      o.start(mpActx.currentTime); o.stop(mpActx.currentTime + 0.3);
+    } catch(e) {}
+  }
+  function mpPlayDing() {
+    try {
+      var o = mpActx.createOscillator(), g = mpActx.createGain();
+      o.connect(g); g.connect(mpActx.destination);
+      o.frequency.setValueAtTime(1200, mpActx.currentTime);
+      g.gain.setValueAtTime(0.02, mpActx.currentTime);
+      g.gain.linearRampToValueAtTime(0, mpActx.currentTime + 0.15);
+      o.start(mpActx.currentTime); o.stop(mpActx.currentTime + 0.15);
+    } catch(e) {}
+  }
+  function mpPlayFanfare() {
+    try {
+      [523, 659, 784, 1047].forEach(function(f, i) {
+        var o = mpActx.createOscillator(), g = mpActx.createGain();
+        o.connect(g); g.connect(mpActx.destination);
+        o.frequency.setValueAtTime(f, mpActx.currentTime + i * 0.15);
+        g.gain.setValueAtTime(0.02, mpActx.currentTime + i * 0.15);
+        g.gain.linearRampToValueAtTime(0, mpActx.currentTime + i * 0.15 + 0.4);
+        o.start(mpActx.currentTime + i * 0.15);
+        o.stop(mpActx.currentTime + i * 0.15 + 0.4);
+      });
+    } catch(e) {}
+  }
+
+  // === Constants ===
+  var PEER_PREFIX = 'taskiap-sportstrivia-';
+  var QUESTIONS_PER_GAME = 20;
+  var ANSWER_TIME = 15; // seconds
+  var MIN_PLAYERS = 1;
+  var MAX_PLAYERS = 8;
+
+  // === Shared utilities ===
+  function genRoomCode() {
+    var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    var code = '';
+    for (var i = 0; i < 4; i++) code += chars[Math.floor(Math.random() * 26)];
+    return code;
+  }
+
+  function shuffleArray(arr) {
+    var a = arr.slice();
+    for (var i = a.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var t = a[i]; a[i] = a[j]; a[j] = t;
+    }
+    return a;
+  }
+
+  function calcScore(correct, answerTimeMs) {
+    if (!correct) return 0;
+    var base = 1000;
+    var speedBonus = 0;
+    var secs = answerTimeMs / 1000;
+    if (secs <= 2) speedBonus = 500;
+    else if (secs < 10) speedBonus = Math.round(500 * (1 - (secs - 2) / 8));
+    return base + speedBonus;
+  }
+
+  // Hide existing container for multiplayer
+  document.querySelector('.container').classList.add('hidden');
+
+  // === HOST MODE ===
+  if (_mpMode === 'host') {
+    var roomCode = genRoomCode();
+    var peerId = PEER_PREFIX + roomCode;
+    var players = {}; // id -> {name, conn, score, streak, answers: [], connected}
+    var connections = []; // all active connections
+    var mpQuestions = [];
+    var mpQIndex = 0;
+    var mpPhase = 'lobby'; // lobby, question, results, leaderboard, podium
+    var questionStartTime = 0;
+    var answersReceived = 0;
+    var questionTimer = null;
+    var botTimers = [];
+
+    // Pick questions
+    var allQ = shuffleArray(Q);
+    mpQuestions = allQ.slice(0, QUESTIONS_PER_GAME);
+
+    // Create host UI
+    var hostDiv = document.createElement('div');
+    hostDiv.id = 'mp-host';
+    hostDiv.style.cssText = 'max-width:900px;margin:0 auto;padding:20px;min-height:100vh;';
+    document.body.appendChild(hostDiv);
+
+    function renderHostLobby() {
+      mpPhase = 'lobby';
+      var joinUrl = 'taskiap.com/games/sportstrivia.html?join=' + roomCode;
+      var playerList = Object.values(players).filter(function(p) { return p.connected; });
+      var playerHTML = playerList.map(function(p) {
+        return '<div style="display:inline-block;background:var(--surface);border:2px solid var(--accent);border-radius:12px;padding:10px 20px;margin:6px;font-size:18px;font-weight:600;">' + escHTML(p.name) + '</div>';
+      }).join('');
+      hostDiv.innerHTML = '<div style="text-align:center;padding:40px 0;">' +
+        '<h1 style="font-size:clamp(20px,4vw,32px);color:var(--accent);letter-spacing:2px;margin-bottom:10px;">DONNY\'S SPORTS TRIVIA</h1>' +
+        '<p style="color:rgba(255,255,255,0.6);margin-bottom:30px;">MULTIPLAYER</p>' +
+        '<div style="background:var(--surface);border:3px solid var(--accent);border-radius:16px;padding:30px;display:inline-block;margin-bottom:20px;">' +
+          '<p style="font-size:14px;color:rgba(255,255,255,0.6);text-transform:uppercase;letter-spacing:2px;margin-bottom:10px;">Room Code</p>' +
+          '<div style="font-size:clamp(48px,10vw,80px);font-weight:900;letter-spacing:12px;color:var(--accent);">' + roomCode + '</div>' +
+          '<p style="font-size:14px;color:rgba(255,255,255,0.5);margin-top:10px;">Join at: <strong style="color:var(--text)">' + joinUrl + '</strong></p>' +
+        '</div>' +
+        '<div style="margin:20px 0;">' +
+          '<p style="font-size:16px;color:rgba(255,255,255,0.7);margin-bottom:12px;">' + playerList.length + ' / ' + MAX_PLAYERS + ' Players</p>' +
+          '<div style="display:flex;flex-wrap:wrap;justify-content:center;gap:8px;">' + (playerHTML || '<p style="color:rgba(255,255,255,0.4)">Waiting for players...</p>') + '</div>' +
+        '</div>' +
+        '<div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:24px;">' +
+          '<button id="mp-start-btn" class="start-btn" style="max-width:300px;' + (playerList.length < MIN_PLAYERS ? 'opacity:0.4;cursor:not-allowed;' : '') + '">START GAME</button>' +
+          '<button id="mp-test-btn" style="max-width:200px;padding:12px 20px;background:transparent;border:2px solid rgba(255,255,255,0.3);color:rgba(255,255,255,0.6);border-radius:8px;font-size:14px;cursor:pointer;font-family:inherit;">TEST MODE</button>' +
+        '</div>' +
+      '</div>';
+
+      var startBtn = document.getElementById('mp-start-btn');
+      if (startBtn) startBtn.onclick = function() {
+        var pl = Object.values(players).filter(function(p) { return p.connected; });
+        if (pl.length < MIN_PLAYERS) return;
+        startMPGame();
+      };
+      var testBtn = document.getElementById('mp-test-btn');
+      if (testBtn) testBtn.onclick = function() { addBotPlayers(); };
+    }
+
+    function addBotPlayers() {
+      var botNames = ['SportsBot', 'TriviaKing', 'QuizWhiz', 'BrainiacBot'];
+      botNames.forEach(function(name) {
+        var botId = 'bot-' + name.toLowerCase() + '-' + Math.random().toString(36).substr(2, 4);
+        players[botId] = {
+          name: name,
+          conn: null,
+          score: 0,
+          streak: 0,
+          answers: [],
+          connected: true,
+          isBot: true
+        };
+      });
+      renderHostLobby();
+    }
+
+    function startMPGame() {
+      mpQIndex = 0;
+      Object.keys(players).forEach(function(id) {
+        players[id].score = 0;
+        players[id].streak = 0;
+        players[id].answers = [];
+      });
+      broadcast({ type: 'gameStart', totalQuestions: mpQuestions.length });
+      showNextQuestion();
+    }
+
+    function showNextQuestion() {
+      if (mpQIndex >= mpQuestions.length) {
+        showPodium();
+        return;
+      }
+      mpPhase = 'question';
+      var q = mpQuestions[mpQIndex];
+      answersReceived = 0;
+      questionStartTime = Date.now();
+
+      // Send question to all players
+      broadcast({
+        type: 'question',
+        qi: mpQIndex,
+        total: mpQuestions.length,
+        q: q.q,
+        options: q.o,
+        cat: q.cat,
+        sport: q.sport,
+        d: q.d,
+        time: ANSWER_TIME
+      });
+
+      // Render on TV
+      renderHostQuestion(q);
+
+      // Auto-advance timer
+      clearTimeout(questionTimer);
+      questionTimer = setTimeout(function() {
+        endQuestion();
+      }, ANSWER_TIME * 1000 + 1000);
+
+      // Bot answers
+      scheduleBotAnswers(q);
+    }
+
+    function scheduleBotAnswers(q) {
+      botTimers.forEach(function(t) { clearTimeout(t); });
+      botTimers = [];
+      Object.keys(players).forEach(function(id) {
+        if (!players[id].isBot || !players[id].connected) return;
+        var delay = 1500 + Math.random() * 6000;
+        var correct = Math.random() < 0.7;
+        var answer = correct ? q.a : ((q.a + 1 + Math.floor(Math.random() * 3)) % 4);
+        var t = setTimeout(function() {
+          if (mpPhase !== 'question') return;
+          handlePlayerAnswer(id, answer, delay);
+        }, delay);
+        botTimers.push(t);
+      });
+    }
+
+    function renderHostQuestion(q) {
+      var totalPlayers = Object.values(players).filter(function(p) { return p.connected; }).length;
+      var catDisplay = (q.sport === 'hockey' ? '\u{1F3D2} ' : '⚾ ') + q.cat;
+      hostDiv.innerHTML = '<div style="text-align:center;padding:20px 0;">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;background:rgba(0,0,0,0.3);padding:8px 16px;border-radius:8px;margin-bottom:16px;border:2px solid var(--accent);">' +
+          '<span style="font-size:14px;">Question ' + (mpQIndex + 1) + ' / ' + mpQuestions.length + '</span>' +
+          '<span id="mp-timer" style="font-size:18px;font-weight:700;color:var(--accent);">' + ANSWER_TIME + '</span>' +
+          '<span style="font-size:14px;">Answers: <strong id="mp-answer-count">0</strong> / ' + totalPlayers + '</span>' +
+        '</div>' +
+        '<div style="margin-bottom:8px;"><span class="category">' + catDisplay + '</span> <span class="badge ' + DIFF_CLASSES[q.d] + '">' + DIFF_LABELS[q.d] + '</span></div>' +
+        '<div style="font-size:clamp(22px,4vw,32px);font-weight:700;margin:20px 0 30px;line-height:1.4;">' + q.q + '</div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:700px;margin:0 auto;">' +
+          q.o.map(function(opt, i) {
+            var colors = ['#e74c3c', '#3498db', '#f1c40f', '#2ecc71'];
+            var labels = ['A', 'B', 'C', 'D'];
+            return '<div id="mp-opt-' + i + '" style="background:' + colors[i] + ';border-radius:12px;padding:16px 20px;font-size:clamp(16px,2.5vw,20px);font-weight:600;text-align:center;min-height:60px;display:flex;align-items:center;justify-content:center;gap:8px;">' +
+              '<span style="opacity:0.7;font-size:14px;">' + labels[i] + '.</span> ' + opt + '</div>';
+          }).join('') +
+        '</div>' +
+      '</div>';
+
+      // Countdown timer
+      var remaining = ANSWER_TIME;
+      var timerEl = document.getElementById('mp-timer');
+      var countdownInterval = setInterval(function() {
+        remaining--;
+        if (timerEl) timerEl.textContent = remaining;
+        if (remaining <= 0) clearInterval(countdownInterval);
+        if (remaining <= 5 && timerEl) timerEl.style.color = 'var(--red)';
+      }, 1000);
+    }
+
+    function handlePlayerAnswer(playerId, answerIndex, timeMs) {
+      if (mpPhase !== 'question') return;
+      if (!players[playerId]) return;
+      // Prevent double answers
+      var existing = players[playerId].answers[mpQIndex];
+      if (existing !== undefined) return;
+
+      var q = mpQuestions[mpQIndex];
+      var correct = answerIndex === q.a;
+      if (timeMs === undefined) timeMs = Date.now() - questionStartTime;
+      var pts = calcScore(correct, timeMs);
+
+      if (correct) {
+        players[playerId].streak++;
+        if (players[playerId].streak >= 3) {
+          pts = Math.round(pts * 1.5);
+        }
+      } else {
+        players[playerId].streak = 0;
+      }
+
+      players[playerId].score += pts;
+      players[playerId].answers[mpQIndex] = {
+        answer: answerIndex,
+        correct: correct,
+        time: timeMs,
+        points: pts
+      };
+
+      answersReceived++;
+      var acEl = document.getElementById('mp-answer-count');
+      if (acEl) acEl.textContent = answersReceived;
+
+      // Send feedback to player
+      if (players[playerId].conn) {
+        players[playerId].conn.send({
+          type: 'answerResult',
+          correct: correct,
+          correctAnswer: q.a,
+          points: pts,
+          totalScore: players[playerId].score,
+          streak: players[playerId].streak
+        });
+      }
+
+      // Check if all answered
+      var totalPlayers = Object.values(players).filter(function(p) { return p.connected; }).length;
+      if (answersReceived >= totalPlayers) {
+        clearTimeout(questionTimer);
+        setTimeout(function() { endQuestion(); }, 500);
+      }
+    }
+
+    function endQuestion() {
+      if (mpPhase !== 'question') return;
+      mpPhase = 'results';
+      clearTimeout(questionTimer);
+      botTimers.forEach(function(t) { clearTimeout(t); });
+
+      var q = mpQuestions[mpQIndex];
+
+      // Mark unanswered players
+      Object.keys(players).forEach(function(id) {
+        if (!players[id].connected) return;
+        if (players[id].answers[mpQIndex] === undefined) {
+          players[id].answers[mpQIndex] = { answer: -1, correct: false, time: ANSWER_TIME * 1000, points: 0 };
+          players[id].streak = 0;
+        }
+      });
+
+      renderHostResults(q);
+      broadcast({ type: 'roundEnd', correctAnswer: q.a, fact: q.fact });
+
+      // Auto-advance to leaderboard
+      setTimeout(function() {
+        showLeaderboard();
+      }, 5000);
+    }
+
+    function renderHostResults(q) {
+      var playerList = Object.values(players).filter(function(p) { return p.connected; });
+      var resultsHTML = playerList.map(function(p) {
+        var ans = p.answers[mpQIndex];
+        var ansText = ans && ans.answer >= 0 ? q.o[ans.answer] : 'No answer';
+        var icon = ans && ans.correct ? '<span style="color:var(--green);">&#10003;</span>' : '<span style="color:var(--red);">&#10007;</span>';
+        var ptsText = ans ? '+' + ans.points : '+0';
+        return '<div style="display:flex;justify-content:space-between;align-items:center;background:rgba(0,0,0,0.3);padding:10px 16px;border-radius:8px;margin:6px 0;border-left:4px solid ' + (ans && ans.correct ? 'var(--green)' : 'var(--red)') + ';">' +
+          '<span style="font-weight:600;">' + icon + ' ' + escHTML(p.name) + '</span>' +
+          '<span style="color:rgba(255,255,255,0.6);font-size:14px;">' + ansText + '</span>' +
+          '<span style="font-weight:700;color:' + (ans && ans.correct ? 'var(--green)' : 'rgba(255,255,255,0.4)') + ';">' + ptsText + '</span>' +
+        '</div>';
+      }).join('');
+
+      hostDiv.innerHTML = '<div style="text-align:center;padding:20px 0;">' +
+        '<p style="font-size:14px;color:rgba(255,255,255,0.5);margin-bottom:6px;">Question ' + (mpQIndex + 1) + ' / ' + mpQuestions.length + '</p>' +
+        '<div style="font-size:clamp(18px,3vw,24px);font-weight:600;margin-bottom:16px;line-height:1.3;">' + q.q + '</div>' +
+        '<div style="background:rgba(74,222,128,0.15);border:2px solid var(--green);border-radius:12px;padding:14px 20px;font-size:20px;font-weight:700;margin-bottom:20px;">' +
+          '<span style="color:var(--green);">&#10003;</span> ' + q.o[q.a] +
+        '</div>' +
+        '<div style="text-align:left;max-width:600px;margin:0 auto;">' + resultsHTML + '</div>' +
+        '<div class="fact-card" style="max-width:600px;margin:16px auto 0;"><span class="fact-emoji">' + (q.sport === 'hockey' ? '\u{1F3D2}' : '⚾') + '</span><span>' + q.fact + '</span></div>' +
+      '</div>';
+    }
+
+    function showLeaderboard() {
+      mpPhase = 'leaderboard';
+      var sorted = Object.values(players).filter(function(p) { return p.connected; }).sort(function(a, b) { return b.score - a.score; });
+
+      var lbHTML = sorted.map(function(p, i) {
+        var medals = ['\u{1F947}', '\u{1F948}', '\u{1F949}'];
+        var prefix = i < 3 ? medals[i] + ' ' : (i + 1) + '. ';
+        var barWidth = sorted[0].score > 0 ? Math.round((p.score / sorted[0].score) * 100) : 0;
+        return '<div style="display:flex;align-items:center;gap:12px;margin:8px 0;">' +
+          '<span style="font-size:20px;width:40px;text-align:right;">' + prefix + '</span>' +
+          '<div style="flex:1;">' +
+            '<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="font-weight:600;font-size:18px;">' + escHTML(p.name) + '</span><span style="font-weight:700;color:var(--accent);font-size:18px;">' + p.score + '</span></div>' +
+            '<div style="height:8px;background:rgba(255,255,255,0.1);border-radius:4px;overflow:hidden;"><div style="height:100%;width:' + barWidth + '%;background:var(--accent);border-radius:4px;transition:width 0.6s;"></div></div>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+
+      // Send standings to players
+      var standings = sorted.map(function(p) { return { name: p.name, score: p.score }; });
+      broadcast({ type: 'standings', standings: standings, qi: mpQIndex + 1, total: mpQuestions.length });
+
+      hostDiv.innerHTML = '<div style="text-align:center;padding:30px 0;">' +
+        '<h2 style="font-size:clamp(22px,4vw,30px);color:var(--accent);margin-bottom:24px;">LEADERBOARD</h2>' +
+        '<div style="max-width:500px;margin:0 auto;text-align:left;">' + lbHTML + '</div>' +
+      '</div>';
+
+      mpQIndex++;
+
+      setTimeout(function() {
+        showNextQuestion();
+      }, 4000);
+    }
+
+    function showPodium() {
+      mpPhase = 'podium';
+      var sorted = Object.values(players).filter(function(p) { return p.connected; }).sort(function(a, b) { return b.score - a.score; });
+      mpPlayFanfare();
+
+      var podiumHTML = '';
+      var medals = ['\u{1F947}', '\u{1F948}', '\u{1F949}'];
+      var podiumColors = ['var(--gold)', '#c0c0c0', '#cd7f32'];
+      for (var i = 0; i < Math.min(3, sorted.length); i++) {
+        var size = i === 0 ? 'clamp(40px,8vw,60px)' : 'clamp(28px,5vw,40px)';
+        podiumHTML += '<div style="margin:16px 0;padding:20px;background:rgba(0,0,0,0.3);border:3px solid ' + podiumColors[i] + ';border-radius:16px;text-align:center;">' +
+          '<div style="font-size:' + size + ';">' + medals[i] + '</div>' +
+          '<div style="font-size:clamp(22px,4vw,32px);font-weight:800;margin:8px 0;">' + escHTML(sorted[i].name) + '</div>' +
+          '<div style="font-size:clamp(20px,3vw,28px);font-weight:700;color:' + podiumColors[i] + ';">' + sorted[i].score + ' pts</div>' +
+        '</div>';
+      }
+
+      // Full standings
+      var fullList = sorted.slice(3).map(function(p, i) {
+        return '<div style="display:flex;justify-content:space-between;padding:8px 12px;background:rgba(0,0,0,0.2);border-radius:6px;margin:4px 0;"><span>' + (i + 4) + '. ' + escHTML(p.name) + '</span><span style="color:var(--accent);font-weight:600;">' + p.score + '</span></div>';
+      }).join('');
+
+      var standings = sorted.map(function(p) { return { name: p.name, score: p.score }; });
+      broadcast({ type: 'podium', standings: standings });
+
+      hostDiv.innerHTML = '<div style="text-align:center;padding:30px 0;">' +
+        '<h2 style="font-size:clamp(28px,5vw,40px);color:var(--accent);margin-bottom:8px;">FINAL RESULTS</h2>' +
+        '<p style="color:rgba(255,255,255,0.6);margin-bottom:24px;">' + mpQuestions.length + ' Questions</p>' +
+        podiumHTML +
+        (fullList ? '<div style="max-width:400px;margin:20px auto 0;">' + fullList + '</div>' : '') +
+        '<button id="mp-play-again" class="restart-btn" style="max-width:300px;margin:30px auto 0;display:block;">Play Again</button>' +
+      '</div>';
+
+      var paBtn = document.getElementById('mp-play-again');
+      if (paBtn) paBtn.onclick = function() {
+        mpQuestions = shuffleArray(Q).slice(0, QUESTIONS_PER_GAME);
+        startMPGame();
+      };
+    }
+
+    function broadcast(data) {
+      connections.forEach(function(conn) {
+        try { conn.send(data); } catch(e) {}
+      });
+    }
+
+    function escHTML(s) {
+      var d = document.createElement('div');
+      d.textContent = s;
+      return d.innerHTML;
+    }
+
+    // Create PeerJS connection
+    var peer = new Peer(peerId);
+    peer.on('open', function() {
+      renderHostLobby();
+    });
+    peer.on('error', function(err) {
+      if (err.type === 'unavailable-id') {
+        // Room code collision — generate new one
+        roomCode = genRoomCode();
+        peerId = PEER_PREFIX + roomCode;
+        peer = new Peer(peerId);
+        peer.on('open', function() { renderHostLobby(); });
+        peer.on('connection', handleConnection);
+      } else {
+        hostDiv.innerHTML = '<div style="text-align:center;padding:60px 20px;"><h2 style="color:var(--red);">Connection Error</h2><p style="margin-top:12px;color:rgba(255,255,255,0.6);">' + (err.message || err.type) + '</p><p style="margin-top:12px;"><a href="sportstrivia.html?host">Try Again</a></p></div>';
+      }
+    });
+
+    function handleConnection(conn) {
+      conn.on('open', function() {
+        connections.push(conn);
+        conn.on('data', function(data) {
+          if (data.type === 'join') {
+            var name = (data.name || 'Player').substring(0, 16);
+            var playersConnected = Object.values(players).filter(function(p) { return p.connected; }).length;
+            if (playersConnected >= MAX_PLAYERS) {
+              conn.send({ type: 'error', message: 'Room is full' });
+              return;
+            }
+            if (mpPhase !== 'lobby') {
+              conn.send({ type: 'error', message: 'Game already in progress' });
+              return;
+            }
+            players[conn.peer] = {
+              name: name,
+              conn: conn,
+              score: 0,
+              streak: 0,
+              answers: [],
+              connected: true,
+              isBot: false
+            };
+            conn.send({ type: 'joined', name: name });
+            renderHostLobby();
+          } else if (data.type === 'answer') {
+            handlePlayerAnswer(conn.peer, data.answer, data.time);
+          }
+        });
+        conn.on('close', function() {
+          if (players[conn.peer]) {
+            players[conn.peer].connected = false;
+          }
+          connections = connections.filter(function(c) { return c !== conn; });
+          if (mpPhase === 'lobby') renderHostLobby();
+        });
+      });
+    }
+    peer.on('connection', handleConnection);
+
+  // === JOIN / PLAYER MODE ===
+  } else if (_mpMode === 'join') {
+    var joinCode = _mpParams.get('join').toUpperCase().replace(/[^A-Z]/g, '').substring(0, 4);
+    var targetPeerId = PEER_PREFIX + joinCode;
+    var playerConn = null;
+    var playerName = localStorage.getItem('mp-player-name') || '';
+    var playerPhase = 'name'; // name, waiting, question, result, standings, podium
+
+    // Create player UI
+    var playerDiv = document.createElement('div');
+    playerDiv.id = 'mp-player';
+    playerDiv.style.cssText = 'max-width:480px;margin:0 auto;padding:16px;min-height:100vh;';
+    document.body.appendChild(playerDiv);
+
+    function escHTML(s) {
+      var d = document.createElement('div');
+      d.textContent = s;
+      return d.innerHTML;
+    }
+
+    function renderNameEntry() {
+      playerPhase = 'name';
+      playerDiv.innerHTML = '<div style="text-align:center;padding:40px 0;">' +
+        '<h1 style="font-size:clamp(20px,5vw,28px);color:var(--accent);letter-spacing:2px;margin-bottom:8px;">DONNY\'S SPORTS TRIVIA</h1>' +
+        '<p style="color:rgba(255,255,255,0.5);margin-bottom:30px;">Room: <strong style="color:var(--accent);letter-spacing:4px;font-size:24px;">' + joinCode + '</strong></p>' +
+        '<div style="margin:20px 0;">' +
+          '<input id="mp-name-input" type="text" placeholder="Your name" maxlength="16" value="' + escHTML(playerName) + '" style="width:100%;padding:16px;font-size:20px;border:2px solid var(--accent);background:var(--surface);color:#fff;border-radius:10px;text-align:center;font-family:inherit;outline:none;" />' +
+        '</div>' +
+        '<button id="mp-join-btn" class="start-btn" style="width:100%;">JOIN GAME</button>' +
+        '<p id="mp-join-error" style="color:var(--red);margin-top:12px;min-height:20px;"></p>' +
+      '</div>';
+
+      var input = document.getElementById('mp-name-input');
+      if (input) {
+        input.focus();
+        input.addEventListener('keydown', function(e) {
+          if (e.key === 'Enter') document.getElementById('mp-join-btn').click();
+        });
+      }
+      document.getElementById('mp-join-btn').onclick = function() {
+        var name = document.getElementById('mp-name-input').value.trim();
+        if (!name) {
+          document.getElementById('mp-join-error').textContent = 'Please enter a name';
+          return;
+        }
+        playerName = name;
+        localStorage.setItem('mp-player-name', name);
+        connectToHost(name);
+      };
+    }
+
+    function connectToHost(name) {
+      playerDiv.innerHTML = '<div style="text-align:center;padding:60px 0;"><p style="font-size:18px;">Connecting...</p></div>';
+
+      var peer = new Peer();
+      peer.on('open', function() {
+        playerConn = peer.connect(targetPeerId, { reliable: true });
+        playerConn.on('open', function() {
+          playerConn.send({ type: 'join', name: name });
+        });
+        playerConn.on('data', function(data) {
+          handleHostMessage(data);
+        });
+        playerConn.on('close', function() {
+          playerDiv.innerHTML = '<div style="text-align:center;padding:60px 0;"><h2 style="color:var(--red);margin-bottom:12px;">Disconnected</h2><p style="color:rgba(255,255,255,0.6);">The host ended the game.</p><p style="margin-top:16px;"><a href="sportstrivia.html?join=' + joinCode + '">Rejoin</a> | <a href="sportstrivia.html">Single Player</a></p></div>';
+        });
+        playerConn.on('error', function() {
+          playerDiv.innerHTML = '<div style="text-align:center;padding:60px 0;"><h2 style="color:var(--red);margin-bottom:12px;">Connection Error</h2><p style="margin-top:12px;"><a href="sportstrivia.html?join=' + joinCode + '">Try Again</a></p></div>';
+        });
+
+        // Timeout for connection
+        setTimeout(function() {
+          if (playerPhase === 'name') {
+            playerDiv.innerHTML = '<div style="text-align:center;padding:60px 0;"><h2 style="color:var(--red);margin-bottom:12px;">Could not connect</h2><p style="color:rgba(255,255,255,0.6);">Room <strong>' + joinCode + '</strong> not found.</p><p style="margin-top:16px;"><a href="sportstrivia.html?join=' + joinCode + '">Try Again</a> | <a href="sportstrivia.html">Single Player</a></p></div>';
+          }
+        }, 8000);
+      });
+      peer.on('error', function(err) {
+        playerDiv.innerHTML = '<div style="text-align:center;padding:60px 0;"><h2 style="color:var(--red);margin-bottom:12px;">Connection Failed</h2><p style="color:rgba(255,255,255,0.6);">' + (err.message || 'Could not reach game server.') + '</p><p style="margin-top:16px;"><a href="sportstrivia.html?join=' + joinCode + '">Try Again</a> | <a href="sportstrivia.html">Single Player</a></p></div>';
+      });
+    }
+
+    var questionSentTime = 0;
+    var hasAnswered = false;
+
+    function handleHostMessage(data) {
+      switch (data.type) {
+        case 'joined':
+          renderWaiting(data.name);
+          break;
+        case 'error':
+          playerDiv.innerHTML = '<div style="text-align:center;padding:60px 0;"><h2 style="color:var(--red);margin-bottom:12px;">Error</h2><p style="color:rgba(255,255,255,0.6);">' + escHTML(data.message) + '</p><p style="margin-top:16px;"><a href="sportstrivia.html?join=' + joinCode + '">Try Again</a></p></div>';
+          break;
+        case 'gameStart':
+          playerPhase = 'waiting';
+          playerDiv.innerHTML = '<div style="text-align:center;padding:60px 0;"><p style="font-size:22px;color:var(--accent);font-weight:700;">Game Starting!</p><p style="margin-top:8px;color:rgba(255,255,255,0.6);">' + data.totalQuestions + ' questions</p></div>';
+          break;
+        case 'question':
+          renderPlayerQuestion(data);
+          break;
+        case 'answerResult':
+          renderPlayerResult(data);
+          break;
+        case 'roundEnd':
+          if (playerPhase === 'question') {
+            // Player didn't answer in time
+            renderPlayerResult({ correct: false, correctAnswer: data.correctAnswer, points: 0, totalScore: 0, streak: 0, timedOut: true });
+          }
+          break;
+        case 'standings':
+          renderPlayerStandings(data);
+          break;
+        case 'podium':
+          renderPlayerPodium(data);
+          break;
+      }
+    }
+
+    function renderWaiting(name) {
+      playerPhase = 'waiting';
+      playerDiv.innerHTML = '<div style="text-align:center;padding:60px 0;">' +
+        '<div style="font-size:48px;margin-bottom:16px;">\u{1F3C6}</div>' +
+        '<h2 style="font-size:22px;color:var(--accent);margin-bottom:12px;">Welcome, ' + escHTML(name) + '!</h2>' +
+        '<p style="color:rgba(255,255,255,0.6);font-size:16px;">Waiting for host to start the game...</p>' +
+        '<div style="margin-top:24px;"><div class="badge badge-1" style="animation:pulse 2s infinite;">READY</div></div>' +
+      '</div>';
+    }
+
+    function renderPlayerQuestion(data) {
+      playerPhase = 'question';
+      questionSentTime = Date.now();
+      hasAnswered = false;
+
+      if (mpActx.state === 'suspended') mpActx.resume();
+
+      var catDisplay = (data.sport === 'hockey' ? '\u{1F3D2} ' : '⚾ ') + data.cat;
+      playerDiv.innerHTML = '<div style="padding:10px 0;">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">' +
+          '<span style="font-size:13px;color:rgba(255,255,255,0.5);">Q ' + (data.qi + 1) + '/' + data.total + '</span>' +
+          '<span id="mp-phone-timer" style="font-size:16px;font-weight:700;color:var(--accent);">' + data.time + '</span>' +
+        '</div>' +
+        '<div style="margin-bottom:6px;"><span class="category">' + catDisplay + '</span></div>' +
+        '<div style="font-size:clamp(17px,4vw,22px);font-weight:600;margin:10px 0 18px;line-height:1.4;">' + data.q + '</div>' +
+        '<div style="display:flex;flex-direction:column;gap:10px;">' +
+          data.options.map(function(opt, i) {
+            var colors = ['#e74c3c', '#3498db', '#f1c40f', '#2ecc71'];
+            return '<button class="mp-answer-btn" data-i="' + i + '" style="width:100%;min-height:60px;padding:14px 18px;border:none;background:' + colors[i] + ';color:#fff;border-radius:12px;font-size:clamp(16px,3.5vw,19px);font-weight:600;cursor:pointer;text-align:left;font-family:inherit;-webkit-tap-highlight-color:transparent;transition:transform 0.1s,opacity 0.2s;">' + opt + '</button>';
+          }).join('') +
+        '</div>' +
+      '</div>';
+
+      // Countdown
+      var remaining = data.time;
+      var phoneTimer = document.getElementById('mp-phone-timer');
+      var phoneCountdown = setInterval(function() {
+        remaining--;
+        if (phoneTimer) phoneTimer.textContent = remaining;
+        if (remaining <= 0) clearInterval(phoneCountdown);
+        if (remaining <= 5 && phoneTimer) phoneTimer.style.color = 'var(--red)';
+      }, 1000);
+
+      // Answer buttons
+      var btns = document.querySelectorAll('.mp-answer-btn');
+      btns.forEach(function(btn) {
+        btn.onclick = function() {
+          if (hasAnswered) return;
+          hasAnswered = true;
+          var answerIndex = parseInt(btn.dataset.i);
+          var elapsed = Date.now() - questionSentTime;
+          clearInterval(phoneCountdown);
+
+          // Highlight selected
+          btns.forEach(function(b) {
+            b.style.opacity = '0.4';
+            b.style.cursor = 'default';
+          });
+          btn.style.opacity = '1';
+          btn.style.transform = 'scale(1.03)';
+          btn.style.border = '3px solid #fff';
+
+          playerConn.send({ type: 'answer', answer: answerIndex, time: elapsed });
+        };
+      });
+    }
+
+    function renderPlayerResult(data) {
+      playerPhase = 'result';
+      if (data.correct) {
+        mpPlayCorrect();
+      } else {
+        mpPlayWrong();
+      }
+
+      playerDiv.innerHTML = '<div style="text-align:center;padding:40px 0;">' +
+        '<div style="font-size:64px;margin-bottom:12px;">' + (data.correct ? '✅' : '❌') + '</div>' +
+        '<h2 style="font-size:28px;color:' + (data.correct ? 'var(--green)' : 'var(--red)') + ';margin-bottom:8px;">' + (data.timedOut ? 'Time\'s Up!' : (data.correct ? 'Correct!' : 'Wrong!')) + '</h2>' +
+        '<div style="font-size:36px;font-weight:800;color:var(--accent);margin:12px 0;">+' + data.points + '</div>' +
+        (data.streak >= 3 ? '<div style="color:var(--green);font-size:16px;margin-bottom:8px;">\u{1F525} Streak x' + data.streak + ' (1.5x bonus!)</div>' : '') +
+        '<p style="color:rgba(255,255,255,0.5);font-size:14px;">Waiting for next question...</p>' +
+      '</div>';
+    }
+
+    function renderPlayerStandings(data) {
+      playerPhase = 'standings';
+      var listHTML = data.standings.map(function(p, i) {
+        var medals = ['\u{1F947}', '\u{1F948}', '\u{1F949}'];
+        var prefix = i < 3 ? medals[i] + ' ' : (i + 1) + '. ';
+        var isMe = p.name === playerName;
+        return '<div style="display:flex;justify-content:space-between;padding:10px 14px;background:' + (isMe ? 'rgba(212,160,23,0.15)' : 'rgba(0,0,0,0.2)') + ';border-radius:8px;margin:4px 0;' + (isMe ? 'border:2px solid var(--accent);' : '') + '">' +
+          '<span style="font-weight:' + (isMe ? '700' : '400') + ';">' + prefix + escHTML(p.name) + '</span>' +
+          '<span style="font-weight:700;color:var(--accent);">' + p.score + '</span>' +
+        '</div>';
+      }).join('');
+
+      playerDiv.innerHTML = '<div style="text-align:center;padding:20px 0;">' +
+        '<h2 style="font-size:20px;color:var(--accent);margin-bottom:4px;">STANDINGS</h2>' +
+        '<p style="font-size:13px;color:rgba(255,255,255,0.5);margin-bottom:16px;">After Q' + data.qi + ' of ' + data.total + '</p>' +
+        '<div style="text-align:left;">' + listHTML + '</div>' +
+      '</div>';
+    }
+
+    function renderPlayerPodium(data) {
+      playerPhase = 'podium';
+      mpPlayFanfare();
+
+      var myRank = -1;
+      data.standings.forEach(function(p, i) {
+        if (p.name === playerName) myRank = i;
+      });
+
+      var medals = ['\u{1F947}', '\u{1F948}', '\u{1F949}'];
+      var placeText = myRank === 0 ? 'YOU WIN!' : (myRank < 3 ? 'Great Job!' : 'Game Over!');
+      var placeIcon = myRank < 3 ? medals[myRank] : '\u{1F3C6}';
+
+      var listHTML = data.standings.map(function(p, i) {
+        var prefix = i < 3 ? medals[i] + ' ' : (i + 1) + '. ';
+        var isMe = p.name === playerName;
+        return '<div style="display:flex;justify-content:space-between;padding:10px 14px;background:' + (isMe ? 'rgba(212,160,23,0.15)' : 'rgba(0,0,0,0.2)') + ';border-radius:8px;margin:4px 0;' + (isMe ? 'border:2px solid var(--accent);' : '') + '">' +
+          '<span style="font-weight:' + (isMe ? '700' : '400') + ';">' + prefix + escHTML(p.name) + '</span>' +
+          '<span style="font-weight:700;color:var(--accent);">' + p.score + '</span>' +
+        '</div>';
+      }).join('');
+
+      playerDiv.innerHTML = '<div style="text-align:center;padding:30px 0;">' +
+        '<div style="font-size:64px;">' + placeIcon + '</div>' +
+        '<h2 style="font-size:28px;color:var(--accent);margin:12px 0;">' + placeText + '</h2>' +
+        (myRank >= 0 ? '<p style="font-size:16px;color:rgba(255,255,255,0.6);margin-bottom:20px;">You placed #' + (myRank + 1) + ' with ' + data.standings[myRank].score + ' points</p>' : '') +
+        '<div style="text-align:left;margin-bottom:20px;">' + listHTML + '</div>' +
+        '<a href="sportstrivia.html" class="restart-btn" style="display:block;text-align:center;text-decoration:none;color:#fff;max-width:300px;margin:0 auto;">Back to Menu</a>' +
+      '</div>';
+    }
+
+    // Start
+    renderNameEntry();
+  }
+}
 </script>
 </body>
 </html>

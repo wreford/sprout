@@ -1008,8 +1008,894 @@ saveState();playBallgame();playCrowdAmbient();renderQ();
 };
 }
 
-// Init
-renderStart();
+// Init — detect multiplayer mode
+const _urlParams = new URLSearchParams(window.location.search);
+const _isHost = _urlParams.has('host');
+const _joinCode = _urlParams.get('join');
+const _isPlayer = !!_joinCode;
+const _isMultiplayer = _isHost || _isPlayer;
+
+if (_isMultiplayer) {
+  // Load PeerJS then init multiplayer
+  const _peerScript = document.createElement('script');
+  _peerScript.src = 'https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js';
+  _peerScript.onload = function() { initMultiplayer(); };
+  document.head.appendChild(_peerScript);
+} else {
+  renderStart();
+}
+
+/* ============================================================
+   MULTIPLAYER — Jackbox-style
+   ============================================================ */
+function initMultiplayer() {
+  // Inject multiplayer CSS
+  const mpStyle = document.createElement('style');
+  mpStyle.textContent = `
+    .mp-lobby{text-align:center;padding:20px 0}
+    .mp-room-code{font-size:72px;font-weight:900;letter-spacing:12px;color:var(--accent);text-shadow:0 0 30px rgba(250,70,22,0.4);margin:16px 0;font-family:monospace}
+    .mp-join-url{font-size:14px;color:rgba(255,255,255,0.5);word-break:break-all;margin:8px 0 20px}
+    .mp-player-list{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin:20px 0;min-height:60px}
+    .mp-player-chip{background:rgba(255,255,255,0.1);border:2px solid rgba(255,255,255,0.2);border-radius:30px;padding:8px 18px;font-size:16px;font-weight:600;animation:cardIn 0.3s ease both}
+    .mp-player-chip.me{border-color:var(--accent);background:rgba(250,70,22,0.15)}
+    .mp-start-btn{width:100%;max-width:300px;min-height:56px;padding:16px;background:var(--accent);color:#fff;border:none;border-radius:12px;font-size:20px;font-weight:700;cursor:pointer;text-transform:uppercase;letter-spacing:2px;transition:opacity 0.15s}
+    .mp-start-btn:hover{opacity:0.9}
+    .mp-start-btn:disabled{opacity:0.4;cursor:default}
+    .mp-test-btn{background:transparent;border:2px solid rgba(255,255,255,0.2);color:rgba(255,255,255,0.5);padding:10px 20px;border-radius:8px;font-size:13px;cursor:pointer;margin-top:12px;font-family:inherit}
+    .mp-test-btn:hover{border-color:var(--accent);color:var(--accent)}
+    .mp-waiting{font-size:18px;color:rgba(255,255,255,0.6);margin:30px 0;animation:pulse 2s ease-in-out infinite}
+    @keyframes pulse{0%,100%{opacity:0.6}50%{opacity:1}}
+    .mp-phone-name{display:flex;flex-direction:column;align-items:center;gap:16px;padding:40px 20px}
+    .mp-name-input{width:100%;max-width:300px;padding:14px;font-size:18px;border:2px solid rgba(255,255,255,0.3);border-radius:10px;background:rgba(0,0,0,0.3);color:#fff;text-align:center;font-family:inherit;outline:none}
+    .mp-name-input:focus{border-color:var(--accent)}
+    .mp-name-btn{width:100%;max-width:300px;min-height:52px;padding:14px;background:var(--accent);color:#fff;border:none;border-radius:10px;font-size:18px;font-weight:700;cursor:pointer}
+    .mp-phone-q{padding:10px 0}
+    .mp-phone-opts{display:flex;flex-direction:column;gap:12px}
+    .mp-phone-opt{width:100%;min-height:64px;padding:16px;border:3px solid rgba(255,255,255,0.2);background:rgba(0,0,0,0.3);color:#fff;border-radius:12px;font-size:18px;font-weight:600;cursor:pointer;text-align:left;transition:all 0.15s;-webkit-tap-highlight-color:transparent;font-family:inherit}
+    .mp-phone-opt:active{transform:scale(0.97)}
+    .mp-phone-opt.selected{border-color:var(--accent);background:rgba(250,70,22,0.2)}
+    .mp-phone-opt.correct{border-color:var(--green);background:rgba(74,222,128,0.2);color:var(--green)}
+    .mp-phone-opt.wrong{border-color:var(--red);background:rgba(239,68,68,0.2);color:var(--red)}
+    .mp-phone-opt:disabled{cursor:default}
+    .mp-phone-result{text-align:center;padding:20px 0;animation:fadeSlide 0.3s ease}
+    .mp-phone-result h2{font-size:32px;margin-bottom:8px}
+    .mp-phone-result .pts{font-size:48px;font-weight:900;color:var(--accent)}
+    .mp-phone-standings{margin-top:16px}
+    .mp-standing-row{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-radius:8px;margin:4px 0;font-size:15px}
+    .mp-standing-row.me{background:rgba(250,70,22,0.15);border:1px solid rgba(250,70,22,0.3)}
+    .mp-standing-row .rank{font-weight:700;color:var(--accent);width:28px}
+    .mp-standing-row .name{flex:1}
+    .mp-standing-row .score{font-weight:700}
+    .mp-tv-question{text-align:center;padding:10px 0}
+    .mp-tv-q-text{font-size:clamp(22px,4vw,32px);font-weight:700;margin:16px 0 24px;line-height:1.3}
+    .mp-tv-opts{display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:800px;margin:0 auto}
+    .mp-tv-opt{padding:16px;border:3px solid rgba(255,255,255,0.2);border-radius:12px;font-size:clamp(16px,2.5vw,20px);font-weight:600;text-align:center;background:rgba(0,0,0,0.3)}
+    .mp-tv-opt.correct{border-color:var(--green);background:rgba(74,222,128,0.15);color:var(--green)}
+    .mp-tv-opt.wrong-pick{border-color:var(--red);background:rgba(239,68,68,0.1)}
+    .mp-tv-timer{font-size:48px;font-weight:900;color:var(--accent);margin:8px 0}
+    .mp-tv-timer.urgent{color:var(--red);animation:pulse 0.5s ease-in-out infinite}
+    .mp-tv-results{max-width:700px;margin:0 auto;padding:10px 0}
+    .mp-tv-result-row{display:flex;align-items:center;gap:12px;padding:10px 16px;margin:6px 0;border-radius:10px;background:rgba(0,0,0,0.2);font-size:16px;animation:cardIn 0.3s ease both}
+    .mp-tv-result-row .icon{font-size:24px;width:32px;text-align:center}
+    .mp-tv-result-row .pname{flex:1;font-weight:600}
+    .mp-tv-result-row .panswer{color:rgba(255,255,255,0.5);font-size:14px;flex:1}
+    .mp-tv-result-row .ppts{font-weight:700;color:var(--accent);min-width:60px;text-align:right}
+    .mp-tv-result-row.row-correct{border-left:3px solid var(--green)}
+    .mp-tv-result-row.row-wrong{border-left:3px solid var(--red)}
+    .mp-tv-leaderboard{max-width:600px;margin:0 auto;padding:20px 0;text-align:center}
+    .mp-tv-lb-row{display:flex;align-items:center;gap:12px;padding:12px 20px;margin:8px 0;border-radius:12px;background:rgba(0,0,0,0.2);font-size:18px;animation:cardIn 0.4s ease both}
+    .mp-tv-lb-row .lb-rank{font-size:28px;font-weight:900;color:var(--accent);width:40px}
+    .mp-tv-lb-row .lb-name{flex:1;text-align:left;font-weight:600}
+    .mp-tv-lb-row .lb-score{font-weight:700;font-size:22px}
+    .mp-tv-lb-row:nth-child(1){background:rgba(250,70,22,0.15);border:2px solid var(--accent)}
+    .mp-tv-lb-row:nth-child(1) .lb-rank{font-size:36px}
+    .mp-tv-podium{display:flex;justify-content:center;align-items:flex-end;gap:16px;margin:30px auto;max-width:500px}
+    .mp-podium-slot{text-align:center;animation:cardIn 0.5s ease both}
+    .mp-podium-slot .pod-name{font-size:18px;font-weight:700;margin-bottom:8px;word-break:break-word}
+    .mp-podium-slot .pod-score{font-size:14px;color:rgba(255,255,255,0.6);margin-bottom:8px}
+    .mp-podium-bar{border-radius:8px 8px 0 0;display:flex;align-items:flex-end;justify-content:center;font-size:36px;font-weight:900}
+    .mp-podium-slot:nth-child(1) .pod-name{color:var(--accent)}
+    .mp-podium-slot:nth-child(2) .pod-name{color:var(--green)}
+    .mp-tv-answered-count{font-size:16px;color:rgba(255,255,255,0.5);margin-top:12px}
+    .mp-tv-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px}
+    .mp-tv-header .round-info{font-size:14px;color:rgba(255,255,255,0.5)}
+    .mp-disconnect-msg{text-align:center;padding:40px 20px;color:rgba(255,255,255,0.6)}
+    .mp-disconnect-msg h2{color:var(--accent);margin-bottom:12px}
+    @media(max-width:500px){
+      .mp-room-code{font-size:48px;letter-spacing:8px}
+      .mp-tv-opts{grid-template-columns:1fr}
+    }
+    @media(min-width:800px){
+      .mp-room-code{font-size:96px;letter-spacing:16px}
+      .mp-tv-q-text{font-size:36px}
+      .mp-tv-opts{gap:16px}
+      .mp-tv-opt{padding:24px;font-size:22px}
+    }
+  `;
+  document.head.appendChild(mpStyle);
+
+  // ---- Multiplayer Audio ----
+  const mpActx = actx; // reuse existing audio context
+  function mpPlayCorrectDing() {
+    try {
+      const o = mpActx.createOscillator(), g = mpActx.createGain();
+      o.connect(g); g.connect(mpActx.destination);
+      o.frequency.setValueAtTime(880, mpActx.currentTime);
+      o.frequency.setValueAtTime(1320, mpActx.currentTime + 0.08);
+      g.gain.setValueAtTime(0.02, mpActx.currentTime);
+      g.gain.linearRampToValueAtTime(0, mpActx.currentTime + 0.2);
+      o.start(); o.stop(mpActx.currentTime + 0.2);
+    } catch(e) {}
+  }
+  function mpPlayWrongBuzz() {
+    try {
+      const o = mpActx.createOscillator(), g = mpActx.createGain();
+      o.connect(g); g.connect(mpActx.destination);
+      o.type = 'sawtooth';
+      o.frequency.setValueAtTime(180, mpActx.currentTime);
+      o.frequency.linearRampToValueAtTime(120, mpActx.currentTime + 0.2);
+      g.gain.setValueAtTime(0.02, mpActx.currentTime);
+      g.gain.linearRampToValueAtTime(0, mpActx.currentTime + 0.25);
+      o.start(); o.stop(mpActx.currentTime + 0.25);
+    } catch(e) {}
+  }
+
+  // ---- Constants ----
+  const MP_PEER_PREFIX = 'taskiap-baseballtrivia-';
+  const MP_TOTAL_QUESTIONS = 20;
+  const MP_QUESTION_TIME = 15; // seconds
+  const MP_MIN_PLAYERS = 1;
+  const MP_MAX_PLAYERS = 8;
+  const MP_RESULTS_TIME = 6000;
+  const MP_LEADERBOARD_TIME = 5000;
+
+  // ---- Scoring ----
+  function mpCalcPoints(correct, elapsed, streak) {
+    if (!correct) return 0;
+    let pts = 1000;
+    // Speed bonus: up to 500 for answering in first 2s, linear decay over 10s
+    if (elapsed <= 2) pts += 500;
+    else if (elapsed < 10) pts += Math.round(500 * (1 - (elapsed - 2) / 8));
+    // Streak bonus
+    if (streak >= 3) pts = Math.round(pts * 1.5);
+    return pts;
+  }
+
+  // ---- Generate room code ----
+  function mpGenCode() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+    let c = '';
+    for (let i = 0; i < 4; i++) c += chars[Math.floor(Math.random() * chars.length)];
+    return c;
+  }
+
+  // ---- Pick questions for multiplayer ----
+  function mpPickQuestions() {
+    // Shuffle and pick MP_TOTAL_QUESTIONS, mix of difficulties
+    const shuffled = Q.slice().sort(() => Math.random() - 0.5);
+    // Try to get a spread: 6 easy, 6 medium, 5 hard, 3 expert
+    const byDiff = {1:[], 2:[], 3:[], 4:[]};
+    shuffled.forEach(q => { if (byDiff[q.d]) byDiff[q.d].push(q); });
+    const picks = [];
+    const targets = [[1,6],[2,6],[3,5],[4,3]];
+    targets.forEach(([d, n]) => { picks.push(...byDiff[d].slice(0, n)); });
+    // Fill remainder if needed
+    while (picks.length < MP_TOTAL_QUESTIONS) {
+      const extra = shuffled.find(q => !picks.includes(q));
+      if (extra) picks.push(extra); else break;
+    }
+    return picks.sort(() => Math.random() - 0.5).slice(0, MP_TOTAL_QUESTIONS);
+  }
+
+  // =============== HOST MODE ===============
+  if (_isHost) {
+    const roomCode = mpGenCode();
+    const peerId = MP_PEER_PREFIX + roomCode;
+    let players = {}; // { peerId: { conn, name, score, streak, answered } }
+    let mpQuestions = [];
+    let mpQIndex = 0;
+    let mpPhase = 'lobby'; // lobby, question, results, leaderboard, podium
+    let mpTimer = null;
+    let mpTimeLeft = 0;
+    let mpTimerInterval = null;
+    let mpQuestionStart = 0;
+    let mpBots = [];
+
+    // Update container to be wider for TV
+    document.querySelector('.container').style.maxWidth = '900px';
+
+    const peer = new Peer(peerId);
+
+    peer.on('open', function() {
+      renderHostLobby();
+    });
+
+    peer.on('error', function(err) {
+      if (err.type === 'unavailable-id') {
+        // Room code taken, generate new one
+        window.location.search = '?host';
+      } else {
+        console.error('PeerJS error:', err);
+      }
+    });
+
+    peer.on('connection', function(conn) {
+      conn.on('open', function() {
+        conn.on('data', function(data) {
+          handleHostData(conn, data);
+        });
+        conn.on('close', function() {
+          handlePlayerDisconnect(conn.peer);
+        });
+      });
+    });
+
+    function handleHostData(conn, data) {
+      if (data.type === 'join') {
+        if (mpPhase !== 'lobby') {
+          conn.send({ type: 'error', msg: 'Game already in progress' });
+          return;
+        }
+        if (Object.keys(players).length >= MP_MAX_PLAYERS) {
+          conn.send({ type: 'error', msg: 'Room is full' });
+          return;
+        }
+        players[conn.peer] = {
+          conn: conn,
+          name: data.name.slice(0, 16),
+          score: 0,
+          streak: 0,
+          answered: false,
+          answerIdx: -1,
+          answerTime: 0,
+          isBot: false
+        };
+        conn.send({ type: 'joined', name: data.name });
+        broadcastPlayerList();
+        renderHostLobby();
+      }
+      else if (data.type === 'answer') {
+        if (mpPhase !== 'question') return;
+        const p = players[conn.peer];
+        if (!p || p.answered) return;
+        p.answered = true;
+        p.answerIdx = data.idx;
+        p.answerTime = (Date.now() - mpQuestionStart) / 1000;
+        updateAnsweredCount();
+        // If all answered, skip timer
+        if (allAnswered()) {
+          clearInterval(mpTimerInterval);
+          setTimeout(showResults, 500);
+        }
+      }
+    }
+
+    function handlePlayerDisconnect(peerId) {
+      if (players[peerId]) {
+        delete players[peerId];
+        if (mpPhase === 'lobby') renderHostLobby();
+        broadcastPlayerList();
+      }
+    }
+
+    function broadcastPlayerList() {
+      const names = Object.values(players).map(p => p.name);
+      broadcast({ type: 'playerList', names: names });
+    }
+
+    function broadcast(data) {
+      Object.values(players).forEach(p => {
+        if (p.conn && p.conn.open) {
+          try { p.conn.send(data); } catch(e) {}
+        }
+      });
+    }
+
+    function allAnswered() {
+      return Object.values(players).every(p => p.answered);
+    }
+
+    function updateAnsweredCount() {
+      const el = document.getElementById('mp-answered-count');
+      if (el) {
+        const answered = Object.values(players).filter(p => p.answered).length;
+        const total = Object.keys(players).length;
+        el.textContent = answered + ' / ' + total + ' answered';
+      }
+    }
+
+    function getStandings() {
+      return Object.values(players)
+        .map(p => ({ name: p.name, score: p.score, streak: p.streak }))
+        .sort((a, b) => b.score - a.score);
+    }
+
+    // ---- Host Lobby ----
+    function renderHostLobby() {
+      const joinUrl = 'taskiap.com/games/baseball.html?join=' + roomCode;
+      const playerChips = Object.values(players).map(p =>
+        '<div class="mp-player-chip">' + escHtml(p.name) + '</div>'
+      ).join('');
+      const count = Object.keys(players).length;
+
+      app.innerHTML = `
+        <div class="mp-lobby">
+          <h2 style="color:rgba(255,255,255,0.7);font-size:16px;text-transform:uppercase;letter-spacing:2px">Join at</h2>
+          <div class="mp-join-url">${escHtml(joinUrl)}</div>
+          <div class="mp-room-code">${roomCode}</div>
+          <div class="mp-player-list" id="mp-player-list">
+            ${playerChips || '<div style="color:rgba(255,255,255,0.3);font-size:14px">Waiting for players...</div>'}
+          </div>
+          <div style="color:rgba(255,255,255,0.5);font-size:14px;margin-bottom:16px">${count} player${count !== 1 ? 's' : ''} connected (${MP_MIN_PLAYERS}-${MP_MAX_PLAYERS})</div>
+          <button class="mp-start-btn" id="mp-start-btn" ${count < MP_MIN_PLAYERS ? 'disabled' : ''}>START GAME</button>
+          <div><button class="mp-test-btn" id="mp-test-btn">TEST MODE — Add 4 Bots</button></div>
+        </div>
+      `;
+      document.getElementById('mp-start-btn').onclick = startMpGame;
+      document.getElementById('mp-test-btn').onclick = addTestBots;
+    }
+
+    // ---- Test bots ----
+    function addTestBots() {
+      const botNames = ['RoboSlug', 'BuntBot', 'CyBorg', 'PinchHit'];
+      botNames.forEach((name, i) => {
+        const botId = 'bot-' + i + '-' + Date.now();
+        players[botId] = {
+          conn: { open: true, send: function(){}, close: function(){} },
+          name: name,
+          score: 0,
+          streak: 0,
+          answered: false,
+          answerIdx: -1,
+          answerTime: 0,
+          isBot: true
+        };
+        mpBots.push(botId);
+      });
+      renderHostLobby();
+    }
+
+    function botAnswer(q) {
+      mpBots.forEach(botId => {
+        if (!players[botId]) return;
+        const delay = 1500 + Math.random() * 8000;
+        setTimeout(() => {
+          if (mpPhase !== 'question') return;
+          const p = players[botId];
+          if (!p || p.answered) return;
+          p.answered = true;
+          // 70% accuracy
+          const isCorrect = Math.random() < 0.7;
+          if (isCorrect) {
+            p.answerIdx = q.a;
+          } else {
+            let wrong;
+            do { wrong = Math.floor(Math.random() * 4); } while (wrong === q.a);
+            p.answerIdx = wrong;
+          }
+          p.answerTime = delay / 1000;
+          updateAnsweredCount();
+          if (allAnswered()) {
+            clearInterval(mpTimerInterval);
+            setTimeout(showResults, 500);
+          }
+        }, delay);
+      });
+    }
+
+    // ---- Start Game ----
+    function startMpGame() {
+      mpQuestions = mpPickQuestions();
+      mpQIndex = 0;
+      // Reset scores
+      Object.values(players).forEach(p => { p.score = 0; p.streak = 0; });
+      broadcast({ type: 'gameStart', totalQ: mpQuestions.length });
+      showQuestion();
+    }
+
+    // ---- Show Question (TV) ----
+    function showQuestion() {
+      if (mpQIndex >= mpQuestions.length) {
+        showPodium();
+        return;
+      }
+      mpPhase = 'question';
+      const q = mpQuestions[mpQIndex];
+      mpQuestionStart = Date.now();
+      mpTimeLeft = MP_QUESTION_TIME;
+
+      // Reset player answers
+      Object.values(players).forEach(p => {
+        p.answered = false;
+        p.answerIdx = -1;
+        p.answerTime = 0;
+      });
+
+      // Send question to players
+      broadcast({
+        type: 'question',
+        qi: mpQIndex,
+        total: mpQuestions.length,
+        q: q.q,
+        o: q.o,
+        cat: q.cat,
+        d: q.d,
+        time: MP_QUESTION_TIME
+      });
+
+      // Bot auto-answer
+      botAnswer(q);
+
+      renderTvQuestion(q);
+      startTimer();
+    }
+
+    function renderTvQuestion(q) {
+      const optColors = ['#3b82f6', '#ef4444', '#f59e0b', '#22c55e'];
+      const optIcons = ['&#9650;', '&#9670;', '&#9679;', '&#9632;'];
+      app.innerHTML = `
+        <div class="mp-tv-question">
+          <div class="mp-tv-header">
+            <span class="round-info">Question ${mpQIndex + 1} / ${mpQuestions.length}</span>
+            <span class="badge ${DIFF_CLASSES[q.d]}">${DIFF_LABELS[q.d]}</span>
+            <span class="category">${escHtml(q.cat)}</span>
+          </div>
+          <div class="mp-tv-timer" id="mp-timer">${mpTimeLeft}</div>
+          <div class="mp-tv-q-text">${escHtml(q.q)}</div>
+          <div class="mp-tv-opts" id="mp-tv-opts">
+            ${q.o.map((o, i) => `<div class="mp-tv-opt" data-i="${i}" style="border-color:${optColors[i]}">${optIcons[i]} ${escHtml(o)}</div>`).join('')}
+          </div>
+          <div class="mp-tv-answered-count" id="mp-answered-count">0 / ${Object.keys(players).length} answered</div>
+        </div>
+      `;
+    }
+
+    function startTimer() {
+      clearInterval(mpTimerInterval);
+      mpTimerInterval = setInterval(() => {
+        mpTimeLeft--;
+        const el = document.getElementById('mp-timer');
+        if (el) {
+          el.textContent = mpTimeLeft;
+          if (mpTimeLeft <= 5) el.classList.add('urgent');
+        }
+        if (mpTimeLeft <= 0) {
+          clearInterval(mpTimerInterval);
+          showResults();
+        }
+      }, 1000);
+    }
+
+    // ---- Results Screen (TV) ----
+    function showResults() {
+      mpPhase = 'results';
+      const q = mpQuestions[mpQIndex];
+      const results = [];
+
+      Object.values(players).forEach(p => {
+        const correct = p.answered && p.answerIdx === q.a;
+        const pts = p.answered ? mpCalcPoints(correct, p.answerTime, p.streak) : 0;
+        if (correct) {
+          p.streak++;
+        } else {
+          p.streak = 0;
+        }
+        p.score += pts;
+        results.push({
+          name: p.name,
+          answered: p.answered,
+          answerIdx: p.answerIdx,
+          correct: correct,
+          pts: pts,
+          time: p.answerTime
+        });
+      });
+
+      // Sort: correct first (by time), then wrong
+      results.sort((a, b) => {
+        if (a.correct && !b.correct) return -1;
+        if (!a.correct && b.correct) return 1;
+        if (a.correct && b.correct) return a.time - b.time;
+        return 0;
+      });
+
+      // Send results to players
+      const standings = getStandings();
+      broadcast({
+        type: 'results',
+        correct: q.a,
+        correctText: q.o[q.a],
+        fact: q.fact,
+        standings: standings,
+        playerResults: Object.fromEntries(
+          Object.entries(players).map(([id, p]) => {
+            const r = results.find(r2 => r2.name === p.name);
+            return [id, { correct: r ? r.correct : false, pts: r ? r.pts : 0, standings: standings }];
+          })
+        )
+      });
+
+      // Render TV results
+      const optColors = ['#3b82f6', '#ef4444', '#f59e0b', '#22c55e'];
+      const rows = results.map((r, i) => {
+        const icon = r.correct ? '&#10003;' : (r.answered ? '&#10007;' : '&#8212;');
+        const cls = r.correct ? 'row-correct' : 'row-wrong';
+        const answerText = r.answered ? escHtml(q.o[r.answerIdx]) : 'No answer';
+        const timeStr = r.answered ? r.time.toFixed(1) + 's' : '';
+        return `<div class="mp-tv-result-row ${cls}" style="animation-delay:${i * 0.1}s">
+          <div class="icon">${icon}</div>
+          <div class="pname">${escHtml(r.name)}</div>
+          <div class="panswer">${answerText} ${timeStr}</div>
+          <div class="ppts">${r.correct ? '+' + r.pts : '0'}</div>
+        </div>`;
+      }).join('');
+
+      app.innerHTML = `
+        <div class="mp-tv-results">
+          <div style="text-align:center;margin-bottom:16px">
+            <div class="q-number">Question ${mpQIndex + 1} Results</div>
+            <div style="margin:8px 0;font-size:18px">Answer: <strong style="color:var(--green)">${escHtml(q.o[q.a])}</strong></div>
+            <div class="fact-card" style="text-align:left"><span class="fact-emoji">&#9918;</span><span>${escHtml(q.fact)}</span></div>
+          </div>
+          ${rows}
+        </div>
+      `;
+
+      // Auto-advance to leaderboard
+      setTimeout(showLeaderboard, MP_RESULTS_TIME);
+    }
+
+    // ---- Leaderboard (TV) ----
+    function showLeaderboard() {
+      mpPhase = 'leaderboard';
+      const standings = getStandings();
+
+      broadcast({ type: 'standings', standings: standings });
+
+      const rows = standings.map((s, i) => {
+        const medal = i === 0 ? '&#129351;' : i === 1 ? '&#129352;' : i === 2 ? '&#129353;' : (i + 1);
+        return `<div class="mp-tv-lb-row" style="animation-delay:${i * 0.15}s">
+          <div class="lb-rank">${medal}</div>
+          <div class="lb-name">${escHtml(s.name)}</div>
+          <div class="lb-score">${s.score}</div>
+        </div>`;
+      }).join('');
+
+      app.innerHTML = `
+        <div class="mp-tv-leaderboard">
+          <h2 style="color:var(--accent);margin-bottom:16px">LEADERBOARD</h2>
+          <div class="round-info" style="margin-bottom:16px">After question ${mpQIndex + 1} of ${mpQuestions.length}</div>
+          ${rows}
+        </div>
+      `;
+
+      mpQIndex++;
+      setTimeout(showQuestion, MP_LEADERBOARD_TIME);
+    }
+
+    // ---- Final Podium (TV) ----
+    function showPodium() {
+      mpPhase = 'podium';
+      const standings = getStandings();
+
+      broadcast({ type: 'podium', standings: standings });
+
+      const podiumData = standings.slice(0, 3);
+      // Reorder for visual: 2nd, 1st, 3rd
+      const podiumOrder = [];
+      if (podiumData[1]) podiumOrder.push({ ...podiumData[1], place: 2 });
+      if (podiumData[0]) podiumOrder.push({ ...podiumData[0], place: 1 });
+      if (podiumData[2]) podiumOrder.push({ ...podiumData[2], place: 3 });
+
+      const heights = { 1: 180, 2: 130, 3: 90 };
+      const colors = { 1: 'var(--accent)', 2: 'var(--green)', 3: '#f59e0b' };
+      const medals = { 1: '&#129351;', 2: '&#129352;', 3: '&#129353;' };
+
+      const podiumSlots = podiumOrder.map(p => `
+        <div class="mp-podium-slot" style="animation-delay:${p.place === 1 ? '0.3s' : p.place === 2 ? '0.1s' : '0.5s'}">
+          <div class="pod-name">${escHtml(p.name)}</div>
+          <div class="pod-score">${p.score} pts</div>
+          <div class="mp-podium-bar" style="width:${p.place === 1 ? 140 : 110}px;height:${heights[p.place]}px;background:${colors[p.place]}">${medals[p.place]}</div>
+        </div>
+      `).join('');
+
+      const restRows = standings.slice(3).map((s, i) => `
+        <div class="mp-tv-lb-row" style="animation-delay:${(i + 3) * 0.1}s">
+          <div class="lb-rank">${i + 4}</div>
+          <div class="lb-name">${escHtml(s.name)}</div>
+          <div class="lb-score">${s.score}</div>
+        </div>
+      `).join('');
+
+      app.innerHTML = `
+        <div style="text-align:center;padding:20px 0">
+          <h2 style="font-size:32px;color:var(--accent);margin-bottom:8px">GAME OVER</h2>
+          <div style="color:rgba(255,255,255,0.5);margin-bottom:24px">${mpQuestions.length} questions</div>
+          <div class="mp-podium">${podiumSlots}</div>
+          ${restRows ? '<div class="mp-tv-leaderboard" style="margin-top:24px">' + restRows + '</div>' : ''}
+          <button class="mp-start-btn" style="margin-top:30px" id="mp-replay-btn">PLAY AGAIN</button>
+        </div>
+      `;
+      document.getElementById('mp-replay-btn').onclick = function() {
+        // Reset and go to lobby
+        Object.values(players).forEach(p => { p.score = 0; p.streak = 0; });
+        mpQIndex = 0;
+        mpPhase = 'lobby';
+        broadcast({ type: 'backToLobby' });
+        renderHostLobby();
+      };
+    }
+
+  }
+
+  // =============== PLAYER/PHONE MODE ===============
+  if (_isPlayer) {
+    const roomCode = _joinCode.toUpperCase();
+    const hostPeerId = MP_PEER_PREFIX + roomCode;
+    let myName = localStorage.getItem('mp-baseball-name') || '';
+    let conn = null;
+    let myPeerId = '';
+    let playerPhase = 'name'; // name, waiting, question, result, standings, podium, disconnected
+    let currentQ = null;
+    let questionStartTime = 0;
+    let myStreak = 0;
+    let myScore = 0;
+    let hasAnswered = false;
+
+    // Make container phone-friendly
+    document.querySelector('.container').style.maxWidth = '500px';
+
+    const peer = new Peer();
+
+    peer.on('open', function(id) {
+      myPeerId = id;
+      if (myName) {
+        renderPhoneName();
+      } else {
+        renderPhoneName();
+      }
+    });
+
+    peer.on('error', function(err) {
+      console.error('PeerJS error:', err);
+      renderDisconnected('Connection error. Please try again.');
+    });
+
+    function connectToHost() {
+      conn = peer.connect(hostPeerId, { reliable: true });
+      conn.on('open', function() {
+        conn.send({ type: 'join', name: myName });
+      });
+      conn.on('data', function(data) {
+        handlePlayerData(data);
+      });
+      conn.on('close', function() {
+        renderDisconnected('Disconnected from host.');
+      });
+      conn.on('error', function() {
+        renderDisconnected('Connection error.');
+      });
+    }
+
+    function handlePlayerData(data) {
+      if (data.type === 'joined') {
+        playerPhase = 'waiting';
+        renderPhoneWaiting();
+      }
+      else if (data.type === 'error') {
+        renderDisconnected(data.msg);
+      }
+      else if (data.type === 'playerList') {
+        // Update waiting screen if visible
+        if (playerPhase === 'waiting') renderPhoneWaiting(data.names);
+      }
+      else if (data.type === 'gameStart') {
+        myScore = 0;
+        myStreak = 0;
+        playerPhase = 'question';
+        // Will render on next question
+      }
+      else if (data.type === 'question') {
+        playerPhase = 'question';
+        hasAnswered = false;
+        currentQ = data;
+        questionStartTime = Date.now();
+        renderPhoneQuestion(data);
+      }
+      else if (data.type === 'results') {
+        playerPhase = 'result';
+        const myResult = data.playerResults[myPeerId];
+        if (myResult) {
+          if (myResult.correct) { myStreak++; } else { myStreak = 0; }
+          myScore += myResult.pts;
+          renderPhoneResult(myResult, data);
+        } else {
+          // Find by connection peer - use standings
+          renderPhoneResult({ correct: false, pts: 0, standings: data.standings }, data);
+        }
+      }
+      else if (data.type === 'standings') {
+        playerPhase = 'standings';
+        renderPhoneStandings(data.standings);
+      }
+      else if (data.type === 'podium') {
+        playerPhase = 'podium';
+        renderPhonePodium(data.standings);
+      }
+      else if (data.type === 'backToLobby') {
+        playerPhase = 'waiting';
+        myScore = 0;
+        myStreak = 0;
+        renderPhoneWaiting();
+      }
+    }
+
+    // ---- Phone: Name Entry ----
+    function renderPhoneName() {
+      app.innerHTML = `
+        <div class="mp-phone-name">
+          <div style="font-size:48px">&#9918;</div>
+          <h2>Join Game</h2>
+          <div style="color:rgba(255,255,255,0.5)">Room: <strong style="color:var(--accent)">${escHtml(roomCode)}</strong></div>
+          <input class="mp-name-input" id="mp-name" type="text" placeholder="Your name" maxlength="16" value="${escHtml(myName)}" autocomplete="off" />
+          <button class="mp-name-btn" id="mp-name-btn">JOIN</button>
+        </div>
+      `;
+      const inp = document.getElementById('mp-name');
+      const btn = document.getElementById('mp-name-btn');
+      inp.focus();
+      function doJoin() {
+        const name = inp.value.trim();
+        if (!name) { inp.style.borderColor = 'var(--red)'; return; }
+        myName = name;
+        localStorage.setItem('mp-baseball-name', myName);
+        btn.disabled = true;
+        btn.textContent = 'Connecting...';
+        connectToHost();
+      }
+      btn.onclick = doJoin;
+      inp.onkeydown = function(e) { if (e.key === 'Enter') doJoin(); };
+    }
+
+    // ---- Phone: Waiting ----
+    function renderPhoneWaiting(names) {
+      const nameList = names ? names.map(n => '<div class="mp-player-chip' + (n === myName ? ' me' : '') + '">' + escHtml(n) + '</div>').join('') : '';
+      app.innerHTML = `
+        <div style="text-align:center;padding:30px 0">
+          <div style="font-size:36px;margin-bottom:16px">&#9918;</div>
+          <h2 style="color:var(--green)">You're in!</h2>
+          <div style="font-size:20px;font-weight:700;margin:8px 0">${escHtml(myName)}</div>
+          <div class="mp-waiting">Waiting for host to start...</div>
+          ${nameList ? '<div class="mp-player-list">' + nameList + '</div>' : ''}
+        </div>
+      `;
+    }
+
+    // ---- Phone: Question ----
+    function renderPhoneQuestion(data) {
+      const optColors = ['#3b82f6', '#ef4444', '#f59e0b', '#22c55e'];
+      app.innerHTML = `
+        <div class="mp-phone-q">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <span class="q-number">Q${data.qi + 1}/${data.total}</span>
+            <span class="badge ${DIFF_CLASSES[data.d]}">${DIFF_LABELS[data.d]}</span>
+          </div>
+          <div class="question-text" style="font-size:18px">${escHtml(data.q)}</div>
+          <div class="mp-phone-opts" id="mp-phone-opts">
+            ${data.o.map((o, i) => `<button class="mp-phone-opt" data-i="${i}" style="border-color:${optColors[i]}">${escHtml(o)}</button>`).join('')}
+          </div>
+          <div style="text-align:center;margin-top:12px;color:rgba(255,255,255,0.4);font-size:13px" id="mp-phone-status"></div>
+        </div>
+      `;
+      document.querySelectorAll('.mp-phone-opt').forEach(btn => {
+        btn.onclick = function() {
+          if (hasAnswered) return;
+          hasAnswered = true;
+          const idx = parseInt(this.dataset.i);
+          // Highlight selection
+          document.querySelectorAll('.mp-phone-opt').forEach(b => {
+            b.disabled = true;
+            if (parseInt(b.dataset.i) === idx) b.classList.add('selected');
+          });
+          document.getElementById('mp-phone-status').textContent = 'Answer locked in!';
+          conn.send({ type: 'answer', idx: idx });
+        };
+      });
+    }
+
+    // ---- Phone: Result ----
+    function renderPhoneResult(result, data) {
+      if (result.correct) {
+        mpPlayCorrectDing();
+      } else {
+        mpPlayWrongBuzz();
+      }
+
+      const standings = data.standings || result.standings || [];
+      const myRank = standings.findIndex(s => s.name === myName) + 1;
+
+      app.innerHTML = `
+        <div class="mp-phone-result">
+          <h2>${result.correct ? '<span style="color:var(--green)">Correct!</span>' : '<span style="color:var(--red)">Wrong!</span>'}</h2>
+          ${!result.correct ? '<div style="margin:8px 0;font-size:15px;color:rgba(255,255,255,0.6)">Answer: ' + escHtml(data.correctText) + '</div>' : ''}
+          <div class="pts">${result.correct ? '+' + result.pts : '0'}</div>
+          <div style="margin:8px 0;color:rgba(255,255,255,0.5);font-size:14px">Total: ${myScore} pts${myStreak >= 3 ? ' &#128293; ' + myStreak + ' streak!' : ''}</div>
+          ${myRank > 0 ? '<div style="color:var(--accent);font-size:16px;font-weight:600">' + ordinal(myRank) + ' place</div>' : ''}
+        </div>
+      `;
+    }
+
+    // ---- Phone: Standings ----
+    function renderPhoneStandings(standings) {
+      const rows = standings.map((s, i) => {
+        const isMe = s.name === myName;
+        return `<div class="mp-standing-row${isMe ? ' me' : ''}">
+          <span class="rank">${i + 1}</span>
+          <span class="name">${escHtml(s.name)}${isMe ? ' (you)' : ''}</span>
+          <span class="score">${s.score}</span>
+        </div>`;
+      }).join('');
+
+      app.innerHTML = `
+        <div style="padding:16px 0">
+          <h3 style="text-align:center;color:var(--accent);margin-bottom:12px">STANDINGS</h3>
+          <div class="mp-phone-standings">${rows}</div>
+        </div>
+      `;
+    }
+
+    // ---- Phone: Podium ----
+    function renderPhonePodium(standings) {
+      const myRank = standings.findIndex(s => s.name === myName) + 1;
+      const medals = ['', '&#129351;', '&#129352;', '&#129353;'];
+      const topMsg = myRank <= 3 ? (medals[myRank] || '') + ' You finished ' + ordinal(myRank) + '!' : 'You finished ' + ordinal(myRank);
+
+      const rows = standings.map((s, i) => {
+        const isMe = s.name === myName;
+        const medal = i < 3 ? medals[i + 1] : '';
+        return `<div class="mp-standing-row${isMe ? ' me' : ''}">
+          <span class="rank">${medal || (i + 1)}</span>
+          <span class="name">${escHtml(s.name)}${isMe ? ' (you)' : ''}</span>
+          <span class="score">${s.score}</span>
+        </div>`;
+      }).join('');
+
+      app.innerHTML = `
+        <div style="text-align:center;padding:20px 0">
+          <h2 style="color:var(--accent);margin-bottom:8px">GAME OVER</h2>
+          <div style="font-size:24px;font-weight:700;margin:16px 0">${topMsg}</div>
+          <div style="font-size:16px;color:rgba(255,255,255,0.5);margin-bottom:20px">Final score: ${myScore}</div>
+          <div class="mp-phone-standings">${rows}</div>
+        </div>
+      `;
+    }
+
+    // ---- Phone: Disconnected ----
+    function renderDisconnected(msg) {
+      playerPhase = 'disconnected';
+      app.innerHTML = `
+        <div class="mp-disconnect-msg">
+          <h2>Disconnected</h2>
+          <p>${escHtml(msg)}</p>
+          <button class="next-btn" style="margin-top:20px;max-width:300px" onclick="location.reload()">Try Again</button>
+        </div>
+      `;
+    }
+  }
+
+  // ---- Helpers ----
+  function escHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  function ordinal(n) {
+    const s = ['th', 'st', 'nd', 'rd'];
+    const v = n % 100;
+    return n + (s[(v - 20) % 10] || s[v] || s[0]);
+  }
+}
 </script>
 </body>
 </html>
