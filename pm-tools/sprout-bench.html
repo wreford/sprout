@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<title>Sprout Benchmarks</title>
+<style>
+:root{
+  --bg:#0a0a0b;--bg2:#111113;--bg3:#161618;--bg4:#1c1c1f;
+  --border:#222225;--border2:#333336;--text:#e8e8ea;--dim:#6e6e73;
+  --accent:#4ade80;--accent-dim:rgba(74,222,128,0.10);
+  --orange:#ff6b35;--gold:#f7c948;--purple:#a78bfa;
+  --blue:#38bdf8;--red:#ef4444;--cyan:#22d3ee;--pink:#f472b6;
+  --mono:ui-monospace,'SF Mono','Cascadia Mono','Fira Code',Menlo,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100vh;padding-bottom:env(safe-area-inset-bottom)}
+
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#333;border-radius:3px}
+
+.bar{
+  background:var(--bg2);border-bottom:1px solid var(--border);
+  padding:0 12px;display:flex;align-items:center;gap:8px;
+  height:46px;flex-shrink:0;position:sticky;top:0;z-index:10;
+}
+.bar .brand{font-size:15px;font-weight:800;color:var(--accent);text-decoration:none;white-space:nowrap}
+.bar .title{font-size:13px;font-weight:600;color:var(--dim);white-space:nowrap}
+.bar .spacer{flex:1;min-width:4px}
+.bar a.link{
+  font-size:11px;font-weight:600;color:var(--dim);text-decoration:none;
+  padding:4px 8px;border-radius:6px;border:1px solid var(--border);
+  white-space:nowrap;transition:all .15s;
+}
+.bar a.link:hover{color:var(--text);border-color:var(--border2)}
+.bar button{
+  border:none;border-radius:6px;padding:5px 14px;font-size:12px;font-weight:700;
+  cursor:pointer;font-family:var(--sans);white-space:nowrap;
+}
+.btn-run{background:var(--accent);color:#111}
+.btn-run:active{opacity:.8}
+.btn-run:disabled{opacity:.5;cursor:default}
+
+.container{max-width:800px;margin:0 auto;padding:16px 12px 40px}
+
+.intro{
+  background:var(--bg2);border:1px solid var(--border);border-radius:10px;
+  padding:14px 16px;margin-bottom:16px;font-size:12px;line-height:1.6;color:var(--dim);
+}
+.intro strong{color:var(--text)}
+
+.status-bar{
+  background:var(--bg3);border:1px solid var(--border);border-radius:8px;
+  padding:8px 14px;margin-bottom:16px;font-size:12px;color:var(--dim);
+  display:flex;align-items:center;gap:8px;min-height:36px;
+}
+.status-bar .dot{width:8px;height:8px;border-radius:50%;background:var(--dim);flex-shrink:0}
+.status-bar .dot.running{background:var(--gold);animation:pulse 0.6s ease-in-out infinite alternate}
+.status-bar .dot.done{background:var(--accent)}
+.status-bar .dot.error{background:var(--red)}
+@keyframes pulse{from{opacity:.4}to{opacity:1}}
+.status-bar .msg{flex:1}
+.status-bar .total{font-weight:700;color:var(--accent);font-family:var(--mono)}
+
+table{width:100%;border-collapse:collapse;font-size:12px}
+thead th{
+  text-align:left;padding:8px 10px;font-size:10px;font-weight:700;
+  text-transform:uppercase;letter-spacing:0.8px;color:var(--dim);
+  border-bottom:1px solid var(--border);white-space:nowrap;
+}
+tbody tr{border-bottom:1px solid var(--border)}
+tbody tr:last-child{border-bottom:none}
+tbody td{padding:10px;vertical-align:top}
+td.name-cell{font-weight:600;color:var(--text);min-width:100px}
+td.name-cell .desc{font-size:10px;color:var(--dim);font-weight:400;margin-top:2px}
+td.time-cell{font-family:var(--mono);font-size:12px;white-space:nowrap;text-align:right;min-width:70px}
+td.time-cell.sprout{color:var(--accent)}
+td.time-cell.native{color:var(--blue)}
+td.time-cell.python{color:var(--gold)}
+td.ratio-cell{font-family:var(--mono);font-size:12px;text-align:right;white-space:nowrap;min-width:50px}
+
+.bar-wrap{margin-top:6px;display:flex;flex-direction:column;gap:3px}
+.bar-row{display:flex;align-items:center;gap:6px;font-size:10px}
+.bar-row .label{width:44px;text-align:right;flex-shrink:0;font-weight:600}
+.bar-row .label.sprout-l{color:var(--accent)}
+.bar-row .label.js-l{color:var(--blue)}
+.bar-row .label.py-l{color:var(--gold)}
+.bar-row .track{flex:1;height:10px;background:var(--bg3);border-radius:3px;overflow:hidden;min-width:40px}
+.bar-row .fill{height:100%;border-radius:3px;transition:width 0.5s ease;min-width:1px}
+.bar-row .fill.sprout-f{background:var(--accent)}
+.bar-row .fill.js-f{background:var(--blue)}
+.bar-row .fill.py-f{background:var(--gold)}
+.bar-row .val{width:56px;font-family:var(--mono);font-size:10px;color:var(--dim)}
+
+.bench-card{
+  background:var(--bg2);border:1px solid var(--border);border-radius:10px;
+  margin-bottom:10px;overflow:hidden;
+}
+.bench-card .card-head{
+  padding:10px 14px;display:flex;align-items:center;gap:10px;
+  border-bottom:1px solid var(--border);
+}
+.bench-card .card-head .num{
+  width:24px;height:24px;border-radius:50%;background:var(--bg3);
+  display:flex;align-items:center;justify-content:center;
+  font-size:10px;font-weight:800;color:var(--dim);flex-shrink:0;
+}
+.bench-card .card-head .bench-name{font-weight:700;font-size:13px;flex:1}
+.bench-card .card-head .bench-desc{font-size:10px;color:var(--dim)}
+.bench-card .card-body{padding:12px 14px}
+
+.times-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px}
+.time-box{
+  background:var(--bg3);border-radius:6px;padding:8px;text-align:center;
+}
+.time-box .t-label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px}
+.time-box .t-label.spr{color:var(--accent)}
+.time-box .t-label.js{color:var(--blue)}
+.time-box .t-label.py{color:var(--gold)}
+.time-box .t-value{font-family:var(--mono);font-size:16px;font-weight:700}
+.time-box .t-value.spr{color:var(--accent)}
+.time-box .t-value.js{color:var(--blue)}
+.time-box .t-value.py{color:var(--gold)}
+.time-box .t-value.pending{color:var(--dim);font-size:12px;font-weight:400}
+
+.ratio-badge{
+  display:inline-block;padding:2px 8px;border-radius:10px;
+  font-family:var(--mono);font-size:11px;font-weight:700;
+}
+.ratio-badge.good{background:rgba(74,222,128,0.12);color:var(--accent)}
+.ratio-badge.ok{background:rgba(247,201,72,0.12);color:var(--gold)}
+.ratio-badge.slow{background:rgba(239,68,68,0.12);color:var(--red)}
+
+.summary{
+  background:var(--bg2);border:1px solid var(--border);border-radius:10px;
+  padding:16px;margin-top:16px;
+}
+.summary h3{font-size:13px;font-weight:700;margin-bottom:10px;color:var(--accent)}
+.summary .stat-row{display:flex;justify-content:space-between;padding:4px 0;font-size:12px;border-bottom:1px solid var(--border)}
+.summary .stat-row:last-child{border-bottom:none}
+.summary .stat-label{color:var(--dim)}
+.summary .stat-val{font-family:var(--mono);font-weight:600}
+
+@media(max-width:500px){
+  .bar{padding:0 8px;gap:5px;height:42px}
+  .bar .title{display:none}
+  .bar button{padding:4px 10px;font-size:11px}
+  .container{padding:10px 8px 30px}
+  .times-grid{grid-template-columns:1fr 1fr 1fr;gap:4px}
+  .time-box .t-value{font-size:13px}
+}
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <a href="sprout.html" class="brand">Sprout</a>
+  <span class="title">Benchmarks</span>
+  <span class="spacer"></span>
+  <a href="sprout-ide.html" class="link">IDE</a>
+  <a href="sprout.html" class="link">Language</a>
+  <button class="btn-run" id="runBtn">Run All</button>
+</div>
+
+<div class="container">
+  <div class="intro">
+    Compares <strong>Sprout</strong> (compiled to JS via tojs.js) against hand-written <strong>native JavaScript</strong>,
+    with <strong>Python</strong> reference times (measured offline, shown as static numbers).
+    Each benchmark runs 5 times; the <strong>median</strong> is reported.
+  </div>
+
+  <div class="status-bar">
+    <div class="dot" id="statusDot"></div>
+    <span class="msg" id="statusMsg">Ready. Tap "Run All" to start.</span>
+    <span class="total" id="statusTotal"></span>
+  </div>
+
+  <div id="results"></div>
+  <div class="summary" id="summary" style="display:none"></div>
+</div>
+
+<!-- Sprout Compiler (exact copy from sprout-ide.html) -->
+<script>
+var SproutToJS=(function(){"use strict";function tokenize(src){const toks=[];let i=0;const n=src.length;const ESC={n:"\n",t:"\t","\\":"\\",'"':'"'};while(i<n){const c=src[i];if(c===" "||c==="\t"||c==="\r"){i++;continue}if(c==="\n"){toks.push(",");i++;continue}if(c==="'"){i++;while(i<n&&src[i]!=="'")i++;i++;continue}if(c==='"'){let j=i+1;const buf=[];while(j<n&&src[j]!=='"'){if(src[j]==="\\"&&j+1<n){const x=src[j+1];buf.push(ESC[x]!==undefined?ESC[x]:x);j+=2}else{buf.push(src[j]);j++}}toks.push({k:"str",v:buf.join("")});i=j+1;continue}if("[](){}".includes(c)){toks.push(c);i++;continue}if(",|:".includes(c)){toks.push(c);i++;continue}let j=i;while(j<n&&!" \t\r\n".includes(src[j])&&!'[](){}",|:'.includes(src[j])&&src[j]!=="'")j++;toks.push({k:"word",v:src.slice(i,j)});i=j}return toks}const Lit=v=>({t:"Lit",v}),Name=n=>({t:"Name",n}),Send=(tgt,m)=>({t:"Send",tgt,m}),Block=()=>({t:"Block",params:[],body:[],group:false}),SetN=(key,val)=>({t:"Set",key,val});const isWord=x=>x&&typeof x==="object"&&x.k==="word",isStr=x=>x&&typeof x==="object"&&x.k==="str";const NUM=/^-?\d+(\.\d+)?$/;class Parser{constructor(t){this.t=t;this.i=0}pk(){return this.i<this.t.length?this.t[this.i]:null}nx(){return this.t[this.i++]}program(){return this.seq(null)}seq(end){const items=[];while(true){const t=this.pk();if(t===null||t===end)break;if(t===","){this.nx();continue}items.push(this.exprOrSet())}return items}exprOrSet(){const left=this.chain();if(this.pk()===":"){this.nx();return SetN(left,this.chain())}return left}chain(){let node=this.primary();while(true){const t=this.pk();if(t===null||t===","||t===":"||t==="|"||t==="]"||t===")"||t==="}")break;node=Send(node,this.primary())}return node}primary(){const t=this.nx();if(t==="[")return this.block("]");if(t==="("){const b=this.block(")");b.group=true;return b}if(isStr(t))return Lit(t.v);if(isWord(t)){if(NUM.test(t.v))return Lit(parseFloat(t.v));return Name(t.v)}throw new Error("unexpected: "+JSON.stringify(t))}block(close){const b=Block();let depth=0,j=this.i,hasBar=false;while(j<this.t.length){const x=this.t[j];if(typeof x==="string"){if(x==="["||x==="(")depth++;else if(x==="]"||x===")"){if(depth===0&&x===close)break;depth--}else if(x==="|"&&depth===0){hasBar=true;break}}j++}if(hasBar){while(true){const x=this.pk();if(x==="|"){this.nx();break}if(x===","){this.nx();continue}if(isWord(x)){b.params.push(x.v);this.nx()}else this.nx()}}b.body=this.seq(close);if(this.pk()===close)this.nx();return b}}const OPS={"+":"+","-":"-","*":"*","/":"/","<":"<",">":">","%":"%","<=":"<=",">=":">=","!=":"!=="},CMP=new Set(["<",">","<=",">=","!="]);function mangle(name){if(name==="@")return"AT";let out=[];for(const ch of name){if(/[A-Za-z0-9_]/.test(ch))out.push(ch);else out.push("_"+ch.charCodeAt(0).toString(16))}let s=out.join("");if(s&&/[0-9]/.test(s[0]))s="_"+s;return"v_"+s}function strlit(s){let out="'";for(const ch of s){if(ch==="\\")out+="\\\\";else if(ch==="'")out+="\\'";else if(ch==="\n")out+="\\n";else if(ch==="\t")out+="\\t";else if(ch==="\r")out+="\\r";else out+=ch}return out+"'"}const FLAGNAMES=new Set(["pure","memoize","immutable","shared","lazy"]),BUILTIN=new Set(["print","length","first","second","append","each","collect","fold","times","while","sqrt","floor","str","last","round","ceil","abs","sin","cos","tan","log"]),OPSET=new Set([...Object.keys(OPS),"=","++"]);class Gen{constructor(){this._self=null;this._declared=new Set();this._lists=new Set();this._maps=new Set();this._fns=new Set();this._dense=new Set();this._arity=new Map()}genProgram(items){return items.map(it=>this.genStmt(it)).filter(p=>p).join(";\n")}peelFlags(node){const flags=new Set();while(node.t==="Send"&&node.m.t==="Name"&&FLAGNAMES.has(node.m.n)){flags.add(node.m.n);node=node.tgt}return[node,flags]}producesList(node){if(node.t==="Block"&&!node.group&&this.isListLiteral(node))return true;if(node.t==="Send"){if(node.tgt.t==="Name"&&(node.tgt.n==="range"||node.tgt.n==="list"))return true;const inner=node.tgt;if(inner.t==="Send"&&inner.m.t==="Name"&&(inner.m.n==="collect"||inner.m.n==="append"))return true}return false}genStore(k,valnode){const tgtNode=k.tgt,idx=this.genExpr(k.m),val=this.genExpr(valnode);if(tgtNode.t==="Name"&&this._maps.has(tgtNode.n))return`${mangle(tgtNode.n)}.set(${idx},${val})`;if(tgtNode.t==="Name"&&(this._dense.has(tgtNode.n)||this._lists.has(tgtNode.n)))return`(${mangle(tgtNode.n)}[${idx}]=${val})`;return`STORE(${this.genExpr(tgtNode)},${idx},${val})`}genStmt(node){if(node.t==="Set"){const key=node.key.t==="Name"?node.key.n:null;if(key===null){if(node.key.t==="Send")return this.genStore(node.key,node.val);throw new Error("unsupported set key")}const[core,flags]=this.peelFlags(node.val);const isFnBlock=core.t==="Block"&&!core.group&&!this.isListLiteral(core)&&!flags.has("memoize")&&!flags.has("pure");if(isFnBlock){this._fns.add(key);this._arity.set(key,core.params.length?core.params.length:(this.usesAt(core.body)?1:0))}let expr;if(core.t==="Block"&&!core.group&&!flags.has("memoize")&&!flags.has("pure")){if(this.isListLiteral(core))expr=this.genList(core);else{const params=core.params.length?core.params:(this.usesAt(core.body)?["@"]:[]);expr=this.genBlockAsLoop(core,key,params)}}else{expr=this.genExpr(core);if(flags.has("memoize")||flags.has("pure"))expr=`MEMO(${expr})`}if(this.producesList(core)||(core.t==="Block"&&this.isListLiteral(core)))this._lists.add(key);else if(this._lists.has(key))this._lists.delete(key);if(core.t==="Send"&&core.tgt.t==="Name"&&(core.tgt.n==="list"||core.tgt.n==="range"))this._dense.add(key);else if(this._dense.has(key))this._dense.delete(key);if(core.t==="Name"&&core.n==="map")this._maps.add(key);else if(this._maps.has(key))this._maps.delete(key);if(!isFnBlock){this._fns.delete(key);this._arity.delete(key)}if(this._declared.has(key))return`${mangle(key)} = ${expr}`;this._declared.add(key);return`let ${mangle(key)} = ${expr}`}const stmt=this.matchLoopVerbStmt(node);if(stmt!==null)return stmt;return this.genExpr(node)}matchLoopVerbStmt(node){if(node.t==="Send"&&node.m.t==="Block"&&!node.m.group){const inner=node.tgt;if(inner.t==="Send"&&inner.m.t==="Block"&&!inner.m.group&&inner.tgt.t==="Name"&&inner.tgt.n==="while"){const condblk=inner.m,bodyblk=node.m;let raw=null;if(condblk.body.length===1&&condblk.body[0].t!=="Set")raw=this.genRawBool(condblk.body[0]);const cond=raw!==null?raw:`(${this.genBlockInlineExpr(condblk)})===TRUE`;return`while(${cond}){${this.genBlockInlineStmts(bodyblk)}}`}if(inner.t==="Send"&&inner.m.t==="Name"&&inner.m.n==="times"){const saved=new Set(this._declared);this._declared.add("@");const body=this.genBlockInlineStmts(node.m);this._declared=saved;return`for(let __i=0;__i<(${this.genExpr(inner.tgt)});__i++){let AT=__i+1;${body}}`}if(inner.t==="Send"&&inner.m.t==="Name"&&inner.m.n==="each"){const xs=this.genExpr(inner.tgt);const saved=new Set(this._declared);this._declared.add("@");const body=this.genBlockInlineStmts(node.m);this._declared=saved;return`{const __l=${xs};for(let __k=1;__k<__l.length;__k++){let AT=__l[__k];${body}}}`}}return null}genBlockAsLoop(blk,selfname,params){const ps=params.map(mangle).join(",");this._self=[selfname,params];const saved=new Set(this._declared);for(const p of params)this._declared.add(p);const body=this.genBlockBody(blk.body);this._declared=saved;this._self=null;const fn=`((${ps})=>{while(true){${body}}})`;return params.length>1?`AR(${fn},${params.length})`:fn}isListLiteral(node){if(node.t!=="Block"||node.group||node.params.length)return false;if(this.usesAt(node.body))return false;if(node.body.some(e=>e.t==="Set"))return false;return node.body.length===0||node.body.length>=2}genList(node){if(node.body.length===0)return`[0]`;return`[0,${node.body.map(e=>this.genExpr(e)).join(",")}]`}genExpr(node,tail=false){if(node.t==="Lit")return typeof node.v==="number"?String(node.v):strlit(node.v);if(node.t==="Name"){const n=node.n;if(n==="true")return"TRUE";if(n==="false")return"FALSE";if(n==="none")return"NONE";if(n==="map")return"newmap()";if(n==="random")return"Math.random()";if(n==="time")return"Date.now()";if(n==="pi")return"Math.PI";return mangle(n)}if(node.t==="Block"){if(node.group){if(node.body.length===1&&node.body[0].t!=="Set")return this.genExpr(node.body[0],tail);const saved=this._self;this._self=null;const body=this.genBlockBody(node.body);this._self=saved;return`(()=>{${body}})()`}if(this.isListLiteral(node))return this.genList(node);const params=node.params.length?node.params:(this.usesAt(node.body)?["@"]:[]);const saved=this._self;this._self=null;const savedd=new Set(this._declared);for(const p of params)this._declared.add(p);const body=this.genBlockBody(node.body);this._declared=savedd;this._self=saved;const fn=`((${params.map(mangle).join(",")})=>{${body}})`;return params.length>1?`AR(${fn},${params.length})`:fn}if(node.t==="Send")return this.genSend(node,tail);throw new Error("node "+JSON.stringify(node))}usesAt(body){const chk=n=>{if(n.t==="Name")return n.n==="@";if(n.t==="Send")return chk(n.tgt)||chk(n.m);if(n.t==="Set")return chk(n.val);if(n.t==="Block"&&n.group)return n.body.some(chk);return false};return body.some(chk)}genRawBool(node){while(node.t==="Block"&&node.group&&node.body.length===1)node=node.body[0];if(node.t==="Send"&&node.tgt.t==="Send"&&node.tgt.m.t==="Name"){const opn=node.tgt.m.n;if(CMP.has(opn))return`(${this.genExpr(node.tgt.tgt)} ${OPS[opn]} ${this.genExpr(node.m)})`;if(opn==="=")return`REQ(${this.genExpr(node.tgt.tgt)},${this.genExpr(node.m)})`}return null}genCallback(blk){if(!(blk.t==="Block"&&!blk.group))return this.genExpr(blk);const params=blk.params.length?blk.params:(this.usesAt(blk.body)?["@"]:[]);const saved=this._self;this._self=null;const parts=[];for(let i=0;i<blk.body.length;i++){const it=blk.body[i],last=i===blk.body.length-1;if(it.t==="Set"){const key=it.key.t==="Name"?it.key.n:null;parts.push(`let ${mangle(key)} = ${this.genExpr(it.val)};`);if(last)parts.push(`return ${mangle(key)};`)}else{parts.push((last?"return ":"")+this.genExpr(it,false)+";")}}this._self=saved;const fn=`((${params.map(mangle).join(",")})=>{${parts.length?parts.join(""):"return NONE;"}})`;return params.length>1?`AR(${fn},${params.length})`:fn}genBlockBody(body){if(!body.length)return"return NONE;";const savedDecl=new Set(this._declared);const parts=[];for(let i=0;i<body.length;i++){const it=body[i],last=i===body.length-1;if(it.t==="Set"){const key=it.key.t==="Name"?it.key.n:null;if(key!==null){if(this._declared.has(key))parts.push(`${mangle(key)} = ${this.genExpr(it.val,false)};`);else{this._declared.add(key);parts.push(`let ${mangle(key)} = ${this.genExpr(it.val,false)};`)}if(last)parts.push(`return ${mangle(key)};`)}else if(it.key.t==="Send"){parts.push(this.genStore(it.key,it.val)+";");if(last)parts.push("return NONE;")}}else{if(last)parts.push(this.genTailStmt(it));else parts.push(this.genExpr(it,false)+";")}}this._declared=savedDecl;return parts.join("")}genTailStmt(node){while(node.t==="Block"&&node.group&&node.body.length===1&&node.body[0].t!=="Set")node=node.body[0];if(node.t==="Send"&&node.m.t==="Block"&&!node.m.group&&!node.m.params.length&&node.m.body.length===2&&this._self!==null){const raw=this.genRawBool(node.tgt);const cond=raw!==null?raw:`(${this.genExpr(node.tgt)})===TRUE`;return`if(${cond}){${this.genTailStmtElem(node.m.body[0])}}else{${this.genTailStmtElem(node.m.body[1])}}`}const e=this.genExpr(node,true);if(e.startsWith("__LOOP__"))return e.slice(8)+"continue;";return`return ${e};`}genTailStmtElem(e){if(e.t==="Set")e=e.val;return this.genTailStmt(e)}callSpine(node){const spine=[];let head=node;while(head.t==="Send"){const m=head.m;if(m.t==="Name"&&(OPSET.has(m.n)||BUILTIN.has(m.n)))return null;spine.push(m);head=head.tgt}if(spine.length>=2&&head.t==="Name"&&!["true","false","none"].includes(head.n)){spine.reverse();return[head,spine]}return null}matchLoopVerb(node){if(node.t==="Send"&&node.m.t==="Block"&&!node.m.group){const inner=node.tgt;if(inner.t==="Send"&&inner.m.t==="Block"&&!inner.m.group&&inner.tgt.t==="Name"&&inner.tgt.n==="while"){const condblk=inner.m,bodyblk=node.m;let raw=null;if(condblk.body.length===1&&condblk.body[0].t!=="Set")raw=this.genRawBool(condblk.body[0]);return`(()=>{while(${raw!==null?raw:`(${this.genBlockInlineExpr(condblk)})===TRUE`}){${this.genBlockInlineStmts(bodyblk)}}return NONE;})()`}if(inner.t==="Send"&&inner.m.t==="Name"&&inner.m.n==="times"){const saved=new Set(this._declared);this._declared.add("@");const body=this.genBlockInlineStmts(node.m);this._declared=saved;return`(()=>{for(let __i=0;__i<(${this.genExpr(inner.tgt)});__i++){let AT=__i+1;${body}}return NONE;})()`}if(inner.t==="Send"&&inner.m.t==="Name"&&inner.m.n==="each"){return`(()=>{const __l=${this.genExpr(inner.tgt)},__f=${this.genCallback(node.m)};for(let __k=1;__k<__l.length;__k++){__f(__l[__k]);}return NONE;})()`}if(inner.t==="Send"&&inner.m.t==="Name"&&inner.m.n==="collect"){return`(()=>{const __l=${this.genExpr(inner.tgt)},__o=[0],__f=${this.genCallback(node.m)};for(let __k=1;__k<__l.length;__k++){__o.push(__f(__l[__k]));}return __o;})()`}}if(node.t==="Send"&&node.m.t==="Block"&&!node.m.group){const i2=node.tgt;if(i2.t==="Send"&&i2.tgt.t==="Send"&&i2.tgt.m.t==="Name"&&i2.tgt.m.n==="fold"){return`(()=>{const __l=${this.genExpr(i2.tgt.tgt)},__f=${this.genCallback(node.m)};let __a=${this.genExpr(i2.m)};for(let __k=1;__k<__l.length;__k++){__a=__f(__a,__l[__k]);}return __a;})()`}}return null}genBlockInlineExpr(blk){if(blk.body.length===1&&blk.body[0].t!=="Set"){const saved=this._self;this._self=null;const r=this.genExpr(blk.body[0]);this._self=saved;return r}const saved=this._self;this._self=null;const b=this.genBlockBody(blk.body);this._self=saved;return`(()=>{${b}})()`}genBlockInlineStmts(blk){const saved=this._self;this._self=null;const parts=[];for(const it of blk.body){if(it.t==="Set"){const key=it.key.t==="Name"?it.key.n:null;if(key===null&&it.key.t==="Send"){parts.push(this.genStore(it.key,it.val)+";");continue}const val=this.genExpr(it.val);if(this._declared.has(key))parts.push(`${mangle(key)} = ${val};`);else{this._declared.add(key);parts.push(`let ${mangle(key)} = ${val};`)}}else parts.push(this.genLoopStmt(it))}this._self=saved;return parts.join("")}genLoopStmt(node){const lv=this.matchLoopVerbStmt(node);if(lv!==null)return lv;let sel=node;while(sel.t==="Block"&&sel.group&&sel.body.length===1)sel=sel.body[0];if(sel.t==="Block"&&sel.group&&sel.body.length>1){const parts=[];for(const it of sel.body){if(it.t==="Set"){const key=it.key.t==="Name"?it.key.n:null;if(key===null&&it.key.t==="Send"){parts.push(this.genStore(it.key,it.val)+";");continue}const val=this.genExpr(it.val);if(this._declared.has(key))parts.push(`${mangle(key)} = ${val};`);else{this._declared.add(key);parts.push(`let ${mangle(key)} = ${val};`)}}else{const lv2=this.matchLoopVerbStmt(it);parts.push(lv2!==null?lv2:this.genLoopStmt(it))}}return parts.join("")}if(sel.t==="Send"&&sel.m.t==="Block"&&!sel.m.group&&!sel.m.params.length&&sel.m.body.length===2){const raw=this.genRawBool(sel.tgt);return`if(${raw!==null?raw:`(${this.genExpr(sel.tgt)})===TRUE`}){${this.genBranchStmt(sel.m.body[0])}}else{${this.genBranchStmt(sel.m.body[1])}}`}return this.genExpr(node)+";"}genBranchStmt(e){if(e.t==="Block"&&e.group&&e.body.length>1)return this.genLoopStmt(e);if(e.t==="Set"){const key=e.key.t==="Name"?e.key.n:null;if(key===null&&e.key.t==="Send")return this.genStore(e.key,e.val)+";";const val=this.genExpr(e.val);if(this._declared.has(key))return`${mangle(key)} = ${val};`;this._declared.add(key);return`let ${mangle(key)} = ${val};`}return this.genExpr(e)+";"}genSend(node,tail=false){if(node.tgt.t==="Name"&&node.tgt.n==="range")return`RANGE(${this.genExpr(node.m)})`;if(node.tgt.t==="Name"&&node.tgt.n==="list")return`ZEROS(${this.genExpr(node.m)})`;const lp=this.matchLoopVerb(node);if(lp!==null)return lp;const cs=this.callSpine(node);if(cs!==null){const[head,spine]=cs;if(tail&&this._self&&head.n===this._self[0]&&spine.length===this._self[1].length){const params=this._self[1],tmps=spine.map(a=>this.genExpr(a));return`__LOOP__{${tmps.map((t,i)=>`let __t${i}=${t};`).join("")}${params.map((p,i)=>`${mangle(p)}=__t${i};`).join("")}}`}const callee=this.genExpr(head),args=spine.map(a=>this.genExpr(a)).join(",");if(!tail&&head.t==="Name"&&this._arity.get(head.n)===spine.length)return`${callee}(${args})`;if(tail)return`TCN(${callee},[${args}])`;return`APPLY(${callee},[${args}])`}const inner=node.tgt;if(inner.t==="Send"&&inner.m.t==="Name"&&(inner.m.n in OPS)){const opn=inner.m.n,L=this.genExpr(inner.tgt),R=this.genExpr(node.m);return CMP.has(opn)?`((${L} ${OPS[opn]} ${R})?TRUE:FALSE)`:`(${L} ${OPS[opn]} ${R})`}if(inner.t==="Send"&&inner.m.t==="Name"&&inner.m.n==="=")return`eq(${this.genExpr(inner.tgt)},${this.genExpr(node.m)})`;if(inner.t==="Send"&&inner.m.t==="Name"&&inner.m.n==="++")return`((${this.genExpr(inner.tgt)})+(${this.genExpr(node.m)}))`;if(inner.t==="Send"&&inner.m.t==="Name"&&inner.m.n==="append")return`(${this.genExpr(inner.tgt)}).concat([${this.genExpr(node.m)}])`;if(node.m.t==="Name"){const m=node.m.n;if(m==="print")return`prnt(${this.genExpr(node.tgt)})`;if(m==="length")return`LEN(${this.genExpr(node.tgt)})`;if(m==="sqrt")return`Math.sqrt(${this.genExpr(node.tgt)})`;if(m==="floor")return`Math.floor(${this.genExpr(node.tgt)})`;if(m==="round")return`Math.round(${this.genExpr(node.tgt)})`;if(m==="ceil")return`Math.ceil(${this.genExpr(node.tgt)})`;if(m==="abs")return`Math.abs(${this.genExpr(node.tgt)})`;if(m==="sin")return`Math.sin(${this.genExpr(node.tgt)})`;if(m==="cos")return`Math.cos(${this.genExpr(node.tgt)})`;if(m==="tan")return`Math.tan(${this.genExpr(node.tgt)})`;if(m==="log")return`Math.log(${this.genExpr(node.tgt)})`;if(m==="str")return`fmt(${this.genExpr(node.tgt)})`;if(m==="last")return`((${this.genExpr(node.tgt)})?.[(${this.genExpr(node.tgt)}).length-1]??NONE)`;if(m==="first")return`((${this.genExpr(node.tgt)})?.[1]??NONE)`;if(m==="second")return`((${this.genExpr(node.tgt)})?.[2]??NONE)`;if((m in OPS)||m==="="||m==="++"){const t=this.genExpr(node.tgt);if(CMP.has(m))return`((R)=>((${t}) ${OPS[m]} R)?TRUE:FALSE)`;if(m in OPS)return`((R)=>((${t}) ${OPS[m]} R))`;if(m==="=")return`((R)=>eq(${t},R))`;if(m==="++")return`((R)=>((${t})+R))`}const argname=({true:"TRUE",false:"FALSE",none:"NONE"})[m]||mangle(m);const t=this.genExpr(node.tgt);return tail?`TC(${t}, ${argname})`:`RUN(SEND(${t}, ${argname}))`}else{const mIsData=node.tgt.t==="Name"&&this._fns.has(node.tgt.n)&&node.m.t==="Block"&&!node.m.group&&!node.m.params.length&&this.isListLiteral(node.m);if(node.m.t==="Block"&&!node.m.group&&!node.m.params.length&&!mIsData){const t=this.genExpr(node.tgt),elems=node.m.body;if(elems.length===2){const a=this.genExprThunkelem(elems[0],tail),b=this.genExprThunkelem(elems[1],tail),raw=this.genRawBool(node.tgt);return raw!==null?`((${raw})?(${a}):(${b}))`:`((${t})===TRUE?(${a}):(${b}))`}if(elems.length===1)return`((${this.genExpr(node.tgt)})===TRUE?(${this.genExprThunkelem(elems[0],tail)}):NONE)`;const thunks=elems.map(e=>"()=>"+this.genExprThunkelem(e,tail)).join(",");return tail?`SELT(${t}, [${thunks}])`:`RUN(SELT(${t}, [${thunks}]))`}if(node.tgt.t==="Name"&&this._lists.has(node.tgt.n)){const a=this.genExpr(node.m);return this._dense.has(node.tgt.n)?`${mangle(node.tgt.n)}[${a}]`:`(${mangle(node.tgt.n)}[${a}]??NONE)`}if(node.tgt.t==="Name"&&this._maps.has(node.tgt.n))return`(${mangle(node.tgt.n)}.get(${this.genExpr(node.m)})??NONE)`;const t=this.genExpr(node.tgt),a=this.genExpr(node.m);if(!tail&&node.tgt.t==="Name"&&this._arity.get(node.tgt.n)===1)return`${t}(${a})`;return tail?`TC(${t}, ${a})`:`RUN(CALL(${t}, ${a}))`}}genExprThunkelem(e,tail=false){return e.t==="Set"?this.genExpr(e.val,tail):this.genExpr(e,tail)}}function compile(src){return new Gen().genProgram(new Parser(tokenize(src)).program())}return{compile}})();
+</script>
+
+<!-- Sprout Runtime (exact copy from sprout-ide.html) -->
+<script>
+var SproutRuntime=(function(){"use strict";const NONE=Symbol("none"),TRUE={sel:0},FALSE={sel:1};const eq=(a,b)=>(a===b)?TRUE:FALSE,REQ=(a,b)=>(a===b);function RANGE(n){const a=new Float64Array(n+1);for(let i=1;i<=n;i++)a[i]=i;return a}function ZEROS(n){return new Float64Array(n+1)}function newmap(){return new Map()}function LEN(x){if(typeof x==="string")return x.length;if(Array.isArray(x)||ArrayBuffer.isView(x))return x.length-1;return 0}function STORE(t,k,v){if(Array.isArray(t)&&typeof k==="number"){while(t.length<=k)t.push(NONE);t[k]=v;return v}if(t instanceof Map){t.set(k,v);return v}return v}function fmt(x){if(x===NONE)return"none";if(x===TRUE)return"true";if(x===FALSE)return"false";if(typeof x==="number")return String(x);if(typeof x==="string")return x;if(typeof x==="function")return"[block]";if(Array.isArray(x)||ArrayBuffer.isView(x))return"["+Array.from(x).slice(1).map(fmt).join(", ")+"]";return String(x)}function CALL(t,a){if(t===TRUE||t===FALSE){if(Array.isArray(a))return(a[t.sel]!==undefined)?a[t.sel]():NONE;return NONE}if(Array.isArray(t)||ArrayBuffer.isView(t))return typeof a==="number"&&a>=1&&a<t.length?t[a]:NONE;if(t instanceof Map)return t.has(a)?t.get(a):NONE;if(typeof t==="function")return t(a);return NONE}function SEND(t,arg){if(typeof t==="function")return RUN(t(arg));return NONE}class Bounce{constructor(fn,args){this.fn=fn;this.args=args}}function RUN(v){while(v instanceof Bounce)v=v.fn(...v.args);return v}function AR(fn,n){fn.L=n;return fn}function invoke(fn,args){if(typeof fn!=="function")return args.length?CALL(fn,args[0]):fn;const L=fn.L||1;if(args.length===L)return fn(...args);if(args.length<L){const got=args.slice();const g=(...more)=>invoke(fn,got.concat(more));g.L=L-args.length;return g}return invoke(RUN(fn(...args.slice(0,L))),args.slice(L))}function APPLY(fn,args){if(typeof fn==="function"&&(fn.L||1)===args.length)return RUN(fn(...args));return RUN(invoke(fn,args))}function TCN(fn,args){if(typeof fn==="function"&&(fn.L||1)===args.length)return new Bounce(fn,args);return invoke(fn,args)}function TC(t,arg){if(typeof t==="function"&&(t.L||1)===1)return new Bounce(t,[arg]);return CALL(t,arg)}function SELT(boolv,thunks){if(boolv===TRUE||boolv===FALSE){const i=boolv.sel;return thunks[i]!==undefined?thunks[i]():NONE}return NONE}function MEMO(fn){const L=fn.L||1,cache=new Map();const w=(...args)=>{const key=args.map(keyOf).join("");if(cache.has(key))return cache.get(key);const val=RUN(fn(...args));cache.set(key,val);return val};w.L=L;return w}function keyOf(a){if(a===TRUE)return"T";if(a===FALSE)return"F";if(a===NONE)return"N";return(typeof a)+":"+String(a)}return{NONE,TRUE,FALSE,eq,REQ,RANGE,ZEROS,newmap,LEN,STORE,fmt,CALL,SEND,Bounce,RUN,AR,invoke,APPLY,TCN,TC,SELT,MEMO,keyOf}})();
+</script>
+
+<!-- Benchmark Engine -->
+<script>
+(function(){
+"use strict";
+
+const $ = id => document.getElementById(id);
+const R = SproutRuntime;
+const prnt = (x) => x; // no-op print for benchmarks
+
+// Helper: run Sprout code and return result
+function runSprout(code) {
+  const compiled = SproutToJS.compile(code);
+  return new Function(
+    'NONE','TRUE','FALSE','eq','REQ','RANGE','ZEROS','newmap','LEN','STORE','fmt',
+    'CALL','SEND','Bounce','RUN','AR','invoke','APPLY','TCN','TC','SELT','MEMO','keyOf','prnt',
+    compiled
+  )(R.NONE,R.TRUE,R.FALSE,R.eq,R.REQ,R.RANGE,R.ZEROS,R.newmap,R.LEN,R.STORE,R.fmt,
+    R.CALL,R.SEND,R.Bounce,R.RUN,R.AR,R.invoke,R.APPLY,R.TCN,R.TC,R.SELT,R.MEMO,R.keyOf,prnt);
+}
+
+// Helper: compile Sprout code to a reusable function
+function compileSprout(code) {
+  const compiled = SproutToJS.compile(code);
+  return new Function(
+    'NONE','TRUE','FALSE','eq','REQ','RANGE','ZEROS','newmap','LEN','STORE','fmt',
+    'CALL','SEND','Bounce','RUN','AR','invoke','APPLY','TCN','TC','SELT','MEMO','keyOf','prnt',
+    compiled
+  );
+}
+
+// Helper: time a function N times, return median
+function benchmark(fn, runs) {
+  runs = runs || 5;
+  const times = [];
+  for (let i = 0; i < runs; i++) {
+    const t0 = performance.now();
+    fn();
+    const t1 = performance.now();
+    times.push(t1 - t0);
+  }
+  times.sort((a, b) => a - b);
+  return times[Math.floor(times.length / 2)];
+}
+
+// ── Benchmark definitions ──
+
+const BENCHMARKS = [
+  {
+    name: "Fibonacci(30)",
+    desc: "Recursive with memoize",
+    python: 0.05,
+    sproutCode: `fib : [n | n <= 1 [n, (fib (n - 1)) + (fib (n - 2))]] memoize\nfib 30`,
+    nativeJS: function() {
+      const cache = new Map();
+      function fib(n) {
+        if (cache.has(n)) return cache.get(n);
+        const v = n <= 1 ? n : fib(n - 1) + fib(n - 2);
+        cache.set(n, v);
+        return v;
+      }
+      return fib(30);
+    }
+  },
+  {
+    name: "FizzBuzz 10,000",
+    desc: "Loop + conditionals",
+    python: 15,
+    sproutCode: `count : 0\ni : 1\nwhile [i <= 10000] [\n  i % 15 = 0 ["FizzBuzz",\n    i % 3 = 0 ["Fizz",\n      i % 5 = 0 ["Buzz", i]\n    ]\n  ]\n  count : count + 1\n  i : i + 1\n]\ncount`,
+    nativeJS: function() {
+      let count = 0;
+      for (let i = 1; i <= 10000; i++) {
+        let r;
+        if (i % 15 === 0) r = "FizzBuzz";
+        else if (i % 3 === 0) r = "Fizz";
+        else if (i % 5 === 0) r = "Buzz";
+        else r = i;
+        count++;
+      }
+      return count;
+    }
+  },
+  {
+    name: "Sum 1..1,000,000",
+    desc: "Tight while loop",
+    python: 80,
+    sproutCode: `i : 0\ntotal : 0\nwhile [i < 1000000] [total : total + i, i : i + 1]\ntotal`,
+    nativeJS: function() {
+      let total = 0;
+      for (let i = 0; i < 1000000; i++) total += i;
+      return total;
+    }
+  },
+  {
+    name: "Sieve to 10,000",
+    desc: "Sieve of Eratosthenes",
+    python: 5,
+    sproutCode: `n : 10000\nsieve : list n\ni : 1\nwhile [i <= n] [sieve i : 1, i : i + 1]\nsieve 1 : 0\np : 2\nwhile [p * p <= n] [\n  sieve p = 1 [\n    (j : p * p\n    while [j <= n] [sieve j : 0, j : j + p]),\n    0\n  ]\n  p : p + 1\n]\ncount : 0\ni : 2\nwhile [i <= n] [sieve i = 1 [count : count + 1, 0], i : i + 1]\ncount`,
+    nativeJS: function() {
+      const n = 10000;
+      const sieve = new Uint8Array(n + 1);
+      sieve.fill(1);
+      sieve[0] = sieve[1] = 0;
+      for (let p = 2; p * p <= n; p++) {
+        if (sieve[p]) {
+          for (let j = p * p; j <= n; j += p) sieve[j] = 0;
+        }
+      }
+      let count = 0;
+      for (let i = 2; i <= n; i++) if (sieve[i]) count++;
+      return count;
+    }
+  },
+  {
+    name: "Collatz 1..1000",
+    desc: "Total steps for n=1 to 1000",
+    python: 25,
+    sproutCode: `total : 0\ni : 1\nwhile [i <= 1000] [\n  n : i\n  steps : 0\n  while [n != 1] [\n    n % 2 = 0 [n : n / 2, n : 3 * n + 1]\n    steps : steps + 1\n  ]\n  total : total + steps\n  i : i + 1\n]\ntotal`,
+    nativeJS: function() {
+      let total = 0;
+      for (let i = 1; i <= 1000; i++) {
+        let n = i, steps = 0;
+        while (n !== 1) {
+          n = (n % 2 === 0) ? n / 2 : 3 * n + 1;
+          steps++;
+        }
+        total += steps;
+      }
+      return total;
+    }
+  },
+  {
+    name: "Map 10,000 squares",
+    desc: "collect [@ * @]",
+    python: 3,
+    sproutCode: `range 10000 collect [@ * @]`,
+    nativeJS: function() {
+      const arr = new Array(10000);
+      for (let i = 0; i < 10000; i++) arr[i] = (i + 1) * (i + 1);
+      return arr;
+    }
+  }
+];
+
+// ── Render ──
+
+function renderCards() {
+  const container = $('results');
+  container.innerHTML = '';
+  BENCHMARKS.forEach((b, idx) => {
+    const card = document.createElement('div');
+    card.className = 'bench-card';
+    card.id = 'bench-' + idx;
+    card.innerHTML = `
+      <div class="card-head">
+        <div class="num">${idx + 1}</div>
+        <div>
+          <div class="bench-name">${b.name}</div>
+          <div class="bench-desc">${b.desc}</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="times-grid">
+          <div class="time-box">
+            <div class="t-label spr">Sprout</div>
+            <div class="t-value spr pending" id="spr-${idx}">--</div>
+          </div>
+          <div class="time-box">
+            <div class="t-label js">Native JS</div>
+            <div class="t-value js pending" id="js-${idx}">--</div>
+          </div>
+          <div class="time-box">
+            <div class="t-label py">Python</div>
+            <div class="t-value py" id="py-${idx}">${formatTime(b.python)}</div>
+          </div>
+        </div>
+        <div class="bar-wrap" id="bars-${idx}">
+          <div class="bar-row">
+            <span class="label sprout-l">Sprout</span>
+            <span class="track"><span class="fill sprout-f" id="bar-spr-${idx}" style="width:0%"></span></span>
+            <span class="val" id="barval-spr-${idx}"></span>
+          </div>
+          <div class="bar-row">
+            <span class="label js-l">JS</span>
+            <span class="track"><span class="fill js-f" id="bar-js-${idx}" style="width:0%"></span></span>
+            <span class="val" id="barval-js-${idx}"></span>
+          </div>
+          <div class="bar-row">
+            <span class="label py-l">Python</span>
+            <span class="track"><span class="fill py-f" id="bar-py-${idx}" style="width:0%"></span></span>
+            <span class="val" id="barval-py-${idx}"></span>
+          </div>
+        </div>
+      </div>
+    `;
+    container.appendChild(card);
+  });
+}
+
+function formatTime(ms) {
+  if (ms < 0.01) return '<0.01ms';
+  if (ms < 1) return ms.toFixed(2) + 'ms';
+  if (ms < 100) return ms.toFixed(1) + 'ms';
+  return Math.round(ms) + 'ms';
+}
+
+function ratioClass(ratio) {
+  if (ratio <= 3) return 'good';
+  if (ratio <= 10) return 'ok';
+  return 'slow';
+}
+
+function updateCard(idx, sproutMs, jsMs, pyMs) {
+  const sprEl = $('spr-' + idx);
+  const jsEl = $('js-' + idx);
+
+  sprEl.textContent = formatTime(sproutMs);
+  sprEl.classList.remove('pending');
+  jsEl.textContent = formatTime(jsMs);
+  jsEl.classList.remove('pending');
+
+  const maxMs = Math.max(sproutMs, jsMs, pyMs);
+  const pctS = maxMs > 0 ? (sproutMs / maxMs * 100) : 0;
+  const pctJ = maxMs > 0 ? (jsMs / maxMs * 100) : 0;
+  const pctP = maxMs > 0 ? (pyMs / maxMs * 100) : 0;
+
+  $('bar-spr-' + idx).style.width = Math.max(1, pctS) + '%';
+  $('bar-js-' + idx).style.width = Math.max(1, pctJ) + '%';
+  $('bar-py-' + idx).style.width = Math.max(1, pctP) + '%';
+
+  $('barval-spr-' + idx).textContent = formatTime(sproutMs);
+  $('barval-js-' + idx).textContent = formatTime(jsMs);
+  $('barval-py-' + idx).textContent = formatTime(pyMs);
+}
+
+function showSummary(results) {
+  const sumEl = $('summary');
+  sumEl.style.display = '';
+  const totalSprout = results.reduce((s, r) => s + r.sprout, 0);
+  const totalJS = results.reduce((s, r) => s + r.js, 0);
+  const totalPython = results.reduce((s, r) => s + r.python, 0);
+  const avgRatio = results.reduce((s, r) => s + r.ratio, 0) / results.length;
+  const bestRatio = Math.min(...results.map(r => r.ratio));
+  const worstRatio = Math.max(...results.map(r => r.ratio));
+
+  sumEl.innerHTML = `
+    <h3>Summary</h3>
+    <div class="stat-row">
+      <span class="stat-label">Total Sprout time</span>
+      <span class="stat-val" style="color:var(--accent)">${formatTime(totalSprout)}</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Total Native JS time</span>
+      <span class="stat-val" style="color:var(--blue)">${formatTime(totalJS)}</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Total Python time (ref)</span>
+      <span class="stat-val" style="color:var(--gold)">${formatTime(totalPython)}</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Avg Sprout/JS ratio</span>
+      <span class="stat-val"><span class="ratio-badge ${ratioClass(avgRatio)}">${avgRatio.toFixed(1)}x</span></span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Best ratio (closest to JS)</span>
+      <span class="stat-val"><span class="ratio-badge ${ratioClass(bestRatio)}">${bestRatio.toFixed(1)}x</span></span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Worst ratio</span>
+      <span class="stat-val"><span class="ratio-badge ${ratioClass(worstRatio)}">${worstRatio.toFixed(1)}x</span></span>
+    </div>
+  `;
+}
+
+// ── Run ──
+
+let running = false;
+
+async function runAll() {
+  if (running) return;
+  running = true;
+  const btn = $('runBtn');
+  btn.disabled = true;
+  btn.textContent = 'Running...';
+
+  const dot = $('statusDot');
+  const msg = $('statusMsg');
+  const totalEl = $('statusTotal');
+
+  dot.className = 'dot running';
+  msg.textContent = 'Warming up...';
+  totalEl.textContent = '';
+  $('summary').style.display = 'none';
+
+  // Reset all cards
+  BENCHMARKS.forEach((b, idx) => {
+    const sprEl = $('spr-' + idx);
+    const jsEl = $('js-' + idx);
+    sprEl.textContent = '--';
+    sprEl.classList.add('pending');
+    jsEl.textContent = '--';
+    jsEl.classList.add('pending');
+    $('bar-spr-' + idx).style.width = '0%';
+    $('bar-js-' + idx).style.width = '0%';
+    $('bar-py-' + idx).style.width = '0%';
+    $('barval-spr-' + idx).textContent = '';
+    $('barval-js-' + idx).textContent = '';
+    $('barval-py-' + idx).textContent = '';
+  });
+
+  // Small delay so the UI can repaint
+  await new Promise(r => setTimeout(r, 50));
+
+  const allStart = performance.now();
+  const results = [];
+
+  // Pre-compile all Sprout benchmarks
+  const sproutFns = [];
+  for (let idx = 0; idx < BENCHMARKS.length; idx++) {
+    const b = BENCHMARKS[idx];
+    try {
+      sproutFns.push(compileSprout(b.sproutCode));
+    } catch(e) {
+      sproutFns.push(null);
+      console.error('Compile error for ' + b.name + ':', e);
+    }
+  }
+
+  for (let idx = 0; idx < BENCHMARKS.length; idx++) {
+    const b = BENCHMARKS[idx];
+    msg.textContent = `Running ${idx + 1}/${BENCHMARKS.length}: ${b.name}`;
+
+    await new Promise(r => setTimeout(r, 20));
+
+    let sproutMs = 0, jsMs = 0;
+
+    // Run Sprout benchmark
+    if (sproutFns[idx]) {
+      const sfn = sproutFns[idx];
+      sproutMs = benchmark(() => {
+        sfn(R.NONE,R.TRUE,R.FALSE,R.eq,R.REQ,R.RANGE,R.ZEROS,R.newmap,R.LEN,R.STORE,R.fmt,
+            R.CALL,R.SEND,R.Bounce,R.RUN,R.AR,R.invoke,R.APPLY,R.TCN,R.TC,R.SELT,R.MEMO,R.keyOf,prnt);
+      }, 5);
+    }
+
+    // Run native JS benchmark
+    jsMs = benchmark(b.nativeJS, 5);
+
+    const ratio = jsMs > 0.001 ? sproutMs / jsMs : sproutMs > 0 ? 999 : 1;
+    results.push({ sprout: sproutMs, js: jsMs, python: b.python, ratio: ratio });
+
+    updateCard(idx, sproutMs, jsMs, b.python);
+  }
+
+  const totalMs = performance.now() - allStart;
+  dot.className = 'dot done';
+  msg.textContent = `All ${BENCHMARKS.length} benchmarks complete.`;
+  totalEl.textContent = formatTime(totalMs);
+
+  showSummary(results);
+
+  btn.disabled = false;
+  btn.textContent = 'Run All';
+  running = false;
+}
+
+$('runBtn').addEventListener('click', runAll);
+
+// ── Init ──
+renderCards();
+
+// Auto-run on load
+setTimeout(runAll, 300);
+
+})();
+</script>
+</body>
+</html>
