@@ -1,0 +1,842 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+  <title>Turkish Delight</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    html,body{height:100%;background:#0f0f10;overflow:hidden;touch-action:manipulation;user-select:none}
+    canvas{display:block;position:fixed;top:0;left:0}
+  </style>
+</head>
+<body>
+<a href="../index.html" style="position:fixed;top:4px;left:8px;z-index:9999;font-size:0.7rem;color:#6e6e73;text-decoration:none;font-family:ui-monospace,monospace;opacity:0.7;transition:opacity 0.2s" onmouseover="this.style.opacity=1;this.style.color='#4ade80'" onmouseout="this.style.opacity=0.7;this.style.color='#6e6e73'">&larr; home</a>
+<canvas id="c"></canvas>
+<script>
+(function(){
+"use strict";
+
+var canvas = document.getElementById('c');
+var ctx = canvas.getContext('2d');
+var W, H;
+var dpr = window.devicePixelRatio || 1;
+
+function resize(){
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ── Audio ──
+var audioCtx = null;
+function getAudio(){
+  if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+function tone(freq, dur, type, vol){
+  try {
+    var c = getAudio();
+    var o = c.createOscillator();
+    var g = c.createGain();
+    o.type = type || 'sine';
+    o.frequency.value = freq;
+    g.gain.setValueAtTime(vol || 0.05, c.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + dur);
+    o.connect(g);
+    g.connect(c.destination);
+    o.start();
+    o.stop(c.currentTime + dur);
+  } catch(e){}
+}
+function hitSound(){
+  tone(200, 0.15, 'sawtooth', 0.08);
+  tone(120, 0.2, 'square', 0.05);
+}
+function gameOverSound(){
+  tone(300, 0.3, 'sawtooth', 0.06);
+  setTimeout(function(){ tone(200, 0.3, 'sawtooth', 0.06); }, 150);
+  setTimeout(function(){ tone(100, 0.5, 'sawtooth', 0.06); }, 300);
+}
+
+// ── Treat types ──
+var TREATS = [
+  { name: 'Lokum',   emoji: '🟪', color: '#e84393', shape: 'rect',    cost: 10, speed: 1.0, weight: 30, size: 28 },
+  { name: 'Baklava', emoji: '🔶', color: '#fdcb6e', shape: 'diamond', cost: 20, speed: 1.1, weight: 25, size: 26 },
+  { name: 'Halva',   emoji: '🟫', color: '#a0522d', shape: 'rect',    cost: 15, speed: 1.0, weight: 25, size: 26 },
+  { name: 'Kunefe',  emoji: '🟠', color: '#e17055', shape: 'circle',  cost: 30, speed: 1.2, weight: 15, size: 24 },
+  { name: 'Coffee',  emoji: '☕', color: '#2d1b0e', shape: 'circle',  cost: 50, speed: 1.8, weight: 5,  size: 20 }
+];
+
+// ── Game state ──
+var STATE_START = 0, STATE_PLAY = 1, STATE_OVER = 2;
+var state = STATE_START;
+
+var player = { x: 0, y: 0, w: 36, h: 44, vx: 0, color: '#00cec9', eyeColor: '#fff' };
+var treats = [];
+var particles = [];
+var bank = 1000;
+var startBank = 1000;
+var timeSurvived = 0;
+var score = 0;
+var shakeX = 0, shakeY = 0, shakeDur = 0;
+var flashAlpha = 0;
+var spawnTimer = 0;
+var difficultyTimer = 0;
+var spawnInterval = 1.2;  // seconds between spawns
+var speedMultiplier = 1.0;
+var maxTreats = 6;
+var bankAnimScale = 1.0;
+var bankFlashTimer = 0;
+
+// ── Input ──
+var keys = {};
+var touchX = null;
+var dragging = false;
+var playerSpeed = 280; // px/sec
+
+window.addEventListener('keydown', function(e){
+  keys[e.key] = true;
+  if(state === STATE_START){startGame();}
+  if(state === STATE_OVER && (e.key === ' ' || e.key === 'Enter')){startGame();}
+});
+window.addEventListener('keyup', function(e){ keys[e.key] = false; });
+
+canvas.addEventListener('touchstart', function(e){
+  e.preventDefault();
+  if(state === STATE_START){startGame(); return;}
+  if(state === STATE_OVER){
+    startGame(); return;
+  }
+  var t = e.touches[0];
+  touchX = t.clientX;
+  dragging = true;
+}, {passive: false});
+
+canvas.addEventListener('touchmove', function(e){
+  e.preventDefault();
+  if(!dragging) return;
+  var t = e.touches[0];
+  touchX = t.clientX;
+}, {passive: false});
+
+canvas.addEventListener('touchend', function(e){
+  e.preventDefault();
+  dragging = false;
+  touchX = null;
+}, {passive: false});
+
+canvas.addEventListener('mousedown', function(e){
+  if(state === STATE_START){startGame(); return;}
+  if(state === STATE_OVER){startGame(); return;}
+  touchX = e.clientX;
+  dragging = true;
+});
+canvas.addEventListener('mousemove', function(e){
+  if(!dragging) return;
+  touchX = e.clientX;
+});
+canvas.addEventListener('mouseup', function(){
+  dragging = false;
+  touchX = null;
+});
+
+// ── Pick treat type (weighted) ──
+function pickTreat(){
+  var totalWeight = 0;
+  for(var i = 0; i < TREATS.length; i++) totalWeight += TREATS[i].weight;
+  var r = Math.random() * totalWeight;
+  var cum = 0;
+  for(var i = 0; i < TREATS.length; i++){
+    cum += TREATS[i].weight;
+    if(r <= cum) return TREATS[i];
+  }
+  return TREATS[0];
+}
+
+// ── Spawn treat ──
+function spawnTreat(){
+  var type = pickTreat();
+  var s = type.size + Math.random() * 8;
+  treats.push({
+    x: s + Math.random() * (W - s * 2),
+    y: -s * 2,
+    size: s,
+    rotation: Math.random() * Math.PI * 2,
+    rotSpeed: (Math.random() - 0.5) * 4,
+    vy: (60 + Math.random() * 40) * type.speed * speedMultiplier,
+    type: type,
+    wobble: Math.random() * Math.PI * 2,
+    wobbleAmp: 15 + Math.random() * 20
+  });
+}
+
+// ── Particles ──
+function spawnParticles(x, y, color, count){
+  for(var i = 0; i < count; i++){
+    var angle = Math.random() * Math.PI * 2;
+    var speed = 60 + Math.random() * 180;
+    particles.push({
+      x: x, y: y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed - 40,
+      life: 0.5 + Math.random() * 0.5,
+      maxLife: 0.5 + Math.random() * 0.5,
+      size: 2 + Math.random() * 4,
+      color: color
+    });
+  }
+}
+
+// ── Start game ──
+function startGame(){
+  state = STATE_PLAY;
+  bank = startBank;
+  timeSurvived = 0;
+  score = 0;
+  treats = [];
+  particles = [];
+  spawnTimer = 0;
+  difficultyTimer = 0;
+  spawnInterval = 1.2;
+  speedMultiplier = 1.0;
+  maxTreats = 6;
+  shakeX = 0; shakeY = 0; shakeDur = 0;
+  flashAlpha = 0;
+  bankAnimScale = 1.0;
+  bankFlashTimer = 0;
+  player.x = W / 2;
+  player.y = H - 70;
+  player.vx = 0;
+}
+
+// ── Update ──
+function update(dt){
+  if(state !== STATE_PLAY) return;
+
+  // Difficulty ramp
+  difficultyTimer += dt;
+  if(difficultyTimer >= 10){
+    difficultyTimer -= 10;
+    speedMultiplier += 0.15;
+    spawnInterval = Math.max(0.25, spawnInterval - 0.1);
+    maxTreats = Math.min(20, maxTreats + 1);
+  }
+
+  // Player movement
+  var moveDir = 0;
+  if(keys['ArrowLeft'] || keys['a'] || keys['A']) moveDir = -1;
+  if(keys['ArrowRight'] || keys['d'] || keys['D']) moveDir = 1;
+
+  if(touchX !== null){
+    var diff = touchX - player.x;
+    if(Math.abs(diff) > 8){
+      moveDir = diff > 0 ? 1 : -1;
+    }
+  }
+
+  player.x += moveDir * playerSpeed * dt;
+  player.x = Math.max(player.w / 2, Math.min(W - player.w / 2, player.x));
+
+  // Spawn treats
+  spawnTimer += dt;
+  if(spawnTimer >= spawnInterval && treats.length < maxTreats){
+    spawnTimer = 0;
+    spawnTreat();
+  }
+
+  // Update treats
+  timeSurvived += dt;
+  for(var i = treats.length - 1; i >= 0; i--){
+    var t = treats[i];
+    t.y += t.vy * dt;
+    t.rotation += t.rotSpeed * dt;
+    t.wobble += dt * 2;
+    var wobbleX = Math.sin(t.wobble) * t.wobbleAmp * dt;
+    t.x += wobbleX;
+
+    // Collision with player (AABB)
+    var hw = t.size / 2;
+    var phw = player.w / 2;
+    var phh = player.h / 2;
+    if(t.x + hw > player.x - phw &&
+       t.x - hw < player.x + phw &&
+       t.y + hw > player.y - phh &&
+       t.y - hw < player.y + phh){
+      // Hit!
+      bank -= t.type.cost;
+      bankAnimScale = 1.4;
+      bankFlashTimer = 0.3;
+      flashAlpha = 0.5;
+      shakeDur = 0.2;
+      shakeX = (Math.random() - 0.5) * 12;
+      shakeY = (Math.random() - 0.5) * 8;
+      hitSound();
+      spawnParticles(t.x, t.y, t.type.color, 12);
+      // Spawn "$-XX" text particle
+      particles.push({
+        x: player.x, y: player.y - 30,
+        vx: (Math.random() - 0.5) * 30,
+        vy: -80,
+        life: 1.0, maxLife: 1.0,
+        size: 0, color: '#ff4444',
+        text: '-$' + t.type.cost
+      });
+      treats.splice(i, 1);
+      if(bank <= 0){
+        bank = 0;
+        state = STATE_OVER;
+        score = Math.floor(timeSurvived * 10 + bank);
+        gameOverSound();
+      }
+      continue;
+    }
+
+    // Off screen
+    if(t.y > H + t.size * 2){
+      treats.splice(i, 1);
+    }
+  }
+
+  // Update particles
+  for(var i = particles.length - 1; i >= 0; i--){
+    var p = particles[i];
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    if(!p.text) p.vy += 200 * dt; // gravity
+    p.life -= dt;
+    if(p.life <= 0) particles.splice(i, 1);
+  }
+
+  // Shake decay
+  if(shakeDur > 0){
+    shakeDur -= dt;
+    shakeX *= 0.9;
+    shakeY *= 0.9;
+    if(shakeDur <= 0){ shakeX = 0; shakeY = 0; }
+  }
+
+  // Flash decay
+  if(flashAlpha > 0) flashAlpha -= dt * 3;
+
+  // Bank anim decay
+  if(bankAnimScale > 1.0) bankAnimScale = Math.max(1.0, bankAnimScale - dt * 3);
+  if(bankFlashTimer > 0) bankFlashTimer -= dt;
+}
+
+// ── Draw helpers ──
+function drawRoundRect(x, y, w, h, r){
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+// ── Draw ──
+function draw(){
+  ctx.save();
+
+  // Apply screen shake
+  if(shakeDur > 0){
+    ctx.translate(shakeX, shakeY);
+  }
+
+  // Background
+  ctx.fillStyle = '#0f0f10';
+  ctx.fillRect(-20, -20, W + 40, H + 40);
+
+  // Subtle grid
+  ctx.strokeStyle = 'rgba(255,255,255,0.02)';
+  ctx.lineWidth = 1;
+  var gridSize = 50;
+  for(var gx = 0; gx < W; gx += gridSize){
+    ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, H); ctx.stroke();
+  }
+  for(var gy = 0; gy < H; gy += gridSize){
+    ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(W, gy); ctx.stroke();
+  }
+
+  if(state === STATE_START){
+    drawStartScreen();
+    ctx.restore();
+    return;
+  }
+
+  // Draw treats
+  for(var i = 0; i < treats.length; i++){
+    drawTreat(treats[i]);
+  }
+
+  // Draw player
+  drawPlayer();
+
+  // Draw particles
+  for(var i = 0; i < particles.length; i++){
+    var p = particles[i];
+    var alpha = Math.max(0, p.life / p.maxLife);
+    if(p.text){
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.font = 'bold 18px ui-monospace, monospace';
+      ctx.fillStyle = p.color;
+      ctx.textAlign = 'center';
+      ctx.fillText(p.text, p.x, p.y);
+      ctx.restore();
+    } else {
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size * alpha, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  // HUD
+  drawHUD();
+
+  // Hit flash (red border)
+  if(flashAlpha > 0){
+    ctx.save();
+    ctx.globalAlpha = flashAlpha;
+    ctx.strokeStyle = '#ff4444';
+    ctx.lineWidth = 8;
+    ctx.strokeRect(0, 0, W, H);
+    ctx.restore();
+  }
+
+  // Game over
+  if(state === STATE_OVER){
+    drawGameOver();
+  }
+
+  ctx.restore();
+}
+
+function drawTreat(t){
+  ctx.save();
+  ctx.translate(t.x, t.y);
+  ctx.rotate(t.rotation);
+
+  var s = t.size;
+  var half = s / 2;
+
+  // Shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  if(t.type.shape === 'circle'){
+    ctx.beginPath();
+    ctx.arc(3, 3, half, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.fillRect(-half + 3, -half + 3, s, s);
+  }
+
+  // Main shape
+  ctx.fillStyle = t.type.color;
+  ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+  ctx.lineWidth = 2;
+
+  if(t.type.shape === 'circle'){
+    ctx.beginPath();
+    ctx.arc(0, 0, half, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    // Highlight
+    ctx.fillStyle = 'rgba(255,255,255,0.25)';
+    ctx.beginPath();
+    ctx.arc(-half * 0.25, -half * 0.25, half * 0.4, 0, Math.PI * 2);
+    ctx.fill();
+  } else if(t.type.shape === 'diamond'){
+    ctx.beginPath();
+    ctx.moveTo(0, -half);
+    ctx.lineTo(half, 0);
+    ctx.lineTo(0, half);
+    ctx.lineTo(-half, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    // Highlight line
+    ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(-half * 0.3, -half * 0.5);
+    ctx.lineTo(half * 0.1, -half * 0.1);
+    ctx.stroke();
+  } else {
+    // rect (lokum / halva)
+    var rr = 4;
+    drawRoundRect(-half, -half, s, s, rr);
+    ctx.fill();
+    ctx.stroke();
+    // Cross-hatch pattern for lokum
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(-half + 4, -half + 4);
+    ctx.lineTo(half - 4, half - 4);
+    ctx.moveTo(half - 4, -half + 4);
+    ctx.lineTo(-half + 4, half - 4);
+    ctx.stroke();
+    // Powdered sugar dusting for lokum
+    if(t.type.name === 'Lokum'){
+      ctx.fillStyle = 'rgba(255,255,255,0.35)';
+      for(var d = 0; d < 5; d++){
+        var dx = (Math.sin(d * 1.7 + t.rotation) * half * 0.5);
+        var dy = (Math.cos(d * 2.3 + t.rotation) * half * 0.5);
+        ctx.beginPath();
+        ctx.arc(dx, dy, 1.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+
+  // Cost label
+  ctx.rotate(-t.rotation); // unrotate for text
+  ctx.font = 'bold ' + Math.max(9, s * 0.35) + 'px ui-monospace, monospace';
+  ctx.fillStyle = '#fff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('$' + t.type.cost, 0, 0);
+
+  ctx.restore();
+}
+
+function drawPlayer(){
+  var px = player.x;
+  var py = player.y;
+  var pw = player.w;
+  var ph = player.h;
+
+  ctx.save();
+  ctx.translate(px, py);
+
+  // Body glow
+  ctx.shadowColor = player.color;
+  ctx.shadowBlur = 15;
+
+  // Body
+  ctx.fillStyle = player.color;
+  drawRoundRect(-pw/2, -ph/2, pw, ph, 8);
+  ctx.fill();
+
+  ctx.shadowBlur = 0;
+
+  // Lighter top half
+  var grad = ctx.createLinearGradient(0, -ph/2, 0, ph/2);
+  grad.addColorStop(0, 'rgba(255,255,255,0.2)');
+  grad.addColorStop(0.5, 'rgba(255,255,255,0)');
+  grad.addColorStop(1, 'rgba(0,0,0,0.1)');
+  ctx.fillStyle = grad;
+  drawRoundRect(-pw/2, -ph/2, pw, ph, 8);
+  ctx.fill();
+
+  // Eyes
+  var eyeY = -ph * 0.12;
+  var eyeSpacing = pw * 0.22;
+  // White
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.ellipse(-eyeSpacing, eyeY, 5, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(eyeSpacing, eyeY, 5, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Pupils (look in movement direction)
+  var lookDir = 0;
+  if(keys['ArrowLeft'] || keys['a'] || keys['A']) lookDir = -1;
+  if(keys['ArrowRight'] || keys['d'] || keys['D']) lookDir = 1;
+  if(touchX !== null){
+    var diff = touchX - px;
+    if(Math.abs(diff) > 8) lookDir = diff > 0 ? 1 : -1;
+  }
+  ctx.fillStyle = '#1a1a2e';
+  ctx.beginPath();
+  ctx.arc(-eyeSpacing + lookDir * 2, eyeY + 1, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(eyeSpacing + lookDir * 2, eyeY + 1, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Worried mouth
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 2;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  var mouthY = ph * 0.18;
+  if(bankFlashTimer > 0){
+    // Open mouth (surprised)
+    ctx.beginPath();
+    ctx.arc(0, mouthY, 5, 0, Math.PI * 2);
+    ctx.stroke();
+  } else {
+    // Wavy worried mouth
+    ctx.beginPath();
+    ctx.moveTo(-6, mouthY);
+    ctx.quadraticCurveTo(-3, mouthY + 3, 0, mouthY);
+    ctx.quadraticCurveTo(3, mouthY - 3, 6, mouthY);
+    ctx.stroke();
+  }
+
+  // Feet
+  ctx.fillStyle = '#0984e3';
+  drawRoundRect(-pw/2 + 2, ph/2 - 6, 12, 6, 3);
+  ctx.fill();
+  drawRoundRect(pw/2 - 14, ph/2 - 6, 12, 6, 3);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawHUD(){
+  // Bank balance
+  ctx.save();
+  var bankX = W / 2;
+  var bankY = 38;
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  // Scale animation
+  ctx.translate(bankX, bankY);
+  ctx.scale(bankAnimScale, bankAnimScale);
+
+  // Bank label
+  ctx.font = '11px ui-monospace, monospace';
+  ctx.fillStyle = 'rgba(255,255,255,0.4)';
+  ctx.fillText('BANK BALANCE', 0, -16);
+
+  // Bank amount
+  var bankColor = bank > 500 ? '#00cec9' : bank > 200 ? '#fdcb6e' : '#ff4444';
+  if(bankFlashTimer > 0) bankColor = '#ff4444';
+  ctx.font = 'bold 28px ui-monospace, monospace';
+  ctx.fillStyle = bankColor;
+  ctx.fillText('$' + bank, 0, 4);
+
+  ctx.restore();
+
+  // Time survived
+  ctx.save();
+  ctx.textAlign = 'right';
+  ctx.font = '12px ui-monospace, monospace';
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.fillText('TIME', W - 14, 22);
+  ctx.font = 'bold 16px ui-monospace, monospace';
+  ctx.fillStyle = '#fff';
+  ctx.fillText(formatTime(timeSurvived), W - 14, 42);
+  ctx.restore();
+
+  // Speed level
+  ctx.save();
+  ctx.textAlign = 'left';
+  ctx.font = '12px ui-monospace, monospace';
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.fillText('SPEED', 14, 22);
+  ctx.font = 'bold 16px ui-monospace, monospace';
+  ctx.fillStyle = speedMultiplier > 2.0 ? '#ff4444' : speedMultiplier > 1.5 ? '#fdcb6e' : '#4ade80';
+  ctx.fillText('x' + speedMultiplier.toFixed(1), 14, 42);
+  ctx.restore();
+
+  // Bank bar
+  var barW = Math.min(220, W * 0.5);
+  var barH = 5;
+  var barX = (W - barW) / 2;
+  var barY = 56;
+  ctx.fillStyle = 'rgba(255,255,255,0.08)';
+  ctx.fillRect(barX, barY, barW, barH);
+  var fill = Math.max(0, bank / startBank);
+  var barColor = fill > 0.5 ? '#00cec9' : fill > 0.2 ? '#fdcb6e' : '#ff4444';
+  ctx.fillStyle = barColor;
+  ctx.fillRect(barX, barY, barW * fill, barH);
+}
+
+function drawStartScreen(){
+  // Title
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  var cx = W / 2;
+  var cy = H * 0.35;
+
+  // Floating treats in background
+  var now = Date.now() / 1000;
+  for(var i = 0; i < 8; i++){
+    var tx = W * 0.15 + (i / 8) * W * 0.7 + Math.sin(now + i * 1.3) * 30;
+    var ty = H * 0.15 + Math.sin(now * 0.7 + i * 2.1) * H * 0.25;
+    var ti = i % TREATS.length;
+    ctx.save();
+    ctx.globalAlpha = 0.15;
+    ctx.translate(tx, ty);
+    ctx.rotate(now * 0.5 + i);
+    var s = 30;
+    ctx.fillStyle = TREATS[ti].color;
+    if(TREATS[ti].shape === 'circle'){
+      ctx.beginPath(); ctx.arc(0, 0, s/2, 0, Math.PI*2); ctx.fill();
+    } else if(TREATS[ti].shape === 'diamond'){
+      ctx.beginPath();
+      ctx.moveTo(0,-s/2); ctx.lineTo(s/2,0); ctx.lineTo(0,s/2); ctx.lineTo(-s/2,0);
+      ctx.closePath(); ctx.fill();
+    } else {
+      ctx.fillRect(-s/2,-s/2,s,s);
+    }
+    ctx.restore();
+  }
+
+  // Title glow
+  ctx.shadowColor = '#e84393';
+  ctx.shadowBlur = 30;
+  ctx.font = 'bold ' + Math.min(42, W * 0.09) + 'px ui-monospace, monospace';
+  ctx.fillStyle = '#e84393';
+  ctx.fillText('TURKISH', cx, cy - 24);
+  ctx.fillStyle = '#fdcb6e';
+  ctx.shadowColor = '#fdcb6e';
+  ctx.fillText('DELIGHT', cx, cy + 24);
+  ctx.shadowBlur = 0;
+
+  // Subtitle
+  ctx.font = '14px ui-monospace, monospace';
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.fillText('dodge the treats, save your money', cx, cy + 65);
+
+  // Treat legend
+  var legendY = cy + 110;
+  ctx.font = '11px ui-monospace, monospace';
+  for(var i = 0; i < TREATS.length; i++){
+    var t = TREATS[i];
+    var ly = legendY + i * 22;
+    ctx.fillStyle = t.color;
+    if(t.shape === 'circle'){
+      ctx.beginPath(); ctx.arc(cx - 60, ly, 6, 0, Math.PI*2); ctx.fill();
+    } else if(t.shape === 'diamond'){
+      ctx.save(); ctx.translate(cx - 60, ly); ctx.rotate(Math.PI/4);
+      ctx.fillRect(-5,-5,10,10); ctx.restore();
+    } else {
+      ctx.fillRect(cx - 66, ly - 5, 10, 10);
+    }
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.textAlign = 'left';
+    ctx.fillText(t.name, cx - 44, ly + 4);
+    ctx.textAlign = 'right';
+    ctx.fillStyle = t.cost >= 40 ? '#ff4444' : '#fdcb6e';
+    ctx.fillText('-$' + t.cost, cx + 70, ly + 4);
+    ctx.textAlign = 'center';
+  }
+
+  // Start prompt
+  var pulse = 0.5 + Math.sin(now * 3) * 0.3;
+  ctx.globalAlpha = pulse + 0.2;
+  ctx.font = 'bold 16px ui-monospace, monospace';
+  ctx.fillStyle = '#fff';
+  ctx.fillText('TAP TO START', cx, H * 0.85);
+  ctx.globalAlpha = 1;
+
+  // Controls hint
+  ctx.font = '11px ui-monospace, monospace';
+  ctx.fillStyle = 'rgba(255,255,255,0.3)';
+  ctx.fillText('A/D or Arrow keys  •  Touch/drag on mobile', cx, H * 0.92);
+
+  ctx.restore();
+}
+
+function drawGameOver(){
+  ctx.save();
+
+  // Overlay
+  ctx.fillStyle = 'rgba(15,15,16,0.85)';
+  ctx.fillRect(-20, -20, W + 40, H + 40);
+
+  var cx = W / 2;
+  var cy = H * 0.38;
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  // Title
+  ctx.font = 'bold ' + Math.min(36, W * 0.08) + 'px ui-monospace, monospace';
+  ctx.fillStyle = '#ff4444';
+  ctx.shadowColor = '#ff4444';
+  ctx.shadowBlur = 20;
+  ctx.fillText('BANKRUPT!', cx, cy);
+  ctx.shadowBlur = 0;
+
+  // Stats
+  ctx.font = '14px ui-monospace, monospace';
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.fillText('Time Survived', cx, cy + 50);
+  ctx.font = 'bold 22px ui-monospace, monospace';
+  ctx.fillStyle = '#fff';
+  ctx.fillText(formatTime(timeSurvived), cx, cy + 76);
+
+  ctx.font = '14px ui-monospace, monospace';
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.fillText('Final Score', cx, cy + 115);
+  ctx.font = 'bold 26px ui-monospace, monospace';
+  ctx.fillStyle = '#fdcb6e';
+  ctx.fillText(score, cx, cy + 145);
+
+  ctx.font = '11px ui-monospace, monospace';
+  ctx.fillStyle = 'rgba(255,255,255,0.35)';
+  ctx.fillText('(time x 10 + remaining bank)', cx, cy + 170);
+
+  // Speed reached
+  ctx.font = '13px ui-monospace, monospace';
+  ctx.fillStyle = 'rgba(255,255,255,0.4)';
+  ctx.fillText('Max Speed: x' + speedMultiplier.toFixed(1), cx, cy + 200);
+
+  // Restart
+  var now = Date.now() / 1000;
+  var pulse = 0.6 + Math.sin(now * 3) * 0.25;
+  ctx.globalAlpha = pulse + 0.15;
+  ctx.font = 'bold 16px ui-monospace, monospace';
+  ctx.fillStyle = '#00cec9';
+  ctx.fillText('TAP TO PLAY AGAIN', cx, H * 0.82);
+  ctx.globalAlpha = 1;
+
+  ctx.restore();
+}
+
+function formatTime(t){
+  var mins = Math.floor(t / 60);
+  var secs = Math.floor(t % 60);
+  var ms = Math.floor((t % 1) * 10);
+  return (mins > 0 ? mins + ':' : '') +
+         (mins > 0 && secs < 10 ? '0' : '') + secs + '.' + ms + 's';
+}
+
+// ── Game loop ──
+var lastTime = 0;
+function loop(timestamp){
+  var dt = (timestamp - lastTime) / 1000;
+  if(dt > 0.1) dt = 0.1; // cap delta
+  lastTime = timestamp;
+
+  update(dt);
+  draw();
+  requestAnimationFrame(loop);
+}
+
+requestAnimationFrame(function(t){
+  lastTime = t;
+  player.x = W / 2;
+  player.y = H - 70;
+  requestAnimationFrame(loop);
+});
+
+})();
+</script>
+</body>
+</html>
