@@ -1,0 +1,997 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<title>Sprout 2.0 IDE</title>
+<style>
+:root{
+  --bg:#0a0a0b;--bg2:#111113;--bg3:#161618;
+  --border:#222225;--text:#e8e8ea;--dim:#6e6e73;
+  --accent:#4ade80;--accent-dim:rgba(74,222,128,0.10);
+  --orange:#ff6b35;--gold:#f7c948;--purple:#a78bfa;
+  --blue:#38bdf8;--red:#ef4444;--cyan:#22d3ee;--pink:#f472b6;
+  --mono:ui-monospace,'SF Mono','Cascadia Mono','Fira Code',Menlo,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;touch-action:manipulation}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);display:flex;flex-direction:column}
+
+.bar{
+  background:var(--bg2);border-bottom:1px solid var(--border);
+  padding:0 8px;display:flex;align-items:center;gap:5px;
+  height:42px;flex-shrink:0;overflow-x:auto;
+  -webkit-overflow-scrolling:touch;scrollbar-width:none;
+}
+.bar::-webkit-scrollbar{display:none}
+.bar .brand{font-size:14px;font-weight:800;color:var(--accent);text-decoration:none;white-space:nowrap;flex-shrink:0}
+.bar .ver{font-size:10px;color:var(--cyan);font-weight:700;margin-left:-2px;flex-shrink:0}
+.bar select{
+  background:var(--bg3);color:var(--text);border:1px solid var(--border);
+  border-radius:6px;padding:4px 22px 4px 7px;font-size:11px;
+  font-family:var(--sans);cursor:pointer;outline:none;
+  appearance:none;-webkit-appearance:none;flex-shrink:0;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%236e6e73'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 5px center;max-width:120px;
+}
+.bar .spacer{flex:1;min-width:2px}
+.bar button{border:none;border-radius:6px;padding:4px 9px;font-size:11px;font-weight:700;cursor:pointer;font-family:var(--sans);flex-shrink:0;white-space:nowrap}
+.btn-run{background:var(--accent);color:#111}
+.btn-js{background:var(--gold);color:#111}
+.btn-clr{background:var(--bg3);color:var(--dim);border:1px solid var(--border) !important}
+.btn-share{background:var(--blue);color:#111}
+
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0}
+.editor-wrap{flex:1;min-height:0;position:relative;border-bottom:1px solid var(--border)}
+#editor{position:absolute;inset:0}
+
+.resize-handle{
+  height:14px;background:var(--bg2);border-top:1px solid var(--border);
+  border-bottom:1px solid var(--border);cursor:row-resize;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;touch-action:none;
+}
+.resize-handle::after{content:'';width:36px;height:3px;border-radius:2px;background:#444}
+
+.output-wrap{
+  flex:0 0 auto;height:38vh;min-height:100px;max-height:60vh;
+  display:flex;flex-direction:column;background:var(--bg);
+}
+.output-bar{
+  padding:3px 8px;font-size:11px;font-weight:700;text-transform:uppercase;
+  letter-spacing:1px;color:var(--dim);border-bottom:1px solid var(--border);
+  background:var(--bg2);flex-shrink:0;display:flex;align-items:center;gap:6px;
+}
+.output-bar .tab{cursor:pointer;padding:3px 8px;border-radius:5px;transition:all .15s}
+.output-bar .tab:hover{color:var(--text)}
+.output-bar .tab.active{color:var(--accent);background:var(--accent-dim)}
+.output-bar .spacer{flex:1}
+.output-bar .time{font-weight:400;font-size:10px;color:var(--dim)}
+.expand-btn{background:none;border:none;color:var(--dim);cursor:pointer;font-size:14px;padding:2px 6px;border-radius:4px;transition:all .15s;line-height:1}
+.expand-btn:hover{color:var(--text);background:rgba(255,255,255,0.05)}
+.output-wrap.expanded{position:fixed;inset:0;z-index:200;height:auto!important;max-height:none!important;min-height:auto!important;border-radius:0}
+.output-wrap.expanded .expand-btn{font-size:16px}
+.out{
+  flex:1;overflow-y:auto;padding:8px 10px;
+  font-family:var(--mono);font-size:13px;line-height:1.5;
+  white-space:pre-wrap;word-break:break-all;-webkit-overflow-scrolling:touch;
+}
+.out-line{color:var(--accent)}.out-error{color:var(--red)}.out-info{color:var(--dim);font-style:italic}
+#domOut{flex:1;overflow:auto;background:#fff;color:#111;font-family:var(--sans);font-size:14px;padding:0;-webkit-overflow-scrolling:touch}
+#domOut iframe{width:100%;height:100%;border:none;background:#fff}
+.js-kw{color:var(--purple)}.js-str{color:var(--gold)}.js-num{color:var(--cyan)}
+.js-op{color:var(--orange)}.js-cmt{color:#555;font-style:italic}
+.js-fn{color:var(--blue)}.js-bool{color:var(--orange)}.js-rt{color:var(--pink)}
+
+.status{
+  background:var(--bg2);border-top:1px solid var(--border);
+  padding:0 8px;height:20px;display:flex;align-items:center;gap:10px;
+  font-size:10px;color:var(--dim);flex-shrink:0;
+}
+.status .s-accent{color:var(--accent)}
+
+/* Ace autocomplete theme overrides */
+.ace_editor.ace_autocomplete{background:var(--bg2)!important;border:1px solid var(--border)!important;color:var(--text)!important;font-size:12px!important}
+.ace_editor.ace_autocomplete .ace_marker-layer .ace_active-line{background:var(--accent-dim)!important}
+.ace_editor.ace_autocomplete .ace_completion-highlight{color:var(--accent)!important}
+.ace_editor.ace_autocomplete .ace_line{color:var(--text)!important}
+
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#333;border-radius:2px}
+
+@media(min-width:768px){
+  .main{flex-direction:row}
+  .editor-wrap{border-bottom:none;border-right:1px solid var(--border);flex:6}
+  .resize-handle{display:none}
+  .output-wrap{flex:4;height:auto;min-height:auto;max-height:none}
+  .bar{height:46px;padding:0 12px;gap:8px}
+  .bar button{padding:5px 12px;font-size:12px}
+}
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <a href="sprout.html" class="brand">Sprout</a>
+  <span class="ver">2.0</span>
+  <select id="examples"><option value="">examples</option></select>
+  <span class="spacer"></span>
+  <button class="btn-js" id="jsBtn">JS</button>
+  <button class="btn-share" id="shareBtn">Share</button>
+  <button class="btn-clr" id="clearBtn">Clear</button>
+  <button class="btn-run" id="runBtn">&#9654; Run</button>
+</div>
+
+<div class="main">
+  <div class="editor-wrap"><div id="editor"></div></div>
+  <div class="resize-handle" id="rh"></div>
+  <div class="output-wrap" id="ow">
+    <div class="output-bar">
+      <span class="tab active" data-tab="output">Output</span>
+      <span class="tab" data-tab="dom">DOM</span>
+      <span class="tab" data-tab="js">JS</span>
+      <span class="spacer"></span>
+      <span class="time" id="runTime"></span>
+      <button class="expand-btn" id="expandBtn" title="Expand/collapse">&#x26F6;</button>
+    </div>
+    <div class="out" id="output"><span class="out-info">Tap Run or Cmd+Enter.</span></div>
+    <div id="domOut" style="display:none"><iframe id="domFrame" sandbox="allow-same-origin"></iframe></div>
+    <div class="out" id="jsOut" style="display:none"></div>
+  </div>
+</div>
+
+<div class="status">
+  <span id="pos">Ln 1, Col 1</span>
+  <span class="s-accent">Sprout 2.0</span>
+</div>
+
+<!-- Ace Editor -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.6/ace.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.6/ext-language_tools.min.js"></script>
+
+<!-- Sprout 2.0 Compiler -->
+<script>
+var SproutToJS=(function(){"use strict";
+
+function tokenize(src){
+  const toks=[];let i=0;const n=src.length;
+  const ESC={n:"\n",t:"\t","\\":"\\",'"':'"'};
+  while(i<n){
+    const c=src[i];
+    if(c===" "||c==="\t"||c==="\r"){i++;continue}
+    if(c==="\n"){toks.push(",");i++;continue}
+    // -- comments (Sprout 2.0)
+    if(c==="-"&&i+1<n&&src[i+1]==="-"){i+=2;while(i<n&&src[i]!=="\n")i++;continue}
+    // Legacy ' comments (backward compat)
+    if(c==="'"){i++;while(i<n&&src[i]!=="'")i++;i++;continue}
+    if(c==='"'){let j=i+1;const buf=[];while(j<n&&src[j]!=='"'){if(src[j]==="\\"&&j+1<n){const x=src[j+1];buf.push(ESC[x]!==undefined?ESC[x]:x);j+=2}else{buf.push(src[j]);j++}}toks.push({k:"str",v:buf.join("")});i=j+1;continue}
+    if("[](){}".includes(c)){toks.push(c);i++;continue}
+    if(",|".includes(c)){toks.push(c);i++;continue}
+    // := mutation token (Sprout 2.0)
+    if(c===":"&&i+1<n&&src[i+1]==="="){toks.push(":=");i+=2;continue}
+    if(c===":"){toks.push(c);i++;continue}
+    let j=i;
+    while(j<n&&!" \t\r\n".includes(src[j])&&!'[](){}",|:'.includes(src[j])&&!(src[j]==="'"&&j>i)&&!(src[j]==="-"&&j+1<n&&src[j+1]==="-"))j++;
+    if(j===i){j=i+1}
+    toks.push({k:"word",v:src.slice(i,j)});i=j;
+  }
+  return toks;
+}
+
+const Lit=v=>({t:"Lit",v}),Name=n=>({t:"Name",n}),Send=(tgt,m)=>({t:"Send",tgt,m}),Block=()=>({t:"Block",params:[],body:[],group:false}),SetN=(key,val,mut)=>({t:"Set",key,val,mut:!!mut});
+const isWord=x=>x&&typeof x==="object"&&x.k==="word",isStr=x=>x&&typeof x==="object"&&x.k==="str";
+const NUM=/^-?\d+(\.\d+)?$/;
+
+class Parser{
+  constructor(t){this.t=t;this.i=0}
+  pk(){return this.i<this.t.length?this.t[this.i]:null}
+  nx(){return this.t[this.i++]}
+  program(){return this.seq(null)}
+  seq(end){
+    const items=[];
+    while(true){
+      const t=this.pk();
+      if(t===null||t===end)break;
+      if(t===","){this.nx();continue}
+      items.push(this.exprOrSet());
+    }
+    return items;
+  }
+  exprOrSet(){
+    const left=this.chain();
+    if(this.pk()===":"){this.nx();return SetN(left,this.chain(),false)}
+    if(this.pk()===":="){this.nx();return SetN(left,this.chain(),true)}
+    return left;
+  }
+  chain(){
+    let node=this.primary();
+    while(true){
+      const t=this.pk();
+      if(t===null||t===","||t===":"||t===":="||t==="|"||t==="]"||t===")"||t==="}")break;
+      node=Send(node,this.primary());
+    }
+    return node;
+  }
+  primary(){
+    const t=this.nx();
+    if(t==="[")return this.block("]");
+    if(t==="("){const b=this.block(")");b.group=true;return b}
+    if(isStr(t))return Lit(t.v);
+    if(isWord(t)){
+      if(NUM.test(t.v))return Lit(parseFloat(t.v));
+      return Name(t.v);
+    }
+    throw new Error("unexpected: "+JSON.stringify(t));
+  }
+  block(close){
+    const b=Block();
+    let depth=0,j=this.i,hasBar=false;
+    while(j<this.t.length){
+      const x=this.t[j];
+      if(typeof x==="string"){
+        if(x==="["||x==="(")depth++;
+        else if(x==="]"||x===")"){if(depth===0&&x===close)break;depth--}
+        else if(x==="|"&&depth===0){hasBar=true;break}
+      }
+      j++;
+    }
+    if(hasBar){
+      while(true){
+        const x=this.pk();
+        if(x==="|"){this.nx();break}
+        if(x===","){this.nx();continue}
+        if(isWord(x)){b.params.push(x.v);this.nx()}
+        else this.nx();
+      }
+    }
+    b.body=this.seq(close);
+    if(this.pk()===close)this.nx();
+    return b;
+  }
+}
+
+const OPS={"+":"+","-":"-","*":"*","/":"/","<":"<",">":">","%":"%","<=":"<=",">=":">=","!=":"!=="},CMP=new Set(["<",">","<=",">=","!="]);
+
+function mangle(name){
+  if(name==="_"||name==="@")return"IT";
+  let out=[];
+  for(const ch of name){
+    if(/[A-Za-z0-9_]/.test(ch))out.push(ch);
+    else out.push("_"+ch.charCodeAt(0).toString(16));
+  }
+  let s=out.join("");
+  if(s&&/[0-9]/.test(s[0]))s="_"+s;
+  return"v_"+s;
+}
+
+function strlit(s){
+  let out="'";
+  for(const ch of s){
+    if(ch==="\\")out+="\\\\";else if(ch==="'")out+="\\'";else if(ch==="\n")out+="\\n";else if(ch==="\t")out+="\\t";else if(ch==="\r")out+="\\r";else out+=ch;
+  }
+  return out+"'";
+}
+
+const FLAGNAMES=new Set(["pure","memoize","immutable","shared","lazy"]),
+      BUILTIN=new Set(["print","length","first","second","append","each","collect","fold","times","while","sqrt","floor","str","last","round","ceil","abs","sin","cos","tan","log"]),
+      OPSET=new Set([...Object.keys(OPS),"=","++"]);
+
+class Gen{
+  constructor(){this._self=null;this._declared=new Set();this._lists=new Set();this._maps=new Set();this._fns=new Set();this._dense=new Set();this._arity=new Map();this._mayPromote=new Set()}
+
+  scanMayPromote(node){
+    if(!node||typeof node!=="object")return;
+    if(node.t==="Set"&&node.key&&node.key.t==="Send"&&node.key.tgt&&node.key.tgt.t==="Name"&&this.litStringKey(node.key.m))this._mayPromote.add(node.key.tgt.n);
+    for(const k in node){const v=node[k];if(Array.isArray(v))v.forEach(x=>this.scanMayPromote(x));else if(v&&typeof v==="object"&&v.t)this.scanMayPromote(v)}
+  }
+
+  genProgram(items){
+    items.forEach(it=>this.scanMayPromote(it));
+    return items.map(it=>this.genStmt(it)).filter(p=>p).join(";\n");
+  }
+
+  peelFlags(node){
+    const flags=new Set();
+    while(node.t==="Send"&&node.m.t==="Name"&&FLAGNAMES.has(node.m.n)){flags.add(node.m.n);node=node.tgt}
+    return[node,flags];
+  }
+
+  producesList(node){
+    if(node.t==="Block"&&!node.group&&this.isListLiteral(node))return true;
+    if(node.t==="Send"){
+      if(node.tgt.t==="Name"&&(node.tgt.n==="range"||node.tgt.n==="list"))return true;
+      const inner=node.tgt;
+      if(inner.t==="Send"&&inner.m.t==="Name"&&(inner.m.n==="collect"||inner.m.n==="append"))return true;
+    }
+    return false;
+  }
+
+  litStringKey(node){
+    while(node&&node.t==="Block"&&node.group&&node.body.length===1)node=node.body[0];
+    return(node&&node.t==="Lit"&&typeof node.v==="string")?node:null;
+  }
+
+  genStore(k,valnode){
+    const tgtNode=k.tgt,idx=this.genExpr(k.m),val=this.genExpr(valnode);
+    if(tgtNode.t==="Name"&&this._maps.has(tgtNode.n))return`${mangle(tgtNode.n)}.set(${idx},${val})`;
+    if(tgtNode.t==="Name"&&(this._dense.has(tgtNode.n)||this._lists.has(tgtNode.n))){
+      if(this.litStringKey(k.m))return`${mangle(tgtNode.n)} = STORE(${mangle(tgtNode.n)},${idx},${val})`;
+      if(this._mayPromote.has(tgtNode.n))return`${mangle(tgtNode.n)} = STORE(${mangle(tgtNode.n)},${idx},${val})`;
+      return`(${mangle(tgtNode.n)}[${idx}]=${val})`;
+    }
+    return`STORE(${this.genExpr(tgtNode)},${idx},${val})`;
+  }
+
+  genStmt(node){
+    if(node.t==="Set"){
+      const key=node.key.t==="Name"?node.key.n:null;
+      if(key===null){
+        if(node.key.t==="Send")return this.genStore(node.key,node.val);
+        throw new Error("unsupported set key");
+      }
+      // := mutation: always reassign, never declare
+      if(node.mut){
+        const expr=this.genExpr(node.val);
+        return`${mangle(key)} = ${expr}`;
+      }
+      const[core,flags]=this.peelFlags(node.val);
+      const isFnBlock=core.t==="Block"&&!core.group&&!this.isListLiteral(core)&&!flags.has("memoize")&&!flags.has("pure");
+      if(isFnBlock){this._fns.add(key);this._arity.set(key,core.params.length?core.params.length:(this.usesImplicit(core.body)?1:0))}
+      let expr;
+      if(core.t==="Block"&&!core.group&&!flags.has("memoize")&&!flags.has("pure")){
+        if(this.isListLiteral(core))expr=this.genList(core);
+        else{const params=core.params.length?core.params:(this.usesImplicit(core.body)?["_"]:[]);expr=this.genBlockAsLoop(core,key,params)}
+      }else{
+        expr=this.genExpr(core);
+        if(flags.has("memoize")||flags.has("pure"))expr=`MEMO(${expr})`;
+      }
+      if(this.producesList(core)||(core.t==="Block"&&this.isListLiteral(core)))this._lists.add(key);else if(this._lists.has(key))this._lists.delete(key);
+      if(core.t==="Send"&&core.tgt.t==="Name"&&(core.tgt.n==="list"||core.tgt.n==="range"))this._dense.add(key);else if(this._dense.has(key))this._dense.delete(key);
+      if(core.t==="Name"&&core.n==="map")this._maps.add(key);else if(this._maps.has(key))this._maps.delete(key);
+      if(!isFnBlock){this._fns.delete(key);this._arity.delete(key)}
+      if(this._declared.has(key))return`${mangle(key)} = ${expr}`;
+      this._declared.add(key);
+      return`let ${mangle(key)} = ${expr}`;
+    }
+    const stmt=this.matchLoopVerbStmt(node);
+    if(stmt!==null)return stmt;
+    return this.genExpr(node);
+  }
+
+  matchLoopVerbStmt(node){
+    if(node.t==="Send"&&node.m.t==="Block"&&!node.m.group){
+      const inner=node.tgt;
+      if(inner.t==="Send"&&inner.m.t==="Block"&&!inner.m.group&&inner.tgt.t==="Name"&&inner.tgt.n==="while"){
+        const condblk=inner.m,bodyblk=node.m;
+        let raw=null;
+        if(condblk.body.length===1&&condblk.body[0].t!=="Set")raw=this.genRawBool(condblk.body[0]);
+        const cond=raw!==null?raw:`(${this.genBlockInlineExpr(condblk)})===TRUE`;
+        return`while(${cond}){${this.genBlockInlineStmts(bodyblk)}}`;
+      }
+      if(inner.t==="Send"&&inner.m.t==="Name"&&inner.m.n==="times"){
+        const saved=new Set(this._declared);
+        this._declared.add("_");this._declared.add("@");
+        const body=this.genBlockInlineStmts(node.m);
+        this._declared=saved;
+        return`for(let __i=0;__i<(${this.genExpr(inner.tgt)});__i++){let IT=__i+1;${body}}`;
+      }
+      if(inner.t==="Send"&&inner.m.t==="Name"&&inner.m.n==="each"){
+        const xs=this.genExpr(inner.tgt);
+        const saved=new Set(this._declared);
+        this._declared.add("_");this._declared.add("@");
+        const body=this.genBlockInlineStmts(node.m);
+        this._declared=saved;
+        return`{const __l=${xs};for(let __k=1;__k<__l.length;__k++){let IT=__l[__k];${body}}}`;
+      }
+    }
+    return null;
+  }
+
+  genBlockAsLoop(blk,selfname,params){
+    const ps=params.map(mangle).join(",");
+    this._self=[selfname,params];
+    const saved=new Set(this._declared);
+    for(const p of params)this._declared.add(p);
+    const body=this.genBlockBody(blk.body);
+    this._declared=saved;
+    this._self=null;
+    const fn=`((${ps})=>{while(true){${body}}})`;
+    return params.length>1?`AR(${fn},${params.length})`:fn;
+  }
+
+  isListLiteral(node){
+    if(node.t!=="Block"||node.group||node.params.length)return false;
+    if(this.usesImplicit(node.body))return false;
+    if(node.body.some(e=>e.t==="Set"))return false;
+    return node.body.length===0||node.body.length>=2;
+  }
+
+  genList(node){
+    if(node.body.length===0)return`[0]`;
+    return`[0,${node.body.map(e=>this.genExpr(e)).join(",")}]`;
+  }
+
+  genExpr(node,tail=false){
+    if(node.t==="Lit")return typeof node.v==="number"?String(node.v):strlit(node.v);
+    if(node.t==="Name"){
+      const n=node.n;
+      if(n==="true")return"TRUE";
+      if(n==="false")return"FALSE";
+      if(n==="none")return"NONE";
+      if(n==="map")return"newmap()";
+      if(n==="random")return"Math.random()";
+      if(n==="time")return"Date.now()";
+      if(n==="pi")return"Math.PI";
+      return mangle(n);
+    }
+    if(node.t==="Block"){
+      if(node.group){
+        if(node.body.length===1&&node.body[0].t!=="Set")return this.genExpr(node.body[0],tail);
+        const saved=this._self;this._self=null;
+        const body=this.genBlockBody(node.body);
+        this._self=saved;
+        return`(()=>{${body}})()`;
+      }
+      if(this.isListLiteral(node))return this.genList(node);
+      const params=node.params.length?node.params:(this.usesImplicit(node.body)?["_"]:[]);
+      const saved=this._self;this._self=null;
+      const savedd=new Set(this._declared);
+      for(const p of params)this._declared.add(p);
+      const body=this.genBlockBody(node.body);
+      this._declared=savedd;this._self=saved;
+      const fn=`((${params.map(mangle).join(",")})=>{${body}})`;
+      return params.length>1?`AR(${fn},${params.length})`:fn;
+    }
+    if(node.t==="Send")return this.genSend(node,tail);
+    throw new Error("node "+JSON.stringify(node));
+  }
+
+  // Check for _ or @ (backward compat) as implicit argument
+  usesImplicit(body){
+    const chk=n=>{
+      if(n.t==="Name")return n.n==="_"||n.n==="@";
+      if(n.t==="Send")return chk(n.tgt)||chk(n.m);
+      if(n.t==="Set")return chk(n.val);
+      if(n.t==="Block"&&n.group)return n.body.some(chk);
+      return false;
+    };
+    return body.some(chk);
+  }
+
+  genRawBool(node){
+    while(node.t==="Block"&&node.group&&node.body.length===1)node=node.body[0];
+    if(node.t==="Send"&&node.tgt.t==="Send"&&node.tgt.m.t==="Name"){
+      const opn=node.tgt.m.n;
+      if(CMP.has(opn))return`(${this.genExpr(node.tgt.tgt)} ${OPS[opn]} ${this.genExpr(node.m)})`;
+      if(opn==="=")return`REQ(${this.genExpr(node.tgt.tgt)},${this.genExpr(node.m)})`;
+    }
+    return null;
+  }
+
+  genCallback(blk){
+    if(!(blk.t==="Block"&&!blk.group))return this.genExpr(blk);
+    const params=blk.params.length?blk.params:(this.usesImplicit(blk.body)?["_"]:[]);
+    const saved=this._self;this._self=null;
+    const parts=[];
+    for(let i=0;i<blk.body.length;i++){
+      const it=blk.body[i],last=i===blk.body.length-1;
+      if(it.t==="Set"){
+        const key=it.key.t==="Name"?it.key.n:null;
+        parts.push(`let ${mangle(key)} = ${this.genExpr(it.val)};`);
+        if(last)parts.push(`return ${mangle(key)};`);
+      }else{
+        parts.push((last?"return ":"")+this.genExpr(it,false)+";");
+      }
+    }
+    this._self=saved;
+    const fn=`((${params.map(mangle).join(",")})=>{${parts.length?parts.join(""):"return NONE;"}})`;
+    return params.length>1?`AR(${fn},${params.length})`:fn;
+  }
+
+  genBlockBody(body){
+    if(!body.length)return"return NONE;";
+    const savedDecl=new Set(this._declared);
+    const parts=[];
+    for(let i=0;i<body.length;i++){
+      const it=body[i],last=i===body.length-1;
+      if(it.t==="Set"){
+        const key=it.key.t==="Name"?it.key.n:null;
+        if(key!==null){
+          // := mutation always reassigns
+          if(it.mut){
+            parts.push(`${mangle(key)} = ${this.genExpr(it.val,false)};`);
+          } else if(this._declared.has(key)){
+            parts.push(`${mangle(key)} = ${this.genExpr(it.val,false)};`);
+          } else{
+            this._declared.add(key);
+            parts.push(`let ${mangle(key)} = ${this.genExpr(it.val,false)};`);
+          }
+          if(last)parts.push(`return ${mangle(key)};`);
+        }else if(it.key.t==="Send"){
+          parts.push(this.genStore(it.key,it.val)+";");
+          if(last)parts.push("return NONE;");
+        }
+      }else{
+        if(last)parts.push(this.genTailStmt(it));
+        else parts.push(this.genExpr(it,false)+";");
+      }
+    }
+    this._declared=savedDecl;
+    return parts.join("");
+  }
+
+  genTailStmt(node){
+    while(node.t==="Block"&&node.group&&node.body.length===1&&node.body[0].t!=="Set")node=node.body[0];
+    if(node.t==="Send"&&node.m.t==="Block"&&!node.m.group&&!node.m.params.length&&node.m.body.length===2&&this._self!==null){
+      const raw=this.genRawBool(node.tgt);
+      const cond=raw!==null?raw:`(${this.genExpr(node.tgt)})===TRUE`;
+      return`if(${cond}){${this.genTailStmtElem(node.m.body[0])}}else{${this.genTailStmtElem(node.m.body[1])}}`;
+    }
+    const e=this.genExpr(node,true);
+    if(e.startsWith("__LOOP__"))return e.slice(8)+"continue;";
+    return`return ${e};`;
+  }
+
+  genTailStmtElem(e){if(e.t==="Set")e=e.val;return this.genTailStmt(e)}
+
+  callSpine(node){
+    const spine=[];let head=node;
+    while(head.t==="Send"){
+      const m=head.m;
+      if(m.t==="Name"&&(OPSET.has(m.n)||BUILTIN.has(m.n)))return null;
+      spine.push(m);head=head.tgt;
+    }
+    if(spine.length>=2&&head.t==="Name"&&!["true","false","none"].includes(head.n)){
+      spine.reverse();return[head,spine];
+    }
+    return null;
+  }
+
+  matchLoopVerb(node){
+    if(node.t==="Send"&&node.m.t==="Block"&&!node.m.group){
+      const inner=node.tgt;
+      if(inner.t==="Send"&&inner.m.t==="Block"&&!inner.m.group&&inner.tgt.t==="Name"&&inner.tgt.n==="while"){
+        const condblk=inner.m,bodyblk=node.m;
+        let raw=null;
+        if(condblk.body.length===1&&condblk.body[0].t!=="Set")raw=this.genRawBool(condblk.body[0]);
+        return`(()=>{while(${raw!==null?raw:`(${this.genBlockInlineExpr(condblk)})===TRUE`}){${this.genBlockInlineStmts(bodyblk)}}return NONE;})()`;
+      }
+      if(inner.t==="Send"&&inner.m.t==="Name"&&inner.m.n==="times"){
+        const saved=new Set(this._declared);
+        this._declared.add("_");this._declared.add("@");
+        const body=this.genBlockInlineStmts(node.m);
+        this._declared=saved;
+        return`(()=>{for(let __i=0;__i<(${this.genExpr(inner.tgt)});__i++){let IT=__i+1;${body}}return NONE;})()`;
+      }
+      if(inner.t==="Send"&&inner.m.t==="Name"&&inner.m.n==="each"){
+        return`(()=>{const __l=${this.genExpr(inner.tgt)},__f=${this.genCallback(node.m)};for(let __k=1;__k<__l.length;__k++){__f(__l[__k]);}return NONE;})()`;
+      }
+      if(inner.t==="Send"&&inner.m.t==="Name"&&inner.m.n==="collect"){
+        return`(()=>{const __l=${this.genExpr(inner.tgt)},__o=[0],__f=${this.genCallback(node.m)};for(let __k=1;__k<__l.length;__k++){__o.push(__f(__l[__k]));}return __o;})()`;
+      }
+    }
+    if(node.t==="Send"&&node.m.t==="Block"&&!node.m.group){
+      const i2=node.tgt;
+      if(i2.t==="Send"&&i2.tgt.t==="Send"&&i2.tgt.m.t==="Name"&&i2.tgt.m.n==="fold"){
+        return`(()=>{const __l=${this.genExpr(i2.tgt.tgt)},__f=${this.genCallback(node.m)};let __a=${this.genExpr(i2.m)};for(let __k=1;__k<__l.length;__k++){__a=__f(__a,__l[__k]);}return __a;})()`;
+      }
+    }
+    return null;
+  }
+
+  provenList(node){
+    while(node&&node.t==="Block"&&node.group&&node.body.length===1)node=node.body[0];
+    if(node.t==="Name")return!this._mayPromote.has(node.n)&&(this._dense.has(node.n)||(this._lists.has(node.n)&&!this._maps.has(node.n)));
+    if(node.t==="Send"&&node.tgt.t==="Name"&&(node.tgt.n==="range"||node.tgt.n==="list"))return true;
+    if(node.t==="Send"&&node.m.t==="Name"&&(node.m.n==="collect"||node.m.n==="append"))return true;
+    if(node.t==="Block"&&this.isListLiteral(node))return true;
+    return false;
+  }
+
+  genBlockInlineExpr(blk){
+    if(blk.body.length===1&&blk.body[0].t!=="Set"){
+      const saved=this._self;this._self=null;
+      const r=this.genExpr(blk.body[0]);
+      this._self=saved;return r;
+    }
+    const saved=this._self;this._self=null;
+    const b=this.genBlockBody(blk.body);
+    this._self=saved;
+    return`(()=>{${b}})()`;
+  }
+
+  genBlockInlineStmts(blk){
+    const saved=this._self;this._self=null;
+    const parts=[];
+    for(const it of blk.body){
+      if(it.t==="Set"){
+        const key=it.key.t==="Name"?it.key.n:null;
+        if(key===null&&it.key.t==="Send"){parts.push(this.genStore(it.key,it.val)+";");continue}
+        const val=this.genExpr(it.val);
+        if(it.mut||this._declared.has(key))parts.push(`${mangle(key)} = ${val};`);
+        else{this._declared.add(key);parts.push(`let ${mangle(key)} = ${val};`)}
+      }else parts.push(this.genLoopStmt(it));
+    }
+    this._self=saved;
+    return parts.join("");
+  }
+
+  genLoopStmt(node){
+    const lv=this.matchLoopVerbStmt(node);
+    if(lv!==null)return lv;
+    let sel=node;
+    while(sel.t==="Block"&&sel.group&&sel.body.length===1)sel=sel.body[0];
+    if(sel.t==="Block"&&sel.group&&sel.body.length>1){
+      const parts=[];
+      for(const it of sel.body){
+        if(it.t==="Set"){
+          const key=it.key.t==="Name"?it.key.n:null;
+          if(key===null&&it.key.t==="Send"){parts.push(this.genStore(it.key,it.val)+";");continue}
+          const val=this.genExpr(it.val);
+          if(it.mut||this._declared.has(key))parts.push(`${mangle(key)} = ${val};`);
+          else{this._declared.add(key);parts.push(`let ${mangle(key)} = ${val};`)}
+        }else{
+          const lv2=this.matchLoopVerbStmt(it);
+          parts.push(lv2!==null?lv2:this.genLoopStmt(it));
+        }
+      }
+      return parts.join("");
+    }
+    if(sel.t==="Send"&&sel.m.t==="Block"&&!sel.m.group&&!sel.m.params.length&&sel.m.body.length===2){
+      const raw=this.genRawBool(sel.tgt);
+      return`if(${raw!==null?raw:`(${this.genExpr(sel.tgt)})===TRUE`}){${this.genBranchStmt(sel.m.body[0])}}else{${this.genBranchStmt(sel.m.body[1])}}`;
+    }
+    return this.genExpr(node)+";";
+  }
+
+  genBranchStmt(e){
+    if(e.t==="Block"&&e.group&&e.body.length>1)return this.genLoopStmt(e);
+    if(e.t==="Set"){
+      const key=e.key.t==="Name"?e.key.n:null;
+      if(key===null&&e.key.t==="Send")return this.genStore(e.key,e.val)+";";
+      const val=this.genExpr(e.val);
+      if(e.mut||this._declared.has(key))return`${mangle(key)} = ${val};`;
+      this._declared.add(key);
+      return`let ${mangle(key)} = ${val};`;
+    }
+    return this.genExpr(e)+";";
+  }
+
+  genSend(node,tail=false){
+    if(node.tgt.t==="Name"&&node.tgt.n==="range")return`RANGE(${this.genExpr(node.m)})`;
+    if(node.tgt.t==="Name"&&node.tgt.n==="list")return`ZEROS(${this.genExpr(node.m)})`;
+    const lp=this.matchLoopVerb(node);
+    if(lp!==null)return lp;
+    const cs=this.callSpine(node);
+    if(cs!==null){
+      const[head,spine]=cs;
+      if(tail&&this._self&&head.n===this._self[0]&&spine.length===this._self[1].length){
+        const params=this._self[1],tmps=spine.map(a=>this.genExpr(a));
+        return`__LOOP__{${tmps.map((t,i)=>`let __t${i}=${t};`).join("")}${params.map((p,i)=>`${mangle(p)}=__t${i};`).join("")}}`;
+      }
+      const callee=this.genExpr(head),args=spine.map(a=>this.genExpr(a)).join(",");
+      if(!tail&&head.t==="Name"&&this._arity.get(head.n)===spine.length)return`${callee}(${args})`;
+      if(tail)return`TCN(${callee},[${args}])`;
+      return`APPLY(${callee},[${args}])`;
+    }
+    const inner=node.tgt;
+    if(inner.t==="Send"&&inner.m.t==="Name"&&(inner.m.n in OPS)){
+      const opn=inner.m.n,L=this.genExpr(inner.tgt),R=this.genExpr(node.m);
+      return CMP.has(opn)?`((${L} ${OPS[opn]} ${R})?TRUE:FALSE)`:`(${L} ${OPS[opn]} ${R})`;
+    }
+    if(inner.t==="Send"&&inner.m.t==="Name"&&inner.m.n==="=")return`eq(${this.genExpr(inner.tgt)},${this.genExpr(node.m)})`;
+    if(inner.t==="Send"&&inner.m.t==="Name"&&inner.m.n==="++")return`((${this.genExpr(inner.tgt)})+(${this.genExpr(node.m)}))`;
+    if(inner.t==="Send"&&inner.m.t==="Name"&&inner.m.n==="append")return`(${this.genExpr(inner.tgt)}).concat([${this.genExpr(node.m)}])`;
+    if(node.m.t==="Name"){
+      const m=node.m.n;
+      if(m==="dom")return`v_dom(${this.genExpr(node.tgt)})`;
+      if(m==="css")return`v_css(${this.genExpr(node.tgt)})`;
+      if(m==="prompt")return`v_prompt(${this.genExpr(node.tgt)})`;
+      if(m==="print")return`prnt(${this.genExpr(node.tgt)})`;
+      if(m==="length")return`LEN(${this.genExpr(node.tgt)})`;
+      if(m==="sqrt")return`Math.sqrt(${this.genExpr(node.tgt)})`;
+      if(m==="floor")return`Math.floor(${this.genExpr(node.tgt)})`;
+      if(m==="round")return`Math.round(${this.genExpr(node.tgt)})`;
+      if(m==="ceil")return`Math.ceil(${this.genExpr(node.tgt)})`;
+      if(m==="abs")return`Math.abs(${this.genExpr(node.tgt)})`;
+      if(m==="sin")return`Math.sin(${this.genExpr(node.tgt)})`;
+      if(m==="cos")return`Math.cos(${this.genExpr(node.tgt)})`;
+      if(m==="tan")return`Math.tan(${this.genExpr(node.tgt)})`;
+      if(m==="log")return`Math.log(${this.genExpr(node.tgt)})`;
+      if(m==="str")return`fmt(${this.genExpr(node.tgt)})`;
+      if(m==="last"){const t=this.genExpr(node.tgt);return this.provenList(node.tgt)?`(${t})[(${t}).length-1]`:`LAST(${t})`}
+      if(m==="first"){const t=this.genExpr(node.tgt);return this.provenList(node.tgt)?`(${t})[1]`:`CALL(${t},1)`}
+      if(m==="second"){const t=this.genExpr(node.tgt);return this.provenList(node.tgt)?`(${t})[2]`:`CALL(${t},2)`}
+      if((m in OPS)||m==="="||m==="++"){
+        const t=this.genExpr(node.tgt);
+        if(CMP.has(m))return`((R)=>((${t}) ${OPS[m]} R)?TRUE:FALSE)`;
+        if(m in OPS)return`((R)=>((${t}) ${OPS[m]} R))`;
+        if(m==="=")return`((R)=>eq(${t},R))`;
+        if(m==="++")return`((R)=>((${t})+R))`;
+      }
+      const argname=({true:"TRUE",false:"FALSE",none:"NONE"})[m]||mangle(m);
+      const t=this.genExpr(node.tgt);
+      return tail?`TC(${t}, ${argname})`:`RUN(SEND(${t}, ${argname}))`;
+    }else{
+      const mIsData=node.tgt.t==="Name"&&this._fns.has(node.tgt.n)&&node.m.t==="Block"&&!node.m.group&&!node.m.params.length&&this.isListLiteral(node.m);
+      if(node.m.t==="Block"&&!node.m.group&&!node.m.params.length&&!mIsData){
+        const t=this.genExpr(node.tgt),elems=node.m.body;
+        if(elems.length===2){
+          const a=this.genExprThunkelem(elems[0],tail),b=this.genExprThunkelem(elems[1],tail),raw=this.genRawBool(node.tgt);
+          return raw!==null?`((${raw})?(${a}):(${b}))`:`((${t})===TRUE?(${a}):(${b}))`;
+        }
+        if(elems.length===1)return`((${this.genExpr(node.tgt)})===TRUE?(${this.genExprThunkelem(elems[0],tail)}):NONE)`;
+        const thunks=elems.map(e=>"()=>"+this.genExprThunkelem(e,tail)).join(",");
+        return tail?`SELT(${t}, [${thunks}])`:`RUN(SELT(${t}, [${thunks}]))`;
+      }
+      if(node.tgt.t==="Name"&&this._lists.has(node.tgt.n)){
+        if(this.litStringKey(node.m))return`CALL(${mangle(node.tgt.n)},${this.genExpr(node.m)})`;
+        const a=this.genExpr(node.m);
+        if(this._mayPromote.has(node.tgt.n))return`CALL(${mangle(node.tgt.n)},${a})`;
+        return this._dense.has(node.tgt.n)?`${mangle(node.tgt.n)}[${a}]`:`(${mangle(node.tgt.n)}[${a}]??NONE)`;
+      }
+      if(node.tgt.t==="Name"&&this._maps.has(node.tgt.n))return`(${mangle(node.tgt.n)}.get(${this.genExpr(node.m)})??NONE)`;
+      const t=this.genExpr(node.tgt),a=this.genExpr(node.m);
+      if(!tail&&node.tgt.t==="Name"&&this._arity.get(node.tgt.n)===1)return`${t}(${a})`;
+      return tail?`TC(${t}, ${a})`:`RUN(CALL(${t}, ${a}))`;
+    }
+  }
+
+  genExprThunkelem(e,tail=false){return e.t==="Set"?this.genExpr(e.val,tail):this.genExpr(e,tail)}
+}
+
+function compile(src){return new Gen().genProgram(new Parser(tokenize(src)).program())}
+return{compile};
+})();
+</script>
+
+<!-- Runtime (same as v1) -->
+<script>
+var SproutRuntime=(function(){"use strict";const NONE=Symbol("none"),TRUE={sel:0},FALSE={sel:1};const eq=(a,b)=>(a===b)?TRUE:FALSE,REQ=(a,b)=>(a===b);function RANGE(n){const a=new Float64Array(n+1);for(let i=1;i<=n;i++)a[i]=i;return a}function ZEROS(n){return new Float64Array(n+1)}function newmap(){return new Map()}function LEN(x){if(typeof x==="string")return x.length;if(Array.isArray(x)||ArrayBuffer.isView(x))return x.length-1;return 0}function LAST(x){if(typeof x==="string")return x.length?x[x.length-1]:NONE;const n=LEN(x);return n>=1?CALL(x,n):NONE}function STORE(t,k,v){if(Array.isArray(t)&&typeof k==="number"){while(t.length<=k)t.push(NONE);t[k]=v;return v}if(t instanceof Map){t.set(k,v);return v}return v}function fmt(x){if(x===NONE)return"none";if(x===TRUE)return"true";if(x===FALSE)return"false";if(typeof x==="number")return String(x);if(typeof x==="string")return x;if(typeof x==="function")return"[block]";if(Array.isArray(x)||ArrayBuffer.isView(x))return"["+Array.from(x).slice(1).map(fmt).join(", ")+"]";return String(x)}function CALL(t,a){if(t===TRUE||t===FALSE){if(Array.isArray(a))return(a[t.sel]!==undefined)?a[t.sel]():NONE;return NONE}if(Array.isArray(t)||ArrayBuffer.isView(t))return typeof a==="number"&&a>=1&&a<t.length?t[a]:NONE;if(t instanceof Map)return t.has(a)?t.get(a):NONE;if(typeof t==="function")return t(a);return NONE}function SEND(t,arg){if(typeof t==="function")return RUN(t(arg));if(Array.isArray(t)||ArrayBuffer.isView(t)||t instanceof Map)return CALL(t,arg);return NONE}class Bounce{constructor(fn,args){this.fn=fn;this.args=args}}function RUN(v){while(v instanceof Bounce)v=v.fn(...v.args);return v}function AR(fn,n){fn.L=n;return fn}function invoke(fn,args){if(typeof fn!=="function")return args.length?CALL(fn,args[0]):fn;const L=fn.L||1;if(args.length===L)return fn(...args);if(args.length<L){const got=args.slice();const g=(...more)=>invoke(fn,got.concat(more));g.L=L-args.length;return g}return invoke(RUN(fn(...args.slice(0,L))),args.slice(L))}function APPLY(fn,args){if(typeof fn==="function"&&(fn.L||1)===args.length)return RUN(fn(...args));return RUN(invoke(fn,args))}function TCN(fn,args){if(typeof fn==="function"&&(fn.L||1)===args.length)return new Bounce(fn,args);return invoke(fn,args)}function TC(t,arg){if(typeof t==="function"&&(t.L||1)===1)return new Bounce(t,[arg]);return CALL(t,arg)}function SELT(boolv,thunks){if(boolv===TRUE||boolv===FALSE){const i=boolv.sel;return thunks[i]!==undefined?thunks[i]():NONE}return NONE}function MEMO(fn){const L=fn.L||1,cache=new Map();const w=(...args)=>{const key=args.map(keyOf).join("");if(cache.has(key))return cache.get(key);const val=RUN(fn(...args));cache.set(key,val);return val};w.L=L;return w}function keyOf(a){if(a===TRUE)return"T";if(a===FALSE)return"F";if(a===NONE)return"N";return(typeof a)+":"+String(a)}return{NONE,TRUE,FALSE,eq,REQ,RANGE,ZEROS,newmap,LEN,LAST,STORE,fmt,CALL,SEND,Bounce,RUN,AR,invoke,APPLY,TCN,TC,SELT,MEMO,keyOf}})();
+</script>
+
+<!-- IDE -->
+<script>
+(function(){
+"use strict";
+const EXAMPLES=[
+{g:"Sprout 2.0",name:"Hello World",code:"-- Hello World in Sprout 2.0\n-- Comments use double-dash now\ngreeting : \"Hello, World!\"\ngreeting print\n\n-- _ is the implicit argument (replaces @)\ndouble : [_ * 2]\ndouble 21 print"},
+{name:"Counter",code:"-- Counter: init with : and mutate with :=\nx : 0\n\"Start: \" ++ (x str) print\n\nx := x + 1\n\"After +1: \" ++ (x str) print\n\nx := x + 1\n\"After +2: \" ++ (x str) print\n\nx := x * 10\n\"After *10: \" ++ (x str) print\n\n-- := only mutates, : initializes\ny : 100\ny := y - 50\n\"y: \" ++ (y str) print"},
+{name:"Fibonacci",code:"-- Fibonacci with memoize\nfib : [n |\n  n <= 1 [n,\n    (fib (n - 1)) + (fib (n - 2))\n  ]\n] memoize\n\n-- _ is the implicit arg in blocks\n10 times [fib _ print]"},
+{name:"Bank Account",code:"-- Bank Account with dispatch table style\n-- Using closures to simulate methods\n\nmake-account : [initial |\n  balance : initial\n\n  deposit : [amt |\n    balance := balance + amt\n    \"Deposited \" ++ (amt str) ++ \", balance: \" ++ (balance str) print\n    balance\n  ]\n\n  withdraw : [amt |\n    amt > balance [\n      (\"Insufficient funds!\" print\n      balance),\n      (balance := balance - amt\n      \"Withdrew \" ++ (amt str) ++ \", balance: \" ++ (balance str) print\n      balance)\n    ]\n  ]\n\n  check : [\"Balance: \" ++ (balance str) print, balance] first\n\n  -- Return a dispatch block\n  [cmd |\n    cmd = \"deposit\" [deposit,\n      cmd = \"withdraw\" [withdraw,\n        cmd = \"check\" [check,\n          \"Unknown command\" print\n        ]\n      ]\n    ]\n  ]\n]\n\nacct : make-account 100\nacct \"check\"\nacct \"deposit\" 50\nacct \"withdraw\" 30\nacct \"withdraw\" 200\nacct \"check\""},
+{name:"FizzBuzz",code:"-- FizzBuzz in Sprout 2.0\nfizzbuzz : [n |\n  n % 15 = 0 [\"FizzBuzz\",\n    n % 3 = 0 [\"Fizz\",\n      n % 5 = 0 [\"Buzz\", n]\n    ]\n  ]\n]\n\n-- _ replaces @ as implicit arg\n20 times [fizzbuzz _ print]"},
+{name:"List Operations",code:"-- List operations in Sprout 2.0\nnums : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]\n\n-- squares using _ (implicit arg)\nnums collect [_ * _] print\n\n-- sum via fold\nnums fold 0 [a, b | a + b] print\n\n-- filter evens\nevens : nums collect [_ % 2 = 0 [_, 0]]\nevens print\n\n-- first 5 odd numbers\n5 times [_ * 2 - 1 print]\n\n-- chained transforms\nnums collect [_ * 3] collect [_ + 1] print"},
+{name:"Mutation Demo",code:"-- := for mutation vs : for init\n\n-- : creates a new binding\ncount : 0\n\"Initial: \" ++ (count str) print\n\n-- := mutates the existing binding\n10 times [\n  count := count + _\n]\n\"After summing 1..10: \" ++ (count str) print\n\n-- Works with lists too\nitems : [10, 20, 30]\ntotal : 0\nitems each [\n  total := total + _\n]\n\"List sum: \" ++ (total str) print\n\n-- Accumulator pattern\nmax-val : 0\ndata : [42, 17, 95, 3, 88, 61]\ndata each [\n  _ > max-val [max-val := _, 0]\n]\n\"Max: \" ++ (max-val str) print"},
+{name:"Closures & HOF",code:"-- Higher-order functions in Sprout 2.0\ntwice : [f | [f (f _)]]\ninc : [_ + 1]\ninc4 : twice (twice inc)\ninc4 0 print\n\n-- compose\ncompose : [f, g | [f (g _)]]\ndouble : [_ * 2]\ndouble-then-inc : compose inc double\ninc-then-double : compose double inc\ndouble-then-inc 5 print\ninc-then-double 5 print\n\n-- adder factory\nadder : [n | [_ + n]]\nadd5 : adder 5\nadd5 10 print\nadd5 20 print\n\n-- not, and, or as library\nnot : [_ [false, true]]\nand : [a, b | a [b, false]]\nor : [a, b | a [true, b]]\nnot true print\nand true false print\nor false true print"},
+];
+
+const $=id=>document.getElementById(id);
+const output=$('output'),jsOut=$('jsOut');
+const tabs=document.querySelectorAll('.output-bar .tab');
+
+let curGroup=null;
+EXAMPLES.forEach((ex,i)=>{
+  if(ex.g){curGroup=document.createElement('optgroup');curGroup.label=ex.g;$('examples').appendChild(curGroup)}
+  const o=document.createElement('option');o.value=i;o.textContent=ex.name;
+  (curGroup||$('examples')).appendChild(o);
+});
+
+// -- Ace Sprout 2.0 syntax mode --
+ace.define("ace/mode/sprout2_highlight_rules",["require","exports","module","ace/lib/oop","ace/mode/text_highlight_rules"],function(require,exports){
+  const oop=require("ace/lib/oop");
+  const TextHighlightRules=require("ace/mode/text_highlight_rules").TextHighlightRules;
+  function SproutHighlightRules(){
+    this.$rules={start:[
+      {token:"comment",regex:"--",next:"comment"},
+      {token:"comment",regex:"'",next:"comment_legacy"},
+      {token:"string",regex:'"',next:"string"},
+      {token:"constant.numeric",regex:"-?\\b\\d+(?:\\.\\d+)?\\b"},
+      {token:"constant.language",regex:"\\b(?:true|false|none|random|time|pi)\\b"},
+      {token:"keyword",regex:"\\b(?:while|times|each|collect|fold|range|list|map|memoize|pure|immutable|shared|lazy)\\b"},
+      {token:"support.function",regex:"\\b(?:print|length|first|second|last|append|sqrt|floor|round|ceil|abs|sin|cos|tan|log|str|not)\\b"},
+      {token:"keyword.operator",regex:":=|\\+\\+|[+\\-*/%<>=!]+"},
+      {token:"keyword.operator",regex:":"},
+      {token:"variable.language",regex:"_(?![a-zA-Z0-9])"},
+      {token:"variable.language",regex:"@"},
+      {token:"paren.lparen",regex:"[\\[\\(]"},
+      {token:"paren.rparen",regex:"[\\]\\)]"},
+      {token:"punctuation",regex:"[,|]"},
+      {token:"identifier",regex:"[a-zA-Z_][a-zA-Z0-9_\\-]*"},
+    ],comment:[
+      {token:"comment",regex:"$",next:"start"},
+      {defaultToken:"comment"}
+    ],comment_legacy:[
+      {token:"comment",regex:"'",next:"start"},
+      {defaultToken:"comment"}
+    ],string:[
+      {token:"constant.character.escape",regex:"\\\\."},
+      {token:"string",regex:'"',next:"start"},
+      {defaultToken:"string"}
+    ]};
+  }
+  oop.inherits(SproutHighlightRules,TextHighlightRules);
+  exports.SproutHighlightRules=SproutHighlightRules;
+});
+
+ace.define("ace/mode/sprout2",["require","exports","module","ace/lib/oop","ace/mode/text","ace/mode/sprout2_highlight_rules"],function(require,exports){
+  const oop=require("ace/lib/oop");
+  const TextMode=require("ace/mode/text").Mode;
+  const SproutHighlightRules=require("ace/mode/sprout2_highlight_rules").SproutHighlightRules;
+  function Mode(){this.HighlightRules=SproutHighlightRules;this.$behaviour=this.$defaultBehaviour}
+  oop.inherits(Mode,TextMode);
+  Mode.prototype.$id="ace/mode/sprout2";
+  exports.Mode=Mode;
+});
+
+// -- Ace theme --
+ace.define("ace/theme/sprout2_dark",["require","exports","module","ace/lib/dom"],function(require,exports){
+  exports.isDark=true;
+  exports.cssClass="ace-sprout2-dark";
+  exports.cssText=`
+.ace-sprout2-dark .ace_gutter{background:#0a0a0b;color:#444;border-right:1px solid #222225}
+.ace-sprout2-dark .ace_gutter-active-line{background:rgba(74,222,128,0.06)}
+.ace-sprout2-dark{background:#0a0a0b;color:#e8e8ea}
+.ace-sprout2-dark .ace_cursor{color:#4ade80}
+.ace-sprout2-dark .ace_marker-layer .ace_selection{background:rgba(74,222,128,0.15)}
+.ace-sprout2-dark .ace_marker-layer .ace_active-line{background:rgba(255,255,255,0.03)}
+.ace-sprout2-dark .ace_comment{color:#555;font-style:italic}
+.ace-sprout2-dark .ace_string{color:#f7c948}
+.ace-sprout2-dark .ace_constant.ace_numeric{color:#22d3ee}
+.ace-sprout2-dark .ace_constant.ace_language{color:#ff6b35}
+.ace-sprout2-dark .ace_constant.ace_character.ace_escape{color:#f7c948}
+.ace-sprout2-dark .ace_keyword{color:#a78bfa}
+.ace-sprout2-dark .ace_keyword.ace_operator{color:#ff6b35}
+.ace-sprout2-dark .ace_support.ace_function{color:#38bdf8}
+.ace-sprout2-dark .ace_variable.ace_language{color:#f472b6}
+.ace-sprout2-dark .ace_paren{color:#6e6e73}
+.ace-sprout2-dark .ace_punctuation{color:#6e6e73}
+.ace-sprout2-dark .ace_identifier{color:#e8e8ea}
+.ace-sprout2-dark .ace_indent-guide{background:url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAACCAYAAACZgbYnAAAAEklEQVQIW2PQ09NrZAgMDPwPAAK5A00Hn3BRAAAAASUVORK5CYII=) right repeat-y}
+`;
+  require("ace/lib/dom").importCssString(exports.cssText,exports.cssClass,false);
+});
+
+// -- Init Ace --
+const editor=ace.edit("editor");
+editor.setTheme("ace/theme/sprout2_dark");
+editor.session.setMode("ace/mode/sprout2");
+editor.setOptions({
+  fontSize:13,
+  fontFamily:"ui-monospace, 'SF Mono', 'Cascadia Mono', 'Fira Code', Menlo, monospace",
+  showPrintMargin:false,
+  tabSize:2,
+  useSoftTabs:true,
+  wrap:false,
+  enableBasicAutocompletion:true,
+  enableLiveAutocompletion:true,
+  enableSnippets:false,
+  showGutter:true,
+  highlightActiveLine:true,
+  animatedScroll:false,
+});
+
+// -- Autocomplete --
+const SPROUT_WORDS=[
+  ...["while","times","each","collect","fold","range","list","map","memoize","pure","immutable"].map(w=>({caption:w,value:w,meta:"keyword"})),
+  ...["print","length","first","second","last","append","sqrt","floor","round","ceil","abs","sin","cos","tan","log","str","not"].map(w=>({caption:w,value:w,meta:"builtin"})),
+  ...["true","false","none","random","time","pi"].map(w=>({caption:w,value:w,meta:"constant"})),
+  {caption:"_",value:"_",meta:"implicit arg"},
+  {caption:":=",value:":= ",meta:"mutate"},
+];
+
+const sproutCompleter={
+  getCompletions:function(ed,session,pos,prefix,callback){
+    if(!prefix)return callback(null,[]);
+    const src=session.getValue();
+    const userNames=new Set();
+    const re=/([a-zA-Z_][a-zA-Z0-9_\-]*)\s*:(?!=)/g;
+    let m;while((m=re.exec(src))!==null)userNames.add(m[1]);
+    const userCompletions=[...userNames].map(w=>({caption:w,value:w,meta:"local",score:1000}));
+    callback(null,[...SPROUT_WORDS,...userCompletions]);
+  }
+};
+const langTools=ace.require("ace/ext/language_tools");
+langTools.addCompleter(sproutCompleter);
+
+// -- Cursor position --
+editor.selection.on('changeCursor',()=>{
+  const c=editor.getCursorPosition();
+  $('pos').textContent=`Ln ${c.row+1}, Col ${c.column+1}`;
+});
+
+// -- Keybindings --
+editor.commands.addCommand({name:'run',bindKey:{win:'Ctrl-Enter',mac:'Cmd-Enter'},exec:run});
+
+// -- JS highlighting --
+const JS_KW=new Set(['let','const','var','function','return','if','else','while','for','new','typeof','break','continue','throw','try','catch','void','do']);
+const JS_RT=new Set(['NONE','TRUE','FALSE','RANGE','ZEROS','LEN','STORE','CALL','SEND','RUN','AR','APPLY','TCN','TC','SELT','MEMO','REQ','Bounce','prnt','fmt','eq','newmap','keyOf','invoke']);
+function hlJS(code){
+  let h='',i=0;const n=code.length;
+  const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  while(i<n){const c=code[i];
+    if(c==='/'&&i+1<n&&code[i+1]==='/'){let j=i;while(j<n&&code[j]!=='\n')j++;h+=`<span class="js-cmt">${esc(code.slice(i,j))}</span>`;i=j;continue}
+    if(c==="'"||c==='"'){let j=i+1;while(j<n&&code[j]!==c){if(code[j]==='\\')j++;j++}h+=`<span class="js-str">${esc(code.slice(i,j+1))}</span>`;i=j+1;continue}
+    if(c>='0'&&c<='9'){let j=i;while(j<n&&((code[j]>='0'&&code[j]<='9')||code[j]==='.'))j++;h+=`<span class="js-num">${esc(code.slice(i,j))}</span>`;i=j;continue}
+    if(/[a-zA-Z_$]/.test(c)){let j=i;while(j<n&&/[a-zA-Z0-9_$]/.test(code[j]))j++;const w=code.slice(i,j);h+=(w==='true'||w==='false'||w==='null')?`<span class="js-bool">${w}</span>`:JS_KW.has(w)?`<span class="js-kw">${w}</span>`:JS_RT.has(w)?`<span class="js-rt">${w}</span>`:(j<n&&code[j]==='(')?`<span class="js-fn">${w}</span>`:w;i=j;continue}
+    if('=<>!+-*/%&|^~?:'.includes(c)){let j=i+1;if(j<n&&'=<>&|'.includes(code[j]))j++;if(j<n&&code[j]==='=')j++;h+=`<span class="js-op">${esc(code.slice(i,j))}</span>`;i=j;continue}
+    if(c==='\n'){h+='\n';i++;continue}
+    h+=esc(c);i++}
+  return h;
+}
+function escH(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+
+// -- Tabs --
+const domOut=$('domOut');
+function showTab(name){
+  tabs.forEach(x=>x.classList.remove('active'));
+  tabs.forEach(x=>{if(x.dataset.tab===name)x.classList.add('active')});
+  output.style.display=name==='output'?'':'none';
+  domOut.style.display=name==='dom'?'':'none';
+  jsOut.style.display=name==='js'?'':'none';
+}
+tabs.forEach(t=>t.addEventListener('click',()=>showTab(t.dataset.tab)));
+
+// -- Expand --
+$('expandBtn').addEventListener('click',()=>{
+  const ow=$('ow');
+  ow.classList.toggle('expanded');
+  $('expandBtn').textContent=ow.classList.contains('expanded')?'✖':'⛶';
+});
+
+// -- Run --
+function run(){
+  output.innerHTML='';jsOut.innerHTML='';$('runTime').textContent='';
+  const frame=$('domFrame');
+  const fdoc=frame.contentDocument||frame.contentWindow.document;
+  fdoc.open();fdoc.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding:12px;font-size:14px;color:#111;line-height:1.5}</style></head><body></body></html>');fdoc.close();
+  let domUsed=false;
+  showTab('output');
+  let compiled;
+  try{compiled=SproutToJS.compile(editor.getValue())}catch(e){output.innerHTML=`<span class="out-error">Compile error: ${escH(e.message)}</span>`;return}
+  jsOut.innerHTML=hlJS(compiled);
+  const R=SproutRuntime;const captured=[];
+  const prnt=x=>{captured.push(R.fmt(x));return x};
+  const v_dom=html=>{domUsed=true;fdoc.body.insertAdjacentHTML('beforeend',String(html));return html};
+  const v_css=css=>{const s=fdoc.createElement('style');s.textContent=String(css);fdoc.head.appendChild(s);return css};
+  const v_prompt=msg=>{const r=window.prompt(String(msg));return r===null?R.NONE:(/^\d+(\.\d+)?$/.test(r)?parseFloat(r):r)};
+  const t0=performance.now();
+  try{new Function('NONE','TRUE','FALSE','eq','REQ','RANGE','ZEROS','newmap','LEN','LAST','STORE','fmt','CALL','SEND','Bounce','RUN','AR','invoke','APPLY','TCN','TC','SELT','MEMO','keyOf','prnt','v_dom','v_css','v_prompt',compiled)(R.NONE,R.TRUE,R.FALSE,R.eq,R.REQ,R.RANGE,R.ZEROS,R.newmap,R.LEN,R.LAST,R.STORE,R.fmt,R.CALL,R.SEND,R.Bounce,R.RUN,R.AR,R.invoke,R.APPLY,R.TCN,R.TC,R.SELT,R.MEMO,R.keyOf,prnt,v_dom,v_css,v_prompt)}catch(e){captured.push(`\x1bERR\x1b${e.message}`)}
+  $('runTime').textContent=(performance.now()-t0).toFixed(1)+'ms';
+  output.innerHTML=captured.length?captured.map(l=>l.startsWith('\x1bERR\x1b')?`<span class="out-error">Runtime error: ${escH(l.slice(5))}</span>`:`<span class="out-line">${escH(l)}</span>`).join('\n'):'<span class="out-info">No output. Use "print".</span>';
+  if(domUsed)showTab('dom');
+}
+
+$('runBtn').addEventListener('click',run);
+$('clearBtn').addEventListener('click',()=>{output.innerHTML='<span class="out-info">Cleared.</span>';jsOut.innerHTML='';$('runTime').textContent='';const fd=$('domFrame').contentDocument;if(fd){fd.open();fd.write('');fd.close()}});
+$('jsBtn').addEventListener('click',()=>{
+  try{jsOut.innerHTML=hlJS(SproutToJS.compile(editor.getValue()))}catch(e){jsOut.innerHTML=`<span class="out-error">${escH(e.message)}</span>`}
+  showTab('js');
+});
+$('shareBtn').addEventListener('click',()=>{
+  navigator.clipboard.writeText(location.origin+location.pathname+'?code='+encodeURIComponent(editor.getValue())).then(()=>{$('shareBtn').textContent='OK!';setTimeout(()=>$('shareBtn').textContent='Share',1200)}).catch(()=>{});
+});
+$('examples').addEventListener('change',function(){if(this.value==='')return;editor.setValue(EXAMPLES[+this.value].code,-1);save();this.value=''});
+
+// -- Resize handle --
+const rh=$('rh'),ow=$('ow');let drag=false,sy=0,sh=0;
+rh.addEventListener('touchstart',e=>{drag=true;sy=e.touches[0].clientY;sh=ow.offsetHeight},{passive:true});
+rh.addEventListener('mousedown',e=>{drag=true;sy=e.clientY;sh=ow.offsetHeight});
+document.addEventListener('touchmove',e=>{if(!drag)return;ow.style.height=Math.max(80,Math.min(window.innerHeight*.7,sh+(sy-(e.touches?e.touches[0].clientY:e.clientY))))+'px';editor.resize()},{passive:true});
+document.addEventListener('mousemove',e=>{if(!drag)return;ow.style.height=Math.max(80,Math.min(window.innerHeight*.7,sh+(sy-e.clientY)))+'px';editor.resize()});
+document.addEventListener('touchend',()=>drag=false);
+document.addEventListener('mouseup',()=>drag=false);
+
+// -- Persistence --
+function save(){try{localStorage.setItem('sprout2-ide',editor.getValue())}catch(e){}}
+editor.on('change',save);
+
+const urlCode=new URLSearchParams(location.search).get('code');
+editor.setValue(urlCode||localStorage.getItem('sprout2-ide')||EXAMPLES[0].code,-1);
+editor.focus();
+})();
+</script>
+</body>
+</html>
