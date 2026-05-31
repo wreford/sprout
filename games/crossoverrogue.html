@@ -317,6 +317,14 @@ function recalcStats(){
     if(e.xpMult) player.xpMult*=e.xpMult;
     if(e.goldMult) player.goldMult*=e.goldMult;
   }
+  // Pet bonuses to xpMult/goldMult
+  if(activePet){
+    const pet=PETS.find(p=>p.id===activePet);
+    if(pet){
+      if(pet.bonus.xpMult) player.xpMult*=pet.bonus.xpMult;
+      if(pet.bonus.goldMult) player.goldMult*=pet.bonus.goldMult;
+    }
+  }
 }
 
 function tryEquip(newEq){
@@ -359,7 +367,18 @@ function tryEquip(newEq){
     return;
   }
 
-  // Slot occupied: show comparison
+  // Slot occupied: compare stats
+  // If new item is worse overall, auto-sell it instead of asking
+  const oldScore = (current.atk||0) + (current.def||0)*1.5 + (current.hp||0)*0.3 + (current.range||0)*3 + (current.crit||0)*0.5 + (current.luck||0)*0.5 + (current.spdBonus||0)*5 + (current.xpMult?current.xpMult*10:0) + (current.goldMult?current.goldMult*5:0);
+  const newScore = (newEq.atk||0) + (newEq.def||0)*1.5 + (newEq.hp||0)*0.3 + (newEq.range||0)*3 + (newEq.crit||0)*0.5 + (newEq.luck||0)*0.5 + (newEq.spdBonus||0)*5 + (newEq.xpMult?newEq.xpMult*10:0) + (newEq.goldMult?newEq.goldMult*5:0);
+  if(newScore <= oldScore){
+    // Worse — auto-sell silently
+    const sellPrice = Math.max(1, Math.floor((newEq.price||10)*0.5));
+    gold += sellPrice;
+    floats.push({x:player.x,y:player.y-16,text:`Sold +${sellPrice}g`,life:.6,color:'#ffd700'});
+    return;
+  }
+
   showCompare(current,newEq,slot);
 }
 
@@ -877,6 +896,7 @@ function startGame(heroIdx,bonus){
       if(b.mp){player.maxMp+=b.mp;player.mp+=b.mp}
       if(b.dmgReduce){player.baseDmgReduce=Math.min(0.7,(player.baseDmgReduce||0)+b.dmgReduce)}
       if(b.extraProj){player.extraProj+=b.extraProj}
+      if(b.phase){player.phaseLeft=1}
       recalcStats();
       floats.push({x:player.x,y:player.y-20,text:`Pet: ${pet.emoji} ${pet.name}`,life:2,color:'#ffd700'});
     }
@@ -895,6 +915,7 @@ function loadFloor(){
   map=data.map;rooms=data.rooms;
   const sr=rooms[0];
   player.x=sr.cx*TS;player.y=sr.cy*TS;
+  if(player.phaseLeft!==undefined) player.phaseLeft=1; // reset phase per floor
   exitOpen=true;
   slimes=[];projectiles=[];particles=[];floats=[];
   spawnEnemies(floor,rooms);
@@ -1014,9 +1035,12 @@ function useSpecial(){
   if(player.spCD>0&&player.hero.id!=='flounder')return;
   const h=player.hero.id;
   const heroData=HEROES.find(x=>x.id===h);
+  // Pet cdReduce
+  let cdMult=1;
+  if(activePet){const pet=PETS.find(p=>p.id===activePet);if(pet&&pet.bonus.cdReduce)cdMult=1-pet.bonus.cdReduce}
   if(h==='bart'){
     // Triple shot — 3 aimed rocks from slingshot
-    player.spCD=heroData.spCD;snd('atk');
+    player.spCD=heroData.spCD*cdMult;snd('atk');
     const dir=getAimDir();
     for(let a=-1;a<=1;a++){
       const ang=Math.atan2(dir.y,dir.x)+a*.3;
@@ -1024,9 +1048,9 @@ function useSpecial(){
         dmg:player.atk*2,life:35,owner:'player',bounce:1,sz:4,color:'#aaa',crit:a===0});
     }
     shake=.1;
-  } else if(h==='worm'){player.slimeActive=5;player.spCD=heroData.spCD}
+  } else if(h==='worm'){player.slimeActive=5;player.spCD=heroData.spCD*cdMult}
   else if(h==='chancla'){
-    player.spCD=heroData.spCD;
+    player.spCD=heroData.spCD*cdMult;
     for(let a=-1;a<=1;a++){
       const ang=Math.atan2(player.facing.y,player.facing.x)+a*.4;
       projectiles.push({x:player.x+8,y:player.y+8,dx:Math.cos(ang)*5,dy:Math.sin(ang)*5,
@@ -1034,7 +1058,7 @@ function useSpecial(){
     }
     snd('atk');
   } else if(h==='cube'){
-    player.spCD=heroData.spCD;shake=.3;snd('hit');
+    player.spCD=heroData.spCD*cdMult;shake=.3;snd('hit');
     enemies.forEach(e=>{
       const dx=e.x-player.x,dy=e.y-player.y,d=Math.sqrt(dx*dx+dy*dy);
       if(d<60){hurtEnemy(e,player.atk*3);e.x+=dx/d*20;e.y+=dy/d*20}
@@ -1043,13 +1067,13 @@ function useSpecial(){
   } else if(h==='flounder'){
     // Passive: handled on death
   } else if(h==='jesus'){
-    player.blockActive=3;player.spCD=heroData.spCD;
+    player.blockActive=3;player.spCD=heroData.spCD*cdMult;
     snd('item');
   } else if(h==='horse'){
-    player.chargeActive=.4;player.chargeDir={...player.facing};player.spCD=heroData.spCD;
+    player.chargeActive=.4;player.chargeDir={...player.facing};player.spCD=heroData.spCD*cdMult;
     snd('atk');
   } else if(h==='keira'){
-    player.spCD=heroData.spCD;snd('hit');shake=.1;
+    player.spCD=heroData.spCD*cdMult;snd('hit');shake=.1;
     // Wine splash — damage + slow enemies in radius
     enemies.forEach(e=>{
       const dx=e.x-player.x,dy=e.y-player.y,d=Math.sqrt(dx*dx+dy*dy);
@@ -1184,6 +1208,11 @@ function hurtPlayer(dmg,attacker){
 function die(){
   gameState='dead';
   TL.style.display='none';document.getElementById('touch-right').style.display='none';
+  showPetShop('dead');
+}
+
+function showDeathScreen(){
+  gameState='dead';
   OV.classList.remove('hidden');
   OVT.style.background='linear-gradient(135deg,#e74c3c,#ff6b6b)';
   OVT.style['-webkit-background-clip']='text';OVT.style['-webkit-text-fill-color']='transparent';
@@ -1205,6 +1234,12 @@ function win(){
   gameState='win';
   if(!wonWith.includes(player.hero.id)){wonWith.push(player.hero.id);localStorage.setItem('cr_wins',JSON.stringify(wonWith))}
   snd('win');
+  TL.style.display='none';document.getElementById('touch-right').style.display='none';
+  showPetShop('win');
+}
+
+function showWinScreen(){
+  gameState='win';
   OV.classList.remove('hidden');
   OVT.style.background='linear-gradient(135deg,#ffd700,#ff9f1c,#4ade80)';
   OVT.style['-webkit-background-clip']='text';OVT.style['-webkit-text-fill-color']='transparent';
@@ -1216,6 +1251,81 @@ function win(){
   OVH.innerHTML='Won with: '+wonWith.map(id=>HEROES.find(h=>h.id===id)?.emoji||'?').join(' ');
   OVB.textContent='PLAY AGAIN';OVB.className='btn btn-go';
   OVB.onclick=()=>showMenu();
+}
+
+function showPetShop(outcome){
+  gameState='petshop';
+  OV.classList.remove('hidden');
+  OVT.style.background='linear-gradient(135deg,#fbbf24,#f472b6,#a855f7)';
+  OVT.style['-webkit-background-clip']='text';OVT.style['-webkit-text-fill-color']='transparent';
+  OVT.textContent='PET SHOP';
+  const currentPet=localStorage.getItem('cr_pet');
+  const currentPetData=currentPet?PETS.find(p=>p.id===currentPet):null;
+  OVS.textContent=`Gold: ${gold}g`+(currentPetData?` | Current pet: ${currentPetData.emoji} ${currentPetData.name}`:' | No pet');
+  OVG.innerHTML='';
+  OVG.style.gridTemplateColumns='repeat(auto-fill,minmax(100px,1fr))';
+  OVST.style.display='none';OVH.style.display='none';
+  let bought=false;
+  PETS.forEach(pet=>{
+    const owned=currentPet===pet.id;
+    const canAfford=gold>=pet.cost&&!currentPet;
+    const d=document.createElement('div');
+    d.className='shop-item-card';
+    d.style.borderColor=owned?'#4ade80':canAfford?'#fbbf24':'rgba(255,255,255,.1)';
+    if(!canAfford&&!owned)d.style.opacity='.5';
+    d.innerHTML=`<div style="font-size:22px">${pet.emoji}</div>
+      <div class="hero-name" style="font-size:10px">${pet.name}</div>
+      <div style="font-size:8px;color:#aaa;margin:2px 0">${pet.desc}</div>
+      <div style="font-size:10px;color:${owned?'#4ade80':'#ffd700'};font-weight:700">${owned?'OWNED':pet.cost+'g'}</div>`;
+    if(!owned&&canAfford&&!bought){
+      d.onclick=()=>{
+        if(bought)return;
+        gold-=pet.cost;
+        localStorage.setItem('cr_pet',pet.id);
+        activePet=pet.id;
+        bought=true;
+        snd('win');
+        floats.push({x:W/2,y:H/2-50,text:`Got ${pet.emoji} ${pet.name}!`,life:2,color:'#ffd700'});
+        OVS.textContent=`Gold: ${gold}g | New pet: ${pet.emoji} ${pet.name}`;
+        // Refresh cards
+        OVG.querySelectorAll('.shop-item-card').forEach(c=>{c.style.opacity='.4';c.style.pointerEvents='none'});
+        d.style.opacity='1';d.style.borderColor='#4ade80';
+        d.querySelector('.hero-name').insertAdjacentHTML('afterend','<div style="color:#4ade80;font-size:9px;font-weight:700">PURCHASED!</div>');
+      };
+    }
+    OVG.appendChild(d);
+  });
+
+  // Release pet button if they have one
+  if(currentPet){
+    const releaseDiv=document.createElement('div');
+    releaseDiv.style.cssText='width:100%;text-align:center;margin-top:8px;grid-column:1/-1';
+    const releaseBtn=document.createElement('div');
+    releaseBtn.className='shop-sell-btn';
+    releaseBtn.style.cssText='font-size:10px;padding:6px 14px;display:inline-block;pointer-events:all;cursor:pointer';
+    releaseBtn.textContent=`Release ${currentPetData.emoji} ${currentPetData.name}`;
+    releaseBtn.onclick=()=>{
+      localStorage.removeItem('cr_pet');
+      activePet=null;
+      snd('item');
+      OVS.textContent=`Gold: ${gold}g | No pet`;
+      releaseBtn.textContent='Released!';
+      releaseBtn.style.opacity='.4';
+      releaseBtn.style.pointerEvents='none';
+      // Re-enable buying
+      showPetShop(outcome);
+    };
+    releaseDiv.appendChild(releaseBtn);
+    OVG.appendChild(releaseDiv);
+  }
+
+  OVB.style.display='';
+  OVB.textContent='CONTINUE';OVB.className='btn btn-go';
+  OVB.onclick=()=>{
+    OVG.style.gridTemplateColumns='repeat(3,1fr)';
+    if(outcome==='win')showWinScreen();
+    else showDeathScreen();
+  };
 }
 
 function showMenu(){
@@ -1247,9 +1357,32 @@ function showMenu(){
     }
     OVG.appendChild(d);
   });
+  // Show current pet and release option in menu
+  const petId=localStorage.getItem('cr_pet');
+  if(petId){
+    const petData=PETS.find(p=>p.id===petId);
+    if(petData){
+      const petDiv=document.createElement('div');
+      petDiv.style.cssText='text-align:center;margin-top:4px;font-size:11px;color:#aaa';
+      petDiv.innerHTML=`Pet: <span style="color:#fbbf24">${petData.emoji} ${petData.name}</span> <span class="shop-sell-btn" id="release-pet-btn" style="font-size:8px;padding:2px 6px;margin-left:6px;pointer-events:all;cursor:pointer">Release</span>`;
+      OVG.parentElement.insertBefore(petDiv,OVB);
+      setTimeout(()=>{
+        const rb=document.getElementById('release-pet-btn');
+        if(rb)rb.onclick=()=>{
+          localStorage.removeItem('cr_pet');activePet=null;
+          petDiv.innerHTML='Pet: <span style="color:#888">None</span>';
+          snd('item');
+        };
+      },50);
+    }
+  }
+
   OVB.textContent='NEXT';OVB.className='btn btn-go';
   OVB.onclick=()=>{
     if(!isUnlocked(HEROES[selectedHero])){floats.push({x:W/2,y:H/2,text:'LOCKED!',life:.8,color:'#ef4444'});return}
+    // Clean up pet div before leaving menu
+    const petDivs=OVG.parentElement.querySelectorAll('div[style*="text-align:center"]');
+    petDivs.forEach(d=>{if(d.textContent.includes('Pet:'))d.remove()});
     showStatDistribution(selectedHero);
   };
 
@@ -1301,7 +1434,8 @@ function update(dt){
     enemies.forEach(e=>{if(e.hp>0){const dx=e.x-player.x,dy=e.y-player.y;if(Math.sqrt(dx*dx+dy*dy)<18)hurtEnemy(e,player.atk*2)}});
   }
 
-  // Collision with walls
+  // Collision with walls (pet phase: can walk through 1 wall tile per room)
+  const canPhase=activePet&&PETS.find(p=>p.id===activePet)?.bonus?.phase&&(player.phaseLeft||0)>0;
   const nx=player.x+mx,ny=player.y+my;
   const tx=Math.floor(nx/TS),ty=Math.floor(ny/TS);
   const tx2=Math.floor((nx+12)/TS),ty2=Math.floor((ny+12)/TS);
@@ -1309,6 +1443,11 @@ function update(dt){
     if(map[ty][Math.floor(nx/TS)]&&map[ty][Math.floor((nx+12)/TS)]&&
        map[Math.floor(ny/TS)][Math.floor(nx/TS)]&&map[Math.floor((ny+12)/TS)][Math.floor((nx+12)/TS)]){
       player.x=nx;player.y=ny;
+    } else if(canPhase&&tx>=1&&tx2<map[0].length-1&&ty>=1&&ty2<map.length-1){
+      // Phase through wall
+      player.x=nx;player.y=ny;player.phaseLeft--;
+      floats.push({x:player.x,y:player.y-12,text:'PHASE!',life:.5,color:'#c084fc'});
+      particles.push({x:player.x+8,y:player.y+8,dx:0,dy:-1,life:.4,color:'#c084fc',sz:3});
     } else {
       // Try axis-separated
       const ax=player.x+mx;
@@ -1443,6 +1582,15 @@ function update(dt){
         const dx=p.x-e.x-e.sz/2,dy=p.y-e.y-e.sz/2;
         if(Math.abs(dx)<e.sz/2+p.sz&&Math.abs(dy)<e.sz/2+p.sz){
           hurtEnemy(e,p.dmg);
+          // Pet lifesteal on crit
+          if(p.crit&&activePet){
+            const pet=PETS.find(pp=>pp.id===activePet);
+            if(pet&&pet.bonus.lifesteal){
+              const heal=Math.max(1,Math.floor(p.dmg*0.2));
+              player.hp=Math.min(player.maxHp,player.hp+heal);
+              floats.push({x:player.x,y:player.y-12,text:`+${heal}`,life:.4,color:'#4ade80'});
+            }
+          }
           if(p.bounce>0){p.bounce--;p.dx=-p.dx+Math.random()-.5;p.dy=-p.dy+Math.random()-.5}
           else p.life=0;
         }
@@ -1506,7 +1654,7 @@ function update(dt){
             for(let a=0;a<8;a++){const ang=a*Math.PI/4;projectiles.push({x:e.x+16,y:e.y+16,dx:Math.cos(ang)*3.6,dy:Math.sin(ang)*3.6,dmg:e.atk,life:30,owner:'enemy',bounce:0,sz:4,color:'#ffd700'})}
           } else if(atkType===1){// charge
             e.x+=dx/dist*40;e.y+=dy/dist*40;
-            if(dist<40)hurtPlayer(e.atk*2);shake=.2;
+            if(dist<40)hurtPlayer(e.atk*2,e);shake=.2;
           } else {// heal
             e.hp=Math.min(e.maxHp,e.hp+Math.floor(e.maxHp*.05));
             floats.push({x:e.x,y:e.y-8,text:'HEAL',life:.8,color:'#4ade80'});
@@ -1561,11 +1709,11 @@ function update(dt){
         for(let i=0;i<8;i++)particles.push({x:e.x+7,y:e.y+7,dx:(Math.random()-.5)*4,dy:(Math.random()-.5)*4,life:.4,color:'#ef4444',sz:2});
         snd('hurt');
       }
-      if(dist<16&&e.atkCD<=0){hurtPlayer(e.atk);e.atkCD=.5}
+      if(dist<16&&e.atkCD<=0){hurtPlayer(e.atk,e);e.atkCD=.5}
     } else if(ai==='swarm'){
       // Ant: fast, beelines to player, tiny
       if(dist<250){const spd=e.spd*TS*DT*2.5;e.x+=dx/dist*spd;e.y+=dy/dist*spd}
-      if(dist<10&&e.atkCD<=0){hurtPlayer(e.atk);e.atkCD=.3}
+      if(dist<10&&e.atkCD<=0){hurtPlayer(e.atk,e);e.atkCD=.3}
     } else if(ai==='orbiter'){
       // Katy Perry: orbits player at distance, shoots stars
       const orbitDist=80;
@@ -1586,7 +1734,7 @@ function update(dt){
       if(Math.floor(e.timer*2)!==Math.floor((e.timer-DT)*2)){
         slimes.push({x:e.x,y:e.y,life:8,color:'rgba(200,200,200,0.3)',slow:true});
       }
-      if(dist<14&&e.atkCD<=0){hurtPlayer(e.atk);e.atkCD=.7}
+      if(dist<14&&e.atkCD<=0){hurtPlayer(e.atk,e);e.atkCD=.7}
     } else if(ai==='disco'){
       // Disco Ball: slow, shoots lasers in 4 rotating directions
       if(dist<120){const spd=e.spd*TS*DT;e.x+=dx/dist*spd;e.y+=dy/dist*spd}
@@ -1760,6 +1908,15 @@ function render(){
     X.fillStyle=player.blockActive>0?'rgba(100,180,255,.2)':'rgba(255,255,100,.15)';X.fillRect(player.x-4,player.y-4,24,24)}
   drawPixelHero(X,player.hero.id,player.x,player.y,16,player.facing.x>=0?1:-1);
   X.globalAlpha=1;
+  // Draw pet next to player
+  if(activePet){
+    const pet=PETS.find(p=>p.id===activePet);
+    if(pet){
+      const petOff=Math.sin(Date.now()/400)*2;
+      X.font='10px sans-serif';X.textAlign='center';
+      X.fillText(pet.emoji,player.x+20,player.y+6+petOff);
+    }
+  }
 
   // Aim crosshair
   if(mouseAiming&&gameState==='play'){
@@ -1804,11 +1961,21 @@ function renderMinimap(){
   if(!map)return;
   const mw=120,mh=90,sc=Math.min(mw/map[0].length,mh/map.length);
   MX.fillStyle='rgba(0,0,0,.7)';MX.fillRect(0,0,mw,mh);
+  // Pet mapReveal: show all rooms
+  const revealAll=activePet&&PETS.find(p=>p.id===activePet)?.bonus?.mapReveal;
   for(let y=0;y<map.length;y++){
     for(let x=0;x<map[0].length;x++){
       if(map[y][x]){
         MX.fillStyle=map[y][x]===3&&exitOpen?'#4ade80':'#444';
         MX.fillRect(x*sc,y*sc,Math.max(1,sc),Math.max(1,sc));
+      } else if(revealAll){
+        // Show walls faintly
+        let adjFloor=false;
+        if(y>0&&map[y-1][x])adjFloor=true;
+        if(y<map.length-1&&map[y+1][x])adjFloor=true;
+        if(x>0&&map[y][x-1])adjFloor=true;
+        if(x<map[0].length-1&&map[y][x+1])adjFloor=true;
+        if(adjFloor){MX.fillStyle='#222';MX.fillRect(x*sc,y*sc,Math.max(1,sc),Math.max(1,sc))}
       }
     }
   }
