@@ -1850,18 +1850,64 @@ function update(dt){
   if(shake>0){shake-=DT;shakeX=(Math.random()-.5)*shake*20;shakeY=(Math.random()-.5)*shake*20}
   else{shakeX=0;shakeY=0}
 
-  // Camera
-  const tcx=player.x+8-W/2,tcy=player.y+8-H/2;
-  camX+=(tcx-camX)*.1;camY+=(tcy-camY)*.1;
+  // Camera with lookahead in movement direction
+  const lookDir=getMoveDir();
+  const lookaheadX=lookDir.x*30;const lookaheadY=lookDir.y*30;
+  const tcx=player.x+8-W/2+lookaheadX,tcy=player.y+8-H/2+lookaheadY;
+  camX+=(tcx-camX)*.08;camY+=(tcy-camY)*.08;
+
+  // --- POLISH UPDATES ---
+  // Player bob
+  const moveSpd=Math.sqrt(lookDir.x*lookDir.x+lookDir.y*lookDir.y);
+  prevPlayerSpeed=moveSpd;
+  if(moveSpd>0.1)playerBobTime+=DT*8; else playerBobTime=0;
+  // Trail particles when moving fast
+  if(moveSpd>0.5&&Math.random()<0.3){
+    particles.push({x:player.x+8+(Math.random()*4-2),y:player.y+14,dx:(Math.random()-.5)*.5,dy:Math.random()*0.3,life:.25,color:player.hero.color,sz:1});
+  }
+  // Ghost HP bar
+  if(ghostHp>player.hp)ghostHp-=DT*15;
+  if(ghostHp<player.hp)ghostHp=player.hp;
+  ghostHp=Math.max(0,ghostHp);
+  // Vignette decay
+  if(vignetteAlpha>0)vignetteAlpha=Math.max(0,vignetteAlpha-DT*2);
+  // Level-up flash decay
+  if(lvlFlashAlpha>0)lvlFlashAlpha=Math.max(0,lvlFlashAlpha-DT*1.5);
+  // Floor fade
+  if(floorFadeDir===-1&&floorFadeAlpha>0)floorFadeAlpha=Math.max(0,floorFadeAlpha-DT*3);
+  if(floorFadeDir===1&&floorFadeAlpha>0){floorFadeAlpha=Math.max(0,floorFadeAlpha-DT*2);if(floorFadeAlpha<=0)floorFadeDir=0}
+  // DPS tracker
+  dpsTracker.timer+=DT;
+  if(dpsTracker.timer>=1){dpsTracker.dps=Math.floor(dpsTracker.dmg/dpsTracker.timer);dpsTracker.dmg=0;dpsTracker.timer=0}
+  // Combo kill timer
+  if(comboKills.timer>0){comboKills.timer-=DT;if(comboKills.timer<=0)comboKills.count=0}
+  // Heartbeat when low HP
+  if(player.hp>0&&player.hp/player.maxHp<0.25){heartbeatCD-=DT;if(heartbeatCD<=0){snd('heartbeat');heartbeatCD=1.2}}
+  // Boss entrance
+  if(bossActive&&!bossEntrancePlayed){bossEntrancePlayed=true;snd('bossdrum')}
+  if(!bossActive)bossEntrancePlayed=false;
+  // Ambient dust
+  if(ambientDust.length<15&&Math.random()<0.05){
+    ambientDust.push({x:camX+Math.random()*W,y:camY+Math.random()*H,dx:(Math.random()-.5)*0.3,dy:(Math.random()-.5)*0.2,life:3+Math.random()*3,maxLife:3+Math.random()*3,sz:1});
+  }
+  ambientDust.forEach(d=>{d.x+=d.dx;d.y+=d.dy;d.life-=DT});
+  ambientDust=ambientDust.filter(d=>d.life>0);
+  // XP sparkles
+  xpSparkles.forEach(s=>{s.life-=DT});xpSparkles=xpSparkles.filter(s=>s.life>0);
 
   // HUD
-  document.getElementById('hp-fill').style.width=Math.max(0,player.hp/player.maxHp*100)+'%';
+  const hpPct=Math.max(0,player.hp/player.maxHp*100);
+  document.getElementById('hp-fill').style.width=hpPct+'%';
+  document.getElementById('hp-ghost').style.width=Math.max(0,ghostHp/player.maxHp*100)+'%';
   document.getElementById('hp-text').textContent=`${Math.max(0,player.hp)}/${player.maxHp}`;
-  // cd-fill was removed from HUD, skip it
   document.getElementById('xp-fill').style.width=(player.xp/player.xpNext*100)+'%';
   document.getElementById('level-text').textContent=`Lv${player.level}`;
   document.getElementById('floor-text').textContent=`F${floor}`;
-  document.getElementById('gold-text').textContent=`${gold}g`;
+  const goldEl=document.getElementById('gold-text');
+  if(gold!==lastGold){goldEl.textContent=`${gold}g`;goldEl.classList.remove('gold-bounce');void goldEl.offsetWidth;goldEl.classList.add('gold-bounce');lastGold=gold}
+  document.getElementById('dps-text').textContent=dpsTracker.dps>0?`${dpsTracker.dps} DPS`:'';
+  if(activePet){const pet=PETS.find(p=>p.id===activePet);document.getElementById('pet-icon').textContent=pet?pet.emoji:''}
+  else{document.getElementById('pet-icon').textContent=''}
 }
 
 // Render
