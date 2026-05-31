@@ -39,7 +39,7 @@ const LANE_COLORS=['#ef4444','#38bdf8','#4ade80','#f7c948'];
 const LANE_COLORS_DIM=['#7f1d1d','#0c4a6e','#14532d','#713f12'];
 const LANE_KEYS=['d','f','j','k'];
 const PENTA=[60,62,64,67,69,72,74,76,79,81]; // C pentatonic MIDI
-const HIT_WINDOW={perfect:50,great:100,good:150};
+const HIT_WINDOW={perfect:80,great:150,good:250};
 
 function resize(){
   const dpr=devicePixelRatio||1;
@@ -214,62 +214,89 @@ function playBacking(song){
   if(!audioCtx)return;
   const bt=60/song.bpm;
   const master=audioCtx.createGain();
-  master.gain.value=0.35;
-  master.connect(audioCtx.destination);
+  master.gain.value=0.4;
+  // Reverb via delay feedback
+  const delay=audioCtx.createDelay();delay.delayTime.value=bt*0.75;
+  const fb=audioCtx.createGain();fb.gain.value=0.2;
+  const dryGain=audioCtx.createGain();dryGain.gain.value=1;
+  const wetGain=audioCtx.createGain();wetGain.gain.value=0.15;
+  delay.connect(fb);fb.connect(delay);delay.connect(wetGain);
+  wetGain.connect(audioCtx.destination);
+  master.connect(dryGain);dryGain.connect(audioCtx.destination);
+  master.connect(delay);
   audioNodes.master=master;
   const now=audioCtx.currentTime;
   const bars=Math.ceil(song.duration/1000/(bt*4));
 
-  // Warm bass — sine + sub octave
+  // Rich bass — sine + slight overdrive harmonic
   for(let bar=0;bar<bars;bar++){
+    const chord=song.chords[bar%song.chords.length];
+    const midi=chordToMidi(chord)[0];
     for(let beat=0;beat<4;beat++){
       const t=now+2+bar*4*bt+beat*bt;
-      const chord=song.chords[bar%song.chords.length];
-      const midi=chordToMidi(chord)[0];
-      [0,-12].forEach(off=>{
-        const osc=audioCtx.createOscillator();
-        const g=audioCtx.createGain();
-        osc.type='sine';
-        osc.frequency.value=midiToFreq(midi+off);
-        g.gain.setValueAtTime(off===0?0.35:0.15,t);
-        g.gain.exponentialRampToValueAtTime(0.01,t+bt*0.85);
-        osc.connect(g);g.connect(master);
-        osc.start(t);osc.stop(t+bt);
-      });
+      const osc=audioCtx.createOscillator();
+      const osc2=audioCtx.createOscillator();
+      const g=audioCtx.createGain();
+      const filt=audioCtx.createBiquadFilter();
+      osc.type='sine';osc.frequency.value=midiToFreq(midi);
+      osc2.type='sine';osc2.frequency.value=midiToFreq(midi-12);
+      filt.type='lowpass';filt.frequency.value=200;
+      g.gain.setValueAtTime(0.4,t);
+      g.gain.setValueAtTime(0.35,t+bt*0.3);
+      g.gain.exponentialRampToValueAtTime(0.01,t+bt*0.9);
+      osc.connect(g);osc2.connect(g);g.connect(filt);filt.connect(master);
+      osc.start(t);osc.stop(t+bt);osc2.start(t);osc2.stop(t+bt);
     }
   }
 
-  // Warm chord pads — detuned saw pairs, low-passed for smoothness
+  // Lush pads — 3 detuned oscillators per note, filtered
   for(let bar=0;bar<bars;bar++){
     const chord=song.chords[bar%song.chords.length];
     const midis=chordToMidi(chord);
     const t=now+2+bar*4*bt;
     midis.forEach(m=>{
-      [-3,3].forEach(detune=>{
+      [-5,0,5].forEach(det=>{
         const osc=audioCtx.createOscillator();
         const g=audioCtx.createGain();
         const filt=audioCtx.createBiquadFilter();
         osc.type='sawtooth';
         osc.frequency.value=midiToFreq(m+12);
-        osc.detune.value=detune;
-        filt.type='lowpass';filt.frequency.value=1200;filt.Q.value=0.5;
-        g.gain.setValueAtTime(0.06,t);
-        g.gain.setValueAtTime(0.06,t+bt*3);
+        osc.detune.value=det;
+        filt.type='lowpass';
+        filt.frequency.setValueAtTime(800,t);
+        filt.frequency.linearRampToValueAtTime(1400,t+bt*2);
+        filt.frequency.linearRampToValueAtTime(600,t+bt*4);
+        filt.Q.value=0.7;
+        g.gain.setValueAtTime(0,t);
+        g.gain.linearRampToValueAtTime(0.05,t+bt*0.5);
+        g.gain.setValueAtTime(0.05,t+bt*3);
         g.gain.exponentialRampToValueAtTime(0.001,t+bt*4);
         osc.connect(filt);filt.connect(g);g.connect(master);
         osc.start(t);osc.stop(t+bt*4+0.1);
       });
     });
+    // Add a high shimmer
+    const shimmer=audioCtx.createOscillator();
+    const sg=audioCtx.createGain();
+    shimmer.type='sine';shimmer.frequency.value=midiToFreq(midis[2]+24);
+    sg.gain.setValueAtTime(0,t);
+    sg.gain.linearRampToValueAtTime(0.015,t+bt);
+    sg.gain.exponentialRampToValueAtTime(0.001,t+bt*4);
+    shimmer.connect(sg);sg.connect(master);
+    shimmer.start(t);shimmer.stop(t+bt*4+0.1);
   }
 
-  // Punchy drums
+  // Tight drums with variation
   for(let bar=0;bar<bars;bar++){
     for(let beat=0;beat<4;beat++){
       const t=now+2+bar*4*bt+beat*bt;
-      if(beat%2===0) playKick(t,master);
-      if(beat%2===1) playSnare(t,master);
+      if(beat===0||beat===2) playKick(t,master);
+      if(beat===1||beat===3) playSnare(t,master);
       playHihat(t,master);
-      if(beat%2===0) playHihat(t+bt/2,master);
+      // Offbeat hihats (not every one for groove)
+      if(beat!==3) playHihat(t+bt/2,master);
+      // Ghost snare for groove
+      if(beat===2&&bar%2===1) playGhostSnare(t+bt/2,master);
     }
   }
 }
@@ -278,56 +305,83 @@ function playKick(t,dest){
   const osc=audioCtx.createOscillator();
   const g=audioCtx.createGain();
   osc.type='sine';
-  osc.frequency.setValueAtTime(160,t);
-  osc.frequency.exponentialRampToValueAtTime(40,t+0.12);
-  g.gain.setValueAtTime(0.7,t);
-  g.gain.exponentialRampToValueAtTime(0.001,t+0.25);
+  osc.frequency.setValueAtTime(170,t);
+  osc.frequency.exponentialRampToValueAtTime(35,t+0.1);
+  g.gain.setValueAtTime(0.8,t);
+  g.gain.setValueAtTime(0.6,t+0.05);
+  g.gain.exponentialRampToValueAtTime(0.001,t+0.3);
   osc.connect(g);g.connect(dest);
-  osc.start(t);osc.stop(t+0.25);
-  // Click transient
-  const osc2=audioCtx.createOscillator();
-  const g2=audioCtx.createGain();
-  osc2.type='square';osc2.frequency.value=800;
-  g2.gain.setValueAtTime(0.15,t);
-  g2.gain.exponentialRampToValueAtTime(0.001,t+0.015);
-  osc2.connect(g2);g2.connect(dest);
-  osc2.start(t);osc2.stop(t+0.02);
+  osc.start(t);osc.stop(t+0.3);
+  // Sub layer
+  const sub=audioCtx.createOscillator();
+  const sg=audioCtx.createGain();
+  sub.type='sine';sub.frequency.value=50;
+  sg.gain.setValueAtTime(0.3,t);
+  sg.gain.exponentialRampToValueAtTime(0.001,t+0.15);
+  sub.connect(sg);sg.connect(dest);
+  sub.start(t);sub.stop(t+0.15);
+  // Click
+  const click=audioCtx.createOscillator();
+  const cg=audioCtx.createGain();
+  click.type='square';click.frequency.value=1200;
+  cg.gain.setValueAtTime(0.1,t);
+  cg.gain.exponentialRampToValueAtTime(0.001,t+0.01);
+  click.connect(cg);cg.connect(dest);
+  click.start(t);click.stop(t+0.015);
 }
 
 function playSnare(t,dest){
-  const bufLen=audioCtx.sampleRate*0.15;
+  // Noise
+  const bufLen=audioCtx.sampleRate*0.18;
   const buf=audioCtx.createBuffer(1,bufLen,audioCtx.sampleRate);
   const data=buf.getChannelData(0);
-  for(let i=0;i<bufLen;i++) data[i]=(Math.random()*2-1)*Math.pow(1-i/bufLen,1.5);
+  for(let i=0;i<bufLen;i++) data[i]=(Math.random()*2-1)*Math.pow(1-i/bufLen,1.2);
   const src=audioCtx.createBufferSource();src.buffer=buf;
   const g=audioCtx.createGain();
   const filt=audioCtx.createBiquadFilter();
-  filt.type='bandpass';filt.frequency.value=3000;filt.Q.value=0.8;
-  g.gain.setValueAtTime(0.4,t);
-  g.gain.exponentialRampToValueAtTime(0.001,t+0.15);
+  filt.type='bandpass';filt.frequency.value=4000;filt.Q.value=0.6;
+  g.gain.setValueAtTime(0.45,t);
+  g.gain.exponentialRampToValueAtTime(0.001,t+0.18);
   src.connect(filt);filt.connect(g);g.connect(dest);
-  src.start(t);src.stop(t+0.15);
-  // Body thump
+  src.start(t);src.stop(t+0.18);
+  // Body
   const osc=audioCtx.createOscillator();
   const g2=audioCtx.createGain();
-  osc.type='sine';osc.frequency.setValueAtTime(250,t);osc.frequency.exponentialRampToValueAtTime(120,t+0.05);
-  g2.gain.setValueAtTime(0.35,t);
-  g2.gain.exponentialRampToValueAtTime(0.001,t+0.06);
+  osc.type='sine';
+  osc.frequency.setValueAtTime(280,t);
+  osc.frequency.exponentialRampToValueAtTime(140,t+0.04);
+  g2.gain.setValueAtTime(0.4,t);
+  g2.gain.exponentialRampToValueAtTime(0.001,t+0.05);
   osc.connect(g2);g2.connect(dest);
-  osc.start(t);osc.stop(t+0.06);
+  osc.start(t);osc.stop(t+0.05);
+}
+
+function playGhostSnare(t,dest){
+  const bufLen=audioCtx.sampleRate*0.08;
+  const buf=audioCtx.createBuffer(1,bufLen,audioCtx.sampleRate);
+  const data=buf.getChannelData(0);
+  for(let i=0;i<bufLen;i++) data[i]=(Math.random()*2-1)*Math.pow(1-i/bufLen,2);
+  const src=audioCtx.createBufferSource();src.buffer=buf;
+  const g=audioCtx.createGain();
+  const filt=audioCtx.createBiquadFilter();
+  filt.type='bandpass';filt.frequency.value=3500;filt.Q.value=1;
+  g.gain.setValueAtTime(0.12,t);
+  g.gain.exponentialRampToValueAtTime(0.001,t+0.08);
+  src.connect(filt);filt.connect(g);g.connect(dest);
+  src.start(t);src.stop(t+0.08);
 }
 
 function playHihat(t,dest){
-  const bufLen=audioCtx.sampleRate*0.04;
+  const bufLen=audioCtx.sampleRate*0.045;
   const buf=audioCtx.createBuffer(1,bufLen,audioCtx.sampleRate);
   const data=buf.getChannelData(0);
-  for(let i=0;i<bufLen;i++) data[i]=(Math.random()*2-1)*Math.pow(1-i/bufLen,3);
+  for(let i=0;i<bufLen;i++) data[i]=(Math.random()*2-1)*Math.pow(1-i/bufLen,4);
   const src=audioCtx.createBufferSource();src.buffer=buf;
   const g=audioCtx.createGain();
   const filt=audioCtx.createBiquadFilter();
-  filt.type='highpass';filt.frequency.value=7000;
-  g.gain.setValueAtTime(0.15,t);
-  g.gain.exponentialRampToValueAtTime(0.001,t+0.04);
+  filt.type='highpass';filt.frequency.value=8000;
+  g.gain.setValueAtTime(0.18,t);
+  g.gain.exponentialRampToValueAtTime(0.001,t+0.045);
   src.connect(filt);filt.connect(g);g.connect(dest);
   src.start(t);src.stop(t+0.05);
 }
@@ -336,17 +390,19 @@ function playHitSound(lane){
   if(!audioCtx)return;
   const now=audioCtx.currentTime;
   const freq=midiToFreq(PENTA[lane*2+1]);
-  // Soft plucky sine with overtone
-  [1,2].forEach((h,i)=>{
-    const osc=audioCtx.createOscillator();
-    const g=audioCtx.createGain();
-    osc.type='sine';
-    osc.frequency.value=freq*h;
-    g.gain.setValueAtTime(i===0?0.25:0.08,now);
-    g.gain.exponentialRampToValueAtTime(0.001,now+0.2);
-    osc.connect(g);g.connect(audioCtx.destination);
-    osc.start();osc.stop(now+0.2);
-  });
+  // Warm bell-like tone
+  const osc=audioCtx.createOscillator();
+  const osc2=audioCtx.createOscillator();
+  const g=audioCtx.createGain();
+  osc.type='sine';osc.frequency.value=freq;
+  osc2.type='sine';osc2.frequency.value=freq*2.01;
+  g.gain.setValueAtTime(0.3,now);
+  g.gain.exponentialRampToValueAtTime(0.001,now+0.3);
+  osc.connect(g);osc2.connect(g);
+  const filt=audioCtx.createBiquadFilter();
+  filt.type='lowpass';filt.frequency.value=3000;
+  g.connect(filt);filt.connect(audioCtx.destination);
+  osc.start();osc.stop(now+0.3);osc2.start();osc2.stop(now+0.3);
 }
 
 // --- PARTICLES ---
@@ -602,11 +658,11 @@ function drawGameplay(){
   const hitY=getHitZoneY();
   const laneW=getLaneWidth();
   const margin=W*0.15;
-  const speed=H*0.45; // pixels per second of note travel
-  const lookAhead=2500; // ms to show notes ahead
+  const speed=H*0.35; // pixels per second of note travel
+  const lookAhead=3000; // ms to show notes ahead
 
-  // Speed multiplier increases slightly as song progresses
-  const speedMult=1+elapsed/song.duration*0.08;
+  // Speed multiplier — barely increases
+  const speedMult=1+elapsed/song.duration*0.03;
 
   // Draw lanes
   for(let i=0;i<4;i++){
