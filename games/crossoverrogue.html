@@ -51,7 +51,8 @@ canvas{display:block;position:fixed;top:0;left:0}
 <div id="hud">
 <span>HP</span><div class="hbar"><div class="hbar-fill" id="hp-fill"></div></div>
 <span id="hp-text">50/50</span>
-<span>SP</span><div class="hbar"><div class="hbar-fill" id="cd-fill" style="width:100%"></div></div>
+<span>XP</span><div class="hbar"><div class="hbar-fill" id="xp-fill" style="width:0%;background:#a78bfa"></div></div>
+<span id="level-text">Lv1</span>
 <span id="floor-text">F1</span>
 <span id="gold-text">0g</span>
 <div id="items-display"></div>
@@ -97,18 +98,20 @@ function snd(type){
 
 // Heroes
 const HEROES=[
-  {id:'worm',name:'Tyler Tapeworm',emoji:'🪱',hp:40,atk:3,spd:2.2,color:'#e879a0',desc:'Slime trail damages foes',
-   special:'Leaves slime trail for 5s',spCD:6},
-  {id:'chancla',name:'La Chancla',emoji:'🩴',hp:45,atk:4,spd:1.8,color:'#c87030',desc:'Throws chanclas (ranged)',
-   special:'Triple chancla burst',spCD:5},
-  {id:'cube',name:'Cube Warrior',emoji:'🟫',hp:70,atk:5,spd:1.4,color:'#b8956a',desc:'Tanky melee slam',
-   special:'Ground slam (AOE)',spCD:7},
-  {id:'flounder',name:'Flounder',emoji:'🐟',hp:50,atk:4,spd:1.8,color:'#4ade80',desc:'Revives once (prestige)',
+  {id:'worm',name:'Tyler Tapeworm',emoji:'🪱',hp:40,mp:20,atk:3,spd:2.2,range:1.0,str:2,luck:3,crit:8,color:'#e879a0',desc:'Fast + slime trail',
+   special:'Slime trail 5s',spCD:6},
+  {id:'chancla',name:'La Chancla',emoji:'🩴',hp:45,mp:25,atk:4,spd:1.8,range:1.5,str:3,luck:2,crit:10,color:'#c87030',desc:'Ranged chancla throw',
+   special:'Triple burst',spCD:5},
+  {id:'cube',name:'Cube Warrior',emoji:'🟫',hp:70,mp:15,atk:5,spd:1.4,range:0.6,str:5,luck:1,crit:5,color:'#b8956a',desc:'Tank + AOE slam',
+   special:'Ground slam',spCD:7},
+  {id:'flounder',name:'Flounder',emoji:'🐟',hp:50,mp:30,atk:4,spd:1.8,range:1.2,str:3,luck:5,crit:12,color:'#4ade80',desc:'Lucky + prestige revive',
    special:'Prestige revive',spCD:0},
-  {id:'jesus',name:'Jesus',emoji:'🏒',hp:55,atk:4,spd:1.6,color:'#e0e0ff',desc:'Blocks with hockey stick',
-   special:'Block all dmg 3s',spCD:8},
-  {id:'horse',name:"Lily's Horse",emoji:'🐴',hp:45,atk:3,spd:2.5,color:'#a0704a',desc:'Charge & horseshoe throw',
-   special:'Charge dash attack',spCD:4}
+  {id:'jesus',name:'Jesus',emoji:'🏒',hp:55,mp:20,atk:4,spd:1.6,range:1.0,str:4,luck:2,crit:6,color:'#e0e0ff',desc:'Blocks + puck bounce',
+   special:'Block 3s',spCD:8},
+  {id:'horse',name:"Lily's Horse",emoji:'🐴',hp:45,mp:20,atk:3,spd:2.5,range:0.8,str:3,luck:3,crit:15,color:'#a0704a',desc:'Fast charge + crit',
+   special:'Charge dash',spCD:4},
+  {id:'keira',name:'Keira',emoji:'🏠',hp:50,mp:35,atk:3,spd:1.9,range:1.3,str:2,luck:4,crit:10,color:'#ff9f0a',desc:'Balanced + high MP',
+   special:'Wine splash (slow)',spCD:5}
 ];
 
 const ITEMS=[
@@ -339,9 +342,11 @@ function updateItemsHUD(){
 function startGame(heroIdx){
   ia();
   const h=HEROES[heroIdx];
-  player={x:0,y:0,hero:h,hp:h.hp,maxHp:h.hp,atk:h.atk,spd:h.spd,facing:{x:0,y:1},
+  player={x:0,y:0,hero:h,hp:h.hp,maxHp:h.hp,mp:h.mp,maxMp:h.mp,atk:h.atk,spd:h.spd,
+    range:h.range,str:h.str,luck:h.luck,crit:h.crit,facing:{x:0,y:1},
     atkCD:0,spCD:0,spActive:0,invTime:0,bounce:false,extraProj:0,dmgReduce:0,items:[],
-    slimeActive:0,blockActive:0,chargeActive:0,chargeDir:{x:0,y:1},flash:0};
+    slimeActive:0,blockActive:0,chargeActive:0,chargeDir:{x:0,y:1},flash:0,
+    xp:0,xpNext:20,level:1};
   floor=1;gold=0;kills=0;prestigeUsed=false;bossActive=false;
   slimes=[];projectiles=[];particles=[];floats=[];
   loadFloor();
@@ -369,6 +374,9 @@ addEventListener('keydown',e=>{keys[e.key.toLowerCase()]=true;if(e.key===' ')e.p
 addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
 
 let touchDir={x:0,y:0},touchAtk=false,touchSpc=false;
+let aimX=0,aimY=0,aimAngle=0,mouseAiming=false;
+C.addEventListener('mousemove',e=>{const r=C.getBoundingClientRect();aimX=e.clientX-r.left;aimY=e.clientY-r.top;mouseAiming=true});
+C.addEventListener('touchmove',e=>{if(e.target===C){const t=e.touches[0];const r=C.getBoundingClientRect();aimX=t.clientX-r.left;aimY=t.clientY-r.top;mouseAiming=true}},{passive:true});
 const TL=document.getElementById('touch-left');
 const TThumb=document.getElementById('touch-thumb');
 const maxJoy=40;
@@ -406,18 +414,33 @@ function getMoveDir(){
 }
 
 // Combat
+function getAimDir(){
+  if(mouseAiming){
+    const px=player.x+8-camX, py=player.y+8-camY;
+    const dx=aimX-px, dy=aimY-py;
+    const d=Math.sqrt(dx*dx+dy*dy);
+    if(d>3) return {x:dx/d,y:dy/d};
+  }
+  return {...player.facing};
+}
 function playerAttack(){
   if(player.atkCD>0)return;
-  player.atkCD=.25;
+  player.atkCD=Math.max(.12, .3 - player.spd*.02);
   snd('atk');
-  const dir={...player.facing};
+  const dir=getAimDir();
+  player.facing=dir;
   const numProj=1+player.extraProj;
+  const projSpd=3+player.range*1.5;
+  const projLife=20+player.range*10;
+  const isCrit=Math.random()*100<player.crit;
+  const dmg=isCrit?Math.floor(player.atk*(1.5+player.str*.1)):player.atk;
   for(let i=0;i<numProj;i++){
     let pd={...dir};
-    if(i>0){const a=Math.atan2(pd.y,pd.x)+(i%2===1?.25:-.25);pd={x:Math.cos(a),y:Math.sin(a)}}
-    projectiles.push({x:player.x+8,y:player.y+8,dx:pd.x*4,dy:pd.y*4,dmg:player.atk,life:30,
-      owner:'player',bounce:player.bounce?2:0,sz:3,color:player.hero.color});
+    if(i>0){const a=Math.atan2(pd.y,pd.x)+(i%2===1?.2:-.2);pd={x:Math.cos(a),y:Math.sin(a)}}
+    projectiles.push({x:player.x+8,y:player.y+8,dx:pd.x*projSpd,dy:pd.y*projSpd,dmg:dmg,life:projLife,
+      owner:'player',bounce:player.bounce?2:0,sz:isCrit?5:3,color:isCrit?'#f7c948':player.hero.color,crit:isCrit});
   }
+  if(isCrit) addFloat(player.x,player.y-8,'CRIT!','#f7c948');
 }
 
 function useSpecial(){
@@ -457,8 +480,57 @@ function hurtEnemy(e,dmg){
   if(e.hp<=0)killEnemy(e);
 }
 
+const UPGRADES=[
+  {name:'+5 Max HP',emoji:'❤️',apply:p=>{p.maxHp+=5;p.hp+=5}},
+  {name:'+1 ATK',emoji:'⚔️',apply:p=>{p.atk+=1}},
+  {name:'+0.2 Speed',emoji:'💨',apply:p=>{p.spd+=.2}},
+  {name:'+0.3 Range',emoji:'🎯',apply:p=>{p.range+=.3}},
+  {name:'+1 STR',emoji:'💪',apply:p=>{p.str+=1}},
+  {name:'+5% Crit',emoji:'⚡',apply:p=>{p.crit+=5}},
+  {name:'+1 Luck',emoji:'🍀',apply:p=>{p.luck+=1}},
+  {name:'+5 MP',emoji:'🔮',apply:p=>{p.maxMp+=5;p.mp+=5}},
+  {name:'+1 Projectile',emoji:'🩴',apply:p=>{p.extraProj+=1}},
+  {name:'Heal 50%',emoji:'💚',apply:p=>{p.hp=Math.min(p.maxHp,p.hp+Math.floor(p.maxHp/2))}},
+];
+let upgradeChoices=[],upgradeActive=false;
+
+function showUpgradeScreen(){
+  upgradeActive=true;gameState='upgrade';
+  // Pick 3 random upgrades
+  const shuffled=[...UPGRADES].sort(()=>Math.random()-.5);
+  upgradeChoices=shuffled.slice(0,3);
+  OV.classList.remove('hidden');
+  OVT.textContent='LEVEL UP!';
+  OVS.textContent='Level '+player.level+' — Choose an upgrade';
+  OVG.innerHTML='';OVST.style.display='none';OVH.style.display='none';
+  upgradeChoices.forEach((u,i)=>{
+    const d=document.createElement('div');d.className='hero-card';
+    d.innerHTML=`<div style="font-size:28px">${u.emoji}</div><div class="hero-name">${u.name}</div>`;
+    d.onclick=()=>{
+      u.apply(player);snd('item');
+      OV.classList.add('hidden');upgradeActive=false;gameState='play';
+      TL.style.display='flex';document.getElementById('touch-right').style.display='flex';
+    };
+    OVG.appendChild(d);
+  });
+  OVB.style.display='none';
+}
+
+function gainXP(amt){
+  player.xp+=amt+Math.floor(player.luck*.5);
+  while(player.xp>=player.xpNext){
+    player.xp-=player.xpNext;
+    player.level++;
+    player.xpNext=Math.floor(player.xpNext*1.4);
+    addFloat(player.x,player.y-16,'LEVEL UP!','#f7c948');
+    snd('win');
+    showUpgradeScreen();
+  }
+}
+
 function killEnemy(e){
   kills++;gold+=Math.floor(2+floor*.5+Math.random()*3);
+  gainXP(3+floor);
   for(let i=0;i<8;i++)particles.push({x:e.x+e.sz/2,y:e.y+e.sz/2,dx:(Math.random()-.5)*3,dy:(Math.random()-.5)*3,life:.4,color:e.type.color,sz:2});
   if(e.type.explode){
     shake=.3;
@@ -534,6 +606,7 @@ function showMenu(){
   OVT.style.background='linear-gradient(135deg,#4ade80,#06b6d4,#8b5cf6)';
   OVT.style['-webkit-background-clip']='text';OVT.style['-webkit-text-fill-color']='transparent';
   OVT.textContent='CROSSOVER ROGUE';OVS.textContent='Choose your hero';
+  OVB.style.display='';OVB.textContent='START';
   OVST.style.display='none';
   OVH.style.display=wonWith.length?'flex':'none';
   if(wonWith.length)OVH.innerHTML='Victories: '+wonWith.map(id=>HEROES.find(h=>h.id===id)?.emoji||'?').join(' ');
@@ -797,6 +870,8 @@ function update(dt){
   document.getElementById('hp-text').textContent=`${Math.max(0,player.hp)}/${player.maxHp}`;
   const cdPct=player.hero.spCD>0?(1-player.spCD/HEROES.find(h=>h.id===player.hero.id).spCD)*100:100;
   document.getElementById('cd-fill').style.width=(player.hero.id==='flounder'?(prestigeUsed?0:100):Math.max(0,cdPct))+'%';
+  document.getElementById('xp-fill').style.width=(player.xp/player.xpNext*100)+'%';
+  document.getElementById('level-text').textContent=`Lv${player.level}`;
   document.getElementById('floor-text').textContent=`F${floor}`;
   document.getElementById('gold-text').textContent=`${gold}g`;
 }
@@ -880,6 +955,18 @@ function render(){
     X.fillStyle=player.blockActive>0?'rgba(100,180,255,.2)':'rgba(255,255,100,.15)';X.fillRect(player.x-4,player.y-4,24,24)}
   drawPixelHero(X,player.hero.id,player.x,player.y,16,player.facing.x>=0?1:-1);
   X.globalAlpha=1;
+
+  // Aim crosshair
+  if(mouseAiming&&gameState==='play'){
+    const ax=aimX+camX,ay=aimY+camY;
+    X.strokeStyle='rgba(255,255,255,.4)';X.lineWidth=1;
+    X.beginPath();X.arc(ax,ay,6,0,Math.PI*2);X.stroke();
+    X.beginPath();X.moveTo(ax-10,ay);X.lineTo(ax+10,ay);X.moveTo(ax,ay-10);X.lineTo(ax,ay+10);X.stroke();
+    // Aim line from player
+    X.strokeStyle='rgba(255,255,255,.1)';X.setLineDash([4,4]);
+    X.beginPath();X.moveTo(player.x+8,player.y+8);X.lineTo(ax,ay);X.stroke();
+    X.setLineDash([]);
+  }
 
   // Projectiles
   projectiles.forEach(p=>{
