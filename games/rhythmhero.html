@@ -96,11 +96,15 @@ function seededRandom(seed){
 // --- SONGS ---
 function buildSong1(){ // Neon Pulse - Very Easy 80BPM
   const bpm=80,bt=60000/bpm,notes=[];
-  // Simple: one note every other beat, single lane
   for(let bar=0;bar<10;bar++){
-    for(let beat=0;beat<4;beat+=2){
-      const t=bar*4*bt+beat*bt+2000;
-      notes.push({time:t,lane:(bar+beat/2)%4,duration:0});
+    if(bar%3===2){
+      // Hold note every 3rd bar
+      notes.push({time:bar*4*bt+2000,lane:bar%4,duration:bt*3});
+    } else {
+      for(let beat=0;beat<4;beat+=2){
+        const t=bar*4*bt+beat*bt+2000;
+        notes.push({time:t,lane:(bar+beat/2)%4,duration:0});
+      }
     }
   }
   return {name:'Neon Pulse',difficulty:1,bpm:80,notes:notes.sort((a,b)=>a.time-b.time),
@@ -160,26 +164,35 @@ function buildSong3(){ // Cyber Shred - Hard 140BPM
 
 function buildShakeItOff(){ // Shake It Off - Easy 120BPM
   const bpm=120,bt=60000/bpm,notes=[];
+  // Verse: sparse taps + hold notes
   for(let bar=0;bar<4;bar++){
-    for(let beat=0;beat<4;beat+=1){
-      const t=bar*4*bt+beat*bt+2000;
-      if(beat%2===0) notes.push({time:t,lane:(bar+beat)%4,duration:0});
+    if(bar%2===0){
+      notes.push({time:bar*4*bt+2000,lane:bar%4,duration:bt*2}); // hold
+      notes.push({time:bar*4*bt+bt*3+2000,lane:(bar+1)%4,duration:0}); // tap
+    } else {
+      for(let beat=0;beat<4;beat+=2){
+        notes.push({time:bar*4*bt+beat*bt+2000,lane:(bar+beat)%4,duration:0});
+      }
     }
   }
+  // Pre-chorus: one per beat
   for(let bar=4;bar<8;bar++){
     for(let beat=0;beat<4;beat++){
       const t=bar*4*bt+beat*bt+2000;
       notes.push({time:t,lane:(bar+beat)%4,duration:0});
     }
+    // Hold note at end of every other bar
+    if(bar%2===1) notes.push({time:bar*4*bt+bt*3+2000,lane:bar%4,duration:bt*2});
   }
-  for(let bar=8;bar<14;bar++){
-    for(let beat=0;beat<4;beat++){
-      const t=bar*4*bt+beat*bt+2000;
-      notes.push({time:t,lane:beat%4,duration:0});
-    }
+  // Chorus: taps + big holds
+  for(let bar=8;bar<12;bar++){
+    notes.push({time:bar*4*bt+2000,lane:0,duration:0});
+    notes.push({time:bar*4*bt+bt+2000,lane:1,duration:0});
+    notes.push({time:bar*4*bt+bt*2+2000,lane:bar%4,duration:bt*3}); // long hold
   }
+  // Outro: all hold notes
   for(let i=0;i<4;i++){
-    notes.push({time:14*4*bt+i*bt*2+2000,lane:i,duration:bt*2});
+    notes.push({time:12*4*bt+i*bt*2+2000,lane:i,duration:bt*3});
   }
   return {name:'Shake It Off',difficulty:1,bpm:120,notes:notes.sort((a,b)=>a.time-b.time),
     duration:notes[notes.length-1].time+3000,chords:['G','Am','C','D'],
@@ -1157,8 +1170,24 @@ function drawGameplay(){
 
     if(n.duration>0){
       const endY=hitY-(timeDiff+n.duration)/1000*speed*speedMult;
+      const barW=nw*0.6;
+      // Glow behind bar
+      X.shadowColor=LANE_COLORS[n.lane];
+      X.shadowBlur=12;
       X.fillStyle=LANE_COLORS_DIM[n.lane];
-      X.fillRect(cx-nw/3,endY,nw*2/3,ny-endY);
+      roundRect(X,cx-barW/2,endY,barW,ny-endY,4);
+      X.fill();
+      // Bright center stripe
+      X.fillStyle=LANE_COLORS[n.lane];
+      X.globalAlpha=0.4+0.1*Math.sin(performance.now()/100);
+      roundRect(X,cx-barW/4,endY,barW/2,ny-endY,3);
+      X.fill();
+      X.globalAlpha=1;
+      X.shadowBlur=0;
+      // End cap
+      X.fillStyle=LANE_COLORS[n.lane];
+      roundRect(X,cx-nw/2,endY-6,nw,12,6);
+      X.fill();
     }
 
     X.fillStyle=LANE_COLORS[n.lane];
@@ -1181,14 +1210,39 @@ function drawGameplay(){
   }
 
   for(const h of activeHolds){
-    if(!lanePress[h.lane])continue;
+    if(!lanePress[h.lane]){
+      // Released early — penalize
+      const n=h.note;
+      const holdElapsed=elapsed-n.time;
+      if(holdElapsed<n.duration*0.8){
+        combo=0;
+        addFloatingText(getLaneX(h.lane),hitY-30,'RELEASED!','#ef4444');
+      }
+      continue;
+    }
     const n=h.note;
     const holdElapsed=elapsed-n.time;
     if(holdElapsed<n.duration){
-      score+=1;
-      spawnParticles(getLaneX(h.lane),hitY,LANE_COLORS[h.lane],1);
+      // Big points while holding — 5 per frame + combo
+      score+=5*Math.max(1,Math.floor(combo/10)+1);
+      // Lots of particles — feels juicy
+      if(Math.random()<0.4) spawnParticles(getLaneX(h.lane),hitY,LANE_COLORS[h.lane],2);
+      // Glow the lane brighter
+      laneGlow[h.lane]=1;
     }
   }
+  // Clean up finished holds
+  activeHolds=activeHolds.filter(h=>{
+    const holdElapsed=elapsed-h.note.time;
+    if(holdElapsed>=h.note.duration && lanePress[h.lane]){
+      // Completed hold! Bonus
+      score+=200*Math.max(1,Math.floor(combo/10)+1);
+      addFloatingText(getLaneX(h.lane),hitY-50,'HELD! +'+200*Math.max(1,Math.floor(combo/10)+1),'#f7c948');
+      spawnParticles(getLaneX(h.lane),hitY,LANE_COLORS[h.lane],20);
+      return false;
+    }
+    return holdElapsed<h.note.duration;
+  });
 
   if(combo>=10){
     const cx=W/2;
