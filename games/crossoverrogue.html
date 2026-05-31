@@ -10,9 +10,15 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 canvas#c{display:block;position:fixed;top:0;left:0;width:100%;height:100%}
 #ui{position:fixed;inset:0;z-index:10;pointer-events:none}
 #hud{position:absolute;top:0;left:0;right:0;padding:6px 10px;display:flex;align-items:center;gap:8px;font-size:11px;color:#ddd;text-shadow:0 1px 2px #000}
-.hbar{width:100px;height:8px;background:rgba(0,0,0,.6);border-radius:4px;border:1px solid rgba(255,255,255,.15);overflow:hidden}
-.hbar-fill{height:100%;border-radius:3px;transition:width .15s}
+.hbar{width:100px;height:10px;background:rgba(0,0,0,.6);border-radius:5px;border:1px solid rgba(255,255,255,.15);overflow:hidden;position:relative}
+.hbar-fill{height:100%;border-radius:4px;transition:width .15s;position:relative;z-index:2}
+#hp-ghost{position:absolute;top:0;left:0;height:100%;background:rgba(255,255,255,.35);border-radius:4px;transition:width .6s;z-index:1}
 #hp-fill{background:linear-gradient(90deg,#e74c3c,#ff6b6b)}
+#pet-icon{font-size:14px;margin-left:-4px}
+#dps-text{font-size:9px;color:#888;margin-left:4px}
+#gold-text{transition:transform .15s}
+.gold-bounce{animation:goldBounce .3s ease-out}
+@keyframes goldBounce{0%{transform:scale(1)}30%{transform:scale(1.4) translateY(-2px)}100%{transform:scale(1)}}
 #cd-fill{background:linear-gradient(90deg,#8b5cf6,#c084fc)}
 #items-display{display:flex;gap:4px;margin-left:auto}
 .item-slot{width:24px;height:24px;background:rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.2);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:12px;cursor:pointer;position:relative}
@@ -45,7 +51,7 @@ canvas#c{display:block;position:fixed;top:0;left:0;width:100%;height:100%}
 .shop-sell-btn{font-size:9px;padding:4px 8px;background:rgba(239,68,68,.3);border:1px solid #ef4444;border-radius:4px;color:#ef4444;cursor:pointer;margin-top:4px;pointer-events:all}
 .shop-sell-btn:hover{background:rgba(239,68,68,.5)}
 #minimap{position:absolute;top:8px;right:8px;border:1px solid rgba(255,255,255,.2);border-radius:4px;background:rgba(0,0,0,.6)}
-#overlay{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(5,5,15,.95);pointer-events:all}
+#overlay{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;align-items:center;background:rgba(5,5,15,.95);pointer-events:all;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:20px 10px}
 #overlay.hidden{display:none;pointer-events:none}
 .ov-title{font-size:clamp(28px,6vw,48px);font-weight:900;margin-bottom:4px;letter-spacing:2px}
 .ov-sub{font-size:13px;color:#888;margin-bottom:16px}
@@ -58,7 +64,7 @@ canvas#c{display:block;position:fixed;top:0;left:0;width:100%;height:100%}
 .hero-special{font-size:8px;color:#c084fc;margin-top:2px}
 .btn{padding:12px 32px;font-size:15px;font-weight:700;border:none;border-radius:10px;cursor:pointer;transition:all .15s;pointer-events:all;letter-spacing:1px}
 .btn:hover{transform:scale(1.05)}
-.btn-go{background:linear-gradient(135deg,#4ade80,#22c55e);color:#0a0a0a}
+.btn-go{background:linear-gradient(135deg,#4ade80,#22c55e);color:#0a0a0a;position:sticky;bottom:10px;z-index:25}
 .btn-retry{background:linear-gradient(135deg,#e74c3c,#ff6b6b);color:#fff}
 .death-stats{font-size:12px;color:#aaa;line-height:2;margin-bottom:12px;text-align:center}
 .win-heroes{display:flex;gap:6px;margin:8px 0}
@@ -77,12 +83,14 @@ canvas#c{display:block;position:fixed;top:0;left:0;width:100%;height:100%}
 <canvas id="minimap" width="120" height="90"></canvas>
 <div id="ui">
 <div id="hud">
-<span>HP</span><div class="hbar"><div class="hbar-fill" id="hp-fill"></div></div>
+<span id="pet-icon"></span>
+<span>HP</span><div class="hbar"><div id="hp-ghost"></div><div class="hbar-fill" id="hp-fill"></div></div>
 <span id="hp-text">50/50</span>
 <span>XP</span><div class="hbar"><div class="hbar-fill" id="xp-fill" style="width:0%;background:#a78bfa"></div></div>
 <span id="level-text">Lv1</span>
 <span id="floor-text">F1</span>
 <span id="gold-text">0g</span>
+<span id="dps-text"></span>
 <div id="items-display"></div>
 </div>
 </div>
@@ -106,6 +114,11 @@ const C=document.getElementById('c'),X=C.getContext('2d'),MC=document.getElement
 const OV=document.getElementById('overlay'),OVT=document.getElementById('ov-title'),OVS=document.getElementById('ov-sub');
 const OVG=document.getElementById('hero-grid'),OVB=document.getElementById('ov-btn'),OVST=document.getElementById('ov-stats'),OVH=document.getElementById('ov-heroes');
 let W,H,TS=16,DT=0,LT=0,gameState='menu',shake=0,shakeX=0,shakeY=0;
+// Polish state
+let ghostHp=50,vignetteAlpha=0,lvlFlashAlpha=0,floorFadeAlpha=0,floorFadeDir=0;
+let ambientDust=[],dpsTracker={dmg:0,timer:0,dps:0},comboKills={count:0,timer:0};
+let lastGold=0,xpSparkles=[],tileNoise={},playerBobTime=0,prevPlayerSpeed=0;
+let heartbeatCD=0,bossEntrancePlayed=false;
 function resize(){W=C.width=innerWidth;H=C.height=innerHeight}
 resize();addEventListener('resize',resize);
 
@@ -123,6 +136,9 @@ function snd(type){
   else if(type==='boss'){o.type='sawtooth';o.frequency.setValueAtTime(80,t);o.frequency.exponentialRampToValueAtTime(40,t+.8);g.gain.setValueAtTime(.12,t);g.gain.linearRampToValueAtTime(.08,t+.4);g.gain.exponentialRampToValueAtTime(.001,t+1);o.start(t);o.stop(t+1)}
   else if(type==='win'){o.type='square';o.frequency.setValueAtTime(523,t);o.frequency.setValueAtTime(659,t+.1);o.frequency.setValueAtTime(784,t+.2);o.frequency.setValueAtTime(1047,t+.3);g.gain.setValueAtTime(.06,t);g.gain.exponentialRampToValueAtTime(.001,t+.5);o.start(t);o.stop(t+.5)}
   else if(type==='stair'){o.type='triangle';o.frequency.setValueAtTime(440,t);o.frequency.exponentialRampToValueAtTime(880,t+.2);g.gain.setValueAtTime(.06,t);g.gain.exponentialRampToValueAtTime(.001,t+.3);o.start(t);o.stop(t+.3)}
+  else if(type==='heartbeat'){o.type='sine';o.frequency.setValueAtTime(50,t);o.frequency.exponentialRampToValueAtTime(40,t+.15);g.gain.setValueAtTime(.06,t);g.gain.exponentialRampToValueAtTime(.001,t+.3);o.start(t);o.stop(t+.3)}
+  else if(type==='combo'){o.type='sine';const base=523;o.frequency.setValueAtTime(base,t);o.frequency.setValueAtTime(base*1.25,t+.06);o.frequency.setValueAtTime(base*1.5,t+.12);g.gain.setValueAtTime(.05,t);g.gain.exponentialRampToValueAtTime(.001,t+.2);o.start(t);o.stop(t+.2)}
+  else if(type==='bossdrum'){o.type='sawtooth';o.frequency.setValueAtTime(60,t);o.frequency.exponentialRampToValueAtTime(30,t+1.2);g.gain.setValueAtTime(.15,t);g.gain.linearRampToValueAtTime(.1,t+.5);g.gain.exponentialRampToValueAtTime(.001,t+1.5);o.start(t);o.stop(t+1.5)}
 }
 
 // Heroes — Troy is default starter, others unlocked by reaching floors
@@ -882,6 +898,11 @@ function startGame(heroIdx,bonus){
   floor=1;gold=0;kills=0;prestigeUsed=false;bossActive=false;
   slimes=[];projectiles=[];particles=[];floats=[];
   petAtkTimer=0;petFireTimer=0;petSlimeTimer=0;petWebTimer=0;petPoisonTimers=[];
+  // Polish state reset
+  ghostHp=player.maxHp;vignetteAlpha=0;lvlFlashAlpha=0;floorFadeAlpha=0;floorFadeDir=0;
+  ambientDust=[];dpsTracker={dmg:0,timer:0,dps:0};comboKills={count:0,timer:0};
+  lastGold=0;xpSparkles=[];tileNoise={};playerBobTime=0;prevPlayerSpeed=0;
+  heartbeatCD=0;bossEntrancePlayed=false;
   // Apply pet bonuses
   activePet=localStorage.getItem('cr_pet')||null;
   if(activePet){
@@ -1026,9 +1047,13 @@ function playerAttack(){
     let pd={...dir};
     if(i>0){const a=Math.atan2(pd.y,pd.x)+(i%2===1?.2:-.2);pd={x:Math.cos(a),y:Math.sin(a)}}
     projectiles.push({x:player.x+8,y:player.y+8,dx:pd.x*projSpd,dy:pd.y*projSpd,dmg:dmg,life:projLife,
-      owner:'player',bounce:player.bounce?2:0,sz:isCrit?5:3,color:isCrit?'#f7c948':player.hero.color,crit:isCrit});
+      owner:'player',bounce:player.bounce?2:0,sz:isCrit?6:3,color:isCrit?'#f7c948':player.hero.color,crit:isCrit,
+      trail:[{x:player.x+8,y:player.y+8},{x:player.x+8,y:player.y+8},{x:player.x+8,y:player.y+8}]});
   }
-  if(isCrit) floats.push({x:player.x,y:player.y-8,text:'CRIT!',life:.8,color:'#f7c948'});
+  if(isCrit){floats.push({x:player.x,y:player.y-8,text:'CRIT!',life:.8,color:'#f7c948'});
+    // Sparkle particles for crit
+    for(let i=0;i<4;i++)particles.push({x:player.x+8,y:player.y+8,dx:(Math.random()-.5)*4,dy:(Math.random()-.5)*4,life:.3,color:'#ffd700',sz:1,isStar:true});
+  }
 }
 
 function useSpecial(){
@@ -1084,8 +1109,9 @@ function useSpecial(){
 }
 
 function hurtEnemy(e,dmg){
-  e.hp-=dmg;e.flash=.15;
-  floats.push({x:e.x,y:e.y-4,text:dmg.toString(),life:.6,color:'#ffd700'});
+  e.hp-=dmg;e.flash=.2;
+  dpsTracker.dmg+=dmg;
+  floats.push({x:e.x,y:e.y-4,text:dmg.toString(),life:.6,color:'#fff'});
   snd('hit');
   // Pet poison: apply DOT
   if(activePet){
@@ -1137,12 +1163,16 @@ function showUpgradeScreen(){
 }
 
 function gainXP(amt){
+  const prevXp=player.xp;
   player.xp+=Math.floor((amt+Math.floor(player.luck*.5))*(player.xpMult||1));
+  // XP sparkle effect
+  if(player.xp>prevXp){for(let i=0;i<2;i++)xpSparkles.push({x:Math.random()*60+40,y:Math.random()*6+2,life:0.4+Math.random()*0.3})}
   while(player.xp>=player.xpNext){
     player.xp-=player.xpNext;
     player.level++;
     player.xpNext=Math.floor(player.xpNext*1.4);
     floats.push({x:player.x,y:player.y-16,text:'LEVEL UP!',life:.8,color:'#f7c948'});
+    lvlFlashAlpha=0.5;
     snd('win');
     showUpgradeScreen();
   }
@@ -1153,7 +1183,15 @@ function killEnemy(e){
   const gm=player.goldMult||1;
   gold+=Math.floor((2+floor*.5+Math.random()*3)*gm);
   gainXP(3+floor);
-  for(let i=0;i<8;i++)particles.push({x:e.x+e.sz/2,y:e.y+e.sz/2,dx:(Math.random()-.5)*3,dy:(Math.random()-.5)*3,life:.4,color:e.type.color,sz:2});
+  shake=Math.max(shake,0.05);
+  // Death explosion: 16 particles, bigger, varied sizes
+  for(let i=0;i<16;i++){
+    const ang=Math.PI*2*i/16;const spd=1.5+Math.random()*3;
+    particles.push({x:e.x+e.sz/2,y:e.y+e.sz/2,dx:Math.cos(ang)*spd,dy:Math.sin(ang)*spd,life:.5+Math.random()*.3,color:e.type.color,sz:1+Math.random()*3});
+  }
+  // Combo tracking
+  comboKills.count++;comboKills.timer=2;
+  if(comboKills.count>=3){snd('combo');floats.push({x:player.x,y:player.y-20,text:`COMBO x${comboKills.count}!`,life:1,color:'#ff9f1c'})}
   if(e.type.explode){
     shake=.3;
     const dmg=e.atk*2;
@@ -1183,8 +1221,9 @@ function killEnemy(e){
 function hurtPlayer(dmg,attacker){
   if(player.invTime>0||player.blockActive>0)return;
   const actual=Math.max(1,Math.floor(dmg*(1-(player.dmgReduce||0))));
-  player.hp-=actual;player.flash=.2;shake=.15;
-  floats.push({x:player.x,y:player.y-4,text:actual.toString(),life:.6,color:'#ff4444'});
+  player.hp-=actual;player.flash=.1;shake=.15;
+  vignetteAlpha=0.6;
+  floats.push({x:player.x,y:player.y-4,text:actual.toString(),life:.6,color:'#ff4444',isPlayerDmg:true});
   snd('hurt');
   // Pet thorns: reflect damage to attacker
   if(activePet&&attacker){
@@ -1319,7 +1358,7 @@ function showPetShop(outcome){
     OVG.appendChild(releaseDiv);
   }
 
-  OVB.style.display='';
+  OVB.style.display='';OVB.style.marginTop='12px';
   OVB.textContent='CONTINUE';OVB.className='btn btn-go';
   OVB.onclick=()=>{
     OVG.style.gridTemplateColumns='repeat(3,1fr)';
@@ -1575,6 +1614,8 @@ function update(dt){
 
   // Projectiles
   projectiles.forEach(p=>{
+    // Store trail positions for player projectiles
+    if(p.trail){p.trail.unshift({x:p.x,y:p.y});if(p.trail.length>3)p.trail.pop()}
     p.x+=p.dx;p.y+=p.dy;p.life--;
     if(p.owner==='player'){
       enemies.forEach(e=>{
@@ -1754,9 +1795,12 @@ function update(dt){
     const dx=player.x-exitX*TS,dy=player.y-exitY*TS;
     if(Math.sqrt(dx*dx+dy*dy)<14){
       if(floor>=15){win();return}
-      floor++;checkUnlocks(floor);loadFloor();
-      floats.push({x:player.x,y:player.y-12,text:`Floor ${floor}`,life:1.2,color:'#4ade80'});
-      snd('stair');
+      floor++;checkUnlocks(floor);
+      floorFadeAlpha=1;floorFadeDir=-1;
+      setTimeout(()=>{loadFloor();floorFadeDir=1;
+        floats.push({x:player.x,y:player.y-12,text:`Floor ${floor}`,life:1.2,color:'#4ade80'});
+      },300);
+      snd('stair');tileNoise={};
     }
   }
 
