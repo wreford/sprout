@@ -7,7 +7,7 @@
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:ui-monospace,"SF Mono",Menlo,monospace;touch-action:none;user-select:none;-webkit-user-select:none}
-canvas{display:block;position:fixed;top:0;left:0}
+canvas#c{display:block;position:fixed;top:0;left:0;width:100%;height:100%}
 #ui{position:fixed;inset:0;z-index:10;pointer-events:none}
 #hud{position:absolute;top:0;left:0;right:0;padding:6px 10px;display:flex;align-items:center;gap:8px;font-size:11px;color:#ddd;text-shadow:0 1px 2px #000}
 .hbar{width:100px;height:8px;background:rgba(0,0,0,.6);border-radius:4px;border:1px solid rgba(255,255,255,.15);overflow:hidden}
@@ -160,14 +160,14 @@ function checkUnlocks(fl){
 }
 
 const ITEMS=[
-  {name:'Horseshoe',emoji:'🧲',desc:'+2 ATK',apply:p=>{p.atk+=2}},
-  {name:'Hockey Puck',emoji:'🏒',desc:'Bouncing shot',apply:p=>{p.bounce=true}},
-  {name:'Coffee Bean',emoji:'☕',desc:'+20% speed',apply:p=>{p.spd*=1.2}},
-  {name:'Worm Segment',emoji:'🪱',desc:'+10 max HP',apply:p=>{p.maxHp+=10;p.hp+=10}},
+  {name:'Horseshoe',emoji:'🧲',desc:'+2 ATK',apply:p=>{p.baseAtk+=2;recalcStats()}},
+  {name:'Hockey Puck',emoji:'🏒',desc:'Bouncing shot',apply:p=>{p.baseBounce=true;recalcStats()}},
+  {name:'Coffee Bean',emoji:'☕',desc:'+20% speed',apply:p=>{p.baseSpd*=1.2;recalcStats()}},
+  {name:'Worm Segment',emoji:'🪱',desc:'+10 max HP',apply:p=>{p.baseMaxHp+=10;p.hp+=10;recalcStats()}},
   {name:'Chancla',emoji:'🩴',desc:'+1 projectile',apply:p=>{p.extraProj++}},
   {name:'Prestige Star',emoji:'⭐',desc:'Full heal',apply:p=>{p.hp=p.maxHp}},
   {name:'Obby Block',emoji:'🟦',desc:'3s invincible',apply:p=>{p.invTime=3}},
-  {name:'Hex Shield',emoji:'🛡️',desc:'-15% damage',apply:p=>{p.dmgReduce=Math.min(.6,(p.dmgReduce||0)+.15)}}
+  {name:'Hex Shield',emoji:'🛡️',desc:'-15% damage',apply:p=>{p.baseDmgReduce=Math.min(.6,(p.baseDmgReduce||0)+.15);recalcStats()}}
 ];
 
 // ─── Equipment System ───
@@ -761,6 +761,7 @@ function startGame(heroIdx){
   OV.classList.add('hidden');
   TL.style.display='flex';
   document.getElementById('touch-right').style.display='flex';
+  updateEquipHUD();
   gameState='play';
 }
 
@@ -1003,15 +1004,21 @@ function hurtPlayer(dmg){
 
 function die(){
   gameState='dead';
+  TL.style.display='none';document.getElementById('touch-right').style.display='none';
   OV.classList.remove('hidden');
   OVT.style.background='linear-gradient(135deg,#e74c3c,#ff6b6b)';
   OVT.style['-webkit-background-clip']='text';OVT.style['-webkit-text-fill-color']='transparent';
   OVT.textContent='YOU DIED';OVS.textContent='';
-  OVG.innerHTML='';
+  OVG.innerHTML='';OVG.style.gridTemplateColumns='repeat(3,1fr)';
+  let eqStr='';
+  if(player&&player.equipment){
+    const eqs=['weapon','armor','acc'].map(s=>player.equipment[s]).filter(Boolean);
+    if(eqs.length)eqStr='<br>Gear: '+eqs.map(e=>`${e.emoji}${e.name}`).join(', ');
+  }
   OVST.style.display='block';
-  OVST.innerHTML=`Floor Reached: <b>${floor}</b><br>Enemies Slain: <b>${kills}</b><br>Gold: <b>${gold}</b>`;
+  OVST.innerHTML=`Floor Reached: <b>${floor}</b><br>Enemies Slain: <b>${kills}</b><br>Gold: <b>${gold}</b>${eqStr}`;
   OVH.style.display='none';
-  OVB.textContent='TRY AGAIN';OVB.className='btn btn-retry';
+  OVB.style.display='';OVB.textContent='TRY AGAIN';OVB.className='btn btn-retry';
   OVB.onclick=()=>showMenu();
 }
 
@@ -1042,7 +1049,7 @@ function showMenu(){
   OVST.style.display='none';
   OVH.style.display=wonWith.length?'flex':'none';
   if(wonWith.length)OVH.innerHTML='Victories: '+wonWith.map(id=>HEROES.find(h=>h.id===id)?.emoji||'?').join(' ');
-  OVG.innerHTML='';selectedHero=0;
+  OVG.innerHTML='';OVG.style.gridTemplateColumns='repeat(3,1fr)';selectedHero=0;
   HEROES.forEach((h,i)=>{
     const locked=!isUnlocked(h);
     const d=document.createElement('div');
@@ -1330,8 +1337,9 @@ function update(dt){
 
 // Render
 function render(){
+  resize();
   X.fillStyle='#0a0a0f';X.fillRect(0,0,W,H);
-  if(gameState==='menu'||gameState==='dead'||gameState==='win')return;
+  if(!map||!player||gameState==='menu'||gameState==='dead'||gameState==='win')return;
 
   X.save();
   X.translate(-camX+shakeX,-camY+shakeY);
@@ -1346,10 +1354,10 @@ function render(){
         // Wall — check if adjacent to floor for wall face
         let adjFloor=false;
         if(y+1<map.length&&map[y+1][x])adjFloor=true;
-        if(adjFloor){X.fillStyle='#2a2a35';X.fillRect(x*TS,y*TS,TS,TS);X.fillStyle='#222230';X.fillRect(x*TS,y*TS+12,TS,4)}
-        else{X.fillStyle='#18181f';X.fillRect(x*TS,y*TS,TS,TS)}
+        if(adjFloor){X.fillStyle='#3a3a48';X.fillRect(x*TS,y*TS,TS,TS);X.fillStyle='#303040';X.fillRect(x*TS,y*TS+12,TS,4)}
+        else{X.fillStyle='#22222e';X.fillRect(x*TS,y*TS,TS,TS)}
       } else if(t===1||t===2){
-        X.fillStyle=t===1?'#33333d':'#2d2d38';X.fillRect(x*TS,y*TS,TS,TS);
+        X.fillStyle=t===1?'#444450':'#3a3a48';X.fillRect(x*TS,y*TS,TS,TS);
         // Tile detail
         if((x+y)%4===0){X.fillStyle='rgba(255,255,255,.03)';X.fillRect(x*TS,y*TS,TS,TS)}
         // Tile border
