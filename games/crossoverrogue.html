@@ -478,6 +478,32 @@ let map=null,rooms=null,camX=0,camY=0,floor=1,gold=0,kills=0,exitOpen=false,exit
 let keys={},selectedHero=0,prestigeUsed=false,wonWith=JSON.parse(localStorage.getItem('cr_wins')||'[]');
 let shopOpen=false,shopItems=[],bossActive=false;
 
+// ─── Pets System ───
+const PETS=[
+  {id:'puppy',name:'Guard Puppy',emoji:'🐕',cost:50,desc:'Attacks nearby enemies',bonus:{atkAura:2}},
+  {id:'cat',name:'Lucky Cat',emoji:'🐱',cost:40,desc:'+3 Luck, finds more gold',bonus:{luck:3,goldMult:1.5}},
+  {id:'parrot',name:'Scout Parrot',emoji:'🦜',cost:35,desc:'Reveals map',bonus:{mapReveal:true}},
+  {id:'turtle',name:'Shield Turtle',emoji:'🐢',cost:60,desc:'-20% damage taken',bonus:{dmgReduce:0.2}},
+  {id:'fox',name:'Speed Fox',emoji:'🦊',cost:45,desc:'+0.4 speed',bonus:{spd:0.4}},
+  {id:'owl',name:'Wise Owl',emoji:'🦉',cost:55,desc:'+50% XP gain',bonus:{xpMult:1.5}},
+  {id:'snake',name:'Venom Snake',emoji:'🐍',cost:50,desc:'Poison on hit (DOT)',bonus:{poison:true}},
+  {id:'bunny',name:'Hop Bunny',emoji:'🐰',cost:30,desc:'+1 extra projectile',bonus:{extraProj:1}},
+  {id:'dragon',name:'Baby Dragon',emoji:'🐉',cost:100,desc:'Breathes fire at enemies',bonus:{fireBreath:true}},
+  {id:'penguin',name:'Chill Penguin',emoji:'🐧',cost:45,desc:'Slows nearby enemies',bonus:{slowAura:true}},
+  {id:'hamster',name:'Hamster Ball',emoji:'🐹',cost:35,desc:'+10 max HP, +5 HP/floor',bonus:{hp:10,hpPerFloor:5}},
+  {id:'wolf',name:'Pack Wolf',emoji:'🐺',cost:70,desc:'+3 ATK, attacks with you',bonus:{atk:3,atkAura:3}},
+  {id:'bee',name:'Buzz Bee',emoji:'🐝',cost:40,desc:'Stings enemies that get close',bonus:{thorns:2}},
+  {id:'fish',name:'Magic Fish',emoji:'🐠',cost:45,desc:'+10 MP, abilities cost less',bonus:{mp:10,cdReduce:0.2}},
+  {id:'unicorn',name:'Mini Unicorn',emoji:'🦄',cost:120,desc:'All stats +1, heal 5/floor',bonus:{atk:1,spd:0.1,luck:1,crit:3,hp:5,hpPerFloor:5}},
+  {id:'slime',name:'Pet Slime',emoji:'🟢',cost:25,desc:'Leaves slime trail',bonus:{slimeTrail:true}},
+  {id:'bat',name:'Night Bat',emoji:'🦇',cost:50,desc:'+30% crit, lifesteal on crit',bonus:{crit:30,lifesteal:true}},
+  {id:'spider',name:'Web Weaver',emoji:'🕷️',cost:40,desc:'Webs slow enemies',bonus:{webAura:true}},
+  {id:'ghost',name:'Friendly Ghost',emoji:'👻',cost:80,desc:'Phase through walls briefly',bonus:{phase:true}},
+  {id:'pig',name:'Truffle Pig',emoji:'🐷',cost:30,desc:'Finds hidden gold +100%',bonus:{goldMult:2}},
+];
+let activePet=localStorage.getItem('cr_pet')||null;
+let petAtkTimer=0,petFireTimer=0,petSlimeTimer=0,petWebTimer=0,petPoisonTimers=[];
+
 // Pixel art drawers
 function drawPixelHero(ctx,id,x,y,s,facing){
   const sc=s/16;ctx.save();ctx.translate(x,y);ctx.scale(sc,sc);
@@ -615,12 +641,12 @@ function drawBoss(ctx,e,x,y){
 
 // Map generation
 function genFloor(fl){
-  const mw=80,mh=60;
+  const mw=50,mh=40;
   const m=Array.from({length:mh},()=>new Uint8Array(mw));// 0=wall,1=floor,2=corridor,3=exit
   const rs=[];
-  const numRooms=5+Math.min(3,Math.floor(fl/3));
+  const numRooms=4+Math.floor(fl/4);
   for(let i=0;i<numRooms*20&&rs.length<numRooms;i++){
-    const rw=6+Math.floor(Math.random()*6),rh=5+Math.floor(Math.random()*5);
+    const rw=4+Math.floor(Math.random()*4),rh=4+Math.floor(Math.random()*3);
     const rx=2+Math.floor(Math.random()*(mw-rw-4)),ry=2+Math.floor(Math.random()*(mh-rh-4));
     let ok=true;
     for(const r of rs){if(rx<r.x+r.w+2&&rx+rw>r.x-2&&ry<r.y+r.h+2&&ry+rh>r.y-2){ok=false;break}}
@@ -647,7 +673,7 @@ function spawnEnemies(fl,rs){
   const isBoss=fl%5===0;
   for(let i=1;i<rs.length-(isBoss?1:0);i++){
     const r=rs[i];
-    const cnt=2+Math.floor(fl/2)+Math.floor(Math.random()*2);
+    const cnt=3+Math.floor(fl*0.7)+Math.floor(Math.random()*2);
     const maxIdx=Math.min(ENEMY_TYPES.length-1,2+fl);
     const avail=ENEMY_TYPES.filter((_,idx)=>idx<=maxIdx);
     for(let j=0;j<cnt;j++){
@@ -655,9 +681,9 @@ function spawnEnemies(fl,rs){
       const spawnCount=et.horde?Math.min(8,3+fl):1; // ants spawn in groups
       for(let k=0;k<spawnCount;k++){
         const ex=r.x+1+Math.random()*(r.w-2),ey=r.y+1+Math.random()*(r.h-2);
-        const hpMul=1+fl*.15;
+        const hpMul=1+fl*.3;
         enemies.push({x:ex*TS,y:ey*TS,type:et,hp:Math.floor(et.hp*hpMul),maxHp:Math.floor(et.hp*hpMul),
-          atk:et.atk+Math.floor(fl/3),spd:et.spd+(et.horde?Math.random()*.5:0),sz:et.sz,
+          atk:et.atk+Math.floor(fl/2),spd:et.spd+(et.horde?Math.random()*.5:0),sz:et.sz,
           disguised:et.id==='imposter',timer:Math.random()*4,atkCD:Math.random(),dir:1,sinOff:Math.random()*Math.PI*2,
           isBoss:false,phase:0,summonCD:0,bossId:''});
       }
@@ -667,9 +693,9 @@ function spawnEnemies(fl,rs){
     const br=rs[rs.length-1];
     const bx=br.cx*TS,by=br.cy*TS;
     let bossId,bossHP,bossATK;
-    if(fl===5){bossId='gloria';bossHP=200+fl*20;bossATK=6}
-    else if(fl===10){bossId='wormking';bossHP=350+fl*15;bossATK=8}
-    else{bossId='champion';bossHP=500+fl*10;bossATK=10}
+    if(fl===5){bossId='gloria';bossHP=Math.floor((200+fl*20)*1.5);bossATK=6}
+    else if(fl===10){bossId='wormking';bossHP=Math.floor((350+fl*15)*1.5);bossATK=8}
+    else{bossId='champion';bossHP=Math.floor((500+fl*10)*1.5);bossATK=10}
     enemies.push({x:bx,y:by,type:{id:'boss',color:'#ff0',hp:bossHP,atk:bossATK,spd:.6,sz:32,ai:'boss'},
       hp:bossHP,maxHp:bossHP,atk:bossATK,spd:.6,sz:32,disguised:false,timer:0,atkCD:0,dir:1,sinOff:0,
       isBoss:true,phase:0,summonCD:0,bossId});
@@ -771,6 +797,31 @@ function showShopOverlay(){
     sellRow.appendChild(sb);
   });
   sellDiv.appendChild(sellRow);
+
+  // Sell All consumable items button
+  if(player.items&&player.items.length>0){
+    const sellAllDiv=document.createElement('div');
+    sellAllDiv.style.cssText='margin-top:8px';
+    const sellAllBtn=document.createElement('div');
+    sellAllBtn.className='shop-sell-btn';
+    sellAllBtn.style.cssText='font-size:11px;padding:8px 16px;background:rgba(239,68,68,.3);border:1px solid #ef4444;border-radius:4px;color:#ef4444;cursor:pointer;pointer-events:all;display:inline-block';
+    sellAllBtn.textContent=`SELL ALL ITEMS (${player.items.length} items → ${player.items.length*5}g)`;
+    sellAllBtn.onclick=()=>{
+      const totalEarned=player.items.length*5;
+      gold+=totalEarned;
+      floats.push({x:player.x,y:player.y-16,text:`Sold all for +${totalEarned}g`,life:1.2,color:'#ffd700'});
+      player.items=[];
+      updateEquipHUD();
+      OVS.textContent=`Gold: ${gold}g`;
+      sellAllBtn.textContent='SOLD!';
+      sellAllBtn.style.opacity='.4';
+      sellAllBtn.style.pointerEvents='none';
+      snd('item');
+    };
+    sellAllDiv.appendChild(sellAllBtn);
+    sellDiv.appendChild(sellAllDiv);
+  }
+
   OVG.parentElement.insertBefore(sellDiv,OVB);
 
   OVST.style.display='none';OVH.style.display='none';
@@ -811,6 +862,25 @@ function startGame(heroIdx,bonus){
     xpMult:1,goldMult:1};
   floor=1;gold=0;kills=0;prestigeUsed=false;bossActive=false;
   slimes=[];projectiles=[];particles=[];floats=[];
+  petAtkTimer=0;petFireTimer=0;petSlimeTimer=0;petWebTimer=0;petPoisonTimers=[];
+  // Apply pet bonuses
+  activePet=localStorage.getItem('cr_pet')||null;
+  if(activePet){
+    const pet=PETS.find(p=>p.id===activePet);
+    if(pet){
+      const b=pet.bonus;
+      if(b.atk){player.baseAtk+=b.atk}
+      if(b.spd){player.baseSpd+=b.spd}
+      if(b.luck){player.baseLuck+=b.luck}
+      if(b.crit){player.baseCrit+=b.crit}
+      if(b.hp){player.baseMaxHp+=b.hp;player.hp+=b.hp;player.maxHp+=b.hp}
+      if(b.mp){player.maxMp+=b.mp;player.mp+=b.mp}
+      if(b.dmgReduce){player.baseDmgReduce=Math.min(0.7,(player.baseDmgReduce||0)+b.dmgReduce)}
+      if(b.extraProj){player.extraProj+=b.extraProj}
+      recalcStats();
+      floats.push({x:player.x,y:player.y-20,text:`Pet: ${pet.emoji} ${pet.name}`,life:2,color:'#ffd700'});
+    }
+  }
   loadFloor();
   camX=player.x+8-W/2;camY=player.y+8-H/2;
   OV.classList.add('hidden');
@@ -825,12 +895,21 @@ function loadFloor(){
   map=data.map;rooms=data.rooms;
   const sr=rooms[0];
   player.x=sr.cx*TS;player.y=sr.cy*TS;
-  exitOpen=false;
+  exitOpen=true;
   slimes=[];projectiles=[];particles=[];floats=[];
   spawnEnemies(floor,rooms);
   spawnChests(floor,rooms);
   bossActive=enemies.some(e=>e.isBoss);
   if(isShopFloor(floor))setTimeout(()=>openShop(),500);
+  // Pet hpPerFloor bonus
+  if(activePet&&player){
+    const pet=PETS.find(p=>p.id===activePet);
+    if(pet&&pet.bonus.hpPerFloor&&floor>1){
+      const heal=pet.bonus.hpPerFloor;
+      player.hp=Math.min(player.maxHp,player.hp+heal);
+      floats.push({x:player.x,y:player.y-16,text:`+${heal} HP (pet)`,life:1,color:'#ff6b6b'});
+    }
+  }
 }
 
 // Input
@@ -984,6 +1063,16 @@ function hurtEnemy(e,dmg){
   e.hp-=dmg;e.flash=.15;
   floats.push({x:e.x,y:e.y-4,text:dmg.toString(),life:.6,color:'#ffd700'});
   snd('hit');
+  // Pet poison: apply DOT
+  if(activePet){
+    const pet=PETS.find(p=>p.id===activePet);
+    if(pet&&pet.bonus.poison&&e.hp>0){
+      if(!petPoisonTimers.find(pt=>pt.enemy===e)){
+        petPoisonTimers.push({enemy:e,timer:3,tickCD:1});
+        floats.push({x:e.x,y:e.y-10,text:'POISON',life:.5,color:'#22c55e'});
+      }
+    }
+  }
   if(e.hp<=0)killEnemy(e);
 }
 
@@ -1247,6 +1336,96 @@ function update(dt){
   });
   slimes=slimes.filter(s=>s.life>0);
 
+  // Pet aura effects
+  if(activePet){
+    const pet=PETS.find(p=>p.id===activePet);
+    if(pet){
+      const b=pet.bonus;
+      // atkAura: pet attacks nearest enemy every 2s
+      if(b.atkAura){
+        petAtkTimer-=DT;
+        if(petAtkTimer<=0){
+          petAtkTimer=2;
+          let nearest=null,nd=Infinity;
+          enemies.forEach(e=>{if(e.hp>0){const d=Math.sqrt((e.x-player.x)**2+(e.y-player.y)**2);if(d<120&&d<nd){nd=d;nearest=e}}});
+          if(nearest){
+            hurtEnemy(nearest,b.atkAura);
+            particles.push({x:nearest.x,y:nearest.y,dx:0,dy:-1,life:.3,color:'#ffd700',sz:2});
+          }
+        }
+      }
+      // fireBreath: pet shoots fire at nearest enemy every 3s
+      if(b.fireBreath){
+        petFireTimer-=DT;
+        if(petFireTimer<=0){
+          petFireTimer=3;
+          let nearest=null,nd=Infinity;
+          enemies.forEach(e=>{if(e.hp>0){const d=Math.sqrt((e.x-player.x)**2+(e.y-player.y)**2);if(d<150&&d<nd){nd=d;nearest=e}}});
+          if(nearest){
+            const dx=nearest.x-player.x,dy=nearest.y-player.y,d=Math.sqrt(dx*dx+dy*dy);
+            projectiles.push({x:player.x+8,y:player.y+8,dx:dx/d*4,dy:dy/d*4,dmg:player.atk,life:25,owner:'player',bounce:0,sz:5,color:'#ff4500',crit:false});
+          }
+        }
+      }
+      // slowAura: enemies within 60px move 40% slower
+      if(b.slowAura){
+        enemies.forEach(e=>{
+          if(e.hp>0){
+            const d=Math.sqrt((e.x-player.x)**2+(e.y-player.y)**2);
+            if(d<60){
+              if(!e.petSlowed){e.petSlowed=true;e.origSpdPet=e.spd;e.spd*=0.6}
+            } else if(e.petSlowed){
+              e.spd=e.origSpdPet||e.spd/0.6;e.petSlowed=false;
+            }
+          }
+        });
+      }
+      // webAura: nearby enemies get slowed (similar to slowAura but web visual)
+      if(b.webAura){
+        petWebTimer-=DT;
+        if(petWebTimer<=0){
+          petWebTimer=1.5;
+          enemies.forEach(e=>{
+            if(e.hp>0){
+              const d=Math.sqrt((e.x-player.x)**2+(e.y-player.y)**2);
+              if(d<60){
+                if(!e.webSlowed){e.webSlowed=true;e.origSpdWeb=e.spd;e.spd*=0.5}
+                e.webTimer=2;
+                slimes.push({x:e.x,y:e.y,life:2,color:'rgba(200,200,200,0.3)',slow:true});
+              }
+            }
+          });
+        }
+        enemies.forEach(e=>{
+          if(e.webSlowed){
+            e.webTimer=(e.webTimer||0)-DT;
+            if(e.webTimer<=0){e.spd=e.origSpdWeb||e.spd/0.5;e.webSlowed=false}
+          }
+        });
+      }
+      // slimeTrail: leave damaging slime
+      if(b.slimeTrail){
+        petSlimeTimer-=DT;
+        if(petSlimeTimer<=0){
+          petSlimeTimer=0.3;
+          slimes.push({x:player.x+6,y:player.y+10,life:3,dmg:1});
+        }
+      }
+      // thorns: enemies that hit player take N damage back (handled in hurtPlayer)
+      // lifesteal: handled in hurtEnemy for crits
+      // poison: handled in hurtEnemy
+      // mapReveal: handled in renderMinimap
+      // goldMult: handled in recalcStats and gold collection
+      // xpMult: handled in recalcStats
+      // cdReduce: handled in useSpecial
+      // phase: handled in collision
+    }
+  }
+
+  // Poison tick on enemies
+  petPoisonTimers.forEach(pt=>{pt.timer-=DT;pt.tickCD-=DT;if(pt.tickCD<=0&&pt.timer>0&&pt.enemy.hp>0){pt.tickCD=1;hurtEnemy(pt.enemy,1)}});
+  petPoisonTimers=petPoisonTimers.filter(pt=>pt.timer>0&&pt.enemy.hp>0);
+
   // Projectiles
   projectiles.forEach(p=>{
     p.x+=p.dx;p.y+=p.dy;p.life--;
@@ -1287,7 +1466,7 @@ function update(dt){
       e.summonCD-=DT;
       if(e.bossId==='gloria'){
         if(e.atkCD<=0&&dist<200){
-          projectiles.push({x:e.x+16,y:e.y+16,dx:dx/dist*3,dy:dy/dist*3,dmg:e.atk,life:40,owner:'enemy',bounce:0,sz:4,color:'#f5deb3'});
+          projectiles.push({x:e.x+16,y:e.y+16,dx:dx/dist*3.6,dy:dy/dist*3.6,dmg:e.atk,life:40,owner:'enemy',bounce:0,sz:4,color:'#f5deb3'});
           e.atkCD=1.2;
         }
         if(e.summonCD<=0){
@@ -1301,7 +1480,7 @@ function update(dt){
         if(e.atkCD<=0){
           for(let a=0;a<6;a++){
             const ang=a*Math.PI/3+e.timer;
-            projectiles.push({x:e.x+16,y:e.y+16,dx:Math.cos(ang)*2.5,dy:Math.sin(ang)*2.5,dmg:e.atk,life:35,owner:'enemy',bounce:0,sz:3,color:'#e879a0'});
+            projectiles.push({x:e.x+16,y:e.y+16,dx:Math.cos(ang)*3.0,dy:Math.sin(ang)*3.0,dmg:e.atk,life:35,owner:'enemy',bounce:0,sz:3,color:'#e879a0'});
           }
           e.atkCD=1.5;
         }
@@ -1316,7 +1495,7 @@ function update(dt){
         if(e.atkCD<=0){
           const atkType=Math.floor(Math.random()*3);
           if(atkType===0){// ranged burst
-            for(let a=0;a<8;a++){const ang=a*Math.PI/4;projectiles.push({x:e.x+16,y:e.y+16,dx:Math.cos(ang)*3,dy:Math.sin(ang)*3,dmg:e.atk,life:30,owner:'enemy',bounce:0,sz:4,color:'#ffd700'})}
+            for(let a=0;a<8;a++){const ang=a*Math.PI/4;projectiles.push({x:e.x+16,y:e.y+16,dx:Math.cos(ang)*3.6,dy:Math.sin(ang)*3.6,dmg:e.atk,life:30,owner:'enemy',bounce:0,sz:4,color:'#ffd700'})}
           } else if(atkType===1){// charge
             e.x+=dx/dist*40;e.y+=dy/dist*40;
             if(dist<40)hurtPlayer(e.atk*2);shake=.2;
@@ -1344,7 +1523,7 @@ function update(dt){
         else if(dist<40){e.x-=dx/dist*spd;e.y-=dy/dist*spd}
       }
       if(dist<180&&e.atkCD<=0){
-        projectiles.push({x:e.x+e.sz/2,y:e.y+e.sz/2,dx:dx/dist*2.5,dy:dy/dist*2.5,dmg:e.atk,life:30,owner:'enemy',bounce:0,sz:3,color:'#6f4e37'});
+        projectiles.push({x:e.x+e.sz/2,y:e.y+e.sz/2,dx:dx/dist*3.0,dy:dy/dist*3.0,dmg:e.atk,life:30,owner:'enemy',bounce:0,sz:3,color:'#6f4e37'});
         e.atkCD=1.5;
       }
     } else if(ai==='zigzag'){
@@ -1389,7 +1568,7 @@ function update(dt){
       e.x+=perp.x*e.spd*TS*DT*1.5;e.y+=perp.y*e.spd*TS*DT*1.5;
       if(e.atkCD<=0&&dist<160){
         // Shoot a star
-        projectiles.push({x:e.x+7,y:e.y+7,dx:dx/dist*3,dy:dy/dist*3,dmg:e.atk,life:25,owner:'enemy',bounce:0,sz:4,color:'#ffd700'});
+        projectiles.push({x:e.x+7,y:e.y+7,dx:dx/dist*3.6,dy:dy/dist*3.6,dmg:e.atk,life:25,owner:'enemy',bounce:0,sz:4,color:'#ffd700'});
         e.atkCD=1.2;
       }
     } else if(ai==='web'){
@@ -1406,7 +1585,7 @@ function update(dt){
       if(e.atkCD<=0){
         for(let a=0;a<4;a++){
           const ang=e.timer*2+a*Math.PI/2;
-          projectiles.push({x:e.x+7,y:e.y+7,dx:Math.cos(ang)*2.5,dy:Math.sin(ang)*2.5,dmg:e.atk,life:20,owner:'enemy',bounce:0,sz:3,color:['#ef4444','#38bdf8','#4ade80','#ffd700'][a]});
+          projectiles.push({x:e.x+7,y:e.y+7,dx:Math.cos(ang)*3.0,dy:Math.sin(ang)*3.0,dmg:e.atk,life:20,owner:'enemy',bounce:0,sz:3,color:['#ef4444','#38bdf8','#4ade80','#ffd700'][a]});
         }
         e.atkCD=1.8;
       }
@@ -1414,14 +1593,7 @@ function update(dt){
   });
   enemies=enemies.filter(e=>e.hp>0);
 
-  // Check if all enemies dead
-  if(!exitOpen&&enemies.length===0){
-    exitOpen=true;
-    floats.push({x:exitX*TS,y:exitY*TS-8,text:'EXIT OPEN',life:1.5,color:'#4ade80'});
-    snd('stair');
-  }
-
-  // Check exit
+  // Check exit — exit is always open
   if(exitOpen){
     const dx=player.x-exitX*TS,dy=player.y-exitY*TS;
     if(Math.sqrt(dx*dx+dy*dy)<14){
@@ -1432,11 +1604,11 @@ function update(dt){
     }
   }
 
-  // Check chests
+  // Auto-pickup chests/items/equipment/gold within 24px
   chests.forEach(ch=>{
     if(ch.open)return;
     const dx=player.x-ch.x,dy=player.y-ch.y;
-    if(Math.sqrt(dx*dx+dy*dy)<14){
+    if(Math.sqrt(dx*dx+dy*dy)<24){
       ch.open=true;snd('item');
       if(ch.isEquip&&ch.equip){
         floats.push({x:ch.x,y:ch.y-8,text:ch.equip.name,life:1.2,color:ch.equip.rarityColor});
@@ -1446,19 +1618,19 @@ function update(dt){
         floats.push({x:ch.x,y:ch.y-8,text:ch.item.name,life:1,color:'#ffd700'});
       } else {
         const r=Math.random();
-        if(r<.3){// Gold
+        if(r<.3){// Gold — auto-collect
           const gm=player.goldMult||1;
           const g=Math.floor((5+Math.floor(Math.random()*floor*3))*gm);gold+=g;
           floats.push({x:ch.x,y:ch.y-8,text:`+${g}g`,life:.8,color:'#ffd700'});
-        } else if(r<.6){// Equipment from chest
+        } else if(r<.6){// Equipment from chest — auto-equip if slot empty
           const eq=getRandomEquip(floor,player.luck);
           floats.push({x:ch.x,y:ch.y-8,text:eq.name,life:1.2,color:eq.rarityColor});
           tryEquip(eq);
-        } else if(r<.8){// Legacy consumable item
+        } else if(r<.8){// Legacy consumable item — auto-use
           const it=ITEMS[Math.floor(Math.random()*ITEMS.length)];
           it.apply(player);addItem(it);
           floats.push({x:ch.x,y:ch.y-8,text:it.name,life:1,color:'#4ade80'});
-        } else {// HP
+        } else {// HP — auto-heal
           const heal=Math.floor(player.maxHp*.3);player.hp=Math.min(player.maxHp,player.hp+heal);
           floats.push({x:ch.x,y:ch.y-8,text:`+${heal} HP`,life:.8,color:'#ff6b6b'});
         }
