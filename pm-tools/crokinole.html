@@ -260,19 +260,31 @@ function renderHistory(){
   if(!G.history.length){panel.innerHTML='<div style="padding:12px;text-align:center;color:var(--dim);font-size:13px">No rounds yet</div>';return}
   panel.innerHTML=G.history.map((h,i)=>{
     const cls=h.delta>0?'pos-left':h.delta<0?'pos-right':'tie';
-    const res=h.delta>0?`${G.names[0]} +${h.delta}`:h.delta<0?`${G.names[1]} +${-h.delta}`:'Tie';
-    return`<div class="history-item"><span class="hi-round">R${i+1}</span><span class="hi-detail">${G.names[0]} ${h.raw[0]} - ${G.names[1]} ${h.raw[1]}</span><span class="hi-result ${cls}">${res}</span></div>`;
+    const net0=h.delta>0?h.delta:0, net1=h.delta<0?-h.delta:0;
+    const o20=h.open20s?` (20s: ${h.open20s[0]}/${h.open20s[1]})`:'';
+    const res=h.delta>0?`${G.names[0]} +${net0+(h.open20s?h.open20s[0]*20:0)}`:h.delta<0?`${G.names[1]} +${net1+(h.open20s?h.open20s[1]*20:0)}`:'Tie';
+    return`<div class="history-item"><span class="hi-round">R${i+1}</span><span class="hi-detail">${h.raw[0]} - ${h.raw[1]}${o20}</span><span class="hi-result ${cls}">${res}</span></div>`;
   }).join('');
 }
 function toggleHistory(){document.getElementById('histPanel').classList.toggle('open')}
 
-// --- Score Round ---
+// --- Score Round (Ontario/NCA rules) ---
+// Open 20s (center hole) score individually for EACH player first, not cancelled.
+// Then remaining discs (15/10/5) use difference scoring.
 function scoreRound(){
-  const r1=G.discs[0].reduce((a,c,i)=>a+c*PTS[i],0);
-  const r2=G.discs[1].reduce((a,c,i)=>a+c*PTS[i],0);
-  const diff=r1-r2;
-  if(diff>0)G.scores[0]+=diff;else if(diff<0)G.scores[1]+=-diff;
-  G.history.push({raw:[r1,r2],delta:diff});
+  // Open 20s score directly
+  const open20s_1 = G.discs[0][0] * 20;
+  const open20s_2 = G.discs[1][0] * 20;
+  G.scores[0] += open20s_1;
+  G.scores[1] += open20s_2;
+  // Remaining rings use difference scoring
+  const rem1 = G.discs[0][1]*15 + G.discs[0][2]*10 + G.discs[0][3]*5;
+  const rem2 = G.discs[1][1]*15 + G.discs[1][2]*10 + G.discs[1][3]*5;
+  const diff = rem1 - rem2;
+  if(diff > 0) G.scores[0] += diff;
+  else if(diff < 0) G.scores[1] += -diff;
+  const totalDelta = (open20s_1 - open20s_2) + diff;
+  G.history.push({raw:[open20s_1+rem1, open20s_2+rem2], open20s:[G.discs[0][0],G.discs[1][0]], delta:totalDelta});
   G.discs=[[0,0,0,0],[0,0,0,0]];
   boardPlayer=0;
   playChime();
