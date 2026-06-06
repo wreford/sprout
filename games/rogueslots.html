@@ -128,11 +128,14 @@ const ACX=new(window.AudioContext||window.webkitAudioContext)();
 let musicOn=true,musicGain,musicInterval;
 
 function chip(f,d,t='square',v=.04){
- if(ACX.state==='suspended')ACX.resume();
- const o=ACX.createOscillator(),g=ACX.createGain();
- o.type=t;o.frequency.value=f;g.gain.value=v;
- g.gain.exponentialRampToValueAtTime(.001,ACX.currentTime+d);
- o.connect(g);g.connect(ACX.destination);o.start();o.stop(ACX.currentTime+d);
+ try{
+  if(ACX.state==='suspended')ACX.resume();
+  if(ACX.state!=='running')return;
+  const o=ACX.createOscillator(),g=ACX.createGain();
+  o.type=t;o.frequency.value=f;g.gain.value=v;
+  g.gain.exponentialRampToValueAtTime(.001,ACX.currentTime+d);
+  o.connect(g);g.connect(ACX.destination);o.start();o.stop(ACX.currentTime+d);
+ }catch(e){}
 }
 function arp(fs,gap=.07,d=.09,t='square',v=.03){fs.forEach((f,i)=>setTimeout(()=>chip(f,d,t,v),i*gap*1000))}
 const SFX={
@@ -175,23 +178,28 @@ const TRACKS={
 let currentTrack='battle',beatIdx=0;
 function startMusic(){
  if(musicInterval)clearInterval(musicInterval);if(!musicOn)return;
- if(ACX.state==='suspended')ACX.resume();
- musicGain=ACX.createGain();musicGain.gain.value=.018;musicGain.connect(ACX.destination);
+ if(ACX.state!=='running')return;
+ try{
+  musicGain=ACX.createGain();musicGain.gain.value=.025;musicGain.connect(ACX.destination);
+ }catch(e){return}
  beatIdx=0;const t=TRACKS[currentTrack];if(!t)return;
  const ms=Math.floor(60000/t.bpm);
  musicInterval=setInterval(()=>{
-  if(!musicOn)return;const i=beatIdx%t.mel.length;
-  const o1=ACX.createOscillator(),g1=ACX.createGain();
-  o1.type='square';o1.frequency.value=t.mel[i];g1.gain.value=.02;
-  g1.gain.exponentialRampToValueAtTime(.001,ACX.currentTime+.11);
-  o1.connect(g1);g1.connect(musicGain);o1.start();o1.stop(ACX.currentTime+.11);
-  const o2=ACX.createOscillator(),g2=ACX.createGain();
-  o2.type='triangle';o2.frequency.value=t.bas[i];g2.gain.value=.014;
-  g2.gain.exponentialRampToValueAtTime(.001,ACX.currentTime+.13);
-  o2.connect(g2);g2.connect(musicGain);o2.start();o2.stop(ACX.currentTime+.13);
-  if(i%4===0){const n=ACX.createBufferSource(),buf=ACX.createBuffer(1,ACX.sampleRate*.04,ACX.sampleRate),d=buf.getChannelData(0);for(let j=0;j<d.length;j++)d[j]=(Math.random()*2-1)*Math.max(0,1-j/d.length);n.buffer=buf;const gn=ACX.createGain();gn.gain.value=.025;n.connect(gn);gn.connect(musicGain);n.start()}
-  if(i%2===1){const n=ACX.createBufferSource(),buf=ACX.createBuffer(1,ACX.sampleRate*.015,ACX.sampleRate),d=buf.getChannelData(0);for(let j=0;j<d.length;j++)d[j]=(Math.random()*2-1)*Math.max(0,1-j/d.length)*.4;n.buffer=buf;const gn=ACX.createGain();gn.gain.value=.012;n.connect(gn);gn.connect(musicGain);n.start()}
-  beatIdx++;
+  if(!musicOn||ACX.state!=='running')return;
+  try{
+   const i=beatIdx%t.mel.length;
+   const o1=ACX.createOscillator(),g1=ACX.createGain();
+   o1.type='square';o1.frequency.value=t.mel[i];g1.gain.value=.03;
+   g1.gain.exponentialRampToValueAtTime(.001,ACX.currentTime+.11);
+   o1.connect(g1);g1.connect(musicGain);o1.start();o1.stop(ACX.currentTime+.11);
+   const o2=ACX.createOscillator(),g2=ACX.createGain();
+   o2.type='triangle';o2.frequency.value=t.bas[i];g2.gain.value=.02;
+   g2.gain.exponentialRampToValueAtTime(.001,ACX.currentTime+.13);
+   o2.connect(g2);g2.connect(musicGain);o2.start();o2.stop(ACX.currentTime+.13);
+   if(i%4===0){const n=ACX.createBufferSource(),buf=ACX.createBuffer(1,ACX.sampleRate*.04,ACX.sampleRate),d=buf.getChannelData(0);for(let j=0;j<d.length;j++)d[j]=(Math.random()*2-1)*Math.max(0,1-j/d.length);n.buffer=buf;const gn=ACX.createGain();gn.gain.value=.035;n.connect(gn);gn.connect(musicGain);n.start()}
+   if(i%2===1){const n=ACX.createBufferSource(),buf=ACX.createBuffer(1,ACX.sampleRate*.015,ACX.sampleRate),d=buf.getChannelData(0);for(let j=0;j<d.length;j++)d[j]=(Math.random()*2-1)*Math.max(0,1-j/d.length)*.5;n.buffer=buf;const gn=ACX.createGain();gn.gain.value=.018;n.connect(gn);gn.connect(musicGain);n.start()}
+   beatIdx++;
+  }catch(e){}
  },ms);
 }
 function stopMusic(){if(musicInterval){clearInterval(musicInterval);musicInterval=null}}
@@ -848,14 +856,14 @@ function showTitle(){
 
 function startRun(cls){
  document.getElementById('overlay').classList.remove('show');
- if(ACX.state==='suspended')ACX.resume();
  G=freshState(cls);
  spawnEnemies();buildReels();renderEnemies();updateUI();
  document.getElementById('results').innerHTML='';
  document.getElementById('spinbtn').disabled=false;
  log(`${cls.icon} ${cls.name} ready!`,'res-combo');
  log('FLOOR 1 - FIGHT!','res-info');
- startMusic();
+ const resume=ACX.state==='suspended'?ACX.resume():Promise.resolve();
+ resume.then(()=>startMusic()).catch(()=>{});
 }
 
 buildReels();updateUI();showTitle();
