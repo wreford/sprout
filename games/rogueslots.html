@@ -94,10 +94,14 @@ body::before{content:'';position:fixed;inset:0;z-index:1;pointer-events:none;bac
 </head>
 <body>
 <a class="home" href="../index.html">← HOME</a>
-<button id="music-btn" onclick="toggleMusic()">♪ ON</button>
+<div id="audio-ctrl" style="position:fixed;top:4px;right:4px;z-index:100;font-family:'Press Start 2P',monospace;font-size:5px;color:#8080a0;display:flex;gap:4px;align-items:center">
+<label>SFX<input type="range" id="sfx-vol" min="0" max="100" value="40" style="width:40px;height:12px;vertical-align:middle" oninput="sfxVol=this.value/100"></label>
+<label>MUS<input type="range" id="mus-vol" min="0" max="100" value="60" style="width:40px;height:12px;vertical-align:middle" oninput="musVol=this.value/100;if(musicGain)musicGain.gain.value=musVol*.04"></label>
+<button id="music-btn" onclick="toggleMusic()" style="background:none;border:1px solid #3a3a5a;color:#6a6a8a;font-family:'Press Start 2P',monospace;font-size:5px;padding:2px 4px;cursor:pointer">ON</button>
+</div>
 <div id="app">
 <div id="topbar">
- <span id="char-icon">🤠</span>
+ <span id="char-icon"></span>
  <span class="stat">HP<span id="hp-text" style="color:#f06060;margin:0 2px">20/20</span><div class="stat-bar"><div class="stat-fill" id="hp-fill" style="width:100%"></div></div></span>
  <span class="stat">SH<span id="shield-text" style="color:#6090f0;margin:0 2px">0</span></span>
  <span class="stat">GP<span id="gold-text" style="color:#f0d040;margin:0 2px">0</span></span>
@@ -192,17 +196,19 @@ function initSprites(){
 
 }
 initSprites();
-function symImg(s){return SC[s]?`<img src="${SC[s]}" style="width:${SPX}px;height:${SPX}px;image-rendering:pixelated" draggable="false">`:`<span style="font-size:32px">${s}</span>`}
+function symImg(s){return SC[s]?`<img src="${SC[s]}" style="width:${SPX}px;height:${SPX}px;image-rendering:pixelated" draggable="false">`:`<span style="font-size:10px;color:#f0d040">[${(SYMS[s]||{}).name||'?'}]</span>`}
+function iconImg(s,sz){sz=sz||20;return SC[s]?`<img src="${SC[s]}" style="width:${sz}px;height:${sz}px;image-rendering:pixelated">`:`<span style="font-size:${Math.floor(sz/2)}px">[?]</span>`}
 
 const ACX=new(window.AudioContext||window.webkitAudioContext)();
 let musicOn=true,musicGain,musicInterval;
+let sfxVol=0.4,musVol=0.6;
 
 function chip(f,d,t='square',v=.04){
  try{
   if(ACX.state==='suspended')ACX.resume();
   if(ACX.state!=='running')return;
   const o=ACX.createOscillator(),g=ACX.createGain();
-  o.type=t;o.frequency.value=f;g.gain.value=v;
+  o.type=t;o.frequency.value=f;g.gain.value=v*sfxVol;
   g.gain.exponentialRampToValueAtTime(.001,ACX.currentTime+d);
   o.connect(g);g.connect(ACX.destination);o.start();o.stop(ACX.currentTime+d);
  }catch(e){}
@@ -250,7 +256,7 @@ function startMusic(){
  if(musicInterval)clearInterval(musicInterval);if(!musicOn)return;
  if(ACX.state!=='running')return;
  try{
-  musicGain=ACX.createGain();musicGain.gain.value=.025;musicGain.connect(ACX.destination);
+  musicGain=ACX.createGain();musicGain.gain.value=musVol*.04;musicGain.connect(ACX.destination);
  }catch(e){return}
  beatIdx=0;const t=TRACKS[currentTrack];if(!t)return;
  const ms=Math.floor(60000/t.bpm);
@@ -274,7 +280,7 @@ function startMusic(){
 }
 function stopMusic(){if(musicInterval){clearInterval(musicInterval);musicInterval=null}}
 function setTrack(t){if(currentTrack!==t){currentTrack=t;stopMusic();startMusic()}}
-function toggleMusic(){musicOn=!musicOn;document.getElementById('music-btn').textContent=musicOn?'♪ ON':'♪ OFF';if(musicOn)startMusic();else stopMusic()}
+function toggleMusic(){musicOn=!musicOn;document.getElementById('music-btn').textContent=musicOn?'ON':'OFF';if(musicOn)startMusic();else stopMusic()}
 
 // ═══ CHARACTER CLASSES ═══
 const CLASSES=[
@@ -291,7 +297,7 @@ const CLASSES=[
 // ═══ SYMBOLS ═══
 const SYMS={
  '🗡️':{name:'SWORD',dmg:2,desc:'2 DMG',tier:0},
- '🔥':{name:'FIRE',dmg:3,desc:'3 DMG +1/adj🔥',adj:'🔥',adjBonus:1,tier:0},
+ '🔥':{name:'FIRE',dmg:3,desc:'3 DMG +1/adj fire',adj:'🔥',adjBonus:1,tier:0},
  '💰':{name:'GOLD',gold:3,desc:'+3 GP',tier:0},
  '💎':{name:'GEM',gold:8,desc:'+8 GP',tier:2},
  '❤️':{name:'HEART',heal:2,desc:'Heal 2',tier:0},
@@ -467,10 +473,10 @@ function updateUI(){
  if(G.charClass){const ci=document.getElementById('char-icon');ci.innerHTML=SC[G.charClass.icon]?`<img src="${SC[G.charClass.icon]}" style="width:24px;height:24px;image-rendering:pixelated">`:G.charClass.icon}
  const ps=document.getElementById('poison-stat');
  if(G.poison>0){ps.style.display='';document.getElementById('poison-text').textContent=G.poison}else ps.style.display='none';
- document.getElementById('perk-bar').innerHTML=G.perks.map(p=>`<span class="perk-icon" title="${p.name}: ${p.desc}">${p.icon}</span>`).join('')+
-  G.relics.map(r=>`<span class="perk-icon" title="${r.name}: ${r.desc}" style="border:1px solid #f0d040;padding:0 1px">${r.icon}</span>`).join('');
+ document.getElementById('perk-bar').innerHTML=G.perks.map(p=>`<span class="perk-icon" title="${p.name}: ${p.desc}">${iconImg(p.icon,16)}</span>`).join('')+
+  G.relics.map(r=>`<span class="perk-icon" title="${r.name}: ${r.desc}" style="border:1px solid #f0d040;padding:0 1px">${iconImg(r.icon,16)}</span>`).join('');
  const sb=document.getElementById('streak-bar');
- sb.textContent=G.streak>1?`🔥 ${G.streak} WIN STREAK`:'';
+ sb.textContent=G.streak>1?`x${G.streak} WIN STREAK`:'';
 }
 function renderEnemies(){
  const c=document.getElementById('enemies');c.innerHTML='';
@@ -479,7 +485,7 @@ function renderEnemies(){
   let st='';
   if(e.poison>0)st+=`<span class="poison-indicator">P${e.poison}</span>`;
   if(e.shield>0)st+=`<span style="color:#6090f0">S${e.shield}</span>`;
-  if(e.frozen)st+=`<span style="color:#60d0f0">❄</span>`;
+  if(e.frozen)st+=`<span style="color:#60d0f0">FRZ</span>`;
   d.innerHTML=`<span class="enemy-icon">${SC[e.icon]?`<img src="${SC[e.icon]}" style="width:36px;height:36px;image-rendering:pixelated">`:e.icon}</span><span class="enemy-name">${e.name}</span>
    <div class="enemy-hp-bar"><div class="enemy-hp-fill" style="width:${Math.max(0,e.hp/e.maxHp*100)}%"></div></div>
    <span class="enemy-status">${st}</span><span class="enemy-atk">A${e.atk}</span>`;
@@ -513,7 +519,7 @@ function spawnEnemies(){
   const bi=Math.min(Math.floor(G.floor/5)-1,BOSSES.length-1);
   let b={...BOSSES[bi]};b.maxHp=b.hp+G.floor*3;b.hp=b.maxHp;b.poison=0;b.shield=0;b.frozen=0;
   if(G.floorFlags.bloodMoon){b.atk=Math.ceil(b.atk*1.5);b.xp=Math.ceil(b.xp*1.5)}
-  G.enemies.push(b);log(`${b.icon} "${b.quip}"`,'res-enemy');setTrack('boss');SFX.boss();
+  G.enemies.push(b);log(`${b.name}: "${b.quip}"`,'res-enemy');setTrack('boss');SFX.boss();
  } else {
   const count=Math.min(4,1+Math.floor(G.floor/3));
   const pool=ENEMIES.filter((_,i)=>i<Math.min(ENEMIES.length,3+Math.floor(G.floor/2)));
@@ -523,7 +529,7 @@ function spawnEnemies(){
    let e={...t};e.maxHp=Math.ceil(t.hp*sc);e.hp=e.maxHp;e.atk=Math.ceil(t.atk*(1+G.floor*.06));e.poison=0;e.shield=0;e.frozen=0;
    if(G.floorFlags.bloodMoon){e.atk=Math.ceil(e.atk*1.5);e.xp=Math.ceil((e.xp||3)*1.5)}
    G.enemies.push(e);
-   if(i===0&&e.quip)log(`${e.icon} "${e.quip}"`,'res-info');
+   if(i===0&&e.quip)log(`${e.name}: "${e.quip}"`,'res-info');
   }
   setTrack('battle');
  }
@@ -745,7 +751,7 @@ function enemyTurn(){
   // Armor reduce
   if(G.perkFlags.armorReduce)dmg=Math.max(1,dmg-G.perkFlags.armorReduce);
   if(G.shield>0){const b=Math.min(G.shield,dmg);G.shield-=b;dmg-=b;if(b>0)log(`SH blocks ${b}`,'res-shield')}
-  if(dmg>0){G.hp-=dmg;tTaken+=dmg;log(`${e.icon}${e.name} ATK ${dmg}`,'res-enemy');
+  if(dmg>0){G.hp-=dmg;tTaken+=dmg;log(`${e.name} ATK ${dmg}`,'res-enemy');
    if(G.perkFlags.thorns){const td=G.perkFlags.thorns;dealDmg(e,td);log(`THORNS ${td}!`,'res-dmg')}
    if(G.relics.some(r=>r.effect==='reflect')){const rd=Math.ceil(dmg*.25);dealDmg(e,rd);log(`REFLECT ${rd}!`,'res-dmg')}
   }
@@ -791,7 +797,7 @@ function showRelicChoice(){
  const choices=avail.sort(()=>Math.random()-.5).slice(0,3);
  pn.innerHTML=`<h2>RELIC FOUND!</h2><p style="font-size:4px;color:#8080a0;margin-bottom:4px">BOSS DEFEATED! CHOOSE A RELIC</p>
   ${choices.map((r,i)=>`<div class="perk-card" onclick="pickRelic(${i})" style="border-color:#f0d040">
-   <span class="emoji">${r.icon}</span><div class="pname" style="color:#f0d040">${r.name}</div><div class="desc">${r.desc}</div></div>`).join('')}
+   ${iconImg(r.icon,28)}<div class="pname" style="color:#f0d040">${r.name}</div><div class="desc">${r.desc}</div></div>`).join('')}
   <button class="btn" onclick="skipRelic()" style="margin-top:4px">SKIP (+15 GP)</button>`;
  window.pickRelic=i=>{G.relics.push(choices[i]);SFX.buy();updateUI();showPerkChoice()};
  window.skipRelic=()=>{G.gold+=15;SFX.gold();showPerkChoice()};
@@ -806,7 +812,7 @@ function showPerkChoice(){
  const choices=avail.sort(()=>Math.random()-.5).slice(0,3);
  pn.innerHTML=`<h2>LEVEL UP!</h2><p style="font-size:4px;color:#8080a0;margin-bottom:4px">CHOOSE A PERK</p>
   ${choices.map((p,i)=>`<div class="perk-card" onclick="pickPerk(${i})">
-   <span class="emoji">${p.icon}</span><div class="pname">${p.name}</div><div class="desc">${p.desc}</div></div>`).join('')}
+   ${iconImg(p.icon,28)}<div class="pname">${p.name}</div><div class="desc">${p.desc}</div></div>`).join('')}
   <button class="btn" onclick="skipPerk()" style="margin-top:4px">SKIP (+10 GP)</button>`;
  window.pickPerk=i=>{choices[i].apply(G);G.perks.push(choices[i]);SFX.buy();updateUI();buildReels();showShop()};
  window.skipPerk=()=>{G.gold+=10;SFX.gold();showShop()};
@@ -881,12 +887,12 @@ function showDeath(){
  meta.runs++;if(G.floor>meta.bestFloor){meta.bestFloor=G.floor}saveMeta();
  const ov=document.getElementById('overlay'),pn=document.getElementById('panel');ov.classList.add('show');
  pn.innerHTML=`<h2 style="color:#f04040">GAME OVER</h2>
-  <div style="font-size:20px;margin:6px">💀</div>
+  <div style="margin:6px">${iconImg('💀',40)}</div>
   <p style="font-size:6px;margin:4px 0">FLOOR <span style="color:#f0d040">${G.floor}</span> | LV${G.level} | ${G.charClass?.name}</p>
   <p style="font-size:5px;color:#6a6a8a">${G.kills} kills | ${G.bestStreak} best streak</p>
   <p style="font-size:5px;color:#6a6a8a">BEST: F-${meta.bestFloor} | RUNS: ${meta.runs}</p>
-  ${G.perks.length?`<p style="font-size:5px;color:#6a6a8a;margin:3px 0">PERKS: ${G.perks.map(p=>p.icon).join('')}</p>`:''}
-  ${G.relics.length?`<p style="font-size:5px;color:#f0d040;margin:2px 0">RELICS: ${G.relics.map(r=>r.icon).join('')}</p>`:''}
+  ${G.perks.length?`<p style="font-size:5px;color:#6a6a8a;margin:3px 0">PERKS: ${G.perks.map(p=>p.name[0]).join('')}</p>`:''}
+  ${G.relics.length?`<p style="font-size:5px;color:#f0d040;margin:2px 0">RELICS: ${G.relics.map(r=>r.name[0]).join('')}</p>`:''}
   <button class="btn btn-gold" onclick="showCharSelect()" style="margin-top:6px">RETRY</button>`;
 }
 
@@ -896,7 +902,7 @@ function showCharSelect(){
  const ov=document.getElementById('overlay'),pn=document.getElementById('panel');ov.classList.add('show');
  pn.innerHTML=`<h2>CHOOSE CLASS</h2>
   ${CLASSES.map((c,i)=>`<div class="char-card" onclick="pick(${i})">
-   <span class="emoji">${c.icon}</span><div class="cname">${c.name}</div>
+   ${iconImg(c.icon,32)}<div class="cname">${c.name}</div>
    <div class="desc">${c.desc.replace(/\n/g,'<br>')}</div>
    <div style="font-size:4px;color:#6060a0;margin-top:2px">HP:${c.hp} CRIT:${Math.round(c.crit*100)}%${c.gold?' GP:'+c.gold:''}${c.extraReels?' +REEL':''}</div>
   </div>`).join('')}`;
@@ -911,7 +917,7 @@ function showTitle(){
   BEST: F-${meta.bestFloor} | RUNS: ${meta.runs} | KILLS: ${meta.kills||0} | GP: ${meta.totalGold}</div>`:'';
  const unlocks=meta.bestFloor>=3?`<p style="font-size:5px;color:#a060f0;margin:2px 0">${Object.entries(UNLOCK_MAP).filter(([f])=>meta.bestFloor>=+f).map(([,s])=>s.join('')).join(' ')}</p>`:'';
  pn.innerHTML=`
-  <div style="font-size:24px;margin:8px">🎰</div>
+  <div style="margin:8px">${iconImg('🎰',48)}</div>
   <h2 class="title-glow" style="font-size:10px;line-height:1.8">TYLER'S<br>ROGUE SLOTS</h2>
   <p style="font-size:4px;color:#8080a0;margin:4px 0;letter-spacing:2px">ROGUELIKE SLOT MACHINE RPG</p>
   <div style="border:1px solid #2a2a4a;padding:4px;margin:4px 0;font-size:4px;color:#6a6a8a;line-height:1.8">
@@ -930,7 +936,7 @@ function startRun(cls){
  spawnEnemies();buildReels();renderEnemies();updateUI();
  document.getElementById('results').innerHTML='';
  document.getElementById('spinbtn').disabled=false;
- log(`${cls.icon} ${cls.name} ready!`,'res-combo');
+ log(`${cls.name} ready!`,'res-combo');
  log('FLOOR 1 - FIGHT!','res-info');
  const resume=ACX.state==='suspended'?ACX.resume():Promise.resolve();
  resume.then(()=>startMusic()).catch(()=>{});
