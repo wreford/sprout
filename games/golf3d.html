@@ -237,21 +237,18 @@ const courses=[
   {
     par:2, tee:[0,-6], hole:[4,5],
     walls:[
-      [-3,-8,-3,7],[3,-8,7,3],[7,3,7,7],
-      [-3,7,7,7],[-3,-8,3,-8]
+      [-3,-8,3,-8],[3,-8,7,3],[7,3,7,7],[7,7,-3,7],[-3,7,-3,-8]
     ],
-    bounds:[[-3,-8],[3,-8],[7,3],[7,7],[-3,7],[-3,-8]],
+    bounds:[[-3,-8],[3,-8],[7,3],[7,7],[-3,7]],
     obstacles:[],water:[],ramps:[],innerWalls:[]
   },
   // Hole 3: L-shape. Par 3.
   {
     par:3, tee:[0,-5], hole:[6,5],
     walls:[
-      [-2,-7,-2,2],[-2,2,3,2],[3,2,3,7],[3,7,8,7],
-      [8,7,8,3],[8,3,2,3],[2,3,2,-7],
-      [-2,-7,2,-7]
+      [-2,-7,2,-7],[2,-7,2,2],[2,2,8,2],[8,2,8,7],[8,7,3,7],[3,7,3,3],[-2,3,-2,-7],[3,3,-2,3]
     ],
-    bounds:[[-2,-7],[2,-7],[2,3],[8,3],[8,7],[3,7],[3,2],[-2,2],[-2,-7]],
+    bounds:[[-2,-7],[2,-7],[2,2],[8,2],[8,7],[3,7],[3,3],[-2,3]],
     obstacles:[],water:[],ramps:[],innerWalls:[]
   },
   // Hole 4: Straight with ramp to elevated green. Par 3.
@@ -293,13 +290,12 @@ const courses=[
   {
     par:3, tee:[0,-7], hole:[0,7],
     walls:[
-      [-4,-9,-4,-1],[-1,-1,-1,1],[-4,1,-4,9],
-      [4,-9,4,-1],[1,-1,1,1],[4,1,4,9],
-      [-4,-9,4,-9],[-4,9,4,9]
+      [-4,-9,4,-9],[4,-9,4,-1.5],[4,-1.5,1.2,-1.5],[1.2,-1.5,1.2,1.5],[1.2,1.5,4,1.5],[4,1.5,4,9],
+      [4,9,-4,9],[-4,9,-4,1.5],[-4,1.5,-1.2,1.5],[-1.2,1.5,-1.2,-1.5],[-1.2,-1.5,-4,-1.5],[-4,-1.5,-4,-9]
     ],
-    bounds:[[-4,-9],[4,-9],[4,-1],[1,-1],[1,1],[4,1],[4,9],[-4,9],[-4,1],[-1,1],[-1,-1],[-4,-1],[-4,-9]],
+    bounds:[[-4,-9],[4,-9],[4,-1.5],[1.2,-1.5],[1.2,1.5],[4,1.5],[4,9],[-4,9],[-4,1.5],[-1.2,1.5],[-1.2,-1.5],[-4,-1.5]],
     obstacles:[],
-    water:[{pos:[-4,-1],size:[3,2]},{pos:[1,-1],size:[3,2]}],
+    water:[{pos:[-4,-1.5],size:[2.8,3]},{pos:[1.2,-1.5],size:[2.8,3]}],
     ramps:[],innerWalls:[]
   },
   // Hole 8: Zigzag with 2 inner walls. Par 4.
@@ -362,8 +358,8 @@ let lastGoodPos={x:0,z:0};
 
 // Camera state
 let cameraAngle=0;
-let cameraPitch=Math.PI*0.32;
-let cameraDistance=16;
+let cameraPitch=Math.PI*0.38;
+let cameraDistance=14;
 let cameraTargetSmooth={x:0,y:0,z:0};
 let isCameraRotating=false;
 let cameraDragStart={x:0,y:0};
@@ -553,14 +549,15 @@ function buildCourse(idx){
   const b=h.bounds;
 
   // --- COURSE SURFACE ---
-  // Outer border (darker green)
+  // Outer border (darker green) - expand bounds outward
   const borderShape=new THREE.Shape();
-  const pad=0.3;
-  // Compute padded bounds
-  borderShape.moveTo(b[0][0]-pad,b[0][1]-pad);
-  for(let i=1;i<b.length;i++){
-    borderShape.lineTo(b[i][0]+(b[i][0]>0?pad:-pad),b[i][1]+(b[i][1]>0?pad:-pad));
-  }
+  const pad=0.4;
+  // Compute center of bounds
+  let cx=0,cz=0;for(let i=0;i<b.length;i++){cx+=b[i][0];cz+=b[i][1]}cx/=b.length;cz/=b.length;
+  // Expand each vertex away from center
+  const padded=b.map(function(v){var dx=v[0]-cx,dz=v[1]-cz,d=Math.sqrt(dx*dx+dz*dz)||1;return[v[0]+dx/d*pad,v[1]+dz/d*pad]});
+  borderShape.moveTo(padded[0][0],padded[0][1]);
+  for(let i=1;i<padded.length;i++) borderShape.lineTo(padded[i][0],padded[i][1]);
   borderShape.closePath();
   const borderGeo=new THREE.ShapeGeometry(borderShape);
   const borderMat=new THREE.MeshLambertMaterial({color:0x2E7D32});
@@ -851,14 +848,16 @@ function loadHole(idx){
   helpText.style.display='block';
   updateHoleDots();
 
-  // Camera setup - view from behind tee toward hole
+  // Camera setup - top-down angled view from behind tee
   const dx=h.hole[0]-h.tee[0];
   const dz=h.hole[1]-h.tee[1];
-  cameraAngle=Math.atan2(-dx,-dz)+Math.PI;
-  cameraPitch=Math.PI*0.28;
+  const midX=(h.tee[0]+h.hole[0])/2;
+  const midZ=(h.tee[1]+h.hole[1])/2;
+  cameraAngle=Math.atan2(dx,dz);
+  cameraPitch=Math.PI*0.38;
   const dist=Math.sqrt(dx*dx+dz*dz);
-  cameraDistance=Math.max(14,dist*0.9);
-  cameraTargetSmooth={x:h.tee[0],y:BALL_RADIUS,z:h.tee[1]};
+  cameraDistance=Math.max(12,dist*0.8+4);
+  cameraTargetSmooth={x:midX,y:0,z:midZ};
 
   gameState='aiming';
 }
