@@ -412,7 +412,7 @@ for(let i=0;i<4;i++){
 let bobberRipples=[];
 
 // ===== GAME STATE =====
-let state='idle';
+let state='idle'; // idle, casting, waiting, bite, hook, fight, caught
 let money=0,totalCaught=0;
 let gameTime=360;
 let tension=0.5,progress=0;
@@ -425,6 +425,11 @@ let fishX=0,fishY=0,fishDir=1,fishTargetX=0;
 let bobberY=0,bobberBaseY=0;
 let exclamationTimer=0;
 let caughtAnimTimer=0;
+// Casting animation
+let castTimer=0,castDuration=0.8;
+let castStartX=200,castStartY=130; // rod tip position
+let castEndX=120,castEndY=0; // where bobber lands (set dynamically)
+let castBobberX=0,castBobberY=0; // animated bobber position during cast
 let lineEndX=0,lineEndY=0;
 let castAnimTimer=0;
 let msgText='',msgTimer=0;
@@ -1109,6 +1114,14 @@ function drawLine(t){
     bx=Math.floor(fishX);by=Math.floor(fishY);
     drawLinePixels(tipX,tipY,bx,by);
     lineEndX=bx;lineEndY=by;
+  }else if(state==='casting'){
+    // Draw line from rod tip to flying bobber
+    bx=Math.floor(castBobberX);by=Math.floor(castBobberY);
+    drawLinePixels(tipX,tipY,bx,by);
+    lineEndX=bx;lineEndY=by;
+    // Draw bobber at cast position
+    ctx.fillStyle='#f83800';ctx.fillRect(bx-1,by,3,3);
+    ctx.fillStyle='#fcfcfc';ctx.fillRect(bx-1,by+3,3,2);
   }else{
     const bobX=180;bx=bobX;by=Math.floor(bobberY);
     drawLinePixels(tipX,tipY,bx,by);
@@ -1687,25 +1700,50 @@ function updateButton(mode){
       btn.textContent='REEL';btn.className='reel';
       shop.style.display='none';stats.style.display='none';journal.style.display='none';achieve.style.display='none';
       break;
+    case'wait':
+      btn.textContent='...';btn.className='';btn.disabled=true;
+      shop.style.display='none';stats.style.display='none';journal.style.display='none';achieve.style.display='none';
+      setTimeout(function(){btn.disabled=false},1000);
+      break;
   }
 }
 
 function onAction(){
   initAudio();
   if(state==='idle'){
+    // Start casting animation
+    state='casting';
     sfxCast();
-    castAnimTimer=0.5;
+    castTimer=0;
+    castStartX=200;castStartY=130;
+    castEndX=60+Math.floor(Math.random()*100);
+    castEndY=WATER_Y+5+Math.floor(Math.random()*20);
+    castBobberX=castStartX;castBobberY=castStartY;
     gameTime+=10;
     advanceWeather();
     advanceSeason();
     checkRareEvent();
     checkLuckyCast();
-    resetBiteTimer();
-    scheduleBiteSwim();
-    bobberRipples.push({x:180,y:WATER_Y+2,age:0});
     saveGame();
+    updateButton('wait');
   }else if(state==='bite'){
     hookFish();
+  }
+}
+
+function finishCast(){
+  state='idle';
+  bobberBaseY=WATER_Y+2;
+  bobberY=bobberBaseY;
+  updateButton('cast');
+  resetBiteTimer();
+  scheduleBiteSwim();
+  bobberRipples.push({x:castEndX,y:castEndY,age:0});
+  bobberRipples.push({x:castEndX-3,y:castEndY+1,age:0.1});
+  bobberRipples.push({x:castEndX+3,y:castEndY-1,age:0.15});
+  // Splash particles
+  for(var sp=0;sp<6;sp++){
+    particles.push({x:castEndX+Math.random()*10-5,y:castEndY,vx:(Math.random()-0.5)*3,vy:-Math.random()*4-1,life:0.5,color:'#0058f8'});
   }
 }
 
@@ -1967,6 +2005,16 @@ function gameLoop(timestamp){
   if(msgTimer>0)msgTimer-=dt;
   if(msg2Timer>0)msg2Timer-=dt;
   if(castAnimTimer>0)castAnimTimer-=dt;
+  // Casting arc animation
+  if(state==='casting'){
+    castTimer+=dt;
+    var p=Math.min(1,castTimer/castDuration);
+    // Parabolic arc: lerp X, arc Y
+    castBobberX=castStartX+(castEndX-castStartX)*p;
+    var arcHeight=-120*p*(1-p); // peak at middle of cast
+    castBobberY=castStartY+(castEndY-castStartY)*p+arcHeight;
+    if(p>=1){finishCast()}
+  }
   if(achievementPopupTimer>0)achievementPopupTimer-=dt;
   if(shakeDuration>0){shakeDuration-=dt;if(shakeDuration<=0)shakeAmount=0}
   if(luckyCast){luckyCastTimer-=dt;if(luckyCastTimer<=0)luckyCast=false}
