@@ -94,6 +94,19 @@ body::after{content:'';position:fixed;inset:0;z-index:1;pointer-events:none;back
 .streak-bar{font-size:8px;color:#f87858;text-align:center;padding:2px;min-height:12px}
 .event-banner{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:1001;font-size:16px;color:#f8d800;text-shadow:0 0 12px rgba(248,216,0,.5);animation:bannerPop 1.5s forwards;pointer-events:none}
 @keyframes bannerPop{0%{opacity:0;transform:translate(-50%,-50%) scale(.5)}15%{opacity:1;transform:translate(-50%,-50%) scale(1.1)}30%{transform:translate(-50%,-50%) scale(1)}80%{opacity:1}100%{opacity:0;transform:translate(-50%,-60%)}}
+.charm-card{background:#1c001c;border:2px solid #a040a0;padding:8px;cursor:pointer;text-align:center;width:100%;margin:4px 0;transition:all .15s;min-height:44px}
+.charm-card:hover{border-color:#e060e0;background:#2c002c}
+.charm-card.rare{border-color:#f0d040;background:#1c1c00}
+.charm-card.rare:hover{border-color:#f8e860;background:#2c2c00}
+.charm-card .cname{font-size:8px;color:#e060e0;margin:3px 0}.charm-card .cname.rare{color:#f0d040}
+.charm-card .desc{font-size:6px;color:#b8b8b8;line-height:1.6}
+.charm-card.selected{border-color:#f83800;background:#380000;box-shadow:0 0 8px rgba(248,56,0,.4)}
+.charm-icon{font-size:12px;opacity:.7;cursor:help;border:1px solid #a040a0;padding:0 1px}
+.charm-icon.rare{border-color:#f0d040}
+.mult-line{color:#f0d040;font-size:7px;letter-spacing:1px}
+.achv-grid{display:flex;flex-wrap:wrap;gap:3px;justify-content:center;margin:4px 0}
+.achv-item{font-size:5px;padding:2px 4px;border:1px solid #383838;color:#585858;background:#0c0c0c}
+.achv-item.earned{border-color:#00a800;color:#00a800;background:#001c00}
 #vol-ctrl{display:flex;gap:4px;align-items:center;margin-left:auto;font-size:6px;color:#787878}
 #vol-ctrl input[type=range]{width:32px;height:10px;vertical-align:middle;-webkit-appearance:none;background:#383838;outline:none;border-radius:0}
 #vol-ctrl input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:8px;height:12px;background:#f8d800;border:none;cursor:pointer}
@@ -110,6 +123,8 @@ body::after{content:'';position:fixed;inset:0;z-index:1;pointer-events:none;back
  <span class="stat">GP<span id="gold-text" style="color:#f8d800;margin:0 2px">0</span></span>
  <span class="stat">LV<span id="lvl-text" style="color:#6828b0;margin:0 2px">1</span></span>
  <span class="stat poison-indicator" id="poison-stat" style="display:none">PSN<span id="poison-text" style="margin-left:1px">0</span></span>
+ <span class="stat" id="target-stat">TGT<span id="target-text" style="color:#f8d800;margin:0 2px">0</span></span>
+ <span class="stat" id="spin-stat">SP<span id="spin-text" style="color:#00a800;margin:0 2px">8</span></span>
  <span class="floor-ind">F-<span id="floor-num">1</span></span>
  <span id="vol-ctrl">
   SFX<input type="range" id="sfx-vol" min="0" max="100" value="40" oninput="sfxVol=this.value/100">
@@ -396,6 +411,53 @@ const ALL_RELICS=[
  {id:'mushroom',icon:'🍄',name:'MAGIC SHROOM',desc:'Random symbol upgrades each floor.',effect:'upgrade'},
 ];
 
+// ═══ CHARMS (Balatro Joker-style) ═══
+const ALL_CHARMS=[
+ {id:'goldFever',name:'GOLD FEVER',desc:'Gold symbols give +50%.',apply:function(G,ctx){ctx.goldMult=(ctx.goldMult||1)*1.5}},
+ {id:'bloodBlade',name:'BLOOD BLADE',desc:'Swords deal +3 but cost 1 HP.',apply:function(G,ctx){ctx.swordBonus=3;ctx.swordCost=1}},
+ {id:'fireStarter',name:'FIRE STARTER',desc:'Fire spreads to ALL enemies.',apply:function(G,ctx){ctx.fireAll=true}},
+ {id:'shieldBash',name:'SHIELD BASH',desc:'Shields also deal 1 DMG.',apply:function(G,ctx){ctx.shieldDmg=1}},
+ {id:'heartBreaker',name:'HEART BREAKER',desc:'Hearts also deal 1 DMG.',apply:function(G,ctx){ctx.heartDmg=1}},
+ {id:'luckyDip',name:'LUCKY DIP',desc:'+1 spin per floor.',apply:function(G,ctx){ctx.extraSpins=(ctx.extraSpins||0)+1}},
+ {id:'taxCollector',name:'TAX COLLECTOR',desc:'+1 GP per enemy hit.',apply:function(G,ctx){ctx.taxGold=1}},
+ {id:'glassCanon',name:'GLASS CANNON',desc:'All DMG x2. Max HP halved.',apply:function(G,ctx){ctx.dmgX2=true}},
+ {id:'miser',name:'MISER',desc:'Gold target -30%.',apply:function(G,ctx){ctx.targetReduce=.3}},
+ {id:'wildCard',name:'WILD CARD',desc:'1 random symbol becomes WILD each spin.',apply:function(G,ctx){ctx.wildCard=true}},
+ {id:'comboKing',name:'COMBO KING',desc:'Doubles count as triples.',apply:function(G,ctx){ctx.comboUp=true}},
+ {id:'vampFang',name:'VAMP FANG',desc:'Heal 1 per 10 DMG dealt.',apply:function(G,ctx){ctx.vampHeal=true}},
+];
+const RARE_CHARMS=[
+ {id:'infiniteSpin',name:'INFINITE ENGINE',desc:'+3 spins per floor. Permanent.',apply:function(G,ctx){ctx.extraSpins=(ctx.extraSpins||0)+3},rare:true},
+ {id:'megaCrit',name:'MEGA CRIT',desc:'Crits do x5 DMG.',apply:function(G,ctx){ctx.critX5=true},rare:true},
+ {id:'goldRush',name:'GOLD RUSH',desc:'All gold x3.',apply:function(G,ctx){ctx.goldMult=(ctx.goldMult||1)*3},rare:true},
+ {id:'deathDefy',name:'DEATH DEFY',desc:'Survive lethal once per floor.',apply:function(G,ctx){ctx.deathDefy=true},rare:true},
+];
+
+// ═══ ACHIEVEMENTS ═══
+const ACHIEVEMENT_DEFS={
+ first_boss:{name:'BOSS SLAYER',desc:'Kill first boss'},
+ floor_10:{name:'DEEP DIVER',desc:'Reach floor 10'},
+ floor_25:{name:'SPELUNKER',desc:'Reach floor 25'},
+ triple_kill:{name:'TRIPLE KILL',desc:'Kill 3 enemies in one spin'},
+ jackpot:{name:'JACKPOT',desc:'Get a jackpot'},
+ rich:{name:'MONEYBAGS',desc:'Have 100+ gold at once'},
+ charm_master:{name:'CHARM MASTER',desc:'Collect 5 charms in one run'},
+ speed_run:{name:'SPEED RUN',desc:'Clear floor in 1 spin'},
+};
+function checkAchievement(id){
+ if(meta.achievements[id])return;
+ meta.achievements[id]=true;saveMeta();
+ var def=ACHIEVEMENT_DEFS[id];
+ if(def){showBanner('ACHIEVEMENT: '+def.name);log('ACHIEVEMENT UNLOCKED: '+def.name+' - '+def.desc,'res-combo');SFX.relic()}
+ if(id==='rich'){meta.merchantBonus=true;saveMeta()}
+}
+function renderAchievements(){
+ var html='<div class="achv-grid">';
+ for(var id in ACHIEVEMENT_DEFS){var d=ACHIEVEMENT_DEFS[id];var earned=meta.achievements[id];
+  html+='<div class="achv-item'+(earned?' earned':'')+'">'+d.name+(earned?' [OK]':'')+'</div>'}
+ return html+'</div>';
+}
+
 // ═══ PERKS ═══
 const ALL_PERKS=[
  {id:'thicc',icon:'🍔',name:'THICC MODE',desc:'+5 max HP. Earned those calories.',apply:G=>{G.maxHp+=5;G.hp+=5},stack:true},
@@ -461,10 +523,19 @@ const FLOOR_EVENTS=[
  {name:'HEALING SPRING',desc:'Fully healed!',apply:G=>{G.hp=G.maxHp}},
  {name:'CURSED',desc:'Lose 3 max HP... but +3 DMG!',apply:G=>{G.maxHp=Math.max(5,G.maxHp-3);G.hp=Math.min(G.hp,G.maxHp);G.floorFlags.curseDmg=3}},
  {name:'SHOP KEEPER',desc:'Free random symbol!',apply:G=>{const s=ALL_SHOP[Math.floor(Math.random()*ALL_SHOP.length)];G.reels[Math.floor(Math.random()*G.reels.length)].push(s)}},
+ {name:'MIRROR MATCH',desc:'Enemies copy your symbols!',apply:G=>{G.floorFlags.mirrorMatch=true}},
+ {name:'GREED FLOOR',desc:'3x gold but enemies hit harder!',apply:G=>{G.floorFlags.greedFloor=true}},
+ {name:'MINI BOSS',desc:'An elite enemy appears!',apply:G=>{
+  const pool=ENEMIES.filter((_,i)=>i>=Math.floor(G.floor/2));const t=pool[Math.floor(Math.random()*pool.length)]||ENEMIES[ENEMIES.length-1];
+  const sc=1.8+G.floor*.15;let e={...t};e.name='ELITE '+t.name;e.maxHp=Math.ceil(t.hp*sc*1.5);e.hp=e.maxHp;e.atk=Math.ceil(t.atk*(1.3+G.floor*.08));e.xp=Math.ceil((t.xp||3)*2);e.poison=0;e.shield=0;e.frozen=0;
+  G.enemies.push(e)}},
+ {name:'GAMBLER\'S PARADISE',desc:'All matches count as triple!',apply:G=>{G.floorFlags.gamblerParadise=true}},
+ {name:'DARK FLOOR',desc:'Enemy HP bars hidden!',apply:G=>{G.floorFlags.darkFloor=true}},
 ];
 
 // ═══ STATE ═══
-let meta=JSON.parse(localStorage.getItem('rs3_meta')||'null')||{bestFloor:0,totalGold:0,runs:0,kills:0,unlocked:[]};
+let meta=JSON.parse(localStorage.getItem('rs3_meta')||'null')||{bestFloor:0,totalGold:0,runs:0,kills:0,unlocked:[],achievements:{}};
+meta.achievements=meta.achievements||{};
 function saveMeta(){localStorage.setItem('rs3_meta',JSON.stringify(meta))}
 function getUnlocked(){
  let u=new Set(BASE_SYMBOLS);
@@ -475,7 +546,8 @@ let G={hp:20,maxHp:20,gold:0,shield:0,poison:0,floor:1,reels:[[...BASE_SYMBOLS],
  enemies:[],spinning:false,spinCount:0,phase:'title',reelResults:[],charClass:null,perks:[],perkFlags:{},relics:[],
  xp:0,xpNeeded:10,level:1,streak:0,bestStreak:0,kills:0,floorFlags:{},reviveUsed:false,
  killStreakNoDmg:0,totalDmgDealt:0,totalGoldEarned:0,totalSpins:0,floorsCleared:0,bossKills:0,
- topResults:[],botResults:[]};
+ topResults:[],botResults:[],
+ goldThisFloor:0,spinsLeft:8,floorTarget:8,charms:[],deathDefyUsed:false};
 function freshState(cls){
  const base=[...BASE_SYMBOLS,...cls.startSyms];
  const rc=3+cls.extraReels;const reels=[];for(let i=0;i<rc;i++)reels.push([...base]);
@@ -544,7 +616,9 @@ function updateUI(){
  document.getElementById('perk-bar').innerHTML=G.perks.map(p=>`<span class="perk-icon" title="${p.name}: ${p.desc}">${iconImg(p.icon,16)}</span>`).join('')+
   G.relics.map(r=>`<span class="perk-icon" title="${r.name}: ${r.desc}" style="border:1px solid #f0d040;padding:0 1px">${iconImg(r.icon,16)}</span>`).join('');
  const sb=document.getElementById('streak-bar');
- sb.textContent=G.streak>1?`x${G.streak} WIN STREAK`:'';
+ let sbt=G.streak>1?`x${G.streak} WIN STREAK`:'';
+ if(G.killStreakNoDmg>=2)sbt+=(sbt?' | ':'')+G.killStreakNoDmg+' KILL STREAK';
+ sb.textContent=sbt;
 }
 function renderEnemies(){
  const c=document.getElementById('enemies');c.innerHTML='';
@@ -554,9 +628,10 @@ function renderEnemies(){
   if(e.poison>0)st+=`<span class="poison-indicator">P${e.poison}</span>`;
   if(e.shield>0)st+=`<span style="color:#6090f0">S${e.shield}</span>`;
   if(e.frozen)st+=`<span style="color:#60d0f0">FRZ</span>`;
+  const dark=G.floorFlags.darkFloor&&e.hp>0;
   d.innerHTML=`<span class="enemy-icon">${SC[e.icon]?`<img src="${SC[e.icon]}" style="width:36px;height:36px;image-rendering:pixelated">`:e.icon}</span><span class="enemy-name">${e.name}</span>
-   <div class="enemy-hp-bar"><div class="enemy-hp-fill" style="width:${Math.max(0,e.hp/e.maxHp*100)}%"></div></div>
-   <span class="enemy-status">${st}</span><span class="enemy-atk">A${e.atk}</span>`;
+   <div class="enemy-hp-bar"><div class="enemy-hp-fill" style="width:${dark?100:Math.max(0,e.hp/e.maxHp*100)}%;${dark?'background:#383838':''}"></div></div>
+   <span class="enemy-status">${st}</span><span class="enemy-atk">${dark?'?':'A'+e.atk}</span>`;
   c.appendChild(d);
  });
 }
@@ -579,7 +654,7 @@ function spawnEnemies(){
  G.enemies=[];G.floorFlags={};
  const isBoss=G.floor%5===0;
  // Floor event (20% chance on non-boss)
- if(!isBoss&&G.floor>1&&Math.random()<.2){
+ if(!isBoss&&G.floor>1&&Math.random()<.28){
   const ev=FLOOR_EVENTS[Math.floor(Math.random()*FLOOR_EVENTS.length)];
   ev.apply(G);showBanner(ev.name);log(`EVENT: ${ev.name} - ${ev.desc}`,'res-combo');
  }
@@ -587,7 +662,7 @@ function spawnEnemies(){
   const bi=Math.min(Math.floor(G.floor/5)-1,BOSSES.length-1);
   let b={...BOSSES[bi]};b.maxHp=b.hp+G.floor*3;b.hp=b.maxHp;b.poison=0;b.shield=0;b.frozen=0;
   if(G.floorFlags.bloodMoon){b.atk=Math.ceil(b.atk*1.5);b.xp=Math.ceil(b.xp*1.5)}
-  G.enemies.push(b);log(`${b.name}: "${b.quip}"`,'res-enemy');setTrack('boss');SFX.boss();
+  G.enemies.push(b);log(`${b.name}: "${b.quip}"`,'res-enemy');setTrack('boss');SFX.boss();bossEntranceEffect();
  } else {
   const count=Math.min(4,1+Math.floor(G.floor/3));
   const pool=ENEMIES.filter((_,i)=>i<Math.min(ENEMIES.length,3+Math.floor(G.floor/2)));
@@ -670,8 +745,7 @@ function spin(){
 }
 
 // ═══ RESOLVE ═══
-function resolveResults(){
- let R=[...G.reelResults];
+function resolveLine(R,mul,label){
  let tDmg=0,tHeal=0,tGold=0,tShield=0,crystB=0,refreshR=[];
 
  // Joker
@@ -679,7 +753,6 @@ function resolveResults(){
  let mc=R[0],mf=0;for(let[s,c]of Object.entries(freq))if(c>mf){mf=c;mc=s}
  R=R.map(s=>s==='🎪'?mc:s);
 
- // Rainbow: counts as matching any adjacent symbol
  // Magnet
  R=R.map((s,i)=>{if(s==='🧲'&&i>0)return R[i-1];return s});
 
@@ -693,7 +766,7 @@ function resolveResults(){
  R.forEach(s=>{if(s==='🍀')spinCrit+=.05});
  let isCrit=Math.random()<spinCrit;
  let critMul=isCrit?(G.relics.some(r=>r.effect==='critX4')?4:3):1;
- if(isCrit){log('!! CRITICAL !!','res-crit');SFX.crit();screenFlash('#ff4080')}
+ if(isCrit){log('!! CRITICAL !!','res-crit');SFX.crit();screenFlash('#ff4080');critBorderFlash()}
 
  // Bell
  let bellBonus=0;R.forEach(s=>{if(s==='🔔')bellBonus+=2});
@@ -701,13 +774,13 @@ function resolveResults(){
 
  // Counts & matches
  const counts={};R.forEach(s=>counts[s]=(counts[s]||0)+1);
- // Rainbow counts as matching
  const rainbows=counts['🌈']||0;
- let matchMul=1;
+ let matchMul=G.floorFlags.gamblerParadise?3:1;
+ let matchTier=0;
  for(let[s,c]of Object.entries(counts)){
   const eff=c+(s!=='🌈'?rainbows:0);
-  if(eff>=3){matchMul=3;log(`>>> TRIPLE ${SYMS[s]?.name||s}! x3 <<<`,'res-combo');SFX.combo();spawnP(document.getElementById('slot-frame'),'#e060f0',18);screenFlash('#a040f0')}
-  else if(eff>=2&&matchMul<1.5){matchMul=1.5;log(`>> DOUBLE ${SYMS[s]?.name||s}!`,'res-combo')}
+  if(eff>=3&&matchMul<3){matchMul=3;matchTier=2;log(`>>> TRIPLE ${SYMS[s]?.name||s}! x3 <<<`,'res-combo');SFX.combo();spawnP(document.getElementById('slot-frame'),'#e060f0',18);screenFlash('#a040f0')}
+  else if(eff>=2&&matchMul<1.5&&!G.floorFlags.gamblerParadise){matchMul=1.5;matchTier=1;log(`>> DOUBLE ${SYMS[s]?.name||s}!`,'res-combo')}
  }
 
  let jpMul=1;
@@ -726,12 +799,12 @@ function resolveResults(){
 
  const greedB=G.perkFlags.greed||0;
  const healMul=1+(G.charClass?.healBonus||0);
- const goldFloorMul=G.floorFlags.goldX2?2:1;
+ const goldFloorMul=(G.floorFlags.goldX2?2:1)*(G.floorFlags.greedFloor?3:1);
  const crownMul=hasCrown?1.5:1;
 
  R.forEach((sym,i)=>{
   const def=SYMS[sym];if(!def)return;
-  const m=mults[i]*matchMul*jpMul*critMul*lastM;
+  const m=mults[i]*matchMul*jpMul*critMul*lastM*mul;
   const dmgExtra=berserkB+spenderB+comboB+bellBonus+crystB;
 
   if(def.dmg){
@@ -741,17 +814,17 @@ function resolveResults(){
    d=(d+dmgExtra)*m;d=Math.floor(d);
    if(def.special==='bone'){if(aliveEnemies().some(e=>e.tags?.includes('undead'))){d+=4;log('BONE vs UNDEAD! +4!','res-crit')}}
    if(def.special==='snipe'){const ae=aliveEnemies();const tgt=ae.length>1?ae[ae.length-1]:ae[0];
-    if(tgt){dealDmg(tgt,d);tDmg+=d;log(`${sym} ${d}→${tgt.name} (back)`,'res-dmg')}}
-   else{tDmg+=d;const tgt=aliveEnemies()[0];if(tgt){dealDmg(tgt,d);log(`${sym} ${d}→${tgt.name}`,'res-dmg')}}
+    if(tgt){dealDmg(tgt,d);tDmg+=d;log(`${label}${d}→${tgt.name} (back)`,'res-dmg')}}
+   else{tDmg+=d;const tgt=aliveEnemies()[0];if(tgt){dealDmg(tgt,d);log(`${label}${d}→${tgt.name}`,'res-dmg')}}
    if(G.perkFlags.poisonTip&&Math.random()<.2){const tgt=aliveEnemies()[0];if(tgt){tgt.poison+=2;log('POISON TIP!','res-dmg')}}
    if(def.special==='freeze'){const tgt=aliveEnemies()[0];if(tgt){tgt.frozen=2;log(`${tgt.name} FROZEN!`,'res-shield')}}
   }
   if(def.dmgAll){let d=Math.floor((def.dmgAll+(G.perkFlags.bombBonus||0)+dmgExtra)*m);
-   aliveEnemies().forEach(e=>dealDmg(e,d));log(`${sym} ${d}→ALL!`,'res-dmg');tDmg+=d*aliveEnemies().length;shake();screenFlash('#f06060')}
+   aliveEnemies().forEach(e=>dealDmg(e,d));log(`${label}${d}→ALL!`,'res-dmg');tDmg+=d*aliveEnemies().length;shake();screenFlash('#f06060')}
   if(def.heal){const h=Math.floor(def.heal*m*healMul);tHeal+=h;G.hp=Math.min(G.maxHp,G.hp+h)}
   if(def.gold){const g=Math.floor((def.gold+greedB)*m*goldFloorMul*crownMul);tGold+=g;G.gold+=g}
   if(def.shield){const s=Math.floor(def.shield*m);tShield+=s;G.shield+=s}
-  if(def.selfDmg){G.hp-=def.selfDmg;log(`${sym} costs ${def.selfDmg} HP`,'res-enemy')}
+  if(def.selfDmg){const sd=Math.ceil(def.selfDmg*mul);G.hp-=sd;log(`costs ${sd} HP`,'res-enemy')}
 
   if(def.special==='star'){const u=new Set(R).size;const d=Math.floor((u+dmgExtra)*m);tDmg+=d;const tgt=aliveEnemies()[0];if(tgt){dealDmg(tgt,d);log(`STAR ${u} unique=${d}`,'res-dmg')}}
   if(def.special==='poison')aliveEnemies().forEach(e=>{e.poison+=3;log(`${e.name} poisoned!`,'res-dmg')});
@@ -769,13 +842,43 @@ function resolveResults(){
    else if(r<.8){aliveEnemies().forEach(e=>e.poison+=3);log('LOOT: Poison ALL!','res-dmg')}
    else{gainXP(5);log('LOOT: +5 XP!','res-xp')}
   }
-  if(def.special==='refresh')refreshR.push(i);
+  if(mul>=1&&def.special==='refresh')refreshR.push(i);
  });
 
+ return{tDmg,tHeal,tGold,tShield,refreshR,matchTier};
+}
+
+function resolveResults(){
+ // Main payline (center row)
+ const main=resolveLine([...G.reelResults],1,'');
+ // Top payline (half effect)
+ const top=resolveLine([...G.topResults],.5,'');
+ // Bottom payline (half effect)
+ const bot=resolveLine([...G.botResults],.5,'');
+
+ const tDmg=main.tDmg+top.tDmg+bot.tDmg;
+ const tHeal=main.tHeal+top.tHeal+bot.tHeal;
+ const tGold=main.tGold+top.tGold+bot.tGold;
+ const tShield=main.tShield+top.tShield+bot.tShield;
+ const refreshR=main.refreshR;
+ const matchTier=Math.max(main.matchTier,top.matchTier,bot.matchTier);
+
+ // Combo announcements
+ if(tDmg>=20){comboAnnounce('MEGA HIT!','#f040f0');SFX.combo()}
+ else if(matchTier>=2||tDmg>=14){comboAnnounce('JACKPOT!','#f0d040')}
+ else if(matchTier>=1&&tDmg>=6){comboAnnounce('TRIPLE!','#f06040')}
+ else if(tDmg>=8){comboAnnounce('DOUBLE!','#40c0f0')}
+
+ // Floating damage/heal/gold numbers
+ if(tDmg>0){const eel=document.querySelector('.enemy-row.targeted')||document.querySelector('.enemy-row');floatNum(eel,'+'+tDmg+' DMG','#f83800')}
+ if(tHeal>0){floatNum(document.getElementById('hp-text'),'+'+tHeal+' HP','#00a800')}
+ if(tGold>0){floatNum(document.getElementById('gold-text'),'+'+tGold+' GP','#f8d800')}
+ if(tShield>0){floatNum(document.getElementById('shield-text'),'+'+tShield+' SH','#0058f8')}
+
  if(tHeal>0){log(`+${tHeal} HP`,'res-heal');SFX.heal()}
- if(tGold>0){log(`+${tGold} GP`,'res-gold');SFX.gold();meta.totalGold+=tGold;saveMeta()}
+ if(tGold>0){log(`+${tGold} GP`,'res-gold');SFX.gold();meta.totalGold+=tGold;G.totalGoldEarned+=tGold;saveMeta()}
  if(tShield>0)log(`+${tShield} SH`,'res-shield');
- if(tDmg>0){SFX.hit();if(tDmg>=8){shake();spawnP(document.getElementById('slot-frame'),'#f06060',10)}}
+ if(tDmg>0){SFX.hit();G.totalDmgDealt+=tDmg;shakeScale(tDmg);if(tDmg>=6)spawnP(document.getElementById('slot-frame'),'#f06060',Math.min(20,4+tDmg));winFlash()}
  if(tDmg>0)G.streak++;else G.streak=0;
  if(G.streak>G.bestStreak)G.bestStreak=G.streak;
 
@@ -783,12 +886,16 @@ function resolveResults(){
 
  // Kill tracking
  G.enemies.forEach((e,i)=>{
-  if(e.hp<=0&&!e._dead){e._dead=true;G.kills++;meta.kills++;
+  if(e.hp<=0&&!e._dead){e._dead=true;G.kills++;meta.kills++;G.killStreakNoDmg++;
    spawnP(document.getElementById('enemy-'+i),'#f04040',8);
    if(G.perkFlags.vampiric){const h=G.perkFlags.vampiric;G.hp=Math.min(G.maxHp,G.hp+h);log(`VAMP +${h}`,'res-heal')}
    if(G.perkFlags.goldTooth){G.gold+=1;log('+1 GP (tooth)','res-gold')}
    if(G.charClass?.id==='necro'){G.hp=Math.min(G.maxHp,G.hp+2);log('NECRO +2 HP','res-heal')}
    gainXP(e.xp||3);
+   // Kill streak rewards
+   if(G.killStreakNoDmg===3){G.gold+=5;log('3-STREAK! +5 GP bonus!','res-gold');floatNum(document.getElementById('gold-text'),'+5 STREAK','#f8d800')}
+   if(G.killStreakNoDmg===5){G.hp=Math.min(G.maxHp,G.hp+3);log('5-STREAK! Free heal 3 HP!','res-heal');floatNum(document.getElementById('hp-text'),'+3 STREAK','#00a800')}
+   if(G.killStreakNoDmg===10){const s=ALL_SHOP[Math.floor(Math.random()*ALL_SHOP.length)];G.reels[Math.floor(Math.random()*G.reels.length)].push(s);log('10-STREAK! Free symbol added!','res-combo');comboAnnounce('10 STREAK!','#f0d040')}
   }
  });
 
@@ -797,11 +904,11 @@ function resolveResults(){
 
  if(aliveEnemies().length===0){
   setTimeout(()=>{
-   SFX.win();log('FLOOR CLEARED!','res-combo');screenFlash('#40e040');showBanner('CLEAR!');
+   SFX.win();log('FLOOR CLEARED!','res-combo');screenFlash('#40e040');showBanner('CLEAR!');G.floorsCleared++;
    G.spinning=false;
    if(G.floor>meta.bestFloor){meta.bestFloor=G.floor;saveMeta();log(`NEW BEST: F-${G.floor}!`,'res-combo')}
    for(let[f,syms]of Object.entries(UNLOCK_MAP)){if(G.floor>=+f&&!meta.unlocked.includes(+f)){meta.unlocked.push(+f);saveMeta();log(`UNLOCKED: ${syms.join(' ')}!`,'res-combo')}}
-   if(G.floor%5===0)showRelicChoice();
+   if(G.floor%5===0){G.bossKills++;showRelicChoice()}
    else if(G.floor%3===0)showPerkChoice();
    else showShop();
   },450);return;
@@ -824,14 +931,15 @@ function enemyTurn(){
   if(e.hp<=0)return;
   if(e.frozen>0){e.frozen--;log(`${e.name} is FROZEN`,'res-shield');return}
   let dmg=e.atk;
+  if(G.floorFlags.greedFloor)dmg=Math.ceil(dmg*1.5);
   if(e.ability==='dodge'&&Math.random()<.3){log(`${e.name} dodges!`,'res-info');return}
   if(e.ability==='phase'&&Math.random()<.4){log(`${e.name} phases!`,'res-info');return}
   if(e.ability==='confuse'&&Math.random()<.25){log(`${e.name} confuses you! Lost turn.`,'res-enemy');return}
   if(G.floorFlags.ironBootActive){G.floorFlags.ironBootActive=false;log('IRON BOOT! 0 DMG!','res-shield');return}
-  // Armor reduce
   if(G.perkFlags.armorReduce)dmg=Math.max(1,dmg-G.perkFlags.armorReduce);
   if(G.shield>0){const b=Math.min(G.shield,dmg);G.shield-=b;dmg-=b;if(b>0)log(`SH blocks ${b}`,'res-shield')}
   if(dmg>0){G.hp-=dmg;tTaken+=dmg;log(`${e.name} ATK ${dmg}`,'res-enemy');
+   floatNum(document.getElementById('hp-text'),'-'+dmg+' HP','#f83800');
    if(G.perkFlags.thorns){const td=G.perkFlags.thorns;dealDmg(e,td);log(`THORNS ${td}!`,'res-dmg')}
    if(G.relics.some(r=>r.effect==='reflect')){const rd=Math.ceil(dmg*.25);dealDmg(e,rd);log(`REFLECT ${rd}!`,'res-dmg')}
   }
@@ -847,7 +955,7 @@ function enemyTurn(){
   }
  });
  if(G.poison>0){G.hp-=G.poison;log(`PSN ${G.poison}`,'res-enemy');G.poison=Math.max(0,G.poison-1)}
- if(tTaken>0){SFX.taken();G.streak=0;if(tTaken>=4){shake();screenFlash('#f04040')};document.getElementById('app').classList.add('dmg-flash');setTimeout(()=>document.getElementById('app').classList.remove('dmg-flash'),250)}
+ if(tTaken>0){SFX.taken();G.streak=0;G.killStreakNoDmg=0;if(tTaken>=4){shake();screenFlash('#f04040')};document.getElementById('app').classList.add('dmg-flash');setTimeout(()=>document.getElementById('app').classList.remove('dmg-flash'),250)}
  renderEnemies();updateUI();
 
  if(G.hp<=0){
@@ -966,10 +1074,26 @@ function showDeath(){
  SFX.die();G.phase='dead';stopMusic();screenFlash('#f04040');
  meta.runs++;if(G.floor>meta.bestFloor){meta.bestFloor=G.floor}saveMeta();
  const ov=document.getElementById('overlay'),pn=document.getElementById('panel');ov.classList.add('show');
+ // Run achievements
+ let ach=[];
+ if(G.bossKills>0)ach.push('BOSS SLAYER ('+G.bossKills+')');
+ if(G.bestStreak>=10)ach.push('UNSTOPPABLE (10+ streak)');
+ if(G.totalGoldEarned>=100)ach.push('GOLD HOARDER (100+ GP)');
+ if(G.floorsCleared>=10)ach.push('FLOOR MASTER (10+ floors)');
+ if(G.level>=5)ach.push('VETERAN (LV5+)');
+ if(G.relics.length>=3)ach.push('COLLECTOR (3+ relics)');
+ if(G.totalDmgDealt>=200)ach.push('DESTROYER (200+ DMG)');
  pn.innerHTML=`<h2 style="color:#f04040">GAME OVER</h2>
   <div style="margin:6px">${iconImg('💀',40)}</div>
   <p style="font-size:6px;margin:4px 0">FLOOR <span style="color:#f0d040">${G.floor}</span> | LV${G.level} | ${G.charClass?.name}</p>
-  <p style="font-size:5px;color:#6a6a8a">${G.kills} kills | ${G.bestStreak} best streak</p>
+  <div style="border:1px solid #2a2a4a;padding:6px;margin:6px 0;font-size:5px;color:#b8b8b8;line-height:2;text-align:left">
+   <span style="color:#f83800">DMG DEALT:</span> ${G.totalDmgDealt}<br>
+   <span style="color:#f8d800">GOLD EARNED:</span> ${G.totalGoldEarned}<br>
+   <span style="color:#0058f8">SPINS:</span> ${G.totalSpins}<br>
+   <span style="color:#00a800">FLOORS:</span> ${G.floorsCleared}<br>
+   <span style="color:#f87858">KILLS:</span> ${G.kills} (best streak: ${G.bestStreak})
+  </div>
+  ${ach.length?`<div style="border:1px solid #4a4a2a;padding:4px;margin:4px 0;font-size:4px;color:#f0d040;line-height:2">${ach.map(a=>'['+a+']').join(' ')}</div>`:''}
   <p style="font-size:5px;color:#6a6a8a">BEST: F-${meta.bestFloor} | RUNS: ${meta.runs}</p>
   ${G.perks.length?`<p style="font-size:5px;color:#6a6a8a;margin:3px 0">PERKS: ${G.perks.map(p=>p.name[0]).join('')}</p>`:''}
   ${G.relics.length?`<p style="font-size:5px;color:#f0d040;margin:2px 0">RELICS: ${G.relics.map(r=>r.name[0]).join('')}</p>`:''}
@@ -1003,7 +1127,8 @@ function showTitle(){
   <div style="border:1px solid #2a2a4a;padding:4px;margin:4px 0;font-size:4px;color:#6a6a8a;line-height:1.8">
    8 CLASSES • 30+ SYMBOLS • 24 PERKS<br>
    10 RELICS • 16 ENEMIES • 6 BOSSES<br>
-   XP & LEVELS • FLOOR EVENTS • ∞ FLOORS
+   3 PAYLINES • 12 EVENTS • KILL STREAKS<br>
+   XP & LEVELS • COMBOS • ∞ FLOORS
   </div>
   ${stats}${unlocks}
   <button class="btn btn-gold" onclick="showCharSelect()" style="margin-top:8px;font-size:8px;padding:10px 24px">START</button>
