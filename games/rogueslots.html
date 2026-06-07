@@ -544,6 +544,41 @@ const FLOOR_EVENTS=[
  {name:'DARK FLOOR',desc:'Enemy HP bars hidden!',apply:G=>{G.floorFlags.darkFloor=true}},
 ];
 
+// ═══ TAUNTS & QUIPS ═══
+const TAUNTS={
+ SLIME:['Bloop!','Splat!','Goo goo!'],
+ GOBLIN:['Yoink!','Mine now!','Hehe!'],
+ SKELTN:['Rattle!','No flesh!','Bone dry!'],
+ WIZARD:['Zap!','Magic!','Poof!'],
+ KAREN:['MANAGER!','Unacceptable!','I want a refund!'],
+ NINJA:['Pssh!','Silent!','Shadow!'],
+ CLOWN:['Honk!','Ha ha!','Boo hoo!'],
+ GHOST:['Whooo!','Boo!','Spooky!'],
+ VAMPIR:['Bleh!','Your blood!','Delicious!'],
+ GOLEM:['Crush!','Rock hard!','Smash!'],
+ SHROOM:['Spore!','Toxic!','Inhale!'],
+ MIMIC:['Surprise!','Not loot!','Gotcha!'],
+ CACTUS:['Poke!','Ouch!','Hug me!'],
+ SNAIL:['Slow...','...pain...','...eventually!'],
+ BLOB:['Splorp!','Goopy!','Absorb!'],
+};
+const PLAYER_QUIPS={
+ bigHit:['BOOM!','Eat that!','Devastating!','Crushed it!','MASSIVE!'],
+ crit:['PERFECT!','Critical!','BULLSEYE!','WRECKED!'],
+ kill:['Down!','Eliminated!','Next!','Easy!','Destroyed!'],
+ lowHp:['Not like this...','Ugh...','Need heals...','Barely alive...'],
+ fever:['ON FIRE!','UNSTOPPABLE!','LETS GO!','FEVER TIME!'],
+};
+function playerQuip(type){
+ var qs=PLAYER_QUIPS[type];if(!qs)return;
+ var q=qs[Math.floor(Math.random()*qs.length)];
+ log('YOU: "'+q+'"','res-combo');
+}
+
+// ═══ DAILY CHALLENGE SEED ═══
+var dailySeed=0;
+function seededRandom(){dailySeed=(dailySeed*1103515245+12345)&0x7fffffff;return(dailySeed&0xffff)/0xffff}
+
 // ═══ STATE ═══
 let meta=JSON.parse(localStorage.getItem('rs3_meta')||'null')||{bestFloor:0,totalGold:0,runs:0,kills:0,unlocked:[],achievements:{}};
 meta.achievements=meta.achievements||{};
@@ -551,6 +586,9 @@ meta.totalKills=meta.totalKills||0;
 meta.totalJackpots=meta.totalJackpots||0;
 meta.maxReelsEver=meta.maxReelsEver||0;
 meta.maxCharmsEver=meta.maxCharmsEver||0;
+meta.prestige=meta.prestige||0;
+meta.prestigeBonus=meta.prestigeBonus||0;
+meta.dailyBest=meta.dailyBest||{};
 function saveMeta(){localStorage.setItem('rs3_meta',JSON.stringify(meta))}
 function isClassUnlocked(c){
  if(!c.unlock)return true;
@@ -572,7 +610,7 @@ let G={hp:20,maxHp:20,gold:0,shield:0,poison:0,floor:1,reels:[[...BASE_SYMBOLS],
  xp:0,xpNeeded:10,level:1,streak:0,bestStreak:0,kills:0,floorFlags:{},reviveUsed:false,
  killStreakNoDmg:0,totalDmgDealt:0,totalGoldEarned:0,totalSpins:0,floorsCleared:0,bossKills:0,
  topResults:[],botResults:[],
- goldThisFloor:0,spinsLeft:8,floorTarget:8,charms:[],deathDefyUsed:false,upgrades:{},fever:0,feverSpins:0,bestMult:1};
+ goldThisFloor:0,spinsLeft:8,floorTarget:8,charms:[],deathDefyUsed:false,upgrades:{},fever:0,feverSpins:0,bestMult:1,matchStreak:0};
 var spinSpeed=1;
 function freshState(cls){
  const base=[...BASE_SYMBOLS,...cls.startSyms];
@@ -584,7 +622,7 @@ function freshState(cls){
   xp:0,xpNeeded:10,level:1,streak:0,bestStreak:0,kills:0,floorFlags:{},reviveUsed:false,
   killStreakNoDmg:0,totalDmgDealt:0,totalGoldEarned:0,totalSpins:0,floorsCleared:0,bossKills:0,
   topResults:[],botResults:[],
-  goldThisFloor:0,spinsLeft:8,floorTarget:8,charms:[],deathDefyUsed:false,upgrades:{},fever:0,feverSpins:0,bestMult:1};
+  goldThisFloor:0,spinsLeft:8,floorTarget:8,charms:[],deathDefyUsed:false,upgrades:{},fever:0,feverSpins:0,bestMult:1,matchStreak:0};
 }
 
 // ═══ PARTICLES ═══
@@ -687,6 +725,7 @@ function log(m,c='res-info'){
 // ═══ ENEMIES ═══
 function spawnEnemies(){
  G.enemies=[];G.floorFlags={};
+ if(G.perkFlags.doubleGoldFloors>0){G.perkFlags.doubleGoldFloors--;if(G.perkFlags.doubleGoldFloors>0)log('x2 GOLD: '+G.perkFlags.doubleGoldFloors+' floors left!','res-gold')}
  const isBoss=G.floor%5===0;
  // Floor event (20% chance on non-boss)
  if(!isBoss&&G.floor>1&&Math.random()<.28){
@@ -718,6 +757,7 @@ function spawnEnemies(){
  if(spCtx.targetReduce)G.floorTarget=Math.max(1,Math.ceil(G.floorTarget*(1-spCtx.targetReduce)));
  G.spinsLeft=Math.min(18,10+Math.floor(G.floor/3))+(spCtx.extraSpins||0);
  if(G.charClass&&G.charClass.spinBonus)G.spinsLeft+=G.charClass.spinBonus;
+ if(G.perkFlags.bonusSpins)G.spinsLeft+=G.perkFlags.bonusSpins;
  G.deathDefyUsed=false;
  if(G.perkFlags.shieldWall)G.shield+=G.perkFlags.shieldWall;
  if(G.charClass&&G.charClass.shieldRegen)G.shield+=G.charClass.shieldRegen;
@@ -912,12 +952,12 @@ function resolveLine(R,mul,label,ctx){
 
  var greedB=G.perkFlags.greed||0;
  var healMul=1+(G.charClass&&G.charClass.healBonus||0);
- var goldFloorMul=(G.floorFlags.goldX2?2:1)*(G.floorFlags.greedFloor?3:1);
+ var goldFloorMul=(G.floorFlags.goldX2?2:1)*(G.floorFlags.greedFloor?3:1)*(G.perkFlags.doubleGoldFloors>0?2:1);
  var crownMul=hasCrown?1.5:1;
  var charmGoldMult=(ctx&&ctx.goldMult)?ctx.goldMult:1;
 
- // Apply global multiplier to final values
- var gM=globalMult;
+ // Apply global multiplier to final values (includes prestige bonus)
+ var gM=globalMult*(1+(meta.prestigeBonus||0));
 
  R.forEach(function(sym,i){
   var defOrig=SYMS[sym];if(!defOrig)return;
@@ -1042,7 +1082,7 @@ function resolveResults(){
  var matchTier=Math.max(main.matchTier,top.matchTier,bot.matchTier);
 
  // Combo announcements
- if(tDmg>=20){comboAnnounce('MEGA HIT!','#f040f0');SFX.combo()}
+ if(tDmg>=20){comboAnnounce('MEGA HIT!','#f040f0');SFX.combo();playerQuip('bigHit')}
  else if(matchTier>=2||tDmg>=14){comboAnnounce('JACKPOT!','#f0d040')}
  else if(matchTier>=1&&tDmg>=6){comboAnnounce('TRIPLE!','#f06040')}
  else if(tDmg>=8){comboAnnounce('DOUBLE!','#40c0f0')}
@@ -1163,6 +1203,7 @@ function enemyTurn(){
   if(G.shield>0){const b=Math.min(G.shield,dmg);G.shield-=b;dmg-=b;if(b>0)log(`SH blocks ${b}`,'res-shield')}
   if(dmg>0){G.hp-=dmg;tTaken+=dmg;log(`${e.name} ATK ${dmg}`,'res-enemy');
    floatNum(document.getElementById('hp-text'),'-'+dmg+' HP','#f83800');
+   if(Math.random()<.3){var taunts=TAUNTS[e.name]||['Hah!','Take that!','Grr!'];log(e.name+': "'+taunts[Math.floor(Math.random()*taunts.length)]+'"','res-enemy')}
    if(G.perkFlags.thorns){const td=G.perkFlags.thorns;dealDmg(e,td);log(`THORNS ${td}!`,'res-dmg')}
    if(G.relics.some(r=>r.effect==='reflect')){const rd=Math.ceil(dmg*.25);dealDmg(e,rd);log(`REFLECT ${rd}!`,'res-dmg')}
   }
