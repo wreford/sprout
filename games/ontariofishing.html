@@ -752,6 +752,10 @@ function renderHotspots(){
     <div class="toggle-left"><div class="toggle-icon"><i data-lucide="eye"></i></div><div><div class="tl">Screen Stay On</div><div class="td">Keep screen awake while fishing</div></div></div>
     <div class="tswitch${wakeLockOn?' on':''}" id="wlToggle"></div>
   </div>`;
+  h+=`<div class="toggle-row">
+    <div class="toggle-left"><div class="toggle-icon"><i data-lucide="gamepad-2"></i></div><div><div class="tl">Game Fish in Log</div><div class="td">Show 8bit Perch catches in your real log</div></div></div>
+    <div class="tswitch${gameFishToLog?' on':''}" id="glToggle"></div>
+  </div>`;
 
   // Hotspots
   h+=`<div class="section-hdr"><h3>YOUR SPOTS</h3><span class="count">${spots.length} locations</span></div>`;
@@ -870,6 +874,8 @@ function renderHotspots(){
   // Bind wake lock
   const wl=document.getElementById('wlToggle');
   if(wl)wl.onclick=()=>{wakeLockOn=!wakeLockOn;wl.classList.toggle('on',wakeLockOn);localStorage.setItem('ontfish_wakelock',wakeLockOn?'1':'0');if(wakeLockOn)requestWakeLock();else releaseWakeLock()};
+  const gl=document.getElementById('glToggle');
+  if(gl)gl.onclick=()=>{gameFishToLog=!gameFishToLog;gl.classList.toggle('on',gameFishToLog);localStorage.setItem('ontfish_gamelog',gameFishToLog?'on':'off')};
 
   fetchWeather();
 }
@@ -940,8 +946,41 @@ function refreshGPS(){
 
 // ─── SPEECH ───
 function speak(t){try{if('speechSynthesis' in window){const u=new SpeechSynthesisUtterance(t);u.rate=.9;speechSynthesis.speak(u)}}catch(e){}}
-window.addEventListener('message',e=>{
-  if(e.data&&e.data.type==='fish-caught'){speak(e.data.weight+' pound '+e.data.species+'! Nice catch!');if(navigator.vibrate)navigator.vibrate([100,50,100])}
+
+// ─── GAME FISH → REAL LOG INTEGRATION ───
+let gameFishToLog=localStorage.getItem('ontfish_gamelog')!=='off';
+window.addEventListener('message',function(e){
+  if(!e.data)return;
+  // Real catch from fishlog
+  if(e.data.type==='fish-caught'){
+    speak(e.data.weight+' kg '+e.data.species+'! Nice catch!');
+    if(navigator.vibrate)navigator.vibrate([100,50,100]);
+  }
+  // Game catch from 8bit Perch
+  if(e.data.type==='game-fish-caught'&&gameFishToLog){
+    var gc={
+      id:Date.now(),
+      species:e.data.species==='PERCH'?'Yellow Perch':e.data.species==='BASS'?'Smallmouth Bass':e.data.species==='PIKE'?'Northern Pike':e.data.species==='CATFISH'?'Channel Catfish':e.data.species==='TROUT'?'Rainbow Trout':e.data.species==='WALLEYE'?'Walleye':e.data.species==='MUSKIE'?'Muskie':e.data.species==='SUNFISH'?'Bluegill/Sunfish':e.data.species||'Other',
+      weightLbs:Math.round(e.data.weightKg*10)/10,
+      weightOz:0,
+      lengthIn:0,
+      location:'8bit Perch (Game)',
+      date:new Date().toISOString().slice(0,10),
+      time:new Date().toTimeString().slice(0,5),
+      notes:'Caught in 8bit Perch game',
+      photos:[],
+      released:false,
+      isGameFish:true,
+      source:'8bitperch'
+    };
+    try{
+      var catches=JSON.parse(localStorage.getItem('fishlog_catches')||'[]');
+      catches.unshift(gc);
+      localStorage.setItem('fishlog_catches',JSON.stringify(catches));
+      speak(gc.weightLbs+' kg '+gc.species+' from the game!');
+    }catch(ex){}
+    if(navigator.vibrate)navigator.vibrate([50,30,50]);
+  }
 });
 
 if(activeTab==='hotspot')renderHotspots();
