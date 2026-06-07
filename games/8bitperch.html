@@ -1,0 +1,1216 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+<title>8bit Perch</title>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet"/>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:#000;overflow:hidden;touch-action:manipulation;user-select:none;-webkit-user-select:none;font-family:'Press Start 2P',monospace}
+#wrap{position:relative;width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#000}
+canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges;-ms-interpolation-mode:nearest-neighbor}
+#scanlines{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:5;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.15) 2px,rgba(0,0,0,0.15) 4px)}
+#actionBtn{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);padding:14px 40px;font-size:10px;font-family:'Press Start 2P',monospace;background:#0058f8;color:#fcfcfc;border:3px solid #003080;cursor:pointer;z-index:20;touch-action:manipulation;text-align:center;letter-spacing:1px;min-width:140px;image-rendering:pixelated}
+#actionBtn:active{background:#003080}
+#actionBtn.hook{background:#f83800;border-color:#b81010;animation:pulse8 0.25s infinite alternate}
+#actionBtn.reel{background:#00a800;border-color:#005800}
+@keyframes pulse8{from{transform:translateX(-50%) scale(1)}to{transform:translateX(-50%) scale(1.06)}}
+#shopBtn{position:absolute;bottom:12px;right:8px;padding:8px 12px;font-size:7px;font-family:'Press Start 2P',monospace;background:#787878;color:#fcfcfc;border:2px solid #484848;cursor:pointer;z-index:20}
+#statsBtn{position:absolute;bottom:12px;left:8px;padding:8px 12px;font-size:7px;font-family:'Press Start 2P',monospace;background:#787878;color:#fcfcfc;border:2px solid #484848;cursor:pointer;z-index:20}
+#shopOverlay,#statsOverlay,#fishPopup{position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.92);z-index:40;display:none;overflow-y:auto;padding:30px 12px 12px;font-family:'Press Start 2P',monospace}
+#shopOverlay h2,#statsOverlay h2{color:#f8d800;text-align:center;margin-bottom:10px;font-size:12px}
+.shopItem{background:#181830;border:3px solid #787878;padding:10px;margin:6px 0;display:flex;justify-content:space-between;align-items:center;color:#fcfcfc}
+.shopItem.owned{border-color:#00a800;opacity:0.5}
+.shopItem .info{flex:1}
+.shopItem .info h3{font-size:8px;color:#f8d800;margin-bottom:4px}
+.shopItem .info p{font-size:6px;color:#bcbcbc}
+.shopItem button{padding:6px 12px;font-size:7px;font-family:'Press Start 2P',monospace;background:#0058f8;color:#fcfcfc;border:2px solid #003080;cursor:pointer}
+.shopItem button:disabled{background:#484848;border-color:#333;color:#787878;cursor:default}
+.closeBtn{display:block;margin:12px auto 0;padding:8px 24px;font-size:9px;font-family:'Press Start 2P',monospace;background:#f83800;color:#fcfcfc;border:2px solid #b81010;cursor:pointer}
+.statRow{display:flex;justify-content:space-between;padding:5px 6px;border-bottom:1px solid #333;color:#fcfcfc;font-size:7px}
+.statRow span:first-child{color:#f8d800}
+#fishPopup{display:none;align-items:center;justify-content:center;flex-direction:column;padding:0}
+#fishPopup .inner{background:#181830;border:4px solid #f8d800;padding:16px;text-align:center;color:#fcfcfc;max-width:220px;width:90%}
+#fishPopup h2{color:#f8d800;font-size:11px;margin-bottom:6px}
+#fishPopup p{margin:3px 0;font-size:7px}
+#fishPopup .weight{font-size:12px;color:#fcfcfc;margin:6px 0}
+#fishPopup .pb{color:#f83800;font-size:7px}
+#fishPopup .value{color:#00a800;font-size:8px}
+#fishPopup canvas{margin:8px auto;display:block;image-rendering:pixelated}
+#fishPopup button{margin-top:10px;padding:8px 20px;font-size:8px;font-family:'Press Start 2P',monospace;background:#0058f8;color:#fcfcfc;border:2px solid #003080;cursor:pointer}
+</style>
+</head>
+<body>
+<a href="../index.html" style="position:fixed;top:4px;left:8px;z-index:9999;font-size:7px;color:#787878;text-decoration:none;font-family:'Press Start 2P',monospace;opacity:0.7;transition:opacity 0.2s" onmouseover="this.style.opacity=1;this.style.color='#58d854'" onmouseout="this.style.opacity=0.7;this.style.color='#787878'">&larr; home</a>
+<div id="wrap">
+  <canvas id="c"></canvas>
+  <div id="scanlines"></div>
+  <button id="actionBtn" onclick="onAction()">CAST</button>
+  <button id="shopBtn" onclick="openShop()">SHOP</button>
+  <button id="statsBtn" onclick="openStats()">FISH</button>
+  <div id="shopOverlay">
+    <h2>SHOP</h2>
+    <div id="shopItems"></div>
+    <button class="closeBtn" onclick="closeShop()">CLOSE</button>
+  </div>
+  <div id="statsOverlay">
+    <h2>FISH LOG</h2>
+    <div id="statsItems"></div>
+    <button class="closeBtn" onclick="closeStats()">CLOSE</button>
+  </div>
+  <div id="fishPopup">
+    <div class="inner">
+      <h2 id="fpTitle">CAUGHT!</h2>
+      <canvas id="fpCanvas" width="48" height="32"></canvas>
+      <p id="fpName"></p>
+      <p class="weight" id="fpWeight"></p>
+      <p class="pb" id="fpPB" style="display:none">NEW PERSONAL BEST!</p>
+      <p class="value" id="fpValue"></p>
+      <button onclick="closeFishPopup()">OK</button>
+    </div>
+  </div>
+</div>
+<script>
+// ===== CANVAS SETUP =====
+const W=240,H=400;
+const canvas=document.getElementById('c');
+canvas.width=W;canvas.height=H;
+const ctx=canvas.getContext('2d');
+ctx.imageSmoothingEnabled=false;
+
+function resizeCanvas(){
+  const wr=document.getElementById('wrap');
+  const aspect=W/H;
+  let cw=wr.clientWidth,ch=wr.clientHeight;
+  if(cw/ch>aspect){cw=ch*aspect}else{ch=cw/aspect}
+  canvas.style.width=Math.floor(cw)+'px';
+  canvas.style.height=Math.floor(ch)+'px';
+}
+window.addEventListener('resize',resizeCanvas);
+resizeCanvas();
+
+// ===== NES PALETTE =====
+const PAL={
+  black:'#000000',white:'#fcfcfc',red:'#f83800',green:'#00a800',
+  blue:'#0058f8',yellow:'#f8d800',dkred:'#b81010',ltblue:'#0078f8',
+  gray:'#787878',ltgray:'#bcbcbc',salmon:'#f87858',ltgreen:'#58d854',
+  periwinkle:'#6888fc',orange:'#f8b800',dkblue:'#003080',dkgreen:'#005800',
+  brown:'#b86800',dkbrown:'#683800',sky:'#88c0f8',dksky:'#5080b8'
+};
+
+// ===== FISH DATA =====
+const FISH=[
+  {name:'SUNFISH',w:8,h:6,colors:['#f8d800','#f83800','#000000'],weight:[0.1,0.8],rarity:0.5,fight:0.1,value:2,speed:0.6},
+  {name:'PERCH',w:12,h:6,colors:['#f8b800','#b86800','#000000'],weight:[0.3,2.5],rarity:0.4,fight:0.3,value:5,speed:1},
+  {name:'CATFISH',w:14,h:8,colors:['#787878','#484848','#000000'],weight:[1,12],rarity:0.2,fight:0.5,value:8,speed:0.8},
+  {name:'BASS',w:14,h:7,colors:['#58d854','#2a6e14','#000000'],weight:[1,8],rarity:0.25,fight:0.6,value:10,speed:1.5},
+  {name:'TROUT',w:12,h:5,colors:['#f87858','#b81010','#000000','#bcbcbc'],weight:[0.5,5],rarity:0.2,fight:0.5,value:12,speed:1.8},
+  {name:'WALLEYE',w:14,h:6,colors:['#f8d800','#b86800','#000000','#fcfcfc'],weight:[1,10],rarity:0.1,fight:0.7,value:25,speed:1.2},
+  {name:'PIKE',w:18,h:6,colors:['#00a800','#005800','#000000','#f8d800'],weight:[2,15],rarity:0.15,fight:0.8,value:20,speed:2},
+  {name:'MUSKIE',w:22,h:7,colors:['#005800','#2a6e14','#000000','#f8d800'],weight:[5,40],rarity:0.03,fight:0.95,value:100,speed:2.5},
+];
+
+// ===== GAME STATE =====
+let state='idle'; // idle, bite, hook, fight, caught
+let money=0,totalCaught=0;
+let gameTime=360; // minutes from midnight: 6AM = 360
+let tension=0.5,progress=0;
+let reeling=false;
+let currentFish=null,currentFishType=-1,currentFishWeight=0;
+let hookTimer=0,hookWindow=1.5;
+let biteTimer=0,nextBiteTime=0;
+let fightTimer=0; // grace period tracking
+let fishX=0,fishY=0,fishDir=1,fishTargetX=0;
+let bobberY=0,bobberBaseY=0;
+let exclamationTimer=0;
+let caughtAnimTimer=0;
+let lineEndX=0,lineEndY=0;
+let castAnimTimer=0;
+let msgText='',msgTimer=0;
+
+// Upgrades
+let upgrades={hook:0,line:0,reel:0,finder:0,lure:0,night:0};
+const SHOP_ITEMS=[
+  {id:'hook',name:'BETTER HOOK',desc:'Hook window +0.5s',cost:[20,50,120],max:3},
+  {id:'line',name:'STRONG LINE',desc:'Snap threshold +10%',cost:[30,80,200],max:3},
+  {id:'reel',name:'FAST REEL',desc:'Reel speed +25%',cost:[25,60,150],max:3},
+  {id:'finder',name:'FISH FINDER',desc:'See fish names',cost:[50],max:1},
+  {id:'lure',name:'LUCKY LURE',desc:'+15% rare fish per lvl',cost:[40,100,250],max:3},
+  {id:'night',name:'NIGHT LIGHT',desc:'Better night fishing',cost:[60],max:1},
+];
+
+// Personal bests
+let personalBest={};
+
+// Swimming fish
+let swimFish=[];
+const MAX_SWIM=8;
+
+// Save/Load
+function saveGame(){
+  const d={money,totalCaught,gameTime,upgrades,personalBest};
+  try{localStorage.setItem('8bitperch_save',JSON.stringify(d))}catch(e){}
+}
+function loadGame(){
+  try{
+    const d=JSON.parse(localStorage.getItem('8bitperch_save'));
+    if(d){
+      money=d.money||0;totalCaught=d.totalCaught||0;
+      gameTime=d.gameTime||360;upgrades=d.upgrades||upgrades;
+      personalBest=d.personalBest||{};
+    }
+  }catch(e){}
+}
+loadGame();
+
+// ===== 8-BIT AUDIO =====
+let audioCtx=null;
+function initAudio(){
+  if(!audioCtx){
+    try{audioCtx=new(window.AudioContext||window.webkitAudioContext)()}catch(e){}
+  }
+}
+function playTone(freq,dur,type,vol,slide){
+  if(!audioCtx)return;
+  try{
+    const o=audioCtx.createOscillator();
+    const g=audioCtx.createGain();
+    o.type=type||'square';
+    o.frequency.setValueAtTime(freq,audioCtx.currentTime);
+    if(slide)o.frequency.linearRampToValueAtTime(slide,audioCtx.currentTime+dur);
+    g.gain.setValueAtTime(vol||0.15,audioCtx.currentTime);
+    g.gain.linearRampToValueAtTime(0,audioCtx.currentTime+dur);
+    o.connect(g);g.connect(audioCtx.destination);
+    o.start();o.stop(audioCtx.currentTime+dur);
+  }catch(e){}
+}
+function sfxCast(){playTone(600,0.15,'square',0.12,200);setTimeout(()=>sfxSplash(),120)}
+function sfxSplash(){
+  if(!audioCtx)return;
+  try{
+    const buf=audioCtx.createBuffer(1,audioCtx.sampleRate*0.12,audioCtx.sampleRate);
+    const d=buf.getChannelData(0);
+    for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*0.15*(1-i/d.length);
+    const s=audioCtx.createBufferSource();s.buffer=buf;
+    s.connect(audioCtx.destination);s.start();
+  }catch(e){}
+}
+function sfxBite(){playTone(880,0.08,'square',0.18);setTimeout(()=>playTone(1100,0.08,'square',0.18),100)}
+function sfxReel(){playTone(200+Math.random()*100,0.03,'square',0.06)}
+function sfxCatch(){
+  playTone(440,0.1,'square',0.15);
+  setTimeout(()=>playTone(550,0.1,'square',0.15),100);
+  setTimeout(()=>playTone(660,0.1,'square',0.15),200);
+  setTimeout(()=>playTone(880,0.2,'square',0.15),300);
+}
+function sfxSnap(){playTone(200,0.3,'sawtooth',0.15,50)}
+function sfxBlip(){playTone(660,0.05,'square',0.1)}
+
+// ===== TIME SYSTEM =====
+function getTimeOfDay(){
+  const h=(gameTime/60)%24;
+  if(h>=5&&h<7)return'dawn';
+  if(h>=7&&h<17)return'day';
+  if(h>=17&&h<19)return'dusk';
+  return'night';
+}
+function getTimeString(){
+  const h=Math.floor((gameTime/60)%24);
+  const m=Math.floor(gameTime%60);
+  const ampm=h>=12?'PM':'AM';
+  const hh=h%12||12;
+  return(hh<10?' ':'')+hh+':'+(m<10?'0':'')+m+ampm;
+}
+function getSkyColors(){
+  const tod=getTimeOfDay();
+  switch(tod){
+    case'dawn':return{top:'#f87858',mid:'#f8b800',bot:'#88c0f8',sun:true,sunC:'#f8d800',stars:false};
+    case'day':return{top:'#0078f8',mid:'#88c0f8',bot:'#88c0f8',sun:true,sunC:'#f8d800',stars:false};
+    case'dusk':return{top:'#b81010',mid:'#f83800',bot:'#f8b800',sun:true,sunC:'#f83800',stars:false};
+    case'night':return{top:'#000000',mid:'#003080',bot:'#003080',sun:false,sunC:'#bcbcbc',stars:true};
+  }
+}
+function getFishChance(){
+  const tod=getTimeOfDay();
+  const hasNight=upgrades.night>0;
+  if(tod==='night'&&!hasNight)return 0.4;
+  if(tod==='dawn'||tod==='dusk')return 1.3;
+  return 1.0;
+}
+
+// ===== SWIMMING FISH =====
+function spawnSwimFish(){
+  if(swimFish.length>=MAX_SWIM)return;
+  const waterTop=162;
+  const idx=pickFishType();
+  const f=FISH[idx];
+  const dir=Math.random()<0.5?1:-1;
+  const x=dir>0?-f.w-4:W+f.w+4;
+  const y=waterTop+20+Math.random()*(H-waterTop-80);
+  swimFish.push({type:idx,x,y,dir,speed:f.speed*(0.5+Math.random()*0.5),frame:Math.random()*100,alive:true,targetHook:false});
+}
+function pickFishType(){
+  const lureBonus=upgrades.lure*0.15;
+  let pool=[];
+  for(let i=0;i<FISH.length;i++){
+    let r=FISH[i].rarity;
+    if(FISH[i].rarity<0.15)r+=lureBonus*0.3;
+    else r+=lureBonus*0.1;
+    pool.push({idx:i,w:r});
+  }
+  let total=pool.reduce((a,b)=>a+b.w,0);
+  let rnd=Math.random()*total;
+  for(const p of pool){rnd-=p.w;if(rnd<=0)return p.idx}
+  return 0;
+}
+function updateSwimFish(dt){
+  for(let i=swimFish.length-1;i>=0;i--){
+    const sf=swimFish[i];
+    if(sf.targetHook){
+      // Swimming toward hook
+      const dx=lineEndX-sf.x;
+      const dy=lineEndY-sf.y;
+      const dist=Math.sqrt(dx*dx+dy*dy);
+      if(dist<4){
+        sf.alive=false;
+        // Fish reached hook -> trigger bite
+        if(state==='idle'){
+          triggerBite(sf.type);
+        }
+      }else{
+        sf.x+=dx/dist*sf.speed*60*dt;
+        sf.y+=dy/dist*sf.speed*60*dt;
+        sf.dir=dx>0?1:-1;
+      }
+    }else{
+      sf.x+=sf.dir*sf.speed*30*dt;
+      sf.y+=Math.sin(sf.frame*0.05)*0.3;
+    }
+    sf.frame+=dt*60;
+    // Remove off-screen
+    if(!sf.targetHook&&(sf.x<-30||sf.x>W+30))sf.alive=false;
+    if(!sf.alive){swimFish.splice(i,1)}
+  }
+  // Spawn new fish
+  if(Math.random()<dt*0.8&&swimFish.length<MAX_SWIM)spawnSwimFish();
+}
+
+// ===== FISH DRAWING =====
+function drawPixelFish(c,type,x,y,dir,frame){
+  const f=FISH[type];
+  const hw=Math.floor(f.w/2);
+  const hh=Math.floor(f.h/2);
+  const swimOff=Math.sin(frame*0.08)*1.5;
+  const fy=y+swimOff;
+  // Body (ellipse of pixels)
+  c.fillStyle=f.colors[0];
+  for(let px=-hw;px<=hw;px++){
+    const rowH=Math.max(1,Math.floor(hh*Math.sqrt(Math.max(0,1-(px*px)/(hw*hw+1)))));
+    for(let py=-rowH;py<=rowH;py++){
+      c.fillRect(Math.floor(x+px*dir),Math.floor(fy+py),1,1);
+    }
+  }
+  // Belly stripe
+  if(f.colors.length>3){
+    c.fillStyle=f.colors[3];
+    for(let px=-hw+2;px<=hw-3;px++){
+      c.fillRect(Math.floor(x+px*dir),Math.floor(fy+hh-1),1,1);
+    }
+  }
+  // Dorsal fin
+  c.fillStyle=f.colors[1];
+  for(let px=-2;px<=3;px++){
+    c.fillRect(Math.floor(x+px*dir),Math.floor(fy-hh-1),1,1);
+    if(Math.abs(px)<2)c.fillRect(Math.floor(x+px*dir),Math.floor(fy-hh-2),1,1);
+  }
+  // Tail
+  c.fillStyle=f.colors[1];
+  const tailWave=Math.sin(frame*0.15)*1;
+  for(let t=0;t<4;t++){
+    const tw=Math.min(t,hh);
+    c.fillRect(Math.floor(x-(hw+1+t)*dir+tailWave),Math.floor(fy-tw),1,1);
+    c.fillRect(Math.floor(x-(hw+1+t)*dir+tailWave),Math.floor(fy+tw),1,1);
+    if(t>0){
+      c.fillRect(Math.floor(x-(hw+1+t)*dir+tailWave),Math.floor(fy-tw+1),1,1);
+      c.fillRect(Math.floor(x-(hw+1+t)*dir+tailWave),Math.floor(fy+tw-1),1,1);
+    }
+  }
+  // Eye
+  c.fillStyle='#fcfcfc';
+  c.fillRect(Math.floor(x+(hw-2)*dir),Math.floor(fy-1),1,1);
+  c.fillStyle='#000000';
+  c.fillRect(Math.floor(x+(hw-1)*dir),Math.floor(fy-1),1,1);
+  // Mouth
+  c.fillStyle='#000000';
+  c.fillRect(Math.floor(x+(hw+1)*dir),Math.floor(fy),1,1);
+}
+
+// ===== SCENE DRAWING =====
+const WATER_Y=160;
+const ROD_X=210,ROD_Y=50;
+
+function drawSky(t){
+  const sc=getSkyColors();
+  // Gradient sky
+  for(let y=0;y<WATER_Y;y++){
+    const r=y/WATER_Y;
+    let col;
+    if(r<0.5){col=lerpColor(sc.top,sc.mid,r*2)}
+    else{col=lerpColor(sc.mid,sc.bot,(r-0.5)*2)}
+    ctx.fillStyle=col;
+    ctx.fillRect(0,y,W,1);
+  }
+  // Stars at night
+  if(sc.stars){
+    ctx.fillStyle='#fcfcfc';
+    const seed=12345;
+    for(let i=0;i<30;i++){
+      const sx=((seed*i*7+i*13)%W);
+      const sy=((seed*i*3+i*17)%120);
+      const twinkle=Math.sin(t*2+i*0.7)>0.3;
+      if(twinkle)ctx.fillRect(sx,sy,1,1);
+    }
+  }
+  // Sun/Moon
+  if(sc.sun||getTimeOfDay()==='night'){
+    const tod=getTimeOfDay();
+    let sunX,sunY;
+    if(tod==='dawn'){sunX=40;sunY=120}
+    else if(tod==='day'){sunX=60;sunY=30}
+    else if(tod==='dusk'){sunX=180;sunY=110}
+    else{sunX=160;sunY=25} // moon
+    ctx.fillStyle=tod==='night'?'#bcbcbc':sc.sunC;
+    // Draw pixel circle
+    for(let px=-6;px<=6;px++){
+      for(let py=-6;py<=6;py++){
+        if(px*px+py*py<=36)ctx.fillRect(sunX+px,sunY+py,1,1);
+      }
+    }
+    if(tod==='night'){
+      // Moon crescent shadow
+      ctx.fillStyle='#000000';
+      for(let px=-4;px<=4;px++){
+        for(let py=-4;py<=4;py++){
+          if((px+2)*(px+2)+py*py<=20)ctx.fillRect(sunX+px,sunY+py,1,1);
+        }
+      }
+    }
+  }
+  // Clouds
+  drawClouds(t);
+  // Trees
+  drawTrees();
+}
+
+function drawClouds(t){
+  ctx.fillStyle=getTimeOfDay()==='night'?'#003080':'#fcfcfc';
+  const co=t*3%W;
+  drawCloud(((30+co)%W)-10,35);
+  drawCloud(((120+co*0.7)%W)-10,50);
+  drawCloud(((200+co*0.5)%W)-10,25);
+}
+function drawCloud(cx,cy){
+  const shape=[[0,0],[1,0],[2,0],[3,0],[4,0],[1,-1],[2,-1],[3,-1],[2,-2],[-1,0],[5,0]];
+  for(const[dx,dy]of shape){
+    ctx.fillRect(Math.floor(cx+dx*3),Math.floor(cy+dy*3),3,3);
+  }
+}
+
+function drawTrees(){
+  const tod=getTimeOfDay();
+  ctx.fillStyle=tod==='night'?'#001800':'#005800';
+  const treePositions=[10,35,55,80,110,145,170,195,220];
+  for(const tx of treePositions){
+    const th=12+((tx*7)%10);
+    // Trunk
+    const trunkC=tod==='night'?'#001000':'#683800';
+    ctx.fillStyle=trunkC;
+    ctx.fillRect(tx,WATER_Y-5,2,5);
+    // Canopy (triangle)
+    ctx.fillStyle=tod==='night'?'#001800':'#005800';
+    for(let row=0;row<th;row++){
+      const halfW=Math.floor(row*0.6)+1;
+      ctx.fillRect(tx+1-halfW,WATER_Y-5-th+row,halfW*2,1);
+    }
+    // Lighter highlights
+    ctx.fillStyle=tod==='night'?'#002800':'#00a800';
+    for(let row=2;row<th;row+=3){
+      const halfW=Math.floor(row*0.4);
+      ctx.fillRect(tx+1-halfW+1,WATER_Y-5-th+row,Math.max(1,halfW),1);
+    }
+  }
+}
+
+function drawWater(t){
+  const tod=getTimeOfDay();
+  // Water surface waves
+  const surfCol=tod==='night'?'#003880':'#0078f8';
+  const midCol=tod==='night'?'#002860':'#0058f8';
+  const deepCol=tod==='night'?'#001840':'#003080';
+  for(let x=0;x<W;x++){
+    const wave=Math.floor(Math.sin(x*0.12+t*2.5)*2+Math.sin(x*0.05+t*1.5)*1);
+    // Surface highlight
+    ctx.fillStyle=surfCol;
+    ctx.fillRect(x,WATER_Y+wave,1,1);
+    ctx.fillStyle=midCol;
+    ctx.fillRect(x,WATER_Y+wave+1,1,2);
+    // Deep water
+    ctx.fillStyle=deepCol;
+    ctx.fillRect(x,WATER_Y+wave+3,1,H-WATER_Y-wave-3);
+  }
+  // Underwater light shafts
+  if(tod!=='night'){
+    ctx.fillStyle='rgba(0,88,248,0.04)';
+    for(let i=0;i<5;i++){
+      const sx=40+i*45+Math.sin(t+i)*5;
+      for(let y=WATER_Y+10;y<H-20;y+=2){
+        const w=3+Math.sin(y*0.02+t)*2;
+        ctx.fillRect(Math.floor(sx-w/2),y,Math.floor(w),2);
+      }
+    }
+  }
+  // Underwater particles
+  ctx.fillStyle=tod==='night'?'#003880':'#0078f8';
+  for(let i=0;i<15;i++){
+    const px=(i*37+Math.floor(t*10))%W;
+    const py=WATER_Y+20+(i*23+Math.floor(t*8+i*5))%(H-WATER_Y-40);
+    ctx.fillRect(px,py,1,1);
+  }
+  // Bottom sand/rocks
+  ctx.fillStyle=tod==='night'?'#181810':'#b86800';
+  for(let x=0;x<W;x++){
+    const bh=3+Math.floor(Math.sin(x*0.3)*2+Math.sin(x*0.1)*3);
+    ctx.fillRect(x,H-bh,1,bh);
+  }
+  ctx.fillStyle=tod==='night'?'#101008':'#683800';
+  for(let x=0;x<W;x+=3){
+    ctx.fillRect(x,H-2-((x*7)%3),2,2);
+  }
+  // Seaweed
+  ctx.fillStyle=tod==='night'?'#002000':'#00a800';
+  const weedPositions=[20,60,100,155,200];
+  for(const wx of weedPositions){
+    const wh=10+((wx*3)%8);
+    for(let wy=0;wy<wh;wy++){
+      const sway=Math.sin(t*1.5+wy*0.3+wx*0.1)*2;
+      ctx.fillRect(Math.floor(wx+sway),H-5-wy,1,1);
+      if(wy%3===0)ctx.fillRect(Math.floor(wx+sway+1),H-5-wy,1,1);
+    }
+  }
+}
+
+function drawRod(t){
+  // Fishing rod
+  ctx.fillStyle='#b86800';
+  // Rod body (diagonal line from top-right)
+  const rodBaseX=230,rodBaseY=145;
+  const rodTipX=ROD_X,rodTipY=ROD_Y;
+  const steps=30;
+  for(let i=0;i<steps;i++){
+    const r=i/steps;
+    const rx=Math.floor(rodBaseX+(rodTipX-rodBaseX)*r);
+    const ry=Math.floor(rodBaseY+(rodTipY-rodBaseY)*r);
+    ctx.fillRect(rx,ry,2-Math.floor(r*1.5),1);
+  }
+  // Rod handle
+  ctx.fillStyle='#683800';
+  ctx.fillRect(230,145,4,8);
+  ctx.fillStyle='#787878';
+  ctx.fillRect(229,143,2,2); // reel
+  ctx.fillRect(228,145,2,3);
+}
+
+function drawLine(t){
+  // Fishing line from rod tip to bobber/hook
+  ctx.fillStyle='#bcbcbc';
+  const tipX=ROD_X,tipY=ROD_Y;
+  let bx,by;
+  if(state==='fight'){
+    bx=Math.floor(fishX);
+    by=WATER_Y;
+    // Line to fighting fish
+    drawLinePixels(tipX,tipY,bx,by);
+    ctx.fillStyle='#bcbcbc';
+    drawLinePixels(bx,by,Math.floor(fishX),Math.floor(fishY));
+    lineEndX=Math.floor(fishX);
+    lineEndY=Math.floor(fishY);
+  }else if(state==='caught'){
+    // Line to jumping fish
+    bx=Math.floor(fishX);
+    by=Math.floor(fishY);
+    drawLinePixels(tipX,tipY,bx,by);
+    lineEndX=bx;lineEndY=by;
+  }else{
+    // Normal: line to bobber then down to hook
+    const bobX=180;
+    bx=bobX;
+    by=Math.floor(bobberY);
+    drawLinePixels(tipX,tipY,bx,by);
+    // Line below bobber to hook
+    const hookY=by+60;
+    ctx.fillStyle='#bcbcbc';
+    drawLinePixels(bx,by+4,bx,hookY);
+    lineEndX=bx;
+    lineEndY=hookY;
+    // Hook
+    ctx.fillStyle='#787878';
+    ctx.fillRect(bx,hookY,1,3);
+    ctx.fillRect(bx-1,hookY+3,1,1);
+    ctx.fillRect(bx-2,hookY+2,1,1);
+  }
+}
+
+function drawLinePixels(x1,y1,x2,y2){
+  const dx=Math.abs(x2-x1),dy=Math.abs(y2-y1);
+  const sx=x1<x2?1:-1,sy=y1<y2?1:-1;
+  let err=dx-dy;
+  let cx=x1,cy=y1;
+  for(let i=0;i<300;i++){
+    ctx.fillRect(cx,cy,1,1);
+    if(cx===x2&&cy===y2)break;
+    const e2=2*err;
+    if(e2>-dy){err-=dy;cx+=sx}
+    if(e2<dx){err+=dx;cy+=sy}
+  }
+}
+
+function drawBobber(t){
+  if(state==='fight'||state==='caught')return;
+  const bobX=180;
+  const by=Math.floor(bobberY);
+  // Bobber: red top, white bottom
+  ctx.fillStyle='#f83800';
+  ctx.fillRect(bobX-1,by-3,3,3);
+  ctx.fillStyle='#fcfcfc';
+  ctx.fillRect(bobX-1,by,3,2);
+  // Bobber stick
+  ctx.fillStyle='#683800';
+  ctx.fillRect(bobX,by-5,1,2);
+  // Ripple around bobber on water
+  if(state==='bite'){
+    // Bobber dipping animation
+    const dip=Math.sin(t*12)*2;
+    ctx.fillStyle='#0078f8';
+    ctx.fillRect(bobX-3,by+2+dip,1,1);
+    ctx.fillRect(bobX+3,by+2+dip,1,1);
+  }
+}
+
+function drawExclamation(t){
+  if(exclamationTimer<=0)return;
+  const bobX=180;
+  const by=Math.floor(bobberY)-12;
+  ctx.fillStyle='#f8d800';
+  // Big pixel "!"
+  ctx.fillRect(bobX-1,by-6,3,5);
+  ctx.fillRect(bobX,by,1,1);
+  // Blink
+  if(Math.sin(t*20)>0){
+    ctx.fillStyle='#f83800';
+    ctx.fillRect(bobX-1,by-6,3,5);
+    ctx.fillRect(bobX,by,1,1);
+  }
+}
+
+function drawFightUI(){
+  if(state!=='fight')return;
+  // Tension bar (right side)
+  const bx=W-14,by=60,bh=120;
+  ctx.fillStyle='#000000';
+  ctx.fillRect(bx-1,by-1,10,bh+2);
+  ctx.fillStyle='#484848';
+  ctx.fillRect(bx,by,8,bh);
+  // Green zone indicator
+  ctx.fillStyle='#003800';
+  const gTop=by+bh-Math.floor(bh*0.75);
+  const gBot=by+bh-Math.floor(bh*0.25);
+  ctx.fillRect(bx,gTop,8,gBot-gTop);
+  // Red zone indicator
+  ctx.fillStyle='#380000';
+  const rTop=by;
+  const rBot=by+bh-Math.floor(bh*0.85);
+  ctx.fillRect(bx,rTop,8,rBot-rTop);
+  // Fill
+  const fillH=Math.floor(bh*tension);
+  let fillCol='#00a800';
+  if(tension>0.85)fillCol='#f83800';
+  else if(tension>0.75)fillCol='#f8b800';
+  else if(tension<0.15)fillCol='#f83800';
+  else if(tension<0.25)fillCol='#f8b800';
+  ctx.fillStyle=fillCol;
+  ctx.fillRect(bx+1,by+bh-fillH,6,fillH);
+  // Border
+  ctx.fillStyle='#fcfcfc';
+  ctx.fillRect(bx-1,by-1,10,1);
+  ctx.fillRect(bx-1,by+bh,10,1);
+  ctx.fillRect(bx-1,by,1,bh);
+  ctx.fillRect(bx+8,by,1,bh);
+  // Label
+  drawText(ctx,'TNS',bx-2,by-8,4,'#fcfcfc');
+
+  // Progress bar (left side)
+  const px=6,py=60,ph=120;
+  ctx.fillStyle='#000000';
+  ctx.fillRect(px-1,py-1,10,ph+2);
+  ctx.fillStyle='#484848';
+  ctx.fillRect(px,py,8,ph);
+  const pfH=Math.floor(ph*progress);
+  ctx.fillStyle='#f8d800';
+  ctx.fillRect(px+1,py+ph-pfH,6,pfH);
+  // Border
+  ctx.fillStyle='#fcfcfc';
+  ctx.fillRect(px-1,py-1,10,1);
+  ctx.fillRect(px-1,py+ph,10,1);
+  ctx.fillRect(px-1,py,1,ph);
+  ctx.fillRect(px+8,py,1,ph);
+  drawText(ctx,'PRG',px-1,py-8,4,'#fcfcfc');
+}
+
+function drawFightFish(t){
+  if(state!=='fight')return;
+  drawPixelFish(ctx,currentFishType,Math.floor(fishX),Math.floor(fishY),fishDir,t*60);
+  // Splash/thrash effects
+  if(Math.random()<0.3){
+    ctx.fillStyle='#0078f8';
+    ctx.fillRect(Math.floor(fishX+Math.random()*10-5),Math.floor(fishY+Math.random()*6-3),1,1);
+  }
+}
+
+function drawCaughtAnim(t){
+  if(state!=='caught')return;
+  // Fish jumping out of water
+  drawPixelFish(ctx,currentFishType,Math.floor(fishX),Math.floor(fishY),1,t*60);
+  // Sparkles
+  ctx.fillStyle='#f8d800';
+  for(let i=0;i<5;i++){
+    const sx=fishX+Math.sin(t*8+i*1.3)*15;
+    const sy=fishY+Math.cos(t*8+i*1.7)*10;
+    if(Math.sin(t*12+i)>0)ctx.fillRect(Math.floor(sx),Math.floor(sy),1,1);
+  }
+}
+
+// ===== UI DRAWING =====
+function drawHUD(){
+  // Top bar background
+  ctx.fillStyle='#000000';
+  ctx.fillRect(0,0,W,16);
+  ctx.fillStyle='#484848';
+  ctx.fillRect(0,16,W,1);
+  // Money
+  drawText(ctx,'$'+money,4,4,4,'#f8d800');
+  // Fish count
+  drawText(ctx,'x'+totalCaught,90,4,4,'#fcfcfc');
+  // Draw tiny fish icon
+  ctx.fillStyle='#0078f8';
+  ctx.fillRect(82,5,4,3);ctx.fillRect(80,6,2,1);
+  ctx.fillStyle='#fcfcfc';
+  ctx.fillRect(85,5,1,1);
+  // Time
+  drawText(ctx,getTimeString(),170,4,4,'#bcbcbc');
+  // Time of day icon
+  const tod=getTimeOfDay();
+  if(tod==='night'){
+    ctx.fillStyle='#bcbcbc';ctx.fillRect(160,5,4,4);
+    ctx.fillStyle='#000000';ctx.fillRect(159,5,3,3);
+  }else{
+    ctx.fillStyle='#f8d800';ctx.fillRect(160,5,4,4);
+  }
+}
+
+function drawMsg(t){
+  if(msgTimer<=0)return;
+  const alpha=Math.min(1,msgTimer*2);
+  const y=WATER_Y-30;
+  drawText(ctx,msgText,W/2-msgText.length*2.5,y,5,'#f83800');
+}
+
+// Pixel font renderer (tiny 4px or 5px font)
+const FONT_DATA={
+  'A':[[0,1,1,0],[1,0,0,1],[1,1,1,1],[1,0,0,1],[1,0,0,1]],
+  'B':[[1,1,1,0],[1,0,0,1],[1,1,1,0],[1,0,0,1],[1,1,1,0]],
+  'C':[[0,1,1,1],[1,0,0,0],[1,0,0,0],[1,0,0,0],[0,1,1,1]],
+  'D':[[1,1,1,0],[1,0,0,1],[1,0,0,1],[1,0,0,1],[1,1,1,0]],
+  'E':[[1,1,1,1],[1,0,0,0],[1,1,1,0],[1,0,0,0],[1,1,1,1]],
+  'F':[[1,1,1,1],[1,0,0,0],[1,1,1,0],[1,0,0,0],[1,0,0,0]],
+  'G':[[0,1,1,1],[1,0,0,0],[1,0,1,1],[1,0,0,1],[0,1,1,1]],
+  'H':[[1,0,0,1],[1,0,0,1],[1,1,1,1],[1,0,0,1],[1,0,0,1]],
+  'I':[[1,1,1],[0,1,0],[0,1,0],[0,1,0],[1,1,1]],
+  'J':[[0,0,1],[0,0,1],[0,0,1],[1,0,1],[0,1,0]],
+  'K':[[1,0,0,1],[1,0,1,0],[1,1,0,0],[1,0,1,0],[1,0,0,1]],
+  'L':[[1,0,0,0],[1,0,0,0],[1,0,0,0],[1,0,0,0],[1,1,1,1]],
+  'M':[[1,0,0,0,1],[1,1,0,1,1],[1,0,1,0,1],[1,0,0,0,1],[1,0,0,0,1]],
+  'N':[[1,0,0,1],[1,1,0,1],[1,0,1,1],[1,0,0,1],[1,0,0,1]],
+  'O':[[0,1,1,0],[1,0,0,1],[1,0,0,1],[1,0,0,1],[0,1,1,0]],
+  'P':[[1,1,1,0],[1,0,0,1],[1,1,1,0],[1,0,0,0],[1,0,0,0]],
+  'Q':[[0,1,1,0],[1,0,0,1],[1,0,0,1],[1,0,1,0],[0,1,0,1]],
+  'R':[[1,1,1,0],[1,0,0,1],[1,1,1,0],[1,0,1,0],[1,0,0,1]],
+  'S':[[0,1,1,1],[1,0,0,0],[0,1,1,0],[0,0,0,1],[1,1,1,0]],
+  'T':[[1,1,1,1,1],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0]],
+  'U':[[1,0,0,1],[1,0,0,1],[1,0,0,1],[1,0,0,1],[0,1,1,0]],
+  'V':[[1,0,0,0,1],[1,0,0,0,1],[0,1,0,1,0],[0,1,0,1,0],[0,0,1,0,0]],
+  'W':[[1,0,0,0,1],[1,0,0,0,1],[1,0,1,0,1],[1,1,0,1,1],[1,0,0,0,1]],
+  'X':[[1,0,0,1],[1,0,0,1],[0,1,1,0],[1,0,0,1],[1,0,0,1]],
+  'Y':[[1,0,0,0,1],[0,1,0,1,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0]],
+  'Z':[[1,1,1,1],[0,0,1,0],[0,1,0,0],[1,0,0,0],[1,1,1,1]],
+  '0':[[0,1,1,0],[1,0,0,1],[1,0,0,1],[1,0,0,1],[0,1,1,0]],
+  '1':[[0,1,0],[1,1,0],[0,1,0],[0,1,0],[1,1,1]],
+  '2':[[0,1,1,0],[1,0,0,1],[0,0,1,0],[0,1,0,0],[1,1,1,1]],
+  '3':[[1,1,1,0],[0,0,0,1],[0,1,1,0],[0,0,0,1],[1,1,1,0]],
+  '4':[[1,0,0,1],[1,0,0,1],[1,1,1,1],[0,0,0,1],[0,0,0,1]],
+  '5':[[1,1,1,1],[1,0,0,0],[1,1,1,0],[0,0,0,1],[1,1,1,0]],
+  '6':[[0,1,1,0],[1,0,0,0],[1,1,1,0],[1,0,0,1],[0,1,1,0]],
+  '7':[[1,1,1,1],[0,0,0,1],[0,0,1,0],[0,1,0,0],[0,1,0,0]],
+  '8':[[0,1,1,0],[1,0,0,1],[0,1,1,0],[1,0,0,1],[0,1,1,0]],
+  '9':[[0,1,1,0],[1,0,0,1],[0,1,1,1],[0,0,0,1],[0,1,1,0]],
+  '$':[[0,1,1,1],[1,1,0,0],[0,1,1,0],[0,0,1,1],[1,1,1,0]],
+  ':':[[0],[1],[0],[1],[0]],
+  '.':[[0],[0],[0],[0],[1]],
+  '!':[[1],[1],[1],[0],[1]],
+  ' ':[[0,0],[0,0],[0,0],[0,0],[0,0]],
+  'x':[[0,0,0],[1,0,1],[0,1,0],[1,0,1],[0,0,0]],
+  '-':[[0,0,0],[0,0,0],[1,1,1],[0,0,0],[0,0,0]],
+  '+':[[0,0,0],[0,1,0],[1,1,1],[0,1,0],[0,0,0]],
+  '%':[[1,0,1],[0,0,1],[0,1,0],[1,0,0],[1,0,1]],
+};
+function drawText(c,str,x,y,scale,color){
+  c.fillStyle=color||'#fcfcfc';
+  let cx=x;
+  scale=scale||1;
+  for(let i=0;i<str.length;i++){
+    const ch=str[i].toUpperCase();
+    const d=FONT_DATA[ch];
+    if(d){
+      for(let row=0;row<d.length;row++){
+        for(let col=0;col<d[row].length;col++){
+          if(d[row][col])c.fillRect(Math.floor(cx+col),Math.floor(y+row),1,1);
+        }
+      }
+      cx+=((d[0]||[]).length)+1;
+    }else{
+      cx+=3;
+    }
+  }
+}
+
+// ===== GAMEPLAY =====
+function resetBiteTimer(){
+  const chance=getFishChance();
+  nextBiteTime=3+Math.random()*8/chance;
+  biteTimer=0;
+}
+
+function triggerBite(fishType){
+  if(state!=='idle')return;
+  state='bite';
+  currentFishType=fishType>=0?fishType:pickFishType();
+  const f=FISH[currentFishType];
+  currentFishWeight=f.weight[0]+Math.random()*(f.weight[1]-f.weight[0]);
+  currentFishWeight=Math.round(currentFishWeight*10)/10;
+  hookTimer=0;
+  hookWindow=1.5+upgrades.hook*0.5;
+  exclamationTimer=hookWindow;
+  // Bobber dip
+  bobberY=bobberBaseY+3;
+  sfxBite();
+  updateButton('hook');
+}
+
+function hookFish(){
+  if(state!=='bite')return;
+  state='fight';
+  tension=0.5;
+  progress=0;
+  reeling=false;
+  const f=FISH[currentFishType];
+  fishX=lineEndX;
+  fishY=lineEndY;
+  fishDir=Math.random()<0.5?1:-1;
+  fishTargetX=fishX+fishDir*30;
+  exclamationTimer=0;
+  fightTimer=0;
+  sfxBlip();
+  updateButton('reel');
+}
+
+function missedBite(){
+  state='idle';
+  exclamationTimer=0;
+  bobberY=bobberBaseY;
+  showMsg('MISSED!');
+  resetBiteTimer();
+  updateButton('cast');
+}
+
+function updateFight(dt){
+  if(state!=='fight')return;
+  fightTimer+=dt;
+  const f=FISH[currentFishType];
+  const fightStr=f.fight;
+  const reelSpeed=(1+upgrades.reel*0.25)*0.8;
+  const snapThresh=0.85+upgrades.line*0.05;
+  const escapeThresh=0.12;
+
+  // Fish pulls - erratic movement
+  const pull=fightStr*(0.3+Math.random()*0.7)*dt;
+  fishX+=(fishTargetX-fishX)*2*dt;
+  fishY+=Math.sin(performance.now()*0.01)*fightStr*20*dt;
+  fishY=Math.max(WATER_Y+10,Math.min(H-20,fishY));
+
+  // Change fish target randomly
+  if(Math.random()<dt*2){
+    fishTargetX=80+Math.random()*120;
+    fishDir=fishTargetX>fishX?1:-1;
+  }
+
+  if(reeling){
+    tension+=dt*(0.4+fightStr*0.3)*reelSpeed;
+    progress+=dt*(0.15+reelSpeed*0.1)*(1-fightStr*0.3);
+    // Reel fish closer to center
+    fishX+=(180-fishX)*dt*reelSpeed*0.5;
+    fishY+=(WATER_Y+40-fishY)*dt*reelSpeed*0.3;
+    if(Math.random()<0.3)sfxReel();
+  }else{
+    tension-=dt*0.35;
+    // Fish pulls away when not reeling
+    tension+=pull*0.25;
+    progress-=dt*0.03*fightStr;
+  }
+
+  // Fish random pull spikes
+  if(Math.random()<dt*fightStr*1.5){
+    tension+=fightStr*0.08;
+  }
+
+  tension=Math.max(0.05,Math.min(1,tension));
+  progress=Math.max(0,Math.min(1,progress));
+
+  // Grace period: no snap/escape for first 1 second
+  if(fightTimer>1.0){
+    // Check snap
+    if(tension>snapThresh){
+      state='idle';
+      showMsg('LINE SNAPPED!');
+      sfxSnap();
+      resetBiteTimer();
+      bobberY=bobberBaseY;
+      updateButton('cast');
+      return;
+    }
+    // Check escape
+    if(tension<escapeThresh){
+      state='idle';
+      showMsg('FISH ESCAPED!');
+      sfxSnap();
+      resetBiteTimer();
+      bobberY=bobberBaseY;
+      updateButton('cast');
+      return;
+    }
+  }
+  // Check caught
+  if(progress>=1){
+    catchFish();
+  }
+}
+
+function catchFish(){
+  state='caught';
+  caughtAnimTimer=0;
+  fishX=180;
+  fishY=WATER_Y-10;
+  sfxCatch();
+  totalCaught++;
+  const f=FISH[currentFishType];
+  const val=Math.floor(f.value*(currentFishWeight/f.weight[1]*0.5+0.75));
+  money+=val;
+  gameTime+=10;
+  // Personal best
+  let isPB=false;
+  if(!personalBest[f.name]||currentFishWeight>personalBest[f.name]){
+    personalBest[f.name]=currentFishWeight;
+    isPB=true;
+  }
+  saveGame();
+  // Show popup after animation
+  setTimeout(()=>{
+    showFishPopup(f,currentFishWeight,val,isPB);
+  },1500);
+}
+
+function showFishPopup(f,weight,val,isPB){
+  const popup=document.getElementById('fishPopup');
+  popup.style.display='flex';
+  document.getElementById('fpTitle').textContent='CAUGHT!';
+  document.getElementById('fpName').textContent=f.name;
+  document.getElementById('fpWeight').textContent=weight.toFixed(1)+' LBS';
+  document.getElementById('fpValue').textContent='+$'+val;
+  const pbEl=document.getElementById('fpPB');
+  pbEl.style.display=isPB?'block':'none';
+  // Draw fish on popup canvas
+  const fc=document.getElementById('fpCanvas');
+  fc.width=48;fc.height=32;
+  const fctx=fc.getContext('2d');
+  fctx.imageSmoothingEnabled=false;
+  fctx.clearRect(0,0,48,32);
+  // Scale up fish
+  const typeIdx=FISH.indexOf(f);
+  fctx.save();
+  fctx.scale(2,2);
+  drawPixelFish(fctx,typeIdx,12,8,1,0);
+  fctx.restore();
+}
+
+function closeFishPopup(){
+  document.getElementById('fishPopup').style.display='none';
+  state='idle';
+  bobberY=bobberBaseY;
+  resetBiteTimer();
+  updateButton('cast');
+  sfxBlip();
+}
+
+function showMsg(txt){
+  msgText=txt;
+  msgTimer=2;
+}
+
+// ===== BUTTON / INPUT =====
+function updateButton(mode){
+  const btn=document.getElementById('actionBtn');
+  btn.className='';
+  switch(mode){
+    case'cast':btn.textContent='CAST';btn.className='';break;
+    case'hook':btn.textContent='HOOK!';btn.className='hook';break;
+    case'reel':btn.textContent='REEL';btn.className='reel';break;
+  }
+}
+
+function onAction(){
+  initAudio();
+  if(state==='idle'){
+    // Cast
+    sfxCast();
+    castAnimTimer=0.5;
+    gameTime+=10;
+    resetBiteTimer();
+    // Pick a random fish to target hook
+    scheduleBiteSwim();
+    saveGame();
+  }else if(state==='bite'){
+    hookFish();
+  }
+}
+
+function scheduleBiteSwim(){
+  // After delay, send a fish toward the hook
+  const delay=nextBiteTime*1000;
+  setTimeout(()=>{
+    if(state!=='idle')return;
+    // Pick fish type and create a fish that swims to hook
+    const idx=pickFishType();
+    const f=FISH[idx];
+    const dir=Math.random()<0.5?1:-1;
+    const x=dir>0?-f.w-4:W+f.w+4;
+    const y=WATER_Y+30+Math.random()*(H-WATER_Y-100);
+    swimFish.push({type:idx,x,y,dir:dir,speed:f.speed*(0.8+Math.random()*0.4),frame:Math.random()*100,alive:true,targetHook:true,hookFishType:idx});
+    // Also trigger bite after fish reaches hook (handled in updateSwimFish)
+    currentFishType=idx;
+  },delay);
+}
+
+// Reel input (hold to reel)
+let reelHeld=false;
+const actionBtn=document.getElementById('actionBtn');
+actionBtn.addEventListener('pointerdown',(e)=>{
+  initAudio();
+  if(state==='fight'){reeling=true;reelHeld=true;e.preventDefault()}
+});
+actionBtn.addEventListener('pointerup',()=>{
+  if(state==='fight'){reeling=false;reelHeld=false}
+});
+actionBtn.addEventListener('pointerleave',()=>{
+  if(state==='fight'){reeling=false;reelHeld=false}
+});
+// Canvas touch (also controls reel and hook)
+canvas.addEventListener('pointerdown',(e)=>{
+  initAudio();
+  if(state==='fight'){reeling=true;reelHeld=true;e.preventDefault()}
+  else if(state==='bite'){hookFish();e.preventDefault()}
+  else if(state==='idle'){onAction();e.preventDefault()}
+});
+canvas.addEventListener('pointerup',()=>{
+  if(state==='fight'){reeling=false;reelHeld=false}
+});
+// Keyboard
+document.addEventListener('keydown',(e)=>{
+  initAudio();
+  if(e.code==='Space'||e.code==='Enter'){
+    e.preventDefault();
+    if(state==='fight'){reeling=true}
+    else onAction();
+  }
+});
+document.addEventListener('keyup',(e)=>{
+  if(e.code==='Space'||e.code==='Enter'){
+    if(state==='fight')reeling=false;
+  }
+});
+
+// ===== SHOP =====
+function openShop(){
+  sfxBlip();
+  const overlay=document.getElementById('shopOverlay');
+  overlay.style.display='block';
+  renderShop();
+}
+function closeShop(){
+  sfxBlip();
+  document.getElementById('shopOverlay').style.display='none';
+}
+function renderShop(){
+  const c=document.getElementById('shopItems');
+  c.innerHTML='';
+  for(const item of SHOP_ITEMS){
+    const lvl=upgrades[item.id]||0;
+    const maxed=lvl>=item.max;
+    const cost=maxed?0:item.cost[lvl]||item.cost[item.cost.length-1];
+    const div=document.createElement('div');
+    div.className='shopItem'+(maxed?' owned':'');
+    div.innerHTML=`<div class="info"><h3>${item.name}${maxed?' (MAX)':' LV'+(lvl+1)}</h3><p>${item.desc}</p></div>`;
+    if(!maxed){
+      const btn=document.createElement('button');
+      btn.textContent='$'+cost;
+      btn.disabled=money<cost;
+      btn.onclick=()=>{
+        if(money>=cost){
+          money-=cost;
+          upgrades[item.id]=(upgrades[item.id]||0)+1;
+          saveGame();
+          sfxBlip();
+          renderShop();
+        }
+      };
+      div.appendChild(btn);
+    }
+    c.appendChild(div);
+  }
+}
+
+// ===== STATS =====
+function openStats(){
+  sfxBlip();
+  const overlay=document.getElementById('statsOverlay');
+  overlay.style.display='block';
+  renderStats();
+}
+function closeStats(){
+  sfxBlip();
+  document.getElementById('statsOverlay').style.display='none';
+}
+function renderStats(){
+  const c=document.getElementById('statsItems');
+  c.innerHTML='';
+  for(const f of FISH){
+    const pb=personalBest[f.name];
+    const div=document.createElement('div');
+    div.className='statRow';
+    div.innerHTML=`<span>${f.name}</span><span>${pb?pb.toFixed(1)+' LBS':'---'}</span>`;
+    c.appendChild(div);
+  }
+}
+
+// ===== COLOR HELPERS =====
+function lerpColor(c1,c2,t){
+  const r1=parseInt(c1.slice(1,3),16),g1=parseInt(c1.slice(3,5),16),b1=parseInt(c1.slice(5,7),16);
+  const r2=parseInt(c2.slice(1,3),16),g2=parseInt(c2.slice(3,5),16),b2=parseInt(c2.slice(5,7),16);
+  const r=Math.floor(r1+(r2-r1)*t),g=Math.floor(g1+(g2-g1)*t),b=Math.floor(b1+(b2-b1)*t);
+  return'#'+(r<16?'0':'')+r.toString(16)+(g<16?'0':'')+g.toString(16)+(b<16?'0':'')+b.toString(16);
+}
+
+// ===== MAIN LOOP =====
+let lastTime=0;
+bobberBaseY=WATER_Y-2;
+bobberY=bobberBaseY;
+resetBiteTimer();
+
+// Spawn initial fish
+for(let i=0;i<5;i++)spawnSwimFish();
+// Schedule first bite so player sees action immediately
+scheduleBiteSwim();
+
+function gameLoop(timestamp){
+  const dt=Math.min(0.05,(timestamp-(lastTime||timestamp))/1000);
+  lastTime=timestamp;
+  const t=timestamp/1000;
+
+  // Update
+  updateSwimFish(dt);
+  if(msgTimer>0)msgTimer-=dt;
+  if(castAnimTimer>0)castAnimTimer-=dt;
+
+  // Bobber physics
+  if(state==='idle'||state==='bite'){
+    const waveOff=Math.sin(t*1.5)*1.5+Math.sin(t*2.3)*0.5;
+    if(state==='bite'){
+      bobberY=bobberBaseY+3+Math.sin(t*10)*2;
+    }else{
+      bobberY=bobberBaseY+waveOff;
+    }
+  }
+
+  // Bite timer
+  if(state==='idle'){
+    biteTimer+=dt;
+  }
+
+  // Hook window
+  if(state==='bite'){
+    hookTimer+=dt;
+    exclamationTimer-=dt;
+    if(hookTimer>=hookWindow){
+      missedBite();
+    }
+  }
+
+  // Fight
+  updateFight(dt);
+
+  // Caught animation
+  if(state==='caught'){
+    caughtAnimTimer+=dt;
+    fishY=WATER_Y-10-Math.sin(caughtAnimTimer*3)*30;
+    fishX=180+Math.sin(caughtAnimTimer*5)*10;
+  }
+
+  // ===== DRAW =====
+  ctx.clearRect(0,0,W,H);
+  drawSky(t);
+  drawWater(t);
+  drawRod(t);
+
+  // Draw swimming fish (behind line)
+  for(const sf of swimFish){
+    drawPixelFish(ctx,sf.type,Math.floor(sf.x),Math.floor(sf.y),sf.dir,sf.frame);
+    // Fish finder labels
+    if(upgrades.finder>0&&!sf.targetHook){
+      drawText(ctx,FISH[sf.type].name,Math.floor(sf.x-FISH[sf.type].name.length*2.5),Math.floor(sf.y-8),1,'#fcfcfc');
+    }
+  }
+
+  drawLine(t);
+  drawBobber(t);
+  drawExclamation(t);
+  drawFightFish(t);
+  drawCaughtAnim(t);
+  drawFightUI();
+  drawHUD();
+  drawMsg(t);
+
+  requestAnimationFrame(gameLoop);
+}
+
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>
