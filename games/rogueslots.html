@@ -10,6 +10,7 @@
 html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:'Press Start 2P',monospace;touch-action:manipulation;user-select:none;-webkit-user-select:none;color:#fcfcfc;image-rendering:pixelated}
 body::after{content:'';position:fixed;inset:0;z-index:1;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(0,0,0,.05) 0px,rgba(0,0,0,.05) 1px,transparent 1px,transparent 3px)}
 #app{width:100%;height:100%;display:flex;flex-direction:column;overflow:hidden;position:relative;transition:box-shadow .2s}
+.fever-active{box-shadow:inset 0 0 30px rgba(248,120,88,.3)!important}
 #topbar{display:flex;align-items:center;gap:5px;padding:4px 6px;background:#0c0c0c;border-bottom:2px solid #585858;font-size:9px;flex-shrink:0;z-index:5;flex-wrap:wrap}
 .stat{display:flex;align-items:center;gap:3px;line-height:1}
 .stat-bar{width:50px;height:8px;background:#000;border:1px solid #585858;overflow:hidden}
@@ -105,7 +106,7 @@ body::after{content:'';position:fixed;inset:0;z-index:1;pointer-events:none;back
 .charm-icon.rare{border-color:#f0d040}
 .mult-line{color:#f0d040;font-size:7px;letter-spacing:1px}
 .achv-grid{display:flex;flex-wrap:wrap;gap:3px;justify-content:center;margin:4px 0}
-.achv-item{font-size:5px;padding:2px 4px;border:1px solid #383838;color:#585858;background:#0c0c0c}
+.achv-item{font-size:7px;padding:2px 4px;border:1px solid #383838;color:#585858;background:#0c0c0c}
 .achv-item.earned{border-color:#00a800;color:#00a800;background:#001c00}
 #vol-ctrl{display:flex;gap:4px;align-items:center;margin-left:auto;font-size:6px;color:#787878}
 #vol-ctrl input[type=range]{width:32px;height:10px;vertical-align:middle;-webkit-appearance:none;background:#383838;outline:none;border-radius:0}
@@ -139,7 +140,7 @@ body::after{content:'';position:fixed;inset:0;z-index:1;pointer-events:none;back
  <div class="slot-frame" id="slot-frame"><div class="payline"></div><div class="payline-dim payline-top"></div><div class="payline-dim payline-bottom"></div></div>
 </div>
 <div class="streak-bar" id="streak-bar"></div>
-<button id="spinbtn" onclick="spin()">SPIN</button>
+<div style="display:flex;justify-content:center;align-items:center;gap:6px;margin:4px 0"><button id="spinbtn" onclick="spin()">SPIN</button><button id="fastbtn" onclick="spinSpeed=spinSpeed===1?2:1;this.textContent=spinSpeed===2?'FAST':'NORM'" style="padding:6px 8px;font-size:7px;font-family:'Press Start 2P',monospace;background:#1c1c1c;color:#b8b8b8;border:2px solid #585858;cursor:pointer;letter-spacing:1px">NORM</button></div>
 <div id="perk-bar"></div>
 <div id="results"></div>
 </div>
@@ -571,7 +572,8 @@ let G={hp:20,maxHp:20,gold:0,shield:0,poison:0,floor:1,reels:[[...BASE_SYMBOLS],
  xp:0,xpNeeded:10,level:1,streak:0,bestStreak:0,kills:0,floorFlags:{},reviveUsed:false,
  killStreakNoDmg:0,totalDmgDealt:0,totalGoldEarned:0,totalSpins:0,floorsCleared:0,bossKills:0,
  topResults:[],botResults:[],
- goldThisFloor:0,spinsLeft:8,floorTarget:8,charms:[],deathDefyUsed:false,upgrades:{}};
+ goldThisFloor:0,spinsLeft:8,floorTarget:8,charms:[],deathDefyUsed:false,upgrades:{},fever:0,feverSpins:0,bestMult:1};
+var spinSpeed=1;
 function freshState(cls){
  const base=[...BASE_SYMBOLS,...cls.startSyms];
  const rc=3+cls.extraReels;const reels=[];for(let i=0;i<rc;i++)reels.push([...base]);
@@ -582,7 +584,7 @@ function freshState(cls){
   xp:0,xpNeeded:10,level:1,streak:0,bestStreak:0,kills:0,floorFlags:{},reviveUsed:false,
   killStreakNoDmg:0,totalDmgDealt:0,totalGoldEarned:0,totalSpins:0,floorsCleared:0,bossKills:0,
   topResults:[],botResults:[],
-  goldThisFloor:0,spinsLeft:8,floorTarget:8,charms:[],deathDefyUsed:false,upgrades:{}};
+  goldThisFloor:0,spinsLeft:8,floorTarget:8,charms:[],deathDefyUsed:false,upgrades:{},fever:0,feverSpins:0,bestMult:1};
 }
 
 // ═══ PARTICLES ═══
@@ -648,7 +650,10 @@ function updateUI(){
  const sb=document.getElementById('streak-bar');
  let sbt=G.streak>1?`x${G.streak} WIN STREAK`:'';
  if(G.killStreakNoDmg>=2)sbt+=(sbt?' | ':'')+G.killStreakNoDmg+' KILL STREAK';
+ if(G.feverSpins>0)sbt+=(sbt?' | ':'')+'FEVER x'+G.feverSpins;
  sb.textContent=sbt;
+ var appEl=document.getElementById('app');
+ if(G.feverSpins>0)appEl.classList.add('fever-active');else appEl.classList.remove('fever-active');
 }
 function renderEnemies(){
  const c=document.getElementById('enemies');c.innerHTML='';
@@ -779,6 +784,8 @@ function spin(){
  G.topResults=G.reels.map(pool=>pickSym(pool));
  G.botResults=G.reels.map(pool=>pickSym(pool));
  if(G.perkFlags.lucky7&&Math.random()<.08){const s=G.reelResults[0];G.reelResults=G.reelResults.map(()=>s)}
+ // Lucky Spin every 10th spin
+ if(G.spinCount%10===0){showBanner('LUCKY SPIN!');var luckyS=G.reelResults[0];G.reelResults[1]=luckyS}
 
  const rc=G.reels.length;let stopped=0;
  G.reels.forEach((_,i)=>{
@@ -792,7 +799,7 @@ function spin(){
   strip.innerHTML='';strip.className='reel-strip';
   syms.forEach(s=>{const d=document.createElement('div');d.className='reel-symbol';d.innerHTML=symImg(s);strip.appendChild(d)});
   strip.style.transform='translateY(0)';
-  const tH=syms.length*SYM_H,tY=-(tH-SYM_H*3),dur=(16+i*6)*16;
+  const tH=syms.length*SYM_H,tY=-(tH-SYM_H*3),dur=Math.floor((16+i*6)*16/spinSpeed);
   const finalY=tY;
   strip.style.transition='none';let st=null;
   function anim(t){
@@ -807,7 +814,7 @@ function spin(){
     document.getElementById('glow-'+i).classList.add('active');setTimeout(()=>document.getElementById('glow-'+i).classList.remove('active'),350);
     stopped++;if(stopped===rc)setTimeout(resolveResults,280)}
   }
-  setTimeout(()=>requestAnimationFrame(anim),i*240);
+  setTimeout(()=>requestAnimationFrame(anim),Math.floor(i*240/spinSpeed));
  });
 }
 
@@ -865,9 +872,16 @@ function resolveLine(R,mul,label,ctx){
   var eff=cc+(sym2!=='🌈'?rainbows:0);
   if((comboUpActive||matchBoostActive)&&eff===2)eff=3;
   if(eff>=3&&matchMul<3){matchMul=3;matchTier=2;log('>>> TRIPLE '+(SYMS[sym2]?SYMS[sym2].name:sym2)+'! x3 <<<','res-combo');SFX.combo();spawnP(document.getElementById('slot-frame'),'#e060f0',18);screenFlash('#a040f0');
-   globalMult+=2;multLog+=' -> x'+globalMult.toFixed(1)+' (triple)'}
+   globalMult+=2;multLog+=' -> x'+globalMult.toFixed(1)+' (triple)';
+   G.spinsLeft=(G.spinsLeft||0)+1;log('+1 FREE SPIN!','res-gold')}
   else if(eff>=2&&matchMul<1.5&&!G.floorFlags.gamblerParadise){matchMul=1.5;matchTier=1;log('>> DOUBLE '+(SYMS[sym2]?SYMS[sym2].name:sym2)+'!','res-combo');
    globalMult+=0.5;multLog+=' -> x'+globalMult.toFixed(1)+' (double)'}
+ }
+ // Near-miss detection
+ if(matchTier===0){
+  for(var nm in counts){if(counts[nm]===2&&R.length>=3){
+   log('SO CLOSE! Almost triple '+((SYMS[nm]||{}).name||nm)+'!','res-info');break;
+  }}
  }
  // Unique symbol bonus to mult
  var uniqSyms=Object.keys(counts).length;
@@ -983,6 +997,28 @@ function resolveLine(R,mul,label,ctx){
  // Vampire class: all attacks heal 1 HP
  if(G.charClass&&G.charClass.healOnHit&&tDmg>0){G.hp=Math.min(G.maxHp,G.hp+1);tHeal+=1;log('DRAIN +1 HP','res-heal')}
 
+ // Symbol synergy announcements
+ var synergyR=R.join('');
+ if(synergyR.indexOf('🗡️')!==-1&&synergyR.indexOf('🛡️')!==-1){
+  log('WARRIOR COMBO! +2 DMG','res-combo');
+  var tSyn=aliveEnemies()[0];if(tSyn){dealDmg(tSyn,2);tDmg+=2}
+ }
+ if(synergyR.indexOf('🔥')!==-1&&synergyR.indexOf('💣')!==-1){
+  log('INFERNO!','res-combo');
+  aliveEnemies().forEach(function(e2){dealDmg(e2,2);tDmg+=2});
+ }
+ if(synergyR.indexOf('❤️')!==-1&&synergyR.indexOf('💰')!==-1){
+  log('PROSPERITY! +3 GP','res-combo');
+  G.gold+=3;G.goldThisFloor+=3;tGold+=3;
+ }
+ if(synergyR.indexOf('💀')!==-1&&synergyR.indexOf('🧪')!==-1){
+  log('DEATH MIX! Poison x2','res-combo');
+  aliveEnemies().forEach(function(e2){e2.poison+=2});
+ }
+
+ // Track best multiplier
+ if(globalMult>G.bestMult)G.bestMult=globalMult;
+
  return{tDmg:tDmg,tHeal:tHeal,tGold:tGold,tShield:tShield,refreshR:refreshR,matchTier:matchTier};
 }
 
@@ -1035,6 +1071,9 @@ function resolveResults(){
  G.enemies.forEach(function(e,i){
   if(e.hp<=0&&!e._dead){e._dead=true;G.kills++;meta.kills++;meta.totalKills++;G.killStreakNoDmg++;killsThisSpin++;
    spawnP(document.getElementById('enemy-'+i),'#f04040',8);
+   // Overkill bonus
+   var overkill=Math.abs(Math.min(0,e.hp));
+   if(overkill>0){var overkillGold=Math.floor(overkill/2);if(overkillGold>0){G.gold+=overkillGold;G.goldThisFloor+=overkillGold;tGold+=overkillGold;log('OVERKILL! +'+overkillGold+' GP','res-gold')}}
    if(G.perkFlags.vampiric){var h=G.perkFlags.vampiric;G.hp=Math.min(G.maxHp,G.hp+h);log('VAMP +'+h,'res-heal')}
    if(G.perkFlags.goldTooth){G.gold+=1;G.goldThisFloor+=1;log('+1 GP (tooth)','res-gold')}
    if(G.charClass&&G.charClass.id==='necro'){G.hp=Math.min(G.maxHp,G.hp+2);log('NECRO +2 HP','res-heal')}
@@ -1155,7 +1194,7 @@ function showRelicChoice(){
  const owned=new Set(G.relics.map(r=>r.id));
  const avail=ALL_RELICS.filter(r=>!owned.has(r.id));
  const choices=avail.sort(()=>Math.random()-.5).slice(0,3);
- pn.innerHTML=`<h2>RELIC FOUND!</h2><p style="font-size:4px;color:#8080a0;margin-bottom:4px">BOSS DEFEATED! CHOOSE A RELIC</p>
+ pn.innerHTML=`<h2>RELIC FOUND!</h2><p style="font-size:7px;color:#8080a0;margin-bottom:4px">BOSS DEFEATED! CHOOSE A RELIC</p>
   ${choices.map((r,i)=>`<div class="perk-card" onclick="pickRelic(${i})" style="border-color:#f0d040">
    ${iconImg(r.icon,28)}<div class="pname" style="color:#f0d040">${r.name}</div><div class="desc">${r.desc}</div></div>`).join('')}
   <button class="btn" onclick="skipRelic()" style="margin-top:4px">SKIP (+15 GP)</button>`;
@@ -1170,7 +1209,7 @@ function showPerkChoice(){
  const owned=new Set(G.perks.map(p=>p.id));
  const avail=ALL_PERKS.filter(p=>!owned.has(p.id)||p.stack);
  const choices=avail.sort(()=>Math.random()-.5).slice(0,3);
- pn.innerHTML=`<h2>LEVEL UP!</h2><p style="font-size:4px;color:#8080a0;margin-bottom:4px">CHOOSE A PERK</p>
+ pn.innerHTML=`<h2>LEVEL UP!</h2><p style="font-size:7px;color:#8080a0;margin-bottom:4px">CHOOSE A PERK</p>
   ${choices.map((p,i)=>`<div class="perk-card" onclick="pickPerk(${i})">
    ${iconImg(p.icon,28)}<div class="pname">${p.name}</div><div class="desc">${p.desc}</div></div>`).join('')}
   <button class="btn" onclick="skipPerk()" style="margin-top:4px">SKIP (+10 GP)</button>`;
@@ -1187,7 +1226,7 @@ function showCharmChoice(){
  var choices=avail.sort(function(){return Math.random()-.5}).slice(0,3);
  G.phase='charm';SFX.perk();
  var ov=document.getElementById('overlay'),pn=document.getElementById('panel');ov.classList.add('show');
- pn.innerHTML='<h2 style="color:#e060e0">LUCKY CHARM!</h2><p style="font-size:4px;color:#8080a0;margin-bottom:4px">CHOOSE A CHARM</p>'+
+ pn.innerHTML='<h2 style="color:#e060e0">LUCKY CHARM!</h2><p style="font-size:7px;color:#8080a0;margin-bottom:4px">CHOOSE A CHARM</p>'+
   choices.map(function(c,i){return'<div class="charm-card" onclick="pickCharm('+i+')"><div class="cname">'+c.name+'</div><div class="desc">'+c.desc+'</div></div>'}).join('')+
   '<button class="btn" onclick="skipCharm()" style="margin-top:4px">SKIP (+8 GP)</button>';
  window.pickCharm=function(i){G.charms.push(choices[i]);SFX.buy();log('CHARM: '+choices[i].name,'res-combo');
@@ -1207,7 +1246,7 @@ function showCharmSacrifice(){
  var selected=[];
  var ov=document.getElementById('overlay'),pn=document.getElementById('panel');ov.classList.add('show');
  function renderSacUI(){
-  pn.innerHTML='<h2 style="color:#f83800">SACRIFICE CHARMS</h2><p style="font-size:5px;color:#8080a0;margin-bottom:4px">Pick 2 charms to destroy for 1 RARE charm</p>'+
+  pn.innerHTML='<h2 style="color:#f83800">SACRIFICE CHARMS</h2><p style="font-size:8px;color:#8080a0;margin-bottom:4px">Pick 2 charms to destroy for 1 RARE charm</p>'+
    G.charms.map(function(c,i){var isSel=selected.indexOf(i)!==-1;return'<div class="charm-card'+(isSel?' selected':'')+(c.rare?' rare':'')+'" onclick="toggleSac('+i+')"><div class="cname'+(c.rare?' rare':'')+'">'+c.name+'</div><div class="desc">'+c.desc+'</div></div>'}).join('')+
    '<div style="margin-top:6px">'+(selected.length===2?'<button class="btn btn-red" onclick="doSacrifice()">SACRIFICE!</button>':'')+
    '<button class="btn" onclick="cancelSac()" style="margin-left:4px">CANCEL</button></div>';
@@ -1245,7 +1284,7 @@ function showShop(){
   const cost=s=>{const t=SYMS[s]?.tier||0;const base=[8,18,28,40][t];return Math.floor(base*(1-disc))};
   var _symCount=new Set(G.reels.flat()).size;
   pn.innerHTML=`<h2>SHOP F${G.floor}</h2>
-   <p style="font-size:5px;color:#8080a0;margin-bottom:3px">GP:<span style="color:#f0d040">${G.gold}</span> HP:${G.hp}/${G.maxHp} LV${G.level} REELS:${G.reels.length} SYMBOLS:${_symCount}/10</p>
+   <p style="font-size:8px;color:#8080a0;margin-bottom:3px">GP:<span style="color:#f0d040">${G.gold}</span> HP:${G.hp}/${G.maxHp} LV${G.level} REELS:${G.reels.length} SYMBOLS:${_symCount}/10</p>
    <h3>BUY SYMBOLS</h3>
    <div class="shop-grid">${items.map((s,i)=>{const c=cost(s),d=SYMS[s];
     return`<div class="shop-card${sold[i]?' sold':''}" onclick="buy(${i})">
@@ -1295,7 +1334,7 @@ window.showCombine=function(){
  if(!combinable.length){log('Nothing to combine!','res-info');return}
  var ov=document.getElementById('overlay'),pn=document.getElementById('panel');ov.classList.add('show');
  pn.innerHTML='<h2 style="color:#f0a040">COMBINE</h2>'+
-  '<p style="font-size:5px;color:#b8b8b8;margin-bottom:4px">Fuse 2 copies into 1 stronger version</p>'+
+  '<p style="font-size:8px;color:#b8b8b8;margin-bottom:4px">Fuse 2 copies into 1 stronger version</p>'+
   '<div class="shop-grid">'+combinable.map(function(e){
    var s=e[0],c=e[1];
    var lvl=(G.upgrades[s]||0)+1;
@@ -1355,18 +1394,18 @@ function showDeath(){
  pn.innerHTML=`<h2 style="color:#f04040">GAME OVER</h2>
   <div style="margin:6px">${iconImg('💀',40)}</div>
   <p style="font-size:6px;margin:4px 0">FLOOR <span style="color:#f0d040">${G.floor}</span> | LV${G.level} | ${G.charClass?.name}</p>
-  <div style="border:1px solid #2a2a4a;padding:6px;margin:6px 0;font-size:5px;color:#b8b8b8;line-height:2;text-align:left">
+  <div style="border:1px solid #2a2a4a;padding:6px;margin:6px 0;font-size:8px;color:#b8b8b8;line-height:2;text-align:left">
    <span style="color:#f83800">DMG DEALT:</span> ${G.totalDmgDealt}<br>
    <span style="color:#f8d800">GOLD EARNED:</span> ${G.totalGoldEarned}<br>
    <span style="color:#0058f8">SPINS:</span> ${G.totalSpins}<br>
    <span style="color:#00a800">FLOORS:</span> ${G.floorsCleared}<br>
    <span style="color:#f87858">KILLS:</span> ${G.kills} (best streak: ${G.bestStreak})
   </div>
-  ${ach.length?'<div style="border:1px solid #4a4a2a;padding:4px;margin:4px 0;font-size:4px;color:#f0d040;line-height:2">'+ach.map(function(a){return'['+a+']'}).join(' ')+'</div>':''}
-  <p style="font-size:5px;color:#6a6a8a">BEST: F-${meta.bestFloor} | RUNS: ${meta.runs}</p>
-  ${G.perks.length?'<p style="font-size:5px;color:#6a6a8a;margin:3px 0">PERKS: '+G.perks.map(function(p){return p.name[0]}).join('')+'</p>':''}
-  ${G.relics.length?'<p style="font-size:5px;color:#f0d040;margin:2px 0">RELICS: '+G.relics.map(function(r){return r.name[0]}).join('')+'</p>':''}
-  ${G.charms.length?'<p style="font-size:5px;color:#e060e0;margin:2px 0">CHARMS: '+G.charms.map(function(c){return c.name}).join(', ')+'</p>':''}
+  ${ach.length?'<div style="border:1px solid #4a4a2a;padding:4px;margin:4px 0;font-size:7px;color:#f0d040;line-height:2">'+ach.map(function(a){return'['+a+']'}).join(' ')+'</div>':''}
+  <p style="font-size:8px;color:#6a6a8a">BEST: F-${meta.bestFloor} | RUNS: ${meta.runs}</p>
+  ${G.perks.length?'<p style="font-size:8px;color:#6a6a8a;margin:3px 0">PERKS: '+G.perks.map(function(p){return p.name[0]}).join('')+'</p>':''}
+  ${G.relics.length?'<p style="font-size:8px;color:#f0d040;margin:2px 0">RELICS: '+G.relics.map(function(r){return r.name[0]}).join('')+'</p>':''}
+  ${G.charms.length?'<p style="font-size:8px;color:#e060e0;margin:2px 0">CHARMS: '+G.charms.map(function(c){return c.name}).join(', ')+'</p>':''}
   <h3 style="margin-top:4px">ACHIEVEMENTS</h3>
   ${renderAchievements()}
   <button class="btn btn-gold" onclick="showCharSelect()" style="margin-top:6px">RETRY</button>`;
@@ -1383,7 +1422,7 @@ function showCharSelect(){
     return`<div class="char-card" onclick="pick(${i})">
      ${iconImg(c.icon,32)}<div class="cname">${c.name}</div>
      <div class="desc">${c.desc.replace(/\n/g,'<br>')}</div>
-     <div style="font-size:4px;color:#787878;margin-top:2px">HP:${c.hp} CRIT:${Math.round(c.crit*100)}%${c.gold?' GP:'+c.gold:''}${c.extraReels?' +REEL':''}</div>
+     <div style="font-size:7px;color:#787878;margin-top:2px">HP:${c.hp} CRIT:${Math.round(c.crit*100)}%${c.gold?' GP:'+c.gold:''}${c.extraReels?' +REEL':''}</div>
     </div>`;
    } else {
     return`<div class="char-card" style="opacity:.3;cursor:default;border-color:#383838">
@@ -1399,14 +1438,14 @@ function showCharSelect(){
 function showTitle(){
  stopMusic();
  const ov=document.getElementById('overlay'),pn=document.getElementById('panel');ov.classList.add('show');
- const stats=meta.bestFloor?`<div style="border:1px solid #2a2a4a;padding:4px;margin:4px 0;font-size:4px;color:#6a6a8a;line-height:2">
+ const stats=meta.bestFloor?`<div style="border:1px solid #2a2a4a;padding:4px;margin:4px 0;font-size:7px;color:#6a6a8a;line-height:2">
   BEST: F-${meta.bestFloor} | RUNS: ${meta.runs} | KILLS: ${meta.kills||0} | GP: ${meta.totalGold}</div>`:'';
- const unlocks=meta.bestFloor>=3?`<p style="font-size:5px;color:#a060f0;margin:2px 0">${Object.entries(UNLOCK_MAP).filter(([f])=>meta.bestFloor>=+f).map(([,s])=>s.join('')).join(' ')}</p>`:'';
+ const unlocks=meta.bestFloor>=3?`<p style="font-size:8px;color:#a060f0;margin:2px 0">${Object.entries(UNLOCK_MAP).filter(([f])=>meta.bestFloor>=+f).map(([,s])=>s.join('')).join(' ')}</p>`:'';
  pn.innerHTML=`
   <div style="margin:8px">${iconImg('🎰',48)}</div>
-  <h2 class="title-glow" style="font-size:10px;line-height:1.8">8BIT<br>ROGUE SLOTS</h2>
-  <p style="font-size:4px;color:#8080a0;margin:4px 0;letter-spacing:2px">ROGUELIKE SLOT MACHINE RPG</p>
-  <div style="border:1px solid #2a2a4a;padding:4px;margin:4px 0;font-size:4px;color:#6a6a8a;line-height:1.8">
+  <h2 class="title-glow" style="font-size:14px;line-height:1.8">8BIT<br>ROGUE SLOTS</h2>
+  <p style="font-size:7px;color:#8080a0;margin:4px 0;letter-spacing:2px">ROGUELIKE SLOT MACHINE RPG</p>
+  <div style="border:1px solid #2a2a4a;padding:4px;margin:4px 0;font-size:7px;color:#6a6a8a;line-height:1.8">
    14 CLASSES • 30+ SYMBOLS • 24 PERKS<br>
    10 RELICS • 12 CHARMS • 4 RARE CHARMS<br>
    16 ENEMIES • 6 BOSSES • 3 PAYLINES<br>
@@ -1417,7 +1456,7 @@ function showTitle(){
   <h3 style="margin-top:4px">ACHIEVEMENTS</h3>
   ${renderAchievements()}
   <button class="btn btn-gold" onclick="showCharSelect()" style="margin-top:8px;font-size:8px;padding:10px 24px">START</button>
-  <div style="font-size:3px;color:#3a3a5a;margin-top:6px">v4.0 // taskiap.com</div>`;
+  <div style="font-size:6px;color:#3a3a5a;margin-top:6px">v4.0 // taskiap.com</div>`;
 }
 
 function startRun(cls){
