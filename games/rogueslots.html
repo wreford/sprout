@@ -476,7 +476,7 @@ const ALL_PERKS=[
  {id:'snakepit',icon:'🐍',name:'SNAKE PIT',desc:'Add 2 snakes to each reel.',apply:G=>{for(let r of G.reels){r.push('🐍');r.push('🐍')}},stack:true},
  {id:'goldtooth',icon:'🦷',name:'GOLD TOOTH',desc:'Earn 1 GP per enemy killed.',apply:G=>{G.perkFlags.goldTooth=true}},
  {id:'berserker',icon:'😤',name:'BERSERKER',desc:'+1 DMG per 4 HP missing.',apply:G=>{G.perkFlags.berserker=true}},
- {id:'expandoslot',icon:'📏',name:'EXPAND-O-SLOT',desc:'Add a new reel! More chaos!',apply:G=>{if(G.reels.length<5)G.reels.push([...BASE_SYMBOLS])},stack:true},
+ {id:'expandoslot',icon:'📏',name:'EXPAND-O-SLOT',desc:'Add a new reel! More chaos!',apply:G=>{if(G.reels.length<5){G.reels.push([...BASE_SYMBOLS]);meta.maxReelsEver=Math.max(meta.maxReelsEver||0,G.reels.length);saveMeta()}},stack:true},
  {id:'poisontip',icon:'☠️',name:'POISON TIPS',desc:'Attacks 20% chance to poison.',apply:G=>{G.perkFlags.poisonTip=true}},
  {id:'laststand',icon:'💪',name:'LAST STAND',desc:'Below 5 HP: all DMG x2.',apply:G=>{G.perkFlags.lastStand=true}},
  {id:'coffeebreak',icon:'☕',name:'COFFEE BREAK',desc:'Full heal between floors.',apply:G=>{G.perkFlags.coffeeBreak=true}},
@@ -547,7 +547,7 @@ let G={hp:20,maxHp:20,gold:0,shield:0,poison:0,floor:1,reels:[[...BASE_SYMBOLS],
  xp:0,xpNeeded:10,level:1,streak:0,bestStreak:0,kills:0,floorFlags:{},reviveUsed:false,
  killStreakNoDmg:0,totalDmgDealt:0,totalGoldEarned:0,totalSpins:0,floorsCleared:0,bossKills:0,
  topResults:[],botResults:[],
- goldThisFloor:0,spinsLeft:8,floorTarget:8,charms:[],deathDefyUsed:false};
+ goldThisFloor:0,spinsLeft:8,floorTarget:8,charms:[],deathDefyUsed:false,upgrades:{}};
 function freshState(cls){
  const base=[...BASE_SYMBOLS,...cls.startSyms];
  const rc=3+cls.extraReels;const reels=[];for(let i=0;i<rc;i++)reels.push([...base]);
@@ -558,7 +558,7 @@ function freshState(cls){
   xp:0,xpNeeded:10,level:1,streak:0,bestStreak:0,kills:0,floorFlags:{},reviveUsed:false,
   killStreakNoDmg:0,totalDmgDealt:0,totalGoldEarned:0,totalSpins:0,floorsCleared:0,bossKills:0,
   topResults:[],botResults:[],
-  goldThisFloor:0,spinsLeft:8,floorTarget:8,charms:[],deathDefyUsed:false};
+  goldThisFloor:0,spinsLeft:8,floorTarget:8,charms:[],deathDefyUsed:false,upgrades:{}};
 }
 
 // ═══ PARTICLES ═══
@@ -688,11 +688,13 @@ function spawnEnemies(){
  var spCtx={};G.charms.forEach(function(c){if(c.apply)c.apply(G,spCtx)});
  if(spCtx.targetReduce)G.floorTarget=Math.max(1,Math.ceil(G.floorTarget*(1-spCtx.targetReduce)));
  G.spinsLeft=Math.min(18,10+Math.floor(G.floor/3))+(spCtx.extraSpins||0);
+ if(G.charClass&&G.charClass.spinBonus)G.spinsLeft+=G.charClass.spinBonus;
  G.deathDefyUsed=false;
  if(G.perkFlags.shieldWall)G.shield+=G.perkFlags.shieldWall;
+ if(G.charClass&&G.charClass.shieldRegen)G.shield+=G.charClass.shieldRegen;
  if(G.perkFlags.payday){G.gold+=G.perkFlags.payday;log(`PAYDAY +${G.perkFlags.payday} GP`,'res-gold')}
  if(G.perkFlags.coffeeBreak&&G.floor>1){G.hp=G.maxHp;log('COFFEE! Full heal.','res-heal')}
- if(G.perkFlags.scavenger){const s=ALL_SHOP[Math.floor(Math.random()*ALL_SHOP.length)];G.reels[Math.floor(Math.random()*G.reels.length)].push(s);log(`Found ${s}!`,'res-combo')}
+ if(G.perkFlags.scavenger){const s=ALL_SHOP[Math.floor(Math.random()*ALL_SHOP.length)];const _uc=new Set(G.reels.flat()).size;if(_uc<10||G.reels.flat().includes(s)){G.reels[Math.floor(Math.random()*G.reels.length)].push(s);log(`Found ${s}!`,'res-combo')}else{log('SCAVENGE: Inventory full!','res-info')}}
  if(G.relics.some(r=>r.effect==='ironBoot'))G.floorFlags.ironBootActive=true;
  if(G.relics.some(r=>r.effect==='upgrade')){
   const ri=Math.floor(Math.random()*G.reels.length);const reel=G.reels[ri];
@@ -799,6 +801,8 @@ function resolveLine(R,mul,label,ctx){
 
  // Combo King charm: doubles count as triples
  var comboUpActive=ctx&&ctx.comboUp;
+ // High Roller class: all matches count +1 tier
+ var matchBoostActive=G.charClass&&G.charClass.matchBoost;
 
  // Joker
  var freq={};R.forEach(function(s){if(SYMS[s]&&!SYMS[s].special)freq[s]=(freq[s]||0)+1});
@@ -835,7 +839,7 @@ function resolveLine(R,mul,label,ctx){
  for(var sym2 in counts){
   var cc=counts[sym2];
   var eff=cc+(sym2!=='🌈'?rainbows:0);
-  if(comboUpActive&&eff===2)eff=3;
+  if((comboUpActive||matchBoostActive)&&eff===2)eff=3;
   if(eff>=3&&matchMul<3){matchMul=3;matchTier=2;log('>>> TRIPLE '+(SYMS[sym2]?SYMS[sym2].name:sym2)+'! x3 <<<','res-combo');SFX.combo();spawnP(document.getElementById('slot-frame'),'#e060f0',18);screenFlash('#a040f0');
    globalMult+=2;multLog+=' -> x'+globalMult.toFixed(1)+' (triple)'}
   else if(eff>=2&&matchMul<1.5&&!G.floorFlags.gamblerParadise){matchMul=1.5;matchTier=1;log('>> DOUBLE '+(SYMS[sym2]?SYMS[sym2].name:sym2)+'!','res-combo');
@@ -851,13 +855,13 @@ function resolveLine(R,mul,label,ctx){
  var jpMul=1;
  if(hasJP&&matchMul>=3){jpMul=3;globalMult*=2;multLog+=' -> x'+globalMult.toFixed(1)+' (JACKPOT)';log('!!! JACKPOT x3 !!!','res-combo');shake();screenFlash('#f0d040');spawnP(document.getElementById('slot-frame'),'#f0d040',25);
   document.getElementById('spinbtn').classList.add('win-flash');setTimeout(function(){document.getElementById('spinbtn').classList.remove('win-flash')},1200);
-  checkAchievement('jackpot')}
+  meta.totalJackpots=(meta.totalJackpots||0)+1;saveMeta();checkAchievement('jackpot')}
 
  if(globalMult>1.0)log(multLog,'mult-line');
 
  // Combo master
  var comboB=G.perkFlags.comboMaster?G.streak:0;
- var berserkB=G.perkFlags.berserker?Math.floor((G.maxHp-G.hp)/4):0;
+ var berserkB=(G.perkFlags.berserker?Math.floor((G.maxHp-G.hp)/4):0)+(G.charClass&&G.charClass.id==='berserker'?Math.floor((G.maxHp-G.hp)/4)*2:0);
  var spenderB=G.perkFlags.bigSpender?Math.floor(G.gold/15):0;
  var lastM=G.perkFlags.lastStand&&G.hp<=5?2:1;
 
@@ -878,7 +882,12 @@ function resolveLine(R,mul,label,ctx){
  var gM=globalMult;
 
  R.forEach(function(sym,i){
-  var def=SYMS[sym];if(!def)return;
+  var defOrig=SYMS[sym];if(!defOrig)return;
+  // Apply upgrade multiplier
+  var upLvl=G.upgrades[sym]||0;
+  var upMult=1+upLvl*0.5;
+  var def={};for(var _k in defOrig)def[_k]=defOrig[_k];
+  if(upLvl>0){if(def.dmg)def.dmg=Math.ceil(def.dmg*upMult);if(def.heal)def.heal=Math.ceil(def.heal*upMult);if(def.gold)def.gold=Math.ceil(def.gold*upMult);if(def.shield)def.shield=Math.ceil(def.shield*upMult);if(def.dmgAll)def.dmgAll=Math.ceil(def.dmgAll*upMult)}
   var m=mults[i]*matchMul*jpMul*critMul*lastM*mul*dmgMultCharm;
   var dmgExtra=berserkB+spenderB+comboB+bellBonus+crystB;
   // Sword bonus from charm
@@ -890,6 +899,8 @@ function resolveLine(R,mul,label,ctx){
    if(def.adjGlobal&&def.adj)d+=def.adjBonus*(counts[sym]-1);
    else if(def.adj){if(i>0&&R[i-1]===def.adj)d+=def.adjBonus;if(i<R.length-1&&R[i+1]===def.adj)d+=def.adjBonus}
    d=(d+dmgExtra)*m;d=Math.floor(d*gM);
+   // Paladin holy damage: x2 vs undead
+   if(G.charClass&&G.charClass.holyDmg){var _tgtCheck=aliveEnemies()[0];if(_tgtCheck&&_tgtCheck.tags&&_tgtCheck.tags.includes('undead')){d=d*2;log('HOLY! x2 vs UNDEAD!','res-crit')}}
    if(def.special==='bone'){if(aliveEnemies().some(function(e){return e.tags&&e.tags.includes('undead')})){d+=4;log('BONE vs UNDEAD! +4!','res-crit')}}
    if(def.special==='snipe'){var ae=aliveEnemies();var tgt=ae.length>1?ae[ae.length-1]:ae[0];
     if(tgt){dealDmg(tgt,d);tDmg+=d;log(label+d+'->'+tgt.name+' (back)','res-dmg')}}
@@ -945,6 +956,8 @@ function resolveLine(R,mul,label,ctx){
 
  // Vamp Fang charm: heal 1 per 10 DMG dealt
  if(ctx&&ctx.vampHeal&&tDmg>=10){var vh=Math.floor(tDmg/10);G.hp=Math.min(G.maxHp,G.hp+vh);tHeal+=vh;log('VAMP FANG +'+vh+' HP','res-heal')}
+ // Vampire class: all attacks heal 1 HP
+ if(G.charClass&&G.charClass.healOnHit&&tDmg>0){G.hp=Math.min(G.maxHp,G.hp+1);tHeal+=1;log('DRAIN +1 HP','res-heal')}
 
  return{tDmg:tDmg,tHeal:tHeal,tGold:tGold,tShield:tShield,refreshR:refreshR,matchTier:matchTier};
 }
@@ -1153,7 +1166,8 @@ function showCharmChoice(){
  pn.innerHTML='<h2 style="color:#e060e0">LUCKY CHARM!</h2><p style="font-size:4px;color:#8080a0;margin-bottom:4px">CHOOSE A CHARM</p>'+
   choices.map(function(c,i){return'<div class="charm-card" onclick="pickCharm('+i+')"><div class="cname">'+c.name+'</div><div class="desc">'+c.desc+'</div></div>'}).join('')+
   '<button class="btn" onclick="skipCharm()" style="margin-top:4px">SKIP (+8 GP)</button>';
- window.pickCharm=function(i){G.charms.push(choices[i]);SFX.buy();log('CHARM: '+choices[i].name,'res-combo');updateUI();
+ window.pickCharm=function(i){G.charms.push(choices[i]);SFX.buy();log('CHARM: '+choices[i].name,'res-combo');
+  meta.maxCharmsEver=Math.max(meta.maxCharmsEver||0,G.charms.length);saveMeta();updateUI();
   if(G.charms.length>=5)checkAchievement('charm_master');
   showPerkOrShop()};
  window.skipCharm=function(){G.gold+=8;G.goldThisFloor+=8;SFX.gold();showPerkOrShop()};
@@ -1181,6 +1195,7 @@ function showCharmSacrifice(){
   selected.forEach(function(i){G.charms.splice(i,1)});
   var rare=RARE_CHARMS[Math.floor(Math.random()*RARE_CHARMS.length)];
   G.charms.push(rare);
+  meta.maxCharmsEver=Math.max(meta.maxCharmsEver||0,G.charms.length);saveMeta();
   SFX.relic();showBanner('RARE: '+rare.name);log('SACRIFICE! Got RARE charm: '+rare.name,'res-combo');
   updateUI();showShop();
  };
@@ -1204,8 +1219,9 @@ function showShop(){
 
  function render(){
   const cost=s=>{const t=SYMS[s]?.tier||0;const base=[8,18,28,40][t];return Math.floor(base*(1-disc))};
+  var _symCount=new Set(G.reels.flat()).size;
   pn.innerHTML=`<h2>SHOP F${G.floor}</h2>
-   <p style="font-size:5px;color:#8080a0;margin-bottom:3px">GP:<span style="color:#f0d040">${G.gold}</span> HP:${G.hp}/${G.maxHp} LV${G.level} REELS:${G.reels.length}</p>
+   <p style="font-size:5px;color:#8080a0;margin-bottom:3px">GP:<span style="color:#f0d040">${G.gold}</span> HP:${G.hp}/${G.maxHp} LV${G.level} REELS:${G.reels.length} SYMBOLS:${_symCount}/10</p>
    <h3>BUY SYMBOLS</h3>
    <div class="shop-grid">${items.map((s,i)=>{const c=cost(s),d=SYMS[s];
     return`<div class="shop-card${sold[i]?' sold':''}" onclick="buy(${i})">
@@ -1219,11 +1235,14 @@ function showShop(){
     <button class="btn" onclick="reroll()">REROLL 5G</button>
     <button class="btn" onclick="dupe()">DUPE 25G</button>
     <button class="btn btn-red" onclick="destroy()">DESTROY 0G</button>
+    <button class="btn" onclick="showCombine()" style="border-color:#f0a040;color:#f0d040">COMBINE</button>
     ${G.charms.length>=2?'<button class="btn" onclick="showCharmSacrifice()" style="border-color:#a040a0;color:#e060e0">SACRIFICE</button>':''}
    </div>
    <button class="btn btn-gold" onclick="nextFloor()" style="margin-top:6px">NEXT FLOOR >></button>`;
 
-  window.buy=i=>{if(sold[i])return;const s=items[i],c=cost(s);if(G.gold<c)return;G.gold-=c;sold[i]=true;
+  window.buy=i=>{if(sold[i])return;const s=items[i],c=cost(s);if(G.gold<c)return;
+   var _uc2=new Set(G.reels.flat()).size;if(_uc2>=10&&!G.reels.flat().includes(s)){log('MAX 10 SYMBOLS! Remove one first.','res-info');return}
+   G.gold-=c;sold[i]=true;
    G.reels[Math.floor(Math.random()*G.reels.length)].push(s);SFX.buy();render()};
   document.getElementById('rmg')?.addEventListener('click',ev=>{
    const c=ev.target.closest('.remove-card');if(!c)return;const s=c.dataset.sym;if(!s||G.gold<5)return;
