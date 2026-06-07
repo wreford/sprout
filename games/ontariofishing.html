@@ -34,8 +34,8 @@ html{scroll-behavior:smooth}
 
 /* Tab content */
 .tab-content{flex:1;position:relative;overflow:hidden}
-.tab-frame{position:absolute;top:0;left:0;width:100%;height:100%;border:none;display:none;background:var(--bg2)}
-.tab-frame.active{display:block}
+.tab-frame{position:absolute;top:0;left:0;width:100%;height:100%;border:none;display:none;background:var(--bg2);opacity:0}
+.tab-frame.active{display:block;opacity:1}
 
 /* Bottom tabs */
 .bottom-tabs{display:flex;background:rgba(8,14,8,.85);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-top:1px solid rgba(42,138,58,.2);flex-shrink:0;padding-bottom:env(safe-area-inset-bottom);position:relative}
@@ -52,6 +52,7 @@ html{scroll-behavior:smooth}
 .hs-scroll{width:100%;height:100%;overflow-y:auto;-webkit-overflow-scrolling:touch;position:relative;scroll-behavior:smooth}
 .scroll-shadow{position:sticky;top:0;left:0;right:0;height:12px;background:linear-gradient(180deg,rgba(8,14,8,.6) 0%,transparent 100%);z-index:10;pointer-events:none;margin-bottom:-12px}
 .hs-pad{padding:18px 16px 28px}
+.install-visible .hs-pad{padding-bottom:180px}
 
 /* Hero card */
 .hs-hero{background:linear-gradient(135deg,#1a3a1a 0%,#0a200a 50%,#142814 100%);border:1px solid var(--border);border-radius:16px;padding:22px 18px;margin-bottom:18px;position:relative;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.3)}
@@ -761,6 +762,7 @@ function renderHotspots(){
       const best=s.catches.reduce((b,c)=>{const w=(c.weightLbs||0)+(c.weightOz||0)/16;return w>b.w?{w,sp:c.species}:b},{w:0,sp:''});
       const hasGPS=s.lat&&s.lng;
       const dist=hasGPS&&currentLat?getDistKm(currentLat,currentLng,s.lat,s.lng):null;
+      var rankClass=i===0?'gold':i===1?'silver':i===2?'bronze':'default';
       h+=`<div class="spot"><div class="spot-top"><div class="spot-info">
         <div class="spot-name">${s.name}</div>
         <div class="spot-meta">
@@ -768,7 +770,7 @@ function renderHotspots(){
           <span class="meta-item">${s.totalWeight.toFixed(1)} lbs</span>
           ${dist!==null?'<span class="meta-item"><i data-lucide="compass"></i> '+dist.toFixed(1)+'km</span>':''}
         </div>
-        </div><div class="spot-rank"><i data-lucide="map-pin"></i></div></div>`;
+        </div><div class="spot-rank ${rankClass}">${i<3?'<i data-lucide="'+(i===0?'crown':i===1?'medal':'award')+'"></i>':'<span>'+(i+1)+'</span>'}</div></div>`;
       if(topSp.length)h+=`<div class="spot-species-bar">${topSp.map(([sp,n])=>`<span class="sp-chip">${sp} (${n})</span>`).join('')}</div>`;
       if(best.w>0)h+=`<div class="spot-best"><i data-lucide="trophy"></i> Best: ${best.w.toFixed(1)} lb ${best.sp}</div>`;
       h+=`<div class="spot-bottom">`;
@@ -785,19 +787,34 @@ function renderHotspots(){
     for(const k of Object.keys(caughtSpeciesMap)){if(k===sp||k.includes(sp)||sp.includes(k))return true}
     return false;
   }).length;
+  // Divider before fish collection
+  h+='<div class="section-divider"></div>';
+
+  var collPct=ALL_SPECIES.length>0?Math.round(caughtCount/ALL_SPECIES.length*100):0;
   h+=`<div class="section-hdr"><h3>FISH COLLECTION</h3><span class="count">${caughtCount}/${ALL_SPECIES.length} Species Discovered</span></div>`;
+  h+=`<div class="collection-progress-wrap"><div class="collection-progress-fill" style="width:${collPct}%"></div></div>`;
+
+  // Sort: caught species first, locked at the bottom
+  var speciesSorted=ALL_SPECIES.slice().sort(function(a,b){
+    var aC=0,bC=0;
+    for(var k in caughtSpeciesMap){if(k===a||k.includes(a)||a.includes(k))aC+=caughtSpeciesMap[k]}
+    for(var k2 in caughtSpeciesMap){if(k2===b||k2.includes(b)||b.includes(k2))bC+=caughtSpeciesMap[k2]}
+    if(aC>0&&bC===0)return -1;
+    if(bC>0&&aC===0)return 1;
+    return 0;
+  });
+
   h+=`<div class="collection-grid">`;
-  ALL_SPECIES.forEach(sp=>{
-    // Match species - check exact or partial
-    let count=0;
-    for(const [k,v] of Object.entries(caughtSpeciesMap)){if(k===sp||k.includes(sp)||sp.includes(k))count+=v}
-    const isCaught=count>0;
-    const initials=sp.split(/[\s\/]/).map(w=>w[0]).join('').slice(0,2).toUpperCase();
-    h+=`<div class="coll-item ${isCaught?'caught':'locked'}">
-      <div class="ci-initials">${initials}<div class="ci-badge"><i data-lucide="${isCaught?'check':'lock'}"></i></div></div>
-      <div class="ci-name">${sp}</div>
-      <div class="ci-count">${isCaught?count+' caught':'---'}</div>
-    </div>`;
+  speciesSorted.forEach(function(sp){
+    var count=0;
+    for(var k in caughtSpeciesMap){if(k===sp||k.includes(sp)||sp.includes(k))count+=caughtSpeciesMap[k]}
+    var isCaught=count>0;
+    var initials=sp.split(/[\s\/]/).map(function(w){return w[0]}).join('').slice(0,2).toUpperCase();
+    h+='<div class="coll-item '+(isCaught?'caught':'locked')+'">'
+      +'<div class="ci-initials">'+initials+'<div class="ci-badge"><i data-lucide="'+(isCaught?'check':'lock')+'"></i></div></div>'
+      +'<div class="ci-name">'+sp+'</div>'
+      +'<div class="ci-count">'+(isCaught?count+' caught':'---')+'</div>'
+      +'</div>';
   });
   h+=`</div>`;
 
@@ -817,6 +834,36 @@ function renderHotspots(){
 
   // Create Lucide icons in dynamic content
   lucide.createIcons();
+
+  // Badge tooltip on click (item 12)
+  var tooltip=document.querySelector('.badge-tooltip');
+  if(!tooltip){tooltip=document.createElement('div');tooltip.className='badge-tooltip';document.body.appendChild(tooltip)}
+  document.querySelectorAll('.badge').forEach(function(b){
+    b.addEventListener('click',function(e){
+      e.stopPropagation();
+      var tip=b.getAttribute('data-tip');
+      if(!tip)return;
+      var parts=tip.split('\n');
+      tooltip.innerHTML='<div style="font-weight:700;color:var(--gold);margin-bottom:3px">'+parts[0]+'</div>'
+        +'<div style="font-size:11px;color:var(--text2);margin-bottom:3px">'+parts[1]+'</div>'
+        +'<div style="font-size:11px;color:var(--gold);font-weight:600">'+parts[2]+'</div>';
+      var rect=b.getBoundingClientRect();
+      tooltip.style.left=Math.max(8,Math.min(window.innerWidth-210,rect.left-40))+'px';
+      tooltip.style.top=(rect.bottom+8)+'px';
+      tooltip.classList.add('visible');
+      setTimeout(function(){tooltip.classList.remove('visible')},2500);
+    });
+  });
+  document.addEventListener('click',function(){if(tooltip)tooltip.classList.remove('visible')});
+
+  // Count-up animation for hero stats (item 17)
+  document.querySelectorAll('.mini-stat .num').forEach(function(el){
+    var target=parseInt(el.textContent)||0;
+    if(target<=0)return;
+    var cur=0;var step=Math.max(1,Math.floor(target/20));
+    el.textContent='0';
+    var iv=setInterval(function(){cur+=step;if(cur>=target){cur=target;clearInterval(iv)}el.textContent=cur},40);
+  });
 
   // Bind wake lock
   const wl=document.getElementById('wlToggle');
@@ -845,7 +892,15 @@ async function fetchWeather(){
     const dirs=['N','NE','E','SE','S','SW','W','NW'];
     const wd=dirs[Math.round(c.wind_direction_10m/45)%8];
     const wIcon=weatherIconName(c.weather_code);
-    card.innerHTML=`<div class="weather-top">
+    var solNow=getSolunar(new Date());
+    var forecast=getFishingForecast(c.weather_code,c.wind_speed_10m,solNow.feeding);
+    card.classList.remove('shimmer');
+    card.innerHTML=`<div class="forecast-banner" style="background:rgba(0,0,0,.25);border:1px solid ${forecast.color}30">
+      <div class="forecast-rating" style="color:${forecast.color}">FISHING FORECAST: ${forecast.rating}</div>
+      <div class="forecast-desc" style="color:${forecast.color}">${forecast.desc}</div>
+      <div class="forecast-bar-wrap"><div class="forecast-bar-fill" style="width:${forecast.score}%;background:${forecast.color}"></div></div>
+    </div>
+    <div class="weather-top">
       <div class="weather-main">
         <div class="weather-icon"><i data-lucide="${wIcon}"></i></div>
         <div><div class="weather-temp">${Math.round(c.temperature_2m)}°F</div><div class="weather-desc">${desc}</div></div>
@@ -927,6 +982,7 @@ function showInstallBanner(){
     installBtn.onclick=function(){dismissInstall()};
   }
   installBanner.style.display='block';
+  document.querySelector('.app').classList.add('install-visible');
   try{lucide.createIcons({nodes:[installBanner]})}catch(e){}
 }
 
@@ -942,6 +998,7 @@ function doInstall(){
 
 function dismissInstall(){
   installBanner.style.display='none';
+  document.querySelector('.app').classList.remove('install-visible');
   localStorage.setItem('ontfish_install_dismissed',Date.now().toString());
 }
 
