@@ -1,0 +1,1303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<title>Mini Golf 3D</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;touch-action:none;user-select:none;-webkit-user-select:none;}
+canvas{display:block;width:100%;height:100%;}
+#ui{position:absolute;top:0;left:0;width:100%;pointer-events:none;z-index:10;}
+#topbar{display:flex;justify-content:space-between;align-items:center;padding:8px 16px;background:rgba(0,0,0,0.5);color:#fff;font-size:14px;}
+#topbar a{color:#8f8;text-decoration:none;pointer-events:auto;font-size:13px;}
+.info-left,.info-center,.info-right{display:flex;flex-direction:column;align-items:center;}
+.info-left{align-items:flex-start;}
+.info-right{align-items:flex-end;}
+.label{font-size:10px;opacity:0.7;text-transform:uppercase;letter-spacing:1px;}
+.value{font-size:20px;font-weight:bold;}
+#powerBarWrap{position:absolute;right:16px;top:50%;transform:translateY(-50%);width:20px;height:200px;background:rgba(0,0,0,0.4);border-radius:10px;border:2px solid rgba(255,255,255,0.3);overflow:hidden;display:none;}
+#powerBar{position:absolute;bottom:0;width:100%;background:linear-gradient(to top,#4f4,#ff0,#f44);border-radius:0 0 8px 8px;transition:none;}
+#announcement{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:36px;font-weight:bold;color:#fff;text-shadow:0 2px 8px rgba(0,0,0,0.8);opacity:0;transition:opacity 0.3s;pointer-events:none;}
+#nextHoleBtn{position:absolute;bottom:80px;left:50%;transform:translateX(-50%);padding:16px 40px;background:#4a4;color:#fff;border:none;border-radius:12px;font-size:18px;font-weight:bold;cursor:pointer;pointer-events:auto;display:none;box-shadow:0 4px 12px rgba(0,0,0,0.4);}
+#startScreen,#endScreen{position:absolute;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,40,0,0.92);color:#fff;z-index:20;pointer-events:auto;}
+#startScreen h1,#endScreen h1{font-size:32px;margin-bottom:8px;color:#8f8;}
+#startScreen p,#endScreen p{font-size:14px;opacity:0.8;margin-bottom:24px;text-align:center;padding:0 20px;}
+.bigBtn{padding:16px 48px;background:#4a4;color:#fff;border:none;border-radius:12px;font-size:20px;font-weight:bold;cursor:pointer;margin:8px;box-shadow:0 4px 12px rgba(0,0,0,0.4);}
+.bigBtn:active{background:#383;}
+#scorecard{width:90%;max-width:360px;margin:16px 0;font-size:14px;}
+#scorecard table{width:100%;border-collapse:collapse;}
+#scorecard th,#scorecard td{padding:6px 4px;text-align:center;border-bottom:1px solid rgba(255,255,255,0.2);}
+#scorecard th{font-size:11px;opacity:0.7;text-transform:uppercase;}
+.under-par{color:#4f4;}
+.over-par{color:#f66;}
+.at-par{color:#ff0;}
+#endScreen{display:none;}
+#aimGuide{position:absolute;pointer-events:none;display:none;}
+#helpText{position:absolute;bottom:24px;left:50%;transform:translateX(-50%);color:rgba(255,255,255,0.6);font-size:13px;text-align:center;pointer-events:none;}
+</style>
+</head>
+<body>
+
+<div id="ui">
+  <div id="topbar">
+    <div class="info-left">
+      <a href="../index.html">Back</a>
+      <div class="label">Hole</div>
+      <div class="value" id="holeNum">1 / 9</div>
+    </div>
+    <div class="info-center">
+      <div class="label">Par</div>
+      <div class="value" id="parVal">2</div>
+    </div>
+    <div class="info-right">
+      <div class="label">Strokes</div>
+      <div class="value" id="strokeVal">0</div>
+      <div class="label" style="margin-top:2px;">Total: <span id="totalVal">0</span></div>
+    </div>
+  </div>
+  <div id="powerBarWrap"><div id="powerBar"></div></div>
+  <div id="announcement"></div>
+  <button id="nextHoleBtn">Next Hole</button>
+  <div id="helpText">Drag from the ball to aim and shoot</div>
+</div>
+
+<div id="startScreen">
+  <h1>Mini Golf 3D</h1>
+  <p>9 holes of fun! Drag from the ball to aim, pull back for power, release to shoot.</p>
+  <button class="bigBtn" id="startBtn">Play</button>
+</div>
+
+<div id="endScreen">
+  <h1>Game Over!</h1>
+  <div id="scorecard"></div>
+  <p id="finalScore"></p>
+  <button class="bigBtn" id="replayBtn">Play Again</button>
+  <a href="../index.html" style="color:#8f8;margin-top:12px;font-size:14px;">Back to Games</a>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+// ====== AUDIO ======
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+let audioCtx;
+function ensureAudio(){if(!audioCtx)audioCtx=new AudioCtx();}
+
+function playHit(power){
+  ensureAudio();
+  const o=audioCtx.createOscillator(),g=audioCtx.createGain();
+  o.type='triangle';o.frequency.setValueAtTime(800+power*400,audioCtx.currentTime);
+  o.frequency.exponentialRampToValueAtTime(200,audioCtx.currentTime+0.15);
+  g.gain.setValueAtTime(0.15+power*0.15,audioCtx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+0.15);
+  o.connect(g);g.connect(audioCtx.destination);
+  o.start();o.stop(audioCtx.currentTime+0.15);
+}
+
+function playRoll(){
+  ensureAudio();
+  const bufSize=audioCtx.sampleRate*0.05;
+  const buf=audioCtx.createBuffer(1,bufSize,audioCtx.sampleRate);
+  const data=buf.getChannelData(0);
+  for(let i=0;i<bufSize;i++)data[i]=(Math.random()*2-1)*0.03;
+  const src=audioCtx.createBufferSource();src.buffer=buf;
+  const g=audioCtx.createGain();g.gain.setValueAtTime(0.05,audioCtx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+0.05);
+  src.connect(g);g.connect(audioCtx.destination);src.start();
+}
+
+function playSplash(){
+  ensureAudio();
+  const bufSize=audioCtx.sampleRate*0.4;
+  const buf=audioCtx.createBuffer(1,bufSize,audioCtx.sampleRate);
+  const data=buf.getChannelData(0);
+  for(let i=0;i<bufSize;i++){
+    const t=i/audioCtx.sampleRate;
+    data[i]=(Math.random()*2-1)*Math.exp(-t*8)*0.3;
+  }
+  const src=audioCtx.createBufferSource();src.buffer=buf;
+  src.connect(audioCtx.destination);src.start();
+}
+
+function playSink(){
+  ensureAudio();
+  const notes=[523,659,784,1047];
+  notes.forEach((f,i)=>{
+    const o=audioCtx.createOscillator(),g=audioCtx.createGain();
+    o.type='sine';o.frequency.value=f;
+    const t=audioCtx.currentTime+i*0.12;
+    g.gain.setValueAtTime(0,t);
+    g.gain.linearRampToValueAtTime(0.15,t+0.02);
+    g.gain.exponentialRampToValueAtTime(0.001,t+0.3);
+    o.connect(g);g.connect(audioCtx.destination);
+    o.start(t);o.stop(t+0.3);
+  });
+}
+
+function playHoleInOne(){
+  ensureAudio();
+  const notes=[523,659,784,880,1047,1319,1568];
+  notes.forEach((f,i)=>{
+    const o=audioCtx.createOscillator(),g=audioCtx.createGain();
+    o.type='sine';o.frequency.value=f;
+    const t=audioCtx.currentTime+i*0.1;
+    g.gain.setValueAtTime(0,t);
+    g.gain.linearRampToValueAtTime(0.2,t+0.02);
+    g.gain.exponentialRampToValueAtTime(0.001,t+0.5);
+    o.connect(g);g.connect(audioCtx.destination);
+    o.start(t);o.stop(t+0.5);
+  });
+}
+
+function playBounce(){
+  ensureAudio();
+  const o=audioCtx.createOscillator(),g=audioCtx.createGain();
+  o.type='square';o.frequency.setValueAtTime(300,audioCtx.currentTime);
+  o.frequency.exponentialRampToValueAtTime(100,audioCtx.currentTime+0.06);
+  g.gain.setValueAtTime(0.08,audioCtx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+0.06);
+  o.connect(g);g.connect(audioCtx.destination);
+  o.start();o.stop(audioCtx.currentTime+0.06);
+}
+
+// ====== COURSE DATA ======
+const courses=[
+  // Hole 1: Straight shot, flat. Par 2.
+  {
+    par:2, tee:[0,-8], hole:[0,8],
+    width:4, length:20,
+    walls:[[-2,-10,-2,10],[2,-10,2,10],[-2,-10,2,-10],[-2,10,2,10]],
+    bounds:[[-2,-10],[2,-10],[2,10],[-2,10]],
+    obstacles:[],water:[],ramps:[]
+  },
+  // Hole 2: Slight curve right. Par 2.
+  {
+    par:2, tee:[0,-8], hole:[5,8],
+    walls:[[-2,-10,-2,4],[-2,4,3,10],[3,10,7,10],[7,10,7,4],[7,4,2,-2],[2,-2,2,-10],[-2,-10,2,-10],[7,10,3,10]],
+    bounds:[[-2,-10],[2,-10],[2,-2],[7,4],[7,10],[3,10],[-2,4],[-2,-10]],
+    obstacles:[],water:[],ramps:[]
+  },
+  // Hole 3: L-shaped with wall. Par 3.
+  {
+    par:3, tee:[0,-8], hole:[8,8],
+    walls:[[-2,-10,-2,2],[-2,2,4,2],[4,2,4,10],[4,10,10,10],[10,10,10,4],[10,4,2,4],[2,4,2,-10],[-2,-10,2,-10],[6,2,6,6]],
+    bounds:[[-2,-10],[2,-10],[2,4],[10,4],[10,10],[4,10],[4,2],[-2,2],[-2,-10]],
+    obstacles:[],water:[],ramps:[],
+    innerWalls:[[6,2,6,6]]
+  },
+  // Hole 4: Ramp up to elevated green. Par 3.
+  {
+    par:3, tee:[0,-8], hole:[0,8],
+    walls:[[-3,-10,-3,10],[3,-10,3,10],[-3,-10,3,-10],[-3,10,3,10]],
+    bounds:[[-3,-10],[3,-10],[3,10],[-3,10]],
+    obstacles:[],water:[],
+    ramps:[{pos:[0,1],size:[6,6],elevation:1.5,dir:'z'}]
+  },
+  // Hole 5: Windmill obstacle. Par 3.
+  {
+    par:3, tee:[0,-10], hole:[0,10],
+    walls:[[-3,-12,-3,12],[3,-12,3,12],[-3,-12,3,-12],[-3,12,3,12]],
+    bounds:[[-3,-12],[3,-12],[3,12],[-3,12]],
+    obstacles:[{type:'windmill',pos:[0,0],radius:2.5}],
+    water:[],ramps:[]
+  },
+  // Hole 6: Water hazard. Par 3.
+  {
+    par:3, tee:[0,-10], hole:[0,10],
+    walls:[[-3,-12,-3,12],[3,-12,3,12],[-3,-12,3,-12],[-3,12,3,12]],
+    bounds:[[-3,-12],[3,-12],[3,12],[-3,12]],
+    obstacles:[],
+    water:[{pos:[-2,-2],size:[4,4]}],
+    ramps:[],
+    safeIsland:{pos:[0,0],radius:0.8}
+  },
+  // Hole 7: Narrow bridge between two areas. Par 4.
+  {
+    par:4, tee:[0,-10], hole:[0,10],
+    walls:[[-4,-12,-4,-2],[-4,-2,-0.7,-2],[-0.7,-2,-0.7,2],[-0.7,2,-4,2],[-4,2,-4,12],
+           [4,-12,4,-2],[4,-2,0.7,-2],[0.7,-2,0.7,2],[0.7,2,4,2],[4,2,4,12],
+           [-4,-12,4,-12],[-4,12,4,12]],
+    bounds:[[-4,-12],[4,-12],[4,-2],[0.7,-2],[0.7,2],[4,2],[4,12],[-4,12],[-4,2],[-0.7,2],[-0.7,-2],[-4,-2],[-4,-12]],
+    obstacles:[],
+    water:[{pos:[-4,-2],size:[3.3,4]},{pos:[0.7,-2],size:[3.3,4]}],
+    ramps:[]
+  },
+  // Hole 8: Loop-around with multiple walls. Par 4.
+  {
+    par:4, tee:[-4,-8], hole:[4,8],
+    walls:[[-6,-10,-6,10],[6,-10,6,10],[-6,-10,6,-10],[-6,10,6,10],
+           [-2,-10,-2,4],[2,-4,2,10]],
+    bounds:[[-6,-10],[6,-10],[6,10],[-6,10]],
+    obstacles:[],water:[],ramps:[],
+    innerWalls:[[-2,-10,-2,4],[2,-4,2,10]]
+  },
+  // Hole 9: Multi-level with ramp, walls, and a curve. Par 5.
+  {
+    par:5, tee:[0,-12], hole:[0,12],
+    walls:[[-4,-14,-4,0],[-4,0,-6,0],[-6,0,-6,8],[-6,8,-4,10],[-4,10,-4,14],
+           [4,-14,4,0],[4,0,6,0],[6,0,6,8],[6,8,4,10],[4,10,4,14],
+           [-4,-14,4,-14],[-4,14,4,14],
+           [-1,-4,-1,2],[1,4,1,8]],
+    bounds:[[-4,-14],[4,-14],[4,0],[6,0],[6,8],[4,10],[4,14],[-4,14],[-4,10],[-6,8],[-6,0],[-4,0],[-4,-14]],
+    obstacles:[],water:[],
+    ramps:[{pos:[0,6],size:[8,3],elevation:1.0,dir:'z'}],
+    innerWalls:[[-1,-4,-1,2],[1,4,1,8]]
+  }
+];
+
+// ====== THREE.JS SETUP ======
+let scene,camera,renderer,clock;
+let ballMesh,ballBody,holeMesh,flagGroup,arrowLine;
+let courseMeshes=[],obstacleMeshes=[],waterMeshes=[];
+let windmillArm=null,windmillSpeed=1.5;
+
+const BALL_RADIUS=0.15;
+const HOLE_RADIUS=0.3;
+const WALL_HEIGHT=0.5;
+const FRICTION=0.985;
+const BOUNCE_LOSS=0.65;
+const GRAVITY=15;
+const STOP_THRESHOLD=0.03;
+const MAX_POWER=25;
+const RAMP_FACTOR=0.7;
+
+let ballVel={x:0,y:0,z:0};
+let ballY=BALL_RADIUS;
+let ballOnGround=true;
+let currentHole=0;
+let strokes=0;
+let totalScore=0;
+let scores=[];
+let gameState='start'; // start, aiming, rolling, sunk, finished
+let isDragging=false;
+let dragStart={x:0,y:0};
+let dragCurrent={x:0,y:0};
+let aimPower=0;
+let aimAngle=0;
+let cameraAngle=Math.PI*0.3;
+let cameraPitch=Math.PI*0.35;
+let cameraDistance=18;
+let cameraTarget={x:0,y:0,z:0};
+let prevTouchDist=0;
+let isCameraRotating=false;
+let rollSoundTimer=0;
+let sinkAnimating=false;
+let courseElevation={}; // ramp elevation map
+
+// DOM
+const holeNumEl=document.getElementById('holeNum');
+const parValEl=document.getElementById('parVal');
+const strokeValEl=document.getElementById('strokeVal');
+const totalValEl=document.getElementById('totalVal');
+const powerBarWrap=document.getElementById('powerBarWrap');
+const powerBar=document.getElementById('powerBar');
+const announcementEl=document.getElementById('announcement');
+const nextHoleBtn=document.getElementById('nextHoleBtn');
+const startScreen=document.getElementById('startScreen');
+const endScreen=document.getElementById('endScreen');
+const helpText=document.getElementById('helpText');
+
+function init(){
+  scene=new THREE.Scene();
+  scene.background=new THREE.Color(0x87CEEB);
+  scene.fog=new THREE.Fog(0x87CEEB,50,120);
+
+  camera=new THREE.PerspectiveCamera(50,window.innerWidth/window.innerHeight,0.1,200);
+  renderer=new THREE.WebGLRenderer({antialias:true,alpha:false});
+  renderer.setSize(window.innerWidth,window.innerHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+  renderer.shadowMap.enabled=true;
+  renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+  document.body.insertBefore(renderer.domElement,document.getElementById('ui'));
+
+  clock=new THREE.Clock();
+
+  // Lights
+  const ambient=new THREE.AmbientLight(0xffffff,0.5);
+  scene.add(ambient);
+  const dirLight=new THREE.DirectionalLight(0xffffff,0.8);
+  dirLight.position.set(10,20,10);
+  dirLight.castShadow=true;
+  dirLight.shadow.mapSize.width=1024;
+  dirLight.shadow.mapSize.height=1024;
+  dirLight.shadow.camera.left=-20;dirLight.shadow.camera.right=20;
+  dirLight.shadow.camera.top=20;dirLight.shadow.camera.bottom=-20;
+  dirLight.shadow.camera.near=1;dirLight.shadow.camera.far=50;
+  scene.add(dirLight);
+
+  const hemiLight=new THREE.HemisphereLight(0x87CEEB,0x3a7d2a,0.3);
+  scene.add(hemiLight);
+
+  // Clouds
+  createClouds();
+
+  // Ground plane (beneath course)
+  const groundGeo=new THREE.PlaneGeometry(200,200);
+  const groundMat=new THREE.MeshLambertMaterial({color:0x2d5a1e});
+  const ground=new THREE.Mesh(groundGeo,groundMat);
+  ground.rotation.x=-Math.PI/2;
+  ground.position.y=-0.05;
+  ground.receiveShadow=true;
+  scene.add(ground);
+
+  // Ball
+  const ballGeo=new THREE.SphereGeometry(BALL_RADIUS,16,16);
+  const ballMat=new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.3,metalness:0.1});
+  ballMesh=new THREE.Mesh(ballGeo,ballMat);
+  ballMesh.castShadow=true;
+  scene.add(ballMesh);
+
+  // Arrow line for aiming
+  const arrowGeo=new THREE.BufferGeometry();
+  const arrowPositions=new Float32Array(6*3); // up to 6 points for dotted line effect
+  arrowGeo.setAttribute('position',new THREE.BufferAttribute(arrowPositions,3));
+  const arrowMat=new THREE.LineBasicMaterial({color:0xffffff,linewidth:2,transparent:true,opacity:0.8});
+  arrowLine=new THREE.Line(arrowGeo,arrowMat);
+  arrowLine.visible=false;
+  scene.add(arrowLine);
+
+  window.addEventListener('resize',onResize);
+  setupInput();
+
+  document.getElementById('startBtn').addEventListener('click',startGame);
+  document.getElementById('replayBtn').addEventListener('click',()=>{endScreen.style.display='none';startGame();});
+  nextHoleBtn.addEventListener('click',goNextHole);
+}
+
+function createClouds(){
+  const cloudMat=new THREE.MeshLambertMaterial({color:0xffffff,transparent:true,opacity:0.8});
+  for(let i=0;i<8;i++){
+    const cloud=new THREE.Group();
+    const numPuffs=3+Math.floor(Math.random()*3);
+    for(let j=0;j<numPuffs;j++){
+      const puffGeo=new THREE.SphereGeometry(1+Math.random()*1.5,8,8);
+      const puff=new THREE.Mesh(puffGeo,cloudMat);
+      puff.position.set(j*1.5-numPuffs*0.75,Math.random()*0.5,Math.random()*0.5);
+      puff.scale.y=0.5+Math.random()*0.3;
+      cloud.add(puff);
+    }
+    cloud.position.set(-40+Math.random()*80,20+Math.random()*10,-30+Math.random()*60);
+    cloud.scale.set(1.5,1.5,1.5);
+    scene.add(cloud);
+  }
+}
+
+function clearCourse(){
+  courseMeshes.forEach(m=>scene.remove(m));
+  courseMeshes=[];
+  obstacleMeshes.forEach(m=>scene.remove(m));
+  obstacleMeshes=[];
+  waterMeshes.forEach(m=>scene.remove(m));
+  waterMeshes=[];
+  if(holeMesh){scene.remove(holeMesh);holeMesh=null;}
+  if(flagGroup){scene.remove(flagGroup);flagGroup=null;}
+  windmillArm=null;
+}
+
+function buildCourse(holeIdx){
+  clearCourse();
+  const h=courses[holeIdx];
+
+  // Build course surface from bounds
+  const shape=new THREE.Shape();
+  const b=h.bounds;
+  shape.moveTo(b[0][0],b[0][1]);
+  for(let i=1;i<b.length;i++) shape.lineTo(b[i][0],b[i][1]);
+  shape.lineTo(b[0][0],b[0][1]);
+
+  const surfaceGeo=new THREE.ShapeGeometry(shape);
+  const surfaceMat=new THREE.MeshLambertMaterial({color:0x4CAF50});
+  const surface=new THREE.Mesh(surfaceGeo,surfaceMat);
+  surface.rotation.x=-Math.PI/2;
+  surface.position.y=0.01;
+  surface.receiveShadow=true;
+  courseMeshes.push(surface);
+  scene.add(surface);
+
+  // Course border/edge
+  const borderShape=new THREE.Shape();
+  borderShape.moveTo(b[0][0]-0.15,b[0][1]-0.15);
+  // Simple wider shape for border
+  const edgeGeo=new THREE.ShapeGeometry(shape);
+  const edgeMat=new THREE.MeshLambertMaterial({color:0x388E3C});
+  const edge=new THREE.Mesh(edgeGeo,edgeMat);
+  edge.rotation.x=-Math.PI/2;
+  edge.position.y=0.005;
+  edge.scale.set(1.04,1.04,1.04);
+  edge.receiveShadow=true;
+  courseMeshes.push(edge);
+  scene.add(edge);
+
+  // Walls
+  const allWalls=[...h.walls];
+  if(h.innerWalls) allWalls.push(...h.innerWalls);
+
+  allWalls.forEach(w=>{
+    const x1=w[0],z1=w[1],x2=w[2],z2=w[3];
+    const dx=x2-x1,dz=z2-z1;
+    const len=Math.sqrt(dx*dx+dz*dz);
+    const ang=Math.atan2(dx,dz);
+    const wallGeo=new THREE.BoxGeometry(0.2,WALL_HEIGHT,len);
+    const wallMat=new THREE.MeshLambertMaterial({color:0x8D6E63});
+    const wallMesh=new THREE.Mesh(wallGeo,wallMat);
+    wallMesh.position.set((x1+x2)/2,WALL_HEIGHT/2,(z1+z2)/2);
+    wallMesh.rotation.y=ang;
+    wallMesh.castShadow=true;
+    wallMesh.receiveShadow=true;
+    courseMeshes.push(wallMesh);
+    scene.add(wallMesh);
+  });
+
+  // Hole (cup)
+  const holeGeo=new THREE.CylinderGeometry(HOLE_RADIUS,HOLE_RADIUS,0.1,16);
+  const holeMat=new THREE.MeshLambertMaterial({color:0x111111});
+  holeMesh=new THREE.Mesh(holeGeo,holeMat);
+  holeMesh.position.set(h.hole[0],0.005,h.hole[1]);
+  scene.add(holeMesh);
+
+  // White ring around hole
+  const ringGeo=new THREE.RingGeometry(HOLE_RADIUS,HOLE_RADIUS+0.08,16);
+  const ringMat=new THREE.MeshLambertMaterial({color:0xffffff,side:THREE.DoubleSide});
+  const ring=new THREE.Mesh(ringGeo,ringMat);
+  ring.rotation.x=-Math.PI/2;
+  ring.position.set(h.hole[0],0.02,h.hole[1]);
+  courseMeshes.push(ring);
+  scene.add(ring);
+
+  // Flag
+  flagGroup=new THREE.Group();
+  const poleGeo=new THREE.CylinderGeometry(0.03,0.03,2,8);
+  const poleMat=new THREE.MeshLambertMaterial({color:0xcccccc});
+  const pole=new THREE.Mesh(poleGeo,poleMat);
+  pole.position.y=1;
+  pole.castShadow=true;
+  flagGroup.add(pole);
+
+  const flagShape=new THREE.Shape();
+  flagShape.moveTo(0,0);flagShape.lineTo(0.6,-0.15);flagShape.lineTo(0,-.3);
+  const flagGeo=new THREE.ShapeGeometry(flagShape);
+  const flagMat=new THREE.MeshLambertMaterial({color:0xf44336,side:THREE.DoubleSide});
+  const flag=new THREE.Mesh(flagGeo,flagMat);
+  flag.position.set(0.03,1.7,0);
+  flagGroup.add(flag);
+
+  flagGroup.position.set(h.hole[0],0,h.hole[1]);
+  scene.add(flagGroup);
+
+  // Water
+  if(h.water){
+    h.water.forEach(w=>{
+      const wGeo=new THREE.PlaneGeometry(w.size[0],w.size[1]);
+      const wMat=new THREE.MeshLambertMaterial({color:0x2196F3,transparent:true,opacity:0.7});
+      const wMesh=new THREE.Mesh(wGeo,wMat);
+      wMesh.rotation.x=-Math.PI/2;
+      wMesh.position.set(w.pos[0]+w.size[0]/2,0.02,w.pos[1]+w.size[1]/2);
+      waterMeshes.push(wMesh);
+      scene.add(wMesh);
+    });
+  }
+
+  // Ramps
+  if(h.ramps){
+    h.ramps.forEach(r=>{
+      const rGeo=new THREE.BoxGeometry(r.size[0],0.15,r.size[1]);
+      const rMat=new THREE.MeshLambertMaterial({color:0x66BB6A});
+      const rMesh=new THREE.Mesh(rGeo,rMat);
+      rMesh.position.set(r.pos[0],r.elevation/2,r.pos[1]);
+      // Tilt the ramp
+      if(r.dir==='z'){
+        rMesh.rotation.x=Math.atan2(r.elevation,r.size[1]);
+      }
+      rMesh.receiveShadow=true;
+      rMesh.castShadow=true;
+      courseMeshes.push(rMesh);
+      scene.add(rMesh);
+
+      // Elevated surface after ramp
+      const platGeo=new THREE.BoxGeometry(r.size[0],r.elevation,4);
+      const platMat=new THREE.MeshLambertMaterial({color:0x4CAF50});
+      const plat=new THREE.Mesh(platGeo,platMat);
+      plat.position.set(r.pos[0],r.elevation/2,r.pos[1]+r.size[1]/2+2);
+      plat.receiveShadow=true;
+      courseMeshes.push(plat);
+      scene.add(plat);
+
+      // Green top
+      const topGeo=new THREE.PlaneGeometry(r.size[0],4);
+      const topMat=new THREE.MeshLambertMaterial({color:0x66BB6A});
+      const topMesh=new THREE.Mesh(topGeo,topMat);
+      topMesh.rotation.x=-Math.PI/2;
+      topMesh.position.set(r.pos[0],r.elevation+0.01,r.pos[1]+r.size[1]/2+2);
+      topMesh.receiveShadow=true;
+      courseMeshes.push(topMesh);
+      scene.add(topMesh);
+    });
+  }
+
+  // Obstacles
+  if(h.obstacles){
+    h.obstacles.forEach(o=>{
+      if(o.type==='windmill'){
+        // Base
+        const baseGeo=new THREE.CylinderGeometry(0.3,0.4,1.5,8);
+        const baseMat=new THREE.MeshLambertMaterial({color:0x795548});
+        const baseMesh=new THREE.Mesh(baseGeo,baseMat);
+        baseMesh.position.set(o.pos[0],0.75,o.pos[1]);
+        baseMesh.castShadow=true;
+        obstacleMeshes.push(baseMesh);
+        scene.add(baseMesh);
+
+        // Arm
+        const armGroup=new THREE.Group();
+        armGroup.position.set(o.pos[0],1.0,o.pos[1]);
+
+        const blade1Geo=new THREE.BoxGeometry(o.radius*2,0.08,0.35);
+        const bladeMat=new THREE.MeshLambertMaterial({color:0xF44336});
+        const blade1=new THREE.Mesh(blade1Geo,bladeMat);
+        blade1.castShadow=true;
+        armGroup.add(blade1);
+
+        const blade2Geo=new THREE.BoxGeometry(0.35,0.08,o.radius*2);
+        const blade2=new THREE.Mesh(blade2Geo,bladeMat);
+        blade2.castShadow=true;
+        armGroup.add(blade2);
+
+        // Hub
+        const hubGeo=new THREE.CylinderGeometry(0.15,0.15,0.2,8);
+        const hubMat=new THREE.MeshLambertMaterial({color:0x333333});
+        const hub=new THREE.Mesh(hubGeo,hubMat);
+        armGroup.add(hub);
+
+        obstacleMeshes.push(armGroup);
+        scene.add(armGroup);
+        windmillArm=armGroup;
+      }
+    });
+  }
+
+  // Tee marker
+  const teeGeo=new THREE.CylinderGeometry(0.3,0.3,0.05,16);
+  const teeMat=new THREE.MeshLambertMaterial({color:0xffffff,transparent:true,opacity:0.5});
+  const teeMesh=new THREE.Mesh(teeGeo,teeMat);
+  teeMesh.position.set(h.tee[0],0.02,h.tee[1]);
+  courseMeshes.push(teeMesh);
+  scene.add(teeMesh);
+}
+
+function startGame(){
+  startScreen.style.display='none';
+  endScreen.style.display='none';
+  currentHole=0;
+  totalScore=0;
+  scores=[];
+  totalValEl.textContent='0';
+  loadHole(0);
+}
+
+function loadHole(idx){
+  currentHole=idx;
+  strokes=0;
+  const h=courses[idx];
+  buildCourse(idx);
+
+  // Place ball
+  ballMesh.position.set(h.tee[0],BALL_RADIUS,h.tee[1]);
+  ballMesh.visible=true;
+  ballVel={x:0,y:0,z:0};
+  ballY=BALL_RADIUS;
+  sinkAnimating=false;
+
+  // Update UI
+  holeNumEl.textContent=(idx+1)+' / 9';
+  parValEl.textContent=h.par;
+  strokeValEl.textContent='0';
+  nextHoleBtn.style.display='none';
+  helpText.style.display='block';
+
+  // Camera position
+  const cx=(h.tee[0]+h.hole[0])/2;
+  const cz=(h.tee[1]+h.hole[1])/2;
+  cameraTarget={x:cx,y:0,z:cz};
+  cameraAngle=Math.PI*0.3;
+  cameraPitch=Math.PI*0.35;
+
+  // Compute good zoom
+  const dx=h.hole[0]-h.tee[0];
+  const dz=h.hole[1]-h.tee[1];
+  const dist=Math.sqrt(dx*dx+dz*dz);
+  cameraDistance=Math.max(12,dist*1.1);
+
+  gameState='aiming';
+}
+
+function goNextHole(){
+  if(currentHole<8){
+    loadHole(currentHole+1);
+  } else {
+    showEndScreen();
+  }
+}
+
+function showEndScreen(){
+  gameState='finished';
+  endScreen.style.display='flex';
+
+  let html='<table><tr><th>Hole</th><th>Par</th><th>Score</th><th>+/-</th></tr>';
+  let totalPar=0;
+  scores.forEach((s,i)=>{
+    const par=courses[i].par;
+    totalPar+=par;
+    const diff=s-par;
+    let cls=diff<0?'under-par':diff>0?'over-par':'at-par';
+    let diffStr=diff===0?'E':(diff>0?'+'+diff:''+diff);
+    html+='<tr><td>'+(i+1)+'</td><td>'+par+'</td><td>'+s+'</td><td class="'+cls+'">'+diffStr+'</td></tr>';
+  });
+  html+='<tr style="border-top:2px solid #fff"><td><b>Total</b></td><td><b>'+totalPar+'</b></td><td><b>'+totalScore+'</b></td>';
+  const totalDiff=totalScore-totalPar;
+  let tcls=totalDiff<0?'under-par':totalDiff>0?'over-par':'at-par';
+  let tdStr=totalDiff===0?'E':(totalDiff>0?'+'+totalDiff:''+totalDiff);
+  html+='<td class="'+tcls+'"><b>'+tdStr+'</b></td></tr></table>';
+
+  document.getElementById('scorecard').innerHTML=html;
+  document.getElementById('finalScore').textContent='Final Score: '+totalScore+' ('+tdStr+' to par)';
+}
+
+function showAnnouncement(text,duration){
+  announcementEl.textContent=text;
+  announcementEl.style.opacity='1';
+  setTimeout(()=>{announcementEl.style.opacity='0';},duration||2000);
+}
+
+// ====== INPUT ======
+function setupInput(){
+  const el=renderer.domElement;
+
+  el.addEventListener('touchstart',onTouchStart,{passive:false});
+  el.addEventListener('touchmove',onTouchMove,{passive:false});
+  el.addEventListener('touchend',onTouchEnd,{passive:false});
+
+  el.addEventListener('mousedown',onMouseDown);
+  el.addEventListener('mousemove',onMouseMove);
+  el.addEventListener('mouseup',onMouseUp);
+  el.addEventListener('wheel',onWheel,{passive:false});
+}
+
+function screenToWorld(sx,sy){
+  // Project screen coords to xz plane at y=ballMesh.position.y
+  const rect=renderer.domElement.getBoundingClientRect();
+  const nx=(sx/rect.width)*2-1;
+  const ny=-(sy/rect.height)*2+1;
+  const raycaster=new THREE.Raycaster();
+  raycaster.setFromCamera(new THREE.Vector2(nx,ny),camera);
+  const plane=new THREE.Plane(new THREE.Vector3(0,1,0),-ballMesh.position.y);
+  const target=new THREE.Vector3();
+  raycaster.ray.intersectPlane(plane,target);
+  return target;
+}
+
+function isBallTouch(sx,sy){
+  const rect=renderer.domElement.getBoundingClientRect();
+  const nx=(sx/rect.width)*2-1;
+  const ny=-(sy/rect.height)*2+1;
+  const raycaster=new THREE.Raycaster();
+  raycaster.setFromCamera(new THREE.Vector2(nx,ny),camera);
+  const hits=raycaster.intersectObject(ballMesh);
+  if(hits.length>0) return true;
+  // Also check proximity in screen space
+  const bp=ballMesh.position.clone().project(camera);
+  const bsx=(bp.x+1)/2*rect.width;
+  const bsy=(-bp.y+1)/2*rect.height;
+  const d=Math.sqrt((sx-bsx)**2+(sy-bsy)**2);
+  return d<50; // 50px tolerance
+}
+
+let touchId=null;
+let secondTouchId=null;
+
+function onTouchStart(e){
+  e.preventDefault();
+  if(gameState==='aiming' && e.touches.length===1){
+    const t=e.touches[0];
+    if(isBallTouch(t.clientX,t.clientY)){
+      isDragging=true;
+      touchId=t.identifier;
+      dragStart={x:t.clientX,y:t.clientY};
+      dragCurrent={x:t.clientX,y:t.clientY};
+      powerBarWrap.style.display='block';
+      helpText.style.display='none';
+      return;
+    }
+  }
+  // Camera rotation for 1 finger not on ball, or 2 fingers
+  if(e.touches.length===1 && !isDragging){
+    const t=e.touches[0];
+    isCameraRotating=true;
+    dragStart={x:t.clientX,y:t.clientY};
+  }
+  if(e.touches.length===2){
+    isCameraRotating=false;
+    const dx=e.touches[0].clientX-e.touches[1].clientX;
+    const dy=e.touches[0].clientY-e.touches[1].clientY;
+    prevTouchDist=Math.sqrt(dx*dx+dy*dy);
+  }
+}
+
+function onTouchMove(e){
+  e.preventDefault();
+  if(isDragging){
+    for(let i=0;i<e.touches.length;i++){
+      if(e.touches[i].identifier===touchId){
+        dragCurrent={x:e.touches[i].clientX,y:e.touches[i].clientY};
+        updateAim();
+        break;
+      }
+    }
+    return;
+  }
+  if(e.touches.length===2){
+    const dx=e.touches[0].clientX-e.touches[1].clientX;
+    const dy=e.touches[0].clientY-e.touches[1].clientY;
+    const dist=Math.sqrt(dx*dx+dy*dy);
+    if(prevTouchDist>0){
+      const scale=prevTouchDist/dist;
+      cameraDistance=Math.max(6,Math.min(40,cameraDistance*scale));
+    }
+    prevTouchDist=dist;
+    return;
+  }
+  if(isCameraRotating && e.touches.length===1){
+    const t=e.touches[0];
+    const dx=t.clientX-dragStart.x;
+    const dy=t.clientY-dragStart.y;
+    cameraAngle-=dx*0.01;
+    cameraPitch=Math.max(0.15,Math.min(Math.PI*0.45,cameraPitch+dy*0.005));
+    dragStart={x:t.clientX,y:t.clientY};
+  }
+}
+
+function onTouchEnd(e){
+  e.preventDefault();
+  if(isDragging){
+    let found=false;
+    for(let i=0;i<e.touches.length;i++){
+      if(e.touches[i].identifier===touchId){found=true;break;}
+    }
+    if(!found){
+      shoot();
+      isDragging=false;
+      touchId=null;
+    }
+    return;
+  }
+  isCameraRotating=false;
+  prevTouchDist=0;
+}
+
+function onMouseDown(e){
+  if(gameState==='aiming' && isBallTouch(e.clientX,e.clientY)){
+    isDragging=true;
+    dragStart={x:e.clientX,y:e.clientY};
+    dragCurrent={x:e.clientX,y:e.clientY};
+    powerBarWrap.style.display='block';
+    helpText.style.display='none';
+  } else if(gameState==='aiming' || gameState==='rolling'){
+    isCameraRotating=true;
+    dragStart={x:e.clientX,y:e.clientY};
+  }
+}
+
+function onMouseMove(e){
+  if(isDragging){
+    dragCurrent={x:e.clientX,y:e.clientY};
+    updateAim();
+  } else if(isCameraRotating){
+    const dx=e.clientX-dragStart.x;
+    const dy=e.clientY-dragStart.y;
+    cameraAngle-=dx*0.005;
+    cameraPitch=Math.max(0.15,Math.min(Math.PI*0.45,cameraPitch+dy*0.003));
+    dragStart={x:e.clientX,y:e.clientY};
+  }
+}
+
+function onMouseUp(e){
+  if(isDragging){
+    shoot();
+    isDragging=false;
+  }
+  isCameraRotating=false;
+}
+
+function onWheel(e){
+  e.preventDefault();
+  cameraDistance=Math.max(6,Math.min(40,cameraDistance+e.deltaY*0.02));
+}
+
+function updateAim(){
+  const dx=dragCurrent.x-dragStart.x;
+  const dy=dragCurrent.y-dragStart.y;
+  const dist=Math.sqrt(dx*dx+dy*dy);
+  aimPower=Math.min(dist/150,1);
+
+  // Get world positions
+  const startWorld=screenToWorld(dragStart.x,dragStart.y);
+  const currentWorld=screenToWorld(dragCurrent.x,dragCurrent.y);
+  if(!startWorld||!currentWorld)return;
+
+  // Direction is opposite of drag
+  const dirX=startWorld.x-currentWorld.x;
+  const dirZ=startWorld.z-currentWorld.z;
+  const dirLen=Math.sqrt(dirX*dirX+dirZ*dirZ);
+  if(dirLen>0.01){
+    aimAngle=Math.atan2(dirX,dirZ);
+  }
+
+  // Update power bar
+  powerBar.style.height=(aimPower*100)+'%';
+
+  // Update arrow
+  updateArrow();
+}
+
+function updateArrow(){
+  if(aimPower<0.02){
+    arrowLine.visible=false;
+    return;
+  }
+  arrowLine.visible=true;
+  const bx=ballMesh.position.x;
+  const bz=ballMesh.position.z;
+  const by=ballMesh.position.y+0.05;
+  const lineLen=aimPower*6;
+  const dx=Math.sin(aimAngle)*lineLen;
+  const dz=Math.cos(aimAngle)*lineLen;
+
+  const positions=arrowLine.geometry.attributes.position;
+  // Main line
+  positions.setXYZ(0,bx,by,bz);
+  positions.setXYZ(1,bx+dx,by,bz+dz);
+  // Arrowhead
+  const headLen=0.4;
+  const headAngle=0.4;
+  const ex=bx+dx,ez=bz+dz;
+  positions.setXYZ(2,ex,by,ez);
+  positions.setXYZ(3,ex-Math.sin(aimAngle+headAngle)*headLen,by,ez-Math.cos(aimAngle+headAngle)*headLen);
+  positions.setXYZ(4,ex,by,ez);
+  positions.setXYZ(5,ex-Math.sin(aimAngle-headAngle)*headLen,by,ez-Math.cos(aimAngle-headAngle)*headLen);
+  positions.needsUpdate=true;
+  arrowLine.geometry.setDrawRange(0,6);
+}
+
+function shoot(){
+  if(aimPower<0.05){
+    powerBarWrap.style.display='none';
+    arrowLine.visible=false;
+    return;
+  }
+  const power=aimPower*MAX_POWER;
+  ballVel.x=Math.sin(aimAngle)*power;
+  ballVel.z=Math.cos(aimAngle)*power;
+  ballVel.y=0;
+
+  strokes++;
+  strokeValEl.textContent=strokes;
+  gameState='rolling';
+  arrowLine.visible=false;
+  powerBarWrap.style.display='none';
+
+  playHit(aimPower);
+  helpText.style.display='none';
+}
+
+// ====== PHYSICS ======
+function getElevationAt(x,z){
+  const h=courses[currentHole];
+  if(!h.ramps||h.ramps.length===0)return 0;
+  for(const r of h.ramps){
+    const rx=r.pos[0],rz=r.pos[1];
+    const hw=r.size[0]/2,hd=r.size[1]/2;
+    // On ramp slope
+    if(x>=rx-hw&&x<=rx+hw&&z>=rz-hd&&z<=rz+hd){
+      const t=(z-(rz-hd))/r.size[1]; // 0 at start, 1 at end
+      return t*r.elevation;
+    }
+    // On elevated platform after ramp
+    if(x>=rx-hw&&x<=rx+hw&&z>rz+hd&&z<=rz+hd+4){
+      return r.elevation;
+    }
+  }
+  return 0;
+}
+
+function isInWater(x,z){
+  const h=courses[currentHole];
+  if(!h.water)return false;
+  for(const w of h.water){
+    if(x>=w.pos[0]&&x<=w.pos[0]+w.size[0]&&z>=w.pos[1]&&z<=w.pos[1]+w.size[1]){
+      // Check safe island
+      if(h.safeIsland){
+        const dx=x-h.safeIsland.pos[0];
+        const dz=z-h.safeIsland.pos[1];
+        if(Math.sqrt(dx*dx+dz*dz)<h.safeIsland.radius)return false;
+      }
+      return true;
+    }
+  }
+  return false;
+}
+
+function isOnCourse(x,z){
+  const h=courses[currentHole];
+  const b=h.bounds;
+  // Ray casting point-in-polygon
+  let inside=false;
+  for(let i=0,j=b.length-1;i<b.length;j=i++){
+    const xi=b[i][0],zi=b[i][1];
+    const xj=b[j][0],zj=b[j][1];
+    if((zi>z)!==(zj>z)&&(x<(xj-xi)*(z-zi)/(zj-zi)+xi)){
+      inside=!inside;
+    }
+  }
+  return inside;
+}
+
+function checkWallCollision(x,z,vx,vz,dt){
+  const h=courses[currentHole];
+  const allWalls=[...h.walls];
+  if(h.innerWalls) allWalls.push(...h.innerWalls);
+
+  let hitWall=false;
+  let newVx=vx,newVz=vz;
+  let newX=x,newZ=z;
+
+  for(const w of allWalls){
+    const wx1=w[0],wz1=w[1],wx2=w[2],wz2=w[3];
+    const wallDx=wx2-wx1,wallDz=wz2-wz1;
+    const wallLen=Math.sqrt(wallDx*wallDx+wallDz*wallDz);
+    if(wallLen<0.001)continue;
+
+    // Wall normal (perpendicular)
+    const nx=-wallDz/wallLen;
+    const nz=wallDx/wallLen;
+
+    // Distance from ball to wall line
+    const dx=x-wx1,dz=z-wz1;
+    const dist=dx*nx+dz*nz;
+
+    // Project ball position onto wall segment
+    const proj=(dx*wallDx+dz*wallDz)/wallLen;
+
+    if(Math.abs(dist)<BALL_RADIUS+0.1 && proj>-BALL_RADIUS && proj<wallLen+BALL_RADIUS){
+      // Ball is close to wall
+      const velDot=vx*nx+vz*nz;
+      if((dist>0&&velDot<0)||(dist<0&&velDot>0)){
+        // Reflect velocity
+        newVx=vx-2*velDot*nx*BOUNCE_LOSS;
+        newVz=vz-2*velDot*nz*BOUNCE_LOSS;
+        // Push ball out of wall
+        const sign=dist>0?1:-1;
+        newX=x+nx*sign*(BALL_RADIUS+0.11-Math.abs(dist));
+        newZ=z+nz*sign*(BALL_RADIUS+0.11-Math.abs(dist));
+        hitWall=true;
+        playBounce();
+      }
+    }
+  }
+
+  return hitWall?{x:newX,z:newZ,vx:newVx,vz:newVz}:null;
+}
+
+function checkWindmillCollision(x,z,vx,vz){
+  const h=courses[currentHole];
+  if(!h.obstacles)return null;
+
+  for(const o of h.obstacles){
+    if(o.type==='windmill'&&windmillArm){
+      const angle=windmillArm.rotation.y;
+      const radius=o.radius;
+      const ox=o.pos[0],oz=o.pos[1];
+
+      // Check each blade (4 directions)
+      for(let b=0;b<4;b++){
+        const bladeAngle=angle+b*Math.PI/2;
+        const bx1=ox,bz1=oz;
+        const bx2=ox+Math.sin(bladeAngle)*radius;
+        const bz2=oz+Math.cos(bladeAngle)*radius;
+
+        // Distance from ball to blade line segment
+        const dx=bx2-bx1,dz=bz2-bz1;
+        const len=Math.sqrt(dx*dx+dz*dz);
+        const nx=-dz/len,nz=dx/len;
+
+        const pdx=x-bx1,pdz=z-bz1;
+        const dist=pdx*nx+pdz*nz;
+        const proj=(pdx*dx+pdz*dz)/len;
+
+        if(Math.abs(dist)<BALL_RADIUS+0.2 && proj>0 && proj<len){
+          const velDot=vx*nx+vz*nz;
+          if((dist>0&&velDot<0)||(dist<0&&velDot>0)){
+            const newVx=vx-2*velDot*nx*BOUNCE_LOSS;
+            const newVz=vz-2*velDot*nz*BOUNCE_LOSS;
+            const sign=dist>0?1:-1;
+            const push=BALL_RADIUS+0.21-Math.abs(dist);
+            playBounce();
+            return{vx:newVx+nx*sign*2,vz:newVz+nz*sign*2,px:x+nx*sign*push,pz:z+nz*sign*push};
+          }
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function updatePhysics(dt){
+  if(gameState!=='rolling')return;
+  if(sinkAnimating)return;
+
+  dt=Math.min(dt,1/30);
+
+  const speed=Math.sqrt(ballVel.x*ballVel.x+ballVel.z*ballVel.z);
+
+  // Gravity / elevation
+  const elev=getElevationAt(ballMesh.position.x,ballMesh.position.z);
+  const targetY=elev+BALL_RADIUS;
+
+  // Ramp physics
+  const h=courses[currentHole];
+  if(h.ramps){
+    for(const r of h.ramps){
+      const rx=r.pos[0],rz=r.pos[1];
+      const hw=r.size[0]/2,hd=r.size[1]/2;
+      if(ballMesh.position.x>=rx-hw&&ballMesh.position.x<=rx+hw&&
+         ballMesh.position.z>=rz-hd&&ballMesh.position.z<=rz+hd){
+        // On ramp - apply gravity component along ramp
+        const slope=r.elevation/r.size[1];
+        ballVel.z-=GRAVITY*slope*dt*RAMP_FACTOR;
+      }
+    }
+  }
+
+  // Apply friction
+  const frictionPow=Math.pow(FRICTION,dt*60);
+  ballVel.x*=frictionPow;
+  ballVel.z*=frictionPow;
+
+  // Move ball
+  let newX=ballMesh.position.x+ballVel.x*dt;
+  let newZ=ballMesh.position.z+ballVel.z*dt;
+
+  // Wall collision
+  const wallHit=checkWallCollision(newX,newZ,ballVel.x,ballVel.z,dt);
+  if(wallHit){
+    newX=wallHit.x;newZ=wallHit.z;
+    ballVel.x=wallHit.vx;ballVel.z=wallHit.vz;
+  }
+
+  // Windmill collision
+  const wmHit=checkWindmillCollision(newX,newZ,ballVel.x,ballVel.z);
+  if(wmHit){
+    ballVel.x=wmHit.vx;ballVel.z=wmHit.vz;
+    newX=wmHit.px;newZ=wmHit.pz;
+  }
+
+  // Water check
+  if(isInWater(newX,newZ)){
+    playSplash();
+    showAnnouncement('Water Hazard! +1 Stroke',2000);
+    strokes++;
+    strokeValEl.textContent=strokes;
+    // Reset to tee or last good position
+    const tee=courses[currentHole].tee;
+    ballMesh.position.set(tee[0],BALL_RADIUS,tee[1]);
+    ballVel={x:0,y:0,z:0};
+    setTimeout(()=>{gameState='aiming';},1000);
+    gameState='rolling'; // keep rolling state briefly for animation
+    return;
+  }
+
+  // Boundary check - if ball goes off course, bounce back
+  if(!isOnCourse(newX,newZ)){
+    // Reflect velocity roughly toward center
+    const cx=(courses[currentHole].tee[0]+courses[currentHole].hole[0])/2;
+    const cz=(courses[currentHole].tee[1]+courses[currentHole].hole[1])/2;
+    const toCx=cx-newX,toCz=cz-newZ;
+    const toLen=Math.sqrt(toCx*toCx+toCz*toCz);
+    if(toLen>0){
+      ballVel.x=toCx/toLen*speed*0.5;
+      ballVel.z=toCz/toLen*speed*0.5;
+    }
+    newX=ballMesh.position.x;
+    newZ=ballMesh.position.z;
+    playBounce();
+  }
+
+  ballMesh.position.x=newX;
+  ballMesh.position.z=newZ;
+
+  // Smooth Y to elevation
+  const currentElev=getElevationAt(newX,newZ)+BALL_RADIUS;
+  ballMesh.position.y+=(currentElev-ballMesh.position.y)*0.3;
+
+  // Ball rotation visual
+  if(speed>0.01){
+    const axis=new THREE.Vector3(-ballVel.z,0,ballVel.x).normalize();
+    const rotAmount=speed*dt/BALL_RADIUS;
+    const quat=new THREE.Quaternion().setFromAxisAngle(axis,rotAmount);
+    ballMesh.quaternion.premultiply(quat);
+  }
+
+  // Rolling sound
+  rollSoundTimer-=dt;
+  if(speed>0.5&&rollSoundTimer<=0){
+    playRoll();
+    rollSoundTimer=0.08;
+  }
+
+  // Check hole
+  const holePos=courses[currentHole].hole;
+  const distToHole=Math.sqrt((newX-holePos[0])**2+(newZ-holePos[1])**2);
+  if(distToHole<HOLE_RADIUS&&speed<8){
+    sinkBall();
+    return;
+  }
+
+  // Ball stopped?
+  const totalSpeed=Math.sqrt(ballVel.x*ballVel.x+ballVel.z*ballVel.z);
+  if(totalSpeed<STOP_THRESHOLD){
+    ballVel={x:0,y:0,z:0};
+    gameState='aiming';
+  }
+}
+
+function sinkBall(){
+  sinkAnimating=true;
+  gameState='sunk';
+
+  const holePos=courses[currentHole].hole;
+  const elev=getElevationAt(holePos[0],holePos[1]);
+
+  // Animate ball into hole
+  const startPos=ballMesh.position.clone();
+  const endPos=new THREE.Vector3(holePos[0],elev-0.1,holePos[1]);
+  const startScale=ballMesh.scale.clone();
+  let t=0;
+
+  function animateSink(){
+    t+=0.03;
+    if(t>=1){
+      ballMesh.visible=false;
+      ballMesh.scale.copy(startScale);
+      onBallSunk();
+      return;
+    }
+    ballMesh.position.lerpVectors(startPos,endPos,t);
+    const s=1-t*0.5;
+    ballMesh.scale.set(s,s,s);
+    requestAnimationFrame(animateSink);
+  }
+  animateSink();
+
+  const par=courses[currentHole].par;
+  const diff=strokes-par;
+
+  if(strokes===1){
+    playHoleInOne();
+    showAnnouncement('HOLE IN ONE!',3000);
+  } else if(diff<=-2){
+    playSink();
+    showAnnouncement('Eagle!',2500);
+  } else if(diff===-1){
+    playSink();
+    showAnnouncement('Birdie!',2500);
+  } else if(diff===0){
+    playSink();
+    showAnnouncement('Par',2000);
+  } else if(diff===1){
+    playSink();
+    showAnnouncement('Bogey',2000);
+  } else if(diff===2){
+    playSink();
+    showAnnouncement('Double Bogey',2000);
+  } else {
+    playSink();
+    showAnnouncement('+'+diff,2000);
+  }
+}
+
+function onBallSunk(){
+  scores.push(strokes);
+  totalScore+=strokes;
+  totalValEl.textContent=totalScore;
+  sinkAnimating=false;
+
+  if(currentHole<8){
+    nextHoleBtn.textContent='Next Hole';
+  } else {
+    nextHoleBtn.textContent='See Results';
+  }
+  nextHoleBtn.style.display='block';
+}
+
+// ====== CAMERA ======
+function updateCamera(dt){
+  // Smooth follow ball
+  const targetX=ballMesh.position.x;
+  const targetZ=ballMesh.position.z;
+  const targetY=ballMesh.position.y;
+
+  cameraTarget.x+=(targetX-cameraTarget.x)*0.05;
+  cameraTarget.y+=(targetY-cameraTarget.y)*0.05;
+  cameraTarget.z+=(targetZ-cameraTarget.z)*0.05;
+
+  const cx=cameraTarget.x+Math.sin(cameraAngle)*Math.cos(cameraPitch)*cameraDistance;
+  const cy=cameraTarget.y+Math.sin(cameraPitch)*cameraDistance;
+  const cz=cameraTarget.z+Math.cos(cameraAngle)*Math.cos(cameraPitch)*cameraDistance;
+
+  camera.position.set(cx,cy,cz);
+  camera.lookAt(cameraTarget.x,cameraTarget.y,cameraTarget.z);
+}
+
+// ====== RENDER LOOP ======
+function animate(){
+  requestAnimationFrame(animate);
+  const dt=clock.getDelta();
+
+  if(gameState!=='start'&&gameState!=='finished'){
+    updatePhysics(dt);
+    updateCamera(dt);
+
+    // Animate windmill
+    if(windmillArm){
+      windmillArm.rotation.y+=windmillSpeed*dt;
+    }
+
+    // Animate flag wave
+    if(flagGroup){
+      const flag=flagGroup.children[1];
+      if(flag) flag.rotation.y=Math.sin(Date.now()*0.003)*0.2;
+    }
+
+    // Water shimmer
+    waterMeshes.forEach(w=>{
+      w.material.opacity=0.55+Math.sin(Date.now()*0.003)*0.15;
+    });
+  }
+
+  renderer.render(scene,camera);
+}
+
+function onResize(){
+  camera.aspect=window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth,window.innerHeight);
+}
+
+init();
+animate();
+
+})();
+</script>
+</body>
+</html>
