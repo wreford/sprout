@@ -115,6 +115,26 @@ html,body{height:100%;background:#0a160a;font-family:-apple-system,BlinkMacSyste
 /* Empty */
 .empty{text-align:center;padding:30px 20px;color:var(--text2);font-size:13px;line-height:1.7;background:var(--card);border:1px dashed var(--border);border-radius:12px}
 
+/* Gamification */
+.xp-card{background:linear-gradient(135deg,#1a2a10 0%,#0e1a08 100%);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:12px;position:relative;overflow:hidden}
+.xp-card::after{content:'';position:absolute;top:-20px;right:-20px;width:80px;height:80px;background:radial-gradient(circle,rgba(200,168,72,.06) 0%,transparent 70%);border-radius:50%}
+.xp-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.xp-level{font-size:11px;color:var(--gold);font-weight:700;letter-spacing:1px}
+.xp-title{font-size:18px;font-weight:800;color:#fff}
+.xp-bar-wrap{height:8px;background:rgba(0,0,0,.3);border-radius:4px;overflow:hidden;margin-bottom:4px}
+.xp-bar-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--gold));border-radius:4px;transition:width .5s}
+.xp-label{font-size:9px;color:var(--text2);display:flex;justify-content:space-between}
+.badge-grid{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.badge{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;border:2px solid var(--border);transition:all .2s}
+.badge.earned{background:linear-gradient(135deg,#2a3a1a,#1a2a10);border-color:var(--gold);color:var(--gold)}
+.badge.locked{background:var(--bg);color:#333;border-color:#222}
+.badge-tooltip{position:fixed;background:var(--card);border:1px solid var(--gold);border-radius:8px;padding:8px 12px;font-size:11px;color:var(--text);z-index:500;pointer-events:none;max-width:200px;display:none;box-shadow:0 4px 12px rgba(0,0,0,.5)}
+.streak-card{background:linear-gradient(135deg,#2a1a10,#1a1008);border:1px solid #3a2a1a;border-radius:12px;padding:12px 14px;margin-bottom:10px;display:flex;align-items:center;gap:12px}
+.streak-flame{font-size:22px;font-weight:800;color:#f87830;min-width:32px;text-align:center}
+.streak-info{flex:1}
+.streak-info .si-title{font-size:13px;font-weight:700;color:#f8a848}
+.streak-info .si-desc{font-size:10px;color:var(--text2);margin-top:2px}
+
 /* Current location */
 .loc-banner{background:linear-gradient(135deg,var(--accent),#2a5e2a);border-radius:10px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px}
 .loc-dot{width:10px;height:10px;border-radius:50%;background:var(--green);flex-shrink:0;box-shadow:0 0 6px var(--green);animation:pulse 2s infinite}
@@ -129,7 +149,7 @@ html,body{height:100%;background:#0a160a;font-family:-apple-system,BlinkMacSyste
   <div class="header">
     <a href="../index.html" class="back">Back</a>
     <h1>ONTARIO FISHING</h1>
-    <div class="gps-status" id="gpsStatus">GPS OFF</div>
+    <div class="gps-status" id="gpsStatus" style="cursor:pointer">TAP FOR GPS</div>
   </div>
   <div class="tab-content" id="tabContent">
     <iframe id="frame-log" class="tab-frame active" src="fishlog.html"></iframe>
@@ -165,18 +185,31 @@ tabs.forEach(btn=>{
 const savedTab=localStorage.getItem('ontfish_tab');
 if(savedTab&&frames[savedTab]){tabs.forEach(b=>b.classList.toggle('active',b.dataset.tab===savedTab));Object.values(frames).forEach(f=>f.classList.remove('active'));frames[savedTab].classList.add('active');activeTab=savedTab}
 
-// ─── GPS ───
-let currentLat=null,currentLng=null,gpsWatchId=null;
+// ─── GPS (requires user tap on iOS) ───
+let currentLat=null,currentLng=null,gpsWatchId=null,gpsRequested=false;
 const gpsEl=document.getElementById('gpsStatus');
 function startGPS(){
-  if(!navigator.geolocation)return;
-  gpsWatchId=navigator.geolocation.watchPosition(
-    pos=>{currentLat=pos.coords.latitude;currentLng=pos.coords.longitude;gpsEl.textContent='GPS ON';gpsEl.classList.add('active')},
-    err=>{gpsEl.textContent='GPS OFF';gpsEl.classList.remove('active')},
-    {enableHighAccuracy:true,maximumAge:30000,timeout:10000}
+  if(!navigator.geolocation||gpsWatchId)return;
+  gpsRequested=true;gpsEl.textContent='GPS...';
+  navigator.geolocation.getCurrentPosition(
+    pos=>{
+      currentLat=pos.coords.latitude;currentLng=pos.coords.longitude;
+      gpsEl.textContent='GPS ON';gpsEl.classList.add('active');
+      gpsWatchId=navigator.geolocation.watchPosition(
+        p=>{currentLat=p.coords.latitude;currentLng=p.coords.longitude;gpsEl.textContent='GPS ON';gpsEl.classList.add('active')},
+        ()=>{},
+        {enableHighAccuracy:true,maximumAge:60000,timeout:15000}
+      );
+      if(activeTab==='hotspot')renderHotspots();
+    },
+    err=>{gpsEl.textContent='TAP FOR GPS';gpsEl.classList.remove('active');gpsRequested=false},
+    {enableHighAccuracy:true,timeout:10000}
   );
 }
-startGPS();
+// GPS button in header — tap to activate (iOS needs user gesture)
+gpsEl.addEventListener('click',()=>{if(!gpsWatchId)startGPS()});
+// Also try on first user interaction with the page
+document.addEventListener('click',function gpsTry(){if(!gpsRequested)startGPS();document.removeEventListener('click',gpsTry)},{once:false});
 
 // ─── WAKE LOCK ───
 let wakeLock=null,wakeLockOn=localStorage.getItem('ontfish_wakelock')==='1';
@@ -184,6 +217,43 @@ async function requestWakeLock(){try{if('wakeLock' in navigator){wakeLock=await 
 async function releaseWakeLock(){try{if(wakeLock){await wakeLock.release();wakeLock=null}}catch(e){}}
 if(wakeLockOn)requestWakeLock();
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&wakeLockOn)requestWakeLock()});
+
+// ─── GAMIFICATION ───
+const ACHIEVEMENTS=[
+  {id:'first',name:'FIRST CATCH',desc:'Log your first fish',check:c=>c.length>=1,xp:10},
+  {id:'five',name:'HIGH FIVE',desc:'Log 5 fish',check:c=>c.length>=5,xp:25},
+  {id:'ten',name:'DOUBLE DIGITS',desc:'Log 10 fish',check:c=>c.length>=10,xp:50},
+  {id:'fifty',name:'HALF CENTURY',desc:'Log 50 fish',check:c=>c.length>=50,xp:100},
+  {id:'hundred',name:'CENTURION',desc:'Log 100 fish',check:c=>c.length>=100,xp:200},
+  {id:'walleye',name:'WALLEYE HUNTER',desc:'Catch 5 walleye',check:c=>c.filter(f=>f.species==='Walleye').length>=5,xp:50},
+  {id:'pike',name:'PIKE MASTER',desc:'Catch 5 pike',check:c=>c.filter(f=>f.species==='Northern Pike').length>=5,xp:50},
+  {id:'bass',name:'BASS PRO',desc:'Catch 5 bass',check:c=>c.filter(f=>(f.species||'').includes('Bass')).length>=5,xp:50},
+  {id:'muskie',name:'MUSKIE LEGEND',desc:'Catch a muskie',check:c=>c.some(f=>f.species==='Muskie'),xp:100},
+  {id:'trophy',name:'TROPHY FISH',desc:'Catch a fish over 10 lbs',check:c=>c.some(f=>(f.weightLbs||0)>=10),xp:75},
+  {id:'monster',name:'MONSTER',desc:'Catch a fish over 20 lbs',check:c=>c.some(f=>(f.weightLbs||0)>=20),xp:150},
+  {id:'explorer',name:'EXPLORER',desc:'Fish at 5 different spots',check:c=>{const s=new Set(c.map(f=>f.location).filter(Boolean));return s.size>=5},xp:60},
+  {id:'globe',name:'GLOBE TROTTER',desc:'Fish at 10 spots',check:c=>{const s=new Set(c.map(f=>f.location).filter(Boolean));return s.size>=10},xp:100},
+  {id:'variety',name:'VARIETY PACK',desc:'Catch 5 different species',check:c=>{const s=new Set(c.map(f=>f.species).filter(Boolean));return s.size>=5},xp:60},
+  {id:'collector',name:'COLLECTOR',desc:'Catch 10 different species',check:c=>{const s=new Set(c.map(f=>f.species).filter(Boolean));return s.size>=10},xp:120},
+  {id:'dawn',name:'EARLY BIRD',desc:'Log a catch before 7 AM',check:c=>c.some(f=>{const t=f.time||'';const h=parseInt(t);return h>=0&&h<7}),xp:30},
+  {id:'night',name:'NIGHT OWL',desc:'Log a catch after 9 PM',check:c=>c.some(f=>{const t=f.time||'';const h=parseInt(t);return h>=21}),xp:30},
+  {id:'release',name:'CONSERVATIONIST',desc:'Release 10 fish',check:c=>c.filter(f=>f.released).length>=10,xp:40},
+];
+function getAnglerStats(){
+  const catches=getCatches();
+  let totalXP=0;const earned=[];
+  ACHIEVEMENTS.forEach(a=>{if(a.check(catches)){totalXP+=a.xp;earned.push(a.id)}});
+  totalXP+=catches.length*5;
+  let level=1,xpForNext=50,xpInLevel=totalXP;
+  while(xpInLevel>=xpForNext){xpInLevel-=xpForNext;level++;xpForNext=Math.floor(xpForNext*1.4)}
+  const titles=['Beginner','Novice','Apprentice','Angler','Skilled Angler','Expert','Master Angler','Grand Master','Legend','Ontario Legend'];
+  const title=titles[Math.min(level-1,titles.length-1)];
+  // Streak: consecutive days with catches
+  const days=new Set(catches.map(c=>c.date).filter(Boolean));
+  const today=new Date();let streak=0;
+  for(let i=0;i<365;i++){const d=new Date(today);d.setDate(d.getDate()-i);const ds=d.toISOString().slice(0,10);if(days.has(ds))streak++;else if(i>0)break}
+  return{totalXP,level,xpInLevel,xpForNext,title,earned,streak,catches};
+}
 
 // ─── MOON / SOLUNAR ───
 function getMoonPhase(date){
@@ -235,6 +305,19 @@ function renderHotspots(){
   const totalW=catches.reduce((s,c)=>s+(c.weightLbs||0)+(c.weightOz||0)/16,0);
 
   let h='';
+  const stats=getAnglerStats();
+
+  // XP / Level card
+  h+=`<div class="xp-card"><div class="xp-top"><div class="xp-level">LEVEL ${stats.level}</div><div style="font-size:10px;color:var(--text2)">${stats.totalXP} XP</div></div>
+    <div class="xp-title">${stats.title}</div>
+    <div class="xp-bar-wrap"><div class="xp-bar-fill" style="width:${Math.min(100,stats.xpInLevel/stats.xpForNext*100)}%"></div></div>
+    <div class="xp-label"><span>${stats.xpInLevel}/${stats.xpForNext} XP</span><span>Next: Level ${stats.level+1}</span></div>
+    <div class="badge-grid">${ACHIEVEMENTS.map(a=>`<div class="badge ${stats.earned.includes(a.id)?'earned':'locked'}" title="${a.name}: ${a.desc}" data-tip="${a.name}\n${a.desc}\n${a.xp} XP">${a.name.split(' ').map(w=>w[0]).join('')}</div>`).join('')}</div></div>`;
+
+  // Streak
+  if(stats.streak>0){
+    h+=`<div class="streak-card"><div class="streak-flame">${stats.streak}</div><div class="streak-info"><div class="si-title">${stats.streak} Day Streak!</div><div class="si-desc">Keep fishing daily to build your streak</div></div></div>`;
+  }
 
   // Hero
   h+=`<div class="hs-hero"><h2>FISHING HOTSPOTS</h2>
