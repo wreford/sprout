@@ -131,23 +131,76 @@ try{
     totalCoinsEver=sav.totalCoinsEver||0;
     unlockedBalls=sav.unlockedBalls||["white"];
     currentBall=sav.currentBall||"white";
+    if(sav.characterUnlocks){
+      for(var ci=0;ci<CHARACTERS.length;ci++){
+        if(sav.characterUnlocks.indexOf(CHARACTERS[ci].id)>=0)CHARACTERS[ci].unlocked=true;
+      }
+    }
+    selectedCharacter=sav.selectedCharacter||0;
+    if(sav.unlockedSkins)unlockedSkins=sav.unlockedSkins;
+    if(typeof sav.selectedSkin==='number')selectedSkin=sav.selectedSkin;
+    if(typeof sav.totalPowerupsCollected==='number')totalPowerupsCollected=sav.totalPowerupsCollected;
+    if(typeof sav.maxHoleReached==='number')maxHoleReached=sav.maxHoleReached;
   }
 }catch(e){}
 
+var maxHoleReached=0;
+
 function saveData(){
   try{
+    var charUnlocks=[];
+    for(var ci=0;ci<CHARACTERS.length;ci++){if(CHARACTERS[ci].unlocked)charUnlocks.push(CHARACTERS[ci].id);}
     localStorage.setItem('rogueminigolf_save',JSON.stringify({
       bestScore:bestScore,totalCoinsEver:totalCoinsEver,
-      unlockedBalls:unlockedBalls,currentBall:currentBall
+      unlockedBalls:unlockedBalls,currentBall:currentBall,
+      characterUnlocks:charUnlocks,selectedCharacter:selectedCharacter,
+      unlockedSkins:unlockedSkins,selectedSkin:selectedSkin,
+      totalPowerupsCollected:totalPowerupsCollected,maxHoleReached:maxHoleReached
     }));
   }catch(e){}
 }
+
+function checkCharacterUnlocks(){
+  // Knight: reach hole 10
+  if(maxHoleReached>=10&&!CHARACTERS[1].unlocked){CHARACTERS[1].unlocked=true;}
+  // Wizard: collect 10 power-ups
+  if(totalPowerupsCollected>=10&&!CHARACTERS[2].unlocked){CHARACTERS[2].unlocked=true;}
+  // Pirate: earn 500 total coins
+  if(totalCoinsEver>=500&&!CHARACTERS[3].unlocked){CHARACTERS[3].unlocked=true;}
+}
+
+function getSelectedCharacter(){return CHARACTERS[selectedCharacter]||CHARACTERS[0];}
+function getSelectedSkin(){return BALL_SKINS[selectedSkin]||BALL_SKINS[0];}
 
 var BALL_COLORS={
   white:'#eeeeff',red:'#ff4444',blue:'#4488ff',gold:'#ffdd44',
   purple:'#bb44ff',green:'#44ff88',dark:'#444466'
 };
 var BALL_COST={red:50,blue:100,gold:200,purple:300,green:150,dark:500};
+
+// Character classes
+var CHARACTERS=[
+  {id:'golfer',name:'GOLFER',desc:'Balanced. No special ability.',color:'#2a8a3a',hat:'#2a8a3a',unlocked:true},
+  {id:'knight',name:'KNIGHT',desc:'+1 starting life. Slower shots.',color:'#8090a0',hat:'#6070a0',ability:'extraLife',unlocked:false,unlockReq:'Reach hole 10'},
+  {id:'wizard',name:'WIZARD',desc:'Magnet power-up lasts 2 shots.',color:'#4040a0',hat:'#3030c0',ability:'extendMagnet',unlocked:false,unlockReq:'Collect 10 power-ups'},
+  {id:'pirate',name:'PIRATE',desc:'+50% coin collection.',color:'#a03030',hat:'#c04040',ability:'extraCoins',unlocked:false,unlockReq:'Earn 500 total coins'},
+];
+var selectedCharacter=0;
+var totalPowerupsCollected=0;
+
+// Ball skins with effects
+var BALL_SKINS=[
+  {id:'normal',name:'NORMAL',color:'#fff',trail:null,cost:0},
+  {id:'fire',name:'FIRE BALL',color:'#f83800',trail:'fire',cost:100,desc:'Leaves fire trail'},
+  {id:'ice',name:'ICE BALL',color:'#58b8f8',trail:'ice',cost:100,desc:'Leaves ice crystals'},
+  {id:'lightning',name:'LIGHTNING',color:'#f8d800',trail:'lightning',cost:150,desc:'Electric sparks'},
+  {id:'rainbow',name:'RAINBOW',color:null,trail:'rainbow',cost:200,desc:'Color-shifting'},
+  {id:'skull_ball',name:'SKULL BALL',color:'#b8b8b8',trail:'smoke',cost:150,desc:'Dark smoke trail'},
+  {id:'star',name:'STAR BALL',color:'#f8c800',trail:'sparkle',cost:250,desc:'Golden sparkles'},
+];
+var selectedSkin=0;
+var unlockedSkins=['normal'];
+var trailParticles=[];
 
 // Upgrade definitions
 var UPGRADES=[
@@ -306,6 +359,119 @@ function generateHole(holeNum){
     }
   }
 
+  // Add lava (after hole 6)
+  var lava=[];
+  if(holeNum>6){
+    var lavaCount=Math.floor(Math.random()*(1+Math.floor((holeNum-6)/3)));
+    lavaCount=Math.min(lavaCount,3);
+    for(var i=0;i<lavaCount;i++){
+      var lf=fairways[1+Math.floor(Math.random()*(fairways.length-1))];
+      var lw=18+Math.floor(Math.random()*20);
+      var lh=14+Math.floor(Math.random()*16);
+      var lx=lf.x+10+Math.floor(Math.random()*(Math.max(1,lf.w-lw-20)));
+      var ly=lf.y+10+Math.floor(Math.random()*(Math.max(1,lf.h-lh-20)));
+      var dTeeL=Math.sqrt((lx+lw/2-teeX)*(lx+lw/2-teeX)+(ly+lh/2-teeY)*(ly+lh/2-teeY));
+      var dHoleL=Math.sqrt((lx+lw/2-holeX)*(lx+lw/2-holeX)+(ly+lh/2-holeY)*(ly+lh/2-holeY));
+      if(dTeeL>30&&dHoleL>25){
+        lava.push({x:lx,y:ly,w:lw,h:lh});
+      }
+    }
+  }
+
+  // Add spikes (after hole 8)
+  var spikes=[];
+  if(holeNum>8){
+    var spikeCount=Math.floor(Math.random()*(1+Math.floor((holeNum-8)/3)));
+    spikeCount=Math.min(spikeCount,3);
+    for(var i=0;i<spikeCount;i++){
+      var sf2=fairways[1+Math.floor(Math.random()*(fairways.length-1))];
+      var spw=16+Math.floor(Math.random()*18);
+      var sph=12+Math.floor(Math.random()*14);
+      var spx=sf2.x+10+Math.floor(Math.random()*(Math.max(1,sf2.w-spw-20)));
+      var spy=sf2.y+10+Math.floor(Math.random()*(Math.max(1,sf2.h-sph-20)));
+      var dTeeS=Math.sqrt((spx+spw/2-teeX)*(spx+spw/2-teeX)+(spy+sph/2-teeY)*(spy+sph/2-teeY));
+      var dHoleS=Math.sqrt((spx+spw/2-holeX)*(spx+spw/2-holeX)+(spy+sph/2-holeY)*(spy+sph/2-holeY));
+      if(dTeeS>30&&dHoleS>25){
+        spikes.push({x:spx,y:spy,w:spw,h:sph});
+      }
+    }
+  }
+
+  // Add portals (after hole 5)
+  var portals=[];
+  if(holeNum>5&&Math.random()<0.5){
+    var pf1=fairways[1+Math.floor(Math.random()*(Math.max(1,fairways.length-2)))];
+    var pf2idx=Math.min(fairways.length-1,Math.floor(fairways.length/2)+1+Math.floor(Math.random()*(Math.max(1,fairways.length/2-1))));
+    var pf2p=fairways[pf2idx];
+    var p1x=pf1.x+15+Math.floor(Math.random()*(Math.max(1,pf1.w-30)));
+    var p1y=pf1.y+15+Math.floor(Math.random()*(Math.max(1,pf1.h-30)));
+    var p2x=pf2p.x+15+Math.floor(Math.random()*(Math.max(1,pf2p.w-30)));
+    var p2y=pf2p.y+15+Math.floor(Math.random()*(Math.max(1,pf2p.h-30)));
+    portals.push({x1:p1x,y1:p1y,x2:p2x,y2:p2y,cooldown:0});
+  }
+
+  // Add windmills (after hole 4)
+  var windmills=[];
+  if(holeNum>4&&Math.random()<0.4+holeNum*0.02){
+    var wmCount=1;
+    if(holeNum>10)wmCount=Math.floor(Math.random()*2)+1;
+    for(var i=0;i<wmCount;i++){
+      var wf2=fairways[1+Math.floor(Math.random()*(fairways.length-1))];
+      var wmx=wf2.x+20+Math.floor(Math.random()*(Math.max(1,wf2.w-40)));
+      var wmy=wf2.y+20+Math.floor(Math.random()*(Math.max(1,wf2.h-40)));
+      var dTeeW=Math.sqrt((wmx-teeX)*(wmx-teeX)+(wmy-teeY)*(wmy-teeY));
+      var dHoleW=Math.sqrt((wmx-holeX)*(wmx-holeX)+(wmy-holeY)*(wmy-holeY));
+      if(dTeeW>35&&dHoleW>30){
+        windmills.push({x:wmx,y:wmy,angle:Math.random()*Math.PI*2,speed:0.015+Math.random()*0.015,bladeLen:18+Math.floor(Math.random()*8)});
+      }
+    }
+  }
+
+  // Add decorations
+  var decorations=[];
+  var isDark=(holeNum>10)||(isMiniBoss)||(isBoss);
+  for(var di=0;di<fairways.length;di++){
+    var df=fairways[di];
+    // Cherry blossom trees near course edges
+    if(!isDark&&Math.random()<0.3){
+      var tx=df.x-8+Math.floor(Math.random()*4);
+      var ty=df.y+10+Math.floor(Math.random()*(Math.max(1,df.h-20)));
+      decorations.push({type:'tree',x:tx,y:ty});
+    }
+    if(!isDark&&Math.random()<0.3){
+      var tx2=df.x+df.w+4+Math.floor(Math.random()*4);
+      var ty2=df.y+10+Math.floor(Math.random()*(Math.max(1,df.h-20)));
+      decorations.push({type:'tree',x:tx2,y:ty2});
+    }
+    // Lanterns
+    if(Math.random()<0.25){
+      var lnx=df.x+5+Math.floor(Math.random()*(Math.max(1,df.w-10)));
+      var lny=df.y+5+Math.floor(Math.random()*(Math.max(1,df.h-10)));
+      decorations.push({type:'lantern',x:lnx,y:lny});
+    }
+    // Gravestones on dark holes
+    if(isDark&&Math.random()<0.35){
+      var gsx=df.x-10+Math.floor(Math.random()*6);
+      var gsy=df.y+10+Math.floor(Math.random()*(Math.max(1,df.h-20)));
+      decorations.push({type:'gravestone',x:gsx,y:gsy});
+    }
+    if(isDark&&Math.random()<0.3){
+      var gsx2=df.x+df.w+4+Math.floor(Math.random()*6);
+      var gsy2=df.y+10+Math.floor(Math.random()*(Math.max(1,df.h-20)));
+      decorations.push({type:'gravestone',x:gsx2,y:gsy2});
+    }
+    // Flowers on lighter holes
+    if(!isDark){
+      var flowerCount=Math.floor(Math.random()*4);
+      for(var fi=0;fi<flowerCount;fi++){
+        var fx=df.x+3+Math.floor(Math.random()*(Math.max(1,df.w-6)));
+        var fy=df.y+3+Math.floor(Math.random()*(Math.max(1,df.h-6)));
+        var fc=['#ff6688','#ffaa44','#ffff66','#88ccff','#cc88ff'][Math.floor(Math.random()*5)];
+        decorations.push({type:'flower',x:fx,y:fy,color:fc});
+      }
+    }
+  }
+
   // Add enemies
   if(holeNum>5||isMiniBoss||isBoss){
     var enemyCount=Math.floor(Math.random()*(1+holeNum/5));
@@ -313,6 +479,10 @@ function generateHole(holeNum){
     if(isBoss)enemyCount=Math.max(3,enemyCount);
     enemyCount=Math.min(enemyCount,5);
     var enemyTypes=['golem','slime','ghost','skull','mimic'];
+    // Add new enemy types for higher holes
+    if(holeNum>=8){
+      enemyTypes.push('skeletonGolfer','mole','bat');
+    }
     for(var i=0;i<enemyCount;i++){
       var ef=fairways[1+Math.floor(Math.random()*(fairways.length-1))];
       var ex=ef.x+15+Math.floor(Math.random()*(Math.max(1,ef.w-30)));
@@ -328,9 +498,29 @@ function generateHole(holeNum){
           vx:0,vy:0,
           phase:Math.random()*Math.PI*2,
           speed:0.3+Math.random()*0.4,
-          hp:1,alive:true,anim:0
+          hp:1,alive:true,anim:0,
+          fireTimer:0,fireActive:false,
+          moleVisible:true,moleTimer:Math.random()*120,
+          swoopTimer:0,swooping:false,swoopY:0
         });
       }
+    }
+    // Dragon on boss holes only
+    if(isBoss){
+      var df=fairways[Math.max(1,Math.floor(fairways.length/2))];
+      var drx=df.x+df.w/2;
+      var dry=df.y+df.h/2;
+      enemies.push({
+        x:drx,y:dry,type:'dragon',
+        originX:drx,originY:dry,
+        vx:0,vy:0,
+        phase:Math.random()*Math.PI*2,
+        speed:0,
+        hp:3,alive:true,anim:0,
+        fireTimer:0,fireActive:false,fireZone:{x:0,y:0,w:0,h:0},
+        moleVisible:true,moleTimer:0,
+        swoopTimer:0,swooping:false,swoopY:0
+      });
     }
   }
 
@@ -364,6 +554,7 @@ function generateHole(holeNum){
     teeX:teeX,teeY:teeY,holeX:holeX,holeY:holeY,
     fairways:fairways,walls:walls,obstacles:obstacles,
     enemies:enemies,pickups:pickups,coins:coinsList,
+    lava:lava,spikes:spikes,portals:portals,windmills:windmills,decorations:decorations,
     par:par,totalHeight:totalH+40,isBoss:isBoss,isMiniBoss:isMiniBoss
   };
 }
@@ -397,6 +588,7 @@ function getObstacleAt(px,py){
 function startRun(){
   currentHole=1;
   totalStrokes=0;
+  trailParticles=[];
   lives=3;
   maxLives=3;
   coins=0;
