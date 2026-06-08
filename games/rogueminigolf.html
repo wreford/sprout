@@ -123,55 +123,6 @@ var unlockedBalls=["white"];
 var currentBall="white";
 var titleAnim=0;
 
-// Load save
-try{
-  var sav=JSON.parse(localStorage.getItem('rogueminigolf_save'));
-  if(sav){
-    bestScore=sav.bestScore||null;
-    totalCoinsEver=sav.totalCoinsEver||0;
-    unlockedBalls=sav.unlockedBalls||["white"];
-    currentBall=sav.currentBall||"white";
-    if(sav.characterUnlocks){
-      for(var ci=0;ci<CHARACTERS.length;ci++){
-        if(sav.characterUnlocks.indexOf(CHARACTERS[ci].id)>=0)CHARACTERS[ci].unlocked=true;
-      }
-    }
-    selectedCharacter=sav.selectedCharacter||0;
-    if(sav.unlockedSkins)unlockedSkins=sav.unlockedSkins;
-    if(typeof sav.selectedSkin==='number')selectedSkin=sav.selectedSkin;
-    if(typeof sav.totalPowerupsCollected==='number')totalPowerupsCollected=sav.totalPowerupsCollected;
-    if(typeof sav.maxHoleReached==='number')maxHoleReached=sav.maxHoleReached;
-  }
-}catch(e){}
-
-var maxHoleReached=0;
-
-function saveData(){
-  try{
-    var charUnlocks=[];
-    for(var ci=0;ci<CHARACTERS.length;ci++){if(CHARACTERS[ci].unlocked)charUnlocks.push(CHARACTERS[ci].id);}
-    localStorage.setItem('rogueminigolf_save',JSON.stringify({
-      bestScore:bestScore,totalCoinsEver:totalCoinsEver,
-      unlockedBalls:unlockedBalls,currentBall:currentBall,
-      characterUnlocks:charUnlocks,selectedCharacter:selectedCharacter,
-      unlockedSkins:unlockedSkins,selectedSkin:selectedSkin,
-      totalPowerupsCollected:totalPowerupsCollected,maxHoleReached:maxHoleReached
-    }));
-  }catch(e){}
-}
-
-function checkCharacterUnlocks(){
-  // Knight: reach hole 10
-  if(maxHoleReached>=10&&!CHARACTERS[1].unlocked){CHARACTERS[1].unlocked=true;}
-  // Wizard: collect 10 power-ups
-  if(totalPowerupsCollected>=10&&!CHARACTERS[2].unlocked){CHARACTERS[2].unlocked=true;}
-  // Pirate: earn 500 total coins
-  if(totalCoinsEver>=500&&!CHARACTERS[3].unlocked){CHARACTERS[3].unlocked=true;}
-}
-
-function getSelectedCharacter(){return CHARACTERS[selectedCharacter]||CHARACTERS[0];}
-function getSelectedSkin(){return BALL_SKINS[selectedSkin]||BALL_SKINS[0];}
-
 var BALL_COLORS={
   white:'#eeeeff',red:'#ff4444',blue:'#4488ff',gold:'#ffdd44',
   purple:'#bb44ff',green:'#44ff88',dark:'#444466'
@@ -201,6 +152,52 @@ var BALL_SKINS=[
 var selectedSkin=0;
 var unlockedSkins=['normal'];
 var trailParticles=[];
+
+var maxHoleReached=0;
+
+function getSelectedCharacter(){return CHARACTERS[selectedCharacter]||CHARACTERS[0];}
+function getSelectedSkin(){return BALL_SKINS[selectedSkin]||BALL_SKINS[0];}
+
+function checkCharacterUnlocks(){
+  if(maxHoleReached>=10&&!CHARACTERS[1].unlocked){CHARACTERS[1].unlocked=true;}
+  if(totalPowerupsCollected>=10&&!CHARACTERS[2].unlocked){CHARACTERS[2].unlocked=true;}
+  if(totalCoinsEver>=500&&!CHARACTERS[3].unlocked){CHARACTERS[3].unlocked=true;}
+}
+
+function saveData(){
+  try{
+    var charUnlocks=[];
+    for(var ci=0;ci<CHARACTERS.length;ci++){if(CHARACTERS[ci].unlocked)charUnlocks.push(CHARACTERS[ci].id);}
+    localStorage.setItem('rogueminigolf_save',JSON.stringify({
+      bestScore:bestScore,totalCoinsEver:totalCoinsEver,
+      unlockedBalls:unlockedBalls,currentBall:currentBall,
+      characterUnlocks:charUnlocks,selectedCharacter:selectedCharacter,
+      unlockedSkins:unlockedSkins,selectedSkin:selectedSkin,
+      totalPowerupsCollected:totalPowerupsCollected,maxHoleReached:maxHoleReached
+    }));
+  }catch(e){}
+}
+
+// Load save
+try{
+  var sav=JSON.parse(localStorage.getItem('rogueminigolf_save'));
+  if(sav){
+    bestScore=sav.bestScore||null;
+    totalCoinsEver=sav.totalCoinsEver||0;
+    unlockedBalls=sav.unlockedBalls||["white"];
+    currentBall=sav.currentBall||"white";
+    if(sav.characterUnlocks){
+      for(var ci=0;ci<CHARACTERS.length;ci++){
+        if(sav.characterUnlocks.indexOf(CHARACTERS[ci].id)>=0)CHARACTERS[ci].unlocked=true;
+      }
+    }
+    selectedCharacter=sav.selectedCharacter||0;
+    if(sav.unlockedSkins)unlockedSkins=sav.unlockedSkins;
+    if(typeof sav.selectedSkin==='number')selectedSkin=sav.selectedSkin;
+    if(typeof sav.totalPowerupsCollected==='number')totalPowerupsCollected=sav.totalPowerupsCollected;
+    if(typeof sav.maxHoleReached==='number')maxHoleReached=sav.maxHoleReached;
+  }
+}catch(e){}
 
 // Upgrade definitions
 var UPGRADES=[
@@ -609,6 +606,11 @@ function startRun(){
 }
 
 function startHole(){
+  if(currentHole>maxHoleReached){
+    maxHoleReached=currentHole;
+    checkCharacterUnlocks();
+    saveData();
+  }
   courseData=generateHole(currentHole);
   ballX=courseData.teeX;
   ballY=courseData.teeY;
@@ -815,7 +817,7 @@ function updateBall(dt){
       if(!e.alive)continue;
       var dx=ballX-e.x,dy=ballY-e.y;
       var dd=Math.sqrt(dx*dx+dy*dy);
-      var hitDist=(e.type==='skull')?14:10;
+      var hitDist=(e.type==='skull')?14:(e.type==='dragon')?16:10;
       if(dd<hitDist){
         if(e.type==='skull'){
           lives--;
@@ -864,6 +866,18 @@ function updateBall(dt){
             sfxHit();
             screenShake=4;
           }
+        }else if(e.type==='dragon'){
+          // Dragon body is a large obstacle, bounces ball hard
+          if(dd>0){
+            ballVX=-ballVX*0.6;
+            ballVY=-ballVY*0.6;
+            ballX=e.x+dx/dd*18;
+            ballY=e.y+dy/dd*18;
+          }
+          e.hp--;
+          if(e.hp<=0){e.alive=false;coins+=50;sfxPowerUp();}
+          sfxHit();
+          screenShake=6;
         }else if(e.type==='bat'){
           // Swooping bat knocks ball
           if(e.swooping){
@@ -1643,15 +1657,18 @@ function drawCharacter(){
   var oy=cameraY;
   var cx=Math.floor(charX),cy=Math.floor(charY-oy);
   charTimer++;
+  var ch=getSelectedCharacter();
+  var bodyCol=ch.color;
+  var hatCol=ch.hat;
 
   if(charState==='idle'){
     // Body
-    drawPixelRect(cx+2,cy-10,6,5,'#4444aa'); // shirt
-    drawPixelRect(cx+3,cy-5,4,4,'#3333aa'); // pants
+    drawPixelRect(cx+2,cy-10,6,5,bodyCol);
+    drawPixelRect(cx+3,cy-5,4,4,bodyCol);
     // Head
-    drawPixelRect(cx+3,cy-14,4,4,'#eebb88'); // skin
-    // Hair
-    drawPixelRect(cx+2,cy-15,6,2,'#553322');
+    drawPixelRect(cx+3,cy-14,4,4,'#eebb88');
+    // Hat
+    drawPixelRect(cx+2,cy-15,6,2,hatCol);
     // Eyes
     drawPixelRect(cx+4,cy-12,1,1,'#111111');
     drawPixelRect(cx+6,cy-12,1,1,'#111111');
@@ -1665,27 +1682,24 @@ function drawCharacter(){
   if(charState==='swing'){
     var frame=Math.floor(charTimer/6)%3;
     // Body
-    drawPixelRect(cx+2,cy-10,6,5,'#4444aa');
-    drawPixelRect(cx+3,cy-5,4,4,'#3333aa');
+    drawPixelRect(cx+2,cy-10,6,5,bodyCol);
+    drawPixelRect(cx+3,cy-5,4,4,bodyCol);
     drawPixelRect(cx+3,cy-14,4,4,'#eebb88');
-    drawPixelRect(cx+2,cy-15,6,2,'#553322');
+    drawPixelRect(cx+2,cy-15,6,2,hatCol);
     drawPixelRect(cx+4,cy-12,1,1,'#111111');
     drawPixelRect(cx+6,cy-12,1,1,'#111111');
     drawPixelRect(cx+2,cy-1,3,2,'#443322');
     drawPixelRect(cx+5,cy-1,3,2,'#443322');
     // Club swing animation
     if(frame===0){
-      // Backswing
       drawPixelRect(cx-2,cy-14,2,8,'#888888');
       drawPixelRect(cx,cy-9,2,4,'#eebb88');
       drawPixelRect(cx+8,cy-9,2,4,'#eebb88');
     }else if(frame===1){
-      // Impact
       drawPixelRect(cx+8,cy-8,6,2,'#888888');
       drawPixelRect(cx,cy-9,2,4,'#eebb88');
       drawPixelRect(cx+8,cy-9,2,4,'#eebb88');
     }else{
-      // Follow through
       drawPixelRect(cx+8,cy-14,2,8,'#888888');
       drawPixelRect(cx,cy-9,2,4,'#eebb88');
       drawPixelRect(cx+8,cy-10,2,4,'#eebb88');
@@ -1695,10 +1709,10 @@ function drawCharacter(){
   if(charState==='celebrate'){
     var bounce=Math.abs(Math.sin(charTimer*0.15))*6;
     cy-=bounce;
-    drawPixelRect(cx+2,cy-10,6,5,'#4444aa');
-    drawPixelRect(cx+3,cy-5,4,4,'#3333aa');
+    drawPixelRect(cx+2,cy-10,6,5,bodyCol);
+    drawPixelRect(cx+3,cy-5,4,4,bodyCol);
     drawPixelRect(cx+3,cy-14,4,4,'#eebb88');
-    drawPixelRect(cx+2,cy-15,6,2,'#553322');
+    drawPixelRect(cx+2,cy-15,6,2,hatCol);
     drawPixelRect(cx+4,cy-12,1,1,'#111111');
     drawPixelRect(cx+6,cy-12,1,1,'#111111');
     // Raised arms
@@ -2212,7 +2226,7 @@ function drawTitle(){
 
     for(var si=0;si<BALL_SKINS.length;si++){
       var sk=BALL_SKINS[si];
-      var sCardX=20,sCardY=70+si*75,sCardW=W-40,sCardH=65;
+      var sCardX=20,sCardY=66+si*62,sCardW=W-40,sCardH=54;
       var isSelSkin=(si===selectedSkin);
       var isUnlocked=(unlockedSkins.indexOf(sk.id)>=0);
 
@@ -2221,7 +2235,7 @@ function drawTitle(){
       drawPixelRect(sCardX,sCardY,sCardW,sCardH,isUnlocked?'#1a1a2e':'#111122');
 
       // Ball preview
-      var bpx=sCardX+25,bpy=sCardY+30;
+      var bpx=sCardX+25,bpy=sCardY+25;
       var prevCol;
       if(sk.trail==='rainbow'){
         prevCol='hsl('+((Date.now()/10+si*50)%360)+',100%,60%)';
@@ -2240,29 +2254,29 @@ function drawTitle(){
       ctx.fillStyle=isUnlocked?'#ffffff':'#666677';
       ctx.font='bold 10px monospace';
       ctx.textAlign='left';
-      ctx.fillText(sk.name,sCardX+50,sCardY+22);
+      ctx.fillText(sk.name,sCardX+50,sCardY+18);
       if(sk.desc){
         ctx.fillStyle=isUnlocked?'#8888aa':'#555566';
         ctx.font='8px monospace';
-        ctx.fillText(sk.desc,sCardX+50,sCardY+36);
+        ctx.fillText(sk.desc,sCardX+50,sCardY+32);
       }
 
       if(!isUnlocked){
         ctx.fillStyle='#ffdd44';
         ctx.font='9px monospace';
-        ctx.fillText('$'+sk.cost,sCardX+50,sCardY+52);
+        ctx.fillText('$'+sk.cost,sCardX+50,sCardY+46);
         if(totalCoinsEver>=sk.cost){
           ctx.fillStyle='#44ff88';
-          ctx.fillText('  TAP TO BUY',sCardX+80,sCardY+52);
+          ctx.fillText('  TAP TO BUY',sCardX+80,sCardY+46);
         }
       }else if(isSelSkin){
         ctx.fillStyle='#ffcc22';
         ctx.font='8px monospace';
-        ctx.fillText('EQUIPPED',sCardX+50,sCardY+52);
+        ctx.fillText('EQUIPPED',sCardX+50,sCardY+46);
       }else{
         ctx.fillStyle='#44ff88';
         ctx.font='8px monospace';
-        ctx.fillText('TAP TO EQUIP',sCardX+50,sCardY+52);
+        ctx.fillText('TAP TO EQUIP',sCardX+50,sCardY+46);
       }
     }
 
@@ -2502,19 +2516,75 @@ function handleTouchStart(gx,gy){
   initAudio();
 
   if(state===STATE_TITLE){
-    // Check ball selector
-    var bsx=W/2-(unlockedBalls.length*20)/2;
-    for(var i=0;i<unlockedBalls.length;i++){
-      if(gx>=bsx+i*20&&gx<=bsx+i*20+12&&gy>=480&&gy<=492){
-        currentBall=unlockedBalls[i];
-        saveData();
+    if(titlePage===0){
+      // Start button (y=170 to 206)
+      if(gy>=170&&gy<=206&&gx>=W/2-80&&gx<=W/2+80){
+        startRun();
         return;
       }
-    }
-    // Start
-    if(gy>280&&gy<400){
-      startRun();
-      return;
+      // Characters button (x=20..170, y=340..372)
+      if(gx>=20&&gx<=170&&gy>=340&&gy<=372){
+        titlePage=1;
+        return;
+      }
+      // Ball Skins button (x=190..340, y=340..372)
+      if(gx>=190&&gx<=340&&gy>=340&&gy<=372){
+        titlePage=2;
+        return;
+      }
+      // Character cards row (y=390..436)
+      if(gy>=390&&gy<=436){
+        for(var ci=0;ci<CHARACTERS.length;ci++){
+          var ccX=30+ci*85;
+          if(gx>=ccX&&gx<=ccX+74&&CHARACTERS[ci].unlocked){
+            selectedCharacter=ci;
+            saveData();
+            return;
+          }
+        }
+      }
+    }else if(titlePage===1){
+      // Back button
+      if(gy>=H-65&&gy<=H-35&&gx>=W/2-50&&gx<=W/2+50){
+        titlePage=0;
+        return;
+      }
+      // Character cards
+      for(var ci=0;ci<CHARACTERS.length;ci++){
+        var cardY=60+ci*130;
+        if(gy>=cardY&&gy<=cardY+115&&gx>=30&&gx<=W-30){
+          if(CHARACTERS[ci].unlocked){
+            selectedCharacter=ci;
+            saveData();
+          }
+          return;
+        }
+      }
+    }else if(titlePage===2){
+      // Back button
+      if(gy>=H-65&&gy<=H-35&&gx>=W/2-50&&gx<=W/2+50){
+        titlePage=0;
+        return;
+      }
+      // Skin cards
+      for(var si=0;si<BALL_SKINS.length;si++){
+        var sCardY=66+si*62;
+        if(gy>=sCardY&&gy<=sCardY+54&&gx>=20&&gx<=W-20){
+          var sk=BALL_SKINS[si];
+          var isUnlocked=(unlockedSkins.indexOf(sk.id)>=0);
+          if(isUnlocked){
+            selectedSkin=si;
+            saveData();
+          }else if(totalCoinsEver>=sk.cost){
+            totalCoinsEver-=sk.cost;
+            unlockedSkins.push(sk.id);
+            selectedSkin=si;
+            saveData();
+            sfxCoin();
+          }
+          return;
+        }
+      }
     }
     return;
   }
@@ -2522,8 +2592,10 @@ function handleTouchStart(gx,gy){
   if(state===STATE_GAMEOVER){
     if(gy>H-80){
       totalCoinsEver+=coins;
+      checkCharacterUnlocks();
       saveData();
       state=STATE_TITLE;
+      titlePage=0;
     }
     return;
   }
@@ -2531,6 +2603,7 @@ function handleTouchStart(gx,gy){
   if(state===STATE_SCORECARD){
     if(gy>H-80){
       state=STATE_TITLE;
+      titlePage=0;
     }
     return;
   }
