@@ -427,9 +427,16 @@ let exclamationTimer=0;
 let caughtAnimTimer=0;
 // Casting animation
 let castTimer=0,castDuration=0.8;
-let castStartX=200,castStartY=130; // rod tip position
-let castEndX=120,castEndY=0; // where bobber lands (set dynamically)
-let castBobberX=0,castBobberY=0; // animated bobber position during cast
+let castStartX=200,castStartY=130;
+let castEndX=120,castEndY=0;
+let castBobberX=0,castBobberY=0;
+// Aiming
+let aimX=120; // where the cast will land (X), controlled by touch
+let aimActive=false;
+// Rod wiggle
+let rodWiggle=0; // current wiggle offset (-1 to 1)
+let wiggleDecay=0;
+let bobberOffsetX=0; // bobber X offset from wiggle
 let lineEndX=0,lineEndY=0;
 let castAnimTimer=0;
 let msgText='',msgTimer=0;
@@ -1123,7 +1130,7 @@ function drawLine(t){
     ctx.fillStyle='#f83800';ctx.fillRect(bx-1,by,3,3);
     ctx.fillStyle='#fcfcfc';ctx.fillRect(bx-1,by+3,3,2);
   }else{
-    const bobX=180;bx=bobX;by=Math.floor(bobberY);
+    const bobX=Math.floor((castEndX||120)+bobberOffsetX);bx=bobX;by=Math.floor(bobberY);
     drawLinePixels(tipX,tipY,bx,by);
     const hookY=by+60;
     ctx.fillStyle='#bcbcbc';
@@ -1716,8 +1723,9 @@ function onAction(){
     sfxCast();
     castTimer=0;
     castStartX=200;castStartY=130;
-    castEndX=60+Math.floor(Math.random()*100);
-    castEndY=WATER_Y+5+Math.floor(Math.random()*20);
+    // Use aimed position (aimX set by touch), or random fallback
+    castEndX=aimX||60+Math.floor(Math.random()*100);
+    castEndY=WATER_Y+5+Math.floor(Math.random()*15);
     castBobberX=castStartX;castBobberY=castStartY;
     gameTime+=10;
     advanceWeather();
@@ -1774,14 +1782,52 @@ actionBtn.addEventListener('pointerup',()=>{
 actionBtn.addEventListener('pointerleave',()=>{
   if(state==='fight'){reeling=false;reelHeld=false}
 });
+let touchStartX=0,touchStartY=0,isDragging=false;
 canvas.addEventListener('pointerdown',(e)=>{
   initAudio();
+  const rect=canvas.getBoundingClientRect();
+  const sx=e.clientX-rect.left,sy=e.clientY-rect.top;
+  const cx=sx/rect.width*W,cy=sy/rect.height*H;
+  touchStartX=cx;touchStartY=cy;isDragging=false;
   if(state==='fight'){reeling=true;reelHeld=true;e.preventDefault()}
   else if(state==='bite'){hookFish();e.preventDefault()}
-  else if(state==='idle'){onAction();e.preventDefault()}
+  else if(state==='idle'){
+    // Start aiming — show where cast will land
+    aimActive=true;aimX=Math.max(20,Math.min(W-20,cx));
+    e.preventDefault();
+  }
 });
-canvas.addEventListener('pointerup',()=>{
+canvas.addEventListener('pointermove',(e)=>{
+  if(!e.buttons)return;
+  const rect=canvas.getBoundingClientRect();
+  const cx=(e.clientX-rect.left)/rect.width*W;
+  if(state==='idle'&&aimActive){
+    // Drag to aim cast position
+    aimX=Math.max(20,Math.min(W-20,cx));
+    isDragging=true;
+    e.preventDefault();
+  }
+  if(state==='idle'&&!aimActive){
+    // Wiggle the rod
+    var dx=cx-touchStartX;
+    rodWiggle=Math.max(-1,Math.min(1,dx/30));
+    wiggleDecay=0.5;
+    bobberOffsetX=rodWiggle*8;
+    // Wiggling reduces bite timer (attracts fish!)
+    if(Math.abs(rodWiggle)>0.3)biteTimer+=0.02;
+    e.preventDefault();
+  }
+});
+canvas.addEventListener('pointerup',(e)=>{
   if(state==='fight'){reeling=false;reelHeld=false}
+  if(state==='idle'&&aimActive){
+    aimActive=false;
+    // Cast to aimed position
+    castEndX=Math.floor(aimX);
+    onAction();
+    e.preventDefault();
+  }
+  isDragging=false;
 });
 document.addEventListener('keydown',(e)=>{
   initAudio();
@@ -2019,6 +2065,8 @@ function gameLoop(timestamp){
   if(shakeDuration>0){shakeDuration-=dt;if(shakeDuration<=0)shakeAmount=0}
   if(luckyCast){luckyCastTimer-=dt;if(luckyCastTimer<=0)luckyCast=false}
 
+  // Rod wiggle decay
+  if(wiggleDecay>0){wiggleDecay-=dt;if(wiggleDecay<=0){rodWiggle*=0.9;if(Math.abs(rodWiggle)<0.05)rodWiggle=0;bobberOffsetX=rodWiggle*8}}
   // Bobber physics
   if(state==='idle'||state==='bite'){
     const waveOff=Math.sin(t*1.5)*1.5+Math.sin(t*2.3)*0.5;
@@ -2070,6 +2118,14 @@ function gameLoop(timestamp){
     }
   }
 
+  // Aim indicator
+  if(state==='idle'&&aimActive){
+    var ax=Math.floor(aimX);
+    ctx.fillStyle='rgba(248,216,0,0.4)';
+    ctx.fillRect(ax-1,WATER_Y-8,3,1);ctx.fillRect(ax,WATER_Y-7,1,1);
+    ctx.fillRect(ax-1,WATER_Y+8,3,1);ctx.fillRect(ax,WATER_Y+7,1,1);
+    ctx.fillRect(ax-4,WATER_Y,1,3);ctx.fillRect(ax+4,WATER_Y,1,3);
+  }
   drawLine(t);
   drawBobber(t);
   drawExclamation(t);
