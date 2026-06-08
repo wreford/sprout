@@ -2513,10 +2513,13 @@ function dismissBackupReminder() {
 function handlePhotoClick() {
   if (currentStream) return;
   if (currentPhotos.length >= 3) { toast('Maximum 3 photos per catch'); return; }
-  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-    openCamera();
-  } else {
+  // On iOS in iframe, getUserMedia often fails — go straight to file input
+  var isIframe = window.self !== window.top;
+  var isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+  if (isIframe || isIOS || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     document.getElementById('fileInput').click();
+  } else {
+    openCamera();
   }
 }
 
@@ -3100,6 +3103,14 @@ function shareCatch(id) {
 
   const text = `Catch Log: ${c.species}\nWeight: ${formatWeight(c)}\nLength: ${c.lengthCm ? c.lengthCm + ' cm' : 'N/A'}\nLocation: ${c.location || 'N/A'}\nDate: ${formatDate(c.date)}${c.time ? ' at ' + formatTime(c.time) : ''}${c.weather ? '\nWeather: ' + c.weather : ''}${c.technique ? '\nTechnique: ' + c.technique : ''}${c.bait ? '\nBait: ' + c.bait : ''}${c.catchRelease ? '\n(Catch & Release)' : ''}${c.notes ? '\nNotes: ' + c.notes : ''}`;
 
+  // Try parent window share first (works better in iframes on iOS)
+  if (window.parent && window.parent !== window) {
+    try {
+      window.parent.postMessage({type:'share-catch',catch:c}, '*');
+      toast('Sharing...');
+      return;
+    } catch(e) {}
+  }
   if (navigator.share) {
     navigator.share({ title: 'Catch - ' + c.species, text: text }).catch(() => {});
   } else if (navigator.clipboard) {
