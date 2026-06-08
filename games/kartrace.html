@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no">
-<title>Pixel Kart</title>
+<title>Pixel Kart 2.0</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;touch-action:none;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
 html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:'Courier New',monospace}
@@ -14,27 +14,23 @@ canvas{display:block;width:100%;height:100%}
 <canvas id="c"></canvas>
 <script>
 // ============================================================
-// PIXEL KART - Top-Down Racing Game
+// PIXEL KART 2.0 - Pseudo-3D Behind-the-Kart Racing
+// Mode 7 / OutRun style
 // ============================================================
-const canvas=document.getElementById('c');
-const ctx=canvas.getContext('2d');
+var canvas=document.getElementById('c');
+var ctx=canvas.getContext('2d');
 
-// --- CONSTANTS ---
-const PI=Math.PI,TAU=PI*2;
-const KART_W=8,KART_H=12;
-const ITEM_NONE=0,ITEM_MUSHROOM=1,ITEM_BANANA=2,ITEM_SHELL=3,ITEM_STAR=4,ITEM_LIGHTNING=5;
-const ITEM_NAMES=['','Mushroom','Banana','Shell','Star','Lightning'];
-const ITEM_COLORS=['','#e44','#ff0','#0f0','#ff0','#ff0'];
-const POINTS=[10,6,3,1];
+var PI=Math.PI,TAU=PI*2;
 
 // --- AUDIO ---
-const AudioCtx=window.AudioContext||window.webkitAudioContext;
-let audioCtx=null;
+var AudioCtx=window.AudioContext||window.webkitAudioContext;
+var audioCtx=null;
 function ensureAudio(){if(!audioCtx)audioCtx=new AudioCtx();}
 
-function playTone(freq,dur,type='sine',vol=0.15,ramp=true){
+function playTone(freq,dur,type,vol,ramp){
+  type=type||'sine';vol=vol||0.15;ramp=ramp!==false;
   ensureAudio();
-  const o=audioCtx.createOscillator(),g=audioCtx.createGain();
+  var o=audioCtx.createOscillator(),g=audioCtx.createGain();
   o.type=type;o.frequency.value=freq;
   g.gain.value=vol;
   if(ramp)g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+dur);
@@ -42,16 +38,17 @@ function playTone(freq,dur,type='sine',vol=0.15,ramp=true){
   o.start();o.stop(audioCtx.currentTime+dur);
 }
 
-function playCollect(){playTone(880,0.1);setTimeout(()=>playTone(1320,0.15),80);}
+function playCollect(){playTone(880,0.1);setTimeout(function(){playTone(1320,0.15);},80);}
 function playBoost(){playTone(200,0.3,'sawtooth',0.1);playTone(400,0.3,'sawtooth',0.08);}
-function playShellFire(){playTone(600,0.1,'square',0.1);setTimeout(()=>playTone(300,0.15,'square',0.1),60);}
+function playShellFire(){playTone(600,0.1,'square',0.1);setTimeout(function(){playTone(300,0.15,'square',0.1);},60);}
 function playSlip(){playTone(150,0.3,'sawtooth',0.12);}
-function playStarJingle(){[660,880,1100,1320].forEach((f,i)=>setTimeout(()=>playTone(f,0.15,'square',0.08),i*80));}
-function playLap(){playTone(523,0.15);setTimeout(()=>playTone(659,0.15),120);setTimeout(()=>playTone(784,0.2),240);}
-function playFinish(){[523,659,784,1047].forEach((f,i)=>setTimeout(()=>playTone(f,0.2,'square',0.1),i*150));}
+function playStarJingle(){[660,880,1100,1320].forEach(function(f,i){setTimeout(function(){playTone(f,0.15,'square',0.08);},i*80);});}
+function playLap(){playTone(523,0.15);setTimeout(function(){playTone(659,0.15);},120);setTimeout(function(){playTone(784,0.2);},240);}
+function playFinish(){[523,659,784,1047].forEach(function(f,i){setTimeout(function(){playTone(f,0.2,'square',0.1);},i*150);});}
 function playCountdown(high){playTone(high?880:440,0.2,'square',0.12);}
+function playHit(){playTone(100,0.2,'square',0.12);playTone(80,0.3,'sawtooth',0.08);}
 
-let engineOsc=null,engineGain=null;
+var engineOsc=null,engineGain=null;
 function startEngine(){
   ensureAudio();
   if(engineOsc)return;
@@ -61,17 +58,17 @@ function startEngine(){
 }
 function updateEngine(speed){
   if(!engineOsc)return;
-  engineOsc.frequency.value=40+speed*0.8;
-  engineGain.gain.value=Math.min(0.05,0.01+speed*0.0003);
+  engineOsc.frequency.value=40+speed*0.5;
+  engineGain.gain.value=Math.min(0.06,0.015+speed*0.0002);
 }
 function stopEngine(){
-  if(engineOsc){engineOsc.stop();engineOsc=null;engineGain=null;}
+  if(engineOsc){try{engineOsc.stop();}catch(e){}engineOsc=null;engineGain=null;}
 }
 
 // --- RESIZE ---
-let W,H,scale;
+var W,H,scale;
 function resize(){
-  const dpr=window.devicePixelRatio||1;
+  var dpr=window.devicePixelRatio||1;
   W=canvas.width=window.innerWidth*dpr;
   H=canvas.height=window.innerHeight*dpr;
   scale=Math.min(W,H)/400;
@@ -80,286 +77,1126 @@ window.addEventListener('resize',resize);
 resize();
 
 // --- SAVE/LOAD ---
-const SAVE_KEY='pixelkart_save';
-let saveData={bestTimes:[null,null,null],unlocked:1,champResults:[]};
-function loadSave(){try{const d=JSON.parse(localStorage.getItem(SAVE_KEY));if(d)saveData=d;}catch(e){}}
+var SAVE_KEY='pixelkart2_save';
+var saveData={bestTimes:[null,null,null],unlocked:1,champResults:[]};
+function loadSave(){try{var d=JSON.parse(localStorage.getItem(SAVE_KEY));if(d)saveData=d;}catch(e){}}
 function writeSave(){try{localStorage.setItem(SAVE_KEY,JSON.stringify(saveData));}catch(e){}}
 loadSave();
 
-// --- TRACK DEFINITIONS ---
-// Tracks are defined as center-line waypoints with width
-// We'll generate track geometry from these
+// --- ITEMS ---
+var ITEM_NONE=0,ITEM_MUSHROOM=1,ITEM_BANANA=2,ITEM_SHELL=3,ITEM_STAR=4,ITEM_LIGHTNING=5;
+var ITEM_NAMES=['','Mushroom','Banana','Shell','Star','Lightning'];
+var ITEM_COLORS=['','#e44','#ff0','#0f0','#ff0','#ff0'];
+var POINTS=[10,6,3,1];
 
-function makeOvalTrack(){
-  // Mushroom Circuit: oval with a chicane
-  const pts=[];
-  const cx=0,cy=0,rx=500,ry=300;
-  for(let i=0;i<60;i++){
-    let a=TAU*i/60;
-    let x=cx+Math.cos(a)*rx;
-    let y=cy+Math.sin(a)*ry;
-    // Add chicane on the right side (around i=7..12)
-    if(i>=7&&i<=12){
-      const t=(i-7)/5;
-      const off=Math.sin(t*PI)*120;
-      x+=Math.cos(a+PI/2)*off;
-      y+=Math.sin(a+PI/2)*off;
-    }
-    pts.push({x,y});
-  }
-  return {
+// =============================================================
+// TRACK DEFINITIONS
+// Each track: array of segments {length, curve, hill}
+// curve: negative=left, positive=right
+// hill: negative=uphill, positive=downhill
+// =============================================================
+var TRACKS=[
+  {
     name:'Mushroom Circuit',
-    waypoints:pts,
-    width:80,
-    hasWalls:true,
-    bgColor:'#2a5e1e',
-    roadColor:'#555',
-    boostPads:[{wp:15,offset:0},{wp:45,offset:0}],
-    itemBoxes:[{wp:5,offset:-20},{wp:5,offset:20},{wp:20,offset:-20},{wp:20,offset:20},{wp:35,offset:0},{wp:50,offset:-20},{wp:50,offset:20}]
-  };
-}
-
-function makeFigure8Track(){
-  // Star Valley: figure-8
-  const pts=[];
-  const r=350;
-  for(let i=0;i<80;i++){
-    const t=TAU*i/80;
-    // Lemniscate of Bernoulli shape (figure 8)
-    const s=Math.sin(t),c=Math.cos(t);
-    const denom=1+s*s;
-    const x=r*1.4*c/denom;
-    const y=r*s*c/denom;
-    pts.push({x,y});
-  }
-  return {
+    segments:[
+      {length:300,curve:0,hill:0},
+      {length:80,curve:0.4,hill:0},
+      {length:120,curve:0,hill:-0.8},
+      {length:80,curve:-0.5,hill:0},
+      {length:200,curve:0,hill:0.5},
+      {length:60,curve:0.7,hill:0},
+      {length:150,curve:0,hill:0},
+      {length:100,curve:-0.3,hill:-0.4},
+      {length:80,curve:0.6,hill:0},
+      {length:200,curve:0,hill:0},
+      {length:60,curve:-0.6,hill:0.3},
+      {length:120,curve:0,hill:0},
+      {length:80,curve:0.3,hill:0},
+      {length:150,curve:0,hill:-0.5},
+      {length:70,curve:-0.4,hill:0},
+      {length:180,curve:0,hill:0}
+    ],
+    laps:3,
+    roadWidth:1200,
+    bgColorTop:'#6ec6ff',
+    bgColorBot:'#c8e8ff',
+    grassColor1:'#2d8a4e',
+    grassColor2:'#247a42',
+    roadColor1:'#666666',
+    roadColor2:'#555555',
+    rumbleColor1:'#ff0000',
+    rumbleColor2:'#ffffff',
+    treeColor:'#1a6030',
+    treeTrunk:'#553322',
+    skyMountain:true,
+    itemFreq:0.015
+  },
+  {
     name:'Star Valley',
-    waypoints:pts,
-    width:70,
-    hasWalls:true,
-    bgColor:'#1e3a5e',
-    roadColor:'#4a4a5a',
-    boostPads:[{wp:10,offset:0},{wp:30,offset:0},{wp:50,offset:0},{wp:70,offset:0}],
-    itemBoxes:[{wp:5,offset:0},{wp:15,offset:-15},{wp:15,offset:15},{wp:25,offset:0},{wp:40,offset:-15},{wp:40,offset:15},{wp:55,offset:0},{wp:65,offset:0}]
-  };
-}
-
-function makeRainbowTrack(){
-  // Rainbow Road: tight turns, narrow, no walls
-  const pts=[];
-  for(let i=0;i<100;i++){
-    const t=TAU*i/100;
-    const r=250+120*Math.sin(t*3)+60*Math.cos(t*5);
-    const x=r*Math.cos(t);
-    const y=r*Math.sin(t);
-    pts.push({x,y});
-  }
-  return {
+    segments:[
+      {length:200,curve:0,hill:0},
+      {length:100,curve:0.6,hill:-0.5},
+      {length:60,curve:-0.8,hill:0},
+      {length:150,curve:0,hill:0.7},
+      {length:80,curve:0.9,hill:0},
+      {length:100,curve:0,hill:-1.0},
+      {length:70,curve:-0.7,hill:0},
+      {length:200,curve:0,hill:0},
+      {length:90,curve:0.5,hill:0.4},
+      {length:60,curve:-0.9,hill:0},
+      {length:150,curve:0,hill:-0.6},
+      {length:80,curve:0.7,hill:0},
+      {length:120,curve:0,hill:0.8},
+      {length:70,curve:-0.5,hill:0},
+      {length:100,curve:0.8,hill:-0.3},
+      {length:160,curve:0,hill:0}
+    ],
+    laps:3,
+    roadWidth:1000,
+    bgColorTop:'#2a1a4e',
+    bgColorBot:'#5533aa',
+    grassColor1:'#1e3a5e',
+    grassColor2:'#162e4a',
+    roadColor1:'#4a4a5a',
+    roadColor2:'#3a3a4a',
+    rumbleColor1:'#ffaa00',
+    rumbleColor2:'#ffffff',
+    treeColor:'#334466',
+    treeTrunk:'#223344',
+    skyMountain:true,
+    itemFreq:0.02
+  },
+  {
     name:'Rainbow Road',
-    waypoints:pts,
-    width:55,
-    hasWalls:false,
-    bgColor:'#111',
-    roadColor:'#333',
+    segments:[
+      {length:150,curve:0,hill:0},
+      {length:80,curve:1.0,hill:-0.6},
+      {length:50,curve:-1.2,hill:0.4},
+      {length:100,curve:0,hill:0},
+      {length:70,curve:0.8,hill:-0.8},
+      {length:60,curve:-0.9,hill:0},
+      {length:120,curve:0,hill:0.6},
+      {length:50,curve:1.1,hill:0},
+      {length:80,curve:0,hill:-1.0},
+      {length:60,curve:-1.0,hill:0},
+      {length:100,curve:0.7,hill:0.5},
+      {length:50,curve:-0.8,hill:0},
+      {length:130,curve:0,hill:0},
+      {length:70,curve:1.0,hill:-0.4},
+      {length:60,curve:-1.1,hill:0.3},
+      {length:100,curve:0,hill:0}
+    ],
+    laps:3,
+    roadWidth:800,
+    bgColorTop:'#000011',
+    bgColorBot:'#000022',
+    grassColor1:'#000005',
+    grassColor2:'#000008',
+    roadColor1:'#333344',
+    roadColor2:'#222233',
+    rumbleColor1:'#ff00ff',
+    rumbleColor2:'#00ffff',
+    treeColor:null,
+    treeTrunk:null,
+    skyMountain:false,
     isRainbow:true,
-    boostPads:[{wp:12,offset:0},{wp:37,offset:0},{wp:62,offset:0},{wp:87,offset:0}],
-    itemBoxes:[{wp:6,offset:0},{wp:18,offset:0},{wp:30,offset:0},{wp:45,offset:0},{wp:55,offset:0},{wp:70,offset:0},{wp:80,offset:0},{wp:93,offset:0}]
-  };
-}
-
-const TRACKS=[makeOvalTrack(),makeFigure8Track(),makeRainbowTrack()];
-
-// --- TRACK GEOMETRY HELPERS ---
-function getTrackPoint(track,idx){
-  const n=track.waypoints.length;
-  return track.waypoints[((idx%n)+n)%n];
-}
-
-function getTrackPos(track,idx,offset){
-  const n=track.waypoints.length;
-  const p=getTrackPoint(track,idx);
-  const pNext=getTrackPoint(track,idx+1);
-  const dx=pNext.x-p.x,dy=pNext.y-p.y;
-  const len=Math.sqrt(dx*dx+dy*dy)||1;
-  const nx=-dy/len,ny=dx/len;
-  return {x:p.x+nx*offset,y:p.y+ny*offset};
-}
-
-function getTrackAngle(track,idx){
-  const p=getTrackPoint(track,idx);
-  const pNext=getTrackPoint(track,idx+1);
-  return Math.atan2(pNext.y-p.y,pNext.x-p.x);
-}
-
-function distToSegment(px,py,ax,ay,bx,by){
-  const dx=bx-ax,dy=by-ay;
-  const len2=dx*dx+dy*dy;
-  if(len2===0)return Math.sqrt((px-ax)**2+(py-ay)**2);
-  let t=((px-ax)*dx+(py-ay)*dy)/len2;
-  t=Math.max(0,Math.min(1,t));
-  const cx=ax+t*dx,cy=ay+t*dy;
-  return Math.sqrt((px-cx)**2+(py-cy)**2);
-}
-
-function findNearestWaypoint(track,x,y){
-  let best=0,bestDist=Infinity;
-  for(let i=0;i<track.waypoints.length;i++){
-    const p=track.waypoints[i];
-    const d=(p.x-x)**2+(p.y-y)**2;
-    if(d<bestDist){bestDist=d;best=i;}
+    itemFreq:0.025
   }
-  return best;
-}
+];
 
-function isOnRoad(track,x,y){
-  let minDist=Infinity;
-  const n=track.waypoints.length;
-  for(let i=0;i<n;i++){
-    const a=track.waypoints[i];
-    const b=track.waypoints[(i+1)%n];
-    const d=distToSegment(x,y,a.x,a.y,b.x,b.y);
-    if(d<minDist)minDist=d;
+// Build flat segment arrays for each track
+function buildTrackSegments(track){
+  var segs=[];
+  var totalLen=0;
+  for(var i=0;i<track.segments.length;i++){
+    var s=track.segments[i];
+    for(var j=0;j<s.length;j++){
+      segs.push({
+        curve:s.curve,
+        hill:s.hill||0,
+        index:totalLen,
+        hasItem:Math.random()<track.itemFreq,
+        itemActive:true,
+        itemRespawn:0,
+        hasBoost:false,
+        hasBanana:false,
+        bananaLane:0
+      });
+      totalLen++;
+    }
   }
-  return {onRoad:minDist<=track.width/2,dist:minDist};
-}
-
-// Pre-compute track edges for rendering
-function computeTrackEdges(track){
-  const n=track.waypoints.length;
-  const left=[],right=[];
-  for(let i=0;i<n;i++){
-    const p=track.waypoints[i];
-    const pNext=track.waypoints[(i+1)%n];
-    const dx=pNext.x-p.x,dy=pNext.y-p.y;
-    const len=Math.sqrt(dx*dx+dy*dy)||1;
-    const nx=-dy/len*(track.width/2);
-    const ny=dx/len*(track.width/2);
-    left.push({x:p.x+nx,y:p.y+ny});
-    right.push({x:p.x-nx,y:p.y-ny});
+  // Add boost pads
+  var boostInterval=Math.floor(totalLen/4);
+  for(var i=0;i<4;i++){
+    var idx=(boostInterval*i+Math.floor(boostInterval/2))%totalLen;
+    segs[idx].hasBoost=true;
   }
-  track.leftEdge=left;
-  track.rightEdge=right;
+  track.flatSegments=segs;
+  track.totalLength=totalLen;
 }
-TRACKS.forEach(computeTrackEdges);
+TRACKS.forEach(buildTrackSegments);
 
-// --- GAME STATE ---
-const STATE_MENU=0,STATE_COUNTDOWN=1,STATE_RACING=2,STATE_FINISH=3,STATE_TRACK_SELECT=4,STATE_CHAMP_RESULTS=5;
-let gameState=STATE_MENU;
-let currentTrack=0;
-let championshipMode=false;
-let champStandings=[0,0,0,0];
-let champRace=0;
+// Roadside objects per track
+function buildRoadsideObjects(track){
+  var objs=[];
+  var total=track.totalLength;
+  for(var i=0;i<total;i+=8+Math.floor(Math.random()*12)){
+    var side=Math.random()<0.5?-1:1;
+    var type=Math.random();
+    objs.push({
+      segIndex:i%total,
+      side:side,
+      offset:0.7+Math.random()*0.5,
+      type:type<0.6?'tree':(type<0.8?'sign':'mushroom')
+    });
+  }
+  track.roadsideObjects=objs;
+}
+TRACKS.forEach(buildRoadsideObjects);
 
-// Touch state
-let touchLeft=false,touchRight=false,touchUseItem=false;
-let touches={};
+// --- GAME STATES ---
+var STATE_MENU=0,STATE_COUNTDOWN=1,STATE_RACING=2,STATE_FINISH=3;
+var STATE_TRACK_SELECT=4,STATE_CHAMP_RESULTS=5;
+var gameState=STATE_MENU;
+var currentTrack=0;
+var championshipMode=false;
+var champStandings=[0,0,0,0];
+var champRace=0;
 
-// Karts
-let karts=[];
-let bananas=[];
-let shells=[];
-let itemBoxes=[];
-let boostPads=[];
-let tireMarks=[];
+// --- INPUT ---
+var touchLeft=false,touchRight=false,touchUseItem=false;
+var touches={};
+var keys={};
 
-// Race state
-let countdown=0;
-let countdownTimer=0;
-let raceTime=0;
-let raceFinished=false;
-let finishPositions=[];
-let lapTimes=[];
+// --- PLAYER STATE ---
+var player={
+  position:0,       // distance along track
+  speed:0,
+  maxSpeed:200,
+  accel:120,
+  decel:80,
+  turnSpeed:0,
+  steerAmount:0,    // -1 to 1 visual steering
+  playerX:0,        // lateral position on road (-1 left, +1 right)
+  lap:0,
+  item:ITEM_NONE,
+  itemTimer:0,
+  boostTimer:0,
+  starTimer:0,
+  spinTimer:0,
+  invincTimer:0,
+  offRoad:false,
+  finished:false,
+  finishTime:0
+};
 
-// Camera
-let camX=0,camY=0,camAngle=0;
-let camTargetX=0,camTargetY=0,camTargetAngle=0;
+// --- AI RACERS ---
+var aiRacers=[];
+var NUM_AI=3;
 
-// --- KART CLASS ---
-function createKart(color,isPlayer,startWP,startOffset){
-  const track=TRACKS[currentTrack];
-  const n=track.waypoints.length;
-  const normWP=((startWP%n)+n)%n;
-  const pos=getTrackPos(track,startWP,startOffset);
-  const angle=getTrackAngle(track,startWP);
+function createAI(i){
   return {
-    x:pos.x,y:pos.y,
-    angle:angle,
+    position:-(i+1)*40,
     speed:0,
-    maxSpeed:180,
-    baseMaxSpeed:180,
-    turnRate:0,
-    color:color,
-    isPlayer:isPlayer,
+    maxSpeed:170+Math.random()*20,
+    playerX:(-0.3+i*0.3),
+    color:['#3366ee','#33bb33','#eeee33'][i],
+    name:['Blue','Green','Yellow'][i],
     lap:0,
-    checkpoint:normWP,
-    lastCheckpoint:normWP,
     finished:false,
     finishTime:0,
-    position:0,
     item:ITEM_NONE,
-    itemTimer:0,
-    starTimer:0,
     shrinkTimer:0,
     spinTimer:0,
-    boostTimer:0,
-    invincTimer:0,
-    // AI
-    targetWP:((startWP+3)%n+n)%n,
-    aiVariation:0.9+Math.random()*0.2,
-    aiItemTimer:0,
-    // Drift
-    driftAngle:0,
-    // Trail
-    lastTrailTime:0
+    targetX:0,
+    steerVariation:Math.random()*0.3-0.15
   };
 }
 
-function resetRace(){
-  const track=TRACKS[currentTrack];
-  const startWP=0;
-  karts=[
-    createKart('#e33','player',startWP,0),
-    createKart('#33e','ai',startWP-2,-15),
-    createKart('#3b3','ai',startWP-2,15),
-    createKart('#ee3','ai',startWP-4,0)
-  ];
-  karts[0].isPlayer=true;
-  for(let i=1;i<4;i++){
-    karts[i].isPlayer=false;
-    karts[i].aiVariation=0.88+Math.random()*0.24;
-  }
+// --- BANANAS ON TRACK ---
+var droppedBananas=[];
+// --- SHELLS ---
+var activeShells=[];
 
-  bananas=[];
-  shells=[];
-  tireMarks=[];
+// --- RACE DATA ---
+var raceTime=0;
+var countdown=0;
+var countdownTimer=0;
+var finishPositions=[];
+var LAPS_TOTAL=3;
 
-  // Place item boxes
-  itemBoxes=[];
-  track.itemBoxes.forEach((ib,idx)=>{
-    const pos=getTrackPos(track,ib.wp,ib.offset);
-    itemBoxes.push({x:pos.x,y:pos.y,active:true,respawnTimer:0,bobPhase:Math.random()*TAU,wp:ib.wp});
-  });
+// -- Particles --
+var particles=[];
 
-  // Boost pads
-  boostPads=[];
-  track.boostPads.forEach(bp=>{
-    const pos=getTrackPos(track,bp.wp,bp.offset);
-    const angle=getTrackAngle(track,bp.wp);
-    boostPads.push({x:pos.x,y:pos.y,angle:angle});
-  });
-
-  countdown=4;
-  countdownTimer=0;
-  raceTime=0;
-  raceFinished=false;
-  finishPositions=[];
-  lapTimes=[[],[],[],[]];
-  gameState=STATE_COUNTDOWN;
+function addParticle(x,y,vx,vy,color,life){
+  particles.push({x:x,y:y,vx:vx,vy:vy,color:color,life:life,maxLife:life});
 }
 
-// --- UPDATE ---
-let lastTime=0;
-const LAPS_TOTAL=3;
+// --- CAMERA / SCROLL ---
+var scrollPos=0;
+
+// =============================================================
+// PSEUDO-3D RENDERING ENGINE
+// =============================================================
+
+var DRAW_DIST=200;        // how many segments to draw ahead
+var SEG_LENGTH=5;         // each segment depth unit
+var CAM_HEIGHT=1500;      // camera height above road
+var CAM_DEPTH=1/(Math.tan((80/2)*PI/180)); // FOV
+
+function getSegment(track,index){
+  var segs=track.flatSegments;
+  var total=segs.length;
+  return segs[((index%total)+total)%total];
+}
+
+function project(x,y,z,camX,camY,camZ){
+  // Project 3D point to 2D screen
+  var scale_proj=CAM_DEPTH/(z-camZ);
+  var sx=W/2+(x-camX)*scale_proj*W/2;
+  var sy=H/2-(y-camY)*scale_proj*H/2;
+  var sw=scale_proj*W/2;
+  return {x:sx,y:sy,w:sw,scale:scale_proj};
+}
+
+function drawRoad(){
+  var track=TRACKS[currentTrack];
+  var segs=track.flatSegments;
+  var total=segs.length;
+  var baseIndex=Math.floor(player.position)%total;
+  var basePercent=player.position-Math.floor(player.position);
+
+  // Camera position
+  var camZ=basePercent*SEG_LENGTH;
+  var camX=player.playerX*track.roadWidth/2;
+  var camY=CAM_HEIGHT;
+
+  // Sky
+  drawSky(track);
+
+  // Accumulate curve and hill
+  var curveAcc=0;
+  var hillAcc=0;
+  var prevProj=null;
+
+  // Collect projected segments
+  var projected=[];
+  for(var i=0;i<DRAW_DIST;i++){
+    var segIdx=((baseIndex+i)%total+total)%total;
+    var seg=segs[segIdx];
+    curveAcc+=seg.curve;
+    hillAcc+=seg.hill;
+
+    var worldX=curveAcc*50;
+    var worldY=hillAcc*30;
+    var worldZ=(i+1)*SEG_LENGTH-camZ;
+
+    if(worldZ<=0)continue;
+
+    var p=project(worldX,worldY,worldZ,camX,0,0);
+    p.segIdx=segIdx;
+    p.seg=seg;
+    p.worldZ=worldZ;
+    p.curve=curveAcc;
+    projected.push(p);
+  }
+
+  // Draw from back to front
+  var horizonY=H/2;
+  if(projected.length>0){
+    horizonY=projected[projected.length-1].y;
+  }
+
+  // Clip sky at horizon
+  ctx.save();
+
+  for(var i=projected.length-1;i>0;i--){
+    var p1=projected[i];
+    var p2=projected[i-1];
+
+    // Skip if behind camera or above screen
+    if(p1.y>=p2.y)continue;
+    if(p2.y<0)continue;
+    if(p1.y>H)continue;
+
+    var segIdx=p2.segIdx;
+    var isLight=Math.floor(segIdx/3)%2===0;
+
+    var y1=Math.max(0,Math.floor(p1.y));
+    var y2=Math.min(H,Math.ceil(p2.y));
+
+    if(y1>=y2)continue;
+
+    // Road widths
+    var rw=track.roadWidth;
+    var w1=p1.w*rw;
+    var w2=p2.w*rw;
+    var rumbleW1=w1*1.15;
+    var rumbleW2=w2*1.15;
+
+    // Grass
+    if(track.isRainbow){
+      var hue=((segIdx*3+raceTime*100)%360);
+      ctx.fillStyle=isLight?'hsl('+hue+',10%,3%)':'hsl('+hue+',10%,2%)';
+    } else {
+      ctx.fillStyle=isLight?track.grassColor1:track.grassColor2;
+    }
+    ctx.fillRect(0,y1,W,y2-y1);
+
+    // Rumble strips
+    if(track.isRainbow){
+      var hue2=(segIdx*8+raceTime*200)%360;
+      ctx.fillStyle=isLight?'hsl('+hue2+',100%,60%)':'hsl('+((hue2+180)%360)+',100%,60%)';
+    } else {
+      ctx.fillStyle=isLight?track.rumbleColor1:track.rumbleColor2;
+    }
+    drawTrapezoid(p1.x,y1,rumbleW1,p2.x,y2,rumbleW2);
+
+    // Road surface
+    if(track.isRainbow){
+      var hue3=(segIdx*5+raceTime*80)%360;
+      ctx.fillStyle=isLight?'hsl('+hue3+',60%,30%)':'hsl('+hue3+',60%,22%)';
+    } else {
+      ctx.fillStyle=isLight?track.roadColor1:track.roadColor2;
+    }
+    drawTrapezoid(p1.x,y1,w1,p2.x,y2,w2);
+
+    // White lane markers
+    var laneW1=w1*0.02;
+    var laneW2=w2*0.02;
+    if(laneW1<1)laneW1=1;
+    if(laneW2<1)laneW2=1;
+
+    // Edge lines (always)
+    ctx.fillStyle='#ffffff';
+    // Left edge
+    drawTrapezoid(p1.x-w1/2,y1,laneW1*2,p2.x-w2/2,y2,laneW2*2);
+    // Right edge
+    drawTrapezoid(p1.x+w1/2-laneW1*2,y1,laneW1*2,p2.x+w2/2-laneW2*2,y2,laneW2*2);
+
+    // Center dashes
+    if(isLight){
+      ctx.fillStyle='rgba(255,255,255,0.6)';
+      drawTrapezoid(p1.x-laneW1,y1,laneW1*2,p2.x-laneW2,y2,laneW2*2);
+    }
+
+    // Boost pad glow
+    if(p2.seg.hasBoost){
+      var glowAlpha=0.3+0.3*Math.sin(raceTime*10);
+      ctx.fillStyle='rgba(255,220,0,'+glowAlpha+')';
+      drawTrapezoid(p1.x,y1,w1*0.4,p2.x,y2,w2*0.4);
+      // Chevron lines
+      ctx.fillStyle='rgba(255,180,0,'+glowAlpha+')';
+      drawTrapezoid(p1.x,y1,w1*0.05,p2.x,y2,w2*0.05);
+    }
+
+    // Start/finish line (segment 0)
+    if(segIdx===0||segIdx===1||segIdx===2){
+      ctx.fillStyle=(segIdx+Math.floor(raceTime*2))%2===0?'#ffffff':'#222222';
+      drawTrapezoid(p1.x,y1,w1*0.8,p2.x,y2,w2*0.8);
+    }
+  }
+
+  // Draw roadside objects
+  drawRoadsideObjects(track,projected);
+
+  // Draw item boxes on road
+  drawTrackItems(track,projected);
+
+  // Draw bananas on road
+  drawBananasOnRoad(projected,track);
+
+  // Draw shells
+  drawShellsOnRoad(projected,track);
+
+  // Draw AI racers
+  drawAIRacers(projected,track);
+
+  ctx.restore();
+}
+
+function drawTrapezoid(x1,y1,w1,x2,y2,w2){
+  ctx.beginPath();
+  ctx.moveTo(x1-w1/2,y1);
+  ctx.lineTo(x1+w1/2,y1);
+  ctx.lineTo(x2+w2/2,y2);
+  ctx.lineTo(x2-w2/2,y2);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawSky(track){
+  // Gradient sky
+  var grad=ctx.createLinearGradient(0,0,0,H/2);
+  grad.addColorStop(0,track.bgColorTop);
+  grad.addColorStop(1,track.bgColorBot);
+  ctx.fillStyle=grad;
+  ctx.fillRect(0,0,W,H/2+20);
+
+  if(track.isRainbow){
+    // Stars in space
+    var seed=42;
+    for(var i=0;i<80;i++){
+      seed=(seed*1103515245+12345)&0x7fffffff;
+      var sx=(seed%W);
+      seed=(seed*1103515245+12345)&0x7fffffff;
+      var sy=(seed%(H/2));
+      seed=(seed*1103515245+12345)&0x7fffffff;
+      var bright=0.3+(seed%70)/100;
+      ctx.fillStyle='rgba(255,255,255,'+bright+')';
+      ctx.fillRect(sx,sy,2,2);
+    }
+    return;
+  }
+
+  if(track.skyMountain){
+    // Mountains (parallax)
+    var mountainOffset=player.steerAmount*20;
+
+    // Far mountains
+    ctx.fillStyle='rgba(100,140,180,0.4)';
+    ctx.beginPath();
+    ctx.moveTo(-50,H/2+10);
+    for(var x=-50;x<=W+50;x+=30){
+      var mh=40+Math.sin(x*0.008+1)*35+Math.sin(x*0.015)*20;
+      ctx.lineTo(x+mountainOffset*0.3,H/2+10-mh*scale);
+    }
+    ctx.lineTo(W+50,H/2+10);
+    ctx.closePath();
+    ctx.fill();
+
+    // Near mountains
+    ctx.fillStyle='rgba(60,100,60,0.6)';
+    ctx.beginPath();
+    ctx.moveTo(-50,H/2+10);
+    for(var x=-50;x<=W+50;x+=20){
+      var mh=25+Math.sin(x*0.012+3)*30+Math.sin(x*0.02+1)*15;
+      ctx.lineTo(x+mountainOffset*0.5,H/2+10-mh*scale);
+    }
+    ctx.lineTo(W+50,H/2+10);
+    ctx.closePath();
+    ctx.fill();
+
+    // Clouds
+    ctx.fillStyle='rgba(255,255,255,0.3)';
+    var cloudBase=raceTime*5+mountainOffset*0.2;
+    for(var i=0;i<5;i++){
+      var cx=((i*W/3+cloudBase*3*(i%2===0?1:-1))%((W+200))-100);
+      var cy=H*0.1+i*H*0.06;
+      ctx.beginPath();
+      ctx.arc(cx,cy,30*scale,0,TAU);
+      ctx.arc(cx+25*scale,cy-5*scale,22*scale,0,TAU);
+      ctx.arc(cx+50*scale,cy,28*scale,0,TAU);
+      ctx.fill();
+    }
+  }
+}
+
+function drawRoadsideObjects(track,projected){
+  if(!track.treeColor)return;
+  var total=track.totalLength;
+  var baseIndex=Math.floor(player.position)%total;
+
+  for(var oi=0;oi<track.roadsideObjects.length;oi++){
+    var obj=track.roadsideObjects[oi];
+    var relSeg=((obj.segIndex-baseIndex)%total+total)%total;
+    if(relSeg<1||relSeg>=DRAW_DIST-1)continue;
+
+    // Find projected segment
+    var pIdx=-1;
+    for(var pi=0;pi<projected.length;pi++){
+      if(projected[pi].segIdx===obj.segIndex){pIdx=pi;break;}
+    }
+    if(pIdx<0||pIdx<1)continue;
+
+    var p=projected[pIdx];
+    var rw=track.roadWidth;
+    var objScale=p.scale;
+    if(objScale<=0)continue;
+
+    var lateralPos=obj.side*(rw/2*p.w+p.w*rw*obj.offset);
+    var ox=p.x+lateralPos;
+    var oy=p.y;
+
+    if(ox<-100||ox>W+100||oy<0||oy>H)continue;
+
+    var sz=objScale*W/2;
+    if(sz<2)continue;
+
+    if(obj.type==='tree'){
+      // Trunk
+      ctx.fillStyle=track.treeTrunk;
+      var tw=sz*20;
+      var th=sz*60;
+      ctx.fillRect(ox-tw/2,oy-th,tw,th);
+      // Foliage
+      ctx.fillStyle=track.treeColor;
+      ctx.beginPath();
+      ctx.moveTo(ox,oy-th-sz*80);
+      ctx.lineTo(ox-sz*40,oy-th+sz*10);
+      ctx.lineTo(ox+sz*40,oy-th+sz*10);
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(ox,oy-th-sz*50);
+      ctx.lineTo(ox-sz*30,oy-th+sz*25);
+      ctx.lineTo(ox+sz*30,oy-th+sz*25);
+      ctx.closePath();
+      ctx.fill();
+    } else if(obj.type==='sign'){
+      // Sign post
+      ctx.fillStyle='#888888';
+      var sw2=sz*8;
+      ctx.fillRect(ox-sw2/2,oy-sz*50,sw2,sz*50);
+      // Sign board
+      ctx.fillStyle='#dd4444';
+      ctx.fillRect(ox-sz*25,oy-sz*55,sz*50,sz*30);
+      // Arrow
+      ctx.fillStyle='#ffffff';
+      ctx.font=(sz*18)+'px monospace';
+      ctx.textAlign='center';
+      ctx.textBaseline='middle';
+      ctx.fillText(obj.side>0?'<':'>',ox,oy-sz*40);
+    } else if(obj.type==='mushroom'){
+      // Mushroom
+      var mSz=sz*25;
+      ctx.fillStyle='#eeddbb';
+      ctx.fillRect(ox-mSz*0.15,oy-mSz*0.8,mSz*0.3,mSz*0.8);
+      ctx.fillStyle='#ee3333';
+      ctx.beginPath();
+      ctx.arc(ox,oy-mSz*0.8,mSz*0.5,PI,0);
+      ctx.fill();
+      // Dots
+      ctx.fillStyle='#ffffff';
+      ctx.beginPath();
+      ctx.arc(ox-mSz*0.15,oy-mSz*0.95,mSz*0.1,0,TAU);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(ox+mSz*0.15,oy-mSz*0.85,mSz*0.08,0,TAU);
+      ctx.fill();
+    }
+  }
+}
+
+function drawTrackItems(track,projected){
+  var total=track.totalLength;
+  var baseIndex=Math.floor(player.position)%total;
+  var segs=track.flatSegments;
+
+  for(var i=0;i<projected.length;i++){
+    var p=projected[i];
+    var seg=p.seg;
+    if(!seg.hasItem||!seg.itemActive)continue;
+
+    var objScale=p.scale;
+    if(objScale<=0.001)continue;
+
+    var sz=objScale*W/2;
+    if(sz<3)continue;
+
+    var boxSize=sz*30;
+    if(boxSize>60*scale)boxSize=60*scale;
+    if(boxSize<4)continue;
+
+    var bob=Math.sin(raceTime*4+p.segIdx)*boxSize*0.15;
+    var bx=p.x;
+    var by=p.y-boxSize-bob;
+
+    if(bx<-50||bx>W+50||by<0||by>H)continue;
+
+    // Rotating question box
+    var rot=raceTime*3+p.segIdx;
+    ctx.save();
+    ctx.translate(bx,by);
+    ctx.rotate(Math.sin(rot)*0.3);
+
+    // Box
+    ctx.fillStyle='rgba(255,200,50,0.9)';
+    ctx.fillRect(-boxSize/2,-boxSize/2,boxSize,boxSize);
+    ctx.strokeStyle='#ffffff';
+    ctx.lineWidth=Math.max(1,boxSize*0.1);
+    ctx.strokeRect(-boxSize/2,-boxSize/2,boxSize,boxSize);
+
+    // Question mark
+    ctx.fillStyle='#ffffff';
+    ctx.font='bold '+Math.max(6,boxSize*0.7)+'px monospace';
+    ctx.textAlign='center';
+    ctx.textBaseline='middle';
+    ctx.fillText('?',0,1);
+
+    ctx.restore();
+  }
+}
+
+function drawBananasOnRoad(projected,track){
+  var total=track.totalLength;
+  var baseIndex=Math.floor(player.position)%total;
+
+  for(var bi=0;bi<droppedBananas.length;bi++){
+    var ban=droppedBananas[bi];
+    if(!ban.active)continue;
+
+    var relSeg=((Math.floor(ban.position)-baseIndex)%total+total)%total;
+    if(relSeg<1||relSeg>=DRAW_DIST-1)continue;
+
+    // Find projected segment
+    var p=null;
+    for(var pi=0;pi<projected.length;pi++){
+      if(projected[pi].segIdx===Math.floor(ban.position)%total){p=projected[pi];break;}
+    }
+    if(!p)continue;
+
+    var objScale=p.scale;
+    if(objScale<=0)continue;
+
+    var sz=objScale*W/2;
+    var bx=p.x+ban.laneX*track.roadWidth/2*p.w;
+    var by=p.y;
+    var bSz=sz*20;
+    if(bSz<3)continue;
+
+    // Banana
+    ctx.fillStyle='#ffee00';
+    ctx.beginPath();
+    ctx.arc(bx,by-bSz/2,bSz/2,0,TAU);
+    ctx.fill();
+    ctx.fillStyle='#cc9900';
+    ctx.beginPath();
+    ctx.arc(bx-bSz*0.15,by-bSz*0.6,bSz*0.2,0,TAU);
+    ctx.fill();
+  }
+}
+
+function drawShellsOnRoad(projected,track){
+  var total=track.totalLength;
+  var baseIndex=Math.floor(player.position)%total;
+
+  for(var si=0;si<activeShells.length;si++){
+    var shell=activeShells[si];
+    if(!shell.active)continue;
+
+    var relSeg=((Math.floor(shell.position)-baseIndex)%total+total)%total;
+    if(relSeg<1||relSeg>=DRAW_DIST-1)continue;
+
+    var p=null;
+    for(var pi=0;pi<projected.length;pi++){
+      if(projected[pi].segIdx===Math.floor(shell.position)%total){p=projected[pi];break;}
+    }
+    if(!p)continue;
+
+    var objScale=p.scale;
+    if(objScale<=0)continue;
+
+    var sz=objScale*W/2;
+    var sx2=p.x+shell.laneX*track.roadWidth/2*p.w;
+    var sy2=p.y;
+    var sSz=sz*15;
+    if(sSz<3)continue;
+
+    ctx.fillStyle='#00ff44';
+    ctx.beginPath();
+    ctx.arc(sx2,sy2-sSz/2,sSz/2,0,TAU);
+    ctx.fill();
+    ctx.fillStyle='#00aa22';
+    ctx.beginPath();
+    ctx.arc(sx2,sy2-sSz/2,sSz/3,0,TAU);
+    ctx.fill();
+  }
+}
+
+function drawAIRacers(projected,track){
+  var total=track.totalLength;
+  var baseIndex=Math.floor(player.position)%total;
+
+  for(var ai=0;ai<aiRacers.length;ai++){
+    var racer=aiRacers[ai];
+    var relSeg=((Math.floor(racer.position)-baseIndex)%total+total)%total;
+    if(relSeg<1||relSeg>=DRAW_DIST-1)continue;
+
+    // Find projected segment
+    var p=null;
+    for(var pi=0;pi<projected.length;pi++){
+      if(projected[pi].segIdx===Math.floor(racer.position)%total){p=projected[pi];break;}
+    }
+    if(!p)continue;
+
+    var objScale=p.scale;
+    if(objScale<=0)continue;
+
+    var sz=objScale*W/2;
+    var rx=p.x+racer.playerX*track.roadWidth/2*p.w;
+    var ry=p.y;
+
+    var kartW=sz*50;
+    var kartH=sz*35;
+    if(kartW<4)continue;
+
+    var shrunk=racer.shrinkTimer>0;
+    if(shrunk){kartW*=0.6;kartH*=0.6;}
+
+    // Shadow
+    ctx.fillStyle='rgba(0,0,0,0.3)';
+    ctx.beginPath();
+    ctx.ellipse(rx,ry,kartW/2,kartH*0.15,0,0,TAU);
+    ctx.fill();
+
+    // Kart body
+    ctx.fillStyle=racer.color;
+    ctx.fillRect(rx-kartW/2,ry-kartH,kartW,kartH);
+
+    // Wheels
+    ctx.fillStyle='#222222';
+    ctx.fillRect(rx-kartW/2-kartW*0.1,ry-kartH*0.2,kartW*0.15,kartH*0.25);
+    ctx.fillRect(rx+kartW/2-kartW*0.05,ry-kartH*0.2,kartW*0.15,kartH*0.25);
+    ctx.fillRect(rx-kartW/2-kartW*0.1,ry-kartH*0.9,kartW*0.15,kartH*0.25);
+    ctx.fillRect(rx+kartW/2-kartW*0.05,ry-kartH*0.9,kartW*0.15,kartH*0.25);
+
+    // Helmet
+    ctx.fillStyle='#ffffff';
+    ctx.beginPath();
+    ctx.arc(rx,ry-kartH*0.65,kartW*0.18,0,TAU);
+    ctx.fill();
+  }
+}
+
+// =============================================================
+// PLAYER KART SPRITE (bottom center)
+// =============================================================
+function drawPlayerKart(){
+  var kartY=H-80*scale;
+  var kartX=W/2;
+  var kartW=40*scale;
+  var kartH=30*scale;
+
+  // Determine lean direction
+  var lean=player.steerAmount;
+
+  // Shadow
+  ctx.fillStyle='rgba(0,0,0,0.4)';
+  ctx.beginPath();
+  ctx.ellipse(kartX,kartY+kartH*0.4,kartW*0.7,kartH*0.15,0,0,TAU);
+  ctx.fill();
+
+  ctx.save();
+  ctx.translate(kartX,kartY);
+
+  // Lean transform
+  ctx.transform(1,0,lean*0.15,1,0,0);
+
+  var color='#e33333';
+  if(player.starTimer>0){
+    color='hsl('+((raceTime*600)%360)+',100%,60%)';
+  }
+
+  // Back of kart (wide rectangle)
+  ctx.fillStyle=darkenColor(color,0.7);
+  ctx.fillRect(-kartW/2,-kartH*0.1,kartW,kartH*0.5);
+
+  // Main body
+  ctx.fillStyle=color;
+  ctx.fillRect(-kartW*0.45,-kartH*0.6,kartW*0.9,kartH*0.7);
+
+  // Cockpit top
+  ctx.fillStyle=darkenColor(color,0.85);
+  ctx.fillRect(-kartW*0.3,-kartH*0.8,kartW*0.6,kartH*0.3);
+
+  // Windshield
+  ctx.fillStyle='rgba(150,200,255,0.6)';
+  ctx.fillRect(-kartW*0.25,-kartH*0.85,kartW*0.5,kartH*0.15);
+
+  // Helmet
+  ctx.fillStyle='#ffffff';
+  ctx.beginPath();
+  ctx.arc(0,-kartH*0.4,kartW*0.15,0,TAU);
+  ctx.fill();
+  ctx.fillStyle='#333333';
+  ctx.beginPath();
+  ctx.arc(0,-kartH*0.42,kartW*0.1,PI,0);
+  ctx.fill();
+
+  // Left wheel
+  ctx.fillStyle='#222222';
+  ctx.fillRect(-kartW/2-kartW*0.12,-kartH*0.15,kartW*0.14,kartH*0.35);
+  ctx.fillRect(-kartW/2-kartW*0.12,-kartH*0.7,kartW*0.14,kartH*0.35);
+
+  // Right wheel
+  ctx.fillRect(kartW/2-kartW*0.02,-kartH*0.15,kartW*0.14,kartH*0.35);
+  ctx.fillRect(kartW/2-kartW*0.02,-kartH*0.7,kartW*0.14,kartH*0.35);
+
+  // Exhaust pipe
+  ctx.fillStyle='#444444';
+  var exSide=lean<-0.1?-1:(lean>0.1?1:0);
+  ctx.fillRect(-kartW*0.15+exSide*kartW*0.05,kartH*0.2,kartW*0.08,kartH*0.2);
+  ctx.fillRect(kartW*0.07+exSide*kartW*0.05,kartH*0.2,kartW*0.08,kartH*0.2);
+
+  ctx.restore();
+
+  // Exhaust particles
+  if(player.speed>50&&gameState===STATE_RACING){
+    if(Math.random()<0.3){
+      addParticle(
+        kartX-kartW*0.1+Math.random()*kartW*0.2,
+        kartY+kartH*0.5,
+        (Math.random()-0.5)*20,
+        30+Math.random()*20,
+        player.boostTimer>0?'rgba(255,150,0,':'rgba(150,150,150,',
+        0.4+Math.random()*0.3
+      );
+    }
+  }
+
+  // Speed lines when boosting
+  if(player.boostTimer>0||player.starTimer>0){
+    ctx.strokeStyle='rgba(255,255,255,0.4)';
+    ctx.lineWidth=2;
+    for(var i=0;i<6;i++){
+      var lx=Math.random()*W;
+      var ly1=H*0.3+Math.random()*H*0.4;
+      ctx.beginPath();
+      ctx.moveTo(lx,ly1);
+      ctx.lineTo(lx+(lx-W/2)*0.1,ly1+40*scale);
+      ctx.stroke();
+    }
+  }
+
+  // Spin animation
+  if(player.spinTimer>0){
+    ctx.save();
+    ctx.translate(kartX,kartY);
+    ctx.rotate(player.spinTimer*15);
+    ctx.globalAlpha=0.5;
+    ctx.fillStyle='#ffff00';
+    ctx.font=Math.floor(20*scale)+'px monospace';
+    ctx.textAlign='center';
+    ctx.fillText('*',0,-kartH);
+    ctx.restore();
+  }
+}
+
+function darkenColor(hex,factor){
+  // Simple darken for hex colors
+  if(hex.charAt(0)==='h')return hex; // hsl, skip
+  var r=parseInt(hex.substr(1,2),16)||parseInt(hex.substr(1,1),16)*17;
+  var g=parseInt(hex.substr(3,2),16)||parseInt(hex.substr(2,1),16)*17;
+  var b=parseInt(hex.substr(5,2),16)||parseInt(hex.substr(3,1),16)*17;
+  r=Math.floor(r*factor);
+  g=Math.floor(g*factor);
+  b=Math.floor(b*factor);
+  return 'rgb('+r+','+g+','+b+')';
+}
+
+// =============================================================
+// PARTICLES
+// =============================================================
+function updateParticles(dt){
+  for(var i=particles.length-1;i>=0;i--){
+    var p=particles[i];
+    p.x+=p.vx*dt;
+    p.y+=p.vy*dt;
+    p.life-=dt;
+    if(p.life<=0){
+      particles.splice(i,1);
+    }
+  }
+}
+
+function drawParticles(){
+  for(var i=0;i<particles.length;i++){
+    var p=particles[i];
+    var alpha=p.life/p.maxLife;
+    ctx.fillStyle=p.color+alpha+')';
+    var sz=3*scale*alpha;
+    ctx.fillRect(p.x-sz/2,p.y-sz/2,sz,sz);
+  }
+}
+
+// =============================================================
+// HUD
+// =============================================================
+function drawHUD(){
+  var fs=scale;
+
+  // Position
+  var pos=getPlayerPosition()+1;
+  var posStr=['1ST','2ND','3RD','4TH'][pos-1]||'4TH';
+  ctx.fillStyle='rgba(0,0,0,0.6)';
+  ctx.fillRect(8*fs,8*fs,75*fs,40*fs);
+  ctx.fillStyle=pos===1?'#ffd700':pos===2?'#c0c0c0':'#ffffff';
+  ctx.font='bold '+Math.floor(26*fs)+'px monospace';
+  ctx.textAlign='center';
+  ctx.textBaseline='middle';
+  ctx.fillText(posStr,45*fs,30*fs);
+
+  // Lap counter
+  var lap=Math.min(player.lap+1,LAPS_TOTAL);
+  ctx.fillStyle='rgba(0,0,0,0.6)';
+  ctx.fillRect(W-95*fs,8*fs,87*fs,22*fs);
+  ctx.fillStyle='#ffffff';
+  ctx.font='bold '+Math.floor(14*fs)+'px monospace';
+  ctx.textAlign='center';
+  ctx.fillText('LAP '+lap+'/'+LAPS_TOTAL,W-52*fs,20*fs);
+
+  // Time
+  var timeStr=formatTime(raceTime);
+  ctx.fillStyle='rgba(0,0,0,0.6)';
+  ctx.fillRect(W-95*fs,34*fs,87*fs,18*fs);
+  ctx.fillStyle='#cccccc';
+  ctx.font=Math.floor(12*fs)+'px monospace';
+  ctx.fillText(timeStr,W-52*fs,44*fs);
+
+  // Speed bar
+  var speedPct=player.speed/player.maxSpeed;
+  var barW=120*fs;
+  var barH=12*fs;
+  var barX=W/2-barW/2;
+  var barY=H-25*fs;
+  ctx.fillStyle='rgba(0,0,0,0.5)';
+  ctx.fillRect(barX,barY,barW,barH);
+  var speedColor=player.boostTimer>0?'#ff8800':(speedPct>0.8?'#00ff44':'#00aa22');
+  ctx.fillStyle=speedColor;
+  ctx.fillRect(barX+2,barY+2,Math.min(barW-4,(barW-4)*speedPct),barH-4);
+
+  // Speed text
+  var kph=Math.floor(player.speed*2);
+  ctx.fillStyle='#ffffff';
+  ctx.font=Math.floor(9*fs)+'px monospace';
+  ctx.textAlign='center';
+  ctx.fillText(kph+' km/h',W/2,barY-3*fs);
+
+  // Item display
+  if(player.item!==ITEM_NONE){
+    var ibx=W/2;
+    var iby=H-60*fs;
+    var ibr=28*fs;
+
+    ctx.fillStyle='rgba(0,0,0,0.7)';
+    ctx.beginPath();
+    ctx.arc(ibx,iby,ibr,0,TAU);
+    ctx.fill();
+
+    ctx.strokeStyle=ITEM_COLORS[player.item];
+    ctx.lineWidth=3*fs;
+    ctx.beginPath();
+    ctx.arc(ibx,iby,ibr,0,TAU);
+    ctx.stroke();
+
+    ctx.fillStyle='#ffffff';
+    ctx.font='bold '+Math.floor(10*fs)+'px monospace';
+    ctx.textAlign='center';
+    ctx.textBaseline='middle';
+    ctx.fillText(ITEM_NAMES[player.item],ibx,iby-3*fs);
+
+    ctx.fillStyle='rgba(255,255,255,0.4)';
+    ctx.font=Math.floor(8*fs)+'px monospace';
+    ctx.fillText('TAP',ibx,iby+10*fs);
+  }
+
+  // Touch zone hints
+  ctx.fillStyle='rgba(255,255,255,0.08)';
+  if(touchLeft){
+    ctx.fillRect(0,H*0.3,W*0.3,H*0.5);
+  }
+  if(touchRight){
+    ctx.fillRect(W*0.7,H*0.3,W*0.3,H*0.5);
+  }
+
+  // Minimap
+  drawMinimap();
+
+  // Off-road warning
+  if(player.offRoad&&gameState===STATE_RACING){
+    var warnAlpha=0.5+0.5*Math.sin(raceTime*10);
+    ctx.fillStyle='rgba(255,50,50,'+warnAlpha+')';
+    ctx.font='bold '+Math.floor(14*fs)+'px monospace';
+    ctx.textAlign='center';
+    ctx.fillText('OFF ROAD!',W/2,H*0.4);
+  }
+}
+
+function drawMinimap(){
+  var fs=scale;
+  var mmX=W-50*fs;
+  var mmY=70*fs;
+  var mmR=30*fs;
+
+  ctx.fillStyle='rgba(0,0,0,0.5)';
+  ctx.beginPath();
+  ctx.arc(mmX,mmY,mmR,0,TAU);
+  ctx.fill();
+
+  var track=TRACKS[currentTrack];
+  var total=track.totalLength;
+
+  // Draw track as a circle
+  ctx.strokeStyle='rgba(255,255,255,0.3)';
+  ctx.lineWidth=3*fs;
+  ctx.beginPath();
+  ctx.arc(mmX,mmY,mmR*0.7,0,TAU);
+  ctx.stroke();
+
+  // Player dot
+  var pAngle=(player.position/total)*TAU-PI/2;
+  ctx.fillStyle='#ff3333';
+  ctx.beginPath();
+  ctx.arc(mmX+Math.cos(pAngle)*mmR*0.7,mmY+Math.sin(pAngle)*mmR*0.7,3*fs,0,TAU);
+  ctx.fill();
+
+  // AI dots
+  for(var i=0;i<aiRacers.length;i++){
+    var aiAngle=(aiRacers[i].position/total)*TAU-PI/2;
+    ctx.fillStyle=aiRacers[i].color;
+    ctx.beginPath();
+    ctx.arc(mmX+Math.cos(aiAngle)*mmR*0.7,mmY+Math.sin(aiAngle)*mmR*0.7,2.5*fs,0,TAU);
+    ctx.fill();
+  }
+}
+
+// =============================================================
+// GAME LOGIC
+// =============================================================
+
+function resetRace(){
+  var track=TRACKS[currentTrack];
+  player.position=0;
+  player.speed=0;
+  player.maxSpeed=200;
+  player.accel=120;
+  player.turnSpeed=0;
+  player.steerAmount=0;
+  player.playerX=0;
+  player.lap=0;
+  player.item=ITEM_NONE;
+  player.itemTimer=0;
+  player.boostTimer=0;
+  player.starTimer=0;
+  player.spinTimer=0;
+  player.invincTimer=0;
+  player.offRoad=false;
+  player.finished=false;
+  player.finishTime=0;
+
+  aiRacers=[];
+  for(var i=0;i<NUM_AI;i++){
+    aiRacers.push(createAI(i));
+  }
+
+  droppedBananas=[];
+  activeShells=[];
+  particles=[];
+  finishPositions=[];
+  raceTime=0;
+  countdown=4;
+  countdownTimer=0;
+
+  // Reset items on track
+  var segs=track.flatSegments;
+  for(var i=0;i<segs.length;i++){
+    if(segs[i].hasItem)segs[i].itemActive=true;
+    segs[i].itemRespawn=0;
+  }
+
+  gameState=STATE_COUNTDOWN;
+}
 
 function update(dt){
   if(gameState===STATE_COUNTDOWN){
@@ -381,690 +1218,771 @@ function update(dt){
 
   raceTime+=dt;
 
-  // Update item boxes
-  itemBoxes.forEach(ib=>{
-    if(!ib.active){
-      ib.respawnTimer-=dt;
-      if(ib.respawnTimer<=0)ib.active=true;
-    }
-    ib.bobPhase+=dt*3;
-  });
+  var track=TRACKS[currentTrack];
+  var total=track.totalLength;
 
-  // Update karts
-  const track=TRACKS[currentTrack];
-  const n=track.waypoints.length;
+  // --- PLAYER ---
+  if(!player.finished){
+    updatePlayerTimers(dt);
 
-  karts.forEach((k,ki)=>{
-    if(k.finished)return;
-
-    // Timers
-    if(k.spinTimer>0){k.spinTimer-=dt;k.speed*=0.95;k.angle+=dt*12;return;}
-    if(k.starTimer>0){k.starTimer-=dt;if(k.starTimer<=0)k.maxSpeed=k.baseMaxSpeed;}
-    if(k.shrinkTimer>0){k.shrinkTimer-=dt;if(k.shrinkTimer<=0)k.maxSpeed=k.baseMaxSpeed;}
-    if(k.boostTimer>0){k.boostTimer-=dt;if(k.boostTimer<=0)k.maxSpeed=k.baseMaxSpeed;}
-    if(k.invincTimer>0)k.invincTimer-=dt;
-    if(k.itemTimer>0)k.itemTimer-=dt;
-
-    // AI control
-    let turnInput=0;
-    let wantUseItem=false;
-
-    if(k.isPlayer){
-      if(touchLeft)turnInput=-1;
-      if(touchRight)turnInput=1;
-      wantUseItem=touchUseItem;
-      touchUseItem=false;
+    if(player.spinTimer>0){
+      player.speed*=0.95;
+      player.spinTimer-=dt;
     } else {
-      // AI: steer toward target waypoint
-      const tp=getTrackPoint(track,k.targetWP);
-      const dx=tp.x-k.x,dy=tp.y-k.y;
-      const targetAngle=Math.atan2(dy,dx);
-      let diff=targetAngle-k.angle;
-      while(diff>PI)diff-=TAU;
-      while(diff<-PI)diff+=TAU;
-      turnInput=Math.max(-1,Math.min(1,diff*3));
+      // Steering
+      var steerInput=0;
+      if(touchLeft)steerInput=-1;
+      if(touchRight)steerInput=1;
+      if(keys['ArrowLeft']||keys['a'])steerInput=-1;
+      if(keys['ArrowRight']||keys['d'])steerInput=1;
 
-      // Advance target waypoint
-      const distToTarget=Math.sqrt(dx*dx+dy*dy);
-      if(distToTarget<60){
-        k.targetWP=(k.targetWP+1)%n;
-      }
+      // Smooth steer amount for visual
+      player.steerAmount+=(steerInput-player.steerAmount)*8*dt;
 
-      // AI item use
-      k.aiItemTimer+=dt;
-      if(k.item!==ITEM_NONE&&k.aiItemTimer>1+Math.random()*2){
-        wantUseItem=true;
-        k.aiItemTimer=0;
-      }
+      // Current segment curve for natural steering feel
+      var curSeg=getSegment(track,Math.floor(player.position));
+      var curvePull=curSeg.curve*player.speed*0.00003;
 
-      // Rubber-banding
-      const playerKart=karts[0];
-      if(!playerKart.finished){
-        const playerProgress=playerKart.lap*n+playerKart.checkpoint;
-        const myProgress=k.lap*n+k.checkpoint;
-        const diff2=playerProgress-myProgress;
-        if(diff2>n*0.3){
-          k.maxSpeed=k.baseMaxSpeed*1.15;
-        } else if(diff2<-n*0.3){
-          k.maxSpeed=k.baseMaxSpeed*0.88;
-        } else {
-          k.maxSpeed=k.baseMaxSpeed*k.aiVariation;
+      // Lateral movement
+      var lateralSpeed=3.0;
+      if(player.speed<50)lateralSpeed=1.5;
+      player.playerX+=steerInput*lateralSpeed*dt;
+      player.playerX+=curvePull*dt;
+
+      // Clamp and off-road detection
+      var roadEdge=1.0;
+      player.offRoad=Math.abs(player.playerX)>roadEdge;
+
+      // Slow down off-road
+      var targetMax=player.maxSpeed;
+      if(player.boostTimer>0)targetMax=player.maxSpeed*1.5;
+      if(player.starTimer>0)targetMax=player.maxSpeed*1.4;
+
+      if(player.offRoad){
+        targetMax*=0.5;
+        // Push back gently
+        if(Math.abs(player.playerX)>1.5){
+          player.playerX+=(player.playerX>0?-1:1)*2*dt;
         }
+        // Rainbow road: fall off if too far
+        if(track.isRainbow&&Math.abs(player.playerX)>1.3){
+          player.playerX=0;
+          player.speed=40;
+          player.position-=30;
+          if(player.position<0)player.position+=total;
+          playSlip();
+        }
+      }
+
+      // Acceleration (auto)
+      if(player.speed<targetMax){
+        player.speed+=player.accel*dt;
+      } else {
+        player.speed+=(targetMax-player.speed)*3*dt;
+      }
+      if(player.speed<0)player.speed=0;
+
+      // Use item
+      if(touchUseItem&&player.item!==ITEM_NONE&&player.itemTimer<=0){
+        usePlayerItem();
+        touchUseItem=false;
       }
     }
 
-    // Use item
-    if(wantUseItem&&k.item!==ITEM_NONE&&k.itemTimer<=0){
-      useItem(k,ki);
+    // Move forward
+    player.position+=player.speed*dt*0.15;
+
+    // Lap detection
+    var lapProgress=player.position/total;
+    var newLap=Math.floor(lapProgress);
+    if(newLap>player.lap){
+      player.lap=newLap;
+      if(player.lap>=LAPS_TOTAL){
+        player.finished=true;
+        player.finishTime=raceTime;
+        finishPositions.push(-1); // -1 = player
+        playFinish();
+        stopEngine();
+        checkRaceEnd();
+      } else {
+        playLap();
+      }
     }
 
-    // Surface check
-    const roadCheck=isOnRoad(track,k.x,k.y);
-    let surfaceSpeed=k.maxSpeed;
-    let surfaceFriction=1;
-
-    if(!roadCheck.onRoad){
-      if(!track.hasWalls){
-        // Rainbow Road: fall off and respawn
-        if(roadCheck.dist>track.width/2+30){
-          respawnKart(k,track);
-          return;
-        }
+    // Item box collection
+    var pSegIdx=Math.floor(player.position)%total;
+    for(var di=-2;di<=2;di++){
+      var checkIdx=((pSegIdx+di)%total+total)%total;
+      var seg=track.flatSegments[checkIdx];
+      if(seg.hasItem&&seg.itemActive&&player.item===ITEM_NONE){
+        seg.itemActive=false;
+        seg.itemRespawn=8;
+        givePlayerItem();
+        playCollect();
       }
-      surfaceSpeed=k.maxSpeed*0.55;
-      surfaceFriction=0.7;
     }
 
     // Boost pad check
-    boostPads.forEach(bp=>{
-      const dx=bp.x-k.x,dy=bp.y-k.y;
-      if(dx*dx+dy*dy<900){
-        k.boostTimer=0.5;
-        k.maxSpeed=k.baseMaxSpeed*1.5;
-        surfaceSpeed=k.maxSpeed;
+    var pSeg=track.flatSegments[pSegIdx];
+    if(pSeg.hasBoost&&Math.abs(player.playerX)<0.5){
+      if(player.boostTimer<=0){
+        player.boostTimer=1;
+        player.speed=Math.max(player.speed,player.maxSpeed*1.3);
+        playBoost();
       }
-    });
-
-    // Accelerate
-    const accel=roadCheck.onRoad?250:150;
-    if(k.speed<surfaceSpeed){
-      k.speed+=accel*dt;
-    } else {
-      k.speed+=(surfaceSpeed-k.speed)*3*dt;
     }
-    k.speed=Math.max(0,k.speed);
-
-    // Turning
-    const turnSpeed=3.0*(k.speed/k.maxSpeed);
-    k.angle+=turnInput*turnSpeed*dt*surfaceFriction;
-
-    // Drift effect
-    k.driftAngle=turnInput*k.speed*0.002;
-
-    // Move
-    const moveAngle=k.angle+k.driftAngle*0.3;
-    k.x+=Math.cos(moveAngle)*k.speed*dt;
-    k.y+=Math.sin(moveAngle)*k.speed*dt;
-
-    // Wall collision (push back onto road)
-    if(track.hasWalls&&!roadCheck.onRoad&&roadCheck.dist>track.width/2+5){
-      const nearWP=findNearestWaypoint(track,k.x,k.y);
-      const wp=track.waypoints[nearWP];
-      const dx=k.x-wp.x,dy=k.y-wp.y;
-      const dist=Math.sqrt(dx*dx+dy*dy)||1;
-      const pushDist=track.width/2;
-      k.x=wp.x+dx/dist*pushDist;
-      k.y=wp.y+dy/dist*pushDist;
-      k.speed*=0.6;
-    }
-
-    // Kart-kart collision
-    karts.forEach((k2,k2i)=>{
-      if(k2i===ki||k2.finished)return;
-      const dx=k2.x-k.x,dy=k2.y-k.y;
-      const dist=Math.sqrt(dx*dx+dy*dy);
-      if(dist<14){
-        const push=14-dist;
-        const nx=dx/dist,ny=dy/dist;
-        k.x-=nx*push*0.5;
-        k.y-=ny*push*0.5;
-        k2.x+=nx*push*0.5;
-        k2.y+=ny*push*0.5;
-        // Star kills
-        if(k.starTimer>0&&k2.invincTimer<=0){k2.spinTimer=1;playSlip();}
-        if(k2.starTimer>0&&k.invincTimer<=0){k.spinTimer=1;playSlip();}
-      }
-    });
-
-    // Item box collision
-    itemBoxes.forEach(ib=>{
-      if(!ib.active)return;
-      const dx=ib.x-k.x,dy=ib.y-k.y;
-      if(dx*dx+dy*dy<625){
-        ib.active=false;
-        ib.respawnTimer=8;
-        if(k.item===ITEM_NONE){
-          // Weight items by position
-          const pos=getKartPosition(ki);
-          let weights;
-          if(pos===0)weights=[0,30,35,25,5,5]; // leaders get weaker items
-          else if(pos===3)weights=[0,15,10,15,25,35]; // last place gets strong items
-          else weights=[0,25,20,25,15,15];
-          const total=weights.reduce((a,b)=>a+b,0);
-          let r=Math.random()*total,acc=0;
-          for(let i=0;i<weights.length;i++){
-            acc+=weights[i];
-            if(r<acc){k.item=i;break;}
-          }
-        }
-        playCollect();
-      }
-    });
 
     // Banana collision
-    bananas.forEach((b,bi)=>{
-      if(!b.active)return;
-      const dx=b.x-k.x,dy=b.y-k.y;
-      if(dx*dx+dy*dy<400&&k.starTimer<=0&&k.invincTimer<=0){
-        k.spinTimer=1;
-        k.speed*=0.3;
-        b.active=false;
-        playSlip();
+    for(var bi=droppedBananas.length-1;bi>=0;bi--){
+      var ban=droppedBananas[bi];
+      if(!ban.active)continue;
+      var bDist=Math.abs(ban.position-player.position%total);
+      if(bDist>total/2)bDist=total-bDist;
+      if(bDist<5&&Math.abs(ban.laneX-player.playerX)<0.4){
+        if(player.starTimer<=0&&player.invincTimer<=0){
+          player.spinTimer=1;
+          player.speed*=0.3;
+          playSlip();
+        }
+        ban.active=false;
       }
-    });
+    }
 
     // Shell collision
-    shells.forEach((s,si)=>{
-      if(!s.active||s.owner===ki)return;
-      const dx=s.x-k.x,dy=s.y-k.y;
-      if(dx*dx+dy*dy<400&&k.starTimer<=0&&k.invincTimer<=0){
-        k.spinTimer=1.2;
-        k.speed*=0.2;
-        s.active=false;
-        playSlip();
-      }
-    });
-
-    // Checkpoint / lap tracking
-    const nearWP=findNearestWaypoint(track,k.x,k.y);
-    const wpDiff=nearWP-k.checkpoint;
-    // Handle wrap-around
-    if(wpDiff>-n/2&&wpDiff<0){}// going backward, ignore
-    else if(wpDiff>0&&wpDiff<n/2){
-      // Check if crossed start line
-      if(k.checkpoint<n*0.15&&nearWP>n*0.85){
-        // went backward past start, ignore
-      } else {
-        k.lastCheckpoint=k.checkpoint;
-        k.checkpoint=nearWP;
-      }
-    } else if(wpDiff<-n/2){
-      // Crossed start line forward
-      k.lastCheckpoint=k.checkpoint;
-      k.checkpoint=nearWP;
-      k.lap++;
-      if(k.lap<=LAPS_TOTAL){
-        lapTimes[ki].push(raceTime);
-        if(k.isPlayer&&k.lap<LAPS_TOTAL)playLap();
-      }
-      if(k.lap>=LAPS_TOTAL){
-        k.finished=true;
-        k.finishTime=raceTime;
-        finishPositions.push(ki);
-        if(k.isPlayer){
-          playFinish();
-          stopEngine();
+    for(var si=activeShells.length-1;si>=0;si--){
+      var shell=activeShells[si];
+      if(!shell.active||shell.fromPlayer)continue;
+      var sDist=Math.abs(shell.position-(player.position%total));
+      if(sDist>total/2)sDist=total-sDist;
+      if(sDist<5&&Math.abs(shell.laneX-player.playerX)<0.4){
+        if(player.starTimer<=0&&player.invincTimer<=0){
+          player.spinTimer=1.2;
+          player.speed*=0.2;
+          playHit();
         }
-        if(finishPositions.length>=4){
-          endRace();
-        }
+        shell.active=false;
       }
     }
 
-    // Tire marks
-    if(Math.abs(turnInput)>0.5&&k.speed>80&&raceTime-k.lastTrailTime>0.05){
-      k.lastTrailTime=raceTime;
-      tireMarks.push({x:k.x,y:k.y,age:0,maxAge:3});
+    updateEngine(player.speed);
+  }
+
+  // Item respawn
+  for(var i=0;i<track.flatSegments.length;i++){
+    var seg=track.flatSegments[i];
+    if(seg.hasItem&&!seg.itemActive){
+      seg.itemRespawn-=dt;
+      if(seg.itemRespawn<=0)seg.itemActive=true;
     }
+  }
 
-    // Engine sound
-    if(k.isPlayer)updateEngine(k.speed);
-  });
+  // --- AI RACERS ---
+  for(var ai=0;ai<aiRacers.length;ai++){
+    updateAI(aiRacers[ai],ai,dt,track,total);
+  }
 
-  // Update shells
-  shells=shells.filter(s=>{
-    if(!s.active)return false;
-    s.x+=Math.cos(s.angle)*s.speed*dt;
-    s.y+=Math.sin(s.angle)*s.speed*dt;
-    s.life-=dt;
-    const road=isOnRoad(TRACKS[currentTrack],s.x,s.y);
-    if(!road.onRoad||s.life<=0)return false;
-    return true;
-  });
+  // --- SHELLS ---
+  for(var si=activeShells.length-1;si>=0;si--){
+    var shell=activeShells[si];
+    if(!shell.active){activeShells.splice(si,1);continue;}
+    shell.position+=shell.speed*dt*0.15;
+    shell.life-=dt;
+    if(shell.life<=0){shell.active=false;continue;}
 
-  // Update bananas
-  bananas=bananas.filter(b=>b.active);
-
-  // Update tire marks
-  tireMarks.forEach(t=>t.age+=dt);
-  tireMarks=tireMarks.filter(t=>t.age<t.maxAge);
-
-  // Auto-finish AI after timeout
-  if(raceTime>120){
-    karts.forEach((k,ki)=>{
-      if(!k.finished){
-        k.finished=true;
-        k.finishTime=raceTime;
-        finishPositions.push(ki);
+    // Shell hitting AI
+    if(shell.fromPlayer){
+      for(var ai=0;ai<aiRacers.length;ai++){
+        var racer=aiRacers[ai];
+        if(racer.finished)continue;
+        var sDist2=Math.abs(shell.position-(racer.position%total));
+        if(sDist2>total/2)sDist2=total-sDist2;
+        if(sDist2<5&&Math.abs(shell.laneX-racer.playerX)<0.4){
+          racer.spinTimer=1;
+          racer.speed*=0.3;
+          shell.active=false;
+          break;
+        }
       }
-    });
-    if(finishPositions.length>=4)endRace();
+    }
   }
 
-  // Camera follow player
-  const pk=karts[0];
-  camTargetX=pk.x;
-  camTargetY=pk.y;
-  camTargetAngle=-pk.angle-PI/2;
-  camX+=(camTargetX-camX)*5*dt;
-  camY+=(camTargetY-camY)*5*dt;
-  // Smooth angle
-  let angleDiff=camTargetAngle-camAngle;
-  while(angleDiff>PI)angleDiff-=TAU;
-  while(angleDiff<-PI)angleDiff+=TAU;
-  camAngle+=angleDiff*4*dt;
-}
+  // --- BANANAS cleanup ---
+  droppedBananas=droppedBananas.filter(function(b){return b.active;});
 
-function getKartPosition(ki){
-  const track=TRACKS[currentTrack];
-  const n=track.waypoints.length;
-  const scores=karts.map((k,i)=>({idx:i,score:k.lap*n+k.checkpoint+(k.finished?n*10:0)}));
-  scores.sort((a,b)=>b.score-a.score);
-  for(let i=0;i<scores.length;i++){
-    if(scores[i].idx===ki)return i;
+  // --- PARTICLES ---
+  updateParticles(dt);
+
+  // Auto-finish timeout
+  if(raceTime>180){
+    if(!player.finished){
+      player.finished=true;
+      player.finishTime=raceTime;
+      finishPositions.push(-1);
+    }
+    for(var ai=0;ai<aiRacers.length;ai++){
+      if(!aiRacers[ai].finished){
+        aiRacers[ai].finished=true;
+        aiRacers[ai].finishTime=raceTime;
+        finishPositions.push(ai);
+      }
+    }
+    checkRaceEnd();
   }
-  return 3;
 }
 
-function useItem(k,ki){
-  const item=k.item;
-  k.item=ITEM_NONE;
-  k.itemTimer=0.5;
+function updatePlayerTimers(dt){
+  if(player.boostTimer>0)player.boostTimer-=dt;
+  if(player.starTimer>0)player.starTimer-=dt;
+  if(player.invincTimer>0)player.invincTimer-=dt;
+  if(player.itemTimer>0)player.itemTimer-=dt;
+}
+
+function givePlayerItem(){
+  var pos=getPlayerPosition();
+  var weights;
+  if(pos===0)weights=[0,30,35,25,5,5];
+  else if(pos===3)weights=[0,15,10,15,25,35];
+  else weights=[0,25,20,25,15,15];
+  var total=0;
+  for(var i=0;i<weights.length;i++)total+=weights[i];
+  var r=Math.random()*total,acc=0;
+  for(var i=0;i<weights.length;i++){
+    acc+=weights[i];
+    if(r<acc){player.item=i;break;}
+  }
+}
+
+function usePlayerItem(){
+  var item=player.item;
+  player.item=ITEM_NONE;
+  player.itemTimer=0.5;
+  var track=TRACKS[currentTrack];
+  var total=track.totalLength;
 
   switch(item){
     case ITEM_MUSHROOM:
-      k.boostTimer=2;
-      k.maxSpeed=k.baseMaxSpeed*1.5;
-      k.speed=Math.max(k.speed,k.maxSpeed*0.8);
+      player.boostTimer=2;
+      player.speed=Math.max(player.speed,player.maxSpeed*1.3);
       playBoost();
       break;
     case ITEM_BANANA:
-      bananas.push({
-        x:k.x-Math.cos(k.angle)*25,
-        y:k.y-Math.sin(k.angle)*25,
+      droppedBananas.push({
+        position:((player.position%total)-10+total)%total,
+        laneX:player.playerX,
         active:true
       });
       break;
     case ITEM_SHELL:
-      shells.push({
-        x:k.x+Math.cos(k.angle)*20,
-        y:k.y+Math.sin(k.angle)*20,
-        angle:k.angle,
-        speed:350,
-        life:3,
+      activeShells.push({
+        position:player.position%total,
+        laneX:player.playerX,
+        speed:400,
+        life:4,
         active:true,
-        owner:ki
+        fromPlayer:true
       });
       playShellFire();
       break;
     case ITEM_STAR:
-      k.starTimer=3;
-      k.invincTimer=3;
-      k.maxSpeed=k.baseMaxSpeed*1.4;
-      k.speed=Math.max(k.speed,k.maxSpeed*0.7);
+      player.starTimer=4;
+      player.invincTimer=4;
+      player.speed=Math.max(player.speed,player.maxSpeed*1.2);
       playStarJingle();
       break;
     case ITEM_LIGHTNING:
-      karts.forEach((k2,k2i)=>{
-        if(k2i!==ki&&k2.starTimer<=0){
-          k2.shrinkTimer=3;
-          k2.maxSpeed=k2.baseMaxSpeed*0.6;
-          k2.speed*=0.5;
-        }
-      });
+      for(var i=0;i<aiRacers.length;i++){
+        aiRacers[i].shrinkTimer=4;
+        aiRacers[i].speed*=0.5;
+        aiRacers[i].maxSpeed*=0.7;
+      }
+      // Flash effect
+      lightningFlash=0.5;
       playTone(100,0.5,'square',0.15);
       break;
   }
 }
 
-function respawnKart(k,track){
-  const wp=findNearestWaypoint(track,k.x,k.y);
-  const p=track.waypoints[wp];
-  k.x=p.x;k.y=p.y;
-  k.angle=getTrackAngle(track,wp);
-  k.speed=50;
-  k.spinTimer=0;
+var lightningFlash=0;
+
+function updateAI(racer,idx,dt,track,total){
+  if(racer.finished)return;
+
+  if(racer.spinTimer>0){
+    racer.spinTimer-=dt;
+    racer.speed*=0.95;
+    racer.position+=racer.speed*dt*0.15;
+    return;
+  }
+
+  if(racer.shrinkTimer>0){
+    racer.shrinkTimer-=dt;
+    if(racer.shrinkTimer<=0){
+      racer.maxSpeed=170+Math.random()*20;
+    }
+  }
+
+  // Rubber-banding
+  var playerProgress=player.lap*total+player.position%total;
+  var aiProgress=racer.lap*total+racer.position%total;
+  var progressDiff=playerProgress-aiProgress;
+
+  var targetSpeed=racer.maxSpeed;
+  if(progressDiff>total*0.2){
+    targetSpeed=racer.maxSpeed*1.2;
+  } else if(progressDiff<-total*0.2){
+    targetSpeed=racer.maxSpeed*0.8;
+  }
+
+  // Accelerate
+  if(racer.speed<targetSpeed){
+    racer.speed+=100*dt;
+  } else {
+    racer.speed+=(targetSpeed-racer.speed)*2*dt;
+  }
+
+  // Steer based on upcoming curve
+  var curSeg=getSegment(track,Math.floor(racer.position));
+  var targetX=curSeg.curve*-0.3+racer.steerVariation;
+  targetX=Math.max(-0.8,Math.min(0.8,targetX));
+  racer.playerX+=(targetX-racer.playerX)*1.5*dt;
+
+  // Move forward
+  racer.position+=racer.speed*dt*0.15;
+
+  // Lap detection
+  var lapProgress=racer.position/total;
+  var newLap=Math.floor(lapProgress);
+  if(newLap>racer.lap){
+    racer.lap=newLap;
+    if(racer.lap>=LAPS_TOTAL){
+      racer.finished=true;
+      racer.finishTime=raceTime;
+      finishPositions.push(idx);
+      checkRaceEnd();
+    }
+  }
+
+  // Banana collision with AI
+  for(var bi=droppedBananas.length-1;bi>=0;bi--){
+    var ban=droppedBananas[bi];
+    if(!ban.active)continue;
+    var bDist=Math.abs(ban.position-(racer.position%total));
+    if(bDist>total/2)bDist=total-bDist;
+    if(bDist<5&&Math.abs(ban.laneX-racer.playerX)<0.4){
+      racer.spinTimer=1;
+      racer.speed*=0.3;
+      ban.active=false;
+    }
+  }
+
+  // Shell collision with AI from other AI (not implemented for simplicity, only player shells)
+}
+
+function getPlayerPosition(){
+  var track=TRACKS[currentTrack];
+  var total=track.totalLength;
+  var scores=[];
+  scores.push({idx:-1,score:player.lap*total+(player.position%total)+(player.finished?total*10:0)});
+  for(var i=0;i<aiRacers.length;i++){
+    var r=aiRacers[i];
+    scores.push({idx:i,score:r.lap*total+(r.position%total)+(r.finished?total*10:0)});
+  }
+  scores.sort(function(a,b){return b.score-a.score;});
+  for(var i=0;i<scores.length;i++){
+    if(scores[i].idx===-1)return i;
+  }
+  return 3;
+}
+
+function checkRaceEnd(){
+  if(finishPositions.length>=4){
+    endRace();
+  }
 }
 
 function endRace(){
-  raceFinished=true;
   gameState=STATE_FINISH;
   stopEngine();
 
+  // Ensure all have finished
+  if(!player.finished){
+    player.finished=true;
+    player.finishTime=raceTime;
+    if(finishPositions.indexOf(-1)===-1)finishPositions.push(-1);
+  }
+  for(var i=0;i<aiRacers.length;i++){
+    if(!aiRacers[i].finished){
+      aiRacers[i].finished=true;
+      aiRacers[i].finishTime=raceTime;
+      if(finishPositions.indexOf(i)===-1)finishPositions.push(i);
+    }
+  }
+
   // Save best time
-  const pk=karts[0];
-  if(pk.finished){
-    const prevBest=saveData.bestTimes[currentTrack];
-    if(prevBest===null||pk.finishTime<prevBest){
-      saveData.bestTimes[currentTrack]=pk.finishTime;
+  var playerFinishIdx=finishPositions.indexOf(-1);
+  if(playerFinishIdx>=0){
+    var prevBest=saveData.bestTimes[currentTrack];
+    if(prevBest===null||player.finishTime<prevBest){
+      saveData.bestTimes[currentTrack]=player.finishTime;
     }
     // Unlock next track
-    const playerPos=finishPositions.indexOf(0);
-    if(playerPos<3&&currentTrack+1<TRACKS.length){
+    if(playerFinishIdx<3&&currentTrack+1<TRACKS.length){
       saveData.unlocked=Math.max(saveData.unlocked,currentTrack+2);
     }
   }
 
-  // Championship scoring
+  // Championship
   if(championshipMode){
-    finishPositions.forEach((ki,pos)=>{
-      champStandings[ki]+=POINTS[pos]||0;
+    finishPositions.forEach(function(id,pos){
+      var pts=POINTS[pos]||0;
+      if(id===-1)champStandings[0]+=pts;
+      else champStandings[id+1]+=pts;
     });
   }
 
   writeSave();
 }
 
-// --- RENDERING ---
-function drawKartSprite(x,y,angle,color,shrunk,star){
-  ctx.save();
-  ctx.translate(x,y);
-  ctx.rotate(angle);
-  const s=shrunk?0.6:1;
-  ctx.scale(s,s);
+// =============================================================
+// MENU / UI DRAWING
+// =============================================================
 
-  // Kart body
-  const w=KART_W,h=KART_H;
-  if(star){
-    ctx.fillStyle=`hsl(${(raceTime*500)%360},100%,70%)`;
-  } else {
-    ctx.fillStyle=color;
-  }
-  ctx.fillRect(-w/2,-h/2,w,h);
+function drawMenu(){
+  var fs=scale;
 
-  // Wheels
-  ctx.fillStyle='#222';
-  ctx.fillRect(-w/2-2,-h/2+1,3,3);
-  ctx.fillRect(w/2-1,-h/2+1,3,3);
-  ctx.fillRect(-w/2-2,h/2-4,3,3);
-  ctx.fillRect(w/2-1,h/2-4,3,3);
-
-  // Windshield
-  ctx.fillStyle='rgba(150,200,255,0.7)';
-  ctx.fillRect(-w/2+2,-h/2+1,w-4,3);
-
-  // Driver helmet
-  ctx.fillStyle='#fff';
-  ctx.fillRect(-1,-2,3,3);
-
-  ctx.restore();
-}
-
-function draw(){
-  ctx.fillStyle='#000';
+  // Background with pseudo-3D road
+  ctx.fillStyle='#1a1a2e';
   ctx.fillRect(0,0,W,H);
 
-  if(gameState===STATE_MENU){
-    drawMenu();return;
-  }
-  if(gameState===STATE_TRACK_SELECT){
-    drawTrackSelect();return;
-  }
-  if(gameState===STATE_CHAMP_RESULTS){
-    drawChampResults();return;
-  }
+  // Animated sky gradient
+  var grad=ctx.createLinearGradient(0,0,0,H*0.5);
+  grad.addColorStop(0,'#4488cc');
+  grad.addColorStop(1,'#88bbee');
+  ctx.fillStyle=grad;
+  ctx.fillRect(0,0,W,H*0.5);
 
-  const track=TRACKS[currentTrack];
+  // Simple road going into distance for menu
+  var t=Date.now()/1000;
+  var scrollMenu=(t*80)%40;
+  for(var y=Math.floor(H*0.5);y<H;y++){
+    var perspective=(y-H*0.5)/(H*0.5);
+    if(perspective<=0)continue;
+    var roadW=50+perspective*W*0.35;
+    var cx=W/2+Math.sin(t*0.5)*perspective*30;
 
-  // --- WORLD RENDERING ---
-  ctx.save();
-  ctx.translate(W/2,H/2);
-  ctx.scale(scale,scale);
-  ctx.rotate(camAngle);
-  ctx.translate(-camX,-camY);
+    var segIdx=Math.floor((y+scrollMenu)/10);
+    var isLight=segIdx%2===0;
 
-  // Background (grass or space)
-  ctx.fillStyle=track.bgColor;
-  // Draw a large background rect
-  ctx.fillRect(camX-600/scale,camY-600/scale,1200/scale,1200/scale);
+    // Grass
+    ctx.fillStyle=isLight?'#2d8a4e':'#247a42';
+    ctx.fillRect(0,y,W,1);
 
-  // Grass texture dots
-  if(!track.isRainbow){
-    ctx.fillStyle='rgba(50,120,30,0.4)';
-    const gx=Math.floor(camX/80)*80,gy=Math.floor(camY/80)*80;
-    for(let x=gx-800;x<gx+800;x+=40){
-      for(let y=gy-800;y<gy+800;y+=40){
-        const hash=((x*7+y*13)&0xff)/255;
-        if(hash>0.5){
-          ctx.fillRect(x+hash*20,y+hash*15,3,3);
-        }
-      }
-    }
-  } else {
-    // Rainbow: stars in space
-    ctx.fillStyle='#fff';
-    const gx=Math.floor(camX/100)*100,gy=Math.floor(camY/100)*100;
-    for(let x=gx-800;x<gx+800;x+=50){
-      for(let y=gy-800;y<gy+800;y+=50){
-        const hash=((x*7+y*13)&0xff)/255;
-        if(hash>0.7){
-          const sz=1+hash;
-          ctx.globalAlpha=0.3+hash*0.7;
-          ctx.fillRect(x+hash*30,y+hash*25,sz,sz);
-        }
-      }
-    }
-    ctx.globalAlpha=1;
-  }
+    // Road
+    ctx.fillStyle=isLight?'#666666':'#555555';
+    ctx.fillRect(cx-roadW/2,y,roadW,1);
 
-  // Draw track road
-  const wpLen=track.waypoints.length;
+    // Edge lines
+    ctx.fillStyle='#ffffff';
+    ctx.fillRect(cx-roadW/2,y,Math.max(1,perspective*3),1);
+    ctx.fillRect(cx+roadW/2-Math.max(1,perspective*3),y,Math.max(1,perspective*3),1);
 
-  // Road fill - trace left edge forward, then right edge backward
-  ctx.beginPath();
-  for(let i=0;i<wpLen;i++){
-    const p=track.leftEdge[i];
-    if(i===0)ctx.moveTo(p.x,p.y);
-    else ctx.lineTo(p.x,p.y);
-  }
-  // Connect back to start of left edge
-  ctx.lineTo(track.leftEdge[0].x,track.leftEdge[0].y);
-  // Now trace right edge backward
-  for(let i=wpLen-1;i>=0;i--){
-    const p=track.rightEdge[i];
-    ctx.lineTo(p.x,p.y);
-  }
-  ctx.lineTo(track.rightEdge[wpLen-1].x,track.rightEdge[wpLen-1].y);
-  ctx.closePath();
-
-  if(track.isRainbow){
-    // Rainbow road cycling colors
-    const grad=ctx.createLinearGradient(-500,-400,500,400);
-    const hueOff=(raceTime*50)%360;
-    for(let i=0;i<=6;i++){
-      grad.addColorStop(i/6,`hsl(${(hueOff+i*60)%360},80%,40%)`);
-    }
-    ctx.fillStyle=grad;
-  } else {
-    ctx.fillStyle=track.roadColor;
-  }
-  ctx.fill();
-
-  // Edge lines
-  ctx.strokeStyle='#fff';
-  ctx.lineWidth=3;
-  ctx.beginPath();
-  for(let i=0;i<wpLen;i++){
-    const p=track.leftEdge[i];
-    if(i===0)ctx.moveTo(p.x,p.y);
-    else ctx.lineTo(p.x,p.y);
-  }
-  ctx.closePath();
-  ctx.stroke();
-
-  ctx.beginPath();
-  for(let i=0;i<wpLen;i++){
-    const p=track.rightEdge[i];
-    if(i===0)ctx.moveTo(p.x,p.y);
-    else ctx.lineTo(p.x,p.y);
-  }
-  ctx.closePath();
-  ctx.stroke();
-
-  // Center dashes
-  ctx.strokeStyle='rgba(255,255,255,0.3)';
-  ctx.lineWidth=2;
-  ctx.setLineDash([15,15]);
-  ctx.beginPath();
-  for(let i=0;i<wpLen;i++){
-    const p=track.waypoints[i];
-    if(i===0)ctx.moveTo(p.x,p.y);
-    else ctx.lineTo(p.x,p.y);
-  }
-  ctx.closePath();
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  // Start/finish line (checkered)
-  const sp=track.waypoints[0];
-  const sp2=track.waypoints[1];
-  const sAngle=Math.atan2(sp2.y-sp.y,sp2.x-sp.x);
-  ctx.save();
-  ctx.translate(sp.x,sp.y);
-  ctx.rotate(sAngle);
-  const hw=track.width/2;
-  const checkSize=8;
-  for(let r=0;r<2;r++){
-    for(let c=-Math.floor(hw/checkSize);c<=Math.floor(hw/checkSize);c++){
-      ctx.fillStyle=((r+c)%2===0)?'#fff':'#222';
-      ctx.fillRect(r*checkSize-checkSize,c*checkSize,checkSize,checkSize);
+    // Center dashes
+    if(isLight){
+      ctx.fillStyle='#ffffff';
+      ctx.fillRect(cx-1,y,Math.max(1,perspective*2),1);
     }
   }
-  ctx.restore();
 
-  // Boost pads
-  boostPads.forEach(bp=>{
-    ctx.save();
-    ctx.translate(bp.x,bp.y);
-    ctx.rotate(bp.angle);
-    const glow=0.5+0.5*Math.sin(raceTime*8);
-    ctx.fillStyle=`rgba(255,220,0,${0.4+glow*0.4})`;
-    // Chevrons
-    for(let i=-1;i<=1;i++){
-      ctx.beginPath();
-      ctx.moveTo(-12+i*14,10);
-      ctx.lineTo(0+i*14,0);
-      ctx.lineTo(12+i*14,10);
-      ctx.lineWidth=4;
-      ctx.strokeStyle=`rgba(255,200,0,${0.6+glow*0.4})`;
-      ctx.stroke();
-    }
-    ctx.restore();
-  });
+  // Title
+  ctx.fillStyle='#000000';
+  ctx.font='bold '+Math.floor(40*fs)+'px monospace';
+  ctx.textAlign='center';
+  ctx.fillText('PIXEL',W/2+2,H*0.13+2);
+  ctx.fillText('KART 2.0',W/2+2,H*0.21+2);
+  ctx.fillStyle='#ff4444';
+  ctx.fillText('PIXEL',W/2,H*0.13);
+  ctx.fillStyle='#ffdd00';
+  ctx.fillText('KART 2.0',W/2,H*0.21);
 
-  // Tire marks
-  tireMarks.forEach(t=>{
-    const alpha=1-t.age/t.maxAge;
-    ctx.fillStyle=`rgba(40,40,40,${alpha*0.5})`;
-    ctx.fillRect(t.x-1,t.y-1,3,3);
-  });
+  // Subtitle
+  ctx.fillStyle='rgba(255,255,255,0.5)';
+  ctx.font=Math.floor(10*fs)+'px monospace';
+  ctx.fillText('PSEUDO-3D RACING',W/2,H*0.26);
 
-  // Bananas
-  bananas.forEach(b=>{
-    if(!b.active)return;
-    ctx.fillStyle='#ff0';
-    ctx.beginPath();
-    ctx.arc(b.x,b.y,6,0,TAU);
-    ctx.fill();
-    ctx.fillStyle='#cc0';
-    ctx.beginPath();
-    ctx.arc(b.x-1,b.y-1,3,0,TAU);
-    ctx.fill();
-  });
+  // Buttons
+  var buttons=[
+    {text:'QUICK RACE',y:H*0.40},
+    {text:'CHAMPIONSHIP',y:H*0.52}
+  ];
 
-  // Item boxes
-  itemBoxes.forEach(ib=>{
-    if(!ib.active)return;
-    const bob=Math.sin(ib.bobPhase)*3;
-    ctx.save();
-    ctx.translate(ib.x,ib.y+bob);
-    ctx.rotate(raceTime*2);
-    ctx.fillStyle='rgba(255,200,50,0.8)';
-    ctx.fillRect(-8,-8,16,16);
-    ctx.strokeStyle='#fff';
+  buttons.forEach(function(b){
+    ctx.fillStyle='rgba(0,0,0,0.5)';
+    ctx.fillRect(W/2-100*fs,b.y-22*fs,200*fs,44*fs);
+    ctx.strokeStyle='#ffdd00';
     ctx.lineWidth=2;
-    ctx.strokeRect(-8,-8,16,16);
-    ctx.fillStyle='#fff';
-    ctx.font='bold 10px monospace';
+    ctx.strokeRect(W/2-100*fs,b.y-22*fs,200*fs,44*fs);
+    ctx.fillStyle='#ffffff';
+    ctx.font='bold '+Math.floor(16*fs)+'px monospace';
     ctx.textAlign='center';
     ctx.textBaseline='middle';
-    ctx.fillText('?',0,1);
-    ctx.restore();
+    ctx.fillText(b.text,W/2,b.y);
   });
 
-  // Shells
-  shells.forEach(s=>{
-    if(!s.active)return;
-    ctx.fillStyle='#0f0';
-    ctx.beginPath();
-    ctx.arc(s.x,s.y,5,0,TAU);
-    ctx.fill();
-    ctx.fillStyle='#0a0';
-    ctx.beginPath();
-    ctx.arc(s.x,s.y,3,0,TAU);
-    ctx.fill();
+  // Best times
+  ctx.fillStyle='#aaaaaa';
+  ctx.font=Math.floor(11*fs)+'px monospace';
+  ctx.textBaseline='alphabetic';
+  ctx.fillText('BEST TIMES',W/2,H*0.68);
+  TRACKS.forEach(function(tr,i){
+    var unlocked=i<saveData.unlocked;
+    ctx.fillStyle=unlocked?'#888888':'#444444';
+    var timeStr=saveData.bestTimes[i]!==null?formatTime(saveData.bestTimes[i]):'--:--.--';
+    ctx.fillText(tr.name+': '+(unlocked?timeStr:'Locked'),W/2,H*0.73+i*18*fs);
   });
 
-  // Karts (draw in order, player last for visibility)
-  const drawOrder=[...karts.keys()].sort((a,b)=>{
-    if(a===0)return 1;if(b===0)return -1;return 0;
-  });
+  // Version
+  ctx.fillStyle='#444444';
+  ctx.font=Math.floor(9*fs)+'px monospace';
+  ctx.fillText('v2.0',W/2,H*0.96);
+}
 
-  drawOrder.forEach(ki=>{
-    const k=karts[ki];
-    if(k.finished&&finishPositions.indexOf(ki)<finishPositions.length-1){
-      // Don't draw finished karts that aren't the last to finish... actually draw them all
+function drawTrackSelect(){
+  var fs=scale;
+  ctx.fillStyle='#1a1a2e';
+  ctx.fillRect(0,0,W,H);
+
+  ctx.fillStyle='#ffffff';
+  ctx.font='bold '+Math.floor(22*fs)+'px monospace';
+  ctx.textAlign='center';
+  ctx.textBaseline='alphabetic';
+  ctx.fillText('SELECT TRACK',W/2,H*0.10);
+
+  TRACKS.forEach(function(tr,i){
+    var unlocked=i<saveData.unlocked;
+    var y=H*0.22+i*H*0.22;
+
+    ctx.fillStyle=unlocked?'rgba(255,255,255,0.08)':'rgba(80,80,80,0.08)';
+    ctx.fillRect(W*0.08,y-28*fs,W*0.84,56*fs);
+    ctx.strokeStyle=unlocked?'#ffffff':'#555555';
+    ctx.lineWidth=2;
+    ctx.strokeRect(W*0.08,y-28*fs,W*0.84,56*fs);
+
+    // Track color indicator
+    if(unlocked){
+      var colors=['#33aa55','#5533aa','#ff33ff'];
+      ctx.fillStyle=colors[i];
+      ctx.fillRect(W*0.10,y-20*fs,6*fs,40*fs);
     }
-    drawKartSprite(k.x,k.y,k.angle+PI/2,k.color,k.shrinkTimer>0,k.starTimer>0);
 
-    // Position indicator for non-player
-    if(!k.isPlayer&&!k.finished){
-      ctx.fillStyle='rgba(0,0,0,0.5)';
-      ctx.fillRect(k.x-6,k.y-18,12,10);
-      ctx.fillStyle='#fff';
-      ctx.font='8px monospace';
-      ctx.textAlign='center';
-      ctx.textBaseline='middle';
-      const pos=getKartPosition(ki)+1;
-      ctx.fillText(pos+'',k.x,k.y-13);
+    ctx.fillStyle=unlocked?'#ffffff':'#666666';
+    ctx.font='bold '+Math.floor(15*fs)+'px monospace';
+    ctx.textAlign='left';
+    ctx.fillText(unlocked?tr.name:'LOCKED',W*0.2,y-4*fs);
+
+    ctx.font=Math.floor(10*fs)+'px monospace';
+    ctx.fillStyle=unlocked?'#aaaaaa':'#555555';
+    var diff=['Easy - Wide Road','Medium - Tight Curves','Hard - Narrow + No Rails'][i];
+    ctx.fillText(unlocked?diff:'Finish top 3 to unlock',W*0.2,y+12*fs);
+
+    if(unlocked&&saveData.bestTimes[i]!==null){
+      ctx.fillStyle='#ffd700';
+      ctx.textAlign='right';
+      ctx.fillText('Best: '+formatTime(saveData.bestTimes[i]),W*0.88,y-4*fs);
+      ctx.textAlign='left';
     }
   });
 
-  ctx.restore();
+  // Back button
+  ctx.fillStyle='rgba(255,255,255,0.08)';
+  ctx.fillRect(W/2-55*fs,H*0.90-18*fs,110*fs,36*fs);
+  ctx.strokeStyle='#ffffff';
+  ctx.lineWidth=1;
+  ctx.strokeRect(W/2-55*fs,H*0.90-18*fs,110*fs,36*fs);
+  ctx.fillStyle='#ffffff';
+  ctx.font=Math.floor(14*fs)+'px monospace';
+  ctx.textAlign='center';
+  ctx.textBaseline='middle';
+  ctx.fillText('BACK',W/2,H*0.90);
+}
 
-  // --- HUD ---
+function drawFinishScreen(){
+  var fs=scale;
+  ctx.fillStyle='rgba(0,0,0,0.8)';
+  ctx.fillRect(0,0,W,H);
+
+  ctx.fillStyle='#ffd700';
+  ctx.font='bold '+Math.floor(28*fs)+'px monospace';
+  ctx.textAlign='center';
+  ctx.textBaseline='alphabetic';
+  ctx.fillText('RACE COMPLETE!',W/2,H*0.15);
+
+  ctx.fillStyle='#ffffff';
+  ctx.font=Math.floor(14*fs)+'px monospace';
+  ctx.fillText(TRACKS[currentTrack].name,W/2,H*0.22);
+
+  var allNames=['You','Blue','Green','Yellow'];
+  var allColors=['#e33333','#3366ee','#33bb33','#eeee33'];
+
+  for(var i=0;i<finishPositions.length&&i<4;i++){
+    var id=finishPositions[i];
+    var y=H*0.30+i*42*fs;
+    var posStr=['1st','2nd','3rd','4th'][i];
+
+    var nameIdx=id===-1?0:id+1;
+    var name=allNames[nameIdx];
+    var color=allColors[nameIdx];
+    var time=(id===-1)?player.finishTime:aiRacers[id].finishTime;
+
+    ctx.fillStyle=i===0?'#ffd700':i===1?'#c0c0c0':i===2?'#cd7f32':'#888888';
+    ctx.font='bold '+Math.floor(16*fs)+'px monospace';
+    ctx.textAlign='left';
+    ctx.fillText(posStr,W*0.12,y);
+
+    ctx.fillStyle=color;
+    ctx.fillRect(W*0.32,y-10*fs,14*fs,14*fs);
+
+    ctx.fillStyle='#ffffff';
+    ctx.font=Math.floor(14*fs)+'px monospace';
+    ctx.fillText(name,W*0.32+20*fs,y);
+
+    ctx.textAlign='right';
+    ctx.fillText(formatTime(time),W*0.88,y);
+    ctx.textAlign='left';
+  }
+
+  // Best time
+  var bestTime=saveData.bestTimes[currentTrack];
+  if(bestTime!==null){
+    ctx.fillStyle='#aaaaaa';
+    ctx.font=Math.floor(12*fs)+'px monospace';
+    ctx.textAlign='center';
+    ctx.fillText('Best: '+formatTime(bestTime),W/2,H*0.60);
+  }
+
+  // Championship standings
+  if(championshipMode){
+    ctx.fillStyle='#ffff00';
+    ctx.font='bold '+Math.floor(14*fs)+'px monospace';
+    ctx.fillText('Championship Standings',W/2,H*0.66);
+
+    var sorted=[0,1,2,3].sort(function(a,b){return champStandings[b]-champStandings[a];});
+    sorted.forEach(function(ki,i){
+      ctx.fillStyle=allColors[ki];
+      ctx.font=Math.floor(12*fs)+'px monospace';
+      ctx.fillText(allNames[ki]+': '+champStandings[ki]+' pts',W/2,H*0.71+i*18*fs);
+    });
+  }
+
+  // Button
+  ctx.fillStyle='#448844';
+  var btnY=championshipMode?H*0.88:H*0.72;
+  ctx.fillRect(W/2-75*fs,btnY-20*fs,150*fs,40*fs);
+  ctx.fillStyle='#ffffff';
+  ctx.font='bold '+Math.floor(14*fs)+'px monospace';
+  ctx.textAlign='center';
+  ctx.textBaseline='middle';
+  var btnText=championshipMode?(champRace<2?'NEXT RACE':'FINAL RESULTS'):'CONTINUE';
+  ctx.fillText(btnText,W/2,btnY);
+}
+
+function drawChampResults(){
+  var fs=scale;
+  ctx.fillStyle='#1a1a2e';
+  ctx.fillRect(0,0,W,H);
+
+  ctx.fillStyle='#ffd700';
+  ctx.font='bold '+Math.floor(26*fs)+'px monospace';
+  ctx.textAlign='center';
+  ctx.textBaseline='alphabetic';
+  ctx.fillText('CHAMPIONSHIP',W/2,H*0.12);
+  ctx.fillText('RESULTS!',W/2,H*0.19);
+
+  var allNames=['You','Blue','Green','Yellow'];
+  var allColors=['#e33333','#3366ee','#33bb33','#eeee33'];
+  var sorted=[0,1,2,3].sort(function(a,b){return champStandings[b]-champStandings[a];});
+
+  if(sorted[0]===0){
+    ctx.fillStyle='#ffd700';
+    ctx.font='bold '+Math.floor(18*fs)+'px monospace';
+    ctx.fillText('CHAMPION!',W/2,H*0.30);
+  }
+
+  sorted.forEach(function(ki,i){
+    var y=H*0.40+i*48*fs;
+    var posStr=['1st','2nd','3rd','4th'][i];
+
+    ctx.fillStyle=i===0?'#ffd700':i===1?'#c0c0c0':i===2?'#cd7f32':'#888888';
+    ctx.font='bold '+Math.floor(18*fs)+'px monospace';
+    ctx.textAlign='left';
+    ctx.fillText(posStr,W*0.12,y);
+
+    ctx.fillStyle=allColors[ki];
+    ctx.fillRect(W*0.35,y-10*fs,16*fs,16*fs);
+
+    ctx.fillStyle='#ffffff';
+    ctx.font=Math.floor(15*fs)+'px monospace';
+    ctx.fillText(allNames[ki],W*0.35+22*fs,y);
+
+    ctx.textAlign='right';
+    ctx.fillText(champStandings[ki]+' pts',W*0.88,y);
+    ctx.textAlign='left';
+  });
+
+  // Back to menu
+  ctx.fillStyle='#448844';
+  ctx.fillRect(W/2-75*fs,H*0.86-20*fs,150*fs,40*fs);
+  ctx.fillStyle='#ffffff';
+  ctx.font='bold '+Math.floor(14*fs)+'px monospace';
+  ctx.textAlign='center';
+  ctx.textBaseline='middle';
+  ctx.fillText('MAIN MENU',W/2,H*0.86);
+}
+
+function formatTime(t){
+  if(t===null||t===undefined)return '--:--.--';
+  var m=Math.floor(t/60);
+  var s=t%60;
+  return m+':'+(s<10?'0':'')+s.toFixed(2);
+}
+
+// =============================================================
+// MAIN DRAW
+// =============================================================
+
+function draw(){
+  ctx.fillStyle='#000000';
+  ctx.fillRect(0,0,W,H);
+
+  if(gameState===STATE_MENU){drawMenu();return;}
+  if(gameState===STATE_TRACK_SELECT){drawTrackSelect();return;}
+  if(gameState===STATE_CHAMP_RESULTS){drawChampResults();return;}
+
+  // Race view
+  drawRoad();
+  drawPlayerKart();
+  drawParticles();
   drawHUD();
+
+  // Lightning flash
+  if(lightningFlash>0){
+    ctx.fillStyle='rgba(255,255,255,'+lightningFlash+')';
+    ctx.fillRect(0,0,W,H);
+    lightningFlash-=0.03;
+  }
 
   // Countdown
   if(gameState===STATE_COUNTDOWN){
-    ctx.fillStyle='rgba(0,0,0,0.5)';
+    ctx.fillStyle='rgba(0,0,0,0.4)';
     ctx.fillRect(0,0,W,H);
-    ctx.fillStyle='#fff';
-    ctx.font=`bold ${80*scale}px monospace`;
+    ctx.fillStyle=countdown>1?'#ffdd00':'#00ff44';
+    ctx.font='bold '+Math.floor(80*scale)+'px monospace';
     ctx.textAlign='center';
     ctx.textBaseline='middle';
-    const text=countdown>0?countdown+'':'GO!';
-    ctx.fillStyle=countdown>0?'#ff4':'#0f0';
+    var text=countdown>0?countdown+'':'GO!';
+    // Shadow
+    ctx.fillStyle='rgba(0,0,0,0.5)';
+    ctx.fillText(text,W/2+3,H/2+3);
+    ctx.fillStyle=countdown>1?'#ffdd00':'#00ff44';
     ctx.fillText(text,W/2,H/2);
   }
 
@@ -1074,458 +1992,55 @@ function draw(){
   }
 }
 
-function drawHUD(){
-  const pk=karts[0];
-  const track=TRACKS[currentTrack];
-  const fs=scale;
+// =============================================================
+// INPUT HANDLING
+// =============================================================
 
-  // Position
-  const pos=getKartPosition(0)+1;
-  const posStr=['1st','2nd','3rd','4th'][pos-1];
-  ctx.fillStyle='rgba(0,0,0,0.6)';
-  ctx.fillRect(10*fs,10*fs,80*fs,35*fs);
-  ctx.fillStyle=pos===1?'#ffd700':pos===2?'#c0c0c0':'#fff';
-  ctx.font=`bold ${22*fs}px monospace`;
-  ctx.textAlign='center';
-  ctx.textBaseline='middle';
-  ctx.fillText(posStr,50*fs,28*fs);
-
-  // Lap counter
-  const lap=Math.min(pk.lap+1,LAPS_TOTAL);
-  ctx.fillStyle='rgba(0,0,0,0.6)';
-  ctx.fillRect(W-90*fs,10*fs,80*fs,35*fs);
-  ctx.fillStyle='#fff';
-  ctx.font=`bold ${16*fs}px monospace`;
-  ctx.textAlign='center';
-  ctx.fillText(`Lap ${lap}/${LAPS_TOTAL}`,W-50*fs,28*fs);
-
-  // Time
-  const timeStr=formatTime(raceTime);
-  ctx.fillStyle='rgba(0,0,0,0.6)';
-  ctx.fillRect(W/2-50*fs,10*fs,100*fs,25*fs);
-  ctx.fillStyle='#fff';
-  ctx.font=`${14*fs}px monospace`;
-  ctx.textAlign='center';
-  ctx.fillText(timeStr,W/2,24*fs);
-
-  // Item display
-  if(pk.item!==ITEM_NONE){
-    const itemBtnX=W/2,itemBtnY=H-70*fs;
-    const itemBtnR=30*fs;
-
-    ctx.fillStyle='rgba(0,0,0,0.7)';
-    ctx.beginPath();
-    ctx.arc(itemBtnX,itemBtnY,itemBtnR,0,TAU);
-    ctx.fill();
-
-    ctx.strokeStyle=ITEM_COLORS[pk.item];
-    ctx.lineWidth=3*fs;
-    ctx.beginPath();
-    ctx.arc(itemBtnX,itemBtnY,itemBtnR,0,TAU);
-    ctx.stroke();
-
-    ctx.fillStyle='#fff';
-    ctx.font=`bold ${11*fs}px monospace`;
-    ctx.textAlign='center';
-    ctx.textBaseline='middle';
-    ctx.fillText(ITEM_NAMES[pk.item],itemBtnX,itemBtnY);
-
-    ctx.fillStyle='rgba(255,255,255,0.4)';
-    ctx.font=`${9*fs}px monospace`;
-    ctx.fillText('TAP',itemBtnX,itemBtnY+14*fs);
-  }
-
-  // Speed bar
-  const speedPct=pk.speed/pk.baseMaxSpeed;
-  ctx.fillStyle='rgba(0,0,0,0.5)';
-  ctx.fillRect(W/2-40*fs,H-25*fs,80*fs,12*fs);
-  const speedColor=speedPct>1?'#ff0':speedPct>0.7?'#0f0':'#0a0';
-  ctx.fillStyle=speedColor;
-  ctx.fillRect(W/2-38*fs,H-23*fs,Math.min(76,76*speedPct)*fs,8*fs);
-
-  // Touch zone indicators
-  ctx.fillStyle='rgba(255,255,255,0.08)';
-  if(touchLeft){
-    ctx.fillRect(0,50*fs,W/2-40*fs,H-120*fs);
-  }
-  if(touchRight){
-    ctx.fillRect(W/2+40*fs,50*fs,W/2-40*fs,H-120*fs);
-  }
-
-  // Turn labels
-  ctx.fillStyle='rgba(255,255,255,0.15)';
-  ctx.font=`${12*fs}px monospace`;
-  ctx.textAlign='center';
-  ctx.fillText('LEFT',W*0.15,H*0.92);
-  ctx.fillText('RIGHT',W*0.85,H*0.92);
-
-  // Minimap
-  drawMinimap();
-}
-
-function drawMinimap(){
-  const track=TRACKS[currentTrack];
-  const fs=scale;
-  const mmX=W-65*fs,mmY=55*fs,mmSize=55*fs;
-
-  ctx.fillStyle='rgba(0,0,0,0.6)';
-  ctx.fillRect(mmX-mmSize/2,mmY-mmSize/2,mmSize,mmSize);
-
-  // Find track bounds
-  let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
-  track.waypoints.forEach(p=>{
-    minX=Math.min(minX,p.x);maxX=Math.max(maxX,p.x);
-    minY=Math.min(minY,p.y);maxY=Math.max(maxY,p.y);
-  });
-  const rangeX=maxX-minX||1,rangeY=maxY-minY||1;
-  const mmScale=(mmSize-10*fs)/Math.max(rangeX,rangeY);
-
-  // Draw track outline
-  ctx.strokeStyle='rgba(255,255,255,0.4)';
-  ctx.lineWidth=2;
-  ctx.beginPath();
-  track.waypoints.forEach((p,i)=>{
-    const x=mmX+(p.x-minX-rangeX/2)*mmScale;
-    const y=mmY+(p.y-minY-rangeY/2)*mmScale;
-    if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
-  });
-  ctx.closePath();
-  ctx.stroke();
-
-  // Draw karts
-  karts.forEach(k=>{
-    const x=mmX+(k.x-minX-rangeX/2)*mmScale;
-    const y=mmY+(k.y-minY-rangeY/2)*mmScale;
-    ctx.fillStyle=k.color;
-    ctx.fillRect(x-2*fs,y-2*fs,4*fs,4*fs);
-  });
-}
-
-function drawFinishScreen(){
-  const fs=scale;
-  ctx.fillStyle='rgba(0,0,0,0.75)';
-  ctx.fillRect(0,0,W,H);
-
-  ctx.fillStyle='#ffd700';
-  ctx.font=`bold ${28*fs}px monospace`;
-  ctx.textAlign='center';
-  ctx.fillText('RACE COMPLETE!',W/2,H*0.18);
-
-  ctx.fillStyle='#fff';
-  ctx.font=`${14*fs}px monospace`;
-  ctx.fillText(TRACKS[currentTrack].name,W/2,H*0.24);
-
-  const colors=['#e33','#33e','#3b3','#ee3'];
-  const names=['You','Blue','Green','Yellow'];
-
-  finishPositions.forEach((ki,pos)=>{
-    const y=H*0.32+pos*40*fs;
-    const posStr=['1st','2nd','3rd','4th'][pos];
-    const k=karts[ki];
-
-    ctx.fillStyle=pos===0?'#ffd700':pos===1?'#c0c0c0':pos===2?'#cd7f32':'#888';
-    ctx.font=`bold ${16*fs}px monospace`;
-    ctx.textAlign='left';
-    ctx.fillText(posStr,W*0.15,y);
-
-    ctx.fillStyle=colors[ki];
-    ctx.fillRect(W*0.35,y-8*fs,12*fs,12*fs);
-
-    ctx.fillStyle='#fff';
-    ctx.font=`${14*fs}px monospace`;
-    ctx.fillText(names[ki],W*0.35+18*fs,y);
-
-    ctx.textAlign='right';
-    ctx.fillText(formatTime(k.finishTime),W*0.85,y);
-    ctx.textAlign='left';
-  });
-
-  // Best time
-  const bestTime=saveData.bestTimes[currentTrack];
-  if(bestTime!==null){
-    ctx.fillStyle='#aaa';
-    ctx.font=`${12*fs}px monospace`;
-    ctx.textAlign='center';
-    ctx.fillText(`Best: ${formatTime(bestTime)}`,W/2,H*0.62);
-  }
-
-  // Championship standings
-  if(championshipMode){
-    ctx.fillStyle='#ff0';
-    ctx.font=`bold ${14*fs}px monospace`;
-    ctx.fillText('Championship Standings',W/2,H*0.67);
-
-    const sorted=[0,1,2,3].sort((a,b)=>champStandings[b]-champStandings[a]);
-    sorted.forEach((ki,i)=>{
-      ctx.fillStyle=colors[ki];
-      ctx.font=`${12*fs}px monospace`;
-      ctx.fillText(`${names[ki]}: ${champStandings[ki]}pts`,W/2,H*0.72+i*18*fs);
-    });
-  }
-
-  // Button
-  ctx.fillStyle='#4a4';
-  const btnY=championshipMode?H*0.88:H*0.75;
-  ctx.fillRect(W/2-70*fs,btnY-18*fs,140*fs,36*fs);
-  ctx.fillStyle='#fff';
-  ctx.font=`bold ${14*fs}px monospace`;
-  ctx.textAlign='center';
-  ctx.textBaseline='middle';
-  const btnText=championshipMode?(champRace<2?'Next Race':'Final Results'):'Continue';
-  ctx.fillText(btnText,W/2,btnY);
-}
-
-function drawMenu(){
-  const fs=scale;
-
-  // Background
-  ctx.fillStyle='#1a1a2e';
-  ctx.fillRect(0,0,W,H);
-
-  // Animated road stripes
-  const stripeOffset=(Date.now()/10)%40;
-  ctx.fillStyle='#333';
-  ctx.fillRect(W*0.3,0,W*0.4,H);
-  ctx.fillStyle='#555';
-  for(let y=-40+stripeOffset;y<H;y+=40){
-    ctx.fillRect(W*0.48,y,W*0.04,20);
-  }
-  ctx.fillStyle='#fff';
-  ctx.fillRect(W*0.3,0,3,H);
-  ctx.fillRect(W*0.7-3,0,3,H);
-
-  // Title
-  ctx.fillStyle='#ff4444';
-  ctx.font=`bold ${36*fs}px monospace`;
-  ctx.textAlign='center';
-  ctx.fillText('PIXEL',W/2,H*0.15);
-  ctx.fillStyle='#ffdd00';
-  ctx.fillText('KART',W/2,H*0.22);
-
-  // Decorative karts
-  const t=Date.now()/1000;
-  drawKartSprite(W*0.35,H*0.15+Math.sin(t*2)*5*fs,0,'#e33',false,false);
-  drawKartSprite(W*0.65,H*0.18+Math.sin(t*2+1)*5*fs,0,'#33e',false,false);
-
-  // Buttons
-  const buttons=[
-    {text:'Quick Race',y:H*0.38,action:'trackselect'},
-    {text:'Championship',y:H*0.50,action:'championship'},
-  ];
-
-  buttons.forEach(b=>{
-    ctx.fillStyle='rgba(255,255,255,0.1)';
-    ctx.fillRect(W/2-90*fs,b.y-20*fs,180*fs,40*fs);
-    ctx.strokeStyle='#fff';
-    ctx.lineWidth=2;
-    ctx.strokeRect(W/2-90*fs,b.y-20*fs,180*fs,40*fs);
-    ctx.fillStyle='#fff';
-    ctx.font=`bold ${16*fs}px monospace`;
-    ctx.fillText(b.text,W/2,b.y+2*fs);
-  });
-
-  // Best times
-  ctx.fillStyle='#aaa';
-  ctx.font=`${11*fs}px monospace`;
-  ctx.fillText('Best Times:',W/2,H*0.66);
-  TRACKS.forEach((tr,i)=>{
-    const unlocked=i<saveData.unlocked;
-    ctx.fillStyle=unlocked?'#888':'#444';
-    const timeStr=saveData.bestTimes[i]!==null?formatTime(saveData.bestTimes[i]):'--:--';
-    ctx.fillText(`${tr.name}: ${unlocked?timeStr:'Locked'}`,W/2,H*0.71+i*18*fs);
-  });
-
-  // Version
-  ctx.fillStyle='#444';
-  ctx.font=`${9*fs}px monospace`;
-  ctx.fillText('v1.0',W/2,H*0.95);
-}
-
-function drawTrackSelect(){
-  const fs=scale;
-  ctx.fillStyle='#1a1a2e';
-  ctx.fillRect(0,0,W,H);
-
-  ctx.fillStyle='#fff';
-  ctx.font=`bold ${22*fs}px monospace`;
-  ctx.textAlign='center';
-  ctx.fillText('Select Track',W/2,H*0.1);
-
-  TRACKS.forEach((tr,i)=>{
-    const unlocked=i<saveData.unlocked;
-    const y=H*0.25+i*H*0.22;
-
-    ctx.fillStyle=unlocked?'rgba(255,255,255,0.1)':'rgba(100,100,100,0.1)';
-    ctx.fillRect(W*0.1,y-25*fs,W*0.8,50*fs);
-    ctx.strokeStyle=unlocked?'#fff':'#555';
-    ctx.lineWidth=2;
-    ctx.strokeRect(W*0.1,y-25*fs,W*0.8,50*fs);
-
-    // Draw mini track
-    let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
-    tr.waypoints.forEach(p=>{
-      minX=Math.min(minX,p.x);maxX=Math.max(maxX,p.x);
-      minY=Math.min(minY,p.y);maxY=Math.max(maxY,p.y);
-    });
-    const rangeX=maxX-minX||1,rangeY=maxY-minY||1;
-    const mmScale=30*fs/Math.max(rangeX,rangeY);
-    const mmX=W*0.2,mmY=y;
-
-    if(unlocked){
-      ctx.strokeStyle='rgba(255,255,255,0.5)';
-      ctx.lineWidth=2;
-      ctx.beginPath();
-      tr.waypoints.forEach((p,j)=>{
-        const x=mmX+(p.x-minX-rangeX/2)*mmScale;
-        const yy=mmY+(p.y-minY-rangeY/2)*mmScale;
-        if(j===0)ctx.moveTo(x,yy);else ctx.lineTo(x,yy);
-      });
-      ctx.closePath();
-      ctx.stroke();
-    }
-
-    ctx.fillStyle=unlocked?'#fff':'#666';
-    ctx.font=`bold ${14*fs}px monospace`;
-    ctx.textAlign='left';
-    ctx.fillText(unlocked?tr.name:'Locked',W*0.38,y-5*fs);
-
-    ctx.font=`${10*fs}px monospace`;
-    ctx.fillStyle=unlocked?'#aaa':'#555';
-    const diff=['Beginner','Intermediate','Expert'][i];
-    ctx.fillText(unlocked?diff:'Finish top 3 to unlock',W*0.38,y+10*fs);
-
-    if(unlocked&&saveData.bestTimes[i]!==null){
-      ctx.fillStyle='#ffd700';
-      ctx.textAlign='right';
-      ctx.fillText(`Best: ${formatTime(saveData.bestTimes[i])}`,W*0.88,y-5*fs);
-      ctx.textAlign='left';
-    }
-  });
-
-  // Back button
-  ctx.fillStyle='rgba(255,255,255,0.1)';
-  ctx.fillRect(W/2-50*fs,H*0.9-15*fs,100*fs,30*fs);
-  ctx.strokeStyle='#fff';
-  ctx.lineWidth=1;
-  ctx.strokeRect(W/2-50*fs,H*0.9-15*fs,100*fs,30*fs);
-  ctx.fillStyle='#fff';
-  ctx.font=`${14*fs}px monospace`;
-  ctx.textAlign='center';
-  ctx.fillText('Back',W/2,H*0.9+2*fs);
-}
-
-function drawChampResults(){
-  const fs=scale;
-  ctx.fillStyle='#1a1a2e';
-  ctx.fillRect(0,0,W,H);
-
-  ctx.fillStyle='#ffd700';
-  ctx.font=`bold ${26*fs}px monospace`;
-  ctx.textAlign='center';
-  ctx.fillText('Championship',W/2,H*0.12);
-  ctx.fillText('Results!',W/2,H*0.19);
-
-  const colors=['#e33','#33e','#3b3','#ee3'];
-  const names=['You','Blue','Green','Yellow'];
-  const sorted=[0,1,2,3].sort((a,b)=>champStandings[b]-champStandings[a]);
-
-  // Trophy for winner
-  if(sorted[0]===0){
-    ctx.fillStyle='#ffd700';
-    ctx.font=`${50*fs}px monospace`;
-    ctx.fillText('*',W/2,H*0.30);
-    ctx.font=`bold ${16*fs}px monospace`;
-    ctx.fillStyle='#ff0';
-    ctx.fillText('CHAMPION!',W/2,H*0.36);
-  }
-
-  sorted.forEach((ki,i)=>{
-    const y=H*0.44+i*45*fs;
-    const posStr=['1st','2nd','3rd','4th'][i];
-
-    ctx.fillStyle=i===0?'#ffd700':i===1?'#c0c0c0':i===2?'#cd7f32':'#888';
-    ctx.font=`bold ${18*fs}px monospace`;
-    ctx.textAlign='left';
-    ctx.fillText(posStr,W*0.15,y);
-
-    ctx.fillStyle=colors[ki];
-    ctx.fillRect(W*0.38,y-8*fs,14*fs,14*fs);
-
-    ctx.fillStyle='#fff';
-    ctx.font=`${15*fs}px monospace`;
-    ctx.fillText(names[ki],W*0.38+20*fs,y);
-
-    ctx.textAlign='right';
-    ctx.fillText(`${champStandings[ki]} pts`,W*0.85,y);
-    ctx.textAlign='left';
-  });
-
-  // Save championship results
-  saveData.champResults=sorted.map(ki=>({name:names[ki],pts:champStandings[ki]}));
-  writeSave();
-
-  // Back to menu
-  ctx.fillStyle='#4a4';
-  ctx.fillRect(W/2-70*fs,H*0.85-18*fs,140*fs,36*fs);
-  ctx.fillStyle='#fff';
-  ctx.font=`bold ${14*fs}px monospace`;
-  ctx.textAlign='center';
-  ctx.textBaseline='middle';
-  ctx.fillText('Main Menu',W/2,H*0.85);
-}
-
-function formatTime(t){
-  if(t===null||t===undefined)return '--:--.--';
-  const m=Math.floor(t/60);
-  const s=t%60;
-  return `${m}:${s<10?'0':''}${s.toFixed(2)}`;
-}
-
-// --- INPUT ---
 function handleTouchStart(e){
   e.preventDefault();
   ensureAudio();
-  for(let t of e.changedTouches){
+  for(var i=0;i<e.changedTouches.length;i++){
+    var t=e.changedTouches[i];
     touches[t.identifier]={x:t.clientX,y:t.clientY};
   }
-  updateTouchState(e);
+  updateTouchState();
   handleUITouch(e);
 }
 
 function handleTouchMove(e){
   e.preventDefault();
-  for(let t of e.changedTouches){
+  for(var i=0;i<e.changedTouches.length;i++){
+    var t=e.changedTouches[i];
     touches[t.identifier]={x:t.clientX,y:t.clientY};
   }
-  updateTouchState(e);
+  updateTouchState();
 }
 
 function handleTouchEnd(e){
   e.preventDefault();
-  for(let t of e.changedTouches){
+  for(var i=0;i<e.changedTouches.length;i++){
+    var t=e.changedTouches[i];
     delete touches[t.identifier];
   }
-  updateTouchState(e);
+  updateTouchState();
 }
 
-function updateTouchState(e){
+function updateTouchState(){
   touchLeft=false;
   touchRight=false;
-  const midX=window.innerWidth/2;
-  const pk=karts[0];
-  const itemZoneSize=60;
+  var midX=window.innerWidth/2;
+  var dpr=window.devicePixelRatio||1;
 
-  for(let id in touches){
-    const t=touches[id];
-    const x=t.x,y=t.y;
+  for(var id in touches){
+    var t=touches[id];
+    var x=t.x,y=t.y;
 
-    // Item button zone (center bottom)
-    if(pk&&pk.item!==ITEM_NONE){
-      const ibx=window.innerWidth/2;
-      const iby=window.innerHeight-70*scale/((window.devicePixelRatio||1));
-      const ibr=35*scale/((window.devicePixelRatio||1));
-      if(Math.sqrt((x-ibx)**2+(y-iby)**2)<ibr){
-        // Don't count as turn
+    // Skip item button zone
+    if(player.item!==ITEM_NONE){
+      var ibx=window.innerWidth/2;
+      var iby=window.innerHeight-60*scale/dpr;
+      var ibr=35*scale/dpr;
+      if(Math.sqrt((x-ibx)*(x-ibx)+(y-iby)*(y-iby))<ibr){
         continue;
       }
     }
@@ -1536,19 +2051,18 @@ function updateTouchState(e){
 }
 
 function handleUITouch(e){
-  const t=e.changedTouches[0];
-  const x=t.clientX,y=t.clientY;
-  const fs=scale/((window.devicePixelRatio||1));
-  const wW=window.innerWidth,wH=window.innerHeight;
+  var t=e.changedTouches[0];
+  var x=t.clientX,y=t.clientY;
+  var dpr=window.devicePixelRatio||1;
+  var fs=scale/dpr;
+  var wW=window.innerWidth,wH=window.innerHeight;
 
   if(gameState===STATE_MENU){
-    // Quick Race button
-    if(y>wH*0.38-20*fs&&y<wH*0.38+20*fs){
+    if(y>wH*0.40-22*fs&&y<wH*0.40+22*fs){
       championshipMode=false;
       gameState=STATE_TRACK_SELECT;
     }
-    // Championship button
-    if(y>wH*0.50-20*fs&&y<wH*0.50+20*fs){
+    if(y>wH*0.52-22*fs&&y<wH*0.52+22*fs){
       championshipMode=true;
       champStandings=[0,0,0,0];
       champRace=0;
@@ -1559,29 +2073,25 @@ function handleUITouch(e){
   }
 
   if(gameState===STATE_TRACK_SELECT){
-    // Track buttons
-    TRACKS.forEach((tr,i)=>{
-      const by=wH*0.25+i*wH*0.22;
-      if(y>by-25*fs&&y<by+25*fs&&i<saveData.unlocked){
+    TRACKS.forEach(function(tr,i){
+      var by=wH*0.22+i*wH*0.22;
+      if(y>by-28*fs&&y<by+28*fs&&i<saveData.unlocked){
         currentTrack=i;
         resetRace();
       }
     });
-    // Back button
-    if(y>wH*0.9-15*fs&&y<wH*0.9+15*fs){
+    if(y>wH*0.90-18*fs&&y<wH*0.90+18*fs){
       gameState=STATE_MENU;
     }
     return;
   }
 
   if(gameState===STATE_RACING||gameState===STATE_COUNTDOWN){
-    // Item use
-    const pk=karts[0];
-    if(pk&&pk.item!==ITEM_NONE){
-      const ibx=wW/2;
-      const iby=wH-70*fs;
-      const ibr=35*fs;
-      if(Math.sqrt((x-ibx)**2+(y-iby)**2)<ibr){
+    if(player.item!==ITEM_NONE){
+      var ibx=wW/2;
+      var iby=wH-60*fs;
+      var ibr=35*fs;
+      if(Math.sqrt((x-ibx)*(x-ibx)+(y-iby)*(y-iby))<ibr){
         touchUseItem=true;
       }
     }
@@ -1589,8 +2099,8 @@ function handleUITouch(e){
   }
 
   if(gameState===STATE_FINISH){
-    const btnY=championshipMode?wH*0.88:wH*0.75;
-    if(y>btnY-20*fs&&y<btnY+20*fs){
+    var btnY=championshipMode?wH*0.88:wH*0.72;
+    if(y>btnY-22*fs&&y<btnY+22*fs){
       if(championshipMode){
         champRace++;
         if(champRace>=3){
@@ -1607,32 +2117,32 @@ function handleUITouch(e){
   }
 
   if(gameState===STATE_CHAMP_RESULTS){
-    if(y>wH*0.85-20*fs&&y<wH*0.85+20*fs){
+    if(y>wH*0.86-22*fs&&y<wH*0.86+22*fs){
       gameState=STATE_MENU;
     }
     return;
   }
 }
 
-// Mouse support for desktop testing
+// Mouse support for desktop
 function handleMouseDown(e){
   ensureAudio();
-  const fakeTouch={changedTouches:[{identifier:99,clientX:e.clientX,clientY:e.clientY}],preventDefault:()=>{}};
   touches[99]={x:e.clientX,y:e.clientY};
+  var fakeTouch={changedTouches:[{identifier:99,clientX:e.clientX,clientY:e.clientY}],preventDefault:function(){}};
   handleTouchStart(fakeTouch);
 }
 function handleMouseMove(e){
   if(touches[99]){
     touches[99]={x:e.clientX,y:e.clientY};
-    const fakeTouch={changedTouches:[{identifier:99,clientX:e.clientX,clientY:e.clientY}],preventDefault:()=>{}};
-    updateTouchState(fakeTouch);
+    updateTouchState();
   }
 }
 function handleMouseUp(e){
+  var fakeTouch={changedTouches:[{identifier:99,clientX:e.clientX,clientY:e.clientY}],preventDefault:function(){}};
+  handleUITouch(fakeTouch);
   delete touches[99];
   touchLeft=false;touchRight=false;
-  const fakeTouch={changedTouches:[{identifier:99,clientX:e.clientX,clientY:e.clientY}],preventDefault:()=>{}};
-  handleUITouch(fakeTouch);
+  updateTouchState();
 }
 
 canvas.addEventListener('touchstart',handleTouchStart,{passive:false});
@@ -1643,34 +2153,35 @@ canvas.addEventListener('mousedown',handleMouseDown);
 canvas.addEventListener('mousemove',handleMouseMove);
 canvas.addEventListener('mouseup',handleMouseUp);
 
-// Keyboard for desktop
-const keys={};
-window.addEventListener('keydown',e=>{
+// Keyboard
+window.addEventListener('keydown',function(e){
   keys[e.key]=true;
   ensureAudio();
-  if(e.key===' '&&karts[0]&&karts[0].item!==ITEM_NONE)touchUseItem=true;
+  if(e.key===' '&&player.item!==ITEM_NONE)touchUseItem=true;
 });
-window.addEventListener('keyup',e=>{keys[e.key]=false;});
+window.addEventListener('keyup',function(e){keys[e.key]=false;});
 
-function pollKeyboard(){
-  if(gameState===STATE_RACING){
-    touchLeft=keys['ArrowLeft']||keys['a']||touchLeft;
-    touchRight=keys['ArrowRight']||keys['d']||touchRight;
-  }
-}
+// =============================================================
+// GAME LOOP
+// =============================================================
 
-// --- GAME LOOP ---
+var lastTime=performance.now();
+
 function gameLoop(timestamp){
-  const dt=Math.min((timestamp-lastTime)/1000,0.05);
+  var dt=Math.min((timestamp-lastTime)/1000,0.05);
   lastTime=timestamp;
 
-  pollKeyboard();
+  // Poll keyboard for racing
+  if(gameState===STATE_RACING){
+    if(keys['ArrowLeft']||keys['a'])touchLeft=true;
+    if(keys['ArrowRight']||keys['d'])touchRight=true;
+  }
+
   update(dt);
   draw();
   requestAnimationFrame(gameLoop);
 }
 
-lastTime=performance.now();
 requestAnimationFrame(gameLoop);
 
 </script>
