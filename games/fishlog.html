@@ -3517,6 +3517,135 @@ if ('serviceWorker' in navigator) {
   });
 }
 
+// =====================================================================
+// INTEGRATION: Cross-tab communication with parent shell
+// =====================================================================
+
+// ---- Feature 1: Request context from parent when opening new catch form ----
+var _origOpenCatchForm = openCatchForm;
+openCatchForm = function(id) {
+  _origOpenCatchForm(id);
+  // If new catch (not editing), request context from parent
+  if (!id) {
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ type: 'request-context' }, '*');
+      }
+    } catch (e) {}
+  }
+};
+
+// ---- Listen for context response and prefill-catch messages ----
+window.addEventListener('message', function(ev) {
+  try {
+    if (!ev.data || !ev.data.type) return;
+
+    // Feature 1: Auto-fill from weather/GPS context
+    if (ev.data.type === 'catch-context') {
+      var panel = document.getElementById('catchForm');
+      if (!panel || !panel.classList.contains('open')) return;
+      // Only fill empty fields (do not overwrite user input)
+      if (ev.data.weather && !document.getElementById('fWeather').value) {
+        // Map weather description to select option
+        var weatherMap = {
+          'Clear': 'Sunny', 'Mostly Clear': 'Sunny',
+          'Partly Cloudy': 'Cloudy', 'Overcast': 'Overcast',
+          'Lt. Drizzle': 'Rainy', 'Drizzle': 'Rainy', 'Hvy. Drizzle': 'Rainy',
+          'Lt. Rain': 'Rainy', 'Rain': 'Rainy', 'Hvy. Rain': 'Rainy',
+          'Showers': 'Rainy', 'Hvy. Showers': 'Rainy',
+          'Foggy': 'Foggy', 'Fog': 'Foggy',
+          'Thunderstorm': 'Rainy',
+          'Lt. Snow': 'Cloudy', 'Snow': 'Cloudy', 'Hvy. Snow': 'Cloudy'
+        };
+        var mapped = weatherMap[ev.data.weather] || '';
+        if (mapped) document.getElementById('fWeather').value = mapped;
+      }
+      if (ev.data.temp && !document.getElementById('fWaterTemp').value) {
+        // Rough water temp estimate from air temp (water is usually cooler)
+        var airTemp = parseFloat(ev.data.temp);
+        if (!isNaN(airTemp)) {
+          var waterEst = Math.round(airTemp * 0.85);
+          if (waterEst > 0 && waterEst < 35) {
+            document.getElementById('fWaterTemp').value = waterEst;
+          }
+        }
+      }
+      if (ev.data.lat && !document.getElementById('fLat').value) {
+        document.getElementById('fLat').value = ev.data.lat;
+        document.getElementById('fLng').value = ev.data.lng;
+        if (!document.getElementById('fLocation').value) {
+          document.getElementById('fLocation').value = parseFloat(ev.data.lat).toFixed(3) + ', ' + parseFloat(ev.data.lng).toFixed(3);
+        }
+      }
+      // Add solunar info to notes if field is empty
+      if (ev.data.solunarRating && !document.getElementById('fNotes').value) {
+        document.getElementById('fNotes').value = 'Solunar: ' + ev.data.solunarRating;
+      }
+    }
+
+    // Feature 3: Hotspot -> Quick Log (prefill-catch message)
+    if (ev.data.type === 'prefill-catch') {
+      // Open the catch form first
+      var panel = document.getElementById('catchForm');
+      if (!panel || !panel.classList.contains('open')) {
+        _origOpenCatchForm();
+      }
+      // Small delay to let form render
+      setTimeout(function() {
+        try {
+          if (ev.data.location && !document.getElementById('fLocation').value) {
+            document.getElementById('fLocation').value = ev.data.location;
+          } else if (ev.data.location) {
+            document.getElementById('fLocation').value = ev.data.location;
+          }
+          if (ev.data.lat) {
+            document.getElementById('fLat').value = ev.data.lat;
+            document.getElementById('fLng').value = ev.data.lng || '';
+          }
+          if (ev.data.weather) {
+            var weatherMap2 = {
+              'Clear': 'Sunny', 'Mostly Clear': 'Sunny',
+              'Partly Cloudy': 'Cloudy', 'Overcast': 'Overcast',
+              'Lt. Drizzle': 'Rainy', 'Drizzle': 'Rainy', 'Hvy. Drizzle': 'Rainy',
+              'Lt. Rain': 'Rainy', 'Rain': 'Rainy', 'Hvy. Rain': 'Rainy',
+              'Showers': 'Rainy', 'Hvy. Showers': 'Rainy',
+              'Foggy': 'Foggy', 'Fog': 'Foggy',
+              'Thunderstorm': 'Rainy'
+            };
+            var mapped2 = weatherMap2[ev.data.weather] || '';
+            if (mapped2 && !document.getElementById('fWeather').value) {
+              document.getElementById('fWeather').value = mapped2;
+            }
+          }
+          if (ev.data.temp && !document.getElementById('fWaterTemp').value) {
+            var airTemp2 = parseFloat(ev.data.temp);
+            if (!isNaN(airTemp2)) {
+              var waterEst2 = Math.round(airTemp2 * 0.85);
+              if (waterEst2 > 0 && waterEst2 < 35) {
+                document.getElementById('fWaterTemp').value = waterEst2;
+              }
+            }
+          }
+          if (ev.data.solunarRating && !document.getElementById('fNotes').value) {
+            document.getElementById('fNotes').value = 'Solunar: ' + ev.data.solunarRating;
+          }
+        } catch (e) {}
+      }, 200);
+    }
+  } catch (e) {}
+});
+
+// ---- Notify parent when a catch is saved ----
+var _origSaveCatch = saveCatch;
+saveCatch = function() {
+  _origSaveCatch();
+  try {
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({ type: 'catch-saved' }, '*');
+    }
+  } catch (e) {}
+};
+
 // --- Start ---
 init();
 </script>

@@ -2259,6 +2259,477 @@ function closeGame() {
   gf.style.display = 'none';
   if (gm) gm.style.display = '';
 }
+
+// =====================================================================
+// INTEGRATION: Cross-tab communication and unified experience
+// =====================================================================
+
+// ---- Cached weather state for cross-tab sharing ----
+var cachedWeatherDesc = '';
+var cachedTemp = '';
+var cachedWind = '';
+var cachedWindDir = '';
+var cachedHumidity = '';
+var cachedFeelsLike = '';
+
+// Patch renderWeatherCard to cache weather data
+var _origRenderWeatherCard = renderWeatherCard;
+renderWeatherCard = function(card, data) {
+  try {
+    var c = data.current;
+    if (c) {
+      cachedWeatherDesc = weatherDescFromCode(c.weather_code) || '';
+      cachedTemp = Math.round(c.temperature_2m) || '';
+      cachedWind = Math.round(c.wind_speed_10m) || '';
+      var dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+      cachedWindDir = dirs[Math.round(c.wind_direction_10m / 45) % 8] || '';
+      cachedHumidity = c.relative_humidity_2m || '';
+      cachedFeelsLike = Math.round(c.apparent_temperature) || '';
+    }
+  } catch (e) {}
+  _origRenderWeatherCard(card, data);
+};
+
+// ---- switchTab: programmatic tab switching ----
+function switchTab(tabName) {
+  if (!frames[tabName]) return;
+  try {
+    if (navigator.vibrate) navigator.vibrate(5);
+    tabs.forEach(function(b) { b.classList.toggle('active', b.dataset.tab === tabName); });
+    var prev = frames[activeTab];
+    if (prev) prev.style.opacity = '0';
+    setTimeout(function() {
+      Object.values(frames).forEach(function(f) { f.classList.remove('active'); });
+      frames[tabName].classList.add('active');
+      frames[tabName].style.opacity = '1';
+      activeTab = tabName;
+      if (tabName === 'hotspot') renderHotspots();
+    }, 100);
+    localStorage.setItem('ontfish_tab', tabName);
+  } catch (e) {}
+}
+
+// ---- getCurrentFeedingStatus / getCurrentSolunarRating ----
+function getCurrentFeedingStatus() {
+  try {
+    var sol = getSolunar(new Date());
+    return sol.feeding || 'unknown';
+  } catch (e) { return 'unknown'; }
+}
+
+function getCurrentSolunarRating() {
+  try {
+    var sol = getSolunar(new Date());
+    var h = new Date().getHours();
+    for (var i = 0; i < sol.periods.length; i++) {
+      var p = sol.periods[i];
+      var end = (p.start + p.dur) % 24;
+      if ((p.start < end && h >= p.start && h < end) || (p.start >= end && (h >= p.start || h < end))) {
+        return p.type + ' Period (' + fmtH(p.start) + '-' + fmtH(p.start + p.dur) + ')';
+      }
+    }
+    // Find next period
+    var nextP = null, minDiff = 999;
+    sol.periods.forEach(function(p) {
+      var diff = p.start - h;
+      if (diff < 0) diff += 24;
+      if (diff < minDiff) { minDiff = diff; nextP = p; }
+    });
+    if (nextP) return 'Next ' + nextP.type + ' at ' + fmtH(nextP.start);
+    return '';
+  } catch (e) { return ''; }
+}
+
+// ---- Feature 1: Auto-fill catch form from weather/GPS ----
+// Listen for context requests from the log iframe
+window.addEventListener('message', function(ev) {
+  try {
+    if (!ev.data || !ev.data.type) return;
+
+    if (ev.data.type === 'request-context') {
+      var ctx = {
+        type: 'catch-context',
+        weather: cachedWeatherDesc || '',
+        temp: cachedTemp || '',
+        windSpeed: cachedWind || '',
+        windDir: cachedWindDir || '',
+        lat: currentLat,
+        lng: currentLng,
+        feedingPeriod: getCurrentFeedingStatus(),
+        solunarRating: getCurrentSolunarRating()
+      };
+      if (ev.source) ev.source.postMessage(ctx, '*');
+    }
+
+    // ---- Feature 2: Species tap -> Bait recommendations ----
+    if (ev.data.type === 'show-bait-for-species') {
+      switchTab('bait');
+      setTimeout(function() {
+        try {
+          var baitFrame = document.getElementById('frame-bait');
+          if (baitFrame && baitFrame.contentWindow) {
+            baitFrame.contentWindow.postMessage({ type: 'select-species', species: ev.data.species }, '*');
+          }
+        } catch (e) {}
+      }, 500);
+    }
+
+    // ---- Feature 6: Cross-tab notifications / badges ----
+    if (ev.data.type === 'catch-saved') {
+      updateTodayStat();
+      updateUnifiedFishData();
+    }
+
+    if (ev.data.type === 'game-achievement') {
+      showTabBadge('hotspot', 1);
+    }
+
+    if (ev.data.type === 'season-opening-soon') {
+      showTabBadge('regs', 1);
+    }
+
+  } catch (e) {}
+});
+
+// ---- Feature 2 (continued): showBaitForSpecies called from collection grid ----
+function showBaitForSpecies(species) {
+  try {
+    if (navigator.vibrate) navigator.vibrate(5);
+    switchTab('bait');
+    setTimeout(function() {
+      try {
+        var baitFrame = document.getElementById('frame-bait');
+        if (baitFrame && baitFrame.contentWindow) {
+          baitFrame.contentWindow.postMessage({ type: 'select-species', species: species }, '*');
+        }
+      } catch (e) {}
+    }, 500);
+  } catch (e) {}
+}
+
+// ---- Feature 3: Hotspot -> Quick Log ----
+function logCatchAtSpot(name, lat, lng) {
+  try {
+    if (navigator.vibrate) navigator.vibrate(5);
+    switchTab('log');
+    setTimeout(function() {
+      try {
+        var logFrame = document.getElementById('frame-log');
+        if (logFrame && logFrame.contentWindow) {
+          logFrame.contentWindow.postMessage({
+            type: 'prefill-catch',
+            location: name,
+            lat: lat,
+            lng: lng,
+            weather: cachedWeatherDesc || '',
+            temp: cachedTemp || '',
+            solunarRating: getCurrentSolunarRating()
+          }, '*');
+        }
+      } catch (e) {}
+    }, 500);
+  } catch (e) {}
+}
+
+// ---- Feature 4: Game catch -> Real log with details ----
+// Enhance the existing game-fish-caught handler
+var _origGameHandler = null;
+(function() {
+  // Wrap existing message listener to enhance game catches
+  var origAddEventListener = window.addEventListener;
+  window.addEventListener('message', function(ev) {
+    try {
+      if (!ev.data) return;
+      if (ev.data.type === 'game-fish-caught' && gameFishToLog) {
+        // Find and enhance the catch that was just added
+        setTimeout(function() {
+          try {
+            var catches = JSON.parse(localStorage.getItem('fishlog_catches') || '[]');
+            if (catches.length > 0 && catches[0].isGameFish) {
+              var gc = catches[0];
+              // Enhance with current context
+              if (!gc.technique) gc.technique = gc.source ? gc.source + ' Game' : 'Fishing Game';
+              if (!gc.weather && cachedWeatherDesc) gc.weather = cachedWeatherDesc;
+              if (!gc.waterBodyType) gc.waterBodyType = 'Virtual Lake';
+              var solNote = getCurrentSolunarRating();
+              if (solNote && gc.notes) {
+                gc.notes += ' | Solunar: ' + solNote;
+              } else if (solNote) {
+                gc.notes = 'Solunar: ' + solNote;
+              }
+              localStorage.setItem('fishlog_catches', JSON.stringify(catches));
+            }
+          } catch (e) {}
+          showTabBadge('log', 1);
+          updateTodayStat();
+          updateUnifiedFishData();
+        }, 200);
+      }
+    } catch (e) {}
+  });
+})();
+
+// ---- Feature 5: Catch stats in header ----
+function updateTodayStat() {
+  try {
+    var catches = getCatches();
+    var today = new Date().toISOString().slice(0, 10);
+    var todayCount = catches.filter(function(c) { return c.date === today; }).length;
+    var el = document.getElementById('todayStat');
+    if (el) el.textContent = todayCount + ' today';
+  } catch (e) {}
+}
+setInterval(updateTodayStat, 10000);
+updateTodayStat();
+
+// ---- Feature 6: Cross-tab notification badges ----
+function showTabBadge(tabName, count) {
+  try {
+    var btn = document.querySelector('[data-tab="' + tabName + '"]');
+    if (!btn) return;
+    var existing = btn.querySelector('.tab-badge');
+    if (existing) existing.remove();
+    if (count > 0) {
+      var badge = document.createElement('span');
+      badge.className = 'tab-badge';
+      badge.textContent = count;
+      btn.appendChild(badge);
+    }
+  } catch (e) {}
+}
+
+// Clear badge when switching to that tab
+var _origTabClick = null;
+tabs.forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    var existing = btn.querySelector('.tab-badge');
+    if (existing) existing.remove();
+  });
+});
+
+// Check for season opening notifications at startup
+(function checkSeasonBadges() {
+  try {
+    var now = new Date();
+    var tomorrow = new Date(now); tomorrow.setDate(tomorrow.getDate() + 1);
+    var hasOpening = false;
+    ALL_SPECIES.forEach(function(sp) {
+      if (!isInSeason(sp, now) && isInSeason(sp, tomorrow)) hasOpening = true;
+    });
+    if (hasOpening) showTabBadge('regs', 1);
+  } catch (e) {}
+})();
+
+// ---- Feature 7: Fishing Session Timer ----
+var sessionStartTime = Date.now();
+var sessionPaused = false;
+var sessionPausedAt = 0;
+var sessionTotalPaused = 0;
+
+try {
+  var savedStart = localStorage.getItem('ontfish_session_start');
+  var savedPaused = localStorage.getItem('ontfish_session_paused');
+  // If last session was within 30 minutes, continue it
+  if (savedStart && (Date.now() - parseInt(savedStart)) < 30 * 60 * 1000) {
+    sessionStartTime = parseInt(savedStart);
+    sessionTotalPaused = parseInt(savedPaused || '0');
+  } else {
+    localStorage.setItem('ontfish_session_start', sessionStartTime.toString());
+    localStorage.setItem('ontfish_session_paused', '0');
+  }
+} catch (e) {}
+
+function updateSessionTimer() {
+  try {
+    if (sessionPaused) return;
+    var elapsed = Date.now() - sessionStartTime - sessionTotalPaused;
+    var totalSecs = Math.floor(elapsed / 1000);
+    var hrs = Math.floor(totalSecs / 3600);
+    var mins = Math.floor((totalSecs % 3600) / 60);
+    var secs = totalSecs % 60;
+    var el = document.getElementById('sessionTime');
+    if (el) {
+      if (hrs > 0) {
+        el.textContent = hrs + ':' + (mins < 10 ? '0' : '') + mins + ':' + (secs < 10 ? '0' : '') + secs;
+      } else {
+        el.textContent = mins + ':' + (secs < 10 ? '0' : '') + secs;
+      }
+    }
+  } catch (e) {}
+}
+setInterval(updateSessionTimer, 1000);
+updateSessionTimer();
+
+// Pause when app is backgrounded
+document.addEventListener('visibilitychange', function() {
+  try {
+    if (document.hidden) {
+      sessionPaused = true;
+      sessionPausedAt = Date.now();
+    } else {
+      if (sessionPaused && sessionPausedAt > 0) {
+        sessionTotalPaused += Date.now() - sessionPausedAt;
+        localStorage.setItem('ontfish_session_paused', sessionTotalPaused.toString());
+      }
+      sessionPaused = false;
+    }
+  } catch (e) {}
+});
+
+// Session summary
+function getSessionSummary() {
+  try {
+    var elapsed = Date.now() - sessionStartTime - sessionTotalPaused;
+    var hrs = Math.floor(elapsed / 3600000);
+    var mins = Math.floor((elapsed % 3600000) / 60000);
+    var catches = getCatches();
+    var today = new Date().toISOString().slice(0, 10);
+    var todayCatches = catches.filter(function(c) { return c.date === today; });
+    var totalWeight = todayCatches.reduce(function(s, c) {
+      return s + (c.weightKg || c.weightLbs || 0) + ((c.weightG || c.weightOz || 0) / 1000);
+    }, 0);
+    var timeStr = hrs > 0 ? hrs + 'h ' + mins + 'm' : mins + 'm';
+    return 'Fished for ' + timeStr + ', caught ' + todayCatches.length + ' fish, ' + totalWeight.toFixed(1) + ' kg total';
+  } catch (e) { return ''; }
+}
+
+// ---- Feature 8: Quick Actions Bar ----
+// Show/hide quick actions based on active tab
+function updateQuickActions() {
+  try {
+    var qa = document.getElementById('quickActions');
+    if (qa) {
+      qa.style.display = (activeTab === 'hotspot') ? 'flex' : 'none';
+    }
+  } catch (e) {}
+}
+
+// Patch tab switching to update quick actions
+var _origTabListeners = [];
+tabs.forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    setTimeout(updateQuickActions, 200);
+  });
+});
+updateQuickActions();
+
+function quickLogCatch() {
+  try {
+    if (navigator.vibrate) navigator.vibrate(5);
+    switchTab('log');
+    setTimeout(function() {
+      try {
+        var logFrame = document.getElementById('frame-log');
+        if (logFrame && logFrame.contentWindow) {
+          logFrame.contentWindow.postMessage({
+            type: 'prefill-catch',
+            lat: currentLat,
+            lng: currentLng,
+            location: currentLat ? (currentLat.toFixed(3) + ', ' + currentLng.toFixed(3)) : '',
+            weather: cachedWeatherDesc || '',
+            temp: cachedTemp || '',
+            solunarRating: getCurrentSolunarRating()
+          }, '*');
+        }
+      } catch (e) {}
+    }, 500);
+  } catch (e) {}
+}
+
+function quickFindBait() {
+  try {
+    if (navigator.vibrate) navigator.vibrate(5);
+    switchTab('bait');
+    // Send current conditions to bait helper
+    setTimeout(function() {
+      try {
+        var baitFrame = document.getElementById('frame-bait');
+        if (baitFrame && baitFrame.contentWindow) {
+          baitFrame.contentWindow.postMessage({
+            type: 'set-conditions',
+            weather: cachedWeatherDesc || '',
+            temp: cachedTemp || ''
+          }, '*');
+        }
+      } catch (e) {}
+    }, 500);
+  } catch (e) {}
+}
+
+// ---- Feature 9: Unified Fish Data ----
+var unifiedFishData = { totalFish: 0, totalWeight: 0, speciesCount: 0, realCatches: 0, gameCatches: 0 };
+
+function updateUnifiedFishData() {
+  try {
+    var catches = getCatches();
+    var speciesSet = new Set();
+    var totalWeight = 0;
+    var realCount = 0;
+    var gameCount = 0;
+
+    catches.forEach(function(c) {
+      if (c.species) speciesSet.add(c.species);
+      totalWeight += (c.weightKg || c.weightLbs || 0) + ((c.weightG || c.weightOz || 0) / 1000);
+      if (c.isGameFish) gameCount++;
+      else realCount++;
+    });
+
+    unifiedFishData = {
+      totalFish: catches.length,
+      totalWeight: totalWeight,
+      speciesCount: speciesSet.size,
+      realCatches: realCount,
+      gameCatches: gameCount
+    };
+  } catch (e) {}
+}
+updateUnifiedFishData();
+
+// Make unified data available to iframes
+window.addEventListener('message', function(ev) {
+  try {
+    if (ev.data && ev.data.type === 'request-unified-data') {
+      if (ev.source) {
+        ev.source.postMessage({
+          type: 'unified-fish-data',
+          data: unifiedFishData,
+          sessionSummary: getSessionSummary()
+        }, '*');
+      }
+    }
+  } catch (e) {}
+});
+
+// ---- Feature 10: Weather Integration into Games ----
+var _origLoadGame = loadGame;
+loadGame = function(src) {
+  _origLoadGame(src);
+  // After game loads, send weather conditions
+  setTimeout(function() {
+    try {
+      var gi = document.getElementById('gameIframe');
+      if (gi && gi.contentWindow) {
+        gi.contentWindow.postMessage({
+          type: 'weather-conditions',
+          weather: cachedWeatherDesc || '',
+          temp: cachedTemp || '',
+          windSpeed: cachedWind || '',
+          windDir: cachedWindDir || '',
+          humidity: cachedHumidity || '',
+          feeding: getCurrentFeedingStatus(),
+          solunar: getCurrentSolunarRating()
+        }, '*');
+      }
+    } catch (e) {}
+  }, 1500);
+};
+
+// ---- Periodic updates ----
+setInterval(function() {
+  updateTodayStat();
+  updateUnifiedFishData();
+}, 30000);
+
 </script>
 </body>
 </html>
