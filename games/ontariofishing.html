@@ -985,6 +985,110 @@ window.addEventListener('message',function(e){
 
 if(activeTab==='hotspot')renderHotspots();
 
+// ─── FISH MEASUREMENT TOOL ───
+// Tap two points on a photo to measure fish length
+// Uses reference object (coin=19mm, phone width, or manual) for scale
+window.addEventListener('message',function(ev){
+  if(ev.data&&ev.data.type==='measure-fish'){openMeasureTool(ev.data.photoSrc)}
+});
+
+function openMeasureTool(photoSrc){
+  var overlay=document.createElement('div');
+  overlay.style.cssText='position:fixed;inset:0;z-index:2000;background:#000;display:flex;flex-direction:column';
+  var header=document.createElement('div');
+  header.style.cssText='padding:10px 16px;background:#101a10;display:flex;justify-content:space-between;align-items:center;flex-shrink:0';
+  header.innerHTML='<span style="color:#d4a83c;font-size:14px;font-weight:700">FISH MEASURE</span><button style="background:none;border:1px solid #585858;color:#b8b8b8;padding:6px 12px;font-size:12px;border-radius:6px;cursor:pointer" id="mClose">Close</button>';
+  var info=document.createElement('div');
+  info.style.cssText='padding:8px 16px;background:#0a160a;color:#8a9a80;font-size:11px;text-align:center;flex-shrink:0';
+  info.textContent='Tap HEAD then TAIL of the fish. Set reference for real size.';
+  var canvasWrap=document.createElement('div');
+  canvasWrap.style.cssText='flex:1;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center';
+  var mc=document.createElement('canvas');mc.style.cssText='max-width:100%;max-height:100%;touch-action:none';
+  canvasWrap.appendChild(mc);
+  var bottom=document.createElement('div');
+  bottom.style.cssText='padding:10px 16px;background:#101a10;display:flex;gap:8px;align-items:center;flex-shrink:0;flex-wrap:wrap;justify-content:center';
+  bottom.innerHTML='<div style="color:#d4a83c;font-size:16px;font-weight:700" id="mResult">Tap fish head...</div>'+
+    '<div style="display:flex;gap:4px;margin-top:4px"><button class="mref" data-ref="coin" style="padding:6px 10px;font-size:10px;background:#1a2e1a;color:#b8b8b8;border:1px solid #3a6e3a;border-radius:6px;cursor:pointer">Loonie (26mm)</button>'+
+    '<button class="mref" data-ref="card" style="padding:6px 10px;font-size:10px;background:#1a2e1a;color:#b8b8b8;border:1px solid #3a6e3a;border-radius:6px;cursor:pointer">Card (85mm)</button>'+
+    '<button class="mref" data-ref="hand" style="padding:6px 10px;font-size:10px;background:#1a2e1a;color:#b8b8b8;border:1px solid #3a6e3a;border-radius:6px;cursor:pointer">Hand (180mm)</button></div>';
+  overlay.appendChild(header);overlay.appendChild(info);overlay.appendChild(canvasWrap);overlay.appendChild(bottom);
+  document.body.appendChild(overlay);
+
+  var img=new Image();var points=[];var refMM=26;var refPixels=0;var refMode=false;
+  var mx=mc.getContext('2d');
+
+  img.onload=function(){
+    mc.width=img.naturalWidth;mc.height=img.naturalHeight;
+    render();
+  };
+  img.src=photoSrc;
+
+  function render(){
+    mx.clearRect(0,0,mc.width,mc.height);
+    mx.drawImage(img,0,0);
+    // Draw points
+    points.forEach(function(p,i){
+      mx.fillStyle=i===0?'#f83800':'#00a800';
+      mx.beginPath();mx.arc(p.x,p.y,Math.max(6,mc.width/60),0,Math.PI*2);mx.fill();
+      mx.strokeStyle='#fff';mx.lineWidth=2;mx.stroke();
+    });
+    // Draw line between points
+    if(points.length===2){
+      mx.strokeStyle='#f8d800';mx.lineWidth=3;mx.setLineDash([10,5]);
+      mx.beginPath();mx.moveTo(points[0].x,points[0].y);mx.lineTo(points[1].x,points[1].y);mx.stroke();
+      mx.setLineDash([]);
+      var dist=Math.sqrt(Math.pow(points[1].x-points[0].x,2)+Math.pow(points[1].y-points[0].y,2));
+      if(refPixels>0){
+        var realMM=dist/refPixels*refMM;
+        var cm=Math.round(realMM/10*10)/10;
+        document.getElementById('mResult').textContent=cm.toFixed(1)+' cm ('+Math.round(cm/2.54*10)/10+' in)';
+      }else{
+        document.getElementById('mResult').textContent=Math.round(dist)+' px — set reference!';
+      }
+    }
+    if(refMode&&points.length>=3){
+      mx.strokeStyle='#0058f8';mx.lineWidth=2;mx.setLineDash([5,3]);
+      mx.beginPath();mx.moveTo(points[2].x,points[2].y);
+      if(points.length>=4)mx.lineTo(points[3].x,points[3].y);
+      mx.stroke();mx.setLineDash([]);
+    }
+  }
+
+  mc.addEventListener('pointerdown',function(e){
+    var rect=mc.getBoundingClientRect();
+    var sx=(e.clientX-rect.left)/rect.width*mc.width;
+    var sy=(e.clientY-rect.top)/rect.height*mc.height;
+    if(refMode){
+      if(points.length<4)points.push({x:sx,y:sy});
+      if(points.length===4){
+        refPixels=Math.sqrt(Math.pow(points[3].x-points[2].x,2)+Math.pow(points[3].y-points[2].y,2));
+        refMode=false;info.textContent='Reference set! Now tap HEAD then TAIL.';
+        points=[];
+      }
+    }else{
+      if(points.length>=2)points=[];
+      points.push({x:sx,y:sy});
+      if(points.length===1)document.getElementById('mResult').textContent='Now tap tail...';
+    }
+    render();e.preventDefault();
+  });
+
+  bottom.querySelectorAll('.mref').forEach(function(btn){
+    btn.addEventListener('click',function(){
+      var ref=this.dataset.ref;
+      if(ref==='coin')refMM=26;
+      else if(ref==='card')refMM=85;
+      else if(ref==='hand')refMM=180;
+      refMode=true;points=[];
+      info.textContent='Tap two ends of the '+this.textContent+' in the photo';
+      document.getElementById('mResult').textContent='Tap reference...';
+      render();
+    });
+  });
+
+  document.getElementById('mClose').addEventListener('click',function(){overlay.remove()});
+}
+
 // ─── SOCIAL MEDIA SHARE CARD GENERATOR ───
 function generateShareCard(data,callback){
   var c=document.createElement('canvas');c.width=1080;c.height=1350;

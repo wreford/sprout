@@ -58,7 +58,6 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges;-ms-i
 </style>
 </head>
 <body>
-<a href="../index.html" style="position:fixed;top:4px;left:8px;z-index:9999;font-size:7px;color:#787878;text-decoration:none;font-family:'Press Start 2P',monospace;opacity:0.7;transition:opacity 0.2s" onmouseover="this.style.opacity=1;this.style.color='#58d854'" onmouseout="this.style.opacity=0.7;this.style.color='#787878'">&larr; home</a>
 <div id="wrap">
   <canvas id="c"></canvas>
   <div id="scanlines"></div>
@@ -97,7 +96,10 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges;-ms-i
       <p class="pb" id="fpPB" style="display:none">NEW PERSONAL BEST!</p>
       <p class="value" id="fpValue"></p>
       <p class="comboInfo" id="fpCombo" style="display:none"></p>
-      <button onclick="closeFishPopup()">OK</button>
+      <div style="display:flex;gap:6px;justify-content:center;margin-top:10px">
+        <button onclick="closeFishPopup()">OK</button>
+        <button onclick="shareGameCatch()" style="background:#00a800;border-color:#005800">SHARE</button>
+      </div>
     </div>
   </div>
 </div>
@@ -2153,6 +2155,84 @@ function gameLoop(timestamp){
 }
 
 requestAnimationFrame(gameLoop);
+
+// ─── SHARE GAME CATCH ───
+var lastCatchData=null;
+var origCatchFish=catchFish;
+// Wrap catchFish to store last catch data
+(function(){
+  var _orig=catchFish;
+  catchFish=function(){
+    _orig();
+    var f=FISH[currentFishType];
+    lastCatchData={species:f.name,weight:currentFishWeight,sizeInfo:getSizeCategory(currentFishWeight,f)};
+  };
+})();
+
+function shareGameCatch(){
+  if(!lastCatchData)return;
+  var c=document.createElement('canvas');c.width=1080;c.height=1080;
+  var x=c.getContext('2d');
+  // Pixel art background
+  x.fillStyle='#000';x.fillRect(0,0,1080,1080);
+  // Water gradient
+  for(var wy=400;wy<1080;wy++){
+    var r=(wy-400)/680;
+    x.fillStyle='rgb('+Math.floor(0+r*10)+','+Math.floor(48-r*20)+','+Math.floor(120-r*40)+')';
+    x.fillRect(0,wy,1080,1);
+  }
+  // Sky gradient
+  for(var sy=0;sy<400;sy++){
+    var sr=sy/400;
+    x.fillStyle='rgb('+Math.floor(40+sr*20)+','+Math.floor(80+sr*40)+','+Math.floor(160+sr*40)+')';
+    x.fillRect(0,sy,1080,1);
+  }
+  // Title
+  x.font='bold 48px "Press Start 2P",monospace';x.fillStyle='#f8d800';x.textAlign='center';
+  x.fillText('8BIT PERCH',540,80);
+  // Species
+  x.font='bold 72px "Press Start 2P",monospace';x.fillStyle='#fcfcfc';
+  x.fillText(lastCatchData.species,540,480);
+  // Weight
+  x.font='bold 96px "Press Start 2P",monospace';x.fillStyle='#f8d800';
+  x.fillText(lastCatchData.weight.toFixed(1)+' LBS',540,620);
+  // Size category
+  if(lastCatchData.sizeInfo){
+    x.font='bold 36px "Press Start 2P",monospace';
+    x.fillStyle=lastCatchData.sizeInfo.color||'#fcfcfc';
+    x.fillText(lastCatchData.sizeInfo.label||'',540,700);
+  }
+  // Draw pixel fish (scaled up)
+  var fc=FISH.findIndex(function(f){return f.name===lastCatchData.species});
+  if(fc>=0){
+    x.save();x.translate(540,280);x.scale(12,12);
+    // Simple fish shape
+    var f=FISH[fc];
+    x.fillStyle=f.colors[0];
+    for(var px=-6;px<=6;px++){
+      var rh=Math.floor(3*Math.sqrt(1-px*px/37));
+      for(var py=-rh;py<=rh;py++)x.fillRect(px,py,1,1);
+    }
+    x.fillStyle=f.colors[1]||f.colors[0];
+    for(var tt=0;tt<3;tt++){x.fillRect(-7-tt,-tt,1,1);x.fillRect(-7-tt,tt,1,1)}
+    x.fillStyle='#fcfcfc';x.fillRect(4,-1,1,1);
+    x.fillStyle='#000';x.fillRect(5,-1,1,1);
+    x.restore();
+  }
+  // Branding
+  x.font='24px "Press Start 2P",monospace';x.fillStyle='#787878';
+  x.fillText('taskiap.com',540,1020);
+  // Share
+  c.toBlob(function(blob){
+    if(!blob)return;
+    var file=new File([blob],'8bitperch-'+Date.now()+'.jpg',{type:'image/jpeg'});
+    if(navigator.share&&navigator.canShare&&navigator.canShare({files:[file]})){
+      navigator.share({title:'8bit Perch Catch',text:lastCatchData.weight.toFixed(1)+' LBS '+lastCatchData.species+'!',files:[file]}).catch(function(){});
+    }else{
+      var a=document.createElement('a');a.href=c.toDataURL('image/jpeg',0.9);a.download='catch.jpg';a.click();
+    }
+  },'image/jpeg',0.9);
+}
 </script>
 </body>
 </html>
