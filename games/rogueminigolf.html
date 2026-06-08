@@ -1,0 +1,1991 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Rogue Mini Golf</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+html,body{width:100%;height:100%;overflow:hidden;background:#0a0a12;font-family:monospace}
+canvas{display:block;margin:0 auto;image-rendering:pixelated;image-rendering:crisp-edges;touch-action:none}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+(function(){
+"use strict";
+
+var W=360,H=640,SCALE=1;
+var canvas=document.getElementById('c');
+var ctx=canvas.getContext('2d');
+
+function resize(){
+  var aw=window.innerWidth,ah=window.innerHeight;
+  var s=Math.min(aw/W,ah/H);
+  SCALE=s;
+  canvas.width=W;
+  canvas.height=H;
+  canvas.style.width=Math.floor(W*s)+'px';
+  canvas.style.height=Math.floor(H*s)+'px';
+  canvas.style.marginTop=Math.floor((ah-H*s)/2)+'px';
+}
+resize();
+window.addEventListener('resize',resize);
+
+// Audio context
+var audioCtx=null;
+function initAudio(){
+  if(!audioCtx){
+    try{audioCtx=new(window.AudioContext||window.webkitAudioContext)();}catch(e){}
+  }
+}
+function playTone(freq,dur,vol,type){
+  if(!audioCtx)return;
+  try{
+    var o=audioCtx.createOscillator();
+    var g=audioCtx.createGain();
+    o.type=type||'square';
+    o.frequency.setValueAtTime(freq,audioCtx.currentTime);
+    g.gain.setValueAtTime((vol||0.1),audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+dur);
+    o.connect(g);g.connect(audioCtx.destination);
+    o.start();o.stop(audioCtx.currentTime+dur);
+  }catch(e){}
+}
+function sfxPutt(power){
+  var p=Math.max(0.3,Math.min(1,power));
+  playTone(120+p*80,0.15,0.12,'square');
+  setTimeout(function(){playTone(80+p*60,0.1,0.08,'triangle');},30);
+}
+function sfxBounce(){playTone(200,0.06,0.08,'square');}
+function sfxSplash(){
+  playTone(400,0.15,0.06,'sawtooth');
+  setTimeout(function(){playTone(300,0.1,0.05,'sawtooth');},50);
+  setTimeout(function(){playTone(200,0.1,0.04,'sawtooth');},100);
+}
+function sfxCoin(){playTone(880,0.08,0.1,'square');setTimeout(function(){playTone(1100,0.12,0.1,'square');},80);}
+function sfxPowerUp(){
+  playTone(440,0.08,0.1,'square');
+  setTimeout(function(){playTone(660,0.08,0.1,'square');},80);
+  setTimeout(function(){playTone(880,0.12,0.1,'square');},160);
+}
+function sfxHoleSink(){
+  playTone(523,0.1,0.12,'square');
+  setTimeout(function(){playTone(659,0.1,0.12,'square');},100);
+  setTimeout(function(){playTone(784,0.1,0.12,'square');},200);
+  setTimeout(function(){playTone(1047,0.2,0.15,'square');},300);
+}
+function sfxHit(){playTone(100,0.12,0.15,'sawtooth');}
+function sfxGameOver(){
+  playTone(200,0.3,0.1,'square');
+  setTimeout(function(){playTone(160,0.3,0.1,'square');},300);
+  setTimeout(function(){playTone(120,0.5,0.1,'square');},600);
+}
+function sfxShop(){playTone(330,0.15,0.06,'triangle');setTimeout(function(){playTone(440,0.15,0.06,'triangle');},150);}
+
+// Game state
+var STATE_TITLE=0,STATE_PLAY=1,STATE_AIM=2,STATE_ROLLING=3,STATE_SINK=4,STATE_SHOP=5,STATE_GAMEOVER=6,STATE_SCORECARD=7,STATE_TRANSITION=8;
+var state=STATE_TITLE;
+var currentHole=1;
+var totalStrokes=0;
+var holeStrokes=0;
+var lives=3;
+var maxLives=3;
+var coins=0;
+var totalCoins=0;
+var courseData=null;
+var ballX=0,ballY=0,ballVX=0,ballVY=0;
+var ballLastX=0,ballLastY=0;
+var ballTrail=[];
+var charX=0,charY=0,charFrame=0,charState='idle',charTimer=0;
+var aimStartX=0,aimStartY=0,aimEndX=0,aimEndY=0,isAiming=false;
+var cameraY=0,targetCameraY=0;
+var particles=[];
+var screenShake=0;
+var flashTimer=0;
+var transitionTimer=0;
+var transitionCallback=null;
+var sinkTimer=0;
+var holeScores=[];
+var holePars=[];
+var powerups_active=[];
+var upgrades_collected=[];
+var shopCards=[];
+var shopSelected=-1;
+var mulliganUsed=false;
+var ballStopped=true;
+var strokesThisHole=0;
+var parBonusTotal=0;
+var bestScore=null;
+var totalCoinsEver=0;
+var unlockedBalls=["white"];
+var currentBall="white";
+var titleAnim=0;
+
+// Load save
+try{
+  var sav=JSON.parse(localStorage.getItem('rogueminigolf_save'));
+  if(sav){
+    bestScore=sav.bestScore||null;
+    totalCoinsEver=sav.totalCoinsEver||0;
+    unlockedBalls=sav.unlockedBalls||["white"];
+    currentBall=sav.currentBall||"white";
+  }
+}catch(e){}
+
+function saveData(){
+  try{
+    localStorage.setItem('rogueminigolf_save',JSON.stringify({
+      bestScore:bestScore,totalCoinsEver:totalCoinsEver,
+      unlockedBalls:unlockedBalls,currentBall:currentBall
+    }));
+  }catch(e){}
+}
+
+var BALL_COLORS={
+  white:'#eeeeff',red:'#ff4444',blue:'#4488ff',gold:'#ffdd44',
+  purple:'#bb44ff',green:'#44ff88',dark:'#444466'
+};
+var BALL_COST={red:50,blue:100,gold:200,purple:300,green:150,dark:500};
+
+// Upgrade definitions
+var UPGRADES=[
+  {name:'Power Putter',desc:'+25% shot power',rarity:'common',effect:'power',val:0.25},
+  {name:'Bounce Ball',desc:'Ball bounces 2 extra times',rarity:'common',effect:'bounces',val:2},
+  {name:'Extra Hole',desc:'+1 par on each hole',rarity:'uncommon',effect:'parBonus',val:1},
+  {name:'Lucky Jig',desc:'+25% better rewards',rarity:'uncommon',effect:'luck',val:0.25},
+  {name:'Portal',desc:'Teleport randomly on green',rarity:'legendary',effect:'teleport',val:1},
+  {name:'Iron Ball',desc:'Break through obstacles',rarity:'rare',effect:'ironBall',val:1},
+  {name:'Ghost Ball',desc:'Pass through 1 wall/shot',rarity:'rare',effect:'ghostWall',val:1},
+  {name:'Heart Container',desc:'+1 max life',rarity:'uncommon',effect:'maxLife',val:1},
+  {name:'Coin Magnet',desc:'Collect coins from further',rarity:'common',effect:'coinRange',val:2},
+  {name:'Precision Aim',desc:'Show ball trajectory',rarity:'rare',effect:'trajectory',val:1},
+  {name:'Mulligan',desc:'1 free re-shot per hole',rarity:'uncommon',effect:'mulligan',val:1},
+  {name:'Sticky Ball',desc:'Ball stops faster on green',rarity:'rare',effect:'stickyGreen',val:1}
+];
+
+var RARITY_COLORS={common:'#44cc66',uncommon:'#4488ff',rare:'#bb44ff',legendary:'#ffcc22'};
+
+// Powerup types on course
+var POWERUP_TYPES=['powerShot','magnet','slowTime','bounceBall','windShift','extraLife','coins','coins','coins'];
+
+function hasUpgrade(eff){
+  for(var i=0;i<upgrades_collected.length;i++){
+    if(upgrades_collected[i].effect===eff) return upgrades_collected[i];
+  }
+  return null;
+}
+function getUpgradeVal(eff){
+  var v=0;
+  for(var i=0;i<upgrades_collected.length;i++){
+    if(upgrades_collected[i].effect===eff) v+=upgrades_collected[i].val;
+  }
+  return v;
+}
+
+// ---- PROCEDURAL COURSE GENERATION ----
+function generateHole(holeNum){
+  var isBoss=(holeNum===18);
+  var isMiniBoss=(holeNum%6===0&&holeNum<18);
+  var fairways=[];
+  var walls=[];
+  var obstacles=[];
+  var enemies=[];
+  var pickups=[];
+  var coinsList=[];
+
+  // Determine shape complexity
+  var segments=2+Math.floor(Math.random()*2);
+  if(holeNum>6)segments=Math.min(4,segments+1);
+  if(isBoss)segments=5;
+
+  // Build fairway segments
+  var fw=80+Math.floor(Math.random()*40);
+  var cx=W/2,cy=0;
+  var teeX=0,teeY=0;
+  var holeX=0,holeY=0;
+  var totalH=0;
+  var dir=0; // 0=down
+
+  // Start segment
+  var segH=80+Math.floor(Math.random()*40);
+  fairways.push({x:cx-fw/2,y:cy,w:fw,h:segH,type:'grass'});
+  teeX=cx;
+  teeY=cy+30;
+  cy+=segH;
+  totalH=cy;
+
+  for(var s=0;s<segments;s++){
+    var turnDir=(Math.random()<0.5)?-1:1;
+    var turnAmount=30+Math.floor(Math.random()*30);
+    var nextCx=cx+turnDir*turnAmount;
+    nextCx=Math.max(fw/2+10,Math.min(W-fw/2-10,nextCx));
+
+    // Connector
+    var connW=Math.abs(nextCx-cx)+fw;
+    var connX=Math.min(cx,nextCx)-fw/2;
+    var connH=20+Math.floor(Math.random()*20);
+    fairways.push({x:connX,y:cy,w:connW,h:connH,type:'grass'});
+    cy+=connH;
+    cx=nextCx;
+
+    // Next segment
+    segH=70+Math.floor(Math.random()*50)+holeNum*3;
+    if(isBoss)segH+=30;
+    var segW=fw+Math.floor(Math.random()*20)-10;
+    segW=Math.max(60,segW);
+    fairways.push({x:cx-segW/2,y:cy,w:segW,h:segH,type:'grass'});
+    cy+=segH;
+    totalH=cy;
+  }
+
+  holeX=cx;
+  holeY=cy-40;
+
+  // Add sand traps
+  if(holeNum>2){
+    var sandCount=Math.floor(Math.random()*(1+holeNum/5));
+    for(var i=0;i<sandCount;i++){
+      var sf=fairways[1+Math.floor(Math.random()*(fairways.length-1))];
+      var sw=20+Math.floor(Math.random()*25);
+      var sh=15+Math.floor(Math.random()*20);
+      var sx=sf.x+10+Math.floor(Math.random()*(sf.w-sw-20));
+      var sy=sf.y+10+Math.floor(Math.random()*(sf.h-sh-20));
+      obstacles.push({x:sx,y:sy,w:sw,h:sh,type:'sand'});
+    }
+  }
+
+  // Add water hazards
+  if(holeNum>4){
+    var waterCount=Math.floor(Math.random()*(holeNum/6));
+    for(var i=0;i<waterCount;i++){
+      var wf=fairways[1+Math.floor(Math.random()*(fairways.length-1))];
+      var ww=25+Math.floor(Math.random()*20);
+      var wh=18+Math.floor(Math.random()*15);
+      var wx=wf.x+10+Math.floor(Math.random()*(Math.max(1,wf.w-ww-20)));
+      var wy=wf.y+10+Math.floor(Math.random()*(Math.max(1,wf.h-wh-20)));
+      obstacles.push({x:wx,y:wy,w:ww,h:wh,type:'water'});
+    }
+  }
+
+  // Add rocks
+  if(holeNum>1){
+    var rockCount=1+Math.floor(Math.random()*(1+holeNum/4));
+    rockCount=Math.min(rockCount,5);
+    for(var i=0;i<rockCount;i++){
+      var rf=fairways[Math.floor(Math.random()*fairways.length)];
+      var rr=5+Math.floor(Math.random()*6);
+      var rx=rf.x+rr+5+Math.floor(Math.random()*(Math.max(1,rf.w-rr*2-10)));
+      var ry=rf.y+rr+5+Math.floor(Math.random()*(Math.max(1,rf.h-rr*2-10)));
+      // Don't place too close to tee or hole
+      var dTee=Math.sqrt((rx-teeX)*(rx-teeX)+(ry-teeY)*(ry-teeY));
+      var dHole=Math.sqrt((rx-holeX)*(rx-holeX)+(ry-holeY)*(ry-holeY));
+      if(dTee>30&&dHole>25){
+        obstacles.push({x:rx-rr,y:ry-rr,w:rr*2,h:rr*2,type:'rock',cx:rx,cy:ry,r:rr});
+      }
+    }
+  }
+
+  // Add inner walls
+  var wallCount=Math.min(4,Math.floor(holeNum/4));
+  if(isBoss)wallCount=3;
+  for(var i=0;i<wallCount;i++){
+    var wf=fairways[1+Math.floor(Math.random()*(fairways.length-1))];
+    var horizontal=Math.random()<0.5;
+    if(horizontal){
+      var wl=20+Math.floor(Math.random()*30);
+      var wx=wf.x+5+Math.floor(Math.random()*(Math.max(1,wf.w-wl-10)));
+      var wy=wf.y+15+Math.floor(Math.random()*(Math.max(1,wf.h-30)));
+      walls.push({x:wx,y:wy,w:wl,h:4,moving:isBoss&&Math.random()<0.5,moveDir:'h',moveRange:20,moveSpeed:0.5+Math.random()*0.5,movePhase:Math.random()*Math.PI*2});
+    }else{
+      var wl=20+Math.floor(Math.random()*30);
+      var wx=wf.x+15+Math.floor(Math.random()*(Math.max(1,wf.w-30)));
+      var wy=wf.y+5+Math.floor(Math.random()*(Math.max(1,wf.h-wl-10)));
+      walls.push({x:wx,y:wy,w:4,h:wl,moving:isBoss&&Math.random()<0.5,moveDir:'v',moveRange:20,moveSpeed:0.5+Math.random()*0.5,movePhase:Math.random()*Math.PI*2});
+    }
+  }
+
+  // Add enemies
+  if(holeNum>5||isMiniBoss||isBoss){
+    var enemyCount=Math.floor(Math.random()*(1+holeNum/5));
+    if(isMiniBoss)enemyCount=Math.max(2,enemyCount);
+    if(isBoss)enemyCount=Math.max(3,enemyCount);
+    enemyCount=Math.min(enemyCount,5);
+    var enemyTypes=['golem','slime','ghost','skull','mimic'];
+    for(var i=0;i<enemyCount;i++){
+      var ef=fairways[1+Math.floor(Math.random()*(fairways.length-1))];
+      var ex=ef.x+15+Math.floor(Math.random()*(Math.max(1,ef.w-30)));
+      var ey=ef.y+15+Math.floor(Math.random()*(Math.max(1,ef.h-30)));
+      var dTee=Math.sqrt((ex-teeX)*(ex-teeX)+(ey-teeY)*(ey-teeY));
+      var dHole=Math.sqrt((ex-holeX)*(ex-holeX)+(ey-holeY)*(ey-holeY));
+      if(dTee>40&&dHole>30){
+        var et=enemyTypes[Math.floor(Math.random()*enemyTypes.length)];
+        if(holeNum<8)et=enemyTypes[Math.floor(Math.random()*3)]; // simpler enemies early
+        enemies.push({
+          x:ex,y:ey,type:et,
+          originX:ex,originY:ey,
+          vx:0,vy:0,
+          phase:Math.random()*Math.PI*2,
+          speed:0.3+Math.random()*0.4,
+          hp:1,alive:true,anim:0
+        });
+      }
+    }
+  }
+
+  // Add powerups (30% chance)
+  if(Math.random()<0.35){
+    var pf=fairways[Math.floor(Math.random()*fairways.length)];
+    var px=pf.x+15+Math.floor(Math.random()*(Math.max(1,pf.w-30)));
+    var py=pf.y+15+Math.floor(Math.random()*(Math.max(1,pf.h-30)));
+    var pt=POWERUP_TYPES[Math.floor(Math.random()*POWERUP_TYPES.length)];
+    pickups.push({x:px,y:py,type:pt,collected:false,anim:0});
+  }
+
+  // Scatter coins
+  var coinCount=2+Math.floor(Math.random()*3)+Math.floor(holeNum/4);
+  var luck=getUpgradeVal('luck');
+  coinCount=Math.floor(coinCount*(1+luck));
+  for(var i=0;i<coinCount;i++){
+    var cf=fairways[Math.floor(Math.random()*fairways.length)];
+    var ccx=cf.x+8+Math.floor(Math.random()*(Math.max(1,cf.w-16)));
+    var ccy=cf.y+8+Math.floor(Math.random()*(Math.max(1,cf.h-16)));
+    coinsList.push({x:ccx,y:ccy,collected:false,anim:Math.random()*Math.PI*2});
+  }
+
+  // Calculate par
+  var par=2+Math.floor(segments*0.8)+Math.floor(enemies.length*0.3);
+  par=Math.max(2,Math.min(5,par));
+  if(isBoss)par=5;
+  par+=parBonusTotal;
+
+  return {
+    teeX:teeX,teeY:teeY,holeX:holeX,holeY:holeY,
+    fairways:fairways,walls:walls,obstacles:obstacles,
+    enemies:enemies,pickups:pickups,coins:coinsList,
+    par:par,totalHeight:totalH+40,isBoss:isBoss,isMiniBoss:isMiniBoss
+  };
+}
+
+// Check if point is on fairway
+function isOnFairway(px,py){
+  if(!courseData)return false;
+  for(var i=0;i<courseData.fairways.length;i++){
+    var f=courseData.fairways[i];
+    if(px>=f.x&&px<=f.x+f.w&&py>=f.y&&py<=f.y+f.h)return true;
+  }
+  return false;
+}
+
+// Check obstacle at point
+function getObstacleAt(px,py){
+  if(!courseData)return null;
+  for(var i=0;i<courseData.obstacles.length;i++){
+    var o=courseData.obstacles[i];
+    if(o.type==='rock'){
+      var dx=px-o.cx,dy=py-o.cy;
+      if(dx*dx+dy*dy<o.r*o.r)return o;
+    }else{
+      if(px>=o.x&&px<=o.x+o.w&&py>=o.y&&py<=o.y+o.h)return o;
+    }
+  }
+  return null;
+}
+
+// Start new run
+function startRun(){
+  currentHole=1;
+  totalStrokes=0;
+  lives=3;
+  maxLives=3;
+  coins=0;
+  holeScores=[];
+  holePars=[];
+  powerups_active=[];
+  upgrades_collected=[];
+  parBonusTotal=0;
+  mulliganUsed=false;
+  startHole();
+}
+
+function startHole(){
+  courseData=generateHole(currentHole);
+  ballX=courseData.teeX;
+  ballY=courseData.teeY;
+  ballVX=0;ballVY=0;
+  ballLastX=ballX;ballLastY=ballY;
+  ballTrail=[];
+  ballStopped=true;
+  holeStrokes=0;
+  strokesThisHole=0;
+  mulliganUsed=false;
+  charX=ballX-10;charY=ballY;charState='idle';charTimer=0;charFrame=0;
+  cameraY=Math.max(0,ballY-H*0.6);
+  targetCameraY=cameraY;
+  isAiming=false;
+  state=STATE_PLAY;
+  particles=[];
+}
+
+// ---- PHYSICS ----
+var ghostWallUsed=false;
+
+function updateBall(dt){
+  if(!ballStopped){
+    var friction=0.982;
+    var onSand=false;
+    var onWater=false;
+
+    // Check terrain
+    var obs=getObstacleAt(ballX,ballY);
+    if(obs){
+      if(obs.type==='sand'){
+        friction=0.92;
+        onSand=true;
+        if(Math.random()<0.3){
+          particles.push({x:ballX,y:ballY,vx:(Math.random()-0.5)*1,vy:-Math.random()*1,life:20,color:'#c8a84e',size:2});
+        }
+      }
+      if(obs.type==='water'){
+        onWater=true;
+      }
+    }
+
+    if(hasUpgrade('stickyGreen')&&isOnFairway(ballX,ballY)){
+      friction=Math.min(friction,0.96);
+    }
+
+    // Active powerup effects
+    var slowTime=false;
+    for(var i=powerups_active.length-1;i>=0;i--){
+      var pu=powerups_active[i];
+      if(pu.type==='slowTime'){slowTime=true;pu.duration--;if(pu.duration<=0)powerups_active.splice(i,1);}
+      if(pu.type==='bounceBall'){/* handled in bounce */}
+      if(pu.type==='windShift'){
+        var dx=courseData.holeX-ballX,dy=courseData.holeY-ballY;
+        var d=Math.sqrt(dx*dx+dy*dy);
+        if(d>1){ballVX+=dx/d*0.08;ballVY+=dy/d*0.08;}
+        pu.duration--;if(pu.duration<=0)powerups_active.splice(i,1);
+      }
+      if(pu.type==='magnet'){
+        var dx=courseData.holeX-ballX,dy=courseData.holeY-ballY;
+        var d=Math.sqrt(dx*dx+dy*dy);
+        if(d>1&&d<120){ballVX+=dx/d*0.15;ballVY+=dy/d*0.15;}
+        pu.duration--;if(pu.duration<=0)powerups_active.splice(i,1);
+      }
+    }
+
+    var speed=slowTime?0.5:1;
+
+    ballX+=ballVX*speed;
+    ballY+=ballVY*speed;
+    ballVX*=friction;
+    ballVY*=friction;
+
+    // Trail
+    if(Math.abs(ballVX)>0.5||Math.abs(ballVY)>0.5){
+      ballTrail.push({x:ballX,y:ballY,life:30});
+    }
+    if(ballTrail.length>50)ballTrail.shift();
+
+    // Water check
+    if(onWater){
+      sfxSplash();
+      for(var i=0;i<12;i++){
+        particles.push({x:ballX,y:ballY,vx:(Math.random()-0.5)*3,vy:-Math.random()*3,life:30,color:'#4488cc',size:3});
+      }
+      ballX=ballLastX;ballY=ballLastY;
+      ballVX=0;ballVY=0;
+      ballStopped=true;
+      holeStrokes++;
+      totalStrokes++;
+      charX=ballX-10;charY=ballY;
+      return;
+    }
+
+    // Wall collisions (boundary = fairway edges)
+    if(!isOnFairway(ballX,ballY)){
+      // Check if ball went out of bounds entirely
+      var nearFairway=false;
+      for(var i=0;i<courseData.fairways.length;i++){
+        var f=courseData.fairways[i];
+        var nx=Math.max(f.x,Math.min(f.x+f.w,ballX));
+        var ny=Math.max(f.y,Math.min(f.y+f.h,ballY));
+        var dd=Math.sqrt((ballX-nx)*(ballX-nx)+(ballY-ny)*(ballY-ny));
+        if(dd<20){
+          nearFairway=true;
+          // Bounce off fairway edge
+          if(ballX<f.x||ballX>f.x+f.w)ballVX=-ballVX*0.7;
+          if(ballY<f.y||ballY>f.y+f.h)ballVY=-ballVY*0.7;
+          ballX=nx;ballY=ny;
+          sfxBounce();
+          break;
+        }
+      }
+      if(!nearFairway){
+        // Out of bounds
+        flashTimer=15;
+        lives--;
+        sfxHit();
+        ballX=ballLastX;ballY=ballLastY;
+        ballVX=0;ballVY=0;
+        ballStopped=true;
+        holeStrokes++;
+        totalStrokes++;
+        charX=ballX-10;charY=ballY;
+        if(lives<=0){
+          state=STATE_GAMEOVER;
+          sfxGameOver();
+        }
+        return;
+      }
+    }
+
+    // Inner wall collisions
+    for(var i=0;i<courseData.walls.length;i++){
+      var w=courseData.walls[i];
+      var wx=w.x,wy=w.y,ww=w.w,wh=w.h;
+      if(w.moving){
+        var off=Math.sin(performance.now()*0.002*w.moveSpeed+w.movePhase)*w.moveRange;
+        if(w.moveDir==='h')wx+=off;
+        else wy+=off;
+      }
+      if(ballX>=wx&&ballX<=wx+ww&&ballY>=wy&&ballY<=wy+wh){
+        if(hasUpgrade('ghostWall')&&!ghostWallUsed){
+          ghostWallUsed=true;
+          continue;
+        }
+        // Determine which side
+        var overlapL=ballX-wx,overlapR=(wx+ww)-ballX;
+        var overlapT=ballY-wy,overlapB=(wy+wh)-ballY;
+        var minOverlap=Math.min(overlapL,overlapR,overlapT,overlapB);
+        if(minOverlap===overlapL||minOverlap===overlapR)ballVX=-ballVX*0.7;
+        else ballVY=-ballVY*0.7;
+        if(minOverlap===overlapL)ballX=wx-1;
+        else if(minOverlap===overlapR)ballX=wx+ww+1;
+        else if(minOverlap===overlapT)ballY=wy-1;
+        else ballY=wy+wh+1;
+        sfxBounce();
+      }
+    }
+
+    // Rock collisions
+    for(var i=0;i<courseData.obstacles.length;i++){
+      var o=courseData.obstacles[i];
+      if(o.type==='rock'){
+        var dx=ballX-o.cx,dy=ballY-o.cy;
+        var dd=Math.sqrt(dx*dx+dy*dy);
+        if(dd<o.r+3){
+          if(hasUpgrade('ironBall')){
+            // Destroy rock
+            courseData.obstacles.splice(i,1);i--;
+            particles.push({x:o.cx,y:o.cy,vx:0,vy:0,life:20,color:'#888',size:5});
+            for(var j=0;j<6;j++){
+              particles.push({x:o.cx,y:o.cy,vx:(Math.random()-0.5)*3,vy:(Math.random()-0.5)*3,life:20,color:'#666',size:3});
+            }
+            sfxBounce();
+            continue;
+          }
+          // Bounce off rock
+          if(dd>0){
+            ballX=o.cx+dx/dd*(o.r+4);
+            ballY=o.cy+dy/dd*(o.r+4);
+            var dot=ballVX*dx/dd+ballVY*dy/dd;
+            ballVX-=2*dot*dx/dd;
+            ballVY-=2*dot*dy/dd;
+            ballVX*=0.7;ballVY*=0.7;
+            // Check bounce powerup
+            var bounceExtra=false;
+            for(var p=0;p<powerups_active.length;p++){
+              if(powerups_active[p].type==='bounceBall'&&powerups_active[p].duration>0){
+                bounceExtra=true;
+                powerups_active[p].duration--;
+                ballVX/=0.7;ballVY/=0.7; // undo energy loss
+              }
+            }
+          }
+          sfxBounce();
+        }
+      }
+    }
+
+    // Enemy collisions
+    for(var i=0;i<courseData.enemies.length;i++){
+      var e=courseData.enemies[i];
+      if(!e.alive)continue;
+      var dx=ballX-e.x,dy=ballY-e.y;
+      var dd=Math.sqrt(dx*dx+dy*dy);
+      var hitDist=(e.type==='skull')?14:10;
+      if(dd<hitDist){
+        if(e.type==='skull'){
+          lives--;
+          flashTimer=15;
+          sfxHit();
+          ballVX=-ballVX*0.5;ballVY=-ballVY*0.5;
+          if(lives<=0){state=STATE_GAMEOVER;sfxGameOver();return;}
+        }else if(e.type==='mimic'){
+          lives--;
+          flashTimer=15;
+          sfxHit();
+          e.alive=false;
+          ballVX*=-0.3;ballVY*=-0.3;
+          if(lives<=0){state=STATE_GAMEOVER;sfxGameOver();return;}
+        }else if(e.type==='slime'){
+          // Knock ball away
+          if(dd>0){
+            ballVX+=dx/dd*3;
+            ballVY+=dy/dd*3;
+          }
+          sfxBounce();
+        }else if(e.type==='golem'||e.type==='ghost'){
+          // Block
+          if(dd>0){
+            ballVX=-ballVX*0.5;
+            ballVY=-ballVY*0.5;
+            ballX=e.x+dx/dd*12;
+            ballY=e.y+dy/dd*12;
+          }
+          sfxBounce();
+        }
+      }
+    }
+
+    // Coin collection
+    var coinDist=12+getUpgradeVal('coinRange');
+    for(var i=0;i<courseData.coins.length;i++){
+      var c=courseData.coins[i];
+      if(c.collected)continue;
+      var dx=ballX-c.x,dy=ballY-c.y;
+      if(dx*dx+dy*dy<coinDist*coinDist){
+        c.collected=true;
+        var amt=5+Math.floor(Math.random()*6);
+        coins+=amt;
+        sfxCoin();
+        for(var j=0;j<5;j++){
+          particles.push({x:c.x,y:c.y,vx:(Math.random()-0.5)*2,vy:-Math.random()*2,life:20,color:'#ffdd44',size:2});
+        }
+      }
+    }
+
+    // Powerup collection
+    for(var i=0;i<courseData.pickups.length;i++){
+      var p=courseData.pickups[i];
+      if(p.collected)continue;
+      var dx=ballX-p.x,dy=ballY-p.y;
+      if(dx*dx+dy*dy<14*14){
+        p.collected=true;
+        sfxPowerUp();
+        for(var j=0;j<8;j++){
+          particles.push({x:p.x,y:p.y,vx:(Math.random()-0.5)*3,vy:(Math.random()-0.5)*3,life:25,color:'#ffffff',size:3});
+        }
+        if(p.type==='extraLife'){
+          lives=Math.min(lives+1,maxLives);
+        }else if(p.type==='coins'){
+          coins+=15+Math.floor(Math.random()*20);
+        }else{
+          powerups_active.push({type:p.type,duration:1});
+        }
+      }
+    }
+
+    // Hole detection
+    var hx=courseData.holeX,hy=courseData.holeY;
+    var dx=ballX-hx,dy=ballY-hy;
+    var dd=Math.sqrt(dx*dx+dy*dy);
+    var spd=Math.sqrt(ballVX*ballVX+ballVY*ballVY);
+    if(dd<8&&spd<4){
+      // Sunk!
+      ballX=hx;ballY=hy;
+      ballVX=0;ballVY=0;
+      ballStopped=true;
+      sfxHoleSink();
+      state=STATE_SINK;
+      sinkTimer=120;
+      holeScores.push(holeStrokes);
+      holePars.push(courseData.par);
+      // Celebration particles
+      for(var i=0;i<20;i++){
+        particles.push({x:hx,y:hy-cameraY,vx:(Math.random()-0.5)*4,vy:-Math.random()*4,life:40,color:['#ffdd44','#ff4488','#44ff88','#4488ff'][Math.floor(Math.random()*4)],size:3});
+      }
+      charState='celebrate';charTimer=0;
+      return;
+    }
+
+    // Stop check
+    if(Math.abs(ballVX)<0.2&&Math.abs(ballVY)<0.2){
+      ballVX=0;ballVY=0;
+      ballStopped=true;
+      ballLastX=ballX;ballLastY=ballY;
+      charX=ballX-10;charY=ballY;
+      charState='idle';charTimer=0;
+      ghostWallUsed=false;
+
+      // Check stroke limit
+      if(holeStrokes>=courseData.par+3){
+        lives--;
+        flashTimer=15;
+        sfxHit();
+        if(lives<=0){state=STATE_GAMEOVER;sfxGameOver();return;}
+      }
+    }
+  }
+}
+
+function updateEnemies(){
+  if(!courseData)return;
+  for(var i=0;i<courseData.enemies.length;i++){
+    var e=courseData.enemies[i];
+    if(!e.alive)continue;
+    e.anim+=0.05;
+
+    if(e.type==='golem'){
+      e.x=e.originX+Math.sin(e.phase+performance.now()*0.001*e.speed)*25;
+    }
+    if(e.type==='slime'){
+      e.phase+=0.03;
+      e.x=e.originX+Math.sin(e.phase)*20;
+      e.y=e.originY+Math.cos(e.phase*1.3)*15;
+    }
+    if(e.type==='ghost'){
+      // Follow ball slowly
+      var dx=ballX-e.x,dy=ballY-e.y;
+      var dd=Math.sqrt(dx*dx+dy*dy);
+      if(dd>5){
+        e.x+=dx/dd*e.speed*0.6;
+        e.y+=dy/dd*e.speed*0.6;
+      }
+    }
+    // skull and mimic are stationary
+  }
+}
+
+// ---- DRAWING ----
+function drawPixelRect(x,y,w,h,color){
+  ctx.fillStyle=color;
+  ctx.fillRect(Math.floor(x),Math.floor(y),Math.floor(w),Math.floor(h));
+}
+
+function drawCourse(){
+  if(!courseData)return;
+  var oy=cameraY;
+
+  // Draw fairways
+  for(var i=0;i<courseData.fairways.length;i++){
+    var f=courseData.fairways[i];
+    // Dark grass base
+    drawPixelRect(f.x,f.y-oy,f.w,f.h,'#1a3a1a');
+    // Lighter grass pattern
+    for(var gx=f.x;gx<f.x+f.w;gx+=8){
+      for(var gy=f.y;gy<f.y+f.h;gy+=8){
+        if((Math.floor(gx/8)+Math.floor(gy/8))%2===0){
+          drawPixelRect(gx,gy-oy,8,8,'#1e4420');
+        }
+      }
+    }
+    // Edge highlight
+    drawPixelRect(f.x,f.y-oy,2,f.h,'#0d2a0d');
+    drawPixelRect(f.x+f.w-2,f.y-oy,2,f.h,'#0d2a0d');
+    drawPixelRect(f.x,f.y-oy,f.w,2,'#0d2a0d');
+    drawPixelRect(f.x,f.y+f.h-2-oy,f.w,2,'#0d2a0d');
+  }
+
+  // Draw obstacles
+  for(var i=0;i<courseData.obstacles.length;i++){
+    var o=courseData.obstacles[i];
+    if(o.type==='sand'){
+      drawPixelRect(o.x,o.y-oy,o.w,o.h,'#c8a84e');
+      // Sand texture
+      for(var sx=o.x;sx<o.x+o.w;sx+=4){
+        for(var sy=o.y;sy<o.y+o.h;sy+=4){
+          if(Math.random()<0.2)drawPixelRect(sx,sy-oy,2,2,'#b8983e');
+        }
+      }
+    }
+    if(o.type==='water'){
+      var wt=Math.sin(performance.now()*0.003)*0.3;
+      drawPixelRect(o.x,o.y-oy,o.w,o.h,'#1a3366');
+      // Water animation
+      for(var wx=o.x;wx<o.x+o.w;wx+=6){
+        var wo=Math.sin(wx*0.3+performance.now()*0.004)*2;
+        drawPixelRect(wx,o.y+o.h/2+wo-oy,4,2,'#2a5599');
+      }
+    }
+    if(o.type==='rock'){
+      ctx.fillStyle='#556666';
+      ctx.beginPath();
+      ctx.arc(o.cx,o.cy-oy,o.r,0,Math.PI*2);
+      ctx.fill();
+      ctx.fillStyle='#667777';
+      ctx.beginPath();
+      ctx.arc(o.cx-1,o.cy-1-oy,o.r-2,0,Math.PI*2);
+      ctx.fill();
+      // Highlight
+      drawPixelRect(o.cx-o.r/3,o.cy-o.r/2-oy,3,2,'#88aaaa');
+    }
+  }
+
+  // Draw inner walls
+  for(var i=0;i<courseData.walls.length;i++){
+    var w=courseData.walls[i];
+    var wx=w.x,wy=w.y;
+    if(w.moving){
+      var off=Math.sin(performance.now()*0.002*w.moveSpeed+w.movePhase)*w.moveRange;
+      if(w.moveDir==='h')wx+=off;
+      else wy+=off;
+    }
+    drawPixelRect(wx,wy-oy,w.w,w.h,'#554433');
+    drawPixelRect(wx,wy-oy,w.w,2,'#776655');
+  }
+
+  // Draw coins
+  for(var i=0;i<courseData.coins.length;i++){
+    var c=courseData.coins[i];
+    if(c.collected)continue;
+    c.anim+=0.05;
+    var cs=Math.abs(Math.sin(c.anim))*3+2;
+    drawPixelRect(c.x-cs/2,c.y-cs/2-oy,cs,cs,'#ffdd44');
+    drawPixelRect(c.x-1,c.y-1-oy,2,2,'#ffee88');
+  }
+
+  // Draw powerups
+  for(var i=0;i<courseData.pickups.length;i++){
+    var p=courseData.pickups[i];
+    if(p.collected)continue;
+    p.anim+=0.05;
+    var bob=Math.sin(p.anim)*3;
+    var px=p.x,py=p.y+bob-oy;
+    // Glow
+    ctx.fillStyle='rgba(255,255,255,0.15)';
+    ctx.beginPath();ctx.arc(px,py,10,0,Math.PI*2);ctx.fill();
+    // Icon
+    var col='#ffffff';
+    if(p.type==='powerShot')col='#ff4444';
+    if(p.type==='magnet')col='#4488ff';
+    if(p.type==='slowTime')col='#ffdd44';
+    if(p.type==='bounceBall')col='#44ff88';
+    if(p.type==='windShift')col='#88ccff';
+    if(p.type==='extraLife')col='#ff4466';
+    if(p.type==='coins')col='#ffdd44';
+    drawPixelRect(px-4,py-4,8,8,col);
+    drawPixelRect(px-2,py-2,4,4,'#ffffff');
+  }
+
+  // Draw enemies
+  for(var i=0;i<courseData.enemies.length;i++){
+    var e=courseData.enemies[i];
+    if(!e.alive)continue;
+    var ex=e.x,ey=e.y-oy;
+
+    if(e.type==='golem'){
+      // Brown rock creature
+      drawPixelRect(ex-6,ey-7,12,14,'#665533');
+      drawPixelRect(ex-5,ey-6,10,12,'#887755');
+      // Eyes
+      drawPixelRect(ex-3,ey-3,2,2,'#ff4444');
+      drawPixelRect(ex+1,ey-3,2,2,'#ff4444');
+      // Arms
+      var armOff=Math.sin(e.anim*2)*2;
+      drawPixelRect(ex-8,ey-2+armOff,3,6,'#665533');
+      drawPixelRect(ex+5,ey-2-armOff,3,6,'#665533');
+    }
+    if(e.type==='slime'){
+      // Green slime blob
+      var squish=Math.sin(e.anim*3)*2;
+      drawPixelRect(ex-5-squish,ey-4+squish,10+squish*2,8-squish,'#33aa44');
+      drawPixelRect(ex-3,ey-3,6,4,'#44cc55');
+      // Eyes
+      drawPixelRect(ex-2,ey-2,2,2,'#111111');
+      drawPixelRect(ex+1,ey-2,2,2,'#111111');
+    }
+    if(e.type==='ghost'){
+      // White translucent ghost
+      ctx.globalAlpha=0.6+Math.sin(e.anim*2)*0.2;
+      drawPixelRect(ex-5,ey-7,10,10,'#ccccdd');
+      drawPixelRect(ex-6,ey-4,12,6,'#bbbbcc');
+      // Wavy bottom
+      for(var g=0;g<4;g++){
+        var goff=Math.sin(e.anim*3+g)*2;
+        drawPixelRect(ex-6+g*3,ey+2+goff,3,4,'#ccccdd');
+      }
+      // Eyes
+      drawPixelRect(ex-3,ey-4,2,3,'#222244');
+      drawPixelRect(ex+1,ey-4,2,3,'#222244');
+      ctx.globalAlpha=1;
+    }
+    if(e.type==='skull'){
+      // Skull with danger zone
+      ctx.fillStyle='rgba(255,50,50,0.15)';
+      ctx.beginPath();ctx.arc(ex,ey,14,0,Math.PI*2);ctx.fill();
+      // Skull
+      drawPixelRect(ex-5,ey-6,10,10,'#ddddbb');
+      drawPixelRect(ex-4,ey-5,8,8,'#eeeecc');
+      // Eyes
+      drawPixelRect(ex-3,ey-3,2,3,'#111111');
+      drawPixelRect(ex+1,ey-3,2,3,'#111111');
+      // Nose
+      drawPixelRect(ex-1,ey,2,2,'#111111');
+      // Teeth
+      drawPixelRect(ex-3,ey+3,6,2,'#111111');
+      drawPixelRect(ex-2,ey+3,1,2,'#ddddbb');
+      drawPixelRect(ex+1,ey+3,1,2,'#ddddbb');
+    }
+    if(e.type==='mimic'){
+      // Treasure chest (looks like a pickup)
+      drawPixelRect(ex-6,ey-5,12,10,'#886633');
+      drawPixelRect(ex-5,ey-4,10,8,'#aa8844');
+      drawPixelRect(ex-6,ey-1,12,2,'#665522');
+      // Lock
+      drawPixelRect(ex-1,ey-3,2,4,'#ffdd44');
+      // Eyes peek when ball is near
+      var db=Math.sqrt((ballX-e.x)*(ballX-e.x)+(ballY-e.y)*(ballY-e.y));
+      if(db<50){
+        drawPixelRect(ex-3,ey-3,2,2,'#ff2222');
+        drawPixelRect(ex+2,ey-3,2,2,'#ff2222');
+      }
+    }
+  }
+
+  // Draw hole (flag)
+  var hx=courseData.holeX,hy=courseData.holeY-oy;
+  // Hole circle
+  ctx.fillStyle='#111111';
+  ctx.beginPath();ctx.arc(hx,hy,6,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#222222';
+  ctx.beginPath();ctx.arc(hx,hy,4,0,Math.PI*2);ctx.fill();
+  // Flag pole
+  drawPixelRect(hx,hy-20,1,20,'#888888');
+  // Flag
+  drawPixelRect(hx+1,hy-20,8,5,'#ff3344');
+  drawPixelRect(hx+1,hy-19,7,3,'#ff5566');
+}
+
+function drawCharacter(){
+  var oy=cameraY;
+  var cx=Math.floor(charX),cy=Math.floor(charY-oy);
+  charTimer++;
+
+  if(charState==='idle'){
+    // Body
+    drawPixelRect(cx+2,cy-10,6,5,'#4444aa'); // shirt
+    drawPixelRect(cx+3,cy-5,4,4,'#3333aa'); // pants
+    // Head
+    drawPixelRect(cx+3,cy-14,4,4,'#eebb88'); // skin
+    // Hair
+    drawPixelRect(cx+2,cy-15,6,2,'#553322');
+    // Eyes
+    drawPixelRect(cx+4,cy-12,1,1,'#111111');
+    drawPixelRect(cx+6,cy-12,1,1,'#111111');
+    // Arms
+    drawPixelRect(cx,cy-9,2,4,'#eebb88');
+    drawPixelRect(cx+8,cy-9,2,4,'#eebb88');
+    // Feet
+    drawPixelRect(cx+2,cy-1,3,2,'#443322');
+    drawPixelRect(cx+5,cy-1,3,2,'#443322');
+  }
+  if(charState==='swing'){
+    var frame=Math.floor(charTimer/6)%3;
+    // Body
+    drawPixelRect(cx+2,cy-10,6,5,'#4444aa');
+    drawPixelRect(cx+3,cy-5,4,4,'#3333aa');
+    drawPixelRect(cx+3,cy-14,4,4,'#eebb88');
+    drawPixelRect(cx+2,cy-15,6,2,'#553322');
+    drawPixelRect(cx+4,cy-12,1,1,'#111111');
+    drawPixelRect(cx+6,cy-12,1,1,'#111111');
+    drawPixelRect(cx+2,cy-1,3,2,'#443322');
+    drawPixelRect(cx+5,cy-1,3,2,'#443322');
+    // Club swing animation
+    if(frame===0){
+      // Backswing
+      drawPixelRect(cx-2,cy-14,2,8,'#888888');
+      drawPixelRect(cx,cy-9,2,4,'#eebb88');
+      drawPixelRect(cx+8,cy-9,2,4,'#eebb88');
+    }else if(frame===1){
+      // Impact
+      drawPixelRect(cx+8,cy-8,6,2,'#888888');
+      drawPixelRect(cx,cy-9,2,4,'#eebb88');
+      drawPixelRect(cx+8,cy-9,2,4,'#eebb88');
+    }else{
+      // Follow through
+      drawPixelRect(cx+8,cy-14,2,8,'#888888');
+      drawPixelRect(cx,cy-9,2,4,'#eebb88');
+      drawPixelRect(cx+8,cy-10,2,4,'#eebb88');
+    }
+    if(charTimer>18){charState='idle';charTimer=0;}
+  }
+  if(charState==='celebrate'){
+    var bounce=Math.abs(Math.sin(charTimer*0.15))*6;
+    cy-=bounce;
+    drawPixelRect(cx+2,cy-10,6,5,'#4444aa');
+    drawPixelRect(cx+3,cy-5,4,4,'#3333aa');
+    drawPixelRect(cx+3,cy-14,4,4,'#eebb88');
+    drawPixelRect(cx+2,cy-15,6,2,'#553322');
+    drawPixelRect(cx+4,cy-12,1,1,'#111111');
+    drawPixelRect(cx+6,cy-12,1,1,'#111111');
+    // Raised arms
+    drawPixelRect(cx-1,cy-14,2,5,'#eebb88');
+    drawPixelRect(cx+9,cy-14,2,5,'#eebb88');
+    drawPixelRect(cx+2,cy-1,3,2,'#443322');
+    drawPixelRect(cx+5,cy-1,3,2,'#443322');
+  }
+}
+
+function drawBall(){
+  var oy=cameraY;
+  var bx=Math.floor(ballX),by=Math.floor(ballY-oy);
+
+  // Trail
+  for(var i=0;i<ballTrail.length;i++){
+    var t=ballTrail[i];
+    var a=t.life/30;
+    ctx.fillStyle='rgba(255,255,255,'+a*0.3+')';
+    ctx.fillRect(Math.floor(t.x)-1,Math.floor(t.y-oy)-1,2,2);
+  }
+
+  // Ball shadow
+  drawPixelRect(bx-3,by+1,6,3,'rgba(0,0,0,0.3)');
+
+  // Ball
+  var bCol=BALL_COLORS[currentBall]||'#eeeeff';
+  ctx.fillStyle=bCol;
+  ctx.beginPath();ctx.arc(bx,by-1,3,0,Math.PI*2);ctx.fill();
+  // Highlight
+  drawPixelRect(bx-1,by-3,2,1,'#ffffff');
+}
+
+function drawAimLine(){
+  if(!isAiming)return;
+  var oy=cameraY;
+  var dx=aimStartX-aimEndX;
+  var dy=aimStartY-aimEndY;
+  var dist=Math.sqrt(dx*dx+dy*dy);
+  var maxDist=150;
+  var power=Math.min(1,dist/maxDist);
+
+  // Dotted line from ball in aim direction
+  var angle=Math.atan2(dy,dx);
+  var lineLen=power*120;
+  for(var i=0;i<lineLen;i+=6){
+    var px=ballX+Math.cos(angle)*i;
+    var py=ballY-oy+Math.sin(angle)*i;
+    ctx.fillStyle='rgba(255,255,255,0.6)';
+    ctx.fillRect(Math.floor(px)-1,Math.floor(py)-1,2,2);
+  }
+
+  // Trajectory preview if has upgrade
+  if(hasUpgrade('trajectory')&&lineLen>10){
+    var simX=ballX,simY=ballY;
+    var pMult=1+getUpgradeVal('power');
+    var simVX=Math.cos(angle)*power*8*pMult;
+    var simVY=Math.sin(angle)*power*8*pMult;
+    for(var s=0;s<60;s++){
+      simX+=simVX;simY+=simVY;
+      simVX*=0.982;simVY*=0.982;
+      if(s%3===0){
+        ctx.fillStyle='rgba(255,200,100,0.3)';
+        ctx.fillRect(Math.floor(simX)-1,Math.floor(simY-oy)-1,2,2);
+      }
+    }
+  }
+
+  // Power bar
+  var barX=20,barY=H-70,barW=W-40,barH=12;
+  drawPixelRect(barX-1,barY-1,barW+2,barH+2,'#222222');
+  drawPixelRect(barX,barY,barW,barH,'#111111');
+  var fillW=barW*power;
+  var fillCol=power<0.4?'#44cc44':power<0.7?'#cccc44':'#cc4444';
+  drawPixelRect(barX,barY,fillW,barH,fillCol);
+
+  ctx.fillStyle='#ffffff';
+  ctx.font='8px monospace';
+  ctx.textAlign='center';
+  ctx.fillText('POWER: '+Math.floor(power*100)+'%',W/2,barY+barH+12);
+}
+
+function drawParticles(){
+  for(var i=particles.length-1;i>=0;i--){
+    var p=particles[i];
+    p.x+=p.vx;p.y+=p.vy;
+    p.vy+=0.1;
+    p.life--;
+    if(p.life<=0){particles.splice(i,1);continue;}
+    var a=p.life/40;
+    ctx.globalAlpha=a;
+    drawPixelRect(p.x-p.size/2,p.y-p.size/2,p.size,p.size,p.color);
+    ctx.globalAlpha=1;
+  }
+}
+
+function drawHUD(){
+  // Top bar
+  drawPixelRect(0,0,W,44,'rgba(0,0,0,0.85)');
+
+  // Hearts
+  for(var i=0;i<maxLives;i++){
+    var hx=10+i*18,hy=6;
+    if(i<lives){
+      // Full heart
+      drawPixelRect(hx,hy+2,3,3,'#ff3344');
+      drawPixelRect(hx+4,hy+2,3,3,'#ff3344');
+      drawPixelRect(hx-1,hy+4,9,3,'#ff3344');
+      drawPixelRect(hx,hy+7,7,2,'#ff3344');
+      drawPixelRect(hx+1,hy+9,5,1,'#ff3344');
+      drawPixelRect(hx+2,hy+10,3,1,'#ff3344');
+      drawPixelRect(hx+3,hy+11,1,1,'#ff3344');
+      // Highlight
+      drawPixelRect(hx+1,hy+3,1,1,'#ff8899');
+    }else{
+      // Empty heart
+      drawPixelRect(hx,hy+2,3,3,'#442222');
+      drawPixelRect(hx+4,hy+2,3,3,'#442222');
+      drawPixelRect(hx-1,hy+4,9,3,'#442222');
+      drawPixelRect(hx,hy+7,7,2,'#442222');
+      drawPixelRect(hx+1,hy+9,5,1,'#442222');
+      drawPixelRect(hx+2,hy+10,3,1,'#442222');
+      drawPixelRect(hx+3,hy+11,1,1,'#442222');
+    }
+  }
+
+  ctx.fillStyle='#ffffff';
+  ctx.font='bold 10px monospace';
+  ctx.textAlign='right';
+  ctx.fillText('HOLE '+currentHole+'/18',W-10,14);
+
+  ctx.font='9px monospace';
+  ctx.fillStyle='#aaaaaa';
+  ctx.fillText('Par '+courseData.par+'  Strokes: '+holeStrokes,W-10,26);
+
+  var diff=totalStrokes-getTotalPar();
+  var diffStr=diff===0?'E':(diff>0?'+'+diff:''+diff);
+  ctx.fillStyle=diff<0?'#44ff88':diff>0?'#ff4444':'#ffffff';
+  ctx.textAlign='left';
+  ctx.fillText('Total: '+diffStr,10,38);
+
+  ctx.fillStyle='#ffdd44';
+  ctx.textAlign='right';
+  ctx.fillText('$'+coins,W-10,38);
+
+  // Active powerups
+  if(powerups_active.length>0){
+    var px=10;
+    for(var i=0;i<powerups_active.length;i++){
+      var pu=powerups_active[i];
+      var col='#ffffff';
+      if(pu.type==='powerShot')col='#ff4444';
+      if(pu.type==='magnet')col='#4488ff';
+      if(pu.type==='slowTime')col='#ffdd44';
+      if(pu.type==='bounceBall')col='#44ff88';
+      if(pu.type==='windShift')col='#88ccff';
+      drawPixelRect(px,48,8,8,col);
+      drawPixelRect(px+2,50,4,4,'#ffffff');
+      px+=12;
+    }
+  }
+
+  // Mulligan indicator
+  if(hasUpgrade('mulligan')&&!mulliganUsed&&holeStrokes>0&&ballStopped&&state===STATE_PLAY){
+    ctx.fillStyle='#ffcc44';
+    ctx.font='8px monospace';
+    ctx.textAlign='center';
+    ctx.fillText('TAP BALL TO MULLIGAN',W/2,H-20);
+  }
+
+  // Mini-boss / boss indicator
+  if(courseData&&(courseData.isBoss||courseData.isMiniBoss)){
+    ctx.fillStyle=courseData.isBoss?'#ff2244':'#ff8844';
+    ctx.font='bold 9px monospace';
+    ctx.textAlign='center';
+    ctx.fillText(courseData.isBoss?'!! BOSS HOLE !!':'- MINI BOSS -',W/2,56);
+  }
+}
+
+function getTotalPar(){
+  var p=0;
+  for(var i=0;i<holePars.length;i++)p+=holePars[i];
+  return p;
+}
+
+function drawTitle(){
+  titleAnim+=0.02;
+
+  // Dark background with stars
+  ctx.fillStyle='#0a0a18';
+  ctx.fillRect(0,0,W,H);
+
+  // Stars
+  for(var i=0;i<60;i++){
+    var sx=((i*137+43)%W);
+    var sy=((i*89+17)%H);
+    var sb=Math.sin(titleAnim*2+i)*0.5+0.5;
+    ctx.fillStyle='rgba(255,255,255,'+sb*0.8+')';
+    ctx.fillRect(sx,sy,1+Math.floor(sb),1+Math.floor(sb));
+  }
+
+  // Ground
+  drawPixelRect(0,H-120,W,120,'#1a3a1a');
+  for(var gx=0;gx<W;gx+=8){
+    drawPixelRect(gx,H-120,8,4,(Math.floor(gx/8)%2===0)?'#1e4420':'#1a3a1a');
+  }
+
+  // Title
+  ctx.fillStyle='#ffcc22';
+  ctx.font='bold 28px monospace';
+  ctx.textAlign='center';
+  ctx.fillText('ROGUE',W/2,160);
+  ctx.fillText('MINI GOLF',W/2,195);
+
+  // Subtitle
+  ctx.fillStyle='#888899';
+  ctx.font='10px monospace';
+  ctx.fillText('18 HOLES OF DARK FANTASY GOLF',W/2,225);
+
+  // Animated ball
+  var abx=W/2+Math.sin(titleAnim*1.5)*40;
+  var aby=H-100+Math.abs(Math.sin(titleAnim*3))*-15;
+  ctx.fillStyle='#eeeeff';
+  ctx.beginPath();ctx.arc(abx,aby,4,0,Math.PI*2);ctx.fill();
+  drawPixelRect(abx-1,aby-3,2,1,'#ffffff');
+
+  // Flag
+  drawPixelRect(W/2+60,H-140,1,30,'#888888');
+  drawPixelRect(W/2+61,H-140,8,5,'#ff3344');
+
+  // Start button
+  var bw=160,bh=36;
+  var bx=W/2-bw/2,by=320;
+  var pulse=Math.sin(titleAnim*3)*0.1+0.9;
+  drawPixelRect(bx-2,by-2,bw+4,bh+4,'#ffcc22');
+  drawPixelRect(bx,by,bw,bh,'#332200');
+  ctx.fillStyle='#ffcc22';
+  ctx.font='bold 14px monospace';
+  ctx.fillText('TAP TO START',W/2,by+bh/2+5);
+
+  // Best score
+  if(bestScore!==null){
+    ctx.fillStyle='#888899';
+    ctx.font='9px monospace';
+    var bsStr=bestScore===0?'E':(bestScore>0?'+'+bestScore:''+bestScore);
+    ctx.fillText('BEST: '+bsStr,W/2,400);
+  }
+
+  // Total coins
+  if(totalCoinsEver>0){
+    ctx.fillStyle='#ffdd44';
+    ctx.font='9px monospace';
+    ctx.fillText('LIFETIME COINS: '+totalCoinsEver,W/2,420);
+  }
+
+  // Ball selector
+  ctx.fillStyle='#666677';
+  ctx.font='8px monospace';
+  ctx.fillText('BALL SKINS',W/2,470);
+  var bsx=W/2-(unlockedBalls.length*20)/2;
+  for(var i=0;i<unlockedBalls.length;i++){
+    var bc=BALL_COLORS[unlockedBalls[i]]||'#eeeeff';
+    var sel=unlockedBalls[i]===currentBall;
+    if(sel)drawPixelRect(bsx+i*20-1,479,14,14,'#ffcc22');
+    drawPixelRect(bsx+i*20,480,12,12,'#222233');
+    ctx.fillStyle=bc;
+    ctx.beginPath();ctx.arc(bsx+i*20+6,486,4,0,Math.PI*2);ctx.fill();
+  }
+
+  // Unlockable balls
+  var lockBalls=Object.keys(BALL_COST);
+  var hasLocked=false;
+  for(var i=0;i<lockBalls.length;i++){
+    if(unlockedBalls.indexOf(lockBalls[i])<0){hasLocked=true;break;}
+  }
+  if(hasLocked){
+    ctx.fillStyle='#555566';
+    ctx.font='7px monospace';
+    ctx.fillText('EARN COINS TO UNLOCK MORE',W/2,510);
+  }
+
+  // Instructions
+  ctx.fillStyle='#555566';
+  ctx.font='8px monospace';
+  ctx.fillText('DRAG FROM BALL TO AIM & SHOOT',W/2,570);
+  ctx.fillText('COLLECT COINS, AVOID ENEMIES',W/2,585);
+  ctx.fillText('SURVIVE 18 HOLES!',W/2,600);
+}
+
+function drawShop(){
+  ctx.fillStyle='#0a0a18';
+  ctx.fillRect(0,0,W,H);
+
+  // Stars
+  for(var i=0;i<30;i++){
+    var sx=((i*137+43)%W);
+    var sy=((i*89+17)%(H/3));
+    ctx.fillStyle='rgba(255,255,255,0.5)';
+    ctx.fillRect(sx,sy,1,1);
+  }
+
+  ctx.fillStyle='#ffcc22';
+  ctx.font='bold 16px monospace';
+  ctx.textAlign='center';
+  ctx.fillText('SHOP',W/2,40);
+
+  ctx.fillStyle='#888899';
+  ctx.font='9px monospace';
+  ctx.fillText('Pick an upgrade (or tap SKIP)',W/2,60);
+
+  ctx.fillStyle='#ffdd44';
+  ctx.fillText('Coins: $'+coins,W/2,80);
+
+  // Draw 3 cards
+  for(var i=0;i<shopCards.length;i++){
+    var card=shopCards[i];
+    var cx=W/2,cy=140+i*135;
+    var cw=260,ch=110;
+    var selected=(shopSelected===i);
+
+    var rarCol=RARITY_COLORS[card.rarity]||'#ffffff';
+
+    // Card border
+    drawPixelRect(cx-cw/2-2,cy-2,cw+4,ch+4,selected?'#ffffff':rarCol);
+    // Card bg
+    drawPixelRect(cx-cw/2,cy,cw,ch,'#1a1a2e');
+
+    // Rarity bar
+    drawPixelRect(cx-cw/2,cy,cw,4,rarCol);
+
+    // Name
+    ctx.fillStyle=rarCol;
+    ctx.font='bold 12px monospace';
+    ctx.textAlign='center';
+    ctx.fillText(card.name,cx,cy+24);
+
+    // Description
+    ctx.fillStyle='#aaaacc';
+    ctx.font='9px monospace';
+    ctx.fillText(card.desc,cx,cy+44);
+
+    // Rarity
+    ctx.fillStyle=rarCol;
+    ctx.font='8px monospace';
+    ctx.fillText('['+card.rarity.toUpperCase()+']',cx,cy+62);
+
+    // Cost
+    var cost=getCardCost(card);
+    ctx.fillStyle=coins>=cost?'#ffdd44':'#ff4444';
+    ctx.font='bold 10px monospace';
+    ctx.fillText('$'+cost,cx,cy+82);
+
+    if(selected&&coins>=cost){
+      ctx.fillStyle='#44ff88';
+      ctx.fillText('TAP AGAIN TO BUY',cx,cy+96);
+    }else if(selected&&coins<cost){
+      ctx.fillStyle='#ff4444';
+      ctx.fillText('NOT ENOUGH COINS',cx,cy+96);
+    }
+  }
+
+  // Skip button
+  var sy=H-50;
+  drawPixelRect(W/2-50,sy,100,30,'#333344');
+  drawPixelRect(W/2-48,sy+2,96,26,'#222233');
+  ctx.fillStyle='#888899';
+  ctx.font='bold 10px monospace';
+  ctx.textAlign='center';
+  ctx.fillText('SKIP',W/2,sy+20);
+}
+
+function getCardCost(card){
+  var base={common:20,uncommon:40,rare:70,legendary:120};
+  return base[card.rarity]||30;
+}
+
+function drawGameOver(){
+  ctx.fillStyle='#0a0a12';
+  ctx.fillRect(0,0,W,H);
+
+  ctx.fillStyle='#ff3344';
+  ctx.font='bold 24px monospace';
+  ctx.textAlign='center';
+  ctx.fillText('GAME OVER',W/2,120);
+
+  ctx.fillStyle='#888899';
+  ctx.font='10px monospace';
+  ctx.fillText('You fell on hole '+currentHole+'/18',W/2,160);
+
+  ctx.fillStyle='#ffffff';
+  ctx.font='12px monospace';
+  ctx.fillText('Total Strokes: '+totalStrokes,W/2,200);
+
+  var diff=totalStrokes-getTotalPar();
+  var diffStr=diff===0?'E':(diff>0?'+'+diff:''+diff);
+  ctx.fillStyle=diff<0?'#44ff88':diff>0?'#ff4444':'#ffffff';
+  ctx.fillText('Score: '+diffStr,W/2,225);
+
+  ctx.fillStyle='#ffdd44';
+  ctx.fillText('Coins Earned: $'+coins,W/2,260);
+
+  // Scorecard
+  drawScorecard(290);
+
+  // Retry button
+  var by=H-70;
+  drawPixelRect(W/2-70,by,140,36,'#ffcc22');
+  drawPixelRect(W/2-68,by+2,136,32,'#332200');
+  ctx.fillStyle='#ffcc22';
+  ctx.font='bold 12px monospace';
+  ctx.textAlign='center';
+  ctx.fillText('TRY AGAIN',W/2,by+23);
+}
+
+function drawScorecard(startY){
+  if(holeScores.length===0)return;
+
+  ctx.fillStyle='#ffffff';
+  ctx.font='8px monospace';
+  ctx.textAlign='center';
+
+  var cols=Math.min(9,holeScores.length);
+  var cw=28;
+  var startX=W/2-(cols*cw)/2;
+
+  // Header
+  for(var row=0;row<Math.ceil(holeScores.length/9);row++){
+    var ry=startY+row*40;
+    var start=row*9;
+    var end=Math.min(start+9,holeScores.length);
+
+    for(var i=start;i<end;i++){
+      var x=startX+(i-start)*cw+cw/2;
+      ctx.fillStyle='#666677';
+      ctx.fillText(''+(i+1),x,ry);
+      ctx.fillStyle='#444455';
+      ctx.fillText('P'+holePars[i],x,ry+10);
+      var s=holeScores[i];
+      var d=s-holePars[i];
+      ctx.fillStyle=d<0?'#44ff88':d>0?'#ff4444':'#ffffff';
+      ctx.fillText(''+s,x,ry+22);
+    }
+  }
+}
+
+function drawFinalScorecard(){
+  ctx.fillStyle='#0a0a18';
+  ctx.fillRect(0,0,W,H);
+
+  ctx.fillStyle='#ffcc22';
+  ctx.font='bold 20px monospace';
+  ctx.textAlign='center';
+  ctx.fillText('COURSE COMPLETE!',W/2,50);
+
+  var diff=totalStrokes-getTotalPar();
+  var diffStr=diff===0?'E':(diff>0?'+'+diff:''+diff);
+  ctx.fillStyle=diff<0?'#44ff88':diff>0?'#ff4444':'#ffffff';
+  ctx.font='bold 16px monospace';
+  ctx.fillText('FINAL: '+diffStr+' ('+totalStrokes+' strokes)',W/2,85);
+
+  ctx.fillStyle='#ffdd44';
+  ctx.font='10px monospace';
+  ctx.fillText('Coins: $'+coins,W/2,110);
+
+  if(bestScore!==null){
+    var bs=bestScore===0?'E':(bestScore>0?'+'+bestScore:''+bestScore);
+    ctx.fillStyle='#888899';
+    ctx.fillText('Personal Best: '+bs,W/2,130);
+  }
+
+  drawScorecard(160);
+
+  // Upgrades used
+  if(upgrades_collected.length>0){
+    ctx.fillStyle='#888899';
+    ctx.font='8px monospace';
+    ctx.fillText('UPGRADES USED:',W/2,340);
+    for(var i=0;i<upgrades_collected.length;i++){
+      var u=upgrades_collected[i];
+      ctx.fillStyle=RARITY_COLORS[u.rarity]||'#ffffff';
+      ctx.fillText(u.name,W/2,355+i*12);
+    }
+  }
+
+  // Play again
+  var by=H-70;
+  drawPixelRect(W/2-70,by,140,36,'#ffcc22');
+  drawPixelRect(W/2-68,by+2,136,32,'#332200');
+  ctx.fillStyle='#ffcc22';
+  ctx.font='bold 12px monospace';
+  ctx.textAlign='center';
+  ctx.fillText('PLAY AGAIN',W/2,by+23);
+}
+
+function drawTransition(){
+  ctx.fillStyle='rgba(0,0,0,'+transOverlayAlpha+')';
+  ctx.fillRect(0,0,W,H);
+}
+
+// ---- INPUT ----
+var touchStartX=0,touchStartY=0;
+var touchActive=false;
+
+function canvasToGame(clientX,clientY){
+  var rect=canvas.getBoundingClientRect();
+  return{
+    x:(clientX-rect.left)/SCALE,
+    y:(clientY-rect.top)/SCALE
+  };
+}
+
+function handleTouchStart(gx,gy){
+  initAudio();
+
+  if(state===STATE_TITLE){
+    // Check ball selector
+    var bsx=W/2-(unlockedBalls.length*20)/2;
+    for(var i=0;i<unlockedBalls.length;i++){
+      if(gx>=bsx+i*20&&gx<=bsx+i*20+12&&gy>=480&&gy<=492){
+        currentBall=unlockedBalls[i];
+        saveData();
+        return;
+      }
+    }
+    // Start
+    if(gy>280&&gy<400){
+      startRun();
+      return;
+    }
+    return;
+  }
+
+  if(state===STATE_GAMEOVER){
+    if(gy>H-80){
+      totalCoinsEver+=coins;
+      saveData();
+      state=STATE_TITLE;
+    }
+    return;
+  }
+
+  if(state===STATE_SCORECARD){
+    if(gy>H-80){
+      state=STATE_TITLE;
+    }
+    return;
+  }
+
+  if(state===STATE_SHOP){
+    // Check card taps
+    for(var i=0;i<shopCards.length;i++){
+      var cy=140+i*135;
+      if(gy>=cy&&gy<=cy+110&&gx>=W/2-130&&gx<=W/2+130){
+        if(shopSelected===i){
+          // Buy
+          var cost=getCardCost(shopCards[i]);
+          if(coins>=cost){
+            coins-=cost;
+            var card=shopCards[i];
+            upgrades_collected.push(card);
+            if(card.effect==='maxLife'){maxLives+=card.val;lives=Math.min(lives+1,maxLives);}
+            if(card.effect==='parBonus'){parBonusTotal+=card.val;}
+            sfxPowerUp();
+            shopSelected=-1;
+            // Next hole
+            currentHole++;
+            if(currentHole>18){
+              finishRun();
+            }else{
+              doTransition(function(){startHole();});
+            }
+            return;
+          }
+        }else{
+          shopSelected=i;
+          sfxShop();
+        }
+        return;
+      }
+    }
+    // Skip
+    if(gy>H-60&&gx>W/2-50&&gx<W/2+50){
+      shopSelected=-1;
+      currentHole++;
+      if(currentHole>18){
+        finishRun();
+      }else{
+        doTransition(function(){startHole();});
+      }
+    }
+    return;
+  }
+
+  if(state===STATE_PLAY&&ballStopped){
+    // Check mulligan
+    if(hasUpgrade('mulligan')&&!mulliganUsed&&holeStrokes>0){
+      var dx=gx-ballX,dy=(gy+cameraY)-ballY;
+      if(dx*dx+dy*dy<20*20){
+        // Use mulligan - but only on ball tap, not aim start
+        // Actually let's use a long press for mulligan to not conflict
+      }
+    }
+
+    // Start aiming
+    aimStartX=gx;
+    aimStartY=gy;
+    aimEndX=gx;
+    aimEndY=gy;
+    isAiming=true;
+    touchActive=true;
+    state=STATE_AIM;
+  }
+}
+
+function handleTouchMove(gx,gy){
+  if(state===STATE_AIM&&touchActive){
+    aimEndX=gx;
+    aimEndY=gy;
+  }
+}
+
+function handleTouchEnd(gx,gy){
+  if(state===STATE_AIM&&touchActive){
+    touchActive=false;
+    isAiming=false;
+
+    var dx=aimStartX-aimEndX;
+    var dy=aimStartY-aimEndY;
+    var dist=Math.sqrt(dx*dx+dy*dy);
+
+    if(dist<10){
+      // Too short, cancel
+      state=STATE_PLAY;
+      // Check mulligan on tap
+      if(hasUpgrade('mulligan')&&!mulliganUsed&&holeStrokes>0){
+        var bDx=gx-ballX,bDy=(gy+cameraY)-ballY;
+        if(bDx*bDx+bDy*bDy<25*25){
+          mulliganUsed=true;
+          holeStrokes--;
+          totalStrokes--;
+          sfxPowerUp();
+        }
+      }
+      return;
+    }
+
+    // Shoot!
+    var maxDist=150;
+    var power=Math.min(1,dist/maxDist);
+    var angle=Math.atan2(dy,dx);
+
+    var pMult=1+getUpgradeVal('power');
+
+    // Power shot powerup
+    for(var i=powerups_active.length-1;i>=0;i--){
+      if(powerups_active[i].type==='powerShot'){
+        pMult*=2;
+        powerups_active.splice(i,1);
+      }
+    }
+
+    var speed=power*8*pMult;
+    ballVX=Math.cos(angle)*speed;
+    ballVY=Math.sin(angle)*speed;
+    ballStopped=false;
+    ballLastX=ballX;
+    ballLastY=ballY;
+    holeStrokes++;
+    totalStrokes++;
+    strokesThisHole++;
+    ghostWallUsed=false;
+
+    // Set active powerup durations for this shot
+    for(var i=0;i<powerups_active.length;i++){
+      var pu=powerups_active[i];
+      if(pu.type==='magnet')pu.duration=200;
+      if(pu.type==='slowTime')pu.duration=200;
+      if(pu.type==='bounceBall')pu.duration=3+Math.floor(getUpgradeVal('bounces'));
+      if(pu.type==='windShift')pu.duration=200;
+    }
+
+    charState='swing';charTimer=0;
+    sfxPutt(power);
+    if(power>0.8)screenShake=8;
+
+    state=STATE_ROLLING;
+    ballTrail=[];
+  }
+}
+
+canvas.addEventListener('touchstart',function(e){
+  e.preventDefault();
+  var t=e.touches[0];
+  var p=canvasToGame(t.clientX,t.clientY);
+  handleTouchStart(p.x,p.y);
+},{passive:false});
+canvas.addEventListener('touchmove',function(e){
+  e.preventDefault();
+  var t=e.touches[0];
+  var p=canvasToGame(t.clientX,t.clientY);
+  handleTouchMove(p.x,p.y);
+},{passive:false});
+canvas.addEventListener('touchend',function(e){
+  e.preventDefault();
+  var t=e.changedTouches[0];
+  var p=canvasToGame(t.clientX,t.clientY);
+  handleTouchEnd(p.x,p.y);
+},{passive:false});
+
+// Mouse support
+var mouseDown=false;
+canvas.addEventListener('mousedown',function(e){
+  var p=canvasToGame(e.clientX,e.clientY);
+  mouseDown=true;
+  handleTouchStart(p.x,p.y);
+});
+canvas.addEventListener('mousemove',function(e){
+  if(!mouseDown)return;
+  var p=canvasToGame(e.clientX,e.clientY);
+  handleTouchMove(p.x,p.y);
+});
+canvas.addEventListener('mouseup',function(e){
+  var p=canvasToGame(e.clientX,e.clientY);
+  mouseDown=false;
+  handleTouchEnd(p.x,p.y);
+});
+
+var transPhase='done'; // 'in' = fade to black, 'out' = fade from black
+var transOverlayAlpha=0;
+var prevStateBeforeTrans=0;
+function doTransition(cb){
+  transitionTimer=0;
+  transPhase='in';
+  transOverlayAlpha=0;
+  transitionCallback=cb;
+  prevStateBeforeTrans=state;
+  state=STATE_TRANSITION;
+}
+
+function finishRun(){
+  var diff=totalStrokes-getTotalPar();
+  if(bestScore===null||diff<bestScore){
+    bestScore=diff;
+  }
+  totalCoinsEver+=coins;
+  // Unlock balls based on total coins
+  var ballKeys=Object.keys(BALL_COST);
+  for(var i=0;i<ballKeys.length;i++){
+    if(totalCoinsEver>=BALL_COST[ballKeys[i]]&&unlockedBalls.indexOf(ballKeys[i])<0){
+      unlockedBalls.push(ballKeys[i]);
+    }
+  }
+  saveData();
+  state=STATE_SCORECARD;
+}
+
+function openShop(){
+  // Pick 3 random upgrades
+  shopCards=[];
+  var pool=UPGRADES.slice();
+  // Shuffle
+  for(var i=pool.length-1;i>0;i--){
+    var j=Math.floor(Math.random()*(i+1));
+    var t=pool[i];pool[i]=pool[j];pool[j]=t;
+  }
+  // Weight by luck
+  var luck=getUpgradeVal('luck');
+  if(luck>0){
+    // Sort rare to front with some probability
+    pool.sort(function(a,b){
+      var ra={common:1,uncommon:2,rare:3,legendary:4};
+      if(Math.random()<luck)return (ra[b.rarity]||0)-(ra[a.rarity]||0);
+      return 0;
+    });
+  }
+  shopCards=pool.slice(0,3);
+  shopSelected=-1;
+  state=STATE_SHOP;
+  sfxShop();
+}
+
+// ---- MAIN LOOP ----
+function update(){
+  // Transition overlay
+  if(transPhase==='in'){
+    transitionTimer++;
+    transOverlayAlpha=Math.min(1,transitionTimer/30);
+    if(transitionTimer>=30){
+      if(transitionCallback){transitionCallback();transitionCallback=null;}
+      transPhase='out';
+      transitionTimer=0;
+    }else{
+      return; // Pause game during fade-in
+    }
+  }
+  if(transPhase==='out'){
+    transitionTimer++;
+    transOverlayAlpha=Math.max(0,1-transitionTimer/30);
+    if(transitionTimer>=30){
+      transPhase='done';
+      transOverlayAlpha=0;
+    }
+  }
+
+  // Trail decay
+  for(var i=ballTrail.length-1;i>=0;i--){
+    ballTrail[i].life--;
+    if(ballTrail[i].life<=0)ballTrail.splice(i,1);
+  }
+
+  if(state===STATE_ROLLING){
+    updateBall(1);
+    updateEnemies();
+
+    if(ballStopped&&state===STATE_ROLLING){
+      state=STATE_PLAY;
+    }
+
+    // Camera follow ball
+    targetCameraY=Math.max(0,ballY-H*0.5);
+    targetCameraY=Math.min(courseData.totalHeight-H+60,targetCameraY);
+    targetCameraY=Math.max(0,targetCameraY);
+  }
+
+  if(state===STATE_AIM){
+    targetCameraY=Math.max(0,ballY-H*0.5);
+    targetCameraY=Math.min(courseData.totalHeight-H+60,targetCameraY);
+    targetCameraY=Math.max(0,targetCameraY);
+    updateEnemies();
+  }
+
+  if(state===STATE_PLAY){
+    targetCameraY=Math.max(0,ballY-H*0.5);
+    targetCameraY=Math.min(courseData.totalHeight-H+60,targetCameraY);
+    targetCameraY=Math.max(0,targetCameraY);
+    updateEnemies();
+  }
+
+  if(state===STATE_SINK){
+    sinkTimer--;
+    if(sinkTimer<=0){
+      // Check if shop (every 3 holes)
+      if(currentHole%3===0&&currentHole<18){
+        openShop();
+      }else{
+        currentHole++;
+        if(currentHole>18){
+          finishRun();
+        }else{
+          doTransition(function(){startHole();});
+        }
+      }
+    }
+  }
+
+  // Smooth camera
+  cameraY+=(targetCameraY-cameraY)*0.1;
+
+  // Screen shake decay
+  if(screenShake>0)screenShake*=0.85;
+  if(screenShake<0.5)screenShake=0;
+
+  // Flash decay
+  if(flashTimer>0)flashTimer--;
+}
+
+function draw(){
+  ctx.save();
+
+  // Screen shake
+  if(screenShake>0){
+    ctx.translate((Math.random()-0.5)*screenShake,(Math.random()-0.5)*screenShake);
+  }
+
+  if(state===STATE_TITLE){
+    drawTitle();
+    ctx.restore();
+    return;
+  }
+
+  if(state===STATE_GAMEOVER){
+    drawGameOver();
+    ctx.restore();
+    return;
+  }
+
+  if(state===STATE_SCORECARD){
+    drawFinalScorecard();
+    ctx.restore();
+    return;
+  }
+
+  if(state===STATE_SHOP){
+    drawShop();
+    ctx.restore();
+    return;
+  }
+
+  // Dark background
+  ctx.fillStyle='#0a0a18';
+  ctx.fillRect(0,0,W,H);
+
+  // Background stars (sky above course)
+  for(var i=0;i<20;i++){
+    var sx=((i*97+13)%W);
+    var sy=((i*53+7)%200)-cameraY*0.3;
+    if(sy>-5&&sy<H){
+      ctx.fillStyle='rgba(255,255,255,0.4)';
+      ctx.fillRect(sx,sy,1,1);
+    }
+  }
+
+  if(courseData){
+    drawCourse();
+    drawCharacter();
+    drawBall();
+  }
+
+  drawAimLine();
+  drawParticles();
+
+  if(courseData)drawHUD();
+
+  // Flash effect
+  if(flashTimer>0){
+    ctx.fillStyle='rgba(255,50,50,'+flashTimer/15*0.4+')';
+    ctx.fillRect(0,0,W,H);
+  }
+
+  // Sink message
+  if(state===STATE_SINK&&sinkTimer>60){
+    var diff=holeScores[holeScores.length-1]-holePars[holePars.length-1];
+    var msg='';
+    if(diff<=-2)msg='EAGLE!';
+    else if(diff===-1)msg='BIRDIE!';
+    else if(diff===0)msg='PAR';
+    else if(diff===1)msg='BOGEY';
+    else msg='+'+diff;
+
+    if(holeScores[holeScores.length-1]===1)msg='HOLE IN ONE!!';
+
+    ctx.fillStyle='rgba(0,0,0,0.6)';
+    drawPixelRect(W/2-80,H/2-30,160,50,'rgba(0,0,0,0.7)');
+    ctx.fillStyle=diff<=0?'#ffcc22':'#ffffff';
+    ctx.font='bold 18px monospace';
+    ctx.textAlign='center';
+    ctx.fillText(msg,W/2,H/2);
+  }
+
+  // Transition overlay
+  if(transOverlayAlpha>0){
+    drawTransition();
+  }
+
+  ctx.restore();
+}
+
+function gameLoop(){
+  update();
+  draw();
+  requestAnimationFrame(gameLoop);
+}
+
+gameLoop();
+
+})();
+</script>
+</body>
+</html>
