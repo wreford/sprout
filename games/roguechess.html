@@ -1,0 +1,1716 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Rogue Chess</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; user-select:none; }
+html, body { width:100%; height:100%; overflow:hidden; background:#1a1a1a; font-family:'Segoe UI',Arial,sans-serif; color:#e0d0c0; }
+#gameContainer { display:flex; flex-direction:column; align-items:center; width:100%; height:100%; }
+#topBar { width:100%; padding:8px 12px; background:#2a1f15; display:flex; justify-content:space-between; align-items:center; flex-shrink:0; border-bottom:2px solid #4a3520; }
+#topBar .left, #topBar .right { display:flex; align-items:center; gap:8px; }
+#topBar .floor { font-size:18px; font-weight:bold; color:#ffd700; }
+#topBar .hp { font-size:18px; color:#ff4444; }
+#statBar { width:100%; padding:6px 12px; background:#221a10; display:flex; justify-content:space-between; align-items:center; flex-shrink:0; }
+#statBar .level { font-size:14px; color:#c0a070; }
+#xpBarOuter { width:120px; height:12px; background:#333; border-radius:6px; overflow:hidden; border:1px solid #555; }
+#xpBarInner { height:100%; background:linear-gradient(90deg,#ffd700,#ffaa00); width:0%; transition:width 0.3s; }
+#canvasWrap { flex:1; display:flex; align-items:center; justify-content:center; width:100%; position:relative; overflow:hidden; }
+canvas { display:block; }
+#bottomBar { width:100%; padding:8px 12px; background:#2a1f15; flex-shrink:0; border-top:2px solid #4a3520; }
+#itemRow { display:flex; gap:8px; align-items:center; margin-bottom:4px; }
+.itemSlot { width:48px; height:48px; background:#3a2a18; border:2px solid #5a4a30; border-radius:8px; display:flex; align-items:center; justify-content:center; cursor:pointer; position:relative; }
+.itemSlot.empty { opacity:0.4; }
+.itemSlot canvas { pointer-events:none; }
+#scoreRow { display:flex; justify-content:space-between; align-items:center; font-size:13px; color:#a09080; }
+#message { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); font-size:28px; font-weight:bold; color:#ffd700; text-shadow:0 0 20px #ffd700, 0 0 40px #aa8800; pointer-events:none; opacity:0; transition:opacity 0.3s; z-index:10; text-align:center; }
+#overlay { position:absolute; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); display:none; flex-direction:column; align-items:center; justify-content:center; z-index:20; }
+#overlay h1 { font-size:36px; color:#ffd700; margin-bottom:10px; text-shadow:0 0 20px #ffd700; }
+#overlay h2 { font-size:22px; color:#ff6644; margin-bottom:20px; }
+#overlay .stats { font-size:16px; color:#c0a070; margin:6px 0; }
+#overlay button { margin-top:20px; padding:14px 40px; font-size:20px; background:linear-gradient(180deg,#8b6914,#5a4010); color:#ffd700; border:2px solid #ffd700; border-radius:10px; cursor:pointer; font-weight:bold; }
+#overlay button:active { background:#5a4010; }
+#specialBtn { position:absolute; bottom:8px; right:8px; width:56px; height:56px; border-radius:50%; background:linear-gradient(180deg,#6a3aaa,#442266); border:2px solid #aa77ff; color:#fff; font-size:11px; font-weight:bold; cursor:pointer; display:none; z-index:5; text-align:center; line-height:1.2; padding-top:12px; }
+#specialBtn.ready { display:flex; align-items:center; justify-content:center; box-shadow:0 0 15px #aa77ff; }
+#specialBtn.cooldown { display:flex; align-items:center; justify-content:center; opacity:0.5; }
+#shieldIcon { position:absolute; top:4px; right:4px; font-size:10px; color:#66ccff; display:none; }
+</style>
+</head>
+<body>
+<div id="gameContainer">
+  <div id="topBar">
+    <div class="left">
+      <span class="floor" id="floorLabel">Floor 1</span>
+    </div>
+    <div class="right">
+      <span class="hp" id="hpLabel"></span>
+    </div>
+  </div>
+  <div id="statBar">
+    <span class="level" id="levelLabel">LV 1 Pawn</span>
+    <div style="display:flex;align-items:center;gap:6px;">
+      <span style="font-size:12px;color:#888;">XP</span>
+      <div id="xpBarOuter"><div id="xpBarInner"></div></div>
+    </div>
+  </div>
+  <div id="canvasWrap">
+    <canvas id="board"></canvas>
+    <div id="message"></div>
+    <div id="overlay">
+      <h1 id="overlayTitle">ROGUE CHESS</h1>
+      <h2 id="overlaySubtitle">Chess meets Roguelike</h2>
+      <div class="stats" id="overlayStat1"></div>
+      <div class="stats" id="overlayStat2"></div>
+      <div class="stats" id="overlayStat3"></div>
+      <div class="stats" id="overlayStat4"></div>
+      <button id="overlayBtn">START</button>
+    </div>
+    <button id="specialBtn"></button>
+  </div>
+  <div id="bottomBar">
+    <div id="itemRow">
+      <div class="itemSlot empty" id="slot0" onclick="useItem(0)"><canvas width="40" height="40"></canvas></div>
+      <div class="itemSlot empty" id="slot1" onclick="useItem(1)"><canvas width="40" height="40"></canvas></div>
+      <div class="itemSlot empty" id="slot2" onclick="useItem(2)"><canvas width="40" height="40"></canvas></div>
+      <div style="flex:1;"></div>
+      <span style="font-size:12px;color:#887766;">Tap item to use</span>
+    </div>
+    <div id="scoreRow">
+      <span id="scoreLabel">Score: 0</span>
+      <span id="bestLabel">Best: Floor 1</span>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============ AUDIO ============
+var AudioCtx = window.AudioContext || window.webkitAudioContext;
+var actx = null;
+function ensureAudio(){ if(!actx) actx = new AudioCtx(); }
+
+function playSound(type){
+  ensureAudio();
+  if(!actx) return;
+  var o = actx.createOscillator();
+  var g = actx.createGain();
+  o.connect(g); g.connect(actx.destination);
+  var t = actx.currentTime;
+  switch(type){
+    case 'move':
+      o.type='sine'; o.frequency.setValueAtTime(300,t); o.frequency.linearRampToValueAtTime(200,t+0.05);
+      g.gain.setValueAtTime(0.15,t); g.gain.linearRampToValueAtTime(0,t+0.08);
+      o.start(t); o.stop(t+0.08); break;
+    case 'capture':
+      o.type='sawtooth'; o.frequency.setValueAtTime(200,t); o.frequency.linearRampToValueAtTime(80,t+0.15);
+      g.gain.setValueAtTime(0.2,t); g.gain.linearRampToValueAtTime(0,t+0.2);
+      o.start(t); o.stop(t+0.2); break;
+    case 'damage':
+      o.type='square'; o.frequency.setValueAtTime(150,t); o.frequency.linearRampToValueAtTime(50,t+0.2);
+      g.gain.setValueAtTime(0.25,t); g.gain.linearRampToValueAtTime(0,t+0.25);
+      o.start(t); o.stop(t+0.25); break;
+    case 'levelup':
+      o.type='sine';
+      o.frequency.setValueAtTime(400,t); o.frequency.linearRampToValueAtTime(600,t+0.1);
+      o.frequency.linearRampToValueAtTime(800,t+0.2); o.frequency.linearRampToValueAtTime(1000,t+0.35);
+      g.gain.setValueAtTime(0.2,t); g.gain.linearRampToValueAtTime(0,t+0.5);
+      o.start(t); o.stop(t+0.5); break;
+    case 'item':
+      o.type='sine'; o.frequency.setValueAtTime(800,t); o.frequency.linearRampToValueAtTime(1200,t+0.1);
+      g.gain.setValueAtTime(0.15,t); g.gain.linearRampToValueAtTime(0,t+0.15);
+      o.start(t); o.stop(t+0.15); break;
+    case 'clear':
+      o.type='sine';
+      o.frequency.setValueAtTime(500,t); o.frequency.linearRampToValueAtTime(700,t+0.15);
+      o.frequency.linearRampToValueAtTime(900,t+0.3); o.frequency.linearRampToValueAtTime(1100,t+0.5);
+      g.gain.setValueAtTime(0.2,t); g.gain.linearRampToValueAtTime(0,t+0.6);
+      o.start(t); o.stop(t+0.6); break;
+    case 'gameover':
+      o.type='sawtooth';
+      o.frequency.setValueAtTime(400,t); o.frequency.linearRampToValueAtTime(100,t+0.8);
+      g.gain.setValueAtTime(0.25,t); g.gain.linearRampToValueAtTime(0,t+1.0);
+      o.start(t); o.stop(t+1.0); break;
+    case 'special':
+      o.type='triangle';
+      o.frequency.setValueAtTime(600,t); o.frequency.linearRampToValueAtTime(1200,t+0.15);
+      o.frequency.linearRampToValueAtTime(600,t+0.3);
+      g.gain.setValueAtTime(0.2,t); g.gain.linearRampToValueAtTime(0,t+0.35);
+      o.start(t); o.stop(t+0.35); break;
+  }
+}
+
+// ============ GLOBALS ============
+var canvas = document.getElementById('board');
+var ctx = canvas.getContext('2d');
+var COLS = 8, ROWS = 8;
+var cellSize = 60;
+var boardX = 0, boardY = 0;
+
+var LIGHT = '#b58863';
+var DARK = '#6d4c2e';
+
+var game = null;
+var animating = false;
+var animations = [];
+var particles = [];
+var shakeTimer = 0;
+var shakeIntensity = 0;
+var flashTimer = 0;
+var fadeAlpha = 0;
+var fadeDir = 0;
+var stairsPos = null;
+var stairsPulse = 0;
+
+var PIECE_TYPES = ['pawn','knight','bishop','rook','queen','king'];
+var PIECE_EVOLVE = {1:'pawn',4:'knight',7:'bishop',10:'rook',13:'queen',20:'king'};
+var XP_TABLE = [0,5,10,18,28,40,55,72,92,115,140,170,205,245,290,340,400,470,550,650];
+
+var ITEMS = ['shield','potion','bomb','freeze','crown','sword'];
+
+// ============ SAVE ============
+var save = {bestFloor:1, bestScore:0, totalCaptures:0};
+function loadSave(){ try{ var s=localStorage.getItem('roguechess_save'); if(s) save=JSON.parse(s); }catch(e){} }
+function writeSave(){ try{ localStorage.setItem('roguechess_save',JSON.stringify(save)); }catch(e){} }
+
+// ============ RESIZE ============
+function resize(){
+  var wrap = document.getElementById('canvasWrap');
+  var w = wrap.clientWidth;
+  var h = wrap.clientHeight;
+  var boardPx = Math.min(w - 16, h - 16);
+  cellSize = Math.floor(boardPx / 8);
+  boardPx = cellSize * 8;
+  canvas.width = boardPx;
+  canvas.height = boardPx;
+  boardX = 0; boardY = 0;
+  render();
+}
+window.addEventListener('resize', resize);
+
+// ============ GAME STATE ============
+function newGame(){
+  game = {
+    floor: 1,
+    player: { r:7, c:3, type:'pawn', hp:3, maxHp:3, level:1, xp:0, shield:false, sword:false },
+    enemies: [],
+    board: [], // 8x8 grid: null, 'wall', 'trap', 'heal', 'gold'
+    items: [null,null,null],
+    score: 0,
+    state: 'play', // play, animating, floorclear, gameover, victory
+    turnPhase: 'player', // player, enemy
+    frozen: false,
+    firstMoveOnFloor: true,
+    specialCooldown: 0,
+    killsThisFloor: 0,
+    totalEnemiesThisFloor: 0,
+  };
+  generateFloor();
+  updateUI();
+  render();
+}
+
+function getPieceForLevel(lv){
+  if(lv>=20) return 'king';
+  if(lv>=13) return 'queen';
+  if(lv>=10) return 'rook';
+  if(lv>=7) return 'bishop';
+  if(lv>=4) return 'knight';
+  return 'pawn';
+}
+
+function xpForLevel(lv){
+  if(lv<=0) return 5;
+  if(lv>20) return 9999;
+  return XP_TABLE[lv-1] || 650;
+}
+
+function generateFloor(){
+  var g = game;
+  var f = g.floor;
+  g.board = [];
+  for(var r=0;r<8;r++){ g.board[r]=[]; for(var c=0;c<8;c++) g.board[r][c]=null; }
+  g.enemies = [];
+  stairsPos = null;
+  g.firstMoveOnFloor = true;
+  g.frozen = false;
+  g.killsThisFloor = 0;
+  g.turnPhase = 'player';
+
+  // Place walls
+  var wallCount = Math.min(f + 2, 12);
+  for(var i=0;i<wallCount;i++){
+    var wr = randInt(0,7), wc = randInt(0,7);
+    if(wr===7 && wc===3) continue; // player start
+    if(wr===0 && wc===3) continue; // avoid blocking too much
+    g.board[wr][wc] = 'wall';
+  }
+
+  // Place traps
+  var trapCount = Math.min(Math.floor(f/3)+1, 6);
+  for(var i=0;i<trapCount;i++){
+    var tr = randInt(0,7), tc = randInt(0,7);
+    if(g.board[tr][tc]) continue;
+    if(tr===7 && tc===3) continue;
+    g.board[tr][tc] = 'trap';
+  }
+
+  // Heal tiles
+  var healCount = Math.max(1, 3 - Math.floor(f/6));
+  for(var i=0;i<healCount;i++){
+    var hr = randInt(0,7), hc = randInt(0,7);
+    if(g.board[hr][hc]) continue;
+    if(hr===7 && hc===3) continue;
+    g.board[hr][hc] = 'heal';
+  }
+
+  // Gold tiles
+  var goldCount = randInt(1,3);
+  for(var i=0;i<goldCount;i++){
+    var gr = randInt(0,7), gc = randInt(0,7);
+    if(g.board[gr][gc]) continue;
+    if(gr===7 && gc===3) continue;
+    g.board[gr][gc] = 'gold';
+  }
+
+  // Player position
+  // Find a clear spot near bottom
+  g.player.r = 7; g.player.c = 3;
+  if(g.board[7][3]==='wall'){
+    for(var c=0;c<8;c++){ if(!g.board[7][c] || g.board[7][c]!=='wall'){ g.player.c=c; break; } }
+  }
+  g.board[g.player.r][g.player.c] = null; // clear player pos
+
+  // Enemies
+  var enemyTypes = [];
+  var enemyCount = 0;
+  if(f<=5){ enemyCount=randInt(2,4); enemyTypes=['pawn']; }
+  else if(f<=10){ enemyCount=randInt(3,5); enemyTypes=['pawn','knight','bishop']; }
+  else if(f<=15){ enemyCount=randInt(4,6); enemyTypes=['pawn','knight','bishop','rook']; }
+  else if(f<=19){ enemyCount=randInt(5,8); enemyTypes=['pawn','knight','bishop','rook','queen']; }
+  else { // floor 20 boss
+    enemyCount = 1;
+    enemyTypes = ['queen'];
+  }
+
+  for(var i=0;i<enemyCount;i++){
+    var tries=50;
+    while(tries-->0){
+      var er=randInt(0,5), ec=randInt(0,7);
+      if(g.board[er][ec]) continue;
+      var occupied=false;
+      if(er===g.player.r && ec===g.player.c) occupied=true;
+      for(var j=0;j<g.enemies.length;j++){
+        if(g.enemies[j].r===er && g.enemies[j].c===ec){ occupied=true; break; }
+      }
+      if(occupied) continue;
+      var etype = enemyTypes[randInt(0,enemyTypes.length-1)];
+      var ehp = 1;
+      if(f===20 && etype==='queen') ehp = 3;
+      g.enemies.push({r:er, c:ec, type:etype, hp:ehp, maxHp:ehp, id:Math.random()});
+      break;
+    }
+  }
+  g.totalEnemiesThisFloor = g.enemies.length;
+}
+
+// ============ MOVEMENT RULES ============
+function getValidMoves(type, r, c, isPlayer, board, enemies, player){
+  var moves = [];
+  var g = game;
+
+  function isEmpty(rr,cc){
+    if(rr<0||rr>7||cc<0||cc>7) return false;
+    if(board[rr][cc]==='wall') return false;
+    return true;
+  }
+  function hasEnemy(rr,cc){
+    for(var i=0;i<enemies.length;i++){
+      if(enemies[i].r===rr && enemies[i].c===cc) return true;
+    }
+    return false;
+  }
+  function hasPlayer(rr,cc){ return player.r===rr && player.c===cc; }
+  function isBlocked(rr,cc){
+    if(!isEmpty(rr,cc)) return true;
+    if(isPlayer && hasEnemy(rr,cc)) return false; // can capture
+    if(!isPlayer && hasPlayer(rr,cc)) return false; // can attack
+    if(isPlayer && hasPlayer(rr,cc)) return true;
+    if(!isPlayer && hasEnemy(rr,cc)) return true;
+    return false;
+  }
+  function canMoveTo(rr,cc){
+    if(rr<0||rr>7||cc<0||cc>7) return false;
+    if(board[rr][cc]==='wall') return false;
+    if(isPlayer){
+      // can move to empty or enemy square
+      for(var i=0;i<enemies.length;i++){
+        if(enemies[i].r===rr && enemies[i].c===cc) return true; // capture
+      }
+      return true;
+    } else {
+      // enemy: can move to empty or player square
+      if(hasEnemy(rr,cc)) return false;
+      return true;
+    }
+  }
+
+  switch(type){
+    case 'pawn':
+      if(isPlayer){
+        // Forward (up) 1
+        if(r-1>=0 && isEmpty(r-1,c) && !hasEnemy(r-1,c)) moves.push({r:r-1,c:c});
+        // Forward 2 on first move
+        if(g && g.firstMoveOnFloor && r-2>=0 && isEmpty(r-2,c) && isEmpty(r-1,c) && !hasEnemy(r-1,c) && !hasEnemy(r-2,c)) moves.push({r:r-2,c:c});
+        // Capture diagonals
+        if(r-1>=0 && c-1>=0 && isEmpty(r-1,c-1) && hasEnemy(r-1,c-1)) moves.push({r:r-1,c:c-1});
+        if(r-1>=0 && c+1<=7 && isEmpty(r-1,c+1) && hasEnemy(r-1,c+1)) moves.push({r:r-1,c:c+1});
+        // Also allow backward and sideways 1 step (roguelike pawn is slightly more flexible)
+        if(r+1<=7 && isEmpty(r+1,c) && !hasEnemy(r+1,c)) moves.push({r:r+1,c:c});
+        if(c-1>=0 && isEmpty(r,c-1) && !hasEnemy(r,c-1)) moves.push({r:r,c:c-1});
+        if(c+1<=7 && isEmpty(r,c+1) && !hasEnemy(r,c+1)) moves.push({r:r,c:c+1});
+      } else {
+        // Enemy pawn moves toward player (down)
+        var dir = r < player.r ? 1 : -1;
+        if(r+dir>=0 && r+dir<=7 && isEmpty(r+dir,c) && !hasEnemy(r+dir,c) && !hasPlayer(r+dir,c)) moves.push({r:r+dir,c:c});
+        // Capture diagonals
+        if(r+dir>=0 && r+dir<=7 && c-1>=0 && isEmpty(r+dir,c-1) && hasPlayer(r+dir,c-1)) moves.push({r:r+dir,c:c-1});
+        if(r+dir>=0 && r+dir<=7 && c+1<=7 && isEmpty(r+dir,c+1) && hasPlayer(r+dir,c+1)) moves.push({r:r+dir,c:c+1});
+        // Side moves
+        if(c-1>=0 && isEmpty(r,c-1) && !hasEnemy(r,c-1)) moves.push({r:r,c:c-1});
+        if(c+1<=7 && isEmpty(r,c+1) && !hasEnemy(r,c+1)) moves.push({r:r,c:c+1});
+      }
+      break;
+    case 'knight':
+      var kMoves = [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]];
+      for(var i=0;i<kMoves.length;i++){
+        var nr=r+kMoves[i][0], nc=c+kMoves[i][1];
+        if(canMoveTo(nr,nc)) moves.push({r:nr,c:nc});
+      }
+      break;
+    case 'bishop':
+      var dirs=[[-1,-1],[-1,1],[1,-1],[1,1]];
+      for(var d=0;d<4;d++){
+        for(var step=1;step<8;step++){
+          var nr=r+dirs[d][0]*step, nc=c+dirs[d][1]*step;
+          if(nr<0||nr>7||nc<0||nc>7) break;
+          if(board[nr][nc]==='wall') break;
+          if(isPlayer){
+            if(hasEnemy(nr,nc)){ moves.push({r:nr,c:nc}); break; }
+            moves.push({r:nr,c:nc});
+          } else {
+            if(hasPlayer(nr,nc)){ moves.push({r:nr,c:nc}); break; }
+            if(hasEnemy(nr,nc)) break;
+            moves.push({r:nr,c:nc});
+          }
+        }
+      }
+      break;
+    case 'rook':
+      var dirs=[[-1,0],[1,0],[0,-1],[0,1]];
+      for(var d=0;d<4;d++){
+        for(var step=1;step<8;step++){
+          var nr=r+dirs[d][0]*step, nc=c+dirs[d][1]*step;
+          if(nr<0||nr>7||nc<0||nc>7) break;
+          if(board[nr][nc]==='wall') break;
+          if(isPlayer){
+            if(hasEnemy(nr,nc)){ moves.push({r:nr,c:nc}); break; }
+            moves.push({r:nr,c:nc});
+          } else {
+            if(hasPlayer(nr,nc)){ moves.push({r:nr,c:nc}); break; }
+            if(hasEnemy(nr,nc)) break;
+            moves.push({r:nr,c:nc});
+          }
+        }
+      }
+      break;
+    case 'queen':
+    case 'king':
+      var dirs=[[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+      var maxStep = (type==='king') ? 2 : 7;
+      for(var d=0;d<8;d++){
+        for(var step=1;step<=maxStep;step++){
+          var nr=r+dirs[d][0]*step, nc=c+dirs[d][1]*step;
+          if(nr<0||nr>7||nc<0||nc>7) break;
+          if(board[nr][nc]==='wall') break;
+          if(isPlayer){
+            if(hasEnemy(nr,nc)){ moves.push({r:nr,c:nc}); break; }
+            moves.push({r:nr,c:nc});
+          } else {
+            if(hasPlayer(nr,nc)){ moves.push({r:nr,c:nc}); break; }
+            if(hasEnemy(nr,nc)) break;
+            moves.push({r:nr,c:nc});
+          }
+        }
+      }
+      break;
+  }
+  return moves;
+}
+
+// ============ ENEMY AI ============
+function doEnemyTurn(){
+  var g = game;
+  if(g.frozen){
+    g.frozen = false;
+    g.turnPhase = 'player';
+    showMessage('Enemies frozen!');
+    return;
+  }
+  var p = g.player;
+  var moveQueue = [];
+
+  for(var i=0;i<g.enemies.length;i++){
+    var e = g.enemies[i];
+    var moves = getValidMoves(e.type, e.r, e.c, false, g.board, g.enemies, p);
+    if(moves.length===0) continue;
+
+    var bestMove = null;
+    var bestDist = 999;
+
+    // 30% random
+    if(Math.random()<0.3){
+      bestMove = moves[randInt(0,moves.length-1)];
+    } else {
+      for(var j=0;j<moves.length;j++){
+        var d = Math.abs(moves[j].r-p.r)+Math.abs(moves[j].c-p.c);
+        if(d<bestDist){ bestDist=d; bestMove=moves[j]; }
+      }
+    }
+    if(bestMove){
+      moveQueue.push({enemy:e, to:bestMove});
+    }
+  }
+
+  // Animate enemy moves sequentially
+  if(moveQueue.length===0){
+    g.turnPhase = 'player';
+    checkFloorClear();
+    return;
+  }
+
+  animating = true;
+  var idx = 0;
+  function nextEnemyMove(){
+    if(idx >= moveQueue.length){
+      animating = false;
+      // Check if any enemy on player
+      checkEnemyAttacks();
+      g.turnPhase = 'player';
+      checkFloorClear();
+      render();
+      return;
+    }
+    var m = moveQueue[idx];
+    idx++;
+    // Check enemy still alive
+    if(g.enemies.indexOf(m.enemy)<0){ nextEnemyMove(); return; }
+    var fromR=Math.round(m.enemy.r), fromC=Math.round(m.enemy.c);
+    var toR=m.to.r, toC=m.to.c;
+    animateMove(fromR,fromC,toR,toC,false,function(){
+      m.enemy.r = toR;
+      m.enemy.c = toC;
+      nextEnemyMove();
+    }, m.enemy);
+  }
+  nextEnemyMove();
+}
+
+function checkEnemyAttacks(){
+  var g = game;
+  var p = g.player;
+  for(var i=0;i<g.enemies.length;i++){
+    if(g.enemies[i].r===p.r && g.enemies[i].c===p.c){
+      playerTakeDamage();
+    }
+  }
+}
+
+function playerTakeDamage(){
+  var g = game;
+  if(g.player.shield){
+    g.player.shield = false;
+    showMessage('Shield blocked!');
+    playSound('item');
+    return;
+  }
+  g.player.hp--;
+  playSound('damage');
+  shakeTimer = 15;
+  shakeIntensity = 8;
+  flashTimer = 10;
+  updateUI();
+  if(g.player.hp <= 0){
+    gameOver();
+  }
+}
+
+// ============ PLAYER MOVE ============
+function playerMove(tr, tc){
+  var g = game;
+  if(g.state!=='play' || g.turnPhase!=='player' || animating) return;
+
+  // Check if clicking stairs
+  if(stairsPos && tr===stairsPos.r && tc===stairsPos.c){
+    nextFloor();
+    return;
+  }
+
+  var p = g.player;
+  var moves = getValidMoves(p.type, p.r, p.c, true, g.board, g.enemies, p);
+  var valid = false;
+  for(var i=0;i<moves.length;i++){
+    if(moves[i].r===tr && moves[i].c===tc){ valid=true; break; }
+  }
+  if(!valid) return;
+
+  var fromR=p.r, fromC=p.c;
+  animating = true;
+  playSound('move');
+
+  animateMove(fromR,fromC,tr,tc,true,function(){
+    p.r = tr; p.c = tc;
+    g.firstMoveOnFloor = false;
+    animating = false;
+
+    // Check capture
+    var captured = false;
+    for(var i=g.enemies.length-1;i>=0;i--){
+      if(g.enemies[i].r===tr && g.enemies[i].c===tc){
+        captureEnemy(i);
+        captured = true;
+      }
+    }
+
+    // Check tile effects
+    var tile = g.board[tr][tc];
+    if(tile==='trap'){
+      playerTakeDamage();
+      g.board[tr][tc] = null; // trap used up
+    } else if(tile==='heal'){
+      if(p.hp < p.maxHp){
+        p.hp++;
+        showMessage('+1 HP');
+        playSound('item');
+      }
+      g.board[tr][tc] = null;
+    } else if(tile==='gold'){
+      g.score += 100;
+      showMessage('+100 Gold!');
+      playSound('item');
+      g.board[tr][tc] = null;
+    }
+
+    updateUI();
+
+    if(g.state==='gameover') return;
+
+    // Enemy turn
+    if(g.enemies.length > 0){
+      g.turnPhase = 'enemy';
+      setTimeout(function(){ doEnemyTurn(); }, 250);
+    } else {
+      checkFloorClear();
+    }
+  });
+}
+
+function captureEnemy(idx){
+  var g = game;
+  var e = g.enemies[idx];
+  var doubleDamage = g.player.sword;
+  if(doubleDamage) g.player.sword = false;
+
+  var dmg = doubleDamage ? e.hp : 1;
+  e.hp -= dmg;
+
+  if(e.hp <= 0){
+    // Kill
+    playSound('capture');
+    spawnCaptureParticles(e.r, e.c);
+    g.enemies.splice(idx,1);
+    g.killsThisFloor++;
+
+    // XP
+    var xpGain = 0;
+    switch(e.type){
+      case 'pawn': xpGain=2; break;
+      case 'knight': xpGain=4; break;
+      case 'bishop': xpGain=4; break;
+      case 'rook': xpGain=6; break;
+      case 'queen': xpGain=10; break;
+    }
+    g.player.xp += xpGain;
+    g.score += xpGain * 10;
+    save.totalCaptures++;
+
+    // Check level up
+    checkLevelUp();
+
+    // Item drop
+    if(Math.random()<0.2){
+      dropItem();
+    }
+  } else {
+    playSound('capture');
+    showMessage('Boss: '+e.hp+'/'+e.maxHp+' HP');
+  }
+}
+
+function checkLevelUp(){
+  var p = game.player;
+  var needed = xpForLevel(p.level);
+  while(p.xp >= needed && p.level < 20){
+    p.xp -= needed;
+    p.level++;
+    var newType = getPieceForLevel(p.level);
+    if(newType !== p.type){
+      p.type = newType;
+      showMessage('Evolved to '+capitalize(newType)+'!');
+    } else {
+      showMessage('Level '+p.level+'!');
+    }
+    // Heal 1 HP on level up
+    if(p.hp < p.maxHp) p.hp++;
+    // Increase max HP every 5 levels
+    if(p.level % 5 === 0){ p.maxHp++; p.hp++; }
+    playSound('levelup');
+    spawnLevelUpParticles();
+    needed = xpForLevel(p.level);
+  }
+  updateUI();
+}
+
+function dropItem(){
+  var g = game;
+  // Find empty slot
+  var slot = -1;
+  for(var i=0;i<3;i++){ if(!g.items[i]){ slot=i; break; } }
+  if(slot<0) return; // inventory full
+
+  var item = ITEMS[randInt(0,ITEMS.length-1)];
+  g.items[slot] = item;
+  playSound('item');
+  showMessage('Got '+capitalize(item)+'!');
+  updateItemSlots();
+}
+
+function useItem(slot){
+  var g = game;
+  if(!g || g.state!=='play') return;
+  var item = g.items[slot];
+  if(!item) return;
+
+  ensureAudio();
+  g.items[slot] = null;
+  playSound('special');
+
+  switch(item){
+    case 'shield':
+      g.player.shield = true;
+      showMessage('Shield active!');
+      break;
+    case 'potion':
+      if(g.player.hp < g.player.maxHp) g.player.hp++;
+      else g.player.maxHp++;
+      showMessage('+1 HP');
+      break;
+    case 'bomb':
+      // Destroy all in 3x3 around player
+      var p = g.player;
+      for(var dr=-1;dr<=1;dr++){
+        for(var dc=-1;dc<=1;dc++){
+          var rr=p.r+dr, cc=p.c+dc;
+          if(rr<0||rr>7||cc<0||cc>7) continue;
+          for(var i=g.enemies.length-1;i>=0;i--){
+            if(g.enemies[i].r===rr && g.enemies[i].c===cc){
+              spawnCaptureParticles(rr,cc);
+              g.enemies.splice(i,1);
+              g.score += 20;
+              save.totalCaptures++;
+            }
+          }
+        }
+      }
+      showMessage('BOOM!');
+      shakeTimer = 10; shakeIntensity = 12;
+      checkFloorClear();
+      break;
+    case 'freeze':
+      g.frozen = true;
+      showMessage('Freeze!');
+      break;
+    case 'crown':
+      g.player.xp += (xpForLevel(g.player.level) * 0.5)|0;
+      checkLevelUp();
+      showMessage('+XP!');
+      break;
+    case 'sword':
+      g.player.sword = true;
+      showMessage('Sword active!');
+      break;
+  }
+  updateUI();
+  updateItemSlots();
+  render();
+}
+
+// ============ SPECIAL ABILITY ============
+function useSpecial(){
+  var g = game;
+  if(!g || g.state!=='play' || g.specialCooldown > 0 || animating) return;
+  ensureAudio();
+
+  var p = g.player;
+  playSound('special');
+
+  switch(p.type){
+    case 'pawn':
+      // Already has first-move-double
+      break;
+    case 'knight':
+      // Jump doesn't need special activation, inherent
+      break;
+    case 'bishop':
+      // Piercing attack: capture 2 in diagonal line (auto-hit nearest 2)
+      var killed = 0;
+      for(var i=g.enemies.length-1;i>=0;i--){
+        var e = g.enemies[i];
+        if(Math.abs(e.r-p.r)===Math.abs(e.c-p.c) && Math.abs(e.r-p.r)<=3){
+          spawnCaptureParticles(e.r, e.c);
+          g.enemies.splice(i,1);
+          g.score += 30;
+          save.totalCaptures++;
+          killed++;
+          if(killed>=2) break;
+        }
+      }
+      if(killed>0) showMessage('Pierce!');
+      else showMessage('No targets');
+      break;
+    case 'rook':
+      // Charge: capture all in same row/col
+      var killed = 0;
+      for(var i=g.enemies.length-1;i>=0;i--){
+        var e = g.enemies[i];
+        if(e.r===p.r || e.c===p.c){
+          spawnCaptureParticles(e.r, e.c);
+          g.enemies.splice(i,1);
+          g.score += 30;
+          save.totalCaptures++;
+          killed++;
+        }
+      }
+      if(killed>0) showMessage('Charge!');
+      else showMessage('No targets');
+      shakeTimer = 8; shakeIntensity = 6;
+      break;
+    case 'queen':
+      // Divine wrath: damage all adjacent
+      for(var dr=-1;dr<=1;dr++){
+        for(var dc=-1;dc<=1;dc++){
+          if(dr===0&&dc===0) continue;
+          var rr=p.r+dr, cc=p.c+dc;
+          for(var i=g.enemies.length-1;i>=0;i--){
+            if(g.enemies[i].r===rr && g.enemies[i].c===cc){
+              g.enemies[i].hp--;
+              if(g.enemies[i].hp<=0){
+                spawnCaptureParticles(rr,cc);
+                g.enemies.splice(i,1);
+                g.score += 30;
+                save.totalCaptures++;
+              }
+            }
+          }
+        }
+      }
+      showMessage('Divine Wrath!');
+      shakeTimer = 8; shakeIntensity = 6;
+      break;
+    case 'king':
+      // Freeze all
+      g.frozen = true;
+      showMessage('Royal Decree!');
+      break;
+  }
+
+  g.specialCooldown = 5;
+  checkFloorClear();
+  updateUI();
+  render();
+}
+
+document.getElementById('specialBtn').addEventListener('click', function(e){
+  e.preventDefault();
+  useSpecial();
+});
+
+// ============ FLOOR MANAGEMENT ============
+function checkFloorClear(){
+  var g = game;
+  if(g.enemies.length === 0 && !stairsPos && g.state==='play'){
+    g.state = 'floorclear';
+    playSound('clear');
+    showMessage('Floor Clear!');
+    // Place stairs
+    var sr = randInt(0,3), sc = randInt(0,7);
+    var tries = 30;
+    while(tries-->0){
+      if(!g.board[sr][sc] || g.board[sr][sc]!=='wall'){
+        if(!(sr===g.player.r && sc===g.player.c)) break;
+      }
+      sr = randInt(0,3); sc = randInt(0,7);
+    }
+    stairsPos = {r:sr, c:sc};
+    g.state = 'play';
+    g.turnPhase = 'player';
+    render();
+  }
+}
+
+function nextFloor(){
+  var g = game;
+  if(g.floor >= 20){
+    victory();
+    return;
+  }
+  fadeDir = 1;
+  fadeAlpha = 0;
+  animating = true;
+
+  var fadeOut = setInterval(function(){
+    fadeAlpha += 0.05;
+    render();
+    if(fadeAlpha >= 1){
+      clearInterval(fadeOut);
+      g.floor++;
+      generateFloor();
+      updateUI();
+
+      if(g.floor > save.bestFloor){ save.bestFloor = g.floor; writeSave(); }
+
+      var fadeIn = setInterval(function(){
+        fadeAlpha -= 0.05;
+        render();
+        if(fadeAlpha <= 0){
+          fadeAlpha = 0;
+          clearInterval(fadeIn);
+          animating = false;
+          render();
+        }
+      },20);
+    }
+  },20);
+}
+
+function gameOver(){
+  game.state = 'gameover';
+  playSound('gameover');
+  if(game.score > save.bestScore) save.bestScore = game.score;
+  if(game.floor > save.bestFloor) save.bestFloor = game.floor;
+  writeSave();
+  setTimeout(function(){
+    showOverlay('GAME OVER','You fell on floor '+game.floor,
+      'Score: '+game.score, 'Best Score: '+save.bestScore,
+      'Best Floor: '+save.bestFloor, 'Total Captures: '+save.totalCaptures,
+      'RETRY');
+  },500);
+}
+
+function victory(){
+  game.state = 'victory';
+  playSound('clear');
+  game.score += 1000;
+  if(game.score > save.bestScore) save.bestScore = game.score;
+  save.bestFloor = 20;
+  writeSave();
+  setTimeout(function(){
+    showOverlay('VICTORY!','You conquered all 20 floors!',
+      'Score: '+game.score, 'Best Score: '+save.bestScore,
+      'Level: '+game.player.level+' '+capitalize(game.player.type), 'Total Captures: '+save.totalCaptures,
+      'PLAY AGAIN');
+  },500);
+}
+
+// ============ UI ============
+function updateUI(){
+  if(!game) return;
+  var p = game.player;
+  document.getElementById('floorLabel').textContent = 'Floor '+game.floor;
+  var hearts = '';
+  for(var i=0;i<p.maxHp;i++) hearts += i<p.hp ? '♥' : '♡';
+  document.getElementById('hpLabel').textContent = hearts;
+  document.getElementById('levelLabel').textContent = 'LV '+p.level+' '+capitalize(p.type);
+  var needed = xpForLevel(p.level);
+  var pct = Math.min(100, (p.xp/needed)*100);
+  document.getElementById('xpBarInner').style.width = pct+'%';
+  document.getElementById('scoreLabel').textContent = 'Score: '+game.score.toLocaleString();
+  document.getElementById('bestLabel').textContent = 'Best: Floor '+save.bestFloor;
+
+  // Special button
+  var sbtn = document.getElementById('specialBtn');
+  if(p.type === 'pawn' || p.type === 'knight'){
+    sbtn.className = '';
+    sbtn.style.display = 'none';
+  } else if(game.specialCooldown > 0){
+    sbtn.className = 'cooldown';
+    sbtn.textContent = getSpecialName(p.type)+' ('+game.specialCooldown+')';
+  } else {
+    sbtn.className = 'ready';
+    sbtn.textContent = getSpecialName(p.type);
+  }
+
+  // Shield indicator on player display
+  updateItemSlots();
+}
+
+function getSpecialName(type){
+  switch(type){
+    case 'bishop': return 'Pierce';
+    case 'rook': return 'Charge';
+    case 'queen': return 'Wrath';
+    case 'king': return 'Decree';
+    default: return '';
+  }
+}
+
+function updateItemSlots(){
+  if(!game) return;
+  for(var i=0;i<3;i++){
+    var slot = document.getElementById('slot'+i);
+    var item = game.items[i];
+    if(item){
+      slot.className = 'itemSlot';
+      drawItemIcon(slot.querySelector('canvas'), item);
+    } else {
+      slot.className = 'itemSlot empty';
+      var ic = slot.querySelector('canvas').getContext('2d');
+      ic.clearRect(0,0,40,40);
+    }
+  }
+}
+
+function drawItemIcon(cvs, item){
+  var c = cvs.getContext('2d');
+  c.clearRect(0,0,40,40);
+  var cx=20, cy=20;
+  c.lineWidth = 2;
+  switch(item){
+    case 'shield':
+      c.fillStyle = '#66aaff';
+      c.strokeStyle = '#3366cc';
+      c.beginPath();
+      c.moveTo(cx,4); c.lineTo(cx+14,10); c.lineTo(cx+12,28);
+      c.quadraticCurveTo(cx,36,cx-12,28);
+      c.lineTo(cx-14,10); c.closePath();
+      c.fill(); c.stroke();
+      break;
+    case 'potion':
+      c.fillStyle = '#ff4466';
+      c.strokeStyle = '#aa2244';
+      c.beginPath();
+      c.moveTo(cx-4,8); c.lineTo(cx+4,8); c.lineTo(cx+4,14);
+      c.lineTo(cx+10,22); c.lineTo(cx+10,32); c.lineTo(cx-10,32);
+      c.lineTo(cx-10,22); c.lineTo(cx-4,14); c.closePath();
+      c.fill(); c.stroke();
+      // Cork
+      c.fillStyle = '#aa8844';
+      c.fillRect(cx-5,4,10,6);
+      break;
+    case 'bomb':
+      c.fillStyle = '#333';
+      c.strokeStyle = '#555';
+      c.beginPath(); c.arc(cx,cy+4,12,0,Math.PI*2); c.fill(); c.stroke();
+      // Fuse
+      c.strokeStyle = '#ff8800';
+      c.lineWidth = 2;
+      c.beginPath(); c.moveTo(cx+4,cy-8); c.quadraticCurveTo(cx+10,cy-16,cx+6,cy-18); c.stroke();
+      // Spark
+      c.fillStyle = '#ffcc00';
+      c.beginPath(); c.arc(cx+6,cy-18,3,0,Math.PI*2); c.fill();
+      break;
+    case 'freeze':
+      c.fillStyle = '#88ddff';
+      c.strokeStyle = '#4488cc';
+      // Snowflake-ish
+      c.lineWidth = 2;
+      for(var a=0;a<6;a++){
+        var angle = a * Math.PI/3;
+        c.beginPath();
+        c.moveTo(cx,cy);
+        c.lineTo(cx+Math.cos(angle)*14, cy+Math.sin(angle)*14);
+        c.stroke();
+      }
+      c.beginPath(); c.arc(cx,cy,4,0,Math.PI*2); c.fill();
+      break;
+    case 'crown':
+      c.fillStyle = '#ffd700';
+      c.strokeStyle = '#cc9900';
+      c.beginPath();
+      c.moveTo(cx-12,28); c.lineTo(cx-12,16); c.lineTo(cx-6,22);
+      c.lineTo(cx,12); c.lineTo(cx+6,22); c.lineTo(cx+12,16);
+      c.lineTo(cx+12,28); c.closePath();
+      c.fill(); c.stroke();
+      break;
+    case 'sword':
+      c.strokeStyle = '#cccccc';
+      c.fillStyle = '#aaaaaa';
+      c.lineWidth = 3;
+      // Blade
+      c.beginPath(); c.moveTo(cx,4); c.lineTo(cx,26); c.stroke();
+      // Guard
+      c.lineWidth = 2;
+      c.beginPath(); c.moveTo(cx-8,24); c.lineTo(cx+8,24); c.stroke();
+      // Handle
+      c.strokeStyle = '#886633';
+      c.lineWidth = 4;
+      c.beginPath(); c.moveTo(cx,26); c.lineTo(cx,34); c.stroke();
+      // Tip
+      c.fillStyle = '#ddd';
+      c.beginPath();
+      c.moveTo(cx-3,6); c.lineTo(cx,2); c.lineTo(cx+3,6); c.closePath(); c.fill();
+      break;
+  }
+}
+
+function showMessage(text){
+  var el = document.getElementById('message');
+  el.textContent = text;
+  el.style.opacity = 1;
+  setTimeout(function(){ el.style.opacity = 0; }, 1200);
+}
+
+function showOverlay(title, subtitle, s1, s2, s3, s4, btnText){
+  document.getElementById('overlayTitle').textContent = title;
+  document.getElementById('overlaySubtitle').textContent = subtitle;
+  document.getElementById('overlayStat1').textContent = s1||'';
+  document.getElementById('overlayStat2').textContent = s2||'';
+  document.getElementById('overlayStat3').textContent = s3||'';
+  document.getElementById('overlayStat4').textContent = s4||'';
+  document.getElementById('overlayBtn').textContent = btnText;
+  document.getElementById('overlay').style.display = 'flex';
+}
+
+document.getElementById('overlayBtn').addEventListener('click', function(){
+  ensureAudio();
+  document.getElementById('overlay').style.display = 'none';
+  newGame();
+});
+
+// ============ RENDERING ============
+function render(){
+  if(!game) return;
+  var w = canvas.width, h = canvas.height;
+  ctx.clearRect(0,0,w,h);
+
+  ctx.save();
+  // Screen shake
+  if(shakeTimer > 0){
+    var sx = (Math.random()-0.5)*shakeIntensity;
+    var sy = (Math.random()-0.5)*shakeIntensity;
+    ctx.translate(sx,sy);
+    shakeTimer--;
+    if(shakeTimer <= 0) shakeIntensity = 0;
+  }
+
+  // Draw board
+  for(var r=0;r<8;r++){
+    for(var c=0;c<8;c++){
+      var x = c*cellSize, y = r*cellSize;
+      var light = (r+c)%2===0;
+      ctx.fillStyle = light ? LIGHT : DARK;
+      ctx.fillRect(x,y,cellSize,cellSize);
+
+      // Tile overlays
+      var tile = game.board[r][c];
+      if(tile==='wall'){
+        ctx.fillStyle = '#555555';
+        ctx.fillRect(x,y,cellSize,cellSize);
+        // Draw stone texture
+        ctx.strokeStyle = '#444';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x+2,y+2,cellSize-4,cellSize-4);
+        ctx.strokeRect(x+cellSize*0.3,y,1,cellSize);
+        ctx.strokeRect(x,y+cellSize*0.4,cellSize,1);
+      } else if(tile==='trap'){
+        ctx.fillStyle = 'rgba(255,0,0,0.2)';
+        ctx.fillRect(x,y,cellSize,cellSize);
+        // Draw X
+        ctx.strokeStyle = 'rgba(255,50,50,0.5)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x+cellSize*0.3,y+cellSize*0.3); ctx.lineTo(x+cellSize*0.7,y+cellSize*0.7);
+        ctx.moveTo(x+cellSize*0.7,y+cellSize*0.3); ctx.lineTo(x+cellSize*0.3,y+cellSize*0.7);
+        ctx.stroke();
+      } else if(tile==='heal'){
+        ctx.fillStyle = 'rgba(0,200,0,0.2)';
+        ctx.fillRect(x,y,cellSize,cellSize);
+        // Draw +
+        ctx.fillStyle = 'rgba(0,200,0,0.5)';
+        var cs4 = cellSize*0.25;
+        ctx.fillRect(x+cellSize/2-3,y+cs4,6,cellSize*0.5);
+        ctx.fillRect(x+cs4,y+cellSize/2-3,cellSize*0.5,6);
+      } else if(tile==='gold'){
+        ctx.fillStyle = 'rgba(255,215,0,0.2)';
+        ctx.fillRect(x,y,cellSize,cellSize);
+        // Draw coin
+        ctx.fillStyle = 'rgba(255,215,0,0.6)';
+        ctx.beginPath(); ctx.arc(x+cellSize/2,y+cellSize/2,cellSize*0.18,0,Math.PI*2); ctx.fill();
+        ctx.strokeStyle = 'rgba(200,170,0,0.8)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+    }
+  }
+
+  // Stairs
+  if(stairsPos){
+    stairsPulse += 0.05;
+    var sx = stairsPos.c*cellSize, sy = stairsPos.r*cellSize;
+    var pulse = 0.3+Math.sin(stairsPulse)*0.15;
+    ctx.fillStyle = 'rgba(255,215,0,'+pulse+')';
+    ctx.fillRect(sx,sy,cellSize,cellSize);
+    // Draw stairs icon
+    ctx.fillStyle = '#ffd700';
+    var step = cellSize/5;
+    for(var i=0;i<4;i++){
+      ctx.fillRect(sx+cellSize*0.2, sy+cellSize*0.15+i*step, cellSize*0.6-i*cellSize*0.12, step*0.7);
+    }
+  }
+
+  // Valid moves highlighting
+  if(game.state==='play' && game.turnPhase==='player' && !animating){
+    var p = game.player;
+    var moves = getValidMoves(p.type, p.r, p.c, true, game.board, game.enemies, p);
+    for(var i=0;i<moves.length;i++){
+      var mx = moves[i].c*cellSize, my = moves[i].r*cellSize;
+      var isCapture = false;
+      for(var j=0;j<game.enemies.length;j++){
+        if(game.enemies[j].r===moves[i].r && game.enemies[j].c===moves[i].c){ isCapture=true; break; }
+      }
+      if(isCapture){
+        ctx.fillStyle = 'rgba(255,50,50,0.35)';
+        ctx.fillRect(mx,my,cellSize,cellSize);
+        ctx.strokeStyle = 'rgba(255,80,80,0.7)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(mx+1,my+1,cellSize-2,cellSize-2);
+      } else {
+        ctx.fillStyle = 'rgba(50,200,50,0.25)';
+        ctx.fillRect(mx,my,cellSize,cellSize);
+        // Dot in center
+        ctx.fillStyle = 'rgba(50,200,50,0.5)';
+        ctx.beginPath();
+        ctx.arc(mx+cellSize/2,my+cellSize/2,cellSize*0.15,0,Math.PI*2);
+        ctx.fill();
+      }
+    }
+  }
+
+  // Draw enemies
+  for(var i=0;i<game.enemies.length;i++){
+    var e = game.enemies[i];
+    // Check if this enemy is being animated
+    var isAnim = false;
+    for(var a=0;a<animations.length;a++){
+      if(!animations[a].isPlayer && animations[a].active){
+        // animations store fromR/C, we check if this is being animated
+      }
+    }
+    drawPiece(ctx, e.type, e.c*cellSize, e.r*cellSize, cellSize, '#cc2222', false);
+    // Boss HP bar
+    if(e.maxHp > 1){
+      var bx = e.c*cellSize+4, by = e.r*cellSize+cellSize-8;
+      ctx.fillStyle = '#333';
+      ctx.fillRect(bx,by,cellSize-8,5);
+      ctx.fillStyle = '#ff4444';
+      ctx.fillRect(bx,by,(cellSize-8)*(e.hp/e.maxHp),5);
+    }
+  }
+
+  // Draw player
+  var p = game.player;
+  drawPiece(ctx, p.type, p.c*cellSize, p.r*cellSize, cellSize, '#ffffff', true);
+  // Shield indicator
+  if(p.shield){
+    ctx.strokeStyle = 'rgba(100,180,255,0.7)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(p.c*cellSize+cellSize/2, p.r*cellSize+cellSize/2, cellSize*0.42, 0, Math.PI*2);
+    ctx.stroke();
+  }
+  // Sword indicator
+  if(p.sword){
+    ctx.strokeStyle = 'rgba(255,100,100,0.7)';
+    ctx.lineWidth = 2;
+    var sx2 = p.c*cellSize+cellSize-10, sy2 = p.r*cellSize+4;
+    ctx.beginPath(); ctx.moveTo(sx2,sy2); ctx.lineTo(sx2,sy2+12); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(sx2-4,sy2+10); ctx.lineTo(sx2+4,sy2+10); ctx.stroke();
+  }
+
+  // Draw animations
+  for(var i=animations.length-1;i>=0;i--){
+    var an = animations[i];
+    if(!an.active) continue;
+    // Draw moving piece at interpolated position
+  }
+
+  // Particles
+  for(var i=particles.length-1;i>=0;i--){
+    var pt = particles[i];
+    pt.x += pt.vx;
+    pt.y += pt.vy;
+    pt.vy += 0.15;
+    pt.life--;
+    if(pt.life<=0){ particles.splice(i,1); continue; }
+    var alpha = pt.life/pt.maxLife;
+    ctx.fillStyle = pt.color.replace('1)', alpha+')');
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, pt.size*alpha, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  // Red flash
+  if(flashTimer > 0){
+    ctx.fillStyle = 'rgba(255,0,0,'+(flashTimer/20)+')';
+    ctx.fillRect(0,0,w,h);
+    flashTimer--;
+  }
+
+  // Fade
+  if(fadeAlpha > 0){
+    ctx.fillStyle = 'rgba(0,0,0,'+Math.min(1,fadeAlpha)+')';
+    ctx.fillRect(0,0,w,h);
+  }
+
+  ctx.restore();
+
+  // Continue animating if needed
+  if(shakeTimer>0 || flashTimer>0 || particles.length>0 || fadeAlpha>0 || stairsPos){
+    requestAnimationFrame(render);
+  }
+}
+
+// ============ DRAWING PIECES ============
+function drawPiece(ctx, type, x, y, size, color, isPlayer){
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.strokeStyle = isPlayer ? '#ffd700' : '#330000';
+  ctx.lineWidth = isPlayer ? 2.5 : 2;
+
+  var cx = x + size/2, cy = y + size/2;
+  var s = size * 0.35;
+
+  switch(type){
+    case 'pawn':
+      // Base
+      ctx.beginPath();
+      ctx.moveTo(cx-s*0.7, cy+s);
+      ctx.lineTo(cx+s*0.7, cy+s);
+      ctx.lineTo(cx+s*0.35, cy+s*0.2);
+      ctx.lineTo(cx-s*0.35, cy+s*0.2);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      // Neck
+      ctx.beginPath();
+      ctx.moveTo(cx-s*0.2, cy+s*0.2);
+      ctx.lineTo(cx+s*0.2, cy+s*0.2);
+      ctx.lineTo(cx+s*0.15, cy-s*0.1);
+      ctx.lineTo(cx-s*0.15, cy-s*0.1);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      // Head
+      ctx.beginPath();
+      ctx.arc(cx, cy-s*0.4, s*0.35, 0, Math.PI*2);
+      ctx.fill(); ctx.stroke();
+      break;
+
+    case 'knight':
+      // Base
+      ctx.beginPath();
+      ctx.moveTo(cx-s*0.6, cy+s);
+      ctx.lineTo(cx+s*0.6, cy+s);
+      ctx.lineTo(cx+s*0.4, cy+s*0.5);
+      ctx.lineTo(cx-s*0.4, cy+s*0.5);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      // Body/head
+      ctx.beginPath();
+      ctx.moveTo(cx-s*0.35, cy+s*0.5);
+      ctx.lineTo(cx-s*0.35, cy-s*0.1);
+      ctx.lineTo(cx-s*0.5, cy-s*0.4);
+      ctx.lineTo(cx-s*0.2, cy-s*0.8);
+      ctx.lineTo(cx+s*0.2, cy-s*0.7);
+      ctx.lineTo(cx+s*0.4, cy-s*0.3);
+      ctx.lineTo(cx+s*0.3, cy);
+      ctx.lineTo(cx+s*0.35, cy+s*0.5);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      // Ear
+      ctx.beginPath();
+      ctx.moveTo(cx-s*0.1, cy-s*0.7);
+      ctx.lineTo(cx, cy-s*1);
+      ctx.lineTo(cx+s*0.1, cy-s*0.65);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      // Eye
+      ctx.fillStyle = isPlayer ? '#333' : '#ff3300';
+      ctx.beginPath();
+      ctx.arc(cx+s*0.15, cy-s*0.4, s*0.09, 0, Math.PI*2);
+      ctx.fill();
+      ctx.fillStyle = color;
+      break;
+
+    case 'bishop':
+      // Base
+      ctx.beginPath();
+      ctx.moveTo(cx-s*0.65, cy+s);
+      ctx.lineTo(cx+s*0.65, cy+s);
+      ctx.lineTo(cx+s*0.35, cy+s*0.4);
+      ctx.lineTo(cx-s*0.35, cy+s*0.4);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      // Body
+      ctx.beginPath();
+      ctx.moveTo(cx-s*0.3, cy+s*0.4);
+      ctx.lineTo(cx-s*0.35, cy-s*0.1);
+      ctx.quadraticCurveTo(cx, cy-s*0.6, cx+s*0.35, cy-s*0.1);
+      ctx.lineTo(cx+s*0.3, cy+s*0.4);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      // Point/mitre
+      ctx.beginPath();
+      ctx.moveTo(cx-s*0.15, cy-s*0.3);
+      ctx.lineTo(cx, cy-s*1);
+      ctx.lineTo(cx+s*0.15, cy-s*0.3);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      // Slit
+      ctx.strokeStyle = isPlayer ? '#ffd700' : '#330000';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(cx-s*0.12, cy-s*0.05);
+      ctx.lineTo(cx+s*0.12, cy-s*0.05);
+      ctx.stroke();
+      ctx.lineWidth = isPlayer ? 2.5 : 2;
+      ctx.strokeStyle = isPlayer ? '#ffd700' : '#330000';
+      break;
+
+    case 'rook':
+      // Base
+      ctx.beginPath();
+      ctx.moveTo(cx-s*0.7, cy+s);
+      ctx.lineTo(cx+s*0.7, cy+s);
+      ctx.lineTo(cx+s*0.5, cy+s*0.5);
+      ctx.lineTo(cx-s*0.5, cy+s*0.5);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      // Tower body
+      ctx.fillRect(cx-s*0.45, cy-s*0.4, s*0.9, cy+s*0.5-(cy-s*0.4));
+      ctx.strokeRect(cx-s*0.45, cy-s*0.4, s*0.9, cy+s*0.5-(cy-s*0.4));
+      // Battlements
+      var bw = s*0.25, bh = s*0.35;
+      ctx.fillRect(cx-s*0.5, cy-s*0.75, bw, bh); ctx.strokeRect(cx-s*0.5, cy-s*0.75, bw, bh);
+      ctx.fillRect(cx-bw/2, cy-s*0.75, bw, bh); ctx.strokeRect(cx-bw/2, cy-s*0.75, bw, bh);
+      ctx.fillRect(cx+s*0.5-bw, cy-s*0.75, bw, bh); ctx.strokeRect(cx+s*0.5-bw, cy-s*0.75, bw, bh);
+      break;
+
+    case 'queen':
+      // Base
+      ctx.beginPath();
+      ctx.moveTo(cx-s*0.7, cy+s);
+      ctx.lineTo(cx+s*0.7, cy+s);
+      ctx.lineTo(cx+s*0.4, cy+s*0.3);
+      ctx.lineTo(cx-s*0.4, cy+s*0.3);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      // Body
+      ctx.beginPath();
+      ctx.moveTo(cx-s*0.4, cy+s*0.3);
+      ctx.quadraticCurveTo(cx-s*0.45, cy-s*0.2, cx-s*0.35, cy-s*0.3);
+      ctx.lineTo(cx+s*0.35, cy-s*0.3);
+      ctx.quadraticCurveTo(cx+s*0.45, cy-s*0.2, cx+s*0.4, cy+s*0.3);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      // Crown points
+      ctx.beginPath();
+      ctx.moveTo(cx-s*0.4, cy-s*0.3);
+      ctx.lineTo(cx-s*0.5, cy-s*0.85);
+      ctx.lineTo(cx-s*0.2, cy-s*0.5);
+      ctx.lineTo(cx, cy-s*0.95);
+      ctx.lineTo(cx+s*0.2, cy-s*0.5);
+      ctx.lineTo(cx+s*0.5, cy-s*0.85);
+      ctx.lineTo(cx+s*0.4, cy-s*0.3);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      // Jewels
+      ctx.fillStyle = isPlayer ? '#ff4466' : '#ffcc00';
+      ctx.beginPath(); ctx.arc(cx-s*0.5, cy-s*0.85, s*0.08, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(cx, cy-s*0.95, s*0.08, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(cx+s*0.5, cy-s*0.85, s*0.08, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = color;
+      break;
+
+    case 'king':
+      // Base
+      ctx.beginPath();
+      ctx.moveTo(cx-s*0.7, cy+s);
+      ctx.lineTo(cx+s*0.7, cy+s);
+      ctx.lineTo(cx+s*0.4, cy+s*0.3);
+      ctx.lineTo(cx-s*0.4, cy+s*0.3);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      // Body
+      ctx.beginPath();
+      ctx.moveTo(cx-s*0.4, cy+s*0.3);
+      ctx.quadraticCurveTo(cx-s*0.45, cy-s*0.1, cx-s*0.35, cy-s*0.3);
+      ctx.lineTo(cx+s*0.35, cy-s*0.3);
+      ctx.quadraticCurveTo(cx+s*0.45, cy-s*0.1, cx+s*0.4, cy+s*0.3);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      // Crown band
+      ctx.beginPath();
+      ctx.moveTo(cx-s*0.38, cy-s*0.3);
+      ctx.lineTo(cx-s*0.42, cy-s*0.55);
+      ctx.lineTo(cx+s*0.42, cy-s*0.55);
+      ctx.lineTo(cx+s*0.38, cy-s*0.3);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      // Cross on top
+      ctx.lineWidth = isPlayer ? 3 : 2.5;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy-s*0.55);
+      ctx.lineTo(cx, cy-s*1.05);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx-s*0.2, cy-s*0.85);
+      ctx.lineTo(cx+s*0.2, cy-s*0.85);
+      ctx.stroke();
+      ctx.lineWidth = isPlayer ? 2.5 : 2;
+      break;
+  }
+
+  // Enemy menacing eyes for non-knight
+  if(!isPlayer && type!=='knight'){
+    ctx.fillStyle = '#ff3300';
+    var eyeY = cy - s*0.15;
+    if(type==='rook') eyeY = cy - s*0.2;
+    if(type==='queen' || type==='king') eyeY = cy + s*0.05;
+    if(type==='bishop') eyeY = cy - s*0.15;
+    ctx.beginPath(); ctx.arc(cx-s*0.12, eyeY, s*0.07, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx+s*0.12, eyeY, s*0.07, 0, Math.PI*2); ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+// ============ PARTICLES ============
+function spawnCaptureParticles(r,c){
+  var px = c*cellSize+cellSize/2;
+  var py = r*cellSize+cellSize/2;
+  for(var i=0;i<12;i++){
+    particles.push({
+      x:px, y:py,
+      vx:(Math.random()-0.5)*5,
+      vy:(Math.random()-0.5)*5 - 2,
+      size:3+Math.random()*3,
+      life:20+Math.random()*15,
+      maxLife:35,
+      color:'rgba(255,100,50,1)'
+    });
+  }
+  requestAnimationFrame(render);
+}
+
+function spawnLevelUpParticles(){
+  var px = game.player.c*cellSize+cellSize/2;
+  var py = game.player.r*cellSize+cellSize/2;
+  for(var i=0;i<20;i++){
+    particles.push({
+      x:px, y:py,
+      vx:(Math.random()-0.5)*6,
+      vy:(Math.random()-0.5)*6 - 3,
+      size:2+Math.random()*4,
+      life:25+Math.random()*20,
+      maxLife:45,
+      color:'rgba(255,215,0,1)'
+    });
+  }
+  requestAnimationFrame(render);
+}
+
+// ============ ANIMATION ============
+function animateMove(fromR,fromC,toR,toC,isPlayer,callback,entityRef){
+  var duration = 150;
+  var startTime = performance.now();
+  var fromX = fromC*cellSize, fromY = fromR*cellSize;
+  var toX = toC*cellSize, toY = toR*cellSize;
+
+  var entity = entityRef || null;
+  if(!entity){
+    if(isPlayer){
+      entity = game.player;
+    } else {
+      for(var i=0;i<game.enemies.length;i++){
+        if(game.enemies[i].r===fromR && game.enemies[i].c===fromC){
+          entity = game.enemies[i]; break;
+        }
+      }
+    }
+  }
+  if(!entity){ callback(); return; }
+
+  function step(now){
+    var t = Math.min(1, (now-startTime)/duration);
+    // Ease out
+    t = 1-(1-t)*(1-t);
+
+    var curX = fromX + (toX-fromX)*t;
+    var curY = fromY + (toY-fromY)*t;
+
+    // Temporarily set position for rendering
+    entity.c = curX/cellSize;
+    entity.r = curY/cellSize;
+
+    render();
+
+    if(t < 1){
+      requestAnimationFrame(step);
+    } else {
+      entity.r = toR;
+      entity.c = toC;
+      callback();
+    }
+  }
+  requestAnimationFrame(step);
+}
+
+// ============ INPUT ============
+canvas.addEventListener('click', function(e){
+  if(!game || animating) return;
+  var rect = canvas.getBoundingClientRect();
+  var mx = e.clientX - rect.left;
+  var my = e.clientY - rect.top;
+  var scaleX = canvas.width / rect.width;
+  var scaleY = canvas.height / rect.height;
+  mx *= scaleX;
+  my *= scaleY;
+
+  var tc = Math.floor(mx / cellSize);
+  var tr = Math.floor(my / cellSize);
+
+  if(tc<0||tc>7||tr<0||tr>7) return;
+
+  playerMove(tr,tc);
+});
+
+canvas.addEventListener('touchstart', function(e){
+  e.preventDefault();
+  if(!game || animating) return;
+  var rect = canvas.getBoundingClientRect();
+  var touch = e.touches[0];
+  var mx = touch.clientX - rect.left;
+  var my = touch.clientY - rect.top;
+  var scaleX = canvas.width / rect.width;
+  var scaleY = canvas.height / rect.height;
+  mx *= scaleX;
+  my *= scaleY;
+
+  var tc = Math.floor(mx / cellSize);
+  var tr = Math.floor(my / cellSize);
+
+  if(tc<0||tc>7||tr<0||tr>7) return;
+
+  playerMove(tr,tc);
+}, {passive:false});
+
+// ============ UTILITIES ============
+function randInt(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
+function capitalize(s){ return s.charAt(0).toUpperCase()+s.slice(1); }
+
+// ============ INIT ============
+loadSave();
+resize();
+
+// Replace playerMove with version that decrements special cooldown
+(function(){
+  var realPlayerMoveFunc = function(tr, tc){
+    var g = game;
+    if(g.state!=='play' || g.turnPhase!=='player' || animating) return;
+
+    if(stairsPos && tr===stairsPos.r && tc===stairsPos.c){
+      nextFloor();
+      return;
+    }
+
+    var p = g.player;
+    var moves = getValidMoves(p.type, p.r, p.c, true, g.board, g.enemies, p);
+    var valid = false;
+    for(var i=0;i<moves.length;i++){
+      if(moves[i].r===tr && moves[i].c===tc){ valid=true; break; }
+    }
+    if(!valid) return;
+
+    // Decrement special cooldown on valid move
+    if(g.specialCooldown > 0) g.specialCooldown--;
+
+    var fromR=p.r, fromC=p.c;
+    animating = true;
+    playSound('move');
+
+    animateMove(fromR,fromC,tr,tc,true,function(){
+      p.r = tr; p.c = tc;
+      g.firstMoveOnFloor = false;
+      animating = false;
+
+      var captured = false;
+      for(var i=g.enemies.length-1;i>=0;i--){
+        if(g.enemies[i].r===tr && g.enemies[i].c===tc){
+          captureEnemy(i);
+          captured = true;
+        }
+      }
+
+      var tile = g.board[tr][tc];
+      if(tile==='trap'){
+        playerTakeDamage();
+        g.board[tr][tc] = null;
+      } else if(tile==='heal'){
+        if(p.hp < p.maxHp){
+          p.hp++;
+          showMessage('+1 HP');
+          playSound('item');
+        }
+        g.board[tr][tc] = null;
+      } else if(tile==='gold'){
+        g.score += 100;
+        showMessage('+100 Gold!');
+        playSound('item');
+        g.board[tr][tc] = null;
+      }
+
+      updateUI();
+
+      if(g.state==='gameover') return;
+
+      if(g.enemies.length > 0){
+        g.turnPhase = 'enemy';
+        setTimeout(function(){ doEnemyTurn(); }, 250);
+      } else {
+        checkFloorClear();
+      }
+    });
+  };
+
+  // Replace global playerMove
+  playerMove = realPlayerMoveFunc;
+})();
+
+// Show start overlay
+showOverlay('ROGUE CHESS', 'Chess meets Roguelike',
+  'Control a chess piece through 20 dungeon floors',
+  'Capture enemies, level up, evolve!',
+  'Best Floor: '+save.bestFloor,
+  'Total Captures: '+save.totalCaptures,
+  'START');
+</script>
+</body>
+</html>
