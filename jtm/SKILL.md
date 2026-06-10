@@ -1,68 +1,114 @@
-# jtm-vision -- re-author images and animation as editable text (JTM)
+# jtm-vision -- media as editable, solvable text (JTM)
 
-Use this skill when converting an image, animation frame, or screen capture into JTM
-(JavaScript Text Media): a JSON envelope of vector ops, gradient bands, and small
-palette-keyed raster blocks. The output is diffable, git-friendly text that renders
-back to pixels with the bundled decoder.
+JTM (JavaScript Text Media) expresses images, animation, and 3D engineering
+scenes as small JSON files of relationships and expressions. Pixels, positions,
+and frames are derived by a decoder; the text is the source of truth -- diffable
+in git, authorable by an LLM, a few KB per scene.
+
+Use this skill to author or edit .jtm scenes, or to extend the decoders.
 
 ## The one rule
 
-Never emit a coordinate, color, or size that did not come from tool output.
-The tools measure; you decide. Your job is the art-director pass: merging, naming,
-simplifying, styling -- never freehand geometry.
+Never write a coordinate when a relationship exists. Objects are placed by
+mates and expressions; if you find yourself typing a position a constraint
+could derive, use the constraint. Raw "x 12" is the escape hatch, not the norm.
 
-## Pipeline (run in order)
+## Files
 
-1. slice -- cut the source into a grid (8/16/32 px cells) and measure each cell:
-   mean color, luma variance, edge energy, gradient trends, dominant-color coverage.
-2. classify -- label each cell flat / gradient / edge / texture from the measurements.
-3. merge -- fuse compatible neighbors: flat cells into maximal rects, gradient cells
-   into bands. This is what turns a mosaic into an illustration.
-4. emit -- ops for merged regions, palette-keyed raster blocks (RLE rows) for
-   edge/texture cells.
-5. render + diff -- decode the JTM, score every cell against the source.
-6. refine -- re-rasterize cells above the error threshold at higher resolution.
-   Loop 5-6 until the worst cell is acceptable or the byte budget is spent.
+- index.html            landing page
+- gtc-demo.html         2D codec: slice/classify/merge/refine pipeline, editable output
+- gtc-core.js           2D codec core (encode/decode/refine/diff), runs in Node too
+- scene3d-demo.html     keyframed 3D shots (positions, no solver) -- the simpler dialect
+- constraints-demo.html the full dialect: solver, calcs, checks, GIS, overlay
 
-## Your art-director pass (after step 4, before final refine)
+## The constraints dialect (constraints-demo.html)
 
-- Merge cells that are one object ("these six cells are the boat -- one path").
-- Collapse near-duplicate palette entries; name the palette semantically if asked.
-- Replace repeating raster blocks with a shared tile referenced by position.
-- Promote tunable values to vars (sun-y, ridge-jaggedness, palette) when the user
-  wants a parametric result.
-- Choose the style vocabulary if restyling: flat-geometric, blueprint, cutout, 8-bit.
+A scene is one JSON object:
 
-## Constraints (kind: scene3d-constrained)
+{
+  "desc":     "shown in the UI; keep it one or two sentences",
+  "kind":     "scene3d-constraints",
+  "sky":      ["#hex-top", "#hex-bottom"],   "sun": [x, y, z],
+  "vars":     { "name": number, ... },        inputs; kebab-case names
+  "ranges":   { "name": [min, max] },         only ranged vars get sliders
+  "derived":  { "name": "expression" },       ordered; each may use earlier ones
+  "units":    { "name": "m3/s" },
+  "checks":   [ { "name", "expr", "max" or "min", "unit" } ],
+  "objects":  [ ... up to 24 ... ],
+  "site":     { "crs": "EPSG:269xx", "anchors": [ {"bim", "gis"} ] },
+  "camera":   { "fov", "orbit": { "target", "radius", "height", "period", "phase" } },
+  "timeline": [ { "var", "ease": "smooth", "keys": [ {"t", "v"} ] } ]
+}
 
-When the output is a 3D assembly, add SolidWorks-style mates:
+### Objects
 
-- **driven** -- slider-exposed dimensions with min/max/step (e.g. beam span).
-- **expressions** -- derived values that reference driven dims (e.g. half_span = span / 2).
-- **mates** -- coincident, distance, axial, size constraints between objects.
-  The solver iterates until all constraints converge.
+{ "id": "beam", "shape": "box", "size": [...], "color": "#hex",
+  "at": ["constraint", ...], "blend": 0.3, "sub": true }
 
-The user drags a dimension slider; the solver reshapes the whole scene.
-Constraint graph is embedded in the JTM text alongside objects and camera.
+Shapes and size semantics (axis-aligned only; there is no rotation):
+- box    [w, h, d] full extents
+- sphere [diameter]
+- cyl    [diameter, height]        vertical axis
+- cyl-x  [diameter, length]        axis along x (horizontal vessels)
+- cyl-z  [diameter, length]        axis along z
+- torus  [major-diameter, minor-diameter], in the xz plane
+blend > 0 smooth-unions with the scene; sub: true subtracts.
 
-## Honesty about scope
+### Constraints (the "at" list; each sets one or more axes)
 
-This is re-authoring, not signal compression. Structure converts beautifully
-(landscapes, icons, diagrams, UI, animation); texture does not (faces, photographs
-whose essence is grain). For stubborn regions, emit a raster block and move on --
-the format is designed for the hybrid.
+on <id> | on ground          rest on top
+above/below <id> [gap-expr]  vertical offset from top/bottom
+left-of/right-of <id> [gap]  x from the side faces
+behind/in-front <id> [gap]   z from the faces (negative gap embeds/straddles)
+align-x|y|z <id>             copy a coordinate
+concentric <id>              copy x and z
+centered-x|z <idA> [idB]     midpoint
+x|y|z <expression>           direct value -- escape hatch only
 
-## Tools
+An object is "fully defined" when all three axes are set; the feature tree
+flags under-defined axes amber and cycles/errors red.
 
-- gtc-core.js -- encode / decode / refine / diffScore / jtmToText. Pure functions
-  over { data: Uint8ClampedArray, w, h }. Runs in Node and the browser unchanged.
-- gtc-demo.html -- the visual bench: scenes, upload, knobs, editable JTM round trip.
+### Expressions
 
-- scene3d-demo.html -- kind: scene3d. SDF raymarcher decoder; objects, lights,
-  camera spline, timeline keyframes. Two scenes: construction lift sequence,
-  tank farm orbit. The video is the text.
+Space-separated tokens: numbers, vars, + - * / and parens (parens may touch).
+pi is built in. Object property refs create solve dependencies:
+  id.x .y .z .w .h .d .top .bottom .left .right .front .back
+Examples: "span / 2",  "jib.bottom - beam.top",  "-( tank-d + gap ) / 2"
+Derived expressions may NOT reference objects; constraints may.
 
-- constraints-demo.html -- kind: scene3d-constrained. Same SDF raymarcher plus a
-  constraint solver: mates (coincident, distance, axial, size), driven dimensions
-  with sliders, expressions for derived values, feature tree display. Dragging the
-  span slider reshapes the whole scene.
+### Derived + checks
+
+Derived entries evaluate in order and become vars, so geometry can be a
+calculation (e.g. an intake screen sized by "flow / ( 0.15 * 6 )").
+Checks evaluate against max/min; status warn inside 8 percent of the limit.
+Put engineering limits in the file -- the model verifies itself every frame.
+
+### Site (BIM |=| GIS)
+
+Anchors mate local points to earth: {"bim": "mon-1" or [x,y,z], "gis": [E,N,elev]}.
+2 anchors fix rotation; 3+ run a least-squares Helmert fit and the RMS residual
+is survey health (green <= 15 mm, amber <= 60 mm). Solve stays in the local
+frame; UTM appears only at readouts. The GIS -- LIVE panel converts the origin
+to lat/lon and can query Open-Meteo and OSM Nominatim (free, keyless).
+
+### Timeline + camera
+
+Timelines animate VARS, never positions -- choreograph by changing numbers and
+let constraints propagate (the calandria lift is two animated vars). Camera
+orbits a target object; radius/height accept expressions.
+
+### Limits worth respecting
+
+- 24 objects per scene (shader uniform cap)
+- keep scene extents within roughly 60 m of the camera (march limit 80)
+- no rotation: compose axis-aligned primitives or restage the problem
+- expressions have no min/max/conditionals -- restructure instead
+
+## Authoring workflow for an LLM
+
+1. Name the vars (the dimensions a human would put on a drawing).
+2. Place objects by mates, root-first (ground/pad, then what rests on it).
+3. Make every length that depends on a var an expression, not a number.
+4. Add derived calcs and checks for whatever the scene must prove.
+5. Animate the fewest vars that tell the story.
+6. Read the feature tree: anything not green is a defect in your text.

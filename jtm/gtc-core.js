@@ -53,7 +53,7 @@ function sliceCells(img, cellSize) {
       const cw = Math.min(cellSize, w - x0), ch = Math.min(cellSize, h - y0);
       let sr = 0, sg = 0, sb = 0, n = 0;
       let lumaSum = 0, lumaSq = 0, edgeSum = 0, edgeN = 0;
-      const buckets = new Map();
+      const buckets = new Map(); // 12-bit color -> count
       let topSum = 0, topN = 0, botSum = 0, botN = 0, leftSum = 0, leftN = 0, rightSum = 0, rightN = 0;
       const topC = [0, 0, 0], botC = [0, 0, 0], leftC = [0, 0, 0], rightC = [0, 0, 0];
       for (let y = y0; y < y0 + ch; y++) {
@@ -122,6 +122,7 @@ function classify(cells, opts) {
 
 // ---------- merging ----------
 
+// Greedy maximal rectangles over flat cells of similar color -> rect ops.
 function mergeFlat(cells, cols, rows, tol) {
   const grid = [];
   for (const c of cells) grid[c.cy * cols + c.cx] = c;
@@ -132,12 +133,14 @@ function mergeFlat(cells, cols, rows, tol) {
     for (let cx = 0; cx < cols; cx++) {
       const c = grid[cy * cols + cx];
       if (!c || c.kind !== "flat" || used.has(c)) continue;
+      // extend right
       let wCells = 1;
       while (cx + wCells < cols) {
         const nx = grid[cy * cols + cx + wCells];
         if (!nx || nx.kind !== "flat" || used.has(nx) || !similar(c, nx)) break;
         wCells++;
       }
+      // extend down while the whole row matches
       let hCells = 1;
       outer: while (cy + hCells < rows) {
         for (let k = 0; k < wCells; k++) {
@@ -163,6 +166,7 @@ function mergeFlat(cells, cols, rows, tol) {
   return rects;
 }
 
+// Merge runs of vertical-gradient cells along a row into bands; horizontal-gradient cells along a column.
 function mergeGradients(cells, cols, rows, tol) {
   const grid = [];
   for (const c of cells) grid[c.cy * cols + c.cx] = c;
@@ -181,6 +185,7 @@ function mergeGradients(cells, cols, rows, tol) {
             || !close(c.topColor, nx.topColor) || !close(c.botColor, nx.botColor)) break;
           wCells++;
         }
+        // try extending the band downward (sky spans several cell rows)
         let hCells = 1;
         outer: while (cy + hCells < rows) {
           for (let k = 0; k < wCells; k++) {
@@ -238,6 +243,7 @@ function cellRaster(img, cell, sub, maxColors, palette) {
       samples.push([r / n, g / n, b / n]);
     }
   }
+  // local quantization: k-means-lite with maxColors seeds picked greedily by distance
   const seeds = [samples[0].slice()];
   while (seeds.length < maxColors) {
     let far = null, farD = -1;
@@ -271,6 +277,7 @@ function cellRaster(img, cell, sub, maxColors, palette) {
   return px;
 }
 
+// run-length encode a row string when it pays for itself: "bbbbrr" -> "4b2r"
 function rle(row) {
   let out = "";
   let i = 0;
@@ -319,6 +326,7 @@ function encode(img, opts = {}) {
 }
 
 function jtmToText(jtm) {
+  // canonical formatting: one op per line, one cell per line, rows aligned
   const lines = [];
   lines.push("{");
   lines.push(`  "kind": ${JSON.stringify(jtm.kind)}, "w": ${jtm.w}, "h": ${jtm.h},`);
@@ -352,6 +360,7 @@ function rleExpand(row) {
 }
 
 function decode(jtm, out) {
+  // out: { data: Uint8ClampedArray, w, h } pre-sized
   const { data, w, h } = out;
   const pal = {};
   for (const k in jtm.palette) pal[k] = unhex(jtm.palette[k]);
@@ -418,7 +427,7 @@ function diffScore(a, b, cellSize) {
           n++;
         }
       }
-      const s = sum / n;
+      const s = sum / n; // mean RGB distance, 0..441
       scores.push({ cx, cy, score: s });
       total += s;
     }
@@ -426,7 +435,9 @@ function diffScore(a, b, cellSize) {
   return { scores, mean: total / scores.length, cols, rows };
 }
 
-// ---------- refine ----------
+// ---------- refine: the render/diff/improve loop ----------
+// Re-rasterize the worst-scoring cells at higher resolution and append them as
+// override blocks (drawn last, so they win). Returns count of refined cells.
 
 function refine(img, jtm, opts = {}) {
   const cellSize = opts.cellSize ?? 16;
@@ -437,7 +448,7 @@ function refine(img, jtm, opts = {}) {
   decode(jtm, out);
   const d = diffScore(img, out, cellSize);
   const palette = makePalette(opts.paletteTol ?? 20);
-  for (const k in jtm.palette) palette.key(unhex(jtm.palette[k]));
+  for (const k in jtm.palette) palette.key(unhex(jtm.palette[k])); // seed with existing palette
   let refined = 0;
   for (const s of d.scores) {
     if (s.score < threshold) continue;
