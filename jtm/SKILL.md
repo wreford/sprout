@@ -33,6 +33,18 @@ simplifying, styling -- never freehand geometry.
   wants a parametric result.
 - Choose the style vocabulary if restyling: flat-geometric, blueprint, cutout, 8-bit.
 
+## Constraints (kind: scene3d-constrained)
+
+When the output is a 3D assembly, add SolidWorks-style mates:
+
+- **driven** -- slider-exposed dimensions with min/max/step (e.g. beam span).
+- **expressions** -- derived values that reference driven dims (e.g. half_span = span / 2).
+- **mates** -- coincident, distance, axial, size constraints between objects.
+  The solver iterates until all constraints converge.
+
+The user drags a dimension slider; the solver reshapes the whole scene.
+Constraint graph is embedded in the JTM text alongside objects and camera.
+
 ## Honesty about scope
 
 This is re-authoring, not signal compression. Structure converts beautifully
@@ -49,3 +61,8 @@ the format is designed for the hybrid.
 - scene3d-demo.html -- kind: scene3d. SDF raymarcher decoder; objects, lights,
   camera spline, timeline keyframes. Two scenes: construction lift sequence,
   tank farm orbit. The video is the text.
+
+- constraints-demo.html -- kind: scene3d-constrained. Same SDF raymarcher plus a
+  constraint solver: mates (coincident, distance, axial, size), driven dimensions
+  with sliders, expressions for derived values, feature tree display. Dragging the
+  span slider reshapes the whole scene.
