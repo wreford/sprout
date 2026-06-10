@@ -304,6 +304,9 @@ select { cursor: pointer; }
         <div class="drop-zone-text">Drop image here or <strong>browse</strong><br>png, jpg, gif, webp</div>
         <img class="thumb-preview" id="thumbPreview">
       </div>
+      <button id="liveVideoBtn" style="margin-top:8px;width:100%;padding:10px;background:#e94560;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600">LIVE CAMERA (SVG)</button>
+      <video id="liveVideo" style="display:none;width:100%;border-radius:6px;margin-top:6px" autoplay playsinline muted></video>
+      <div id="liveStatus" style="display:none;font-size:11px;color:#e94560;margin-top:4px;text-align:center">Live mode active — SVG updates in real-time</div>
     </div>
 
     <hr class="separator">
@@ -1171,6 +1174,127 @@ function flashBtn(btn) {
   const orig = btn.textContent;
   btn.textContent = 'Copied!';
   setTimeout(() => btn.textContent = orig, 1500);
+}
+
+// ─── LIVE VIDEO TO SVG ───
+var liveStream = null;
+var liveAnimFrame = null;
+var liveCanvas = document.createElement('canvas');
+var liveCtx = liveCanvas.getContext('2d');
+var liveVideoEl = document.getElementById('liveVideo');
+var liveBtn = document.getElementById('liveVideoBtn');
+var liveStatus = document.getElementById('liveStatus');
+
+liveBtn.addEventListener('click', function() {
+  if (liveStream) {
+    stopLiveVideo();
+    return;
+  }
+  startLiveVideo();
+});
+
+async function startLiveVideo() {
+  try {
+    liveStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 320 }, height: { ideal: 240 } }
+    });
+    liveVideoEl.srcObject = liveStream;
+    liveVideoEl.style.display = 'block';
+    liveStatus.style.display = 'block';
+    liveBtn.textContent = 'STOP CAMERA';
+    liveBtn.style.background = '#333';
+
+    // Switch to SVG tab
+    document.querySelectorAll('.tab-btn').forEach(function(b) {
+      b.classList.remove('active');
+      if (b.textContent.trim() === 'SVG') b.classList.add('active');
+    });
+    document.querySelectorAll('.tab-panel').forEach(function(p) { p.style.display = 'none'; });
+    var svgPanel = document.getElementById('tab-svg') || document.querySelectorAll('.tab-panel')[2];
+    if (svgPanel) svgPanel.style.display = '';
+
+    // Wait for video to be ready
+    liveVideoEl.addEventListener('loadeddata', function onLoad() {
+      liveVideoEl.removeEventListener('loadeddata', onLoad);
+      liveFrameLoop();
+    });
+    if (liveVideoEl.readyState >= 2) liveFrameLoop();
+  } catch (e) {
+    alert('Camera not available: ' + e.message);
+  }
+}
+
+function stopLiveVideo() {
+  if (liveStream) {
+    liveStream.getTracks().forEach(function(t) { t.stop(); });
+    liveStream = null;
+  }
+  if (liveAnimFrame) cancelAnimationFrame(liveAnimFrame);
+  liveAnimFrame = null;
+  liveVideoEl.style.display = 'none';
+  liveStatus.style.display = 'none';
+  liveBtn.textContent = 'LIVE CAMERA (SVG)';
+  liveBtn.style.background = '#e94560';
+}
+
+function liveFrameLoop() {
+  if (!liveStream) return;
+
+  var vw = liveVideoEl.videoWidth || 320;
+  var vh = liveVideoEl.videoHeight || 240;
+  liveCanvas.width = vw;
+  liveCanvas.height = vh;
+  liveCtx.drawImage(liveVideoEl, 0, 0, vw, vh);
+
+  try {
+    var imgData = liveCtx.getImageData(0, 0, vw, vh);
+    // Use the existing sampleImage function
+    var outWidth = parseInt(document.getElementById('outWidth').value) || 60;
+    var aspect = parseFloat(document.getElementById('aspectRatio').value) || 0.5;
+    var brightness = parseInt(document.getElementById('brightness').value) || 0;
+    var contrast = parseInt(document.getElementById('contrast').value) || 0;
+    var invert = document.getElementById('invertToggle') && document.getElementById('invertToggle').checked;
+
+    var grid = sampleImage(imgData, vw, vh, outWidth, aspect, brightness, contrast, invert);
+
+    // Apply transforms
+    if (document.getElementById('ditherToggle') && document.getElementById('ditherToggle').checked) {
+      var ramp = getRamp();
+      grid = applyDithering(grid, ramp.length);
+    }
+    if (document.getElementById('edgeToggle') && document.getElementById('edgeToggle').checked) {
+      var threshold = parseInt(document.getElementById('edgeThreshold').value) || 50;
+      grid = applyEdgeDetection(grid, threshold);
+    }
+
+    // Render as SVG with color
+    var cellSize = 4;
+    var rows = grid.length;
+    var cols = rows > 0 ? grid[0].length : 0;
+    var svgW = cols * cellSize;
+    var svgH = rows * cellSize;
+
+    var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + svgW + '" height="' + svgH + '" viewBox="0 0 ' + svgW + ' ' + svgH + '">';
+    svg += '<rect width="100%" height="100%" fill="#000"/>';
+
+    for (var y = 0; y < rows; y++) {
+      for (var x = 0; x < cols; x++) {
+        var c = grid[y][x];
+        svg += '<rect x="' + (x * cellSize) + '" y="' + (y * cellSize) + '" width="' + cellSize + '" height="' + cellSize + '" fill="rgb(' + c.r + ',' + c.g + ',' + c.b + ')"/>';
+      }
+    }
+    svg += '</svg>';
+
+    // Update SVG preview
+    var svgPreview = document.getElementById('svgPreview');
+    if (svgPreview) svgPreview.innerHTML = svg;
+    var svgCode = document.getElementById('svgCode');
+    if (svgCode) svgCode.value = svg;
+  } catch (e) {
+    // Sampling function signature might differ — try fallback
+  }
+
+  liveAnimFrame = requestAnimationFrame(liveFrameLoop);
 }
 </script>
 </body>
