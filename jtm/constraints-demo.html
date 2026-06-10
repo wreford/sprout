@@ -653,41 +653,65 @@ const SCENES = {
     ]
   },
   cooling: {
-    desc: "Once-through cooling. The heat balance is in the file: intake screen width and plume size ARE flow calculations. Playback is one year of lake temperature -- the outfall check fails in summer. GIS -- LIVE can set lake-t from the real temperature right now.",
+    desc: "Once-through cooling for a 600 MWe nuclear station. The heat balance is in the file: mass flow, conduit velocity, pump power, intake screen width, discharge plume, and Reynolds number are ALL derived from q-reject and dt-design. The lake temperature animates through a full year -- the outfall check fails in summer. Drag q-reject down or dt-design up to restore compliance. GIS -- LIVE can set lake-t from the current real temperature.",
     kind: "scene3d-constraints",
     sky: ["#d8e2ea", "#9bb0c2"],
     sun: [-0.4, -1.0, 0.25],
-    vars: { "q-reject": 600, "dt-design": 8, "pipe-d": 3, "lake-t": 8 },
-    ranges: { "q-reject": [300, 1200], "dt-design": [6, 12], "pipe-d": [1.8, 3.5], "lake-t": [4, 22] },
+    vars: { "q-reject": 600, "dt-design": 8, "pipe-d": 3, "lake-t": 8, "pump-eff": 0.82, "cw-roughness": 0.045 },
+    ranges: { "q-reject": [300, 1200], "dt-design": [6, 12], "pipe-d": [1.8, 3.5], "lake-t": [4, 22], "pump-eff": [0.6, 0.92], "cw-roughness": [0.01, 0.1] },
     derived: {
+      "mw-thermal": "q-reject / 0.33",
+      "mw-electric": "mw-thermal * 0.33",
       "m-dot": "q-reject * 1000000 / ( 4186 * dt-design )",
       "flow": "m-dot / 1000",
       "area": "pi * pipe-d * pipe-d / 4",
       "velocity": "flow / area",
+      "reynolds": "velocity * pipe-d / 0.000001",
+      "friction": "cw-roughness / pipe-d",
+      "head-loss": "friction * 200 * velocity * velocity / ( 2 * 9.81 * pipe-d )",
+      "pump-power": "m-dot * 9.81 * head-loss / ( pump-eff * 1000 )",
+      "parasitic-pct": "pump-power / ( mw-electric * 1000 ) * 100",
       "discharge-t": "lake-t + dt-design",
       "screen-w": "flow / ( 0.15 * 6 )",
+      "plume-length": "flow * dt-design / 8",
       "margin": "29 - discharge-t"
     },
-    units: { "m-dot": "kg/s", "flow": "m3/s", "area": "m2", "velocity": "m/s", "discharge-t": "C", "screen-w": "m", "margin": "C" },
+    units: {
+      "mw-thermal": "MWt", "mw-electric": "MWe",
+      "m-dot": "kg/s", "flow": "m3/s", "area": "m2", "velocity": "m/s",
+      "reynolds": "", "friction": "", "head-loss": "m",
+      "pump-power": "kW", "parasitic-pct": "%",
+      "discharge-t": "C", "screen-w": "m", "plume-length": "m", "margin": "C"
+    },
     checks: [
       { name: "conduit velocity", expr: "velocity", max: 3, unit: "m/s" },
       { name: "outfall temperature", expr: "discharge-t", max: 29, unit: "C" },
-      { name: "mixing-zone delta-T", expr: "dt-design", max: 11, unit: "C" }
+      { name: "mixing-zone delta-T", expr: "dt-design", max: 11, unit: "C" },
+      { name: "pump parasitic load", expr: "parasitic-pct", max: 2.5, unit: "%" },
+      { name: "screen approach velocity", expr: "flow / ( screen-w * 6 )", max: 0.15, unit: "m/s" }
     ],
     objects: [
-      { id: "water", shape: "box", size: [36, 3, 48], color: "#3f6f8f", at: ["on ground", "x -20", "z 0"] },
-      { id: "bank", shape: "box", size: [28, 4.5, 48], color: "#b3aa97", at: ["on ground", "x 12", "z 0"] },
+      { id: "water", shape: "box", size: [40, 3, 52], color: "#3f6f8f", at: ["on ground", "x -22", "z 0"] },
+      { id: "bank", shape: "box", size: [32, 4.5, 52], color: "#b3aa97", at: ["on ground", "x 14", "z 0"] },
       { id: "intake", shape: "box", size: [3, 6, "screen-w"], color: "#7e8b98", at: ["on ground", "x -12", "z -10"] },
       { id: "conduit-in", shape: "cyl-x", size: ["pipe-d", "pumphouse.x - intake.x"], color: "#5d6671", at: ["y pipe-d / 2", "x ( intake.x + pumphouse.x ) / 2", "align-z intake"] },
       { id: "pumphouse", shape: "box", size: [6, 5, 10], color: "#cfc9be", at: ["on bank", "x 4", "z -10"] },
-      { id: "hall", shape: "box", size: [14, 8, 10], color: "#c4beb2", at: ["on bank", "x 16", "z -10"] },
+      { id: "pump-a", shape: "cyl", size: [1.8, 2.5], color: "#46505c", at: ["on pumphouse", "x pumphouse.x - 1.2", "z -10"] },
+      { id: "pump-b", shape: "cyl", size: [1.8, 2.5], color: "#46505c", at: ["on pumphouse", "x pumphouse.x + 1.2", "z -10"] },
+      { id: "hall", shape: "box", size: [14, 10, 12], color: "#c4beb2", at: ["on bank", "x 16", "z -10"] },
+      { id: "turbine", shape: "cyl-z", size: [5, 8], color: "#8a9099", at: ["on hall", "align-x hall", "align-z hall"] },
+      { id: "containment", shape: "sphere", size: [14], color: "#d6d0c4", blend: 0.2, at: ["on bank", "x 20", "z 12"] },
+      { id: "aux", shape: "box", size: [8, 6, 8], color: "#b8b3a8", at: ["on bank", "right-of hall 1", "z -10"] },
+      { id: "stack", shape: "cyl", size: [2, 18], color: "#a8a29e", at: ["on bank", "right-of aux 1", "z -10"] },
+      { id: "switchyard", shape: "box", size: [12, 0.3, 10], color: "#e8e4de", at: ["on bank", "x 12", "z 18"] },
+      { id: "xfmr-a", shape: "box", size: [3, 4, 3], color: "#6b7280", at: ["on switchyard", "x switchyard.x - 3", "align-z switchyard"] },
+      { id: "xfmr-b", shape: "box", size: [3, 4, 3], color: "#6b7280", at: ["on switchyard", "x switchyard.x + 3", "align-z switchyard"] },
       { id: "conduit-out", shape: "cyl-x", size: ["pipe-d", "hall.x - outfall.x"], color: "#5d6671", at: ["y pipe-d / 2", "x ( outfall.x + hall.x ) / 2", "align-z outfall"] },
-      { id: "outfall", shape: "box", size: [2.5, 3, "flow / 3 + 4"], color: "#7e8b98", at: ["on ground", "x -10", "z 10"] },
-      { id: "plume", shape: "box", size: ["flow * dt-design / 10", 0.12, "flow / 3 + 5"], color: "#d98a5f", at: ["above water 0.02", "left-of outfall 0", "align-z outfall"] },
-      { id: "rb", shape: "cyl", size: [10, 14], color: "#d6d0c4", at: ["on bank", "x 20", "z 12"] },
-      { id: "mon-1", shape: "cyl", size: [0.25, 0.15], color: "#e3b341", at: ["on bank", "x 0", "z 20"] },
-      { id: "mon-2", shape: "cyl", size: [0.25, 0.15], color: "#e3b341", at: ["on bank", "x 24", "z 20"] },
-      { id: "mon-3", shape: "cyl", size: [0.25, 0.15], color: "#e3b341", at: ["on bank", "x 0", "z -20"] }
+      { id: "outfall", shape: "box", size: [2.5, 3, "flow / 3 + 4"], color: "#7e8b98", at: ["on ground", "x -10", "z 12"] },
+      { id: "plume", shape: "box", size: ["plume-length", 0.12, "flow / 3 + 5"], color: "#d98a5f", at: ["above water 0.02", "left-of outfall 0", "align-z outfall"] },
+      { id: "mon-1", shape: "cyl", size: [0.25, 0.15], color: "#e3b341", at: ["on bank", "x 0", "z 22"] },
+      { id: "mon-2", shape: "cyl", size: [0.25, 0.15], color: "#e3b341", at: ["on bank", "x 28", "z 22"] },
+      { id: "mon-3", shape: "cyl", size: [0.25, 0.15], color: "#e3b341", at: ["on bank", "x 0", "z -22"] }
     ],
     site: {
       crs: "EPSG:26917",
@@ -697,9 +721,9 @@ const SCENES = {
         { bim: "mon-3", gis: [444301.116, 4905180.031, 179.075] }
       ]
     },
-    camera: { fov: 46, orbit: { target: "pumphouse", radius: 36, height: 22, period: 20, phase: 215 } },
+    camera: { fov: 46, orbit: { target: "hall", radius: 42, height: 24, period: 24, phase: 215 } },
     timeline: [
-      { var: "lake-t", ease: "smooth", keys: [ { t: 0, v: 4 }, { t: 10, v: 22 }, { t: 20, v: 4 } ] }
+      { var: "lake-t", ease: "smooth", keys: [ { t: 0, v: 4 }, { t: 12, v: 22 }, { t: 24, v: 4 } ] }
     ]
   },
   tandem: {
