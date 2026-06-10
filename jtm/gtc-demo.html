@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GTC -- Generative Text Codec</title>
+<style>
+  :root {
+    --bench: #ECEDEE; --panel: #FFFFFF; --ink: #20242A; --muted: #6A7178; --hair: #D5D8DB;
+    --flat: #3E9B6B; --grad: #3E78C9; --edge: #D9952F; --tex: #C85A4F;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", Consolas, Menlo, monospace;
+    --sans: Inter, "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--bench); color: var(--ink); font-family: var(--sans); font-size: 14px; line-height: 1.45; }
+  a { color: inherit; }
+  header { padding: 22px 28px 14px; display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; border-bottom: 1px solid var(--hair); }
+  header h1 { font-family: var(--mono); font-size: 22px; font-weight: 700; letter-spacing: 0.06em; }
+  header h1 .dim { color: var(--muted); font-weight: 400; }
+  header p { color: var(--muted); font-size: 13px; }
+  .controls { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; padding: 14px 28px; border-bottom: 1px solid var(--hair); background: var(--panel); }
+  .controls label { font-size: 12px; color: var(--muted); display: flex; gap: 7px; align-items: center; }
+  select, input[type=range] { accent-color: var(--ink); }
+  select { font: inherit; padding: 4px 8px; border: 1px solid var(--hair); border-radius: 4px; background: var(--panel); }
+  button { font: 600 13px var(--sans); padding: 7px 16px; border-radius: 4px; cursor: pointer; border: 1px solid var(--ink); background: var(--ink); color: var(--panel); }
+  button.ghost { background: var(--panel); color: var(--ink); }
+  button:disabled { opacity: 0.4; cursor: default; }
+  input[type=file] { display: none; }
+  .filebtn { font-weight: 600; font-size: 13px; padding: 7px 16px; border: 1px solid var(--ink); border-radius: 4px; cursor: pointer; background: var(--panel); }
+  .knob { display: flex; flex-direction: column; gap: 2px; }
+  .knob output { font-family: var(--mono); font-size: 11px; color: var(--ink); }
+  .stages { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1px; background: var(--hair); border-bottom: 1px solid var(--hair); }
+  figure { background: var(--panel); padding: 14px; }
+  figcaption { font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; color: var(--muted); margin-bottom: 9px; display: flex; justify-content: space-between; }
+  figcaption b { color: var(--ink); font-weight: 600; }
+  canvas { width: 100%; image-rendering: pixelated; border: 1px solid var(--hair); display: block; background: #f6f7f8; }
+  .legend { display: flex; gap: 14px; padding: 10px 28px; background: var(--panel); border-bottom: 1px solid var(--hair); flex-wrap: wrap; }
+  .legend span { font-family: var(--mono); font-size: 11px; display: flex; align-items: center; gap: 6px; color: var(--muted); }
+  .legend i { width: 10px; height: 10px; display: inline-block; border-radius: 2px; }
+  main { display: grid; grid-template-columns: 1fr 280px; gap: 1px; background: var(--hair); }
+  @media (max-width: 880px) { main { grid-template-columns: 1fr; } }
+  .jtm { background: var(--panel); padding: 16px 20px 20px; }
+  .jtm .bar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+  .jtm .bar h2 { font-family: var(--mono); font-size: 12px; letter-spacing: 0.1em; font-weight: 600; margin-right: auto; }
+  textarea { width: 100%; height: 380px; resize: vertical; font: 12px/1.5 var(--mono); color: var(--ink); border: 1px solid var(--hair); border-radius: 4px; padding: 12px; background: #FAFBFB; white-space: pre; tab-size: 2; }
+  textarea:focus { outline: 2px solid var(--ink); outline-offset: -1px; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .hint code { font-family: var(--mono); background: var(--bench); padding: 1px 5px; border-radius: 3px; }
+  aside { background: var(--panel); padding: 16px 20px; }
+  aside h2 { font-family: var(--mono); font-size: 12px; letter-spacing: 0.1em; font-weight: 600; margin-bottom: 12px; }
+  table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 12px; }
+  td { padding: 6px 0; border-bottom: 1px solid var(--hair); }
+  td:last-child { text-align: right; font-weight: 600; }
+  td.lbl { color: var(--muted); font-weight: 400; }
+  .big { font-size: 17px; }
+  .ok { color: var(--flat); }
+  footer { padding: 14px 28px 26px; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>GTC<span class="dim"> / generative text codec</span></h1>
+  <p>image in, editable text out, image back. The JTM file below is the actual transmission.</p>
+</header>
+<div class="controls">
+  <label>scene <select id="scene"><option value="landscape">landscape (gradients + texture)</option><option value="geometric">geometric (flat shapes)</option><option value="sprite">sprite sheet (tiles + dither)</option></select></label>
+  <label class="filebtn" for="upload">upload image</label>
+  <input type="file" id="upload" accept="image/*">
+  <div class="knob"><label>cell size <input type="range" id="cellSize" min="0" max="2" value="1" step="1"></label><output id="cellSizeOut">16 px</output></div>
+  <div class="knob"><label>refine threshold <input type="range" id="threshold" min="10" max="120" value="40" step="5"></label><output id="thresholdOut">40 (lower = more raster fallback)</output></div>
+  <button id="run">Encode</button>
+</div>
+<div class="legend" id="legend">
+  <span><i style="background:var(--flat)"></i> flat <b id="nFlat">0</b></span>
+  <span><i style="background:var(--grad)"></i> gradient <b id="nGrad">0</b></span>
+  <span><i style="background:var(--edge)"></i> edge <b id="nEdge">0</b></span>
+  <span><i style="background:var(--tex)"></i> texture <b id="nTex">0</b></span>
+  <span style="margin-left:auto">measured by code -- the classifier never guesses a coordinate</span>
+</div>
+<div class="stages">
+  <figure><figcaption><b>01 SOURCE</b><span id="srcDim"></span></figcaption><canvas id="cSrc"></canvas></figure>
+  <figure><figcaption><b>02 CELL MAP</b><span>classified regions</span></figcaption><canvas id="cMap"></canvas></figure>
+  <figure><figcaption><b>03 DECODED</b><span>rendered from the text below</span></figcaption><canvas id="cDec"></canvas></figure>
+  <figure><figcaption><b>04 ERROR</b><span id="errLabel">per-cell distance</span></figcaption><canvas id="cDiff"></canvas></figure>
+</div>
+<main>
+  <section class="jtm">
+    <div class="bar">
+      <h2>JTM -- THE FILE ITSELF (EDIT ME)</h2>
+      <button id="decodeBtn" class="ghost">Decode edited text</button>
+      <button id="downloadBtn" class="ghost">Download .jtm</button>
+    </div>
+    <textarea id="jtmText" spellcheck="false"></textarea>
+    <p class="hint">Try it: change a hex value in <code>"palette"</code>, or edit a number in a <code>rect</code> op, then press Decode edited text. Panel 03 re-renders from your edit.</p>
+  </section>
+  <aside>
+    <h2>TRANSMISSION REPORT</h2>
+    <table>
+      <tr><td class="lbl">raw pixels (RGB)</td><td id="sRaw">--</td></tr>
+      <tr><td class="lbl">PNG equivalent</td><td id="sPng">--</td></tr>
+      <tr><td class="lbl">JTM text</td><td id="sJtm">--</td></tr>
+      <tr><td class="lbl">JTM gzipped (wire)</td><td id="sGz">--</td></tr>
+      <tr><td class="lbl">ratio vs raw</td><td id="sRatio" class="big">--</td></tr>
+      <tr><td class="lbl">mean error / 441</td><td id="sErr">--</td></tr>
+      <tr><td class="lbl">refined cells</td><td id="sRef">--</td></tr>
+      <tr><td class="lbl">vector ops</td><td id="sOps">--</td></tr>
+      <tr><td class="lbl">raster blocks</td><td id="sCells">--</td></tr>
+      <tr><td class="lbl">palette entries</td><td id="sPal">--</td></tr>
+    </table>
+    <h2 style="margin-top:20px">PIPELINE</h2>
+    <table>
+      <tr><td class="lbl">slice</td><td>grid + measure</td></tr>
+      <tr><td class="lbl">classify</td><td>flat/grad/edge/tex</td></tr>
+      <tr><td class="lbl">merge</td><td>rects + bands</td></tr>
+      <tr><td class="lbl">emit</td><td>ops + raster cells</td></tr>
+      <tr><td class="lbl">refine</td><td>render, diff, redo worst</td></tr>
+    </table>
+  </aside>
+</main>
+<footer>Everything above runs locally -- no libraries, no network.</footer>
+<script src="gtc-core.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const CELL_SIZES = [8, 16, 32];
+let source = null, lastJtm = null, lastCellSize = 16;
+
+function makeImage(w, h) { return { data: new Uint8ClampedArray(w * h * 4), w, h }; }
+function px(img, x, y, r, g, b) {
+  if (x < 0 || y < 0 || x >= img.w || y >= img.h) return;
+  const i = (y * img.w + x) * 4;
+  img.data[i] = r; img.data[i+1] = g; img.data[i+2] = b; img.data[i+3] = 255;
+}
+
+function sceneLandscape(w, h) {
+  const img = makeImage(w, h);
+  const horizon = Math.floor(h * 0.55);
+  for (let y = 0; y < horizon; y++) { const f = y / horizon; for (let x = 0; x < w; x++) px(img, x, y, 26+207*f, 42+88*f, 90-10*f); }
+  const sx = Math.floor(w*0.72), sy = Math.floor(h*0.3), sr = Math.floor(h*0.09);
+  for (let y = sy-sr; y <= sy+sr; y++) for (let x = sx-sr; x <= sx+sr; x++) if ((x-sx)**2+(y-sy)**2 <= sr*sr) px(img, x, y, 255, 214, 110);
+  for (let x = 0; x < w; x++) {
+    const r1 = horizon - h*0.18*(0.6+0.4*Math.sin(x*0.05)*Math.sin(x*0.013+2));
+    for (let y = Math.floor(r1); y < horizon; y++) px(img, x, y, 38, 50, 72);
+    const r2 = horizon - h*0.09*(0.5+0.5*Math.sin(x*0.03+1));
+    for (let y = Math.floor(r2); y < horizon; y++) px(img, x, y, 58, 72, 96);
+  }
+  for (let y = horizon; y < h; y++) { const f = (y-horizon)/(h-horizon); for (let x = 0; x < w; x++) px(img, x, y, 40-24*f, 90-50*f, 120-50*f); }
+  for (let y = horizon+4; y < horizon+Math.floor((h-horizon)*0.5); y += 3)
+    for (let x = 0; x < w; x++) if (Math.sin(x*0.7+y*5.1) > 0.4) px(img, x, y, 200, 210, 180);
+  return img;
+}
+function sceneGeometric(w, h) {
+  const img = makeImage(w, h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    let c = [235,230,220];
+    if (x > w*0.55 && y < h*0.6) c = [200,60,50];
+    if ((x-w*0.3)**2+(y-h*0.55)**2 < (h*0.28)**2) c = [30,40,60];
+    if (y > h*0.78) c = [230,170,40];
+    if (x > w*0.1 && x < w*0.14) c = [30,40,60];
+    px(img, x, y, c[0], c[1], c[2]);
+  }
+  return img;
+}
+function sceneSprite(w, h) {
+  const img = makeImage(w, h);
+  const tile = 32;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const tx = Math.floor(x/tile)%3, lx = x%tile, ly = y%tile;
+    let c = [40,44,52];
+    if (tx===0) c = (lx+ly)%8<4 ? [86,152,92] : [70,130,80];
+    if (tx===1) c = (lx<4||lx>=tile-4||ly<4||ly>=tile-4) ? [120,96,70] : [160,130,92];
+    if (tx===2) c = ((lx^ly)&8) ? [60,86,140] : [50,70,116];
+    px(img, x, y, c[0], c[1], c[2]);
+  }
+  return img;
+}
+
+function putCanvas(canvas, img) { canvas.width=img.w; canvas.height=img.h; canvas.getContext("2d").putImageData(new ImageData(img.data.slice(),img.w,img.h),0,0); }
+function drawCellMap(canvas, img, cells, cellSize) {
+  canvas.width=img.w; canvas.height=img.h;
+  const ctx=canvas.getContext("2d");
+  ctx.putImageData(new ImageData(img.data.slice(),img.w,img.h),0,0);
+  ctx.fillStyle="rgba(255,255,255,0.55)"; ctx.fillRect(0,0,img.w,img.h);
+  const colors={flat:"#3E9B6B",gradient:"#3E78C9",edge:"#D9952F",texture:"#C85A4F"};
+  for (const c of cells) { ctx.fillStyle=colors[c.kind]+"66"; ctx.fillRect(c.x,c.y,c.w,c.h); ctx.strokeStyle=colors[c.kind]; ctx.lineWidth=1; ctx.strokeRect(c.x+0.5,c.y+0.5,c.w-1,c.h-1); }
+}
+function drawDiff(canvas, d, cellSize, w, h) {
+  canvas.width=w; canvas.height=h; const ctx=canvas.getContext("2d");
+  for (const s of d.scores) { const t=Math.min(1,s.score/90); ctx.fillStyle=`rgb(${Math.round(62+t*138)},${Math.round(155-t*65)},${Math.round(107-t*28)})`; ctx.fillRect(s.cx*cellSize,s.cy*cellSize,cellSize,cellSize); }
+}
+function fmtBytes(n) { return n>=1024*1024?(n/1024/1024).toFixed(2)+" MB":n>=1024?(n/1024).toFixed(1)+" KB":n+" B"; }
+async function gzipSize(text) { if(typeof CompressionStream==="undefined")return null; return(await new Response(new Blob([text]).stream().pipeThrough(new CompressionStream("gzip"))).arrayBuffer()).byteLength; }
+function pngSize(img) { const c=document.createElement("canvas"); c.width=img.w; c.height=img.h; c.getContext("2d").putImageData(new ImageData(img.data.slice(),img.w,img.h),0,0); return Math.round((c.toDataURL("image/png").length-"data:image/png;base64,".length)*3/4); }
+
+async function run() {
+  if (!source) source = sceneLandscape(256, 192);
+  const cellSize=CELL_SIZES[+$("cellSize").value], threshold=+$("threshold").value;
+  lastCellSize=cellSize;
+  const {jtm,cells}=GTC.encode(source,{cellSize});
+  const ref=GTC.refine(source,jtm,{cellSize,threshold});
+  lastJtm=jtm;
+  $("jtmText").value=GTC.jtmToText(jtm);
+  putCanvas($("cSrc"),source); $("srcDim").textContent=source.w+" x "+source.h;
+  drawCellMap($("cMap"),source,cells,cellSize);
+  const out=makeImage(source.w,source.h); GTC.decode(jtm,out); putCanvas($("cDec"),out);
+  const d=GTC.diffScore(source,out,cellSize); drawDiff($("cDiff"),d,cellSize,source.w,source.h);
+  $("errLabel").textContent="mean "+d.mean.toFixed(1)+" / 441";
+  const kinds={flat:0,gradient:0,edge:0,texture:0}; for(const c of cells) kinds[c.kind]++;
+  $("nFlat").textContent=kinds.flat; $("nGrad").textContent=kinds.gradient; $("nEdge").textContent=kinds.edge; $("nTex").textContent=kinds.texture;
+  const raw=source.w*source.h*3, text=$("jtmText").value, gz=await gzipSize(text);
+  $("sRaw").textContent=fmtBytes(raw); $("sPng").textContent=fmtBytes(pngSize(source));
+  $("sJtm").textContent=fmtBytes(text.length); $("sGz").textContent=gz?fmtBytes(gz):"n/a";
+  $("sRatio").textContent=gz?(raw/gz).toFixed(0)+"x":(raw/text.length).toFixed(0)+"x"; $("sRatio").className="big ok";
+  $("sErr").textContent=d.mean.toFixed(1)+" (was "+ref.meanBefore.toFixed(1)+")";
+  $("sRef").textContent=ref.refined; $("sOps").textContent=jtm.ops.length;
+  $("sCells").textContent=jtm.cells.length; $("sPal").textContent=Object.keys(jtm.palette).length;
+}
+function decodeEdited() {
+  let parsed; try{parsed=JSON.parse($("jtmText").value)}catch(e){alert("JSON error: "+e.message);return}
+  lastJtm=parsed; const out=makeImage(parsed.w,parsed.h); GTC.decode(parsed,out); putCanvas($("cDec"),out);
+  if(source&&source.w===parsed.w&&source.h===parsed.h){const d=GTC.diffScore(source,out,lastCellSize);drawDiff($("cDiff"),d,lastCellSize,parsed.w,parsed.h);$("errLabel").textContent="mean "+d.mean.toFixed(1)+" / 441";}
+}
+function download() { const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([$("jtmText").value],{type:"application/json"})); a.download="scene.jtm"; a.click(); }
+
+$("run").addEventListener("click", run);
+$("decodeBtn").addEventListener("click", decodeEdited);
+$("downloadBtn").addEventListener("click", download);
+$("cellSize").addEventListener("input", e => { $("cellSizeOut").textContent=CELL_SIZES[+e.target.value]+" px"; });
+$("threshold").addEventListener("input", e => { $("thresholdOut").textContent=e.target.value+" (lower = more raster fallback)"; });
+$("scene").addEventListener("change", e => { source={landscape:sceneLandscape,geometric:sceneGeometric,sprite:sceneSprite}[e.target.value](256,192); run(); });
+$("upload").addEventListener("change", e => {
+  const file=e.target.files[0]; if(!file)return;
+  const url=URL.createObjectURL(file), im=new Image();
+  im.onload=()=>{ const s=Math.min(1,320/im.width),w=Math.round(im.width*s),h=Math.round(im.height*s),c=document.createElement("canvas"); c.width=w;c.height=h; c.getContext("2d").drawImage(im,0,0,w,h); const id=c.getContext("2d").getImageData(0,0,w,h); source={data:id.data,w,h}; URL.revokeObjectURL(url); run(); };
+  im.src=url;
+});
+run();
+</script>
+</body>
+</html>
