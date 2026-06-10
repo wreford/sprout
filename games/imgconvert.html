@@ -1473,33 +1473,100 @@ var liveLastRender = 0;
 
 function liveFrameLoop(ts) {
   if (!liveStream) return;
-  if (ts - liveLastRender < 66) { liveAnimFrame = requestAnimationFrame(liveFrameLoop); return; }
+  // Throttle to ~10fps (100ms) — prevents crashes
+  if (ts - liveLastRender < 100) { liveAnimFrame = requestAnimationFrame(liveFrameLoop); return; }
   liveLastRender = ts;
-  var vw = liveVideoEl.videoWidth || 320;
-  var vh = liveVideoEl.videoHeight || 240;
-  liveCanvas.width = vw; liveCanvas.height = vh;
-  liveCtx.drawImage(liveVideoEl, 0, 0, vw, vh);
   try {
-    var imgData = liveCtx.getImageData(0, 0, vw, vh);
-    var ow = Math.min(60, parseInt(document.getElementById('outWidth').value) || 40);
-    var asp = (parseInt(document.getElementById('aspectRatio').value) || 50) / 100;
-    var br = parseInt(document.getElementById('brightness').value) || 0;
-    var co = parseInt(document.getElementById('contrast').value) || 0;
-    var inv = document.getElementById('invert') && document.getElementById('invert').checked;
-    var grid = sampleImage(imgData, ow, asp, br, co, inv);
-    if (!grid || !grid.length) { liveAnimFrame = requestAnimationFrame(liveFrameLoop); return; }
-    var rows = grid.length, cols = grid[0].length, cs = 6;
-    liveOutCanvas.width = cols * cs; liveOutCanvas.height = rows * cs;
-    for (var y = 0; y < rows; y++)
+    var vw = liveVideoEl.videoWidth;
+    var vh = liveVideoEl.videoHeight;
+    if (!vw || !vh || vw < 10) { liveAnimFrame = requestAnimationFrame(liveFrameLoop); return; }
+    // Downscale capture for speed
+    var scale = Math.min(1, 160 / Math.max(vw, vh));
+    var sw = Math.floor(vw * scale);
+    var sh = Math.floor(vh * scale);
+    liveCanvas.width = sw; liveCanvas.height = sh;
+    liveCtx.drawImage(liveVideoEl, 0, 0, sw, sh);
+    var imgData = liveCtx.getImageData(0, 0, sw, sh);
+    // Simple direct pixel sampling — bypass sampleImage for reliability
+    var cols = 40; // fixed small size for live
+    var cellW = Math.max(1, Math.floor(sw / cols));
+    var cellH = Math.max(1, Math.floor(cellW * 1.8)); // aspect correction
+    var rows = Math.floor(sh / cellH);
+    var cs = 8; // display cell size
+    liveOutCanvas.width = cols * cs;
+    liveOutCanvas.height = rows * cs;
+    var d = imgData.data;
+    for (var y = 0; y < rows; y++) {
       for (var x = 0; x < cols; x++) {
-        var c = grid[y][x];
-        liveOutCtx.fillStyle = 'rgb(' + c.r + ',' + c.g + ',' + c.b + ')';
+        var px = Math.min(sw - 1, x * cellW + Math.floor(cellW / 2));
+        var py = Math.min(sh - 1, y * cellH + Math.floor(cellH / 2));
+        var idx = (py * sw + px) * 4;
+        var r = d[idx], g = d[idx + 1], b = d[idx + 2];
+        liveOutCtx.fillStyle = 'rgb(' + r + ',' + g + ',' + b + ')';
         liveOutCtx.fillRect(x * cs, y * cs, cs, cs);
       }
+    }
+    // Place canvas in preview
     var svgPrev = document.getElementById('svgPreview');
     if (svgPrev && !svgPrev.contains(liveOutCanvas)) { svgPrev.innerHTML = ''; svgPrev.appendChild(liveOutCanvas); }
-  } catch (e) { console.log('Live frame error:', e); }
+  } catch (e) { /* skip frame */ }
   liveAnimFrame = requestAnimationFrame(liveFrameLoop);
+}
+
+// ─── JSPRITE FORMAT ───
+// Compact palette-indexed sprite format for game development
+function generateJSprite(grid) {
+  if (!grid || !grid.length) return '';
+  var rows = grid.length, cols = grid[0].length;
+  var palette = {};
+  var palArr = [];
+  var pixels = [];
+  // Build palette
+  for (var y = 0; y < rows; y++) {
+    var row = [];
+    for (var x = 0; x < cols; x++) {
+      var c = grid[y][x];
+      var hex = '#' + ((1<<24)+(c.r<<16)+(c.g<<8)+c.b).toString(16).slice(1);
+      if (!(hex in palette)) { palette[hex] = palArr.length; palArr.push(hex); }
+      row.push(palette[hex]);
+    }
+    pixels.push(row);
+  }
+  var obj = {
+    format: 'jsprite',
+    version: 1,
+    width: cols,
+    height: rows,
+    palette: palArr,
+    pixels: pixels
+  };
+  // Add a draw function as a string
+  obj._draw = 'function drawSprite(ctx,x,y,s,data){s=s||1;data.pixels.forEach(function(row,ry){row.forEach(function(pi,rx){ctx.fillStyle=data.palette[pi];ctx.fillRect(x+rx*s,y+ry*s,s,s)})});}';
+  return JSON.stringify(obj);
+}
+
+function generateJSpriteCode(grid) {
+  if (!grid || !grid.length) return '';
+  var json = generateJSprite(grid);
+  var rows = grid.length, cols = grid[0].length;
+  return '// JSprite format — palette-indexed pixel data\n'
+    + '// Dimensions: ' + cols + 'x' + rows + '\n'
+    + '// Paste this data and the draw function into your game\n\n'
+    + 'var sprite = ' + json + ';\n\n'
+    + '// Draw the sprite:\n'
+    + 'function drawSprite(ctx, x, y, scale, data) {\n'
+    + '  scale = scale || 1;\n'
+    + '  data.pixels.forEach(function(row, ry) {\n'
+    + '    row.forEach(function(pi, rx) {\n'
+    + '      ctx.fillStyle = data.palette[pi];\n'
+    + '      ctx.fillRect(x + rx * scale, y + ry * scale, scale, scale);\n'
+    + '    });\n'
+    + '  });\n'
+    + '}\n\n'
+    + '// Usage:\n'
+    + '// var canvas = document.getElementById("myCanvas");\n'
+    + '// var ctx = canvas.getContext("2d");\n'
+    + '// drawSprite(ctx, 10, 10, 4, sprite);\n';
 }
 </script>
 </body>
