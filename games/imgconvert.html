@@ -1237,8 +1237,21 @@ function stopLiveVideo() {
   liveBtn.style.background = '#e94560';
 }
 
-function liveFrameLoop() {
+// Use a visible canvas for live rendering (much faster than SVG DOM)
+var liveOutCanvas = document.createElement('canvas');
+liveOutCanvas.style.cssText = 'width:100%;border-radius:6px;image-rendering:pixelated;background:#000';
+var liveOutCtx = liveOutCanvas.getContext('2d');
+var liveLastRender = 0;
+
+function liveFrameLoop(ts) {
   if (!liveStream) return;
+
+  // Throttle to 15fps max (every 66ms) — prevents browser freeze
+  if (ts - liveLastRender < 66) {
+    liveAnimFrame = requestAnimationFrame(liveFrameLoop);
+    return;
+  }
+  liveLastRender = ts;
 
   var vw = liveVideoEl.videoWidth || 320;
   var vh = liveVideoEl.videoHeight || 240;
@@ -1248,50 +1261,39 @@ function liveFrameLoop() {
 
   try {
     var imgData = liveCtx.getImageData(0, 0, vw, vh);
-    // Use the existing sampleImage function
-    var outWidth = parseInt(document.getElementById('outWidth').value) || 60;
+    // Use smaller width for live mode (performance)
+    var outWidth = Math.min(60, parseInt(document.getElementById('outWidth').value) || 40);
     var aspect = parseFloat(document.getElementById('aspectRatio').value) || 0.5;
     var brightness = parseInt(document.getElementById('brightness').value) || 0;
     var contrast = parseInt(document.getElementById('contrast').value) || 0;
     var invert = document.getElementById('invertToggle') && document.getElementById('invertToggle').checked;
 
     var grid = sampleImage(imgData, vw, vh, outWidth, aspect, brightness, contrast, invert);
+    if (!grid || !grid.length) { liveAnimFrame = requestAnimationFrame(liveFrameLoop); return; }
 
-    // Apply transforms
-    if (document.getElementById('ditherToggle') && document.getElementById('ditherToggle').checked) {
-      var ramp = getRamp();
-      grid = applyDithering(grid, ramp.length);
-    }
-    if (document.getElementById('edgeToggle') && document.getElementById('edgeToggle').checked) {
-      var threshold = parseInt(document.getElementById('edgeThreshold').value) || 50;
-      grid = applyEdgeDetection(grid, threshold);
-    }
-
-    // Render as SVG with color
-    var cellSize = 4;
     var rows = grid.length;
-    var cols = rows > 0 ? grid[0].length : 0;
-    var svgW = cols * cellSize;
-    var svgH = rows * cellSize;
+    var cols = grid[0].length;
+    var cellSize = 6;
 
-    var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + svgW + '" height="' + svgH + '" viewBox="0 0 ' + svgW + ' ' + svgH + '">';
-    svg += '<rect width="100%" height="100%" fill="#000"/>';
-
+    // Render to canvas (FAST — no DOM manipulation)
+    liveOutCanvas.width = cols * cellSize;
+    liveOutCanvas.height = rows * cellSize;
     for (var y = 0; y < rows; y++) {
       for (var x = 0; x < cols; x++) {
         var c = grid[y][x];
-        svg += '<rect x="' + (x * cellSize) + '" y="' + (y * cellSize) + '" width="' + cellSize + '" height="' + cellSize + '" fill="rgb(' + c.r + ',' + c.g + ',' + c.b + ')"/>';
+        liveOutCtx.fillStyle = 'rgb(' + c.r + ',' + c.g + ',' + c.b + ')';
+        liveOutCtx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
       }
     }
-    svg += '</svg>';
 
-    // Update SVG preview
+    // Insert canvas into SVG preview area (only once)
     var svgPreview = document.getElementById('svgPreview');
-    if (svgPreview) svgPreview.innerHTML = svg;
-    var svgCode = document.getElementById('svgCode');
-    if (svgCode) svgCode.value = svg;
+    if (svgPreview && !svgPreview.contains(liveOutCanvas)) {
+      svgPreview.innerHTML = '';
+      svgPreview.appendChild(liveOutCanvas);
+    }
   } catch (e) {
-    // Sampling function signature might differ — try fallback
+    console.log('Live frame error:', e);
   }
 
   liveAnimFrame = requestAnimationFrame(liveFrameLoop);
