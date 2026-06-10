@@ -2,16 +2,22 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Audio to MIDI / WAV Converter</title>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; height: -webkit-fill-available; }
 body {
   font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
   background: #1a1a2e;
   color: #e0e0e0;
-  min-height: 100vh;
+  min-height: 100%;
+  min-height: -webkit-fill-available;
   overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
 }
 header {
   background: #16213e;
@@ -33,7 +39,8 @@ header small {
 }
 .main-layout {
   display: flex;
-  min-height: calc(100vh - 60px);
+  min-height: calc(100% - 60px);
+  min-height: calc(-webkit-fill-available - 60px);
 }
 /* ---- Sidebar ---- */
 .sidebar {
@@ -47,6 +54,7 @@ header small {
   flex-direction: column;
   gap: 6px;
 }
+.sidebar { -webkit-overflow-scrolling: touch; }
 .sidebar::-webkit-scrollbar { width: 6px; }
 .sidebar::-webkit-scrollbar-thumb { background: #0f3460; border-radius: 3px; }
 .grp { margin-bottom: 2px; }
@@ -59,6 +67,34 @@ header small {
   margin-bottom: 6px;
   padding-bottom: 3px;
   border-bottom: 1px solid #0f3460;
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.grp-title::after {
+  content: '';
+  display: inline-block;
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid #e94560;
+  transition: transform 0.2s;
+}
+.grp.collapsed .grp-title::after {
+  transform: rotate(-90deg);
+}
+.grp-body {
+  overflow: hidden;
+  transition: max-height 0.3s ease, opacity 0.2s ease;
+  max-height: 600px;
+  opacity: 1;
+}
+.grp.collapsed .grp-body {
+  max-height: 0;
+  opacity: 0;
 }
 .ctrl { margin-bottom: 6px; }
 .ctrl label {
@@ -79,7 +115,10 @@ header small {
 .ctrl input[type="range"] {
   width: 100%;
   accent-color: #e94560;
+  -webkit-appearance: none;
 }
+.ctrl input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; height: 22px; border-radius: 50%; background: #e94560; cursor: pointer; }
+.ctrl input[type="range"]::-webkit-slider-runnable-track { background: #30363d; height: 4px; border-radius: 2px; }
 .ctrl .range-row {
   display: flex;
   align-items: center;
@@ -149,7 +188,57 @@ header small {
 }
 .drop-zone h2 { font-size: 18px; color: #ccc; margin-bottom: 8px; }
 .drop-zone p { font-size: 12px; color: #666; }
-.drop-zone input { display: none; }
+.drop-zone input[type="file"] { display: none; }
+.drop-zone-btns {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 14px;
+}
+.drop-zone-btns button {
+  padding: 8px 20px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid #30363d;
+  background: #0f3460;
+  color: #ccc;
+  transition: all 0.2s;
+}
+.drop-zone-btns button:hover {
+  background: #153a6e;
+  border-color: #e94560;
+}
+.drop-zone-btns button.recording {
+  background: #e94560;
+  color: #fff;
+  border-color: #e94560;
+  animation: pulse-rec 1.2s infinite;
+}
+@keyframes pulse-rec {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(233,69,96,0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(233,69,96,0); }
+}
+/* Waveform preview */
+.waveform-preview-wrap {
+  margin: 0 16px;
+  display: none;
+}
+.waveform-preview-wrap canvas {
+  width: 100%;
+  height: 64px;
+  border-radius: 6px;
+  display: block;
+}
+.waveform-preview-info {
+  display: flex;
+  gap: 16px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: #666;
+}
+.waveform-preview-info span { white-space: nowrap; }
 /* Tabs */
 .tab-bar {
   display: flex;
@@ -176,6 +265,11 @@ header small {
   padding: 16px;
   overflow: auto;
   flex-direction: column;
+  animation: fadeTab 0.25s ease;
+}
+@keyframes fadeTab {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 .tab-panel.active { display: flex; }
 /* Piano roll */
@@ -216,30 +310,167 @@ header small {
 }
 .piano-scroll canvas {
   display: block;
+  cursor: pointer;
+}
+/* Piano roll zoom controls */
+.piano-roll-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0;
+}
+.piano-roll-toolbar button {
+  background: #0f3460;
+  border: none;
+  color: #ccc;
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+.piano-roll-toolbar button:hover { background: #153a6e; }
+.piano-roll-toolbar .zoom-label {
+  font-size: 11px;
+  color: #888;
+  margin: 0 4px;
+}
+/* Note tooltip */
+.note-tooltip {
+  position: fixed;
+  background: #161b22;
+  border: 1px solid #e94560;
+  color: #e0e0e0;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: monospace;
+  pointer-events: none;
+  z-index: 100;
+  display: none;
+  white-space: nowrap;
 }
 /* Playback controls */
 .playback-bar {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   padding: 10px 0;
 }
 .playback-bar button {
   background: #0f3460;
   border: none;
   color: #e0e0e0;
-  padding: 8px 16px;
+  padding: 0;
+  width: 36px;
+  height: 36px;
   border-radius: 4px;
   cursor: pointer;
   font-size: 13px;
   font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
 }
 .playback-bar button:hover { background: #153a6e; }
 .playback-bar button.playing { background: #e94560; }
+/* CSS Icons */
+.icon-play {
+  width: 0;
+  height: 0;
+  border-top: 7px solid transparent;
+  border-bottom: 7px solid transparent;
+  border-left: 11px solid #e0e0e0;
+  margin-left: 2px;
+}
+.icon-pause {
+  display: flex;
+  gap: 3px;
+}
+.icon-pause span {
+  width: 3px;
+  height: 12px;
+  background: #e0e0e0;
+  border-radius: 1px;
+}
+.icon-stop {
+  width: 11px;
+  height: 11px;
+  background: #e0e0e0;
+  border-radius: 2px;
+}
+.icon-loop {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #aaa;
+  border-radius: 50%;
+  border-right-color: transparent;
+  position: relative;
+}
+.icon-loop::after {
+  content: '';
+  position: absolute;
+  right: -3px;
+  top: 1px;
+  width: 0;
+  height: 0;
+  border-left: 4px solid #aaa;
+  border-top: 3px solid transparent;
+  border-bottom: 3px solid transparent;
+}
+.loop-active .icon-loop {
+  border-color: #e94560;
+  border-right-color: transparent;
+}
+.loop-active .icon-loop::after {
+  border-left-color: #e94560;
+}
 .playback-bar .time-display {
   font-size: 13px;
   font-variant-numeric: tabular-nums;
   color: #aaa;
+  white-space: nowrap;
+}
+.playback-bar .volume-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+.playback-bar .volume-wrap input {
+  width: 60px;
+  accent-color: #e94560;
+}
+.volume-icon {
+  width: 14px;
+  height: 14px;
+  position: relative;
+}
+.volume-icon::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 3px;
+  width: 5px;
+  height: 8px;
+  background: #aaa;
+}
+.volume-icon::after {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 0;
+  width: 0;
+  height: 0;
+  border-right: 7px solid #aaa;
+  border-top: 7px solid transparent;
+  border-bottom: 7px solid transparent;
 }
 /* WAV tab */
 .wav-waveform {
@@ -249,6 +480,36 @@ header small {
   border: 1px solid #30363d;
   border-radius: 6px;
 }
+.wav-compare {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.wav-compare .wav-col {
+  flex: 1;
+  min-width: 0;
+}
+.wav-compare .wav-col-label {
+  font-size: 11px;
+  color: #888;
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+.wav-compare canvas {
+  width: 100%;
+  height: 100px;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  display: block;
+}
+.wav-info-row {
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+  color: #888;
+  padding: 6px 0;
+}
+.wav-info-row span { white-space: nowrap; }
 /* Code snippets */
 .snippet-block {
   background: #0d1117;
@@ -274,6 +535,7 @@ header small {
   border-radius: 3px;
   cursor: pointer;
   font-size: 11px;
+  transition: all 0.15s;
 }
 .snippet-header button:hover { background: #153a6e; }
 .snippet-code {
@@ -329,6 +591,13 @@ header small {
   display: flex;
   gap: 8px;
   margin: 10px 0;
+  flex-wrap: wrap;
+}
+/* Copy feedback */
+.copy-btn { position: relative; }
+.copy-btn.copied {
+  background: #238636 !important;
+  color: #fff !important;
 }
 /* Channel toggle */
 .channel-toggle {
@@ -349,6 +618,190 @@ header small {
 .channel-toggle button.active {
   background: #0f3460;
   color: #e0e0e0;
+  border-color: #e94560;
+}
+/* Preset buttons */
+.preset-row {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.preset-row button {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 2px;
+  font-size: 10px;
+  border: 1px solid #30363d;
+  background: #0d1117;
+  color: #888;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.preset-row button:hover {
+  background: #0f3460;
+  color: #e0e0e0;
+  border-color: #e94560;
+}
+/* Seek bar */
+.seek-bar {
+  flex: 1;
+  accent-color: #e94560;
+}
+/* Note count */
+.note-count {
+  font-size: 12px;
+  color: #888;
+  padding: 4px 0;
+}
+/* Analysis stats */
+.analysis-stats {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 8px 0;
+  font-size: 12px;
+  color: #888;
+}
+.analysis-stats .stat {
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  padding: 4px 10px;
+}
+.analysis-stats .stat strong {
+  color: #e94560;
+  margin-right: 4px;
+}
+/* Note histogram */
+.note-histogram {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 60px;
+  padding: 8px 0;
+}
+.note-histogram .hist-bar {
+  flex: 1;
+  min-width: 0;
+  background: #0f3460;
+  border-radius: 2px 2px 0 0;
+  position: relative;
+  transition: height 0.3s;
+}
+.note-histogram .hist-bar:hover {
+  background: #e94560;
+}
+.note-histogram .hist-label {
+  position: absolute;
+  bottom: -14px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 8px;
+  color: #666;
+  white-space: nowrap;
+}
+/* MIDI tab extras */
+.midi-actions-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 8px 0;
+}
+.midi-actions-row .btn {
+  width: auto;
+  flex: none;
+}
+/* Note table */
+.note-table-wrap {
+  max-height: 280px;
+  overflow: auto;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  margin-top: 8px;
+}
+.note-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.note-table th {
+  position: sticky;
+  top: 0;
+  background: #161b22;
+  color: #aaa;
+  font-weight: 600;
+  padding: 6px 8px;
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+  border-bottom: 1px solid #30363d;
+  white-space: nowrap;
+}
+.note-table th:hover { color: #e94560; }
+.note-table th .sort-arrow { margin-left: 4px; font-size: 9px; }
+.note-table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid rgba(48,54,61,0.5);
+  color: #c9d1d9;
+  font-variant-numeric: tabular-nums;
+}
+.note-table tr:hover td { background: rgba(233,69,96,0.05); }
+/* AI Prompt tab */
+.ai-prompt-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.ai-prompt-task {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.ai-prompt-task button {
+  padding: 6px 14px;
+  border: 1px solid #30363d;
+  background: #0d1117;
+  color: #aaa;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.15s;
+}
+.ai-prompt-task button:hover, .ai-prompt-task button.active {
+  background: #0f3460;
+  color: #e0e0e0;
+  border-color: #e94560;
+}
+.ai-prompt-output {
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 12px;
+  font-family: monospace;
+  font-size: 11px;
+  color: #c9d1d9;
+  white-space: pre-wrap;
+  overflow: auto;
+  max-height: 400px;
+  line-height: 1.5;
+}
+.ai-prompt-custom {
+  width: 100%;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  color: #e0e0e0;
+  border-radius: 4px;
+  padding: 8px;
+  font-size: 12px;
+  font-family: inherit;
+  resize: vertical;
+  min-height: 40px;
+}
+.ai-prompt-custom:focus {
+  outline: none;
   border-color: #e94560;
 }
 /* Responsive */
@@ -375,16 +828,45 @@ header small {
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
-/* Seek bar */
-.seek-bar {
-  flex: 1;
-  accent-color: #e94560;
+/* Tooltip */
+[data-tip] {
+  position: relative;
 }
-/* Note count */
-.note-count {
-  font-size: 12px;
-  color: #888;
-  padding: 4px 0;
+[data-tip]:hover::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 6px);
+  transform: translateX(-50%);
+  background: #161b22;
+  border: 1px solid #30363d;
+  color: #ccc;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  white-space: nowrap;
+  z-index: 50;
+  pointer-events: none;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}
+/* Reset defaults */
+.reset-btn {
+  background: none;
+  border: 1px solid #30363d;
+  color: #666;
+  padding: 4px 8px;
+  border-radius: 3px;
+  font-size: 10px;
+  cursor: pointer;
+  width: 100%;
+  margin-top: 2px;
+  transition: all 0.15s;
+}
+.reset-btn:hover {
+  color: #e94560;
+  border-color: #e94560;
 }
 </style>
 </head>
@@ -392,167 +874,194 @@ header small {
 
 <header>
   Audio to MIDI / WAV Converter
-  <small>Monophonic pitch detection with autocorrelation -- Polyphonic mode coming soon</small>
+  <small>Transcribe audio to MIDI, WAV, and note event arrays for music production and AI-assisted coding</small>
 </header>
+
+<div class="note-tooltip" id="noteTooltip"></div>
 
 <div class="main-layout">
   <!-- SIDEBAR -->
   <div class="sidebar">
-    <div class="grp">
-      <div class="grp-title">Input</div>
-      <div id="fileInfo" class="file-info" style="display:none;"></div>
-      <div class="ctrl" style="margin-top:6px;">
-        <label>Channel Mode</label>
-        <div class="channel-toggle" id="channelToggle">
-          <button class="active" data-ch="mix">Mix to Mono</button>
-          <button data-ch="left">Left</button>
-          <button data-ch="right">Right</button>
-        </div>
-      </div>
-      <div class="ctrl">
-        <label>Working Sample Rate</label>
-        <select id="sampleRate">
-          <option value="11025">11025 Hz (fast)</option>
-          <option value="22050" selected>22050 Hz (balanced)</option>
-          <option value="44100">44100 Hz (quality)</option>
-        </select>
-      </div>
-    </div>
-
-    <div class="grp">
-      <div class="grp-title">Analysis</div>
-      <div class="ctrl-row">
-        <div class="ctrl">
-          <label>Frame Size</label>
-          <select id="frameSize">
-            <option value="1024">1024</option>
-            <option value="2048" selected>2048</option>
-            <option value="4096">4096</option>
-          </select>
+    <div class="grp" id="grpInput">
+      <div class="grp-title" onclick="toggleGroup('grpInput')"><span>Input</span></div>
+      <div class="grp-body">
+        <div id="fileInfo" class="file-info" style="display:none;"></div>
+        <div class="ctrl" style="margin-top:6px;">
+          <label data-tip="How multi-channel audio is handled">Channel Mode</label>
+          <div class="channel-toggle" id="channelToggle">
+            <button class="active" data-ch="mix">Mix to Mono</button>
+            <button data-ch="left">Left</button>
+            <button data-ch="right">Right</button>
+          </div>
         </div>
         <div class="ctrl">
-          <label>Hop Size</label>
-          <select id="hopSize">
-            <option value="256">256</option>
-            <option value="512" selected>512</option>
-            <option value="1024">1024</option>
-          </select>
-        </div>
-      </div>
-      <div class="ctrl">
-        <label>Window Function</label>
-        <select id="windowFn">
-          <option value="hann" selected>Hann</option>
-          <option value="hamming">Hamming</option>
-          <option value="rectangular">Rectangular</option>
-        </select>
-      </div>
-      <div class="ctrl">
-        <label>Confidence Threshold</label>
-        <div class="range-row">
-          <input type="range" id="confThreshold" min="0.05" max="0.95" step="0.01" value="0.30">
-          <span class="range-val" id="confThresholdVal">0.30</span>
-        </div>
-      </div>
-      <div class="ctrl">
-        <label>Energy Gate (RMS)</label>
-        <div class="range-row">
-          <input type="range" id="energyThreshold" min="0.001" max="0.15" step="0.001" value="0.010">
-          <span class="range-val" id="energyThresholdVal">0.010</span>
-        </div>
-      </div>
-    </div>
-
-    <div class="grp">
-      <div class="grp-title">Note Segmentation</div>
-      <div class="ctrl-row">
-        <div class="ctrl">
-          <label>Min Duration (s)</label>
-          <input type="number" id="minDuration" value="0.06" min="0.01" max="2" step="0.01">
-        </div>
-        <div class="ctrl">
-          <label>Gap Merge (s)</label>
-          <input type="number" id="gapMerge" value="0.04" min="0" max="0.5" step="0.01">
-        </div>
-      </div>
-      <div class="ctrl-row">
-        <div class="ctrl">
-          <label>Pitch Low (MIDI)</label>
-          <input type="number" id="pitchLow" value="24" min="0" max="127">
-        </div>
-        <div class="ctrl">
-          <label>Pitch High (MIDI)</label>
-          <input type="number" id="pitchHigh" value="96" min="0" max="127">
-        </div>
-      </div>
-      <div class="ctrl">
-        <label>Transpose (semitones)</label>
-        <div class="range-row">
-          <input type="range" id="transpose" min="-12" max="12" step="1" value="0">
-          <span class="range-val" id="transposeVal">0</span>
-        </div>
-      </div>
-    </div>
-
-    <div class="grp">
-      <div class="grp-title">Quantize</div>
-      <div class="ctrl-row">
-        <div class="ctrl">
-          <label>BPM</label>
-          <input type="number" id="bpm" value="120" min="20" max="400" step="1">
-        </div>
-        <div class="ctrl">
-          <label>Grid</label>
-          <select id="quantize">
-            <option value="none" selected>None</option>
-            <option value="1/4">1/4</option>
-            <option value="1/8">1/8</option>
-            <option value="1/16">1/16</option>
-            <option value="1/32">1/32</option>
+          <label data-tip="Lower = faster but less detail; higher = better quality">Working Sample Rate</label>
+          <select id="sampleRate">
+            <option value="11025">11025 Hz (fast)</option>
+            <option value="22050" selected>22050 Hz (balanced)</option>
+            <option value="44100">44100 Hz (quality)</option>
           </select>
         </div>
       </div>
     </div>
 
-    <div class="grp">
-      <div class="grp-title">Resynthesis</div>
-      <div class="ctrl">
-        <label>Voice</label>
-        <select id="synthVoice">
-          <option value="sine">Sine</option>
-          <option value="triangle" selected>Triangle</option>
-          <option value="square">Square</option>
-          <option value="sawtooth">Sawtooth</option>
-          <option value="plucked">Plucked String</option>
-        </select>
+    <div class="grp" id="grpPresets">
+      <div class="grp-title" onclick="toggleGroup('grpPresets')"><span>Presets</span></div>
+      <div class="grp-body">
+        <div class="preset-row">
+          <button onclick="applyPreset('speech')" data-tip="Optimized for speech/vocal transcription">Speech</button>
+          <button onclick="applyPreset('singing')" data-tip="Optimized for singing voice">Singing</button>
+          <button onclick="applyPreset('instrument')" data-tip="Optimized for melodic instruments">Instrument</button>
+          <button onclick="applyPreset('percussion')" data-tip="Optimized for percussive/rhythmic content">Percussion</button>
+        </div>
+        <button class="reset-btn" onclick="applyPreset('default')">Reset to defaults</button>
       </div>
-      <div class="ctrl-row">
-        <div class="ctrl">
-          <label>Attack (s)</label>
-          <input type="number" id="adsrA" value="0.01" min="0.001" max="2" step="0.001">
+    </div>
+
+    <div class="grp" id="grpAnalysis">
+      <div class="grp-title" onclick="toggleGroup('grpAnalysis')"><span>Analysis</span></div>
+      <div class="grp-body">
+        <div class="ctrl-row">
+          <div class="ctrl">
+            <label data-tip="FFT window size; larger = better frequency resolution, worse time resolution">Frame Size</label>
+            <select id="frameSize">
+              <option value="1024">1024</option>
+              <option value="2048" selected>2048</option>
+              <option value="4096">4096</option>
+            </select>
+          </div>
+          <div class="ctrl">
+            <label data-tip="Overlap between frames; smaller = finer time resolution">Hop Size</label>
+            <select id="hopSize">
+              <option value="256">256</option>
+              <option value="512" selected>512</option>
+              <option value="1024">1024</option>
+            </select>
+          </div>
         </div>
         <div class="ctrl">
-          <label>Decay (s)</label>
-          <input type="number" id="adsrD" value="0.1" min="0.001" max="2" step="0.01">
+          <label data-tip="Windowing function applied to each analysis frame">Window Function</label>
+          <select id="windowFn">
+            <option value="hann" selected>Hann</option>
+            <option value="hamming">Hamming</option>
+            <option value="rectangular">Rectangular</option>
+          </select>
+        </div>
+        <div class="ctrl">
+          <label data-tip="Minimum autocorrelation confidence to accept a pitch detection">Confidence Threshold</label>
+          <div class="range-row">
+            <input type="range" id="confThreshold" min="0.05" max="0.95" step="0.01" value="0.30">
+            <span class="range-val" id="confThresholdVal">0.30</span>
+          </div>
+        </div>
+        <div class="ctrl">
+          <label data-tip="Minimum RMS energy to consider a frame as containing a note">Energy Gate (RMS)</label>
+          <div class="range-row">
+            <input type="range" id="energyThreshold" min="0.001" max="0.15" step="0.001" value="0.010">
+            <span class="range-val" id="energyThresholdVal">0.010</span>
+          </div>
         </div>
       </div>
-      <div class="ctrl-row">
-        <div class="ctrl">
-          <label>Sustain</label>
-          <input type="number" id="adsrS" value="0.6" min="0" max="1" step="0.01">
+    </div>
+
+    <div class="grp" id="grpSegmentation">
+      <div class="grp-title" onclick="toggleGroup('grpSegmentation')"><span>Note Segmentation</span></div>
+      <div class="grp-body">
+        <div class="ctrl-row">
+          <div class="ctrl">
+            <label data-tip="Notes shorter than this are discarded">Min Duration (s)</label>
+            <input type="number" id="minDuration" value="0.06" min="0.01" max="2" step="0.01">
+          </div>
+          <div class="ctrl">
+            <label data-tip="Merge consecutive notes of same pitch with gap smaller than this">Gap Merge (s)</label>
+            <input type="number" id="gapMerge" value="0.04" min="0" max="0.5" step="0.01">
+          </div>
+        </div>
+        <div class="ctrl-row">
+          <div class="ctrl">
+            <label data-tip="Lowest MIDI note to detect (24 = C1)">Pitch Low (MIDI)</label>
+            <input type="number" id="pitchLow" value="24" min="0" max="127">
+          </div>
+          <div class="ctrl">
+            <label data-tip="Highest MIDI note to detect (96 = C7)">Pitch High (MIDI)</label>
+            <input type="number" id="pitchHigh" value="96" min="0" max="127">
+          </div>
         </div>
         <div class="ctrl">
-          <label>Release (s)</label>
-          <input type="number" id="adsrR" value="0.15" min="0.001" max="3" step="0.01">
+          <label data-tip="Shift all detected notes up or down by semitones">Transpose (semitones)</label>
+          <div class="range-row">
+            <input type="range" id="transpose" min="-12" max="12" step="1" value="0">
+            <span class="range-val" id="transposeVal">0</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grp" id="grpQuantize">
+      <div class="grp-title" onclick="toggleGroup('grpQuantize')"><span>Quantize</span></div>
+      <div class="grp-body">
+        <div class="ctrl-row">
+          <div class="ctrl">
+            <label data-tip="Tempo for quantization grid and MIDI output">BPM</label>
+            <input type="number" id="bpm" value="120" min="20" max="400" step="1">
+          </div>
+          <div class="ctrl">
+            <label data-tip="Snap note start/end times to a rhythmic grid">Grid</label>
+            <select id="quantize">
+              <option value="none" selected>None</option>
+              <option value="1/4">1/4</option>
+              <option value="1/8">1/8</option>
+              <option value="1/16">1/16</option>
+              <option value="1/32">1/32</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grp" id="grpResynth">
+      <div class="grp-title" onclick="toggleGroup('grpResynth')"><span>Resynthesis</span></div>
+      <div class="grp-body">
+        <div class="ctrl">
+          <label data-tip="Waveform type used for MIDI playback and WAV resynthesis">Voice</label>
+          <select id="synthVoice">
+            <option value="sine">Sine</option>
+            <option value="triangle" selected>Triangle</option>
+            <option value="square">Square</option>
+            <option value="sawtooth">Sawtooth</option>
+            <option value="plucked">Plucked String</option>
+          </select>
+        </div>
+        <div class="ctrl-row">
+          <div class="ctrl">
+            <label>Attack (s)</label>
+            <input type="number" id="adsrA" value="0.01" min="0.001" max="2" step="0.001">
+          </div>
+          <div class="ctrl">
+            <label>Decay (s)</label>
+            <input type="number" id="adsrD" value="0.1" min="0.001" max="2" step="0.01">
+          </div>
+        </div>
+        <div class="ctrl-row">
+          <div class="ctrl">
+            <label>Sustain</label>
+            <input type="number" id="adsrS" value="0.6" min="0" max="1" step="0.01">
+          </div>
+          <div class="ctrl">
+            <label>Release (s)</label>
+            <input type="number" id="adsrR" value="0.15" min="0.001" max="3" step="0.01">
+          </div>
         </div>
       </div>
     </div>
 
     <div class="grp">
-      <div class="grp-title">Detection Mode</div>
-      <div style="display:flex;gap:6px;align-items:center;">
-        <span style="font-size:12px;color:#e0e0e0;">Monophonic</span>
-        <span class="badge-soon">Polyphonic -- coming soon</span>
+      <div class="grp-title" style="cursor:default;"><span>Detection Mode</span></div>
+      <div class="grp-body">
+        <div style="display:flex;gap:6px;align-items:center;">
+          <span style="font-size:12px;color:#e0e0e0;">Monophonic</span>
+          <span class="badge-soon">Polyphonic -- coming soon</span>
+        </div>
       </div>
     </div>
 
@@ -568,24 +1077,50 @@ header small {
       <h2>Drop an audio file here</h2>
       <p>Or click to browse. Accepts WAV, MP3, OGG, FLAC, M4A, WebM</p>
       <input type="file" id="fileInput" accept=".wav,.mp3,.ogg,.flac,.m4a,.webm,audio/*">
+      <div class="drop-zone-btns">
+        <button id="browseBtn">Browse Files</button>
+        <button id="recordBtn">Record from Microphone</button>
+      </div>
+    </div>
+
+    <div class="waveform-preview-wrap" id="waveformPreview">
+      <canvas id="previewCanvas"></canvas>
+      <div class="waveform-preview-info" id="previewInfo"></div>
     </div>
 
     <div id="outputSection" style="display:none;flex:1;flex-direction:column;">
       <div class="tab-bar">
         <button class="tab-btn active" data-tab="midi">MIDI</button>
         <button class="tab-btn" data-tab="wav">WAV</button>
-        <button class="tab-btn" data-tab="code">Use in Your App</button>
+        <button class="tab-btn" data-tab="code">Code Snippets</button>
+        <button class="tab-btn" data-tab="ai">AI Prompt</button>
       </div>
 
       <!-- MIDI Tab -->
       <div class="tab-panel active" id="tab-midi">
         <div class="playback-bar">
-          <button id="playBtn">Play</button>
-          <button id="stopBtn">Stop</button>
+          <button id="playBtn" title="Play / Pause"><div class="icon-play"></div></button>
+          <button id="stopBtn" title="Stop"><div class="icon-stop"></div></button>
+          <button id="loopBtn" title="Toggle loop"><div class="icon-loop"></div></button>
           <input type="range" class="seek-bar" id="seekBar" min="0" max="100" step="0.1" value="0">
           <span class="time-display" id="timeDisplay">0:00.0 / 0:00.0</span>
+          <div class="volume-wrap">
+            <div class="volume-icon"></div>
+            <input type="range" id="volumeSlider" min="0" max="1" step="0.01" value="0.5" title="Volume">
+          </div>
         </div>
+
+        <div class="analysis-stats" id="analysisStats" style="display:none;"></div>
+
         <div class="note-count" id="noteCount"></div>
+
+        <div class="piano-roll-toolbar">
+          <button id="zoomOut" title="Zoom out">-</button>
+          <span class="zoom-label" id="zoomLabel">100%</span>
+          <button id="zoomIn" title="Zoom in">+</button>
+          <button id="zoomFit" title="Fit to view" style="font-size:11px;width:auto;padding:0 8px;">Fit</button>
+        </div>
+
         <div class="piano-roll-wrap" id="pianoRollWrap">
           <div class="piano-labels" id="pianoLabels">
             <canvas id="labelsCanvas"></canvas>
@@ -594,10 +1129,37 @@ header small {
             <canvas id="rollCanvas"></canvas>
           </div>
         </div>
-        <div class="download-row" style="margin-top:10px;">
-          <button class="btn btn-primary btn-sm" id="dlMidi">Download .mid</button>
-          <button class="btn btn-secondary btn-sm" id="dlJson">Download JSON Events</button>
+
+        <div class="midi-actions-row">
+          <button class="btn btn-primary btn-sm copy-btn" id="copyNotesJson">Copy Notes JSON</button>
+          <button class="btn btn-secondary btn-sm copy-btn" id="copyMidiBase64">Copy MIDI base64</button>
+          <button class="btn btn-secondary btn-sm" id="dlMidi">Download .mid</button>
+          <button class="btn btn-secondary btn-sm" id="dlJson">Download JSON</button>
         </div>
+
+        <div id="noteTableSection">
+          <div style="display:flex;align-items:center;gap:8px;margin-top:8px;">
+            <span style="font-size:12px;color:#aaa;font-weight:600;">Note Events</span>
+            <button class="btn btn-secondary btn-sm" id="toggleNoteTable" style="width:auto;padding:4px 10px;">Show Table</button>
+          </div>
+          <div class="note-table-wrap" id="noteTableWrap" style="display:none;">
+            <table class="note-table" id="noteTable">
+              <thead>
+                <tr>
+                  <th data-sort="idx"># <span class="sort-arrow"></span></th>
+                  <th data-sort="pitch">Pitch <span class="sort-arrow"></span></th>
+                  <th data-sort="name">Name <span class="sort-arrow"></span></th>
+                  <th data-sort="start">Start (s) <span class="sort-arrow"></span></th>
+                  <th data-sort="end">End (s) <span class="sort-arrow"></span></th>
+                  <th data-sort="dur">Duration (s) <span class="sort-arrow"></span></th>
+                  <th data-sort="vel">Velocity <span class="sort-arrow"></span></th>
+                </tr>
+              </thead>
+              <tbody id="noteTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+
         <div class="json-output" id="jsonOutput" style="display:none;"></div>
         <button class="btn btn-secondary btn-sm" id="toggleJson" style="margin-top:4px;width:auto;">Show JSON</button>
       </div>
@@ -611,10 +1173,21 @@ header small {
             <option value="original">Original audio</option>
           </select>
         </div>
-        <canvas class="wav-waveform" id="wavWaveform"></canvas>
+        <div class="wav-compare">
+          <div class="wav-col">
+            <div class="wav-col-label">Original Audio</div>
+            <canvas id="wavOriginalCanvas"></canvas>
+          </div>
+          <div class="wav-col">
+            <div class="wav-col-label">Resynthesized</div>
+            <canvas id="wavResynthCanvas"></canvas>
+          </div>
+        </div>
+        <div class="wav-info-row" id="wavInfoRow"></div>
         <audio id="wavPlayer" controls style="width:100%;margin-top:8px;"></audio>
         <div class="download-row" style="margin-top:10px;">
           <button class="btn btn-primary btn-sm" id="dlWav">Download .wav</button>
+          <button class="btn btn-secondary btn-sm copy-btn" id="copyWavInfo">Copy WAV Info</button>
         </div>
       </div>
 
@@ -622,31 +1195,88 @@ header small {
       <div class="tab-panel" id="tab-code">
         <div class="snippet-block">
           <div class="snippet-header">
-            <span>JavaScript -- Web Audio Playback</span>
-            <button onclick="copySnippet(this)">Copy</button>
+            <span>JavaScript -- Web Audio API Playback</span>
+            <button class="copy-btn" onclick="copySnippet(this)">Copy</button>
           </div>
           <div class="snippet-code" id="snippetJS"></div>
         </div>
         <div class="snippet-block">
           <div class="snippet-header">
+            <span>JavaScript -- Tone.js</span>
+            <button class="copy-btn" onclick="copySnippet(this)">Copy</button>
+          </div>
+          <div class="snippet-code" id="snippetToneJS"></div>
+        </div>
+        <div class="snippet-block">
+          <div class="snippet-header">
+            <span>JavaScript -- MIDI.js</span>
+            <button class="copy-btn" onclick="copySnippet(this)">Copy</button>
+          </div>
+          <div class="snippet-code" id="snippetMidiJS"></div>
+        </div>
+        <div class="snippet-block">
+          <div class="snippet-header">
             <span>React -- Piano Roll Component</span>
-            <button onclick="copySnippet(this)">Copy</button>
+            <button class="copy-btn" onclick="copySnippet(this)">Copy</button>
           </div>
           <div class="snippet-code" id="snippetReact"></div>
         </div>
         <div class="snippet-block">
           <div class="snippet-header">
+            <span>Python -- music21</span>
+            <button class="copy-btn" onclick="copySnippet(this)">Copy</button>
+          </div>
+          <div class="snippet-code" id="snippetMusic21"></div>
+        </div>
+        <div class="snippet-block">
+          <div class="snippet-header">
+            <span>Python -- pretty_midi</span>
+            <button class="copy-btn" onclick="copySnippet(this)">Copy</button>
+          </div>
+          <div class="snippet-code" id="snippetPrettyMidi"></div>
+        </div>
+        <div class="snippet-block">
+          <div class="snippet-header">
             <span>Python -- Read MIDI with mido</span>
-            <button onclick="copySnippet(this)">Copy</button>
+            <button class="copy-btn" onclick="copySnippet(this)">Copy</button>
           </div>
           <div class="snippet-code" id="snippetPython"></div>
         </div>
         <div class="snippet-block">
           <div class="snippet-header">
             <span>Python -- Load WAV with scipy</span>
-            <button onclick="copySnippet(this)">Copy</button>
+            <button class="copy-btn" onclick="copySnippet(this)">Copy</button>
           </div>
           <div class="snippet-code" id="snippetPythonWav"></div>
+        </div>
+      </div>
+
+      <!-- AI Prompt Tab -->
+      <div class="tab-panel" id="tab-ai">
+        <div class="ai-prompt-wrap">
+          <div style="font-size:13px;color:#ccc;font-weight:600;">Generate an AI-ready prompt with your note data</div>
+          <div style="font-size:11px;color:#888;">Choose a task or write your own. The note events will be included automatically.</div>
+
+          <div class="ai-prompt-task" id="aiTaskBtns">
+            <button class="active" data-task="visualize">Create a melody visualization</button>
+            <button data-task="sheet">Generate sheet music</button>
+            <button data-task="game">Build a rhythm game</button>
+            <button data-task="harmony">Compose a harmony</button>
+            <button data-task="analyze">Analyze the melody</button>
+            <button data-task="remix">Create a remix</button>
+          </div>
+
+          <div>
+            <label style="font-size:11px;color:#aaa;display:block;margin-bottom:4px;">Custom task (optional -- overrides selection above)</label>
+            <textarea class="ai-prompt-custom" id="aiCustomTask" rows="2" placeholder="e.g., Generate a bass line that complements this melody"></textarea>
+          </div>
+
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-primary btn-sm copy-btn" id="copyAiPrompt" style="width:auto;">Copy Prompt for AI Assistant</button>
+            <button class="btn btn-secondary btn-sm copy-btn" id="copyClaudePrompt" style="width:auto;">Copy for Claude Code</button>
+          </div>
+
+          <div class="ai-prompt-output" id="aiPromptOutput"></div>
         </div>
       </div>
     </div>
@@ -673,6 +1303,16 @@ var scheduledNodes = [];
 var totalDuration = 0;
 var playbackRAF = null;
 var channelMode = 'mix';
+var loopEnabled = false;
+var masterVolume = 0.5;
+var masterGainNode = null;
+var detectedTempo = 120;
+var noteTableVisible = false;
+var noteTableSortCol = 'start';
+var noteTableSortAsc = true;
+var mediaRecorder = null;
+var isRecording = false;
+var zoomLevel = 1.0;
 
 // ========== DOM REFS ==========
 var dropZone = document.getElementById('dropZone');
@@ -693,6 +1333,7 @@ var rollCanvas = document.getElementById('rollCanvas');
 var labelsCanvas = document.getElementById('labelsCanvas');
 var pianoScroll = document.getElementById('pianoScroll');
 var pianoRollWrap = document.getElementById('pianoRollWrap');
+var noteTooltip = document.getElementById('noteTooltip');
 
 // ========== HELPERS ==========
 function $(id) { return document.getElementById(id); }
@@ -731,6 +1372,69 @@ function midiToFreq(n) {
   return 440 * Math.pow(2, (n - 69) / 12);
 }
 
+function copyToClipboard(text, btnEl) {
+  navigator.clipboard.writeText(text).then(function() {
+    if (btnEl) {
+      var orig = btnEl.textContent;
+      btnEl.textContent = 'Copied!';
+      btnEl.classList.add('copied');
+      setTimeout(function() {
+        btnEl.textContent = orig;
+        btnEl.classList.remove('copied');
+      }, 1500);
+    }
+  });
+}
+
+function getNotesJSON() {
+  return JSON.stringify(noteEvents.map(function(n) {
+    return {
+      pitch: n.pitch,
+      name: midiToName(n.pitch),
+      startTime: parseFloat(n.startTime.toFixed(4)),
+      endTime: parseFloat(n.endTime.toFixed(4)),
+      duration: parseFloat((n.endTime - n.startTime).toFixed(4)),
+      velocity: n.velocity
+    };
+  }), null, 2);
+}
+
+function uint8ToBase64(arr) {
+  var str = '';
+  for (var i = 0; i < arr.length; i++) str += String.fromCharCode(arr[i]);
+  return btoa(str);
+}
+
+// ========== COLLAPSIBLE GROUPS ==========
+window.toggleGroup = function(id) {
+  var el = document.getElementById(id);
+  if (el) el.classList.toggle('collapsed');
+};
+
+// ========== PRESETS ==========
+window.applyPreset = function(name) {
+  var presets = {
+    default: { frameSize: '2048', hopSize: '512', windowFn: 'hann', confThreshold: 0.30, energyThreshold: 0.010, minDuration: 0.06, gapMerge: 0.04, pitchLow: 24, pitchHigh: 96, sampleRate: '22050' },
+    speech: { frameSize: '2048', hopSize: '512', windowFn: 'hann', confThreshold: 0.40, energyThreshold: 0.020, minDuration: 0.10, gapMerge: 0.08, pitchLow: 36, pitchHigh: 84, sampleRate: '22050' },
+    singing: { frameSize: '2048', hopSize: '256', windowFn: 'hann', confThreshold: 0.35, energyThreshold: 0.015, minDuration: 0.08, gapMerge: 0.05, pitchLow: 36, pitchHigh: 96, sampleRate: '22050' },
+    instrument: { frameSize: '2048', hopSize: '512', windowFn: 'hann', confThreshold: 0.25, energyThreshold: 0.008, minDuration: 0.04, gapMerge: 0.03, pitchLow: 24, pitchHigh: 108, sampleRate: '22050' },
+    percussion: { frameSize: '1024', hopSize: '256', windowFn: 'hamming', confThreshold: 0.20, energyThreshold: 0.030, minDuration: 0.03, gapMerge: 0.02, pitchLow: 24, pitchHigh: 96, sampleRate: '22050' }
+  };
+  var p = presets[name] || presets['default'];
+  $('frameSize').value = p.frameSize;
+  $('hopSize').value = p.hopSize;
+  $('windowFn').value = p.windowFn;
+  $('confThreshold').value = p.confThreshold;
+  $('confThresholdVal').textContent = p.confThreshold.toFixed(2);
+  $('energyThreshold').value = p.energyThreshold;
+  $('energyThresholdVal').textContent = p.energyThreshold.toFixed(3);
+  $('minDuration').value = p.minDuration;
+  $('gapMerge').value = p.gapMerge;
+  $('pitchLow').value = p.pitchLow;
+  $('pitchHigh').value = p.pitchHigh;
+  $('sampleRate').value = p.sampleRate;
+};
+
 // ========== RANGE SLIDER BINDINGS ==========
 ['confThreshold', 'energyThreshold', 'transpose'].forEach(function(id) {
   var el = $(id);
@@ -750,6 +1454,9 @@ document.querySelectorAll('.tab-btn').forEach(function(btn) {
     if (btn.dataset.tab === 'wav' && noteEvents.length > 0) {
       renderWav();
     }
+    if (btn.dataset.tab === 'ai' && noteEvents.length > 0) {
+      updateAiPrompt();
+    }
   });
 });
 
@@ -764,7 +1471,14 @@ document.querySelectorAll('#channelToggle button').forEach(function(btn) {
 });
 
 // ========== FILE INPUT ==========
-dropZone.addEventListener('click', function() { fileInput.click(); });
+dropZone.addEventListener('click', function(e) {
+  if (e.target.tagName === 'BUTTON') return;
+  fileInput.click();
+});
+$('browseBtn').addEventListener('click', function(e) {
+  e.stopPropagation();
+  fileInput.click();
+});
 dropZone.addEventListener('dragover', function(e) {
   e.preventDefault();
   dropZone.classList.add('dragover');
@@ -780,6 +1494,80 @@ dropZone.addEventListener('drop', function(e) {
 fileInput.addEventListener('change', function() {
   if (fileInput.files.length) loadFile(fileInput.files[0]);
 });
+
+// ========== RECORDING ==========
+$('recordBtn').addEventListener('click', function(e) {
+  e.stopPropagation();
+  if (isRecording) {
+    stopRecording();
+  } else {
+    startRecording();
+  }
+});
+
+function startRecording() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    setStatus('Microphone access not supported in this browser.', 'error');
+    return;
+  }
+  navigator.mediaDevices.getUserMedia({ audio: true }).then(function(stream) {
+    isRecording = true;
+    var recBtn = $('recordBtn');
+    recBtn.textContent = 'Stop Recording';
+    recBtn.classList.add('recording');
+
+    var chunks = [];
+    mediaRecorder = new MediaRecorder(stream);
+    mediaRecorder.ondataavailable = function(e) {
+      if (e.data.size > 0) chunks.push(e.data);
+    };
+    mediaRecorder.onstop = function() {
+      isRecording = false;
+      recBtn.textContent = 'Record from Microphone';
+      recBtn.classList.remove('recording');
+      stream.getTracks().forEach(function(t) { t.stop(); });
+      if (chunks.length > 0) {
+        var blob = new Blob(chunks, { type: 'audio/webm' });
+        processAudioBlob(blob, 'recording.webm');
+      }
+    };
+    mediaRecorder.start();
+    setStatus('Recording... Click "Stop Recording" when done.', 'ok');
+  }).catch(function(err) {
+    setStatus('Microphone access denied: ' + err.message, 'error');
+  });
+}
+
+function stopRecording() {
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.stop();
+  }
+}
+
+function processAudioBlob(blob, filename) {
+  setStatus('Decoding recorded audio...');
+  fileInfo.style.display = 'block';
+  fileInfo.innerHTML = '<strong>' + filename + '</strong><br>Size: ' + (blob.size / 1024).toFixed(1) + ' KB';
+
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    audioCtx.decodeAudioData(e.target.result, function(buf) {
+      originalBuffer = buf;
+      fileInfo.innerHTML = '<strong>' + filename + '</strong><br>' +
+        'Channels: ' + buf.numberOfChannels + ' | SR: ' + buf.sampleRate + ' Hz<br>' +
+        'Duration: ' + buf.duration.toFixed(2) + 's | Samples: ' + buf.length;
+      prepareMonoData();
+      drawWaveformPreview();
+      analyzeBtn.disabled = false;
+      setStatus('Audio decoded. Ready to analyze.', 'ok');
+    }, function(err) {
+      setStatus('Failed to decode audio: ' + (err.message || err), 'error');
+    });
+  };
+  reader.readAsArrayBuffer(blob);
+}
 
 function loadFile(file) {
   var ext = file.name.split('.').pop().toLowerCase();
@@ -802,6 +1590,7 @@ function loadFile(file) {
         'Channels: ' + buf.numberOfChannels + ' | SR: ' + buf.sampleRate + ' Hz<br>' +
         'Duration: ' + buf.duration.toFixed(2) + 's | Samples: ' + buf.length;
       prepareMonoData();
+      drawWaveformPreview();
       analyzeBtn.disabled = false;
       setStatus('Audio decoded. Ready to analyze.', 'ok');
     }, function(err) {
@@ -833,6 +1622,62 @@ function prepareMonoData() {
   } else {
     monoData = originalBuffer.getChannelData(Math.min(1, numCh - 1));
   }
+}
+
+// ========== WAVEFORM PREVIEW ==========
+function drawWaveformPreview() {
+  if (!originalBuffer) return;
+  var wrap = $('waveformPreview');
+  wrap.style.display = 'block';
+  var canvas = $('previewCanvas');
+  var infoEl = $('previewInfo');
+
+  var data = originalBuffer.getChannelData(0);
+  var w = wrap.clientWidth || 600;
+  var h = 64;
+  canvas.width = w;
+  canvas.height = h;
+  canvas.style.width = w + 'px';
+  canvas.style.height = h + 'px';
+
+  var ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#0d1117';
+  ctx.fillRect(0, 0, w, h);
+
+  var mid = h / 2;
+  var samplesPerPx = Math.max(1, Math.floor(data.length / w));
+
+  ctx.strokeStyle = '#e94560';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (var i = 0; i < w; i++) {
+    var start = i * samplesPerPx;
+    var end = Math.min(data.length, start + samplesPerPx);
+    var mn = 0, mx = 0;
+    for (var j = start; j < end; j++) {
+      if (data[j] < mn) mn = data[j];
+      if (data[j] > mx) mx = data[j];
+    }
+    ctx.moveTo(i, mid - mx * mid);
+    ctx.lineTo(i, mid - mn * mid);
+  }
+  ctx.stroke();
+
+  // center line
+  ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+  ctx.beginPath();
+  ctx.moveTo(0, mid);
+  ctx.lineTo(w, mid);
+  ctx.stroke();
+
+  var dur = originalBuffer.duration;
+  var sr = originalBuffer.sampleRate;
+  var ch = originalBuffer.numberOfChannels;
+  infoEl.innerHTML =
+    '<span>Duration: ' + dur.toFixed(2) + 's</span>' +
+    '<span>Sample rate: ' + sr + ' Hz</span>' +
+    '<span>Channels: ' + ch + '</span>' +
+    '<span>Samples: ' + originalBuffer.length.toLocaleString() + '</span>';
 }
 
 // ========== RESAMPLE ==========
@@ -880,15 +1725,9 @@ function detectPitch(buffer, sampleRate, minFreq, maxFreq) {
   var windowed = buffer; // already windowed
   var N = windowed.length;
 
-  // Compute normalized squared difference function (McLeod approach)
-  // More robust than plain autocorrelation
-  var nsdf = new Float32Array(N);
   var maxLag = Math.min(N, Math.floor(sampleRate / minFreq));
   var minLag = Math.max(2, Math.floor(sampleRate / maxFreq));
 
-  // Precompute using autocorrelation
-  // m'(tau) = 2 * r(tau) / (r_prime(0, tau) + r_prime(tau, N))
-  // Simplified: compute autocorrelation and normalize
   var ac = new Float32Array(maxLag + 1);
   for (var lag = 0; lag <= maxLag; lag++) {
     var sum = 0;
@@ -904,8 +1743,6 @@ function detectPitch(buffer, sampleRate, minFreq, maxFreq) {
     ac[lag] = denom > 0 ? sum / denom : 0;
   }
 
-  // Find peaks in the NSDF
-  // Look for first significant peak after crossing zero
   var peaks = [];
   var prevVal = 1;
   var crossedZero = false;
@@ -915,7 +1752,6 @@ function detectPitch(buffer, sampleRate, minFreq, maxFreq) {
       crossedZero = true;
     }
     if (crossedZero && ac[i] > 0.0) {
-      // Find local maximum in this positive region
       var peakLag = i;
       var peakVal = ac[i];
       while (i < maxLag - 1 && ac[i + 1] >= ac[i]) {
@@ -926,7 +1762,6 @@ function detectPitch(buffer, sampleRate, minFreq, maxFreq) {
         }
       }
       peaks.push({ lag: peakLag, val: peakVal });
-      // Reset for next zero crossing
       crossedZero = false;
     }
   }
@@ -935,7 +1770,6 @@ function detectPitch(buffer, sampleRate, minFreq, maxFreq) {
     return { freq: 0, confidence: 0 };
   }
 
-  // Pick the first peak that is at least 0.8 * the max peak (fundamental)
   var maxPeak = 0;
   for (var i = 0; i < peaks.length; i++) {
     if (peaks[i].val > maxPeak) maxPeak = peaks[i].val;
@@ -953,7 +1787,7 @@ function detectPitch(buffer, sampleRate, minFreq, maxFreq) {
   var bestLag = bestPeak.lag;
   var bestVal = bestPeak.val;
 
-  // Parabolic interpolation for sub-sample accuracy
+  // Parabolic interpolation
   if (bestLag > 0 && bestLag < maxLag) {
     var a = ac[bestLag - 1];
     var b = ac[bestLag];
@@ -1049,7 +1883,7 @@ function segmentNotes(frames, settings) {
     notes[i].velocity = Math.min(127, Math.max(20, Math.floor(avgRms * 800)));
   }
 
-  // Merge gaps (same pitch, short silence between)
+  // Merge gaps
   notes = mergeGaps(notes, settings.gapMerge);
 
   // Filter by minimum duration
@@ -1098,11 +1932,32 @@ function quantizeNotes(notes, bpm, grid) {
     var n = notes[i];
     var origDur = n.endTime - n.startTime;
     n.startTime = Math.round(n.startTime / gridSec) * gridSec;
-    // Quantize duration to at least one grid unit
     var qDur = Math.max(gridSec, Math.round(origDur / gridSec) * gridSec);
     n.endTime = n.startTime + qDur;
   }
   return notes;
+}
+
+// ========== TEMPO ESTIMATION ==========
+function estimateTempo(notes) {
+  if (notes.length < 3) return 120;
+  var onsets = notes.map(function(n) { return n.startTime; });
+  var iois = [];
+  for (var i = 1; i < onsets.length; i++) {
+    var diff = onsets[i] - onsets[i - 1];
+    if (diff > 0.05 && diff < 2.0) iois.push(diff);
+  }
+  if (iois.length < 2) return 120;
+
+  // Cluster IOIs to find most common beat duration
+  iois.sort(function(a, b) { return a - b; });
+  var median = iois[Math.floor(iois.length / 2)];
+  var bpm = Math.round(60 / median);
+
+  // Constrain to reasonable range
+  while (bpm < 60) bpm *= 2;
+  while (bpm > 200) bpm /= 2;
+  return Math.round(bpm);
 }
 
 // ========== MIDI ENCODER ==========
@@ -1133,10 +1988,9 @@ function encodeMidi(notes, bpm) {
     arr.push((v >>> 8) & 0xff, v & 0xff);
   }
 
-  // Build track data
   var trackData = [];
 
-  // Tempo meta event: delta=0, FF 51 03 tt tt tt
+  // Tempo meta event
   trackData.push(0x00, 0xFF, 0x51, 0x03);
   trackData.push((usPerBeat >>> 16) & 0xff, (usPerBeat >>> 8) & 0xff, usPerBeat & 0xff);
 
@@ -1151,7 +2005,6 @@ function encodeMidi(notes, bpm) {
   // Program change: acoustic grand piano (channel 0)
   trackData.push(0x00, 0xC0, 0x00);
 
-  // Build note events sorted by tick
   var events = [];
   var beatsPerSec = bpm / 60;
   for (var i = 0; i < notes.length; i++) {
@@ -1165,7 +2018,6 @@ function encodeMidi(notes, bpm) {
     events.push({ tick: endTick, type: 0x80, note: p, vel: 0, order: 0 });
   }
 
-  // Sort: by tick, then note-offs before note-ons at same tick
   events.sort(function(a, b) {
     if (a.tick !== b.tick) return a.tick - b.tick;
     return a.order - b.order;
@@ -1184,15 +2036,12 @@ function encodeMidi(notes, bpm) {
   // End of track
   trackData.push(0x00, 0xFF, 0x2F, 0x00);
 
-  // Build the MIDI file
   var midi = [];
-  // MThd header
   writeString(midi, 'MThd');
-  write32(midi, 6);        // header length
-  write16(midi, 0);        // format 0
-  write16(midi, 1);        // 1 track
+  write32(midi, 6);
+  write16(midi, 0);
+  write16(midi, 1);
   write16(midi, ticksPerBeat);
-  // MTrk
   writeString(midi, 'MTrk');
   write32(midi, trackData.length);
   for (var i = 0; i < trackData.length; i++) midi.push(trackData[i]);
@@ -1299,10 +2148,9 @@ function resynthNotes(notes, sampleRate, voice, adsr) {
     var endSamp = Math.min(totalSamples, Math.ceil((n.startTime + totalLen) * sampleRate));
 
     for (var s = startSamp; s < endSamp; s++) {
-      var t = (s - startSamp) / sampleRate; // time within note
+      var t = (s - startSamp) / sampleRate;
       var phase = (t * freq) % 1;
 
-      // Generate waveform
       var sample = 0;
       if (voice === 'sine') {
         sample = Math.sin(2 * Math.PI * phase);
@@ -1313,14 +2161,12 @@ function resynthNotes(notes, sampleRate, voice, adsr) {
       } else if (voice === 'sawtooth') {
         sample = 2 * phase - 1;
       } else if (voice === 'plucked') {
-        // Karplus-Strong-like: exponential decay * mix of harmonics
         var decay = Math.exp(-t * 6);
         sample = (Math.sin(2 * Math.PI * phase)
                 + 0.5 * Math.sin(4 * Math.PI * phase)
                 + 0.25 * Math.sin(6 * Math.PI * phase)) * decay / 1.5;
       }
 
-      // ADSR envelope
       var env = 0;
       if (t < adsr.a) {
         env = t / adsr.a;
@@ -1338,7 +2184,6 @@ function resynthNotes(notes, sampleRate, voice, adsr) {
     }
   }
 
-  // Soft clip
   for (var i = 0; i < output.length; i++) {
     if (output[i] > 1) output[i] = 1;
     else if (output[i] < -1) output[i] = -1;
@@ -1380,10 +2225,10 @@ function drawPianoRoll(notes, duration, highlightTime) {
   rollState.noteHeight = Math.max(4, Math.min(16, Math.floor(availH / pitchRange)));
   var rollHeight = pitchRange * rollState.noteHeight;
 
-  // Auto-scale pixels per second based on duration
+  // Scale pixels per second based on zoom
   var scrollWidth = pianoScroll.clientWidth || 600;
-  var minPxPerSec = scrollWidth / duration;
-  rollState.pxPerSec = Math.max(minPxPerSec, Math.min(200, 80));
+  var basePxPerSec = Math.max(scrollWidth / duration, 80);
+  rollState.pxPerSec = basePxPerSec * zoomLevel;
 
   var rollWidth = Math.max(scrollWidth, Math.ceil(duration * rollState.pxPerSec) + 60);
 
@@ -1403,7 +2248,6 @@ function drawPianoRoll(notes, duration, highlightTime) {
     var y = (maxP - p) * rollState.noteHeight;
     var isBlack = [1,3,6,8,10].indexOf(p % 12) !== -1;
     if (p % 12 === 0) {
-      // C note - mark it
       lctx.fillStyle = '#e94560';
       lctx.fillText(midiToName(p), 44, y + rollState.noteHeight / 2);
     } else if (!isBlack) {
@@ -1474,8 +2318,7 @@ function drawPianoRoll(notes, duration, highlightTime) {
     ctx.stroke();
   }
 
-  // Draw notes
-  var hueBase = 210; // blue base
+  // Draw notes - color by velocity
   for (var i = 0; i < notes.length; i++) {
     var n = notes[i];
     var x = n.startTime * rollState.pxPerSec;
@@ -1483,11 +2326,11 @@ function drawPianoRoll(notes, duration, highlightTime) {
     var y = (maxP - n.pitch) * rollState.noteHeight;
     var h = rollState.noteHeight - 1;
 
-    // Color by velocity
+    // Color by velocity: quiet=light desaturated, loud=dark saturated
     var velNorm = (n.velocity - 20) / 107;
-    var hue = hueBase + velNorm * 60; // blue to purple
-    var sat = 60 + velNorm * 30;
-    var lum = 35 + velNorm * 25;
+    var hue = 210 + velNorm * 60;
+    var sat = 45 + velNorm * 45;
+    var lum = 30 + velNorm * 30;
 
     ctx.fillStyle = 'hsl(' + hue + ',' + sat + '%,' + lum + '%)';
     ctx.fillRect(x, y, w, h);
@@ -1506,9 +2349,93 @@ function drawPianoRoll(notes, duration, highlightTime) {
     ctx.moveTo(px, 0);
     ctx.lineTo(px, rollHeight);
     ctx.stroke();
+
+    // Playhead glow
+    ctx.strokeStyle = 'rgba(233,69,96,0.3)';
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.moveTo(px, 0);
+    ctx.lineTo(px, rollHeight);
+    ctx.stroke();
   }
 
-  noteCountEl.textContent = notes.length + ' notes detected | Duration: ' + duration.toFixed(2) + 's | Pitch range: ' + midiToName(minP) + ' - ' + midiToName(maxP);
+  noteCountEl.textContent = notes.length + ' notes detected | Duration: ' + duration.toFixed(2) + 's | Pitch range: ' + midiToName(minP + 3) + ' - ' + midiToName(maxP - 3);
+}
+
+// ========== PIANO ROLL INTERACTION ==========
+rollCanvas.addEventListener('mousemove', function(e) {
+  if (noteEvents.length === 0) return;
+  var rect = rollCanvas.getBoundingClientRect();
+  var scaleX = rollCanvas.width / rect.width;
+  var scaleY = rollCanvas.height / rect.height;
+  var mx = (e.clientX - rect.left) * scaleX;
+  var my = (e.clientY - rect.top) * scaleY;
+
+  var maxP = rollState.maxPitch;
+  var found = null;
+  for (var i = 0; i < noteEvents.length; i++) {
+    var n = noteEvents[i];
+    var nx = n.startTime * rollState.pxPerSec;
+    var nw = Math.max(2, (n.endTime - n.startTime) * rollState.pxPerSec);
+    var ny = (maxP - n.pitch) * rollState.noteHeight;
+    var nh = rollState.noteHeight - 1;
+    if (mx >= nx && mx <= nx + nw && my >= ny && my <= ny + nh) {
+      found = n;
+      break;
+    }
+  }
+
+  if (found) {
+    noteTooltip.style.display = 'block';
+    noteTooltip.style.left = (e.clientX + 12) + 'px';
+    noteTooltip.style.top = (e.clientY - 8) + 'px';
+    var dur = (found.endTime - found.startTime).toFixed(3);
+    noteTooltip.textContent = midiToName(found.pitch) + ' (MIDI ' + found.pitch + ') | ' + dur + 's | vel:' + found.velocity;
+  } else {
+    noteTooltip.style.display = 'none';
+  }
+});
+
+rollCanvas.addEventListener('mouseleave', function() {
+  noteTooltip.style.display = 'none';
+});
+
+// Click on piano roll to seek
+rollCanvas.addEventListener('click', function(e) {
+  if (noteEvents.length === 0 || totalDuration <= 0) return;
+  var rect = rollCanvas.getBoundingClientRect();
+  var scaleX = rollCanvas.width / rect.width;
+  var mx = (e.clientX - rect.left) * scaleX;
+  var seekTime = mx / rollState.pxPerSec;
+  seekTime = Math.max(0, Math.min(totalDuration, seekTime));
+
+  seekBar.value = (seekTime / totalDuration) * 100;
+  timeDisplay.textContent = formatTime(seekTime) + ' / ' + formatTime(totalDuration);
+  if (isPlaying) {
+    startPlayback(seekTime);
+  } else {
+    drawPianoRoll(noteEvents, totalDuration, seekTime);
+  }
+});
+
+// ========== ZOOM CONTROLS ==========
+$('zoomIn').addEventListener('click', function() {
+  zoomLevel = Math.min(5.0, zoomLevel * 1.3);
+  updateZoomLabel();
+  drawPianoRoll(noteEvents, totalDuration, -1);
+});
+$('zoomOut').addEventListener('click', function() {
+  zoomLevel = Math.max(0.2, zoomLevel / 1.3);
+  updateZoomLabel();
+  drawPianoRoll(noteEvents, totalDuration, -1);
+});
+$('zoomFit').addEventListener('click', function() {
+  zoomLevel = 1.0;
+  updateZoomLabel();
+  drawPianoRoll(noteEvents, totalDuration, -1);
+});
+function updateZoomLabel() {
+  $('zoomLabel').textContent = Math.round(zoomLevel * 100) + '%';
 }
 
 // ========== WAVEFORM DISPLAY ==========
@@ -1516,8 +2443,9 @@ function drawWaveform(canvas, data, sampleRate) {
   var ctx = canvas.getContext('2d');
   var w = canvas.parentElement ? canvas.parentElement.clientWidth : canvas.clientWidth;
   if (w < 100) w = 600;
-  var h = canvas.height;
+  var h = canvas.height || 120;
   canvas.width = w;
+  canvas.height = h;
   ctx.clearRect(0, 0, w, h);
 
   ctx.fillStyle = '#0d1117';
@@ -1555,7 +2483,7 @@ function drawWaveform(canvas, data, sampleRate) {
 // ========== PLAYBACK (Web Audio) ==========
 function stopPlayback() {
   isPlaying = false;
-  playBtn.textContent = 'Play';
+  playBtn.innerHTML = '<div class="icon-play"></div>';
   playBtn.classList.remove('playing');
   if (playbackRAF) cancelAnimationFrame(playbackRAF);
   for (var i = 0; i < scheduledNodes.length; i++) {
@@ -1563,6 +2491,10 @@ function stopPlayback() {
     try { scheduledNodes[i].gain.disconnect(); } catch(e) {}
   }
   scheduledNodes = [];
+  if (masterGainNode) {
+    try { masterGainNode.disconnect(); } catch(e) {}
+    masterGainNode = null;
+  }
 }
 
 function startPlayback(fromTime) {
@@ -1572,16 +2504,16 @@ function startPlayback(fromTime) {
   if (audioCtx.state === 'suspended') audioCtx.resume();
 
   isPlaying = true;
-  playBtn.textContent = 'Pause';
+  playBtn.innerHTML = '<div class="icon-pause"><span></span><span></span></div>';
   playBtn.classList.add('playing');
   playOffset = fromTime || 0;
   playStartTime = audioCtx.currentTime - playOffset;
 
   var voice = sval('synthVoice');
   var adsr = { a: val('adsrA'), d: val('adsrD'), s: val('adsrS'), r: val('adsrR') };
-  var masterGain = audioCtx.createGain();
-  masterGain.gain.value = 0.3;
-  masterGain.connect(audioCtx.destination);
+  masterGainNode = audioCtx.createGain();
+  masterGainNode.gain.value = masterVolume * 0.6;
+  masterGainNode.connect(audioCtx.destination);
 
   for (var i = 0; i < noteEvents.length; i++) {
     var n = noteEvents[i];
@@ -1594,7 +2526,6 @@ function startPlayback(fromTime) {
     var actualStart = audioCtx.currentTime + noteStart;
 
     if (voice === 'plucked') {
-      // For plucked, use custom node
       var osc = audioCtx.createOscillator();
       osc.type = 'triangle';
       osc.frequency.value = freq;
@@ -1603,7 +2534,7 @@ function startPlayback(fromTime) {
       g.gain.linearRampToValueAtTime(vel, actualStart + 0.005);
       g.gain.exponentialRampToValueAtTime(0.001, actualStart + noteDur + 0.5);
       osc.connect(g);
-      g.connect(masterGain);
+      g.connect(masterGainNode);
       osc.start(actualStart);
       osc.stop(actualStart + noteDur + 0.6);
       scheduledNodes.push({ osc: osc, gain: g });
@@ -1613,7 +2544,6 @@ function startPlayback(fromTime) {
       osc.frequency.value = freq;
       var g = audioCtx.createGain();
 
-      // ADSR
       g.gain.setValueAtTime(0, actualStart);
       g.gain.linearRampToValueAtTime(vel, actualStart + adsr.a);
       g.gain.linearRampToValueAtTime(vel * adsr.s, actualStart + adsr.a + adsr.d);
@@ -1621,18 +2551,21 @@ function startPlayback(fromTime) {
       g.gain.linearRampToValueAtTime(0, actualStart + noteDur + adsr.r);
 
       osc.connect(g);
-      g.connect(masterGain);
+      g.connect(masterGainNode);
       osc.start(actualStart);
       osc.stop(actualStart + noteDur + adsr.r + 0.05);
       scheduledNodes.push({ osc: osc, gain: g });
     }
   }
 
-  // Animation loop for playhead
   function tick() {
     if (!isPlaying) return;
     var elapsed = audioCtx.currentTime - playStartTime;
     if (elapsed >= totalDuration) {
+      if (loopEnabled) {
+        startPlayback(0);
+        return;
+      }
       stopPlayback();
       seekBar.value = 0;
       timeDisplay.textContent = '0:00.0 / ' + formatTime(totalDuration);
@@ -1672,6 +2605,18 @@ stopBtn.addEventListener('click', function() {
   drawPianoRoll(noteEvents, totalDuration, -1);
 });
 
+$('loopBtn').addEventListener('click', function() {
+  loopEnabled = !loopEnabled;
+  $('loopBtn').classList.toggle('loop-active', loopEnabled);
+});
+
+$('volumeSlider').addEventListener('input', function() {
+  masterVolume = parseFloat(this.value);
+  if (masterGainNode) {
+    masterGainNode.gain.value = masterVolume * 0.6;
+  }
+});
+
 seekBar.addEventListener('input', function() {
   var t = (parseFloat(seekBar.value) / 100) * totalDuration;
   timeDisplay.textContent = formatTime(t) + ' / ' + formatTime(totalDuration);
@@ -1681,6 +2626,99 @@ seekBar.addEventListener('input', function() {
     drawPianoRoll(noteEvents, totalDuration, t);
   }
 });
+
+// ========== ANALYSIS STATS ==========
+function updateAnalysisStats() {
+  if (noteEvents.length === 0) {
+    $('analysisStats').style.display = 'none';
+    return;
+  }
+
+  var minP = 127, maxP = 0;
+  var totalVel = 0;
+  for (var i = 0; i < noteEvents.length; i++) {
+    if (noteEvents[i].pitch < minP) minP = noteEvents[i].pitch;
+    if (noteEvents[i].pitch > maxP) maxP = noteEvents[i].pitch;
+    totalVel += noteEvents[i].velocity;
+  }
+
+  detectedTempo = estimateTempo(noteEvents);
+
+  var statsEl = $('analysisStats');
+  statsEl.style.display = 'flex';
+  statsEl.innerHTML =
+    '<div class="stat"><strong>Notes:</strong> ' + noteEvents.length + '</div>' +
+    '<div class="stat"><strong>Duration:</strong> ' + totalDuration.toFixed(2) + 's</div>' +
+    '<div class="stat"><strong>Est. Tempo:</strong> ' + detectedTempo + ' BPM</div>' +
+    '<div class="stat"><strong>Pitch Range:</strong> ' + midiToName(minP) + ' - ' + midiToName(maxP) + '</div>' +
+    '<div class="stat"><strong>Avg Velocity:</strong> ' + Math.round(totalVel / noteEvents.length) + '</div>';
+}
+
+// ========== NOTE TABLE ==========
+$('toggleNoteTable').addEventListener('click', function() {
+  noteTableVisible = !noteTableVisible;
+  $('noteTableWrap').style.display = noteTableVisible ? 'block' : 'none';
+  this.textContent = noteTableVisible ? 'Hide Table' : 'Show Table';
+  if (noteTableVisible) renderNoteTable();
+});
+
+document.querySelectorAll('#noteTable th').forEach(function(th) {
+  th.addEventListener('click', function() {
+    var col = th.dataset.sort;
+    if (noteTableSortCol === col) {
+      noteTableSortAsc = !noteTableSortAsc;
+    } else {
+      noteTableSortCol = col;
+      noteTableSortAsc = true;
+    }
+    renderNoteTable();
+  });
+});
+
+function renderNoteTable() {
+  if (noteEvents.length === 0) return;
+
+  var sorted = noteEvents.map(function(n, i) { return { n: n, idx: i }; });
+  var col = noteTableSortCol;
+  var asc = noteTableSortAsc;
+
+  sorted.sort(function(a, b) {
+    var va, vb;
+    if (col === 'idx') { va = a.idx; vb = b.idx; }
+    else if (col === 'pitch') { va = a.n.pitch; vb = b.n.pitch; }
+    else if (col === 'name') { va = a.n.pitch; vb = b.n.pitch; }
+    else if (col === 'start') { va = a.n.startTime; vb = b.n.startTime; }
+    else if (col === 'end') { va = a.n.endTime; vb = b.n.endTime; }
+    else if (col === 'dur') { va = a.n.endTime - a.n.startTime; vb = b.n.endTime - b.n.startTime; }
+    else if (col === 'vel') { va = a.n.velocity; vb = b.n.velocity; }
+    else { va = a.idx; vb = b.idx; }
+    return asc ? (va - vb) : (vb - va);
+  });
+
+  // Update sort arrows
+  document.querySelectorAll('#noteTable th .sort-arrow').forEach(function(s) { s.textContent = ''; });
+  var activeHeader = document.querySelector('#noteTable th[data-sort="' + col + '"] .sort-arrow');
+  if (activeHeader) activeHeader.textContent = asc ? ' ^' : ' v';
+
+  var maxRows = Math.min(sorted.length, 500);
+  var html = '';
+  for (var i = 0; i < maxRows; i++) {
+    var n = sorted[i].n;
+    html += '<tr>' +
+      '<td>' + (sorted[i].idx + 1) + '</td>' +
+      '<td>' + n.pitch + '</td>' +
+      '<td>' + midiToName(n.pitch) + '</td>' +
+      '<td>' + n.startTime.toFixed(4) + '</td>' +
+      '<td>' + n.endTime.toFixed(4) + '</td>' +
+      '<td>' + (n.endTime - n.startTime).toFixed(4) + '</td>' +
+      '<td>' + n.velocity + '</td>' +
+      '</tr>';
+  }
+  if (sorted.length > 500) {
+    html += '<tr><td colspan="7" style="color:#888;text-align:center;">... ' + (sorted.length - 500) + ' more rows</td></tr>';
+  }
+  $('noteTableBody').innerHTML = html;
+}
 
 // ========== MAIN ANALYZE ==========
 analyzeBtn.addEventListener('click', function() {
@@ -1695,7 +2733,6 @@ analyzeBtn.addEventListener('click', function() {
   showProgress(5);
   analyzeBtn.disabled = true;
 
-  // Use setTimeout to allow UI to update
   setTimeout(function() {
     try {
       var settings = {
@@ -1706,11 +2743,9 @@ analyzeBtn.addEventListener('click', function() {
         pitchHigh: parseInt($('pitchHigh').value)
       };
 
-      // Run analysis
       analysisFrames = analyzeAudio(data, sr, settings);
       showProgress(75);
 
-      // Segment notes
       var noteSettings = {
         confThreshold: val('confThreshold'),
         energyThreshold: val('energyThreshold'),
@@ -1726,11 +2761,9 @@ analyzeBtn.addEventListener('click', function() {
       noteEvents = segmentNotes(analysisFrames, noteSettings);
       showProgress(85);
 
-      // Generate MIDI
       midiBytes = encodeMidi(noteEvents, val('bpm'));
       showProgress(90);
 
-      // Compute duration
       totalDuration = originalBuffer.duration;
       if (noteEvents.length > 0) {
         var lastEnd = 0;
@@ -1740,19 +2773,18 @@ analyzeBtn.addEventListener('click', function() {
         totalDuration = Math.max(totalDuration, lastEnd + 0.5);
       }
 
-      // Show output
       outputSection.style.display = 'flex';
       dropZone.style.display = 'none';
       reprocessBtn.style.display = 'block';
 
       timeDisplay.textContent = '0:00.0 / ' + formatTime(totalDuration);
 
-      // Draw piano roll
       drawPianoRoll(noteEvents, totalDuration, -1);
       showProgress(100);
 
-      // Update code snippets
+      updateAnalysisStats();
       updateSnippets();
+      if (noteTableVisible) renderNoteTable();
 
       setStatus('Done. ' + noteEvents.length + ' notes detected.', 'ok');
       hideProgress();
@@ -1766,7 +2798,7 @@ analyzeBtn.addEventListener('click', function() {
   }, 50);
 });
 
-// ========== RE-PROCESS (just note segmentation, no re-analysis) ==========
+// ========== RE-PROCESS ==========
 reprocessBtn.addEventListener('click', function() {
   if (!analysisFrames) return;
   stopPlayback();
@@ -1797,40 +2829,79 @@ reprocessBtn.addEventListener('click', function() {
 
   timeDisplay.textContent = '0:00.0 / ' + formatTime(totalDuration);
   drawPianoRoll(noteEvents, totalDuration, -1);
+  updateAnalysisStats();
   updateSnippets();
+  if (noteTableVisible) renderNoteTable();
   setStatus('Re-processed. ' + noteEvents.length + ' notes.', 'ok');
 
-  // If on WAV tab, re-render
   if (document.getElementById('tab-wav').classList.contains('active')) {
     renderWav();
+  }
+  if (document.getElementById('tab-ai').classList.contains('active')) {
+    updateAiPrompt();
   }
 });
 
 // ========== WAV RENDER ==========
 function renderWav() {
   var mode = sval('wavMode');
-  var wavCanvas = $('wavWaveform');
   var wavPlayer = $('wavPlayer');
+  var origCanvas = $('wavOriginalCanvas');
+  var resynthCanvas = $('wavResynthCanvas');
+  var infoRow = $('wavInfoRow');
+
+  // Always draw original waveform if available
+  if (originalBuffer) {
+    drawWaveform(origCanvas, originalBuffer.getChannelData(0), originalBuffer.sampleRate);
+  }
 
   if (mode === 'original' && originalBuffer) {
     wavBlob = encodeWavFromBuffer(originalBuffer);
-    drawWaveform(wavCanvas, originalBuffer.getChannelData(0), originalBuffer.sampleRate);
+    drawWaveform(resynthCanvas, originalBuffer.getChannelData(0), originalBuffer.sampleRate);
   } else if (mode === 'resynth' && noteEvents.length > 0) {
     var voice = sval('synthVoice');
     var adsr = { a: val('adsrA'), d: val('adsrD'), s: val('adsrS'), r: val('adsrR') };
     var sr = 44100;
     var samples = resynthNotes(noteEvents, sr, voice, adsr);
     wavBlob = encodeWavFromFloat32(samples, sr);
-    drawWaveform(wavCanvas, samples, sr);
+    drawWaveform(resynthCanvas, samples, sr);
   } else {
     return;
   }
 
   wavPlayer.src = URL.createObjectURL(wavBlob);
+
+  // Show info
+  var fileSize = wavBlob.size;
+  var sizeStr = fileSize > 1048576 ? (fileSize / 1048576).toFixed(2) + ' MB' : (fileSize / 1024).toFixed(1) + ' KB';
+  infoRow.innerHTML =
+    '<span>File size: ' + sizeStr + '</span>' +
+    '<span>Format: PCM 16-bit</span>' +
+    '<span>Source: ' + (mode === 'original' ? 'Original audio' : 'Resynthesized from notes') + '</span>';
 }
 
 $('wavMode').addEventListener('change', function() {
   if (noteEvents.length > 0) renderWav();
+});
+
+// ========== COPY BUTTONS ==========
+$('copyNotesJson').addEventListener('click', function() {
+  if (!noteEvents.length) return;
+  copyToClipboard(getNotesJSON(), this);
+});
+
+$('copyMidiBase64').addEventListener('click', function() {
+  if (!midiBytes) return;
+  copyToClipboard(uint8ToBase64(midiBytes), this);
+});
+
+$('copyWavInfo').addEventListener('click', function() {
+  if (!noteEvents.length) return;
+  var info = 'WAV Info:\n' +
+    'Notes: ' + noteEvents.length + '\n' +
+    'Duration: ' + totalDuration.toFixed(2) + 's\n' +
+    'File size: ' + (wavBlob ? (wavBlob.size / 1024).toFixed(1) + ' KB' : 'N/A');
+  copyToClipboard(info, this);
 });
 
 // ========== DOWNLOADS ==========
@@ -1842,17 +2913,7 @@ $('dlMidi').addEventListener('click', function() {
 
 $('dlJson').addEventListener('click', function() {
   if (!noteEvents.length) return;
-  var json = JSON.stringify(noteEvents.map(function(n) {
-    return {
-      pitch: n.pitch,
-      name: midiToName(n.pitch),
-      startTime: parseFloat(n.startTime.toFixed(4)),
-      endTime: parseFloat(n.endTime.toFixed(4)),
-      duration: parseFloat((n.endTime - n.startTime).toFixed(4)),
-      velocity: n.velocity
-    };
-  }), null, 2);
-  var blob = new Blob([json], { type: 'application/json' });
+  var blob = new Blob([getNotesJSON()], { type: 'application/json' });
   downloadBlob(blob, 'notes.json');
 });
 
@@ -1878,20 +2939,78 @@ $('toggleJson').addEventListener('click', function() {
   var el = $('jsonOutput');
   if (jsonVisible && noteEvents.length) {
     el.style.display = 'block';
-    el.textContent = JSON.stringify(noteEvents.map(function(n) {
-      return {
-        pitch: n.pitch,
-        name: midiToName(n.pitch),
-        start: parseFloat(n.startTime.toFixed(4)),
-        end: parseFloat(n.endTime.toFixed(4)),
-        velocity: n.velocity
-      };
-    }), null, 2);
+    el.textContent = getNotesJSON();
     $('toggleJson').textContent = 'Hide JSON';
   } else {
     el.style.display = 'none';
     $('toggleJson').textContent = 'Show JSON';
   }
+});
+
+// ========== AI PROMPT TAB ==========
+var aiTasks = {
+  visualize: 'create a melody visualization',
+  sheet: 'generate sheet music notation',
+  game: 'build a rhythm game level',
+  harmony: 'compose a harmony or accompaniment',
+  analyze: 'analyze the melodic structure and patterns',
+  remix: 'create a remix or variation of this melody'
+};
+var selectedAiTask = 'visualize';
+
+document.querySelectorAll('#aiTaskBtns button').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    document.querySelectorAll('#aiTaskBtns button').forEach(function(b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+    selectedAiTask = btn.dataset.task;
+    updateAiPrompt();
+  });
+});
+
+$('aiCustomTask').addEventListener('input', function() {
+  updateAiPrompt();
+});
+
+function getAiPromptText() {
+  if (noteEvents.length === 0) return 'No notes detected yet. Run analysis first.';
+
+  var customTask = $('aiCustomTask').value.trim();
+  var task = customTask || aiTasks[selectedAiTask] || 'create a melody visualization';
+
+  var minP = 127, maxP = 0;
+  for (var i = 0; i < noteEvents.length; i++) {
+    if (noteEvents[i].pitch < minP) minP = noteEvents[i].pitch;
+    if (noteEvents[i].pitch > maxP) maxP = noteEvents[i].pitch;
+  }
+
+  var prompt =
+    'I have a sequence of musical notes transcribed from audio.\n' +
+    'Format: {pitch: MIDI note number, name: note name, startTime: seconds, endTime: seconds, duration: seconds, velocity: 0-127}\n' +
+    'Tempo: ' + detectedTempo + ' BPM | Duration: ' + totalDuration.toFixed(1) + 's | Notes: ' + noteEvents.length + ' | Range: ' + midiToName(minP) + ' to ' + midiToName(maxP) + '\n\n' +
+    'Use these notes to ' + task + ':\n\n' +
+    '```json\n' + getNotesJSON() + '\n```';
+
+  return prompt;
+}
+
+function updateAiPrompt() {
+  $('aiPromptOutput').textContent = getAiPromptText();
+}
+
+$('copyAiPrompt').addEventListener('click', function() {
+  copyToClipboard(getAiPromptText(), this);
+});
+
+$('copyClaudePrompt').addEventListener('click', function() {
+  var customTask = $('aiCustomTask').value.trim();
+  var task = customTask || aiTasks[selectedAiTask] || 'create a melody visualization';
+
+  var prompt =
+    'I have MIDI note events transcribed from audio. Each event has {pitch (MIDI number), startTime (seconds), endTime (seconds), velocity (0-127)}.\n\n' +
+    'Use these to ' + task + '.\n\n' +
+    'Here are the note events:\n\n```json\n' + getNotesJSON() + '\n```';
+
+  copyToClipboard(prompt, this);
 });
 
 // ========== CODE SNIPPETS ==========
@@ -1922,6 +3041,39 @@ function updateSnippets() {
 '}\n' +
 'playNotes(notes);';
 
+  $('snippetToneJS').textContent =
+'// Tone.js playback of transcribed notes\n' +
+'import * as Tone from "tone";\n\n' +
+'const notes = [\n' + noteArr + moreNote + '\n];\n\n' +
+'const synth = new Tone.PolySynth(Tone.Synth).toDestination();\n\n' +
+'async function play() {\n' +
+'  await Tone.start();\n' +
+'  const now = Tone.now();\n' +
+'  notes.forEach(n => {\n' +
+'    const freq = Tone.Frequency(n.pitch, "midi").toFrequency();\n' +
+'    const dur = n.end - n.start;\n' +
+'    synth.triggerAttackRelease(freq, dur, now + n.start, n.velocity / 127);\n' +
+'  });\n' +
+'}\n' +
+'play();';
+
+  $('snippetMidiJS').textContent =
+'// MIDI.js playback of transcribed notes\n' +
+'// Include midi.js from https://github.com/mudcube/MIDI.js\n\n' +
+'const notes = [\n' + noteArr + moreNote + '\n];\n\n' +
+'MIDI.loadPlugin({\n' +
+'  soundfontUrl: "./soundfont/",\n' +
+'  instrument: "acoustic_grand_piano",\n' +
+'  onprogress: (state, progress) => console.log(state, progress),\n' +
+'  onsuccess: () => {\n' +
+'    notes.forEach(n => {\n' +
+'      const dur = n.end - n.start;\n' +
+'      MIDI.noteOn(0, n.pitch, n.velocity, n.start);\n' +
+'      MIDI.noteOff(0, n.pitch, n.start + dur);\n' +
+'    });\n' +
+'  }\n' +
+'});';
+
   $('snippetReact').textContent =
 'import React, { useRef, useEffect } from "react";\n\n' +
 'function PianoRoll({ notes, width = 800, height = 300 }) {\n' +
@@ -1947,6 +3099,52 @@ function updateSnippets() {
 '  return <canvas ref={canvasRef} width={width} height={height} />;\n' +
 '}\n\n' +
 '// Usage: <PianoRoll notes={notes} />';
+
+  $('snippetMusic21').textContent =
+'# music21 -- Create sheet music from note events\n' +
+'from music21 import stream, note, tempo, meter\n\n' +
+'# Paste your JSON notes here or load from file\n' +
+'import json\n' +
+'with open("notes.json") as f:\n' +
+'    events = json.load(f)\n\n' +
+'s = stream.Stream()\n' +
+'s.append(tempo.MetronomeMark(number=' + Math.round(detectedTempo) + '))\n' +
+'s.append(meter.TimeSignature("4/4"))\n\n' +
+'for ev in events:\n' +
+'    n = note.Note(ev["pitch"])\n' +
+'    n.quarterLength = ev["duration"] * (' + Math.round(detectedTempo) + ' / 60)\n' +
+'    n.volume.velocity = ev["velocity"]\n' +
+'    n.offset = ev["startTime"] * (' + Math.round(detectedTempo) + ' / 60)\n' +
+'    s.insert(n.offset, n)\n\n' +
+'s.show()  # Opens in MuseScore or default viewer\n' +
+'s.write("musicxml", fp="transcription.musicxml")';
+
+  $('snippetPrettyMidi').textContent =
+'# pretty_midi -- Create MIDI programmatically\n' +
+'import pretty_midi\n' +
+'import json\n\n' +
+'with open("notes.json") as f:\n' +
+'    events = json.load(f)\n\n' +
+'midi = pretty_midi.PrettyMIDI(initial_tempo=' + Math.round(detectedTempo) + ')\n' +
+'inst = pretty_midi.Instrument(program=0, name="Piano")\n\n' +
+'for ev in events:\n' +
+'    note = pretty_midi.Note(\n' +
+'        velocity=ev["velocity"],\n' +
+'        pitch=ev["pitch"],\n' +
+'        start=ev["startTime"],\n' +
+'        end=ev["endTime"]\n' +
+'    )\n' +
+'    inst.notes.append(note)\n\n' +
+'midi.instruments.append(inst)\n' +
+'midi.write("transcription.mid")\n\n' +
+'# Get piano roll visualization\n' +
+'import matplotlib.pyplot as plt\n' +
+'roll = midi.get_piano_roll(fs=100)\n' +
+'plt.imshow(roll, aspect="auto", origin="lower")\n' +
+'plt.xlabel("Time (10ms)")\n' +
+'plt.ylabel("MIDI Note")\n' +
+'plt.title("Piano Roll")\n' +
+'plt.show()';
 
   $('snippetPython').textContent =
 '# Read the downloaded MIDI file with mido\n' +
@@ -1988,11 +3186,7 @@ function updateSnippets() {
 // ========== COPY SNIPPET ==========
 window.copySnippet = function(btn) {
   var code = btn.parentElement.nextElementSibling.textContent;
-  navigator.clipboard.writeText(code).then(function() {
-    var orig = btn.textContent;
-    btn.textContent = 'Copied';
-    setTimeout(function() { btn.textContent = orig; }, 1200);
-  });
+  copyToClipboard(code, btn);
 };
 
 // ========== RESIZE HANDLER ==========
@@ -2002,6 +3196,9 @@ window.addEventListener('resize', function() {
   resizeTimer = setTimeout(function() {
     if (noteEvents.length > 0) {
       drawPianoRoll(noteEvents, totalDuration, -1);
+    }
+    if (originalBuffer && $('waveformPreview').style.display !== 'none') {
+      drawWaveformPreview();
     }
   }, 200);
 });
