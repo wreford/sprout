@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JTM -- atom graph / constraint data as text</title>
+<style>
+:root{--bg:#12141a;--panel:#1a1d25;--ink:#e8eaed;--muted:#7a8290;--hair:#2a2e38;--ok:#3E9B6B;--warn:#D9952F;--bad:#C85A4F;--blue:#3E78C9;--violet:#a78bfa;--mono:ui-monospace,"SF Mono","Cascadia Code",Consolas,Menlo,monospace;--sans:Inter,"Segoe UI",system-ui,sans-serif}
+*{box-sizing:border-box;margin:0}body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.45}
+header{padding:18px 28px 12px;border-bottom:1px solid var(--hair)}
+header h1{font-family:var(--mono);font-size:20px;font-weight:700;letter-spacing:.06em}
+header h1 .dim{color:var(--muted);font-weight:400}
+header p{color:var(--muted);font-size:13px;margin-top:4px}
+.bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 28px;border-bottom:1px solid var(--hair);background:var(--panel)}
+.bar h2{font-family:var(--mono);font-size:12px;letter-spacing:.1em;font-weight:600;margin-right:auto}
+.bar .bytes{font-family:var(--mono);font-size:12px;color:var(--muted)}
+button{font:600 12px var(--sans);padding:6px 14px;border-radius:4px;cursor:pointer;border:1px solid var(--hair);background:var(--panel);color:var(--ink)}
+button:hover{border-color:var(--ink)}
+button.active{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+select{font:inherit;padding:4px 8px;border:1px solid var(--hair);border-radius:4px;background:var(--panel);color:var(--ink)}
+.dash{display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:8px;padding:14px 28px;border-bottom:1px solid var(--hair)}
+.stat{background:var(--panel);border:1px solid var(--hair);border-radius:8px;padding:10px 12px;text-align:center}
+.stat .v{font-family:var(--mono);font-size:22px;font-weight:800}
+.stat .l{font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-top:4px}
+.stat.ok .v{color:var(--ok)}.stat.warn .v{color:var(--warn)}.stat.bad .v{color:var(--bad)}.stat.blue .v{color:var(--blue)}
+.graph{padding:14px 28px;border-bottom:1px solid var(--hair);max-height:320px;overflow:auto}
+.node{display:flex;align-items:center;gap:8px;padding:8px 10px;margin:4px 0;background:var(--panel);border:1px solid var(--hair);border-radius:6px;font-size:12px;cursor:pointer;transition:border-color .15s}
+.node:hover{border-color:var(--blue)}
+.dot{width:8px;height:8px;border-radius:50%;flex:none}
+.dot.ok{background:var(--ok);box-shadow:0 0 6px rgba(62,155,107,.5)}
+.dot.warn{background:var(--warn);box-shadow:0 0 6px rgba(217,149,47,.5)}
+.dot.bad{background:var(--bad);box-shadow:0 0 6px rgba(200,90,79,.5)}
+.dot.blue{background:var(--blue)}
+.node .al{font-family:var(--mono);font-size:11px;color:var(--blue);min-width:70px}
+.node .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.node .ty{font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase}
+.node .ck{font-family:var(--mono);font-size:9px;padding:2px 6px;border-radius:3px;margin-left:auto}
+.node .ck.complete{color:var(--ok);background:rgba(62,155,107,.12);border:1px solid rgba(62,155,107,.3)}
+.node .ck.open{color:var(--bad);background:rgba(200,90,79,.12);border:1px solid rgba(200,90,79,.3)}
+.node .ck.ready{color:var(--ok)}
+.node .ck.blocked{color:var(--bad)}
+.editor{padding:0 28px 20px}
+textarea{width:100%;height:380px;resize:vertical;font:12px/1.6 var(--mono);color:var(--ink);background:#0d1016;border:1px solid var(--hair);border-radius:6px;padding:14px;white-space:pre;tab-size:2}
+textarea:focus{outline:2px solid var(--blue);outline-offset:-1px}
+.hint{font-size:12px;color:var(--muted);margin-top:8px;line-height:1.6}
+.hint code{font-family:var(--mono);background:var(--panel);padding:1px 5px;border-radius:3px;font-size:11px}
+footer{padding:14px 28px 26px;color:var(--muted);font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <h1>JTM<span class="dim"> / atom-graph -- constraint data as text</span></h1>
+  <p>ACT atoms, relationships, and completion semantics as editable text. The graph state is derived from the text below.</p>
+</header>
+<div class="bar">
+  <label>preset <select id="preset"><option value="nuclear">nuclear construction (RB slab)</option><option value="pipeline">pipeline tie-in</option><option value="minimal">minimal (3 atoms)</option></select></label>
+  <button id="run">Apply</button>
+</div>
+<div class="dash" id="dash"></div>
+<div class="graph" id="graph"></div>
+<div class="bar">
+  <h2>ATOM GRAPH (EDIT ME)</h2>
+  <span class="bytes" id="bytes"></span>
+  <button id="modeJson" class="active">JSON</button>
+  <button id="modeSprout">SPROUT</button>
+</div>
+<div class="editor">
+  <textarea id="text" spellcheck="false"></textarea>
+  <p class="hint">
+    <b>Format:</b> <code>kind: "atom-graph"</code>. Each atom has <code>type</code>, <code>alias</code>, <code>name</code>, <code>completion</code> (leaf|gate|rollup|verified|trivial), and relationship fields (<code>blocks</code>, <code>waits-on</code>, <code>contains</code>, <code>after</code>, etc).
+    Completion is derived: <b>leaf</b> = manually flipped, <b>gate</b> = met when all waits-on clear, <b>rollup</b> = done when children done, <b>verified</b> = done when verifier done, <b>trivial</b> = always done.
+    Toggle an atom's <code>complete</code> field and Apply to see the graph re-derive.
+  </p>
+</div>
+<footer>Same semantics as ACT. One substance, one shape. The graph state is walked, not stored.</footer>
+<script>
+const PRESETS = {
+  nuclear: {
+    kind: "atom-graph",
+    desc: "Reactor building base slab -- rebar, constraints, materials, pour",
+    atoms: [
+      { type: "cwp", alias: "CWP-0110", name: "RB Base Slab", completion: "rollup", contains: ["IWP-001", "IWP-002", "IWP-003"] },
+      { type: "iwp", alias: "IWP-001", name: "Rebar mat -- east bay", completion: "leaf", complete: false, est: 8, owner: "Troy M.", "done-by": "Rebar East", "in-zone": "RB-Slab-E" },
+      { type: "iwp", alias: "IWP-002", name: "Rebar mat -- west bay", completion: "leaf", complete: true, est: 8, owner: "Troy M.", "done-by": "Rebar West", "in-zone": "RB-Slab-W" },
+      { type: "iwp", alias: "IWP-003", name: "Concrete pour -- base slab", completion: "leaf", complete: false, est: 6, owner: "Troy M.", after: ["IWP-001", "IWP-002"], "done-by": "Civil Pour" },
+      { type: "constraint", alias: "CON-001", name: "Rebar not on site", completion: "gate", owner: "R. Petrov", blocks: ["IWP-001"], "waits-on": ["MAT-001"] },
+      { type: "constraint", alias: "CON-002", name: "RFI open: cover spec", completion: "gate", owner: "S. Kaur", blocks: ["IWP-001"], "waits-on": ["RFI-1043"] },
+      { type: "constraint", alias: "CON-003", name: "Pour card not signed", completion: "gate", owner: "Troy M.", blocks: ["IWP-003"], "waits-on": ["DOC-PC33"] },
+      { type: "material", alias: "MAT-001", name: "Rebar 30M epoxy lot 14", completion: "leaf", complete: false, owner: "R. Petrov", "allocated-to": ["IWP-001"] },
+      { type: "rfi", alias: "RFI-1043", name: "Cover to outer rebar at CJ", completion: "leaf", complete: false, owner: "S. Kaur" },
+      { type: "document", alias: "DOC-PC33", name: "Pour card PC-0033", completion: "leaf", complete: false, owner: "Troy M." },
+      { type: "supplier", alias: "SUP-014", name: "Harris Rebar", completion: "trivial", supplies: ["MAT-001"] },
+      { type: "risk", alias: "RSK-001", name: "Winter concrete curing", completion: "trivial", threatens: ["CWP-0110"] }
+    ]
+  },
+  pipeline: {
+    kind: "atom-graph",
+    desc: "Pipeline tie-in -- isolation, cut, weld, NDE, reinstate",
+    atoms: [
+      { type: "cwp", alias: "CWP-TI", name: "Tie-in Package", completion: "rollup", contains: ["IWP-ISO", "IWP-CUT", "IWP-WELD", "IWP-NDE", "IWP-REIN"] },
+      { type: "iwp", alias: "IWP-ISO", name: "Isolate and drain", completion: "leaf", complete: true, est: 4, owner: "Ops Lead" },
+      { type: "iwp", alias: "IWP-CUT", name: "Cut and prep", completion: "leaf", complete: false, est: 3, after: ["IWP-ISO"], owner: "Pipe Foreman" },
+      { type: "iwp", alias: "IWP-WELD", name: "Weld tie-in spool", completion: "leaf", complete: false, est: 6, after: ["IWP-CUT"], owner: "Weld Foreman" },
+      { type: "iwp", alias: "IWP-NDE", name: "RT / UT inspection", completion: "leaf", complete: false, est: 2, after: ["IWP-WELD"], owner: "QC Inspector" },
+      { type: "iwp", alias: "IWP-REIN", name: "Reinstate and pressure test", completion: "leaf", complete: false, est: 3, after: ["IWP-NDE"], owner: "Ops Lead" },
+      { type: "constraint", alias: "CON-PTW", name: "Permit to work", completion: "gate", owner: "Safety", blocks: ["IWP-CUT"], "waits-on": ["DOC-PTW"] },
+      { type: "constraint", alias: "CON-SPOOL", name: "Spool not delivered", completion: "gate", owner: "Procurement", blocks: ["IWP-WELD"], "waits-on": ["MAT-SPOOL"] },
+      { type: "document", alias: "DOC-PTW", name: "PTW-2201", completion: "leaf", complete: false },
+      { type: "material", alias: "MAT-SPOOL", name: "Tie-in spool P-4422", completion: "leaf", complete: false },
+      { type: "requirement", alias: "REQ-HT", name: "Hydro test to ASME B31.3", completion: "verified", "verified-by": ["DOC-HT"], "applies-to": ["CWP-TI"] },
+      { type: "document", alias: "DOC-HT", name: "Hydro test report", completion: "leaf", complete: false }
+    ]
+  },
+  minimal: {
+    kind: "atom-graph",
+    desc: "Smallest possible graph: a gate blocking work, cleared by a material",
+    atoms: [
+      { type: "iwp", alias: "WORK", name: "The work", completion: "leaf", complete: false },
+      { type: "constraint", alias: "GATE", name: "Material not here", completion: "gate", blocks: ["WORK"], "waits-on": ["STUFF"] },
+      { type: "material", alias: "STUFF", name: "The stuff", completion: "leaf", complete: false }
+    ]
+  }
+};
+
+const RELS = ['contains','enables','blocks','waits-on','cleared-by','supplies','allocated-to','verified-by','applies-to','after','done-by','in-zone','threatens','informs'];
+const $ = id => document.getElementById(id);
+
+let data = null, mode = 'json';
+
+function solve(graph) {
+  const byAlias = {}, incoming = {};
+  for (const a of graph.atoms) {
+    byAlias[a.alias] = a;
+    a._complete = false;
+    a._ready = true;
+    a._blockers = [];
+  }
+  for (const a of graph.atoms) {
+    RELS.forEach(r => {
+      (a[r] || []).forEach(to => {
+        (incoming[to] = incoming[to] || []).push({ rel: r, from: a.alias });
+      });
+    });
+  }
+  const get = al => byAlias[al];
+  function isComplete(a, seen) {
+    if (!a) return false;
+    seen = seen || new Set();
+    if (a.completion === 'trivial') return true;
+    if (seen.has(a.alias)) return false;
+    seen.add(a.alias);
+    switch (a.completion) {
+      case 'leaf': return !!a.complete;
+      case 'gate': {
+        const w = [...(a['waits-on']||[]).map(get).filter(Boolean), ...(a['cleared-by']||[]).map(get).filter(Boolean)];
+        return w.length > 0 && w.every(x => isComplete(x, new Set(seen)));
+      }
+      case 'rollup': {
+        const ch = (a.contains || []).map(get).filter(Boolean);
+        return ch.length > 0 && ch.every(x => isComplete(x, new Set(seen)));
+      }
+      case 'verified': {
+        const v = (a['verified-by'] || []).map(get).filter(Boolean);
+        return v.length > 0 && v.every(x => isComplete(x, new Set(seen)));
+      }
+      default: return !!a.complete;
+    }
+  }
+  for (const a of graph.atoms) a._complete = isComplete(a);
+  for (const a of graph.atoms) {
+    if (a.completion === 'leaf' || a.type === 'iwp') {
+      const blockers = (incoming[a.alias] || []).filter(e => e.rel === 'blocks').map(e => get(e.from)).filter(b => b && !b._complete);
+      a._blockers = blockers;
+      a._ready = blockers.length === 0;
+    }
+  }
+  const total = graph.atoms.length;
+  const done = graph.atoms.filter(a => a._complete).length;
+  const blocked = graph.atoms.filter(a => a.type === 'iwp' && !a._ready).length;
+  const open = graph.atoms.filter(a => a.completion === 'gate' && !a._complete).length;
+  return { total, done, blocked, open, pct: Math.round(done / total * 100) };
+}
+
+function render() {
+  if (!data) return;
+  const stats = solve(data);
+  $('dash').innerHTML =
+    '<div class="stat ok"><div class="v">' + stats.pct + '%</div><div class="l">Complete</div></div>' +
+    '<div class="stat blue"><div class="v">' + stats.total + '</div><div class="l">Atoms</div></div>' +
+    '<div class="stat ok"><div class="v">' + stats.done + '</div><div class="l">Done</div></div>' +
+    '<div class="stat bad"><div class="v">' + stats.blocked + '</div><div class="l">Blocked</div></div>' +
+    '<div class="stat warn"><div class="v">' + stats.open + '</div><div class="l">Open gates</div></div>';
+  let gh = '';
+  for (const a of data.atoms) {
+    const dotCls = a._complete ? 'ok' : (a.completion === 'gate' ? 'bad' : (a._ready === false ? 'bad' : 'warn'));
+    const ckCls = a._complete ? 'complete' : (a._blockers && a._blockers.length ? 'blocked' : 'open');
+    const ckText = a._complete ? 'done' : (a._blockers && a._blockers.length ? a._blockers.length + ' blocking' : (a.completion === 'gate' ? 'open' : 'incomplete'));
+    gh += '<div class="node" data-al="' + a.alias + '"><span class="dot ' + dotCls + '"></span><span class="al">' + a.alias + '</span><span class="nm">' + a.name + '</span><span class="ty">' + a.type + '</span><span class="ck ' + ckCls + '">' + ckText + '</span></div>';
+  }
+  $('graph').innerHTML = gh;
+  $('bytes').textContent = $('text').value.length + ' chars';
+}
+
+function toSprout(g) {
+  let o = 'graph "' + (g.desc || '') + '"\n\n';
+  const byType = {};
+  g.atoms.forEach(a => (byType[a.type] = byType[a.type] || []).push(a));
+  for (const type in byType) {
+    o += '-- ' + type + '\n';
+    for (const a of byType[type]) {
+      o += 'atom ' + a.alias + ' : ' + a.type + ' "' + a.name + '"\n';
+      o += '  completion ' + a.completion + (a.complete ? ' complete' : '') + '\n';
+      if (a.owner) o += '  owner "' + a.owner + '"\n';
+      if (a.est) o += '  est ' + a.est + 'd\n';
+      RELS.forEach(r => {
+        if (a[r] && Array.isArray(a[r]) && a[r].length) o += '  ' + r + ' ' + a[r].join(' ') + '\n';
+        else if (a[r] && typeof a[r] === 'string') o += '  ' + r + ' ' + a[r] + '\n';
+      });
+      o += '\n';
+    }
+  }
+  return o;
+}
+
+function setData(d) {
+  data = JSON.parse(JSON.stringify(d));
+  $('text').value = mode === 'json' ? JSON.stringify(data, null, 2) : toSprout(data);
+  render();
+}
+
+$('preset').addEventListener('change', e => setData(PRESETS[e.target.value]));
+$('run').addEventListener('click', () => {
+  if (mode === 'sprout') { alert('Sprout view is read-only. Switch to JSON to edit.'); return; }
+  try { data = JSON.parse($('text').value); render(); $('text').value = JSON.stringify(data, null, 2); }
+  catch (e) { alert('JSON error: ' + e.message); }
+});
+$('modeJson').addEventListener('click', () => {
+  mode = 'json'; $('modeJson').classList.add('active'); $('modeSprout').classList.remove('active');
+  $('text').value = JSON.stringify(data, null, 2); $('text').readOnly = false;
+});
+$('modeSprout').addEventListener('click', () => {
+  mode = 'sprout'; $('modeSprout').classList.add('active'); $('modeJson').classList.remove('active');
+  $('text').value = toSprout(data); $('text').readOnly = true;
+});
+$('graph').addEventListener('click', e => {
+  const node = e.target.closest('.node');
+  if (!node) return;
+  const al = node.dataset.al;
+  const a = data.atoms.find(x => x.alias === al);
+  if (!a || a.completion !== 'leaf') return;
+  a.complete = !a.complete;
+  $('text').value = mode === 'json' ? JSON.stringify(data, null, 2) : toSprout(data);
+  render();
+});
+
+setData(PRESETS.nuclear);
+</script>
+</body>
+</html>
