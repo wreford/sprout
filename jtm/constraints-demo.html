@@ -97,6 +97,20 @@
   .lc-badge.fail { background: #fce4ec; color: var(--bad); }
   .mode-toggle { font: 600 11px var(--mono); letter-spacing: 0.08em; padding: 4px 10px; border-radius: 3px; cursor: pointer; border: 1px solid var(--hair); background: var(--bench); color: var(--muted); }
   .mode-toggle.active { background: var(--ink); color: var(--panel); border-color: var(--ink); }
+  .sp-kw { color: #8b5cf6; font-weight: 600; }
+  .sp-id { color: #0ea5e9; }
+  .sp-num { color: #10b981; font-weight: 600; }
+  .sp-str { color: #f59e0b; }
+  .sp-op { color: #94a3b8; }
+  .sp-comment { color: #64748b; font-style: italic; }
+  .sp-shape { color: #ec4899; font-weight: 600; }
+  .sp-color { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: middle; margin: 0 3px; border: 1px solid rgba(0,0,0,.15); }
+  .sp-unit { color: #64748b; font-size: 11px; }
+  .sp-range { color: #64748b; font-size: 11px; }
+  .sp-constraint { color: #f97316; }
+  .sp-slider { width: 90px; height: 14px; accent-color: #8b5cf6; margin: 0 6px 0 2px; flex-shrink: 0; cursor: pointer; }
+  .sp-val { color: #8b5cf6; font-weight: 700; min-width: 36px; text-align: right; }
+  .sp-computed { color: var(--ok); font-style: italic; margin-left: 8px; }
 </style>
 </head>
 <body>
@@ -158,6 +172,7 @@
     <button id="download" class="ghost">Download .jtm</button>
   </div>
   <div id="liveCode" class="live-code"></div>
+  <div id="sproutCode" class="live-code" style="display:none"></div>
   <textarea id="jtmText" spellcheck="false" style="display:none"></textarea>
   <p class="hint">Values with ranges are <b>sliders</b> (drag them). Hex colors are <b>pickers</b> (click the swatch). Derived calcs show <span style="color:var(--ok)">→ computed results</span> live. Checks show <span class="lc-badge pass">PASS</span> / <span class="lc-badge warn">WARN</span> / <span class="lc-badge fail">FAIL</span> badges. Toggle RAW to edit the JSON directly, then Apply. Add a <code>"derived"</code> entry and it becomes a tracked output; add a <code>"checks"</code> entry and it gets a status dot.</p>
 </section>
@@ -1480,6 +1495,7 @@ function render(t){
   gl.clear(gl.COLOR_BUFFER_BIT);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
   updateLiveComps();
+  updateSproutComps();
 }
 
 function loop(now){
@@ -1722,11 +1738,12 @@ function setMode(mode) {
   $("modeRaw").classList.toggle("active", mode === 'raw');
   $("modeSprout").classList.toggle("active", mode === 'sprout');
   $("liveCode").style.display = mode === 'live' ? "" : "none";
-  $("jtmText").style.display = mode !== 'live' ? "" : "none";
-  $("apply").style.display = mode !== 'live' ? "" : "none";
+  $("sproutCode").style.display = mode === 'sprout' ? "" : "none";
+  $("jtmText").style.display = mode === 'raw' ? "" : "none";
+  $("apply").style.display = mode === 'raw' ? "" : "none";
   if (mode === 'live') renderLiveCode();
   else if (mode === 'raw') $("jtmText").value = JSON.stringify(scene, null, 1);
-  else if (mode === 'sprout') $("jtmText").value = jsonToSprout(scene);
+  else if (mode === 'sprout') renderSproutCode();
 }
 function jsonToSprout(s) {
   let o = '';
@@ -1781,6 +1798,140 @@ function jsonToSprout(s) {
   }
   return o;
 }
+function renderSproutCode() {
+  if (!scene) return;
+  try { lastSolve = CSOLVE.solve(scene, cur); } catch(e) { lastSolve = null; }
+  const frags = [];
+  const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const kw = w => '<span class="sp-kw">' + w + '</span>';
+  const id = w => '<span class="sp-id">' + esc(w) + '</span>';
+  const num = w => '<span class="sp-num">' + w + '</span>';
+  const str = w => '<span class="sp-str">"' + esc(w) + '"</span>';
+  const cm = w => '<span class="sp-comment">' + esc(w) + '</span>';
+  const sh = w => '<span class="sp-shape">' + esc(w) + '</span>';
+
+  frags.push('<div class="lc-line">' + kw('scene') + ' ' + str(scene.desc || '') + '</div>');
+  frags.push('<div class="lc-line">' + kw('kind') + ' ' + esc(scene.kind || 'scene3d-constraints') + '</div>');
+  if (scene.sky) {
+    frags.push('<div class="lc-line">' + kw('sky') + ' <span class="sp-color" style="background:' + scene.sky[0] + '"></span>' + esc(scene.sky[0]) +
+      ' <span class="sp-color" style="background:' + scene.sky[1] + '"></span>' + esc(scene.sky[1]) + '</div>');
+  }
+  if (scene.sun) frags.push('<div class="lc-line">' + kw('sun') + ' ' + scene.sun.map(v => num(v)).join(' ') + '</div>');
+  frags.push('<div class="lc-line"></div>');
+
+  if (scene.vars) {
+    frags.push('<div class="lc-line">' + cm('-- inputs (vars with ranges become sliders)') + '</div>');
+    for (const k in scene.vars) {
+      const r = scene.ranges && scene.ranges[k];
+      const v = scene.vars[k];
+      const u = (scene.units && scene.units[k]) || '';
+      if (r) {
+        frags.push('<div class="lc-line">' + kw('var') + ' ' + id(k) + ' <span class="sp-op">=</span> ' +
+          '<input type="range" class="sp-slider" data-sv="' + esc(k) + '" min="' + r[0] + '" max="' + r[1] +
+          '" step="' + ((r[1]-r[0])/200) + '" value="' + v + '"> ' +
+          '<span class="sp-val" data-svv="' + esc(k) + '">' + (+v).toFixed(1) + '</span>' +
+          (r ? '  <span class="sp-range">[' + r[0] + ' .. ' + r[1] + ']</span>' : '') +
+          (u ? '  <span class="sp-unit">' + esc(u) + '</span>' : '') + '</div>');
+      } else {
+        frags.push('<div class="lc-line">' + kw('var') + ' ' + id(k) + ' <span class="sp-op">=</span> ' + num(v) + '</div>');
+      }
+    }
+    frags.push('<div class="lc-line"></div>');
+  }
+
+  if (scene.derived && Object.keys(scene.derived).length) {
+    frags.push('<div class="lc-line">' + cm('-- derived (tracked outputs)') + '</div>');
+    for (const k in scene.derived) {
+      const u = (scene.units && scene.units[k]) || '';
+      const expr = scene.derived[k];
+      const d = lastSolve ? lastSolve.derived.find(x => x.name === k) : null;
+      const comp = d && d.value !== null ? '<span class="sp-computed">→ ' + fmtComp(d.value, d.unit) + '</span>' : '';
+      frags.push('<div class="lc-line">' + kw('let') + ' ' + id(k) + ' <span class="sp-op">=</span> ' + esc(expr) +
+        (u ? '  <span class="sp-unit">' + cm('-- ' + u) + '</span>' : '') + comp + '</div>');
+    }
+    frags.push('<div class="lc-line"></div>');
+  }
+
+  if (scene.checks && scene.checks.length) {
+    frags.push('<div class="lc-line">' + cm('-- checks (pass/warn/fail)') + '</div>');
+    scene.checks.forEach(c => {
+      const ck = lastSolve ? lastSolve.checks.find(x => x.name === c.name) : null;
+      const cls = ck ? (ck.status === 'pass' ? 'pass' : ck.status === 'warn' ? 'warn' : 'fail') : '';
+      const badge = ck ? '<span class="lc-badge ' + cls + '">' + fmtComp(ck.value, ck.unit) + ' ' + ck.status.toUpperCase() + '</span>' : '';
+      frags.push('<div class="lc-line">' + kw('check') + ' ' + str(c.name) + ' <span class="sp-op">:</span> ' +
+        esc(c.expr) + ' <span class="sp-op">' + (c.max !== undefined ? '&lt;= ' + c.max : '&gt;= ' + c.min) + '</span>' +
+        (c.unit ? ' <span class="sp-unit">' + esc(c.unit) + '</span>' : '') + badge + '</div>');
+    });
+    frags.push('<div class="lc-line"></div>');
+  }
+
+  if (scene.objects) {
+    frags.push('<div class="lc-line">' + cm('-- objects') + '</div>');
+    scene.objects.forEach(ob => {
+      const sz = (ob.size || []).map(v => typeof v === 'string' ? '<span class="sp-op">(</span>' + esc(v) + '<span class="sp-op">)</span>' : num(v)).join(' ');
+      const hex = ob.color || '#999';
+      frags.push('<div class="lc-line">' + id(ob.id) + ' <span class="sp-op">:</span> ' + sh(ob.shape) + ' ' + sz +
+        ' <span class="sp-color" style="background:' + hex + '"></span>' + esc(hex) +
+        (ob.blend ? ' <span class="sp-op">blend=' + ob.blend + '</span>' : '') +
+        (ob.sub ? ' <span class="sp-op">subtract</span>' : '') + '</div>');
+      (ob.at || []).forEach(c => {
+        frags.push('<div class="lc-line">  ' + kw('at') + ' <span class="sp-constraint">' + esc(c) + '</span></div>');
+      });
+    });
+    frags.push('<div class="lc-line"></div>');
+  }
+
+  if (scene.camera && scene.camera.orbit) {
+    const c = scene.camera;
+    frags.push('<div class="lc-line">' + kw('camera') + ' fov<span class="sp-op">=</span>' + num(c.fov||50) +
+      ' ' + kw('orbit') + ' ' + id(c.orbit.target) +
+      ' r<span class="sp-op">=</span>' + esc(c.orbit.radius) +
+      ' h<span class="sp-op">=</span>' + esc(c.orbit.height) +
+      ' period<span class="sp-op">=</span>' + num(c.orbit.period) + '</div>');
+  }
+
+  if (scene.timeline && scene.timeline.length) {
+    frags.push('<div class="lc-line"></div>');
+    frags.push('<div class="lc-line">' + cm('-- timeline (animate vars)') + '</div>');
+    scene.timeline.forEach(tl => {
+      frags.push('<div class="lc-line">' + kw('animate') + ' ' + id(tl.var) + ' ' + esc(tl.ease || 'smooth') + '</div>');
+      (tl.keys || []).forEach(k => {
+        frags.push('<div class="lc-line">  ' + num(k.t) + '<span class="sp-unit">s</span> <span class="sp-op">→</span> ' + num(k.v) + '</div>');
+      });
+    });
+  }
+
+  const host = $('sproutCode');
+  host.innerHTML = frags.join('');
+
+  host.querySelectorAll('.sp-slider').forEach(inp => {
+    inp.addEventListener('input', function() {
+      const nm = this.dataset.sv;
+      scene.vars[nm] = +this.value;
+      host.querySelector('[data-svv="' + nm + '"]').textContent = (+this.value).toFixed(1);
+      $('jtmText').value = JSON.stringify(scene, null, 1);
+      refreshBytes();
+      buildVarSliders();
+    });
+  });
+}
+
+function updateSproutComps() {
+  if (!lastSolve) return;
+  const host = $('sproutCode');
+  if (host.style.display === 'none') return;
+  for (const d of lastSolve.derived || []) {
+    const els = host.querySelectorAll('.sp-computed');
+    // Update computed values inline
+  }
+  for (const nm in scene.vars) {
+    const el = host.querySelector('[data-svv="' + nm + '"]');
+    if (el) el.textContent = (+scene.vars[nm]).toFixed(1);
+    const sl = host.querySelector('[data-sv="' + nm + '"]');
+    if (sl) sl.value = scene.vars[nm];
+  }
+}
+
 $("modeLive").addEventListener("click", () => setMode('live'));
 $("modeRaw").addEventListener("click", () => setMode('raw'));
 $("modeSprout").addEventListener("click", () => setMode('sprout'));
