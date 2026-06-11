@@ -6,7 +6,7 @@
 <title>JTM -- video recorder / text is the video</title>
 <style>
 :root{--bg:#12141a;--panel:#1a1d25;--ink:#e8eaed;--muted:#7a8290;--hair:#2a2e38;--red:#C85A4F;--ok:#3E9B6B;--blue:#3E78C9;--accent:#D9952F;--mono:ui-monospace,"SF Mono","Cascadia Code",Consolas,Menlo,monospace;--sans:Inter,"Segoe UI",system-ui,sans-serif}
-*{box-sizing:border-box;margin:0}body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px}
+*{box-sizing:border-box;margin:0;-webkit-tap-highlight-color:transparent}body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;touch-action:manipulation;min-height:100vh;min-height:-webkit-fill-available}
 header{padding:14px 20px 10px;border-bottom:1px solid var(--hair)}
 header h1{font-family:var(--mono);font-size:18px;font-weight:700;letter-spacing:.06em}
 header h1 .dim{color:var(--muted);font-weight:400}
@@ -106,15 +106,23 @@ let recording=false,playing=false,jtmData=null;
 let recFrames=[],recInterval=null;
 
 // -- camera --
+let camReady=false;
 async function startCam(){
   try{
     if(stream)stream.getTracks().forEach(t=>t.stop());
+    camReady=false;
     stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:facing,width:{ideal:640}},audio:false});
-    vid.srcObject=stream;vid.style.display='';fileVid.style.display='none';
-    $('status').textContent='camera ready';
+    vid.srcObject=stream;vid.style.display='';fileVid.style.display='none';fileVid.pause();
+    $('status').textContent='waiting for camera...';
+    await new Promise(r=>{
+      if(vid.readyState>=2){camReady=true;r();return;}
+      vid.addEventListener('loadeddata',function onL(){vid.removeEventListener('loadeddata',onL);camReady=true;r();});
+    });
+    $('status').textContent='camera ready ('+vid.videoWidth+'x'+vid.videoHeight+')';
+    $('camBtn').textContent='Stop Camera';$('camBtn').classList.add('active');
   }catch(e){$('status').textContent='camera: '+e.message;}
 }
-function stopCam(){if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}}
+function stopCam(){if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}camReady=false;$('camBtn').textContent='Start Camera';$('camBtn').classList.remove('active');}
 
 // -- sampling --
 function sampleFrame(source,cols){
@@ -282,8 +290,10 @@ function decode(jtm){
 
 // -- recording --
 function startRec(){
-  const source=fileVid.style.display!=='none'?fileVid:vid;
-  if(!source.videoWidth){$('status').textContent='no video source';return;}
+  const useFile=fileVid.style.display!=='none'&&fileVid.readyState>=2;
+  const source=useFile?fileVid:vid;
+  if(!source.videoWidth||(!useFile&&!camReady)){$('status').textContent='no video source -- start camera or upload a file first';return;}
+  if(useFile){fileVid.currentTime=0;fileVid.play();}
   recFrames=[];recording=true;
   $('recDot').classList.add('on');$('recBtn').textContent='Recording...';$('recBtn').disabled=true;
   const cols=parseInt($('res').value);
@@ -368,8 +378,12 @@ $('upload').addEventListener('change',e=>{
   const file=e.target.files[0];if(!file)return;
   const url=URL.createObjectURL(file);
   fileVid.src=url;fileVid.style.display='';vid.style.display='none';
-  fileVid.play();
-  $('status').textContent='video loaded -- hit Record';
+  if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;camReady=false;}
+  fileVid.load();
+  fileVid.addEventListener('loadeddata',function onL(){
+    fileVid.removeEventListener('loadeddata',onL);
+    $('status').textContent='video loaded ('+fileVid.videoWidth+'x'+fileVid.videoHeight+') -- hit Record';
+  },{once:true});
 });
 
 // -- wiring --
