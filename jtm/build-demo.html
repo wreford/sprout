@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JTM -- build sequence / power plant construction</title>
+<style>
+:root{--bench:#ECEDEE;--panel:#FFFFFF;--ink:#20242A;--muted:#6A7178;--hair:#D5D8DB;--ok:#3E9B6B;--warn:#D9952F;--bad:#C85A4F;--blue:#3E78C9;--mono:ui-monospace,"SF Mono","Cascadia Code",Consolas,Menlo,monospace;--sans:Inter,"Segoe UI",system-ui,sans-serif}
+*{box-sizing:border-box;margin:0;-webkit-tap-highlight-color:transparent}
+body{background:var(--bench);color:var(--ink);font-family:var(--sans);font-size:14px;touch-action:manipulation}
+.sticky{position:sticky;top:0;z-index:20;background:var(--bench);border-bottom:1px solid var(--hair)}
+header{padding:10px 24px 6px;display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+header h1{font-family:var(--mono);font-size:18px;font-weight:700;letter-spacing:.06em}
+header h1 .dim{color:var(--muted);font-weight:400}
+.timeline{padding:8px 24px 12px;background:var(--panel);border-bottom:1px solid var(--hair)}
+.tl-row{display:flex;align-items:center;gap:10px}
+.tl-row input[type=range]{flex:1;accent-color:var(--ink);height:20px}
+.tl-label{font-family:var(--mono);font-size:12px;min-width:100px;font-weight:600}
+.tl-phase{font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.05em;margin-top:4px}
+.phase-bar{display:flex;gap:2px;margin-top:6px;height:18px}
+.phase-seg{flex:1;border-radius:3px;font-family:var(--mono);font-size:8px;letter-spacing:.06em;display:flex;align-items:center;justify-content:center;color:#fff;cursor:pointer;transition:opacity .15s;text-transform:uppercase}
+.phase-seg:hover{opacity:.85}
+.phase-seg.done{opacity:1}.phase-seg.future{opacity:.35}
+canvas{width:100%;aspect-ratio:16/10;display:block;border-bottom:1px solid var(--hair);background:#1a1d22}
+.dims{padding:10px 24px;background:var(--panel);border-bottom:1px solid var(--hair);display:flex;gap:16px;flex-wrap:wrap}
+.dim{display:flex;align-items:center;gap:6px;font-size:12px}
+.dim label{font-family:var(--mono);color:var(--muted);min-width:60px}
+.dim input[type=range]{width:80px;accent-color:var(--blue)}
+.dim .v{font-family:var(--mono);font-weight:600;min-width:32px;text-align:right}
+.calcs{padding:12px 24px;display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:6px}
+.calc{background:var(--panel);border:1px solid var(--hair);border-radius:6px;padding:8px 10px}
+.calc .cv{font-family:var(--mono);font-size:15px;font-weight:700}
+.calc .cl{font-family:var(--mono);font-size:8px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-top:2px}
+.calc.ok .cv{color:var(--ok)}.calc.warn .cv{color:var(--warn)}.calc.blue .cv{color:var(--blue)}
+.legend{padding:8px 24px;font-family:var(--mono);font-size:10px;color:var(--muted);display:flex;gap:12px;flex-wrap:wrap;border-top:1px solid var(--hair)}
+.legend span{display:flex;align-items:center;gap:4px}
+.legend i{width:10px;height:10px;border-radius:2px;display:inline-block}
+@media(max-width:700px){
+  .sticky canvas{max-height:30vh}
+  header h1{font-size:14px}
+  .dims{gap:8px;padding:8px 16px}
+  .dim input[type=range]{width:60px}
+}
+</style>
+</head>
+<body>
+<div class="sticky">
+<header><h1>JTM<span class="dim"> / build sequence</span></h1></header>
+<div class="timeline">
+  <div class="tl-row">
+    <button id="play" style="font:600 12px var(--sans);padding:5px 12px;border:1px solid var(--ink);border-radius:4px;cursor:pointer;background:var(--ink);color:var(--panel)">Play</button>
+    <input type="range" id="month" min="0" max="84" value="0" step="1">
+    <span class="tl-label" id="monthLabel">Month 0 / 84</span>
+  </div>
+  <div class="tl-phase" id="phaseName">Site preparation</div>
+  <div class="phase-bar" id="phases"></div>
+</div>
+<canvas id="gl"></canvas>
+</div>
+<div class="dims" id="dims"></div>
+<div class="calcs" id="calcs"></div>
+<div class="legend">
+  <span><i style="background:#b9bec4"></i> concrete</span>
+  <span><i style="background:#8a9099"></i> steel</span>
+  <span><i style="background:#c85a4f"></i> crane</span>
+  <span><i style="background:#d9952f"></i> equipment</span>
+  <span><i style="background:#3f6f8f"></i> water</span>
+  <span><i style="background:#3E78C9"></i> electrical</span>
+  <span><i style="background:#9aa7b4"></i> reactor</span>
+</div>
+<script>
+const SHAPE_IDS={box:0,sphere:1,cyl:2,torus:3,"cyl-x":4,"cyl-z":5},MAX_OBJ=24;
+function unhex(h){return[parseInt(h.slice(1,3),16)/255,parseInt(h.slice(3,5),16)/255,parseInt(h.slice(5,7),16)/255]}
+
+const PHASES=[
+  {name:"Site prep",color:"#8a9099",start:0,end:6},
+  {name:"Excavation",color:"#b3aa97",start:3,end:12},
+  {name:"Foundation",color:"#b9bec4",start:8,end:18},
+  {name:"RB walls",color:"#a0a5ab",start:14,end:36},
+  {name:"Containment",color:"#9aa7b4",start:20,end:42},
+  {name:"Turbine bldg",color:"#c4beb2",start:24,end:44},
+  {name:"Mechanical",color:"#d9952f",start:36,end:60},
+  {name:"Electrical",color:"#3E78C9",start:42,end:66},
+  {name:"CW system",color:"#3f6f8f",start:30,end:54},
+  {name:"Commissioning",color:"#3E9B6B",start:60,end:84}
+];
+
+const VARS={
+  "rb-dia":42,"rb-h":50,"tb-w":60,"tb-h":30,"cw-pipe":3.5,
+  "crane-h":65,"site-w":120
+};
+const RANGES={
+  "rb-dia":[30,55],"rb-h":[35,65],"tb-w":[40,80],"tb-h":[20,40],
+  "cw-pipe":[2,5],"crane-h":[50,80],"site-w":[80,160]
+};
+
+function buildObjects(month,V){
+  const objs=[];
+  const sc=0.12;
+  function s(v){return v*sc;}
+  function vis(start,end){
+    if(month<start)return 0;
+    if(month>=end)return 1;
+    return(month-start)/(end-start);
+  }
+  function addIf(start,end,obj){
+    const v=vis(start,end);
+    if(v<=0)return;
+    obj._vis=v;
+    objs.push(obj);
+  }
+
+  // ground
+  addIf(0,1,{id:"ground",shape:"box",pos:[0,-0.01,0],size:[s(V["site-w"]),0.02,s(V["site-w"]*0.7)],color:"#b3aa97"});
+
+  // excavation pit
+  addIf(3,12,{id:"pit",shape:"box",pos:[s(-10),s(-3)*vis(3,12),0],size:[s(V["rb-dia"]+10),s(6)*vis(3,12),s(V["rb-dia"]+10)],color:"#8a7a60",sub:true});
+
+  // base slab
+  addIf(8,18,{id:"baseslab",shape:"box",pos:[s(-10),s(-0.5),0],size:[s(V["rb-dia"]+8),s(3)*vis(8,18),s(V["rb-dia"]+8)],color:"#b9bec4"});
+
+  // RB walls (cylinder growing up)
+  const rbH=s(V["rb-h"])*vis(14,36);
+  if(month>=14)addIf(14,36,{id:"rb-wall",shape:"cyl",pos:[s(-10),rbH/2+s(1.5),0],size:[s(V["rb-dia"]),rbH],color:"#a0a5ab"});
+
+  // containment dome
+  if(month>=34)addIf(34,42,{id:"dome",shape:"sphere",pos:[s(-10),rbH+s(1.5),0],size:[s(V["rb-dia"])],color:"#9aa7b4",blend:0.3});
+
+  // reactor vessel (inside RB)
+  if(month>=36)addIf(36,48,{id:"reactor",shape:"cyl",pos:[s(-10),s(8),0],size:[s(8),s(14)*vis(36,48)],color:"#d9952f"});
+
+  // steam generators
+  if(month>=40){
+    addIf(40,52,{id:"sg-a",shape:"cyl",pos:[s(-10)+s(8),s(10)*vis(40,52),s(5)],size:[s(4),s(12)*vis(40,52)],color:"#d9952f"});
+    addIf(40,52,{id:"sg-b",shape:"cyl",pos:[s(-10)-s(8),s(10)*vis(40,52),s(-5)],size:[s(4),s(12)*vis(40,52)],color:"#d9952f"});
+  }
+
+  // turbine building
+  const tbH=s(V["tb-h"])*vis(24,44);
+  if(month>=24)addIf(24,44,{id:"tb",shape:"box",pos:[s(25),tbH/2,0],size:[s(V["tb-w"]),tbH,s(30)],color:"#c4beb2"});
+
+  // turbine
+  if(month>=44)addIf(44,56,{id:"turbine",shape:"cyl-z",pos:[s(25),s(V["tb-h"]*0.4),0],size:[s(8),s(20)*vis(44,56)],color:"#8a9099"});
+
+  // condenser
+  if(month>=46)addIf(46,54,{id:"condenser",shape:"box",pos:[s(25),s(3),s(12)],size:[s(12)*vis(46,54),s(6),s(8)],color:"#5d6671"});
+
+  // CW intake
+  if(month>=30)addIf(30,42,{id:"intake",shape:"box",pos:[s(-35),s(2),s(-25)],size:[s(6),s(5)*vis(30,42),s(V["cw-pipe"]*3)],color:"#7e8b98"});
+
+  // CW pipe
+  if(month>=34)addIf(34,48,{id:"cw-pipe",shape:"cyl-x",pos:[s(-10),s(V["cw-pipe"]/2),s(-25)],size:[s(V["cw-pipe"]),s(50)*vis(34,48)],color:"#5d6671"});
+
+  // outfall
+  if(month>=38)addIf(38,48,{id:"outfall",shape:"box",pos:[s(50),s(2),s(-25)],size:[s(4),s(4)*vis(38,48),s(V["cw-pipe"]*2+3)],color:"#7e8b98"});
+
+  // switchyard
+  if(month>=42)addIf(42,58,{id:"yard",shape:"box",pos:[s(30),s(0.2),s(25)],size:[s(20)*vis(42,58),s(0.3),s(15)],color:"#e8e4de"});
+  if(month>=50){
+    addIf(50,58,{id:"xfmr-a",shape:"box",pos:[s(25),s(3)*vis(50,58),s(25)],size:[s(5),s(5)*vis(50,58),s(4)],color:"#6b7280"});
+    addIf(50,58,{id:"xfmr-b",shape:"box",pos:[s(35),s(3)*vis(50,58),s(25)],size:[s(5),s(5)*vis(50,58),s(4)],color:"#6b7280"});
+  }
+
+  // tower crane
+  if(month>=6&&month<66){
+    const ch=s(V["crane-h"]);
+    addIf(6,66,{id:"crane-mast",shape:"box",pos:[s(5),ch/2,s(10)],size:[s(1),ch,s(1)],color:"#c85a4f"});
+    addIf(6,66,{id:"crane-jib",shape:"box",pos:[s(-15),ch,s(10)],size:[s(40),s(0.6),s(0.6)],color:"#c85a4f"});
+  }
+
+  // water body
+  addIf(0,1,{id:"water",shape:"box",pos:[s(-45),s(-1),s(-25)],size:[s(30),s(2),s(40)],color:"#3f6f8f"});
+
+  return objs;
+}
+
+function computeCalcs(month,V){
+  const concreteVol=Math.PI*(V["rb-dia"]/2)**2*V["rb-h"]*0.08+V["tb-w"]*V["tb-h"]*30*0.04;
+  const steelTons=concreteVol*0.12;
+  const cwFlow=Math.PI*(V["cw-pipe"]/2)**2*2.5;
+  const mwe=600*(month>=84?1:month>=60?0.5:0);
+  const pctComplete=Math.min(100,Math.round(month/84*100));
+  const workforceBase=Math.round(200+2800*Math.sin(Math.min(1,month/42)*Math.PI/2)*(month<70?1:Math.max(0,1-(month-70)/14)));
+  return[
+    {v:pctComplete+'%',l:'complete',c:pctComplete>=100?'ok':pctComplete>=50?'warn':''},
+    {v:Math.round(concreteVol/1000)+'k',l:'concrete m3',c:''},
+    {v:Math.round(steelTons/1000)+'k',l:'steel tonnes',c:''},
+    {v:cwFlow.toFixed(1),l:'CW flow m3/s',c:'blue'},
+    {v:mwe,l:'MWe output',c:mwe>0?'ok':''},
+    {v:workforceBase,l:'workforce',c:'warn'},
+    {v:'Month '+month,l:'schedule',c:'blue'}
+  ];
+}
+
+// -- WebGL SDF raymarcher --
+const VERT=`#version 300 es\nin vec2 aPos;\nvoid main(){gl_Position=vec4(aPos,0,1);}`;
+const FRAG=`#version 300 es
+precision highp float;out vec4 frag;
+uniform vec2 uRes;uniform vec3 uCamPos,uCamLook;uniform float uFov;uniform int uCount;
+uniform int uType[24];uniform vec3 uPos[24],uSize[24],uColor[24];uniform float uBlend[24],uSub[24];
+uniform vec3 uSun,uSky1,uSky2;
+float sdBox(vec3 p,vec3 b){vec3 q=abs(p)-b;return length(max(q,0.))+min(max(q.x,max(q.y,q.z)),0.);}
+float sdSphere(vec3 p,float r){return length(p)-r;}
+float sdCyl(vec3 p,float r,float h){vec2 d=abs(vec2(length(p.xz),p.y))-vec2(r,h);return min(max(d.x,d.y),0.)+length(max(d,0.));}
+float sdTorus(vec3 p,float R,float r){vec2 q=vec2(length(p.xz)-R,p.y);return length(q)-r;}
+float smin(float a,float b,float k){float h=clamp(.5+.5*(b-a)/k,0.,1.);return mix(b,a,h)-k*h*(1.-h);}
+float sdObj(int i,vec3 p){vec3 q=p-uPos[i],s=uSize[i]*.5;if(uType[i]==0)return sdBox(q,s);if(uType[i]==1)return sdSphere(q,s.x);if(uType[i]==2)return sdCyl(q,s.x,s.y);if(uType[i]==4)return sdCyl(q.yxz,s.x,s.y);if(uType[i]==5)return sdCyl(q.xzy,s.x,s.y);return sdTorus(q,s.x,s.y);}
+float mapD(vec3 p){float d=p.y;for(int i=0;i<24;i++){if(i>=uCount)break;float di=sdObj(i,p);if(uSub[i]>.5)d=max(d,-di);else if(uBlend[i]>.001)d=smin(d,di,uBlend[i]);else d=min(d,di);}return d;}
+vec3 mapColor(vec3 p,float dist){float d=p.y;vec2 q2=abs(fract(p.xz*.5)-.5);float m=max(q2.x,q2.y),w=.008*(1.+dist*.12),line=smoothstep(.5-w,.5,m);
+  vec3 col=mix(vec3(.80,.81,.83),vec3(.56,.59,.64),line*.85);
+  for(int i=0;i<24;i++){if(i>=uCount)break;float di=sdObj(i,p);if(uSub[i]>.5)d=max(d,-di);else if(uBlend[i]>.001){float nd=smin(d,di,uBlend[i]);if(di<d)col=uColor[i];d=nd;}else{if(di<d){d=di;col=uColor[i];}}}return col;}
+vec3 calcN(vec3 p){vec2 e=vec2(.002,0);return normalize(vec3(mapD(p+e.xyy)-mapD(p-e.xyy),mapD(p+e.yxy)-mapD(p-e.yxy),mapD(p+e.yyx)-mapD(p-e.yyx)));}
+float shadow(vec3 ro,vec3 rd){float r=1.,t=.05;for(int i=0;i<32;i++){float h=mapD(ro+rd*t);r=min(r,10.*h/t);t+=clamp(h,.02,.5);if(r<.005||t>30.)break;}return clamp(r,0.,1.);}
+float ao(vec3 p,vec3 n){float o=0.,s=1.;for(int i=1;i<=5;i++){float h=.06*float(i);o+=(h-mapD(p+n*h))*s;s*=.7;}return clamp(1.-2.*o,0.,1.);}
+void main(){vec2 uv=(gl_FragCoord.xy*2.-uRes)/uRes.y;
+  vec3 fwd=normalize(uCamLook-uCamPos),rgt=normalize(cross(fwd,vec3(0,1,0))),up=cross(rgt,fwd);
+  float fl=1./tan(radians(uFov)*.5);vec3 rd=normalize(fwd*fl+rgt*uv.x+up*uv.y),ro=uCamPos;
+  vec3 sun=normalize(vec3(.5,1.,.35)),sky=mix(vec3(.56,.62,.70),vec3(.78,.83,.88),clamp(rd.y*.7+.5,0.,1.));
+  sky+=vec3(1,.9,.7)*pow(max(dot(rd,sun),0.),64.)*.4;
+  float t=0.;bool hit=false;for(int i=0;i<128;i++){float h=mapD(ro+rd*t);if(h<.002*max(t,1.)){hit=true;break;}t+=h;if(t>80.)break;}
+  vec3 col=sky;if(hit){vec3 p=ro+rd*t,n=calcN(p),base=mapColor(p,t);
+    float dif=max(dot(n,sun),0.)*shadow(p+n*.02,sun),amb=.5+.5*n.y,occ=ao(p,n);
+    col=base*(vec3(1,.96,.88)*dif*1.1+vec3(.55,.58,.65)*amb*.55)*occ;
+    col+=vec3(pow(max(dot(reflect(rd,n),sun),0.),24.)*.2*dif);
+    col=mix(col,sky,1.-exp(-.001*t*t));}
+  col=pow(max(col,vec3(0)),vec3(1./2.2));frag=vec4(col,1);}`;
+
+const canvas=document.getElementById("gl"),gl=canvas.getContext("webgl2",{antialias:false});
+if(!gl)document.body.innerHTML="<p style='padding:40px'>WebGL2 required.</p>";
+function compile(t,s){const sh=gl.createShader(t);gl.shaderSource(sh,s);gl.compileShader(sh);if(!gl.getShaderParameter(sh,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(sh));return sh;}
+const prog=gl.createProgram();gl.attachShader(prog,compile(gl.VERTEX_SHADER,VERT));gl.attachShader(prog,compile(gl.FRAGMENT_SHADER,FRAG));gl.linkProgram(prog);gl.useProgram(prog);
+const buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buf);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
+const aPos=gl.getAttribLocation(prog,"aPos");gl.enableVertexAttribArray(aPos);gl.vertexAttribPointer(aPos,2,gl.FLOAT,false,0,0);
+const U={};["uRes","uCamPos","uCamLook","uFov","uCount","uType","uPos","uSize","uColor","uBlend","uSub","uSun","uSky1","uSky2"].forEach(n=>U[n]=gl.getUniformLocation(prog,n));
+
+const $=id=>document.getElementById(id);
+let month=0,playing=false,lastFrame=performance.now();
+
+function render(){
+  const dpr=Math.min(devicePixelRatio||1,1.5);
+  const w=Math.min(1100,Math.round(canvas.clientWidth*dpr)),h=Math.round(w*10/16);
+  if(canvas.width!==w){canvas.width=w;canvas.height=h;}
+
+  const objs=buildObjects(month,VARS).slice(0,MAX_OBJ);
+  const type=new Int32Array(MAX_OBJ),pos=new Float32Array(MAX_OBJ*3),size=new Float32Array(MAX_OBJ*3),color=new Float32Array(MAX_OBJ*3),blend=new Float32Array(MAX_OBJ),sub=new Float32Array(MAX_OBJ);
+  objs.forEach((o,i)=>{
+    type[i]=SHAPE_IDS[o.shape]??0;
+    pos.set(o.pos,i*3);size.set([o.size[0]??1,o.size[1]??o.size[0]??1,o.size[2]??o.size[0]??1],i*3);
+    color.set(unhex(o.color||"#999"),i*3);blend[i]=o.blend||0;sub[i]=o.sub?1:0;
+  });
+
+  const t=month/84*2*Math.PI;
+  const camR=12,camH=7;
+  const cam={pos:[Math.cos(t*0.3)*camR,camH,Math.sin(t*0.3)*camR],look:[0,2,0],fov:48};
+
+  gl.viewport(0,0,w,h);
+  gl.uniform2f(U.uRes,w,h);gl.uniform3fv(U.uCamPos,cam.pos);gl.uniform3fv(U.uCamLook,cam.look);gl.uniform1f(U.uFov,cam.fov);
+  gl.uniform1i(U.uCount,objs.length);gl.uniform1iv(U.uType,type);gl.uniform3fv(U.uPos,pos);gl.uniform3fv(U.uSize,size);gl.uniform3fv(U.uColor,color);
+  gl.uniform1fv(U.uBlend,blend);gl.uniform1fv(U.uSub,sub);
+  gl.uniform3f(U.uSun,-0.5,-1,-0.35);gl.uniform3fv(U.uSky1,[.78,.83,.88]);gl.uniform3fv(U.uSky2,[.56,.62,.70]);
+  gl.drawArrays(gl.TRIANGLES,0,3);
+}
+
+function updateUI(){
+  $('monthLabel').textContent='Month '+month+' / 84';
+  $('month').value=month;
+  const phase=PHASES.find(p=>month>=p.start&&month<p.end)||PHASES[PHASES.length-1];
+  $('phaseName').textContent=phase.name+(month>=84?' -- complete':'');
+  const calcs=computeCalcs(month,VARS);
+  $('calcs').innerHTML=calcs.map(c=>'<div class="calc'+(c.c?' '+c.c:'')+'"><div class="cv">'+c.v+'</div><div class="cl">'+c.l+'</div></div>').join('');
+}
+
+function buildPhaseBar(){
+  $('phases').innerHTML=PHASES.map((p,i)=>{
+    const done=month>=p.end?'done':month>=p.start?'':'future';
+    return'<div class="phase-seg '+done+'" style="background:'+p.color+'" data-ph="'+i+'">'+p.name.split(' ')[0]+'</div>';
+  }).join('');
+}
+
+function buildDims(){
+  $('dims').innerHTML='';
+  for(const k in RANGES){
+    const r=RANGES[k];
+    const d=document.createElement('div');d.className='dim';
+    d.innerHTML='<label>'+k+'</label><input type="range" min="'+r[0]+'" max="'+r[1]+'" step="'+((r[1]-r[0])/100)+'" value="'+VARS[k]+'" data-var="'+k+'"><span class="v" data-vv="'+k+'">'+VARS[k]+'</span>';
+    $('dims').appendChild(d);
+  }
+  $('dims').querySelectorAll('input[type=range]').forEach(inp=>{
+    inp.addEventListener('input',()=>{
+      VARS[inp.dataset.var]=+inp.value;
+      $('dims').querySelector('[data-vv="'+inp.dataset.var+'"]').textContent=(+inp.value).toFixed(+inp.value>=10?0:1);
+    });
+  });
+}
+
+function loop(now){
+  const dt=(now-lastFrame)/1000;lastFrame=now;
+  if(playing){
+    month=Math.min(84,month+dt*4);
+    $('month').value=Math.round(month);
+    updateUI();buildPhaseBar();
+    if(month>=84){playing=false;$('play').textContent='Play';}
+  }
+  render();
+  requestAnimationFrame(loop);
+}
+
+$('month').addEventListener('input',e=>{month=+e.target.value;playing=false;$('play').textContent='Play';updateUI();buildPhaseBar();});
+$('play').addEventListener('click',()=>{
+  if(playing){playing=false;$('play').textContent='Play';}
+  else{if(month>=84)month=0;playing=true;$('play').textContent='Pause';}
+});
+$('phases').addEventListener('click',e=>{
+  const seg=e.target.closest('.phase-seg');
+  if(!seg)return;
+  const p=PHASES[+seg.dataset.ph];
+  month=p.start;playing=false;$('play').textContent='Play';
+  updateUI();buildPhaseBar();
+});
+
+buildDims();buildPhaseBar();updateUI();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
