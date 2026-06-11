@@ -115,6 +115,7 @@
       <option value="calandria">calandria lift -- dock to plinth (marine heavy lift)</option>
       <option value="cooling">once-through cooling (flow calcs drive geometry)</option>
       <option value="tandem">tandem lift -- two cranes, load share (lever rule)</option>
+      <option value="power">construction power (230kV→46kV→13.8kV, TBM, line loss)</option>
     </select>
   </label>
   <button id="play" class="ghost">Pause</button>
@@ -151,7 +152,8 @@
     <h2>JTM -- THE MODEL</h2>
     <span class="bytes" id="bytes"></span>
     <button class="mode-toggle active" id="modeLive">LIVE</button>
-    <button class="mode-toggle" id="modeRaw">RAW</button>
+    <button class="mode-toggle" id="modeRaw">JSON</button>
+    <button class="mode-toggle" id="modeSprout">SPROUT</button>
     <button id="apply" class="ghost">Apply raw text</button>
     <button id="download" class="ghost">Download .jtm</button>
   </div>
@@ -816,6 +818,88 @@ const SCENES = {
     ],
     camera: { fov: 46, orbit: { target: "pipe", radius: "tank-d * 2.4 + gap + 4", height: "tank-h + 3", period: 18, phase: 0 } },
     timeline: []
+  },
+  power: {
+    desc: "Construction power distribution. 230 kV grid steps down through 46 kV and 13.8 kV to site trailers, with a direct 46 kV feed to the tunnel boring machine. Every cable current, line loss, and voltage drop is derived from the loads. Drag tbm-load up and watch the 46 kV cable overheat.",
+    kind: "scene3d-constraints",
+    sky: ["#d2dbe4", "#94a8ba"],
+    sun: [-0.5, -1.0, -0.3],
+    vars: {
+      "tbm-load": 8, "trailer-load": 1.2, "aux-load": 0.6,
+      "cable-46": 400, "cable-13": 200, "cable-600": 80,
+      "xsec-46": 240, "xsec-13": 120, "xsec-600": 95,
+      "pf": 0.85, "rho": 0.0175
+    },
+    ranges: {
+      "tbm-load": [3, 16], "trailer-load": [0.4, 3], "aux-load": [0.2, 1.5],
+      "cable-46": [100, 800], "cable-13": [50, 500], "cable-600": [20, 200],
+      "xsec-46": [95, 500], "xsec-13": [50, 300], "xsec-600": [35, 185],
+      "pf": [0.7, 0.95]
+    },
+    derived: {
+      "total-mw": "tbm-load + trailer-load + aux-load",
+      "i-230": "total-mw * 1000 / ( 230 * 1.732 * pf )",
+      "i-46-tbm": "tbm-load * 1000 / ( 46 * 1.732 * pf )",
+      "i-46-dist": "( trailer-load + aux-load ) * 1000 / ( 46 * 1.732 * pf )",
+      "i-13": "( trailer-load + aux-load ) * 1000 / ( 13.8 * 1.732 * pf )",
+      "i-600": "trailer-load * 1000 / ( 0.6 * 1.732 * pf )",
+      "r-46-tbm": "rho * cable-46 / xsec-46",
+      "r-46-dist": "rho * cable-13 / xsec-46",
+      "r-13": "rho * cable-13 / xsec-13",
+      "r-600": "rho * cable-600 / xsec-600",
+      "loss-46-tbm": "3 * i-46-tbm * i-46-tbm * r-46-tbm / 1000",
+      "loss-46-dist": "3 * i-46-dist * i-46-dist * r-46-dist / 1000",
+      "loss-13": "3 * i-13 * i-13 * r-13 / 1000",
+      "loss-600": "3 * i-600 * i-600 * r-600 / 1000",
+      "total-loss": "loss-46-tbm + loss-46-dist + loss-13 + loss-600",
+      "loss-pct": "total-loss / total-mw * 100",
+      "vdrop-46-tbm": "1.732 * i-46-tbm * r-46-tbm / 46000 * 100",
+      "vdrop-13": "1.732 * i-13 * r-13 / 13800 * 100",
+      "vdrop-600": "1.732 * i-600 * r-600 / 600 * 100"
+    },
+    units: {
+      "total-mw": "MW", "i-230": "A", "i-46-tbm": "A", "i-46-dist": "A",
+      "i-13": "A", "i-600": "A",
+      "r-46-tbm": "ohm", "r-46-dist": "ohm", "r-13": "ohm", "r-600": "ohm",
+      "loss-46-tbm": "kW", "loss-46-dist": "kW", "loss-13": "kW", "loss-600": "kW",
+      "total-loss": "kW", "loss-pct": "%",
+      "vdrop-46-tbm": "%", "vdrop-13": "%", "vdrop-600": "%"
+    },
+    checks: [
+      { name: "46 kV TBM cable ampacity", expr: "i-46-tbm", max: 400, unit: "A" },
+      { name: "13.8 kV cable ampacity", expr: "i-13", max: 300, unit: "A" },
+      { name: "600 V cable ampacity", expr: "i-600", max: 800, unit: "A" },
+      { name: "46 kV voltage drop (TBM)", expr: "vdrop-46-tbm", max: 3, unit: "%" },
+      { name: "13.8 kV voltage drop", expr: "vdrop-13", max: 3, unit: "%" },
+      { name: "600 V voltage drop", expr: "vdrop-600", max: 5, unit: "%" },
+      { name: "total line losses", expr: "loss-pct", max: 4, unit: "%" }
+    ],
+    objects: [
+      { id: "ground", shape: "box", size: [60, 0.2, 40], color: "#b3aa97", at: ["on ground", "x 0", "z 0"] },
+      { id: "tower-a", shape: "box", size: [0.6, 16, 0.6], color: "#7e8b98", at: ["on ground", "x -24", "z 0"] },
+      { id: "tower-b", shape: "box", size: [0.6, 16, 0.6], color: "#7e8b98", at: ["on ground", "x -24", "z -4"] },
+      { id: "cross-arm", shape: "box", size: [0.3, 0.3, 5.5], color: "#7e8b98", at: ["above tower-a 0", "align-x tower-a", "centered-z tower-a tower-b"] },
+      { id: "xfmr-230", shape: "cyl", size: [4, 5], color: "#5d6671", at: ["on ground", "x -16", "z -2"] },
+      { id: "xfmr-230-bush", shape: "cyl", size: [1, 2], color: "#d9952f", at: ["on xfmr-230", "align-x xfmr-230", "align-z xfmr-230"] },
+      { id: "swgr-46", shape: "box", size: [5, 3, 2.5], color: "#46505c", at: ["on ground", "x -8", "z -2"] },
+      { id: "cable-46-tbm", shape: "cyl-x", size: [0.3, "tbm.x - swgr-46.x"], color: "#c85a4f", at: ["y 0.3", "x ( swgr-46.x + tbm.x ) / 2", "z -6"] },
+      { id: "tbm", shape: "cyl-x", size: [6, 12], color: "#8a9099", at: ["on ground", "x 18", "z -6"] },
+      { id: "tbm-head", shape: "cyl-x", size: [6.5, 1], color: "#d9952f", at: ["right-of tbm 0", "align-y tbm", "align-z tbm"] },
+      { id: "xfmr-46", shape: "cyl", size: [2.5, 3.5], color: "#5d6671", at: ["on ground", "x -2", "z 4"] },
+      { id: "swgr-13", shape: "box", size: [4, 2.5, 2], color: "#46505c", at: ["on ground", "right-of xfmr-46 1", "align-z xfmr-46"] },
+      { id: "cable-13", shape: "cyl-x", size: [0.2, "xfmr-site.x - swgr-13.x"], color: "#3E78C9", at: ["y 0.2", "x ( swgr-13.x + xfmr-site.x ) / 2", "align-z swgr-13"] },
+      { id: "xfmr-site", shape: "box", size: [2, 2.5, 1.5], color: "#5d6671", at: ["on ground", "x 14", "z 4"] },
+      { id: "cable-600", shape: "cyl-x", size: [0.15, "trailer-a.x - xfmr-site.x"], color: "#3E9B6B", at: ["y 0.15", "x ( xfmr-site.x + trailer-a.x ) / 2", "z 6"] },
+      { id: "trailer-a", shape: "box", size: [6, 2.8, 3], color: "#cfc9be", at: ["on ground", "x 22", "z 6"] },
+      { id: "trailer-b", shape: "box", size: [6, 2.8, 3], color: "#cfc9be", at: ["on ground", "right-of trailer-a 1", "align-z trailer-a"] },
+      { id: "panel-a", shape: "box", size: [0.8, 1.8, 0.4], color: "#3E9B6B", at: ["on ground", "left-of trailer-a 0.3", "align-z trailer-a"] },
+      { id: "gen-backup", shape: "box", size: [3, 2, 1.5], color: "#D9952F", at: ["on ground", "x 14", "z 10"] },
+      { id: "tunnel", shape: "cyl-x", size: [5.5, 10], color: "#4a4a52", sub: true, at: ["right-of tbm 0", "align-y tbm", "align-z tbm"] }
+    ],
+    camera: { fov: 48, orbit: { target: "swgr-46", radius: 38, height: 18, period: 22, phase: 160 } },
+    timeline: [
+      { var: "tbm-load", ease: "smooth", keys: [{ t: 0, v: 4 }, { t: 5, v: 14 }, { t: 11, v: 6 }, { t: 16, v: 12 }, { t: 22, v: 4 }] }
+    ]
   }
 };
 
@@ -1632,25 +1716,79 @@ $("scrub").addEventListener("input", e => {
   $("play").textContent = "Play";
   cur = +e.target.value / 1000 * duration;
 });
-$("modeLive").addEventListener("click", () => {
-  liveMode = true;
-  $("modeLive").classList.add("active");
-  $("modeRaw").classList.remove("active");
-  $("liveCode").style.display = "";
-  $("jtmText").style.display = "none";
-  $("apply").style.display = "none";
-  renderLiveCode();
-});
-$("modeRaw").addEventListener("click", () => {
-  liveMode = false;
-  $("modeLive").classList.remove("active");
-  $("modeRaw").classList.add("active");
-  $("liveCode").style.display = "none";
-  $("jtmText").style.display = "";
-  $("jtmText").value = JSON.stringify(scene, null, 1);
-  $("apply").style.display = "";
-});
+function setMode(mode) {
+  liveMode = mode === 'live';
+  $("modeLive").classList.toggle("active", mode === 'live');
+  $("modeRaw").classList.toggle("active", mode === 'raw');
+  $("modeSprout").classList.toggle("active", mode === 'sprout');
+  $("liveCode").style.display = mode === 'live' ? "" : "none";
+  $("jtmText").style.display = mode !== 'live' ? "" : "none";
+  $("apply").style.display = mode !== 'live' ? "" : "none";
+  if (mode === 'live') renderLiveCode();
+  else if (mode === 'raw') $("jtmText").value = JSON.stringify(scene, null, 1);
+  else if (mode === 'sprout') $("jtmText").value = jsonToSprout(scene);
+}
+function jsonToSprout(s) {
+  let o = '';
+  o += 'scene "' + (s.desc || '') + '"\n';
+  o += 'kind ' + (s.kind || 'scene3d-constraints') + '\n';
+  if (s.sky) o += 'sky ' + s.sky[0] + ' ' + s.sky[1] + '\n';
+  if (s.sun) o += 'sun ' + s.sun.join(' ') + '\n\n';
+  if (s.vars) {
+    o += '-- inputs (vars with ranges become sliders)\n';
+    for (const k in s.vars) {
+      const r = s.ranges && s.ranges[k];
+      o += 'var ' + k + ' = ' + s.vars[k] + (r ? '  [' + r[0] + ' .. ' + r[1] + ']' : '') + '\n';
+    }
+    o += '\n';
+  }
+  if (s.derived && Object.keys(s.derived).length) {
+    o += '-- derived (tracked outputs)\n';
+    for (const k in s.derived) {
+      const u = (s.units && s.units[k]) || '';
+      o += 'let ' + k + ' = ' + s.derived[k] + (u ? '  -- ' + u : '') + '\n';
+    }
+    o += '\n';
+  }
+  if (s.checks && s.checks.length) {
+    o += '-- checks (pass/warn/fail)\n';
+    s.checks.forEach(c => {
+      o += 'check "' + c.name + '" : ' + c.expr + (c.max !== undefined ? ' <= ' + c.max : ' >= ' + c.min) + (c.unit ? ' ' + c.unit : '') + '\n';
+    });
+    o += '\n';
+  }
+  if (s.objects) {
+    o += '-- objects\n';
+    s.objects.forEach(ob => {
+      const sz = (ob.size || []).map(v => typeof v === 'string' ? '(' + v + ')' : v).join(' ');
+      o += ob.id + ' : ' + ob.shape + ' ' + sz + ' ' + (ob.color || '#999') + (ob.blend ? ' blend=' + ob.blend : '') + (ob.sub ? ' subtract' : '') + '\n';
+      (ob.at || []).forEach(c => o += '  at ' + c + '\n');
+    });
+    o += '\n';
+  }
+  if (s.camera) {
+    const c = s.camera;
+    if (c.orbit) {
+      o += 'camera fov=' + (c.fov || 50) + ' orbit ' + c.orbit.target + ' r=' + c.orbit.radius + ' h=' + c.orbit.height + ' period=' + c.orbit.period + '\n';
+    }
+  }
+  if (s.timeline && s.timeline.length) {
+    o += '\n-- timeline (animate vars)\n';
+    s.timeline.forEach(tl => {
+      o += 'animate ' + tl.var + ' ' + (tl.ease || 'smooth') + '\n';
+      (tl.keys || []).forEach(k => o += '  ' + k.t + 's -> ' + k.v + '\n');
+    });
+  }
+  return o;
+}
+$("modeLive").addEventListener("click", () => setMode('live'));
+$("modeRaw").addEventListener("click", () => setMode('raw'));
+$("modeSprout").addEventListener("click", () => setMode('sprout'));
 $("apply").addEventListener("click", () => {
+  if ($("modeSprout").classList.contains("active")) {
+    alert("Sprout view is read-only. Switch to JSON to edit and apply.");
+    return;
+  }
   try {
     const parsed = JSON.parse($("jtmText").value);
     scene = parsed;
@@ -1661,7 +1799,7 @@ $("apply").addEventListener("click", () => {
     buildVarSliders();
     renderLiveCode();
     refreshBytes();
-    $("modeLive").click();
+    setMode('live');
   } catch (e) {
     alert("That edit broke the JSON: " + e.message);
   }
