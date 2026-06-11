@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Sprout Live -- camera to code</title>
+<style>
+:root{--bg:#0f0f10;--panel:#1a1a1c;--border:#2a2a2d;--text:#f0f0f0;--dim:#6e6e73;--accent:#a78bfa;--green:#4ade80;--mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;--font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh;min-height:-webkit-fill-available}
+header{padding:12px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px}
+header h1{font-family:var(--mono);font-size:16px;font-weight:700;color:var(--accent)}
+header p{font-size:12px;color:var(--dim)}
+.controls{display:flex;gap:8px;padding:10px 18px;border-bottom:1px solid var(--border);flex-wrap:wrap;align-items:center}
+button{font:600 12px var(--font);padding:7px 14px;border-radius:6px;cursor:pointer;border:1px solid var(--border);background:var(--panel);color:var(--text);transition:all .15s}
+button:hover{border-color:var(--accent)}
+button.active{background:var(--accent);color:#000;border-color:var(--accent)}
+select{font:12px var(--mono);padding:5px 8px;border:1px solid var(--border);border-radius:6px;background:var(--panel);color:var(--text)}
+.main{display:grid;grid-template-columns:1fr 1fr;min-height:calc(100vh - 100px);min-height:calc(-webkit-fill-available - 100px)}
+@media(max-width:700px){.main{grid-template-columns:1fr;grid-template-rows:40vh 1fr}}
+.cam-pane{position:relative;background:#000;overflow:hidden;border-right:1px solid var(--border)}
+video{width:100%;height:100%;object-fit:cover}
+canvas#overlay{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.code-pane{display:flex;flex-direction:column;overflow:hidden}
+.code-pane .tab-bar{display:flex;border-bottom:1px solid var(--border);background:var(--panel)}
+.tab-btn{flex:0 0 auto;padding:8px 14px;background:none;border:none;border-bottom:2px solid transparent;color:var(--dim);font:600 11px var(--mono);cursor:pointer;letter-spacing:.05em}
+.tab-btn.active{color:var(--accent);border-bottom-color:var(--accent)}
+.output{flex:1;overflow:auto;padding:12px;font:12px/1.6 var(--mono);white-space:pre-wrap;color:var(--text);background:#0a0c0e;-webkit-overflow-scrolling:touch}
+.output .kw{color:var(--accent);font-weight:600}
+.output .num{color:#4ade80}
+.output .str{color:#f59e0b}
+.output .cm{color:#555;font-style:italic}
+.output .op{color:#666}
+.status{padding:6px 18px;font:11px var(--mono);color:var(--dim);border-top:1px solid var(--border);display:flex;gap:16px}
+.no-cam{display:flex;align-items:center;justify-content:center;height:100%;color:var(--dim);font:14px var(--mono);text-align:center;padding:20px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Sprout Live</h1>
+  <p>Camera to code in real time</p>
+</header>
+<div class="controls">
+  <button id="camBtn">Start Camera</button>
+  <button id="flipBtn">Flip</button>
+  <select id="mode">
+    <option value="ascii">ASCII art</option>
+    <option value="sprout">Sprout DSL</option>
+    <option value="json">JSON pixels</option>
+    <option value="svg">SVG rects</option>
+  </select>
+  <select id="res">
+    <option value="40">40 cols</option>
+    <option value="60" selected>60 cols</option>
+    <option value="80">80 cols</option>
+  </select>
+  <select id="fps">
+    <option value="5">5 fps</option>
+    <option value="10" selected>10 fps</option>
+    <option value="15">15 fps</option>
+  </select>
+</div>
+<div class="main">
+  <div class="cam-pane">
+    <video id="vid" playsinline autoplay muted></video>
+    <canvas id="overlay"></canvas>
+    <div class="no-cam" id="noCam">Tap "Start Camera" above</div>
+  </div>
+  <div class="code-pane">
+    <div class="tab-bar">
+      <button class="tab-btn active" data-tab="live">Live Output</button>
+      <button class="tab-btn" data-tab="snap">Snapshot</button>
+    </div>
+    <div class="output" id="liveOut"></div>
+  </div>
+</div>
+<div class="status">
+  <span id="sDim">--</span>
+  <span id="sFps">--</span>
+  <span id="sBytes">--</span>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+let stream=null,facing='environment',animFrame=null,lastRender=0;
+let snapText='';
+const vid=$('vid'),ov=$('overlay'),ovCtx=ov.getContext('2d');
+const sampleCanvas=document.createElement('canvas'),sCtx=sampleCanvas.getContext('2d');
+
+const ASCII=' .:-=+*#%@';
+const BRAILLE_MAP=[[0x01,0x08],[0x02,0x10],[0x04,0x20],[0x40,0x80]];
+
+async function startCam(){
+  try{
+    if(stream){stream.getTracks().forEach(t=>t.stop());}
+    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:facing,width:{ideal:640},height:{ideal:480}},audio:false});
+    vid.srcObject=stream;$('noCam').style.display='none';$('camBtn').textContent='Stop Camera';$('camBtn').classList.add('active');
+    vid.addEventListener('loadeddata',function onL(){vid.removeEventListener('loadeddata',onL);loop();},{once:true});
+    if(vid.readyState>=2)loop();
+  }catch(e){alert('Camera: '+e.message);}
+}
+function stopCam(){
+  if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}
+  if(animFrame)cancelAnimationFrame(animFrame);animFrame=null;
+  vid.srcObject=null;$('noCam').style.display='';$('camBtn').textContent='Start Camera';$('camBtn').classList.remove('active');
+}
+function flip(){facing=facing==='environment'?'user':'environment';if(stream)startCam();}
+
+function sample(cols){
+  const vw=vid.videoWidth,vh=vid.videoHeight;
+  if(!vw||!vh)return null;
+  const aspect=vh/vw;const rows=Math.round(cols*aspect*0.5);
+  sampleCanvas.width=cols;sampleCanvas.height=rows;
+  sCtx.drawImage(vid,0,0,cols,rows);
+  return sCtx.getImageData(0,0,cols,rows);
+}
+
+function toAscii(img){
+  let out='';const d=img.data;
+  for(let y=0;y<img.height;y++){
+    let row='';
+    for(let x=0;x<img.width;x++){
+      const i=(y*img.width+x)*4;
+      const l=(d[i]*0.299+d[i+1]*0.587+d[i+2]*0.114)/255;
+      row+=ASCII[Math.min(ASCII.length-1,Math.floor(l*(ASCII.length-1)))];
+    }
+    out+=row+'\n';
+  }
+  return out;
+}
+
+function toSprout(img){
+  let out='<span class="cm">-- sprout live frame '+img.width+'x'+img.height+'</span>\n';
+  out+='<span class="kw">let</span> w <span class="op">=</span> <span class="num">'+img.width+'</span>\n';
+  out+='<span class="kw">let</span> h <span class="op">=</span> <span class="num">'+img.height+'</span>\n';
+  out+='<span class="kw">let</span> pixels <span class="op">=</span> [\n';
+  const d=img.data;
+  for(let y=0;y<img.height;y++){
+    let row='  ';
+    for(let x=0;x<img.width;x++){
+      const i=(y*img.width+x)*4;
+      const r=d[i],g=d[i+1],b=d[i+2];
+      const hex='#'+((1<<24)|(r<<16)|(g<<8)|b).toString(16).slice(1);
+      row+='<span class="str">"'+hex+'"</span> ';
+    }
+    out+=row+'\n';
+  }
+  out+=']\n\n<span class="cm">-- draw</span>\n';
+  out+='<span class="kw">for</span> y <span class="kw">in</span> <span class="num">0</span><span class="op">..</span>h\n';
+  out+='  <span class="kw">for</span> x <span class="kw">in</span> <span class="num">0</span><span class="op">..</span>w\n';
+  out+='    fillRect(x<span class="op">*</span>s, y<span class="op">*</span>s, s, s, pixels[y<span class="op">*</span>w<span class="op">+</span>x])\n';
+  return out;
+}
+
+function toJSON(img){
+  const d=img.data,rows=[];
+  for(let y=0;y<img.height;y++){
+    const row=[];
+    for(let x=0;x<img.width;x++){
+      const i=(y*img.width+x)*4;
+      row.push([d[i],d[i+1],d[i+2]]);
+    }
+    rows.push(row);
+  }
+  return JSON.stringify({width:img.width,height:img.height,pixels:rows},null,1);
+}
+
+function toSVG(img){
+  const d=img.data,s=6;
+  let svg='<svg xmlns="http://www.w3.org/2000/svg" width="'+(img.width*s)+'" height="'+(img.height*s)+'">\n';
+  for(let y=0;y<img.height;y++)for(let x=0;x<img.width;x++){
+    const i=(y*img.width+x)*4;
+    svg+='<rect x="'+(x*s)+'" y="'+(y*s)+'" width="'+s+'" height="'+s+'" fill="rgb('+d[i]+','+d[i+1]+','+d[i+2]+')"/>\n';
+  }
+  return svg+'</svg>';
+}
+
+function convert(img){
+  const mode=$('mode').value;
+  if(mode==='ascii')return toAscii(img);
+  if(mode==='sprout')return toSprout(img);
+  if(mode==='json')return toJSON(img);
+  return toSVG(img);
+}
+
+let activeTab='live';
+function loop(ts){
+  if(!stream)return;
+  const interval=1000/parseInt($('fps').value);
+  if(ts&&ts-lastRender<interval){animFrame=requestAnimationFrame(loop);return;}
+  lastRender=ts||performance.now();
+  const cols=parseInt($('res').value);
+  const img=sample(cols);
+  if(!img){animFrame=requestAnimationFrame(loop);return;}
+  const text=convert(img);
+  if(activeTab==='live'){
+    const mode=$('mode').value;
+    if(mode==='sprout')$('liveOut').innerHTML=text;
+    else $('liveOut').textContent=text;
+  }
+  $('sDim').textContent=img.width+'x'+img.height;
+  $('sFps').textContent=Math.round(1000/(performance.now()-(lastRender-interval)||1000))+'fps';
+  const plain=text.replace(/<[^>]*>/g,'');
+  $('sBytes').textContent=plain.length>=1024?(plain.length/1024).toFixed(1)+' KB':plain.length+' B';
+  animFrame=requestAnimationFrame(loop);
+}
+
+$('camBtn').addEventListener('click',()=>{if(stream)stopCam();else startCam();});
+$('flipBtn').addEventListener('click',flip);
+document.querySelectorAll('.tab-btn').forEach(b=>{
+  b.addEventListener('click',()=>{
+    document.querySelectorAll('.tab-btn').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');activeTab=b.dataset.tab;
+    if(activeTab==='snap'){
+      const cols=parseInt($('res').value);
+      const img=sample(cols);
+      if(img)snapText=convert(img);
+      const mode=$('mode').value;
+      if(mode==='sprout')$('liveOut').innerHTML=snapText;
+      else $('liveOut').textContent=snapText;
+    }
+  });
+});
+</script>
+</body>
+</html>
