@@ -116,7 +116,12 @@ function render(){
     }
     // right-click or double-tap to rotate
     w.oncontextmenu=e=>{e.preventDefault();if(!p.used){p.shape=rot(p.shape);sfx('rotate');render();}};
-    w.ondblclick=e=>{e.preventDefault();if(!p.used){p.shape=rot(p.shape);sfx('rotate');render();}};
+    w.addEventListener('click',e=>{
+      if(p.used)return;
+      const now=Date.now();
+      if(window._tapIdx===i&&now-window._tapT<400){p.shape=rot(p.shape);sfx('rotate');render();window._tapIdx=-1;}
+      else{window._tapIdx=i;window._tapT=now;}
+    });
     w.appendChild(d);inner.appendChild(w);
   });
   $('sc').textContent=score;
@@ -344,8 +349,15 @@ function scheduleLoop(){
   });
   musLoop=setTimeout(scheduleLoop,bps*16*1000-200);
 }
-function toggleMusic(){initAudio();if(actx.state==='suspended')actx.resume();if(musicOn)stopMus();else startMus();}
-function startMus(){musicOn=true;$('musBtn').textContent='♪ ON';scheduleLoop();drawWave();}
+function toggleMusic(){
+  initAudio();
+  if(actx.state==='suspended'){
+    actx.resume().then(()=>{if(!musicOn)startMus();});
+  }else{
+    if(musicOn)stopMus();else startMus();
+  }
+}
+function startMus(){musicOn=true;$('musBtn').textContent='♪ ON';scheduleLoop();}
 function stopMus(){musicOn=false;$('musBtn').textContent='♪';clearTimeout(musLoop);}
 
 // SFX
@@ -359,20 +371,37 @@ function sfx(type){
   if(type==='gameover'){playNote(220,'sawtooth',.08,.01,.3,.4,.5,.4,now,0);playNote(196,'sawtooth',.06,.01,.3,.4,.5,.4,now+.15,0);}
 }
 
-function drawWave(){
-  if(!analyser)return;analyser.getByteTimeDomainData(waveData);
-  const w=wvC.width=wvC.clientWidth*2,h=wvC.height=wvC.clientHeight*2;wvX.clearRect(0,0,w,h);
-  wvX.strokeStyle='rgba(123,104,238,.5)';wvX.lineWidth=2;wvX.beginPath();
-  const sl=waveData.length,step=sl/w;
-  for(let i=0;i<w;i++){const v=waveData[Math.floor(i*step)]/128;i?wvX.lineTo(i,v*h/2):wvX.moveTo(i,v*h/2);}wvX.stroke();
-  wvX.strokeStyle='rgba(255,110,199,.3)';wvX.lineWidth=1.5;wvX.beginPath();
-  for(let i=0;i<w;i++){const v=waveData[Math.min(sl-1,Math.floor(i*step)+20)]/128;i?wvX.lineTo(i,v*h/2):wvX.moveTo(i,v*h/2);}wvX.stroke();
-  requestAnimationFrame(drawWave);
-}
+// waveform rendering moved to waveLoop below
 
-// auto music
-document.addEventListener('click',function f(){initAudio();if(actx.state==='suspended')actx.resume().then(()=>{if(!musicOn)startMus();});else if(!musicOn)startMus();document.removeEventListener('click',f);},{once:true});
-document.addEventListener('touchstart',function f(){initAudio();if(actx.state==='suspended')actx.resume().then(()=>{if(!musicOn)startMus();});else if(!musicOn)startMus();document.removeEventListener('touchstart',f);},{once:true});
+// auto music on first interaction (use touchend to avoid conflict with drag)
+let musicStarted=false;
+function tryAutoMusic(){
+  if(musicStarted)return;musicStarted=true;
+  initAudio();
+  if(actx.state==='suspended'){
+    actx.resume().then(()=>{if(!musicOn)startMus();});
+  }else if(!musicOn)startMus();
+}
+document.addEventListener('touchend',tryAutoMusic,{once:true});
+document.addEventListener('click',tryAutoMusic,{once:true});
+
+// always render waveform
+function waveLoop(){
+  if(analyser)analyser.getByteTimeDomainData(waveData);
+  const w=wvC.width=wvC.clientWidth*2,h=wvC.height=wvC.clientHeight*2;
+  wvX.clearRect(0,0,w,h);
+  if(waveData){
+    wvX.strokeStyle='rgba(123,104,238,.5)';wvX.lineWidth=2;wvX.beginPath();
+    const sl=waveData.length,step=sl/w;
+    for(let i=0;i<w;i++){const v=(waveData?waveData[Math.floor(i*step)]:128)/128;i?wvX.lineTo(i,v*h/2):wvX.moveTo(i,v*h/2);}wvX.stroke();
+    wvX.strokeStyle='rgba(255,110,199,.3)';wvX.lineWidth=1.5;wvX.beginPath();
+    for(let i=0;i<w;i++){const v=(waveData?waveData[Math.min(sl-1,Math.floor(i*step)+20)]:128)/128;i?wvX.lineTo(i,v*h/2):wvX.moveTo(i,v*h/2);}wvX.stroke();
+  }else{
+    wvX.strokeStyle='rgba(123,104,238,.15)';wvX.lineWidth=1;wvX.beginPath();wvX.moveTo(0,h/2);wvX.lineTo(w,h/2);wvX.stroke();
+  }
+  requestAnimationFrame(waveLoop);
+}
+waveLoop();
 
 startGame();
 </script>
