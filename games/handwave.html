@@ -29,6 +29,9 @@ canvas{display:block;position:fixed;inset:0;width:100%;height:100%}
   <button id="modePaint">Paint</button>
   <button id="modeWave">Wave</button>
   <button id="modeMirror">Mirror</button>
+  <button id="modePong">Pong</button>
+  <button id="modeFidget">Fidget</button>
+  <button id="modeBubble">Bubbles</button>
   <button id="clearBtn">Clear</button>
 </div>
 <script>
@@ -40,6 +43,12 @@ resize();onresize=resize;
 
 let stream=null,facing='user',running=false,mode='particle';
 let prevFrame=null,particles=[],paintLayer=null,waveData=[];
+// pong state
+let pongPadL=0,pongPadR=0,pongBX=0,pongBY=0,pongBVX=4,pongBVY=2,pongScore=[0,0];
+// fidget state
+let fidgetAngle=0,fidgetVel=0;
+// bubble state
+let bubbles=[],score=0;
 const COLS=['#ff6ec7','#7b68ee','#00ced1','#ff69b4','#9370db','#40e0d0','#da70d6'];
 
 // audio
@@ -244,6 +253,89 @@ function loop(){
     if(motion.length){spawnParticles(motion);updateParticles();drawParticles();}
   }
 
+  // PONG: motion on left/right edges controls paddles, ball bounces
+  if(mode==='pong'&&motion.length){
+    // detect motion centroids on left and right thirds
+    let lSum=0,lCnt=0,rSum=0,rCnt=0;
+    for(let i=0;i<motion.length;i++){
+      if(!motion[i])continue;
+      const mx=i%MW,my=Math.floor(i/MW);
+      if(mx<MW/3){lSum+=my;lCnt++;}
+      if(mx>MW*2/3){rSum+=my;rCnt++;}
+    }
+    if(lCnt>2)pongPadL+=(lSum/lCnt/MH*H-pongPadL)*.3;
+    if(rCnt>2)pongPadR+=(rSum/rCnt/MH*H-pongPadR)*.3;
+    // ball physics
+    pongBX+=pongBVX;pongBY+=pongBVY;
+    if(pongBY<20||pongBY>H-20)pongBVY*=-1;
+    const padW=12,padH=80;
+    if(pongBX<40&&pongBY>pongPadL-padH/2&&pongBY<pongPadL+padH/2){pongBVX=Math.abs(pongBVX);pongBVY+=(pongBY-pongPadL)*.1;playTone(440,.08);pongScore[0]++;}
+    if(pongBX>W-40&&pongBY>pongPadR-padH/2&&pongBY<pongPadR+padH/2){pongBVX=-Math.abs(pongBVX);pongBVY+=(pongBY-pongPadR)*.1;playTone(520,.08);pongScore[1]++;}
+    if(pongBX<0||pongBX>W){pongBX=W/2;pongBY=H/2;pongBVX=4*(Math.random()>.5?1:-1);pongBVY=(Math.random()-.5)*4;playTone(220,.2);}
+    // draw
+    ctx.fillStyle='#00ced1';ctx.fillRect(24,pongPadL-padH/2,padW,padH);
+    ctx.fillStyle='#ff6ec7';ctx.fillRect(W-36,pongPadR-padH/2,padW,padH);
+    ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(pongBX,pongBY,8,0,Math.PI*2);ctx.fill();
+    ctx.setLineDash([6,6]);ctx.strokeStyle='rgba(255,255,255,.15)';ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(W/2,0);ctx.lineTo(W/2,H);ctx.stroke();ctx.setLineDash([]);
+    ctx.fillStyle='rgba(255,255,255,.6)';ctx.font='bold 28px monospace';ctx.textAlign='center';
+    ctx.fillText(pongScore[0]+' : '+pongScore[1],W/2,40);
+  }
+
+  // FIDGET SPINNER: motion makes it spin, it slows with friction
+  if(mode==='fidget'&&motion.length){
+    let total=0;for(const m of motion)total+=m;
+    fidgetVel+=total/200000;fidgetVel*=.995;fidgetAngle+=fidgetVel;
+    const cx=W/2,cy=H/2,r=Math.min(W,H)*.25;
+    // draw spinner
+    for(let i=0;i<3;i++){
+      const a=fidgetAngle+i*Math.PI*2/3;
+      const ex=cx+Math.cos(a)*r,ey=cy+Math.sin(a)*r;
+      ctx.fillStyle=COLS[i%COLS.length];ctx.beginPath();ctx.arc(ex,ey,r*.35,0,Math.PI*2);ctx.fill();
+      ctx.strokeStyle='rgba(255,255,255,.2)';ctx.lineWidth=3;
+      ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(ex,ey);ctx.stroke();
+    }
+    ctx.fillStyle='rgba(20,10,40,.8)';ctx.beginPath();ctx.arc(cx,cy,r*.18,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle='#7b68ee';ctx.lineWidth=2;ctx.beginPath();ctx.arc(cx,cy,r*.18,0,Math.PI*2);ctx.stroke();
+    ctx.fillStyle='rgba(255,255,255,.5)';ctx.font='bold 14px monospace';ctx.textAlign='center';
+    ctx.fillText(Math.round(fidgetVel*600)+' RPM',cx,cy+5);
+    if(fidgetVel>.01)playTone(200+fidgetVel*500,.05);
+  }
+
+  // BUBBLES: floating bubbles, motion pops them
+  if(mode==='bubble'){
+    // spawn bubbles
+    if(Math.random()<.08&&bubbles.length<40){
+      bubbles.push({x:Math.random()*W,y:H+20,r:15+Math.random()*25,vy:-.5-Math.random(),
+        col:COLS[Math.floor(Math.random()*COLS.length)],wobble:Math.random()*6});
+    }
+    // update bubbles
+    for(let i=bubbles.length-1;i>=0;i--){
+      const b=bubbles[i];b.y+=b.vy;b.x+=Math.sin(performance.now()*.002+b.wobble)*.5;
+      if(b.y<-40){bubbles.splice(i,1);continue;}
+      // pop check with motion
+      if(motion.length){
+        const mx=Math.floor((facing==='user'?W-b.x:b.x)/W*MW),my=Math.floor(b.y/H*MH);
+        const mi=my*MW+mx;
+        if(mi>=0&&mi<motion.length&&motion[mi]>0){
+          // pop!
+          for(let j=0;j<8;j++)particles.push({x:b.x,y:b.y,vx:(Math.random()-.5)*5,vy:(Math.random()-.5)*5,life:1,decay:.03,r:3,col:b.col,type:'dot'});
+          score+=10;playTone(300+b.r*10,.1);bubbles.splice(i,1);continue;
+        }
+      }
+      // draw bubble
+      ctx.globalAlpha=.6;ctx.strokeStyle=b.col;ctx.lineWidth=2;
+      ctx.beginPath();ctx.arc(b.x,b.y,b.r,0,Math.PI*2);ctx.stroke();
+      ctx.fillStyle=b.col+'22';ctx.fill();
+      // shine
+      ctx.fillStyle='rgba(255,255,255,.3)';ctx.beginPath();ctx.arc(b.x-b.r*.25,b.y-b.r*.25,b.r*.2,0,Math.PI*2);ctx.fill();
+      ctx.globalAlpha=1;
+    }
+    updateParticles();drawParticles();
+    ctx.fillStyle='rgba(255,255,255,.6)';ctx.font='bold 20px monospace';ctx.textAlign='center';
+    ctx.fillText('POP: '+score,W/2,40);
+  }
+
   // motion meter
   if(motion.length){
     let total=0;for(const m of motion)total+=m;
@@ -264,12 +356,14 @@ document.getElementById('clearBtn').addEventListener('click',()=>{
   particles=[];waveData=[];
   if(paintLayer)for(let i=0;i<paintLayer.data.length;i++)paintLayer.data[i]=0;
 });
-['modeParticle','modePaint','modeWave','modeMirror'].forEach(id=>{
+['modeParticle','modePaint','modeWave','modeMirror','modePong','modeFidget','modeBubble'].forEach(id=>{
   document.getElementById(id).addEventListener('click',()=>{
     mode=id.replace('mode','').toLowerCase();
     document.querySelectorAll('.bar button').forEach(b=>b.classList.remove('on'));
     document.getElementById(id).classList.add('on');
-    particles=[];waveData=[];
+    particles=[];waveData=[];bubbles=[];score=0;
+    pongBX=W/2;pongBY=H/2;pongBVX=4;pongBVY=2;pongScore=[0,0];pongPadL=H/2;pongPadR=H/2;
+    fidgetAngle=0;fidgetVel=0;
     if(paintLayer)for(let i=0;i<paintLayer.data.length;i++)paintLayer.data[i]=0;
   });
 });
