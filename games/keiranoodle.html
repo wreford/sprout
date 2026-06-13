@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>KeiraNoodle -- A Starbucks Puzzle</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#1e3932;font-family:'Segoe UI',system-ui,sans-serif;color:#f1f0eb;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;min-height:100vh;min-height:-webkit-fill-available;display:flex;flex-direction:column;align-items:center}
+header{padding:14px 20px;text-align:center;width:100%}
+header h1{font-size:28px;font-weight:800;letter-spacing:.03em;color:#d4e9e2}
+header h1 span{color:#00704A}
+header .sub{font-size:12px;color:#8aad9e;margin-top:2px;letter-spacing:.08em}
+.info{display:flex;gap:16px;justify-content:center;padding:6px;font:bold 13px monospace;color:#d4e9e2}
+.info .lvl{color:#00704A}
+.board-wrap{position:relative;display:flex;align-items:center;justify-content:center;flex:1;width:100%;max-width:420px;padding:8px}
+.board{display:grid;gap:2px;background:#0d1f1a;border-radius:12px;padding:6px;box-shadow:0 4px 20px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.05)}
+.cell{border-radius:4px;transition:background .15s;cursor:pointer;aspect-ratio:1;min-width:0}
+.cell.empty{background:#2a4a40}
+.cell.filled{border:1px solid rgba(0,0,0,.2)}
+.cell.hover{outline:2px solid #f1f0eb;outline-offset:-1px}
+.cell.invalid{animation:shake .3s}
+@keyframes shake{25%{transform:translateX(-3px)}75%{transform:translateX(3px)}}
+.pieces{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;padding:8px 12px;max-width:420px;width:100%}
+.piece{background:#0d1f1a;border:2px solid transparent;border-radius:8px;padding:4px;cursor:grab;transition:border-color .15s,transform .15s;display:inline-grid;gap:1px}
+.piece:hover{border-color:#00704A}
+.piece.selected{border-color:#f1f0eb;transform:scale(1.05);box-shadow:0 0 12px rgba(0,112,74,.4)}
+.piece.placed{opacity:.25;pointer-events:none}
+.piece .pc{border-radius:3px;width:16px;height:16px}
+.piece .pc.on{border:1px solid rgba(0,0,0,.15)}
+.piece .pc.off{background:transparent}
+.controls{display:flex;gap:8px;padding:8px 12px;justify-content:center;flex-wrap:wrap}
+button{font:600 12px system-ui;padding:7px 16px;border:1px solid #3a6b5a;border-radius:6px;background:#2a4a40;color:#d4e9e2;cursor:pointer;transition:.15s}
+button:hover{background:#3a6b5a;border-color:#4a8b6a}
+button:active{transform:scale(.97)}
+button.primary{background:#00704A;border-color:#00704A;color:#fff}
+.win{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:20;background:rgba(0,0,0,.6);flex-direction:column;gap:12px}
+.win h2{font-size:36px;color:#00704A;text-shadow:0 2px 8px rgba(0,0,0,.5)}
+.win p{font-size:14px;color:#8aad9e}
+.toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);font:600 13px system-ui;color:#fff;background:#00704A;padding:8px 20px;border-radius:8px;display:none;z-index:15;box-shadow:0 4px 12px rgba(0,0,0,.3)}
+</style>
+</head>
+<body>
+<header>
+  <h1>Keira<span>Noodle</span></h1>
+  <div class="sub">A STARBUCKS PUZZLE</div>
+</header>
+<div class="info"><span class="lvl" id="lvl">Level 1</span><span id="moves">Pieces: 0/0</span></div>
+<div class="board-wrap"><div class="board" id="board"></div></div>
+<div class="pieces" id="pieces"></div>
+<div class="controls">
+  <button onclick="rotatePiece()">Rotate</button>
+  <button onclick="flipPiece()">Flip</button>
+  <button onclick="undoLast()">Undo</button>
+  <button onclick="resetLevel()">Reset</button>
+  <button onclick="nextLevel()" class="primary">Next</button>
+</div>
+<div class="win" id="win"><h2>Perfect!</h2><p>Every cell filled. Keira approves.</p><button class="primary" onclick="nextLevel();document.getElementById('win').style.display='none'">Next Level</button></div>
+<div class="toast" id="toast"></div>
+<script>
+const COLORS=[
+  '#00704A','#1E3932','#D4E9E2','#CBA258','#A0522D',
+  '#4A8B6A','#8B4513','#D2691E','#B87333','#6B8E23',
+  '#2F4F4F','#8FBC8F'
+];
+
+const PIECES=[
+  {name:'Tall',shape:[[1,1,1,1]],color:0},
+  {name:'Grande',shape:[[1,1],[1,0]],color:1},
+  {name:'Venti',shape:[[1,1,1],[1,0,0]],color:2},
+  {name:'Trenta',shape:[[1,1],[0,1],[0,1]],color:3},
+  {name:'Flat White',shape:[[1,1,1],[0,1,0]],color:4},
+  {name:'Mocha',shape:[[1,1,0],[0,1,1]],color:5},
+  {name:'Latte',shape:[[1,0],[1,1],[0,1]],color:6},
+  {name:'Frap',shape:[[1,1],[1,1]],color:7},
+  {name:'Espresso',shape:[[1,1,1],[1,0,0],[1,0,0]],color:8},
+  {name:'Doppio',shape:[[1,1,1,1],[1,0,0,0]],color:9},
+  {name:'Macchiato',shape:[[0,1],[1,1],[1,0]],color:10},
+  {name:'Cortado',shape:[[1,1,1],[0,0,1],[0,0,1]],color:11}
+];
+
+const LEVELS=[
+  {w:5,h:4,pieces:[0,1,2,4,7],blocked:[]},
+  {w:5,h:4,pieces:[0,3,5,6,7],blocked:[[2,1]]},
+  {w:5,h:5,pieces:[0,1,2,3,4,5],blocked:[[2,2]]},
+  {w:6,h:5,pieces:[0,1,2,3,4,5,6],blocked:[[0,0],[5,4]]},
+  {w:5,h:5,pieces:[2,3,4,5,6,7],blocked:[[1,1],[3,3]]},
+  {w:6,h:5,pieces:[0,1,2,3,4,5,7,8],blocked:[]},
+  {w:7,h:5,pieces:[0,1,2,3,4,5,6,8],blocked:[[3,2]]},
+  {w:5,h:6,pieces:[0,1,2,3,4,5,6],blocked:[[2,0],[2,5]]},
+  {w:6,h:6,pieces:[0,1,2,3,4,5,6,7,9],blocked:[]},
+  {w:7,h:5,pieces:[0,1,2,3,4,5,6,7,10],blocked:[[0,0],[6,0]]},
+  {w:8,h:5,pieces:[0,1,2,3,4,5,6,7,8,9],blocked:[]},
+  {w:5,h:11,pieces:[0,1,2,3,4,5,6,7,8,9,10,11],blocked:[[2,5]]}
+];
+
+let lvl=0,grid=[],bw=0,bh=0,selected=null,placedPieces=[],levelPieces=[];
+
+function rotate(shape){
+  const h=shape.length,w=shape[0].length;
+  const r=[];for(let x=0;x<w;x++){r.push([]);for(let y=h-1;y>=0;y--)r[x].push(shape[y][x]);}
+  return r;
+}
+function flip(shape){return shape.map(r=>[...r].reverse());}
+
+function loadLevel(n){
+  lvl=n%LEVELS.length;
+  const L=LEVELS[lvl];
+  bw=L.w;bh=L.h;
+  grid=[];for(let y=0;y<bh;y++){grid[y]=[];for(let x=0;x<bw;x++)grid[y][x]=0;}
+  L.blocked.forEach(([x,y])=>grid[y][x]=-1);
+  placedPieces=[];
+  selected=null;
+  levelPieces=L.pieces.map(i=>{const p=PIECES[i];return{idx:i,name:p.name,shape:p.shape.map(r=>[...r]),color:p.color,placed:false};});
+  document.getElementById('lvl').textContent='Level '+(lvl+1)+' / '+LEVELS.length;
+  renderBoard();renderPieces();updateInfo();
+}
+
+function renderBoard(){
+  const board=document.getElementById('board');
+  const cellSize=Math.min(Math.floor((Math.min(innerWidth,420)-24)/bw),Math.floor((innerHeight*0.45)/bh));
+  board.style.gridTemplateColumns='repeat('+bw+','+cellSize+'px)';
+  board.style.gridTemplateRows='repeat('+bh+','+cellSize+'px)';
+  board.innerHTML='';
+  for(let y=0;y<bh;y++)for(let x=0;x<bw;x++){
+    const cell=document.createElement('div');
+    cell.className='cell';
+    cell.dataset.x=x;cell.dataset.y=y;
+    if(grid[y][x]===-1){cell.style.background='#0d1f1a';cell.style.borderRadius='4px';}
+    else if(grid[y][x]>0){cell.className='cell filled';cell.style.background=COLORS[(grid[y][x]-1)%COLORS.length];}
+    else cell.className='cell empty';
+    cell.onclick=()=>placeAt(x,y);
+    cell.onmouseenter=()=>hoverAt(x,y);
+    cell.onmouseleave=clearHover;
+    board.appendChild(cell);
+  }
+}
+
+function renderPieces(){
+  const el=document.getElementById('pieces');
+  el.innerHTML='';
+  levelPieces.forEach((p,i)=>{
+    const div=document.createElement('div');
+    const sh=p.shape,h=sh.length,w=sh[0].length;
+    div.className='piece'+(p.placed?' placed':'')+(selected===i?' selected':'');
+    div.style.gridTemplateColumns='repeat('+w+',16px)';
+    div.style.gridTemplateRows='repeat('+h+',16px)';
+    div.title=p.name;
+    for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+      const c=document.createElement('div');
+      c.className='pc '+(sh[y][x]?'on':'off');
+      if(sh[y][x])c.style.background=COLORS[p.color%COLORS.length];
+      div.appendChild(c);
+    }
+    div.onclick=()=>{if(!p.placed){selected=i;renderPieces();}};
+    el.appendChild(div);
+  });
+}
+
+function canPlace(shape,bx,by){
+  for(let y=0;y<shape.length;y++)for(let x=0;x<shape[0].length;x++){
+    if(!shape[y][x])continue;
+    const gx=bx+x,gy=by+y;
+    if(gx<0||gx>=bw||gy<0||gy>=bh)return false;
+    if(grid[gy][gx]!==0)return false;
+  }
+  return true;
+}
+
+function placeAt(bx,by){
+  if(selected===null)return;
+  const p=levelPieces[selected];
+  if(p.placed)return;
+  // try centering the piece on click
+  const sh=p.shape;
+  const ox=bx-Math.floor(sh[0].length/2),oy=by-Math.floor(sh.length/2);
+  if(!canPlace(sh,ox,oy)){toast("Doesn't fit there");return;}
+  for(let y=0;y<sh.length;y++)for(let x=0;x<sh[0].length;x++){
+    if(sh[y][x])grid[oy+y][ox+x]=p.color+1;
+  }
+  p.placed=true;
+  placedPieces.push({idx:selected,ox,oy,shape:sh.map(r=>[...r]),color:p.color});
+  selected=null;
+  renderBoard();renderPieces();updateInfo();checkWin();
+}
+
+function hoverAt(bx,by){
+  if(selected===null)return;
+  clearHover();
+  const sh=levelPieces[selected].shape;
+  const ox=bx-Math.floor(sh[0].length/2),oy=by-Math.floor(sh.length/2);
+  const ok=canPlace(sh,ox,oy);
+  for(let y=0;y<sh.length;y++)for(let x=0;x<sh[0].length;x++){
+    if(!sh[y][x])continue;
+    const gx=ox+x,gy=oy+y;
+    if(gx<0||gx>=bw||gy<0||gy>=bh)continue;
+    const cell=document.querySelector(`.cell[data-x="${gx}"][data-y="${gy}"]`);
+    if(cell)cell.classList.add('hover');
+  }
+}
+function clearHover(){document.querySelectorAll('.cell.hover').forEach(c=>c.classList.remove('hover'));}
+
+function rotatePiece(){
+  if(selected===null)return;
+  levelPieces[selected].shape=rotate(levelPieces[selected].shape);
+  renderPieces();
+}
+function flipPiece(){
+  if(selected===null)return;
+  levelPieces[selected].shape=flip(levelPieces[selected].shape);
+  renderPieces();
+}
+
+function undoLast(){
+  if(!placedPieces.length)return;
+  const last=placedPieces.pop();
+  const sh=last.shape;
+  for(let y=0;y<sh.length;y++)for(let x=0;x<sh[0].length;x++){
+    if(sh[y][x])grid[last.oy+y][last.ox+x]=0;
+  }
+  levelPieces[last.idx].placed=false;
+  selected=last.idx;
+  renderBoard();renderPieces();updateInfo();
+}
+
+function resetLevel(){loadLevel(lvl);}
+function nextLevel(){loadLevel(lvl+1);}
+function updateInfo(){
+  const placed=levelPieces.filter(p=>p.placed).length;
+  document.getElementById('moves').textContent='Pieces: '+placed+'/'+levelPieces.length;
+}
+
+function checkWin(){
+  for(let y=0;y<bh;y++)for(let x=0;x<bw;x++)if(grid[y][x]===0)return;
+  document.getElementById('win').style.display='flex';
+}
+
+function toast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg;t.style.display='block';
+  setTimeout(()=>t.style.display='none',1200);
+}
+
+document.onkeydown=e=>{
+  if(e.code==='KeyR')rotatePiece();
+  if(e.code==='KeyF')flipPiece();
+  if(e.code==='KeyZ'&&e.ctrlKey)undoLast();
+  if(e.code==='KeyN')nextLevel();
+};
+
+loadLevel(0);
+</script>
+</body>
+</html>
