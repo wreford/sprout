@@ -27,6 +27,7 @@ canvas#wave{position:fixed;bottom:0;left:0;right:0;height:50px;z-index:1;width:1
 .tray-inner{display:flex;gap:8px;justify-content:center;align-items:flex-end;min-height:60px}
 .pw{cursor:grab;transition:.15s;position:relative}
 .pw.used{opacity:.08;pointer-events:none}
+.pw.sel .piece{border-color:#00ced1 !important;box-shadow:0 0 12px rgba(0,206,209,.4)}
 .pw.dragging{opacity:.3}
 .pw .piece{display:grid;gap:1px;padding:2px;border-radius:4px;background:rgba(12,4,28,.5);border:2px solid rgba(123,104,238,.1);pointer-events:none}
 .pw:not(.used):hover .piece{border-color:rgba(255,110,199,.3)}
@@ -54,12 +55,16 @@ canvas#wave{position:fixed;bottom:0;left:0;right:0;height:50px;z-index:1;width:1
 <div class="hud"><span class="score" id="sc">0</span><span class="combo" id="combo"></span><span class="best" id="best">Best: 0</span></div>
 <div class="board-area"><div id="board"></div></div>
 <div class="tray"><div class="tray-inner" id="tray"></div></div>
+<div style="display:flex;gap:8px;justify-content:center;padding:4px 8px">
+  <button id="rotBtn" onclick="rotSelected()" style="flex:1;max-width:140px;font-size:14px;padding:10px">↻ Rotate</button>
+  <button id="flipBtn" onclick="flipSelected()" style="flex:1;max-width:140px;font-size:14px;padding:10px">↔ Flip</button>
+</div>
 </div>
 <div class="over" id="over"><h2>Game Over</h2><div class="fs" id="finalSc">0</div><p>No more moves</p><button onclick="startGame()">Play Again</button></div>
 <script>
 const $=id=>document.getElementById(id);
 const BW=8,BH=8;
-let grid,score,comboN,bestScore=+(localStorage.getItem('kn-best')||0),trayPieces,cellSz;
+let grid,score,comboN,bestScore=+(localStorage.getItem('kn-best')||0),trayPieces,cellSz,selIdx=-1;
 
 function rot(s){const h=s.length,w=s[0].length,r=[];for(let x=0;x<w;x++){r.push([]);for(let y=h-1;y>=0;y--)r[x].push(s[y][x]);}return r;}
 
@@ -77,7 +82,7 @@ const SHAPES=[
 ];
 
 function randPiece(){const s=SHAPES[Math.floor(Math.random()*SHAPES.length)];return{shape:s.map(r=>[...r]),c:Math.floor(Math.random()*COLORS.length),used:false};}
-function newTray(){trayPieces=[randPiece(),randPiece(),randPiece()];}
+function newTray(){trayPieces=[randPiece(),randPiece(),randPiece()];selIdx=-1;}
 
 function startGame(){
   grid=[];for(let y=0;y<BH;y++){grid[y]=[];for(let x=0;x<BW;x++)grid[y][x]=0;}
@@ -102,7 +107,7 @@ function render(){
   const tray=$('tray');tray.innerHTML='<div class="tray-inner" id="trayInner"></div>';
   const inner=$('trayInner');
   trayPieces.forEach((p,i)=>{
-    const w=document.createElement('div');w.className='pw'+(p.used?' used':'');w.dataset.idx=i;
+    const w=document.createElement('div');w.className='pw'+(p.used?' used':'')+(selIdx===i?' sel':'');w.dataset.idx=i;
     const d=document.createElement('div');d.className='piece';
     const sh=p.shape,rows=sh.length,cols=sh[0].length;
     const psz=Math.min(14,cellSz*.3);
@@ -234,8 +239,16 @@ function pieceAt(cx,cy){
 }
 
 function doRotate(){
-  if(dragIdx<0)return;
-  trayPieces[dragIdx].shape=rot(trayPieces[dragIdx].shape);
+  const idx=dragIdx>=0?dragIdx:selIdx;
+  if(idx<0||!trayPieces[idx]||trayPieces[idx].used)return;
+  trayPieces[idx].shape=rot(trayPieces[idx].shape);
+  sfx('rotate');render();
+}
+function rotSelected(){doRotate();}
+function flipSelected(){
+  const idx=dragIdx>=0?dragIdx:selIdx;
+  if(idx<0||!trayPieces[idx]||trayPieces[idx].used)return;
+  trayPieces[idx].shape=trayPieces[idx].shape.map(r=>[...r].reverse());
   sfx('rotate');render();
 }
 
@@ -247,30 +260,47 @@ document.addEventListener('mousedown',e=>{
 document.addEventListener('mousemove',e=>{if(dragIdx>=0)showDrop(e.clientX,e.clientY);});
 document.addEventListener('mouseup',e=>{if(dragIdx>=0){doDrop(e.clientX,e.clientY);dragIdx=-1;}});
 
-// touch
-let rotCD=0;
+// touch: tap piece to select, drag to board to place, two-finger rotate
+let rotCD=0,touchStartTime=0,touchMoved=false;
 document.addEventListener('touchstart',e=>{
   // two-finger rotate
-  if(e.touches.length>=2&&dragIdx>=0){
+  if(e.touches.length>=2){
     e.preventDefault();
     if(Date.now()-rotCD<350)return;rotCD=Date.now();
     doRotate();return;
   }
   if(e.touches.length!==1)return;
   const t=e.touches[0];
+  touchStartTime=Date.now();touchMoved=false;
+  // check if touching a piece
   const idx=pieceAt(t.clientX,t.clientY);
-  if(idx<0)return;
-  e.preventDefault();touchId=t.identifier;dragIdx=idx;
+  if(idx>=0){
+    e.preventDefault();touchId=t.identifier;dragIdx=idx;selIdx=idx;render();
+    return;
+  }
+  // check if touching board with a selected piece
+  if(selIdx>=0){
+    e.preventDefault();touchId=t.identifier;dragIdx=selIdx;
+  }
 },{passive:false});
 document.addEventListener('touchmove',e=>{
-  if(dragIdx<0)return;
+  if(dragIdx<0)return;touchMoved=true;
   for(const t of e.changedTouches)
     if(t.identifier===touchId){e.preventDefault();showDrop(t.clientX,t.clientY);}
 },{passive:false});
 document.addEventListener('touchend',e=>{
   if(dragIdx<0)return;
-  for(const t of e.changedTouches)
-    if(t.identifier===touchId){doDrop(t.clientX,t.clientY);dragIdx=-1;touchId=null;}
+  for(const t of e.changedTouches){
+    if(t.identifier!==touchId)continue;
+    // if tapped a piece without moving, just select it (don't try to place)
+    const wasTap=!touchMoved&&Date.now()-touchStartTime<300;
+    const tappedPiece=pieceAt(t.clientX,t.clientY)>=0;
+    if(wasTap&&tappedPiece){
+      document.querySelectorAll('.cell').forEach(c=>c.classList.remove('ok','bad'));
+      dragIdx=-1;touchId=null;return;
+    }
+    doDrop(t.clientX,t.clientY);dragIdx=-1;touchId=null;
+  }
 });
 
 
@@ -346,16 +376,33 @@ function scheduleLoop(){
   });
   musLoop=setTimeout(scheduleLoop,bps*16*1000-200);
 }
+let padOscs=[];
 function toggleMusic(){
   initAudio();
   if(actx.state==='suspended'){
     actx.resume().then(()=>{if(!musicOn)startMus();});
-  }else{
-    if(musicOn)stopMus();else startMus();
+    return;
   }
+  if(musicOn)stopMus();else startMus();
 }
-function startMus(){musicOn=true;$('musBtn').textContent='♪ ON';scheduleLoop();}
-function stopMus(){musicOn=false;$('musBtn').textContent='♪';clearTimeout(musLoop);}
+function startMus(){
+  musicOn=true;$('musBtn').textContent='♪ ON';
+  // continuous pad (doesn't need rescheduling)
+  const pad=[130.81,164.81,196,261.63];
+  pad.forEach(f=>{
+    const o1=actx.createOscillator(),o2=actx.createOscillator();
+    o1.type='sine';o1.frequency.value=f;o2.type='sine';o2.frequency.value=f*1.004;
+    const g=actx.createGain();g.gain.value=.04;
+    const fl=actx.createBiquadFilter();fl.type='lowpass';fl.frequency.value=400+Math.random()*200;fl.Q.value=1;
+    o1.connect(fl);o2.connect(fl);fl.connect(g);g.connect(masterGain);
+    o1.start();o2.start();padOscs.push(o1,o2);
+  });
+  scheduleLoop();
+}
+function stopMus(){
+  musicOn=false;$('musBtn').textContent='♪';clearTimeout(musLoop);
+  padOscs.forEach(o=>{try{o.stop();}catch(e){}});padOscs=[];
+}
 
 // SFX
 function sfx(type){
