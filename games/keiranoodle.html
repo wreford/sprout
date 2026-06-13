@@ -56,8 +56,9 @@ canvas#wave{position:fixed;bottom:0;left:0;right:0;height:60px;z-index:5;width:1
 <div id="board"></div>
 <div class="tray-inner" id="tray"></div>
 <div class="btns">
-  <button ontouchend="event.stopPropagation();doRot()" onclick="doRot()">↻ Rotate</button>
-  <button ontouchend="event.stopPropagation();doFlip()" onclick="doFlip()">↔ Flip</button>
+  <button id="btnRot">↻ Rotate</button>
+  <button id="btnFlip">↔ Flip</button>
+  <button id="btnCam">📷</button>
 </div>
 </div>
 <div class="over" id="over"><h2>Game Over</h2><div class="fs" id="finalSc">0</div><p>No more moves</p><button ontouchend="event.stopPropagation();startGame()" onclick="startGame()">Play Again</button></div>
@@ -217,14 +218,41 @@ function popup(x,y,txt,col){
   d.textContent=txt;document.body.appendChild(d);setTimeout(()=>d.remove(),700);
 }
 
-// --- CONTROLS ---
+// --- CONTROLS (buttons use direct addEventListener, no inline handlers) ---
 function doRot(){
-  if(sel<0||!tray[sel]||tray[sel].used)return;
+  if(sel<0||!tray[sel]||tray[sel].used){console.log('rot: no sel',sel);return;}
   tray[sel].shape=rot(tray[sel].shape);sfx('rotate');draw();
 }
 function doFlip(){
   if(sel<0||!tray[sel]||tray[sel].used)return;
   tray[sel].shape=flip(tray[sel].shape);sfx('rotate');draw();
+}
+// Wire buttons with BOTH touchend and click, preventing double-fire
+['btnRot','btnFlip'].forEach(id=>{
+  const el=$(id);
+  let fired=false;
+  el.addEventListener('touchend',e=>{
+    e.preventDefault();e.stopPropagation();fired=true;
+    if(id==='btnRot')doRot();else doFlip();
+    setTimeout(()=>fired=false,300);
+  });
+  el.addEventListener('click',e=>{
+    if(fired)return;
+    if(id==='btnRot')doRot();else doFlip();
+  });
+});
+
+// Camera background
+let camStream=null,camVideo=null;
+$('btnCam').addEventListener('touchend',e=>{e.preventDefault();e.stopPropagation();toggleCam();});
+$('btnCam').addEventListener('click',toggleCam);
+function toggleCam(){
+  if(camStream){camStream.getTracks().forEach(t=>t.stop());camStream=null;return;}
+  navigator.mediaDevices.getUserMedia({video:{facingMode:'environment',width:{ideal:320}},audio:false}).then(s=>{
+    camStream=s;
+    if(!camVideo){camVideo=document.createElement('video');camVideo.playsInline=true;camVideo.autoplay=true;camVideo.muted=true;}
+    camVideo.srcObject=s;
+  }).catch(()=>{});
 }
 
 function cellAt(cx,cy){
@@ -239,10 +267,9 @@ function pwAt(cx,cy){
     if(cx>=r.left&&cx<=r.right&&cy>=r.top&&cy<=r.bottom)return+el.dataset.i;}
   return-1;
 }
-
 function showPreview(bx,by){
   document.querySelectorAll('.c').forEach(c=>c.classList.remove('ok','bad'));
-  if(sel<0)return;
+  if(sel<0||!tray[sel])return;
   const sh=tray[sel].shape;
   const ox=bx-Math.floor(sh[0].length/2),oy=by-Math.floor(sh.length/2);
   const ok=canPlace(sh,ox,oy);
@@ -254,46 +281,40 @@ function showPreview(bx,by){
   }
 }
 
-// tray click (desktop + mobile via ontouchend)
+// tray: tap to select
 $('tray').addEventListener('click',e=>{
   const pw=e.target.closest('.pw');if(!pw||pw.classList.contains('used'))return;
   sel=+pw.dataset.i;draw();
 });
-
-// board click
+// board: click/tap to place
 $('board').addEventListener('click',e=>{
   const cell=e.target.closest('.c');
-  if(!cell||sel<0)return;
-  place(sel,+cell.dataset.x,+cell.dataset.y);
+  if(!cell||sel<0||!tray[sel])return;
+  if(place(sel,+cell.dataset.x,+cell.dataset.y))sel=-1;
 });
-
-// board hover preview (desktop)
+// board: hover preview
 $('board').addEventListener('mousemove',e=>{
   const cell=e.target.closest('.c');
   document.querySelectorAll('.c').forEach(c=>c.classList.remove('ok','bad'));
   if(!cell||sel<0)return;
   showPreview(+cell.dataset.x,+cell.dataset.y);
 });
-$('board').addEventListener('mouseleave',()=>document.querySelectorAll('.c').forEach(c=>c.classList.remove('ok','bad')));
 
-// touch: drag piece from tray OR tap board to place selected
-let tid=null,dragging=false,moved=false;
+// touch: drag from tray or tap board
+let tid=null,moved=false,dragging=false;
 document.addEventListener('touchstart',e=>{
-  // don't intercept button taps!
-  if(e.target.closest('button'))return;
+  if(e.target.closest('button')||e.target.closest('.mus'))return;
   if(e.touches.length>=2){e.preventDefault();doRot();return;}
   if(e.touches.length!==1)return;
   const t=e.touches[0];moved=false;dragging=false;
   const pi=pwAt(t.clientX,t.clientY);
   if(pi>=0){e.preventDefault();tid=t.identifier;sel=pi;dragging=true;draw();return;}
-  // touching board with selection
   if(sel>=0){const c=cellAt(t.clientX,t.clientY);if(c){e.preventDefault();tid=t.identifier;}}
 },{passive:false});
 document.addEventListener('touchmove',e=>{
   if(tid===null)return;moved=true;
   for(const t of e.changedTouches){
-    if(t.identifier!==tid)continue;
-    e.preventDefault();
+    if(t.identifier!==tid)continue;e.preventDefault();
     const c=cellAt(t.clientX,t.clientY);
     document.querySelectorAll('.c').forEach(c=>c.classList.remove('ok','bad'));
     if(c&&sel>=0)showPreview(c.bx,c.by);
@@ -303,29 +324,38 @@ document.addEventListener('touchend',e=>{
   if(tid===null)return;
   for(const t of e.changedTouches){
     if(t.identifier!==tid)continue;
-    // if just tapped piece, select only
     if(!moved&&dragging){tid=null;return;}
-    // place on board
     const c=cellAt(t.clientX,t.clientY);
-    document.querySelectorAll('.c').forEach(c=>c.classList.remove('ok','bad'));
+    document.querySelectorAll('.c').forEach(cc=>cc.classList.remove('ok','bad'));
     if(c&&sel>=0)place(sel,c.bx,c.by);
     tid=null;
   }
 });
 
-// keyboard
 document.addEventListener('keydown',e=>{
   if(e.code==='KeyR')doRot();
   if(e.code==='KeyF')doFlip();
-  if(e.code==='Digit1'&&tray[0]&&!tray[0].used){sel=0;draw();}
-  if(e.code==='Digit2'&&tray[1]&&!tray[1].used){sel=1;draw();}
-  if(e.code==='Digit3'&&tray[2]&&!tray[2].used){sel=2;draw();}
 });
 
-// --- BG ---
+// --- BG (vaporwave + optional camera) ---
 const bgC=$('bg'),bgX=bgC.getContext('2d');
 function drawBg(t){
   const w=bgC.width=innerWidth,h=bgC.height=innerHeight;
+  // camera pixelated bg
+  if(camStream&&camVideo&&camVideo.readyState>=2){
+    bgX.imageSmoothingEnabled=false;
+    bgX.drawImage(camVideo,0,0,w,h);
+    // vaporwave filter: purple overlay + scanlines
+    bgX.fillStyle='rgba(20,0,50,.55)';bgX.fillRect(0,0,w,h);
+    for(let y=0;y<h;y+=3){bgX.fillStyle='rgba(0,0,0,.12)';bgX.fillRect(0,y,w,1);}
+    // pixelate
+    const pw=64,ph=Math.round(64*h/w);
+    const pxC=document.createElement('canvas');pxC.width=pw;pxC.height=ph;
+    const pxX=pxC.getContext('2d');pxX.drawImage(camVideo,0,0,pw,ph);
+    bgX.imageSmoothingEnabled=false;
+    bgX.globalAlpha=.3;bgX.drawImage(pxC,0,0,w,h);bgX.globalAlpha=1;
+    return;
+  }
   const g=bgX.createLinearGradient(0,0,0,h);
   g.addColorStop(0,'#08001a');g.addColorStop(.35,'#140028');g.addColorStop(.5,'#1f0838');g.addColorStop(1,'#040008');
   bgX.fillStyle=g;bgX.fillRect(0,0,w,h);
@@ -340,24 +370,23 @@ function drawBg(t){
 }
 requestAnimationFrame(function bl(t){drawBg(t);requestAnimationFrame(bl);});
 
-// --- MUSIC ---
+// --- MUSIC (JTM ambient scene: pad + shimmer + bass) ---
 let actx,analyser,waveD,mus=false,mg,padO=[],arpT;
 const wvC=$('wave'),wvX=wvC.getContext('2d');
-
 function initA(){
   if(actx)return;
   actx=new(AudioContext||webkitAudioContext)();
   analyser=actx.createAnalyser();analyser.fftSize=1024;
   waveD=new Uint8Array(analyser.frequencyBinCount);
-  mg=actx.createGain();mg.gain.value=.16;
+  mg=actx.createGain();mg.gain.value=.14;
   mg.connect(analyser);analyser.connect(actx.destination);
 }
 function pn(f,w,g,a,d,s,r,dur,when,det){
   if(!actx)return;
   const env=actx.createGain();
   env.gain.setValueAtTime(0,when);
-  env.gain.linearRampToValueAtTime(g,when+a);
-  env.gain.linearRampToValueAtTime(g*s,when+a+d);
+  env.gain.linearRampToValueAtTime(g,when+Math.min(a,dur*.4));
+  env.gain.linearRampToValueAtTime(g*s,when+Math.min(a+d,dur*.8));
   env.gain.setValueAtTime(g*s,when+dur);
   env.gain.linearRampToValueAtTime(0,when+dur+r);
   const fl=actx.createBiquadFilter();fl.type='lowpass';fl.frequency.value=1200;
@@ -372,36 +401,41 @@ function toggleMusic(){
   if(mus)stopMus();else goMus();
 }
 function goMus(){
-  mus=true;$('musBtn').textContent='♪ ON';
-  [130.81,164.81,196,261.63].forEach(f=>{
+  mus=true;$('musBtn').textContent='\u266a ON';
+  // JTM ambient: long pads with chord changes
+  const pad=[[130.81,164.81,196,261.63],[110,130.81,164.81,220],[146.83,174.61,220,293.66],[130.81,164.81,196,261.63]];
+  pad.forEach((ch,ci)=>{ch.forEach(f=>{
     const o=actx.createOscillator(),o2=actx.createOscillator();
-    o.type='sine';o.frequency.value=f;o2.type='sine';o2.frequency.value=f*1.004;
-    const g=actx.createGain();g.gain.value=.035;
-    const fl=actx.createBiquadFilter();fl.type='lowpass';fl.frequency.value=350+Math.random()*200;
+    o.type='sine';o.frequency.value=f;o2.type='sine';o2.frequency.value=f*1.005;
+    const g=actx.createGain();g.gain.value=.03;
+    const fl=actx.createBiquadFilter();fl.type='lowpass';fl.frequency.value=300+Math.random()*200;
     o.connect(fl);o2.connect(fl);fl.connect(g);g.connect(mg);o.start();o2.start();padO.push(o,o2);
-  });
+  });});
+  // shimmer arp
   function arp(){
     if(!mus)return;
     const n=actx.currentTime+.05;
-    [523.25,659.25,783.99,1046.5,783.99,659.25,523.25,392].forEach((f,i)=>{
-      pn(f,'sine',.035,.08,.06,.12,.3,.35,n+i*.42,0);
-    });
-    arpT=setTimeout(arp,3360);
+    const scale=[261.63,293.66,329.63,392,440,523.25,587.33,659.25,783.99,880,1046.5,1174.66];
+    for(let i=0;i<16;i++){
+      const f=scale[Math.floor(Math.random()*scale.length)];
+      pn(f,'sine',.02,.2,.15,.1,.5,.6,n+i*.5+Math.random()*.2,Math.random()*8);
+    }
+    arpT=setTimeout(arp,8000);
   }
   arp();
 }
-function stopMus(){mus=false;$('musBtn').textContent='♪ OFF';clearTimeout(arpT);padO.forEach(o=>{try{o.stop();}catch(e){}});padO=[];}
+function stopMus(){mus=false;$('musBtn').textContent='\u266a';clearTimeout(arpT);padO.forEach(o=>{try{o.stop();}catch(e){}});padO=[];}
 
 function sfx(t){
   if(!actx||actx.state==='suspended')return;const n=actx.currentTime;
-  if(t==='place'){pn(523.25,'sine',.07,.01,.04,.2,.08,.08,n,0);pn(659.25,'sine',.05,.01,.04,.15,.08,.06,n+.03,0);}
+  if(t==='place'){pn(523.25,'sine',.06,.01,.04,.2,.08,.08,n,0);pn(659.25,'sine',.04,.01,.04,.15,.08,.06,n+.03,0);}
   if(t==='clear'){for(let i=0;i<5;i++)pn(523.25*(1+i*.25),'triangle',.05,.01,.04,.1,.1,.06,n+i*.03,0);}
   if(t==='combo'){for(let i=0;i<8;i++)pn(440*(1+i*.2),'sine',.04,.005,.02,.1,.08,.05,n+i*.025,i*3);}
   if(t==='rotate'){pn(880,'sine',.04,.005,.02,.1,.04,.04,n,0);}
   if(t==='gameover'){pn(220,'sawtooth',.06,.01,.2,.4,.4,.3,n,0);pn(196,'sawtooth',.05,.01,.2,.4,.4,.3,n+.12,0);}
 }
 
-// waveform (always running)
+// waveform always running
 function wv(){
   if(analyser&&waveD)analyser.getByteTimeDomainData(waveD);
   const w=wvC.width=wvC.clientWidth*2,h=wvC.height=wvC.clientHeight*2;
@@ -409,11 +443,9 @@ function wv(){
   if(waveD&&analyser){
     const sl=waveD.length,st=sl/w;
     wvX.strokeStyle='rgba(123,104,238,.5)';wvX.lineWidth=2;wvX.beginPath();
-    for(let i=0;i<w;i++){const v=waveD[Math.floor(i*st)]/128;i?wvX.lineTo(i,v*h/2):wvX.moveTo(i,v*h/2);}
-    wvX.stroke();
+    for(let i=0;i<w;i++){const v=waveD[Math.floor(i*st)]/128;i?wvX.lineTo(i,v*h/2):wvX.moveTo(i,v*h/2);}wvX.stroke();
     wvX.strokeStyle='rgba(255,110,199,.3)';wvX.lineWidth=1.5;wvX.beginPath();
-    for(let i=0;i<w;i++){const v=waveD[Math.min(sl-1,Math.floor(i*st)+16)]/128;i?wvX.lineTo(i,v*h/2):wvX.moveTo(i,v*h/2);}
-    wvX.stroke();
+    for(let i=0;i<w;i++){const v=waveD[Math.min(sl-1,Math.floor(i*st)+16)]/128;i?wvX.lineTo(i,v*h/2):wvX.moveTo(i,v*h/2);}wvX.stroke();
   }else{
     wvX.strokeStyle='rgba(123,104,238,.12)';wvX.lineWidth=1;wvX.beginPath();wvX.moveTo(0,h/2);wvX.lineTo(w,h/2);wvX.stroke();
   }
@@ -421,13 +453,18 @@ function wv(){
 }
 wv();
 
-// auto-start music on first interaction
+// auto music on first touchend (NOT touchstart, to avoid interfering with drag)
 document.addEventListener('touchend',function f(e){
-  if(e.target.closest('button'))return; // let button handlers fire first
+  if(e.target.closest('button'))return;
   initA();actx.resume().then(()=>{if(!mus)goMus();});
   document.removeEventListener('touchend',f);
 },{once:true});
-document.addEventListener('click',function f(){initA();if(actx.state==='suspended')actx.resume().then(()=>{if(!mus)goMus();});else if(!mus)goMus();document.removeEventListener('click',f);},{once:true});
+document.addEventListener('click',function f(e){
+  if(e.target.closest('button'))return;
+  initA();if(actx.state==='suspended')actx.resume().then(()=>{if(!mus)goMus();});
+  else if(!mus)goMus();
+  document.removeEventListener('click',f);
+},{once:true});
 
 startGame();
 </script>
