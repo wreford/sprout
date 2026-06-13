@@ -247,6 +247,16 @@ function endDrag(cx,cy){
   dragIdx=-1;
 }
 
+// find which tray piece is at touch point
+function pieceAtPoint(cx,cy){
+  const els=document.querySelectorAll('.pw:not(.used)');
+  for(const el of els){
+    const r=el.getBoundingClientRect();
+    if(cx>=r.left&&cx<=r.right&&cy>=r.top&&cy<=r.bottom)return+el.dataset.idx;
+  }
+  return-1;
+}
+
 // mouse
 document.addEventListener('mousedown',e=>{
   const pw=e.target.closest('.pw');if(!pw||pw.classList.contains('used'))return;
@@ -254,11 +264,14 @@ document.addEventListener('mousedown',e=>{
 });
 document.addEventListener('mousemove',e=>{if(dragIdx>=0){e.preventDefault();moveDrag(e.clientX,e.clientY);}});
 document.addEventListener('mouseup',e=>{if(dragIdx>=0)endDrag(e.clientX,e.clientY);});
-// two-finger rotate while dragging
-let lastTouchCount=0,pinchStart=0;
+
+// touch: use hit-test by coordinates, not e.target (iOS sometimes reports wrong target)
+let rotCooldown=0;
 document.addEventListener('touchstart',e=>{
+  // two-finger rotate while dragging
   if(e.touches.length===2&&dragIdx>=0){
     e.preventDefault();
+    if(Date.now()-rotCooldown<300)return;rotCooldown=Date.now();
     trayPieces[dragIdx].shape=rot(trayPieces[dragIdx].shape);
     const sh=trayPieces[dragIdx].shape;
     dragOX=Math.floor(sh[0].length/2)*cellSz+cellSz/2;
@@ -267,14 +280,20 @@ document.addEventListener('touchstart',e=>{
     sfx('rotate');
     return;
   }
-  const pw=e.target.closest('.pw');if(!pw||pw.classList.contains('used'))return;
-  e.preventDefault();const t=e.changedTouches[0];touchId=t.identifier;startDrag(+pw.dataset.idx,t.clientX,t.clientY);
+  if(e.touches.length!==1)return;
+  const t=e.touches[0];
+  const idx=pieceAtPoint(t.clientX,t.clientY);
+  if(idx<0)return;
+  e.preventDefault();touchId=t.identifier;
+  startDrag(idx,t.clientX,t.clientY);
 },{passive:false});
 document.addEventListener('touchmove',e=>{
-  if(dragIdx<0)return;for(const t of e.changedTouches)if(t.identifier===touchId){e.preventDefault();moveDrag(t.clientX,t.clientY);}
+  if(dragIdx<0)return;
+  for(const t of e.changedTouches)if(t.identifier===touchId){e.preventDefault();moveDrag(t.clientX,t.clientY);}
 },{passive:false});
 document.addEventListener('touchend',e=>{
-  if(dragIdx<0)return;for(const t of e.changedTouches)if(t.identifier===touchId){endDrag(t.clientX,t.clientY);touchId=null;}
+  if(dragIdx<0)return;
+  for(const t of e.changedTouches)if(t.identifier===touchId){endDrag(t.clientX,t.clientY);touchId=null;}
 });
 
 // --- BG ---
