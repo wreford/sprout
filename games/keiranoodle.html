@@ -55,7 +55,6 @@ canvas#wave{position:fixed;bottom:0;left:0;right:0;height:50px;z-index:1;width:1
 <div class="board-area"><div id="board"></div></div>
 <div class="tray"><div class="tray-inner" id="tray"></div></div>
 </div>
-<div class="ghost" id="ghost"><div class="piece" id="gg"></div></div>
 <div class="over" id="over"><h2>Game Over</h2><div class="fs" id="finalSc">0</div><p>No more moves</p><button onclick="startGame()">Play Again</button></div>
 <script>
 const $=id=>document.getElementById(id);
@@ -193,39 +192,22 @@ function anyMoves(){
   }return false;
 }
 
-// drag & drop
-let dragIdx=-1,touchId=null,dragOX=0,dragOY=0;
+// --- DRAG (no ghost, just highlight board cells like Block Blast) ---
+let dragIdx=-1,touchId=null;
 
-function renderGhost(shape,color){
-  const g=$('gg');
-  g.style.gridTemplateColumns=`repeat(${shape[0].length},${cellSz}px)`;
-  g.style.gridTemplateRows=`repeat(${shape.length},${cellSz}px)`;g.style.gap='2px';g.innerHTML='';
-  for(let y=0;y<shape.length;y++)for(let x=0;x<shape[0].length;x++){
-    const c=document.createElement('div');c.style.width=cellSz+'px';c.style.height=cellSz+'px';c.style.borderRadius='3px';
-    if(shape[y][x]){c.style.background=COLORS[color%COLORS.length];c.style.opacity='.55';c.style.border='1px solid rgba(255,255,255,.2)';}
-    g.appendChild(c);
-  }
-}
-function startDrag(idx,cx,cy){
-  const p=trayPieces[idx];if(p.used)return;
-  dragIdx=idx;
-  dragOX=Math.floor(p.shape[0].length/2)*cellSz+cellSz/2;
-  dragOY=Math.floor(p.shape.length/2)*cellSz+cellSz/2;
-  renderGhost(p.shape,p.c);
-  $('ghost').style.display='block';
-  moveDrag(cx,cy);
-  const pw=document.querySelectorAll('.pw')[idx];if(pw)pw.classList.add('dragging');
-}
-function moveDrag(cx,cy){
-  $('ghost').style.left=(cx-dragOX)+'px';$('ghost').style.top=(cy-dragOY)+'px';
-  // highlight cells
+function boardCell(cx,cy){
   const br=$('board').getBoundingClientRect();
-  const bx=Math.floor((cx-br.left-4)/((br.width-8)/BW));
-  const by=Math.floor((cy-br.top-4)/((br.height-8)/BH));
+  const cw=(br.width-8)/BW,ch=(br.height-8)/BH;
+  return{bx:Math.floor((cx-br.left-4)/cw),by:Math.floor((cy-br.top-4)/ch)};
+}
+
+function showDrop(cx,cy){
+  document.querySelectorAll('.cell').forEach(c=>c.classList.remove('ok','bad'));
+  if(dragIdx<0)return;
+  const{bx,by}=boardCell(cx,cy);
   const sh=trayPieces[dragIdx].shape;
   const ox=bx-Math.floor(sh[0].length/2),oy=by-Math.floor(sh.length/2);
   const ok=canPlace(sh,ox,oy);
-  document.querySelectorAll('.cell').forEach(c=>{c.classList.remove('ok','bad');});
   for(let y=0;y<sh.length;y++)for(let x=0;x<sh[0].length;x++){
     if(!sh[y][x])continue;
     const gx=ox+x,gy=oy+y;if(gx<0||gx>=BW||gy<0||gy>=BH)continue;
@@ -233,68 +215,64 @@ function moveDrag(cx,cy){
     if(cell)cell.classList.add(ok?'ok':'bad');
   }
 }
-function endDrag(cx,cy){
-  $('ghost').style.display='none';
-  document.querySelectorAll('.cell').forEach(c=>{c.classList.remove('ok','bad');});
-  document.querySelectorAll('.pw.dragging').forEach(w=>w.classList.remove('dragging'));
+
+function doDrop(cx,cy){
+  document.querySelectorAll('.cell').forEach(c=>c.classList.remove('ok','bad'));
   if(dragIdx<0)return;
-  const br=$('board').getBoundingClientRect();
-  const bx=Math.floor((cx-br.left-4)/((br.width-8)/BW));
-  const by=Math.floor((cy-br.top-4)/((br.height-8)/BH));
+  const{bx,by}=boardCell(cx,cy);
   const sh=trayPieces[dragIdx].shape;
   const ox=bx-Math.floor(sh[0].length/2),oy=by-Math.floor(sh.length/2);
   place(dragIdx,ox,oy);
   dragIdx=-1;
 }
 
-// find which tray piece is at touch point
-function pieceAtPoint(cx,cy){
+function pieceAt(cx,cy){
   const els=document.querySelectorAll('.pw:not(.used)');
-  for(const el of els){
-    const r=el.getBoundingClientRect();
-    if(cx>=r.left&&cx<=r.right&&cy>=r.top&&cy<=r.bottom)return+el.dataset.idx;
-  }
+  for(const el of els){const r=el.getBoundingClientRect();
+    if(cx>=r.left&&cx<=r.right&&cy>=r.top&&cy<=r.bottom)return+el.dataset.idx;}
   return-1;
+}
+
+function doRotate(){
+  if(dragIdx<0)return;
+  trayPieces[dragIdx].shape=rot(trayPieces[dragIdx].shape);
+  sfx('rotate');render();
 }
 
 // mouse
 document.addEventListener('mousedown',e=>{
   const pw=e.target.closest('.pw');if(!pw||pw.classList.contains('used'))return;
-  e.preventDefault();startDrag(+pw.dataset.idx,e.clientX,e.clientY);
+  e.preventDefault();dragIdx=+pw.dataset.idx;
 });
-document.addEventListener('mousemove',e=>{if(dragIdx>=0){e.preventDefault();moveDrag(e.clientX,e.clientY);}});
-document.addEventListener('mouseup',e=>{if(dragIdx>=0)endDrag(e.clientX,e.clientY);});
+document.addEventListener('mousemove',e=>{if(dragIdx>=0)showDrop(e.clientX,e.clientY);});
+document.addEventListener('mouseup',e=>{if(dragIdx>=0){doDrop(e.clientX,e.clientY);dragIdx=-1;}});
 
-// touch: use hit-test by coordinates, not e.target (iOS sometimes reports wrong target)
-let rotCooldown=0;
+// touch
+let rotCD=0;
 document.addEventListener('touchstart',e=>{
-  // two-finger rotate while dragging
-  if(e.touches.length===2&&dragIdx>=0){
+  // two-finger rotate
+  if(e.touches.length>=2&&dragIdx>=0){
     e.preventDefault();
-    if(Date.now()-rotCooldown<300)return;rotCooldown=Date.now();
-    trayPieces[dragIdx].shape=rot(trayPieces[dragIdx].shape);
-    const sh=trayPieces[dragIdx].shape;
-    dragOX=Math.floor(sh[0].length/2)*cellSz+cellSz/2;
-    dragOY=Math.floor(sh.length/2)*cellSz+cellSz/2;
-    renderGhost(sh,trayPieces[dragIdx].c);
-    sfx('rotate');
-    return;
+    if(Date.now()-rotCD<350)return;rotCD=Date.now();
+    doRotate();return;
   }
   if(e.touches.length!==1)return;
   const t=e.touches[0];
-  const idx=pieceAtPoint(t.clientX,t.clientY);
+  const idx=pieceAt(t.clientX,t.clientY);
   if(idx<0)return;
-  e.preventDefault();touchId=t.identifier;
-  startDrag(idx,t.clientX,t.clientY);
+  e.preventDefault();touchId=t.identifier;dragIdx=idx;
 },{passive:false});
 document.addEventListener('touchmove',e=>{
   if(dragIdx<0)return;
-  for(const t of e.changedTouches)if(t.identifier===touchId){e.preventDefault();moveDrag(t.clientX,t.clientY);}
+  for(const t of e.changedTouches)
+    if(t.identifier===touchId){e.preventDefault();showDrop(t.clientX,t.clientY);}
 },{passive:false});
 document.addEventListener('touchend',e=>{
   if(dragIdx<0)return;
-  for(const t of e.changedTouches)if(t.identifier===touchId){endDrag(t.clientX,t.clientY);touchId=null;}
+  for(const t of e.changedTouches)
+    if(t.identifier===touchId){doDrop(t.clientX,t.clientY);dragIdx=-1;touchId=null;}
 });
+
 
 // --- BG ---
 const bgC=$('bg'),bgX=bgC.getContext('2d');
