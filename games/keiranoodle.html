@@ -110,7 +110,7 @@ function render(){
     const w=document.createElement('div');w.className='pw'+(p.used?' used':'')+(selIdx===i?' sel':'');w.dataset.idx=i;
     const d=document.createElement('div');d.className='piece';
     const sh=p.shape,rows=sh.length,cols=sh[0].length;
-    const psz=Math.min(14,cellSz*.3);
+    const psz=Math.min(18,cellSz*.4);
     d.style.gridTemplateColumns=`repeat(${cols},${psz}px)`;d.style.gridTemplateRows=`repeat(${rows},${psz}px)`;d.style.gap='1px';
     for(let y=0;y<rows;y++)for(let x=0;x<cols;x++){
       const pc=document.createElement('div');pc.className='pc '+(sh[y][x]?'on':'off');
@@ -118,14 +118,13 @@ function render(){
       if(sh[y][x])pc.style.background=COLORS[p.c%COLORS.length];
       d.appendChild(pc);
     }
-    // right-click or double-tap to rotate
-    w.oncontextmenu=e=>{e.preventDefault();if(!p.used){p.shape=rot(p.shape);sfx('rotate');render();}};
+    // tap piece to select it
     w.addEventListener('click',e=>{
       if(p.used)return;
-      const now=Date.now();
-      if(window._tapIdx===i&&now-window._tapT<400){p.shape=rot(p.shape);sfx('rotate');render();window._tapIdx=-1;}
-      else{window._tapIdx=i;window._tapT=now;}
+      e.stopPropagation();
+      selIdx=i;dragIdx=-1;render();
     });
+    w.oncontextmenu=e=>{e.preventDefault();if(!p.used){selIdx=i;doRotate();}};
     w.appendChild(d);inner.appendChild(w);
   });
   $('sc').textContent=score;
@@ -252,10 +251,38 @@ function flipSelected(){
   sfx('rotate');render();
 }
 
-// mouse
+// click on board to place selected piece
+$('board').addEventListener('click',e=>{
+  const cell=e.target.closest('.cell');
+  if(!cell||selIdx<0)return;
+  const bx=+cell.dataset.x,by=+cell.dataset.y;
+  const sh=trayPieces[selIdx].shape;
+  const ox=bx-Math.floor(sh[0].length/2),oy=by-Math.floor(sh.length/2);
+  if(place(selIdx,ox,oy))selIdx=-1;
+});
+// hover on board shows drop preview
+$('board').addEventListener('mousemove',e=>{
+  const cell=e.target.closest('.cell');
+  document.querySelectorAll('.cell').forEach(c=>c.classList.remove('ok','bad'));
+  if(!cell||(selIdx<0&&dragIdx<0))return;
+  const idx=dragIdx>=0?dragIdx:selIdx;
+  const bx=+cell.dataset.x,by=+cell.dataset.y;
+  const sh=trayPieces[idx].shape;
+  const ox=bx-Math.floor(sh[0].length/2),oy=by-Math.floor(sh.length/2);
+  const ok=canPlace(sh,ox,oy);
+  for(let y=0;y<sh.length;y++)for(let x=0;x<sh[0].length;x++){
+    if(!sh[y][x])continue;
+    const gx=ox+x,gy=oy+y;if(gx<0||gx>=BW||gy<0||gy>=BH)continue;
+    const c2=$('board').children[gy*BW+gx];if(c2)c2.classList.add(ok?'ok':'bad');
+  }
+});
+$('board').addEventListener('mouseleave',()=>{
+  document.querySelectorAll('.cell').forEach(c=>c.classList.remove('ok','bad'));
+});
+// mouse drag from tray
 document.addEventListener('mousedown',e=>{
   const pw=e.target.closest('.pw');if(!pw||pw.classList.contains('used'))return;
-  e.preventDefault();dragIdx=+pw.dataset.idx;
+  e.preventDefault();dragIdx=+pw.dataset.idx;selIdx=+pw.dataset.idx;render();
 });
 document.addEventListener('mousemove',e=>{if(dragIdx>=0)showDrop(e.clientX,e.clientY);});
 document.addEventListener('mouseup',e=>{if(dragIdx>=0){doDrop(e.clientX,e.clientY);dragIdx=-1;}});
@@ -447,6 +474,13 @@ function waveLoop(){
 }
 waveLoop();
 
+document.addEventListener('keydown',e=>{
+  if(e.code==='KeyR'){e.preventDefault();doRotate();}
+  if(e.code==='KeyF'){e.preventDefault();flipSelected();}
+  if(e.code==='Digit1'&&trayPieces[0]&&!trayPieces[0].used){selIdx=0;render();}
+  if(e.code==='Digit2'&&trayPieces[1]&&!trayPieces[1].used){selIdx=1;render();}
+  if(e.code==='Digit3'&&trayPieces[2]&&!trayPieces[2].used){selIdx=2;render();}
+});
 startGame();
 </script>
 </body>
