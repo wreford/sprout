@@ -39,6 +39,8 @@ canvas{display:block;position:fixed;inset:0;width:100%;height:100%}
   <button id="modeXray">X-Ray</button>
   <button id="modeSpectrum">Spectrum</button>
   <button id="modeLidar">LiDAR</button>
+  <button id="modeScan3d">3D Scan</button>
+  <button id="modeNude">Beige</button>
   <button id="modeWand">Wand</button>
   <button id="musicBtn">♪</button>
   <button id="clearBtn">Clear</button>
@@ -59,8 +61,9 @@ let shakeX=0,shakeY=0,motionHistory=[],heatMap=null;
 let trailCanvas=null,trailCtx=null;
 // wand tracking
 let wandColor=[255,0,100],wandThreshold=80,wandTrail=[],wandHue=340;
-// lidar depth layers
 let lidarLayers=8;
+// 3D scanner
+let scan3d={pts:[],rotY:0,rotX:.3,capturing:false,lastCap:0};
 const COLS=['#ff6ec7','#7b68ee','#00ced1','#ff69b4','#9370db','#40e0d0','#da70d6'];
 
 // --- JTM AUDIO ENGINE ---
@@ -751,6 +754,110 @@ function loop(){
     ctx.fillText('LiDAR SIM',W/2,18);
   }
 
+  // 3D SCAN: accumulate point cloud, render with perspective rotation
+  if(mode==='scan3d'){
+    const now=performance.now();
+    // capture points every 200ms
+    if(now-scan3d.lastCap>200&&scan3d.pts.length<15000){
+      scan3d.lastCap=now;
+      sc.width=48;sc.height=36;sctx.save();
+      if(facing==='user'){sctx.translate(48,0);sctx.scale(-1,1);}
+      sctx.drawImage(cam,0,0,48,36);sctx.restore();
+      const sd=sctx.getImageData(0,0,48,36).data;
+      for(let y=0;y<36;y+=2)for(let x=0;x<48;x+=2){
+        const i=(y*48+x)*4;
+        const depth=(sd[i]*.3+sd[i+1]*.6+sd[i+2]*.1)/255;
+        if(Math.random()>.6)continue;
+        scan3d.pts.push({
+          x:(x/48-.5)*4,y:(y/36-.5)*-3,z:(depth-.5)*3,
+          r:sd[i],g:sd[i+1],b:sd[i+2]
+        });
+      }
+    }
+    // auto-rotate + motion-driven rotation
+    let total=0;if(motion.length)for(const m of motion)total+=m;
+    scan3d.rotY+=.008+total/2000000;
+    scan3d.rotX=.3+Math.sin(now*.0003)*.15;
+
+    ctx.fillStyle='#050010';ctx.fillRect(0,0,W,H);
+    const cosY=Math.cos(scan3d.rotY),sinY=Math.sin(scan3d.rotY);
+    const cosX=Math.cos(scan3d.rotX),sinX=Math.sin(scan3d.rotX);
+    const fov=400,cx2=W/2,cy2=H/2;
+
+    // sort by depth for painter's algorithm
+    const projected=[];
+    for(const p of scan3d.pts){
+      const x1=p.x*cosY-p.z*sinY,z1=p.x*sinY+p.z*cosY;
+      const y1=p.y*cosX-z1*sinX,z2=p.y*sinX+z1*cosX;
+      const scale=fov/(fov+z2+5);
+      projected.push({sx:cx2+x1*fov/(z2+5),sy:cy2+y1*fov/(z2+5),z:z2,scale,r:p.r,g:p.g,b:p.b});
+    }
+    projected.sort((a,b)=>a.z-b.z);
+    for(const p of projected){
+      const sz=Math.max(1,p.scale*2);
+      ctx.fillStyle=`rgb(${p.r},${p.g},${p.b})`;
+      ctx.fillRect(p.sx-sz/2,p.sy-sz/2,sz,sz);
+    }
+    // UI
+    ctx.fillStyle='rgba(0,0,0,.5)';ctx.fillRect(8,8,130,30);
+    ctx.fillStyle='#0f0';ctx.font='bold 10px monospace';ctx.textAlign='left';
+    ctx.fillText('3D SCAN: '+scan3d.pts.length+' pts',14,20);
+    ctx.fillText('auto-rotate | move to spin',14,32);
+  }
+
+  // BEIGE: skin-tone enhancement filter
+  if(mode==='nude'){
+    sc.width=W;sc.height=H;sctx.save();
+    if(facing==='user'){sctx.translate(W,0);sctx.scale(-1,1);}
+    sctx.drawImage(cam,0,0,W,H);sctx.restore();
+    const img=sctx.getImageData(0,0,W,H),d=img.data;
+    for(let i=0;i<d.length;i+=4){
+      let r=d[i],g=d[i+1],b=d[i+2];
+      // detect skin-like pixels (high red, moderate green, low blue)
+      const isSkin=r>80&&g>40&&b>20&&r>g&&r>b&&(r-g)>15&&Math.abs(g-b)<80;
+      if(isSkin){
+        // warm beige enhancement: push toward skin tones, smooth, glow
+        const lum=(r*.3+g*.59+b*.11);
+        r=Math.min(255,Math.round(lum*.4+r*.6+30));
+        g=Math.min(255,Math.round(lum*.3+g*.5+15));
+        b=Math.min(255,Math.round(lum*.2+b*.3+5));
+        // slight blur by averaging with neighbors (cheap)
+        d[i]=r;d[i+1]=g;d[i+2]=b;
+      }else{
+        // desaturate non-skin areas slightly
+        const gray=(r+g+b)/3;
+        d[i]=Math.round(r*.6+gray*.4);
+        d[i+1]=Math.round(g*.6+gray*.4);
+        d[i+2]=Math.round(b*.6+gray*.4);
+      }
+    }
+    // second pass: smooth skin areas (3x3 box blur on skin pixels)
+    const out=new Uint8ClampedArray(d.length);
+    for(let y=1;y<H-1;y++)for(let x=1;x<W-1;x++){
+      const i=(y*W+x)*4;
+      const isSkin=d[i]>100&&d[i]>d[i+2]&&(d[i]-d[i+1])>10;
+      if(isSkin){
+        let sr=0,sg=0,sb=0;
+        for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+          const j=((y+dy)*W+x+dx)*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];
+        }
+        out[i]=Math.round(sr/9);out[i+1]=Math.round(sg/9);out[i+2]=Math.round(sb/9);out[i+3]=255;
+      }else{out[i]=d[i];out[i+1]=d[i+1];out[i+2]=d[i+2];out[i+3]=255;}
+    }
+    ctx.putImageData(new ImageData(out,W,H),0,0);
+    // warm glow overlay
+    const wg=ctx.createRadialGradient(W/2,H/2,0,W/2,H/2,Math.max(W,H)*.6);
+    wg.addColorStop(0,'rgba(255,220,180,.08)');wg.addColorStop(1,'transparent');
+    ctx.fillStyle=wg;ctx.fillRect(0,0,W,H);
+    // soft vignette
+    const vg=ctx.createRadialGradient(W/2,H/2,Math.min(W,H)*.35,W/2,H/2,Math.max(W,H)*.65);
+    vg.addColorStop(0,'transparent');vg.addColorStop(1,'rgba(0,0,0,.25)');
+    ctx.fillStyle=vg;ctx.fillRect(0,0,W,H);
+    ctx.fillStyle='rgba(0,0,0,.4)';ctx.fillRect(W-80,8,72,18);
+    ctx.fillStyle='#eeddcc';ctx.font='bold 10px monospace';ctx.textAlign='right';
+    ctx.fillText('BEIGE',W-14,20);
+  }
+
   // WAND: track brightest pixel matching wandColor, draw magic trail
   if(mode==='wand'){
     sc.width=MW;sc.height=MH;sctx.save();
@@ -871,14 +978,15 @@ cv.addEventListener('click',e=>{
   if(i>=0&&i<d.length-2){wandColor=[d[i],d[i+1],d[i+2]];wandTrail=[];}
 });
 
-['modeParticle','modePaint','modeWave','modeMirror','modePong','modeFidget','modeBubble','modeScene','modeInstrument','modeThermal','modeXray','modeSpectrum','modeLidar','modeWand'].forEach(id=>{
+['modeParticle','modePaint','modeWave','modeMirror','modePong','modeFidget','modeBubble','modeScene','modeInstrument','modeThermal','modeXray','modeSpectrum','modeLidar','modeScan3d','modeNude','modeWand'].forEach(id=>{
   document.getElementById(id).addEventListener('click',()=>{
     mode=id.replace('mode','').toLowerCase();
     document.querySelectorAll('.bar button').forEach(b=>b.classList.remove('on'));
     document.getElementById(id).classList.add('on');
-    particles=[];waveData=[];bubbles=[];score=0;
+    particles=[];waveData=[];bubbles=[];score=0;combo=0;
     pongBX=W/2;pongBY=H/2;pongBVX=4;pongBVY=2;pongScore=[0,0];pongPadL=H/2;pongPadR=H/2;
-    fidgetAngle=0;fidgetVel=0;
+    fidgetAngle=0;fidgetVel=0;wandTrail=[];
+    scan3d={pts:[],rotY:0,rotX:.3,capturing:false,lastCap:0};
     if(paintLayer)for(let i=0;i<paintLayer.data.length;i++)paintLayer.data[i]=0;
   });
 });
