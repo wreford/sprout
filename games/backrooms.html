@@ -121,7 +121,44 @@ function spawnMeeps(){
   }
 }
 let flickerPhase=0,lightFlicker=1,camFlashTimer=0,camFlashFrames=0;
-let msgTimer=0,level=0,found=0,transitioning=false;
+let msgTimer=0,level=0,found=0,transitioning=false,narrateTimer=0;
+const FLUORESCENT_LIGHTS=[];
+function spawnLights(){
+  FLUORESCENT_LIGHTS.length=0;
+  for(let y=1;y<MH-1;y+=3)for(let x=1;x<MW-1;x+=4){
+    if(MAP[y][x]===0)FLUORESCENT_LIGHTS.push({x:x+.5,y:y+.5,on:Math.random()>.15,
+      flicker:Math.random(),phase:Math.random()*100,broken:Math.random()<.2+level*.05});
+  }
+}
+const LORE=[
+  {level:0,enter:'The Lobby',notes:['NOTICE: Store closes at 9PM','Employee of the month: [REDACTED]','EXIT signs point nowhere']},
+  {level:1,enter:'Housewares',notes:['The mannequins moved again','I can hear the PA but no one is speaking','Day 3. The doors are gone.']},
+  {level:2,enter:'Stockroom',notes:['DO NOT go past aisle 7','Someone wrote HELP on the wall in lipstick','The clock has been at 3:33 for hours']},
+  {level:3,enter:'Fitting Rooms',notes:['The mirrors show someone behind me','I found my own badge on the floor','It mimics footsteps']},
+  {level:4,enter:'Basement',notes:['The escalator goes down. Only down.','Water on the ceiling','They built this place wrong on purpose']},
+];
+function getLore(lv){return LORE[Math.min(lv,LORE.length-1)];}
+const NARRATION=[
+  'You were not supposed to find this place.',
+  'The exit moves when you are not looking.',
+  'Something remembers your name.',
+  'The lights are not for you.',
+  'You have been here before.',
+  'The walls are listening.',
+  'There is no ground floor.',
+  'It was always a department store.',
+  'The mannequins were here first.',
+  'You cannot leave the way you came in.',
+];
+function narrate(text){
+  if(!('speechSynthesis' in window))return;
+  const u=new SpeechSynthesisUtterance(text);
+  u.pitch=.1;u.rate=.6;u.volume=.4;
+  const voices=speechSynthesis.getVoices();
+  const deep=voices.find(v=>/male/i.test(v.name)&&!/female/i.test(v.name));
+  if(deep)u.voice=deep;
+  speechSynthesis.speak(u);
+}
 const ITEMS=[];
 let spriteCanvas=null,spriteReady=false;
 
@@ -529,9 +566,11 @@ async function go(){
   px=1.5;py=1.5;pa=0;level=0;found=0;
   entityActive=false;entityTimer=0;entityX=20;entityY=20;
   camPhotos=[];camSnapTimer=0;camFlashTimer=0;camFlashFrames=0;
-  phantomTimer=0;behindYouTimer=0;breathTimer=0;
-  spawnItems();spawnMeeps();spawnFurniture();
-  showMsg('Find the key.\nReach the exit.',3000);
+  phantomTimer=0;behindYouTimer=0;breathTimer=0;narrateTimer=0;
+  spawnItems();spawnMeeps();spawnFurniture();spawnLights();
+  const lore=getLore(0);
+  showMsg(lore.enter+'\nFind the key.',3000);
+  setTimeout(()=>narrate(NARRATION[0]),5000);
   lastT=performance.now();
   loop();
 }
@@ -609,14 +648,20 @@ function update(dt){
   if(!transitioning&&Math.hypot(px-EXIT.x-.5,py-EXIT.y-.5)<.8&&found>=1){
     transitioning=true;level++;found=0;
     const fd=document.getElementById('fade');fd.style.opacity='1';
+    const lore=getLore(level);
     setTimeout(()=>{
-      spawnItems();spawnMeeps();spawnFurniture();
+      spawnItems();spawnMeeps();spawnFurniture();spawnLights();
       px=1.5;py=1.5;entityActive=level>=2;
       entityX=20;entityY=20;
       fd.style.opacity='0';transitioning=false;
       if(actx&&actx.state==='running'&&!musicTimer)startBackroomsMusic();
     },800);
-    showMsg('Level '+level,2000);
+    showMsg(lore.enter,2500);
+    setTimeout(()=>{
+      const note=lore.notes[Math.floor(Math.random()*lore.notes.length)];
+      showMsg(note,3000);
+    },4000);
+    if(Math.random()<.5)setTimeout(()=>narrate(NARRATION[level%NARRATION.length]),6000);
   }
   // flickering lights
   flickerPhase+=dt;
@@ -696,11 +741,25 @@ function update(dt){
       s.connect(fl);fl.connect(g);g.connect(actx.destination);s.start(n);
     }
   }
-  // "behind you" feeling - creepy messages + infrasound
+  // narration timer
+  narrateTimer+=dt;
+  if(narrateTimer>45+Math.random()*60){
+    narrateTimer=0;
+    narrate(NARRATION[Math.floor(Math.random()*NARRATION.length)]);
+  }
+  // update fluorescent lights
+  for(const lt of FLUORESCENT_LIGHTS){
+    lt.phase+=dt;
+    if(lt.broken){lt.on=Math.sin(lt.phase*8+lt.flicker*20)>0&&Math.random()>.3;}
+    else if(Math.random()<.003)lt.on=!lt.on;
+  }
+  // "behind you" feeling - creepy messages + lore notes
   behindYouTimer+=dt;
   if(behindYouTimer>25+Math.random()*40){
     behindYouTimer=0;
-    showMsg(['...something moved...','...did you hear that?...','...turn around...','...you are not alone...','...the walls are closer...','...it knows where you are...'][Math.floor(Math.random()*6)],2500);
+    const lore=getLore(level);
+    const msgs=['...something moved...','...did you hear that?...','...turn around...','...you are not alone...','...the walls are closer...','...it knows where you are...',...lore.notes];
+    showMsg(msgs[Math.floor(Math.random()*msgs.length)],2500);
     if(actx&&actx.state==='running'){
       const n=actx.currentTime;
       const o=actx.createOscillator();o.type='sine';o.frequency.value=18;
@@ -766,6 +825,34 @@ function render(){
       ctx.fillStyle=`rgba(255,255,180,${.06*shade})`;
       ctx.fillRect(colX,y0,colW,2);
     }
+  }
+
+  // fluorescent tube lights on ceiling
+  for(const lt of FLUORESCENT_LIGHTS){
+    if(!lt.on)continue;
+    const ldx=lt.x-px,ldy=lt.y-py,ldist=Math.hypot(ldx,ldy);
+    if(ldist<.3||ldist>6)continue;
+    const lang=Math.atan2(ldy,ldx)-pa;
+    let la=lang;while(la>Math.PI)la-=Math.PI*2;while(la<-Math.PI)la+=Math.PI*2;
+    if(Math.abs(la)>fov/2+.1)continue;
+    const lsx=W/2+Math.tan(la)*W/2/(Math.tan(fov/2));
+    const lsz=Math.min(200,H/ldist*.4);
+    const lbright=Math.max(.1,1-ldist/5)*(lt.broken?.4+Math.random()*.4:1);
+    // ceiling tube
+    ctx.globalAlpha=lbright*.6;
+    ctx.fillStyle='rgba(255,255,220,.9)';
+    ctx.fillRect(lsx-lsz*.3,(H-lsz*2)/2,lsz*.6,3);
+    // ceiling glow
+    ctx.globalAlpha=lbright*.15;
+    const lg=ctx.createRadialGradient(lsx,(H-lsz*2)/2,0,lsx,(H-lsz*2)/2,lsz*.5);
+    lg.addColorStop(0,'rgba(255,255,200,.4)');lg.addColorStop(1,'rgba(255,255,200,0)');
+    ctx.fillStyle=lg;ctx.fillRect(lsx-lsz*.5,(H-lsz*2)/2-lsz*.3,lsz,lsz*.6);
+    // floor pool of light
+    ctx.globalAlpha=lbright*.08;
+    const fg=ctx.createRadialGradient(lsx,H/2+lsz*.3,0,lsx,H/2+lsz*.3,lsz*.6);
+    fg.addColorStop(0,'rgba(255,255,180,.3)');fg.addColorStop(1,'rgba(255,255,180,0)');
+    ctx.fillStyle=fg;ctx.fillRect(lsx-lsz*.6,H/2,lsz*1.2,lsz*.8);
+    ctx.globalAlpha=1;
   }
 
   // wall paintings - camera photos replace JTM sprites over time
