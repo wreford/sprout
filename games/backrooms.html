@@ -136,36 +136,42 @@ const MW=28,MH=28;
 let MAP,EXIT;
 function generateMap(lv){
   MAP=Array.from({length:MH},()=>new Array(MW).fill(1));
-  // carve rooms
   const rooms=[];
-  const numRooms=4+Math.min(lv,4);
-  for(let attempt=0;attempt<200&&rooms.length<numRooms;attempt++){
-    const rw=3+Math.floor(Math.random()*5),rh=3+Math.floor(Math.random()*4);
-    const rx=2+Math.floor(Math.random()*(MW-rw-3)),ry=2+Math.floor(Math.random()*(MH-rh-3));
+  // first room always at spawn — big and open
+  rooms.push({x:1,y:1,w:6+Math.floor(Math.random()*3),h:5+Math.floor(Math.random()*3)});
+  const numRooms=5+Math.min(lv,5);
+  for(let attempt=0;attempt<300&&rooms.length<numRooms;attempt++){
+    const rw=4+Math.floor(Math.random()*6),rh=4+Math.floor(Math.random()*5);
+    const rx=1+Math.floor(Math.random()*(MW-rw-2)),ry=1+Math.floor(Math.random()*(MH-rh-2));
     let ok=true;
     for(const r of rooms)if(rx<r.x+r.w+1&&rx+rw>r.x-1&&ry<r.y+r.h+1&&ry+rh>r.y-1){ok=false;break;}
     if(!ok)continue;
     rooms.push({x:rx,y:ry,w:rw,h:rh});
-    for(let dy=0;dy<rh;dy++)for(let dx=0;dx<rw;dx++)MAP[ry+dy][rx+dx]=0;
   }
-  // connect rooms with corridors
+  // carve all rooms
+  for(const r of rooms)for(let dy=0;dy<r.h;dy++)for(let dx=0;dx<r.w;dx++)MAP[r.y+dy][r.x+dx]=0;
+  // connect rooms with wide corridors (3 tiles)
   for(let i=1;i<rooms.length;i++){
     const a=rooms[i-1],b=rooms[i];
     let cx=a.x+Math.floor(a.w/2),cy=a.y+Math.floor(a.h/2);
     const tx=b.x+Math.floor(b.w/2),ty=b.y+Math.floor(b.h/2);
-    while(cx!==tx){cx+=cx<tx?1:-1;if(cy>0&&cy<MH-1&&cx>0&&cx<MW-1){MAP[cy][cx]=0;MAP[cy-1][cx]=0;}}
-    while(cy!==ty){cy+=cy<ty?1:-1;if(cy>0&&cy<MH-1&&cx>0&&cx<MW-1){MAP[cy][cx]=0;MAP[cy][Math.min(MW-2,cx+1)]=0;}}
-  }
-  // scatter pillars in large rooms
-  for(const r of rooms){
-    if(r.w>=5&&r.h>=4){
-      for(let py=r.y+2;py<r.y+r.h-1;py+=3)for(let px2=r.x+2;px2<r.x+r.w-1;px2+=3)
-        if(Math.random()<.4)MAP[py][px2]=1;
+    while(cx!==tx){
+      cx+=cx<tx?1:-1;
+      for(let w=-1;w<=1;w++)if(cy+w>0&&cy+w<MH-1&&cx>0&&cx<MW-1)MAP[cy+w][cx]=0;
+    }
+    while(cy!==ty){
+      cy+=cy<ty?1:-1;
+      for(let w=-1;w<=1;w++)if(cy>0&&cy<MH-1&&cx+w>0&&cx+w<MW-1)MAP[cy][cx+w]=0;
     }
   }
-  // ensure start is clear
-  MAP[1][1]=0;MAP[1][2]=0;MAP[2][1]=0;MAP[2][2]=0;
-  // place exit in last room
+  // sparse pillars only in very large rooms
+  for(const r of rooms){
+    if(r.w>=7&&r.h>=6){
+      for(let py2=r.y+3;py2<r.y+r.h-2;py2+=4)for(let px2=r.x+3;px2<r.x+r.w-2;px2+=4)
+        if(Math.random()<.25)MAP[py2][px2]=1;
+    }
+  }
+  // exit in last room
   const lastRoom=rooms[rooms.length-1];
   EXIT={x:lastRoom.x+Math.floor(lastRoom.w/2),y:lastRoom.y+Math.floor(lastRoom.h/2)};
   MAP[EXIT.y][EXIT.x]=0;
@@ -1560,23 +1566,13 @@ function render(){
     }
   }
 
-  // hallucination shadows at edge of vision
+  // rare hallucination shadow at edge of vision
   const now2=performance.now();
-  if(Math.sin(now2*.0003)>.85){
-    const side=Math.sin(now2*.0007)>0?0:W-80;
-    ctx.globalAlpha=.12+Math.sin(now2*.005)*.06;
-    ctx.fillStyle='#000';
-    ctx.fillRect(side,H*.2,60,H*.5);
+  if(Math.sin(now2*.00015)>.95){
+    const side=Math.sin(now2*.0007)>0?0:W-60;
     ctx.globalAlpha=.06;
-    ctx.fillStyle='#300';
-    ctx.beginPath();ctx.arc(side+30,H*.35,4,0,Math.PI*2);ctx.fill();
-    ctx.beginPath();ctx.arc(side+45,H*.35,4,0,Math.PI*2);ctx.fill();
-    ctx.globalAlpha=1;
-  }
-  // screen distortion pulse
-  if(Math.sin(now2*.0002)>.92){
-    ctx.globalAlpha=.05;
-    ctx.drawImage(cv,Math.sin(now2*.01)*3,Math.cos(now2*.013)*2);
+    ctx.fillStyle='#000';
+    ctx.fillRect(side,H*.25,40,H*.4);
     ctx.globalAlpha=1;
   }
 
