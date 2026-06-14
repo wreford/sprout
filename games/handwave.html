@@ -779,96 +779,114 @@ function loop(){
     ctx.fillText('LiDAR SIM',W/2,18);
   }
 
-  // 3D SCAN: high-res point cloud, touch/drag rotation, ground plane, lighting
+  // 3D SCAN: layered depth from color segmentation, not luminance
   if(mode==='scan3d'){
     const now=performance.now();
-    // capture at 80x60 every 80ms, up to 80k points
-    if(now-scan3d.lastCap>80&&scan3d.pts.length<80000){
+    if(now-scan3d.lastCap>60&&scan3d.pts.length<80000){
       scan3d.lastCap=now;
       const SW=80,SH=60;
       sc.width=SW;sc.height=SH;sctx.save();
       if(facing==='user'){sctx.translate(SW,0);sctx.scale(-1,1);}
       sctx.drawImage(cam,0,0,SW,SH);sctx.restore();
       const sd=sctx.getImageData(0,0,SW,SH).data;
-      // improved depth: luminance + saturation + local contrast + color warmth
+      // build edge map first
+      const edgeMap=new Float32Array(SW*SH);
       for(let y=1;y<SH-1;y++)for(let x=1;x<SW-1;x++){
-        if(Math.random()>.65)continue;
+        const i=(y*SW+x)*4;
+        const l=sd[(y*SW+x-1)*4],r2=sd[(y*SW+x+1)*4],u=sd[((y-1)*SW+x)*4],dn=sd[((y+1)*SW+x)*4];
+        edgeMap[y*SW+x]=(Math.abs(sd[i]-l)+Math.abs(sd[i]-r2)+Math.abs(sd[i]-u)+Math.abs(sd[i]-dn))/4;
+      }
+      // color segmentation depth: assign layers
+      for(let y=1;y<SH-1;y++)for(let x=1;x<SW-1;x++){
+        if(Math.random()>.55)continue;
         const i=(y*SW+x)*4;
         const r=sd[i],g=sd[i+1],b=sd[i+2];
-        const lum=(r*.3+g*.6+b*.1)/255;
-        // local contrast (Laplacian)
-        const c4=(sd[((y-1)*SW+x)*4]+sd[((y+1)*SW+x)*4]+sd[(y*SW+x-1)*4]+sd[(y*SW+x+1)*4])/4;
-        const lap=Math.abs(r-c4)/255;
-        // saturation (colorful objects are typically foreground)
+        const lum=(r+g+b)/3;
         const mx=Math.max(r,g,b),mn=Math.min(r,g,b);
         const sat=mx>0?(mx-mn)/mx:0;
-        // warm colors are usually closer (skin, objects) vs cool (sky, background)
-        const warm=(r-b)/255;
-        // combined depth: higher = closer
-        const depth=lum*.4+lap*.2+sat*.25+Math.max(0,warm)*.15;
+        const edge=edgeMap[y*SW+x]/255;
+        // YCbCr skin detection
+        const cr=128+.5*r-.419*g-.081*b;
+        const cb=128-.169*r-.331*g+.5*b;
+        const isSkin=cr>133&&cr<175&&cb>77&&cb<127&&lum>50;
+        // depth layers (0=far, 1=close):
+        // skin = very close (0.8-1.0)
+        // saturated warm = close (0.6-0.8)
+        // edges = medium-close (0.5-0.7) - object boundaries
+        // neutral/gray = medium (0.3-0.5)
+        // dark = far (0.1-0.3)
+        // blue/cool = very far (0.0-0.2) - sky/background
+        let depth;
+        if(isSkin) depth=.85+sat*.15;
+        else if(sat>.4&&r>g) depth=.6+sat*.2+edge*.1;
+        else if(edge>.15) depth=.5+edge*.3;
+        else if(sat>.3) depth=.4+sat*.2;
+        else if(lum<60) depth=.15+lum/60*.15;
+        else if(b>r&&b>g) depth=.05+lum/255*.15;
+        else depth=.25+lum/255*.25;
+        // add noise to break banding
+        depth+=((Math.random()-.5)*.08);
+        const z=(depth-.5)*8; // spread Z range wide
         scan3d.pts.push({
-          x:(x/SW-.5)*5,y:(y/SH-.5)*-4,z:(depth-.4)*5,
-          r,g,b,sz:.8+lap*3+sat*1.5
+          x:(x/SW-.5)*6,y:(y/SH-.5)*-5,z,
+          r,g,b,sz:.6+edge*4+sat*2+(isSkin?1.5:0)
         });
       }
     }
     // auto-rotate + motion spin
     let total=0;if(motion.length)for(const m of motion)total+=m;
-    scan3d.rotY+=.006+total/3000000;
-    scan3d.rotX=.25+Math.sin(now*.0002)*.1;
+    scan3d.rotY+=.008+total/2000000;
+    scan3d.rotX=.3+Math.sin(now*.0003)*.15;
 
     // render
     ctx.fillStyle='#020008';ctx.fillRect(0,0,W,H);
-    // grid floor
     const cosY=Math.cos(scan3d.rotY),sinY=Math.sin(scan3d.rotY);
     const cosX=Math.cos(scan3d.rotX),sinX=Math.sin(scan3d.rotX);
-    const fov=500,cx2=W/2,cy2=H/2;
-    ctx.strokeStyle='rgba(0,255,100,.04)';ctx.lineWidth=1;
-    for(let gz=-3;gz<=3;gz++){
-      for(let gx=-3;gx<=3;gx++){
-        const x1=gx*cosY-(-2)*sinY,z1=gx*sinY+(-2)*cosY;
-        const y1=2.5*cosX-z1*sinX,z2=2.5*sinX+z1*cosX;
-        if(z2<-4)continue;
-        const sx=cx2+x1*fov/(z2+6),sy=cy2+y1*fov/(z2+6);
-        const x1b=(gx+1)*cosY-(-2)*sinY,z1b=(gx+1)*sinY+(-2)*cosY;
-        const y1b=2.5*cosX-z1b*sinX,z2b=2.5*sinX+z1b*cosX;
-        if(z2b>-4){ctx.beginPath();ctx.moveTo(sx,sy);ctx.lineTo(cx2+x1b*fov/(z2b+6),cy2+y1b*fov/(z2b+6));ctx.stroke();}
-      }
+    const fov=450,cx2=W/2,cy2=H/2;
+    // grid floor
+    ctx.strokeStyle='rgba(0,255,100,.03)';ctx.lineWidth=1;
+    for(let gx=-4;gx<=4;gx++){
+      const x1=gx*cosY-(-3)*sinY,z1=gx*sinY+(-3)*cosY;
+      const y1=3*cosX-z1*sinX,z2=3*sinX+z1*cosX;
+      if(z2<-4)continue;
+      const sx=cx2+x1*fov/(z2+6),sy=cy2+y1*fov/(z2+6);
+      const x1b=(gx+1)*cosY-(-3)*sinY,z1b=(gx+1)*sinY+(-3)*cosY;
+      const y1b=3*cosX-z1b*sinX,z2b=3*sinX+z1b*cosX;
+      if(z2b>-4){ctx.beginPath();ctx.moveTo(sx,sy);ctx.lineTo(cx2+x1b*fov/(z2b+6),cy2+y1b*fov/(z2b+6));ctx.stroke();}
     }
-
-    // project and render points with size based on depth
-    const projected=new Array(scan3d.pts.length);
+    // project points
+    const projected=[];
     for(let i=0;i<scan3d.pts.length;i++){
       const p=scan3d.pts[i];
       const x1=p.x*cosY-p.z*sinY,z1=p.x*sinY+p.z*cosY;
       const y1=p.y*cosX-z1*sinX,z2=p.y*sinX+z1*cosX;
+      if(z2<-5)continue;
       const s=fov/(z2+6);
-      projected[i]={sx:cx2+x1*s,sy:cy2+y1*s,z:z2,s,r:p.r,g:p.g,b:p.b,psz:p.sz||1};
+      projected.push({sx:cx2+x1*s,sy:cy2+y1*s,z:z2,s,r:p.r,g:p.g,b:p.b,psz:p.sz||1});
     }
-    // bucket sort by z for speed (not full sort)
+    // bucket sort
     const buckets=new Array(64);for(let i=0;i<64;i++)buckets[i]=[];
-    for(const p of projected){const bi=Math.max(0,Math.min(63,Math.floor((p.z+5)/10*64)));buckets[bi].push(p);}
+    for(const p of projected){const bi=Math.max(0,Math.min(63,Math.floor((p.z+6)/12*64)));buckets[bi].push(p);}
     for(let bi=0;bi<64;bi++){
       for(const p of buckets[bi]){
-        const sz=Math.max(.8,p.s*p.psz*.8);
-        // simple lighting: brighter when facing "camera"
-        const bright=Math.max(.4,1-(p.z+3)/8);
+        const sz=Math.max(.5,p.s*p.psz*.7);
+        const bright=Math.max(.3,1-(p.z+4)/10);
         ctx.fillStyle=`rgb(${Math.round(p.r*bright)},${Math.round(p.g*bright)},${Math.round(p.b*bright)})`;
         ctx.fillRect(p.sx-sz/2,p.sy-sz/2,sz,sz);
       }
     }
-    // scan laser line
-    const laserAngle=now*.002;
-    const lx1=cx2+Math.cos(laserAngle)*W*.4,ly1=cy2-H*.35;
-    const lx2=cx2+Math.cos(laserAngle)*W*.4,ly2=cy2+H*.35;
-    ctx.strokeStyle='rgba(0,255,50,.15)';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(lx1,ly1);ctx.lineTo(lx2,ly2);ctx.stroke();
+    // laser
+    const la=now*.002;
+    ctx.strokeStyle='rgba(0,255,50,.12)';ctx.lineWidth=2;ctx.beginPath();
+    ctx.moveTo(cx2+Math.cos(la)*W*.4,cy2-H*.35);ctx.lineTo(cx2+Math.cos(la)*W*.4,cy2+H*.35);ctx.stroke();
     // UI
-    ctx.fillStyle='rgba(0,0,0,.6)';ctx.fillRect(6,6,160,42);
+    ctx.fillStyle='rgba(0,0,0,.6)';ctx.fillRect(6,6,170,52);
     ctx.fillStyle='#0f0';ctx.font='bold 11px monospace';ctx.textAlign='left';
-    ctx.fillText('3D SCAN',12,18);
+    ctx.fillText('3D SCAN (simulated)',12,18);
     ctx.fillStyle='#0a0';ctx.font='9px monospace';
     ctx.fillText(scan3d.pts.length.toLocaleString()+' points',12,30);
-    ctx.fillText('60k max | wave to spin',12,42);
+    ctx.fillText('depth: skin/color segmentation',12,42);
+    ctx.fillText('no real LiDAR - web limitation',12,52);
     // point count bar
     const pctFull=scan3d.pts.length/60000;
     ctx.fillStyle='rgba(0,255,50,.15)';ctx.fillRect(6,52,150,4);
