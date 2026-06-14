@@ -172,9 +172,11 @@ const PLOT_TWISTS=[
     },4000);
   }},
   {id:'key_vanish',level:2,trigger:'key',action:()=>{
+    const twLv=level;
     showMsg('The key crumbles to dust.',2500);
     narrate('The key was never real.');
     setTimeout(()=>{
+      if(level!==twLv)return;
       found=0;spawnItems();
       showMsg('Find the real key.',2000);
     },3000);
@@ -537,30 +539,39 @@ async function startCam(){
     camReady=true;
   }catch(e){camReady=false;}
 }
-// camera snapshot system - captures your face, puts it on the walls
+// camera snapshot system - continuous captures, recycled as wall textures
 let camPhotos=[];
 let camSnapTimer=0;
-const CAM_SNAP_POSITIONS=[
-  {x:9.5,y:7.5},{x:17.5,y:17.5}
+const MAX_CAM_PHOTOS=20;
+const CAM_FILTERS=[
+  {name:'blood',fn:d=>{for(let i=0;i<d.length;i+=4){d[i]=Math.min(255,d[i]*1.4);d[i+1]*=.3;d[i+2]*=.2;}}},
+  {name:'ghost',fn:d=>{for(let i=0;i<d.length;i+=4){const g=d[i]*.3+d[i+1]*.59+d[i+2]*.11;d[i]=g;d[i+1]=g;d[i+2]=g;d[i+3]=160;}}},
+  {name:'invert',fn:d=>{for(let i=0;i<d.length;i+=4){d[i]=255-d[i];d[i+1]=255-d[i+1];d[i+2]=255-d[i+2];}}},
+  {name:'surveillance',fn:d=>{for(let i=0;i<d.length;i+=4){d[i]*=.3;d[i+1]=Math.min(255,d[i+1]*1.3);d[i+2]*=.3;}}},
+  {name:'thermal',fn:d=>{for(let i=0;i<d.length;i+=4){const v=d[i]*.3+d[i+1]*.59+d[i+2]*.11;d[i]=v>180?255:v>100?255:v*.5;d[i+1]=v>180?255:v>100?v*1.5:0;d[i+2]=v>100?0:255-v*2;}}},
+  {name:'xray',fn:d=>{for(let i=0;i<d.length;i+=4){const v=255-(d[i]*.3+d[i+1]*.59+d[i+2]*.11);d[i]=v*.8;d[i+1]=v*.9;d[i+2]=v;}}},
+  {name:'sepia',fn:d=>{for(let i=0;i<d.length;i+=4){const v=d[i]*.3+d[i+1]*.59+d[i+2]*.11;d[i]=Math.min(255,v*1.2);d[i+1]=v*.9;d[i+2]=v*.6;}}},
+  {name:'vhs',fn:d=>{for(let i=0;i<d.length;i+=4){d[i]=Math.min(255,d[i]+Math.random()*40-20);d[i+1]=Math.min(255,d[i+1]+Math.random()*40-20);d[i+2]=Math.min(255,d[i+2]+Math.random()*40-20);if(Math.random()<.02){d[i]=255;d[i+1]=255;d[i+2]=255;}}}},
 ];
 function snapCamera(){
   if(!camReady||!camVideo||camVideo.readyState<2)return;
-  const snapCv=document.createElement('canvas');snapCv.width=48;snapCv.height=48;
+  const snapCv=document.createElement('canvas');snapCv.width=64;snapCv.height=64;
   const sc=snapCv.getContext('2d');
-  sc.save();sc.translate(48,0);sc.scale(-1,1);
-  sc.drawImage(camVideo,0,0,48,48);sc.restore();
-  // apply creepy color grading
-  const imgData=sc.getImageData(0,0,48,48);const d=imgData.data;
-  const style=Math.floor(Math.random()*4);
-  for(let i=0;i<d.length;i+=4){
-    if(style===0){d[i]=Math.min(255,d[i]*1.3);d[i+1]*=.6;d[i+2]*=.4;} // red tint
-    else if(style===1){const g=d[i]*.3+d[i+1]*.59+d[i+2]*.11;d[i]=g;d[i+1]=g;d[i+2]=g;d[i+3]=200;} // ghostly grey
-    else if(style===2){d[i]=255-d[i];d[i+1]=255-d[i+1];d[i+2]=255-d[i+2];} // inverted
-    else{d[i]*=.5;d[i+1]=Math.min(255,d[i+1]*1.2);d[i+2]*=.5;} // green surveillance
-  }
+  sc.save();sc.translate(64,0);sc.scale(-1,1);
+  sc.drawImage(camVideo,0,0,64,64);sc.restore();
+  const filter=CAM_FILTERS[Math.floor(Math.random()*CAM_FILTERS.length)];
+  const imgData=sc.getImageData(0,0,64,64);
+  filter.fn(imgData.data);
   sc.putImageData(imgData,0,0);
-  const pos=CAM_SNAP_POSITIONS[camPhotos.length%CAM_SNAP_POSITIONS.length];
-  camPhotos.push({canvas:snapCv,x:pos.x,y:pos.y});
+  const wallX=2+Math.floor(Math.random()*(MW-4))+.5;
+  const wallY=2+Math.floor(Math.random()*(MH-4))+.5;
+  if(camPhotos.length>=MAX_CAM_PHOTOS){
+    const oldest=camPhotos.shift();
+    oldest.canvas=snapCv;oldest.x=wallX;oldest.y=wallY;oldest.filter=filter.name;
+    camPhotos.push(oldest);
+  }else{
+    camPhotos.push({canvas:snapCv,x:wallX,y:wallY,filter:filter.name});
+  }
 }
 
 function sfx(type){
@@ -677,7 +688,7 @@ let stepTimer=0,phantomTimer=0,behindYouTimer=0,breathTimer=0;
 function update(dt){
   // camera snapshot timer
   camSnapTimer+=dt;
-  if(camSnapTimer>15+Math.random()*20&&camPhotos.length<2){
+  if(camSnapTimer>20){
     camSnapTimer=0;snapCamera();
     if(camPhotos.length===1)showMsg('...someone is watching...',2000);
   }
@@ -934,30 +945,22 @@ function render(){
     ctx.globalAlpha=1;
   }
 
-  // wall paintings - camera photos replace JTM sprites over time
-  {
-    const paintPos=CAM_SNAP_POSITIONS;
-    for(let pi=0;pi<paintPos.length;pi++){
-      const p=paintPos[pi];
-      const pdx=p.x-px,pdy=p.y-py,pdist=Math.hypot(pdx,pdy);
-      if(pdist<.5||pdist>8)continue;
-      const pang=Math.atan2(pdy,pdx)-pa;
-      let pa2=pang;while(pa2>Math.PI)pa2-=Math.PI*2;while(pa2<-Math.PI)pa2+=Math.PI*2;
-      if(Math.abs(pa2)>fov/2+.1)continue;
-      const psx=W/2+Math.tan(pa2)*W/2/(Math.tan(fov/2));
-      const psz=Math.min(140,H/pdist*.3);
-      ctx.globalAlpha=Math.max(.3,1-pdist/7)*lightFlicker;
-      const photo=camPhotos[pi];
-      const paintSrc=photo?photo.canvas:sprite5;
-      if(paintSrc){
-        ctx.imageSmoothingEnabled=!photo;
-        ctx.drawImage(paintSrc,psx-psz*.4,H/2-psz*.6,psz*.8,psz*1.1);
-        ctx.imageSmoothingEnabled=true;
-        ctx.strokeStyle=photo?'#553333':'#443322';ctx.lineWidth=2;
-        ctx.strokeRect(psx-psz*.42,H/2-psz*.62,psz*.84,psz*1.14);
-      }
-      ctx.globalAlpha=1;
-    }
+  // wall photos - camera snapshots scattered around the map
+  for(const photo of camPhotos){
+    const pdx=photo.x-px,pdy=photo.y-py,pdist=Math.hypot(pdx,pdy);
+    if(pdist<.3||pdist>6)continue;
+    const pang=Math.atan2(pdy,pdx)-pa;
+    let pa2=pang;while(pa2>Math.PI)pa2-=Math.PI*2;while(pa2<-Math.PI)pa2+=Math.PI*2;
+    if(Math.abs(pa2)>fov/2+.1)continue;
+    const psx=W/2+Math.tan(pa2)*W/2/(Math.tan(fov/2));
+    const psz=Math.min(100,H/pdist*.25);
+    ctx.globalAlpha=Math.max(.2,1-pdist/5)*lightFlicker;
+    ctx.imageSmoothingEnabled=false;
+    ctx.drawImage(photo.canvas,psx-psz*.4,H/2-psz*.5,psz*.8,psz*.8);
+    ctx.imageSmoothingEnabled=true;
+    ctx.strokeStyle='#332222';ctx.lineWidth=1;
+    ctx.strokeRect(psx-psz*.42,H/2-psz*.52,psz*.84,psz*.84);
+    ctx.globalAlpha=1;
   }
 
   // TV screens showing JTM video at fixed locations
