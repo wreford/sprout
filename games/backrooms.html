@@ -136,6 +136,9 @@ const LORE=[
   {level:2,enter:'Stockroom',notes:['DO NOT go past aisle 7','Someone wrote HELP on the wall in lipstick','The clock has been at 3:33 for hours']},
   {level:3,enter:'Fitting Rooms',notes:['The mirrors show someone behind me','I found my own badge on the floor','It mimics footsteps']},
   {level:4,enter:'Basement',notes:['The escalator goes down. Only down.','Water on the ceiling','They built this place wrong on purpose']},
+  {level:5,enter:'The Lobby',notes:['Wait. This is the same lobby.','The key was in my pocket the whole time.','I have been here before.']},
+  {level:6,enter:'Housewares... again',notes:['The notes on the wall are in my handwriting.','There are footprints. They are mine.','The PA is playing my voice.']},
+  {level:7,enter:'Employee Corridor',notes:['STAFF ONLY - but there is no staff','The schedule has my name on every shift','I built this place']},
 ];
 function getLore(lv){return LORE[Math.min(lv,LORE.length-1)];}
 const NARRATION=[
@@ -150,6 +153,67 @@ const NARRATION=[
   'The mannequins were here first.',
   'You cannot leave the way you came in.',
 ];
+// plot twists - one-time events triggered at specific conditions
+const twistsTriggered={};
+const PLOT_TWISTS=[
+  {id:'loop',level:5,trigger:'enter',action:ctx=>{
+    narrate('You have been here before. This is the same floor.');
+    showMsg('Wait...\nYou recognize this place.',4000);
+    // invert player controls for 10 seconds
+    ctx.invertControls=true;
+    setTimeout(()=>{ctx.invertControls=false;showMsg('...the walls shifted.',2000);},10000);
+  }},
+  {id:'dark',level:3,trigger:'time',time:30,action:()=>{
+    narrate('The lights are going out.');
+    showMsg('The lights are dying.',2000);
+    for(const lt of FLUORESCENT_LIGHTS)lt.broken=true;
+    setTimeout(()=>{
+      showMsg('...something is breathing...',3000);
+    },4000);
+  }},
+  {id:'key_vanish',level:2,trigger:'key',action:()=>{
+    showMsg('The key crumbles to dust.',2500);
+    narrate('The key was never real.');
+    setTimeout(()=>{
+      found=0;spawnItems();
+      showMsg('Find the real key.',2000);
+    },3000);
+  }},
+  {id:'voice',level:4,trigger:'time',time:20,action:()=>{
+    narrate('You are the one who locked the doors.');
+    showMsg('EMPLOYEE #0000\nTERMINATED',3000);
+    setTimeout(()=>showMsg('...but you are still here...',2500),4000);
+  }},
+  {id:'mirror',level:6,trigger:'enter',action:()=>{
+    narrate('The thing in the mirror is not your reflection.');
+    showMsg('The notes on the wall\nare in your handwriting.',4000);
+    setTimeout(()=>{
+      showMsg('You wrote them\nlast time you were here.',4000);
+      narrate('You have always been here.');
+    },6000);
+  }},
+  {id:'exit_lie',level:7,trigger:'enter',action:()=>{
+    narrate('There is no exit. There was never an exit.');
+    showMsg('EMPLOYEE CORRIDOR\nAuthorized personnel only.',3000);
+    setTimeout(()=>{
+      showMsg('You are authorized.\nYou always were.',4000);
+      narrate('You built this place.');
+    },5000);
+    setTimeout(()=>showMsg('The store is you.',3000),10000);
+  }},
+  {id:'speed',level:3,trigger:'time',time:45,action:ctx=>{
+    for(const mp of meeps)mp.spd*=2.5;
+    showMsg('...they are faster now...',2000);
+    sfx('scare');
+  }},
+  {id:'teleport',level:4,trigger:'time',time:35,action:()=>{
+    px=MW/2;py=MH/2;pa+=Math.PI;
+    showMsg('You blinked.',1500);
+    narrate('You moved without walking.');
+    sfx('scare');
+  }},
+];
+let twistTimers={},invertControls=false;
 function narrate(text){
   if(!('speechSynthesis' in window))return;
   const u=new SpeechSynthesisUtterance(text);
@@ -566,7 +630,9 @@ async function go(){
   px=1.5;py=1.5;pa=0;level=0;found=0;
   entityActive=false;entityTimer=0;entityX=20;entityY=20;
   camPhotos=[];camSnapTimer=0;camFlashTimer=0;camFlashFrames=0;
-  phantomTimer=0;behindYouTimer=0;breathTimer=0;narrateTimer=0;
+  phantomTimer=0;behindYouTimer=0;breathTimer=0;narrateTimer=0;invertControls=false;
+  for(const k in twistsTriggered)delete twistsTriggered[k];
+  for(const k in twistTimers)delete twistTimers[k];
   spawnItems();spawnMeeps();spawnFurniture();spawnLights();
   const lore=getLore(0);
   showMsg(lore.enter+'\nFind the key.',3000);
@@ -622,15 +688,24 @@ function update(dt){
     if(videoFrames.length){videoIdx=(videoIdx+1)%videoFrames.length;if(videoCanvas)videoCanvas.getContext('2d').putImageData(videoFrames[videoIdx],0,0);}
     if(video2Frames.length&&video2Canvas){const i2=(videoIdx+Math.floor(video2Frames.length/3))%video2Frames.length;video2Canvas.getContext('2d').putImageData(video2Frames[i2],0,0);}
   }
+  // process plot twists
+  for(const tw of PLOT_TWISTS){
+    if(twistsTriggered[tw.id])continue;
+    if(tw.trigger==='time'){
+      if(!twistTimers[tw.id])twistTimers[tw.id]=0;
+      if(level>=tw.level){twistTimers[tw.id]+=dt;if(twistTimers[tw.id]>=tw.time){twistsTriggered[tw.id]=true;tw.action({invertControls:v=>{invertControls=v;}});}}
+    }
+  }
   // movement
   let mx=0,my=0;
-  if(keys.KeyW||keys.ArrowUp||joyMY<-.2)my=-1;
-  if(keys.KeyS||keys.ArrowDown||joyMY>.2)my=1;
-  if(keys.KeyA||keys.ArrowLeft)mx=-1;
-  if(keys.KeyD||keys.ArrowRight)mx=1;
+  const inv=invertControls?-1:1;
+  if(keys.KeyW||keys.ArrowUp||joyMY<-.2)my=-1*inv;
+  if(keys.KeyS||keys.ArrowDown||joyMY>.2)my=1*inv;
+  if(keys.KeyA||keys.ArrowLeft)mx=-1*inv;
+  if(keys.KeyD||keys.ArrowRight)mx=1*inv;
   // look
   if(keys.KeyQ)pa-=dt*2;if(keys.KeyE)pa+=dt*2;
-  pa+=lookDX*dt*3+joyMX*dt*2.5;
+  pa+=(lookDX*dt*3+joyMX*dt*2.5)*inv;
   // move
   const spd=2.0*dt;
   const nx=px+Math.cos(pa)*my*spd*-1+Math.cos(pa+Math.PI/2)*mx*spd;
@@ -642,7 +717,9 @@ function update(dt){
   // items
   for(const it of ITEMS){
     if(!it.alive)continue;
-    if(Math.hypot(px-it.x,py-it.y)<.6){it.alive=false;found++;sfx('found');showMsg('Key found. Find the exit.');}
+    if(Math.hypot(px-it.x,py-it.y)<.6){it.alive=false;found++;sfx('found');showMsg('Key found. Find the exit.');
+      for(const tw of PLOT_TWISTS){if(!twistsTriggered[tw.id]&&tw.trigger==='key'&&level>=tw.level){twistsTriggered[tw.id]=true;setTimeout(()=>tw.action(),1500);}}
+    }
   }
   // exit check
   if(!transitioning&&Math.hypot(px-EXIT.x-.5,py-EXIT.y-.5)<.8&&found>=1){
@@ -662,6 +739,8 @@ function update(dt){
       showMsg(note,3000);
     },4000);
     if(Math.random()<.5)setTimeout(()=>narrate(NARRATION[level%NARRATION.length]),6000);
+    for(const tw of PLOT_TWISTS){if(!twistsTriggered[tw.id]&&tw.trigger==='enter'&&level===tw.level)
+      {twistsTriggered[tw.id]=true;setTimeout(()=>tw.action({invertControls:v=>{invertControls=v;}}),2000);}}
   }
   // flickering lights
   flickerPhase+=dt;
