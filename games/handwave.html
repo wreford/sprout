@@ -1012,88 +1012,109 @@ function loop(){
     wandHue=(wandHue+.3)%360;
   }
 
-  // EYE TRACKER: front cam detects eye position, back cam shows what you're looking at
+  // EYE TRACKER: front camera only, shows face with eye overlay, highlights screen gaze point
   if(mode==='eye'){
-    // start back camera if not already
-    if(!backCamStream){
-      navigator.mediaDevices.getUserMedia({video:{facingMode:'environment',width:{ideal:640}},audio:false}).then(s=>{
-        backCamStream=s;
-        if(!backCamVideo){backCamVideo=document.createElement('video');backCamVideo.playsInline=true;backCamVideo.autoplay=true;backCamVideo.muted=true;}
-        backCamVideo.srcObject=s;
-      }).catch(()=>{});
-    }
-    // draw back camera view (what you're looking at)
-    if(backCamVideo&&backCamVideo.readyState>=2){
-      ctx.drawImage(backCamVideo,0,0,W,H);
-      ctx.fillStyle='rgba(0,0,20,.2)';ctx.fillRect(0,0,W,H);
-    }
-    // detect eyes from front camera: find dark circular regions in upper portion
-    sc.width=MW;sc.height=MH;sctx.save();
-    if(facing==='user'){sctx.translate(MW,0);sctx.scale(-1,1);}
-    sctx.drawImage(cam,0,0,MW,MH);sctx.restore();
+    // draw front camera full screen (mirrored)
+    ctx.save();ctx.translate(W,0);ctx.scale(-1,1);
+    ctx.drawImage(cam,0,0,W,H);ctx.restore();
+    ctx.fillStyle='rgba(10,0,25,.25)';ctx.fillRect(0,0,W,H);
+
+    // detect eyes: scan for dark spots with bright surroundings in upper face region
+    sc.width=MW;sc.height=MH;
+    sctx.drawImage(cam,0,0,MW,MH); // not mirrored for detection
     const fd=sctx.getImageData(0,0,MW,MH).data;
-    // scan upper 40% for darkest region pair (eyes are dark relative to face)
-    const scanH=Math.floor(MH*.45);
-    let darkest1={x:MW/3,y:MH/4,v:999},darkest2={x:MW*2/3,y:MH/4,v:999};
-    for(let y=Math.floor(MH*.15);y<scanH;y++){
-      for(let x=5;x<MW-5;x++){
+    const scanTop=Math.floor(MH*.12),scanBot=Math.floor(MH*.55);
+    let eye1={x:MW*.35,y:MH*.3,v:999,found:false};
+    let eye2={x:MW*.65,y:MH*.3,v:999,found:false};
+
+    for(let y=scanTop;y<scanBot;y++){
+      for(let x=4;x<MW-4;x++){
         const i=(y*MW+x)*4;
         const lum=fd[i]*.3+fd[i+1]*.6+fd[i+2]*.1;
-        // check surrounding pixels are brighter (dark spot = pupil)
-        const above=y>1?(fd[((y-2)*MW+x)*4]*.3+fd[((y-2)*MW+x)*4+1]*.6+fd[((y-2)*MW+x)*4+2]*.1):lum;
-        const below=y<MH-2?(fd[((y+2)*MW+x)*4]*.3+fd[((y+2)*MW+x)*4+1]*.6+fd[((y+2)*MW+x)*4+2]*.1):lum;
-        const contrast=above+below-lum*2;
-        if(contrast>20&&lum<120){
-          if(x<MW/2&&lum<darkest1.v){darkest1={x,y,v:lum};}
-          if(x>=MW/2&&lum<darkest2.v){darkest2={x,y,v:lum};}
+        // 5-point cross contrast check
+        let surround=0,sc2=0;
+        for(const[dx,dy]of[[-3,0],[3,0],[0,-3],[0,3]]){
+          const nx=x+dx,ny=y+dy;
+          if(nx>=0&&nx<MW&&ny>=0&&ny<MH){
+            const j=(ny*MW+nx)*4;surround+=fd[j]*.3+fd[j+1]*.6+fd[j+2]*.1;sc2++;
+          }
+        }
+        const avgSurround=sc2?surround/sc2:lum;
+        const contrast=avgSurround-lum;
+        if(contrast>18&&lum<110){
+          if(x<MW*.5&&lum<eye1.v){eye1={x,y,v:lum,found:true};}
+          if(x>=MW*.5&&lum<eye2.v){eye2={x,y,v:lum,found:true};}
         }
       }
     }
-    // average eye positions to get gaze direction
-    const ex=(darkest1.x+darkest2.x)/2/MW;
-    const ey=(darkest1.y+darkest2.y)/2/MH;
-    // smooth
-    eyeSmooth.x+=(ex-eyeSmooth.x)*.15;
-    eyeSmooth.y+=(ey-eyeSmooth.y)*.15;
-    // map gaze to screen position (inverted X for mirror)
-    const gazeX=(1-eyeSmooth.x)*W;
-    const gazeY=eyeSmooth.y*H*2.5-H*.3;
-    eyeTrail.push({x:gazeX,y:gazeY,t:performance.now()});
-    if(eyeTrail.length>60)eyeTrail.shift();
 
-    // draw gaze point on back camera view
-    // trail
+    // mirror X for display (front cam is mirrored)
+    const e1sx=W-(eye1.x/MW*W),e1sy=eye1.y/MH*H;
+    const e2sx=W-(eye2.x/MW*W),e2sy=eye2.y/MH*H;
+
+    // draw eye detection circles on face
+    if(eye1.found){
+      ctx.strokeStyle='#00ffc8';ctx.lineWidth=2;
+      ctx.beginPath();ctx.arc(e1sx,e1sy,14,0,Math.PI*2);ctx.stroke();
+      ctx.beginPath();ctx.arc(e1sx,e1sy,6,0,Math.PI*2);ctx.stroke();
+      // iris highlight
+      ctx.fillStyle='rgba(0,255,200,.3)';ctx.beginPath();ctx.arc(e1sx,e1sy,4,0,Math.PI*2);ctx.fill();
+    }
+    if(eye2.found){
+      ctx.strokeStyle='#00ffc8';ctx.lineWidth=2;
+      ctx.beginPath();ctx.arc(e2sx,e2sy,14,0,Math.PI*2);ctx.stroke();
+      ctx.beginPath();ctx.arc(e2sx,e2sy,6,0,Math.PI*2);ctx.stroke();
+      ctx.fillStyle='rgba(0,255,200,.3)';ctx.beginPath();ctx.arc(e2sx,e2sy,4,0,Math.PI*2);ctx.fill();
+    }
+    // line between eyes
+    if(eye1.found&&eye2.found){
+      ctx.strokeStyle='rgba(0,255,200,.15)';ctx.lineWidth=1;ctx.setLineDash([4,4]);
+      ctx.beginPath();ctx.moveTo(e1sx,e1sy);ctx.lineTo(e2sx,e2sy);ctx.stroke();ctx.setLineDash([]);
+      // face center
+      const fcx=(e1sx+e2sx)/2,fcy=(e1sy+e2sy)/2;
+      ctx.strokeStyle='rgba(0,255,200,.1)';ctx.beginPath();ctx.arc(fcx,fcy,Math.abs(e2sx-e1sx)*.8,0,Math.PI*2);ctx.stroke();
+    }
+
+    // compute gaze direction from pupil position within eye socket
+    // the pupil's offset from center of the eye region indicates gaze direction
+    const eyeCenterX=MW*.5; // expected center if looking straight
+    const pupilOffX=((eye1.x+eye2.x)/2-eyeCenterX)/MW; // negative = looking right (mirrored)
+    const pupilOffY=((eye1.y+eye2.y)/2-MH*.3)/(MH*.2); // normalized vertical offset
+
+    eyeSmooth.x+=(-pupilOffX*2-eyeSmooth.x)*.12;
+    eyeSmooth.y+=(pupilOffY*1.5-eyeSmooth.y)*.12;
+
+    const gazeX=W/2+eyeSmooth.x*W*.6;
+    const gazeY=H/2+eyeSmooth.y*H*.5;
+    eyeTrail.push({x:gazeX,y:gazeY,t:performance.now()});
+    if(eyeTrail.length>80)eyeTrail.shift();
+
+    // draw gaze highlight on screen
     const now=performance.now();
+    // gaze heat: larger, softer glow where looking
+    const gzG=ctx.createRadialGradient(gazeX,gazeY,0,gazeX,gazeY,60);
+    gzG.addColorStop(0,'rgba(0,255,200,.15)');gzG.addColorStop(.5,'rgba(0,255,200,.05)');gzG.addColorStop(1,'transparent');
+    ctx.fillStyle=gzG;ctx.beginPath();ctx.arc(gazeX,gazeY,60,0,Math.PI*2);ctx.fill();
+    // gaze trail
     ctx.lineCap='round';
     for(let i=1;i<eyeTrail.length;i++){
-      const age=(now-eyeTrail[i].t)/2000;if(age>1)continue;
-      ctx.strokeStyle=`rgba(0,255,200,${(1-age)*.3})`;ctx.lineWidth=2;
+      const age=(now-eyeTrail[i].t)/3000;if(age>1)continue;
+      ctx.strokeStyle=`rgba(0,255,200,${(1-age)*.2})`;ctx.lineWidth=3*(1-age);
       ctx.beginPath();ctx.moveTo(eyeTrail[i-1].x,eyeTrail[i-1].y);ctx.lineTo(eyeTrail[i].x,eyeTrail[i].y);ctx.stroke();
     }
-    // gaze crosshair
-    ctx.strokeStyle='rgba(0,255,200,.6)';ctx.lineWidth=1.5;
-    ctx.beginPath();ctx.moveTo(gazeX-20,gazeY);ctx.lineTo(gazeX+20,gazeY);ctx.stroke();
-    ctx.beginPath();ctx.moveTo(gazeX,gazeY-20);ctx.lineTo(gazeX,gazeY+20);ctx.stroke();
-    ctx.beginPath();ctx.arc(gazeX,gazeY,12,0,Math.PI*2);ctx.stroke();
-    // glow
-    const gg=ctx.createRadialGradient(gazeX,gazeY,0,gazeX,gazeY,30);
-    gg.addColorStop(0,'rgba(0,255,200,.2)');gg.addColorStop(1,'transparent');
-    ctx.fillStyle=gg;ctx.beginPath();ctx.arc(gazeX,gazeY,30,0,Math.PI*2);ctx.fill();
+    // crosshair
+    ctx.strokeStyle='rgba(0,255,200,.5)';ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(gazeX-15,gazeY);ctx.lineTo(gazeX+15,gazeY);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(gazeX,gazeY-15);ctx.lineTo(gazeX,gazeY+15);ctx.stroke();
+    ctx.beginPath();ctx.arc(gazeX,gazeY,8,0,Math.PI*2);ctx.stroke();
 
-    // mini front cam preview with eye detection overlay
-    const pw=80,ph=60;
-    ctx.strokeStyle='rgba(0,255,200,.3)';ctx.strokeRect(W-pw-8,8,pw+4,ph+4);
-    ctx.drawImage(cam,W-pw-6,10,pw,ph);
-    // draw detected eye positions on preview
-    ctx.fillStyle='rgba(0,255,200,.6)';
-    ctx.beginPath();ctx.arc(W-pw-6+(facing==='user'?pw-darkest1.x/MW*pw:darkest1.x/MW*pw),10+darkest1.y/MH*ph,3,0,Math.PI*2);ctx.fill();
-    ctx.beginPath();ctx.arc(W-pw-6+(facing==='user'?pw-darkest2.x/MW*pw:darkest2.x/MW*pw),10+darkest2.y/MH*ph,3,0,Math.PI*2);ctx.fill();
-
-    ctx.fillStyle='rgba(0,0,0,.5)';ctx.fillRect(8,8,100,30);
-    ctx.fillStyle='#00ffc8';ctx.font='bold 10px monospace';ctx.textAlign='left';
+    // UI
+    ctx.fillStyle='rgba(0,0,0,.5)';ctx.fillRect(8,8,130,42);
+    ctx.fillStyle='#00ffc8';ctx.font='bold 11px monospace';ctx.textAlign='left';
     ctx.fillText('EYE TRACKER',14,20);
     ctx.fillStyle='#0a8';ctx.font='9px monospace';
-    ctx.fillText('gaze: '+Math.round(gazeX)+','+Math.round(gazeY),14,32);
+    ctx.fillText('gaze: '+Math.round(gazeX)+', '+Math.round(gazeY),14,32);
+    ctx.fillText('eyes: '+(eye1.found?'L':'_')+' '+(eye2.found?'R':'_'),14,44);
   }
 
   // CLOAK: invisibility cloak - captures background, then removes you
