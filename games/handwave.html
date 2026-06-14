@@ -462,37 +462,76 @@ function loop(){
     ctx.fillText('POP: '+score,W/2,40);
   }
 
-  // SCENE3D: motion controls a simple SDF-like scene with shapes
+  // SCENE3D: layered parallax world that reacts to motion
   if(mode==='scene'){
-    const cx=W/2,cy=H/2;
-    // motion centroid drives camera
-    let mcx=cx,mcy=cy,mt=0;
+    const cx=W/2,cy=H/2,t=performance.now()*.001;
+    // motion centroid
+    let mcx=cx,mcy=cy,mt=0,mTotal=0;
     if(motion.length){for(let i=0;i<motion.length;i++){if(!motion[i])continue;
-      const mx=i%MW,my=Math.floor(i/MW);mcx+=(facing==='user'?W-mx*W/MW:mx*W/MW);mcy+=my*H/MH;mt++;}}
+      const mx=i%MW,my=Math.floor(i/MW);
+      mcx+=(facing==='user'?W-mx*W/MW:mx*W/MW);mcy+=my*H/MH;mt++;mTotal+=motion[i];}}
     if(mt>0){mcx/=mt;mcy/=mt;}
-    const t=performance.now()*.001;
-    // draw floating shapes that react to motion position
-    for(let i=0;i<8;i++){
-      const a=t*.3+i*Math.PI/4,r=100+Math.sin(t*.5+i)*30;
-      const sx=cx+Math.cos(a)*r,sy=cy+Math.sin(a)*r*.6;
-      const dist=Math.hypot(sx-mcx,sy-mcy);
-      const react=Math.max(0,1-dist/200);
-      const sz=20+react*30+Math.sin(t*2+i)*5;
-      ctx.globalAlpha=.5+react*.4;
-      ctx.fillStyle=COLS[i%COLS.length];
-      if(i%3===0){ctx.beginPath();ctx.arc(sx,sy,sz,0,Math.PI*2);ctx.fill();}
-      else if(i%3===1){ctx.fillRect(sx-sz/2,sy-sz/2,sz,sz);}
-      else{ctx.beginPath();ctx.moveTo(sx,sy-sz);ctx.lineTo(sx+sz,sy+sz*.6);ctx.lineTo(sx-sz,sy+sz*.6);ctx.fill();}
-      // glow ring when near motion
-      if(react>.3){ctx.strokeStyle=COLS[i%COLS.length];ctx.lineWidth=2;ctx.beginPath();ctx.arc(sx,sy,sz+10+react*15,0,Math.PI*2);ctx.stroke();}
+    const offX=(mcx-cx)*.15,offY=(mcy-cy)*.15;
+    const energy=Math.min(1,mTotal/50000);
+
+    // dark bg with stars
+    ctx.fillStyle='#050012';ctx.fillRect(0,0,W,H);
+    for(let i=0;i<60;i++){
+      const sx=(Math.sin(i*7.3+t*.02)*0.5+0.5)*W+offX*.1;
+      const sy=(Math.cos(i*11.1+t*.01)*0.5+0.5)*H+offY*.1;
+      ctx.fillStyle=`rgba(200,180,255,${.2+Math.sin(t+i)*.15})`;
+      ctx.fillRect(sx,sy,1.5,1.5);
     }
-    ctx.globalAlpha=1;
-    // central orb
-    const orbR=30+Math.sin(t)*5;
-    const og=ctx.createRadialGradient(cx,cy,0,cx,cy,orbR*2);
-    og.addColorStop(0,'rgba(255,110,199,.6)');og.addColorStop(.5,'rgba(123,104,238,.3)');og.addColorStop(1,'transparent');
-    ctx.fillStyle=og;ctx.beginPath();ctx.arc(cx,cy,orbR*2,0,Math.PI*2);ctx.fill();
-    ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(cx,cy,orbR*.3,0,Math.PI*2);ctx.fill();
+
+    // nebula clouds (parallax layer 1)
+    for(let i=0;i<4;i++){
+      const nx=cx+Math.cos(t*.1+i*1.5)*W*.3+offX*.3;
+      const ny=cy+Math.sin(t*.08+i*2)*H*.2+offY*.3;
+      const ng=ctx.createRadialGradient(nx,ny,0,nx,ny,120+energy*60);
+      ng.addColorStop(0,`rgba(${i%2?255:123},${i%2?110:104},${i%2?199:238},.12)`);
+      ng.addColorStop(1,'transparent');
+      ctx.fillStyle=ng;ctx.fillRect(0,0,W,H);
+    }
+
+    // orbiting planets (parallax layer 2)
+    for(let i=0;i<5;i++){
+      const orbitR=60+i*45,spd=.15-i*.02;
+      const px=cx+Math.cos(t*spd+i*1.2)*orbitR+offX*.5;
+      const py=cy+Math.sin(t*spd+i*1.2)*orbitR*.5+offY*.5;
+      const sz=8+i*5+energy*10;
+      // shadow
+      ctx.fillStyle='rgba(0,0,0,.2)';ctx.beginPath();ctx.ellipse(px+3,py+3,sz,sz*.3,0,0,Math.PI*2);ctx.fill();
+      // planet
+      const pg=ctx.createRadialGradient(px-sz*.2,py-sz*.3,0,px,py,sz);
+      pg.addColorStop(0,COLS[i%COLS.length]);pg.addColorStop(1,COLS[(i+3)%COLS.length]+'88');
+      ctx.fillStyle=pg;ctx.beginPath();ctx.arc(px,py,sz,0,Math.PI*2);ctx.fill();
+      // ring on some
+      if(i%2===0){ctx.strokeStyle=COLS[i%COLS.length]+'66';ctx.lineWidth=2;
+        ctx.beginPath();ctx.ellipse(px,py,sz*1.8,sz*.4,.3,0,Math.PI*2);ctx.stroke();}
+      // orbit path
+      ctx.strokeStyle='rgba(123,104,238,.06)';ctx.lineWidth=1;
+      ctx.beginPath();ctx.ellipse(cx+offX*.5,cy+offY*.5,orbitR,orbitR*.5,0,0,Math.PI*2);ctx.stroke();
+    }
+
+    // central star
+    const starR=25+Math.sin(t*2)*5+energy*20;
+    const sg=ctx.createRadialGradient(cx+offX,cy+offY,0,cx+offX,cy+offY,starR*3);
+    sg.addColorStop(0,'rgba(255,255,255,.9)');sg.addColorStop(.2,'rgba(255,200,100,.5)');
+    sg.addColorStop(.5,'rgba(255,110,199,.2)');sg.addColorStop(1,'transparent');
+    ctx.fillStyle=sg;ctx.beginPath();ctx.arc(cx+offX,cy+offY,starR*3,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(cx+offX,cy+offY,starR*.4,0,Math.PI*2);ctx.fill();
+
+    // shooting stars on big motion
+    if(energy>.3){
+      for(let i=0;i<3;i++){
+        const sx=Math.random()*W,sy=Math.random()*H*.5;
+        ctx.strokeStyle=`rgba(255,255,255,${energy*.5})`;ctx.lineWidth=1.5;
+        ctx.beginPath();ctx.moveTo(sx,sy);ctx.lineTo(sx+30+energy*40,sy+15);ctx.stroke();
+      }
+    }
+
+    // particle aurora at edges
+    if(motion.length){spawnParticles(motion);updateParticles();drawParticles();}
   }
 
   // INSTRUMENT: screen divided into zones, motion in each plays different notes
@@ -554,37 +593,79 @@ function loop(){
     ctx.fillText('THERMAL',W-12,22);
   }
 
-  // X-RAY: high contrast, edge-enhanced, blue/white tones
+  // X-RAY: medical radiograph look with density layers, bone simulation, film grain
   if(mode==='xray'){
     sc.width=W;sc.height=H;sctx.save();
     if(facing==='user'){sctx.translate(W,0);sctx.scale(-1,1);}
     sctx.drawImage(cam,0,0,W,H);sctx.restore();
     const img=sctx.getImageData(0,0,W,H),d=img.data;
+    const w2=W,h2=H;
+
+    // pass 1: convert to radiograph (inverted, high contrast, slight blue)
     for(let i=0;i<d.length;i+=4){
-      const lum=d[i]*.299+d[i+1]*.587+d[i+2]*.114;
-      // invert + blue tint
-      const v=255-lum;
-      d[i]=Math.round(v*.6);d[i+1]=Math.round(v*.7);d[i+2]=Math.min(255,Math.round(v*1.2+30));
+      let lum=d[i]*.299+d[i+1]*.587+d[i+2]*.114;
+      // contrast curve (S-curve for medical look)
+      lum=lum/255;lum=lum<.5?2*lum*lum:1-2*(1-lum)*(1-lum);
+      const v=Math.round((1-lum)*255); // invert
+      // density layers: very bright areas = "bone" (stays bright white)
+      const bone=lum>.7?Math.round((lum-.7)/.3*180):0;
+      d[i]=Math.min(255,v+bone);
+      d[i+1]=Math.min(255,Math.round(v*.95)+bone);
+      d[i+2]=Math.min(255,Math.round(v*.85+15)+bone);
     }
-    // edge detection pass
-    const w2=W,h2=H,out=new Uint8ClampedArray(d.length);
+
+    // pass 2: edge enhancement (structure boundaries like bone edges)
+    const out=new Uint8ClampedArray(d.length);
     for(let y=1;y<h2-1;y++)for(let x=1;x<w2-1;x++){
       const i=(y*w2+x)*4;
-      const l=(y*w2+x-1)*4,r2=(y*w2+x+1)*4,u=(y*w2+x-w2)*4,dn=(y*w2+x+w2)*4;
-      const edge=Math.abs(d[l]-d[r2])+Math.abs(d[u]-d[dn]);
-      const e=Math.min(255,edge*2);
-      out[i]=Math.max(d[i],Math.round(e*.5));out[i+1]=Math.max(d[i+1],Math.round(e*.6));
-      out[i+2]=Math.max(d[i+2],e);out[i+3]=255;
+      // Sobel X and Y
+      const tl=d[((y-1)*w2+x-1)*4],tc=d[((y-1)*w2+x)*4],tr=d[((y-1)*w2+x+1)*4];
+      const ml=d[(y*w2+x-1)*4],mr=d[(y*w2+x+1)*4];
+      const bl=d[((y+1)*w2+x-1)*4],bc=d[((y+1)*w2+x)*4],br=d[((y+1)*w2+x+1)*4];
+      const gx=(-tl-2*ml-bl+tr+2*mr+br);
+      const gy=(-tl-2*tc-tr+bl+2*bc+br);
+      const edge=Math.min(255,Math.sqrt(gx*gx+gy*gy)*.5);
+      // blend edge with base
+      out[i]=Math.min(255,d[i]+Math.round(edge*.7));
+      out[i+1]=Math.min(255,d[i+1]+Math.round(edge*.6));
+      out[i+2]=Math.min(255,d[i+2]+Math.round(edge*.5));
+      out[i+3]=255;
     }
     ctx.putImageData(new ImageData(out,w2,h2),0,0);
-    // scan line effect
-    ctx.strokeStyle='rgba(100,180,255,.08)';ctx.lineWidth=1;
-    const scanY=(performance.now()*.1)%H;
+
+    // film grain
+    ctx.globalAlpha=.06;
+    for(let i=0;i<200;i++){
+      ctx.fillStyle=Math.random()>.5?'#fff':'#000';
+      ctx.fillRect(Math.random()*W,Math.random()*H,1,1);
+    }
+    ctx.globalAlpha=1;
+
+    // vignette (dark corners like real radiograph)
+    const vg=ctx.createRadialGradient(W/2,H/2,Math.min(W,H)*.3,W/2,H/2,Math.max(W,H)*.7);
+    vg.addColorStop(0,'transparent');vg.addColorStop(1,'rgba(0,0,0,.5)');
+    ctx.fillStyle=vg;ctx.fillRect(0,0,W,H);
+
+    // scanning line
+    const scanY=(performance.now()*.15)%H;
+    ctx.strokeStyle='rgba(150,200,255,.06)';ctx.lineWidth=3;
     ctx.beginPath();ctx.moveTo(0,scanY);ctx.lineTo(W,scanY);ctx.stroke();
-    ctx.fillStyle='rgba(0,0,0,.4)';ctx.fillRect(W-70,8,62,20);
-    ctx.fillStyle='#88ccff';ctx.font='bold 11px monospace';ctx.textAlign='right';
-    ctx.fillText('X-RAY',W-12,22);
-    if(motion.length){spawnParticles(motion);updateParticles();drawParticles();}
+    ctx.strokeStyle='rgba(150,200,255,.15)';ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(0,scanY);ctx.lineTo(W,scanY);ctx.stroke();
+
+    // medical UI overlay
+    ctx.fillStyle='rgba(0,0,0,.5)';ctx.fillRect(6,6,90,50);
+    ctx.fillStyle='#aaccff';ctx.font='bold 10px monospace';ctx.textAlign='left';
+    ctx.fillText('RADIOGRAPH',10,18);
+    ctx.fillStyle='#88aacc';ctx.font='9px monospace';
+    const d2=new Date();
+    ctx.fillText(d2.toLocaleDateString(),10,30);
+    ctx.fillText(d2.toLocaleTimeString(),10,40);
+    ctx.fillText('kVp: 80  mAs: 12',10,50);
+    // L/R markers
+    ctx.fillStyle='rgba(200,220,255,.4)';ctx.font='bold 18px serif';
+    ctx.textAlign='left';ctx.fillText('L',14,H/2);
+    ctx.textAlign='right';ctx.fillText('R',W-14,H/2);
   }
 
   // SPECTRUM: push camera channels to extremes, enhance UV/IR ends
