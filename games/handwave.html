@@ -9,13 +9,14 @@
 body{background:#08001a;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none}
 canvas{display:block;position:fixed;inset:0;width:100%;height:100%}
 #cam{display:none}
-.hud{position:fixed;top:0;left:0;right:0;z-index:10;padding:10px 16px;display:flex;align-items:center;gap:10px;pointer-events:none}
-.hud h1{font:800 18px system-ui;background:linear-gradient(135deg,#ff6ec7,#7b68ee,#00ced1);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
-.hud .info{font:11px monospace;color:rgba(255,255,255,.5);margin-left:auto}
-.bar{position:fixed;bottom:0;left:0;right:0;z-index:10;display:flex;gap:6px;padding:10px 12px;justify-content:center;flex-wrap:wrap}
-.bar button{font:700 11px system-ui;padding:8px 14px;border:1px solid rgba(123,104,238,.25);border-radius:8px;background:rgba(20,10,40,.8);color:#d0c0f0;cursor:pointer;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}
+.hud{position:fixed;top:0;left:0;right:0;z-index:10;padding:6px 12px;display:flex;align-items:center;gap:8px;pointer-events:none}
+.hud h1{font:800 16px system-ui;background:linear-gradient(135deg,#ff6ec7,#7b68ee,#00ced1);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.hud .info{font:10px monospace;color:rgba(255,255,255,.5);margin-left:auto}
+.bar{position:fixed;top:30px;left:0;right:0;z-index:10;display:flex;gap:4px;padding:4px 8px;overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap}
+.bar::-webkit-scrollbar{height:0}
+.bar button{font:700 9px system-ui;padding:5px 10px;border:1px solid rgba(123,104,238,.25);border-radius:6px;background:rgba(20,10,40,.85);color:#b0a0d0;cursor:pointer;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);flex:none}
 .bar button:active{transform:scale(.94)}
-.bar button.on{background:rgba(123,104,238,.3);border-color:rgba(123,104,238,.5);color:#fff}
+.bar button.on{background:rgba(123,104,238,.35);border-color:rgba(123,104,238,.5);color:#fff}
 </style>
 </head>
 <body>
@@ -45,6 +46,8 @@ canvas{display:block;position:fixed;inset:0;width:100%;height:100%}
   <button id="modeEye">Eye Track</button>
   <button id="modeCloak">Cloak</button>
   <button id="modeGlitch">Glitch</button>
+  <button id="modeDodge">Dodge</button>
+  <button id="modeCatch">Catch</button>
   <button id="musicBtn">♪</button>
   <button id="clearBtn">Clear</button>
 </div>
@@ -67,8 +70,10 @@ let wandColor=[255,0,100],wandThreshold=80,wandTrail=[],wandHue=340;
 let lidarLayers=8;
 // eye tracker
 let eyePos={x:0,y:0},eyeSmooth={x:0,y:0},eyeTrail=[],backCamStream=null,backCamVideo=null;
-// cloak: background capture
+// cloak + games
 let bgCapture=null;
+let dodgeBalls=[],dodgeScore=0,dodgeHP=3;
+let catchItems=[],catchScore=0,catchMissed=0;
 // 3D scan depth reference
 let depthRef=null;
 // 3D scanner
@@ -1019,34 +1024,55 @@ function loop(){
     ctx.drawImage(cam,0,0,W,H);ctx.restore();
     ctx.fillStyle='rgba(10,0,25,.25)';ctx.fillRect(0,0,W,H);
 
-    // detect eyes: scan for dark spots with bright surroundings in upper face region
-    sc.width=MW;sc.height=MH;
-    sctx.drawImage(cam,0,0,MW,MH); // not mirrored for detection
-    const fd=sctx.getImageData(0,0,MW,MH).data;
-    const scanTop=Math.floor(MH*.12),scanBot=Math.floor(MH*.55);
-    let eye1={x:MW*.35,y:MH*.3,v:999,found:false};
-    let eye2={x:MW*.65,y:MH*.3,v:999,found:false};
-
-    for(let y=scanTop;y<scanBot;y++){
-      for(let x=4;x<MW-4;x++){
-        const i=(y*MW+x)*4;
-        const lum=fd[i]*.3+fd[i+1]*.6+fd[i+2]*.1;
-        // 5-point cross contrast check
-        let surround=0,sc2=0;
-        for(const[dx,dy]of[[-3,0],[3,0],[0,-3],[0,3]]){
-          const nx=x+dx,ny=y+dy;
-          if(nx>=0&&nx<MW&&ny>=0&&ny<MH){
-            const j=(ny*MW+nx)*4;surround+=fd[j]*.3+fd[j+1]*.6+fd[j+2]*.1;sc2++;
+    // detect eyes: multi-scale dark-spot detection with ring contrast
+    const EW=120,EH=90; // higher res for better detection
+    sc.width=EW;sc.height=EH;
+    sctx.drawImage(cam,0,0,EW,EH);
+    const fd=sctx.getImageData(0,0,EW,EH).data;
+    // build luminance map
+    const lumMap=new Float32Array(EW*EH);
+    for(let i=0;i<EW*EH;i++)lumMap[i]=fd[i*4]*.3+fd[i*4+1]*.59+fd[i*4+2]*.11;
+    const scanTop=Math.floor(EH*.1),scanBot=Math.floor(EH*.55);
+    // multi-scale ring contrast: check at radius 2,4,6 (catches different face distances)
+    const candidates=[];
+    for(let y=scanTop+6;y<scanBot-6;y++){
+      for(let x=8;x<EW-8;x++){
+        const cLum=lumMap[y*EW+x];
+        if(cLum>140)continue; // skip bright areas
+        let totalContrast=0;
+        for(const rad of[2,4,6]){
+          let ring=0,rc=0;
+          for(const[dx,dy]of[[-rad,0],[rad,0],[0,-rad],[0,rad],[-rad,-rad],[rad,-rad],[-rad,rad],[rad,rad]]){
+            const nx=x+dx,ny=y+dy;
+            if(nx>=0&&nx<EW&&ny>=0&&ny<EH){ring+=lumMap[ny*EW+nx];rc++;}
           }
+          if(rc)totalContrast+=ring/rc-cLum;
         }
-        const avgSurround=sc2?surround/sc2:lum;
-        const contrast=avgSurround-lum;
-        if(contrast>18&&lum<110){
-          if(x<MW*.5&&lum<eye1.v){eye1={x,y,v:lum,found:true};}
-          if(x>=MW*.5&&lum<eye2.v){eye2={x,y,v:lum,found:true};}
+        if(totalContrast>40){
+          candidates.push({x,y,score:totalContrast,lum:cLum});
         }
       }
     }
+    // find best left and right eye candidates
+    candidates.sort((a,b)=>b.score-a.score);
+    let eye1={x:EW*.35,y:EH*.3,v:0,found:false};
+    let eye2={x:EW*.65,y:EH*.3,v:0,found:false};
+    for(const c of candidates){
+      if(c.x<EW*.5&&!eye1.found){eye1={x:c.x,y:c.y,v:c.score,found:true};}
+      if(c.x>=EW*.5&&!eye2.found){eye2={x:c.x,y:c.y,v:c.score,found:true};}
+      if(eye1.found&&eye2.found)break;
+    }
+    // temporal smoothing: blend with previous position
+    if(eye1.found){eyeSmooth.lx=(eyeSmooth.lx||eye1.x)*.7+eye1.x*.3;eyeSmooth.ly=(eyeSmooth.ly||eye1.y)*.7+eye1.y*.3;eye1.x=eyeSmooth.lx;eye1.y=eyeSmooth.ly;}
+    if(eye2.found){eyeSmooth.rx=(eyeSmooth.rx||eye2.x)*.7+eye2.x*.3;eyeSmooth.ry=(eyeSmooth.ry||eye2.y)*.7+eye2.y*.3;eye2.x=eyeSmooth.rx;eye2.y=eyeSmooth.ry;}
+    // validate: eyes should be roughly same Y, reasonable distance apart
+    if(eye1.found&&eye2.found){
+      const dy2=Math.abs(eye1.y-eye2.y),dx2=Math.abs(eye2.x-eye1.x);
+      if(dy2>EH*.12||dx2<EW*.08||dx2>EW*.45){eye1.found=false;eye2.found=false;}
+    }
+    // map from detection res to screen
+    const e1sx=W-(eye1.x/EW*W),e1sy=eye1.y/EH*H;
+    const e2sx=W-(eye2.x/EW*W),e2sy=eye2.y/EH*H;
 
     // mirror X for display (front cam is mirrored)
     const e1sx=W-(eye1.x/MW*W),e1sy=eye1.y/MH*H;
@@ -1075,11 +1101,10 @@ function loop(){
       ctx.strokeStyle='rgba(0,255,200,.1)';ctx.beginPath();ctx.arc(fcx,fcy,Math.abs(e2sx-e1sx)*.8,0,Math.PI*2);ctx.stroke();
     }
 
-    // compute gaze direction from pupil position within eye socket
-    // the pupil's offset from center of the eye region indicates gaze direction
-    const eyeCenterX=MW*.5; // expected center if looking straight
-    const pupilOffX=((eye1.x+eye2.x)/2-eyeCenterX)/MW; // negative = looking right (mirrored)
-    const pupilOffY=((eye1.y+eye2.y)/2-MH*.3)/(MH*.2); // normalized vertical offset
+    // compute gaze direction from pupil position
+    const eyeCenterX=EW*.5;
+    const pupilOffX=((eye1.x+eye2.x)/2-eyeCenterX)/EW;
+    const pupilOffY=((eye1.y+eye2.y)/2-EH*.3)/(EH*.2);
 
     eyeSmooth.x+=(-pupilOffX*2-eyeSmooth.x)*.12;
     eyeSmooth.y+=(pupilOffY*1.5-eyeSmooth.y)*.12;
@@ -1115,6 +1140,71 @@ function loop(){
     ctx.fillStyle='#0a8';ctx.font='9px monospace';
     ctx.fillText('gaze: '+Math.round(gazeX)+', '+Math.round(gazeY),14,32);
     ctx.fillText('eyes: '+(eye1.found?'L':'_')+' '+(eye2.found?'R':'_'),14,44);
+  }
+
+  // DODGE: avoid falling neon shapes with your body motion
+  if(mode==='dodge'&&motion.length){
+    if(dodgeHP<=0){
+      ctx.fillStyle='rgba(0,0,0,.7)';ctx.fillRect(0,0,W,H);
+      ctx.fillStyle='#ff6ec7';ctx.font='bold 32px system-ui';ctx.textAlign='center';
+      ctx.fillText('GAME OVER',W/2,H/2-20);
+      ctx.fillStyle='#7b68ee';ctx.font='bold 20px monospace';
+      ctx.fillText('Score: '+dodgeScore,W/2,H/2+20);
+      ctx.fillStyle='#6a5a8a';ctx.font='12px monospace';
+      ctx.fillText('switch mode to restart',W/2,H/2+50);
+    }else{
+      // spawn obstacles
+      if(Math.random()<.04+dodgeScore*.001)dodgeBalls.push({x:Math.random()*W,y:-20,vy:2+Math.random()*3+dodgeScore*.05,r:12+Math.random()*18,col:COLS[Math.floor(Math.random()*COLS.length)]});
+      // update
+      for(let i=dodgeBalls.length-1;i>=0;i--){
+        const b=dodgeBalls[i];b.y+=b.vy;
+        if(b.y>H+30){dodgeBalls.splice(i,1);dodgeScore++;continue;}
+        // collision: check if motion exists at ball position
+        const mx=Math.floor((facing==='user'?W-b.x:b.x)/W*MW),my=Math.floor(b.y/H*MH);
+        const mi=my*MW+mx;
+        if(mi>=0&&mi<motion.length&&motion[mi]>60){
+          // hit!
+          dodgeHP--;shakeX=(Math.random()-.5)*15;shakeY=(Math.random()-.5)*15;
+          for(let j=0;j<10;j++)particles.push({x:b.x,y:b.y,vx:(Math.random()-.5)*8,vy:(Math.random()-.5)*8,life:1,decay:.025,r:3,col:'#ff3333',type:'sparkle'});
+          playTone(150,.2);dodgeBalls.splice(i,1);continue;
+        }
+        // draw
+        ctx.fillStyle=b.col;ctx.globalAlpha=.7;ctx.beginPath();ctx.arc(b.x,b.y,b.r,0,Math.PI*2);ctx.fill();
+        ctx.strokeStyle='#fff';ctx.lineWidth=1;ctx.stroke();ctx.globalAlpha=1;
+      }
+      updateParticles();drawParticles();
+      // HUD
+      ctx.fillStyle='rgba(0,0,0,.4)';ctx.fillRect(W/2-60,H-35,120,28);
+      ctx.fillStyle='#ff6ec7';ctx.font='bold 12px monospace';ctx.textAlign='center';
+      ctx.fillText('DODGE: '+dodgeScore+'  HP: '+'♥'.repeat(dodgeHP),W/2,H-18);
+    }
+  }
+
+  // CATCH: grab falling stars with your motion
+  if(mode==='catch'&&motion.length){
+    // spawn items
+    if(Math.random()<.06)catchItems.push({x:Math.random()*W,y:-15,vy:1.5+Math.random()*2,type:Math.random()>.8?'gold':'star',r:10+Math.random()*8});
+    for(let i=catchItems.length-1;i>=0;i--){
+      const it=catchItems[i];it.y+=it.vy;
+      if(it.y>H+20){catchMissed++;catchItems.splice(i,1);continue;}
+      const mx=Math.floor((facing==='user'?W-it.x:it.x)/W*MW),my=Math.floor(it.y/H*MH);
+      const mi=my*MW+mx;
+      if(mi>=0&&mi<motion.length&&motion[mi]>40){
+        const pts=it.type==='gold'?50:10;catchScore+=pts;
+        for(let j=0;j<6;j++)particles.push({x:it.x,y:it.y,vx:(Math.random()-.5)*5,vy:-Math.random()*4,life:1,decay:.02,r:3,col:it.type==='gold'?'#ffd700':'#00ced1',type:'star'});
+        playTone(it.type==='gold'?880:660,.1);
+        catchItems.splice(i,1);continue;
+      }
+      // draw
+      ctx.fillStyle=it.type==='gold'?'#ffd700':'#00ced1';ctx.globalAlpha=.8;
+      ctx.beginPath();
+      for(let p=0;p<5;p++){const a=p*Math.PI*2/5-Math.PI/2;ctx.lineTo(it.x+Math.cos(a)*it.r,it.y+Math.sin(a)*it.r);const a2=a+Math.PI/5;ctx.lineTo(it.x+Math.cos(a2)*it.r*.4,it.y+Math.sin(a2)*it.r*.4);}
+      ctx.fill();ctx.globalAlpha=1;
+    }
+    updateParticles();drawParticles();
+    ctx.fillStyle='rgba(0,0,0,.4)';ctx.fillRect(W/2-70,H-35,140,28);
+    ctx.fillStyle='#00ced1';ctx.font='bold 12px monospace';ctx.textAlign='center';
+    ctx.fillText('CATCH: '+catchScore+'  miss: '+catchMissed,W/2,H-18);
   }
 
   // CLOAK: invisibility cloak - captures background, then removes you
@@ -1249,7 +1339,7 @@ cv.addEventListener('click',e=>{
   if(i>=0&&i<d.length-2){wandColor=[d[i],d[i+1],d[i+2]];wandTrail=[];}
 });
 
-['modeParticle','modePaint','modeWave','modeMirror','modePong','modeFidget','modeBubble','modeScene','modeInstrument','modeThermal','modeXray','modeSpectrum','modeLidar','modeScan3d','modeNude','modeWand','modeEye','modeCloak','modeGlitch'].forEach(id=>{
+['modeParticle','modePaint','modeWave','modeMirror','modePong','modeFidget','modeBubble','modeScene','modeInstrument','modeThermal','modeXray','modeSpectrum','modeLidar','modeScan3d','modeNude','modeWand','modeEye','modeCloak','modeGlitch','modeDodge','modeCatch'].forEach(id=>{
   document.getElementById(id).addEventListener('click',()=>{
     mode=id.replace('mode','').toLowerCase();
     document.querySelectorAll('.bar button').forEach(b=>b.classList.remove('on'));
@@ -1258,6 +1348,7 @@ cv.addEventListener('click',e=>{
     pongBX=W/2;pongBY=H/2;pongBVX=4;pongBVY=2;pongScore=[0,0];pongPadL=H/2;pongPadR=H/2;
     fidgetAngle=0;fidgetVel=0;wandTrail=[];
     scan3d={pts:[],rotY:0,rotX:.3,capturing:false,lastCap:0};eyeTrail=[];bgCapture=null;
+    dodgeBalls=[];dodgeScore=0;dodgeHP=3;catchItems=[];catchScore=0;catchMissed=0;
     if(backCamStream&&id!=='modeEye'){backCamStream.getTracks().forEach(t=>t.stop());backCamStream=null;}
     if(paintLayer)for(let i=0;i<paintLayer.data.length;i++)paintLayer.data[i]=0;
   });
