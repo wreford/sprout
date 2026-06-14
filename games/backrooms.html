@@ -1126,16 +1126,39 @@ function update(dt){
 function render(){
   resize();
   const fov=Math.PI/3,rays=Math.min(W,400);
-  // ceiling and floor with tiled textures
-  const tileSz=Math.max(60,Math.min(W,H)/6);
-  ctx.globalAlpha=.5*lightFlicker;
-  for(let tx=0;tx<W;tx+=tileSz)for(let ty=0;ty<H/2;ty+=tileSz)ctx.drawImage(ceilTex,tx,ty,tileSz,tileSz);
-  ctx.globalAlpha=.35*lightFlicker;
-  for(let tx=0;tx<W;tx+=tileSz)for(let ty=H/2;ty<H;ty+=tileSz)ctx.drawImage(floorTex,tx,ty,tileSz,tileSz);
+  // perspective floor and ceiling (raycasted scanlines)
+  const halfH=H/2;
+  const floorW=floorTex.width,floorH2=floorTex.height,ceilW=ceilTex.width,ceilH2=ceilTex.height;
+  const floorCtx=floorTex.getContext('2d'),ceilCtx2=ceilTex.getContext('2d');
+  const cosA=Math.cos(pa),sinA=Math.sin(pa);
+  const fovHalf=fov/2,tanFov=Math.tan(fovHalf);
+  for(let y=1;y<halfH;y++){
+    const rowDist=halfH/(y+.01);
+    const floorAlpha=Math.max(.08,Math.min(.5,(1-y/(halfH))*.6))*lightFlicker;
+    const ceilAlpha=Math.max(.06,Math.min(.4,(1-y/(halfH))*.5))*lightFlicker;
+    const leftX=px+rowDist*(cosA-sinA*tanFov);
+    const leftY=py+rowDist*(sinA+cosA*tanFov);
+    const rightX=px+rowDist*(cosA+sinA*tanFov);
+    const rightY=py+rowDist*(sinA-cosA*tanFov);
+    const stepX=(rightX-leftX)/W;
+    const stepY=(rightY-leftY)/W;
+    // sample a few columns per scanline for speed
+    const cols=Math.min(W,80);
+    const colW2=Math.ceil(W/cols)+1;
+    for(let c=0;c<cols;c++){
+      const cx=c*W/cols;
+      const fx=leftX+stepX*cx,fy=leftY+stepY*cx;
+      const texX=Math.abs(Math.floor(fx*floorW))%floorW;
+      const texY=Math.abs(Math.floor(fy*floorH2))%floorH2;
+      // floor
+      ctx.globalAlpha=floorAlpha;
+      ctx.drawImage(floorTex,texX,texY,1,1,cx,halfH+y,colW2,1);
+      // ceiling
+      ctx.globalAlpha=ceilAlpha;
+      ctx.drawImage(ceilTex,texX%ceilW,texY%ceilH2,1,1,cx,halfH-y,colW2,1);
+    }
+  }
   ctx.globalAlpha=1;
-  // darken edges
-  ctx.fillStyle='rgba(0,0,0,.4)';ctx.fillRect(0,0,W,H*.15);
-  ctx.fillStyle='rgba(0,0,0,.3)';ctx.fillRect(0,H*.85,W,H*.15);
 
   // raycast walls with backrooms textures
   const extraTex=[];
