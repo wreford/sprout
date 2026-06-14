@@ -101,14 +101,14 @@ const FURNITURE=[
 ];
 let furniture=[];
 function spawnFurniture(){
-  furniture=[];for(let i=0;i<5+level*2;i++){
+  furniture=[];for(let i=0;i<2+level;i++){
     let fx,fy;do{fx=2+Math.floor(Math.random()*(MW-4));fy=2+Math.floor(Math.random()*(MH-4));}while(MAP[fy][fx]!==0);
     furniture.push({x:fx+.5,y:fy+.5,type:FURNITURE[Math.floor(Math.random()*FURNITURE.length)]});
   }
 }
 function spawnMeeps(){
   meeps=[];
-  const count=1+Math.floor(level*.5);
+  const count=level<2?0:Math.min(3,Math.floor(level*.3));
   for(let i=0;i<count;i++){
     let mx2,my2;do{mx2=2+Math.floor(Math.random()*(MW-4));my2=2+Math.floor(Math.random()*(MH-4));}while(MAP[my2][mx2]!==0);
     const charType=HORROR_CHARS[i%HORROR_CHARS.length];
@@ -561,7 +561,7 @@ function castRay(ox,oy,angle){
   return{dist:20,side:0,mx:0,my:0};
 }
 
-let stepTimer=0;
+let stepTimer=0,phantomTimer=0,halluTimer=0,behindYouTimer=0,breathTimer=0;
 function update(dt){
   // camera snapshot timer
   camSnapTimer+=dt;
@@ -586,7 +586,7 @@ function update(dt){
   if(keys.KeyQ)pa-=dt*2;if(keys.KeyE)pa+=dt*2;
   pa+=lookDX*dt*3+joyMX*dt*2.5;
   // move
-  const spd=2.5*dt;
+  const spd=2.0*dt;
   const nx=px+Math.cos(pa)*my*spd*-1+Math.cos(pa+Math.PI/2)*mx*spd;
   const ny=py+Math.sin(pa)*my*spd*-1+Math.sin(pa+Math.PI/2)*mx*spd;
   if(MAP[Math.floor(py)][Math.floor(nx)]===0)px=nx;
@@ -644,6 +644,51 @@ function update(dt){
     // damage player if hostile and touching
     if(mp.hostile&&dist2p<.5){sfx('scare');showMsg(mp.char.name+' GOT YOU!\nLevel '+level,3000);running=false;
       setTimeout(()=>{document.getElementById('start').style.display='flex';document.querySelector('#start h1').textContent='Caught by '+mp.char.name;},1500);return;}
+  }
+  // phantom footsteps - you hear steps when you're NOT moving
+  phantomTimer+=dt;
+  if(Math.abs(mx)+Math.abs(my)===0&&phantomTimer>8+Math.random()*15){
+    phantomTimer=0;
+    if(actx&&actx.state==='running'){
+      const n=actx.currentTime;
+      for(let ps=0;ps<2+Math.floor(Math.random()*3);ps++){
+        const d=ps*.4+Math.random()*.1;
+        const buf=actx.createBuffer(1,actx.sampleRate*.1,actx.sampleRate);
+        const bd=buf.getChannelData(0);
+        for(let i=0;i<bd.length;i++){const t=i/actx.sampleRate;bd[i]=Math.sin(t*55*Math.PI*2)*Math.exp(-t*35)*.3+(Math.random()*2-1)*Math.exp(-t*20)*.15;}
+        const s=actx.createBufferSource();s.buffer=buf;
+        const g=actx.createGain();g.gain.value=.06;
+        const fl=actx.createBiquadFilter();fl.type='lowpass';fl.frequency.value=250;
+        s.connect(fl);fl.connect(g);g.connect(actx.destination);s.start(n+d);
+      }
+    }
+  }
+  // breathing gets heavier in darkness
+  breathTimer+=dt;
+  if(breathTimer>3+Math.random()*4){
+    breathTimer=0;
+    if(actx&&actx.state==='running'&&lightFlicker<.4){
+      const n=actx.currentTime;
+      const buf=actx.createBuffer(1,actx.sampleRate*1.2,actx.sampleRate);
+      const bd=buf.getChannelData(0);
+      for(let i=0;i<bd.length;i++){const t=i/actx.sampleRate;bd[i]=(Math.random()*2-1)*.08*Math.sin(t*Math.PI/.6)*Math.sin(t*Math.PI*2*1.5);}
+      const s=actx.createBufferSource();s.buffer=buf;
+      const g=actx.createGain();g.gain.value=.06;
+      const fl=actx.createBiquadFilter();fl.type='bandpass';fl.frequency.value=400;fl.Q.value=3;
+      s.connect(fl);fl.connect(g);g.connect(actx.destination);s.start(n);
+    }
+  }
+  // "behind you" feeling - creepy messages + infrasound
+  behindYouTimer+=dt;
+  if(behindYouTimer>25+Math.random()*40){
+    behindYouTimer=0;
+    showMsg(['...something moved...','...did you hear that?...','...turn around...','...you are not alone...','...the walls are closer...','...it knows where you are...'][Math.floor(Math.random()*6)],2500);
+    if(actx&&actx.state==='running'){
+      const n=actx.currentTime;
+      const o=actx.createOscillator();o.type='sine';o.frequency.value=18;
+      const g=actx.createGain();g.gain.setValueAtTime(.08,n);g.gain.linearRampToValueAtTime(0,n+2);
+      o.connect(g);g.connect(actx.destination);o.start(n);o.stop(n+2.5);
+    }
   }
   // entity
   if(entityActive){
@@ -867,11 +912,31 @@ function render(){
 
   // camera face overlay (ghostly)
   if(camReady&&camVideo&&camVideo.readyState>=2){
-    ctx.globalAlpha=.06+Math.sin(performance.now()*.0008)*.03;
+    ctx.globalAlpha=.04+Math.sin(performance.now()*.0006)*.02;
     ctx.globalCompositeOperation='screen';
     ctx.save();ctx.translate(W,0);ctx.scale(-1,1);
     ctx.drawImage(camVideo,0,0,W,H);ctx.restore();
     ctx.globalCompositeOperation='source-over';
+    ctx.globalAlpha=1;
+  }
+
+  // hallucination shadows at edge of vision
+  const now2=performance.now();
+  if(Math.sin(now2*.0003)>.85){
+    const side=Math.sin(now2*.0007)>0?0:W-80;
+    ctx.globalAlpha=.12+Math.sin(now2*.005)*.06;
+    ctx.fillStyle='#000';
+    ctx.fillRect(side,H*.2,60,H*.5);
+    ctx.globalAlpha=.06;
+    ctx.fillStyle='#300';
+    ctx.beginPath();ctx.arc(side+30,H*.35,4,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.arc(side+45,H*.35,4,0,Math.PI*2);ctx.fill();
+    ctx.globalAlpha=1;
+  }
+  // screen distortion pulse
+  if(Math.sin(now2*.0002)>.92){
+    ctx.globalAlpha=.05;
+    ctx.drawImage(cv,Math.sin(now2*.01)*3,Math.cos(now2*.013)*2);
     ctx.globalAlpha=1;
   }
 
