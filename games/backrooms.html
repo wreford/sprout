@@ -35,6 +35,10 @@ canvas{display:block;width:100vw;height:100vh}
   <h1>Meep City Backrooms</h1>
   <div class="sub">An abandoned department store. Detuned muzak. Flickering fluorescents. Mannequins that weren't there before. Find the key. Reach the exit. They're watching.</div>
   <button onclick="go()">Enter the Backrooms</button>
+  <label style="margin-top:12px;font-size:11px;color:#665533;cursor:pointer;padding:8px 16px;border:1px solid rgba(255,215,0,.15);border-radius:6px;display:inline-block">
+    <input type="file" accept="image/*" multiple id="photoPick" style="display:none" onchange="importPhotos(this.files)">
+    Import Photos as Textures
+  </label>
 </div>
 <div id="joy"><div id="jring"><div id="jknob"></div></div></div>
 <div id="look"><div id="lring"><div id="lknob"></div></div></div>
@@ -679,6 +683,32 @@ function snapCamera(){
   }
 }
 
+// user-imported photo textures (from camera roll)
+let userTextures=[];
+function importPhotos(files){
+  for(const file of files){
+    const reader=new FileReader();
+    reader.onload=e=>{
+      const img=new Image();
+      img.onload=()=>{
+        const sz=64;
+        const cv2=document.createElement('canvas');cv2.width=sz;cv2.height=sz;
+        const c=cv2.getContext('2d');
+        const aspect=img.width/img.height;
+        const sw=aspect>1?sz:sz*aspect,sh=aspect>1?sz/aspect:sz;
+        c.drawImage(img,(sz-sw)/2,(sz-sh)/2,sw,sh);
+        const filter=CAM_FILTERS[Math.floor(Math.random()*CAM_FILTERS.length)];
+        const imgData=c.getImageData(0,0,sz,sz);
+        filter.fn(imgData.data);
+        c.putImageData(imgData,0,0);
+        userTextures.push(cv2);
+      };
+      img.src=e.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+}
+
 function sfx(type){
   if(!actx||actx.state!=='running')return;const n=actx.currentTime;
   if(type==='step'){
@@ -1014,8 +1044,11 @@ function render(){
   ctx.fillStyle='#0f0f05';ctx.fillRect(0,0,W,H/2); // ceiling - very dark
   ctx.fillStyle='#0a0a04';ctx.fillRect(0,H/2,W,H/2); // floor - nearly black
 
-  // raycast walls with sprite textures
-  const wallSprites=[sprite1,sprite2,sprite3,sprite4,sprite5];
+  // raycast walls with sprite textures + camera/user textures
+  const baseSprites=[sprite1,sprite2,sprite3,sprite4,sprite5].filter(Boolean);
+  const allTextures=[...baseSprites];
+  for(const p of camPhotos)if(p.canvas)allTextures.push(p.canvas);
+  for(const t of userTextures)allTextures.push(t);
   for(let i=0;i<rays;i++){
     const angle=pa-fov/2+fov*i/rays;
     const hit=castRay(px,py,angle);
@@ -1026,9 +1059,9 @@ function render(){
     const sideShade=hit.side===0?.75:1;
     const colW=Math.ceil(W/rays)+1;
     const colX=i*W/rays;
-    // pick sprite based on wall cell
-    const sprIdx=(hit.mx*7+hit.my*13)%5;
-    const wallSpr=wallSprites[sprIdx];
+    const texCount=allTextures.length||1;
+    const sprIdx=(hit.mx*7+hit.my*13)%texCount;
+    const wallSpr=allTextures[sprIdx];
     if(wallSpr&&perp<8){
       const dx2=Math.cos(angle),dy2=Math.sin(angle);
       const hitX=px+dx2*hit.dist,hitY=py+dy2*hit.dist;
