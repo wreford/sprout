@@ -37,6 +37,9 @@ canvas{display:block;position:fixed;inset:0;width:100%;height:100%}
   <button id="modeInstrument">Instrument</button>
   <button id="modeThermal">Thermal</button>
   <button id="modeXray">X-Ray</button>
+  <button id="modeSpectrum">Spectrum</button>
+  <button id="modeLidar">LiDAR</button>
+  <button id="modeWand">Wand</button>
   <button id="musicBtn">♪</button>
   <button id="clearBtn">Clear</button>
 </div>
@@ -54,6 +57,10 @@ let fidgetAngle=0,fidgetVel=0;
 let bubbles=[],score=0,combo=0,lastPop=0;
 let shakeX=0,shakeY=0,motionHistory=[],heatMap=null;
 let trailCanvas=null,trailCtx=null;
+// wand tracking
+let wandColor=[255,0,100],wandThreshold=80,wandTrail=[],wandHue=340;
+// lidar depth layers
+let lidarLayers=8;
 const COLS=['#ff6ec7','#7b68ee','#00ced1','#ff69b4','#9370db','#40e0d0','#da70d6'];
 
 // --- JTM AUDIO ENGINE ---
@@ -580,6 +587,151 @@ function loop(){
     if(motion.length){spawnParticles(motion);updateParticles();drawParticles();}
   }
 
+  // SPECTRUM: push camera channels to extremes, enhance UV/IR ends
+  if(mode==='spectrum'){
+    sc.width=W;sc.height=H;sctx.save();
+    if(facing==='user'){sctx.translate(W,0);sctx.scale(-1,1);}
+    sctx.drawImage(cam,0,0,W,H);sctx.restore();
+    const img=sctx.getImageData(0,0,W,H),d=img.data;
+    for(let i=0;i<d.length;i+=4){
+      let r=d[i],g=d[i+1],b=d[i+2];
+      // enhance far red (simulated near-IR): boost red channel, suppress green
+      const ir=Math.min(255,r*1.8-g*.5-b*.3);
+      // enhance far blue (simulated near-UV): boost blue, suppress red
+      const uv=Math.min(255,b*1.8-r*.3-g*.2);
+      // mid spectrum stays as green
+      const mid=Math.min(255,g*1.4-r*.2-b*.2);
+      // apply gamma curve to push extremes
+      d[i]=Math.min(255,Math.max(0,Math.round(Math.pow(ir/255,0.6)*255)));
+      d[i+1]=Math.min(255,Math.max(0,Math.round(Math.pow(Math.max(0,mid)/255,0.8)*255)));
+      d[i+2]=Math.min(255,Math.max(0,Math.round(Math.pow(uv/255,0.6)*255)));
+    }
+    ctx.putImageData(img,0,0);
+    // spectrum bar legend
+    const sg=ctx.createLinearGradient(W-160,0,W-10,0);
+    sg.addColorStop(0,'#ff0000');sg.addColorStop(.25,'#ff8800');sg.addColorStop(.5,'#00ff00');sg.addColorStop(.75,'#0088ff');sg.addColorStop(1,'#8800ff');
+    ctx.fillStyle='rgba(0,0,0,.5)';ctx.fillRect(W-168,8,166,24);
+    ctx.fillStyle=sg;ctx.fillRect(W-164,14,156,6);
+    ctx.fillStyle='#fff';ctx.font='bold 8px monospace';ctx.textAlign='center';
+    ctx.fillText('IR',W-158,28);ctx.fillText('VIS',W-86,28);ctx.fillText('UV',W-14,28);
+    ctx.fillStyle='rgba(255,255,255,.4)';ctx.font='bold 10px monospace';ctx.textAlign='left';
+    ctx.fillText('SPECTRUM ENHANCED',12,22);
+    if(motion.length){spawnParticles(motion);updateParticles();drawParticles();}
+  }
+
+  // LiDAR: simulated depth from luminance, contour lines, point cloud
+  if(mode==='lidar'){
+    sc.width=160;sc.height=120;sctx.save();
+    if(facing==='user'){sctx.translate(160,0);sctx.scale(-1,1);}
+    sctx.drawImage(cam,0,0,160,120);sctx.restore();
+    const img=sctx.getImageData(0,0,160,120),d=img.data;
+    const pw=W/160,ph=H/120;
+    // black background
+    ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);
+    // point cloud with depth coloring
+    for(let y=0;y<120;y++)for(let x=0;x<160;x++){
+      const i=(y*160+x)*4;
+      const depth=(d[i]*.299+d[i+1]*.587+d[i+2]*.114)/255; // 0=far 1=near
+      const layer=Math.floor(depth*lidarLayers);
+      // depth palette: far=blue, mid=green/yellow, near=red/white
+      const hue=(1-depth)*240; // 240=blue → 0=red
+      const sat=depth>.8?.5:1;
+      const bri=.3+depth*.7;
+      // HSL to RGB
+      const c2=bri*(1-Math.abs(2*sat-1)),x2=c2*(1-Math.abs((hue/60)%2-1)),m=bri-c2/2;
+      let r2,g2,b2;
+      if(hue<60){r2=c2;g2=x2;b2=0;}else if(hue<120){r2=x2;g2=c2;b2=0;}else if(hue<180){r2=0;g2=c2;b2=x2;}
+      else if(hue<240){r2=0;g2=x2;b2=c2;}else if(hue<300){r2=x2;g2=0;b2=c2;}else{r2=c2;g2=0;b2=x2;}
+      // draw point (skip some for performance)
+      if(Math.random()<.7+depth*.3){
+        ctx.fillStyle=`rgb(${Math.round((r2+m)*255)},${Math.round((g2+m)*255)},${Math.round((b2+m)*255)})`;
+        ctx.fillRect(x*pw,y*ph,pw*.8,ph*.8);
+      }
+    }
+    // contour lines (where depth changes sharply)
+    ctx.strokeStyle='rgba(0,255,100,.25)';ctx.lineWidth=1;
+    for(let y=1;y<119;y++)for(let x=1;x<159;x++){
+      const i=(y*160+x)*4,l=(y*160+x-1)*4,u=((y-1)*160+x)*4;
+      const dc=d[i]*.3+d[i+1]*.59+d[i+2]*.11;
+      const dl=d[l]*.3+d[l+1]*.59+d[l+2]*.11;
+      const du=d[u]*.3+d[u+1]*.59+d[u+2]*.11;
+      if(Math.abs(dc-dl)>25||Math.abs(dc-du)>25){
+        ctx.fillStyle='rgba(0,255,100,.3)';ctx.fillRect(x*pw,y*ph,1.5,1.5);
+      }
+    }
+    // distance readout at center
+    const ci=(60*160+80)*4;
+    const cdepth=(d[ci]*.3+d[ci+1]*.59+d[ci+2]*.11)/255;
+    ctx.strokeStyle='#0f0';ctx.lineWidth=1;
+    ctx.strokeRect(W/2-15,H/2-15,30,30);
+    ctx.fillStyle='rgba(0,0,0,.6)';ctx.fillRect(W/2-40,H/2+20,80,16);
+    ctx.fillStyle='#0f0';ctx.font='bold 10px monospace';ctx.textAlign='center';
+    ctx.fillText((cdepth*5).toFixed(1)+'m (est)',W/2,H/2+32);
+    ctx.fillText('LiDAR SIM',W/2,18);
+  }
+
+  // WAND: track brightest pixel matching wandColor, draw magic trail
+  if(mode==='wand'){
+    sc.width=MW;sc.height=MH;sctx.save();
+    if(facing==='user'){sctx.translate(MW,0);sctx.scale(-1,1);}
+    sctx.drawImage(cam,0,0,MW,MH);sctx.restore();
+    const img=sctx.getImageData(0,0,MW,MH),d=img.data;
+    // find pixel closest to wand color
+    let bestI=-1,bestD=Infinity;
+    for(let i=0;i<d.length;i+=4){
+      const dr=d[i]-wandColor[0],dg=d[i+1]-wandColor[1],db=d[i+2]-wandColor[2];
+      const dist=dr*dr+dg*dg+db*db;
+      // also check brightness - wand should be bright
+      const lum=d[i]+d[i+1]+d[i+2];
+      if(dist<wandThreshold*wandThreshold&&lum>150&&dist<bestD){bestD=dist;bestI=i/4;}
+    }
+    if(bestI>=0){
+      const wx=bestI%MW,wy=Math.floor(bestI/MW);
+      const sx=wx/MW*W,sy=wy/MH*H;
+      wandTrail.push({x:sx,y:sy,t:performance.now()});
+      if(wandTrail.length>120)wandTrail.shift();
+      // play note based on position
+      if(Math.random()<.1){
+        const pent=[261.63,293.66,329.63,392,440,523.25,659.25,783.99];
+        pn(pent[Math.floor(sy/H*pent.length)],'sine',.03,.05,.06,.12,.3,.25,actx.currentTime,Math.random()*5);
+      }
+    }
+    // draw trail with glow
+    if(wandTrail.length>1){
+      const now=performance.now();
+      ctx.lineCap='round';ctx.lineJoin='round';
+      for(let i=1;i<wandTrail.length;i++){
+        const age=(now-wandTrail[i].t)/3000;
+        if(age>1)continue;
+        const alpha=1-age;
+        const hue=(wandHue+i*3)%360;
+        ctx.strokeStyle=`hsla(${hue},100%,70%,${alpha})`;
+        ctx.lineWidth=4+alpha*6;
+        ctx.beginPath();ctx.moveTo(wandTrail[i-1].x,wandTrail[i-1].y);ctx.lineTo(wandTrail[i].x,wandTrail[i].y);ctx.stroke();
+        // sparkle particles at tip
+        if(i===wandTrail.length-1&&Math.random()<.4){
+          particles.push({x:wandTrail[i].x,y:wandTrail[i].y,vx:(Math.random()-.5)*3,vy:(Math.random()-.5)*3,life:1,decay:.02,r:2+Math.random()*3,col:`hsl(${hue},100%,70%)`,type:'sparkle'});
+        }
+      }
+      // glow at tip
+      if(wandTrail.length>0){
+        const tip=wandTrail[wandTrail.length-1];
+        const tg=ctx.createRadialGradient(tip.x,tip.y,0,tip.x,tip.y,20);
+        tg.addColorStop(0,`hsla(${wandHue},100%,80%,.6)`);tg.addColorStop(1,'transparent');
+        ctx.fillStyle=tg;ctx.beginPath();ctx.arc(tip.x,tip.y,20,0,Math.PI*2);ctx.fill();
+      }
+    }
+    updateParticles();drawParticles();
+    // wand color picker UI
+    ctx.fillStyle='rgba(0,0,0,.5)';ctx.fillRect(8,H-50,120,42);
+    ctx.fillStyle=`rgb(${wandColor[0]},${wandColor[1]},${wandColor[2]})`;ctx.fillRect(12,H-46,30,30);
+    ctx.strokeStyle='#fff';ctx.strokeRect(12,H-46,30,30);
+    ctx.fillStyle='#fff';ctx.font='9px monospace';ctx.textAlign='left';
+    ctx.fillText('TAP SCREEN TO',48,H-36);ctx.fillText('SET WAND COLOR',48,H-24);
+    ctx.fillText('HUE: '+wandHue,48,H-12);
+    wandHue=(wandHue+.5)%360;
+  }
+
   // motion-reactive ambient sounds
   if(musicOn&&motion.length)motionSound(motion);
 
@@ -624,7 +776,21 @@ document.getElementById('musicBtn').addEventListener('click',()=>{
   if(actx.state==='suspended'){actx.resume().then(()=>{if(!musicOn)startMusic();});return;}
   if(musicOn)stopMusic();else startMusic();
 });
-['modeParticle','modePaint','modeWave','modeMirror','modePong','modeFidget','modeBubble','modeScene','modeInstrument','modeThermal','modeXray'].forEach(id=>{
+// tap screen to set wand color from camera
+cv.addEventListener('click',e=>{
+  if(mode!=='wand'||!running)return;
+  const r=cv.getBoundingClientRect();
+  const cx=(e.clientX-r.left)/r.width,cy=(e.clientY-r.top)/r.height;
+  sc.width=MW;sc.height=MH;sctx.save();
+  if(facing==='user'){sctx.translate(MW,0);sctx.scale(-1,1);}
+  sctx.drawImage(cam,0,0,MW,MH);sctx.restore();
+  const img=sctx.getImageData(0,0,MW,MH),d=img.data;
+  const px=Math.floor(cx*MW),py=Math.floor(cy*MH);
+  const i=(py*MW+px)*4;
+  if(i>=0&&i<d.length-2){wandColor=[d[i],d[i+1],d[i+2]];wandTrail=[];}
+});
+
+['modeParticle','modePaint','modeWave','modeMirror','modePong','modeFidget','modeBubble','modeScene','modeInstrument','modeThermal','modeXray','modeSpectrum','modeLidar','modeWand'].forEach(id=>{
   document.getElementById(id).addEventListener('click',()=>{
     mode=id.replace('mode','').toLowerCase();
     document.querySelectorAll('.bar button').forEach(b=>b.classList.remove('on'));
