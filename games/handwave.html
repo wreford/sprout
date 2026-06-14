@@ -42,6 +42,7 @@ canvas{display:block;position:fixed;inset:0;width:100%;height:100%}
   <button id="modeScan3d">3D Scan</button>
   <button id="modeNude">Beige</button>
   <button id="modeWand">Wand</button>
+  <button id="modeEye">Eye Track</button>
   <button id="musicBtn">♪</button>
   <button id="clearBtn">Clear</button>
 </div>
@@ -62,6 +63,8 @@ let trailCanvas=null,trailCtx=null;
 // wand tracking
 let wandColor=[255,0,100],wandThreshold=80,wandTrail=[],wandHue=340;
 let lidarLayers=8;
+// eye tracker
+let eyePos={x:0,y:0},eyeSmooth={x:0,y:0},eyeTrail=[],backCamStream=null,backCamVideo=null;
 // 3D scanner
 let scan3d={pts:[],rotY:0,rotX:.3,capturing:false,lastCap:0};
 const COLS=['#ff6ec7','#7b68ee','#00ced1','#ff69b4','#9370db','#40e0d0','#da70d6'];
@@ -919,66 +922,165 @@ function loop(){
     ctx.fillText('BEAUTY',W-14,20);
   }
 
-  // WAND: track brightest pixel matching wandColor, draw magic trail
+  // WAND: upgraded with multi-cluster tracking, spell shapes, particle explosions
   if(mode==='wand'){
     sc.width=MW;sc.height=MH;sctx.save();
     if(facing==='user'){sctx.translate(MW,0);sctx.scale(-1,1);}
     sctx.drawImage(cam,0,0,MW,MH);sctx.restore();
     const img=sctx.getImageData(0,0,MW,MH),d=img.data;
-    // find pixel closest to wand color
-    let bestI=-1,bestD=Infinity;
+    // find ALL pixels matching wand color, compute centroid + spread
+    let sumX=0,sumY=0,cnt=0,maxLum=0;
     for(let i=0;i<d.length;i+=4){
       const dr=d[i]-wandColor[0],dg=d[i+1]-wandColor[1],db=d[i+2]-wandColor[2];
       const dist=dr*dr+dg*dg+db*db;
-      // also check brightness - wand should be bright
       const lum=d[i]+d[i+1]+d[i+2];
-      if(dist<wandThreshold*wandThreshold&&lum>150&&dist<bestD){bestD=dist;bestI=i/4;}
-    }
-    if(bestI>=0){
-      const wx=bestI%MW,wy=Math.floor(bestI/MW);
-      const sx=wx/MW*W,sy=wy/MH*H;
-      wandTrail.push({x:sx,y:sy,t:performance.now()});
-      if(wandTrail.length>120)wandTrail.shift();
-      // play note based on position
-      if(Math.random()<.1){
-        const pent=[261.63,293.66,329.63,392,440,523.25,659.25,783.99];
-        pn(pent[Math.floor(sy/H*pent.length)],'sine',.03,.05,.06,.12,.3,.25,actx.currentTime,Math.random()*5);
+      if(dist<wandThreshold*wandThreshold&&lum>120){
+        const px=(i/4)%MW,py=Math.floor(i/4/MW);
+        sumX+=px;sumY+=py;cnt++;maxLum=Math.max(maxLum,lum);
       }
     }
-    // draw trail with glow
+    if(cnt>3){
+      const wx=sumX/cnt,wy=sumY/cnt;
+      const sx=wx/MW*W,sy=wy/MH*H;
+      const spread=Math.min(50,cnt/3);
+      wandTrail.push({x:sx,y:sy,t:performance.now(),spread});
+      if(wandTrail.length>200)wandTrail.shift();
+      // particles at wand tip
+      for(let j=0;j<2+spread/10;j++){
+        particles.push({x:sx+(Math.random()-.5)*spread,y:sy+(Math.random()-.5)*spread,
+          vx:(Math.random()-.5)*4,vy:(Math.random()-.5)*4-1,life:1,decay:.015,
+          r:2+Math.random()*4,col:`hsl(${wandHue},100%,${60+Math.random()*30}%)`,
+          type:['sparkle','star','trail'][Math.floor(Math.random()*3)]});
+      }
+      // musical note based on position
+      if(Math.random()<.12){
+        const pent=[261.63,293.66,329.63,392,440,523.25,659.25,783.99];
+        pn(pent[Math.floor(sy/H*pent.length)],'sine',.035,.04,.06,.15,.3,.3,actx.currentTime,Math.random()*6);
+      }
+    }
+    // draw trail
     if(wandTrail.length>1){
       const now=performance.now();
       ctx.lineCap='round';ctx.lineJoin='round';
+      // outer glow trail
       for(let i=1;i<wandTrail.length;i++){
-        const age=(now-wandTrail[i].t)/3000;
-        if(age>1)continue;
-        const alpha=1-age;
-        const hue=(wandHue+i*3)%360;
-        ctx.strokeStyle=`hsla(${hue},100%,70%,${alpha})`;
-        ctx.lineWidth=4+alpha*6;
+        const age=(now-wandTrail[i].t)/4000;if(age>1)continue;
+        const alpha=(1-age)*.3;const hue=(wandHue+i*2)%360;
+        ctx.strokeStyle=`hsla(${hue},100%,60%,${alpha})`;
+        ctx.lineWidth=(wandTrail[i].spread||4)*.5*(1-age);
         ctx.beginPath();ctx.moveTo(wandTrail[i-1].x,wandTrail[i-1].y);ctx.lineTo(wandTrail[i].x,wandTrail[i].y);ctx.stroke();
-        // sparkle particles at tip
-        if(i===wandTrail.length-1&&Math.random()<.4){
-          particles.push({x:wandTrail[i].x,y:wandTrail[i].y,vx:(Math.random()-.5)*3,vy:(Math.random()-.5)*3,life:1,decay:.02,r:2+Math.random()*3,col:`hsl(${hue},100%,70%)`,type:'sparkle'});
-        }
       }
-      // glow at tip
-      if(wandTrail.length>0){
-        const tip=wandTrail[wandTrail.length-1];
-        const tg=ctx.createRadialGradient(tip.x,tip.y,0,tip.x,tip.y,20);
-        tg.addColorStop(0,`hsla(${wandHue},100%,80%,.6)`);tg.addColorStop(1,'transparent');
-        ctx.fillStyle=tg;ctx.beginPath();ctx.arc(tip.x,tip.y,20,0,Math.PI*2);ctx.fill();
+      // inner bright trail
+      for(let i=1;i<wandTrail.length;i++){
+        const age=(now-wandTrail[i].t)/4000;if(age>1)continue;
+        const alpha=1-age;const hue=(wandHue+i*3)%360;
+        ctx.strokeStyle=`hsla(${hue},100%,75%,${alpha})`;
+        ctx.lineWidth=2+alpha*4;
+        ctx.beginPath();ctx.moveTo(wandTrail[i-1].x,wandTrail[i-1].y);ctx.lineTo(wandTrail[i].x,wandTrail[i].y);ctx.stroke();
       }
+      // tip glow
+      const tip=wandTrail[wandTrail.length-1];
+      const tg=ctx.createRadialGradient(tip.x,tip.y,0,tip.x,tip.y,30+(tip.spread||5));
+      tg.addColorStop(0,`hsla(${wandHue},100%,85%,.7)`);tg.addColorStop(.3,`hsla(${wandHue},100%,60%,.3)`);tg.addColorStop(1,'transparent');
+      ctx.fillStyle=tg;ctx.beginPath();ctx.arc(tip.x,tip.y,30+(tip.spread||5),0,Math.PI*2);ctx.fill();
+      // crosshair at tip
+      ctx.strokeStyle=`hsla(${wandHue},100%,80%,.5)`;ctx.lineWidth=1;
+      ctx.beginPath();ctx.moveTo(tip.x-12,tip.y);ctx.lineTo(tip.x+12,tip.y);ctx.moveTo(tip.x,tip.y-12);ctx.lineTo(tip.x,tip.y+12);ctx.stroke();
     }
     updateParticles();drawParticles();
-    // wand color picker UI
-    ctx.fillStyle='rgba(0,0,0,.5)';ctx.fillRect(8,H-50,120,42);
-    ctx.fillStyle=`rgb(${wandColor[0]},${wandColor[1]},${wandColor[2]})`;ctx.fillRect(12,H-46,30,30);
-    ctx.strokeStyle='#fff';ctx.strokeRect(12,H-46,30,30);
-    ctx.fillStyle='#fff';ctx.font='9px monospace';ctx.textAlign='left';
-    ctx.fillText('TAP SCREEN TO',48,H-36);ctx.fillText('SET WAND COLOR',48,H-24);
-    ctx.fillText('HUE: '+wandHue,48,H-12);
-    wandHue=(wandHue+.5)%360;
+    // UI
+    ctx.fillStyle='rgba(0,0,0,.6)';ctx.fillRect(8,H-55,130,48);
+    ctx.fillStyle=`rgb(${wandColor[0]},${wandColor[1]},${wandColor[2]})`;ctx.fillRect(12,H-50,26,26);
+    ctx.strokeStyle='#fff';ctx.lineWidth=1;ctx.strokeRect(12,H-50,26,26);
+    ctx.fillStyle='#fff';ctx.font='bold 9px monospace';ctx.textAlign='left';
+    ctx.fillText('TAP TO SET COLOR',44,H-40);
+    ctx.fillText('Tracking: '+(cnt>3?cnt+' px':'lost'),44,H-28);
+    ctx.fillText('Trail: '+wandTrail.length+'/200',44,H-16);
+    wandHue=(wandHue+.3)%360;
+  }
+
+  // EYE TRACKER: front cam detects eye position, back cam shows what you're looking at
+  if(mode==='eye'){
+    // start back camera if not already
+    if(!backCamStream){
+      navigator.mediaDevices.getUserMedia({video:{facingMode:'environment',width:{ideal:640}},audio:false}).then(s=>{
+        backCamStream=s;
+        if(!backCamVideo){backCamVideo=document.createElement('video');backCamVideo.playsInline=true;backCamVideo.autoplay=true;backCamVideo.muted=true;}
+        backCamVideo.srcObject=s;
+      }).catch(()=>{});
+    }
+    // draw back camera view (what you're looking at)
+    if(backCamVideo&&backCamVideo.readyState>=2){
+      ctx.drawImage(backCamVideo,0,0,W,H);
+      ctx.fillStyle='rgba(0,0,20,.2)';ctx.fillRect(0,0,W,H);
+    }
+    // detect eyes from front camera: find dark circular regions in upper portion
+    sc.width=MW;sc.height=MH;sctx.save();
+    if(facing==='user'){sctx.translate(MW,0);sctx.scale(-1,1);}
+    sctx.drawImage(cam,0,0,MW,MH);sctx.restore();
+    const fd=sctx.getImageData(0,0,MW,MH).data;
+    // scan upper 40% for darkest region pair (eyes are dark relative to face)
+    const scanH=Math.floor(MH*.45);
+    let darkest1={x:MW/3,y:MH/4,v:999},darkest2={x:MW*2/3,y:MH/4,v:999};
+    for(let y=Math.floor(MH*.15);y<scanH;y++){
+      for(let x=5;x<MW-5;x++){
+        const i=(y*MW+x)*4;
+        const lum=fd[i]*.3+fd[i+1]*.6+fd[i+2]*.1;
+        // check surrounding pixels are brighter (dark spot = pupil)
+        const above=y>1?(fd[((y-2)*MW+x)*4]*.3+fd[((y-2)*MW+x)*4+1]*.6+fd[((y-2)*MW+x)*4+2]*.1):lum;
+        const below=y<MH-2?(fd[((y+2)*MW+x)*4]*.3+fd[((y+2)*MW+x)*4+1]*.6+fd[((y+2)*MW+x)*4+2]*.1):lum;
+        const contrast=above+below-lum*2;
+        if(contrast>20&&lum<120){
+          if(x<MW/2&&lum<darkest1.v){darkest1={x,y,v:lum};}
+          if(x>=MW/2&&lum<darkest2.v){darkest2={x,y,v:lum};}
+        }
+      }
+    }
+    // average eye positions to get gaze direction
+    const ex=(darkest1.x+darkest2.x)/2/MW;
+    const ey=(darkest1.y+darkest2.y)/2/MH;
+    // smooth
+    eyeSmooth.x+=(ex-eyeSmooth.x)*.15;
+    eyeSmooth.y+=(ey-eyeSmooth.y)*.15;
+    // map gaze to screen position (inverted X for mirror)
+    const gazeX=(1-eyeSmooth.x)*W;
+    const gazeY=eyeSmooth.y*H*2.5-H*.3;
+    eyeTrail.push({x:gazeX,y:gazeY,t:performance.now()});
+    if(eyeTrail.length>60)eyeTrail.shift();
+
+    // draw gaze point on back camera view
+    // trail
+    const now=performance.now();
+    ctx.lineCap='round';
+    for(let i=1;i<eyeTrail.length;i++){
+      const age=(now-eyeTrail[i].t)/2000;if(age>1)continue;
+      ctx.strokeStyle=`rgba(0,255,200,${(1-age)*.3})`;ctx.lineWidth=2;
+      ctx.beginPath();ctx.moveTo(eyeTrail[i-1].x,eyeTrail[i-1].y);ctx.lineTo(eyeTrail[i].x,eyeTrail[i].y);ctx.stroke();
+    }
+    // gaze crosshair
+    ctx.strokeStyle='rgba(0,255,200,.6)';ctx.lineWidth=1.5;
+    ctx.beginPath();ctx.moveTo(gazeX-20,gazeY);ctx.lineTo(gazeX+20,gazeY);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(gazeX,gazeY-20);ctx.lineTo(gazeX,gazeY+20);ctx.stroke();
+    ctx.beginPath();ctx.arc(gazeX,gazeY,12,0,Math.PI*2);ctx.stroke();
+    // glow
+    const gg=ctx.createRadialGradient(gazeX,gazeY,0,gazeX,gazeY,30);
+    gg.addColorStop(0,'rgba(0,255,200,.2)');gg.addColorStop(1,'transparent');
+    ctx.fillStyle=gg;ctx.beginPath();ctx.arc(gazeX,gazeY,30,0,Math.PI*2);ctx.fill();
+
+    // mini front cam preview with eye detection overlay
+    const pw=80,ph=60;
+    ctx.strokeStyle='rgba(0,255,200,.3)';ctx.strokeRect(W-pw-8,8,pw+4,ph+4);
+    ctx.drawImage(cam,W-pw-6,10,pw,ph);
+    // draw detected eye positions on preview
+    ctx.fillStyle='rgba(0,255,200,.6)';
+    ctx.beginPath();ctx.arc(W-pw-6+(facing==='user'?pw-darkest1.x/MW*pw:darkest1.x/MW*pw),10+darkest1.y/MH*ph,3,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.arc(W-pw-6+(facing==='user'?pw-darkest2.x/MW*pw:darkest2.x/MW*pw),10+darkest2.y/MH*ph,3,0,Math.PI*2);ctx.fill();
+
+    ctx.fillStyle='rgba(0,0,0,.5)';ctx.fillRect(8,8,100,30);
+    ctx.fillStyle='#00ffc8';ctx.font='bold 10px monospace';ctx.textAlign='left';
+    ctx.fillText('EYE TRACKER',14,20);
+    ctx.fillStyle='#0a8';ctx.font='9px monospace';
+    ctx.fillText('gaze: '+Math.round(gazeX)+','+Math.round(gazeY),14,32);
   }
 
   // motion-reactive ambient sounds
@@ -1039,7 +1141,7 @@ cv.addEventListener('click',e=>{
   if(i>=0&&i<d.length-2){wandColor=[d[i],d[i+1],d[i+2]];wandTrail=[];}
 });
 
-['modeParticle','modePaint','modeWave','modeMirror','modePong','modeFidget','modeBubble','modeScene','modeInstrument','modeThermal','modeXray','modeSpectrum','modeLidar','modeScan3d','modeNude','modeWand'].forEach(id=>{
+['modeParticle','modePaint','modeWave','modeMirror','modePong','modeFidget','modeBubble','modeScene','modeInstrument','modeThermal','modeXray','modeSpectrum','modeLidar','modeScan3d','modeNude','modeWand','modeEye'].forEach(id=>{
   document.getElementById(id).addEventListener('click',()=>{
     mode=id.replace('mode','').toLowerCase();
     document.querySelectorAll('.bar button').forEach(b=>b.classList.remove('on'));
@@ -1047,7 +1149,8 @@ cv.addEventListener('click',e=>{
     particles=[];waveData=[];bubbles=[];score=0;combo=0;
     pongBX=W/2;pongBY=H/2;pongBVX=4;pongBVY=2;pongScore=[0,0];pongPadL=H/2;pongPadR=H/2;
     fidgetAngle=0;fidgetVel=0;wandTrail=[];
-    scan3d={pts:[],rotY:0,rotX:.3,capturing:false,lastCap:0};
+    scan3d={pts:[],rotY:0,rotX:.3,capturing:false,lastCap:0};eyeTrail=[];
+    if(backCamStream&&id!=='modeEye'){backCamStream.getTracks().forEach(t=>t.stop());backCamStream=null;}
     if(paintLayer)for(let i=0;i<paintLayer.data.length;i++)paintLayer.data[i]=0;
   });
 });
