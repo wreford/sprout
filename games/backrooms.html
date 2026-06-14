@@ -1082,7 +1082,7 @@ function update(dt){
   }
   // narration timer
   narrateTimer+=dt;
-  if(narrateTimer>45+Math.random()*60){
+  if(narrateTimer>30+Math.random()*40){
     narrateTimer=0;
     narrate(NARRATION[Math.floor(Math.random()*NARRATION.length)]);
   }
@@ -1094,7 +1094,7 @@ function update(dt){
   }
   // "behind you" feeling - creepy messages + lore notes
   behindYouTimer+=dt;
-  if(behindYouTimer>25+Math.random()*40){
+  if(behindYouTimer>15+Math.random()*25){
     behindYouTimer=0;
     const lore=getLore(level);
     const msgs=['...something moved...','...did you hear that?...','...turn around...','...you are not alone...','...the walls are closer...','...it knows where you are...',...lore.notes];
@@ -1126,39 +1126,26 @@ function update(dt){
 function render(){
   resize();
   const fov=Math.PI/3,rays=Math.min(W,400);
-  // perspective floor and ceiling (raycasted scanlines)
-  const halfH=H/2;
-  const floorW=floorTex.width,floorH2=floorTex.height,ceilW=ceilTex.width,ceilH2=ceilTex.height;
-  const floorCtx=floorTex.getContext('2d'),ceilCtx2=ceilTex.getContext('2d');
-  const cosA=Math.cos(pa),sinA=Math.sin(pa);
-  const fovHalf=fov/2,tanFov=Math.tan(fovHalf);
-  for(let y=1;y<halfH;y++){
-    const rowDist=halfH/(y+.01);
-    const floorAlpha=Math.max(.08,Math.min(.5,(1-y/(halfH))*.6))*lightFlicker;
-    const ceilAlpha=Math.max(.06,Math.min(.4,(1-y/(halfH))*.5))*lightFlicker;
-    const leftX=px+rowDist*(cosA-sinA*tanFov);
-    const leftY=py+rowDist*(sinA+cosA*tanFov);
-    const rightX=px+rowDist*(cosA+sinA*tanFov);
-    const rightY=py+rowDist*(sinA-cosA*tanFov);
-    const stepX=(rightX-leftX)/W;
-    const stepY=(rightY-leftY)/W;
-    // sample a few columns per scanline for speed
-    const cols=Math.min(W,80);
-    const colW2=Math.ceil(W/cols)+1;
-    for(let c=0;c<cols;c++){
-      const cx=c*W/cols;
-      const fx=leftX+stepX*cx,fy=leftY+stepY*cx;
-      const texX=Math.abs(Math.floor(fx*floorW))%floorW;
-      const texY=Math.abs(Math.floor(fy*floorH2))%floorH2;
-      // floor
-      ctx.globalAlpha=floorAlpha;
-      ctx.drawImage(floorTex,texX,texY,1,1,cx,halfH+y,colW2,1);
-      // ceiling
-      ctx.globalAlpha=ceilAlpha;
-      ctx.drawImage(ceilTex,texX%ceilW,texY%ceilH2,1,1,cx,halfH-y,colW2,1);
-    }
-  }
-  ctx.globalAlpha=1;
+  // ceiling - off-white tiles fading to dark at horizon
+  const ceilGrad=ctx.createLinearGradient(0,0,0,H/2);
+  ceilGrad.addColorStop(0,`rgba(180,175,160,${.45*lightFlicker})`);
+  ceilGrad.addColorStop(.6,`rgba(140,135,120,${.25*lightFlicker})`);
+  ceilGrad.addColorStop(1,`rgba(30,28,20,${.05*lightFlicker})`);
+  ctx.fillStyle='#050504';ctx.fillRect(0,0,W,H/2);
+  ctx.fillStyle=ceilGrad;ctx.fillRect(0,0,W,H/2);
+  // ceiling tile grid lines (perspective)
+  ctx.strokeStyle=`rgba(120,115,100,${.06*lightFlicker})`;ctx.lineWidth=1;
+  for(let cy=0;cy<H/2;cy+=Math.max(8,H/2-cy)){ctx.beginPath();ctx.moveTo(0,cy);ctx.lineTo(W,cy);ctx.stroke();}
+  // floor - damp carpet fading to dark at horizon
+  const floorGrad=ctx.createLinearGradient(0,H/2,0,H);
+  floorGrad.addColorStop(0,`rgba(20,18,12,${.05*lightFlicker})`);
+  floorGrad.addColorStop(.4,`rgba(50,42,30,${.2*lightFlicker})`);
+  floorGrad.addColorStop(1,`rgba(65,55,38,${.35*lightFlicker})`);
+  ctx.fillStyle='#050504';ctx.fillRect(0,H/2,W,H/2);
+  ctx.fillStyle=floorGrad;ctx.fillRect(0,H/2,W,H/2);
+  // carpet weave lines
+  ctx.strokeStyle=`rgba(40,33,22,${.04*lightFlicker})`;
+  for(let fy=H/2+8;fy<H;fy+=Math.max(4,(fy-H/2)*.15)){ctx.beginPath();ctx.moveTo(0,fy);ctx.lineTo(W,fy);ctx.stroke();}
 
   // raycast walls with backrooms textures
   const extraTex=[];
@@ -1357,10 +1344,6 @@ function render(){
     ctx.beginPath();ctx.ellipse(ssx,spy,ssz*(.5+si*.1%1),ssz*.25,si*.5,0,Math.PI*2);ctx.fill();
     ctx.globalAlpha=1;
   }
-
-  // floor pattern (damp carpet, barely visible)
-  ctx.fillStyle='rgba(30,25,10,.06)';
-  for(let y=H/2;y<H;y+=6)ctx.fillRect(0,y,W,1);
 
   // render 3D key
   for(const it of ITEMS){
@@ -1586,17 +1569,23 @@ function render(){
     }
   }
 
-  // heavy vignette - claustrophobic darkness
-  const vg=ctx.createRadialGradient(W/2,H/2,Math.min(W,H)*.12,W/2,H/2,Math.max(W,H)*.5);
-  vg.addColorStop(0,'rgba(0,0,0,0)');vg.addColorStop(.5,'rgba(0,0,0,.3)');vg.addColorStop(1,'rgba(0,0,0,.75)');
-  ctx.fillStyle=vg;ctx.fillRect(0,0,W,H);
-  // extra darkness overlay
-  ctx.fillStyle='rgba(0,0,0,.15)';ctx.fillRect(0,0,W,H);
+  // breathing pulse - screen darkens rhythmically
+  const breathPulse=Math.sin(performance.now()*.0015)*.04+.04;
+  ctx.fillStyle=`rgba(0,0,0,${breathPulse})`;ctx.fillRect(0,0,W,H);
 
-  // film grain noise
-  ctx.globalAlpha=.03;
-  for(let i=0;i<50;i++){ctx.fillStyle=Math.random()>.7?'#332':'#000';ctx.fillRect(Math.random()*W,Math.random()*H,Math.random()*3+1,Math.random()*3+1);}
+  // heavy vignette
+  const vg=ctx.createRadialGradient(W/2,H/2,Math.min(W,H)*.1,W/2,H/2,Math.max(W,H)*.5);
+  vg.addColorStop(0,'rgba(0,0,0,0)');vg.addColorStop(.4,'rgba(0,0,0,.2)');vg.addColorStop(.7,'rgba(0,0,0,.5)');vg.addColorStop(1,'rgba(0,0,0,.8)');
+  ctx.fillStyle=vg;ctx.fillRect(0,0,W,H);
+
+  // film grain
+  ctx.globalAlpha=.025;
+  for(let i=0;i<30;i++){ctx.fillStyle=Math.random()>.6?'#221':'#000';ctx.fillRect(Math.random()*W,Math.random()*H,Math.random()*2+1,Math.random()*2+1);}
   ctx.globalAlpha=1;
+
+  // scanlines (CRT horror feel)
+  ctx.fillStyle='rgba(0,0,0,.03)';
+  for(let sl=0;sl<H;sl+=3)ctx.fillRect(0,sl,W,1);
 
   // minimap
   ctx.globalAlpha=.3;
