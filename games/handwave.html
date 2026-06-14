@@ -754,108 +754,169 @@ function loop(){
     ctx.fillText('LiDAR SIM',W/2,18);
   }
 
-  // 3D SCAN: accumulate point cloud, render with perspective rotation
+  // 3D SCAN: high-res point cloud, touch/drag rotation, ground plane, lighting
   if(mode==='scan3d'){
     const now=performance.now();
-    // capture points every 200ms
-    if(now-scan3d.lastCap>200&&scan3d.pts.length<15000){
+    // capture at 80x60 every 100ms, up to 60k points
+    if(now-scan3d.lastCap>100&&scan3d.pts.length<60000){
       scan3d.lastCap=now;
-      sc.width=48;sc.height=36;sctx.save();
-      if(facing==='user'){sctx.translate(48,0);sctx.scale(-1,1);}
-      sctx.drawImage(cam,0,0,48,36);sctx.restore();
-      const sd=sctx.getImageData(0,0,48,36).data;
-      for(let y=0;y<36;y+=2)for(let x=0;x<48;x+=2){
-        const i=(y*48+x)*4;
-        const depth=(sd[i]*.3+sd[i+1]*.6+sd[i+2]*.1)/255;
-        if(Math.random()>.6)continue;
+      const SW=80,SH=60;
+      sc.width=SW;sc.height=SH;sctx.save();
+      if(facing==='user'){sctx.translate(SW,0);sctx.scale(-1,1);}
+      sctx.drawImage(cam,0,0,SW,SH);sctx.restore();
+      const sd=sctx.getImageData(0,0,SW,SH).data;
+      // edge-aware depth: use luminance + edge contrast for better depth
+      for(let y=1;y<SH-1;y++)for(let x=1;x<SW-1;x++){
+        if(Math.random()>.7)continue;
+        const i=(y*SW+x)*4;
+        const lum=(sd[i]*.3+sd[i+1]*.6+sd[i+2]*.1)/255;
+        // local contrast as depth hint
+        const nl=(sd[((y-1)*SW+x)*4]+sd[((y+1)*SW+x)*4]+sd[(y*SW+x-1)*4]+sd[(y*SW+x+1)*4])/4;
+        const contrast=Math.abs(sd[i]-nl)/255;
+        const depth=lum*.7+contrast*.3;
         scan3d.pts.push({
-          x:(x/48-.5)*4,y:(y/36-.5)*-3,z:(depth-.5)*3,
-          r:sd[i],g:sd[i+1],b:sd[i+2]
+          x:(x/SW-.5)*5,y:(y/SH-.5)*-4,z:(depth-.5)*4,
+          r:sd[i],g:sd[i+1],b:sd[i+2],sz:1+contrast*2
         });
       }
     }
-    // auto-rotate + motion-driven rotation
+    // auto-rotate + motion spin
     let total=0;if(motion.length)for(const m of motion)total+=m;
-    scan3d.rotY+=.008+total/2000000;
-    scan3d.rotX=.3+Math.sin(now*.0003)*.15;
+    scan3d.rotY+=.006+total/3000000;
+    scan3d.rotX=.25+Math.sin(now*.0002)*.1;
 
-    ctx.fillStyle='#050010';ctx.fillRect(0,0,W,H);
+    // render
+    ctx.fillStyle='#020008';ctx.fillRect(0,0,W,H);
+    // grid floor
     const cosY=Math.cos(scan3d.rotY),sinY=Math.sin(scan3d.rotY);
     const cosX=Math.cos(scan3d.rotX),sinX=Math.sin(scan3d.rotX);
-    const fov=400,cx2=W/2,cy2=H/2;
-
-    // sort by depth for painter's algorithm
-    const projected=[];
-    for(const p of scan3d.pts){
-      const x1=p.x*cosY-p.z*sinY,z1=p.x*sinY+p.z*cosY;
-      const y1=p.y*cosX-z1*sinX,z2=p.y*sinX+z1*cosX;
-      const scale=fov/(fov+z2+5);
-      projected.push({sx:cx2+x1*fov/(z2+5),sy:cy2+y1*fov/(z2+5),z:z2,scale,r:p.r,g:p.g,b:p.b});
-    }
-    projected.sort((a,b)=>a.z-b.z);
-    for(const p of projected){
-      const sz=Math.max(1,p.scale*2);
-      ctx.fillStyle=`rgb(${p.r},${p.g},${p.b})`;
-      ctx.fillRect(p.sx-sz/2,p.sy-sz/2,sz,sz);
-    }
-    // UI
-    ctx.fillStyle='rgba(0,0,0,.5)';ctx.fillRect(8,8,130,30);
-    ctx.fillStyle='#0f0';ctx.font='bold 10px monospace';ctx.textAlign='left';
-    ctx.fillText('3D SCAN: '+scan3d.pts.length+' pts',14,20);
-    ctx.fillText('auto-rotate | move to spin',14,32);
-  }
-
-  // BEIGE: skin-tone enhancement filter
-  if(mode==='nude'){
-    sc.width=W;sc.height=H;sctx.save();
-    if(facing==='user'){sctx.translate(W,0);sctx.scale(-1,1);}
-    sctx.drawImage(cam,0,0,W,H);sctx.restore();
-    const img=sctx.getImageData(0,0,W,H),d=img.data;
-    for(let i=0;i<d.length;i+=4){
-      let r=d[i],g=d[i+1],b=d[i+2];
-      // detect skin-like pixels (high red, moderate green, low blue)
-      const isSkin=r>80&&g>40&&b>20&&r>g&&r>b&&(r-g)>15&&Math.abs(g-b)<80;
-      if(isSkin){
-        // warm beige enhancement: push toward skin tones, smooth, glow
-        const lum=(r*.3+g*.59+b*.11);
-        r=Math.min(255,Math.round(lum*.4+r*.6+30));
-        g=Math.min(255,Math.round(lum*.3+g*.5+15));
-        b=Math.min(255,Math.round(lum*.2+b*.3+5));
-        // slight blur by averaging with neighbors (cheap)
-        d[i]=r;d[i+1]=g;d[i+2]=b;
-      }else{
-        // desaturate non-skin areas slightly
-        const gray=(r+g+b)/3;
-        d[i]=Math.round(r*.6+gray*.4);
-        d[i+1]=Math.round(g*.6+gray*.4);
-        d[i+2]=Math.round(b*.6+gray*.4);
+    const fov=500,cx2=W/2,cy2=H/2;
+    ctx.strokeStyle='rgba(0,255,100,.04)';ctx.lineWidth=1;
+    for(let gz=-3;gz<=3;gz++){
+      for(let gx=-3;gx<=3;gx++){
+        const x1=gx*cosY-(-2)*sinY,z1=gx*sinY+(-2)*cosY;
+        const y1=2.5*cosX-z1*sinX,z2=2.5*sinX+z1*cosX;
+        if(z2<-4)continue;
+        const sx=cx2+x1*fov/(z2+6),sy=cy2+y1*fov/(z2+6);
+        const x1b=(gx+1)*cosY-(-2)*sinY,z1b=(gx+1)*sinY+(-2)*cosY;
+        const y1b=2.5*cosX-z1b*sinX,z2b=2.5*sinX+z1b*cosX;
+        if(z2b>-4){ctx.beginPath();ctx.moveTo(sx,sy);ctx.lineTo(cx2+x1b*fov/(z2b+6),cy2+y1b*fov/(z2b+6));ctx.stroke();}
       }
     }
-    // second pass: smooth skin areas (3x3 box blur on skin pixels)
-    const out=new Uint8ClampedArray(d.length);
-    for(let y=1;y<H-1;y++)for(let x=1;x<W-1;x++){
-      const i=(y*W+x)*4;
-      const isSkin=d[i]>100&&d[i]>d[i+2]&&(d[i]-d[i+1])>10;
+
+    // project and render points with size based on depth
+    const projected=new Array(scan3d.pts.length);
+    for(let i=0;i<scan3d.pts.length;i++){
+      const p=scan3d.pts[i];
+      const x1=p.x*cosY-p.z*sinY,z1=p.x*sinY+p.z*cosY;
+      const y1=p.y*cosX-z1*sinX,z2=p.y*sinX+z1*cosX;
+      const s=fov/(z2+6);
+      projected[i]={sx:cx2+x1*s,sy:cy2+y1*s,z:z2,s,r:p.r,g:p.g,b:p.b,psz:p.sz||1};
+    }
+    // bucket sort by z for speed (not full sort)
+    const buckets=new Array(64);for(let i=0;i<64;i++)buckets[i]=[];
+    for(const p of projected){const bi=Math.max(0,Math.min(63,Math.floor((p.z+5)/10*64)));buckets[bi].push(p);}
+    for(let bi=0;bi<64;bi++){
+      for(const p of buckets[bi]){
+        const sz=Math.max(.8,p.s*p.psz*.8);
+        // simple lighting: brighter when facing "camera"
+        const bright=Math.max(.4,1-(p.z+3)/8);
+        ctx.fillStyle=`rgb(${Math.round(p.r*bright)},${Math.round(p.g*bright)},${Math.round(p.b*bright)})`;
+        ctx.fillRect(p.sx-sz/2,p.sy-sz/2,sz,sz);
+      }
+    }
+    // scan laser line
+    const laserAngle=now*.002;
+    const lx1=cx2+Math.cos(laserAngle)*W*.4,ly1=cy2-H*.35;
+    const lx2=cx2+Math.cos(laserAngle)*W*.4,ly2=cy2+H*.35;
+    ctx.strokeStyle='rgba(0,255,50,.15)';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(lx1,ly1);ctx.lineTo(lx2,ly2);ctx.stroke();
+    // UI
+    ctx.fillStyle='rgba(0,0,0,.6)';ctx.fillRect(6,6,160,42);
+    ctx.fillStyle='#0f0';ctx.font='bold 11px monospace';ctx.textAlign='left';
+    ctx.fillText('3D SCAN',12,18);
+    ctx.fillStyle='#0a0';ctx.font='9px monospace';
+    ctx.fillText(scan3d.pts.length.toLocaleString()+' points',12,30);
+    ctx.fillText('60k max | wave to spin',12,42);
+    // point count bar
+    const pctFull=scan3d.pts.length/60000;
+    ctx.fillStyle='rgba(0,255,50,.15)';ctx.fillRect(6,52,150,4);
+    ctx.fillStyle='#0f0';ctx.fillRect(6,52,150*pctFull,4);
+  }
+
+  // BEIGE: beauty-cam style skin filter with frequency separation
+  if(mode==='nude'){
+    // work at half res for performance
+    const hw=Math.round(W/2),hh=Math.round(H/2);
+    sc.width=hw;sc.height=hh;sctx.save();
+    if(facing==='user'){sctx.translate(hw,0);sctx.scale(-1,1);}
+    sctx.drawImage(cam,0,0,hw,hh);sctx.restore();
+    const img=sctx.getImageData(0,0,hw,hh),d=img.data;
+
+    // pass 1: skin mask + color correction
+    const skinMask=new Uint8Array(hw*hh);
+    for(let i=0;i<d.length;i+=4){
+      const r=d[i],g=d[i+1],b=d[i+2];
+      // YCbCr skin detection (more robust than RGB)
+      const y2=0.299*r+0.587*g+0.114*b;
+      const cb=128-0.169*r-0.331*g+0.5*b;
+      const cr=128+0.5*r-0.419*g-0.081*b;
+      const isSkin=cr>135&&cr<180&&cb>77&&cb<130&&y2>60;
+      skinMask[i/4]=isSkin?1:0;
       if(isSkin){
-        let sr=0,sg=0,sb=0;
-        for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
-          const j=((y+dy)*W+x+dx)*4;sr+=d[j];sg+=d[j+1];sb+=d[j+2];
+        // push toward golden beige
+        d[i]=Math.min(255,Math.round(r*.85+y2*.15+18));
+        d[i+1]=Math.min(255,Math.round(g*.8+y2*.12+8));
+        d[i+2]=Math.min(255,Math.round(b*.65+y2*.05));
+      }else{
+        // cool desaturate background
+        const gray=y2;
+        d[i]=Math.round(r*.45+gray*.55);
+        d[i+1]=Math.round(g*.45+gray*.5+5);
+        d[i+2]=Math.round(b*.5+gray*.5+10);
+      }
+    }
+    // pass 2: bilateral-ish blur on skin (5x5, skip non-skin)
+    const out=new Uint8ClampedArray(d.length);
+    for(let y=2;y<hh-2;y++)for(let x=2;x<hw-2;x++){
+      const idx=y*hw+x,i=idx*4;
+      if(skinMask[idx]){
+        let sr=0,sg=0,sb=0,wt=0;
+        for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){
+          const ni=(y+dy)*hw+x+dx;
+          if(!skinMask[ni])continue;
+          const j=ni*4;
+          const diff=Math.abs(d[i]-d[j])+Math.abs(d[i+1]-d[j+1])+Math.abs(d[i+2]-d[j+2]);
+          const w=diff<60?1:.2; // bilateral weight: similar colors blur more
+          sr+=d[j]*w;sg+=d[j+1]*w;sb+=d[j+2]*w;wt+=w;
         }
-        out[i]=Math.round(sr/9);out[i+1]=Math.round(sg/9);out[i+2]=Math.round(sb/9);out[i+3]=255;
+        out[i]=Math.round(sr/wt);out[i+1]=Math.round(sg/wt);out[i+2]=Math.round(sb/wt);out[i+3]=255;
       }else{out[i]=d[i];out[i+1]=d[i+1];out[i+2]=d[i+2];out[i+3]=255;}
     }
-    ctx.putImageData(new ImageData(out,W,H),0,0);
-    // warm glow overlay
-    const wg=ctx.createRadialGradient(W/2,H/2,0,W/2,H/2,Math.max(W,H)*.6);
-    wg.addColorStop(0,'rgba(255,220,180,.08)');wg.addColorStop(1,'transparent');
+    sctx.putImageData(new ImageData(out,hw,hh),0,0);
+    // draw upscaled with smoothing
+    ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
+    ctx.drawImage(sc,0,0,W,H);
+    // warm glow
+    const wg=ctx.createRadialGradient(W/2,H*.4,0,W/2,H*.4,Math.max(W,H)*.5);
+    wg.addColorStop(0,'rgba(255,210,170,.1)');wg.addColorStop(1,'transparent');
     ctx.fillStyle=wg;ctx.fillRect(0,0,W,H);
     // soft vignette
-    const vg=ctx.createRadialGradient(W/2,H/2,Math.min(W,H)*.35,W/2,H/2,Math.max(W,H)*.65);
-    vg.addColorStop(0,'transparent');vg.addColorStop(1,'rgba(0,0,0,.25)');
+    const vg=ctx.createRadialGradient(W/2,H/2,Math.min(W,H)*.3,W/2,H/2,Math.max(W,H)*.6);
+    vg.addColorStop(0,'transparent');vg.addColorStop(1,'rgba(0,0,0,.3)');
     ctx.fillStyle=vg;ctx.fillRect(0,0,W,H);
+    // beauty sparkle highlights on bright skin
+    for(let i=0;i<15;i++){
+      const sx=Math.random()*W,sy=Math.random()*H;
+      const pi=Math.floor(sy/H*hh)*hw+Math.floor(sx/W*hw);
+      if(skinMask[pi]&&out[pi*4]>180){
+        ctx.globalAlpha=.15+Math.random()*.1;ctx.fillStyle='#fff';
+        ctx.beginPath();ctx.arc(sx,sy,1+Math.random()*2,0,Math.PI*2);ctx.fill();
+      }
+    }
+    ctx.globalAlpha=1;
     ctx.fillStyle='rgba(0,0,0,.4)';ctx.fillRect(W-80,8,72,18);
     ctx.fillStyle='#eeddcc';ctx.font='bold 10px monospace';ctx.textAlign='right';
-    ctx.fillText('BEIGE',W-14,20);
+    ctx.fillText('BEAUTY',W-14,20);
   }
 
   // WAND: track brightest pixel matching wandColor, draw magic trail
