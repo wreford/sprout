@@ -104,6 +104,19 @@ const FURNITURE=[
   {name:'bench',col:'#775533',w:.7,h:.3},{name:'display',col:'#996633',w:.6,h:.6}
 ];
 let furniture=[];
+let pools=[];
+function spawnPools(){
+  pools=[];
+  const count=2+Math.floor(level*.5);
+  for(let i=0;i<count;i++){
+    let cx,cy;do{cx=3+Math.floor(Math.random()*(MW-6));cy=3+Math.floor(Math.random()*(MH-6));}while(MAP[cy][cx]!==0);
+    pools.push({x:cx,y:cy,w:2+Math.floor(Math.random()*3),h:2+Math.floor(Math.random()*2),depth:Math.random()*.3+.1});
+  }
+}
+function isPool(tx,ty){
+  for(const p of pools)if(tx>=p.x&&tx<p.x+p.w&&ty>=p.y&&ty<p.y+p.h)return p;
+  return null;
+}
 function spawnFurniture(){
   furniture=[];for(let i=0;i<2+level;i++){
     let fx,fy;do{fx=2+Math.floor(Math.random()*(MW-4));fy=2+Math.floor(Math.random()*(MH-4));}while(MAP[fy][fx]!==0);
@@ -540,6 +553,64 @@ function startBackroomsMusic(){
       const fl=actx.createBiquadFilter();fl.type='bandpass';fl.frequency.value=2000+Math.random()*1000;fl.Q.value=10;
       s.connect(fl);fl.connect(g);g.connect(actx.destination);s.start(n+d);
     }
+    // pool water echo - slow dripping into standing water
+    if(pools.length&&Math.random()<.4){
+      const d=Math.random()*8;
+      for(let dr=0;dr<2+Math.floor(Math.random()*3);dr++){
+        const dd=d+dr*.3+Math.random()*.1;
+        const o=actx.createOscillator();o.type='sine';
+        o.frequency.setValueAtTime(3000+Math.random()*2000,n+dd);
+        o.frequency.exponentialRampToValueAtTime(500,n+dd+.15);
+        const g=actx.createGain();g.gain.setValueAtTime(.015,n+dd);g.gain.exponentialRampToValueAtTime(.001,n+dd+.2);
+        const rv=actx.createBiquadFilter();rv.type='allpass';rv.frequency.value=1000;rv.Q.value=10;
+        o.connect(rv);rv.connect(g);g.connect(actx.destination);o.start(n+dd);o.stop(n+dd+.25);
+      }
+    }
+    // HVAC rumble - deep mechanical hum
+    if(Math.random()<.25){
+      const d=Math.random()*4;
+      const o=actx.createOscillator();o.type='sawtooth';o.frequency.value=28+Math.random()*8;
+      const o2=actx.createOscillator();o2.type='sawtooth';o2.frequency.value=o.frequency.value*2.01;
+      const g=actx.createGain();g.gain.setValueAtTime(0,n+d);
+      g.gain.linearRampToValueAtTime(.012,n+d+1);g.gain.setValueAtTime(.012,n+d+4);
+      g.gain.linearRampToValueAtTime(0,n+d+5);
+      const fl=actx.createBiquadFilter();fl.type='lowpass';fl.frequency.value=60;
+      o.connect(fl);o2.connect(fl);fl.connect(g);g.connect(actx.destination);
+      o.start(n+d);o.stop(n+d+5.5);o2.start(n+d);o2.stop(n+d+5.5);
+    }
+    // distant elevator ding
+    if(Math.random()<.08){
+      const d=Math.random()*7;
+      const o=actx.createOscillator();o.type='sine';o.frequency.value=1200;
+      const g=actx.createGain();g.gain.setValueAtTime(.02,n+d);g.gain.exponentialRampToValueAtTime(.001,n+d+.8);
+      const rv=actx.createBiquadFilter();rv.type='bandpass';rv.frequency.value=1200;rv.Q.value=20;
+      o.connect(rv);rv.connect(g);g.connect(actx.destination);o.start(n+d);o.stop(n+d+1);
+    }
+    // PA system static burst
+    if(Math.random()<.1){
+      const d=Math.random()*6;
+      const dur=.5+Math.random()*1.5;
+      const buf=actx.createBuffer(1,actx.sampleRate*dur,actx.sampleRate);
+      const bd=buf.getChannelData(0);
+      for(let i=0;i<bd.length;i++)bd[i]=(Math.random()*2-1)*.05*Math.sin(i/bd.length*Math.PI);
+      const s=actx.createBufferSource();s.buffer=buf;
+      const g=actx.createGain();g.gain.value=.02;
+      const fl=actx.createBiquadFilter();fl.type='bandpass';fl.frequency.value=600;fl.Q.value=3;
+      s.connect(fl);fl.connect(g);g.connect(actx.destination);s.start(n+d);
+    }
+    // pipe groaning (metallic stress)
+    if(Math.random()<.2){
+      const d=Math.random()*8;
+      const o=actx.createOscillator();o.type='sawtooth';
+      o.frequency.setValueAtTime(80+Math.random()*40,n+d);
+      o.frequency.linearRampToValueAtTime(60+Math.random()*20,n+d+1.5);
+      const g=actx.createGain();g.gain.setValueAtTime(0,n+d);
+      g.gain.linearRampToValueAtTime(.015,n+d+.1);
+      g.gain.setValueAtTime(.012,n+d+1);
+      g.gain.exponentialRampToValueAtTime(.001,n+d+1.5);
+      const fl=actx.createBiquadFilter();fl.type='bandpass';fl.frequency.value=100;fl.Q.value=5;
+      o.connect(fl);fl.connect(g);g.connect(actx.destination);o.start(n+d);o.stop(n+d+2);
+    }
     musicTimer=setTimeout(layer,7000+Math.random()*2000);
   }
   layer();
@@ -630,6 +701,14 @@ function sfx(type){
     const g2=actx.createGain();g2.gain.setValueAtTime(.2,n);g2.gain.exponentialRampToValueAtTime(.001,n+.4);
     o.connect(g2);g2.connect(actx.destination);o.start(n);o.stop(n+.5);
   }
+  if(type==='splash'){
+    const buf=actx.createBuffer(1,actx.sampleRate*.15,actx.sampleRate),d=buf.getChannelData(0);
+    for(let i=0;i<d.length;i++){const t=i/actx.sampleRate;d[i]=(Math.random()*2-1)*Math.exp(-t*20)*.3;}
+    const s=actx.createBufferSource();s.buffer=buf;
+    const g=actx.createGain();g.gain.value=.08;
+    const fl=actx.createBiquadFilter();fl.type='bandpass';fl.frequency.value=800;fl.Q.value=1;
+    s.connect(fl);fl.connect(g);g.connect(actx.destination);s.start(n);
+  }
 }
 
 function spawnItems(){
@@ -660,7 +739,7 @@ async function go(){
   phantomTimer=0;behindYouTimer=0;breathTimer=0;narrateTimer=0;invertControls=false;
   for(const k in twistsTriggered)delete twistsTriggered[k];
   for(const k in twistTimers)delete twistTimers[k];
-  spawnItems();spawnMeeps();spawnFurniture();spawnLights();spawnRats();
+  spawnItems();spawnMeeps();spawnFurniture();spawnLights();spawnRats();spawnPools();
   const lore=getLore(0);
   showMsg(lore.enter+'\nFind the key.',3000);
   setTimeout(()=>narrate(NARRATION[0]),5000);
@@ -734,13 +813,14 @@ function update(dt){
   if(keys.KeyQ)pa-=dt*2;if(keys.KeyE)pa+=dt*2;
   pa+=(lookDX*dt*3+joyMX*dt*2.5)*inv;
   // move
-  const spd=2.0*dt;
+  const inPool=isPool(Math.floor(px),Math.floor(py));
+  const spd=(inPool?1.2:2.0)*dt;
   const nx=px+Math.cos(pa)*my*spd*-1+Math.cos(pa+Math.PI/2)*mx*spd;
   const ny=py+Math.sin(pa)*my*spd*-1+Math.sin(pa+Math.PI/2)*mx*spd;
   if(MAP[Math.floor(py)][Math.floor(nx)]===0)px=nx;
   if(MAP[Math.floor(ny)][Math.floor(px)]===0)py=ny;
   // footsteps
-  if(Math.abs(mx)+Math.abs(my)>0){stepTimer+=dt;if(stepTimer>.35){stepTimer=0;sfx('step');}}
+  if(Math.abs(mx)+Math.abs(my)>0){stepTimer+=dt;if(stepTimer>.35){stepTimer=0;sfx(inPool?'splash':'step');}}
   // items
   for(const it of ITEMS){
     if(!it.alive)continue;
@@ -754,7 +834,7 @@ function update(dt){
     const fd=document.getElementById('fade');fd.style.opacity='1';
     const lore=getLore(level);
     setTimeout(()=>{
-      spawnItems();spawnMeeps();spawnFurniture();spawnLights();spawnRats();
+      spawnItems();spawnMeeps();spawnFurniture();spawnLights();spawnRats();spawnPools();
       px=1.5;py=1.5;entityActive=level>=2;
       entityX=20;entityY=20;
       fd.style.opacity='0';transitioning=false;
@@ -1063,6 +1143,28 @@ function render(){
     ctx.drawImage(ratCanvas,rsx-rsz*.5,H/2+rsz*2,rsz,rsz*.6);
     ctx.imageSmoothingEnabled=true;
     ctx.globalAlpha=1;
+  }
+
+  // indoor pools on floor
+  for(const pool of pools){
+    for(let py2=pool.y;py2<pool.y+pool.h;py2++)for(let px2=pool.x;px2<pool.x+pool.w;px2++){
+      const pdx2=px2+.5-px,pdy2=py2+.5-py,pdist2=Math.hypot(pdx2,pdy2);
+      if(pdist2>6)continue;
+      const pang2=Math.atan2(pdy2,pdx2)-pa;
+      let pa3=pang2;while(pa3>Math.PI)pa3-=Math.PI*2;while(pa3<-Math.PI)pa3+=Math.PI*2;
+      if(Math.abs(pa3)>fov/2+.2)continue;
+      const psx2=W/2+Math.tan(pa3)*W/2/(Math.tan(fov/2));
+      const psz2=Math.min(W/2,W/(pdist2*2));
+      const py3=H/2+H/(pdist2*2)*.3;
+      const ripple=Math.sin(performance.now()*.002+px2*3+py2*5)*.3+.7;
+      ctx.globalAlpha=Math.max(.1,.4-pdist2/10)*lightFlicker*ripple;
+      ctx.fillStyle='rgba(40,80,90,.5)';
+      ctx.fillRect(psx2-psz2/2,py3,psz2,psz2*.3);
+      // reflection shimmer
+      ctx.fillStyle=`rgba(100,180,200,${.08*ripple})`;
+      ctx.fillRect(psx2-psz2/3,py3+1,psz2*.2,psz2*.15);
+      ctx.globalAlpha=1;
+    }
   }
 
   // floor pattern (damp carpet, barely visible)
