@@ -43,6 +43,8 @@ canvas{display:block;position:fixed;inset:0;width:100%;height:100%}
   <button id="modeNude">Beige</button>
   <button id="modeWand">Wand</button>
   <button id="modeEye">Eye Track</button>
+  <button id="modeCloak">Cloak</button>
+  <button id="modeGlitch">Glitch</button>
   <button id="musicBtn">♪</button>
   <button id="clearBtn">Clear</button>
 </div>
@@ -65,6 +67,10 @@ let wandColor=[255,0,100],wandThreshold=80,wandTrail=[],wandHue=340;
 let lidarLayers=8;
 // eye tracker
 let eyePos={x:0,y:0},eyeSmooth={x:0,y:0},eyeTrail=[],backCamStream=null,backCamVideo=null;
+// cloak: background capture
+let bgCapture=null;
+// 3D scan depth reference
+let depthRef=null;
 // 3D scanner
 let scan3d={pts:[],rotY:0,rotX:.3,capturing:false,lastCap:0};
 const COLS=['#ff6ec7','#7b68ee','#00ced1','#ff69b4','#9370db','#40e0d0','#da70d6'];
@@ -760,26 +766,33 @@ function loop(){
   // 3D SCAN: high-res point cloud, touch/drag rotation, ground plane, lighting
   if(mode==='scan3d'){
     const now=performance.now();
-    // capture at 80x60 every 100ms, up to 60k points
-    if(now-scan3d.lastCap>100&&scan3d.pts.length<60000){
+    // capture at 80x60 every 80ms, up to 80k points
+    if(now-scan3d.lastCap>80&&scan3d.pts.length<80000){
       scan3d.lastCap=now;
       const SW=80,SH=60;
       sc.width=SW;sc.height=SH;sctx.save();
       if(facing==='user'){sctx.translate(SW,0);sctx.scale(-1,1);}
       sctx.drawImage(cam,0,0,SW,SH);sctx.restore();
       const sd=sctx.getImageData(0,0,SW,SH).data;
-      // edge-aware depth: use luminance + edge contrast for better depth
+      // improved depth: luminance + saturation + local contrast + color warmth
       for(let y=1;y<SH-1;y++)for(let x=1;x<SW-1;x++){
-        if(Math.random()>.7)continue;
+        if(Math.random()>.65)continue;
         const i=(y*SW+x)*4;
-        const lum=(sd[i]*.3+sd[i+1]*.6+sd[i+2]*.1)/255;
-        // local contrast as depth hint
-        const nl=(sd[((y-1)*SW+x)*4]+sd[((y+1)*SW+x)*4]+sd[(y*SW+x-1)*4]+sd[(y*SW+x+1)*4])/4;
-        const contrast=Math.abs(sd[i]-nl)/255;
-        const depth=lum*.7+contrast*.3;
+        const r=sd[i],g=sd[i+1],b=sd[i+2];
+        const lum=(r*.3+g*.6+b*.1)/255;
+        // local contrast (Laplacian)
+        const c4=(sd[((y-1)*SW+x)*4]+sd[((y+1)*SW+x)*4]+sd[(y*SW+x-1)*4]+sd[(y*SW+x+1)*4])/4;
+        const lap=Math.abs(r-c4)/255;
+        // saturation (colorful objects are typically foreground)
+        const mx=Math.max(r,g,b),mn=Math.min(r,g,b);
+        const sat=mx>0?(mx-mn)/mx:0;
+        // warm colors are usually closer (skin, objects) vs cool (sky, background)
+        const warm=(r-b)/255;
+        // combined depth: higher = closer
+        const depth=lum*.4+lap*.2+sat*.25+Math.max(0,warm)*.15;
         scan3d.pts.push({
-          x:(x/SW-.5)*5,y:(y/SH-.5)*-4,z:(depth-.5)*4,
-          r:sd[i],g:sd[i+1],b:sd[i+2],sz:1+contrast*2
+          x:(x/SW-.5)*5,y:(y/SH-.5)*-4,z:(depth-.4)*5,
+          r,g,b,sz:.8+lap*3+sat*1.5
         });
       }
     }
@@ -1083,6 +1096,80 @@ function loop(){
     ctx.fillText('gaze: '+Math.round(gazeX)+','+Math.round(gazeY),14,32);
   }
 
+  // CLOAK: invisibility cloak - captures background, then removes you
+  if(mode==='cloak'){
+    if(!bgCapture){
+      // first frame: capture background
+      bgCapture=ctx.getImageData(0,0,W,H);
+      document.getElementById('info').textContent='Background captured! Move into frame.';
+    }else{
+      // compare current frame to background, replace similar areas with camera, different with background
+      sc.width=W;sc.height=H;sctx.save();
+      if(facing==='user'){sctx.translate(W,0);sctx.scale(-1,1);}
+      sctx.drawImage(cam,0,0,W,H);sctx.restore();
+      const cur=sctx.getImageData(0,0,W,H),cd=cur.data,bd=bgCapture.data;
+      for(let i=0;i<cd.length;i+=4){
+        const diff=Math.abs(cd[i]-bd[i])+Math.abs(cd[i+1]-bd[i+1])+Math.abs(cd[i+2]-bd[i+2]);
+        if(diff>50){
+          // person detected: show background instead (cloak!)
+          cd[i]=bd[i];cd[i+1]=bd[i+1];cd[i+2]=bd[i+2];
+        }
+        // else: background unchanged, show current camera
+      }
+      ctx.putImageData(cur,0,0);
+      ctx.fillStyle='rgba(0,0,0,.4)';ctx.fillRect(8,8,110,18);
+      ctx.fillStyle='#00ff88';ctx.font='bold 10px monospace';ctx.textAlign='left';
+      ctx.fillText('INVISIBILITY CLOAK',14,20);
+    }
+  }
+
+  // GLITCH: datamosh / pixel sort / RGB channel shift
+  if(mode==='glitch'){
+    sc.width=W;sc.height=H;sctx.save();
+    if(facing==='user'){sctx.translate(W,0);sctx.scale(-1,1);}
+    sctx.drawImage(cam,0,0,W,H);sctx.restore();
+    const img=sctx.getImageData(0,0,W,H),d=img.data;
+    const t=performance.now();
+    const intensity=motion.length?Math.min(1,motion.reduce((a,b)=>a+b,0)/40000):.1;
+
+    // RGB channel shift (each channel offset differently)
+    const shiftR=Math.round(Math.sin(t*.003)*8*intensity);
+    const shiftB=Math.round(Math.cos(t*.004)*8*intensity);
+    const out=new Uint8ClampedArray(d.length);
+    for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+      const i=(y*W+x)*4;
+      const ri=(y*W+Math.min(W-1,Math.max(0,x+shiftR)))*4;
+      const bi=(y*W+Math.min(W-1,Math.max(0,x+shiftB)))*4;
+      out[i]=d[ri];out[i+1]=d[i+1];out[i+2]=d[bi];out[i+3]=255;
+    }
+    // random block displacement (datamosh)
+    const blockH=8+Math.floor(Math.random()*20);
+    if(intensity>.2){
+      const sy=Math.floor(Math.random()*H);
+      const shift2=Math.round((Math.random()-.5)*40*intensity);
+      for(let y=sy;y<Math.min(H,sy+blockH);y++)for(let x=0;x<W;x++){
+        const i=(y*W+x)*4;
+        const si=(y*W+Math.min(W-1,Math.max(0,x+shift2)))*4;
+        out[i]=d[si];out[i+1]=d[si+1];out[i+2]=d[si+2];
+      }
+    }
+    // scan line corruption
+    for(let i=0;i<3;i++){
+      const sy2=Math.floor(Math.random()*H);
+      for(let x=0;x<W;x++){const j=(sy2*W+x)*4;out[j]=255;out[j+1]=out[j+1]*.5;out[j+2]=0;}
+    }
+    ctx.putImageData(new ImageData(out,W,H),0,0);
+    // VHS tracking lines
+    ctx.fillStyle='rgba(255,255,255,.03)';
+    for(let y=0;y<H;y+=2)ctx.fillRect(0,y,W,1);
+    // timestamp
+    ctx.fillStyle='rgba(0,0,0,.5)';ctx.fillRect(8,H-26,140,18);
+    ctx.fillStyle='#ff3333';ctx.font='bold 10px monospace';ctx.textAlign='left';
+    ctx.fillText('REC ● '+new Date().toLocaleTimeString(),14,H-14);
+    ctx.fillText('GLITCH',W-50,20);
+    if(motion.length&&intensity>.3){spawnParticles(motion);updateParticles();drawParticles();}
+  }
+
   // motion-reactive ambient sounds
   if(musicOn&&motion.length)motionSound(motion);
 
@@ -1141,7 +1228,7 @@ cv.addEventListener('click',e=>{
   if(i>=0&&i<d.length-2){wandColor=[d[i],d[i+1],d[i+2]];wandTrail=[];}
 });
 
-['modeParticle','modePaint','modeWave','modeMirror','modePong','modeFidget','modeBubble','modeScene','modeInstrument','modeThermal','modeXray','modeSpectrum','modeLidar','modeScan3d','modeNude','modeWand','modeEye'].forEach(id=>{
+['modeParticle','modePaint','modeWave','modeMirror','modePong','modeFidget','modeBubble','modeScene','modeInstrument','modeThermal','modeXray','modeSpectrum','modeLidar','modeScan3d','modeNude','modeWand','modeEye','modeCloak','modeGlitch'].forEach(id=>{
   document.getElementById(id).addEventListener('click',()=>{
     mode=id.replace('mode','').toLowerCase();
     document.querySelectorAll('.bar button').forEach(b=>b.classList.remove('on'));
@@ -1149,7 +1236,7 @@ cv.addEventListener('click',e=>{
     particles=[];waveData=[];bubbles=[];score=0;combo=0;
     pongBX=W/2;pongBY=H/2;pongBVX=4;pongBVY=2;pongScore=[0,0];pongPadL=H/2;pongPadR=H/2;
     fidgetAngle=0;fidgetVel=0;wandTrail=[];
-    scan3d={pts:[],rotY:0,rotX:.3,capturing:false,lastCap:0};eyeTrail=[];
+    scan3d={pts:[],rotY:0,rotX:.3,capturing:false,lastCap:0};eyeTrail=[];bgCapture=null;
     if(backCamStream&&id!=='modeEye'){backCamStream.getTracks().forEach(t=>t.stop());backCamStream=null;}
     if(paintLayer)for(let i=0;i<paintLayer.data.length;i++)paintLayer.data[i]=0;
   });
