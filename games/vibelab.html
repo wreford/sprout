@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>VibeLab -- vibration + tilt experiments</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0015;font-family:system-ui;color:#e0d0ff;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;height:100vh}
+canvas{position:fixed;inset:0;width:100%;height:100%;z-index:0}
+#app{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;height:100vh;max-width:420px;margin:0 auto;padding:16px}
+h1{font-size:24px;font-weight:900;background:linear-gradient(135deg,#ff6ec7,#7b68ee);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:4px}
+.sub{font-size:10px;color:#6a5a8a;letter-spacing:.15em;margin-bottom:12px}
+.tilt{width:200px;height:200px;border-radius:50%;border:2px solid rgba(123,104,238,.2);position:relative;margin:8px auto;background:rgba(20,10,40,.5)}
+.tilt .ball{width:24px;height:24px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#ff6ec7,#7b68ee);position:absolute;top:88px;left:88px;transition:all .1s;box-shadow:0 0 12px rgba(255,110,199,.4)}
+.tilt .ring{position:absolute;inset:0;border-radius:50%;border:1px solid rgba(123,104,238,.08)}
+.tilt .cross{position:absolute;width:1px;height:100%;left:50%;top:0;background:rgba(123,104,238,.08)}
+.tilt .crossH{position:absolute;height:1px;width:100%;top:50%;left:0;background:rgba(123,104,238,.08)}
+.vals{font:11px monospace;color:#7b68ee;text-align:center;margin:6px}
+.modes{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin:10px 0}
+.modes button{font:700 11px system-ui;padding:8px 14px;border:1px solid rgba(123,104,238,.2);border-radius:8px;background:rgba(20,10,40,.7);color:#d0c0f0;cursor:pointer}
+.modes button:active{transform:scale(.94)}
+.modes button.on{background:rgba(123,104,238,.3);border-color:#7b68ee;color:#fff}
+.slider{width:100%;max-width:300px;margin:8px auto;display:flex;align-items:center;gap:8px;font:11px monospace;color:#7b68ee}
+.slider input{flex:1;accent-color:#7b68ee}
+.slider .sv{min-width:40px;text-align:right;font-weight:700}
+.status{font:bold 13px monospace;color:#ff6ec7;text-align:center;margin:8px;min-height:20px}
+.info{font:10px monospace;color:#6a5a8a;text-align:center;margin-top:auto;padding:8px;line-height:1.5}
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<div id="app">
+<h1>VibeLab</h1>
+<div class="sub">VIBRATION + MOTION EXPERIMENTS</div>
+<div class="tilt" id="tilt">
+  <div class="ring" style="inset:25%"></div>
+  <div class="ring" style="inset:42%"></div>
+  <div class="cross"></div>
+  <div class="crossH"></div>
+  <div class="ball" id="ball"></div>
+</div>
+<div class="vals" id="vals">tilt: waiting for sensor...</div>
+<div class="status" id="status"></div>
+<div class="modes">
+  <button onclick="vibe('pulse')">Pulse</button>
+  <button onclick="vibe('spin')">Spin CW</button>
+  <button onclick="vibe('spinccw')">Spin CCW</button>
+  <button onclick="vibe('walk')">Walk</button>
+  <button onclick="vibe('heartbeat')">Heartbeat</button>
+  <button onclick="vibe('sos')">SOS</button>
+  <button onclick="vibe('ramp')">Ramp Up</button>
+  <button onclick="vibe('chaos')">Chaos</button>
+  <button onclick="vibe('music')">Music Vibe</button>
+  <button onclick="vibe('spin360')">360 Scan</button>
+  <button onclick="vibe('tilt')">Tilt React</button>
+  <button onclick="stopVibe()">Stop</button>
+</div>
+<div class="slider"><span>Speed</span><input type="range" id="speed" min="10" max="200" value="80"><span class="sv" id="speedVal">80ms</span></div>
+<div class="slider"><span>Power</span><input type="range" id="power" min="1" max="10" value="5"><span class="sv" id="powerVal">5</span></div>
+<div class="info">
+  <b>Vibration:</b> Android only (iOS Safari has no vibrate API).<br>
+  <b>Tilt sensor:</b> works on all devices (tap to grant permission on iOS).<br>
+  <b>Music Vibe:</b> kick-hat-snare drum pattern.<br>
+  <b>Tilt React:</b> vibration follows phone angle.
+</div>
+</div>
+<script>
+const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+let W,H;function resize(){W=cv.width=innerWidth;H=cv.height=innerHeight;}
+resize();onresize=resize;
+
+let alpha=0,beta=0,gamma=0,vibeMode=null,vibeTimer=null,vibeStep=0;
+const ball=document.getElementById('ball');
+
+// request sensor permission (iOS)
+if(typeof DeviceOrientationEvent!=='undefined'&&typeof DeviceOrientationEvent.requestPermission==='function'){
+  document.addEventListener('click',function f(){
+    DeviceOrientationEvent.requestPermission().then(r=>{if(r==='granted')startSensors();});
+    document.removeEventListener('click',f);
+  },{once:true});
+  document.getElementById('status').textContent='Tap anywhere to enable sensors';
+}else startSensors();
+
+function startSensors(){
+  window.addEventListener('deviceorientation',e=>{
+    alpha=e.alpha||0;beta=e.beta||0;gamma=e.gamma||0;
+    // move ball based on tilt
+    const bx=Math.max(0,Math.min(176,88+gamma*2));
+    const by=Math.max(0,Math.min(176,88+beta*2));
+    ball.style.left=bx+'px';ball.style.top=by+'px';
+    document.getElementById('vals').textContent=
+      'α:'+alpha.toFixed(0)+'° β:'+beta.toFixed(0)+'° γ:'+gamma.toFixed(0)+'° tilt:'+Math.round(Math.hypot(beta,gamma))+'°';
+    // tilt-reactive vibration
+    if(vibeMode==='tilt'){
+      const tiltAngle=Math.hypot(beta,gamma);
+      if(tiltAngle>5)navigator.vibrate(Math.min(100,Math.round(tiltAngle*2)));
+    }
+  });
+  document.getElementById('status').textContent='Sensors active';
+}
+
+function getSpeed(){return+document.getElementById('speed').value;}
+function getPower(){return+document.getElementById('power').value;}
+document.getElementById('speed').oninput=function(){document.getElementById('speedVal').textContent=this.value+'ms';};
+document.getElementById('power').oninput=function(){document.getElementById('powerVal').textContent=this.value;};
+
+function stopVibe(){
+  if(vibeTimer)clearInterval(vibeTimer);vibeTimer=null;vibeMode=null;vibeStep=0;
+  navigator.vibrate(0);
+  document.querySelectorAll('.modes button').forEach(b=>b.classList.remove('on'));
+  document.getElementById('status').textContent='Stopped';
+}
+
+function vibe(mode){
+  stopVibe();vibeMode=mode;
+  document.getElementById('status').textContent=mode.toUpperCase()+' running...';
+  // highlight button
+  document.querySelectorAll('.modes button').forEach(b=>{if(b.textContent.toLowerCase().includes(mode.slice(0,4)))b.classList.add('on');});
+
+  const spd=getSpeed(),pwr=getPower();
+
+  if(mode==='pulse'){
+    vibeTimer=setInterval(()=>{navigator.vibrate(spd*pwr/5);},spd*2);
+  }
+  else if(mode==='spin'){
+    // asymmetric pattern: short-long-short creates torque
+    let step=0;
+    vibeTimer=setInterval(()=>{
+      const pattern=[spd*pwr/5,spd*.3,spd*pwr/8,spd*.6,spd*pwr/3,spd*.2];
+      navigator.vibrate(pattern[step%pattern.length]);
+      step++;
+    },spd);
+  }
+  else if(mode==='spinccw'){
+    let step=0;
+    vibeTimer=setInterval(()=>{
+      const pattern=[spd*pwr/3,spd*.2,spd*pwr/8,spd*.6,spd*pwr/5,spd*.3];
+      navigator.vibrate(pattern[step%pattern.length]);
+      step++;
+    },spd);
+  }
+  else if(mode==='walk'){
+    // alternating strong pulses to inch the phone forward
+    let step=0;
+    vibeTimer=setInterval(()=>{
+      navigator.vibrate(step%2===0?spd*pwr/3:spd*pwr/10);
+      step++;
+    },spd*1.5);
+  }
+  else if(mode==='heartbeat'){
+    vibeTimer=setInterval(()=>{
+      navigator.vibrate([spd*.6,spd*.3,spd*.4,spd*2]);
+    },spd*4);
+  }
+  else if(mode==='sos'){
+    // ... --- ...
+    const dot=spd*.3,dash=spd*.8,gap=spd*.3,lgap=spd*.8;
+    navigator.vibrate([dot,gap,dot,gap,dot,lgap,dash,gap,dash,gap,dash,lgap,dot,gap,dot,gap,dot]);
+    vibeTimer=setInterval(()=>{
+      navigator.vibrate([dot,gap,dot,gap,dot,lgap,dash,gap,dash,gap,dash,lgap,dot,gap,dot,gap,dot]);
+    },spd*12);
+  }
+  else if(mode==='ramp'){
+    let intensity=10;
+    vibeTimer=setInterval(()=>{
+      navigator.vibrate(Math.round(intensity));
+      intensity+=pwr*2;
+      if(intensity>200)intensity=10;
+    },spd);
+  }
+  else if(mode==='chaos'){
+    vibeTimer=setInterval(()=>{
+      navigator.vibrate(Math.round(Math.random()*spd*pwr/3));
+    },Math.round(spd*.5+Math.random()*spd));
+  }
+  else if(mode==='music'){
+    // proper beat: [vibrate, pause, vibrate, pause, ...] alternating
+    function playBeat(){
+      if(!vibeMode)return;
+      const p=pwr*8;
+      // kick-hat-snare-hat pattern
+      const pattern=[
+        p*3,spd*.3,  // kick
+        p,spd*.2,    // hat
+        p*2,spd*.15, // snare
+        p,spd*.2,    // hat
+        p*3,spd*.4,  // kick
+        p,spd*.15,   // hat
+        p*2,spd*.15, // snare
+        p,spd*.3,    // hat
+        p*3,spd*.3,  // kick (bar 2)
+        p,spd*.2,
+        p*2,spd*.15,
+        p,spd*.2,
+        p*4,spd*.5,  // big kick
+        p,spd*.15,
+        p*2,spd*.15,
+        p*1.5,spd*.4
+      ].map(v=>Math.max(1,Math.round(v)));
+      navigator.vibrate(pattern);
+      const total=pattern.reduce((a,b)=>a+b,0);
+      vibeTimer=setTimeout(playBeat,total+50);
+    }
+    playBeat();
+  }
+  else if(mode==='spin360'){
+    // 360 LiDAR scan: continuous asymmetric pulses for ~30 seconds to complete a full rotation
+    // short-strong-long-weak pattern creates consistent torque
+    let elapsed=0;
+    document.getElementById('status').textContent='360 SCAN: place face-down, scanning...';
+    function spinPulse(){
+      if(!vibeMode||elapsed>30000)return;
+      const p=pwr*6;
+      // asymmetric: strong burst then long weak = consistent rotation direction
+      navigator.vibrate([p*3,Math.round(spd*.1),p,Math.round(spd*.4)]);
+      elapsed+=spd;
+      const pct=Math.min(100,Math.round(elapsed/300));
+      document.getElementById('status').textContent='360 SCAN: '+pct+'% ('+Math.round(elapsed/1000)+'s)';
+      vibeTimer=setTimeout(spinPulse,spd);
+    }
+    spinPulse();
+  }
+  else if(mode==='tilt'){
+    document.getElementById('status').textContent='TILT REACT: tilt phone to vibrate';
+  }
+}
+
+// background animation
+function drawBg(t){
+  const w=W,h=H;
+  ctx.fillStyle='#0a0015';ctx.fillRect(0,0,w,h);
+  // pulsing rings
+  const cx=w/2,cy=h/2;
+  for(let i=0;i<6;i++){
+    const r=50+i*40+Math.sin(t*.001+i)*(vibeMode?15:5);
+    ctx.strokeStyle=`rgba(123,104,238,${.06-i*.008})`;ctx.lineWidth=1.5;
+    ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.stroke();
+  }
+  // vibration visualization
+  if(vibeMode){
+    const intensity=getPower()/10;
+    for(let i=0;i<20;i++){
+      const a=t*.002+i*.31,r2=120+Math.sin(t*.003+i)*50*intensity;
+      const px=cx+Math.cos(a)*r2,py=cy+Math.sin(a)*r2;
+      ctx.fillStyle=`rgba(255,110,199,${.1+Math.sin(t*.005+i)*.08})`;
+      ctx.beginPath();ctx.arc(px,py,3+intensity*4,0,Math.PI*2);ctx.fill();
+    }
+  }
+  // tilt indicator lines
+  ctx.strokeStyle='rgba(123,104,238,.15)';ctx.lineWidth=1;
+  ctx.save();ctx.translate(cx,cy);ctx.rotate(gamma*Math.PI/180);
+  ctx.beginPath();ctx.moveTo(-w*.4,0);ctx.lineTo(w*.4,0);ctx.stroke();
+  ctx.restore();
+  ctx.save();ctx.translate(cx,cy);ctx.rotate(beta*Math.PI/180);
+  ctx.beginPath();ctx.moveTo(0,-h*.4);ctx.lineTo(0,h*.4);ctx.stroke();
+  ctx.restore();
+}
+requestAnimationFrame(function loop(t){drawBg(t);requestAnimationFrame(loop);});
+</script>
+</body>
+</html>

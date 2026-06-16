@@ -1,0 +1,745 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JTM -- build sequence / nuclear construction simulator</title>
+<style>
+:root{--bg:#f4f5f6;--p:#fff;--ink:#1c1f26;--m:#6b7280;--h:#dde0e4;--ok:#16a34a;--w:#d97706;--bad:#dc2626;--bl:#2563eb;--vi:#7c3aed;--mono:ui-monospace,"SF Mono","Cascadia Code",Consolas,Menlo,monospace;--sans:Inter,"Segoe UI",system-ui,sans-serif}
+*{box-sizing:border-box;margin:0;-webkit-tap-highlight-color:transparent}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:13px;touch-action:manipulation}
+.top{position:sticky;top:0;z-index:20;background:var(--bg)}
+.hdr{padding:6px 16px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;border-bottom:1px solid var(--h)}
+.hdr h1{font:700 15px var(--mono);letter-spacing:.05em;flex:none}
+.hdr h1 b{color:var(--vi)}
+.hdr select,.hdr button{font:600 10px var(--sans);padding:4px 10px;border:1px solid var(--h);border-radius:4px;background:var(--p);color:var(--ink);cursor:pointer}
+.hdr button.on{background:var(--ink);color:var(--p);border-color:var(--ink)}
+.hdr .sp{margin-left:auto;font:11px var(--mono);color:var(--m)}
+.tl{padding:5px 16px 8px;background:var(--p);border-bottom:1px solid var(--h)}
+.tl-r{display:flex;align-items:center;gap:6px}
+.tl-r input[type=range]{flex:1;accent-color:var(--ink)}
+.tl-r .lb{font:600 11px var(--mono);min-width:80px}
+.pbar{display:flex;gap:1px;margin-top:4px;height:14px}
+.pbar .ps{flex:1;border-radius:2px;font:600 7px var(--mono);display:flex;align-items:center;justify-content:center;color:#fff;cursor:pointer;overflow:hidden;white-space:nowrap;transition:.12s}
+.pbar .ps.now{outline:2px solid var(--ink);outline-offset:-1px;z-index:1}
+.pbar .ps.fut{opacity:.2}
+#gl{width:100%;aspect-ratio:16/10;display:block;background:#1a1d22;border-bottom:1px solid var(--h)}
+@media(max-width:700px){.top #gl{max-height:30vh;aspect-ratio:auto}}
+
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--h)}
+@media(max-width:700px){.grid{grid-template-columns:1fr}}
+.card{background:var(--p);padding:10px 14px}
+.card h3{font:600 9px var(--mono);letter-spacing:.12em;color:var(--m);text-transform:uppercase;margin-bottom:5px}
+.card canvas{width:100%;height:80px;display:block;border:1px solid var(--h);border-radius:3px;background:#fafbfc}
+
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:4px;padding:8px 16px}
+.k{background:var(--p);border:1px solid var(--h);border-radius:5px;padding:5px 6px;text-align:center}
+.k .v{font:800 14px var(--mono)}.k .l{font:500 7px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--m);margin-top:1px}
+.k.ok .v{color:var(--ok)}.k.w .v{color:var(--w)}.k.bad .v{color:var(--bad)}.k.bl .v{color:var(--bl)}.k.vi .v{color:var(--vi)}
+
+.ms{padding:6px 16px;display:flex;gap:4px;flex-wrap:wrap;border-bottom:1px solid var(--h)}
+.ms .m{font:500 8px var(--mono);padding:2px 6px;border-radius:3px;border:1px solid var(--h);display:flex;align-items:center;gap:3px}
+.ms .m.d{border-color:var(--ok);color:var(--ok);background:#f0fdf4}.ms .m.a{border-color:var(--w);color:var(--w);background:#fffbeb}.ms .m.f{color:var(--m)}
+.ms .md{width:5px;height:5px;border-radius:50%}
+
+.feed{background:var(--p);border-bottom:1px solid var(--h);max-height:120px;overflow-y:auto;padding:6px 16px}
+.feed .ev{font:11px var(--mono);padding:3px 0;border-bottom:1px solid #f0f0f0;display:flex;gap:6px;color:var(--m)}
+.feed .ev .t{color:var(--ink);font-weight:600;min-width:40px}.feed .ev .typ{min-width:50px}
+.feed .ev.risk{color:var(--bad)}.feed .ev.good{color:var(--ok)}.feed .ev.mile{color:var(--vi)}
+
+.risk{background:var(--p);padding:8px 16px;border-bottom:1px solid var(--h)}
+.risk h3{font:600 9px var(--mono);letter-spacing:.12em;color:var(--m);text-transform:uppercase;margin-bottom:4px}
+.rr{display:flex;gap:4px;flex-wrap:wrap}
+.ri{font:10px var(--mono);padding:3px 7px;border-radius:4px;border:1px solid var(--h);display:flex;align-items:center;gap:4px}
+.ri.hit{border-color:var(--bad);color:var(--bad);background:#fef2f2}
+.ri.ok{border-color:var(--ok);color:var(--ok)}
+
+.llt{background:var(--p);padding:8px 16px;border-bottom:1px solid var(--h)}
+.llt h3{font:600 9px var(--mono);letter-spacing:.12em;color:var(--m);text-transform:uppercase;margin-bottom:4px}
+.ll{display:flex;gap:4px;flex-wrap:wrap}
+.li{font:10px var(--mono);padding:3px 7px;border-radius:4px;border:1px solid var(--h);display:flex;align-items:center;gap:4px}
+.li.del{border-color:var(--ok);color:var(--ok);background:#f0fdf4}.li.wait{color:var(--w);border-color:var(--w);background:#fffbeb}.li.late{color:var(--bad);border-color:var(--bad)}
+
+.dims{padding:6px 16px;background:var(--p);display:flex;gap:10px;flex-wrap:wrap;border-bottom:1px solid var(--h)}
+.dim{display:flex;align-items:center;gap:4px;font:11px var(--mono)}
+.dim label{color:var(--m)}.dim input{width:50px;accent-color:var(--bl)}.dim .dv{font-weight:600;min-width:24px;text-align:right}
+.report{background:var(--p);padding:10px 16px;border-bottom:1px solid var(--h);font:11px/1.6 var(--mono);color:var(--m);max-height:100px;overflow-y:auto}
+.report b{color:var(--ink)}
+.sf{display:inline-block;font:700 10px var(--mono);padding:3px 8px;border-radius:4px;border:1px solid var(--h);text-align:center;min-width:60px}
+.sf.g{border-color:var(--ok);color:var(--ok);background:#f0fdf4}
+.sf.y{border-color:var(--w);color:var(--w);background:#fffbeb}
+.sf.r{border-color:var(--bad);color:var(--bad);background:#fef2f2}
+.sf .sv{font-size:14px;display:block}.sf .sl{font-size:7px;letter-spacing:.08em;text-transform:uppercase;color:var(--m);font-weight:500;margin-top:1px}
+.pour-row{padding:2px 0;border-bottom:1px solid #f0f0f0;display:flex;gap:8px}
+.pour-row .pm{font-weight:600;color:var(--ink);min-width:30px}
+.pour-row .pn{flex:1}.pour-row .pv{color:var(--bl);font-weight:600;min-width:40px;text-align:right}
+.pour-row.done{color:var(--ok)}.pour-row.future{color:var(--h)}
+.narr{background:var(--p);padding:12px 20px;border-bottom:1px solid var(--h);font:13px/1.7 var(--sans);color:var(--m)}
+.narr b{color:var(--ink);font-weight:600}
+.narr .cap{font:700 9px var(--mono);letter-spacing:.14em;color:var(--vi);text-transform:uppercase;margin-bottom:3px}
+.narr .hl{background:linear-gradient(transparent 60%,rgba(124,58,237,.12) 60%);font-weight:600;color:var(--ink)}
+.narr code{font:11px var(--mono);background:#f0f0f2;padding:1px 5px;border-radius:3px;color:var(--vi)}
+.cap-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;padding:10px 20px;border-bottom:1px solid var(--h)}
+.cap{background:var(--p);border:1px solid var(--h);border-radius:6px;padding:10px 12px;border-left:3px solid var(--vi)}
+.cap .ct{font:700 10px var(--mono);letter-spacing:.06em;color:var(--vi);margin-bottom:3px}
+.cap .cd{font:11px/1.5 var(--sans);color:var(--m)}
+.jtm-peek{background:var(--p);border-bottom:1px solid var(--h);padding:10px 20px;font:10px/1.5 var(--mono);color:var(--m);max-height:80px;overflow-y:auto}
+.jtm-peek b{color:var(--ink)}.jtm-peek .kw{color:var(--vi);font-weight:600}.jtm-peek .nm{color:var(--bl)}.jtm-peek .vl{color:var(--ok)}
+</style>
+</head>
+<body>
+<div class="top">
+<div class="hdr">
+  <h1><b>BUILD</b> SEQUENCE</h1>
+  <select id="plant"><option value="pwr">PWR 600 MWe</option><option value="candu">CANDU 700 MWe</option><option value="smr">SMR 300 MWe</option><option value="ap1000">AP1000 1100 MWe</option><option value="epr">EPR 1650 MWe</option></select>
+  <select id="cam"><option value="orbit">Orbit</option><option value="aerial">Aerial</option><option value="reactor">Reactor</option><option value="turbine">Turbine</option><option value="intake">Intake</option><option value="crane">Crane</option></select>
+  <button id="night">Night</button>
+  <button id="weather">Weather</button>
+  <button id="play">Play</button>
+  <button id="spd" data-s="1">1x</button>
+  <span class="sp" id="sp"></span>
+</div>
+<div class="tl">
+  <div class="tl-r"><input type="range" id="mo" min="0" max="84" value="0" step="0.1"><span class="lb" id="mlab">M0</span></div>
+  <div class="pbar" id="pb"></div>
+</div>
+<canvas id="gl"></canvas>
+</div>
+<div class="narr" id="narr"><div class="cap">CAPABILITY DEMO</div></div>
+<div class="cap-grid" id="caps"></div>
+<div class="jtm-peek" id="peek"></div>
+
+<div class="grid">
+  <div class="card"><h3>S-CURVE (PLAN vs EARN vs ACTUAL COST)</h3><canvas id="sc"></canvas></div>
+  <div class="card"><h3>DISCIPLINE PROGRESS</h3><canvas id="disc"></canvas></div>
+</div>
+<div class="kpis" id="kpis"></div>
+<div class="ms" id="ms"></div>
+<div class="feed" id="feed"></div>
+<div class="grid">
+  <div class="risk"><h3>RISK REGISTER</h3><div class="rr" id="risks"></div></div>
+  <div class="llt"><h3>LONG-LEAD ITEMS</h3><div class="ll" id="ll"></div></div>
+</div>
+<div class="report" id="report"></div>
+<div class="dims" id="dims"></div>
+<div class="grid">
+  <div class="card"><h3>COST BY DISCIPLINE (CUMULATIVE $M)</h3><canvas id="costd"></canvas></div>
+  <div class="card"><h3>WORKFORCE BY TRADE</h3><canvas id="wftrade"></canvas></div>
+</div>
+<div class="grid">
+  <div class="pours" style="background:var(--p);padding:8px 14px;border-bottom:1px solid var(--h)">
+    <h3 style="font:600 9px var(--mono);letter-spacing:.12em;color:var(--m);text-transform:uppercase;margin-bottom:4px">CONCRETE POUR LOG</h3>
+    <div id="pourlog" style="font:10px var(--mono);color:var(--m);max-height:80px;overflow-y:auto"></div>
+  </div>
+  <div style="background:var(--p);padding:8px 14px;border-bottom:1px solid var(--h)">
+    <h3 style="font:600 9px var(--mono);letter-spacing:.12em;color:var(--m);text-transform:uppercase;margin-bottom:4px">SAFETY DASHBOARD</h3>
+    <div id="safety" style="display:flex;gap:4px;flex-wrap:wrap"></div>
+  </div>
+</div>
+<div style="background:var(--p);padding:8px 16px;border-bottom:1px solid var(--h)">
+  <h3 style="font:600 9px var(--mono);letter-spacing:.12em;color:var(--m);text-transform:uppercase;margin-bottom:6px">WHAT-IF SCENARIOS</h3>
+  <div style="display:flex;gap:6px;flex-wrap:wrap" id="whatif">
+    <button onclick="whatIf('delay',6)">+6mo regulatory hold</button>
+    <button onclick="whatIf('delay',3)">+3mo strike</button>
+    <button onclick="whatIf('delay',2)">+2mo supply chain</button>
+    <button onclick="whatIf('delay',4)">+4mo NDE rework</button>
+    <button onclick="whatIf('accel',-4)">Crash -4mo</button>
+    <button onclick="whatIf('accel',-2)">Overtime -2mo</button>
+    <button onclick="whatIf('budget',0.5)">Budget +$0.5B</button>
+    <button onclick="whatIf('budget',1.0)">Budget +$1B</button>
+    <button onclick="whatIf('crew',500)">+500 workers</button>
+    <button onclick="whatIf('crew',1000)">+1000 workers</button>
+    <button onclick="whatIf('crew',-300)">-300 workers (layoff)</button>
+    <button onclick="whatIf('reset',0)">Reset all</button>
+  </div>
+</div>
+<script>
+const SHAPE_IDS={box:0,sphere:1,cyl:2,torus:3,"cyl-x":4,"cyl-z":5},MAX_OBJ=24;
+function unhex(h){return[parseInt(h.slice(1,3),16)/255,parseInt(h.slice(3,5),16)/255,parseInt(h.slice(5,7),16)/255]}
+const $=id=>document.getElementById(id);
+
+const PHASES=[
+{n:"Site prep",c:"#78909c",s:0,e:6},{n:"Excavation",c:"#8d6e63",s:3,e:12},{n:"Foundation",c:"#9e9e9e",s:8,e:20},
+{n:"RB structure",c:"#607d8b",s:14,e:38},{n:"Containment",c:"#7c3aed",s:20,e:44},{n:"TB build",c:"#a1887f",s:22,e:42},
+{n:"Mech install",c:"#f59e0b",s:34,e:62},{n:"Piping",c:"#6b7280",s:30,e:60},{n:"Electrical",c:"#2563eb",s:40,e:68},
+{n:"CW system",c:"#0891b2",s:28,e:54},{n:"I&C",c:"#059669",s:50,e:72},{n:"Pre-op test",c:"#0d9488",s:58,e:74},
+{n:"Fuel load",c:"#7c3aed",s:72,e:78},{n:"Startup",c:"#16a34a",s:76,e:84}];
+
+const MILESTONES=[
+{m:0,n:"NTP"},{m:3,n:"Site mobilization"},{m:6,n:"Excavation complete"},
+{m:10,n:"First nuclear concrete"},{m:14,n:"RB rebar L1"},{m:18,n:"Basemat complete"},
+{m:22,n:"Containment liner start"},{m:26,n:"RB wall elev 100m"},{m:30,n:"CW tunnel break-thru"},
+{m:34,n:"RB ring beam"},{m:36,n:"RB walls topped out"},{m:38,n:"Dome steel set"},
+{m:40,n:"Containment structural"},{m:42,n:"Containment pressure test"},{m:44,n:"TB enclosed"},
+{m:46,n:"RPV set on supports"},{m:48,n:"SG lift complete"},{m:50,n:"Main coolant pipe close"},
+{m:52,n:"Turbine on sole plates"},{m:54,n:"CW system hydro test"},{m:56,n:"Generator set"},
+{m:58,n:"Systems turnover start"},{m:60,n:"Electrical energization"},{m:62,n:"I&C loop checks"},
+{m:64,n:"Cold hydro test"},{m:66,n:"Hot functional test"},{m:68,n:"Containment ILRT"},
+{m:70,n:"Pre-op complete"},{m:72,n:"Fuel load authorization"},{m:74,n:"Fuel load complete"},
+{m:76,n:"Initial criticality"},{m:78,n:"Generator sync"},{m:80,n:"Power ascension 50%"},
+{m:82,n:"Power ascension 100%"},{m:84,n:"Commercial operation"}];
+
+const RISKS=[
+{n:"Rebar supply chain disruption",prob:.3,impact:3,trigger:14,desc:"+3mo RB walls"},
+{n:"Batch plant mechanical failure",prob:.2,impact:2,trigger:20,desc:"+2mo civil"},
+{n:"Containment weld RT reject rate",prob:.25,impact:4,trigger:34,desc:"+4mo containment"},
+{n:"Labour dispute / work stoppage",prob:.15,impact:3,trigger:40,desc:"+3mo all trades"},
+{n:"SG delivery: vendor shop delay",prob:.35,impact:5,trigger:38,desc:"+5mo mechanical"},
+{n:"Commissioning deficiency backlog",prob:.2,impact:2,trigger:64,desc:"+2mo commissioning"},
+{n:"Regulatory design change order",prob:.1,impact:6,trigger:50,desc:"+6mo all"},
+{n:"Winter concrete curing failure",prob:.25,impact:1,trigger:16,desc:"+1mo foundation"},
+{n:"Dewatering pump failure (excav)",prob:.2,impact:2,trigger:8,desc:"+2mo excavation"},
+{n:"Crane boom failure / inspection",prob:.15,impact:2,trigger:30,desc:"+2mo lifts"},
+{n:"RPV transport route obstruction",prob:.12,impact:3,trigger:44,desc:"+3mo RPV set"},
+{n:"Seismic restraint rework",prob:.18,impact:2,trigger:46,desc:"+2mo piping"},
+{n:"Cable tray routing interference",prob:.22,impact:1,trigger:52,desc:"+1mo electrical"},
+{n:"Hot functional test deficiency",prob:.3,impact:3,trigger:66,desc:"+3mo startup"},
+{n:"Fuel handling crane commissioning",prob:.15,impact:2,trigger:70,desc:"+2mo fuel load"},
+{n:"Environmental permit amendment",prob:.08,impact:4,trigger:24,desc:"+4mo CW system"}];
+
+const LONGLEAD=[
+{n:"Reactor pressure vessel",order:0,deliver:44,need:46},{n:"Steam generators (x2)",order:2,deliver:38,need:42},
+{n:"Pressurizer",order:4,deliver:40,need:44},{n:"Containment liner plates",order:4,deliver:18,need:22},
+{n:"Reactor coolant pumps (x4)",order:8,deliver:42,need:46},{n:"Control rod drive mechanisms",order:12,deliver:52,need:56},
+{n:"Turbine HP/LP rotors",order:6,deliver:48,need:52},{n:"Generator stator + rotor",order:8,deliver:50,need:54},
+{n:"Main power transformer",order:10,deliver:50,need:56},{n:"Unit aux transformer",order:12,deliver:52,need:58},
+{n:"CW conduit pipe (3.5km)",order:6,deliver:28,need:32},{n:"Fuel handling crane",order:14,deliver:58,need:64},
+{n:"Emergency diesel generators",order:10,deliver:36,need:40},{n:"Main steam piping",order:12,deliver:44,need:48},
+{n:"Reactor internals",order:8,deliver:46,need:50},{n:"Nuclear fuel assemblies",order:24,deliver:70,need:72}];
+
+const DISCIPLINES=[
+{n:"Civil",c:"#9e9e9e",s:3,e:44},{n:"Mechanical",c:"#f59e0b",s:30,e:62},{n:"Electrical",c:"#2563eb",s:38,e:68},
+{n:"Piping",c:"#6b7280",s:28,e:60},{n:"I&C",c:"#059669",s:48,e:72},{n:"Nuclear",c:"#7c3aed",s:40,e:76}];
+
+// plant configs
+const PLANTS={
+  pwr:{name:"PWR 600 MWe (Darlington B style)",mwe:600,v:{"rb-d":42,"rb-h":50,"tb-w":60,"tb-h":30,"cw-d":3.5,"cr-h":65},budget:4.8,dur:84,fuel:"UO2 enriched",coolant:"Light water",contain:"Pre-stressed concrete"},
+  candu:{name:"CANDU 6 (700 MWe)",mwe:700,v:{"rb-d":50,"rb-h":35,"tb-w":70,"tb-h":35,"cw-d":4,"cr-h":60},budget:5.6,dur:84,fuel:"Natural UO2",coolant:"Heavy water",contain:"Pre-stressed + steel liner"},
+  smr:{name:"SMR 300 MWe (modular)",mwe:300,v:{"rb-d":24,"rb-h":30,"tb-w":30,"tb-h":20,"cw-d":2,"cr-h":45},budget:2.2,dur:60,fuel:"HALEU",coolant:"Light water",contain:"Steel module"},
+  ap1000:{name:"AP1000 (1100 MWe)",mwe:1100,v:{"rb-d":44,"rb-h":55,"tb-w":72,"tb-h":34,"cw-d":4.2,"cr-h":70},budget:7.2,dur:84,fuel:"UO2 enriched",coolant:"Light water",contain:"Steel + concrete shield"},
+  epr:{name:"EPR 1650 MWe",mwe:1650,v:{"rb-d":52,"rb-h":60,"tb-w":80,"tb-h":38,"cw-d":5,"cr-h":75},budget:12.4,dur:96,fuel:"UO2/MOX",coolant:"Light water",contain:"Double wall concrete"}
+};
+const R={"rb-d":[20,55],"rb-h":[25,65],"tb-w":[25,80],"tb-h":[18,40],"cw-d":[1.5,5],"cr-h":[35,80]};
+
+let V={},plant='pwr',nightMode=false,weatherOn=false,month=0,playing=false,lastF=performance.now(),spdX=1,camMode='orbit';
+let riskHits=new Set(),delayTotal=0,eventLog=[];
+
+const POURS=[
+{m:9,n:"Lean concrete / mudmat",vol:120,spec:"25 MPa"},{m:10,n:"Basemat east sector",vol:2800,spec:"50 MPa nuclear"},
+{m:11,n:"Basemat west sector",vol:2800,spec:"50 MPa nuclear"},{m:12,n:"Basemat center strip",vol:1200,spec:"50 MPa nuclear"},
+{m:14,n:"RB wall lift 1 (0-4m)",vol:420,spec:"40 MPa"},{m:16,n:"RB wall lift 2 (4-8m)",vol:420,spec:"40 MPa"},
+{m:18,n:"RB wall lift 3 (8-12m)",vol:420,spec:"40 MPa"},{m:20,n:"RB wall lift 4 (12-16m)",vol:420,spec:"40 MPa"},
+{m:22,n:"RB wall lift 5 (16-20m)",vol:420,spec:"40 MPa"},{m:24,n:"TB mat foundation",vol:1800,spec:"35 MPa"},
+{m:25,n:"Aux building slab",vol:500,spec:"35 MPa"},{m:26,n:"RB wall lift 6 (20-24m)",vol:420,spec:"40 MPa"},
+{m:27,n:"CW intake structure base",vol:350,spec:"35 MPa sulphate resistant"},
+{m:28,n:"RB wall lift 7 (24-28m)",vol:420,spec:"40 MPa"},{m:29,n:"CW outfall base",vol:200,spec:"35 MPa SR"},
+{m:30,n:"RB wall lift 8 (28-32m)",vol:420,spec:"40 MPa"},{m:32,n:"RB wall lift 9 (32-36m)",vol:420,spec:"40 MPa"},
+{m:33,n:"Diesel generator foundation",vol:250,spec:"35 MPa"},{m:34,n:"RB ring beam",vol:680,spec:"50 MPa nuclear"},
+{m:36,n:"Dome ring pour",vol:300,spec:"50 MPa nuclear"},{m:38,n:"TB pedestal (turbine base)",vol:600,spec:"45 MPa"},
+{m:40,n:"Fuel handling building slab",vol:400,spec:"40 MPa"},{m:42,n:"Switchyard foundations",vol:180,spec:"30 MPa"},
+{m:44,n:"Admin/control bldg slab",vol:220,spec:"30 MPa"},{m:46,n:"Final pours / grout",vol:150,spec:"various"}];
+
+const TRADES=[
+{n:"Civil",color:"#9e9e9e",peak:0.35},{n:"Mech",color:"#f59e0b",peak:0.25},
+{n:"Elec",color:"#2563eb",peak:0.15},{n:"Pipe",color:"#6b7280",peak:0.15},
+{n:"I&C",color:"#059669",peak:0.06},{n:"Nuclear",color:"#7c3aed",peak:0.04}];
+
+let whatIfDelay=0,whatIfBudget=0,whatIfCrew=0;
+function whatIf(type,val){
+  if(type==='reset'){whatIfDelay=0;whatIfBudget=0;whatIfCrew=0;delayTotal=0;riskHits=new Set();eventLog.push({m:Math.round(month),type:'good',msg:'All scenarios reset'});return;}
+  if(type==='delay'){whatIfDelay+=val;delayTotal+=Math.max(0,val);eventLog.push({m:Math.round(month),type:'risk',msg:'SCENARIO: '+(val>0?'+':'')+val+'mo schedule impact'});}
+  if(type==='accel'){whatIfDelay+=val;eventLog.push({m:Math.round(month),type:'good',msg:'SCENARIO: Schedule crashed by '+Math.abs(val)+'mo'});}
+  if(type==='budget'){whatIfBudget+=val;eventLog.push({m:Math.round(month),type:'good',msg:'SCENARIO: Budget increased by $'+val+'B'});}
+  if(type==='crew'){whatIfCrew+=val;eventLog.push({m:Math.round(month),type:'good',msg:'SCENARIO: +'+val+' workers added'});}
+}
+
+function setPlant(p){
+  plant=p;const cfg=PLANTS[p];V=Object.assign({},cfg.v);
+  riskHits=new Set();delayTotal=0;eventLog=[];whatIfDelay=0;whatIfBudget=0;whatIfCrew=0;
+  $('mo').max=cfg.dur;
+  eventLog.push({m:0,type:'mile',msg:'Notice to Proceed: '+cfg.name+'. Budget $'+cfg.budget+'B, duration '+cfg.dur+' months. Fuel: '+cfg.fuel+'. Coolant: '+cfg.coolant+'. Containment: '+cfg.contain+'.'});
+  buildDims();
+}
+
+function sc(v){return v*0.12;}
+function vis(m,s,e){return m<s?0:m>=e?1:Math.min(1,(m-s)/(e-s));}
+function eo(t){return 1-Math.pow(1-t,3);}
+
+function buildObjs(m){
+  const o=[];
+  function add(s,e,obj){const v=vis(m,s,e);if(v<=0)return;obj._v=v;o.push(obj);}
+  const D=V;
+
+  // ground + water
+  add(0,1,{shape:"box",pos:[0,-.01,0],size:[14,.02,10],color:"#b3aa97"});
+  add(0,1,{shape:"box",pos:[sc(-50),sc(-1.5),sc(-20)],size:[sc(35),sc(3),sc(45)],color:weatherOn?"#2d5a7a":"#3f6f8f"});
+  // roads
+  add(2,8,{shape:"box",pos:[0,.01,sc(-32)],size:[12*eo(vis(m,2,8)),.02,sc(3.5)],color:"#555"});
+  add(4,10,{shape:"box",pos:[sc(42),.01,0],size:[sc(3.5),.02,sc(50)*eo(vis(m,4,10))],color:"#555"});
+  // laydown area
+  add(3,84,{shape:"box",pos:[sc(38),.015,sc(-28)],size:[sc(20)*eo(vis(m,3,10)),.01,sc(16)],color:"#c8c0b0"});
+
+  // excavation
+  if(m>=3)add(3,84,{shape:"box",pos:[sc(-10),sc(-3)*eo(vis(m,3,12)),0],size:[sc(D["rb-d"]+12),sc(6)*eo(vis(m,3,12)),sc(D["rb-d"]+12)],color:"#8a7a60",sub:true});
+  // basemat
+  if(m>=8)add(8,84,{shape:"box",pos:[sc(-10),sc(-.3),0],size:[sc(D["rb-d"]+10),sc(3)*eo(vis(m,8,18)),sc(D["rb-d"]+10)],color:"#b9bec4"});
+  // RB walls
+  const rbH=sc(D["rb-h"])*eo(vis(m,14,38));
+  if(m>=14)add(14,84,{shape:"cyl",pos:[sc(-10),rbH/2+sc(1.5),0],size:[sc(D["rb-d"]),rbH],color:"#90a4ae"});
+  // containment liner
+  if(m>=22&&rbH>.5)add(22,84,{shape:"cyl",pos:[sc(-10),rbH*.48+sc(1.5),0],size:[sc(D["rb-d"]-4),rbH*.95*eo(vis(m,22,38))],color:"#7c3aed"});
+  // dome
+  if(m>=36)add(36,42,{shape:"sphere",pos:[sc(-10),rbH+sc(1.5),0],size:[sc(D["rb-d"])*eo(vis(m,36,42))],color:"#9aa7b4",blend:.3});
+  // RPV
+  if(m>=40)add(40,50,{shape:"cyl",pos:[sc(-10),sc(10),0],size:[sc(8),sc(14)*eo(vis(m,40,50))],color:"#d97706"});
+  // SGs
+  if(m>=42){
+    const sv=eo(vis(m,42,54));
+    add(42,84,{shape:"cyl",pos:[sc(-10)+sc(9),sc(10)*sv,sc(5)],size:[sc(3.5),sc(12)*sv],color:"#d97706"});
+    add(42,84,{shape:"cyl",pos:[sc(-10)-sc(9),sc(10)*sv,sc(-5)],size:[sc(3.5),sc(12)*sv],color:"#d97706"});
+  }
+  // pressurizer
+  if(m>=44)add(44,54,{shape:"cyl",pos:[sc(-10)+sc(5),sc(14)*eo(vis(m,44,54)),sc(-8)],size:[sc(2.5),sc(8)*eo(vis(m,44,54))],color:"#d97706"});
+  // TB
+  const tbH=sc(D["tb-h"])*eo(vis(m,22,40));
+  if(m>=22)add(22,84,{shape:"box",pos:[sc(25),tbH/2,0],size:[sc(D["tb-w"]),tbH,sc(28)],color:"#c4beb2"});
+  // turbine + gen
+  if(m>=46){
+    add(46,58,{shape:"cyl-z",pos:[sc(25),sc(D["tb-h"]*.4),sc(-3)],size:[sc(7),sc(18)*eo(vis(m,46,58))],color:"#8a9099"});
+    add(48,58,{shape:"cyl-z",pos:[sc(25),sc(D["tb-h"]*.4),sc(8)],size:[sc(5),sc(10)*eo(vis(m,48,58))],color:"#6b7280"});
+  }
+  // CW intake
+  if(m>=28)add(28,42,{shape:"box",pos:[sc(-38),sc(2.5)*eo(vis(m,28,42)),sc(-20)],size:[sc(8),sc(6)*eo(vis(m,28,42)),sc(D["cw-d"]*3+2)],color:"#7e8b98"});
+  // CW conduit
+  if(m>=32)add(32,48,{shape:"cyl-x",pos:[sc(-5),sc(D["cw-d"]/2),sc(-20)],size:[sc(D["cw-d"]),sc(60)*eo(vis(m,32,48))],color:"#5d6671"});
+  // outfall
+  if(m>=36)add(36,48,{shape:"box",pos:[sc(50),sc(2)*eo(vis(m,36,48)),sc(-20)],size:[sc(5),sc(4)*eo(vis(m,36,48)),sc(D["cw-d"]*2+4)],color:"#7e8b98"});
+  // switchyard
+  if(m>=44)add(44,60,{shape:"box",pos:[sc(30),.15,sc(24)],size:[sc(22)*eo(vis(m,44,56)),.3,sc(16)],color:"#e8e4de"});
+  if(m>=52){
+    add(52,60,{shape:"box",pos:[sc(24),sc(3)*eo(vis(m,52,60)),sc(24)],size:[sc(4),sc(5)*eo(vis(m,52,60)),sc(3)],color:"#6b7280"});
+    add(52,60,{shape:"box",pos:[sc(36),sc(3)*eo(vis(m,52,60)),sc(24)],size:[sc(4),sc(5)*eo(vis(m,52,60)),sc(3)],color:"#6b7280"});
+  }
+  // crane
+  if(m>=4&&m<64){
+    const ch=sc(D["cr-h"]);
+    add(4,64,{shape:"box",pos:[sc(5),ch/2,sc(12)],size:[sc(.8),ch,sc(.8)],color:"#dc2626"});
+    add(4,64,{shape:"box",pos:[sc(-12),ch-sc(.3),sc(12)],size:[sc(36),sc(.5),sc(.5)],color:"#dc2626"});
+  }
+  // aux building
+  if(m>=26)add(26,44,{shape:"box",pos:[sc(8),sc(4)*eo(vis(m,26,44)),sc(14)],size:[sc(14),sc(8)*eo(vis(m,26,44)),sc(10)],color:"#b8b3a8"});
+  // diesel gen
+  if(m>=38)add(38,52,{shape:"box",pos:[sc(-30),sc(2.5)*eo(vis(m,38,52)),sc(15)],size:[sc(12),sc(5)*eo(vis(m,38,52)),sc(6)],color:"#a0968a"});
+  // admin
+  if(m>=16)add(16,30,{shape:"box",pos:[sc(42),sc(3)*eo(vis(m,16,30)),sc(14)],size:[sc(10),sc(6)*eo(vis(m,16,30)),sc(8)],color:"#cfc9be"});
+  // batch plant
+  if(m>=5&&m<50)add(5,50,{shape:"cyl",pos:[sc(35),sc(5)*eo(vis(m,5,10)),sc(-15)],size:[sc(4),sc(10)*eo(vis(m,5,10))],color:"#a0a0a0"});
+
+  return o.slice(0,MAX_OBJ);
+}
+
+// metrics
+function planned(m){const d=PLANTS[plant].dur;return 100*(1-Math.exp(-.06*m))/(1-Math.exp(-.06*d));}
+function earned(m){const delay=delayTotal*.5*Math.sin(m*.1);return Math.min(100,planned(Math.max(0,m-delayTotal*.3+delay))*(m<20?.92:m<50?.88:.95));}
+function workforce(m){if(m<=0)return 0;const pk=(plant==='smr'?1800:plant==='candu'?3800:3200)+whatIfCrew;return Math.round(pk*Math.min(1,m/18)*(m<16?m/16:m<55?1:Math.max(.05,1-(m-55)/25))*(1+.06*Math.sin(m*.5)));}
+function discProg(d,m){return m<d.s?0:m>=d.e?100:Math.round((m-d.s)/(d.e-d.s)*100);}
+
+function kpis(m){
+  const cfg=PLANTS[plant],B=cfg.budget+whatIfBudget,ev=earned(m),pv=planned(m),spi=pv>0?ev/pv:1;
+  let spent=0;for(let i=0;i<=m;i++)spent+=workforce(i)*8500/1e6;
+  const cpi=spent>0?(ev/100*B)/spent:1,eac=cpi>0?B/cpi:B;
+  const dur=cfg.dur;
+  const mwe=m>=dur?cfg.mwe:m>=dur-6?Math.round(cfg.mwe*.5):m>=dur-12?Math.round(cfg.mwe*.05):0;
+  let cumVol=0;POURS.forEach(p=>{if(m>=p.m+2)cumVol+=p.vol;});
+  const wf=workforce(m);
+  const hrs=Math.round(wf*170*m);
+  const activePhases=PHASES.filter(p=>m>=p.s&&m<p.e).length;
+  const deliveredLL=LONGLEAD.filter(l=>m>=l.deliver).length;
+  return[
+    {v:Math.round(m/dur*100)+'%',l:'schedule',c:m>=dur?'ok':''},
+    {v:ev.toFixed(0)+'%',l:'earned value',c:ev>=pv?'ok':ev>=pv*.9?'w':'bad'},
+    {v:spi.toFixed(2),l:'SPI',c:spi>=.95?'ok':spi>=.85?'w':'bad'},
+    {v:cpi.toFixed(2),l:'CPI',c:cpi>=.95?'ok':cpi>=.85?'w':'bad'},
+    {v:'$'+spent.toFixed(1)+'B',l:'spent / $'+B.toFixed(1)+'B',c:spent>B?'bad':spent>B*.9?'w':''},
+    {v:'$'+eac.toFixed(1)+'B',l:'EAC',c:eac<=B*1.05?'ok':eac<=B*1.15?'w':'bad'},
+    {v:wf.toLocaleString(),l:'workforce',c:'bl'},
+    {v:mwe||'--',l:'MWe output',c:mwe>=cfg.mwe?'vi':mwe>0?'w':''},
+    {v:Math.round(cumVol/1000)+'k',l:'concrete m3',c:''},
+    {v:Math.round(hrs/1e6)+'M',l:'worker-hours',c:''},
+    {v:activePhases,l:'active phases',c:activePhases>4?'w':'bl'},
+    {v:deliveredLL+'/'+LONGLEAD.length,l:'delivered LL',c:deliveredLL>=LONGLEAD.length?'ok':''},
+    {v:delayTotal+'mo',l:'delay',c:delayTotal>6?'bad':delayTotal>0?'w':'ok'},
+    {v:riskHits.size+'/'+RISKS.length,l:'risks hit',c:riskHits.size>4?'bad':riskHits.size>0?'w':'ok'}
+  ];
+}
+
+function genReport(m){
+  const cfg=PLANTS[plant],yr=Math.floor(m/12)+1,mo=Math.round(m%12)+1;
+  const phase=PHASES.filter(p=>m>=p.s&&m<p.e);
+  const wf=workforce(m),ev=earned(m),pv=planned(m),spi=pv>0?ev/pv:1;
+  let spent=0;for(let i=0;i<=m;i++)spent+=workforce(i)*8500/1e6;
+  const cpi=spent>0?(ev/100*cfg.budget)/spent:1;
+  let cumVol=0;POURS.forEach(p=>{if(m>=p.m+2)cumVol+=p.vol;});
+  const nextPour=POURS.find(p=>m<p.m);
+  const nextMS=MILESTONES.find(ms=>m<ms.m);
+  const activeFab=LONGLEAD.filter(l=>m>=l.order&&m<l.deliver);
+  const lateItems=LONGLEAD.filter(l=>m>=l.need&&m<l.deliver);
+  const activeRisks=RISKS.filter((r,i)=>riskHits.has(i));
+  const hrs=Math.round(wf*170*m);
+
+  let r='<b>'+cfg.name+' -- Monthly Construction Report</b><br>';
+  r+='<b>Period:</b> Year '+yr+', Month '+mo+' (Project Month '+Math.round(m)+' of '+cfg.dur+')<br>';
+  r+='<b>Active phases:</b> '+(phase.length?phase.map(p=>p.n).join(', '):'Commissioning')+'<br>';
+  r+='<b>Workforce:</b> '+wf.toLocaleString()+' | <b>Earned:</b> '+ev.toFixed(1)+'% | <b>SPI:</b> '+spi.toFixed(2)+' | <b>CPI:</b> '+cpi.toFixed(2)+'<br>';
+  r+='<b>Budget:</b> $'+cfg.budget+'B | <b>Spent:</b> $'+spent.toFixed(2)+'B | <b>EAC:</b> $'+(cpi>0?cfg.budget/cpi:cfg.budget).toFixed(2)+'B<br>';
+  r+='<b>Concrete placed:</b> '+cumVol.toLocaleString()+' m3'+(nextPour?' | Next: '+nextPour.n+' (M'+nextPour.m+', '+nextPour.vol+' m3)':'')+'<br>';
+  r+='<b>Worker-hours:</b> '+Math.round(hrs/1e6)+'M | <b>LTI-free days:</b> '+Math.round((m-Math.floor(m/25)*25)*30)+'<br>';
+  r+='<b>Reactor type:</b> '+cfg.fuel+' / '+cfg.coolant+' / '+cfg.contain+'<br>';
+  if(activeFab.length)r+='<b>In fabrication:</b> '+activeFab.map(l=>l.n).join(', ')+'<br>';
+  if(lateItems.length)r+='<span style="color:var(--bad)"><b>LATE deliveries:</b> '+lateItems.map(l=>l.n).join(', ')+'</span><br>';
+  if(delayTotal>0)r+='<span style="color:var(--bad)"><b>Cumulative delay:</b> '+delayTotal+'mo from '+riskHits.size+' risk event(s): '+activeRisks.map(r=>r.n).join(', ')+'</span><br>';
+  if(nextMS)r+='<b>Next milestone:</b> '+nextMS.n+' (M'+nextMS.m+', '+(nextMS.m-Math.round(m)>0?nextMS.m-Math.round(m)+'mo away':'NOW')+')<br>';
+  if(spi<0.9)r+='<span style="color:var(--bad)"><b>WARNING:</b> SPI below 0.90 -- schedule recovery plan required.</span><br>';
+  if(cpi<0.9)r+='<span style="color:var(--bad)"><b>WARNING:</b> CPI below 0.90 -- cost overrun projected at EAC $'+(cpi>0?cfg.budget/cpi:0).toFixed(1)+'B.</span><br>';
+  return r;
+}
+
+// check risk triggers
+let lastRiskCheck=0;
+function checkRisks(m){
+  if(Math.floor(m)===lastRiskCheck)return;
+  lastRiskCheck=Math.floor(m);
+  RISKS.forEach((r,i)=>{
+    if(riskHits.has(i))return;
+    if(Math.abs(m-r.trigger)<1&&Math.random()<r.prob){
+      riskHits.add(i);delayTotal+=r.impact;
+      eventLog.push({m:Math.round(m),type:'risk',msg:'RISK: '+r.n+' -- '+r.desc});
+    }
+  });
+}
+
+// check milestones
+let msHit=new Set();
+function checkMilestones(m){
+  MILESTONES.forEach((ms,i)=>{
+    if(msHit.has(i))return;
+    if(m>=ms.m){msHit.add(i);eventLog.push({m:ms.m,type:'mile',msg:'MILESTONE: '+ms.n+' achieved'});}
+  });
+}
+
+// WebGL (same raymarcher)
+const VERT=`#version 300 es\nin vec2 aP;\nvoid main(){gl_Position=vec4(aP,0,1);}`;
+const FRAG=`#version 300 es
+precision highp float;out vec4 F;
+uniform vec2 uR;uniform vec3 uC,uL;uniform float uV;uniform int uN;
+uniform int uT[24];uniform vec3 uP[24],uS[24],uO[24];uniform float uB[24],uX[24];
+uniform vec3 uD,uA,uZ;uniform float uNight;
+float sB(vec3 p,vec3 b){vec3 q=abs(p)-b;return length(max(q,0.))+min(max(q.x,max(q.y,q.z)),0.);}
+float sS(vec3 p,float r){return length(p)-r;}
+float sC(vec3 p,float r,float h){vec2 d=abs(vec2(length(p.xz),p.y))-vec2(r,h);return min(max(d.x,d.y),0.)+length(max(d,0.));}
+float sT(vec3 p,float R,float r){return length(vec2(length(p.xz)-R,p.y))-r;}
+float sm(float a,float b,float k){float h=clamp(.5+.5*(b-a)/k,0.,1.);return mix(b,a,h)-k*h*(1.-h);}
+float sO(int i,vec3 p){vec3 q=p-uP[i],s=uS[i]*.5;if(uT[i]==0)return sB(q,s);if(uT[i]==1)return sS(q,s.x);if(uT[i]==2)return sC(q,s.x,s.y);if(uT[i]==4)return sC(q.yxz,s.x,s.y);if(uT[i]==5)return sC(q.xzy,s.x,s.y);return sT(q,s.x,s.y);}
+float map(vec3 p){float d=p.y;for(int i=0;i<24;i++){if(i>=uN)break;float di=sO(i,p);if(uX[i]>.5)d=max(d,-di);else if(uB[i]>.001)d=sm(d,di,uB[i]);else d=min(d,di);}return d;}
+vec3 mc(vec3 p,float dist){float d=p.y;vec2 q=abs(fract(p.xz*.5)-.5);float mx=max(q.x,q.y),w=.008*(1.+dist*.12),ln=smoothstep(.5-w,.5,mx);
+vec3 c=mix(vec3(.80,.81,.83),vec3(.56,.59,.64),ln*.85);
+for(int i=0;i<24;i++){if(i>=uN)break;float di=sO(i,p);if(uX[i]>.5)d=max(d,-di);else if(uB[i]>.001){float nd=sm(d,di,uB[i]);if(di<d)c=uO[i];d=nd;}else{if(di<d){d=di;c=uO[i];}}}return c;}
+vec3 N(vec3 p){vec2 e=vec2(.002,0);return normalize(vec3(map(p+e.xyy)-map(p-e.xyy),map(p+e.yxy)-map(p-e.yxy),map(p+e.yyx)-map(p-e.yyx)));}
+float sh(vec3 o,vec3 d){float r=1.,t=.05;for(int i=0;i<32;i++){float h=map(o+d*t);r=min(r,10.*h/t);t+=clamp(h,.02,.5);if(r<.005||t>30.)break;}return clamp(r,0.,1.);}
+float ao(vec3 p,vec3 n){float o=0.,s=1.;for(int i=1;i<=5;i++){float h=.06*float(i);o+=(h-map(p+n*h))*s;s*=.7;}return clamp(1.-2.*o,0.,1.);}
+void main(){vec2 uv=(gl_FragCoord.xy*2.-uR)/uR.y;
+vec3 fw=normalize(uL-uC),rt=normalize(cross(fw,vec3(0,1,0))),up=cross(rt,fw);
+float fl=1./tan(radians(uV)*.5);vec3 rd=normalize(fw*fl+rt*uv.x+up*uv.y),ro=uC;
+vec3 sun=normalize(uD);
+float ni=uNight;
+vec3 sky1=mix(uA,vec3(.05,.06,.12),ni),sky2=mix(uZ,vec3(.02,.03,.06),ni);
+vec3 sky=mix(sky2,sky1,clamp(rd.y*.7+.5,0.,1.));
+sky+=vec3(1,.9,.7)*pow(max(dot(rd,sun),0.),64.)*.4*(1.-ni*.8);
+float t=0.;bool hit=false;for(int i=0;i<128;i++){float h=map(ro+rd*t);if(h<.002*max(t,1.)){hit=true;break;}t+=h;if(t>80.)break;}
+vec3 col=sky;if(hit){vec3 p=ro+rd*t,n=N(p),base=mc(p,t);
+float dif=max(dot(n,sun),0.)*sh(p+n*.02,sun)*(1.-ni*.6);float amb=(.5+.5*n.y)*(1.-ni*.3);float occ=ao(p,n);
+col=base*(vec3(1,.96,.88)*dif*(1.-ni*.5)+mix(sky2,sky1,.5)*amb*.55)*occ;
+col+=vec3(pow(max(dot(reflect(rd,n),sun),0.),24.)*.2*dif);
+col=mix(col,sky,1.-exp(-.001*t*t));}
+col=pow(max(col,vec3(0)),vec3(1./2.2));F=vec4(col,1);}`;
+
+const cv=$('gl'),gl=cv.getContext("webgl2",{antialias:false});
+if(!gl)document.body.innerHTML="<p>WebGL2 required</p>";
+function cmp(t,s){const sh=gl.createShader(t);gl.shaderSource(sh,s);gl.compileShader(sh);if(!gl.getShaderParameter(sh,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(sh));return sh;}
+const prg=gl.createProgram();gl.attachShader(prg,cmp(gl.VERTEX_SHADER,VERT));gl.attachShader(prg,cmp(gl.FRAGMENT_SHADER,FRAG));gl.linkProgram(prg);gl.useProgram(prg);
+const bf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,bf);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
+const aP=gl.getAttribLocation(prg,"aP");gl.enableVertexAttribArray(aP);gl.vertexAttribPointer(aP,2,gl.FLOAT,false,0,0);
+const U={};["uR","uC","uL","uV","uN","uT","uP","uS","uO","uB","uX","uD","uA","uZ","uNight"].forEach(n=>U[n]=gl.getUniformLocation(prg,n));
+
+function getCam(m){
+  const t=m/84*Math.PI*2;
+  if(camMode==='aerial')return{p:[0,18,.01],l:[0,0,0],f:55};
+  if(camMode==='reactor')return{p:[sc(-10)+4,sc(V["rb-h"]*.4),5],l:[sc(-10),sc(V["rb-h"]*.3),0],f:50};
+  if(camMode==='turbine')return{p:[sc(25)+6,4,8],l:[sc(25),sc(V["tb-h"]*.3),0],f:52};
+  if(camMode==='intake')return{p:[sc(-38),4,sc(-20)+8],l:[sc(-20),1,sc(-20)],f:50};
+  if(camMode==='crane')return{p:[sc(5)+2,sc(V["cr-h"]*.7),sc(12)+3],l:[sc(-10),sc(V["rb-h"]*.3),0],f:48};
+  return{p:[Math.cos(t*.25)*14,8,Math.sin(t*.25)*14],l:[0,2.5,0],f:48};
+}
+
+function render3D(){
+  const dpr=Math.min(devicePixelRatio||1,1.5),w=Math.min(1100,Math.round(cv.clientWidth*dpr)),h=Math.round(w*10/16);
+  if(cv.width!==w){cv.width=w;cv.height=h;}
+  const objs=buildObjs(month);
+  const tp=new Int32Array(MAX_OBJ),ps=new Float32Array(MAX_OBJ*3),sz=new Float32Array(MAX_OBJ*3),cl=new Float32Array(MAX_OBJ*3),bl=new Float32Array(MAX_OBJ),sb=new Float32Array(MAX_OBJ);
+  objs.forEach((o,i)=>{tp[i]=SHAPE_IDS[o.shape]??0;ps.set(o.pos,i*3);sz.set([o.size[0]??1,o.size[1]??o.size[0]??1,o.size[2]??o.size[0]??1],i*3);cl.set(unhex(o.color||"#999"),i*3);bl[i]=o.blend||0;sb[i]=o.sub?1:0;});
+  const cam=getCam(month);
+  gl.viewport(0,0,w,h);gl.uniform2f(U.uR,w,h);gl.uniform3fv(U.uC,cam.p);gl.uniform3fv(U.uL,cam.l);gl.uniform1f(U.uV,cam.f);
+  gl.uniform1i(U.uN,objs.length);gl.uniform1iv(U.uT,tp);gl.uniform3fv(U.uP,ps);gl.uniform3fv(U.uS,sz);gl.uniform3fv(U.uO,cl);gl.uniform1fv(U.uB,bl);gl.uniform1fv(U.uX,sb);
+  gl.uniform3f(U.uD,.5,1,.3);gl.uniform3fv(U.uA,[.80,.84,.90]);gl.uniform3fv(U.uZ,[.58,.63,.72]);
+  gl.uniform1f(U.uNight,nightMode?1:0);
+  gl.drawArrays(gl.TRIANGLES,0,3);
+}
+
+const scCtx=$('sc').getContext('2d'),dsCtx=$('disc').getContext('2d');
+function drawCharts(){
+  const dur=PLANTS[plant].dur;
+  // S-curve
+  let c=scCtx,w=c.canvas.width=c.canvas.clientWidth*2,h=c.canvas.height=c.canvas.clientHeight*2;
+  c.fillStyle='#fafbfc';c.fillRect(0,0,w,h);
+  c.strokeStyle='#e0e0e0';c.lineWidth=1;for(let i=0;i<=4;i++){const y=h*.08+h*.84*(1-i/4);c.beginPath();c.moveTo(0,y);c.lineTo(w,y);c.stroke();}
+  // actual cost line
+  c.strokeStyle='#dc262644';c.lineWidth=2;c.beginPath();
+  let cumCost=0;for(let m=0;m<=dur;m++){cumCost+=workforce(m)*8500/1e6;const x=m/dur*w,y=h*.08+h*.84*(1-cumCost/(PLANTS[plant].budget*1.3)*100/100);m?c.lineTo(x,y):c.moveTo(x,y);}c.stroke();
+  c.strokeStyle='#ddd';c.lineWidth=2;c.beginPath();for(let m=0;m<=dur;m++){const x=m/dur*w,y=h*.08+h*.84*(1-planned(m)/100);m?c.lineTo(x,y):c.moveTo(x,y);}c.stroke();
+  c.strokeStyle='#2563eb';c.lineWidth=3;c.beginPath();for(let m=0;m<=Math.min(month,dur);m++){const x=m/dur*w,y=h*.08+h*.84*(1-earned(m)/100);m?c.lineTo(x,y):c.moveTo(x,y);}c.stroke();
+  const nx=month/dur*w;c.strokeStyle='#d97706';c.lineWidth=2;c.setLineDash([4,4]);c.beginPath();c.moveTo(nx,0);c.lineTo(nx,h);c.stroke();c.setLineDash([]);
+  c.fillStyle='#999';c.font='bold '+(h*.1)+'px '+getComputedStyle(document.body).getPropertyValue('--mono');
+  c.fillText('Plan',4,h*.1);c.fillStyle='#2563eb';c.fillText('Earned',w*.15,h*.1);c.fillStyle='#dc262688';c.fillText('Cost',w*.32,h*.1);
+
+  // discipline progress
+  c=dsCtx;w=c.canvas.width=c.canvas.clientWidth*2;h=c.canvas.height=c.canvas.clientHeight*2;
+  c.fillStyle='#fafbfc';c.fillRect(0,0,w,h);
+  const bw=w/(DISCIPLINES.length+.5),bh=h*.78;
+  DISCIPLINES.forEach((d,i)=>{
+    const pct=discProg(d,month)/100;
+    c.fillStyle=d.c+'44';c.fillRect(i*bw+bw*.15,h*.1,bw*.7,bh);
+    c.fillStyle=d.c;c.fillRect(i*bw+bw*.15,h*.1+bh*(1-pct),bw*.7,bh*pct);
+    c.fillStyle='#666';c.font=(h*.08)+'px '+getComputedStyle(document.body).getPropertyValue('--mono');
+    c.fillText(d.n.slice(0,4),i*bw+bw*.2,h*.98);
+    c.fillStyle=d.c;c.font='bold '+(h*.09)+'px '+getComputedStyle(document.body).getPropertyValue('--mono');
+    c.fillText(discProg(d,month)+'%',i*bw+bw*.2,h*.1+bh*(1-pct)-4);
+  });
+  c.strokeStyle='#d97706';c.lineWidth=2;c.setLineDash([4,4]);c.beginPath();c.moveTo(nx,0);c.lineTo(nx,h);c.stroke();c.setLineDash([]);
+}
+
+function drawCostDisc(){
+  const el=document.getElementById('costd');if(!el)return;
+  const c=el.getContext('2d'),w=el.width=el.clientWidth*2,h=el.height=el.clientHeight*2;
+  c.fillStyle='#fafbfc';c.fillRect(0,0,w,h);
+  const dur=PLANTS[plant].dur,B=PLANTS[plant].budget*1000;
+  TRADES.forEach((t,ti)=>{
+    c.strokeStyle=t.color;c.lineWidth=2;c.beginPath();
+    let cum=0;
+    for(let m=0;m<=Math.min(month,dur);m++){
+      const wf=workforce(m);const share=t.peak*(m<20?ti<2?1.5:.3:m<50?1:ti>3?1.5:.5);
+      cum+=wf*8.5*share/1e3;
+      const x=m/dur*w,y=h*.08+h*.84*(1-cum/B);
+      m?c.lineTo(x,y):c.moveTo(x,y);
+    }
+    c.stroke();
+  });
+  c.fillStyle='#999';c.font='bold '+(h*.09)+'px '+getComputedStyle(document.body).getPropertyValue('--mono');
+  TRADES.forEach((t,i)=>{c.fillStyle=t.color;c.fillText(t.n,4+i*w/TRADES.length,h*.97);});
+}
+
+function drawWfTrade(){
+  const el=document.getElementById('wftrade');if(!el)return;
+  const c=el.getContext('2d'),w=el.width=el.clientWidth*2,h=el.height=el.clientHeight*2;
+  c.fillStyle='#fafbfc';c.fillRect(0,0,w,h);
+  const wf=workforce(Math.round(month));
+  const bw=w/TRADES.length,bh=h*.78;
+  TRADES.forEach((t,i)=>{
+    const share=t.peak*(month<20?i<2?1.5:.3:month<50?1:i>3?1.5:.5);
+    const tw=Math.round(wf*share);
+    const pct=tw/4000;
+    c.fillStyle=t.color+'66';c.fillRect(i*bw+bw*.1,h*.1,bw*.8,bh);
+    c.fillStyle=t.color;c.fillRect(i*bw+bw*.1,h*.1+bh*(1-pct),bw*.8,bh*pct);
+    c.fillStyle='#666';c.font=(h*.08)+'px '+getComputedStyle(document.body).getPropertyValue('--mono');
+    c.fillText(t.n.slice(0,4),i*bw+bw*.15,h*.97);
+    c.fillStyle=t.color;c.font='bold '+(h*.09)+'px '+getComputedStyle(document.body).getPropertyValue('--mono');
+    c.fillText(tw,i*bw+bw*.15,h*.1+bh*(1-pct)-3);
+  });
+}
+
+function updatePours(){
+  const el=$('pourlog');if(!el)return;
+  let cumVol=0;POURS.forEach(p=>{if(month>=p.m+2)cumVol+=p.vol;});
+  el.innerHTML='<div style="font-weight:600;color:var(--ink);margin-bottom:3px">Cumulative: '+Math.round(cumVol).toLocaleString()+' m3 placed</div>'+
+    POURS.map(p=>{
+    const cls=month>=p.m+2?'done':month>=p.m-1?'pour-row':'future';
+    return'<div class="pour-row '+cls+'"><span class="pm">M'+p.m+'</span><span class="pn">'+p.n+'</span><span style="color:var(--m);font-size:9px">'+((p.spec)||'')+'</span><span class="pv">'+p.vol+' m3</span></div>';
+  }).join('');
+}
+
+function updateSafety(){
+  const el=$('safety');if(!el)return;
+  const hrs=Math.round(workforce(month)*170*month);
+  const lti=Math.floor(month/25);
+  const ltir=hrs>0?(lti/hrs*200000).toFixed(2):'0';
+  const nearMiss=Math.round(month*1.5+Math.sin(month*.3)*3);
+  const daysNoLTI=Math.round((month-lti*25)*30);
+  el.innerHTML=
+    '<div class="sf g"><span class="sv">'+Math.round(hrs/1e6)+'M</span><span class="sl">worker hours</span></div>'+
+    '<div class="sf '+(lti>2?'r':lti>0?'y':'g')+'"><span class="sv">'+lti+'</span><span class="sl">LTIs</span></div>'+
+    '<div class="sf '+(+ltir>1?'r':+ltir>.5?'y':'g')+'"><span class="sv">'+ltir+'</span><span class="sl">LTIR</span></div>'+
+    '<div class="sf g"><span class="sv">'+daysNoLTI+'</span><span class="sl">days no LTI</span></div>'+
+    '<div class="sf y"><span class="sv">'+nearMiss+'</span><span class="sl">near misses</span></div>'+
+    '<div class="sf '+(nearMiss>0&&lti===0?'g':'y')+'"><span class="sv">'+(nearMiss>0?Math.round(nearMiss/Math.max(1,lti)):'-')+'</span><span class="sl">NM/LTI ratio</span></div>';
+}
+
+function updateUI(){
+  const dur=PLANTS[plant].dur;
+  $('mlab').textContent='M'+Math.round(month)+' / '+dur;
+  const yr=Math.floor(month/12)+1,mo=Math.round(month%12)+1;
+  const phase=PHASES.find(p=>month>=p.s&&month<p.e)||PHASES[PHASES.length-1];
+  $('sp').textContent='Y'+yr+' M'+mo+' | '+phase.n+(weatherOn?' | Rain':'')+(nightMode?' | Night':'');
+
+  $('pb').innerHTML=PHASES.map((p,i)=>{
+    const cls=month>=p.e?'past':month>=p.s?'now':'fut';
+    return'<div class="ps '+cls+'" style="background:'+p.c+'" data-ph="'+i+'">'+p.n.split(' ')[0]+'</div>';}).join('');
+
+  const K=kpis(month);
+  $('kpis').innerHTML=K.map(k=>'<div class="k'+(k.c?' '+k.c:'')+'"><div class="v">'+k.v+'</div><div class="l">'+k.l+'</div></div>').join('');
+
+  $('ms').innerHTML=MILESTONES.map(ms=>{
+    const cls=month>=ms.m+1?'d':month>=ms.m-2?'a':'f';
+    const dc=cls==='d'?'background:var(--ok)':cls==='a'?'background:var(--w)':'background:var(--h)';
+    return'<div class="m '+cls+'"><span class="md" style="'+dc+'"></span>M'+ms.m+' '+ms.n+'</div>';}).join('');
+
+  $('risks').innerHTML=RISKS.map((r,i)=>{
+    const hit=riskHits.has(i);
+    return'<div class="ri'+(hit?' hit':month>r.trigger+2?' ok':'')+'">'+
+      (hit?'&#9888; ':'')+(month>r.trigger+2&&!hit?'&#10003; ':'')+r.n+'</div>';}).join('');
+
+  $('ll').innerHTML=LONGLEAD.map(l=>{
+    const cls=month>=l.deliver?'del':month>=l.need&&month<l.deliver?'late':month>=l.order?'wait':'';
+    return'<div class="li '+cls+'">'+(cls==='del'?'&#10003;':cls==='late'?'&#9888;':cls==='wait'?'&#9881;':'&#8987;')+' '+l.n+
+      (cls==='wait'?' (fab)':cls==='del'?' (on site)':cls==='late'?' LATE':'')+'</div>';}).join('');
+
+  // feed (show last 8)
+  $('feed').innerHTML=eventLog.slice(-8).reverse().map(e=>
+    '<div class="ev '+e.type+'"><span class="t">M'+e.m+'</span><span class="typ">'+e.type+'</span><span>'+e.msg+'</span></div>').join('');
+
+  $('report').innerHTML=genReport(Math.round(month));
+  drawCharts();drawCostDisc();drawWfTrade();updatePours();updateSafety();updateNarrative();
+}
+
+function updateNarrative(){
+  const m=Math.round(month),cfg=PLANTS[plant];
+  const narr=$('narr'),caps=$('caps'),peek=$('peek');
+
+  // narrative text changes by phase
+  let n='';
+  if(m<3)n='<div class="cap">PARAMETRIC GEOMETRY</div>The 3D scene is <span class="hl">derived from 7 numbers</span> -- reactor diameter, height, turbine width, pipe diameter. Drag any slider below and the entire site re-derives. No coordinates are stored; every position is a relationship. This is what JTM does: <b>the file is the source, the pixels are computed</b>.';
+  else if(m<10)n='<div class="cap">CONSTRUCTION SEQUENCING</div>Objects appear when their phase starts and <span class="hl">grow with easeOut cubic interpolation</span>. The excavation pit is a <code>sub:true</code> boolean subtraction from the ground plane -- the same SDF raymarcher that renders the crane also carves the hole. <b>One shader, one format, one file</b>.';
+  else if(m<20)n='<div class="cap">PHYSICS-DRIVEN GEOMETRY</div>The basemat pour is <b>'+POURS.filter(p=>m>=p.m+2).reduce((a,p)=>a+p.vol,0).toLocaleString()+' m3 placed</b> so far. Each pour has a mix specification ('+((POURS.find(p=>m>=p.m-1&&m<p.m+3)||{}).spec||'50 MPa nuclear')+') because the model carries engineering data, not just shapes. The <span class="hl">text IS the engineering record</span>.';
+  else if(m<36)n='<div class="cap">CONSTRAINT SOLVER</div>The reactor building wall is rising at <b>'+Math.round(vis(m,14,38)*100)+'%</b>. Inside, the containment liner (purple) is placed by a constraint: <code>"concentric RB"</code> -- not a coordinate, a relationship. If you change the reactor diameter, the liner <span class="hl">re-derives its position automatically</span>. This is SolidWorks thinking applied to a text file.';
+  else if(m<48)n='<div class="cap">LONG-LEAD TRACKING</div><b>'+LONGLEAD.filter(l=>m>=l.order&&m<l.deliver).length+'</b> items in fabrication right now. The RPV, steam generators, and turbine rotor are on multi-year procurement cycles. Each has an order date, delivery date, and need date -- <span class="hl">and the model knows when late is late</span>. The 3D objects only appear when the item arrives.';
+  else if(m<60)n='<div class="cap">EARNED VALUE + MONTE CARLO</div>SPI is <b>'+((earned(m)/planned(m))||1).toFixed(2)+'</b>. The S-curve shows plan vs earned vs actual cost -- three readings of one graph. In ACT, the schedule is not a separate system; it is a <span class="hl">derived reading of the constraint graph</span>. Every risk event that fired changed the earned value curve. No reconciliation needed because there is nothing to reconcile.';
+  else if(m<72)n='<div class="cap">RISK PROPAGATION</div><b>'+riskHits.size+'</b> of '+RISKS.length+' risks have fired, adding <b>'+delayTotal+' months</b> of delay. Each risk has a probability, an impact, and a trigger month. During playback they fire probabilistically -- <span class="hl">the same build never plays the same way twice</span>. The what-if buttons let you layer scenarios and see the EVM respond live.';
+  else if(m<84)n='<div class="cap">COMMISSIONING SEQUENCE</div>The plant is entering startup. Fuel load at M72, criticality at M78, commercial operation at M84. The workforce is ramping down from peak. The <span class="hl">entire 84-month narrative</span> -- 25 concrete pours, 16 long-lead items, 35 milestones, 16 risks, 6 discipline curves -- is driven by <b>one parametric model in one text file</b>.';
+  else n='<div class="cap">COMMERCIAL OPERATION</div><b>'+cfg.name+'</b> is online at <b>'+cfg.mwe+' MWe</b>. Budget was $'+cfg.budget+'B. Every number on this page was derived from the same source: <span class="hl">a JSON file small enough to paste in a chat message</span>. That is the JTM thesis: media as editable, solvable text.';
+
+  narr.innerHTML=n;
+
+  // capability cards - rotate based on month
+  const allCaps=[
+    {t:'Text = Source',d:'The 3D scene, schedule, cost, and risk are all derived from one JSON object. Edit the text; everything re-derives.'},
+    {t:'No Coordinates',d:'Objects are placed by constraints (on, above, align-x, concentric), not positions. Change a dimension; the layout re-solves.'},
+    {t:'Physics Calcs',d:'Concrete volumes, cable ampacity, heat balance, flow rates -- geometry IS the calculation, not a separate spreadsheet.'},
+    {t:'SDF Raymarcher',d:'One GLSL shader renders box, sphere, cylinder, torus, CSG subtract, and smooth blend. 128 march steps, soft shadows, AO.'},
+    {t:'Risk Register',d:'16 risks with probability, impact, and trigger month. They fire during playback -- the same build never plays identically.'},
+    {t:'Earned Value',d:'SPI, CPI, EAC derived live. The S-curve is not a drawing; it is a function of the constraint graph state.'},
+    {t:'5 Plant Types',d:'PWR, CANDU, SMR, AP1000, EPR -- swap the plant type and every dimension, budget, and duration re-derives.'},
+    {t:'What-If',d:'Layer scenarios: delays, crashes, budget changes, workforce adjustments. The EVM responds live. No recalculation button.'},
+    {t:'Long-Lead Items',d:'16 items from RPV to fuel assemblies, each with order/deliver/need dates. Objects appear when the item arrives on site.'},
+    {t:'Safety Dashboard',d:'Worker-hours, LTIs, LTIR, near misses. All derived from the workforce curve and the timeline position.'},
+  ];
+  const show=3,offset=Math.floor(m/8)%allCaps.length;
+  const visible=[];for(let i=0;i<show;i++)visible.push(allCaps[(offset+i)%allCaps.length]);
+  caps.innerHTML=visible.map(c=>'<div class="cap"><div class="ct">'+c.t+'</div><div class="cd">'+c.d+'</div></div>').join('');
+
+  // JTM peek - show a fragment of the underlying data
+  const obj=buildObjs(m);
+  const sample=obj.slice(0,3);
+  let p='<b>JTM source powering this frame ('+obj.length+' objects):</b> ';
+  p+=sample.map(o=>'<span class="kw">'+o.shape+'</span> pos=[<span class="vl">'+o.pos.map(v=>v.toFixed(2)).join(',')+'</span>] size=[<span class="vl">'+o.size.map(v=>v.toFixed(2)).join(',')+'</span>] <span class="nm">'+o.color+'</span>').join(' | ');
+  if(obj.length>3)p+=' | <span style="color:var(--m)">...+'+(obj.length-3)+' more</span>';
+  peek.innerHTML=p;
+}
+
+function buildDims(){
+  $('dims').innerHTML='';
+  for(const k in R){
+    const r=R[k],d=document.createElement('div');d.className='dim';
+    d.innerHTML='<label>'+k+'</label><input type="range" min="'+r[0]+'" max="'+r[1]+'" step="'+((r[1]-r[0])/100)+'" value="'+(V[k]||r[0])+'" data-k="'+k+'"><span class="dv" data-dv="'+k+'">'+(V[k]||r[0])+'</span>';
+    $('dims').appendChild(d);
+  }
+  $('dims').addEventListener('input',e=>{if(!e.target.dataset.k)return;V[e.target.dataset.k]=+e.target.value;document.querySelector('[data-dv="'+e.target.dataset.k+'"]').textContent=(+e.target.value).toFixed(+e.target.value>=10?0:1);});
+}
+
+function loop(now){
+  const dt=(now-lastF)/1000;lastF=now;
+  if(playing){
+    const dur=PLANTS[plant].dur;
+    month=Math.min(dur,month+dt*spdX*3);
+    $('mo').value=month;
+    if(month>=dur){playing=false;$('play').textContent='Play';eventLog.push({m:dur,type:'good',msg:'COMMERCIAL OPERATION DATE achieved!'});}
+    checkRisks(month);checkMilestones(month);
+    // construction events (positive)
+    if(Math.random()<.003&&month>5){
+      const goodMsgs=[
+        "Concrete test cylinders pass 28-day strength ("+Math.round(40+Math.random()*15)+" MPa)",
+        "Survey crew completes as-built elevation check: within 3mm tolerance",
+        "QC inspection: zero NCRs this period across all disciplines",
+        "Safety milestone: "+(Math.round(workforce(month)*170*month/1e5))+"00k worker-hours LTI-free",
+        "Environmental monitoring: all parameters within permit limits",
+        "Night shift continuous pour completed: "+Math.round(200+Math.random()*400)+" m3 placed",
+        "Crane monthly inspection: all hooks, sheaves, and wire rope passed",
+        "Batch plant daily calibration verified: slump "+Math.round(80+Math.random()*40)+" mm",
+        "Welding NDE results: "+Math.round(96+Math.random()*4)+"% first-time pass rate",
+        "Rebar placement rate: "+Math.round(15+Math.random()*10)+" tonnes/day achieved",
+        "Containment liner vacuum test: leak rate within spec",
+        "Embedded plates survey: "+Math.round(40+Math.random()*20)+" items verified this period",
+        "CW conduit hydrostatic test: hold pressure stable for 24 hours",
+        "Cable pulling crew: "+Math.round(2+Math.random()*6)+" km of cable pulled this week",
+        "Turbine pedestal alignment: within 0.05mm specification",
+        "Reactor building elevator commissioned and operational"
+      ];
+      eventLog.push({m:Math.round(month),type:'good',msg:goodMsgs[Math.floor(Math.random()*goodMsgs.length)]});
+    }
+    // weather events
+    if(weatherOn&&Math.random()<.004){
+      const wxMsgs=["Heavy rain: outdoor concrete pours postponed 2 days","High winds: crane operations suspended (>40 km/h)","Snow: site access roads being plowed, 1-hour delay","Fog: crane operations limited visibility, morning shift delayed","Thunder: all outdoor work stopped per safety protocol","Extreme cold: winter heating protocol activated for concrete curing"];
+      eventLog.push({m:Math.round(month),type:'risk',msg:'WEATHER: '+wxMsgs[Math.floor(Math.random()*wxMsgs.length)]});
+    }
+    // inspection events
+    if(Math.random()<.001&&month>20){
+      const inspMsgs=["CNSC regulatory inspection: satisfactory, 2 minor findings","TSSA pressure vessel inspection: approved to proceed","MOL site visit: zero orders issued","ISO 9001 surveillance audit: no non-conformances","N299.x nuclear quality audit: all records compliant"];
+      eventLog.push({m:Math.round(month),type:'mile',msg:inspMsgs[Math.floor(Math.random()*inspMsgs.length)]});
+    }
+  }
+  render3D();updateUI();
+  requestAnimationFrame(loop);
+}
+
+// wiring
+$('mo').oninput=e=>{month=+e.target.value;playing=false;$('play').textContent='Play';};
+$('play').onclick=()=>{if(playing){playing=false;$('play').textContent='Play';}else{if(month>=PLANTS[plant].dur)month=0;playing=true;$('play').textContent='Pause';}};
+$('spd').onclick=function(){spdX=spdX===1?3:spdX===3?8:1;this.textContent=spdX+'x';};
+$('cam').onchange=e=>{camMode=e.target.value;};
+$('night').onclick=function(){nightMode=!nightMode;this.classList.toggle('on');};
+$('weather').onclick=function(){weatherOn=!weatherOn;this.classList.toggle('on');if(weatherOn)eventLog.push({m:Math.round(month),type:'risk',msg:'Weather event: heavy rain, outdoor work slowed'});};
+$('plant').onchange=e=>{month=0;playing=false;$('play').textContent='Play';msHit=new Set();lastRiskCheck=0;setPlant(e.target.value);};
+$('pb').onclick=e=>{const ph=e.target.closest('.ps');if(!ph)return;month=PHASES[+ph.dataset.ph].s;playing=false;$('play').textContent='Play';};
+document.onkeydown=e=>{if(e.code==='Space'&&e.target.tagName!=='INPUT'){e.preventDefault();$('play').click();}};
+
+setPlant('pwr');requestAnimationFrame(loop);
+</script>
+</body>
+</html>

@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Flappy You</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#08001a;overflow:hidden;-webkit-user-select:none;user-select:none}
+canvas{display:block;position:fixed;inset:0;width:100%;height:100%}
+video{display:none}
+.ui{position:fixed;z-index:10;pointer-events:none}
+.sc{top:12px;left:0;right:0;text-align:center;font:900 48px system-ui;color:#fff;text-shadow:0 3px 10px rgba(0,0,0,.5)}
+.combo-txt{top:65px;left:0;right:0;text-align:center;font:700 16px monospace;color:#00ced1}
+.start{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;align-items:center;justify-content:center;background:linear-gradient(180deg,#0a0020,#1a0040);color:#fff;text-align:center}
+.start h1{font-size:36px;font-weight:900;background:linear-gradient(135deg,#ff6ec7,#7b68ee,#00ced1);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:6px}
+.start .sub{font-size:13px;color:#8a7aaa;margin-bottom:16px;max-width:300px;line-height:1.5}
+.start button{font:bold 18px system-ui;padding:14px 40px;border:none;border-radius:10px;background:linear-gradient(135deg,#ff6ec7,#7b68ee);color:#fff;cursor:pointer}
+.over{position:fixed;inset:0;z-index:20;display:none;flex-direction:column;align-items:center;justify-content:center;background:rgba(5,0,15,.9);color:#fff;text-align:center;gap:8px}
+.over h2{font-size:30px;font-weight:900;color:#ff6ec7}
+.over .fs{font:bold 44px monospace;color:#00ced1}
+.over button{font:bold 16px system-ui;padding:12px 32px;border:none;border-radius:8px;background:linear-gradient(135deg,#ff6ec7,#7b68ee);color:#fff;cursor:pointer;margin-top:8px}
+.wv{position:fixed;bottom:0;left:0;right:0;height:40px;z-index:5;pointer-events:none;opacity:.4}
+</style>
+</head>
+<body>
+<video id="cam" playsinline autoplay muted></video>
+<canvas id="cv"></canvas>
+<canvas class="wv" id="wv"></canvas>
+<div class="ui sc" id="sc">0</div>
+<div class="ui combo-txt" id="combo"></div>
+<div class="start" id="startScreen">
+  <h1>Flappy You</h1>
+  <div class="sub">Your face is the bird. Camera background. Tap to flap. Pipes play music. Collect stars for combos. Your pixel portrait flies.</div>
+  <button id="goBtn">Play</button>
+</div>
+<div class="over" id="over">
+  <h2>Game Over</h2>
+  <div class="fs" id="finalSc">0</div>
+  <p style="color:#8a7aaa;font-size:12px" id="bestTxt">Best: 0</p>
+  <button id="retryBtn">Play Again</button>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const cv=$('cv'),ctx=cv.getContext('2d');
+const cam=$('cam');
+const wvC=$('wv'),wvX=wvC.getContext('2d');
+const faceC=document.createElement('canvas'),faceX=faceC.getContext('2d');
+let W,H;function resize(){W=cv.width=innerWidth;H=cv.height=innerHeight;}
+resize();onresize=resize;
+
+// game state
+let running=false,score=0,best=+(localStorage.fy||0),combo=0,lastStarT=0;
+let bird={y:0,vy:0,rot:0};
+let pipes=[],stars=[],particles=[];
+const GRAVITY=.35,FLAP=-7,PIPE_GAP=160,PIPE_W=60,PIPE_SPD=2.5,STAR_SIZE=14;
+let camReady=false,stream=null;
+
+// face capture (pixel portrait)
+const FACE_W=20,FACE_H=20;
+let facePixels=null;
+function captureFace(){
+  if(!cam.videoWidth)return;
+  faceC.width=FACE_W;faceC.height=FACE_H;
+  // crop center square from camera
+  const vw=cam.videoWidth,vh=cam.videoHeight;
+  const sz=Math.min(vw,vh);
+  const ox=(vw-sz)/2,oy=(vh-sz)/2;
+  faceX.drawImage(cam,ox,oy,sz,sz,0,0,FACE_W,FACE_H);
+  facePixels=faceX.getImageData(0,0,FACE_W,FACE_H);
+}
+
+// JTM audio engine
+let actx,mg,analyser,waveBuf,padOscs=[],arpTimer,musicOn=false;
+function initAudio(){
+  if(actx)return;
+  actx=new(AudioContext||webkitAudioContext)();
+  analyser=actx.createAnalyser();analyser.fftSize=512;
+  waveBuf=new Uint8Array(analyser.frequencyBinCount);
+  mg=actx.createGain();mg.gain.value=.14;
+  mg.connect(analyser);analyser.connect(actx.destination);
+}
+function pn(f,w,g,a,d,s,r,dur,when,det){
+  if(!actx)return;
+  const env=actx.createGain();
+  env.gain.setValueAtTime(0,when);
+  env.gain.linearRampToValueAtTime(g,when+Math.min(a,dur*.4));
+  env.gain.linearRampToValueAtTime(g*s,when+Math.min(a+d,dur*.8));
+  env.gain.setValueAtTime(g*s,when+dur);
+  env.gain.linearRampToValueAtTime(0,when+dur+r);
+  const fl=actx.createBiquadFilter();fl.type='lowpass';fl.frequency.value=1400;
+  env.connect(fl);fl.connect(mg);
+  const o=actx.createOscillator();o.type=w;o.frequency.value=f;
+  if(det)o.detune.value=det;
+  o.connect(env);o.start(when);o.stop(when+dur+r+.1);
+}
+function startMusic(){
+  if(musicOn)return;musicOn=true;
+  [130.81,196,261.63].forEach(f=>{
+    const o=actx.createOscillator(),o2=actx.createOscillator();
+    o.type='sine';o.frequency.value=f;o2.type='sine';o2.frequency.value=f*1.005;
+    const g=actx.createGain();g.gain.value=.02;
+    const fl=actx.createBiquadFilter();fl.type='lowpass';fl.frequency.value=400;
+    o.connect(fl);o2.connect(fl);fl.connect(g);g.connect(mg);o.start();o2.start();padOscs.push(o,o2);
+  });
+  function arp(){
+    if(!musicOn)return;
+    const n=actx.currentTime+.05;
+    const scale=[392,440,523.25,659.25,783.99,1046.5];
+    for(let i=0;i<8;i++){
+      pn(scale[Math.floor(Math.random()*scale.length)],'sine',.015,.1,.08,.1,.3,.4,n+i*.7+Math.random()*.15,Math.random()*5);
+    }
+    arpTimer=setTimeout(arp,5600);
+  }
+  arp();
+}
+function stopMusic(){musicOn=false;clearTimeout(arpTimer);padOscs.forEach(o=>{try{o.stop();}catch(e){}});padOscs=[];}
+function sfxFlap(){pn(440,'sine',.06,.005,.03,.1,.08,.06,actx.currentTime,0);pn(554,'sine',.04,.005,.03,.1,.08,.05,actx.currentTime+.02,0);}
+function sfxScore(pitch){pn(pitch||660,'triangle',.08,.01,.05,.2,.12,.1,actx.currentTime,0);}
+function sfxStar(){pn(880,'sine',.07,.005,.03,.15,.1,.08,actx.currentTime,0);pn(1100,'sine',.05,.005,.03,.1,.1,.06,actx.currentTime+.03,0);}
+function sfxDie(){pn(220,'sawtooth',.08,.01,.2,.3,.4,.3,actx.currentTime,0);pn(180,'sawtooth',.06,.01,.2,.3,.4,.3,actx.currentTime+.1,0);}
+
+// pipe music: each pipe plays a note based on its gap position
+const PIPE_SCALE=[261.63,293.66,329.63,392,440,523.25,587.33,659.25];
+function pipeNote(gapY){
+  const noteIdx=Math.floor((1-gapY/H)*PIPE_SCALE.length);
+  sfxScore(PIPE_SCALE[Math.max(0,Math.min(PIPE_SCALE.length-1,noteIdx))]);
+}
+
+async function startGame(){
+  $('startScreen').style.display='none';$('over').style.display='none';
+  initAudio();if(actx.state==='suspended')await actx.resume();
+  if(!stream){
+    try{
+      stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:320}},audio:false});
+      cam.srcObject=stream;
+      await new Promise(r=>{if(cam.readyState>=2)r();else cam.onloadeddata=()=>{cam.onloadeddata=null;r();};});
+      camReady=true;
+    }catch(e){camReady=false;}
+  }
+  captureFace();
+  startMusic();
+  running=true;score=0;combo=0;
+  bird={y:H/2,vy:0,rot:0};
+  pipes=[];stars=[];particles=[];
+  spawnPipe();
+  loop();
+}
+
+function flap(){
+  if(!running)return;
+  bird.vy=FLAP;
+  sfxFlap();
+  // burst particles from bird
+  for(let i=0;i<6;i++){
+    particles.push({x:80,y:bird.y,vx:-1-Math.random()*2,vy:(Math.random()-.5)*3,
+      life:1,decay:.03,r:2+Math.random()*3,col:['#ff6ec7','#7b68ee','#00ced1'][Math.floor(Math.random()*3)]});
+  }
+}
+
+function spawnPipe(){
+  const gapY=100+Math.random()*(H-200);
+  pipes.push({x:W+PIPE_W,gapY,scored:false,
+    col:['#ff6ec7','#7b68ee','#00ced1','#9370db','#40e0d0'][Math.floor(Math.random()*5)]});
+  // random star
+  if(Math.random()<.4){
+    stars.push({x:W+PIPE_W+80,y:50+Math.random()*(H-100),alive:true});
+  }
+}
+
+function die(){
+  running=false;sfxDie();stopMusic();
+  if(score>best){best=score;localStorage.fy=best;}
+  $('finalSc').textContent=score;
+  $('bestTxt').textContent='Best: '+best;
+  setTimeout(()=>$('over').style.display='flex',400);
+}
+
+function loop(){
+  if(!running){return;}
+  resize();
+  const t=performance.now()*.001;
+
+  // update bird
+  bird.vy+=GRAVITY;bird.y+=bird.vy;
+  bird.rot=Math.min(Math.PI/4,Math.max(-Math.PI/4,bird.vy*.06));
+  if(bird.y<0||bird.y>H){die();return;}
+
+  // update pipes
+  for(let i=pipes.length-1;i>=0;i--){
+    pipes[i].x-=PIPE_SPD+score*.02;
+    if(pipes[i].x<-PIPE_W){pipes.splice(i,1);continue;}
+    // score
+    if(!pipes[i].scored&&pipes[i].x<60){
+      pipes[i].scored=true;score++;
+      pipeNote(pipes[i].gapY);
+      combo=0;$('combo').textContent='';
+    }
+    // collision
+    const p=pipes[i];
+    if(80>p.x&&80<p.x+PIPE_W){
+      if(bird.y-18<p.gapY-PIPE_GAP/2||bird.y+18>p.gapY+PIPE_GAP/2){die();return;}
+    }
+  }
+  // spawn
+  if(!pipes.length||pipes[pipes.length-1].x<W-220-Math.random()*60)spawnPipe();
+
+  // stars
+  for(let i=stars.length-1;i>=0;i--){
+    stars[i].x-=PIPE_SPD+score*.02;
+    if(stars[i].x<-20){stars.splice(i,1);continue;}
+    if(stars[i].alive&&Math.hypot(80-stars[i].x,bird.y-stars[i].y)<24){
+      stars[i].alive=false;score+=3;combo++;lastStarT=t;
+      sfxStar();
+      for(let j=0;j<10;j++)particles.push({x:stars[i].x,y:stars[i].y,vx:(Math.random()-.5)*6,vy:(Math.random()-.5)*6,life:1,decay:.025,r:2+Math.random()*3,col:'#ffd700'});
+      $('combo').textContent=combo>1?'x'+combo+' COMBO':'';
+    }
+  }
+
+  // particles
+  for(let i=particles.length-1;i>=0;i--){
+    const p=particles[i];p.x+=p.vx;p.y+=p.vy;p.vy+=.05;p.life-=p.decay;
+    if(p.life<=0)particles.splice(i,1);
+  }
+
+  // --- DRAW ---
+  // camera background (pixelated vaporwave)
+  if(camReady&&cam.readyState>=2){
+    ctx.save();ctx.translate(W,0);ctx.scale(-1,1);
+    ctx.imageSmoothingEnabled=false;
+    // downscale then upscale for pixel effect
+    const pw=64,ph=Math.round(64*H/W);
+    const tc=document.createElement('canvas');tc.width=pw;tc.height=ph;
+    const tx=tc.getContext('2d');tx.drawImage(cam,0,0,pw,ph);
+    // color shift
+    const img=tx.getImageData(0,0,pw,ph),d=img.data;
+    for(let i=0;i<d.length;i+=4){
+      d[i]=Math.min(255,d[i]*1.1+20);d[i+1]=Math.round(d[i+1]*.6);d[i+2]=Math.min(255,d[i+2]*1.3+30);
+    }
+    tx.putImageData(img,0,0);
+    ctx.drawImage(tc,0,0,W,H);
+    ctx.restore();
+    ctx.fillStyle='rgba(8,0,26,.4)';ctx.fillRect(0,0,W,H);
+    // scanlines
+    ctx.fillStyle='rgba(0,0,0,.06)';for(let y=0;y<H;y+=2)ctx.fillRect(0,y,W,1);
+  }else{
+    // fallback gradient
+    const g=ctx.createLinearGradient(0,0,0,H);
+    g.addColorStop(0,'#0a0020');g.addColorStop(.5,'#1a0040');g.addColorStop(1,'#050010');
+    ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  }
+
+  // ground
+  ctx.fillStyle='rgba(123,104,238,.1)';ctx.fillRect(0,H-4,W,4);
+
+  // pipes (neon style)
+  for(const p of pipes){
+    // top pipe
+    const topH=p.gapY-PIPE_GAP/2;
+    ctx.fillStyle=p.col+'44';ctx.fillRect(p.x,0,PIPE_W,topH);
+    ctx.strokeStyle=p.col;ctx.lineWidth=2;ctx.strokeRect(p.x,0,PIPE_W,topH);
+    // glow line at pipe opening
+    ctx.shadowColor=p.col;ctx.shadowBlur=10;
+    ctx.fillStyle=p.col;ctx.fillRect(p.x-4,topH-4,PIPE_W+8,4);
+    ctx.shadowBlur=0;
+    // bottom pipe
+    const botY=p.gapY+PIPE_GAP/2;
+    ctx.fillStyle=p.col+'44';ctx.fillRect(p.x,botY,PIPE_W,H-botY);
+    ctx.strokeStyle=p.col;ctx.lineWidth=2;ctx.strokeRect(p.x,botY,PIPE_W,H-botY);
+    ctx.shadowColor=p.col;ctx.shadowBlur=10;
+    ctx.fillStyle=p.col;ctx.fillRect(p.x-4,botY,PIPE_W+8,4);
+    ctx.shadowBlur=0;
+  }
+
+  // stars
+  for(const s of stars){
+    if(!s.alive)continue;
+    ctx.fillStyle='#ffd700';ctx.globalAlpha=.7+Math.sin(t*4)*.3;
+    ctx.beginPath();
+    for(let i=0;i<5;i++){const a=i*Math.PI*2/5-Math.PI/2;ctx.lineTo(s.x+Math.cos(a)*STAR_SIZE,s.y+Math.sin(a)*STAR_SIZE);
+      const a2=a+Math.PI/5;ctx.lineTo(s.x+Math.cos(a2)*STAR_SIZE*.4,s.y+Math.sin(a2)*STAR_SIZE*.4);}
+    ctx.fill();ctx.globalAlpha=1;
+  }
+
+  // bird: pixel portrait from camera face capture
+  ctx.save();ctx.translate(80,bird.y);ctx.rotate(bird.rot);
+  if(facePixels){
+    const d=facePixels.data,psz=2;
+    const ox=-FACE_W*psz/2,oy=-FACE_H*psz/2;
+    for(let py=0;py<FACE_H;py++)for(let px=0;px<FACE_W;px++){
+      const i=(py*FACE_W+px)*4;
+      if(d[i]+d[i+1]+d[i+2]<30)continue;
+      ctx.fillStyle=`rgb(${d[i]},${d[i+1]},${d[i+2]})`;
+      ctx.fillRect(ox+px*psz,oy+py*psz,psz,psz);
+    }
+    // glow border
+    ctx.strokeStyle='rgba(255,110,199,.4)';ctx.lineWidth=2;
+    ctx.strokeRect(ox-2,oy-2,FACE_W*psz+4,FACE_H*psz+4);
+  }else{
+    // fallback circle
+    ctx.fillStyle='#ff6ec7';ctx.beginPath();ctx.arc(0,0,16,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(5,-3,4,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#000';ctx.beginPath();ctx.arc(6,-3,2,0,Math.PI*2);ctx.fill();
+  }
+  ctx.restore();
+
+  // trail behind bird
+  ctx.globalAlpha=.15;
+  for(let i=1;i<6;i++){
+    const tx2=80-i*8,ty=bird.y+i*bird.vy*.3;
+    if(facePixels){
+      const d2=facePixels.data,psz=2,ox=-FACE_W*psz/2,oy=-FACE_H*psz/2;
+      ctx.globalAlpha=.08/(i*.5);
+      for(let py=0;py<FACE_H;py+=2)for(let px=0;px<FACE_W;px+=2){
+        const i2=(py*FACE_W+px)*4;
+        ctx.fillStyle=`rgb(${d2[i2]},${d2[i2+1]},${d2[i2+2]})`;
+        ctx.fillRect(tx2+ox+px*psz,ty+oy+py*psz,psz,psz);
+      }
+    }
+  }
+  ctx.globalAlpha=1;
+
+  // particles
+  for(const p of particles){
+    ctx.globalAlpha=p.life;ctx.fillStyle=p.col;
+    ctx.beginPath();ctx.arc(p.x,p.y,p.r*p.life,0,Math.PI*2);ctx.fill();
+  }
+  ctx.globalAlpha=1;
+
+  // score
+  $('sc').textContent=score;
+
+  // waveform
+  if(analyser&&waveBuf){
+    analyser.getByteTimeDomainData(waveBuf);
+    const ww=wvC.width=wvC.clientWidth*2,wh=wvC.height=wvC.clientHeight*2;
+    wvX.clearRect(0,0,ww,wh);
+    wvX.strokeStyle='rgba(123,104,238,.5)';wvX.lineWidth=2;wvX.beginPath();
+    const sl=waveBuf.length,st=sl/ww;
+    for(let i=0;i<ww;i++){const v=waveBuf[Math.floor(i*st)]/128;i?wvX.lineTo(i,v*wh/2):wvX.moveTo(i,v*wh/2);}
+    wvX.stroke();
+  }
+
+  // recapture face periodically
+  if(camReady&&Math.random()<.01)captureFace();
+
+  requestAnimationFrame(loop);
+}
+
+// input
+cv.ontouchstart=e=>{e.preventDefault();flap();};
+cv.onmousedown=flap;
+document.onkeydown=e=>{if(e.code==='Space'){e.preventDefault();flap();}};
+
+$('goBtn').onclick=startGame;
+$('retryBtn').onclick=startGame;
+</script>
+</body>
+</html>

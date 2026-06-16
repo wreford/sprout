@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Overlay -- camera + image mashup</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0015;overflow:hidden;font-family:system-ui;color:#e0d0ff;-webkit-user-select:none;user-select:none}
+canvas{display:block;position:fixed;inset:0;width:100%;height:100%}
+video{display:none}
+.dock{position:fixed;bottom:0;left:0;right:0;z-index:10;display:flex;gap:6px;padding:8px 10px;background:rgba(10,0,25,.9);border-top:1px solid rgba(123,104,238,.2);align-items:center;justify-content:center;flex-wrap:wrap}
+.dock button,.dock label{font:700 11px system-ui;padding:8px 14px;border:1px solid rgba(123,104,238,.2);border-radius:8px;background:rgba(25,12,50,.9);color:#b0a0d0;cursor:pointer}
+.dock button:active,.dock label:active{background:rgba(60,30,120,.9)}
+.dock button.on{background:rgba(123,104,238,.4);color:#fff}
+.dock select{font:11px monospace;padding:6px 8px;border:1px solid rgba(123,104,238,.2);border-radius:6px;background:rgba(20,10,40,.9);color:#b0a0d0}
+.dock input[type=range]{width:70px;accent-color:#7b68ee}
+.dock .lbl{font:9px monospace;color:#6a5a8a}
+input[type=file]{display:none}
+.hud{position:fixed;top:0;left:0;right:0;z-index:10;padding:8px 14px;display:flex;align-items:center;gap:10px;pointer-events:none}
+.hud h1{font:800 18px system-ui;background:linear-gradient(135deg,#ff6ec7,#7b68ee,#00ced1);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.hud .info{font:10px monospace;color:rgba(255,255,255,.4);margin-left:auto}
+</style>
+</head>
+<body>
+<video id="cam" playsinline autoplay muted></video>
+<canvas id="cv"></canvas>
+<div class="hud"><h1>Overlay</h1><span class="info" id="info">upload an image + start camera</span></div>
+<div class="dock">
+  <button id="camBtn">📷 Camera</button>
+  <button id="flipBtn">🔄</button>
+  <label for="imgFile">🖼 Image</label>
+  <input type="file" id="imgFile" accept="image/*">
+  <select id="blend">
+    <option value="over">Image over you</option>
+    <option value="under">You over image</option>
+    <option value="mask">Silhouette mask</option>
+    <option value="edge">Edge blend</option>
+    <option value="color">Color swap</option>
+    <option value="ghost">Ghost</option>
+    <option value="split">Split screen</option>
+    <option value="puzzle">Puzzle mix</option>
+  </select>
+  <div><span class="lbl">opacity</span><input type="range" id="opacity" min="0" max="100" value="50"></div>
+  <div><span class="lbl">scale</span><input type="range" id="scale" min="20" max="200" value="100"></div>
+  <button id="snapBtn">📸 Snap</button>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const cv=$('cv'),ctx=cv.getContext('2d');
+const cam=$('cam');
+const sc=document.createElement('canvas'),sctx=sc.getContext('2d');
+let W,H;function resize(){W=cv.width=innerWidth;H=cv.height=innerHeight;}
+resize();onresize=resize;
+
+let stream=null,facing='user',running=false;
+let overlayImg=null,blendMode='over';
+
+// camera
+async function startCam(){
+  if(stream)stream.getTracks().forEach(t=>t.stop());
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:facing,width:{ideal:640}},audio:false});
+    cam.srcObject=stream;
+    await new Promise(r=>{if(cam.readyState>=2)r();else cam.onloadeddata=()=>{cam.onloadeddata=null;r();};});
+    running=true;$('camBtn').textContent='⏹ Stop';$('camBtn').classList.add('on');
+    $('info').textContent=cam.videoWidth+'x'+cam.videoHeight;
+    loop();
+  }catch(e){$('info').textContent=e.message;}
+}
+function stopCam(){
+  running=false;if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}
+  $('camBtn').textContent='📷 Camera';$('camBtn').classList.remove('on');
+}
+
+// image upload
+$('imgFile').onchange=e=>{
+  const file=e.target.files[0];if(!file)return;
+  const img=new Image();
+  img.onload=()=>{overlayImg=img;$('info').textContent='image: '+img.width+'x'+img.height;};
+  img.src=URL.createObjectURL(file);
+};
+
+// draw helpers
+function drawCam(){
+  ctx.save();
+  if(facing==='user'){ctx.translate(W,0);ctx.scale(-1,1);}
+  ctx.drawImage(cam,0,0,W,H);
+  ctx.restore();
+}
+function drawImg(alpha){
+  if(!overlayImg)return;
+  const s=+$('scale').value/100;
+  const iw=overlayImg.width*s,ih=overlayImg.height*s;
+  const aspect=overlayImg.width/overlayImg.height;
+  let dw,dh;
+  if(W/H>aspect){dh=H*s;dw=dh*aspect;}else{dw=W*s;dh=dw/aspect;}
+  ctx.globalAlpha=alpha;
+  ctx.drawImage(overlayImg,(W-dw)/2,(H-dh)/2,dw,dh);
+  ctx.globalAlpha=1;
+}
+
+function loop(){
+  if(!running)return;
+  resize();
+  const alpha=+$('opacity').value/100;
+  const mode=$('blend').value;
+
+  if(mode==='over'){
+    drawCam();drawImg(alpha);
+  }
+  else if(mode==='under'){
+    if(overlayImg){
+      const s=+$('scale').value/100,aspect=overlayImg.width/overlayImg.height;
+      let dw,dh;if(W/H>aspect){dh=H*s;dw=dh*aspect;}else{dw=W*s;dh=dw/aspect;}
+      ctx.drawImage(overlayImg,(W-dw)/2,(H-dh)/2,dw,dh);
+    }
+    ctx.globalAlpha=alpha;drawCam();ctx.globalAlpha=1;
+  }
+  else if(mode==='mask'){
+    // camera as silhouette cutout over image
+    drawCam();
+    sc.width=W;sc.height=H;sctx.drawImage(cv,0,0);
+    const camData=sctx.getImageData(0,0,W,H),cd=camData.data;
+    if(overlayImg){
+      const s=+$('scale').value/100,aspect=overlayImg.width/overlayImg.height;
+      let dw,dh;if(W/H>aspect){dh=H*s;dw=dh*aspect;}else{dw=W*s;dh=dw/aspect;}
+      ctx.drawImage(overlayImg,(W-dw)/2,(H-dh)/2,dw,dh);
+    }
+    const bg=ctx.getImageData(0,0,W,H),bd=bg.data;
+    // motion-based mask: bright areas of camera cut through
+    for(let i=0;i<cd.length;i+=4){
+      const lum=(cd[i]+cd[i+1]+cd[i+2])/3;
+      const t=lum/255*alpha;
+      bd[i]=Math.round(bd[i]*(1-t)+cd[i]*t);
+      bd[i+1]=Math.round(bd[i+1]*(1-t)+cd[i+1]*t);
+      bd[i+2]=Math.round(bd[i+2]*(1-t)+cd[i+2]*t);
+    }
+    ctx.putImageData(bg,0,0);
+  }
+  else if(mode==='edge'){
+    drawCam();
+    // edge detect camera
+    sc.width=W;sc.height=H;sctx.drawImage(cv,0,0);
+    const img=sctx.getImageData(0,0,W,H),d=img.data;
+    for(let y=1;y<H-1;y++)for(let x=1;x<W-1;x++){
+      const i=(y*W+x)*4;
+      const l=d[(y*W+x-1)*4],r=d[(y*W+x+1)*4],u=d[((y-1)*W+x)*4],dn=d[((y+1)*W+x)*4];
+      const edge=Math.min(255,(Math.abs(d[i]-l)+Math.abs(d[i]-r)+Math.abs(d[i]-u)+Math.abs(d[i]-dn)));
+      d[i]=edge;d[i+1]=edge;d[i+2]=edge;
+    }
+    sctx.putImageData(img,0,0);
+    // blend edges with overlay image
+    if(overlayImg){drawImg(1);}
+    ctx.globalAlpha=alpha;ctx.drawImage(sc,0,0);ctx.globalAlpha=1;
+  }
+  else if(mode==='color'){
+    // take color from image, structure from camera
+    drawCam();
+    if(overlayImg){
+      sc.width=W;sc.height=H;
+      sctx.save();if(facing==='user'){sctx.translate(W,0);sctx.scale(-1,1);}
+      sctx.drawImage(cam,0,0,W,H);sctx.restore();
+      const camD=sctx.getImageData(0,0,W,H),cd2=camD.data;
+      const s=+$('scale').value/100,aspect=overlayImg.width/overlayImg.height;
+      let dw,dh;if(W/H>aspect){dh=H*s;dw=dh*aspect;}else{dw=W*s;dh=dw/aspect;}
+      sctx.drawImage(overlayImg,(W-dw)/2,(H-dh)/2,dw,dh);
+      const imgD=sctx.getImageData(0,0,W,H),id2=imgD.data;
+      for(let i=0;i<cd2.length;i+=4){
+        const camLum=(cd2[i]+cd2[i+1]+cd2[i+2])/3/255;
+        cd2[i]=Math.round(id2[i]*camLum*alpha+cd2[i]*(1-alpha));
+        cd2[i+1]=Math.round(id2[i+1]*camLum*alpha+cd2[i+1]*(1-alpha));
+        cd2[i+2]=Math.round(id2[i+2]*camLum*alpha+cd2[i+2]*(1-alpha));
+      }
+      ctx.putImageData(camD,0,0);
+    }
+  }
+  else if(mode==='ghost'){
+    // ghostly double exposure
+    drawCam();
+    ctx.fillStyle='rgba(0,0,0,.15)';ctx.fillRect(0,0,W,H);
+    if(overlayImg){
+      ctx.globalCompositeOperation='screen';
+      drawImg(alpha);
+      ctx.globalCompositeOperation='source-over';
+    }
+    // scanlines
+    ctx.fillStyle='rgba(0,0,0,.04)';for(let y=0;y<H;y+=2)ctx.fillRect(0,y,W,1);
+  }
+  else if(mode==='split'){
+    // vertical split: left=camera, right=image
+    const splitX=Math.round(W*alpha);
+    ctx.save();ctx.beginPath();ctx.rect(0,0,splitX,H);ctx.clip();
+    drawCam();ctx.restore();
+    if(overlayImg){
+      ctx.save();ctx.beginPath();ctx.rect(splitX,0,W-splitX,H);ctx.clip();
+      drawImg(1);ctx.restore();
+    }
+    // split line
+    ctx.strokeStyle='#ff6ec7';ctx.lineWidth=2;
+    ctx.beginPath();ctx.moveTo(splitX,0);ctx.lineTo(splitX,H);ctx.stroke();
+    ctx.fillStyle='rgba(0,0,0,.5)';ctx.fillRect(splitX-20,H/2-10,40,20);
+    ctx.fillStyle='#fff';ctx.font='bold 10px monospace';ctx.textAlign='center';
+    ctx.fillText('◄ ►',splitX,H/2+4);
+  }
+  else if(mode==='puzzle'){
+    // checkerboard: alternating tiles from camera and image
+    const tileSize=40+Math.round(alpha*40);
+    const cols=Math.ceil(W/tileSize),rows=Math.ceil(H/tileSize);
+    // draw camera first
+    drawCam();
+    sc.width=W;sc.height=H;sctx.drawImage(cv,0,0);
+    // draw image
+    if(overlayImg){
+      ctx.fillStyle='#0a0015';ctx.fillRect(0,0,W,H);
+      drawImg(1);
+    }
+    // cut checkerboard from camera over image
+    for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
+      if((r+c)%2===0){
+        const sx=c*tileSize,sy=r*tileSize;
+        ctx.drawImage(sc,sx,sy,tileSize,tileSize,sx,sy,tileSize,tileSize);
+      }
+    }
+    // grid lines
+    ctx.strokeStyle='rgba(123,104,238,.1)';ctx.lineWidth=1;
+    for(let x=0;x<W;x+=tileSize){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}
+    for(let y=0;y<H;y+=tileSize){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
+  }
+
+  requestAnimationFrame(loop);
+}
+
+// snapshot
+$('snapBtn').onclick=()=>{
+  const a=document.createElement('a');
+  a.href=cv.toDataURL('image/png');
+  a.download='overlay-'+Date.now()+'.png';
+  a.click();
+};
+
+// wiring
+$('camBtn').onclick=()=>{if(running)stopCam();else startCam();};
+$('flipBtn').onclick=()=>{facing=facing==='user'?'environment':'user';if(running){stopCam();startCam();}};
+$('blend').onchange=function(){blendMode=this.value;};
+</script>
+</body>
+</html>

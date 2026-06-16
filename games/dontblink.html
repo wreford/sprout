@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Don't Blink</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#000;overflow:hidden;-webkit-user-select:none;user-select:none}
+canvas{display:block;position:fixed;inset:0;width:100%;height:100%}
+video{display:none}
+.ui{position:fixed;z-index:10;color:#fff;font-family:system-ui;pointer-events:none}
+.title{top:0;left:0;right:0;text-align:center;padding:12px}
+.title h1{font-size:28px;font-weight:900;color:#c00;text-shadow:0 0 20px rgba(200,0,0,.5)}
+.title .sub{font-size:11px;color:#666;margin-top:2px}
+.score-ui{bottom:80px;left:0;right:0;text-align:center}
+.score-ui .sc{font:bold 24px monospace;color:#c00}
+.score-ui .msg{font:13px system-ui;color:#888;margin-top:4px}
+.start{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#000;color:#fff;text-align:center}
+.start h1{font-size:36px;color:#c00;text-shadow:0 0 30px rgba(200,0,0,.4);margin-bottom:8px}
+.start p{font-size:13px;color:#666;max-width:280px;line-height:1.5;margin-bottom:20px}
+.start button{font:bold 18px system-ui;padding:14px 40px;border:2px solid #c00;border-radius:10px;background:transparent;color:#c00;cursor:pointer}
+.start button:active{background:rgba(200,0,0,.2)}
+.scare{position:fixed;inset:0;z-index:30;display:none;align-items:center;justify-content:center;background:#000}
+.scare canvas{width:100%;height:100%}
+</style>
+</head>
+<body>
+<video id="cam" playsinline autoplay muted></video>
+<canvas id="cv"></canvas>
+<div class="scare" id="scare"><canvas id="scareCanvas"></canvas></div>
+<div class="ui title"><h1>Don't Blink</h1><div class="sub" id="sub">stay still...</div></div>
+<div class="ui score-ui"><div class="sc" id="sc">0</div><div class="msg" id="msg"></div></div>
+<div class="start" id="start">
+  <h1>Don't Blink</h1>
+  <p>Stare at the camera. Don't move. Don't blink. Something is watching. The longer you last, the higher your score. But it WILL get you.</p>
+  <button id="goBtn">I'm Ready</button>
+</div>
+<script>
+const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+const cam=document.getElementById('cam');
+const sc2=document.createElement('canvas'),sctx=sc2.getContext('2d');
+const scareCv=document.getElementById('scareCanvas'),scareCtx=scareCv.getContext('2d');
+let W,H;function resize(){W=cv.width=innerWidth;H=cv.height=innerHeight;scareCv.width=W;scareCv.height=H;}
+resize();onresize=resize;
+
+let stream=null,running=false,score=0,phase=0,lastFrame=null;
+let tension=0,maxTension=100,scareActive=false,gameOver=false;
+let flickerTimer=0,creepAlpha=0,soundPlayed=false;
+let ambTimer=null;
+
+// audio
+let actx;
+function initAudio(){if(actx)return;actx=new(AudioContext||webkitAudioContext)();}
+function playTone(freq,dur,vol,type){
+  if(!actx)return;const g=actx.createGain(),o=actx.createOscillator();
+  o.type=type||'sine';o.frequency.value=freq;
+  g.gain.setValueAtTime(vol||.1,actx.currentTime);
+  g.gain.exponentialRampToValueAtTime(.001,actx.currentTime+dur);
+  o.connect(g);g.connect(actx.destination);o.start();o.stop(actx.currentTime+dur);
+}
+function scareSound(){
+  if(!actx)return;
+  // loud harsh noise burst
+  const buf=actx.createBuffer(1,actx.sampleRate*.4,actx.sampleRate);
+  const d=buf.getChannelData(0);
+  for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*(1-i/d.length);
+  const src=actx.createBufferSource();src.buffer=buf;
+  const g=actx.createGain();g.gain.value=.4;
+  src.connect(g);g.connect(actx.destination);src.start();
+  // low rumble
+  const o=actx.createOscillator();o.type='sawtooth';o.frequency.value=55;
+  const g2=actx.createGain();g2.gain.setValueAtTime(.3,actx.currentTime);
+  g2.gain.exponentialRampToValueAtTime(.001,actx.currentTime+1);
+  o.connect(g2);g2.connect(actx.destination);o.start();o.stop(actx.currentTime+1);
+}
+function ambientDrone(){
+  if(!actx||!running)return;
+  const t=actx.currentTime;
+  // quiet unsettling drone
+  const o=actx.createOscillator();o.type='sine';
+  o.frequency.setValueAtTime(55+Math.random()*10,t);
+  o.frequency.linearRampToValueAtTime(50+Math.random()*15,t+4);
+  const g=actx.createGain();g.gain.setValueAtTime(.02+tension*.001,t);
+  g.gain.linearRampToValueAtTime(.001,t+4);
+  o.connect(g);g.connect(actx.destination);o.start(t);o.stop(t+4);
+  // occasional high pitch
+  if(Math.random()<.3+tension*.005){
+    const o2=actx.createOscillator();o2.type='sine';o2.frequency.value=2000+Math.random()*3000;
+    const g2=actx.createGain();g2.gain.setValueAtTime(.005+tension*.0003,t+Math.random()*2);
+    g2.gain.exponentialRampToValueAtTime(.001,t+Math.random()*2+.5);
+    o2.connect(g2);g2.connect(actx.destination);o2.start(t);o2.stop(t+4);
+  }
+  ambTimer=setTimeout(ambientDrone,3500+Math.random()*1500);
+}
+
+async function startGame(){
+  document.getElementById('start').style.display='none';
+  initAudio();if(actx.state==='suspended')await actx.resume();
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:640}},audio:false});
+    cam.srcObject=stream;
+    await new Promise(r=>{if(cam.readyState>=2)r();else cam.onloadeddata=()=>{cam.onloadeddata=null;r();};});
+  }catch(e){document.getElementById('msg').textContent='Camera needed: '+e.message;return;}
+  running=true;score=0;tension=0;phase=0;gameOver=false;scareActive=false;
+  creepAlpha=0;flickerTimer=0;lastFrame=null;soundPlayed=false;
+  ambientDrone();
+  loop();
+}
+
+const MW=64,MH=48;
+function detectMotion(){
+  sc2.width=MW;sc2.height=MH;
+  sctx.drawImage(cam,0,0,MW,MH);
+  const frame=sctx.getImageData(0,0,MW,MH);
+  let motion=0;
+  if(lastFrame){
+    const d=frame.data,p=lastFrame.data;
+    for(let i=0;i<d.length;i+=4){
+      motion+=Math.abs(d[i]-p[i])+Math.abs(d[i+1]-p[i+1])+Math.abs(d[i+2]-p[i+2]);
+    }
+  }
+  lastFrame=frame;
+  return motion/(MW*MH*3);
+}
+
+function drawCreepyFace(alpha){
+  // procedural creepy face that fades in
+  const cx=W/2+Math.sin(performance.now()*.001)*20;
+  const cy=H/2+Math.cos(performance.now()*.0013)*15;
+  ctx.globalAlpha=alpha;
+  // dark oval
+  ctx.fillStyle='#1a0808';
+  ctx.beginPath();ctx.ellipse(cx,cy,80,110,0,0,Math.PI*2);ctx.fill();
+  // hollow eyes
+  ctx.fillStyle='#000';
+  ctx.beginPath();ctx.ellipse(cx-30,cy-25,18,22,0,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.ellipse(cx+30,cy-25,18,22,0,0,Math.PI*2);ctx.fill();
+  // red pupils
+  ctx.fillStyle='rgba(255,0,0,'+(alpha*.8)+')';
+  ctx.beginPath();ctx.arc(cx-30+Math.sin(performance.now()*.002)*5,cy-25,5,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(cx+30+Math.sin(performance.now()*.002)*5,cy-25,5,0,Math.PI*2);ctx.fill();
+  // mouth
+  ctx.strokeStyle='rgba(80,0,0,'+alpha+')';ctx.lineWidth=3;
+  ctx.beginPath();
+  ctx.moveTo(cx-35,cy+40);
+  for(let i=0;i<70;i++){const x=cx-35+i,y=cy+40+Math.sin(i*.3+performance.now()*.003)*8;ctx.lineTo(x,y);}
+  ctx.stroke();
+  ctx.globalAlpha=1;
+}
+
+function triggerScare(){
+  if(scareActive)return;
+  scareActive=true;gameOver=true;running=false;
+  clearTimeout(ambTimer);
+  scareSound();
+  // flash scare frames
+  const el=document.getElementById('scare');el.style.display='flex';
+  let frame=0;
+  function scareDraw(){
+    scareCv.width=W;scareCv.height=H;
+    const sx=scareCtx;
+    if(frame<3){
+      // red flash
+      sx.fillStyle='#ff0000';sx.fillRect(0,0,W,H);
+    }else if(frame<8){
+      // inverted camera with face
+      sx.save();sx.translate(W,0);sx.scale(-1,1);
+      sx.drawImage(cam,0,0,W,H);sx.restore();
+      // invert colors
+      const img=sx.getImageData(0,0,W,H),d=img.data;
+      for(let i=0;i<d.length;i+=4){d[i]=255-d[i];d[i+1]=255-d[i+1];d[i+2]=255-d[i+2];}
+      sx.putImageData(img,0,0);
+      drawCreepyFace.call({},1);
+      // but draw on scareCv
+      sx.fillStyle='rgba(100,0,0,.3)';sx.fillRect(0,0,W,H);
+      sx.fillStyle='#000';
+      sx.beginPath();sx.ellipse(W/2,H/2-20,90,120,0,0,Math.PI*2);sx.fill();
+      sx.fillStyle='#300';
+      sx.beginPath();sx.ellipse(W/2-35,H/2-50,20,25,0,0,Math.PI*2);sx.fill();
+      sx.beginPath();sx.ellipse(W/2+35,H/2-50,20,25,0,0,Math.PI*2);sx.fill();
+      sx.fillStyle='#f00';
+      sx.beginPath();sx.arc(W/2-35,H/2-50,7,0,Math.PI*2);sx.fill();
+      sx.beginPath();sx.arc(W/2+35,H/2-50,7,0,Math.PI*2);sx.fill();
+      sx.strokeStyle='#500';sx.lineWidth=4;sx.beginPath();
+      sx.moveTo(W/2-40,H/2+30);
+      for(let i=0;i<80;i++)sx.lineTo(W/2-40+i,H/2+30+Math.sin(i*.4)*12);
+      sx.stroke();
+    }else if(frame<12){
+      sx.fillStyle='#000';sx.fillRect(0,0,W,H);
+      sx.fillStyle='#c00';sx.font='bold 48px system-ui';sx.textAlign='center';
+      sx.fillText('YOU BLINKED',W/2,H/2-10);
+      sx.fillStyle='#888';sx.font='20px monospace';
+      sx.fillText('Score: '+score,W/2,H/2+30);
+    }else{
+      el.style.display='none';
+      document.getElementById('start').style.display='flex';
+      document.querySelector('.start h1').textContent='You Lasted '+score+'s';
+      return;
+    }
+    frame++;
+    setTimeout(scareDraw,frame<3?80:frame<8?200:1500);
+  }
+  scareDraw();
+}
+
+function loop(){
+  if(!running)return;
+  resize();
+  const motion=detectMotion();
+  const dt=1/60;
+  score+=dt;
+
+  // draw mirrored camera
+  ctx.save();ctx.translate(W,0);ctx.scale(-1,1);
+  ctx.drawImage(cam,0,0,W,H);ctx.restore();
+
+  // darken over time
+  const darkness=Math.min(.4,tension/maxTension*.4);
+  ctx.fillStyle=`rgba(0,0,0,${darkness})`;ctx.fillRect(0,0,W,H);
+
+  // vignette gets stronger
+  const vStr=.2+tension/maxTension*.5;
+  const vg=ctx.createRadialGradient(W/2,H/2,Math.min(W,H)*.25,W/2,H/2,Math.max(W,H)*.6);
+  vg.addColorStop(0,'transparent');vg.addColorStop(1,`rgba(0,0,0,${vStr})`);
+  ctx.fillStyle=vg;ctx.fillRect(0,0,W,H);
+
+  // red tint increases
+  ctx.fillStyle=`rgba(80,0,0,${tension/maxTension*.12})`;ctx.fillRect(0,0,W,H);
+
+  // tension builds over time, motion spikes it
+  tension+=dt*.5+motion*.05;
+
+  // random flicker/glitch
+  if(Math.random()<tension/maxTension*.08){
+    flickerTimer=3+Math.floor(Math.random()*5);
+  }
+  if(flickerTimer>0){
+    flickerTimer--;
+    ctx.fillStyle='rgba(255,255,255,.06)';ctx.fillRect(0,0,W,H);
+    // shift a random strip
+    const sy=Math.floor(Math.random()*H),sh=5+Math.floor(Math.random()*15);
+    const strip=ctx.getImageData(0,sy,W,sh);
+    ctx.putImageData(strip,Math.round((Math.random()-.5)*20),sy);
+  }
+
+  // creepy face fades in gradually
+  if(tension>maxTension*.3){
+    creepAlpha=Math.min(.25,(tension-maxTension*.3)/(maxTension*.7)*.25);
+    drawCreepyFace(creepAlpha*(1+Math.sin(performance.now()*.003)*.3));
+  }
+
+  // scanlines
+  ctx.fillStyle='rgba(0,0,0,.04)';
+  for(let y=0;y<H;y+=2)ctx.fillRect(0,y,W,1);
+
+  // noise grain
+  ctx.globalAlpha=.03+tension/maxTension*.04;
+  for(let i=0;i<50;i++){
+    ctx.fillStyle=Math.random()>.5?'#fff':'#000';
+    ctx.fillRect(Math.random()*W,Math.random()*H,2,2);
+  }
+  ctx.globalAlpha=1;
+
+  // UI
+  document.getElementById('sc').textContent=Math.floor(score)+'s';
+  const msgs=['stay still...','it sees you','don\'t move','something is wrong','behind you','it\'s closer','RUN','don\'t look away'];
+  const mi=Math.min(msgs.length-1,Math.floor(tension/maxTension*msgs.length));
+  document.getElementById('sub').textContent=msgs[mi];
+
+  // SCARE trigger: motion spike while tension is high, or max tension reached
+  if(tension>maxTension*.6&&motion>8){triggerScare();return;}
+  if(tension>=maxTension){triggerScare();return;}
+
+  requestAnimationFrame(loop);
+}
+
+document.getElementById('goBtn').onclick=startGame;
+</script>
+</body>
+</html>

@@ -1,0 +1,1155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Golf - 9 Holes</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none}
+html,body{width:100%;height:100%;overflow:hidden;background:#1a472a;font-family:'Segoe UI',system-ui,sans-serif}
+#game-container{display:flex;flex-direction:column;height:100%;max-width:500px;margin:0 auto;position:relative}
+#top-bar{background:rgba(0,0,0,0.7);color:#fff;padding:8px 12px;display:flex;flex-wrap:wrap;gap:4px 12px;align-items:center;font-size:14px;z-index:10}
+#top-bar .hole-info{font-weight:bold;font-size:16px}
+#top-bar .wind-info{display:flex;align-items:center;gap:4px}
+#top-bar .wind-arrow{display:inline-block;font-size:18px;transition:transform 0.3s}
+#top-bar .stroke-info{margin-left:auto}
+#canvas-wrap{flex:1;position:relative;overflow:hidden;background:#2d5a1e}
+#gameCanvas{display:block;width:100%;height:100%}
+#aim-overlay{position:absolute;top:0;left:0;width:100%;height:100%;z-index:5;touch-action:none}
+#bottom-panel{background:rgba(0,0,0,0.85);padding:8px;z-index:10}
+#club-selector{display:flex;justify-content:center;gap:6px;margin-bottom:8px;flex-wrap:wrap}
+.club-btn{background:#2a5a2a;color:#fff;border:2px solid #4a8a4a;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:bold;cursor:pointer;min-width:44px;text-align:center;transition:all 0.15s}
+.club-btn.active{background:#4a8a4a;border-color:#7cfc00;color:#fff;transform:scale(1.05)}
+.club-btn.disabled{opacity:0.3;pointer-events:none}
+#meter-area{margin-bottom:6px}
+.meter-bar{height:28px;background:#111;border-radius:14px;overflow:hidden;position:relative;margin-bottom:4px}
+.meter-bar .fill{height:100%;border-radius:14px;transition:none}
+.meter-bar .marker{position:absolute;top:0;height:100%;width:3px;background:#fff;border-radius:2px;transition:none}
+.meter-bar .center-mark{position:absolute;top:0;height:100%;width:2px;background:rgba(255,255,255,0.3);left:50%}
+#power-bar .fill{background:linear-gradient(90deg,#22cc22,#ffcc00,#ff4444)}
+#accuracy-bar .fill{background:linear-gradient(90deg,#ff4444,#22cc22,#ff4444)}
+#power-bar,#accuracy-bar{display:none}
+.meter-label{color:#aaa;font-size:11px;text-align:center;margin-bottom:2px}
+#swing-row{display:flex;align-items:center;gap:10px;justify-content:center}
+#swing-btn{background:linear-gradient(180deg,#4a8a4a,#2a5a2a);color:#fff;border:3px solid #7cfc00;border-radius:16px;padding:14px 40px;font-size:18px;font-weight:bold;cursor:pointer;letter-spacing:1px;transition:all 0.1s;min-width:140px}
+#swing-btn:active{transform:scale(0.95);background:linear-gradient(180deg,#2a5a2a,#1a3a1a)}
+#swing-btn.locked{background:#555;border-color:#888;color:#aaa}
+#dist-info{color:#ccc;font-size:13px;text-align:center;margin-top:4px}
+#message-overlay{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.8);color:#fff;padding:20px 40px;border-radius:16px;font-size:24px;font-weight:bold;text-align:center;z-index:20;display:none;pointer-events:none}
+#scorecard-overlay{position:absolute;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.9);z-index:50;display:none;flex-direction:column;align-items:center;justify-content:center;color:#fff;padding:20px}
+#scorecard-overlay h2{font-size:22px;margin-bottom:16px}
+#scorecard-table{border-collapse:collapse;font-size:13px;width:90%;max-width:400px}
+#scorecard-table th,#scorecard-table td{border:1px solid #555;padding:6px 4px;text-align:center}
+#scorecard-table th{background:#2a5a2a;font-size:12px}
+#scorecard-table .under{color:#4af}
+#scorecard-table .over{color:#f66}
+#scorecard-table .eagle{color:#ff0}
+#play-again-btn,#next-hole-btn{background:#4a8a4a;color:#fff;border:2px solid #7cfc00;border-radius:12px;padding:12px 32px;font-size:16px;font-weight:bold;cursor:pointer;margin-top:16px}
+#back-link{position:absolute;top:8px;left:8px;color:#aaa;text-decoration:none;font-size:13px;z-index:60;background:rgba(0,0,0,0.5);padding:4px 10px;border-radius:6px}
+#back-link:hover{color:#fff}
+#stats-line{color:#999;font-size:12px;margin-top:10px;text-align:center}
+#hole-transition{position:absolute;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:40;display:none;flex-direction:column;align-items:center;justify-content:center;color:#fff;text-align:center}
+#hole-transition h2{font-size:28px;margin-bottom:8px}
+#hole-transition p{font-size:16px;margin-bottom:6px;color:#ccc}
+#hole-transition .hole-desc{font-style:italic;color:#aaa;margin:12px 20px}
+</style>
+</head>
+<body>
+<div id="game-container">
+  <a id="back-link" href="../index.html">Back</a>
+  <div id="top-bar">
+    <span class="hole-info" id="hole-label">Hole 1</span>
+    <span id="par-label">Par 4</span>
+    <span id="yards-label">350y</span>
+    <span class="wind-info">Wind: <span id="wind-speed">5</span>mph <span class="wind-arrow" id="wind-arrow">&#8594;</span></span>
+    <span class="stroke-info">Stroke: <span id="stroke-count">1</span></span>
+    <span id="score-vs-par"></span>
+  </div>
+  <div id="canvas-wrap">
+    <canvas id="gameCanvas"></canvas>
+    <div id="aim-overlay"></div>
+    <div id="message-overlay"></div>
+    <div id="hole-transition">
+      <h2 id="ht-title">Hole 1</h2>
+      <p id="ht-par">Par 4 - 350 yards</p>
+      <p class="hole-desc" id="ht-desc">Straight par 4, bunker left of green. Easy opener.</p>
+      <button id="next-hole-btn">Tee Off</button>
+    </div>
+    <div id="scorecard-overlay">
+      <h2>Scorecard</h2>
+      <table id="scorecard-table"></table>
+      <div id="stats-line"></div>
+      <button id="play-again-btn">Play Again</button>
+    </div>
+  </div>
+  <div id="bottom-panel">
+    <div id="club-selector"></div>
+    <div id="meter-area">
+      <div class="meter-label" id="power-label">Power</div>
+      <div class="meter-bar" id="power-bar"><div class="fill"></div><div class="marker"></div></div>
+      <div class="meter-label" id="accuracy-label">Accuracy</div>
+      <div class="meter-bar" id="accuracy-bar"><div class="fill"></div><div class="marker"></div><div class="center-mark"></div></div>
+    </div>
+    <div id="swing-row">
+      <button id="swing-btn">SWING</button>
+    </div>
+    <div id="dist-info"><span id="dist-to-pin"></span></div>
+  </div>
+</div>
+
+<script>
+(function(){
+// ---- CONSTANTS ----
+const CLUBS = [
+  {name:'Driver',maxDist:280,loft:10,icon:'D',speed:2.8},
+  {name:'3 Wood',maxDist:230,loft:15,icon:'3W',speed:2.5},
+  {name:'5 Iron',maxDist:180,loft:28,icon:'5I',speed:2.2},
+  {name:'7 Iron',maxDist:150,loft:34,icon:'7I',speed:2.0},
+  {name:'9 Iron',maxDist:120,loft:42,icon:'9I',speed:1.8},
+  {name:'P Wedge',maxDist:90,loft:48,icon:'PW',speed:1.5},
+  {name:'Putter',maxDist:50,loft:4,icon:'PT',speed:0.8}
+];
+
+const TERRAIN_MOD = {fairway:1.0,rough:0.7,bunker:0.5,green:1.0,tee:1.0,water:1.0};
+const BOUNCE_MOD = {fairway:0.15,rough:0.05,bunker:0.0,green:0.25,tee:0.1,water:0};
+
+const SCORE_NAMES = {'-3':'Albatross','-2':'Eagle','-1':'Birdie','0':'Par','1':'Bogey','2':'Double Bogey','3':'Triple Bogey'};
+
+// ---- HOLES ----
+// World coords: 1 unit = 1 yard. Holes oriented vertically, tee at bottom, pin at top(ish).
+const HOLES = [
+  { // Hole 1: Par 4, 350y straight
+    par:4, yards:350,
+    tee:{x:200,y:380}, hole:{x:200,y:40},
+    fairway:[{x:160,y:370},{x:240,y:370},{x:245,y:200},{x:250,y:80},{x:240,y:30},{x:160,y:30},{x:150,y:80},{x:155,y:200}],
+    green:{x:200,y:40,rx:35,ry:30},
+    bunkers:[{x:155,y:50,r:18},{x:170,y:120,r:12}],
+    water:[],
+    trees:[{x:130,y:300,r:12},{x:270,y:280,r:14},{x:120,y:200,r:10},{x:280,y:180,r:12},{x:280,y:100,r:11},{x:130,y:80,r:10}],
+    desc:'Straight par 4, bunker left of green. Easy opener.'
+  },
+  { // Hole 2: Par 3, 165y over water
+    par:3, yards:165,
+    tee:{x:200,y:220}, hole:{x:200,y:55},
+    fairway:[{x:160,y:210},{x:240,y:210},{x:245,y:100},{x:240,y:70},{x:160,y:70},{x:155,y:100}],
+    green:{x:200,y:55,rx:32,ry:28},
+    bunkers:[{x:245,y:50,r:16},{x:155,y:50,r:14},{x:200,y:22,r:15}],
+    water:[{points:[{x:130,y:160},{x:270,y:160},{x:275,y:100},{x:270,y:85},{x:130,y:85},{x:125,y:100}]}],
+    trees:[{x:120,y:60,r:10},{x:280,y:60,r:12},{x:280,y:150,r:11},{x:120,y:150,r:10}],
+    desc:'Short iron over water to green. Bunkers behind.'
+  },
+  { // Hole 3: Par 5, 520y dogleg left
+    par:5, yards:520,
+    tee:{x:320,y:560}, hole:{x:80,y:50},
+    fairway:[{x:280,y:550},{x:360,y:550},{x:365,y:400},{x:340,y:300},{x:280,y:200},{x:200,y:130},{x:130,y:80},{x:60,y:60},{x:50,y:40},{x:110,y:30},{x:140,y:60},{x:200,y:100},{x:260,y:170},{x:310,y:280},{x:330,y:400},{x:280,y:450}],
+    green:{x:80,y:50,rx:34,ry:30},
+    bunkers:[{x:60,y:30,r:16},{x:110,y:60,r:14},{x:300,y:350,r:15}],
+    water:[{points:[{x:180,y:180},{x:230,y:110},{x:170,y:80},{x:130,y:110}]}],
+    trees:[{x:250,y:240,r:14},{x:240,y:200,r:12},{x:230,y:160,r:13},{x:350,y:350,r:11},{x:360,y:300,r:10},{x:360,y:250,r:12},{x:150,y:130,r:10},{x:40,y:80,r:10}],
+    desc:'Dogleg left. Trees line the turn. Risk/reward to cut the corner.'
+  },
+  { // Hole 4: Par 4, 410y narrow
+    par:4, yards:410,
+    tee:{x:200,y:450}, hole:{x:200,y:40},
+    fairway:[{x:175,y:440},{x:225,y:440},{x:230,y:300},{x:235,y:150},{x:230,y:60},{x:220,y:30},{x:180,y:30},{x:170,y:60},{x:165,y:150},{x:170,y:300}],
+    green:{x:200,y:40,rx:30,ry:26},
+    bunkers:[{x:155,y:45,r:16},{x:245,y:45,r:16},{x:240,y:200,r:13},{x:160,y:250,r:12}],
+    water:[],
+    trees:[{x:140,y:400,r:12},{x:260,y:400,r:12},{x:135,y:300,r:11},{x:265,y:300,r:11},{x:135,y:200,r:10},{x:265,y:200,r:10},{x:135,y:100,r:10},{x:265,y:100,r:10}],
+    desc:'Long with narrow fairway. Bunkers both sides.'
+  },
+  { // Hole 5: Par 3, 195y wind exposed
+    par:3, yards:195,
+    tee:{x:200,y:260}, hole:{x:200,y:55},
+    fairway:[{x:155,y:250},{x:245,y:250},{x:250,y:120},{x:245,y:70},{x:155,y:70},{x:150,y:120}],
+    green:{x:200,y:55,rx:35,ry:32},
+    bunkers:[{x:250,y:60,r:18},{x:150,y:60,r:16},{x:200,y:18,r:14}],
+    water:[],
+    trees:[{x:120,y:200,r:8},{x:280,y:200,r:8}],
+    desc:'Elevated green. Wind exposed -- club up!'
+  },
+  { // Hole 6: Par 4, 375y dogleg right, water right
+    par:4, yards:375,
+    tee:{x:100,y:420}, hole:{x:300,y:50},
+    fairway:[{x:65,y:410},{x:135,y:410},{x:140,y:300},{x:160,y:220},{x:200,y:150},{x:260,y:90},{x:310,y:60},{x:330,y:40},{x:280,y:30},{x:240,y:60},{x:180,y:120},{x:140,y:190},{x:120,y:280},{x:70,y:350}],
+    green:{x:300,y:50,rx:32,ry:28},
+    bunkers:[{x:280,y:25,r:15},{x:330,y:55,r:14},{x:140,y:350,r:12}],
+    water:[{points:[{x:200,y:400},{x:350,y:400},{x:350,y:130},{x:300,y:100},{x:250,y:140},{x:210,y:200},{x:200,y:300}]}],
+    trees:[{x:60,y:300,r:12},{x:50,y:200,r:11},{x:60,y:120,r:10},{x:160,y:100,r:10}],
+    desc:'Dogleg right. Water along right side. Stay left off the tee.'
+  },
+  { // Hole 7: Par 5, 540y double dogleg
+    par:5, yards:540,
+    tee:{x:200,y:590}, hole:{x:200,y:40},
+    fairway:[{x:165,y:580},{x:235,y:580},{x:240,y:480},{x:270,y:380},{x:300,y:320},{x:310,y:260},{x:290,y:200},{x:250,y:160},{x:220,y:120},{x:220,y:60},{x:230,y:35},{x:170,y:35},{x:180,y:60},{x:180,y:120},{x:160,y:170},{x:150,y:220},{x:160,y:280},{x:200,y:350},{x:210,y:420},{x:195,y:480},{x:170,y:500}],
+    green:{x:200,y:40,rx:33,ry:28},
+    bunkers:[{x:175,y:30,r:14},{x:230,y:55,r:13},{x:310,y:280,r:15},{x:150,y:200,r:14}],
+    water:[{points:[{x:100,y:320},{x:140,y:320},{x:145,y:250},{x:130,y:200},{x:100,y:200}]}],
+    trees:[{x:140,y:550,r:12},{x:260,y:550,r:12},{x:320,y:350,r:14},{x:130,y:300,r:12},{x:130,y:150,r:11},{x:270,y:130,r:11},{x:270,y:80,r:10},{x:130,y:80,r:10}],
+    desc:'Double dogleg. Wide fairway but long. Placement is key.'
+  },
+  { // Hole 8: Par 4, 430y hardest
+    par:4, yards:430,
+    tee:{x:200,y:480}, hole:{x:200,y:45},
+    fairway:[{x:170,y:470},{x:230,y:470},{x:232,y:350},{x:234,y:260},{x:230,y:200},{x:235,y:100},{x:230,y:55},{x:220,y:35},{x:180,y:35},{x:170,y:55},{x:165,y:100},{x:170,y:200},{x:166,y:260},{x:168,y:350}],
+    green:{x:200,y:45,rx:28,ry:25},
+    bunkers:[{x:155,y:50,r:15},{x:245,y:50,r:15},{x:245,y:200,r:12}],
+    water:[{points:[{x:155,y:310},{x:245,y:310},{x:248,y:280},{x:245,y:260},{x:155,y:260},{x:152,y:280}]}],
+    trees:[{x:140,y:450,r:13},{x:260,y:450,r:13},{x:135,y:380,r:12},{x:265,y:380,r:12},{x:135,y:200,r:11},{x:265,y:200,r:11},{x:135,y:130,r:10},{x:265,y:130,r:10},{x:145,y:320,r:8},{x:255,y:320,r:8}],
+    desc:'Hardest hole. Narrow, trees both sides, water crossing fairway at 200y.'
+  },
+  { // Hole 9: Par 4, 390y finishing hole
+    par:4, yards:390,
+    tee:{x:200,y:430}, hole:{x:200,y:40},
+    fairway:[{x:155,y:420},{x:245,y:420},{x:250,y:300},{x:255,y:150},{x:250,y:70},{x:240,y:35},{x:160,y:35},{x:150,y:70},{x:145,y:150},{x:150,y:300}],
+    green:{x:200,y:40,rx:34,ry:30},
+    bunkers:[{x:148,y:35,r:17},{x:252,y:35,r:17},{x:160,y:55,r:13},{x:240,y:55,r:13},{x:200,y:15,r:14},{x:150,y:200,r:12},{x:250,y:250,r:11}],
+    water:[],
+    trees:[{x:120,y:380,r:12},{x:280,y:380,r:12},{x:120,y:280,r:11},{x:280,y:280,r:11},{x:120,y:180,r:10},{x:280,y:180,r:10}],
+    desc:'Finishing hole. Open fairway but bunkers surround the green.'
+  }
+];
+
+// ---- STATE ----
+let currentHole = 0;
+let strokes = 0;
+let scores = [];
+let ballPos = {x:0,y:0};
+let ballTerrain = 'tee';
+let selectedClub = 0;
+let aimAngle = -Math.PI/2; // up
+let swingState = 'idle'; // idle, aiming, power, accuracy, flying, rolling, holed
+let powerValue = 0;
+let accuracyValue = 50;
+let meterPos = 0;
+let meterDir = 1;
+let lastMeterTime = 0;
+let flightAnim = null;
+let cameraTarget = {x:0,y:0};
+let cameraPos = {x:0,y:0};
+let cameraZoom = 1;
+let targetZoom = 1;
+let windSpeed = 5;
+let windAngle = 0;
+let shotTrail = [];
+let totalPutts = 0;
+let fairwaysHit = 0;
+let greensInReg = 0;
+let bestRound = localStorage.getItem('golf_best') ? parseInt(localStorage.getItem('golf_best')) : null;
+
+// ---- AUDIO ----
+let audioCtx = null;
+function ensureAudio(){if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();}
+function playSound(type){
+  ensureAudio();
+  const ctx = audioCtx;
+  const now = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  switch(type){
+    case 'driver':
+      osc.type='triangle';osc.frequency.setValueAtTime(120,now);osc.frequency.exponentialRampToValueAtTime(60,now+0.15);
+      gain.gain.setValueAtTime(0.4,now);gain.gain.exponentialRampToValueAtTime(0.01,now+0.2);
+      osc.start(now);osc.stop(now+0.2);break;
+    case 'iron':
+      osc.type='square';osc.frequency.setValueAtTime(800,now);osc.frequency.exponentialRampToValueAtTime(200,now+0.08);
+      gain.gain.setValueAtTime(0.2,now);gain.gain.exponentialRampToValueAtTime(0.01,now+0.1);
+      osc.start(now);osc.stop(now+0.1);break;
+    case 'putter':
+      osc.type='sine';osc.frequency.setValueAtTime(400,now);osc.frequency.exponentialRampToValueAtTime(300,now+0.1);
+      gain.gain.setValueAtTime(0.15,now);gain.gain.exponentialRampToValueAtTime(0.01,now+0.12);
+      osc.start(now);osc.stop(now+0.12);break;
+    case 'land':
+      osc.type='triangle';osc.frequency.setValueAtTime(150,now);osc.frequency.exponentialRampToValueAtTime(80,now+0.1);
+      gain.gain.setValueAtTime(0.2,now);gain.gain.exponentialRampToValueAtTime(0.01,now+0.12);
+      osc.start(now);osc.stop(now+0.12);break;
+    case 'splash':{
+      const bufSize=4410;const buf=ctx.createBuffer(1,bufSize,ctx.sampleRate);const d=buf.getChannelData(0);
+      for(let i=0;i<bufSize;i++)d[i]=(Math.random()*2-1)*Math.max(0,1-i/bufSize);
+      const src=ctx.createBufferSource();src.buffer=buf;const g=ctx.createGain();g.gain.setValueAtTime(0.3,now);g.gain.exponentialRampToValueAtTime(0.01,now+0.3);
+      src.connect(g);g.connect(ctx.destination);src.start(now);return;}
+    case 'bunker':{
+      const bufSize=3000;const buf=ctx.createBuffer(1,bufSize,ctx.sampleRate);const d=buf.getChannelData(0);
+      for(let i=0;i<bufSize;i++)d[i]=(Math.random()*2-1)*Math.max(0,1-i/bufSize)*0.5;
+      const src=ctx.createBufferSource();src.buffer=buf;const g=ctx.createGain();g.gain.setValueAtTime(0.2,now);g.gain.exponentialRampToValueAtTime(0.01,now+0.15);
+      src.connect(g);g.connect(ctx.destination);src.start(now);return;}
+    case 'hole':{
+      const o1=ctx.createOscillator();const o2=ctx.createOscillator();const g=ctx.createGain();
+      o1.connect(g);o2.connect(g);g.connect(ctx.destination);
+      o1.type='sine';o1.frequency.setValueAtTime(523,now);o1.frequency.setValueAtTime(659,now+0.15);o1.frequency.setValueAtTime(784,now+0.3);
+      o2.type='sine';o2.frequency.setValueAtTime(659,now);o2.frequency.setValueAtTime(784,now+0.15);o2.frequency.setValueAtTime(1047,now+0.3);
+      g.gain.setValueAtTime(0.2,now);g.gain.setValueAtTime(0.25,now+0.15);g.gain.setValueAtTime(0.3,now+0.3);g.gain.exponentialRampToValueAtTime(0.01,now+0.6);
+      o1.start(now);o1.stop(now+0.6);o2.start(now);o2.stop(now+0.6);return;}
+    case 'crowd_good':{
+      const bufSize=ctx.sampleRate*0.5;const buf=ctx.createBuffer(1,bufSize,ctx.sampleRate);const d=buf.getChannelData(0);
+      for(let i=0;i<bufSize;i++){const env=Math.sin(Math.PI*i/bufSize);d[i]=(Math.random()*2-1)*env*0.15;}
+      const src=ctx.createBufferSource();src.buffer=buf;src.connect(ctx.destination);src.start(now);return;}
+    case 'crowd_bad':{
+      const o=ctx.createOscillator();const g=ctx.createGain();o.connect(g);g.connect(ctx.destination);
+      o.type='sawtooth';o.frequency.setValueAtTime(200,now);o.frequency.linearRampToValueAtTime(100,now+0.4);
+      g.gain.setValueAtTime(0.08,now);g.gain.exponentialRampToValueAtTime(0.01,now+0.4);
+      o.start(now);o.stop(now+0.4);return;}
+  }
+}
+
+// ---- DOM REFS ----
+const canvas = document.getElementById('gameCanvas');
+const ctx2d = canvas.getContext('2d');
+const aimOverlay = document.getElementById('aim-overlay');
+const swingBtn = document.getElementById('swing-btn');
+const clubSelector = document.getElementById('club-selector');
+const powerBar = document.getElementById('power-bar');
+const accuracyBar = document.getElementById('accuracy-bar');
+const powerLabel = document.getElementById('power-label');
+const accuracyLabel = document.getElementById('accuracy-label');
+const msgOverlay = document.getElementById('message-overlay');
+const holeTransition = document.getElementById('hole-transition');
+const scorecardOverlay = document.getElementById('scorecard-overlay');
+const distInfo = document.getElementById('dist-to-pin');
+
+// ---- INIT ----
+function init(){
+  resizeCanvas();
+  buildClubButtons();
+  setupEvents();
+  newRound();
+}
+
+function resizeCanvas(){
+  const wrap = document.getElementById('canvas-wrap');
+  canvas.width = wrap.clientWidth * window.devicePixelRatio;
+  canvas.height = wrap.clientHeight * window.devicePixelRatio;
+  canvas.style.width = wrap.clientWidth+'px';
+  canvas.style.height = wrap.clientHeight+'px';
+}
+
+window.addEventListener('resize',()=>{resizeCanvas();draw();});
+
+function buildClubButtons(){
+  clubSelector.innerHTML = '';
+  CLUBS.forEach((c,i)=>{
+    const btn = document.createElement('button');
+    btn.className = 'club-btn'+(i===selectedClub?' active':'');
+    btn.textContent = c.icon;
+    btn.setAttribute('data-idx',i);
+    btn.addEventListener('click',()=>selectClub(i));
+    clubSelector.appendChild(btn);
+  });
+}
+
+function selectClub(idx){
+  if(swingState!=='idle'&&swingState!=='aiming') return;
+  if(ballTerrain==='green'&&idx!==6) return; // must use putter on green
+  selectedClub = idx;
+  document.querySelectorAll('.club-btn').forEach((b,i)=>{
+    b.classList.toggle('active',i===idx);
+  });
+  updateDistInfo();
+}
+
+function autoSelectClub(){
+  const d = distToPin();
+  if(ballTerrain==='green'){selectClub(6);return;}
+  const tmod = TERRAIN_MOD[ballTerrain]||0.7;
+  // find the shortest club that can reach the pin
+  let best=0;
+  for(let i=CLUBS.length-2;i>=0;i--){
+    if(CLUBS[i].maxDist*tmod >= d*0.9){best=i; break;}
+  }
+  // don't use driver from rough/bunker unless really far
+  if(ballTerrain==='rough'&&best===0&&d<250)best=1;
+  if(ballTerrain==='bunker')best=Math.max(best,4);
+  selectClub(best);
+}
+
+// ---- GEOMETRY HELPERS ----
+function dist(a,b){return Math.sqrt((a.x-b.x)**2+(a.y-b.y)**2);}
+function distToPin(){return dist(ballPos, HOLES[currentHole].hole);}
+
+function pointInPolygon(p, poly){
+  let inside=false;
+  for(let i=0,j=poly.length-1;i<poly.length;j=i++){
+    const xi=poly[i].x,yi=poly[i].y,xj=poly[j].x,yj=poly[j].y;
+    if(((yi>p.y)!==(yj>p.y))&&(p.x<(xj-xi)*(p.y-yi)/(yj-yi)+xi))inside=!inside;
+  }
+  return inside;
+}
+
+function pointInCircle(p, c){
+  return (p.x-c.x)**2+(p.y-c.y)**2 <= c.r*c.r;
+}
+
+function pointInEllipse(p, e){
+  return ((p.x-e.x)**2/(e.rx*e.rx))+((p.y-e.y)**2/(e.ry*e.ry))<=1;
+}
+
+function getTerrainAt(pos){
+  const h = HOLES[currentHole];
+  // Check green first (ellipse)
+  if(pointInEllipse(pos, h.green)) return 'green';
+  // Bunkers
+  for(const b of h.bunkers) if(pointInCircle(pos,b)) return 'bunker';
+  // Water
+  for(const w of h.water) if(pointInPolygon(pos,w.points)) return 'water';
+  // Fairway
+  if(pointInPolygon(pos, h.fairway)) return 'fairway';
+  // Tee box area
+  if(dist(pos, h.tee)<8) return 'tee';
+  return 'rough';
+}
+
+// ---- WIND ----
+function generateWind(){
+  windSpeed = Math.round(3 + Math.random()*12);
+  windAngle = Math.random()*Math.PI*2;
+  updateWindDisplay();
+}
+
+function updateWindDisplay(){
+  document.getElementById('wind-speed').textContent = windSpeed;
+  const arrow = document.getElementById('wind-arrow');
+  // rotate arrow to show wind direction
+  const deg = (windAngle * 180/Math.PI);
+  arrow.style.transform = 'rotate('+deg+'deg)';
+  arrow.innerHTML = '&#8594;';
+}
+
+// ---- GAME FLOW ----
+function newRound(){
+  currentHole=0;scores=[];totalPutts=0;fairwaysHit=0;greensInReg=0;
+  scorecardOverlay.style.display='none';
+  showHoleTransition();
+}
+
+function showHoleTransition(){
+  const h = HOLES[currentHole];
+  document.getElementById('ht-title').textContent = 'Hole '+(currentHole+1);
+  document.getElementById('ht-par').textContent = 'Par '+h.par+' - '+h.yards+' yards';
+  document.getElementById('ht-desc').textContent = h.desc;
+  holeTransition.style.display='flex';
+  swingState='idle';
+}
+
+document.getElementById('next-hole-btn').addEventListener('click',()=>{
+  holeTransition.style.display='none';
+  startHole();
+});
+
+function startHole(){
+  const h = HOLES[currentHole];
+  strokes=0;
+  ballPos = {x:h.tee.x, y:h.tee.y};
+  ballTerrain = 'tee';
+  shotTrail = [];
+  generateWind();
+  // aim toward hole
+  aimAngle = Math.atan2(h.hole.y - ballPos.y, h.hole.x - ballPos.x);
+  autoSelectClub();
+  updateUI();
+  // set camera
+  setCameraForHole();
+  swingState = 'idle';
+  draw();
+}
+
+function setCameraForHole(){
+  const h = HOLES[currentHole];
+  // center camera between tee and hole
+  const cx = (h.tee.x+h.hole.x)/2;
+  const cy = (h.tee.y+h.hole.y)/2;
+  // calculate zoom to fit
+  const allX = [h.tee.x,h.hole.x];
+  const allY = [h.tee.y,h.hole.y];
+  h.fairway.forEach(p=>{allX.push(p.x);allY.push(p.y);});
+  h.trees.forEach(t=>{allX.push(t.x);allY.push(t.y);});
+  const minX=Math.min(...allX)-30,maxX=Math.max(...allX)+30;
+  const minY=Math.min(...allY)-30,maxY=Math.max(...allY)+30;
+  const rangeX=maxX-minX, rangeY=maxY-minY;
+  const cw = canvas.width, ch = canvas.height;
+  const zx = cw/rangeX, zy = ch/rangeY;
+  targetZoom = Math.min(zx,zy)*0.9;
+  cameraZoom = targetZoom;
+  cameraTarget = {x:cx,y:cy};
+  cameraPos = {x:cx,y:cy};
+}
+
+function setCameraOnBall(zoom){
+  cameraTarget = {x:ballPos.x, y:ballPos.y};
+  if(zoom) targetZoom = zoom;
+}
+
+function updateUI(){
+  const h = HOLES[currentHole];
+  document.getElementById('hole-label').textContent = 'Hole '+(currentHole+1);
+  document.getElementById('par-label').textContent = 'Par '+h.par;
+  document.getElementById('yards-label').textContent = h.yards+'y';
+  document.getElementById('stroke-count').textContent = strokes;
+  // score vs par
+  const totalStrokes = scores.reduce((a,b)=>a+b,0)+strokes;
+  const totalPar = HOLES.slice(0,currentHole).reduce((a,h)=>a+h.par,0)+(strokes>0?h.par:0);
+  const diff = totalStrokes - totalPar;
+  const svp = document.getElementById('score-vs-par');
+  if(scores.length>0||strokes>0){
+    svp.textContent = diff===0?'E':(diff>0?'+'+diff:diff);
+    svp.style.color = diff<0?'#4af':(diff>0?'#f66':'#fff');
+  } else svp.textContent='';
+  updateDistInfo();
+  updateClubStates();
+}
+
+function updateDistInfo(){
+  const d = Math.round(distToPin());
+  const club = CLUBS[selectedClub];
+  const tmod = TERRAIN_MOD[ballTerrain]||0.7;
+  const maxReach = Math.round(club.maxDist * tmod);
+  const terrainLabel = ballTerrain.charAt(0).toUpperCase()+ballTerrain.slice(1);
+  distInfo.textContent = d+'y to pin | '+club.name+': '+maxReach+'y | Lie: '+terrainLabel;
+}
+
+function updateClubStates(){
+  document.querySelectorAll('.club-btn').forEach((b,i)=>{
+    const onGreen = ballTerrain==='green';
+    b.classList.toggle('disabled', onGreen && i!==6);
+  });
+}
+
+// ---- AIMING ----
+let aimStartX=0, aimStartAngle=0, isDragging=false;
+
+aimOverlay.addEventListener('touchstart',(e)=>{
+  if(swingState!=='idle'&&swingState!=='aiming') return;
+  e.preventDefault();
+  isDragging=true;
+  aimStartX = e.touches[0].clientX;
+  aimStartAngle = aimAngle;
+  swingState='aiming';
+},{passive:false});
+
+aimOverlay.addEventListener('touchmove',(e)=>{
+  if(!isDragging) return;
+  e.preventDefault();
+  const dx = e.touches[0].clientX - aimStartX;
+  aimAngle = aimStartAngle + dx*0.005;
+  draw();
+},{passive:false});
+
+aimOverlay.addEventListener('touchend',(e)=>{
+  if(!isDragging) return;
+  isDragging=false;
+  if(swingState==='aiming') swingState='idle';
+},{passive:false});
+
+// Mouse aiming for desktop
+aimOverlay.addEventListener('mousedown',(e)=>{
+  if(swingState!=='idle'&&swingState!=='aiming') return;
+  isDragging=true;
+  aimStartX = e.clientX;
+  aimStartAngle = aimAngle;
+  swingState='aiming';
+});
+window.addEventListener('mousemove',(e)=>{
+  if(!isDragging) return;
+  const dx = e.clientX - aimStartX;
+  aimAngle = aimStartAngle + dx*0.005;
+  draw();
+});
+window.addEventListener('mouseup',()=>{
+  if(!isDragging) return;
+  isDragging=false;
+  if(swingState==='aiming') swingState='idle';
+});
+
+// ---- SWING MECHANICS ----
+swingBtn.addEventListener('click',()=>{
+  ensureAudio();
+  if(swingState==='idle'||swingState==='aiming'){
+    // Start power meter
+    swingState='power';
+    meterPos=0; meterDir=1;
+    powerBar.style.display='block';
+    powerLabel.style.display='block';
+    accuracyBar.style.display='none';
+    accuracyLabel.style.display='none';
+    swingBtn.textContent='SET POWER';
+    lastMeterTime=performance.now();
+    requestAnimationFrame(animateMeter);
+  } else if(swingState==='power'){
+    // Lock power, start accuracy
+    powerValue = meterPos;
+    swingState='accuracy';
+    meterPos=50; meterDir=1;
+    accuracyBar.style.display='block';
+    accuracyLabel.style.display='block';
+    swingBtn.textContent='SET ACCURACY';
+    const fill = powerBar.querySelector('.fill');
+    fill.style.width = powerValue+'%';
+    const marker = powerBar.querySelector('.marker');
+    marker.style.left = powerValue+'%';
+    lastMeterTime=performance.now();
+  } else if(swingState==='accuracy'){
+    // Lock accuracy, execute shot
+    accuracyValue = meterPos;
+    const fill = accuracyBar.querySelector('.fill');
+    fill.style.width='100%';
+    const marker = accuracyBar.querySelector('.marker');
+    marker.style.left = accuracyValue+'%';
+    swingBtn.textContent='...';
+    swingBtn.classList.add('locked');
+    executeShot();
+  }
+});
+
+function animateMeter(t){
+  if(swingState!=='power'&&swingState!=='accuracy') return;
+  const club = CLUBS[selectedClub];
+  const speed = swingState==='power' ? club.speed : (club.speed*0.8);
+  const dt = t - lastMeterTime;
+  lastMeterTime = t;
+  meterPos += meterDir * speed * dt * 0.1;
+  if(meterPos>=100){meterPos=100;meterDir=-1;}
+  if(meterPos<=0){meterPos=0;meterDir=1;}
+
+  if(swingState==='power'){
+    const fill = powerBar.querySelector('.fill');
+    fill.style.width = meterPos+'%';
+    const marker = powerBar.querySelector('.marker');
+    marker.style.left = meterPos+'%';
+  } else {
+    const fill = accuracyBar.querySelector('.fill');
+    fill.style.width = '100%';
+    const marker = accuracyBar.querySelector('.marker');
+    marker.style.left = meterPos+'%';
+  }
+  requestAnimationFrame(animateMeter);
+}
+
+// ---- SHOT EXECUTION ----
+function executeShot(){
+  swingState='flying';
+  strokes++;
+  const club = CLUBS[selectedClub];
+  const terrainMod = TERRAIN_MOD[ballTerrain]||0.7;
+
+  // Distance
+  let distance = club.maxDist * (powerValue/100) * terrainMod;
+
+  // Accuracy offset (50 = center = straight)
+  const accOffset = (accuracyValue - 50) / 50; // -1 to 1
+  const sideAngle = accOffset * 0.25; // up to ~14 degrees off
+
+  // Final direction
+  const dir = aimAngle + sideAngle;
+
+  // Wind effect (proportional to distance/loft)
+  const hangTime = distance * (club.loft/30); // rough hang time factor
+  const windEffectX = Math.cos(windAngle) * windSpeed * hangTime * 0.003;
+  const windEffectY = Math.sin(windAngle) * windSpeed * hangTime * 0.003;
+
+  // Landing position (before bounce)
+  let landX = ballPos.x + Math.cos(dir)*distance + windEffectX;
+  let landY = ballPos.y + Math.sin(dir)*distance + windEffectY;
+
+  // Check tree collision along flight path
+  const h = HOLES[currentHole];
+  if(selectedClub!==6){ // putts roll on ground, skip trees
+    const steps=20;
+    for(let s=1;s<=steps;s++){
+      const frac=s/steps;
+      const tx=ballPos.x+Math.cos(dir)*distance*frac+windEffectX*frac;
+      const ty=ballPos.y+Math.sin(dir)*distance*frac+windEffectY*frac;
+      // Ball arc height at this fraction
+      const arcH=Math.sin(frac*Math.PI)*Math.min(distance*0.3,80)*(club.loft/30);
+      for(const tree of h.trees){
+        const tdist=Math.sqrt((tx-tree.x)**2+(ty-tree.y)**2);
+        // Only block if arc height is below tree top (~tree.r * 2 in height)
+        if(tdist<tree.r && arcH<tree.r*1.8){
+          // Hit tree! Ball stops short, deflected
+          const deflectAngle=Math.atan2(ty-tree.y,tx-tree.x);
+          landX=tree.x+Math.cos(deflectAngle)*(tree.r+3);
+          landY=tree.y+Math.sin(deflectAngle)*(tree.r+3);
+          distance=dist(ballPos,{x:landX,y:landY});
+          s=steps+1;break;
+        }
+      }
+    }
+  }
+
+  // Bounce/roll
+  const landTerrain = getTerrainAt({x:landX,y:landY});
+  const bounceFactor = BOUNCE_MOD[landTerrain]||0.05;
+  if(selectedClub!==6){ // not putter
+    landX += Math.cos(dir)*distance*bounceFactor;
+    landY += Math.sin(dir)*distance*bounceFactor;
+  }
+
+  // Play sound
+  if(selectedClub===6) playSound('putter');
+  else if(selectedClub<=1) playSound('driver');
+  else playSound('iron');
+
+  // Animate flight
+  animateFlight(ballPos.x, ballPos.y, landX, landY, distance, club.loft);
+}
+
+function animateFlight(sx,sy,ex,ey,distance,loft){
+  const duration = Math.max(500, Math.min(2000, distance*3));
+  const startTime = performance.now();
+  shotTrail = [];
+  const startBall = {x:sx,y:sy};
+
+  function tick(t){
+    const elapsed = t - startTime;
+    let progress = Math.min(1, elapsed/duration);
+
+    // Ease out
+    const eased = 1-(1-progress)**2;
+
+    const cx = sx + (ex-sx)*eased;
+    const cy = sy + (ey-sy)*eased;
+
+    // Arc height for 3D effect (ball shadow offset)
+    const arcHeight = Math.sin(progress*Math.PI) * Math.min(distance*0.3, 80) * (loft/30);
+
+    ballPos = {x:cx, y:cy};
+    shotTrail.push({x:cx, y:cy, h:arcHeight});
+
+    // Camera follows
+    cameraTarget = {x:cx,y:cy};
+
+    draw(arcHeight);
+
+    if(progress<1){
+      requestAnimationFrame(tick);
+    } else {
+      // Ball landed
+      ballPos = {x:ex, y:ey};
+      ballTerrain = getTerrainAt(ballPos);
+      shotTrail = [];
+      onBallLanded();
+    }
+  }
+  requestAnimationFrame(tick);
+}
+
+function onBallLanded(){
+  const h = HOLES[currentHole];
+
+  // Check water
+  if(ballTerrain==='water'){
+    playSound('splash');
+    showMessage('Water! +1 penalty');
+    strokes++; // penalty stroke
+    // Move ball back to edge of water (approximate: move toward tee)
+    const angle = Math.atan2(h.tee.y - ballPos.y, h.tee.x - ballPos.x);
+    let testPos = {x:ballPos.x,y:ballPos.y};
+    for(let i=0;i<100;i++){
+      testPos.x += Math.cos(angle)*3;
+      testPos.y += Math.sin(angle)*3;
+      if(getTerrainAt(testPos)!=='water'){
+        ballPos = testPos;
+        ballTerrain = getTerrainAt(ballPos);
+        break;
+      }
+    }
+    setTimeout(()=>{hideMessage();afterLanding();},1500);
+    return;
+  }
+
+  if(ballTerrain==='bunker') playSound('bunker');
+  else playSound('land');
+
+  // Track putts
+  if(selectedClub===6) totalPutts++;
+
+  // Check if ball is in the hole
+  const distFromHole = dist(ballPos, h.hole);
+  // Putter: more forgiving radius (4y). Other clubs: must be very close (1.5y for hole-in-one type)
+  const holeRadius = selectedClub===6 ? 4 : 1.5;
+  if(distFromHole < holeRadius){
+    // HOLED IT!
+    ballPos = {x:h.hole.x, y:h.hole.y};
+    playSound('hole');
+    const scoreDiff = strokes - h.par;
+    const name = SCORE_NAMES[scoreDiff.toString()] || (scoreDiff>0?'+'+scoreDiff:scoreDiff);
+    if(scoreDiff<=0) setTimeout(()=>playSound('crowd_good'),300);
+    if(scoreDiff>2) setTimeout(()=>playSound('crowd_bad'),300);
+    showMessage(name+'!');
+    setTimeout(()=>{hideMessage();finishHole();},2000);
+    return;
+  }
+
+  // Track fairway hit on first shot of par 4/5
+  if(strokes===1 && h.par>=4 && (ballTerrain==='fairway'||ballTerrain==='green')){
+    fairwaysHit++;
+  }
+
+  // Track GIR
+  if(strokes <= h.par-2 && ballTerrain==='green'){
+    greensInReg++;
+  }
+
+  // Check OB (ball too far from any course feature)
+  const distFromTee = dist(ballPos, h.tee);
+  const distFromPin = dist(ballPos, h.hole);
+  const courseRadius = Math.max(h.yards, 400);
+  if(distFromTee > courseRadius && distFromPin > courseRadius){
+    showMessage('Out of Bounds! +1 penalty');
+    strokes++;
+    // Reset to tee or last known good position
+    ballPos = {x:h.tee.x, y:h.tee.y};
+    ballTerrain = 'tee';
+    setTimeout(()=>{hideMessage();afterLanding();},1500);
+    return;
+  }
+
+  afterLanding();
+}
+
+function afterLanding(){
+  swingState='idle';
+  swingBtn.textContent='SWING';
+  swingBtn.classList.remove('locked');
+  powerBar.style.display='none';
+  accuracyBar.style.display='none';
+  powerLabel.style.display='none';
+  accuracyLabel.style.display='none';
+
+  // Aim toward hole
+  const h = HOLES[currentHole];
+  aimAngle = Math.atan2(h.hole.y - ballPos.y, h.hole.x - ballPos.x);
+
+  // Auto select club
+  autoSelectClub();
+
+  // If on green, zoom in
+  if(ballTerrain==='green'){
+    setCameraOnBall(canvas.width/(HOLES[currentHole].green.rx*5));
+  } else {
+    setCameraForHole();
+  }
+
+  updateUI();
+  draw();
+
+  // Check max strokes
+  if(strokes>=10){
+    showMessage('Max strokes reached');
+    setTimeout(()=>{hideMessage();finishHole();},1500);
+  }
+}
+
+function finishHole(){
+  scores.push(strokes);
+  currentHole++;
+  if(currentHole>=9){
+    showScorecard();
+  } else {
+    showHoleTransition();
+  }
+}
+
+function showMessage(text){
+  msgOverlay.textContent = text;
+  msgOverlay.style.display = 'block';
+}
+function hideMessage(){
+  msgOverlay.style.display='none';
+}
+
+// ---- SCORECARD ----
+function showScorecard(){
+  const table = document.getElementById('scorecard-table');
+  let html = '<tr><th>Hole</th>';
+  for(let i=0;i<9;i++) html+='<th>'+(i+1)+'</th>';
+  html+='<th>Tot</th></tr>';
+
+  html+='<tr><td>Par</td>';
+  let totalPar=0;
+  for(let i=0;i<9;i++){totalPar+=HOLES[i].par;html+='<td>'+HOLES[i].par+'</td>';}
+  html+='<td>'+totalPar+'</td></tr>';
+
+  html+='<tr><td>Score</td>';
+  let totalScore=0;
+  for(let i=0;i<9;i++){
+    totalScore+=scores[i];
+    const diff=scores[i]-HOLES[i].par;
+    let cls='';
+    if(diff<=-2)cls='eagle';else if(diff<0)cls='under';else if(diff>0)cls='over';
+    html+='<td class="'+cls+'">'+scores[i]+'</td>';
+  }
+  const totalDiff = totalScore-totalPar;
+  const totalCls = totalDiff<0?'under':(totalDiff>0?'over':'');
+  html+='<td class="'+totalCls+'"><b>'+totalScore+'</b></td></tr>';
+
+  html+='<tr><td>+/-</td>';
+  for(let i=0;i<9;i++){
+    const diff=scores[i]-HOLES[i].par;
+    let cls=diff<0?'under':(diff>0?'over':'');
+    if(diff<=-2)cls='eagle';
+    html+='<td class="'+cls+'">'+(diff===0?'E':(diff>0?'+'+diff:diff))+'</td>';
+  }
+  html+='<td class="'+totalCls+'">'+(totalDiff===0?'E':(totalDiff>0?'+'+totalDiff:totalDiff))+'</td></tr>';
+  table.innerHTML = html;
+
+  // Stats
+  const parOpp = HOLES.filter(h=>h.par>=4).length;
+  let statsText = 'Fairways: '+fairwaysHit+'/'+parOpp+' | GIR: '+greensInReg+'/9 | Putts: '+totalPutts;
+  if(bestRound && bestRound!==totalScore) statsText += ' | Best: '+bestRound;
+  document.getElementById('stats-line').textContent = statsText;
+
+  // Save best
+  if(!bestRound || totalScore<bestRound){
+    bestRound = totalScore;
+    localStorage.setItem('golf_best', totalScore);
+  }
+
+  scorecardOverlay.style.display='flex';
+
+  if(totalDiff<=0) playSound('crowd_good');
+}
+
+document.getElementById('play-again-btn').addEventListener('click',()=>{
+  newRound();
+});
+
+// ---- DRAWING ----
+function draw(ballArcHeight){
+  ballArcHeight = ballArcHeight||0;
+  const w=canvas.width, h=canvas.height;
+
+  // Smooth camera
+  cameraPos.x += (cameraTarget.x - cameraPos.x)*0.1;
+  cameraPos.y += (cameraTarget.y - cameraPos.y)*0.1;
+  cameraZoom += (targetZoom - cameraZoom)*0.1;
+
+  ctx2d.save();
+  ctx2d.clearRect(0,0,w,h);
+
+  // Background (rough)
+  ctx2d.fillStyle='#2d5a1e';
+  ctx2d.fillRect(0,0,w,h);
+
+  // Transform: center camera
+  ctx2d.translate(w/2, h/2);
+  ctx2d.scale(cameraZoom, cameraZoom);
+  ctx2d.translate(-cameraPos.x, -cameraPos.y);
+
+  const hole = HOLES[currentHole];
+
+  // Draw fairway
+  ctx2d.fillStyle='#4a8f3f';
+  ctx2d.beginPath();
+  ctx2d.moveTo(hole.fairway[0].x, hole.fairway[0].y);
+  for(let i=1;i<hole.fairway.length;i++) ctx2d.lineTo(hole.fairway[i].x, hole.fairway[i].y);
+  ctx2d.closePath();
+  ctx2d.fill();
+
+  // Fairway stripes (subtle)
+  ctx2d.save();
+  ctx2d.beginPath();
+  ctx2d.moveTo(hole.fairway[0].x, hole.fairway[0].y);
+  for(let i=1;i<hole.fairway.length;i++) ctx2d.lineTo(hole.fairway[i].x, hole.fairway[i].y);
+  ctx2d.closePath();
+  ctx2d.clip();
+  ctx2d.fillStyle='rgba(255,255,255,0.03)';
+  for(let y=-100;y<700;y+=20){
+    if((y/20)%2===0){
+      ctx2d.fillRect(-50,y,500,10);
+    }
+  }
+  ctx2d.restore();
+
+  // Draw water
+  ctx2d.fillStyle='#2266aa';
+  for(const water of hole.water){
+    ctx2d.beginPath();
+    ctx2d.moveTo(water.points[0].x, water.points[0].y);
+    for(let i=1;i<water.points.length;i++) ctx2d.lineTo(water.points[i].x, water.points[i].y);
+    ctx2d.closePath();
+    ctx2d.fill();
+    // Water shimmer
+    ctx2d.fillStyle='rgba(100,180,255,0.15)';
+    ctx2d.fill();
+    ctx2d.fillStyle='#2266aa';
+  }
+
+  // Draw bunkers
+  ctx2d.fillStyle='#d4b96a';
+  for(const b of hole.bunkers){
+    ctx2d.beginPath();
+    ctx2d.arc(b.x, b.y, b.r, 0, Math.PI*2);
+    ctx2d.fill();
+    // Inner shade
+    ctx2d.fillStyle='#c4a95a';
+    ctx2d.beginPath();
+    ctx2d.arc(b.x+1, b.y+1, b.r*0.7, 0, Math.PI*2);
+    ctx2d.fill();
+    ctx2d.fillStyle='#d4b96a';
+  }
+
+  // Draw green
+  ctx2d.fillStyle='#5fbf5f';
+  ctx2d.beginPath();
+  ctx2d.ellipse(hole.green.x, hole.green.y, hole.green.rx, hole.green.ry, 0, 0, Math.PI*2);
+  ctx2d.fill();
+  // Green edge
+  ctx2d.strokeStyle='#4a9f4a';
+  ctx2d.lineWidth=1.5/cameraZoom;
+  ctx2d.stroke();
+  // Green stripes
+  ctx2d.save();
+  ctx2d.beginPath();
+  ctx2d.ellipse(hole.green.x, hole.green.y, hole.green.rx, hole.green.ry, 0, 0, Math.PI*2);
+  ctx2d.clip();
+  ctx2d.fillStyle='rgba(255,255,255,0.04)';
+  for(let y=hole.green.y-hole.green.ry;y<hole.green.y+hole.green.ry;y+=6){
+    if(Math.floor(y/6)%2===0){
+      ctx2d.fillRect(hole.green.x-hole.green.rx, y, hole.green.rx*2, 3);
+    }
+  }
+  ctx2d.restore();
+
+  // Draw trees (shadow first, then tree)
+  for(const t of hole.trees){
+    ctx2d.fillStyle='rgba(0,0,0,0.2)';
+    ctx2d.beginPath();
+    ctx2d.ellipse(t.x+2, t.y+3, t.r, t.r*0.6, 0, 0, Math.PI*2);
+    ctx2d.fill();
+  }
+  for(const t of hole.trees){
+    ctx2d.fillStyle='#1a5a1a';
+    ctx2d.beginPath();
+    ctx2d.arc(t.x, t.y, t.r, 0, Math.PI*2);
+    ctx2d.fill();
+    ctx2d.fillStyle='#227722';
+    ctx2d.beginPath();
+    ctx2d.arc(t.x-t.r*0.2, t.y-t.r*0.2, t.r*0.6, 0, Math.PI*2);
+    ctx2d.fill();
+  }
+
+  // Tee box
+  ctx2d.fillStyle='#5a9f5a';
+  ctx2d.fillRect(hole.tee.x-6, hole.tee.y-3, 12, 6);
+  // Tee markers
+  ctx2d.fillStyle='#fff';
+  ctx2d.beginPath();ctx2d.arc(hole.tee.x-5,hole.tee.y,1.5,0,Math.PI*2);ctx2d.fill();
+  ctx2d.beginPath();ctx2d.arc(hole.tee.x+5,hole.tee.y,1.5,0,Math.PI*2);ctx2d.fill();
+
+  // Flag/pin
+  ctx2d.fillStyle='#fff';
+  ctx2d.fillRect(hole.hole.x-0.5, hole.hole.y-10, 1, 10);
+  ctx2d.fillStyle='#ff2222';
+  ctx2d.beginPath();
+  ctx2d.moveTo(hole.hole.x+0.5, hole.hole.y-10);
+  ctx2d.lineTo(hole.hole.x+8, hole.hole.y-7);
+  ctx2d.lineTo(hole.hole.x+0.5, hole.hole.y-4);
+  ctx2d.fill();
+  // Hole circle
+  ctx2d.fillStyle='#111';
+  ctx2d.beginPath();
+  ctx2d.arc(hole.hole.x, hole.hole.y, 2, 0, Math.PI*2);
+  ctx2d.fill();
+
+  // Shot trail
+  if(shotTrail.length>1){
+    ctx2d.strokeStyle='rgba(255,255,255,0.4)';
+    ctx2d.lineWidth=1/cameraZoom;
+    ctx2d.setLineDash([3/cameraZoom, 4/cameraZoom]);
+    ctx2d.beginPath();
+    ctx2d.moveTo(shotTrail[0].x, shotTrail[0].y);
+    for(let i=1;i<shotTrail.length;i++){
+      ctx2d.lineTo(shotTrail[i].x, shotTrail[i].y);
+    }
+    ctx2d.stroke();
+    ctx2d.setLineDash([]);
+  }
+
+  // Ball shadow (when in air)
+  if(ballArcHeight>1){
+    ctx2d.fillStyle='rgba(0,0,0,0.3)';
+    ctx2d.beginPath();
+    ctx2d.ellipse(ballPos.x, ballPos.y, 3+ballArcHeight*0.02, 2+ballArcHeight*0.01, 0, 0, Math.PI*2);
+    ctx2d.fill();
+  }
+
+  // Ball
+  const ballDrawY = ballPos.y - ballArcHeight*0.3;
+  ctx2d.fillStyle='#fff';
+  ctx2d.beginPath();
+  ctx2d.arc(ballPos.x, ballDrawY, Math.max(2.5, 4/Math.sqrt(cameraZoom)), 0, Math.PI*2);
+  ctx2d.fill();
+  ctx2d.strokeStyle='#ccc';
+  ctx2d.lineWidth=0.5/cameraZoom;
+  ctx2d.stroke();
+
+  // Aim line (when idle/aiming and not flying)
+  if(swingState==='idle'||swingState==='aiming'||swingState==='power'||swingState==='accuracy'){
+    const club = CLUBS[selectedClub];
+    const maxDist = club.maxDist * (TERRAIN_MOD[ballTerrain]||0.7);
+    const lineLen = maxDist * 0.8;
+    ctx2d.strokeStyle='rgba(255,255,100,0.6)';
+    ctx2d.lineWidth = 1.5/cameraZoom;
+    ctx2d.setLineDash([4/cameraZoom, 4/cameraZoom]);
+    ctx2d.beginPath();
+    ctx2d.moveTo(ballPos.x, ballPos.y);
+    ctx2d.lineTo(ballPos.x + Math.cos(aimAngle)*lineLen, ballPos.y + Math.sin(aimAngle)*lineLen);
+    ctx2d.stroke();
+    ctx2d.setLineDash([]);
+
+    // Arrow head
+    const ax = ballPos.x + Math.cos(aimAngle)*lineLen;
+    const ay = ballPos.y + Math.sin(aimAngle)*lineLen;
+    const aSize = 5/cameraZoom;
+    ctx2d.fillStyle='rgba(255,255,100,0.6)';
+    ctx2d.beginPath();
+    ctx2d.moveTo(ax, ay);
+    ctx2d.lineTo(ax-Math.cos(aimAngle-0.4)*aSize, ay-Math.sin(aimAngle-0.4)*aSize);
+    ctx2d.lineTo(ax-Math.cos(aimAngle+0.4)*aSize, ay-Math.sin(aimAngle+0.4)*aSize);
+    ctx2d.fill();
+  }
+
+  // Distance markers (50 yard rings from pin)
+  if(swingState!=='flying'){
+    ctx2d.strokeStyle='rgba(255,255,255,0.08)';
+    ctx2d.lineWidth=0.5/cameraZoom;
+    for(let d=50;d<=300;d+=50){
+      ctx2d.beginPath();
+      ctx2d.arc(hole.hole.x, hole.hole.y, d, 0, Math.PI*2);
+      ctx2d.stroke();
+    }
+    // 150 yard marker
+    ctx2d.strokeStyle='rgba(255,100,100,0.15)';
+    ctx2d.lineWidth=1/cameraZoom;
+    ctx2d.beginPath();
+    ctx2d.arc(hole.hole.x, hole.hole.y, 150, 0, Math.PI*2);
+    ctx2d.stroke();
+  }
+
+  ctx2d.restore();
+}
+
+// ---- MAIN LOOP ----
+let animFrame;
+function gameLoop(){
+  if(swingState!=='flying'){
+    draw();
+  }
+  animFrame = requestAnimationFrame(gameLoop);
+}
+
+// ---- EVENTS ----
+function setupEvents(){
+  // Prevent scroll
+  document.body.addEventListener('touchmove',(e)=>e.preventDefault(),{passive:false});
+}
+
+// ---- START ----
+init();
+gameLoop();
+
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,1980 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GTC -- constraints / nothing has a coordinate</title>
+<style>
+  :root {
+    --bench: #ECEDEE; --panel: #FFFFFF; --ink: #20242A; --muted: #6A7178; --hair: #D5D8DB;
+    --ok: #3E9B6B; --warn: #D9952F; --bad: #C85A4F;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", Consolas, Menlo, monospace;
+    --sans: Inter, "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--bench); color: var(--ink); font-family: var(--sans); font-size: 14px; line-height: 1.45; }
+  header { padding: 22px 28px 14px; display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; border-bottom: 1px solid var(--hair); }
+  header h1 { font-family: var(--mono); font-size: 22px; font-weight: 700; letter-spacing: 0.06em; }
+  header h1 .dim { color: var(--muted); font-weight: 400; }
+  header p { color: var(--muted); font-size: 13px; }
+
+  .controls { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; padding: 12px 28px; border-bottom: 1px solid var(--hair); background: var(--panel); }
+  .controls label { font-size: 12px; color: var(--muted); display: flex; gap: 7px; align-items: center; }
+  select { font: inherit; padding: 4px 8px; border: 1px solid var(--hair); border-radius: 4px; background: var(--panel); }
+  button { font: 600 13px var(--sans); padding: 7px 16px; border-radius: 4px; cursor: pointer; border: 1px solid var(--ink); background: var(--ink); color: var(--panel); }
+  button.ghost { background: var(--panel); color: var(--ink); }
+  input[type=range] { accent-color: var(--ink); }
+  #scrub { width: 200px; }
+  .tlabel { font-family: var(--mono); font-size: 12px; min-width: 84px; }
+
+  .sticky-viewer { position: sticky; top: 0; z-index: 20; background: var(--bench); border-bottom: 1px solid var(--hair); }
+  .sticky-viewer header { padding: 10px 28px 4px; }
+  .sticky-viewer header p { display: none; }
+  .sticky-viewer .controls { padding: 6px 28px; }
+  .sticky-viewer .viewport { padding: 4px 28px 8px; }
+  .sticky-viewer .viewport figcaption { margin-bottom: 4px; }
+  .sticky-viewer canvas { max-height: 34vh; width: auto; margin: 0 auto; }
+  aside { border-top: 1px solid var(--hair); }
+  @media (max-width: 960px) {
+    .sticky-viewer canvas { max-height: 25vh; }
+    .sticky-viewer header h1 { font-size: 14px; }
+    .sticky-viewer header h1 .dim { display: none; }
+    .sticky-viewer .controls { gap: 6px; padding: 4px 12px; }
+    .sticky-viewer .controls select { font-size: 11px; padding: 2px 4px; max-width: 140px; }
+    .sticky-viewer .controls button { font-size: 11px; padding: 3px 8px; }
+    .sticky-viewer #scrub { width: 80px; }
+    .sticky-viewer .tlabel { font-size: 10px; min-width: 50px; }
+    .sticky-viewer .viewport { padding: 2px 8px 4px; }
+    .sticky-viewer #overlayBtn { display: none; }
+  }
+  .viewport { background: var(--panel); padding: 14px; }
+  .viewport figcaption { font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; color: var(--muted); margin-bottom: 9px; display: flex; justify-content: space-between; }
+  .viewport figcaption b { color: var(--ink); }
+  canvas { width: 100%; aspect-ratio: 16/10; display: block; border: 1px solid var(--hair); background: #1a1d22; border-radius: 2px; }
+
+  aside { background: var(--panel); padding: 16px 28px; }
+  aside h2 { font-family: var(--mono); font-size: 12px; letter-spacing: 0.1em; font-weight: 600; margin: 0 0 10px; }
+  aside h2 + h2 { margin-top: 18px; }
+  .below-viewer { max-width: 1100px; margin: 0 auto; }
+  .var { display: grid; grid-template-columns: 78px 1fr 48px; gap: 8px; align-items: center; margin-bottom: 7px; }
+  .var label { font-family: var(--mono); font-size: 12px; }
+  .var output { font-family: var(--mono); font-size: 12px; text-align: right; }
+  .var.driven { opacity: 0.55; }
+  .var.driven label::after { content: " *"; color: var(--warn); }
+  .drivennote { font-size: 11px; color: var(--muted); margin: 2px 0 14px; }
+
+  .tree { font-family: var(--mono); font-size: 11.5px; }
+  .node { padding: 6px 0; border-bottom: 1px solid var(--hair); }
+  .node .head { display: flex; align-items: center; gap: 7px; font-weight: 600; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .node .mates { color: var(--muted); padding-left: 16px; }
+  .node .stat { margin-left: auto; font-weight: 400; color: var(--muted); font-size: 10.5px; }
+
+  .jtm { background: var(--panel); padding: 16px 20px 20px; border-top: 1px solid var(--hair); }
+  .jtm .bar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+  .jtm .bar h2 { font-family: var(--mono); font-size: 12px; letter-spacing: 0.1em; font-weight: 600; margin-right: auto; }
+  .jtm .bar .bytes { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  textarea { width: 100%; height: 320px; resize: vertical; font: 12px/1.5 var(--mono); color: var(--ink); border: 1px solid var(--hair); border-radius: 4px; padding: 12px; background: #FAFBFB; white-space: pre; tab-size: 1; }
+  textarea:focus { outline: 2px solid var(--ink); outline-offset: -1px; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .hint code { font-family: var(--mono); background: var(--bench); padding: 1px 5px; border-radius: 3px; }
+  footer { padding: 14px 28px 26px; color: var(--muted); font-size: 12px; }
+
+  .live-code { font: 12px/1.8 var(--mono); background: #FAFBFB; border: 1px solid var(--hair); border-radius: 4px; padding: 12px 14px; max-height: 520px; overflow: auto; white-space: pre; }
+  .lc-line { min-height: 21px; display: flex; align-items: center; flex-wrap: nowrap; }
+  .lc-key { color: #0451a5; }
+  .lc-str { color: #a31515; }
+  .lc-num { color: #098658; }
+  .lc-slider { width: 100px; height: 14px; accent-color: var(--accent); margin: 0 6px 0 2px; flex-shrink: 0; cursor: pointer; }
+  .lc-val { color: var(--accent); font-weight: 700; min-width: 38px; text-align: right; }
+  .lc-color { width: 20px; height: 20px; border: 1px solid var(--hair); border-radius: 3px; padding: 0; cursor: pointer; margin: 0 4px; flex-shrink: 0; -webkit-appearance: none; appearance: none; }
+  .lc-color::-webkit-color-swatch-wrapper { padding: 1px; }
+  .lc-color::-webkit-color-swatch { border: none; border-radius: 2px; }
+  .lc-computed { color: var(--ok); font-style: italic; margin-left: 8px; white-space: nowrap; }
+  .lc-badge { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 3px; margin-left: 8px; font-weight: 700; letter-spacing: 0.03em; white-space: nowrap; }
+  .lc-badge.pass { background: #e8f5e9; color: var(--ok); }
+  .lc-badge.warn { background: #fff8e1; color: var(--warn); }
+  .lc-badge.fail { background: #fce4ec; color: var(--bad); }
+  .mode-toggle { font: 600 11px var(--mono); letter-spacing: 0.08em; padding: 4px 10px; border-radius: 3px; cursor: pointer; border: 1px solid var(--hair); background: var(--bench); color: var(--muted); }
+  .mode-toggle.active { background: var(--ink); color: var(--panel); border-color: var(--ink); }
+  .sp-kw { color: #8b5cf6; font-weight: 600; }
+  .sp-id { color: #0ea5e9; }
+  .sp-num { color: #10b981; font-weight: 600; }
+  .sp-str { color: #f59e0b; }
+  .sp-op { color: #94a3b8; }
+  .sp-comment { color: #64748b; font-style: italic; }
+  .sp-shape { color: #ec4899; font-weight: 600; }
+  .sp-color { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: middle; margin: 0 3px; border: 1px solid rgba(0,0,0,.15); }
+  .sp-unit { color: #64748b; font-size: 11px; }
+  .sp-range { color: #64748b; font-size: 11px; }
+  .sp-constraint { color: #f97316; }
+  .sp-slider { width: 90px; height: 14px; accent-color: #8b5cf6; margin: 0 6px 0 2px; flex-shrink: 0; cursor: pointer; }
+  .sp-val { color: #8b5cf6; font-weight: 700; min-width: 36px; text-align: right; }
+  .sp-computed { color: var(--ok); font-style: italic; margin-left: 8px; }
+</style>
+</head>
+<body>
+
+<div class="sticky-viewer">
+<header>
+  <h1>GTC<span class="dim"> / constraints -- nothing has a coordinate</span></h1>
+  <p>objects declare relationships; positions are solved. Drag a dimension and the whole shot re-derives.</p>
+</header>
+
+<div class="controls">
+  <label>scene
+    <select id="scene">
+      <option value="lift">parametric lift (mates + driven dims)</option>
+      <option value="tanks">tank pad (concentric + spacing)</option>
+      <option value="calandria">calandria lift -- dock to plinth (marine heavy lift)</option>
+      <option value="cooling">once-through cooling (flow calcs drive geometry)</option>
+      <option value="tandem">tandem lift -- two cranes, load share (lever rule)</option>
+      <option value="power">construction power (230kV→46kV→13.8kV, TBM, line loss)</option>
+    </select>
+  </label>
+  <button id="play" class="ghost">Pause</button>
+  <button id="overlayBtn" class="ghost">Site overlay (camera)</button>
+  <input type="range" id="scrub" min="0" max="1000" value="0">
+  <span class="tlabel" id="tlabel">0.0 s</span>
+</div>
+
+<div class="controls" id="overlayCtl" style="display:none">
+  <span style="font-family:var(--mono);font-size:11px;letter-spacing:0.08em;color:var(--muted)">OVERLAY ALIGN</span>
+  <label>view angle <input type="range" id="ovAngle" min="0" max="360" value="150"></label>
+  <label>height <input type="range" id="ovHeight" min="2" max="60" value="15" step="0.5"></label>
+  <label>distance <input type="range" id="ovDist" min="8" max="120" value="40" step="1"></label>
+  <label>opacity <input type="range" id="ovAlpha" min="20" max="100" value="85"></label>
+  <button id="overlayExit" class="ghost">Exit overlay</button>
+</div>
+
+<figure class="viewport">
+  <figcaption><b>SOLVED RENDER</b><span id="fps"></span></figcaption>
+  <div style="position:relative">
+    <video id="cam" playsinline autoplay muted style="display:none;position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:2px"></video>
+    <canvas id="gl"></canvas>
+    <div id="compass" style="position:absolute;top:10px;right:12px;font-family:var(--mono);font-size:12px;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.6);display:none;text-align:center;width:34px">
+      <div id="needle" style="font-size:20px;line-height:1">^</div>N
+    </div>
+  </div>
+</figure>
+</div>
+
+<p id="sceneDesc" style="padding:8px 28px;background:var(--panel);border-bottom:1px solid var(--hair);font-size:12.5px;color:var(--muted)"></p>
+
+<section class="jtm">
+  <div class="bar">
+    <h2>JTM -- THE MODEL</h2>
+    <span class="bytes" id="bytes"></span>
+    <button class="mode-toggle active" id="modeLive">LIVE</button>
+    <button class="mode-toggle" id="modeRaw">JSON</button>
+    <button class="mode-toggle" id="modeSprout">SPROUT</button>
+    <button id="apply" class="ghost">Apply raw text</button>
+    <button id="download" class="ghost">Download .jtm</button>
+  </div>
+  <div id="liveCode" class="live-code"></div>
+  <div id="sproutCode" class="live-code" style="display:none"></div>
+  <textarea id="jtmText" spellcheck="false" style="display:none"></textarea>
+  <p class="hint">Values with ranges are <b>sliders</b> (drag them). Hex colors are <b>pickers</b> (click the swatch). Derived calcs show <span style="color:var(--ok)">→ computed results</span> live. Checks show <span class="lc-badge pass">PASS</span> / <span class="lc-badge warn">WARN</span> / <span class="lc-badge fail">FAIL</span> badges. Toggle RAW to edit the JSON directly, then Apply. Add a <code>"derived"</code> entry and it becomes a tracked output; add a <code>"checks"</code> entry and it gets a status dot.</p>
+</section>
+
+<aside style="padding:16px 28px">
+  <h2>DIMENSIONS (DRAG ME)</h2>
+  <div id="vars"></div>
+  <p class="drivennote">* driven by the timeline while playing, like a motion study.</p>
+  <h2 id="derivedH" style="display:none">DERIVED -- PROCESS CALCS</h2>
+  <div class="tree" id="derived" style="display:none"></div>
+  <h2 id="checksH" style="display:none;margin-top:18px">CHECKS</h2>
+  <div class="tree" id="checks" style="display:none"></div>
+  <h2 style="margin-top:18px">SITE -- BIM |=| GIS</h2>
+  <div class="tree" id="site"></div>
+  <h2 id="gisliveH" style="display:none;margin-top:18px">GIS -- LIVE (FREE APIS)</h2>
+  <div class="tree" id="gislive" style="display:none"></div>
+  <h2 style="margin-top:18px">FEATURE TREE</h2>
+  <div class="tree" id="tree"></div>
+</aside>
+
+<footer>
+  SolidWorks' idea applied to a video format: mates, driven dimensions, a feature tree with defined-status, and a motion study -- except the file is 2 KB of diffable text and the renderer is one shader. CAD derives geometry from constraints; this derives the shot.
+</footer>
+
+<script>
+// constraints core: a SolidWorks-flavored scene solver.
+// Objects declare relationships (mates) and expressions, never raw coordinates.
+// Positions are derived. Pure functions, Node-testable.
+
+const SHAPE_IDS = { box: 0, sphere: 1, cyl: 2, torus: 3, "cyl-x": 4, "cyl-z": 5 };
+const MAX_OBJ = 24;
+
+function unhex(h) {
+  return [parseInt(h.slice(1, 3), 16) / 255, parseInt(h.slice(3, 5), 16) / 255, parseInt(h.slice(5, 7), 16) / 255];
+}
+function smoothstep01(f) { return f * f * (3 - 2 * f); }
+
+function sampleKeys(keys, t, ease) {
+  if (!keys || !keys.length) return null;
+  if (t <= keys[0].t) return keys[0].v;
+  const last = keys[keys.length - 1];
+  if (t >= last.t) return last.v;
+  for (let i = 0; i < keys.length - 1; i++) {
+    const a = keys[i], b = keys[i + 1];
+    if (t >= a.t && t <= b.t) {
+      let f = (b.t === a.t) ? 0 : (t - a.t) / (b.t - a.t);
+      if (ease === "smooth") f = smoothstep01(f);
+      return a.v + (b.v - a.v) * f;
+    }
+  }
+  return last.v;
+}
+
+// ---------- expressions ----------
+// Space-separated tokens: numbers, var names (kebab-case ok), refs like beam.top,
+// operators + - * /, parens ( ) as standalone tokens. Leading - on a token negates it.
+
+class Unresolved extends Error {}
+
+const REF_PROPS = ["x", "y", "z", "w", "h", "d", "top", "bottom", "left", "right", "front", "back"];
+
+function refValue(rec, prop) {
+  switch (prop) {
+    case "x": return rec.x; case "y": return rec.y; case "z": return rec.z;
+    case "w": return rec.w; case "h": return rec.h; case "d": return rec.d;
+    case "top": return rec.y + rec.h / 2; case "bottom": return rec.y - rec.h / 2;
+    case "left": return rec.x - rec.w / 2; case "right": return rec.x + rec.w / 2;
+    case "front": return rec.z + rec.d / 2; case "back": return rec.z - rec.d / 2;
+    default: throw new Error("unknown ref property: " + prop);
+  }
+}
+
+function evalExpr(expr, ctx) {
+  if (typeof expr === "number") return expr;
+  const toks = String(expr).replace(/([()])/g, " $1 ").trim().split(/\s+/);
+  let i = 0;
+  function atom(tok) {
+    let neg = false;
+    if (tok.length > 1 && tok[0] === "-") { neg = true; tok = tok.slice(1); }
+    let v;
+    if (/^\d/.test(tok) || /^\.\d/.test(tok)) {
+      v = parseFloat(tok);
+      if (Number.isNaN(v)) throw new Error("bad number: " + tok);
+    } else if (tok.includes(".") ) {
+      const [id, prop] = tok.split(".");
+      if (!REF_PROPS.includes(prop)) throw new Error("unknown property ." + prop + " on " + id);
+      const rec = ctx.obj(id);
+      if (!rec || !rec.solved) throw new Unresolved(id);
+      v = refValue(rec, prop);
+    } else {
+      if (!(tok in ctx.vars)) throw new Error("unknown var: " + tok);
+      v = ctx.vars[tok];
+    }
+    return neg ? -v : v;
+  }
+  function factor() {
+    if (toks[i] === "(") {
+      i++;
+      const v = sum();
+      if (toks[i] !== ")") throw new Error("expected )");
+      i++;
+      return v;
+    }
+    if (toks[i] === "-" ) { i++; return -factor(); }
+    return atom(toks[i++]);
+  }
+  function product() {
+    let v = factor();
+    while (toks[i] === "*" || toks[i] === "/") {
+      const op = toks[i++];
+      const r = factor();
+      v = op === "*" ? v * r : v / r;
+    }
+    return v;
+  }
+  function sum() {
+    let v = product();
+    while (toks[i] === "+" || toks[i] === "-") {
+      const op = toks[i++];
+      const r = product();
+      v = op === "+" ? v + r : v - r;
+    }
+    return v;
+  }
+  const v = sum();
+  if (i !== toks.length) throw new Error("trailing tokens in expression: " + expr);
+  return v;
+}
+
+// ---------- constraints ----------
+
+function applyConstraint(rec, spec, ctx) {
+  const toks = String(spec).trim().split(/\s+/);
+  const op = toks[0];
+  const need = id => {
+    const r = ctx.obj(id);
+    if (!r || !r.solved) throw new Unresolved(id);
+    return r;
+  };
+  const rest = from => toks.slice(from).join(" ") || "0";
+  switch (op) {
+    case "on": {
+      if (toks[1] === "ground") { rec.y = rec.h / 2; rec.set.y = true; break; }
+      const o = need(toks[1]);
+      rec.y = refValue(o, "top") + rec.h / 2; rec.set.y = true; break;
+    }
+    case "above": { const o = need(toks[1]); rec.y = refValue(o, "top") + evalExpr(rest(2), ctx) + rec.h / 2; rec.set.y = true; break; }
+    case "below": { const o = need(toks[1]); rec.y = refValue(o, "bottom") - evalExpr(rest(2), ctx) - rec.h / 2; rec.set.y = true; break; }
+    case "left-of": { const o = need(toks[1]); rec.x = refValue(o, "left") - evalExpr(rest(2), ctx) - rec.w / 2; rec.set.x = true; break; }
+    case "right-of": { const o = need(toks[1]); rec.x = refValue(o, "right") + evalExpr(rest(2), ctx) + rec.w / 2; rec.set.x = true; break; }
+    case "behind": { const o = need(toks[1]); rec.z = refValue(o, "back") - evalExpr(rest(2), ctx) - rec.d / 2; rec.set.z = true; break; }
+    case "in-front": { const o = need(toks[1]); rec.z = refValue(o, "front") + evalExpr(rest(2), ctx) + rec.d / 2; rec.set.z = true; break; }
+    case "align-x": { rec.x = need(toks[1]).x; rec.set.x = true; break; }
+    case "align-y": { rec.y = need(toks[1]).y; rec.set.y = true; break; }
+    case "align-z": { rec.z = need(toks[1]).z; rec.set.z = true; break; }
+    case "concentric": { const o = need(toks[1]); rec.x = o.x; rec.z = o.z; rec.set.x = rec.set.z = true; break; }
+    case "centered-x": {
+      const a = need(toks[1]);
+      const b = toks[2] ? need(toks[2]) : a;
+      rec.x = (a.x + b.x) / 2; rec.set.x = true; break;
+    }
+    case "centered-z": {
+      const a = need(toks[1]);
+      const b = toks[2] ? need(toks[2]) : a;
+      rec.z = (a.z + b.z) / 2; rec.set.z = true; break;
+    }
+    case "x": rec.x = evalExpr(rest(1), ctx); rec.set.x = true; break;
+    case "y": rec.y = evalExpr(rest(1), ctx); rec.set.y = true; break;
+    case "z": rec.z = evalExpr(rest(1), ctx); rec.set.z = true; break;
+    default: throw new Error("unknown constraint: " + op);
+  }
+}
+
+function boundsFromSize(shape, s) {
+  // s: up to 3 numbers, shader semantics: box full extents; sphere [diameter];
+  // cyl [diameter, height]; torus [major-diameter, minor-diameter]
+  if (shape === "sphere") return { w: s[0], h: s[0], d: s[0] };
+  if (shape === "cyl") return { w: s[0], h: s[1] ?? s[0], d: s[0] };
+  if (shape === "cyl-x") return { w: s[1] ?? s[0], h: s[0], d: s[0] };
+  if (shape === "cyl-z") return { w: s[0], h: s[0], d: s[1] ?? s[0] };
+  if (shape === "torus") return { w: s[0] + (s[1] ?? 0), h: s[1] ?? 0.2, d: s[0] + (s[1] ?? 0) };
+  return { w: s[0], h: s[1] ?? s[0], d: s[2] ?? s[0] };
+}
+
+
+// ---------- georeferencing: BIM |=| GIS ----------
+// site: { crs, anchors: [{ bim: "<object-id>" | [x,y,z], gis: [E,N,elev] }] }
+// 2D Helmert similarity fit in plan (x,z)->(E,N) + mean elevation offset.
+
+function geoSolve(site, records) {
+  if (!site || !site.anchors || !site.anchors.length) {
+    return { status: "not georeferenced", anchors: 0 };
+  }
+  const pts = [];
+  for (const a of site.anchors) {
+    let local;
+    if (Array.isArray(a.bim)) local = a.bim;
+    else {
+      const r = records[a.bim];
+      if (!r || !r.solved || (r.status && r.status.startsWith("error"))) {
+        return { status: "error: anchor references unsolved object " + a.bim, anchors: site.anchors.length };
+      }
+      local = [r.x, r.y, r.z];
+    }
+    pts.push({ lx: local[0], ly: local[1], lz: local[2], E: a.gis[0], N: a.gis[1], el: a.gis[2] });
+  }
+  const n = pts.length;
+  if (n === 1) {
+    const p = pts[0];
+    return {
+      status: "under-defined: rotation (1 anchor)", anchors: 1,
+      theta: 0, scale: 1,
+      E0: p.E - p.lx, N0: p.N - p.lz, elev0: p.el - p.ly,
+      residual: 0, crs: site.crs
+    };
+  }
+  // centroids
+  let lcx = 0, lcz = 0, gcE = 0, gcN = 0, lcy = 0, gel = 0;
+  for (const p of pts) { lcx += p.lx; lcz += p.lz; gcE += p.E; gcN += p.N; lcy += p.ly; gel += p.el; }
+  lcx /= n; lcz /= n; gcE /= n; gcN /= n; lcy /= n; gel /= n;
+  // Helmert: E = s(c*x - sn*z) + tE ; N = s(sn*x + c*z) + tN
+  let Sxx = 0, Sxy = 0, Sll = 0;
+  for (const p of pts) {
+    const x = p.lx - lcx, z = p.lz - lcz, E = p.E - gcE, N = p.N - gcN;
+    Sxx += x * E + z * N;
+    Sxy += x * N - z * E;
+    Sll += x * x + z * z;
+  }
+  const theta = Math.atan2(Sxy, Sxx);
+  const scale = Sll > 0 ? Math.sqrt(Sxx * Sxx + Sxy * Sxy) / Sll : 1;
+  const c = Math.cos(theta), sn = Math.sin(theta);
+  const tE = gcE - scale * (c * lcx - sn * lcz);
+  const tN = gcN - scale * (sn * lcx + c * lcz);
+  const elev0 = gel - lcy;
+  // residuals (plan + elevation)
+  let rr = 0;
+  for (const p of pts) {
+    const fE = scale * (c * p.lx - sn * p.lz) + tE;
+    const fN = scale * (sn * p.lx + c * p.lz) + tN;
+    const fel = p.ly + elev0;
+    rr += (p.E - fE) ** 2 + (p.N - fN) ** 2 + (p.el - fel) ** 2;
+  }
+  const residual = Math.sqrt(rr / n);
+  return { status: "fit", anchors: n, theta, scale, tE, tN, elev0, residual, crs: site.crs };
+}
+
+function toGis(geo, x, y, z) {
+  if (!geo || (geo.status !== "fit" && !geo.status.startsWith("under"))) return null;
+  if (geo.status.startsWith("under")) {
+    return [geo.E0 + x, geo.N0 + z, geo.elev0 + y];
+  }
+  const c = Math.cos(geo.theta), sn = Math.sin(geo.theta);
+  return [
+    geo.scale * (c * x - sn * z) + geo.tE,
+    geo.scale * (sn * x + c * z) + geo.tN,
+    geo.elev0 + y
+  ];
+}
+
+// ---------- solve ----------
+
+function solve(scene, t) {
+  const vars = Object.assign({}, scene.vars || {});
+  for (const tl of scene.timeline || []) {
+    const v = sampleKeys(tl.keys, t, tl.ease || "smooth");
+    if (v !== null && tl.var) vars[tl.var] = v;
+  }
+  vars.pi = vars.pi ?? Math.PI;
+  const records = {};
+  const ctx = { vars, obj: id => records[id] };
+  // derived process quantities: ordered, each may reference vars and earlier derived
+  const derived = [];
+  const dctx = { vars, obj: () => null }; // object refs not allowed in derived
+  for (const name in scene.derived || {}) {
+    try {
+      const v = evalExpr(scene.derived[name], dctx);
+      vars[name] = v;
+      derived.push({ name, value: v, unit: (scene.units || {})[name] || "" });
+    } catch (e) {
+      derived.push({ name, value: null, unit: "", error: e.message });
+    }
+  }
+  // checks: engineering limits evaluated against derived/vars
+  const checks = [];
+  for (const c of scene.checks || []) {
+    try {
+      const v = evalExpr(c.expr, dctx);
+      let status = "pass";
+      if (c.max !== undefined) {
+        if (v > c.max) status = "fail";
+        else if (v > c.max * 0.92) status = "warn";
+      }
+      if (c.min !== undefined) {
+        if (v < c.min) status = "fail";
+        else if (v < c.min * 1.08) status = status === "fail" ? "fail" : (status === "warn" ? "warn" : (v < c.min * 1.08 ? "warn" : status));
+      }
+      checks.push({ name: c.name, value: v, limit: c.max !== undefined ? "<= " + c.max : ">= " + c.min, unit: c.unit || "", status });
+    } catch (e) {
+      checks.push({ name: c.name, value: null, limit: "", unit: "", status: "error: " + e.message });
+    }
+  }
+  const objs = (scene.objects || []).slice(0, MAX_OBJ);
+  for (const o of objs) records[o.id] = { solved: false, status: "pending", set: {} };
+
+  let pass = 0;
+  let progress = true;
+  while (progress && pass < 12) {
+    progress = false;
+    pass++;
+    for (const o of objs) {
+      const rec = records[o.id];
+      if (rec.solved) continue;
+      try {
+        const sizeNums = (o.size || [1]).map(e => evalExpr(e, ctx));
+        const b = boundsFromSize(o.shape, sizeNums);
+        const fresh = { solved: false, status: "pending", set: {}, x: 0, y: 0, z: 0, w: b.w, h: b.h, d: b.d, sizeNums };
+        for (const spec of o.at || []) applyConstraint(fresh, spec, ctx);
+        fresh.solved = true;
+        const missing = ["x", "y", "z"].filter(a => !fresh.set[a]);
+        fresh.status = missing.length ? "under-defined: " + missing.join(",") : "fully defined";
+        fresh.missing = missing;
+        records[o.id] = fresh;
+        progress = true;
+      } catch (e) {
+        if (e instanceof Unresolved) { rec.waitingOn = e.message; continue; }
+        rec.status = "error: " + e.message;
+        rec.solved = true; // don't retry a hard error
+        rec.x = rec.y = rec.z = 0; rec.w = rec.h = rec.d = 0.001;
+        rec.sizeNums = [0.001];
+        records[o.id] = rec;
+        progress = true;
+      }
+    }
+  }
+  for (const o of objs) {
+    const rec = records[o.id];
+    if (!rec.solved) {
+      rec.status = "unresolved (cycle or missing ref" + (rec.waitingOn ? ": waiting on " + rec.waitingOn : "") + ")";
+      rec.x = rec.y = rec.z = 0; rec.w = rec.h = rec.d = 0.001; rec.sizeNums = [0.001];
+      rec.solved = true;
+    }
+  }
+
+  // pack uniforms
+  const type = new Int32Array(MAX_OBJ);
+  const pos = new Float32Array(MAX_OBJ * 3);
+  const size = new Float32Array(MAX_OBJ * 3);
+  const color = new Float32Array(MAX_OBJ * 3);
+  const blend = new Float32Array(MAX_OBJ);
+  const sub = new Float32Array(MAX_OBJ);
+  objs.forEach((o, i) => {
+    const r = records[o.id];
+    type[i] = SHAPE_IDS[o.shape] ?? 0;
+    pos.set([r.x, r.y, r.z], i * 3);
+    const s = r.sizeNums;
+    size.set([s[0] ?? 1, s[1] ?? s[0] ?? 1, s[2] ?? s[0] ?? 1], i * 3);
+    color.set(unhex(o.color || "#999999"), i * 3);
+    blend[i] = o.blend || 0;
+    sub[i] = o.sub ? 1 : 0;
+  });
+
+  // camera
+  let cam;
+  const c = scene.camera || {};
+  if (c.orbit) {
+    const tr = records[c.orbit.target];
+    const target = tr && tr.solved ? [tr.x, tr.y, tr.z] : [0, 1, 0];
+    const radius = evalExpr(c.orbit.radius ?? 10, ctx);
+    const height = evalExpr(c.orbit.height ?? 4, ctx);
+    const period = c.orbit.period || 12;
+    const phase = (c.orbit.phase || 0) * Math.PI / 180;
+    const a = phase + 2 * Math.PI * t / period;
+    cam = { pos: [target[0] + Math.cos(a) * radius, height, target[2] + Math.sin(a) * radius], look: target, fov: c.fov || 50 };
+  } else {
+    cam = { pos: [10, 5, 10], look: [0, 1, 0], fov: c.fov || 50 };
+  }
+
+  const geo = geoSolve(scene.site, records);
+  const statuses = objs.map(o => {
+    const r = records[o.id];
+    const gis = toGis(geo, r.x, r.y, r.z);
+    return { id: o.id, at: o.at || [], status: r.status, gis };
+  });
+  return {
+    count: objs.length, type, pos, size, color, blend, sub, cam, geo, derived, checks,
+    sun: scene.sun || [-0.5, -1.0, -0.35],
+    sky1: unhex(scene.sky ? scene.sky[0] : "#cfdce8"),
+    sky2: unhex(scene.sky ? scene.sky[1] : "#8fa6bc"),
+    statuses, vars
+  };
+}
+
+function sceneDuration(scene) {
+  let d = 0;
+  for (const tl of scene.timeline || []) for (const k of tl.keys || []) d = Math.max(d, k.t);
+  if (scene.camera && scene.camera.orbit) d = Math.max(d, scene.camera.orbit.period || 12);
+  return Math.max(d, 0.001);
+}
+
+window.CSOLVE = { solve, sceneDuration, evalExpr, sampleKeys, geoSolve, toGis, MAX_OBJ };
+</script>
+<script>
+/* ===== scenes ===== */
+const SCENES = {
+  lift: {
+    desc: "Two columns and a beam placed entirely by mates. Drag span and the columns, beam, cable, and camera re-solve. The motion study animates one variable; geometry follows.",
+    kind: "scene3d-constraints",
+    sky: ["#cfdce8", "#8fa6bc"],
+    sun: [-0.5, -1.0, -0.35],
+    vars: { "span": 6, "col-h": 3, "lift": 4.5 },
+    ranges: { "span": [3, 11], "col-h": [1.5, 6], "lift": [0, 6] },
+    objects: [
+      { id: "slab", shape: "box", size: [16, 0.2, 12], color: "#b9bec4", at: ["on ground", "x 0", "z 0"] },
+      { id: "col-a", shape: "box", size: [0.6, "col-h", 0.6], color: "#8a9099", at: ["on slab", "x -span / 2", "z 0"] },
+      { id: "col-b", shape: "box", size: [0.6, "col-h", 0.6], color: "#8a9099", at: ["on slab", "x span / 2", "z 0"] },
+      { id: "beam", shape: "box", size: ["span + 1.2", 0.5, 0.7], color: "#d9952f", at: ["above col-a lift", "centered-x col-a col-b", "align-z col-a"] },
+      { id: "mast", shape: "box", size: [0.5, "col-h + 7", 0.5], color: "#c85a4f", at: ["on slab", "x span / 2 + 4.5", "z 0"] },
+      { id: "jib", shape: "box", size: ["span + 8", 0.3, 0.3], color: "#c85a4f", at: ["y mast.top - 0.15", "x mast.x - 3.5", "align-z mast"] },
+      { id: "cable", shape: "cyl", size: [0.1, "jib.bottom - beam.top"], color: "#3a3f46", at: ["align-x beam", "y ( jib.bottom + beam.top ) / 2", "align-z beam"] },
+      { id: "counter", shape: "box", size: [1.4, 0.9, 0.9], color: "#3a3f46", at: ["below jib 0", "x mast.x + 3", "align-z mast"] },
+      { id: "mon-1", shape: "cyl", size: [0.25, 0.15], color: "#e3b341", at: ["on slab", "x -7", "z -5"] },
+      { id: "mon-2", shape: "cyl", size: [0.25, 0.15], color: "#e3b341", at: ["on slab", "x 7", "z -5"] },
+      { id: "mon-3", shape: "cyl", size: [0.25, 0.15], color: "#e3b341", at: ["on slab", "x -7", "z 5"] }
+    ],
+    site: {
+      crs: "EPSG:26917",
+      anchors: [
+        { bim: "mon-1", gis: [589406.718, 4878335.555, 176.675] },
+        { bim: "mon-2", gis: [589420.302, 4878338.942, 176.675] },
+        { bim: "mon-3", gis: [589404.298, 4878345.258, 176.675] }
+      ]
+    },
+    derived: {
+      "beam-mass": "span * 0.15",
+      "rigging": "0.5",
+      "hook-load": "beam-mass + rigging",
+      "crane-radius": "span / 2 + 4.5",
+      "moment-arm": "crane-radius * hook-load * 9.81"
+    },
+    units: { "beam-mass": "t", "rigging": "t", "hook-load": "t", "crane-radius": "m", "moment-arm": "kN-m" },
+    checks: [
+      { name: "crane radius", expr: "crane-radius", max: 10, unit: "m" },
+      { name: "hook load", expr: "hook-load", max: 3.5, unit: "t" }
+    ],
+    camera: { fov: 48, orbit: { target: "beam", radius: "span * 1.6 + 6", height: "col-h + 4", period: 16, phase: 20 } },
+    timeline: [
+      { var: "lift", ease: "smooth", keys: [ { t: 1, v: 4.5 }, { t: 3, v: 4.5 }, { t: 9, v: 0 }, { t: 14, v: 0 } ] }
+    ]
+  },
+  calandria: {
+    desc: "Marine heavy lift: a calandria hoisted off a barge by a strand-jack gantry and set on a plinth. Tower heights absorb the barge/quay elevation difference; berth and pad-x sliders re-derive the lift path.",
+    kind: "scene3d-constraints",
+    sky: ["#d4dde6", "#93a7ba"],
+    sun: [-0.45, -1.0, 0.3],
+    vars: { "header-elev": 24, "berth": -14, "pad-x": 10, "travel": 0, "hook-elev": 9.85 },
+    ranges: { "header-elev": [21, 30], "berth": [-16, -12], "pad-x": [8, 14], "travel": [0, 20], "hook-elev": [9, 15] },
+    objects: [
+      { id: "water", shape: "box", size: [40, 0.3, 46], color: "#3f6f8f", at: ["on ground", "x -22", "z 0"] },
+      { id: "quay", shape: "box", size: [30, 2.2, 46], color: "#b6b9bd", at: ["on ground", "x 13", "z 0"] },
+      { id: "barge", shape: "box", size: [18, 2, 10], color: "#8a4f43", at: ["above water -1.2", "x berth", "z 0"] },
+      { id: "saddle-a", shape: "box", size: [5, 1.2, 1.6], color: "#5d6671", at: ["on barge", "align-x barge", "z -2.4"] },
+      { id: "saddle-b", shape: "box", size: [5, 1.2, 1.6], color: "#5d6671", at: ["on barge", "align-x barge", "z 2.4"] },
+      { id: "leg-a1", shape: "box", size: [1.2, "header-elev - barge.top - 1.5", 1.2], color: "#c85a4f", at: ["on barge", "align-x barge", "z -5"] },
+      { id: "leg-a2", shape: "box", size: [1.2, "header-elev - barge.top - 1.5", 1.2], color: "#c85a4f", at: ["on barge", "align-x barge", "z 5"] },
+      { id: "leg-b1", shape: "box", size: [1.2, "header-elev - quay.top - 1.5", 1.2], color: "#c85a4f", at: ["on quay", "x 16", "z -5"] },
+      { id: "leg-b2", shape: "box", size: [1.2, "header-elev - quay.top - 1.5", 1.2], color: "#c85a4f", at: ["on quay", "x 16", "z 5"] },
+      { id: "cross-a", shape: "box", size: [1.4, 1, 11.2], color: "#c85a4f", at: ["above leg-a1 0", "align-x leg-a1", "centered-z leg-a1 leg-a2"] },
+      { id: "cross-b", shape: "box", size: [1.4, 1, 11.2], color: "#c85a4f", at: ["above leg-b1 0", "align-x leg-b1", "centered-z leg-b1 leg-b2"] },
+      { id: "header", shape: "box", size: ["leg-b1.x - leg-a1.x + 6", 1, 1.2], color: "#d9952f", at: ["y header-elev", "centered-x cross-a cross-b", "z 0"] },
+      { id: "trolley", shape: "box", size: [2.4, 1, 2.4], color: "#46505c", at: ["below header 0", "x cross-a.x + travel * ( pad-x - cross-a.x ) / 20", "z 0"] },
+      { id: "cable-a", shape: "cyl", size: [0.12, "trolley.bottom - spreader.top"], color: "#2e3338", at: ["align-x trolley", "y ( trolley.bottom + spreader.top ) / 2", "z -1"] },
+      { id: "cable-b", shape: "cyl", size: [0.12, "trolley.bottom - spreader.top"], color: "#2e3338", at: ["align-x trolley", "y ( trolley.bottom + spreader.top ) / 2", "z 1"] },
+      { id: "spreader", shape: "box", size: [3, 0.6, 6], color: "#d9952f", at: ["align-x trolley", "y hook-elev", "align-z trolley"] },
+      { id: "calandria", shape: "cyl-z", size: [7.5, 7.6], color: "#9aa7b4", at: ["align-x spreader", "below spreader 0.3", "align-z spreader"] },
+      { id: "ring-a", shape: "cyl-z", size: [8.2, 0.5], color: "#7e8b98", at: ["align-x calandria", "align-y calandria", "in-front calandria -0.5"] },
+      { id: "ring-b", shape: "cyl-z", size: [8.2, 0.5], color: "#7e8b98", at: ["align-x calandria", "align-y calandria", "behind calandria -0.5"] },
+      { id: "plinth", shape: "box", size: [5, 1.5, 9], color: "#a9a194", at: ["on quay", "x pad-x", "z 0"] },
+      { id: "rb", shape: "box", size: [10, 12, 10], color: "#cfc9be", at: ["on quay", "x 22", "z -15"] },
+      { id: "mon-1", shape: "cyl", size: [0.25, 0.15], color: "#e3b341", at: ["on quay", "x 2", "z 18"] },
+      { id: "mon-2", shape: "cyl", size: [0.25, 0.15], color: "#e3b341", at: ["on quay", "x 26", "z 18"] },
+      { id: "mon-3", shape: "cyl", size: [0.25, 0.15], color: "#e3b341", at: ["on quay", "x 2", "z -18"] }
+    ],
+    site: {
+      crs: "EPSG:26917",
+      anchors: [
+        { bim: "mon-1", gis: [445124.639, 4906497.507, 178.275] },
+        { bim: "mon-2", gis: [445148.375, 4906493.959, 178.275] },
+        { bim: "mon-3", gis: [445119.317, 4906461.902, 178.275] }
+      ]
+    },
+    camera: { fov: 44, orbit: { target: "spreader", radius: "header-elev + 22", height: "header-elev * 0.85", period: 26, phase: 205 } },
+    timeline: [
+      { var: "hook-elev", ease: "smooth", keys: [ { t: 0, v: 9.85 }, { t: 2, v: 9.85 }, { t: 7, v: 14 }, { t: 16, v: 14 }, { t: 22, v: 11.5 }, { t: 26, v: 11.5 } ] },
+      { var: "travel", ease: "smooth", keys: [ { t: 0, v: 0 }, { t: 7, v: 0 }, { t: 16, v: 20 }, { t: 26, v: 20 } ] }
+    ]
+  },
+  cooling: {
+    desc: "Once-through cooling for a 600 MWe nuclear station. The heat balance is in the file: mass flow, conduit velocity, pump power, intake screen width, discharge plume, and Reynolds number are ALL derived from q-reject and dt-design. The lake temperature animates through a full year -- the outfall check fails in summer. Drag q-reject down or dt-design up to restore compliance. GIS -- LIVE can set lake-t from the current real temperature.",
+    kind: "scene3d-constraints",
+    sky: ["#d8e2ea", "#9bb0c2"],
+    sun: [-0.4, -1.0, 0.25],
+    vars: { "q-reject": 600, "dt-design": 8, "pipe-d": 3, "lake-t": 8, "pump-eff": 0.82, "cw-roughness": 0.045 },
+    ranges: { "q-reject": [300, 1200], "dt-design": [6, 12], "pipe-d": [1.8, 3.5], "lake-t": [4, 22], "pump-eff": [0.6, 0.92], "cw-roughness": [0.01, 0.1] },
+    derived: {
+      "mw-thermal": "q-reject / 0.33",
+      "mw-electric": "mw-thermal * 0.33",
+      "m-dot": "q-reject * 1000000 / ( 4186 * dt-design )",
+      "flow": "m-dot / 1000",
+      "area": "pi * pipe-d * pipe-d / 4",
+      "velocity": "flow / area",
+      "reynolds": "velocity * pipe-d / 0.000001",
+      "friction": "cw-roughness / pipe-d",
+      "head-loss": "friction * 200 * velocity * velocity / ( 2 * 9.81 * pipe-d )",
+      "pump-power": "m-dot * 9.81 * head-loss / ( pump-eff * 1000 )",
+      "parasitic-pct": "pump-power / ( mw-electric * 1000 ) * 100",
+      "discharge-t": "lake-t + dt-design",
+      "screen-w": "flow / ( 0.15 * 6 )",
+      "plume-length": "flow * dt-design / 8",
+      "margin": "29 - discharge-t"
+    },
+    units: {
+      "mw-thermal": "MWt", "mw-electric": "MWe",
+      "m-dot": "kg/s", "flow": "m3/s", "area": "m2", "velocity": "m/s",
+      "reynolds": "", "friction": "", "head-loss": "m",
+      "pump-power": "kW", "parasitic-pct": "%",
+      "discharge-t": "C", "screen-w": "m", "plume-length": "m", "margin": "C"
+    },
+    checks: [
+      { name: "conduit velocity", expr: "velocity", max: 3, unit: "m/s" },
+      { name: "outfall temperature", expr: "discharge-t", max: 29, unit: "C" },
+      { name: "mixing-zone delta-T", expr: "dt-design", max: 11, unit: "C" },
+      { name: "pump parasitic load", expr: "parasitic-pct", max: 2.5, unit: "%" },
+      { name: "screen approach velocity", expr: "flow / ( screen-w * 6 )", max: 0.15, unit: "m/s" }
+    ],
+    objects: [
+      { id: "water", shape: "box", size: [40, 3, 52], color: "#3f6f8f", at: ["on ground", "x -22", "z 0"] },
+      { id: "bank", shape: "box", size: [32, 4.5, 52], color: "#b3aa97", at: ["on ground", "x 14", "z 0"] },
+      { id: "intake", shape: "box", size: [3, 6, "screen-w"], color: "#7e8b98", at: ["on ground", "x -12", "z -10"] },
+      { id: "conduit-in", shape: "cyl-x", size: ["pipe-d", "pumphouse.x - intake.x"], color: "#5d6671", at: ["y pipe-d / 2", "x ( intake.x + pumphouse.x ) / 2", "align-z intake"] },
+      { id: "pumphouse", shape: "box", size: [6, 5, 10], color: "#cfc9be", at: ["on bank", "x 4", "z -10"] },
+      { id: "pump-a", shape: "cyl", size: [1.8, 2.5], color: "#46505c", at: ["on pumphouse", "x pumphouse.x - 1.2", "z -10"] },
+      { id: "pump-b", shape: "cyl", size: [1.8, 2.5], color: "#46505c", at: ["on pumphouse", "x pumphouse.x + 1.2", "z -10"] },
+      { id: "hall", shape: "box", size: [14, 10, 12], color: "#c4beb2", at: ["on bank", "x 16", "z -10"] },
+      { id: "turbine", shape: "cyl-z", size: [5, 8], color: "#8a9099", at: ["on hall", "align-x hall", "align-z hall"] },
+      { id: "containment", shape: "sphere", size: [14], color: "#d6d0c4", blend: 0.2, at: ["on bank", "x 20", "z 12"] },
+      { id: "aux", shape: "box", size: [8, 6, 8], color: "#b8b3a8", at: ["on bank", "right-of hall 1", "z -10"] },
+      { id: "stack", shape: "cyl", size: [2, 18], color: "#a8a29e", at: ["on bank", "right-of aux 1", "z -10"] },
+      { id: "switchyard", shape: "box", size: [12, 0.3, 10], color: "#e8e4de", at: ["on bank", "x 12", "z 18"] },
+      { id: "xfmr-a", shape: "box", size: [3, 4, 3], color: "#6b7280", at: ["on switchyard", "x switchyard.x - 3", "align-z switchyard"] },
+      { id: "xfmr-b", shape: "box", size: [3, 4, 3], color: "#6b7280", at: ["on switchyard", "x switchyard.x + 3", "align-z switchyard"] },
+      { id: "conduit-out", shape: "cyl-x", size: ["pipe-d", "hall.x - outfall.x"], color: "#5d6671", at: ["y pipe-d / 2", "x ( outfall.x + hall.x ) / 2", "align-z outfall"] },
+      { id: "outfall", shape: "box", size: [2.5, 3, "flow / 3 + 4"], color: "#7e8b98", at: ["on ground", "x -10", "z 12"] },
+      { id: "plume", shape: "box", size: ["plume-length", 0.12, "flow / 3 + 5"], color: "#d98a5f", at: ["above water 0.02", "left-of outfall 0", "align-z outfall"] },
+      { id: "mon-1", shape: "cyl", size: [0.25, 0.15], color: "#e3b341", at: ["on bank", "x 0", "z 22"] },
+      { id: "mon-2", shape: "cyl", size: [0.25, 0.15], color: "#e3b341", at: ["on bank", "x 28", "z 22"] },
+      { id: "mon-3", shape: "cyl", size: [0.25, 0.15], color: "#e3b341", at: ["on bank", "x 0", "z -22"] }
+    ],
+    site: {
+      crs: "EPSG:26917",
+      anchors: [
+        { bim: "mon-1", gis: [444298.884, 4905219.969, 179.075] },
+        { bim: "mon-2", gis: [444322.846, 4905221.309, 179.075] },
+        { bim: "mon-3", gis: [444301.116, 4905180.031, 179.075] }
+      ]
+    },
+    camera: { fov: 46, orbit: { target: "hall", radius: 42, height: 24, period: 24, phase: 215 } },
+    timeline: [
+      { var: "lake-t", ease: "smooth", keys: [ { t: 0, v: 4 }, { t: 12, v: 22 }, { t: 24, v: 4 } ] }
+    ]
+  },
+  tandem: {
+    desc: "Two cranes share one vessel by the lever rule. Drag cg-offset: load transfers between cranes, the red CG marker slides, and past 1.5 m the near crane exceeds 200 t. Tighten hook-gap and the far crane approaches slack.",
+    kind: "scene3d-constraints",
+    sky: ["#d2dbe4", "#8fa3b6"],
+    sun: [-0.55, -1.0, -0.3],
+    vars: { "load-w": 320, "cg-offset": 0, "hook-gap": 12, "crane-cap": 200, "hoist": 3.0, "travel": 0 },
+    ranges: { "load-w": [240, 400], "cg-offset": [-3, 3], "hook-gap": [8, 16], "hoist": [3, 7.5], "travel": [0, 8] },
+    derived: {
+      "share-a": "( hook-gap / 2 - cg-offset ) / hook-gap",
+      "share-b": "1 - share-a",
+      "load-a": "load-w * share-a",
+      "load-b": "load-w * share-b",
+      "util-a": "load-a / crane-cap * 100",
+      "util-b": "load-b / crane-cap * 100"
+    },
+    units: { "share-a": "", "share-b": "", "load-a": "t", "load-b": "t", "util-a": "%", "util-b": "%" },
+    checks: [
+      { name: "crane A load", expr: "load-a", max: 200, unit: "t" },
+      { name: "crane B load", expr: "load-b", max: 200, unit: "t" },
+      { name: "crane A not slack", expr: "share-a", min: 0.1, unit: "" },
+      { name: "crane B not slack", expr: "share-b", min: 0.1, unit: "" }
+    ],
+    objects: [
+      { id: "pad", shape: "box", size: [30, 0.3, 28], color: "#b9bec4", at: ["on ground", "x 0", "z 0"] },
+      { id: "leg-a1", shape: "box", size: [1.1, 13, 1.1], color: "#c85a4f", at: ["on pad", "x -hook-gap / 2", "z -4"] },
+      { id: "leg-a2", shape: "box", size: [1.1, 13, 1.1], color: "#c85a4f", at: ["on pad", "x -hook-gap / 2", "z 12"] },
+      { id: "leg-b1", shape: "box", size: [1.1, 13, 1.1], color: "#3E78C9", at: ["on pad", "x hook-gap / 2", "z -4"] },
+      { id: "leg-b2", shape: "box", size: [1.1, 13, 1.1], color: "#3E78C9", at: ["on pad", "x hook-gap / 2", "z 12"] },
+      { id: "cross-a", shape: "box", size: [1.3, 1, 17.4], color: "#c85a4f", at: ["above leg-a1 0", "align-x leg-a1", "centered-z leg-a1 leg-a2"] },
+      { id: "cross-b", shape: "box", size: [1.3, 1, 17.4], color: "#3E78C9", at: ["above leg-b1 0", "align-x leg-b1", "centered-z leg-b1 leg-b2"] },
+      { id: "trolley-a", shape: "box", size: [1.6, 0.8, 1.6], color: "#46505c", at: ["below cross-a 0", "align-x cross-a", "z travel"] },
+      { id: "trolley-b", shape: "box", size: [1.6, 0.8, 1.6], color: "#46505c", at: ["below cross-b 0", "align-x cross-b", "z travel"] },
+      { id: "cable-a", shape: "cyl", size: [0.1, "trolley-a.bottom - hook-a.top"], color: "#2e3338", at: ["align-x trolley-a", "y ( trolley-a.bottom + hook-a.top ) / 2", "align-z trolley-a"] },
+      { id: "cable-b", shape: "cyl", size: [0.1, "trolley-b.bottom - hook-b.top"], color: "#2e3338", at: ["align-x trolley-b", "y ( trolley-b.bottom + hook-b.top ) / 2", "align-z trolley-b"] },
+      { id: "hook-a", shape: "box", size: [0.9, 0.7, 0.9], color: "#d9952f", at: ["align-x trolley-a", "y vessel.top + 1.4", "align-z trolley-a"] },
+      { id: "hook-b", shape: "box", size: [0.9, 0.7, 0.9], color: "#d9952f", at: ["align-x trolley-b", "y vessel.top + 1.4", "align-z trolley-b"] },
+      { id: "sling-a", shape: "cyl", size: [0.08, "hook-a.bottom - vessel.top"], color: "#2e3338", at: ["align-x hook-a", "y ( hook-a.bottom + vessel.top ) / 2", "align-z hook-a"] },
+      { id: "sling-b", shape: "cyl", size: [0.08, "hook-b.bottom - vessel.top"], color: "#2e3338", at: ["align-x hook-b", "y ( hook-b.bottom + vessel.top ) / 2", "align-z hook-b"] },
+      { id: "vessel", shape: "cyl-x", size: [4, 18], color: "#9aa7b4", at: ["x 0", "y hoist", "align-z trolley-a"] },
+      { id: "ring-a", shape: "cyl-x", size: [4.5, 0.4], color: "#7e8b98", at: ["left-of vessel -0.4", "align-y vessel", "align-z vessel"] },
+      { id: "ring-b", shape: "cyl-x", size: [4.5, 0.4], color: "#7e8b98", at: ["right-of vessel -0.4", "align-y vessel", "align-z vessel"] },
+      { id: "cg-marker", shape: "sphere", size: [0.8], color: "#C85A4F", at: ["x cg-offset", "y vessel.top + 0.2", "align-z vessel"] },
+      { id: "saddle-a", shape: "box", size: [1.6, 1.1, 4.5], color: "#5d6671", at: ["on pad", "x -4.5", "z 0"] },
+      { id: "saddle-b", shape: "box", size: [1.6, 1.1, 4.5], color: "#5d6671", at: ["on pad", "x 4.5", "z 0"] },
+      { id: "spmt", shape: "box", size: [20, 1.8, 5], color: "#d9952f", at: ["on pad", "x 0", "z 8"] },
+      { id: "mon-1", shape: "cyl", size: [0.25, 0.15], color: "#e3b341", at: ["on pad", "x -13", "z -12"] }
+    ],
+    site: {
+      crs: "EPSG:26917",
+      anchors: [
+        { bim: "mon-1", gis: [446038.095, 4907786.913, 177.575] },
+        { bim: [13, 0.375, -12], gis: [446063.996, 4907789.179, 177.575] },
+        { bim: [-13, 0.375, 12], gis: [446036.004, 4907810.821, 177.575] }
+      ]
+    },
+    camera: { fov: 46, orbit: { target: "vessel", radius: "hook-gap * 1.4 + 16", height: 15, period: 20, phase: 150 } },
+    timeline: [
+      { var: "hoist", ease: "smooth", keys: [ { t: 0, v: 3.0 }, { t: 2, v: 3.0 }, { t: 6, v: 7 }, { t: 12, v: 7 }, { t: 17, v: 3.7 }, { t: 20, v: 3.7 } ] },
+      { var: "travel", ease: "smooth", keys: [ { t: 0, v: 0 }, { t: 6, v: 0 }, { t: 12, v: 8 }, { t: 20, v: 8 } ] }
+    ]
+  },
+  tanks: {
+    desc: "Concentric domes, spacing by gap, a torus pipe centered between tanks. No site block, so the SITE panel reports not georeferenced.",
+    kind: "scene3d-constraints",
+    sky: ["#e8e0cf", "#b8a98c"],
+    sun: [-0.6, -0.8, 0.4],
+    vars: { "tank-d": 3, "tank-h": 3, "gap": 1.5, "pipe-r": 0.35 },
+    ranges: { "tank-d": [1.5, 5], "tank-h": [1.5, 5], "gap": [0.5, 5], "pipe-r": [0.15, 0.7] },
+    objects: [
+      { id: "pad", shape: "box", size: ["tank-d * 2 + gap + 4", 0.2, "tank-d + 4"], color: "#c5beb0", at: ["on ground", "x 0", "z 0"] },
+      { id: "tank-a", shape: "cyl", size: ["tank-d", "tank-h"], color: "#8fa3b8", at: ["on pad", "x -( tank-d + gap ) / 2", "z 0"] },
+      { id: "dome-a", shape: "sphere", size: ["tank-d"], color: "#8fa3b8", blend: 0.3, at: ["concentric tank-a", "y tank-a.top"] },
+      { id: "tank-b", shape: "cyl", size: ["tank-d", "tank-h"], color: "#b8927a", at: ["on pad", "right-of tank-a gap", "align-z tank-a"] },
+      { id: "dome-b", shape: "sphere", size: ["tank-d"], color: "#b8927a", blend: 0.3, at: ["concentric tank-b", "y tank-b.top"] },
+      { id: "pipe", shape: "torus", size: ["tank-d + gap", "pipe-r"], color: "#5d6671", at: ["centered-x tank-a tank-b", "y pipe-r + 0.2", "align-z tank-a"] },
+      { id: "stack", shape: "cyl", size: [0.4, "tank-h * 1.6"], color: "#46505c", at: ["on pad", "right-of tank-b 1", "align-z tank-b"] }
+    ],
+    derived: {
+      "tank-vol": "pi * ( tank-d / 2 ) * ( tank-d / 2 ) * tank-h",
+      "total-vol": "tank-vol * 2",
+      "pipe-circumference": "pi * ( tank-d + gap )",
+      "pipe-flow-area": "pi * pipe-r * pipe-r"
+    },
+    units: { "tank-vol": "m3", "total-vol": "m3", "pipe-circumference": "m", "pipe-flow-area": "m2" },
+    checks: [
+      { name: "tank aspect ratio", expr: "tank-h / tank-d", max: 2.5, unit: "" },
+      { name: "pipe velocity capacity", expr: "pipe-flow-area * 3", max: 5, unit: "m3/s" }
+    ],
+    camera: { fov: 46, orbit: { target: "pipe", radius: "tank-d * 2.4 + gap + 4", height: "tank-h + 3", period: 18, phase: 0 } },
+    timeline: []
+  },
+  power: {
+    desc: "Construction power distribution. 230 kV grid steps down through 46 kV and 13.8 kV to site trailers, with a direct 46 kV feed to the tunnel boring machine. Every cable current, line loss, and voltage drop is derived from the loads. Drag tbm-load up and watch the 46 kV cable overheat.",
+    kind: "scene3d-constraints",
+    sky: ["#d2dbe4", "#94a8ba"],
+    sun: [-0.5, -1.0, -0.3],
+    vars: {
+      "tbm-load": 8, "trailer-load": 1.2, "aux-load": 0.6,
+      "cable-46": 400, "cable-13": 200, "cable-600": 80,
+      "xsec-46": 240, "xsec-13": 120, "xsec-600": 95,
+      "pf": 0.85, "rho": 0.0175
+    },
+    ranges: {
+      "tbm-load": [3, 16], "trailer-load": [0.4, 3], "aux-load": [0.2, 1.5],
+      "cable-46": [100, 800], "cable-13": [50, 500], "cable-600": [20, 200],
+      "xsec-46": [95, 500], "xsec-13": [50, 300], "xsec-600": [35, 185],
+      "pf": [0.7, 0.95]
+    },
+    derived: {
+      "total-mw": "tbm-load + trailer-load + aux-load",
+      "i-230": "total-mw * 1000 / ( 230 * 1.732 * pf )",
+      "i-46-tbm": "tbm-load * 1000 / ( 46 * 1.732 * pf )",
+      "i-46-dist": "( trailer-load + aux-load ) * 1000 / ( 46 * 1.732 * pf )",
+      "i-13": "( trailer-load + aux-load ) * 1000 / ( 13.8 * 1.732 * pf )",
+      "i-600": "trailer-load * 1000 / ( 0.6 * 1.732 * pf )",
+      "r-46-tbm": "rho * cable-46 / xsec-46",
+      "r-46-dist": "rho * cable-13 / xsec-46",
+      "r-13": "rho * cable-13 / xsec-13",
+      "r-600": "rho * cable-600 / xsec-600",
+      "loss-46-tbm": "3 * i-46-tbm * i-46-tbm * r-46-tbm / 1000",
+      "loss-46-dist": "3 * i-46-dist * i-46-dist * r-46-dist / 1000",
+      "loss-13": "3 * i-13 * i-13 * r-13 / 1000",
+      "loss-600": "3 * i-600 * i-600 * r-600 / 1000",
+      "total-loss": "loss-46-tbm + loss-46-dist + loss-13 + loss-600",
+      "loss-pct": "total-loss / total-mw * 100",
+      "vdrop-46-tbm": "1.732 * i-46-tbm * r-46-tbm / 46000 * 100",
+      "vdrop-13": "1.732 * i-13 * r-13 / 13800 * 100",
+      "vdrop-600": "1.732 * i-600 * r-600 / 600 * 100"
+    },
+    units: {
+      "total-mw": "MW", "i-230": "A", "i-46-tbm": "A", "i-46-dist": "A",
+      "i-13": "A", "i-600": "A",
+      "r-46-tbm": "ohm", "r-46-dist": "ohm", "r-13": "ohm", "r-600": "ohm",
+      "loss-46-tbm": "kW", "loss-46-dist": "kW", "loss-13": "kW", "loss-600": "kW",
+      "total-loss": "kW", "loss-pct": "%",
+      "vdrop-46-tbm": "%", "vdrop-13": "%", "vdrop-600": "%"
+    },
+    checks: [
+      { name: "46 kV TBM cable ampacity", expr: "i-46-tbm", max: 400, unit: "A" },
+      { name: "13.8 kV cable ampacity", expr: "i-13", max: 300, unit: "A" },
+      { name: "600 V cable ampacity", expr: "i-600", max: 800, unit: "A" },
+      { name: "46 kV voltage drop (TBM)", expr: "vdrop-46-tbm", max: 3, unit: "%" },
+      { name: "13.8 kV voltage drop", expr: "vdrop-13", max: 3, unit: "%" },
+      { name: "600 V voltage drop", expr: "vdrop-600", max: 5, unit: "%" },
+      { name: "total line losses", expr: "loss-pct", max: 4, unit: "%" }
+    ],
+    objects: [
+      { id: "ground", shape: "box", size: [60, 0.2, 40], color: "#b3aa97", at: ["on ground", "x 0", "z 0"] },
+      { id: "tower-a", shape: "box", size: [0.6, 16, 0.6], color: "#7e8b98", at: ["on ground", "x -24", "z 0"] },
+      { id: "tower-b", shape: "box", size: [0.6, 16, 0.6], color: "#7e8b98", at: ["on ground", "x -24", "z -4"] },
+      { id: "cross-arm", shape: "box", size: [0.3, 0.3, 5.5], color: "#7e8b98", at: ["above tower-a 0", "align-x tower-a", "centered-z tower-a tower-b"] },
+      { id: "xfmr-230", shape: "cyl", size: [4, 5], color: "#5d6671", at: ["on ground", "x -16", "z -2"] },
+      { id: "xfmr-230-bush", shape: "cyl", size: [1, 2], color: "#d9952f", at: ["on xfmr-230", "align-x xfmr-230", "align-z xfmr-230"] },
+      { id: "swgr-46", shape: "box", size: [5, 3, 2.5], color: "#46505c", at: ["on ground", "x -8", "z -2"] },
+      { id: "cable-46-tbm", shape: "cyl-x", size: [0.3, "tbm.x - swgr-46.x"], color: "#c85a4f", at: ["y 0.3", "x ( swgr-46.x + tbm.x ) / 2", "z -6"] },
+      { id: "tbm", shape: "cyl-x", size: [6, 12], color: "#8a9099", at: ["on ground", "x 18", "z -6"] },
+      { id: "tbm-head", shape: "cyl-x", size: [6.5, 1], color: "#d9952f", at: ["right-of tbm 0", "align-y tbm", "align-z tbm"] },
+      { id: "xfmr-46", shape: "cyl", size: [2.5, 3.5], color: "#5d6671", at: ["on ground", "x -2", "z 4"] },
+      { id: "swgr-13", shape: "box", size: [4, 2.5, 2], color: "#46505c", at: ["on ground", "right-of xfmr-46 1", "align-z xfmr-46"] },
+      { id: "cable-13", shape: "cyl-x", size: [0.2, "xfmr-site.x - swgr-13.x"], color: "#3E78C9", at: ["y 0.2", "x ( swgr-13.x + xfmr-site.x ) / 2", "align-z swgr-13"] },
+      { id: "xfmr-site", shape: "box", size: [2, 2.5, 1.5], color: "#5d6671", at: ["on ground", "x 14", "z 4"] },
+      { id: "cable-600", shape: "cyl-x", size: [0.15, "trailer-a.x - xfmr-site.x"], color: "#3E9B6B", at: ["y 0.15", "x ( xfmr-site.x + trailer-a.x ) / 2", "z 6"] },
+      { id: "trailer-a", shape: "box", size: [6, 2.8, 3], color: "#cfc9be", at: ["on ground", "x 22", "z 6"] },
+      { id: "trailer-b", shape: "box", size: [6, 2.8, 3], color: "#cfc9be", at: ["on ground", "right-of trailer-a 1", "align-z trailer-a"] },
+      { id: "panel-a", shape: "box", size: [0.8, 1.8, 0.4], color: "#3E9B6B", at: ["on ground", "left-of trailer-a 0.3", "align-z trailer-a"] },
+      { id: "gen-backup", shape: "box", size: [3, 2, 1.5], color: "#D9952F", at: ["on ground", "x 14", "z 10"] },
+      { id: "tunnel", shape: "cyl-x", size: [5.5, 10], color: "#4a4a52", sub: true, at: ["right-of tbm 0", "align-y tbm", "align-z tbm"] }
+    ],
+    camera: { fov: 48, orbit: { target: "swgr-46", radius: 38, height: 18, period: 22, phase: 160 } },
+    timeline: [
+      { var: "tbm-load", ease: "smooth", keys: [{ t: 0, v: 4 }, { t: 5, v: 14 }, { t: 11, v: 6 }, { t: 16, v: 12 }, { t: 22, v: 4 }] }
+    ]
+  }
+};
+
+/* ===== shaders (same raymarcher as scene3d) ===== */
+const VERT = `#version 300 es
+in vec2 aPos;
+void main(){ gl_Position = vec4(aPos, 0.0, 1.0); }`;
+
+const FRAG = `#version 300 es
+precision highp float;
+out vec4 frag;
+uniform vec2 uRes;
+uniform vec3 uCamPos;
+uniform vec3 uCamLook;
+uniform float uFov;
+uniform int uCount;
+uniform int uType[24];
+uniform vec3 uPos[24];
+uniform vec3 uSize[24];
+uniform vec3 uColor[24];
+uniform float uBlend[24];
+uniform float uSub[24];
+uniform vec3 uSun;
+uniform vec3 uSky1;
+uniform vec3 uSky2;
+uniform float uOverlay;
+uniform float uAlpha;
+
+float sdBox(vec3 p, vec3 b){ vec3 q = abs(p) - b; return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0); }
+float sdSphere(vec3 p, float r){ return length(p) - r; }
+float sdCyl(vec3 p, float r, float h){ vec2 d = abs(vec2(length(p.xz), p.y)) - vec2(r, h); return min(max(d.x, d.y), 0.0) + length(max(d, 0.0)); }
+float sdTorus(vec3 p, float R, float r){ vec2 q = vec2(length(p.xz) - R, p.y); return length(q) - r; }
+float smin(float a, float b, float k){ float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0); return mix(b, a, h) - k * h * (1.0 - h); }
+
+float sdObj(int i, vec3 p){
+  vec3 q = p - uPos[i];
+  vec3 s = uSize[i] * 0.5;
+  if (uType[i] == 0) return sdBox(q, s);
+  if (uType[i] == 1) return sdSphere(q, s.x);
+  if (uType[i] == 2) return sdCyl(q, s.x, s.y);
+  if (uType[i] == 4) return sdCyl(q.yxz, s.x, s.y);
+  if (uType[i] == 5) return sdCyl(q.xzy, s.x, s.y);
+  return sdTorus(q, s.x, s.y);
+}
+
+float mapD(vec3 p){
+  float d = uOverlay > 0.5 ? 1e6 : p.y;
+  for (int i = 0; i < 24; i++){
+    if (i >= uCount) break;
+    float di = sdObj(i, p);
+    if (uSub[i] > 0.5) d = max(d, -di);
+    else if (uBlend[i] > 0.001) d = smin(d, di, uBlend[i]);
+    else d = min(d, di);
+  }
+  return d;
+}
+
+vec3 mapColor(vec3 p, float dist){
+  float d = uOverlay > 0.5 ? 1e6 : p.y;
+  vec2 q2 = abs(fract(p.xz * 0.5) - 0.5);
+  float m = max(q2.x, q2.y);
+  float w = 0.008 * (1.0 + dist * 0.12);
+  float line = smoothstep(0.5 - w, 0.5, m);
+  vec3 col = mix(vec3(0.80, 0.81, 0.83), vec3(0.56, 0.59, 0.64), line * 0.85);
+  for (int i = 0; i < 24; i++){
+    if (i >= uCount) break;
+    float di = sdObj(i, p);
+    if (uSub[i] > 0.5){ d = max(d, -di); }
+    else if (uBlend[i] > 0.001){ float nd = smin(d, di, uBlend[i]); if (di < d) col = uColor[i]; d = nd; }
+    else { if (di < d){ d = di; col = uColor[i]; } }
+  }
+  return col;
+}
+
+vec3 calcNormal(vec3 p){
+  vec2 e = vec2(0.0015, 0.0);
+  return normalize(vec3(
+    mapD(p + e.xyy) - mapD(p - e.xyy),
+    mapD(p + e.yxy) - mapD(p - e.yxy),
+    mapD(p + e.yyx) - mapD(p - e.yyx)));
+}
+
+float softShadow(vec3 ro, vec3 rd){
+  float res = 1.0;
+  float t = 0.05;
+  for (int i = 0; i < 32; i++){
+    float h = mapD(ro + rd * t);
+    res = min(res, 10.0 * h / t);
+    t += clamp(h, 0.02, 0.5);
+    if (res < 0.005 || t > 30.0) break;
+  }
+  return clamp(res, 0.0, 1.0);
+}
+
+float calcAO(vec3 p, vec3 n){
+  float occ = 0.0;
+  float sca = 1.0;
+  for (int i = 1; i <= 5; i++){
+    float hd = 0.06 * float(i);
+    occ += (hd - mapD(p + n * hd)) * sca;
+    sca *= 0.7;
+  }
+  return clamp(1.0 - 2.0 * occ, 0.0, 1.0);
+}
+
+void main(){
+  vec2 uv = (gl_FragCoord.xy * 2.0 - uRes) / uRes.y;
+  vec3 fwd = normalize(uCamLook - uCamPos);
+  vec3 rgt = normalize(cross(fwd, vec3(0.0, 1.0, 0.0)));
+  vec3 up = cross(rgt, fwd);
+  float fl = 1.0 / tan(radians(uFov) * 0.5);
+  vec3 rd = normalize(fwd * fl + rgt * uv.x + up * uv.y);
+  vec3 ro = uCamPos;
+  vec3 sunDir = normalize(-uSun);
+  vec3 sky = mix(uSky2, uSky1, clamp(rd.y * 0.7 + 0.5, 0.0, 1.0));
+  sky += vec3(1.0, 0.9, 0.7) * pow(max(dot(rd, sunDir), 0.0), 64.0) * 0.5;
+
+  float t = 0.0;
+  bool hit = false;
+  for (int i = 0; i < 128; i++){
+    float h = mapD(ro + rd * t);
+    if (h < 0.0015 * max(t, 1.0)){ hit = true; break; }
+    t += h;
+    if (t > 80.0) break;
+  }
+
+  vec3 col = sky;
+  float alpha = 1.0;
+  if (!hit && uOverlay > 0.5){ frag = vec4(0.0); return; }
+  if (hit){
+    vec3 p = ro + rd * t;
+    vec3 n = calcNormal(p);
+    vec3 base = mapColor(p, t);
+    float dif = max(dot(n, sunDir), 0.0) * softShadow(p + n * 0.02, sunDir);
+    float amb = 0.5 + 0.5 * n.y;
+    float occ = calcAO(p, n);
+    col = base * (vec3(1.0, 0.96, 0.88) * dif * 1.1 + mix(uSky2, uSky1, 0.5) * amb * 0.55) * occ;
+    float spec = pow(max(dot(reflect(rd, n), sunDir), 0.0), 24.0) * 0.25 * dif;
+    col += vec3(spec);
+    if (uOverlay > 0.5){ alpha = uAlpha; }
+  }
+  col = pow(max(col, 0.0), vec3(1.0 / 2.2));
+  frag = vec4(col * alpha, alpha);
+}`;
+
+/* ===== GL setup ===== */
+const canvas = document.getElementById("gl");
+const gl = canvas.getContext("webgl2", { antialias: false, alpha: true, premultipliedAlpha: true });
+if (!gl) document.body.innerHTML = "<p style='padding:40px'>This demo needs WebGL2.</p>";
+
+function compileShader(type, src){
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+  return s;
+}
+const prog = gl.createProgram();
+gl.attachShader(prog, compileShader(gl.VERTEX_SHADER, VERT));
+gl.attachShader(prog, compileShader(gl.FRAGMENT_SHADER, FRAG));
+gl.linkProgram(prog);
+if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+gl.useProgram(prog);
+
+const buf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+const aPos = gl.getAttribLocation(prog, "aPos");
+gl.enableVertexAttribArray(aPos);
+gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+
+const U = {};
+["uRes","uCamPos","uCamLook","uFov","uCount","uType","uPos","uSize","uColor","uBlend","uSub","uSun","uSky1","uSky2","uOverlay","uAlpha"]
+  .forEach(n => U[n] = gl.getUniformLocation(prog, n));
+
+/* ===== state ===== */
+const $ = id => document.getElementById(id);
+let scene = JSON.parse(JSON.stringify(SCENES.lift));
+let duration = CSOLVE.sceneDuration(scene);
+let cur = 0;
+let playing = true;
+let lastFrame = performance.now();
+let fpsAcc = 0, fpsN = 0;
+let lastStatusKey = "";
+
+function drivenVars(){
+  const s = new Set();
+  for (const tl of scene.timeline || []) if (tl.var) s.add(tl.var);
+  return s;
+}
+
+function buildVarSliders(){
+  const host = $("vars");
+  host.innerHTML = "";
+  const driven = drivenVars();
+  for (const name in scene.vars || {}){
+    if (!scene.ranges || !(name in scene.ranges)) continue; // constants get no slider
+    const v0 = scene.vars[name];
+    const rng = scene.ranges[name];
+    const row = document.createElement("div");
+    row.className = "var" + (driven.has(name) ? " driven" : "");
+    const lab = document.createElement("label");
+    lab.textContent = name;
+    const inp = document.createElement("input");
+    inp.type = "range";
+    inp.min = rng[0]; inp.max = rng[1]; inp.step = (rng[1] - rng[0]) / 100;
+    inp.value = v0;
+    const out = document.createElement("output");
+    out.textContent = (+v0).toFixed(1);
+    inp.addEventListener("input", () => {
+      scene.vars[name] = +inp.value;
+      out.textContent = (+inp.value).toFixed(1);
+      $("jtmText").value = JSON.stringify(scene, null, 1);
+      refreshBytes();
+    });
+    row.append(lab, inp, out);
+    host.append(row);
+  }
+}
+
+function dotColor(status){
+  if (status.startsWith("fully")) return "var(--ok)";
+  if (status.startsWith("under")) return "var(--warn)";
+  return "var(--bad)";
+}
+
+function buildTree(statuses){
+  const key = statuses.map(s => s.id + s.status).join("|");
+  if (key === lastStatusKey) return;
+  lastStatusKey = key;
+  const host = $("tree");
+  host.innerHTML = "";
+  for (const s of statuses){
+    const node = document.createElement("div");
+    node.className = "node";
+    const head = document.createElement("div");
+    head.className = "head";
+    const dot = document.createElement("span");
+    dot.className = "dot";
+    dot.style.background = dotColor(s.status);
+    const name = document.createElement("span");
+    name.textContent = s.id;
+    const stat = document.createElement("span");
+    stat.className = "stat";
+    stat.textContent = s.status;
+    head.append(dot, name, stat);
+    const mates = document.createElement("div");
+    mates.className = "mates";
+    mates.textContent = s.at.join("   ");
+    node.append(head, mates);
+    if (s.gis){
+      const g = document.createElement("div");
+      g.className = "mates";
+      g.dataset.gis = s.id;
+      node.append(g);
+    }
+    host.append(node);
+  }
+}
+
+function fmtGis(gis){
+  return "E " + gis[0].toFixed(3) + "  N " + gis[1].toFixed(3) + "  el " + gis[2].toFixed(2);
+}
+
+function updateGisLines(statuses){
+  for (const s of statuses){
+    if (!s.gis) continue;
+    const el = document.querySelector('[data-gis="' + s.id + '"]');
+    if (el) el.textContent = fmtGis(s.gis);
+  }
+}
+
+let lastSiteKey = "";
+function buildSite(geo){
+  const host = $("site");
+  let rows;
+  let dot = "var(--muted)";
+  if (!geo || geo.status === "not georeferenced"){
+    rows = [["status", "not georeferenced"]];
+  } else if (geo.status.startsWith("error")){
+    rows = [["status", geo.status]];
+    dot = "var(--bad)";
+  } else if (geo.status.startsWith("under")){
+    rows = [["status", geo.status], ["CRS", geo.crs || "--"]];
+    dot = "var(--warn)";
+  } else {
+    const mm = geo.residual * 1000;
+    dot = mm <= 15 ? "var(--ok)" : (mm <= 60 ? "var(--warn)" : "var(--bad)");
+    rows = [
+      ["CRS", geo.crs || "--"],
+      ["anchors", geo.anchors + " (control network)"],
+      ["grid-to-project north", (geo.theta * 180 / Math.PI).toFixed(3) + " deg"],
+      ["scale", ((geo.scale - 1) * 1e6).toFixed(0) + " ppm"],
+      ["survey fit residual", mm.toFixed(1) + " mm RMS"]
+    ];
+  }
+  const key = JSON.stringify(rows) + dot;
+  if (key === lastSiteKey) return;
+  lastSiteKey = key;
+  host.innerHTML = "";
+  rows.forEach((r, i) => {
+    const node = document.createElement("div");
+    node.className = "node";
+    const head = document.createElement("div");
+    head.className = "head";
+    if (i === 0){
+      const d = document.createElement("span");
+      d.className = "dot";
+      d.style.background = dot;
+      head.append(d);
+    }
+    const name = document.createElement("span");
+    name.textContent = r[0];
+    name.style.fontWeight = "400";
+    name.style.color = "var(--muted)";
+    const val = document.createElement("span");
+    val.className = "stat";
+    val.style.color = "var(--ink)";
+    val.textContent = r[1];
+    head.append(name, val);
+    node.append(head);
+    host.append(node);
+  });
+}
+
+/* ===== UTM (WGS84) -> lat/lon, Snyder series ===== */
+const UTM_A = 6378137, UTM_F = 1 / 298.257223563;
+const UTM_E2 = UTM_F * (2 - UTM_F), UTM_EP2 = UTM_E2 / (1 - UTM_E2), UTM_K0 = 0.9996;
+function utmToLatLon(easting, northing, zone, north){
+  const e1 = (1 - Math.sqrt(1 - UTM_E2)) / (1 + Math.sqrt(1 - UTM_E2));
+  const x = easting - 500000;
+  const y = north ? northing : northing - 10000000;
+  const M = y / UTM_K0;
+  const mu = M / (UTM_A * (1 - UTM_E2 / 4 - 3 * UTM_E2 * UTM_E2 / 64 - 5 * Math.pow(UTM_E2, 3) / 256));
+  const phi1 = mu
+    + (3 * e1 / 2 - 27 * Math.pow(e1, 3) / 32) * Math.sin(2 * mu)
+    + (21 * e1 * e1 / 16 - 55 * Math.pow(e1, 4) / 32) * Math.sin(4 * mu)
+    + (151 * Math.pow(e1, 3) / 96) * Math.sin(6 * mu)
+    + (1097 * Math.pow(e1, 4) / 512) * Math.sin(8 * mu);
+  const s1 = Math.sin(phi1), c1 = Math.cos(phi1), t1 = Math.tan(phi1);
+  const C1 = UTM_EP2 * c1 * c1, T1 = t1 * t1;
+  const N1 = UTM_A / Math.sqrt(1 - UTM_E2 * s1 * s1);
+  const R1 = UTM_A * (1 - UTM_E2) / Math.pow(1 - UTM_E2 * s1 * s1, 1.5);
+  const D = x / (N1 * UTM_K0);
+  const lat = phi1 - (N1 * t1 / R1) * (D * D / 2
+    - (5 + 3 * T1 + 10 * C1 - 4 * C1 * C1 - 9 * UTM_EP2) * Math.pow(D, 4) / 24
+    + (61 + 90 * T1 + 298 * C1 + 45 * T1 * T1 - 252 * UTM_EP2 - 3 * C1 * C1) * Math.pow(D, 6) / 720);
+  const lon0 = (zone * 6 - 183) * Math.PI / 180;
+  const lon = lon0 + (D - (1 + 2 * T1 + C1) * Math.pow(D, 3) / 6
+    + (5 - 2 * C1 + 28 * T1 - 3 * C1 * C1 + 8 * UTM_EP2 + 24 * T1 * T1) * Math.pow(D, 5) / 120) / c1;
+  return [lat * 180 / Math.PI, lon * 180 / Math.PI];
+}
+
+/* ===== GIS live panel (free, keyless APIs) ===== */
+let gisRows = null;
+function gisRow(host, name, value){
+  const node = document.createElement("div");
+  node.className = "node";
+  const head = document.createElement("div");
+  head.className = "head";
+  const n = document.createElement("span");
+  n.textContent = name;
+  n.style.fontWeight = "400";
+  n.style.color = "var(--muted)";
+  const v = document.createElement("span");
+  v.className = "stat";
+  v.style.color = "var(--ink)";
+  v.style.textAlign = "right";
+  v.style.maxWidth = "190px";
+  v.textContent = value;
+  head.append(n, v);
+  node.append(head);
+  host.append(node);
+  return v;
+}
+function buildGisLive(u){
+  const has = u.geo && u.geo.status === "fit" && u.geo.crs && u.geo.crs.startsWith("EPSG:269");
+  $("gisliveH").style.display = $("gislive").style.display = has ? "" : "none";
+  if (!has){ gisRows = null; return; }
+  if (gisRows) return;
+  const zone = parseInt(u.geo.crs.slice(8), 10);
+  const origin = CSOLVE.toGis(u.geo, 0, 0, 0);
+  const [lat, lon] = utmToLatLon(origin[0], origin[1], zone, true);
+  const host = $("gislive");
+  host.innerHTML = "";
+  gisRows = {};
+  gisRows.latlon = gisRow(host, "site origin", lat.toFixed(6) + ", " + lon.toFixed(6));
+  gisRows.place = gisRow(host, "place (OSM)", "--");
+  gisRows.temp = gisRow(host, "live air temp", "--");
+  gisRows.elev = gisRow(host, "terrain elev (model " + (u.geo.elev0 !== undefined ? u.geo.elev0.toFixed(1) : "--") + ")", "--");
+  const btnNode = document.createElement("div");
+  btnNode.className = "node";
+  const b = document.createElement("button");
+  b.className = "ghost";
+  b.textContent = "Query live site data";
+  b.style.margin = "6px 0 2px";
+  b.addEventListener("click", () => queryGis(lat, lon, u.geo));
+  btnNode.append(b);
+  host.append(btnNode);
+}
+async function queryGis(lat, lon, geo){
+  gisRows.place.textContent = "querying...";
+  gisRows.temp.textContent = "querying...";
+  try {
+    const r = await fetch("https://api.open-meteo.com/v1/forecast?latitude=" + lat.toFixed(5) + "&longitude=" + lon.toFixed(5) + "&current=temperature_2m");
+    const j = await r.json();
+    const t = j.current && j.current.temperature_2m;
+    gisRows.temp.textContent = t + " C (Open-Meteo)";
+    gisRows.elev.textContent = j.elevation + " m grid" + (geo.elev0 !== undefined ? " (delta " + (j.elevation - geo.elev0).toFixed(1) + ")" : "");
+    if (scene.vars && ("lake-t" in scene.vars) && typeof t === "number"){
+      const rng = (scene.ranges && scene.ranges["lake-t"]) || [0, 30];
+      scene.vars["lake-t"] = Math.max(rng[0], Math.min(rng[1], t));
+      $("jtmText").value = JSON.stringify(scene, null, 1);
+      buildVarSliders();
+      gisRows.temp.textContent += " -> lake-t set";
+    }
+  } catch (e) { gisRows.temp.textContent = "fetch failed: " + e.message; }
+  try {
+    const r = await fetch("https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=" + lat.toFixed(6) + "&lon=" + lon.toFixed(6) + "&zoom=12");
+    const j = await r.json();
+    gisRows.place.textContent = (j.display_name || "unknown").split(",").slice(0, 3).join(",");
+  } catch (e) { gisRows.place.textContent = "fetch failed"; }
+}
+
+/* ===== site overlay (device camera + transparent render) ===== */
+let overlay = false;
+let camStream = null;
+async function enterOverlay(){
+  try {
+    camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+  } catch (e) { alert("Camera unavailable: " + e.message); return; }
+  const v = $("cam");
+  v.srcObject = camStream;
+  v.style.display = "block";
+  canvas.style.background = "transparent";
+  $("overlayCtl").style.display = "flex";
+  overlay = true;
+}
+function exitOverlay(){
+  overlay = false;
+  if (camStream){ camStream.getTracks().forEach(t => t.stop()); camStream = null; }
+  $("cam").style.display = "none";
+  $("cam").srcObject = null;
+  canvas.style.background = "#1a1d22";
+  $("overlayCtl").style.display = "none";
+}
+
+let lastCalcKey = "";
+function buildCalcPanels(u){
+  const hasD = u.derived && u.derived.length, hasC = u.checks && u.checks.length;
+  $("derivedH").style.display = $("derived").style.display = hasD ? "" : "none";
+  $("checksH").style.display = $("checks").style.display = hasC ? "" : "none";
+  if (!hasD && !hasC) return;
+  const key = (u.derived || []).map(d => d.name).join() + "|" + (u.checks || []).map(c => c.name).join();
+  if (key !== lastCalcKey){
+    lastCalcKey = key;
+    const dh = $("derived");
+    dh.innerHTML = "";
+    for (const d of u.derived || []){
+      const node = document.createElement("div");
+      node.className = "node";
+      const head = document.createElement("div");
+      head.className = "head";
+      const name = document.createElement("span");
+      name.textContent = d.name;
+      name.style.fontWeight = "400";
+      name.style.color = "var(--muted)";
+      const val = document.createElement("span");
+      val.className = "stat";
+      val.style.color = "var(--ink)";
+      val.dataset.dval = d.name;
+      head.append(name, val);
+      node.append(head);
+      dh.append(node);
+    }
+    const ch = $("checks");
+    ch.innerHTML = "";
+    for (const c of u.checks || []){
+      const node = document.createElement("div");
+      node.className = "node";
+      const head = document.createElement("div");
+      head.className = "head";
+      const dot = document.createElement("span");
+      dot.className = "dot";
+      dot.dataset.cdot = c.name;
+      const name = document.createElement("span");
+      name.textContent = c.name;
+      const val = document.createElement("span");
+      val.className = "stat";
+      val.dataset.cval = c.name;
+      head.append(dot, name, val);
+      node.append(head);
+      ch.append(node);
+    }
+  }
+  for (const d of u.derived || []){
+    const el = document.querySelector('[data-dval="' + d.name + '"]');
+    if (el) el.textContent = d.value === null ? "ERR" : d.value.toFixed(d.value >= 100 ? 0 : 2) + " " + d.unit;
+  }
+  for (const c of u.checks || []){
+    const dot = document.querySelector('[data-cdot="' + c.name + '"]');
+    const val = document.querySelector('[data-cval="' + c.name + '"]');
+    if (dot) dot.style.background = c.status === "pass" ? "var(--ok)" : (c.status === "warn" ? "var(--warn)" : "var(--bad)");
+    if (val) val.textContent = (c.value === null ? "ERR" : c.value.toFixed(2) + " " + c.unit) + "  " + c.limit;
+  }
+}
+
+function updateCompass(u){
+  const el = $("compass");
+  const geo = u.geo;
+  if (!geo || (geo.status !== "fit" && !geo.status.startsWith("under"))){ el.style.display = "none"; return; }
+  el.style.display = "block";
+  const th = geo.theta || 0;
+  const nl = [Math.sin(th), Math.cos(th)]; // local plan direction of grid north
+  const f = [u.cam.look[0] - u.cam.pos[0], u.cam.look[2] - u.cam.pos[2]];
+  const fl = Math.hypot(f[0], f[1]) || 1;
+  const fp = [f[0] / fl, f[1] / fl];
+  const fy = u.cam.look[1] - u.cam.pos[1];
+  const r3 = [-(u.cam.look[2] - u.cam.pos[2]), (u.cam.look[0] - u.cam.pos[0])]; // cross(fwd,(0,1,0)).xz = (-fz, fx)
+  const rl = Math.hypot(r3[0], r3[1]) || 1;
+  const rp = [r3[0] / rl, r3[1] / rl];
+  const xc = nl[0] * rp[0] + nl[1] * rp[1];
+  const yc = nl[0] * fp[0] + nl[1] * fp[1];
+  const ang = Math.atan2(xc, yc) * 180 / Math.PI;
+  $("needle").style.transform = "rotate(" + ang + "deg)";
+}
+
+function resize(){
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+  const w = Math.min(1100, Math.round(canvas.clientWidth * dpr));
+  const h = Math.round(w * 10 / 16);
+  if (canvas.width !== w){ canvas.width = w; canvas.height = h; }
+}
+
+function render(t){
+  resize();
+  let u;
+  try { u = CSOLVE.solve(scene, t); }
+  catch (e) { $("fps").textContent = "solve error: " + e.message; return; }
+  lastSolve = u;
+  if (playing) {
+    for (const tl of scene.timeline || []) {
+      const v = sampleKeys(tl.keys, t, tl.ease || "smooth");
+      if (v !== null && tl.var) scene.vars[tl.var] = v;
+    }
+  }
+  buildTree(u.statuses);
+  updateGisLines(u.statuses);
+  buildSite(u.geo);
+  buildCalcPanels(u);
+  buildGisLive(u);
+  updateCompass(u);
+  if (overlay){
+    const a = +$("ovAngle").value * Math.PI / 180;
+    const hgt = +$("ovHeight").value;
+    const dist = +$("ovDist").value;
+    const tgt = u.cam.look;
+    u.cam = { pos: [tgt[0] + Math.cos(a) * dist, hgt, tgt[2] + Math.sin(a) * dist], look: tgt, fov: u.cam.fov };
+  }
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.uniform2f(U.uRes, canvas.width, canvas.height);
+  gl.uniform3fv(U.uCamPos, u.cam.pos);
+  gl.uniform3fv(U.uCamLook, u.cam.look);
+  gl.uniform1f(U.uFov, u.cam.fov);
+  gl.uniform1i(U.uCount, u.count);
+  gl.uniform1iv(U.uType, u.type);
+  gl.uniform3fv(U.uPos, u.pos);
+  gl.uniform3fv(U.uSize, u.size);
+  gl.uniform3fv(U.uColor, u.color);
+  gl.uniform1fv(U.uBlend, u.blend);
+  gl.uniform1fv(U.uSub, u.sub);
+  gl.uniform3fv(U.uSun, u.sun);
+  gl.uniform3fv(U.uSky1, u.sky1);
+  gl.uniform3fv(U.uSky2, u.sky2);
+  gl.uniform1f(U.uOverlay, overlay ? 1 : 0);
+  gl.uniform1f(U.uAlpha, overlay ? +$("ovAlpha").value / 100 : 1);
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  updateLiveComps();
+  updateSproutComps();
+}
+
+function loop(now){
+  const dt = Math.min(0.1, (now - lastFrame) / 1000);
+  lastFrame = now;
+  if (playing){
+    cur = (cur + dt) % duration;
+    $("scrub").value = Math.round(cur / duration * 1000);
+  }
+  render(cur);
+  $("tlabel").textContent = cur.toFixed(1) + " / " + duration.toFixed(1) + " s";
+  fpsAcc += dt; fpsN++;
+  if (fpsAcc > 0.5){
+    $("fps").textContent = canvas.width + " x " + canvas.height + " @ " + Math.round(fpsN / fpsAcc) + " fps";
+    fpsAcc = 0; fpsN = 0;
+  }
+  requestAnimationFrame(loop);
+}
+
+/* ===== live code view ===== */
+let liveMode = true;
+let lastSolve = null;
+
+function escH(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function fmtComp(v, u) {
+  if (v === null) return 'ERR';
+  const s = Math.abs(v) >= 1000 ? v.toFixed(0) : Math.abs(v) >= 10 ? v.toFixed(1) : v.toFixed(2);
+  return s + (u ? ' ' + u : '');
+}
+
+function renderLiveCode() {
+  if (!liveMode || !scene) return;
+  try { lastSolve = CSOLVE.solve(scene, cur); } catch(e) { lastSolve = null; }
+  const text = JSON.stringify(scene, null, 1);
+  const lines = text.split('\n');
+  const frags = [];
+  let sec = '', oi = -1;
+
+  for (let li = 0; li < lines.length; li++) {
+    const raw = lines[li];
+    const t = raw.trim();
+    const ind = raw.match(/^(\s*)/)[1];
+
+    if (ind.length <= 1) {
+      if (/^"vars"/.test(t)) sec = 'vars';
+      else if (/^"ranges"/.test(t)) sec = 'ranges';
+      else if (/^"derived"/.test(t)) sec = 'derived';
+      else if (/^"objects"/.test(t)) { sec = 'objects'; oi = -1; }
+      else if (/^"checks"/.test(t)) sec = 'checks';
+      else if (/^"[a-z]/.test(t) && !/^"(vars|ranges|derived|objects|checks)"/.test(t)) sec = '';
+    }
+    if (sec === 'objects' && t.startsWith('{')) oi++;
+
+    // vars with ranges → inline slider
+    if (sec === 'vars') {
+      const m = t.match(/^"([^"]+)"\s*:\s*([\d.e+-]+)(,?)$/);
+      if (m && scene.ranges && m[1] in scene.ranges) {
+        const nm = m[1], v = scene.vars[nm], r = scene.ranges[nm];
+        const unit = (scene.units && scene.units[nm]) || '';
+        frags.push('<div class="lc-line">' + ind +
+          '<span class="lc-key">"' + escH(nm) + '"</span>: ' +
+          '<input type="range" class="lc-slider" data-v="' + escH(nm) + '" min="' + r[0] + '" max="' + r[1] +
+          '" step="' + ((r[1]-r[0])/200) + '" value="' + v + '"> ' +
+          '<span class="lc-val" data-vv="' + escH(nm) + '">' + (+v).toFixed(1) + '</span>' +
+          (unit ? ' <span style="color:var(--muted);font-size:11px">' + escH(unit) + '</span>' : '') +
+          m[3] + '</div>');
+        continue;
+      }
+    }
+
+    // colors in objects → picker
+    if (oi >= 0) {
+      const cm = raw.match(/"color"\s*:\s*"(#[0-9a-fA-F]{6})"/);
+      if (cm) {
+        const hex = cm[1];
+        const ci = raw.indexOf(cm[0]);
+        const before = raw.substring(0, ci);
+        const after = raw.substring(ci + cm[0].length);
+        frags.push('<div class="lc-line">' + escH(before) +
+          '<span class="lc-key">"color"</span>: ' +
+          '<input type="color" class="lc-color" data-oi="' + oi + '" value="' + hex + '">' +
+          '<span class="lc-str" data-cs="' + oi + '">"' + hex + '"</span>' + escH(after) + '</div>');
+        continue;
+      }
+    }
+
+    // sky colors → pickers
+    const skm = raw.match(/"sky"\s*:\s*\[\s*"(#[0-9a-fA-F]{6})"\s*,\s*"(#[0-9a-fA-F]{6})"\s*\]/);
+    if (skm) {
+      frags.push('<div class="lc-line">' + ind +
+        '<span class="lc-key">"sky"</span>: [' +
+        '<input type="color" class="lc-color" data-sky="0" value="' + skm[1] + '">' +
+        '<span class="lc-str" data-sks="0">"' + skm[1] + '"</span>, ' +
+        '<input type="color" class="lc-color" data-sky="1" value="' + skm[2] + '">' +
+        '<span class="lc-str" data-sks="1">"' + skm[2] + '"</span>]' + (t.endsWith(',') ? ',' : '') + '</div>');
+      continue;
+    }
+
+    // derived → show computed value
+    if (sec === 'derived' && lastSolve) {
+      const dm = t.match(/^"([^"]+)"\s*:\s*"(.+)"(,?)$/);
+      if (dm) {
+        const d = lastSolve.derived.find(x => x.name === dm[1]);
+        const comp = d ? (d.value !== null
+          ? '<span class="lc-computed" data-dc="' + escH(dm[1]) + '">→ ' + fmtComp(d.value, d.unit) + '</span>'
+          : '<span class="lc-fail" data-dc="' + escH(dm[1]) + '">→ ERR</span>') : '';
+        frags.push('<div class="lc-line">' + ind +
+          '<span class="lc-key">"' + escH(dm[1]) + '"</span>: <span class="lc-str">"' + escH(dm[2]) + '"</span>' +
+          dm[3] + comp + '</div>');
+        continue;
+      }
+    }
+
+    // checks → show status badge
+    if (sec === 'checks' && lastSolve) {
+      const ckn = t.match(/"name"\s*:\s*"([^"]+)"/);
+      if (ckn) {
+        const c = lastSolve.checks.find(x => x.name === ckn[1]);
+        if (c) {
+          const cls = c.status === 'pass' ? 'pass' : c.status === 'warn' ? 'warn' : 'fail';
+          frags.push('<div class="lc-line">' + escH(raw) +
+            '<span class="lc-badge ' + cls + '" data-ck="' + escH(ckn[1]) + '">' +
+            fmtComp(c.value, c.unit) + ' ' + c.status.toUpperCase() + '</span></div>');
+          continue;
+        }
+      }
+    }
+
+    // default: plain text
+    frags.push('<div class="lc-line">' + escH(raw) + '</div>');
+  }
+
+  const host = $('liveCode');
+  host.innerHTML = frags.join('');
+
+  // wire slider events
+  host.querySelectorAll('.lc-slider').forEach(inp => {
+    inp.addEventListener('input', function() {
+      const nm = this.dataset.v;
+      scene.vars[nm] = +this.value;
+      host.querySelector('[data-vv="' + nm + '"]').textContent = (+this.value).toFixed(1);
+      $('jtmText').value = JSON.stringify(scene, null, 1);
+      refreshBytes();
+      buildVarSliders();
+    });
+  });
+
+  // wire color pickers
+  host.querySelectorAll('.lc-color[data-oi]').forEach(inp => {
+    inp.addEventListener('input', function() {
+      const i = +this.dataset.oi;
+      scene.objects[i].color = this.value;
+      host.querySelector('[data-cs="' + i + '"]').textContent = '"' + this.value + '"';
+      $('jtmText').value = JSON.stringify(scene, null, 1);
+      refreshBytes();
+    });
+  });
+
+  // wire sky pickers
+  host.querySelectorAll('.lc-color[data-sky]').forEach(inp => {
+    inp.addEventListener('input', function() {
+      const i = +this.dataset.sky;
+      scene.sky[i] = this.value;
+      host.querySelector('[data-sks="' + i + '"]').textContent = '"' + this.value + '"';
+      $('jtmText').value = JSON.stringify(scene, null, 1);
+      refreshBytes();
+    });
+  });
+}
+
+function updateLiveComps() {
+  if (!liveMode || !lastSolve) return;
+  const host = $('liveCode');
+  for (const d of lastSolve.derived || []) {
+    const el = host.querySelector('[data-dc="' + d.name + '"]');
+    if (el) {
+      el.textContent = '→ ' + fmtComp(d.value, d.unit);
+      el.className = d.value !== null ? 'lc-computed' : 'lc-fail';
+    }
+  }
+  for (const c of lastSolve.checks || []) {
+    const el = host.querySelector('[data-ck="' + c.name + '"]');
+    if (el) {
+      const cls = c.status === 'pass' ? 'pass' : c.status === 'warn' ? 'warn' : 'fail';
+      el.className = 'lc-badge ' + cls;
+      el.textContent = fmtComp(c.value, c.unit) + ' ' + c.status.toUpperCase();
+    }
+  }
+  // update var slider positions if driven by timeline
+  for (const nm in scene.vars) {
+    const el = host.querySelector('[data-vv="' + nm + '"]');
+    if (el) el.textContent = (+scene.vars[nm]).toFixed(1);
+    const sl = host.querySelector('[data-v="' + nm + '"]');
+    if (sl) sl.value = scene.vars[nm];
+  }
+}
+
+/* ===== text + stats ===== */
+function fmtBytes(n){
+  if (n >= 1024) return (n / 1024).toFixed(1) + " KB";
+  return n + " B";
+}
+async function refreshBytes(){
+  const text = $("jtmText").value;
+  let gz = null;
+  if (typeof CompressionStream !== "undefined"){
+    const stream = new Blob([text]).stream().pipeThrough(new CompressionStream("gzip"));
+    gz = (await new Response(stream).arrayBuffer()).byteLength;
+  }
+  $("bytes").textContent = fmtBytes(text.length) + (gz ? " / " + fmtBytes(gz) + " gz" : "");
+}
+function setScene(s){
+  scene = JSON.parse(JSON.stringify(s));
+  duration = CSOLVE.sceneDuration(scene);
+  cur = 0;
+  lastStatusKey = ""; lastSiteKey = ""; lastCalcKey = ""; gisRows = null;
+  $("jtmText").value = JSON.stringify(scene, null, 1);
+  $("sceneDesc").textContent = scene.desc || "";
+  buildVarSliders();
+  renderLiveCode();
+  refreshBytes();
+}
+
+$("scene").addEventListener("change", e => setScene(SCENES[e.target.value]));
+$("overlayBtn").addEventListener("click", () => { if (!overlay) enterOverlay(); });
+$("overlayExit").addEventListener("click", exitOverlay);
+$("play").addEventListener("click", () => {
+  playing = !playing;
+  $("play").textContent = playing ? "Pause" : "Play";
+});
+$("scrub").addEventListener("input", e => {
+  playing = false;
+  $("play").textContent = "Play";
+  cur = +e.target.value / 1000 * duration;
+});
+function setMode(mode) {
+  liveMode = mode === 'live';
+  $("modeLive").classList.toggle("active", mode === 'live');
+  $("modeRaw").classList.toggle("active", mode === 'raw');
+  $("modeSprout").classList.toggle("active", mode === 'sprout');
+  $("liveCode").style.display = mode === 'live' ? "" : "none";
+  $("sproutCode").style.display = mode === 'sprout' ? "" : "none";
+  $("jtmText").style.display = mode === 'raw' ? "" : "none";
+  $("apply").style.display = mode === 'raw' ? "" : "none";
+  if (mode === 'live') renderLiveCode();
+  else if (mode === 'raw') $("jtmText").value = JSON.stringify(scene, null, 1);
+  else if (mode === 'sprout') renderSproutCode();
+}
+function jsonToSprout(s) {
+  let o = '';
+  o += 'scene "' + (s.desc || '') + '"\n';
+  o += 'kind ' + (s.kind || 'scene3d-constraints') + '\n';
+  if (s.sky) o += 'sky ' + s.sky[0] + ' ' + s.sky[1] + '\n';
+  if (s.sun) o += 'sun ' + s.sun.join(' ') + '\n\n';
+  if (s.vars) {
+    o += '-- inputs (vars with ranges become sliders)\n';
+    for (const k in s.vars) {
+      const r = s.ranges && s.ranges[k];
+      o += 'var ' + k + ' = ' + s.vars[k] + (r ? '  [' + r[0] + ' .. ' + r[1] + ']' : '') + '\n';
+    }
+    o += '\n';
+  }
+  if (s.derived && Object.keys(s.derived).length) {
+    o += '-- derived (tracked outputs)\n';
+    for (const k in s.derived) {
+      const u = (s.units && s.units[k]) || '';
+      o += 'let ' + k + ' = ' + s.derived[k] + (u ? '  -- ' + u : '') + '\n';
+    }
+    o += '\n';
+  }
+  if (s.checks && s.checks.length) {
+    o += '-- checks (pass/warn/fail)\n';
+    s.checks.forEach(c => {
+      o += 'check "' + c.name + '" : ' + c.expr + (c.max !== undefined ? ' <= ' + c.max : ' >= ' + c.min) + (c.unit ? ' ' + c.unit : '') + '\n';
+    });
+    o += '\n';
+  }
+  if (s.objects) {
+    o += '-- objects\n';
+    s.objects.forEach(ob => {
+      const sz = (ob.size || []).map(v => typeof v === 'string' ? '(' + v + ')' : v).join(' ');
+      o += ob.id + ' : ' + ob.shape + ' ' + sz + ' ' + (ob.color || '#999') + (ob.blend ? ' blend=' + ob.blend : '') + (ob.sub ? ' subtract' : '') + '\n';
+      (ob.at || []).forEach(c => o += '  at ' + c + '\n');
+    });
+    o += '\n';
+  }
+  if (s.camera) {
+    const c = s.camera;
+    if (c.orbit) {
+      o += 'camera fov=' + (c.fov || 50) + ' orbit ' + c.orbit.target + ' r=' + c.orbit.radius + ' h=' + c.orbit.height + ' period=' + c.orbit.period + '\n';
+    }
+  }
+  if (s.timeline && s.timeline.length) {
+    o += '\n-- timeline (animate vars)\n';
+    s.timeline.forEach(tl => {
+      o += 'animate ' + tl.var + ' ' + (tl.ease || 'smooth') + '\n';
+      (tl.keys || []).forEach(k => o += '  ' + k.t + 's -> ' + k.v + '\n');
+    });
+  }
+  return o;
+}
+function renderSproutCode() {
+  if (!scene) return;
+  try { lastSolve = CSOLVE.solve(scene, cur); } catch(e) { lastSolve = null; }
+  const frags = [];
+  const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const kw = w => '<span class="sp-kw">' + w + '</span>';
+  const id = w => '<span class="sp-id">' + esc(w) + '</span>';
+  const num = w => '<span class="sp-num">' + w + '</span>';
+  const str = w => '<span class="sp-str">"' + esc(w) + '"</span>';
+  const cm = w => '<span class="sp-comment">' + esc(w) + '</span>';
+  const sh = w => '<span class="sp-shape">' + esc(w) + '</span>';
+
+  frags.push('<div class="lc-line">' + kw('scene') + ' ' + str(scene.desc || '') + '</div>');
+  frags.push('<div class="lc-line">' + kw('kind') + ' ' + esc(scene.kind || 'scene3d-constraints') + '</div>');
+  if (scene.sky) {
+    frags.push('<div class="lc-line">' + kw('sky') + ' <span class="sp-color" style="background:' + scene.sky[0] + '"></span>' + esc(scene.sky[0]) +
+      ' <span class="sp-color" style="background:' + scene.sky[1] + '"></span>' + esc(scene.sky[1]) + '</div>');
+  }
+  if (scene.sun) frags.push('<div class="lc-line">' + kw('sun') + ' ' + scene.sun.map(v => num(v)).join(' ') + '</div>');
+  frags.push('<div class="lc-line"></div>');
+
+  if (scene.vars) {
+    frags.push('<div class="lc-line">' + cm('-- inputs (vars with ranges become sliders)') + '</div>');
+    for (const k in scene.vars) {
+      const r = scene.ranges && scene.ranges[k];
+      const v = scene.vars[k];
+      const u = (scene.units && scene.units[k]) || '';
+      if (r) {
+        frags.push('<div class="lc-line">' + kw('var') + ' ' + id(k) + ' <span class="sp-op">=</span> ' +
+          '<input type="range" class="sp-slider" data-sv="' + esc(k) + '" min="' + r[0] + '" max="' + r[1] +
+          '" step="' + ((r[1]-r[0])/200) + '" value="' + v + '"> ' +
+          '<span class="sp-val" data-svv="' + esc(k) + '">' + (+v).toFixed(1) + '</span>' +
+          (r ? '  <span class="sp-range">[' + r[0] + ' .. ' + r[1] + ']</span>' : '') +
+          (u ? '  <span class="sp-unit">' + esc(u) + '</span>' : '') + '</div>');
+      } else {
+        frags.push('<div class="lc-line">' + kw('var') + ' ' + id(k) + ' <span class="sp-op">=</span> ' + num(v) + '</div>');
+      }
+    }
+    frags.push('<div class="lc-line"></div>');
+  }
+
+  if (scene.derived && Object.keys(scene.derived).length) {
+    frags.push('<div class="lc-line">' + cm('-- derived (tracked outputs)') + '</div>');
+    for (const k in scene.derived) {
+      const u = (scene.units && scene.units[k]) || '';
+      const expr = scene.derived[k];
+      const d = lastSolve ? lastSolve.derived.find(x => x.name === k) : null;
+      const comp = d && d.value !== null ? '<span class="sp-computed">→ ' + fmtComp(d.value, d.unit) + '</span>' : '';
+      frags.push('<div class="lc-line">' + kw('let') + ' ' + id(k) + ' <span class="sp-op">=</span> ' + esc(expr) +
+        (u ? '  <span class="sp-unit">' + cm('-- ' + u) + '</span>' : '') + comp + '</div>');
+    }
+    frags.push('<div class="lc-line"></div>');
+  }
+
+  if (scene.checks && scene.checks.length) {
+    frags.push('<div class="lc-line">' + cm('-- checks (pass/warn/fail)') + '</div>');
+    scene.checks.forEach(c => {
+      const ck = lastSolve ? lastSolve.checks.find(x => x.name === c.name) : null;
+      const cls = ck ? (ck.status === 'pass' ? 'pass' : ck.status === 'warn' ? 'warn' : 'fail') : '';
+      const badge = ck ? '<span class="lc-badge ' + cls + '">' + fmtComp(ck.value, ck.unit) + ' ' + ck.status.toUpperCase() + '</span>' : '';
+      frags.push('<div class="lc-line">' + kw('check') + ' ' + str(c.name) + ' <span class="sp-op">:</span> ' +
+        esc(c.expr) + ' <span class="sp-op">' + (c.max !== undefined ? '&lt;= ' + c.max : '&gt;= ' + c.min) + '</span>' +
+        (c.unit ? ' <span class="sp-unit">' + esc(c.unit) + '</span>' : '') + badge + '</div>');
+    });
+    frags.push('<div class="lc-line"></div>');
+  }
+
+  if (scene.objects) {
+    frags.push('<div class="lc-line">' + cm('-- objects') + '</div>');
+    scene.objects.forEach(ob => {
+      const sz = (ob.size || []).map(v => typeof v === 'string' ? '<span class="sp-op">(</span>' + esc(v) + '<span class="sp-op">)</span>' : num(v)).join(' ');
+      const hex = ob.color || '#999';
+      frags.push('<div class="lc-line">' + id(ob.id) + ' <span class="sp-op">:</span> ' + sh(ob.shape) + ' ' + sz +
+        ' <span class="sp-color" style="background:' + hex + '"></span>' + esc(hex) +
+        (ob.blend ? ' <span class="sp-op">blend=' + ob.blend + '</span>' : '') +
+        (ob.sub ? ' <span class="sp-op">subtract</span>' : '') + '</div>');
+      (ob.at || []).forEach(c => {
+        frags.push('<div class="lc-line">  ' + kw('at') + ' <span class="sp-constraint">' + esc(c) + '</span></div>');
+      });
+    });
+    frags.push('<div class="lc-line"></div>');
+  }
+
+  if (scene.camera && scene.camera.orbit) {
+    const c = scene.camera;
+    frags.push('<div class="lc-line">' + kw('camera') + ' fov<span class="sp-op">=</span>' + num(c.fov||50) +
+      ' ' + kw('orbit') + ' ' + id(c.orbit.target) +
+      ' r<span class="sp-op">=</span>' + esc(c.orbit.radius) +
+      ' h<span class="sp-op">=</span>' + esc(c.orbit.height) +
+      ' period<span class="sp-op">=</span>' + num(c.orbit.period) + '</div>');
+  }
+
+  if (scene.timeline && scene.timeline.length) {
+    frags.push('<div class="lc-line"></div>');
+    frags.push('<div class="lc-line">' + cm('-- timeline (animate vars)') + '</div>');
+    scene.timeline.forEach(tl => {
+      frags.push('<div class="lc-line">' + kw('animate') + ' ' + id(tl.var) + ' ' + esc(tl.ease || 'smooth') + '</div>');
+      (tl.keys || []).forEach(k => {
+        frags.push('<div class="lc-line">  ' + num(k.t) + '<span class="sp-unit">s</span> <span class="sp-op">→</span> ' + num(k.v) + '</div>');
+      });
+    });
+  }
+
+  const host = $('sproutCode');
+  host.innerHTML = frags.join('');
+
+  host.querySelectorAll('.sp-slider').forEach(inp => {
+    inp.addEventListener('input', function() {
+      const nm = this.dataset.sv;
+      scene.vars[nm] = +this.value;
+      host.querySelector('[data-svv="' + nm + '"]').textContent = (+this.value).toFixed(1);
+      $('jtmText').value = JSON.stringify(scene, null, 1);
+      refreshBytes();
+      buildVarSliders();
+    });
+  });
+}
+
+function updateSproutComps() {
+  if (!lastSolve) return;
+  const host = $('sproutCode');
+  if (host.style.display === 'none') return;
+  for (const d of lastSolve.derived || []) {
+    const els = host.querySelectorAll('.sp-computed');
+    // Update computed values inline
+  }
+  for (const nm in scene.vars) {
+    const el = host.querySelector('[data-svv="' + nm + '"]');
+    if (el) el.textContent = (+scene.vars[nm]).toFixed(1);
+    const sl = host.querySelector('[data-sv="' + nm + '"]');
+    if (sl) sl.value = scene.vars[nm];
+  }
+}
+
+$("modeLive").addEventListener("click", () => setMode('live'));
+$("modeRaw").addEventListener("click", () => setMode('raw'));
+$("modeSprout").addEventListener("click", () => setMode('sprout'));
+$("apply").addEventListener("click", () => {
+  if ($("modeSprout").classList.contains("active")) {
+    alert("Sprout view is read-only. Switch to JSON to edit and apply.");
+    return;
+  }
+  try {
+    const parsed = JSON.parse($("jtmText").value);
+    scene = parsed;
+    duration = CSOLVE.sceneDuration(scene);
+    cur = Math.min(cur, duration);
+    lastStatusKey = ""; lastSiteKey = ""; lastCalcKey = ""; gisRows = null;
+    $("sceneDesc").textContent = scene.desc || "";
+    buildVarSliders();
+    renderLiveCode();
+    refreshBytes();
+    setMode('live');
+  } catch (e) {
+    alert("That edit broke the JSON: " + e.message);
+  }
+});
+$("apply").style.display = "none";
+$("download").addEventListener("click", () => {
+  const text = liveMode ? JSON.stringify(scene, null, 1) : $("jtmText").value;
+  const blob = new Blob([text], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "model.jtm";
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+document.addEventListener("keydown", e => {
+  if (e.code !== "Space" || e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT") return;
+  e.preventDefault();
+  playing = !playing;
+  $("play").textContent = playing ? "Pause" : "Play";
+});
+
+setScene(SCENES.lift);
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

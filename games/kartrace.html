@@ -1,0 +1,1465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<title>Pixel Racer</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;touch-action:none;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+html,body{width:100%;height:100%;height:-webkit-fill-available;overflow:hidden;position:fixed;background:#000;font-family:'Courier New',monospace;touch-action:manipulation;-webkit-tap-highlight-color:transparent;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+canvas{display:block;margin:0 auto;touch-action:manipulation}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+(function(){
+// ============================================================
+// PIXEL RACER - Pole Position / OutRun style pseudo-3D racer
+// ============================================================
+
+var canvas = document.getElementById('c');
+var ctx = canvas.getContext('2d');
+var W = 360, H = 640;
+var PI = Math.PI;
+
+// --- Resize ---
+function resize() {
+  var ww = window.innerWidth, wh = window.innerHeight;
+  var ratio = W / H;
+  var cw, ch;
+  if (ww / wh < ratio) { cw = ww; ch = ww / ratio; }
+  else { cw = wh * ratio; ch = wh; }
+  canvas.width = W;
+  canvas.height = H;
+  canvas.style.width = Math.floor(cw) + 'px';
+  canvas.style.height = Math.floor(ch) + 'px';
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ============================================================
+// AUDIO
+// ============================================================
+var AudioCtx = window.AudioContext || window.webkitAudioContext;
+var audioCtx = null;
+function ensureAudio() { if (!audioCtx) audioCtx = new AudioCtx(); if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); }
+
+var engineOsc = null, engineGain = null;
+var engineOsc2 = null, engineGain2 = null;
+function startEngine() {
+  ensureAudio();
+  if (engineOsc) return;
+  engineOsc = audioCtx.createOscillator();
+  engineGain = audioCtx.createGain();
+  engineOsc.type = 'sawtooth';
+  engineOsc.frequency.value = 50;
+  engineGain.gain.value = 0.04;
+  engineOsc.connect(engineGain);
+  engineGain.connect(audioCtx.destination);
+  engineOsc.start();
+  engineOsc2 = audioCtx.createOscillator();
+  engineGain2 = audioCtx.createGain();
+  engineOsc2.type = 'square';
+  engineOsc2.frequency.value = 25;
+  engineGain2.gain.value = 0.02;
+  engineOsc2.connect(engineGain2);
+  engineGain2.connect(audioCtx.destination);
+  engineOsc2.start();
+}
+function updateEngineSound(spd, maxSpd) {
+  if (!engineOsc) return;
+  var t = spd / maxSpd;
+  engineOsc.frequency.value = 40 + t * 160;
+  engineGain.gain.value = 0.02 + t * 0.04;
+  engineOsc2.frequency.value = 20 + t * 80;
+  engineGain2.gain.value = 0.01 + t * 0.02;
+}
+function stopEngine() {
+  try { if (engineOsc) engineOsc.stop(); } catch(e){}
+  try { if (engineOsc2) engineOsc2.stop(); } catch(e){}
+  engineOsc = null; engineGain = null;
+  engineOsc2 = null; engineGain2 = null;
+}
+
+function playTone(freq, dur, type, vol) {
+  ensureAudio();
+  var o = audioCtx.createOscillator(), g = audioCtx.createGain();
+  o.type = type || 'sine';
+  o.frequency.value = freq;
+  g.gain.value = vol || 0.12;
+  g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+  o.connect(g); g.connect(audioCtx.destination);
+  o.start(); o.stop(audioCtx.currentTime + dur);
+}
+function playTireScreech() {
+  ensureAudio();
+  var len = Math.floor(audioCtx.sampleRate * 0.25);
+  var buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+  var d = buf.getChannelData(0);
+  for (var i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / len * 4) * 0.12;
+  var s = audioCtx.createBufferSource(); s.buffer = buf;
+  var f = audioCtx.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 3000;
+  s.connect(f); f.connect(audioCtx.destination); s.start();
+}
+function playCollisionThud() {
+  playTone(80, 0.2, 'sine', 0.18);
+  playTone(55, 0.3, 'square', 0.08);
+}
+function playOvertakeWhoosh() {
+  ensureAudio();
+  var len = Math.floor(audioCtx.sampleRate * 0.15);
+  var buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+  var d = buf.getChannelData(0);
+  for (var i = 0; i < len; i++) {
+    var t = i / len;
+    d[i] = (Math.random() * 2 - 1) * Math.sin(t * PI) * 0.08;
+  }
+  var s = audioCtx.createBufferSource(); s.buffer = buf;
+  s.connect(audioCtx.destination); s.start();
+}
+function playLapChime() {
+  playTone(523, 0.12); setTimeout(function(){ playTone(659, 0.12); }, 100);
+  setTimeout(function(){ playTone(784, 0.18); }, 200);
+}
+function playFinishFanfare() {
+  [523, 659, 784, 1047, 784, 1047].forEach(function(f, i) {
+    setTimeout(function(){ playTone(f, 0.2, 'square', 0.1); }, i * 120);
+  });
+}
+function playCountdownBeep(high) { playTone(high ? 880 : 440, 0.2, 'square', 0.12); }
+
+var screechCooldown = 0;
+
+// ============================================================
+// SAVE / LOAD
+// ============================================================
+var SAVE_KEY = 'pixelracer_best';
+var bestTimes = {};
+function loadBest() { try { var d = JSON.parse(localStorage.getItem(SAVE_KEY)); if (d) bestTimes = d; } catch(e){} }
+function saveBest() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(bestTimes)); } catch(e){} }
+loadBest();
+
+// ============================================================
+// PSEUDO-3D ROAD CONSTANTS
+// ============================================================
+var SEG_LENGTH = 200;
+var ROAD_WIDTH = 800;
+var DRAW_DISTANCE = 160;
+var CAM_D = 0.84;
+var CAM_HEIGHT = 150;
+
+// ============================================================
+// TRACK BUILDER
+// ============================================================
+function buildTrack(pattern) {
+  var segs = [];
+  pattern.forEach(function(p) {
+    for (var i = 0; i < p.count; i++) {
+      var t = i / p.count;
+      segs.push({
+        curve: p.curve * Math.sin(t * PI),
+        hill: (p.hill || 0) * Math.sin(t * PI),
+        sceneryL: null,
+        sceneryR: null
+      });
+    }
+  });
+  return segs;
+}
+
+// ============================================================
+// TRACK DEFINITIONS (3 tracks, 200-300 segments each)
+// ============================================================
+var TRACKS = [
+  {
+    name: 'Fuji Speedway',
+    laps: 3,
+    scenery: 'japan',
+    road: buildTrack([
+      {count: 40, curve: 0, hill: 0},
+      {count: 25, curve: 0.7, hill: 0},
+      {count: 30, curve: 0, hill: 0.4},
+      {count: 20, curve: -0.5, hill: 0.2},
+      {count: 35, curve: 0, hill: 0},
+      {count: 22, curve: 0.9, hill: 0},
+      {count: 25, curve: 0, hill: -0.3},
+      {count: 18, curve: -0.6, hill: 0},
+      {count: 30, curve: 0, hill: 0},
+      {count: 15, curve: 0.4, hill: 0.3},
+      {count: 20, curve: 0, hill: 0},
+      {count: 18, curve: -0.8, hill: 0},
+      {count: 25, curve: 0, hill: -0.2},
+      {count: 15, curve: 0.3, hill: 0},
+      {count: 22, curve: 0, hill: 0.1},
+      {count: 18, curve: -0.4, hill: 0.2}
+    ]),
+    colors: {
+      sky1: '#6ec6ff', sky2: '#c8e8ff',
+      grass1: '#10aa10', grass2: '#009a00',
+      road1: '#6b6b6b', road2: '#636363',
+      rumble1: '#ff0000', rumble2: '#ffffff',
+      lane: '#ffffff'
+    }
+  },
+  {
+    name: 'Monaco Grand Prix',
+    laps: 3,
+    scenery: 'city',
+    road: buildTrack([
+      {count: 28, curve: 0, hill: 0},
+      {count: 18, curve: 0.9, hill: 0},
+      {count: 14, curve: 0, hill: 0.3},
+      {count: 22, curve: -1.0, hill: 0},
+      {count: 18, curve: 0, hill: 0},
+      {count: 14, curve: 0.6, hill: -0.2},
+      {count: 28, curve: 0, hill: 0},
+      {count: 18, curve: -0.7, hill: 0},
+      {count: 14, curve: 0.8, hill: 0.2},
+      {count: 22, curve: 0, hill: 0},
+      {count: 14, curve: -0.5, hill: 0},
+      {count: 18, curve: 0, hill: -0.3},
+      {count: 14, curve: 1.0, hill: 0},
+      {count: 22, curve: 0, hill: 0},
+      {count: 18, curve: -0.8, hill: 0.2},
+      {count: 12, curve: 0, hill: 0},
+      {count: 15, curve: 0.5, hill: -0.1},
+      {count: 10, curve: -0.3, hill: 0}
+    ]),
+    colors: {
+      sky1: '#4488cc', sky2: '#aaccee',
+      grass1: '#888888', grass2: '#777777',
+      road1: '#555555', road2: '#4a4a4a',
+      rumble1: '#ff0000', rumble2: '#ffffff',
+      lane: '#ffffff'
+    }
+  },
+  {
+    name: 'Outback Rally',
+    laps: 3,
+    scenery: 'desert',
+    road: buildTrack([
+      {count: 45, curve: 0, hill: 0},
+      {count: 28, curve: 0.6, hill: 0.3},
+      {count: 18, curve: 0, hill: 0},
+      {count: 32, curve: -0.8, hill: -0.2},
+      {count: 22, curve: 0, hill: 0.5},
+      {count: 18, curve: 0.5, hill: 0},
+      {count: 35, curve: 0, hill: 0},
+      {count: 22, curve: -0.7, hill: 0.3},
+      {count: 14, curve: 0, hill: 0},
+      {count: 28, curve: 1.0, hill: -0.4},
+      {count: 18, curve: 0, hill: 0},
+      {count: 22, curve: -0.4, hill: 0.2},
+      {count: 30, curve: 0, hill: -0.3},
+      {count: 18, curve: 0.6, hill: 0},
+      {count: 20, curve: 0, hill: 0.1},
+      {count: 15, curve: -0.5, hill: 0}
+    ]),
+    colors: {
+      sky1: '#ff9944', sky2: '#ffcc88',
+      grass1: '#c8a050', grass2: '#b89040',
+      road1: '#7a6a5a', road2: '#6a5a4a',
+      rumble1: '#ff6600', rumble2: '#ffcc00',
+      lane: '#ffeecc'
+    }
+  }
+];
+
+// ============================================================
+// SCENERY PLACEMENT
+// ============================================================
+function placeScenery(track) {
+  var segs = track.road;
+  var total = segs.length;
+  var rng = 42;
+  function nextRng() { rng = (rng * 1103515245 + 12345) & 0x7fffffff; return (rng & 0xffff) / 0xffff; }
+
+  for (var i = 0; i < total; i++) {
+    if (nextRng() < 0.15) {
+      var offset = 1.1 + nextRng() * 1.8;
+      var height = 0.5 + nextRng() * 1.0;
+      var type;
+      if (track.scenery === 'japan') {
+        var r = nextRng();
+        type = r < 0.45 ? 'cherry_tree' : (r < 0.75 ? 'pine' : 'pagoda');
+      } else if (track.scenery === 'city') {
+        var r = nextRng();
+        type = r < 0.35 ? 'building' : (r < 0.65 ? 'streetlight' : (r < 0.85 ? 'barrier' : 'sign'));
+      } else {
+        var r = nextRng();
+        type = r < 0.35 ? 'cactus' : (r < 0.65 ? 'rock' : 'sanddune');
+      }
+      // Alternate sides with some randomness
+      if (nextRng() < 0.5) {
+        segs[i].sceneryL = {type: type, offset: offset, height: height};
+      } else {
+        segs[i].sceneryR = {type: type, offset: offset, height: height};
+      }
+      // Sometimes both sides
+      if (nextRng() < 0.2) {
+        var type2;
+        if (track.scenery === 'japan') type2 = 'pine';
+        else if (track.scenery === 'city') type2 = 'barrier';
+        else type2 = 'rock';
+        var otherOffset = 1.0 + nextRng() * 1.5;
+        if (segs[i].sceneryL && !segs[i].sceneryR) {
+          segs[i].sceneryR = {type: type2, offset: otherOffset, height: height * 0.8};
+        } else if (segs[i].sceneryR && !segs[i].sceneryL) {
+          segs[i].sceneryL = {type: type2, offset: otherOffset, height: height * 0.8};
+        }
+      }
+    }
+  }
+}
+TRACKS.forEach(placeScenery);
+
+// ============================================================
+// GAME STATES
+// ============================================================
+var STATE_MENU = 0, STATE_SELECT = 1, STATE_COUNTDOWN = 2, STATE_RACING = 3, STATE_FINISH = 4;
+var gameState = STATE_MENU;
+var selectedTrack = 0;
+
+// Player state
+var playerZ = 0;       // distance along track
+var playerX = 0;       // lateral position -1 to 1
+var speed = 0;
+var maxSpeed = 200;
+var steerVisual = 0;   // smooth steer for car tilt
+var playerLap = 0;
+var raceTime = 0;
+var racePosition = 1;
+var finished = false;
+var finishTime = 0;
+var offRoad = false;
+
+// Countdown
+var countdown = 0;
+var countdownTimer = 0;
+
+// AI
+var aiCars = [];
+var NUM_AI = 7;
+
+// ============================================================
+// INPUT
+// ============================================================
+var touchLeft = false, touchRight = false;
+var tapX = -1, tapY = -1, tapped = false;
+var keys = {};
+
+canvas.addEventListener('touchstart', function(e) {
+  e.preventDefault(); ensureAudio();
+  var rect = canvas.getBoundingClientRect();
+  if(e.touches.length > 0) {
+    tapX = (e.touches[0].clientX - rect.left) / rect.width * W;
+    tapY = (e.touches[0].clientY - rect.top) / rect.height * H;
+    tapped = true;
+  }
+  handleTouches(e.touches);
+}, {passive: false});
+canvas.addEventListener('touchmove', function(e) {
+  e.preventDefault();
+  handleTouches(e.touches);
+}, {passive: false});
+canvas.addEventListener('touchend', function(e) {
+  e.preventDefault();
+  handleTouches(e.touches);
+}, {passive: false});
+canvas.addEventListener('touchcancel', function(e) {
+  e.preventDefault();
+  touchLeft = false; touchRight = false;
+}, {passive: false});
+
+function handleTouches(touches) {
+  touchLeft = false; touchRight = false;
+  var rect = canvas.getBoundingClientRect();
+  for (var i = 0; i < touches.length; i++) {
+    var tx = (touches[i].clientX - rect.left) / rect.width;
+    if (tx < 0.5) touchLeft = true;
+    else touchRight = true;
+  }
+}
+
+canvas.addEventListener('click', function(e) {
+  ensureAudio();
+  var rect = canvas.getBoundingClientRect();
+  tapX = (e.clientX - rect.left) / rect.width * W;
+  tapY = (e.clientY - rect.top) / rect.height * H;
+  tapped = true;
+});
+
+window.addEventListener('keydown', function(e) { keys[e.key] = true; });
+window.addEventListener('keyup', function(e) { keys[e.key] = false; });
+
+// Prevent iOS bounce scrolling
+document.addEventListener('touchmove', function(e){ e.preventDefault(); }, {passive: false});
+// Audio unlock on first touch
+document.addEventListener('touchstart', function(){ ensureAudio(); }, {once: true});
+
+// ============================================================
+// AI CARS
+// ============================================================
+var AI_COLORS = ['#3366ee','#33cc33','#eeee33','#ee33ee','#33eeee','#ee6633','#8833ee'];
+var AI_DARK   = ['#2244aa','#229922','#aaaa22','#aa22aa','#22aaaa','#aa4422','#6622aa'];
+
+function createAICar(index) {
+  return {
+    z: -((index + 1) * 50 + Math.random() * 20),
+    x: -0.6 + (index % 4) * 0.35 + (Math.random() - 0.5) * 0.15,
+    speed: 0,
+    maxSpeed: 145 + Math.random() * 45,
+    color: AI_COLORS[index % 7],
+    darkColor: AI_DARK[index % 7],
+    lap: 0,
+    finished: false,
+    targetX: -0.4 + Math.random() * 0.8,
+    steerTimer: Math.random() * 2,
+    wobble: Math.random() * 0.05
+  };
+}
+
+function updateAI(car, dt, track) {
+  if (car.finished) return;
+  var total = track.road.length;
+  var totalZ = total * SEG_LENGTH;
+
+  // Periodic re-aim
+  car.steerTimer -= dt;
+  if (car.steerTimer <= 0) {
+    car.steerTimer = 0.8 + Math.random() * 1.5;
+    var segIdx = ((Math.floor(car.z / SEG_LENGTH) % total) + total) % total;
+    var seg = track.road[segIdx];
+    car.targetX = -seg.curve * 0.4 + (Math.random() - 0.5) * 0.5;
+    car.targetX = Math.max(-0.85, Math.min(0.85, car.targetX));
+  }
+
+  // Steer toward target
+  car.x += (car.targetX - car.x) * 1.8 * dt;
+  car.x += Math.sin(raceTime * 1.5 + car.wobble * 200) * car.wobble * dt;
+
+  // Speed based on curve
+  var segIdx = ((Math.floor(car.z / SEG_LENGTH) % total) + total) % total;
+  var seg = track.road[segIdx];
+  var curvePenalty = 1 - Math.abs(seg.curve) * 0.25;
+  var tgtSpeed = car.maxSpeed * curvePenalty;
+  if (car.speed < tgtSpeed) car.speed += 90 * dt;
+  else car.speed += (tgtSpeed - car.speed) * 2.5 * dt;
+  if (car.speed < 0) car.speed = 0;
+
+  car.z += car.speed * dt;
+
+  // Lap
+  var newLap = Math.floor(car.z / totalZ);
+  if (newLap > car.lap) {
+    car.lap = newLap;
+    if (car.lap >= track.laps) car.finished = true;
+  }
+}
+
+// ============================================================
+// RENDERING HELPERS
+// ============================================================
+function drawTrapezoid(x1, y1, w1, x2, y2, w2) {
+  ctx.beginPath();
+  ctx.moveTo(x1 - w1 / 2, y1);
+  ctx.lineTo(x1 + w1 / 2, y1);
+  ctx.lineTo(x2 + w2 / 2, y2);
+  ctx.lineTo(x2 - w2 / 2, y2);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function darken(hex, factor) {
+  if (!hex || hex.charAt(0) !== '#') return hex;
+  var r = parseInt(hex.substr(1, 2), 16);
+  var g = parseInt(hex.substr(3, 2), 16);
+  var b = parseInt(hex.substr(5, 2), 16);
+  return 'rgb(' + Math.floor(r * factor) + ',' + Math.floor(g * factor) + ',' + Math.floor(b * factor) + ')';
+}
+
+// ============================================================
+// SKY + BACKGROUND SCENERY
+// ============================================================
+function drawSky(track) {
+  var grad = ctx.createLinearGradient(0, 0, 0, H / 2);
+  grad.addColorStop(0, track.colors.sky1);
+  grad.addColorStop(1, track.colors.sky2);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H / 2 + 10);
+
+  if (track.scenery === 'japan') {
+    // Far mountains
+    ctx.fillStyle = '#8899bb';
+    ctx.beginPath();
+    ctx.moveTo(-20, H / 2 + 5);
+    for (var x = -20; x <= W + 20; x += 12) {
+      var mh = 18 + Math.sin(x * 0.015 + 1) * 22 + Math.sin(x * 0.03) * 10;
+      ctx.lineTo(x, H / 2 + 5 - mh);
+    }
+    ctx.lineTo(W + 20, H / 2 + 5);
+    ctx.closePath();
+    ctx.fill();
+
+    // Mount Fuji
+    ctx.fillStyle = '#7788aa';
+    ctx.beginPath();
+    ctx.moveTo(W * 0.58, H / 2 + 5);
+    ctx.lineTo(W * 0.73, H / 2 - 70);
+    ctx.lineTo(W * 0.88, H / 2 + 5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.moveTo(W * 0.70, H / 2 - 52);
+    ctx.lineTo(W * 0.73, H / 2 - 70);
+    ctx.lineTo(W * 0.76, H / 2 - 52);
+    ctx.closePath();
+    ctx.fill();
+
+    // Near green hills
+    ctx.fillStyle = '#3a7744';
+    ctx.beginPath();
+    ctx.moveTo(-20, H / 2 + 5);
+    for (var x = -20; x <= W + 20; x += 8) {
+      var mh = 8 + Math.sin(x * 0.02 + 3) * 15 + Math.sin(x * 0.04 + 1) * 6;
+      ctx.lineTo(x, H / 2 + 5 - mh);
+    }
+    ctx.lineTo(W + 20, H / 2 + 5);
+    ctx.closePath();
+    ctx.fill();
+
+  } else if (track.scenery === 'city') {
+    // Skyline
+    var rng2 = 7;
+    function cR() { rng2 = (rng2 * 1103515245 + 12345) & 0x7fffffff; return (rng2 & 0xffff) / 0xffff; }
+    ctx.fillStyle = '#556677';
+    for (var x = -5; x < W + 5; x += Math.floor(10 + cR() * 8)) {
+      var bw = 6 + cR() * 14;
+      var bh = 12 + cR() * 45;
+      ctx.fillRect(x, H / 2 + 5 - bh, bw, bh);
+      ctx.fillStyle = '#aabbcc';
+      for (var wy = H / 2 + 5 - bh + 3; wy < H / 2 + 2; wy += 5) {
+        for (var wx = x + 2; wx < x + bw - 1; wx += 3) {
+          if (cR() > 0.4) ctx.fillRect(wx, wy, 1, 2);
+        }
+      }
+      ctx.fillStyle = '#556677';
+    }
+
+  } else if (track.scenery === 'desert') {
+    // Sand dunes horizon
+    ctx.fillStyle = '#d4a050';
+    ctx.beginPath();
+    ctx.moveTo(-20, H / 2 + 5);
+    for (var x = -20; x <= W + 20; x += 8) {
+      var mh = 6 + Math.sin(x * 0.01 + 2) * 18 + Math.sin(x * 0.025) * 8;
+      ctx.lineTo(x, H / 2 + 5 - mh);
+    }
+    ctx.lineTo(W + 20, H / 2 + 5);
+    ctx.closePath();
+    ctx.fill();
+
+    // Sun
+    ctx.fillStyle = '#ffee44';
+    ctx.beginPath();
+    ctx.arc(W * 0.75, H * 0.12, 20, 0, PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,238,68,0.2)';
+    ctx.beginPath();
+    ctx.arc(W * 0.75, H * 0.12, 35, 0, PI * 2);
+    ctx.fill();
+  }
+}
+
+// ============================================================
+// ROADSIDE SCENERY OBJECTS
+// ============================================================
+function drawSceneryObject(type, sx, sy, scl, scenery) {
+  if (scl < 0.002) return;
+  var S = scl * 1400; // base scale multiplier
+
+  if (type === 'cherry_tree') {
+    ctx.fillStyle = '#553322';
+    ctx.fillRect(sx - S * 0.08, sy - S * 0.7, S * 0.16, S * 0.7);
+    ctx.fillStyle = '#ffaacc';
+    ctx.beginPath(); ctx.arc(sx, sy - S * 0.7, S * 0.45, 0, PI * 2); ctx.fill();
+    ctx.fillStyle = '#ff88aa';
+    ctx.beginPath(); ctx.arc(sx - S * 0.2, sy - S * 0.85, S * 0.25, 0, PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(sx + S * 0.2, sy - S * 0.8, S * 0.28, 0, PI * 2); ctx.fill();
+
+  } else if (type === 'pine') {
+    ctx.fillStyle = '#443322';
+    ctx.fillRect(sx - S * 0.06, sy - S * 0.8, S * 0.12, S * 0.8);
+    ctx.fillStyle = '#1a6030';
+    for (var layer = 0; layer < 3; layer++) {
+      var ly = sy - S * 0.4 - layer * S * 0.22;
+      var lw = S * 0.4 * (1 - layer * 0.2);
+      ctx.beginPath();
+      ctx.moveTo(sx, ly - S * 0.3);
+      ctx.lineTo(sx - lw, ly);
+      ctx.lineTo(sx + lw, ly);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+  } else if (type === 'pagoda') {
+    ctx.fillStyle = '#884422';
+    ctx.fillRect(sx - S * 0.25, sy - S * 0.35, S * 0.5, S * 0.35);
+    ctx.fillStyle = '#993333';
+    for (var tier = 0; tier < 3; tier++) {
+      var tw = S * 0.4 * (1 - tier * 0.22);
+      var ty = sy - S * 0.35 - tier * S * 0.18;
+      ctx.fillRect(sx - tw / 2, ty - S * 0.12, tw, S * 0.12);
+      ctx.fillStyle = '#661111';
+      ctx.beginPath();
+      ctx.moveTo(sx - tw * 0.65, ty);
+      ctx.lineTo(sx, ty - S * 0.04);
+      ctx.lineTo(sx + tw * 0.65, ty);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#993333';
+    }
+
+  } else if (type === 'building') {
+    ctx.fillStyle = '#667788';
+    ctx.fillRect(sx - S * 0.3, sy - S * 1.0, S * 0.6, S * 1.0);
+    ctx.fillStyle = '#aabbcc';
+    for (var wy = sy - S * 0.9; wy < sy - S * 0.1; wy += S * 0.12) {
+      for (var wx = sx - S * 0.22; wx < sx + S * 0.22; wx += S * 0.1) {
+        ctx.fillRect(wx, wy, S * 0.05, S * 0.07);
+      }
+    }
+
+  } else if (type === 'streetlight') {
+    ctx.fillStyle = '#555555';
+    ctx.fillRect(sx - S * 0.03, sy - S * 0.9, S * 0.06, S * 0.9);
+    ctx.fillStyle = '#ffee88';
+    ctx.fillRect(sx - S * 0.08, sy - S * 0.95, S * 0.16, S * 0.06);
+
+  } else if (type === 'barrier') {
+    ctx.fillStyle = '#cc4444';
+    ctx.fillRect(sx - S * 0.25, sy - S * 0.2, S * 0.5, S * 0.2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(sx - S * 0.25, sy - S * 0.14, S * 0.5, S * 0.04);
+
+  } else if (type === 'sign') {
+    ctx.fillStyle = '#888888';
+    ctx.fillRect(sx - S * 0.03, sy - S * 0.5, S * 0.06, S * 0.5);
+    ctx.fillStyle = '#226622';
+    ctx.fillRect(sx - S * 0.18, sy - S * 0.55, S * 0.36, S * 0.15);
+
+  } else if (type === 'cactus') {
+    ctx.fillStyle = '#338833';
+    ctx.fillRect(sx - S * 0.06, sy - S * 0.65, S * 0.12, S * 0.65);
+    ctx.fillRect(sx - S * 0.22, sy - S * 0.5, S * 0.16, S * 0.06);
+    ctx.fillRect(sx - S * 0.22, sy - S * 0.5, S * 0.06, S * 0.2);
+    ctx.fillRect(sx + S * 0.06, sy - S * 0.38, S * 0.14, S * 0.06);
+    ctx.fillRect(sx + S * 0.14, sy - S * 0.38, S * 0.06, S * 0.16);
+
+  } else if (type === 'rock') {
+    ctx.fillStyle = '#887766';
+    ctx.beginPath();
+    ctx.moveTo(sx - S * 0.22, sy);
+    ctx.lineTo(sx - S * 0.12, sy - S * 0.28);
+    ctx.lineTo(sx + S * 0.08, sy - S * 0.25);
+    ctx.lineTo(sx + S * 0.22, sy);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#776655';
+    ctx.beginPath();
+    ctx.moveTo(sx - S * 0.05, sy);
+    ctx.lineTo(sx + S * 0.02, sy - S * 0.18);
+    ctx.lineTo(sx + S * 0.15, sy);
+    ctx.closePath();
+    ctx.fill();
+
+  } else if (type === 'sanddune') {
+    ctx.fillStyle = '#d4a860';
+    ctx.beginPath();
+    ctx.moveTo(sx - S * 0.5, sy);
+    ctx.quadraticCurveTo(sx, sy - S * 0.22, sx + S * 0.5, sy);
+    ctx.closePath();
+    ctx.fill();
+  }
+}
+
+// ============================================================
+// CAR SPRITE
+// ============================================================
+function drawCarSprite(x, y, w, h, color, darkColor, turnState) {
+  var skew = (turnState || 0) * 0.15;
+  ctx.save();
+  ctx.translate(x, y);
+
+  // Shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.beginPath();
+  ctx.ellipse(0, h * 0.1, w * 0.55, h * 0.1, 0, 0, PI * 2);
+  ctx.fill();
+
+  // Lean transform
+  ctx.transform(1, 0, skew, 1, 0, 0);
+
+  // Body lower
+  ctx.fillStyle = darkColor;
+  ctx.fillRect(-w / 2, -h * 0.05, w, h * 0.35);
+  // Body main
+  ctx.fillStyle = color;
+  ctx.fillRect(-w * 0.44, -h * 0.55, w * 0.88, h * 0.55);
+  // Cockpit top
+  ctx.fillStyle = darkColor;
+  ctx.fillRect(-w * 0.28, -h * 0.75, w * 0.56, h * 0.22);
+  // Windshield
+  ctx.fillStyle = 'rgba(150,200,255,0.6)';
+  ctx.fillRect(-w * 0.22, -h * 0.8, w * 0.44, h * 0.1);
+
+  // Wheels
+  ctx.fillStyle = '#1a1a1a';
+  ctx.fillRect(-w / 2 - w * 0.09, -h * 0.08, w * 0.11, h * 0.25);
+  ctx.fillRect(w / 2 - w * 0.02, -h * 0.08, w * 0.11, h * 0.25);
+  ctx.fillRect(-w / 2 - w * 0.09, -h * 0.6, w * 0.11, h * 0.25);
+  ctx.fillRect(w / 2 - w * 0.02, -h * 0.6, w * 0.11, h * 0.25);
+
+  // Helmet
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.arc(0, -h * 0.38, w * 0.12, 0, PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+// ============================================================
+// MAIN ROAD RENDERER (THE HEART OF THE GAME)
+// ============================================================
+function renderRoad() {
+  var track = TRACKS[selectedTrack];
+  var segs = track.road;
+  var total = segs.length;
+  var colors = track.colors;
+
+  var baseSegment = Math.floor(playerZ / SEG_LENGTH);
+  var basePercent = (playerZ % SEG_LENGTH) / SEG_LENGTH;
+
+  drawSky(track);
+
+  // Build projection list
+  var projected = [];
+  var cumCurve = 0;
+  var cumHill = 0;
+
+  for (var n = 0; n < DRAW_DISTANCE; n++) {
+    var segIdx = ((baseSegment + n) % total + total) % total;
+    var seg = segs[segIdx];
+
+    cumCurve += seg.curve;
+    cumHill += seg.hill;
+
+    var z = (n - basePercent) * SEG_LENGTH;
+    if (z <= 0) continue;
+
+    var scale = CAM_D / z * SEG_LENGTH;
+
+    // Curve: x offset accumulates quadratically for convincing perspective bending
+    var curveOffset = cumCurve * n * n * 0.0025;
+    var screenX = W / 2 + (curveOffset - playerX * ROAD_WIDTH / 2) * scale;
+    var screenY = H / 2 - (cumHill * 25 - CAM_HEIGHT) * scale;
+    var screenW = scale * ROAD_WIDTH;
+
+    projected.push({
+      x: screenX,
+      y: screenY,
+      w: screenW,
+      scale: scale,
+      segIdx: segIdx,
+      seg: seg,
+      n: n,
+      z: z
+    });
+  }
+
+  // Draw from far to near (back to front)
+  var clipY = H;
+
+  for (var i = projected.length - 1; i > 0; i--) {
+    var p1 = projected[i];     // far
+    var p2 = projected[i - 1]; // near
+
+    if (p2.y > clipY) continue;
+    if (p1.y <= 0 && p2.y <= 0) continue;
+    if (p1.y >= p2.y) continue;
+
+    var y1 = Math.max(0, Math.floor(p1.y));
+    var y2 = Math.min(H, Math.ceil(p2.y));
+    if (y1 >= y2) continue;
+
+    var isAlt = Math.floor(p2.segIdx / 2) % 2 === 0;
+    var isStartLine = p2.segIdx <= 2;
+
+    // Grass strip
+    ctx.fillStyle = isAlt ? colors.grass1 : colors.grass2;
+    ctx.fillRect(0, y1, W, y2 - y1);
+
+    // Rumble strips
+    var rw1 = p1.w * 1.15;
+    var rw2 = p2.w * 1.15;
+    ctx.fillStyle = isAlt ? colors.rumble1 : colors.rumble2;
+    drawTrapezoid(p1.x, y1, rw1, p2.x, y2, rw2);
+
+    // Road surface
+    if (isStartLine) {
+      ctx.fillStyle = (p2.segIdx + Math.floor(raceTime * 2)) % 2 === 0 ? '#eeeeee' : '#222222';
+    } else {
+      ctx.fillStyle = isAlt ? colors.road1 : colors.road2;
+    }
+    drawTrapezoid(p1.x, y1, p1.w, p2.x, y2, p2.w);
+
+    // Lane markings
+    if (!isStartLine) {
+      var lw1 = Math.max(0.5, p1.w * 0.012);
+      var lw2 = Math.max(0.5, p2.w * 0.012);
+
+      // Edge lines
+      ctx.fillStyle = colors.lane;
+      drawTrapezoid(p1.x - p1.w / 2, y1, lw1 * 2, p2.x - p2.w / 2, y2, lw2 * 2);
+      drawTrapezoid(p1.x + p1.w / 2, y1, lw1 * 2, p2.x + p2.w / 2, y2, lw2 * 2);
+
+      // Center dashes
+      if (isAlt) {
+        ctx.fillStyle = 'rgba(255,255,255,0.45)';
+        drawTrapezoid(p1.x, y1, lw1, p2.x, y2, lw2);
+      }
+    }
+
+    clipY = Math.min(clipY, y1);
+  }
+
+  // --- Scenery objects (draw back to front) ---
+  for (var i = projected.length - 1; i >= 0; i--) {
+    var p = projected[i];
+    if (p.scale < 0.0004) continue;
+    var seg = p.seg;
+    if (seg.sceneryL) {
+      var ox = p.x - p.w / 2 - seg.sceneryL.offset * p.w * 0.28;
+      if (ox > -60 && ox < W + 60) {
+        drawSceneryObject(seg.sceneryL.type, ox, p.y, p.scale * seg.sceneryL.height, track.scenery);
+      }
+    }
+    if (seg.sceneryR) {
+      var ox = p.x + p.w / 2 + seg.sceneryR.offset * p.w * 0.28;
+      if (ox > -60 && ox < W + 60) {
+        drawSceneryObject(seg.sceneryR.type, ox, p.y, p.scale * seg.sceneryR.height, track.scenery);
+      }
+    }
+  }
+
+  // --- AI cars (back to front) ---
+  var aiDrawList = [];
+  for (var a = 0; a < aiCars.length; a++) {
+    var car = aiCars[a];
+    var carSeg = Math.floor(car.z / SEG_LENGTH);
+    var relSeg = ((carSeg - baseSegment) % total + total) % total;
+    if (relSeg <= 0 || relSeg >= DRAW_DISTANCE) continue;
+
+    // Find nearest projected segment
+    for (var pi = 0; pi < projected.length; pi++) {
+      var pn = projected[pi].n;
+      if (pn >= relSeg - 1 && pn <= relSeg + 1) {
+        var p = projected[pi];
+        var carScreenX = p.x + car.x * p.w / 2;
+        var carW = p.scale * ROAD_WIDTH * 0.11;
+        var carH = carW * 0.75;
+        if (carW > 1.5 && carScreenX > -40 && carScreenX < W + 40) {
+          aiDrawList.push({
+            x: carScreenX, y: p.y, w: carW, h: carH,
+            color: car.color, darkColor: car.darkColor, z: p.z
+          });
+        }
+        break;
+      }
+    }
+  }
+  aiDrawList.sort(function(a, b) { return b.z - a.z; });
+  for (var i = 0; i < aiDrawList.length; i++) {
+    var c = aiDrawList[i];
+    drawCarSprite(c.x, c.y, c.w, c.h, c.color, c.darkColor, 0);
+  }
+}
+
+// ============================================================
+// PLAYER CAR (fixed screen position, bottom third)
+// ============================================================
+function drawPlayerCar() {
+  var turnState = 0;
+  if (steerVisual < -0.25) turnState = -1;
+  else if (steerVisual > 0.25) turnState = 1;
+
+  var px = W / 2;
+  var py = H - H / 3.5;
+  var pw = 42;
+  var ph = 32;
+
+  drawCarSprite(px, py, pw, ph, '#e33333', '#aa1111', turnState);
+
+  // Exhaust when moving
+  if (speed > 30 && gameState === STATE_RACING) {
+    ctx.fillStyle = 'rgba(140,140,140,0.25)';
+    for (var i = 0; i < 2; i++) {
+      var ex = px - 4 + Math.random() * 8;
+      var ey = py + ph * 0.4 + Math.random() * 4;
+      var es = 1 + Math.random() * 2;
+      ctx.fillRect(ex - es / 2, ey, es, es);
+    }
+  }
+}
+
+// ============================================================
+// HUD
+// ============================================================
+function drawHUD() {
+  var track = TRACKS[selectedTrack];
+
+  // Position (top left, big)
+  var posOrd = ['1st','2nd','3rd','4th','5th','6th','7th','8th'];
+  var posStr = posOrd[racePosition - 1] || racePosition + 'th';
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillRect(6, 6, 68, 30);
+  ctx.fillStyle = racePosition === 1 ? '#ffd700' : '#ffffff';
+  ctx.font = 'bold 20px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(posStr, 40, 22);
+
+  // Lap (top right)
+  var lap = Math.min(playerLap + 1, track.laps);
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillRect(W - 86, 6, 80, 20);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 13px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('LAP ' + lap + '/' + track.laps, W - 46, 17);
+
+  // Timer (top center)
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillRect(W / 2 - 42, 6, 84, 18);
+  ctx.fillStyle = '#cccccc';
+  ctx.font = '11px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(formatTime(raceTime), W / 2, 16);
+
+  // Speed bar + number (bottom)
+  var speedPct = speed / maxSpeed;
+  var barW = 150;
+  var barH = 12;
+  var barX = W / 2 - barW / 2;
+  var barY = H - 24;
+
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(barX - 1, barY - 1, barW + 2, barH + 2);
+
+  var sColor = speedPct > 0.85 ? '#ff4444' : (speedPct > 0.6 ? '#ffaa00' : '#00cc44');
+  ctx.fillStyle = sColor;
+  ctx.fillRect(barX, barY, barW * Math.min(1, speedPct), barH);
+
+  var kph = Math.floor(speed * 1.5);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 10px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(kph + ' km/h', W / 2, barY - 4);
+
+  // Off-road warning
+  if (offRoad && gameState === STATE_RACING) {
+    var alpha = 0.5 + 0.5 * Math.sin(raceTime * 10);
+    ctx.fillStyle = 'rgba(255,50,50,' + alpha + ')';
+    ctx.font = 'bold 14px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('OFF ROAD!', W / 2, H * 0.37);
+  }
+
+  // Touch zone hints
+  if (touchLeft) {
+    ctx.fillStyle = 'rgba(255,255,255,0.05)';
+    ctx.fillRect(0, H * 0.3, W * 0.3, H * 0.5);
+  }
+  if (touchRight) {
+    ctx.fillStyle = 'rgba(255,255,255,0.05)';
+    ctx.fillRect(W * 0.7, H * 0.3, W * 0.3, H * 0.5);
+  }
+}
+
+function formatTime(t) {
+  var m = Math.floor(t / 60);
+  var s = Math.floor(t % 60);
+  var ms = Math.floor((t % 1) * 100);
+  return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s + '.' + (ms < 10 ? '0' : '') + ms;
+}
+
+// ============================================================
+// COLLISION DETECTION
+// ============================================================
+function checkCollisions() {
+  for (var a = 0; a < aiCars.length; a++) {
+    var car = aiCars[a];
+    var dz = Math.abs(playerZ - car.z);
+    if (dz > SEG_LENGTH * 3) continue;
+
+    var dx = Math.abs(playerX - car.x);
+    if (dx < 0.35 && dz < SEG_LENGTH * 1.5) {
+      speed *= 0.7;
+      if (speed > 15) playCollisionThud();
+      if (playerX < car.x) { playerX -= 0.06; car.x += 0.06; }
+      else { playerX += 0.06; car.x -= 0.06; }
+      break;
+    }
+  }
+}
+
+// ============================================================
+// POSITION CALCULATION
+// ============================================================
+function calcPosition() {
+  var track = TRACKS[selectedTrack];
+  var total = track.road.length;
+  var totalZ = total * SEG_LENGTH;
+  var playerDist = playerLap * totalZ + (playerZ % totalZ);
+  var pos = 1;
+  for (var a = 0; a < aiCars.length; a++) {
+    var car = aiCars[a];
+    var carDist = car.lap * totalZ + (car.z % totalZ);
+    if (carDist > playerDist) pos++;
+  }
+  var oldPos = racePosition;
+  racePosition = pos;
+  if (oldPos > pos && gameState === STATE_RACING) {
+    playOvertakeWhoosh();
+  }
+}
+
+// ============================================================
+// GAME UPDATE (RACING)
+// ============================================================
+function gameUpdate(dt) {
+  // Countdown phase
+  if (gameState === STATE_COUNTDOWN) {
+    countdownTimer += dt;
+    if (countdownTimer >= 1) {
+      countdownTimer -= 1;
+      countdown--;
+      if (countdown > 0) playCountdownBeep(false);
+      if (countdown <= 0) {
+        gameState = STATE_RACING;
+        playCountdownBeep(true);
+        startEngine();
+      }
+    }
+    renderRoad();
+    drawPlayerCar();
+    drawHUD();
+
+    // Countdown overlay
+    if (countdown > 0) {
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 72px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('' + countdown, W / 2, H / 2);
+    } else {
+      ctx.fillStyle = '#00ff44';
+      ctx.font = 'bold 36px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('GO!', W / 2, H / 2);
+    }
+    return;
+  }
+
+  if (gameState !== STATE_RACING) return;
+
+  raceTime += dt;
+  screechCooldown -= dt;
+
+  var track = TRACKS[selectedTrack];
+  var segs = track.road;
+  var total = segs.length;
+  var totalZ = total * SEG_LENGTH;
+
+  if (!finished) {
+    // --- STEERING ---
+    var steerInput = 0;
+    if (touchLeft || keys['ArrowLeft'] || keys['a']) steerInput = -1;
+    if (touchRight || keys['ArrowRight'] || keys['d']) steerInput = 1;
+
+    // Smooth visual
+    steerVisual += (steerInput - steerVisual) * 10 * dt;
+
+    // Current segment curve pull
+    var curSegIdx = ((Math.floor(playerZ / SEG_LENGTH) % total) + total) % total;
+    var curSeg = segs[curSegIdx];
+    var curvePull = curSeg.curve * speed * 0.00004;
+
+    // Lateral movement
+    var lateralSpeed = 2.5;
+    if (speed < 50) lateralSpeed = 1.0;
+    playerX += steerInput * lateralSpeed * dt;
+    playerX -= curvePull * speed * dt * 0.008;
+
+    // Off-road
+    offRoad = Math.abs(playerX) > 1.0;
+
+    // Tire screech on sharp turns at speed
+    if (Math.abs(steerInput) > 0 && Math.abs(curSeg.curve) > 0.4 && speed > 100 && screechCooldown <= 0) {
+      playTireScreech();
+      screechCooldown = 0.7;
+    }
+
+    // --- SPEED ---
+    var targetMax = maxSpeed;
+    if (offRoad) {
+      targetMax = maxSpeed * 0.35;
+      if (Math.abs(playerX) > 1.6) {
+        playerX = playerX > 0 ? 1.6 : -1.6;
+      }
+    }
+
+    // Auto accelerate
+    if (speed < targetMax) {
+      speed += 100 * dt;
+    } else {
+      speed += (targetMax - speed) * 3.5 * dt;
+    }
+    if (speed < 0) speed = 0;
+
+    // Brake: both sides touched simultaneously
+    if (touchLeft && touchRight) {
+      speed -= 120 * dt;
+      if (speed < 0) speed = 0;
+    }
+
+    // Move forward
+    playerZ += speed * dt;
+
+    // --- LAP ---
+    var newLap = Math.floor(playerZ / totalZ);
+    if (newLap > playerLap) {
+      playerLap = newLap;
+      if (playerLap >= track.laps) {
+        finished = true;
+        finishTime = raceTime;
+        playFinishFanfare();
+        stopEngine();
+        var key = track.name;
+        if (!bestTimes[key] || finishTime < bestTimes[key]) {
+          bestTimes[key] = finishTime;
+          saveBest();
+        }
+        gameState = STATE_FINISH;
+      } else {
+        playLapChime();
+      }
+    }
+
+    // Collisions
+    checkCollisions();
+
+    // Engine sound
+    updateEngineSound(speed, maxSpeed);
+  }
+
+  // Update AI
+  for (var a = 0; a < aiCars.length; a++) {
+    updateAI(aiCars[a], dt, track);
+  }
+
+  // Position
+  calcPosition();
+
+  // Render
+  renderRoad();
+  drawPlayerCar();
+  drawHUD();
+}
+
+// ============================================================
+// MENU SCREENS
+// ============================================================
+function drawMenu() {
+  ctx.fillStyle = '#0a0a18';
+  ctx.fillRect(0, 0, W, H);
+
+  // Animated road background
+  var t = Date.now() * 0.001;
+  for (var y = H / 2; y < H; y += 3) {
+    var d = y - H / 2 + 1;
+    var sc = 40 / d;
+    var rw = sc * 280;
+    var rx = W / 2 + Math.sin(t * 0.8 + d * 0.015) * d * 0.35;
+    var alt = Math.floor(d / 7) % 2 === 0;
+    ctx.fillStyle = alt ? '#222233' : '#1a1a2a';
+    ctx.fillRect(0, y, W, 3);
+    ctx.fillStyle = alt ? '#444455' : '#3a3a4a';
+    ctx.fillRect(rx - rw / 2, y, rw, 3);
+  }
+
+  // Title
+  ctx.fillStyle = '#ff3333';
+  ctx.font = 'bold 34px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('PIXEL', W / 2, H * 0.14);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText('RACER', W / 2, H * 0.21);
+
+  ctx.fillStyle = '#888899';
+  ctx.font = '10px monospace';
+  ctx.fillText('Pole Position Style Racing', W / 2, H * 0.27);
+
+  // Start button
+  ctx.fillStyle = '#ff3333';
+  ctx.fillRect(W / 2 - 75, H * 0.40 - 18, 150, 36);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 17px monospace';
+  ctx.fillText('START RACE', W / 2, H * 0.40);
+
+  // Instructions
+  ctx.fillStyle = '#667788';
+  ctx.font = '10px monospace';
+  ctx.fillText('Left side: steer left', W / 2, H * 0.52);
+  ctx.fillText('Right side: steer right', W / 2, H * 0.56);
+  ctx.fillText('Both sides: brake', W / 2, H * 0.60);
+  ctx.fillText('Auto-accelerate', W / 2, H * 0.64);
+  ctx.fillText('Stay on road for speed!', W / 2, H * 0.68);
+
+  ctx.fillStyle = '#556677';
+  ctx.font = '9px monospace';
+  ctx.fillText('Keyboard: Arrow Left/Right', W / 2, H * 0.76);
+
+  if (tapped) {
+    if (tapY > H * 0.30 && tapY < H * 0.55) {
+      gameState = STATE_SELECT;
+    }
+    tapped = false;
+  }
+  if (keys['Enter']) { gameState = STATE_SELECT; keys['Enter'] = false; }
+}
+
+function drawTrackSelect() {
+  ctx.fillStyle = '#0a0a18';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 18px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('SELECT TRACK', W / 2, 35);
+
+  for (var i = 0; i < TRACKS.length; i++) {
+    var track = TRACKS[i];
+    var y = 80 + i * 140;
+    var sel = (i === selectedTrack);
+
+    ctx.fillStyle = sel ? '#1e2a3a' : '#111122';
+    ctx.fillRect(16, y, W - 32, 120);
+    if (sel) {
+      ctx.strokeStyle = '#ff3333';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(16, y, W - 32, 120);
+    }
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 15px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(track.name, 30, y + 20);
+
+    ctx.fillStyle = '#889999';
+    ctx.font = '10px monospace';
+    ctx.fillText(track.laps + ' laps / ' + track.road.length + ' segments', 30, y + 38);
+    ctx.fillText('Theme: ' + track.scenery, 30, y + 52);
+
+    var best = bestTimes[track.name];
+    ctx.fillStyle = best ? '#ffdd44' : '#555555';
+    ctx.fillText(best ? 'Best: ' + formatTime(best) : 'Best: --:--.--', 30, y + 70);
+
+    // Color swatch
+    var sx = W - 60;
+    ctx.fillStyle = track.colors.grass1;
+    ctx.fillRect(sx, y + 8, 28, 100);
+    ctx.fillStyle = track.colors.road1;
+    ctx.fillRect(sx + 6, y + 8, 16, 100);
+    ctx.fillStyle = track.colors.rumble1;
+    ctx.fillRect(sx + 4, y + 8, 2, 100);
+    ctx.fillRect(sx + 22, y + 8, 2, 100);
+
+    // AI count
+    ctx.fillStyle = '#778888';
+    ctx.font = '9px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(NUM_AI + ' opponents', 30, y + 86);
+
+    // Difficulty note
+    if (i === 0) ctx.fillText('Easy', 30, y + 100);
+    else if (i === 1) ctx.fillText('Medium', 30, y + 100);
+    else ctx.fillText('Hard', 30, y + 100);
+  }
+
+  // Race button
+  ctx.fillStyle = '#ff3333';
+  ctx.fillRect(W / 2 - 55, H - 58, 110, 32);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 15px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('RACE!', W / 2, H - 41);
+
+  // Back hint
+  ctx.fillStyle = '#556677';
+  ctx.font = '10px monospace';
+  ctx.fillText('Tap track to select', W / 2, H - 16);
+
+  if (tapped) {
+    for (var i = 0; i < TRACKS.length; i++) {
+      var y = 80 + i * 140;
+      if (tapY > y && tapY < y + 120) {
+        selectedTrack = i;
+      }
+    }
+    if (tapY > H - 80 && tapY < H - 10) {
+      startRace();
+    }
+    tapped = false;
+  }
+
+  if (keys['1']) { selectedTrack = 0; keys['1'] = false; }
+  if (keys['2']) { selectedTrack = 1; keys['2'] = false; }
+  if (keys['3'] && TRACKS.length > 2) { selectedTrack = 2; keys['3'] = false; }
+  if (keys['Enter']) { startRace(); keys['Enter'] = false; }
+}
+
+function drawFinish() {
+  renderRoad();
+  drawPlayerCar();
+  drawHUD();
+
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(0, 0, W, H);
+
+  var track = TRACKS[selectedTrack];
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 26px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('FINISH!', W / 2, H * 0.18);
+
+  var posOrd = ['1st','2nd','3rd','4th','5th','6th','7th','8th'];
+  var posStr = posOrd[racePosition - 1] || racePosition + 'th';
+  ctx.fillStyle = racePosition === 1 ? '#ffd700' : (racePosition <= 3 ? '#cccccc' : '#999999');
+  ctx.font = 'bold 48px monospace';
+  ctx.fillText(posStr, W / 2, H * 0.31);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '16px monospace';
+  ctx.fillText('Time: ' + formatTime(finishTime), W / 2, H * 0.43);
+
+  var best = bestTimes[track.name];
+  if (best) {
+    ctx.fillStyle = finishTime <= best ? '#ffdd44' : '#888888';
+    ctx.font = '13px monospace';
+    ctx.fillText('Best: ' + formatTime(best), W / 2, H * 0.50);
+    if (finishTime <= best) {
+      ctx.fillStyle = '#ff4444';
+      ctx.font = 'bold 13px monospace';
+      ctx.fillText('NEW RECORD!', W / 2, H * 0.56);
+    }
+  }
+
+  // Retry button
+  ctx.fillStyle = '#ff3333';
+  ctx.fillRect(W / 2 - 65, H * 0.66 - 14, 130, 28);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 13px monospace';
+  ctx.fillText('RETRY', W / 2, H * 0.66);
+
+  // Track select button
+  ctx.fillStyle = '#335577';
+  ctx.fillRect(W / 2 - 65, H * 0.76 - 14, 130, 28);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText('TRACK SELECT', W / 2, H * 0.76);
+
+  if (tapped) {
+    if (tapY > H * 0.63 && tapY < H * 0.70) startRace();
+    else if (tapY > H * 0.73 && tapY < H * 0.80) gameState = STATE_SELECT;
+    tapped = false;
+  }
+  if (keys['Enter']) { startRace(); keys['Enter'] = false; }
+}
+
+// ============================================================
+// START RACE
+// ============================================================
+function startRace() {
+  playerZ = 0;
+  playerX = 0;
+  speed = 0;
+  steerVisual = 0;
+  playerLap = 0;
+  raceTime = 0;
+  racePosition = NUM_AI + 1;
+  finished = false;
+  finishTime = 0;
+  offRoad = false;
+  screechCooldown = 0;
+  stopEngine();
+
+  aiCars = [];
+  for (var i = 0; i < NUM_AI; i++) {
+    aiCars.push(createAICar(i));
+  }
+
+  countdown = 3;
+  countdownTimer = 0;
+  gameState = STATE_COUNTDOWN;
+}
+
+// ============================================================
+// MAIN LOOP
+// ============================================================
+var lastTime = 0;
+
+function frame(time) {
+  requestAnimationFrame(frame);
+  var dt = (time - lastTime) / 1000;
+  if (dt > 0.05) dt = 0.05;
+  if (dt <= 0) dt = 0.016;
+  lastTime = time;
+
+  ctx.clearRect(0, 0, W, H);
+
+  switch (gameState) {
+    case STATE_MENU:
+      drawMenu();
+      break;
+    case STATE_SELECT:
+      drawTrackSelect();
+      break;
+    case STATE_COUNTDOWN:
+    case STATE_RACING:
+      gameUpdate(dt);
+      break;
+    case STATE_FINISH:
+      drawFinish();
+      break;
+  }
+}
+
+requestAnimationFrame(function(t) {
+  lastTime = t;
+  requestAnimationFrame(frame);
+});
+
+})();
+</script>
+</body>
+</html>
