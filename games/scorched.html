@@ -138,6 +138,45 @@ function checkAchievements(){
 function getPerks(){return PERKS.filter(p=>stats.unlocked.includes(p.req));}
 let skulls=[];
 
+// weapon upgrade levels (per player, per weapon name)
+const UPGRADES={
+  'Shot':[{dmg:40,rad:30},{dmg:55,rad:35},{dmg:70,rad:40},{dmg:90,rad:45}],
+  'Big Shot':[{dmg:60,rad:50},{dmg:80,rad:60},{dmg:100,rad:70}],
+  'MIRV':[{dmg:30,subs:5},{dmg:40,subs:7},{dmg:50,subs:9}],
+  'Napalm':[{dmg:25,rad:40},{dmg:35,rad:50},{dmg:45,rad:60}],
+  'Roller':[{dmg:35,rad:25},{dmg:50,rad:35},{dmg:65,rad:40}],
+  'Deaths Head':[{dmg:80,rad:60},{dmg:110,rad:75},{dmg:140,rad:90}],
+  'Nuke':[{dmg:100,rad:90},{dmg:130,rad:110}],
+};
+const UPGRADE_COST=150;
+
+// Contra-style floating powerups
+const POWERUP_TYPES=[
+  {letter:'S',name:'Spread',color:'#f00',give:p=>{p.inventory['MIRV']=(p.inventory['MIRV']||0)+2;}},
+  {letter:'R',name:'Rapid',color:'#f80',give:p=>{p.inventory['Big Shot']=(p.inventory['Big Shot']||0)+3;}},
+  {letter:'L',name:'Laser',color:'#0ff',give:p=>{p.inventory["Deaths Head"]=(p.inventory["Deaths Head"]||0)+1;}},
+  {letter:'B',name:'Bomb',color:'#ff0',give:p=>{p.inventory['Napalm']=(p.inventory['Napalm']||0)+2;}},
+  {letter:'F',name:'Fuel',color:'#0f0',give:p=>{p.fuel=Math.min(200,p.fuel+50);}},
+  {letter:'H',name:'Health',color:'#f0f',give:p=>{p.hp=Math.min(p.maxHp,p.hp+30);}},
+  {letter:'M',name:'Money',color:'#ff0',give:p=>{p.money+=100;}},
+  {letter:'N',name:'Nuke',color:'#f00',give:p=>{p.inventory['Nuke']=(p.inventory['Nuke']||0)+1;}},
+  {letter:'J',name:'Jet Fuel',color:'#f80',give:p=>{p.fuel=200;}},
+  {letter:'W',name:'Swarm',color:'#0f0',give:p=>{p.inventory['Swarm']=(p.inventory['Swarm']||0)+1;}},
+];
+let powerups=[];
+
+function spawnPowerups(){
+  powerups=[];
+  const count=2+Math.floor(round*.5);
+  for(let i=0;i<count;i++){
+    const px2=30+Math.floor(Math.random()*(W-60));
+    const ty=terrain[Math.floor(px2)];
+    const py2=ty-40-Math.floor(Math.random()*80);
+    const type=POWERUP_TYPES[Math.floor(Math.random()*POWERUP_TYPES.length)];
+    powerups.push({x:px2,y:py2,type,bobPhase:Math.random()*Math.PI*2,alive:true});
+  }
+}
+
 let terrain,players,currentPlayer,wind,projectiles,explosions,particles,lemmings;
 let gameState,round,maxRounds,numPlayers,numCPU,msgTimer;
 let actx,shakeX=0,shakeY=0,shakeLife=0,turnCount=0;
@@ -179,12 +218,22 @@ function sfx(type){
   else if(type==='cam'){const o=actx.createOscillator(),g=actx.createGain();o.type='sine';o.frequency.value=1000;o.frequency.setValueAtTime(1200,n+.03);g.gain.setValueAtTime(.02,n);g.gain.exponentialRampToValueAtTime(.001,n+.06);o.connect(g);g.connect(actx.destination);o.start(n);o.stop(n+.06);}
 }
 
+function checkPowerups(p){
+  for(const pu of powerups){
+    if(!pu.alive)continue;
+    if(Math.hypot(p.x-pu.x,p.y-pu.y)<25){
+      pu.alive=false;pu.type.give(p);
+      sfx('buy');showMsg(pu.type.name+'!',1000);
+      for(let k=0;k<8;k++)particles.push({x:pu.x,y:pu.y,vx:(Math.random()-.5)*3,vy:(Math.random()-.5)*3,life:15,color:pu.type.color});
+    }
+  }
+}
 function moveTank(dir){
   if(gameState!=='aiming')return;
   const p=players[currentPlayer];if(!p||p.cpu)return;
   if(p.fuel<3){sfx('denied');return;}
   p.x=Math.max(15,Math.min(W-15,p.x+dir*4));p.fuel-=3;
-  p.y=terrain[Math.floor(p.x)];sfx('move');updateUI();
+  p.y=terrain[Math.floor(p.x)];sfx('move');checkPowerups(p);updateUI();
 }
 function jetpack(){
   if(gameState!=='aiming')return;
@@ -195,7 +244,7 @@ function jetpack(){
   p.x=Math.max(15,Math.min(W-15,p.x+dir*30));
   p.y=terrain[Math.floor(p.x)];
   for(let i=0;i<8;i++)particles.push({x:p.x-dir*5,y:p.y,vx:-dir*(2+Math.random()*3),vy:1+Math.random()*2,life:15+Math.random()*10,color:'#f80'});
-  sfx('land');updateUI();
+  sfx('land');checkPowerups(p);updateUI();
 }
 
 function generateTerrain(){
@@ -238,7 +287,7 @@ function placePlayers(){
     players.push({
       x,y:terrain[x],hp,maxHp:hp,alive:true,color:COLORS[i%5],name:NAMES[i%5],
       score:0,money,angle:i<numPlayers/2?60:120,power:50,fuel:100,
-      weapon:0,inventory:inv,shield:0,cpu:isCpu,kills:0,
+      weapon:0,inventory:inv,upgrades:{},shield:0,cpu:isCpu,kills:0,
       armor:perks.find(p=>p.id==='armor')?.15:0
     });
   }
@@ -261,7 +310,7 @@ function newRound(){
   currentPlayer=0;projectiles=[];explosions=[];particles=[];lemmings=[];skulls=[];turnCount=0;
   for(const t of tracers)t.age++;
   tracers=tracers.filter(t=>t.age<6);
-  spawnBgLemmings();
+  spawnBgLemmings();spawnPowerups();
   wind=(Math.random()-.5)*3;
   gameState='aiming';showMsg('Round '+round,2000);sfx('round');
   updateUI();
@@ -412,8 +461,15 @@ function fire(){
   p.inventory[w.name]--;
   const rad=p.angle*Math.PI/180;
   const speed=p.power*.13;
+  // apply weapon upgrades
+  let fw={...w};
+  const ulv=p.upgrades[w.name]||0;
+  if(UPGRADES[w.name]&&ulv>0&&ulv<=UPGRADES[w.name].length){
+    const u=UPGRADES[w.name][ulv-1];
+    if(u.dmg)fw.damage=u.dmg;if(u.rad)fw.radius=u.rad;if(u.subs)fw.subs=u.subs;
+  }
   projectiles.push({x:p.x,y:p.y-12,vx:Math.cos(rad)*speed,vy:-Math.sin(rad)*speed,
-    owner:currentPlayer,weapon:w,trail:[],type:w.type});
+    owner:currentPlayer,weapon:fw,trail:[],type:fw.type});
   gameState='flying';sfx('fire');
 }
 
@@ -540,7 +596,21 @@ function showShop(){
       cpuBuy(p);
     }
   }
-  html.push('<button onclick="closeShop()" style="font:bold 14px monospace;padding:10px 30px;border:2px solid #ff6b35;border-radius:8px;background:transparent;color:#ff6b35;cursor:pointer;margin-top:12px">NEXT ROUND</button>');
+  // upgrade section
+  for(const p of players){
+    if(p.cpu||!p.alive)continue;
+    const pi=players.indexOf(p);
+    html.push('<div style="font:8px monospace;color:#0ff;margin:4px 0">UPGRADES ('+p.name+'):</div>');
+    html.push('<div style="display:flex;flex-wrap:wrap;gap:3px;justify-content:center">');
+    for(const wn in UPGRADES){
+      const lv=p.upgrades[wn]||0;const maxLv=UPGRADES[wn].length;
+      if(lv>=maxLv)continue;
+      const cost=UPGRADE_COST*(lv+1);
+      html.push('<button onclick="buyUpgrade('+pi+',&quot;'+wn+'&quot;)" style="font:8px monospace;padding:3px 6px;border:1px solid #0aa;background:#001a1a;color:'+(p.money>=cost?'#0ff':'#044')+';cursor:pointer">'+wn+' Lv'+(lv+1)+' $'+cost+'</button>');
+    }
+    html.push('</div>');
+  }
+  html.push('<button onclick="closeShop()" style="font:bold 14px monospace;padding:10px 30px;border:2px solid #ff0;border-radius:0;background:#000;color:#ff0;cursor:pointer;margin-top:12px">NEXT ROUND</button>');
   const el=document.getElementById('start');
   el.style.display='flex';el.innerHTML=html.join('');
 }
@@ -568,6 +638,16 @@ function cpuBuy(p){
   if(p.hp<40&&Math.random()<.5)buy('Heallem');
   if(Math.random()<.15)buy('Digger');
   if(Math.random()<.15)buy('Teleport');
+}
+function buyUpgrade(pi,wn){
+  const p=players[pi];if(!p)return;
+  const lv=p.upgrades[wn]||0;
+  const maxLv=UPGRADES[wn]?UPGRADES[wn].length:0;
+  if(lv>=maxLv)return;
+  const cost=UPGRADE_COST*(lv+1);
+  if(p.money<cost)return;
+  p.money-=cost;p.upgrades[wn]=lv+1;
+  sfx('buy');showShop();
 }
 function closeShop(){document.getElementById('start').style.display='none';newRound();}
 
@@ -793,6 +873,23 @@ function render(){
   // terrain top edge
   ctx.strokeStyle='#80e040';ctx.lineWidth=1;
   ctx.beginPath();for(let x=0;x<W;x++)x===0?ctx.moveTo(x,terrain[x]):ctx.lineTo(x,terrain[x]);ctx.stroke();
+
+  // floating powerups (Contra-style)
+  for(const pu of powerups){
+    if(!pu.alive)continue;
+    const bob=Math.sin(performance.now()*.003+pu.bobPhase)*4;
+    const px3=pu.x,py3=pu.y+bob;
+    // eagle/falcon icon box (like Contra)
+    ctx.fillStyle='#222';ctx.fillRect(px3-8,py3-8,16,16);
+    ctx.strokeStyle=pu.type.color;ctx.lineWidth=1;ctx.strokeRect(px3-8,py3-8,16,16);
+    // letter
+    ctx.fillStyle=pu.type.color;ctx.font='bold 10px monospace';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText(pu.type.letter,px3,py3);
+    // glow pulse
+    const pulse=Math.sin(performance.now()*.005+pu.bobPhase)*.3+.3;
+    ctx.globalAlpha=pulse;ctx.fillStyle=pu.type.color;ctx.fillRect(px3-10,py3-10,20,20);
+    ctx.globalAlpha=1;
+  }
 
   // background lemmings (decorative, behind tanks)
   for(const bg of bgLemmings){
