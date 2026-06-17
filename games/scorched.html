@@ -69,7 +69,7 @@ canvas{display:block;position:fixed;top:0;left:0;image-rendering:pixelated;image
   </div>
 </div>
 <div id="start">
-  <canvas id="titleArt" width="48" height="48" style="image-rendering:pixelated;width:64px;height:64px;margin-bottom:2px"></canvas>
+  <canvas id="titleArt" width="48" height="48" style="image-rendering:pixelated;width:100%;max-width:340px;aspect-ratio:1;margin-bottom:4px"></canvas>
   <h1 style="color:#ff0;text-shadow:2px 2px #800;font-size:18px;margin-bottom:2px">SCORCHED LEMMING</h1>
   <div style="display:flex;gap:2px;justify-content:center;margin:4px 0">
     <button class="mtab" onclick="showTab('play')" id="tabPlay" style="border-color:#ff0;color:#ff0">PLAY</button>
@@ -467,14 +467,25 @@ function applyTrophyRewards(p){
 }
 
 let idleMode=false,idleGemTimer=0;
-let gamePhotos=[];
+let gamePhoto=null;
 function snapGamePhoto(){
   if(!camReady||!camVideo||camVideo.readyState<2)return;
-  const sc=document.createElement('canvas');sc.width=60;sc.height=45;
-  const c=sc.getContext('2d');c.save();c.translate(60,0);c.scale(-1,1);
-  c.drawImage(camVideo,0,0,60,45);c.restore();
-  gamePhotos.push({canvas:sc,floor:round,time:Date.now()});
-  if(gamePhotos.length>8)gamePhotos.shift();
+  const sc=document.createElement('canvas');sc.width=80;sc.height=60;
+  const c=sc.getContext('2d');c.save();c.translate(80,0);c.scale(-1,1);
+  c.drawImage(camVideo,0,0,80,60);c.restore();
+  // random effect
+  const fx=Math.floor(Math.random()*6);
+  const id=c.getImageData(0,0,80,60),d=id.data;
+  if(fx===0){for(let i=0;i<d.length;i+=4){d[i]=Math.min(255,d[i]*1.4);d[i+1]*=.4;d[i+2]*=.3;}}
+  else if(fx===1){for(let i=0;i<d.length;i+=4){const v=d[i]*.3+d[i+1]*.59+d[i+2]*.11;d[i]=v;d[i+1]=v;d[i+2]=v;}}
+  else if(fx===2){for(let i=0;i<d.length;i+=4){d[i]=255-d[i];d[i+1]=255-d[i+1];d[i+2]=255-d[i+2];}}
+  else if(fx===3){for(let i=0;i<d.length;i+=4){d[i]=Math.floor(d[i]/32)*32;d[i+1]=Math.floor(d[i+1]/32)*32;d[i+2]=Math.floor(d[i+2]/32)*32;}}
+  else if(fx===4){for(let i=0;i<d.length;i+=4){d[i]*=.3;d[i+1]=Math.min(255,d[i+1]*1.3);d[i+2]*=.3;}}
+  else{for(let i=0;i<d.length;i+=4){const v=d[i]*.3+d[i+1]*.59+d[i+2]*.11;d[i]=Math.min(255,v*1.2);d[i+1]=v*.8;d[i+2]=v*.5;}}
+  c.putImageData(id,0,0);
+  // scanlines
+  c.fillStyle='rgba(0,0,0,.15)';for(let y=0;y<60;y+=2)c.fillRect(0,y,80,1);
+  gamePhoto={canvas:sc,floor:round,fx:['BLOOD','B&W','INVERT','DOS','MATRIX','SEPIA'][fx]};
 }
 function showTab(t){
   document.getElementById('panelPlay').style.display=t==='play'?'block':'none';
@@ -863,7 +874,7 @@ function startGame(){
   numCPU=2+Math.floor(Math.random()*4);numPlayers=numCPU+1;maxRounds=999;
   if(!camReady)startCam();
   if(musicOn)startMusic();
-  gamePhotos=[];
+  gamePhoto=null;
   round=startFloor;newRound();
 }
 
@@ -1298,20 +1309,15 @@ function endGame(){
   const el=document.getElementById('start');
   snapGamePhoto();
   let h='<h1 style="font:bold 18px monospace;color:#ff0;text-shadow:2px 2px #800">GAME OVER — Floor '+round+'</h1>';
-  h+='<div style="font:9px monospace;color:#0f0;margin:4px 0;white-space:pre-line">'+players.map(p=>(p.alive?'':'☠ ')+p.name+': $'+p.money+' ('+((p.kills||0))+' kills)').join('\n')+'</div>';
-  h+='<div style="font:8px monospace;color:#888;margin:2px 0">🏆 '+stats.unlocked.length+'/'+ACHIEVEMENTS.length+' | 💎 '+(stats.idleGems||0)+'</div>';
-  // game photos
-  if(gamePhotos.length){
-    h+='<div style="font:7px monospace;color:#555;margin:4px 0">📸 BATTLE SNAPSHOTS</div>';
-    h+='<div style="display:flex;gap:3px;flex-wrap:wrap;justify-content:center;margin:4px 0">';
-    for(const photo of gamePhotos){
-      const dataUrl=photo.canvas.toDataURL('image/jpeg',.6);
-      h+='<div style="text-align:center"><img src="'+dataUrl+'" style="width:50px;height:38px;border:1px solid #333;image-rendering:pixelated"><div style="font:6px monospace;color:#555">F'+photo.floor+'</div></div>';
-    }
-    h+='</div>';
+  // battle snapshot
+  if(gamePhoto){
+    const dataUrl=gamePhoto.canvas.toDataURL('image/jpeg',.7);
+    h+='<div style="margin:4px 0;text-align:center"><img src="'+dataUrl+'" style="width:120px;height:90px;border:2px solid #555;image-rendering:pixelated"><div style="font:6px monospace;color:#555">Floor '+gamePhoto.floor+' | '+gamePhoto.fx+'</div></div>';
   }
+  h+='<div style="font:9px monospace;color:#0f0;margin:4px 0;white-space:pre-line">'+players.map(p=>(p.alive?'':'☠ ')+p.name+': $'+p.money+' ('+((p.kills||0))+' kills)').join('\n')+'</div>';
+  h+='<div style="font:8px monospace;color:#888;margin:2px 0">🏆 '+stats.unlocked.length+'/'+ACHIEVEMENTS.length+'</div>';
   h+='<button onclick="location.reload()" style="font:bold 12px monospace;padding:8px 24px;border:2px solid #ff0;background:#000;color:#ff0;cursor:pointer;margin-top:6px">PLAY AGAIN</button>';
-  el.innerHTML=h;el.style.display='flex';sfx('win');gamePhotos=[];
+  el.innerHTML=h;el.style.display='flex';sfx('win');gamePhoto=null;
 }
 
 function update(dt){
@@ -1512,7 +1518,7 @@ function update(dt){
   for(let i=explosions.length-1;i>=0;i--){explosions[i].life--;if(explosions[i].life<=0)explosions.splice(i,1);}
   for(let i=skulls.length-1;i>=0;i--){skulls[i].life--;skulls[i].y-=.1;if(skulls[i].life<=0)skulls.splice(i,1);}
   // random camera snapshots during gameplay
-  if(camReady&&Math.random()<.001)snapGamePhoto();
+  if(camReady&&!gamePhoto&&Math.random()<.002)snapGamePhoto();
   // gem earning (idle = passive, always = on events)
   if(idleMode){
     idleGemTimer+=dt;
