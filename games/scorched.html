@@ -69,7 +69,7 @@ canvas{display:block;position:fixed;top:0;left:0;image-rendering:pixelated;image
   </div>
 </div>
 <div id="start">
-  <canvas id="titleArt" width="144" height="144" style="image-rendering:pixelated;width:144px;height:144px;margin-bottom:4px;border:2px solid #555"></canvas>
+  <canvas id="titleArt" width="48" height="48" style="image-rendering:pixelated;width:64px;height:64px;margin-bottom:2px"></canvas>
   <h1 style="color:#ff0;text-shadow:2px 2px #800;font-size:18px;margin-bottom:2px">SCORCHED LEMMING</h1>
   <div style="display:flex;gap:2px;justify-content:center;margin:4px 0">
     <button class="mtab" onclick="showTab('play')" id="tabPlay" style="border-color:#ff0;color:#ff0">PLAY</button>
@@ -279,7 +279,9 @@ const HAND_SIZE=5;
 function buildDeck(tankId){
   deck=[...CORE_CARDS];
   const classCards=CLASS_CARDS[tankId]||CLASS_CARDS.standard;
-  deck.push(...classCards);
+  // start with only 3 class cards (random)
+  const shuffledClass=[...classCards].sort(()=>Math.random()-.5);
+  deck.push(...shuffledClass.slice(0,3));
   for(let i=deck.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[deck[i],deck[j]]=[deck[j],deck[i]];}
 }
 function drawHand(){
@@ -636,7 +638,7 @@ function spawnPowerups(){
 
 let terrain,players,currentPlayer,wind,projectiles,explosions,particles,lemmings;
 let gameState,round,maxRounds,numPlayers,numCPU,msgTimer;
-let actx,shakeX=0,shakeY=0,shakeLife=0,turnCount=0;
+let actx,shakeX=0,shakeY=0,shakeLife=0,turnCount=0,stalemateTurns=0,damageThisRound=false;
 let bgLemmings=[],tracers=[];
 let camVideo=null,camReady=false,camPixBuf=null,camPrevBuf=null,camOpacity=40,camOn=true,camMotion=0;
 function toggleCam(){
@@ -851,7 +853,7 @@ setTimeout(()=>{
   const ta=document.getElementById('titleArt');
   if(ta&&jtmSprites['scorched-goal']){
     const tc=ta.getContext('2d');tc.imageSmoothingEnabled=false;
-    tc.drawImage(jtmSprites['scorched-goal'],0,0,144,144);
+    tc.drawImage(jtmSprites['scorched-goal'],0,0,48,48);
   }
 },1500);
 
@@ -1073,7 +1075,7 @@ function explode(x,y,weapon,owner){
       let dmg=Math.floor((1-d/(r*1.5))*weapon.damage);
       if(p.shield>0){dmg=Math.floor(dmg*.2);p.shield=Math.max(0,p.shield-10);}
       if(p.armor)dmg=Math.floor(dmg*(1-p.armor));
-      p.hp-=dmg;
+      p.hp-=dmg;damageThisRound=true;
       if(dmg>10&&p.hp>0&&Math.random()<.3)tankTalk(players.indexOf(p),'hit');
       if(p.hp<=0){p.hp=0;p.alive=false;sfx('hit');
         if(owner!==null&&players[owner]){
@@ -1166,6 +1168,17 @@ function nextTurn(){
   }
   wind+=(Math.random()-.5)*.8;wind=Math.max(-4,Math.min(4,wind));
   turnCount++;
+  // stalemate check
+  if(damageThisRound){stalemateTurns=0;damageThisRound=false;}
+  else{stalemateTurns++;
+    if(stalemateTurns===numPlayers*5)showMsg('⚠ STALEMATE WARNING!\nDeal damage or everyone dies!',3000);
+    if(stalemateTurns>=numPlayers*10){
+      showMsg('💀 STALEMATE! Everyone dies!',3000);sfx('explode');
+      for(const p of players){if(p.alive){p.hp=0;p.alive=false;skulls.push({x:p.x,y:p.y-15,life:120});}}
+      gameState='roundOver';
+      const humanAlive=false;setTimeout(endGame,2000);return;
+    }
+  }
   if(!players[currentPlayer]?.cpu)drawHand();
   gameState='aiming';updateUI();
   if(Math.random()<.2&&players[currentPlayer]&&players[currentPlayer].alive)tankTalk(currentPlayer,'idle');
@@ -1196,6 +1209,20 @@ function showShop(){
   // heal option
   const hp=players.find(pl=>!pl.cpu);
   if(hp)html.push('<button onclick="shopHeal()" style="font:8px monospace;padding:4px 12px;border:1px solid #f0f;background:#0a000a;color:'+(hp.money>=50?'#f0f':'#333')+';cursor:pointer">Heal 30 HP ($50)</button> ');
+  // delete card option (every 3 floors, costs $200+floor*20)
+  if(round%3===0){
+    const delCost=200+round*20;
+    const allDeck=[...deck,...discard].filter(c=>c.rarity!=='basic');
+    if(allDeck.length&&hp){
+      html.push('<div style="font:7px monospace;color:#f44;margin:4px 0">REMOVE A CARD ($'+delCost+')</div>');
+      html.push('<div style="display:flex;gap:3px;flex-wrap:wrap;justify-content:center">');
+      allDeck.forEach((card,i)=>{
+        const rc={common:'#0f0',uncommon:'#0ff',rare:'#f0f',legendary:'#ff0'}[card.rarity]||'#888';
+        html.push('<button onclick="deleteCard('+i+','+delCost+')" style="font:7px monospace;padding:2px 4px;border:1px solid '+(hp.money>=delCost?'#f44':'#333')+';background:#1a0000;color:'+(hp.money>=delCost?rc:'#333')+';cursor:pointer">✕ '+card.name+'</button>');
+      });
+      html.push('</div>');
+    }
+  }
   html.push('<button onclick="closeShop()" style="font:bold 12px monospace;padding:8px 24px;border:2px solid #ff0;background:#000;color:#ff0;cursor:pointer;margin-top:8px">NEXT FLOOR →</button>');
   for(const p of players){if(p.cpu)cpuBuy(p);}
   const el=document.getElementById('start');
@@ -1211,6 +1238,18 @@ function buyCard(idx){
 function shopHeal(){
   const p=players.find(pl=>!pl.cpu);if(!p||p.money<50)return;
   p.money-=50;p.hp=Math.min(p.maxHp||100,p.hp+30);sfx('buy');showShop();
+}
+function deleteCard(idx,cost){
+  const p=players.find(pl=>!pl.cpu);if(!p||p.money<cost)return;
+  const allDel=[...deck,...discard].filter(c=>c.rarity!=='basic');
+  if(idx<0||idx>=allDel.length)return;
+  const card=allDel[idx];
+  p.money-=cost;
+  // remove from deck or discard
+  let di=deck.findIndex(c=>c.name===card.name&&c.rarity===card.rarity);
+  if(di>=0)deck.splice(di,1);
+  else{di=discard.findIndex(c=>c.name===card.name&&c.rarity===card.rarity);if(di>=0)discard.splice(di,1);}
+  sfx('hit');showMsg('Removed '+card.name,1500);showShop();
 }
 function buyWeapon(pi,wi){
   sfx('buy');showShop();
@@ -1553,19 +1592,6 @@ function render(){
     for(let x=0;x<W;x++)ctx.lineTo(x,terrain[x]+5+s*7);
     ctx.lineTo(W,H);ctx.closePath();ctx.fill();
   }
-  // JTM sky decoration sprites (behind terrain)
-  if(jtmSprites['scorched-sky']){
-    const skyS=jtmSprites['scorched-sky'];
-    for(let sx=0;sx<W;sx+=skyS.width*3){
-      ctx.globalAlpha=.35;ctx.drawImage(skyS,sx,H*.05,skyS.width*4,skyS.height*4);
-    }
-    ctx.globalAlpha=1;
-  }
-  if(jtmSprites['scorched-meteor']&&round>3&&Math.sin(performance.now()*.0005)>.7){
-    const ms=jtmSprites['scorched-meteor'];
-    ctx.globalAlpha=.5;ctx.drawImage(ms,W*.6+Math.sin(performance.now()*.001)*50,H*.05,ms.width*3,ms.height*3);
-    ctx.globalAlpha=1;
-  }
   // terrain dither texture (pixel noise like DOS)
   for(let x=0;x<W;x+=2){
     const ty=Math.floor(terrain[x]);
@@ -1579,33 +1605,6 @@ function render(){
   ctx.strokeStyle='#80e040';ctx.lineWidth=1;
   ctx.beginPath();for(let x=0;x<W;x++)x===0?ctx.moveTo(x,terrain[x]):ctx.lineTo(x,terrain[x]);ctx.stroke();
 
-  // JTM soldier sprites flanking terrain
-  if(jtmSprites['scorched-soldiers']){
-    const ss=jtmSprites['scorched-soldiers'];
-    ctx.globalAlpha=.4;
-    ctx.drawImage(ss,10,terrain[10]-ss.height*2-5,ss.width*2,ss.height*2);
-    ctx.drawImage(ss,W-ss.width*2-10,terrain[Math.min(W-1,W-20)]-ss.height*2-5,ss.width*2,ss.height*2);
-    ctx.globalAlpha=1;
-  }
-  // JTM tank sprite as decoration
-  if(jtmSprites['scorched-tank']&&round>2){
-    const tk=jtmSprites['scorched-tank'];
-    const tkx=Math.floor(W*.15);
-    ctx.globalAlpha=.3;
-    ctx.drawImage(tk,tkx,terrain[tkx]-tk.height*2,tk.width*2,tk.height*2);
-    ctx.globalAlpha=1;
-  }
-  // JTM terrain decorations
-  if(jtmSprites['scorched-terrain']){
-    const ts=jtmSprites['scorched-terrain'];
-    for(let dx=0;dx<W;dx+=ts.width*4){
-      const tx2=Math.floor(dx+ts.width*2);
-      if(tx2>0&&tx2<W){
-        const ty2=terrain[tx2];
-        ctx.globalAlpha=.25;ctx.drawImage(ts,dx,ty2-ts.height*2,ts.width*4,ts.height*3);ctx.globalAlpha=1;
-      }
-    }
-  }
   // floating powerups (Contra-style)
   for(const pu of powerups){
     if(!pu.alive)continue;
