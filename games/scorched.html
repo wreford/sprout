@@ -257,6 +257,81 @@ function exitIdle(){
 
 let skulls=[];
 
+// tank taunts (inspired by classic SE style)
+const TAUNTS_MISS=[
+  "Ha! You couldn't hit water if you fell out of a boat!",
+  "My grandmother shoots better than that!",
+  "Were you aiming at me or the sky?",
+  "Nice shot! ...at nothing.",
+  "I've seen better aim from a blindfolded lemming.",
+  "That wasn't even close. Like, really.",
+  "The wind isn't THAT strong.",
+  "Maybe try opening your eyes next time?",
+  "Somewhere, a cloud is very upset with you.",
+  "You call that a shot? I call it comedy.",
+  "I think you hit a bird. Congrats.",
+  "Is your turret on backwards?",
+];
+const TAUNTS_HIT=[
+  "OW! That actually hurt!",
+  "Lucky shot!",
+  "You'll pay for that!",
+  "Is that all you've got?",
+  "My paint job! You monster!",
+  "Okay, NOW I'm angry.",
+  "Direct hit?! This means war!",
+  "I felt that in my treads!",
+  "Nice aim... for a beginner.",
+  "You scratched my turret!",
+];
+const TAUNTS_KILL=[
+  "Tell my lemmings I loved them!",
+  "I regret... nothing... *boom*",
+  "This isn't even my final form! Oh wait...",
+  "You haven't seen the last of-- *explodes*",
+  "Avenge meeeee!",
+  "I'll be back! ...probably not.",
+  "At least I didn't die to a lemming. Oh wait.",
+  "GG no re.",
+  "My turret! My beautiful turret!",
+  "*sad tank noises*",
+];
+const TAUNTS_START=[
+  "Let's dance!",
+  "Prepare to be crater-ized!",
+  "Hope you brought a shield.",
+  "I didn't choose the tank life. The tank life chose me.",
+  "Another floor, another pile of scrap metal.",
+  "Someone's getting nuked today.",
+  "My lemmings are ready. Are you?",
+  "This ground won't know what hit it.",
+];
+const TAUNTS_BUY=[
+  "Shopping spree!",
+  "I'll take two of everything.",
+  "Ooh, a nuke! Don't mind if I do.",
+  "Money well spent. Probably.",
+  "My wallet weeps but my turret rejoices.",
+];
+const TAUNTS_IDLE=[
+  "Zzzz... huh? My turn? Already?",
+  "*adjusts turret menacingly*",
+  "Eeny meeny miny... NUKE.",
+  "*polishes barrel*",
+  "Calculating optimal destruction...",
+  "The graboids are getting closer...",
+  "Is it just me or is the wind suspicious?",
+  "I wonder what's on the next floor.",
+];
+let talkBubbles=[];
+function tankTalk(playerIdx,category){
+  const lists={miss:TAUNTS_MISS,hit:TAUNTS_HIT,kill:TAUNTS_KILL,start:TAUNTS_START,buy:TAUNTS_BUY,idle:TAUNTS_IDLE};
+  const list=lists[category]||TAUNTS_IDLE;
+  const txt=list[Math.floor(Math.random()*list.length)];
+  const p=players[playerIdx];if(!p)return;
+  talkBubbles.push({x:p.x,y:p.y-30-(p.stilts?20:0),text:txt,life:120,color:p.color,playerIdx});
+}
+
 // weapon upgrade levels (per player, per weapon name)
 const UPGRADES={
   'Shot':[{dmg:40,rad:30},{dmg:55,rad:35},{dmg:70,rad:40},{dmg:90,rad:45}],
@@ -490,7 +565,8 @@ function newRound(){
   wind=(Math.random()-.5)*3*weather.windMult;
   gameState='aiming';
   showMsg('Floor '+round+' — '+BACKGROUNDS[bgIdx].name+'\n'+weather.name+' | '+floorType.name+' ground',3000);
-  sfx('round');
+  sfx('round');talkBubbles=[];
+  setTimeout(()=>{const ri=Math.floor(Math.random()*numPlayers);if(players[ri]&&players[ri].alive)tankTalk(ri,'start');},1500);
   updateUI();
   document.getElementById('hud').classList.add('show');
   document.getElementById('ui').classList.add('show');
@@ -675,13 +751,15 @@ function explode(x,y,weapon,owner){
       if(p.shield>0){dmg=Math.floor(dmg*.2);p.shield=Math.max(0,p.shield-10);}
       if(p.armor)dmg=Math.floor(dmg*(1-p.armor));
       p.hp-=dmg;
+      if(dmg>10&&p.hp>0&&Math.random()<.3)tankTalk(players.indexOf(p),'hit');
       if(p.hp<=0){p.hp=0;p.alive=false;sfx('hit');
         if(owner!==null&&players[owner]){
           players[owner].money+=50;players[owner].kills=(players[owner].kills||0)+1;
           if(!players[owner].cpu){stats.kills++;stats.totalKills++;checkAchievements();}
         }
         showMsg(p.name+' destroyed!',1500);
-        // death skull marker
+        if(Math.random()<.7)tankTalk(players.indexOf(p),'kill');
+        if(owner!==null&&Math.random()<.5)tankTalk(owner,'hit');
         skulls.push({x:p.x,y:p.y-15,life:120});
       }
     }
@@ -763,6 +841,7 @@ function nextTurn(){
   }
   wind+=(Math.random()-.5)*.8;wind=Math.max(-4,Math.min(4,wind));
   turnCount++;gameState='aiming';updateUI();
+  if(Math.random()<.2&&players[currentPlayer]&&players[currentPlayer].alive)tankTalk(currentPlayer,'idle');
 }
 
 function showShop(){
@@ -922,7 +1001,11 @@ function update(dt){
         p.vx+=(Math.cos(ha)*3-p.vx)*.04;
       }
     }
-    if(p.x<-100||p.x>W+100||p.y>H+100){projectiles.splice(i,1);continue;}
+    if(p.x<-100||p.x>W+100||p.y>H+100){
+      projectiles.splice(i,1);
+      if(Math.random()<.4){const other=players.filter((pl,idx)=>pl.alive&&idx!==p.owner);if(other.length)tankTalk(players.indexOf(other[Math.floor(Math.random()*other.length)]),'miss');}
+      continue;
+    }
   }
   // lemmings
   for(let i=lemmings.length-1;i>=0;i--){
@@ -1373,6 +1456,26 @@ function render(){
   for(const sk of skulls){
     ctx.globalAlpha=Math.min(1,sk.life/30);
     ctx.fillStyle='#fff';ctx.fillText('☠',sk.x,sk.y);
+    ctx.globalAlpha=1;
+  }
+
+  // talk bubbles
+  for(let i=talkBubbles.length-1;i>=0;i--){
+    const tb=talkBubbles[i];tb.life--;tb.y-=.15;
+    if(tb.life<=0){talkBubbles.splice(i,1);continue;}
+    const a=Math.min(1,tb.life/30);
+    ctx.globalAlpha=a;
+    const tw=ctx.measureText||null;
+    ctx.font='7px monospace';ctx.textAlign='center';
+    const txt=tb.text;const mx=Math.min(Math.max(txt.length*3.5+6,40),W*.4);
+    const bx=Math.max(mx/2+2,Math.min(W-mx/2-2,tb.x));
+    // bubble bg
+    ctx.fillStyle='#000';ctx.fillRect(bx-mx/2-2,tb.y-10,mx+4,14);
+    ctx.strokeStyle=tb.color;ctx.lineWidth=1;ctx.strokeRect(bx-mx/2-2,tb.y-10,mx+4,14);
+    // pointer
+    ctx.fillStyle='#000';ctx.fillRect(bx-2,tb.y+4,4,3);
+    // text
+    ctx.fillStyle=tb.color;ctx.fillText(txt,bx,tb.y);
     ctx.globalAlpha=1;
   }
 
