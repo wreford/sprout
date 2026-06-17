@@ -42,9 +42,9 @@ canvas{display:block;position:fixed;top:0;left:0;image-rendering:pixelated;image
   <span id="turnInfo"></span>
   <span id="windInfo" style="color:#0ff;font-size:8px"></span>
   <span style="margin-left:auto;font-size:8px;color:#888" id="scores"></span>
-  <span id="idleHud" style="color:#0f0;font-size:7px;display:none">IDLE 💎<span id="idleGemHud">0</span></span>
+  <span style="color:#0f0;font-size:7px">💎<span id="idleGemHud">0</span></span>
+  <button onclick="toggleIdle()" style="font:bold 7px monospace;padding:1px 4px;border:1px solid #555;background:#000;color:#555;cursor:pointer;pointer-events:all" id="idleBtn">IDLE</button>
   <button onclick="toggleCam()" style="font:bold 7px monospace;padding:1px 4px;border:1px solid #555;background:#000;color:#0ff;cursor:pointer;pointer-events:all" id="camBtn">CAM</button>
-  <button id="exitIdleBtn" onclick="exitIdle()" style="font:bold 7px monospace;padding:1px 4px;border:1px solid #f00;background:#000;color:#f00;cursor:pointer;pointer-events:all;display:none">EXIT</button>
 </div>
 <div id="wpnBar" style="position:fixed;top:16px;left:0;right:0;z-index:10;display:none;padding:1px 2px;background:rgba(0,0,0,.9);border-bottom:1px solid #333">
   <div id="weaponBar" style="display:flex;flex-wrap:wrap;gap:1px;justify-content:center"></div>
@@ -74,7 +74,6 @@ canvas{display:block;position:fixed;top:0;left:0;image-rendering:pixelated;image
   <div style="font:8px monospace;color:#888;margin:4px 0">CHOOSE SKILL PATH</div>
   <div id="skillPick" style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-bottom:8px"></div>
   <button onclick="startGame()">ENTER DUNGEON</button>
-  <button onclick="startIdle()" style="font:bold 9px monospace;padding:4px 16px;border:1px solid #0f0;background:#001a00;color:#0f0;cursor:pointer;margin-top:4px">IDLE MODE (Watch &amp; Earn)</button>
   <div style="font:7px monospace;color:#555;margin-top:4px" id="gemInfo"></div>
   <div id="permUpgrades" style="display:flex;gap:3px;flex-wrap:wrap;justify-content:center;margin-top:4px"></div>
 </div>
@@ -195,7 +194,9 @@ const PERKS=[
   {id:'free_nuke',name:'Free Nuke',desc:'Start with 1 Nuke',req:'nuke'},
 ];
 let stats;try{stats=JSON.parse(localStorage.getItem('sl_stats')||'{}');}catch(e){stats={};}
-if(!stats.kills)stats={kills:0,totalKills:0,lemmingKills:0,wins:0,roundsSurvived:0,maxMoney:0,deathsHeadUsed:0,nukesUsed:0,unlocked:[],idleGems:0,permUpgrades:{}};
+if(!stats.kills){stats={kills:0,totalKills:0,lemmingKills:0,wins:0,roundsSurvived:0,maxMoney:0,deathsHeadUsed:0,nukesUsed:0,unlocked:[],idleGems:10,permUpgrades:{}};localStorage.setItem('sl_stats',JSON.stringify(stats));}
+if(!stats.idleGems&&stats.idleGems!==0)stats.idleGems=10;
+if(!stats.permUpgrades)stats.permUpgrades={};
 function saveStats(){localStorage.setItem('sl_stats',JSON.stringify(stats));}
 function checkAchievements(){
   let newOnes=[];
@@ -215,6 +216,9 @@ const PERM_UPGRADES=[
   {id:'perm_shot',name:'Shot+',desc:'Base Shot +10 damage',cost:6,max:3,apply:p=>{}},
   {id:'perm_armor',name:'Armor+',desc:'Take 5% less damage per level',cost:8,max:3,apply:p=>{p.armor=(p.armor||0)+.05*(stats.permUpgrades.perm_armor||0);}},
   {id:'perm_bigshot',name:'Free Big Shot',desc:'+2 Big Shots per run',cost:5,max:2,apply:p=>{p.inventory['Big Shot']=(p.inventory['Big Shot']||0)+2*(stats.permUpgrades.perm_bigshot||0);}},
+  {id:'cpu_aim',name:'CPU Aim+',desc:'Auto-pilot aims better',cost:4,max:5,apply:p=>{}},
+  {id:'cpu_weapons',name:'CPU Weapons+',desc:'Auto-pilot uses better weapons',cost:6,max:3,apply:p=>{}},
+  {id:'cpu_move',name:'CPU Move+',desc:'Auto-pilot repositions',cost:5,max:3,apply:p=>{}},
 ];
 function applyPermUpgrades(p){for(const pu of PERM_UPGRADES)pu.apply(p);}
 function buildPermUI(){
@@ -235,24 +239,15 @@ function buildPermUI(){
   }
 }
 
-let idleMode=false,idleTimer=0,idleGemTimer=0;
-function startIdle(){
-  document.getElementById('start').style.display='none';
-  initAudio();
-  numPlayers=4;numCPU=4;maxRounds=999;idleMode=true;
-  document.getElementById('idleHud').style.display='inline';
-  document.getElementById('exitIdleBtn').style.display='inline';
-  document.getElementById('ui').classList.remove('show');
-  round=1;newRound();
-}
-function exitIdle(){
-  idleMode=false;running=false;gameState='over';
-  document.getElementById('idleHud').style.display='none';
-  document.getElementById('exitIdleBtn').style.display='none';
-  document.getElementById('hud').classList.remove('show');
-  document.getElementById('wpnBar').style.display='none';
-  document.getElementById('start').style.display='flex';
-  document.getElementById('start').innerHTML='<h1 style="color:#ff0;text-shadow:2px 2px #800">SCORCHED LEMMING</h1><div style="font:9px monospace;color:#0f0;margin:6px 0">Idle session ended. Gems earned!</div><button onclick="location.reload()" style="font:bold 11px monospace;padding:6px 20px;border:2px solid #ff0;background:#000;color:#ff0;cursor:pointer">BACK TO MENU</button>';
+let idleMode=false,idleGemTimer=0;
+function toggleIdle(){
+  idleMode=!idleMode;
+  const p=players.find(pl=>!pl.cpu&&pl.alive);
+  if(idleMode&&p){p.cpu=true;showMsg('AUTO-PILOT ON',1500);}
+  else if(!idleMode&&p){p.cpu=false;showMsg('Manual control',1500);}
+  document.getElementById('idleBtn').style.color=idleMode?'#0f0':'#555';
+  document.getElementById('idleBtn').textContent=idleMode?'AUTO':'IDLE';
+  if(idleMode&&gameState==='aiming')updateUI();
 }
 
 let skulls=[];
@@ -271,6 +266,18 @@ const TAUNTS_MISS=[
   "You call that a shot? I call it comedy.",
   "I think you hit a bird. Congrats.",
   "Is your turret on backwards?",
+  "The graboid was more accurate.",
+  "My lemming could aim better.",
+  "That shot had the energy of a wet fart.",
+  "Bruh.",
+];
+const TAUNTS_GRABOID=[
+  "THE FLOOR IS LEMMINGS!",
+  "*tremor intensifies*",
+  "Something touched my treads!",
+  "GRABOID! EVERYBODY PANIC!",
+  "Get on the platforms!",
+  "I knew I should've bought stilts.",
 ];
 const TAUNTS_HIT=[
   "OW! That actually hurt!",
@@ -287,7 +294,7 @@ const TAUNTS_HIT=[
 const TAUNTS_KILL=[
   "Tell my lemmings I loved them!",
   "I regret... nothing... *boom*",
-  "This isn't even my final form! Oh wait...",
+  "This isn't even my final form! Oh wait..",
   "You haven't seen the last of-- *explodes*",
   "Avenge meeeee!",
   "I'll be back! ...probably not.",
@@ -322,6 +329,11 @@ const TAUNTS_IDLE=[
   "The graboids are getting closer...",
   "Is it just me or is the wind suspicious?",
   "I wonder what's on the next floor.",
+  "My turret is longer than yours.",
+  "Plot twist: I AM the graboid.",
+  "This is fine. Everything is fine.",
+  "I should've picked Engineer.",
+  "Who put rubber on this floor?!",
 ];
 let talkBubbles=[];
 function tankTalk(playerIdx,category){
@@ -528,7 +540,7 @@ buildPickers();buildPermUI();
 function startGame(){
   document.getElementById('start').style.display='none';
   initAudio();
-  numPlayers=6;numCPU=5;maxRounds=999;
+  numCPU=2+Math.floor(Math.random()*4);numPlayers=numCPU+1;maxRounds=999;
   if(!camReady)startCam();
   round=1;newRound();
 }
@@ -550,6 +562,7 @@ function newRound(){
   weather=WEATHERS[Math.floor(Math.random()*WEATHERS.length)];
   bgIdx=Math.floor(Math.random()*BACKGROUNDS.length);
   floorType=FLOOR_TYPES[Math.floor(Math.random()*FLOOR_TYPES.length)];
+  numCPU=Math.min(5,2+Math.floor(round/3)+Math.floor(Math.random()*2));numPlayers=numCPU+1;
   generateTerrain();placePlayers();
   // apply skill tree tiers based on kills
   for(const p of players){
@@ -696,9 +709,19 @@ function cpuTurn(){
       if(err<bestErr){bestErr=err;bestA=testA;bestP=testP;}
     }
   }
-  // add slight inaccuracy so CPU isn't perfect
-  me.angle=Math.max(5,Math.min(175,bestA+Math.floor(Math.random()*6-3)));
-  me.power=Math.max(15,Math.min(95,bestP+Math.floor(Math.random()*6-3)));
+  // CPU accuracy scales with cpu_aim perm upgrade
+  const aimLv=stats.permUpgrades?.cpu_aim||0;
+  const inaccuracy=Math.max(1,6-aimLv);
+  me.angle=Math.max(5,Math.min(175,bestA+Math.floor(Math.random()*inaccuracy*2-inaccuracy)));
+  me.power=Math.max(15,Math.min(95,bestP+Math.floor(Math.random()*inaccuracy*2-inaccuracy)));
+  // CPU move upgrade: reposition before firing
+  const moveLv=stats.permUpgrades?.cpu_move||0;
+  if(moveLv>0&&me.fuel>=10&&Math.random()<moveLv*.25){
+    const moveDir=bestTarget.x>me.x?1:-1;
+    const moveDist=Math.min(me.fuel/3,moveLv*5);
+    me.x=Math.max(15,Math.min(W-15,me.x+moveDir*moveDist));me.fuel-=Math.floor(moveDist);
+    me.y=terrain[Math.floor(me.x)];checkPowerups(me);
+  }
   setTimeout(fire,500);
 }
 
@@ -755,7 +778,7 @@ function explode(x,y,weapon,owner){
       if(p.hp<=0){p.hp=0;p.alive=false;sfx('hit');
         if(owner!==null&&players[owner]){
           players[owner].money+=50;players[owner].kills=(players[owner].kills||0)+1;
-          if(!players[owner].cpu){stats.kills++;stats.totalKills++;checkAchievements();}
+          if(!players[owner].cpu){stats.kills++;stats.totalKills++;stats.idleGems=(stats.idleGems||0)+1;saveStats();checkAchievements();}
         }
         showMsg(p.name+' destroyed!',1500);
         if(Math.random()<.7)tankTalk(players.indexOf(p),'kill');
@@ -830,7 +853,6 @@ function nextTurn(){
       if(!alive[0].cpu){stats.roundsSurvived++;stats.maxMoney=Math.max(stats.maxMoney,alive[0].money);checkAchievements();}}
     gameState='roundOver';
     if(idleMode){
-      stats.idleGems=(stats.idleGems||0)+2;saveStats();
       setTimeout(()=>{round++;newRound();},2000);
     }else{
       const humanAlive=players.some(p=>p.alive&&!p.cpu);
@@ -1129,12 +1151,12 @@ function update(dt){
   for(let i=particles.length-1;i>=0;i--){const p=particles[i];p.x+=p.vx;p.y+=p.vy;p.vy+=.12;p.life--;if(p.life<=0)particles.splice(i,1);}
   for(let i=explosions.length-1;i>=0;i--){explosions[i].life--;if(explosions[i].life<=0)explosions.splice(i,1);}
   for(let i=skulls.length-1;i>=0;i--){skulls[i].life--;skulls[i].y-=.1;if(skulls[i].life<=0)skulls.splice(i,1);}
-  // idle mode gem earning
+  // gem earning (idle = passive, always = on events)
   if(idleMode){
     idleGemTimer+=dt;
-    if(idleGemTimer>10){idleGemTimer=0;stats.idleGems=(stats.idleGems||0)+1;saveStats();
-      const gh=document.getElementById('idleGemHud');if(gh)gh.textContent=stats.idleGems;}
+    if(idleGemTimer>8){idleGemTimer=0;stats.idleGems=(stats.idleGems||0)+1;saveStats();}
   }
+  const gh=document.getElementById('idleGemHud');if(gh)gh.textContent=stats.idleGems||0;
   // settle tanks
   for(const p of players){if(!p.alive)continue;const tx=Math.max(0,Math.min(W-1,Math.floor(p.x)));p.y=terrain[tx];if(p.shield>0)p.shield-=dt;}
 }
@@ -1467,7 +1489,8 @@ function render(){
     ctx.globalAlpha=a;
     const tw=ctx.measureText||null;
     ctx.font='7px monospace';ctx.textAlign='center';
-    const txt=tb.text;const mx=Math.min(Math.max(txt.length*3.5+6,40),W*.4);
+    const txt=tb.text.length>30?tb.text.slice(0,28)+'..':tb.text;
+    const mx=Math.min(Math.max(txt.length*3.8+8,40),W*.45);
     const bx=Math.max(mx/2+2,Math.min(W-mx/2-2,tb.x));
     // bubble bg
     ctx.fillStyle='#000';ctx.fillRect(bx-mx/2-2,tb.y-10,mx+4,14);
