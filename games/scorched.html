@@ -39,6 +39,7 @@ canvas{display:block;position:fixed;top:0;left:0;image-rendering:pixelated;image
   <span id="turnInfo"></span>
   <span id="windInfo" style="color:#0ff;font-size:8px"></span>
   <span style="margin-left:auto;font-size:8px;color:#888" id="scores"></span>
+  <button onclick="toggleCam()" style="font:bold 7px monospace;padding:1px 4px;border:1px solid #555;background:#000;color:#0ff;cursor:pointer;pointer-events:all" id="camBtn">CAM</button>
 </div>
 <div id="wpnBar" style="position:fixed;top:18px;left:0;right:0;z-index:10;display:none;overflow-x:auto;padding:1px 2px;background:rgba(0,0,0,.85);border-bottom:1px solid #333;-webkit-overflow-scrolling:touch;white-space:nowrap">
   <div id="weaponBar" style="display:inline-flex;gap:2px"></div>
@@ -127,8 +128,13 @@ let skulls=[];
 let terrain,players,currentPlayer,wind,projectiles,explosions,particles,lemmings;
 let gameState,round,maxRounds,numPlayers,numCPU,msgTimer;
 let actx,shakeX=0,shakeY=0,shakeLife=0,turnCount=0;
-let bgLemmings=[];
-let camVideo=null,camReady=false,camPixBuf=null;
+let bgLemmings=[],tracers=[];
+let camVideo=null,camReady=false,camPixBuf=null,camOpacity=40,camOn=true;
+function toggleCam(){
+  if(!camReady){startCam();camOn=true;return;}
+  camOpacity+=20;if(camOpacity>80){camOn=!camOn;camOpacity=20;}
+  document.getElementById('camBtn').style.color=camOn?'#0ff':'#555';
+}
 async function startCam(){
   try{
     const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:80}},audio:false});
@@ -149,6 +155,9 @@ function sfx(type){
   else if(type==='lemming'){const o=actx.createOscillator(),g=actx.createGain();o.type='square';o.frequency.value=600;o.frequency.setValueAtTime(800,n+.05);o.frequency.setValueAtTime(600,n+.1);g.gain.setValueAtTime(.03,n);g.gain.exponentialRampToValueAtTime(.001,n+.15);o.connect(g);g.connect(actx.destination);o.start(n);o.stop(n+.15);}
   else if(type==='buy'){const o=actx.createOscillator(),g=actx.createGain();o.type='sine';o.frequency.value=500;o.frequency.setValueAtTime(700,n+.05);g.gain.setValueAtTime(.04,n);g.gain.exponentialRampToValueAtTime(.001,n+.1);o.connect(g);g.connect(actx.destination);o.start(n);o.stop(n+.1);}
   else if(type==='win'){[523,659,784,1047].forEach((f,i)=>{const o=actx.createOscillator(),g=actx.createGain();o.type='square';o.frequency.value=f;g.gain.setValueAtTime(.04,n+i*.1);g.gain.exponentialRampToValueAtTime(.001,n+i*.1+.15);o.connect(g);g.connect(actx.destination);o.start(n+i*.1);o.stop(n+i*.1+.15);});}
+  else if(type==='ouch'){const o=actx.createOscillator(),g=actx.createGain();o.type='sine';o.frequency.value=800;o.frequency.exponentialRampToValueAtTime(200,n+.15);g.gain.setValueAtTime(.06,n);g.gain.exponentialRampToValueAtTime(.001,n+.18);o.connect(g);g.connect(actx.destination);o.start(n);o.stop(n+.2);}
+  else if(type==='move'){const o=actx.createOscillator(),g=actx.createGain();o.type='sawtooth';o.frequency.value=40;g.gain.setValueAtTime(.03,n);g.gain.exponentialRampToValueAtTime(.001,n+.06);o.connect(g);g.connect(actx.destination);o.start(n);o.stop(n+.06);}
+  else if(type==='turret'){const o=actx.createOscillator(),g=actx.createGain();o.type='sine';o.frequency.value=200+Math.random()*100;g.gain.setValueAtTime(.02,n);g.gain.exponentialRampToValueAtTime(.001,n+.03);o.connect(g);g.connect(actx.destination);o.start(n);o.stop(n+.04);}
 }
 
 function generateTerrain(){
@@ -182,7 +191,7 @@ function placePlayers(){
     if(perks.find(p=>p.id==='free_nuke'))inv['Nuke']=(inv['Nuke']||0)+1;
     players.push({
       x,y:terrain[x],hp,maxHp:hp,alive:true,color:COLORS[i%5],name:NAMES[i%5],
-      score:0,money,angle:i<numPlayers/2?60:120,power:50,
+      score:0,money,angle:i<numPlayers/2?60:120,power:50,fuel:100,
       weapon:0,inventory:inv,shield:0,cpu:isCpu,kills:0,
       armor:perks.find(p=>p.id==='armor')?.15:0
     });
@@ -203,7 +212,10 @@ function startGame(){
 
 function newRound(){
   resize();generateTerrain();placePlayers();
-  currentPlayer=0;projectiles=[];explosions=[];particles=[];lemmings=[];skulls=[];turnCount=0;spawnBgLemmings();
+  currentPlayer=0;projectiles=[];explosions=[];particles=[];lemmings=[];skulls=[];turnCount=0;
+  for(const t of tracers)t.age++;
+  tracers=tracers.filter(t=>t.age<6);
+  spawnBgLemmings();
   wind=(Math.random()-.5)*3;
   gameState='aiming';showMsg('Round '+round,2000);
   updateUI();
@@ -243,20 +255,100 @@ function updateUI(){
 document.getElementById('asl').oninput=function(){if(gameState==='aiming'&&!players[currentPlayer].cpu){players[currentPlayer].angle=+this.value;document.getElementById('av').textContent=this.value+'°';}};
 document.getElementById('psl').oninput=function(){if(gameState==='aiming'&&!players[currentPlayer].cpu){players[currentPlayer].power=+this.value;document.getElementById('pv').textContent=this.value;}};
 
+function cpuSimShot(sx,sy,angle,power,w){
+  const rad=angle*Math.PI/180,spd=power*.13;
+  let px2=sx,py2=sy-12,vx=Math.cos(rad)*spd,vy=-Math.sin(rad)*spd;
+  for(let step=0;step<300;step++){
+    vx+=w*.015;vy+=9.8/60*2.8;px2+=vx;py2+=vy;
+    const tx=Math.floor(px2);
+    if(tx<0||tx>=W||py2>H)return{x:px2,y:py2,hit:false};
+    if(tx>=0&&tx<W&&py2>=terrain[tx])return{x:px2,y:py2,hit:true};
+  }
+  return{x:px2,y:py2,hit:false};
+}
+
 function cpuTurn(){
   if(gameState!=='aiming')return;
   const me=players[currentPlayer];
-  let bestTarget=null,bestDist=Infinity;
-  for(const p of players){if(p===me||!p.alive)continue;const d=Math.abs(p.x-me.x);if(d<bestDist){bestDist=d;bestTarget=p;}}
-  if(!bestTarget){fire();return;}
-  const dx=bestTarget.x-me.x,dy=bestTarget.y-me.y;
-  const dist=Math.hypot(dx,dy);
-  me.angle=Math.max(10,Math.min(170,Math.floor(Math.atan2(-dy,dx)*180/Math.PI)));
-  me.power=Math.max(20,Math.min(90,Math.floor(dist*.12+Math.random()*15)));
+  // pick target: prioritize lowest HP, then closest
+  let bestTarget=null,bestScore=-Infinity;
+  for(const p of players){
+    if(p===me||!p.alive)continue;
+    const d=Math.abs(p.x-me.x);
+    const score=(100-p.hp)*2+(500-d);
+    if(score>bestScore){bestScore=score;bestTarget=p;}
+  }
+  if(!bestTarget){me.weapon=0;setTimeout(fire,300);return;}
+
+  // pick weapon strategically
   me.weapon=0;
-  if(me.inventory['Big Shot']>0&&Math.random()<.3)me.weapon=1;
-  if(me.inventory['Lemming']>0&&Math.random()<.15)me.weapon=7;
-  setTimeout(fire,400);
+  const dist=Math.hypot(bestTarget.x-me.x,bestTarget.y-me.y);
+  const hasWeapon=n=>(me.inventory[n]||0)>0;
+  // use shield if low HP
+  if(me.hp<30&&hasWeapon('Shield')){
+    me.weapon=WEAPONS.findIndex(w=>w.name==='Shield');
+    setTimeout(fire,300);return;
+  }
+  // teleport if buried or cornered
+  if(me.hp<20&&hasWeapon('Teleport')){
+    me.weapon=WEAPONS.findIndex(w=>w.name==='Teleport');
+    setTimeout(fire,300);return;
+  }
+  // healer lemming if hurt
+  if(me.hp<50&&hasWeapon('Heallem')){
+    me.weapon=WEAPONS.findIndex(w=>w.name==='Heallem');
+  }
+  // nuke for groups
+  else if(hasWeapon('Nuke')&&players.filter(p=>p!==me&&p.alive&&Math.abs(p.x-bestTarget.x)<60).length>=2){
+    me.weapon=WEAPONS.findIndex(w=>w.name==='Nuke');
+  }
+  // death's head for distant/hard targets
+  else if(hasWeapon('Deaths Head')&&dist>200){
+    me.weapon=WEAPONS.findIndex(w=>w.name==="Deaths Head");
+  }
+  // MIRV for clustered enemies
+  else if(hasWeapon('MIRV')&&players.filter(p=>p!==me&&p.alive&&Math.abs(p.x-bestTarget.x)<80).length>=2){
+    me.weapon=WEAPONS.findIndex(w=>w.name==='MIRV');
+  }
+  // napalm for area denial
+  else if(hasWeapon('Napalm')&&dist<250){
+    me.weapon=WEAPONS.findIndex(w=>w.name==='Napalm');
+  }
+  // roller if target is downhill
+  else if(hasWeapon('Roller')&&Math.abs(bestTarget.y-me.y)>20&&bestTarget.y>me.y){
+    me.weapon=WEAPONS.findIndex(w=>w.name==='Roller');
+  }
+  // big shot if close
+  else if(hasWeapon('Big Shot')&&dist<200){
+    me.weapon=WEAPONS.findIndex(w=>w.name==='Big Shot');
+  }
+  // lemming weapons for fun
+  else if(hasWeapon('Swarm')&&dist<150&&Math.random()<.3){
+    me.weapon=WEAPONS.findIndex(w=>w.name==='Swarm');
+  }
+  else if(hasWeapon('Lemming')&&Math.random()<.2){
+    me.weapon=WEAPONS.findIndex(w=>w.name==='Lemming');
+  }
+  // dirt to bury nearby enemy
+  else if(hasWeapon('Dirt')&&dist<100&&Math.random()<.25){
+    me.weapon=WEAPONS.findIndex(w=>w.name==='Dirt');
+  }
+
+  // simulate shots to find best angle/power
+  let bestA=90,bestP=50,bestErr=Infinity;
+  for(let attempt=0;attempt<40;attempt++){
+    const testA=Math.max(5,Math.min(175,Math.floor(Math.atan2(-(bestTarget.y-me.y),bestTarget.x-me.x)*180/Math.PI)+Math.random()*30-15));
+    const testP=Math.max(15,Math.min(95,Math.floor(dist*.1+Math.random()*30-5)));
+    const sim=cpuSimShot(me.x,me.y,testA,testP,wind);
+    if(sim.hit){
+      const err=Math.hypot(sim.x-bestTarget.x,sim.y-bestTarget.y);
+      if(err<bestErr){bestErr=err;bestA=testA;bestP=testP;}
+    }
+  }
+  // add slight inaccuracy so CPU isn't perfect
+  me.angle=Math.max(5,Math.min(175,bestA+Math.floor(Math.random()*6-3)));
+  me.power=Math.max(15,Math.min(95,bestP+Math.floor(Math.random()*6-3)));
+  setTimeout(fire,500);
 }
 
 function fire(){
@@ -411,8 +503,23 @@ function buyWeapon(pi,wi){
   sfx('buy');showShop();
 }
 function cpuBuy(p){
-  const wants=[2,3,7,8,9,10,11,4,12];
-  for(const wi of wants){if(wi>=WEAPONS.length)continue;const w=WEAPONS[wi];if(p.money>=w.cost&&Math.random()<.4){p.money-=w.cost;p.inventory[w.name]=(p.inventory[w.name]||0)+1;}}
+  // prioritize by situation
+  const buy=n=>{const wi=WEAPONS.findIndex(w=>w.name===n);if(wi>=0&&p.money>=WEAPONS[wi].cost){p.money-=WEAPONS[wi].cost;p.inventory[n]=(p.inventory[n]||0)+1;return true;}return false;};
+  // always want shields and big shots
+  if(p.hp<60&&Math.random()<.7)buy('Shield');
+  if(Math.random()<.5)buy('Big Shot');
+  if(Math.random()<.4)buy('Big Shot');
+  // offensive weapons based on budget
+  if(p.money>600&&Math.random()<.5)buy('Nuke');
+  if(p.money>400&&Math.random()<.4)buy("Deaths Head");
+  if(p.money>300&&Math.random()<.5)buy('MIRV');
+  if(p.money>200&&Math.random()<.4)buy('Napalm');
+  if(Math.random()<.3)buy('Roller');
+  if(Math.random()<.2)buy('Lemming');
+  if(Math.random()<.2)buy('Swarm');
+  if(p.hp<40&&Math.random()<.5)buy('Heallem');
+  if(Math.random()<.15)buy('Digger');
+  if(Math.random()<.15)buy('Teleport');
 }
 function closeShop(){document.getElementById('start').style.display='none';newRound();}
 
@@ -458,6 +565,7 @@ function update(dt){
         continue;
       }
       if(p.type==='lemming'){spawnLemming(p.x,p.y,p.owner,p.weapon.ltype);projectiles.splice(i,1);continue;}
+      if(p.trail.length>2)tracers.push({pts:[...p.trail],color:p.type==='deathshead'?'#f00':'#aa8',age:0});
       explode(p.x,p.y,p.weapon,p.owner);projectiles.splice(i,1);continue;
     }
     // Death's Head homing after apex
@@ -504,7 +612,7 @@ function update(dt){
         if(Math.hypot(p.x-l.x,p.y-l.y)<20){
           explode(l.x,l.y,{radius:l.radius||15,damage:l.damage||20,type:'projectile'},l.owner);
           if(!players[l.owner]?.cpu){stats.lemmingKills++;checkAchievements();}
-          l.hp=0;break;
+          sfx('ouch');l.hp=0;break;
         }
       }
     }
@@ -585,7 +693,7 @@ function render(){
   ctx.save();ctx.translate(shakeX,shakeY);
 
   // pixelated camera background (DOS CRT style)
-  if(camReady&&camVideo&&camVideo.readyState>=2){
+  if(camOn&&camReady&&camVideo&&camVideo.readyState>=2){
     const pc=camPixBuf.getContext('2d');
     pc.save();pc.translate(40,0);pc.scale(-1,1);
     pc.drawImage(camVideo,0,0,40,30);pc.restore();
@@ -593,14 +701,14 @@ function render(){
     const pid=pc.getImageData(0,0,40,30),pd=pid.data;
     for(let i=0;i<pd.length;i+=4){
       pd[i]=Math.floor(pd[i]/32)*32;pd[i+1]=Math.floor(pd[i+1]/32)*32;pd[i+2]=Math.floor(pd[i+2]/32)*32;
-      pd[i+3]=25;
+      pd[i+3]=camOpacity;
     }
     pc.putImageData(pid,0,0);
     ctx.imageSmoothingEnabled=false;
     ctx.drawImage(camPixBuf,0,0,W,H);
   }
   // DOS-era banded sky with dither noise (semi-transparent over camera)
-  ctx.globalAlpha=camReady?.7:1;
+  ctx.globalAlpha=(camOn&&camReady)?.65:1;
   const skyColors=['#000088','#0000a0','#0000c0','#2020c0','#4040b0','#6040a0','#804080','#a04060','#c06040','#d08030','#e0a020','#e8c010','#f0d800'];
   const bandH=Math.ceil(H/skyColors.length);
   for(let i=0;i<skyColors.length;i++){ctx.fillStyle=skyColors[i];ctx.fillRect(0,i*bandH,W,bandH+1);}
@@ -679,6 +787,16 @@ function render(){
     }
   }
 
+  // old tracers (fade with age)
+  for(const tr of tracers){
+    ctx.globalAlpha=Math.max(.03,.2-tr.age*.03);
+    ctx.strokeStyle=tr.color;ctx.lineWidth=1;
+    ctx.beginPath();
+    for(let i=0;i<tr.pts.length;i++)i===0?ctx.moveTo(tr.pts[i].x,tr.pts[i].y):ctx.lineTo(tr.pts[i].x,tr.pts[i].y);
+    ctx.stroke();
+  }
+  ctx.globalAlpha=1;
+
   // aim line
   if(gameState==='aiming'){
     const p=players[currentPlayer];
@@ -711,6 +829,9 @@ function render(){
     // hp bar (DOS style)
     ctx.fillStyle='#800';ctx.fillRect(tx-12,ty-16,24,2);
     ctx.fillStyle=p.hp>50?'#0f0':p.hp>25?'#ff0':'#f00';ctx.fillRect(tx-12,ty-16,Math.floor(24*p.hp/100),2);
+    // fuel bar
+    ctx.fillStyle='#004';ctx.fillRect(tx-12,ty-14,24,1);
+    ctx.fillStyle='#08f';ctx.fillRect(tx-12,ty-14,Math.floor(24*p.fuel/100),1);
     // name
     ctx.fillStyle='#ff0';ctx.font='8px monospace';ctx.textAlign='center';
     ctx.fillText((p.cpu?'CPU ':'')+p.name,tx,ty-19);
@@ -834,6 +955,19 @@ function loop(){
 
 // touch
 let touchSY=null,touchSX=null;
+// keyboard: arrow keys move tank, z/x adjust angle
+const keysDown={};
+document.onkeydown=e=>{keysDown[e.code]=true;if(actx&&actx.state==='suspended')actx.resume();
+  if(gameState!=='aiming'||players[currentPlayer].cpu)return;
+  const p=players[currentPlayer];
+  if(e.code==='ArrowLeft'&&p.fuel>0){p.x=Math.max(15,p.x-3);p.fuel-=2;p.y=terrain[Math.floor(p.x)];sfx('move');}
+  if(e.code==='ArrowRight'&&p.fuel>0){p.x=Math.min(W-15,p.x+3);p.fuel-=2;p.y=terrain[Math.floor(p.x)];sfx('move');}
+  if(e.code==='ArrowUp'){p.angle=Math.min(180,p.angle+2);sfx('turret');}
+  if(e.code==='ArrowDown'){p.angle=Math.max(0,p.angle-2);sfx('turret');}
+  if(e.code==='Space')fire();
+  updateUI();
+};
+document.onkeyup=e=>{keysDown[e.code]=false;};
 cv.addEventListener('touchstart',e=>{if(gameState!=='aiming'||players[currentPlayer].cpu)return;const t=e.touches[0];touchSY=t.clientY;touchSX=t.clientX;if(actx&&actx.state==='suspended')actx.resume();});
 cv.addEventListener('touchmove',e=>{if(gameState!=='aiming'||touchSY===null||players[currentPlayer].cpu)return;e.preventDefault();const t=e.touches[0];const dy=touchSY-t.clientY,dx=t.clientX-touchSX;const p=players[currentPlayer];p.angle=Math.max(0,Math.min(180,p.angle+Math.round(dy*.25)));p.power=Math.max(5,Math.min(100,p.power+Math.round(dx*.15)));touchSY=t.clientY;touchSX=t.clientX;updateUI();},{passive:false});
 cv.addEventListener('touchend',()=>{touchSY=null;touchSX=null;});
