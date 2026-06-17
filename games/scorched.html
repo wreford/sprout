@@ -128,6 +128,17 @@ let terrain,players,currentPlayer,wind,projectiles,explosions,particles,lemmings
 let gameState,round,maxRounds,numPlayers,numCPU,msgTimer;
 let actx,shakeX=0,shakeY=0,shakeLife=0,turnCount=0;
 let bgLemmings=[];
+let camVideo=null,camReady=false,camPixBuf=null;
+async function startCam(){
+  try{
+    const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:80}},audio:false});
+    camVideo=document.createElement('video');camVideo.playsInline=true;camVideo.autoplay=true;camVideo.muted=true;
+    camVideo.srcObject=stream;
+    await new Promise(r=>{camVideo.onloadeddata=()=>{camVideo.onloadeddata=null;r();};});
+    camReady=true;
+    camPixBuf=document.createElement('canvas');camPixBuf.width=40;camPixBuf.height=30;
+  }catch(e){camReady=false;}
+}
 
 function initAudio(){if(actx)return;actx=new(AudioContext||webkitAudioContext)();if(actx.state==='suspended')actx.resume();}
 function sfx(type){
@@ -186,6 +197,7 @@ function startGame(){
   numPlayers=parseInt(document.getElementById('np').value);
   numCPU=Math.min(parseInt(document.getElementById('nc').value),numPlayers-1);
   maxRounds=parseInt(document.getElementById('nr').value);
+  if(!camReady)startCam();
   round=1;newRound();
 }
 
@@ -572,7 +584,23 @@ function render(){
   else{shakeX=0;shakeY=0;}
   ctx.save();ctx.translate(shakeX,shakeY);
 
-  // DOS-era banded sky with dither noise
+  // pixelated camera background (DOS CRT style)
+  if(camReady&&camVideo&&camVideo.readyState>=2){
+    const pc=camPixBuf.getContext('2d');
+    pc.save();pc.translate(40,0);pc.scale(-1,1);
+    pc.drawImage(camVideo,0,0,40,30);pc.restore();
+    // posterize to DOS palette
+    const pid=pc.getImageData(0,0,40,30),pd=pid.data;
+    for(let i=0;i<pd.length;i+=4){
+      pd[i]=Math.floor(pd[i]/32)*32;pd[i+1]=Math.floor(pd[i+1]/32)*32;pd[i+2]=Math.floor(pd[i+2]/32)*32;
+      pd[i+3]=25;
+    }
+    pc.putImageData(pid,0,0);
+    ctx.imageSmoothingEnabled=false;
+    ctx.drawImage(camPixBuf,0,0,W,H);
+  }
+  // DOS-era banded sky with dither noise (semi-transparent over camera)
+  ctx.globalAlpha=camReady?.7:1;
   const skyColors=['#000088','#0000a0','#0000c0','#2020c0','#4040b0','#6040a0','#804080','#a04060','#c06040','#d08030','#e0a020','#e8c010','#f0d800'];
   const bandH=Math.ceil(H/skyColors.length);
   for(let i=0;i<skyColors.length;i++){ctx.fillStyle=skyColors[i];ctx.fillRect(0,i*bandH,W,bandH+1);}
@@ -582,6 +610,7 @@ function render(){
     ctx.fillStyle=skyColors[i+1];
     for(let x=0;x<W;x+=2)if((x+i)%4<2)ctx.fillRect(x,y-2,1,4);
   }
+  ctx.globalAlpha=1;
 
   // terrain - solid fill with pixel edge
   ctx.fillStyle='#40a020';
