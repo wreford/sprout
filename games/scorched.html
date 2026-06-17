@@ -44,6 +44,7 @@ canvas{display:block;position:fixed;top:0;left:0;image-rendering:pixelated;image
   <span style="margin-left:auto;font-size:8px;color:#888" id="scores"></span>
   <span style="color:#0f0;font-size:7px">💎<span id="idleGemHud">0</span></span>
   <button onclick="toggleIdle()" style="font:bold 7px monospace;padding:1px 4px;border:1px solid #555;background:#000;color:#555;cursor:pointer;pointer-events:all" id="idleBtn">IDLE</button>
+  <button onclick="toggleMusic()" style="font:bold 7px monospace;padding:1px 4px;border:1px solid #555;background:#000;color:#f80;cursor:pointer;pointer-events:all" id="musBtn">♪</button>
   <button onclick="toggleCam()" style="font:bold 7px monospace;padding:1px 4px;border:1px solid #555;background:#000;color:#0ff;cursor:pointer;pointer-events:all" id="camBtn">CAM</button>
 </div>
 <div id="wpnBar" style="position:fixed;top:16px;left:0;right:0;z-index:10;display:none;padding:1px 2px;background:rgba(0,0,0,.9);border-bottom:1px solid #333">
@@ -74,8 +75,11 @@ canvas{display:block;position:fixed;top:0;left:0;image-rendering:pixelated;image
   <div style="font:8px monospace;color:#888;margin:4px 0">CHOOSE SKILL PATH</div>
   <div id="skillPick" style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-bottom:8px"></div>
   <button onclick="startGame()">ENTER DUNGEON</button>
-  <div style="font:7px monospace;color:#555;margin-top:4px" id="gemInfo"></div>
+  <div style="font:8px monospace;color:#888;margin:8px 0 2px">💎 GEMS &amp; UPGRADES</div>
+  <div style="font:7px monospace;color:#555;margin-top:2px" id="gemInfo"></div>
   <div id="permUpgrades" style="display:flex;gap:3px;flex-wrap:wrap;justify-content:center;margin-top:4px"></div>
+  <div style="font:8px monospace;color:#888;margin:8px 0 2px">🏆 ACHIEVEMENTS</div>
+  <div id="achieveList" style="display:flex;gap:3px;flex-wrap:wrap;justify-content:center;margin-top:2px;max-width:320px"></div>
 </div>
 <div id="msg"></div>
 <script>
@@ -208,6 +212,17 @@ function checkAchievements(){
   if(newOnes.length)showMsg('ACHIEVEMENT!\n'+newOnes.map(a=>'['+a.name+'] '+a.desc).join('\n'),3000);
 }
 function getPerks(){return PERKS.filter(p=>stats.unlocked.includes(p.req));}
+function buildAchieveUI(){
+  const el=document.getElementById('achieveList');if(!el)return;el.innerHTML='';
+  for(const a of ACHIEVEMENTS){
+    const done=stats.unlocked&&stats.unlocked.includes(a.id);
+    const perk=PERKS.find(p=>p.req===a.id);
+    const d=document.createElement('div');
+    d.style.cssText='font:7px monospace;padding:3px 5px;border:1px solid '+(done?'#0f0':'#333')+';background:'+(done?'#001a00':'#060606')+';color:'+(done?'#0f0':'#555')+';text-align:left;line-height:1.3;min-width:70px';
+    d.innerHTML=(done?'✓ ':'○ ')+'<b>'+a.name+'</b><br><span style="color:'+(done?'#080':'#444')+'">'+a.desc+'</span>'+(perk?'<br><span style="color:'+(done?'#ff0':'#333')+'">→ '+perk.name+'</span>':'');
+    el.appendChild(d);
+  }
+}
 
 // permanent roguelike upgrades (bought with idle gems)
 const PERM_UPGRADES=[
@@ -418,6 +433,62 @@ async function startCam(){
 }
 
 function initAudio(){if(actx)return;actx=new(AudioContext||webkitAudioContext)();if(actx.state==='suspended')actx.resume();}
+
+// background music - DOS chiptune style
+let musicOn=false,musicLoop=null;
+const SONGS=[
+  {name:'March',bpm:140,bass:[55,55,73.4,55,82.4,55,73.4,65.4,55,55,73.4,55,98,82.4,73.4,65.4],
+   mel:[220,0,330,0,440,330,220,0,261,0,392,0,349,330,261,0],
+   mel2:[0,440,0,523,0,440,349,0,0,523,0,659,0,523,440,0]},
+  {name:'Battle',bpm:160,bass:[82.4,82.4,110,82.4,65.4,65.4,98,73.4,82.4,82.4,110,82.4,130.8,110,98,82.4],
+   mel:[330,392,440,392,261,330,349,261,330,392,440,523,392,349,330,261],
+   mel2:[0,0,659,0,0,0,523,0,0,0,659,0,784,0,523,0]},
+  {name:'Tension',bpm:120,bass:[55,0,55,58.3,55,0,55,51.9,55,0,55,58.3,65.4,61.7,58.3,55],
+   mel:[220,0,233,0,220,0,207,0,220,233,261,233,220,0,207,0],
+   mel2:[0,440,0,466,0,440,0,415,0,440,466,523,466,440,0,415]},
+];
+let songIdx=0,beatIdx=0,beatTimer=0;
+function toggleMusic(){
+  musicOn=!musicOn;
+  document.getElementById('musBtn').style.color=musicOn?'#f80':'#555';
+  if(musicOn&&!musicLoop)startMusic();
+}
+function startMusic(){
+  if(musicLoop)clearInterval(musicLoop);
+  songIdx=Math.floor(Math.random()*SONGS.length);beatIdx=0;
+  const tick=()=>{
+    if(!musicOn||!actx||actx.state!=='running')return;
+    const song=SONGS[songIdx];const n=actx.currentTime;const dur=60/song.bpm*.9;
+    // bass
+    const bf=song.bass[beatIdx%song.bass.length];
+    if(bf>0){const o=actx.createOscillator(),g=actx.createGain();o.type='sawtooth';o.frequency.value=bf;
+      g.gain.setValueAtTime(.04,n);g.gain.exponentialRampToValueAtTime(.001,n+dur);
+      const fl=actx.createBiquadFilter();fl.type='lowpass';fl.frequency.value=200;
+      o.connect(fl);fl.connect(g);g.connect(actx.destination);o.start(n);o.stop(n+dur);}
+    // melody
+    const mf=song.mel[beatIdx%song.mel.length];
+    if(mf>0){const o=actx.createOscillator(),g=actx.createGain();o.type='square';o.frequency.value=mf;
+      g.gain.setValueAtTime(.025,n);g.gain.exponentialRampToValueAtTime(.001,n+dur*.8);
+      o.connect(g);g.connect(actx.destination);o.start(n);o.stop(n+dur);}
+    // harmony
+    const hf=song.mel2[beatIdx%song.mel2.length];
+    if(hf>0){const o=actx.createOscillator(),g=actx.createGain();o.type='triangle';o.frequency.value=hf;
+      g.gain.setValueAtTime(.015,n);g.gain.exponentialRampToValueAtTime(.001,n+dur*.7);
+      o.connect(g);g.connect(actx.destination);o.start(n);o.stop(n+dur);}
+    // drums (every 4 beats)
+    if(beatIdx%4===0){const buf=actx.createBuffer(1,actx.sampleRate*.05,actx.sampleRate),d=buf.getChannelData(0);
+      for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*Math.exp(-i/(d.length*.15));
+      const s=actx.createBufferSource();s.buffer=buf;const g=actx.createGain();g.gain.value=.06;
+      s.connect(g);g.connect(actx.destination);s.start(n);}
+    if(beatIdx%4===2){const o=actx.createOscillator(),g=actx.createGain();o.type='triangle';o.frequency.value=800;
+      g.gain.setValueAtTime(.02,n);g.gain.exponentialRampToValueAtTime(.001,n+.03);
+      o.connect(g);g.connect(actx.destination);o.start(n);o.stop(n+.04);}
+    beatIdx++;
+    if(beatIdx>=song.bass.length*2){beatIdx=0;songIdx=(songIdx+1)%SONGS.length;}
+  };
+  musicLoop=setInterval(tick,60000/SONGS[songIdx].bpm);
+}
+function stopMusic(){if(musicLoop){clearInterval(musicLoop);musicLoop=null;}}
 function sfx(type){
   if(!actx||actx.state!=='running')return;const n=actx.currentTime;
   if(type==='fire'){const o=actx.createOscillator(),g=actx.createGain();o.type='sawtooth';o.frequency.value=100;o.frequency.exponentialRampToValueAtTime(400,n+.08);g.gain.setValueAtTime(.08,n);g.gain.exponentialRampToValueAtTime(.001,n+.12);o.connect(g);g.connect(actx.destination);o.start(n);o.stop(n+.12);}
@@ -537,13 +608,14 @@ function buildPickers(){
     sp.appendChild(b);
   });
 }
-buildPickers();buildPermUI();
+buildPickers();buildPermUI();buildAchieveUI();
 
 function startGame(){
   document.getElementById('start').style.display='none';
   initAudio();
   numCPU=2+Math.floor(Math.random()*4);numPlayers=numCPU+1;maxRounds=999;
   if(!camReady)startCam();
+  if(musicOn)startMusic();
   round=1;newRound();
 }
 
@@ -942,7 +1014,7 @@ function buyUpgrade(pi,wn){
 function closeShop(){document.getElementById('start').style.display='none';newRound();}
 
 function endGame(){
-  gameState='over';
+  gameState='over';stopMusic();
   document.getElementById('ui').classList.remove('show');
   document.getElementById('hud').classList.remove('show');
   document.getElementById('wpnBar').style.display='none';
