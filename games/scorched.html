@@ -1674,12 +1674,13 @@ function render(){
     ctx.fillStyle='#444';ctx.fillRect(tx-3,ty-2,2,2);ctx.fillRect(tx+2,ty-2,2,2);
   }
 
-  // tanks (chunky pixel art style)
+  // tanks (unique per class)
   for(const p of players){
     if(!p.alive)continue;
     const tx=p.x;
     const stiltH=p.stilts?20:0;
     const ty=p.y-stiltH;
+    const shape=p.tank?.shape||'box';
     // stilts
     if(p.stilts){
       ctx.strokeStyle='#888';ctx.lineWidth=2;
@@ -1688,7 +1689,7 @@ function render(){
       ctx.strokeStyle='#666';ctx.lineWidth=1;
       ctx.beginPath();ctx.moveTo(tx-5,p.y-stiltH*.5);ctx.lineTo(tx+5,p.y-stiltH*.5);ctx.stroke();
     }
-    // parachute (when falling)
+    // parachute
     if(p.parachuteOpen>0){
       ctx.strokeStyle='#fff';ctx.lineWidth=1;
       ctx.beginPath();ctx.moveTo(tx-8,ty-28);ctx.quadraticCurveTo(tx,ty-38,tx+8,ty-28);ctx.stroke();
@@ -1696,29 +1697,68 @@ function render(){
     }
     // shield
     if(p.shield>0){ctx.strokeStyle='#0ff';ctx.lineWidth=1;ctx.strokeRect(tx-14,ty-18,28,20);}
-    // treads
-    ctx.fillStyle='#444';ctx.fillRect(tx-11,ty-3,22,4);
-    ctx.fillStyle='#222';for(let wx=-10;wx<=10;wx+=4)ctx.fillRect(tx+wx,ty-2,2,2);
-    // body
+    // treads (vary by shape)
+    ctx.fillStyle='#444';
+    if(shape==='wide'){ctx.fillRect(tx-14,ty-3,28,5);ctx.fillStyle='#333';for(let wx=-13;wx<=13;wx+=3)ctx.fillRect(tx+wx,ty-2,2,3);}
+    else if(shape==='slim'){ctx.fillRect(tx-8,ty-2,16,3);ctx.fillStyle='#333';for(let wx=-7;wx<=7;wx+=4)ctx.fillRect(tx+wx,ty-1,2,2);}
+    else if(shape==='long'){ctx.fillRect(tx-13,ty-3,26,4);ctx.fillStyle='#333';for(let wx=-12;wx<=12;wx+=4)ctx.fillRect(tx+wx,ty-2,2,2);}
+    else{ctx.fillRect(tx-11,ty-3,22,4);ctx.fillStyle='#222';for(let wx=-10;wx<=10;wx+=4)ctx.fillRect(tx+wx,ty-2,2,2);}
+    // body (unique per shape)
     ctx.fillStyle=p.color;
-    ctx.fillRect(tx-9,ty-8,18,6);
-    // turret dome
-    ctx.fillRect(tx-5,ty-12,10,5);
+    if(shape==='wide'){
+      // heavy: wide low body, thick armor plates
+      ctx.fillRect(tx-12,ty-7,24,5);ctx.fillRect(tx-10,ty-10,20,4);
+      ctx.fillStyle=p.tank?.color2||'#644';ctx.fillRect(tx-12,ty-7,2,5);ctx.fillRect(tx+10,ty-7,2,5);
+    }else if(shape==='slim'){
+      // scout: narrow tall body, antenna
+      ctx.fillRect(tx-6,ty-10,12,8);ctx.fillRect(tx-4,ty-13,8,4);
+      ctx.fillStyle='#fff';ctx.fillRect(tx+3,ty-17,1,5);ctx.fillRect(tx+2,ty-17,3,1);
+    }else if(shape==='long'){
+      // artillery: long low body, extended barrel platform
+      ctx.fillRect(tx-11,ty-7,22,5);ctx.fillRect(tx-7,ty-11,14,5);
+      ctx.fillStyle=p.tank?.color2||'#664';ctx.fillRect(tx+5,ty-11,2,5);
+    }else if(shape==='dome'){
+      // engineer: rounded dome top, tools
+      ctx.fillRect(tx-9,ty-7,18,5);
+      ctx.beginPath();ctx.arc(tx,ty-9,6,Math.PI,0);ctx.fill();
+      ctx.fillStyle='#ff0';ctx.fillRect(tx-7,ty-5,2,2);ctx.fillRect(tx+5,ty-5,2,2);
+    }else if(shape==='spike'){
+      // berserker: angular aggressive body, spikes
+      ctx.fillRect(tx-10,ty-8,20,6);ctx.fillRect(tx-6,ty-12,12,5);
+      ctx.fillStyle='#f00';
+      ctx.beginPath();ctx.moveTo(tx-10,ty-8);ctx.lineTo(tx-13,ty-12);ctx.lineTo(tx-8,ty-8);ctx.fill();
+      ctx.beginPath();ctx.moveTo(tx+10,ty-8);ctx.lineTo(tx+13,ty-12);ctx.lineTo(tx+8,ty-8);ctx.fill();
+      ctx.fillRect(tx-1,ty-15,2,4);
+    }else{
+      // standard: classic box
+      ctx.fillRect(tx-9,ty-8,18,6);ctx.fillRect(tx-5,ty-12,10,5);
+    }
     // barrel
     const rad=p.angle*Math.PI/180;
-    const bx=Math.cos(rad)*16,by=-Math.sin(rad)*16;
-    ctx.strokeStyle=p.color;ctx.lineWidth=3;
+    const blen=shape==='long'?20:shape==='slim'?12:16;
+    const bx=Math.cos(rad)*blen,by=-Math.sin(rad)*blen;
+    ctx.strokeStyle=p.color;ctx.lineWidth=shape==='wide'?4:shape==='slim'?2:3;
     ctx.beginPath();ctx.moveTo(tx,ty-12);ctx.lineTo(tx+bx,ty-12+by);ctx.stroke();
-    // hp bar (DOS style)
+    // muzzle flash when recently fired
+    if(gameState==='flying'&&players.indexOf(p)===currentPlayer&&projectiles.length&&projectiles[0].trail.length<3){
+      ctx.fillStyle='#ff0';ctx.beginPath();ctx.arc(tx+bx,ty-12+by,4,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(tx+bx,ty-12+by,2,0,Math.PI*2);ctx.fill();
+    }
+    // hp bar
     ctx.fillStyle='#800';ctx.fillRect(tx-12,ty-16,24,2);
     ctx.fillStyle=p.hp>p.maxHp*.5?'#0f0':p.hp>p.maxHp*.25?'#ff0':'#f00';ctx.fillRect(tx-12,ty-16,Math.floor(24*p.hp/(p.maxHp||100)),2);
     // fuel bar
     ctx.fillStyle='#004';ctx.fillRect(tx-12,ty-14,24,1);
-    ctx.fillStyle='#08f';ctx.fillRect(tx-12,ty-14,Math.floor(24*p.fuel/100),1);
-    // name
+    ctx.fillStyle='#08f';ctx.fillRect(tx-12,ty-14,Math.floor(24*Math.min(p.fuel,200)/200),1);
+    // name + class icon
     ctx.fillStyle='#ff0';ctx.font='8px monospace';ctx.textAlign='center';
-    ctx.fillText((p.cpu?'CPU ':'')+p.name,tx,ty-19);
+    const icon=shape==='wide'?'H':shape==='slim'?'S':shape==='long'?'A':shape==='dome'?'E':shape==='spike'?'B':'';
+    ctx.fillText((p.cpu?'CPU ':'')+(icon?icon+' ':'')+p.name,tx,ty-19);
     if(players.indexOf(p)===currentPlayer&&gameState==='aiming'){ctx.fillStyle='#fff';ctx.fillText('v',tx,ty-24);}
+    // damage smoke
+    if(p.hp<p.maxHp*.4&&Math.random()<.1){
+      particles.push({x:tx+(Math.random()-0.5)*6,y:ty-10,vx:(Math.random()-.5)*.5,vy:-1-Math.random(),life:12,color:p.hp<p.maxHp*.2?'#333':'#555'});
+    }
   }
 
   // lemmings (classic pixel art with hair, arms, walking)
