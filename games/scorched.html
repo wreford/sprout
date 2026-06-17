@@ -42,7 +42,9 @@ canvas{display:block;position:fixed;top:0;left:0;image-rendering:pixelated;image
   <span id="turnInfo"></span>
   <span id="windInfo" style="color:#0ff;font-size:8px"></span>
   <span style="margin-left:auto;font-size:8px;color:#888" id="scores"></span>
+  <span id="idleHud" style="color:#0f0;font-size:7px;display:none">IDLE 💎<span id="idleGemHud">0</span></span>
   <button onclick="toggleCam()" style="font:bold 7px monospace;padding:1px 4px;border:1px solid #555;background:#000;color:#0ff;cursor:pointer;pointer-events:all" id="camBtn">CAM</button>
+  <button id="exitIdleBtn" onclick="exitIdle()" style="font:bold 7px monospace;padding:1px 4px;border:1px solid #f00;background:#000;color:#f00;cursor:pointer;pointer-events:all;display:none">EXIT</button>
 </div>
 <div id="wpnBar" style="position:fixed;top:16px;left:0;right:0;z-index:10;display:none;padding:1px 2px;background:rgba(0,0,0,.9);border-bottom:1px solid #333">
   <div id="weaponBar" style="display:flex;flex-wrap:wrap;gap:1px;justify-content:center"></div>
@@ -66,14 +68,15 @@ canvas{display:block;position:fixed;top:0;left:0;image-rendering:pixelated;image
 <div id="start">
   <h1 style="color:#ff0;text-shadow:2px 2px #800">SCORCHED LEMMING</h1>
   <div class="sub" style="color:#0f0">Roguelike Tank Combat.<br>Pick a tank. Build your skill tree. Survive the dungeon.</div>
-  <div class="opt-row"><label>Players</label><select id="np"><option value="2">2</option><option value="3" selected>3</option><option value="4">4</option><option value="5">5</option></select>
-  <label>CPU</label><select id="nc"><option value="0">0</option><option value="1">1</option><option value="2" selected>2</option><option value="3">3</option><option value="4">4</option></select></div>
-  <div class="opt-row"><label>Floors</label><select id="nr"><option value="5">5</option><option value="8" selected>8</option><option value="12">12</option></select></div>
+  <div class="opt-row"><label style="color:#888;font:8px monospace">You + 5 CPU. Infinite floors. How deep can you go?</label></div>
   <div style="font:8px monospace;color:#888;margin:6px 0">CHOOSE YOUR TANK</div>
   <div id="tankPick" style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-bottom:8px"></div>
   <div style="font:8px monospace;color:#888;margin:4px 0">CHOOSE SKILL PATH</div>
   <div id="skillPick" style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-bottom:8px"></div>
   <button onclick="startGame()">ENTER DUNGEON</button>
+  <button onclick="startIdle()" style="font:bold 9px monospace;padding:4px 16px;border:1px solid #0f0;background:#001a00;color:#0f0;cursor:pointer;margin-top:4px">IDLE MODE (Watch &amp; Earn)</button>
+  <div style="font:7px monospace;color:#555;margin-top:4px" id="gemInfo"></div>
+  <div id="permUpgrades" style="display:flex;gap:3px;flex-wrap:wrap;justify-content:center;margin-top:4px"></div>
 </div>
 <div id="msg"></div>
 <script>
@@ -87,11 +90,12 @@ const NAMES=['P1','P2','P3','P4','P5'];
 
 // tank classes
 const TANKS=[
-  {id:'standard',name:'Standard',hp:100,fuel:100,spd:1,color2:'#888',desc:'Balanced all-rounder'},
-  {id:'heavy',name:'Heavy',hp:150,fuel:60,spd:.7,color2:'#644',desc:'+50% HP, slow, less fuel'},
-  {id:'scout',name:'Scout',hp:70,fuel:180,spd:1.5,color2:'#468',desc:'Fast, extra fuel, fragile'},
-  {id:'artillery',name:'Artillery',hp:80,fuel:80,spd:.9,color2:'#664',desc:'+20% damage, paper armor'},
-  {id:'engineer',name:'Engineer',hp:90,fuel:120,spd:1,color2:'#464',desc:'Dirt weapons free, builder'},
+  {id:'standard',name:'Standard',hp:100,fuel:100,spd:1,range:1,angleMin:0,angleMax:180,atk:1,lemBoost:0,nukeBoost:0,color2:'#888',shape:'box'},
+  {id:'heavy',name:'Heavy',hp:160,fuel:60,spd:.6,range:.8,angleMin:10,angleMax:170,atk:1.2,lemBoost:0,nukeBoost:.3,color2:'#644',shape:'wide'},
+  {id:'scout',name:'Scout',hp:65,fuel:200,spd:1.6,range:1.2,angleMin:0,angleMax:180,atk:.8,lemBoost:.5,nukeBoost:0,color2:'#468',shape:'slim'},
+  {id:'artillery',name:'Artillery',hp:70,fuel:80,spd:.8,range:1.5,angleMin:20,angleMax:160,atk:1.4,lemBoost:0,nukeBoost:.5,color2:'#664',shape:'long'},
+  {id:'engineer',name:'Engineer',hp:90,fuel:140,spd:1,range:1,angleMin:0,angleMax:180,atk:.9,lemBoost:1,nukeBoost:0,color2:'#464',shape:'dome'},
+  {id:'berserker',name:'Berserker',hp:120,fuel:90,spd:1.3,range:.7,angleMin:15,angleMax:165,atk:1.6,lemBoost:.3,nukeBoost:.8,color2:'#a44',shape:'spike'},
 ];
 let chosenTank=0;
 
@@ -190,8 +194,8 @@ const PERKS=[
   {id:'armor',name:'Armor',desc:'Take 15% less damage',req:'survive_10'},
   {id:'free_nuke',name:'Free Nuke',desc:'Start with 1 Nuke',req:'nuke'},
 ];
-let stats=JSON.parse(localStorage.getItem('sl_stats')||'{}');
-if(!stats.kills)stats={kills:0,totalKills:0,lemmingKills:0,wins:0,roundsSurvived:0,maxMoney:0,deathsHeadUsed:0,nukesUsed:0,unlocked:[]};
+let stats;try{stats=JSON.parse(localStorage.getItem('sl_stats')||'{}');}catch(e){stats={};}
+if(!stats.kills)stats={kills:0,totalKills:0,lemmingKills:0,wins:0,roundsSurvived:0,maxMoney:0,deathsHeadUsed:0,nukesUsed:0,unlocked:[],idleGems:0,permUpgrades:{}};
 function saveStats(){localStorage.setItem('sl_stats',JSON.stringify(stats));}
 function checkAchievements(){
   let newOnes=[];
@@ -202,6 +206,55 @@ function checkAchievements(){
   if(newOnes.length)showMsg('ACHIEVEMENT!\n'+newOnes.map(a=>'['+a.name+'] '+a.desc).join('\n'),3000);
 }
 function getPerks(){return PERKS.filter(p=>stats.unlocked.includes(p.req));}
+
+// permanent roguelike upgrades (bought with idle gems)
+const PERM_UPGRADES=[
+  {id:'perm_hp',name:'+10 HP',desc:'All runs start +10 HP',cost:5,max:5,apply:p=>{p.hp+=10*(stats.permUpgrades.perm_hp||0);p.maxHp=p.hp;}},
+  {id:'perm_fuel',name:'+15 Fuel',desc:'All runs start +15 fuel',cost:3,max:5,apply:p=>{p.fuel+=15*(stats.permUpgrades.perm_fuel||0);}},
+  {id:'perm_cash',name:'+$25',desc:'All runs start +$25',cost:4,max:4,apply:p=>{p.money+=25*(stats.permUpgrades.perm_cash||0);}},
+  {id:'perm_shot',name:'Shot+',desc:'Base Shot +10 damage',cost:6,max:3,apply:p=>{}},
+  {id:'perm_armor',name:'Armor+',desc:'Take 5% less damage per level',cost:8,max:3,apply:p=>{p.armor=(p.armor||0)+.05*(stats.permUpgrades.perm_armor||0);}},
+  {id:'perm_bigshot',name:'Free Big Shot',desc:'+2 Big Shots per run',cost:5,max:2,apply:p=>{p.inventory['Big Shot']=(p.inventory['Big Shot']||0)+2*(stats.permUpgrades.perm_bigshot||0);}},
+];
+function applyPermUpgrades(p){for(const pu of PERM_UPGRADES)pu.apply(p);}
+function buildPermUI(){
+  if(!stats.permUpgrades)stats.permUpgrades={};
+  const gi=document.getElementById('gemInfo');
+  if(gi)gi.textContent='Gems: '+(stats.idleGems||0);
+  const el=document.getElementById('permUpgrades');if(!el)return;el.innerHTML='';
+  for(const pu of PERM_UPGRADES){
+    const lv=stats.permUpgrades[pu.id]||0;
+    if(lv>=pu.max)continue;
+    const cost=pu.cost*(lv+1);
+    const b=document.createElement('button');
+    b.style.cssText='font:7px monospace;padding:2px 4px;border:1px solid '+((stats.idleGems||0)>=cost?'#ff0':'#333')+';background:#0a0a00;color:'+((stats.idleGems||0)>=cost?'#ff0':'#444')+';cursor:pointer';
+    b.textContent=pu.name+' Lv'+(lv+1)+' ('+cost+'💎)';
+    b.title=pu.desc;
+    b.onclick=()=>{if((stats.idleGems||0)>=cost){stats.idleGems-=cost;stats.permUpgrades[pu.id]=(stats.permUpgrades[pu.id]||0)+1;saveStats();buildPermUI();sfx('buy');}};
+    el.appendChild(b);
+  }
+}
+
+let idleMode=false,idleTimer=0,idleGemTimer=0;
+function startIdle(){
+  document.getElementById('start').style.display='none';
+  initAudio();
+  numPlayers=4;numCPU=4;maxRounds=999;idleMode=true;
+  document.getElementById('idleHud').style.display='inline';
+  document.getElementById('exitIdleBtn').style.display='inline';
+  document.getElementById('ui').classList.remove('show');
+  round=1;newRound();
+}
+function exitIdle(){
+  idleMode=false;running=false;gameState='over';
+  document.getElementById('idleHud').style.display='none';
+  document.getElementById('exitIdleBtn').style.display='none';
+  document.getElementById('hud').classList.remove('show');
+  document.getElementById('wpnBar').style.display='none';
+  document.getElementById('start').style.display='flex';
+  document.getElementById('start').innerHTML='<h1 style="color:#ff0;text-shadow:2px 2px #800">SCORCHED LEMMING</h1><div style="font:9px monospace;color:#0f0;margin:6px 0">Idle session ended. Gems earned!</div><button onclick="location.reload()" style="font:bold 11px monospace;padding:6px 20px;border:2px solid #ff0;background:#000;color:#ff0;cursor:pointer">BACK TO MENU</button>';
+}
+
 let skulls=[];
 
 // weapon upgrade levels (per player, per weapon name)
@@ -247,7 +300,7 @@ function spawnPowerups(){
   for(let i=0;i<count;i++){
     const px2=30+Math.floor(Math.random()*(W-60));
     const ty=terrain[Math.floor(px2)];
-    const py2=ty-40-Math.floor(Math.random()*80);
+    const py2=ty-15-Math.floor(Math.random()*30);
     const type=POWERUP_TYPES[Math.floor(Math.random()*POWERUP_TYPES.length)];
     powerups.push({x:px2,y:py2,type,bobPhase:Math.random()*Math.PI*2,alive:true});
   }
@@ -297,7 +350,7 @@ function sfx(type){
 function checkPowerups(p){
   for(const pu of powerups){
     if(!pu.alive)continue;
-    if(Math.hypot(p.x-pu.x,p.y-pu.y)<25){
+    if(Math.hypot(p.x-pu.x,p.y-pu.y)<35){
       pu.alive=false;pu.type.give(p);
       sfx('buy');showMsg(pu.type.name+'!',1000);
       for(let k=0;k<8;k++)particles.push({x:pu.x,y:pu.y,vx:(Math.random()-.5)*3,vy:(Math.random()-.5)*3,life:15,color:pu.type.color});
@@ -355,7 +408,8 @@ function placePlayers(){
     const isCpu=i>=numPlayers-numCPU;
     const perks=isCpu?[]:getPerks();
     const tank=isCpu?TANKS[Math.floor(Math.random()*TANKS.length)]:TANKS[chosenTank];
-    let hp=tank.hp,money=100;
+    const floorScale=1+round*.08;
+    let hp=Math.floor(tank.hp*(isCpu?floorScale:1)),money=100+round*10;
     if(perks.find(p=>p.id==='extra_hp'))hp+=20;
     if(perks.find(p=>p.id==='extra_cash'))money=150;
     if(perks.find(p=>p.id==='free_mirv'))inv['MIRV']=(inv['MIRV']||0)+1;
@@ -366,8 +420,9 @@ function placePlayers(){
       score:0,money,angle:i<numPlayers/2?60:120,power:50,fuel:tank.fuel,
       weapon:0,inventory:inv,upgrades:{},shield:0,cpu:isCpu,kills:0,
       tank:tank,skillMods:{},
-      armor:perks.find(p=>p.id==='armor')?.15:0
+      armor:perks.find(p=>p.id==='armor')?0.15:0
     });
+    if(!isCpu)applyPermUpgrades(players[players.length-1]);
   }
 }
 
@@ -378,8 +433,9 @@ function buildPickers(){
   const tp=document.getElementById('tankPick');tp.innerHTML='';
   TANKS.forEach((t,i)=>{
     const b=document.createElement('button');
-    b.style.cssText='font:8px monospace;padding:4px 6px;border:1px solid '+(i===chosenTank?'#ff0':'#444')+';background:'+(i===chosenTank?'#1a1a00':'#0a0a0a')+';color:'+(i===chosenTank?'#ff0':'#888')+';cursor:pointer';
-    b.textContent=t.name;b.title=t.desc;
+    const sel=i===chosenTank;
+    b.style.cssText='font:7px monospace;padding:3px 5px;border:1px solid '+(sel?'#ff0':'#333')+';background:'+(sel?'#1a1a00':'#060606')+';color:'+(sel?'#ff0':'#777')+';cursor:pointer;text-align:left;line-height:1.4';
+    b.innerHTML=t.name+'<br><span style="color:'+(sel?'#0f0':'#555')+'">HP:'+t.hp+' F:'+t.fuel+' ATK:'+t.atk+'x<br>RNG:'+t.range+'x LEM:+'+Math.round(t.lemBoost*100)+'%</span>';
     b.onclick=()=>{chosenTank=i;buildPickers();};
     tp.appendChild(b);
   });
@@ -392,14 +448,12 @@ function buildPickers(){
     sp.appendChild(b);
   });
 }
-buildPickers();
+buildPickers();buildPermUI();
 
 function startGame(){
   document.getElementById('start').style.display='none';
   initAudio();
-  numPlayers=parseInt(document.getElementById('np').value);
-  numCPU=Math.min(parseInt(document.getElementById('nc').value),numPlayers-1);
-  maxRounds=parseInt(document.getElementById('nr').value);
+  numPlayers=6;numCPU=5;maxRounds=999;
   if(!camReady)startCam();
   round=1;newRound();
 }
@@ -616,6 +670,7 @@ function explode(x,y,weapon,owner){
     if(!p.alive)continue;
     const d=Math.hypot(p.x-x,p.y-y);
     if(d<r*1.5&&weapon.damage>0){
+      if(r<=0)continue;
       let dmg=Math.floor((1-d/(r*1.5))*weapon.damage);
       if(p.shield>0){dmg=Math.floor(dmg*.2);p.shield=Math.max(0,p.shield-10);}
       if(p.armor)dmg=Math.floor(dmg*(1-p.armor));
@@ -696,7 +751,14 @@ function nextTurn(){
     if(alive.length===1){alive[0].money+=100;showMsg(alive[0].name+' wins Round '+round+'!',2500);sfx('win');
       if(!alive[0].cpu){stats.roundsSurvived++;stats.maxMoney=Math.max(stats.maxMoney,alive[0].money);checkAchievements();}}
     gameState='roundOver';
-    setTimeout(()=>{round++;if(round>maxRounds){endGame();}else{showShop();}},3000);
+    if(idleMode){
+      stats.idleGems=(stats.idleGems||0)+2;saveStats();
+      setTimeout(()=>{round++;newRound();},2000);
+    }else{
+      const humanAlive=players.some(p=>p.alive&&!p.cpu);
+      if(!humanAlive){setTimeout(endGame,2000);}
+      else{setTimeout(()=>{round++;showShop();},2500);}
+    }
     return;
   }
   wind+=(Math.random()-.5)*.8;wind=Math.max(-4,Math.min(4,wind));
@@ -843,7 +905,7 @@ function update(dt){
         projectiles.splice(i,1);sfx('explode');continue;
       }
       // check powerup hits
-      for(const pu of powerups){if(pu.alive&&Math.hypot(p.x-pu.x,p.y-pu.y)<20){
+      for(const pu of powerups){if(pu.alive&&Math.hypot(p.x-pu.x,p.y-pu.y)<30){
         pu.alive=false;const owner=players[p.owner];if(owner){pu.type.give(owner);showMsg(pu.type.name+'!',800);}
         for(let k=0;k<6;k++)particles.push({x:pu.x,y:pu.y,vx:(Math.random()-.5)*3,vy:(Math.random()-.5)*3,life:12,color:pu.type.color});
       }}
@@ -883,7 +945,7 @@ function update(dt){
       if(ownerP&&ownerP.alive){
         const hd=Math.hypot(ownerP.x-l.x,ownerP.y-l.y);
         if(hd>15){const ha=Math.atan2(ownerP.y-l.y,ownerP.x-l.x);l.vx=Math.cos(ha)*1.5;}
-        if(hd<25){ownerP.hp=Math.min(100,ownerP.hp+dt*8);
+        if(hd<25){ownerP.hp=Math.min(ownerP.maxHp||100,ownerP.hp+dt*8);
           if(Math.random()<.05)particles.push({x:l.x,y:l.y-8,vx:(Math.random()-.5),vy:-1,life:15,color:'#4ade80'});}
       }
     }
@@ -984,6 +1046,12 @@ function update(dt){
   for(let i=particles.length-1;i>=0;i--){const p=particles[i];p.x+=p.vx;p.y+=p.vy;p.vy+=.12;p.life--;if(p.life<=0)particles.splice(i,1);}
   for(let i=explosions.length-1;i>=0;i--){explosions[i].life--;if(explosions[i].life<=0)explosions.splice(i,1);}
   for(let i=skulls.length-1;i>=0;i--){skulls[i].life--;skulls[i].y-=.1;if(skulls[i].life<=0)skulls.splice(i,1);}
+  // idle mode gem earning
+  if(idleMode){
+    idleGemTimer+=dt;
+    if(idleGemTimer>10){idleGemTimer=0;stats.idleGems=(stats.idleGems||0)+1;saveStats();
+      const gh=document.getElementById('idleGemHud');if(gh)gh.textContent=stats.idleGems;}
+  }
   // settle tanks
   for(const p of players){if(!p.alive)continue;const tx=Math.max(0,Math.min(W-1,Math.floor(p.x)));p.y=terrain[tx];if(p.shield>0)p.shield-=dt;}
 }
@@ -1205,7 +1273,7 @@ function render(){
     ctx.beginPath();ctx.moveTo(tx,ty-12);ctx.lineTo(tx+bx,ty-12+by);ctx.stroke();
     // hp bar (DOS style)
     ctx.fillStyle='#800';ctx.fillRect(tx-12,ty-16,24,2);
-    ctx.fillStyle=p.hp>50?'#0f0':p.hp>25?'#ff0':'#f00';ctx.fillRect(tx-12,ty-16,Math.floor(24*p.hp/100),2);
+    ctx.fillStyle=p.hp>p.maxHp*.5?'#0f0':p.hp>p.maxHp*.25?'#ff0':'#f00';ctx.fillRect(tx-12,ty-16,Math.floor(24*p.hp/(p.maxHp||100)),2);
     // fuel bar
     ctx.fillStyle='#004';ctx.fillRect(tx-12,ty-14,24,1);
     ctx.fillStyle='#08f';ctx.fillRect(tx-12,ty-14,Math.floor(24*p.fuel/100),1);
