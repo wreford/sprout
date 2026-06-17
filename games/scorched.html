@@ -791,7 +791,9 @@ function placePlayers(){
   const spacing=W/(numPlayers+1);
   for(let i=0;i<numPlayers;i++){
     const x=Math.max(25,Math.min(W-25,Math.floor(spacing*(i+1))+(Math.random()*40-20)|0));
-    const inv={};WEAPONS.forEach(w=>inv[w.name]=w.count);
+    const inv={};CORE_CARDS.forEach(w=>inv[w.name]=w.count||0);
+    const cc=CLASS_CARDS[tank.id]||CLASS_CARDS.standard;
+    cc.forEach(w=>inv[w.name]=w.count||0);
     const isCpu=i>=numPlayers-numCPU;
     const perks=isCpu?[]:getPerks();
     const tank=isCpu?TANKS[Math.floor(Math.random()*TANKS.length)]:TANKS[chosenTank];
@@ -921,7 +923,7 @@ function updateUI(){
   document.getElementById('turnInfo').style.color=p.color;
   document.getElementById('windInfo').textContent='Wind:'+(wind>0?'→':'←')+Math.abs(wind).toFixed(1);
   document.getElementById('windInfo').style.color=wind>0?'#38bdf8':'#a78bfa';
-  document.getElementById('wpnInfo').textContent=WEAPONS[p.weapon].name;
+  document.getElementById('wpnInfo').textContent=WEAPONS.length&&WEAPONS[p.weapon]?WEAPONS[p.weapon].name:'Shot';
   document.getElementById('scores').textContent=players.map(p2=>(p2.alive?'':'☠')+p2.name+':$'+p2.money).join(' ');
   document.getElementById('asl').value=p.angle;document.getElementById('av').textContent=p.angle+'°';
   document.getElementById('psl').value=p.power;document.getElementById('pv').textContent=p.power;
@@ -960,58 +962,23 @@ function cpuTurn(){
   if(!bestTarget){me.weapon=0;setTimeout(fire,300);return;}
 
   // pick weapon strategically
+  buildWeaponBar();
   me.weapon=0;
   const dist=Math.hypot(bestTarget.x-me.x,bestTarget.y-me.y);
-  const hasWeapon=n=>(me.inventory[n]||0)>0;
+  const pickW=n=>{const i=WEAPONS.findIndex(w=>w.name===n);if(i>=0){me.weapon=i;return true;}return false;};
+  const hasWeapon=n=>pickW(n);
   // use shield if low HP
-  if(me.hp<30&&hasWeapon('Shield')){
-    me.weapon=WEAPONS.findIndex(w=>w.name==='Shield');
-    setTimeout(fire,300);return;
-  }
-  // teleport if buried or cornered
-  if(me.hp<20&&hasWeapon('Teleport')){
-    me.weapon=WEAPONS.findIndex(w=>w.name==='Teleport');
-    setTimeout(fire,300);return;
-  }
-  // healer lemming if hurt
-  if(me.hp<50&&hasWeapon('Heallem')){
-    me.weapon=WEAPONS.findIndex(w=>w.name==='Heallem');
-  }
-  // nuke for groups
-  else if(hasWeapon('Nuke')&&players.filter(p=>p!==me&&p.alive&&Math.abs(p.x-bestTarget.x)<60).length>=2){
-    me.weapon=WEAPONS.findIndex(w=>w.name==='Nuke');
-  }
-  // death's head for distant/hard targets
-  else if(hasWeapon('Deaths Head')&&dist>200){
-    me.weapon=WEAPONS.findIndex(w=>w.name==="Deaths Head");
-  }
-  // MIRV for clustered enemies
-  else if(hasWeapon('MIRV')&&players.filter(p=>p!==me&&p.alive&&Math.abs(p.x-bestTarget.x)<80).length>=2){
-    me.weapon=WEAPONS.findIndex(w=>w.name==='MIRV');
-  }
-  // napalm for area denial
-  else if(hasWeapon('Napalm')&&dist<250){
-    me.weapon=WEAPONS.findIndex(w=>w.name==='Napalm');
-  }
-  // roller if target is downhill
-  else if(hasWeapon('Roller')&&Math.abs(bestTarget.y-me.y)>20&&bestTarget.y>me.y){
-    me.weapon=WEAPONS.findIndex(w=>w.name==='Roller');
-  }
-  // big shot if close
-  else if(hasWeapon('Big Shot')&&dist<200){
-    me.weapon=WEAPONS.findIndex(w=>w.name==='Big Shot');
-  }
-  // lemming weapons for fun
-  else if(hasWeapon('Swarm')&&dist<150&&Math.random()<.3){
-    me.weapon=WEAPONS.findIndex(w=>w.name==='Swarm');
-  }
-  else if(hasWeapon('Lemming')&&Math.random()<.2){
-    me.weapon=WEAPONS.findIndex(w=>w.name==='Lemming');
-  }
-  // dirt to bury nearby enemy
-  else if(hasWeapon('Dirt')&&dist<100&&Math.random()<.25){
-    me.weapon=WEAPONS.findIndex(w=>w.name==='Dirt');
-  }
+  if(me.hp<30&&pickW('Shield')){setTimeout(fire,300);return;}
+  if(me.hp<20&&pickW('Teleport')){setTimeout(fire,300);return;}
+  if(me.hp<50)pickW('Heallem');
+  else if(players.filter(p=>p!==me&&p.alive&&Math.abs(p.x-bestTarget.x)<60).length>=2)pickW('Nuke');
+  else if(dist>200)pickW('Deaths Head')||pickW('Howitzer');
+  else if(players.filter(p=>p!==me&&p.alive&&Math.abs(p.x-bestTarget.x)<80).length>=2)pickW('MIRV')||pickW('Carpet Bomb')||pickW('Rain of Fire');
+  else if(dist<250&&Math.random()<.4)pickW('Napalm')||pickW('Flame')||pickW('Berserk Flame');
+  else if(Math.abs(bestTarget.y-me.y)>20&&bestTarget.y>me.y)pickW('Roller')||pickW('Blood Roller');
+  else if(dist<200)pickW('Big Shot')||pickW('Bunker Buster')||pickW('Gore Bomb');
+  else if(dist<150&&Math.random()<.3)pickW('Swarm')||pickW('Lemming');
+  else if(dist<100&&Math.random()<.25)pickW('Dirt')||pickW('Dirt Wall');
 
   // simulate shots to find best angle/power
   let bestA=90,bestP=50,bestErr=Infinity;
@@ -1234,7 +1201,8 @@ function buyWeapon(pi,wi){
 }
 function cpuBuy(p){
   // prioritize by situation
-  const buy=n=>{const wi=WEAPONS.findIndex(w=>w.name===n);if(wi>=0&&p.money>=WEAPONS[wi].cost){p.money-=WEAPONS[wi].cost;p.inventory[n]=(p.inventory[n]||0)+1;return true;}return false;};
+  const allCards=[...CORE_CARDS,...(CLASS_CARDS[p.tank?.id]||CLASS_CARDS.standard)];
+  const buy=n=>{const card=allCards.find(w=>w.name===n);if(card&&p.money>=card.cost){p.money-=card.cost;p.inventory[n]=(p.inventory[n]||0)+1;return true;}return false;};
   // always want shields and big shots
   if(p.hp<60&&Math.random()<.7)buy('Shield');
   if(Math.random()<.5)buy('Big Shot');
