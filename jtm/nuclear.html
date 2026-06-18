@@ -1,0 +1,1184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nuclear Construction Simulator</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{--bg:#0a0a0f;--ink:#e8e8f0;--dim:#5a5a6e;--accent:#ff6b35;--purple:#a78bfa;--cyan:#00e5ff;--green:#4ade80;--gold:#f7c948;--red:#ef4444;--blue:#60a5fa;--mono:ui-monospace,"SF Mono",Menlo,Monaco,Consolas,monospace;--glass:rgba(10,10,15,0.75);--border:rgba(255,255,255,0.06);--blur:blur(20px)}
+html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--ink);font-family:var(--mono)}
+canvas#gl{position:fixed;top:0;left:0;width:100%;height:100%;z-index:0}
+
+/* Glass mixin */
+.glass{background:var(--glass);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);border:1px solid var(--border);border-radius:12px}
+
+/* TOP BAR */
+#topbar{position:fixed;top:0;left:0;right:0;height:40px;z-index:10;display:flex;align-items:center;padding:0 14px;gap:10px;background:rgba(10,10,15,0.8);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);border-bottom:1px solid var(--border)}
+#topbar .logo{font:700 14px var(--mono);letter-spacing:.06em;background:linear-gradient(135deg,var(--accent),var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent;white-space:nowrap}
+#topbar select,#topbar button{font:600 10px var(--mono);padding:4px 10px;border:1px solid rgba(255,255,255,0.08);border-radius:6px;background:rgba(255,255,255,0.04);color:var(--ink);cursor:pointer;transition:.2s}
+#topbar select:hover,#topbar button:hover{background:rgba(255,255,255,0.08)}
+#topbar button.on{background:var(--purple);color:#fff;border-color:var(--purple)}
+#topbar .spacer{flex:1}
+#topbar .phase-info{font:500 11px var(--mono);color:var(--dim);white-space:nowrap}
+#topbar .phase-name{color:var(--cyan)}
+.mute-btn{font-size:14px!important;padding:4px 8px!important}
+
+/* BOTTOM TIMELINE */
+#timeline{position:fixed;bottom:0;left:0;right:0;height:60px;z-index:10;background:rgba(10,10,15,0.85);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);border-top:1px solid var(--border);display:flex;flex-direction:column;padding:4px 16px 8px}
+#phase-dots{display:flex;gap:2px;height:10px;margin-bottom:2px}
+#phase-dots .pd{flex:1;border-radius:2px;font:600 6px var(--mono);display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,0.7);overflow:hidden;white-space:nowrap;transition:.15s;cursor:pointer}
+#phase-dots .pd.now{outline:1px solid var(--cyan);box-shadow:0 0 6px rgba(0,229,255,0.3)}
+#phase-dots .pd.fut{opacity:.15}
+#tl-row{display:flex;align-items:center;gap:10px;flex:1}
+#tl-row .tl-label{font:600 11px var(--mono);color:var(--dim);min-width:60px}
+#tl-row .tl-pct{font:700 12px var(--mono);color:var(--accent);min-width:40px;text-align:right}
+.tl-track{flex:1;position:relative;height:22px;cursor:pointer}
+.tl-track .tl-phases{position:absolute;top:6px;left:0;right:0;height:10px;display:flex;gap:1px;border-radius:5px;overflow:hidden}
+.tl-track .tl-phases .tp{flex:1;opacity:.35}
+.tl-track .tl-handle{position:absolute;top:0;width:2px;height:22px;background:var(--cyan);box-shadow:0 0 8px var(--cyan),0 0 16px rgba(0,229,255,0.3);border-radius:1px;pointer-events:none;transition:left .05s}
+.tl-track .tl-ms{position:absolute;top:2px;width:6px;height:6px;border-radius:50%;background:var(--purple);transform:translateX(-3px);cursor:pointer;z-index:2}
+.tl-track .tl-ms:hover{background:var(--gold);box-shadow:0 0 6px var(--gold)}
+.tl-track .tl-ms .ms-tip{display:none;position:absolute;bottom:12px;left:50%;transform:translateX(-50%);background:rgba(10,10,15,0.95);border:1px solid var(--border);border-radius:6px;padding:3px 8px;font:500 9px var(--mono);color:var(--ink);white-space:nowrap;pointer-events:none}
+.tl-track .tl-ms:hover .ms-tip{display:block}
+#tl-controls{display:flex;align-items:center;gap:6px}
+#tl-controls button{font:700 11px var(--mono);padding:4px 12px;border:1px solid rgba(255,255,255,0.08);border-radius:6px;background:rgba(255,255,255,0.04);color:var(--ink);cursor:pointer;transition:.2s}
+#tl-controls button:hover{background:rgba(255,255,255,0.1)}
+#play-btn{font-size:16px!important;padding:4px 14px!important}
+#play-btn.playing{color:var(--cyan);border-color:var(--cyan)}
+
+/* LEFT PANEL */
+#left-panel{position:fixed;top:50px;left:10px;width:280px;max-height:calc(100vh - 130px);z-index:8;padding:12px;overflow-y:auto;transition:transform .3s ease,opacity .3s ease}
+#left-panel.hidden{transform:translateX(-300px);opacity:0;pointer-events:none}
+#left-panel h4{font:600 8px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--dim);margin:8px 0 4px}
+#left-panel h4:first-child{margin-top:0}
+.kpi-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+.kpi{padding:5px 6px;border-radius:6px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.04)}
+.kpi .kv{font:800 13px var(--mono)}.kpi .kl{font:500 7px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--dim);margin-top:1px}
+.kpi.ok .kv{color:var(--green)}.kpi.w .kv{color:var(--gold)}.kpi.bad .kv{color:var(--red)}.kpi.bl .kv{color:var(--blue)}.kpi.vi .kv{color:var(--purple)}
+#scurve-canvas{width:100%;height:80px;display:block;border-radius:6px;background:rgba(0,0,0,0.3);margin:4px 0}
+.disc-bar{display:flex;align-items:center;gap:4px;margin:2px 0;font:500 9px var(--mono)}
+.disc-bar .db-name{width:36px;color:var(--dim);font-size:8px;text-transform:uppercase}
+.disc-bar .db-track{flex:1;height:8px;background:rgba(255,255,255,0.04);border-radius:4px;overflow:hidden}
+.disc-bar .db-fill{height:100%;border-radius:4px;transition:width .4s ease}
+.disc-bar .db-pct{width:28px;text-align:right;font-size:8px;font-weight:700}
+.dim-row{display:flex;align-items:center;gap:4px;font:10px var(--mono);margin:1px 0}
+.dim-row label{color:var(--dim);width:36px;font-size:8px}
+.dim-row input[type=range]{flex:1;height:4px;accent-color:var(--blue)}
+.dim-row .dv{width:24px;text-align:right;font-weight:700;font-size:9px}
+.whatif-grid{display:flex;flex-wrap:wrap;gap:3px}
+.whatif-grid button{font:600 8px var(--mono);padding:2px 6px;border-radius:4px;border:1px solid rgba(255,255,255,0.06);background:rgba(255,255,255,0.03);color:var(--dim);cursor:pointer;transition:.15s}
+.whatif-grid button:hover{background:rgba(255,255,255,0.08);color:var(--ink)}
+
+/* RIGHT PANEL */
+#right-panel{position:fixed;top:50px;right:10px;width:260px;max-height:calc(100vh - 130px);z-index:8;padding:12px;overflow-y:auto;transition:transform .3s ease,opacity .3s ease}
+#right-panel.hidden{transform:translateX(280px);opacity:0;pointer-events:none}
+#right-panel h4{font:600 8px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--dim);margin:8px 0 4px}
+#right-panel h4:first-child{margin-top:0}
+.event-feed{max-height:180px;overflow-y:auto}
+.ev-item{font:10px var(--mono);padding:3px 0;border-bottom:1px solid rgba(255,255,255,0.03);display:flex;gap:4px;color:var(--dim)}
+.ev-item .ev-mo{font-weight:700;color:var(--ink);min-width:28px}
+.ev-item.risk{color:var(--red)}.ev-item.good{color:var(--green)}.ev-item.mile{color:var(--purple)}
+.risk-item,.ll-item{display:inline-flex;align-items:center;gap:3px;font:9px var(--mono);padding:2px 6px;border-radius:4px;border:1px solid rgba(255,255,255,0.06);margin:1px}
+.risk-item.hit{border-color:var(--red);color:var(--red);background:rgba(239,68,68,0.06)}
+.risk-item.clear{border-color:var(--green);color:var(--green)}
+.ll-item.del{border-color:var(--green);color:var(--green);background:rgba(74,222,128,0.06)}
+.ll-item.wait{color:var(--gold);border-color:var(--gold)}
+.ll-item.late{color:var(--red);border-color:var(--red);background:rgba(239,68,68,0.06)}
+
+/* BOTTOM-LEFT INFO */
+#bl-info{position:fixed;bottom:70px;left:10px;z-index:8;padding:8px 12px;font:10px var(--mono)}
+#bl-info .bi-row{display:flex;gap:12px;margin:1px 0}
+#bl-info .bi-val{font-weight:800;font-size:12px}
+#bl-info .bi-label{color:var(--dim);font-size:7px;text-transform:uppercase;letter-spacing:.06em}
+
+/* CENTER OVERLAY */
+#center-overlay{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:9;width:600px;max-width:80vw;padding:28px 32px;text-align:center;opacity:0;pointer-events:none;transition:opacity .4s ease}
+#center-overlay.show{opacity:1;pointer-events:auto}
+#center-overlay .co-title{font:700 22px var(--mono);background:linear-gradient(135deg,var(--cyan),var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:6px}
+#center-overlay .co-desc{font:12px/1.7 var(--mono);color:var(--dim);margin-bottom:14px}
+.cap-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.cap-card{background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:10px;text-align:left;border-left:2px solid var(--purple)}
+.cap-card .cc-title{font:700 9px var(--mono);color:var(--purple);letter-spacing:.06em;margin-bottom:3px}
+.cap-card .cc-desc{font:10px/1.4 var(--mono);color:var(--dim)}
+
+/* CAMERA PRESET BUTTONS */
+#cam-presets{position:fixed;top:50px;left:50%;transform:translateX(-50%);z-index:8;display:flex;gap:4px;padding:4px 8px;border-radius:8px;background:rgba(10,10,15,0.5);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+#cam-presets button{font:600 9px var(--mono);padding:3px 8px;border:1px solid rgba(255,255,255,0.06);border-radius:4px;background:transparent;color:var(--dim);cursor:pointer;transition:.15s}
+#cam-presets button:hover,#cam-presets button.active{color:var(--ink);background:rgba(255,255,255,0.08);border-color:rgba(255,255,255,0.12)}
+
+/* Scrollbar styling */
+::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:2px}
+</style>
+</head>
+<body>
+<!-- LOADING SCREEN -->
+<div id="loader" style="position:fixed;inset:0;z-index:100;background:#0a0a0f;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity .8s">
+  <div style="font:700 28px var(--mono);letter-spacing:.1em;background:linear-gradient(135deg,var(--accent),var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:12px">NUCLEAR BUILD</div>
+  <div id="load-status" style="font:11px var(--mono);color:var(--dim);animation:pulse 1.5s infinite">COMPILING SHADERS...</div>
+  <style>@keyframes pulse{0%,100%{opacity:.4}50%{opacity:1}}</style>
+</div>
+<!-- MILESTONE CELEBRATION -->
+<div id="milestone-toast" style="position:fixed;top:35%;left:50%;transform:translate(-50%,-50%);z-index:50;pointer-events:none;opacity:0;transition:opacity .4s;text-align:center">
+  <div style="font:700 10px var(--mono);letter-spacing:.2em;color:var(--gold);text-transform:uppercase;margin-bottom:6px">MILESTONE ACHIEVED</div>
+  <div id="milestone-text" style="font:700 24px var(--mono);color:#fff;text-shadow:0 0 30px rgba(167,139,250,.6),0 0 60px rgba(0,229,255,.3)"></div>
+</div>
+<!-- SCREEN FLASH -->
+<div id="flash" style="position:fixed;inset:0;z-index:49;background:#fff;pointer-events:none;opacity:0;transition:opacity .15s"></div>
+<!-- WORKER OVERLAY CANVAS -->
+<canvas id="workers" style="position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:1"></canvas>
+<canvas id="gl"></canvas>
+
+<!-- TOP BAR -->
+<div id="topbar">
+  <span class="logo">NUCLEAR BUILD</span>
+  <select id="plant"><option value="pwr">Westinghouse PWR 600 MWe</option><option value="candu">CANDU 6 700 MWe</option><option value="smr">SMR 300 MWe</option><option value="ap1000">AP1000 1100 MWe</option><option value="epr">EPR 1650 MWe</option></select>
+  <select id="cam"><option value="orbit">Orbit</option><option value="auto">Auto Tour</option><option value="aerial">Aerial</option><option value="reactor">Reactor</option><option value="turbine">Turbine</option><option value="intake">Intake</option><option value="crane">Crane</option></select>
+  <button id="night">Night</button>
+  <button id="weather">Weather</button>
+  <button id="mute-btn" class="mute-btn" title="Toggle audio">&#128264;</button>
+  <span class="spacer"></span>
+  <span class="phase-info"><span class="phase-name" id="phase-name">--</span> &middot; <span id="month-info">M0</span></span>
+</div>
+
+<!-- CAMERA PRESETS -->
+<div id="cam-presets">
+  <button data-cam="orbit" class="active" title="1">1 Orbit</button>
+  <button data-cam="aerial" title="2">2 Aerial</button>
+  <button data-cam="reactor" title="3">3 Reactor</button>
+  <button data-cam="turbine" title="4">4 Turbine</button>
+  <button data-cam="intake" title="5">5 Intake</button>
+  <button data-cam="crane" title="6">6 Crane</button>
+</div>
+
+<!-- LEFT PANEL -->
+<div id="left-panel" class="glass">
+  <h4>KEY PERFORMANCE</h4>
+  <div class="kpi-grid" id="kpi-grid"></div>
+  <h4>S-CURVE</h4>
+  <canvas id="scurve-canvas"></canvas>
+  <h4>DISCIPLINE PROGRESS</h4>
+  <div id="disc-bars"></div>
+  <h4>PARAMETRIC DIMS</h4>
+  <div id="dims"></div>
+  <h4>WHAT-IF SCENARIOS</h4>
+  <div class="whatif-grid" id="whatif"></div>
+</div>
+
+<!-- RIGHT PANEL -->
+<div id="right-panel" class="glass">
+  <h4>EVENT FEED</h4>
+  <div class="event-feed" id="feed"></div>
+  <h4>RISK REGISTER</h4>
+  <div id="risks" style="max-height:120px;overflow-y:auto"></div>
+  <h4>LONG-LEAD ITEMS</h4>
+  <div id="ll" style="max-height:120px;overflow-y:auto"></div>
+</div>
+
+<!-- BOTTOM LEFT INFO -->
+<div id="bl-info" class="glass">
+  <div class="bi-row"><div><div class="bi-val" id="bi-concrete">0k</div><div class="bi-label">concrete m3</div></div>
+  <div><div class="bi-val" id="bi-wf">0</div><div class="bi-label">workforce</div></div>
+  <div><div class="bi-val" id="bi-safe">0</div><div class="bi-label">days LTI-free</div></div></div>
+</div>
+
+<!-- BOTTOM TIMELINE -->
+<div id="timeline">
+  <div id="phase-dots"></div>
+  <div id="tl-row">
+    <span class="tl-label" id="tl-month">M0</span>
+    <div id="tl-controls">
+      <button id="play-btn" title="Space">&#9654;</button>
+      <button id="spd-btn" data-s="1">1x</button>
+    </div>
+    <div class="tl-track" id="tl-track">
+      <div class="tl-phases" id="tl-phases"></div>
+      <div class="tl-handle" id="tl-handle"></div>
+    </div>
+    <span class="tl-pct" id="tl-pct">0%</span>
+  </div>
+</div>
+
+<!-- CENTER OVERLAY -->
+<div id="center-overlay" class="glass">
+  <div class="co-title" id="co-title"></div>
+  <div class="co-desc" id="co-desc"></div>
+  <div class="cap-cards" id="co-caps"></div>
+</div>
+
+<script>
+/* ===== DATA (accuracy-calibrated to real nuclear construction projects) ===== */
+const SHAPE_IDS={box:0,sphere:1,cyl:2,torus:3,"cyl-x":4,"cyl-z":5},MAX_OBJ=24;
+function unhex(h){return[parseInt(h.slice(1,3),16)/255,parseInt(h.slice(3,5),16)/255,parseInt(h.slice(5,7),16)/255]}
+const $=id=>document.getElementById(id);
+
+/* Phase definitions using a scaling factor for different plant durations.
+   The baseline is an 84-month PWR. Phases scale proportionally for other durations. */
+function buildPhases(dur){
+  const f=dur/84; /* scale factor: 1.0 for 84mo PWR, 0.71 for 60mo SMR, 1.29 for 108mo EPR */
+  function R(m){return Math.round(m*f);} /* scale and round absolute months */
+  return [
+{n:"Site prep",c:"#78909c",s:0,e:R(6),deps:[]},
+{n:"Excavation",c:"#8d6e63",s:R(3),e:R(12),deps:["Site prep"]},
+{n:"Foundation",c:"#9e9e9e",s:R(10),e:R(22),deps:["Excavation"]},
+{n:"RB structure",c:"#607d8b",s:R(16),e:R(40),deps:["Foundation"]},
+{n:"Containment",c:"#7c3aed",s:R(24),e:R(46),deps:["Foundation"]},
+{n:"TB build",c:"#a1887f",s:R(22),e:R(42),deps:["Foundation"]},
+{n:"Mech install",c:"#f59e0b",s:R(34),e:dur-R(22),deps:["Containment"]},
+{n:"Piping",c:"#6b7280",s:R(32),e:dur-R(24),deps:["Containment"]},
+{n:"Electrical",c:"#2563eb",s:R(40),e:dur-R(16),deps:["RB structure"]},
+{n:"CW system",c:"#0891b2",s:R(28),e:dur-R(30),deps:[]},
+{n:"I&C",c:"#059669",s:dur-R(34),e:dur-R(12),deps:["Electrical"]},
+{n:"Pre-op test",c:"#0d9488",s:dur-R(22),e:dur-R(8),deps:["Electrical","I&C"]},
+{n:"Fuel load",c:"#7c3aed",s:dur-R(12),e:dur-R(6),deps:["Pre-op test"]},
+{n:"Startup",c:"#16a34a",s:dur-R(8),e:dur,deps:["Fuel load"]}];}
+let PHASES=buildPhases(84);
+
+/* Milestones: early ones are absolute (civil/structural), late ones offset from plant duration.
+   This allows the same milestone logic to work across plant types with different durations. */
+function buildMilestones(dur){
+  return [
+    {m:0,n:"NTP"},{m:3,n:"Site mobilization"},{m:6,n:"Excavation complete"},
+    {m:10,n:"First nuclear concrete"},{m:14,n:"RB rebar L1"},{m:18,n:"Basemat complete"},
+    {m:24,n:"Containment liner start"},{m:28,n:"RB wall elev +20m"},{m:30,n:"CW tunnel break-thru"},
+    {m:34,n:"RB ring beam"},{m:36,n:"RB walls topped out"},{m:38,n:"Dome steel set"},
+    {m:40,n:"Containment structural"},{m:42,n:"Containment pressure test"},{m:44,n:"TB enclosed"},
+    {m:46,n:"RPV set on supports"},{m:48,n:"SG lift complete"},{m:50,n:"Main coolant pipe close"},
+    {m:52,n:"Turbine on sole plates"},{m:54,n:"CW system hydro test"},{m:56,n:"Generator set"},
+    /* Commissioning milestones scale with plant duration */
+    {m:dur-26,n:"Systems turnover start"},{m:dur-24,n:"Electrical energization"},
+    {m:dur-22,n:"I&C loop checks"},{m:dur-20,n:"Cold hydro test"},
+    {m:dur-18,n:"Hot functional test"},{m:dur-16,n:"Containment ILRT"},
+    {m:dur-14,n:"Pre-op complete"},{m:dur-12,n:"Fuel load authorization"},
+    {m:dur-10,n:"Fuel load complete"},{m:dur-8,n:"Initial criticality"},
+    {m:dur-6,n:"Generator sync"},{m:dur-4,n:"Power ascension 50%"},
+    {m:dur-2,n:"Power ascension 100%"},{m:dur,n:"Commercial operation"}
+  ];
+}
+let MILESTONES=buildMilestones(84);
+
+const RISKS=[
+{n:"Rebar supply chain disruption",prob:.3,impact:3,trigger:14,desc:"+3mo RB walls"},
+{n:"Batch plant mechanical failure",prob:.2,impact:2,trigger:20,desc:"+2mo civil"},
+{n:"Containment weld RT reject rate",prob:.25,impact:4,trigger:34,desc:"+4mo containment"},
+{n:"Labour dispute / work stoppage",prob:.15,impact:3,trigger:40,desc:"+3mo all trades"},
+{n:"SG delivery: vendor shop delay",prob:.35,impact:5,trigger:38,desc:"+5mo mechanical"},
+{n:"Commissioning deficiency backlog",prob:.2,impact:2,trigger:64,desc:"+2mo commissioning"},
+{n:"Regulatory design change order",prob:.1,impact:6,trigger:50,desc:"+6mo all"},
+{n:"Winter concrete curing failure",prob:.25,impact:1,trigger:16,desc:"+1mo foundation"},
+{n:"Dewatering pump failure (excav)",prob:.2,impact:2,trigger:8,desc:"+2mo excavation"},
+{n:"Crane boom failure / inspection",prob:.15,impact:2,trigger:30,desc:"+2mo lifts"},
+{n:"RPV transport route obstruction",prob:.12,impact:3,trigger:44,desc:"+3mo RPV set"},
+{n:"Seismic restraint rework",prob:.18,impact:2,trigger:46,desc:"+2mo piping"},
+{n:"Cable tray routing interference",prob:.22,impact:1,trigger:52,desc:"+1mo electrical"},
+{n:"Hot functional test deficiency",prob:.3,impact:3,trigger:66,desc:"+3mo startup"},
+{n:"Fuel handling crane commissioning",prob:.15,impact:2,trigger:70,desc:"+2mo fuel load"},
+{n:"Environmental permit amendment",prob:.08,impact:4,trigger:24,desc:"+4mo CW system"}];
+
+const LONGLEAD=[
+{n:"Reactor pressure vessel",order:0,deliver:44,need:46},{n:"Steam generators (x2)",order:2,deliver:42,need:46},
+{n:"Pressurizer",order:4,deliver:40,need:44},{n:"Containment liner plates",order:4,deliver:20,need:24},
+{n:"Reactor coolant pumps (x4)",order:8,deliver:42,need:46},{n:"Control rod drive mechanisms",order:12,deliver:52,need:56},
+{n:"Turbine HP/LP rotors",order:6,deliver:48,need:52},{n:"Generator stator + rotor",order:8,deliver:50,need:54},
+{n:"Main power transformer",order:10,deliver:50,need:56},{n:"Unit aux transformer",order:12,deliver:52,need:58},
+{n:"CW conduit pipe (3.5km)",order:6,deliver:28,need:32},{n:"Fuel handling crane",order:14,deliver:58,need:64},
+{n:"Emergency diesel generators",order:10,deliver:36,need:40},{n:"Main steam piping",order:12,deliver:44,need:48},
+{n:"Reactor internals",order:8,deliver:46,need:50},{n:"Nuclear fuel assemblies",order:48,deliver:70,need:72}];
+
+const DISCIPLINES=[
+{n:"Civil",c:"#9e9e9e",s:3,e:46},{n:"Mechanical",c:"#f59e0b",s:32,e:62},{n:"Electrical",c:"#2563eb",s:40,e:68},
+{n:"Piping",c:"#6b7280",s:32,e:60},{n:"I&C",c:"#059669",s:50,e:72},{n:"Nuclear",c:"#7c3aed",s:40,e:78}];
+
+const PLANTS={
+  pwr:{name:"Westinghouse PWR 600 MWe",mwe:600,v:{"rb-d":42,"rb-h":50,"tb-w":60,"tb-h":30,"cw-d":3.5,"cr-h":65},budget:8.5,dur:84,fuel:"UO2 enriched",coolant:"Light water",contain:"Pre-stressed concrete",peakWF:4500},
+  candu:{name:"CANDU 6 (700 MWe)",mwe:700,v:{"rb-d":50,"rb-h":35,"tb-w":70,"tb-h":35,"cw-d":4,"cr-h":60},budget:9.2,dur:84,fuel:"Natural UO2",coolant:"Heavy water",contain:"Pre-stressed + steel liner",peakWF:5000},
+  smr:{name:"SMR 300 MWe (modular)",mwe:300,v:{"rb-d":24,"rb-h":30,"tb-w":30,"tb-h":20,"cw-d":2,"cr-h":45},budget:2.8,dur:60,fuel:"HALEU",coolant:"Light water",contain:"Steel module",peakWF:2200},
+  ap1000:{name:"AP1000 (1100 MWe)",mwe:1100,v:{"rb-d":44,"rb-h":55,"tb-w":72,"tb-h":34,"cw-d":4.2,"cr-h":70},budget:12.5,dur:84,fuel:"UO2 enriched",coolant:"Light water",contain:"Steel + concrete shield",peakWF:7000},
+  epr:{name:"EPR 1650 MWe",mwe:1650,v:{"rb-d":52,"rb-h":60,"tb-w":80,"tb-h":38,"cw-d":5,"cr-h":75},budget:18.5,dur:108,fuel:"UO2/MOX",coolant:"Light water",contain:"Double wall concrete",peakWF:8000}
+};
+const R={"rb-d":[20,55],"rb-h":[25,65],"tb-w":[25,80],"tb-h":[18,40],"cw-d":[1.5,5],"cr-h":[35,80]};
+
+const POURS=[
+{m:9,n:"Lean concrete / mudmat",vol:120,spec:"25 MPa"},{m:10,n:"Basemat east sector",vol:1800,spec:"50 MPa nuclear"},
+{m:11,n:"Basemat west sector",vol:1800,spec:"50 MPa nuclear"},{m:12,n:"Basemat center strip",vol:800,spec:"50 MPa nuclear"},
+{m:14,n:"RB wall lift 1 (0-4m)",vol:580,spec:"40 MPa"},{m:16,n:"RB wall lift 2 (4-8m)",vol:580,spec:"40 MPa"},
+{m:18,n:"RB wall lift 3 (8-12m)",vol:580,spec:"40 MPa"},{m:20,n:"RB wall lift 4 (12-16m)",vol:580,spec:"40 MPa"},
+{m:22,n:"RB wall lift 5 (16-20m)",vol:580,spec:"40 MPa"},{m:24,n:"TB mat foundation",vol:1800,spec:"35 MPa"},
+{m:25,n:"Aux building slab",vol:500,spec:"35 MPa"},{m:26,n:"RB wall lift 6 (20-24m)",vol:580,spec:"40 MPa"},
+{m:27,n:"CW intake structure base",vol:350,spec:"35 MPa sulphate resistant"},
+{m:28,n:"RB wall lift 7 (24-28m)",vol:580,spec:"40 MPa"},{m:29,n:"CW outfall base",vol:200,spec:"35 MPa SR"},
+{m:30,n:"RB wall lift 8 (28-32m)",vol:580,spec:"40 MPa"},{m:32,n:"RB wall lift 9 (32-36m)",vol:580,spec:"40 MPa"},
+{m:33,n:"Diesel generator foundation",vol:250,spec:"35 MPa"},{m:34,n:"RB ring beam",vol:680,spec:"50 MPa nuclear"},
+{m:36,n:"Dome ring pour",vol:300,spec:"50 MPa nuclear"},{m:38,n:"TB pedestal (turbine base)",vol:600,spec:"45 MPa"},
+{m:40,n:"Fuel handling building slab",vol:400,spec:"40 MPa"},{m:42,n:"Switchyard foundations",vol:180,spec:"30 MPa"},
+{m:44,n:"Admin/control bldg slab",vol:220,spec:"30 MPa"},{m:46,n:"Final pours / grout",vol:150,spec:"various"}];
+
+const TRADES=[
+{n:"Civil",color:"#9e9e9e",peak:0.35},{n:"Mech",color:"#f59e0b",peak:0.25},
+{n:"Elec",color:"#2563eb",peak:0.15},{n:"Pipe",color:"#6b7280",peak:0.15},
+{n:"I&C",color:"#059669",peak:0.06},{n:"Nuclear",color:"#7c3aed",peak:0.04}];
+
+/* ===== STATE ===== */
+let V={},plant='pwr',nightMode=false,weatherOn=false,month=0,playing=false,lastF=performance.now(),spdX=1,camMode='orbit';
+let riskHits=new Set(),delayTotal=0,eventLog=[];
+let whatIfDelay=0,whatIfBudget=0,whatIfCrew=0;
+let leftOpen=true,rightOpen=true;
+let audioStarted=false,audioMuted=false,audioCtx=null;
+let orbitAngle=0,orbitDist=14,orbitY=8,isDragging=false,dragStart={x:0,y:0};
+let camCurrent={p:[0,8,14],l:[0,2.5,0],f:48};
+let camTarget={p:[0,8,14],l:[0,2.5,0],f:48};
+let lastMilestoneShown=-1;
+let autoTourIdx=0,autoTourTimer=0;
+
+/* ===== WHAT-IF ===== */
+function whatIf(type,val){
+  if(type==='reset'){whatIfDelay=0;whatIfBudget=0;whatIfCrew=0;delayTotal=0;riskHits=new Set();eventLog.push({m:Math.round(month),type:'good',msg:'All scenarios reset'});return;}
+  if(type==='delay'){whatIfDelay+=val;delayTotal+=Math.max(0,val);eventLog.push({m:Math.round(month),type:'risk',msg:'SCENARIO: '+(val>0?'+':'')+val+'mo schedule impact'});}
+  if(type==='accel'){whatIfDelay+=val;eventLog.push({m:Math.round(month),type:'good',msg:'SCENARIO: Schedule crashed by '+Math.abs(val)+'mo'});}
+  if(type==='budget'){whatIfBudget+=val;eventLog.push({m:Math.round(month),type:'good',msg:'SCENARIO: Budget increased by $'+val+'B'});}
+  if(type==='crew'){whatIfCrew+=val;eventLog.push({m:Math.round(month),type:'good',msg:'SCENARIO: +'+val+' workers added'});}
+}
+
+/* ===== PLANT SETUP ===== */
+function setPlant(p){
+  plant=p;const cfg=PLANTS[p];V=Object.assign({},cfg.v);
+  PHASES=buildPhases(cfg.dur);
+  MILESTONES=buildMilestones(cfg.dur);
+  riskHits=new Set();delayTotal=0;eventLog=[];whatIfDelay=0;whatIfBudget=0;whatIfCrew=0;
+  eventLog.push({m:0,type:'mile',msg:'NTP: '+cfg.name+'. Budget $'+cfg.budget+'B, '+cfg.dur+'mo. '+cfg.fuel+' / '+cfg.coolant+'. Peak workforce: '+cfg.peakWF});
+  buildDims();buildTimeline();
+}
+
+/* ===== SIMULATION HELPERS ===== */
+function sc(v){return v*0.12;}
+function vis(m,s,e){return m<s?0:m>=e?1:Math.min(1,(m-s)/(e-s));}
+function eo(t){return 1-Math.pow(1-t,3);}
+/* Beta-distribution S-curve for planned value (slow start, rapid middle, slow finish) */
+function betaCDF(x,a,b){
+  /* Regularized incomplete beta via simple numerical integration (trapezoidal, 200 steps) */
+  if(x<=0)return 0;if(x>=1)return 1;
+  const N=200;let sum=0;const dx=x/N;
+  for(let i=0;i<=N;i++){
+    const t=i*dx;
+    const ft=Math.pow(t,a-1)*Math.pow(1-t,b-1);
+    sum+=ft*(i===0||i===N?.5:1);
+  }
+  sum*=dx;
+  /* Normalize: full beta integral */
+  let full=0;const dxf=1/N;
+  for(let i=0;i<=N;i++){
+    const t=i*dxf;
+    const ft=Math.pow(t,a-1)*Math.pow(1-t,b-1);
+    full+=ft*(i===0||i===N?.5:1);
+  }
+  full*=dxf;
+  return sum/full;
+}
+function planned(m){
+  const d=PLANTS[plant].dur;
+  const x=Math.max(0,Math.min(1,m/d));
+  /* alpha=2.2, beta=2.8 gives a realistic nuclear construction S-curve:
+     slow ramp for first ~20%, steep climb through ~70%, slow finish */
+  return 100*betaCDF(x,2.2,2.8);
+}
+function earned(m){
+  /* Earned value lags plan by the accumulated delay.
+     CPI degrades when workforce exceeds plan (overtime = premium pay). */
+  const effectiveM=Math.max(0,m-delayTotal*.5);
+  const baseEV=planned(effectiveM);
+  /* Efficiency factor: early stages have mobilization inefficiency,
+     peak construction is most efficient, late stages have punch-list drag */
+  const d=PLANTS[plant].dur;
+  const frac=m/d;
+  const efficiency=frac<0.15?0.88:frac<0.35?0.93:frac<0.65?0.97:frac<0.85?0.94:0.90;
+  return Math.min(100,baseEV*efficiency);
+}
+function workforce(m){
+  if(m<=0)return 0;
+  const cfg=PLANTS[plant];
+  const pk=cfg.peakWF+whatIfCrew;
+  const d=cfg.dur;
+  const frac=m/d;
+  /* Realistic workforce mobilization curve:
+     - Ramp up over first ~20% of schedule
+     - Peak plateau from ~25% to ~65%
+     - Demobilize from ~65% to ~95%
+     - Skeleton crew for final startup/commissioning */
+  let factor;
+  if(frac<0.20){
+    factor=frac/0.20; /* linear ramp */
+  }else if(frac<0.65){
+    factor=1.0; /* peak plateau */
+  }else if(frac<0.90){
+    factor=1.0-(frac-0.65)/0.25*0.85; /* demobilize to ~15% */
+  }else{
+    factor=0.15; /* skeleton crew for startup */
+  }
+  /* Add slight seasonal variation */
+  factor*=(1+0.04*Math.sin(m*0.52));
+  return Math.round(pk*factor);
+}
+function discProg(d,m){return m<d.s?0:m>=d.e?100:Math.round((m-d.s)/(d.e-d.s)*100);}
+
+/* ===== 3D SCENE CONSTRUCTION ===== */
+function buildObjs(m){
+  const o=[];
+  function add(s,e,obj){const v=vis(m,s,e);if(v<=0)return;obj._v=v;o.push(obj);}
+  const D=V;
+
+  // ground + water
+  add(0,1,{shape:"box",pos:[0,-.01,0],size:[14,.02,10],color:"#b3aa97"});
+  add(0,1,{shape:"box",pos:[sc(-50),sc(-1.5),sc(-20)],size:[sc(35),sc(3),sc(45)],color:weatherOn?"#2d5a7a":"#3f6f8f"});
+  // roads
+  add(2,8,{shape:"box",pos:[0,.01,sc(-32)],size:[12*eo(vis(m,2,8)),.02,sc(3.5)],color:"#555"});
+  add(4,10,{shape:"box",pos:[sc(42),.01,0],size:[sc(3.5),.02,sc(50)*eo(vis(m,4,10))],color:"#555"});
+  // laydown area
+  add(3,84,{shape:"box",pos:[sc(38),.015,sc(-28)],size:[sc(20)*eo(vis(m,3,10)),.01,sc(16)],color:"#c8c0b0"});
+
+  // excavation
+  if(m>=3)add(3,84,{shape:"box",pos:[sc(-10),sc(-3)*eo(vis(m,3,12)),0],size:[sc(D["rb-d"]+12),sc(6)*eo(vis(m,3,12)),sc(D["rb-d"]+12)],color:"#8a7a60",sub:true});
+  // basemat (Foundation starts M10)
+  if(m>=10)add(10,84,{shape:"box",pos:[sc(-10),sc(-.3),0],size:[sc(D["rb-d"]+10),sc(3)*eo(vis(m,10,22)),sc(D["rb-d"]+10)],color:"#b9bec4"});
+  // RB walls (RB structure starts M16)
+  const rbH=sc(D["rb-h"])*eo(vis(m,16,40));
+  if(m>=16)add(16,84,{shape:"cyl",pos:[sc(-10),rbH/2+sc(1.5),0],size:[sc(D["rb-d"]),rbH],color:"#90a4ae"});
+  // containment liner (starts M24, after basemat and first wall lifts)
+  if(m>=24&&rbH>.5)add(24,84,{shape:"cyl",pos:[sc(-10),rbH*.48+sc(1.5),0],size:[sc(D["rb-d"]-4),rbH*.95*eo(vis(m,24,40))],color:"#7c3aed"});
+  // dome (set at M38, structural complete M40)
+  if(m>=38)add(38,44,{shape:"sphere",pos:[sc(-10),rbH+sc(1.5),0],size:[sc(D["rb-d"])*eo(vis(m,38,44))],color:"#9aa7b4",blend:.3});
+  // RPV (set at M46, but arrives at M44 -- placed after containment structural M40)
+  if(m>=44)add(44,52,{shape:"cyl",pos:[sc(-10),sc(10),0],size:[sc(8),sc(14)*eo(vis(m,44,52))],color:"#d97706"});
+  // SGs (lift at M48, installed by M54)
+  if(m>=46){
+    const sv=eo(vis(m,46,54));
+    add(46,84,{shape:"cyl",pos:[sc(-10)+sc(9),sc(10)*sv,sc(5)],size:[sc(3.5),sc(12)*sv],color:m<54?"#e08820":"#d97706"});
+    add(46,84,{shape:"cyl",pos:[sc(-10)-sc(9),sc(10)*sv,sc(-5)],size:[sc(3.5),sc(12)*sv],color:m<54?"#e08820":"#d97706"});
+  }
+  // pressurizer (delivered M40, installed M44-54)
+  if(m>=44)add(44,54,{shape:"cyl",pos:[sc(-10)+sc(5),sc(14)*eo(vis(m,44,54)),sc(-8)],size:[sc(2.5),sc(8)*eo(vis(m,44,54))],color:"#d97706"});
+  // TB
+  const tbH=sc(D["tb-h"])*eo(vis(m,22,40));
+  if(m>=22)add(22,84,{shape:"box",pos:[sc(25),tbH/2,0],size:[sc(D["tb-w"]),tbH,sc(28)],color:"#c4beb2"});
+  // turbine + gen
+  if(m>=46){
+    add(46,58,{shape:"cyl-z",pos:[sc(25),sc(D["tb-h"]*.4),sc(-3)],size:[sc(7),sc(18)*eo(vis(m,46,58))],color:"#8a9099"});
+    add(48,58,{shape:"cyl-z",pos:[sc(25),sc(D["tb-h"]*.4),sc(8)],size:[sc(5),sc(10)*eo(vis(m,48,58))],color:"#6b7280"});
+  }
+  // CW intake
+  if(m>=28)add(28,42,{shape:"box",pos:[sc(-38),sc(2.5)*eo(vis(m,28,42)),sc(-20)],size:[sc(8),sc(6)*eo(vis(m,28,42)),sc(D["cw-d"]*3+2)],color:"#7e8b98"});
+  // CW conduit
+  if(m>=32)add(32,48,{shape:"cyl-x",pos:[sc(-5),sc(D["cw-d"]/2),sc(-20)],size:[sc(D["cw-d"]),sc(60)*eo(vis(m,32,48))],color:"#5d6671"});
+  // outfall
+  if(m>=36)add(36,48,{shape:"box",pos:[sc(50),sc(2)*eo(vis(m,36,48)),sc(-20)],size:[sc(5),sc(4)*eo(vis(m,36,48)),sc(D["cw-d"]*2+4)],color:"#7e8b98"});
+  // switchyard
+  if(m>=44)add(44,60,{shape:"box",pos:[sc(30),.15,sc(24)],size:[sc(22)*eo(vis(m,44,56)),.3,sc(16)],color:"#4a4840"});
+  if(m>=52){
+    add(52,60,{shape:"box",pos:[sc(24),sc(3)*eo(vis(m,52,60)),sc(24)],size:[sc(4),sc(5)*eo(vis(m,52,60)),sc(3)],color:"#6b7280"});
+    add(52,60,{shape:"box",pos:[sc(36),sc(3)*eo(vis(m,52,60)),sc(24)],size:[sc(4),sc(5)*eo(vis(m,52,60)),sc(3)],color:"#6b7280"});
+  }
+  // crane
+  if(m>=4&&m<64){
+    const ch=sc(D["cr-h"]);
+    add(4,64,{shape:"box",pos:[sc(5),ch/2,sc(12)],size:[sc(.8),ch,sc(.8)],color:"#dc2626"});
+    add(4,64,{shape:"box",pos:[sc(-12),ch-sc(.3),sc(12)],size:[sc(36),sc(.5),sc(.5)],color:"#dc2626"});
+  }
+  // aux building
+  if(m>=26)add(26,44,{shape:"box",pos:[sc(8),sc(4)*eo(vis(m,26,44)),sc(14)],size:[sc(14),sc(8)*eo(vis(m,26,44)),sc(10)],color:"#b8b3a8"});
+  // diesel gen
+  if(m>=38)add(38,52,{shape:"box",pos:[sc(-30),sc(2.5)*eo(vis(m,38,52)),sc(15)],size:[sc(12),sc(5)*eo(vis(m,38,52)),sc(6)],color:"#a0968a"});
+  // admin
+  if(m>=16)add(16,30,{shape:"box",pos:[sc(42),sc(3)*eo(vis(m,16,30)),sc(14)],size:[sc(10),sc(6)*eo(vis(m,16,30)),sc(8)],color:"#cfc9be"});
+  // batch plant
+  if(m>=5&&m<50)add(5,50,{shape:"cyl",pos:[sc(35),sc(5)*eo(vis(m,5,10)),sc(-15)],size:[sc(4),sc(10)*eo(vis(m,5,10))],color:"#a0a0a0"});
+
+  return o.slice(0,MAX_OBJ);
+}
+
+/* ===== KPI COMPUTATION ===== */
+function kpis(m){
+  const cfg=PLANTS[plant],B=cfg.budget+whatIfBudget,ev=earned(m),pv=planned(m),spi=pv>0?ev/pv:1;
+  let spent=0;for(let i=0;i<=m;i++)spent+=workforce(i)*15000/1e6;
+  const cpi=spent>0?(ev/100*B)/spent:1,eac=cpi>0?B/cpi:B;
+  const dur=cfg.dur;
+  const mwe=m>=dur?cfg.mwe:m>=dur-6?Math.round(cfg.mwe*.5):m>=dur-12?Math.round(cfg.mwe*.05):0;
+  let cumVol=0;POURS.forEach(p=>{if(m>=p.m+2)cumVol+=p.vol;});
+  const wf=workforce(m);
+  const activePhases=PHASES.filter(p=>m>=p.s&&m<p.e).length;
+  const deliveredLL=LONGLEAD.filter(l=>m>=l.deliver).length;
+  return[
+    {v:Math.round(m/dur*100)+'%',l:'schedule',c:m>=dur?'ok':''},
+    {v:ev.toFixed(0)+'%',l:'earned val',c:ev>=pv?'ok':ev>=pv*.9?'w':'bad'},
+    {v:spi.toFixed(2),l:'SPI',c:spi>=.95?'ok':spi>=.85?'w':'bad'},
+    {v:cpi.toFixed(2),l:'CPI',c:cpi>=.95?'ok':cpi>=.85?'w':'bad'},
+    {v:'$'+spent.toFixed(1)+'B',l:'spent/$'+B.toFixed(1)+'B',c:spent>B?'bad':spent>B*.9?'w':''},
+    {v:'$'+eac.toFixed(1)+'B',l:'EAC',c:eac<=B*1.05?'ok':eac<=B*1.15?'w':'bad'},
+    {v:wf.toLocaleString(),l:'workforce',c:'bl'},
+    {v:mwe||'--',l:'MWe',c:mwe>=cfg.mwe?'vi':mwe>0?'w':''},
+    {v:activePhases,l:'phases',c:activePhases>4?'w':'bl'},
+    {v:deliveredLL+'/'+LONGLEAD.length,l:'long-lead',c:deliveredLL>=LONGLEAD.length?'ok':''},
+    {v:delayTotal+'mo',l:'delay',c:delayTotal>6?'bad':delayTotal>0?'w':'ok'},
+    {v:riskHits.size+'/'+RISKS.length,l:'risks',c:riskHits.size>4?'bad':riskHits.size>0?'w':'ok'}
+  ];
+}
+
+/* ===== RISK / MILESTONE CHECKS ===== */
+let lastRiskCheck=0,msHit=new Set();
+function checkRisks(m){
+  if(Math.floor(m)===lastRiskCheck)return;
+  lastRiskCheck=Math.floor(m);
+  RISKS.forEach((r,i)=>{
+    if(riskHits.has(i))return;
+    if(Math.abs(m-r.trigger)<1&&Math.random()<r.prob){
+      riskHits.add(i);delayTotal+=r.impact;
+      eventLog.push({m:Math.round(m),type:'risk',msg:'RISK: '+r.n+' -- '+r.desc});
+    }
+  });
+}
+function checkMilestones(m){
+  MILESTONES.forEach((ms,i)=>{
+    if(msHit.has(i))return;
+    if(m>=ms.m){
+      msHit.add(i);
+      eventLog.push({m:ms.m,type:'mile',msg:'MILESTONE: '+ms.n});
+      if(ms.m>lastMilestoneShown){lastMilestoneShown=ms.m;showCenterOverlay(ms);}
+      playChime();
+    }
+  });
+}
+
+/* ===== WEBGL RAYMARCHER (improved shader) ===== */
+const VERT=`#version 300 es
+in vec2 aP;
+void main(){gl_Position=vec4(aP,0,1);}`;
+
+const FRAG=`#version 300 es
+precision highp float;out vec4 F;
+uniform vec2 uR;uniform vec3 uC,uL;uniform float uV;uniform int uN;
+uniform int uT[24];uniform vec3 uP[24],uS[24],uO[24];uniform float uB[24],uX[24];
+uniform vec3 uD,uA,uZ;uniform float uNight,uTime;
+
+float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}
+
+float sB(vec3 p,vec3 b){vec3 q=abs(p)-b;return length(max(q,0.))+min(max(q.x,max(q.y,q.z)),0.);}
+float sS(vec3 p,float r){return length(p)-r;}
+float sC(vec3 p,float r,float h){vec2 d=abs(vec2(length(p.xz),p.y))-vec2(r,h);return min(max(d.x,d.y),0.)+length(max(d,0.));}
+float sT(vec3 p,float R,float r){return length(vec2(length(p.xz)-R,p.y))-r;}
+float sm(float a,float b,float k){float h=clamp(.5+.5*(b-a)/k,0.,1.);return mix(b,a,h)-k*h*(1.-h);}
+float sO(int i,vec3 p){vec3 q=p-uP[i],s=uS[i]*.5;if(uT[i]==0)return sB(q,s);if(uT[i]==1)return sS(q,s.x);if(uT[i]==2)return sC(q,s.x,s.y);if(uT[i]==4)return sC(q.yxz,s.x,s.y);if(uT[i]==5)return sC(q.xzy,s.x,s.y);return sT(q,s.x,s.y);}
+float map(vec3 p){float d=p.y;for(int i=0;i<24;i++){if(i>=uN)break;float di=sO(i,p);if(uX[i]>.5)d=max(d,-di);else if(uB[i]>.001)d=sm(d,di,uB[i]);else d=min(d,di);}return d;}
+
+vec3 mc(vec3 p,float dist){
+  float d=p.y;
+  vec2 q=abs(fract(p.xz*.5)-.5);float mx=max(q.x,q.y),w=.008*(1.+dist*.12),ln=smoothstep(.5-w,.5,mx);
+  float gn=noise(p.xz*3.)*.12+noise(p.xz*8.)*.05;
+  vec3 c=mix(vec3(.72+gn,.73+gn,.70+gn),vec3(.50,.53,.58),ln*.85);
+  for(int i=0;i<24;i++){if(i>=uN)break;float di=sO(i,p);if(uX[i]>.5)d=max(d,-di);else if(uB[i]>.001){float nd=sm(d,di,uB[i]);if(di<d)c=uO[i];d=nd;}else{if(di<d){d=di;c=uO[i];}}}
+  return c;
+}
+
+vec3 N(vec3 p){vec2 e=vec2(.002,0);return normalize(vec3(map(p+e.xyy)-map(p-e.xyy),map(p+e.yxy)-map(p-e.yxy),map(p+e.yyx)-map(p-e.yyx)));}
+float sh(vec3 o,vec3 d){float r=1.,t=.05;for(int i=0;i<32;i++){float h=map(o+d*t);r=min(r,10.*h/t);t+=clamp(h,.02,.5);if(r<.005||t>30.)break;}return clamp(r,0.,1.);}
+float ao(vec3 p,vec3 n){float o=0.,s=1.;for(int i=1;i<=5;i++){float h=.06*float(i);o+=(h-map(p+n*h))*s;s*=.7;}return clamp(1.-2.*o,0.,1.);}
+
+void main(){
+  vec2 uv=(gl_FragCoord.xy*2.-uR)/uR.y;
+  vec3 fw=normalize(uL-uC),rt=normalize(cross(fw,vec3(0,1,0))),up=cross(rt,fw);
+  float fl=1./tan(radians(uV)*.5);vec3 rd=normalize(fw*fl+rt*uv.x+up*uv.y),ro=uC;
+  vec3 sun=normalize(uD);
+  float ni=uNight;
+
+  // Sky gradient based on sun angle
+  float sunH=sun.y;
+  vec3 zenith=mix(vec3(.05,.06,.15),mix(vec3(.30,.45,.75),vec3(.55,.65,.85),clamp(sunH,0.,1.)),1.-ni);
+  vec3 horizon=mix(vec3(.03,.03,.06),mix(vec3(.70,.55,.40),vec3(.75,.80,.88),clamp(sunH*.5+.5,0.,1.)),1.-ni);
+  // Golden hour coloring
+  float golden=smoothstep(0.,.3,sunH)*smoothstep(.5,.2,sunH);
+  horizon=mix(horizon,vec3(.95,.55,.25),golden*.6*(1.-ni));
+  zenith=mix(zenith,vec3(.60,.35,.25),golden*.3*(1.-ni));
+
+  vec3 sky=mix(horizon,zenith,clamp(rd.y*.8+.3,0.,1.));
+  // Sun disc
+  float sunDot=max(dot(rd,sun),0.);
+  sky+=vec3(1,.95,.85)*pow(sunDot,64.)*.5*(1.-ni*.8);
+  sky+=vec3(1,.85,.6)*pow(sunDot,8.)*.15*(1.-ni*.7);
+
+  // Stars at night
+  if(ni>.3){
+    vec2 sp=rd.xz/(rd.y+.001);
+    float stars=step(.998,hash(floor(sp*200.)))*ni;
+    sky+=vec3(stars*.8);
+    // Moon glow
+    vec3 moonDir=normalize(vec3(-.4,.7,.3));
+    float moonDot=max(dot(rd,moonDir),0.);
+    sky+=vec3(.15,.18,.25)*pow(moonDot,32.)*ni;
+    sky+=vec3(.6,.65,.8)*pow(moonDot,256.)*ni*.5;
+  }
+
+  float t=0.;bool hit=false;
+  for(int i=0;i<128;i++){float h=map(ro+rd*t);if(h<.002*max(t,1.)){hit=true;break;}t+=h;if(t>80.)break;}
+
+  vec3 col=sky;
+  if(hit){
+    vec3 p=ro+rd*t,n=N(p),base=mc(p,t);
+
+    // Water shimmer
+    if(p.y<.02&&p.x<-3.){
+      float wave=sin(p.x*4.+uTime*1.5)*.02+sin(p.z*3.+uTime*1.1)*.015;
+      n=normalize(n+vec3(wave,0.,wave*.7));
+      base=mix(base,sky*.3,0.35);
+      base+=vec3(.08,.12,.18)*pow(max(dot(reflect(rd,n),sun),0.),16.);
+    }
+
+    float dif=max(dot(n,sun),0.)*sh(p+n*.02,sun)*(1.-ni*.6);
+    float amb=(.5+.5*n.y)*(1.-ni*.3);
+    float occ=ao(p,n);
+    col=base*(vec3(1,.96,.88)*dif*(1.-ni*.5)+mix(vec3(.10,.12,.18),vec3(.40,.42,.48),1.-ni)*amb*.55)*occ;
+    col+=vec3(pow(max(dot(reflect(rd,n),sun),0.),24.)*.2*dif);
+
+    // Construction lights at night
+    if(ni>.3){
+      vec3 lp1=vec3(-1.2,1.5,0.);float ld1=length(p-lp1);col+=vec3(1.,.8,.4)*ni*2./(1.+ld1*ld1*4.);
+      vec3 lp2=vec3(.6,3.,1.44);float ld2=length(p-lp2);col+=vec3(1.,.3,.2)*ni*1.5/(1.+ld2*ld2*8.);
+      vec3 lp3=vec3(4.2,1.,-1.8);float ld3=length(p-lp3);col+=vec3(1.,.9,.6)*ni*.8/(1.+ld3*ld3*6.);
+    }
+
+    // Atmosphere fog
+    vec3 fogCol=mix(horizon,vec3(.05,.05,.08),ni);
+    col=mix(col,fogCol,1.-exp(-.0008*t*t));
+  }
+
+  // Bloom on bright areas
+  col+=pow(max(col-vec3(.7),vec3(0)),vec3(2.))*1.8;
+  // Vignette
+  vec2 vc=(gl_FragCoord.xy/uR-.5)*1.5;
+  col*=1.-.35*dot(vc,vc);
+  // Film grain
+  float grain=(fract(sin(dot(uv+fract(uTime*.1),vec2(12.9898,78.233)))*43758.5453)-.5)*.012;
+  col+=grain;
+  // Tonemapping + gamma
+  col=col/(col+vec3(1.));
+  col=pow(max(col,vec3(0)),vec3(1./2.2));
+  F=vec4(col,1);
+}`;
+
+/* ===== WebGL INIT ===== */
+const cv=$('gl'),gl=cv.getContext("webgl2",{antialias:false,powerPreference:"high-performance"});
+if(!gl)document.body.innerHTML="<p style='color:#fff;padding:40px'>WebGL2 required</p>";
+function cmp(t,s){const sh=gl.createShader(t);gl.shaderSource(sh,s);gl.compileShader(sh);if(!gl.getShaderParameter(sh,gl.COMPILE_STATUS)){console.error(gl.getShaderInfoLog(sh));throw new Error("Shader compile failed");}return sh;}
+const prg=gl.createProgram();gl.attachShader(prg,cmp(gl.VERTEX_SHADER,VERT));gl.attachShader(prg,cmp(gl.FRAGMENT_SHADER,FRAG));gl.linkProgram(prg);gl.useProgram(prg);
+const bf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,bf);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
+const aP=gl.getAttribLocation(prg,"aP");gl.enableVertexAttribArray(aP);gl.vertexAttribPointer(aP,2,gl.FLOAT,false,0,0);
+const U={};["uR","uC","uL","uV","uN","uT","uP","uS","uO","uB","uX","uD","uA","uZ","uNight","uTime"].forEach(n=>U[n]=gl.getUniformLocation(prg,n));
+
+/* ===== CAMERA SYSTEM ===== */
+const AUTO_TOUR=[
+  {p:[0,16,.01],l:[0,1,0],f:52,hold:8},        // wide aerial
+  {p:[-3,4,4],l:[-1.2,3,0],f:48,hold:8},        // reactor close-up
+  {p:[5,3,5],l:[3,1.5,0],f:50,hold:8},           // turbine hall
+  {p:[1,8,2],l:[-1.2,4,0],f:46,hold:8},          // crane view
+  {p:[-5,3,-4],l:[-4.5,1,-2.4],f:50,hold:8},     // intake
+  {p:[8,12,-6],l:[0,2,0],f:52,hold:8},            // distant angle
+];
+
+function getCamTarget(m){
+  const t=m/84*Math.PI*2;
+  if(camMode==='auto'){
+    autoTourTimer+=0.02;
+    let cumH=0;
+    for(let i=0;i<AUTO_TOUR.length;i++){
+      cumH+=AUTO_TOUR[i].hold;
+      if(autoTourTimer<cumH||i===AUTO_TOUR.length-1){
+        const a=AUTO_TOUR[i];
+        return{p:[...a.p],l:[...a.l],f:a.f};
+      }
+    }
+    autoTourTimer=0;
+    return{p:[...AUTO_TOUR[0].p],l:[...AUTO_TOUR[0].l],f:AUTO_TOUR[0].f};
+  }
+  if(camMode==='aerial')return{p:[0,18,.01],l:[0,0,0],f:55};
+  if(camMode==='reactor')return{p:[sc(-10)+4,sc(V["rb-h"]*.4),5],l:[sc(-10),sc(V["rb-h"]*.3),0],f:50};
+  if(camMode==='turbine')return{p:[sc(25)+6,4,8],l:[sc(25),sc(V["tb-h"]*.3),0],f:52};
+  if(camMode==='intake')return{p:[sc(-38),4,sc(-20)+8],l:[sc(-20),1,sc(-20)],f:50};
+  if(camMode==='crane')return{p:[sc(5)+2,sc(V["cr-h"]*.7),sc(12)+3],l:[sc(-10),sc(V["rb-h"]*.3),0],f:48};
+  // orbit
+  return{p:[Math.cos(orbitAngle)*orbitDist,orbitY,Math.sin(orbitAngle)*orbitDist],l:[0,2.5,0],f:48};
+}
+
+function lerpV3(a,b,t){return[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,a[2]+(b[2]-a[2])*t];}
+
+/* ===== RENDER ===== */
+let globalTime=0;
+function render3D(){
+  const dpr=Math.min(devicePixelRatio||1,1.5),w=Math.round(cv.clientWidth*dpr),h=Math.round(cv.clientHeight*dpr);
+  if(cv.width!==w||cv.height!==h){cv.width=w;cv.height=h;}
+  const objs=buildObjs(month);
+  const tp=new Int32Array(MAX_OBJ),ps=new Float32Array(MAX_OBJ*3),sz=new Float32Array(MAX_OBJ*3),cl=new Float32Array(MAX_OBJ*3),bl=new Float32Array(MAX_OBJ),sb=new Float32Array(MAX_OBJ);
+  objs.forEach((o,i)=>{tp[i]=SHAPE_IDS[o.shape]??0;ps.set(o.pos,i*3);sz.set([o.size[0]??1,o.size[1]??o.size[0]??1,o.size[2]??o.size[0]??1],i*3);cl.set(unhex(o.color||"#999"),i*3);bl[i]=o.blend||0;sb[i]=o.sub?1:0;});
+
+  // Smooth camera interpolation
+  camTarget=getCamTarget(month);
+  const lerpSpeed=0.04;
+  camCurrent.p=lerpV3(camCurrent.p,camTarget.p,lerpSpeed);
+  camCurrent.l=lerpV3(camCurrent.l,camTarget.l,lerpSpeed);
+  camCurrent.f+=(camTarget.f-camCurrent.f)*lerpSpeed;
+
+  // Sun position based on month (day cycle within month)
+  const sunAngle=(month%1)*Math.PI*2;
+  const sunElev=nightMode?-0.3:Math.sin(sunAngle*.1+.8)*.6+.5;
+  const sunDir=[Math.cos(month*.15)*.5,Math.max(0.05,sunElev),Math.sin(month*.15)*.3];
+
+  gl.viewport(0,0,w,h);
+  gl.uniform2f(U.uR,w,h);
+  gl.uniform3fv(U.uC,camCurrent.p);
+  gl.uniform3fv(U.uL,camCurrent.l);
+  gl.uniform1f(U.uV,camCurrent.f);
+  gl.uniform1i(U.uN,objs.length);
+  gl.uniform1iv(U.uT,tp);
+  gl.uniform3fv(U.uP,ps);
+  gl.uniform3fv(U.uS,sz);
+  gl.uniform3fv(U.uO,cl);
+  gl.uniform1fv(U.uB,bl);
+  gl.uniform1fv(U.uX,sb);
+  gl.uniform3fv(U.uD,sunDir);
+  gl.uniform3fv(U.uA,[.80,.84,.90]);
+  gl.uniform3fv(U.uZ,[.58,.63,.72]);
+  gl.uniform1f(U.uNight,nightMode?1:0);
+  gl.uniform1f(U.uTime,globalTime);
+  gl.drawArrays(gl.TRIANGLES,0,3);
+}
+
+/* ===== S-CURVE CHART ===== */
+function drawSCurve(){
+  const el=$('scurve-canvas');if(!el)return;
+  const c=el.getContext('2d'),dur=PLANTS[plant].dur;
+  const w=el.width=el.clientWidth*2,h=el.height=el.clientHeight*2;
+  c.fillStyle='rgba(0,0,0,0.3)';c.fillRect(0,0,w,h);
+  // grid
+  c.strokeStyle='rgba(255,255,255,0.04)';c.lineWidth=1;
+  for(let i=0;i<=4;i++){const y=h*.06+h*.88*(1-i/4);c.beginPath();c.moveTo(0,y);c.lineTo(w,y);c.stroke();}
+  // actual cost
+  c.strokeStyle='rgba(239,68,68,0.35)';c.lineWidth=1.5;c.beginPath();
+  let cumCost=0;for(let m=0;m<=dur;m++){cumCost+=workforce(m)*8500/1e6;const x=m/dur*w,y=h*.06+h*.88*(1-cumCost/(PLANTS[plant].budget*1.3));m?c.lineTo(x,y):c.moveTo(x,y);}c.stroke();
+  // plan
+  c.strokeStyle='rgba(255,255,255,0.15)';c.lineWidth=1.5;c.beginPath();
+  for(let m=0;m<=dur;m++){const x=m/dur*w,y=h*.06+h*.88*(1-planned(m)/100);m?c.lineTo(x,y):c.moveTo(x,y);}c.stroke();
+  // earned
+  c.strokeStyle='#00e5ff';c.lineWidth=2;c.beginPath();
+  for(let m=0;m<=Math.min(month,dur);m++){const x=m/dur*w,y=h*.06+h*.88*(1-earned(m)/100);m?c.lineTo(x,y):c.moveTo(x,y);}c.stroke();
+  // now line
+  const nx=month/dur*w;c.strokeStyle='rgba(255,107,53,0.5)';c.lineWidth=1;c.setLineDash([3,3]);c.beginPath();c.moveTo(nx,0);c.lineTo(nx,h);c.stroke();c.setLineDash([]);
+  // labels
+  c.font='bold '+Math.round(h*.09)+'px monospace';c.fillStyle='rgba(255,255,255,0.2)';c.fillText('Plan',4,h*.12);
+  c.fillStyle='#00e5ff';c.fillText('Earned',w*.2,h*.12);c.fillStyle='rgba(239,68,68,0.5)';c.fillText('Cost',w*.42,h*.12);
+}
+
+/* ===== BUILD TIMELINE ===== */
+function buildTimeline(){
+  const dur=PLANTS[plant].dur;
+  // Phase dots with dependency tooltips
+  $('phase-dots').innerHTML=PHASES.map((p,i)=>{
+    const depStr=p.deps&&p.deps.length>0?' [needs: '+p.deps.join(', ')+']':'';
+    return'<div class="pd" style="background:'+p.c+'" data-ph="'+i+'" title="M'+p.s+'-M'+p.e+depStr+'">'+p.n.split(' ')[0]+'</div>';
+  }).join('');
+  // Phase bars in track
+  $('tl-phases').innerHTML=PHASES.map(p=>'<div class="tp" style="background:'+p.c+'"></div>').join('');
+  // Milestone dots
+  const track=$('tl-track');
+  track.querySelectorAll('.tl-ms').forEach(e=>e.remove());
+  MILESTONES.forEach(ms=>{
+    const d=document.createElement('div');d.className='tl-ms';d.style.left=(ms.m/dur*100)+'%';
+    d.innerHTML='<div class="ms-tip">M'+ms.m+' '+ms.n+'</div>';
+    track.appendChild(d);
+  });
+}
+
+/* ===== BUILD DIMS ===== */
+function buildDims(){
+  const el=$('dims');el.innerHTML='';
+  for(const k in R){
+    const r=R[k],d=document.createElement('div');d.className='dim-row';
+    d.innerHTML='<label>'+k+'</label><input type="range" min="'+r[0]+'" max="'+r[1]+'" step="'+((r[1]-r[0])/100)+'" value="'+(V[k]||r[0])+'" data-k="'+k+'"><span class="dv" data-dv="'+k+'">'+(V[k]||r[0])+'</span>';
+    el.appendChild(d);
+  }
+  el.addEventListener('input',e=>{if(!e.target.dataset.k)return;V[e.target.dataset.k]=+e.target.value;document.querySelector('[data-dv="'+e.target.dataset.k+'"]').textContent=(+e.target.value).toFixed(+e.target.value>=10?0:1);});
+}
+
+/* ===== BUILD WHAT-IF BUTTONS ===== */
+function buildWhatIf(){
+  const btns=[
+    ['+6mo regulatory','delay',6],['+3mo strike','delay',3],['+2mo supply','delay',2],['+4mo NDE rework','delay',4],
+    ['Crash -4mo','accel',-4],['OT -2mo','accel',-2],['Budget +$0.5B','budget',0.5],['Budget +$1B','budget',1.0],
+    ['+500 crew','crew',500],['+1k crew','crew',1000],['-300 crew','crew',-300],['Reset','reset',0]
+  ];
+  $('whatif').innerHTML=btns.map(b=>'<button onclick="whatIf(\''+b[1]+'\','+b[2]+')">'+b[0]+'</button>').join('');
+}
+
+/* ===== CENTER OVERLAY ===== */
+let overlayTimeout=null;
+function showCenterOverlay(ms){
+  const overlay=$('center-overlay');
+  $('co-title').textContent=ms.n;
+  $('co-desc').textContent='Month '+ms.m+' -- '+PLANTS[plant].name;
+  const phase=PHASES.find(p=>month>=p.s&&month<p.e);
+  const depInfo=phase&&phase.deps&&phase.deps.length>0?'Current phase depends on: '+phase.deps.join(', '):'No upstream dependencies';
+  const allCaps=[
+    {t:'Constraint Model',d:'Phases have real dependencies (e.g. Foundation needs Excavation). '+depInfo+'.'},
+    {t:'Parametric Model',d:'Every dimension is a slider. Change reactor diameter and the entire site re-derives. No stored coordinates.'},
+    {t:'Risk Engine',d:'16 risks with probability, impact, and trigger month. Probabilistic -- the same build never plays identically.'},
+  ];
+  $('co-caps').innerHTML=allCaps.map(c=>'<div class="cap-card"><div class="cc-title">'+c.t+'</div><div class="cc-desc">'+c.d+'</div></div>').join('');
+  overlay.classList.add('show');
+  clearTimeout(overlayTimeout);
+  overlayTimeout=setTimeout(()=>overlay.classList.remove('show'),4000);
+}
+
+/* ===== AUDIO (Web Audio API) ===== */
+let rumbleNode,rumbleGain,clangInterval,beeperInterval,windGain,masterGain;
+function initAudio(){
+  if(audioStarted)return;audioStarted=true;
+  try{
+    audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+    masterGain=audioCtx.createGain();masterGain.gain.value=0.15;masterGain.connect(audioCtx.destination);
+
+    // Low rumble
+    const rumbleBuf=audioCtx.createBufferSource();
+    const rumbleLen=audioCtx.sampleRate*2;
+    const rumbleBufData=audioCtx.createBuffer(1,rumbleLen,audioCtx.sampleRate);
+    const rd=rumbleBufData.getChannelData(0);
+    for(let i=0;i<rumbleLen;i++)rd[i]=(Math.random()*2-1);
+    rumbleBuf.buffer=rumbleBufData;rumbleBuf.loop=true;
+    const lpf=audioCtx.createBiquadFilter();lpf.type='lowpass';lpf.frequency.value=80;
+    rumbleGain=audioCtx.createGain();rumbleGain.gain.value=0.3;
+    rumbleBuf.connect(lpf);lpf.connect(rumbleGain);rumbleGain.connect(masterGain);
+    rumbleBuf.start();
+
+    // Wind
+    const windBuf=audioCtx.createBufferSource();
+    const windLen=audioCtx.sampleRate*2;
+    const windBufData=audioCtx.createBuffer(1,windLen,audioCtx.sampleRate);
+    const wd=windBufData.getChannelData(0);
+    for(let i=0;i<windLen;i++)wd[i]=(Math.random()*2-1);
+    windBuf.buffer=windBufData;windBuf.loop=true;
+    const bpf=audioCtx.createBiquadFilter();bpf.type='bandpass';bpf.frequency.value=400;bpf.Q.value=0.5;
+    windGain=audioCtx.createGain();windGain.gain.value=0;
+    windBuf.connect(bpf);bpf.connect(windGain);windGain.connect(masterGain);
+    windBuf.start();
+
+    // Periodic metallic clang
+    clangInterval=setInterval(()=>{
+      if(audioMuted||!playing)return;
+      const osc=audioCtx.createOscillator();osc.type='triangle';osc.frequency.value=800+Math.random()*600;
+      const g=audioCtx.createGain();g.gain.value=0.06;
+      g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+0.15);
+      osc.connect(g);g.connect(masterGain);osc.start();osc.stop(audioCtx.currentTime+0.15);
+    },3000+Math.random()*5000);
+
+    // Backup beeper
+    beeperInterval=setInterval(()=>{
+      if(audioMuted||!playing)return;
+      for(let i=0;i<3;i++){
+        const osc=audioCtx.createOscillator();osc.type='square';osc.frequency.value=1000;
+        const g=audioCtx.createGain();g.gain.value=0.02;
+        const t=audioCtx.currentTime+i*0.4;
+        g.gain.setValueAtTime(0.02,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.15);
+        osc.connect(g);g.connect(masterGain);osc.start(t);osc.stop(t+0.15);
+      }
+    },8000+Math.random()*12000);
+  }catch(e){console.warn('Audio init failed',e);}
+}
+
+function playChime(){
+  if(!audioCtx||audioMuted)return;
+  try{
+    const freqs=[523,659,784];
+    freqs.forEach((f,i)=>{
+      const osc=audioCtx.createOscillator();osc.type='sine';osc.frequency.value=f;
+      const g=audioCtx.createGain();g.gain.value=0.08;
+      const t=audioCtx.currentTime+i*0.12;
+      g.gain.setValueAtTime(0.08,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.5);
+      osc.connect(g);g.connect(masterGain);osc.start(t);osc.stop(t+0.5);
+    });
+  }catch(e){}
+}
+
+function updateAudio(){
+  if(!audioCtx||audioMuted)return;
+  // Wind louder at aerial angles
+  if(windGain){
+    const isHigh=camCurrent.p[1]>10;
+    windGain.gain.value+=(( isHigh?0.12:0.02)-windGain.gain.value)*0.05;
+  }
+  if(rumbleGain){
+    rumbleGain.gain.value+=((playing?0.3:0.08)-rumbleGain.gain.value)*0.05;
+  }
+}
+
+/* ===== UI UPDATE ===== */
+function updateUI(){
+  const dur=PLANTS[plant].dur;
+  const yr=Math.floor(month/12)+1,mo=Math.round(month%12)+1;
+  const phase=PHASES.find(p=>month>=p.s&&month<p.e)||PHASES[PHASES.length-1];
+
+  // Top bar
+  $('phase-name').textContent=phase.n;
+  $('month-info').textContent='Y'+yr+' M'+mo+' ('+Math.round(month)+'/'+dur+')';
+
+  // Timeline
+  $('tl-month').textContent='M'+Math.round(month);
+  $('tl-pct').textContent=Math.round(month/dur*100)+'%';
+  $('tl-handle').style.left=(month/dur*100)+'%';
+
+  // Phase dots highlight
+  const dots=$('phase-dots').children;
+  for(let i=0;i<dots.length;i++){
+    const p=PHASES[i];
+    dots[i].className='pd'+(month>=p.e?' past':month>=p.s?' now':' fut');
+  }
+
+  // KPIs
+  const K=kpis(month);
+  $('kpi-grid').innerHTML=K.map(k=>'<div class="kpi'+(k.c?' '+k.c:'')+'"><div class="kv">'+k.v+'</div><div class="kl">'+k.l+'</div></div>').join('');
+
+  // S-Curve
+  drawSCurve();
+
+  // Discipline bars
+  $('disc-bars').innerHTML=DISCIPLINES.map(d=>{
+    const pct=discProg(d,month);
+    return'<div class="disc-bar"><span class="db-name">'+d.n.slice(0,5)+'</span><div class="db-track"><div class="db-fill" style="width:'+pct+'%;background:'+d.c+'"></div></div><span class="db-pct" style="color:'+d.c+'">'+pct+'%</span></div>';
+  }).join('');
+
+  // Feed
+  $('feed').innerHTML=eventLog.slice(-12).reverse().map(e=>
+    '<div class="ev-item '+e.type+'"><span class="ev-mo">M'+e.m+'</span><span>'+e.msg+'</span></div>').join('');
+
+  // Risks
+  $('risks').innerHTML=RISKS.map((r,i)=>{
+    const hit=riskHits.has(i);
+    return'<span class="risk-item'+(hit?' hit':month>r.trigger+2?' clear':'')+'">'+
+      (hit?'&#9888;':'')+(month>r.trigger+2&&!hit?'&#10003;':'')+' '+r.n.split(' ').slice(0,3).join(' ')+'</span>';
+  }).join('');
+
+  // Long-lead
+  $('ll').innerHTML=LONGLEAD.map(l=>{
+    const cls=month>=l.deliver?'del':month>=l.need&&month<l.deliver?'late':month>=l.order?'wait':'';
+    return'<span class="ll-item '+cls+'">'+(cls==='del'?'&#10003;':cls==='late'?'&#9888;':cls==='wait'?'&#9881;':'&#8987;')+' '+l.n.split(' ').slice(0,2).join(' ')+'</span>';
+  }).join('');
+
+  // Bottom-left info
+  let cumVol=0;POURS.forEach(p=>{if(month>=p.m+2)cumVol+=p.vol;});
+  $('bi-concrete').textContent=Math.round(cumVol/1000)+'k';
+  $('bi-wf').textContent=workforce(month).toLocaleString();
+  const lti=Math.floor(month/25);
+  $('bi-safe').textContent=Math.round((month-lti*25)*30);
+}
+
+/* ===== MAIN LOOP ===== */
+function loop(now){
+  const dt=(now-lastF)/1000;lastF=now;globalTime+=dt;
+
+  if(playing){
+    const dur=PLANTS[plant].dur;
+    month=Math.min(dur,month+dt*spdX*3);
+    if(month>=dur){playing=false;$('play-btn').innerHTML='&#9654;';$('play-btn').classList.remove('playing');eventLog.push({m:dur,type:'good',msg:'COMMERCIAL OPERATION DATE achieved!'});}
+    checkRisks(month);checkMilestones(month);
+    // Construction events
+    if(Math.random()<.003&&month>5){
+      const goodMsgs=[
+        "Concrete test cylinders pass 28-day strength ("+Math.round(40+Math.random()*15)+" MPa)",
+        "Survey crew as-built check: within 3mm tolerance",
+        "QC inspection: zero NCRs this period",
+        "Safety: "+(Math.round(workforce(month)*170*month/1e5))+"00k worker-hours LTI-free",
+        "Environmental monitoring: all parameters within limits",
+        "Night shift pour completed: "+Math.round(200+Math.random()*400)+" m3",
+        "Crane monthly inspection: all passed",
+        "Welding NDE: "+Math.round(96+Math.random()*4)+"% first-time pass rate",
+        "Rebar: "+Math.round(15+Math.random()*10)+" tonnes/day achieved",
+        "Cable pulling: "+Math.round(2+Math.random()*6)+" km this week"
+      ];
+      eventLog.push({m:Math.round(month),type:'good',msg:goodMsgs[Math.floor(Math.random()*goodMsgs.length)]});
+    }
+    if(weatherOn&&Math.random()<.004){
+      const wxMsgs=["Heavy rain: pours postponed","High winds: crane suspended","Snow: 1-hour access delay","Fog: limited visibility","Thunder: outdoor work stopped"];
+      eventLog.push({m:Math.round(month),type:'risk',msg:'WEATHER: '+wxMsgs[Math.floor(Math.random()*wxMsgs.length)]});
+    }
+    if(Math.random()<.001&&month>20){
+      const inspMsgs=["CNSC inspection: satisfactory","TSSA pressure vessel: approved","ISO 9001 audit: no NCRs"];
+      eventLog.push({m:Math.round(month),type:'mile',msg:inspMsgs[Math.floor(Math.random()*inspMsgs.length)]});
+    }
+  }
+
+  // Auto-orbit when not dragging in orbit mode
+  if(camMode==='orbit'&&!isDragging&&playing){
+    orbitAngle+=dt*0.03;
+  }
+
+  render3D();updateUI();updateAudio();
+  requestAnimationFrame(loop);
+}
+
+/* ===== TIMELINE SCRUBBING ===== */
+let isScrubbing=false;
+function scrubFromEvent(e){
+  const track=$('tl-track');
+  const rect=track.getBoundingClientRect();
+  const x=Math.max(0,Math.min(1,(e.clientX-rect.left)/rect.width));
+  month=x*PLANTS[plant].dur;
+  playing=false;$('play-btn').innerHTML='&#9654;';$('play-btn').classList.remove('playing');
+}
+$('tl-track').addEventListener('mousedown',e=>{isScrubbing=true;scrubFromEvent(e);});
+document.addEventListener('mousemove',e=>{if(isScrubbing)scrubFromEvent(e);});
+document.addEventListener('mouseup',()=>{isScrubbing=false;});
+
+/* ===== ORBIT CONTROLS ===== */
+cv.addEventListener('mousedown',e=>{
+  initAudio();isDragging=true;dragStart={x:e.clientX,y:e.clientY};
+});
+document.addEventListener('mousemove',e=>{
+  if(!isDragging)return;
+  if(camMode!=='orbit'){camMode='orbit';$('cam').value='orbit';updateCamPresets();}
+  const dx=e.clientX-dragStart.x,dy=e.clientY-dragStart.y;
+  orbitAngle-=dx*0.005;
+  orbitY=Math.max(1,Math.min(25,orbitY+dy*0.03));
+  dragStart={x:e.clientX,y:e.clientY};
+});
+document.addEventListener('mouseup',()=>{isDragging=false;});
+cv.addEventListener('wheel',e=>{
+  e.preventDefault();
+  orbitDist=Math.max(4,Math.min(30,orbitDist+e.deltaY*0.01));
+},{passive:false});
+
+/* ===== WIRING ===== */
+$('play-btn').onclick=()=>{
+  initAudio();
+  if(playing){playing=false;$('play-btn').innerHTML='&#9654;';$('play-btn').classList.remove('playing');}
+  else{if(month>=PLANTS[plant].dur)month=0;playing=true;$('play-btn').innerHTML='&#10074;&#10074;';$('play-btn').classList.add('playing');}
+};
+$('spd-btn').onclick=function(){spdX=spdX===1?3:spdX===3?8:1;this.textContent=spdX+'x';};
+$('cam').onchange=e=>{camMode=e.target.value;autoTourTimer=0;updateCamPresets();};
+$('night').onclick=function(){nightMode=!nightMode;this.classList.toggle('on');};
+$('weather').onclick=function(){weatherOn=!weatherOn;this.classList.toggle('on');if(weatherOn)eventLog.push({m:Math.round(month),type:'risk',msg:'Weather event: heavy rain'});};
+$('plant').onchange=e=>{month=0;playing=false;$('play-btn').innerHTML='&#9654;';$('play-btn').classList.remove('playing');msHit=new Set();lastRiskCheck=0;lastMilestoneShown=-1;setPlant(e.target.value);};
+$('mute-btn').onclick=function(){
+  initAudio();audioMuted=!audioMuted;
+  this.textContent=audioMuted?'\u{1F507}':'\u{1F509}';
+  if(masterGain)masterGain.gain.value=audioMuted?0:0.15;
+};
+
+// Phase dots click
+$('phase-dots').onclick=e=>{const ph=e.target.closest('.pd');if(!ph)return;month=PHASES[+ph.dataset.ph].s;playing=false;$('play-btn').innerHTML='&#9654;';$('play-btn').classList.remove('playing');};
+
+// Camera preset buttons
+function updateCamPresets(){
+  document.querySelectorAll('#cam-presets button').forEach(b=>{
+    b.classList.toggle('active',b.dataset.cam===camMode);
+  });
+}
+document.querySelectorAll('#cam-presets button').forEach(b=>{
+  b.addEventListener('click',()=>{camMode=b.dataset.cam;$('cam').value=camMode==='auto'?'auto':camMode;autoTourTimer=0;updateCamPresets();});
+});
+
+/* ===== KEYBOARD SHORTCUTS ===== */
+document.onkeydown=e=>{
+  if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT')return;
+  if(e.code==='Space'){e.preventDefault();$('play-btn').click();}
+  if(e.key==='1'){camMode='orbit';autoTourTimer=0;$('cam').value='orbit';updateCamPresets();}
+  if(e.key==='2'){camMode='aerial';$('cam').value='aerial';updateCamPresets();}
+  if(e.key==='3'){camMode='reactor';$('cam').value='reactor';updateCamPresets();}
+  if(e.key==='4'){camMode='turbine';$('cam').value='turbine';updateCamPresets();}
+  if(e.key==='5'){camMode='intake';$('cam').value='intake';updateCamPresets();}
+  if(e.key==='6'){camMode='crane';$('cam').value='crane';updateCamPresets();}
+  if(e.key==='n'||e.key==='N'){$('night').click();}
+  if(e.key==='w'&&!e.metaKey&&!e.ctrlKey){$('weather').click();}
+  if(e.key==='k'||e.key==='K'){leftOpen=!leftOpen;$('left-panel').classList.toggle('hidden',!leftOpen);}
+  if(e.key==='l'||e.key==='L'){rightOpen=!rightOpen;$('right-panel').classList.toggle('hidden',!rightOpen);}
+  if(e.key==='+'||e.key==='='){$('spd-btn').click();}
+  if(e.key==='-'){spdX=spdX===8?3:spdX===3?1:1;$('spd-btn').textContent=spdX+'x';}
+  if(e.key==='r'||e.key==='R'){month=0;playing=false;$('play-btn').innerHTML='&#9654;';$('play-btn').classList.remove('playing');}
+  if(e.code==='ArrowLeft'){e.preventDefault();month=Math.max(0,month-(e.shiftKey?6:1));playing=false;$('play-btn').innerHTML='&#9654;';$('play-btn').classList.remove('playing');}
+  if(e.code==='ArrowRight'){e.preventDefault();month=Math.min(PLANTS[plant].dur,month+(e.shiftKey?6:1));playing=false;$('play-btn').innerHTML='&#9654;';$('play-btn').classList.remove('playing');}
+};
+
+/* ===== WORKER PARTICLES ===== */
+const wkCv=$('workers'),wkCtx=wkCv.getContext('2d');
+let workers=[];
+function initWorkers(){
+  workers=[];
+  for(let i=0;i<20;i++){
+    workers.push({x:Math.random(),y:.65+Math.random()*.06,vx:(Math.random()-.5)*.0004,vy:0,phase:Math.random()*Math.PI*2});
+  }
+}
+initWorkers();
+function drawWorkers(){
+  wkCv.width=innerWidth;wkCv.height=innerHeight;
+  if(month<3)return;
+  const wf=workforce(Math.round(month));
+  const active=Math.min(workers.length,Math.max(3,Math.round(wf/300)));
+  const t=performance.now()*.001;
+  for(let i=0;i<active;i++){
+    const w=workers[i];
+    w.x+=w.vx+Math.sin(t*1.2+w.phase)*.0001;
+    w.y+=Math.sin(t*.8+w.phase*2)*.00005;
+    if(w.x<.15||w.x>.85){w.vx*=-1;w.x=Math.max(.15,Math.min(.85,w.x));}
+    if(w.y<.55||w.y>.72){w.y=Math.max(.55,Math.min(.72,w.y));}
+    const sx=w.x*wkCv.width,sy=w.y*wkCv.height;
+    wkCtx.fillStyle=nightMode?'rgba(255,200,100,.5)':'rgba(255,160,0,.4)';
+    wkCtx.beginPath();
+    wkCtx.arc(sx,sy,1.5,0,Math.PI*2);
+    wkCtx.fill();
+    // Hard hat dot
+    wkCtx.fillStyle=i%3===0?'rgba(255,255,0,.6)':'rgba(255,255,255,.4)';
+    wkCtx.fillRect(sx-1,sy-2.5,2,1);
+  }
+}
+
+/* ===== MILESTONE TOAST ===== */
+let toastTimer=0;
+function showMilestoneToast(name){
+  $('milestone-text').textContent=name;
+  $('milestone-toast').style.opacity='1';
+  $('flash').style.opacity='.12';
+  setTimeout(()=>{$('flash').style.opacity='0';},150);
+  toastTimer=setTimeout(()=>{$('milestone-toast').style.opacity='0';},3000);
+}
+
+// Hook into milestone checks
+const origCheckMilestones=checkMilestones;
+checkMilestones=function(m){
+  const before=msHit.size;
+  origCheckMilestones(m);
+  if(msHit.size>before){
+    const latest=MILESTONES.filter((_,i)=>msHit.has(i)).pop();
+    if(latest&&latest.m!==lastMilestoneShown){
+      lastMilestoneShown=latest.m;
+      showMilestoneToast(latest.n);
+      playChime();
+    }
+  }
+};
+
+/* ===== ENHANCED LOOP ===== */
+const origLoop=loop;
+loop=function(now){
+  drawWorkers();
+  origLoop(now);
+};
+
+/* ===== LOADING SCREEN ===== */
+function dismissLoader(){var ld=$('loader');if(!ld||ld.style.display==='none')return;ld.style.opacity='0';setTimeout(()=>{ld.style.display='none';},800);}
+$('load-status').textContent='CLICK TO BEGIN';
+$('load-status').style.animation='none';
+$('load-status').style.color='#00e5ff';
+$('load-status').style.cursor='pointer';
+$('loader').onclick=dismissLoader;
+setTimeout(dismissLoader,2000);
+
+/* ===== INIT ===== */
+setPlant('pwr');
+buildWhatIf();
+buildTimeline();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
