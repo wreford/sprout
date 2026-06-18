@@ -190,6 +190,7 @@ const CORE_CARDS=[
   {name:'Shot',cost:0,radius:30,damage:40,count:99,type:'projectile',rarity:'basic',desc:'Standard shot'},
   {name:'Big Shot',cost:0,radius:50,damage:60,count:3,type:'projectile',rarity:'basic',desc:'Bigger boom'},
   {name:'Shield',cost:100,radius:0,damage:0,count:2,type:'shield',rarity:'basic',desc:'Block 80% dmg'},
+  {name:'Oil Slick',cost:100,radius:0,damage:0,count:2,type:'oil',rarity:'common',desc:'Pool of oil. Set it on fire!'},
   {name:'Teleport',cost:150,radius:0,damage:0,count:1,type:'teleport',rarity:'basic',desc:'Random warp'},
 ];
 const CLASS_CARDS={
@@ -783,6 +784,17 @@ function spawnPowerups(){
   }
 }
 
+// water and oil pools on terrain
+let waterPools=[],oilPools=[];
+function spawnWater(){
+  waterPools=[];oilPools=[];
+  const wc=1+Math.floor(Math.random()*2);
+  for(let i=0;i<wc;i++){
+    const wx=40+Math.floor(Math.random()*(W-80)),ww=20+Math.floor(Math.random()*40);
+    waterPools.push({x:wx,w:ww});
+  }
+}
+
 let terrain,players,currentPlayer,wind,projectiles,explosions,particles,lemmings;
 let gameState,round,maxRounds,numPlayers,numCPU,msgTimer;
 let actx,shakeX=0,shakeY=0,shakeLife=0,turnCount=0,stalemateTurns=0,damageThisRound=false;
@@ -1093,7 +1105,7 @@ function newRound(){
   }
   currentPlayer=0;projectiles=[];explosions=[];particles=[];lemmings=[];skulls=[];turnCount=0;
   tracers=[];raindrops=[];snowflakes=[];
-  spawnBgLemmings();spawnPowerups();spawnGraboids();boss=null;spawnBoss();
+  spawnBgLemmings();spawnPowerups();spawnGraboids();spawnWater();boss=null;spawnBoss();
   wind=(Math.random()-.5)*3*weather.windMult;
   gameState='aiming';
   showMsg('Floor '+round+' — '+BACKGROUNDS[bgIdx].name+'\n'+weather.name+' | '+floorType.name+' ground',3000);
@@ -1635,6 +1647,12 @@ function update(dt){
         if(Math.random()<.7){projectiles.push({x:p.x+(Math.random()-.5)*10,y:p.y-3,vx:p.vx*.3+(Math.random()-.5)*2,vy:-1-Math.random()*2,owner:p.owner,weapon:p.weapon,trail:[],type:'flame'});}
         projectiles.splice(i,1);continue;
       }
+      if(p.type==='oil'){
+        // create oil pool on terrain
+        oilPools.push({x:Math.floor(p.x)-15,w:30,burning:false,burnTimer:0});
+        for(let k=0;k<8;k++)particles.push({x:p.x+(Math.random()-.5)*20,y:p.y,vx:(Math.random()-.5)*2,vy:-1,life:15,color:'#222'});
+        sfx('land');projectiles.splice(i,1);continue;
+      }
       if(p.type==='dirtspray'){
         for(let s=0;s<8;s++){const dx2=(Math.random()-.5)*40;const tx2=Math.floor(p.x+dx2);if(tx2>0&&tx2<W)terrain[tx2]=Math.max(H*.1,terrain[tx2]-3-Math.random()*5);}
         for(let k=0;k<10;k++)particles.push({x:p.x,y:p.y,vx:(Math.random()-.5)*4,vy:-2-Math.random()*3,life:15,color:'#8b6914'});
@@ -1766,23 +1784,73 @@ function update(dt){
       if(ahead>0&&ahead<W&&terrain[ahead]<bg.y-5){bg.y-=dt*20;bg.vx*=.5;}
     }
   }
-  // graboids
+  // graboids (sand worms - tunnel through terrain)
   for(const gb of graboids){
-    gb.timer+=dt;gb.x+=gb.dir;
-    if(gb.x<20||gb.x>W-20)gb.dir=-gb.dir;
+    gb.timer+=dt;
     if(gb.underground){
-      if(Math.random()<.005+round*.002){
-        gb.underground=false;gb.surfaceTimer=2;sfx('ouch');
+      // tunnel: actually carve terrain as worm moves
+      gb.x+=gb.dir*1.5;
+      if(gb.x<20||gb.x>W-20)gb.dir=-gb.dir;
+      const gx=Math.max(1,Math.min(W-2,Math.floor(gb.x)));
+      // carve tunnel trail
+      if(Math.random()<.3){terrain[gx]=Math.min(H,terrain[gx]+.5);
+        if(gx>1)terrain[gx-1]=Math.min(H,terrain[gx-1]+.3);
+        if(gx<W-2)terrain[gx+1]=Math.min(H,terrain[gx+1]+.3);
+      }
+      // surface ripple particles
+      if(Math.random()<.08){
+        const gy=terrain[gx];
+        particles.push({x:gb.x+(Math.random()-.5)*6,y:gy,vx:0,vy:-1,life:8,color:'#8b6914'});
+      }
+      // hunt nearest player
+      let closest=null,cd=Infinity;
+      for(const p of players){if(!p.alive)continue;const d=Math.abs(p.x-gb.x);if(d<cd){cd=d;closest=p;}}
+      if(closest&&cd<60)gb.dir=Math.sign(closest.x-gb.x)*(.5+Math.random()*.3);
+      // emerge near player
+      if(closest&&cd<20&&Math.random()<.02+round*.003){
+        gb.underground=false;gb.surfaceTimer=2.5;sfx('ouch');
+        const gy=terrain[gx];
         for(const p of players){if(!p.alive)continue;if(Math.abs(p.x-gb.x)<25){
-          p.hp-=15;showMsg('GRABOID!',1000);sfx('hit');
+          p.hp-=12+round;showMsg('SAND WORM!',1000);sfx('hit');
           if(p.hp<=0){p.hp=0;p.alive=false;skulls.push({x:p.x,y:p.y-15,life:120});}
         }}
-        for(let dx=-12;dx<=12;dx++){const tx=Math.floor(gb.x)+dx;if(tx>0&&tx<W)terrain[tx]=Math.min(H,terrain[tx]+3);}
-        for(let k=0;k<12;k++)particles.push({x:gb.x+(Math.random()-.5)*20,y:terrain[Math.floor(gb.x)],vx:(Math.random()-.5)*3,vy:-2-Math.random()*4,life:20,color:'#8b6914'});
+        // burst crater
+        for(let dx=-15;dx<=15;dx++){const tx=gx+dx;if(tx>0&&tx<W)terrain[tx]=Math.min(H,terrain[tx]+4);}
+        for(let k=0;k<15;k++)particles.push({x:gb.x+(Math.random()-.5)*25,y:gy,vx:(Math.random()-.5)*4,vy:-3-Math.random()*5,life:25,color:'#a08040'});
       }
     }else{
       gb.surfaceTimer-=dt;
-      if(gb.surfaceTimer<=0){gb.underground=true;gb.dir=(Math.random()>.5?1:-1)*(.3+Math.random()*.5);}
+      if(gb.surfaceTimer<=0){gb.underground=true;gb.dir=(Math.random()>.5?1:-1)*(.4+Math.random()*.4);}
+    }
+  }
+  // water flows downhill
+  for(const wp of waterPools){
+    for(let x=wp.x;x<Math.min(W-1,wp.x+wp.w);x++){
+      if(terrain[x]>terrain[x+1]+.5)terrain[x+1]=terrain[x]-.3;
+      if(terrain[x]>terrain[x-1]+.5&&x>1)terrain[x-1]=terrain[x]-.3;
+    }
+  }
+  // oil pools burn if fire hits them
+  for(let oi=oilPools.length-1;oi>=0;oi--){
+    const op=oilPools[oi];
+    if(op.burning){
+      op.burnTimer-=dt;
+      // damage anyone standing in oil
+      for(const p of players){if(!p.alive)continue;
+        if(Math.abs(p.x-op.x)<op.w/2){p.hp-=dt*8;if(p.hp<=0){p.hp=0;p.alive=false;sfx('hit');skulls.push({x:p.x,y:p.y-15,life:120});}}}
+      // fire particles
+      for(let fx=op.x;fx<op.x+op.w;fx+=4){
+        if(Math.random()<.15){const ty2=terrain[Math.max(0,Math.min(W-1,fx))];
+          particles.push({x:fx,y:ty2,vx:(Math.random()-.5)*.5,vy:-1-Math.random(),life:15+Math.random()*10,color:['#f00','#f40','#f80','#ff0'][Math.floor(Math.random()*4)]});}
+      }
+      if(op.burnTimer<=0)oilPools.splice(oi,1);
+    }else{
+      // check if fire particle is near oil
+      for(const pt of particles){
+        if((pt.color==='#f00'||pt.color==='#f40'||pt.color==='#f80')&&Math.abs(pt.x-op.x-op.w/2)<op.w/2+10){
+          op.burning=true;op.burnTimer=5+Math.random()*3;sfx('sizzle');showMsg('OIL FIRE!',1500);break;
+        }
+      }
     }
   }
   // boss update
@@ -1910,6 +1978,30 @@ function render(){
   ctx.strokeStyle=bg.groundSub?.[0]||'#50b028';ctx.lineWidth=1;
   ctx.beginPath();for(let x=0;x<W;x++)x===0?ctx.moveTo(x,terrain[x]):ctx.lineTo(x,terrain[x]);ctx.stroke();
 
+  // water pools (shimmering blue on terrain)
+  for(const wp of waterPools){
+    for(let x=wp.x;x<Math.min(W,wp.x+wp.w);x++){
+      const ty2=terrain[Math.max(0,Math.min(W-1,x))];
+      const shimmer=Math.sin(performance.now()*.003+x*.1)*.3+.5;
+      ctx.globalAlpha=.4*shimmer;
+      ctx.fillStyle='#4080c0';ctx.fillRect(x,ty2-2,1,3);
+      ctx.fillStyle='#80c0ff';ctx.fillRect(x,ty2-1,1,1);
+    }
+    ctx.globalAlpha=1;
+  }
+  // oil pools (dark shiny puddles)
+  for(const op of oilPools){
+    for(let x=op.x;x<Math.min(W,op.x+op.w);x++){
+      const ty2=terrain[Math.max(0,Math.min(W-1,x))];
+      ctx.globalAlpha=op.burning?.6:.4;
+      ctx.fillStyle=op.burning?'#f40':'#1a1a1a';ctx.fillRect(x,ty2-2,1,3);
+      if(!op.burning){
+        const rainbow=Math.sin(performance.now()*.002+x*.2);
+        ctx.globalAlpha=.15;ctx.fillStyle=rainbow>.3?'#408':'#048';ctx.fillRect(x,ty2-1,1,1);
+      }
+    }
+    ctx.globalAlpha=1;
+  }
   // floating powerups (Contra-style)
   for(const pu of powerups){
     if(!pu.alive)continue;
