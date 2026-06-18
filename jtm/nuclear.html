@@ -292,13 +292,14 @@ body{background:var(--paper);color:var(--ink);font-family:var(--serif);font-size
 .atom-tag.t-governance{color:var(--green);border-color:var(--green);background:rgba(47,125,79,.08)}
 .atom-tag.t-workface{color:var(--faint);border-color:var(--faint);background:rgba(154,144,119,.08)}
 
-/* Inline atom graph */
-.atom-graph{display:flex;align-items:center;gap:0;margin:8px 0;padding:8px;background:var(--hi);border:1px solid var(--rule2);border-radius:6px;overflow-x:auto;font:9px var(--mono)}
-.atom-graph .ag-node{padding:3px 6px;border:1px solid var(--rule2);border-radius:4px;background:var(--panel);color:var(--ink2);white-space:nowrap;cursor:pointer;text-align:center;min-width:50px}
-.atom-graph .ag-node.ag-self{border-color:var(--oxide);background:rgba(168,64,31,.08);font-weight:600;color:var(--oxide)}
-.atom-graph .ag-edge{width:20px;height:1px;background:var(--rule2);flex-shrink:0;position:relative}
-.atom-graph .ag-edge::after{content:attr(data-label);position:absolute;top:-8px;left:0;right:0;text-align:center;font:600 7px var(--mono);color:var(--faint);white-space:nowrap}
-.atom-graph .ag-col{display:flex;flex-direction:column;gap:3px;align-items:center}
+/* Inline SVG atom dependency graph */
+.atom-graph { margin: 10px 0; overflow-x: auto; }
+.atom-graph svg { display: block; }
+.ag-node { cursor: pointer; }
+.ag-node rect { rx: 5; ry: 5; stroke-width: 1.5; }
+.ag-node text { font-family: var(--mono); font-size: 9px; fill: var(--ink); }
+.ag-edge { stroke: var(--rule2); stroke-width: 1; fill: none; }
+.ag-edge-label { font-family: var(--mono); font-size: 7px; fill: var(--faint); }
 
 /* MC settings */
 .mc-settings{display:flex;align-items:center;gap:6px;margin-top:6px;flex-wrap:wrap}
@@ -1611,43 +1612,134 @@ function showCard(data){
   }
   let rels='';
   if(data.rels&&data.rels.length){data.rels.forEach(r=>{rels+='<div class="card-rel"><b>'+r[0]+':</b> '+r[1]+'</div>';});}
-  ov.innerHTML='<div class="card-modal" style="position:relative"><h3>'+data.title+'</h3>'+fields+rels+links+'</div>';
+  let graphHtml='';
+  if(data.alias){graphHtml=renderAtomGraph(data.alias);}
+  ov.innerHTML='<div class="card-modal" style="position:relative"><h3>'+data.title+'</h3>'+fields+rels+graphHtml+links+'</div>';
   document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)closeCard();
     const lnk=e.target.closest('.card-link');if(lnk){const alias=lnk.dataset.goto;closeCard();navigateToAtom(alias);}
+    const gn=e.target.closest('.ag-node[data-goto]');if(gn){const al=gn.dataset.goto;closeCard();navigateToAtom(al);}
   });
 }
 function closeCard(){const ov=document.getElementById('card-overlay');if(ov)ov.remove();}
 
-function buildAtomGraph(a){
-  // Build a small inline HTML graph showing immediate connections
-  const deps=a['waits-on']||[];
-  const enables=a.enables||[];
-  const blocks=a.blocks||[];
-  const contains=a.contains||[];
-  const clearedBy=a['cleared-by']||[];
-  let html='<div class="atom-graph">';
-  // Upstream nodes
-  if(deps.length){
-    html+='<div class="ag-col">';
-    deps.slice(0,3).forEach(d=>{html+='<div class="ag-node" data-goto="'+d+'">'+d+'</div>';});
-    if(deps.length>3)html+='<div class="ag-node" style="font-size:8px">+' +(deps.length-3)+' more</div>';
-    html+='</div>';
-    html+='<div class="ag-edge" data-label="waits-on"></div>';
+function renderAtomGraph(alias){
+  const a=ACE_ATOMS[alias];
+  if(!a) return '';
+
+  // Collect upstream connections: waits-on, cleared-by, parent (contains children -> this is a child)
+  const upEdges=[];
+  (a['waits-on']||[]).forEach(d=>{upEdges.push({alias:d,rel:'waits-on'});});
+  (a['cleared-by']||[]).forEach(d=>{
+    if(!upEdges.find(e=>e.alias===d)) upEdges.push({alias:d,rel:'cleared-by'});
+  });
+  // If this atom is a child of a rollup, the parent is upstream
+  const parentAtom=ACE_ALL.find(x=>x.contains&&x.contains.includes(alias));
+  if(parentAtom&&!upEdges.find(e=>e.alias===parentAtom.alias)){
+    upEdges.push({alias:parentAtom.alias,rel:'child-of'});
   }
-  // Self
-  html+='<div class="ag-node ag-self">'+a.alias+'</div>';
-  // Downstream
-  const downstream=[...enables,...blocks];
-  if(downstream.length){
-    html+='<div class="ag-edge" data-label="'+(enables.length?'enables':'blocks')+'"></div>';
-    html+='<div class="ag-col">';
-    downstream.slice(0,3).forEach(d=>{html+='<div class="ag-node" data-goto="'+d+'">'+d+'</div>';});
-    if(downstream.length>3)html+='<div class="ag-node" style="font-size:8px">+'+(downstream.length-3)+' more</div>';
-    html+='</div>';
+
+  // Collect downstream connections: enables, blocks, contains (children)
+  const downEdges=[];
+  (a.enables||[]).forEach(d=>{downEdges.push({alias:d,rel:'enables'});});
+  (a.blocks||[]).forEach(d=>{downEdges.push({alias:d,rel:'blocks'});});
+  (a.contains||[]).forEach(d=>{downEdges.push({alias:d,rel:'contains'});});
+
+  // Cap at 8 per side
+  const upNodes=upEdges.slice(0,8);
+  const downNodes=downEdges.slice(0,8);
+
+  if(upNodes.length===0&&downNodes.length===0) return '';
+
+  // Layout constants
+  const nodeW=100, nodeH=22, nodeGap=6;
+  const colPad=20; // horizontal padding between columns
+  const svgW=400;
+  const maxSide=Math.max(upNodes.length,downNodes.length,1);
+  const colH=maxSide*(nodeH+nodeGap)-nodeGap;
+  const svgH=Math.max(colH+40, 80);
+  const centerX=svgW/2, centerY=svgH/2;
+  const leftX=colPad;
+  const rightX=svgW-colPad-nodeW;
+
+  // Color based on atom status
+  function nodeColor(al){
+    const at=ACE_ATOMS[al];
+    if(!at) return '#9a9077'; // gray
+    if(actIsComplete(al)) return '#2f7d4f'; // green
+    const st=actStatus(al);
+    if(st==='a') return '#a87718'; // amber
+    // Check if it blocks something incomplete
+    if(at.blocks&&at.blocks.length>0) {
+      const blocksSomething=at.blocks.some(b=>{const ba=ACE_ATOMS[b];return ba&&!actIsComplete(b);});
+      if(blocksSomething&&!actIsComplete(al)) return '#b13d2c'; // red
+    }
+    return '#9a9077'; // gray/pending
   }
-  html+='</div>';
-  return html;
+
+  function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
+  // Truncate alias for display
+  function truncAlias(al){return al.length>14?al.slice(0,12)+'..':al;}
+
+  let svg='<svg xmlns="http://www.w3.org/2000/svg" width="'+svgW+'" height="'+svgH+'" viewBox="0 0 '+svgW+' '+svgH+'">';
+
+  // Draw center node
+  const cX=centerX-nodeW/2, cY=centerY-nodeH/2;
+  const selfColor=nodeColor(alias);
+  svg+='<g class="ag-node">';
+  svg+='<rect x="'+cX+'" y="'+cY+'" width="'+nodeW+'" height="'+nodeH+'" fill="rgba(168,64,31,0.08)" stroke="#a8401f" stroke-width="2.5" rx="5" ry="5"/>';
+  svg+='<text x="'+centerX+'" y="'+(centerY+3)+'" text-anchor="middle" font-weight="600" style="font-size:10px;fill:#a8401f">'+escHtml(truncAlias(alias))+'</text>';
+  svg+='</g>';
+
+  // Draw upstream nodes (left column)
+  const upStartY=centerY - ((upNodes.length*(nodeH+nodeGap)-nodeGap)/2);
+  upNodes.forEach(function(edge,i){
+    const nx=leftX;
+    const ny=upStartY+i*(nodeH+nodeGap);
+    const col=nodeColor(edge.alias);
+    svg+='<g class="ag-node" data-goto="'+escHtml(edge.alias)+'">';
+    svg+='<rect x="'+nx+'" y="'+ny+'" width="'+nodeW+'" height="'+nodeH+'" fill="rgba(255,255,255,0.6)" stroke="'+col+'" rx="5" ry="5"/>';
+    svg+='<text x="'+(nx+nodeW/2)+'" y="'+(ny+nodeH/2+3)+'" text-anchor="middle">'+escHtml(truncAlias(edge.alias))+'</text>';
+    svg+='</g>';
+    // Edge line from right side of upstream node to left side of center node
+    var lineX1=nx+nodeW, lineY1=ny+nodeH/2;
+    var lineX2=cX, lineY2=centerY;
+    svg+='<line class="ag-edge" x1="'+lineX1+'" y1="'+lineY1+'" x2="'+lineX2+'" y2="'+lineY2+'"/>';
+    // Edge label at midpoint
+    var mx=(lineX1+lineX2)/2, my=(lineY1+lineY2)/2-4;
+    svg+='<text class="ag-edge-label" x="'+mx+'" y="'+my+'" text-anchor="middle">'+escHtml(edge.rel)+'</text>';
+  });
+
+  // Draw downstream nodes (right column)
+  const downStartY=centerY - ((downNodes.length*(nodeH+nodeGap)-nodeGap)/2);
+  downNodes.forEach(function(edge,i){
+    const nx=rightX;
+    const ny=downStartY+i*(nodeH+nodeGap);
+    const col=nodeColor(edge.alias);
+    svg+='<g class="ag-node" data-goto="'+escHtml(edge.alias)+'">';
+    svg+='<rect x="'+nx+'" y="'+ny+'" width="'+nodeW+'" height="'+nodeH+'" fill="rgba(255,255,255,0.6)" stroke="'+col+'" rx="5" ry="5"/>';
+    svg+='<text x="'+(nx+nodeW/2)+'" y="'+(ny+nodeH/2+3)+'" text-anchor="middle">'+escHtml(truncAlias(edge.alias))+'</text>';
+    svg+='</g>';
+    // Edge line from right side of center node to left side of downstream node
+    var lineX1=cX+nodeW, lineY1=centerY;
+    var lineX2=nx, lineY2=ny+nodeH/2;
+    svg+='<line class="ag-edge" x1="'+lineX1+'" y1="'+lineY1+'" x2="'+lineX2+'" y2="'+lineY2+'"/>';
+    // Edge label at midpoint
+    var mx=(lineX1+lineX2)/2, my=(lineY1+lineY2)/2-4;
+    svg+='<text class="ag-edge-label" x="'+mx+'" y="'+my+'" text-anchor="middle">'+escHtml(edge.rel)+'</text>';
+  });
+
+  // Overflow indicators
+  if(upEdges.length>8){
+    svg+='<text x="'+(leftX+nodeW/2)+'" y="'+(svgH-4)+'" text-anchor="middle" class="ag-edge-label" style="font-size:8px">+'+(upEdges.length-8)+' more upstream</text>';
+  }
+  if(downEdges.length>8){
+    svg+='<text x="'+(rightX+nodeW/2)+'" y="'+(svgH-4)+'" text-anchor="middle" class="ag-edge-label" style="font-size:8px">+'+(downEdges.length-8)+' more downstream</text>';
+  }
+
+  svg+='</svg>';
+  return '<div class="atom-graph">'+svg+'</div>';
 }
 
 function buildBreadcrumb(a){
@@ -1702,8 +1794,8 @@ function navigateToAtom(alias){
       }).join(' ')+'</div>';
     }
 
-    // Build inline graph
-    const graphHtml=buildAtomGraph(a);
+    // Build inline SVG dependency graph
+    const graphHtml=renderAtomGraph(a.alias);
 
     // Children list for rollups
     let childrenHtml='';
