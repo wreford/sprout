@@ -575,6 +575,7 @@ let sidebarVisible=true;
 let selectedPhase=-1,selectedMilestone=-1; // Gantt selection state
 let ganttHitmap=[]; // array of {x,y,w,h,type:'phase'|'milestone',idx} for click detection
 let mcResults=null; // Monte Carlo results cache
+let mcPrevResults=null; // previous MC run for comparison overlay
 let triageMCEffects=[]; // accumulated MC effects from triage resolutions
 
 // ================================================================
@@ -626,6 +627,7 @@ function runMonteCarlo(iterations){
   const p80=results[Math.floor(iterations*0.8)];
   const p90=results[Math.floor(iterations*0.9)];
   const elapsed=performance.now()-t0;
+  if(mcResults)mcPrevResults=mcResults;
   mcResults={results,p10,p50,p80,p90,iterations,elapsed};
   return mcResults;
 }
@@ -670,7 +672,28 @@ function drawMCHistogram(){
     c.fillRect(x+1,y,Math.max(1,bW-2),bH);
   });
 
-  // P50 line
+  // Previous distribution ghost overlay (if exists)
+  if(mcPrevResults&&mcPrevResults!==mcResults){
+    const prevMonths=mcPrevResults.results.map(r=>r.month);
+    const prevCounts=new Array(bins).fill(0);
+    prevMonths.forEach(m=>{const bi=Math.min(bins-1,Math.max(0,Math.floor((m-minM)/binW)));prevCounts[bi]++;});
+    const prevMaxC=Math.max(1,...prevCounts);
+    c.globalAlpha=0.25;
+    prevCounts.forEach((cnt,i)=>{
+      const bH=(cnt/prevMaxC)*cH;
+      const x=padL+i*bW;
+      const y=padT+cH-bH;
+      c.fillStyle='#9a9077';
+      c.fillRect(x+1,y,Math.max(1,bW-2),bH);
+    });
+    c.globalAlpha=1;
+    // Previous P50 line (ghost)
+    const prevP50x=padL+((mcPrevResults.p50.month-minM)/range)*cW;
+    c.strokeStyle='#9a9077';c.lineWidth=1;c.setLineDash([2,3]);
+    c.beginPath();c.moveTo(prevP50x,padT);c.lineTo(prevP50x,padT+cH);c.stroke();c.setLineDash([]);
+  }
+
+  // P50 line (current)
   const p50x=padL+((mcResults.p50.month-minM)/range)*cW;
   c.strokeStyle='#a8401f';c.lineWidth=2;c.setLineDash([3,2]);
   c.beginPath();c.moveTo(p50x,padT);c.lineTo(p50x,padT+cH);c.stroke();c.setLineDash([]);
@@ -681,6 +704,16 @@ function drawMCHistogram(){
   c.fillText('M'+minM,padL,h-1*dpr);
   c.fillText('M'+maxM,w-padR,h-1*dpr);
   c.fillText('P50',p50x,h-1*dpr);
+
+  // Delta annotation if previous exists
+  if(mcPrevResults&&mcPrevResults!==mcResults){
+    const delta=mcResults.p80.month-mcPrevResults.p80.month;
+    const deltaStr=delta>=0?'+'+delta.toFixed(1)+'mo':delta.toFixed(1)+'mo';
+    c.fillStyle=delta<=0?'#2f7d4f':'#b13d2c';
+    c.font='bold '+(7*dpr)+'px '+mf;
+    c.textAlign='right';
+    c.fillText('P80 shift: '+deltaStr,w-padR,padT+10*dpr);
+  }
 }
 
 function renderMCPanel(){
