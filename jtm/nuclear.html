@@ -3189,8 +3189,10 @@ function askACE(question) {
 }
 
 function renderAskACETab(el) {
+  if (nerdMode) { renderAskACETabNerd(el); return; }
   let html = '<div class="tab-panel">';
   html += '<h2>Ask ACE</h2>';
+  html += '<button class="nerd-toggle" id="nerd-toggle-btn">[Nerd Mode]</button>';
   html += '<p style="font:12px var(--serif);color:var(--ink2);margin-bottom:10px">Query the ACE model using natural language. Answers are derived from live atom data, Monte Carlo results, and site conditions.</p>';
   html += '<div style="display:flex;gap:6px;margin-bottom:10px">';
   html += '<input id="ace-input" placeholder="e.g., What is on the critical path?" style="flex:1;font:11px var(--mono);padding:8px;border:1px solid var(--rule2);border-radius:4px">';
@@ -3226,6 +3228,82 @@ function renderAskACETab(el) {
       if(inputEl) inputEl.value = btn.dataset.q;
       if(respEl) respEl.textContent = askACE(btn.dataset.q);
     });
+  });
+  // Nerd mode toggle
+  var nerdBtn = $('nerd-toggle-btn');
+  if (nerdBtn) {
+    nerdBtn.addEventListener('click', function() {
+      nerdMode = true;
+      renderAskACETabNerd(el);
+    });
+  }
+}
+
+// FEATURE: Dimension Sliders
+const DIM_RANGES={'rb-d':[30,60,'RB Diameter (m)'],'rb-h':[30,70,'RB Height (m)'],'tb-w':[40,90,'TB Width (m)'],'tb-h':[20,45,'TB Height (m)'],'cr-h':[40,85,'Crane Height (m)']};
+function renderDimSliders(){const wrap=$('dim-sliders');if(!wrap)return;let html='';for(const key in DIM_RANGES){const r=DIM_RANGES[key],val=V[key]||PLANT.v[key];html+='<div class="dim-slider"><label>'+r[2]+'</label><input type="range" min="'+r[0]+'" max="'+r[1]+'" value="'+val+'" step="1" data-dim="'+key+'"><span class="dim-val" id="dv-'+key+'">'+val+'</span></div>';}wrap.innerHTML=html;wrap.querySelectorAll('input[data-dim]').forEach(inp=>{inp.addEventListener('input',()=>{V[inp.dataset.dim]=+inp.value;const ve=$('dv-'+inp.dataset.dim);if(ve)ve.textContent=inp.value;});});}
+
+// FEATURE: Earned Schedule (ES) -- PMI extension
+function earnedSchedule(m){const ev=earned(m);for(let t=0;t<=PLANT.dur;t+=0.5){if(planned(t)>=ev)return t;}return PLANT.dur;}
+function updateESKPIs(){const el=$('es-kpis');if(!el)return;const m=month,es=earnedSchedule(m),svt=es-m,spit=m>0?es/m:1;el.innerHTML=[{v:es.toFixed(1),l:'ES (months)',c:'bl'},{v:(svt>=0?'+':'')+svt.toFixed(1),l:'SV(t)',c:svt>=0?'ok':'bad'},{v:spit.toFixed(2),l:'SPI(t)',c:spit>=.95?'ok':spit>=.85?'w':'bad'}].map(k=>'<div class="k'+(k.c?' '+k.c:'')+'"><div class="v">'+k.v+'</div><div class="l">'+k.l+'</div></div>').join('');}
+
+// FEATURE: Change Management
+const CHANGES=[
+{id:'CHG-001',title:'Concrete mix design revision for winter pours',status:'approved',month:14,impact:{cost:0.02,schedule:0},requestedBy:'Civil Eng',approvedBy:'Steering Committee',desc:'Switch to Type HE cement with accelerator for ambient temperatures below 5C.'},
+{id:'CHG-002',title:'Cable tray routing redesign -- RB Level 2',status:'pending',month:48,impact:{cost:0.08,schedule:2},requestedBy:'Electrical Eng',desc:'Reroute 4160V feeds around mechanical penetration. Adds 300m cable but eliminates interference.'},
+{id:'CHG-003',title:'SG nozzle weld procedure qualification update',status:'approved',month:38,impact:{cost:0.01,schedule:0},requestedBy:'Welding Eng',approvedBy:'QC Manager'},
+{id:'CHG-004',title:'Cooling tower fan motor vendor substitution',status:'rejected',month:30,impact:{cost:-0.05,schedule:1},requestedBy:'Procurement',reason:'Substitute motor does not meet seismic qualification requirements.'},
+{id:'CHG-005',title:'Add second fuel handling crane',status:'pending',month:52,impact:{cost:1.2,schedule:-2},requestedBy:'Operations',desc:'Reduces fuel load duration by 2 months. High cost but significant schedule benefit.'},
+{id:'CHG-006',title:'Containment ILRT test protocol revision',status:'approved',month:62,impact:{cost:0.03,schedule:0},requestedBy:'Commissioning Mgr',approvedBy:'CNSC Designated Officer'}];
+
+function renderChanges(el){
+  let filterState='all';
+  function draw(){
+    const filtered=filterState==='all'?CHANGES:CHANGES.filter(c=>c.status===filterState);
+    let html='<div class="tab-panel"><h2>Change Management</h2><div class="filters">';
+    ['all','approved','pending','rejected'].forEach(f=>{html+='<button class="'+(filterState===f?'active':'')+'" data-chf="'+f+'">'+f.charAt(0).toUpperCase()+f.slice(1)+'</button>';});
+    html+='</div>';
+    filtered.forEach(c=>{const cs=c.impact.cost>=0?'+$'+c.impact.cost.toFixed(2)+'B':'-$'+Math.abs(c.impact.cost).toFixed(2)+'B';const ss=c.impact.schedule>0?'+'+c.impact.schedule+'mo':c.impact.schedule<0?c.impact.schedule+'mo':'No impact';html+='<div class="chg-card" data-chg="'+c.id+'"><div class="chg-hdr"><span class="chg-id">'+c.id+'</span><span class="chg-title">'+c.title+'</span><span class="chg-pill chg-'+c.status+'">'+c.status+'</span></div><div class="chg-impact">Cost: '+cs+' | Schedule: '+ss+' | M'+c.month+' | By: '+c.requestedBy+'</div></div>';});
+    html+='</div>';el.innerHTML=html;
+    el.querySelectorAll('[data-chf]').forEach(btn=>{btn.addEventListener('click',()=>{filterState=btn.dataset.chf;draw();});});
+    el.querySelectorAll('[data-chg]').forEach(row=>{row.addEventListener('click',()=>{const c=CHANGES.find(x=>x.id===row.dataset.chg);if(!c)return;const f=[['status',c.status],['month','M'+c.month],['requested by',c.requestedBy],['cost impact',c.impact.cost>=0?'+$'+c.impact.cost.toFixed(2)+'B':'-$'+Math.abs(c.impact.cost).toFixed(2)+'B'],['schedule impact',c.impact.schedule!==0?c.impact.schedule+' months':'None']];if(c.approvedBy)f.push(['approved by',c.approvedBy]);if(c.reason)f.push(['rejection reason',c.reason]);if(c.desc)f.push(['description',c.desc]);showCard({title:c.id+' -- '+c.title,fields:f,links:[]});});});
+  }
+  draw();
+}
+
+// FEATURE: Nerd Mode -- DOS Command Line
+let nerdMode=false,nerdHistory=[],nerdHistIdx=-1;
+const NERD_COMMANDS=['query','atom','risks','mc','forecast','status','weather','blocked','critical','flex','changes','export csv','export pdf','help','clear'];
+
+function nerdExec(cmd){
+  const parts=cmd.trim().split(/\s+/),verb=parts[0].toLowerCase(),arg=parts.slice(1).join(' ');
+  const sep='-'.repeat(72),pad=(s,n)=>(s+'').padEnd(n);
+  if(verb==='help')return'FMC ACE Command Reference\n-------------------------\nquery <type>    List atoms by type\natom <alias>    Show atom detail\nrisks           Risk register\nmc <iters>      Run Monte Carlo\nforecast        P50/P80 forecast\nstatus          Project summary\nweather         Live weather\nblocked         Blocked IWPs\ncritical        Critical path\nflex            FLEX packages\nchanges         Change log\nexport csv/pdf  Export data\nclear           Clear terminal';
+  if(verb==='query'){const type=arg.toLowerCase();if(!type)return'Usage: query <type>';const atoms=ACE_ALL.filter(a=>a.type===type);if(!atoms.length)return'No atoms of type "'+type+'" found.';return type.toUpperCase()+' ('+atoms.length+' total)'+(atoms.length>30?' -- showing first 30':'')+'\n'+sep+'\n'+atoms.slice(0,30).map(a=>'  '+pad(a.alias,16)+pad(actIsComplete(a.alias)?'DONE':'PEND',6)+(a.name||'').slice(0,50)).join('\n');}
+  if(verb==='atom'){if(!arg)return'Usage: atom <alias>';const a=ACE_ATOMS[arg.toUpperCase()]||ACE_ATOMS[arg];if(!a)return'Atom not found: '+arg;let o='ALIAS:  '+a.alias+'\nNAME:   '+(a.name||'--')+'\nTYPE:   '+a.type+'\nKIND:   '+(a.completionKind||'--')+'\nSTATUS: '+(actIsComplete(a.alias)?'COMPLETE':'INCOMPLETE')+'\nMONTH:  '+(a.completeAtMonth!=null?'M'+a.completeAtMonth:'--');if(a['waits-on']&&a['waits-on'].length)o+='\nWAITS:  '+a['waits-on'].join(', ');if(a.enables&&a.enables.length)o+='\nENABLES:'+a.enables.join(', ');if(a.blocks&&a.blocks.length)o+='\nBLOCKS: '+a.blocks.join(', ');if(a.tags&&a.tags.length)o+='\nTAGS:   '+a.tags.join(', ');if(a.desc)o+='\nDESC:   '+a.desc;return o;}
+  if(verb==='risks')return'RISK REGISTER ('+RISKS.length+' risks, '+riskHits.size+' hit)\n'+sep+'\n'+RISKS.map((r,i)=>'  '+pad(r.alias,10)+pad(riskHits.has(i)?'HIT':month>r.trigger+2?'CLR':'PEND',6)+pad('P='+Math.round(r.prob*100)+'%',8)+pad('+'+r.impact+'mo',6)+r.n.slice(0,40)).join('\n');
+  if(verb==='mc'){const it=parseInt(arg)||1000,t0=performance.now();runMonteCarlo(it);return'Monte Carlo: '+it+' iters in '+((performance.now()-t0)/1000).toFixed(3)+'s\nP10: M'+Math.round(mcResults.p10.month)+' ($'+mcResults.p10.cost.toFixed(1)+'B)\nP50: M'+Math.round(mcResults.p50.month)+' ($'+mcResults.p50.cost.toFixed(1)+'B)\nP80: M'+Math.round(mcResults.p80.month)+' ($'+mcResults.p80.cost.toFixed(1)+'B)\nP90: M'+Math.round(mcResults.p90.month)+' ($'+mcResults.p90.cost.toFixed(1)+'B)';}
+  if(verb==='forecast'){if(!mcResults)runMonteCarlo(1000);return'PROJECT FORECAST\n'+'-'.repeat(40)+'\nP10: M'+Math.round(mcResults.p10.month)+' | $'+mcResults.p10.cost.toFixed(1)+'B\nP50: M'+Math.round(mcResults.p50.month)+' | $'+mcResults.p50.cost.toFixed(1)+'B\nP80: M'+Math.round(mcResults.p80.month)+' | $'+mcResults.p80.cost.toFixed(1)+'B\nP90: M'+Math.round(mcResults.p90.month)+' | $'+mcResults.p90.cost.toFixed(1)+'B\nDelay: '+delayTotal+'mo | Risks hit: '+riskHits.size+'/'+RISKS.length;}
+  if(verb==='status'){const ev=earned(month),pv=planned(month),spi=pv>0?(ev/pv).toFixed(2):'--',cost=projectSpent(month),cpi=cost.total>0.1?((ev/100*PLANT.budget)/cost.total).toFixed(2):'--',es=earnedSchedule(month);return'PROJECT STATUS: '+PLANT.name+'\n'+'='.repeat(50)+'\nMonth:     M'+Math.round(month)+' / '+PLANT.dur+'\nProgress:  '+Math.round(month/PLANT.dur*100)+'%\nEV:        '+ev.toFixed(1)+'%\nSPI:       '+spi+'\nCPI:       '+cpi+'\nES:        '+es.toFixed(1)+'mo\nSPI(t):    '+(month>0?(es/month).toFixed(2):'--')+'\nBudget:    $'+PLANT.budget+'B\nSpent:     $'+cost.total.toFixed(1)+'B\nWorkforce: '+workforce(month).toLocaleString()+'\nDelay:     '+delayTotal+'mo\nAtoms:     '+ACE_ALL.length;}
+  if(verb==='weather'){if(!weatherData)return'Weather data not loaded.';return'SITE WEATHER: Tiverton, ON\n'+'-'.repeat(45)+'\nTemperature: '+weatherData.temperature+'C\nWind:        '+weatherData.windspeed+' km/h\n'+(weatherData.temperature<0?'WARNING: Below freezing. PRC-004 applies.':'Conditions acceptable.');}
+  if(verb==='blocked'){const bl=IWP_DATA.filter(i=>!iwpIsReady(i));if(!bl.length)return'All IWPs are constraint-free.';return'BLOCKED IWPs ('+bl.length+')\n'+sep+'\n'+bl.slice(0,20).map(i=>'  '+pad(i.id,10)+pad(i.name.slice(0,30),32)+iwpBlockers(i).join(', ')).join('\n');}
+  if(verb==='critical'){const bl=ACE_ALL.filter(a=>a.type==='constraint'&&!actIsComplete(a.alias));if(!bl.length)return'No blocking constraints.';return'CRITICAL PATH ('+bl.length+')\n'+sep+'\n'+bl.slice(0,15).map(a=>'  '+pad(a.alias,16)+(a.name||'').slice(0,50)).join('\n');}
+  if(verb==='flex')return'FLEX PACKAGES ('+FLEX.length+')\n'+sep+'\n'+FLEX.map(f=>'  '+pad(f.id,10)+pad('$'+f.value+'K',8)+pad(f.est,6)+f.name.slice(0,40)).join('\n');
+  if(verb==='changes')return'CHANGE LOG ('+CHANGES.length+')\n'+sep+'\n'+CHANGES.map(c=>'  '+pad(c.id,10)+pad(c.status.toUpperCase(),10)+'M'+pad(c.month,5)+c.title.slice(0,40)).join('\n');
+  if(verb==='export'){if(arg.toLowerCase()==='csv'){exportCSV();return'CSV export triggered.';}if(arg.toLowerCase()==='pdf'){exportPDF();return'PDF export triggered.';}return'Usage: export csv | export pdf';}
+  if(verb==='clear')return'__CLEAR__';
+  return'Unknown command: '+verb+'. Type "help" for commands.';
+}
+
+function renderAskACETabNerd(el){
+  el.innerHTML='<div class="tab-panel"><h2>Ask ACE</h2><button class="nerd-toggle nerd-on" id="nerd-toggle-btn">[Nerd Mode]</button><div class="nerd-terminal" id="nerd-term"><span class="nerd-prompt">FMC ACE v1.0 -- Nuclear Construction Atomic Constraint Engine</span>\nType "help" for available commands.\n\n</div><input class="nerd-input" id="nerd-input" placeholder="C:\\NDX>" autofocus></div>';
+  const term=$('nerd-term'),inp=$('nerd-input'),tog=$('nerd-toggle-btn');
+  if(tog)tog.addEventListener('click',()=>{nerdMode=false;renderAskACETab(el);});
+  if(inp)inp.addEventListener('keydown',e=>{
+    if(e.key==='Enter'){const cmd=inp.value.trim();if(!cmd)return;nerdHistory.push(cmd);nerdHistIdx=nerdHistory.length;term.innerHTML+='<span class="nerd-prompt">C:\\NDX></span>'+cmd+'\n';const r=nerdExec(cmd);if(r==='__CLEAR__')term.innerHTML='<span class="nerd-prompt">C:\\NDX></span>\n';else term.innerHTML+=r+'\n\n';inp.value='';term.scrollTop=term.scrollHeight;}
+    if(e.key==='ArrowUp'){e.preventDefault();if(nerdHistIdx>0){nerdHistIdx--;inp.value=nerdHistory[nerdHistIdx];}}
+    if(e.key==='ArrowDown'){e.preventDefault();if(nerdHistIdx<nerdHistory.length-1){nerdHistIdx++;inp.value=nerdHistory[nerdHistIdx];}else{nerdHistIdx=nerdHistory.length;inp.value='';}}
+    if(e.key==='Tab'){e.preventDefault();const p=inp.value.trim();if(!p)return;const m=NERD_COMMANDS.filter(c=>c.indexOf(p.toLowerCase())===0);if(m.length===1)inp.value=m[0]+' ';else if(m.length>1){term.innerHTML+='<span class="nerd-prompt">C:\\NDX></span>'+p+'\n'+m.join('  ')+'\n';term.scrollTop=term.scrollHeight;}}
   });
 }
 
