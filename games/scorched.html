@@ -1142,7 +1142,12 @@ function buildWeaponBar(){
     WEAPONS=[...CORE_CARDS,...(CLASS_CARDS[TANKS[Math.floor(Math.random()*TANKS.length)].id]||CLASS_CARDS.standard).slice(0,3)];
   }else{
     if(!hand.length)drawHand();
-    WEAPONS=hand.length?hand:[...CORE_CARDS];
+    // always include class basic shot
+    const classCards=CLASS_CARDS[TANKS[chosenTank]?.id]||CLASS_CARDS.standard;
+    const basicShot=classCards.find(c=>c.rarity==='basic')||CORE_CARDS[0];
+    const handWithBasic=hand.length?hand:CORE_CARDS.slice(0,2);
+    if(!handWithBasic.find(c=>c.name===basicShot.name))handWithBasic.unshift(basicShot);
+    WEAPONS=handWithBasic;
   }
   p.weapon=Math.min(p.weapon||0,WEAPONS.length-1);
   WEAPONS.forEach((card,i)=>{
@@ -1996,13 +2001,23 @@ function render(){
     ctx.imageSmoothingEnabled=false;
     ctx.drawImage(camPixBuf,0,0,W,H);
   }
-  // SNES-style smooth sky gradient (no dither bands)
+  // 32-bit sky with parallax layers
   ctx.globalAlpha=(camOn&&camReady)?.65:1;
   const bg=BACKGROUNDS[bgIdx]||BACKGROUNDS[0];
   const skyColors=bg.sky;
-  const skyGrad=ctx.createLinearGradient(0,0,0,H*.55);
+  const skyGrad=ctx.createLinearGradient(0,0,0,H*.6);
   skyColors.forEach((c,i)=>skyGrad.addColorStop(i/(skyColors.length-1),c));
   ctx.fillStyle=skyGrad;ctx.fillRect(0,0,W,H);
+  // parallax cloud/haze layer
+  ctx.globalAlpha=.08;
+  const t=performance.now()*.00005;
+  for(let cl=0;cl<4;cl++){
+    const cx=(cl*W*.3+t*W*(cl+1))%W-W*.1;
+    const cy=H*.08+cl*H*.06;
+    ctx.fillStyle='#fff';
+    ctx.beginPath();ctx.ellipse(cx,cy,30+cl*15,6+cl*3,0,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.ellipse(cx+W,cy,30+cl*15,6+cl*3,0,0,Math.PI*2);ctx.fill();
+  }
   ctx.globalAlpha=1;
 
   // terrain - solid fill with pixel edge
@@ -2010,20 +2025,32 @@ function render(){
   ctx.beginPath();ctx.moveTo(0,H);
   for(let x=0;x<W;x++)ctx.lineTo(x,terrain[x]);
   ctx.lineTo(W,H);ctx.closePath();ctx.fill();
-  // SNES-style terrain with smooth gradient
-  const tg=ctx.createLinearGradient(0,H*.3,0,H);
+  // 32-bit terrain with depth layers + grass detail
   const gc=floorType?floorType.color:bg.ground;
-  tg.addColorStop(0,gc);tg.addColorStop(.3,bg.groundSub?.[1]||'#308014');tg.addColorStop(.7,bg.groundSub?.[3]||'#206008');tg.addColorStop(1,bg.groundSub?.[5]||'#103004');
+  const gs=bg.groundSub||['#50b028','#308014','#286010','#206008','#185004','#103004'];
+  // main fill
+  const tg=ctx.createLinearGradient(0,H*.25,0,H);
+  tg.addColorStop(0,gc);tg.addColorStop(.2,gs[1]||gc);tg.addColorStop(.5,gs[3]||gc);tg.addColorStop(1,gs[5]||'#080400');
   ctx.fillStyle=tg;
   ctx.beginPath();ctx.moveTo(0,H);
   for(let x=0;x<W;x++)ctx.lineTo(x,terrain[x]);
   ctx.lineTo(W,H);ctx.closePath();ctx.fill();
-  // soft highlight on terrain edge (2px bright, 1px darker)
-  ctx.strokeStyle=gc;ctx.lineWidth=2;ctx.globalAlpha=.6;
-  ctx.beginPath();for(let x=0;x<W;x++)x===0?ctx.moveTo(x,terrain[x]-1):ctx.lineTo(x,terrain[x]-1);ctx.stroke();
+  // sub-surface rock layer line
+  ctx.strokeStyle=gs[2]||'#286010';ctx.lineWidth=1;ctx.globalAlpha=.3;
+  ctx.beginPath();for(let x=0;x<W;x++){const sy=terrain[x]+12;if(sy<H)x===0?ctx.moveTo(x,sy):ctx.lineTo(x,sy);}ctx.stroke();
   ctx.globalAlpha=1;
-  ctx.strokeStyle=bg.groundSub?.[0]||'#50b028';ctx.lineWidth=1;
+  // bright highlight edge (top-lit)
+  ctx.strokeStyle=shade(gc,60);ctx.lineWidth=2;
   ctx.beginPath();for(let x=0;x<W;x++)x===0?ctx.moveTo(x,terrain[x]):ctx.lineTo(x,terrain[x]);ctx.stroke();
+  ctx.strokeStyle=shade(gc,30);ctx.lineWidth=1;
+  ctx.beginPath();for(let x=0;x<W;x++)x===0?ctx.moveTo(x,terrain[x]+1):ctx.lineTo(x,terrain[x]+1);ctx.stroke();
+  // grass/detail tufts on surface
+  ctx.fillStyle=shade(gc,50);
+  for(let x=3;x<W;x+=6){
+    const ty=terrain[x];if(ty>=H)continue;
+    ctx.fillRect(x,ty-2,1,2);
+    if(x%12<3)ctx.fillRect(x+1,ty-3,1,2);
+  }
 
   // water pools (shimmering blue on terrain)
   for(const wp of waterPools){
