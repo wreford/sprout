@@ -323,27 +323,48 @@ const CLASS_CARDS={
 // deck building
 let deck=[],hand=[],discard=[];
 const HAND_SIZE=5;
+let discards=2;
 function buildDeck(tankId){
   deck=[...CORE_CARDS];
   const classCards=CLASS_CARDS[tankId]||CLASS_CARDS.standard;
-  // start with only 3 class cards (random)
   const shuffledClass=[...classCards].sort(()=>Math.random()-.5);
   deck.push(...shuffledClass.slice(0,3));
   for(let i=deck.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[deck[i],deck[j]]=[deck[j],deck[i]];}
 }
-function drawHand(){
-  hand=[];
-  for(let i=0;i<HAND_SIZE&&(deck.length||discard.length);i++){
-    if(!deck.length){deck=[...discard];discard=[];for(let j=deck.length-1;j>0;j--){const k=Math.floor(Math.random()*(j+1));[deck[j],deck[k]]=[deck[k],deck[j]];}}
-    if(deck.length)hand.push(deck.pop());
+function shuffleDiscard(){
+  deck.push(...discard);discard=[];
+  for(let j=deck.length-1;j>0;j--){const k=Math.floor(Math.random()*(j+1));[deck[j],deck[k]]=[deck[k],deck[j]];}
+}
+function drawCards(n){
+  const drawn=[];
+  for(let i=0;i<n;i++){
+    if(!deck.length)shuffleDiscard();
+    if(deck.length)drawn.push(deck.pop());
   }
+  return drawn;
+}
+function drawHand(){
+  hand=drawCards(HAND_SIZE);
+  discards=2;
 }
 function playCard(idx){
   if(idx<0||idx>=hand.length)return null;
-  const card=hand[idx];
-  hand.splice(idx,1);
+  const card=hand.splice(idx,1)[0];
   if(card.rarity!=='basic')discard.push(card);
   return card;
+}
+function discardCards(indices){
+  if(discards<=0||!indices.length)return;
+  indices.sort((a,b)=>b-a);
+  for(const idx of indices){
+    if(idx>=0&&idx<hand.length){
+      const card=hand.splice(idx,1)[0];
+      if(card.rarity!=='basic')discard.push(card);
+    }
+  }
+  discards--;
+  const newCards=drawCards(indices.length);
+  hand.push(...newCards);
 }
 // shop offers 3 random cards from your class pool
 function getShopCards(tankId){
@@ -1134,32 +1155,61 @@ function newRound(){
   requestAnimationFrame(loop);
 }
 
+let markedForDiscard=[];
 function buildWeaponBar(){
   const p=players[currentPlayer];if(!p)return;
   const bar=document.getElementById('weaponBar');bar.innerHTML='';
-  // CPU uses core cards, human uses hand
   if(p.cpu){
     WEAPONS=[...CORE_CARDS,...(CLASS_CARDS[TANKS[Math.floor(Math.random()*TANKS.length)].id]||CLASS_CARDS.standard).slice(0,3)];
   }else{
     if(!hand.length)drawHand();
-    // always include class basic shot
     const classCards=CLASS_CARDS[TANKS[chosenTank]?.id]||CLASS_CARDS.standard;
     const basicShot=classCards.find(c=>c.rarity==='basic')||CORE_CARDS[0];
-    const handWithBasic=hand.length?hand:CORE_CARDS.slice(0,2);
-    if(!handWithBasic.find(c=>c.name===basicShot.name))handWithBasic.unshift(basicShot);
-    WEAPONS=handWithBasic;
+    if(!hand.find(c=>c.name===basicShot.name))hand.unshift(basicShot);
+    WEAPONS=hand;
   }
   p.weapon=Math.min(p.weapon||0,WEAPONS.length-1);
+  // discard button (Balatro style)
+  if(!p.cpu&&discards>0&&markedForDiscard.length>0){
+    const db=document.createElement('button');
+    db.className='wbtn';db.style.borderColor='#f44';db.style.color='#f44';
+    db.textContent='DISCARD('+markedForDiscard.length+') ['+discards+' left]';
+    db.onclick=()=>{discardCards([...markedForDiscard]);markedForDiscard=[];buildWeaponBar();sfx('buy');};
+    bar.appendChild(db);
+  }
   WEAPONS.forEach((card,i)=>{
     const b=document.createElement('button');
     const sel=p.weapon===i;
+    const marked=markedForDiscard.includes(i);
     const rc={basic:'#888',common:'#0f0',uncommon:'#0ff',rare:'#f0f',legendary:'#ff0'}[card.rarity]||'#888';
     b.className='wbtn'+(sel?' sel':'');
-    b.style.borderColor=sel?rc:'#333';b.style.color=sel?rc:'#777';
+    b.style.borderColor=marked?'#f44':sel?rc:'#333';
+    b.style.color=marked?'#f44':sel?rc:'#777';
+    if(marked)b.style.textDecoration='line-through';
     b.textContent=card.name;b.title=(card.desc||'')+' ['+card.rarity+']';
-    b.onclick=()=>{p.weapon=i;buildWeaponBar();};
+    // tap = select, double-tap = mark for discard
+    let tapTimer=0;
+    b.onclick=()=>{
+      const now=Date.now();
+      if(now-tapTimer<300&&!p.cpu&&discards>0&&card.rarity!=='basic'){
+        // double-tap: toggle discard mark
+        if(marked)markedForDiscard=markedForDiscard.filter(x=>x!==i);
+        else markedForDiscard.push(i);
+        buildWeaponBar();
+      }else{
+        p.weapon=i;markedForDiscard=markedForDiscard.filter(x=>x!==i);buildWeaponBar();
+      }
+      tapTimer=now;
+    };
     bar.appendChild(b);
   });
+  // deck info
+  if(!p.cpu){
+    const info=document.createElement('span');
+    info.style.cssText='font:7px monospace;color:#555;padding:2px 4px;white-space:nowrap';
+    info.textContent='D:'+deck.length+' X:'+discard.length;
+    bar.appendChild(info);
+  }
 }
 
 function updateUI(){
@@ -1496,6 +1546,7 @@ function nextTurn(){
     cp.chargeCount=0;
   }
   if(!cp?.cpu)drawHand();
+  markedForDiscard=[];
   gameState='aiming';updateUI();
   if(Math.random()<.2&&players[currentPlayer]&&players[currentPlayer].alive)tankTalk(currentPlayer,'idle');
 }
