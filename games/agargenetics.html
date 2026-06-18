@@ -152,6 +152,8 @@ var GENE_DEFS=[
   {name:"Decay Resist",key:"decay",min:-2,max:2,color:"#ec4899",desc:"Mass loss resistance"},
   {name:"Repro Thresh",key:"reproT",min:-2,max:2,color:"#f43f5e",desc:"Split mass threshold modifier"},
   {name:"Vision Range",key:"vision",min:-2,max:2,color:"#64748b",desc:"Detection radius"},
+  {name:"Diet",key:"diet",min:-2,max:2,color:"#16a34a",desc:"-2=carnivore 0=omnivore +2=herbivore"},
+  {name:"Plant Sense",key:"plantSense",min:-2,max:2,color:"#65a30d",desc:"Ability to detect plants"},
   {name:"Hue",key:"hue",min:0,max:360,color:"#fff",desc:"Body color hue"},
   {name:"Saturation",key:"sat",min:20,max:100,color:"#ddd",desc:"Color saturation"},
 ];
@@ -228,7 +230,8 @@ function genomeToObj(g){
 
 // ═══ CELL ═══
 function massToR(m){return Math.sqrt(m)*4}
-var cells=[],pellets=[],genomes=[];
+var cells=[],pellets=[],plants=[],genomes=[];
+var PLANT_COUNT=120,PLANT_MASS_MIN=3,PLANT_MASS_MAX=12,PLANT_GROW_RATE=0.01;
 var allTimeBest=0,allTimeBestGenome=null,totalBorn=0,totalEaten=0,tickCount=0,generation=0;
 var running=true,speed=1,camMode=0,camX=0,camY=0,camZ=1;
 var selectedCell=null;
@@ -257,25 +260,31 @@ function spawnPellet(){
   return{id:_id++,x:Math.random()*WORLD,y:Math.random()*WORLD,mass:PELLET_MASS,r:4,type:"pellet",hue:(Math.random()*360)|0};
 }
 
+function spawnPlant(){
+  var m=PLANT_MASS_MIN+Math.random()*(PLANT_MASS_MAX-PLANT_MASS_MIN);
+  return{id:_id++,x:Math.random()*WORLD,y:Math.random()*WORLD,mass:m,maxMass:m*2,r:massToR(m),type:"plant",age:0};
+}
+
 function cellColor(cell){
   var g=genomes[cell.gi];
-  return"hsl("+(g[12]|0)+","+(g[13]|0)+"%,55%)";
+  return"hsl("+((g[14]|0)%360)+","+(g[15]|0)+"%,55%)";
 }
 
 function cellColorBright(cell){
   var g=genomes[cell.gi];
-  return"hsl("+(g[12]|0)+","+(g[13]|0)+"%,70%)";
+  return"hsl("+((g[14]|0)%360)+","+(g[15]|0)+"%,70%)";
 }
 
 // ═══ INIT ═══
 function initSim(){
-  cells=[];pellets=[];genomes=[];_id=0;
+  cells=[];pellets=[];plants=[];genomes=[];_id=0;
   generation=0;allTimeBest=0;allTimeBestGenome=null;
   totalBorn=0;totalEaten=0;tickCount=0;selectedCell=null;
   histPop=[];histBig=[];histGenes=[];
   reproCounters={asexual:0,sexual:0,foodBased:0,horiz:0};
   for(var i=0;i<START_POP;i++){cells.push(spawnCell(null));totalBorn++;}
   for(var i=0;i<PELLET_COUNT;i++)pellets.push(spawnPellet());
+  for(var i=0;i<PLANT_COUNT;i++)plants.push(spawnPlant());
 }
 
 // ═══ AI ═══
@@ -285,14 +294,19 @@ function aiDecide(cell){
   var range=Math.max(250,(1+g.vision)*150);
   var nearby=gridQuery(cell.x,cell.y,range);
   var bestPD=1e9,bestPX=0,bestPY=0;
+  var bestPlD=1e9,bestPlX=0,bestPlY=0,hasPlant=false;
   var bestPS=-1e9,bestPrX=0,bestPrY=0,hasPrey=false;
   var flX=0,flY=0,flW=0;
+  var canEatPlants=g.diet>-0.5;
 
   for(var i=0;i<nearby.length;i++){
     var o=nearby[i];if(o.id===cell.id)continue;
     var dx=o.x-cell.x,dy=o.y-cell.y,d=Math.sqrt(dx*dx+dy*dy)||1;
     if(o.type==="pellet"){
       if(d<bestPD){bestPD=d;bestPX=o.x;bestPY=o.y;}
+    }else if(o.type==="plant"&&canEatPlants){
+      var plantDist=d*(1-(g.plantSense+2)*.1);
+      if(plantDist<bestPlD){bestPlD=plantDist;bestPlX=o.x;bestPlY=o.y;hasPlant=true;}
     }else if(o.type==="cell"&&o.alive){
       var ratio=cell.mass/(o.mass||1);
       if(ratio>1.15){
@@ -303,7 +317,7 @@ function aiDecide(cell){
         if(d<fd){var urg=(1-d/fd)*(o.mass/(cell.mass||1));flX-=(dx/d)*urg*100;flY-=(dy/d)*urg*100;flW+=urg;}
       }
       // spread from similar hue
-      var hDiff=Math.abs(genomes[cell.gi][12]-genomes[o.gi][12]);
+      var hDiff=Math.abs(genomes[cell.gi][14]-genomes[o.gi][14]);
       if(hDiff<30){var sf=(g.spread+.5)*40/(d+10);flX-=(dx/d)*sf;flY-=(dy/d)*sf;flW+=sf*.3;}
     }
   }
@@ -311,6 +325,7 @@ function aiDecide(cell){
   if(flW>.01){tx+=flX/flW*3;ty+=flY/flW*3;tw+=flW*3;}
   if(hasPrey&&g.aggro>-.5){var pd=Math.sqrt((bestPrX-cell.x)*(bestPrX-cell.x)+(bestPrY-cell.y)*(bestPrY-cell.y))||1;var cw=(1+g.aggro)*2;tx+=(bestPrX-cell.x)/pd*cw*100;ty+=(bestPrY-cell.y)/pd*cw*100;tw+=cw;}
   if(bestPD<1e8){var pd2=bestPD||1;var pw=(1+g.hunger)*1.5;tx+=(bestPX-cell.x)/pd2*pw*80;ty+=(bestPY-cell.y)/pd2*pw*80;tw+=pw;}
+  if(hasPlant){var pd3=bestPlD||1;var plW=(1+g.diet)*2;tx+=(bestPlX-cell.x)/pd3*plW*90;ty+=(bestPlY-cell.y)/pd3*plW*90;tw+=plW;}
   var ew=(1+g.edge)*2,margin=150;
   if(cell.x<margin){tx+=ew*(margin-cell.x)*.5;tw+=ew*.3;}
   if(cell.x>WORLD-margin){tx-=ew*(cell.x-(WORLD-margin))*.5;tw+=ew*.3;}
@@ -387,6 +402,7 @@ function simTick(){
   gridClear();
   for(var i=0;i<cells.length;i++)if(cells[i].alive)gridInsert(cells[i]);
   for(var i=0;i<pellets.length;i++)gridInsert(pellets[i]);
+  for(var i=0;i<plants.length;i++)gridInsert(plants[i]);
 
   for(var i=0;i<cells.length;i++){
     var cl=cells[i];if(!cl.alive)continue;
@@ -452,9 +468,41 @@ function simTick(){
     }
   }
 
+  // Plants — only herbivores (diet > -0.5) and omnivores can eat
+  for(var i=0;i<cells.length;i++){
+    var cl=cells[i];if(!cl.alive)continue;
+    var diet=genomes[cl.gi][12]; // diet gene index
+    if(diet<-0.5)continue; // carnivores can't eat plants
+    var eff=0.5+(diet+2)*0.15; // herbivores digest plants better
+    var near=gridQuery(cl.x,cl.y,cl.r+20);
+    for(var j=0;j<near.length;j++){
+      var p=near[j];if(p.type!=="plant")continue;
+      var dx=p.x-cl.x,dy=p.y-cl.y;
+      if(dx*dx+dy*dy<(cl.r+p.r)*(cl.r+p.r)*.6){
+        var eat=Math.min(p.mass,3);
+        cl.mass+=eat*eff;cl.r=massToR(cl.mass);
+        if(cl.mass>cl.maxMass)cl.maxMass=cl.mass;
+        p.mass-=eat;p.r=massToR(p.mass);
+        if(p.mass<1){p.x=Math.random()*WORLD;p.y=Math.random()*WORLD;p.mass=PLANT_MASS_MIN;p.r=massToR(p.mass);p.age=0;}
+      }
+    }
+  }
+
+  // Plant regrowth
+  for(var i=0;i<plants.length;i++){
+    var p=plants[i];
+    p.age++;
+    if(p.mass<p.maxMass)p.mass+=PLANT_GROW_RATE;
+    p.r=massToR(p.mass);
+  }
+
+  // Carnivore bonus — cells with diet < 0 get extra mass from kills (already applied via bulk gene)
+  // Carnivores also can't eat plants, so they MUST hunt
+
   for(var i=cells.length-1;i>=0;i--)if(!cells[i].alive)cells.splice(i,1);
   while(cells.length<15){cells.push(spawnCell(null));totalBorn++;}
   while(pellets.length<PELLET_COUNT)pellets.push(spawnPellet());
+  while(plants.length<PLANT_COUNT)plants.push(spawnPlant());
 
   // Stats every 5s
   if(tickCount%300===0){
@@ -502,6 +550,19 @@ function render(){
   for(var y=gy0;y<=Math.min(WORLD,vy1);y+=gs){c.beginPath();c.moveTo(Math.max(0,vx0),y);c.lineTo(Math.min(WORLD,vx1),y);c.stroke();}
 
   c.strokeStyle="#ff6b3520";c.lineWidth=3/camZ;c.strokeRect(0,0,WORLD,WORLD);
+
+  // Plants
+  for(var i=0;i<plants.length;i++){
+    var p=plants[i];
+    if(p.x<vx0-p.r||p.x>vx1+p.r||p.y<vy0-p.r||p.y>vy1+p.r)continue;
+    c.fillStyle="#16a34a";c.globalAlpha=.5;
+    c.beginPath();c.arc(p.x,p.y,p.r,0,6.2832);c.fill();
+    c.globalAlpha=1;
+    c.fillStyle="#22c55e";
+    var lr=p.r*.4;
+    c.fillRect(p.x-lr,p.y-p.r*.8,lr*2,lr);
+    c.fillRect(p.x-p.r*.6,p.y-lr,p.r*1.2,lr);
+  }
 
   // Pellets
   for(var i=0;i<pellets.length;i++){
@@ -580,7 +641,9 @@ function updateLB(){
   var html="";
   for(var i=0;i<Math.min(10,sorted.length);i++){
     var cl=sorted[i];
-    html+='<div class="le" data-id="'+cl.id+'"><span class="ln">'+(i+1)+'</span><span class="dot" style="background:'+cellColor(cl)+'"></span><span class="lm">'+(cl.mass|0)+' g'+cl.gen+'</span></div>';
+    var diet=genomes[cl.gi][12];
+    var dietLabel=diet<-0.5?"🥩":diet>0.5?"🌿":"🍽️";
+    html+='<div class="le" data-id="'+cl.id+'"><span class="ln">'+(i+1)+'</span><span class="dot" style="background:'+cellColor(cl)+'"></span><span class="lm">'+(cl.mass|0)+' '+dietLabel+'</span></div>';
   }
   document.getElementById("lb").innerHTML=html;
 }
@@ -627,7 +690,7 @@ function updatePanel(){
     code+="// Decay resist: "+((MASS_DECAY+(go.decay+2)*.00005)*100).toFixed(3)+"%\n";
     code+="// Bulk efficiency: "+((1+(go.bulk+2)*.05)*100).toFixed(1)+"%\n";
     if(selectedCell.lastEatenGenome){
-      code+="\n// Last eaten genome (mate DNA):\n// Hue: "+(selectedCell.lastEatenGenome[12]|0)+"\n";
+      code+="\n// Last eaten genome (mate DNA):\n// Hue: "+(selectedCell.lastEatenGenome[14]|0)+"\n";
     }
     document.getElementById("codeBlock").textContent=code;
   }
@@ -677,7 +740,7 @@ function updateHud(){
   var alive=0,bestM=0,hues={};
   for(var i=0;i<cells.length;i++){
     if(cells[i].alive){alive++;if(cells[i].mass>bestM)bestM=cells[i].mass;
-      var h=(genomes[cells[i].gi][12]/30|0)*30;hues[h]=1;
+      var h=(genomes[cells[i].gi][14]/30|0)*30;hues[h]=1;
     }
   }
   document.getElementById("hCells").textContent=alive;
