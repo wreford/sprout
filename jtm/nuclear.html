@@ -184,7 +184,7 @@ body{background:var(--paper);color:var(--ink);font-family:var(--serif);font-size
     <div id="ll" style="display:flex;flex-wrap:wrap;gap:2px"></div>
   </div>
 
-  <!-- Row 4: Safety + Concrete | What-if + Dims | Pour log -->
+  <!-- Row 4: Safety | What-if + Dims | ACT Constraints -->
   <div class="pan" style="grid-column:1">
     <h3>Safety</h3>
     <div id="safety" style="display:flex;gap:4px;flex-wrap:wrap"></div>
@@ -808,15 +808,15 @@ actAtom({alias:'QC-POUR',type:'action',name:'QC pour card sign-off',completionKi
 actAtom({alias:'CWP-RB-BASE',type:'cwp',name:'RB Basemat',completionKind:'leaf',completeAtMonth:20,
   enables:['CWP-RB-WALLS']});
 actAtom({alias:'CWP-RB-WALLS',type:'cwp',name:'RB Walls',completionKind:'gate',
-  'waits-on':['CWP-RB-BASE','CON-001'],enables:['CWP-RB-DOME']});
+  'waits-on':['CWP-RB-BASE','CON-001'],enables:['CWP-RB-DOME'],completeAtMonth:36});
 actAtom({alias:'CWP-RB-DOME',type:'cwp',name:'RB Dome',completionKind:'gate',
   'waits-on':['CWP-RB-WALLS'],completeAtMonth:42});
 
 // Containment CWPs
 actAtom({alias:'CWP-CT-LINER',type:'cwp',name:'Containment Liner',completionKind:'gate',
-  'waits-on':['CON-002'],completeAtMonth:40,enables:['CWP-CT-PTEST']});
+  'waits-on':['CON-002'],completeAtMonth:46,enables:['CWP-CT-PTEST']});
 actAtom({alias:'CWP-CT-PTEST',type:'cwp',name:'Containment Pressure Test',completionKind:'gate',
-  'waits-on':['CWP-CT-LINER'],completeAtMonth:44});
+  'waits-on':['CWP-CT-LINER'],completeAtMonth:48});
 
 // Turbine Building CWPs
 actAtom({alias:'CWP-TB-STRUCT',type:'cwp',name:'TB Structure',completionKind:'leaf',completeAtMonth:42,
@@ -899,7 +899,10 @@ function actIsComplete(alias, seen) {
     case 'gate': {
       const deps = a['waits-on'] || [];
       if (deps.length === 0) return false;
-      return deps.every(d => actIsComplete(d, new Set(seen)));
+      const depsOk = deps.every(d => actIsComplete(d, new Set(seen)));
+      // If gate also has a schedule month, require that too
+      if (a.completeAtMonth != null) return depsOk && month >= a.completeAtMonth;
+      return depsOk;
     }
     case 'rollup': {
       const ch = a.contains || [];
@@ -916,14 +919,18 @@ function actStatus(alias) {
   if (!a) return 'f';
   if (actIsComplete(alias)) return 'g'; // green = complete
 
-  // Check if any child/dep is in progress
-  const deps = (a.contains || []).concat(a['waits-on'] || []);
-  if (deps.some(d => {
-    const da = ACT_ATOMS[d];
-    if (!da) return false;
-    if (da.completeAtMonth != null && month >= (da.completeAtMonth - 12)) return true;
-    return actIsComplete(d);
-  })) return 'a'; // amber = in progress
+  // For rollups: in progress if any child is complete or in progress
+  if (a.completionKind === 'rollup' && a.contains && a.contains.length) {
+    if (a.contains.some(c => actIsComplete(c) || actStatus(c) === 'a')) return 'a';
+  }
+  // For gates: in progress if some waits-on are complete or if scheduled to start soon
+  if (a.completionKind === 'gate' && a['waits-on'] && a['waits-on'].length) {
+    if (a['waits-on'].some(d => actIsComplete(d))) return 'a';
+  }
+  // For leaves: in progress if within 6 months of completion
+  if (a.completionKind === 'leaf' && a.completeAtMonth != null) {
+    if (month >= a.completeAtMonth - 6) return 'a';
+  }
 
   return 'f'; // gray = future
 }
