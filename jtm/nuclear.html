@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Nuclear Construction Simulator</title>
+<title>Monte Carlo ++ / Nuclear Station Construction Simulation</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,900&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -25,6 +25,10 @@ body{background:var(--paper);color:var(--ink);font-family:var(--serif);font-size
 .hdr select,.hdr button{font-family:var(--mono);font-size:10px;font-weight:500;padding:4px 8px;border:1px solid var(--rule2);border-radius:6px;background:var(--hi);color:var(--ink2);cursor:pointer}
 .hdr button.on{background:var(--ink);color:var(--hi)}
 .hdr .sp{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--faint)}
+.hdr .whatif-dropdown{position:relative;display:inline-block}
+.hdr .whatif-dropdown .whatif-menu{display:none;position:absolute;top:100%;left:0;z-index:100;background:var(--panel);border:1px solid var(--rule2);border-radius:6px;padding:4px;box-shadow:0 4px 12px rgba(34,28,16,.15);min-width:120px}
+.hdr .whatif-dropdown:hover .whatif-menu{display:block}
+.hdr .whatif-dropdown .whatif-menu button{display:block;width:100%;text-align:left;margin:1px 0}
 .tl{padding:4px 14px 6px;border-bottom:1px solid var(--rule);background:var(--panel);flex-shrink:0}
 .tl-r{display:flex;align-items:center;gap:6px}
 .tl-r input[type=range]{flex:1;accent-color:var(--oxide)}
@@ -34,12 +38,17 @@ body{background:var(--paper);color:var(--ink);font-family:var(--serif);font-size
 .pbar .ps.now{outline:2px solid var(--oxide);outline-offset:-1px;z-index:1}
 .pbar .ps.fut{opacity:.15}
 
-/* Dashboard grid — fits 1920x1080 minus header/timeline */
-.dash{display:grid;grid-template-columns:1fr 1fr 1fr;grid-template-rows:auto auto auto auto;gap:1px;background:var(--rule);flex:1;overflow:hidden}
+/* Dashboard grid -- fits 1920x1080 minus header/timeline
+   Row 1: [3D viewport (1col)]  [KPIs (1col)]         [Events feed (1col, spans row 1-2)]
+   Row 2: [3D viewport cont.]   [S-curve + Discipline] [Events cont.]
+   Row 3: [GANTT CHART -- spans all 3 columns]
+   Row 4: [Risks (scrollable)]  [ACT Constraints]      [Long-Lead (scrollable)]
+*/
+.dash{display:grid;grid-template-columns:1fr 1fr 1fr;grid-template-rows:auto auto auto 1fr;gap:1px;background:var(--rule);flex:1;overflow:hidden}
 .dash>*{background:var(--panel);overflow:hidden}
 
-/* 3D viewport spans 2 columns */
-.gl-cell{grid-column:1/2;grid-row:1/3;padding:0;position:relative}
+/* 3D viewport spans row 1-2 col 1 */
+.gl-cell{grid-column:1;grid-row:1/3;padding:0;position:relative}
 .gl-cell .exlabel{font:600 9px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--oxide);padding:4px 10px 2px;display:flex;align-items:center;gap:6px}
 .gl-cell .live{margin-left:auto;color:var(--green);display:inline-flex;align-items:center;gap:4px;font-size:9px}
 .gl-cell .live i{width:5px;height:5px;border-radius:50%;background:var(--green)}
@@ -59,12 +68,6 @@ body{background:var(--paper);color:var(--ink);font-family:var(--serif);font-size
 /* Charts */
 .card canvas{width:100%;height:50px;display:block;border:1px solid var(--rule2);border-radius:4px;background:var(--hi)}
 
-/* Milestones */
-.ms{display:flex;flex-wrap:wrap;gap:2px}
-.ms .m{font:500 9px var(--mono);letter-spacing:.04em;padding:2px 6px;border-radius:10px;border:1px solid var(--rule2);background:var(--hi);color:var(--ink2);white-space:nowrap}
-.ms .m.d{border-color:#b8cfbb;color:var(--green)}.ms .m.a{border-color:#d6c391;color:var(--amber)}.ms .m.f{color:var(--faint);opacity:.5}
-.ms .md{width:4px;height:4px;border-radius:50%;display:inline-block}
-
 /* Feed */
 .feed{max-height:100%;overflow-y:auto}
 .feed .ev{font:10px var(--mono);padding:2px 0;border-bottom:1px solid var(--rule);display:flex;gap:4px;color:var(--ink2)}
@@ -72,43 +75,33 @@ body{background:var(--paper);color:var(--ink);font-family:var(--serif);font-size
 .feed .ev .typ{display:none}
 .feed .ev.risk{color:var(--red)}.feed .ev.good{color:var(--green)}.feed .ev.mile{color:var(--violet)}
 
-/* Risk/LL pills */
-.ri,.li{font:9px var(--mono);letter-spacing:.04em;padding:2px 6px;border-radius:10px;border:1px solid var(--rule2);display:inline-flex;align-items:center;gap:3px;background:var(--hi);color:var(--ink2);white-space:nowrap;margin:1px}
-.ri.hit{border-color:#d9b3a8;color:var(--red)}.ri.ok{border-color:#b8cfbb;color:var(--green)}
-.li.del{border-color:#b8cfbb;color:var(--green)}.li.wait{color:var(--amber);border-color:#d6c391}.li.late{color:var(--red);border-color:#d9b3a8}
+/* Gantt cell */
+.gantt-cell{grid-column:1/4;grid-row:3;padding:0;position:relative;background:var(--hi)}
+#gantt{width:100%;height:80px;display:block}
 
-/* Report */
+/* Risks compact list */
+.risk-list{max-height:100%;overflow-y:auto;font:9px var(--mono)}
+.risk-list .rr{display:flex;gap:6px;padding:2px 0;border-bottom:1px solid var(--rule);align-items:center;white-space:nowrap}
+.risk-list .rr .ra{color:var(--blue);font-weight:600;min-width:50px}
+.risk-list .rr .rn{flex:1;color:var(--ink2);overflow:hidden;text-overflow:ellipsis}
+.risk-list .rr .rs{min-width:16px;text-align:center;font-size:11px}
+
+/* Long-lead compact list */
+.ll-list{max-height:100%;overflow-y:auto;font:9px var(--mono)}
+.ll-list .lr{display:flex;gap:6px;padding:2px 0;border-bottom:1px solid var(--rule);align-items:center;white-space:nowrap}
+.ll-list .lr .la{color:var(--blue);font-weight:600;min-width:58px}
+.ll-list .lr .ln{flex:1;color:var(--ink2);overflow:hidden;text-overflow:ellipsis}
+.ll-list .lr .ls{min-width:16px;text-align:center;font-size:11px}
+.ll-list .lr .lt{color:var(--faint);font-size:9px}
+
+/* Report footer */
 .report{font:9px var(--mono);line-height:1.5;color:var(--faint);overflow-y:auto}
 .report b{color:var(--ink)}
-
-/* Safety */
-.sf{display:inline-block;font:600 9px var(--mono);padding:4px 6px;border-radius:6px;border:1px solid var(--rule2);text-align:center;min-width:50px;background:var(--hi)}
-.sf.g{border-color:#b8cfbb;color:var(--green)}.sf.y{border-color:#d6c391;color:var(--amber)}.sf.r{border-color:#d9b3a8;color:var(--red)}
-.sf .sv{font:900 13px var(--disp);display:block;line-height:1}
-.sf .sl{font:8px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--faint);margin-top:2px}
-
-/* Pour log */
-.pour-row{padding:1px 0;border-bottom:1px solid var(--rule);display:flex;gap:4px;font:9px var(--mono);color:var(--ink2)}
-.pour-row .pm{font-weight:600;color:var(--oxide);min-width:24px}
-.pour-row .pn{flex:1}.pour-row .pv{color:var(--blue);font-weight:600;min-width:32px;text-align:right}
-.pour-row.done{color:var(--green)}.pour-row.future{color:var(--rule2)}
-
-/* What-if */
-.whatif-section button{font:9px var(--mono);padding:3px 6px;border:1px solid var(--rule2);border-radius:4px;background:var(--hi);color:var(--ink2);cursor:pointer}
-.whatif-section button:hover{border-color:var(--oxide);color:var(--oxide)}
-
-/* Dims */
-.dims{display:flex;gap:8px;flex-wrap:wrap}
-.dim{display:flex;align-items:center;gap:3px;font:10px var(--mono)}
-.dim label{color:var(--faint);font-size:9px;letter-spacing:.04em;text-transform:uppercase}
-.dim input{width:40px;accent-color:var(--oxide)}
-.dim .dv{font-weight:600;min-width:20px;text-align:right;color:var(--ink)}
 
 /* ACT panel */
 .act-pan{overflow-y:auto}
 .act-pan h3{font:600 9px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--faint);margin:0 0 3px}
-.act-cwa{cursor:pointer;padding:2px 0;border-bottom:1px solid var(--rule)}
-.act-cwa:hover{background:var(--hi)}
+.act-cwa{padding:2px 0;border-bottom:1px solid var(--rule)}
 .act-row{display:flex;align-items:center;gap:4px;font-size:10px;line-height:1.5}
 .act-dot{width:6px;height:6px;border-radius:50%;flex:none}
 .act-dot.g{background:var(--green)}.act-dot.a{background:var(--amber)}.act-dot.f{background:var(--rule2)}.act-dot.r{background:var(--red)}
@@ -118,30 +111,45 @@ body{background:var(--paper);color:var(--ink);font-family:var(--serif);font-size
 .act-pill.green{color:var(--green);border-color:#b8cfbb}
 .act-pill.amber{color:var(--amber);border-color:#d6c391}
 .act-pill.red{color:var(--red);border-color:#d9b3a8}
-.act-sub{padding-left:14px;display:none}
-.act-cwa.open .act-sub{display:block}
+.act-sub{padding-left:14px}
 .act-cwp{padding:1px 0}
 .act-con{padding:1px 0 1px 12px;font:9px var(--mono);color:var(--ink2)}
 .act-con .rel{font-size:9px;color:var(--faint);font-style:italic;font-family:var(--serif)}
+.act-pct{font:600 9px var(--mono);color:var(--oxide);margin-left:auto;padding-right:4px}
+.act-critical{display:inline-block;font:600 8px var(--mono);letter-spacing:.06em;padding:1px 4px;border-radius:3px;background:var(--red);color:#fff;margin-left:4px}
 
 /* Clash modal */
 .clash-overlay{position:fixed;inset:0;z-index:200;background:rgba(34,28,16,.55);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(2px)}
-.clash-modal{background:var(--panel);border:2px solid var(--oxide);border-radius:10px;padding:14px 16px;max-width:420px;width:90%;box-shadow:0 8px 32px rgba(34,28,16,.3)}
+.clash-modal{background:var(--panel);border:2px solid var(--oxide);border-radius:10px;padding:14px 16px;max-width:480px;width:90%;box-shadow:0 8px 32px rgba(34,28,16,.3)}
 .clash-modal h4{font:900 14px var(--disp);color:var(--oxide);margin:0 0 6px;letter-spacing:.01em}
+.clash-modal .clash-loc{font:500 10px var(--mono);color:var(--blue);margin-bottom:4px}
+.clash-modal .clash-conflict{font:10px var(--mono);color:var(--ink2);margin-bottom:4px;padding:4px;background:var(--hi);border:1px solid var(--rule2);border-radius:4px}
 .clash-modal p{font:11px var(--serif);color:var(--ink2);margin:6px 0 10px;line-height:1.4}
+.clash-modal .clash-impact{font:9px var(--mono);color:var(--faint);margin-top:4px}
 .clash-modal .clash-btns{display:flex;gap:6px}
 .clash-modal .clash-btn{flex:1;font:500 10px var(--mono);padding:8px 6px;border:1px solid var(--rule2);border-radius:6px;background:var(--hi);color:var(--ink2);cursor:pointer;text-align:center;line-height:1.3}
 .clash-modal .clash-btn:hover{border-color:var(--oxide);color:var(--oxide)}
 .clash-modal .clash-btn.picked{background:var(--oxide);color:#fff;border-color:var(--oxide)}
+.clash-modal .clash-affected{font:9px var(--mono);color:var(--amber);margin-top:8px;padding:4px;border-top:1px solid var(--rule)}
 </style>
 </head>
 <body style="display:flex;flex-direction:column;height:100vh">
 <div class="hdr">
-  <h1><b>NUCLEAR</b> BUILD</h1>
-  <select id="plant"><option value="pwr">4×PWR 4000 MWe</option><option value="candu">4×CANDU 3600 MWe</option><option value="smr">12×SMR 3600 MWe</option><option value="ap1000">4×AP1000 4400 MWe</option><option value="epr">3×EPR 4950 MWe</option></select>
+  <h1><b>MONTE CARLO</b> ++</h1>
+  <select id="plant"><option value="pwr">4xPWR 4000 MWe</option><option value="candu">4xCANDU 3600 MWe</option><option value="smr">12xSMR 3600 MWe</option><option value="ap1000">4xAP1000 4400 MWe</option><option value="epr">3xEPR 4950 MWe</option></select>
   <select id="cam"><option value="orbit">Orbit</option><option value="aerial">Aerial</option><option value="reactor">Reactor</option><option value="turbine">Turbine</option><option value="intake">Intake</option><option value="crane">Crane</option></select>
   <button id="play">Play</button>
   <button id="spd" data-s="1">1x</button>
+  <div class="whatif-dropdown">
+    <button>What-If</button>
+    <div class="whatif-menu">
+      <button onclick="whatIf('delay',6)">+6mo delay</button>
+      <button onclick="whatIf('delay',3)">+3mo delay</button>
+      <button onclick="whatIf('accel',-4)">Crash schedule</button>
+      <button onclick="whatIf('budget',1)">+$1B budget</button>
+      <button onclick="whatIf('reset',0)">Reset all</button>
+    </div>
+  </div>
   <span class="sp" id="sp"></span>
 </div>
 <div class="tl">
@@ -150,63 +158,51 @@ body{background:var(--paper);color:var(--ink);font-family:var(--serif);font-size
 </div>
 
 <div class="dash">
-  <!-- Row 1-2: 3D viewport (2 cols) + KPIs + S-curve -->
+  <!-- Row 1-2, Col 1: 3D viewport -->
   <div class="gl-cell">
     <div class="exlabel">Construction Site <span class="live"><i></i>live</span></div>
     <canvas id="gl"></canvas>
   </div>
+  <!-- Row 1, Col 2: KPIs -->
   <div class="pan" style="grid-column:2;grid-row:1">
     <h3>Performance</h3>
     <div class="kpis" id="kpis"></div>
   </div>
+  <!-- Row 1-2, Col 3: Events feed -->
+  <div class="pan" style="grid-column:3;grid-row:1/3">
+    <h3>Events</h3>
+    <div class="feed" id="feed" style="max-height:100%;overflow-y:auto"></div>
+  </div>
+  <!-- Row 2, Col 2: S-curve + Discipline -->
   <div class="pan" style="grid-column:2;grid-row:2">
     <h3>S-Curve</h3>
     <canvas id="sc" style="width:100%;height:50px;display:block;border:1px solid var(--rule2);border-radius:4px;background:var(--hi)"></canvas>
     <h3 style="margin-top:4px">Discipline</h3>
     <canvas id="disc" style="width:100%;height:40px;display:block;border:1px solid var(--rule2);border-radius:4px;background:var(--hi)"></canvas>
   </div>
-  <div class="pan" style="grid-column:3;grid-row:1/3">
-    <h3>Events</h3>
-    <div class="feed" id="feed" style="max-height:100%;overflow-y:auto"></div>
+
+  <!-- Row 3: Gantt chart spanning all 3 columns -->
+  <div class="gantt-cell">
+    <canvas id="gantt"></canvas>
   </div>
 
-  <!-- Row 3: Milestones + Risks + Long-lead -->
-  <div class="pan" style="grid-column:1">
-    <h3>Milestones</h3>
-    <div class="ms" id="ms"></div>
-  </div>
-  <div class="pan" style="grid-column:2">
+  <!-- Row 4, Col 1: Risks (scrollable compact list) -->
+  <div class="pan" style="grid-column:1;grid-row:4">
     <h3>Risk Register</h3>
-    <div id="risks" style="display:flex;flex-wrap:wrap;gap:2px"></div>
+    <div class="risk-list" id="risks"></div>
   </div>
-  <div class="pan" style="grid-column:3">
-    <h3>Long-Lead Items</h3>
-    <div id="ll" style="display:flex;flex-wrap:wrap;gap:2px"></div>
-  </div>
-
-  <!-- Row 4: Safety | What-if + Dims | ACT Constraints -->
-  <div class="pan" style="grid-column:1">
-    <h3>Safety</h3>
-    <div id="safety" style="display:flex;gap:4px;flex-wrap:wrap"></div>
-  </div>
-  <div class="pan" style="grid-column:2">
-    <h3>What-If</h3>
-    <div style="display:flex;gap:4px;flex-wrap:wrap">
-      <button onclick="whatIf('delay',6)" style="font:9px var(--mono);padding:3px 6px;border:1px solid var(--rule2);border-radius:4px;background:var(--hi);color:var(--ink2);cursor:pointer">+6mo</button>
-      <button onclick="whatIf('delay',3)" style="font:9px var(--mono);padding:3px 6px;border:1px solid var(--rule2);border-radius:4px;background:var(--hi);color:var(--ink2);cursor:pointer">+3mo</button>
-      <button onclick="whatIf('accel',-4)" style="font:9px var(--mono);padding:3px 6px;border:1px solid var(--rule2);border-radius:4px;background:var(--hi);color:var(--ink2);cursor:pointer">Crash</button>
-      <button onclick="whatIf('budget',1)" style="font:9px var(--mono);padding:3px 6px;border:1px solid var(--rule2);border-radius:4px;background:var(--hi);color:var(--ink2);cursor:pointer">+$1B</button>
-      <button onclick="whatIf('reset',0)" style="font:9px var(--mono);padding:3px 6px;border:1px solid var(--rule2);border-radius:4px;background:var(--hi);color:var(--ink2);cursor:pointer">Reset</button>
-    </div>
-    <h3 style="margin-top:4px">Dimensions</h3>
-    <div class="dims" id="dims"></div>
-  </div>
-  <div class="pan act-pan" style="grid-column:3">
+  <!-- Row 4, Col 2: ACT Constraints (expanded) -->
+  <div class="pan act-pan" style="grid-column:2;grid-row:4">
     <h3>ACT Constraints</h3>
-    <div id="actpanel" style="max-height:80px;overflow-y:auto"></div>
+    <div id="actpanel" style="max-height:100%;overflow-y:auto"></div>
+  </div>
+  <!-- Row 4, Col 3: Long-Lead Items (scrollable compact list) -->
+  <div class="pan" style="grid-column:3;grid-row:4">
+    <h3>Long-Lead Items</h3>
+    <div class="ll-list" id="ll"></div>
   </div>
 </div>
-<div id="report" class="report" style="flex-shrink:0;max-height:52px;padding:4px 14px;font-size:9px;line-height:1.4;border-top:1px solid var(--rule)"></div>
+<div id="report" class="report" style="flex-shrink:0;max-height:40px;padding:3px 14px;font-size:9px;line-height:1.3;border-top:1px solid var(--rule)"></div>
 <script>
 const SHAPE_IDS={box:0,sphere:1,cyl:2,torus:3,"cyl-x":4,"cyl-z":5},MAX_OBJ=24;
 function unhex(h){return[parseInt(h.slice(1,3),16)/255,parseInt(h.slice(3,5),16)/255,parseInt(h.slice(5,7),16)/255]}
@@ -234,50 +230,56 @@ const MILESTONES=[
 {m:82,n:"Power ascension 100%"},{m:84,n:"Commercial operation"}];
 
 const RISKS=[
-{n:"Rebar supply chain disruption",prob:.3,impact:3,trigger:14,desc:"+3mo RB walls"},
-{n:"Batch plant mechanical failure",prob:.2,impact:2,trigger:20,desc:"+2mo civil"},
-{n:"Containment weld RT reject rate",prob:.25,impact:4,trigger:34,desc:"+4mo containment"},
-{n:"Labour dispute / work stoppage",prob:.15,impact:3,trigger:40,desc:"+3mo all trades"},
-{n:"SG delivery: vendor shop delay",prob:.35,impact:5,trigger:38,desc:"+5mo mechanical"},
-{n:"Commissioning deficiency backlog",prob:.2,impact:2,trigger:64,desc:"+2mo commissioning"},
-{n:"Regulatory design change order",prob:.1,impact:6,trigger:50,desc:"+6mo all"},
-{n:"Winter concrete curing failure",prob:.25,impact:1,trigger:16,desc:"+1mo foundation"},
-{n:"Dewatering pump failure (excav)",prob:.2,impact:2,trigger:8,desc:"+2mo excavation"},
-{n:"Crane boom failure / inspection",prob:.15,impact:2,trigger:30,desc:"+2mo lifts"},
-{n:"RPV transport route obstruction",prob:.12,impact:3,trigger:44,desc:"+3mo RPV set"},
-{n:"Seismic restraint rework",prob:.18,impact:2,trigger:46,desc:"+2mo piping"},
-{n:"Cable tray routing interference",prob:.22,impact:1,trigger:52,desc:"+1mo electrical"},
-{n:"Hot functional test deficiency",prob:.3,impact:3,trigger:66,desc:"+3mo startup"},
-{n:"Fuel handling crane commissioning",prob:.15,impact:2,trigger:70,desc:"+2mo fuel load"},
-{n:"Environmental permit amendment",prob:.08,impact:4,trigger:24,desc:"+4mo CW system"}];
+{alias:"CON-001",n:"Rebar supply chain disruption",prob:.3,impact:3,trigger:14,desc:"+3mo RB walls"},
+{alias:"CON-002",n:"Batch plant mechanical failure",prob:.2,impact:2,trigger:20,desc:"+2mo civil"},
+{alias:"CON-003",n:"Containment weld RT reject rate",prob:.25,impact:4,trigger:34,desc:"+4mo containment"},
+{alias:"CON-004",n:"Labour dispute / work stoppage",prob:.15,impact:3,trigger:40,desc:"+3mo all trades"},
+{alias:"CON-005",n:"SG delivery: vendor shop delay",prob:.35,impact:5,trigger:38,desc:"+5mo mechanical"},
+{alias:"CON-006",n:"Commissioning deficiency backlog",prob:.2,impact:2,trigger:64,desc:"+2mo commissioning"},
+{alias:"CON-007",n:"Regulatory design change order",prob:.1,impact:6,trigger:50,desc:"+6mo all"},
+{alias:"CON-008",n:"Winter concrete curing failure",prob:.25,impact:1,trigger:16,desc:"+1mo foundation"},
+{alias:"CON-009",n:"Dewatering pump failure (excav)",prob:.2,impact:2,trigger:8,desc:"+2mo excavation"},
+{alias:"CON-010",n:"Crane boom failure / inspection",prob:.15,impact:2,trigger:30,desc:"+2mo lifts"},
+{alias:"CON-011",n:"RPV transport route obstruction",prob:.12,impact:3,trigger:44,desc:"+3mo RPV set"},
+{alias:"CON-012",n:"Seismic restraint rework",prob:.18,impact:2,trigger:46,desc:"+2mo piping"},
+{alias:"CON-013",n:"Cable tray routing interference",prob:.22,impact:1,trigger:52,desc:"+1mo electrical"},
+{alias:"CON-014",n:"Hot functional test deficiency",prob:.3,impact:3,trigger:66,desc:"+3mo startup"},
+{alias:"CON-015",n:"Fuel handling crane commissioning",prob:.15,impact:2,trigger:70,desc:"+2mo fuel load"},
+{alias:"CON-016",n:"Environmental permit amendment",prob:.08,impact:4,trigger:24,desc:"+4mo CW system"}];
 
 const LONGLEAD=[
-{n:"Reactor pressure vessel",order:0,deliver:44,need:46},{n:"Steam generators (x2)",order:2,deliver:38,need:42},
-{n:"Pressurizer",order:4,deliver:40,need:44},{n:"Containment liner plates",order:4,deliver:18,need:22},
-{n:"Reactor coolant pumps (x4)",order:8,deliver:42,need:46},{n:"Control rod drive mechanisms",order:12,deliver:52,need:56},
-{n:"Turbine HP/LP rotors",order:6,deliver:48,need:52},{n:"Generator stator + rotor",order:8,deliver:50,need:54},
-{n:"Main power transformer",order:10,deliver:50,need:56},{n:"Unit aux transformer",order:12,deliver:52,need:58},
-{n:"CW conduit pipe (3.5km)",order:6,deliver:28,need:32},{n:"Fuel handling crane",order:14,deliver:58,need:64},
-{n:"Emergency diesel generators",order:10,deliver:36,need:40},{n:"Main steam piping",order:12,deliver:44,need:48},
-{n:"Reactor internals",order:8,deliver:46,need:50},{n:"Nuclear fuel assemblies",order:24,deliver:70,need:72}];
+{alias:"RPV",n:"Reactor pressure vessel",order:0,deliver:44,need:46},
+{alias:"SGs (x2)",n:"Steam generators (x2)",order:2,deliver:38,need:42},
+{alias:"Pressurizer",n:"Pressurizer",order:4,deliver:40,need:44},
+{alias:"CT Liner",n:"Containment liner plates",order:4,deliver:18,need:22},
+{alias:"RCPs (x4)",n:"Reactor coolant pumps (x4)",order:8,deliver:42,need:46},
+{alias:"CRDMs",n:"Control rod drive mechanisms",order:12,deliver:52,need:56},
+{alias:"Turbine",n:"Turbine HP/LP rotors",order:6,deliver:48,need:52},
+{alias:"Generator",n:"Generator stator + rotor",order:8,deliver:50,need:54},
+{alias:"MPT",n:"Main power transformer",order:10,deliver:50,need:56},
+{alias:"UAT",n:"Unit aux transformer",order:12,deliver:52,need:58},
+{alias:"CW Pipe",n:"CW conduit pipe (3.5km)",order:6,deliver:28,need:32},
+{alias:"FH Crane",n:"Fuel handling crane",order:14,deliver:58,need:64},
+{alias:"EDGs",n:"Emergency diesel generators",order:10,deliver:36,need:40},
+{alias:"MS Pipe",n:"Main steam piping",order:12,deliver:44,need:48},
+{alias:"Internals",n:"Reactor internals",order:8,deliver:46,need:50},
+{alias:"Fuel",n:"Nuclear fuel assemblies",order:24,deliver:70,need:72}];
 
 const DISCIPLINES=[
 {n:"Civil",c:"#9a9077",s:3,e:44},{n:"Mechanical",c:"#c9a96a",s:30,e:62},{n:"Electrical",c:"#2c5d78",s:38,e:68},
 {n:"Piping",c:"#7e8b98",s:28,e:60},{n:"I&C",c:"#2f7d4f",s:48,e:72},{n:"Nuclear",c:"#6c5fae",s:40,e:76}];
 
-// plant configs — Multi-unit station builds (3500-4800 MWe)
-// Total Installed Cost (2024 $B USD) scaled to ~$50B baseline for 4000 MWe
-// Includes labor, materials, NSSS equipment, engineering, regulatory, owner's costs, contingency
+// plant configs
 const PLANTS={
-  pwr:{name:"4×PWR-1000 (4000 MWe)",mwe:4000,v:{"rb-d":44,"rb-h":52,"tb-w":65,"tb-h":32,"cw-d":4,"cr-h":68},budget:50,dur:96,fuel:"UO2 enriched 4.5%",coolant:"Light water",contain:"Pre-stressed concrete + steel liner",peakWF:9000,
+  pwr:{name:"4xPWR-1000 (4000 MWe)",mwe:4000,v:{"rb-d":44,"rb-h":52,"tb-w":65,"tb-h":32,"cw-d":4,"cr-h":68},budget:50,dur:96,fuel:"UO2 enriched 4.5%",coolant:"Light water",contain:"Pre-stressed concrete + steel liner",peakWF:9000,
     equip:[{m:44,c:2.4,n:"RPVs(x4)"},{m:42,c:1.8,n:"SGs(x8)"},{m:40,c:.8,n:"Pressurizers(x4)"},{m:46,c:1.2,n:"RCPs(x16)"},{m:48,c:2.0,n:"Turbine-Gens(x4)"},{m:50,c:.6,n:"Transformers"},{m:36,c:.5,n:"EDGs(x8)"},{m:70,c:1.4,n:"Fuel Assemblies"}]},
-  candu:{name:"4×CANDU-900 (3600 MWe)",mwe:3600,v:{"rb-d":52,"rb-h":38,"tb-w":75,"tb-h":36,"cw-d":4.5,"cr-h":62},budget:48,dur:96,fuel:"Natural UO2",coolant:"Heavy water",contain:"Pre-stressed + steel liner",peakWF:8500,
+  candu:{name:"4xCANDU-900 (3600 MWe)",mwe:3600,v:{"rb-d":52,"rb-h":38,"tb-w":75,"tb-h":36,"cw-d":4.5,"cr-h":62},budget:48,dur:96,fuel:"Natural UO2",coolant:"Heavy water",contain:"Pre-stressed + steel liner",peakWF:8500,
     equip:[{m:44,c:1.8,n:"Calandrias(x4)"},{m:42,c:2.4,n:"SGs(x16)"},{m:38,c:3.6,n:"D2O Inventory"},{m:48,c:2.0,n:"Turbine-Gens(x4)"},{m:50,c:.5,n:"Transformers"},{m:70,c:1.0,n:"Fuel Bundles"}]},
-  smr:{name:"12×SMR-300 (3600 MWe)",mwe:3600,v:{"rb-d":28,"rb-h":32,"tb-w":40,"tb-h":22,"cw-d":2.5,"cr-h":48},budget:42,dur:84,fuel:"HALEU <20%",coolant:"Light water",contain:"Steel modules",peakWF:6000,
+  smr:{name:"12xSMR-300 (3600 MWe)",mwe:3600,v:{"rb-d":28,"rb-h":32,"tb-w":40,"tb-h":22,"cw-d":2.5,"cr-h":48},budget:42,dur:84,fuel:"HALEU <20%",coolant:"Light water",contain:"Steel modules",peakWF:6000,
     equip:[{m:30,c:4.8,n:"Reactor Modules(x12)"},{m:36,c:1.8,n:"Turbine-Gens(x12)"},{m:38,c:.4,n:"Transformers"},{m:50,c:1.2,n:"HALEU Fuel"}]},
-  ap1000:{name:"4×AP1000 (4400 MWe)",mwe:4400,v:{"rb-d":46,"rb-h":57,"tb-w":76,"tb-h":35,"cw-d":4.5,"cr-h":72},budget:58,dur:96,fuel:"UO2 enriched 4.95%",coolant:"Light water",contain:"Steel + concrete shield",peakWF:10000,
+  ap1000:{name:"4xAP1000 (4400 MWe)",mwe:4400,v:{"rb-d":46,"rb-h":57,"tb-w":76,"tb-h":35,"cw-d":4.5,"cr-h":72},budget:58,dur:96,fuel:"UO2 enriched 4.95%",coolant:"Light water",contain:"Steel + concrete shield",peakWF:10000,
     equip:[{m:44,c:3.2,n:"RPVs(x4)"},{m:42,c:2.4,n:"SGs(x8)"},{m:40,c:.8,n:"Pressurizers(x4)"},{m:46,c:1.6,n:"RCPs(x16)"},{m:48,c:2.8,n:"Turbine-Gens(x4)"},{m:50,c:.8,n:"Transformers"},{m:36,c:.6,n:"EDGs(x8)"},{m:70,c:1.8,n:"Fuel Assemblies"}]},
-  epr:{name:"3×EPR-1650 (4950 MWe)",mwe:4950,v:{"rb-d":54,"rb-h":62,"tb-w":85,"tb-h":40,"cw-d":5.5,"cr-h":78},budget:65,dur:120,fuel:"UO2/MOX",coolant:"Light water",contain:"Double wall concrete",peakWF:12000,
+  epr:{name:"3xEPR-1650 (4950 MWe)",mwe:4950,v:{"rb-d":54,"rb-h":62,"tb-w":85,"tb-h":40,"cw-d":5.5,"cr-h":78},budget:65,dur:120,fuel:"UO2/MOX",coolant:"Light water",contain:"Double wall concrete",peakWF:12000,
     equip:[{m:44,c:3.6,n:"RPVs(x3)"},{m:42,c:3.0,n:"SGs(x12)"},{m:40,c:1.0,n:"Pressurizers(x3)"},{m:46,c:1.5,n:"RCPs(x12)"},{m:48,c:3.0,n:"Turbine-Gens(x3)"},{m:50,c:.8,n:"Transformers"},{m:70,c:1.5,n:"Fuel Assemblies"}]}
 };
 const R={"rb-d":[20,55],"rb-h":[25,65],"tb-w":[25,80],"tb-h":[18,40],"cw-d":[1.5,5],"cr-h":[35,80]};
@@ -319,7 +321,6 @@ function setPlant(p){
   riskHits=new Set();delayTotal=0;eventLog=[];whatIfDelay=0;whatIfBudget=0;whatIfCrew=0;
   $('mo').max=cfg.dur;
   eventLog.push({m:0,type:'mile',msg:'Notice to Proceed: '+cfg.name+'. Budget $'+cfg.budget+'B, duration '+cfg.dur+' months. Fuel: '+cfg.fuel+'. Coolant: '+cfg.coolant+'. Containment: '+cfg.contain+'.'});
-  buildDims();
 }
 
 function sc(v){return v*0.12;}
@@ -408,7 +409,6 @@ function workforce(m){
   let f;if(frac<.20)f=frac/.20;else if(frac<.65)f=1;else if(frac<.90)f=1-(frac-.65)/.25*.85;else f=.15;
   return Math.round(pk*f*(1+.04*Math.sin(m*.52)));
 }
-// Cost model: labor + indirect + materials + equipment
 function projectSpent(m){
   const cfg=PLANTS[plant],dur=cfg.dur,mI=Math.min(Math.round(m),dur);
   let lab=0,ind=0,mat=0,eq=0;
@@ -427,7 +427,6 @@ function kpis(m){
   const mwe=m>=dur?cfg.mwe:m>=dur-6?Math.round(cfg.mwe*.5):m>=dur-12?Math.round(cfg.mwe*.05):0;
   let cumVol=0;POURS.forEach(p=>{if(m>=p.m+2)cumVol+=p.vol;});
   const wf=workforce(m);
-  const hrs=Math.round(wf*170*m);
   const activePhases=PHASES.filter(p=>m>=p.s&&m<p.e).length;
   const deliveredLL=LONGLEAD.filter(l=>m>=l.deliver).length;
   return[
@@ -440,7 +439,6 @@ function kpis(m){
     {v:wf.toLocaleString(),l:'workforce',c:'bl'},
     {v:mwe||'--',l:'MWe output',c:mwe>=cfg.mwe?'vi':mwe>0?'w':''},
     {v:Math.round(cumVol/1000)+'k',l:'concrete m3',c:''},
-    {v:Math.round(hrs/1e6)+'M',l:'worker-hours',c:''},
     {v:activePhases,l:'active phases',c:activePhases>4?'w':'bl'},
     {v:deliveredLL+'/'+LONGLEAD.length,l:'delivered LL',c:deliveredLL>=LONGLEAD.length?'ok':''},
     {v:delayTotal+'mo',l:'delay',c:delayTotal>6?'bad':delayTotal>0?'w':'ok'},
@@ -454,30 +452,22 @@ function genReport(m){
   const wf=workforce(m),ev=earned(m),pv=planned(m),spi=pv>0?ev/pv:1;
   const cost=projectSpent(m),spent=cost.total;
   const cpi=spent>.1?(ev/100*cfg.budget)/spent:1;
-  let cumVol=0;POURS.forEach(p=>{if(m>=p.m+2)cumVol+=p.vol;});
-  const nextPour=POURS.find(p=>m<p.m);
   const nextMS=MILESTONES.find(ms=>m<ms.m);
-  const activeFab=LONGLEAD.filter(l=>m>=l.order&&m<l.deliver);
   const lateItems=LONGLEAD.filter(l=>m>=l.need&&m<l.deliver);
-  const activeRisks=RISKS.filter((r,i)=>riskHits.has(i));
   const hrs=Math.round(wf*170*m);
+  const lti=Math.floor(m/25);
+  const ltir=hrs>0?(lti/hrs*200000).toFixed(2):'0';
 
-  let r='<b>'+cfg.name+' -- Monthly Construction Report</b><br>';
-  r+='<b>Period:</b> Year '+yr+', Month '+mo+' (Project Month '+Math.round(m)+' of '+cfg.dur+')<br>';
-  r+='<b>Active phases:</b> '+(phase.length?phase.map(p=>p.n).join(', '):'Commissioning')+'<br>';
-  r+='<b>Workforce:</b> '+wf.toLocaleString()+' | <b>Earned:</b> '+ev.toFixed(1)+'% | <b>SPI:</b> '+spi.toFixed(2)+' | <b>CPI:</b> '+cpi.toFixed(2)+'<br>';
-  const eac=Math.min(cfg.budget*2.5,cpi>.1?cfg.budget/cpi:cfg.budget);
-  r+='<b>Budget:</b> $'+cfg.budget+'B | <b>Spent:</b> $'+spent.toFixed(1)+'B | <b>EAC:</b> $'+eac.toFixed(1)+'B<br>';
-  r+='<b>Cost breakdown:</b> Labor $'+cost.labor.toFixed(1)+'B + Indirect $'+cost.indirect.toFixed(1)+'B + Materials $'+cost.materials.toFixed(1)+'B + Equipment $'+cost.equipment.toFixed(1)+'B<br>';
-  r+='<b>Concrete placed:</b> '+cumVol.toLocaleString()+' m3'+(nextPour?' | Next: '+nextPour.n+' (M'+nextPour.m+', '+nextPour.vol+' m3)':'')+'<br>';
-  r+='<b>Worker-hours:</b> '+Math.round(hrs/1e6)+'M | <b>LTI-free days:</b> '+Math.round((m-Math.floor(m/25)*25)*30)+'<br>';
-  r+='<b>Reactor type:</b> '+cfg.fuel+' / '+cfg.coolant+' / '+cfg.contain+'<br>';
-  if(activeFab.length)r+='<b>In fabrication:</b> '+activeFab.map(l=>l.n).join(', ')+'<br>';
-  if(lateItems.length)r+='<span style="color:var(--red)"><b>LATE deliveries:</b> '+lateItems.map(l=>l.n).join(', ')+'</span><br>';
-  if(delayTotal>0)r+='<span style="color:var(--red)"><b>Cumulative delay:</b> '+delayTotal+'mo from '+riskHits.size+' risk event(s): '+activeRisks.map(r=>r.n).join(', ')+'</span><br>';
-  if(nextMS)r+='<b>Next milestone:</b> '+nextMS.n+' (M'+nextMS.m+', '+(nextMS.m-Math.round(m)>0?nextMS.m-Math.round(m)+'mo away':'NOW')+')<br>';
-  if(spi<0.9)r+='<span style="color:var(--red)"><b>WARNING:</b> SPI below 0.90 -- schedule recovery plan required.</span><br>';
-  if(cpi<0.9)r+='<span style="color:var(--red)"><b>WARNING:</b> CPI below 0.90 -- cost overrun projected at EAC $'+(cpi>0?cfg.budget/cpi:0).toFixed(1)+'B.</span><br>';
+  let r='<b>'+cfg.name+'</b> Y'+yr+'M'+mo+' (M'+Math.round(m)+'/'+cfg.dur+') | ';
+  r+='<b>Active:</b> '+(phase.length?phase.map(p=>p.n).join(', '):'Commissioning')+' | ';
+  r+='WF '+wf.toLocaleString()+' | EV '+ev.toFixed(0)+'% | SPI '+spi.toFixed(2)+' | CPI '+cpi.toFixed(2)+' | ';
+  r+='Spent $'+spent.toFixed(1)+'B/$'+cfg.budget+'B | ';
+  // Safety inline
+  r+='<b>Safety:</b> '+Math.round(hrs/1e6)+'M wkr-hrs, '+lti+' LTIs, LTIR '+ltir+' | ';
+  if(lateItems.length)r+='<span style="color:var(--red)">LATE: '+lateItems.map(l=>l.n).join(', ')+'</span> | ';
+  if(delayTotal>0)r+='<span style="color:var(--red)">Delay: '+delayTotal+'mo</span> | ';
+  if(nextMS)r+='Next: '+nextMS.n+' (M'+nextMS.m+')';
+  if(spi<0.9)r+=' | <span style="color:var(--red)">SPI WARNING</span>';
   return r;
 }
 
@@ -604,69 +594,160 @@ function drawCharts(){
   c.strokeStyle='#a87718';c.lineWidth=2;c.setLineDash([4,4]);c.beginPath();c.moveTo(nx,0);c.lineTo(nx,h);c.stroke();c.setLineDash([]);
 }
 
-function drawCostDisc(){
-  const el=document.getElementById('costd');if(!el)return;
-  const c=el.getContext('2d'),w=el.width=el.clientWidth*2,h=el.height=el.clientHeight*2;
-  c.fillStyle='#faf7ee';c.fillRect(0,0,w,h);
-  const dur=PLANTS[plant].dur,B=PLANTS[plant].budget*1000;
-  TRADES.forEach((t,ti)=>{
-    c.strokeStyle=t.color;c.lineWidth=2;c.beginPath();
-    let cum=0;
-    for(let m=0;m<=Math.min(month,dur);m++){
-      const wf=workforce(m);const share=t.peak*(m<20?ti<2?1.5:.3:m<50?1:ti>3?1.5:.5);
-      cum+=wf*52*share/1e3;
-      const x=m/dur*w,y=h*.08+h*.84*(1-cum/B);
-      m?c.lineTo(x,y):c.moveTo(x,y);
+// ================================================================
+// LIVE GANTT CHART -- Canvas 2D
+// Draws phase bars, milestone diamonds, current month line, risk triangles
+// ================================================================
+function drawGantt(){
+  const canvas=$('gantt');
+  if(!canvas)return;
+  const dur=PLANTS[plant].dur;
+  const dpr=2;
+  const w=canvas.clientWidth*dpr;
+  const h=canvas.clientHeight*dpr;
+  canvas.width=w;canvas.height=h;
+  const c=canvas.getContext('2d');
+
+  // Background
+  c.fillStyle='#faf7ee';
+  c.fillRect(0,0,w,h);
+
+  const leftMargin=90*dpr;
+  const rightMargin=10*dpr;
+  const topMargin=12*dpr;
+  const bottomMargin=14*dpr;
+  const chartW=w-leftMargin-rightMargin;
+  const chartH=h-topMargin-bottomMargin;
+  const rowH=chartH/PHASES.length;
+  const monoFont=getComputedStyle(document.body).getPropertyValue('--mono');
+
+  // Month grid lines
+  c.strokeStyle='#ede7d6';c.lineWidth=1;
+  for(let m=0;m<=dur;m+=6){
+    const x=leftMargin+m/dur*chartW;
+    c.beginPath();c.moveTo(x,topMargin);c.lineTo(x,topMargin+chartH);c.stroke();
+  }
+
+  // X-axis month labels
+  c.fillStyle='#9a9077';
+  c.font=(7*dpr)+'px '+monoFont;
+  c.textAlign='center';
+  for(let m=0;m<=dur;m+=12){
+    const x=leftMargin+m/dur*chartW;
+    c.fillText('M'+m,x,h-2*dpr);
+  }
+
+  // Draw phase bars
+  PHASES.forEach((p,i)=>{
+    const y=topMargin+i*rowH;
+    const barH=rowH*0.7;
+    const barY=y+(rowH-barH)/2;
+    const x0=leftMargin+p.s/dur*chartW;
+    const x1=leftMargin+p.e/dur*chartW;
+    const barW=x1-x0;
+
+    // Phase name (left side)
+    c.fillStyle='#544c3a';
+    c.font=(7*dpr)+'px '+monoFont;
+    c.textAlign='right';
+    c.fillText(p.n,leftMargin-4*dpr,barY+barH*0.7);
+
+    // Background bar (outline for remaining)
+    c.strokeStyle=p.c+'66';
+    c.lineWidth=1;
+    c.strokeRect(x0,barY,barW,barH);
+
+    // Completed portion
+    const progress=month<p.s?0:month>=p.e?1:Math.max(0,(month-p.s)/(p.e-p.s));
+    if(progress>0){
+      c.fillStyle=p.c+(progress>=1?'':'cc');
+      c.fillRect(x0,barY,barW*progress,barH);
     }
+    // Remaining portion (lighter)
+    if(progress<1&&progress>0){
+      c.fillStyle=p.c+'22';
+      c.fillRect(x0+barW*progress,barY,barW*(1-progress),barH);
+    }
+    // Future bars (very faint)
+    if(progress===0){
+      c.fillStyle=p.c+'15';
+      c.fillRect(x0,barY,barW,barH);
+    }
+  });
+
+  // Draw milestone diamonds on the timeline
+  c.textAlign='center';
+  MILESTONES.forEach(ms=>{
+    const x=leftMargin+ms.m/dur*chartW;
+    // Find which phase row this milestone falls in
+    let bestRow=0;
+    PHASES.forEach((p,i)=>{
+      if(ms.m>=p.s&&ms.m<=p.e)bestRow=i;
+    });
+    const y=topMargin+bestRow*rowH+rowH*0.5;
+    const sz=3*dpr;
+
+    // Diamond shape
+    c.beginPath();
+    c.moveTo(x,y-sz);
+    c.lineTo(x+sz,y);
+    c.lineTo(x,y+sz);
+    c.lineTo(x-sz,y);
+    c.closePath();
+
+    if(month>=ms.m){
+      c.fillStyle='#2f7d4f';
+      c.fill();
+    } else if(month>=ms.m-3){
+      c.fillStyle='#a87718';
+      c.fill();
+    } else {
+      c.fillStyle='#cabd9c';
+      c.fill();
+    }
+    c.strokeStyle='#221c10';
+    c.lineWidth=0.5;
     c.stroke();
   });
-  c.fillStyle='#9a9077';c.font='bold '+(h*.09)+'px '+getComputedStyle(document.body).getPropertyValue('--mono');
-  TRADES.forEach((t,i)=>{c.fillStyle=t.color;c.fillText(t.n,4+i*w/TRADES.length,h*.97);});
-}
 
-function drawWfTrade(){
-  const el=document.getElementById('wftrade');if(!el)return;
-  const c=el.getContext('2d'),w=el.width=el.clientWidth*2,h=el.height=el.clientHeight*2;
-  c.fillStyle='#faf7ee';c.fillRect(0,0,w,h);
-  const wf=workforce(Math.round(month));
-  const bw=w/TRADES.length,bh=h*.78;
-  TRADES.forEach((t,i)=>{
-    const share=t.peak*(month<20?i<2?1.5:.3:month<50?1:i>3?1.5:.5);
-    const tw=Math.round(wf*share);
-    const pct=tw/4000;
-    c.fillStyle=t.color+'44';c.fillRect(i*bw+bw*.1,h*.1,bw*.8,bh);
-    c.fillStyle=t.color;c.fillRect(i*bw+bw*.1,h*.1+bh*(1-pct),bw*.8,bh*pct);
-    c.fillStyle='#9a9077';c.font=(h*.08)+'px '+getComputedStyle(document.body).getPropertyValue('--mono');
-    c.fillText(t.n.slice(0,4),i*bw+bw*.15,h*.97);
-    c.fillStyle=t.color;c.font='bold '+(h*.09)+'px '+getComputedStyle(document.body).getPropertyValue('--mono');
-    c.fillText(tw,i*bw+bw*.15,h*.1+bh*(1-pct)-3);
+  // Draw risk event triangles
+  RISKS.forEach((r,i)=>{
+    const x=leftMargin+r.trigger/dur*chartW;
+    // Place near top of chart
+    const y=topMargin+4*dpr;
+    const sz=3*dpr;
+
+    c.beginPath();
+    c.moveTo(x,y-sz);
+    c.lineTo(x+sz,y+sz);
+    c.lineTo(x-sz,y+sz);
+    c.closePath();
+
+    if(riskHits.has(i)){
+      c.fillStyle='#b13d2c';
+    } else if(month>r.trigger+2){
+      c.fillStyle='#b8cfbb';
+    } else {
+      c.fillStyle='#b13d2c44';
+    }
+    c.fill();
   });
-}
 
-function updatePours(){
-  const el=$('pourlog');if(!el)return;
-  let cumVol=0;POURS.forEach(p=>{if(month>=p.m+2)cumVol+=p.vol;});
-  el.innerHTML='<div style="font-weight:600;color:var(--ink);margin-bottom:3px">Cumulative: '+Math.round(cumVol).toLocaleString()+' m3 placed</div>'+
-    POURS.map(p=>{
-    const cls=month>=p.m+2?'done':month>=p.m-1?'pour-row':'future';
-    return'<div class="pour-row '+cls+'"><span class="pm">M'+p.m+'</span><span class="pn">'+p.n+'</span><span style="color:var(--faint);font-size:9px">'+((p.spec)||'')+'</span><span class="pv">'+p.vol+' m3</span></div>';
-  }).join('');
-}
+  // Current month vertical red line
+  const curX=leftMargin+month/dur*chartW;
+  c.strokeStyle='#b13d2c';
+  c.lineWidth=2*dpr;
+  c.setLineDash([]);
+  c.beginPath();
+  c.moveTo(curX,topMargin-2*dpr);
+  c.lineTo(curX,topMargin+chartH+2*dpr);
+  c.stroke();
 
-function updateSafety(){
-  const el=$('safety');if(!el)return;
-  const hrs=Math.round(workforce(month)*170*month);
-  const lti=Math.floor(month/25);
-  const ltir=hrs>0?(lti/hrs*200000).toFixed(2):'0';
-  const nearMiss=Math.round(month*1.5+Math.sin(month*.3)*3);
-  const daysNoLTI=Math.round((month-lti*25)*30);
-  el.innerHTML=
-    '<div class="sf g"><span class="sv">'+Math.round(hrs/1e6)+'M</span><span class="sl">worker hours</span></div>'+
-    '<div class="sf '+(lti>2?'r':lti>0?'y':'g')+'"><span class="sv">'+lti+'</span><span class="sl">LTIs</span></div>'+
-    '<div class="sf '+(+ltir>1?'r':+ltir>.5?'y':'g')+'"><span class="sv">'+ltir+'</span><span class="sl">LTIR</span></div>'+
-    '<div class="sf g"><span class="sv">'+daysNoLTI+'</span><span class="sl">days no LTI</span></div>'+
-    '<div class="sf y"><span class="sv">'+nearMiss+'</span><span class="sl">near misses</span></div>'+
-    '<div class="sf '+(nearMiss>0&&lti===0?'g':'y')+'"><span class="sv">'+(nearMiss>0?Math.round(nearMiss/Math.max(1,lti)):'-')+'</span><span class="sl">NM/LTI ratio</span></div>';
+  // Current month label at top
+  c.fillStyle='#b13d2c';
+  c.font='bold '+(7*dpr)+'px '+monoFont;
+  c.textAlign='center';
+  c.fillText('M'+Math.round(month),curX,topMargin-3*dpr);
 }
 
 function updateUI(){
@@ -683,37 +764,37 @@ function updateUI(){
   const K=kpis(month);
   $('kpis').innerHTML=K.map(k=>'<div class="k'+(k.c?' '+k.c:'')+'"><div class="v">'+k.v+'</div><div class="l">'+k.l+'</div></div>').join('');
 
-  $('ms').innerHTML=MILESTONES.map(ms=>{
-    const cls=month>=ms.m+1?'d':month>=ms.m-2?'a':'f';
-    const dc=cls==='d'?'background:var(--green)':cls==='a'?'background:var(--amber)':'background:var(--rule)';
-    return'<div class="m '+cls+'"><span class="md" style="'+dc+'"></span>M'+ms.m+' '+ms.n+'</div>';}).join('');
-
+  // Risks -- compact scrollable list
   $('risks').innerHTML=RISKS.map((r,i)=>{
     const hit=riskHits.has(i);
-    return'<div class="ri'+(hit?' hit':month>r.trigger+2?' ok':'')+'">'+
-      (hit?'&#9888; ':'')+(month>r.trigger+2&&!hit?'&#10003; ':'')+r.n+'</div>';}).join('');
+    const past=month>r.trigger+2;
+    let icon='&#8212;'; // em dash for pending
+    let statusTxt='';
+    if(hit){icon='&#9888;';statusTxt=' +'+r.impact+'mo';}
+    else if(past){icon='&#10003;';}
+    return'<div class="rr"><span class="ra">'+r.alias+'</span><span class="rn">'+r.n+'</span><span class="rs" style="color:'+(hit?'var(--red)':past?'var(--green)':'var(--faint)')+'">'+icon+'</span>'+(statusTxt?'<span style="color:var(--red);font-size:9px">'+statusTxt+'</span>':'')+'</div>';
+  }).join('');
 
+  // Long-lead items -- compact scrollable list
   $('ll').innerHTML=LONGLEAD.map(l=>{
-    const cls=month>=l.deliver?'del':month>=l.need&&month<l.deliver?'late':month>=l.order?'wait':'';
-    return'<div class="li '+cls+'">'+(cls==='del'?'&#10003;':cls==='late'?'&#9888;':cls==='wait'?'&#9881;':'&#8987;')+' '+l.n+
-      (cls==='wait'?' (fab)':cls==='del'?' (on site)':cls==='late'?' LATE':'')+'</div>';}).join('');
+    const delivered=month>=l.deliver;
+    const late=month>=l.need&&month<l.deliver;
+    const inFab=month>=l.order&&month<l.deliver;
+    let icon,color,statusTxt;
+    if(delivered){icon='&#10003;';color='var(--green)';statusTxt='on site';}
+    else if(late){icon='&#9888;';color='var(--red)';statusTxt='LATE';}
+    else if(inFab){icon='&#9881;';color='var(--amber)';statusTxt='fab';}
+    else{icon='&#8212;';color='var(--faint)';statusTxt='pending';}
+    return'<div class="lr"><span class="la">'+l.alias+'</span><span class="ln">ordered &rarr; M'+l.deliver+' delivery</span><span class="ls" style="color:'+color+'">'+icon+'</span><span class="lt" style="color:'+color+'">'+statusTxt+'</span></div>';
+  }).join('');
 
-  // feed (show last 8)
-  $('feed').innerHTML=eventLog.slice(-8).reverse().map(e=>
+  // feed (show last 12)
+  $('feed').innerHTML=eventLog.slice(-12).reverse().map(e=>
     '<div class="ev '+e.type+'"><span class="t">M'+e.m+'</span><span class="typ">'+e.type+'</span><span>'+e.msg+'</span></div>').join('');
 
   $('report').innerHTML=genReport(Math.round(month));
-  drawCharts();drawCostDisc();drawWfTrade();updateSafety();
-}
-
-function buildDims(){
-  $('dims').innerHTML='';
-  for(const k in R){
-    const r=R[k],d=document.createElement('div');d.className='dim';
-    d.innerHTML='<label>'+k+'</label><input type="range" min="'+r[0]+'" max="'+r[1]+'" step="'+((r[1]-r[0])/100)+'" value="'+(V[k]||r[0])+'" data-k="'+k+'"><span class="dv" data-dv="'+k+'">'+(V[k]||r[0])+'</span>';
-    $('dims').appendChild(d);
-  }
-  $('dims').addEventListener('input',e=>{if(!e.target.dataset.k)return;V[e.target.dataset.k]=+e.target.value;document.querySelector('[data-dv="'+e.target.dataset.k+'"]').textContent=(+e.target.value).toFixed(+e.target.value>=10?0:1);});
+  drawCharts();
+  drawGantt();
 }
 
 function loop(now){
@@ -746,7 +827,6 @@ function loop(now){
       ];
       eventLog.push({m:Math.round(month),type:'good',msg:goodMsgs[Math.floor(Math.random()*goodMsgs.length)]});
     }
-    // weather events
     // inspection events
     if(Math.random()<.001&&month>20){
       const inspMsgs=["CNSC regulatory inspection: satisfactory, 2 minor findings","TSSA pressure vessel inspection: approved to proceed","MOL site visit: zero orders issued","ISO 9001 surveillance audit: no non-conformances","N299.x nuclear quality audit: all records compliant"];
@@ -769,9 +849,8 @@ document.onkeydown=e=>{if(e.code==='Space'&&e.target.tagName!=='INPUT'){e.preven
 setPlant('pwr');requestAnimationFrame(loop);
 
 // ================================================================
-// ACT (Atomic Constraint Theory) — Nuclear Construction Overlay
+// ACT (Atomic Constraint Theory) -- Nuclear Construction Overlay
 // Adds CWA/CWP/CON atoms, completion logic, panel UI, clash modals
-// All existing code above is untouched.
 // ================================================================
 
 const ACT_ATOMS = {};
@@ -804,45 +883,39 @@ actAtom({alias:'REG-FUEL',type:'approval',name:'Regulatory fuel load authorizati
 actAtom({alias:'QC-POUR',type:'action',name:'QC pour card sign-off',completionKind:'leaf',completeAtMonth:10});
 
 // --- CWPs (rollup or gate atoms) ---
-// Reactor Building CWPs
 actAtom({alias:'CWP-RB-BASE',type:'cwp',name:'RB Basemat',completionKind:'leaf',completeAtMonth:20,
   enables:['CWP-RB-WALLS']});
 actAtom({alias:'CWP-RB-WALLS',type:'cwp',name:'RB Walls',completionKind:'gate',
-  'waits-on':['CWP-RB-BASE','CON-001'],enables:['CWP-RB-DOME'],completeAtMonth:36});
+  'waits-on':['CWP-RB-BASE','CON-ACT-001'],enables:['CWP-RB-DOME'],completeAtMonth:36});
 actAtom({alias:'CWP-RB-DOME',type:'cwp',name:'RB Dome',completionKind:'gate',
   'waits-on':['CWP-RB-WALLS'],completeAtMonth:42});
 
-// Containment CWPs
 actAtom({alias:'CWP-CT-LINER',type:'cwp',name:'Containment Liner',completionKind:'gate',
-  'waits-on':['CON-002'],completeAtMonth:46,enables:['CWP-CT-PTEST']});
+  'waits-on':['CON-ACT-002'],completeAtMonth:46,enables:['CWP-CT-PTEST']});
 actAtom({alias:'CWP-CT-PTEST',type:'cwp',name:'Containment Pressure Test',completionKind:'gate',
   'waits-on':['CWP-CT-LINER'],completeAtMonth:48});
 
-// Turbine Building CWPs
 actAtom({alias:'CWP-TB-STRUCT',type:'cwp',name:'TB Structure',completionKind:'leaf',completeAtMonth:42,
   enables:['CWP-TB-EQUIP']});
 actAtom({alias:'CWP-TB-EQUIP',type:'cwp',name:'TB Equipment Install',completionKind:'gate',
   'waits-on':['CWP-TB-STRUCT'],completeAtMonth:58});
 
-// Cooling Water CWPs
 actAtom({alias:'CWP-CW-INTAKE',type:'cwp',name:'CW Intake Structure',completionKind:'leaf',completeAtMonth:42,
   enables:['CWP-CW-PIPE']});
 actAtom({alias:'CWP-CW-PIPE',type:'cwp',name:'CW Piping',completionKind:'gate',
   'waits-on':['CWP-CW-INTAKE'],completeAtMonth:54});
 
-// Electrical & I&C CWPs
 actAtom({alias:'CWP-EL-CABLE',type:'cwp',name:'Cable Pulling',completionKind:'leaf',completeAtMonth:60,
   enables:['CWP-EL-IC']});
 actAtom({alias:'CWP-EL-IC',type:'cwp',name:'I&C Loop Checks',completionKind:'gate',
   'waits-on':['CWP-EL-CABLE'],completeAtMonth:68});
 
-// Commissioning CWPs
 actAtom({alias:'CWP-CM-COLD',type:'cwp',name:'Cold Hydro Test',completionKind:'gate',
-  'waits-on':['CON-003','CON-004'],completeAtMonth:66});
+  'waits-on':['CON-ACT-003','CON-ACT-004'],completeAtMonth:66});
 actAtom({alias:'CWP-CM-HOT',type:'cwp',name:'Hot Functional Test',completionKind:'gate',
-  'waits-on':['CWP-CM-COLD','CON-004'],completeAtMonth:68});
+  'waits-on':['CWP-CM-COLD','CON-ACT-004'],completeAtMonth:68});
 actAtom({alias:'CWP-CM-FUEL',type:'cwp',name:'Fuel Load',completionKind:'gate',
-  'waits-on':['CWP-CM-HOT','CON-005'],completeAtMonth:74});
+  'waits-on':['CWP-CM-HOT','CON-ACT-005'],completeAtMonth:74});
 
 // --- CWAs (rollup atoms) ---
 actAtom({alias:'CWA-RB',type:'cwa',name:'Reactor Building -- Civil',completionKind:'rollup',
@@ -859,38 +932,33 @@ actAtom({alias:'CWA-CM',type:'cwa',name:'Commissioning',completionKind:'rollup',
   contains:['CWP-CM-COLD','CWP-CM-HOT','CWP-CM-FUEL']});
 
 // --- Constraints (gate atoms blocking work packages) ---
-actAtom({alias:'CON-001',type:'constraint',name:'Rebar supply chain',completionKind:'gate',
+actAtom({alias:'CON-ACT-001',type:'constraint',name:'Rebar supply chain',completionKind:'gate',
   blocks:['CWP-RB-WALLS'],'waits-on':['MAT-REBAR'],
   desc:'Rebar delivery required before RB wall construction'});
-actAtom({alias:'CON-002',type:'constraint',name:'RPV delivery',completionKind:'gate',
+actAtom({alias:'CON-ACT-002',type:'constraint',name:'RPV delivery',completionKind:'gate',
   blocks:['CWP-CT-LINER'],'waits-on':['MAT-RPV'],
   desc:'RPV must be on site before closing containment'});
-actAtom({alias:'CON-003',type:'constraint',name:'Containment pressure test',completionKind:'gate',
+actAtom({alias:'CON-ACT-003',type:'constraint',name:'Containment pressure test',completionKind:'gate',
   blocks:['CWP-CM-COLD'],'waits-on':['CWP-CT-PTEST'],
   desc:'Containment ILRT must pass before cold commissioning'});
-actAtom({alias:'CON-004',type:'constraint',name:'Electrical energization',completionKind:'gate',
+actAtom({alias:'CON-ACT-004',type:'constraint',name:'Electrical energization',completionKind:'gate',
   blocks:['CWP-CM-COLD','CWP-CM-HOT'],'waits-on':['CWP-EL-CABLE'],
   desc:'Permanent power required for commissioning'});
-actAtom({alias:'CON-005',type:'constraint',name:'Fuel load authorization',completionKind:'gate',
+actAtom({alias:'CON-ACT-005',type:'constraint',name:'Fuel load authorization',completionKind:'gate',
   blocks:['CWP-CM-FUEL'],'waits-on':['REG-FUEL'],
   desc:'Regulatory approval needed for fuel load'});
-actAtom({alias:'CON-006',type:'constraint',name:'Pour card approval',completionKind:'gate',
+actAtom({alias:'CON-ACT-006',type:'constraint',name:'Pour card approval',completionKind:'gate',
   blocks:['CWP-RB-BASE'],'waits-on':['QC-POUR'],'cleared-by':['QC-POUR'],
   desc:'Each concrete pour requires QC-approved pour card'});
 
 
 // --- ACT Completion Logic ---
-// leaf: complete when month >= completeAtMonth
-// gate: complete when all waits-on are complete
-// rollup: complete when all children complete
-
 function actIsComplete(alias, seen) {
   seen = seen || new Set();
   const a = ACT_ATOMS[alias];
   if (!a) return false;
   if (seen.has(alias)) return false;
   seen.add(alias);
-
   if (a.complete) return true;
 
   switch (a.completionKind) {
@@ -900,7 +968,6 @@ function actIsComplete(alias, seen) {
       const deps = a['waits-on'] || [];
       if (deps.length === 0) return false;
       const depsOk = deps.every(d => actIsComplete(d, new Set(seen)));
-      // If gate also has a schedule month, require that too
       if (a.completeAtMonth != null) return depsOk && month >= a.completeAtMonth;
       return depsOk;
     }
@@ -917,22 +984,17 @@ function actIsComplete(alias, seen) {
 function actStatus(alias) {
   const a = ACT_ATOMS[alias];
   if (!a) return 'f';
-  if (actIsComplete(alias)) return 'g'; // green = complete
-
-  // For rollups: in progress if any child is complete or in progress
+  if (actIsComplete(alias)) return 'g';
   if (a.completionKind === 'rollup' && a.contains && a.contains.length) {
     if (a.contains.some(c => actIsComplete(c) || actStatus(c) === 'a')) return 'a';
   }
-  // For gates: in progress if some waits-on are complete or if scheduled to start soon
   if (a.completionKind === 'gate' && a['waits-on'] && a['waits-on'].length) {
     if (a['waits-on'].some(d => actIsComplete(d))) return 'a';
   }
-  // For leaves: in progress if within 6 months of completion
   if (a.completionKind === 'leaf' && a.completeAtMonth != null) {
     if (month >= a.completeAtMonth - 6) return 'a';
   }
-
-  return 'f'; // gray = future
+  return 'f';
 }
 
 function actConstraintsForCWP(cwpAlias) {
@@ -941,33 +1003,51 @@ function actConstraintsForCWP(cwpAlias) {
   );
 }
 
-// --- ACT Panel Rendering ---
-let actExpandedCWA = null;
+// Find the next milestone and which constraints are blocking it
+function findCriticalPath() {
+  const nextMS = MILESTONES.find(ms => month < ms.m);
+  if (!nextMS) return { blocking: [], nextMilestone: null };
 
+  // Find incomplete constraints
+  const blocking = ACT_ALL.filter(a =>
+    a.type === 'constraint' && !actIsComplete(a.alias)
+  );
+  return { blocking, nextMilestone: nextMS };
+}
+
+// --- ACT Panel Rendering (expanded by default, with completion %, critical path) ---
 function updateACTPanel() {
   const el = document.getElementById('actpanel');
   if (!el) return;
 
   const cwas = ACT_ALL.filter(a => a.type === 'cwa');
+  const critPath = findCriticalPath();
+  const blockingAliases = new Set(critPath.blocking.map(b => b.alias));
+
   let html = '';
 
   cwas.forEach(cwa => {
     const st = actStatus(cwa.alias);
     const dotCls = st;
-    const expanded = actExpandedCWA === cwa.alias;
     const pillCls = st === 'g' ? 'green' : st === 'a' ? 'amber' : '';
 
-    html += '<div class="act-cwa' + (expanded ? ' open' : '') + '" data-act-cwa="' + cwa.alias + '">';
+    // Completion percentage
+    const children = cwa.contains || [];
+    const doneCount = children.filter(c => actIsComplete(c)).length;
+    const pctText = doneCount + '/' + children.length + ' complete';
+
+    html += '<div class="act-cwa">';
     html += '<div class="act-row">';
     html += '<span class="act-dot ' + dotCls + '"></span>';
     html += '<span class="act-alias">' + cwa.alias + '</span>';
     html += '<span class="act-name">' + cwa.name + '</span>';
+    html += '<span class="act-pct">' + pctText + '</span>';
     html += '<span class="act-pill ' + pillCls + '">' + (st === 'g' ? 'Done' : st === 'a' ? 'Active' : 'Future') + '</span>';
     html += '</div>';
 
-    // Expandable children
-    html += '<div class="act-sub">';
-    (cwa.contains || []).forEach(cwpAlias => {
+    // Always expanded children (no click to expand)
+    html += '<div class="act-sub" style="display:block">';
+    children.forEach(cwpAlias => {
       const cwp = ACT_ATOMS[cwpAlias];
       if (!cwp) return;
       const cwpSt = actStatus(cwpAlias);
@@ -982,24 +1062,26 @@ function updateACTPanel() {
       html += '<span class="act-pill ' + cwpPill + '">' + (cwpSt === 'g' ? 'Done' : cwpSt === 'a' ? 'Active' : 'Pending') + '</span>';
       html += '</div>';
 
-      // Constraints for this CWP
+      // Constraints for this CWP with inline status
       const cons = actConstraintsForCWP(cwpAlias);
       cons.forEach(con => {
         const conComplete = actIsComplete(con.alias);
         const blocking = !conComplete;
+        const isCritical = blockingAliases.has(con.alias);
         html += '<div class="act-con">';
         html += '<span class="act-dot ' + (conComplete ? 'g' : 'r') + '"></span> ';
         html += '<span style="color:' + (blocking ? 'var(--red)' : 'var(--green)') + '">' + con.alias + '</span> ';
         html += con.name;
+        html += ' <span style="color:' + (conComplete ? 'var(--green)' : 'var(--red)') + ';font-weight:600">[' + (conComplete ? 'CLEARED' : 'BLOCKING') + ']</span>';
+        if (isCritical) {
+          html += ' <span class="act-critical">CRITICAL PATH</span>';
+        }
         if (con['waits-on'] && con['waits-on'].length) {
           const waitNames = con['waits-on'].map(w => {
             const wa = ACT_ATOMS[w];
             return wa ? wa.name : w;
           }).join(', ');
           html += ' <span class="rel">waits-on: ' + waitNames + '</span>';
-        }
-        if (con.enables && con.enables.length) {
-          html += ' <span class="rel">enables: ' + con.enables.join(', ') + '</span>';
         }
         html += '</div>';
       });
@@ -1030,25 +1112,116 @@ function updateACTPanel() {
   el.innerHTML = html;
 }
 
-// Click handler for ACT panel expand/collapse
-document.addEventListener('click', function(e) {
-  const cwaEl = e.target.closest('[data-act-cwa]');
-  if (cwaEl) {
-    const alias = cwaEl.dataset.actCwa;
-    actExpandedCWA = actExpandedCWA === alias ? null : alias;
-    updateACTPanel();
-    return;
+// --- Clash Resolution Modals (enhanced with more detail) ---
+const ACT_CLASHES_SPEC = {
+  'CL-001': {
+    triggerMonth: 30,
+    title: 'Piping / Cable Tray Interference',
+    location: 'RB Elev +12m / Grid C-7',
+    conflictA: 'CWP-RB-WALLS (Piping route P-RC-01)',
+    conflictB: 'CWP-EL-CABLE (Cable tray ET-4A)',
+    desc: 'Piping route P-RC-01 conflicts with cable tray ET-4A in Reactor Building elevation +12m. The routing was not coordinated between disciplines.',
+    optA: 'Accept reroute (+2 weeks to piping)',
+    optB: 'Escalate to engineering review (+1 week)',
+    impactA: '+2 weeks to piping schedule, no engineering cost',
+    impactB: '+1 week engineering review, potential optimization',
+    affectedConstraints: ['CON-ACT-001'],
+    effectA: { delay: 0.5 },
+    effectB: { delay: 0 }
+  },
+  'CL-002': {
+    triggerMonth: 45,
+    title: 'RPV Set / Liner Weld Conflict',
+    location: 'RB Elev +0m / Containment Interior',
+    conflictA: 'CWP-RB-DOME (RPV set sequence)',
+    conflictB: 'CWP-CT-LINER (Liner weld inspection)',
+    desc: 'RPV set sequence conflicts with containment liner weld inspection window. Both crews require exclusive access to the containment interior.',
+    optA: 'Delay RPV set by 1 month to clear inspection',
+    optB: 'Parallel inspection with restricted RPV rigging zone',
+    impactA: '+1 month to RPV set, full inspection clearance',
+    impactB: 'No delay but restricted rigging area, higher safety risk',
+    affectedConstraints: ['CON-ACT-002'],
+    effectA: { delay: 1 },
+    effectB: { delay: 0 }
+  },
+  'CL-003': {
+    triggerMonth: 55,
+    title: 'Condenser / Turbine Pedestal Sequence',
+    location: 'TB Main Bay / Elev +0m',
+    conflictA: 'CWP-TB-EQUIP (Condenser tube pull)',
+    conflictB: 'CWP-TB-STRUCT (Pedestal grouting)',
+    desc: 'Condenser tube pull schedule overlaps with turbine pedestal grouting cure window. Both activities occupy the turbine building main bay.',
+    optA: 'Sequence condenser first, delay grouting (+3 weeks)',
+    optB: 'Grout first, condenser waits for cure (+2 weeks)',
+    impactA: '+3 weeks to TB schedule, condenser in first',
+    impactB: '+2 weeks to TB schedule, grout cures first',
+    affectedConstraints: ['CON-ACT-004'],
+    effectA: { delay: 0.75 },
+    effectB: { delay: 0.5 }
   }
-  // Clash modal button handler
+};
+
+const actClashFired = {};
+
+function checkACTClashes() {
+  for (const id in ACT_CLASHES_SPEC) {
+    if (actClashFired[id]) continue;
+    const spec = ACT_CLASHES_SPEC[id];
+    if (Math.abs(month - spec.triggerMonth) < 0.5) {
+      showClashModal(id, spec);
+      actClashFired[id] = true;
+      break;
+    }
+  }
+}
+
+function showClashModal(id, spec) {
+  if (document.getElementById('clash-overlay')) return;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'clash-overlay';
+  overlay.id = 'clash-overlay';
+  overlay.dataset.clashId = id;
+
+  let affectedHtml = '';
+  if (spec.affectedConstraints && spec.affectedConstraints.length) {
+    const names = spec.affectedConstraints.map(alias => {
+      const a = ACT_ATOMS[alias];
+      return a ? alias + ' (' + a.name + ')' : alias;
+    });
+    affectedHtml = '<div class="clash-affected">ACT Constraints affected: ' + names.join(', ') + '</div>';
+  }
+
+  overlay.innerHTML =
+    '<div class="clash-modal">' +
+    '<h4>' + id + ' -- ' + spec.title + '</h4>' +
+    '<div class="clash-loc">' + id + ' / ' + spec.location + '</div>' +
+    '<div class="clash-conflict"><b>Conflict:</b> ' + spec.conflictA + ' vs ' + spec.conflictB + '</div>' +
+    '<p>' + spec.desc + '</p>' +
+    '<div class="clash-btns">' +
+    '<button class="clash-btn" data-clash-choice="a">' + spec.optA + '<div class="clash-impact">' + spec.impactA + '</div></button>' +
+    '<button class="clash-btn" data-clash-choice="b">' + spec.optB + '<div class="clash-impact">' + spec.impactB + '</div></button>' +
+    '</div>' +
+    affectedHtml +
+    '</div>';
+
+  document.body.appendChild(overlay);
+
+  if (playing) {
+    playing = false;
+    $('play').textContent = 'Play';
+  }
+}
+
+// Click handler for clash modal
+document.addEventListener('click', function(e) {
   const clashBtn = e.target.closest('[data-clash-choice]');
   if (clashBtn) {
     const choice = clashBtn.dataset.clashChoice;
     const overlay = document.getElementById('clash-overlay');
     const clashId = overlay ? overlay.dataset.clashId : '';
     if (overlay) overlay.remove();
-    // Apply effects
     if (choice === 'a') {
-      // Option A effects (typically +delay)
       const spec = ACT_CLASHES_SPEC[clashId];
       if (spec && spec.effectA) {
         delayTotal += spec.effectA.delay || 0;
@@ -1066,82 +1239,7 @@ document.addEventListener('click', function(e) {
 });
 
 
-// --- Clash Resolution Modals ---
-const ACT_CLASHES_SPEC = {
-  'CL-PIPE-CABLE': {
-    triggerMonth: 30,
-    title: 'Piping / Cable Tray Interference',
-    desc: 'CLASH: Piping route P-RC-01 conflicts with cable tray ET-4A in Reactor Building elevation +12m. The routing was not coordinated between disciplines.',
-    optA: 'Accept reroute (+2 weeks to piping schedule)',
-    optB: 'Escalate to engineering for combined solution',
-    effectA: { delay: 0.5 },
-    effectB: { delay: 0 }
-  },
-  'CL-RPV-LINER': {
-    triggerMonth: 45,
-    title: 'RPV Set / Liner Weld Conflict',
-    desc: 'CLASH: RPV set sequence conflicts with containment liner weld inspection window. Both crews require exclusive access to the containment interior.',
-    optA: 'Delay RPV set by 1 month to clear inspection',
-    optB: 'Parallel inspection with restricted RPV rigging zone',
-    effectA: { delay: 1 },
-    effectB: { delay: 0 }
-  },
-  'CL-COND-GROUT': {
-    triggerMonth: 55,
-    title: 'Condenser / Turbine Pedestal Sequence',
-    desc: 'CLASH: Condenser tube pull schedule overlaps with turbine pedestal grouting cure window. Both activities occupy the turbine building main bay.',
-    optA: 'Sequence condenser first, delay grouting (+3 weeks)',
-    optB: 'Grout first, condenser waits for cure (+2 weeks)',
-    effectA: { delay: 0.75 },
-    effectB: { delay: 0.5 }
-  }
-};
-
-const actClashFired = {};
-
-function checkACTClashes() {
-  for (const id in ACT_CLASHES_SPEC) {
-    if (actClashFired[id]) continue;
-    const spec = ACT_CLASHES_SPEC[id];
-    if (Math.abs(month - spec.triggerMonth) < 0.5) {
-      showClashModal(id, spec);
-      actClashFired[id] = true;
-      break; // only one at a time
-    }
-  }
-}
-
-function showClashModal(id, spec) {
-  // Don't show if already showing
-  if (document.getElementById('clash-overlay')) return;
-
-  const overlay = document.createElement('div');
-  overlay.className = 'clash-overlay';
-  overlay.id = 'clash-overlay';
-  overlay.dataset.clashId = id;
-
-  overlay.innerHTML =
-    '<div class="clash-modal">' +
-    '<h4>' + spec.title + '</h4>' +
-    '<p>' + spec.desc + '</p>' +
-    '<div class="clash-btns">' +
-    '<button class="clash-btn" data-clash-choice="a">' + spec.optA + '</button>' +
-    '<button class="clash-btn" data-clash-choice="b">' + spec.optB + '</button>' +
-    '</div>' +
-    '</div>';
-
-  document.body.appendChild(overlay);
-
-  // Pause playback so user can read
-  if (playing) {
-    playing = false;
-    $('play').textContent = 'Play';
-  }
-}
-
-
 // --- ACT Event Integration ---
-// Track which ACT events we've already logged
 const actEventsLogged = {};
 
 function checkACTEvents() {
@@ -1173,14 +1271,10 @@ updateUI = function() {
 const _origSetPlant = setPlant;
 setPlant = function(p) {
   _origSetPlant(p);
-  // Reset ACT completion tracking
   for (const k in actEventsLogged) delete actEventsLogged[k];
   for (const k in actClashFired) delete actClashFired[k];
   ACT_ALL.forEach(a => { a.complete = false; });
 };
-
-// Re-init with current plant to apply patched setPlant
-// (no-op reset -- the existing setPlant('pwr') already ran, this just hooks the ACT reset)
 
 </script>
 </body>
