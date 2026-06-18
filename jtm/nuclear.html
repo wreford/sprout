@@ -77,7 +77,7 @@ body{background:var(--paper);color:var(--ink);font-family:var(--serif);font-size
 
 /* Gantt cell */
 .gantt-cell{grid-column:1/4;grid-row:3;padding:0;position:relative;background:var(--hi)}
-#gantt{width:100%;height:80px;display:block}
+#gantt{width:100%;height:110px;display:block}
 
 /* Risks compact list */
 .risk-list{max-height:100%;overflow-y:auto;font:9px var(--mono)}
@@ -176,9 +176,9 @@ body{background:var(--paper);color:var(--ink);font-family:var(--serif);font-size
   <!-- Row 2, Col 2: S-curve + Discipline -->
   <div class="pan" style="grid-column:2;grid-row:2">
     <h3>S-Curve</h3>
-    <canvas id="sc" style="width:100%;height:50px;display:block;border:1px solid var(--rule2);border-radius:4px;background:var(--hi)"></canvas>
+    <canvas id="sc" style="width:100%;height:65px;display:block;border:1px solid var(--rule2);border-radius:4px;background:var(--hi)"></canvas>
     <h3 style="margin-top:4px">Discipline</h3>
-    <canvas id="disc" style="width:100%;height:40px;display:block;border:1px solid var(--rule2);border-radius:4px;background:var(--hi)"></canvas>
+    <canvas id="disc" style="width:100%;height:55px;display:block;border:1px solid var(--rule2);border-radius:4px;background:var(--hi)"></canvas>
   </div>
 
   <!-- Row 3: Gantt chart spanning all 3 columns -->
@@ -403,8 +403,17 @@ function buildObjs(m){
 }
 
 // metrics
-function planned(m){const d=PLANTS[plant].dur;const x=Math.max(0,Math.min(1,m/d));const t=x*x*(3-2*x);return 100*t*t*(3-2*t);}
-function earned(m){const eff=m<15?.88:m<40?.93:m<60?.97:.92;return Math.min(100,planned(Math.max(0,m-delayTotal*.4))*eff);}
+function planned(m){
+  const d=PLANTS[plant].dur,x=Math.max(0,Math.min(1,m/d));
+  // Realistic nuclear S-curve: ~8% at 20%, ~50% at 50%, ~90% at 80%
+  if(x<=0)return 0;if(x>=1)return 100;
+  return 100*(3*x*x-2*x*x*x);  // simple cubic hermite — not too flat early
+}
+function earned(m){
+  const d=PLANTS[plant].dur,frac=m/d;
+  const eff=frac<.1?.90:frac<.3?.94:frac<.7?.97:frac<.85?.95:.91;
+  return Math.min(100,planned(Math.max(0,m-delayTotal*.3))*eff);
+}
 function workforce(m){
   if(m<=0)return 0;
   const cfg=PLANTS[plant],pk=(cfg.peakWF||3200)+whatIfCrew,d=cfg.dur,frac=m/d;
@@ -414,7 +423,11 @@ function workforce(m){
 function projectSpent(m){
   const cfg=PLANTS[plant],dur=cfg.dur,mI=Math.min(Math.round(m),dur);
   let lab=0,ind=0,mat=0,eq=0;
-  for(let i=1;i<=mI;i++){const wf=workforce(i);const fr=i/dur;lab+=wf*18000;ind+=wf*12000;mat+=wf*(fr<.15?15000:fr<.5?28000:fr<.75?20000:8000);}
+  for(let i=1;i<=mI;i++){const wf=workforce(i);const fr=i/dur;
+    lab+=wf*18000;
+    ind+=wf*(fr<.1?6000:12000);  // lower indirect during mobilization
+    mat+=wf*(fr<.1?5000:fr<.25?18000:fr<.55?26000:fr<.75?18000:6000);  // materials peak during civil/mech
+  }
   if(cfg.equip)cfg.equip.forEach(e=>{if(m>=e.m)eq+=e.c*1e9;});
   const total=(lab+ind+mat+eq)/1e9;
   return{labor:lab/1e9,indirect:ind/1e9,materials:mat/1e9,equipment:eq/1e9,total};
@@ -770,11 +783,10 @@ function updateUI(){
   $('risks').innerHTML=RISKS.map((r,i)=>{
     const hit=riskHits.has(i);
     const past=month>r.trigger+2;
-    let icon='&#8212;'; // em dash for pending
-    let statusTxt='';
-    if(hit){icon='&#9888;';statusTxt=' +'+r.impact+'mo';}
-    else if(past){icon='&#10003;';}
-    return'<div class="rr"><span class="ra">'+r.alias+'</span><span class="rn">'+r.n+'</span><span class="rs" style="color:'+(hit?'var(--red)':past?'var(--green)':'var(--faint)')+'">'+icon+'</span>'+(statusTxt?'<span style="color:var(--red);font-size:9px">'+statusTxt+'</span>':'')+'</div>';
+    let icon='&#8212;',cls='';
+    if(hit){icon='&#9888;';cls=' hit';}
+    else if(past){icon='&#10003;';cls=' clear';}
+    return'<div class="rr'+cls+'" title="P='+Math.round(r.prob*100)+'% | Impact: '+r.impact+'mo | Trigger: M'+r.trigger+' | '+r.desc+'" style="cursor:help"><span class="ra">'+r.alias+'</span><span class="rn">'+r.n+'</span><span class="rs" style="color:'+(hit?'var(--red)':past?'var(--green)':'var(--faint)')+'">'+icon+(hit?' +'+r.impact+'mo':'')+'</span></div>';
   }).join('');
 
   // Long-lead items -- compact scrollable list
@@ -1160,6 +1172,66 @@ const ACT_CLASHES_SPEC = {
     affectedConstraints: ['CON-ACT-004'],
     effectA: { delay: 0.75 },
     effectB: { delay: 0.5 }
+  },
+  'CL-004': {
+    triggerMonth: 18,
+    title: 'Crane Swing Radius / Excavation Face',
+    location: 'RB Excavation North Face / Grid A-3',
+    conflictA: 'CWP-RB-BASE (Basemat rebar)',
+    conflictB: 'Site prep (Crane pad relocation)',
+    desc: 'Crane swing radius overlaps with active excavation face. CSA Z150 requires minimum clearance. Rebar delivery trucks cannot access east laydown while crane is slewing.',
+    optA: 'Relocate crane pad 8m south (+1 week, $120K)',
+    optB: 'Restrict crane slew angle to 180° (+2 weeks)',
+    impactA: '+1 week, one-time crane move cost',
+    impactB: '+2 weeks, slower lifts for entire basemat phase',
+    affectedConstraints: ['CON-ACT-001'],
+    effectA: { delay: 0.25 },
+    effectB: { delay: 0.5 }
+  },
+  'CL-005': {
+    triggerMonth: 38,
+    title: 'Containment Dome Steel / SG Delivery',
+    location: 'RB Top of Wall / Equipment Hatch',
+    conflictA: 'CWP-RB-DOME (Dome steel erection)',
+    conflictB: 'CWP-CT-LINER (SG lift through equipment hatch)',
+    desc: 'Steam generators must be lifted through the equipment hatch before dome steel closes it permanently. SG delivery from vendor is tracking 2 weeks late.',
+    optA: 'Hold dome steel, wait for SG delivery (+3 weeks)',
+    optB: 'Expedite SG shipment ($800K air freight, +0 weeks)',
+    impactA: '+3 weeks to containment schedule',
+    impactB: 'No delay but $800K expediting premium',
+    affectedConstraints: ['CON-ACT-002'],
+    effectA: { delay: 0.75 },
+    effectB: { delay: 0 }
+  },
+  'CL-006': {
+    triggerMonth: 62,
+    title: 'Cable Pull / I&C Sensor Installation',
+    location: 'RB Elev +8m / Cable Vault CV-04',
+    conflictA: 'CWP-EL-CABLE (Power cable pull 4160V)',
+    conflictB: 'CWP-EL-IC (Safety system instrument tubing)',
+    desc: 'Power cable routing through cable vault CV-04 would overfill cable tray above CNSC REGDOC-2.5.2 fill ratio limits. I&C tubing uses the same penetration sleeve.',
+    optA: 'Reroute power cables via alternate vault (+2 weeks)',
+    optB: 'Request CNSC disposition on fill ratio (+4 weeks)',
+    impactA: '+2 weeks, 300m additional cable, fully compliant',
+    impactB: '+4 weeks regulatory review, uncertain outcome',
+    affectedConstraints: ['CON-ACT-004'],
+    effectA: { delay: 0.5 },
+    effectB: { delay: 1 }
+  },
+  'CL-007': {
+    triggerMonth: 70,
+    title: 'Hot Functional Test / Fuel Handling Crane',
+    location: 'RB Reactor Hall / Fuel Transfer Canal',
+    conflictA: 'CWP-CM-HOT (Hot functional test boundary)',
+    conflictB: 'CWP-CM-FUEL (Fuel handling crane commissioning)',
+    desc: 'Hot functional test pressurizes the reactor coolant system. CNSC requires fuel handling crane to be commissioned before fuel load, but crane testing cannot occur during hot functional test due to containment isolation.',
+    optA: 'Complete crane commissioning first, then HFT (+2 weeks)',
+    optB: 'Run HFT first, commission crane during cooldown (+1 week)',
+    impactA: '+2 weeks, cleaner sequence, CNSC preferred',
+    impactB: '+1 week, tight on fuel load authorization window',
+    affectedConstraints: ['CON-ACT-005'],
+    effectA: { delay: 0.5 },
+    effectB: { delay: 0.25 }
   }
 };
 
