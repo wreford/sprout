@@ -353,33 +353,14 @@ function setPlant(p){
 function sc(v){return v*0.12;}
 function vis(m,s,e){return m<s?0:m>=e?1:e<=s?0:Math.max(.001,Math.min(1,(m-s)/(e-s)));}
 function eo(t){return 1-Math.pow(1-t,3);}
-/* Beta-distribution S-curve for planned value (slow start, rapid middle, slow finish) */
-function betaCDF(x,a,b){
-  /* Regularized incomplete beta via simple numerical integration (trapezoidal, 200 steps) */
-  if(x<=0)return 0;if(x>=1)return 1;
-  const N=200;let sum=0;const dx=x/N;
-  for(let i=0;i<=N;i++){
-    const t=i*dx;
-    const ft=Math.pow(t,a-1)*Math.pow(1-t,b-1);
-    sum+=ft*(i===0||i===N?.5:1);
-  }
-  sum*=dx;
-  /* Normalize: full beta integral */
-  let full=0;const dxf=1/N;
-  for(let i=0;i<=N;i++){
-    const t=i*dxf;
-    const ft=Math.pow(t,a-1)*Math.pow(1-t,b-1);
-    full+=ft*(i===0||i===N?.5:1);
-  }
-  full*=dxf;
-  return sum/full;
-}
 function planned(m){
   const d=PLANTS[plant].dur;
   const x=Math.max(0,Math.min(1,m/d));
-  /* alpha=2.2, beta=2.8 gives a realistic nuclear construction S-curve:
-     slow ramp for first ~20%, steep climb through ~70%, slow finish */
-  return 100*betaCDF(x,2.2,2.8);
+  // Fast S-curve approximation (no numerical integration)
+  // Approximates beta(2.2, 2.8) CDF with a smoothstep blend
+  const t=x*x*(3-2*x); // hermite smoothstep
+  const s=t*t*(3-2*t); // double-smoothstep for steeper S shape
+  return 100*s;
 }
 function earned(m){
   /* Earned value lags plan by the accumulated delay.
@@ -981,7 +962,7 @@ function loop(now){
 
   if(playing){
     const dur=PLANTS[plant].dur;
-    month=Math.min(dur,month+dt*spdX*3);
+    month=Math.min(dur,month+dt*spdX*6);
     if(month>=dur){playing=false;$('play-btn').innerHTML='&#9654;';$('play-btn').classList.remove('playing');eventLog.push({m:dur,type:'good',msg:'COMMERCIAL OPERATION DATE achieved!'});}
     checkRisks(month);checkMilestones(month);
     // Construction events
@@ -1058,7 +1039,7 @@ $('play-btn').onclick=()=>{
   if(playing){playing=false;$('play-btn').innerHTML='&#9654;';$('play-btn').classList.remove('playing');}
   else{if(month>=PLANTS[plant].dur)month=0;playing=true;$('play-btn').innerHTML='&#10074;&#10074;';$('play-btn').classList.add('playing');}
 };
-$('spd-btn').onclick=function(){spdX=spdX===1?3:spdX===3?8:1;this.textContent=spdX+'x';};
+$('spd-btn').onclick=function(){spdX=spdX===1?2:spdX===2?5:spdX===5?10:1;this.textContent=spdX+'x';};
 $('cam').onchange=e=>{camMode=e.target.value;autoTourTimer=0;updateCamPresets();};
 $('night').onclick=function(){nightMode=!nightMode;this.classList.toggle('on');};
 $('weather').onclick=function(){weatherOn=!weatherOn;this.classList.toggle('on');if(weatherOn)eventLog.push({m:Math.round(month),type:'risk',msg:'Weather event: heavy rain'});};
@@ -1097,7 +1078,7 @@ document.onkeydown=e=>{
   if(e.key==='k'||e.key==='K'){leftOpen=!leftOpen;$('left-panel').classList.toggle('hidden',!leftOpen);}
   if(e.key==='l'||e.key==='L'){rightOpen=!rightOpen;$('right-panel').classList.toggle('hidden',!rightOpen);}
   if(e.key==='+'||e.key==='='){$('spd-btn').click();}
-  if(e.key==='-'){spdX=spdX===8?3:spdX===3?1:1;$('spd-btn').textContent=spdX+'x';}
+  if(e.key==='-'){spdX=spdX===10?5:spdX===5?2:spdX===2?1:1;$('spd-btn').textContent=spdX+'x';}
   if(e.key==='r'||e.key==='R'){month=0;playing=false;$('play-btn').innerHTML='&#9654;';$('play-btn').classList.remove('playing');}
   if(e.code==='ArrowLeft'){e.preventDefault();month=Math.max(0,month-(e.shiftKey?6:1));playing=false;$('play-btn').innerHTML='&#9654;';$('play-btn').classList.remove('playing');}
   if(e.code==='ArrowRight'){e.preventDefault();month=Math.min(PLANTS[plant].dur,month+(e.shiftKey?6:1));playing=false;$('play-btn').innerHTML='&#9654;';$('play-btn').classList.remove('playing');}
