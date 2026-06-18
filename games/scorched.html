@@ -588,7 +588,23 @@ const BOSS_TYPES=[
   {name:'SKULL LORD',hp:350,atk:1.4,radius:45,damage:55,color:'#a0a',shape:'skull'},
   {name:'TANK HYDRA',hp:500,atk:2,radius:30,damage:40,color:'#a00',shape:'hydra'},
 ];
-let boss=null;
+let boss=null,camMonster=null;
+function spawnCamMonster(){
+  if(!camReady||!camVideo||camVideo.readyState<2||round<5||camMonster)return;
+  if(Math.random()>.3)return;
+  const sc=document.createElement('canvas');sc.width=24;sc.height=24;
+  const c=sc.getContext('2d');c.save();c.translate(24,0);c.scale(-1,1);
+  c.drawImage(camVideo,0,0,24,24);c.restore();
+  // posterize + red tint for creepy look
+  const id=c.getImageData(0,0,24,24),d=id.data;
+  for(let i=0;i<d.length;i+=4){
+    d[i]=Math.min(255,Math.floor(d[i]/32)*32+80);d[i+1]=Math.floor(d[i+1]/64)*64;d[i+2]=Math.floor(d[i+2]/64)*64;
+  }
+  c.putImageData(id,0,0);
+  const mx=40+Math.random()*(W-80);
+  camMonster={canvas:sc,x:mx,y:terrain[Math.max(0,Math.min(W-1,Math.floor(mx)))]-20,
+    hp:30+round*5,maxHp:30+round*5,dir:(Math.random()>.5?1:-1)*.4,timer:0,shootCD:2};
+}
 function spawnBoss(){
   if(round%3!==0||round<3)return;
   const bt=BOSS_TYPES[Math.floor(Math.random()*BOSS_TYPES.length)];
@@ -1105,7 +1121,7 @@ function newRound(){
   }
   currentPlayer=0;projectiles=[];explosions=[];particles=[];lemmings=[];skulls=[];turnCount=0;
   tracers=[];raindrops=[];snowflakes=[];
-  spawnBgLemmings();spawnPowerups();spawnGraboids();spawnWater();boss=null;spawnBoss();
+  spawnBgLemmings();spawnPowerups();spawnGraboids();spawnWater();boss=null;camMonster=null;spawnBoss();spawnCamMonster();
   wind=(Math.random()-.5)*3*weather.windMult;
   gameState='aiming';
   showMsg('Floor '+round+' — '+BACKGROUNDS[bgIdx].name+'\n'+weather.name+' | '+floorType.name+' ground',3000);
@@ -1322,6 +1338,17 @@ function explode(x,y,weapon,owner){
       }
     }
   }
+  // camera monster damage
+  if(camMonster&&camMonster.hp>0){
+    const cd=Math.hypot(camMonster.x-x,camMonster.y-y);
+    if(cd<r*1.5&&weapon.damage>0){
+      camMonster.hp-=Math.floor((1-cd/(r*1.5))*weapon.damage);
+      if(camMonster.hp<=0){sfx('hit');showMsg('YOUR FACE DEFEATED!',2000);
+        for(const p of players){if(p.alive&&!p.cpu)p.money+=100;}
+        for(let k=0;k<15;k++)particles.push({x:camMonster.x+(Math.random()-.5)*20,y:camMonster.y+(Math.random()-.5)*15,vx:(Math.random()-.5)*4,vy:-2-Math.random()*3,life:20,color:'#f0f'});
+      }
+    }
+  }
   // boss damage
   if(boss&&boss.alive){
     const bd=Math.hypot(boss.x-x,boss.y-y);
@@ -1400,15 +1427,16 @@ function spawnLemming(x,y,owner,ltype){
 
 function spawnBgLemmings(){
   bgLemmings=[];
-  const jobs=['walker','builder','miner','climber','blocker','basher','floater','walker','builder','miner'];
-  for(let i=0;i<8+round*2;i++){
-    const bx=20+Math.random()*(W-40);
+  const jobs=['settler','campfire','flagbearer','panicker','photographer','dancer','fisherman','prospector'];
+  const count=3+Math.min(round,4);
+  for(let i=0;i<count;i++){
+    const bx=30+Math.random()*(W-60);
     const tx=Math.floor(bx);
     bgLemmings.push({
-      x:bx,y:terrain[tx]||H*.6,vx:(Math.random()>.5?1:-1)*(.3+Math.random()*.4),vy:0,
+      x:bx,y:terrain[tx]||H*.5,vx:(Math.random()>.5?1:-1)*(.15+Math.random()*.2),vy:0,
       timer:Math.random()*10,job:jobs[i%jobs.length],
-      color:['#0f0','#0ff','#ff0','#f0f','#f80','#8f0'][i%6],
-      buildX:0,buildY:0,stairDir:0
+      color:['#0f0','#0ff','#ff0','#f0f','#f80','#8f0','#88f','#f88'][i%8],
+      stateTimer:Math.random()*5
     });
   }
 }
@@ -1766,23 +1794,15 @@ function update(dt){
     const bx2=Math.max(0,Math.min(W-1,Math.floor(bg.x)));
     bg.y=terrain[bx2];
     if(bg.x<5||bg.x>W-5)bg.vx=-bg.vx;
-    if(bg.job==='builder'&&Math.random()<.03){
-      const sx=Math.floor(bg.x+bg.vx*4);
-      if(sx>0&&sx<W)terrain[sx]=Math.min(terrain[sx],bg.y-1);
-    }
-    if(bg.job==='miner'&&Math.random()<.02){
-      const mx2=Math.floor(bg.x);
-      if(mx2>0&&mx2<W)terrain[mx2]=Math.min(H,terrain[mx2]+.3);
-    }
-    if(bg.job==='basher'){
-      const bx3=Math.floor(bg.x+bg.vx*2);
-      if(bx3>0&&bx3<W&&terrain[bx3]<bg.y-4)bg.vx=-bg.vx;
-    }
-    if(bg.job==='blocker')bg.vx=0;
-    if(bg.job==='climber'){
-      const ahead=Math.floor(bg.x+Math.sign(bg.vx)*2);
-      if(ahead>0&&ahead<W&&terrain[ahead]<bg.y-5){bg.y-=dt*20;bg.vx*=.5;}
-    }
+    bg.stateTimer=(bg.stateTimer||0)+dt;
+    if(bg.job==='settler')bg.vx*=.99;
+    if(bg.job==='campfire'){bg.vx=0;}
+    if(bg.job==='flagbearer'){if(bg.x<30||bg.x>W-30)bg.vx=-bg.vx;}
+    if(bg.job==='panicker'){if(Math.random()<.03)bg.vx=-bg.vx;bg.vx+=(Math.random()-.5)*.1;}
+    if(bg.job==='photographer'){bg.vx=0;}
+    if(bg.job==='dancer'){bg.vx=Math.sin(bg.stateTimer*3)*.3;}
+    if(bg.job==='fisherman'){bg.vx=0;}
+    if(bg.job==='prospector'){if(Math.random()<.01)bg.vx=-bg.vx;}
   }
   // graboids (sand worms - tunnel through terrain)
   for(const gb of graboids){
@@ -1858,6 +1878,26 @@ function update(dt){
         if((pt.color==='#f00'||pt.color==='#f40'||pt.color==='#f80')&&Math.abs(pt.x-op.x-op.w/2)<op.w/2+10){
           op.burning=true;op.burnTimer=5+Math.random()*3;sfx('sizzle');showMsg('OIL FIRE!',1500);break;
         }
+      }
+    }
+  }
+  // camera monster update
+  if(camMonster&&camMonster.hp>0){
+    camMonster.timer+=dt;camMonster.shootCD=Math.max(0,camMonster.shootCD-dt);
+    camMonster.x+=camMonster.dir;
+    if(camMonster.x<20||camMonster.x>W-20)camMonster.dir=-camMonster.dir;
+    const cmx=Math.max(0,Math.min(W-1,Math.floor(camMonster.x)));
+    camMonster.y=terrain[cmx]-20;
+    // shoot at nearest player
+    if(camMonster.shootCD<=0){
+      camMonster.shootCD=4+Math.random()*2;
+      const targets=players.filter(p=>p.alive);
+      if(targets.length){
+        const t=targets[Math.floor(Math.random()*targets.length)];
+        const a=Math.atan2(t.y-camMonster.y,t.x-camMonster.x);
+        projectiles.push({x:camMonster.x,y:camMonster.y,vx:Math.cos(a)*3,vy:Math.sin(a)*3,
+          owner:-1,weapon:{radius:20,damage:15+round,type:'projectile'},trail:[],type:'projectile'});
+        sfx('fire');
       }
     }
   }
@@ -2034,36 +2074,65 @@ function render(){
     ctx.fillStyle=bg.color;
     ctx.fillRect(bx-1,by-8,3,2);
     ctx.fillStyle='#000';ctx.fillRect(bx+dir*.5,by-7,.5,.5);
-    if(bg.job==='walker'){
-      ctx.fillStyle='#00c';ctx.fillRect(bx-1,by-6,3,4);
+    if(bg.job==='settler'){
+      // sitting by a tiny tent
+      ctx.fillStyle='#a86';ctx.beginPath();ctx.moveTo(bx-4,by);ctx.lineTo(bx,by-6);ctx.lineTo(bx+4,by);ctx.fill();
+      ctx.fillStyle=bg.color;ctx.fillRect(bx-1,by-4,2,4);
+      ctx.fillRect(bx+5,by-3,1,3);
+    }else if(bg.job==='campfire'){
+      // sitting by fire
+      ctx.fillStyle=bg.color;ctx.fillRect(bx-4,by-4,2,4);ctx.fillRect(bx+3,by-4,2,4);
+      // fire
+      ctx.fillStyle='#f80';ctx.fillRect(bx-1,by-3,3,3);
+      ctx.fillStyle='#ff0';ctx.fillRect(bx,by-5+Math.sin(bg.stateTimer*8),1,2);
+      ctx.fillStyle='#f00';ctx.fillRect(bx-1,by-2,3,1);
+      // smoke
+      ctx.fillStyle='#555';ctx.globalAlpha=.4;
+      ctx.fillRect(bx+Math.sin(bg.stateTimer*2),by-7-bg.stateTimer%3,1,1);
+      ctx.globalAlpha=1;
+    }else if(bg.job==='flagbearer'){
+      // marching with flag
+      ctx.fillStyle=bg.color;ctx.fillRect(bx-1,by-6,3,4);
       ctx.fillRect(bx-1,by-2,1,1+lp);ctx.fillRect(bx+1,by-2,1,1-lp);
-    }else if(bg.job==='builder'){
-      ctx.fillStyle='#c80';ctx.fillRect(bx-1,by-6,3,4);
-      ctx.strokeStyle='#aa0';ctx.lineWidth=.5;
-      ctx.beginPath();ctx.moveTo(bx+dir*2,by-6);ctx.lineTo(bx+dir*5,by-9+lp);ctx.stroke();
-      // stairs being built
-      for(let s=0;s<3;s++){ctx.fillStyle='#864';ctx.fillRect(bx+dir*(3+s*3),by-s*2-2,3,1);}
-      ctx.fillRect(bx-1,by-2,1,1+lp);ctx.fillRect(bx+1,by-2,1,1-lp);
-    }else if(bg.job==='miner'){
-      ctx.fillStyle='#a0a';ctx.fillRect(bx-1,by-6,3,4);
+      // flag pole + flag
+      ctx.fillStyle='#888';ctx.fillRect(bx+dir*2,by-12,1,10);
+      ctx.fillStyle='#f00';ctx.fillRect(bx+dir*2,by-12,dir*4,3);
+      ctx.fillStyle='#ff0';ctx.fillRect(bx+dir*3,by-11,1,1);
+    }else if(bg.job==='panicker'){
+      // running with arms up
+      ctx.fillStyle=bg.color;ctx.fillRect(bx-1,by-6,3,4);
+      ctx.fillRect(bx-2,by-8+Math.abs(lp),1,2);ctx.fillRect(bx+2,by-8+Math.abs(lp),1,2);
+      ctx.fillRect(bx-1,by-2,1,1+lp*1.5);ctx.fillRect(bx+1,by-2,1,1-lp*1.5);
+      // exclamation
+      ctx.fillStyle='#f00';ctx.fillRect(bx,by-11,1,2);ctx.fillRect(bx,by-8,1,1);
+    }else if(bg.job==='photographer'){
+      // standing with camera
+      ctx.fillStyle=bg.color;ctx.fillRect(bx-1,by-6,3,5);
+      ctx.fillStyle='#333';ctx.fillRect(bx+dir*2,by-6,3,2);
+      ctx.fillStyle='#f00';ctx.fillRect(bx+dir*2,by-5,1,1);
+      ctx.fillRect(bx-1,by-1,1,1);ctx.fillRect(bx+1,by-1,1,1);
+      // flash
+      if(Math.sin(bg.stateTimer*2)>.95){ctx.fillStyle='#ff0';ctx.fillRect(bx+dir*3,by-7,2,1);}
+    }else if(bg.job==='dancer'){
+      // swaying back and forth
+      const sw=Math.sin(bg.stateTimer*4)*2;
+      ctx.fillStyle=bg.color;ctx.fillRect(bx-1+sw,by-7,3,5);
+      ctx.fillRect(bx-2,by-2,1,2);ctx.fillRect(bx+2,by-2,1,2);
+      ctx.fillRect(bx-2+sw,by-9,1,2);ctx.fillRect(bx+2+sw,by-9,1,2);
+    }else if(bg.job==='fisherman'){
+      // sitting with fishing rod over edge
+      ctx.fillStyle=bg.color;ctx.fillRect(bx-1,by-4,2,4);
+      ctx.strokeStyle='#864';ctx.lineWidth=.5;
+      ctx.beginPath();ctx.moveTo(bx+1,by-4);ctx.lineTo(bx+8,by-10);ctx.lineTo(bx+10,by-5+Math.sin(bg.stateTimer*1.5)*2);ctx.stroke();
+      ctx.fillStyle='#aaa';ctx.fillRect(bx+9,by-5+Math.sin(bg.stateTimer*1.5)*2,2,1);
+    }else if(bg.job==='prospector'){
+      // digging with pickaxe
+      ctx.fillStyle=bg.color;ctx.fillRect(bx-1,by-6,3,5);
+      ctx.fillRect(bx-1,by-1,1,1+lp);ctx.fillRect(bx+1,by-1,1,1-lp);
       ctx.strokeStyle='#888';ctx.lineWidth=.5;
-      ctx.beginPath();ctx.moveTo(bx+dir*2,by-5);ctx.lineTo(bx+dir*4,by-2+lp*2);ctx.stroke();
-      ctx.fillRect(bx-1,by-2,1,1+lp);ctx.fillRect(bx+1,by-2,1,1-lp);
-    }else if(bg.job==='climber'){
-      ctx.fillStyle='#08f';ctx.fillRect(bx-1,by-6,3,4);
-      ctx.fillRect(bx-2,by-5+lp,1,2);ctx.fillRect(bx+2,by-5-lp,1,2);
-      ctx.fillRect(bx-1,by-2,1,1+lp);ctx.fillRect(bx+1,by-2,1,1-lp);
-    }else if(bg.job==='blocker'){
-      ctx.fillStyle='#f00';ctx.fillRect(bx-1,by-6,3,4);
-      ctx.fillRect(bx-3,by-5,2,3);ctx.fillRect(bx+2,by-5,2,3);
-    }else if(bg.job==='basher'){
-      ctx.fillStyle='#ff0';ctx.fillRect(bx-1,by-6,3,4);
-      ctx.fillRect(bx+dir*2,by-6+Math.abs(lp),1,2);
-      ctx.fillRect(bx-1,by-2,1,1+lp);ctx.fillRect(bx+1,by-2,1,1-lp);
-    }else if(bg.job==='floater'){
-      ctx.fillStyle='#f0f';ctx.fillRect(bx-1,by-6,3,4);
-      ctx.fillStyle='#faf';ctx.fillRect(bx-2,by-10,5,2);
-      ctx.fillRect(bx-1,by-2,1,1);ctx.fillRect(bx+1,by-2,1,1);
+      ctx.beginPath();ctx.moveTo(bx+dir*2,by-6);ctx.lineTo(bx+dir*5,by-9+Math.abs(Math.sin(bg.stateTimer*3))*4);ctx.stroke();
+      // gold sparkle
+      if(Math.random()<.02){ctx.fillStyle='#ff0';ctx.fillRect(bx+dir*4,by-1,1,1);}
     }
   }
 
@@ -2124,6 +2193,20 @@ function render(){
       const spray=Math.sin(performance.now()*.015+gx)*3;
       ctx.fillRect(gx-3+spray,gy-22,2,3);ctx.fillRect(gx+1-spray,gy-24,2,2);
     }
+  }
+
+  // camera monster rendering
+  if(camMonster&&camMonster.hp>0){
+    const cmx=camMonster.x,cmy=camMonster.y;
+    ctx.imageSmoothingEnabled=false;
+    ctx.drawImage(camMonster.canvas,cmx-18,cmy-18,36,36);
+    ctx.imageSmoothingEnabled=true;
+    // red border glow
+    ctx.strokeStyle='#f00';ctx.lineWidth=2;ctx.strokeRect(cmx-18,cmy-18,36,36);
+    // HP bar
+    ctx.fillStyle='#400';ctx.fillRect(cmx-18,cmy-22,36,3);
+    ctx.fillStyle='#f0f';ctx.fillRect(cmx-18,cmy-22,Math.floor(36*camMonster.hp/camMonster.maxHp),3);
+    ctx.fillStyle='#f0f';ctx.font='6px monospace';ctx.textAlign='center';ctx.fillText('YOUR FACE',cmx,cmy-24);
   }
 
   // boss rendering
