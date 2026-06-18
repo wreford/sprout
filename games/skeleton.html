@@ -163,7 +163,7 @@
   </div>
 
   <div id="controls">
-    <button class="ctrl" id="btn-start">START</button>
+    <button class="ctrl on" id="btn-start">PAUSE</button>
     <button class="ctrl" id="btn-reset">RESET</button>
     <button class="ctrl" id="btn-showbest">SHOW BEST</button>
     <button class="ctrl" id="btn-track">TRACK: BEST</button>
@@ -444,12 +444,44 @@ function physicsTick(skel, genome, time) {
 }
 
 // --- Genome ---
+// Pre-tuned walking genome — alternating hip/knee/ankle with arm counter-swing
+var SEED_GENOME = new Float64Array([
+  // L.Shoulder: amp, freq, phase — counter-swing with right leg
+  40, 5, Math.PI,
+  // R.Shoulder: counter-swing with left leg
+  40, 5, 0,
+  // L.Elbow: slight flex
+  15, 5, Math.PI * 0.5,
+  // R.Elbow: slight flex
+  15, 5, Math.PI * 1.5,
+  // L.Hip: main drive — forward swing
+  120, 5, 0,
+  // R.Hip: anti-phase to left
+  120, 5, Math.PI,
+  // L.Knee: flex during swing phase
+  80, 5, Math.PI * 0.3,
+  // R.Knee: anti-phase
+  80, 5, Math.PI * 1.3,
+  // L.Ankle: push-off
+  60, 5, Math.PI * 0.7,
+  // R.Ankle: anti-phase push-off
+  60, 5, Math.PI * 1.7
+]);
+
 function randomGenome() {
   var g = new Float64Array(GENOME_LENGTH);
   for (var i = 0; i < NUM_MUSCLES; i++) {
     g[i*3] = rand(-200, 200);
     g[i*3+1] = rand(1, 12);
     g[i*3+2] = rand(0, Math.PI*2);
+  }
+  return g;
+}
+
+function seededGenome() {
+  var g = new Float64Array(SEED_GENOME);
+  for (var i = 0; i < GENOME_LENGTH; i++) {
+    g[i] += gaussRand() * (i % 3 === 0 ? 15 : i % 3 === 1 ? 0.5 : 0.3);
   }
   return g;
 }
@@ -484,7 +516,7 @@ function tournamentSelect(pop, fit) {
 // --- State ---
 var population = [], skeletons = [], fitnesses = [];
 var generation = 0, simStep = 0;
-var running = false, speed = 1;
+var running = true, speed = 1;
 var bestEverDist = 0, bestEverGenome = null;
 var hallOfFame = [];
 var showingBest = false, showBestSkel = null, showBestGenome = null, showBestStep = 0;
@@ -494,7 +526,7 @@ var historyBest = [], historyAvg = [], historyWorst = [];
 function initPopulation() {
   population = []; skeletons = []; fitnesses = [];
   for (var i = 0; i < POP_SIZE; i++) {
-    population.push(randomGenome());
+    population.push(i < POP_SIZE / 2 ? seededGenome() : randomGenome());
     skeletons.push(createSkeleton(0));
     fitnesses.push(0);
   }
@@ -642,16 +674,37 @@ var var_accent = "#ff6b35";
 // --- Rendering ---
 function drawSkeleton(ctx2, skel, alpha, color, glow, scale, ox, oy, drawHead) {
   var j = skel.joints;
+  var s = scale || 1;
   ctx2.save();
   ctx2.globalAlpha = alpha;
-  ctx2.shadowColor = glow || color;
-  ctx2.shadowBlur = 8 * (scale||1);
-  ctx2.strokeStyle = color;
-  ctx2.lineWidth = 2.5 * (scale||1);
   ctx2.lineCap = "round";
+  ctx2.lineJoin = "round";
 
-  function jx(i) { return j[i*2]*(scale||1)+(ox||0); }
-  function jy(i) { return j[i*2+1]*(scale||1)+(oy||0); }
+  function jx(i) { return j[i*2]*s+(ox||0); }
+  function jy(i) { return j[i*2+1]*s+(oy||0); }
+
+  var isLeader = drawHead !== false && alpha > 0.9;
+
+  // Torso fill for prominent skeletons
+  if (isLeader) {
+    ctx2.fillStyle = color.replace(")", ",0.12)").replace("hsl", "hsla").replace("#", "#");
+    if (color.charAt(0) === '#') ctx2.fillStyle = color + "1a";
+    ctx2.beginPath();
+    ctx2.moveTo(jx(SHOULDER), jy(SHOULDER));
+    ctx2.lineTo(jx(L_ELBOW), jy(L_ELBOW));
+    ctx2.lineTo(jx(HIP), jy(HIP));
+    ctx2.lineTo(jx(R_ELBOW), jy(R_ELBOW));
+    ctx2.closePath();
+    ctx2.fill();
+  }
+
+  // Glow
+  ctx2.shadowColor = glow || color;
+  ctx2.shadowBlur = isLeader ? 12*s : 6*s;
+
+  // Bones — thicker for leader
+  ctx2.strokeStyle = color;
+  ctx2.lineWidth = isLeader ? 3.5*s : 2*s;
 
   ctx2.beginPath();
   for (var b = 0; b < BONE_DEFS.length; b++) {
@@ -660,22 +713,37 @@ function drawSkeleton(ctx2, skel, alpha, color, glow, scale, ox, oy, drawHead) {
   }
   ctx2.stroke();
 
+  // Joints
   ctx2.fillStyle = color;
-  var jr = 3*(scale||1);
+  var jr = isLeader ? 4*s : 2.5*s;
   for (var i = 0; i < NUM_JOINTS; i++) {
     if (i === HEAD && drawHead) continue;
     ctx2.beginPath(); ctx2.arc(jx(i), jy(i), jr, 0, Math.PI*2); ctx2.fill();
   }
 
+  // Head
   if (drawHead !== false) {
-    ctx2.beginPath(); ctx2.arc(jx(HEAD), jy(HEAD), 7*(scale||1), 0, Math.PI*2); ctx2.stroke();
+    var hr = isLeader ? 9*s : 6*s;
+    ctx2.beginPath(); ctx2.arc(jx(HEAD), jy(HEAD), hr, 0, Math.PI*2); ctx2.stroke();
     ctx2.shadowBlur = 0;
     ctx2.fillStyle = "#0f0f10"; ctx2.fill();
-    ctx2.fillStyle = color; ctx2.shadowColor = glow||color; ctx2.shadowBlur = 4;
+    // Eyes
+    ctx2.fillStyle = color;
+    ctx2.shadowColor = glow||color; ctx2.shadowBlur = 4;
+    var ex = jx(HEAD), ey = jy(HEAD);
+    var er = isLeader ? 1.5*s : 1*s;
     ctx2.beginPath();
-    ctx2.arc(jx(HEAD)-2.5*(scale||1), jy(HEAD)-1*(scale||1), 1.2*(scale||1), 0, Math.PI*2);
-    ctx2.arc(jx(HEAD)+2.5*(scale||1), jy(HEAD)-1*(scale||1), 1.2*(scale||1), 0, Math.PI*2);
+    ctx2.arc(ex - 3*s, ey - 1*s, er, 0, Math.PI*2);
+    ctx2.arc(ex + 3*s, ey - 1*s, er, 0, Math.PI*2);
     ctx2.fill();
+    // Mouth for leader
+    if (isLeader) {
+      ctx2.strokeStyle = color;
+      ctx2.lineWidth = 1*s;
+      ctx2.beginPath();
+      ctx2.arc(ex, ey + 2*s, 2.5*s, 0.1, Math.PI - 0.1);
+      ctx2.stroke();
+    }
   }
   ctx2.restore();
 }
@@ -717,8 +785,12 @@ function render() {
     ctx.fillStyle = "#1a1a1c";
     ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath(); ctx.fill();
   } else {
-    // Flat ground grid
-    ctx.strokeStyle = "#1a1a1c"; ctx.lineWidth = 1;
+    // Ground fill
+    ctx.fillStyle = "#131315";
+    ctx.fillRect(0, groundScreenY, W, H - groundScreenY);
+
+    // Grid
+    ctx.strokeStyle = "#1c1c1f"; ctx.lineWidth = 1;
     var gs = 50, gStart = Math.floor(camX/gs)*gs;
     for (var gx = gStart; gx < camX+W+gs; gx += gs) {
       var sx = gx - camX;
@@ -730,9 +802,14 @@ function render() {
     }
   }
 
-  // Ground line (flat mode)
+  // Ground line
   if (terrainMode === 0) {
-    ctx.strokeStyle = "#3a3a3d"; ctx.lineWidth = 2;
+    ctx.shadowColor = "#00e5ff";
+    ctx.shadowBlur = 6;
+    ctx.strokeStyle = "#00e5ff30"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(0, groundScreenY); ctx.lineTo(W, groundScreenY); ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = "#3a3a3d"; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(0, groundScreenY); ctx.lineTo(W, groundScreenY); ctx.stroke();
   }
 
