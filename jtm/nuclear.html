@@ -1872,7 +1872,8 @@ function renderDashboard(el){
     '<div style="padding:6px 10px"><div class="sec-h">S-Curve</div><canvas id="scurve" class="chart-canvas"></canvas></div>'+
     '<div style="padding:6px 10px"><div class="sec-h">Events</div><div class="feed" id="feed"></div></div>'+
     '</div>'+
-    '<div style="padding:6px 10px" id="dash-triagees"></div>';
+    '<div style="padding:6px 10px" id="dash-triagees"></div>'+
+    '<div style="padding:6px 10px"><div class="sec-h">IWP Constraint Heatmap <span style="font-weight:400;color:var(--faint)">(sort by most blocked)</span></div><div id="iwp-heatmap" style="overflow-y:auto;max-height:160px"></div></div>';
 
   // Wire up Gantt click and hover
   const ganttCanvas=$('gantt');
@@ -2457,7 +2458,7 @@ function updateUI(){
   if(currentTab==='dashboard'){
     if(needsFullRender){renderTab();needsFullRender=false;}
     render3D();drawGantt();drawSCurve();
-    updateDashboardKPIs();updateDashboardFeed();updateDashboardTriagees();
+    updateDashboardKPIs();updateDashboardFeed();updateDashboardTriagees();updateIWPHeatmap();
   }
   checkACEEvents();checkACETriagees();
 }
@@ -2465,6 +2466,32 @@ function updateUI(){
 // ================================================================
 // MAIN LOOP
 // ================================================================
+function updateIWPHeatmap(){
+  const el=$('iwp-heatmap');if(!el)return;
+  updateIWPConstraints(month);
+  // Sort by most blocked first
+  const sorted=[...IWP_DATA].sort((a,b)=>{
+    const aB=iwpBlockers(a).length,bB=iwpBlockers(b).length;
+    if(aB!==bB)return bB-aB; // most blocked first
+    return(a.completeAtMonth||0)-(b.completeAtMonth||0); // then by date
+  });
+  const boxStyle='display:inline-block;width:14px;height:14px;border-radius:2px;text-align:center;font:600 9px var(--mono);line-height:14px;margin:0 1px;';
+  let html='<table style="width:100%;border-collapse:collapse;font:9px var(--mono)">';
+  html+='<tr style="color:var(--faint)"><th style="text-align:left;padding:2px 4px;width:60px">IWP</th><th style="text-align:left;padding:2px">Name</th><th style="width:18px">M</th><th style="width:18px">L</th><th style="width:18px">E</th><th style="width:18px">Q</th><th style="width:18px">A</th><th style="text-align:right;width:60px;padding-right:4px">Status</th></tr>';
+  sorted.forEach(iwp=>{
+    const c=iwp.constraints,rdy=iwpIsReady(iwp);
+    const mkBox=(v,l)=>'<td><span style="'+boxStyle+'background:'+(v?'#b8cfbb':'#d9b3a8')+';color:'+(v?'#2f7d4f':'#b13d2c')+'">'+(v?l:l)+'</span></td>';
+    html+='<tr style="border-bottom:1px solid var(--rule);cursor:pointer" onclick="navigateToAtom(\''+iwp.id+'\')">';
+    html+='<td style="padding:2px 4px;color:var(--blue);font-weight:600">'+iwp.id+'</td>';
+    html+='<td style="padding:2px;color:var(--ink2);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+iwp.name+'</td>';
+    html+=mkBox(c.material,'M')+mkBox(c.labour,'L')+mkBox(c.engineering,'E')+mkBox(c.equipment,'Q')+mkBox(c.access,'A');
+    html+='<td style="text-align:right;padding-right:4px;font-weight:600;color:'+(rdy?'var(--green)':'var(--red)')+'">'+(rdy?'READY':'BLOCKED')+'</td>';
+    html+='</tr>';
+  });
+  html+='</table>';
+  el.innerHTML=html;
+}
+
 function loop(now){
   const dt=(now-lastF)/1000;lastF=now;
   if(playing){
