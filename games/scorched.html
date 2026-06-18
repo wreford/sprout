@@ -822,7 +822,27 @@ function spawnPowerups(){
 }
 
 // water and oil pools on terrain
-let waterPools=[],oilPools=[];
+let waterPools=[],oilPools=[],structures=[];
+const STRUCT_TYPES=[
+  {name:'wood',hp:30,color:'#8b6914',colorD:'#6b4904',w:6,h:12},
+  {name:'stone',hp:60,color:'#888',colorD:'#666',w:8,h:10},
+  {name:'ice',hp:15,color:'#a0d8f0',colorD:'#80b8d0',w:5,h:14},
+  {name:'tnt',hp:10,color:'#f44',colorD:'#c00',w:6,h:8,explodes:true},
+  {name:'steel',hp:100,color:'#aaa',colorD:'#777',w:8,h:8},
+];
+function spawnStructures(){
+  structures=[];
+  const count=2+Math.floor(Math.random()*3)+Math.floor(round/4);
+  for(let i=0;i<count;i++){
+    const st=STRUCT_TYPES[Math.floor(Math.random()*STRUCT_TYPES.length)];
+    const sx=30+Math.floor(Math.random()*(W-60));
+    const tx=Math.max(0,Math.min(W-1,sx));
+    // stack on terrain or on other structures
+    let sy=terrain[tx]-st.h;
+    for(const s2 of structures){if(Math.abs(s2.x-sx)<s2.type.w&&sy>s2.y-s2.type.h-st.h)sy=s2.y-st.h;}
+    structures.push({x:sx,y:sy,type:st,hp:st.hp,maxHp:st.hp,vx:0,vy:0,grounded:true});
+  }
+}
 function spawnWater(){
   waterPools=[];oilPools=[];
   const wc=1+Math.floor(Math.random()*2);
@@ -1157,7 +1177,7 @@ function newRound(){
   }
   currentPlayer=0;projectiles=[];explosions=[];particles=[];lemmings=[];skulls=[];turnCount=0;
   tracers=[];raindrops=[];snowflakes=[];
-  spawnBgLemmings();spawnPowerups();spawnGraboids();spawnWater();boss=null;camMonster=null;spawnBoss();spawnCamMonster();
+  spawnBgLemmings();spawnPowerups();spawnGraboids();spawnWater();spawnStructures();boss=null;camMonster=null;spawnBoss();spawnCamMonster();
   wind=(Math.random()-.5)*3*weather.windMult;
   gameState='aiming';
   showMsg('Floor '+round+' — '+BACKGROUNDS[bgIdx].name+'\n'+weather.name+' | '+floorType.name+' ground',3000);
@@ -1406,6 +1426,23 @@ function explode(x,y,weapon,owner){
         if(Math.random()<.7)tankTalk(players.indexOf(p),'kill');
         if(owner!==null&&Math.random()<.5)tankTalk(owner,'hit');
         skulls.push({x:p.x,y:p.y-15,life:120});
+      }
+    }
+  }
+  // structure damage from explosions
+  for(let si=structures.length-1;si>=0;si--){
+    const s=structures[si];
+    const sd=Math.hypot(s.x-x,s.y-y);
+    if(sd<r*1.5&&weapon.damage>0){
+      const sdmg=Math.floor((1-sd/(r*1.5))*weapon.damage*.8);
+      s.hp-=sdmg;
+      s.vx+=(s.x-x)*.1;s.vy-=2;s.grounded=false;
+      if(s.hp<=0){
+        // debris particles
+        for(let k=0;k<8;k++)particles.push({x:s.x+(Math.random()-.5)*s.type.w,y:s.y+(Math.random()-.5)*s.type.h,vx:(Math.random()-.5)*4,vy:-2-Math.random()*3,life:20,color:s.type.color});
+        // TNT chain explosion
+        if(s.type.explodes)explode(s.x,s.y+s.type.h/2,{radius:40,damage:50,type:'projectile'},owner);
+        structures.splice(si,1);
       }
     }
   }
@@ -1992,6 +2029,25 @@ function update(dt){
     const bx2=Math.max(0,Math.min(W-1,Math.floor(boss.x)));
     boss.y=boss.shape==='blimp_boss'?H*.1+Math.sin(boss.timer)*3:terrain[bx2]-15;
   }
+  // structure physics (gravity, settling, collisions)
+  for(const s of structures){
+    if(!s.grounded){
+      s.vy+=6*dt;s.x+=s.vx;s.y+=s.vy;s.vx*=.98;
+      const sx=Math.max(0,Math.min(W-1,Math.floor(s.x)));
+      const groundY=terrain[sx]-s.type.h;
+      if(s.y>=groundY){s.y=groundY;s.vy=0;s.vx*=.5;s.grounded=true;
+        if(Math.abs(s.vx)<.1)s.vx=0;
+      }
+      // damage if falling fast
+      if(s.vy>5){
+        for(const p of players){if(!p.alive)continue;
+          if(Math.abs(p.x-s.x)<s.type.w&&Math.abs(p.y-s.y)<s.type.h+5){
+            p.hp-=8;sfx('hit');if(p.hp<=0){p.hp=0;p.alive=false;skulls.push({x:p.x,y:p.y-15,life:120});}
+          }
+        }
+      }
+    }
+  }
   // stilts timer
   for(const p of players){if(p.stilts&&p.stiltsTimer!==undefined){p.stiltsTimer-=dt;if(p.stiltsTimer<=0)p.stilts=false;}}
   // check if all projectiles done
@@ -2107,6 +2163,24 @@ function render(){
     ctx.fillStyle=['#f66','#ff4','#66f','#f6f'][(x/35|0)%4];
     ctx.fillRect(x,ty-3,2,2);
     ctx.fillStyle=shade(gc,20);ctx.fillRect(x,ty-1,1,1);
+  }
+
+  // destructible structures (Angry Birds style)
+  for(const s of structures){
+    const sx=s.x,sy=s.y,st=s.type;
+    const hpFrac=s.hp/s.maxHp;
+    // body
+    ctx.fillStyle=st.colorD;ctx.fillRect(sx-st.w/2,sy,st.w,st.h);
+    ctx.fillStyle=st.color;ctx.fillRect(sx-st.w/2+1,sy+1,st.w-2,st.h-2);
+    // highlight top edge
+    ctx.fillStyle=shade(st.color,30);ctx.fillRect(sx-st.w/2+1,sy+1,st.w-2,1);
+    // damage cracks
+    if(hpFrac<.7){ctx.fillStyle='#000';ctx.fillRect(sx-1,sy+st.h*.3,2,st.h*.4);}
+    if(hpFrac<.4){ctx.fillStyle='#000';ctx.fillRect(sx-st.w/4,sy+st.h*.5,st.w/2,1);ctx.fillRect(sx+1,sy+st.h*.2,1,st.h*.3);}
+    // TNT label
+    if(st.explodes){ctx.fillStyle='#fff';ctx.font='bold 5px monospace';ctx.textAlign='center';ctx.fillText('TNT',sx,sy+st.h/2+2);}
+    // steel shine
+    if(st.name==='steel'){ctx.fillStyle='rgba(255,255,255,.15)';ctx.fillRect(sx-st.w/2+1,sy+1,2,st.h-2);}
   }
 
   // water pools (shimmering blue on terrain)
