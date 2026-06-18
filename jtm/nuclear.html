@@ -191,6 +191,23 @@ body{background:var(--paper);color:var(--ink);font-family:var(--serif);font-size
 .lesson-meta{font:9px var(--mono);color:var(--faint);margin-bottom:4px}
 .lesson-text{font:11px var(--serif);color:var(--ink2);line-height:1.4}
 
+/* IWP constraint grid */
+.iwp-grid{display:grid;grid-template-columns:70px 1fr repeat(5,28px) 70px;gap:2px 4px;font:10px var(--mono);align-items:center}
+.iwp-grid .iwp-hdr{font:600 9px var(--mono);color:var(--faint);text-transform:uppercase;letter-spacing:.04em;padding-bottom:2px;border-bottom:1px solid var(--rule)}
+.iwp-box{width:22px;height:16px;border-radius:3px;text-align:center;font:600 8px var(--mono);line-height:16px;border:1px solid var(--rule2)}
+.iwp-box.on{background:var(--green);color:#fff;border-color:var(--green)}
+.iwp-box.off{background:var(--hi);color:var(--red);border-color:var(--red)}
+.iwp-ready{font:600 8px var(--mono);color:var(--green);text-transform:uppercase}
+.iwp-blocked{font:600 8px var(--mono);color:var(--red);text-transform:uppercase}
+
+/* Risk matrix */
+.rmatrix{border-collapse:collapse;margin:8px 0;font:9px var(--mono)}
+.rmatrix th,.rmatrix td{width:36px;height:28px;text-align:center;border:1px solid var(--rule2);padding:2px}
+.rmatrix th{background:var(--panel2);color:var(--faint);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.rmatrix .rm-lo{background:#f0f7f0}.rmatrix .rm-med{background:#faf5e8}.rmatrix .rm-hi{background:#fdf0ed}
+.rmatrix .rm-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin:1px;cursor:pointer}
+.rmatrix .rm-dot.g{background:var(--green)}.rmatrix .rm-dot.a{background:var(--amber)}.rmatrix .rm-dot.r{background:var(--red)}
+
 /* Pop-up card overlay */
 .card-overlay{position:fixed;inset:0;z-index:200;background:rgba(34,28,16,.55);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(2px)}
 .card-modal{background:var(--panel);border:2px solid var(--oxide);border-radius:10px;padding:16px 18px;max-width:520px;width:90%;max-height:80vh;overflow-y:auto;box-shadow:0 8px 32px rgba(34,28,16,.3)}
@@ -665,6 +682,7 @@ function projectSpent(m){
 function discProg(d,m){return m<d.s?0:m>=d.e?100:Math.round((m-d.s)/(d.e-d.s)*100)}
 
 function kpiData(m){
+  updateIWPConstraints(m);
   const B=PLANT.budget,ev=earned(m),pv=planned(m),spi=pv>0?ev/pv:1;
   const cost=projectSpent(m),spent=cost.total;
   const cpi=spent>.1?(ev/100*B)/spent:1,eac=Math.min(B*2.5,cpi>.1?B/cpi:B);
@@ -673,6 +691,7 @@ function kpiData(m){
   let cumVol=0;POURS.forEach(p=>{if(m>=p.m+2)cumVol+=p.vol;});
   const wf=workforce(m);
   const deliveredLL=LONGLEAD.filter(l=>m>=l.deliver).length;
+  const iwpReady=IWP_DATA.filter(i=>iwpIsReady(i)).length;
   return[
     {v:Math.round(m/dur*100)+'%',l:'schedule',c:m>=dur?'ok':''},
     {v:ev.toFixed(0)+'%',l:'earned value',c:ev>=pv?'ok':ev>=pv*.9?'w':'bad'},
@@ -684,6 +703,7 @@ function kpiData(m){
     {v:mwe||'--',l:'MWe output',c:mwe>=PLANT.mwe?'vi':mwe>0?'w':''},
     {v:Math.round(cumVol/1000)+'k m3',l:'concrete',c:''},
     {v:deliveredLL+'/'+LONGLEAD.length,l:'long-lead',c:deliveredLL>=LONGLEAD.length?'ok':''},
+    {v:iwpReady+'/'+IWP_DATA.length,l:'IWPs ready',c:iwpReady>=IWP_DATA.length?'ok':iwpReady>IWP_DATA.length/2?'w':'bad'},
     {v:delayTotal+'mo',l:'delay',c:delayTotal>6?'bad':delayTotal>0?'w':'ok'},
     {v:riskHits.size+'/'+RISKS.length,l:'risks hit',c:riskHits.size>4?'bad':riskHits.size>0?'w':'ok'}
   ];
@@ -737,6 +757,54 @@ actAtom({alias:'CON-ACT-003',type:'constraint',name:'Containment pressure test',
 actAtom({alias:'CON-ACT-004',type:'constraint',name:'Electrical energization',completionKind:'gate',blocks:['CWP-CM-COLD','CWP-CM-HOT'],'waits-on':['CWP-EL-CABLE'],desc:'Permanent power required for commissioning'});
 actAtom({alias:'CON-ACT-005',type:'constraint',name:'Fuel load authorization',completionKind:'gate',blocks:['CWP-CM-FUEL'],'waits-on':['REG-FUEL'],desc:'Regulatory approval needed for fuel load'});
 actAtom({alias:'CON-ACT-006',type:'constraint',name:'Pour card approval',completionKind:'gate',blocks:['CWP-RB-BASE'],'waits-on':['QC-POUR'],'cleared-by':['QC-POUR'],desc:'Each concrete pour requires QC-approved pour card'});
+
+// IWPs — Install Work Packages under CWPs with 5-constraint model
+const IWP_DATA=[];
+function addIWP(id,name,cwp,thresholds){
+  const iwp={id,name,cwp,constraints:{material:false,labour:false,engineering:false,equipment:false,access:false},thresholds};
+  IWP_DATA.push(iwp);return iwp;
+}
+// CWP-RB-BASE IWPs
+addIWP('IWP-001','Rebar east bay','CWP-RB-BASE',{material:12,labour:14,engineering:10,equipment:13,access:11});
+addIWP('IWP-002','Rebar west bay','CWP-RB-BASE',{material:13,labour:16,engineering:10,equipment:14,access:12});
+addIWP('IWP-003','Pour base slab','CWP-RB-BASE',{material:15,labour:17,engineering:11,equipment:16,access:14});
+addIWP('IWP-004','Formwork perimeter','CWP-RB-BASE',{material:11,labour:12,engineering:10,equipment:11,access:10});
+// CWP-RB-WALLS IWPs
+addIWP('IWP-005','Wall lift 1 (0-4m)','CWP-RB-WALLS',{material:17,labour:18,engineering:16,equipment:17,access:16});
+addIWP('IWP-006','Wall lift 2 (4-8m)','CWP-RB-WALLS',{material:19,labour:20,engineering:17,equipment:19,access:18});
+addIWP('IWP-007','Wall lift 3 (8-12m)','CWP-RB-WALLS',{material:21,labour:22,engineering:18,equipment:21,access:20});
+addIWP('IWP-008','Wall lift 4 (12-16m)','CWP-RB-WALLS',{material:23,labour:25,engineering:20,equipment:23,access:22});
+addIWP('IWP-009','Wall lift 5 (16-20m)','CWP-RB-WALLS',{material:25,labour:27,engineering:22,equipment:26,access:24});
+addIWP('IWP-010','Wall lift 6 (20-24m)','CWP-RB-WALLS',{material:27,labour:29,engineering:24,equipment:28,access:26});
+addIWP('IWP-011','Wall lift 7 (24-28m)','CWP-RB-WALLS',{material:29,labour:31,engineering:26,equipment:30,access:28});
+addIWP('IWP-012','Wall lift 8 (28-32m)','CWP-RB-WALLS',{material:31,labour:34,engineering:28,equipment:32,access:30});
+addIWP('IWP-013','Wall lift 9 (ring beam)','CWP-RB-WALLS',{material:33,labour:36,engineering:30,equipment:34,access:32});
+// CWP-CT-LINER IWPs
+addIWP('IWP-014','Liner plate install','CWP-CT-LINER',{material:28,labour:30,engineering:26,equipment:29,access:27});
+addIWP('IWP-015','Liner weld & NDE','CWP-CT-LINER',{material:32,labour:34,engineering:28,equipment:33,access:30});
+// CWP-TB-STRUCT
+addIWP('IWP-016','TB steel erection','CWP-TB-STRUCT',{material:30,labour:32,engineering:28,equipment:31,access:29});
+addIWP('IWP-017','TB cladding','CWP-TB-STRUCT',{material:38,labour:40,engineering:34,equipment:39,access:36});
+// CWP-TB-EQUIP
+addIWP('IWP-018','Condenser install','CWP-TB-EQUIP',{material:52,labour:54,engineering:48,equipment:53,access:50});
+addIWP('IWP-019','Turbine set','CWP-TB-EQUIP',{material:58,labour:62,engineering:54,equipment:60,access:56});
+// CWP-EL-CABLE
+addIWP('IWP-020','Power cable pull 4160V','CWP-EL-CABLE',{material:50,labour:54,engineering:48,equipment:52,access:49});
+addIWP('IWP-021','Control cable pull','CWP-EL-CABLE',{material:56,labour:60,engineering:52,equipment:58,access:54});
+// CWP-CW-PIPE
+addIWP('IWP-022','CW header install','CWP-CW-PIPE',{material:36,labour:40,engineering:34,equipment:38,access:35});
+addIWP('IWP-023','CW tunnel piping','CWP-CW-PIPE',{material:42,labour:46,engineering:38,equipment:44,access:40});
+
+function updateIWPConstraints(m){
+  IWP_DATA.forEach(iwp=>{const t=iwp.thresholds;
+    iwp.constraints.material=m>=t.material;iwp.constraints.labour=m>=t.labour;
+    iwp.constraints.engineering=m>=t.engineering;iwp.constraints.equipment=m>=t.equipment;
+    iwp.constraints.access=m>=t.access;
+  });
+}
+function iwpIsReady(iwp){const c=iwp.constraints;return c.material&&c.labour&&c.engineering&&c.equipment&&c.access;}
+function iwpBlockers(iwp){const c=iwp.constraints,b=[];if(!c.material)b.push('material');if(!c.labour)b.push('labour');if(!c.engineering)b.push('engineering');if(!c.equipment)b.push('equipment');if(!c.access)b.push('access');return b;}
+function iwpsForCWP(cwp){return IWP_DATA.filter(i=>i.cwp===cwp);}
 
 function actIsComplete(alias,seen){
   seen=seen||new Set();const a=ACT_ATOMS[alias];if(!a)return false;if(seen.has(alias))return false;seen.add(alias);if(a.complete)return true;
@@ -816,7 +884,7 @@ function checkACTClashes(){
         const pickA=spec.impactA.mcEffect.delay<=spec.impactB.mcEffect.delay;
         const eff=pickA?spec.impactA.mcEffect:spec.impactB.mcEffect;
         delayTotal+=eff.delay;
-        clashMCEffects.totalDelay+=eff.delay;clashMCEffects.totalCost+=eff.cost;
+        clashMCEffects.push(eff);
         eventLog.push({m:Math.round(month),type:'mile',msg:'CLASH '+id+' auto-resolved: '+(pickA?spec.optA:spec.optB)+' ('+((pickA?spec.impactA:spec.impactB).schedule)+')'});
         mcResults=runMonteCarlo(1000);
       } else {
@@ -1401,33 +1469,50 @@ function updateDashboardClashes(){
 function renderConstraints(el){
   let filterState='all';
   function draw(){
+    updateIWPConstraints(month);
     const critPath=findCriticalPath();
     const blockingSet=new Set(critPath.blocking.map(b=>b.alias));
     let html='<div class="tab-panel"><h2>ACT Constraint Graph</h2>';
-    html+='<div class="filters"><button class="'+(filterState==='all'?'active':'')+'" data-cf="all">All</button><button class="'+(filterState==='blocking'?'active':'')+'" data-cf="blocking">Blocking</button><button class="'+(filterState==='cleared'?'active':'')+'" data-cf="cleared">Cleared</button><button class="'+(filterState==='gates'?'active':'')+'" data-cf="gates">Gates</button><button class="'+(filterState==='rollups'?'active':'')+'" data-cf="rollups">Rollups</button></div>';
+    html+='<div class="filters"><button class="'+(filterState==='all'?'active':'')+'" data-cf="all">All</button><button class="'+(filterState==='blocking'?'active':'')+'" data-cf="blocking">Blocking</button><button class="'+(filterState==='cleared'?'active':'')+'" data-cf="cleared">Cleared</button><button class="'+(filterState==='gates'?'active':'')+'" data-cf="gates">Gates</button><button class="'+(filterState==='rollups'?'active':'')+'" data-cf="rollups">Rollups</button><button class="'+(filterState==='iwps'?'active':'')+'" data-cf="iwps">IWPs</button></div>';
 
-    let atoms=ACT_ALL;
-    if(filterState==='blocking')atoms=atoms.filter(a=>!actIsComplete(a.alias)&&(a.type==='constraint'||a.blocks&&a.blocks.length));
-    if(filterState==='cleared')atoms=atoms.filter(a=>actIsComplete(a.alias));
-    if(filterState==='gates')atoms=atoms.filter(a=>a.completionKind==='gate');
-    if(filterState==='rollups')atoms=atoms.filter(a=>a.completionKind==='rollup');
-
-    atoms.forEach(a=>{
-      const st=actStatus(a.alias);
-      const dotCls=st;
-      const isCritical=blockingSet.has(a.alias);
-      html+='<div class="act-row" data-atom="'+a.alias+'">';
-      html+='<span class="act-dot '+dotCls+'"></span>';
-      html+='<span class="act-alias">'+a.alias+'</span>';
-      html+='<span class="act-name">'+a.name+'</span>';
-      html+='<span class="act-kind">'+a.completionKind+'</span>';
-      if(isCritical)html+='<span style="font:600 8px var(--mono);padding:1px 4px;border-radius:3px;background:var(--red);color:#fff;margin-left:4px">CRITICAL</span>';
+    if(filterState==='iwps'){
+      const ready=IWP_DATA.filter(i=>iwpIsReady(i)).length;
+      html+='<div style="font:600 12px var(--disp);color:var(--oxide);margin:8px 0">Constraint-free IWPs: '+ready+' / '+IWP_DATA.length+'</div>';
+      html+='<div class="iwp-grid"><span class="iwp-hdr">ID</span><span class="iwp-hdr">Name</span><span class="iwp-hdr">M</span><span class="iwp-hdr">L</span><span class="iwp-hdr">E</span><span class="iwp-hdr">Q</span><span class="iwp-hdr">A</span><span class="iwp-hdr">Status</span>';
+      IWP_DATA.forEach(iwp=>{
+        const c=iwp.constraints,rdy=iwpIsReady(iwp),bl=iwpBlockers(iwp);
+        html+='<span style="color:var(--blue);font-weight:600;cursor:pointer" data-iwp="'+iwp.id+'">'+iwp.id+'</span>';
+        html+='<span style="color:var(--ink2)">'+iwp.name+'</span>';
+        html+='<span class="iwp-box '+(c.material?'on':'off')+'">'+(c.material?'M':' ')+'</span>';
+        html+='<span class="iwp-box '+(c.labour?'on':'off')+'">'+(c.labour?'L':' ')+'</span>';
+        html+='<span class="iwp-box '+(c.engineering?'on':'off')+'">'+(c.engineering?'E':' ')+'</span>';
+        html+='<span class="iwp-box '+(c.equipment?'on':'off')+'">'+(c.equipment?'Q':' ')+'</span>';
+        html+='<span class="iwp-box '+(c.access?'on':'off')+'">'+(c.access?'A':' ')+'</span>';
+        html+='<span class="'+(rdy?'iwp-ready':'iwp-blocked')+'">'+(rdy?'READY':'BLOCKED ('+bl.join(', ')+')')+'</span>';
+      });
       html+='</div>';
-    });
+    } else {
+      let atoms=ACT_ALL;
+      if(filterState==='blocking')atoms=atoms.filter(a=>!actIsComplete(a.alias)&&(a.type==='constraint'||a.blocks&&a.blocks.length));
+      if(filterState==='cleared')atoms=atoms.filter(a=>actIsComplete(a.alias));
+      if(filterState==='gates')atoms=atoms.filter(a=>a.completionKind==='gate');
+      if(filterState==='rollups')atoms=atoms.filter(a=>a.completionKind==='rollup');
+      atoms.forEach(a=>{
+        const st=actStatus(a.alias),isCritical=blockingSet.has(a.alias);
+        html+='<div class="act-row" data-atom="'+a.alias+'"><span class="act-dot '+st+'"></span><span class="act-alias">'+a.alias+'</span><span class="act-name">'+a.name+'</span><span class="act-kind">'+a.completionKind+'</span>';
+        if(isCritical)html+='<span style="font:600 8px var(--mono);padding:1px 4px;border-radius:3px;background:var(--red);color:#fff;margin-left:4px">CRITICAL</span>';
+        html+='</div>';
+      });
+    }
     html+='</div>';
     el.innerHTML=html;
     el.querySelectorAll('[data-cf]').forEach(btn=>{btn.addEventListener('click',()=>{filterState=btn.dataset.cf;draw();});});
     el.querySelectorAll('[data-atom]').forEach(row=>{row.addEventListener('click',()=>{navigateToAtom(row.dataset.atom);});});
+    el.querySelectorAll('[data-iwp]').forEach(span=>{span.addEventListener('click',()=>{
+      const iwp=IWP_DATA.find(i=>i.id===span.dataset.iwp);if(!iwp)return;
+      const bl=iwpBlockers(iwp),rdy=iwpIsReady(iwp);
+      showCard({title:iwp.id+' -- '+iwp.name,fields:[['CWP',iwp.cwp],['material',iwp.constraints.material?'CLEARED':'BLOCKED (M'+iwp.thresholds.material+')'],['labour',iwp.constraints.labour?'CLEARED':'BLOCKED (M'+iwp.thresholds.labour+')'],['engineering',iwp.constraints.engineering?'CLEARED':'BLOCKED (M'+iwp.thresholds.engineering+')'],['equipment',iwp.constraints.equipment?'CLEARED':'BLOCKED (M'+iwp.thresholds.equipment+')'],['access',iwp.constraints.access?'CLEARED':'BLOCKED (M'+iwp.thresholds.access+')'],['status',rdy?'CONSTRAINT-FREE':'BLOCKED: '+bl.join(', ')]],links:[iwp.cwp]});
+    });});
   }
   draw();
 }
@@ -1474,12 +1559,47 @@ function renderActions(el){
   });
 }
 
+function renderRiskMatrix(){
+  const probLabels=['V.Low','Low','Med','High','V.High'];
+  const impLabels=['1','2','3','4','5'];
+  // Map risk prob to row (0-4): <.12=0, <.20=1, <.26=2, <.35=3, >=.35=4
+  function probRow(p){return p>=.35?4:p>=.26?3:p>=.20?2:p>=.12?1:0;}
+  // Impact directly maps 1-5 (clamp to 1-5)
+  function impCol(i){return Math.min(4,Math.max(0,i-1));}
+  // Color class for cell: row+col sum => low(0-2), med(3-5), high(6-8)
+  function cellCls(r,c){const s=r+c;return s>=5?'rm-hi':s>=3?'rm-med':'rm-lo';}
+  // Build grid: risks[row][col] = array of risk refs
+  const grid=Array.from({length:5},()=>Array.from({length:5},()=>[]));
+  RISKS.forEach((r,i)=>{grid[probRow(r.prob)][impCol(r.impact)].push({r,i});});
+
+  let html='<div class="sec-h" style="margin:8px 0 4px;color:var(--oxide)">PMI Risk Matrix (P x I)</div>';
+  html+='<table class="rmatrix"><tr><th></th>';
+  impLabels.forEach(l=>{html+='<th>I='+l+'</th>';});
+  html+='</tr>';
+  for(let row=4;row>=0;row--){
+    html+='<tr><th>'+probLabels[row]+'</th>';
+    for(let col=0;col<5;col++){
+      html+='<td class="'+cellCls(row,col)+'">';
+      grid[row][col].forEach(({r,i})=>{
+        const hit=riskHits.has(i);
+        const dotCls=hit?'r':(row+col>=5?'r':row+col>=3?'a':'g');
+        html+='<span class="rm-dot '+dotCls+'" title="'+r.alias+': '+r.n+'" data-risk="'+i+'"></span>';
+      });
+      html+='</td>';
+    }
+    html+='</tr>';
+  }
+  html+='</table>';
+  return html;
+}
+
 function renderRisksOpps(el){
   let showRisks=true,showOpps=true;
   function draw(){
     let html='<div class="tab-panel"><h2>Risks & Opportunities</h2>';
     html+='<div class="filters"><button class="'+(showRisks&&showOpps?'active':'')+'" data-rf="all">All</button><button class="'+(showRisks&&!showOpps?'active':'')+'" data-rf="risks">Risks</button><button class="'+(!showRisks&&showOpps?'active':'')+'" data-rf="opps">Opportunities</button></div>';
     if(showRisks){
+      html+=renderRiskMatrix();
       html+='<div class="sec-h" style="margin-top:8px;color:var(--red)">Risks</div>';
       RISKS.forEach((r,i)=>{
         const hit=riskHits.has(i),past=month>r.trigger+2;
@@ -1514,22 +1634,33 @@ function renderRisksOpps(el){
   draw();
 }
 
+const CTR_CWA_MAP={'CTR-001':['CWA-CT'],'CTR-002':['CWA-TB'],'CTR-003':['CWA-RB','CWA-CW'],'CTR-004':['CWA-CM'],'CTR-005':['CWA-EL'],'CTR-006':[]};
+function ctrBilled(c){
+  const dur=PLANT.dur,frac=Math.min(1,month/dur);
+  if(c.status==='pending')return month>60?Math.round(frac*30):0;
+  return Math.round(frac*100*(.7+.3*Math.sin(frac*Math.PI)));
+}
 function renderContracts(el){
   let html='<div class="tab-panel"><h2>Contracts</h2>';
   CONTRACTS.forEach(c=>{
     const stClass=c.status==='active'?'st-active':'st-pending';
-    html+='<div class="contract-card" data-ctr="'+c.id+'"><div class="ctr-hdr"><span class="ctr-id">'+c.id+'</span><span class="ctr-title">'+c.title+'</span><span class="ctr-value">'+c.currency+c.value+'</span><span class="item-status '+stClass+'">'+c.status+'</span></div><div class="ctr-detail">'+c.vendor+' | '+c.type+(c.scope?' | '+c.scope:'')+'</div></div>';
+    const billed=ctrBilled(c);
+    const cwas=CTR_CWA_MAP[c.id]||[];
+    html+='<div class="contract-card" data-ctr="'+c.id+'"><div class="ctr-hdr"><span class="ctr-id">'+c.id+'</span><span class="ctr-title">'+c.title+'</span><span class="ctr-value">'+c.currency+c.value+'</span><span style="font:600 10px var(--mono);color:'+(billed>80?'var(--green)':billed>30?'var(--amber)':'var(--faint)')+'">'+billed+'% billed</span><span class="item-status '+stClass+'">'+c.status+'</span></div><div class="ctr-detail">'+c.vendor+' | '+c.type+(c.scope?' | '+c.scope:'')+(cwas.length?' | CWAs: '+cwas.join(', '):'')+'</div></div>';
   });
   html+='</div>';
   el.innerHTML=html;
   el.querySelectorAll('[data-ctr]').forEach(row=>{
     row.addEventListener('click',()=>{
       const c=CONTRACTS.find(x=>x.id===row.dataset.ctr);if(!c)return;
-      showCard({title:c.id+' -- '+c.title,fields:[['vendor',c.vendor],['value',c.currency+c.value],['type',c.type],['status',c.status],c.scope?['scope',c.scope]:null].filter(Boolean),links:[]});
+      const cwas=CTR_CWA_MAP[c.id]||[];
+      const cwps=cwas.flatMap(cwa=>{const a=ACT_ATOMS[cwa];return a&&a.contains?a.contains:[];});
+      showCard({title:c.id+' -- '+c.title,fields:[['vendor',c.vendor],['value',c.currency+c.value],['type',c.type],['status',c.status],['% billed',ctrBilled(c)+'%'],c.scope?['scope',c.scope]:null].filter(Boolean),links:[...cwas,...cwps]});
     });
   });
 }
 
+const SYS_CWP_MAP={'SYS-001':['CWP-RB-BASE','CWP-RB-WALLS'],'SYS-002':['CWP-CM-COLD'],'SYS-003':['CWP-CT-PTEST'],'SYS-004':['CWP-CW-PIPE'],'SYS-005':['CWP-CW-INTAKE','CWP-CW-PIPE'],'SYS-006':['CWP-TB-EQUIP'],'SYS-007':['CWP-TB-EQUIP'],'SYS-008':['CWP-EL-CABLE'],'SYS-009':['CWP-EL-IC'],'SYS-010':['CWP-CM-FUEL']};
 function renderSystems(el){
   let html='<div class="tab-panel"><h2>Systems</h2>';
   SYSTEMS.forEach(s=>{
@@ -1540,14 +1671,20 @@ function renderSystems(el){
     else st='not-started';
     const progress=st==='operational'?100:st==='commissioning'?80:st==='construction'?Math.round(Math.max(0,Math.min(60,(month-(s.turnover-20))/20*60))):0;
     const stClass=st==='operational'?'st-complete':st==='commissioning'?'st-active':st==='construction'?'st-open':'st-pending';
-    html+='<div class="sys-card" data-sys="'+s.id+'"><div class="sys-hdr"><span class="sys-code">'+s.code+'</span><span class="sys-name">'+s.name+'</span><div class="sys-bar"><div class="sys-bar-fill" style="width:'+progress+'%;background:'+(st==='operational'?'var(--green)':st==='commissioning'?'var(--blue)':'var(--amber)')+'"></div></div><span class="item-status '+stClass+'">'+st+'</span></div></div>';
+    const cwps=SYS_CWP_MAP[s.id]||[];
+    const iwps=cwps.flatMap(c=>iwpsForCWP(c));
+    html+='<div class="sys-card" data-sys="'+s.id+'"><div class="sys-hdr"><span class="sys-code">'+s.code+'</span><span class="sys-name">'+s.name+'</span><div class="sys-bar"><div class="sys-bar-fill" style="width:'+progress+'%;background:'+(st==='operational'?'var(--green)':st==='commissioning'?'var(--blue)':'var(--amber)')+'"></div></div><span class="item-status '+stClass+'">'+st+'</span></div>';
+    if(cwps.length||iwps.length)html+='<div style="font:9px var(--mono);color:var(--faint);margin-top:2px;padding-left:40px">CWPs: '+cwps.join(', ')+(iwps.length?' | IWPs: '+iwps.map(i=>i.id).join(', '):'')+'</div>';
+    html+='</div>';
   });
   html+='</div>';
   el.innerHTML=html;
   el.querySelectorAll('[data-sys]').forEach(row=>{
     row.addEventListener('click',()=>{
       const s=SYSTEMS.find(x=>x.id===row.dataset.sys);if(!s)return;
-      showCard({title:s.code+' -- '+s.name,fields:[['id',s.id],['turnover month','M'+s.turnover],s.desc?['description',s.desc]:null].filter(Boolean),links:[]});
+      let st=s.status;if(month>=s.turnover+6)st='operational';else if(month>=s.turnover)st='commissioning';else if(month>=s.turnover-20)st='construction';else st='not-started';
+      const cwps=SYS_CWP_MAP[s.id]||[];
+      showCard({title:s.code+' -- '+s.name,fields:[['id',s.id],['turnover month','M'+s.turnover],['status',st],s.desc?['description',s.desc]:null].filter(Boolean),links:cwps});
     });
   });
 }
@@ -1555,20 +1692,27 @@ function renderSystems(el){
 function renderProcedures(el){
   let html='<div class="tab-panel"><h2>Procedures</h2>';
   PROCEDURES.forEach(p=>{
-    const linkedNames=(p.links||[]).map(l=>{const a=ACT_ATOMS[l];return a?l+' ('+a.name+')':l;}).join(', ');
-    html+='<div class="proc-page"><div class="proc-title">'+p.id+' -- '+p.title+'</div><div class="proc-meta">Rev '+p.rev+(linkedNames?' | Links: '+linkedNames:'')+'</div><div class="proc-text">'+p.text+'</div></div>';
+    const linkHtml=(p.links||[]).map(l=>{const a=ACT_ATOMS[l];const nm=a?l+' ('+a.name+')':l;return '<span class="card-link" data-goto="'+l+'" style="cursor:pointer">'+nm+'</span>';}).join(' ');
+    html+='<div class="proc-page"><div class="proc-title">'+p.id+' -- '+p.title+'</div><div class="proc-meta">Rev '+p.rev+'</div>'+(linkHtml?'<div style="margin:4px 0;font:9px var(--mono);color:var(--faint)">Constraints raised: '+linkHtml+'</div>':'')+'<div class="proc-text">'+p.text+'</div></div>';
   });
   html+='</div>';
   el.innerHTML=html;
+  el.querySelectorAll('[data-goto]').forEach(lnk=>{lnk.addEventListener('click',()=>{navigateToAtom(lnk.dataset.goto);});});
 }
 
 function renderLessons(el){
   let html='<div class="tab-panel"><h2>Lessons Learned</h2>';
   LESSONS.forEach(l=>{
-    html+='<div class="lesson-card"><div class="lesson-title">'+l.id+' -- '+l.title+'</div><div class="lesson-meta">Source: '+l.source+' | Applies to: '+l.applies+'</div><div class="lesson-text">'+l.text+'</div></div>';
+    const apAtom=ACT_ATOMS[l.applies];
+    const apHtml=apAtom?'<span class="card-link" data-goto="'+l.applies+'" style="cursor:pointer">'+l.applies+' ('+apAtom.name+')</span>':'<span>'+l.applies+'</span>';
+    // Find related CWPs from the applies field
+    const relCWPs=ACT_ALL.filter(a=>a.type==='cwp'&&(a.alias===l.applies||(a.name&&l.applies.toLowerCase().includes(a.name.toLowerCase().split(' ')[0]))));
+    const extraLinks=relCWPs.filter(c=>c.alias!==l.applies).map(c=>'<span class="card-link" data-goto="'+c.alias+'" style="cursor:pointer">'+c.alias+'</span>').join(' ');
+    html+='<div class="lesson-card"><div class="lesson-title">'+l.id+' -- '+l.title+'</div><div class="lesson-meta">Source: '+l.source+' | Applies to: '+apHtml+(extraLinks?' '+extraLinks:'')+'</div><div class="lesson-text">'+l.text+'</div></div>';
   });
   html+='</div>';
   el.innerHTML=html;
+  el.querySelectorAll('[data-goto]').forEach(lnk=>{lnk.addEventListener('click',e=>{e.stopPropagation();navigateToAtom(lnk.dataset.goto);});});
 }
 
 // ================================================================
