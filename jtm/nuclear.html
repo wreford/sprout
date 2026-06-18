@@ -2453,6 +2453,442 @@ function dismissSplash(){
   setInterval(saveState, 30000);
 }
 
+// ================================================================
+// PLATFORM INTEGRATION 1: FieldIQ Camera Capture
+// ================================================================
+let fiqStream = null, fiqGPS = null;
+
+function fiqStart() {
+  navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}})
+    .then(stream => {
+      fiqStream = stream;
+      const video = $('fiq-video');
+      video.srcObject = stream;
+      video.style.display = 'block';
+      $('fiq-placeholder').style.display = 'none';
+    }).catch(e => {
+      $('fiq-placeholder').textContent = '[Camera access denied]';
+    });
+  // Get GPS
+  if(navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(pos => {
+      fiqGPS = {lat: pos.coords.latitude, lon: pos.coords.longitude, acc: pos.coords.accuracy};
+      $('fiq-gps').textContent = 'GPS: ' + fiqGPS.lat.toFixed(5) + ', ' + fiqGPS.lon.toFixed(5) + ' (±' + Math.round(fiqGPS.acc) + 'm)';
+    }, () => {
+      $('fiq-gps').textContent = 'GPS: unavailable (using site default: 44.32°N, 81.56°W)';
+      fiqGPS = {lat:44.32, lon:-81.56, acc:0};
+    });
+  }
+}
+
+function fiqCapture() {
+  const video = $('fiq-video'), canvas = $('fiq-canvas');
+  if(!video || !fiqStream) return;
+  canvas.width = video.videoWidth || 640;
+  canvas.height = video.videoHeight || 480;
+  canvas.getContext('2d').drawImage(video, 0, 0);
+  canvas.style.display = 'block';
+  video.style.display = 'none';
+  $('fiq-form').style.display = 'block';
+  // Stop camera
+  fiqStream.getTracks().forEach(t => t.stop());
+}
+
+function fiqSave() {
+  const type = $('fiq-type').value;
+  const title = $('fiq-title').value || type + ' observation';
+  const alias = 'FIQ-' + String(Date.now()).slice(-6);
+  const thumb = $('fiq-canvas').toDataURL('image/jpeg', 0.4);
+
+  // Create atom
+  const atom = {
+    alias: alias, name: title, type: 'field-capture',
+    completionKind: 'leaf', complete: false,
+    captureType: type,
+    gps: fiqGPS || {lat:44.32, lon:-81.56},
+    timestamp: new Date().toISOString(),
+    thumbnail: thumb,
+    tags: ['fieldiq', type],
+    month: Math.round(month)
+  };
+
+  // Add to ACE atom store
+  ACE_ATOMS[alias] = atom;
+  ACE_ALL.push(atom);
+
+  // Add to event log
+  eventLog.push({m:Math.round(month), type:'mile', msg:'FieldIQ: ' + alias + ' -- ' + title + ' (' + type + ')'});
+
+  // Save to localStorage
+  saveState();
+
+  // Reset form
+  $('fiq-form').style.display = 'none';
+  $('fiq-canvas').style.display = 'none';
+  $('fiq-placeholder').style.display = 'flex';
+  $('fiq-placeholder').textContent = '[Saved: ' + alias + ']';
+  $('fiq-title').value = '';
+
+  // Re-render if on FieldIQ tab
+  renderFieldIQ();
+}
+
+function renderFieldIQ() {
+  const captures = ACE_ALL.filter(a => a.type === 'field-capture');
+  const list = $('fiq-list');
+  if(!list) return;
+  list.innerHTML = captures.length === 0 ? '<div style="font:10px var(--mono);color:var(--faint);padding:8px">[No captures yet]</div>' :
+    captures.map(c => '<div class="item-row" onclick="showCard({title:\''+c.alias+' -- '+c.name.replace(/'/g,"\\'")+'\',fields:[[\'Type\',\''+c.captureType+'\'],[\'Month\',\'M'+c.month+'\'],[\'GPS\',\''+(c.gps?c.gps.lat.toFixed(4)+', '+c.gps.lon.toFixed(4):'--')+'\']],links:[]})">' +
+      (c.thumbnail ? '<img src="'+c.thumbnail+'" style="width:36px;height:27px;border-radius:3px;object-fit:cover;margin-right:6px">' : '') +
+      '<span class="item-id">'+c.alias+'</span><span class="item-name">'+c.name+'</span><span class="item-status st-'+(c.complete?'complete':'open')+'">'+c.captureType+'</span></div>').join('');
+}
+
+function renderFieldIQTab(el) {
+  let html = '<div class="tab-panel">';
+  html += '<h2>FieldIQ -- Field Data Capture</h2>';
+  html += '<p style="font:12px var(--serif);color:var(--ink2)">Capture field observations as ACE atoms. Photos are tagged with GPS coordinates and linked to the nearest work package.</p>';
+  html += '<div id="fiq-preview" style="width:100%;max-width:400px;aspect-ratio:4/3;background:#1a1d22;border-radius:8px;overflow:hidden;position:relative">';
+  html += '<video id="fiq-video" autoplay playsinline style="width:100%;height:100%;object-fit:cover;display:none"></video>';
+  html += '<canvas id="fiq-canvas" style="width:100%;height:100%;display:none"></canvas>';
+  html += '<div id="fiq-placeholder" style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--faint);font:11px var(--mono)">[Camera not started]</div>';
+  html += '</div>';
+  html += '<div style="display:flex;gap:6px;margin-top:8px">';
+  html += '<button onclick="fiqStart()">[Start Camera]</button>';
+  html += '<button onclick="fiqCapture()">[Capture]</button>';
+  html += '</div>';
+  html += '<div id="fiq-form" style="display:none;margin-top:10px">';
+  html += '<select id="fiq-type" style="font:11px var(--mono);padding:4px 6px;border:1px solid var(--rule2);border-radius:4px">';
+  html += '<option value="deficiency">Deficiency Report</option>';
+  html += '<option value="progress">Progress Photo</option>';
+  html += '<option value="safety">Safety Observation</option>';
+  html += '<option value="inspection">Inspection Record</option>';
+  html += '<option value="quality">Quality Hold Point</option>';
+  html += '</select>';
+  html += '<input id="fiq-title" placeholder="Description..." style="width:100%;margin-top:6px;font:11px var(--mono);padding:6px;border:1px solid var(--rule2);border-radius:4px">';
+  html += '<div id="fiq-gps" style="font:10px var(--mono);color:var(--faint);margin-top:4px">GPS: acquiring...</div>';
+  html += '<button onclick="fiqSave()" style="margin-top:6px">[Save as Atom]</button>';
+  html += '</div>';
+  html += '<h3 style="margin-top:14px;font:600 14px var(--disp);color:var(--ink)">Field Captures</h3>';
+  html += '<div id="fiq-list"></div>';
+  html += '</div>';
+  el.innerHTML = html;
+  renderFieldIQ();
+}
+
+// ================================================================
+// PLATFORM INTEGRATION 2: Local Storage
+// ================================================================
+function saveState() {
+  const state = {
+    month: month,
+    riskHits: Array.from(riskHits),
+    delayTotal: delayTotal,
+    eventLog: eventLog.slice(-50),
+    triageFired: Object.assign({}, actTriageFired),
+    fieldCaptures: ACE_ALL.filter(a => a.type === 'field-capture').map(a => ({...a})),
+    triageAutoResolve: $('triage-auto') ? $('triage-auto').checked : false,
+    mcIterations: mcIterationCount || 1000
+  };
+  try { localStorage.setItem('fmc-ace-state', JSON.stringify(state)); } catch(e) {}
+}
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem('fmc-ace-state');
+    if(!raw) return false;
+    const state = JSON.parse(raw);
+    month = state.month || 0;
+    riskHits = new Set(state.riskHits || []);
+    delayTotal = state.delayTotal || 0;
+    eventLog = state.eventLog || [];
+    if(state.triageFired) Object.assign(actTriageFired, state.triageFired);
+    if(state.fieldCaptures) state.fieldCaptures.forEach(c => { ACE_ATOMS[c.alias] = c; ACE_ALL.push(c); });
+    return true;
+  } catch(e) { return false; }
+}
+
+function clearState() {
+  localStorage.removeItem('fmc-ace-state');
+  location.reload();
+}
+
+// ================================================================
+// PLATFORM INTEGRATION 3: Live Weather (Open-Meteo)
+// ================================================================
+let weatherData = null;
+
+function fetchWeather() {
+  fetch('https://api.open-meteo.com/v1/forecast?latitude=44.32&longitude=-81.56&current_weather=true&timezone=America/Toronto')
+    .then(r => r.json())
+    .then(data => {
+      weatherData = data.current_weather;
+      updateWeatherDisplay();
+    }).catch(() => {
+      weatherData = {temperature: '--', windspeed: '--', weathercode: 0};
+    });
+}
+
+function updateWeatherDisplay() {
+  const el = $('weather-display');
+  if(!el || !weatherData) return;
+  const t = weatherData.temperature;
+  const ws = weatherData.windspeed;
+  const wc = weatherData.weathercode;
+  // WMO weather codes: 0=clear, 1-3=cloudy, 45-48=fog, 51-67=rain, 71-77=snow, 80-82=showers, 95-99=thunder
+  let desc = 'Clear';
+  if(wc>=1&&wc<=3) desc='Cloudy';
+  if(wc>=45&&wc<=48) desc='Fog';
+  if(wc>=51&&wc<=67) desc='Rain';
+  if(wc>=71&&wc<=77) desc='Snow';
+  if(wc>=80&&wc<=82) desc='Showers';
+  if(wc>=95) desc='Thunder';
+
+  el.innerHTML = t+'°C | '+ws+'km/h | '+desc;
+  el.title = 'Live weather at Tiverton, ON (44.32°N, 81.56°W)';
+
+  // Impact construction if severe
+  if(t < -10 || ws > 40 || wc >= 71) {
+    el.style.color = 'var(--red)';
+  } else if(t < 0 || ws > 25 || wc >= 51) {
+    el.style.color = 'var(--amber)';
+  } else {
+    el.style.color = 'var(--green)';
+  }
+}
+
+// Refresh weather every 10 minutes
+setInterval(fetchWeather, 600000);
+
+// ================================================================
+// PLATFORM INTEGRATION 4: CSV Export
+// ================================================================
+function exportCSV() {
+  let csv = 'Alias,Name,Type,CompletionKind,Complete,Tags,Month\n';
+  ACE_ALL.forEach(a => {
+    csv += '"'+a.alias+'","'+(a.name||'').replace(/"/g,'""')+'","'+a.type+'","'+(a.completionKind||'')+'","'+(actIsComplete(a.alias)?'Y':'N')+'","'+(a.tags||[]).join(';')+'","'+(a.completeAtMonth||'')+'"\n';
+  });
+  const blob = new Blob([csv], {type:'text/csv'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'fmc-ace-atoms-M'+Math.round(month)+'.csv';
+  a.click(); URL.revokeObjectURL(url);
+}
+
+// ================================================================
+// PLATFORM INTEGRATION 5: PDF Report
+// ================================================================
+function exportPDF() {
+  const jsPDFLib = window.jspdf || {};
+  const jsPDF = jsPDFLib.jsPDF;
+  if(!jsPDF) { alert('PDF library loading...'); return; }
+  const doc = new jsPDF();
+  const dur = PLANT.dur;
+  const ev = earned(month), pv = planned(month);
+  const spi = pv > 0 ? (ev/pv).toFixed(2) : '--';
+  const cost = projectSpent(month);
+  const cpi = cost.total > 0.1 ? ((ev/100*PLANT.budget)/cost.total).toFixed(2) : '--';
+
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(18);
+  doc.text('FMC ACE -- Monthly Construction Report', 14, 20);
+
+  doc.setFont('helvetica','normal');
+  doc.setFontSize(10);
+  doc.text('Project: ' + PLANT.name, 14, 30);
+  doc.text('Period: Month ' + Math.round(month) + ' / ' + dur, 14, 36);
+  doc.text('Generated: ' + new Date().toISOString().slice(0,10), 14, 42);
+
+  doc.setFontSize(11);
+  doc.setFont('helvetica','bold');
+  doc.text('Key Performance Indicators', 14, 54);
+
+  doc.setFont('courier','normal');
+  doc.setFontSize(9);
+  let y = 62;
+  const kpiLines = [
+    'Schedule Progress: ' + Math.round(month/dur*100) + '%',
+    'Earned Value: ' + ev.toFixed(1) + '%',
+    'SPI: ' + spi,
+    'CPI: ' + cpi,
+    'Budget: $' + PLANT.budget + 'B',
+    'Spent: $' + cost.total.toFixed(1) + 'B',
+    'Workforce: ' + workforce(month).toLocaleString(),
+    'Delay: ' + delayTotal + ' months',
+    'Risks Hit: ' + riskHits.size + ' / ' + RISKS.length,
+    'Atoms: ' + ACE_ALL.length,
+  ];
+  kpiLines.forEach(line => { doc.text(line, 14, y); y += 5; });
+
+  // MC Forecast
+  if(mcResults) {
+    y += 6;
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(11);
+    doc.text('Monte Carlo Forecast (' + (mcIterationCount||1000) + ' iterations)', 14, y);
+    y += 8;
+    doc.setFont('courier','normal');
+    doc.setFontSize(9);
+    doc.text('P50 Schedule: M' + mcResults.p50.month.toFixed(0) + ' | Cost: $' + mcResults.p50.cost.toFixed(1) + 'B', 14, y); y+=5;
+    doc.text('P80 Schedule: M' + mcResults.p80.month.toFixed(0) + ' | Cost: $' + mcResults.p80.cost.toFixed(1) + 'B', 14, y); y+=5;
+  }
+
+  // Recent events
+  y += 8;
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(11);
+  doc.text('Recent Events', 14, y); y += 7;
+  doc.setFont('courier','normal');
+  doc.setFontSize(8);
+  eventLog.slice(-10).forEach(evItem => {
+    doc.text('M' + evItem.m + ' [' + evItem.type + '] ' + evItem.msg.slice(0, 80), 14, y);
+    y += 4;
+    if(y > 280) { doc.addPage(); y = 20; }
+  });
+
+  // Weather
+  if(weatherData) {
+    y += 6;
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(10);
+    doc.text('Site Weather (Tiverton, ON)', 14, y); y += 6;
+    doc.setFont('courier','normal');
+    doc.setFontSize(9);
+    doc.text('Temperature: ' + weatherData.temperature + 'C | Wind: ' + weatherData.windspeed + ' km/h', 14, y);
+  }
+
+  doc.save('FMC-ACE-Report-M' + Math.round(month) + '.pdf');
+}
+
+// ================================================================
+// PLATFORM INTEGRATION 6: P6 Mockup Export
+// ================================================================
+function exportP6() {
+  let xer = 'ERMHDR\t20.12\tFMC ACE Export\t' + new Date().toISOString().slice(0,10) + '\n';
+  xer += '%T\tPROJECT\n';
+  xer += '%F\tproj_id\tproj_short_name\n';
+  xer += '%R\t1\tWilldoX 5x1000\n';
+  xer += '%T\tCALENDAR\n';
+  xer += '%F\tclndr_id\tclndr_name\n';
+  xer += '%R\t1\t5d8h Standard\n';
+  xer += '%T\tTASK\n';
+  xer += '%F\ttask_id\ttask_code\ttask_name\tearly_start\tearly_end\n';
+  PHASES.forEach((p, i) => {
+    const startDate = new Date(2026, p.s, 1).toISOString().slice(0,10);
+    const endDate = new Date(2026, p.e, 1).toISOString().slice(0,10);
+    xer += '%R\t' + (i+1) + '\tA' + String(i+1).padStart(4,'0') + '\t' + p.n + '\t' + startDate + '\t' + endDate + '\n';
+  });
+  xer += '%T\tTASKPRED\n';
+  xer += '%F\ttask_pred_id\ttask_id\tpred_task_id\tpred_type\n';
+  // Add FS predecessors based on phase dependencies
+  PHASES.forEach((p, i) => {
+    if(p.deps) {
+      p.deps.forEach(dep => {
+        const predIdx = PHASES.findIndex(pp => pp.n === dep);
+        if(predIdx >= 0) xer += '%R\t' + (i*10+predIdx) + '\t' + (i+1) + '\t' + (predIdx+1) + '\tPR_FS\n';
+      });
+    }
+  });
+
+  const blob = new Blob([xer], {type:'text/plain'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'FMC-ACE-Schedule.xer';
+  a.click();
+}
+
+// ================================================================
+// PLATFORM INTEGRATION 7: Mock LLM Assistant ("Ask ACE")
+// ================================================================
+const LLM_PATTERNS = [
+  {match: /critical path|blocking|what.*block/i, fn: () => {
+    const blocking = ACE_ALL.filter(a => a.type === 'constraint' && !actIsComplete(a.alias));
+    return 'There are ' + blocking.length + ' unresolved constraints. The critical path runs through: ' + blocking.slice(0, 5).map(a => a.alias + ' (' + a.name + ')').join(', ') + (blocking.length > 5 ? '... and ' + (blocking.length-5) + ' more.' : '.');
+  }},
+  {match: /risk|exposure|p80|forecast/i, fn: () => {
+    if(!mcResults) return 'Run the Monte Carlo simulation first to get a forecast.';
+    return 'Based on ' + (mcIterationCount||1000) + ' Monte Carlo iterations:\nP50: Month ' + mcResults.p50.month.toFixed(0) + ', $' + mcResults.p50.cost.toFixed(1) + 'B\nP80: Month ' + mcResults.p80.month.toFixed(0) + ', $' + mcResults.p80.cost.toFixed(1) + 'B\nCurrent risk exposure: ' + riskHits.size + ' of ' + RISKS.length + ' risks have materialized, adding ' + delayTotal + ' months delay.';
+  }},
+  {match: /fuel.*load|when.*fuel|criticality/i, fn: () => {
+    const fuelMS = MILESTONES.find(m => m.n.includes('Fuel load'));
+    const fuelCons = ACE_ALL.filter(a => a.alias && a.alias.includes('CON') && a.name && a.name.toLowerCase().includes('fuel'));
+    return 'Fuel load authorization is scheduled at Month ' + (fuelMS?fuelMS.m:'72') + '. ' + (fuelCons.length ? 'Blocking constraints: ' + fuelCons.map(c=>c.alias).join(', ') : 'No direct fuel-related constraints currently blocking.') + ' CNSC requires 30 days written notice before fuel load hold point.';
+  }},
+  {match: /weather|temperature|wind|rain|snow/i, fn: () => {
+    if(!weatherData) return 'Weather data not yet loaded. Fetching from Open-Meteo for Tiverton, ON...';
+    return 'Current conditions at Tiverton, ON (44.32°N, 81.56°W): ' + weatherData.temperature + '°C, wind ' + weatherData.windspeed + ' km/h. ' + (weatherData.temperature < 0 ? 'Below freezing -- winter concrete curing procedures (PRC-004) apply.' : weatherData.windspeed > 40 ? 'High winds -- crane operations may be suspended per CSA Z150.' : 'Conditions acceptable for all construction activities.');
+  }},
+  {match: /cost|budget|spent|cpi|eac/i, fn: () => {
+    const cost = projectSpent(month);
+    const ev = earned(month), pv = planned(month);
+    const cpi = cost.total > 0.1 ? (ev/100*PLANT.budget)/cost.total : 1;
+    return 'Budget: $' + PLANT.budget + 'B. Spent to date: $' + cost.total.toFixed(1) + 'B (Labor: $' + cost.labor.toFixed(1) + 'B, Materials: $' + cost.materials.toFixed(1) + 'B, Equipment: $' + cost.equipment.toFixed(1) + 'B). CPI: ' + cpi.toFixed(2) + '. EAC: $' + (cpi>0.1?PLANT.budget/cpi:PLANT.budget).toFixed(1) + 'B.';
+  }},
+  {match: /atom|count|how many/i, fn: () => {
+    const types = {};
+    ACE_ALL.forEach(a => { types[a.type] = (types[a.type]||0) + 1; });
+    return 'Total atoms: ' + ACE_ALL.length + '. Breakdown: ' + Object.entries(types).sort((a,b)=>b[1]-a[1]).map(([t,c])=>t+': '+c).join(', ') + '.';
+  }},
+  {match: /iwp|constraint.free|ready|workface/i, fn: () => {
+    const allIWPs = ACE_ALL.filter(a => a.type === 'iwp' && a.constraints);
+    const readyIWPs = IWP_DATA.filter(a => iwpIsReady(a));
+    return 'Constraint-free IWPs: ' + readyIWPs.length + ' / ' + IWP_DATA.length + ' (' + Math.round(readyIWPs.length/IWP_DATA.length*100) + '% workface-ready). ' + (IWP_DATA.length - readyIWPs.length) + ' IWPs have unresolved constraints (material, labour, engineering, equipment, or access).';
+  }},
+  {match: /help|what can you|capabilities/i, fn: () => {
+    return 'I can answer questions about:\n- Critical path and blocking constraints\n- Risk exposure and Monte Carlo forecast (P50/P80)\n- Cost, budget, CPI, EAC\n- Fuel load schedule\n- Weather conditions at site\n- Atom counts and types\n- IWP readiness and constraint-free status\n\nTry: "What is blocking fuel load?" or "Show risk forecast"';
+  }}
+];
+
+function askACE(question) {
+  for(const p of LLM_PATTERNS) {
+    if(p.match.test(question)) return p.fn();
+  }
+  return 'I don\'t have a specific answer for that. Try asking about: critical path, risks, cost, fuel load, weather, atoms, or IWP readiness.';
+}
+
+function renderAskACETab(el) {
+  let html = '<div class="tab-panel">';
+  html += '<h2>Ask ACE</h2>';
+  html += '<p style="font:12px var(--serif);color:var(--ink2);margin-bottom:10px">Query the ACE model using natural language. Answers are derived from live atom data, Monte Carlo results, and site conditions.</p>';
+  html += '<div style="display:flex;gap:6px;margin-bottom:10px">';
+  html += '<input id="ace-input" placeholder="e.g., What is on the critical path?" style="flex:1;font:11px var(--mono);padding:8px;border:1px solid var(--rule2);border-radius:4px">';
+  html += '<button id="ace-ask-btn" style="font:500 11px var(--mono);padding:8px 14px;border:1px solid var(--oxide);border-radius:4px;background:var(--hi);color:var(--oxide);cursor:pointer">[Ask]</button>';
+  html += '</div>';
+  html += '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px">';
+  const quickQs = ['Critical path?','Risk forecast','Cost & CPI','Fuel load','Weather','Atom count','IWP readiness','Help'];
+  quickQs.forEach(q => {
+    html += '<button class="ace-quick" data-q="'+q+'" style="font:10px var(--mono);padding:4px 8px;border:1px solid var(--rule2);border-radius:4px;background:var(--hi);color:var(--ink2);cursor:pointer">'+q+'</button>';
+  });
+  html += '</div>';
+  html += '<div id="ace-response" style="font:11px var(--mono);color:var(--ink2);padding:10px 12px;background:var(--hi);border:1px solid var(--rule2);border-radius:6px;min-height:60px;white-space:pre-wrap;line-height:1.5">[Awaiting query...]</div>';
+  html += '</div>';
+  el.innerHTML = html;
+
+  // Wire up Ask button
+  const askBtn = $('ace-ask-btn');
+  const inputEl = $('ace-input');
+  const respEl = $('ace-response');
+  if(askBtn && inputEl && respEl) {
+    askBtn.addEventListener('click', () => {
+      const q = inputEl.value.trim();
+      if(!q) return;
+      respEl.textContent = askACE(q);
+    });
+    inputEl.addEventListener('keydown', e => {
+      if(e.key === 'Enter') { askBtn.click(); }
+    });
+  }
+  // Quick question buttons
+  el.querySelectorAll('.ace-quick').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if(inputEl) inputEl.value = btn.dataset.q;
+      if(respEl) respEl.textContent = askACE(btn.dataset.q);
+    });
+  });
+}
+
+// Helper alias for atom completion check used by exports
+function isAtomComplete(a) { return actIsComplete(a.alias); }
+
 $('splash-enter').addEventListener('click',dismissSplash);
 document.addEventListener('keydown',function splashKey(e){
   if(!splashDismissed&&(e.code==='Enter'||e.code==='Space')){
