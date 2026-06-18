@@ -1823,16 +1823,24 @@ function update(dt){
       if(gb.surfaceTimer<=0){gb.underground=true;gb.dir=(Math.random()>.5?1:-1)*(.4+Math.random()*.4);}
     }
   }
-  // water flows downhill
+  // water settles into terrain valleys (real physics)
   for(const wp of waterPools){
+    // expand water to fill low spots
+    const lx=Math.max(1,wp.x),rx=Math.min(W-2,wp.x+wp.w);
+    if(lx>1&&terrain[lx-1]<terrain[lx]+2){wp.x--;wp.w++;}
+    if(rx<W-2&&terrain[rx+1]<terrain[rx]+2){wp.w++;}
+    // slow terrain erosion under water
     for(let x=wp.x;x<Math.min(W-1,wp.x+wp.w);x++){
-      if(terrain[x]>terrain[x+1]+.5)terrain[x+1]=terrain[x]-.3;
-      if(terrain[x]>terrain[x-1]+.5&&x>1)terrain[x-1]=terrain[x]-.3;
+      if(terrain[x]>0)terrain[x]+=dt*.1;
     }
   }
-  // oil pools burn if fire hits them
+  // oil pools persist, flow downhill, ignite from fire
   for(let oi=oilPools.length-1;oi>=0;oi--){
     const op=oilPools[oi];
+    // oil flows downhill slowly
+    const olx=Math.max(1,op.x),orx=Math.min(W-2,op.x+op.w);
+    if(olx>1&&terrain[olx-1]>terrain[olx]+1){op.x--;op.w++;}
+    if(orx<W-2&&terrain[orx+1]>terrain[orx]+1){op.w++;}
     if(op.burning){
       op.burnTimer-=dt;
       // damage anyone standing in oil
@@ -2090,29 +2098,31 @@ function render(){
     }
   }
 
-  // graboids
+  // graboids (same size underground and surfaced)
   for(const gb of graboids){
     const gx=gb.x,gy=terrain[Math.max(0,Math.min(W-1,Math.floor(gx)))];
+    // body (always same size)
+    ctx.fillStyle='#c08040';
+    ctx.fillRect(gx-6,gy-20,12,20);ctx.fillRect(gx-8,gy-12,16,8);
+    ctx.fillStyle='#a06830';ctx.fillRect(gx-6,gy-18,12,2);ctx.fillRect(gx-6,gy-14,12,2);
+    // mouth + eyes
+    ctx.fillStyle='#f44';ctx.fillRect(gx-4,gy-20,8,4);
+    ctx.fillStyle='#ff0';ctx.fillRect(gx-2,gy-18,1,2);ctx.fillRect(gx+2,gy-18,1,2);
+    // tentacles
+    ctx.strokeStyle='#d09050';ctx.lineWidth=1;
+    for(let t=0;t<3;t++){
+      const ta=Math.sin(performance.now()*.008+t*2)*6;
+      ctx.beginPath();ctx.moveTo(gx-3+t*3,gy-20);ctx.lineTo(gx-5+t*4+ta,gy-28);ctx.stroke();
+    }
     if(gb.underground){
-      // underground rumble line
-      const rumble=Math.sin(performance.now()*.01+gx)*2;
-      ctx.strokeStyle='#8b6914';ctx.lineWidth=1;
-      ctx.beginPath();ctx.moveTo(gx-8,gy+rumble);ctx.lineTo(gx+8,gy-rumble);ctx.stroke();
-      ctx.fillStyle='#654';ctx.fillRect(gx-2,gy-1,4,2);
-    }else{
-      // surfaced graboid - worm creature
-      ctx.fillStyle='#c08040';
-      ctx.fillRect(gx-6,gy-20,12,20);
-      ctx.fillRect(gx-8,gy-12,16,8);
-      // mouth
-      ctx.fillStyle='#f44';ctx.fillRect(gx-4,gy-20,8,4);
-      ctx.fillStyle='#ff0';ctx.fillRect(gx-2,gy-18,1,2);ctx.fillRect(gx+2,gy-18,1,2);
-      // tentacles
-      ctx.strokeStyle='#d09050';ctx.lineWidth=1;
-      for(let t=0;t<3;t++){
-        const ta=Math.sin(performance.now()*.008+t*2)*6;
-        ctx.beginPath();ctx.moveTo(gx-3+t*3,gy-20);ctx.lineTo(gx-5+t*4+ta,gy-28);ctx.stroke();
-      }
+      // tunneling: body partially buried, dirt over lower half
+      ctx.fillStyle=floorType?floorType.color:'#40a020';ctx.globalAlpha=.7;
+      ctx.fillRect(gx-10,gy-8,20,10);
+      ctx.globalAlpha=1;
+      // dirt spray from digging
+      ctx.fillStyle='#8b6914';
+      const spray=Math.sin(performance.now()*.015+gx)*3;
+      ctx.fillRect(gx-3+spray,gy-22,2,3);ctx.fillRect(gx+1-spray,gy-24,2,2);
     }
   }
 
