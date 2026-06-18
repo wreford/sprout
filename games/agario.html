@@ -1,0 +1,776 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+<title>Auto Agar — Genetic Algorithm</title>
+<style>
+:root{--bg:#0f0f10;--bg2:#1a1a1c;--border:#2a2a2d;--text:#f0f0f0;--dim:#6e6e73;--accent:#ff6b35;--cyan:#00e5ff;--green:#4ade80;--mono:ui-monospace,"SF Mono",Menlo,Monaco,Consolas,monospace}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--mono);overflow:hidden;touch-action:manipulation;user-select:none}
+#cv{display:block;width:100%;height:100%;position:fixed;top:0;left:0}
+#hud{position:fixed;top:0;left:0;right:0;z-index:10;pointer-events:none;padding:8px 12px;display:flex;justify-content:space-between;font-size:11px}
+.hc{display:flex;flex-direction:column;gap:2px}
+.hl{font-size:9px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em}
+.hv{font-weight:700;font-size:13px}
+.hv.cy{color:var(--cyan)}.hv.ac{color:var(--accent)}.hv.gr{color:var(--green)}
+#bar{position:fixed;bottom:0;left:0;right:0;z-index:10;background:var(--bg2);border-top:1px solid var(--border);padding:6px 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:center}
+.btn{font:600 11px var(--mono);padding:5px 12px;background:var(--border);color:var(--text);border:1px solid #3a3a3d;border-radius:5px;cursor:pointer}
+.btn:active{background:var(--accent);color:#000}.btn.on{background:var(--accent);color:#000;border-color:var(--accent)}
+.sr{display:flex;align-items:center;gap:4px}
+.sr label{font-size:9px;color:var(--dim)}.sr .sv{font-size:9px;color:var(--accent);min-width:22px;font-weight:700}
+input[type=range]{-webkit-appearance:none;width:70px;height:3px;background:var(--border);border-radius:2px;outline:none}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:var(--accent);cursor:pointer}
+#lb{position:fixed;top:40px;right:12px;z-index:10;pointer-events:none;font-size:9px;color:var(--dim);max-height:40vh;overflow:hidden}
+.le{display:flex;gap:6px;align-items:center;padding:1px 0}
+.le .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.le .ln{color:var(--text);font-weight:600;min-width:14px}
+.le .lm{color:var(--dim)}
+#graph{position:fixed;bottom:44px;left:12px;z-index:10;pointer-events:none}
+#graph canvas{border-radius:4px;background:rgba(15,15,16,.85);border:1px solid var(--border)}
+a{color:var(--dim);text-decoration:none;pointer-events:all}a:hover{color:var(--accent)}
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<div id="hud">
+<div class="hc">
+<div><span class="hl">Gen </span><span class="hv cy" id="hGen">0</span></div>
+<div><span class="hl">Alive </span><span class="hv" id="hAlive">0</span></div>
+<div><span class="hl">Time </span><span class="hv" id="hTime">0s</span></div>
+</div>
+<div class="hc" style="text-align:center">
+<div><span class="hl">Best Mass </span><span class="hv ac" id="hBest">0</span></div>
+<div><span class="hl">Record </span><span class="hv gr" id="hRec">0</span></div>
+</div>
+<div class="hc" style="text-align:right">
+<div><span class="hl">Pellets </span><span class="hv" id="hPel">0</span></div>
+<div><span class="hl">FPS </span><span class="hv" id="hFps">60</span></div>
+</div>
+</div>
+<div id="lb"></div>
+<div id="graph"><canvas id="gcv" width="200" height="70"></canvas></div>
+<div id="bar">
+<a href="games.html">&larr; games</a>
+<button class="btn on" id="bRun">PAUSE</button>
+<button class="btn" id="bReset">RESET</button>
+<button class="btn" id="bCam">CAM: BEST</button>
+<div class="sr"><label>SPEED</label><input type="range" id="sSpd" min="1" max="20" value="1"/><span class="sv" id="vSpd">1x</span></div>
+<div class="sr"><label>POP</label><input type="range" id="sPop" min="10" max="100" step="5" value="30"/><span class="sv" id="vPop">30</span></div>
+<div class="sr"><label>MUT%</label><input type="range" id="sMut" min="1" max="30" value="8"/><span class="sv" id="vMut">8%</span></div>
+</div>
+<script>
+(function(){"use strict";
+
+// ═══════════════════════════════════════
+// CONFIG
+// ═══════════════════════════════════════
+var WORLD = 3000;
+var POP = 30;
+var PELLET_COUNT = 400;
+var PELLET_MASS = 1;
+var START_MASS = 10;
+var ROUND_TIME = 30; // seconds per generation
+var MUT_RATE = 0.08;
+var MUT_STD = 0.3;
+var ELITISM = 2;
+var TOURN = 4;
+var SPLIT_COST = 0.4; // fraction of mass kept
+var MERGE_DELAY = 300; // ticks before fragments merge
+var GRID_SIZE = 100;
+
+// Genome: 10 genes controlling behavior
+// 0: aggression (chase bigger threshold ratio)
+// 1: flee distance factor
+// 2: hunger (pellet vs cell priority)
+// 3: split threshold (mass at which to split)
+// 4: split aggression (how eagerly split toward prey)
+// 5: wander amplitude
+// 6: wander frequency
+// 7: edge avoidance strength
+// 8: speed preference (trade mass for speed?)
+// 9: group avoidance (stay away from same-gen?)
+var GENES = 10;
+var GENE_NAMES = ["Aggro","Flee","Hunger","SplitAt","SplitAggr","Wander","WanderF","EdgeAvoid","SpdPref","Spread"];
+
+// ═══════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════
+var cv = document.getElementById("cv"), c = cv.getContext("2d");
+var gcv = document.getElementById("gcv"), gc = gcv.getContext("2d");
+var W, H;
+function resize() { W = cv.width = innerWidth; H = cv.height = innerHeight; }
+resize(); window.addEventListener("resize", resize);
+
+var cells = [];       // all cells (players + fragments)
+var pellets = [];
+var genomes = [];     // POP genomes
+var generation = 0;
+var roundTick = 0;
+var running = true;
+var speed = 1;
+var camMode = 0; // 0=best, 1=action, 2=overview
+var camX = 0, camY = 0, camZ = 1;
+var record = 0;
+var histBest = [], histAvg = [];
+var fpsFrames = 0, fpsTime = 0, fps = 60;
+
+// Colors - distinct neon per genome
+var COLORS = [];
+(function(){
+  for(var i=0;i<200;i++){
+    var h = (i * 137.508) % 360;
+    COLORS.push("hsl("+h+",80%,60%)");
+  }
+})();
+
+// ═══════════════════════════════════════
+// SPATIAL HASH
+// ═══════════════════════════════════════
+var grid = {};
+function gridKey(x,y){ return ((x/GRID_SIZE)|0)+","+((y/GRID_SIZE)|0); }
+function gridClear(){ grid = {}; }
+function gridInsert(obj){
+  var r = obj.r || 0;
+  var x0 = ((obj.x-r)/GRID_SIZE)|0, x1 = ((obj.x+r)/GRID_SIZE)|0;
+  var y0 = ((obj.y-r)/GRID_SIZE)|0, y1 = ((obj.y+r)/GRID_SIZE)|0;
+  for(var gx=x0;gx<=x1;gx++) for(var gy=y0;gy<=y1;gy++){
+    var k = gx+","+gy;
+    if(!grid[k]) grid[k] = [];
+    grid[k].push(obj);
+  }
+}
+function gridQuery(x,y,range){
+  var results = [];
+  var x0 = ((x-range)/GRID_SIZE)|0, x1 = ((x+range)/GRID_SIZE)|0;
+  var y0 = ((y-range)/GRID_SIZE)|0, y1 = ((y+range)/GRID_SIZE)|0;
+  var seen = {};
+  for(var gx=x0;gx<=x1;gx++) for(var gy=y0;gy<=y1;gy++){
+    var k = gx+","+gy;
+    var bucket = grid[k];
+    if(!bucket) continue;
+    for(var i=0;i<bucket.length;i++){
+      var o = bucket[i];
+      if(!seen[o.id]){ seen[o.id] = 1; results.push(o); }
+    }
+  }
+  return results;
+}
+
+// ═══════════════════════════════════════
+// GENOME
+// ═══════════════════════════════════════
+var _id = 0;
+function randGenome(){
+  var g = new Float32Array(GENES);
+  for(var i=0;i<GENES;i++) g[i] = Math.random()*2-1;
+  return g;
+}
+function crossover(a,b){
+  var c = new Float32Array(GENES);
+  for(var i=0;i<GENES;i++) c[i] = Math.random()<.5 ? a[i] : b[i];
+  return c;
+}
+function mutate(g){
+  var m = new Float32Array(g);
+  for(var i=0;i<GENES;i++){
+    if(Math.random()<MUT_RATE) m[i] += gaussRand()*MUT_STD;
+    m[i] = Math.max(-2, Math.min(2, m[i]));
+  }
+  return m;
+}
+function gaussRand(){ var u=0,v=0; while(!u)u=Math.random(); while(!v)v=Math.random(); return Math.sqrt(-2*Math.log(u))*Math.cos(6.2832*v); }
+function tournSelect(fits){
+  var best=-1,bestF=-1e9;
+  for(var i=0;i<TOURN;i++){
+    var idx=(Math.random()*fits.length)|0;
+    if(fits[idx]>bestF){bestF=fits[idx];best=idx;}
+  }
+  return best;
+}
+
+// ═══════════════════════════════════════
+// CELL / PELLET
+// ═══════════════════════════════════════
+function massToR(mass){ return Math.sqrt(mass)*4; }
+function rToMass(r){ return (r/4)*(r/4); }
+
+function spawnCell(gi, x, y, mass){
+  return {
+    id: _id++,
+    gi: gi, // genome index
+    x: x||Math.random()*WORLD,
+    y: y||Math.random()*WORLD,
+    vx: 0, vy: 0,
+    mass: mass||START_MASS,
+    r: massToR(mass||START_MASS),
+    maxMass: mass||START_MASS,
+    alive: true,
+    age: 0,
+    mergeTimer: 0,
+    type: "cell"
+  };
+}
+
+function spawnPellet(){
+  return {
+    id: _id++,
+    x: Math.random()*WORLD,
+    y: Math.random()*WORLD,
+    mass: PELLET_MASS,
+    r: 4,
+    type: "pellet",
+    hue: (Math.random()*360)|0
+  };
+}
+
+// ═══════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════
+function initRound(){
+  cells = [];
+  pellets = [];
+  roundTick = 0;
+  _id = 0;
+  for(var i=0;i<POP;i++){
+    cells.push(spawnCell(i));
+  }
+  for(var i=0;i<PELLET_COUNT;i++){
+    pellets.push(spawnPellet());
+  }
+}
+
+function initGenomes(){
+  genomes = [];
+  for(var i=0;i<POP;i++) genomes.push(randGenome());
+}
+
+// ═══════════════════════════════════════
+// AI DECISION
+// ═══════════════════════════════════════
+function aiDecide(cell){
+  var g = genomes[cell.gi];
+  var aggro = g[0];        // -1 to 2: negative=very passive, positive=aggressive
+  var fleeFactor = g[1];   // flee distance multiplier
+  var hunger = g[2];       // negative=prefer cells, positive=prefer pellets
+  var splitAt = g[3];      // mass threshold to split (mapped to 30-200)
+  var splitAggr = g[4];    // eagerness to split
+  var wanderAmp = g[5];    // wander force
+  var wanderFreq = g[6];   // wander oscillation
+  var edgeAvoid = g[7];    // wall avoidance
+  var spdPref = g[8];      // not used for movement currently
+  var spread = g[9];       // avoidance of same-genome cells
+
+  var tx = 0, ty = 0, tw = 0;
+
+  var range = Math.max(300, cell.r * 10);
+  var nearby = gridQuery(cell.x, cell.y, range);
+
+  var bestPelDist = 1e9, bestPelX = 0, bestPelY = 0;
+  var bestPreyScore = -1e9, bestPreyX = 0, bestPreyY = 0, hasPreyTarget = false;
+  var fleeX = 0, fleeY = 0, fleeW = 0;
+
+  for(var i=0;i<nearby.length;i++){
+    var o = nearby[i];
+    if(o.id === cell.id) continue;
+    var dx = o.x - cell.x, dy = o.y - cell.y;
+    var d = Math.sqrt(dx*dx+dy*dy) || 1;
+
+    if(o.type === "pellet"){
+      if(d < bestPelDist){ bestPelDist = d; bestPelX = o.x; bestPelY = o.y; }
+    } else if(o.type === "cell" && o.alive){
+      if(o.gi === cell.gi && o.id !== cell.id){
+        // same genome — spread out
+        var spreadForce = (spread + 0.5) * 50 / (d + 10);
+        fleeX -= (dx/d) * spreadForce;
+        fleeY -= (dy/d) * spreadForce;
+        fleeW += spreadForce;
+        continue;
+      }
+
+      var ratio = cell.mass / (o.mass || 1);
+      if(ratio > 1.15){
+        // we can eat them
+        var score = o.mass / (d + 50);
+        if(score > bestPreyScore){
+          bestPreyScore = score;
+          bestPreyX = o.x; bestPreyY = o.y;
+          hasPreyTarget = true;
+        }
+      } else if(ratio < 0.85){
+        // they can eat us — flee
+        var fleeDist = cell.r * (3 + fleeFactor * 4);
+        if(d < fleeDist){
+          var urgency = (1 - d/fleeDist) * (o.mass / (cell.mass||1));
+          fleeX -= (dx/d) * urgency * 100;
+          fleeY -= (dy/d) * urgency * 100;
+          fleeW += urgency;
+        }
+      }
+    }
+  }
+
+  // Flee
+  if(fleeW > 0.01){
+    tx += fleeX / fleeW * 3;
+    ty += fleeY / fleeW * 3;
+    tw += fleeW * 3;
+  }
+
+  // Chase prey
+  if(hasPreyTarget && aggro > -0.5){
+    var pd = Math.sqrt((bestPreyX-cell.x)*(bestPreyX-cell.x)+(bestPreyY-cell.y)*(bestPreyY-cell.y))||1;
+    var chaseW = (1 + aggro) * 2;
+    tx += (bestPreyX - cell.x)/pd * chaseW * 100;
+    ty += (bestPreyY - cell.y)/pd * chaseW * 100;
+    tw += chaseW;
+  }
+
+  // Pellets
+  if(bestPelDist < 1e8){
+    var pd2 = bestPelDist || 1;
+    var pelW = (1 + hunger) * 1.5;
+    tx += (bestPelX - cell.x)/pd2 * pelW * 80;
+    ty += (bestPelY - cell.y)/pd2 * pelW * 80;
+    tw += pelW;
+  }
+
+  // Edge avoidance
+  var edgeW = (1 + edgeAvoid) * 2;
+  var margin = 150;
+  if(cell.x < margin){ tx += edgeW * (margin - cell.x) * 0.5; tw += edgeW * 0.3; }
+  if(cell.x > WORLD - margin){ tx -= edgeW * (cell.x - (WORLD-margin)) * 0.5; tw += edgeW * 0.3; }
+  if(cell.y < margin){ ty += edgeW * (margin - cell.y) * 0.5; tw += edgeW * 0.3; }
+  if(cell.y > WORLD - margin){ ty -= edgeW * (cell.y - (WORLD-margin)) * 0.5; tw += edgeW * 0.3; }
+
+  // Wander
+  var wAmp = (1 + wanderAmp) * 30;
+  var wFreq = (1 + wanderFreq) * 0.02;
+  tx += Math.sin(cell.age * wFreq + cell.id) * wAmp;
+  ty += Math.cos(cell.age * wFreq * 1.3 + cell.id * 1.7) * wAmp;
+  tw += 0.5;
+
+  if(tw > 0){ tx /= tw; ty /= tw; }
+
+  // Normalize
+  var tl = Math.sqrt(tx*tx+ty*ty) || 1;
+  var spd = 2.5 / (1 + cell.mass * 0.008);
+  cell.vx = (tx/tl) * spd;
+  cell.vy = (ty/tl) * spd;
+
+  // Split decision
+  var splitThresh = 30 + (1 + splitAt) * 60;
+  if(cell.mass > splitThresh && hasPreyTarget && splitAggr > 0.2 && cell.mergeTimer <= 0){
+    splitCell(cell, bestPreyX, bestPreyY);
+  }
+}
+
+function splitCell(cell, targetX, targetY){
+  var half = cell.mass * SPLIT_COST;
+  cell.mass -= half;
+  cell.r = massToR(cell.mass);
+  var dx = targetX - cell.x, dy = targetY - cell.y;
+  var d = Math.sqrt(dx*dx+dy*dy)||1;
+  var frag = spawnCell(cell.gi, cell.x + (dx/d)*cell.r*2, cell.y + (dy/d)*cell.r*2, half);
+  frag.vx = (dx/d) * 8;
+  frag.vy = (dy/d) * 8;
+  frag.mergeTimer = MERGE_DELAY;
+  cell.mergeTimer = MERGE_DELAY;
+  cells.push(frag);
+}
+
+// ═══════════════════════════════════════
+// SIMULATION TICK
+// ═══════════════════════════════════════
+function simTick(){
+  roundTick++;
+
+  // Rebuild spatial grid
+  gridClear();
+  for(var i=0;i<cells.length;i++) if(cells[i].alive) gridInsert(cells[i]);
+  for(var i=0;i<pellets.length;i++) gridInsert(pellets[i]);
+
+  // AI + move
+  for(var i=0;i<cells.length;i++){
+    var cl = cells[i];
+    if(!cl.alive) continue;
+    cl.age++;
+    if(cl.mergeTimer > 0) cl.mergeTimer--;
+
+    aiDecide(cl);
+
+    cl.x += cl.vx;
+    cl.y += cl.vy;
+    // Slow down split fragments
+    cl.vx *= 0.92;
+    cl.vy *= 0.92;
+
+    // Bounds
+    if(cl.x < cl.r) cl.x = cl.r;
+    if(cl.x > WORLD-cl.r) cl.x = WORLD-cl.r;
+    if(cl.y < cl.r) cl.y = cl.r;
+    if(cl.y > WORLD-cl.r) cl.y = WORLD-cl.r;
+
+    // Slow mass decay
+    if(cl.mass > START_MASS * 1.5) cl.mass *= 0.9998;
+    cl.r = massToR(cl.mass);
+  }
+
+  // Cell-cell collisions
+  for(var i=0;i<cells.length;i++){
+    var a = cells[i];
+    if(!a.alive) continue;
+    var near = gridQuery(a.x, a.y, a.r + 80);
+    for(var j=0;j<near.length;j++){
+      var b = near[j];
+      if(b.type !== "cell" || !b.alive || b.id === a.id) continue;
+      var dx = b.x-a.x, dy = b.y-a.y;
+      var d = Math.sqrt(dx*dx+dy*dy);
+      if(d > a.r + b.r * 0.4) continue;
+
+      // Same genome — merge if timer expired
+      if(a.gi === b.gi){
+        if(a.mergeTimer <= 0 && b.mergeTimer <= 0){
+          if(a.mass >= b.mass){
+            a.mass += b.mass; a.r = massToR(a.mass);
+            if(a.mass > a.maxMass) a.maxMass = a.mass;
+            b.alive = false;
+          } else {
+            b.mass += a.mass; b.r = massToR(b.mass);
+            if(b.mass > b.maxMass) b.maxMass = b.mass;
+            a.alive = false;
+          }
+        }
+        continue;
+      }
+
+      // Different genome — bigger eats smaller
+      if(a.mass > b.mass * 1.15){
+        a.mass += b.mass * 0.8;
+        a.r = massToR(a.mass);
+        if(a.mass > a.maxMass) a.maxMass = a.mass;
+        b.alive = false;
+      } else if(b.mass > a.mass * 1.15){
+        b.mass += a.mass * 0.8;
+        b.r = massToR(b.mass);
+        if(b.mass > b.maxMass) b.maxMass = b.mass;
+        a.alive = false;
+      }
+    }
+  }
+
+  // Cell-pellet collisions
+  for(var i=0;i<cells.length;i++){
+    var cl = cells[i];
+    if(!cl.alive) continue;
+    var near = gridQuery(cl.x, cl.y, cl.r + 10);
+    for(var j=0;j<near.length;j++){
+      var p = near[j];
+      if(p.type !== "pellet") continue;
+      var dx = p.x-cl.x, dy = p.y-cl.y;
+      if(dx*dx+dy*dy < (cl.r+p.r)*(cl.r+p.r)*0.5){
+        cl.mass += p.mass;
+        cl.r = massToR(cl.mass);
+        if(cl.mass > cl.maxMass) cl.maxMass = cl.mass;
+        // Respawn pellet
+        p.x = Math.random()*WORLD;
+        p.y = Math.random()*WORLD;
+      }
+    }
+  }
+
+  // Clean dead cells
+  for(var i=cells.length-1;i>=0;i--){
+    if(!cells[i].alive) cells.splice(i,1);
+  }
+
+  // Maintain pellet count
+  while(pellets.length < PELLET_COUNT) pellets.push(spawnPellet());
+}
+
+// ═══════════════════════════════════════
+// GENERATION
+// ═══════════════════════════════════════
+function endGeneration(){
+  // Compute fitness per genome (sum of maxMass of all cells with that gi)
+  var fits = new Float32Array(POP);
+  for(var i=0;i<cells.length;i++){
+    var cl = cells[i];
+    if(cl.gi < fits.length) fits[cl.gi] = Math.max(fits[cl.gi], cl.maxMass);
+  }
+
+  var bestF = -1, avgF = 0, bestI = 0;
+  for(var i=0;i<POP;i++){
+    avgF += fits[i];
+    if(fits[i] > bestF){ bestF = fits[i]; bestI = i; }
+  }
+  avgF /= POP;
+
+  if(bestF > record) record = bestF;
+  histBest.push(bestF);
+  histAvg.push(avgF);
+
+  // Selection + breed
+  var oldGenomes = genomes.slice();
+  var indices = [];
+  for(var i=0;i<POP;i++) indices.push(i);
+  indices.sort(function(a,b){ return fits[b]-fits[a]; });
+
+  var newG = [];
+  for(var i=0;i<Math.min(ELITISM,POP);i++) newG.push(new Float32Array(oldGenomes[indices[i]]));
+  while(newG.length < POP){
+    var p1 = tournSelect(fits);
+    var p2 = tournSelect(fits);
+    newG.push(mutate(crossover(oldGenomes[p1], oldGenomes[p2])));
+  }
+  genomes = newG;
+  generation++;
+  initRound();
+}
+
+// ═══════════════════════════════════════
+// RENDER
+// ═══════════════════════════════════════
+function render(){
+  c.fillStyle = "#0a0a0f";
+  c.fillRect(0,0,W,H);
+
+  // Camera
+  var bestMass = 0, bestCell = null;
+  for(var i=0;i<cells.length;i++){
+    if(cells[i].alive && cells[i].mass > bestMass){ bestMass = cells[i].mass; bestCell = cells[i]; }
+  }
+
+  var targetX, targetY, targetZ;
+  if(camMode === 2){
+    targetX = WORLD/2; targetY = WORLD/2;
+    targetZ = Math.min(W,H) / WORLD * 0.9;
+  } else if(bestCell){
+    targetX = bestCell.x; targetY = bestCell.y;
+    targetZ = Math.min(W,H) / (bestCell.r * 16 + 300);
+  } else {
+    targetX = WORLD/2; targetY = WORLD/2; targetZ = 0.3;
+  }
+  camX += (targetX - camX) * 0.08;
+  camY += (targetY - camY) * 0.08;
+  camZ += (targetZ - camZ) * 0.05;
+
+  c.save();
+  c.translate(W/2, H/2);
+  c.scale(camZ, camZ);
+  c.translate(-camX, -camY);
+
+  // Grid
+  var gs = 100;
+  c.strokeStyle = "#151518";
+  c.lineWidth = 1/camZ;
+  var vx0 = camX - W/2/camZ, vx1 = camX + W/2/camZ;
+  var vy0 = camY - H/2/camZ, vy1 = camY + H/2/camZ;
+  var gx0 = Math.floor(Math.max(0,vx0)/gs)*gs;
+  var gy0 = Math.floor(Math.max(0,vy0)/gs)*gs;
+  for(var x=gx0;x<=Math.min(WORLD,vx1);x+=gs){
+    c.beginPath(); c.moveTo(x,Math.max(0,vy0)); c.lineTo(x,Math.min(WORLD,vy1)); c.stroke();
+  }
+  for(var y=gy0;y<=Math.min(WORLD,vy1);y+=gs){
+    c.beginPath(); c.moveTo(Math.max(0,vx0),y); c.lineTo(Math.min(WORLD,vx1),y); c.stroke();
+  }
+
+  // World border
+  c.strokeStyle = "#ff6b3530";
+  c.lineWidth = 3/camZ;
+  c.strokeRect(0,0,WORLD,WORLD);
+
+  // Pellets (batch draw)
+  for(var i=0;i<pellets.length;i++){
+    var p = pellets[i];
+    if(p.x < vx0-10||p.x > vx1+10||p.y < vy0-10||p.y > vy1+10) continue;
+    c.fillStyle = "hsl("+p.hue+",70%,55%)";
+    c.fillRect(p.x-2, p.y-2, 4, 4);
+  }
+
+  // Cells
+  for(var i=0;i<cells.length;i++){
+    var cl = cells[i];
+    if(!cl.alive) continue;
+    if(cl.x+cl.r < vx0||cl.x-cl.r > vx1||cl.y+cl.r < vy0||cl.y-cl.r > vy1) continue;
+
+    var col = COLORS[cl.gi % COLORS.length];
+
+    // Body
+    c.beginPath();
+    c.arc(cl.x, cl.y, cl.r, 0, 6.2832);
+    c.fillStyle = col;
+    c.globalAlpha = 0.7;
+    c.fill();
+    c.globalAlpha = 1;
+
+    // Outline
+    c.lineWidth = Math.max(1, 2/camZ);
+    c.strokeStyle = col;
+    c.stroke();
+
+    // Mass text (only if big enough on screen)
+    if(cl.r * camZ > 12){
+      c.fillStyle = "#000";
+      c.font = Math.max(8, cl.r*0.5|0) + "px monospace";
+      c.textAlign = "center";
+      c.textBaseline = "middle";
+      c.fillText((cl.mass|0)+"", cl.x, cl.y);
+    }
+  }
+
+  c.restore();
+}
+
+function drawGraph(){
+  gc.fillStyle = "rgba(15,15,16,.9)";
+  gc.fillRect(0,0,200,70);
+  if(histBest.length < 2) return;
+  var n = histBest.length;
+  var maxV = 0;
+  for(var i=0;i<n;i++) if(histBest[i]>maxV) maxV=histBest[i];
+  if(maxV < 1) maxV = 1;
+
+  function px(i){ return (i/(n-1))*196+2; }
+  function py(v){ return 66 - (v/maxV)*62; }
+
+  gc.strokeStyle = "#ff6b3560";
+  gc.lineWidth = 1;
+  gc.beginPath();
+  for(var i=0;i<n;i++){ i?gc.lineTo(px(i),py(histAvg[i])):gc.moveTo(px(i),py(histAvg[i])); }
+  gc.stroke();
+
+  gc.strokeStyle = "#00e5ff";
+  gc.lineWidth = 1.5;
+  gc.beginPath();
+  for(var i=0;i<n;i++){ i?gc.lineTo(px(i),py(histBest[i])):gc.moveTo(px(i),py(histBest[i])); }
+  gc.stroke();
+}
+
+function updateLeaderboard(){
+  var massPerGenome = {};
+  for(var i=0;i<cells.length;i++){
+    var cl = cells[i];
+    if(!cl.alive) continue;
+    if(!massPerGenome[cl.gi] || cl.mass > massPerGenome[cl.gi].mass){
+      massPerGenome[cl.gi] = { mass: cl.mass, gi: cl.gi };
+    }
+  }
+  var leaders = [];
+  for(var k in massPerGenome) leaders.push(massPerGenome[k]);
+  leaders.sort(function(a,b){ return b.mass - a.mass; });
+
+  var html = "";
+  for(var i=0;i<Math.min(8,leaders.length);i++){
+    var l = leaders[i];
+    html += '<div class="le"><span class="ln">'+(i+1)+'</span><span class="dot" style="background:'+COLORS[l.gi%COLORS.length]+'"></span><span class="lm">'+(l.mass|0)+'</span></div>';
+  }
+  document.getElementById("lb").innerHTML = html;
+}
+
+// ═══════════════════════════════════════
+// HUD
+// ═══════════════════════════════════════
+function updateHud(){
+  var alive = 0, bestM = 0;
+  var genomeAlive = {};
+  for(var i=0;i<cells.length;i++){
+    if(cells[i].alive){
+      if(!genomeAlive[cells[i].gi]) genomeAlive[cells[i].gi] = true;
+      if(cells[i].mass > bestM) bestM = cells[i].mass;
+    }
+  }
+  alive = Object.keys(genomeAlive).length;
+  var timeLeft = Math.max(0, ROUND_TIME - roundTick/60);
+  hGen.textContent = generation;
+  hAlive.textContent = alive + "/" + POP;
+  hTime.textContent = timeLeft.toFixed(0) + "s";
+  hBest.textContent = (bestM|0) + "";
+  hRec.textContent = (record|0) + "";
+  hPel.textContent = pellets.length;
+}
+
+// ═══════════════════════════════════════
+// MAIN LOOP
+// ═══════════════════════════════════════
+var hGen = document.getElementById("hGen");
+var hAlive = document.getElementById("hAlive");
+var hTime = document.getElementById("hTime");
+var hBest = document.getElementById("hBest");
+var hRec = document.getElementById("hRec");
+var hPel = document.getElementById("hPel");
+var hFps = document.getElementById("hFps");
+
+function frame(now){
+  requestAnimationFrame(frame);
+
+  // FPS
+  fpsFrames++;
+  if(!fpsTime) fpsTime = now;
+  if(now - fpsTime > 500){
+    fps = (fpsFrames / ((now-fpsTime)/1000))|0;
+    hFps.textContent = fps;
+    fpsFrames = 0; fpsTime = now;
+  }
+
+  if(running){
+    for(var s=0;s<speed;s++){
+      simTick();
+      if(roundTick >= ROUND_TIME * 60){
+        endGeneration();
+        drawGraph();
+        break;
+      }
+    }
+  }
+
+  render();
+
+  // Update HUD every 10 frames
+  if(roundTick % 10 === 0){
+    updateHud();
+    updateLeaderboard();
+  }
+}
+
+// ═══════════════════════════════════════
+// CONTROLS
+// ═══════════════════════════════════════
+document.getElementById("bRun").addEventListener("click", function(){
+  running = !running;
+  this.textContent = running ? "PAUSE" : "RUN";
+  this.classList.toggle("on", running);
+});
+document.getElementById("bReset").addEventListener("click", function(){
+  generation = 0; record = 0; histBest = []; histAvg = [];
+  initGenomes(); initRound();
+  gc.clearRect(0,0,200,70);
+});
+var camLabels = ["CAM: BEST","CAM: ACTION","CAM: MAP"];
+document.getElementById("bCam").addEventListener("click", function(){
+  camMode = (camMode+1)%3;
+  this.textContent = camLabels[camMode];
+});
+
+function bindSlider(id, vid, fn){
+  var sl = document.getElementById(id), sv = document.getElementById(vid);
+  sl.addEventListener("input", function(){ fn(sl,sv); });
+}
+bindSlider("sSpd","vSpd",function(s,v){ speed=+s.value; v.textContent=speed+"x"; });
+bindSlider("sPop","vPop",function(s,v){ POP=+s.value; v.textContent=POP; });
+bindSlider("sMut","vMut",function(s,v){ MUT_RATE=+s.value/100; v.textContent=s.value+"%"; });
+
+// Prevent zoom
+document.addEventListener("touchstart",function(e){if(e.touches.length>1)e.preventDefault();},{passive:false});
+
+// ═══════════════════════════════════════
+// START
+// ═══════════════════════════════════════
+initGenomes();
+initRound();
+requestAnimationFrame(frame);
+
+})();
+</script>
+</body>
+</html>
