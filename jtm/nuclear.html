@@ -368,6 +368,7 @@ body{background:var(--paper);color:var(--ink);font-family:var(--serif);font-size
   <button onclick="exportCSV()">[CSV]</button>
   <button onclick="exportPDF()">[PDF]</button>
   <button onclick="exportP6()">[P6]</button>
+  <button onclick="play4DTimelapse()" title="4D construction timelapse">[4D]</button>
   <span class="sp" id="atomcount" style="font-weight:600;color:var(--oxide);margin-right:6px"></span>
   <span class="sp" id="sp"></span>
 </div>
@@ -2499,6 +2500,81 @@ function updateUI(){
 // ================================================================
 // MAIN LOOP
 // ================================================================
+// 4D Construction Timelapse
+let timelapseRunning=false;
+function play4DTimelapse(){
+  if(timelapseRunning)return;
+  timelapseRunning=true;
+  const thumb=$('gl-thumb');
+  const wasPlaying=playing;
+  playing=false;
+  const savedMonth=month;
+
+  // Expand viewport
+  if(thumb){
+    thumb.style.width='480px';thumb.style.height='300px';
+    thumb.style.zIndex='100';thumb.style.top='50%';thumb.style.left='50%';
+    thumb.style.transform='translate(-50%,-50%)';thumb.style.borderWidth='2px';
+    thumb.style.boxShadow='0 8px 40px rgba(34,28,16,.5)';
+    if(glCanvas){glCanvas.style.width='100%';glCanvas.style.height='100%';}
+  }
+
+  // Add overlay label
+  const label=document.createElement('div');
+  label.id='timelapse-label';
+  label.style.cssText='position:fixed;top:calc(50% + 160px);left:50%;transform:translateX(-50%);z-index:101;font:900 14px var(--disp);color:var(--oxide);background:rgba(250,246,236,.9);padding:4px 16px;border-radius:6px;border:1px solid var(--rule2)';
+  document.body.appendChild(label);
+
+  // Backdrop
+  const bd=document.createElement('div');
+  bd.id='timelapse-bd';
+  bd.style.cssText='position:fixed;inset:0;z-index:99;background:rgba(34,28,16,.4);backdrop-filter:blur(2px)';
+  document.body.appendChild(bd);
+
+  let tlMonth=0;
+  const dur=PLANT.dur;
+  const step=dur/120; // ~120 frames for full build
+  function tlFrame(){
+    if(tlMonth>=dur||!timelapseRunning){
+      // Restore
+      month=savedMonth;
+      if(thumb){
+        thumb.style.width='';thumb.style.height='';thumb.style.zIndex='';
+        thumb.style.top='';thumb.style.left='';thumb.style.transform='';
+        thumb.style.borderWidth='';thumb.style.boxShadow='';
+        if(glCanvas){glCanvas.style.width='';glCanvas.style.height='';}
+      }
+      const lb=document.getElementById('timelapse-label');if(lb)lb.remove();
+      const b=document.getElementById('timelapse-bd');if(b)b.remove();
+      playing=wasPlaying;
+      timelapseRunning=false;
+      return;
+    }
+    month=tlMonth;
+    const lbl=document.getElementById('timelapse-label');
+    if(lbl)lbl.textContent='Month '+Math.round(tlMonth)+' / '+dur;
+    // Render at higher res for timelapse
+    if(gl&&glCanvas){
+      glCanvas.width=480*2;glCanvas.height=300*2;
+      const objs=buildObjs(month);
+      const tp=new Int32Array(MAX_OBJ),ps=new Float32Array(MAX_OBJ*3),sz=new Float32Array(MAX_OBJ*3),cl=new Float32Array(MAX_OBJ*3),bl=new Float32Array(MAX_OBJ),sb=new Float32Array(MAX_OBJ);
+      objs.forEach((o,i)=>{tp[i]=SHAPE_IDS[o.shape]??0;ps.set(o.pos,i*3);sz.set([o.size[0]??1,o.size[1]??o.size[0]??1,o.size[2]??o.size[0]??1],i*3);cl.set(unhex(o.color||"#999"),i*3);bl[i]=o.blend||0;sb[i]=o.sub?1:0;});
+      const cam=getCam(month);
+      gl.viewport(0,0,960,600);gl.uniform2f(U.uR,960,600);gl.uniform3fv(U.uC,cam.p);gl.uniform3fv(U.uL,cam.l);gl.uniform1f(U.uV,cam.f);
+      gl.uniform1i(U.uN,objs.length);gl.uniform1iv(U.uT,tp);gl.uniform3fv(U.uP,ps);gl.uniform3fv(U.uS,sz);gl.uniform3fv(U.uO,cl);gl.uniform1fv(U.uB,bl);gl.uniform1fv(U.uX,sb);
+      gl.uniform3f(U.uD,.5,1,.3);gl.uniform3fv(U.uA,[.80,.84,.90]);gl.uniform3fv(U.uZ,[.58,.63,.72]);
+      gl.uniform1f(U.uNight,0);
+      gl.drawArrays(gl.TRIANGLES,0,3);
+    }
+    tlMonth+=step;
+    requestAnimationFrame(tlFrame);
+  }
+  requestAnimationFrame(tlFrame);
+
+  // Click backdrop to cancel
+  bd.onclick=()=>{timelapseRunning=false;};
+}
+
 function updateIWPHeatmap(){
   const el=$('iwp-heatmap');if(!el)return;
   updateIWPConstraints(month);
