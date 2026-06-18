@@ -103,6 +103,36 @@ body{background:var(--paper);color:var(--ink);font-family:var(--serif);font-size
 .dim label{color:var(--faint);font-size:9px;letter-spacing:.04em;text-transform:uppercase}
 .dim input{width:40px;accent-color:var(--oxide)}
 .dim .dv{font-weight:600;min-width:20px;text-align:right;color:var(--ink)}
+
+/* ACT panel */
+.act-pan{overflow-y:auto}
+.act-pan h3{font:600 9px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--faint);margin:0 0 3px}
+.act-cwa{cursor:pointer;padding:2px 0;border-bottom:1px solid var(--rule)}
+.act-cwa:hover{background:var(--hi)}
+.act-row{display:flex;align-items:center;gap:4px;font-size:10px;line-height:1.5}
+.act-dot{width:6px;height:6px;border-radius:50%;flex:none}
+.act-dot.g{background:var(--green)}.act-dot.a{background:var(--amber)}.act-dot.f{background:var(--rule2)}.act-dot.r{background:var(--red)}
+.act-alias{font-family:var(--mono);font-size:9px;color:var(--blue);min-width:42px}
+.act-name{font-family:var(--serif);font-size:10px;color:var(--ink2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.act-pill{font-family:var(--mono);font-size:8px;letter-spacing:.06em;text-transform:uppercase;padding:1px 5px;border-radius:10px;border:1px solid var(--rule2);color:var(--ink2);white-space:nowrap;display:inline-flex;align-items:center;gap:3px;background:var(--hi)}
+.act-pill.green{color:var(--green);border-color:#b8cfbb}
+.act-pill.amber{color:var(--amber);border-color:#d6c391}
+.act-pill.red{color:var(--red);border-color:#d9b3a8}
+.act-sub{padding-left:14px;display:none}
+.act-cwa.open .act-sub{display:block}
+.act-cwp{padding:1px 0}
+.act-con{padding:1px 0 1px 12px;font:9px var(--mono);color:var(--ink2)}
+.act-con .rel{font-size:9px;color:var(--faint);font-style:italic;font-family:var(--serif)}
+
+/* Clash modal */
+.clash-overlay{position:fixed;inset:0;z-index:200;background:rgba(34,28,16,.55);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(2px)}
+.clash-modal{background:var(--panel);border:2px solid var(--oxide);border-radius:10px;padding:14px 16px;max-width:420px;width:90%;box-shadow:0 8px 32px rgba(34,28,16,.3)}
+.clash-modal h4{font:900 14px var(--disp);color:var(--oxide);margin:0 0 6px;letter-spacing:.01em}
+.clash-modal p{font:11px var(--serif);color:var(--ink2);margin:6px 0 10px;line-height:1.4}
+.clash-modal .clash-btns{display:flex;gap:6px}
+.clash-modal .clash-btn{flex:1;font:500 10px var(--mono);padding:8px 6px;border:1px solid var(--rule2);border-radius:6px;background:var(--hi);color:var(--ink2);cursor:pointer;text-align:center;line-height:1.3}
+.clash-modal .clash-btn:hover{border-color:var(--oxide);color:var(--oxide)}
+.clash-modal .clash-btn.picked{background:var(--oxide);color:#fff;border-color:var(--oxide)}
 </style>
 </head>
 <body style="display:flex;flex-direction:column;height:100vh">
@@ -171,9 +201,9 @@ body{background:var(--paper);color:var(--ink);font-family:var(--serif);font-size
     <h3 style="margin-top:4px">Dimensions</h3>
     <div class="dims" id="dims"></div>
   </div>
-  <div class="pan" style="grid-column:3">
-    <h3>Concrete Pours</h3>
-    <div id="pourlog" style="max-height:80px;overflow-y:auto"></div>
+  <div class="pan act-pan" style="grid-column:3">
+    <h3>ACT Constraints</h3>
+    <div id="actpanel" style="max-height:80px;overflow-y:auto"></div>
   </div>
 </div>
 <div id="report" class="report" style="flex-shrink:0;max-height:52px;padding:4px 14px;font-size:9px;line-height:1.4;border-top:1px solid var(--rule)"></div>
@@ -673,7 +703,7 @@ function updateUI(){
     '<div class="ev '+e.type+'"><span class="t">M'+e.m+'</span><span class="typ">'+e.type+'</span><span>'+e.msg+'</span></div>').join('');
 
   $('report').innerHTML=genReport(Math.round(month));
-  drawCharts();drawCostDisc();drawWfTrade();updatePours();updateSafety();
+  drawCharts();drawCostDisc();drawWfTrade();updateSafety();
 }
 
 function buildDims(){
@@ -737,6 +767,414 @@ $('pb').onclick=e=>{const ph=e.target.closest('.ps');if(!ph)return;month=PHASES[
 document.onkeydown=e=>{if(e.code==='Space'&&e.target.tagName!=='INPUT'){e.preventDefault();$('play').click();}};
 
 setPlant('pwr');requestAnimationFrame(loop);
+
+// ================================================================
+// ACT (Atomic Constraint Theory) — Nuclear Construction Overlay
+// Adds CWA/CWP/CON atoms, completion logic, panel UI, clash modals
+// All existing code above is untouched.
+// ================================================================
+
+const ACT_ATOMS = {};
+const ACT_ALL = [];
+
+function actAtom(spec) {
+  const a = Object.assign({
+    alias: spec.alias,
+    type: spec.type,
+    name: spec.name,
+    completionKind: spec.completionKind || 'leaf',
+    complete: false,
+    contains: spec.contains || [],
+    'waits-on': spec['waits-on'] || [],
+    blocks: spec.blocks || [],
+    enables: spec.enables || [],
+    'cleared-by': spec['cleared-by'] || [],
+    completeAtMonth: spec.completeAtMonth != null ? spec.completeAtMonth : null,
+    desc: spec.desc || ''
+  }, spec);
+  ACT_ATOMS[a.alias] = a;
+  ACT_ALL.push(a);
+  return a;
+}
+
+// --- Materials / external triggers (leaf atoms, complete by month) ---
+actAtom({alias:'MAT-REBAR',type:'material',name:'Rebar supply delivery',completionKind:'leaf',completeAtMonth:13});
+actAtom({alias:'MAT-RPV',type:'material',name:'RPV delivered to site',completionKind:'leaf',completeAtMonth:44});
+actAtom({alias:'REG-FUEL',type:'approval',name:'Regulatory fuel load authorization',completionKind:'leaf',completeAtMonth:72});
+actAtom({alias:'QC-POUR',type:'action',name:'QC pour card sign-off',completionKind:'leaf',completeAtMonth:10});
+
+// --- CWPs (rollup or gate atoms) ---
+// Reactor Building CWPs
+actAtom({alias:'CWP-RB-BASE',type:'cwp',name:'RB Basemat',completionKind:'leaf',completeAtMonth:20,
+  enables:['CWP-RB-WALLS']});
+actAtom({alias:'CWP-RB-WALLS',type:'cwp',name:'RB Walls',completionKind:'gate',
+  'waits-on':['CWP-RB-BASE','CON-001'],enables:['CWP-RB-DOME']});
+actAtom({alias:'CWP-RB-DOME',type:'cwp',name:'RB Dome',completionKind:'gate',
+  'waits-on':['CWP-RB-WALLS'],completeAtMonth:42});
+
+// Containment CWPs
+actAtom({alias:'CWP-CT-LINER',type:'cwp',name:'Containment Liner',completionKind:'gate',
+  'waits-on':['CON-002'],completeAtMonth:40,enables:['CWP-CT-PTEST']});
+actAtom({alias:'CWP-CT-PTEST',type:'cwp',name:'Containment Pressure Test',completionKind:'gate',
+  'waits-on':['CWP-CT-LINER'],completeAtMonth:44});
+
+// Turbine Building CWPs
+actAtom({alias:'CWP-TB-STRUCT',type:'cwp',name:'TB Structure',completionKind:'leaf',completeAtMonth:42,
+  enables:['CWP-TB-EQUIP']});
+actAtom({alias:'CWP-TB-EQUIP',type:'cwp',name:'TB Equipment Install',completionKind:'gate',
+  'waits-on':['CWP-TB-STRUCT'],completeAtMonth:58});
+
+// Cooling Water CWPs
+actAtom({alias:'CWP-CW-INTAKE',type:'cwp',name:'CW Intake Structure',completionKind:'leaf',completeAtMonth:42,
+  enables:['CWP-CW-PIPE']});
+actAtom({alias:'CWP-CW-PIPE',type:'cwp',name:'CW Piping',completionKind:'gate',
+  'waits-on':['CWP-CW-INTAKE'],completeAtMonth:54});
+
+// Electrical & I&C CWPs
+actAtom({alias:'CWP-EL-CABLE',type:'cwp',name:'Cable Pulling',completionKind:'leaf',completeAtMonth:60,
+  enables:['CWP-EL-IC']});
+actAtom({alias:'CWP-EL-IC',type:'cwp',name:'I&C Loop Checks',completionKind:'gate',
+  'waits-on':['CWP-EL-CABLE'],completeAtMonth:68});
+
+// Commissioning CWPs
+actAtom({alias:'CWP-CM-COLD',type:'cwp',name:'Cold Hydro Test',completionKind:'gate',
+  'waits-on':['CON-003','CON-004'],completeAtMonth:66});
+actAtom({alias:'CWP-CM-HOT',type:'cwp',name:'Hot Functional Test',completionKind:'gate',
+  'waits-on':['CWP-CM-COLD','CON-004'],completeAtMonth:68});
+actAtom({alias:'CWP-CM-FUEL',type:'cwp',name:'Fuel Load',completionKind:'gate',
+  'waits-on':['CWP-CM-HOT','CON-005'],completeAtMonth:74});
+
+// --- CWAs (rollup atoms) ---
+actAtom({alias:'CWA-RB',type:'cwa',name:'Reactor Building -- Civil',completionKind:'rollup',
+  contains:['CWP-RB-BASE','CWP-RB-WALLS','CWP-RB-DOME']});
+actAtom({alias:'CWA-CT',type:'cwa',name:'Containment',completionKind:'rollup',
+  contains:['CWP-CT-LINER','CWP-CT-PTEST']});
+actAtom({alias:'CWA-TB',type:'cwa',name:'Turbine Building',completionKind:'rollup',
+  contains:['CWP-TB-STRUCT','CWP-TB-EQUIP']});
+actAtom({alias:'CWA-CW',type:'cwa',name:'Cooling Water System',completionKind:'rollup',
+  contains:['CWP-CW-INTAKE','CWP-CW-PIPE']});
+actAtom({alias:'CWA-EL',type:'cwa',name:'Electrical & I&C',completionKind:'rollup',
+  contains:['CWP-EL-CABLE','CWP-EL-IC']});
+actAtom({alias:'CWA-CM',type:'cwa',name:'Commissioning',completionKind:'rollup',
+  contains:['CWP-CM-COLD','CWP-CM-HOT','CWP-CM-FUEL']});
+
+// --- Constraints (gate atoms blocking work packages) ---
+actAtom({alias:'CON-001',type:'constraint',name:'Rebar supply chain',completionKind:'gate',
+  blocks:['CWP-RB-WALLS'],'waits-on':['MAT-REBAR'],
+  desc:'Rebar delivery required before RB wall construction'});
+actAtom({alias:'CON-002',type:'constraint',name:'RPV delivery',completionKind:'gate',
+  blocks:['CWP-CT-LINER'],'waits-on':['MAT-RPV'],
+  desc:'RPV must be on site before closing containment'});
+actAtom({alias:'CON-003',type:'constraint',name:'Containment pressure test',completionKind:'gate',
+  blocks:['CWP-CM-COLD'],'waits-on':['CWP-CT-PTEST'],
+  desc:'Containment ILRT must pass before cold commissioning'});
+actAtom({alias:'CON-004',type:'constraint',name:'Electrical energization',completionKind:'gate',
+  blocks:['CWP-CM-COLD','CWP-CM-HOT'],'waits-on':['CWP-EL-CABLE'],
+  desc:'Permanent power required for commissioning'});
+actAtom({alias:'CON-005',type:'constraint',name:'Fuel load authorization',completionKind:'gate',
+  blocks:['CWP-CM-FUEL'],'waits-on':['REG-FUEL'],
+  desc:'Regulatory approval needed for fuel load'});
+actAtom({alias:'CON-006',type:'constraint',name:'Pour card approval',completionKind:'gate',
+  blocks:['CWP-RB-BASE'],'waits-on':['QC-POUR'],'cleared-by':['QC-POUR'],
+  desc:'Each concrete pour requires QC-approved pour card'});
+
+
+// --- ACT Completion Logic ---
+// leaf: complete when month >= completeAtMonth
+// gate: complete when all waits-on are complete
+// rollup: complete when all children complete
+
+function actIsComplete(alias, seen) {
+  seen = seen || new Set();
+  const a = ACT_ATOMS[alias];
+  if (!a) return false;
+  if (seen.has(alias)) return false;
+  seen.add(alias);
+
+  if (a.complete) return true;
+
+  switch (a.completionKind) {
+    case 'leaf':
+      return a.completeAtMonth != null && month >= a.completeAtMonth;
+    case 'gate': {
+      const deps = a['waits-on'] || [];
+      if (deps.length === 0) return false;
+      return deps.every(d => actIsComplete(d, new Set(seen)));
+    }
+    case 'rollup': {
+      const ch = a.contains || [];
+      if (ch.length === 0) return false;
+      return ch.every(c => actIsComplete(c, new Set(seen)));
+    }
+    default:
+      return a.completeAtMonth != null && month >= a.completeAtMonth;
+  }
+}
+
+function actStatus(alias) {
+  const a = ACT_ATOMS[alias];
+  if (!a) return 'f';
+  if (actIsComplete(alias)) return 'g'; // green = complete
+
+  // Check if any child/dep is in progress
+  const deps = (a.contains || []).concat(a['waits-on'] || []);
+  if (deps.some(d => {
+    const da = ACT_ATOMS[d];
+    if (!da) return false;
+    if (da.completeAtMonth != null && month >= (da.completeAtMonth - 12)) return true;
+    return actIsComplete(d);
+  })) return 'a'; // amber = in progress
+
+  return 'f'; // gray = future
+}
+
+function actConstraintsForCWP(cwpAlias) {
+  return ACT_ALL.filter(a =>
+    a.type === 'constraint' && (a.blocks || []).includes(cwpAlias)
+  );
+}
+
+// --- ACT Panel Rendering ---
+let actExpandedCWA = null;
+
+function updateACTPanel() {
+  const el = document.getElementById('actpanel');
+  if (!el) return;
+
+  const cwas = ACT_ALL.filter(a => a.type === 'cwa');
+  let html = '';
+
+  cwas.forEach(cwa => {
+    const st = actStatus(cwa.alias);
+    const dotCls = st;
+    const expanded = actExpandedCWA === cwa.alias;
+    const pillCls = st === 'g' ? 'green' : st === 'a' ? 'amber' : '';
+
+    html += '<div class="act-cwa' + (expanded ? ' open' : '') + '" data-act-cwa="' + cwa.alias + '">';
+    html += '<div class="act-row">';
+    html += '<span class="act-dot ' + dotCls + '"></span>';
+    html += '<span class="act-alias">' + cwa.alias + '</span>';
+    html += '<span class="act-name">' + cwa.name + '</span>';
+    html += '<span class="act-pill ' + pillCls + '">' + (st === 'g' ? 'Done' : st === 'a' ? 'Active' : 'Future') + '</span>';
+    html += '</div>';
+
+    // Expandable children
+    html += '<div class="act-sub">';
+    (cwa.contains || []).forEach(cwpAlias => {
+      const cwp = ACT_ATOMS[cwpAlias];
+      if (!cwp) return;
+      const cwpSt = actStatus(cwpAlias);
+      const cwpDot = cwpSt;
+      const cwpPill = cwpSt === 'g' ? 'green' : cwpSt === 'a' ? 'amber' : '';
+
+      html += '<div class="act-cwp">';
+      html += '<div class="act-row">';
+      html += '<span class="act-dot ' + cwpDot + '"></span>';
+      html += '<span class="act-alias">' + cwpAlias + '</span>';
+      html += '<span class="act-name">' + cwp.name + '</span>';
+      html += '<span class="act-pill ' + cwpPill + '">' + (cwpSt === 'g' ? 'Done' : cwpSt === 'a' ? 'Active' : 'Pending') + '</span>';
+      html += '</div>';
+
+      // Constraints for this CWP
+      const cons = actConstraintsForCWP(cwpAlias);
+      cons.forEach(con => {
+        const conComplete = actIsComplete(con.alias);
+        const blocking = !conComplete;
+        html += '<div class="act-con">';
+        html += '<span class="act-dot ' + (conComplete ? 'g' : 'r') + '"></span> ';
+        html += '<span style="color:' + (blocking ? 'var(--red)' : 'var(--green)') + '">' + con.alias + '</span> ';
+        html += con.name;
+        if (con['waits-on'] && con['waits-on'].length) {
+          const waitNames = con['waits-on'].map(w => {
+            const wa = ACT_ATOMS[w];
+            return wa ? wa.name : w;
+          }).join(', ');
+          html += ' <span class="rel">waits-on: ' + waitNames + '</span>';
+        }
+        if (con.enables && con.enables.length) {
+          html += ' <span class="rel">enables: ' + con.enables.join(', ') + '</span>';
+        }
+        html += '</div>';
+      });
+
+      // Show waits-on relationships
+      if (cwp['waits-on'] && cwp['waits-on'].length) {
+        cwp['waits-on'].forEach(dep => {
+          if (ACT_ATOMS[dep] && ACT_ATOMS[dep].type !== 'constraint') {
+            const depA = ACT_ATOMS[dep];
+            html += '<div class="act-con"><span class="act-dot ' + (actIsComplete(dep) ? 'g' : 'a') + '"></span> ';
+            html += '<span class="rel">waits-on: ' + depA.name + '</span></div>';
+          }
+        });
+      }
+      if (cwp.enables && cwp.enables.length) {
+        html += '<div class="act-con"><span class="rel">enables: ' + cwp.enables.map(e => {
+          const ea = ACT_ATOMS[e];
+          return ea ? ea.name : e;
+        }).join(', ') + '</span></div>';
+      }
+
+      html += '</div>';
+    });
+    html += '</div>';
+    html += '</div>';
+  });
+
+  el.innerHTML = html;
+}
+
+// Click handler for ACT panel expand/collapse
+document.addEventListener('click', function(e) {
+  const cwaEl = e.target.closest('[data-act-cwa]');
+  if (cwaEl) {
+    const alias = cwaEl.dataset.actCwa;
+    actExpandedCWA = actExpandedCWA === alias ? null : alias;
+    updateACTPanel();
+    return;
+  }
+  // Clash modal button handler
+  const clashBtn = e.target.closest('[data-clash-choice]');
+  if (clashBtn) {
+    const choice = clashBtn.dataset.clashChoice;
+    const overlay = document.getElementById('clash-overlay');
+    const clashId = overlay ? overlay.dataset.clashId : '';
+    if (overlay) overlay.remove();
+    // Apply effects
+    if (choice === 'a') {
+      // Option A effects (typically +delay)
+      const spec = ACT_CLASHES_SPEC[clashId];
+      if (spec && spec.effectA) {
+        delayTotal += spec.effectA.delay || 0;
+        eventLog.push({m: Math.round(month), type: 'risk', msg: 'CLASH RESOLVED: ' + spec.title + ' -- ' + spec.optA});
+      }
+    } else {
+      const spec = ACT_CLASHES_SPEC[clashId];
+      if (spec && spec.effectB) {
+        delayTotal += spec.effectB.delay || 0;
+        eventLog.push({m: Math.round(month), type: 'good', msg: 'CLASH RESOLVED: ' + spec.title + ' -- ' + spec.optB});
+      }
+    }
+    actClashFired[clashId] = true;
+  }
+});
+
+
+// --- Clash Resolution Modals ---
+const ACT_CLASHES_SPEC = {
+  'CL-PIPE-CABLE': {
+    triggerMonth: 30,
+    title: 'Piping / Cable Tray Interference',
+    desc: 'CLASH: Piping route P-RC-01 conflicts with cable tray ET-4A in Reactor Building elevation +12m. The routing was not coordinated between disciplines.',
+    optA: 'Accept reroute (+2 weeks to piping schedule)',
+    optB: 'Escalate to engineering for combined solution',
+    effectA: { delay: 0.5 },
+    effectB: { delay: 0 }
+  },
+  'CL-RPV-LINER': {
+    triggerMonth: 45,
+    title: 'RPV Set / Liner Weld Conflict',
+    desc: 'CLASH: RPV set sequence conflicts with containment liner weld inspection window. Both crews require exclusive access to the containment interior.',
+    optA: 'Delay RPV set by 1 month to clear inspection',
+    optB: 'Parallel inspection with restricted RPV rigging zone',
+    effectA: { delay: 1 },
+    effectB: { delay: 0 }
+  },
+  'CL-COND-GROUT': {
+    triggerMonth: 55,
+    title: 'Condenser / Turbine Pedestal Sequence',
+    desc: 'CLASH: Condenser tube pull schedule overlaps with turbine pedestal grouting cure window. Both activities occupy the turbine building main bay.',
+    optA: 'Sequence condenser first, delay grouting (+3 weeks)',
+    optB: 'Grout first, condenser waits for cure (+2 weeks)',
+    effectA: { delay: 0.75 },
+    effectB: { delay: 0.5 }
+  }
+};
+
+const actClashFired = {};
+
+function checkACTClashes() {
+  for (const id in ACT_CLASHES_SPEC) {
+    if (actClashFired[id]) continue;
+    const spec = ACT_CLASHES_SPEC[id];
+    if (Math.abs(month - spec.triggerMonth) < 0.5) {
+      showClashModal(id, spec);
+      actClashFired[id] = true;
+      break; // only one at a time
+    }
+  }
+}
+
+function showClashModal(id, spec) {
+  // Don't show if already showing
+  if (document.getElementById('clash-overlay')) return;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'clash-overlay';
+  overlay.id = 'clash-overlay';
+  overlay.dataset.clashId = id;
+
+  overlay.innerHTML =
+    '<div class="clash-modal">' +
+    '<h4>' + spec.title + '</h4>' +
+    '<p>' + spec.desc + '</p>' +
+    '<div class="clash-btns">' +
+    '<button class="clash-btn" data-clash-choice="a">' + spec.optA + '</button>' +
+    '<button class="clash-btn" data-clash-choice="b">' + spec.optB + '</button>' +
+    '</div>' +
+    '</div>';
+
+  document.body.appendChild(overlay);
+
+  // Pause playback so user can read
+  if (playing) {
+    playing = false;
+    $('play').textContent = 'Play';
+  }
+}
+
+
+// --- ACT Event Integration ---
+// Track which ACT events we've already logged
+const actEventsLogged = {};
+
+function checkACTEvents() {
+  ACT_ALL.forEach(a => {
+    if (actEventsLogged[a.alias]) return;
+    if (actIsComplete(a.alias)) {
+      actEventsLogged[a.alias] = true;
+      if (a.type === 'constraint') {
+        eventLog.push({m: Math.round(month), type: 'good', msg: a.alias + ' cleared: ' + a.name});
+      } else if (a.type === 'cwa') {
+        eventLog.push({m: Math.round(month), type: 'mile', msg: 'CWA complete: ' + a.name});
+      } else if (a.type === 'cwp') {
+        eventLog.push({m: Math.round(month), type: 'good', msg: a.alias + ' complete: ' + a.name});
+      }
+    }
+  });
+}
+
+// --- Patch into the main update loop ---
+const _origUpdateUI = updateUI;
+updateUI = function() {
+  _origUpdateUI();
+  updateACTPanel();
+  checkACTEvents();
+  checkACTClashes();
+};
+
+// Reset ACT state when plant changes
+const _origSetPlant = setPlant;
+setPlant = function(p) {
+  _origSetPlant(p);
+  // Reset ACT completion tracking
+  for (const k in actEventsLogged) delete actEventsLogged[k];
+  for (const k in actClashFired) delete actClashFired[k];
+  ACT_ALL.forEach(a => { a.complete = false; });
+};
+
+// Re-init with current plant to apply patched setPlant
+// (no-op reset -- the existing setPlant('pwr') already ran, this just hooks the ACT reset)
+
 </script>
 </body>
 </html>
