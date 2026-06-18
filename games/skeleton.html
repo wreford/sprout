@@ -1,0 +1,987 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+  <title>Skeleton Walk — Genetic Algorithm</title>
+  <style>
+    :root {
+      --bg: #0f0f10;
+      --bg2: #1a1a1c;
+      --border: #2a2a2d;
+      --text: #f0f0f0;
+      --dim: #6e6e73;
+      --accent: #ff6b35;
+      --cyan: #00e5ff;
+      --mono: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--mono); overflow-x: hidden; touch-action: manipulation; user-select: none; }
+    a { color: var(--dim); text-decoration: none; transition: color 0.2s; }
+    a:hover { color: var(--accent); }
+
+    #header {
+      display: flex; align-items: center; gap: 12px;
+      padding: 8px 16px; background: var(--bg2); border-bottom: 1px solid var(--border);
+      font-size: 0.75rem; z-index: 100; position: relative;
+    }
+    #header .title { font-size: 0.85rem; font-weight: 700; color: var(--text); letter-spacing: 0.05em; }
+    #header .sub { color: var(--dim); font-size: 0.65rem; }
+
+    #canvas-wrap {
+      position: relative; width: 100%;
+      flex: 1 1 auto; min-height: 300px;
+    }
+    canvas#main { display: block; width: 100%; height: 100%; background: var(--bg); }
+
+    #hud {
+      position: absolute; top: 0; left: 0; right: 0; z-index: 10;
+      pointer-events: none; padding: 10px 16px;
+      display: flex; justify-content: space-between; align-items: flex-start;
+    }
+    .hud-col { display: flex; flex-direction: column; gap: 3px; }
+    .hud-label { font-size: 10px; color: var(--dim); letter-spacing: 0.08em; text-transform: uppercase; }
+    .hud-val { font-size: 14px; font-weight: 700; color: var(--text); }
+    .hud-val.accent { color: var(--accent); }
+    .hud-val.cyan { color: var(--cyan); }
+
+    #controls {
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+      padding: 10px 16px; background: var(--bg2); border-top: 1px solid var(--border);
+      flex-wrap: wrap;
+    }
+    button.ctrl {
+      padding: 8px 16px; font-size: 0.72rem; font-family: var(--mono); font-weight: 600;
+      background: var(--border); color: var(--text); border: 1px solid #3a3a3d;
+      border-radius: 6px; cursor: pointer; transition: background 0.15s, border-color 0.15s;
+      letter-spacing: 0.04em;
+    }
+    button.ctrl:hover { background: #3a3a3d; border-color: var(--accent); }
+    button.ctrl:active { background: var(--accent); color: #000; }
+    button.ctrl.active { background: var(--accent); color: #000; border-color: var(--accent); }
+    .speed-group { display: flex; align-items: center; gap: 6px; }
+    .speed-group label { font-size: 0.65rem; color: var(--dim); }
+    input[type=range] {
+      -webkit-appearance: none; width: 100px; height: 4px; background: var(--border);
+      border-radius: 2px; outline: none;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%;
+      background: var(--accent); cursor: pointer;
+    }
+    .speed-val { font-size: 0.65rem; color: var(--accent); min-width: 28px; text-align: center; }
+
+    #hall-of-fame {
+      padding: 12px 16px; background: var(--bg); border-top: 1px solid var(--border);
+    }
+    #hall-of-fame h3 {
+      font-size: 0.7rem; color: var(--dim); letter-spacing: 0.1em; text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    #hof-container {
+      display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px;
+    }
+    #hof-container::-webkit-scrollbar { height: 4px; }
+    #hof-container::-webkit-scrollbar-track { background: var(--bg2); }
+    #hof-container::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    .hof-card {
+      flex: 0 0 auto; width: 120px; background: var(--bg2); border: 1px solid var(--border);
+      border-radius: 6px; padding: 6px; text-align: center;
+    }
+    .hof-card canvas { width: 108px; height: 80px; border-radius: 4px; background: var(--bg); display: block; margin: 0 auto 4px; }
+    .hof-gen { font-size: 0.6rem; color: var(--dim); }
+    .hof-dist { font-size: 0.7rem; color: var(--cyan); font-weight: 700; }
+
+    #page-layout { display: flex; flex-direction: column; height: 100vh; }
+
+    @media (max-width: 600px) {
+      #controls { gap: 6px; padding: 8px 10px; }
+      button.ctrl { padding: 6px 10px; font-size: 0.65rem; }
+      input[type=range] { width: 70px; }
+      .hof-card { width: 100px; }
+      .hof-card canvas { width: 88px; height: 64px; }
+    }
+  </style>
+</head>
+<body>
+<div id="page-layout">
+  <div id="header">
+    <a href="games.html">&larr; games</a>
+    <span class="title">SKELETON WALK</span>
+    <span class="sub">genetic algorithm evolution</span>
+  </div>
+
+  <div id="canvas-wrap">
+    <canvas id="main"></canvas>
+    <div id="hud">
+      <div class="hud-col">
+        <div><span class="hud-label">Generation </span><span class="hud-val cyan" id="h-gen">1</span></div>
+        <div><span class="hud-label">Best Dist </span><span class="hud-val accent" id="h-best">0.0</span></div>
+      </div>
+      <div class="hud-col" style="text-align:right">
+        <div><span class="hud-label">Avg Dist </span><span class="hud-val" id="h-avg">0.0</span></div>
+        <div><span class="hud-label">Mutation </span><span class="hud-val" id="h-mut">5.0%</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="controls">
+    <button class="ctrl active" id="btn-start">START</button>
+    <button class="ctrl" id="btn-reset">RESET</button>
+    <button class="ctrl" id="btn-showbest">SHOW BEST</button>
+    <div class="speed-group">
+      <label>SPEED</label>
+      <input type="range" id="speed-slider" min="1" max="20" value="1"/>
+      <span class="speed-val" id="speed-val">1x</span>
+    </div>
+  </div>
+
+  <div id="hall-of-fame">
+    <h3>Hall of Fame</h3>
+    <div id="hof-container"><span style="font-size:0.6rem;color:var(--dim)">Evolving...</span></div>
+  </div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════
+// SKELETON WALK — Genetic Algorithm Walking Evolution
+// ════════════════════════════════════════════════════════
+
+(function() {
+"use strict";
+
+// --- Constants ---
+var POP_SIZE = 50;
+var SIM_STEPS = 500;
+var DT = 1 / 60;
+var GRAVITY = 980;
+var GROUND_Y = 0;
+var CONSTRAINT_ITERS = 8;
+var FRICTION = 0.7;
+var RESTITUTION = 0.1;
+var MUTATION_RATE = 0.05;
+var MUTATION_STD = 0.3;
+var TOURNAMENT_SIZE = 5;
+var ELITISM = 2;
+var HOF_INTERVAL = 10;
+
+// Skeleton joint indices
+var HEAD = 0, SHOULDER = 1, HIP = 2;
+var L_ELBOW = 3, L_HAND = 4, R_ELBOW = 5, R_HAND = 6;
+var L_KNEE = 7, L_ANKLE = 8, L_FOOT = 9;
+var R_KNEE = 10, R_ANKLE = 11, R_FOOT = 12;
+var NUM_JOINTS = 13;
+
+// Bones (pairs of joint indices + rest length)
+var BONE_DEFS = [
+  [HEAD, SHOULDER],
+  [SHOULDER, HIP],
+  [SHOULDER, L_ELBOW],
+  [L_ELBOW, L_HAND],
+  [SHOULDER, R_ELBOW],
+  [R_ELBOW, R_HAND],
+  [HIP, L_KNEE],
+  [L_KNEE, L_ANKLE],
+  [L_ANKLE, L_FOOT],
+  [HIP, R_KNEE],
+  [R_KNEE, R_ANKLE],
+  [R_ANKLE, R_FOOT]
+];
+
+// Muscles (joint index triplets: pivot, a, b) — the torque acts at pivot between bones a-pivot and pivot-b
+// Each muscle has genome params: [amplitude, frequency, phase]
+var MUSCLE_DEFS = [
+  // Shoulder joints (arms swing)
+  { pivot: SHOULDER, a: HEAD, b: L_ELBOW, name: "L_shoulder" },
+  { pivot: SHOULDER, a: HEAD, b: R_ELBOW, name: "R_shoulder" },
+  // Elbow joints
+  { pivot: L_ELBOW, a: SHOULDER, b: L_HAND, name: "L_elbow" },
+  { pivot: R_ELBOW, a: SHOULDER, b: R_HAND, name: "R_elbow" },
+  // Hip joints (legs swing)
+  { pivot: HIP, a: SHOULDER, b: L_KNEE, name: "L_hip" },
+  { pivot: HIP, a: SHOULDER, b: R_KNEE, name: "R_hip" },
+  // Knee joints
+  { pivot: L_KNEE, a: HIP, b: L_ANKLE, name: "L_knee" },
+  { pivot: R_KNEE, a: HIP, b: R_ANKLE, name: "R_knee" },
+  // Ankle joints
+  { pivot: L_ANKLE, a: L_KNEE, b: L_FOOT, name: "L_ankle" },
+  { pivot: R_ANKLE, a: R_KNEE, b: R_FOOT, name: "R_ankle" }
+];
+
+var NUM_MUSCLES = MUSCLE_DEFS.length;
+var GENOME_LENGTH = NUM_MUSCLES * 3; // 3 params per muscle
+
+// Angle constraints (min, max in radians) for certain joints
+// Convention: angle is measured at pivot between vectors (pivot->a) and (pivot->b)
+// Precomputed angle constraint list: { pivot, a, b, min, max }
+var ANGLE_CONSTRAINT_MAP = {};
+ANGLE_CONSTRAINT_MAP[L_KNEE] = { min: 0.05, max: 2.8 };
+ANGLE_CONSTRAINT_MAP[R_KNEE] = { min: 0.05, max: 2.8 };
+ANGLE_CONSTRAINT_MAP[L_ELBOW] = { min: 0.1, max: 3.0 };
+ANGLE_CONSTRAINT_MAP[R_ELBOW] = { min: 0.1, max: 3.0 };
+
+// Build precomputed list for fast iteration
+var ANGLE_CONSTRAINT_LIST = [];
+(function() {
+  for (var mm = 0; mm < NUM_MUSCLES; mm++) {
+    var md = MUSCLE_DEFS[mm];
+    if (ANGLE_CONSTRAINT_MAP.hasOwnProperty(md.pivot)) {
+      var c = ANGLE_CONSTRAINT_MAP[md.pivot];
+      ANGLE_CONSTRAINT_LIST.push({ pivot: md.pivot, a: md.a, b: md.b, min: c.min, max: c.max });
+    }
+  }
+})();
+
+// --- DOM ---
+var canvas = document.getElementById("main");
+var ctx = canvas.getContext("2d");
+var hGen = document.getElementById("h-gen");
+var hBest = document.getElementById("h-best");
+var hAvg = document.getElementById("h-avg");
+var hMut = document.getElementById("h-mut");
+var btnStart = document.getElementById("btn-start");
+var btnReset = document.getElementById("btn-reset");
+var btnShowBest = document.getElementById("btn-showbest");
+var speedSlider = document.getElementById("speed-slider");
+var speedVal = document.getElementById("speed-val");
+var hofContainer = document.getElementById("hof-container");
+
+var W, H;
+function resize() {
+  var wrap = document.getElementById("canvas-wrap");
+  W = canvas.width = wrap.clientWidth;
+  H = canvas.height = wrap.clientHeight;
+}
+resize();
+window.addEventListener("resize", resize);
+
+// --- Web Audio ---
+var audioCtx = null;
+function initAudio() {
+  if (audioCtx) return;
+  try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {}
+}
+function playPop() {
+  if (!audioCtx) return;
+  try {
+    var osc = audioCtx.createOscillator();
+    var gain = audioCtx.createGain();
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.type = "sine"; osc.frequency.value = 220;
+    osc.frequency.exponentialRampToValueAtTime(110, audioCtx.currentTime + 0.1);
+    gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.15);
+    osc.start(audioCtx.currentTime); osc.stop(audioCtx.currentTime + 0.15);
+  } catch(e) {}
+}
+function playChime() {
+  if (!audioCtx) return;
+  try {
+    var freqs = [523, 659, 784];
+    for (var i = 0; i < freqs.length; i++) {
+      var osc = audioCtx.createOscillator();
+      var gain = audioCtx.createGain();
+      osc.connect(gain); gain.connect(audioCtx.destination);
+      osc.type = "sine"; osc.frequency.value = freqs[i];
+      var t = audioCtx.currentTime + i * 0.08;
+      gain.gain.setValueAtTime(0.06, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+      osc.start(t); osc.stop(t + 0.25);
+    }
+  } catch(e) {}
+}
+
+// --- Utility ---
+function rand(lo, hi) { return lo + Math.random() * (hi - lo); }
+function gaussRand() {
+  var u = 0, v = 0;
+  while (u === 0) u = Math.random();
+  while (v === 0) v = Math.random();
+  return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+}
+function clamp(x, lo, hi) { return x < lo ? lo : x > hi ? hi : x; }
+function dist(ax, ay, bx, by) { var dx = bx-ax, dy = by-ay; return Math.sqrt(dx*dx+dy*dy); }
+function angle2(ax, ay, bx, by) { return Math.atan2(by-ay, bx-ax); }
+
+// --- Skeleton Creation ---
+// Creates a skeleton at position (startX, groundY).
+// The skeleton stands upright. All y values are negative (above ground = above y=0).
+function createSkeleton(startX) {
+  var sx = startX;
+  var gndY = 0; // ground level
+  // Heights
+  var footH = 0;
+  var ankleH = 8;
+  var kneeH = 48;
+  var hipH = 88;
+  var shoulderH = 138;
+  var headH = 158;
+  var elbowH = 118;
+  var handH = 98;
+  var legSpread = 8;
+  var armSpread = 12;
+  var footLen = 12;
+
+  var joints = new Float64Array(NUM_JOINTS * 2);
+  var old = new Float64Array(NUM_JOINTS * 2);
+
+  function setJ(idx, x, y) {
+    joints[idx*2] = x; joints[idx*2+1] = y;
+    old[idx*2] = x; old[idx*2+1] = y;
+  }
+
+  setJ(HEAD, sx, gndY - headH);
+  setJ(SHOULDER, sx, gndY - shoulderH);
+  setJ(HIP, sx, gndY - hipH);
+  setJ(L_ELBOW, sx - armSpread, gndY - elbowH);
+  setJ(L_HAND, sx - armSpread, gndY - handH);
+  setJ(R_ELBOW, sx + armSpread, gndY - elbowH);
+  setJ(R_HAND, sx + armSpread, gndY - handH);
+  setJ(L_KNEE, sx - legSpread, gndY - kneeH);
+  setJ(L_ANKLE, sx - legSpread, gndY - ankleH);
+  setJ(L_FOOT, sx - legSpread + footLen, gndY - footH);
+  setJ(R_KNEE, sx + legSpread, gndY - kneeH);
+  setJ(R_ANKLE, sx + legSpread, gndY - ankleH);
+  setJ(R_FOOT, sx + legSpread + footLen, gndY - footH);
+
+  // Compute rest lengths for bones
+  var boneLens = [];
+  for (var b = 0; b < BONE_DEFS.length; b++) {
+    var ia = BONE_DEFS[b][0], ib = BONE_DEFS[b][1];
+    boneLens.push(dist(joints[ia*2], joints[ia*2+1], joints[ib*2], joints[ib*2+1]));
+  }
+
+  return { joints: joints, old: old, boneLens: boneLens };
+}
+
+// --- Physics ---
+function physicsTick(skel, genome, time) {
+  var j = skel.joints, o = skel.old;
+  var n = NUM_JOINTS;
+
+  // Verlet integration: apply gravity
+  for (var i = 0; i < n; i++) {
+    var ix = i*2, iy = i*2+1;
+    var vx = j[ix] - o[ix];
+    var vy = j[iy] - o[iy];
+    // Damping
+    vx *= 0.99; vy *= 0.99;
+    o[ix] = j[ix]; o[iy] = j[iy];
+    j[ix] += vx;
+    j[iy] += vy + GRAVITY * DT * DT;
+  }
+
+  // Apply muscle torques
+  for (var m = 0; m < NUM_MUSCLES; m++) {
+    var md = MUSCLE_DEFS[m];
+    var amp = genome[m*3];
+    var freq = genome[m*3+1];
+    var phase = genome[m*3+2];
+    var torque = amp * Math.sin(freq * time + phase);
+
+    var pi = md.pivot, ai = md.a, bi = md.b;
+    var px = j[pi*2], py = j[pi*2+1];
+    var ax = j[ai*2], ay = j[ai*2+1];
+    var bx = j[bi*2], by = j[bi*2+1];
+
+    // Apply torque as tangential forces on a and b relative to pivot
+    var dax = ax - px, day = ay - py;
+    var dbx = bx - px, dby = by - py;
+    var la = Math.sqrt(dax*dax + day*day) || 1;
+    var lb = Math.sqrt(dbx*dbx + dby*dby) || 1;
+
+    var force = torque * 0.4;
+    // Tangential direction for a: perpendicular to (pivot -> a)
+    var tax = -day / la, tay = dax / la;
+    // Tangential direction for b: perpendicular to (pivot -> b)
+    var tbx = -dby / lb, tby = dbx / lb;
+
+    j[ai*2] += tax * force * DT;
+    j[ai*2+1] += tay * force * DT;
+    j[bi*2] -= tbx * force * DT;
+    j[bi*2+1] -= tby * force * DT;
+  }
+
+  // Solve constraints
+  for (var iter = 0; iter < CONSTRAINT_ITERS; iter++) {
+    // Bone distance constraints
+    for (var b = 0; b < BONE_DEFS.length; b++) {
+      var ia = BONE_DEFS[b][0], ib = BONE_DEFS[b][1];
+      var restLen = skel.boneLens[b];
+      var iax = ia*2, iay = ia*2+1, ibx = ib*2, iby = ib*2+1;
+      var dx = j[ibx] - j[iax];
+      var dy = j[iby] - j[iay];
+      var d = Math.sqrt(dx*dx + dy*dy) || 0.001;
+      var diff = (d - restLen) / d * 0.5;
+      j[iax] += dx * diff;
+      j[iay] += dy * diff;
+      j[ibx] -= dx * diff;
+      j[iby] -= dy * diff;
+    }
+
+    // Angle constraints (precomputed list)
+    for (var ac = 0; ac < ANGLE_CONSTRAINT_LIST.length; ac++) {
+      var c = ANGLE_CONSTRAINT_LIST[ac];
+      var pxi = c.pivot*2, pyi = c.pivot*2+1;
+      var axi = c.a*2, ayi = c.a*2+1;
+      var bxi = c.b*2, byi = c.b*2+1;
+
+      var da_x = j[axi] - j[pxi], da_y = j[ayi] - j[pyi];
+      var db_x = j[bxi] - j[pxi], db_y = j[byi] - j[pyi];
+
+      var angA = Math.atan2(da_y, da_x);
+      var angB = Math.atan2(db_y, db_x);
+      var ang = angB - angA;
+      // Normalize to [0, 2PI]
+      while (ang < 0) ang += Math.PI * 2;
+      while (ang > Math.PI * 2) ang -= Math.PI * 2;
+
+      if (ang < c.min) {
+        var fix = (c.min - ang) * 0.5;
+        var la2 = Math.sqrt(da_x*da_x + da_y*da_y);
+        var lb2 = Math.sqrt(db_x*db_x + db_y*db_y);
+        j[axi] = j[pxi] + Math.cos(angA - fix) * la2;
+        j[ayi] = j[pyi] + Math.sin(angA - fix) * la2;
+        j[bxi] = j[pxi] + Math.cos(angB + fix) * lb2;
+        j[byi] = j[pyi] + Math.sin(angB + fix) * lb2;
+      } else if (ang > c.max) {
+        var fix2 = (ang - c.max) * 0.5;
+        var la3 = Math.sqrt(da_x*da_x + da_y*da_y);
+        var lb3 = Math.sqrt(db_x*db_x + db_y*db_y);
+        j[axi] = j[pxi] + Math.cos(angA + fix2) * la3;
+        j[ayi] = j[pyi] + Math.sin(angA + fix2) * la3;
+        j[bxi] = j[pxi] + Math.cos(angB - fix2) * lb3;
+        j[byi] = j[pyi] + Math.sin(angB - fix2) * lb3;
+      }
+    }
+
+    // Ground collision
+    for (var gi = 0; gi < n; gi++) {
+      if (j[gi*2+1] > GROUND_Y) {
+        var vy2 = j[gi*2+1] - o[gi*2+1];
+        j[gi*2+1] = GROUND_Y;
+        o[gi*2+1] = GROUND_Y + vy2 * RESTITUTION;
+        // Friction
+        var vx2 = j[gi*2] - o[gi*2];
+        o[gi*2] = j[gi*2] - vx2 * FRICTION;
+      }
+    }
+  }
+}
+
+// --- Genome ---
+function randomGenome() {
+  var g = new Float64Array(GENOME_LENGTH);
+  for (var i = 0; i < NUM_MUSCLES; i++) {
+    g[i*3] = rand(-200, 200);     // amplitude
+    g[i*3+1] = rand(1, 12);       // frequency
+    g[i*3+2] = rand(0, Math.PI*2); // phase
+  }
+  return g;
+}
+
+function crossover(a, b) {
+  var child = new Float64Array(GENOME_LENGTH);
+  for (var i = 0; i < GENOME_LENGTH; i++) {
+    child[i] = Math.random() < 0.5 ? a[i] : b[i];
+  }
+  return child;
+}
+
+function mutate(genome) {
+  var g = new Float64Array(genome);
+  for (var i = 0; i < GENOME_LENGTH; i++) {
+    if (Math.random() < MUTATION_RATE) {
+      var paramType = i % 3;
+      var std;
+      if (paramType === 0) std = 40;       // amplitude
+      else if (paramType === 1) std = 2;   // frequency
+      else std = 0.5;                       // phase
+      g[i] += gaussRand() * std;
+    }
+  }
+  return g;
+}
+
+function tournamentSelect(pop, fitnesses) {
+  var bestIdx = -1, bestFit = -Infinity;
+  for (var i = 0; i < TOURNAMENT_SIZE; i++) {
+    var idx = Math.floor(Math.random() * pop.length);
+    if (fitnesses[idx] > bestFit) {
+      bestFit = fitnesses[idx];
+      bestIdx = idx;
+    }
+  }
+  return bestIdx;
+}
+
+// --- Simulation State ---
+var population = [];       // array of genomes
+var skeletons = [];        // array of skeleton physics objects
+var fitnesses = [];
+var generation = 1;
+var simStep = 0;
+var running = false;
+var speed = 1;
+var bestEverDist = 0;
+var bestEverGenome = null;
+var hallOfFame = [];       // array of { gen, dist, genome }
+var showingBest = false;
+var showBestSkel = null;
+var showBestGenome = null;
+var showBestStep = 0;
+
+function initPopulation() {
+  population = [];
+  skeletons = [];
+  fitnesses = [];
+  for (var i = 0; i < POP_SIZE; i++) {
+    population.push(randomGenome());
+    skeletons.push(createSkeleton(0));
+    fitnesses.push(0);
+  }
+  simStep = 0;
+}
+
+function nextGeneration() {
+  // Compute fitnesses
+  for (var i = 0; i < POP_SIZE; i++) {
+    fitnesses[i] = skeletons[i].joints[HIP*2]; // hip x position
+    // Penalty for falling: if head is below hip, reduce fitness
+    if (skeletons[i].joints[HEAD*2+1] > skeletons[i].joints[HIP*2+1]) {
+      fitnesses[i] *= 0.3;
+    }
+  }
+
+  // Track stats
+  var bestDist = -Infinity, avgDist = 0, bestIdx = 0;
+  for (var i = 0; i < POP_SIZE; i++) {
+    avgDist += fitnesses[i];
+    if (fitnesses[i] > bestDist) { bestDist = fitnesses[i]; bestIdx = i; }
+  }
+  avgDist /= POP_SIZE;
+
+  // Update HUD
+  hGen.textContent = generation;
+  hBest.textContent = bestDist.toFixed(1);
+  hAvg.textContent = avgDist.toFixed(1);
+
+  // Check new record
+  if (bestDist > bestEverDist) {
+    bestEverDist = bestDist;
+    bestEverGenome = new Float64Array(population[bestIdx]);
+    playChime();
+  }
+
+  // Hall of fame
+  if (generation % HOF_INTERVAL === 0 || generation === 1) {
+    hallOfFame.push({ gen: generation, dist: bestDist, genome: new Float64Array(population[bestIdx]) });
+    updateHallOfFame();
+  }
+
+  playPop();
+
+  // Sort by fitness for elitism
+  var indices = [];
+  for (var i = 0; i < POP_SIZE; i++) indices.push(i);
+  indices.sort(function(a, b) { return fitnesses[b] - fitnesses[a]; });
+
+  // Create next generation
+  var newPop = [];
+  // Elitism: keep top ELITISM
+  for (var i = 0; i < ELITISM; i++) {
+    newPop.push(new Float64Array(population[indices[i]]));
+  }
+  // Fill rest with crossover + mutation
+  while (newPop.length < POP_SIZE) {
+    var p1 = tournamentSelect(population, fitnesses);
+    var p2 = tournamentSelect(population, fitnesses);
+    var child = crossover(population[p1], population[p2]);
+    child = mutate(child);
+    newPop.push(child);
+  }
+
+  population = newPop;
+  // Reset skeletons
+  skeletons = [];
+  for (var i = 0; i < POP_SIZE; i++) {
+    skeletons.push(createSkeleton(0));
+  }
+  simStep = 0;
+  generation++;
+}
+
+// --- Rendering ---
+function drawSkeleton(ctx2, skel, alpha, color, glowColor, scale, offsetX, offsetY, drawHead) {
+  var j = skel.joints;
+  ctx2.save();
+  ctx2.globalAlpha = alpha;
+
+  // Glow
+  ctx2.shadowColor = glowColor || color;
+  ctx2.shadowBlur = 8 * (scale || 1);
+
+  ctx2.strokeStyle = color;
+  ctx2.lineWidth = 2.5 * (scale || 1);
+  ctx2.lineCap = "round";
+
+  function jx(idx) { return j[idx*2] * (scale||1) + (offsetX||0); }
+  function jy(idx) { return j[idx*2+1] * (scale||1) + (offsetY||0); }
+
+  // Draw bones
+  ctx2.beginPath();
+  for (var b = 0; b < BONE_DEFS.length; b++) {
+    var ia = BONE_DEFS[b][0], ib = BONE_DEFS[b][1];
+    ctx2.moveTo(jx(ia), jy(ia));
+    ctx2.lineTo(jx(ib), jy(ib));
+  }
+  ctx2.stroke();
+
+  // Draw joints
+  ctx2.fillStyle = color;
+  var jr = 3 * (scale || 1);
+  for (var i = 0; i < NUM_JOINTS; i++) {
+    if (i === HEAD && drawHead) continue;
+    ctx2.beginPath();
+    ctx2.arc(jx(i), jy(i), jr, 0, Math.PI*2);
+    ctx2.fill();
+  }
+
+  // Draw head
+  if (drawHead !== false) {
+    ctx2.beginPath();
+    ctx2.arc(jx(HEAD), jy(HEAD), 7 * (scale||1), 0, Math.PI*2);
+    ctx2.stroke();
+    ctx2.shadowBlur = 0;
+    ctx2.fillStyle = "#0f0f10";
+    ctx2.fill();
+    // Eyes
+    ctx2.fillStyle = color;
+    ctx2.shadowColor = glowColor || color;
+    ctx2.shadowBlur = 4;
+    var ex = jx(HEAD), ey = jy(HEAD);
+    ctx2.beginPath();
+    ctx2.arc(ex - 2.5*(scale||1), ey - 1*(scale||1), 1.2*(scale||1), 0, Math.PI*2);
+    ctx2.arc(ex + 2.5*(scale||1), ey - 1*(scale||1), 1.2*(scale||1), 0, Math.PI*2);
+    ctx2.fill();
+  }
+
+  ctx2.restore();
+}
+
+function render() {
+  ctx.clearRect(0, 0, W, H);
+
+  // Camera: follow the best performing skeleton (during sim) or showBest
+  var camTarget;
+  if (showingBest && showBestSkel) {
+    camTarget = showBestSkel.joints[HIP*2];
+  } else {
+    // Find current best
+    var bestX = -Infinity, bestI = 0;
+    for (var i = 0; i < POP_SIZE; i++) {
+      if (skeletons[i].joints[HIP*2] > bestX) {
+        bestX = skeletons[i].joints[HIP*2];
+        bestI = i;
+      }
+    }
+    camTarget = skeletons[bestI].joints[HIP*2];
+  }
+
+  var camX = camTarget - W * 0.35;
+  var groundScreenY = H * 0.72;
+
+  ctx.save();
+
+  // --- Draw ground grid ---
+  ctx.strokeStyle = "#1a1a1c";
+  ctx.lineWidth = 1;
+  // Vertical grid lines every 50 units
+  var gridSpacing = 50;
+  var gridStart = Math.floor(camX / gridSpacing) * gridSpacing;
+  for (var gx = gridStart; gx < camX + W + gridSpacing; gx += gridSpacing) {
+    var sx = gx - camX;
+    ctx.beginPath();
+    ctx.moveTo(sx, groundScreenY);
+    ctx.lineTo(sx, H);
+    ctx.stroke();
+  }
+  // Horizontal grid lines
+  for (var gy = 0; gy < 200; gy += gridSpacing) {
+    var sy = groundScreenY + gy;
+    if (sy > H) break;
+    ctx.beginPath();
+    ctx.moveTo(0, sy);
+    ctx.lineTo(W, sy);
+    ctx.stroke();
+  }
+
+  // Ground line
+  ctx.strokeStyle = "#3a3a3d";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, groundScreenY);
+  ctx.lineTo(W, groundScreenY);
+  ctx.stroke();
+
+  // Distance markers
+  ctx.fillStyle = "#3a3a3d";
+  ctx.font = '10px ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace';
+  var markerSpacing = 100;
+  var markerStart = Math.floor(camX / markerSpacing) * markerSpacing;
+  for (var mx = markerStart; mx < camX + W + markerSpacing; mx += markerSpacing) {
+    var msx = mx - camX;
+    ctx.fillText(mx.toFixed(0), msx + 3, groundScreenY + 14);
+    ctx.beginPath();
+    ctx.strokeStyle = "#2a2a2d";
+    ctx.lineWidth = 1;
+    ctx.moveTo(msx, groundScreenY - 4);
+    ctx.lineTo(msx, groundScreenY + 4);
+    ctx.stroke();
+  }
+
+  // --- Draw skeletons ---
+  if (showingBest && showBestSkel) {
+    drawSkeleton(ctx, showBestSkel, 1.0, "#00e5ff", "#00e5ff", 1, -camX, groundScreenY, true);
+  } else {
+    // Find best for highlighting
+    var bestX2 = -Infinity, bestI2 = 0;
+    for (var i = 0; i < POP_SIZE; i++) {
+      if (skeletons[i].joints[HIP*2] > bestX2) {
+        bestX2 = skeletons[i].joints[HIP*2]; bestI2 = i;
+      }
+    }
+
+    // Draw faded population
+    for (var i = 0; i < POP_SIZE; i++) {
+      if (i === bestI2) continue;
+      drawSkeleton(ctx, skeletons[i], 0.12, "#00e5ff", "#00e5ff", 1, -camX, groundScreenY, false);
+    }
+
+    // Draw best prominently
+    drawSkeleton(ctx, skeletons[bestI2], 1.0, "#00e5ff", "#00e5ff", 1, -camX, groundScreenY, true);
+  }
+
+  // --- Start line ---
+  var startScreenX = 0 - camX;
+  if (startScreenX > -5 && startScreenX < W + 5) {
+    ctx.strokeStyle = "#ff6b3540";
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(startScreenX, groundScreenY - 180);
+    ctx.lineTo(startScreenX, groundScreenY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = "#ff6b3580";
+    ctx.font = '9px ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace';
+    ctx.fillText("START", startScreenX + 4, groundScreenY - 170);
+  }
+
+  // --- Progress bar for generation ---
+  if (!showingBest) {
+    var progress = simStep / SIM_STEPS;
+    var barW = 140, barH = 4;
+    var barX = W / 2 - barW / 2;
+    var barY = groundScreenY + 30;
+    ctx.fillStyle = "#1a1a1c";
+    ctx.fillRect(barX, barY, barW, barH);
+    ctx.fillStyle = "#ff6b35";
+    ctx.fillRect(barX, barY, barW * progress, barH);
+    ctx.fillStyle = "#6e6e73";
+    ctx.font = '9px ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace';
+    ctx.textAlign = "center";
+    ctx.fillText("Step " + simStep + " / " + SIM_STEPS, W/2, barY + 16);
+    ctx.textAlign = "start";
+  }
+
+  ctx.restore();
+}
+
+// --- Hall of Fame ---
+function updateHallOfFame() {
+  hofContainer.innerHTML = "";
+  for (var h = 0; h < hallOfFame.length; h++) {
+    var entry = hallOfFame[h];
+    var card = document.createElement("div");
+    card.className = "hof-card";
+
+    var cvs = document.createElement("canvas");
+    cvs.width = 216; cvs.height = 160;
+    card.appendChild(cvs);
+
+    var genLabel = document.createElement("div");
+    genLabel.className = "hof-gen";
+    genLabel.textContent = "Gen " + entry.gen;
+    card.appendChild(genLabel);
+
+    var distLabel = document.createElement("div");
+    distLabel.className = "hof-dist";
+    distLabel.textContent = entry.dist.toFixed(1) + " px";
+    card.appendChild(distLabel);
+
+    hofContainer.appendChild(card);
+
+    // Render the replay in the small canvas
+    renderHofCard(cvs, entry.genome);
+  }
+}
+
+function renderHofCard(cvs, genome) {
+  var ctx2 = cvs.getContext("2d");
+  // Simulate a few hundred steps and draw keyframes
+  var skel = createSkeleton(0);
+  var frames = [];
+  for (var s = 0; s < SIM_STEPS; s++) {
+    physicsTick(skel, genome, s * DT);
+    if (s % 30 === 0) {
+      frames.push({
+        joints: new Float64Array(skel.joints)
+      });
+    }
+  }
+
+  ctx2.fillStyle = "#0f0f10";
+  ctx2.fillRect(0, 0, cvs.width, cvs.height);
+
+  // Ground
+  var gndY = cvs.height * 0.85;
+  ctx2.strokeStyle = "#2a2a2d";
+  ctx2.lineWidth = 1;
+  ctx2.beginPath();
+  ctx2.moveTo(0, gndY);
+  ctx2.lineTo(cvs.width, gndY);
+  ctx2.stroke();
+
+  // Find x range
+  var minX = Infinity, maxX = -Infinity;
+  for (var f = 0; f < frames.length; f++) {
+    for (var ji = 0; ji < NUM_JOINTS; ji++) {
+      var x = frames[f].joints[ji*2];
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+    }
+  }
+  var rangeX = (maxX - minX) || 1;
+  var scale = (cvs.width - 20) / rangeX;
+  scale = Math.min(scale, 0.8);
+  var offX = 10 - minX * scale;
+
+  // Draw keyframes
+  for (var f = 0; f < frames.length; f++) {
+    var alpha = 0.15 + 0.6 * (f / frames.length);
+    var fakeSkel = { joints: frames[f].joints };
+    drawSkeleton(ctx2, fakeSkel, alpha, "#00e5ff", "#00e5ff", scale, offX, gndY, f === frames.length-1);
+  }
+}
+
+// --- Main Loop ---
+var animId = null;
+
+function tick() {
+  if (!running && !showingBest) {
+    animId = requestAnimationFrame(tick);
+    render();
+    return;
+  }
+
+  if (showingBest) {
+    // Replay best genome
+    if (showBestStep < SIM_STEPS) {
+      for (var sp = 0; sp < speed; sp++) {
+        if (showBestStep < SIM_STEPS) {
+          physicsTick(showBestSkel, showBestGenome, showBestStep * DT);
+          showBestStep++;
+        }
+      }
+    } else {
+      // Done replaying
+      showingBest = false;
+      btnShowBest.textContent = "SHOW BEST";
+      btnShowBest.classList.remove("active");
+    }
+    render();
+    animId = requestAnimationFrame(tick);
+    return;
+  }
+
+  // Normal sim
+  var stepsThisFrame = speed;
+  for (var sp = 0; sp < stepsThisFrame; sp++) {
+    if (simStep < SIM_STEPS) {
+      for (var i = 0; i < POP_SIZE; i++) {
+        physicsTick(skeletons[i], population[i], simStep * DT);
+      }
+      simStep++;
+    } else {
+      nextGeneration();
+      break;
+    }
+  }
+
+  // Render (at high speeds, still render every animation frame)
+  render();
+  animId = requestAnimationFrame(tick);
+}
+
+// --- Controls ---
+btnStart.addEventListener("click", function() {
+  initAudio();
+  running = !running;
+  btnStart.textContent = running ? "PAUSE" : "START";
+  btnStart.classList.toggle("active", running);
+});
+
+btnReset.addEventListener("click", function() {
+  running = false;
+  showingBest = false;
+  generation = 1;
+  bestEverDist = 0;
+  bestEverGenome = null;
+  hallOfFame = [];
+  hofContainer.innerHTML = '<span style="font-size:0.6rem;color:var(--dim)">Evolving...</span>';
+  initPopulation();
+  hGen.textContent = "1";
+  hBest.textContent = "0.0";
+  hAvg.textContent = "0.0";
+  btnStart.textContent = "START";
+  btnStart.classList.add("active");
+  btnShowBest.textContent = "SHOW BEST";
+  btnShowBest.classList.remove("active");
+});
+
+btnShowBest.addEventListener("click", function() {
+  initAudio();
+  if (!bestEverGenome) return;
+  if (showingBest) {
+    showingBest = false;
+    btnShowBest.textContent = "SHOW BEST";
+    btnShowBest.classList.remove("active");
+    return;
+  }
+  showingBest = true;
+  showBestGenome = bestEverGenome;
+  showBestSkel = createSkeleton(0);
+  showBestStep = 0;
+  btnShowBest.textContent = "STOP REPLAY";
+  btnShowBest.classList.add("active");
+});
+
+speedSlider.addEventListener("input", function() {
+  speed = parseInt(this.value);
+  speedVal.textContent = speed + "x";
+});
+
+// Touch-friendly: prevent double-tap zoom
+document.addEventListener("touchstart", function(e) {
+  if (e.touches.length > 1) e.preventDefault();
+}, { passive: false });
+
+// --- Init ---
+initPopulation();
+animId = requestAnimationFrame(tick);
+
+})();
+</script>
+</body>
+</html>

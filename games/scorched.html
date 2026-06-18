@@ -1266,13 +1266,15 @@ function updateUI(){
 document.getElementById('asl').oninput=function(){if(gameState==='aiming'&&!players[currentPlayer].cpu){players[currentPlayer].angle=+this.value;document.getElementById('av').textContent=this.value+'°';}};
 document.getElementById('psl').oninput=function(){if(gameState==='aiming'&&!players[currentPlayer].cpu){players[currentPlayer].power=+this.value;document.getElementById('pv').textContent=this.value;}};
 
-function cpuSimShot(sx,sy,angle,power,w){
+function cpuSimShot(sx,sy,angle,power,w,target){
   const rad=angle*Math.PI/180,spd=power*.13;
   let px2=sx,py2=sy-12,vx=Math.cos(rad)*spd,vy=-Math.sin(rad)*spd;
   for(let step=0;step<300;step++){
     vx+=w*.015;vy+=9.8/60*2.8;px2+=vx;py2+=vy;
     const tx=Math.floor(px2);
     if(tx<0||tx>=W||py2>H)return{x:px2,y:py2,hit:false};
+    // direct hit on floating target (airship)
+    if(target&&target.tank?.floats&&Math.hypot(target.x-px2,target.y-py2)<25)return{x:px2,y:py2,hit:true};
     if(tx>=0&&tx<W&&py2>=terrain[tx])return{x:px2,y:py2,hit:true};
   }
   return{x:px2,y:py2,hit:false};
@@ -1315,7 +1317,7 @@ function cpuTurn(){
   for(let attempt=0;attempt<40;attempt++){
     const testA=Math.max(5,Math.min(175,Math.floor(Math.atan2(-(bestTarget.y-me.y),bestTarget.x-me.x)*180/Math.PI)+Math.random()*30-15));
     const testP=Math.max(15,Math.min(95,Math.floor(dist*.1+Math.random()*30-5)));
-    const sim=cpuSimShot(me.x,me.y,testA,testP,wind);
+    const sim=cpuSimShot(me.x,me.y,testA,testP,wind,bestTarget);
     if(sim.hit){
       const err=Math.hypot(sim.x-bestTarget.x,sim.y-bestTarget.y);
       if(err<bestErr){bestErr=err;bestA=testA;bestP=testP;}
@@ -1743,6 +1745,16 @@ function update(dt){
     p.trail.push({x:p.x,y:p.y});if(p.trail.length>25)p.trail.shift();
     p.vx+=wind*.02;p.vy+=9.8*dt*3.5;
     p.x+=p.vx;p.y+=p.vy;
+    // direct hit check for floating tanks (airships) — projectiles fly above terrain
+    let floatHit=false;
+    for(const pl of players){
+      if(!pl.alive||!pl.tank?.floats||players.indexOf(pl)===p.owner)continue;
+      if(Math.hypot(pl.x-p.x,pl.y-p.y)<25){
+        if(p.trail.length>2){tracers.push({pts:[...p.trail],color:p.type==='deathshead'?'#f00':'#aa8',age:0});if(tracers.length>150)tracers.shift();}
+        explode(p.x,p.y,p.weapon,p.owner);projectiles.splice(i,1);floatHit=true;break;
+      }
+    }
+    if(floatHit)continue;
     const px2=Math.floor(p.x);
     if(px2>=0&&px2<W&&p.y>=terrain[px2]){
       if(p.type==='roller'){

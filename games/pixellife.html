@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Pixel Life</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a0a;overflow:hidden;touch-action:none;font-family:monospace;-webkit-user-select:none;user-select:none}
+canvas{display:block;position:fixed;top:0;left:0;image-rendering:pixelated}
+#hud{position:fixed;top:0;left:0;right:0;z-index:10;padding:2px 6px;padding-top:max(2px,env(safe-area-inset-top));font:bold 9px monospace;color:#ff0;background:#000;border-bottom:1px solid #333;display:flex;gap:8px;align-items:center}
+#ui{position:fixed;bottom:0;left:0;right:0;z-index:10;padding:3px 6px;padding-bottom:max(4px,env(safe-area-inset-bottom));background:#000;border-top:1px solid #333;display:flex;gap:3px;align-items:center;flex-wrap:wrap;justify-content:center}
+.btn{font:bold 9px monospace;padding:4px 8px;border:1px solid #444;background:#0a0a0a;color:#0f0;cursor:pointer}
+.btn:active{background:#1a1a00;color:#ff0}
+.btn.sel{border-color:#ff0;color:#ff0}
+#msg{position:fixed;top:40%;left:50%;transform:translate(-50%,-50%);z-index:15;font:bold 14px monospace;color:#ff0;background:#000;padding:6px 12px;border:1px solid #ff0;opacity:0;transition:opacity .3s;pointer-events:none;text-align:center}
+#msg.show{opacity:1}
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<div id="hud">
+  <span id="dayInfo">Day 1</span>
+  <span id="popInfo" style="color:#0f0">Pop: 0</span>
+  <span id="foodInfo" style="color:#f80">Food: 0</span>
+  <span id="woodInfo" style="color:#8b6914">Wood: 0</span>
+  <span id="stoneInfo" style="color:#888">Stone: 0</span>
+  <span style="margin-left:auto;color:#555" id="fps"></span>
+</div>
+<div id="ui">
+  <button class="btn sel" onclick="setTool('select')" id="tSelect">Select</button>
+  <button class="btn" onclick="setTool('house')" id="tHouse">House($5w)</button>
+  <button class="btn" onclick="setTool('farm')" id="tFarm">Farm($3w)</button>
+  <button class="btn" onclick="setTool('mine')" id="tMine">Mine($4w)</button>
+  <button class="btn" onclick="setTool('wall')" id="tWall">Wall($2s)</button>
+  <button class="btn" onclick="setTool('tower')" id="tTower">Tower($8s)</button>
+  <button class="btn" onclick="toggleSpeed()" id="speedBtn">1x</button>
+</div>
+<div id="msg"></div>
+<script>
+const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+let W,H,GS=8,GW,GH;
+function resize(){W=cv.width=innerWidth;H=cv.height=innerHeight;GW=Math.floor(W/GS);GH=Math.floor(H/GS);}
+resize();onresize=resize;
+
+let day=1,food=20,wood=15,stone=5,speed=1,tool='select',msgTimer;
+let grid,entities,buildings,particles;
+const TERRAIN={water:0,grass:1,sand:2,forest:3,mountain:4,dirt:5};
+const TCOL={0:'#2060a0',1:'#3a8a3a',2:'#c0a060',3:'#1a6a1a',4:'#888',5:'#6a5a3a'};
+const TCOL2={0:'#1850880',1:'#308030',2:'#b09050',3:'#105010',4:'#777',5:'#5a4a2a'};
+
+function generateWorld(){
+  grid=[];
+  for(let y=0;y<GH;y++){grid[y]=[];for(let x=0;x<GW;x++){
+    const n=Math.sin(x*.06)*5+Math.sin(y*.08)*4+Math.sin((x+y)*.04)*6+Math.random()*3;
+    if(n<3)grid[y][x]=TERRAIN.water;
+    else if(n<5)grid[y][x]=TERRAIN.sand;
+    else if(n<9)grid[y][x]=TERRAIN.grass;
+    else if(n<12)grid[y][x]=TERRAIN.forest;
+    else grid[y][x]=TERRAIN.mountain;
+  }}
+}
+
+const BUILDING_TYPES={
+  house:{name:'House',w:2,h:2,color:'#a06030',roof:'#c04040',costW:5,costS:0,pop:2,prod:null},
+  farm:{name:'Farm',w:3,h:2,color:'#8b6914',roof:null,costW:3,costS:0,pop:0,prod:{food:2}},
+  mine:{name:'Mine',w:2,h:2,color:'#666',roof:'#555',costW:4,costS:0,pop:0,prod:{stone:1}},
+  wall:{name:'Wall',w:1,h:1,color:'#999',roof:null,costW:0,costS:2,pop:0,prod:null,hp:50},
+  tower:{name:'Tower',w:1,h:2,color:'#aaa',roof:'#ff0',costW:0,costS:8,pop:0,prod:null,hp:80,attacks:true},
+};
+
+function init(){
+  generateWorld();
+  entities=[];buildings=[];particles=[];
+  // spawn initial villagers
+  const cx=Math.floor(GW/2),cy=Math.floor(GH/2);
+  // clear starting area
+  for(let dy=-3;dy<=3;dy++)for(let dx=-3;dx<=3;dx++){
+    const tx=cx+dx,ty=cy+dy;
+    if(tx>=0&&tx<GW&&ty>=0&&ty<GH)grid[ty][tx]=TERRAIN.grass;
+  }
+  for(let i=0;i<5;i++){
+    entities.push({x:cx+Math.random()*4-2,y:cy+Math.random()*4-2,type:'villager',
+      hp:20,maxHp:20,hunger:50,job:['gatherer','woodcutter','farmer'][i%3],
+      target:null,timer:Math.random()*3,carrying:null,carryAmt:0,homeX:cx,homeY:cy});
+  }
+  food=20;wood=15;stone=5;day=1;
+}
+
+function showMsg(txt,dur){
+  const el=document.getElementById('msg');el.textContent=txt;el.classList.add('show');
+  clearTimeout(msgTimer);msgTimer=setTimeout(()=>el.classList.remove('show'),dur||2000);
+}
+
+function setTool(t){
+  tool=t;
+  document.querySelectorAll('.btn').forEach(b=>b.classList.remove('sel'));
+  const el=document.getElementById('t'+t.charAt(0).toUpperCase()+t.slice(1));
+  if(el)el.classList.add('sel');
+}
+
+let gameSpeed=1;
+function toggleSpeed(){gameSpeed=gameSpeed===1?2:gameSpeed===2?4:1;document.getElementById('speedBtn').textContent=gameSpeed+'x';}
+
+// click/tap to build or select
+cv.addEventListener('click',e=>{
+  const gx=Math.floor(e.clientX/GS),gy=Math.floor(e.clientY/GS);
+  if(tool==='select')return;
+  const bt=BUILDING_TYPES[tool];if(!bt)return;
+  if(bt.costW>wood){showMsg('Need '+bt.costW+' wood',1500);return;}
+  if(bt.costS>stone){showMsg('Need '+bt.costS+' stone',1500);return;}
+  // check terrain is buildable
+  for(let dy=0;dy<bt.h;dy++)for(let dx=0;dx<bt.w;dx++){
+    const tx=gx+dx,ty=gy+dy;
+    if(tx<0||tx>=GW||ty<0||ty>=GH)return;
+    if(grid[ty][tx]===TERRAIN.water||grid[ty][tx]===TERRAIN.mountain){showMsg("Can't build here",1000);return;}
+  }
+  // check overlap
+  for(const b of buildings){
+    if(gx<b.x+b.type.w&&gx+bt.w>b.x&&gy<b.y+b.type.h&&gy+bt.h>b.y){showMsg('Occupied',1000);return;}
+  }
+  wood-=bt.costW;stone-=bt.costS;
+  buildings.push({x:gx,y:gy,type:bt,hp:bt.hp||30,maxHp:bt.hp||30});
+  // flatten terrain under building
+  for(let dy=0;dy<bt.h;dy++)for(let dx=0;dx<bt.w;dx++)grid[gy+dy][gx+dx]=TERRAIN.dirt;
+  // house spawns villagers
+  if(bt.pop>0){
+    for(let i=0;i<bt.pop;i++){
+      entities.push({x:gx+Math.random()*bt.w,y:gy+bt.h,type:'villager',
+        hp:20,maxHp:20,hunger:50,job:'gatherer',target:null,timer:Math.random()*3,
+        carrying:null,carryAmt:0,homeX:gx,homeY:gy});
+    }
+  }
+  for(let k=0;k<6;k++)particles.push({x:(gx+bt.w/2)*GS,y:(gy+bt.h/2)*GS,vx:(Math.random()-.5)*3,vy:-1-Math.random()*2,life:15,color:'#8b6914'});
+});
+
+function update(dt){
+  dt*=gameSpeed;
+  // day cycle
+  const dayLen=30;
+  day+=dt/dayLen;
+
+  // spawn enemies every few days
+  if(Math.floor(day)%5===0&&Math.random()<.001*gameSpeed){
+    const side=Math.random()>.5?GW-2:1;
+    entities.push({x:side,y:2+Math.random()*(GH-4),type:'enemy',hp:15+Math.floor(day),maxHp:15+Math.floor(day),
+      target:null,timer:0,atk:3+Math.floor(day/3)});
+  }
+
+  // update entities
+  for(let i=entities.length-1;i>=0;i--){
+    const e=entities[i];e.timer+=dt;
+    if(e.type==='villager'){
+      e.hunger-=dt*.3;
+      if(e.hunger<=0){e.hp-=dt*2;if(e.hp<=0){entities.splice(i,1);continue;}}
+      if(e.hunger<20&&food>0){e.hunger=Math.min(100,e.hunger+30);food--;}
+      // simple AI: wander toward job-related resources
+      if(e.timer>2){
+        e.timer=0;
+        if(e.job==='woodcutter'){
+          // find nearest forest tile
+          let best=null,bd=999;
+          for(let dy=-8;dy<=8;dy++)for(let dx=-8;dx<=8;dx++){
+            const tx=Math.floor(e.x)+dx,ty=Math.floor(e.y)+dy;
+            if(tx>=0&&tx<GW&&ty>=0&&ty<GH&&grid[ty][tx]===TERRAIN.forest){
+              const d=Math.abs(dx)+Math.abs(dy);if(d<bd){bd=d;best={x:tx,y:ty};}
+            }
+          }
+          if(best)e.target=best;
+        }else if(e.job==='farmer'){
+          let best=null,bd=999;
+          for(const b of buildings){if(b.type.name==='Farm'){const d=Math.hypot(b.x-e.x,b.y-e.y);if(d<bd){bd=d;best={x:b.x+1,y:b.y+1};}}}
+          if(best)e.target=best;
+        }else{
+          // gatherer: wander randomly
+          e.target={x:e.x+Math.random()*6-3,y:e.y+Math.random()*6-3};
+        }
+      }
+      // move toward target
+      if(e.target){
+        const dx=e.target.x-e.x,dy=e.target.y-e.y,d=Math.hypot(dx,dy);
+        if(d>.5){const spd=.8*dt;e.x+=dx/d*spd;e.y+=dy/d*spd;}
+        else{
+          // arrived at target — do work
+          if(e.job==='woodcutter'){
+            const tx=Math.floor(e.target.x),ty=Math.floor(e.target.y);
+            if(tx>=0&&tx<GW&&ty>=0&&ty<GH&&grid[ty][tx]===TERRAIN.forest){
+              grid[ty][tx]=TERRAIN.grass;wood++;
+              particles.push({x:tx*GS+GS/2,y:ty*GS+GS/2,vx:0,vy:-1,life:20,color:'#0f0'});
+            }
+          }
+          e.target=null;
+        }
+      }
+      e.x=Math.max(.5,Math.min(GW-.5,e.x));e.y=Math.max(.5,Math.min(GH-.5,e.y));
+    }else if(e.type==='enemy'){
+      // find nearest villager or building
+      let closest=null,cd=999;
+      for(const v of entities){if(v.type==='villager'){const d=Math.hypot(v.x-e.x,v.y-e.y);if(d<cd){cd=d;closest=v;}}}
+      if(!closest){for(const b of buildings){const d=Math.hypot(b.x+1-e.x,b.y+1-e.y);if(d<cd){cd=d;closest={x:b.x+1,y:b.y+1,building:b};}}}
+      if(closest){
+        const tx=closest.x||closest.x,ty=closest.y||closest.y;
+        const dx=tx-e.x,dy=ty-e.y,d=Math.hypot(dx,dy);
+        if(d>1){const spd=.6*dt;e.x+=dx/d*spd;e.y+=dy/d*spd;}
+        else if(e.timer>1.5){
+          e.timer=0;
+          if(closest.hp!==undefined){closest.hp-=e.atk;if(closest.hp<=0){
+            if(closest.type==='villager')entities.splice(entities.indexOf(closest),1);
+          }}
+          if(closest.building){closest.building.hp-=e.atk;if(closest.building.hp<=0){buildings.splice(buildings.indexOf(closest.building),1);}}
+        }
+      }
+      // tower attacks enemies
+      for(const b of buildings){
+        if(!b.type.attacks)continue;
+        const td=Math.hypot(b.x+.5-e.x,b.y+1-e.y);
+        if(td<6&&Math.random()<.02*gameSpeed){
+          e.hp-=5;
+          particles.push({x:e.x*GS,y:e.y*GS,vx:(Math.random()-.5)*2,vy:-2,life:10,color:'#ff0'});
+        }
+      }
+      if(e.hp<=0){
+        for(let k=0;k<5;k++)particles.push({x:e.x*GS,y:e.y*GS,vx:(Math.random()-.5)*3,vy:-1-Math.random()*2,life:15,color:'#f44'});
+        entities.splice(i,1);continue;
+      }
+    }
+  }
+
+  // building production
+  for(const b of buildings){
+    if(b.type.prod){
+      if(b.type.prod.food)food+=b.type.prod.food*dt*.1;
+      if(b.type.prod.stone)stone+=b.type.prod.stone*dt*.1;
+    }
+  }
+
+  // particles
+  for(let i=particles.length-1;i>=0;i--){
+    const p=particles[i];p.x+=p.vx;p.y+=p.vy;p.life--;
+    if(p.life<=0)particles.splice(i,1);
+  }
+}
+
+function render(){
+  ctx.imageSmoothingEnabled=false;
+  ctx.fillStyle='#0a0a0a';ctx.fillRect(0,0,W,H);
+
+  // day/night cycle
+  const dayPhase=(day%1);
+  const nightAlpha=dayPhase>.75?.3*(dayPhase-.75)*4:dayPhase<.25?.3*(1-dayPhase*4):0;
+
+  // terrain
+  for(let y=0;y<GH;y++)for(let x=0;x<GW;x++){
+    const t=grid[y][x];
+    ctx.fillStyle=TCOL[t]||'#000';
+    ctx.fillRect(x*GS,y*GS,GS,GS);
+    // pixel detail
+    if(t===TERRAIN.forest&&(x+y)%3===0){ctx.fillStyle='#0a5a0a';ctx.fillRect(x*GS+2,y*GS,GS-4,GS-2);}
+    if(t===TERRAIN.grass&&(x*7+y*13)%11===0){ctx.fillStyle='#4a9a4a';ctx.fillRect(x*GS+3,y*GS+3,2,2);}
+    if(t===TERRAIN.water){const w=Math.sin(performance.now()*.002+x+y)*.5+.5;ctx.fillStyle=`rgba(100,180,255,${w*.15})`;ctx.fillRect(x*GS,y*GS,GS,GS);}
+  }
+
+  // buildings
+  for(const b of buildings){
+    const bx=b.x*GS,by=b.y*GS,bw=b.type.w*GS,bh=b.type.h*GS;
+    ctx.fillStyle=b.type.color;ctx.fillRect(bx,by,bw,bh);
+    // highlight
+    ctx.fillStyle=shade(b.type.color,30);ctx.fillRect(bx,by,bw,1);ctx.fillRect(bx,by,1,bh);
+    // shadow
+    ctx.fillStyle=shade(b.type.color,-30);ctx.fillRect(bx+bw-1,by,1,bh);ctx.fillRect(bx,by+bh-1,bw,1);
+    // roof
+    if(b.type.roof){
+      ctx.fillStyle=b.type.roof;
+      ctx.beginPath();ctx.moveTo(bx-1,by);ctx.lineTo(bx+bw/2,by-GS*.6);ctx.lineTo(bx+bw+1,by);ctx.fill();
+    }
+    // hp bar if damaged
+    if(b.hp<b.maxHp){
+      ctx.fillStyle='#400';ctx.fillRect(bx,by-3,bw,2);
+      ctx.fillStyle='#0f0';ctx.fillRect(bx,by-3,Math.floor(bw*b.hp/b.maxHp),2);
+    }
+  }
+
+  // entities
+  for(const e of entities){
+    const ex=e.x*GS,ey=e.y*GS;
+    if(e.type==='villager'){
+      // body
+      ctx.fillStyle='#deb887';ctx.fillRect(ex-2,ey-4,4,4);
+      // head
+      ctx.fillStyle='#f5deb3';ctx.fillRect(ex-1,ey-6,3,2);
+      // job color hat
+      ctx.fillStyle=e.job==='woodcutter'?'#0a0':e.job==='farmer'?'#880':'#08f';
+      ctx.fillRect(ex-1,ey-7,3,1);
+      // hunger indicator
+      if(e.hunger<20){ctx.fillStyle='#f00';ctx.fillRect(ex-1,ey-9,2,1);}
+    }else if(e.type==='enemy'){
+      // red enemy
+      ctx.fillStyle='#a00';ctx.fillRect(ex-3,ey-5,6,5);
+      ctx.fillStyle='#f00';ctx.fillRect(ex-2,ey-3,4,3);
+      ctx.fillStyle='#ff0';ctx.fillRect(ex-1,ey-4,1,1);ctx.fillRect(ex+1,ey-4,1,1);
+      // hp
+      ctx.fillStyle='#400';ctx.fillRect(ex-3,ey-7,6,1);
+      ctx.fillStyle='#f00';ctx.fillRect(ex-3,ey-7,Math.floor(6*e.hp/e.maxHp),1);
+    }
+  }
+
+  // particles
+  for(const p of particles){
+    ctx.globalAlpha=Math.max(0,p.life/15);ctx.fillStyle=p.color;
+    ctx.fillRect(p.x-1,p.y-1,2,2);
+  }
+  ctx.globalAlpha=1;
+
+  // night overlay
+  if(nightAlpha>0){ctx.fillStyle=`rgba(0,0,40,${nightAlpha})`;ctx.fillRect(0,0,W,H);}
+
+  // HUD
+  const villagers=entities.filter(e=>e.type==='villager').length;
+  const enemies=entities.filter(e=>e.type==='enemy').length;
+  document.getElementById('dayInfo').textContent='Day '+Math.floor(day)+(enemies?' ⚔'+enemies:'');
+  document.getElementById('popInfo').textContent='Pop:'+villagers;
+  document.getElementById('foodInfo').textContent='Food:'+Math.floor(food);
+  document.getElementById('woodInfo').textContent='Wood:'+Math.floor(wood);
+  document.getElementById('stoneInfo').textContent='Stone:'+Math.floor(stone);
+}
+
+function shade(hex,amt){
+  let r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);
+  r=Math.max(0,Math.min(255,r+amt));g=Math.max(0,Math.min(255,g+amt));b=Math.max(0,Math.min(255,b+amt));
+  return'#'+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1);
+}
+
+init();
+let lastT=performance.now(),fpsT=0,fpsC=0;
+function loop(){
+  const now=performance.now(),dt=Math.min(.05,(now-lastT)/1000);lastT=now;
+  fpsC++;fpsT+=dt;if(fpsT>1){document.getElementById('fps').textContent=fpsC+'fps';fpsC=0;fpsT=0;}
+  update(dt);render();
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
