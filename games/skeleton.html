@@ -214,7 +214,23 @@ var GENOME_LENGTH = NUM_MUSCLES * 3; // 3 params per muscle
 // Angle constraints (min, max in radians) for certain joints
 // Convention: angle is measured at pivot between vectors (pivot->a) and (pivot->b)
 // Precomputed angle constraint list: { pivot, a, b, min, max }
+var ANGLE_CONSTRAINT_MAP = {};
+ANGLE_CONSTRAINT_MAP[L_KNEE] = { min: 0.05, max: 2.8 };
+ANGLE_CONSTRAINT_MAP[R_KNEE] = { min: 0.05, max: 2.8 };
+ANGLE_CONSTRAINT_MAP[L_ELBOW] = { min: 0.1, max: 3.0 };
+ANGLE_CONSTRAINT_MAP[R_ELBOW] = { min: 0.1, max: 3.0 };
+
+// Build precomputed list for fast iteration
 var ANGLE_CONSTRAINT_LIST = [];
+(function() {
+  for (var mm = 0; mm < NUM_MUSCLES; mm++) {
+    var md = MUSCLE_DEFS[mm];
+    if (ANGLE_CONSTRAINT_MAP.hasOwnProperty(md.pivot)) {
+      var c = ANGLE_CONSTRAINT_MAP[md.pivot];
+      ANGLE_CONSTRAINT_LIST.push({ pivot: md.pivot, a: md.a, b: md.b, min: c.min, max: c.max });
+    }
+  }
+})();
 
 // --- DOM ---
 var canvas = document.getElementById("main");
@@ -403,52 +419,39 @@ function physicsTick(skel, genome, time) {
       j[iby] -= dy * diff;
     }
 
-    // Angle constraints
-    for (var ci in ANGLE_CONSTRAINTS) {
-      if (!ANGLE_CONSTRAINTS.hasOwnProperty(ci)) continue;
-      var c = ANGLE_CONSTRAINTS[ci];
-      var pivotIdx = parseInt(ci);
-      // Find the muscle def for this pivot to get a and b
-      for (var mm = 0; mm < NUM_MUSCLES; mm++) {
-        if (MUSCLE_DEFS[mm].pivot === pivotIdx) {
-          var mdef = MUSCLE_DEFS[mm];
-          var pxi = pivotIdx*2, pyi = pivotIdx*2+1;
-          var axi = mdef.a*2, ayi = mdef.a*2+1;
-          var bxi = mdef.b*2, byi = mdef.b*2+1;
+    // Angle constraints (precomputed list)
+    for (var ac = 0; ac < ANGLE_CONSTRAINT_LIST.length; ac++) {
+      var c = ANGLE_CONSTRAINT_LIST[ac];
+      var pxi = c.pivot*2, pyi = c.pivot*2+1;
+      var axi = c.a*2, ayi = c.a*2+1;
+      var bxi = c.b*2, byi = c.b*2+1;
 
-          var da_x = j[axi] - j[pxi], da_y = j[ayi] - j[pyi];
-          var db_x = j[bxi] - j[pxi], db_y = j[byi] - j[pyi];
+      var da_x = j[axi] - j[pxi], da_y = j[ayi] - j[pyi];
+      var db_x = j[bxi] - j[pxi], db_y = j[byi] - j[pyi];
 
-          var angA = Math.atan2(da_y, da_x);
-          var angB = Math.atan2(db_y, db_x);
-          var ang = angB - angA;
-          // Normalize to [0, 2PI]
-          while (ang < 0) ang += Math.PI * 2;
-          while (ang > Math.PI * 2) ang -= Math.PI * 2;
+      var angA = Math.atan2(da_y, da_x);
+      var angB = Math.atan2(db_y, db_x);
+      var ang = angB - angA;
+      // Normalize to [0, 2PI]
+      while (ang < 0) ang += Math.PI * 2;
+      while (ang > Math.PI * 2) ang -= Math.PI * 2;
 
-          if (ang < c.min) {
-            var fix = (c.min - ang) * 0.5;
-            var cosA = Math.cos(angA - fix), sinA = Math.sin(angA - fix);
-            var cosB = Math.cos(angB + fix), sinB = Math.sin(angB + fix);
-            var la2 = Math.sqrt(da_x*da_x + da_y*da_y);
-            var lb2 = Math.sqrt(db_x*db_x + db_y*db_y);
-            j[axi] = j[pxi] + cosA * la2;
-            j[ayi] = j[pyi] + sinA * la2;
-            j[bxi] = j[pxi] + cosB * lb2;
-            j[byi] = j[pyi] + sinB * lb2;
-          } else if (ang > c.max) {
-            var fix2 = (ang - c.max) * 0.5;
-            var cosA2 = Math.cos(angA + fix2), sinA2 = Math.sin(angA + fix2);
-            var cosB2 = Math.cos(angB - fix2), sinB2 = Math.sin(angB - fix2);
-            var la3 = Math.sqrt(da_x*da_x + da_y*da_y);
-            var lb3 = Math.sqrt(db_x*db_x + db_y*db_y);
-            j[axi] = j[pxi] + cosA2 * la3;
-            j[ayi] = j[pyi] + sinA2 * la3;
-            j[bxi] = j[pxi] + cosB2 * lb3;
-            j[byi] = j[pyi] + sinB2 * lb3;
-          }
-          break;
-        }
+      if (ang < c.min) {
+        var fix = (c.min - ang) * 0.5;
+        var la2 = Math.sqrt(da_x*da_x + da_y*da_y);
+        var lb2 = Math.sqrt(db_x*db_x + db_y*db_y);
+        j[axi] = j[pxi] + Math.cos(angA - fix) * la2;
+        j[ayi] = j[pyi] + Math.sin(angA - fix) * la2;
+        j[bxi] = j[pxi] + Math.cos(angB + fix) * lb2;
+        j[byi] = j[pyi] + Math.sin(angB + fix) * lb2;
+      } else if (ang > c.max) {
+        var fix2 = (ang - c.max) * 0.5;
+        var la3 = Math.sqrt(da_x*da_x + da_y*da_y);
+        var lb3 = Math.sqrt(db_x*db_x + db_y*db_y);
+        j[axi] = j[pxi] + Math.cos(angA + fix2) * la3;
+        j[ayi] = j[pyi] + Math.sin(angA + fix2) * la3;
+        j[bxi] = j[pxi] + Math.cos(angB - fix2) * lb3;
+        j[byi] = j[pyi] + Math.sin(angB - fix2) * lb3;
       }
     }
 
