@@ -890,58 +890,140 @@ function runMonteCarlo(iterations){
   return mcResults;
 }
 
-/** Draw the Monte Carlo histogram on the mc-hist canvas */
-function drawMCHistogram(){
-  const canvas=$('mc-hist');
-  if(!canvas||!mcResults)return;
-  const dpr=2;
-  const w=canvas.clientWidth*dpr,h=canvas.clientHeight*dpr;
-  canvas.width=w;canvas.height=h;
+/** Draw a generic MC histogram on a canvas
+ * @param {string} canvasId - canvas element ID
+ * @param {number[]} values - array of values to histogram
+ * @param {{p10:number,p50:number,p80:number,p90:number}} pcts - percentile values
+ * @param {string} prefix - label prefix ('M' for months, '$' for cost)
+ * @param {string} suffix - label suffix ('' for months, 'B' for cost)
+ * @param {number|null} currentMarker - optional current month marker
+ */
+function drawMCHistogramGeneric(canvasId,values,pcts,prefix,suffix,currentMarker){
+  const canvas=$(canvasId);
+  if(!canvas||!values.length)return;
+  const dpr=window.devicePixelRatio||2;
+  const cw=canvas.clientWidth,ch=canvas.clientHeight;
+  canvas.width=cw*dpr;canvas.height=ch*dpr;
   const c=canvas.getContext('2d');
-  c.fillStyle='#faf7ee';c.fillRect(0,0,w,h);
+  c.scale(dpr,dpr);
+  c.fillStyle='#faf7ee';c.fillRect(0,0,cw,ch);
 
-  const months=mcResults.results.map(r=>r.month);
-  const minM=Math.floor(Math.min(...months));
-  const maxM=Math.ceil(Math.max(...months));
-  const range=maxM-minM||1;
-  const bins=Math.min(30,range);
+  const minV=Math.floor(Math.min(...values));
+  const maxV=Math.ceil(Math.max(...values));
+  const range=maxV-minV||1;
+  const bins=Math.min(40,Math.max(12,range));
   const binW=range/bins;
   const counts=new Array(bins).fill(0);
-  months.forEach(m=>{
-    const bi=Math.min(bins-1,Math.floor((m-minM)/binW));
+  values.forEach(v=>{
+    const bi=Math.min(bins-1,Math.floor((v-minV)/binW));
     counts[bi]++;
   });
   const maxC=Math.max(...counts);
-  const padL=4*dpr,padR=4*dpr,padT=4*dpr,padB=10*dpr;
-  const cW=w-padL-padR,cH=h-padT-padB;
-  const bW=cW/bins;
 
+  const padL=32,padR=10,padT=14,padB=22;
+  const cW=cw-padL-padR,cH=ch-padT-padB;
+  const bW=cW/bins;
+  const mf="'IBM Plex Mono',monospace";
+
+  // Y-axis grid lines and labels
+  c.strokeStyle='#eee5d0';c.lineWidth=0.5;
+  const yTicks=4;
+  for(let i=0;i<=yTicks;i++){
+    const y=padT+cH-(i/yTicks)*cH;
+    c.beginPath();c.moveTo(padL,y);c.lineTo(padL+cW,y);c.stroke();
+    if(i>0){
+      c.fillStyle='#9a9077';c.font='8px '+mf;c.textAlign='right';
+      c.fillText(Math.round((i/yTicks)*maxC),padL-3,y+3);
+    }
+  }
+
+  // Draw bars with color bands
   counts.forEach((cnt,i)=>{
+    if(cnt===0)return;
     const bH=(cnt/maxC)*cH;
     const x=padL+i*bW;
     const y=padT+cH-bH;
-    // Color based on percentile position
-    const mVal=minM+(i+0.5)*binW;
-    let col='#cabd9c';
-    if(mVal<=mcResults.p10.month)col='#2f7d4f';
-    else if(mVal<=mcResults.p50.month)col='#2c5d78';
-    else if(mVal<=mcResults.p80.month)col='#a87718';
-    else col='#b13d2c';
+    const mVal=minV+(i+0.5)*binW;
+    let col;
+    if(mVal<=pcts.p50) col='#2f7d4f';       // green: P10-P50
+    else if(mVal<=pcts.p80) col='#a87718';   // amber: P50-P80
+    else if(mVal<=pcts.p90) col='#b13d2c';   // red: P80-P90
+    else col='#7a2118';                       // dark red: >P90
     c.fillStyle=col;
-    c.fillRect(x+1,y,Math.max(1,bW-2),bH);
+    c.fillRect(x+0.5,y,Math.max(1,bW-1),bH);
   });
 
-  // P50 line
-  const p50x=padL+((mcResults.p50.month-minM)/range)*cW;
-  c.strokeStyle='#a8401f';c.lineWidth=2;c.setLineDash([3,2]);
-  c.beginPath();c.moveTo(p50x,padT);c.lineTo(p50x,padT+cH);c.stroke();c.setLineDash([]);
+  // Percentile vertical lines
+  function drawPctLine(val,label,color,dashPattern){
+    const x=padL+((val-minV)/range)*cW;
+    if(x<padL||x>padL+cW)return;
+    c.strokeStyle=color;c.lineWidth=1.5;c.setLineDash(dashPattern);
+    c.beginPath();c.moveTo(x,padT);c.lineTo(x,padT+cH);c.stroke();c.setLineDash([]);
+    // Label above
+    c.fillStyle=color;c.font='bold 7px '+mf;c.textAlign='center';
+    c.fillText(label,x,padT-3);
+  }
+  drawPctLine(pcts.p10,'P10','#2f7d4f',[2,2]);
+  drawPctLine(pcts.p50,'P50','#a8401f',[]);
+  drawPctLine(pcts.p80,'P80','#a87718',[3,2]);
+  drawPctLine(pcts.p90,'P90','#b13d2c',[2,2]);
 
-  // Axis labels
-  const mf=getComputedStyle(document.body).getPropertyValue('--mono');
-  c.fillStyle='#9a9077';c.font=(6*dpr)+'px '+mf;c.textAlign='center';
-  c.fillText('M'+minM,padL,h-1*dpr);
-  c.fillText('M'+maxM,w-padR,h-1*dpr);
-  c.fillText('P50',p50x,h-1*dpr);
+  // Current month marker
+  if(currentMarker!==null&&currentMarker!==undefined){
+    const mx=padL+((currentMarker-minV)/range)*cW;
+    if(mx>=padL&&mx<=padL+cW){
+      c.strokeStyle='#6c5fae';c.lineWidth=2;c.setLineDash([]);
+      c.beginPath();c.moveTo(mx,padT);c.lineTo(mx,padT+cH);c.stroke();
+      c.fillStyle='#6c5fae';c.font='bold 7px '+mf;c.textAlign='center';
+      c.fillText('NOW',mx,padT+cH+10);
+    }
+  }
+
+  // X-axis labels
+  c.fillStyle='#9a9077';c.font='8px '+mf;c.textAlign='center';
+  const xLabelCount=Math.min(8,bins);
+  const xStep=Math.max(1,Math.floor(bins/xLabelCount));
+  for(let i=0;i<bins;i+=xStep){
+    const val=minV+i*binW;
+    const x=padL+i*bW+bW/2;
+    const label=prefix+Math.round(val)+(suffix?suffix:'');
+    c.fillText(label,x,ch-4);
+  }
+  // Always show last label
+  const lastVal=minV+(bins-1)*binW;
+  const lastX=padL+(bins-1)*bW+bW/2;
+  c.fillText(prefix+Math.round(lastVal)+(suffix?suffix:''),lastX,ch-4);
+}
+
+/** Draw the Monte Carlo schedule histogram on the mc-hist-schedule canvas */
+function drawMCHistogram(){
+  if(!mcResults)return;
+  const months=mcResults.results.map(r=>r.month);
+  drawMCHistogramGeneric('mc-hist-schedule',months,
+    {p10:mcResults.p10.month,p50:mcResults.p50.month,p80:mcResults.p80.month,p90:mcResults.p90.month},
+    'M','',playing?month:null);
+}
+
+/** Draw the Monte Carlo cost histogram on the mc-hist-cost canvas */
+function drawCostHistogram(){
+  if(!mcResults)return;
+  const costs=mcResults.results.map(r=>r.cost);
+  drawMCHistogramGeneric('mc-hist-cost',costs,
+    {p10:mcResults.cp10.cost,p50:mcResults.cp50.cost,p80:mcResults.cp80.cost,p90:mcResults.cp90.cost},
+    '$','B',null);
+}
+
+/** Compute sensitivity analysis: top risks by expected value and contribution to P80-P50 spread */
+function mcSensitivityAnalysis(){
+  const items=RISKS.map(r=>{
+    const ev=r.prob*Math.abs(r.impact);
+    return{alias:r.alias,name:r.n,prob:r.prob,impact:r.impact,ev:ev};
+  });
+  items.sort((a,b)=>b.ev-a.ev);
+  // Estimate contribution to P80-P50 spread
+  const spread=mcResults?(mcResults.p80.month-mcResults.p50.month):0;
+  const totalEV=items.reduce((s,r)=>s+r.ev,0)||1;
+  return items.slice(0,5).map(r=>({...r,spreadContrib:(r.ev/totalEV)*spread}));
 }
 
 /** Build the HTML for the Monte Carlo forecast panel */
@@ -949,26 +1031,84 @@ function renderMCPanel(){
   if(!mcResults)runMonteCarlo(1000);
   const mc=mcResults;
   const timing=mc.timing?mc.timing.toFixed(2)+'s':'--';
-  return '<div class="mc-panel">'+
-    '<div class="mc-title">MC Forecast</div>'+
-    '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap">'+
-    '<span style="font:600 9px var(--mono);color:var(--faint)">Iterations:</span>'+
+
+  // Confidence summary colors
+  const schedSpread=mc.p80.month-mc.p50.month;
+  const schedSpreadPct=schedSpread/PLANT.dur;
+  const schedCls=schedSpreadPct<=0.1?'mc-cs-green':schedSpreadPct<=0.2?'mc-cs-amber':'mc-cs-red';
+  const costSpread=mc.cp80.cost-mc.cp50.cost;
+  const costSpreadPct=costSpread/PLANT.budget;
+  const costCls=costSpreadPct<=0.1?'mc-cs-green':costSpreadPct<=0.2?'mc-cs-amber':'mc-cs-red';
+
+  // Shift message
+  let shiftHtml='';
+  if(mcPrevResults){
+    const oldP50m=Math.round(mcPrevResults.p50.month),newP50m=Math.round(mc.p50.month);
+    const diffM=newP50m-oldP50m;
+    const oldP50c=mcPrevResults.p50.cost.toFixed(1),newP50c=mc.p50.cost.toFixed(1);
+    const diffC=(mc.p50.cost-mcPrevResults.p50.cost).toFixed(1);
+    if(diffM!==0||Math.abs(parseFloat(diffC))>=0.1){
+      const sign=diffM>=0?'+':'';
+      const csign=parseFloat(diffC)>=0?'+':'';
+      shiftHtml='<div class="mc-shift-msg" id="mc-shift-msg" style="display:block">'+
+        'P50 shifted: M'+oldP50m+' -> M'+newP50m+' ('+sign+diffM+'mo) | $'+oldP50c+'B -> $'+newP50c+'B ('+csign+diffC+'B)</div>';
+    }
+  }
+
+  // Sensitivity analysis
+  const sens=mcSensitivityAnalysis();
+  const maxEV=sens.length?sens[0].ev:1;
+  let sensHtml='<div class="mc-sensitivity"><div class="mc-sens-title">Sensitivity -- Top Risks by Expected Impact</div>';
+  sens.forEach(r=>{
+    const barPct=Math.round((r.ev/maxEV)*100);
+    sensHtml+='<div class="mc-sens-row">'+
+      '<span class="mc-sens-alias">'+r.alias+'</span>'+
+      '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+r.name+'</span>'+
+      '<span style="min-width:100px;font-size:9px;color:var(--faint)">'+Math.round(r.prob*100)+'% x '+Math.abs(r.impact)+'mo</span>'+
+      '<div class="mc-sens-bar"><div class="mc-sens-bar-fill" style="width:'+barPct+'%"></div></div>'+
+      '<span class="mc-sens-ev">'+r.ev.toFixed(1)+'mo</span>'+
+      '<span style="font-size:9px;color:var(--faint);min-width:60px">+/-'+r.spreadContrib.toFixed(1)+'mo spread</span>'+
+      '</div>';
+  });
+  sensHtml+='</div>';
+
+  return '<div class="mc-panel" id="mc-panel-inner">'+
+    '<div class="mc-title">Monte Carlo Forecast</div>'+
+    // Confidence summary one-liner
+    '<div class="mc-conf-summary">'+
+    'Schedule: <span class="'+schedCls+'">P50 M'+Math.round(mc.p50.month)+' | P80 M'+Math.round(mc.p80.month)+' (+'+Math.round(schedSpread)+'mo spread)</span>'+
+    ' &nbsp; Cost: <span class="'+costCls+'">P50 $'+mc.cp50.cost.toFixed(1)+'B | P80 $'+mc.cp80.cost.toFixed(1)+'B (+$'+costSpread.toFixed(1)+'B spread)</span>'+
+    '</div>'+
+    // Shift message
+    shiftHtml+
+    // MC Settings panel
+    '<div class="mc-settings">'+
+    '<span class="mc-settings-label">Iterations:</span>'+
     '<button class="mc-iter-btn'+(mc.iterations===100?' mc-iter-on':'')+'" data-iters="100">100</button>'+
     '<button class="mc-iter-btn'+(mc.iterations===500?' mc-iter-on':'')+'" data-iters="500">500</button>'+
     '<button class="mc-iter-btn'+(mc.iterations===1000?' mc-iter-on':'')+'" data-iters="1000">1000</button>'+
     '<button class="mc-iter-btn'+(mc.iterations===5000?' mc-iter-on':'')+'" data-iters="5000">5k</button>'+
     '<button class="mc-iter-btn'+(mc.iterations===10000?' mc-iter-on':'')+'" data-iters="10000">10k</button>'+
-    '<button id="mc-run-btn" style="font:600 9px var(--mono);padding:3px 8px;border:1px solid var(--oxide);border-radius:4px;background:var(--oxide);color:#fff;cursor:pointer">Run MC</button>'+
+    '<button id="mc-run-btn" style="font:600 9px var(--mono);padding:3px 8px;border:1px solid var(--oxide);border-radius:4px;background:var(--oxide);color:#fff;cursor:pointer;margin-left:4px">Run Now</button>'+
+    '<span class="mc-autorun-toggle'+(mcAutoRun?' on':'')+'" id="mc-autorun-btn">'+(mcAutoRun?'Auto: ON':'Auto: OFF')+'</span>'+
     '</div>'+
+    '<div class="mc-run-info">Last run: '+mc.iterations.toLocaleString()+' iterations'+(mc.timing?', '+timing:'')+'</div>'+
+    // Percentile cards
     '<div class="mc-pcts">'+
     '<div class="mc-pct"><div class="mc-pl">P10</div><div class="mc-pv">M'+Math.round(mc.p10.month)+'</div><div class="mc-pl">$'+mc.p10.cost.toFixed(1)+'B</div></div>'+
-    '<div class="mc-pct highlight"><div class="mc-pl">P50</div><div class="mc-pv">M'+Math.round(mc.p50.month)+'</div><div class="mc-pl">$'+mc.p50.cost.toFixed(1)+'B</div></div>'+
-    '<div class="mc-pct"><div class="mc-pl">P80</div><div class="mc-pv">M'+Math.round(mc.p80.month)+'</div><div class="mc-pl">$'+mc.p80.cost.toFixed(1)+'B</div></div>'+
-    '<div class="mc-pct"><div class="mc-pl">P90</div><div class="mc-pv">M'+Math.round(mc.p90.month)+'</div><div class="mc-pl">$'+mc.p90.cost.toFixed(1)+'B</div></div>'+
+    '<div class="mc-pct highlight"><div class="mc-pl">P50</div><div class="mc-pv">M'+Math.round(mc.p50.month)+'</div><div class="mc-pl">$'+mc.cp50.cost.toFixed(1)+'B</div></div>'+
+    '<div class="mc-pct"><div class="mc-pl">P80</div><div class="mc-pv">M'+Math.round(mc.p80.month)+'</div><div class="mc-pl">$'+mc.cp80.cost.toFixed(1)+'B</div></div>'+
+    '<div class="mc-pct"><div class="mc-pl">P90</div><div class="mc-pv">M'+Math.round(mc.p90.month)+'</div><div class="mc-pl">$'+mc.cp90.cost.toFixed(1)+'B</div></div>'+
     '</div>'+
-    '<div class="mc-conf">P50 = M'+Math.round(mc.p50.month)+' ($'+mc.p50.cost.toFixed(1)+'B) | P80 = M'+Math.round(mc.p80.month)+' ($'+mc.p80.cost.toFixed(1)+'B)</div>'+
-    '<div style="font:9px var(--mono);color:var(--faint);margin-top:2px">Last run: '+mc.iterations.toLocaleString()+' iterations'+(mc.timing?' | '+timing:'')+'</div>'+
-    '<canvas id="mc-hist" style="width:200px;height:60px;display:block;border:1px solid var(--rule2);border-radius:4px;background:var(--panel);margin-top:4px"></canvas>'+
+    // Dual histograms
+    '<div class="mc-histograms">'+
+    '<div class="mc-hist-wrap"><div class="mc-hist-label">Schedule Distribution (months)</div>'+
+    '<canvas id="mc-hist-schedule" class="mc-hist-canvas"></canvas></div>'+
+    '<div class="mc-hist-wrap"><div class="mc-hist-label">Cost Distribution ($B)</div>'+
+    '<canvas id="mc-hist-cost" class="mc-hist-canvas"></canvas></div>'+
+    '</div>'+
+    // Sensitivity analysis
+    sensHtml+
     '</div>';
 }
 
@@ -1750,7 +1890,7 @@ function checkACETriagees(){
         triageMCEffects.push(eff);
         eventLog.push({m:Math.round(month),type:'mile',msg:'TRIAGE '+id+' auto-resolved: '+(pickA?spec.optA:spec.optB)+' ('+((pickA?spec.impactA:spec.impactB).schedule)+')'});
         recordNarrative(id,'triage-resolve','Auto-resolved: '+(pickA?spec.optA:spec.optB)+'. Impact: '+((pickA?spec.impactA:spec.impactB).schedule),false);
-        mcResults=runMonteCarlo(1000);
+        mcUpdateAfterEvent('auto-resolved triage');
       } else {
         showTriageModal(id,spec);
       }
@@ -2818,9 +2958,10 @@ function renderDashboard(el){
   // Render Earned Schedule KPIs
   updateESKPIs();
 
-  // Draw MC histogram after DOM is ready and wire up MC controls
+  // Draw MC histograms after DOM is ready and wire up MC controls
   setTimeout(()=>{
     drawMCHistogram();
+    drawCostHistogram();
     wireMCControls();
   },50);
   const mcWrap=$('mc-wrap');
@@ -2830,22 +2971,74 @@ function renderDashboard(el){
       const runBtn=e.target.closest('#mc-run-btn');
       if(iterBtn){
         const iters=+iterBtn.dataset.iters;
+        mcPrevResults=null; // no shift message for manual re-runs
         runMonteCarlo(iters);
         mcWrap.innerHTML=renderMCPanel();
-        setTimeout(()=>drawMCHistogram(),50);
+        setTimeout(()=>{drawMCHistogram();drawCostHistogram();wireMCControls();},50);
       }
       if(runBtn){
         const currentIters=mcResults?mcResults.iterations:1000;
+        mcPrevResults=null;
         runMonteCarlo(currentIters);
         mcWrap.innerHTML=renderMCPanel();
-        setTimeout(()=>drawMCHistogram(),50);
+        setTimeout(()=>{drawMCHistogram();drawCostHistogram();wireMCControls();},50);
       }
     });
   }
 }
 
 /** Wire up Monte Carlo iteration selector and run button */
-function wireMCControls(){}
+function wireMCControls(){
+  const autoBtn=$('mc-autorun-btn');
+  if(autoBtn){
+    autoBtn.onclick=function(){
+      mcAutoRun=!mcAutoRun;
+      this.textContent=mcAutoRun?'Auto: ON':'Auto: OFF';
+      this.classList.toggle('on',mcAutoRun);
+    };
+  }
+}
+
+/** Flash the MC panel and show shift message after a distribution change */
+function flashMCPanel(){
+  const panel=$('mc-panel-inner');
+  if(panel){
+    panel.classList.remove('mc-flash');
+    void panel.offsetWidth; // force reflow
+    panel.classList.add('mc-flash');
+  }
+  const shiftMsg=$('mc-shift-msg');
+  if(shiftMsg){
+    shiftMsg.style.display='block';
+    shiftMsg.style.animation='none';
+    void shiftMsg.offsetWidth;
+    shiftMsg.style.animation='mcShiftFade 4s ease-out forwards';
+  }
+}
+
+/** Re-run MC, update display, flash panel, and log shift event */
+function mcUpdateAfterEvent(eventSource){
+  if(!mcAutoRun)return;
+  const oldP50m=mcResults?Math.round(mcResults.p50.month):null;
+  const oldP50c=mcResults?mcResults.p50.cost.toFixed(1):null;
+  runMonteCarlo(mcIterationCount);
+  if(currentTab==='dashboard'){
+    const mcw=$('mc-wrap');
+    if(mcw){
+      mcw.innerHTML=renderMCPanel();
+      setTimeout(()=>{drawMCHistogram();drawCostHistogram();wireMCControls();flashMCPanel();},50);
+    }
+  }
+  // Log shift event
+  if(oldP50m!==null){
+    const newP50m=Math.round(mcResults.p50.month);
+    const diffM=newP50m-oldP50m;
+    if(diffM!==0){
+      const sign=diffM>=0?'+':'';
+      eventLog.push({m:Math.round(month),type:diffM>0?'risk':'good',msg:'P50 shifted from M'+oldP50m+' to M'+newP50m+' ('+sign+diffM+'mo) after '+eventSource});
+    }
+  }
+}
 
 /** Handle click events on the Gantt chart canvas */
 function onGanttClick(e){
@@ -3477,12 +3670,7 @@ function checkRisks(m){
   let riskFired=false;
   RISKS.forEach((r,i)=>{if(riskHits.has(i))return;if(Math.abs(m-r.trigger)<1&&Math.random()<r.prob){riskHits.add(i);delayTotal+=r.impact;eventLog.push({m:Math.round(m),type:'risk',msg:'RISK: '+r.n+' -- '+r.desc});riskFired=true;recordNarrative(r.alias,'risk-fired',r.n+'. Impact: '+r.desc,false);}});
   if(riskFired){
-    // Re-run Monte Carlo after a risk fires
-    runMonteCarlo(1000);
-    if(currentTab==='dashboard'){
-      const mcw=$('mc-wrap');
-      if(mcw){mcw.innerHTML=renderMCPanel();setTimeout(()=>{drawMCHistogram();wireMCControls();},50);}
-    }
+    mcUpdateAfterEvent('risk event');
   }
 }
 /** Check if any milestones have been reached */
@@ -3635,12 +3823,8 @@ document.addEventListener('click',function(e){
       }
       actTriageFired[triageId]=true;
 
-      // Re-run Monte Carlo and update display
-      runMonteCarlo(1000);
-      if(currentTab==='dashboard'){
-        const mcw=$('mc-wrap');
-        if(mcw){mcw.innerHTML=renderMCPanel();setTimeout(()=>{drawMCHistogram();wireMCControls();},50);}
-      }
+      // Re-run Monte Carlo and update display with shift animation
+      mcUpdateAfterEvent('triage resolution');
     }
   }
 });
@@ -4508,12 +4692,15 @@ function updateQuickStats(){
   updateIWPConstraints(month);
   const iwpReady=IWP_DATA.filter(i=>iwpIsReady(i)).length;
   const mc=mcResults;const p50=mc?'M'+Math.round(mc.p50.month):'--';
+  const p80=mc?'M'+Math.round(mc.p80.month):'--';
+  const costP50=mc?'$'+mc.cp50.cost.toFixed(1)+'B':'--';
   const wd=weatherData;const wStr=wd?wd.temperature+'C '+(wd.weathercode>=51?'Rain':wd.weathercode>=1?'Cloudy':'Clear'):'--';
   const wCls=wd?(wd.temperature<0||wd.windspeed>40?'qs-bad':wd.temperature<5||wd.windspeed>25?'qs-warn':'qs-ok'):'';
   el.innerHTML='<span>IWPs Ready: <span class="qs-val '+(iwpReady>=IWP_DATA.length?'qs-ok':iwpReady>IWP_DATA.length/2?'qs-warn':'qs-bad')+'">'+iwpReady+'/'+IWP_DATA.length+'</span></span>'+
     '<span>Risks Hit: <span class="qs-val '+(riskHits.size>4?'qs-bad':riskHits.size>0?'qs-warn':'qs-ok')+'">'+riskHits.size+'/'+RISKS.length+'</span></span>'+
     '<span>Delay: <span class="qs-val '+(delayTotal>6?'qs-bad':delayTotal>0?'qs-warn':'qs-ok')+'">'+delayTotal+'mo</span></span>'+
-    '<span>MC P50: <span class="qs-val qs-bl">'+p50+'</span></span>'+
+    '<span>MC P50: <span class="qs-val qs-bl">'+p50+'</span> | P80: <span class="qs-val qs-bl">'+p80+'</span></span>'+
+    '<span>Cost P50: <span class="qs-val qs-bl">'+costP50+'</span></span>'+
     '<span>Atoms: <span class="qs-val">'+ACE_ALL.length+'</span></span>'+
     '<span>Weather: <span class="qs-val '+wCls+'">'+wStr+'</span></span>';
 }
