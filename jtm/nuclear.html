@@ -536,23 +536,24 @@ body{background:var(--paper);color:var(--ink);font-family:var(--serif);font-size
 }
 /* Responsive: Phone (<768px) */
 @media(max-width:768px){
-  .sidebar{position:fixed;left:0;top:0;bottom:0;z-index:150;width:260px;box-shadow:4px 0 20px rgba(34,28,16,.3);padding-top:44px;transition:transform .2s}
-  .sidebar.hidden{transform:translateX(-260px);box-shadow:none}
+  .sidebar{position:fixed;left:0;top:0;bottom:0;z-index:150;width:240px;box-shadow:4px 0 20px rgba(34,28,16,.4);padding-top:48px;transition:transform .25s ease;transform:translateX(-240px)}
+  .sidebar.mobile-open{transform:translateX(0)}
+  .sidebar.hidden{transform:translateX(-240px)}
   .main-wrap{flex-direction:column}
   .content{width:100%}
-  /* Hide export buttons on mobile — keep Menu, Play, speed only */
   .hdr button[onclick*="export"],.hdr button[onclick*="save"],.hdr button[onclick*="clear"],
   .hdr button[onclick*="P6"],.hdr button[onclick*="Tour"],.hdr button[onclick*="Shortcuts"],
   .hdr select[id="cam"],.hdr #weather-display{display:none}
   .hdr .sp{display:none}
-  .hdr{flex-wrap:wrap;height:auto;padding:4px 10px;gap:6px}
+  .hdr{flex-wrap:wrap;height:auto;padding:4px 10px;padding-top:max(4px,env(safe-area-inset-top));gap:6px;z-index:200;position:relative}
   .hdr .scrub{max-width:100%;order:10;width:100%}
   .hdr .mo-label{order:11}
-  /* Hide 3D viewport on mobile — too small to be useful, blocks UI */
   .gl-wrap{display:none!important}
   #gl-toggle{display:none}
   .kpis{grid-template-columns:repeat(3,1fr)}
-  .hdr{z-index:200;position:relative}
+  /* Backdrop when sidebar open */
+  .sidebar-backdrop{display:none;position:fixed;inset:0;z-index:140;background:rgba(34,28,16,.3)}
+  .sidebar-backdrop.visible{display:block}
 }
 </style>
 </head>
@@ -3762,9 +3763,32 @@ $('mo').oninput=e=>{month=+e.target.value;playing=false;$('play').textContent='P
 $('play').onclick=()=>{if(playing){playing=false;$('play').textContent='Play';}else{if(month>=PLANT.dur)month=0;playing=true;$('play').textContent='Pause';}};
 $('spd').onclick=function(){spdX=spdX===1?2:spdX===2?5:spdX===5?10:1;this.textContent=spdX+'x';};
 $('cam').onchange=e=>{camMode=e.target.value;};
-/** Toggle sidebar — bulletproof */
-var _sb=$('sidebar'),_sbt=$('sbtog');
-if(_sbt&&_sb){_sbt.addEventListener('click',function(e){e.stopPropagation();e.preventDefault();if(_sb.classList.contains('hidden')){_sb.classList.remove('hidden');sidebarVisible=true;}else{_sb.classList.add('hidden');sidebarVisible=false;}},true);}
+/** Toggle sidebar — handles both mobile (slide+backdrop) and desktop (margin) */
+(function(){
+  var sb=$('sidebar'),btn=$('sbtog');if(!sb||!btn)return;
+  // Create backdrop for mobile
+  var bd=document.createElement('div');bd.className='sidebar-backdrop';bd.id='sb-backdrop';
+  document.body.appendChild(bd);
+  function isMobile(){return window.innerWidth<768;}
+  function openSidebar(){
+    if(isMobile()){sb.classList.add('mobile-open');sb.classList.remove('hidden');bd.classList.add('visible');}
+    else{sb.classList.remove('hidden');}
+    sidebarVisible=true;
+  }
+  function closeSidebar(){
+    if(isMobile()){sb.classList.remove('mobile-open');bd.classList.remove('visible');}
+    else{sb.classList.add('hidden');}
+    sidebarVisible=false;
+  }
+  btn.addEventListener('click',function(e){e.stopPropagation();e.preventDefault();
+    if(sidebarVisible)closeSidebar();else openSidebar();
+  },true);
+  bd.addEventListener('click',function(){closeSidebar();});
+  // Start hidden on mobile
+  if(isMobile()){sb.classList.remove('mobile-open');sidebarVisible=false;}
+  // Expose for other code
+  window._closeSidebar=closeSidebar;
+})();
 
 // Sidebar navigation
 $('sbnav').addEventListener('click',e=>{
@@ -3776,7 +3800,7 @@ $('sbnav').addEventListener('click',e=>{
   needsFullRender=true;
   renderTab();
   /** On mobile, auto-close sidebar after selecting a tab */
-  if(window.innerWidth<768){sidebarVisible=false;$('sidebar').classList.add('hidden');}
+  if(window.innerWidth<768&&window._closeSidebar)window._closeSidebar();
 });
 /** On mobile, clicking content area closes sidebar */
 $('content').addEventListener('click',function(){
