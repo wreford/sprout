@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>ACE — Atomic Constraint Engine</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -22,7 +22,7 @@ html,body{margin:0;padding:0;height:100%;overflow:hidden}
 body{background:var(--paper);color:var(--ink);font-family:var(--serif);font-size:14px;line-height:1.4;-webkit-font-smoothing:antialiased;display:flex;flex-direction:column;height:100vh}
 
 /* Top bar */
-.hdr{display:flex;align-items:center;gap:10px;padding:5px 14px;border-bottom:1px solid var(--rule);background:rgba(250,246,236,.95);backdrop-filter:blur(4px);flex-shrink:0;z-index:10;height:36px}
+.hdr{display:flex;align-items:center;gap:10px;padding:5px 14px;padding-top:max(5px,env(safe-area-inset-top));border-bottom:1px solid var(--rule);background:rgba(250,246,236,.95);backdrop-filter:blur(4px);flex-shrink:0;z-index:10;height:36px}
 .hdr h1{font-family:var(--disp);font-weight:900;font-size:16px;letter-spacing:.02em;flex:none}
 .hdr h1 b{color:var(--oxide)}
 .hdr button,.hdr select{font-family:var(--mono);font-size:10px;font-weight:500;padding:3px 8px;border:1px solid var(--rule2);border-radius:5px;background:var(--hi);color:var(--ink2);cursor:pointer}
@@ -2378,6 +2378,28 @@ function navigateToAtom(alias){
       if(blockedIWPCount>0) conDetailHtml+='<div style="margin-top:4px;color:var(--oxide);font-weight:600"><span class="ci-label">Impact</span> Clearing this unblocks '+blockedIWPCount+' IWPs worth ~'+Math.round(blockedWorkerDays).toLocaleString()+' worker-days</div>';
       conDetailHtml+='</div>';
     }
+    // Full chain visualization (upstream + downstream)
+    let chainHtml='';
+    var critFull2=findCriticalPathFull();
+    var critSet2=critFull2.chainSet;
+    var upTree=traceChain(alias,'upstream',4);
+    var downTree=traceChain(alias,'downstream',4);
+    var hasUpstream=upTree&&upTree.children&&upTree.children.length>0;
+    var hasDownstream=downTree&&downTree.children&&downTree.children.length>0;
+    if(hasUpstream||hasDownstream){
+      chainHtml='<div class="chain-section">';
+      chainHtml+='<div class="chain-title">Dependency Chain</div>';
+      if(hasUpstream){
+        chainHtml+='<div style="font:600 9px var(--mono);color:var(--faint);text-transform:uppercase;margin:4px 0 2px">Upstream (what this needs):</div>';
+        upTree.children.forEach(function(ch){chainHtml+=renderChainTree(ch,critSet2);});
+      }
+      if(hasDownstream){
+        chainHtml+='<div style="font:600 9px var(--mono);color:var(--faint);text-transform:uppercase;margin:6px 0 2px">Downstream (what needs this):</div>';
+        downTree.children.forEach(function(ch){chainHtml+=renderChainTree(ch,critSet2);});
+      }
+      chainHtml+='</div>';
+    }
+
     // Related narrative entries
     let narrHtml='';
     const relNarr=NARRATIVE_LOG.filter(n=>n.atom===alias);
@@ -2410,7 +2432,7 @@ function navigateToAtom(alias){
     const srcJson=JSON.stringify(srcObj,null,2);
     const srcHtml='<div style="margin-top:8px"><button onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display===\'none\'?\'block\':\'none\'" style="font:600 9px var(--mono);padding:3px 8px;border:1px solid var(--rule2);border-radius:4px;background:var(--hi);color:var(--ink2);cursor:pointer">[Source]</button><pre style="display:none;margin-top:4px;font:10px/1.5 var(--mono);background:var(--hi);border:1px solid var(--rule2);border-radius:6px;padding:8px 10px;color:var(--ink2);overflow-x:auto;white-space:pre;max-height:200px;overflow-y:auto">'+srcJson.replace(/</g,'&lt;')+'</pre></div>';
 
-    ov.innerHTML='<div class="card-modal" style="position:relative"><h3>'+a.alias+' -- '+a.name+'</h3>'+breadcrumb+tagsHtml+progressHtml+fieldsHtml+iwpGridHtml+conDetailHtml+relsHtml+narrHtml+graphHtml+linksHtml+srcHtml+'</div>';
+    ov.innerHTML='<div class="card-modal" style="position:relative"><h3>'+a.alias+' -- '+a.name+'</h3>'+breadcrumb+tagsHtml+progressHtml+fieldsHtml+iwpGridHtml+conDetailHtml+chainHtml+relsHtml+narrHtml+graphHtml+linksHtml+srcHtml+'</div>';
     document.body.appendChild(ov);
     ov.addEventListener('click',e=>{if(e.target===ov)closeCard();
       const lnk=e.target.closest('[data-goto]');if(lnk){const al=lnk.dataset.goto;closeCard();navigateToAtom(al);}
@@ -2615,17 +2637,56 @@ function updateDashboardTriagees(){
   cEl.innerHTML=html;
 }
 
-/** Render the constraints tab with filter buttons and atom/IWP lists */
+/** Render the constraints tab with filter buttons, critical path, explorer, and atom/IWP lists */
 function renderConstraints(el){
   let filterState='all';
+  let explorerAlias='';
   function draw(){
     updateIWPConstraints(month);
-    const critPath=findCriticalPath();
-    const blockingSet=new Set(critPath.blocking.map(b=>b.alias));
+    var critFull=findCriticalPathFull();
+    var critSet=critFull.chainSet;
+    var blockingSet=new Set(critFull.blocking.map(function(b){return b.alias;}));
     let html='<div class="tab-panel"><h2>ACE Constraint Graph</h2>';
-    html+='<div class="filters"><button class="'+(filterState==='all'?'active':'')+'" data-cf="all">All</button><button class="'+(filterState==='blocking'?'active':'')+'" data-cf="blocking">Blocking</button><button class="'+(filterState==='cleared'?'active':'')+'" data-cf="cleared">Cleared</button><button class="'+(filterState==='gates'?'active':'')+'" data-cf="gates">Gates</button><button class="'+(filterState==='rollups'?'active':'')+'" data-cf="rollups">Rollups</button><button class="'+(filterState==='iwps'?'active':'')+'" data-cf="iwps">IWPs</button></div>';
+    html+='<div class="filters"><button class="'+(filterState==='all'?'active':'')+'" data-cf="all">All</button><button class="'+(filterState==='blocking'?'active':'')+'" data-cf="blocking">Blocking</button><button class="'+(filterState==='cleared'?'active':'')+'" data-cf="cleared">Cleared</button><button class="'+(filterState==='gates'?'active':'')+'" data-cf="gates">Gates</button><button class="'+(filterState==='rollups'?'active':'')+'" data-cf="rollups">Rollups</button><button class="'+(filterState==='iwps'?'active':'')+'" data-cf="iwps">IWPs</button><button class="'+(filterState==='critical-path'?'active':'')+'" data-cf="critical-path" style="border-color:var(--red);color:'+(filterState==='critical-path'?'#fff':'var(--red)')+';background:'+(filterState==='critical-path'?'var(--red)':'var(--hi)')+'">Critical Path</button></div>';
 
-    if(filterState==='iwps'){
+    // Relationship Explorer section
+    html+='<div class="explorer-section"><div style="font:600 9px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--oxide);margin-bottom:6px">Explore from...</div>';
+    html+='<div class="explorer-input-row"><input id="explorer-input" placeholder="Type an alias (e.g. CON-ACE-001, CWP-RB-WALLS)..." value="'+(explorerAlias||'')+'"><button id="explorer-go-btn">[Explore]</button></div>';
+    html+='<div id="explorer-tree"></div>';
+    html+='</div>';
+
+    // Critical Path view
+    if(filterState==='critical-path'){
+      html+='<div class="crit-chain">';
+      html+='<div class="crit-title">Critical Path -- Longest Incomplete Chain ('+critFull.chain.length+' atoms)</div>';
+      if(critFull.nextMilestone){
+        html+='<div style="font:10px var(--mono);color:var(--ink2);margin-bottom:6px">Next milestone: M'+critFull.nextMilestone.m+' -- '+(critFull.nextMilestone.reg?'[CNSC] ':'')+critFull.nextMilestone.n+'</div>';
+      }
+      if(critFull.chain.length>0){
+        html+='<div class="crit-chain-list">';
+        critFull.chain.forEach(function(alias,idx){
+          var a=ACE_ATOMS[alias];
+          var st=actStatus(alias);
+          var dotCls=st==='g'?'cd-g':st==='a'?'cd-a':st==='r'?'cd-r':'cd-f';
+          html+='<div class="crit-chain-item" data-atom="'+alias+'">';
+          html+='<span class="chain-dot '+dotCls+'"></span>';
+          html+='<span style="color:var(--blue);font-weight:600;font-size:10px">'+alias+'</span>';
+          if(a) html+='<span style="font-size:9px;color:var(--ink2);max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+a.name+'</span>';
+          html+='</div>';
+          if(idx<critFull.chain.length-1) html+='<span class="crit-chain-arrow">--></span>';
+        });
+        html+='</div>';
+      } else {
+        html+='<div style="font:11px var(--serif);color:var(--green);padding:8px">No incomplete chains found. All critical constraints are cleared.</div>';
+      }
+      html+='</div>';
+      // Also show each atom on the critical path as a row
+      critFull.chain.forEach(function(alias){
+        var a=ACE_ATOMS[alias]; if(!a) return;
+        var st=actStatus(alias);
+        html+='<div class="act-row" data-atom="'+alias+'"><span class="act-dot '+st+'"></span><span class="act-alias">'+alias+'</span><span class="act-name">'+a.name+'</span><span class="act-kind">'+(a.completionKind||a.type)+'</span><span class="chain-crit">[CRIT]</span></div>';
+      });
+    } else if(filterState==='iwps'){
       const ready=IWP_DATA.filter(i=>iwpIsReady(i)).length;
       html+='<div style="font:600 12px var(--disp);color:var(--oxide);margin:8px 0">Constraint-free IWPs: '+ready+' / '+IWP_DATA.length+'</div>';
       html+='<div class="iwp-grid"><span class="iwp-hdr">ID</span><span class="iwp-hdr">Name</span><span class="iwp-hdr">M</span><span class="iwp-hdr">L</span><span class="iwp-hdr">E</span><span class="iwp-hdr">Q</span><span class="iwp-hdr">A</span><span class="iwp-hdr">Status</span>';
@@ -2648,9 +2709,9 @@ function renderConstraints(el){
       if(filterState==='gates')atoms=atoms.filter(a=>a.completionKind==='gate');
       if(filterState==='rollups')atoms=atoms.filter(a=>a.completionKind==='rollup');
       atoms.forEach(a=>{
-        const st=actStatus(a.alias),isCritical=blockingSet.has(a.alias);
+        const st=actStatus(a.alias),isCritical=critSet.has(a.alias);
         html+='<div class="act-row" data-atom="'+a.alias+'"><span class="act-dot '+st+'"></span><span class="act-alias">'+a.alias+'</span><span class="act-name">'+a.name+'</span><span class="act-kind">'+a.completionKind+'</span>';
-        if(isCritical)html+='<span style="font:600 9px var(--mono);padding:1px 4px;border-radius:3px;background:var(--red);color:#fff;margin-left:4px">CRITICAL</span>';
+        if(isCritical)html+='<span class="chain-crit">[CRIT]</span>';
         html+='</div>';
       });
     }
@@ -2663,6 +2724,50 @@ function renderConstraints(el){
       const bl=iwpBlockers(iwp),rdy=iwpIsReady(iwp);
       showCard({title:iwp.id+' -- '+iwp.name,fields:[['CWP',iwp.cwp],['material',iwp.constraints.material?'CLEARED':'BLOCKED (M'+iwp.thresholds.material+')'],['labour',iwp.constraints.labour?'CLEARED':'BLOCKED (M'+iwp.thresholds.labour+')'],['engineering',iwp.constraints.engineering?'CLEARED':'BLOCKED (M'+iwp.thresholds.engineering+')'],['equipment',iwp.constraints.equipment?'CLEARED':'BLOCKED (M'+iwp.thresholds.equipment+')'],['access',iwp.constraints.access?'CLEARED':'BLOCKED (M'+iwp.thresholds.access+')'],['status',rdy?'CONSTRAINT-FREE':'BLOCKED: '+bl.join(', ')]],links:[iwp.cwp]});
     });});
+
+    // Wire up explorer
+    var expInput=document.getElementById('explorer-input');
+    var expBtn=document.getElementById('explorer-go-btn');
+    var expTree=document.getElementById('explorer-tree');
+    function runExplorer(){
+      var alias=(expInput?expInput.value.trim().toUpperCase():'');
+      if(!alias||!ACE_ATOMS[alias]){
+        if(expTree) expTree.innerHTML=alias?'<div style="font:10px var(--mono);color:var(--red);padding:4px">Atom not found: '+alias+'</div>':'';
+        return;
+      }
+      explorerAlias=alias;
+      var a=ACE_ATOMS[alias];
+      var crit=findCriticalPathFull().chainSet;
+      var upTree=traceChain(alias,'upstream',4);
+      var downTree=traceChain(alias,'downstream',4);
+      var ehtml='<div style="font:600 11px var(--disp);color:var(--oxide);margin:6px 0">'+alias+' -- '+(a.name||'')+'</div>';
+      var hasUp=upTree&&upTree.children&&upTree.children.length>0;
+      var hasDown=downTree&&downTree.children&&downTree.children.length>0;
+      if(hasUp){
+        ehtml+='<div style="font:600 9px var(--mono);color:var(--faint);text-transform:uppercase;margin:4px 0 2px">Upstream (what this needs):</div>';
+        upTree.children.forEach(function(ch){ehtml+=renderChainTree(ch,crit);});
+      }
+      if(hasDown){
+        ehtml+='<div style="font:600 9px var(--mono);color:var(--faint);text-transform:uppercase;margin:6px 0 2px">Downstream (what needs this):</div>';
+        downTree.children.forEach(function(ch){ehtml+=renderChainTree(ch,crit);});
+      }
+      if(!hasUp&&!hasDown) ehtml+='<div style="font:10px var(--mono);color:var(--faint);padding:4px">No upstream or downstream dependencies found.</div>';
+      if(expTree) expTree.innerHTML=ehtml;
+      // Wire up chain node clicks to re-center explorer
+      if(expTree) expTree.querySelectorAll('[data-goto]').forEach(function(node){
+        node.addEventListener('click',function(e){
+          e.stopPropagation();
+          var al=node.dataset.goto;
+          if(expInput) expInput.value=al;
+          explorerAlias=al;
+          runExplorer();
+        });
+      });
+    }
+    if(expBtn) expBtn.addEventListener('click',runExplorer);
+    if(expInput) expInput.addEventListener('keydown',function(e){if(e.key==='Enter')runExplorer();});
+    // If we had a previous explorer alias, re-run
+    if(explorerAlias) runExplorer();
   }
   draw();
 }
@@ -3076,11 +3181,15 @@ function updateUI(){
 
   if(currentTab==='dashboard'){
     if(needsFullRender){renderTab();needsFullRender=false;}
+  /** On mobile, start with sidebar hidden */
+  if(window.innerWidth<768){sidebarVisible=false;var _s=$("sidebar");if(_s)_s.classList.add("hidden");}
     render3D();drawGantt();drawSCurve();drawMinimap();
     updateDashboardKPIs();updateESKPIs();updateDashboardFeed();updateDashboardTriagees();updateQuickStats();updateSidebarFooter();
   } else if(playing&&uiTick%15===0){
     /** Re-render non-dashboard tabs every ~15 frames during playback so data stays fresh */
     renderTab();
+  /** On mobile, start with sidebar hidden */
+  if(window.innerWidth<768){sidebarVisible=false;var _s=$("sidebar");if(_s)_s.classList.add("hidden");}
   }
   checkACEEvents();checkACETriagees();
 }
@@ -3123,10 +3232,14 @@ function loop(now){
 
 // WIRING
 $('mo').oninput=e=>{month=+e.target.value;playing=false;$('play').textContent='Play';needsFullRender=currentTab==='dashboard';if(currentTab!=='dashboard')renderTab();};
+  /** On mobile, start with sidebar hidden */
+  if(window.innerWidth<768){sidebarVisible=false;var _s=$("sidebar");if(_s)_s.classList.add("hidden");}
 $('play').onclick=()=>{if(playing){playing=false;$('play').textContent='Play';}else{if(month>=PLANT.dur)month=0;playing=true;$('play').textContent='Pause';}};
 $('spd').onclick=function(){spdX=spdX===1?2:spdX===2?5:spdX===5?10:1;this.textContent=spdX+'x';};
 $('cam').onchange=e=>{camMode=e.target.value;};
-$('sbtog').onclick=()=>{sidebarVisible=!sidebarVisible;$('sidebar').classList.toggle('hidden',!sidebarVisible);};
+/** Toggle sidebar — bulletproof */
+var _sb=$('sidebar'),_sbt=$('sbtog');
+if(_sbt&&_sb){_sbt.addEventListener('click',function(e){e.stopPropagation();e.preventDefault();if(_sb.classList.contains('hidden')){_sb.classList.remove('hidden');sidebarVisible=true;}else{_sb.classList.add('hidden');sidebarVisible=false;}},true);}
 
 // Sidebar navigation
 $('sbnav').addEventListener('click',e=>{
@@ -3137,6 +3250,8 @@ $('sbnav').addEventListener('click',e=>{
   item.classList.add('active');
   needsFullRender=true;
   renderTab();
+  /** On mobile, start with sidebar hidden */
+  if(window.innerWidth<768){sidebarVisible=false;var _s=$("sidebar");if(_s)_s.classList.add("hidden");}
   /** On mobile, auto-close sidebar after selecting a tab */
   if(window.innerWidth<768){sidebarVisible=false;$('sidebar').classList.add('hidden');}
 });
@@ -3204,6 +3319,8 @@ function dismissSplash(){
   runMonteCarlo(mcIterationCount);
   fetchWeather();
   renderTab();
+  /** On mobile, start with sidebar hidden */
+  if(window.innerWidth<768){sidebarVisible=false;var _s=$("sidebar");if(_s)_s.classList.add("hidden");}
   requestAnimationFrame(loop);
   // Auto-save every 30 seconds
   setInterval(saveState, 30000);
@@ -3835,9 +3952,17 @@ const TOUR_STEPS = [
   {target: '.kpis', text: 'Key performance indicators update in real time. SPI and CPI track schedule and cost performance. Earned Schedule (ES) gives time-based variance.', action: function() { month = 20; }},
   {target: '#gantt', text: 'Watch the phases progress. The red line shows current month. Diamonds are milestones -- oxide red ones are CNSC regulatory hold points.', action: function() { month = 35; playing = false; }},
   {target: '.sb-item[data-tab="constraints"]', text: 'Every work package, risk, and procedure is an ACE atom. Click Constraints to see the full graph -- filter by status, type, or tag.', action: function() { currentTab = 'constraints'; renderTab(); }},
+  /** On mobile, start with sidebar hidden */
+  if(window.innerWidth<768){sidebarVisible=false;var _s=$("sidebar");if(_s)_s.classList.add("hidden");}
   {target: '.sb-item[data-tab="risks"]', text: 'Risks fire probabilistically during playback. The Monte Carlo engine runs 1000 iterations to show P50/P80 schedule and cost forecasts.', action: function() { currentTab = 'risks'; renderTab(); }},
+  /** On mobile, start with sidebar hidden */
+  if(window.innerWidth<768){sidebarVisible=false;var _s=$("sidebar");if(_s)_s.classList.add("hidden");}
   {target: '.sb-item[data-tab="flex"]', text: 'When critical work is blocked, FLEX packages keep crews productive. Pre-cleared, pre-staged -- pull from the job jar anytime.', action: function() { currentTab = 'flex'; renderTab(); }},
+  /** On mobile, start with sidebar hidden */
+  if(window.innerWidth<768){sidebarVisible=false;var _s=$("sidebar");if(_s)_s.classList.add("hidden");}
   {target: '#play', text: 'Press Play to run the simulation. Risks fire, triages appear for your decision, the Monte Carlo forecast updates. Every decision has quantified cost, schedule, and safety impacts.', action: function() { currentTab = 'dashboard'; renderTab(); month = 0; }}
+  /** On mobile, start with sidebar hidden */
+  if(window.innerWidth<768){sidebarVisible=false;var _s=$("sidebar");if(_s)_s.classList.add("hidden");}
 ];
 
 /** Start the guided tour walkthrough */
@@ -3856,6 +3981,8 @@ function startTour() {
     if (dashItem) dashItem.classList.add('active');
     needsFullRender = true;
     renderTab();
+  /** On mobile, start with sidebar hidden */
+  if(window.innerWidth<768){sidebarVisible=false;var _s=$("sidebar");if(_s)_s.classList.add("hidden");}
   }
   // Slight delay to let dashboard render
   setTimeout(function() { showTourStep(); }, 100);
@@ -4006,6 +4133,8 @@ function endTour() {
   });
   needsFullRender = true;
   renderTab();
+  /** On mobile, start with sidebar hidden */
+  if(window.innerWidth<768){sidebarVisible=false;var _s=$("sidebar");if(_s)_s.classList.add("hidden");}
 }
 
 // ================================================================
@@ -4061,6 +4190,8 @@ function updateBreadcrumb(){
   const tabNames={dashboard:'Dashboard',constraints:'Constraints',rfis:'RFIs',actions:'Actions',risks:'Risks / Opps',contracts:'Contracts',systems:'Systems',procedures:'Procedures',lessons:'Lessons',changes:'Changes',flex:'FLEX',wbs:'WBS',fieldiq:'FieldIQ',map:'Map',narrative:'Narrative',askace:'Ask ACE'};
   bc.innerHTML='<span data-bc-tab="dashboard">Dashboard</span>'+(currentTab!=='dashboard'?'<span class="bc-sep">></span><span>'+tabNames[currentTab]+'</span>':'');
   bc.querySelectorAll('[data-bc-tab]').forEach(s=>{s.addEventListener('click',()=>{currentTab=s.dataset.bcTab;$('sbnav').querySelectorAll('.sb-item').forEach(i=>i.classList.toggle('active',i.dataset.tab===currentTab));needsFullRender=true;renderTab();});});
+  /** On mobile, start with sidebar hidden */
+  if(window.innerWidth<768){sidebarVisible=false;var _s=$("sidebar");if(_s)_s.classList.add("hidden");}
 }
 
 /** Show keyboard shortcuts modal */
@@ -4192,7 +4323,11 @@ document.onkeydown=function(e){
   if(e.code==='Space'&&e.target.tagName!=='INPUT'&&e.target.tagName!=='TEXTAREA'){e.preventDefault();$('play').click();}
   if(e.code==='KeyM'&&e.target.tagName!=='INPUT'&&e.target.tagName!=='TEXTAREA'){e.preventDefault();$('sbtog').click();}
   if(e.code==='ArrowLeft'&&e.target.tagName!=='INPUT'){e.preventDefault();const step=e.shiftKey?6:1;month=Math.max(0,month-step);$('mo').value=month;playing=false;$('play').textContent='Play';needsFullRender=currentTab==='dashboard';if(currentTab!=='dashboard')renderTab();}
+  /** On mobile, start with sidebar hidden */
+  if(window.innerWidth<768){sidebarVisible=false;var _s=$("sidebar");if(_s)_s.classList.add("hidden");}
   if(e.code==='ArrowRight'&&e.target.tagName!=='INPUT'){e.preventDefault();const step=e.shiftKey?6:1;month=Math.min(PLANT.dur,month+step);$('mo').value=month;playing=false;$('play').textContent='Play';needsFullRender=currentTab==='dashboard';if(currentTab!=='dashboard')renderTab();}
+  /** On mobile, start with sidebar hidden */
+  if(window.innerWidth<768){sidebarVisible=false;var _s=$("sidebar");if(_s)_s.classList.add("hidden");}
   if(e.code==='Escape'){if(tourActive){endTour();}else{const triageOv=document.getElementById('triage-overlay');if(triageOv)triageOv.remove();else closeCard();}}
   if(e.key==='/'&&e.target.tagName!=='INPUT'&&e.target.tagName!=='TEXTAREA'){e.preventDefault();const s=$('sb-search');if(s)s.focus();}
 };
@@ -4206,6 +4341,8 @@ document.addEventListener('click',function(e){
     $('mo').value=month;playing=false;$('play').textContent='Play';
     needsFullRender=currentTab==='dashboard';
     if(currentTab!=='dashboard')renderTab();
+  /** On mobile, start with sidebar hidden */
+  if(window.innerWidth<768){sidebarVisible=false;var _s=$("sidebar");if(_s)_s.classList.add("hidden");}
   }
 });
 
