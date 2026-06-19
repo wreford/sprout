@@ -1,0 +1,476 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ACE Parametric — constraints as geometry</title>
+<style>
+  :root {
+    --bench: #ECEDEE; --panel: #FFFFFF; --ink: #20242A; --muted: #6A7178; --hair: #D5D8DB;
+    --ok: #3E9B6B; --warn: #D9952F; --bad: #C85A4F;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", Consolas, Menlo, monospace;
+    --sans: Inter, "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--bench); color: var(--ink); font-family: var(--sans); font-size: 14px; line-height: 1.45; }
+  header { padding: 22px 28px 14px; display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; border-bottom: 1px solid var(--hair); position: sticky; top: 0; z-index: 20; background: var(--bench); }
+  header h1 { font-family: var(--mono); font-size: 22px; font-weight: 700; letter-spacing: 0.06em; }
+  header h1 .dim { color: var(--muted); font-weight: 400; }
+  header p { color: var(--muted); font-size: 13px; }
+  header a { color: var(--muted); font-size: 12px; text-decoration: none; border: 1px solid var(--hair); padding: 3px 10px; border-radius: 4px; font-family: var(--mono); }
+  header a:hover { background: var(--panel); color: var(--ink); }
+
+  .controls { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; padding: 12px 28px; border-bottom: 1px solid var(--hair); background: var(--panel); }
+  .controls label { font-size: 12px; color: var(--muted); display: flex; gap: 7px; align-items: center; }
+  .controls .slider-group { display: flex; flex-direction: column; gap: 2px; }
+  .controls .slider-group span { font-family: var(--mono); font-size: 11px; min-width: 44px; text-align: right; color: var(--ink); font-weight: 600; }
+  input[type=range] { accent-color: var(--ink); width: 120px; }
+  button { font: 600 13px var(--sans); padding: 7px 16px; border-radius: 4px; cursor: pointer; border: 1px solid var(--ink); background: var(--ink); color: var(--panel); }
+  button.ghost { background: var(--panel); color: var(--ink); }
+
+  .viewport { background: var(--panel); padding: 14px 28px; }
+  .viewport figcaption { font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; color: var(--muted); margin-bottom: 9px; display: flex; justify-content: space-between; }
+  .viewport figcaption b { color: var(--ink); }
+  canvas { width: 100%; height: 520px; display: block; border: 1px solid var(--hair); background: #FFFFFF; border-radius: 2px; cursor: crosshair; }
+
+  .below-viewer { max-width: 1100px; margin: 0 auto; }
+  aside { background: var(--panel); padding: 16px 28px; border-top: 1px solid var(--hair); }
+  aside h2 { font-family: var(--mono); font-size: 12px; letter-spacing: 0.1em; font-weight: 600; margin: 0 0 10px; }
+
+  .tree { font-family: var(--mono); font-size: 11.5px; }
+  .node { padding: 6px 0; border-bottom: 1px solid var(--hair); display: flex; align-items: center; gap: 7px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .node .id { font-weight: 600; min-width: 30px; }
+  .node .name { color: var(--muted); flex: 1; }
+  .node .constraint { color: var(--warn); font-size: 10.5px; margin-left: auto; }
+
+  .jtm { background: var(--panel); padding: 16px 28px; border-top: 1px solid var(--hair); }
+  .jtm .bar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+  .jtm .bar h2 { font-family: var(--mono); font-size: 12px; letter-spacing: 0.1em; font-weight: 600; margin-right: auto; }
+  .jtm .bar .bytes { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  textarea { width: 100%; height: 300px; resize: vertical; font: 12px/1.5 var(--mono); color: var(--ink); border: 1px solid var(--hair); border-radius: 4px; padding: 12px; background: #FAFBFB; white-space: pre; tab-size: 2; }
+  textarea:focus { outline: 2px solid var(--ink); outline-offset: -1px; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .hint code { font-family: var(--mono); background: var(--bench); padding: 1px 5px; border-radius: 3px; }
+
+  .results { background: var(--panel); padding: 16px 28px; border-top: 1px solid var(--hair); }
+  .results h2 { font-family: var(--mono); font-size: 12px; letter-spacing: 0.1em; font-weight: 600; margin: 0 0 10px; }
+  .result-row { display: grid; grid-template-columns: 140px 140px 1fr; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--hair); font-family: var(--mono); font-size: 12px; align-items: baseline; }
+  .result-row .label { font-weight: 600; }
+  .result-row .value { color: var(--ok); }
+  .result-row .expr { color: var(--muted); font-size: 11px; }
+
+  footer { padding: 14px 28px 26px; color: var(--muted); font-size: 12px; border-top: 1px solid var(--hair); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>ACE Parametric<span class="dim"> — constraints as geometry</span></h1>
+  <p>Dimension sliders drive constraint expressions. Every coordinate is derived, never hardcoded.</p>
+  <a href="nuclear.html">back to nuclear.html</a>
+</header>
+
+<div class="controls" id="sliders"></div>
+
+<figure class="viewport">
+  <figcaption><b>SITE PLAN</b><span id="scaleInfo"></span></figcaption>
+  <canvas id="plan"></canvas>
+</figure>
+
+<div class="below-viewer">
+  <aside>
+    <h2>CONSTRAINT TREE</h2>
+    <div class="tree" id="tree"></div>
+  </aside>
+
+  <div class="jtm">
+    <div class="bar">
+      <h2>BUILDINGS (editable JSON)</h2>
+      <span class="bytes" id="bytes"></span>
+      <button id="applyBtn">Apply</button>
+      <button id="resetBtn" class="ghost">Reset</button>
+    </div>
+    <textarea id="jsonText"></textarea>
+    <p class="hint">Edit the JSON above and click <code>Apply</code> to re-solve and re-draw. The text IS the source.</p>
+  </div>
+
+  <div class="results">
+    <h2>COMPUTED RESULTS</h2>
+    <div id="computed"></div>
+  </div>
+</div>
+
+<footer>ACE Parametric -- atoms drive geometry. Every position solved from constraint expressions.</footer>
+
+<script>
+const $ = id => document.getElementById(id);
+
+/* ── Dimensions ─────────────────────────────────────────── */
+const DIMS = { 'rb-d': 46, 'tb-w': 70, 'ct-d': 22, 'ct-sp': 35, 'cw-off': 60 };
+const DIM_META = {
+  'rb-d':   { label: 'RB diameter',  unit: 'm', min: 30, max: 70,  step: 1 },
+  'tb-w':   { label: 'TB width',     unit: 'm', min: 40, max: 100, step: 1 },
+  'ct-d':   { label: 'CT diameter',  unit: 'm', min: 14, max: 36,  step: 1 },
+  'ct-sp':  { label: 'CT spacing',   unit: 'm', min: 20, max: 60,  step: 1 },
+  'cw-off': { label: 'CW offset',    unit: 'm', min: 30, max: 100, step: 1 },
+};
+
+/* ── Buildings ──────────────────────────────────────────── */
+const DEFAULT_BUILDINGS = [
+  { id: 'RB', name: 'Reactor Building',  shape: 'circle', x: '0',  y: '0',  r: 'rb-d/2' },
+  { id: 'TB', name: 'Turbine Building',  shape: 'rect',   x: 'rb-d/2 + tb-w/2 + 15', y: '0', w: 'tb-w', h: 28 },
+  { id: 'CT1', name: 'Cooling Tower 1',  shape: 'circle', x: 'rb-d/2 + tb-w/2 + 15', y: '-(28/2 + ct-d/2 + 20)', r: 'ct-d/2' },
+  { id: 'CT2', name: 'Cooling Tower 2',  shape: 'circle', x: 'rb-d/2 + tb-w/2 + 15 + ct-sp', y: '-(28/2 + ct-d/2 + 20)', r: 'ct-d/2' },
+  { id: 'CW',  name: 'CW Intake',        shape: 'rect',   x: '-(rb-d/2 + cw-off)', y: -30, w: 12, h: 8 },
+  { id: 'SW',  name: 'Switchyard',        shape: 'rect',   x: 'rb-d/2 + tb-w + 45', y: 20, w: 25, h: 18 },
+];
+
+let buildings = JSON.parse(JSON.stringify(DEFAULT_BUILDINGS));
+
+/* ── Constraints (for the tree display) ─────────────────── */
+const CONSTRAINTS = [
+  { from: 'RB', type: 'concentric', desc: 'origin anchor at (0,0)' },
+  { from: 'TB', type: 'east-of RB', desc: 'rb-d/2 + tb-w/2 + 15 m east of RB center' },
+  { from: 'CT1', type: 'south-of TB', desc: 'aligned with TB center, 20 m south of TB edge' },
+  { from: 'CT2', type: 'south-of TB', desc: 'CT1 + ct-sp east, same y as CT1' },
+  { from: 'CW', type: 'west-of RB', desc: 'cw-off west of RB edge' },
+  { from: 'SW', type: 'east-of TB', desc: '30 m east of TB east edge' },
+];
+
+/* ── Solver ─────────────────────────────────────────────── */
+function solve(expr) {
+  let s = String(expr);
+  for (const [k, v] of Object.entries(DIMS)) {
+    s = s.replace(new RegExp(k.replace(/-/g, '\\-'), 'g'), v);
+  }
+  try { return Function('"use strict"; return (' + s + ')')(); }
+  catch (e) { return 0; }
+}
+
+function solveBuilding(b) {
+  return {
+    id: b.id, name: b.name, shape: b.shape,
+    x: solve(b.x), y: solve(b.y),
+    r: b.r !== undefined ? solve(b.r) : undefined,
+    w: b.w !== undefined ? solve(b.w) : undefined,
+    h: b.h !== undefined ? solve(b.h) : undefined,
+    _exprX: String(b.x), _exprY: String(b.y),
+  };
+}
+
+/* ── Build sliders ──────────────────────────────────────── */
+function buildSliders() {
+  const el = $('sliders');
+  el.innerHTML = '';
+  for (const [key, meta] of Object.entries(DIM_META)) {
+    const val = DIMS[key];
+    const lbl = document.createElement('label');
+    lbl.innerHTML = `${meta.label}
+      <div class="slider-group">
+        <input type="range" min="${meta.min}" max="${meta.max}" step="${meta.step}" value="${val}" data-dim="${key}">
+        <span id="val-${key}">${val} ${meta.unit}</span>
+      </div>`;
+    el.appendChild(lbl);
+    lbl.querySelector('input').addEventListener('input', e => {
+      DIMS[key] = Number(e.target.value);
+      $('val-' + key).textContent = DIMS[key] + ' ' + meta.unit;
+      update();
+    });
+  }
+}
+
+/* ── Canvas drawing ─────────────────────────────────────── */
+function draw() {
+  const canvas = $('plan');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  const W = rect.width, H = rect.height;
+
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(0, 0, W, H);
+
+  const solved = buildings.map(solveBuilding);
+
+  // Compute bounds for auto-scaling
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const b of solved) {
+    const ext = b.shape === 'circle' ? (b.r || 10) : Math.max(b.w || 10, b.h || 10) / 2;
+    minX = Math.min(minX, b.x - ext - 20);
+    maxX = Math.max(maxX, b.x + ext + 20);
+    minY = Math.min(minY, b.y - ext - 20);
+    maxY = Math.max(maxY, b.y + ext + 20);
+  }
+  const rangeX = maxX - minX || 1;
+  const rangeY = maxY - minY || 1;
+  const margin = 60;
+  const scale = Math.min((W - margin * 2) / rangeX, (H - margin * 2) / rangeY);
+  const cx = W / 2 - ((minX + maxX) / 2) * scale;
+  const cy = H / 2 + ((minY + maxY) / 2) * scale;  // flip Y
+
+  function tx(x) { return cx + x * scale; }
+  function ty(y) { return cy - y * scale; }  // flip Y so positive = up
+
+  const mPerPx = 1 / scale;
+  $('scaleInfo').textContent = `1 px = ${mPerPx.toFixed(2)} m  |  scale ~ 1:${Math.round(mPerPx * 96 * 0.0254 * 1000) || '--'}`;
+
+  // Grid
+  ctx.strokeStyle = '#F0F0F0';
+  ctx.lineWidth = 0.5;
+  const gridStep = scale > 3 ? 10 : scale > 1.5 ? 20 : 50;
+  for (let gx = Math.ceil(minX / gridStep) * gridStep; gx <= maxX; gx += gridStep) {
+    ctx.beginPath(); ctx.moveTo(tx(gx), 0); ctx.lineTo(tx(gx), H); ctx.stroke();
+  }
+  for (let gy = Math.ceil(minY / gridStep) * gridStep; gy <= maxY; gy += gridStep) {
+    ctx.beginPath(); ctx.moveTo(0, ty(gy)); ctx.lineTo(W, ty(gy)); ctx.stroke();
+  }
+
+  // Draw buildings
+  const colors = { RB: '#C85A4F', TB: '#2C6FAA', CT1: '#3E9B6B', CT2: '#3E9B6B', CW: '#7B68AE', SW: '#D9952F' };
+
+  for (const b of solved) {
+    const color = colors[b.id] || '#666';
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.fillStyle = color + '15';
+
+    if (b.shape === 'circle') {
+      const r = (b.r || 10) * scale;
+      ctx.beginPath();
+      ctx.arc(tx(b.x), ty(b.y), r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      // Center cross
+      ctx.lineWidth = 0.8;
+      ctx.strokeStyle = color + '60';
+      ctx.beginPath();
+      ctx.moveTo(tx(b.x) - 6, ty(b.y)); ctx.lineTo(tx(b.x) + 6, ty(b.y));
+      ctx.moveTo(tx(b.x), ty(b.y) - 6); ctx.lineTo(tx(b.x), ty(b.y) + 6);
+      ctx.stroke();
+    } else {
+      const w = (b.w || 10) * scale;
+      const h = (b.h || 10) * scale;
+      ctx.fillRect(tx(b.x) - w / 2, ty(b.y) - h / 2, w, h);
+      ctx.strokeRect(tx(b.x) - w / 2, ty(b.y) - h / 2, w, h);
+    }
+
+    // Label
+    ctx.fillStyle = color;
+    ctx.font = `600 ${Math.max(10, Math.min(13, scale * 4))}px ${getComputedStyle(document.body).getPropertyValue('--mono')}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    const labelY = b.shape === 'circle' ? ty(b.y) - (b.r || 10) * scale - 6 : ty(b.y) - (b.h || 10) / 2 * scale - 6;
+    ctx.fillText(b.id, tx(b.x), labelY);
+    ctx.font = `400 ${Math.max(9, Math.min(11, scale * 3))}px ${getComputedStyle(document.body).getPropertyValue('--sans')}`;
+    ctx.fillStyle = '#6A7178';
+    ctx.fillText(b.name, tx(b.x), labelY - Math.max(12, scale * 4));
+  }
+
+  // Dimension lines
+  drawDimLine(ctx, solved, 'RB', 'TB', scale, tx, ty);
+  drawDimLine(ctx, solved, 'TB', 'CT1', scale, tx, ty);
+  drawDimLine(ctx, solved, 'CT1', 'CT2', scale, tx, ty);
+  drawDimLine(ctx, solved, 'RB', 'CW', scale, tx, ty);
+  drawDimLine(ctx, solved, 'TB', 'SW', scale, tx, ty);
+
+  // Constraint labels
+  drawConstraintLabel(ctx, solved, 'RB', 'concentric', tx, ty, null, scale);
+  drawConstraintLabel(ctx, solved, 'TB', 'east-of', tx, ty, 'RB', scale);
+  drawConstraintLabel(ctx, solved, 'CT1', 'south-of', tx, ty, 'TB', scale);
+  drawConstraintLabel(ctx, solved, 'CW', 'west-of', tx, ty, 'RB', scale);
+
+  // North arrow
+  drawNorthArrow(ctx, W, H);
+
+  // Scale bar
+  drawScaleBar(ctx, W, H, scale);
+
+  return solved;
+}
+
+function drawDimLine(ctx, solved, id1, id2, scale, tx, ty) {
+  const a = solved.find(b => b.id === id1);
+  const b = solved.find(b => b.id === id2);
+  if (!a || !b) return;
+  const x1 = tx(a.x), y1 = ty(a.y), x2 = tx(b.x), y2 = ty(b.y);
+  const dist = Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+
+  ctx.save();
+  ctx.strokeStyle = '#20242A50';
+  ctx.lineWidth = 0.8;
+  ctx.setLineDash([4, 3]);
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Ticks at ends
+  const ang = Math.atan2(y2 - y1, x2 - x1);
+  const perp = ang + Math.PI / 2;
+  const tk = 5;
+  for (const [px, py] of [[x1, y1], [x2, y2]]) {
+    ctx.beginPath();
+    ctx.moveTo(px + Math.cos(perp) * tk, py + Math.sin(perp) * tk);
+    ctx.lineTo(px - Math.cos(perp) * tk, py - Math.sin(perp) * tk);
+    ctx.stroke();
+  }
+
+  // Distance label
+  const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+  ctx.font = `500 10px ${getComputedStyle(document.body).getPropertyValue('--mono')}`;
+  ctx.fillStyle = '#20242A';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'bottom';
+  const offset = -8;
+  ctx.fillText(`${dist.toFixed(1)} m`, mx + Math.cos(perp) * offset, my + Math.sin(perp) * offset);
+  ctx.restore();
+}
+
+function drawConstraintLabel(ctx, solved, id, type, tx, ty, refId, scale) {
+  const b = solved.find(s => s.id === id);
+  if (!b) return;
+  ctx.save();
+  ctx.font = `600 9px ${getComputedStyle(document.body).getPropertyValue('--mono')}`;
+  ctx.fillStyle = '#D9952F';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  const extPx = b.shape === 'circle' ? (b.r || 10) * scale + 8 : (b.w || 10) / 2 * scale + 8;
+  const px = tx(b.x) + extPx;
+  const py = ty(b.y) + 4;
+  ctx.fillText(type, px, py);
+  ctx.restore();
+}
+
+function drawNorthArrow(ctx, W, H) {
+  const ax = W - 40, ay = 40;
+  ctx.save();
+  ctx.strokeStyle = '#20242A';
+  ctx.fillStyle = '#20242A';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(ax, ay + 20); ctx.lineTo(ax, ay - 10); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(ax, ay - 10); ctx.lineTo(ax - 5, ay - 2); ctx.lineTo(ax + 5, ay - 2); ctx.closePath(); ctx.fill();
+  ctx.font = `700 11px ${getComputedStyle(document.body).getPropertyValue('--sans')}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText('N', ax, ay - 14);
+  ctx.restore();
+}
+
+function drawScaleBar(ctx, W, H, scale) {
+  const barMeters = scale > 3 ? 20 : scale > 1.5 ? 50 : 100;
+  const barPx = barMeters * scale;
+  const bx = 28, by = H - 24;
+  ctx.save();
+  ctx.strokeStyle = '#20242A';
+  ctx.fillStyle = '#20242A';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(bx + barPx, by); ctx.stroke();
+  // End ticks
+  ctx.beginPath(); ctx.moveTo(bx, by - 4); ctx.lineTo(bx, by + 4); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(bx + barPx, by - 4); ctx.lineTo(bx + barPx, by + 4); ctx.stroke();
+  ctx.font = `500 10px ${getComputedStyle(document.body).getPropertyValue('--mono')}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText(`${barMeters} m`, bx + barPx / 2, by - 6);
+  ctx.restore();
+}
+
+/* ── Constraint tree ────────────────────────────────────── */
+function buildTree() {
+  const el = $('tree');
+  const colors = { RB: '#C85A4F', TB: '#2C6FAA', CT1: '#3E9B6B', CT2: '#3E9B6B', CW: '#7B68AE', SW: '#D9952F' };
+  el.innerHTML = CONSTRAINTS.map(c => `
+    <div class="node">
+      <span class="dot" style="background:${colors[c.from] || '#999'}"></span>
+      <span class="id">${c.from}</span>
+      <span class="name">${c.desc}</span>
+      <span class="constraint">${c.type}</span>
+    </div>
+  `).join('');
+}
+
+/* ── Computed results ───────────────────────────────────── */
+function buildResults(solved) {
+  const el = $('computed');
+  const rb = solved.find(b => b.id === 'RB');
+  const tb = solved.find(b => b.id === 'TB');
+  const ct1 = solved.find(b => b.id === 'CT1');
+  const ct2 = solved.find(b => b.id === 'CT2');
+  const cw = solved.find(b => b.id === 'CW');
+  const sw = solved.find(b => b.id === 'SW');
+
+  function dist(a, b) { return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2); }
+
+  const rows = [
+    { label: 'RB center', value: `(${rb.x.toFixed(1)}, ${rb.y.toFixed(1)})`, expr: 'origin anchor' },
+    { label: 'TB center', value: `(${tb.x.toFixed(1)}, ${tb.y.toFixed(1)})`, expr: `derived from: rb-d/2 + tb-w/2 + 15 = ${tb.x.toFixed(1)}` },
+    { label: 'CT1 center', value: `(${ct1.x.toFixed(1)}, ${ct1.y.toFixed(1)})`, expr: `x: aligned with TB, y: -(28/2 + ct-d/2 + 20)` },
+    { label: 'CT2 center', value: `(${ct2.x.toFixed(1)}, ${ct2.y.toFixed(1)})`, expr: `CT1.x + ct-sp = ${ct2.x.toFixed(1)}` },
+    { label: 'CW center', value: `(${cw.x.toFixed(1)}, ${cw.y.toFixed(1)})`, expr: `-(rb-d/2 + cw-off) = ${cw.x.toFixed(1)}` },
+    { label: 'SW center', value: `(${sw.x.toFixed(1)}, ${sw.y.toFixed(1)})`, expr: `rb-d/2 + tb-w + 45 = ${sw.x.toFixed(1)}` },
+    { label: 'Dist RB-TB', value: `${dist(rb, tb).toFixed(1)} m`, expr: `center-to-center` },
+    { label: 'Dist TB-CT1', value: `${dist(tb, ct1).toFixed(1)} m`, expr: `center-to-center` },
+    { label: 'Dist CT1-CT2', value: `${dist(ct1, ct2).toFixed(1)} m`, expr: `= ct-sp = ${DIMS['ct-sp']}` },
+    { label: 'Dist RB-CW', value: `${dist(rb, cw).toFixed(1)} m`, expr: `center-to-center` },
+    { label: 'RB radius', value: `${(DIMS['rb-d'] / 2).toFixed(1)} m`, expr: `rb-d / 2 = ${DIMS['rb-d']} / 2` },
+  ];
+
+  el.innerHTML = rows.map(r => `
+    <div class="result-row">
+      <span class="label">${r.label}</span>
+      <span class="value">${r.value}</span>
+      <span class="expr">${r.expr}</span>
+    </div>
+  `).join('');
+}
+
+/* ── JSON textarea ──────────────────────────────────────── */
+function syncTextarea() {
+  $('jsonText').value = JSON.stringify(buildings, null, 2);
+  $('bytes').textContent = new Blob([$('jsonText').value]).size + ' bytes';
+}
+
+$('applyBtn').addEventListener('click', () => {
+  try {
+    const parsed = JSON.parse($('jsonText').value);
+    if (!Array.isArray(parsed)) throw new Error('Expected array');
+    buildings = parsed;
+    update();
+    $('applyBtn').textContent = 'Applied';
+    setTimeout(() => $('applyBtn').textContent = 'Apply', 800);
+  } catch (e) {
+    alert('JSON parse error: ' + e.message);
+  }
+});
+
+$('resetBtn').addEventListener('click', () => {
+  buildings = JSON.parse(JSON.stringify(DEFAULT_BUILDINGS));
+  // Reset sliders to defaults
+  const defaults = { 'rb-d': 46, 'tb-w': 70, 'ct-d': 22, 'ct-sp': 35, 'cw-off': 60 };
+  for (const [k, v] of Object.entries(defaults)) {
+    DIMS[k] = v;
+    const slider = document.querySelector(`input[data-dim="${k}"]`);
+    if (slider) slider.value = v;
+    const valEl = $('val-' + k);
+    if (valEl) valEl.textContent = v + ' ' + DIM_META[k].unit;
+  }
+  update();
+});
+
+/* ── Master update ──────────────────────────────────────── */
+function update() {
+  const solved = draw();
+  buildTree();
+  buildResults(solved);
+  syncTextarea();
+}
+
+/* ── Init ───────────────────────────────────────────────── */
+buildSliders();
+update();
+window.addEventListener('resize', () => draw());
+</script>
+</body>
+</html>
