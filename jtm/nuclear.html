@@ -326,6 +326,42 @@ body{background:var(--paper);color:var(--ink);font-family:var(--serif);font-size
 .ag-edge { stroke: var(--rule2); stroke-width: 1; fill: none; }
 .ag-edge-label { font-family: var(--mono); font-size: 9px; fill: var(--faint); }
 
+/* Chain tree visualization */
+.chain-section{margin:8px 0;padding:8px 10px;background:var(--hi);border:1px solid var(--rule2);border-radius:6px}
+.chain-section .chain-title{font:600 9px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--oxide);margin-bottom:6px}
+.chain-tree{list-style:none;padding:0;margin:0}
+.chain-tree .chain-tree{padding-left:14px;margin:0;border-left:1px solid var(--rule)}
+.chain-node{display:flex;align-items:center;gap:5px;padding:3px 4px;font:10px var(--mono);color:var(--ink2);cursor:pointer;border-radius:3px;transition:background .1s;line-height:1.4}
+.chain-node:hover{background:rgba(168,64,31,.06)}
+.chain-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.chain-dot.cd-g{background:var(--green)}.chain-dot.cd-a{background:var(--amber)}.chain-dot.cd-r{background:var(--red)}.chain-dot.cd-f{background:var(--rule2)}
+.chain-alias{color:var(--blue);font-weight:600;min-width:60px}
+.chain-name{color:var(--ink2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chain-status{font:600 9px var(--mono);padding:1px 5px;border-radius:3px;flex-shrink:0;letter-spacing:.03em}
+.chain-crit{color:#fff;background:var(--red);font:600 9px var(--mono);padding:1px 5px;border-radius:3px;margin-left:4px}
+
+/* Constraint detail enhanced */
+.con-impact{margin:6px 0;padding:6px 8px;background:rgba(168,64,31,.04);border:1px solid var(--rule2);border-radius:5px;font:10px var(--mono);color:var(--ink2);line-height:1.5}
+.con-impact .ci-label{font-weight:600;color:var(--faint);text-transform:uppercase;letter-spacing:.04em;font-size:9px}
+.con-impact .ci-val{font-weight:600;color:var(--ink)}
+.con-impact .ci-highlight{color:var(--oxide);font-weight:600}
+
+/* Critical path linear chain */
+.crit-chain{padding:8px 10px;background:var(--hi);border:1px solid var(--red);border-radius:6px;margin:8px 0}
+.crit-chain .crit-title{font:600 9px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--red);margin-bottom:6px}
+.crit-chain-list{display:flex;flex-wrap:wrap;align-items:center;gap:0}
+.crit-chain-item{display:flex;align-items:center;gap:4px;padding:3px 6px;font:10px var(--mono);color:var(--ink2);cursor:pointer;border-radius:3px;transition:background .1s}
+.crit-chain-item:hover{background:rgba(177,61,44,.08)}
+.crit-chain-arrow{color:var(--red);font:600 10px var(--mono);padding:0 2px}
+
+/* Explorer section */
+.explorer-section{margin:10px 0;padding:10px 12px;background:var(--panel);border:1px solid var(--rule2);border-radius:6px}
+.explorer-input-row{display:flex;gap:6px;margin-bottom:8px}
+.explorer-input-row input{flex:1;font:11px var(--mono);padding:6px 8px;border:1px solid var(--rule2);border-radius:4px;background:var(--hi);color:var(--ink)}
+.explorer-input-row input:focus{border-color:var(--oxide);outline:none}
+.explorer-input-row button{font:500 10px var(--mono);padding:6px 12px;border:1px solid var(--oxide);border-radius:4px;background:var(--hi);color:var(--oxide);cursor:pointer}
+.explorer-input-row button:hover{background:var(--oxide);color:#fff}
+
 /* MC settings */
 .mc-settings{display:flex;align-items:center;gap:6px;margin-top:6px;flex-wrap:wrap}
 .mc-settings select,.mc-settings button{font:500 10px var(--mono);padding:3px 8px;border:1px solid var(--rule2);border-radius:4px;background:var(--hi);color:var(--ink2);cursor:pointer}
@@ -1165,6 +1201,143 @@ function actStatus(alias){
 function actConstraintsForCWP(cwpAlias){return ACE_ALL.filter(a=>a.type==='constraint'&&(a.blocks||[]).includes(cwpAlias));}
 /** Identify blocking constraints and next milestone on the critical path */
 function findCriticalPath(){const next=MILESTONES.find(ms=>month<ms.m);const blocking=ACE_ALL.filter(a=>a.type==='constraint'&&!actIsComplete(a.alias));return{blocking,nextMilestone:next};}
+
+/**
+ * Trace the full dependency chain from an atom in a given direction.
+ * direction: 'upstream' follows waits-on, cleared-by (what does this need?)
+ *            'downstream' follows enables, blocks (what needs this?)
+ * Returns tree: {alias, name, status, complete, children:[...]}
+ * maxDepth caps recursion to prevent explosion (default 4).
+ */
+function traceChain(alias, direction, maxDepth, _seen) {
+  maxDepth = maxDepth != null ? maxDepth : 4;
+  _seen = _seen || new Set();
+  var a = ACE_ATOMS[alias];
+  if (!a || maxDepth <= 0 || _seen.has(alias)) {
+    return a ? {alias:alias, name:a.name||'', status:actStatus(alias), complete:actIsComplete(alias), type:a.type, pct:atomPctComplete(alias), children:[]} : null;
+  }
+  _seen.add(alias);
+  var deps = [];
+  if (direction === 'upstream') {
+    (a['waits-on'] || []).forEach(function(d) { deps.push(d); });
+    (a['cleared-by'] || []).forEach(function(d) { if (deps.indexOf(d) === -1) deps.push(d); });
+    // If this is inside a rollup, include the parent as upstream context
+    var parent = ACE_ALL.find(function(x) { return x.contains && x.contains.indexOf(alias) !== -1; });
+    if (parent && deps.indexOf(parent.alias) === -1) deps.push(parent.alias);
+  } else {
+    (a.enables || []).forEach(function(d) { deps.push(d); });
+    (a.blocks || []).forEach(function(d) { if (deps.indexOf(d) === -1) deps.push(d); });
+    (a.contains || []).forEach(function(d) { if (deps.indexOf(d) === -1) deps.push(d); });
+    // Also find atoms that wait-on this one
+    ACE_ALL.forEach(function(x) {
+      if (x['waits-on'] && x['waits-on'].indexOf(alias) !== -1 && deps.indexOf(x.alias) === -1) deps.push(x.alias);
+    });
+  }
+  var children = [];
+  deps.forEach(function(d) {
+    var child = traceChain(d, direction, maxDepth - 1, new Set(_seen));
+    if (child) children.push(child);
+  });
+  return {
+    alias: alias, name: a.name || '', status: actStatus(alias),
+    complete: actIsComplete(alias), type: a.type,
+    pct: atomPctComplete(alias), children: children
+  };
+}
+
+/** Compute a percentage complete for an atom (for chain display) */
+function atomPctComplete(alias) {
+  var a = ACE_ATOMS[alias];
+  if (!a) return 0;
+  if (actIsComplete(alias)) return 100;
+  if (a.completionKind === 'rollup' && a.contains && a.contains.length) {
+    var done = a.contains.filter(function(c) { return actIsComplete(c); }).length;
+    return Math.round(done / a.contains.length * 100);
+  }
+  if (a.completeAtMonth != null) {
+    return Math.max(0, Math.min(99, Math.round(month / a.completeAtMonth * 100)));
+  }
+  return 0;
+}
+
+/** Render a chain tree as indented HTML (recursive) */
+function renderChainTree(node, critSet) {
+  if (!node) return '';
+  var dotCls = node.complete ? 'cd-g' : node.status === 'a' ? 'cd-a' : node.status === 'r' ? 'cd-r' : 'cd-f';
+  var statusText = node.complete ? 'DONE' : node.pct > 0 ? node.pct + '%' : 'PEND';
+  var statusColor = node.complete ? 'var(--green)' : node.pct > 50 ? 'var(--blue)' : node.pct > 0 ? 'var(--amber)' : 'var(--faint)';
+  var isCrit = critSet && critSet.has(node.alias);
+  var html = '<ul class="chain-tree">';
+  html += '<li>';
+  html += '<div class="chain-node" data-goto="' + node.alias + '">';
+  html += '<span class="chain-dot ' + dotCls + '"></span>';
+  html += '<span class="chain-alias">' + node.alias + '</span>';
+  html += '<span class="chain-name">' + node.name + '</span>';
+  html += '<span class="chain-status" style="color:' + statusColor + '">[' + statusText + ']</span>';
+  if (isCrit) html += '<span class="chain-crit">[CRIT]</span>';
+  html += '</div>';
+  if (node.children && node.children.length) {
+    node.children.forEach(function(ch) {
+      html += renderChainTree(ch, critSet);
+    });
+  }
+  html += '</li></ul>';
+  return html;
+}
+
+/**
+ * Enhanced critical path: find the longest chain of incomplete atoms
+ * from current month to the last milestone. Mark with [CRIT].
+ * Returns {chain: [alias,...], blocking: [...], nextMilestone: ...}
+ */
+function findCriticalPathFull() {
+  var next = MILESTONES.find(function(ms) { return month < ms.m; });
+  var blocking = ACE_ALL.filter(function(a) { return a.type === 'constraint' && !actIsComplete(a.alias); });
+  // Build the longest chain: start from incomplete CWPs/constraints that
+  // have downstream dependencies. Use BFS/DFS to find longest path.
+  var incomplete = ACE_ALL.filter(function(a) {
+    return !actIsComplete(a.alias) && (a.type === 'constraint' || a.type === 'cwp' || a.type === 'cwa');
+  });
+  // Build adjacency: a -> things that depend on a (downstream)
+  var adj = {};
+  ACE_ALL.forEach(function(a) {
+    var downs = [];
+    (a.enables || []).forEach(function(d) { downs.push(d); });
+    (a.blocks || []).forEach(function(d) { downs.push(d); });
+    if (downs.length) adj[a.alias] = downs;
+  });
+  // DFS from each incomplete node to find longest path
+  var longestPath = [];
+  var memo = {};
+  function dfs(alias, seen) {
+    if (seen.has(alias)) return [alias];
+    if (memo[alias]) return memo[alias];
+    seen.add(alias);
+    var best = [alias];
+    var nexts = adj[alias] || [];
+    nexts.forEach(function(n) {
+      if (ACE_ATOMS[n] && !actIsComplete(n)) {
+        var path = dfs(n, new Set(seen));
+        if (path.length + 1 > best.length) {
+          best = [alias].concat(path);
+        }
+      }
+    });
+    memo[alias] = best;
+    seen.delete(alias);
+    return best;
+  }
+  incomplete.forEach(function(a) {
+    var path = dfs(a.alias, new Set());
+    if (path.length > longestPath.length) longestPath = path;
+  });
+  return {
+    chain: longestPath,
+    chainSet: new Set(longestPath),
+    blocking: blocking,
+    nextMilestone: next
+  };
+}
 
 // PROCEDURAL ATOM GENERATION (~3000 atoms)
 /** Procedurally generate ~3000 atoms (IWPs, constraints, materials, etc.) */
@@ -2158,9 +2331,53 @@ function navigateToAtom(alias){
     // IWP 5-constraint grid
     let iwpGridHtml='';
     if(a.type==='iwp'){const iwp=IWP_DATA.find(i=>i.id===alias);if(iwp){updateIWPConstraints(month);const c=iwp.constraints,lbs=['M','L','E','Q','A'],ks=['material','labour','engineering','equipment','access'];iwpGridHtml='<div style="margin:8px 0"><div style="font:600 9px var(--mono);color:var(--faint);text-transform:uppercase;margin-bottom:4px">5-Constraint Status</div><div style="display:flex;gap:4px">';lbs.forEach((l,i)=>{const on=c[ks[i]];iwpGridHtml+='<div style="width:28px;height:22px;border-radius:4px;text-align:center;font:600 10px var(--mono);line-height:22px;border:1px solid '+(on?'var(--green)':'var(--red)')+';background:'+(on?'var(--green)':'var(--hi)')+';color:'+(on?'#fff':'var(--red)')+'">'+l+'</div>';});iwpGridHtml+='<span style="font:600 9px var(--mono);color:'+(iwpIsReady(iwp)?'var(--green)':'var(--red)')+';margin-left:6px;align-self:center">'+(iwpIsReady(iwp)?'READY':'BLOCKED')+'</span></div></div>';}}
-    // Constraint blocks/waits detail
+    // Constraint blocks/waits detail (enhanced for CON-xxx)
     let conDetailHtml='';
-    if(a.type==='constraint'){const bAt=(a.blocks||[]).map(b=>{const ba=ACE_ATOMS[b];return ba?b+' ('+ba.name+')':b;}),wAt=(a['waits-on']||[]).map(w=>{const wa=ACE_ATOMS[w];return wa?w+' ('+wa.name+')':w;});if(bAt.length||wAt.length){conDetailHtml='<div style="margin:8px 0;padding:6px;background:var(--hi);border:1px solid var(--rule2);border-radius:4px">';if(wAt.length)conDetailHtml+='<div style="font:600 9px var(--mono);color:var(--faint);text-transform:uppercase;margin-bottom:2px">Waits on</div>'+wAt.map(w=>'<div style="font:10px var(--mono);color:var(--ink2);padding:1px 0">'+w+'</div>').join('');if(bAt.length)conDetailHtml+='<div style="font:600 9px var(--mono);color:var(--faint);text-transform:uppercase;margin:4px 0 2px">Blocks</div>'+bAt.map(b=>'<div style="font:10px var(--mono);color:var(--red);padding:1px 0">'+b+'</div>').join('');conDetailHtml+='</div>';}}
+    if(a.type==='constraint'){
+      var critFull=findCriticalPathFull();
+      var critSet=critFull.chainSet;
+      var bAt=(a.blocks||[]).map(function(b){var ba=ACE_ATOMS[b];return ba?{alias:b,name:ba.name,pct:atomPctComplete(b),complete:actIsComplete(b)}:{alias:b,name:b,pct:0,complete:false};});
+      var wAt=(a['waits-on']||[]).map(function(w){var wa=ACE_ATOMS[w];return wa?{alias:w,name:wa.name,status:actStatus(w),complete:actIsComplete(w)}:{alias:w,name:w,status:'f',complete:false};});
+      // Owner: find if any action references this constraint
+      var ownerAction=ACEIONS.find(function(act){return act.source&&act.source.indexOf(a.alias)!==-1;});
+      // NeedBy: find earliest completeAtMonth of blocked items
+      var needByMonth=null;
+      bAt.forEach(function(b){var ba=ACE_ATOMS[b.alias];if(ba&&ba.completeAtMonth!=null){if(needByMonth===null||ba.completeAtMonth<needByMonth)needByMonth=ba.completeAtMonth;}});
+      // Impact calculation: count blocked IWPs and worker-days
+      var blockedIWPCount=0,blockedWorkerDays=0;
+      (a.blocks||[]).forEach(function(b){
+        var ba=ACE_ATOMS[b];if(!ba)return;
+        // Count IWPs under blocked CWPs
+        if(ba.type==='cwp'){
+          var iwps=IWP_DATA.filter(function(i){return i.cwp===b;});
+          blockedIWPCount+=iwps.length;
+          if(ba.completeAtMonth!=null){
+            var durMo=Math.max(1,Math.round((ba.completeAtMonth-(ba.completeAtMonth>20?ba.completeAtMonth-10:0))));
+            blockedWorkerDays+=durMo*workforce(Math.min(month,ba.completeAtMonth))*0.02;
+          }
+        }
+      });
+      conDetailHtml='<div class="con-impact">';
+      if(wAt.length){
+        conDetailHtml+='<div class="ci-label">Waits on ('+wAt.length+')</div>';
+        wAt.forEach(function(w){
+          var stColor=w.complete?'var(--green)':w.status==='a'?'var(--amber)':'var(--faint)';
+          var stText=w.complete?'DONE':w.status==='a'?'IN PROGRESS':'PENDING';
+          conDetailHtml+='<div style="padding:2px 0;display:flex;align-items:center;gap:4px"><span class="chain-dot '+(w.complete?'cd-g':w.status==='a'?'cd-a':'cd-f')+'" style="width:6px;height:6px"></span><span style="color:var(--blue);font-weight:600;cursor:pointer" data-goto="'+w.alias+'">'+w.alias+'</span> <span>'+w.name+'</span> <span style="color:'+stColor+';font-weight:600">['+stText+']</span></div>';
+        });
+      }
+      if(bAt.length){
+        conDetailHtml+='<div class="ci-label" style="margin-top:4px">Blocks ('+bAt.length+')</div>';
+        bAt.forEach(function(b){
+          var pcol=b.complete?'var(--green)':b.pct>50?'var(--blue)':b.pct>0?'var(--amber)':'var(--faint)';
+          conDetailHtml+='<div style="padding:2px 0;display:flex;align-items:center;gap:4px"><span style="color:var(--red);font-weight:600;cursor:pointer" data-goto="'+b.alias+'">'+b.alias+'</span> <span>'+b.name+'</span> <span style="color:'+pcol+';font-weight:600">['+b.pct+'%]</span></div>';
+        });
+      }
+      if(ownerAction) conDetailHtml+='<div style="margin-top:4px"><span class="ci-label">Owner</span> <span class="ci-val">'+ownerAction.assignee+' ('+ownerAction.id+')</span></div>';
+      if(needByMonth!=null) conDetailHtml+='<div><span class="ci-label">Need by</span> <span class="ci-val ci-highlight">M'+needByMonth+'</span></div>';
+      if(blockedIWPCount>0) conDetailHtml+='<div style="margin-top:4px;color:var(--oxide);font-weight:600"><span class="ci-label">Impact</span> Clearing this unblocks '+blockedIWPCount+' IWPs worth ~'+Math.round(blockedWorkerDays).toLocaleString()+' worker-days</div>';
+      conDetailHtml+='</div>';
+    }
     // Related narrative entries
     let narrHtml='';
     const relNarr=NARRATIVE_LOG.filter(n=>n.atom===alias);
