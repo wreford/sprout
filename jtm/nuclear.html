@@ -356,6 +356,30 @@ body{background:var(--paper);color:var(--ink);font-family:var(--serif);font-size
 .nerd-prompt{color:#ff6b35}
 .nerd-toggle{font:600 10px var(--mono);padding:4px 10px;border:1px solid var(--rule2);border-radius:4px;background:var(--hi);color:var(--ink2);cursor:pointer;margin-bottom:8px}
 .nerd-toggle.nerd-on{background:#0a0a0a;color:#33ff33;border-color:#333}
+
+/* Tour overlay */
+.tour-overlay{position:fixed;inset:0;z-index:9000;pointer-events:all}
+.tour-highlight{position:absolute;box-shadow:0 0 0 9999px rgba(34,28,16,0.65);border-radius:6px;z-index:9001;pointer-events:none;transition:all 0.4s ease}
+.tour-card{position:absolute;z-index:9002;background:var(--panel);border:2px solid var(--oxide);border-radius:8px;padding:14px 16px;max-width:340px;box-shadow:0 4px 20px rgba(34,28,16,.3)}
+.tour-card p{font:13px/1.5 var(--serif);color:var(--ink2);margin:0 0 10px}
+.tour-card .tour-step{font:10px var(--mono);color:var(--faint);margin-bottom:6px}
+.tour-card .tour-next{font:600 11px var(--mono);padding:6px 16px;border:1px solid var(--oxide);border-radius:5px;background:var(--oxide);color:#fff;cursor:pointer}
+.tour-card .tour-next:hover{background:#8a3018}
+.tour-card .tour-skip{font:10px var(--mono);color:var(--faint);cursor:pointer;margin-left:10px;text-decoration:underline}
+.tour-card .tour-skip:hover{color:var(--oxide)}
+
+/* Narrative log */
+.narr-entry{display:flex;gap:8px;padding:6px 8px;border-bottom:1px solid var(--rule);cursor:pointer;transition:background .1s;font:10px var(--mono);color:var(--ink2);line-height:1.4}
+.narr-entry:hover{background:var(--hi)}
+.narr-month{color:var(--oxide);font-weight:600;min-width:30px;flex-shrink:0}
+.narr-action{color:var(--faint);min-width:90px;flex-shrink:0}
+.narr-atom{color:var(--blue);font-weight:600;min-width:60px;flex-shrink:0}
+.narr-text{color:var(--ink2);flex:1;font:11px var(--serif)}
+.narr-header{font:12px/1.6 var(--serif);color:var(--ink2);padding:10px 12px;background:var(--hi);border:1px solid var(--rule2);border-radius:6px;margin-bottom:10px;border-left:3px solid var(--oxide)}
+.triage-narrative{margin-top:8px;padding-top:6px;border-top:1px solid var(--rule)}
+.triage-narrative label{font:600 9px var(--mono);color:var(--faint);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:4px}
+.triage-narrative textarea{width:100%;height:48px;font:11px var(--serif);color:var(--ink2);border:1px solid var(--rule2);border-radius:4px;padding:6px 8px;resize:vertical;background:var(--hi)}
+.triage-narrative textarea:focus{outline:none;border-color:var(--oxide)}
 </style>
 </head>
 <body>
@@ -393,6 +417,7 @@ body{background:var(--paper);color:var(--ink);font-family:var(--serif);font-size
   <button onclick="exportCSV()">[CSV]</button>
   <button onclick="exportPDF()">[PDF]</button>
   <button onclick="exportP6()">[P6]</button>
+  <button id="tour-btn" onclick="startTour()">[Tour]</button>
   <span class="sp" id="atomcount" style="font-weight:600;color:var(--oxide);margin-right:6px"></span>
   <span class="sp" id="sp"></span>
 </div>
@@ -420,6 +445,7 @@ body{background:var(--paper);color:var(--ink);font-family:var(--serif);font-size
       <div class="sb-item" data-tab="flex"><span class="sb-icon">[X]</span> FLEX Packages</div>
       <div class="sb-item" data-tab="wbs"><span class="sb-icon">[W]</span> WBS</div>
       <div class="sb-item" data-tab="fieldiq"><span class="sb-icon">[F]</span> FieldIQ</div>
+      <div class="sb-item" data-tab="narrative"><span class="sb-icon">[N]</span> Narrative</div>
       <div class="sb-item" data-tab="askace"><span class="sb-icon">[?]</span> Ask ACE</div>
       <div style="border-top:1px solid var(--rule);margin:8px 0 4px;padding-top:6px">
         <label style="display:flex;align-items:center;gap:6px;font:10px var(--mono);color:var(--faint);padding:4px 10px;cursor:pointer">
@@ -1350,6 +1376,7 @@ function checkACETriagees(){
         delayTotal+=eff.delay;
         triageMCEffects.push(eff);
         eventLog.push({m:Math.round(month),type:'mile',msg:'TRIAGE '+id+' auto-resolved: '+(pickA?spec.optA:spec.optB)+' ('+((pickA?spec.impactA:spec.impactB).schedule)+')'});
+        recordNarrative(id,'triage-resolve','Auto-resolved: '+(pickA?spec.optA:spec.optB)+'. Impact: '+((pickA?spec.impactA:spec.impactB).schedule),false);
         mcResults=runMonteCarlo(1000);
       } else {
         showTriageModal(id,spec);
@@ -1377,7 +1404,8 @@ function showTriageModal(id,spec){
   }
   cmpHtml+='</table>';
 
-  overlay.innerHTML='<div class="triage-modal"><h4>'+id+' -- '+spec.title+'</h4><div class="triage-loc">'+spec.location+'</div><div class="triage-conflict"><b>Conflict:</b> '+spec.conflictA+' vs '+spec.conflictB+'</div><p>'+spec.desc+'</p>'+cmpHtml+'<div class="triage-btns"><button class="triage-btn" data-triage-choice="a"><b>A:</b> '+spec.optA+'</button><button class="triage-btn" data-triage-choice="b"><b>B:</b> '+spec.optB+'</button></div>'+affHtml+'</div>';
+  const narrHtml='<div class="triage-narrative"><label>Add narrative (optional):</label><textarea id="triage-narrative-input" placeholder="Why did you choose this option? Record your reasoning for the decision trail..."></textarea></div>';
+  overlay.innerHTML='<div class="triage-modal"><h4>'+id+' -- '+spec.title+'</h4><div class="triage-loc">'+spec.location+'</div><div class="triage-conflict"><b>Conflict:</b> '+spec.conflictA+' vs '+spec.conflictB+'</div><p>'+spec.desc+'</p>'+cmpHtml+narrHtml+'<div class="triage-btns"><button class="triage-btn" data-triage-choice="a"><b>A:</b> '+spec.optA+'</button><button class="triage-btn" data-triage-choice="b"><b>B:</b> '+spec.optB+'</button></div>'+affHtml+'</div>';
   document.body.appendChild(overlay);
   if(playing){playing=false;$('play').textContent='Play';}
 }
@@ -1988,6 +2016,7 @@ function renderTab(){
     case'flex':renderFlex(el);break;
     case'wbs':renderWBS(el);break;
     case'fieldiq':renderFieldIQTab(el);break;
+    case'narrative':renderNarrativeTab(el);break;
     case'askace':renderAskACETab(el);break;
   }
 }
@@ -2555,7 +2584,7 @@ function renderWBS(el){
 function checkRisks(m){
   if(Math.floor(m)===lastRiskCheck)return;lastRiskCheck=Math.floor(m);
   let riskFired=false;
-  RISKS.forEach((r,i)=>{if(riskHits.has(i))return;if(Math.abs(m-r.trigger)<1&&Math.random()<r.prob){riskHits.add(i);delayTotal+=r.impact;eventLog.push({m:Math.round(m),type:'risk',msg:'RISK: '+r.n+' -- '+r.desc});riskFired=true;}});
+  RISKS.forEach((r,i)=>{if(riskHits.has(i))return;if(Math.abs(m-r.trigger)<1&&Math.random()<r.prob){riskHits.add(i);delayTotal+=r.impact;eventLog.push({m:Math.round(m),type:'risk',msg:'RISK: '+r.n+' -- '+r.desc});riskFired=true;recordNarrative(r.alias,'risk-fired',r.n+'. Impact: '+r.desc,false);}});
   if(riskFired){
     // Re-run Monte Carlo after a risk fires
     runMonteCarlo(1000);
@@ -2675,6 +2704,9 @@ document.addEventListener('click',function(e){
     if(overlay)overlay.remove();
     const spec=ACE_TRIAGEES_SPEC[triageId];
     if(spec){
+      // Capture narrative from textarea before removing overlay
+      const narrInput=document.getElementById('triage-narrative-input');
+      const narrText=narrInput?narrInput.value.trim():'';
       let chosenImpact=null;
       if(choice==='a'&&spec.impactA){
         chosenImpact=spec.impactA;
@@ -2682,12 +2714,14 @@ document.addEventListener('click',function(e){
         delayTotal+=delayVal;
         triageMCEffects.push(chosenImpact.mcEffect||{delay:0,cost:0});
         eventLog.push({m:Math.round(month),type:'risk',msg:'TRIAGE RESOLVED: '+spec.title+' -- '+spec.optA+' ('+chosenImpact.schedule+', '+chosenImpact.cost+')'});
+        recordNarrative(triageId,'triage-resolve',narrText||('Chose: '+spec.optA+'. Impact: '+chosenImpact.schedule+', '+chosenImpact.cost),false);
       } else if(spec.impactB){
         chosenImpact=spec.impactB;
         const delayVal=chosenImpact.mcEffect?chosenImpact.mcEffect.delay||0:0;
         delayTotal+=delayVal;
         triageMCEffects.push(chosenImpact.mcEffect||{delay:0,cost:0});
         eventLog.push({m:Math.round(month),type:'good',msg:'TRIAGE RESOLVED: '+spec.title+' -- '+spec.optB+' ('+chosenImpact.schedule+', '+chosenImpact.cost+')'});
+        recordNarrative(triageId,'triage-resolve',narrText||('Chose: '+spec.optB+'. Impact: '+chosenImpact.schedule+', '+chosenImpact.cost),false);
       }
       actTriageFired[triageId]=true;
 
@@ -2785,6 +2819,9 @@ function fiqSave() {
 
   // Add to event log
   eventLog.push({m:Math.round(month), type:'mile', msg:'FieldIQ: ' + alias + ' -- ' + title + ' (' + type + ')'});
+
+  // Record narrative -- the description IS the narrative for field captures
+  recordNarrative(alias, 'field-capture', title, false);
 
   // Save to localStorage
   saveState();
