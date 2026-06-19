@@ -801,6 +801,8 @@ let msHit=new Set(),lastRiskCheck=0;
 let sidebarVisible=true;
 let selectedPhase=-1,selectedMilestone=-1; // Gantt selection state
 let ganttHitmap=[]; // array of {x,y,w,h,type:'phase'|'milestone',idx} for click detection
+let ganttScrubbing=false; // true while drag-to-scrub is active
+let ganttScrubStartX=-1; // X position where scrub started (to distinguish click from drag)
 let mcResults=null; // Monte Carlo results cache
 let triageMCEffects=[]; // accumulated MC effects from triage resolutions
 
@@ -2009,7 +2011,7 @@ function drawGantt(){
 }
 
 // Gantt tooltip
-/** Show a tooltip near the cursor on the Gantt chart */
+/** Show a tooltip near the cursor on the Gantt chart — follows mouse */
 function showGanttTooltip(x,y,html){
   let tt=document.getElementById('gantt-tooltip');
   if(!tt){
@@ -2020,13 +2022,16 @@ function showGanttTooltip(x,y,html){
   }
   tt.innerHTML=html;
   tt.classList.add('visible');
-  // Position near cursor but keep in bounds
+  // Position follows mouse, stay in bounds
   const gw=document.querySelector('.gantt-hero');
   if(!gw)return;
   const gwR=gw.getBoundingClientRect();
-  let left=x+12,top=y-10;
-  if(left+220>gwR.width)left=x-230;
-  if(top<0)top=4;
+  const ttW=tt.offsetWidth||280,ttH=tt.offsetHeight||120;
+  let left=x+14,top=y-ttH/2;
+  if(left+ttW>gwR.width)left=x-ttW-14;
+  if(left<4)left=4;
+  if(top<4)top=4;
+  if(top+ttH>gwR.height-4)top=gwR.height-ttH-4;
   tt.style.left=left+'px';tt.style.top=top+'px';
 }
 /** Hide the Gantt chart tooltip */
@@ -2054,6 +2059,17 @@ function showGanttDetail(){
     const relRisks=RISKS.filter(r=>r.trigger>=p.s&&r.trigger<=p.e);
     const relTriagees=Object.entries(ACE_TRIAGEES_SPEC).filter(([_,cl])=>cl.triggerMonth>=p.s&&cl.triggerMonth<=p.e);
 
+    // Dependencies: find prior phases that must complete before this one
+    const depPhases=PHASES.filter(pp=>pp.e<=p.s+2&&pp!==p&&pp.e>p.s-6).slice(-3);
+    // IWPs in this phase's timeframe (via CWPs)
+    updateIWPConstraints(month);
+    const phaseIWPs=IWP_DATA.filter(function(iwp){
+      const cwpAtom=ACE_ATOMS[iwp.cwp];
+      return cwpAtom&&cwpAtom.completeAtMonth!=null&&cwpAtom.completeAtMonth>=p.s&&cwpAtom.completeAtMonth<=p.e;
+    });
+    // Milestones in this phase
+    const phaseMilestones=MILESTONES.filter(ms=>ms.m>=p.s&&ms.m<=p.e);
+
     let html='<h3>'+p.n+'</h3>';
     html+='<div class="gd-grid">';
     html+='<div class="gd-item"><div class="gd-label">Duration</div><div class="gd-val">M'+p.s+' - M'+p.e+' ('+(p.e-p.s)+'mo)</div></div>';
@@ -2061,6 +2077,51 @@ function showGanttDetail(){
     html+='<div class="gd-item"><div class="gd-label">Workforce</div><div class="gd-val">'+phaseWF.toLocaleString()+'</div></div>';
     html+='<div class="gd-item"><div class="gd-label">Cost to date</div><div class="gd-val">$'+phaseCost+'B</div></div>';
     html+='</div>';
+
+    // Dependencies section
+    if(depPhases.length){
+      html+='<div class="gd-section">Dependencies</div>';
+      depPhases.forEach(dp2=>{
+        const dpProg=month<dp2.s?0:month>=dp2.e?100:Math.round((month-dp2.s)/(dp2.e-dp2.s)*100);
+        const dpStatusCls=dpProg>=100?'complete':dpProg>0?'active':'pending';
+        const dpStatusLabel=dpProg>=100?'COMPLETE':dpProg>0?'IN PROGRESS':'PENDING';
+        const dpIdx=PHASES.indexOf(dp2);
+        html+='<div class="gd-dep"><span class="gd-link" data-phase-idx="'+dpIdx+'" style="cursor:pointer">'+dp2.n+'</span> <span class="dep-status '+dpStatusCls+'">'+dpStatusLabel+'</span></div>';
+      });
+    }
+
+    // IWPs (sub-activities)
+    if(phaseIWPs.length){
+      const iwpReady=phaseIWPs.filter(iwp=>iwpIsReady(iwp)).length;
+      html+='<div class="gd-section">Install Work Packages ('+iwpReady+'/'+phaseIWPs.length+' ready)</div>';
+      phaseIWPs.slice(0,8).forEach(iwp=>{
+        const ready=iwpIsReady(iwp);
+        const blockers=iwpBlockers(iwp);
+        html+='<div class="gd-iwp-row"><span class="gd-iwp-id">'+iwp.id+'</span><span class="gd-iwp-name">'+iwp.name+'</span><span class="gd-iwp-status" style="color:'+(ready?'var(--green)':'var(--amber)')+'">'+(ready?'READY':blockers.length+' blocked')+'</span></div>';
+      });
+      if(phaseIWPs.length>8)html+='<div style="font:9px var(--mono);color:var(--faint);padding:2px 0">+'+(phaseIWPs.length-8)+' more IWPs</div>';
+    }
+
+    // Milestones in this phase
+    if(phaseMilestones.length){
+      html+='<div class="gd-section">Milestones ('+phaseMilestones.length+')</div>';
+      phaseMilestones.forEach(ms=>{
+        const reached=month>=ms.m;
+        const msIdx=MILESTONES.indexOf(ms);
+        const diamondColor=ms.reg?'var(--oxide)':reached?'var(--green)':'var(--faint)';
+        html+='<div class="gd-milestone" data-milestone-idx="'+msIdx+'"><span class="ms-diamond" style="background:'+diamondColor+'"></span>'+(ms.reg?'[CNSC] ':'')+ms.n+' <span style="color:var(--faint);margin-left:auto">M'+ms.m+'</span> <span style="color:'+(reached?'var(--green)':'var(--faint)')+'"> '+(reached?'DONE':'')+'</span></div>';
+      });
+    }
+
+    // Active triage events
+    if(relTriagees.length){
+      html+='<div class="gd-section">Triage Events ('+relTriagees.length+')</div><div class="gd-links">';
+      relTriagees.forEach(([id,cl])=>{
+        const resolved=actTriageFired[id];
+        html+='<span class="gd-link" style="color:'+(resolved?'var(--green)':'var(--amber)')+'">'+id+' '+cl.title+(resolved?' [RESOLVED]':'')+'</span>';
+      });
+      html+='</div>';
+    }
 
     // Linked constraints
     if(relCons.length){
@@ -2083,15 +2144,9 @@ function showGanttDetail(){
       });
       html+='</div>';
     }
-    // Active triagees
-    if(relTriagees.length){
-      html+='<div class="gd-section">Triagees ('+relTriagees.length+')</div><div class="gd-links">';
-      relTriagees.forEach(([id,cl])=>{
-        const resolved=actTriageFired[id];
-        html+='<span class="gd-link" style="color:'+(resolved?'var(--green)':'var(--amber)')+'">'+id+' '+cl.title+(resolved?' [RESOLVED]':'')+'</span>';
-      });
-      html+='</div>';
-    }
+
+    // Mini S-curve for this phase
+    html+='<div class="gd-section">Phase S-Curve</div><canvas class="gd-mini-scurve" id="gd-mini-scurve"></canvas>';
 
     dp.innerHTML=html;
     dp.classList.add('open');
@@ -2102,6 +2157,17 @@ function showGanttDetail(){
       const r=RFIS.find(x=>x.id===el.dataset.rfi);if(!r)return;
       showCard({title:r.id+' -- '+r.title,fields:[['raised','M'+r.raised],['raised by',r.by],['status',r.status]],links:r.blocks||[]});
     });});
+    // Wire up dependency phase clicks
+    dp.querySelectorAll('[data-phase-idx]').forEach(el=>{el.addEventListener('click',()=>{
+      selectedPhase=parseInt(el.dataset.phaseIdx);selectedMilestone=-1;showGanttDetail();drawGantt();
+    });});
+    // Wire up milestone clicks in detail
+    dp.querySelectorAll('[data-milestone-idx]').forEach(el=>{el.addEventListener('click',()=>{
+      selectedMilestone=parseInt(el.dataset.milestoneIdx);selectedPhase=-1;showGanttDetail();drawGantt();
+    });});
+
+    // Draw mini S-curve after DOM insertion
+    setTimeout(()=>drawMiniSCurve(p),30);
 
   } else if(selectedMilestone>=0){
     const ms=MILESTONES[selectedMilestone];
@@ -2115,16 +2181,98 @@ function showGanttDetail(){
 
     // Find the phase this milestone belongs to
     let bestPhase=null;
-    PHASES.forEach(p=>{if(ms.m>=p.s&&ms.m<=p.e)bestPhase=p;});
+    PHASES.forEach((p,pi)=>{if(ms.m>=p.s&&ms.m<=p.e){bestPhase=p;bestPhase._idx=pi;}});
     if(bestPhase){
-      html+='<div class="gd-section">Phase: '+bestPhase.n+' (M'+bestPhase.s+'-M'+bestPhase.e+')</div>';
+      html+='<div class="gd-section">Phase</div>';
+      html+='<div class="gd-dep"><span class="gd-link" data-phase-idx="'+bestPhase._idx+'" style="cursor:pointer">'+bestPhase.n+' (M'+bestPhase.s+'-M'+bestPhase.e+')</span></div>';
+    }
+
+    // Adjacent milestones
+    const msIdx=MILESTONES.indexOf(ms);
+    const nearby=MILESTONES.filter((m2,i)=>Math.abs(m2.m-ms.m)<=8&&i!==msIdx).slice(0,5);
+    if(nearby.length){
+      html+='<div class="gd-section">Nearby Milestones</div>';
+      nearby.forEach(m2=>{
+        const r2=month>=m2.m;const m2Idx=MILESTONES.indexOf(m2);
+        const dColor=m2.reg?'var(--oxide)':r2?'var(--green)':'var(--faint)';
+        html+='<div class="gd-milestone" data-milestone-idx="'+m2Idx+'"><span class="ms-diamond" style="background:'+dColor+'"></span>'+(m2.reg?'[CNSC] ':'')+m2.n+' <span style="color:var(--faint);margin-left:auto">M'+m2.m+'</span></div>';
+      });
     }
 
     dp.innerHTML=html;
     dp.classList.add('open');
+
+    // Wire up phase click in milestone detail
+    dp.querySelectorAll('[data-phase-idx]').forEach(el=>{el.addEventListener('click',()=>{
+      selectedPhase=parseInt(el.dataset.phaseIdx);selectedMilestone=-1;showGanttDetail();drawGantt();
+    });});
+    dp.querySelectorAll('[data-milestone-idx]').forEach(el=>{el.addEventListener('click',()=>{
+      selectedMilestone=parseInt(el.dataset.milestoneIdx);selectedPhase=-1;showGanttDetail();drawGantt();
+    });});
   } else {
     dp.classList.remove('open');
   }
+}
+
+/** Draw a mini S-curve for a specific phase showing planned vs earned */
+function drawMiniSCurve(phase){
+  const canvas=$('gd-mini-scurve');if(!canvas)return;
+  const dpr=2;
+  const w=canvas.clientWidth*dpr,h=canvas.clientHeight*dpr;
+  canvas.width=w;canvas.height=h;
+  const ctx=canvas.getContext('2d');
+  ctx.fillStyle='#faf7ee';ctx.fillRect(0,0,w,h);
+  const pad=4*dpr;
+  const cw=w-pad*2,ch=h-pad*2;
+  const pDur=phase.e-phase.s;if(pDur<=0)return;
+  const mf=getComputedStyle(document.body).getPropertyValue('--mono');
+
+  // Grid lines
+  ctx.strokeStyle='#ede7d6';ctx.lineWidth=0.5;
+  for(let i=1;i<4;i++){const y=pad+ch*(1-i/4);ctx.beginPath();ctx.moveTo(pad,y);ctx.lineTo(pad+cw,y);ctx.stroke();}
+
+  // Planned line (what the phase should look like)
+  ctx.strokeStyle='#cabd9c';ctx.lineWidth=1.5;ctx.beginPath();
+  for(let m=0;m<=pDur;m++){
+    const frac=m/pDur;
+    const pProg=100*(3*frac*frac-2*frac*frac*frac); // S-curve shape
+    const x=pad+m/pDur*cw;
+    const y=pad+ch*(1-pProg/100);
+    m===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+  }
+  ctx.stroke();
+
+  // Earned line (actual up to current month within phase)
+  const earnedMax=Math.max(0,Math.min(pDur,month-phase.s));
+  if(earnedMax>0){
+    ctx.strokeStyle='#2c5d78';ctx.lineWidth=2;ctx.beginPath();
+    for(let m=0;m<=earnedMax;m++){
+      const globalM=phase.s+m;
+      const eProg=earned(globalM)-earned(phase.s);
+      const totalEarned=earned(phase.e)-earned(phase.s);
+      const normProg=totalEarned>0?Math.min(100,eProg/totalEarned*100):0;
+      const x=pad+m/pDur*cw;
+      const y=pad+ch*(1-normProg/100);
+      m===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+    }
+    ctx.stroke();
+  }
+
+  // Current month indicator within phase
+  if(month>=phase.s&&month<=phase.e){
+    const mFrac=(month-phase.s)/pDur;
+    const nx=pad+mFrac*cw;
+    ctx.strokeStyle='#a8740188';ctx.lineWidth=1;ctx.setLineDash([3,3]);
+    ctx.beginPath();ctx.moveTo(nx,pad);ctx.lineTo(nx,pad+ch);ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Labels
+  ctx.fillStyle='#9a9077';ctx.font=(5*dpr)+'px '+mf;ctx.textAlign='left';
+  ctx.fillText('Planned',pad+2,pad+6*dpr);
+  ctx.fillStyle='#2c5d78';ctx.fillText('Earned',pad+cw*0.3,pad+6*dpr);
+  ctx.fillStyle='#9a9077';ctx.textAlign='left';ctx.fillText('M'+phase.s,pad,pad+ch+5*dpr);
+  ctx.textAlign='right';ctx.fillText('M'+phase.e,pad+cw,pad+ch+5*dpr);
 }
 
 // S-CURVE
@@ -2530,6 +2678,7 @@ function renderDashboard(el){
   el.innerHTML=
     '<div class="gantt-hero">'+
     '<canvas id="gantt"></canvas>'+
+    '<div class="gantt-month-pulse"></div>'+
     '<div class="gantt-detail" id="gantt-detail"></div>'+
     '</div>'+
     '<div class="timeline-minimap"><canvas id="minimap"></canvas></div>'+
@@ -2544,12 +2693,89 @@ function renderDashboard(el){
     '</div>'+
     '<div style="padding:6px 10px" id="dash-triagees"></div>';
 
-  // Wire up Gantt click and hover
+  // Wire up Gantt click, hover, and drag-to-scrub
   const ganttCanvas=$('gantt');
   if(ganttCanvas){
-    ganttCanvas.addEventListener('click',onGanttClick);
     ganttCanvas.addEventListener('mousemove',onGanttHover);
-    ganttCanvas.addEventListener('mouseleave',()=>hideGanttTooltip());
+    ganttCanvas.addEventListener('mouseleave',()=>{hideGanttTooltip();if(ganttScrubbing){ganttScrubbing=false;ganttCanvas.style.cursor='pointer';}});
+
+    // Drag-to-scrub: mouse events
+    ganttCanvas.addEventListener('mousedown',function(e){
+      ganttScrubbing=true;
+      ganttScrubStartX=e.clientX;
+      ganttCanvas.style.cursor='ew-resize';
+      hideGanttTooltip();
+      e.preventDefault();
+    });
+    document.addEventListener('mousemove',function(e){
+      if(!ganttScrubbing)return;
+      const rect=ganttCanvas.getBoundingClientRect();
+      const labelCol=80;
+      const rightMargin=10;
+      const chartW=rect.width-labelCol-rightMargin;
+      const cx=e.clientX-rect.left-labelCol;
+      const frac=Math.max(0,Math.min(1,cx/chartW));
+      month=frac*PLANT.dur;
+      $('mo').value=month;
+      playing=false;$('play').textContent='Play';
+      drawGantt();
+    });
+    document.addEventListener('mouseup',function(e){
+      if(!ganttScrubbing)return;
+      const wasScrub=Math.abs(e.clientX-ganttScrubStartX)>4;
+      ganttScrubbing=false;
+      ganttCanvas.style.cursor='pointer';
+      if(!wasScrub){
+        // It was a click, not a drag -- simulate click on canvas
+        const rect=ganttCanvas.getBoundingClientRect();
+        const cx=e.clientX-rect.left;
+        const cy=e.clientY-rect.top;
+        // Only handle if the click is within the canvas bounds
+        if(cx>=0&&cy>=0&&cx<=rect.width&&cy<=rect.height){
+          // Inline click handling to avoid e.target issues
+          for(var _i=ganttHitmap.length-1;_i>=0;_i--){
+            var _h=ganttHitmap[_i];
+            if(_h.type==='milestone'&&cx>=_h.x&&cx<=_h.x+_h.w&&cy>=_h.y&&cy<=_h.y+_h.h){
+              selectedMilestone=_h.idx;selectedPhase=-1;showGanttDetail();drawGantt();return;
+            }
+          }
+          for(var _j=0;_j<ganttHitmap.length;_j++){
+            var _h2=ganttHitmap[_j];
+            if(_h2.type==='phase'&&cx>=_h2.x&&cx<=_h2.x+_h2.w&&cy>=_h2.y&&cy<=_h2.y+_h2.h){
+              selectedPhase=_h2.idx;selectedMilestone=-1;showGanttDetail();drawGantt();return;
+            }
+          }
+          selectedPhase=-1;selectedMilestone=-1;showGanttDetail();drawGantt();
+        }
+      }
+    });
+
+    // Touch events for drag-to-scrub
+    ganttCanvas.addEventListener('touchstart',function(e){
+      if(e.touches.length!==1)return;
+      ganttScrubbing=true;
+      ganttScrubStartX=e.touches[0].clientX;
+      hideGanttTooltip();
+      e.preventDefault();
+    },{passive:false});
+    ganttCanvas.addEventListener('touchmove',function(e){
+      if(!ganttScrubbing||e.touches.length!==1)return;
+      const rect=ganttCanvas.getBoundingClientRect();
+      const labelCol=80;
+      const rightMargin=10;
+      const chartW=rect.width-labelCol-rightMargin;
+      const cx=e.touches[0].clientX-rect.left-labelCol;
+      const frac=Math.max(0,Math.min(1,cx/chartW));
+      month=frac*PLANT.dur;
+      $('mo').value=month;
+      playing=false;$('play').textContent='Play';
+      drawGantt();
+      e.preventDefault();
+    },{passive:false});
+    ganttCanvas.addEventListener('touchend',function(e){
+      if(!ganttScrubbing)return;
+      ganttScrubbing=false;
+    });
   }
 
   // Show detail if a phase/milestone was selected
@@ -2626,6 +2852,7 @@ function onGanttClick(e){
 
 /** Handle hover events on the Gantt chart for tooltips */
 function onGanttHover(e){
+  if(ganttScrubbing)return; // Don't show tooltips while scrubbing
   const rect=e.target.getBoundingClientRect();
   const cx=e.clientX-rect.left;
   const cy=e.clientY-rect.top;
@@ -2638,13 +2865,14 @@ function onGanttHover(e){
       const reached=month>=ms.m;
       showGanttTooltip(cx,cy,
         '<div class="gt-name">'+(ms.reg?'[CNSC] ':'')+ms.n+'</div>'+
-        '<div class="gt-stat">Month '+ms.m+' | '+(reached?'REACHED':'Pending')+'</div>'
+        '<div class="gt-stat">Month '+ms.m+' | '+(reached?'<span style="color:var(--green)">REACHED</span>':'<span style="color:var(--faint)">Pending</span>')+'</div>'+
+        (ms.reg?'<div class="gt-stat" style="color:var(--oxide)">CNSC Regulatory Hold Point</div>':'')
       );
       e.target.style.cursor='pointer';
       return;
     }
   }
-  // Then phases
+  // Then phases — rich tooltip
   for(let i=0;i<ganttHitmap.length;i++){
     const h=ganttHitmap[i];
     if(h.type==='phase'&&cx>=h.x&&cx<=h.x+h.w&&cy>=h.y&&cy<=h.y+h.h){
@@ -2652,10 +2880,36 @@ function onGanttHover(e){
       const progress=month<p.s?0:month>=p.e?100:Math.round((month-p.s)/(p.e-p.s)*100);
       const wf=workforce(month);
       const phaseWF=Math.round(wf*(h.idx<6?0.18:h.idx<10?0.14:0.08));
+      const cost=projectSpent(month);
+      const phaseCostFrac=(p.e-p.s)/PLANT.dur;
+      const phaseCost=(cost.total*phaseCostFrac).toFixed(2);
+      // IWPs in this phase
+      updateIWPConstraints(month);
+      const phaseIWPs=IWP_DATA.filter(function(iwp){
+        const cwpAtom=ACE_ATOMS[iwp.cwp];
+        return cwpAtom&&cwpAtom.completeAtMonth!=null&&cwpAtom.completeAtMonth>=p.s&&cwpAtom.completeAtMonth<=p.e;
+      });
+      const iwpReady=phaseIWPs.filter(function(iwp){return iwpIsReady(iwp);}).length;
+      // Active risks in this phase
+      const phaseRisks=RISKS.filter(function(r){return r.trigger>=p.s&&r.trigger<=p.e;});
+      const activeRisks=phaseRisks.filter(function(r){return riskHits.has(RISKS.indexOf(r));}).length;
+      // Active triage events
+      const phaseTriagees=Object.entries(ACE_TRIAGEES_SPEC).filter(function(entry){return entry[1].triggerMonth>=p.s&&entry[1].triggerMonth<=p.e;});
+      const activeTriagees=phaseTriagees.filter(function(entry){return actTriageFired[entry[0]];}).length;
+      // Progress bar color
+      const progColor=progress>=100?'var(--green)':progress>50?'var(--blue)':'var(--amber)';
+
       showGanttTooltip(cx,cy,
         '<div class="gt-name">'+p.n+'</div>'+
-        '<div class="gt-stat">M'+p.s+' - M'+p.e+' ('+(p.e-p.s)+'mo)</div>'+
-        '<div class="gt-stat">Progress: '+progress+'% | WF: '+phaseWF.toLocaleString()+'</div>'
+        '<div class="gt-row"><span class="gt-label">Duration</span><span class="gt-val">M'+p.s+' - M'+p.e+' ('+(p.e-p.s)+'mo)</span></div>'+
+        '<div class="gt-bar"><div class="gt-bar-fill" style="width:'+progress+'%;background:'+progColor+'"></div></div>'+
+        '<div class="gt-row"><span class="gt-label">Progress</span><span class="gt-val" style="color:'+progColor+'">'+progress+'%</span></div>'+
+        '<hr class="gt-divider">'+
+        '<div class="gt-row"><span class="gt-label">Workforce</span><span class="gt-val">'+phaseWF.toLocaleString()+'</span></div>'+
+        '<div class="gt-row"><span class="gt-label">Cost to date</span><span class="gt-val">$'+phaseCost+'B</span></div>'+
+        '<div class="gt-row"><span class="gt-label">IWPs</span><span class="gt-val">'+iwpReady+'/'+phaseIWPs.length+' ready</span></div>'+
+        '<div class="gt-row"><span class="gt-label">Risks</span><span class="gt-val"'+(activeRisks>0?' style="color:var(--red)"':'')+'>'+activeRisks+' active / '+phaseRisks.length+' total</span></div>'+
+        '<div class="gt-row"><span class="gt-label">Triage</span><span class="gt-val"'+(activeTriagees>0?' style="color:var(--amber)"':'')+'>'+activeTriagees+' active / '+phaseTriagees.length+' total</span></div>'
       );
       e.target.style.cursor='pointer';
       return;
