@@ -2691,7 +2691,7 @@ document.onkeydown=e=>{
   if(!splashDismissed)return;
   if(e.code==='Space'&&e.target.tagName!=='INPUT'){e.preventDefault();$('play').click();}
   if(e.code==='KeyM'&&e.target.tagName!=='INPUT'){e.preventDefault();$('sbtog').click();}
-  if(e.code==='Escape'){closeCard();}
+  if(e.code==='Escape'){if(tourActive){endTour();}else{closeCard();}}
 };
 
 // Triage click handler — with MC re-run
@@ -2701,12 +2701,12 @@ document.addEventListener('click',function(e){
     const choice=triageBtn.dataset.triageChoice;
     const overlay=document.getElementById('triage-overlay');
     const triageId=overlay?overlay.dataset.triageId:'';
+    // Capture narrative from textarea before removing overlay
+    const narrInput=document.getElementById('triage-narrative-input');
+    const narrText=narrInput?narrInput.value.trim():'';
     if(overlay)overlay.remove();
     const spec=ACE_TRIAGEES_SPEC[triageId];
     if(spec){
-      // Capture narrative from textarea before removing overlay
-      const narrInput=document.getElementById('triage-narrative-input');
-      const narrText=narrInput?narrInput.value.trim():'';
       let chosenImpact=null;
       if(choice==='a'&&spec.impactA){
         chosenImpact=spec.impactA;
@@ -3215,7 +3215,7 @@ function renderChanges(el){
     filtered.forEach(c=>{const cs=c.impact.cost>=0?'+$'+c.impact.cost.toFixed(2)+'B':'-$'+Math.abs(c.impact.cost).toFixed(2)+'B';const ss=c.impact.schedule>0?'+'+c.impact.schedule+'mo':c.impact.schedule<0?c.impact.schedule+'mo':'No impact';html+='<div class="chg-card" data-chg="'+c.id+'"><div class="chg-hdr"><span class="chg-id">'+c.id+'</span><span class="chg-title">'+c.title+'</span><span class="chg-pill chg-'+c.status+'">'+c.status+'</span></div><div class="chg-impact">Cost: '+cs+' | Schedule: '+ss+' | M'+c.month+' | By: '+c.requestedBy+'</div></div>';});
     html+='</div>';el.innerHTML=html;
     el.querySelectorAll('[data-chf]').forEach(btn=>{btn.addEventListener('click',()=>{filterState=btn.dataset.chf;draw();});});
-    el.querySelectorAll('[data-chg]').forEach(row=>{row.addEventListener('click',()=>{const c=CHANGES.find(x=>x.id===row.dataset.chg);if(!c)return;const f=[['status',c.status],['month','M'+c.month],['requested by',c.requestedBy],['cost impact',c.impact.cost>=0?'+$'+c.impact.cost.toFixed(2)+'B':'-$'+Math.abs(c.impact.cost).toFixed(2)+'B'],['schedule impact',c.impact.schedule!==0?c.impact.schedule+' months':'None']];if(c.approvedBy)f.push(['approved by',c.approvedBy]);if(c.reason)f.push(['rejection reason',c.reason]);if(c.desc)f.push(['description',c.desc]);showCard({title:c.id+' -- '+c.title,fields:f,links:[]});});});
+    el.querySelectorAll('[data-chg]').forEach(row=>{row.addEventListener('click',()=>{const c=CHANGES.find(x=>x.id===row.dataset.chg);if(!c)return;const f=[['status',c.status],['month','M'+c.month],['requested by',c.requestedBy],['cost impact',c.impact.cost>=0?'+$'+c.impact.cost.toFixed(2)+'B':'-$'+Math.abs(c.impact.cost).toFixed(2)+'B'],['schedule impact',c.impact.schedule!==0?c.impact.schedule+' months':'None']];if(c.approvedBy)f.push(['approved by',c.approvedBy]);if(c.reason)f.push(['rejection reason',c.reason]);if(c.desc)f.push(['description',c.desc]);showCard({title:c.id+' -- '+c.title,fields:f,links:[]});if(c.status==='approved'){recordNarrative(c.id,'change-approved',c.title+'. Cost: '+(c.impact.cost>=0?'+':'')+c.impact.cost.toFixed(2)+'B. Schedule: '+(c.impact.schedule!==0?c.impact.schedule+'mo':'None')+'. Approved by: '+(c.approvedBy||'--'),true);}});});
   }
   draw();
 }
@@ -3258,6 +3258,257 @@ function renderAskACETabNerd(el){
 
 // Helper alias for atom completion check used by exports
 function isAtomComplete(a) { return actIsComplete(a.alias); }
+
+// ================================================================
+// NARRATIVE SYSTEM
+// Constraint modeling and binary completion are the MODEL.
+// Narrative is the COMMUNICATION TOOL.
+// ================================================================
+const NARRATIVE_LOG = [];
+
+function recordNarrative(atomAlias, action, narrative, required) {
+  NARRATIVE_LOG.push({
+    timestamp: new Date().toISOString(),
+    month: Math.round(month),
+    atom: atomAlias,
+    action: action,  // 'complete', 'triage-resolve', 'risk-fired', 'field-capture', 'change-approved', etc
+    narrative: narrative || '',
+    required: required || false,
+    user: 'demo-user'
+  });
+}
+
+function renderNarrativeTab(el) {
+  let html = '<div class="tab-panel">';
+  html += '<h2>Narrative Log</h2>';
+  html += '<div class="narr-header">';
+  html += 'Constraint modeling and binary completion are the model. Narrative is the communication tool. Each action is recorded with optional or required narrative inputs, creating an auditable decision trail that gives context to the constraint graph.';
+  html += '</div>';
+
+  if (NARRATIVE_LOG.length === 0) {
+    html += '<div style="font:12px var(--serif);color:var(--faint);padding:20px;text-align:center">No narrative entries yet. Narratives are recorded as risks fire, triages are resolved, field captures are saved, and changes are approved during playback.</div>';
+  } else {
+    html += '<div style="font:600 10px var(--mono);color:var(--faint);margin-bottom:6px">' + NARRATIVE_LOG.length + ' entries</div>';
+    // Show entries in reverse chronological order
+    const entries = NARRATIVE_LOG.slice().reverse();
+    entries.forEach(function(entry, idx) {
+      html += '<div class="narr-entry" data-narr-idx="' + (NARRATIVE_LOG.length - 1 - idx) + '">';
+      html += '<span class="narr-month">M' + entry.month + '</span>';
+      html += '<span class="narr-action">' + entry.action + '</span>';
+      html += '<span class="narr-atom">' + entry.atom + '</span>';
+      html += '<span class="narr-text">"' + (entry.narrative || '--').replace(/"/g, '&quot;') + '"</span>';
+      html += '</div>';
+    });
+  }
+  html += '</div>';
+  el.innerHTML = html;
+
+  // Wire up clicks to open related atom cards
+  el.querySelectorAll('[data-narr-idx]').forEach(function(row) {
+    row.addEventListener('click', function() {
+      var idx = parseInt(row.dataset.narrIdx);
+      var entry = NARRATIVE_LOG[idx];
+      if (!entry) return;
+      // Try to navigate to the atom
+      if (ACE_ATOMS[entry.atom]) {
+        navigateToAtom(entry.atom);
+      } else {
+        // Show a card with the narrative details
+        showCard({
+          title: entry.atom + ' -- ' + entry.action,
+          fields: [
+            ['month', 'M' + entry.month],
+            ['action', entry.action],
+            ['atom', entry.atom],
+            ['narrative', entry.narrative || '--'],
+            ['timestamp', entry.timestamp],
+            ['required', entry.required ? 'Yes' : 'No'],
+            ['user', entry.user]
+          ],
+          links: []
+        });
+      }
+    });
+  });
+}
+
+// ================================================================
+// GUIDED WALKTHROUGH ("TOUR")
+// ================================================================
+let tourActive = false, tourStep = 0;
+
+const TOUR_STEPS = [
+  {target: '#gantt', text: 'This is the Gantt chart. Each bar is a construction phase. Click any bar to see its detail -- linked constraints, RFIs, risks, and costs.', action: function() { month = 0; }},
+  {target: '.kpis', text: 'Key performance indicators update in real time. SPI and CPI track schedule and cost performance. Earned Schedule (ES) gives time-based variance.', action: function() { month = 20; }},
+  {target: '#gantt', text: 'Watch the phases progress. The red line shows current month. Diamonds are milestones -- oxide red ones are CNSC regulatory hold points.', action: function() { month = 35; playing = false; }},
+  {target: '.sb-item[data-tab="constraints"]', text: 'Every work package, risk, and procedure is an ACE atom. Click Constraints to see the full graph -- filter by status, type, or tag.', action: function() { currentTab = 'constraints'; renderTab(); }},
+  {target: '.sb-item[data-tab="risks"]', text: 'Risks fire probabilistically during playback. The Monte Carlo engine runs 1000 iterations to show P50/P80 schedule and cost forecasts.', action: function() { currentTab = 'risks'; renderTab(); }},
+  {target: '.sb-item[data-tab="flex"]', text: 'When critical work is blocked, FLEX packages keep crews productive. Pre-cleared, pre-staged -- pull from the job jar anytime.', action: function() { currentTab = 'flex'; renderTab(); }},
+  {target: '#play', text: 'Press Play to run the simulation. Risks fire, triages appear for your decision, the Monte Carlo forecast updates. Every decision has quantified cost, schedule, and safety impacts.', action: function() { currentTab = 'dashboard'; renderTab(); month = 0; }}
+];
+
+function startTour() {
+  if (tourActive) return;
+  tourActive = true;
+  tourStep = 0;
+  // Pause playback
+  if (playing) { playing = false; $('play').textContent = 'Play'; }
+  // Make sure we are on dashboard and sidebar visible
+  if (!sidebarVisible) { sidebarVisible = true; $('sidebar').classList.remove('hidden'); }
+  if (currentTab !== 'dashboard') {
+    currentTab = 'dashboard';
+    $('sbnav').querySelectorAll('.sb-item').forEach(function(i) { i.classList.remove('active'); });
+    var dashItem = $('sbnav').querySelector('.sb-item[data-tab="dashboard"]');
+    if (dashItem) dashItem.classList.add('active');
+    needsFullRender = true;
+    renderTab();
+  }
+  // Slight delay to let dashboard render
+  setTimeout(function() { showTourStep(); }, 100);
+}
+
+function showTourStep() {
+  // Remove any existing tour elements
+  removeTourUI();
+
+  if (tourStep >= TOUR_STEPS.length) {
+    endTour();
+    return;
+  }
+
+  var step = TOUR_STEPS[tourStep];
+
+  // Execute the step action
+  if (step.action) {
+    step.action();
+    $('mo').value = month;
+    needsFullRender = true;
+    updateUI();
+  }
+
+  // Update sidebar active state if step switched tabs
+  $('sbnav').querySelectorAll('.sb-item').forEach(function(i) {
+    i.classList.toggle('active', i.dataset.tab === currentTab);
+  });
+
+  // Wait for rendering to complete
+  setTimeout(function() {
+    var targetEl = document.querySelector(step.target);
+    if (!targetEl) {
+      // Target not found, skip to next
+      tourStep++;
+      showTourStep();
+      return;
+    }
+
+    // Create overlay
+    var overlay = document.createElement('div');
+    overlay.className = 'tour-overlay';
+    overlay.id = 'tour-overlay';
+    document.body.appendChild(overlay);
+
+    // Create highlight
+    var highlight = document.createElement('div');
+    highlight.className = 'tour-highlight';
+    highlight.id = 'tour-highlight';
+    document.body.appendChild(highlight);
+
+    // Position highlight over target
+    var rect = targetEl.getBoundingClientRect();
+    var pad = 6;
+    highlight.style.left = (rect.left - pad) + 'px';
+    highlight.style.top = (rect.top - pad) + 'px';
+    highlight.style.width = (rect.width + pad * 2) + 'px';
+    highlight.style.height = (rect.height + pad * 2) + 'px';
+
+    // Create card
+    var card = document.createElement('div');
+    card.className = 'tour-card';
+    card.id = 'tour-card';
+    card.innerHTML =
+      '<div class="tour-step">Step ' + (tourStep + 1) + ' of ' + TOUR_STEPS.length + '</div>' +
+      '<p>' + step.text + '</p>' +
+      '<div>' +
+      '<button class="tour-next" id="tour-next-btn">' + (tourStep < TOUR_STEPS.length - 1 ? 'Next' : 'Finish') + '</button>' +
+      '<span class="tour-skip" id="tour-skip-btn">Skip Tour</span>' +
+      '</div>';
+    document.body.appendChild(card);
+
+    // Position card near target
+    positionTourCard(card, rect);
+
+    // Wire up buttons
+    document.getElementById('tour-next-btn').addEventListener('click', function() {
+      tourStep++;
+      showTourStep();
+    });
+    document.getElementById('tour-skip-btn').addEventListener('click', function() {
+      endTour();
+    });
+
+    // Overlay click skips tour
+    overlay.addEventListener('click', function(e) {
+      if (e.target === overlay) {
+        endTour();
+      }
+    });
+  }, 150);
+}
+
+function positionTourCard(card, targetRect) {
+  var cardW = 340;
+  var cardH = card.offsetHeight || 140;
+  var viewW = window.innerWidth;
+  var viewH = window.innerHeight;
+  var margin = 12;
+  var left, top;
+
+  // Try below target
+  if (targetRect.bottom + margin + cardH < viewH) {
+    top = targetRect.bottom + margin;
+    left = Math.max(margin, Math.min(targetRect.left, viewW - cardW - margin));
+  }
+  // Try above target
+  else if (targetRect.top - margin - cardH > 0) {
+    top = targetRect.top - margin - cardH;
+    left = Math.max(margin, Math.min(targetRect.left, viewW - cardW - margin));
+  }
+  // Try right of target
+  else if (targetRect.right + margin + cardW < viewW) {
+    top = Math.max(margin, Math.min(targetRect.top, viewH - cardH - margin));
+    left = targetRect.right + margin;
+  }
+  // Try left of target
+  else {
+    top = Math.max(margin, Math.min(targetRect.top, viewH - cardH - margin));
+    left = Math.max(margin, targetRect.left - cardW - margin);
+  }
+
+  card.style.left = left + 'px';
+  card.style.top = top + 'px';
+}
+
+function removeTourUI() {
+  var overlay = document.getElementById('tour-overlay');
+  var highlight = document.getElementById('tour-highlight');
+  var card = document.getElementById('tour-card');
+  if (overlay) overlay.remove();
+  if (highlight) highlight.remove();
+  if (card) card.remove();
+}
+
+function endTour() {
+  removeTourUI();
+  tourActive = false;
+  tourStep = 0;
+  // Return to dashboard
+  currentTab = 'dashboard';
+  $('sbnav').querySelectorAll('.sb-item').forEach(function(i) {
+    i.classList.toggle('active', i.dataset.tab === 'dashboard');
+  });
+  needsFullRender = true;
+  renderTab();
+}
 
 document.getElementById('splash-btn').addEventListener('click', dismissSplash);
 document.addEventListener('keydown',function splashKey(e){
