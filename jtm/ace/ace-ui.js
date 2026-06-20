@@ -1,934 +1,638 @@
 /**
- * ACE UI — Clean single-page interface for the Atomic Constraint Engine
+ * ACE UI 2.0 — Monte Carlo first
+ *
+ * The probability distribution IS the interface.
+ * See the spread → ask why → find the risk → resolve it → watch the curve shift.
  *
  * Depends on ACE (ace-core.js), ACE_Schedule (ace-schedule.js), ACE_Data (ace-data.js).
- * Renders everything from ACE state. No local UI state beyond active tab and sim clock.
  */
 
 const ACE_UI = (function () {
   'use strict';
 
-  // ── State ───────────────────────────────────────────────────
-  var activeTab = 'dashboard';
-  var simMonth = 0;
-  var simPlaying = false;
-  var simSpeed = 1;            // months per second
-  var simInterval = null;
-  var overlayAtomId = null;
-  var overlayEditMode = false;
-  var overlayShowSource = false;
-  var terminalHistory = [];
-  var terminalInput = '';
-  var filterText = '';
-  var filterType = '';
+  var simMonth = 0, simPlaying = false, simSpeed = 1;
+  var mcResults = null, mcPrev = null;
+  var selectedRisk = null;        // risk atom id being inspected
+  var selectedAtom = null;        // atom card overlay
+  var view = 'mc';                // mc | graph | gantt | terminal
+  var lastF = performance.now();
 
-  // ── Cached schedule data ────────────────────────────────────
-  var cachedCPM = null;
-  var cachedMC = null;
+  // ── Init ────────────────────────────────────────────────────
 
-  /** Initialize the UI after DOM is ready */
+  /** Boot the UI */
   function init() {
-    ACE_Data.load();
-    cachedCPM = ACE_Schedule.cpm();
-    cachedMC = ACE_Schedule.monteCarlo(1000);
     render();
-    bindEvents();
-    terminalHistory.push({ type: 'system', text: 'ACE 2.0 — Atomic Constraint Engine' });
-    terminalHistory.push({ type: 'system', text: 'Type "help" for available commands.' });
+    runMC(1000);
+    requestAnimationFrame(loop);
+    document.addEventListener('keydown', onKey);
   }
 
-  /** Full re-render of the active view */
-  function render() {
-    renderTopBar();
-    renderSidebar();
+  // ── Monte Carlo ─────────────────────────────────────────────
+
+  /** Run MC and store results */
+  function runMC(n) {
+    mcPrev = mcResults;
+    mcResults = ACE_Schedule.monteCarlo(n || 1000);
+  }
+
+  // ── Main Loop ───────────────────────────────────────────────
+
+  function loop(now) {
+    var dt = (now - lastF) / 1000; lastF = now;
+    if (simPlaying) {
+      simMonth = Math.min(ACE_Data.PLANT.dur, simMonth + dt * simSpeed * 0.5);
+      updateSim();
+    }
+    requestAnimationFrame(loop);
+  }
+
+  /** Advance simulation: complete workable atoms, check risks */
+  function updateSim() {
+    var workable = ACE.workable();
+    workable.forEach(function (a) {
+      var dur = ACE_Schedule.durations[a.id];
+      if (dur && simMonth >= (dur._start || 0) + dur.likely) {
+        ACE.complete(a.id, 'M' + Math.round(simMonth));
+      }
+    });
+    ACE.settle();
+    // Check risks
+    ACE.query({ type: 'risk' }).forEach(function (r) {
+      if (!r._complete && r.tags.indexOf('fired') < 0 && simMonth >= (r._triggerMonth || 999)) {
+        if (Math.random() < (r._probability || 0)) {
+          r.tags.push('fired');
+          runMC(1000);
+        }
+      }
+    });
     renderContent();
-    if (overlayAtomId) renderOverlay();
   }
 
-  // ── Top Bar ─────────────────────────────────────────────────
+  // ── Render ──────────────────────────────────────────────────
 
-  /** Render the top control bar */
-  function renderTopBar() {
-    var bar = document.getElementById('topbar');
-    var pct = ACE.summary().percent;
-    bar.innerHTML =
-      '<div class="topbar-left">' +
-        '<span class="topbar-title">ACE</span>' +
-        '<span class="topbar-subtitle">' + ACE_Data.PLANT.name + '</span>' +
-      '</div>' +
-      '<div class="topbar-controls">' +
-        '<button id="btn-play" class="btn-ctrl">' + (simPlaying ? '[Pause]' : '[Play]') + '</button>' +
-        '<select id="sel-speed" class="sel-speed">' +
-          '<option value="0.5"' + (simSpeed === 0.5 ? ' selected' : '') + '>0.5x</option>' +
-          '<option value="1"' + (simSpeed === 1 ? ' selected' : '') + '>1x</option>' +
-          '<option value="2"' + (simSpeed === 2 ? ' selected' : '') + '>2x</option>' +
-          '<option value="4"' + (simSpeed === 4 ? ' selected' : '') + '>4x</option>' +
-        '</select>' +
-        '<input type="range" id="scrubber" min="0" max="' + ACE_Data.PLANT.baselineMonths + '" value="' + simMonth + '" class="scrubber" />' +
-        '<span class="topbar-month">Month ' + simMonth + ' / ' + ACE_Data.PLANT.baselineMonths + '</span>' +
-        '<span class="topbar-pct">' + pct + '% EV</span>' +
+  /** Full page render */
+  function render() {
+    var root = document.getElementById('app');
+    root.innerHTML = renderHeader() + '<div class="ace-body">' + renderNav() + '<div class="ace-content" id="content"></div></div>';
+    wireHeader();
+    wireNav();
+    renderContent();
+  }
+
+  /** Header bar */
+  function renderHeader() {
+    return '<div class="ace-hdr">' +
+      '<span class="ace-title">ACE</span>' +
+      '<button id="btn-play" class="hbtn">' + (simPlaying ? 'Pause' : 'Play') + '</button>' +
+      '<button id="btn-speed" class="hbtn">' + simSpeed + 'x</button>' +
+      '<input type="range" id="scrub" min="0" max="' + ACE_Data.PLANT.dur + '" value="' + simMonth + '" step="0.1" class="scrub">' +
+      '<span class="hmo">M' + Math.round(simMonth) + ' / ' + ACE_Data.PLANT.dur + '</span>' +
+      '<span class="hinfo">' + ACE.all().length + ' atoms</span>' +
       '</div>';
   }
 
-  // ── Sidebar ─────────────────────────────────────────────────
-
-  /** Render the sidebar tab list */
-  function renderSidebar() {
-    var sidebar = document.getElementById('sidebar');
+  /** View switcher nav */
+  function renderNav() {
     var tabs = [
-      { id: 'dashboard',   label: 'Dashboard' },
-      { id: 'constraints', label: 'Constraints' },
-      { id: 'wbs',         label: 'WBS' },
-      { id: 'risks',       label: 'Risks' },
-      { id: 'ask',         label: 'Ask ACE' }
+      { id: 'mc', label: 'Monte Carlo' },
+      { id: 'graph', label: 'Atoms' },
+      { id: 'gantt', label: 'Schedule' },
+      { id: 'terminal', label: 'Terminal' }
     ];
-    var html = '<div class="sidebar-tabs">';
-    tabs.forEach(function (t) {
-      var cls = t.id === activeTab ? 'sidebar-tab active' : 'sidebar-tab';
-      html += '<button class="' + cls + '" data-tab="' + t.id + '">' + t.label + '</button>';
+    return '<div class="ace-nav">' + tabs.map(function (t) {
+      return '<button class="nav-btn' + (view === t.id ? ' active' : '') + '" data-view="' + t.id + '">' + t.label + '</button>';
+    }).join('') + '</div>';
+  }
+
+  /** Route to active view */
+  function renderContent() {
+    var el = document.getElementById('content');
+    if (!el) return;
+    switch (view) {
+      case 'mc': renderMC(el); break;
+      case 'graph': renderGraph(el); break;
+      case 'gantt': renderGantt(el); break;
+      case 'terminal': renderTerminal(el); break;
+    }
+  }
+
+  // ── MC View (Hero) ──────────────────────────────────────────
+
+  /** The main event: Monte Carlo probability distributions */
+  function renderMC(el) {
+    if (!mcResults) { el.innerHTML = '<p>Running simulation...</p>'; return; }
+
+    var p = mcResults;
+    var spread = p.p80.finish - p.p50.finish;
+    var spreadColor = spread <= ACE_Data.PLANT.dur * 0.08 ? 'var(--green)' :
+                      spread <= ACE_Data.PLANT.dur * 0.15 ? 'var(--amber)' : 'var(--red)';
+
+    var html = '';
+
+    // Confidence summary — the headline
+    html += '<div class="mc-headline">';
+    html += '<div class="mc-h-label">Schedule Forecast</div>';
+    html += '<div class="mc-h-row">';
+    html += '<div class="mc-stat"><div class="mc-stat-v" style="color:var(--green)">M' + Math.round(p.p50.finish) + '</div><div class="mc-stat-l">P50</div></div>';
+    html += '<div class="mc-stat"><div class="mc-stat-v" style="color:var(--amber)">M' + Math.round(p.p80.finish) + '</div><div class="mc-stat-l">P80</div></div>';
+    html += '<div class="mc-stat"><div class="mc-stat-v" style="color:' + spreadColor + '">+' + Math.round(spread) + 'mo</div><div class="mc-stat-l">spread</div></div>';
+    html += '</div>';
+
+    // Shift indicator
+    if (mcPrev) {
+      var shift = Math.round(p.p50.finish) - Math.round(mcPrev.p50.finish);
+      if (shift !== 0) {
+        html += '<div class="mc-shift" style="color:' + (shift > 0 ? 'var(--red)' : 'var(--green)') + '">P50 shifted ' + (shift > 0 ? '+' : '') + shift + ' months</div>';
+      }
+    }
+    html += '</div>';
+
+    // Histogram
+    html += '<div class="mc-hist-wrap"><canvas id="mc-hist" class="mc-canvas"></canvas></div>';
+
+    // What's driving the spread — sensitivity
+    html += '<div class="mc-drivers">';
+    html += '<div class="mc-d-title">What drives the spread</div>';
+    var risks = ACE.query({ type: 'risk' }).sort(function (a, b) {
+      return (b._probability || 0) * (b._impact || 0) - (a._probability || 0) * (a._impact || 0);
+    });
+    risks.slice(0, 8).forEach(function (r) {
+      var ev = ((r._probability || 0) * (r._impact || 0)).toFixed(1);
+      var fired = r.tags.indexOf('fired') >= 0;
+      html += '<div class="mc-risk' + (fired ? ' fired' : '') + (r.id === selectedRisk ? ' selected' : '') + '" data-risk="' + r.id + '">';
+      html += '<span class="mc-r-name">' + r.name + '</span>';
+      html += '<span class="mc-r-prob">' + Math.round((r._probability || 0) * 100) + '%</span>';
+      html += '<span class="mc-r-impact">+' + (r._impact || 0) + 'mo</span>';
+      html += '<span class="mc-r-ev">EV=' + ev + '</span>';
+      if (fired) html += '<span class="mc-r-fired">[FIRED]</span>';
+      html += '</div>';
     });
     html += '</div>';
 
-    // Summary below tabs
-    var s = ACE.summary();
-    html += '<div class="sidebar-summary">' +
-      '<div class="sidebar-stat"><span class="stat-val">' + s.atoms + '</span><span class="stat-lbl">Atoms</span></div>' +
-      '<div class="sidebar-stat"><span class="stat-val">' + s.complete + '</span><span class="stat-lbl">Done</span></div>' +
-      '<div class="sidebar-stat"><span class="stat-val">' + s.workable + '</span><span class="stat-lbl">Workable</span></div>' +
-    '</div>';
+    // Quick KPIs
+    var cpm = ACE_Schedule.cpm();
+    var ev = ACE.summary();
+    html += '<div class="mc-kpis">';
+    html += kpi('Atoms', ev.atoms);
+    html += kpi('Complete', ev.complete + '/' + ev.atoms);
+    html += kpi('Progress', ev.percent + '%');
+    html += kpi('Workable', ev.workable);
+    html += kpi('Critical', cpm.criticalPath ? cpm.criticalPath.length : '--');
+    html += kpi('Month', 'M' + Math.round(simMonth));
+    html += '</div>';
 
-    // Export buttons
-    html += '<div class="sidebar-export">' +
-      '<button id="btn-export-json" class="btn-export">[Export JSON]</button>' +
-      '<button id="btn-export-csv" class="btn-export">[Export CSV]</button>' +
-    '</div>';
-
-    sidebar.innerHTML = html;
-  }
-
-  // ── Content Router ──────────────────────────────────────────
-
-  /** Render the main content area based on active tab */
-  function renderContent() {
-    var content = document.getElementById('content');
-    switch (activeTab) {
-      case 'dashboard':   renderDashboard(content); break;
-      case 'constraints': renderConstraints(content); break;
-      case 'wbs':         renderWBS(content); break;
-      case 'risks':       renderRisks(content); break;
-      case 'ask':         renderAskACE(content); break;
-    }
-  }
-
-  // ── Dashboard ───────────────────────────────────────────────
-
-  /** Render the dashboard: Gantt + KPIs + event feed */
-  function renderDashboard(el) {
-    var html = '<div class="dash-gantt"><canvas id="gantt-canvas"></canvas></div>';
-    html += '<div class="dash-kpis">' + renderKPIs() + '</div>';
-    html += '<div class="dash-feed">' + renderEventFeed() + '</div>';
     el.innerHTML = html;
-    requestAnimationFrame(function () { drawGantt(); });
-  }
 
-  /** Build KPI row HTML */
-  function renderKPIs() {
-    var s = ACE.summary();
-    var es = ACE_Schedule.earnedSchedule(simMonth);
-    var spi = es.spi_t;
-    var cpi = s.percent > 0 ? Math.min(s.percent / Math.max(1, plannedPct(simMonth)), 2.0) : 1.0;
-    var p50 = cachedMC ? cachedMC.p50.finish.toFixed(1) : '--';
-    var p80 = cachedMC ? cachedMC.p80.finish.toFixed(1) : '--';
-    var workforce = estimateWorkforce(simMonth);
+    // Draw histogram after DOM update
+    setTimeout(function () { drawHistogram(); }, 20);
 
-    return '<div class="kpi"><span class="kpi-val">' + s.percent + '%</span><span class="kpi-lbl">Earned Value</span></div>' +
-      '<div class="kpi"><span class="kpi-val ' + (spi >= 1 ? 'kpi-good' : 'kpi-bad') + '">' + spi.toFixed(2) + '</span><span class="kpi-lbl">SPI(t)</span></div>' +
-      '<div class="kpi"><span class="kpi-val ' + (cpi >= 1 ? 'kpi-good' : 'kpi-bad') + '">' + cpi.toFixed(2) + '</span><span class="kpi-lbl">CPI</span></div>' +
-      '<div class="kpi"><span class="kpi-val">' + workforce + '</span><span class="kpi-lbl">Workforce</span></div>' +
-      '<div class="kpi"><span class="kpi-val">' + p50 + 'mo</span><span class="kpi-lbl">P50</span></div>' +
-      '<div class="kpi"><span class="kpi-val">' + p80 + 'mo</span><span class="kpi-lbl">P80</span></div>';
-  }
-
-  /** Planned percent at a given month (S-curve) */
-  function plannedPct(month) {
-    var t = month / ACE_Data.PLANT.baselineMonths;
-    return Math.round(100 * (3 * t * t - 2 * t * t * t));
-  }
-
-  /** Rough workforce estimate based on S-curve derivative */
-  function estimateWorkforce(month) {
-    var t = month / ACE_Data.PLANT.baselineMonths;
-    var derivative = 6 * t * (1 - t);
-    return Math.round(derivative * 8500);
-  }
-
-  /** Build event feed HTML */
-  function renderEventFeed() {
-    var completed = ACE.query({ complete: true });
-    var recent = completed.slice(-10).reverse();
-    if (recent.length === 0) return '<div class="feed-empty">No events yet. Press [Play] to begin simulation.</div>';
-    var html = '<div class="feed-title">Recent Events</div>';
-    recent.forEach(function (a) {
-      html += '<div class="feed-item"><span class="feed-type">[' + a.type + ']</span> ' +
-        '<span class="feed-name" data-atom="' + a.id + '">' + a.name + '</span></div>';
+    // Wire risk clicks
+    el.querySelectorAll('[data-risk]').forEach(function (row) {
+      row.addEventListener('click', function () {
+        selectedRisk = row.dataset.risk;
+        showAtomCard(selectedRisk);
+      });
     });
-    return html;
   }
 
-  // ── Gantt Chart ─────────────────────────────────────────────
+  function kpi(label, value) {
+    return '<div class="mc-kpi"><div class="mc-kpi-v">' + value + '</div><div class="mc-kpi-l">' + label + '</div></div>';
+  }
 
-  /** Draw the Gantt chart on the canvas */
-  function drawGantt() {
-    var canvas = document.getElementById('gantt-canvas');
-    if (!canvas) return;
-    var container = canvas.parentElement;
-    canvas.width = container.clientWidth;
-    canvas.height = container.clientHeight;
+  /** Draw MC histogram on canvas */
+  function drawHistogram() {
+    var cv = document.getElementById('mc-hist');
+    if (!cv || !mcResults) return;
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var cw = cv.clientWidth, ch = cv.clientHeight;
+    cv.width = cw * dpr; cv.height = ch * dpr;
+    var c = cv.getContext('2d');
+    c.scale(dpr, dpr);
 
-    var ctx = canvas.getContext('2d');
-    var W = canvas.width;
-    var H = canvas.height;
-    var pad = { top: 30, right: 20, bottom: 25, left: 140 };
+    var results = mcResults.results;
+    var minF = results[0].finish, maxF = results[results.length - 1].finish;
+    var range = maxF - minF || 1;
+    var bins = Math.min(40, Math.max(12, Math.round(range)));
+    var counts = new Array(bins).fill(0);
+    var maxCount = 0;
 
-    // Clear
-    ctx.fillStyle = getCSS('--paper');
-    ctx.fillRect(0, 0, W, H);
+    results.forEach(function (r) {
+      var idx = Math.min(bins - 1, Math.floor((r.finish - minF) / range * bins));
+      counts[idx]++;
+      if (counts[idx] > maxCount) maxCount = counts[idx];
+    });
 
-    // Phases to draw
-    var phases = ACE.query({ type: 'phase' });
-    if (phases.length === 0) return;
+    var pad = { l: 10, r: 10, t: 10, b: 24 };
+    var pw = cw - pad.l - pad.r, ph = ch - pad.t - pad.b;
 
-    var cpmData = cachedCPM;
-    var maxMonth = ACE_Data.PLANT.baselineMonths;
-    var barH = Math.min(22, (H - pad.top - pad.bottom) / phases.length - 4);
-    var scaleX = (W - pad.left - pad.right) / maxMonth;
+    // Background
+    c.fillStyle = '#221c10';
+    c.fillRect(0, 0, cw, ch);
 
-    // Month grid
-    ctx.strokeStyle = getCSS('--faint');
-    ctx.lineWidth = 0.5;
-    ctx.font = '10px "IBM Plex Mono", monospace';
-    ctx.fillStyle = getCSS('--faint');
-    for (var m = 0; m <= maxMonth; m += 12) {
-      var x = pad.left + m * scaleX;
-      ctx.beginPath();
-      ctx.moveTo(x, pad.top);
-      ctx.lineTo(x, H - pad.bottom);
-      ctx.stroke();
-      ctx.fillText('M' + m, x, H - pad.bottom + 14);
+    // Bars
+    var bw = pw / bins;
+    for (var i = 0; i < bins; i++) {
+      var x = pad.l + i * bw;
+      var h = maxCount > 0 ? (counts[i] / maxCount) * ph : 0;
+      var mo = minF + (i + 0.5) / bins * range;
+
+      // Color by percentile
+      if (mo <= mcResults.p50.finish) c.fillStyle = '#2f7d4f';
+      else if (mo <= mcResults.p80.finish) c.fillStyle = '#a87718';
+      else if (mo <= mcResults.p90.finish) c.fillStyle = '#b13d2c';
+      else c.fillStyle = '#6c3020';
+
+      c.fillRect(x + 1, pad.t + ph - h, bw - 2, h);
     }
 
-    // Current month line
-    var nowX = pad.left + simMonth * scaleX;
-    ctx.strokeStyle = getCSS('--oxide');
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(nowX, pad.top);
-    ctx.lineTo(nowX, H - pad.bottom);
-    ctx.stroke();
-
-    // Title
-    ctx.fillStyle = getCSS('--ink');
-    ctx.font = '12px "Fraunces", serif';
-    ctx.fillText('Project Schedule — NDX', pad.left, 18);
-
-    // Draw bars
-    phases.forEach(function (phase, i) {
-      var y = pad.top + i * (barH + 4);
-      var start = cpmData.starts[phase.id] || 0;
-      var finish = cpmData.finishes[phase.id] || 0;
-      var bx = pad.left + start * scaleX;
-      var bw = Math.max(2, (finish - start) * scaleX);
-
-      // Label
-      ctx.fillStyle = getCSS('--ink');
-      ctx.font = '11px "Newsreader", serif';
-      ctx.fillText(phase.name, 4, y + barH - 5);
-
-      // Background bar
-      var isOnCP = cpmData.criticalPath.indexOf(phase.id) >= 0;
-      ctx.fillStyle = isOnCP ? getCSS('--red') + '33' : getCSS('--blue') + '33';
-      ctx.fillRect(bx, y, bw, barH);
-
-      // Progress fill
-      var pct = ACE.percentComplete(phase.id) / 100;
-      ctx.fillStyle = isOnCP ? getCSS('--red') : getCSS('--blue');
-      ctx.fillRect(bx, y, bw * pct, barH);
-
-      // Border
-      ctx.strokeStyle = isOnCP ? getCSS('--red') : getCSS('--blue');
-      ctx.lineWidth = 1;
-      ctx.strokeRect(bx, y, bw, barH);
+    // Percentile lines
+    [
+      { v: mcResults.p10, label: 'P10', color: '#2f7d4f' },
+      { v: mcResults.p50, label: 'P50', color: '#e8dcc8' },
+      { v: mcResults.p80, label: 'P80', color: '#a87718' },
+      { v: mcResults.p90, label: 'P90', color: '#b13d2c' }
+    ].forEach(function (p) {
+      var x = pad.l + ((p.v.finish - minF) / range) * pw;
+      c.strokeStyle = p.color;
+      c.lineWidth = 1.5;
+      c.setLineDash([3, 3]);
+      c.beginPath(); c.moveTo(x, pad.t); c.lineTo(x, pad.t + ph); c.stroke();
+      c.setLineDash([]);
+      c.fillStyle = p.color;
+      c.font = '10px IBM Plex Mono, monospace';
+      c.textAlign = 'center';
+      c.fillText(p.label, x, pad.t + ph + 14);
     });
+
+    // Month labels
+    c.fillStyle = '#6a6050';
+    c.font = '9px IBM Plex Mono, monospace';
+    c.textAlign = 'center';
+    for (var m = Math.ceil(minF / 12) * 12; m <= maxF; m += 12) {
+      var mx = pad.l + ((m - minF) / range) * pw;
+      c.fillText('M' + m, mx, pad.t + ph + 22);
+    }
   }
 
-  // ── Constraints Tab ─────────────────────────────────────────
+  // ── Graph View ──────────────────────────────────────────────
 
-  /** Render the constraint list with filters */
-  function renderConstraints(el) {
+  /** Atom list with search and type filter */
+  function renderGraph(el) {
+    var html = '<div class="graph-controls">';
+    html += '<input type="text" id="graph-search" placeholder="Search atoms..." class="g-search" value="">';
+    html += '<select id="graph-type" class="g-filter"><option value="">All types</option>';
     var types = {};
-    ACE.all().forEach(function (a) { types[a.type] = true; });
-
-    var html = '<div class="filter-bar">' +
-      '<input id="filter-search" type="text" placeholder="Search atoms..." value="' + escHtml(filterText) + '" class="filter-input" />' +
-      '<select id="filter-type" class="filter-select"><option value="">All Types</option>';
+    ACE.all().forEach(function (a) { types[a.type] = (types[a.type] || 0) + 1; });
     Object.keys(types).sort().forEach(function (t) {
-      html += '<option value="' + t + '"' + (filterType === t ? ' selected' : '') + '>' + t + '</option>';
+      html += '<option value="' + t + '">' + t + ' (' + types[t] + ')</option>';
     });
     html += '</select></div>';
 
-    var filter = {};
-    if (filterType) filter.type = filterType;
-    if (filterText) filter.search = filterText;
-    var atoms = ACE.query(filter);
+    html += '<div id="graph-list" class="graph-list">';
+    html += renderAtomList(ACE.all().slice(0, 50));
+    html += '</div>';
 
-    html += '<div class="atom-list">';
-    atoms.forEach(function (a) {
+    el.innerHTML = html;
+
+    // Wire search/filter
+    var search = document.getElementById('graph-search');
+    var typeFilter = document.getElementById('graph-type');
+    function update() {
+      var f = {};
+      if (search.value.trim()) f.search = search.value.trim();
+      if (typeFilter.value) f.type = typeFilter.value;
+      var results = ACE.query(f).slice(0, 80);
+      document.getElementById('graph-list').innerHTML = renderAtomList(results);
+      wireAtomClicks();
+    }
+    search.addEventListener('input', update);
+    typeFilter.addEventListener('change', update);
+    wireAtomClicks();
+  }
+
+  function renderAtomList(atoms) {
+    return atoms.map(function (a) {
       var status = a._complete ? 'done' : 'open';
-      html += '<div class="atom-row" data-atom="' + a.id + '">' +
-        '<span class="atom-status atom-' + status + '">[' + (a._complete ? 'x' : ' ') + ']</span>' +
-        '<span class="atom-id">' + a.id + '</span>' +
-        '<span class="atom-name">' + escHtml(a.name) + '</span>' +
-        '<span class="atom-type">' + a.type + '</span>' +
-        a.tags.slice(0, 3).map(function (t) { return '<span class="atom-tag">' + escHtml(t) + '</span>'; }).join('') +
-      '</div>';
+      return '<div class="atom-row" data-atom="' + a.id + '">' +
+        '<span class="a-dot ' + status + '"></span>' +
+        '<span class="a-id">' + a.id + '</span>' +
+        '<span class="a-name">' + a.name + '</span>' +
+        '<span class="a-type">' + a.type + '</span>' +
+        '<span class="a-kind">' + a.kind + '</span>' +
+        '</div>';
+    }).join('');
+  }
+
+  function wireAtomClicks() {
+    document.querySelectorAll('[data-atom]').forEach(function (row) {
+      row.addEventListener('click', function () { showAtomCard(row.dataset.atom); });
     });
-    html += '</div>';
-    el.innerHTML = html;
   }
 
-  // ── WBS Tab ─────────────────────────────────────────────────
+  // ── Gantt View ──────────────────────────────────────────────
 
-  /** Render the WBS tree view */
-  function renderWBS(el) {
-    var root = ACE.get('NDX');
-    if (!root) { el.innerHTML = '<div class="wbs-empty">No project loaded.</div>'; return; }
-
-    var html = '<div class="wbs-tree">';
-    html += renderTreeNode('NDX', 0);
-    html += '</div>';
-    el.innerHTML = html;
+  /** Simple Gantt from CPM data */
+  function renderGantt(el) {
+    el.innerHTML = '<canvas id="gantt-cv" class="gantt-canvas"></canvas>';
+    setTimeout(drawGantt, 20);
   }
 
-  /** Recursively render a tree node */
-  function renderTreeNode(id, depth) {
+  function drawGantt() {
+    var cv = document.getElementById('gantt-cv');
+    if (!cv) return;
+    var cpm = ACE_Schedule.cpm();
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var cw = cv.clientWidth, ch = cv.clientHeight;
+    cv.width = cw * dpr; cv.height = ch * dpr;
+    var c = cv.getContext('2d');
+    c.scale(dpr, dpr);
+
+    c.fillStyle = '#faf7ee';
+    c.fillRect(0, 0, cw, ch);
+
+    var phases = ACE.query({ type: 'phase' });
+    if (!phases.length) { c.fillStyle = '#9a9077'; c.font = '12px IBM Plex Mono'; c.fillText('No phase atoms found', 20, 30); return; }
+
+    var maxFinish = cpm.projectFinish || ACE_Data.PLANT.dur;
+    var labelW = 90, padR = 10, padT = 20, padB = 16;
+    var chartW = cw - labelW - padR, chartH = ch - padT - padB;
+    var rowH = Math.min(28, chartH / phases.length);
+
+    // Grid
+    c.strokeStyle = '#ede7d6'; c.lineWidth = 0.5;
+    for (var m = 0; m <= maxFinish; m += 12) {
+      var x = labelW + (m / maxFinish) * chartW;
+      c.beginPath(); c.moveTo(x, padT); c.lineTo(x, padT + chartH); c.stroke();
+      c.fillStyle = '#9a9077'; c.font = '9px IBM Plex Mono, monospace'; c.textAlign = 'center';
+      c.fillText('M' + m, x, padT + chartH + 12);
+    }
+
+    // Phase bars
+    phases.forEach(function (p, i) {
+      var start = cpm.finishes[p.id] ? cpm.finishes[p.id] - (ACE_Schedule.durations[p.id] ? ACE_Schedule.durations[p.id].likely : 0) : 0;
+      var finish = cpm.finishes[p.id] || 0;
+      var y = padT + i * rowH;
+      var x0 = labelW + (start / maxFinish) * chartW;
+      var x1 = labelW + (finish / maxFinish) * chartW;
+      var bh = rowH * 0.65;
+      var by = y + (rowH - bh) / 2;
+
+      // Label
+      c.fillStyle = '#544c3a'; c.font = '10px IBM Plex Mono, monospace'; c.textAlign = 'right';
+      c.fillText(p.name.slice(0, 12), labelW - 6, by + bh * 0.7);
+
+      // Bar
+      var onCrit = cpm.criticalPath && cpm.criticalPath.indexOf(p.id) >= 0;
+      c.fillStyle = onCrit ? '#a8401f44' : '#2c5d7833';
+      c.fillRect(x0, by, x1 - x0, bh);
+      // Progress fill
+      var pct = ACE.percentComplete(p.id) / 100;
+      c.fillStyle = onCrit ? '#a8401f' : '#2c5d78';
+      c.fillRect(x0, by, (x1 - x0) * pct, bh);
+
+      if (onCrit) {
+        c.strokeStyle = '#a8401f'; c.lineWidth = 1.5;
+        c.strokeRect(x0, by, x1 - x0, bh);
+      }
+    });
+
+    // Current month line
+    var cmx = labelW + (simMonth / maxFinish) * chartW;
+    c.strokeStyle = '#a8401f'; c.lineWidth = 2;
+    c.beginPath(); c.moveTo(cmx, padT - 4); c.lineTo(cmx, padT + chartH + 4); c.stroke();
+    c.fillStyle = '#a8401f'; c.font = 'bold 10px IBM Plex Mono'; c.textAlign = 'center';
+    c.fillText('M' + Math.round(simMonth), cmx, padT - 6);
+  }
+
+  // ── Terminal ────────────────────────────────────────────────
+
+  var termLines = ['ACE 2.0 -- Atomic Constraint Engine', 'Type "help" for commands.', ''];
+  var termCmdHistory = [], termHistIdx = -1;
+
+  function renderTerminal(el) {
+    el.innerHTML = '<div class="term" id="term-out">' + termLines.join('\n') + '</div>' +
+      '<input class="term-in" id="term-in" placeholder="C:\\NDX>" autofocus>';
+
+    var inp = document.getElementById('term-in');
+    inp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+        var cmd = inp.value.trim();
+        if (cmd) { termCmdHistory.push(cmd); termHistIdx = termCmdHistory.length; }
+        execCmd(cmd);
+        inp.value = '';
+      }
+      if (e.key === 'ArrowUp') { e.preventDefault(); if (termHistIdx > 0) { termHistIdx--; inp.value = termCmdHistory[termHistIdx]; } }
+      if (e.key === 'ArrowDown') { e.preventDefault(); if (termHistIdx < termCmdHistory.length - 1) { termHistIdx++; inp.value = termCmdHistory[termHistIdx]; } else { termHistIdx = termCmdHistory.length; inp.value = ''; } }
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        var cmds = ['query', 'atom', 'risks', 'mc', 'forecast', 'status', 'workable', 'settle', 'complete', 'export', 'help', 'clear'];
+        var v = inp.value.trim().toLowerCase();
+        var matches = cmds.filter(function (c) { return c.indexOf(v) === 0; });
+        if (matches.length === 1) inp.value = matches[0] + ' ';
+        else if (matches.length > 1) termPrint(matches.join('  '));
+      }
+    });
+  }
+
+  function termPrint(text) {
+    termLines.push(text);
+    var out = document.getElementById('term-out');
+    if (out) { out.textContent = termLines.join('\n'); out.scrollTop = out.scrollHeight; }
+  }
+
+  function execCmd(cmd) {
+    termPrint('> ' + cmd);
+    var parts = cmd.split(/\s+/);
+    var verb = (parts[0] || '').toLowerCase();
+
+    if (verb === 'help') termPrint('Commands: query <type>, atom <id>, risks, mc [n], forecast, status, workable, settle, complete <id>, export json|csv, clear');
+    else if (verb === 'clear') { termLines.length = 0; var out = document.getElementById('term-out'); if (out) out.textContent = ''; }
+    else if (verb === 'status') { var s = ACE.summary(); termPrint('Atoms: ' + s.atoms + '  Complete: ' + s.complete + '  Progress: ' + s.percent + '%  Workable: ' + s.workable); }
+    else if (verb === 'risks') { ACE.query({ type: 'risk' }).forEach(function (r) { termPrint(r.id + '  ' + r.name + '  P=' + Math.round((r._probability || 0) * 100) + '%  +' + (r._impact || 0) + 'mo' + (r.tags.indexOf('fired') >= 0 ? '  [FIRED]' : '')); }); }
+    else if (verb === 'forecast' || verb === 'mc') {
+      var n = parseInt(parts[1]) || 1000;
+      runMC(n);
+      termPrint('Monte Carlo (' + n + ' runs):  P50=M' + Math.round(mcResults.p50.finish) + '  P80=M' + Math.round(mcResults.p80.finish) + '  P90=M' + Math.round(mcResults.p90.finish));
+    }
+    else if (verb === 'workable') { ACE.workable().forEach(function (a) { termPrint(a.id + '  ' + a.name); }); }
+    else if (verb === 'settle') { var n = ACE.settle(); termPrint('Settled: ' + n + ' atoms changed'); }
+    else if (verb === 'complete' && parts[1]) { var ok = ACE.complete(parts[1], 'terminal'); ACE.settle(); termPrint(ok ? parts[1] + ' cleared' : 'Cannot clear ' + parts[1]); if (ok) runMC(1000); }
+    else if (verb === 'atom' && parts[1]) {
+      var a = ACE.get(parts[1]);
+      if (!a) { termPrint('Not found: ' + parts[1]); return; }
+      termPrint(JSON.stringify({ id: a.id, name: a.name, type: a.type, kind: a.kind, tags: a.tags, complete: a._complete, requires: a.requires, contains: a.contains }, null, 2));
+    }
+    else if (verb === 'query') {
+      var f = {};
+      if (parts[1]) f.type = parts[1];
+      var r = ACE.query(f);
+      termPrint(r.length + ' results');
+      r.slice(0, 20).forEach(function (a) { termPrint(a.id + '  ' + a.name + '  [' + a.type + '] ' + (a._complete ? 'DONE' : 'OPEN')); });
+      if (r.length > 20) termPrint('... +' + (r.length - 20) + ' more');
+    }
+    else if (verb === 'export') {
+      if (parts[1] === 'json') { var blob = new Blob([JSON.stringify(ACE.exportJSON(), null, 2)], { type: 'application/json' }); var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'ace-atoms.json'; a.click(); termPrint('Exported JSON'); }
+      else if (parts[1] === 'csv') { var csv = 'id,name,type,kind,complete\n'; ACE.all().forEach(function (a) { csv += a.id + ',"' + a.name + '",' + a.type + ',' + a.kind + ',' + (a._complete ? 'Y' : 'N') + '\n'; }); var blob2 = new Blob([csv], { type: 'text/csv' }); var a2 = document.createElement('a'); a2.href = URL.createObjectURL(blob2); a2.download = 'ace-atoms.csv'; a2.click(); termPrint('Exported CSV'); }
+      else termPrint('export json | export csv');
+    }
+    else if (cmd.trim()) termPrint('Unknown: ' + verb + '. Type "help".');
+  }
+
+  // ── Atom Card Overlay ───────────────────────────────────────
+
+  function showAtomCard(id) {
     var a = ACE.get(id);
-    if (!a) return '';
-    var indent = depth * 20;
-    var pct = ACE.percentComplete(id);
-    var hasChildren = a.contains.length > 0;
-    var icon = hasChildren ? '[-]' : ' * ';
-    var html = '<div class="tree-node" data-atom="' + id + '" style="padding-left:' + indent + 'px">' +
-      '<span class="tree-icon">' + icon + '</span>' +
-      '<span class="tree-id">' + id + '</span>' +
-      '<span class="tree-name">' + escHtml(a.name) + '</span>' +
-      '<span class="tree-pct">' + pct + '%</span>' +
-    '</div>';
-    a.contains.forEach(function (cid) {
-      html += renderTreeNode(cid, depth + 1);
-    });
-    return html;
-  }
+    if (!a) return;
+    selectedAtom = id;
 
-  // ── Risks Tab ───────────────────────────────────────────────
+    var html = '<div class="card-overlay" id="card-ov"><div class="card-modal">';
 
-  /** Render risks list and MC histogram */
-  function renderRisks(el) {
-    var risks = ACE.query({ type: 'risk' });
-
-    var html = '<div class="risk-header">Risk Register</div>';
-    html += '<div class="risk-list">';
-    risks.forEach(function (r) {
-      var prob = parseFloat(r.tags.find(function (t) { return t.startsWith('p:'); })?.replace('p:', '') || '0');
-      var impact = parseFloat(r.tags.find(function (t) { return t.startsWith('impact:'); })?.replace('impact:', '') || '0');
-      var score = (prob * impact).toFixed(1);
-      var severity = score >= 2.0 ? 'risk-high' : score >= 1.0 ? 'risk-med' : 'risk-low';
-      html += '<div class="risk-row ' + severity + '" data-atom="' + r.id + '">' +
-        '<span class="risk-id">' + r.id + '</span>' +
-        '<span class="risk-name">' + escHtml(r.name) + '</span>' +
-        '<span class="risk-prob">P=' + (prob * 100).toFixed(0) + '%</span>' +
-        '<span class="risk-impact">I=' + impact + 'mo</span>' +
-        '<span class="risk-score">Score=' + score + '</span>' +
-      '</div>';
-    });
-    html += '</div>';
-
-    html += '<div class="mc-section">' +
-      '<div class="mc-header">Monte Carlo Distribution (n=1000)</div>' +
-      '<canvas id="mc-canvas" class="mc-canvas"></canvas>' +
-      '<div class="mc-stats">';
-    if (cachedMC) {
-      html += '<span>P10: ' + cachedMC.p10.finish.toFixed(1) + 'mo</span>' +
-        '<span>P50: ' + cachedMC.p50.finish.toFixed(1) + 'mo</span>' +
-        '<span>P80: ' + cachedMC.p80.finish.toFixed(1) + 'mo</span>' +
-        '<span>P90: ' + cachedMC.p90.finish.toFixed(1) + 'mo</span>';
-    }
-    html += '</div></div>';
-
-    el.innerHTML = html;
-    requestAnimationFrame(function () { drawMCHistogram(); });
-  }
-
-  /** Draw Monte Carlo histogram */
-  function drawMCHistogram() {
-    var canvas = document.getElementById('mc-canvas');
-    if (!canvas || !cachedMC) return;
-    var container = canvas.parentElement;
-    canvas.width = container.clientWidth;
-    canvas.height = 200;
-
-    var ctx = canvas.getContext('2d');
-    var W = canvas.width;
-    var H = canvas.height;
-    var pad = { top: 10, right: 20, bottom: 30, left: 50 };
-    var results = cachedMC.results;
-
-    ctx.fillStyle = getCSS('--paper');
-    ctx.fillRect(0, 0, W, H);
-
-    // Bin the results
-    var minFinish = results[0].finish;
-    var maxFinish = results[results.length - 1].finish;
-    var range = maxFinish - minFinish || 1;
-    var numBins = Math.min(40, Math.ceil(range));
-    var binWidth = range / numBins;
-    var bins = new Array(numBins).fill(0);
-
-    results.forEach(function (r) {
-      var bin = Math.min(numBins - 1, Math.floor((r.finish - minFinish) / binWidth));
-      bins[bin]++;
-    });
-
-    var maxBin = Math.max.apply(null, bins);
-    var barW = (W - pad.left - pad.right) / numBins;
-    var scaleY = (H - pad.top - pad.bottom) / maxBin;
-
-    // Draw bars
-    bins.forEach(function (count, i) {
-      var x = pad.left + i * barW;
-      var bh = count * scaleY;
-      var y = H - pad.bottom - bh;
-      var monthVal = minFinish + (i + 0.5) * binWidth;
-
-      ctx.fillStyle = monthVal <= ACE_Data.PLANT.baselineMonths ? getCSS('--blue') : getCSS('--red');
-      ctx.fillRect(x, y, barW - 1, bh);
-    });
-
-    // Baseline line
-    var blX = pad.left + ((ACE_Data.PLANT.baselineMonths - minFinish) / range) * (W - pad.left - pad.right);
-    ctx.strokeStyle = getCSS('--oxide');
-    ctx.lineWidth = 2;
-    ctx.setLineDash([4, 4]);
-    ctx.beginPath();
-    ctx.moveTo(blX, pad.top);
-    ctx.lineTo(blX, H - pad.bottom);
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    // Axis labels
-    ctx.fillStyle = getCSS('--ink');
-    ctx.font = '10px "IBM Plex Mono", monospace';
-    for (var i = 0; i <= 4; i++) {
-      var mv = minFinish + (range * i / 4);
-      var lx = pad.left + (i / 4) * (W - pad.left - pad.right);
-      ctx.fillText(mv.toFixed(0) + 'mo', lx, H - pad.bottom + 15);
+    // Breadcrumb
+    var anc = ACE.ancestors(id);
+    if (anc.length) {
+      html += '<div class="card-crumb">' + anc.map(function (aid) {
+        var p = ACE.get(aid);
+        return '<span class="crumb-link" data-goto="' + aid + '">' + (p ? p.name : aid) + '</span>';
+      }).join(' > ') + ' > <b>' + a.name + '</b></div>';
     }
 
-    ctx.fillText('Baseline', blX - 25, pad.top + 12);
-  }
+    // Header
+    html += '<h3>' + a.id + ' -- ' + a.name + '</h3>';
 
-  // ── Ask ACE Tab (Terminal) ──────────────────────────────────
-
-  /** Render the Ask ACE nerd terminal */
-  function renderAskACE(el) {
-    var html = '<div class="terminal" id="terminal">';
-    terminalHistory.forEach(function (line) {
-      var cls = line.type === 'input' ? 'term-input' : line.type === 'error' ? 'term-error' : 'term-output';
-      html += '<div class="' + cls + '">' + escHtml(line.text) + '</div>';
-    });
-    html += '</div>';
-    html += '<div class="term-prompt">' +
-      '<span class="term-caret">C:\\NDX&gt;</span>' +
-      '<input id="term-input" type="text" class="term-field" autocomplete="off" spellcheck="false" />' +
-    '</div>';
-    el.innerHTML = html;
-
-    var input = document.getElementById('term-input');
-    if (input) input.focus();
-
-    var terminal = document.getElementById('terminal');
-    if (terminal) terminal.scrollTop = terminal.scrollHeight;
-  }
-
-  /** Process a terminal command */
-  function execCommand(cmd) {
-    terminalHistory.push({ type: 'input', text: 'C:\\NDX> ' + cmd });
-    var parts = cmd.trim().split(/\s+/);
-    var verb = parts[0].toLowerCase();
-    var arg = parts.slice(1).join(' ');
-
-    switch (verb) {
-      case 'help':
-        terminalHistory.push({ type: 'system', text: 'Commands: query <filter> | atom <id> | risks | mc [n] | forecast | status | clear | help' });
-        terminalHistory.push({ type: 'system', text: 'query type:phase        — list atoms by type' });
-        terminalHistory.push({ type: 'system', text: 'query tag:critical-path — list atoms by tag' });
-        terminalHistory.push({ type: 'system', text: 'atom MS-COD             — show atom detail' });
-        terminalHistory.push({ type: 'system', text: 'risks                   — risk register summary' });
-        terminalHistory.push({ type: 'system', text: 'mc 5000                 — run Monte Carlo (n iterations)' });
-        terminalHistory.push({ type: 'system', text: 'forecast                — schedule forecast' });
-        terminalHistory.push({ type: 'system', text: 'status                  — project summary' });
-        break;
-
-      case 'status':
-        var s = ACE.summary();
-        terminalHistory.push({ type: 'system', text: 'Atoms: ' + s.atoms + '  Complete: ' + s.complete + '  Progress: ' + s.percent + '%  Workable: ' + s.workable });
-        var types = Object.keys(s.types).map(function (t) { return t + ':' + s.types[t]; }).join(', ');
-        terminalHistory.push({ type: 'system', text: 'Types: ' + types });
-        break;
-
-      case 'query':
-        var filter = {};
-        if (arg.startsWith('type:')) filter.type = arg.replace('type:', '');
-        else if (arg.startsWith('tag:')) filter.tag = arg.replace('tag:', '');
-        else if (arg) filter.search = arg;
-        var results = ACE.query(filter);
-        terminalHistory.push({ type: 'system', text: results.length + ' atoms found:' });
-        results.slice(0, 20).forEach(function (a) {
-          terminalHistory.push({ type: 'system', text: '  ' + a.id + '  ' + a.name + '  [' + (a._complete ? 'DONE' : 'OPEN') + ']' });
-        });
-        if (results.length > 20) terminalHistory.push({ type: 'system', text: '  ... and ' + (results.length - 20) + ' more' });
-        break;
-
-      case 'atom':
-        var a = ACE.get(arg);
-        if (!a) { terminalHistory.push({ type: 'error', text: 'Unknown atom: ' + arg }); break; }
-        terminalHistory.push({ type: 'system', text: 'ID:       ' + a.id });
-        terminalHistory.push({ type: 'system', text: 'Name:     ' + a.name });
-        terminalHistory.push({ type: 'system', text: 'Type:     ' + a.type });
-        terminalHistory.push({ type: 'system', text: 'Kind:     ' + a.kind });
-        terminalHistory.push({ type: 'system', text: 'Tags:     ' + (a.tags.join(', ') || 'none') });
-        terminalHistory.push({ type: 'system', text: 'Requires: ' + (a.requires.join(', ') || 'none') });
-        terminalHistory.push({ type: 'system', text: 'Contains: ' + (a.contains.join(', ') || 'none') });
-        terminalHistory.push({ type: 'system', text: 'Parent:   ' + (a._parent || 'none') });
-        terminalHistory.push({ type: 'system', text: 'Complete: ' + (a._complete ? 'YES' : 'NO') });
-        terminalHistory.push({ type: 'system', text: 'Progress: ' + ACE.percentComplete(a.id) + '%' });
-        break;
-
-      case 'risks':
-        var riskAtoms = ACE.query({ type: 'risk' });
-        terminalHistory.push({ type: 'system', text: riskAtoms.length + ' risks:' });
-        riskAtoms.forEach(function (r) {
-          var prob = r.tags.find(function (t) { return t.startsWith('p:'); })?.replace('p:', '') || '?';
-          var impact = r.tags.find(function (t) { return t.startsWith('impact:'); })?.replace('impact:', '') || '?';
-          terminalHistory.push({ type: 'system', text: '  ' + r.id + '  P=' + prob + ' I=' + impact + 'mo  ' + r.name });
-        });
-        break;
-
-      case 'mc':
-        var n = parseInt(arg) || 1000;
-        terminalHistory.push({ type: 'system', text: 'Running Monte Carlo with ' + n + ' iterations...' });
-        cachedMC = ACE_Schedule.monteCarlo(n);
-        terminalHistory.push({ type: 'system', text: 'P10=' + cachedMC.p10.finish.toFixed(1) + 'mo  P50=' + cachedMC.p50.finish.toFixed(1) + 'mo  P80=' + cachedMC.p80.finish.toFixed(1) + 'mo  P90=' + cachedMC.p90.finish.toFixed(1) + 'mo' });
-        break;
-
-      case 'forecast':
-        var cpmResult = ACE_Schedule.cpm();
-        var es = ACE_Schedule.earnedSchedule(simMonth);
-        terminalHistory.push({ type: 'system', text: 'CPM Project Finish: ' + cpmResult.projectFinish.toFixed(1) + ' months' });
-        terminalHistory.push({ type: 'system', text: 'Critical Path: ' + cpmResult.criticalPath.join(' -> ') });
-        terminalHistory.push({ type: 'system', text: 'Earned Schedule: ' + es.es.toFixed(1) + 'mo  SPI(t): ' + es.spi_t.toFixed(2) });
-        if (cachedMC) {
-          terminalHistory.push({ type: 'system', text: 'MC P50: ' + cachedMC.p50.finish.toFixed(1) + 'mo  P80: ' + cachedMC.p80.finish.toFixed(1) + 'mo' });
-        }
-        break;
-
-      case 'clear':
-        terminalHistory = [];
-        break;
-
-      default:
-        terminalHistory.push({ type: 'error', text: 'Unknown command: ' + verb + '. Type "help" for commands.' });
-    }
-
-    render();
-  }
-
-  /** Tab autocomplete for terminal */
-  function tabComplete(partial) {
-    var commands = ['query', 'atom', 'risks', 'mc', 'forecast', 'status', 'help', 'clear'];
-    var parts = partial.split(/\s+/);
-
-    if (parts.length <= 1) {
-      var matches = commands.filter(function (c) { return c.startsWith(parts[0].toLowerCase()); });
-      return matches.length === 1 ? matches[0] + ' ' : partial;
-    }
-
-    // Autocomplete atom IDs
-    if (parts[0] === 'atom' && parts.length === 2) {
-      var atomIds = ACE.all().map(function (a) { return a.id; });
-      var matches2 = atomIds.filter(function (id) { return id.toLowerCase().startsWith(parts[1].toLowerCase()); });
-      if (matches2.length === 1) return parts[0] + ' ' + matches2[0];
-    }
-
-    return partial;
-  }
-
-  // ── Atom Overlay ────────────────────────────────────────────
-
-  /** Render the atom detail overlay card */
-  function renderOverlay() {
-    var a = ACE.get(overlayAtomId);
-    if (!a) { closeOverlay(); return; }
-
-    var existing = document.getElementById('overlay');
-    if (existing) existing.remove();
-
-    var overlay = document.createElement('div');
-    overlay.id = 'overlay';
-    overlay.className = 'overlay';
-
-    var ancestors = ACE.ancestors(a.id);
-    var breadcrumb = ancestors.map(function (aid) {
-      return '<span class="crumb" data-atom="' + aid + '">' + aid + '</span>';
-    }).join(' / ');
-    if (breadcrumb) breadcrumb += ' / ';
-
-    var html = '<div class="card">';
-    html += '<div class="card-header">' +
-      '<span class="card-breadcrumb">' + breadcrumb + '<strong>' + a.id + '</strong></span>' +
-      '<button class="card-close" id="btn-close-overlay">[X]</button>' +
-    '</div>';
-
-    html += '<h2 class="card-title">' + escHtml(a.name) + '</h2>';
-
-    html += '<div class="card-fields">' +
-      '<div class="card-field"><span class="field-lbl">Type</span><span class="field-val">' + a.type + '</span></div>' +
-      '<div class="card-field"><span class="field-lbl">Kind</span><span class="field-val">' + a.kind + '</span></div>' +
-      '<div class="card-field"><span class="field-lbl">Status</span><span class="field-val ' + (a._complete ? 'val-done' : 'val-open') + '">' + (a._complete ? 'Complete' : 'Open') + '</span></div>' +
-      '<div class="card-field"><span class="field-lbl">Progress</span><span class="field-val">' + ACE.percentComplete(a.id) + '%</span></div>' +
-    '</div>';
-
-    // Tags as pills
+    // Tags
     if (a.tags.length) {
-      html += '<div class="card-tags">';
-      a.tags.forEach(function (t) { html += '<span class="pill">' + escHtml(t) + '</span>'; });
-      html += '</div>';
+      html += '<div class="card-tags">' + a.tags.map(function (t) {
+        return '<span class="tag-pill">' + t + '</span>';
+      }).join('') + '</div>';
     }
+
+    // Fields
+    html += '<div class="card-fields">';
+    html += field('Type', a.type);
+    html += field('Kind', a.kind);
+    html += field('Status', a._complete ? 'COMPLETE' : 'OPEN');
+    html += field('Progress', ACE.percentComplete(id) + '%');
+    if (a._evidence) html += field('Evidence', a._evidence);
+    if (a._narrative) html += field('Narrative', a._narrative);
+    // Type-specific
+    if (a._probability !== undefined) html += field('Probability', Math.round(a._probability * 100) + '%');
+    if (a._impact !== undefined) html += field('Impact', '+' + a._impact + ' months');
+    html += '</div>';
 
     // Requires
     if (a.requires.length) {
-      html += '<div class="card-section"><span class="section-lbl">Requires</span>';
+      html += '<div class="card-section">Requires (' + a.requires.length + ')</div>';
       a.requires.forEach(function (rid) {
         var r = ACE.get(rid);
-        html += '<span class="card-link" data-atom="' + rid + '">' + rid + (r ? ' - ' + escHtml(r.name) : '') + '</span>';
+        html += '<div class="card-link" data-goto="' + rid + '"><span class="a-dot ' + (r && r._complete ? 'done' : 'open') + '"></span>' + rid + (r ? ' -- ' + r.name : '') + '</div>';
       });
-      html += '</div>';
     }
 
     // Contains
     if (a.contains.length) {
-      html += '<div class="card-section"><span class="section-lbl">Contains</span>';
+      html += '<div class="card-section">Contains (' + a.contains.length + ')</div>';
       a.contains.forEach(function (cid) {
-        var c = ACE.get(cid);
-        html += '<span class="card-link" data-atom="' + cid + '">' + cid + (c ? ' - ' + escHtml(c.name) : '') + '</span>';
+        var ch = ACE.get(cid);
+        html += '<div class="card-link" data-goto="' + cid + '"><span class="a-dot ' + (ch && ch._complete ? 'done' : 'open') + '"></span>' + cid + (ch ? ' -- ' + ch.name : '') + '</div>';
       });
-      html += '</div>';
     }
 
-    // Evidence / Narrative
-    if (a._evidence) {
-      html += '<div class="card-section"><span class="section-lbl">Evidence</span><div class="card-evidence">' + escHtml(a._evidence) + '</div></div>';
-    }
-    if (a._narrative) {
-      html += '<div class="card-section"><span class="section-lbl">Narrative</span><div class="card-narrative">' + escHtml(a._narrative) + '</div></div>';
-    }
-
-    // Toolbar
-    html += '<div class="card-toolbar">';
-    html += '<button id="btn-source" class="btn-card">[Source]</button>';
-    html += '<button id="btn-edit" class="btn-card">[Edit]</button>';
-    html += '</div>';
-
-    // Source view (toggleable)
-    if (overlayShowSource) {
-      var json = JSON.stringify(ACE.exportJSON().find(function (x) { return x.id === a.id; }), null, 2);
-      html += '<pre class="card-source">' + escHtml(json) + '</pre>';
+    // Who requires this atom
+    var depBy = ACE.all().filter(function (x) { return x.requires.indexOf(id) >= 0; });
+    if (depBy.length) {
+      html += '<div class="card-section">Required by (' + depBy.length + ')</div>';
+      depBy.forEach(function (d) {
+        html += '<div class="card-link" data-goto="' + d.id + '"><span class="a-dot ' + (d._complete ? 'done' : 'open') + '"></span>' + d.id + ' -- ' + d.name + '</div>';
+      });
     }
 
-    // Edit mode (toggleable)
-    if (overlayEditMode) {
-      var json2 = JSON.stringify(ACE.exportJSON().find(function (x) { return x.id === a.id; }), null, 2);
-      html += '<div class="card-edit">' +
-        '<textarea id="edit-json" class="edit-textarea">' + escHtml(json2) + '</textarea>' +
-        '<button id="btn-apply" class="btn-card btn-apply">[Apply]</button>' +
-      '</div>';
+    // Source JSON
+    html += '<div class="card-section" style="margin-top:10px"><button class="src-btn" id="src-toggle">[Source]</button></div>';
+    var src = JSON.stringify({ id: a.id, name: a.name, type: a.type, kind: a.kind, tags: a.tags, requires: a.requires, contains: a.contains, complete: a._complete }, null, 2);
+    html += '<pre class="card-src" id="card-src" style="display:none">' + syntaxHL(src) + '</pre>';
+
+    // Manual completion button
+    if (a.kind === 'manual' && !a._complete) {
+      html += '<button class="complete-btn" id="btn-complete">Clear this atom</button>';
     }
 
-    html += '</div>';
-    overlay.innerHTML = html;
+    html += '</div></div>';
 
-    // Click outside card to close
-    overlay.addEventListener('click', function (e) {
-      if (e.target === overlay) closeOverlay();
+    // Insert overlay
+    var ov = document.createElement('div');
+    ov.innerHTML = html;
+    document.body.appendChild(ov.firstChild);
+
+    // Wire events
+    document.getElementById('card-ov').addEventListener('click', function (e) {
+      if (e.target.id === 'card-ov') closeCard();
+      var goto = e.target.closest('[data-goto]');
+      if (goto) { closeCard(); showAtomCard(goto.dataset.goto); }
     });
-
-    document.body.appendChild(overlay);
-  }
-
-  /** Close the overlay */
-  function closeOverlay() {
-    overlayAtomId = null;
-    overlayEditMode = false;
-    overlayShowSource = false;
-    var el = document.getElementById('overlay');
-    if (el) el.remove();
-  }
-
-  /** Open overlay for a given atom */
-  function openOverlay(id) {
-    overlayAtomId = id;
-    overlayEditMode = false;
-    overlayShowSource = false;
-    renderOverlay();
-  }
-
-  // ── Simulation ──────────────────────────────────────────────
-
-  /** Advance the simulation by one month */
-  function simTick() {
-    if (simMonth >= ACE_Data.PLANT.baselineMonths) {
-      simPause();
-      return;
-    }
-    simMonth++;
-
-    // Auto-complete workable atoms probabilistically
-    var w = ACE.workable();
-    w.forEach(function (a) {
-      var dur = ACE_Schedule.getDuration(a.id);
-      if (dur <= 0) dur = 1;
-      var chance = 1 / dur;
-      if (Math.random() < chance) {
-        ACE.complete(a.id, 'Simulation auto-complete at month ' + simMonth);
-      }
+    var srcBtn = document.getElementById('src-toggle');
+    if (srcBtn) srcBtn.addEventListener('click', function () {
+      var src = document.getElementById('card-src');
+      src.style.display = src.style.display === 'none' ? 'block' : 'none';
     });
-
-    // Complete milestones whose requirements are met
-    ACE.query({ type: 'milestone', complete: false }).forEach(function (ms) {
-      var allReqsDone = ms.requires.every(function (rid) { return ACE.isComplete(rid); });
-      if (allReqsDone && ms.kind === 'manual') {
-        ACE.complete(ms.id, 'Milestone achieved at month ' + simMonth);
-      }
+    var compBtn = document.getElementById('btn-complete');
+    if (compBtn) compBtn.addEventListener('click', function () {
+      ACE.complete(id, 'M' + Math.round(simMonth), 'Manually cleared');
+      ACE.settle();
+      runMC(1000);
+      closeCard();
+      renderContent();
     });
-
-    ACE.settle();
-    render();
   }
 
-  /** Start simulation playback */
-  function simPlay() {
-    if (simPlaying) return;
-    simPlaying = true;
-    simInterval = setInterval(simTick, 1000 / simSpeed);
-    render();
+  function field(label, value) {
+    return '<div class="card-field"><span class="cf-l">' + label + '</span><span class="cf-v">' + value + '</span></div>';
   }
 
-  /** Pause simulation */
-  function simPause() {
-    simPlaying = false;
-    if (simInterval) clearInterval(simInterval);
-    simInterval = null;
-    render();
+  function syntaxHL(json) {
+    return json.replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/"([^"]+)":/g, '<span style="color:#a8401f">"$1"</span>:')
+      .replace(/: "([^"]*)"/g, ': <span style="color:#b8cfbb">"$1"</span>')
+      .replace(/: (\d+)/g, ': <span style="color:#d6c391">$1</span>')
+      .replace(/: (true|false)/g, ': <span style="color:#a89bdb">$1</span>');
   }
 
-  // ── Event Binding ───────────────────────────────────────────
+  function closeCard() {
+    var ov = document.getElementById('card-ov');
+    if (ov) ov.remove();
+    selectedAtom = null;
+  }
 
-  /** Bind all UI events via delegation */
-  function bindEvents() {
-    // Tab clicks
-    document.addEventListener('click', function (e) {
-      var tab = e.target.closest('[data-tab]');
-      if (tab) {
-        activeTab = tab.dataset.tab;
+  // ── Wiring ──────────────────────────────────────────────────
+
+  function wireHeader() {
+    document.getElementById('btn-play').addEventListener('click', function () {
+      simPlaying = !simPlaying;
+      this.textContent = simPlaying ? 'Pause' : 'Play';
+    });
+    document.getElementById('btn-speed').addEventListener('click', function () {
+      simSpeed = simSpeed === 1 ? 2 : simSpeed === 2 ? 5 : simSpeed === 5 ? 10 : 1;
+      this.textContent = simSpeed + 'x';
+    });
+    document.getElementById('scrub').addEventListener('input', function () {
+      simMonth = parseFloat(this.value);
+      simPlaying = false;
+      document.getElementById('btn-play').textContent = 'Play';
+      renderContent();
+    });
+  }
+
+  function wireNav() {
+    document.querySelectorAll('.nav-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        view = btn.dataset.view;
         render();
-        return;
-      }
-
-      // Atom clicks (anywhere)
-      var atomEl = e.target.closest('[data-atom]');
-      if (atomEl && !e.target.closest('.card-link') && !e.target.closest('.crumb') && !e.target.closest('.feed-name')) {
-        openOverlay(atomEl.dataset.atom);
-        return;
-      }
-
-      // Card links and crumbs
-      if (e.target.closest('.card-link') || e.target.closest('.crumb') || e.target.closest('.feed-name')) {
-        var id = e.target.dataset.atom || e.target.closest('[data-atom]')?.dataset.atom;
-        if (id) openOverlay(id);
-        return;
-      }
-
-      // Play/Pause
-      if (e.target.id === 'btn-play') {
-        simPlaying ? simPause() : simPlay();
-        return;
-      }
-
-      // Close overlay
-      if (e.target.id === 'btn-close-overlay') { closeOverlay(); return; }
-
-      // Source toggle
-      if (e.target.id === 'btn-source') {
-        overlayShowSource = !overlayShowSource;
-        overlayEditMode = false;
-        renderOverlay();
-        return;
-      }
-
-      // Edit toggle
-      if (e.target.id === 'btn-edit') {
-        overlayEditMode = !overlayEditMode;
-        overlayShowSource = false;
-        renderOverlay();
-        return;
-      }
-
-      // Apply edit
-      if (e.target.id === 'btn-apply') {
-        var textarea = document.getElementById('edit-json');
-        if (textarea) {
-          try {
-            var edited = JSON.parse(textarea.value);
-            var existing = ACE.get(edited.id);
-            if (existing) {
-              existing.name = edited.name || existing.name;
-              existing.tags = edited.tags || existing.tags;
-              ACE.settle();
-              overlayEditMode = false;
-              render();
-              renderOverlay();
-            }
-          } catch (err) {
-            alert('Invalid JSON: ' + err.message);
-          }
-        }
-        return;
-      }
-
-      // Export JSON
-      if (e.target.id === 'btn-export-json') {
-        downloadFile('ace-ndx.json', JSON.stringify(ACE.exportJSON(), null, 2), 'application/json');
-        return;
-      }
-
-      // Export CSV
-      if (e.target.id === 'btn-export-csv') {
-        exportCSV();
-        return;
-      }
-    });
-
-    // Speed selector
-    document.addEventListener('change', function (e) {
-      if (e.target.id === 'sel-speed') {
-        simSpeed = parseFloat(e.target.value);
-        if (simPlaying) {
-          clearInterval(simInterval);
-          simInterval = setInterval(simTick, 1000 / simSpeed);
-        }
-      }
-
-      // Scrubber
-      if (e.target.id === 'scrubber') {
-        simMonth = parseInt(e.target.value);
-        render();
-      }
-
-      // Filters
-      if (e.target.id === 'filter-type') {
-        filterType = e.target.value;
-        renderContent();
-      }
-    });
-
-    // Input events for scrubber (live update while dragging)
-    document.addEventListener('input', function (e) {
-      if (e.target.id === 'scrubber') {
-        simMonth = parseInt(e.target.value);
-        render();
-      }
-      if (e.target.id === 'filter-search') {
-        filterText = e.target.value;
-        renderContent();
-      }
-    });
-
-    // Terminal input
-    document.addEventListener('keydown', function (e) {
-      if (e.target.id === 'term-input') {
-        if (e.key === 'Enter') {
-          var val = e.target.value.trim();
-          if (val) execCommand(val);
-          e.target.value = '';
-        }
-        if (e.key === 'Tab') {
-          e.preventDefault();
-          e.target.value = tabComplete(e.target.value);
-        }
-      }
-    });
-
-    // Window resize
-    window.addEventListener('resize', function () {
-      if (activeTab === 'dashboard') {
-        requestAnimationFrame(drawGantt);
-      }
-    });
-
-    // Responsive sidebar toggle
-    document.addEventListener('click', function (e) {
-      if (e.target.id === 'btn-menu') {
-        document.getElementById('sidebar').classList.toggle('sidebar-open');
-      }
+      });
     });
   }
 
-  // ── Export Helpers ──────────────────────────────────────────
-
-  /** Export atoms as CSV and trigger download */
-  function exportCSV() {
-    var atoms = ACE.all();
-    var csv = 'id,name,type,kind,complete,tags,requires,contains\n';
-    atoms.forEach(function (a) {
-      csv += '"' + a.id + '","' + a.name.replace(/"/g, '""') + '","' + a.type + '","' + a.kind + '",' +
-        a._complete + ',"' + a.tags.join(';') + '","' + a.requires.join(';') + '","' + a.contains.join(';') + '"\n';
-    });
-    downloadFile('ace-ndx.csv', csv, 'text/csv');
+  function onKey(e) {
+    if (e.key === 'Escape') closeCard();
   }
 
-  /** Trigger a file download */
-  function downloadFile(name, content, mime) {
-    var blob = new Blob([content], { type: mime });
-    var url = URL.createObjectURL(blob);
-    var link = document.createElement('a');
-    link.href = url;
-    link.download = name;
-    link.click();
-    URL.revokeObjectURL(url);
-  }
-
-  // ── Utility ────────────────────────────────────────────────
-
-  /** Get a CSS custom property value */
-  function getCSS(prop) {
-    return getComputedStyle(document.documentElement).getPropertyValue(prop).trim();
-  }
-
-  /** HTML-escape a string */
-  function escHtml(str) {
-    var div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
-  }
-
-  return { init: init, render: render, openOverlay: openOverlay, closeOverlay: closeOverlay };
+  return { init: init };
 })();
