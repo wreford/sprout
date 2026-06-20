@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ACE — Atomic Constraint Engine</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=IBM+Plex+Mono:wght@400;500&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet" />
+  <style>
+    /* ── ACE Journal Palette ─────────────────────────────── */
+    :root {
+      --paper:  #f2ecdf;
+      --ink:    #221c10;
+      --oxide:  #a8401f;
+      --green:  #2f7d4f;
+      --red:    #b13d2c;
+      --blue:   #2c5d78;
+      --faint:  #9a9077;
+      --card:   #faf6ed;
+      --border: #d5cebc;
+      --term-bg: #1a1a18;
+      --term-fg: #4ade80;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; background: var(--paper); color: var(--ink); font-family: 'Newsreader', serif; font-size: 14px; }
+
+    /* ── Layout ──────────────────────────────────────────── */
+    .app { display: grid; grid-template-rows: 48px 1fr; grid-template-columns: 200px 1fr; height: 100vh; }
+    #topbar { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; background: var(--ink); color: var(--paper); gap: 12px; }
+    #sidebar { grid-row: 2; display: flex; flex-direction: column; border-right: 1px solid var(--border); padding: 12px 0; overflow-y: auto; background: var(--card); }
+    #content { grid-row: 2; overflow-y: auto; padding: 16px; }
+
+    /* ── Top Bar ──────────────────────────────────────────── */
+    .topbar-left { display: flex; align-items: baseline; gap: 12px; }
+    .topbar-title { font-family: 'Fraunces', serif; font-size: 20px; font-weight: 700; letter-spacing: 0.04em; }
+    .topbar-subtitle { font-size: 11px; color: var(--faint); font-family: 'IBM Plex Mono', monospace; }
+    .topbar-controls { display: flex; align-items: center; gap: 10px; }
+    .btn-ctrl { background: none; border: 1px solid var(--faint); color: var(--paper); padding: 3px 10px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; cursor: pointer; border-radius: 3px; }
+    .btn-ctrl:hover { border-color: var(--paper); }
+    .sel-speed { background: var(--ink); color: var(--paper); border: 1px solid var(--faint); font-family: 'IBM Plex Mono', monospace; font-size: 11px; padding: 2px 4px; border-radius: 3px; }
+    .scrubber { width: 180px; accent-color: var(--oxide); }
+    .topbar-month { font-family: 'IBM Plex Mono', monospace; font-size: 12px; min-width: 120px; }
+    .topbar-pct { font-family: 'Fraunces', serif; font-size: 14px; font-weight: 600; color: var(--oxide); }
+
+    /* ── Sidebar ──────────────────────────────────────────── */
+    .sidebar-tabs { display: flex; flex-direction: column; gap: 2px; padding: 0 8px; }
+    .sidebar-tab { text-align: left; background: none; border: none; padding: 8px 12px; font-family: 'Newsreader', serif; font-size: 14px; cursor: pointer; border-radius: 4px; color: var(--ink); }
+    .sidebar-tab:hover { background: var(--border); }
+    .sidebar-tab.active { background: var(--oxide); color: var(--paper); font-weight: 500; }
+    .sidebar-summary { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; padding: 16px 12px; border-top: 1px solid var(--border); margin-top: 12px; }
+    .sidebar-stat { text-align: center; }
+    .stat-val { display: block; font-family: 'Fraunces', serif; font-size: 18px; font-weight: 600; }
+    .stat-lbl { display: block; font-size: 10px; color: var(--faint); font-family: 'IBM Plex Mono', monospace; text-transform: uppercase; }
+    .sidebar-export { padding: 12px; border-top: 1px solid var(--border); margin-top: auto; display: flex; flex-direction: column; gap: 4px; }
+    .btn-export { background: none; border: 1px solid var(--border); padding: 5px 8px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; cursor: pointer; border-radius: 3px; color: var(--ink); }
+    .btn-export:hover { border-color: var(--oxide); color: var(--oxide); }
+
+    /* ── Dashboard ────────────────────────────────────────── */
+    .dash-gantt { width: 100%; height: 40%; min-height: 200px; }
+    .dash-gantt canvas { width: 100%; height: 100%; display: block; }
+    .dash-kpis { display: flex; gap: 12px; padding: 12px 0; flex-wrap: wrap; }
+    .kpi { flex: 1; min-width: 100px; text-align: center; padding: 10px 8px; background: var(--card); border: 1px solid var(--border); border-radius: 6px; }
+    .kpi-val { display: block; font-family: 'Fraunces', serif; font-size: 22px; font-weight: 600; }
+    .kpi-lbl { display: block; font-size: 10px; color: var(--faint); font-family: 'IBM Plex Mono', monospace; text-transform: uppercase; margin-top: 2px; }
+    .kpi-good { color: var(--green); }
+    .kpi-bad { color: var(--red); }
+    .dash-feed { padding: 8px 0; }
+    .feed-title { font-family: 'Fraunces', serif; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+    .feed-empty { color: var(--faint); font-style: italic; font-size: 13px; }
+    .feed-item { padding: 3px 0; font-size: 13px; border-bottom: 1px solid var(--border); }
+    .feed-type { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--faint); }
+    .feed-name { cursor: pointer; color: var(--blue); }
+    .feed-name:hover { text-decoration: underline; }
+
+    /* ── Constraint List ──────────────────────────────────── */
+    .filter-bar { display: flex; gap: 8px; margin-bottom: 12px; }
+    .filter-input { flex: 1; padding: 6px 10px; border: 1px solid var(--border); border-radius: 4px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; background: var(--card); }
+    .filter-select { padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; background: var(--card); }
+    .atom-list { display: flex; flex-direction: column; gap: 2px; }
+    .atom-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 4px; cursor: pointer; font-size: 13px; }
+    .atom-row:hover { background: var(--border); }
+    .atom-status { font-family: 'IBM Plex Mono', monospace; font-size: 12px; width: 24px; flex-shrink: 0; }
+    .atom-done { color: var(--green); }
+    .atom-open { color: var(--faint); }
+    .atom-id { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--blue); min-width: 100px; }
+    .atom-name { flex: 1; }
+    .atom-type { font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--faint); background: var(--paper); padding: 1px 6px; border-radius: 8px; }
+    .atom-tag { font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: var(--oxide); background: var(--oxide)15; padding: 1px 5px; border-radius: 8px; }
+
+    /* ── WBS Tree ─────────────────────────────────────────── */
+    .wbs-tree { font-size: 13px; }
+    .tree-node { display: flex; align-items: center; gap: 6px; padding: 3px 4px; cursor: pointer; border-radius: 3px; }
+    .tree-node:hover { background: var(--border); }
+    .tree-icon { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--faint); width: 24px; flex-shrink: 0; }
+    .tree-id { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--blue); min-width: 80px; }
+    .tree-name { flex: 1; }
+    .tree-pct { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--faint); }
+
+    /* ── Risks ────────────────────────────────────────────── */
+    .risk-header { font-family: 'Fraunces', serif; font-size: 16px; font-weight: 600; margin-bottom: 10px; }
+    .risk-list { display: flex; flex-direction: column; gap: 3px; margin-bottom: 20px; }
+    .risk-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 4px; cursor: pointer; font-size: 13px; border-left: 3px solid transparent; }
+    .risk-row:hover { background: var(--border); }
+    .risk-high { border-left-color: var(--red); }
+    .risk-med { border-left-color: var(--oxide); }
+    .risk-low { border-left-color: var(--green); }
+    .risk-id { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--faint); min-width: 100px; }
+    .risk-name { flex: 1; }
+    .risk-prob, .risk-impact, .risk-score { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--faint); }
+    .mc-section { margin-top: 12px; }
+    .mc-header { font-family: 'Fraunces', serif; font-size: 14px; font-weight: 600; margin-bottom: 8px; }
+    .mc-canvas { width: 100%; height: 200px; display: block; }
+    .mc-stats { display: flex; gap: 16px; padding: 8px 0; font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--faint); }
+
+    /* ── Terminal ─────────────────────────────────────────── */
+    .terminal { background: var(--term-bg); color: var(--term-fg); font-family: 'IBM Plex Mono', monospace; font-size: 13px; padding: 12px; height: calc(100% - 40px); overflow-y: auto; border-radius: 6px 6px 0 0; }
+    .term-input { color: #e2e8f0; }
+    .term-output, .term-system { color: var(--term-fg); }
+    .term-error { color: var(--red); }
+    .term-prompt { display: flex; align-items: center; background: var(--term-bg); padding: 8px 12px; border-radius: 0 0 6px 6px; }
+    .term-caret { color: var(--term-fg); font-family: 'IBM Plex Mono', monospace; font-size: 13px; margin-right: 8px; flex-shrink: 0; }
+    .term-field { flex: 1; background: none; border: none; color: #e2e8f0; font-family: 'IBM Plex Mono', monospace; font-size: 13px; outline: none; }
+
+    /* ── Overlay & Card ──────────────────────────────────── */
+    .overlay { position: fixed; inset: 0; background: rgba(34,28,16,0.5); display: flex; align-items: center; justify-content: center; z-index: 100; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 20px 24px; width: 520px; max-width: 90vw; max-height: 85vh; overflow-y: auto; box-shadow: 0 8px 32px rgba(34,28,16,0.25); }
+    .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .card-breadcrumb { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--faint); }
+    .card-breadcrumb .crumb { cursor: pointer; color: var(--blue); }
+    .card-breadcrumb .crumb:hover { text-decoration: underline; }
+    .card-close { background: none; border: none; font-family: 'IBM Plex Mono', monospace; font-size: 13px; cursor: pointer; color: var(--faint); }
+    .card-close:hover { color: var(--red); }
+    .card-title { font-family: 'Fraunces', serif; font-size: 18px; font-weight: 600; margin-bottom: 12px; }
+    .card-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 12px; }
+    .card-field { display: flex; gap: 6px; font-size: 13px; }
+    .field-lbl { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--faint); min-width: 60px; }
+    .field-val { font-family: 'IBM Plex Mono', monospace; font-size: 12px; }
+    .val-done { color: var(--green); }
+    .val-open { color: var(--oxide); }
+    .card-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 12px; }
+    .pill { font-family: 'IBM Plex Mono', monospace; font-size: 10px; padding: 2px 8px; border-radius: 10px; background: var(--oxide)18; color: var(--oxide); border: 1px solid var(--oxide)40; }
+    .card-section { margin-bottom: 10px; }
+    .section-lbl { display: block; font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--faint); text-transform: uppercase; margin-bottom: 4px; }
+    .card-link { display: block; font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--blue); cursor: pointer; padding: 2px 0; }
+    .card-link:hover { text-decoration: underline; }
+    .card-evidence, .card-narrative { font-size: 13px; color: var(--ink); padding: 6px 8px; background: var(--paper); border-radius: 4px; }
+    .card-toolbar { display: flex; gap: 6px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+    .btn-card { background: none; border: 1px solid var(--border); padding: 4px 10px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; cursor: pointer; border-radius: 3px; color: var(--ink); }
+    .btn-card:hover { border-color: var(--oxide); color: var(--oxide); }
+    .btn-apply { border-color: var(--green); color: var(--green); }
+    .card-source { font-family: 'IBM Plex Mono', monospace; font-size: 11px; background: var(--term-bg); color: var(--term-fg); padding: 12px; border-radius: 4px; margin-top: 10px; overflow-x: auto; white-space: pre; }
+    .card-edit { margin-top: 10px; }
+    .edit-textarea { width: 100%; height: 160px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; padding: 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--card); resize: vertical; }
+
+    /* ── Mobile Menu Button (hidden on desktop) ──────────── */
+    #btn-menu { display: none; background: none; border: none; color: var(--paper); font-family: 'IBM Plex Mono', monospace; font-size: 14px; cursor: pointer; }
+
+    /* ── Responsive ───────────────────────────────────────── */
+    @media (max-width: 768px) {
+      .app { grid-template-columns: 1fr; }
+      #sidebar { position: fixed; left: -240px; top: 48px; bottom: 0; width: 240px; z-index: 50; transition: left 0.2s; box-shadow: 2px 0 12px rgba(0,0,0,0.15); }
+      #sidebar.sidebar-open { left: 0; }
+      #btn-menu { display: block; }
+      .topbar-subtitle { display: none; }
+      .scrubber { width: 100px; }
+      .card { width: 95vw; }
+    }
+
+    @media (min-width: 1600px) {
+      .app { grid-template-columns: 220px 1fr; }
+      .kpi-val { font-size: 28px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div id="topbar">
+      <button id="btn-menu">[=]</button>
+    </div>
+    <div id="sidebar"></div>
+    <div id="content"></div>
+  </div>
+
+  <script src="ace-core.js"></script>
+  <script src="ace-schedule.js"></script>
+  <script src="ace-data.js"></script>
+  <script src="ace-ui.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      ACE_UI.init();
+    });
+  </script>
+</body>
+</html>
