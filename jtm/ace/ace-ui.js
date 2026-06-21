@@ -32,6 +32,31 @@ const ACE_UI = (function () {
   var ganttScrollX = 0;
   var searchOpen = false;
   var searchQuery = '';
+  var ganttTooltipEl = null;
+
+  // -- Pill color mapping --
+  var PILL_CLASSES = {
+    'risk': 'pill-risk',
+    'constraint': 'pill-constraint',
+    'phase': 'pill-phase',
+    'iwp': 'pill-iwp',
+    'awp': 'pill-awp',
+    'milestone': 'pill-milestone',
+    'nuclear': 'pill-nuclear',
+    'opportunity': 'pill-opportunity',
+    'long-lead': 'pill-long-lead'
+  };
+
+  function pillClass(tag) {
+    // Match known tag prefixes
+    var t = tag.toLowerCase();
+    if (PILL_CLASSES[t]) return PILL_CLASSES[t];
+    // Check if tag starts with a known prefix
+    for (var key in PILL_CLASSES) {
+      if (t.indexOf(key) === 0) return PILL_CLASSES[key];
+    }
+    return ''; // default pill styling
+  }
 
   // -- Init --
 
@@ -80,12 +105,18 @@ const ACE_UI = (function () {
         '<span class="topbar-subtitle">' + ACE_Data.PLANT.name + '</span>' +
       '</div>' +
       '<div class="topbar-controls">' +
-        '<button class="btn-ctrl" id="btn-new-atom">[+ Atom]</button>' +
-        '<button class="btn-ctrl" id="btn-save">[Save]</button>' +
-        '<button class="btn-ctrl" id="btn-load">[Load]</button>' +
-        '<button class="btn-ctrl" id="btn-clear-data">[Clear]</button>' +
-        '<button class="btn-ctrl" id="btn-export-json">[JSON]</button>' +
-        '<button class="btn-ctrl" id="btn-export-csv">[CSV]</button>' +
+        '<div class="topbar-group">' +
+          '<button class="btn-ctrl" id="btn-new-atom">+ Atom</button>' +
+        '</div>' +
+        '<div class="topbar-group">' +
+          '<button class="btn-ctrl" id="btn-save">Save</button>' +
+          '<button class="btn-ctrl" id="btn-load">Load</button>' +
+          '<button class="btn-ctrl" id="btn-clear-data">Clear</button>' +
+        '</div>' +
+        '<div class="topbar-group">' +
+          '<button class="btn-ctrl" id="btn-export-json">JSON</button>' +
+          '<button class="btn-ctrl" id="btn-export-csv">CSV</button>' +
+        '</div>' +
         '<span class="topbar-pct">' + s.percent + '%</span>' +
       '</div>';
 
@@ -256,7 +287,7 @@ const ACE_UI = (function () {
     // Right side: WBS tree (rendered as inline panel on wide screens)
     html += '<div id="wbs-panel" style="margin-top:16px">';
     html += '<div style="font-family:Fraunces,serif;font-size:14px;font-weight:600;margin-bottom:8px">Work Breakdown</div>';
-    html += '<input type="text" id="wbs-search" class="filter-input" placeholder="Filter WBS..." value="' + escAttr(wbsFilter) + '" style="margin-bottom:8px">';
+    html += '<input type="text" id="wbs-search" class="filter-input" placeholder="Filter WBS..." value="' + escAttr(wbsFilter) + '" style="margin-bottom:8px;flex:none;width:100%">';
     html += '<div class="wbs-tree" id="wbs-tree">' + renderWBSTree('NDX', 0) + '</div>';
     html += '</div>';
 
@@ -295,12 +326,16 @@ const ACE_UI = (function () {
       if (!childrenMatch) return '';
     }
 
-    var indent = depth * 16;
-    var icon = hasChildren ? (collapsed ? '[+]' : '[-]') : ' . ';
+    var indent = depth * 20;
+    var toggleIcon = hasChildren ? (collapsed ? '+' : '−') : '·';
+    var barColor = pct >= 100 ? 'var(--green)' : pct > 0 ? 'var(--blue)' : 'var(--border)';
+
     var html = '<div class="tree-node" data-wbs="' + id + '" style="padding-left:' + indent + 'px">' +
-      '<span class="tree-icon" data-wbs-toggle="' + id + '">' + icon + '</span>' +
+      (depth > 0 ? '<span class="tree-indent-line" style="height:20px;display:inline-block;width:1px;margin-right:4px"></span>' : '') +
+      '<span class="tree-icon" data-wbs-toggle="' + id + '">' + toggleIcon + '</span>' +
       '<span class="tree-id">' + id + '</span>' +
       '<span class="tree-name">' + a.name + '</span>' +
+      '<span class="tree-bar-wrap"><span class="tree-bar-fill" style="width:' + pct + '%;background:' + barColor + '"></span></span>' +
       '<span class="tree-pct">' + pct + '%</span>' +
       '</div>';
 
@@ -372,14 +407,14 @@ const ACE_UI = (function () {
     }
 
     var maxFinish = Math.max(cpm.projectFinish, ACE_Data.PLANT.baselineMonths) || 120;
-    var labelW = 140, padR = 16, padT = 24, padB = 24;
+    var labelW = 140, padR = 16, padT = 28, padB = 28;
     var chartW = cw - labelW - padR;
-    var rowH = Math.min(26, (ch - padT - padB) / phases.length);
+    var rowH = Math.min(28, (ch - padT - padB) / phases.length);
 
     // Month grid
     c.strokeStyle = '#ede7d6';
     c.lineWidth = 0.5;
-    c.font = '9px IBM Plex Mono, monospace';
+    c.font = '10px IBM Plex Mono, monospace';
     c.textAlign = 'center';
     c.fillStyle = '#9a9077';
     for (var m = 0; m <= maxFinish; m += 12) {
@@ -388,7 +423,7 @@ const ACE_UI = (function () {
       c.moveTo(gx, padT);
       c.lineTo(gx, padT + phases.length * rowH);
       c.stroke();
-      c.fillText('M' + m, gx, padT + phases.length * rowH + 14);
+      c.fillText('M' + m, gx, padT + phases.length * rowH + 16);
     }
 
     // Phase bars
@@ -401,42 +436,97 @@ const ACE_UI = (function () {
       var x1 = labelW + (finish / maxFinish) * chartW;
       var bh = rowH * 0.6;
       var by = y + (rowH - bh) / 2;
+      var barWidth = Math.max(x1 - x0, 2);
 
-      // Label
-      c.fillStyle = (selectedAtom === p.id) ? '#a8401f' : '#544c3a';
-      c.font = '11px IBM Plex Mono, monospace';
-      c.textAlign = 'right';
-      var label = p.name.length > 18 ? p.name.slice(0, 17) + '.' : p.name;
-      c.fillText(label, labelW - 8, by + bh * 0.75);
-
-      // Bar background
       var onCrit = cpm.criticalPath.indexOf(p.id) >= 0;
-      c.fillStyle = onCrit ? 'rgba(168,64,31,0.2)' : 'rgba(44,93,120,0.15)';
-      c.fillRect(x0, by, Math.max(x1 - x0, 2), bh);
-
-      // Progress fill
       var pct = ACE.percentComplete(p.id) / 100;
-      c.fillStyle = onCrit ? '#a8401f' : '#2c5d78';
-      c.fillRect(x0, by, (x1 - x0) * pct, bh);
+      var isComplete = pct >= 1.0;
+
+      // Bar background with gradient fill
+      if (onCrit) {
+        var grad = c.createLinearGradient(x0, by, x0, by + bh);
+        grad.addColorStop(0, 'rgba(168,64,31,0.25)');
+        grad.addColorStop(1, 'rgba(168,64,31,0.12)');
+        c.fillStyle = grad;
+      } else {
+        var grad2 = c.createLinearGradient(x0, by, x0, by + bh);
+        grad2.addColorStop(0, 'rgba(44,93,120,0.2)');
+        grad2.addColorStop(1, 'rgba(44,93,120,0.08)');
+        c.fillStyle = grad2;
+      }
+      // Rounded rect for bar background
+      roundRect(c, x0, by, barWidth, bh, 3);
+      c.fill();
+
+      // Progress fill with gradient
+      if (pct > 0) {
+        var progressW = barWidth * pct;
+        if (onCrit) {
+          var pGrad = c.createLinearGradient(x0, by, x0, by + bh);
+          pGrad.addColorStop(0, '#c04e25');
+          pGrad.addColorStop(1, '#a8401f');
+          c.fillStyle = pGrad;
+        } else {
+          var pGrad2 = c.createLinearGradient(x0, by, x0, by + bh);
+          pGrad2.addColorStop(0, '#3878a0');
+          pGrad2.addColorStop(1, '#2c5d78');
+          c.fillStyle = pGrad2;
+        }
+        // Clip to rounded rect
+        c.save();
+        roundRect(c, x0, by, barWidth, bh, 3);
+        c.clip();
+        c.fillRect(x0, by, progressW, bh);
+        c.restore();
+      }
 
       // Critical border
       if (onCrit) {
         c.strokeStyle = '#a8401f';
         c.lineWidth = 1.5;
-        c.strokeRect(x0, by, x1 - x0, bh);
+        roundRect(c, x0, by, barWidth, bh, 3);
+        c.stroke();
       }
 
       // Selected highlight
       if (selectedAtom === p.id) {
         c.strokeStyle = '#221c10';
         c.lineWidth = 2;
-        c.strokeRect(x0 - 1, by - 1, x1 - x0 + 2, bh + 2);
+        roundRect(c, x0 - 1, by - 1, barWidth + 2, bh + 2, 4);
+        c.stroke();
+      }
+
+      // Phase label INSIDE bar (white text) or outside (dark text)
+      var label = p.name.length > 20 ? p.name.slice(0, 19) + '…' : p.name;
+      c.font = '10px IBM Plex Mono, monospace';
+      var labelMetrics = c.measureText(label);
+      var labelFitsInBar = labelMetrics.width + 12 < barWidth && barWidth > 40;
+
+      if (labelFitsInBar) {
+        // Inside bar
+        c.fillStyle = pct > 0.5 ? '#ffffff' : (onCrit ? '#5a2010' : '#1a3a52');
+        c.textAlign = 'left';
+        c.fillText(label, x0 + 6, by + bh * 0.72);
+      } else {
+        // Outside bar (to the left)
+        c.fillStyle = (selectedAtom === p.id) ? '#a8401f' : '#544c3a';
+        c.font = '11px IBM Plex Mono, monospace';
+        c.textAlign = 'right';
+        var shortLabel = p.name.length > 18 ? p.name.slice(0, 17) + '.' : p.name;
+        c.fillText(shortLabel, labelW - 8, by + bh * 0.75);
+      }
+
+      // Checkmark on completed phases
+      if (isComplete) {
+        c.fillStyle = '#ffffff';
+        c.font = 'bold 12px IBM Plex Mono, monospace';
+        c.textAlign = 'right';
+        c.fillText('✓', x1 - 6, by + bh * 0.75);
       }
     });
 
     // Milestones as diamonds
     milestones.forEach(function (ms) {
-      var monthTag = ms.tags.find(function (t) { return t === 'milestone'; });
       var msStart = cpm.starts[ms.id];
       if (msStart === undefined) return;
       var mx = labelW + (msStart / maxFinish) * chartW;
@@ -469,7 +559,7 @@ const ACE_UI = (function () {
       c.fillStyle = '#b13d2c';
       c.font = 'bold 10px IBM Plex Mono, monospace';
       c.textAlign = 'center';
-      c.fillText('Now (M' + currentMonth + ')', cmx, padT - 8);
+      c.fillText('Now (M' + currentMonth + ')', cmx, padT - 10);
     }
 
     // Click handler
@@ -477,7 +567,6 @@ const ACE_UI = (function () {
       var rect = cv.getBoundingClientRect();
       var mx2 = (e.clientX - rect.left);
       var my2 = (e.clientY - rect.top);
-      // Hit test phases
       phases.forEach(function (p, i) {
         var start2 = cpm.starts[p.id] || 0;
         var finish2 = cpm.finishes[p.id] || 0;
@@ -492,6 +581,73 @@ const ACE_UI = (function () {
         }
       });
     };
+
+    // Hover tooltip
+    cv.onmousemove = function (e) {
+      var rect = cv.getBoundingClientRect();
+      var mx3 = (e.clientX - rect.left);
+      var my3 = (e.clientY - rect.top);
+      var found = null;
+      phases.forEach(function (p, i) {
+        var start3 = cpm.starts[p.id] || 0;
+        var finish3 = cpm.finishes[p.id] || 0;
+        var y3 = padT + i * rowH;
+        var x03 = labelW + (start3 / maxFinish) * chartW;
+        var x13 = labelW + (finish3 / maxFinish) * chartW;
+        if (mx3 >= x03 && mx3 <= x13 && my3 >= y3 && my3 <= y3 + rowH) {
+          found = p;
+        }
+      });
+      if (found) {
+        showGanttTooltip(e.clientX, e.clientY, found, cpm);
+        cv.style.cursor = 'pointer';
+      } else {
+        hideGanttTooltip();
+        cv.style.cursor = 'default';
+      }
+    };
+    cv.onmouseleave = function () { hideGanttTooltip(); };
+  }
+
+  function roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.arcTo(x + w, y, x + w, y + r, r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+    ctx.lineTo(x + r, y + h);
+    ctx.arcTo(x, y + h, x, y + h - r, r);
+    ctx.lineTo(x, y + r);
+    ctx.arcTo(x, y, x + r, y, r);
+    ctx.closePath();
+  }
+
+  function showGanttTooltip(cx, cy, phase, cpmData) {
+    if (!ganttTooltipEl) {
+      ganttTooltipEl = document.createElement('div');
+      ganttTooltipEl.className = 'gantt-tooltip';
+      document.body.appendChild(ganttTooltipEl);
+    }
+    var pct = ACE.percentComplete(phase.id);
+    var dur = ACE_Schedule.durations[phase.id];
+    var onCrit = cpmData.criticalPath.indexOf(phase.id) >= 0;
+    var tip = phase.name + '\n' +
+      'M' + Math.round(cpmData.starts[phase.id] || 0) + ' - M' + Math.round(cpmData.finishes[phase.id] || 0);
+    if (dur) tip += ' (' + dur.likely + ' mo)';
+    tip += '\n' + pct + '% complete';
+    if (onCrit) tip += ' [CRITICAL]';
+    ganttTooltipEl.textContent = tip;
+    ganttTooltipEl.style.display = 'block';
+    ganttTooltipEl.style.left = (cx + 12) + 'px';
+    ganttTooltipEl.style.top = (cy - 10) + 'px';
+    ganttTooltipEl.style.whiteSpace = 'pre';
+  }
+
+  function hideGanttTooltip() {
+    if (ganttTooltipEl) {
+      ganttTooltipEl.style.display = 'none';
+    }
   }
 
   // -- Project summary (when nothing selected) --
@@ -524,7 +680,7 @@ const ACE_UI = (function () {
     var work = ACE.workable().slice(0, 10);
     html += '<div class="dash-feed"><div class="feed-title">Workable Now (' + ACE.workable().length + ')</div>';
     if (work.length === 0) {
-      html += '<div class="feed-empty">No workable atoms.</div>';
+      html += '<div class="empty-state">No workable atoms at this time.<div class="empty-state-hint">Clear constraints or complete prerequisites to unlock work.</div></div>';
     }
     work.forEach(function (a) {
       html += '<div class="feed-item"><span class="feed-name" data-select="' + a.id + '">' + a.id + '</span> -- ' + a.name + '</div>';
@@ -538,7 +694,7 @@ const ACE_UI = (function () {
 
   function renderAtomCard(id) {
     var a = ACE.get(id);
-    if (!a) return '<div class="feed-empty">Atom not found: ' + escHtml(id) + '</div>';
+    if (!a) return '<div class="empty-state">Atom not found: ' + escHtml(id) + '</div>';
 
     var pct = ACE.percentComplete(id);
     var dur = ACE_Schedule.durations[id];
@@ -559,10 +715,10 @@ const ACE_UI = (function () {
     html += '<div class="card-header"><div class="card-title">' + escHtml(a.id) + ' -- ' + escHtml(a.name) + '</div>' +
       '<button class="card-close" id="btn-close-card">[x]</button></div>';
 
-    // Tags
+    // Tags with colored pills
     if (a.tags.length) {
       html += '<div class="card-tags">';
-      a.tags.forEach(function (t) { html += '<span class="pill">' + escHtml(t) + '</span>'; });
+      a.tags.forEach(function (t) { html += '<span class="pill ' + pillClass(t) + '">' + escHtml(t) + '</span>'; });
       html += '</div>';
     }
 
@@ -595,7 +751,7 @@ const ACE_UI = (function () {
       a.requires.forEach(function (rid) {
         var r = ACE.get(rid);
         html += '<div class="card-link" data-select="' + rid + '">' +
-          '<span class="' + (r && r._complete ? 'atom-done' : 'atom-open') + '">' + (r && r._complete ? '[x]' : '[ ]') + '</span> ' +
+          '<span class="' + (r && r._complete ? 'atom-done' : 'atom-open') + '">' + (r && r._complete ? '✓' : '○') + '</span> ' +
           rid + (r ? ' -- ' + escHtml(r.name) : '') + '</div>';
       });
       html += '</div>';
@@ -607,7 +763,7 @@ const ACE_UI = (function () {
       a.contains.forEach(function (cid) {
         var ch = ACE.get(cid);
         html += '<div class="card-link" data-select="' + cid + '">' +
-          '<span class="' + (ch && ch._complete ? 'atom-done' : 'atom-open') + '">' + (ch && ch._complete ? '[x]' : '[ ]') + '</span> ' +
+          '<span class="' + (ch && ch._complete ? 'atom-done' : 'atom-open') + '">' + (ch && ch._complete ? '✓' : '○') + '</span> ' +
           cid + (ch ? ' -- ' + escHtml(ch.name) : '') + '</div>';
       });
       html += '</div>';
@@ -626,14 +782,14 @@ const ACE_UI = (function () {
     // Toolbar
     html += '<div class="card-toolbar">';
     if (!editingAtom) {
-      html += '<button class="btn-card" id="btn-edit-atom">[Edit]</button>';
+      html += '<button class="btn-card" id="btn-edit-atom">Edit</button>';
     }
-    html += '<button class="btn-card" id="btn-add-req">[Add requires]</button>';
-    html += '<button class="btn-card" id="btn-add-child">[Add child]</button>';
+    html += '<button class="btn-card" id="btn-add-req">+ Requires</button>';
+    html += '<button class="btn-card" id="btn-add-child">+ Child</button>';
     if (a.kind === 'manual' && !a._complete) {
-      html += '<button class="btn-card btn-apply" id="btn-clear-atom">[Clear]</button>';
+      html += '<button class="btn-card btn-apply" id="btn-clear-atom">Clear</button>';
     }
-    html += '<button class="btn-card" id="btn-delete-atom" style="color:var(--red);border-color:var(--red)">[Delete]</button>';
+    html += '<button class="btn-card" id="btn-delete-atom" style="color:var(--red);border-color:var(--red)">Delete</button>';
     html += '</div>';
 
     return html;
@@ -641,23 +797,23 @@ const ACE_UI = (function () {
 
   function renderEditForm(a, dur) {
     var html = '<div class="card-edit">';
-    html += '<div class="section-lbl" style="margin-bottom:6px">Edit Atom</div>';
-    html += '<div style="display:flex;gap:6px;margin-bottom:6px">';
-    html += '<div><label class="field-lbl">Name</label><input type="text" class="filter-input" id="edit-name" value="' + escAttr(a.name) + '" style="width:100%"></div>';
+    html += '<div class="section-lbl" style="margin-bottom:8px">Edit Atom</div>';
+    html += '<div class="form-row">';
+    html += '<div class="form-group" style="flex:1"><label class="field-lbl">Name</label><input type="text" class="filter-input" id="edit-name" value="' + escAttr(a.name) + '" style="width:100%"></div>';
     html += '</div>';
-    html += '<div style="display:flex;gap:6px;margin-bottom:6px">';
-    html += '<div><label class="field-lbl">Type</label><input type="text" class="filter-input" id="edit-type" value="' + escAttr(a.type) + '" style="width:80px"></div>';
-    html += '<div><label class="field-lbl">Kind</label><select class="filter-select" id="edit-kind"><option value="manual"' + (a.kind === 'manual' ? ' selected' : '') + '>manual</option><option value="derived"' + (a.kind === 'derived' ? ' selected' : '') + '>derived</option></select></div>';
-    html += '<div><label class="field-lbl">Tags</label><input type="text" class="filter-input" id="edit-tags" value="' + escAttr(a.tags.join(', ')) + '" style="width:140px"></div>';
+    html += '<div class="form-row">';
+    html += '<div class="form-group"><label class="field-lbl">Type</label><input type="text" class="filter-input" id="edit-type" value="' + escAttr(a.type) + '" style="width:90px"></div>';
+    html += '<div class="form-group"><label class="field-lbl">Kind</label><select class="filter-select" id="edit-kind"><option value="manual"' + (a.kind === 'manual' ? ' selected' : '') + '>manual</option><option value="derived"' + (a.kind === 'derived' ? ' selected' : '') + '>derived</option></select></div>';
+    html += '<div class="form-group" style="flex:1"><label class="field-lbl">Tags</label><input type="text" class="filter-input" id="edit-tags" value="' + escAttr(a.tags.join(', ')) + '" style="width:100%"></div>';
     html += '</div>';
-    html += '<div style="display:flex;gap:6px;margin-bottom:6px">';
-    html += '<div><label class="field-lbl">Dur Min</label><input type="number" class="filter-input" id="edit-dur-min" value="' + (dur ? dur.min : '') + '" style="width:70px" step="0.5"></div>';
-    html += '<div><label class="field-lbl">Dur Likely</label><input type="number" class="filter-input" id="edit-dur-likely" value="' + (dur ? dur.likely : '') + '" style="width:70px" step="0.5"></div>';
-    html += '<div><label class="field-lbl">Dur Max</label><input type="number" class="filter-input" id="edit-dur-max" value="' + (dur ? dur.max : '') + '" style="width:70px" step="0.5"></div>';
+    html += '<div class="form-row">';
+    html += '<div class="form-group"><label class="field-lbl">Min (mo)</label><input type="number" class="filter-input" id="edit-dur-min" value="' + (dur ? dur.min : '') + '" style="width:70px" step="0.5" min="0"></div>';
+    html += '<div class="form-group"><label class="field-lbl">Likely (mo)</label><input type="number" class="filter-input" id="edit-dur-likely" value="' + (dur ? dur.likely : '') + '" style="width:70px" step="0.5" min="0"></div>';
+    html += '<div class="form-group"><label class="field-lbl">Max (mo)</label><input type="number" class="filter-input" id="edit-dur-max" value="' + (dur ? dur.max : '') + '" style="width:70px" step="0.5" min="0"></div>';
     html += '</div>';
-    html += '<div style="display:flex;gap:6px">';
-    html += '<button class="btn-card btn-apply" id="btn-save-edit">[Save]</button>';
-    html += '<button class="btn-card" id="btn-cancel-edit">[Cancel]</button>';
+    html += '<div class="form-actions">';
+    html += '<button class="btn-card btn-apply" id="btn-save-edit">Save</button>';
+    html += '<button class="btn-card" id="btn-cancel-edit">Cancel</button>';
     html += '</div>';
     html += '</div>';
     return html;
@@ -668,23 +824,24 @@ const ACE_UI = (function () {
   function renderCreateForm() {
     var html = '<div style="margin-bottom:8px"><span class="card-title">New Atom</span></div>';
     html += '<div class="card-edit">';
-    html += '<div style="display:flex;gap:6px;margin-bottom:6px">';
-    html += '<div><label class="field-lbl">ID (required)</label><input type="text" class="filter-input" id="new-id" placeholder="e.g. PH-NEW" style="width:140px"></div>';
-    html += '<div style="flex:1"><label class="field-lbl">Name</label><input type="text" class="filter-input" id="new-name" placeholder="Phase name" style="width:100%"></div>';
+    html += '<div class="form-row">';
+    html += '<div class="form-group"><label class="field-lbl">ID (required)</label><input type="text" class="filter-input" id="new-id" placeholder="e.g. PH-NEW" style="width:160px"></div>';
+    html += '<div class="form-group" style="flex:1"><label class="field-lbl">Name</label><input type="text" class="filter-input" id="new-name" placeholder="Phase name" style="width:100%"></div>';
     html += '</div>';
-    html += '<div style="display:flex;gap:6px;margin-bottom:6px">';
-    html += '<div><label class="field-lbl">Type</label><input type="text" class="filter-input" id="new-type" value="phase" style="width:80px"></div>';
-    html += '<div><label class="field-lbl">Kind</label><select class="filter-select" id="new-kind"><option value="derived">derived</option><option value="manual">manual</option></select></div>';
-    html += '<div><label class="field-lbl">Tags</label><input type="text" class="filter-input" id="new-tags" placeholder="tag1, tag2" style="width:140px"></div>';
+    html += '<div class="form-row">';
+    html += '<div class="form-group"><label class="field-lbl">Type</label><input type="text" class="filter-input" id="new-type" value="phase" style="width:90px"></div>';
+    html += '<div class="form-group"><label class="field-lbl">Kind</label><select class="filter-select" id="new-kind"><option value="derived">derived</option><option value="manual">manual</option></select></div>';
+    html += '<div class="form-group" style="flex:1"><label class="field-lbl">Tags</label><input type="text" class="filter-input" id="new-tags" placeholder="tag1, tag2" style="width:100%"></div>';
     html += '</div>';
-    html += '<div style="display:flex;gap:6px;margin-bottom:6px">';
-    html += '<div><label class="field-lbl">Dur Min (mo)</label><input type="number" class="filter-input" id="new-dur-min" step="0.5" style="width:80px"></div>';
-    html += '<div><label class="field-lbl">Dur Likely</label><input type="number" class="filter-input" id="new-dur-likely" step="0.5" style="width:80px"></div>';
-    html += '<div><label class="field-lbl">Dur Max</label><input type="number" class="filter-input" id="new-dur-max" step="0.5" style="width:80px"></div>';
+    html += '<div class="form-row">';
+    html += '<div class="form-group"><label class="field-lbl">Min (mo)</label><input type="number" class="filter-input" id="new-dur-min" step="0.5" min="0" style="width:80px"></div>';
+    html += '<div class="form-group"><label class="field-lbl">Likely (mo)</label><input type="number" class="filter-input" id="new-dur-likely" step="0.5" min="0" style="width:80px"></div>';
+    html += '<div class="form-group"><label class="field-lbl">Max (mo)</label><input type="number" class="filter-input" id="new-dur-max" step="0.5" min="0" style="width:80px"></div>';
     html += '</div>';
-    html += '<div style="display:flex;gap:6px">';
-    html += '<button class="btn-card btn-apply" id="btn-create-atom">[Create]</button>';
-    html += '<button class="btn-card" id="btn-cancel-create">[Cancel]</button>';
+    html += '<div id="create-validation" class="form-validation" style="display:none"></div>';
+    html += '<div class="form-actions">';
+    html += '<button class="btn-card btn-apply" id="btn-create-atom">Create</button>';
+    html += '<button class="btn-card" id="btn-cancel-create">Cancel</button>';
     html += '</div>';
     html += '</div>';
     return html;
@@ -776,7 +933,7 @@ const ACE_UI = (function () {
       showLinkPicker(selectedAtom, 'contains');
     });
 
-    // Create atom
+    // Create atom with validation
     var createBtn = document.getElementById('btn-create-atom');
     if (createBtn) createBtn.addEventListener('click', function () {
       var id = (document.getElementById('new-id').value || '').trim();
@@ -784,21 +941,40 @@ const ACE_UI = (function () {
       var type = (document.getElementById('new-type').value || '').trim() || 'atom';
       var kind = document.getElementById('new-kind').value || 'derived';
       var tags = (document.getElementById('new-tags').value || '').split(',').map(function (t) { return t.trim(); }).filter(Boolean);
-      if (!id) { alert('ID is required.'); return; }
-      if (ACE.get(id)) { alert('Atom ' + id + ' already exists.'); return; }
+      var valEl = document.getElementById('create-validation');
+
+      // Validation
+      if (!id) {
+        if (valEl) { valEl.textContent = 'ID is required.'; valEl.style.display = 'block'; }
+        return;
+      }
+      if (ACE.get(id)) {
+        if (valEl) { valEl.textContent = 'Atom "' + id + '" already exists.'; valEl.style.display = 'block'; }
+        return;
+      }
+      var dMin = parseFloat(document.getElementById('new-dur-min').value);
+      var dLikely = parseFloat(document.getElementById('new-dur-likely').value);
+      var dMax = parseFloat(document.getElementById('new-dur-max').value);
+      var hasDur = !isNaN(dMin) || !isNaN(dLikely) || !isNaN(dMax);
+      if (hasDur && (isNaN(dMin) || isNaN(dLikely) || isNaN(dMax))) {
+        if (valEl) { valEl.textContent = 'Fill all three duration fields or leave all empty.'; valEl.style.display = 'block'; }
+        return;
+      }
+      if (hasDur && (dMin > dLikely || dLikely > dMax)) {
+        if (valEl) { valEl.textContent = 'Duration must satisfy min <= likely <= max.'; valEl.style.display = 'block'; }
+        return;
+      }
+
       try {
         ACE.create({ id: id, name: name, type: type, kind: kind, tags: tags });
-        var dMin = parseFloat(document.getElementById('new-dur-min').value);
-        var dLikely = parseFloat(document.getElementById('new-dur-likely').value);
-        var dMax = parseFloat(document.getElementById('new-dur-max').value);
-        if (!isNaN(dMin) && !isNaN(dLikely) && !isNaN(dMax) && dMin <= dLikely && dLikely <= dMax) {
+        if (hasDur) {
           ACE_Schedule.setDuration(id, dMin, dLikely, dMax);
         }
         creatingAtom = false;
         selectedAtom = id;
         afterMutation();
       } catch (e) {
-        alert('Error: ' + e.message);
+        if (valEl) { valEl.textContent = 'Error: ' + e.message; valEl.style.display = 'block'; }
       }
     });
 
@@ -822,8 +998,8 @@ const ACE_UI = (function () {
       '<div class="card-section"><span class="section-lbl">Narrative (optional)</span>' +
       '<textarea class="edit-textarea" id="clear-narrative" placeholder="Notes, context, lessons learned..." style="height:80px"></textarea></div>' +
       '<div class="card-toolbar">' +
-      '<button class="btn-card btn-apply" id="btn-do-clear">[Clear atom]</button>' +
-      '<button class="btn-card" id="btn-cancel-clear">[Cancel]</button>' +
+      '<button class="btn-card btn-apply" id="btn-do-clear">Clear Atom</button>' +
+      '<button class="btn-card" id="btn-cancel-clear">Cancel</button>' +
       '</div></div></div>';
     var div = document.createElement('div');
     div.innerHTML = html;
@@ -851,7 +1027,7 @@ const ACE_UI = (function () {
       '<div class="card-title">Add ' + rel + ' to ' + escHtml(fromId) + '</div>' +
       '<input type="text" class="filter-input" id="link-search" placeholder="Search atoms..." style="width:100%;margin-bottom:8px" autofocus>' +
       '<div id="link-results" class="atom-list" style="max-height:300px;overflow-y:auto"></div>' +
-      '<div class="card-toolbar"><button class="btn-card" id="btn-cancel-link">[Cancel]</button></div>' +
+      '<div class="card-toolbar"><button class="btn-card" id="btn-cancel-link">Cancel</button></div>' +
       '</div></div>';
     var div = document.createElement('div');
     div.innerHTML = html;
@@ -863,11 +1039,14 @@ const ACE_UI = (function () {
       var rEl = document.getElementById('link-results');
       rEl.innerHTML = results.map(function (a) {
         return '<div class="atom-row" data-link-target="' + a.id + '">' +
-          '<span class="atom-status ' + (a._complete ? 'atom-done' : 'atom-open') + '">' + (a._complete ? '[x]' : '[ ]') + '</span>' +
+          '<span class="atom-status ' + (a._complete ? 'atom-done' : 'atom-open') + '">' + (a._complete ? '✓' : '○') + '</span>' +
           '<span class="atom-id">' + a.id + '</span>' +
           '<span class="atom-name">' + escHtml(a.name) + '</span>' +
           '</div>';
       }).join('');
+      if (results.length === 0) {
+        rEl.innerHTML = '<div class="empty-state">No matching atoms found.</div>';
+      }
       rEl.querySelectorAll('[data-link-target]').forEach(function (row) {
         row.addEventListener('click', function () {
           try {
@@ -898,20 +1077,31 @@ const ACE_UI = (function () {
 
   function renderForecast(el) {
     if (!mcResults) { runMC(mcIterations); }
-    if (!mcResults) { el.innerHTML = '<p>No atoms loaded.</p>'; return; }
+    if (!mcResults) {
+      el.innerHTML = '<div class="empty-state">No atoms loaded.<div class="empty-state-hint">Load a dataset to run Monte Carlo analysis.</div></div>';
+      return;
+    }
 
     var p = mcResults;
     var spread = p.p90.finish - p.p10.finish;
     var html = '';
 
-    // Hero histograms
+    // Hero histogram
     html += '<div style="display:flex;gap:16px;flex-wrap:wrap">';
     html += '<div style="flex:2;min-width:300px">';
     html += '<div class="mc-header">Schedule Distribution</div>';
-    html += '<div class="mc-canvas" style="height:220px"><canvas id="fc-hist-sched"></canvas></div>';
+    html += '<div class="mc-canvas-wrap" style="height:220px"><canvas id="fc-hist-sched"></canvas></div>';
+
+    // Legend
+    html += '<div class="mc-legend">';
+    html += '<div class="mc-legend-item"><span class="mc-legend-swatch" style="background:#2f7d4f"></span>Below P50</div>';
+    html += '<div class="mc-legend-item"><span class="mc-legend-swatch" style="background:#a87718"></span>P50-P80</div>';
+    html += '<div class="mc-legend-item"><span class="mc-legend-swatch" style="background:#b13d2c"></span>P80-P90</div>';
+    html += '<div class="mc-legend-item"><span class="mc-legend-swatch" style="background:#6c3020"></span>Above P90</div>';
+    html += '</div>';
 
     // Confidence summary
-    html += '<div class="mc-stats" style="margin-top:8px;flex-wrap:wrap;gap:16px">';
+    html += '<div class="mc-stats" style="margin-top:4px;flex-wrap:wrap;gap:16px">';
     html += fcStat('P10', 'M' + Math.round(p.p10.finish), 'var(--green)');
     html += fcStat('P50', 'M' + Math.round(p.p50.finish), 'var(--ink)');
     html += fcStat('P80', 'M' + Math.round(p.p80.finish), 'var(--oxide)');
@@ -929,20 +1119,20 @@ const ACE_UI = (function () {
     }
 
     // Iteration controls
-    html += '<div style="display:flex;gap:6px;margin-top:12px;align-items:center">';
+    html += '<div style="display:flex;gap:6px;margin-top:12px;align-items:center;flex-wrap:wrap">';
     html += '<span class="field-lbl">Iterations:</span>';
     [100, 500, 1000, 5000].forEach(function (n) {
       html += '<button class="btn-card' + (mcIterations === n ? ' btn-apply' : '') + '" data-mc-n="' + n + '">' + n + '</button>';
     });
-    html += '<button class="btn-card btn-apply" id="btn-run-mc">[Run]</button>';
+    html += '<button class="btn-card btn-apply" id="btn-run-mc">Run</button>';
     html += '</div>';
 
     // What-if buttons
-    html += '<div style="display:flex;gap:6px;margin-top:8px">';
-    html += '<button class="btn-card" id="btn-whatif-delay">[+3mo delay]</button>';
-    html += '<button class="btn-card" id="btn-whatif-addrisk">[+risk]</button>';
-    html += '<button class="btn-card" id="btn-whatif-remrisk">[-risk]</button>';
-    html += '<button class="btn-card" id="btn-whatif-reset">[reset]</button>';
+    html += '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">';
+    html += '<button class="btn-card" id="btn-whatif-delay">+3mo delay</button>';
+    html += '<button class="btn-card" id="btn-whatif-addrisk">+risk</button>';
+    html += '<button class="btn-card" id="btn-whatif-remrisk">−risk</button>';
+    html += '<button class="btn-card" id="btn-whatif-reset">Reset</button>';
     html += '</div>';
 
     html += '</div>';
@@ -954,31 +1144,42 @@ const ACE_UI = (function () {
     var risks = ACE.query({ type: 'risk' }).sort(function (a, b) {
       return riskEV(b) - riskEV(a);
     });
+    if (risks.length === 0) {
+      html += '<div class="empty-state">No risks defined.</div>';
+    }
+    var maxEV = risks.length > 0 ? riskEV(risks[0]) : 1;
     risks.forEach(function (r) {
       var prob = riskProb(r);
       var impact = riskImpact(r);
       var ev = riskEV(r);
       var severity = ev > 2 ? 'risk-high' : ev > 1 ? 'risk-med' : 'risk-low';
       var fired = r.tags.indexOf('fired') >= 0;
+      var barPct = maxEV > 0 ? Math.round(ev / maxEV * 100) : 0;
+      var barColor = ev > 2 ? 'var(--red)' : ev > 1 ? 'var(--oxide)' : 'var(--green)';
       html += '<div class="risk-row ' + severity + '" data-select="' + r.id + '"' + (fired ? ' style="background:rgba(177,61,44,0.1)"' : '') + '>' +
         '<span class="risk-id">' + r.id + '</span>' +
         '<span class="risk-name">' + escHtml(r.name) + (fired ? ' [FIRED]' : '') + '</span>' +
+        '<span class="risk-bar-wrap"><span class="risk-bar-fill" style="width:' + barPct + '%;background:' + barColor + '"></span></span>' +
         '<span class="risk-prob">' + Math.round(prob * 100) + '%</span>' +
         '<span class="risk-impact">+' + impact + 'mo</span>' +
-        '<span class="risk-score">EV=' + ev.toFixed(1) + '</span>' +
+        '<span class="risk-ev">EV=' + ev.toFixed(1) + '</span>' +
         '</div>';
     });
     html += '</div>';
 
-    // Sensitivity table
+    // Sensitivity table with bar chart
     html += '<div class="section-lbl" style="margin-top:8px">Risk Sensitivity (top by EV)</div>';
     html += '<div style="font-family:IBM Plex Mono,monospace;font-size:11px">';
     risks.slice(0, 6).forEach(function (r) {
-      var bar = '';
       var evN = riskEV(r);
-      for (var i = 0; i < Math.min(20, Math.round(evN * 4)); i++) bar += '|';
-      html += '<div style="display:flex;gap:4px;padding:2px 0"><span style="min-width:100px;color:var(--faint)">' +
-        r.id + '</span><span style="color:var(--oxide)">' + bar + '</span><span style="color:var(--faint)">' + evN.toFixed(1) + '</span></div>';
+      var barPct2 = maxEV > 0 ? Math.round(evN / maxEV * 100) : 0;
+      var barColor2 = evN > 2 ? 'var(--red)' : evN > 1 ? 'var(--oxide)' : 'var(--green)';
+      html += '<div style="display:flex;gap:6px;padding:3px 0;align-items:center">' +
+        '<span style="min-width:100px;color:var(--faint);font-size:10px">' + r.id + '</span>' +
+        '<span style="flex:1;height:6px;background:var(--paper);border-radius:3px;overflow:hidden">' +
+          '<span style="display:block;height:100%;width:' + barPct2 + '%;background:' + barColor2 + ';border-radius:3px"></span>' +
+        '</span>' +
+        '<span style="color:var(--faint);min-width:30px;text-align:right">' + evN.toFixed(1) + '</span></div>';
     });
     html += '</div>';
 
@@ -1007,7 +1208,6 @@ const ACE_UI = (function () {
     // What-if handlers
     var delayBtn = document.getElementById('btn-whatif-delay');
     if (delayBtn) delayBtn.addEventListener('click', function () {
-      // Add 3 months to all phase likely durations
       ACE.query({ type: 'phase' }).forEach(function (p) {
         var d = ACE_Schedule.durations[p.id];
         if (d) ACE_Schedule.setDuration(p.id, d.min, d.likely + 3, d.max + 3);
@@ -1086,7 +1286,8 @@ const ACE_UI = (function () {
     var minF = results[0].finish;
     var maxF = results[results.length - 1].finish;
     var range = maxF - minF || 1;
-    var bins = Math.min(50, Math.max(15, Math.round(range * 1.5)));
+    // Use 30-40 bins for smoother distribution
+    var bins = Math.min(40, Math.max(30, Math.round(range * 1.2)));
     var counts = new Array(bins).fill(0);
     var maxCount = 0;
 
@@ -1096,7 +1297,7 @@ const ACE_UI = (function () {
       if (counts[idx] > maxCount) maxCount = counts[idx];
     });
 
-    var pad = { l: 40, r: 16, t: 14, b: 30 };
+    var pad = { l: 44, r: 16, t: 18, b: 34 };
     var pw = cw - pad.l - pad.r;
     var ph = ch - pad.t - pad.b;
 
@@ -1104,12 +1305,13 @@ const ACE_UI = (function () {
     c.fillStyle = '#1a1a18';
     c.fillRect(0, 0, cw, ch);
 
-    // Y axis
+    // Y axis line
     c.strokeStyle = '#333';
     c.lineWidth = 0.5;
     c.beginPath();
     c.moveTo(pad.l, pad.t);
     c.lineTo(pad.l, pad.t + ph);
+    c.lineTo(pad.l + pw, pad.t + ph);
     c.stroke();
 
     // Bars with color bands
@@ -1124,7 +1326,22 @@ const ACE_UI = (function () {
       else if (mo <= mcResults.p90.finish) c.fillStyle = '#b13d2c';
       else c.fillStyle = '#6c3020';
 
-      c.fillRect(x + 1, pad.t + ph - h, bw - 2, h);
+      if (h > 0) {
+        // Rounded top corners on bars
+        var barX = x + 1;
+        var barW = bw - 2;
+        var barY = pad.t + ph - h;
+        var barR = Math.min(2, barW / 2);
+        c.beginPath();
+        c.moveTo(barX, pad.t + ph);
+        c.lineTo(barX, barY + barR);
+        c.arcTo(barX, barY, barX + barR, barY, barR);
+        c.lineTo(barX + barW - barR, barY);
+        c.arcTo(barX + barW, barY, barX + barW, barY + barR, barR);
+        c.lineTo(barX + barW, pad.t + ph);
+        c.closePath();
+        c.fill();
+      }
     }
 
     // Percentile lines
@@ -1157,15 +1374,30 @@ const ACE_UI = (function () {
     for (var yi = 0; yi <= 4; yi++) {
       var yv = Math.round(maxCount * yi / 4);
       var yy = pad.t + ph - (yi / 4) * ph;
-      c.fillText('' + yv, pad.l - 4, yy + 3);
+      c.fillText('' + yv, pad.l - 6, yy + 3);
+      // Grid line
+      if (yi > 0) {
+        c.strokeStyle = 'rgba(100,100,80,0.15)';
+        c.lineWidth = 0.5;
+        c.beginPath();
+        c.moveTo(pad.l, yy);
+        c.lineTo(pad.l + pw, yy);
+        c.stroke();
+      }
     }
+
+    // X axis title
+    c.fillStyle = '#555';
+    c.font = '9px IBM Plex Mono, monospace';
+    c.textAlign = 'center';
+    c.fillText('Project Duration (months)', pad.l + pw / 2, ch - 2);
 
     // Month labels along bottom
     c.fillStyle = '#555';
     c.textAlign = 'center';
     for (var m = Math.ceil(minF / 12) * 12; m <= maxF; m += 12) {
       var mx = pad.l + ((m - minF) / range) * pw;
-      c.fillText('M' + m, mx, pad.t + ph + 26);
+      c.fillText('M' + m, mx, pad.t + ph + 28);
     }
   }
 
@@ -1178,9 +1410,9 @@ const ACE_UI = (function () {
 
     // Filter bar
     html += '<div class="filter-bar">';
-    html += '<button class="btn-card' + (constraintFilter === 'all' ? ' btn-apply' : '') + '" data-cf="all">[All]</button>';
-    html += '<button class="btn-card' + (constraintFilter === 'workable' ? ' btn-apply' : '') + '" data-cf="workable">[Workable]</button>';
-    html += '<button class="btn-card' + (constraintFilter === 'blocked' ? ' btn-apply' : '') + '" data-cf="blocked">[Blocked]</button>';
+    html += '<button class="btn-card' + (constraintFilter === 'all' ? ' btn-apply' : '') + '" data-cf="all">All</button>';
+    html += '<button class="btn-card' + (constraintFilter === 'workable' ? ' btn-apply' : '') + '" data-cf="workable">Workable</button>';
+    html += '<button class="btn-card' + (constraintFilter === 'blocked' ? ' btn-apply' : '') + '" data-cf="blocked">Blocked</button>';
     html += '</div>';
 
     html += '<div style="display:flex;gap:16px;flex-wrap:wrap">';
@@ -1191,6 +1423,7 @@ const ACE_UI = (function () {
 
     // Group IWPs by parent CWP
     var cwps = ACE.query({ type: 'cwp' });
+    var anyIwps = false;
     cwps.forEach(function (cwp) {
       var iwps = cwp.contains.map(function (cid) { return ACE.get(cid); }).filter(function (a) { return a && a.type === 'iwp'; });
       if (!iwps.length) return;
@@ -1202,28 +1435,45 @@ const ACE_UI = (function () {
         iwps = iwps.filter(function (iwp) { return !iwp._complete && !isWorkable(iwp); });
       }
       if (!iwps.length) return;
+      anyIwps = true;
 
-      html += '<div style="margin-bottom:12px">';
-      html += '<div style="font-family:Fraunces,serif;font-size:13px;font-weight:600;margin-bottom:4px;cursor:pointer" data-select="' + cwp.id + '">' +
-        cwp.id + ' -- ' + escHtml(cwp.name) + ' (' + ACE.percentComplete(cwp.id) + '%)</div>';
+      var cwpPct = ACE.percentComplete(cwp.id);
+      html += '<div style="margin-bottom:12px;padding:12px;background:var(--card);border:1px solid var(--border);border-radius:6px">';
+      html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer" data-select="' + cwp.id + '">' +
+        '<span style="font-family:Fraunces,serif;font-size:13px;font-weight:600">' + cwp.id + ' -- ' + escHtml(cwp.name) + '</span>' +
+        '<span class="tree-bar-wrap" style="width:60px"><span class="tree-bar-fill" style="width:' + cwpPct + '%;background:' + (cwpPct >= 100 ? 'var(--green)' : 'var(--blue)') + '"></span></span>' +
+        '<span style="font-family:IBM Plex Mono,monospace;font-size:11px;color:var(--faint)">' + cwpPct + '%</span>' +
+        '</div>';
 
       iwps.forEach(function (iwp) {
         var workable2 = isWorkable(iwp);
         var blockers = getBlockers(iwp);
-        var statusClass = iwp._complete ? 'atom-done' : (workable2 ? 'atom-done' : 'atom-open');
-        var statusLabel = iwp._complete ? 'DONE' : (workable2 ? 'WORKABLE' : 'BLOCKED');
 
         html += '<div class="atom-row" data-select="' + iwp.id + '">';
-        html += '<span class="atom-status ' + statusClass + '">' + statusLabel + '</span>';
+        if (iwp._complete) {
+          html += '<span class="badge-done">✓ DONE</span>';
+        } else if (workable2) {
+          html += '<span class="badge-workable">WORKABLE</span>';
+        } else {
+          html += '<span class="badge-blocked">BLOCKED</span>';
+        }
         html += '<span class="atom-id">' + iwp.id + '</span>';
         html += '<span class="atom-name">' + escHtml(iwp.name) + '</span>';
         if (blockers.length && !iwp._complete) {
-          html += '<span class="atom-tag">blocked by: ' + blockers.join(', ') + '</span>';
+          html += '<span style="font-size:10px;color:var(--faint)">blocked by </span>';
+          blockers.forEach(function (bid, idx) {
+            html += '<span class="blocker-link" data-select="' + bid + '">' + bid + '</span>';
+            if (idx < blockers.length - 1) html += '<span style="color:var(--faint);font-size:10px">, </span>';
+          });
         }
         html += '</div>';
       });
       html += '</div>';
     });
+
+    if (!anyIwps) {
+      html += '<div class="empty-state">No IWPs match the current filter.<div class="empty-state-hint">Try changing the filter above.</div></div>';
+    }
 
     html += '</div>';
 
@@ -1231,10 +1481,13 @@ const ACE_UI = (function () {
     html += '<div style="flex:1;min-width:200px">';
     html += '<div class="risk-header">Constraints</div>';
     var constraints = ACE.query({ type: 'constraint' });
+    if (constraints.length === 0) {
+      html += '<div class="empty-state">No constraints defined.</div>';
+    }
     html += '<div class="atom-list">';
     constraints.forEach(function (con) {
       html += '<div class="atom-row" data-select="' + con.id + '">' +
-        '<span class="atom-status ' + (con._complete ? 'atom-done' : 'atom-open') + '">' + (con._complete ? '[x]' : '[ ]') + '</span>' +
+        '<span class="atom-status ' + (con._complete ? 'atom-done' : 'atom-open') + '">' + (con._complete ? '✓' : '○') + '</span>' +
         '<span class="atom-id">' + con.id + '</span>' +
         '<span class="atom-name">' + escHtml(con.name) + '</span>' +
         '</div>';
@@ -1268,7 +1521,8 @@ const ACE_UI = (function () {
 
     // Wire select clicks
     document.querySelectorAll('[data-select]').forEach(function (el2) {
-      el2.addEventListener('click', function () {
+      el2.addEventListener('click', function (e) {
+        e.stopPropagation();
         showAtomOverlay(el2.dataset.select);
       });
     });
@@ -1315,19 +1569,21 @@ const ACE_UI = (function () {
     var results = ACE.query(filter).slice(0, 60);
     results.forEach(function (a) {
       html += '<div class="atom-row" data-select="' + a.id + '">' +
-        '<span class="atom-status ' + (a._complete ? 'atom-done' : 'atom-open') + '">' + (a._complete ? '[x]' : '[ ]') + '</span>' +
+        '<span class="atom-status ' + (a._complete ? 'atom-done' : 'atom-open') + '">' + (a._complete ? '✓' : '○') + '</span>' +
         '<span class="atom-id">' + a.id + '</span>' +
         '<span class="atom-name">' + escHtml(a.name) + '</span>' +
         '<span class="atom-type">' + a.type + '</span>' +
         '</div>';
     });
-    if (results.length === 0) html += '<div class="feed-empty">No results.</div>';
+    if (results.length === 0) {
+      html += '<div class="empty-state">No results.<div class="empty-state-hint">Try a different search term or select a type filter.</div></div>';
+    }
     html += '</div>';
 
     // Terminal
     html += '<div style="margin-top:16px">';
     html += '<div class="section-lbl" style="margin-bottom:4px">Terminal</div>';
-    html += '<div class="terminal" id="term-out">' + escHtml(termLines.join('\n')) + '</div>';
+    html += '<div class="terminal" id="term-out">' + renderTermLines() + '<span class="term-blink"></span></div>';
     html += '<div class="term-prompt"><span class="term-caret">C:\\NDX&gt;</span><input class="term-field" id="term-in" autofocus></div>';
     html += '</div>';
 
@@ -1387,6 +1643,10 @@ const ACE_UI = (function () {
     });
   }
 
+  function renderTermLines() {
+    return escHtml(termLines.join('\n'));
+  }
+
   function updateExploreResults() {
     var container = document.getElementById('explore-results');
     if (!container) return;
@@ -1396,13 +1656,15 @@ const ACE_UI = (function () {
     var results = ACE.query(filter).slice(0, 60);
     container.innerHTML = results.map(function (a) {
       return '<div class="atom-row" data-select="' + a.id + '">' +
-        '<span class="atom-status ' + (a._complete ? 'atom-done' : 'atom-open') + '">' + (a._complete ? '[x]' : '[ ]') + '</span>' +
+        '<span class="atom-status ' + (a._complete ? 'atom-done' : 'atom-open') + '">' + (a._complete ? '✓' : '○') + '</span>' +
         '<span class="atom-id">' + a.id + '</span>' +
         '<span class="atom-name">' + escHtml(a.name) + '</span>' +
         '<span class="atom-type">' + a.type + '</span>' +
         '</div>';
     }).join('');
-    if (results.length === 0) container.innerHTML = '<div class="feed-empty">No results.</div>';
+    if (results.length === 0) {
+      container.innerHTML = '<div class="empty-state">No results.<div class="empty-state-hint">Try a different search term or select a type filter.</div></div>';
+    }
     container.querySelectorAll('[data-select]').forEach(function (el2) {
       el2.addEventListener('click', function () {
         showAtomOverlay(el2.dataset.select);
@@ -1414,7 +1676,8 @@ const ACE_UI = (function () {
     termLines.push(text);
     var out = document.getElementById('term-out');
     if (out) {
-      out.textContent = termLines.join('\n');
+      // Re-render with blinking cursor
+      out.innerHTML = renderTermLines() + '<span class="term-blink"></span>';
       out.scrollTop = out.scrollHeight;
     }
   }
@@ -1432,7 +1695,7 @@ const ACE_UI = (function () {
     else if (verb === 'clear') {
       termLines.length = 0;
       var out = document.getElementById('term-out');
-      if (out) out.textContent = '';
+      if (out) out.innerHTML = '<span class="term-blink"></span>';
     }
     else if (verb === 'status') {
       var s = ACE.summary();
@@ -1528,10 +1791,10 @@ const ACE_UI = (function () {
     html += '<div class="card-header"><div class="card-title">' + escHtml(a.id) + ' -- ' + escHtml(a.name) + '</div>' +
       '<button class="card-close" id="btn-close-overlay">[x]</button></div>';
 
-    // Tags
+    // Tags with colored pills
     if (a.tags.length) {
       html += '<div class="card-tags">';
-      a.tags.forEach(function (t) { html += '<span class="pill">' + escHtml(t) + '</span>'; });
+      a.tags.forEach(function (t) { html += '<span class="pill ' + pillClass(t) + '">' + escHtml(t) + '</span>'; });
       html += '</div>';
     }
 
@@ -1557,7 +1820,7 @@ const ACE_UI = (function () {
       a.requires.forEach(function (rid) {
         var r = ACE.get(rid);
         html += '<div class="card-link" data-ov-goto="' + rid + '">' +
-          '<span class="' + (r && r._complete ? 'atom-done' : 'atom-open') + '">' + (r && r._complete ? '[x]' : '[ ]') + '</span> ' +
+          '<span class="' + (r && r._complete ? 'atom-done' : 'atom-open') + '">' + (r && r._complete ? '✓' : '○') + '</span> ' +
           rid + (r ? ' -- ' + escHtml(r.name) : '') + '</div>';
       });
       html += '</div>';
@@ -1569,7 +1832,7 @@ const ACE_UI = (function () {
       a.contains.forEach(function (cid) {
         var ch = ACE.get(cid);
         html += '<div class="card-link" data-ov-goto="' + cid + '">' +
-          '<span class="' + (ch && ch._complete ? 'atom-done' : 'atom-open') + '">' + (ch && ch._complete ? '[x]' : '[ ]') + '</span> ' +
+          '<span class="' + (ch && ch._complete ? 'atom-done' : 'atom-open') + '">' + (ch && ch._complete ? '✓' : '○') + '</span> ' +
           cid + (ch ? ' -- ' + escHtml(ch.name) : '') + '</div>';
       });
       html += '</div>';
@@ -1586,16 +1849,16 @@ const ACE_UI = (function () {
     }
 
     // Source
-    html += '<div class="card-section" style="margin-top:8px"><button class="btn-card" id="btn-ov-source">[Source]</button></div>';
+    html += '<div class="card-section" style="margin-top:8px"><button class="btn-card" id="btn-ov-source">Source</button></div>';
     var src = JSON.stringify({ id: a.id, name: a.name, type: a.type, kind: a.kind, tags: a.tags, requires: a.requires, contains: a.contains, complete: a._complete }, null, 2);
     html += '<pre class="card-source" id="ov-source" style="display:none">' + escHtml(src) + '</pre>';
 
     // Actions
     html += '<div class="card-toolbar">';
     if (a.kind === 'manual' && !a._complete) {
-      html += '<button class="btn-card btn-apply" id="btn-ov-clear">[Clear]</button>';
+      html += '<button class="btn-card btn-apply" id="btn-ov-clear">Clear</button>';
     }
-    html += '<button class="btn-card" id="btn-ov-goto-plan">[View in Plan]</button>';
+    html += '<button class="btn-card" id="btn-ov-goto-plan">View in Plan</button>';
     html += '</div>';
 
     html += '</div></div>';
@@ -1656,7 +1919,7 @@ const ACE_UI = (function () {
 
   function renderSearchOverlay() {
     if (document.getElementById('search-overlay')) return;
-    var html = '<div class="overlay" id="search-overlay"><div class="card" style="width:440px">' +
+    var html = '<div class="overlay" id="search-overlay"><div class="card" style="max-width:440px">' +
       '<input type="text" class="filter-input" id="search-input" placeholder="Search atoms..." value="' + escAttr(searchQuery) + '" style="width:100%;margin-bottom:8px;font-size:14px" autofocus>' +
       '<div id="search-results" class="atom-list" style="max-height:400px;overflow-y:auto"></div>' +
       '</div></div>';
@@ -1671,14 +1934,20 @@ const ACE_UI = (function () {
       searchQuery = input.value;
       var results = searchQuery.trim() ? ACE.query({ search: searchQuery.trim() }).slice(0, 30) : [];
       var rEl = document.getElementById('search-results');
-      rEl.innerHTML = results.map(function (a) {
-        return '<div class="atom-row" data-search-go="' + a.id + '">' +
-          '<span class="atom-status ' + (a._complete ? 'atom-done' : 'atom-open') + '">' + (a._complete ? '[x]' : '[ ]') + '</span>' +
-          '<span class="atom-id">' + a.id + '</span>' +
-          '<span class="atom-name">' + escHtml(a.name) + '</span>' +
-          '<span class="atom-type">' + a.type + '</span>' +
-          '</div>';
-      }).join('');
+      if (results.length === 0 && searchQuery.trim()) {
+        rEl.innerHTML = '<div class="empty-state">No matching atoms.</div>';
+      } else if (results.length === 0) {
+        rEl.innerHTML = '<div class="empty-state" style="padding:16px">Type to search atoms by ID or name.</div>';
+      } else {
+        rEl.innerHTML = results.map(function (a) {
+          return '<div class="atom-row" data-search-go="' + a.id + '">' +
+            '<span class="atom-status ' + (a._complete ? 'atom-done' : 'atom-open') + '">' + (a._complete ? '✓' : '○') + '</span>' +
+            '<span class="atom-id">' + a.id + '</span>' +
+            '<span class="atom-name">' + escHtml(a.name) + '</span>' +
+            '<span class="atom-type">' + a.type + '</span>' +
+            '</div>';
+        }).join('');
+      }
       rEl.querySelectorAll('[data-search-go]').forEach(function (row) {
         row.addEventListener('click', function () {
           closeSearch();
