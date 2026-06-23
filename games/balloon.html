@@ -10,7 +10,7 @@ body{background:#111;overflow:hidden;font-family:system-ui,sans-serif;user-selec
 canvas{display:block;cursor:pointer}
 #back{position:fixed;top:14px;left:16px;font-size:12px;color:#666;text-decoration:none;font-family:monospace;z-index:100}
 #back:hover{color:#aaa}
-#textBox{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);width:90%;max-width:700px;background:rgba(0,0,0,0.82);color:#fff;font-size:20px;padding:18px 24px;border-radius:12px;border:3px solid #555;line-height:1.5;min-height:60px;pointer-events:none;z-index:50;display:none}
+#textBox{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);width:90%;max-width:700px;background:rgba(0,0,0,0.82);color:#fff;font-size:18px;padding:18px 24px;border-radius:12px;border:3px solid #555;line-height:1.6;min-height:60px;pointer-events:none;z-index:50;display:none}
 #prompt{position:fixed;bottom:8px;left:50%;transform:translateX(-50%);color:#aaa;font-size:13px;font-family:monospace;z-index:51;display:none;animation:blink 1.2s infinite}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:0.3}}
 #playAgain{position:fixed;bottom:100px;left:50%;transform:translateX(-50%);padding:14px 36px;font-size:20px;font-family:system-ui,sans-serif;background:#d32f2f;color:#fff;border:3px solid #000;border-radius:8px;cursor:pointer;z-index:60;display:none}
@@ -24,309 +24,571 @@ canvas{display:block;cursor:pointer}
 <div id="prompt">click to continue</div>
 <button id="playAgain">Play Again</button>
 <script>
-const C=document.getElementById('c'),ctx=C.getContext('2d');
-const textBox=document.getElementById('textBox');
-const promptEl=document.getElementById('prompt');
-const playAgainBtn=document.getElementById('playAgain');
-let W,H,t=0,scene=0,sceneTime=0,typing=false,typeText='',typeIdx=0,typeTimer=0;
-let waitingForClick=false,shakeX=0,shakeY=0,transitioning=false,transAlpha=0,transDir=1;
-let nextScene=-1,audioCtx=null;
+var C=document.getElementById('c'),ctx=C.getContext('2d');
+var textBox=document.getElementById('textBox');
+var promptEl=document.getElementById('prompt');
+var playAgainBtn=document.getElementById('playAgain');
+var W,H,t=0,scene=0,sceneTime=0,typing=false,typeText='',typeIdx=0,typeTimer=0;
+var waitingForClick=false,shakeX=0,shakeY=0,transitioning=false,transAlpha=0,transDir=1;
+var nextScene=-1,audioCtx=null;
+var SCALE=1;
 
-function resize(){W=C.width=window.innerWidth;H=C.height=window.innerHeight}
+function resize(){W=C.width=window.innerWidth;H=C.height=window.innerHeight;SCALE=Math.min(W,H)/500;}
 window.addEventListener('resize',resize);resize();
 
-function initAudio(){if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)()}
+function initAudio(){if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();}
 
-// --- AUDIO ---
+// ========== AUDIO ==========
 function playNeigh(){
   initAudio();
-  let o=audioCtx.createOscillator(),g=audioCtx.createGain();
+  var o=audioCtx.createOscillator(),g=audioCtx.createGain();
   o.type='sawtooth';o.frequency.setValueAtTime(600,audioCtx.currentTime);
   o.frequency.linearRampToValueAtTime(200,audioCtx.currentTime+0.3);
   g.gain.setValueAtTime(0.15,audioCtx.currentTime);
   g.gain.linearRampToValueAtTime(0,audioCtx.currentTime+0.35);
-  o.connect(g);g.connect(audioCtx.destination);
-  o.start();o.stop(audioCtx.currentTime+0.4);
+  o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+0.4);
 }
 function playPop(){
   initAudio();
-  let buf=audioCtx.createBuffer(1,audioCtx.sampleRate*0.15,audioCtx.sampleRate);
-  let d=buf.getChannelData(0);
-  for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*Math.exp(-i/(d.length*0.15));
-  let s=audioCtx.createBufferSource(),g=audioCtx.createGain();
-  s.buffer=buf;g.gain.value=0.3;s.connect(g);g.connect(audioCtx.destination);s.start();
+  var buf=audioCtx.createBuffer(1,audioCtx.sampleRate*0.15,audioCtx.sampleRate);
+  var d=buf.getChannelData(0);
+  for(var i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*Math.exp(-i/(d.length*0.15));
+  var src=audioCtx.createBufferSource(),g=audioCtx.createGain();
+  src.buffer=buf;g.gain.value=0.3;src.connect(g);g.connect(audioCtx.destination);src.start();
 }
 function playLaugh(){
   initAudio();
-  let o=audioCtx.createOscillator(),g=audioCtx.createGain();
+  var o=audioCtx.createOscillator(),g=audioCtx.createGain();
+  var lfo=audioCtx.createOscillator(),lfoG=audioCtx.createGain();
   o.type='sine';o.frequency.setValueAtTime(800,audioCtx.currentTime);
   o.frequency.linearRampToValueAtTime(200,audioCtx.currentTime+0.8);
+  lfo.type='sine';lfo.frequency.value=12;lfoG.gain.value=30;
+  lfo.connect(lfoG);lfoG.connect(o.frequency);
   g.gain.setValueAtTime(0.08,audioCtx.currentTime);
   g.gain.linearRampToValueAtTime(0,audioCtx.currentTime+0.9);
-  o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+1);
+  o.connect(g);g.connect(audioCtx.destination);
+  o.start();lfo.start();o.stop(audioCtx.currentTime+1);lfo.stop(audioCtx.currentTime+1);
 }
 function playSting(){
   initAudio();
-  [100,130,80].forEach((f,i)=>{
-    let o=audioCtx.createOscillator(),g=audioCtx.createGain();
+  [100,150].forEach(function(f,i){
+    var o=audioCtx.createOscillator(),g=audioCtx.createGain();
     o.type='sawtooth';o.frequency.value=f;
-    g.gain.setValueAtTime(0.1,audioCtx.currentTime);
-    g.gain.linearRampToValueAtTime(0,audioCtx.currentTime+1.5);
-    o.connect(g);g.connect(audioCtx.destination);o.start(audioCtx.currentTime+i*0.05);o.stop(audioCtx.currentTime+1.6);
+    g.gain.setValueAtTime(0.12,audioCtx.currentTime);
+    g.gain.linearRampToValueAtTime(0,audioCtx.currentTime+0.5);
+    o.connect(g);g.connect(audioCtx.destination);o.start(audioCtx.currentTime+i*0.05);o.stop(audioCtx.currentTime+0.6);
   });
+}
+function playGallop(){
+  initAudio();
+  for(var i=0;i<8;i++){
+    (function(i){
+      setTimeout(function(){
+        var o=audioCtx.createOscillator(),g=audioCtx.createGain();
+        o.type='square';o.frequency.value=80+Math.random()*40;
+        g.gain.setValueAtTime(0.06,audioCtx.currentTime);
+        g.gain.linearRampToValueAtTime(0,audioCtx.currentTime+0.05);
+        o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+0.06);
+      },i*100);
+    })(i);
+  }
 }
 function playDrone(){
   initAudio();
-  let o=audioCtx.createOscillator(),g=audioCtx.createGain();
-  o.type='sine';o.frequency.value=80;g.gain.value=0.015;
-  o.connect(g);g.connect(audioCtx.destination);o.start();
-  return{stop(){g.gain.linearRampToValueAtTime(0,audioCtx.currentTime+0.5);o.stop(audioCtx.currentTime+0.6)}}
+  var o=audioCtx.createOscillator(),g=audioCtx.createGain();
+  var flt=audioCtx.createBiquadFilter();
+  o.type='sine';o.frequency.value=80;g.gain.value=0.012;
+  flt.type='lowpass';flt.frequency.value=200;
+  o.connect(flt);flt.connect(g);g.connect(audioCtx.destination);o.start();
+  return{stop:function(){g.gain.linearRampToValueAtTime(0,audioCtx.currentTime+0.5);o.stop(audioCtx.currentTime+0.6);}};
 }
-let drone=null;
+var drone=null;
 
-// --- DRAWING HELPERS ---
-function outline(fn,lw=3){ctx.save();ctx.lineWidth=lw;ctx.strokeStyle='#000';ctx.lineJoin='round';fn(true);ctx.stroke();fn(false);ctx.fill();ctx.restore()}
-function rect(x,y,w,h,col,ol=3){outline(s=>{ctx.fillStyle=col;ctx.beginPath();ctx.rect(x,y,w,h)},ol)}
-function circ(x,y,r,col,ol=3){outline(s=>{ctx.fillStyle=col;ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2)},ol)}
+// ========== CC1-STYLE DRAWING ==========
+// Characters drawn EXACTLY like Crossover Chaos 1 (showdown.html)
+// Simple Canvas 2D: fillRect, arc, ellipse, quadraticCurveTo
+// Structure: shadow -> legs -> torso -> arms -> head -> face -> features
 
-// --- SKY & GROUND ---
-function drawSky(darkLevel=0){
-  let grad=ctx.createLinearGradient(0,0,0,H*0.65);
-  let r1=Math.min(255,100+darkLevel*155),g1=Math.max(0,180-darkLevel*180),b1=Math.max(0,255-darkLevel*200);
-  let r2=Math.min(255,170+darkLevel*85),g2=Math.max(0,220-darkLevel*180),b2=Math.max(0,255-darkLevel*150);
-  grad.addColorStop(0,`rgb(${r1},${g1},${b1})`);
-  grad.addColorStop(1,`rgb(${r2},${g2},${b2})`);
-  ctx.fillStyle=grad;ctx.fillRect(0,0,W,H*0.65);
-}
-function drawGround(darkLevel=0){
-  let g=Math.max(40,160-darkLevel*120);
-  ctx.fillStyle=`rgb(${Math.max(20,60-darkLevel*40)},${g},${Math.max(10,40-darkLevel*30)})`;
-  ctx.fillRect(0,H*0.62,W,H*0.4);
-  ctx.fillStyle=`rgb(${Math.max(30,80-darkLevel*50)},${Math.min(255,g+30)},${Math.max(20,50-darkLevel*30)})`;
-  ctx.fillRect(0,H*0.62,W,8);
-}
-function drawCloud(x,y,s){
-  ctx.fillStyle='rgba(255,255,255,0.85)';
-  ctx.beginPath();
-  ctx.arc(x,y,s*20,0,Math.PI*2);
-  ctx.arc(x-s*15,y+s*5,s*14,0,Math.PI*2);
-  ctx.arc(x+s*18,y+s*3,s*16,0,Math.PI*2);
-  ctx.fill();
-}
-function drawTree(x,y,s){
-  rect(x-s*6,y-s*40,s*12,s*40,'#5D3A1A',2);
-  circ(x,y-s*45,s*25,'#2E7D32',3);
-  circ(x-s*15,y-s*35,s*18,'#388E3C',3);
-  circ(x+s*15,y-s*38,s*20,'#2E7D32',3);
+function drawHorseCC1(x,y,s,opts){
+  opts=opts||{};
+  var crouch=1;
+  var headY=-80*s*crouch;
+  var torsoY=-55*s*crouch;
+  var torsoH=35*s;
+  var legY=-20*s*crouch;
+  var legH=20*s;
+
+  var breathe=1+Math.sin(t*4)*0.02;
+  var tailSwish=Math.sin(t*3)*0.4;
+  var headShake=opts.shake?Math.sin(t*12)*0.26:0;
+  var earPerk=opts.alert?-5*s:0;
+  var gallopBob=opts.gallop?Math.abs(Math.sin(t*16))*8*s:0;
+
+  // Gallop leg offsets
+  var legOffs=[0,0,0,0];
+  if(opts.gallop){
+    legOffs[0]=Math.sin(t*16)*10*s;
+    legOffs[1]=Math.sin(t*16+1.5)*10*s;
+    legOffs[2]=Math.sin(t*16+3)*10*s;
+    legOffs[3]=Math.sin(t*16+4.5)*10*s;
+  }
+  // Stamp
+  var stamp=opts.stamp?Math.abs(Math.sin(t*8))*6*s:0;
+
+  ctx.save();
+  ctx.translate(x,y-gallopBob);
+  if(opts.facing<0)ctx.scale(-1,1);
+  ctx.scale(breathe,breathe);
+
+  // Shadow ellipse on ground
+  ctx.fillStyle='rgba(0,0,0,0.25)';
+  ctx.beginPath();ctx.ellipse(0,gallopBob,20*s,5*s,0,0,Math.PI*2);ctx.fill();
+
+  // === LEGS (4 horse legs) ===
+  ctx.fillStyle='#6B4226';
+  ctx.fillRect(-14*s,legY+legOffs[0],6*s,legH+5*s);
+  ctx.fillRect(-6*s,legY+legOffs[1],6*s,legH+5*s);
+  ctx.fillRect(4*s,legY+legOffs[2]-stamp,6*s,legH+5*s);
+  ctx.fillRect(12*s,legY+legOffs[3],6*s,legH+5*s);
+  // Hooves (#333)
+  ctx.fillStyle='#333';
+  ctx.fillRect(-15*s,-3*s+legOffs[0],7*s,3*s);
+  ctx.fillRect(-7*s,-3*s+legOffs[1],7*s,3*s);
+  ctx.fillRect(3*s,-3*s+legOffs[2]-stamp,7*s,3*s);
+  ctx.fillRect(11*s,-3*s+legOffs[3],7*s,3*s);
+
+  // Dust clouds when galloping
+  if(opts.gallop){
+    ctx.fillStyle='rgba(180,160,120,0.3)';
+    for(var di=0;di<3;di++){
+      var dx=-20*s-di*15*s+Math.sin(t*5+di)*5*s;
+      var dy=-5*s+Math.sin(t*8+di*2)*3*s;
+      ctx.beginPath();ctx.arc(dx,dy,4*s+di*2*s,0,Math.PI*2);ctx.fill();
+    }
+  }
+
+  // === TORSO (wide rect, 36*s) ===
+  ctx.fillStyle='#8B5A2B';
+  ctx.fillRect(-18*s,torsoY,36*s,torsoH+5*s);
+
+  // === MANE (dark rectangles) ===
+  ctx.fillStyle='#5a3a1a';
+  ctx.fillRect(-5*s,torsoY-8*s,10*s,12*s);
+
+  // === TAIL (quadratic curve with sin(time) swish) ===
+  ctx.strokeStyle='#5a3a1a';ctx.lineWidth=4*s;
+  ctx.beginPath();ctx.moveTo(-18*s,torsoY+10*s);
+  ctx.quadraticCurveTo(-30*s,torsoY+5*s+Math.sin(t*3)*5*s,-25*s,torsoY-5*s+tailSwish*10*s);
+  ctx.stroke();
+
+  // === HEAD (ellipse tilted 0.3 radians) ===
+  ctx.save();
+  ctx.rotate(headShake);
+  ctx.fillStyle='#8B5A2B';
+  ctx.beginPath();ctx.ellipse(5*s,headY+earPerk,10*s,16*s,0.3,0,Math.PI*2);ctx.fill();
+
+  // Eyes (#222)
+  ctx.fillStyle='#222';
+  ctx.beginPath();ctx.arc(8*s,headY-4*s+earPerk,3*s,0,Math.PI*2);ctx.fill();
+
+  // Nostrils
+  ctx.beginPath();ctx.arc(12*s,headY+6*s+earPerk,2*s,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(8*s,headY+7*s+earPerk,2*s,0,Math.PI*2);ctx.fill();
+
+  // Ears (triangular, #7a4a1a)
+  ctx.fillStyle='#7a4a1a';
+  ctx.beginPath();ctx.moveTo(-2*s,headY-14*s+earPerk);ctx.lineTo(2*s,headY-24*s+earPerk);ctx.lineTo(6*s,headY-14*s+earPerk);ctx.fill();
+  ctx.beginPath();ctx.moveTo(6*s,headY-15*s+earPerk);ctx.lineTo(10*s,headY-24*s+earPerk);ctx.lineTo(14*s,headY-14*s+earPerk);ctx.fill();
+
+  // Eating animation
+  if(opts.eating){
+    var mOpen=Math.abs(Math.sin(t*2))*3*s;
+    ctx.fillStyle='#5a3a1a';
+    ctx.fillRect(12*s,headY+8*s+earPerk,6*s,3*s+mOpen);
+    ctx.strokeStyle='#4CAF50';ctx.lineWidth=2;
+    ctx.beginPath();ctx.moveTo(14*s,headY+8*s+earPerk);
+    ctx.lineTo(14*s+Math.sin(t)*4*s,headY+earPerk);ctx.stroke();
+  }
+
+  ctx.restore(); // headShake
+
+  // NO arms (it's a horse)
+
+  ctx.restore();
 }
 
-// --- HORSE ---
-function drawHorse(x,y,s,opts={}){
-  let breathe=Math.sin(t*2)*s*2;
-  let tailAng=Math.sin(t*3)*0.3;
-  let earTwitch=Math.sin(t*5)*0.05;
-  let legOff=opts.gallop?[Math.sin(t*8)*s*10,Math.sin(t*8+1.5)*s*10,Math.sin(t*8+3)*s*10,Math.sin(t*8+4.5)*s*10]:[0,0,0,0];
-  let headTilt=opts.tilt?Math.sin(t*1.5)*0.1:0;
-  let shake=opts.shake?Math.sin(t*12)*0.15:0;
-  let lookUp=opts.lookUp?-s*8:0;
-  let stamp=opts.stamp?Math.abs(Math.sin(t*6))*s*5:0;
+function drawPennywiseCC1(x,y,s,opts){
+  opts=opts||{};
+  var crouch=1;
+  var headY=-80*s*crouch;
+  var torsoY=-55*s*crouch;
+  var torsoH=35*s;
+  var legY=-20*s*crouch;
+  var legH=20*s;
+  var headR=14*s;
+  var menace=opts.menace||0;
+  var sway=Math.sin(t*1.5)*0.03*(1+menace);
 
   ctx.save();
   ctx.translate(x,y);
-  if(opts.flip)ctx.scale(-1,1);
+  if(opts.facing<0)ctx.scale(-1,1);
+  ctx.rotate(sway);
 
-  // tail
-  ctx.save();ctx.translate(-s*40,breathe-s*15);ctx.rotate(tailAng);
-  rect(-s*3,-s*25,s*6,s*25,'#5D4037',2);
-  ctx.restore();
+  // Shadow ellipse on ground
+  ctx.fillStyle='rgba(0,0,0,0.25)';
+  ctx.beginPath();ctx.ellipse(0,0,20*s,5*s,0,0,Math.PI*2);ctx.fill();
 
-  // back legs
-  rect(-s*25,s*15+breathe-stamp,s*10,s*30,'#6D4C41',2);
-  rect(-s*25,s*44+breathe-stamp,s*10,s*6,'#3E2723',2);
-  rect(-s*15,s*15+breathe+legOff[2],s*10,s*30,'#6D4C41',2);
-  rect(-s*15,s*44+breathe+legOff[2],s*10,s*6,'#3E2723',2);
+  // === LEGS (regular) ===
+  ctx.fillStyle='#888';
+  ctx.beginPath();ctx.roundRect(-13*s,legY,11*s,legH,3*s);ctx.fill();
+  ctx.beginPath();ctx.roundRect(4*s,legY,11*s,legH,3*s);ctx.fill();
+  // Shoes
+  ctx.fillStyle='#222';
+  ctx.fillRect(-14*s,-4*s,12*s,4*s);
+  ctx.fillRect(4*s,-4*s,12*s,4*s);
 
-  // body
-  rect(-s*38,-s*10+breathe,s*70,s*30,'#795548',3);
-  // belly
-  rect(-s*30,s*5+breathe,s*54,s*12,'#A1887F',2);
+  // === TORSO (gray/silver #ccc) ===
+  ctx.fillStyle='#ccc';
+  ctx.beginPath();ctx.roundRect(-15*s,torsoY,30*s,torsoH,4*s);ctx.fill();
 
-  // front legs
-  rect(s*15,s*15+breathe+legOff[0],s*10,s*30,'#6D4C41',2);
-  rect(s*15,s*44+breathe+legOff[0],s*10,s*6,'#3E2723',2);
-  rect(s*25,s*15+breathe+legOff[1],s*10,s*30,'#795548',2);
-  rect(s*25,s*44+breathe+legOff[1],s*10,s*6,'#3E2723',2);
-
-  // neck
-  ctx.save();ctx.translate(s*30,-s*10+breathe+lookUp);ctx.rotate(headTilt+shake);
-  rect(-s*8,-s*30,s*20,s*35,'#795548',3);
-
-  // head
-  rect(-s*4,-s*48,s*28,s*22,'#795548',3);
-
-  // mane
-  for(let i=0;i<5;i++){
-    rect(-s*8,-s*45+i*s*8,s*8,s*10,'#4E342E',2);
+  // === RUFFLED COLLAR (zigzag of circles) ===
+  ctx.fillStyle='#ddd';
+  for(var ri=0;ri<8;ri++){
+    var ra=ri*Math.PI/4;
+    ctx.beginPath();ctx.arc(Math.cos(ra)*12*s,torsoY-2*s+Math.sin(ra)*4*s,5*s,0,Math.PI*2);ctx.fill();
   }
 
-  // ears
-  ctx.save();ctx.translate(s*2,-s*50);ctx.rotate(-0.2+earTwitch);
-  rect(-s*3,-s*12,s*6,s*12,'#795548',2);
-  rect(-s*2,-s*10,s*4,s*8,'#E8A0BF',1);
-  ctx.restore();
-  ctx.save();ctx.translate(s*16,-s*50);ctx.rotate(0.2-earTwitch);
-  rect(-s*3,-s*12,s*6,s*12,'#795548',2);
-  rect(-s*2,-s*10,s*4,s*8,'#E8A0BF',1);
-  ctx.restore();
+  // === ARMS ===
+  ctx.fillStyle='#ccc';
+  // Left arm
+  ctx.fillRect(-18*s,torsoY+5*s,6*s,25*s);
 
-  // eyes
-  let ex=opts.lookBack?s*4:s*18,ey=-s*42;
-  circ(ex,ey,s*5,'#fff',2);
-  let px=opts.lookBack?-s*2:s*2;
-  circ(ex+px,ey+s*1,s*2.5,'#2C1810',2);
-  // second eye (if facing us)
-  if(!opts.lookBack){
-    circ(s*6,ey,s*4,'#fff',2);
-    circ(s*6+px,ey+s*1,s*2,'#2C1810',2);
-  }
-
-  // mouth (eating grass)
-  if(opts.eating){
-    let mOpen=Math.abs(Math.sin(t*2))*s*3;
-    ctx.fillStyle='#4E342E';ctx.fillRect(s*20,-s*28,s*6,s*3+mOpen);
-    // grass hanging from mouth
-    ctx.strokeStyle='#4CAF50';ctx.lineWidth=2;
-    ctx.beginPath();ctx.moveTo(s*22,-s*28);
-    ctx.lineTo(s*22+Math.sin(t)*s*4,-s*28-s*8);ctx.stroke();
-  }
-
-  ctx.restore();// neck
-  ctx.restore();// main
-}
-
-// --- PENNYWISE ---
-function drawPennywise(x,y,s,opts={}){
-  let sway=Math.sin(t*1.5)*s*3;
-  let menace=opts.menace||0; // 0-1
-  let lunge=opts.lunge||false;
-  let grinW=s*12+menace*s*8;
-
-  ctx.save();ctx.translate(x+sway,y);
-  if(opts.flip)ctx.scale(-1,1);
-
-  // body
-  rect(-s*18,-s*10,s*36,s*50,'#9E9E9E',3);
-
-  // collar (zigzag)
-  ctx.fillStyle='#eee';ctx.strokeStyle='#000';ctx.lineWidth=2;
-  ctx.beginPath();
-  for(let i=0;i<8;i++){
-    let zx=-s*22+i*s*6.5;
-    ctx.lineTo(zx,-s*10+(i%2?-s*8:-s*2));
-  }
-  ctx.lineTo(s*22,-s*10);ctx.closePath();ctx.fill();ctx.stroke();
-
-  // arms
-  if(lunge){
-    // claws out!
-    ctx.save();ctx.translate(s*18,-s*5);ctx.rotate(-0.5);
-    rect(0,-s*4,s*30,s*8,'#bbb',2);
-    // claws
-    for(let i=0;i<4;i++){
-      ctx.fillStyle='#333';ctx.beginPath();
-      ctx.moveTo(s*30,-s*4+i*s*3);ctx.lineTo(s*36,-s*5+i*s*3);ctx.lineTo(s*30,-s*2+i*s*3);ctx.fill();
+  if(opts.lunge){
+    // Right arm extended with claws
+    ctx.save();
+    ctx.translate(14*s,torsoY+8*s);
+    ctx.rotate(-0.4);
+    ctx.fillStyle='#ccc';
+    ctx.fillRect(0,0,30*s,8*s);
+    // Claws
+    ctx.fillStyle='#333';
+    for(var ci=0;ci<4;ci++){
+      ctx.beginPath();
+      ctx.moveTo(30*s,-2*s+ci*3*s);
+      ctx.lineTo(36*s,-3*s+ci*3*s);
+      ctx.lineTo(30*s,ci*3*s);
+      ctx.fill();
     }
     ctx.restore();
-  } else {
-    // right arm holding balloon string
-    rect(s*15,-s*8,s*8,s*25,'#9E9E9E',2);
+  }else{
+    // Right arm
+    ctx.fillRect(14*s,torsoY+5*s,6*s,25*s);
   }
-  // left arm
-  rect(-s*22,-s*8,s*8,s*20+menace*s*5,'#9E9E9E',2);
 
-  // legs
-  rect(-s*12,s*38,s*10,s*20,'#616161',2);
-  rect(s*5,s*38,s*10,s*20,'#616161',2);
-  // shoes
-  rect(-s*14,s*56,s*14,s*6,'#212121',2);
-  rect(s*3,s*56,s*14,s*6,'#212121',2);
+  // === HEAD (white round, #f0f0f0) ===
+  ctx.fillStyle='#f0f0f0';
+  ctx.beginPath();ctx.arc(0,headY,headR+2*s,0,Math.PI*2);ctx.fill();
 
-  // head
-  circ(0,-s*25,s*18,'#F5F5F5',3);
-
-  // hair
-  ctx.fillStyle='#E65100';ctx.strokeStyle='#000';ctx.lineWidth=2;
-  for(let i=0;i<7;i++){
-    let a=-2.5+i*0.75;
-    let hr=s*14+Math.sin(i*2+t)*s*3;
+  // === WILD ORANGE/RED HAIR SPIKES (#ff4400) ===
+  ctx.fillStyle='#ff4400';
+  ctx.beginPath();ctx.arc(-14*s,headY-4*s,10*s,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(14*s,headY-4*s,10*s,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(0,headY-16*s,8*s,0,Math.PI*2);ctx.fill();
+  // Extra spiky bits that animate
+  for(var hi=0;hi<5;hi++){
+    var ha=-2+hi*0.9;
     ctx.beginPath();
-    ctx.arc(Math.cos(a)*s*16,-s*25+Math.sin(a)*s*14,s*8+Math.sin(i+t*2)*s*2,0,Math.PI*2);
-    ctx.fill();ctx.stroke();
+    ctx.arc(Math.cos(ha)*16*s,headY-4*s+Math.sin(ha)*12*s,6*s+Math.sin(hi+t*2)*2*s,0,Math.PI*2);
+    ctx.fill();
   }
 
-  // face
-  // eyes
-  let eyeGlow=menace*0.5+Math.sin(t*3)*0.1;
-  let ec1=`rgb(${200+eyeGlow*55},${200-menace*200},${50-menace*50})`;
-  circ(-s*7,-s*28,s*4,ec1,2);
-  circ(s*7,-s*28,s*4,ec1,2);
-  // pupils (track horse)
-  let pOff=opts.lookDir||0;
-  circ(-s*7+pOff*s*2,-s*28,s*2,'#000',1);
-  circ(s*7+pOff*s*2,-s*28,s*2,'#000',1);
-  // eye glow
-  if(menace>0.3){
-    ctx.globalAlpha=menace*0.4;
-    circ(-s*7,-s*28,s*6,'#FF0',0);
-    circ(s*7,-s*28,s*6,'#FF0',0);
-    ctx.globalAlpha=1;
-  }
-
-  // nose
-  circ(0,-s*22,s*4,'#D32F2F',2);
-
-  // mouth/grin
-  ctx.fillStyle='#C62828';ctx.strokeStyle='#000';ctx.lineWidth=2;
-  ctx.beginPath();
-  ctx.moveTo(-grinW,-s*17);
-  ctx.quadraticCurveTo(0,-s*10+menace*s*4,grinW,-s*17);
-  ctx.quadraticCurveTo(0,-s*14-menace*s*2,-grinW,-s*17);
-  ctx.fill();ctx.stroke();
-
-  // teeth (more visible when menacing)
+  // === YELLOW GLOWING EYES (#ffdd00) ===
+  var eyeGlow=menace*0.5+Math.sin(t*3)*0.1;
+  ctx.fillStyle='#ffdd00';
+  ctx.beginPath();ctx.arc(-6*s,headY-4*s,3*s,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(6*s,headY-4*s,3*s,0,Math.PI*2);ctx.fill();
+  // Pupils
+  ctx.fillStyle='#000';
+  ctx.beginPath();ctx.arc(-6*s,headY-4*s,1.5*s,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(6*s,headY-4*s,1.5*s,0,Math.PI*2);ctx.fill();
+  // Glow effect
   if(menace>0.2){
+    ctx.save();
+    ctx.shadowColor='#ffdd00';ctx.shadowBlur=10+menace*20;
+    ctx.fillStyle='rgba(255,221,0,'+(menace*0.3)+')';
+    ctx.beginPath();ctx.arc(-6*s,headY-4*s,5*s,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.arc(6*s,headY-4*s,5*s,0,Math.PI*2);ctx.fill();
+    ctx.restore();
+  }
+
+  // === RED NOSE (#ff0000, circle) ===
+  ctx.fillStyle='#ff0000';
+  ctx.beginPath();ctx.arc(0,headY+1*s,3*s,0,Math.PI*2);ctx.fill();
+
+  // === WIDE RED SMILE (#cc0000, arc) ===
+  var grinW=8*s+menace*8*s;
+  ctx.strokeStyle='#cc0000';ctx.lineWidth=2*s;
+  ctx.beginPath();ctx.arc(0,headY+2*s,grinW,0.1,Math.PI-0.1);ctx.stroke();
+
+  // Teeth when menacing
+  if(menace>0.3){
     ctx.fillStyle='#fff';
-    let teeth=Math.floor(4+menace*6);
-    for(let i=0;i<teeth;i++){
-      let tx=-grinW+s*2+i*(grinW*2-s*4)/(teeth-1);
-      let tw=s*2;
-      let th=s*2+menace*s*3;
-      ctx.fillRect(tx-tw/2,-s*17,tw,th);
+    var teeth=Math.floor(4+menace*6);
+    for(var ti=0;ti<teeth;ti++){
+      var tx=-grinW+3*s+ti*(grinW*2-6*s)/(teeth-1);
+      ctx.fillRect(tx-1*s,headY+2*s,2*s,2*s+menace*4*s);
     }
+  }
+
+  // Face distortion when very menacing
+  if(menace>0.7){
+    // Extra wide mouth lines
+    ctx.strokeStyle='#cc0000';ctx.lineWidth=1.5*s;
+    ctx.beginPath();
+    ctx.moveTo(-grinW-3*s,headY+2*s);ctx.lineTo(-grinW-3*s-menace*4*s,headY-2*s);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(grinW+3*s,headY+2*s);ctx.lineTo(grinW+3*s+menace*4*s,headY-2*s);
+    ctx.stroke();
   }
 
   ctx.restore();
 }
 
-// --- BALLOON ---
-function drawBalloon(x,y,s,popped=false){
-  if(popped)return;
-  let bob=Math.sin(t*2.5)*s*5;
-  // string
-  ctx.strokeStyle='#000';ctx.lineWidth=2;
-  ctx.beginPath();ctx.moveTo(x,y+s*15);
-  for(let i=0;i<20;i++){
-    ctx.lineTo(x+Math.sin(i*0.5+t*2)*s*3,y+s*15+i*s*3);
+// === BALLOON (red circle on string) ===
+function drawBalloon(x,y,s,opts){
+  opts=opts||{};
+  if(opts.popped)return;
+  var bob=Math.sin(t*2.5)*5*s;
+  var col=opts.color||'#D32F2F';
+
+  // Color cycling
+  if(opts.cycling){
+    var hue=(t*120)%360;
+    col='hsl('+hue+',70%,50%)';
+  }
+
+  // String (wavy)
+  ctx.strokeStyle='#555';ctx.lineWidth=1.5;
+  ctx.beginPath();ctx.moveTo(x,y+15*s);
+  for(var i=0;i<15;i++){
+    ctx.lineTo(x+Math.sin(i*0.5+t*2)*3*s,y+15*s+i*3*s);
   }
   ctx.stroke();
-  // balloon
-  circ(x,y+bob,s*15,'#D32F2F',3);
-  // highlight
-  circ(x-s*4,y+bob-s*5,s*4,'rgba(255,255,255,0.35)',0);
+
+  // Balloon body
+  ctx.fillStyle=col;
+  ctx.beginPath();ctx.arc(x,y+bob,15*s,0,Math.PI*2);ctx.fill();
+  // Highlight
+  ctx.fillStyle='rgba(255,255,255,0.3)';
+  ctx.beginPath();ctx.arc(x-4*s,y+bob-5*s,4*s,0,Math.PI*2);ctx.fill();
+  // Knot
+  ctx.fillStyle=col;
+  ctx.beginPath();ctx.moveTo(x-2*s,y+bob+14*s);ctx.lineTo(x,y+bob+18*s);ctx.lineTo(x+2*s,y+bob+14*s);ctx.fill();
 }
 
-// --- TEXT SYSTEM ---
-let textLines=[],textCallback=null,allTextDone=false;
+// ========== ENVIRONMENT ==========
+function drawSky(darkLevel){
+  darkLevel=darkLevel||0;
+  var grad=ctx.createLinearGradient(0,0,0,H*0.65);
+  var r1=Math.min(255,100+darkLevel*155),g1=Math.max(0,180-darkLevel*180),b1=Math.max(0,255-darkLevel*200);
+  var r2=Math.min(255,170+darkLevel*85),g2=Math.max(0,220-darkLevel*180),b2=Math.max(0,255-darkLevel*150);
+  grad.addColorStop(0,'rgb('+r1+','+g1+','+b1+')');
+  grad.addColorStop(1,'rgb('+r2+','+g2+','+b2+')');
+  ctx.fillStyle=grad;ctx.fillRect(0,0,W,H*0.65);
+}
+function drawGround(darkLevel){
+  darkLevel=darkLevel||0;
+  var g=Math.max(40,160-darkLevel*120);
+  ctx.fillStyle='rgb('+Math.max(20,60-darkLevel*40)+','+g+','+Math.max(10,40-darkLevel*30)+')';
+  ctx.fillRect(0,H*0.62,W,H*0.4);
+  ctx.fillStyle='rgb('+Math.max(30,80-darkLevel*50)+','+Math.min(255,g+30)+','+Math.max(20,50-darkLevel*30)+')';
+  ctx.fillRect(0,H*0.62,W,6);
+}
+function drawSun(x,y,s,bright){
+  bright=bright||1;
+  ctx.fillStyle='rgba(255,230,50,'+bright+')';
+  ctx.beginPath();ctx.arc(x,y,20*s,0,Math.PI*2);ctx.fill();
+  // Rays
+  ctx.strokeStyle='rgba(255,230,50,'+(bright*0.4)+')';ctx.lineWidth=2*s;
+  for(var i=0;i<8;i++){
+    var a=i*Math.PI/4+t*0.3;
+    ctx.beginPath();
+    ctx.moveTo(x+Math.cos(a)*25*s,y+Math.sin(a)*25*s);
+    ctx.lineTo(x+Math.cos(a)*40*s,y+Math.sin(a)*40*s);
+    ctx.stroke();
+  }
+}
+function drawCloud(x,y,s){
+  ctx.fillStyle='rgba(255,255,255,0.85)';
+  ctx.beginPath();ctx.arc(x,y,s*20,0,Math.PI*2);
+  ctx.arc(x-s*15,y+s*5,s*14,0,Math.PI*2);
+  ctx.arc(x+s*18,y+s*3,s*16,0,Math.PI*2);ctx.fill();
+}
+function drawTree(x,y,s){
+  ctx.fillStyle='#5D3A1A';ctx.fillRect(x-6*s,y-40*s,12*s,40*s);
+  ctx.fillStyle='#2E7D32';ctx.beginPath();ctx.arc(x,y-45*s,25*s,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#388E3C';ctx.beginPath();ctx.arc(x-15*s,y-35*s,18*s,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#2E7D32';ctx.beginPath();ctx.arc(x+15*s,y-38*s,20*s,0,Math.PI*2);ctx.fill();
+}
+function drawFlower(x,y,col){
+  ctx.fillStyle='#2a8c2a';ctx.fillRect(x-1,y-8,2,8);
+  ctx.fillStyle=col;
+  for(var i=0;i<5;i++){
+    var a=i*Math.PI*2/5+t*0.5;
+    ctx.beginPath();ctx.arc(x+Math.cos(a)*4,y-10+Math.sin(a)*4,3,0,Math.PI*2);ctx.fill();
+  }
+  ctx.fillStyle='#ffeb3b';ctx.beginPath();ctx.arc(x,y-10,2,0,Math.PI*2);ctx.fill();
+}
+function drawButterfly(x,y,col,seed){
+  var wingFlap=Math.sin(t*8+seed)*0.5;
+  var bx=x+Math.sin(t*0.7+seed*3)*40;
+  var by=y+Math.sin(t*1.1+seed*7)*20;
+  ctx.save();ctx.translate(bx,by);
+  // Body
+  ctx.fillStyle='#333';ctx.fillRect(-1,-4,2,8);
+  // Wings
+  ctx.fillStyle=col;ctx.globalAlpha=0.7;
+  ctx.save();ctx.scale(1,wingFlap);
+  ctx.beginPath();ctx.ellipse(-4,0,5,4,0,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.ellipse(4,0,5,4,0,0,Math.PI*2);ctx.fill();
+  ctx.restore();
+  ctx.globalAlpha=1;
+  ctx.restore();
+}
+function drawBird(x,y,s){
+  ctx.strokeStyle='#333';ctx.lineWidth=2;
+  ctx.beginPath();
+  ctx.moveTo(x-6*s,y+2*s);ctx.quadraticCurveTo(x-3*s,y-4*s,x,y);
+  ctx.quadraticCurveTo(x+3*s,y-4*s,x+6*s,y+2*s);
+  ctx.stroke();
+}
+function drawCreek(x1,x2,y,s){
+  ctx.fillStyle='rgba(60,140,200,0.4)';
+  ctx.beginPath();
+  ctx.moveTo(x1,y);
+  for(var cx=x1;cx<x2;cx+=20){
+    ctx.lineTo(cx,y+Math.sin(cx*0.02+t*2)*3*s);
+  }
+  ctx.lineTo(x2,y+8*s);
+  for(var cx2=x2;cx2>x1;cx2-=20){
+    ctx.lineTo(cx2,y+8*s+Math.sin(cx2*0.02+t*2)*3*s);
+  }
+  ctx.closePath();ctx.fill();
+  // Sparkles
+  ctx.fillStyle='rgba(255,255,255,0.5)';
+  for(var si=0;si<5;si++){
+    var sx=x1+(x2-x1)*((si*0.2+t*0.05)%1);
+    if(Math.sin(t*3+si*2)>0.7){
+      ctx.beginPath();ctx.arc(sx,y+4*s,1.5,0,Math.PI*2);ctx.fill();
+    }
+  }
+}
+function drawDrain(x,y,s,glowing){
+  // Stone arch
+  ctx.fillStyle='#555';
+  ctx.beginPath();
+  ctx.arc(x,y,25*s,Math.PI,0);
+  ctx.lineTo(x+30*s,y+20*s);
+  ctx.lineTo(x-30*s,y+20*s);
+  ctx.closePath();ctx.fill();
+  // Dark interior
+  ctx.fillStyle='#111';
+  ctx.beginPath();
+  ctx.arc(x,y+2*s,20*s,Math.PI,0);
+  ctx.lineTo(x+20*s,y+18*s);
+  ctx.lineTo(x-20*s,y+18*s);
+  ctx.closePath();ctx.fill();
+  // Red glow from inside
+  if(glowing){
+    var pulse=0.2+Math.sin(t*2)*0.1;
+    ctx.fillStyle='rgba(200,0,0,'+pulse+')';
+    ctx.beginPath();ctx.arc(x,y+5*s,12*s,0,Math.PI*2);ctx.fill();
+  }
+  // Grate bars
+  ctx.strokeStyle='#444';ctx.lineWidth=3;
+  for(var gi=-15;gi<=15;gi+=10){
+    ctx.beginPath();ctx.moveTo(x+gi*s,y-15*s);ctx.lineTo(x+gi*s,y+18*s);ctx.stroke();
+  }
+}
+function drawFarmhouse(x,y,s){
+  // Walls
+  ctx.fillStyle='#8B4513';ctx.fillRect(x-20*s,y-30*s,40*s,30*s);
+  // Roof
+  ctx.fillStyle='#B22222';
+  ctx.beginPath();ctx.moveTo(x-25*s,y-30*s);ctx.lineTo(x,y-50*s);ctx.lineTo(x+25*s,y-30*s);ctx.closePath();ctx.fill();
+  // Door
+  ctx.fillStyle='#5D3A1A';ctx.fillRect(x-5*s,y-15*s,10*s,15*s);
+  // Windows
+  ctx.fillStyle='#FFE082';
+  ctx.fillRect(x-16*s,y-25*s,8*s,8*s);
+  ctx.fillRect(x+8*s,y-25*s,8*s,8*s);
+  // Window crosses
+  ctx.strokeStyle='#5D3A1A';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(x-12*s,y-25*s);ctx.lineTo(x-12*s,y-17*s);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(x-16*s,y-21*s);ctx.lineTo(x-8*s,y-21*s);ctx.stroke();
+}
+function drawLily(x,y,s,waving){
+  // Simple girl silhouette in CC1 style
+  var headY2=-80*s;
+  var torsoY2=-55*s;
+
+  ctx.save();ctx.translate(x,y);
+
+  // Shadow
+  ctx.fillStyle='rgba(0,0,0,0.2)';
+  ctx.beginPath();ctx.ellipse(0,0,12*s,4*s,0,0,Math.PI*2);ctx.fill();
+
+  // Legs
+  ctx.fillStyle='#2196F3';
+  ctx.beginPath();ctx.roundRect(-10*s,-20*s,8*s,20*s,3*s);ctx.fill();
+  ctx.beginPath();ctx.roundRect(2*s,-20*s,8*s,20*s,3*s);ctx.fill();
+  // Shoes
+  ctx.fillStyle='#795548';
+  ctx.fillRect(-11*s,-4*s,10*s,4*s);
+  ctx.fillRect(2*s,-4*s,10*s,4*s);
+
+  // Dress/torso
+  ctx.fillStyle='#E91E63';
+  ctx.beginPath();ctx.roundRect(-12*s,torsoY2,24*s,35*s,4*s);ctx.fill();
+
+  // Arms
+  ctx.fillStyle='#FFCCBC';
+  ctx.fillRect(-15*s,torsoY2+5*s,5*s,20*s);
+  if(waving){
+    ctx.save();
+    ctx.translate(10*s,torsoY2+5*s);
+    ctx.rotate(-0.5-Math.sin(t*6)*0.4);
+    ctx.fillRect(0,0,5*s,20*s);
+    ctx.restore();
+  }else{
+    ctx.fillRect(10*s,torsoY2+5*s,5*s,20*s);
+  }
+
+  // Head
+  ctx.fillStyle='#FFCCBC';
+  ctx.beginPath();ctx.arc(0,headY2,12*s,0,Math.PI*2);ctx.fill();
+
+  // Hair (long brown)
+  ctx.fillStyle='#5D4037';
+  ctx.beginPath();ctx.ellipse(0,headY2-6*s,14*s,10*s,0,Math.PI,Math.PI*2);ctx.fill();
+  ctx.fillRect(-13*s,headY2-4*s,5*s,25*s);
+  ctx.fillRect(8*s,headY2-4*s,5*s,25*s);
+
+  // Face
+  ctx.fillStyle='#333';
+  ctx.fillRect(-4*s,headY2-3*s,2.5*s,3*s);
+  ctx.fillRect(2*s,headY2-3*s,2.5*s,3*s);
+  // Smile
+  ctx.strokeStyle='#333';ctx.lineWidth=1.5*s;
+  ctx.beginPath();ctx.arc(0,headY2+3*s,4*s,0.1,Math.PI-0.1);ctx.stroke();
+
+  ctx.restore();
+}
+
+// ========== TEXT SYSTEM ==========
+var textLines=[],textCallback=null,allTextDone=false;
+var currentLineIdx=0,currentCharIdx=0,typeSpeed=35;
 function showText(lines,cb){
   textBox.style.display='block';
   textBox.innerHTML='';
@@ -337,14 +599,13 @@ function showText(lines,cb){
   textCallback=cb||null;
   currentLineIdx=0;currentCharIdx=0;
 }
-let currentLineIdx=0,currentCharIdx=0,typeSpeed=35;
 function updateText(dt){
   if(!typing)return;
   typeTimer+=dt*1000;
   if(typeTimer>typeSpeed&&currentLineIdx<textLines.length){
     typeTimer=0;
     currentCharIdx++;
-    let line=textLines[currentLineIdx];
+    var line=textLines[currentLineIdx];
     if(currentCharIdx>line.length){
       currentCharIdx=0;currentLineIdx++;
       if(currentLineIdx>=textLines.length){
@@ -354,12 +615,11 @@ function updateText(dt){
         return;
       }
     }
-    // render all lines so far
-    let html='';
-    for(let i=0;i<=currentLineIdx&&i<textLines.length;i++){
+    var html='';
+    for(var i=0;i<=currentLineIdx&&i<textLines.length;i++){
       if(i===currentLineIdx){
         html+=textLines[i].substring(0,currentCharIdx);
-      } else {
+      }else{
         html+=textLines[i]+'<br>';
       }
     }
@@ -367,162 +627,488 @@ function updateText(dt){
   }
 }
 
-// --- SCENE DATA ---
-const scenes=[
-  // Scene 0: A Beautiful Day
-  {
-    text:["It was a beautiful day in the meadow.","Lily's Horse was enjoying the sunshine."],
-    draw(dt){
-      drawSky(0);
-      drawCloud(W*0.2+t*5%W,H*0.12,1.2);
-      drawCloud(W*0.6+t*3%W,H*0.18,0.9);
-      drawCloud(W*0.85+t*4%W,H*0.1,1);
-      drawGround(0);
-      drawTree(W*0.15,H*0.62,1.5);
-      drawTree(W*0.85,H*0.62,1.2);
-      let hx=W*0.55,hy=H*0.52;
-      drawHorse(hx,hy,1.8,{eating:true});
-    },
-    onEnter(){drone=playDrone();}
-  },
-  // Scene 1: A Stranger Approaches
-  {
-    text:["'Well, hello there!'","said a voice from the shadows."],
-    draw(dt){
-      drawSky(0);
-      drawCloud(W*0.3,H*0.12,1);drawCloud(W*0.7,H*0.15,1.3);
-      drawGround(0);
-      drawTree(W*0.18,H*0.62,1.8);
-      // Pennywise half-hidden behind tree
-      let px=W*0.18,py=H*0.32;
-      let reveal=Math.min(1,sceneTime/2);
-      ctx.save();
-      ctx.beginPath();ctx.rect(px-10,0,W,H);ctx.clip();
-      if(reveal>0.3){
-        drawPennywise(px+30,py+50,1.2,{menace:0,lookDir:1});
-        drawBalloon(px+55,py-40,1.5);
-      }
-      ctx.restore();
-      // redraw tree on top
-      drawTree(W*0.18,H*0.62,1.8);
-      // horse
-      drawHorse(W*0.6,H*0.52,1.8,{lookUp:true});
-    },
-    onEnter(){playLaugh();}
-  },
-  // Scene 2: The Offer
-  {
-    text:["'Do you want a balloon?' Pennywise smiled.","'They float! They ALL float!'"],
-    draw(dt){
-      drawSky(0);drawCloud(W*0.5,H*0.12,1.1);
-      drawGround(0);
-      // Pennywise fully visible
-      let px=W*0.3,py=H*0.28;
-      drawPennywise(px,py,1.5,{menace:0.1,lookDir:1});
-      drawBalloon(px+30,py-60,2);
-      // Horse tilting head
-      drawHorse(W*0.65,H*0.52,1.8,{tilt:true});
-    }
-  },
-  // Scene 3: Neigh
-  {
-    text:["'Neigh,' said the horse."],
-    draw(dt){
-      drawSky(0);drawCloud(W*0.4,H*0.1,1);
-      drawGround(0);
-      drawPennywise(W*0.32,H*0.28,1.5,{menace:0.15,lookDir:1});
-      drawBalloon(W*0.32+30,H*0.28-60,2);
-      // horse shaking head
-      drawHorse(W*0.65,H*0.52,1.8,{shake:true});
-    },
-    onEnter(){playNeigh();}
-  },
-  // Scene 4: But It's a REALLY Nice Balloon
-  {
-    text:["'But it's a REALLY nice balloon!'","Pennywise leaned closer, his smile widening.","'Don't you want to float too?'","","'NEIGH,' said the horse, more firmly."],
-    draw(dt){
-      let dark=Math.min(0.3,sceneTime*0.05);
-      drawSky(dark);drawCloud(W*0.5,H*0.13,1);
-      drawGround(dark);
-      let approach=Math.min(1,sceneTime/3);
-      let px=W*0.32+approach*W*0.08;
-      drawPennywise(px,H*0.26,1.6,{menace:0.3+approach*0.2,lookDir:1});
-      drawBalloon(px+30,H*0.26-65,2.2);
-      drawHorse(W*0.65,H*0.5,1.8,{stamp:true,lookUp:true});
-    },
-    onEnter(){
-      setTimeout(()=>playNeigh(),2500);
-    }
-  },
-  // Scene 5: The Lunge
-  {
-    text:["Pennywise LUNGED!","Teeth like razors!","The horse BOLTED!"],
-    draw(dt){
-      let flash=sceneTime<0.3?1-sceneTime/0.3:0;
-      let dark=0.8;
-      drawSky(dark);
-      // red flash
-      if(flash>0){
-        ctx.fillStyle=`rgba(200,0,0,${flash*0.6})`;
-        ctx.fillRect(0,0,W,H);
-      }
-      drawGround(dark);
-      // screen shake
-      if(sceneTime<2){
-        shakeX=(Math.random()-0.5)*12;
-        shakeY=(Math.random()-0.5)*8;
-        ctx.save();ctx.translate(shakeX,shakeY);
-      }
-      // pennywise lunging
-      let lungeX=W*0.45+Math.min(sceneTime*80,W*0.15);
-      drawPennywise(lungeX,H*0.25,1.8,{menace:1,lookDir:1,lunge:true});
-      // balloon popped - draw pop particles
-      if(sceneTime<1.5){
-        for(let i=0;i<8;i++){
-          let a=i*Math.PI*2/8;
-          let d=sceneTime*100;
-          circ(W*0.45+Math.cos(a)*d,H*0.12+Math.sin(a)*d,4-sceneTime*2,'#D32F2F',1);
-        }
-      }
-      // horse galloping away
-      let horseX=W*0.65+sceneTime*60;
-      if(horseX<W+100){
-        drawHorse(horseX,H*0.48,1.8,{gallop:true,flip:true});
-      }
-      if(sceneTime<2)ctx.restore();
-    },
-    onEnter(){playSting();playPop();setTimeout(()=>playNeigh(),600);}
-  },
-  // Scene 6: The Moral
+// ========== SCENES ==========
+var scenes=[
+
+  // Scene 0: "Once upon a time..."
   {
     text:[
-      "Moral of the story:",
-      "Don't judge a book by its cover.",
-      "",
-      "Plot twist:",
-      "Actually, DO judge some books by their covers.",
-      "Listen to your instincts.",
-      "If a clown in a sewer offers you a balloon...",
-      "",
-      "...NEIGH."
+      "Once upon a time, in a meadow just past the Wreford farm, there lived a horse named Clover.",
+      "Clover belonged to a girl named Lily, who loved her more than anything in the world."
     ],
-    draw(dt){
+    draw:function(dt){
       drawSky(0);
-      drawCloud(W*0.2+t*3%(W+100),H*0.1,1);
-      drawCloud(W*0.6+t*2%(W+100),H*0.15,1.2);
-      drawCloud(W*0.9+t*4%(W+100),H*0.08,0.8);
+      drawSun(W*0.85,H*0.1,SCALE*1.5,1);
+      drawCloud(W*0.15+(t*8)%(W+200)-100,H*0.12,1.2*SCALE);
+      drawCloud(W*0.55+(t*5)%(W+200)-100,H*0.18,0.9*SCALE);
       drawGround(0);
-      // tiny pennywise far away
-      drawPennywise(W*0.12,H*0.56,0.4,{menace:0});
-      drawBalloon(W*0.12+8,H*0.56-25,0.5);
-      // horse safe, breathing hard then victory trot
-      let safe=sceneTime>8;
-      let hx=W*0.65+(safe?Math.sin(t*2)*30:0);
-      drawHorse(hx,H*0.5,1.8,{gallop:safe});
+
+      // Flowers
+      var flowerCols=['#e91e63','#ff9800','#9c27b0','#ffeb3b','#2196f3'];
+      for(var i=0;i<12;i++){
+        drawFlower(W*0.1+i*(W*0.07),H*0.64+Math.sin(i*1.3)*5,flowerCols[i%flowerCols.length]);
+      }
+
+      // Butterflies
+      drawButterfly(W*0.3,H*0.4,'#e91e63',1);
+      drawButterfly(W*0.6,H*0.35,'#ffeb3b',2);
+      drawButterfly(W*0.45,H*0.45,'#9c27b0',3);
+
+      // Birds
+      drawBird(W*0.3+Math.sin(t*0.5)*20,H*0.08,SCALE);
+      drawBird(W*0.4+Math.sin(t*0.4+1)*15,H*0.12,SCALE*0.8);
+      drawBird(W*0.5+Math.sin(t*0.6+2)*25,H*0.06,SCALE*0.6);
+
+      // Horse grazing
+      drawHorseCC1(W*0.55,H*0.6,SCALE*1.6,{eating:true});
+    },
+    onEnter:function(){drone=playDrone();}
+  },
+
+  // Scene 1: "A Perfect Day"
+  {
+    text:[
+      "It was the kind of day where nothing could go wrong.",
+      "The sun was warm, the grass was sweet, and the creek sang its little creek song."
+    ],
+    draw:function(dt){
+      drawSky(0);
+      drawSun(W*0.82,H*0.1,SCALE*1.8,1);
+      drawCloud(W*0.2,H*0.1,1.1*SCALE);
+      drawCloud(W*0.7,H*0.15,0.8*SCALE);
+      drawGround(0);
+
+      // Creek
+      drawCreek(W*0.05,W*0.4,H*0.67,SCALE);
+
+      // Flowers
+      for(var i=0;i<8;i++){
+        drawFlower(W*0.45+i*(W*0.06),H*0.63+Math.sin(i*2)*4,['#e91e63','#ffeb3b','#ff9800','#9c27b0','#ff5722'][i%5]);
+      }
+
+      drawTree(W*0.12,H*0.62,SCALE*1.5);
+
+      // Horse trotting happily (slight bob)
+      var trotX=W*0.5+Math.sin(t*0.8)*30;
+      drawHorseCC1(trotX,H*0.58,SCALE*1.6,{});
+    }
+  },
+
+  // Scene 2: "The Drain"
+  {
+    text:[
+      "At the edge of the meadow, where the wildflowers stopped and the shadows began, there was a drain.",
+      "Nobody talked about the drain."
+    ],
+    draw:function(dt){
+      var dark=Math.min(0.2,sceneTime*0.08);
+      drawSky(dark);
+      drawSun(W*0.85,H*0.1,SCALE*1.2,1-dark);
+      drawGround(dark);
+
+      // Flowers on left side only
+      for(var i=0;i<5;i++){
+        drawFlower(W*0.05+i*(W*0.06),H*0.63,['#e91e63','#ff9800','#9c27b0'][i%3]);
+      }
+
+      // The drain - right side, ominous
+      drawDrain(W*0.75,H*0.6,SCALE*1.5,true);
+
+      // Darker ground near drain
+      ctx.fillStyle='rgba(0,0,0,0.15)';
+      ctx.fillRect(W*0.6,H*0.62,W*0.4,H*0.4);
+
+      // Horse, ears perked, looking toward drain
+      drawHorseCC1(W*0.35,H*0.58,SCALE*1.6,{alert:true});
+    }
+  },
+
+  // Scene 3: "Hello There"
+  {
+    text:[
+      "'Hiya, Clover!' said a voice like honey poured over broken glass."
+    ],
+    draw:function(dt){
+      var dark=0.25;
+      drawSky(dark);
+      drawGround(dark);
+
+      // The drain
+      drawDrain(W*0.72,H*0.58,SCALE*1.5,true);
+
+      // Pennywise's face appearing in the drain
+      var reveal=Math.min(1,sceneTime/2);
+      if(reveal>0.2){
+        ctx.save();
+        // Clip to drain opening
+        ctx.beginPath();
+        ctx.arc(W*0.72,H*0.58+2*SCALE*1.5,20*SCALE*1.5,Math.PI,0);
+        ctx.lineTo(W*0.72+20*SCALE*1.5,H*0.58+18*SCALE*1.5);
+        ctx.lineTo(W*0.72-20*SCALE*1.5,H*0.58+18*SCALE*1.5);
+        ctx.closePath();ctx.clip();
+
+        // Just the face emerging from darkness
+        var peekY=H*0.58+30*(1-reveal);
+        ctx.fillStyle='#f0f0f0';
+        ctx.beginPath();ctx.arc(W*0.72,peekY,12*SCALE,0,Math.PI*2);ctx.fill();
+        // Yellow eyes
+        ctx.save();
+        ctx.shadowColor='#ffdd00';ctx.shadowBlur=15;
+        ctx.fillStyle='#ffdd00';
+        ctx.beginPath();ctx.arc(W*0.72-5*SCALE,peekY-3*SCALE,2.5*SCALE,0,Math.PI*2);ctx.fill();
+        ctx.beginPath();ctx.arc(W*0.72+5*SCALE,peekY-3*SCALE,2.5*SCALE,0,Math.PI*2);ctx.fill();
+        ctx.restore();
+        // Red nose
+        ctx.fillStyle='#ff0000';
+        ctx.beginPath();ctx.arc(W*0.72,peekY+1*SCALE,2*SCALE,0,Math.PI*2);ctx.fill();
+
+        ctx.restore();
+
+        // Balloon floating up from behind drain
+        if(reveal>0.5){
+          drawBalloon(W*0.72+15*SCALE,H*0.38-reveal*20,SCALE*1.5,{});
+        }
+      }
+
+      // Horse frozen mid-chew
+      drawHorseCC1(W*0.3,H*0.58,SCALE*1.6,{alert:true});
+    },
+    onEnter:function(){playLaugh();}
+  },
+
+  // Scene 4: "The Balloon"
+  {
+    text:[
+      "'Do you want a balloon?' The clown's smile was so wide it nearly met at the back of his head.",
+      "'They float! They ALL float down here!'"
+    ],
+    draw:function(dt){
+      var dark=0.2;
+      drawSky(dark);
+      drawGround(dark);
+
+      // Pennywise emerged more, holding balloon, big grin
+      var emerge=Math.min(1,sceneTime/1.5);
+      var py=H*0.42+20*(1-emerge);
+      drawPennywiseCC1(W*0.65,py,SCALE*1.4,{menace:0.1,facing:1});
+      drawBalloon(W*0.65+15*SCALE,py-100*SCALE,SCALE*1.5,{});
+
+      // Horse looking at clown
+      drawHorseCC1(W*0.3,H*0.58,SCALE*1.6,{alert:true});
+    }
+  },
+
+  // Scene 5: "Neigh."
+  {
+    text:[
+      "'Neigh,' said Clover.",
+      "",
+      "This had never happened before."
+    ],
+    draw:function(dt){
+      var dark=0.2;
+      drawSky(dark);
+      drawGround(dark);
+
+      // Pennywise, confused head tilt
+      ctx.save();
+      ctx.translate(W*0.65,H*0.42);
+      ctx.rotate(Math.sin(sceneTime*2)*0.15);
+      ctx.translate(-W*0.65,-H*0.42);
+      drawPennywiseCC1(W*0.65,H*0.42,SCALE*1.4,{menace:0.05,facing:1});
+      ctx.restore();
+      drawBalloon(W*0.65+15*SCALE,H*0.42-100*SCALE,SCALE*1.5,{});
+
+      // Horse shaking head, one hoof stamps
+      drawHorseCC1(W*0.3,H*0.58,SCALE*1.6,{shake:true,stamp:true});
+    },
+    onEnter:function(){playNeigh();}
+  },
+
+  // Scene 6: "The Sales Pitch"
+  {
+    text:[
+      "'But it's a REALLY nice balloon! It's red! Your favorite color!'",
+      "'I can make it ANY color! How about... horse-colored?'",
+      "",
+      "'Neigh,' said Clover, backing up three steps."
+    ],
+    draw:function(dt){
+      var dark=Math.min(0.3,0.2+sceneTime*0.02);
+      drawSky(dark);
+      drawGround(dark);
+
+      // Pennywise animated, doing a little dance (bobbing)
+      var danceBob=Math.abs(Math.sin(t*4))*10;
+      drawPennywiseCC1(W*0.6,H*0.42-danceBob,SCALE*1.4,{menace:0.15,facing:1});
+
+      // Balloon changing colors rapidly
+      drawBalloon(W*0.6+15*SCALE,H*0.42-danceBob-100*SCALE,SCALE*1.5,{cycling:true});
+
+      // Horse backing up
+      var backOff=Math.min(3,sceneTime)*15;
+      drawHorseCC1(W*0.3-backOff,H*0.58,SCALE*1.6,{alert:true});
+    },
+    onEnter:function(){
+      setTimeout(function(){playNeigh();},3000);
+    }
+  },
+
+  // Scene 7: "Getting Desperate"
+  {
+    text:[
+      "'What if I told you there were UNLIMITED APPLES down here?'",
+      "'And sugar cubes? Mountains of sugar cubes!'",
+      "'And a NICE WARM STABLE with fresh hay and--'",
+      "",
+      "'NEIGH,' said Clover."
+    ],
+    draw:function(dt){
+      var dark=Math.min(0.4,0.25+sceneTime*0.03);
+      drawSky(dark);
+      drawGround(dark);
+
+      // Pennywise crawling out more, smile strained, teeth showing
+      var crawlOut=Math.min(1,sceneTime/3);
+      var px=W*0.55+crawlOut*W*0.05;
+      drawPennywiseCC1(px,H*0.45,SCALE*1.5,{menace:0.3+crawlOut*0.2,facing:1});
+      drawBalloon(px+20*SCALE,H*0.45-110*SCALE,SCALE*1.5,{});
+
+      // Horse further back, firm
+      drawHorseCC1(W*0.22,H*0.58,SCALE*1.6,{stamp:true,alert:true});
+    },
+    onEnter:function(){
+      setTimeout(function(){playNeigh();},4000);
+    }
+  },
+
+  // Scene 8: "The Mask Slips"
+  {
+    text:[
+      "The clown's face changed. Not a lot. Just enough.",
+      "The smile stayed, but the eyes forgot to smile with it.",
+      "",
+      "Clover's instincts -- four million years of prey-animal evolution -- screamed one word:",
+      "",
+      "RUN."
+    ],
+    draw:function(dt){
+      var dark=Math.min(0.7,0.3+sceneTime*0.1);
+      drawSky(dark);
+      drawGround(dark);
+
+      // Pennywise - face distorting, eyes blazing
+      var menaceRise=Math.min(1,sceneTime/4);
+      drawPennywiseCC1(W*0.55,H*0.42,SCALE*1.6,{menace:0.5+menaceRise*0.5,facing:1});
+      drawBalloon(W*0.55+20*SCALE,H*0.42-120*SCALE,SCALE*1.5,{});
+
+      // Horse trembling (slight random offset)
+      var trembleX=menaceRise>0.5?(Math.random()-0.5)*4:0;
+      var trembleY=menaceRise>0.5?(Math.random()-0.5)*2:0;
+      drawHorseCC1(W*0.25+trembleX,H*0.58+trembleY,SCALE*1.6,{alert:true});
+
+      // Dramatic vignette
+      if(menaceRise>0.5){
+        var vigGrad=ctx.createRadialGradient(W/2,H/2,H*0.3,W/2,H/2,H*0.8);
+        vigGrad.addColorStop(0,'rgba(0,0,0,0)');
+        vigGrad.addColorStop(1,'rgba(0,0,0,'+(menaceRise*0.4)+')');
+        ctx.fillStyle=vigGrad;ctx.fillRect(0,0,W,H);
+      }
+    },
+    onEnter:function(){playSting();}
+  },
+
+  // Scene 9: "THE LUNGE"
+  {
+    text:[
+      "PENNYWISE LUNGED."
+    ],
+    draw:function(dt){
+      var dark=0.8;
+      drawSky(dark);
+
+      // Red flash at start
+      var flash=sceneTime<0.3?1-sceneTime/0.3:0;
+      if(flash>0){
+        ctx.fillStyle='rgba(200,0,0,'+(flash*0.6)+')';
+        ctx.fillRect(0,0,W,H);
+      }
+
+      drawGround(dark);
+
+      // Screen shake
+      if(sceneTime<2.5){
+        var shakeIntensity=Math.max(0,1-sceneTime/2.5);
+        shakeX=(Math.random()-0.5)*16*shakeIntensity;
+        shakeY=(Math.random()-0.5)*10*shakeIntensity;
+        ctx.save();ctx.translate(shakeX,shakeY);
+      }
+
+      // Pennywise lunging - MASSIVE, teeth like razors, claws extended
+      var lungeX=W*0.4+Math.min(sceneTime*120,W*0.25);
+      drawPennywiseCC1(lungeX,H*0.35,SCALE*2,{menace:1,facing:1,lunge:true});
+
+      // Balloon POP - particles
+      if(sceneTime<1.5){
+        for(var i=0;i<10;i++){
+          var a=i*Math.PI*2/10;
+          var d=sceneTime*150;
+          var pr=5-sceneTime*3;
+          if(pr>0){
+            ctx.fillStyle='#D32F2F';
+            ctx.beginPath();ctx.arc(W*0.5+Math.cos(a)*d,H*0.2+Math.sin(a)*d*0.6,pr,0,Math.PI*2);ctx.fill();
+          }
+        }
+      }
+
+      // Horse BOLTING at full gallop
+      var horseX=W*0.6+sceneTime*100;
+      if(horseX<W+200){
+        drawHorseCC1(horseX,H*0.55,SCALE*1.6,{gallop:true,facing:-1});
+      }
+
+      if(sceneTime<2.5)ctx.restore();
+    },
+    onEnter:function(){
+      playSting();playPop();
+      setTimeout(function(){playNeigh();},400);
+      setTimeout(function(){playGallop();},600);
+    }
+  },
+
+  // Scene 10: "Safe"
+  {
+    text:[
+      "Clover ran. Clover ran like she had never run before.",
+      "Past the creek, past the old oak, past the fence where Lily was waiting with an apple and a confused expression.",
+      "",
+      "'What's wrong, girl?' Lily asked.",
+      "",
+      "Clover pressed her nose against Lily's shoulder and stayed there for a very long time."
+    ],
+    draw:function(dt){
+      // Sun breaking through clouds
+      var brightening=Math.min(1,sceneTime/4);
+      var dark=0.4*(1-brightening);
+      drawSky(dark);
+      drawSun(W*0.8,H*0.12,SCALE*1.5,brightening);
+      drawCloud(W*0.3,H*0.1,SCALE);
+      drawCloud(W*0.6,H*0.08,SCALE*0.8);
+      drawGround(dark);
+
+      // Farmhouse in distance
+      drawFarmhouse(W*0.78,H*0.6,SCALE*1.2);
+
+      // Tree
+      drawTree(W*0.5,H*0.62,SCALE*1.2);
+
+      // Pennywise tiny angry figure behind
+      if(sceneTime>1){
+        var angryScale=SCALE*0.4;
+        drawPennywiseCC1(W*0.1,H*0.59,angryScale,{menace:0.8,facing:1});
+      }
+
+      // Horse galloping toward farmhouse, then stopping near Lily
+      var runDist=Math.min(1,sceneTime/3);
+      var hx=W*0.2+runDist*(W*0.55);
+      var isRunning=sceneTime<3;
+
+      if(isRunning){
+        drawHorseCC1(hx,H*0.58,SCALE*1.5,{gallop:true,facing:-1});
+      }else{
+        // Horse nuzzling Lily
+        drawHorseCC1(W*0.72,H*0.58,SCALE*1.5,{facing:-1});
+        drawLily(W*0.67,H*0.6,SCALE*1.2,false);
+      }
+    },
+    onEnter:function(){playGallop();}
+  },
+
+  // Scene 11: "The Moral"
+  {
+    text:[
+      "MORAL OF THE STORY",
+      "",
+      "They say don't judge a book by its cover.",
+      "That's nice advice for library books.",
+      "",
+      "But if the book is lurking in a storm drain",
+      "with yellow eyes and a balloon...",
+      "",
+      "...trust your instincts.",
+      "Every single time.",
+      "",
+      "Clover knew.",
+      "Clover always knew.",
+      "",
+      "NEIGH."
+    ],
+    draw:function(dt){
+      // Warm sunset scene
+      var grad=ctx.createLinearGradient(0,0,0,H*0.65);
+      grad.addColorStop(0,'#1a0533');
+      grad.addColorStop(0.3,'#ff6b35');
+      grad.addColorStop(0.7,'#ffd700');
+      grad.addColorStop(1,'#ffb347');
+      ctx.fillStyle=grad;ctx.fillRect(0,0,W,H*0.65);
+
+      // Sun setting
+      ctx.fillStyle='#ff4500';
+      ctx.beginPath();ctx.arc(W*0.5,H*0.58,SCALE*40,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#ffd700';
+      ctx.beginPath();ctx.arc(W*0.5,H*0.58,SCALE*32,0,Math.PI*2);ctx.fill();
+
+      // Ground (dark)
+      ctx.fillStyle='#1a3300';ctx.fillRect(0,H*0.62,W,H*0.4);
+
+      // Horse and Lily silhouette against sunset
+      ctx.fillStyle='#111';
+      // Horse silhouette
+      var victoryTrot=allTextDone?Math.sin(t*3)*15:0;
+      ctx.save();
+      ctx.globalAlpha=1;
+
+      // Draw as silhouettes
+      var hx2=W*0.45+victoryTrot;
+      // Horse body silhouette
+      ctx.fillStyle='#1a1005';
+      ctx.save();ctx.translate(hx2,H*0.58);
+      // Body
+      ctx.fillRect(-18*SCALE*1.4,-55*SCALE*1.4,36*SCALE*1.4,40*SCALE*1.4);
+      // Legs
+      ctx.fillRect(-14*SCALE*1.4,-20*SCALE*1.4,6*SCALE*1.4,25*SCALE*1.4);
+      ctx.fillRect(-6*SCALE*1.4,-20*SCALE*1.4,6*SCALE*1.4,25*SCALE*1.4);
+      ctx.fillRect(4*SCALE*1.4,-20*SCALE*1.4,6*SCALE*1.4,25*SCALE*1.4);
+      ctx.fillRect(12*SCALE*1.4,-20*SCALE*1.4,6*SCALE*1.4,25*SCALE*1.4);
+      // Head
+      ctx.beginPath();ctx.ellipse(5*SCALE*1.4,-80*SCALE*1.4,10*SCALE*1.4,16*SCALE*1.4,0.3,0,Math.PI*2);ctx.fill();
+      // Tail swishing
+      ctx.strokeStyle='#1a1005';ctx.lineWidth=4*SCALE*1.4;
+      ctx.beginPath();ctx.moveTo(-18*SCALE*1.4,-45*SCALE*1.4);
+      ctx.quadraticCurveTo(-30*SCALE*1.4,-50*SCALE*1.4+Math.sin(t*3)*5,-25*SCALE*1.4,-60*SCALE*1.4);ctx.stroke();
+      ctx.restore();
+
+      // Lily silhouette next to horse
+      ctx.fillStyle='#1a1005';
+      ctx.save();ctx.translate(W*0.38,H*0.58);
+      ctx.beginPath();ctx.arc(0,-80*SCALE*1.2,12*SCALE*1.2,0,Math.PI*2);ctx.fill();
+      ctx.fillRect(-12*SCALE*1.2,-55*SCALE*1.2,24*SCALE*1.2,55*SCALE*1.2);
+      // Waving arm if done
+      if(allTextDone){
+        ctx.save();
+        ctx.translate(10*SCALE*1.2,-50*SCALE*1.2);
+        ctx.rotate(-0.5-Math.sin(t*6)*0.4);
+        ctx.fillRect(0,0,5*SCALE*1.2,20*SCALE*1.2);
+        ctx.restore();
+      }
+      ctx.restore();
+
+      ctx.restore();
+
       // THE END
       if(allTextDone){
         ctx.save();
-        ctx.fillStyle='#000';ctx.font='bold 48px system-ui';ctx.textAlign='center';
+        ctx.fillStyle='#000';ctx.font='bold '+Math.round(48*SCALE)+'px system-ui';ctx.textAlign='center';
         ctx.fillText('THE END',W/2+2,H*0.35+2);
         ctx.fillStyle='#FFD600';
         ctx.fillText('THE END',W/2,H*0.35);
@@ -530,13 +1116,14 @@ const scenes=[
         playAgainBtn.style.display='block';
       }
     },
-    onEnter(){
-      typeSpeed=50; // slower for dramatic effect
+    onEnter:function(){
+      typeSpeed=50;
+      setTimeout(function(){playNeigh();},12000);
     }
   }
 ];
 
-// --- SCENE MANAGEMENT ---
+// ========== SCENE MANAGEMENT ==========
 function enterScene(idx){
   scene=idx;sceneTime=0;
   waitingForClick=false;typing=false;allTextDone=false;
@@ -545,17 +1132,15 @@ function enterScene(idx){
   playAgainBtn.style.display='none';
   typeSpeed=35;
   if(scenes[idx].onEnter)scenes[idx].onEnter();
-  // show text after a short delay
-  setTimeout(()=>{
+  setTimeout(function(){
     showText(scenes[idx].text);
   },800);
 }
 
 function advanceScene(){
   if(typing){
-    // skip to end of text
     typing=false;allTextDone=true;
-    let html=textLines.join('<br>');
+    var html=textLines.join('<br>');
     textBox.innerHTML=html;
     waitingForClick=true;
     promptEl.style.display='block';
@@ -563,7 +1148,6 @@ function advanceScene(){
   }
   if(!waitingForClick)return;
   if(scene>=scenes.length-1)return;
-  // transition
   promptEl.style.display='none';
   waitingForClick=false;
   transitioning=true;transDir=1;transAlpha=0;
@@ -577,32 +1161,30 @@ function handleClick(){
 }
 
 C.addEventListener('click',handleClick);
-C.addEventListener('touchstart',e=>{e.preventDefault();handleClick()},{passive:false});
+C.addEventListener('touchstart',function(e){e.preventDefault();handleClick();},{passive:false});
 
-playAgainBtn.addEventListener('click',e=>{
+playAgainBtn.addEventListener('click',function(e){
   e.stopPropagation();
   if(drone){drone.stop();drone=null;}
   playAgainBtn.style.display='none';
   transitioning=true;transDir=1;transAlpha=0;nextScene=0;
 });
 
-// --- MAIN LOOP ---
-let lastTime=0;
+// ========== MAIN LOOP ==========
+var lastTime=0;
 function frame(ts){
-  let dt=(ts-lastTime)/1000;if(dt>0.1)dt=0.1;
+  var dt=(ts-lastTime)/1000;if(dt>0.1)dt=0.1;
   lastTime=ts;t+=dt;
   sceneTime+=dt;
 
   ctx.save();
   ctx.clearRect(0,0,W,H);
 
-  // draw current scene
   if(scenes[scene])scenes[scene].draw(dt);
 
-  // update text
   updateText(dt);
 
-  // transition overlay
+  // Transition overlay
   if(transitioning){
     transAlpha+=transDir*dt*2;
     if(transAlpha>=1&&transDir===1){
@@ -612,7 +1194,7 @@ function frame(ts){
     if(transAlpha<=0&&transDir===-1){
       transAlpha=0;transitioning=false;
     }
-    ctx.fillStyle=`rgba(0,0,0,${Math.max(0,Math.min(1,transAlpha))})`;
+    ctx.fillStyle='rgba(0,0,0,'+Math.max(0,Math.min(1,transAlpha))+')';
     ctx.fillRect(0,0,W,H);
   }
 
@@ -620,7 +1202,6 @@ function frame(ts){
   requestAnimationFrame(frame);
 }
 
-// Start
 enterScene(0);
 requestAnimationFrame(frame);
 </script>
