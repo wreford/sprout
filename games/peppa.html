@@ -1,0 +1,1307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Peppa's Kitchen — A Cooking Adventure!</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Comic+Neue:wght@400;700&display=swap');
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+html, body { width: 100%; height: 100%; overflow: hidden; font-family: 'Comic Neue', 'Comic Sans MS', cursive; background: #87CEEB; }
+canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+// =========================================================
+// Peppa's Kitchen — A Cooking Adventure!
+// A dark comedy cooking game
+// =========================================================
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+// ---- Responsive sizing ----
+let W, H, scale;
+function resize() {
+  W = canvas.width = window.innerWidth * devicePixelRatio;
+  H = canvas.height = window.innerHeight * devicePixelRatio;
+  scale = Math.min(W / 800, H / 1200);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ---- Audio Engine ----
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+let audio;
+function ensureAudio() { if (!audio) audio = new AudioCtx(); }
+
+function playSizzle(dur = 0.3) {
+  ensureAudio();
+  const buf = audio.createBufferSource();
+  const n = audio.sampleRate * dur;
+  const buffer = audio.createBuffer(1, n, audio.sampleRate);
+  const d = buffer.getChannelData(0);
+  for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (n * 0.3)) * 0.15;
+  buf.buffer = buffer;
+  const filt = audio.createBiquadFilter();
+  filt.type = 'bandpass'; filt.frequency.value = 4000; filt.Q.value = 2;
+  buf.connect(filt); filt.connect(audio.destination);
+  buf.start();
+}
+
+function playOink() {
+  ensureAudio();
+  const o = audio.createOscillator();
+  const g = audio.createGain();
+  o.type = 'sine'; o.frequency.value = 600;
+  o.frequency.setValueAtTime(600, audio.currentTime);
+  o.frequency.exponentialRampToValueAtTime(300, audio.currentTime + 0.15);
+  g.gain.setValueAtTime(0.2, audio.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + 0.2);
+  o.connect(g); g.connect(audio.destination);
+  o.start(); o.stop(audio.currentTime + 0.2);
+}
+
+function playDing() {
+  ensureAudio();
+  const o = audio.createOscillator();
+  const g = audio.createGain();
+  o.type = 'sine'; o.frequency.value = 1200;
+  g.gain.setValueAtTime(0.25, audio.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + 0.5);
+  o.connect(g); g.connect(audio.destination);
+  o.start(); o.stop(audio.currentTime + 0.5);
+}
+
+function playChop() {
+  ensureAudio();
+  const buf = audio.createBufferSource();
+  const n = audio.sampleRate * 0.08;
+  const buffer = audio.createBuffer(1, n, audio.sampleRate);
+  const d = buffer.getChannelData(0);
+  for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (n * 0.15)) * 0.3;
+  buf.buffer = buffer;
+  buf.connect(audio.destination); buf.start();
+}
+
+function playJingle() {
+  ensureAudio();
+  const notes = [523, 659, 784, 1047];
+  notes.forEach((f, i) => {
+    const o = audio.createOscillator();
+    const g = audio.createGain();
+    o.type = 'triangle'; o.frequency.value = f;
+    g.gain.setValueAtTime(0, audio.currentTime + i * 0.15);
+    g.gain.linearRampToValueAtTime(0.15, audio.currentTime + i * 0.15 + 0.05);
+    g.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + i * 0.15 + 0.4);
+    o.connect(g); g.connect(audio.destination);
+    o.start(audio.currentTime + i * 0.15);
+    o.stop(audio.currentTime + i * 0.15 + 0.4);
+  });
+}
+
+// Background melody
+let melodyPlaying = false;
+function startMelody() {
+  if (melodyPlaying) return;
+  melodyPlaying = true;
+  ensureAudio();
+  const melody = [262, 294, 330, 349, 330, 294, 262, 0, 330, 349, 392, 440, 392, 349, 330, 0];
+  let idx = 0;
+  function playNote() {
+    if (!melodyPlaying) return;
+    const f = melody[idx % melody.length];
+    if (f > 0) {
+      const o = audio.createOscillator();
+      const g = audio.createGain();
+      o.type = 'sine'; o.frequency.value = f;
+      g.gain.value = 0.03;
+      g.gain.setValueAtTime(0.03, audio.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + 0.4);
+      o.connect(g); g.connect(audio.destination);
+      o.start(); o.stop(audio.currentTime + 0.4);
+    }
+    idx++;
+    setTimeout(playNote, 500);
+  }
+  playNote();
+}
+
+// ---- Game Data ----
+const RECIPES = [
+  { id: 0, name: "Bacon Sandwich", emoji: "\u{1F953}", desc: "Daddy Pig's favourite! Crispy bacon between two slices of bread.", locked: false,
+    dialogue: ["I LOVE bacon! It's so crispy!", "Daddy Pig eats these every morning!", "Mmm, can you smell that? DELICIOUS!"],
+    steps: [
+      { instruction: "Tap the BACON to add it to the pan!", type: "tap", item: "bacon", target: "pan" },
+      { instruction: "Now COOK it! Tap tap tap!", type: "rapid", item: "cooking", count: 15 },
+      { instruction: "FLIP IT!", type: "swipe", item: "bacon" },
+      { instruction: "Cook the other side! Tap tap!", type: "rapid", item: "cooking", count: 10 },
+      { instruction: "Add it to the BREAD!", type: "tap", item: "bread", target: "plate" },
+    ]},
+  { id: 1, name: "Bacon Bits Salad", emoji: "\u{1F957}", desc: "A healthy salad with crunchy bacon bits! Mummy Pig says eat your greens!", locked: false,
+    dialogue: ["Mummy Pig says salad is good for you!", "The bacon makes it EXTRA healthy!", "Crispy bits are the best bits!"],
+    steps: [
+      { instruction: "Tap the LETTUCE to chop it!", type: "tap", item: "lettuce", target: "board" },
+      { instruction: "Chop chop chop! Tap rapidly!", type: "rapid", item: "chopping", count: 12 },
+      { instruction: "Add the BACON BITS! Tap them!", type: "tap", item: "bacon_bits", target: "bowl" },
+      { instruction: "TOSS the salad! Swipe up!", type: "swipe", item: "salad" },
+    ]},
+  { id: 2, name: "The Baconator", emoji: "\u{1F354}", desc: "A TRIPLE bacon burger! George loves these! *oink*", locked: true,
+    dialogue: ["Three layers of bacon! This is the BEST burger!", "I wonder where bacon comes from? ...Anyway!", "George says 'Dine-saw!' but I think he means 'delicious'!"],
+    steps: [
+      { instruction: "Tap the PATTY onto the grill!", type: "tap", item: "patty", target: "pan" },
+      { instruction: "SIZZLE it! Tap tap tap!", type: "rapid", item: "cooking", count: 18 },
+      { instruction: "FLIP the patty!", type: "swipe", item: "patty" },
+      { instruction: "Stack the TRIPLE BACON!", type: "tap", item: "triple_bacon", target: "plate" },
+      { instruction: "Add the BUN! Tap to finish!", type: "tap", item: "bun", target: "plate" },
+    ]},
+  { id: 3, name: "Pork Poutine", emoji: "\u{1F35F}", desc: "Chips, cheese curds, and pulled pork gravy! Canadian food is brilliant!", locked: true,
+    dialogue: ["Emily Elephant went to Canada and told me about this!", "The gravy is made from... actually, let's not think about it!", "Cheese AND pork! What could be better?"],
+    steps: [
+      { instruction: "Add the CHIPS to the bowl!", type: "tap", item: "chips", target: "bowl" },
+      { instruction: "Sprinkle CHEESE CURDS! Tap!", type: "tap", item: "cheese", target: "bowl" },
+      { instruction: "Pour the PORK GRAVY! Tap tap!", type: "rapid", item: "pouring", count: 10 },
+      { instruction: "Stir it together! Swipe!", type: "swipe", item: "poutine" },
+    ]},
+  { id: 4, name: "Pulled Pork Tacos", emoji: "\u{1F32E}", desc: "Slow-cooked for 8 hours! Peppa helped stir!", locked: true,
+    dialogue: ["You have to cook it LOW and SLOW! That's what Mr. Bull said.", "It smells AMAZING! Like... something familiar...", "Mr. Bull looked at me funny when I ordered this."],
+    steps: [
+      { instruction: "Add the PORK to the pot!", type: "tap", item: "pork", target: "pan" },
+      { instruction: "SLOW COOK it! Keep tapping!", type: "rapid", item: "cooking", count: 25 },
+      { instruction: "SHRED it with forks! Swipe!", type: "swipe", item: "pork" },
+      { instruction: "Fill the TACO SHELLS! Tap!", type: "tap", item: "taco", target: "plate" },
+      { instruction: "Add TOPPINGS! Tap tap!", type: "rapid", item: "topping", count: 8 },
+    ]},
+  { id: 5, name: "Pork Belly Ramen", emoji: "\u{1F35C}", desc: "Suzy Sheep taught Peppa this one. Suzy seems... nervous.", locked: true,
+    dialogue: ["Suzy Sheep showed me how to make this!", "Suzy kept saying 'Are you sure about this, Peppa?'", "The pork belly is SO tender! Suzy won't eat any though. Silly Suzy!"],
+    steps: [
+      { instruction: "Boil the NOODLES! Tap the pot!", type: "tap", item: "noodles", target: "pan" },
+      { instruction: "Cook the noodles! Tap tap!", type: "rapid", item: "cooking", count: 15 },
+      { instruction: "Slice the PORK BELLY! Swipe!", type: "swipe", item: "pork_belly" },
+      { instruction: "Add the BROTH! Tap to pour!", type: "tap", item: "broth", target: "bowl" },
+      { instruction: "Arrange everything! Tap tap!", type: "rapid", item: "arranging", count: 10 },
+    ]},
+  { id: 6, name: "Full English Fry-Up", emoji: "\u{1F373}", desc: "Sausages, bacon, black pudding! A proper breakfast!", locked: true,
+    dialogue: ["A PROPER breakfast! None of that continental nonsense!", "Black pudding is made from... actually, Mummy Pig says I shouldn't ask.", "Daddy Pig says this is 'the works'! All the meats!"],
+    steps: [
+      { instruction: "SAUSAGES in the pan! Tap!", type: "tap", item: "sausages", target: "pan" },
+      { instruction: "BACON next to them! Tap!", type: "tap", item: "bacon", target: "pan" },
+      { instruction: "Cook everything! Tap tap tap!", type: "rapid", item: "cooking", count: 22 },
+      { instruction: "FLIP the sausages! Swipe!", type: "swipe", item: "sausages" },
+      { instruction: "Add BLACK PUDDING! Tap!", type: "tap", item: "pudding", target: "pan" },
+      { instruction: "Plate it up! Tap to serve!", type: "tap", item: "plate", target: "plate" },
+    ]},
+  { id: 7, name: "Ham & Pineapple Pizza", emoji: "\u{1F355}", desc: "Peppa's favourite pizza! Don't tell the Italians!", locked: true,
+    dialogue: ["Ham and pineapple is the BEST combination!", "Freddy Fox says this is a 'crime against food'. He's so silly!", "The ham is so pink! Almost as pink as... never mind!"],
+    steps: [
+      { instruction: "Roll the DOUGH! Swipe!", type: "swipe", item: "dough" },
+      { instruction: "Add TOMATO SAUCE! Tap!", type: "tap", item: "sauce", target: "dough" },
+      { instruction: "Sprinkle CHEESE! Tap tap!", type: "rapid", item: "cheese_sprinkle", count: 12 },
+      { instruction: "Add the HAM! Tap!", type: "tap", item: "ham", target: "dough" },
+      { instruction: "Add PINEAPPLE! Tap!", type: "tap", item: "pineapple", target: "dough" },
+      { instruction: "BAKE it! Keep tapping!", type: "rapid", item: "cooking", count: 20 },
+    ]},
+  { id: 8, name: "Pork Crackling", emoji: "\u{1F356}", desc: "Crispy and crunchy! Grandpa Pig's secret recipe! ...Grandpa?", locked: true,
+    dialogue: ["Grandpa Pig taught me this recipe! He's not here today though.", "You have to get the skin REALLY crispy!", "It crackles just like... well, like crackling! That's why it's called that! *nervous giggle*"],
+    steps: [
+      { instruction: "Score the SKIN! Swipe across!", type: "swipe", item: "skin" },
+      { instruction: "Add SALT! Tap tap!", type: "rapid", item: "salting", count: 10 },
+      { instruction: "Into the OVEN! Tap!", type: "tap", item: "pork_skin", target: "pan" },
+      { instruction: "ROAST it! Keep tapping!", type: "rapid", item: "cooking", count: 28 },
+      { instruction: "Listen to it CRACKLE! Tap to finish!", type: "tap", item: "crackling", target: "plate" },
+    ]},
+  { id: 9, name: "The Ultimate BLT", emoji: "\u{1F96A}", desc: "Bacon, lettuce, tomato, and MORE BACON!", locked: true,
+    dialogue: ["The secret ingredient is... MORE BACON!", "Daddy Pig says you can never have too much bacon. He's so wise!", "B is for Bacon! L is for Lovely! T is for Tasty!"],
+    steps: [
+      { instruction: "Cook the FIRST layer of bacon! Tap!", type: "tap", item: "bacon", target: "pan" },
+      { instruction: "SIZZLE! Tap tap tap!", type: "rapid", item: "cooking", count: 14 },
+      { instruction: "Cook the SECOND layer! Tap!", type: "tap", item: "more_bacon", target: "pan" },
+      { instruction: "MORE SIZZLE! Tap tap!", type: "rapid", item: "cooking", count: 14 },
+      { instruction: "Stack it ALL! Swipe up!", type: "swipe", item: "blt" },
+    ]},
+  { id: 10, name: "Peppa's Special Roast", emoji: "\u{1F357}", desc: "A beautiful Sunday roast! The whole family is here! ...wait.", locked: true,
+    dialogue: [
+      "Everyone's coming for dinner! This is going to be LOVELY!",
+      "Mummy Pig, Daddy Pig, George... we're ALL here!",
+      "...why is everyone looking at me like that?",
+      "Suzy Sheep keeps crying. Silly Suzy!",
+      "The roast smells just like... like home. Isn't that nice?",
+      "Wait... where IS Grandpa Pig? And Granny Pig?",
+      "...I'm sure it's fine. Everything is FINE. *oink*"
+    ],
+    steps: [
+      { instruction: "Prepare the ROAST! Tap!", type: "tap", item: "roast", target: "pan" },
+      { instruction: "Season it! Tap tap tap!", type: "rapid", item: "seasoning", count: 15 },
+      { instruction: "Add VEGETABLES! Tap each one!", type: "tap", item: "veggies", target: "pan" },
+      { instruction: "Into the OVEN! Swipe!", type: "swipe", item: "roast" },
+      { instruction: "ROAST for hours! Keep tapping!", type: "rapid", item: "cooking", count: 35 },
+      { instruction: "Baste it! Swipe!", type: "swipe", item: "baste" },
+      { instruction: "More cooking! Tap tap tap!", type: "rapid", item: "cooking", count: 20 },
+      { instruction: "Serve the ROAST! Tap to finish!", type: "tap", item: "final_roast", target: "plate" },
+    ]},
+];
+
+// ---- State ----
+let state = 'menu'; // menu, cooking, rating
+let selectedRecipe = null;
+let currentStep = 0;
+let tapCount = 0;
+let tapTarget = 0;
+let cookProgress = 0;
+let swipeStart = null;
+let stars = 0;
+let dialogueIdx = 0;
+let dialogueTimer = 0;
+let speechBubbleText = '';
+let speechBubbleAlpha = 0;
+let sparkles = [];
+let burnCount = 0;
+let peppaPokeCount = 0;
+let peppaPokeMsg = '';
+let peppaPokeTimer = 0;
+let completedRecipes = new Set();
+let totalDishesCooked = 0;
+let animFrame = 0;
+let cookingAlpha = 0; // for ingredient animations
+let ingredientY = 0;
+let ingredientBounce = false;
+let stepCompleteFlash = 0;
+let menuScroll = 0;
+let touchStartY = 0;
+let isDragging = false;
+let overcookTimer = 0;
+let overcookWarning = false;
+let undercookWarning = false;
+
+// Load progress
+try {
+  const saved = JSON.parse(localStorage.getItem('peppa_kitchen'));
+  if (saved) {
+    completedRecipes = new Set(saved.completed || []);
+    totalDishesCooked = saved.totalCooked || 0;
+    burnCount = saved.burnCount || 0;
+    completedRecipes.forEach(id => {
+      if (id + 1 < RECIPES.length) RECIPES[id + 1].locked = false;
+    });
+    // Ensure first two are always unlocked
+    RECIPES[0].locked = false;
+    RECIPES[1].locked = false;
+    // Secret recipe
+    if (completedRecipes.size >= 10) RECIPES[10].locked = false;
+  }
+} catch(e) {}
+
+function saveProgress() {
+  try {
+    localStorage.setItem('peppa_kitchen', JSON.stringify({
+      completed: [...completedRecipes],
+      totalCooked: totalDishesCooked,
+      burnCount: burnCount
+    }));
+  } catch(e) {}
+}
+
+// ---- Drawing helpers ----
+function px(v) { return v * scale; }
+
+function drawRoundRect(x, y, w, h, r, fill, stroke, lw = 3) {
+  ctx.beginPath();
+  ctx.roundRect(px(x), px(y), px(w), px(h), px(r));
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = px(lw); ctx.stroke(); }
+}
+
+function drawText(text, x, y, size, color = '#333', align = 'center', maxW) {
+  ctx.font = `bold ${px(size)}px 'Comic Neue', 'Comic Sans MS', cursive`;
+  ctx.fillStyle = color;
+  ctx.textAlign = align;
+  ctx.textBaseline = 'middle';
+  if (maxW) ctx.fillText(text, px(x), px(y), px(maxW));
+  else ctx.fillText(text, px(x), px(y));
+}
+
+function drawTextWrap(text, x, y, size, color, maxWidth, lineHeight) {
+  ctx.font = `bold ${px(size)}px 'Comic Neue', 'Comic Sans MS', cursive`;
+  ctx.fillStyle = color || '#333';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  const words = text.split(' ');
+  let line = '';
+  let cy = px(y);
+  for (const word of words) {
+    const test = line + word + ' ';
+    if (ctx.measureText(test).width > px(maxWidth) && line) {
+      ctx.fillText(line.trim(), px(x), cy);
+      line = word + ' ';
+      cy += px(lineHeight || size * 1.3);
+    } else {
+      line = test;
+    }
+  }
+  ctx.fillText(line.trim(), px(x), cy);
+}
+
+// ---- Draw Peppa ----
+function drawPeppa(x, y, sc, talking = false) {
+  const s = sc * scale;
+  ctx.save();
+  ctx.translate(px(x), px(y));
+
+  // Body / dress
+  ctx.fillStyle = '#E85D8C';
+  ctx.beginPath();
+  ctx.ellipse(0, s * 40, s * 22, s * 28, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#333';
+  ctx.lineWidth = s * 2.5;
+  ctx.stroke();
+
+  // Head — side view circle
+  const headX = s * 12;
+  const headY = s * -10;
+  ctx.fillStyle = '#F8A4B8';
+  ctx.beginPath();
+  ctx.ellipse(headX, headY, s * 24, s * 22, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#333';
+  ctx.lineWidth = s * 2.5;
+  ctx.stroke();
+
+  // Snout (protruding circle for the Peppa nose shape)
+  ctx.fillStyle = '#F8A4B8';
+  ctx.beginPath();
+  ctx.ellipse(headX + s * 26, headY - s * 2, s * 10, s * 8, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#333';
+  ctx.lineWidth = s * 2.5;
+  ctx.stroke();
+
+  // Nostrils
+  ctx.fillStyle = '#D4728A';
+  ctx.beginPath();
+  ctx.arc(headX + s * 28, headY - s * 3, s * 2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(headX + s * 32, headY - s * 3, s * 2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Eye
+  ctx.fillStyle = '#333';
+  ctx.beginPath();
+  ctx.arc(headX + s * 10, headY - s * 8, s * 3.5, 0, Math.PI * 2);
+  ctx.fill();
+  // Eye shine
+  ctx.fillStyle = '#FFF';
+  ctx.beginPath();
+  ctx.arc(headX + s * 11, headY - s * 9.5, s * 1.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Mouth — smile
+  ctx.strokeStyle = '#333';
+  ctx.lineWidth = s * 2;
+  ctx.beginPath();
+  if (talking && Math.floor(animFrame / 8) % 2 === 0) {
+    // Open mouth
+    ctx.ellipse(headX + s * 16, headY + s * 6, s * 7, s * 5, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#C44';
+    ctx.fill();
+    ctx.stroke();
+  } else {
+    ctx.arc(headX + s * 14, headY + s * 3, s * 10, 0.2, Math.PI * 0.7);
+    ctx.stroke();
+  }
+
+  // Cheek blush
+  ctx.fillStyle = 'rgba(255, 100, 120, 0.3)';
+  ctx.beginPath();
+  ctx.ellipse(headX + s * 2, headY + s * 4, s * 6, s * 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Ears (on top of head)
+  ctx.fillStyle = '#F8A4B8';
+  ctx.strokeStyle = '#333';
+  ctx.lineWidth = s * 2;
+  ctx.beginPath();
+  ctx.ellipse(headX - s * 4, headY - s * 28, s * 5, s * 8, -0.3, 0, Math.PI * 2);
+  ctx.fill(); ctx.stroke();
+  ctx.beginPath();
+  ctx.ellipse(headX + s * 6, headY - s * 30, s * 5, s * 8, 0.2, 0, Math.PI * 2);
+  ctx.fill(); ctx.stroke();
+
+  // Arms
+  ctx.strokeStyle = '#F8A4B8';
+  ctx.lineWidth = s * 5;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(-s * 15, s * 30);
+  ctx.lineTo(-s * 30, s * 20 + Math.sin(animFrame * 0.1) * s * 5);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(s * 15, s * 30);
+  ctx.lineTo(s * 30, s * 20 + Math.cos(animFrame * 0.1) * s * 5);
+  ctx.stroke();
+
+  // Legs
+  ctx.strokeStyle = '#F8A4B8';
+  ctx.lineWidth = s * 4;
+  ctx.beginPath();
+  ctx.moveTo(-s * 6, s * 65);
+  ctx.lineTo(-s * 8, s * 82);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(s * 6, s * 65);
+  ctx.lineTo(s * 8, s * 82);
+  ctx.stroke();
+
+  // Shoes
+  ctx.fillStyle = '#222';
+  ctx.beginPath();
+  ctx.ellipse(-s * 8, s * 85, s * 6, s * 3, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(s * 8, s * 85, s * 6, s * 3, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+// ---- Speech Bubble ----
+function drawSpeechBubble(text, x, y, maxW) {
+  if (!text || speechBubbleAlpha <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, speechBubbleAlpha);
+
+  ctx.font = `bold ${px(16)}px 'Comic Neue', 'Comic Sans MS', cursive`;
+  ctx.textAlign = 'left';
+  const words = text.split(' ');
+  let lines = [];
+  let line = '';
+  for (const word of words) {
+    const test = line + word + ' ';
+    if (ctx.measureText(test).width > px(maxW - 30) && line) {
+      lines.push(line.trim());
+      line = word + ' ';
+    } else { line = test; }
+  }
+  lines.push(line.trim());
+
+  const lh = px(20);
+  const bw = px(maxW);
+  const bh = lines.length * lh + px(20);
+  const bx = px(x);
+  const by = px(y) - bh;
+
+  // Bubble
+  ctx.fillStyle = '#FFF';
+  ctx.strokeStyle = '#333';
+  ctx.lineWidth = px(3);
+  ctx.beginPath();
+  ctx.roundRect(bx, by, bw, bh, px(12));
+  ctx.fill(); ctx.stroke();
+
+  // Tail
+  ctx.fillStyle = '#FFF';
+  ctx.beginPath();
+  ctx.moveTo(bx + px(20), by + bh);
+  ctx.lineTo(bx + px(10), by + bh + px(15));
+  ctx.lineTo(bx + px(40), by + bh);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(bx + px(20), by + bh - px(1));
+  ctx.lineTo(bx + px(10), by + bh + px(15));
+  ctx.lineTo(bx + px(40), by + bh - px(1));
+  ctx.strokeStyle = '#333';
+  ctx.stroke();
+
+  // Text
+  ctx.fillStyle = '#333';
+  ctx.textBaseline = 'top';
+  lines.forEach((l, i) => {
+    ctx.fillText(l, bx + px(15), by + px(10) + i * lh);
+  });
+
+  ctx.restore();
+}
+
+// ---- Sparkle effects ----
+function addSparkles(cx, cy, count = 12) {
+  for (let i = 0; i < count; i++) {
+    sparkles.push({
+      x: cx, y: cy,
+      vx: (Math.random() - 0.5) * 6,
+      vy: (Math.random() - 0.5) * 6 - 2,
+      life: 1,
+      size: Math.random() * 6 + 3,
+      color: ['#FFD700', '#FF69B4', '#87CEEB', '#FFF'][Math.floor(Math.random() * 4)]
+    });
+  }
+}
+
+function updateSparkles() {
+  for (let i = sparkles.length - 1; i >= 0; i--) {
+    const s = sparkles[i];
+    s.x += s.vx; s.y += s.vy;
+    s.vy += 0.1;
+    s.life -= 0.02;
+    if (s.life <= 0) sparkles.splice(i, 1);
+  }
+}
+
+function drawSparkles() {
+  sparkles.forEach(s => {
+    ctx.save();
+    ctx.globalAlpha = s.life;
+    ctx.fillStyle = s.color;
+    ctx.translate(px(s.x), px(s.y));
+    ctx.rotate(animFrame * 0.05);
+    // Star shape
+    const sz = px(s.size);
+    ctx.beginPath();
+    for (let i = 0; i < 5; i++) {
+      const a = (i * 4 * Math.PI) / 5 - Math.PI / 2;
+      const r = i === 0 ? sz : sz;
+      ctx.lineTo(Math.cos(a) * sz, Math.sin(a) * sz);
+      const a2 = a + (2 * Math.PI) / 10;
+      ctx.lineTo(Math.cos(a2) * sz * 0.4, Math.sin(a2) * sz * 0.4);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  });
+}
+
+// ---- Kitchen Drawing ----
+function drawKitchen() {
+  // Wall
+  const gradient = ctx.createLinearGradient(0, 0, 0, H);
+  gradient.addColorStop(0, '#B8E6F0');
+  gradient.addColorStop(0.5, '#E8F4F8');
+  gradient.addColorStop(1, '#F5E6D3');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, W, H);
+
+  // Wallpaper pattern — small flowers
+  ctx.globalAlpha = 0.1;
+  for (let fy = 0; fy < H * 0.45; fy += px(60)) {
+    for (let fx = 0; fx < W; fx += px(60)) {
+      ctx.fillStyle = '#F8A4B8';
+      ctx.beginPath();
+      ctx.arc(fx, fy, px(5), 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.globalAlpha = 1;
+
+  // Counter
+  drawRoundRect(0, 540, 800, 120, 0, '#8B6914', '#5C4400', 4);
+  // Counter top surface
+  drawRoundRect(0, 535, 800, 15, 0, '#D4A853', '#8B6914', 2);
+  // Wood grain
+  ctx.strokeStyle = 'rgba(92, 68, 0, 0.15)';
+  ctx.lineWidth = px(1);
+  for (let gy = 550; gy < 660; gy += 12) {
+    ctx.beginPath();
+    ctx.moveTo(0, px(gy / scale));
+    for (let gx = 0; gx < 800; gx += 40) {
+      ctx.lineTo(px(gx + Math.sin(gy * 0.3) * 8), px(gy / scale));
+    }
+    ctx.stroke();
+  }
+
+  // Stove area
+  drawRoundRect(250, 430, 300, 110, 8, '#444', '#222', 3);
+  // Burner rings
+  ctx.strokeStyle = '#666';
+  ctx.lineWidth = px(2);
+  [340, 460].forEach(bx => {
+    ctx.beginPath();
+    ctx.arc(px(bx), px(480), px(30), 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(px(bx), px(480), px(20), 0, Math.PI * 2);
+    ctx.stroke();
+  });
+
+  // Stove knobs
+  [310, 370, 430, 490].forEach(kx => {
+    ctx.fillStyle = '#888';
+    ctx.beginPath();
+    ctx.arc(px(kx), px(530), px(8), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#555';
+    ctx.lineWidth = px(1.5);
+    ctx.stroke();
+  });
+
+  // Pan on stove
+  ctx.fillStyle = '#333';
+  ctx.beginPath();
+  ctx.ellipse(px(400), px(475), px(60), px(15), 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#444';
+  ctx.beginPath();
+  ctx.ellipse(px(400), px(472), px(55), px(12), 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Pan handle
+  ctx.fillStyle = '#222';
+  ctx.beginPath();
+  ctx.roundRect(px(455), px(468), px(70), px(10), px(3));
+  ctx.fill();
+
+  // Cutting board
+  drawRoundRect(80, 460, 120, 80, 8, '#C4964A', '#8B6914', 2);
+  drawRoundRect(85, 465, 110, 70, 6, '#D4A65A', '#B8893A', 1);
+
+  // Floor
+  ctx.fillStyle = '#C5E8B0';
+  ctx.fillRect(0, px(660), W, H - px(660));
+  // Tile lines
+  ctx.strokeStyle = 'rgba(100, 160, 80, 0.3)';
+  ctx.lineWidth = px(1);
+  for (let tx = 0; tx < W; tx += px(60)) {
+    ctx.beginPath();
+    ctx.moveTo(tx, px(660)); ctx.lineTo(tx, H);
+    ctx.stroke();
+  }
+}
+
+// ---- Draw current cooking step UI ----
+function drawCookingStep(recipe, step) {
+  const s = recipe.steps[step];
+  if (!s) return;
+
+  // Instruction banner
+  drawRoundRect(50, 30, 530, 60, 15, 'rgba(255,255,255,0.92)', '#F8A4B8', 3);
+  drawText(s.instruction, 315, 60, 18, '#333', 'center', 510);
+
+  if (s.type === 'rapid') {
+    // Progress bar
+    const prog = Math.min(1, tapCount / s.count);
+    drawRoundRect(100, 100, 430, 30, 12, '#EEE', '#CCC', 2);
+    if (prog > 0) {
+      ctx.fillStyle = overcookWarning ? '#FF4444' : (prog >= 1 ? '#4CAF50' : '#F8A4B8');
+      ctx.beginPath();
+      ctx.roundRect(px(102), px(102), px(426 * prog), px(26), px(10));
+      ctx.fill();
+    }
+    drawText(`${tapCount} / ${s.count}`, 315, 115, 14, '#555');
+
+    // Overcook warning
+    if (overcookWarning) {
+      drawText("IT'S BURNING! Stop tapping!", 315, 145, 16, '#FF0000');
+    }
+
+    // Sizzle effect on pan
+    if (tapCount > 0 && tapCount <= s.count) {
+      for (let si = 0; si < 3; si++) {
+        ctx.fillStyle = 'rgba(200,200,200,0.5)';
+        const sx = 370 + Math.random() * 60;
+        const sy = 450 - Math.random() * 30 - animFrame % 20;
+        ctx.beginPath();
+        ctx.arc(px(sx), px(sy), px(3 + Math.random() * 4), 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  } else if (s.type === 'tap') {
+    // Show tappable ingredient
+    const itemX = 140;
+    const itemY = 420 + Math.sin(animFrame * 0.05) * 5;
+    const bounce = ingredientBounce ? Math.sin(animFrame * 0.3) * 10 : 0;
+
+    // Ingredient icon (simple colored shape)
+    ctx.save();
+    ctx.translate(px(itemX), px(itemY + bounce));
+
+    const itemEmojis = {
+      bacon: '\u{1F953}', bread: '\u{1F35E}', lettuce: '\u{1F96C}', bacon_bits: '\u{1F953}',
+      patty: '\u{1F969}', triple_bacon: '\u{1F953}', bun: '\u{1F354}', chips: '\u{1F35F}',
+      cheese: '\u{1F9C0}', pork: '\u{1F356}', taco: '\u{1F32E}', noodles: '\u{1F35C}',
+      broth: '\u{1F372}', pork_belly: '\u{1F969}', sausages: '\u{1F32D}', pudding: '\u{1F36B}',
+      plate: '\u{1F37D}️', sauce: '\u{1F345}', ham: '\u{1F356}', pineapple: '\u{1F34D}',
+      pork_skin: '\u{1F969}', crackling: '\u{1F356}', more_bacon: '\u{1F953}',
+      roast: '\u{1F357}', veggies: '\u{1F966}', final_roast: '\u{1F357}', dough: '\u{1F96F}'
+    };
+
+    // Pulsing circle behind ingredient
+    const pulse = 1 + Math.sin(animFrame * 0.08) * 0.1;
+    ctx.fillStyle = 'rgba(248, 164, 184, 0.3)';
+    ctx.beginPath();
+    ctx.arc(0, 0, px(35 * pulse), 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.font = `${px(40)}px serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(itemEmojis[s.item] || '\u{1F372}', 0, 0);
+    ctx.restore();
+
+    // "TAP!" label
+    ctx.save();
+    const tapPulse = 1 + Math.sin(animFrame * 0.15) * 0.15;
+    ctx.translate(px(itemX), px(itemY - 50));
+    ctx.scale(tapPulse, tapPulse);
+    drawText("TAP!", 0, 0, 20, '#E85D8C', 'center');
+    ctx.restore();
+
+  } else if (s.type === 'swipe') {
+    // Swipe indicator
+    const arrowY = 350;
+    ctx.save();
+    ctx.translate(px(400), px(arrowY));
+
+    // Arrow
+    const sway = Math.sin(animFrame * 0.08) * 20;
+    ctx.strokeStyle = '#E85D8C';
+    ctx.lineWidth = px(4);
+    ctx.beginPath();
+    ctx.moveTo(px(-40 + sway), 0);
+    ctx.lineTo(px(40 + sway), 0);
+    ctx.stroke();
+
+    // Arrowhead
+    ctx.beginPath();
+    ctx.moveTo(px(30 + sway), px(-10));
+    ctx.lineTo(px(45 + sway), 0);
+    ctx.lineTo(px(30 + sway), px(10));
+    ctx.strokeStyle = '#E85D8C';
+    ctx.lineWidth = px(3);
+    ctx.stroke();
+
+    ctx.restore();
+
+    drawText("SWIPE!", 400, 310, 22, '#E85D8C');
+  }
+
+  // Step complete flash
+  if (stepCompleteFlash > 0) {
+    ctx.fillStyle = `rgba(255, 255, 255, ${stepCompleteFlash * 0.3})`;
+    ctx.fillRect(0, 0, W, H);
+    stepCompleteFlash -= 0.05;
+  }
+}
+
+// ---- Draw Menu ----
+function drawMenu() {
+  // Sky background
+  const skyGrad = ctx.createLinearGradient(0, 0, 0, H);
+  skyGrad.addColorStop(0, '#87CEEB');
+  skyGrad.addColorStop(0.7, '#B8E6F0');
+  skyGrad.addColorStop(1, '#C5E8B0');
+  ctx.fillStyle = skyGrad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Grass
+  ctx.fillStyle = '#7EC850';
+  ctx.fillRect(0, H * 0.85, W, H * 0.15);
+  // Grass tufts
+  ctx.fillStyle = '#6BB840';
+  for (let gx = 0; gx < W; gx += px(30)) {
+    ctx.beginPath();
+    ctx.moveTo(gx, H * 0.85);
+    ctx.quadraticCurveTo(gx + px(8), H * 0.85 - px(10 + Math.sin(gx) * 5), gx + px(15), H * 0.85);
+    ctx.fill();
+  }
+
+  // Clouds
+  ctx.fillStyle = 'rgba(255,255,255,0.7)';
+  [[100, 60], [350, 40], [600, 70]].forEach(([cx, cy]) => {
+    const drift = (animFrame * 0.15 + cx) % 900 - 50;
+    ctx.beginPath();
+    ctx.arc(px(drift), px(cy), px(25), 0, Math.PI * 2);
+    ctx.arc(px(drift + 25), px(cy - 8), px(20), 0, Math.PI * 2);
+    ctx.arc(px(drift + 50), px(cy), px(28), 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // Title
+  ctx.save();
+  const titleBounce = Math.sin(animFrame * 0.04) * 3;
+  drawRoundRect(80, 70 + titleBounce, 640, 80, 20, 'rgba(255,255,255,0.9)', '#F8A4B8', 4);
+  drawText("Peppa's Kitchen", 400, 95 + titleBounce, 32, '#E85D8C');
+  drawText("A Cooking Adventure!", 400, 125 + titleBounce, 18, '#888');
+  ctx.restore();
+
+  // Dishes cooked counter
+  drawRoundRect(580, 165, 180, 35, 10, 'rgba(255,255,255,0.8)', '#F8A4B8', 2);
+  drawText(`Dishes cooked: ${totalDishesCooked}`, 670, 182, 13, '#666');
+
+  // Recipe cards (scrollable area)
+  ctx.save();
+  const menuTop = 210;
+  const menuBottom = 1100;
+  const cardH = 90;
+  const cardGap = 10;
+  const totalH = RECIPES.length * (cardH + cardGap);
+  const maxScroll = Math.max(0, totalH - (menuBottom - menuTop));
+  menuScroll = Math.max(0, Math.min(maxScroll, menuScroll));
+
+  // Clip
+  ctx.beginPath();
+  ctx.rect(0, px(menuTop - 5), W, px(menuBottom - menuTop + 10));
+  ctx.clip();
+
+  RECIPES.forEach((r, i) => {
+    const cy = menuTop + i * (cardH + cardGap) - menuScroll;
+    if (cy + cardH < menuTop - 20 || cy > menuBottom + 20) return;
+
+    const unlocked = !r.locked;
+    const completed = completedRecipes.has(r.id);
+    const isSecret = r.id === 10;
+
+    // Card
+    const cardColor = unlocked ? (completed ? 'rgba(200, 240, 200, 0.92)' : 'rgba(255,255,255,0.92)') : 'rgba(200,200,200,0.7)';
+    const borderColor = completed ? '#4CAF50' : (unlocked ? '#F8A4B8' : '#AAA');
+    drawRoundRect(60, cy, 680, cardH, 15, cardColor, borderColor, 3);
+
+    if (unlocked) {
+      // Emoji
+      ctx.font = `${px(36)}px serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(r.emoji, px(100), px(cy + cardH / 2));
+
+      // Name
+      drawText(r.name, 140, cy + 22, 18, '#333', 'left');
+
+      // Description
+      ctx.font = `${px(12)}px 'Comic Neue', 'Comic Sans MS', cursive`;
+      ctx.fillStyle = '#777';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText(r.desc, px(140), px(cy + 42), px(560));
+
+      // Completed star
+      if (completed) {
+        drawText('⭐', 710, cy + cardH / 2, 24, '#FFD700');
+      }
+    } else {
+      // Locked
+      drawText('\u{1F512}', 100, cy + cardH / 2, 30, '#999');
+      if (isSecret) {
+        drawText('???  Complete all recipes to unlock!', 400, cy + cardH / 2, 16, '#999');
+      } else {
+        drawText('Locked  Complete the previous recipe!', 400, cy + cardH / 2, 16, '#999');
+      }
+    }
+  });
+
+  ctx.restore();
+
+  // Peppa on the side
+  drawPeppa(680, 850, 0.9);
+
+  // Speech bubble
+  if (speechBubbleAlpha > 0) {
+    drawSpeechBubble(speechBubbleText, 480, 800, 260);
+  }
+
+  // Scroll indicator
+  if (totalH > menuBottom - menuTop) {
+    const scrollFrac = menuScroll / maxScroll;
+    const barH = 300;
+    const thumbH = 40;
+    ctx.fillStyle = 'rgba(0,0,0,0.15)';
+    ctx.beginPath();
+    ctx.roundRect(px(755), px(menuTop + 10), px(8), px(barH), px(4));
+    ctx.fill();
+    ctx.fillStyle = 'rgba(248, 164, 184, 0.6)';
+    ctx.beginPath();
+    ctx.roundRect(px(755), px(menuTop + 10 + scrollFrac * (barH - thumbH)), px(8), px(thumbH), px(4));
+    ctx.fill();
+  }
+}
+
+// ---- Draw Rating Screen ----
+function drawRating() {
+  // Background
+  const skyGrad = ctx.createLinearGradient(0, 0, 0, H);
+  skyGrad.addColorStop(0, '#FFE4EC');
+  skyGrad.addColorStop(1, '#F8A4B8');
+  ctx.fillStyle = skyGrad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Big dish emoji
+  const bounce = Math.sin(animFrame * 0.06) * 10;
+  ctx.font = `${px(80)}px serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(selectedRecipe.emoji, px(400), px(250 + bounce));
+
+  // Dish name
+  drawText(selectedRecipe.name, 400, 350, 28, '#FFF');
+
+  // Stars
+  const starY = 430;
+  for (let i = 0; i < 3; i++) {
+    const delay = i * 0.3;
+    const appear = Math.min(1, Math.max(0, (animFrame - 30 - i * 15) / 15));
+    if (appear <= 0) continue;
+    ctx.save();
+    ctx.globalAlpha = appear;
+    const sx = 300 + i * 100;
+    const starScale = 1 + (1 - appear) * 0.5;
+    ctx.translate(px(sx), px(starY));
+    ctx.scale(starScale, starScale);
+    const filled = i < stars;
+    ctx.font = `${px(50)}px serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(filled ? '⭐' : '☆', 0, 0);
+    ctx.restore();
+  }
+
+  // Message based on stars
+  const messages = {
+    1: "Not bad! Daddy Pig would eat it anyway!",
+    2: "Yummy! Mummy Pig is impressed!",
+    3: "PERFECT! You're the BEST cook! *oink oink*"
+  };
+
+  if (animFrame > 60) {
+    drawRoundRect(100, 520, 600, 70, 15, 'rgba(255,255,255,0.9)', '#FFF', 2);
+    drawText(messages[stars] || "How did you manage that?", 400, 555, 18, '#E85D8C');
+  }
+
+  // Special dialogue for final recipe
+  if (selectedRecipe.id === 10 && animFrame > 90) {
+    drawRoundRect(100, 610, 600, 50, 12, 'rgba(0,0,0,0.2)', null, 0);
+    drawText("...something doesn't feel right.", 400, 635, 14, 'rgba(255,255,255,0.8)');
+  }
+
+  // Continue button
+  if (animFrame > 80) {
+    const btnPulse = 1 + Math.sin(animFrame * 0.08) * 0.05;
+    ctx.save();
+    ctx.translate(px(400), px(750));
+    ctx.scale(btnPulse, btnPulse);
+    drawRoundRect(-120, -30, 240, 60, 15, '#FFF', '#E85D8C', 3);
+    drawText("Cook Again!", 0, 0, 20, '#E85D8C');
+    ctx.restore();
+  }
+
+  // All complete message
+  if (selectedRecipe.id === 10 && completedRecipes.size >= 11 && animFrame > 120) {
+    drawRoundRect(80, 840, 640, 80, 15, 'rgba(0,0,0,0.3)', null, 0);
+    drawTextWrap("What a lovely cook! Time for a mud bath! ...the mud smells different today.", 100, 852, 16, 'rgba(255,255,255,0.9)', 600, 22);
+  }
+
+  // Peppa
+  drawPeppa(650, 880, 0.8, animFrame > 60);
+
+  // Sparkles
+  drawSparkles();
+}
+
+// ---- Game Loop ----
+function updateDialogue(recipe) {
+  dialogueTimer++;
+  if (dialogueTimer > 180) { // Change dialogue every ~3 seconds
+    dialogueTimer = 0;
+    dialogueIdx = (dialogueIdx + 1) % recipe.dialogue.length;
+    speechBubbleText = recipe.dialogue[dialogueIdx];
+    speechBubbleAlpha = 1;
+    if (Math.random() < 0.3) playOink();
+  }
+  if (speechBubbleAlpha > 0 && dialogueTimer > 150) {
+    speechBubbleAlpha -= 0.03;
+  }
+}
+
+function gameLoop() {
+  animFrame++;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+
+  if (state === 'menu') {
+    drawMenu();
+    updateDialogue(RECIPES[0]); // Menu chatter
+    // Menu Peppa dialogue
+    const menuPhrases = [
+      "What shall we cook today?",
+      "I LOVE cooking! *oink*",
+      "Daddy Pig is SO hungry!",
+      "Let's make something YUMMY!",
+      "Mummy Pig taught me everything I know!",
+      "Cooking is my FAVOURITE thing!"
+    ];
+    if (dialogueTimer === 0) {
+      speechBubbleText = menuPhrases[dialogueIdx % menuPhrases.length];
+    }
+  } else if (state === 'cooking') {
+    drawKitchen();
+    drawCookingStep(selectedRecipe, currentStep);
+    updateDialogue(selectedRecipe);
+
+    // Peppa in corner
+    drawPeppa(680, 700, 0.65, speechBubbleAlpha > 0.5);
+    drawSpeechBubble(speechBubbleText, 460, 660, 240);
+
+    // Overcook timer for rapid steps
+    const step = selectedRecipe.steps[currentStep];
+    if (step && step.type === 'rapid' && tapCount >= step.count) {
+      overcookTimer++;
+      if (overcookTimer > 90) {
+        overcookWarning = true;
+        if (overcookTimer > 180) {
+          // Burned!
+          burnCount++;
+          saveProgress();
+          speechBubbleText = burnCount >= 3
+            ? "Maybe Mummy Pig should cook..."
+            : "Oh no! It's burnt! Daddy Pig will eat it anyway.";
+          speechBubbleAlpha = 1;
+          playOink();
+          advanceStep(0); // 0 stars penalty... but let them continue
+        }
+      }
+    }
+
+    drawSparkles();
+
+  } else if (state === 'rating') {
+    drawRating();
+  }
+
+  updateSparkles();
+
+  // Peppa poke message
+  if (peppaPokeTimer > 0) {
+    peppaPokeTimer--;
+    drawRoundRect(200, 400, 400, 50, 12, 'rgba(0,0,0,0.7)', null, 0);
+    drawText(peppaPokeMsg, 400, 425, 16, '#FFF');
+  }
+
+  requestAnimationFrame(gameLoop);
+}
+
+// ---- Step advancement ----
+function advanceStep(starBonus = 1) {
+  currentStep++;
+  tapCount = 0;
+  overcookTimer = 0;
+  overcookWarning = false;
+  stepCompleteFlash = 1;
+  playChop();
+
+  if (currentStep >= selectedRecipe.steps.length) {
+    // Recipe complete!
+    state = 'rating';
+    animFrame = 0;
+    stars = Math.min(3, Math.max(1, starBonus + (burnCount > 0 ? 0 : 1) + 1));
+    completedRecipes.add(selectedRecipe.id);
+    totalDishesCooked++;
+
+    // Unlock next
+    if (selectedRecipe.id + 1 < RECIPES.length && selectedRecipe.id !== 10) {
+      RECIPES[selectedRecipe.id + 1].locked = false;
+    }
+    // Check for secret recipe
+    let allDone = true;
+    for (let i = 0; i < 10; i++) { if (!completedRecipes.has(i)) allDone = false; }
+    if (allDone) RECIPES[10].locked = false;
+
+    saveProgress();
+    playJingle();
+    for (let i = 0; i < 30; i++) {
+      addSparkles(200 + Math.random() * 400, 200 + Math.random() * 200);
+    }
+  } else {
+    addSparkles(400, 400, 6);
+  }
+}
+
+// ---- Input Handling ----
+function getPos(e) {
+  const rect = canvas.getBoundingClientRect();
+  const t = e.touches ? e.touches[0] || e.changedTouches[0] : e;
+  return {
+    x: (t.clientX - rect.left) * (W / rect.width) / scale,
+    y: (t.clientY - rect.top) * (H / rect.height) / scale
+  };
+}
+
+function hitRect(pos, rx, ry, rw, rh) {
+  return pos.x >= rx && pos.x <= rx + rw && pos.y >= ry && pos.y <= ry + rh;
+}
+
+let lastTapTime = 0;
+
+function handleTap(e) {
+  ensureAudio();
+  startMelody();
+  const pos = getPos(e);
+
+  if (state === 'menu') {
+    // Check recipe cards
+    const menuTop = 210;
+    const cardH = 90;
+    const cardGap = 10;
+
+    RECIPES.forEach((r, i) => {
+      const cy = menuTop + i * (cardH + cardGap) - menuScroll;
+      if (hitRect(pos, 60, cy, 680, cardH) && !r.locked) {
+        selectedRecipe = r;
+        currentStep = 0;
+        tapCount = 0;
+        overcookTimer = 0;
+        overcookWarning = false;
+        state = 'cooking';
+        animFrame = 0;
+        dialogueIdx = 0;
+        dialogueTimer = 0;
+        speechBubbleText = r.dialogue[0];
+        speechBubbleAlpha = 1;
+        playOink();
+        playDing();
+      }
+    });
+
+    // Peppa poke
+    if (hitRect(pos, 630, 770, 100, 170)) {
+      peppaPokeCount++;
+      if (peppaPokeCount >= 10) {
+        peppaPokeMsg = "Stop poking me! *oink*";
+        peppaPokeTimer = 120;
+        peppaPokeCount = 0;
+        playOink();
+      }
+    }
+
+  } else if (state === 'cooking') {
+    const step = selectedRecipe.steps[currentStep];
+    if (!step) return;
+
+    if (step.type === 'tap') {
+      // Check if tapping ingredient area (left side of screen / cutting board area)
+      if (hitRect(pos, 60, 350, 200, 200)) {
+        ingredientBounce = true;
+        setTimeout(() => { ingredientBounce = false; }, 200);
+        addSparkles(pos.x, pos.y, 5);
+        playChop();
+        advanceStep(2);
+      }
+    } else if (step.type === 'rapid') {
+      if (tapCount < step.count) {
+        tapCount++;
+        const now = Date.now();
+        if (now - lastTapTime < 300) {
+          playSizzle(0.1);
+        }
+        lastTapTime = now;
+        addSparkles(350 + Math.random() * 100, 450 + Math.random() * 30, 2);
+
+        if (tapCount >= step.count) {
+          speechBubbleText = "PERFECT! Now quickly, before it burns!";
+          speechBubbleAlpha = 1;
+          // Start overcook timer (handled in game loop)
+          overcookTimer = 0;
+          setTimeout(() => advanceStep(2), 800);
+        }
+      }
+    }
+
+    // Peppa poke in cooking
+    if (hitRect(pos, 630, 620, 100, 170)) {
+      peppaPokeCount++;
+      if (peppaPokeCount >= 10) {
+        peppaPokeMsg = "Stop poking me! I'm COOKING! *oink*";
+        peppaPokeTimer = 120;
+        peppaPokeCount = 0;
+        playOink();
+      }
+    }
+
+  } else if (state === 'rating') {
+    // Continue button
+    if (animFrame > 80 && hitRect(pos, 280, 720, 240, 60)) {
+      state = 'menu';
+      animFrame = 0;
+      dialogueTimer = 150; // Trigger immediate dialogue
+      playDing();
+    }
+  }
+}
+
+function handleSwipe(startPos, endPos) {
+  if (state !== 'cooking') return;
+  const step = selectedRecipe.steps[currentStep];
+  if (!step || step.type !== 'swipe') return;
+
+  const dx = endPos.x - startPos.x;
+  const dy = endPos.y - startPos.y;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+
+  if (dist > 40) {
+    addSparkles(400, 450, 8);
+    playSizzle(0.2);
+    advanceStep(2);
+  }
+}
+
+// Touch / Mouse events
+let pointerDown = null;
+
+canvas.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  pointerDown = getPos(e);
+  touchStartY = pointerDown.y;
+  isDragging = false;
+});
+
+canvas.addEventListener('pointermove', e => {
+  if (!pointerDown) return;
+  e.preventDefault();
+  const pos = getPos(e);
+
+  // Menu scrolling
+  if (state === 'menu') {
+    const dy = touchStartY - pos.y;
+    if (Math.abs(dy) > 5) {
+      isDragging = true;
+      menuScroll += dy * 0.5;
+      touchStartY = pos.y;
+    }
+  }
+});
+
+canvas.addEventListener('pointerup', e => {
+  e.preventDefault();
+  if (!pointerDown) return;
+  const endPos = getPos(e);
+
+  if (!isDragging) {
+    // Treat as tap or swipe
+    const dx = endPos.x - pointerDown.x;
+    const dy = endPos.y - pointerDown.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    if (dist > 40) {
+      handleSwipe(pointerDown, endPos);
+    } else {
+      handleTap(e);
+    }
+  }
+
+  pointerDown = null;
+  isDragging = false;
+});
+
+canvas.addEventListener('pointercancel', () => {
+  pointerDown = null;
+  isDragging = false;
+});
+
+// Prevent context menu on long press
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+// ---- Initialize ----
+speechBubbleText = "What shall we cook today?";
+speechBubbleAlpha = 1;
+
+gameLoop();
+</script>
+</body>
+</html>
