@@ -6,29 +6,29 @@
 <title>Meet the Flockers</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{background:#0a0a12;overflow:hidden;font-family:ui-monospace,"SF Mono",Menlo,Monaco,Consolas,monospace;-webkit-user-select:none;user-select:none}
+body{background:#1a0a2e;overflow:hidden;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;-webkit-user-select:none;user-select:none}
 canvas{display:block;position:fixed;top:0;left:0}
-#ui{position:fixed;bottom:0;left:0;right:0;z-index:10;padding:8px 12px;padding-bottom:max(8px,env(safe-area-inset-bottom));background:rgba(10,10,18,.85);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-top:1px solid rgba(255,255,255,.06);display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;justify-content:center}
+#ui{position:fixed;bottom:0;left:0;right:0;z-index:10;padding:8px 14px;padding-bottom:max(8px,env(safe-area-inset-bottom));background:rgba(20,10,30,.75);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid rgba(255,200,100,.08);display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;justify-content:center}
 .sl{display:flex;align-items:center;gap:5px}
-.sl label{font-size:10px;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.06em;min-width:65px}
-.sl input[type=range]{-webkit-appearance:none;width:80px;height:3px;background:rgba(255,255,255,.12);border-radius:2px;outline:none}
-.sl input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:#fff;cursor:pointer;box-shadow:0 0 6px rgba(255,255,255,.3)}
-.sv{font-size:10px;color:rgba(255,255,255,.7);min-width:24px;font-weight:600}
-.btn{font:600 10px ui-monospace;padding:5px 12px;border:1px solid rgba(255,255,255,.12);border-radius:5px;background:rgba(255,255,255,.06);color:rgba(255,255,255,.7);cursor:pointer;transition:.15s}
-.btn:hover{background:rgba(255,255,255,.12);color:#fff}
-.btn.on{background:rgba(120,200,255,.15);border-color:rgba(120,200,255,.3);color:#78c8ff}
+.sl label{font-size:10px;color:rgba(255,230,180,.5);text-transform:uppercase;letter-spacing:.06em;min-width:65px}
+.sl input[type=range]{-webkit-appearance:none;width:80px;height:3px;background:rgba(255,200,100,.15);border-radius:2px;outline:none}
+.sl input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:linear-gradient(135deg,#ffd080,#e8a030);cursor:pointer;box-shadow:0 0 6px rgba(255,180,60,.4)}
+.sv{font-size:10px;color:rgba(255,230,180,.7);min-width:24px;font-weight:600}
+.btn{font:600 10px/1 'Segoe UI',system-ui,sans-serif;padding:5px 12px;border:1px solid rgba(255,200,100,.12);border-radius:5px;background:rgba(255,200,100,.06);color:rgba(255,230,180,.65);cursor:pointer;transition:.15s}
+.btn:hover{background:rgba(255,200,100,.14);color:rgba(255,240,200,.9)}
+.btn.on{background:rgba(255,180,60,.18);border-color:rgba(255,180,60,.35);color:#ffc050}
 #title{position:fixed;top:0;left:0;right:0;z-index:10;padding:10px 16px;padding-top:max(10px,env(safe-area-inset-top));display:flex;align-items:center;gap:12px;pointer-events:none}
-#title h1{font-size:16px;font-weight:700;color:rgba(255,255,255,.8);letter-spacing:.04em}
-#title .sub{font-size:10px;color:rgba(255,255,255,.3)}
-#title .count{margin-left:auto;font-size:11px;color:rgba(255,255,255,.4);font-weight:600}
+#title h1{font-size:16px;font-weight:700;color:rgba(255,230,190,.8);letter-spacing:.04em}
+#title .sub{font-size:10px;color:rgba(255,220,170,.3)}
+#title .count{margin-left:auto;font-size:11px;color:rgba(255,220,170,.4);font-weight:600}
 </style>
 </head>
 <body>
 <canvas id="cv"></canvas>
 <div id="title">
   <h1>Meet the Flockers</h1>
-  <span class="sub">boids flocking simulation</span>
-  <span class="count" id="count">0 boids</span>
+  <span class="sub">a nature flocking simulation</span>
+  <span class="count" id="count">0 birds</span>
 </div>
 <div id="ui">
   <div class="sl"><label>Cohesion</label><input type="range" id="sCoh" min="0" max="100" value="50"><span class="sv" id="vCoh">50</span></div>
@@ -41,6 +41,7 @@ canvas{display:block;position:fixed;top:0;left:0}
   <button class="btn" id="bPred">Predator</button>
   <button class="btn" id="bWind">Wind</button>
   <button class="btn" id="bColor">Rainbow</button>
+  <button class="btn" id="bMute">Sound: Off</button>
 </div>
 <script>
 const cv=document.getElementById('cv'),c=cv.getContext('2d');
@@ -48,36 +49,55 @@ let W,H;
 function resize(){W=cv.width=innerWidth;H=cv.height=innerHeight}
 resize();addEventListener('resize',resize);
 
-// Parameters
+// --- Parameters ---
 let cohesion=.5,alignment=.65,separation=.7,maxSpeed=4.5,vision=80,targetCount=200;
 let trails=false,predatorOn=false,windOn=false,rainbow=false;
 
-// Boids
+// --- Sky cycle: 0=dawn, .25=day, .5=sunset, .75=dusk, 1=dawn ---
+let skyTime=0.45; // start near sunset
+
+// --- Clouds ---
+const clouds=[];
+for(let i=0;i<12;i++){
+  clouds.push({x:Math.random()*2-0.3,y:0.05+Math.random()*0.45,w:80+Math.random()*160,h:20+Math.random()*30,
+    speed:(0.0001+Math.random()*0.0003)*(Math.random()<0.5?1:0.6),opacity:0.06+Math.random()*0.1});
+}
+
+// --- Stars ---
+const stars=[];
+for(let i=0;i<100;i++){
+  stars.push({x:Math.random(),y:Math.random()*0.6,size:0.5+Math.random()*1.5,twinkle:Math.random()*Math.PI*2,speed:1+Math.random()*2});
+}
+
+// --- Boids ---
 let boids=[];
 function createBoid(x,y){
   const angle=Math.random()*Math.PI*2;
-  const hue=rainbow?Math.random()*360:200+Math.random()*40;
-  return{x:x||Math.random()*W,y:y||Math.random()*H,vx:Math.cos(angle)*2,vy:Math.sin(angle)*2,hue:hue,trail:[]};
+  const baseHue=20+Math.random()*30; // warm sunset hues for rainbow
+  return{x:x??Math.random()*W,y:y??Math.random()*H,vx:Math.cos(angle)*2,vy:Math.sin(angle)*2,
+    hue:baseHue,wingPhase:Math.random()*Math.PI*2,wingSpeed:0.08+Math.random()*0.07,
+    size:3+Math.random()*1.5,swoopTimer:0,swoopVy:0,trail:[]};
 }
 function initBoids(n){boids=[];for(let i=0;i<n;i++)boids.push(createBoid())}
 initBoids(200);
 
-// Predator
-let pred={x:W/2,y:H/2,vx:1.5,vy:0.8,trail:[]};
+// --- Predator ---
+let pred={x:0,y:0,vx:1.5,vy:0.8,wingPhase:0,trail:[]};
 
-// Wind
+// --- Wind ---
 let windAngle=0,windStrength=0;
 
-// Mouse attraction
-let mouse={x:-1000,y:-1000,active:false};
+// --- Mouse attraction ---
+let mouse={x:-1e4,y:-1e4,active:false};
 cv.addEventListener('mousedown',e=>{mouse.active=true;mouse.x=e.clientX;mouse.y=e.clientY});
 cv.addEventListener('mousemove',e=>{if(mouse.active){mouse.x=e.clientX;mouse.y=e.clientY}});
-cv.addEventListener('mouseup',()=>{mouse.active=false;mouse.x=-1000;mouse.y=-1000});
-cv.addEventListener('touchstart',e=>{e.preventDefault();mouse.active=true;mouse.x=e.touches[0].clientX;mouse.y=e.touches[0].clientY},{passive:false});
+cv.addEventListener('mouseup',()=>{mouse.active=false;mouse.x=-1e4;mouse.y=-1e4});
+cv.addEventListener('touchstart',e=>{e.preventDefault();mouse.active=true;mouse.x=e.touches[0].clientX;mouse.y=e.touches[0].clientY;startAudio()},{passive:false});
 cv.addEventListener('touchmove',e=>{e.preventDefault();mouse.x=e.touches[0].clientX;mouse.y=e.touches[0].clientY},{passive:false});
-cv.addEventListener('touchend',()=>{mouse.active=false;mouse.x=-1000;mouse.y=-1000});
+cv.addEventListener('touchend',()=>{mouse.active=false;mouse.x=-1e4;mouse.y=-1e4});
+cv.addEventListener('click',()=>startAudio(),{once:true});
 
-// Spatial grid for performance
+// --- Spatial grid ---
 const GRID_SIZE=100;
 let grid={};
 function gridKey(x,y){return((x/GRID_SIZE)|0)+','+(((y/GRID_SIZE)|0))}
@@ -99,11 +119,149 @@ function getNeighbors(b){
   return results;
 }
 
-// Simulation
-function update(){
+// --- Ambient Audio ---
+let audioCtx,audioStarted=false,audioMuted=true;
+let masterGain,windGain,chirpTimeout;
+
+function startAudio(){
+  if(audioStarted)return;
+  audioStarted=true;
+  audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+  masterGain=audioCtx.createGain();
+  masterGain.gain.value=audioMuted?0:1;
+  masterGain.connect(audioCtx.destination);
+
+  // Layer 1: Deep drone ~80Hz
+  const drone=audioCtx.createOscillator();
+  drone.type='sine';drone.frequency.value=80;
+  const droneGain=audioCtx.createGain();droneGain.gain.value=0.06;
+  const droneFilter=audioCtx.createBiquadFilter();
+  droneFilter.type='lowpass';droneFilter.frequency.value=200;
+  // Slow LFO on drone filter
+  const droneLfo=audioCtx.createOscillator();droneLfo.type='sine';droneLfo.frequency.value=0.08;
+  const droneLfoGain=audioCtx.createGain();droneLfoGain.gain.value=80;
+  droneLfo.connect(droneLfoGain);droneLfoGain.connect(droneFilter.frequency);
+  droneLfo.start();
+  drone.connect(droneFilter);droneFilter.connect(droneGain);droneGain.connect(masterGain);
+  drone.start();
+
+  // Layer 2: Mid pad ~220Hz
+  const pad=audioCtx.createOscillator();
+  pad.type='triangle';pad.frequency.value=220;
+  const padGain=audioCtx.createGain();padGain.gain.value=0.025;
+  const padFilter=audioCtx.createBiquadFilter();
+  padFilter.type='bandpass';padFilter.frequency.value=220;padFilter.Q.value=2;
+  pad.connect(padFilter);padFilter.connect(padGain);padGain.connect(masterGain);
+  pad.start();
+
+  // Layer 3: High shimmer ~880Hz with tremolo
+  const shimmer=audioCtx.createOscillator();
+  shimmer.type='sine';shimmer.frequency.value=880;
+  const shimGain=audioCtx.createGain();shimGain.gain.value=0.012;
+  const tremolo=audioCtx.createOscillator();tremolo.type='sine';tremolo.frequency.value=0.3;
+  const tremGain=audioCtx.createGain();tremGain.gain.value=0.008;
+  tremolo.connect(tremGain);tremGain.connect(shimGain.gain);
+  tremolo.start();
+  shimmer.connect(shimGain);shimGain.connect(masterGain);
+  shimmer.start();
+
+  // Layer 5: Wind noise
+  const bufSize=audioCtx.sampleRate*2;
+  const noiseBuf=audioCtx.createBuffer(1,bufSize,audioCtx.sampleRate);
+  const data=noiseBuf.getChannelData(0);
+  for(let i=0;i<bufSize;i++)data[i]=Math.random()*2-1;
+  const noise=audioCtx.createBufferSource();
+  noise.buffer=noiseBuf;noise.loop=true;
+  const noiseFilter=audioCtx.createBiquadFilter();
+  noiseFilter.type='bandpass';noiseFilter.frequency.value=600;noiseFilter.Q.value=0.5;
+  windGain=audioCtx.createGain();windGain.gain.value=0;
+  noise.connect(noiseFilter);noiseFilter.connect(windGain);windGain.connect(masterGain);
+  noise.start();
+
+  // Layer 4: Bird chirps
+  scheduleChirp();
+}
+
+function scheduleChirp(){
+  if(!audioCtx)return;
+  const delay=3000+Math.random()*5000;
+  chirpTimeout=setTimeout(()=>{
+    if(!audioMuted&&audioCtx){
+      const osc=audioCtx.createOscillator();
+      osc.type='sine';
+      osc.frequency.value=1000+Math.random()*2000;
+      const g=audioCtx.createGain();
+      g.gain.setValueAtTime(0,audioCtx.currentTime);
+      g.gain.linearRampToValueAtTime(0.04,audioCtx.currentTime+0.01);
+      g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+0.08);
+      osc.connect(g);g.connect(masterGain);
+      osc.start(audioCtx.currentTime);
+      osc.stop(audioCtx.currentTime+0.1);
+      // Sometimes a second chirp
+      if(Math.random()<0.4){
+        const osc2=audioCtx.createOscillator();osc2.type='sine';
+        osc2.frequency.value=1200+Math.random()*1800;
+        const g2=audioCtx.createGain();
+        g2.gain.setValueAtTime(0,audioCtx.currentTime+0.12);
+        g2.gain.linearRampToValueAtTime(0.03,audioCtx.currentTime+0.13);
+        g2.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+0.2);
+        osc2.connect(g2);g2.connect(masterGain);
+        osc2.start(audioCtx.currentTime+0.12);
+        osc2.stop(audioCtx.currentTime+0.22);
+      }
+    }
+    scheduleChirp();
+  },delay);
+}
+
+// --- Sky Colors ---
+function skyColors(t){
+  // t: 0=dawn, 0.25=day, 0.5=sunset, 0.75=dusk
+  const phases=[
+    {t:0,   top:[40,20,80],   mid:[120,60,100], bot:[200,120,80],  sun:[255,180,80]},  // dawn
+    {t:0.25,top:[70,130,220], mid:[120,170,230],bot:[180,210,240], sun:[255,255,200]},  // day
+    {t:0.5, top:[30,20,80],   mid:[120,40,100], bot:[220,120,50],  sun:[255,160,40]},   // sunset
+    {t:0.75,top:[10,10,40],   mid:[20,15,50],   bot:[40,25,60],    sun:[100,60,40]},    // dusk
+    {t:1,   top:[40,20,80],   mid:[120,60,100], bot:[200,120,80],  sun:[255,180,80]}    // dawn again
+  ];
+  let a=phases[0],b=phases[1];
+  for(let i=0;i<phases.length-1;i++){
+    if(t>=phases[i].t&&t<phases[i+1].t){a=phases[i];b=phases[i+1];break;}
+  }
+  const f=(t-a.t)/(b.t-a.t);
+  const lerp=(c1,c2)=>c1.map((v,i)=>v+(c2[i]-v)*f);
+  return{top:lerp(a.top,b.top),mid:lerp(a.mid,b.mid),bot:lerp(a.bot,b.bot),sun:lerp(a.sun,b.sun)};
+}
+
+function rgb(c){return`rgb(${c[0]|0},${c[1]|0},${c[2]|0})`}
+function rgba(c,a){return`rgba(${c[0]|0},${c[1]|0},${c[2]|0},${a})`}
+
+// --- Simulation ---
+let lastTime=0,swoopCooldown=0;
+
+function update(dt){
   buildGrid();
   const coh=cohesion*.003,ali=alignment*.04,sep=separation*.08;
   const vis2=vision*vision;
+
+  // Sky cycle: ~60 second loop
+  // Sky cycle: full loop in 60 seconds. dt is ms, so increment = dt/60000
+  skyTime=(skyTime+dt/60000)%1;
+
+  // Wind noise volume
+  if(windGain){
+    const target=windOn?0.03+windStrength*0.01:0;
+    windGain.gain.value+=(target-windGain.gain.value)*0.05;
+  }
+
+  // Swoop: occasionally make a bird swoop
+  swoopCooldown-=dt;
+  if(swoopCooldown<=0&&boids.length>0){
+    swoopCooldown=4000+Math.random()*8000;
+    const bi=Math.floor(Math.random()*boids.length);
+    boids[bi].swoopTimer=1.0;
+    boids[bi].swoopVy=3+Math.random()*2;
+  }
 
   for(let i=0;i<boids.length;i++){
     const b=boids[i];
@@ -118,23 +276,17 @@ function update(){
       const d2=dx*dx+dy*dy;
       if(d2>vis2||d2<1)continue;
       const d=Math.sqrt(d2);
-      // Cohesion — steer toward center of neighbors
       cx+=o.x;cy+=o.y;
-      // Alignment — match velocity
       ax+=o.vx;ay+=o.vy;
-      // Separation — avoid crowding
       sx-=dx/d;sy-=dy/d;
       count++;
     }
 
     if(count>0){
-      // Cohesion
       cx=cx/count-b.x;cy=cy/count-b.y;
       b.vx+=cx*coh;b.vy+=cy*coh;
-      // Alignment
       ax/=count;ay/=count;
       b.vx+=(ax-b.vx)*ali;b.vy+=(ay-b.vy)*ali;
-      // Separation
       b.vx+=sx*sep;b.vy+=sy*sep;
     }
 
@@ -146,11 +298,13 @@ function update(){
     }
 
     // Predator avoidance
+    let nearPredator=false;
     if(predatorOn){
       const dx=pred.x-b.x,dy=pred.y-b.y;
       const d=Math.sqrt(dx*dx+dy*dy)||1;
       if(d<150){
         b.vx-=dx/d*1.5;b.vy-=dy/d*1.5;
+        nearPredator=true;
       }
     }
 
@@ -160,9 +314,20 @@ function update(){
       b.vy+=Math.sin(windAngle)*windStrength*.02;
     }
 
+    // Swoop
+    if(b.swoopTimer>0){
+      b.swoopTimer-=dt*0.002;
+      if(b.swoopTimer>0.5)b.vy+=b.swoopVy*0.1;
+      else b.vy-=b.swoopVy*0.08;
+    }
+
     // Speed limit
     const spd=Math.sqrt(b.vx*b.vx+b.vy*b.vy);
     if(spd>maxSpeed){b.vx=b.vx/spd*maxSpeed;b.vy=b.vy/spd*maxSpeed;}
+
+    // Wing flap: faster birds flap faster, near predator flap harder
+    let flapMult=nearPredator?2.0:0.6+spd/maxSpeed*0.8;
+    b.wingPhase+=b.wingSpeed*flapMult;
 
     // Move
     b.x+=b.vx;b.y+=b.vy;
@@ -177,11 +342,11 @@ function update(){
       if(b.trail.length>20)b.trail.shift();
     }else if(b.trail.length){b.trail.length=0;}
 
-    // Rainbow: slowly shift hue
-    if(rainbow)b.hue=(b.hue+.3)%360;
+    // Rainbow hue shift
+    if(rainbow)b.hue=(b.hue+0.3)%360;
   }
 
-  // Predator movement — chase nearest boid
+  // Predator movement
   if(predatorOn){
     let nearest=null,nd=Infinity;
     for(let i=0;i<boids.length;i++){
@@ -199,6 +364,7 @@ function update(){
     pred.x+=pred.vx;pred.y+=pred.vy;
     if(pred.x<0)pred.x+=W;if(pred.x>W)pred.x-=W;
     if(pred.y<0)pred.y+=H;if(pred.y>H)pred.y-=H;
+    pred.wingPhase+=0.06;
     pred.trail.push({x:pred.x,y:pred.y});
     if(pred.trail.length>30)pred.trail.shift();
   }
@@ -209,32 +375,101 @@ function update(){
     windStrength=2+Math.sin(performance.now()*.001)*1.5;
   }
 
-  // Adjust boid count
+  // Adjust count
   while(boids.length<targetCount)boids.push(createBoid());
   while(boids.length>targetCount)boids.pop();
 }
 
-// Rendering
+// --- Rendering ---
+function drawBird(x,y,angle,size,wingPhase,bodyColor,wingColor){
+  const wingAngle=Math.sin(wingPhase)*0.6;
+  c.save();
+  c.translate(x,y);
+  c.rotate(angle);
+  // Body
+  c.beginPath();
+  c.ellipse(0,0,size*1.2,size*0.3,0,0,Math.PI*2);
+  c.fillStyle=bodyColor;
+  c.fill();
+  // Left wing
+  c.save();
+  c.rotate(-wingAngle);
+  c.beginPath();
+  c.moveTo(-size*0.3,0);
+  c.quadraticCurveTo(-size*1.5,-size*1.2,-size*2.5,-size*0.3);
+  c.quadraticCurveTo(-size*1.5,-size*0.1,-size*0.3,0);
+  c.fillStyle=wingColor;
+  c.fill();
+  c.restore();
+  // Right wing
+  c.save();
+  c.rotate(wingAngle);
+  c.beginPath();
+  c.moveTo(-size*0.3,0);
+  c.quadraticCurveTo(-size*1.5,size*1.2,-size*2.5,size*0.3);
+  c.quadraticCurveTo(-size*1.5,size*0.1,-size*0.3,0);
+  c.fillStyle=wingColor;
+  c.fill();
+  c.restore();
+  c.restore();
+}
+
 function render(){
-  // Fade trail effect
-  if(trails){
-    c.fillStyle='rgba(10,10,18,.12)';
-    c.fillRect(0,0,W,H);
-  }else{
-    c.fillStyle='#0a0a12';
-    c.fillRect(0,0,W,H);
+  const sky=skyColors(skyTime);
+  const isDusk=skyTime>0.6&&skyTime<0.9;
+  const duskAmount=isDusk?Math.sin((skyTime-0.6)/0.3*Math.PI):0;
+
+  // Sky gradient
+  const grad=c.createLinearGradient(0,0,0,H);
+  grad.addColorStop(0,rgb(sky.top));
+  grad.addColorStop(0.5,rgb(sky.mid));
+  grad.addColorStop(1,rgb(sky.bot));
+  c.fillStyle=grad;
+  c.fillRect(0,0,W,H);
+
+  // Sun glow
+  const sunY=H*0.92;
+  const sunX=W*0.7;
+  const sunGrad=c.createRadialGradient(sunX,sunY,0,sunX,sunY,H*0.45);
+  sunGrad.addColorStop(0,rgba(sky.sun,0.35));
+  sunGrad.addColorStop(0.3,rgba(sky.sun,0.12));
+  sunGrad.addColorStop(1,rgba(sky.sun,0));
+  c.fillStyle=sunGrad;
+  c.fillRect(0,0,W,H);
+
+  // Stars during dusk
+  if(duskAmount>0.1){
+    c.fillStyle=`rgba(255,255,240,${duskAmount*0.7})`;
+    const now=performance.now()*0.001;
+    for(let i=0;i<stars.length;i++){
+      const s=stars[i];
+      const twinkle=0.3+0.7*Math.abs(Math.sin(now*s.speed+s.twinkle));
+      c.globalAlpha=duskAmount*twinkle*0.8;
+      c.beginPath();
+      c.arc(s.x*W,s.y*H,s.size,0,Math.PI*2);
+      c.fill();
+    }
+    c.globalAlpha=1;
   }
 
-  // Subtle background gradient
-  if(!trails){
-    const bg=c.createRadialGradient(W/2,H/2,0,W/2,H/2,Math.max(W,H)*.6);
-    bg.addColorStop(0,'rgba(20,22,40,.4)');
-    bg.addColorStop(1,'rgba(10,10,18,0)');
-    c.fillStyle=bg;
-    c.fillRect(0,0,W,H);
+  // Clouds
+  const cloudBrightness=isDusk?0.08:0.25;
+  for(let i=0;i<clouds.length;i++){
+    const cl=clouds[i];
+    cl.x+=cl.speed*(windOn?1+windStrength*0.3:1);
+    if(cl.x>1.3)cl.x=-0.3;
+    const cx=cl.x*W,cy=cl.y*H;
+    c.beginPath();
+    c.ellipse(cx,cy,cl.w,cl.h,0,0,Math.PI*2);
+    c.fillStyle=`rgba(255,240,230,${cl.opacity*cloudBrightness})`;
+    c.fill();
+    // Second puff
+    c.beginPath();
+    c.ellipse(cx+cl.w*0.4,cy-cl.h*0.3,cl.w*0.6,cl.h*0.7,0,0,Math.PI*2);
+    c.fill();
   }
 
-  // Draw boid trails
+  // Trails (light ribbons)
   if(trails){
     for(let i=0;i<boids.length;i++){
       const b=boids[i];
@@ -244,78 +479,42 @@ function render(){
       for(let t=1;t<b.trail.length;t++){
         c.lineTo(b.trail[t].x,b.trail[t].y);
       }
-      c.strokeStyle='hsla('+b.hue+',70%,65%,'+(0.15)+')';
-      c.lineWidth=1;
+      if(rainbow){
+        c.strokeStyle=`hsla(${b.hue},80%,70%,0.2)`;
+      }else{
+        c.strokeStyle=`rgba(255,220,160,0.12)`;
+      }
+      c.lineWidth=1.5;
       c.stroke();
     }
   }
 
-  // Draw boids
+  // Draw birds
   for(let i=0;i<boids.length;i++){
     const b=boids[i];
     const angle=Math.atan2(b.vy,b.vx);
-    const spd=Math.sqrt(b.vx*b.vx+b.vy*b.vy);
-    const size=3+spd*.4;
-
-    c.save();
-    c.translate(b.x,b.y);
-    c.rotate(angle);
-
-    // Glow
-    c.shadowColor='hsla('+b.hue+',80%,60%,.6)';
-    c.shadowBlur=8;
-
-    // Body — elegant bird/arrow shape
-    c.beginPath();
-    c.moveTo(size*1.8,0);
-    c.lineTo(-size*.8,-size*.7);
-    c.quadraticCurveTo(-size*.2,0,-size*.8,size*.7);
-    c.closePath();
-
-    const sat=rainbow?'80%':'60%';
-    const light=rainbow?'65%':'55%';
-    c.fillStyle='hsla('+b.hue+','+sat+','+light+',0.85)';
-    c.fill();
-
-    // Wing highlight
-    c.beginPath();
-    c.moveTo(size*.6,0);
-    c.lineTo(-size*.3,-size*.4);
-    c.lineTo(-size*.1,0);
-    c.closePath();
-    c.fillStyle='hsla('+b.hue+',90%,80%,0.3)';
-    c.fill();
-
-    c.shadowBlur=0;
-    c.restore();
+    let bodyColor,wingColor;
+    if(rainbow){
+      bodyColor=`hsla(${b.hue},70%,40%,0.9)`;
+      wingColor=`hsla(${b.hue},80%,55%,0.85)`;
+    }else{
+      bodyColor='rgba(15,10,20,0.85)';
+      wingColor='rgba(35,25,40,0.75)';
+    }
+    drawBird(b.x,b.y,angle,b.size,b.wingPhase,bodyColor,wingColor);
   }
 
-  // Draw predator
+  // Predator
   if(predatorOn){
     // Predator trail
     if(pred.trail.length>1){
       c.beginPath();
       c.moveTo(pred.trail[0].x,pred.trail[0].y);
       for(let t=1;t<pred.trail.length;t++)c.lineTo(pred.trail[t].x,pred.trail[t].y);
-      c.strokeStyle='rgba(255,60,60,.2)';c.lineWidth=2;c.stroke();
+      c.strokeStyle='rgba(80,20,20,0.25)';c.lineWidth=2;c.stroke();
     }
     const pa=Math.atan2(pred.vy,pred.vx);
-    c.save();
-    c.translate(pred.x,pred.y);
-    c.rotate(pa);
-    c.shadowColor='rgba(255,40,40,.8)';c.shadowBlur=16;
-    c.beginPath();
-    c.moveTo(14,0);
-    c.lineTo(-8,-7);
-    c.lineTo(-4,0);
-    c.lineTo(-8,7);
-    c.closePath();
-    c.fillStyle='rgba(255,50,50,.9)';
-    c.fill();
-    // Eye
-    c.beginPath();c.arc(4,0,1.5,0,Math.PI*2);c.fillStyle='#fff';c.fill();
-    c.shadowBlur=0;
-    c.restore();
+    drawBird(pred.x,pred.y,pa,7,pred.wingPhase,'rgba(30,10,10,0.95)','rgba(50,20,15,0.9)');
   }
 
   // Wind indicator
@@ -323,23 +522,29 @@ function render(){
     c.save();
     c.translate(W-50,60);
     c.rotate(windAngle);
-    c.strokeStyle='rgba(255,255,255,.2)';c.lineWidth=1.5;
+    c.strokeStyle='rgba(255,230,180,.2)';c.lineWidth=1.5;
     c.beginPath();c.moveTo(-15,0);c.lineTo(15,0);c.moveTo(10,-4);c.lineTo(15,0);c.lineTo(10,4);
     c.stroke();
     c.restore();
-    c.fillStyle='rgba(255,255,255,.15)';c.font='9px monospace';c.textAlign='center';
+    c.fillStyle='rgba(255,230,180,.15)';c.font='9px sans-serif';c.textAlign='center';
     c.fillText('WIND',W-50,80);
   }
 
-  // Count
-  document.getElementById('count').textContent=boids.length+' boids';
+  document.getElementById('count').textContent=boids.length+' birds';
 }
 
-// Loop
-function loop(){update();render();requestAnimationFrame(loop)}
+// --- Loop ---
+function loop(t){
+  const dt=Math.min(t-lastTime,50);
+  lastTime=t;
+  update(dt);
+  render();
+  requestAnimationFrame(loop);
+}
+lastTime=performance.now();
 requestAnimationFrame(loop);
 
-// Controls
+// --- Controls ---
 function bind(sliderId,valId,fn){
   const sl=document.getElementById(sliderId),sv=document.getElementById(valId);
   sl.addEventListener('input',()=>{fn(+sl.value);sv.textContent=sl.value});
@@ -356,8 +561,15 @@ document.getElementById('bPred').addEventListener('click',function(){predatorOn=
 document.getElementById('bWind').addEventListener('click',function(){windOn=!windOn;this.classList.toggle('on')});
 document.getElementById('bColor').addEventListener('click',function(){
   rainbow=!rainbow;this.classList.toggle('on');
-  if(rainbow)boids.forEach(b=>{b.hue=Math.random()*360});
-  else boids.forEach(b=>{b.hue=200+Math.random()*40});
+  if(rainbow)boids.forEach(b=>{b.hue=Math.random()*60});
+  else boids.forEach(b=>{b.hue=0});
+});
+document.getElementById('bMute').addEventListener('click',function(){
+  startAudio();
+  audioMuted=!audioMuted;
+  this.textContent=audioMuted?'Sound: Off':'Sound: On';
+  this.classList.toggle('on',!audioMuted);
+  if(masterGain)masterGain.gain.setTargetAtTime(audioMuted?0:1,audioCtx.currentTime,0.1);
 });
 </script>
 </body>
