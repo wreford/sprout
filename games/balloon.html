@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Do You Want a Balloon?</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#111;overflow:hidden;font-family:system-ui,sans-serif;user-select:none;-webkit-user-select:none}
+canvas{display:block;cursor:pointer}
+#back{position:fixed;top:14px;left:16px;font-size:12px;color:#666;text-decoration:none;font-family:monospace;z-index:100}
+#back:hover{color:#aaa}
+#textBox{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);width:90%;max-width:700px;background:rgba(0,0,0,0.82);color:#fff;font-size:20px;padding:18px 24px;border-radius:12px;border:3px solid #555;line-height:1.5;min-height:60px;pointer-events:none;z-index:50;display:none}
+#prompt{position:fixed;bottom:8px;left:50%;transform:translateX(-50%);color:#aaa;font-size:13px;font-family:monospace;z-index:51;display:none;animation:blink 1.2s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0.3}}
+#playAgain{position:fixed;bottom:100px;left:50%;transform:translateX(-50%);padding:14px 36px;font-size:20px;font-family:system-ui,sans-serif;background:#d32f2f;color:#fff;border:3px solid #000;border-radius:8px;cursor:pointer;z-index:60;display:none}
+#playAgain:hover{background:#e53935}
+</style>
+</head>
+<body>
+<a href="games.html" id="back">&larr; games</a>
+<canvas id="c"></canvas>
+<div id="textBox"></div>
+<div id="prompt">click to continue</div>
+<button id="playAgain">Play Again</button>
+<script>
+const C=document.getElementById('c'),ctx=C.getContext('2d');
+const textBox=document.getElementById('textBox');
+const promptEl=document.getElementById('prompt');
+const playAgainBtn=document.getElementById('playAgain');
+let W,H,t=0,scene=0,sceneTime=0,typing=false,typeText='',typeIdx=0,typeTimer=0;
+let waitingForClick=false,shakeX=0,shakeY=0,transitioning=false,transAlpha=0,transDir=1;
+let nextScene=-1,audioCtx=null;
+
+function resize(){W=C.width=window.innerWidth;H=C.height=window.innerHeight}
+window.addEventListener('resize',resize);resize();
+
+function initAudio(){if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)()}
+
+// --- AUDIO ---
+function playNeigh(){
+  initAudio();
+  let o=audioCtx.createOscillator(),g=audioCtx.createGain();
+  o.type='sawtooth';o.frequency.setValueAtTime(600,audioCtx.currentTime);
+  o.frequency.linearRampToValueAtTime(200,audioCtx.currentTime+0.3);
+  g.gain.setValueAtTime(0.15,audioCtx.currentTime);
+  g.gain.linearRampToValueAtTime(0,audioCtx.currentTime+0.35);
+  o.connect(g);g.connect(audioCtx.destination);
+  o.start();o.stop(audioCtx.currentTime+0.4);
+}
+function playPop(){
+  initAudio();
+  let buf=audioCtx.createBuffer(1,audioCtx.sampleRate*0.15,audioCtx.sampleRate);
+  let d=buf.getChannelData(0);
+  for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*Math.exp(-i/(d.length*0.15));
+  let s=audioCtx.createBufferSource(),g=audioCtx.createGain();
+  s.buffer=buf;g.gain.value=0.3;s.connect(g);g.connect(audioCtx.destination);s.start();
+}
+function playLaugh(){
+  initAudio();
+  let o=audioCtx.createOscillator(),g=audioCtx.createGain();
+  o.type='sine';o.frequency.setValueAtTime(800,audioCtx.currentTime);
+  o.frequency.linearRampToValueAtTime(200,audioCtx.currentTime+0.8);
+  g.gain.setValueAtTime(0.08,audioCtx.currentTime);
+  g.gain.linearRampToValueAtTime(0,audioCtx.currentTime+0.9);
+  o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+1);
+}
+function playSting(){
+  initAudio();
+  [100,130,80].forEach((f,i)=>{
+    let o=audioCtx.createOscillator(),g=audioCtx.createGain();
+    o.type='sawtooth';o.frequency.value=f;
+    g.gain.setValueAtTime(0.1,audioCtx.currentTime);
+    g.gain.linearRampToValueAtTime(0,audioCtx.currentTime+1.5);
+    o.connect(g);g.connect(audioCtx.destination);o.start(audioCtx.currentTime+i*0.05);o.stop(audioCtx.currentTime+1.6);
+  });
+}
+function playDrone(){
+  initAudio();
+  let o=audioCtx.createOscillator(),g=audioCtx.createGain();
+  o.type='sine';o.frequency.value=80;g.gain.value=0.015;
+  o.connect(g);g.connect(audioCtx.destination);o.start();
+  return{stop(){g.gain.linearRampToValueAtTime(0,audioCtx.currentTime+0.5);o.stop(audioCtx.currentTime+0.6)}}
+}
+let drone=null;
+
+// --- DRAWING HELPERS ---
+function outline(fn,lw=3){ctx.save();ctx.lineWidth=lw;ctx.strokeStyle='#000';ctx.lineJoin='round';fn(true);ctx.stroke();fn(false);ctx.fill();ctx.restore()}
+function rect(x,y,w,h,col,ol=3){outline(s=>{ctx.fillStyle=col;ctx.beginPath();ctx.rect(x,y,w,h)},ol)}
+function circ(x,y,r,col,ol=3){outline(s=>{ctx.fillStyle=col;ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2)},ol)}
+
+// --- SKY & GROUND ---
+function drawSky(darkLevel=0){
+  let grad=ctx.createLinearGradient(0,0,0,H*0.65);
+  let r1=Math.min(255,100+darkLevel*155),g1=Math.max(0,180-darkLevel*180),b1=Math.max(0,255-darkLevel*200);
+  let r2=Math.min(255,170+darkLevel*85),g2=Math.max(0,220-darkLevel*180),b2=Math.max(0,255-darkLevel*150);
+  grad.addColorStop(0,`rgb(${r1},${g1},${b1})`);
+  grad.addColorStop(1,`rgb(${r2},${g2},${b2})`);
+  ctx.fillStyle=grad;ctx.fillRect(0,0,W,H*0.65);
+}
+function drawGround(darkLevel=0){
+  let g=Math.max(40,160-darkLevel*120);
+  ctx.fillStyle=`rgb(${Math.max(20,60-darkLevel*40)},${g},${Math.max(10,40-darkLevel*30)})`;
+  ctx.fillRect(0,H*0.62,W,H*0.4);
+  ctx.fillStyle=`rgb(${Math.max(30,80-darkLevel*50)},${Math.min(255,g+30)},${Math.max(20,50-darkLevel*30)})`;
+  ctx.fillRect(0,H*0.62,W,8);
+}
+function drawCloud(x,y,s){
+  ctx.fillStyle='rgba(255,255,255,0.85)';
+  ctx.beginPath();
+  ctx.arc(x,y,s*20,0,Math.PI*2);
+  ctx.arc(x-s*15,y+s*5,s*14,0,Math.PI*2);
+  ctx.arc(x+s*18,y+s*3,s*16,0,Math.PI*2);
+  ctx.fill();
+}
+function drawTree(x,y,s){
+  rect(x-s*6,y-s*40,s*12,s*40,'#5D3A1A',2);
+  circ(x,y-s*45,s*25,'#2E7D32',3);
+  circ(x-s*15,y-s*35,s*18,'#388E3C',3);
+  circ(x+s*15,y-s*38,s*20,'#2E7D32',3);
+}
+
+// --- HORSE ---
+function drawHorse(x,y,s,opts={}){
+  let breathe=Math.sin(t*2)*s*2;
+  let tailAng=Math.sin(t*3)*0.3;
+  let earTwitch=Math.sin(t*5)*0.05;
+  let legOff=opts.gallop?[Math.sin(t*8)*s*10,Math.sin(t*8+1.5)*s*10,Math.sin(t*8+3)*s*10,Math.sin(t*8+4.5)*s*10]:[0,0,0,0];
+  let headTilt=opts.tilt?Math.sin(t*1.5)*0.1:0;
+  let shake=opts.shake?Math.sin(t*12)*0.15:0;
+  let lookUp=opts.lookUp?-s*8:0;
+  let stamp=opts.stamp?Math.abs(Math.sin(t*6))*s*5:0;
+
+  ctx.save();
+  ctx.translate(x,y);
+  if(opts.flip)ctx.scale(-1,1);
+
+  // tail
+  ctx.save();ctx.translate(-s*40,breathe-s*15);ctx.rotate(tailAng);
+  rect(-s*3,-s*25,s*6,s*25,'#5D4037',2);
+  ctx.restore();
+
+  // back legs
+  rect(-s*25,s*15+breathe-stamp,s*10,s*30,'#6D4C41',2);
+  rect(-s*25,s*44+breathe-stamp,s*10,s*6,'#3E2723',2);
+  rect(-s*15,s*15+breathe+legOff[2],s*10,s*30,'#6D4C41',2);
+  rect(-s*15,s*44+breathe+legOff[2],s*10,s*6,'#3E2723',2);
+
+  // body
+  rect(-s*38,-s*10+breathe,s*70,s*30,'#795548',3);
+  // belly
+  rect(-s*30,s*5+breathe,s*54,s*12,'#A1887F',2);
+
+  // front legs
+  rect(s*15,s*15+breathe+legOff[0],s*10,s*30,'#6D4C41',2);
+  rect(s*15,s*44+breathe+legOff[0],s*10,s*6,'#3E2723',2);
+  rect(s*25,s*15+breathe+legOff[1],s*10,s*30,'#795548',2);
+  rect(s*25,s*44+breathe+legOff[1],s*10,s*6,'#3E2723',2);
+
+  // neck
+  ctx.save();ctx.translate(s*30,-s*10+breathe+lookUp);ctx.rotate(headTilt+shake);
+  rect(-s*8,-s*30,s*20,s*35,'#795548',3);
+
+  // head
+  rect(-s*4,-s*48,s*28,s*22,'#795548',3);
+
+  // mane
+  for(let i=0;i<5;i++){
+    rect(-s*8,-s*45+i*s*8,s*8,s*10,'#4E342E',2);
+  }
+
+  // ears
+  ctx.save();ctx.translate(s*2,-s*50);ctx.rotate(-0.2+earTwitch);
+  rect(-s*3,-s*12,s*6,s*12,'#795548',2);
+  rect(-s*2,-s*10,s*4,s*8,'#E8A0BF',1);
+  ctx.restore();
+  ctx.save();ctx.translate(s*16,-s*50);ctx.rotate(0.2-earTwitch);
+  rect(-s*3,-s*12,s*6,s*12,'#795548',2);
+  rect(-s*2,-s*10,s*4,s*8,'#E8A0BF',1);
+  ctx.restore();
+
+  // eyes
+  let ex=opts.lookBack?s*4:s*18,ey=-s*42;
+  circ(ex,ey,s*5,'#fff',2);
+  let px=opts.lookBack?-s*2:s*2;
+  circ(ex+px,ey+s*1,s*2.5,'#2C1810',2);
+  // second eye (if facing us)
+  if(!opts.lookBack){
+    circ(s*6,ey,s*4,'#fff',2);
+    circ(s*6+px,ey+s*1,s*2,'#2C1810',2);
+  }
+
+  // mouth (eating grass)
+  if(opts.eating){
+    let mOpen=Math.abs(Math.sin(t*2))*s*3;
+    ctx.fillStyle='#4E342E';ctx.fillRect(s*20,-s*28,s*6,s*3+mOpen);
+    // grass hanging from mouth
+    ctx.strokeStyle='#4CAF50';ctx.lineWidth=2;
+    ctx.beginPath();ctx.moveTo(s*22,-s*28);
+    ctx.lineTo(s*22+Math.sin(t)*s*4,-s*28-s*8);ctx.stroke();
+  }
+
+  ctx.restore();// neck
+  ctx.restore();// main
+}
+
+// --- PENNYWISE ---
+function drawPennywise(x,y,s,opts={}){
+  let sway=Math.sin(t*1.5)*s*3;
+  let menace=opts.menace||0; // 0-1
+  let lunge=opts.lunge||false;
+  let grinW=s*12+menace*s*8;
+
+  ctx.save();ctx.translate(x+sway,y);
+  if(opts.flip)ctx.scale(-1,1);
+
+  // body
+  rect(-s*18,-s*10,s*36,s*50,'#9E9E9E',3);
+
+  // collar (zigzag)
+  ctx.fillStyle='#eee';ctx.strokeStyle='#000';ctx.lineWidth=2;
+  ctx.beginPath();
+  for(let i=0;i<8;i++){
+    let zx=-s*22+i*s*6.5;
+    ctx.lineTo(zx,-s*10+(i%2?-s*8:-s*2));
+  }
+  ctx.lineTo(s*22,-s*10);ctx.closePath();ctx.fill();ctx.stroke();
+
+  // arms
+  if(lunge){
+    // claws out!
+    ctx.save();ctx.translate(s*18,-s*5);ctx.rotate(-0.5);
+    rect(0,-s*4,s*30,s*8,'#bbb',2);
+    // claws
+    for(let i=0;i<4;i++){
+      ctx.fillStyle='#333';ctx.beginPath();
+      ctx.moveTo(s*30,-s*4+i*s*3);ctx.lineTo(s*36,-s*5+i*s*3);ctx.lineTo(s*30,-s*2+i*s*3);ctx.fill();
+    }
+    ctx.restore();
+  } else {
+    // right arm holding balloon string
+    rect(s*15,-s*8,s*8,s*25,'#9E9E9E',2);
+  }
+  // left arm
+  rect(-s*22,-s*8,s*8,s*20+menace*s*5,'#9E9E9E',2);
+
+  // legs
+  rect(-s*12,s*38,s*10,s*20,'#616161',2);
+  rect(s*5,s*38,s*10,s*20,'#616161',2);
+  // shoes
+  rect(-s*14,s*56,s*14,s*6,'#212121',2);
+  rect(s*3,s*56,s*14,s*6,'#212121',2);
+
+  // head
+  circ(0,-s*25,s*18,'#F5F5F5',3);
+
+  // hair
+  ctx.fillStyle='#E65100';ctx.strokeStyle='#000';ctx.lineWidth=2;
+  for(let i=0;i<7;i++){
+    let a=-2.5+i*0.75;
+    let hr=s*14+Math.sin(i*2+t)*s*3;
+    ctx.beginPath();
+    ctx.arc(Math.cos(a)*s*16,-s*25+Math.sin(a)*s*14,s*8+Math.sin(i+t*2)*s*2,0,Math.PI*2);
+    ctx.fill();ctx.stroke();
+  }
+
+  // face
+  // eyes
+  let eyeGlow=menace*0.5+Math.sin(t*3)*0.1;
+  let ec1=`rgb(${200+eyeGlow*55},${200-menace*200},${50-menace*50})`;
+  circ(-s*7,-s*28,s*4,ec1,2);
+  circ(s*7,-s*28,s*4,ec1,2);
+  // pupils (track horse)
+  let pOff=opts.lookDir||0;
+  circ(-s*7+pOff*s*2,-s*28,s*2,'#000',1);
+  circ(s*7+pOff*s*2,-s*28,s*2,'#000',1);
+  // eye glow
+  if(menace>0.3){
+    ctx.globalAlpha=menace*0.4;
+    circ(-s*7,-s*28,s*6,'#FF0',0);
+    circ(s*7,-s*28,s*6,'#FF0',0);
+    ctx.globalAlpha=1;
+  }
+
+  // nose
+  circ(0,-s*22,s*4,'#D32F2F',2);
+
+  // mouth/grin
+  ctx.fillStyle='#C62828';ctx.strokeStyle='#000';ctx.lineWidth=2;
+  ctx.beginPath();
+  ctx.moveTo(-grinW,-s*17);
+  ctx.quadraticCurveTo(0,-s*10+menace*s*4,grinW,-s*17);
+  ctx.quadraticCurveTo(0,-s*14-menace*s*2,-grinW,-s*17);
+  ctx.fill();ctx.stroke();
+
+  // teeth (more visible when menacing)
+  if(menace>0.2){
+    ctx.fillStyle='#fff';
+    let teeth=Math.floor(4+menace*6);
+    for(let i=0;i<teeth;i++){
+      let tx=-grinW+s*2+i*(grinW*2-s*4)/(teeth-1);
+      let tw=s*2;
+      let th=s*2+menace*s*3;
+      ctx.fillRect(tx-tw/2,-s*17,tw,th);
+    }
+  }
+
+  ctx.restore();
+}
+
+// --- BALLOON ---
+function drawBalloon(x,y,s,popped=false){
+  if(popped)return;
+  let bob=Math.sin(t*2.5)*s*5;
+  // string
+  ctx.strokeStyle='#000';ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(x,y+s*15);
+  for(let i=0;i<20;i++){
+    ctx.lineTo(x+Math.sin(i*0.5+t*2)*s*3,y+s*15+i*s*3);
+  }
+  ctx.stroke();
+  // balloon
+  circ(x,y+bob,s*15,'#D32F2F',3);
+  // highlight
+  circ(x-s*4,y+bob-s*5,s*4,'rgba(255,255,255,0.35)',0);
+}
+
+// --- TEXT SYSTEM ---
+let textLines=[],textCallback=null,allTextDone=false;
+function showText(lines,cb){
+  textBox.style.display='block';
+  textBox.innerHTML='';
+  promptEl.style.display='none';
+  textLines=Array.isArray(lines)?lines:[lines];
+  typeIdx=0;typeTimer=0;typing=true;allTextDone=false;
+  waitingForClick=false;
+  textCallback=cb||null;
+  currentLineIdx=0;currentCharIdx=0;
+}
+let currentLineIdx=0,currentCharIdx=0,typeSpeed=35;
+function updateText(dt){
+  if(!typing)return;
+  typeTimer+=dt*1000;
+  if(typeTimer>typeSpeed&&currentLineIdx<textLines.length){
+    typeTimer=0;
+    currentCharIdx++;
+    let line=textLines[currentLineIdx];
+    if(currentCharIdx>line.length){
+      currentCharIdx=0;currentLineIdx++;
+      if(currentLineIdx>=textLines.length){
+        typing=false;allTextDone=true;
+        waitingForClick=true;
+        promptEl.style.display='block';
+        return;
+      }
+    }
+    // render all lines so far
+    let html='';
+    for(let i=0;i<=currentLineIdx&&i<textLines.length;i++){
+      if(i===currentLineIdx){
+        html+=textLines[i].substring(0,currentCharIdx);
+      } else {
+        html+=textLines[i]+'<br>';
+      }
+    }
+    textBox.innerHTML=html;
+  }
+}
+
+// --- SCENE DATA ---
+const scenes=[
+  // Scene 0: A Beautiful Day
+  {
+    text:["It was a beautiful day in the meadow.","Lily's Horse was enjoying the sunshine."],
+    draw(dt){
+      drawSky(0);
+      drawCloud(W*0.2+t*5%W,H*0.12,1.2);
+      drawCloud(W*0.6+t*3%W,H*0.18,0.9);
+      drawCloud(W*0.85+t*4%W,H*0.1,1);
+      drawGround(0);
+      drawTree(W*0.15,H*0.62,1.5);
+      drawTree(W*0.85,H*0.62,1.2);
+      let hx=W*0.55,hy=H*0.52;
+      drawHorse(hx,hy,1.8,{eating:true});
+    },
+    onEnter(){drone=playDrone();}
+  },
+  // Scene 1: A Stranger Approaches
+  {
+    text:["'Well, hello there!'","said a voice from the shadows."],
+    draw(dt){
+      drawSky(0);
+      drawCloud(W*0.3,H*0.12,1);drawCloud(W*0.7,H*0.15,1.3);
+      drawGround(0);
+      drawTree(W*0.18,H*0.62,1.8);
+      // Pennywise half-hidden behind tree
+      let px=W*0.18,py=H*0.32;
+      let reveal=Math.min(1,sceneTime/2);
+      ctx.save();
+      ctx.beginPath();ctx.rect(px-10,0,W,H);ctx.clip();
+      if(reveal>0.3){
+        drawPennywise(px+30,py+50,1.2,{menace:0,lookDir:1});
+        drawBalloon(px+55,py-40,1.5);
+      }
+      ctx.restore();
+      // redraw tree on top
+      drawTree(W*0.18,H*0.62,1.8);
+      // horse
+      drawHorse(W*0.6,H*0.52,1.8,{lookUp:true});
+    },
+    onEnter(){playLaugh();}
+  },
+  // Scene 2: The Offer
+  {
+    text:["'Do you want a balloon?' Pennywise smiled.","'They float! They ALL float!'"],
+    draw(dt){
+      drawSky(0);drawCloud(W*0.5,H*0.12,1.1);
+      drawGround(0);
+      // Pennywise fully visible
+      let px=W*0.3,py=H*0.28;
+      drawPennywise(px,py,1.5,{menace:0.1,lookDir:1});
+      drawBalloon(px+30,py-60,2);
+      // Horse tilting head
+      drawHorse(W*0.65,H*0.52,1.8,{tilt:true});
+    }
+  },
+  // Scene 3: Neigh
+  {
+    text:["'Neigh,' said the horse."],
+    draw(dt){
+      drawSky(0);drawCloud(W*0.4,H*0.1,1);
+      drawGround(0);
+      drawPennywise(W*0.32,H*0.28,1.5,{menace:0.15,lookDir:1});
+      drawBalloon(W*0.32+30,H*0.28-60,2);
+      // horse shaking head
+      drawHorse(W*0.65,H*0.52,1.8,{shake:true});
+    },
+    onEnter(){playNeigh();}
+  },
+  // Scene 4: But It's a REALLY Nice Balloon
+  {
+    text:["'But it's a REALLY nice balloon!'","Pennywise leaned closer, his smile widening.","'Don't you want to float too?'","","'NEIGH,' said the horse, more firmly."],
+    draw(dt){
+      let dark=Math.min(0.3,sceneTime*0.05);
+      drawSky(dark);drawCloud(W*0.5,H*0.13,1);
+      drawGround(dark);
+      let approach=Math.min(1,sceneTime/3);
+      let px=W*0.32+approach*W*0.08;
+      drawPennywise(px,H*0.26,1.6,{menace:0.3+approach*0.2,lookDir:1});
+      drawBalloon(px+30,H*0.26-65,2.2);
+      drawHorse(W*0.65,H*0.5,1.8,{stamp:true,lookUp:true});
+    },
+    onEnter(){
+      setTimeout(()=>playNeigh(),2500);
+    }
+  },
+  // Scene 5: The Lunge
+  {
+    text:["Pennywise LUNGED!","Teeth like razors!","The horse BOLTED!"],
+    draw(dt){
+      let flash=sceneTime<0.3?1-sceneTime/0.3:0;
+      let dark=0.8;
+      drawSky(dark);
+      // red flash
+      if(flash>0){
+        ctx.fillStyle=`rgba(200,0,0,${flash*0.6})`;
+        ctx.fillRect(0,0,W,H);
+      }
+      drawGround(dark);
+      // screen shake
+      if(sceneTime<2){
+        shakeX=(Math.random()-0.5)*12;
+        shakeY=(Math.random()-0.5)*8;
+        ctx.save();ctx.translate(shakeX,shakeY);
+      }
+      // pennywise lunging
+      let lungeX=W*0.45+Math.min(sceneTime*80,W*0.15);
+      drawPennywise(lungeX,H*0.25,1.8,{menace:1,lookDir:1,lunge:true});
+      // balloon popped - draw pop particles
+      if(sceneTime<1.5){
+        for(let i=0;i<8;i++){
+          let a=i*Math.PI*2/8;
+          let d=sceneTime*100;
+          circ(W*0.45+Math.cos(a)*d,H*0.12+Math.sin(a)*d,4-sceneTime*2,'#D32F2F',1);
+        }
+      }
+      // horse galloping away
+      let horseX=W*0.65+sceneTime*60;
+      if(horseX<W+100){
+        drawHorse(horseX,H*0.48,1.8,{gallop:true,flip:true});
+      }
+      if(sceneTime<2)ctx.restore();
+    },
+    onEnter(){playSting();playPop();setTimeout(()=>playNeigh(),600);}
+  },
+  // Scene 6: The Moral
+  {
+    text:[
+      "Moral of the story:",
+      "Don't judge a book by its cover.",
+      "",
+      "Plot twist:",
+      "Actually, DO judge some books by their covers.",
+      "Listen to your instincts.",
+      "If a clown in a sewer offers you a balloon...",
+      "",
+      "...NEIGH."
+    ],
+    draw(dt){
+      drawSky(0);
+      drawCloud(W*0.2+t*3%(W+100),H*0.1,1);
+      drawCloud(W*0.6+t*2%(W+100),H*0.15,1.2);
+      drawCloud(W*0.9+t*4%(W+100),H*0.08,0.8);
+      drawGround(0);
+      // tiny pennywise far away
+      drawPennywise(W*0.12,H*0.56,0.4,{menace:0});
+      drawBalloon(W*0.12+8,H*0.56-25,0.5);
+      // horse safe, breathing hard then victory trot
+      let safe=sceneTime>8;
+      let hx=W*0.65+(safe?Math.sin(t*2)*30:0);
+      drawHorse(hx,H*0.5,1.8,{gallop:safe});
+      // THE END
+      if(allTextDone){
+        ctx.save();
+        ctx.fillStyle='#000';ctx.font='bold 48px system-ui';ctx.textAlign='center';
+        ctx.fillText('THE END',W/2+2,H*0.35+2);
+        ctx.fillStyle='#FFD600';
+        ctx.fillText('THE END',W/2,H*0.35);
+        ctx.restore();
+        playAgainBtn.style.display='block';
+      }
+    },
+    onEnter(){
+      typeSpeed=50; // slower for dramatic effect
+    }
+  }
+];
+
+// --- SCENE MANAGEMENT ---
+function enterScene(idx){
+  scene=idx;sceneTime=0;
+  waitingForClick=false;typing=false;allTextDone=false;
+  textBox.style.display='none';textBox.innerHTML='';
+  promptEl.style.display='none';
+  playAgainBtn.style.display='none';
+  typeSpeed=35;
+  if(scenes[idx].onEnter)scenes[idx].onEnter();
+  // show text after a short delay
+  setTimeout(()=>{
+    showText(scenes[idx].text);
+  },800);
+}
+
+function advanceScene(){
+  if(typing){
+    // skip to end of text
+    typing=false;allTextDone=true;
+    let html=textLines.join('<br>');
+    textBox.innerHTML=html;
+    waitingForClick=true;
+    promptEl.style.display='block';
+    return;
+  }
+  if(!waitingForClick)return;
+  if(scene>=scenes.length-1)return;
+  // transition
+  promptEl.style.display='none';
+  waitingForClick=false;
+  transitioning=true;transDir=1;transAlpha=0;
+  nextScene=scene+1;
+}
+
+function handleClick(){
+  initAudio();
+  if(transitioning)return;
+  advanceScene();
+}
+
+C.addEventListener('click',handleClick);
+C.addEventListener('touchstart',e=>{e.preventDefault();handleClick()},{passive:false});
+
+playAgainBtn.addEventListener('click',e=>{
+  e.stopPropagation();
+  if(drone){drone.stop();drone=null;}
+  playAgainBtn.style.display='none';
+  transitioning=true;transDir=1;transAlpha=0;nextScene=0;
+});
+
+// --- MAIN LOOP ---
+let lastTime=0;
+function frame(ts){
+  let dt=(ts-lastTime)/1000;if(dt>0.1)dt=0.1;
+  lastTime=ts;t+=dt;
+  sceneTime+=dt;
+
+  ctx.save();
+  ctx.clearRect(0,0,W,H);
+
+  // draw current scene
+  if(scenes[scene])scenes[scene].draw(dt);
+
+  // update text
+  updateText(dt);
+
+  // transition overlay
+  if(transitioning){
+    transAlpha+=transDir*dt*2;
+    if(transAlpha>=1&&transDir===1){
+      transAlpha=1;transDir=-1;
+      if(nextScene>=0)enterScene(nextScene);
+    }
+    if(transAlpha<=0&&transDir===-1){
+      transAlpha=0;transitioning=false;
+    }
+    ctx.fillStyle=`rgba(0,0,0,${Math.max(0,Math.min(1,transAlpha))})`;
+    ctx.fillRect(0,0,W,H);
+  }
+
+  ctx.restore();
+  requestAnimationFrame(frame);
+}
+
+// Start
+enterScene(0);
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
