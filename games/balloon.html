@@ -4,25 +4,40 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Do You Want a Balloon?</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:#111;overflow:hidden;font-family:system-ui,sans-serif;user-select:none;-webkit-user-select:none}
+body{background:#111;overflow:hidden;font-family:'Lora',Georgia,'Times New Roman',serif;user-select:none;-webkit-user-select:none}
 canvas{display:block;cursor:pointer}
-#back{position:fixed;top:14px;left:16px;font-size:12px;color:#666;text-decoration:none;font-family:monospace;z-index:100}
-#back:hover{color:#aaa}
-#textBox{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);width:90%;max-width:700px;background:rgba(0,0,0,0.82);color:#fff;font-size:18px;padding:18px 24px;border-radius:12px;border:3px solid #555;line-height:1.6;min-height:60px;pointer-events:none;z-index:50;display:none}
-#prompt{position:fixed;bottom:8px;left:50%;transform:translateX(-50%);color:#aaa;font-size:13px;font-family:monospace;z-index:51;display:none;animation:blink 1.2s infinite}
-@keyframes blink{0%,100%{opacity:1}50%{opacity:0.3}}
-#playAgain{position:fixed;bottom:100px;left:50%;transform:translateX(-50%);padding:14px 36px;font-size:20px;font-family:system-ui,sans-serif;background:#d32f2f;color:#fff;border:3px solid #000;border-radius:8px;cursor:pointer;z-index:60;display:none}
-#playAgain:hover{background:#e53935}
+#textBox{
+  position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
+  width:88%;max-width:680px;
+  background:rgba(10,8,16,0.72);
+  -webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);
+  color:#f0ece4;font-size:19px;padding:22px 28px;
+  border-radius:14px;
+  border:1px solid rgba(255,255,255,0.08);
+  box-shadow:0 8px 32px rgba(0,0,0,0.5);
+  line-height:1.7;min-height:60px;pointer-events:none;z-index:50;display:none;
+  font-family:'Lora',Georgia,serif;
+  letter-spacing:0.01em;
+}
+#textBox .bold{font-weight:700;color:#ffd54f}
+#textBox .scary{font-weight:700;color:#ef5350;text-shadow:0 0 8px rgba(239,83,80,0.4)}
+#textBox .italic{font-style:italic;color:#b0bec5}
+#prompt{position:fixed;bottom:10px;left:50%;transform:translateX(-50%);color:rgba(200,195,185,0.6);font-size:12px;font-family:'Lora',Georgia,serif;letter-spacing:0.08em;z-index:51;display:none;animation:blink 1.8s ease-in-out infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0.2}}
+#playAgain{position:fixed;bottom:100px;left:50%;transform:translateX(-50%);padding:14px 40px;font-size:18px;font-family:'Lora',Georgia,serif;background:rgba(211,47,47,0.9);color:#fff;border:none;border-radius:24px;cursor:pointer;z-index:60;display:none;letter-spacing:0.05em;box-shadow:0 4px 20px rgba(211,47,47,0.4);transition:all 0.3s}
+#playAgain:hover{background:rgba(229,57,53,1);box-shadow:0 6px 28px rgba(229,57,53,0.6);transform:translateX(-50%) scale(1.05)}
 </style>
 </head>
 <body>
-<a href="games.html" id="back">&larr; games</a>
 <canvas id="c"></canvas>
 <div id="textBox"></div>
-<div id="prompt">click to continue</div>
-<button id="playAgain">Play Again</button>
+<div id="prompt">tap to continue</div>
+<button id="playAgain">Read Again</button>
 <script>
 var C=document.getElementById('c'),ctx=C.getContext('2d');
 var textBox=document.getElementById('textBox');
@@ -41,503 +56,402 @@ function initAudio(){if(!audioCtx)audioCtx=new(window.AudioContext||window.webki
 // ========== AUDIO ==========
 function playNeigh(){
   initAudio();
-  var o=audioCtx.createOscillator(),g=audioCtx.createGain();
-  o.type='sawtooth';o.frequency.setValueAtTime(600,audioCtx.currentTime);
-  o.frequency.linearRampToValueAtTime(200,audioCtx.currentTime+0.3);
-  g.gain.setValueAtTime(0.15,audioCtx.currentTime);
-  g.gain.linearRampToValueAtTime(0,audioCtx.currentTime+0.35);
-  o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+0.4);
+  var ac=audioCtx,now=ac.currentTime;
+  // More natural neigh: breathy noise + formant-shaped oscillator sweep
+  var buf=ac.createBuffer(1,ac.sampleRate*0.5,ac.sampleRate);
+  var d=buf.getChannelData(0);
+  for(var i=0;i<d.length;i++){
+    var env=Math.exp(-i/(d.length*0.4));
+    var vibrato=Math.sin(i/ac.sampleRate*2*Math.PI*6)*0.3;
+    d[i]=(Math.random()*2-1)*0.15*env*(1+vibrato);
+  }
+  var noiseSrc=ac.createBufferSource(),ng=ac.createGain();
+  var noiseFlt=ac.createBiquadFilter();
+  noiseSrc.buffer=buf;
+  noiseFlt.type='bandpass';noiseFlt.frequency.setValueAtTime(1800,now);
+  noiseFlt.frequency.linearRampToValueAtTime(600,now+0.4);noiseFlt.Q.value=3;
+  ng.gain.setValueAtTime(0.25,now);ng.gain.linearRampToValueAtTime(0,now+0.5);
+  noiseSrc.connect(noiseFlt);noiseFlt.connect(ng);ng.connect(ac.destination);noiseSrc.start(now);
+
+  // Tonal component - descending with vibrato
+  var o=ac.createOscillator(),g=ac.createGain();
+  var flt=ac.createBiquadFilter();
+  o.type='sawtooth';
+  o.frequency.setValueAtTime(700,now);
+  o.frequency.exponentialRampToValueAtTime(250,now+0.35);
+  var lfo=ac.createOscillator(),lfoG=ac.createGain();
+  lfo.type='sine';lfo.frequency.value=6;lfoG.gain.value=25;
+  lfo.connect(lfoG);lfoG.connect(o.frequency);
+  flt.type='lowpass';flt.frequency.value=1200;
+  g.gain.setValueAtTime(0.1,now);
+  g.gain.linearRampToValueAtTime(0.06,now+0.2);
+  g.gain.linearRampToValueAtTime(0,now+0.45);
+  o.connect(flt);flt.connect(g);g.connect(ac.destination);
+  o.start(now);lfo.start(now);o.stop(now+0.5);lfo.stop(now+0.5);
 }
+
 function playPop(){
   initAudio();
-  var buf=audioCtx.createBuffer(1,audioCtx.sampleRate*0.15,audioCtx.sampleRate);
+  var ac=audioCtx,now=ac.currentTime;
+  // Sharp transient click
+  var clickBuf=ac.createBuffer(1,ac.sampleRate*0.01,ac.sampleRate);
+  var cd=clickBuf.getChannelData(0);
+  for(var i=0;i<cd.length;i++)cd[i]=(i<cd.length*0.3?1:-0.5)*Math.exp(-i/(cd.length*0.1));
+  var clickSrc=ac.createBufferSource(),cg=ac.createGain();
+  clickSrc.buffer=clickBuf;cg.gain.value=0.6;
+  clickSrc.connect(cg);cg.connect(ac.destination);clickSrc.start(now);
+
+  // Burst noise
+  var buf=ac.createBuffer(1,ac.sampleRate*0.12,ac.sampleRate);
   var d=buf.getChannelData(0);
-  for(var i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*Math.exp(-i/(d.length*0.15));
-  var src=audioCtx.createBufferSource(),g=audioCtx.createGain();
-  src.buffer=buf;g.gain.value=0.3;src.connect(g);g.connect(audioCtx.destination);src.start();
+  for(var i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*Math.exp(-i/(d.length*0.08));
+  var src=ac.createBufferSource(),g=ac.createGain();
+  var flt=ac.createBiquadFilter();
+  src.buffer=buf;flt.type='highpass';flt.frequency.value=2000;
+  g.gain.setValueAtTime(0.5,now);g.gain.linearRampToValueAtTime(0,now+0.1);
+  src.connect(flt);flt.connect(g);g.connect(ac.destination);src.start(now);
 }
+
 function playLaugh(){
   initAudio();
-  var o=audioCtx.createOscillator(),g=audioCtx.createGain();
-  var lfo=audioCtx.createOscillator(),lfoG=audioCtx.createGain();
-  o.type='sine';o.frequency.setValueAtTime(800,audioCtx.currentTime);
-  o.frequency.linearRampToValueAtTime(200,audioCtx.currentTime+0.8);
-  lfo.type='sine';lfo.frequency.value=12;lfoG.gain.value=30;
-  lfo.connect(lfoG);lfoG.connect(o.frequency);
-  g.gain.setValueAtTime(0.08,audioCtx.currentTime);
-  g.gain.linearRampToValueAtTime(0,audioCtx.currentTime+0.9);
-  o.connect(g);g.connect(audioCtx.destination);
-  o.start();lfo.start();o.stop(audioCtx.currentTime+1);lfo.stop(audioCtx.currentTime+1);
-}
-function playSting(){
-  initAudio();
-  [100,150].forEach(function(f,i){
-    var o=audioCtx.createOscillator(),g=audioCtx.createGain();
-    o.type='sawtooth';o.frequency.value=f;
-    g.gain.setValueAtTime(0.12,audioCtx.currentTime);
-    g.gain.linearRampToValueAtTime(0,audioCtx.currentTime+0.5);
-    o.connect(g);g.connect(audioCtx.destination);o.start(audioCtx.currentTime+i*0.05);o.stop(audioCtx.currentTime+0.6);
-  });
-}
-function playGallop(){
-  initAudio();
-  for(var i=0;i<8;i++){
+  var ac=audioCtx,now=ac.currentTime;
+  // Eerie giggle: staccato sine bursts descending
+  for(var i=0;i<6;i++){
     (function(i){
-      setTimeout(function(){
-        var o=audioCtx.createOscillator(),g=audioCtx.createGain();
-        o.type='square';o.frequency.value=80+Math.random()*40;
-        g.gain.setValueAtTime(0.06,audioCtx.currentTime);
-        g.gain.linearRampToValueAtTime(0,audioCtx.currentTime+0.05);
-        o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+0.06);
-      },i*100);
+      var o=ac.createOscillator(),g=ac.createGain();
+      o.type='sine';
+      o.frequency.value=900-i*80+Math.random()*40;
+      g.gain.setValueAtTime(0,now+i*0.12);
+      g.gain.linearRampToValueAtTime(0.06,now+i*0.12+0.02);
+      g.gain.linearRampToValueAtTime(0,now+i*0.12+0.1);
+      o.connect(g);g.connect(ac.destination);o.start(now+i*0.12);o.stop(now+i*0.12+0.12);
     })(i);
   }
 }
-function playDrone(){
+
+function playSting(){
   initAudio();
-  var o=audioCtx.createOscillator(),g=audioCtx.createGain();
-  var flt=audioCtx.createBiquadFilter();
-  o.type='sine';o.frequency.value=80;g.gain.value=0.012;
-  flt.type='lowpass';flt.frequency.value=200;
-  o.connect(flt);flt.connect(g);g.connect(audioCtx.destination);o.start();
-  return{stop:function(){g.gain.linearRampToValueAtTime(0,audioCtx.currentTime+0.5);o.stop(audioCtx.currentTime+0.6);}};
+  var ac=audioCtx,now=ac.currentTime;
+  [80,120,160].forEach(function(f,i){
+    var o=ac.createOscillator(),g=ac.createGain();
+    o.type='sawtooth';o.frequency.value=f;
+    g.gain.setValueAtTime(0.15,now);
+    g.gain.linearRampToValueAtTime(0,now+0.6);
+    o.connect(g);g.connect(ac.destination);o.start(now+i*0.03);o.stop(now+0.7);
+  });
 }
-var drone=null;
+
+function playGallop(){
+  initAudio();
+  var ac=audioCtx;
+  for(var i=0;i<12;i++){
+    (function(i){
+      var delay=i*80;
+      setTimeout(function(){
+        if(!audioCtx)return;
+        var now=ac.currentTime;
+        // Two-beat gallop pattern (clip-clop)
+        var isClip=i%2===0;
+        var buf=ac.createBuffer(1,ac.sampleRate*0.04,ac.sampleRate);
+        var d=buf.getChannelData(0);
+        for(var j=0;j<d.length;j++){
+          d[j]=(Math.random()*2-1)*Math.exp(-j/(d.length*0.15))*(isClip?1:0.6);
+        }
+        var src=ac.createBufferSource(),g=ac.createGain();
+        var flt=ac.createBiquadFilter();
+        src.buffer=buf;
+        flt.type='bandpass';flt.frequency.value=isClip?800:500;flt.Q.value=2;
+        g.gain.value=0.12;
+        src.connect(flt);flt.connect(g);g.connect(ac.destination);src.start(now);
+      },delay);
+    })(i);
+  }
+}
+
 var musicNodes=[];
-/** Mood music — evolves with the story */
 function playMood(mood){
   stopMusic();
   initAudio();
-  var ac=audioCtx,t=ac.currentTime;
+  var ac=audioCtx,now=ac.currentTime;
+
   if(mood==='peaceful'){
-    // Warm major pad — C major (C4 E4 G4) with gentle LFO
-    [261.6,329.6,392].forEach(function(f,i){
+    // Warm C major pad with gentle motion
+    [261.6,329.6,392,523.2].forEach(function(f,i){
       var o=ac.createOscillator(),g=ac.createGain(),flt=ac.createBiquadFilter();
       o.type='triangle';o.frequency.value=f;
-      flt.type='lowpass';flt.frequency.value=800;
-      g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(0.04,t+2);
-      o.connect(flt);flt.connect(g);g.connect(ac.destination);o.start(t+i*0.3);
+      // Gentle detuning for warmth
+      o.detune.value=(i-1.5)*4;
+      flt.type='lowpass';flt.frequency.value=600+i*100;
+      g.gain.setValueAtTime(0,now);g.gain.linearRampToValueAtTime(0.028,now+3);
+      o.connect(flt);flt.connect(g);g.connect(ac.destination);o.start(now+i*0.4);
       musicNodes.push({o:o,g:g});
     });
-    // Bird sounds — gentle high sine pings
+    // Gentle bird pings
     var birdInt=setInterval(function(){
       if(!audioCtx)return;
+      var nn=ac.currentTime;
+      var freqs=[1200,1400,1600,1800];
+      var f=freqs[Math.floor(Math.random()*freqs.length)];
       var o=ac.createOscillator(),g=ac.createGain();
-      o.type='sine';o.frequency.value=1200+Math.random()*800;
-      g.gain.setValueAtTime(0.02,ac.currentTime);
-      g.gain.linearRampToValueAtTime(0,ac.currentTime+0.3);
-      o.connect(g);g.connect(ac.destination);o.start();o.stop(ac.currentTime+0.35);
-    },3000+Math.random()*4000);
+      o.type='sine';o.frequency.value=f;
+      o.frequency.linearRampToValueAtTime(f*1.1,nn+0.15);
+      g.gain.setValueAtTime(0.015,nn);
+      g.gain.linearRampToValueAtTime(0,nn+0.25);
+      o.connect(g);g.connect(ac.destination);o.start(nn);o.stop(nn+0.3);
+    },2500+Math.random()*4000);
     musicNodes.push({interval:birdInt});
+
   }else if(mood==='uneasy'){
-    // Minor pad — C minor (C3 Eb3 G3) with slow detuning
+    // C minor with slow detuning and breathing
     [130.8,155.6,196].forEach(function(f,i){
       var o=ac.createOscillator(),g=ac.createGain(),flt=ac.createBiquadFilter();
       o.type='sine';o.frequency.value=f;
-      o.detune.setValueAtTime(0,t);o.detune.linearRampToValueAtTime(15,t+8);
-      flt.type='lowpass';flt.frequency.value=400;
-      g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(0.035,t+1.5);
-      o.connect(flt);flt.connect(g);g.connect(ac.destination);o.start(t);
-      musicNodes.push({o:o,g:g});
+      o.detune.setValueAtTime(0,now);o.detune.linearRampToValueAtTime(20,now+10);
+      flt.type='lowpass';flt.frequency.value=300;
+      // Slow breathing volume
+      var lfo=ac.createOscillator(),lfoG=ac.createGain();
+      lfo.type='sine';lfo.frequency.value=0.15;lfoG.gain.value=0.008;
+      lfo.connect(lfoG);lfoG.connect(g.gain);
+      g.gain.setValueAtTime(0,now);g.gain.linearRampToValueAtTime(0.03,now+2);
+      o.connect(flt);flt.connect(g);g.connect(ac.destination);o.start(now);lfo.start(now);
+      musicNodes.push({o:o,g:g,extra:[lfo]});
     });
+
   }else if(mood==='creepy'){
-    // Dissonant — tritone drone with tremolo
+    // Tritone drone with tremolo and high eerie whine
     [98,138.6].forEach(function(f){
       var o=ac.createOscillator(),g=ac.createGain();
       var lfo=ac.createOscillator(),lfoG=ac.createGain();
       o.type='sawtooth';o.frequency.value=f;
-      lfo.type='sine';lfo.frequency.value=3;lfoG.gain.value=0.02;
+      lfo.type='sine';lfo.frequency.value=3+Math.random();lfoG.gain.value=0.015;
       lfo.connect(lfoG);lfoG.connect(g.gain);
-      g.gain.setValueAtTime(0.03,t);
-      o.connect(g);g.connect(ac.destination);o.start(t);lfo.start(t);
+      g.gain.setValueAtTime(0.025,now);
+      o.connect(g);g.connect(ac.destination);o.start(now);lfo.start(now);
       musicNodes.push({o:o,g:g,extra:[lfo]});
     });
-    // High eerie sine
+    // High eerie sine sliding
     var hi=ac.createOscillator(),hg=ac.createGain();
-    hi.type='sine';hi.frequency.value=1660;hi.detune.value=20;
-    hg.gain.setValueAtTime(0,t);hg.gain.linearRampToValueAtTime(0.015,t+3);
-    hi.connect(hg);hg.connect(ac.destination);hi.start(t);
+    hi.type='sine';hi.frequency.value=1660;
+    hi.frequency.linearRampToValueAtTime(1700,now+8);
+    hi.detune.value=15;
+    hg.gain.setValueAtTime(0,now);hg.gain.linearRampToValueAtTime(0.012,now+4);
+    hi.connect(hg);hg.connect(ac.destination);hi.start(now);
     musicNodes.push({o:hi,g:hg});
+
+  }else if(mood==='silence'){
+    // True silence - nothing plays. Most effective before jumpscare.
+
   }else if(mood==='jumpscare'){
-    // LOUD dissonant blast — then silence
-    [80,120,170,240].forEach(function(f){
+    // LOUD dissonant blast
+    [60,90,127,170,240,340].forEach(function(f){
       var o=ac.createOscillator(),g=ac.createGain();
       o.type='sawtooth';o.frequency.value=f;
-      g.gain.setValueAtTime(0.25,t);g.gain.linearRampToValueAtTime(0,t+0.8);
-      o.connect(g);g.connect(ac.destination);o.start(t);o.stop(t+1);
+      g.gain.setValueAtTime(0.2,now);g.gain.linearRampToValueAtTime(0,now+0.7);
+      o.connect(g);g.connect(ac.destination);o.start(now);o.stop(now+0.8);
     });
     // Noise burst
-    var buf=ac.createBuffer(1,ac.sampleRate*0.3,ac.sampleRate);
-    var d=buf.getChannelData(0);for(var i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*0.5;
+    var buf=ac.createBuffer(1,ac.sampleRate*0.25,ac.sampleRate);
+    var d=buf.getChannelData(0);
+    for(var i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*0.6*Math.exp(-i/(d.length*0.3));
     var src=ac.createBufferSource(),ng=ac.createGain();
-    src.buffer=buf;ng.gain.setValueAtTime(0.4,t);ng.gain.linearRampToValueAtTime(0,t+0.3);
-    src.connect(ng);ng.connect(ac.destination);src.start(t);
+    src.buffer=buf;ng.gain.setValueAtTime(0.45,now);ng.gain.linearRampToValueAtTime(0,now+0.25);
+    src.connect(ng);ng.connect(ac.destination);src.start(now);
+
   }else if(mood==='warm'){
-    // Full House resolution — warm major 7th (C E G B) soft piano-like
+    // Major 7th resolution, soft and cinematic
     [261.6,329.6,392,493.9].forEach(function(f,i){
       var o=ac.createOscillator(),g=ac.createGain(),flt=ac.createBiquadFilter();
       o.type='triangle';o.frequency.value=f;
-      flt.type='lowpass';flt.frequency.value=600;
-      g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(0.035,t+1+i*0.2);
-      o.connect(flt);flt.connect(g);g.connect(ac.destination);o.start(t+i*0.15);
+      o.detune.value=(i-1.5)*3;
+      flt.type='lowpass';flt.frequency.value=500+i*80;
+      g.gain.setValueAtTime(0,now);g.gain.linearRampToValueAtTime(0.03,now+1.5+i*0.3);
+      o.connect(flt);flt.connect(g);g.connect(ac.destination);o.start(now+i*0.2);
       musicNodes.push({o:o,g:g});
     });
+    // Sub bass warmth
+    var sub=ac.createOscillator(),sg=ac.createGain();
+    sub.type='sine';sub.frequency.value=65;
+    sg.gain.setValueAtTime(0,now);sg.gain.linearRampToValueAtTime(0.02,now+2);
+    sub.connect(sg);sg.connect(ac.destination);sub.start(now);
+    musicNodes.push({o:sub,g:sg});
   }
 }
+
 function stopMusic(){
   musicNodes.forEach(function(n){
-    try{if(n.g)n.g.gain.linearRampToValueAtTime(0,audioCtx.currentTime+0.3);}catch(e){}
-    try{if(n.o)n.o.stop(audioCtx.currentTime+0.4);}catch(e){}
-    try{if(n.extra)n.extra.forEach(function(x){x.stop(audioCtx.currentTime+0.4);});}catch(e){}
+    try{if(n.g&&audioCtx)n.g.gain.linearRampToValueAtTime(0,audioCtx.currentTime+0.5);}catch(e){}
+    try{if(n.o)n.o.stop(audioCtx.currentTime+0.6);}catch(e){}
+    try{if(n.extra)n.extra.forEach(function(x){x.stop(audioCtx.currentTime+0.6);});}catch(e){}
     try{if(n.interval)clearInterval(n.interval);}catch(e){}
   });
   musicNodes=[];
 }
 
-// ========== CC1-STYLE DRAWING ==========
-// Characters drawn EXACTLY like Crossover Chaos 1 (showdown.html)
-// Simple Canvas 2D: fillRect, arc, ellipse, quadraticCurveTo
-// Structure: shadow -> legs -> torso -> arms -> head -> face -> features
-
-function drawHorseCC1(x,y,s,opts){
-  opts=opts||{};
-  var crouch=1;
-  var headY=-80*s*crouch;
-  var torsoY=-55*s*crouch;
-  var torsoH=35*s;
-  var legY=-20*s*crouch;
-  var legH=20*s;
-
-  var breathe=1+Math.sin(t*4)*0.02;
-  var tailSwish=Math.sin(t*3)*0.4;
-  var headShake=opts.shake?Math.sin(t*12)*0.26:0;
-  var earPerk=opts.alert?-5*s:0;
-  var gallopBob=opts.gallop?Math.abs(Math.sin(t*16))*8*s:0;
-
-  // Gallop leg offsets
-  var legOffs=[0,0,0,0];
-  if(opts.gallop){
-    legOffs[0]=Math.sin(t*16)*10*s;
-    legOffs[1]=Math.sin(t*16+1.5)*10*s;
-    legOffs[2]=Math.sin(t*16+3)*10*s;
-    legOffs[3]=Math.sin(t*16+4.5)*10*s;
-  }
-  // Stamp
-  var stamp=opts.stamp?Math.abs(Math.sin(t*8))*6*s:0;
-
-  ctx.save();
-  ctx.translate(x,y-gallopBob);
-  if(opts.facing<0)ctx.scale(-1,1);
-  ctx.scale(breathe,breathe);
-
-  // Shadow ellipse on ground
-  ctx.fillStyle='rgba(0,0,0,0.25)';
-  ctx.beginPath();ctx.ellipse(0,gallopBob,20*s,5*s,0,0,Math.PI*2);ctx.fill();
-
-  // === LEGS (4 horse legs) ===
-  ctx.fillStyle='#6B4226';
-  ctx.fillRect(-14*s,legY+legOffs[0],6*s,legH+5*s);
-  ctx.fillRect(-6*s,legY+legOffs[1],6*s,legH+5*s);
-  ctx.fillRect(4*s,legY+legOffs[2]-stamp,6*s,legH+5*s);
-  ctx.fillRect(12*s,legY+legOffs[3],6*s,legH+5*s);
-  // Hooves (#333)
-  ctx.fillStyle='#333';
-  ctx.fillRect(-15*s,-3*s+legOffs[0],7*s,3*s);
-  ctx.fillRect(-7*s,-3*s+legOffs[1],7*s,3*s);
-  ctx.fillRect(3*s,-3*s+legOffs[2]-stamp,7*s,3*s);
-  ctx.fillRect(11*s,-3*s+legOffs[3],7*s,3*s);
-
-  // Dust clouds when galloping
-  if(opts.gallop){
-    ctx.fillStyle='rgba(180,160,120,0.3)';
-    for(var di=0;di<3;di++){
-      var dx=-20*s-di*15*s+Math.sin(t*5+di)*5*s;
-      var dy=-5*s+Math.sin(t*8+di*2)*3*s;
-      ctx.beginPath();ctx.arc(dx,dy,4*s+di*2*s,0,Math.PI*2);ctx.fill();
-    }
-  }
-
-  // === TORSO (wide rect, 36*s) ===
-  ctx.fillStyle='#8B5A2B';
-  ctx.fillRect(-18*s,torsoY,36*s,torsoH+5*s);
-
-  // === MANE (dark rectangles) ===
-  ctx.fillStyle='#5a3a1a';
-  ctx.fillRect(-5*s,torsoY-8*s,10*s,12*s);
-
-  // === TAIL (quadratic curve with sin(time) swish) ===
-  ctx.strokeStyle='#5a3a1a';ctx.lineWidth=4*s;
-  ctx.beginPath();ctx.moveTo(-18*s,torsoY+10*s);
-  ctx.quadraticCurveTo(-30*s,torsoY+5*s+Math.sin(t*3)*5*s,-25*s,torsoY-5*s+tailSwish*10*s);
-  ctx.stroke();
-
-  // === HEAD (ellipse tilted 0.3 radians) ===
-  ctx.save();
-  ctx.rotate(headShake);
-  ctx.fillStyle='#8B5A2B';
-  ctx.beginPath();ctx.ellipse(5*s,headY+earPerk,10*s,16*s,0.3,0,Math.PI*2);ctx.fill();
-
-  // Eyes (#222)
-  ctx.fillStyle='#222';
-  ctx.beginPath();ctx.arc(8*s,headY-4*s+earPerk,3*s,0,Math.PI*2);ctx.fill();
-
-  // Nostrils
-  ctx.beginPath();ctx.arc(12*s,headY+6*s+earPerk,2*s,0,Math.PI*2);ctx.fill();
-  ctx.beginPath();ctx.arc(8*s,headY+7*s+earPerk,2*s,0,Math.PI*2);ctx.fill();
-
-  // Ears (triangular, #7a4a1a)
-  ctx.fillStyle='#7a4a1a';
-  ctx.beginPath();ctx.moveTo(-2*s,headY-14*s+earPerk);ctx.lineTo(2*s,headY-24*s+earPerk);ctx.lineTo(6*s,headY-14*s+earPerk);ctx.fill();
-  ctx.beginPath();ctx.moveTo(6*s,headY-15*s+earPerk);ctx.lineTo(10*s,headY-24*s+earPerk);ctx.lineTo(14*s,headY-14*s+earPerk);ctx.fill();
-
-  // Eating animation
-  if(opts.eating){
-    var mOpen=Math.abs(Math.sin(t*2))*3*s;
-    ctx.fillStyle='#5a3a1a';
-    ctx.fillRect(12*s,headY+8*s+earPerk,6*s,3*s+mOpen);
-    ctx.strokeStyle='#4CAF50';ctx.lineWidth=2;
-    ctx.beginPath();ctx.moveTo(14*s,headY+8*s+earPerk);
-    ctx.lineTo(14*s+Math.sin(t)*4*s,headY+earPerk);ctx.stroke();
-  }
-
-  ctx.restore(); // headShake
-
-  // NO arms (it's a horse)
-
-  ctx.restore();
-}
-
-function drawPennywiseCC1(x,y,s,opts){
-  opts=opts||{};
-  var crouch=1;
-  var headY=-80*s*crouch;
-  var torsoY=-55*s*crouch;
-  var torsoH=35*s;
-  var legY=-20*s*crouch;
-  var legH=20*s;
-  var headR=14*s;
-  var menace=opts.menace||0;
-  var sway=Math.sin(t*1.5)*0.03*(1+menace);
-
-  ctx.save();
-  ctx.translate(x,y);
-  if(opts.facing<0)ctx.scale(-1,1);
-  ctx.rotate(sway);
-
-  // Shadow ellipse on ground
-  ctx.fillStyle='rgba(0,0,0,0.25)';
-  ctx.beginPath();ctx.ellipse(0,0,20*s,5*s,0,0,Math.PI*2);ctx.fill();
-
-  // === LEGS (regular) ===
-  ctx.fillStyle='#888';
-  ctx.beginPath();ctx.roundRect(-13*s,legY,11*s,legH,3*s);ctx.fill();
-  ctx.beginPath();ctx.roundRect(4*s,legY,11*s,legH,3*s);ctx.fill();
-  // Shoes
-  ctx.fillStyle='#222';
-  ctx.fillRect(-14*s,-4*s,12*s,4*s);
-  ctx.fillRect(4*s,-4*s,12*s,4*s);
-
-  // === TORSO (gray/silver #ccc) ===
-  ctx.fillStyle='#ccc';
-  ctx.beginPath();ctx.roundRect(-15*s,torsoY,30*s,torsoH,4*s);ctx.fill();
-
-  // === RUFFLED COLLAR (zigzag of circles) ===
-  ctx.fillStyle='#ddd';
-  for(var ri=0;ri<8;ri++){
-    var ra=ri*Math.PI/4;
-    ctx.beginPath();ctx.arc(Math.cos(ra)*12*s,torsoY-2*s+Math.sin(ra)*4*s,5*s,0,Math.PI*2);ctx.fill();
-  }
-
-  // === ARMS ===
-  ctx.fillStyle='#ccc';
-  // Left arm
-  ctx.fillRect(-18*s,torsoY+5*s,6*s,25*s);
-
-  if(opts.lunge){
-    // Right arm extended with claws
-    ctx.save();
-    ctx.translate(14*s,torsoY+8*s);
-    ctx.rotate(-0.4);
-    ctx.fillStyle='#ccc';
-    ctx.fillRect(0,0,30*s,8*s);
-    // Claws
-    ctx.fillStyle='#333';
-    for(var ci=0;ci<4;ci++){
-      ctx.beginPath();
-      ctx.moveTo(30*s,-2*s+ci*3*s);
-      ctx.lineTo(36*s,-3*s+ci*3*s);
-      ctx.lineTo(30*s,ci*3*s);
-      ctx.fill();
-    }
-    ctx.restore();
-  }else{
-    // Right arm
-    ctx.fillRect(14*s,torsoY+5*s,6*s,25*s);
-  }
-
-  // === HEAD (white round, #f0f0f0) ===
-  ctx.fillStyle='#f0f0f0';
-  ctx.beginPath();ctx.arc(0,headY,headR+2*s,0,Math.PI*2);ctx.fill();
-
-  // === WILD ORANGE/RED HAIR SPIKES (#ff4400) ===
-  ctx.fillStyle='#ff4400';
-  ctx.beginPath();ctx.arc(-14*s,headY-4*s,10*s,0,Math.PI*2);ctx.fill();
-  ctx.beginPath();ctx.arc(14*s,headY-4*s,10*s,0,Math.PI*2);ctx.fill();
-  ctx.beginPath();ctx.arc(0,headY-16*s,8*s,0,Math.PI*2);ctx.fill();
-  // Extra spiky bits that animate
-  for(var hi=0;hi<5;hi++){
-    var ha=-2+hi*0.9;
-    ctx.beginPath();
-    ctx.arc(Math.cos(ha)*16*s,headY-4*s+Math.sin(ha)*12*s,6*s+Math.sin(hi+t*2)*2*s,0,Math.PI*2);
-    ctx.fill();
-  }
-
-  // === YELLOW GLOWING EYES (#ffdd00) ===
-  var eyeGlow=menace*0.5+Math.sin(t*3)*0.1;
-  ctx.fillStyle='#ffdd00';
-  ctx.beginPath();ctx.arc(-6*s,headY-4*s,3*s,0,Math.PI*2);ctx.fill();
-  ctx.beginPath();ctx.arc(6*s,headY-4*s,3*s,0,Math.PI*2);ctx.fill();
-  // Pupils
-  ctx.fillStyle='#000';
-  ctx.beginPath();ctx.arc(-6*s,headY-4*s,1.5*s,0,Math.PI*2);ctx.fill();
-  ctx.beginPath();ctx.arc(6*s,headY-4*s,1.5*s,0,Math.PI*2);ctx.fill();
-  // Glow effect
-  if(menace>0.2){
-    ctx.save();
-    ctx.shadowColor='#ffdd00';ctx.shadowBlur=10+menace*20;
-    ctx.fillStyle='rgba(255,221,0,'+(menace*0.3)+')';
-    ctx.beginPath();ctx.arc(-6*s,headY-4*s,5*s,0,Math.PI*2);ctx.fill();
-    ctx.beginPath();ctx.arc(6*s,headY-4*s,5*s,0,Math.PI*2);ctx.fill();
-    ctx.restore();
-  }
-
-  // === RED NOSE (#ff0000, circle) ===
-  ctx.fillStyle='#ff0000';
-  ctx.beginPath();ctx.arc(0,headY+1*s,3*s,0,Math.PI*2);ctx.fill();
-
-  // === WIDE RED SMILE (#cc0000, arc) ===
-  var grinW=8*s+menace*8*s;
-  ctx.strokeStyle='#cc0000';ctx.lineWidth=2*s;
-  ctx.beginPath();ctx.arc(0,headY+2*s,grinW,0.1,Math.PI-0.1);ctx.stroke();
-
-  // Teeth when menacing
-  if(menace>0.3){
-    ctx.fillStyle='#fff';
-    var teeth=Math.floor(4+menace*6);
-    for(var ti=0;ti<teeth;ti++){
-      var tx=-grinW+3*s+ti*(grinW*2-6*s)/(teeth-1);
-      ctx.fillRect(tx-1*s,headY+2*s,2*s,2*s+menace*4*s);
-    }
-  }
-
-  // Face distortion when very menacing
-  if(menace>0.7){
-    // Extra wide mouth lines
-    ctx.strokeStyle='#cc0000';ctx.lineWidth=1.5*s;
-    ctx.beginPath();
-    ctx.moveTo(-grinW-3*s,headY+2*s);ctx.lineTo(-grinW-3*s-menace*4*s,headY-2*s);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(grinW+3*s,headY+2*s);ctx.lineTo(grinW+3*s+menace*4*s,headY-2*s);
-    ctx.stroke();
-  }
-
-  ctx.restore();
-}
-
-// === BALLOON (red circle on string) ===
-function drawBalloon(x,y,s,opts){
-  opts=opts||{};
-  if(opts.popped)return;
-  var bob=Math.sin(t*2.5)*5*s;
-  var col=opts.color||'#D32F2F';
-
-  // Color cycling
-  if(opts.cycling){
-    var hue=(t*120)%360;
-    col='hsl('+hue+',70%,50%)';
-  }
-
-  // String (wavy)
-  ctx.strokeStyle='#555';ctx.lineWidth=1.5;
-  ctx.beginPath();ctx.moveTo(x,y+15*s);
-  for(var i=0;i<15;i++){
-    ctx.lineTo(x+Math.sin(i*0.5+t*2)*3*s,y+15*s+i*3*s);
-  }
-  ctx.stroke();
-
-  // Balloon body
-  ctx.fillStyle=col;
-  ctx.beginPath();ctx.arc(x,y+bob,15*s,0,Math.PI*2);ctx.fill();
-  // Highlight
-  ctx.fillStyle='rgba(255,255,255,0.3)';
-  ctx.beginPath();ctx.arc(x-4*s,y+bob-5*s,4*s,0,Math.PI*2);ctx.fill();
-  // Knot
-  ctx.fillStyle=col;
-  ctx.beginPath();ctx.moveTo(x-2*s,y+bob+14*s);ctx.lineTo(x,y+bob+18*s);ctx.lineTo(x+2*s,y+bob+14*s);ctx.fill();
-}
-
-// ========== ENVIRONMENT ==========
-function drawSky(darkLevel){
+// ========== PAINTED SKY ==========
+function drawPaintedSky(darkLevel,opts){
   darkLevel=darkLevel||0;
+  opts=opts||{};
+
+  // Base gradient
   var grad=ctx.createLinearGradient(0,0,0,H*0.65);
-  var r1=Math.min(255,100+darkLevel*155),g1=Math.max(0,180-darkLevel*180),b1=Math.max(0,255-darkLevel*200);
-  var r2=Math.min(255,170+darkLevel*85),g2=Math.max(0,220-darkLevel*180),b2=Math.max(0,255-darkLevel*150);
+  var r1=Math.max(0,Math.min(255,130-darkLevel*130));
+  var g1=Math.max(0,Math.min(255,185-darkLevel*185));
+  var b1=Math.max(0,Math.min(255,240-darkLevel*200));
+  var r2=Math.max(0,Math.min(255,200-darkLevel*120));
+  var g2=Math.max(0,Math.min(255,220-darkLevel*160));
+  var b2=Math.max(0,Math.min(255,245-darkLevel*140));
   grad.addColorStop(0,'rgb('+r1+','+g1+','+b1+')');
+  grad.addColorStop(0.5,'rgb('+Math.floor((r1+r2)/2)+','+Math.floor((g1+g2)/2)+','+Math.floor((b1+b2)/2)+')');
   grad.addColorStop(1,'rgb('+r2+','+g2+','+b2+')');
-  ctx.fillStyle=grad;ctx.fillRect(0,0,W,H*0.65);
+  ctx.fillStyle=grad;
+  ctx.fillRect(0,0,W,H*0.65);
+
+  // Painted cloud layers with parallax
+  var cloudAlpha=Math.max(0.05,0.5-darkLevel*0.4);
+  // Far clouds (slow)
+  ctx.fillStyle='rgba(255,255,255,'+cloudAlpha*0.3+')';
+  for(var i=0;i<6;i++){
+    var cx=(i*W/4+(t*3))%(W+300)-150;
+    var cy=H*0.06+Math.sin(i*2.1)*H*0.04;
+    drawSoftCloud(cx,cy,0.6+Math.sin(i*3)*0.2,cloudAlpha*0.3);
+  }
+  // Mid clouds
+  for(var i=0;i<4;i++){
+    var cx2=(i*W/3+(t*7))%(W+400)-200;
+    var cy2=H*0.1+Math.sin(i*1.7+1)*H*0.05;
+    drawSoftCloud(cx2,cy2,0.9+Math.sin(i*2+0.5)*0.3,cloudAlpha*0.5);
+  }
+  // Near clouds (fast, bigger)
+  for(var i=0;i<3;i++){
+    var cx3=(i*W/2.5+(t*12))%(W+500)-250;
+    var cy3=H*0.15+Math.sin(i*1.3+2)*H*0.04;
+    drawSoftCloud(cx3,cy3,1.2+Math.sin(i*1.8)*0.4,cloudAlpha*0.6);
+  }
 }
-function drawGround(darkLevel){
+
+function drawSoftCloud(x,y,s,alpha){
+  ctx.save();
+  ctx.globalAlpha=alpha;
+  ctx.fillStyle='#fff';
+  var blobs=[
+    {dx:0,dy:0,r:22},{dx:-18,dy:4,r:16},{dx:20,dy:2,r:18},
+    {dx:-10,dy:-6,r:14},{dx:12,dy:-5,r:15},{dx:30,dy:6,r:12},
+    {dx:-28,dy:5,r:11}
+  ];
+  ctx.beginPath();
+  blobs.forEach(function(b){
+    ctx.moveTo(x+b.dx*s*SCALE+b.r*s*SCALE,y+b.dy*s*SCALE);
+    ctx.arc(x+b.dx*s*SCALE,y+b.dy*s*SCALE,b.r*s*SCALE,0,Math.PI*2);
+  });
+  ctx.fill();
+  ctx.restore();
+}
+
+// ========== MEADOW GROUND ==========
+function drawMeadow(darkLevel){
   darkLevel=darkLevel||0;
-  var g=Math.max(40,160-darkLevel*120);
-  ctx.fillStyle='rgb('+Math.max(20,60-darkLevel*40)+','+g+','+Math.max(10,40-darkLevel*30)+')';
+  var baseG=Math.max(40,155-darkLevel*115);
+  var baseR=Math.max(20,55-darkLevel*35);
+  var baseB=Math.max(10,35-darkLevel*25);
+
+  // Ground fill
+  ctx.fillStyle='rgb('+baseR+','+baseG+','+baseB+')';
   ctx.fillRect(0,H*0.62,W,H*0.4);
-  ctx.fillStyle='rgb('+Math.max(30,80-darkLevel*50)+','+Math.min(255,g+30)+','+Math.max(20,50-darkLevel*30)+')';
-  ctx.fillRect(0,H*0.62,W,6);
+
+  // Grass edge highlight
+  var edgeGrad=ctx.createLinearGradient(0,H*0.61,0,H*0.66);
+  edgeGrad.addColorStop(0,'rgb('+Math.min(255,baseR+30)+','+Math.min(255,baseG+40)+','+Math.min(255,baseB+20)+')');
+  edgeGrad.addColorStop(1,'rgb('+baseR+','+baseG+','+baseB+')');
+  ctx.fillStyle=edgeGrad;
+  ctx.fillRect(0,H*0.61,W,H*0.05);
+
+  // Individual grass blades
+  if(darkLevel<0.6){
+    ctx.strokeStyle='rgba('+Math.min(255,baseR+15)+','+Math.min(255,baseG+25)+','+Math.min(255,baseB+10)+','+(0.6-darkLevel*0.8)+')';
+    ctx.lineWidth=1.2;
+    for(var i=0;i<Math.floor(W/8);i++){
+      var gx=i*8+Math.sin(i*0.7)*3;
+      var gy=H*0.625+Math.sin(i*1.3)*3;
+      var bend=Math.sin(t*1.5+i*0.3)*3;
+      ctx.beginPath();
+      ctx.moveTo(gx,gy);
+      ctx.quadraticCurveTo(gx+bend,gy-8-Math.random()*4,gx+bend*1.5,gy-12-Math.random()*5);
+      ctx.stroke();
+    }
+  }
+
+  // Wildflowers as small colored dots
+  if(darkLevel<0.5){
+    var flowerColors=['#e91e63','#ff9800','#9c27b0','#ffeb3b','#2196f3','#ff5722','#e040fb','#ffab40'];
+    for(var i=0;i<Math.floor(W/25);i++){
+      var fx=(i*25+Math.sin(i*3.7)*10)%W;
+      var fy=H*0.635+Math.sin(i*2.1)*8+Math.abs(Math.sin(i*1.1))*12;
+      var fc=flowerColors[i%flowerColors.length];
+      // Stem
+      ctx.strokeStyle='rgba('+Math.min(255,baseR+10)+','+Math.min(255,baseG+20)+','+baseB+','+(0.5-darkLevel)+')';
+      ctx.lineWidth=1;
+      ctx.beginPath();ctx.moveTo(fx,fy);ctx.lineTo(fx+Math.sin(t*0.8+i)*1.5,fy-6);ctx.stroke();
+      // Petals (tiny dots)
+      ctx.fillStyle=fc;
+      ctx.globalAlpha=0.7-darkLevel;
+      ctx.beginPath();ctx.arc(fx+Math.sin(t*0.8+i)*1.5,fy-7,2.2+Math.sin(i)*0.5,0,Math.PI*2);ctx.fill();
+      ctx.globalAlpha=1;
+    }
+  }
 }
+
+// ========== SUN ==========
 function drawSun(x,y,s,bright){
   bright=bright||1;
-  ctx.fillStyle='rgba(255,230,50,'+bright+')';
-  ctx.beginPath();ctx.arc(x,y,20*s,0,Math.PI*2);ctx.fill();
-  // Rays
-  ctx.strokeStyle='rgba(255,230,50,'+(bright*0.4)+')';ctx.lineWidth=2*s;
-  for(var i=0;i<8;i++){
-    var a=i*Math.PI/4+t*0.3;
+  if(bright<=0)return;
+  // Soft glow
+  ctx.save();
+  var glowGrad=ctx.createRadialGradient(x,y,0,x,y,50*s);
+  glowGrad.addColorStop(0,'rgba(255,240,80,'+bright*0.3+')');
+  glowGrad.addColorStop(0.5,'rgba(255,230,50,'+bright*0.1+')');
+  glowGrad.addColorStop(1,'rgba(255,230,50,0)');
+  ctx.fillStyle=glowGrad;
+  ctx.beginPath();ctx.arc(x,y,50*s,0,Math.PI*2);ctx.fill();
+
+  // Sun body
+  ctx.fillStyle='rgba(255,235,60,'+bright+')';
+  ctx.beginPath();ctx.arc(x,y,18*s,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='rgba(255,250,200,'+bright*0.6+')';
+  ctx.beginPath();ctx.arc(x-5*s,y-5*s,8*s,0,Math.PI*2);ctx.fill();
+
+  // Rays (soft)
+  ctx.strokeStyle='rgba(255,230,50,'+(bright*0.25)+')';ctx.lineWidth=2.5*s;
+  ctx.lineCap='round';
+  for(var i=0;i<12;i++){
+    var a=i*Math.PI/6+t*0.2;
+    var r1=24*s,r2=36*s+Math.sin(t*2+i)*4*s;
     ctx.beginPath();
-    ctx.moveTo(x+Math.cos(a)*25*s,y+Math.sin(a)*25*s);
-    ctx.lineTo(x+Math.cos(a)*40*s,y+Math.sin(a)*40*s);
+    ctx.moveTo(x+Math.cos(a)*r1,y+Math.sin(a)*r1);
+    ctx.lineTo(x+Math.cos(a)*r2,y+Math.sin(a)*r2);
     ctx.stroke();
   }
+  ctx.restore();
 }
-function drawCloud(x,y,s){
-  ctx.fillStyle='rgba(255,255,255,0.85)';
-  ctx.beginPath();ctx.arc(x,y,s*20,0,Math.PI*2);
-  ctx.arc(x-s*15,y+s*5,s*14,0,Math.PI*2);
-  ctx.arc(x+s*18,y+s*3,s*16,0,Math.PI*2);ctx.fill();
-}
+
 function drawTree(x,y,s){
-  ctx.fillStyle='#5D3A1A';ctx.fillRect(x-6*s,y-40*s,12*s,40*s);
-  ctx.fillStyle='#2E7D32';ctx.beginPath();ctx.arc(x,y-45*s,25*s,0,Math.PI*2);ctx.fill();
-  ctx.fillStyle='#388E3C';ctx.beginPath();ctx.arc(x-15*s,y-35*s,18*s,0,Math.PI*2);ctx.fill();
-  ctx.fillStyle='#2E7D32';ctx.beginPath();ctx.arc(x+15*s,y-38*s,20*s,0,Math.PI*2);ctx.fill();
+  // Trunk with slight taper
+  ctx.fillStyle='#5D3A1A';
+  ctx.beginPath();
+  ctx.moveTo(x-7*s,y);ctx.lineTo(x-5*s,y-40*s);ctx.lineTo(x+5*s,y-40*s);ctx.lineTo(x+7*s,y);
+  ctx.fill();
+  // Foliage layers
+  ctx.fillStyle='#2E7D32';ctx.beginPath();ctx.arc(x,y-48*s,26*s,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#388E3C';ctx.beginPath();ctx.arc(x-14*s,y-38*s,19*s,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#43A047';ctx.beginPath();ctx.arc(x+16*s,y-42*s,21*s,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#2E7D32';ctx.beginPath();ctx.arc(x+5*s,y-55*s,16*s,0,Math.PI*2);ctx.fill();
 }
-function drawFlower(x,y,col){
-  ctx.fillStyle='#2a8c2a';ctx.fillRect(x-1,y-8,2,8);
-  ctx.fillStyle=col;
-  for(var i=0;i<5;i++){
-    var a=i*Math.PI*2/5+t*0.5;
-    ctx.beginPath();ctx.arc(x+Math.cos(a)*4,y-10+Math.sin(a)*4,3,0,Math.PI*2);ctx.fill();
-  }
-  ctx.fillStyle='#ffeb3b';ctx.beginPath();ctx.arc(x,y-10,2,0,Math.PI*2);ctx.fill();
-}
+
 function drawButterfly(x,y,col,seed){
   var wingFlap=Math.sin(t*8+seed)*0.5;
   var bx=x+Math.sin(t*0.7+seed*3)*40;
   var by=y+Math.sin(t*1.1+seed*7)*20;
   ctx.save();ctx.translate(bx,by);
-  // Body
-  ctx.fillStyle='#333';ctx.fillRect(-1,-4,2,8);
-  // Wings
+  ctx.fillStyle='#333';ctx.fillRect(-1,-3,2,6);
   ctx.fillStyle=col;ctx.globalAlpha=0.7;
   ctx.save();ctx.scale(1,wingFlap);
   ctx.beginPath();ctx.ellipse(-4,0,5,4,0,0,Math.PI*2);ctx.fill();
@@ -546,139 +460,691 @@ function drawButterfly(x,y,col,seed){
   ctx.globalAlpha=1;
   ctx.restore();
 }
+
 function drawBird(x,y,s){
-  ctx.strokeStyle='#333';ctx.lineWidth=2;
+  ctx.strokeStyle='rgba(40,40,40,0.6)';ctx.lineWidth=1.5;ctx.lineCap='round';
   ctx.beginPath();
   ctx.moveTo(x-6*s,y+2*s);ctx.quadraticCurveTo(x-3*s,y-4*s,x,y);
   ctx.quadraticCurveTo(x+3*s,y-4*s,x+6*s,y+2*s);
   ctx.stroke();
 }
+
 function drawCreek(x1,x2,y,s){
-  ctx.fillStyle='rgba(60,140,200,0.4)';
+  ctx.fillStyle='rgba(60,150,210,0.35)';
   ctx.beginPath();
   ctx.moveTo(x1,y);
-  for(var cx=x1;cx<x2;cx+=20){
-    ctx.lineTo(cx,y+Math.sin(cx*0.02+t*2)*3*s);
+  for(var cx=x1;cx<x2;cx+=15){
+    ctx.lineTo(cx,y+Math.sin(cx*0.025+t*2)*3*s);
   }
-  ctx.lineTo(x2,y+8*s);
-  for(var cx2=x2;cx2>x1;cx2-=20){
-    ctx.lineTo(cx2,y+8*s+Math.sin(cx2*0.02+t*2)*3*s);
+  ctx.lineTo(x2,y+10*s);
+  for(var cx2=x2;cx2>x1;cx2-=15){
+    ctx.lineTo(cx2,y+10*s+Math.sin(cx2*0.025+t*2)*3*s);
   }
   ctx.closePath();ctx.fill();
   // Sparkles
   ctx.fillStyle='rgba(255,255,255,0.5)';
-  for(var si=0;si<5;si++){
-    var sx=x1+(x2-x1)*((si*0.2+t*0.05)%1);
-    if(Math.sin(t*3+si*2)>0.7){
-      ctx.beginPath();ctx.arc(sx,y+4*s,1.5,0,Math.PI*2);ctx.fill();
+  for(var si=0;si<8;si++){
+    var sx=x1+(x2-x1)*((si*0.125+t*0.04)%1);
+    if(Math.sin(t*3+si*2)>0.6){
+      ctx.beginPath();ctx.arc(sx,y+5*s,1.5,0,Math.PI*2);ctx.fill();
     }
   }
 }
+
+// ========== DRAIN (ominous) ==========
 function drawDrain(x,y,s,glowing){
-  // Stone arch
-  ctx.fillStyle='#555';
+  // Cracked concrete surround
+  ctx.fillStyle='#4a4a4a';
   ctx.beginPath();
-  ctx.arc(x,y,25*s,Math.PI,0);
-  ctx.lineTo(x+30*s,y+20*s);
-  ctx.lineTo(x-30*s,y+20*s);
+  ctx.arc(x,y,28*s,Math.PI,0);
+  ctx.lineTo(x+34*s,y+24*s);
+  ctx.lineTo(x-34*s,y+24*s);
   ctx.closePath();ctx.fill();
-  // Dark interior
-  ctx.fillStyle='#111';
+
+  // Concrete cracks
+  ctx.strokeStyle='#333';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(x-25*s,y-5*s);ctx.lineTo(x-20*s,y+10*s);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(x+22*s,y-8*s);ctx.lineTo(x+18*s,y+5*s);ctx.lineTo(x+24*s,y+18*s);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(x-10*s,y+20*s);ctx.lineTo(x-5*s,y+15*s);ctx.lineTo(x+2*s,y+22*s);ctx.stroke();
+
+  // Wet stain around drain
+  ctx.fillStyle='rgba(20,25,15,0.25)';
   ctx.beginPath();
-  ctx.arc(x,y+2*s,20*s,Math.PI,0);
-  ctx.lineTo(x+20*s,y+18*s);
-  ctx.lineTo(x-20*s,y+18*s);
+  ctx.ellipse(x,y+22*s,32*s,6*s,0,0,Math.PI*2);
+  ctx.fill();
+
+  // Dark interior - deep black
+  ctx.fillStyle='#080808';
+  ctx.beginPath();
+  ctx.arc(x,y+2*s,22*s,Math.PI,0);
+  ctx.lineTo(x+22*s,y+20*s);
+  ctx.lineTo(x-22*s,y+20*s);
   ctx.closePath();ctx.fill();
+
+  // Depth gradient inside
+  var depthGrad=ctx.createRadialGradient(x,y+10*s,0,x,y+10*s,20*s);
+  depthGrad.addColorStop(0,'rgba(0,0,0,0.9)');
+  depthGrad.addColorStop(1,'rgba(5,5,5,0.3)');
+  ctx.fillStyle=depthGrad;
+  ctx.beginPath();ctx.arc(x,y+10*s,20*s,0,Math.PI*2);ctx.fill();
+
   // Red glow from inside
   if(glowing){
-    var pulse=0.2+Math.sin(t*2)*0.1;
-    ctx.fillStyle='rgba(200,0,0,'+pulse+')';
-    ctx.beginPath();ctx.arc(x,y+5*s,12*s,0,Math.PI*2);ctx.fill();
+    var pulse=0.15+Math.sin(t*1.5)*0.08;
+    var grd=ctx.createRadialGradient(x,y+8*s,0,x,y+8*s,15*s);
+    grd.addColorStop(0,'rgba(180,0,0,'+pulse+')');
+    grd.addColorStop(1,'rgba(100,0,0,0)');
+    ctx.fillStyle=grd;
+    ctx.beginPath();ctx.arc(x,y+8*s,15*s,0,Math.PI*2);ctx.fill();
   }
-  // Grate bars
-  ctx.strokeStyle='#444';ctx.lineWidth=3;
-  for(var gi=-15;gi<=15;gi+=10){
-    ctx.beginPath();ctx.moveTo(x+gi*s,y-15*s);ctx.lineTo(x+gi*s,y+18*s);ctx.stroke();
+
+  // Grate bars (rusted)
+  ctx.strokeStyle='#3a3530';ctx.lineWidth=2.5;
+  for(var gi=-15;gi<=15;gi+=8){
+    ctx.beginPath();ctx.moveTo(x+gi*s,y-16*s);ctx.lineTo(x+gi*s,y+20*s);ctx.stroke();
   }
+  // Horizontal bar
+  ctx.beginPath();ctx.moveTo(x-18*s,y+5*s);ctx.lineTo(x+18*s,y+5*s);ctx.stroke();
 }
+
 function drawFarmhouse(x,y,s){
   // Walls
-  ctx.fillStyle='#8B4513';ctx.fillRect(x-20*s,y-30*s,40*s,30*s);
+  ctx.fillStyle='#8B4513';ctx.fillRect(x-22*s,y-32*s,44*s,32*s);
   // Roof
   ctx.fillStyle='#B22222';
-  ctx.beginPath();ctx.moveTo(x-25*s,y-30*s);ctx.lineTo(x,y-50*s);ctx.lineTo(x+25*s,y-30*s);ctx.closePath();ctx.fill();
+  ctx.beginPath();ctx.moveTo(x-28*s,y-32*s);ctx.lineTo(x,y-54*s);ctx.lineTo(x+28*s,y-32*s);ctx.closePath();ctx.fill();
   // Door
-  ctx.fillStyle='#5D3A1A';ctx.fillRect(x-5*s,y-15*s,10*s,15*s);
-  // Windows
+  ctx.fillStyle='#5D3A1A';ctx.fillRect(x-5*s,y-16*s,10*s,16*s);
+  // Doorknob
+  ctx.fillStyle='#c9a84c';ctx.beginPath();ctx.arc(x+3*s,y-8*s,1.2*s,0,Math.PI*2);ctx.fill();
+  // Windows with warm glow
   ctx.fillStyle='#FFE082';
-  ctx.fillRect(x-16*s,y-25*s,8*s,8*s);
-  ctx.fillRect(x+8*s,y-25*s,8*s,8*s);
+  ctx.fillRect(x-18*s,y-27*s,10*s,10*s);
+  ctx.fillRect(x+8*s,y-27*s,10*s,10*s);
+  // Window glow
+  ctx.save();
+  ctx.shadowColor='#FFE082';ctx.shadowBlur=8;
+  ctx.fillStyle='rgba(255,224,130,0.4)';
+  ctx.fillRect(x-18*s,y-27*s,10*s,10*s);
+  ctx.fillRect(x+8*s,y-27*s,10*s,10*s);
+  ctx.restore();
   // Window crosses
-  ctx.strokeStyle='#5D3A1A';ctx.lineWidth=1;
-  ctx.beginPath();ctx.moveTo(x-12*s,y-25*s);ctx.lineTo(x-12*s,y-17*s);ctx.stroke();
-  ctx.beginPath();ctx.moveTo(x-16*s,y-21*s);ctx.lineTo(x-8*s,y-21*s);ctx.stroke();
+  ctx.strokeStyle='#5D3A1A';ctx.lineWidth=1.5;
+  ctx.beginPath();ctx.moveTo(x-13*s,y-27*s);ctx.lineTo(x-13*s,y-17*s);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(x-18*s,y-22*s);ctx.lineTo(x-8*s,y-22*s);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(x+13*s,y-27*s);ctx.lineTo(x+13*s,y-17*s);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(x+8*s,y-22*s);ctx.lineTo(x+18*s,y-22*s);ctx.stroke();
 }
-function drawLily(x,y,s,waving){
-  // Simple girl silhouette in CC1 style
-  var headY2=-80*s;
-  var torsoY2=-55*s;
 
-  ctx.save();ctx.translate(x,y);
+// ========== CC1-STYLE HORSE (detailed) ==========
+function drawHorseCC1(x,y,s,opts){
+  opts=opts||{};
+  var headY=-82*s;
+  var torsoY=-55*s;
+  var torsoH=35*s;
+  var legY=-20*s;
+  var legH=22*s;
+
+  var breathe=1+Math.sin(t*3.5)*0.015;
+  var tailSwish=Math.sin(t*2.5)*0.4;
+  var headShake=opts.shake?Math.sin(t*10)*0.22:0;
+  var earPerk=opts.alert?-6*s:0;
+  var gallopBob=opts.gallop?Math.abs(Math.sin(t*14))*10*s:0;
+
+  var legOffs=[0,0,0,0];
+  if(opts.gallop){
+    legOffs[0]=Math.sin(t*14)*12*s;
+    legOffs[1]=Math.sin(t*14+1.5)*12*s;
+    legOffs[2]=Math.sin(t*14+3)*12*s;
+    legOffs[3]=Math.sin(t*14+4.5)*12*s;
+  }
+  var stamp=opts.stamp?Math.abs(Math.sin(t*6))*6*s:0;
+
+  ctx.save();
+  ctx.translate(x,y-gallopBob);
+  if(opts.facing<0)ctx.scale(-1,1);
+  ctx.scale(breathe,breathe);
+
+  // Shadow
+  ctx.fillStyle='rgba(0,0,0,0.18)';
+  ctx.beginPath();ctx.ellipse(0,gallopBob,22*s,5*s,0,0,Math.PI*2);ctx.fill();
+
+  // Dust when galloping
+  if(opts.gallop){
+    ctx.fillStyle='rgba(180,165,130,0.25)';
+    for(var di=0;di<4;di++){
+      var dx=-22*s-di*12*s+Math.sin(t*6+di)*4*s;
+      var dy=-3*s+Math.sin(t*9+di*2)*3*s;
+      ctx.beginPath();ctx.arc(dx,dy,3*s+di*2*s,0,Math.PI*2);ctx.fill();
+    }
+  }
+
+  // === LEGS with muscle definition ===
+  // Back legs
+  ctx.fillStyle='#7a4e2a';
+  // Back left
+  ctx.save();
+  ctx.translate(-12*s,legY+legOffs[0]);
+  if(opts.gallop){ctx.rotate(Math.sin(t*14)*0.15);}
+  ctx.fillRect(-3.5*s,0,7*s,legH+3*s);
+  // Muscle bulge at top
+  ctx.fillStyle='#8B5A2B';
+  ctx.beginPath();ctx.ellipse(0,3*s,4.5*s,5*s,0,0,Math.PI*2);ctx.fill();
+  ctx.restore();
+  // Back right
+  ctx.fillStyle='#7a4e2a';
+  ctx.save();
+  ctx.translate(-4*s,legY+legOffs[1]);
+  if(opts.gallop){ctx.rotate(Math.sin(t*14+1.5)*0.15);}
+  ctx.fillRect(-3.5*s,0,7*s,legH+3*s);
+  ctx.fillStyle='#8B5A2B';
+  ctx.beginPath();ctx.ellipse(0,3*s,4.5*s,5*s,0,0,Math.PI*2);ctx.fill();
+  ctx.restore();
+  // Front left
+  ctx.fillStyle='#7a4e2a';
+  ctx.save();
+  ctx.translate(6*s,legY+legOffs[2]-stamp);
+  if(opts.gallop){ctx.rotate(Math.sin(t*14+3)*0.15);}
+  ctx.fillRect(-3.5*s,0,7*s,legH+3*s);
+  ctx.fillStyle='#8B5A2B';
+  ctx.beginPath();ctx.ellipse(0,3*s,4.5*s,5*s,0,0,Math.PI*2);ctx.fill();
+  ctx.restore();
+  // Front right
+  ctx.fillStyle='#7a4e2a';
+  ctx.save();
+  ctx.translate(14*s,legY+legOffs[3]);
+  if(opts.gallop){ctx.rotate(Math.sin(t*14+4.5)*0.15);}
+  ctx.fillRect(-3.5*s,0,7*s,legH+3*s);
+  ctx.fillStyle='#8B5A2B';
+  ctx.beginPath();ctx.ellipse(0,3*s,4.5*s,5*s,0,0,Math.PI*2);ctx.fill();
+  ctx.restore();
+
+  // Hooves (dark with slight shape)
+  ctx.fillStyle='#2a2a2a';
+  [[-13.5,legOffs[0]],[-5.5,legOffs[1]],[4.5,legOffs[2]-stamp],[12.5,legOffs[3]]].forEach(function(h){
+    ctx.beginPath();
+    ctx.moveTo(h[0]*s-1*s,-2*s+h[1]);
+    ctx.lineTo(h[0]*s-1.5*s,-4.5*s+h[1]);
+    ctx.lineTo(h[0]*s+6.5*s,-4.5*s+h[1]);
+    ctx.lineTo(h[0]*s+6*s,-2*s+h[1]);
+    ctx.closePath();ctx.fill();
+  });
+
+  // === TORSO (barrel shaped) ===
+  ctx.fillStyle='#8B5A2B';
+  ctx.beginPath();
+  ctx.ellipse(0,torsoY+torsoH/2+2*s,20*s,torsoH/2+4*s,0,0,Math.PI*2);
+  ctx.fill();
+  // Belly highlight
+  ctx.fillStyle='#9c6b38';
+  ctx.beginPath();
+  ctx.ellipse(2*s,torsoY+torsoH/2+5*s,14*s,8*s,0.1,0,Math.PI*2);
+  ctx.fill();
+  // Shoulder muscle
+  ctx.fillStyle='#8B5A2B';
+  ctx.beginPath();ctx.ellipse(12*s,torsoY+8*s,10*s,14*s,0.2,0,Math.PI*2);ctx.fill();
+  // Haunch muscle
+  ctx.beginPath();ctx.ellipse(-12*s,torsoY+10*s,10*s,13*s,-0.15,0,Math.PI*2);ctx.fill();
+
+  // === MANE (flowing strands) ===
+  ctx.strokeStyle='#4a2e12';ctx.lineWidth=2.5*s;ctx.lineCap='round';
+  for(var mi=0;mi<7;mi++){
+    var mx=mi*3*s-8*s;
+    var mWave=Math.sin(t*2+mi*0.7)*4*s;
+    ctx.beginPath();
+    ctx.moveTo(mx,torsoY-5*s);
+    ctx.quadraticCurveTo(mx-3*s+mWave,torsoY-15*s,mx-5*s+mWave*1.3,torsoY-22*s);
+    ctx.stroke();
+  }
+  // Forelock
+  ctx.beginPath();
+  ctx.moveTo(3*s,headY+8*s);
+  ctx.quadraticCurveTo(8*s+Math.sin(t*2)*2*s,headY-5*s,5*s+Math.sin(t*2.5)*3*s,headY-18*s);
+  ctx.stroke();
+
+  // === TAIL (flowing with multiple strands) ===
+  ctx.strokeStyle='#4a2e12';ctx.lineWidth=3*s;ctx.lineCap='round';
+  for(var ti=0;ti<4;ti++){
+    ctx.beginPath();ctx.moveTo(-18*s+ti*1.5*s,torsoY+8*s+ti*3*s);
+    ctx.quadraticCurveTo(
+      -32*s+ti*2*s,torsoY+3*s+Math.sin(t*2.5+ti*0.5)*6*s,
+      -28*s+ti*2*s+tailSwish*12*s,torsoY-8*s+ti*4*s
+    );
+    ctx.stroke();
+  }
+
+  // === NECK ===
+  ctx.fillStyle='#8B5A2B';
+  ctx.beginPath();
+  ctx.moveTo(8*s,torsoY);
+  ctx.quadraticCurveTo(14*s,torsoY-15*s,10*s,headY+12*s);
+  ctx.lineTo(-2*s,headY+12*s);
+  ctx.quadraticCurveTo(-4*s,torsoY-10*s,0*s,torsoY);
+  ctx.closePath();ctx.fill();
+
+  // === HEAD ===
+  ctx.save();
+  ctx.rotate(headShake);
+  ctx.fillStyle='#8B5A2B';
+  ctx.beginPath();ctx.ellipse(6*s,headY+earPerk,11*s,17*s,0.25,0,Math.PI*2);ctx.fill();
+  // Snout lighter area
+  ctx.fillStyle='#9c6b38';
+  ctx.beginPath();ctx.ellipse(12*s,headY+6*s+earPerk,6*s,8*s,0.25,0,Math.PI*2);ctx.fill();
+
+  // Eyes - BIG and expressive
+  // Eye white
+  ctx.fillStyle='#f5f0e8';
+  ctx.beginPath();ctx.ellipse(6*s,headY-5*s+earPerk,4.5*s,4*s,0,0,Math.PI*2);ctx.fill();
+  // Iris
+  ctx.fillStyle='#3e2215';
+  ctx.beginPath();ctx.arc(7*s,headY-5*s+earPerk,3*s,0,Math.PI*2);ctx.fill();
+  // Pupil
+  ctx.fillStyle='#111';
+  ctx.beginPath();ctx.arc(7.5*s,headY-5*s+earPerk,1.8*s,0,Math.PI*2);ctx.fill();
+  // Eye shine
+  ctx.fillStyle='rgba(255,255,255,0.7)';
+  ctx.beginPath();ctx.arc(6*s,headY-6.5*s+earPerk,1.2*s,0,Math.PI*2);ctx.fill();
+  // Eyelid line
+  ctx.strokeStyle='#5a3a1a';ctx.lineWidth=1*s;
+  ctx.beginPath();ctx.arc(6*s,headY-5*s+earPerk,4.5*s,Math.PI+0.3,Math.PI*2-0.3);ctx.stroke();
+
+  // Nostrils
+  ctx.fillStyle='#3a2210';
+  ctx.beginPath();ctx.ellipse(14*s,headY+7*s+earPerk,2*s,1.5*s,0.3,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.ellipse(10*s,headY+8*s+earPerk,2*s,1.5*s,0.3,0,Math.PI*2);ctx.fill();
+
+  // Mouth line
+  ctx.strokeStyle='#5a3a1a';ctx.lineWidth=1*s;
+  ctx.beginPath();
+  ctx.moveTo(16*s,headY+10*s+earPerk);
+  ctx.quadraticCurveTo(10*s,headY+12*s+earPerk,4*s,headY+10*s+earPerk);
+  ctx.stroke();
+
+  // Ears (more detailed, pointed)
+  ctx.fillStyle='#8B5A2B';
+  ctx.beginPath();ctx.moveTo(-1*s,headY-14*s+earPerk);ctx.lineTo(1*s,headY-26*s+earPerk);ctx.lineTo(5*s,headY-14*s+earPerk);ctx.closePath();ctx.fill();
+  ctx.beginPath();ctx.moveTo(7*s,headY-15*s+earPerk);ctx.lineTo(9*s,headY-26*s+earPerk);ctx.lineTo(13*s,headY-14*s+earPerk);ctx.closePath();ctx.fill();
+  // Inner ear
+  ctx.fillStyle='#c4917a';
+  ctx.beginPath();ctx.moveTo(0.5*s,headY-16*s+earPerk);ctx.lineTo(1.5*s,headY-23*s+earPerk);ctx.lineTo(3.5*s,headY-16*s+earPerk);ctx.closePath();ctx.fill();
+  ctx.beginPath();ctx.moveTo(8.5*s,headY-17*s+earPerk);ctx.lineTo(9.5*s,headY-23*s+earPerk);ctx.lineTo(11.5*s,headY-16*s+earPerk);ctx.closePath();ctx.fill();
+
+  // Eating animation
+  if(opts.eating){
+    var mOpen=Math.abs(Math.sin(t*2))*3*s;
+    ctx.fillStyle='#5a3a1a';
+    ctx.fillRect(12*s,headY+9*s+earPerk,6*s,3*s+mOpen);
+    ctx.strokeStyle='#4CAF50';ctx.lineWidth=2;
+    ctx.beginPath();ctx.moveTo(14*s,headY+9*s+earPerk);
+    ctx.lineTo(14*s+Math.sin(t)*4*s,headY+earPerk);ctx.stroke();
+  }
+
+  ctx.restore(); // headShake
+  ctx.restore();
+}
+
+// ========== CC1-STYLE PENNYWISE (progressive horror) ==========
+function drawPennywiseCC1(x,y,s,opts){
+  opts=opts||{};
+  var headY=-82*s;
+  var torsoY=-55*s;
+  var torsoH=35*s;
+  var legY=-20*s;
+  var legH=22*s;
+  var headR=15*s;
+  var menace=opts.menace||0;
+  var sway=Math.sin(t*1.2)*0.025*(1+menace*2);
+
+  // Color desaturation based on menace
+  var satShift=menace*0.6;
+  var suitR=Math.floor(200-satShift*60);
+  var suitG=Math.floor(200-satShift*80);
+  var suitB=Math.floor(210-satShift*90);
+  var suitCol='rgb('+suitR+','+suitG+','+suitB+')';
+  var hairHue=Math.floor(15-menace*15);
+  var hairSat=Math.floor(100-menace*30);
+  var hairLight=Math.floor(50-menace*15);
+  var hairCol='hsl('+hairHue+','+hairSat+'%,'+hairLight+'%)';
+
+  ctx.save();
+  ctx.translate(x,y);
+  if(opts.facing<0)ctx.scale(-1,1);
+  ctx.rotate(sway);
 
   // Shadow
   ctx.fillStyle='rgba(0,0,0,0.2)';
-  ctx.beginPath();ctx.ellipse(0,0,12*s,4*s,0,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.ellipse(0,0,22*s,5*s,0,0,Math.PI*2);ctx.fill();
 
+  // === LEGS ===
+  ctx.fillStyle='#777';
+  ctx.beginPath();ctx.roundRect(-14*s,legY,12*s,legH+2*s,3*s);ctx.fill();
+  ctx.beginPath();ctx.roundRect(4*s,legY,12*s,legH+2*s,3*s);ctx.fill();
+  // Shoes (oversized clown shoes)
+  ctx.fillStyle='#222';
+  ctx.beginPath();ctx.ellipse(-8*s,-2*s,9*s,3*s,0,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.ellipse(10*s,-2*s,9*s,3*s,0,0,Math.PI*2);ctx.fill();
+
+  // === TORSO ===
+  ctx.fillStyle=suitCol;
+  ctx.beginPath();ctx.roundRect(-16*s,torsoY,32*s,torsoH+2*s,5*s);ctx.fill();
+  // Pom-pom buttons
+  var pomCol=menace<0.5?'#ff4400':'#880000';
+  ctx.fillStyle=pomCol;
+  ctx.beginPath();ctx.arc(0,torsoY+10*s,3*s,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(0,torsoY+20*s,3*s,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(0,torsoY+30*s,2.5*s,0,Math.PI*2);ctx.fill();
+
+  // === RUFFLED COLLAR ===
+  ctx.fillStyle=menace<0.5?'#eee':'#ccc';
+  for(var ri=0;ri<10;ri++){
+    var ra=ri*Math.PI*2/10+Math.sin(t*0.8+ri)*0.1;
+    var rr=13*s+Math.sin(ri*2+t)*1.5*s;
+    ctx.beginPath();ctx.arc(Math.cos(ra)*rr,torsoY-1*s+Math.sin(ra)*4*s,5*s,0,Math.PI*2);ctx.fill();
+  }
+
+  // === ARMS ===
+  ctx.fillStyle=suitCol;
+  // Left arm
+  ctx.save();
+  ctx.translate(-16*s,torsoY+6*s);
+  ctx.rotate(Math.sin(t*1.5)*0.05);
+  ctx.fillRect(-2*s,0,7*s,26*s);
+  // Glove
+  ctx.fillStyle='#f5f0e8';
+  ctx.beginPath();ctx.ellipse(1.5*s,27*s,4*s,3.5*s,0,0,Math.PI*2);ctx.fill();
+  ctx.restore();
+
+  if(opts.lunge){
+    // Right arm LUNGING with claws
+    ctx.save();
+    ctx.translate(14*s,torsoY+6*s);
+    ctx.rotate(-0.5-Math.sin(t*12)*0.1);
+    ctx.fillStyle=suitCol;
+    ctx.fillRect(0,-3*s,32*s,8*s);
+    // Hand/claws
+    ctx.fillStyle='#ddd';
+    ctx.beginPath();ctx.ellipse(33*s,1*s,5*s,4*s,0,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#222';
+    for(var ci=0;ci<5;ci++){
+      ctx.beginPath();
+      ctx.moveTo(33*s,-4*s+ci*2.5*s);
+      ctx.lineTo(40*s,-5*s+ci*2.5*s);
+      ctx.lineTo(33*s,-2.5*s+ci*2.5*s);
+      ctx.fill();
+    }
+    ctx.restore();
+  }else{
+    // Right arm normal
+    ctx.save();
+    ctx.translate(14*s,torsoY+6*s);
+    ctx.rotate(-Math.sin(t*1.5)*0.05);
+    ctx.fillRect(-2*s,0,7*s,26*s);
+    ctx.fillStyle='#f5f0e8';
+    ctx.beginPath();ctx.ellipse(1.5*s,27*s,4*s,3.5*s,0,0,Math.PI*2);ctx.fill();
+    ctx.restore();
+  }
+
+  // === HEAD ===
+  // Face base - gets paler with menace
+  var faceR=Math.floor(240-menace*20);
+  var faceG=Math.floor(240-menace*40);
+  var faceB=Math.floor(240-menace*30);
+  ctx.fillStyle='rgb('+faceR+','+faceG+','+faceB+')';
+  ctx.beginPath();ctx.arc(0,headY,headR+2*s,0,Math.PI*2);ctx.fill();
+
+  // Face shadows when menacing
+  if(menace>0.3){
+    var shadowAlpha=menace*0.3;
+    ctx.fillStyle='rgba(40,0,20,'+shadowAlpha+')';
+    // Under-eye shadows
+    ctx.beginPath();ctx.ellipse(-6*s,headY-1*s,5*s,3*s,0,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.ellipse(6*s,headY-1*s,5*s,3*s,0,0,Math.PI*2);ctx.fill();
+    // Cheek hollows
+    ctx.beginPath();ctx.ellipse(-8*s,headY+4*s,4*s,5*s,0,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.ellipse(8*s,headY+4*s,4*s,5*s,0,0,Math.PI*2);ctx.fill();
+  }
+
+  // === HAIR ===
+  ctx.fillStyle=hairCol;
+  // Main hair puffs
+  ctx.beginPath();ctx.arc(-15*s,headY-3*s,11*s,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(15*s,headY-3*s,11*s,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(0,headY-17*s,9*s,0,Math.PI*2);ctx.fill();
+  // Animated spiky bits
+  for(var hi=0;hi<7;hi++){
+    var ha=-2.5+hi*0.75;
+    var hpulse=Math.sin(hi+t*1.5)*2*s;
+    ctx.beginPath();
+    ctx.arc(Math.cos(ha)*17*s,headY-4*s+Math.sin(ha)*13*s,5*s+hpulse+menace*2*s,0,Math.PI*2);
+    ctx.fill();
+  }
+
+  // === EYES - progressive horror ===
+  var eyeSize=3*s+menace*2*s; // Eyes get bigger
+  var pupilSize=1.5*s-menace*0.5*s; // Pupils get smaller (more unsettling)
+  var eyeY=headY-4*s;
+
+  // Eye glow
+  if(menace>0.15){
+    ctx.save();
+    ctx.shadowColor='rgba(255,220,0,'+(menace*0.8)+')';
+    ctx.shadowBlur=8+menace*25;
+    ctx.fillStyle='rgba(255,220,0,'+(menace*0.2)+')';
+    ctx.beginPath();ctx.arc(-6*s,eyeY,eyeSize+4*s,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.arc(6*s,eyeY,eyeSize+4*s,0,Math.PI*2);ctx.fill();
+    ctx.restore();
+  }
+
+  // Sclera (white or yellowish)
+  ctx.fillStyle=menace>0.4?'rgba(255,255,200,1)':'#fff';
+  ctx.beginPath();ctx.ellipse(-6*s,eyeY,eyeSize+1*s,eyeSize,0,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.ellipse(6*s,eyeY,eyeSize+1*s,eyeSize,0,0,Math.PI*2);ctx.fill();
+
+  // Iris
+  var irisCol=menace>0.5?'#ffcc00':'#ffdd00';
+  ctx.fillStyle=irisCol;
+  ctx.beginPath();ctx.arc(-6*s,eyeY,eyeSize-0.5*s,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(6*s,eyeY,eyeSize-0.5*s,0,Math.PI*2);ctx.fill();
+
+  // Pupils (get tiny when menacing - uncanny)
+  ctx.fillStyle='#000';
+  ctx.beginPath();ctx.arc(-6*s,eyeY,pupilSize,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(6*s,eyeY,pupilSize,0,Math.PI*2);ctx.fill();
+
+  // Eye highlight
+  ctx.fillStyle='rgba(255,255,255,0.6)';
+  ctx.beginPath();ctx.arc(-7*s,eyeY-1.5*s,1*s,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(5*s,eyeY-1.5*s,1*s,0,Math.PI*2);ctx.fill();
+
+  // === RED NOSE ===
+  ctx.fillStyle='#e00000';
+  ctx.beginPath();ctx.arc(0,headY+2*s,3.5*s,0,Math.PI*2);ctx.fill();
+  // Nose highlight
+  ctx.fillStyle='rgba(255,100,100,0.5)';
+  ctx.beginPath();ctx.arc(-1*s,headY+0.5*s,1.5*s,0,Math.PI*2);ctx.fill();
+
+  // === MOUTH - progressive horror ===
+  var grinW=8*s+menace*10*s; // Wider with menace
+  var teethCount=Math.floor(4+menace*12); // More teeth
+
+  // Red lip paint - gets more like a gash with menace
+  ctx.strokeStyle=menace>0.6?'#990000':'#cc0000';
+  ctx.lineWidth=(2+menace)*s;
+  ctx.beginPath();ctx.arc(0,headY+2*s,grinW,0.1,Math.PI-0.1);ctx.stroke();
+
+  // Upper lip paint
+  if(menace>0.3){
+    ctx.beginPath();ctx.arc(0,headY+2*s,grinW,-0.05,-Math.PI+0.05,true);ctx.stroke();
+  }
+
+  // Teeth
+  if(menace>0.15){
+    ctx.fillStyle='#fff';
+    for(var ti=0;ti<teethCount;ti++){
+      var tPos=-grinW+3*s+ti*(grinW*2-6*s)/(teethCount-1);
+      var tHeight=2*s+menace*5*s;
+      // Teeth get pointier with menace
+      if(menace>0.7){
+        // Fangs - triangular
+        ctx.beginPath();
+        ctx.moveTo(tPos-1.2*s,headY+3*s);
+        ctx.lineTo(tPos,headY+3*s+tHeight+(ti%3===0?3*s:0));
+        ctx.lineTo(tPos+1.2*s,headY+3*s);
+        ctx.fill();
+      }else{
+        ctx.fillRect(tPos-1*s,headY+3*s,2*s,tHeight);
+      }
+    }
+  }
+
+  // Drool when very menacing
+  if(menace>0.8){
+    ctx.strokeStyle='rgba(200,200,220,0.4)';ctx.lineWidth=1.5*s;
+    ctx.beginPath();
+    ctx.moveTo(-3*s,headY+3*s+menace*5*s);
+    ctx.lineTo(-4*s+Math.sin(t*3)*s,headY+15*s+Math.sin(t*2)*3*s);
+    ctx.stroke();
+  }
+
+  // Face crack lines when NIGHTMARE
+  if(menace>0.8){
+    ctx.strokeStyle='rgba(100,0,0,0.5)';ctx.lineWidth=1*s;
+    // Mouth corner tears
+    ctx.beginPath();ctx.moveTo(-grinW-2*s,headY+3*s);
+    ctx.lineTo(-grinW-5*s-menace*4*s,headY-3*s);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(grinW+2*s,headY+3*s);
+    ctx.lineTo(grinW+5*s+menace*4*s,headY-3*s);ctx.stroke();
+    // Forehead crack
+    ctx.beginPath();ctx.moveTo(-2*s,headY-headR);
+    ctx.lineTo(-1*s,headY-headR+8*s);ctx.lineTo(2*s,headY-headR+5*s);ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+// === BALLOON (shiny, with reflection) ===
+function drawBalloon(x,y,s,opts){
+  opts=opts||{};
+  if(opts.popped)return;
+  var bob=Math.sin(t*2)*6*s;
+  var col=opts.color||'#D32F2F';
+
+  if(opts.cycling){
+    var hue=(t*100)%360;
+    col='hsl('+hue+',75%,50%)';
+  }
+
+  var bx=x,by=y+bob;
+
+  // String (wavy, thin)
+  ctx.strokeStyle='rgba(80,80,80,0.6)';ctx.lineWidth=1;ctx.lineCap='round';
+  ctx.beginPath();ctx.moveTo(bx,by+15*s);
+  for(var i=0;i<18;i++){
+    ctx.lineTo(bx+Math.sin(i*0.4+t*1.8)*2.5*s,by+15*s+i*2.8*s);
+  }
+  ctx.stroke();
+
+  // Balloon body (egg-shaped)
+  ctx.save();
+  ctx.fillStyle=col;
+  ctx.beginPath();
+  ctx.ellipse(bx,by,14*s,17*s,0,0,Math.PI*2);
+  ctx.fill();
+
+  // Glossy highlight (large)
+  var hlGrad=ctx.createRadialGradient(bx-5*s,by-7*s,0,bx-3*s,by-4*s,10*s);
+  hlGrad.addColorStop(0,'rgba(255,255,255,0.45)');
+  hlGrad.addColorStop(0.5,'rgba(255,255,255,0.1)');
+  hlGrad.addColorStop(1,'rgba(255,255,255,0)');
+  ctx.fillStyle=hlGrad;
+  ctx.beginPath();ctx.ellipse(bx-3*s,by-4*s,10*s,12*s,0,0,Math.PI*2);ctx.fill();
+
+  // Small bright specular highlight
+  ctx.fillStyle='rgba(255,255,255,0.7)';
+  ctx.beginPath();ctx.ellipse(bx-5*s,by-8*s,2.5*s,3*s,-0.3,0,Math.PI*2);ctx.fill();
+
+  // Edge darkening
+  var edgeGrad=ctx.createRadialGradient(bx,by,8*s,bx,by,16*s);
+  edgeGrad.addColorStop(0,'rgba(0,0,0,0)');
+  edgeGrad.addColorStop(1,'rgba(0,0,0,0.15)');
+  ctx.fillStyle=edgeGrad;
+  ctx.beginPath();ctx.ellipse(bx,by,14*s,17*s,0,0,Math.PI*2);ctx.fill();
+
+  ctx.restore();
+
+  // Knot
+  ctx.fillStyle=col;
+  ctx.beginPath();ctx.moveTo(bx-2*s,by+16*s);ctx.lineTo(bx,by+20*s);ctx.lineTo(bx+2*s,by+16*s);ctx.fill();
+}
+
+// ========== LILY (girl character) ==========
+function drawLily(x,y,s,waving){
+  var headY2=-80*s;
+  var torsoY2=-55*s;
+  ctx.save();ctx.translate(x,y);
+  // Shadow
+  ctx.fillStyle='rgba(0,0,0,0.15)';
+  ctx.beginPath();ctx.ellipse(0,0,12*s,4*s,0,0,Math.PI*2);ctx.fill();
   // Legs
   ctx.fillStyle='#2196F3';
   ctx.beginPath();ctx.roundRect(-10*s,-20*s,8*s,20*s,3*s);ctx.fill();
   ctx.beginPath();ctx.roundRect(2*s,-20*s,8*s,20*s,3*s);ctx.fill();
   // Shoes
   ctx.fillStyle='#795548';
-  ctx.fillRect(-11*s,-4*s,10*s,4*s);
-  ctx.fillRect(2*s,-4*s,10*s,4*s);
-
-  // Dress/torso
+  ctx.beginPath();ctx.ellipse(-6*s,-2*s,7*s,3*s,0,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.ellipse(6*s,-2*s,7*s,3*s,0,0,Math.PI*2);ctx.fill();
+  // Dress
   ctx.fillStyle='#E91E63';
-  ctx.beginPath();ctx.roundRect(-12*s,torsoY2,24*s,35*s,4*s);ctx.fill();
-
+  ctx.beginPath();ctx.roundRect(-13*s,torsoY2,26*s,36*s,5*s);ctx.fill();
   // Arms
   ctx.fillStyle='#FFCCBC';
-  ctx.fillRect(-15*s,torsoY2+5*s,5*s,20*s);
+  ctx.fillRect(-16*s,torsoY2+6*s,5*s,20*s);
   if(waving){
     ctx.save();
-    ctx.translate(10*s,torsoY2+5*s);
-    ctx.rotate(-0.5-Math.sin(t*6)*0.4);
+    ctx.translate(11*s,torsoY2+6*s);
+    ctx.rotate(-0.5-Math.sin(t*5)*0.35);
     ctx.fillRect(0,0,5*s,20*s);
     ctx.restore();
   }else{
-    ctx.fillRect(10*s,torsoY2+5*s,5*s,20*s);
+    ctx.fillRect(11*s,torsoY2+6*s,5*s,20*s);
   }
-
   // Head
   ctx.fillStyle='#FFCCBC';
-  ctx.beginPath();ctx.arc(0,headY2,12*s,0,Math.PI*2);ctx.fill();
-
-  // Hair (long brown)
+  ctx.beginPath();ctx.arc(0,headY2,13*s,0,Math.PI*2);ctx.fill();
+  // Hair
   ctx.fillStyle='#5D4037';
-  ctx.beginPath();ctx.ellipse(0,headY2-6*s,14*s,10*s,0,Math.PI,Math.PI*2);ctx.fill();
-  ctx.fillRect(-13*s,headY2-4*s,5*s,25*s);
-  ctx.fillRect(8*s,headY2-4*s,5*s,25*s);
-
-  // Face
+  ctx.beginPath();ctx.ellipse(0,headY2-6*s,15*s,11*s,0,Math.PI,Math.PI*2);ctx.fill();
+  ctx.fillRect(-14*s,headY2-4*s,5*s,26*s);
+  ctx.fillRect(9*s,headY2-4*s,5*s,26*s);
+  // Eyes
   ctx.fillStyle='#333';
-  ctx.fillRect(-4*s,headY2-3*s,2.5*s,3*s);
-  ctx.fillRect(2*s,headY2-3*s,2.5*s,3*s);
+  ctx.beginPath();ctx.arc(-4*s,headY2-2*s,2*s,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(4*s,headY2-2*s,2*s,0,Math.PI*2);ctx.fill();
+  // Eye shine
+  ctx.fillStyle='rgba(255,255,255,0.5)';
+  ctx.beginPath();ctx.arc(-4.5*s,headY2-3*s,0.8*s,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(3.5*s,headY2-3*s,0.8*s,0,Math.PI*2);ctx.fill();
   // Smile
   ctx.strokeStyle='#333';ctx.lineWidth=1.5*s;
-  ctx.beginPath();ctx.arc(0,headY2+3*s,4*s,0.1,Math.PI-0.1);ctx.stroke();
-
+  ctx.beginPath();ctx.arc(0,headY2+3*s,4*s,0.15,Math.PI-0.15);ctx.stroke();
   ctx.restore();
 }
 
 // ========== TEXT SYSTEM ==========
 var textLines=[],textCallback=null,allTextDone=false;
-var currentLineIdx=0,currentCharIdx=0,typeSpeed=35;
+var currentLineIdx=0,currentCharIdx=0,typeSpeed=40;
+
+// Rich text: wraps *text* in bold, _text_ in italic, ALLCAPS in scary
+function formatLine(line){
+  // ALLCAPS words (3+ chars) get scary class
+  line=line.replace(/\b([A-Z]{3,})\b/g,'<span class="scary">$1</span>');
+  // *bold*
+  line=line.replace(/\*([^*]+)\*/g,'<span class="bold">$1</span>');
+  // _italic_
+  line=line.replace(/_([^_]+)_/g,'<span class="italic">$1</span>');
+  return line;
+}
+
 function showText(lines,cb){
   textBox.style.display='block';
   textBox.innerHTML='';
@@ -689,6 +1155,7 @@ function showText(lines,cb){
   textCallback=cb||null;
   currentLineIdx=0;currentCharIdx=0;
 }
+
 function updateText(dt){
   if(!typing)return;
   typeTimer+=dt*1000;
@@ -708,9 +1175,10 @@ function updateText(dt){
     var html='';
     for(var i=0;i<=currentLineIdx&&i<textLines.length;i++){
       if(i===currentLineIdx){
-        html+=textLines[i].substring(0,currentCharIdx);
+        var partial=textLines[i].substring(0,currentCharIdx);
+        html+=formatLine(partial);
       }else{
-        html+=textLines[i]+'<br>';
+        html+=formatLine(textLines[i])+'<br>';
       }
     }
     textBox.innerHTML=html;
@@ -723,21 +1191,13 @@ var scenes=[
   // Scene 0: "Once upon a time..."
   {
     text:[
-      "Once upon a time, in a meadow just past the Wreford farm, there lived a horse named Clover.",
-      "Clover belonged to a girl named Lily, who loved her more than anything in the world."
+      "Once upon a time, in a meadow just past the Wreford farm, there lived a horse named *Clover*.",
+      "Clover belonged to a girl named *Lily*, who loved her more than anything in the world."
     ],
     draw:function(dt){
-      drawSky(0);
+      drawPaintedSky(0);
       drawSun(W*0.85,H*0.1,SCALE*1.5,1);
-      drawCloud(W*0.15+(t*8)%(W+200)-100,H*0.12,1.2*SCALE);
-      drawCloud(W*0.55+(t*5)%(W+200)-100,H*0.18,0.9*SCALE);
-      drawGround(0);
-
-      // Flowers
-      var flowerCols=['#e91e63','#ff9800','#9c27b0','#ffeb3b','#2196f3'];
-      for(var i=0;i<12;i++){
-        drawFlower(W*0.1+i*(W*0.07),H*0.64+Math.sin(i*1.3)*5,flowerCols[i%flowerCols.length]);
-      }
+      drawMeadow(0);
 
       // Butterflies
       drawButterfly(W*0.3,H*0.4,'#e91e63',1);
@@ -752,7 +1212,7 @@ var scenes=[
       // Horse grazing
       drawHorseCC1(W*0.55,H*0.6,SCALE*1.6,{eating:true});
     },
-    onEnter:function(){drone=playDrone();}
+    onEnter:function(){}
   },
 
   // Scene 1: "A Perfect Day"
@@ -762,23 +1222,16 @@ var scenes=[
       "The sun was warm, the grass was sweet, and the creek sang its little creek song."
     ],
     draw:function(dt){
-      drawSky(0);
+      drawPaintedSky(0);
       drawSun(W*0.82,H*0.1,SCALE*1.8,1);
-      drawCloud(W*0.2,H*0.1,1.1*SCALE);
-      drawCloud(W*0.7,H*0.15,0.8*SCALE);
-      drawGround(0);
+      drawMeadow(0);
 
       // Creek
       drawCreek(W*0.05,W*0.4,H*0.67,SCALE);
 
-      // Flowers
-      for(var i=0;i<8;i++){
-        drawFlower(W*0.45+i*(W*0.06),H*0.63+Math.sin(i*2)*4,['#e91e63','#ffeb3b','#ff9800','#9c27b0','#ff5722'][i%5]);
-      }
-
       drawTree(W*0.12,H*0.62,SCALE*1.5);
 
-      // Horse trotting happily (slight bob)
+      // Horse trotting
       var trotX=W*0.5+Math.sin(t*0.8)*30;
       drawHorseCC1(trotX,H*0.58,SCALE*1.6,{});
     }
@@ -788,27 +1241,26 @@ var scenes=[
   {
     text:[
       "At the edge of the meadow, where the wildflowers stopped and the shadows began, there was a drain.",
-      "Nobody talked about the drain."
+      "_Nobody talked about the drain._"
     ],
     draw:function(dt){
-      var dark=Math.min(0.2,sceneTime*0.08);
-      drawSky(dark);
+      var dark=Math.min(0.25,sceneTime*0.08);
+      drawPaintedSky(dark);
       drawSun(W*0.85,H*0.1,SCALE*1.2,1-dark);
-      drawGround(dark);
+      drawMeadow(dark);
 
-      // Flowers on left side only
-      for(var i=0;i<5;i++){
-        drawFlower(W*0.05+i*(W*0.06),H*0.63,['#e91e63','#ff9800','#9c27b0'][i%3]);
-      }
-
-      // The drain - right side, ominous
+      // The drain
       drawDrain(W*0.75,H*0.6,SCALE*1.5,true);
 
       // Darker ground near drain
-      ctx.fillStyle='rgba(0,0,0,0.15)';
-      ctx.fillRect(W*0.6,H*0.62,W*0.4,H*0.4);
+      var drainShadow=ctx.createLinearGradient(W*0.55,0,W,0);
+      drainShadow.addColorStop(0,'rgba(0,0,0,0)');
+      drainShadow.addColorStop(0.3,'rgba(0,0,0,0.1)');
+      drainShadow.addColorStop(1,'rgba(0,0,0,0.25)');
+      ctx.fillStyle=drainShadow;
+      ctx.fillRect(W*0.55,H*0.62,W*0.45,H*0.4);
 
-      // Horse, ears perked, looking toward drain
+      // Horse, ears perked
       drawHorseCC1(W*0.35,H*0.58,SCALE*1.6,{alert:true});
     }
   },
@@ -816,124 +1268,127 @@ var scenes=[
   // Scene 3: "Hello There"
   {
     text:[
-      "'Hiya, Clover!' said a voice like honey poured over broken glass."
+      "_'Hiya, Clover!'_ said a voice like honey poured over broken glass."
     ],
     draw:function(dt){
-      var dark=0.25;
-      drawSky(dark);
-      drawGround(dark);
+      var dark=0.28;
+      drawPaintedSky(dark);
+      drawMeadow(dark);
 
       // The drain
       drawDrain(W*0.72,H*0.58,SCALE*1.5,true);
 
-      // Pennywise's face appearing in the drain
-      var reveal=Math.min(1,sceneTime/2);
-      if(reveal>0.2){
+      // Pennywise face appearing in drain
+      var reveal=Math.min(1,sceneTime/2.5);
+      if(reveal>0.15){
         ctx.save();
-        // Clip to drain opening
         ctx.beginPath();
-        ctx.arc(W*0.72,H*0.58+2*SCALE*1.5,20*SCALE*1.5,Math.PI,0);
-        ctx.lineTo(W*0.72+20*SCALE*1.5,H*0.58+18*SCALE*1.5);
-        ctx.lineTo(W*0.72-20*SCALE*1.5,H*0.58+18*SCALE*1.5);
+        ctx.arc(W*0.72,W*0.72<W?H*0.58+2*SCALE*1.5:H*0.58,22*SCALE*1.5,Math.PI,0);
+        ctx.lineTo(W*0.72+22*SCALE*1.5,H*0.58+20*SCALE*1.5);
+        ctx.lineTo(W*0.72-22*SCALE*1.5,H*0.58+20*SCALE*1.5);
         ctx.closePath();ctx.clip();
 
-        // Just the face emerging from darkness
-        var peekY=H*0.58+30*(1-reveal);
-        ctx.fillStyle='#f0f0f0';
-        ctx.beginPath();ctx.arc(W*0.72,peekY,12*SCALE,0,Math.PI*2);ctx.fill();
-        // Yellow eyes
+        var peekY=H*0.58+35*(1-reveal);
+        // Face
+        ctx.fillStyle='#f0ece8';
+        ctx.beginPath();ctx.arc(W*0.72,peekY,13*SCALE,0,Math.PI*2);ctx.fill();
+        // Yellow eyes with glow
         ctx.save();
-        ctx.shadowColor='#ffdd00';ctx.shadowBlur=15;
+        ctx.shadowColor='#ffdd00';ctx.shadowBlur=18;
         ctx.fillStyle='#ffdd00';
-        ctx.beginPath();ctx.arc(W*0.72-5*SCALE,peekY-3*SCALE,2.5*SCALE,0,Math.PI*2);ctx.fill();
-        ctx.beginPath();ctx.arc(W*0.72+5*SCALE,peekY-3*SCALE,2.5*SCALE,0,Math.PI*2);ctx.fill();
+        ctx.beginPath();ctx.arc(W*0.72-5*SCALE,peekY-3*SCALE,3*SCALE,0,Math.PI*2);ctx.fill();
+        ctx.beginPath();ctx.arc(W*0.72+5*SCALE,peekY-3*SCALE,3*SCALE,0,Math.PI*2);ctx.fill();
         ctx.restore();
+        // Pupils
+        ctx.fillStyle='#000';
+        ctx.beginPath();ctx.arc(W*0.72-5*SCALE,peekY-3*SCALE,1.2*SCALE,0,Math.PI*2);ctx.fill();
+        ctx.beginPath();ctx.arc(W*0.72+5*SCALE,peekY-3*SCALE,1.2*SCALE,0,Math.PI*2);ctx.fill();
         // Red nose
-        ctx.fillStyle='#ff0000';
-        ctx.beginPath();ctx.arc(W*0.72,peekY+1*SCALE,2*SCALE,0,Math.PI*2);ctx.fill();
+        ctx.fillStyle='#e00000';
+        ctx.beginPath();ctx.arc(W*0.72,peekY+1*SCALE,2.5*SCALE,0,Math.PI*2);ctx.fill();
+        // Smile
+        ctx.strokeStyle='#cc0000';ctx.lineWidth=2*SCALE;
+        ctx.beginPath();ctx.arc(W*0.72,peekY+1*SCALE,7*SCALE,0.15,Math.PI-0.15);ctx.stroke();
 
         ctx.restore();
 
-        // Balloon floating up from behind drain
-        if(reveal>0.5){
-          drawBalloon(W*0.72+15*SCALE,H*0.38-reveal*20,SCALE*1.5,{});
+        // Balloon floating up
+        if(reveal>0.4){
+          drawBalloon(W*0.72+18*SCALE,H*0.35-reveal*25,SCALE*1.5,{});
         }
       }
 
-      // Horse frozen mid-chew
+      // Horse frozen
       drawHorseCC1(W*0.3,H*0.58,SCALE*1.6,{alert:true});
     },
     onEnter:function(){playLaugh();}
   },
 
-  // Scene 4: "The Balloon"
+  // Scene 4: "The Balloon" (friendly clown, bright)
   {
     text:[
-      "'Do you want a balloon?' The clown's smile was so wide it nearly met at the back of his head.",
-      "'They float! They ALL float down here!'"
+      "_'Do you want a balloon?'_ The clown's smile was so wide it nearly met at the back of his head.",
+      "_'They float! They_ ALL _float down here!'_"
     ],
     draw:function(dt){
       var dark=0.2;
-      drawSky(dark);
-      drawGround(dark);
+      drawPaintedSky(dark);
+      drawMeadow(dark);
 
-      // Pennywise emerged more, holding balloon, big grin
       var emerge=Math.min(1,sceneTime/1.5);
       var py=H*0.42+20*(1-emerge);
-      drawPennywiseCC1(W*0.65,py,SCALE*1.4,{menace:0.1,facing:1});
-      drawBalloon(W*0.65+15*SCALE,py-100*SCALE,SCALE*1.5,{});
+      // Friendly Pennywise - low menace, bright
+      drawPennywiseCC1(W*0.65,py,SCALE*1.4,{menace:0.05,facing:1});
+      drawBalloon(W*0.65+18*SCALE,py-105*SCALE,SCALE*1.5,{});
 
-      // Horse looking at clown
       drawHorseCC1(W*0.3,H*0.58,SCALE*1.6,{alert:true});
     }
   },
 
-  // Scene 5: "Neigh."
+  // Scene 5: "Neigh." (friendly clown, confused)
   {
     text:[
-      "'Neigh,' said Clover.",
+      "_'Neigh,'_ said Clover.",
       "",
       "This had never happened before."
     ],
     draw:function(dt){
-      var dark=0.2;
-      drawSky(dark);
-      drawGround(dark);
+      var dark=0.22;
+      drawPaintedSky(dark);
+      drawMeadow(dark);
 
-      // Pennywise, confused head tilt
+      // Pennywise confused head tilt
       ctx.save();
       ctx.translate(W*0.65,H*0.42);
-      ctx.rotate(Math.sin(sceneTime*2)*0.15);
+      ctx.rotate(Math.sin(sceneTime*1.5)*0.18);
       ctx.translate(-W*0.65,-H*0.42);
       drawPennywiseCC1(W*0.65,H*0.42,SCALE*1.4,{menace:0.05,facing:1});
       ctx.restore();
-      drawBalloon(W*0.65+15*SCALE,H*0.42-100*SCALE,SCALE*1.5,{});
+      drawBalloon(W*0.65+18*SCALE,H*0.42-105*SCALE,SCALE*1.5,{});
 
-      // Horse shaking head, one hoof stamps
       drawHorseCC1(W*0.3,H*0.58,SCALE*1.6,{shake:true,stamp:true});
     },
     onEnter:function(){playNeigh();}
   },
 
-  // Scene 6: "The Sales Pitch"
+  // Scene 6: "The Sales Pitch" (slightly off, colors desaturating)
   {
     text:[
-      "'But it's a REALLY nice balloon! It's red! Your favorite color!'",
-      "'I can make it ANY color! How about... horse-colored?'",
+      "_'But it's a_ REALLY _nice balloon! It's red! Your favorite color!'_",
+      "_'I can make it_ ANY _color! How about... horse-colored?'_",
       "",
-      "'Neigh,' said Clover, backing up three steps."
+      "_'Neigh,'_ said Clover, backing up three steps."
     ],
     draw:function(dt){
-      var dark=Math.min(0.3,0.2+sceneTime*0.02);
-      drawSky(dark);
-      drawGround(dark);
+      var dark=Math.min(0.32,0.22+sceneTime*0.02);
+      drawPaintedSky(dark);
+      drawMeadow(dark);
 
-      // Pennywise animated, doing a little dance (bobbing)
-      var danceBob=Math.abs(Math.sin(t*4))*10;
-      drawPennywiseCC1(W*0.6,H*0.42-danceBob,SCALE*1.4,{menace:0.15,facing:1});
+      // Pennywise dancing, slightly more menacing
+      var danceBob=Math.abs(Math.sin(t*3.5))*10;
+      drawPennywiseCC1(W*0.6,H*0.42-danceBob,SCALE*1.4,{menace:0.2,facing:1});
 
-      // Balloon changing colors rapidly
-      drawBalloon(W*0.6+15*SCALE,H*0.42-danceBob-100*SCALE,SCALE*1.5,{cycling:true});
+      drawBalloon(W*0.6+18*SCALE,H*0.42-danceBob-105*SCALE,SCALE*1.5,{cycling:true});
 
       // Horse backing up
       var backOff=Math.min(3,sceneTime)*15;
@@ -944,27 +1399,26 @@ var scenes=[
     }
   },
 
-  // Scene 7: "Getting Desperate"
+  // Scene 7: "Getting Desperate" (shadows on face, eyes too bright)
   {
     text:[
-      "'What if I told you there were UNLIMITED APPLES down here?'",
-      "'And sugar cubes? Mountains of sugar cubes!'",
-      "'And a NICE WARM STABLE with fresh hay and--'",
+      "_'What if I told you there were_ UNLIMITED APPLES _down here?'_",
+      "_'And sugar cubes? Mountains of sugar cubes!'_",
+      "_'And a_ NICE WARM STABLE _with fresh hay and--'_",
       "",
-      "'NEIGH,' said Clover."
+      "_'_ NEIGH _,'_ said Clover."
     ],
     draw:function(dt){
-      var dark=Math.min(0.4,0.25+sceneTime*0.03);
-      drawSky(dark);
-      drawGround(dark);
+      var dark=Math.min(0.42,0.28+sceneTime*0.03);
+      drawPaintedSky(dark);
+      drawMeadow(dark);
 
-      // Pennywise crawling out more, smile strained, teeth showing
+      // Pennywise crawling out, more teeth, eyes brighter
       var crawlOut=Math.min(1,sceneTime/3);
       var px=W*0.55+crawlOut*W*0.05;
-      drawPennywiseCC1(px,H*0.45,SCALE*1.5,{menace:0.3+crawlOut*0.2,facing:1});
-      drawBalloon(px+20*SCALE,H*0.45-110*SCALE,SCALE*1.5,{});
+      drawPennywiseCC1(px,H*0.45,SCALE*1.5,{menace:0.45+crawlOut*0.2,facing:1});
+      drawBalloon(px+22*SCALE,H*0.45-115*SCALE,SCALE*1.5,{});
 
-      // Horse further back, firm
       drawHorseCC1(W*0.22,H*0.58,SCALE*1.6,{stamp:true,alert:true});
     },
     onEnter:function(){
@@ -972,10 +1426,10 @@ var scenes=[
     }
   },
 
-  // Scene 8: "The Mask Slips"
+  // Scene 8: "The Mask Slips" (NIGHTMARE - distorted, too many teeth)
   {
     text:[
-      "The clown's face changed. Not a lot. Just enough.",
+      "The clown's face _changed_. Not a lot. Just enough.",
       "The smile stayed, but the eyes forgot to smile with it.",
       "",
       "Clover's instincts -- four million years of prey-animal evolution -- screamed one word:",
@@ -983,232 +1437,320 @@ var scenes=[
       "RUN."
     ],
     draw:function(dt){
-      var dark=Math.min(0.7,0.3+sceneTime*0.1);
-      drawSky(dark);
-      drawGround(dark);
+      var dark=Math.min(0.75,0.35+sceneTime*0.1);
+      drawPaintedSky(dark);
+      drawMeadow(dark);
 
-      // Pennywise - face distorting, eyes blazing
-      var menaceRise=Math.min(1,sceneTime/4);
-      drawPennywiseCC1(W*0.55,H*0.42,SCALE*1.6,{menace:0.5+menaceRise*0.5,facing:1});
-      drawBalloon(W*0.55+20*SCALE,H*0.42-120*SCALE,SCALE*1.5,{});
+      // Pennywise - full nightmare mode
+      var menaceRise=Math.min(1,sceneTime/3.5);
+      drawPennywiseCC1(W*0.55,H*0.42,SCALE*1.6,{menace:0.6+menaceRise*0.4,facing:1});
+      drawBalloon(W*0.55+22*SCALE,H*0.42-125*SCALE,SCALE*1.5,{});
 
-      // Horse trembling (slight random offset)
-      var trembleX=menaceRise>0.5?(Math.random()-0.5)*4:0;
-      var trembleY=menaceRise>0.5?(Math.random()-0.5)*2:0;
+      // Horse trembling
+      var trembleX=menaceRise>0.4?(Math.random()-0.5)*5:0;
+      var trembleY=menaceRise>0.4?(Math.random()-0.5)*3:0;
       drawHorseCC1(W*0.25+trembleX,H*0.58+trembleY,SCALE*1.6,{alert:true});
 
-      // Dramatic vignette
-      if(menaceRise>0.5){
-        var vigGrad=ctx.createRadialGradient(W/2,H/2,H*0.3,W/2,H/2,H*0.8);
+      // Heavy vignette
+      if(menaceRise>0.3){
+        var vigGrad=ctx.createRadialGradient(W/2,H/2,H*0.2,W/2,H/2,H*0.75);
         vigGrad.addColorStop(0,'rgba(0,0,0,0)');
-        vigGrad.addColorStop(1,'rgba(0,0,0,'+(menaceRise*0.4)+')');
+        vigGrad.addColorStop(1,'rgba(0,0,0,'+(menaceRise*0.55)+')');
         ctx.fillStyle=vigGrad;ctx.fillRect(0,0,W,H);
       }
     },
     onEnter:function(){playSting();}
   },
 
-  // Scene 9: "THE LUNGE"
+  // Scene 9: "THE LUNGE" - SILENCE then BLAST
   {
     text:[
       "PENNYWISE LUNGED."
     ],
     draw:function(dt){
-      var dark=0.8;
-      drawSky(dark);
+      var dark=0.85;
+      drawPaintedSky(dark);
 
-      // Red flash at start
-      var flash=sceneTime<0.3?1-sceneTime/0.3:0;
+      // Red flash
+      var flash=sceneTime<0.25?1-sceneTime/0.25:0;
       if(flash>0){
-        ctx.fillStyle='rgba(200,0,0,'+(flash*0.6)+')';
+        ctx.fillStyle='rgba(180,0,0,'+(flash*0.7)+')';
         ctx.fillRect(0,0,W,H);
       }
 
-      drawGround(dark);
+      drawMeadow(dark);
 
       // Screen shake
-      if(sceneTime<2.5){
-        var shakeIntensity=Math.max(0,1-sceneTime/2.5);
-        shakeX=(Math.random()-0.5)*16*shakeIntensity;
-        shakeY=(Math.random()-0.5)*10*shakeIntensity;
+      if(sceneTime<2){
+        var shakeIntensity=Math.max(0,1-sceneTime/2);
+        shakeX=(Math.random()-0.5)*20*shakeIntensity;
+        shakeY=(Math.random()-0.5)*14*shakeIntensity;
         ctx.save();ctx.translate(shakeX,shakeY);
       }
 
-      // Pennywise lunging - MASSIVE, teeth like razors, claws extended
-      var lungeX=W*0.4+Math.min(sceneTime*120,W*0.25);
-      drawPennywiseCC1(lungeX,H*0.35,SCALE*2,{menace:1,facing:1,lunge:true});
-
-      // Balloon POP - particles
+      // Speed lines / motion blur
       if(sceneTime<1.5){
-        for(var i=0;i<10;i++){
-          var a=i*Math.PI*2/10;
-          var d=sceneTime*150;
-          var pr=5-sceneTime*3;
-          if(pr>0){
-            ctx.fillStyle='#D32F2F';
-            ctx.beginPath();ctx.arc(W*0.5+Math.cos(a)*d,H*0.2+Math.sin(a)*d*0.6,pr,0,Math.PI*2);ctx.fill();
-          }
+        ctx.strokeStyle='rgba(255,50,50,'+(0.3*(1-sceneTime/1.5))+')';
+        ctx.lineWidth=3;
+        for(var sl=0;sl<12;sl++){
+          var sly=Math.random()*H;
+          ctx.beginPath();
+          ctx.moveTo(W*0.3+Math.random()*W*0.3,sly);
+          ctx.lineTo(W*0.3+Math.random()*W*0.3+80+Math.random()*120,sly);
+          ctx.stroke();
         }
       }
 
-      // Horse BOLTING at full gallop
-      var horseX=W*0.6+sceneTime*100;
-      if(horseX<W+200){
-        drawHorseCC1(horseX,H*0.55,SCALE*1.6,{gallop:true,facing:-1});
+      // Pennywise LUNGING - massive
+      var lungeProgress=Math.min(sceneTime*2,1);
+      var lungeX=W*0.35+lungeProgress*W*0.3;
+      var lungeScale=SCALE*(1.8+lungeProgress*0.5);
+      drawPennywiseCC1(lungeX,H*0.32,lungeScale,{menace:1,facing:1,lunge:true});
+
+      // Balloon POP particles
+      if(sceneTime<1.8){
+        ctx.fillStyle='#D32F2F';
+        for(var pi=0;pi<12;pi++){
+          var pa=pi*Math.PI*2/12;
+          var pd=sceneTime*180;
+          var pr=6-sceneTime*3;
+          if(pr>0){
+            ctx.globalAlpha=1-sceneTime/1.8;
+            ctx.beginPath();ctx.arc(W*0.5+Math.cos(pa)*pd,H*0.18+Math.sin(pa)*pd*0.5,pr,0,Math.PI*2);ctx.fill();
+          }
+        }
+        ctx.globalAlpha=1;
       }
 
-      if(sceneTime<2.5)ctx.restore();
+      // Horse BOLTING
+      var horseX=W*0.6+sceneTime*130;
+      if(horseX<W+200){
+        drawHorseCC1(horseX,H*0.53,SCALE*1.6,{gallop:true,facing:-1});
+      }
+
+      if(sceneTime<2)ctx.restore();
     },
     onEnter:function(){
-      playSting();playPop();
-      setTimeout(function(){playNeigh();},400);
-      setTimeout(function(){playGallop();},600);
+      // Brief silence already set by scene 8's mood
+      // Then BLAST
+      setTimeout(function(){playMood('jumpscare');playPop();},100);
+      setTimeout(function(){playNeigh();},500);
+      setTimeout(function(){playGallop();},700);
     }
   },
 
-  // Scene 10: "Safe"
+  // Scene 10: "Safe" - warm golden light
   {
     text:[
       "Clover ran. Clover ran like she had never run before.",
-      "Past the creek, past the old oak, past the fence where Lily was waiting with an apple and a confused expression.",
+      "Past the creek, past the old oak, past the fence where *Lily* was waiting with an apple and a confused expression.",
       "",
-      "'What's wrong, girl?' Lily asked.",
+      "_'What's wrong, girl?'_ Lily asked.",
       "",
       "Clover pressed her nose against Lily's shoulder and stayed there for a very long time."
     ],
     draw:function(dt){
-      // Sun breaking through clouds
       var brightening=Math.min(1,sceneTime/4);
-      var dark=0.4*(1-brightening);
-      drawSky(dark);
-      drawSun(W*0.8,H*0.12,SCALE*1.5,brightening);
-      drawCloud(W*0.3,H*0.1,SCALE);
-      drawCloud(W*0.6,H*0.08,SCALE*0.8);
-      drawGround(dark);
 
-      // Farmhouse in distance
+      // Warm golden sky
+      var grad=ctx.createLinearGradient(0,0,0,H*0.65);
+      var warmth=brightening;
+      grad.addColorStop(0,'rgb('+Math.floor(100+warmth*80)+','+Math.floor(140+warmth*60)+','+Math.floor(200-warmth*60)+')');
+      grad.addColorStop(0.6,'rgb('+Math.floor(160+warmth*60)+','+Math.floor(180+warmth*40)+','+Math.floor(220-warmth*40)+')');
+      grad.addColorStop(1,'rgb('+Math.floor(200+warmth*40)+','+Math.floor(210+warmth*30)+','+Math.floor(200-warmth*20)+')');
+      ctx.fillStyle=grad;ctx.fillRect(0,0,W,H*0.65);
+
+      // Soft clouds
+      for(var i=0;i<3;i++){
+        drawSoftCloud((i*W/2.5+(t*6))%(W+400)-200,H*0.1+i*H*0.04,1.0,0.4);
+      }
+
+      drawSun(W*0.8,H*0.12,SCALE*1.5,brightening);
+
+      // Warm golden ground
+      var gBase=Math.floor(140+brightening*30);
+      ctx.fillStyle='rgb('+Math.floor(50+brightening*20)+','+gBase+','+Math.floor(30+brightening*10)+')';
+      ctx.fillRect(0,H*0.62,W,H*0.4);
+      // Warm light overlay on ground
+      ctx.fillStyle='rgba(255,220,100,'+(brightening*0.08)+')';
+      ctx.fillRect(0,H*0.62,W,H*0.4);
+
+      // Farmhouse
       drawFarmhouse(W*0.78,H*0.6,SCALE*1.2);
 
       // Tree
       drawTree(W*0.5,H*0.62,SCALE*1.2);
 
-      // Pennywise tiny angry figure behind
-      if(sceneTime>1){
-        var angryScale=SCALE*0.4;
-        drawPennywiseCC1(W*0.1,H*0.59,angryScale,{menace:0.8,facing:1});
+      // Tiny angry Pennywise far behind
+      if(sceneTime>1.5){
+        var angryAlpha=Math.min(1,(sceneTime-1.5)/2);
+        ctx.globalAlpha=angryAlpha*0.6;
+        drawPennywiseCC1(W*0.08,H*0.59,SCALE*0.35,{menace:0.9,facing:1});
+        ctx.globalAlpha=1;
       }
 
-      // Horse galloping toward farmhouse, then stopping near Lily
+      // Horse running then stopping
       var runDist=Math.min(1,sceneTime/3);
-      var hx=W*0.2+runDist*(W*0.55);
+      var hx=W*0.15+runDist*(W*0.57);
       var isRunning=sceneTime<3;
 
       if(isRunning){
         drawHorseCC1(hx,H*0.58,SCALE*1.5,{gallop:true,facing:-1});
       }else{
-        // Horse nuzzling Lily
         drawHorseCC1(W*0.72,H*0.58,SCALE*1.5,{facing:-1});
-        drawLily(W*0.67,H*0.6,SCALE*1.2,false);
+        drawLily(W*0.66,H*0.6,SCALE*1.2,false);
+      }
+
+      // Warm golden light overlay
+      if(brightening>0.5){
+        ctx.fillStyle='rgba(255,230,150,'+(brightening-0.5)*0.06+')';
+        ctx.fillRect(0,0,W,H);
       }
     },
     onEnter:function(){playGallop();}
   },
 
-  // Scene 11: "The Moral"
+  // Scene 11: "The Moral" - sunset silhouette, cinematic
   {
     text:[
       "MORAL OF THE STORY",
       "",
       "They say don't judge a book by its cover.",
-      "That's nice advice for library books.",
+      "_That's nice advice for library books._",
       "",
       "But if the book is lurking in a storm drain",
       "with yellow eyes and a balloon...",
       "",
-      "...trust your instincts.",
-      "Every single time.",
+      "...*trust your instincts.*",
+      "_Every single time._",
       "",
       "Clover knew.",
-      "Clover always knew.",
+      "_Clover always knew._",
       "",
       "NEIGH."
     ],
     draw:function(dt){
-      // Warm sunset scene
+      // Cinematic sunset
       var grad=ctx.createLinearGradient(0,0,0,H*0.65);
-      grad.addColorStop(0,'#1a0533');
-      grad.addColorStop(0.3,'#ff6b35');
-      grad.addColorStop(0.7,'#ffd700');
-      grad.addColorStop(1,'#ffb347');
+      grad.addColorStop(0,'#0d0320');
+      grad.addColorStop(0.2,'#1a0533');
+      grad.addColorStop(0.4,'#8b1a1a');
+      grad.addColorStop(0.6,'#e65100');
+      grad.addColorStop(0.8,'#ff8f00');
+      grad.addColorStop(1,'#ffb74d');
       ctx.fillStyle=grad;ctx.fillRect(0,0,W,H*0.65);
 
-      // Sun setting
-      ctx.fillStyle='#ff4500';
-      ctx.beginPath();ctx.arc(W*0.5,H*0.58,SCALE*40,0,Math.PI*2);ctx.fill();
-      ctx.fillStyle='#ffd700';
-      ctx.beginPath();ctx.arc(W*0.5,H*0.58,SCALE*32,0,Math.PI*2);ctx.fill();
+      // Sun (large, low)
+      var sunGrad=ctx.createRadialGradient(W*0.5,H*0.57,0,W*0.5,H*0.57,SCALE*50);
+      sunGrad.addColorStop(0,'rgba(255,220,50,0.9)');
+      sunGrad.addColorStop(0.3,'rgba(255,160,0,0.6)');
+      sunGrad.addColorStop(0.6,'rgba(255,100,0,0.2)');
+      sunGrad.addColorStop(1,'rgba(255,50,0,0)');
+      ctx.fillStyle=sunGrad;
+      ctx.beginPath();ctx.arc(W*0.5,H*0.57,SCALE*50,0,Math.PI*2);ctx.fill();
 
-      // Ground (dark)
-      ctx.fillStyle='#1a3300';ctx.fillRect(0,H*0.62,W,H*0.4);
+      // Sun core
+      ctx.fillStyle='#ffd54f';
+      ctx.beginPath();ctx.arc(W*0.5,H*0.57,SCALE*28,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#fff8e1';
+      ctx.beginPath();ctx.arc(W*0.5,H*0.57,SCALE*20,0,Math.PI*2);ctx.fill();
 
-      // Horse and Lily silhouette against sunset
-      ctx.fillStyle='#111';
+      // Thin cloud silhouettes
+      ctx.fillStyle='rgba(20,5,30,0.3)';
+      for(var ci=0;ci<4;ci++){
+        var ccx=(ci*W/3+(t*4))%(W+300)-150;
+        drawSoftCloud(ccx,H*0.35+ci*H*0.03,0.8+ci*0.2,0.15+ci*0.05);
+      }
+
+      // Ground (dark silhouette)
+      ctx.fillStyle='#0a1a00';ctx.fillRect(0,H*0.62,W,H*0.4);
+      // Grass silhouette blades on horizon
+      ctx.fillStyle='#0a1a00';
+      for(var gi=0;gi<Math.floor(W/6);gi++){
+        var gx=gi*6;
+        var gh=4+Math.sin(gi*0.8)*3+Math.sin(gi*2.1)*2;
+        ctx.fillRect(gx,H*0.62-gh,2,gh);
+      }
+
+      // Horse and Lily silhouettes against sunset
+      var victoryTrot=allTextDone?Math.sin(t*2.5)*12:0;
+      ctx.fillStyle='#0a0805';
+
       // Horse silhouette
-      var victoryTrot=allTextDone?Math.sin(t*3)*15:0;
-      ctx.save();
-      ctx.globalAlpha=1;
-
-      // Draw as silhouettes
-      var hx2=W*0.45+victoryTrot;
-      // Horse body silhouette
-      ctx.fillStyle='#1a1005';
+      var hx2=W*0.47+victoryTrot;
       ctx.save();ctx.translate(hx2,H*0.58);
       // Body
-      ctx.fillRect(-18*SCALE*1.4,-55*SCALE*1.4,36*SCALE*1.4,40*SCALE*1.4);
+      ctx.beginPath();ctx.ellipse(0,-37*SCALE*1.4,20*SCALE*1.4,22*SCALE*1.4,0,0,Math.PI*2);ctx.fill();
       // Legs
-      ctx.fillRect(-14*SCALE*1.4,-20*SCALE*1.4,6*SCALE*1.4,25*SCALE*1.4);
-      ctx.fillRect(-6*SCALE*1.4,-20*SCALE*1.4,6*SCALE*1.4,25*SCALE*1.4);
-      ctx.fillRect(4*SCALE*1.4,-20*SCALE*1.4,6*SCALE*1.4,25*SCALE*1.4);
-      ctx.fillRect(12*SCALE*1.4,-20*SCALE*1.4,6*SCALE*1.4,25*SCALE*1.4);
+      ctx.fillRect(-14*SCALE*1.4,-18*SCALE*1.4,6*SCALE*1.4,22*SCALE*1.4);
+      ctx.fillRect(-5*SCALE*1.4,-18*SCALE*1.4,6*SCALE*1.4,22*SCALE*1.4);
+      ctx.fillRect(5*SCALE*1.4,-18*SCALE*1.4,6*SCALE*1.4,22*SCALE*1.4);
+      ctx.fillRect(12*SCALE*1.4,-18*SCALE*1.4,6*SCALE*1.4,22*SCALE*1.4);
+      // Neck
+      ctx.beginPath();
+      ctx.moveTo(10*SCALE*1.4,-50*SCALE*1.4);
+      ctx.quadraticCurveTo(14*SCALE*1.4,-65*SCALE*1.4,8*SCALE*1.4,-72*SCALE*1.4);
+      ctx.lineTo(0,-72*SCALE*1.4);
+      ctx.quadraticCurveTo(-2*SCALE*1.4,-60*SCALE*1.4,2*SCALE*1.4,-50*SCALE*1.4);
+      ctx.closePath();ctx.fill();
       // Head
-      ctx.beginPath();ctx.ellipse(5*SCALE*1.4,-80*SCALE*1.4,10*SCALE*1.4,16*SCALE*1.4,0.3,0,Math.PI*2);ctx.fill();
-      // Tail swishing
-      ctx.strokeStyle='#1a1005';ctx.lineWidth=4*SCALE*1.4;
-      ctx.beginPath();ctx.moveTo(-18*SCALE*1.4,-45*SCALE*1.4);
-      ctx.quadraticCurveTo(-30*SCALE*1.4,-50*SCALE*1.4+Math.sin(t*3)*5,-25*SCALE*1.4,-60*SCALE*1.4);ctx.stroke();
+      ctx.beginPath();ctx.ellipse(6*SCALE*1.4,-80*SCALE*1.4,10*SCALE*1.4,14*SCALE*1.4,0.3,0,Math.PI*2);ctx.fill();
+      // Ears
+      ctx.beginPath();ctx.moveTo(2*SCALE*1.4,-92*SCALE*1.4);ctx.lineTo(4*SCALE*1.4,-102*SCALE*1.4);ctx.lineTo(8*SCALE*1.4,-92*SCALE*1.4);ctx.fill();
+      ctx.beginPath();ctx.moveTo(8*SCALE*1.4,-92*SCALE*1.4);ctx.lineTo(10*SCALE*1.4,-102*SCALE*1.4);ctx.lineTo(14*SCALE*1.4,-92*SCALE*1.4);ctx.fill();
+      // Tail
+      ctx.strokeStyle='#0a0805';ctx.lineWidth=4*SCALE*1.4;ctx.lineCap='round';
+      ctx.beginPath();ctx.moveTo(-18*SCALE*1.4,-42*SCALE*1.4);
+      ctx.quadraticCurveTo(-30*SCALE*1.4,-48*SCALE*1.4+Math.sin(t*2.5)*5,-26*SCALE*1.4,-58*SCALE*1.4);ctx.stroke();
       ctx.restore();
 
-      // Lily silhouette next to horse
-      ctx.fillStyle='#1a1005';
+      // Lily silhouette
+      ctx.fillStyle='#0a0805';
       ctx.save();ctx.translate(W*0.38,H*0.58);
-      ctx.beginPath();ctx.arc(0,-80*SCALE*1.2,12*SCALE*1.2,0,Math.PI*2);ctx.fill();
-      ctx.fillRect(-12*SCALE*1.2,-55*SCALE*1.2,24*SCALE*1.2,55*SCALE*1.2);
+      ctx.beginPath();ctx.arc(0,-80*SCALE*1.2,13*SCALE*1.2,0,Math.PI*2);ctx.fill();
+      // Body
+      ctx.beginPath();
+      ctx.moveTo(-13*SCALE*1.2,-55*SCALE*1.2);
+      ctx.lineTo(-16*SCALE*1.2,0);
+      ctx.lineTo(16*SCALE*1.2,0);
+      ctx.lineTo(13*SCALE*1.2,-55*SCALE*1.2);
+      ctx.closePath();ctx.fill();
+      // Hair flowing
+      ctx.fillRect(-14*SCALE*1.2,-75*SCALE*1.2,5*SCALE*1.2,30*SCALE*1.2);
+      ctx.fillRect(9*SCALE*1.2,-75*SCALE*1.2,5*SCALE*1.2,30*SCALE*1.2);
       // Waving arm if done
       if(allTextDone){
         ctx.save();
-        ctx.translate(10*SCALE*1.2,-50*SCALE*1.2);
-        ctx.rotate(-0.5-Math.sin(t*6)*0.4);
-        ctx.fillRect(0,0,5*SCALE*1.2,20*SCALE*1.2);
+        ctx.translate(11*SCALE*1.2,-50*SCALE*1.2);
+        ctx.rotate(-0.5-Math.sin(t*5)*0.35);
+        ctx.fillRect(0,0,5*SCALE*1.2,22*SCALE*1.2);
         ctx.restore();
       }
       ctx.restore();
 
-      ctx.restore();
-
-      // THE END
+      // THE END text
       if(allTextDone){
         ctx.save();
-        ctx.fillStyle='#000';ctx.font='bold '+Math.round(48*SCALE)+'px system-ui';ctx.textAlign='center';
-        ctx.fillText('THE END',W/2+2,H*0.35+2);
-        ctx.fillStyle='#FFD600';
-        ctx.fillText('THE END',W/2,H*0.35);
+        ctx.textAlign='center';
+        var endSize=Math.round(44*SCALE);
+        ctx.font='700 '+endSize+'px Lora, Georgia, serif';
+        // Shadow
+        ctx.fillStyle='rgba(0,0,0,0.5)';
+        ctx.fillText('THE END',W/2+2,H*0.32+2);
+        // Gold text
+        var textGrad=ctx.createLinearGradient(W/2-80,0,W/2+80,0);
+        textGrad.addColorStop(0,'#ffd54f');
+        textGrad.addColorStop(0.5,'#fff8e1');
+        textGrad.addColorStop(1,'#ffd54f');
+        ctx.fillStyle=textGrad;
+        ctx.fillText('THE END',W/2,H*0.32);
         ctx.restore();
         playAgainBtn.style.display='block';
       }
     },
     onEnter:function(){
-      typeSpeed=50;
-      setTimeout(function(){playNeigh();},12000);
+      typeSpeed=48;
+      setTimeout(function(){playNeigh();},13000);
     }
   }
 ];
@@ -1220,26 +1762,27 @@ function enterScene(idx){
   textBox.style.display='none';textBox.innerHTML='';
   promptEl.style.display='none';
   playAgainBtn.style.display='none';
-  typeSpeed=35;
-  /** Mood music shifts with the story arc */
-  if(idx===0){playMood('peaceful');}        // relaxing meadow
-  else if(idx===2){playMood('uneasy');}     // the drain appears
-  else if(idx===3){playMood('creepy');}      // Pennywise emerges
-  else if(idx===7){stopMusic();playMood('creepy');} // desperate
-  else if(idx===8){stopMusic();}             // silence before the storm
-  else if(idx===9){playMood('jumpscare');}   // THE LUNGE
-  else if(idx===10){playMood('peaceful');}   // safe, running home
-  else if(idx===11){playMood('warm');}       // Full House moment
+  typeSpeed=40;
+
+  // Mood music progression
+  if(idx===0){playMood('peaceful');}
+  else if(idx===2){playMood('uneasy');}
+  else if(idx===3){playMood('creepy');}
+  else if(idx===7){stopMusic();playMood('creepy');}
+  else if(idx===8){stopMusic();playMood('silence');} // TRUE SILENCE before lunge
+  else if(idx===10){playMood('peaceful');}
+  else if(idx===11){playMood('warm');}
+
   if(scenes[idx].onEnter)scenes[idx].onEnter();
   setTimeout(function(){
     showText(scenes[idx].text);
-  },800);
+  },900);
 }
 
 function advanceScene(){
   if(typing){
     typing=false;allTextDone=true;
-    var html=textLines.join('<br>');
+    var html=textLines.map(formatLine).join('<br>');
     textBox.innerHTML=html;
     waitingForClick=true;
     promptEl.style.display='block';
@@ -1264,7 +1807,6 @@ C.addEventListener('touchstart',function(e){e.preventDefault();handleClick();},{
 
 playAgainBtn.addEventListener('click',function(e){
   e.stopPropagation();
-  if(drone){drone.stop();drone=null;}
   playAgainBtn.style.display='none';
   transitioning=true;transDir=1;transAlpha=0;nextScene=0;
 });
@@ -1283,9 +1825,9 @@ function frame(ts){
 
   updateText(dt);
 
-  // Transition overlay
+  // Transition overlay (smooth crossfade)
   if(transitioning){
-    transAlpha+=transDir*dt*2;
+    transAlpha+=transDir*dt*1.8; // Slightly slower for smoothness
     if(transAlpha>=1&&transDir===1){
       transAlpha=1;transDir=-1;
       if(nextScene>=0)enterScene(nextScene);
