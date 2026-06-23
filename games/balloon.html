@@ -103,6 +103,96 @@ function playDrone(){
   return{stop:function(){g.gain.linearRampToValueAtTime(0,audioCtx.currentTime+0.5);o.stop(audioCtx.currentTime+0.6);}};
 }
 var drone=null;
+var musicNodes=[];
+/** Mood music — evolves with the story */
+function playMood(mood){
+  stopMusic();
+  initAudio();
+  var ac=audioCtx,t=ac.currentTime;
+  if(mood==='peaceful'){
+    // Warm major pad — C major (C4 E4 G4) with gentle LFO
+    [261.6,329.6,392].forEach(function(f,i){
+      var o=ac.createOscillator(),g=ac.createGain(),flt=ac.createBiquadFilter();
+      o.type='triangle';o.frequency.value=f;
+      flt.type='lowpass';flt.frequency.value=800;
+      g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(0.04,t+2);
+      o.connect(flt);flt.connect(g);g.connect(ac.destination);o.start(t+i*0.3);
+      musicNodes.push({o:o,g:g});
+    });
+    // Bird sounds — gentle high sine pings
+    var birdInt=setInterval(function(){
+      if(!audioCtx)return;
+      var o=ac.createOscillator(),g=ac.createGain();
+      o.type='sine';o.frequency.value=1200+Math.random()*800;
+      g.gain.setValueAtTime(0.02,ac.currentTime);
+      g.gain.linearRampToValueAtTime(0,ac.currentTime+0.3);
+      o.connect(g);g.connect(ac.destination);o.start();o.stop(ac.currentTime+0.35);
+    },3000+Math.random()*4000);
+    musicNodes.push({interval:birdInt});
+  }else if(mood==='uneasy'){
+    // Minor pad — C minor (C3 Eb3 G3) with slow detuning
+    [130.8,155.6,196].forEach(function(f,i){
+      var o=ac.createOscillator(),g=ac.createGain(),flt=ac.createBiquadFilter();
+      o.type='sine';o.frequency.value=f;
+      o.detune.setValueAtTime(0,t);o.detune.linearRampToValueAtTime(15,t+8);
+      flt.type='lowpass';flt.frequency.value=400;
+      g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(0.035,t+1.5);
+      o.connect(flt);flt.connect(g);g.connect(ac.destination);o.start(t);
+      musicNodes.push({o:o,g:g});
+    });
+  }else if(mood==='creepy'){
+    // Dissonant — tritone drone with tremolo
+    [98,138.6].forEach(function(f){
+      var o=ac.createOscillator(),g=ac.createGain();
+      var lfo=ac.createOscillator(),lfoG=ac.createGain();
+      o.type='sawtooth';o.frequency.value=f;
+      lfo.type='sine';lfo.frequency.value=3;lfoG.gain.value=0.02;
+      lfo.connect(lfoG);lfoG.connect(g.gain);
+      g.gain.setValueAtTime(0.03,t);
+      o.connect(g);g.connect(ac.destination);o.start(t);lfo.start(t);
+      musicNodes.push({o:o,g:g,extra:[lfo]});
+    });
+    // High eerie sine
+    var hi=ac.createOscillator(),hg=ac.createGain();
+    hi.type='sine';hi.frequency.value=1660;hi.detune.value=20;
+    hg.gain.setValueAtTime(0,t);hg.gain.linearRampToValueAtTime(0.015,t+3);
+    hi.connect(hg);hg.connect(ac.destination);hi.start(t);
+    musicNodes.push({o:hi,g:hg});
+  }else if(mood==='jumpscare'){
+    // LOUD dissonant blast — then silence
+    [80,120,170,240].forEach(function(f){
+      var o=ac.createOscillator(),g=ac.createGain();
+      o.type='sawtooth';o.frequency.value=f;
+      g.gain.setValueAtTime(0.25,t);g.gain.linearRampToValueAtTime(0,t+0.8);
+      o.connect(g);g.connect(ac.destination);o.start(t);o.stop(t+1);
+    });
+    // Noise burst
+    var buf=ac.createBuffer(1,ac.sampleRate*0.3,ac.sampleRate);
+    var d=buf.getChannelData(0);for(var i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*0.5;
+    var src=ac.createBufferSource(),ng=ac.createGain();
+    src.buffer=buf;ng.gain.setValueAtTime(0.4,t);ng.gain.linearRampToValueAtTime(0,t+0.3);
+    src.connect(ng);ng.connect(ac.destination);src.start(t);
+  }else if(mood==='warm'){
+    // Full House resolution — warm major 7th (C E G B) soft piano-like
+    [261.6,329.6,392,493.9].forEach(function(f,i){
+      var o=ac.createOscillator(),g=ac.createGain(),flt=ac.createBiquadFilter();
+      o.type='triangle';o.frequency.value=f;
+      flt.type='lowpass';flt.frequency.value=600;
+      g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(0.035,t+1+i*0.2);
+      o.connect(flt);flt.connect(g);g.connect(ac.destination);o.start(t+i*0.15);
+      musicNodes.push({o:o,g:g});
+    });
+  }
+}
+function stopMusic(){
+  musicNodes.forEach(function(n){
+    try{if(n.g)n.g.gain.linearRampToValueAtTime(0,audioCtx.currentTime+0.3);}catch(e){}
+    try{if(n.o)n.o.stop(audioCtx.currentTime+0.4);}catch(e){}
+    try{if(n.extra)n.extra.forEach(function(x){x.stop(audioCtx.currentTime+0.4);});}catch(e){}
+    try{if(n.interval)clearInterval(n.interval);}catch(e){}
+  });
+  musicNodes=[];
+}
 
 // ========== CC1-STYLE DRAWING ==========
 // Characters drawn EXACTLY like Crossover Chaos 1 (showdown.html)
@@ -1131,6 +1221,15 @@ function enterScene(idx){
   promptEl.style.display='none';
   playAgainBtn.style.display='none';
   typeSpeed=35;
+  /** Mood music shifts with the story arc */
+  if(idx===0){playMood('peaceful');}        // relaxing meadow
+  else if(idx===2){playMood('uneasy');}     // the drain appears
+  else if(idx===3){playMood('creepy');}      // Pennywise emerges
+  else if(idx===7){stopMusic();playMood('creepy');} // desperate
+  else if(idx===8){stopMusic();}             // silence before the storm
+  else if(idx===9){playMood('jumpscare');}   // THE LUNGE
+  else if(idx===10){playMood('peaceful');}   // safe, running home
+  else if(idx===11){playMood('warm');}       // Full House moment
   if(scenes[idx].onEnter)scenes[idx].onEnter();
   setTimeout(function(){
     showText(scenes[idx].text);
