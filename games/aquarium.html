@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aquarium</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0a1e2e;overflow:hidden;font-family:system-ui,sans-serif;user-select:none;-webkit-user-select:none}
+canvas{display:block}
+#back{position:fixed;top:14px;left:16px;font-size:12px;color:rgba(255,255,255,0.35);text-decoration:none;font-family:monospace;z-index:100}
+#back:hover{color:rgba(255,255,255,0.7)}
+#gear{position:fixed;top:14px;right:16px;width:28px;height:28px;cursor:pointer;z-index:100;opacity:0.3;transition:opacity 0.3s}
+#gear:hover{opacity:0.8}
+#panel{position:fixed;top:50px;right:16px;background:rgba(0,10,20,0.85);border:1px solid rgba(255,255,255,0.15);border-radius:10px;padding:18px;width:220px;z-index:99;display:none;color:rgba(255,255,255,0.8);font-size:13px;backdrop-filter:blur(8px)}
+#panel label{display:block;margin:8px 0 2px;font-size:11px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:1px}
+#panel input[type=range]{width:100%;accent-color:#4db8ff}
+#panel .toggle{display:flex;align-items:center;justify-content:space-between;margin:8px 0}
+#panel .toggle input{accent-color:#4db8ff}
+#hint{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);color:rgba(255,255,255,0.2);font-size:11px;font-family:monospace;z-index:100;pointer-events:none;transition:opacity 1s}
+</style>
+</head>
+<body>
+<a href="games.html" id="back">&larr; games</a>
+<svg id="gear" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.8)" stroke-width="1.5">
+<circle cx="12" cy="12" r="3"/><path d="M12 1v3M12 20v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M1 12h3M20 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/>
+</svg>
+<div id="panel">
+<label>Fish Count</label>
+<input type="range" id="sFish" min="8" max="40" value="18">
+<label>Bubble Rate</label>
+<input type="range" id="sBubble" min="1" max="10" value="5">
+<label>Plant Density</label>
+<input type="range" id="sPlant" min="3" max="12" value="7">
+<label>Light Intensity</label>
+<input type="range" id="sLight" min="0" max="10" value="6">
+<div class="toggle"><span>Music</span><input type="checkbox" id="sMusic" checked></div>
+</div>
+<div id="hint">click to scatter &middot; double-click to feed</div>
+<canvas id="c"></canvas>
+<script>
+const C=document.getElementById('c'),ctx=C.getContext('2d');
+let W,H,sandY;
+function resize(){W=C.width=innerWidth;H=C.height=innerHeight;sandY=H*0.82;}
+resize();addEventListener('resize',resize);
+
+// Settings
+const cfg={fishCount:18,bubbleRate:5,plantCount:7,lightIntensity:0.6,music:true};
+const gearEl=document.getElementById('gear'),panelEl=document.getElementById('panel');
+gearEl.onclick=()=>panelEl.style.display=panelEl.style.display==='none'?'block':'none';
+document.getElementById('sFish').oninput=e=>{cfg.fishCount=+e.target.value;syncFish()};
+document.getElementById('sBubble').oninput=e=>cfg.bubbleRate=+e.target.value;
+document.getElementById('sPlant').oninput=e=>{cfg.plantCount=+e.target.value;initPlants()};
+document.getElementById('sLight').oninput=e=>cfg.lightIntensity=e.target.value/10;
+document.getElementById('sMusic').onchange=e=>{cfg.music=e.target.checked;toggleMusic()};
+
+// Hint fade
+setTimeout(()=>{const h=document.getElementById('hint');if(h)h.style.opacity='0';setTimeout(()=>{if(h)h.remove()},1200)},6000);
+
+// --- WEB AUDIO AMBIENT ---
+let audioCtx,musicGain,masterGain,musicStarted=false;
+function initAudio(){
+  if(audioCtx)return;
+  audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+  masterGain=audioCtx.createGain();masterGain.gain.value=0.25;masterGain.connect(audioCtx.destination);
+  musicGain=audioCtx.createGain();musicGain.gain.value=cfg.music?1:0;musicGain.connect(masterGain);
+  // Ambient pads
+  [110,146.83,164.81,220].forEach((f,i)=>{
+    const osc=audioCtx.createOscillator();osc.type='triangle';osc.frequency.value=f;
+    const g=audioCtx.createGain();g.gain.value=0.06;
+    const flt=audioCtx.createBiquadFilter();flt.type='lowpass';flt.frequency.value=300+i*40;flt.Q.value=1;
+    osc.connect(flt);flt.connect(g);g.connect(musicGain);osc.start();
+    // Slow LFO on volume
+    const lfo=audioCtx.createOscillator();lfo.frequency.value=0.05+i*0.02;
+    const lfoG=audioCtx.createGain();lfoG.gain.value=0.03;
+    lfo.connect(lfoG);lfoG.connect(g.gain);lfo.start();
+  });
+  // Bubble sounds
+  setInterval(()=>{
+    if(!cfg.music||!audioCtx)return;
+    const osc=audioCtx.createOscillator();osc.type='sine';
+    const f=800+Math.random()*1200;
+    osc.frequency.setValueAtTime(f,audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(f*0.4,audioCtx.currentTime+0.15);
+    const g=audioCtx.createGain();g.gain.setValueAtTime(0.02,audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+0.15);
+    osc.connect(g);g.connect(masterGain);osc.start();osc.stop(audioCtx.currentTime+0.16);
+  },2000+Math.random()*3000);
+  // Water drip
+  setInterval(()=>{
+    if(!cfg.music||!audioCtx)return;
+    const osc=audioCtx.createOscillator();osc.type='sine';
+    osc.frequency.setValueAtTime(1800,audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(400,audioCtx.currentTime+0.08);
+    const g=audioCtx.createGain();g.gain.setValueAtTime(0.015,audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+0.1);
+    osc.connect(g);g.connect(masterGain);osc.start();osc.stop(audioCtx.currentTime+0.12);
+  },5000+Math.random()*8000);
+  musicStarted=true;
+}
+function toggleMusic(){if(!audioCtx)return;musicGain.gain.value=cfg.music?1:0;}
+function tryInitAudio(){if(!musicStarted){initAudio()}}
+addEventListener('click',tryInitAudio,{once:false});
+addEventListener('keydown',tryInitAudio,{once:false});
+
+// --- FISH ---
+const TYPES=['neon','angel','clown','goldfish','betta','large'];
+const TYPE_CFG={
+  neon:{sizeMin:12,sizeMax:18,speedMin:1.2,speedMax:2.2,colors:['#00ffcc','#00aaff','#ff4488','#aaffee','#ffee00'],school:true,tailLen:0.6},
+  angel:{sizeMin:20,sizeMax:28,speedMin:0.8,speedMax:1.5,colors:['#ffffff','#ffdd44','#cccccc','#88aacc'],school:false,tailLen:0.9},
+  clown:{sizeMin:14,sizeMax:20,speedMin:1,speedMax:1.8,colors:['#ff6600'],school:true,tailLen:0.5},
+  goldfish:{sizeMin:22,sizeMax:30,speedMin:0.6,speedMax:1.2,colors:['#ffaa22','#ffcc44','#ff8800','#ffdd66'],school:false,tailLen:1.0},
+  betta:{sizeMin:24,sizeMax:32,speedMin:0.5,speedMax:1.0,colors:['#cc00ff','#0066ff','#ff0044','#00ccaa','#ff44aa'],school:false,tailLen:1.4},
+  large:{sizeMin:40,sizeMax:55,speedMin:0.3,speedMax:0.6,colors:['#557799','#668877','#886655'],school:false,tailLen:0.8}
+};
+
+let fishes=[];
+function makeFish(type){
+  const tc=TYPE_CFG[type];
+  const size=tc.sizeMin+Math.random()*(tc.sizeMax-tc.sizeMin);
+  const col=tc.colors[Math.floor(Math.random()*tc.colors.length)];
+  // Vary hue slightly
+  const hueShift=(Math.random()-0.5)*20;
+  return{
+    type,x:Math.random()*W,y:sandY*0.15+Math.random()*(sandY*0.75),
+    size,speed:tc.speedMin+Math.random()*(tc.speedMax-tc.speedMin),
+    angle:Math.random()*Math.PI*2,
+    targetAngle:0,turnTimer:Math.random()*3,
+    color:col,hueShift,tailPhase:Math.random()*Math.PI*2,
+    bodyPhase:Math.random()*Math.PI*2,
+    tailLen:tc.tailLen,school:tc.school,
+    scatterTimer:0,scatterAngle:0
+  };
+}
+function initFish(){
+  fishes=[];
+  // Ensure variety: at least some of each type
+  const counts={neon:5,angel:2,clown:3,goldfish:3,betta:2,large:2};
+  let total=0;
+  for(const t in counts){for(let i=0;i<counts[t]&&total<cfg.fishCount;i++,total++)fishes.push(makeFish(t));}
+  while(fishes.length<cfg.fishCount){
+    const t=TYPES[Math.floor(Math.random()*4)]; // bias toward smaller
+    fishes.push(makeFish(t));
+  }
+}
+function syncFish(){
+  while(fishes.length>cfg.fishCount)fishes.pop();
+  while(fishes.length<cfg.fishCount){
+    const t=TYPES[Math.floor(Math.random()*4)];
+    fishes.push(makeFish(t));
+  }
+}
+initFish();
+
+// --- PLANTS ---
+let plants=[];
+function initPlants(){
+  plants=[];
+  for(let i=0;i<cfg.plantCount;i++){
+    plants.push({
+      x:W*0.05+Math.random()*W*0.9,
+      height:40+Math.random()*100,
+      width:8+Math.random()*14,
+      phase:Math.random()*Math.PI*2,
+      speed:0.3+Math.random()*0.5,
+      hue:100+Math.random()*40,
+      segments:5+Math.floor(Math.random()*4)
+    });
+  }
+  plants.sort((a,b)=>a.x-b.x);
+}
+initPlants();
+
+// --- BUBBLES ---
+let bubbles=[];
+const airStones=[{x:0.15},{x:0.55},{x:0.85}];
+function spawnBubble(stone){
+  bubbles.push({
+    x:stone.x*W+(Math.random()-0.5)*10,
+    y:sandY-5,
+    r:1+Math.random()*3,
+    speed:0.4+Math.random()*0.8,
+    wobblePhase:Math.random()*Math.PI*2,
+    wobbleAmp:0.3+Math.random()*0.5,
+    alpha:0.5+Math.random()*0.3
+  });
+}
+
+// --- ROCKS & DECORATIONS ---
+let rocks=[];
+function initRocks(){
+  rocks=[
+    {x:W*0.25,y:sandY,w:60,h:35,color:'#556'},
+    {x:W*0.7,y:sandY,w:45,h:28,color:'#665'},
+    {x:W*0.5,y:sandY,w:30,h:20,color:'#777'}
+  ];
+}
+initRocks();
+
+// --- PEBBLES ---
+let pebbles=[];
+function initPebbles(){
+  pebbles=[];
+  for(let i=0;i<40;i++){
+    pebbles.push({
+      x:Math.random()*W,y:sandY+Math.random()*(H-sandY)*0.6,
+      r:1.5+Math.random()*3,
+      color:`hsl(${30+Math.random()*30},${10+Math.random()*20}%,${30+Math.random()*25}%)`
+    });
+  }
+}
+initPebbles();
+
+// --- FOOD ---
+let foodParticles=[];
+
+// --- SCATTER ---
+let scatterCenter=null,scatterTime=0;
+
+C.addEventListener('click',e=>{
+  tryInitAudio();
+  scatterCenter={x:e.clientX,y:e.clientY};scatterTime=1.5;
+  fishes.forEach(f=>{
+    const dx=f.x-e.clientX,dy=f.y-e.clientY;
+    const dist=Math.sqrt(dx*dx+dy*dy);
+    if(dist<250){
+      f.scatterTimer=0.8+Math.random()*0.7;
+      f.scatterAngle=Math.atan2(dy,dx)+((Math.random()-0.5)*0.5);
+    }
+  });
+});
+
+C.addEventListener('dblclick',e=>{
+  e.preventDefault();
+  for(let i=0;i<8;i++){
+    foodParticles.push({
+      x:e.clientX+(Math.random()-0.5)*40,
+      y:e.clientY,
+      vy:0.2+Math.random()*0.3,
+      r:2+Math.random()*2,
+      alpha:1,
+      eaten:false
+    });
+  }
+});
+
+// --- CAUSTIC PATTERN ---
+function caustVal(x,y,t){
+  return(Math.sin(x*0.02+t*0.7)+Math.sin(y*0.025+t*0.5)+Math.sin((x+y)*0.015+t*0.9))/3;
+}
+
+// --- DRAWING ---
+let time=0;
+function draw(dt){
+  time+=dt;
+  ctx.clearRect(0,0,W,H);
+
+  // Water gradient
+  const grad=ctx.createLinearGradient(0,0,0,H);
+  grad.addColorStop(0,'#0e3d5c');
+  grad.addColorStop(0.5,'#0a2e48');
+  grad.addColorStop(0.8,'#072238');
+  grad.addColorStop(1,'#051a2c');
+  ctx.fillStyle=grad;
+  ctx.fillRect(0,0,W,H);
+
+  // Light rays
+  drawLightRays();
+
+  // Caustics on sand
+  drawCaustics();
+
+  // Sand
+  drawSand();
+
+  // Pebbles
+  pebbles.forEach(p=>{
+    ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
+    ctx.fillStyle=p.color;ctx.fill();
+  });
+
+  // Rocks
+  drawRocks();
+
+  // Treasure chest
+  drawChest();
+
+  // Plants
+  drawPlants();
+
+  // Fish
+  updateAndDrawFish(dt);
+
+  // Bubbles
+  updateAndDrawBubbles(dt);
+
+  // Food
+  updateFood(dt);
+
+  // Water surface
+  drawSurface();
+
+  // Vignette
+  drawVignette();
+
+  // Blue tint overlay
+  ctx.fillStyle='rgba(10,40,80,0.08)';
+  ctx.fillRect(0,0,W,H);
+}
+
+function drawLightRays(){
+  const intensity=cfg.lightIntensity;
+  if(intensity<0.05)return;
+  ctx.save();
+  for(let i=0;i<5;i++){
+    const cx=W*0.15+i*W*0.18+Math.sin(time*0.2+i*1.5)*30;
+    const w=30+Math.sin(time*0.3+i)*10;
+    ctx.beginPath();
+    ctx.moveTo(cx-w,0);
+    ctx.lineTo(cx+w,0);
+    ctx.lineTo(cx+w*0.3+Math.sin(time*0.15+i)*20,sandY);
+    ctx.lineTo(cx-w*0.3+Math.sin(time*0.15+i)*20,sandY);
+    ctx.closePath();
+    ctx.fillStyle=`rgba(120,200,255,${0.02*intensity})`;
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawCaustics(){
+  const intensity=cfg.lightIntensity;
+  if(intensity<0.05)return;
+  ctx.save();
+  const step=20;
+  for(let x=0;x<W;x+=step){
+    for(let y=sandY-10;y<sandY+30;y+=step){
+      const v=caustVal(x,y,time);
+      if(v>0.3){
+        const a=((v-0.3)/0.7)*0.15*intensity;
+        ctx.fillStyle=`rgba(150,220,255,${a})`;
+        ctx.beginPath();
+        ctx.arc(x+step/2,y+step/2,step*0.6,0,Math.PI*2);
+        ctx.fill();
+      }
+    }
+  }
+  ctx.restore();
+}
+
+function drawSand(){
+  const grad=ctx.createLinearGradient(0,sandY,0,H);
+  grad.addColorStop(0,'#c2a366');
+  grad.addColorStop(0.3,'#b89558');
+  grad.addColorStop(1,'#8a7040');
+  ctx.fillStyle=grad;
+  // Slightly wavy top
+  ctx.beginPath();
+  ctx.moveTo(0,H);
+  for(let x=0;x<=W;x+=20){
+    ctx.lineTo(x,sandY+Math.sin(x*0.03+1.5)*3);
+  }
+  ctx.lineTo(W,H);ctx.closePath();ctx.fill();
+  // Sand texture dots
+  ctx.fillStyle='rgba(0,0,0,0.05)';
+  for(let i=0;i<80;i++){
+    const sx=((i*137.5)%W),sy=sandY+5+((i*73.1)%(H-sandY-10));
+    ctx.beginPath();ctx.arc(sx,sy,0.8+Math.random()*0.5,0,Math.PI*2);ctx.fill();
+  }
+}
+
+function drawRocks(){
+  rocks.forEach(r=>{
+    ctx.save();
+    ctx.beginPath();
+    ctx.ellipse(r.x,r.y-r.h*0.3,r.w*0.5,r.h*0.5,0,0,Math.PI*2);
+    const g=ctx.createRadialGradient(r.x-r.w*0.1,r.y-r.h*0.5,2,r.x,r.y-r.h*0.3,r.w*0.5);
+    g.addColorStop(0,'#8899');g.addColorStop(1,r.color);
+    ctx.fillStyle=g;ctx.fill();
+    ctx.restore();
+  });
+}
+
+function drawChest(){
+  const cx=W*0.82,cy=sandY-2;
+  ctx.save();
+  // Body
+  ctx.fillStyle='#6b4226';
+  ctx.beginPath();
+  ctx.moveTo(cx-18,cy);ctx.lineTo(cx+18,cy);ctx.lineTo(cx+16,cy-14);ctx.lineTo(cx-16,cy-14);ctx.closePath();ctx.fill();
+  // Lid (slightly open)
+  ctx.fillStyle='#7a4f30';
+  ctx.beginPath();
+  ctx.moveTo(cx-17,cy-14);ctx.lineTo(cx+17,cy-14);
+  ctx.quadraticCurveTo(cx+18,cy-22,cx,cy-24);
+  ctx.quadraticCurveTo(cx-18,cy-22,cx-17,cy-14);
+  ctx.fill();
+  // Gold latch
+  ctx.fillStyle='#ffd700';
+  ctx.fillRect(cx-3,cy-16,6,4);
+  // Gold glint
+  ctx.fillStyle='rgba(255,215,0,0.3)';
+  ctx.beginPath();ctx.arc(cx,cy-18,8,0,Math.PI*2);ctx.fill();
+  ctx.restore();
+}
+
+function drawPlants(){
+  plants.forEach(p=>{
+    ctx.save();
+    const baseX=p.x, baseY=sandY;
+    for(let s=0;s<p.segments;s++){
+      const t=s/p.segments;
+      const swayAmount=t*t*15;
+      const sway=Math.sin(time*p.speed+p.phase+s*0.3)*swayAmount;
+      const segH=p.height/p.segments;
+      const y1=baseY-s*segH;
+      const y2=baseY-(s+1)*segH;
+      const x1=baseX+Math.sin(time*p.speed+p.phase+s*0.3)*swayAmount*0.7;
+      const x2=baseX+sway;
+      const w=p.width*(1-t*0.5);
+      const lightness=30+t*25;
+      ctx.fillStyle=`hsl(${p.hue},60%,${lightness}%)`;
+      ctx.beginPath();
+      ctx.moveTo(x1-w/2,y1);
+      ctx.quadraticCurveTo(x2-w/3,y2+segH*0.3,x2-w*0.3,y2);
+      ctx.lineTo(x2+w*0.3,y2);
+      ctx.quadraticCurveTo(x2+w/3,y2+segH*0.3,x1+w/2,y1);
+      ctx.closePath();ctx.fill();
+    }
+    // Leaf tip
+    const tipSway=Math.sin(time*p.speed+p.phase+p.segments*0.3)*15*(1);
+    const tipX=baseX+tipSway;
+    const tipY=baseY-p.height;
+    ctx.beginPath();
+    ctx.ellipse(tipX,tipY,p.width*0.2,5,tipSway*0.05,0,Math.PI*2);
+    ctx.fillStyle=`hsl(${p.hue},55%,55%)`;ctx.fill();
+    ctx.restore();
+  });
+}
+
+// --- FISH UPDATE & DRAW ---
+function updateAndDrawFish(dt){
+  fishes.forEach(f=>{
+    // Scatter behavior
+    if(f.scatterTimer>0){
+      f.scatterTimer-=dt;
+      f.angle+=(f.scatterAngle-f.angle)*0.1;
+      f.x+=Math.cos(f.angle)*f.speed*4*dt*60;
+      f.y+=Math.sin(f.angle)*f.speed*4*dt*60;
+    }else{
+      // Check for nearby food
+      let nearestFood=null,nearestFoodDist=Infinity;
+      foodParticles.forEach(fd=>{
+        if(fd.eaten)return;
+        const dx=fd.x-f.x,dy=fd.y-f.y,d=Math.sqrt(dx*dx+dy*dy);
+        if(d<nearestFoodDist&&d<200){nearestFoodDist=d;nearestFood=fd;}
+      });
+      if(nearestFood){
+        const dx=nearestFood.x-f.x,dy=nearestFood.y-f.y;
+        f.angle=Math.atan2(dy,dx);
+        f.x+=Math.cos(f.angle)*f.speed*1.5*dt*60;
+        f.y+=Math.sin(f.angle)*f.speed*1.5*dt*60;
+        if(nearestFoodDist<f.size*0.5){nearestFood.eaten=true;}
+      }else{
+        // Normal swimming
+        f.turnTimer-=dt;
+        if(f.turnTimer<=0){
+          f.targetAngle=f.angle+(Math.random()-0.5)*1.2;
+          f.turnTimer=2+Math.random()*4;
+        }
+        // Edge avoidance
+        const margin=60;
+        if(f.x<margin)f.targetAngle=0;
+        if(f.x>W-margin)f.targetAngle=Math.PI;
+        if(f.y<margin)f.targetAngle=Math.PI*0.3;
+        if(f.y>sandY-margin)f.targetAngle=-Math.PI*0.3;
+        // Schooling
+        if(f.school){
+          let sx=0,sy=0,cnt=0;
+          fishes.forEach(o=>{
+            if(o===f||o.type!==f.type)return;
+            const dx=o.x-f.x,dy=o.y-f.y,d=Math.sqrt(dx*dx+dy*dy);
+            if(d<120&&d>10){sx+=dx;sy+=dy;cnt++;}
+          });
+          if(cnt>0){
+            const schoolAngle=Math.atan2(sy/cnt,sx/cnt);
+            f.targetAngle=f.targetAngle*0.7+schoolAngle*0.3;
+          }
+        }
+        // Fish avoidance
+        fishes.forEach(o=>{
+          if(o===f)return;
+          const dx=o.x-f.x,dy=o.y-f.y,d=Math.sqrt(dx*dx+dy*dy);
+          const minDist=(f.size+o.size)*1.2;
+          if(d<minDist&&d>0){
+            f.targetAngle=Math.atan2(-dy,-dx);
+          }
+        });
+        // Smooth turn
+        let da=f.targetAngle-f.angle;
+        while(da>Math.PI)da-=Math.PI*2;
+        while(da<-Math.PI)da+=Math.PI*2;
+        f.angle+=da*2*dt;
+        f.x+=Math.cos(f.angle)*f.speed*dt*60;
+        f.y+=Math.sin(f.angle)*f.speed*dt*60;
+      }
+    }
+    // Wrap
+    if(f.x<-f.size*2)f.x=W+f.size;
+    if(f.x>W+f.size*2)f.x=-f.size;
+    if(f.y<10)f.y=10;
+    if(f.y>sandY-20)f.y=sandY-20;
+
+    drawFish(f);
+  });
+}
+
+function drawFish(f){
+  ctx.save();
+  ctx.translate(f.x,f.y);
+  const dir=Math.cos(f.angle)>=0?1:-1;
+  ctx.scale(dir,1);
+  const bodyAngle=dir>0?0:0;
+
+  const s=f.size;
+  const tailWag=Math.sin(time*6+f.tailPhase)*0.4;
+  const bodyWag=Math.sin(time*5+f.bodyPhase)*0.03*s;
+
+  // Parse color for gradient
+  ctx.globalAlpha=0.95;
+
+  // Tail fin
+  const tailX=-s*0.6;
+  const tailSize=s*f.tailLen;
+  ctx.beginPath();
+  ctx.moveTo(tailX,0);
+  ctx.quadraticCurveTo(tailX-tailSize*0.6,tailWag*tailSize*0.5-tailSize*0.4,tailX-tailSize,tailWag*tailSize*0.3-tailSize*0.3);
+  ctx.quadraticCurveTo(tailX-tailSize*0.4,tailWag*tailSize*0.1,tailX-tailSize*0.4,0);
+  ctx.quadraticCurveTo(tailX-tailSize*0.4,-tailWag*tailSize*0.1,tailX-tailSize,tailWag*tailSize*0.3+tailSize*0.3);
+  ctx.quadraticCurveTo(tailX-tailSize*0.6,tailWag*tailSize*0.5+tailSize*0.4,tailX,0);
+  ctx.closePath();
+  ctx.fillStyle=f.color;
+  ctx.globalAlpha=0.7;
+  ctx.fill();
+  ctx.globalAlpha=0.95;
+
+  // Body (ellipse)
+  ctx.beginPath();
+  ctx.ellipse(0,bodyWag,s*0.55,s*0.32,0,0,Math.PI*2);
+  const bGrad=ctx.createLinearGradient(0,-s*0.35,0,s*0.35);
+  bGrad.addColorStop(0,lightenColor(f.color,30));
+  bGrad.addColorStop(0.5,f.color);
+  bGrad.addColorStop(1,darkenColor(f.color,30));
+  ctx.fillStyle=bGrad;
+  ctx.fill();
+
+  // Dorsal fin
+  ctx.beginPath();
+  ctx.moveTo(-s*0.1,bodyWag-s*0.28);
+  ctx.quadraticCurveTo(s*0.1,bodyWag-s*0.5+Math.sin(time*4+f.tailPhase)*3,s*0.25,bodyWag-s*0.28);
+  ctx.fillStyle=f.color;ctx.globalAlpha=0.5;ctx.fill();ctx.globalAlpha=0.95;
+
+  // Pectoral fin
+  ctx.beginPath();
+  const finAngle=Math.sin(time*3+f.bodyPhase)*0.3;
+  ctx.ellipse(s*0.05,bodyWag+s*0.15,s*0.15,s*0.08,finAngle+0.3,0,Math.PI*2);
+  ctx.fillStyle=f.color;ctx.globalAlpha=0.4;ctx.fill();ctx.globalAlpha=0.95;
+
+  // Clown fish stripes
+  if(f.type==='clown'){
+    ctx.fillStyle='rgba(255,255,255,0.8)';
+    ctx.fillRect(s*0.1,bodyWag-s*0.32,3,s*0.64);
+    ctx.fillRect(-s*0.15,bodyWag-s*0.3,3,s*0.6);
+    ctx.fillRect(-s*0.35,bodyWag-s*0.2,2,s*0.4);
+  }
+
+  // Eye
+  const eyeX=s*0.3,eyeY=bodyWag-s*0.05;
+  ctx.beginPath();ctx.arc(eyeX,eyeY,s*0.07,0,Math.PI*2);
+  ctx.fillStyle='#fff';ctx.fill();
+  ctx.beginPath();ctx.arc(eyeX+s*0.02,eyeY,s*0.04,0,Math.PI*2);
+  ctx.fillStyle='#111';ctx.fill();
+
+  // Subtle highlight
+  ctx.beginPath();
+  ctx.ellipse(s*0.05,bodyWag-s*0.15,s*0.25,s*0.08,0,0,Math.PI*2);
+  ctx.fillStyle='rgba(255,255,255,0.1)';ctx.fill();
+
+  ctx.restore();
+}
+
+function lightenColor(hex,amt){
+  const c=hexToRgb(hex);if(!c)return hex;
+  return`rgb(${Math.min(255,c.r+amt)},${Math.min(255,c.g+amt)},${Math.min(255,c.b+amt)})`;
+}
+function darkenColor(hex,amt){
+  const c=hexToRgb(hex);if(!c)return hex;
+  return`rgb(${Math.max(0,c.r-amt)},${Math.max(0,c.g-amt)},${Math.max(0,c.b-amt)})`;
+}
+function hexToRgb(hex){
+  const r=/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  if(!r){
+    // Try short hex
+    const s=/^#?([a-f\d])([a-f\d])([a-f\d])$/i.exec(hex);
+    if(!s)return null;
+    return{r:parseInt(s[1]+s[1],16),g:parseInt(s[2]+s[2],16),b:parseInt(s[3]+s[3],16)};
+  }
+  return{r:parseInt(r[1],16),g:parseInt(r[2],16),b:parseInt(r[3],16)};
+}
+
+// --- BUBBLES UPDATE & DRAW ---
+let bubbleTimer=0;
+function updateAndDrawBubbles(dt){
+  bubbleTimer+=dt;
+  const interval=0.3/(cfg.bubbleRate*0.2+0.1);
+  if(bubbleTimer>interval){
+    bubbleTimer=0;
+    const stone=airStones[Math.floor(Math.random()*airStones.length)];
+    spawnBubble(stone);
+  }
+
+  bubbles=bubbles.filter(b=>{
+    b.y-=b.speed*dt*60;
+    b.x+=Math.sin(time*3+b.wobblePhase)*b.wobbleAmp*dt*20;
+    // Fade near surface
+    if(b.y<40){b.alpha-=dt*2;}
+    if(b.y<0||b.alpha<=0)return false;
+    // Draw
+    ctx.beginPath();ctx.arc(b.x,b.y,b.r,0,Math.PI*2);
+    ctx.strokeStyle=`rgba(180,220,255,${b.alpha*0.6})`;
+    ctx.lineWidth=0.8;ctx.stroke();
+    // Highlight
+    ctx.beginPath();ctx.arc(b.x-b.r*0.3,b.y-b.r*0.3,b.r*0.3,0,Math.PI*2);
+    ctx.fillStyle=`rgba(220,240,255,${b.alpha*0.4})`;ctx.fill();
+    return true;
+  });
+}
+
+// --- FOOD ---
+function updateFood(dt){
+  foodParticles=foodParticles.filter(fd=>{
+    if(fd.eaten){fd.alpha-=dt*4;if(fd.alpha<=0)return false;}
+    else{
+      fd.y+=fd.vy*dt*60;
+      fd.x+=Math.sin(time*2+fd.x)*0.2;
+      if(fd.y>sandY-5){fd.vy=0;}
+      fd.alpha-=dt*0.05;
+      if(fd.alpha<=0)return false;
+    }
+    ctx.beginPath();ctx.arc(fd.x,fd.y,fd.r,0,Math.PI*2);
+    ctx.fillStyle=`rgba(180,120,50,${fd.alpha})`;ctx.fill();
+    return true;
+  });
+}
+
+// --- WATER SURFACE ---
+function drawSurface(){
+  // Glass reflection line
+  ctx.save();
+  const surfGrad=ctx.createLinearGradient(0,0,0,25);
+  surfGrad.addColorStop(0,'rgba(180,220,255,0.15)');
+  surfGrad.addColorStop(0.3,'rgba(180,220,255,0.08)');
+  surfGrad.addColorStop(1,'rgba(180,220,255,0)');
+  ctx.fillStyle=surfGrad;
+  ctx.beginPath();
+  ctx.moveTo(0,0);
+  for(let x=0;x<=W;x+=10){
+    ctx.lineTo(x,3+Math.sin(x*0.04+time*1.5)*2);
+  }
+  ctx.lineTo(W,25);ctx.lineTo(0,25);ctx.closePath();ctx.fill();
+
+  // Ripple highlight
+  ctx.strokeStyle='rgba(255,255,255,0.08)';
+  ctx.lineWidth=1;
+  ctx.beginPath();
+  for(let x=0;x<=W;x+=5){
+    const y=6+Math.sin(x*0.05+time*2)*2+Math.sin(x*0.02+time*1.2)*1.5;
+    x===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+// --- VIGNETTE ---
+function drawVignette(){
+  const grd=ctx.createRadialGradient(W/2,H/2,W*0.3,W/2,H/2,W*0.75);
+  grd.addColorStop(0,'rgba(0,0,0,0)');
+  grd.addColorStop(1,'rgba(0,5,15,0.4)');
+  ctx.fillStyle=grd;ctx.fillRect(0,0,W,H);
+}
+
+// --- MAIN LOOP ---
+let lastTime=0;
+function loop(ts){
+  const dt=Math.min((ts-lastTime)/1000,0.05);
+  lastTime=ts;
+  draw(dt);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(ts=>{lastTime=ts;loop(ts)});
+
+// Reinit on resize
+addEventListener('resize',()=>{initPebbles();initRocks();});
+</script>
+</body>
+</html>
