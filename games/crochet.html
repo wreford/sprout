@@ -126,12 +126,13 @@ canvas{position:absolute;inset:0;width:100%;height:100%;cursor:pointer}
 
 <script>
 // ============================================================
-// Cozy Crochet -- a meditation app disguised as a crochet sim
+// Cozy Crochet -- actual yarn thread physics
+// Procedural yarn paths with bezier curves and over/under crossings
 // ============================================================
 
 const C = document.getElementById('C'), cx = C.getContext('2d');
 
-// -- Palette: warm, soft yarn colors --
+// -- Palette: 10 warm yarn colors --
 const PAL = [
   '#F0E4D0','#D4A0A0','#A8B89C','#D4A843','#8CA8B8',
   '#D08060','#B0A0C0','#B06040','#C8C4C0','#505050'
@@ -141,16 +142,14 @@ const PNAME = [
   'Coral','Lavender','Clay','Cloud','Charcoal'
 ];
 
-// -- Stitch dimensions --
+// -- Stitch types --
+const TKEYS = ['ch','sc'];
 const ST = {
-  ch:{h:14,label:'ch'}, sc:{h:22,label:'sc'},
-  dc:{h:34,label:'dc'}, tr:{h:46,label:'tr'}
+  ch:{h:18, label:'ch'},
+  sc:{h:28, label:'sc'}
 };
-const TKEYS = ['ch','sc','dc','tr'];
 
 // -- Patterns --
-// Each pattern has: name, desc, width, and a getRow(rowIdx) function
-// that returns {type, colorIdx} for that row, or null if infinite/free.
 const PATTERNS = [
   { name:'Free', desc:'Freeform -- stitch whatever you like', width:10,
     getRow:()=>null },
@@ -160,12 +159,11 @@ const PATTERNS = [
   { name:'Blanket', desc:'12 wide, rainbow stripes', width:12,
     colors:[1,5,3,6,4,0], totalRows:18,
     getRow(r){ return {t:'sc', c:this.colors[Math.floor(r/3)%this.colors.length]} }},
-  { name:'Granny Square', desc:'Double crochet clusters with chain gaps', width:10,
-    colors:[1,5,3], totalRows:12,
+  { name:'Chain Band', desc:'Alternating chain and single crochet rows', width:10,
+    colors:[1,5,3], totalRows:16,
     getRow(r){
       const c = this.colors[Math.floor(r/4)%this.colors.length];
-      // Alternating dc and ch rows for lacy effect
-      return {t: r%2===0?'dc':'ch', c};
+      return {t: r%2===0?'ch':'sc', c};
     }},
 ];
 
@@ -198,22 +196,25 @@ function save() {
 // ============================================================
 // Color helpers
 // ============================================================
-function hx(h) { return [parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)] }
-function th(r,g,b) { return '#'+[r,g,b].map(v=>Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,'0')).join('') }
-function li(c,a) { const [r,g,b]=hx(c); return th(r+a,g+a,b+a) }
-function dk(c,a) { return li(c,-a) }
-function ra(c,a) { const [r,g,b]=hx(c); return `rgba(${r},${g},${b},${a})` }
+function hx(h) {
+  return [parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];
+}
+function th(r,g,b) {
+  return '#'+[r,g,b].map(v=>Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,'0')).join('');
+}
+function li(c,a) { const [r,g,b]=hx(c); return th(r+a,g+a,b+a); }
+function dk(c,a) { return li(c,-a); }
+function ra(c,a) { const [r,g,b]=hx(c); return `rgba(${r},${g},${b},${a})`; }
 
 // ============================================================
-// Audio -- ASMR soft pops
+// Audio -- soft pops and chimes
 // ============================================================
 let ac = null;
-function initA() { if (ac) return; ac = new (window.AudioContext||window.webkitAudioContext)() }
+function initA() { if (ac) return; ac = new (window.AudioContext||window.webkitAudioContext)(); }
 
 function playPop() {
   if (!S.sound || !ac) return;
   const t = ac.currentTime;
-  // Warm sine pop, randomized pitch
   const o = ac.createOscillator(), g = ac.createGain();
   o.type = 'sine';
   o.frequency.value = 600 + Math.random() * 200;
@@ -221,7 +222,6 @@ function playPop() {
   g.gain.exponentialRampToValueAtTime(0.001, t + 0.025);
   o.connect(g); g.connect(ac.destination);
   o.start(t); o.stop(t + 0.03);
-  // Tiny noise for texture
   const buf = ac.createBuffer(1, ac.sampleRate * 0.02, ac.sampleRate);
   const d = buf.getChannelData(0);
   for (let i = 0; i < d.length; i++) d[i] = (Math.random()*2-1) * 0.3;
@@ -236,7 +236,6 @@ function playPop() {
 function playChime() {
   if (!S.sound || !ac) return;
   const t = ac.currentTime;
-  // Three ascending notes: C-E-G
   [523, 659, 784].forEach((f, i) => {
     const o = ac.createOscillator(), g = ac.createGain();
     o.type = 'sine'; o.frequency.value = f;
@@ -248,93 +247,328 @@ function playChime() {
 }
 
 // ============================================================
-// Stitch rendering -- textured bumps
+// Yarn rendering engine
+// ============================================================
+
+const YARN_W = 5;       // yarn thickness
+const HILITE_OFF = 1.5; // highlight offset for 3D roundness
+
+// Draw a thick yarn bezier segment with 3D highlight
+function drawYarnBezier(pts, color, shadowColor) {
+  // pts = array of {x,y} -- 4 points for cubic bezier
+  if (pts.length < 4) return;
+
+  // Shadow/under layer
+  if (shadowColor) {
+    cx.save();
+    cx.strokeStyle = shadowColor;
+    cx.lineWidth = YARN_W + 2;
+    cx.lineCap = 'round';
+    cx.lineJoin = 'round';
+    cx.beginPath();
+    cx.moveTo(pts[0].x, pts[0].y);
+    cx.bezierCurveTo(pts[1].x, pts[1].y, pts[2].x, pts[2].y, pts[3].x, pts[3].y);
+    cx.stroke();
+    cx.restore();
+  }
+
+  // Main yarn stroke
+  cx.save();
+  cx.strokeStyle = color;
+  cx.lineWidth = YARN_W;
+  cx.lineCap = 'round';
+  cx.lineJoin = 'round';
+  cx.beginPath();
+  cx.moveTo(pts[0].x, pts[0].y);
+  cx.bezierCurveTo(pts[1].x, pts[1].y, pts[2].x, pts[2].y, pts[3].x, pts[3].y);
+  cx.stroke();
+  cx.restore();
+
+  // 3D highlight -- lighter, thinner, offset up-left
+  cx.save();
+  cx.strokeStyle = li(color, 40);
+  cx.lineWidth = HILITE_OFF;
+  cx.lineCap = 'round';
+  cx.lineJoin = 'round';
+  cx.globalAlpha = 0.5;
+  cx.beginPath();
+  cx.moveTo(pts[0].x - 1, pts[0].y - 1.2);
+  cx.bezierCurveTo(
+    pts[1].x - 1, pts[1].y - 1.2,
+    pts[2].x - 1, pts[2].y - 1.2,
+    pts[3].x - 1, pts[3].y - 1.2
+  );
+  cx.stroke();
+  cx.restore();
+}
+
+// Draw a yarn polyline through multiple points as smooth bezier segments
+function drawYarnPath(points, color, shadowColor) {
+  if (points.length < 2) return;
+  if (points.length === 2) {
+    // Simple straight segment rendered as degenerate bezier
+    const p0 = points[0], p1 = points[1];
+    const mx = (p0.x+p1.x)/2, my = (p0.y+p1.y)/2;
+    drawYarnBezier([p0, {x:mx,y:my}, {x:mx,y:my}, p1], color, shadowColor);
+    return;
+  }
+  // For 3+ points, generate smooth cubic beziers through each segment
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[i];
+    const p1 = points[i+1];
+    // Control points: use neighbors for tangent direction
+    const prev = points[i-1] || p0;
+    const next = points[i+2] || p1;
+    const tension = 0.3;
+    const cp1 = {
+      x: p0.x + (p1.x - prev.x) * tension,
+      y: p0.y + (p1.y - prev.y) * tension
+    };
+    const cp2 = {
+      x: p1.x - (next.x - p0.x) * tension,
+      y: p1.y - (next.y - p0.y) * tension
+    };
+    drawYarnBezier([p0, cp1, cp2, p1], color, shadowColor);
+  }
+}
+
+// ============================================================
+// Chain stitch: interlocking oval loops threaded through previous
+// ============================================================
+function drawChainStitch(x, y, w, h, color, scale) {
+  const sc = scale === undefined ? 1 : scale;
+  if (sc < 0.01) return;
+  const mx = x + w/2;
+  const my = y + h/2;
+
+  if (sc < 1) {
+    cx.save();
+    cx.translate(mx, my); cx.scale(sc, sc); cx.translate(-mx, -my);
+  }
+
+  const loopW = w * 0.38;
+  const loopH = h * 0.38;
+  const darkCol = dk(color, 30);
+  const shadowCol = ra(darkCol, 0.3);
+
+  // The chain loop: an oval ring made of yarn
+  // Draw as two halves so we can show the thread-through
+
+  // Bottom half of the oval (the "under" part that goes behind the next chain)
+  cx.save();
+  cx.strokeStyle = shadowCol;
+  cx.lineWidth = YARN_W + 2;
+  cx.lineCap = 'round';
+  cx.beginPath();
+  cx.ellipse(mx, my, loopW, loopH, 0, Math.PI * 0.15, Math.PI * 0.85);
+  cx.stroke();
+  cx.restore();
+
+  cx.save();
+  cx.strokeStyle = dk(color, 10);
+  cx.lineWidth = YARN_W;
+  cx.lineCap = 'round';
+  cx.beginPath();
+  cx.ellipse(mx, my, loopW, loopH, 0, Math.PI * 0.15, Math.PI * 0.85);
+  cx.stroke();
+  // 3D highlight on bottom arc
+  cx.strokeStyle = li(color, 30);
+  cx.lineWidth = HILITE_OFF;
+  cx.globalAlpha = 0.45;
+  cx.beginPath();
+  cx.ellipse(mx, my + 1, loopW - 1, loopH - 1, 0, Math.PI * 0.2, Math.PI * 0.8);
+  cx.stroke();
+  cx.restore();
+
+  // Thread connecting to next chain (going down through the loop)
+  // This is the vertical connector between chain links
+  const connY1 = my + loopH * 0.6;
+  const connY2 = my + h * 0.52;
+  drawYarnBezier([
+    {x: mx - 1, y: connY1},
+    {x: mx - 2, y: (connY1+connY2)/2},
+    {x: mx + 2, y: (connY1+connY2)/2},
+    {x: mx + 1, y: connY2}
+  ], dk(color, 8), null);
+
+  // Top half of oval (the "over" part -- drawn on top)
+  cx.save();
+  cx.strokeStyle = color;
+  cx.lineWidth = YARN_W;
+  cx.lineCap = 'round';
+  cx.beginPath();
+  cx.ellipse(mx, my, loopW, loopH, 0, -Math.PI * 0.85, Math.PI * 0.15);
+  cx.stroke();
+  // 3D highlight on top arc
+  cx.strokeStyle = li(color, 45);
+  cx.lineWidth = HILITE_OFF;
+  cx.globalAlpha = 0.55;
+  cx.beginPath();
+  cx.ellipse(mx - 0.8, my - 1, loopW - 1, loopH - 1, 0, -Math.PI * 0.8, Math.PI * 0.1);
+  cx.stroke();
+  cx.restore();
+
+  if (sc < 1) cx.restore();
+}
+
+// ============================================================
+// Single crochet: two legs crossing, right over left
+// Yarn goes down through stitch below, loops at bottom, comes up
+// ============================================================
+function drawSCStitch(x, y, w, h, color, scale) {
+  const sc = scale === undefined ? 1 : scale;
+  if (sc < 0.01) return;
+  const mx = x + w/2;
+  const my = y + h/2;
+
+  if (sc < 1) {
+    cx.save();
+    cx.translate(mx, my); cx.scale(sc, sc); cx.translate(-mx, -my);
+  }
+
+  const darkCol = dk(color, 35);
+  const shadowCol = ra(darkCol, 0.35);
+  const legSpread = w * 0.32;
+  const topY = y + h * 0.08;
+  const botY = y + h * 0.88;
+  const crossY = my - h * 0.02;  // crossing point
+
+  // The two legs of the V, crossing at middle
+  // Left leg: from top-left to bottom-center
+  const leftLeg = [
+    {x: mx - legSpread, y: topY},
+    {x: mx - legSpread * 0.7, y: topY + (crossY - topY) * 0.4},
+    {x: mx + legSpread * 0.1, y: crossY - h * 0.06},
+    {x: mx, y: crossY}
+  ];
+  const leftLegLower = [
+    {x: mx, y: crossY},
+    {x: mx - legSpread * 0.05, y: crossY + (botY - crossY) * 0.3},
+    {x: mx + w * 0.02, y: botY - h * 0.12},
+    {x: mx, y: botY}
+  ];
+
+  // Right leg: from top-right to bottom-center
+  const rightLeg = [
+    {x: mx + legSpread, y: topY},
+    {x: mx + legSpread * 0.7, y: topY + (crossY - topY) * 0.4},
+    {x: mx - legSpread * 0.1, y: crossY - h * 0.06},
+    {x: mx, y: crossY}
+  ];
+  const rightLegLower = [
+    {x: mx, y: crossY},
+    {x: mx + legSpread * 0.05, y: crossY + (botY - crossY) * 0.3},
+    {x: mx - w * 0.02, y: botY - h * 0.12},
+    {x: mx, y: botY}
+  ];
+
+  // Bottom loop: yarn loops at the very bottom
+  const loopW = w * 0.18;
+  const loopPts = [
+    {x: mx, y: botY},
+    {x: mx - loopW, y: botY + h * 0.08},
+    {x: mx + loopW, y: botY + h * 0.08},
+    {x: mx, y: botY}
+  ];
+
+  // -- Draw order for crossing: left leg UNDER, right leg OVER --
+
+  // 1. Draw the left leg (goes under at crossing)
+  // Left upper
+  drawYarnBezier(leftLeg, dk(color, 8), shadowCol);
+  // Left lower
+  drawYarnBezier(leftLegLower, dk(color, 8), shadowCol);
+
+  // 2. Bottom loop
+  drawYarnBezier(loopPts, dk(color, 5), null);
+
+  // 3. Erase / mask at crossing for the over-under illusion
+  // Draw a small background patch at the crossing to break the under-strand
+  cx.save();
+  cx.globalCompositeOperation = 'destination-out';
+  cx.beginPath();
+  cx.ellipse(mx, crossY, YARN_W * 0.9, YARN_W * 1.1, Math.PI * 0.35, 0, Math.PI * 2);
+  cx.fill();
+  cx.globalCompositeOperation = 'source-over';
+  cx.restore();
+
+  // 3b. Redraw the left leg only at the crossing zone but darkened (shadow under)
+  cx.save();
+  cx.beginPath();
+  cx.ellipse(mx, crossY, YARN_W * 0.9, YARN_W * 1.1, Math.PI * 0.35, 0, Math.PI * 2);
+  cx.clip();
+  // Shadow underneath
+  cx.strokeStyle = ra(darkCol, 0.4);
+  cx.lineWidth = YARN_W + 2;
+  cx.lineCap = 'round';
+  cx.beginPath();
+  cx.moveTo(leftLeg[0].x, leftLeg[0].y);
+  cx.bezierCurveTo(leftLeg[1].x, leftLeg[1].y, leftLeg[2].x, leftLeg[2].y, leftLeg[3].x, leftLeg[3].y);
+  cx.stroke();
+  // The under strand
+  cx.strokeStyle = dk(color, 18);
+  cx.lineWidth = YARN_W;
+  cx.beginPath();
+  cx.moveTo(leftLeg[0].x, leftLeg[0].y);
+  cx.bezierCurveTo(leftLeg[1].x, leftLeg[1].y, leftLeg[2].x, leftLeg[2].y, leftLeg[3].x, leftLeg[3].y);
+  cx.stroke();
+  cx.restore();
+
+  // 4. Draw the right leg ON TOP (goes over at crossing)
+  drawYarnBezier(rightLeg, color, shadowCol);
+  drawYarnBezier(rightLegLower, color, shadowCol);
+
+  // 5. Highlight on the right (over) leg at the crossing
+  cx.save();
+  cx.strokeStyle = li(color, 35);
+  cx.lineWidth = HILITE_OFF;
+  cx.lineCap = 'round';
+  cx.globalAlpha = 0.5;
+  cx.beginPath();
+  cx.moveTo(rightLeg[0].x - 0.8, rightLeg[0].y - 1);
+  cx.bezierCurveTo(
+    rightLeg[1].x - 0.8, rightLeg[1].y - 1,
+    rightLeg[2].x - 0.8, rightLeg[2].y - 1,
+    rightLeg[3].x - 0.8, rightLeg[3].y - 1
+  );
+  cx.stroke();
+  cx.restore();
+
+  // 6. Top bar: a small horizontal yarn connecting the two legs at top
+  const barY = topY - h * 0.01;
+  drawYarnBezier([
+    {x: mx - legSpread - w * 0.04, y: barY},
+    {x: mx - legSpread * 0.3, y: barY - h * 0.04},
+    {x: mx + legSpread * 0.3, y: barY - h * 0.04},
+    {x: mx + legSpread + w * 0.04, y: barY}
+  ], color, null);
+
+  if (sc < 1) cx.restore();
+}
+
+// ============================================================
+// Dispatch stitch drawing
 // ============================================================
 function drawStitch(x, y, w, h, color, type, scale) {
-  scale = scale === undefined ? 1 : scale;
-  if (scale < 0.01) return;
-  if (scale < 1) {
-    cx.save();
-    const mx = x+w/2, my = y+h/2;
-    cx.translate(mx, my); cx.scale(scale, scale); cx.translate(-mx, -my);
+  if (type === 'ch') {
+    drawChainStitch(x, y, w, h, color, scale);
+  } else {
+    drawSCStitch(x, y, w, h, color, scale);
   }
-  if (type === 'ch') drawChain(x, y, w, h, color);
-  else drawBump(x, y, w, h, color, type);
-  if (scale < 1) cx.restore();
 }
 
-function drawChain(x, y, w, h, color) {
-  const mx = x+w/2, my = y+h/2;
-  // Gradient oval
-  const grd = cx.createRadialGradient(mx, my-1, 0, mx, my, w*0.42);
-  grd.addColorStop(0, li(color, 18));
-  grd.addColorStop(0.65, color);
-  grd.addColorStop(1, dk(color, 12));
-  cx.fillStyle = grd;
-  cx.beginPath();
-  cx.ellipse(mx, my, w*0.38, h*0.34, 0, 0, Math.PI*2);
-  cx.fill();
-  // Center hole
-  cx.fillStyle = ra(dk(color, 30), 0.4);
-  cx.beginPath();
-  cx.ellipse(mx, my+0.5, w*0.14, h*0.1, 0, 0, Math.PI*2);
-  cx.fill();
-}
-
-function drawBump(x, y, w, h, color, type) {
-  const mx = x + w/2;
-
-  // Radial gradient: highlight on top, shadow at edges
-  const grd = cx.createRadialGradient(mx, y+h*0.32, 0, mx, y+h*0.4, w*0.65);
-  grd.addColorStop(0, li(color, 22));
-  grd.addColorStop(0.5, color);
-  grd.addColorStop(1, dk(color, 18));
-  cx.fillStyle = grd;
-
-  // Rounded bump contour
-  cx.beginPath();
-  cx.moveTo(x+1, y+h);
-  cx.quadraticCurveTo(x, y+h*0.22, x+w*0.28, y+h*0.04);
-  cx.quadraticCurveTo(mx, y-h*0.12, x+w*0.72, y+h*0.04);
-  cx.quadraticCurveTo(x+w, y+h*0.22, x+w-1, y+h);
-  cx.closePath();
-  cx.fill();
-
-  // V-line stitch legs
-  cx.strokeStyle = ra(dk(color, 28), 0.45);
-  cx.lineWidth = 0.8;
-  cx.beginPath();
-  cx.moveTo(x+w*0.3, y+h*0.78);
-  cx.lineTo(mx, y+h*0.2);
-  cx.lineTo(x+w*0.7, y+h*0.78);
-  cx.stroke();
-
-  // Yarn-over marks for dc/tr
-  if (type === 'dc' || type === 'tr') {
-    cx.strokeStyle = ra(li(color, 18), 0.4);
-    cx.lineWidth = 0.7;
-    cx.beginPath();
-    const wy = y + h*0.42;
-    cx.moveTo(x+w*0.24, wy);
-    cx.quadraticCurveTo(mx, wy+3, x+w*0.76, wy);
-    cx.stroke();
-  }
-  if (type === 'tr') {
-    cx.strokeStyle = ra(li(color, 18), 0.35);
-    cx.lineWidth = 0.7;
-    cx.beginPath();
-    const wy2 = y + h*0.56;
-    cx.moveTo(x+w*0.27, wy2);
-    cx.quadraticCurveTo(mx, wy2+2.5, x+w*0.73, wy2);
-    cx.stroke();
-  }
-
-  // Top highlight arc
-  cx.strokeStyle = ra(li(color, 38), 0.25);
-  cx.lineWidth = 0.6;
-  cx.beginPath();
-  cx.arc(mx, y+h*0.28, w*0.2, -Math.PI*0.8, -Math.PI*0.2);
-  cx.stroke();
+// ============================================================
+// Inter-row yarn connector: draw a yarn thread between rows
+// ============================================================
+function drawRowConnector(x1, y1, x2, y2, color) {
+  const mx = (x1+x2)/2;
+  const sag = Math.abs(y2-y1) * 0.15;
+  drawYarnBezier([
+    {x: x1, y: y1},
+    {x: mx - sag, y: y1 + (y2-y1)*0.35},
+    {x: mx + sag, y: y1 + (y2-y1)*0.65},
+    {x: x2, y: y2}
+  ], color, null);
 }
 
 // ============================================================
@@ -361,13 +595,13 @@ function draw() {
     return;
   }
 
-  const bw = Math.max(16, Math.min(44, (cw - 28) / S.width));
+  const bw = Math.max(20, Math.min(48, (cw - 28) / S.width));
   const fabricW = S.width * bw;
   const ox = (cw - fabricW) / 2;
 
-  // Compute row positions
+  // Compute row positions (bottom-up layout, newest at bottom)
   const rys = [];
-  let cum = 24 + S.panY;
+  let cum = 28 + S.panY;
   for (let r = 0; r < S.fabric.length; r++) {
     const row = S.fabric[r];
     let mh = ST.sc.h;
@@ -376,39 +610,68 @@ function draw() {
       if (ti.h > mh) mh = ti.h;
     }
     rys.push({y: cum, h: mh});
-    cum += mh + 1;
+    cum += mh + 2;
   }
 
-  // Auto-scroll to keep newest row visible
+  // Auto-scroll
   const visBottom = ch - 8;
   if (cum > visBottom) {
     const over = cum - visBottom;
     if (S.panY > -over) S.panY = -over;
-    cum = 24 + S.panY;
+    cum = 28 + S.panY;
     for (let r = 0; r < S.fabric.length; r++) {
       rys[r].y = cum;
-      cum += rys[r].h + 1;
+      cum += rys[r].h + 2;
     }
   }
 
-  // Draw each row
+  // Draw inter-row yarn connectors (behind stitches)
+  for (let r = 1; r < S.fabric.length; r++) {
+    const prevRow = S.fabric[r-1];
+    const currRow = S.fabric[r];
+    if (prevRow.length === 0 || currRow.length === 0) continue;
+    // Connect last stitch of previous row to first stitch of current row
+    const prevReversed = (r-1) % 2 === 1;
+    const currReversed = r % 2 === 1;
+    const prevLastCol = prevReversed ? 0 : prevRow.length - 1;
+    const currFirstCol = currReversed ? S.width - 1 : 0;
+    const prevXoff = prevReversed ? bw * 0.08 : 0;
+    const currXoff = currReversed ? bw * 0.08 : 0;
+    const px = ox + prevLastCol * bw + bw/2 + prevXoff;
+    const py = rys[r-1].y + rys[r-1].h * 0.9;
+    const nx = ox + currFirstCol * bw + bw/2 + currXoff;
+    const ny = rys[r].y + rys[r].h * 0.1;
+    const connColor = ra(PAL[prevRow[prevRow.length-1].c], 0.3);
+    drawRowConnector(px, py, nx, ny, connColor);
+  }
+
+  // Draw each row of stitches
   for (let r = 0; r < S.fabric.length; r++) {
     const row = S.fabric[r];
     const ry = rys[r];
     const reversed = r % 2 === 1;
-    // Slight horizontal stagger on alternate rows
-    const xoff = reversed ? bw * 0.12 : 0;
-
-    // Thin shadow line between rows for depth
-    if (r > 0) {
-      cx.fillStyle = 'rgba(80,60,40,0.05)';
-      cx.fillRect(ox, ry.y - 1, fabricW, 2);
-    }
+    const xoff = reversed ? bw * 0.08 : 0;
 
     for (let c = 0; c < row.length; c++) {
       const st = row[c];
       const ci = reversed ? (S.width - 1 - c) : c;
       const sx = ox + ci * bw + xoff;
+
+      // Draw connecting yarn between stitches in the same row
+      if (c > 0) {
+        const prevCi = reversed ? (S.width - 1 - (c-1)) : (c-1);
+        const prevX = ox + prevCi * bw + bw/2 + xoff;
+        const currX = sx + bw/2;
+        const connY = ry.y + ry.h * 0.06;
+        const yarnCol = ra(PAL[st.c], 0.45);
+        drawYarnBezier([
+          {x: prevX, y: connY},
+          {x: (prevX + currX)/2, y: connY - 3},
+          {x: (prevX + currX)/2, y: connY - 3},
+          {x: currX, y: connY}
+        ], yarnCol, null);
+      }
+
       drawStitch(sx, ry.y, bw - 1, ry.h, PAL[st.c], st.t, st.sc);
     }
   }
@@ -416,7 +679,7 @@ function draw() {
   // Crochet hook at current position
   const hr = S.row;
   const hc = hr % 2 === 1 ? (S.width - 1 - S.col) : S.col;
-  const hoff = hr % 2 === 1 ? bw * 0.12 : 0;
+  const hoff = hr % 2 === 1 ? bw * 0.08 : 0;
   const hy = hr < rys.length ? rys[hr].y : cum;
   const hookX = ox + hc * bw + bw/2 + hoff;
   const hookY = hy - 2;
@@ -431,14 +694,16 @@ function draw() {
   cx.beginPath(); cx.moveTo(0, -12); cx.lineTo(0, -24); cx.stroke();
   cx.restore();
 
-  // Yarn tail to upper right
+  // Yarn tail from hook to upper right
+  cx.save();
   cx.strokeStyle = ra(PAL[S.color], 0.25);
-  cx.lineWidth = 1.5; cx.lineCap = 'round'; cx.setLineDash([3, 4]);
+  cx.lineWidth = 2; cx.lineCap = 'round'; cx.setLineDash([4, 5]);
   cx.beginPath();
   cx.moveTo(hookX, hookY);
   cx.quadraticCurveTo(cw - 18, hookY - 28, cw - 8, 12);
   cx.stroke();
   cx.setLineDash([]);
+  cx.restore();
 
   updateCt();
 }
@@ -456,12 +721,11 @@ function updateCt() {
 // ============================================================
 function animSt(st, dur) {
   return new Promise(resolve => {
-    st.sc = 0.5;
+    st.sc = 0.4;
     const t0 = performance.now();
     function tick(now) {
       const p = Math.min(1, (now - t0) / dur);
-      // Smooth ease-out from 0.5 to 1.0
-      st.sc = 0.5 + 0.5 * (1 - Math.pow(1 - p, 3));
+      st.sc = 0.4 + 0.6 * (1 - Math.pow(1 - p, 3));
       draw();
       if (p < 1) requestAnimationFrame(tick);
       else { st.sc = 1; S.anim = false; resolve(); }
@@ -471,13 +735,13 @@ function animSt(st, dur) {
 }
 
 // ============================================================
-// Add stitch -- the core loop
+// Add stitch
 // ============================================================
 let lastTap = 0;
 
 function addStitch() {
   const now = Date.now();
-  if (now - lastTap < 100) return;  // 100ms cooldown
+  if (now - lastTap < 100) return;
   if (S.anim) return;
   lastTap = now;
   initA();
@@ -485,7 +749,6 @@ function addStitch() {
 
   let type = S.type, color = S.color;
 
-  // Pattern override: pattern decides type and color per row
   if (S.pat && S.pat.getRow) {
     const info = S.pat.getRow(S.patRow);
     if (info) {
@@ -494,18 +757,16 @@ function addStitch() {
     }
   }
 
-  // Ensure current row array exists
   if (!S.fabric[S.row]) S.fabric[S.row] = [];
 
-  const st = {t: type, c: color, sc: 0.5};
+  const st = {t: type, c: color, sc: 0.4};
   S.fabric[S.row].push(st);
   playPop();
 
-  animSt(st, 150).then(() => {
+  animSt(st, 160).then(() => {
     S.today++; S.total++; save();
     S.col++;
 
-    // Row complete?
     if (S.col >= S.width) {
       playChime();
       showToast('Row ' + (S.row + 1) + ' complete');
@@ -513,7 +774,6 @@ function addStitch() {
       S.row++;
       S.patRow++;
 
-      // Check if pattern is done
       if (S.pat && S.pat.totalRows && S.patRow >= S.pat.totalRows) {
         showToast(S.pat.name + ' finished!');
         stopAuto();
@@ -598,7 +858,6 @@ function buildColors() {
   PAL.forEach((c, i) => {
     const b = document.createElement('button');
     b.className = 'sw' + (i === S.color ? ' on' : '');
-    // Light colors need a visible border
     if (i === 0 || i === 8) b.classList.add('pale');
     b.style.background = c;
     b.title = PNAME[i];
@@ -660,13 +919,11 @@ function openSpeed() {
 buildColors();
 buildTypes();
 
-// Canvas: tap to stitch
 C.addEventListener('click', e => { e.preventDefault(); if (!S.auto) addStitch(); });
 C.addEventListener('touchstart', e => {
   if (e.touches.length === 1) { e.preventDefault(); initA(); if (!S.auto) addStitch(); }
 }, {passive: false});
 
-// Keyboard shortcuts
 document.addEventListener('keydown', e => {
   if (e.code === 'Space') { e.preventDefault(); initA(); if (!S.auto) addStitch(); }
   if (e.key === 'z' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); undo(); }
@@ -675,10 +932,8 @@ document.addEventListener('keydown', e => {
   if (n >= 1 && n <= TKEYS.length) { S.type = TKEYS[n-1]; buildTypes(); }
 });
 
-// Scroll to pan
 C.addEventListener('wheel', e => { S.panY -= e.deltaY * 0.5; draw(); }, {passive: true});
 
-// Two-finger pan
 let tp = null;
 C.addEventListener('touchmove', e => {
   if (e.touches.length === 2) {
@@ -690,7 +945,6 @@ C.addEventListener('touchmove', e => {
 }, {passive: false});
 C.addEventListener('touchend', () => { tp = null; });
 
-// Buttons
 document.getElementById('bUndo').addEventListener('click', undo);
 document.getElementById('bAuto').addEventListener('click', toggleAuto);
 document.getElementById('bPat').addEventListener('click', openPats);
@@ -698,7 +952,6 @@ document.getElementById('cPat').addEventListener('click', () => {
   document.getElementById('oPat').classList.remove('open');
 });
 
-// Sound toggle
 document.getElementById('bSnd').addEventListener('click', () => {
   initA(); S.sound = !S.sound;
   document.getElementById('bSnd').textContent = S.sound ? 'Sound' : 'Muted';
@@ -706,7 +959,6 @@ document.getElementById('bSnd').addEventListener('click', () => {
 });
 document.getElementById('bSnd').textContent = S.sound ? 'Sound' : 'Muted';
 
-// Speed
 document.getElementById('bSpd').addEventListener('click', openSpeed);
 document.querySelectorAll('.sp').forEach(b => {
   b.addEventListener('click', () => {
@@ -720,10 +972,8 @@ document.getElementById('cSpd').addEventListener('click', () => {
   document.getElementById('oSpd').classList.remove('open');
 });
 
-// Resize
 window.addEventListener('resize', () => draw());
 
-// Initial draw
 setTimeout(draw, 0);
 </script>
 </body>

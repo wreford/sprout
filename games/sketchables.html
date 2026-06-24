@@ -104,6 +104,23 @@ header .subtitle{font-size:0.8rem;color:var(--dim);margin-top:4px;font-style:ita
   letter-spacing:.5px;text-transform:uppercase}
 .toast.show{transform:translateX(-50%) translateY(0);opacity:1}
 
+/* composition guide */
+#compositionGuide{display:none;max-width:580px;width:100%;margin:14px auto 0;z-index:1;flex-shrink:0;
+  opacity:0;transform:translateY(6px);transition:opacity .4s ease .3s,transform .4s ease .3s}
+#compositionGuide.visible{display:block;opacity:1;transform:translateY(0)}
+.palette-row{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-bottom:10px}
+.swatch{display:inline-flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;
+  -webkit-tap-highlight-color:transparent;transition:transform .15s}
+.swatch:active{transform:scale(.92)}
+.swatch .circle{width:24px;height:24px;border-radius:50%;border:1.5px solid var(--border);
+  box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.swatch .hex{font-family:'Courier New',monospace;font-size:0.55rem;color:var(--dim);letter-spacing:.3px;
+  text-transform:uppercase}
+.comp-note{font-family:Georgia,serif;font-size:0.78rem;color:var(--dim);font-style:italic;
+  text-align:center;line-height:1.5;padding:0 8px}
+.comp-label{font-family:'Courier New',monospace;font-size:0.6rem;color:var(--dim);text-transform:uppercase;
+  letter-spacing:1.5px;text-align:center;margin-bottom:6px;font-weight:600}
+
 @media(max-width:520px){
   body{padding:16px 16px 20px}
   .prompt-card{padding:36px 20px 32px;max-height:280px}
@@ -111,6 +128,8 @@ header .subtitle{font-size:0.8rem;color:var(--dim);margin-top:4px;font-style:ita
   .pill{padding:4px 8px;font-size:0.62rem}
   .actions{margin-top:16px}
   .counter{margin-top:12px}
+  .palette-row{gap:8px}
+  .swatch .hex{font-size:0.5rem}
 }
 </style>
 </head>
@@ -127,6 +146,13 @@ header .subtitle{font-size:0.8rem;color:var(--dim);margin-top:4px;font-style:ita
 </div>
 
 <div class="pills" id="pills"></div>
+
+<div id="compositionGuide">
+  <div class="comp-label">Palette</div>
+  <div class="palette-row" id="paletteRow"></div>
+  <div class="comp-label" style="margin-top:8px">Composition</div>
+  <div class="comp-note" id="compNote"></div>
+</div>
 
 <div class="actions">
   <button class="big-btn" id="generateBtn">Sketch This</button>
@@ -356,6 +382,7 @@ function renderPills(){
       renderPrompt(false);
       renderPills();
       updateFavBtn();
+      renderCompositionGuide(false);
     });
     pill.addEventListener("contextmenu", e => {
       e.preventDefault();
@@ -414,6 +441,193 @@ function showToast(msg){
   setTimeout(() => t.classList.remove("show"), 1200);
 }
 
+// Composition guidance — color palette rule engine
+const MOOD_PALETTES = {
+  melancholy: [
+    {hex:"#6B7B8D",name:"slate blue"},{hex:"#9E9A94",name:"dusty gray"},{hex:"#8E7B9A",name:"faded purple"},
+    {hex:"#F0E8DC",name:"pale cream"},{hex:"#2C3E50",name:"deep navy"},{hex:"#5F7A7E",name:"muted teal"}
+  ],
+  joyful: [
+    {hex:"#F4D03F",name:"sunshine yellow"},{hex:"#E8735A",name:"coral"},{hex:"#7ECBA1",name:"mint"},
+    {hex:"#FFF8E7",name:"warm white"},{hex:"#87CEEB",name:"sky blue"},{hex:"#FFDAB9",name:"soft peach"}
+  ],
+  mysterious: [
+    {hex:"#1A535C",name:"deep teal"},{hex:"#722F37",name:"burgundy"},{hex:"#36454F",name:"charcoal"},
+    {hex:"#C5A03F",name:"gold accent"},{hex:"#2C5F2D",name:"forest green"},{hex:"#191970",name:"midnight"}
+  ],
+  fierce: [
+    {hex:"#DC143C",name:"crimson"},{hex:"#1C1C1C",name:"black"},{hex:"#FF8C00",name:"amber"},
+    {hex:"#71797E",name:"steel"},{hex:"#CC5500",name:"blood orange"},{hex:"#B8860B",name:"dark gold"}
+  ],
+  gentle: [
+    {hex:"#C4B7D5",name:"lavender"},{hex:"#F2D1D1",name:"soft pink"},{hex:"#FFFDD0",name:"cream"},
+    {hex:"#B2BFA0",name:"sage"},{hex:"#B0C4DE",name:"powder blue"},{hex:"#F0EAD6",name:"pearl"}
+  ],
+  dark: [
+    {hex:"#4F5D65",name:"storm gray"},{hex:"#6B3A3A",name:"dried blood"},{hex:"#B2BEB5",name:"ash"},
+    {hex:"#C2A569",name:"faded ochre"},{hex:"#5D4775",name:"bruised purple"},{hex:"#36454F",name:"charcoal"}
+  ]
+};
+const MOOD_GROUPS = {
+  melancholy:["melancholy","lonely","haunted","somber","bittersweet","wistful","pensive"],
+  joyful:["joyful","playful","radiant","mischievous","content","hopeful"],
+  mysterious:["mysterious","curious","suspicious","spellbound","brooding","haunted"],
+  fierce:["fierce","furious","brave","defiant","bold","reckless","determined"],
+  gentle:["gentle","serene","tender","dreamy","content","contemplative","reverent","luminous","awestruck"],
+  dark:["terrified","anxious","stoic","confused"]
+};
+const DEFAULT_PALETTE = [
+  {hex:"#A0998C",name:"warm gray"},{hex:"#D4C5A9",name:"sand"},{hex:"#708090",name:"slate"},
+  {hex:"#FFFDD0",name:"cream"},{hex:"#808000",name:"olive"},{hex:"#928E85",name:"stone"}
+];
+const ANIMAL_COLORS = {
+  cat:[{hex:"#D48A3A",name:"warm orange"},{hex:"#333333",name:"charcoal"}],
+  dog:[{hex:"#A0764D",name:"golden brown"},{hex:"#F5E6CC",name:"warm cream"}],
+  fox:[{hex:"#CC5500",name:"burnt orange"},{hex:"#F5F0E0",name:"cream white"}],
+  owl:[{hex:"#654321",name:"rich brown"},{hex:"#DAA520",name:"golden"}],
+  bear:[{hex:"#3B2006",name:"dark brown"},{hex:"#EB9605",name:"honey"}],
+  whale:[{hex:"#000080",name:"deep blue"},{hex:"#708090",name:"steel gray"}],
+  raven:[{hex:"#0A0A0A",name:"jet black"},{hex:"#4B0082",name:"iridescent purple"}],
+  crow:[{hex:"#0A0A0A",name:"jet black"},{hex:"#4B0082",name:"iridescent purple"}],
+  deer:[{hex:"#E5AA70",name:"fawn"},{hex:"#4B3621",name:"forest brown"}],
+  wolf:[{hex:"#C0C0C0",name:"silver gray"},{hex:"#A5D8E6",name:"ice blue"}],
+  penguin:[{hex:"#111111",name:"tuxedo black"},{hex:"#F8F8FF",name:"white"}],
+  frog:[{hex:"#32CD32",name:"bright green"},{hex:"#FFD700",name:"gold"}],
+  snake:[{hex:"#50C878",name:"emerald"},{hex:"#2C3E2C",name:"dark scale"}],
+  flamingo:[{hex:"#FF69B4",name:"hot pink"},{hex:"#FF7F50",name:"coral"}]
+};
+const SETTING_TINTS = [
+  {keywords:["forest","bamboo","garden","greenhouse","mushroom"],swatch:{hex:"#2D5A27",name:"forest green"}},
+  {keywords:["desert","sunset","sun"],swatch:{hex:"#D4A76A",name:"warm sand"}},
+  {keywords:["ocean","underwater","sea","coral","harbor","lake"],swatch:{hex:"#1B4B72",name:"deep ocean"}},
+  {keywords:["snow","frozen","ice"],swatch:{hex:"#E8F0FE",name:"ice white"}},
+  {keywords:["night","midnight","dark","cave"],swatch:{hex:"#1A1A2E",name:"midnight"}}
+];
+
+function getColorPalette(mood, subject, setting){
+  // 1. Determine base palette from mood
+  let palette = null;
+  const moodLower = (mood||"").toLowerCase();
+  for(const [group, moods] of Object.entries(MOOD_GROUPS)){
+    if(moods.includes(moodLower)){
+      palette = MOOD_PALETTES[group].map(c=>({...c}));
+      break;
+    }
+  }
+  if(!palette) palette = DEFAULT_PALETTE.map(c=>({...c}));
+
+  // 2. Subject animal override (replace last 1-2 swatches)
+  const subjectLower = (subject||"").toLowerCase();
+  for(const [animal, colors] of Object.entries(ANIMAL_COLORS)){
+    if(subjectLower.includes(animal)){
+      const replaceCount = colors.length;
+      for(let i=0;i<replaceCount;i++){
+        palette[palette.length - replaceCount + i] = {...colors[i]};
+      }
+      break;
+    }
+  }
+
+  // 3. Setting tint (replace the 3rd swatch)
+  const settingLower = (setting||"").toLowerCase();
+  for(const rule of SETTING_TINTS){
+    if(rule.keywords.some(kw => settingLower.includes(kw))){
+      palette[2] = {...rule.swatch};
+      break;
+    }
+  }
+
+  return palette;
+}
+
+const COMP_NOTES = [
+  {actions:["sleeping","napping","resting"],
+   note:"Low horizon. Subject curled, center-bottom. Lots of negative space above."},
+  {actions:["dancing","juggling","spinning"],
+   note:"Dynamic diagonal. Off-center subject with motion blur suggestion."},
+  {actions:["standing in rain","falling"],
+   note:"Vertical emphasis. High contrast. Light source behind for silhouette."},
+  {actions:["reading","meditating","knitting","sketching","painting","sculpting"],
+   note:"Intimate framing. Tight crop. Warm directional light from one side."},
+  {actions:["running","climbing","fighting"],
+   note:"Strong diagonal thrust. Leading space in direction of movement."},
+  {actions:["hiding","eavesdropping"],
+   note:"Partially obscured subject. Frame-within-a-frame composition."},
+  {actions:["dreaming","stargazing"],
+   note:"Expansive sky. Small subject, vast environment. Low angle."},
+  {actions:["singing","laughing","whispering","crying"],
+   note:"Portrait orientation. Focus on expression. Soft background blur."},
+  {actions:["floating","hovering","flying"],
+   note:"Central subject, no ground line. Ethereal negative space all around."},
+  {actions:["dissolving","crumbling","sinking"],
+   note:"Off-center, lower third. Particle scatter effect outward."},
+  {actions:["emerging from shadow","glowing"],
+   note:"High contrast chiaroscuro. Single strong light source."},
+  {actions:["perched","balancing","tilting"],
+   note:"Rule of thirds. Subject on high point. Sky-heavy composition."}
+];
+const DEFAULT_COMP_NOTE = "Centered subject. Balanced composition. Medium shot with environmental context.";
+
+function getCompositionNote(action){
+  const actionLower = (action||"").toLowerCase();
+  for(const rule of COMP_NOTES){
+    if(rule.actions.some(a => actionLower === a)){
+      return rule.note;
+    }
+  }
+  return DEFAULT_COMP_NOTE;
+}
+
+function renderCompositionGuide(animate){
+  const guide = document.getElementById("compositionGuide");
+  const row = document.getElementById("paletteRow");
+  const noteEl = document.getElementById("compNote");
+  if(!hasGenerated){
+    guide.classList.remove("visible");
+    guide.style.display = "none";
+    return;
+  }
+
+  const mood = mode === "full" ? getWord("mood") : "";
+  const subject = getWord("subject");
+  const setting = mode === "full" ? getWord("setting") : "";
+  const action = getWord("action");
+
+  const palette = getColorPalette(mood, subject, setting);
+  const note = getCompositionNote(action);
+
+  // Render swatches
+  row.innerHTML = "";
+  palette.forEach(c => {
+    const swatch = document.createElement("div");
+    swatch.className = "swatch";
+    swatch.innerHTML = `<div class="circle" style="background:${c.hex}"></div><span class="hex">${c.hex}</span>`;
+    swatch.title = `${c.name} — tap to copy`;
+    swatch.addEventListener("click", () => {
+      navigator.clipboard.writeText(c.hex).then(() => showToast("Copied " + c.hex));
+    });
+    row.appendChild(swatch);
+  });
+
+  // Render composition note
+  noteEl.textContent = note;
+
+  // Show with animation
+  if(animate){
+    guide.style.display = "block";
+    guide.classList.remove("visible");
+    // Force reflow so transition triggers
+    void guide.offsetWidth;
+    guide.classList.add("visible");
+  } else {
+    guide.style.display = "block";
+    guide.style.transition = "none";
+    guide.classList.add("visible");
+    // Re-enable transition after paint
+    requestAnimationFrame(() => { guide.style.transition = ""; });
+  }
+}
+
 // Generate
 async function generate(){
   hasGenerated = true;
@@ -440,6 +654,7 @@ async function generate(){
   renderPills();
   incrementSeen();
   updateFavBtn();
+  renderCompositionGuide(true);
 }
 
 // Mode button
@@ -484,7 +699,7 @@ function init(){
     mode = mode==="full" ? "simple" : "full";
     updateModeBtn();
     updateCounter();
-    if(hasGenerated){ renderPrompt(false); renderPills(); }
+    if(hasGenerated){ renderPrompt(false); renderPills(); renderCompositionGuide(false); }
   });
 
   document.addEventListener("keydown", e => {
