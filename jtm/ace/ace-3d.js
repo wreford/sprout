@@ -320,135 +320,211 @@ var ACE_3D = (function () {
     canvas.style.width = w + 'px';
     canvas.style.height = h + 'px';
     var c = canvas.getContext('2d');
+    if (!c) { animFrame = requestAnimationFrame(renderFallback); return; }
     c.scale(dpr, dpr);
 
     updateProgress();
+    var time = performance.now() / 1000;
+    var simM = (typeof ACE_UI !== 'undefined' && ACE_UI.getSimMonth) ? ACE_UI.getSimMonth() : 0;
+    var pctDone = (typeof ACE !== 'undefined') ? ACE.summary().percent : 0;
 
-    // Sky gradient
-    var sky = c.createLinearGradient(0, 0, 0, h);
-    sky.addColorStop(0, '#d4cfc5');
-    sky.addColorStop(1, '#e8e2d6');
-    c.fillStyle = sky;
+    // Dark blueprint background
+    c.fillStyle = '#1a1d21';
     c.fillRect(0, 0, w, h);
 
-    // Ground
-    var groundY = h * 0.65;
-    c.fillStyle = '#c5bfae';
-    c.fillRect(0, groundY, w, h - groundY);
-    c.strokeStyle = '#b0a898';
+    // Subtle grid
+    c.strokeStyle = 'rgba(44,93,120,.12)';
+    c.lineWidth = 0.5;
+    var gs = 30;
+    for (var gx = 0; gx < w; gx += gs) { c.beginPath(); c.moveTo(gx, 0); c.lineTo(gx, h); c.stroke(); }
+    for (var gy = 0; gy < h; gy += gs) { c.beginPath(); c.moveTo(0, gy); c.lineTo(w, gy); c.stroke(); }
+
+    var groundY = h * 0.62;
+    var cx = w * 0.42;
+    var s = Math.min(w, h) * 0.0035;
+
+    // Ground line
+    c.strokeStyle = 'rgba(168,64,31,.4)';
     c.lineWidth = 1;
-    c.beginPath();
-    c.moveTo(0, groundY);
-    c.lineTo(w, groundY);
-    c.stroke();
+    c.setLineDash([8, 4]);
+    c.beginPath(); c.moveTo(0, groundY); c.lineTo(w, groundY); c.stroke();
+    c.setLineDash([]);
 
-    var cx = w * 0.45;
-    var scale = Math.min(w, h) * 0.003;
-
-    // Foundation
-    if (progress.foundation > 0) {
-      c.fillStyle = '#a09888';
-      var fndW = 280 * scale * progress.foundation;
-      var fndH = 12 * scale;
-      c.fillRect(cx - fndW / 2, groundY - fndH, fndW, fndH);
-    }
-
-    // Reactor building (cylinder-ish)
-    if (progress.reactor > 0) {
-      var rxH = 120 * scale * progress.reactor;
-      var rxW = 60 * scale;
-      var rxX = cx - 80 * scale;
-      c.fillStyle = '#8a8a8e';
-      c.fillRect(rxX - rxW / 2, groundY - 12 * scale - rxH, rxW, rxH);
-      // Dome
-      if (progress.containment > 0.3) {
-        c.fillStyle = '#7a7a80';
-        c.beginPath();
-        c.arc(rxX, groundY - 12 * scale - rxH, rxW / 2 * progress.containment, Math.PI, 0);
-        c.fill();
+    // -- Buildings (always show outlines, fill with progress) --
+    function bldg(x, y, bw, bh, prog, color, label) {
+      // Ghost outline (always visible)
+      c.strokeStyle = 'rgba(154,144,119,.25)';
+      c.lineWidth = 1;
+      c.setLineDash([4, 3]);
+      c.strokeRect(x - bw / 2, y - bh, bw, bh);
+      c.setLineDash([]);
+      // Fill with progress
+      if (prog > 0) {
+        var fillH = bh * Math.min(1, prog);
+        var grad = c.createLinearGradient(x, y - fillH, x, y);
+        grad.addColorStop(0, color);
+        grad.addColorStop(1, color.replace(')', ',.6)').replace('rgb', 'rgba'));
+        c.fillStyle = grad;
+        c.fillRect(x - bw / 2, y - fillH, bw, fillH);
+        // Top edge glow
+        c.strokeStyle = color;
+        c.lineWidth = 1.5;
+        c.beginPath(); c.moveTo(x - bw / 2, y - fillH); c.lineTo(x + bw / 2, y - fillH); c.stroke();
+      }
+      // Label
+      c.fillStyle = prog > 0.1 ? 'rgba(242,236,223,.7)' : 'rgba(154,144,119,.35)';
+      c.font = (8 * s) + 'px IBM Plex Mono, monospace';
+      c.textAlign = 'center';
+      c.fillText(label, x, y + 12 * s);
+      if (prog > 0) {
+        c.fillStyle = color;
+        c.fillText(Math.round(prog * 100) + '%', x, y - Math.min(1, prog) * bh - 4 * s);
       }
     }
 
-    // Turbine building
-    if (progress.turbine > 0) {
-      var tbW = 100 * scale * progress.turbine;
-      var tbH = 50 * scale * progress.turbine;
-      var tbX = cx + 50 * scale;
-      c.fillStyle = '#707580';
-      c.fillRect(tbX - tbW / 2, groundY - 12 * scale - tbH, tbW, tbH);
+    // Foundation pad
+    var fndW = 320 * s, fndH = 8 * s;
+    c.fillStyle = progress.foundation > 0 ? 'rgba(160,152,136,.5)' : 'rgba(160,152,136,.1)';
+    c.fillRect(cx - fndW / 2, groundY - fndH, fndW * (progress.foundation > 0 ? 1 : 1), fndH);
+
+    // Reactor Building
+    bldg(cx - 90 * s, groundY - fndH, 70 * s, 130 * s, progress.reactor, 'rgb(168,64,31)', 'RB');
+
+    // Containment dome
+    if (progress.containment > 0.01) {
+      var domeX = cx - 90 * s, domeR = 35 * s * progress.containment;
+      var domeY = groundY - fndH - 130 * s * progress.reactor;
+      c.fillStyle = 'rgba(168,64,31,.4)';
+      c.beginPath(); c.arc(domeX, domeY, domeR, Math.PI, 0); c.fill();
+      c.strokeStyle = 'rgb(168,64,31)'; c.lineWidth = 1.5;
+      c.beginPath(); c.arc(domeX, domeY, domeR, Math.PI, 0); c.stroke();
+    } else {
+      var domeX2 = cx - 90 * s;
+      c.strokeStyle = 'rgba(154,144,119,.15)';
+      c.setLineDash([4, 3]);
+      c.beginPath(); c.arc(domeX2, groundY - fndH - 130 * s, 35 * s, Math.PI, 0); c.stroke();
+      c.setLineDash([]);
     }
 
-    // Cooling towers
-    if (progress.cooling > 0) {
-      for (var ct = 0; ct < 2; ct++) {
-        var ctX = cx + 180 * scale + ct * 50 * scale;
-        var ctH = 90 * scale * progress.cooling;
-        var ctW = 35 * scale;
-        c.fillStyle = '#b5afa3';
+    // Turbine Building
+    bldg(cx + 60 * s, groundY - fndH, 110 * s, 60 * s, progress.turbine, 'rgb(44,93,120)', 'TB');
+
+    // Cooling Towers (2)
+    for (var ct = 0; ct < 2; ct++) {
+      var ctX = cx + 210 * s + ct * 55 * s;
+      var ctBotW = 40 * s, ctTopW = 25 * s, ctH = 100 * s;
+      // Ghost
+      c.strokeStyle = 'rgba(154,144,119,.2)';
+      c.setLineDash([4, 3]);
+      c.beginPath();
+      c.moveTo(ctX - ctBotW / 2, groundY - fndH);
+      c.lineTo(ctX - ctTopW / 2, groundY - fndH - ctH);
+      c.lineTo(ctX + ctTopW / 2, groundY - fndH - ctH);
+      c.lineTo(ctX + ctBotW / 2, groundY - fndH);
+      c.stroke();
+      c.setLineDash([]);
+      // Fill
+      if (progress.cooling > 0) {
+        var cFill = ctH * progress.cooling;
+        var cTopW2 = ctBotW / 2 - (ctBotW / 2 - ctTopW / 2) * progress.cooling;
+        c.fillStyle = 'rgba(107,76,154,.35)';
         c.beginPath();
-        c.moveTo(ctX - ctW, groundY - 12 * scale);
-        c.lineTo(ctX - ctW * 0.6, groundY - 12 * scale - ctH);
-        c.lineTo(ctX + ctW * 0.6, groundY - 12 * scale - ctH);
-        c.lineTo(ctX + ctW, groundY - 12 * scale);
-        c.closePath();
+        c.moveTo(ctX - ctBotW / 2, groundY - fndH);
+        c.lineTo(ctX - cTopW2, groundY - fndH - cFill);
+        c.lineTo(ctX + cTopW2, groundY - fndH - cFill);
+        c.lineTo(ctX + ctBotW / 2, groundY - fndH);
         c.fill();
+        c.strokeStyle = 'rgb(107,76,154)'; c.lineWidth = 1;
+        c.beginPath(); c.moveTo(ctX - cTopW2, groundY - fndH - cFill); c.lineTo(ctX + cTopW2, groundY - fndH - cFill); c.stroke();
       }
+      c.fillStyle = progress.cooling > 0.1 ? 'rgba(242,236,223,.5)' : 'rgba(154,144,119,.25)';
+      c.font = (7 * s) + 'px IBM Plex Mono, monospace';
+      c.textAlign = 'center';
+      c.fillText('CT-' + (ct + 1), ctX, groundY + 12 * s);
     }
 
-    // Auxiliary building
-    if (progress.aux > 0) {
-      c.fillStyle = '#95908a';
-      var auxW = 50 * scale * progress.aux;
-      var auxH = 30 * scale * progress.aux;
-      c.fillRect(cx - 40 * scale - auxW / 2, groundY - 12 * scale - auxH, auxW, auxH);
-    }
+    // Auxiliary Building
+    bldg(cx - 50 * s, groundY - fndH, 50 * s, 35 * s, progress.aux, 'rgb(184,134,11)', 'AUX');
 
     // Crane
+    var crX = cx + 15 * s;
+    var crH = 170 * s;
+    c.strokeStyle = progress.crane > 0 ? 'rgba(168,64,31,.8)' : 'rgba(154,144,119,.15)';
+    c.lineWidth = progress.crane > 0 ? 2 : 1;
     if (progress.crane > 0) {
-      var crH = 160 * scale * progress.crane;
-      var crX = cx + 10 * scale;
-      c.strokeStyle = '#a8401f';
-      c.lineWidth = 2 * scale;
-      c.beginPath();
-      c.moveTo(crX, groundY - 12 * scale);
-      c.lineTo(crX, groundY - 12 * scale - crH);
-      c.stroke();
-      // Boom
-      c.beginPath();
-      c.moveTo(crX - 80 * scale, groundY - 12 * scale - crH);
-      c.lineTo(crX + 80 * scale, groundY - 12 * scale - crH);
-      c.stroke();
+      var actCrH = crH * progress.crane;
+      c.beginPath(); c.moveTo(crX, groundY - fndH); c.lineTo(crX, groundY - fndH - actCrH); c.stroke();
+      c.beginPath(); c.moveTo(crX - 90 * s, groundY - fndH - actCrH); c.lineTo(crX + 90 * s, groundY - fndH - actCrH); c.stroke();
+      // Cable
+      var cableSwing = Math.sin(time * 1.5) * 8 * s;
+      c.strokeStyle = 'rgba(168,64,31,.4)';
+      c.lineWidth = 1;
+      c.beginPath(); c.moveTo(crX + 50 * s + cableSwing, groundY - fndH - actCrH);
+      c.lineTo(crX + 50 * s + cableSwing * 1.5, groundY - fndH - actCrH * 0.4); c.stroke();
+    } else {
+      c.setLineDash([4, 3]);
+      c.beginPath(); c.moveTo(crX, groundY - fndH); c.lineTo(crX, groundY - fndH - crH); c.stroke();
+      c.beginPath(); c.moveTo(crX - 90 * s, groundY - fndH - crH); c.lineTo(crX + 90 * s, groundY - fndH - crH); c.stroke();
+      c.setLineDash([]);
     }
 
     // Pipes
-    if (progress.pipes > 0.3) {
-      c.strokeStyle = '#2c5d78';
-      c.lineWidth = 3 * scale;
-      var pipeY = groundY - 12 * scale - 30 * scale;
+    if (progress.pipes > 0) {
+      c.strokeStyle = 'rgba(44,93,120,.7)';
+      c.lineWidth = 2.5 * s;
+      var pipeY = groundY - fndH - 25 * s;
       c.beginPath();
-      c.moveTo(cx - 60 * scale, pipeY);
-      c.lineTo(cx + 40 * scale, pipeY);
+      c.moveTo(cx - 55 * s, pipeY);
+      c.bezierCurveTo(cx - 20 * s, pipeY - 10 * s, cx + 20 * s, pipeY + 5 * s, cx + 50 * s, pipeY);
       c.stroke();
     }
 
-    // Labels
-    c.fillStyle = '#544c3a';
-    c.font = (10 * scale) + 'px IBM Plex Mono, monospace';
-    c.textAlign = 'center';
-    if (progress.reactor > 0.3) c.fillText('Reactor', cx - 80 * scale, groundY + 20 * scale);
-    if (progress.turbine > 0.3) c.fillText('Turbine', cx + 50 * scale, groundY + 20 * scale);
-    if (progress.cooling > 0.3) c.fillText('Cooling', cx + 205 * scale, groundY + 20 * scale);
-
-    // Site label
+    // -- HUD overlay --
+    // Title
     c.fillStyle = '#a8401f';
-    c.font = 'bold ' + (11 * scale) + 'px IBM Plex Mono, monospace';
+    c.font = 'bold ' + Math.max(14, 14 * s) + 'px Fraunces, serif';
     c.textAlign = 'left';
-    c.fillText('NDX Nuclear Generating Station', 12, 20 * scale);
-    c.fillStyle = '#9a9077';
-    c.font = (9 * scale) + 'px IBM Plex Mono, monospace';
-    var simM2 = (typeof ACE_UI !== 'undefined' && ACE_UI.getSimMonth) ? ACE_UI.getSimMonth() : 0;
-    var pctDone = (typeof ACE !== 'undefined') ? ACE.summary().percent : 0;
-    c.fillText('Month ' + Math.round(simM2) + ' / ' + (ACE_Data.PLANT.baselineMonths || 108) + '   ' + pctDone + '% complete', 12, 34 * scale);
+    c.fillText('NDX Nuclear Generating Station', 16, 28);
+    c.fillStyle = 'rgba(154,144,119,.7)';
+    c.font = Math.max(11, 10 * s) + 'px IBM Plex Mono, monospace';
+    c.fillText('5 × 1000 MWe CANDU  |  M' + Math.round(simM) + '/' + (ACE_Data.PLANT.baselineMonths || 108) + '  |  ' + pctDone + '%', 16, 46);
+
+    // Progress bar at bottom
+    var barY = h - 24, barH = 6, barW = w - 32;
+    c.fillStyle = 'rgba(154,144,119,.15)';
+    c.fillRect(16, barY, barW, barH);
+    if (pctDone > 0) {
+      var pGrad = c.createLinearGradient(16, barY, 16 + barW * pctDone / 100, barY);
+      pGrad.addColorStop(0, '#a8401f');
+      pGrad.addColorStop(1, '#2f7d4f');
+      c.fillStyle = pGrad;
+      c.fillRect(16, barY, barW * pctDone / 100, barH);
+    }
+    c.fillStyle = 'rgba(154,144,119,.5)';
+    c.font = '9px IBM Plex Mono, monospace';
+    c.textAlign = 'right';
+    c.fillText(pctDone + '% complete', w - 16, barY - 4);
+
+    // Phase status list (right side)
+    var phases = ['PH-SITE', 'PH-EXCAV', 'PH-CIVIL', 'PH-CONTAIN', 'PH-MECH', 'PH-PIPE', 'PH-ELEC', 'PH-REACT', 'PH-COMM'];
+    var phY = 70;
+    c.textAlign = 'right';
+    c.font = '10px IBM Plex Mono, monospace';
+    phases.forEach(function (pid) {
+      var a = (typeof ACE !== 'undefined') ? ACE.get(pid) : null;
+      if (!a) return;
+      var pp = (typeof ACE !== 'undefined') ? ACE.percentComplete(pid) : 0;
+      c.fillStyle = pp >= 100 ? 'rgba(47,125,79,.8)' : pp > 0 ? 'rgba(168,64,31,.7)' : 'rgba(154,144,119,.3)';
+      c.fillText((pp >= 100 ? '✓ ' : '') + a.name, w - 16, phY);
+      // Mini bar
+      c.fillStyle = 'rgba(154,144,119,.1)';
+      c.fillRect(w - 16 - 60, phY + 2, 60, 3);
+      if (pp > 0) {
+        c.fillStyle = pp >= 100 ? 'rgba(47,125,79,.6)' : 'rgba(168,64,31,.5)';
+        c.fillRect(w - 16 - 60, phY + 2, 60 * pp / 100, 3);
+      }
+      phY += 18;
+    });
 
     animFrame = requestAnimationFrame(renderFallback);
   }
