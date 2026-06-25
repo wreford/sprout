@@ -679,6 +679,13 @@ const ACE_UI = (function () {
       c.lineTo(gx, padT + phases.length * rowH);
       c.stroke();
       c.fillText('M' + m, gx, padT + phases.length * rowH + 16);
+      if (m > 0 && m % 12 === 0) {
+        c.fillStyle = 'rgba(154,144,119,0.5)';
+        c.font = '9px IBM Plex Mono, monospace';
+        c.fillText('Y' + (m / 12), gx, padT - 4);
+        c.fillStyle = '#9a9077';
+        c.font = '10px IBM Plex Mono, monospace';
+      }
     }
 
     // Phase bars
@@ -710,7 +717,7 @@ const ACE_UI = (function () {
         c.fillStyle = grad2;
       }
       // Rounded rect for bar background
-      roundRect(c, x0, by, barWidth, bh, 3);
+      roundRect(c, x0, by, barWidth, bh, 5);
       c.fill();
 
       // Progress fill with gradient
@@ -729,9 +736,25 @@ const ACE_UI = (function () {
         }
         // Clip to rounded rect
         c.save();
-        roundRect(c, x0, by, barWidth, bh, 3);
+        roundRect(c, x0, by, barWidth, bh, 5);
         c.clip();
         c.fillRect(x0, by, progressW, bh);
+        c.restore();
+      }
+
+      // Hatching pattern on completed bars
+      if (isComplete) {
+        c.save();
+        roundRect(c, x0, by, barWidth, bh, 5);
+        c.clip();
+        c.strokeStyle = 'rgba(255,255,255,0.15)';
+        c.lineWidth = 0.5;
+        for (var hx = x0 - bh; hx < x0 + barWidth; hx += 6) {
+          c.beginPath();
+          c.moveTo(hx, by + bh);
+          c.lineTo(hx + bh, by);
+          c.stroke();
+        }
         c.restore();
       }
 
@@ -739,7 +762,7 @@ const ACE_UI = (function () {
       if (onCrit) {
         c.strokeStyle = '#a8401f';
         c.lineWidth = 1.5;
-        roundRect(c, x0, by, barWidth, bh, 3);
+        roundRect(c, x0, by, barWidth, bh, 5);
         c.stroke();
       }
 
@@ -769,6 +792,13 @@ const ACE_UI = (function () {
         c.textAlign = 'right';
         var shortLabel = p.name.length > 18 ? p.name.slice(0, 17) + '.' : p.name;
         c.fillText(shortLabel, labelW - 8, by + bh * 0.75);
+        // Subtle connecting line from label to bar
+        c.strokeStyle = 'rgba(154,144,119,0.3)';
+        c.lineWidth = 0.5;
+        c.beginPath();
+        c.moveTo(labelW - 4, by + bh / 2);
+        c.lineTo(x0, by + bh / 2);
+        c.stroke();
       }
 
       // Checkmark on completed phases
