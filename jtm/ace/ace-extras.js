@@ -714,13 +714,43 @@ const ACE_Map = (function () {
     };
     constraints.forEach(function (con) {
       var loc = constraintLocs[con.id] || [44.3255 + Math.random() * 0.002, -81.5980 + Math.random() * 0.002];
-      var icon = con._complete ? '✓' : '⚠';
       var color = con._complete ? '#2f7d4f' : '#b13d2c';
+      var blockedBy = ACE.all().filter(function (a) { return a.requires.indexOf(con.id) >= 0; });
+      var html = '<div style="min-width:200px;font-family:IBM Plex Mono,monospace;font-size:12px">';
+      html += '<div style="font-weight:700;font-size:13px;margin-bottom:4px">' + (con._complete ? '✓' : '⚠') + ' ' + con.id + '</div>';
+      html += '<div style="margin-bottom:6px">' + con.name + '</div>';
+      html += '<div style="color:' + color + ';font-weight:600;margin-bottom:8px">' + (con._complete ? 'CLEARED' : 'OPEN — BLOCKING') + '</div>';
+      if (!con._complete && blockedBy.length) {
+        html += '<div style="font-size:11px;color:#666;margin-bottom:4px">Blocks ' + blockedBy.length + ' atom' + (blockedBy.length > 1 ? 's' : '') + ':</div>';
+        blockedBy.slice(0, 5).forEach(function (b) {
+          html += '<div style="font-size:10px;padding:2px 0;color:#2c5d78">' + b.id + ' — ' + b.name + '</div>';
+        });
+        if (blockedBy.length > 5) html += '<div style="font-size:10px;color:#999">+' + (blockedBy.length - 5) + ' more</div>';
+        html += '<button onclick="ACE_Map._clearConstraint(\'' + con.id + '\')" style="margin-top:8px;padding:6px 14px;background:#2f7d4f;color:#fff;border:none;border-radius:6px;font-size:11px;font-family:IBM Plex Mono,monospace;cursor:pointer;font-weight:600">Clear Constraint</button>';
+      }
+      if (con._complete && con._evidence) {
+        html += '<div style="font-size:10px;color:#666;margin-top:4px">Evidence: ' + escH(con._evidence) + '</div>';
+      }
+      html += '</div>';
       var marker = L.circleMarker(loc, {
-        radius: 6, fillColor: color, color: '#fff', weight: 1.5, fillOpacity: 0.9
+        radius: con._complete ? 7 : 9, fillColor: color, color: '#fff', weight: 2, fillOpacity: 0.9
       }).addTo(layers.constraints);
-      marker.bindPopup('<b>' + icon + ' ' + con.id + '</b><br>' + con.name + '<br><span style="color:' + color + '">' + (con._complete ? 'CLEARED' : 'OPEN') + '</span>');
+      marker.bindPopup(html, { maxWidth: 280 });
+      if (!con._complete) {
+        var pulseCircle = L.circleMarker(loc, {
+          radius: 14, fillColor: 'transparent', color: color, weight: 1.5, fillOpacity: 0, dashArray: '4,3'
+        }).addTo(layers.constraints);
+      }
     });
+  }
+
+  function _clearConstraint(conId) {
+    if (typeof ACE === 'undefined') return;
+    ACE.complete(conId, 'Cleared from GIS map');
+    ACE.settle();
+    if (layers.constraints) { layers.constraints.clearLayers(); addConstraintPins(); }
+    if (typeof ACE_Narrative !== 'undefined') ACE_Narrative.record(conId, 'constraint-cleared', 'Constraint ' + conId + ' cleared from GIS map view', false);
+    map.closePopup();
   }
 
   function addUserPins() {
@@ -1047,7 +1077,7 @@ const ACE_Map = (function () {
     init: init, destroy: destroy, refresh: refresh,
     addPin: addPin, removePin: removePin,
     toggleMeasure: toggleMeasure, toggleLayer: toggleLayer,
-    toggleModel: toggleModel,
+    toggleModel: toggleModel, _clearConstraint: _clearConstraint,
     buildings: buildings, constructionZones: constructionZones
   };
 })();
