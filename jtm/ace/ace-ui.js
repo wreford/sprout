@@ -87,20 +87,20 @@ const ACE_UI = (function () {
       '@keyframes pulse-glow{0%,100%{opacity:.6}50%{opacity:1}}';
     document.head.appendChild(style);
 
-    var html = '<div id="ace-splash" style="position:fixed;inset:0;z-index:200;cursor:pointer;background:linear-gradient(135deg,#0f1117,#1a1525,#0f1722)">' +
+    var html = '<div id="ace-splash" style="position:fixed;inset:0;z-index:200;cursor:pointer;background:#1a1a1a">' +
       '<canvas id="splash-cv" style="position:absolute;inset:0;width:100%;height:100%"></canvas>' +
-      '<div style="position:absolute;inset:0;background:rgba(0,0,0,.3)"></div>' +
+      '<div style="position:absolute;inset:0;background:rgba(26,26,26,.5)"></div>' +
       '<div style="position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:24px">' +
-        '<div style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:48px 56px;max-width:520px;text-align:center;backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);box-shadow:0 8px 32px rgba(0,0,0,.4)">' +
-          '<div style="font-family:Fraunces,serif;font-size:clamp(48px,10vw,72px);font-weight:700;color:#fff;letter-spacing:.12em;opacity:0;animation:si .8s ease forwards;line-height:1">ACE</div>' +
-          '<div style="width:60px;height:2px;background:linear-gradient(90deg,transparent,#ff7b4a,transparent);margin:12px auto;opacity:0;animation:si .6s ease .3s forwards"></div>' +
-          '<div style="font-family:Newsreader,serif;font-size:clamp(14px,3vw,18px);color:rgba(255,255,255,.7);opacity:0;animation:si .8s ease .4s forwards">Atomic Constraint Engine</div>' +
-          '<div style="font-family:IBM Plex Mono,monospace;font-size:clamp(10px,2vw,12px);color:#ff7b4a;margin-top:16px;opacity:0;animation:si .8s ease .7s forwards">' +
+        '<div style="background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:16px;padding:48px 56px;max-width:520px;text-align:center;backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);box-shadow:0 8px 40px rgba(0,0,0,.5)">' +
+          '<div style="font-family:Fraunces,serif;font-size:clamp(48px,10vw,72px);font-weight:700;color:#f5f3ee;letter-spacing:.12em;opacity:0;animation:si .8s ease forwards;line-height:1">ACE</div>' +
+          '<div style="width:60px;height:2px;background:linear-gradient(90deg,transparent,#a8401f,transparent);margin:12px auto;opacity:0;animation:si .6s ease .3s forwards"></div>' +
+          '<div style="font-family:Newsreader,serif;font-size:clamp(14px,3vw,18px);color:rgba(245,243,238,.65);opacity:0;animation:si .8s ease .4s forwards">Atomic Constraint Engine</div>' +
+          '<div style="font-family:IBM Plex Mono,monospace;font-size:clamp(10px,2vw,12px);color:#a8401f;margin-top:16px;opacity:0;animation:si .8s ease .7s forwards">' +
             ACE_Data.PLANT.name + '</div>' +
-          '<div style="font-family:IBM Plex Mono,monospace;font-size:clamp(9px,1.8vw,11px);color:rgba(255,255,255,.4);margin-top:4px;opacity:0;animation:si .8s ease .9s forwards">' +
+          '<div style="font-family:IBM Plex Mono,monospace;font-size:clamp(9px,1.8vw,11px);color:rgba(245,243,238,.35);margin-top:4px;opacity:0;animation:si .8s ease .9s forwards">' +
             s.atoms + ' atoms &middot; ' + ACE_Data.PLANT.units + '×' + ACE_Data.PLANT.mwe + ' MWe &middot; $' + Math.round(ACE_Data.PLANT.budget / 1e9) + 'B &middot; ' + ACE_Data.PLANT.baselineMonths + ' months</div>' +
           '<div style="margin-top:28px;opacity:0;animation:si .8s ease 1.2s forwards">' +
-            '<div style="font-family:IBM Plex Mono,monospace;font-size:10px;color:rgba(255,255,255,.3);animation:pulse-glow 2s ease infinite">click anywhere to enter</div>' +
+            '<div style="font-family:IBM Plex Mono,monospace;font-size:10px;color:rgba(245,243,238,.3);animation:pulse-glow 2s ease infinite">click anywhere to enter</div>' +
           '</div>' +
         '</div>' +
       '</div></div>';
@@ -139,7 +139,7 @@ const ACE_UI = (function () {
             var dx = nodes[a].x - nodes[b].x, dy = nodes[a].y - nodes[b].y;
             var dist = Math.sqrt(dx * dx + dy * dy);
             if (dist < 150) {
-              ctx.strokeStyle = 'rgba(255,123,74,' + (0.2 * (1 - dist / 150)) + ')';
+              ctx.strokeStyle = 'rgba(168,64,31,' + (0.2 * (1 - dist / 150)) + ')';
               ctx.lineWidth = 0.8;
               ctx.beginPath(); ctx.moveTo(nodes[a].x, nodes[a].y); ctx.lineTo(nodes[b].x, nodes[b].y); ctx.stroke();
             }
@@ -152,9 +152,9 @@ const ACE_UI = (function () {
           if (n.x < 0 || n.x > cw) n.vx *= -1;
           if (n.y < 0 || n.y > ch) n.vy *= -1;
           ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
-          ctx.fillStyle = n.complete ? 'rgba(74,222,128,.7)' : 'rgba(255,123,74,.5)';
+          ctx.fillStyle = n.complete ? 'rgba(47,125,79,.7)' : 'rgba(168,64,31,.5)';
           ctx.fill();
-          ctx.strokeStyle = n.complete ? 'rgba(74,222,128,.3)' : 'rgba(255,123,74,.2)';
+          ctx.strokeStyle = n.complete ? 'rgba(47,125,79,.3)' : 'rgba(168,64,31,.2)';
           ctx.lineWidth = 4; ctx.stroke();
         });
 
@@ -658,13 +658,13 @@ const ACE_UI = (function () {
     var c = cv.getContext('2d');
     c.scale(dpr, dpr);
 
-    c.fillStyle = '#14161e';
+    c.fillStyle = '#faf8f3';
     c.fillRect(0, 0, cw, ch);
 
     var phases = ACE.query({ type: 'phase' });
     var milestones = ACE.query({ type: 'milestone' });
     if (!phases.length) {
-      c.fillStyle = 'rgba(232,234,237,.4)';
+      c.fillStyle = '#8a8578';
       c.font = '12px IBM Plex Mono, monospace';
       c.fillText('No phase atoms. Create some to see the schedule.', 20, 30);
       return;
@@ -676,11 +676,11 @@ const ACE_UI = (function () {
     var rowH = Math.min(28, (ch - padT - padB) / phases.length);
 
     // Month grid
-    c.strokeStyle = 'rgba(255,255,255,.06)';
+    c.strokeStyle = '#ece6d8';
     c.lineWidth = 0.5;
     c.font = '10px IBM Plex Mono, monospace';
     c.textAlign = 'center';
-    c.fillStyle = 'rgba(232,234,237,.4)';
+    c.fillStyle = '#8a8578';
     for (var m = 0; m <= maxFinish; m += 12) {
       var gx = labelW + (m / maxFinish) * chartW;
       c.beginPath();
@@ -692,7 +692,7 @@ const ACE_UI = (function () {
         c.fillStyle = 'rgba(154,144,119,0.5)';
         c.font = '9px IBM Plex Mono, monospace';
         c.fillText('Y' + (m / 12), gx, padT - 4);
-        c.fillStyle = 'rgba(232,234,237,.4)';
+        c.fillStyle = '#8a8578';
         c.font = '10px IBM Plex Mono, monospace';
       }
     }
@@ -796,7 +796,7 @@ const ACE_UI = (function () {
         c.fillText(label, x0 + 6, by + bh * 0.72);
       } else {
         // Outside bar (to the left)
-        c.fillStyle = (selectedAtom === p.id) ? '#ff7b4a' : 'rgba(232,234,237,.6)';
+        c.fillStyle = (selectedAtom === p.id) ? '#a8401f' : '#5a5448';
         c.font = '11px IBM Plex Mono, monospace';
         c.textAlign = 'right';
         var shortLabel = p.name.length > 18 ? p.name.slice(0, 17) + '.' : p.name;
@@ -959,7 +959,7 @@ const ACE_UI = (function () {
     c.scale(dpr, dpr);
 
     // Background
-    c.fillStyle = '#14161e';
+    c.fillStyle = '#faf8f3';
     c.fillRect(0, 0, cw, ch);
 
     var totalMonths = ACE_Data.PLANT.baselineMonths || 108;
@@ -978,18 +978,18 @@ const ACE_UI = (function () {
 
     // X axis labels (months)
     c.font = '9px IBM Plex Mono, monospace';
-    c.fillStyle = 'rgba(232,234,237,.4)';
+    c.fillStyle = '#8a8578';
     c.textAlign = 'center';
     var step = totalMonths <= 60 ? 6 : 12;
     for (var m = 0; m <= totalMonths; m += step) {
       var gx = pad.l + (m / totalMonths) * pw;
-      c.strokeStyle = 'rgba(255,255,255,.06)';
+      c.strokeStyle = '#ece6d8';
       c.lineWidth = 0.5;
       c.beginPath();
       c.moveTo(gx, pad.t);
       c.lineTo(gx, pad.t + ph);
       c.stroke();
-      c.fillStyle = 'rgba(232,234,237,.4)';
+      c.fillStyle = '#8a8578';
       c.fillText('M' + m, gx, pad.t + ph + 14);
     }
 
@@ -997,13 +997,13 @@ const ACE_UI = (function () {
     c.textAlign = 'right';
     for (var p2 = 0; p2 <= 100; p2 += 25) {
       var gy = pad.t + ph - (p2 / 100) * ph;
-      c.strokeStyle = 'rgba(255,255,255,.06)';
+      c.strokeStyle = '#ece6d8';
       c.lineWidth = 0.5;
       c.beginPath();
       c.moveTo(pad.l, gy);
       c.lineTo(pad.l + pw, gy);
       c.stroke();
-      c.fillStyle = 'rgba(232,234,237,.4)';
+      c.fillStyle = '#8a8578';
       c.fillText(p2 + '%', pad.l - 6, gy + 3);
     }
 
@@ -1077,7 +1077,7 @@ const ACE_UI = (function () {
     var pvEndT = 0.85;
     var pvEndPct = 100 * (3 * pvEndT * pvEndT - 2 * pvEndT * pvEndT * pvEndT);
     var pvLabelY = pad.t + ph - (pvEndPct / 100) * ph;
-    c.fillStyle = 'rgba(232,234,237,.4)';
+    c.fillStyle = '#8a8578';
     c.fillText('PV', pad.l + pw + 4, pvLabelY);
     // EV label
     if (currentSim > 0) {
