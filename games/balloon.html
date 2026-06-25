@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Do You Want a Balloon?</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -15,19 +15,21 @@ canvas{display:block;cursor:pointer}
   position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
   width:88%;max-width:680px;
   background:rgba(10,8,16,0.72);
-  -webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);
+  -webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);
   color:#f0ece4;font-size:19px;padding:22px 28px;
+  padding-bottom:calc(22px + env(safe-area-inset-bottom));
   border-radius:14px;
   border:1px solid rgba(255,255,255,0.08);
   box-shadow:0 8px 32px rgba(0,0,0,0.5);
   line-height:1.7;min-height:60px;pointer-events:none;z-index:50;display:none;
   font-family:'Lora',Georgia,serif;
   letter-spacing:0.01em;
+  text-shadow:0 1px 3px rgba(0,0,0,0.3);
 }
 #textBox .bold{font-weight:700;color:#ffd54f}
 #textBox .scary{font-weight:700;color:#ef5350;text-shadow:0 0 8px rgba(239,83,80,0.4)}
 #textBox .italic{font-style:italic;color:#b0bec5}
-#prompt{position:fixed;bottom:10px;left:50%;transform:translateX(-50%);color:rgba(200,195,185,0.6);font-size:12px;font-family:'Lora',Georgia,serif;letter-spacing:0.08em;z-index:51;display:none;animation:blink 1.8s ease-in-out infinite}
+#prompt{position:fixed;bottom:10px;left:50%;transform:translateX(-50%);color:rgba(200,195,185,0.6);font-size:12px;font-family:'Lora',Georgia,serif;letter-spacing:0.08em;z-index:51;display:none;animation:blink 1.8s ease-in-out infinite;padding-bottom:env(safe-area-inset-bottom)}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:0.2}}
 #playAgain{position:fixed;bottom:100px;left:50%;transform:translateX(-50%);padding:14px 40px;font-size:18px;font-family:'Lora',Georgia,serif;background:rgba(211,47,47,0.9);color:#fff;border:none;border-radius:24px;cursor:pointer;z-index:60;display:none;letter-spacing:0.05em;box-shadow:0 4px 20px rgba(211,47,47,0.4);transition:all 0.3s}
 #playAgain:hover{background:rgba(229,57,53,1);box-shadow:0 6px 28px rgba(229,57,53,0.6);transform:translateX(-50%) scale(1.05)}
@@ -47,6 +49,9 @@ var W,H,t=0,scene=0,sceneTime=0,typing=false,typeText='',typeIdx=0,typeTimer=0;
 var waitingForClick=false,shakeX=0,shakeY=0,transitioning=false,transAlpha=0,transDir=1;
 var nextScene=-1,audioCtx=null;
 var SCALE=1;
+
+// Line-by-line mode state
+var lineByLineMode=false,linePause=1200,lineByLinePausing=false,linePauseTimer=0;
 
 function resize(){W=C.width=window.innerWidth;H=C.height=window.innerHeight;SCALE=Math.min(W,H)/500;}
 window.addEventListener('resize',resize);resize();
@@ -292,19 +297,34 @@ function drawPaintedSky(darkLevel,opts){
   darkLevel=darkLevel||0;
   opts=opts||{};
 
-  // Base gradient
+  // Base gradient - warm-to-cool (more orange near horizon, blue at top)
   var grad=ctx.createLinearGradient(0,0,0,H*0.65);
-  var r1=Math.max(0,Math.min(255,130-darkLevel*130));
-  var g1=Math.max(0,Math.min(255,185-darkLevel*185));
-  var b1=Math.max(0,Math.min(255,240-darkLevel*200));
-  var r2=Math.max(0,Math.min(255,200-darkLevel*120));
-  var g2=Math.max(0,Math.min(255,220-darkLevel*160));
-  var b2=Math.max(0,Math.min(255,245-darkLevel*140));
+  var r1=Math.max(0,Math.min(255,110-darkLevel*130));
+  var g1=Math.max(0,Math.min(255,170-darkLevel*185));
+  var b1=Math.max(0,Math.min(255,245-darkLevel*200));
+  var rMid=Math.max(0,Math.min(255,155-darkLevel*120));
+  var gMid=Math.max(0,Math.min(255,195-darkLevel*160));
+  var bMid=Math.max(0,Math.min(255,235-darkLevel*160));
+  var r2=Math.max(0,Math.min(255,220-darkLevel*120));
+  var g2=Math.max(0,Math.min(255,210-darkLevel*140));
+  var b2=Math.max(0,Math.min(255,200-darkLevel*100));
   grad.addColorStop(0,'rgb('+r1+','+g1+','+b1+')');
-  grad.addColorStop(0.5,'rgb('+Math.floor((r1+r2)/2)+','+Math.floor((g1+g2)/2)+','+Math.floor((b1+b2)/2)+')');
-  grad.addColorStop(1,'rgb('+r2+','+g2+','+b2+')');
+  grad.addColorStop(0.45,'rgb('+rMid+','+gMid+','+bMid+')');
+  grad.addColorStop(0.8,'rgb('+r2+','+g2+','+b2+')');
+  grad.addColorStop(1,'rgb('+Math.min(255,r2+30)+','+Math.min(255,g2+10)+','+Math.max(0,b2-30)+')');
   ctx.fillStyle=grad;
   ctx.fillRect(0,0,W,H*0.65);
+
+  // Faint sun haze near horizon
+  if(darkLevel<0.6){
+    var hazeAlpha=Math.max(0,0.12-darkLevel*0.18);
+    var hazeGrad=ctx.createRadialGradient(W*0.7,H*0.6,0,W*0.7,H*0.6,W*0.5);
+    hazeGrad.addColorStop(0,'rgba(255,230,160,'+hazeAlpha+')');
+    hazeGrad.addColorStop(0.4,'rgba(255,200,120,'+hazeAlpha*0.4+')');
+    hazeGrad.addColorStop(1,'rgba(255,180,80,0)');
+    ctx.fillStyle=hazeGrad;
+    ctx.fillRect(0,H*0.3,W,H*0.35);
+  }
 
   // Painted cloud layers with parallax
   var cloudAlpha=Math.max(0.05,0.5-darkLevel*0.4);
@@ -354,28 +374,45 @@ function drawMeadow(darkLevel){
   var baseR=Math.max(20,55-darkLevel*35);
   var baseB=Math.max(10,35-darkLevel*25);
 
+  // Rolling hill silhouette at horizon
+  ctx.fillStyle='rgb('+Math.min(255,baseR+10)+','+Math.min(255,baseG+20)+','+Math.min(255,baseB+8)+')';
+  ctx.beginPath();
+  ctx.moveTo(0,H*0.63);
+  for(var hx=0;hx<=W;hx+=5){
+    var hy=H*0.62+Math.sin(hx*0.003)*H*0.012+Math.sin(hx*0.007+1.5)*H*0.008+Math.sin(hx*0.015+3)*H*0.004;
+    ctx.lineTo(hx,hy);
+  }
+  ctx.lineTo(W,H);ctx.lineTo(0,H);ctx.closePath();ctx.fill();
+
   // Ground fill
   ctx.fillStyle='rgb('+baseR+','+baseG+','+baseB+')';
-  ctx.fillRect(0,H*0.62,W,H*0.4);
+  ctx.fillRect(0,H*0.64,W,H*0.38);
 
   // Grass edge highlight
-  var edgeGrad=ctx.createLinearGradient(0,H*0.61,0,H*0.66);
+  var edgeGrad=ctx.createLinearGradient(0,H*0.62,0,H*0.68);
   edgeGrad.addColorStop(0,'rgb('+Math.min(255,baseR+30)+','+Math.min(255,baseG+40)+','+Math.min(255,baseB+20)+')');
   edgeGrad.addColorStop(1,'rgb('+baseR+','+baseG+','+baseB+')');
   ctx.fillStyle=edgeGrad;
-  ctx.fillRect(0,H*0.61,W,H*0.05);
+  ctx.fillRect(0,H*0.62,W,H*0.06);
 
-  // Individual grass blades
+  // Individual grass blades - 3 shades of green, varied heights
   if(darkLevel<0.6){
-    ctx.strokeStyle='rgba('+Math.min(255,baseR+15)+','+Math.min(255,baseG+25)+','+Math.min(255,baseB+10)+','+(0.6-darkLevel*0.8)+')';
+    var grassShades=[
+      'rgba('+Math.min(255,baseR+15)+','+Math.min(255,baseG+25)+','+Math.min(255,baseB+10)+','+(0.6-darkLevel*0.8)+')',
+      'rgba('+Math.min(255,baseR+5)+','+Math.min(255,baseG+35)+','+Math.min(255,baseB+5)+','+(0.55-darkLevel*0.7)+')',
+      'rgba('+Math.min(255,baseR+20)+','+Math.min(255,baseG+15)+','+Math.min(255,baseB+15)+','+(0.5-darkLevel*0.7)+')'
+    ];
     ctx.lineWidth=1.2;
-    for(var i=0;i<Math.floor(W/8);i++){
-      var gx=i*8+Math.sin(i*0.7)*3;
-      var gy=H*0.625+Math.sin(i*1.3)*3;
+    for(var i=0;i<Math.floor(W/6);i++){
+      var gx=i*6+Math.sin(i*0.7)*3;
+      var hillOff=Math.sin(gx*0.003)*H*0.012+Math.sin(gx*0.007+1.5)*H*0.008+Math.sin(gx*0.015+3)*H*0.004;
+      var gy=H*0.625+hillOff+Math.sin(i*1.3)*2;
       var bend=Math.sin(t*1.5+i*0.3)*3;
+      var bladeH=10+Math.sin(i*2.3)*5+Math.sin(i*0.7+1)*4+Math.random()*2;
+      ctx.strokeStyle=grassShades[i%3];
       ctx.beginPath();
       ctx.moveTo(gx,gy);
-      ctx.quadraticCurveTo(gx+bend,gy-8-Math.random()*4,gx+bend*1.5,gy-12-Math.random()*5);
+      ctx.quadraticCurveTo(gx+bend,gy-bladeH*0.6,gx+bend*1.5,gy-bladeH);
       ctx.stroke();
     }
   }
@@ -491,6 +528,27 @@ function drawCreek(x1,x2,y,s){
   }
 }
 
+// ========== DRIP HELPER ==========
+function drawDrip(x,y,s,seed){
+  var cycle=(t*0.8+seed)%3;
+  if(cycle<2){
+    // Droplet forming
+    var size=Math.min(cycle*1.5,2)*s;
+    ctx.fillStyle='rgba(100,130,160,0.5)';
+    ctx.beginPath();
+    ctx.arc(x,y+size*2,size,0,Math.PI*2);
+    ctx.fill();
+  }else{
+    // Droplet falling
+    var fallDist=(cycle-2)*60*s;
+    var dropSize=Math.max(0,2-(cycle-2)*2)*s;
+    ctx.fillStyle='rgba(100,130,160,0.4)';
+    ctx.beginPath();
+    ctx.arc(x,y+4*s+fallDist,dropSize,0,Math.PI*2);
+    ctx.fill();
+  }
+}
+
 // ========== DRAIN (ominous) ==========
 function drawDrain(x,y,s,glowing){
   // Cracked concrete surround
@@ -501,11 +559,35 @@ function drawDrain(x,y,s,glowing){
   ctx.lineTo(x-34*s,y+24*s);
   ctx.closePath();ctx.fill();
 
-  // Concrete cracks
+  // Moss/algae patches on concrete
+  ctx.fillStyle='rgba(30,70,30,0.35)';
+  ctx.beginPath();ctx.ellipse(x-20*s,y+8*s,6*s,4*s,0.3,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.ellipse(x+18*s,y+14*s,5*s,3*s,-0.2,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='rgba(25,60,25,0.25)';
+  ctx.beginPath();ctx.ellipse(x-12*s,y+18*s,4*s,3*s,0.5,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.ellipse(x+25*s,y+2*s,3*s,2.5*s,-0.4,0,Math.PI*2);ctx.fill();
+
+  // Concrete cracks with branching sub-cracks
   ctx.strokeStyle='#333';ctx.lineWidth=1;
   ctx.beginPath();ctx.moveTo(x-25*s,y-5*s);ctx.lineTo(x-20*s,y+10*s);ctx.stroke();
+  // Sub-cracks branching from main crack
+  ctx.strokeStyle='#3a3a3a';ctx.lineWidth=0.7;
+  ctx.beginPath();ctx.moveTo(x-22*s,y+3*s);ctx.lineTo(x-26*s,y+6*s);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(x-21*s,y+7*s);ctx.lineTo(x-18*s,y+12*s);ctx.stroke();
+
+  ctx.strokeStyle='#333';ctx.lineWidth=1;
   ctx.beginPath();ctx.moveTo(x+22*s,y-8*s);ctx.lineTo(x+18*s,y+5*s);ctx.lineTo(x+24*s,y+18*s);ctx.stroke();
+  // Sub-cracks
+  ctx.strokeStyle='#3a3a3a';ctx.lineWidth=0.7;
+  ctx.beginPath();ctx.moveTo(x+20*s,y-1*s);ctx.lineTo(x+25*s,y+1*s);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(x+19*s,y+8*s);ctx.lineTo(x+15*s,y+11*s);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(x+22*s,y+14*s);ctx.lineTo(x+27*s,y+16*s);ctx.stroke();
+
+  ctx.strokeStyle='#333';ctx.lineWidth=1;
   ctx.beginPath();ctx.moveTo(x-10*s,y+20*s);ctx.lineTo(x-5*s,y+15*s);ctx.lineTo(x+2*s,y+22*s);ctx.stroke();
+  // Sub-cracks
+  ctx.strokeStyle='#3a3a3a';ctx.lineWidth=0.7;
+  ctx.beginPath();ctx.moveTo(x-7*s,y+17*s);ctx.lineTo(x-3*s,y+20*s);ctx.stroke();
 
   // Wet stain around drain
   ctx.fillStyle='rgba(20,25,15,0.25)';
@@ -528,6 +610,16 @@ function drawDrain(x,y,s,glowing){
   ctx.fillStyle=depthGrad;
   ctx.beginPath();ctx.arc(x,y+10*s,20*s,0,Math.PI*2);ctx.fill();
 
+  // Faint mist/fog emanating from drain opening
+  for(var mi=0;mi<5;mi++){
+    var mx=x+(mi-2)*8*s+Math.sin(t*0.5+mi*1.3)*4*s;
+    var my=y-5*s-Math.sin(t*0.3+mi*0.7)*6*s-mi*3*s;
+    var mr=5*s+Math.sin(t*0.4+mi)*2*s;
+    var mistAlpha=Math.max(0,0.06-mi*0.01+Math.sin(t*0.6+mi*2)*0.02);
+    ctx.fillStyle='rgba(160,170,180,'+mistAlpha+')';
+    ctx.beginPath();ctx.arc(mx,my,mr,0,Math.PI*2);ctx.fill();
+  }
+
   // Red glow from inside
   if(glowing){
     var pulse=0.15+Math.sin(t*1.5)*0.08;
@@ -545,6 +637,11 @@ function drawDrain(x,y,s,glowing){
   }
   // Horizontal bar
   ctx.beginPath();ctx.moveTo(x-18*s,y+5*s);ctx.lineTo(x+18*s,y+5*s);ctx.stroke();
+
+  // Dripping water from top of drain arch
+  drawDrip(x-10*s,y-22*s,s,0);
+  drawDrip(x+5*s,y-24*s,s,1.2);
+  drawDrip(x+16*s,y-18*s,s,2.5);
 }
 
 function drawFarmhouse(x,y,s){
@@ -670,21 +767,45 @@ function drawHorseCC1(x,y,s,opts){
     ctx.closePath();ctx.fill();
   });
 
-  // === TORSO (barrel shaped) ===
-  ctx.fillStyle='#8B5A2B';
+  // === TORSO (barrel shaped) with gradient shading ===
+  var torsoGrad=ctx.createRadialGradient(2*s,torsoY+torsoH/2+2*s,5*s,0,torsoY+torsoH/2+2*s,22*s);
+  torsoGrad.addColorStop(0,'#9c6b38');
+  torsoGrad.addColorStop(0.5,'#8B5A2B');
+  torsoGrad.addColorStop(1,'#7a4e24');
+  ctx.fillStyle=torsoGrad;
   ctx.beginPath();
   ctx.ellipse(0,torsoY+torsoH/2+2*s,20*s,torsoH/2+4*s,0,0,Math.PI*2);
   ctx.fill();
   // Belly highlight
-  ctx.fillStyle='#9c6b38';
+  ctx.fillStyle='rgba(170,130,80,0.3)';
   ctx.beginPath();
   ctx.ellipse(2*s,torsoY+torsoH/2+5*s,14*s,8*s,0.1,0,Math.PI*2);
   ctx.fill();
   // Shoulder muscle
-  ctx.fillStyle='#8B5A2B';
+  var shoulderGrad=ctx.createRadialGradient(12*s,torsoY+8*s,2*s,12*s,torsoY+8*s,12*s);
+  shoulderGrad.addColorStop(0,'#9c6b38');
+  shoulderGrad.addColorStop(1,'#8B5A2B');
+  ctx.fillStyle=shoulderGrad;
   ctx.beginPath();ctx.ellipse(12*s,torsoY+8*s,10*s,14*s,0.2,0,Math.PI*2);ctx.fill();
   // Haunch muscle
+  var haunchGrad=ctx.createRadialGradient(-12*s,torsoY+10*s,2*s,-12*s,torsoY+10*s,12*s);
+  haunchGrad.addColorStop(0,'#9c6b38');
+  haunchGrad.addColorStop(1,'#8B5A2B');
+  ctx.fillStyle=haunchGrad;
   ctx.beginPath();ctx.ellipse(-12*s,torsoY+10*s,10*s,13*s,-0.15,0,Math.PI*2);ctx.fill();
+
+  // Subtle muscle definition lines
+  ctx.strokeStyle='rgba(100,65,30,0.25)';ctx.lineWidth=0.8*s;
+  // Shoulder line
+  ctx.beginPath();
+  ctx.moveTo(8*s,torsoY-2*s);
+  ctx.quadraticCurveTo(14*s,torsoY+8*s,10*s,torsoY+22*s);
+  ctx.stroke();
+  // Haunch line
+  ctx.beginPath();
+  ctx.moveTo(-8*s,torsoY);
+  ctx.quadraticCurveTo(-14*s,torsoY+10*s,-10*s,torsoY+24*s);
+  ctx.stroke();
 
   // === MANE (flowing strands) ===
   ctx.strokeStyle='#4a2e12';ctx.lineWidth=2.5*s;ctx.lineCap='round';
@@ -714,7 +835,11 @@ function drawHorseCC1(x,y,s,opts){
   }
 
   // === NECK ===
-  ctx.fillStyle='#8B5A2B';
+  var neckGrad=ctx.createLinearGradient(0,torsoY,-2*s,headY+12*s);
+  neckGrad.addColorStop(0,'#8B5A2B');
+  neckGrad.addColorStop(0.5,'#9c6b38');
+  neckGrad.addColorStop(1,'#8B5A2B');
+  ctx.fillStyle=neckGrad;
   ctx.beginPath();
   ctx.moveTo(8*s,torsoY);
   ctx.quadraticCurveTo(14*s,torsoY-15*s,10*s,headY+12*s);
@@ -725,18 +850,36 @@ function drawHorseCC1(x,y,s,opts){
   // === HEAD ===
   ctx.save();
   ctx.rotate(headShake);
-  ctx.fillStyle='#8B5A2B';
+
+  // Head with gradient
+  var headGrad=ctx.createRadialGradient(6*s,headY+earPerk,3*s,6*s,headY+earPerk,18*s);
+  headGrad.addColorStop(0,'#9c6b38');
+  headGrad.addColorStop(1,'#8B5A2B');
+  ctx.fillStyle=headGrad;
   ctx.beginPath();ctx.ellipse(6*s,headY+earPerk,11*s,17*s,0.25,0,Math.PI*2);ctx.fill();
   // Snout lighter area
-  ctx.fillStyle='#9c6b38';
+  ctx.fillStyle='#a8774a';
   ctx.beginPath();ctx.ellipse(12*s,headY+6*s+earPerk,6*s,8*s,0.25,0,Math.PI*2);ctx.fill();
 
-  // Eyes - BIG and expressive
+  // White blaze/star marking on forehead
+  ctx.fillStyle='rgba(255,250,240,0.65)';
+  ctx.beginPath();
+  ctx.moveTo(4*s,headY-10*s+earPerk);
+  ctx.quadraticCurveTo(6*s,headY-14*s+earPerk,8*s,headY-10*s+earPerk);
+  ctx.quadraticCurveTo(7*s,headY-6*s+earPerk,6*s,headY-4*s+earPerk);
+  ctx.quadraticCurveTo(5*s,headY-6*s+earPerk,4*s,headY-10*s+earPerk);
+  ctx.fill();
+
+  // Eyes - BIG and expressive with gradient iris
   // Eye white
   ctx.fillStyle='#f5f0e8';
   ctx.beginPath();ctx.ellipse(6*s,headY-5*s+earPerk,4.5*s,4*s,0,0,Math.PI*2);ctx.fill();
-  // Iris
-  ctx.fillStyle='#3e2215';
+  // Iris gradient (dark brown outer to amber inner)
+  var irisGrad=ctx.createRadialGradient(7*s,headY-5*s+earPerk,0.5*s,7*s,headY-5*s+earPerk,3*s);
+  irisGrad.addColorStop(0,'#b8860b');
+  irisGrad.addColorStop(0.5,'#6b3a10');
+  irisGrad.addColorStop(1,'#3e2215');
+  ctx.fillStyle=irisGrad;
   ctx.beginPath();ctx.arc(7*s,headY-5*s+earPerk,3*s,0,Math.PI*2);ctx.fill();
   // Pupil
   ctx.fillStyle='#111';
@@ -794,6 +937,12 @@ function drawPennywiseCC1(x,y,s,opts){
   var headR=15*s;
   var menace=opts.menace||0;
   var sway=Math.sin(t*1.2)*0.025*(1+menace*2);
+
+  // Head twitching at high menace
+  var headTwitch=0;
+  if(menace>0.7){
+    headTwitch=(Math.random()-0.5)*0.06*(menace-0.7)*3;
+  }
 
   // Color desaturation based on menace
   var satShift=menace*0.6;
@@ -885,6 +1034,9 @@ function drawPennywiseCC1(x,y,s,opts){
   }
 
   // === HEAD ===
+  ctx.save();
+  ctx.rotate(headTwitch);
+
   // Face base - gets paler with menace
   var faceR=Math.floor(240-menace*20);
   var faceG=Math.floor(240-menace*40);
@@ -904,18 +1056,35 @@ function drawPennywiseCC1(x,y,s,opts){
     ctx.beginPath();ctx.ellipse(8*s,headY+4*s,4*s,5*s,0,0,Math.PI*2);ctx.fill();
   }
 
+  // Dark veins on face at high menace
+  if(menace>0.8){
+    ctx.strokeStyle='rgba(60,0,30,'+(menace-0.8)*2.5+')';
+    ctx.lineWidth=0.8*s;
+    // Veins radiating from left eye
+    ctx.beginPath();ctx.moveTo(-6*s,headY-4*s);ctx.lineTo(-10*s,headY-10*s);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(-6*s,headY-4*s);ctx.lineTo(-12*s,headY-6*s);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(-6*s,headY-1*s);ctx.lineTo(-13*s,headY+1*s);ctx.stroke();
+    // Veins radiating from right eye
+    ctx.beginPath();ctx.moveTo(6*s,headY-4*s);ctx.lineTo(10*s,headY-10*s);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(6*s,headY-4*s);ctx.lineTo(12*s,headY-6*s);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(6*s,headY-1*s);ctx.lineTo(13*s,headY+1*s);ctx.stroke();
+  }
+
   // === HAIR ===
   ctx.fillStyle=hairCol;
+  // Hair wildness factor
+  var hairWild=menace>0.6?(menace-0.6)*8:0;
   // Main hair puffs
-  ctx.beginPath();ctx.arc(-15*s,headY-3*s,11*s,0,Math.PI*2);ctx.fill();
-  ctx.beginPath();ctx.arc(15*s,headY-3*s,11*s,0,Math.PI*2);ctx.fill();
-  ctx.beginPath();ctx.arc(0,headY-17*s,9*s,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(-15*s,headY-3*s,11*s+hairWild*s,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(15*s,headY-3*s,11*s+hairWild*s,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(0,headY-17*s,9*s+hairWild*0.5*s,0,Math.PI*2);ctx.fill();
   // Animated spiky bits
   for(var hi=0;hi<7;hi++){
     var ha=-2.5+hi*0.75;
     var hpulse=Math.sin(hi+t*1.5)*2*s;
+    var wildOsc=menace>0.6?Math.sin(t*4+hi*1.7)*hairWild*s:0;
     ctx.beginPath();
-    ctx.arc(Math.cos(ha)*17*s,headY-4*s+Math.sin(ha)*13*s,5*s+hpulse+menace*2*s,0,Math.PI*2);
+    ctx.arc(Math.cos(ha)*(17*s+wildOsc),headY-4*s+Math.sin(ha)*(13*s+wildOsc),5*s+hpulse+menace*2*s+hairWild*0.5*s,0,Math.PI*2);
     ctx.fill();
   }
 
@@ -924,12 +1093,13 @@ function drawPennywiseCC1(x,y,s,opts){
   var pupilSize=1.5*s-menace*0.5*s; // Pupils get smaller (more unsettling)
   var eyeY=headY-4*s;
 
-  // Eye glow
+  // Eye glow - pulsates more dramatically at high menace
   if(menace>0.15){
+    var glowPulse=menace>0.5?0.5+Math.sin(t*4)*0.4:1;
     ctx.save();
-    ctx.shadowColor='rgba(255,220,0,'+(menace*0.8)+')';
-    ctx.shadowBlur=8+menace*25;
-    ctx.fillStyle='rgba(255,220,0,'+(menace*0.2)+')';
+    ctx.shadowColor='rgba(255,220,0,'+(menace*0.8*glowPulse)+')';
+    ctx.shadowBlur=(8+menace*25)*glowPulse;
+    ctx.fillStyle='rgba(255,220,0,'+(menace*0.2*glowPulse)+')';
     ctx.beginPath();ctx.arc(-6*s,eyeY,eyeSize+4*s,0,Math.PI*2);ctx.fill();
     ctx.beginPath();ctx.arc(6*s,eyeY,eyeSize+4*s,0,Math.PI*2);ctx.fill();
     ctx.restore();
@@ -1019,6 +1189,7 @@ function drawPennywiseCC1(x,y,s,opts){
     ctx.lineTo(-1*s,headY-headR+8*s);ctx.lineTo(2*s,headY-headR+5*s);ctx.stroke();
   }
 
+  ctx.restore(); // headTwitch
   ctx.restore();
 }
 
@@ -1093,8 +1264,12 @@ function drawLily(x,y,s,waving){
   ctx.fillStyle='#795548';
   ctx.beginPath();ctx.ellipse(-6*s,-2*s,7*s,3*s,0,0,Math.PI*2);ctx.fill();
   ctx.beginPath();ctx.ellipse(6*s,-2*s,7*s,3*s,0,0,Math.PI*2);ctx.fill();
-  // Dress
-  ctx.fillStyle='#E91E63';
+  // Dress with gradient
+  var dressGrad=ctx.createLinearGradient(0,torsoY2,0,torsoY2+36*s);
+  dressGrad.addColorStop(0,'#E91E63');
+  dressGrad.addColorStop(0.5,'#EC407A');
+  dressGrad.addColorStop(1,'#C2185B');
+  ctx.fillStyle=dressGrad;
   ctx.beginPath();ctx.roundRect(-13*s,torsoY2,26*s,36*s,5*s);ctx.fill();
   // Arms
   ctx.fillStyle='#FFCCBC';
@@ -1111,11 +1286,28 @@ function drawLily(x,y,s,waving){
   // Head
   ctx.fillStyle='#FFCCBC';
   ctx.beginPath();ctx.arc(0,headY2,13*s,0,Math.PI*2);ctx.fill();
+
+  // Blush circles on cheeks
+  ctx.fillStyle='rgba(255,130,130,0.3)';
+  ctx.beginPath();ctx.arc(-7*s,headY2+3*s,3*s,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(7*s,headY2+3*s,3*s,0,Math.PI*2);ctx.fill();
+
   // Hair
   ctx.fillStyle='#5D4037';
   ctx.beginPath();ctx.ellipse(0,headY2-6*s,15*s,11*s,0,Math.PI,Math.PI*2);ctx.fill();
   ctx.fillRect(-14*s,headY2-4*s,5*s,26*s);
   ctx.fillRect(9*s,headY2-4*s,5*s,26*s);
+
+  // Hair bow
+  ctx.fillStyle='#E91E63';
+  ctx.beginPath();
+  ctx.moveTo(9*s,headY2-12*s);
+  ctx.lineTo(15*s,headY2-16*s);
+  ctx.lineTo(12*s,headY2-12*s);
+  ctx.lineTo(15*s,headY2-8*s);
+  ctx.closePath();ctx.fill();
+  ctx.beginPath();ctx.arc(9*s,headY2-12*s,1.5*s,0,Math.PI*2);ctx.fill();
+
   // Eyes
   ctx.fillStyle='#333';
   ctx.beginPath();ctx.arc(-4*s,headY2-2*s,2*s,0,Math.PI*2);ctx.fill();
@@ -1124,6 +1316,18 @@ function drawLily(x,y,s,waving){
   ctx.fillStyle='rgba(255,255,255,0.5)';
   ctx.beginPath();ctx.arc(-4.5*s,headY2-3*s,0.8*s,0,Math.PI*2);ctx.fill();
   ctx.beginPath();ctx.arc(3.5*s,headY2-3*s,0.8*s,0,Math.PI*2);ctx.fill();
+
+  // Eyelashes
+  ctx.strokeStyle='#333';ctx.lineWidth=0.8*s;ctx.lineCap='round';
+  // Left eye lashes
+  ctx.beginPath();ctx.moveTo(-6*s,headY2-3.5*s);ctx.lineTo(-6.5*s,headY2-5*s);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(-4*s,headY2-4*s);ctx.lineTo(-4*s,headY2-5.5*s);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(-2*s,headY2-3.5*s);ctx.lineTo(-1.5*s,headY2-5*s);ctx.stroke();
+  // Right eye lashes
+  ctx.beginPath();ctx.moveTo(2*s,headY2-3.5*s);ctx.lineTo(1.5*s,headY2-5*s);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(4*s,headY2-4*s);ctx.lineTo(4*s,headY2-5.5*s);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(6*s,headY2-3.5*s);ctx.lineTo(6.5*s,headY2-5*s);ctx.stroke();
+
   // Smile
   ctx.strokeStyle='#333';ctx.lineWidth=1.5*s;
   ctx.beginPath();ctx.arc(0,headY2+3*s,4*s,0.15,Math.PI-0.15);ctx.stroke();
@@ -1132,7 +1336,7 @@ function drawLily(x,y,s,waving){
 
 // ========== TEXT SYSTEM ==========
 var textLines=[],textCallback=null,allTextDone=false;
-var currentLineIdx=0,currentCharIdx=0,typeSpeed=40;
+var currentLineIdx=0,currentCharIdx=0,typeSpeed=36;
 
 // Rich text: wraps *text* in bold, _text_ in italic, ALLCAPS in scary
 function formatLine(line){
@@ -1154,28 +1358,76 @@ function showText(lines,cb){
   waitingForClick=false;
   textCallback=cb||null;
   currentLineIdx=0;currentCharIdx=0;
+  lineByLinePausing=false;linePauseTimer=0;
 }
 
 function updateText(dt){
   if(!typing)return;
-  typeTimer+=dt*1000;
-  if(typeTimer>typeSpeed&&currentLineIdx<textLines.length){
-    typeTimer=0;
-    currentCharIdx++;
-    var line=textLines[currentLineIdx];
-    if(currentCharIdx>line.length){
-      currentCharIdx=0;currentLineIdx++;
+
+  // Handle line-by-line pause
+  if(lineByLineMode&&lineByLinePausing){
+    linePauseTimer-=dt*1000;
+    if(linePauseTimer<=0){
+      lineByLinePausing=false;
+      currentLineIdx++;
+      currentCharIdx=0;
       if(currentLineIdx>=textLines.length){
         typing=false;allTextDone=true;
         waitingForClick=true;
         promptEl.style.display='block';
         return;
       }
+    }else{
+      return;
+    }
+  }
+
+  typeTimer+=dt*1000;
+  if(typeTimer>typeSpeed&&currentLineIdx<textLines.length){
+    typeTimer=0;
+    currentCharIdx++;
+    var line=textLines[currentLineIdx];
+    if(currentCharIdx>line.length){
+      if(lineByLineMode){
+        // In line-by-line mode, pause after finishing each line
+        if(currentLineIdx>=textLines.length-1){
+          // Last line done
+          typing=false;allTextDone=true;
+          waitingForClick=true;
+          promptEl.style.display='block';
+          // Render final state
+          var html='';
+          for(var i=0;i<textLines.length;i++){
+            html+=formatLine(textLines[i]);
+            if(i<textLines.length-1)html+='<br>';
+          }
+          textBox.innerHTML=html;
+          return;
+        }
+        // Check if this is the last real line before "NEIGH." and use longer pause
+        var nextNonEmpty=currentLineIdx+1;
+        var isBeforeNeigh=false;
+        // Check if remaining lines lead to NEIGH.
+        for(var ni=nextNonEmpty;ni<textLines.length;ni++){
+          if(textLines[ni].trim()==='NEIGH.'){isBeforeNeigh=true;break;}
+          if(textLines[ni].trim()!=='')break;
+        }
+        lineByLinePausing=true;
+        linePauseTimer=isBeforeNeigh?2000:linePause;
+      }else{
+        currentCharIdx=0;currentLineIdx++;
+        if(currentLineIdx>=textLines.length){
+          typing=false;allTextDone=true;
+          waitingForClick=true;
+          promptEl.style.display='block';
+          return;
+        }
+      }
     }
     var html='';
     for(var i=0;i<=currentLineIdx&&i<textLines.length;i++){
       if(i===currentLineIdx){
-        var partial=textLines[i].substring(0,currentCharIdx);
+        var partial=textLines[i].substring(0,Math.min(currentCharIdx,textLines[i].length));
         html+=formatLine(partial);
       }else{
         html+=formatLine(textLines[i])+'<br>';
@@ -1471,32 +1723,57 @@ var scenes=[
       var dark=0.85;
       drawPaintedSky(dark);
 
-      // Red flash
-      var flash=sceneTime<0.25?1-sceneTime/0.25:0;
-      if(flash>0){
-        ctx.fillStyle='rgba(180,0,0,'+(flash*0.7)+')';
+      // Brief white flash at the very start (0 to 0.1s)
+      if(sceneTime<0.1){
+        var whiteFlash=1-sceneTime/0.1;
+        ctx.fillStyle='rgba(255,255,255,'+(whiteFlash*0.9)+')';
         ctx.fillRect(0,0,W,H);
+      }
+
+      // Red flash - full screen pulsing red, more dramatic
+      if(sceneTime<1.5){
+        var redPulse=sceneTime<0.3?(1-sceneTime/0.3)*0.85:Math.sin(sceneTime*8)*0.3*(1-sceneTime/1.5);
+        if(redPulse>0){
+          ctx.fillStyle='rgba(200,0,0,'+redPulse+')';
+          ctx.fillRect(0,0,W,H);
+        }
       }
 
       drawMeadow(dark);
 
-      // Screen shake
+      // Screen shake - more violent (amplitude 30+ pixels)
       if(sceneTime<2){
         var shakeIntensity=Math.max(0,1-sceneTime/2);
-        shakeX=(Math.random()-0.5)*20*shakeIntensity;
-        shakeY=(Math.random()-0.5)*14*shakeIntensity;
+        shakeX=(Math.random()-0.5)*35*shakeIntensity;
+        shakeY=(Math.random()-0.5)*25*shakeIntensity;
         ctx.save();ctx.translate(shakeX,shakeY);
       }
 
-      // Speed lines / motion blur
+      // Motion blur effect - semi-transparent overlay for blur feel
+      if(sceneTime>0.05&&sceneTime<1.5){
+        ctx.fillStyle='rgba(0,0,0,'+(0.15*(1-sceneTime/1.5))+')';
+        ctx.fillRect(0,0,W,H);
+      }
+
+      // Radial speed lines emanating from center
       if(sceneTime<1.5){
-        ctx.strokeStyle='rgba(255,50,50,'+(0.3*(1-sceneTime/1.5))+')';
-        ctx.lineWidth=3;
-        for(var sl=0;sl<12;sl++){
-          var sly=Math.random()*H;
+        var lineAlpha=0.5*(1-sceneTime/1.5);
+        for(var sl=0;sl<20;sl++){
+          var angle=sl*Math.PI*2/20+Math.sin(sl*3.7)*0.3;
+          var innerR=80+Math.random()*60;
+          var outerR=innerR+120+Math.random()*180;
+          var lw=2+Math.random()*4;
+          // Alternate white and red streaks
+          if(sl%3===0){
+            ctx.strokeStyle='rgba(255,60,60,'+lineAlpha+')';
+            ctx.lineWidth=lw+2;
+          }else{
+            ctx.strokeStyle='rgba(255,255,255,'+lineAlpha*0.7+')';
+            ctx.lineWidth=lw;
+          }
           ctx.beginPath();
-          ctx.moveTo(W*0.3+Math.random()*W*0.3,sly);
-          ctx.lineTo(W*0.3+Math.random()*W*0.3+80+Math.random()*120,sly);
+          ctx.moveTo(W/2+Math.cos(angle)*innerR,H/2+Math.sin(angle)*innerR);
+          ctx.lineTo(W/2+Math.cos(angle)*outerR,H/2+Math.sin(angle)*outerR);
           ctx.stroke();
         }
       }
@@ -1749,39 +2026,60 @@ var scenes=[
       }
     },
     onEnter:function(){
-      typeSpeed=48;
+      typeSpeed=38;
+      lineByLineMode=true;
+      linePause=1200;
       setTimeout(function(){playNeigh();},13000);
     }
   }
 ];
 
 // ========== SCENE MANAGEMENT ==========
+// Delay timer for scene 8 dramatic pause
+var sceneTextDelay=0;
+
 function enterScene(idx){
   scene=idx;sceneTime=0;
   waitingForClick=false;typing=false;allTextDone=false;
   textBox.style.display='none';textBox.innerHTML='';
   promptEl.style.display='none';
   playAgainBtn.style.display='none';
-  typeSpeed=40;
+  typeSpeed=36;
+  lineByLineMode=false;
+  lineByLinePausing=false;
+  linePauseTimer=0;
+  sceneTextDelay=0;
 
   // Mood music progression
+  // Scenes 0-2: peaceful
   if(idx===0){playMood('peaceful');}
-  else if(idx===2){playMood('uneasy');}
-  else if(idx===3){playMood('creepy');}
-  else if(idx===7){stopMusic();playMood('creepy');}
-  else if(idx===8){stopMusic();playMood('silence');} // TRUE SILENCE before lunge
-  else if(idx===10){playMood('peaceful');}
+  // Scenes 3-5: uneasy
+  else if(idx===3){playMood('uneasy');}
+  // Scenes 6-7: creepy
+  else if(idx===6){playMood('creepy');}
+  // Scene 8: silence (dramatic pause before lunge)
+  else if(idx===8){stopMusic();playMood('silence');}
+  // Scene 10: warm
+  else if(idx===10){playMood('warm');}
+  // Scene 11: warm continues
   else if(idx===11){playMood('warm');}
 
   if(scenes[idx].onEnter)scenes[idx].onEnter();
+
+  // Scene 8 gets a 2.5 second pause before text appears
+  var textDelay=900;
+  if(idx===8){textDelay=2500;}
+
   setTimeout(function(){
     showText(scenes[idx].text);
-  },900);
+  },textDelay);
 }
 
 function advanceScene(){
   if(typing){
+    // Skip typing - show all text immediately
     typing=false;allTextDone=true;
+    lineByLinePausing=false;
     var html=textLines.map(formatLine).join('<br>');
     textBox.innerHTML=html;
     waitingForClick=true;
@@ -1827,7 +2125,7 @@ function frame(ts){
 
   // Transition overlay (smooth crossfade)
   if(transitioning){
-    transAlpha+=transDir*dt*1.8; // Slightly slower for smoothness
+    transAlpha+=transDir*dt*1.4; // Smoother, more cinematic pace
     if(transAlpha>=1&&transDir===1){
       transAlpha=1;transDir=-1;
       if(nextScene>=0)enterScene(nextScene);
