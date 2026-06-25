@@ -583,78 +583,230 @@ const ACE_Map = (function () {
 
   var map = null;
   var markers = [];
+  var layers = {};
+  var userPins = JSON.parse(localStorage.getItem('ace-map-pins') || '[]');
+  var measuring = false;
+  var measurePoints = [];
+  var measureLine = null;
 
-  // NDX site buildings (Tiverton ON area)
   var buildings = [
-    { id: 'RB', name: 'Reactor Building', lat: 44.3265, lng: -81.5983, color: '#a8401f' },
-    { id: 'TB', name: 'Turbine Building', lat: 44.3260, lng: -81.5970, color: '#2c5d78' },
-    { id: 'CT-1', name: 'Cooling Tower 1', lat: 44.3275, lng: -81.5960, color: '#6b4c9a' },
-    { id: 'CT-2', name: 'Cooling Tower 2', lat: 44.3275, lng: -81.5945, color: '#6b4c9a' },
-    { id: 'AB', name: 'Auxiliary Building', lat: 44.3258, lng: -81.5990, color: '#b8860b' },
-    { id: 'SB', name: 'Service Building', lat: 44.3250, lng: -81.5975, color: '#2f7d4f' },
-    { id: 'WH', name: 'Warehouse', lat: 44.3245, lng: -81.5960, color: '#9a9077' },
-    { id: 'MCR', name: 'Main Control Room', lat: 44.3262, lng: -81.5985, color: '#b13d2c' }
+    { id: 'RB', name: 'Reactor Building', lat: 44.3265, lng: -81.5983, color: '#a8401f', phase: 'PH-REACT', radius: 18, type: 'nuclear' },
+    { id: 'TB', name: 'Turbine Building', lat: 44.3260, lng: -81.5970, color: '#2c5d78', phase: 'PH-MECH', radius: 16, type: 'mechanical' },
+    { id: 'CT-1', name: 'Cooling Tower 1', lat: 44.3275, lng: -81.5960, color: '#6b4c9a', phase: 'PH-AUX', radius: 14, type: 'cooling' },
+    { id: 'CT-2', name: 'Cooling Tower 2', lat: 44.3275, lng: -81.5945, color: '#6b4c9a', phase: 'PH-AUX', radius: 14, type: 'cooling' },
+    { id: 'AB', name: 'Auxiliary Building', lat: 44.3258, lng: -81.5990, color: '#b8860b', phase: 'PH-AUX', radius: 10, type: 'auxiliary' },
+    { id: 'SB', name: 'Service Building', lat: 44.3250, lng: -81.5975, color: '#2f7d4f', phase: 'PH-SITE', radius: 8, type: 'service' },
+    { id: 'WH', name: 'Warehouse', lat: 44.3245, lng: -81.5960, color: '#9a9077', phase: 'PH-SITE', radius: 8, type: 'logistics' },
+    { id: 'MCR', name: 'Main Control Room', lat: 44.3262, lng: -81.5985, color: '#b13d2c', phase: 'PH-INST', radius: 10, type: 'controls' },
+    { id: 'PIPE', name: 'Pipe Fabrication Shop', lat: 44.3248, lng: -81.5948, color: '#2c5d78', phase: 'PH-PIPE', radius: 8, type: 'mechanical' },
+    { id: 'ELEC', name: 'Electrical Substation', lat: 44.3270, lng: -81.5935, color: '#b8860b', phase: 'PH-ELEC', radius: 10, type: 'electrical' },
+    { id: 'BATCH', name: 'Concrete Batch Plant', lat: 44.3240, lng: -81.5940, color: '#9a9077', phase: 'PH-CIVIL', radius: 8, type: 'civil' },
+    { id: 'LAY', name: 'Laydown Area', lat: 44.3235, lng: -81.5970, color: '#544c3a', phase: 'PH-SITE', radius: 12, type: 'logistics' }
+  ];
+
+  var sitePerimeter = [
+    [44.3280, -81.6005], [44.3280, -81.5920], [44.3230, -81.5920], [44.3230, -81.6005]
+  ];
+
+  var constructionZones = [
+    { name: 'Nuclear Island', bounds: [[44.3270, -81.5995], [44.3255, -81.5965]], color: '#a8401f', cwas: ['CWA-01'] },
+    { name: 'Turbine Island', bounds: [[44.3268, -81.5980], [44.3252, -81.5955]], color: '#2c5d78', cwas: ['CWA-02'] },
+    { name: 'Cooling Water', bounds: [[44.3280, -81.5965], [44.3268, -81.5935]], color: '#6b4c9a', cwas: [] },
+    { name: 'Support Area', bounds: [[44.3255, -81.5995], [44.3230, -81.5935]], color: '#9a9077', cwas: ['CWA-03'] }
   ];
 
   function init(el) {
     if (!window.L) {
-      el.innerHTML = '<div class="empty-state" style="padding:40px">Leaflet not loaded. Map unavailable.</div>';
+      el.innerHTML = '<div class="empty-state" style="padding:40px">Leaflet not loaded.</div>';
       return null;
     }
-    map = L.map(el).setView([44.3260, -81.5970], 16);
+    map = L.map(el, { zoomControl: false }).setView([44.3258, -81.5965], 16);
+    L.control.zoom({ position: 'topright' }).addTo(map);
+
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: 'OSM',
-      maxZoom: 19
+      attribution: 'OSM', maxZoom: 19
     }).addTo(map);
+
+    addPerimeter();
+    addZones();
     addBuildings();
+    addConstraintPins();
+    addUserPins();
+    addCaptures();
+
+    map.on('click', onMapClick);
     return map;
+  }
+
+  function addPerimeter() {
+    if (!map) return;
+    layers.perimeter = L.polygon(sitePerimeter, {
+      color: '#a8401f', weight: 2, dashArray: '8,4', fillColor: '#a8401f', fillOpacity: 0.03
+    }).addTo(map);
+    layers.perimeter.bindPopup('<b>NDX Site Boundary</b><br>~500m × 800m exclusion zone');
+  }
+
+  function addZones() {
+    if (!map) return;
+    layers.zones = L.layerGroup().addTo(map);
+    constructionZones.forEach(function (z) {
+      var rect = L.rectangle(z.bounds, {
+        color: z.color, weight: 1.5, dashArray: '4,4', fillColor: z.color, fillOpacity: 0.06
+      });
+      var pctText = '';
+      if (z.cwas.length && typeof ACE !== 'undefined') {
+        z.cwas.forEach(function (cid) {
+          var pct = ACE.percentComplete(cid);
+          pctText += '<br>' + cid + ': ' + pct + '%';
+        });
+      }
+      rect.bindPopup('<b>' + z.name + '</b>' + pctText);
+      layers.zones.addLayer(rect);
+    });
+  }
+
+  function buildingPopup(b) {
+    var pct = 0;
+    if (typeof ACE !== 'undefined' && b.phase) pct = ACE.percentComplete(b.phase);
+    var phaseAtom = typeof ACE !== 'undefined' ? ACE.get(b.phase) : null;
+    var html = '<div style="min-width:180px">';
+    html += '<div style="font-weight:700;font-size:14px;margin-bottom:4px">' + b.id + ' — ' + b.name + '</div>';
+    html += '<div style="font-size:11px;color:#666;margin-bottom:6px">' + (b.type || '') + '</div>';
+    if (phaseAtom) {
+      html += '<div style="font-size:12px;margin-bottom:4px">Phase: ' + phaseAtom.name + '</div>';
+      html += '<div style="background:#eee;height:8px;border-radius:4px;overflow:hidden;margin-bottom:4px">';
+      html += '<div style="width:' + pct + '%;height:100%;background:' + b.color + ';border-radius:4px"></div></div>';
+      html += '<div style="font-size:11px;font-weight:600;color:' + b.color + '">' + pct + '% complete</div>';
+    }
+    html += '</div>';
+    return html;
   }
 
   function addBuildings() {
     if (!map) return;
+    layers.buildings = L.layerGroup().addTo(map);
     buildings.forEach(function (b) {
+      var pct = 0;
+      if (typeof ACE !== 'undefined' && b.phase) pct = ACE.percentComplete(b.phase);
       var marker = L.circleMarker([b.lat, b.lng], {
-        radius: 10, fillColor: b.color, color: '#221c10', weight: 2,
-        fillOpacity: 0.8
-      }).addTo(map);
-      marker.bindPopup('<b>' + b.id + '</b><br>' + b.name);
-      markers.push(marker);
+        radius: b.radius || 10,
+        fillColor: b.color,
+        color: pct >= 100 ? '#2f7d4f' : '#221c10',
+        weight: pct >= 100 ? 3 : 2,
+        fillOpacity: 0.15 + 0.65 * (pct / 100)
+      }).addTo(layers.buildings);
+      marker.bindPopup(buildingPopup(b));
+      marker._bldg = b;
+    });
+  }
+
+  function addConstraintPins() {
+    if (!map || typeof ACE === 'undefined') return;
+    layers.constraints = L.layerGroup().addTo(map);
+    var constraints = ACE.query({ type: 'constraint' });
+    var constraintLocs = {
+      'CON-REBAR':   [44.3253, -81.5985],
+      'CON-CRANE':   [44.3272, -81.5978],
+      'CON-WELDCERT':[44.3262, -81.5975],
+      'CON-CNSCHOLD':[44.3268, -81.5990],
+      'CON-COOLANT': [44.3260, -81.5988],
+      'CON-FORMWORK':[44.3255, -81.5978]
+    };
+    constraints.forEach(function (con) {
+      var loc = constraintLocs[con.id] || [44.3255 + Math.random() * 0.002, -81.5980 + Math.random() * 0.002];
+      var icon = con._complete ? '✓' : '⚠';
+      var color = con._complete ? '#2f7d4f' : '#b13d2c';
+      var marker = L.circleMarker(loc, {
+        radius: 6, fillColor: color, color: '#fff', weight: 1.5, fillOpacity: 0.9
+      }).addTo(layers.constraints);
+      marker.bindPopup('<b>' + icon + ' ' + con.id + '</b><br>' + con.name + '<br><span style="color:' + color + '">' + (con._complete ? 'CLEARED' : 'OPEN') + '</span>');
+    });
+  }
+
+  function addUserPins() {
+    if (!map) return;
+    layers.userPins = L.layerGroup().addTo(map);
+    userPins.forEach(function (pin, idx) {
+      var marker = L.marker([pin.lat, pin.lng]).addTo(layers.userPins);
+      marker.bindPopup('<b>' + escH(pin.label) + '</b><br><span style="font-size:11px;color:#666">' + escH(pin.note || '') + '</span>' +
+        '<br><button onclick="ACE_Map.removePin(' + idx + ')" style="margin-top:6px;padding:3px 8px;border:1px solid #ccc;border-radius:4px;cursor:pointer;font-size:10px;background:#fff">Remove</button>');
     });
   }
 
   function addCaptures() {
     if (!map) return;
+    layers.captures = L.layerGroup().addTo(map);
     ACE_FieldIQ.getCaptures().forEach(function (cap) {
       if (cap.gps) {
         var marker = L.circleMarker([cap.gps.lat, cap.gps.lng], {
-          radius: 6, fillColor: '#4ade80', color: '#221c10', weight: 1,
-          fillOpacity: 0.9
-        }).addTo(map);
+          radius: 5, fillColor: '#4ade80', color: '#221c10', weight: 1, fillOpacity: 0.9
+        }).addTo(layers.captures);
         marker.bindPopup('<b>' + escH(cap.title || cap.id) + '</b><br>' + cap.timestamp);
-        markers.push(marker);
       }
     });
   }
 
-  function refresh() {
-    if (map) {
-      map.invalidateSize();
-      addCaptures();
+  function onMapClick(e) {
+    if (measuring) {
+      measurePoints.push(e.latlng);
+      if (measurePoints.length >= 2) {
+        if (measureLine) map.removeLayer(measureLine);
+        measureLine = L.polyline(measurePoints, { color: '#a8401f', weight: 2, dashArray: '6,4' }).addTo(map);
+        var totalDist = 0;
+        for (var i = 1; i < measurePoints.length; i++) {
+          totalDist += measurePoints[i - 1].distanceTo(measurePoints[i]);
+        }
+        measureLine.bindPopup(Math.round(totalDist) + ' m').openPopup();
+      }
+      return;
     }
+  }
+
+  function addPin(lat, lng, label, note) {
+    var pin = { lat: lat, lng: lng, label: label || 'Pin', note: note || '' };
+    userPins.push(pin);
+    localStorage.setItem('ace-map-pins', JSON.stringify(userPins));
+    if (layers.userPins) {
+      var marker = L.marker([lat, lng]).addTo(layers.userPins);
+      marker.bindPopup('<b>' + escH(label) + '</b><br>' + escH(note));
+    }
+  }
+
+  function removePin(idx) {
+    userPins.splice(idx, 1);
+    localStorage.setItem('ace-map-pins', JSON.stringify(userPins));
+    if (layers.userPins) { layers.userPins.clearLayers(); addUserPins(); }
+  }
+
+  function toggleMeasure() {
+    measuring = !measuring;
+    if (!measuring) {
+      measurePoints = [];
+      if (measureLine) { map.removeLayer(measureLine); measureLine = null; }
+    }
+    return measuring;
+  }
+
+  function toggleLayer(name) {
+    if (!map || !layers[name]) return;
+    if (map.hasLayer(layers[name])) map.removeLayer(layers[name]);
+    else map.addLayer(layers[name]);
+  }
+
+  function refresh() {
+    if (map) map.invalidateSize();
   }
 
   function destroy() {
     if (map) { map.remove(); map = null; }
-    markers = [];
+    markers = []; layers = {};
   }
 
   return {
-    init: init,
-    addBuildings: addBuildings,
-    addCaptures: addCaptures,
-    refresh: refresh,
-    destroy: destroy,
-    buildings: buildings
+    init: init, destroy: destroy, refresh: refresh,
+    addPin: addPin, removePin: removePin,
+    toggleMeasure: toggleMeasure, toggleLayer: toggleLayer,
+    buildings: buildings, constructionZones: constructionZones
   };
 })();
 
@@ -1210,17 +1362,30 @@ const ACE_Extras = (function () {
 
   // ── Map View ──
   function renderMapView(el) {
-    var html = '<div class="risk-header">GIS Site Map</div>';
-    html += '<div style="font-family:IBM Plex Mono,monospace;font-size:11px;color:var(--faint);margin-bottom:12px">' +
-      'NDX Nuclear Generating Station -- Tiverton, Ontario</div>';
-    html += '<div id="ace-map" style="width:100%;height:calc(100vh - 160px);min-height:400px;border-radius:8px;border:1px solid var(--border)"></div>';
+    var html = '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">';
+    html += '<div><div class="risk-header" style="margin-bottom:2px">GIS Site Map</div>' +
+      '<div style="font-family:IBM Plex Mono,monospace;font-size:11px;color:var(--faint)">NDX Nuclear Generating Station — Tiverton, Ontario</div></div>';
+
+    // Toolbar
+    html += '<div style="display:flex;gap:4px;flex-wrap:wrap">';
+    html += '<button class="btn-card" id="map-btn-measure">Measure</button>';
+    html += '<button class="btn-card" id="map-btn-pin">Drop Pin</button>';
+    html += '<button class="btn-card btn-sm" id="map-lyr-zones" data-layer="zones">Zones</button>';
+    html += '<button class="btn-card btn-sm" id="map-lyr-constraints" data-layer="constraints">Constraints</button>';
+    html += '<button class="btn-card btn-sm" id="map-lyr-captures" data-layer="captures">Captures</button>';
+    html += '</div></div>';
+
+    html += '<div id="ace-map" style="width:100%;height:calc(100vh - 180px);min-height:350px;border-radius:8px;border:1px solid var(--border)"></div>';
 
     // Legend
-    html += '<div style="display:flex;gap:12px;padding:8px 0;flex-wrap:wrap;font-family:IBM Plex Mono,monospace;font-size:10px">';
+    html += '<div style="display:flex;gap:8px;padding:6px 0;flex-wrap:wrap;font-family:IBM Plex Mono,monospace;font-size:10px;align-items:center">';
     ACE_Map.buildings.forEach(function (b) {
-      html += '<div style="display:flex;align-items:center;gap:4px">' +
-        '<span style="width:10px;height:10px;border-radius:50%;background:' + b.color + ';display:inline-block"></span>' +
-        b.id + ' ' + b.name + '</div>';
+      var pct = (typeof ACE !== 'undefined' && b.phase) ? ACE.percentComplete(b.phase) : 0;
+      html += '<div style="display:flex;align-items:center;gap:3px;opacity:' + (pct > 0 ? '1' : '.5') + '">' +
+        '<span style="width:8px;height:8px;border-radius:50%;background:' + b.color + ';display:inline-block"></span>' +
+        '<span>' + b.id + '</span>' +
+        (pct > 0 ? '<span style="color:' + (pct >= 100 ? 'var(--green)' : 'var(--oxide)') + '">' + pct + '%</span>' : '') +
+        '</div>';
     });
     html += '</div>';
 
@@ -1230,6 +1395,30 @@ const ACE_Extras = (function () {
       ACE_Map.destroy();
       ACE_Map.init(document.getElementById('ace-map'));
     }, 50);
+
+    // Measure button
+    document.getElementById('map-btn-measure').addEventListener('click', function () {
+      var on = ACE_Map.toggleMeasure();
+      this.textContent = on ? 'Stop Measure' : 'Measure';
+      this.style.color = on ? 'var(--oxide)' : '';
+      this.style.borderColor = on ? 'var(--oxide)' : '';
+    });
+
+    // Drop pin
+    document.getElementById('map-btn-pin').addEventListener('click', function () {
+      var label = prompt('Pin label:');
+      if (!label) return;
+      var note = prompt('Note (optional):') || '';
+      ACE_Map.addPin(44.3258 + (Math.random() - 0.5) * 0.003, -81.5965 + (Math.random() - 0.5) * 0.003, label, note);
+    });
+
+    // Layer toggles
+    el.querySelectorAll('[data-layer]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        ACE_Map.toggleLayer(btn.dataset.layer);
+        btn.classList.toggle('btn-apply');
+      });
+    });
   }
 
   // HTML escape helper (local to extras)
