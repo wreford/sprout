@@ -248,7 +248,21 @@ const ACE_UI = (function () {
       '</div>';
 
     document.getElementById('btn-menu').addEventListener('click', function () {
-      document.getElementById('sidebar').classList.toggle('sidebar-open');
+      var sb = document.getElementById('sidebar');
+      sb.classList.toggle('sidebar-open');
+      var bd = document.getElementById('sidebar-backdrop');
+      if (sb.classList.contains('sidebar-open')) {
+        if (!bd) {
+          bd = document.createElement('div');
+          bd.id = 'sidebar-backdrop';
+          bd.style.cssText = 'position:fixed;inset:0;z-index:49;background:rgba(34,28,16,.4);backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px)';
+          bd.addEventListener('click', function () {
+            sb.classList.remove('sidebar-open');
+            bd.remove();
+          });
+          document.body.appendChild(bd);
+        }
+      } else if (bd) { bd.remove(); }
     });
     document.getElementById('btn-play').addEventListener('click', function () {
       if (!simPlaying && simMonth >= maxMonth()) {
@@ -400,6 +414,11 @@ const ACE_UI = (function () {
         selectedAtom = null;
         creatingAtom = false;
         editingAtom = false;
+        // Auto-close sidebar on mobile
+        var sb = document.getElementById('sidebar');
+        if (sb) sb.classList.remove('sidebar-open');
+        var bd = document.getElementById('sidebar-backdrop');
+        if (bd) bd.remove();
         render();
       });
     });
