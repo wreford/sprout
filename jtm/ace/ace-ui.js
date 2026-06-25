@@ -266,6 +266,10 @@ const ACE_UI = (function () {
   // -- Save / Load --
 
   function doSave() {
+    if (typeof ACE_Storage !== 'undefined') {
+      ACE_Storage.save();
+      return;
+    }
     var data = {
       atoms: ACE.exportJSON(),
       durations: {}
