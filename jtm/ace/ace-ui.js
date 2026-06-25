@@ -114,6 +114,17 @@ const ACE_UI = (function () {
         ACE.settle();
         simCpmCache = ACE_Schedule.cpm();
       }
+      // Check triages — pause sim on triage event
+      if (typeof ACE_Triage !== 'undefined') {
+        var triggered = ACE_Triage.check(simMonth);
+        if (triggered && triggered.length) {
+          simPlaying = false;
+          var pb0 = document.getElementById('btn-play');
+          if (pb0) pb0.textContent = 'Play';
+          ACE_Triage.show(triggered[0].id);
+        }
+      }
+      ACE_Extras._currentMonth = simMonth;
       var moEl = document.getElementById('sim-month');
       if (moEl) moEl.textContent = 'M' + Math.round(simMonth) + '/' + maxMonth();
       var scrub = document.getElementById('sim-scrub');
@@ -203,6 +214,8 @@ const ACE_UI = (function () {
         simMonth = 0;
         ACE_Data.load();
         simCpmCache = ACE_Schedule.cpm();
+        if (typeof ACE_Triage !== 'undefined') ACE_Triage.resetFired();
+        if (typeof ACE_Narrative !== 'undefined') ACE_Narrative.clear();
         runMC(mcIterations);
         renderSidebar();
       }
@@ -226,6 +239,8 @@ const ACE_UI = (function () {
       simCpmCache = null;
       ACE_Data.load();
       simCpmCache = ACE_Schedule.cpm();
+      if (typeof ACE_Triage !== 'undefined') ACE_Triage.resetFired();
+      if (typeof ACE_Narrative !== 'undefined') ACE_Narrative.clear();
       runMC(mcIterations);
       render();
     });
