@@ -86,9 +86,20 @@ const ACE_UI = (function () {
       if (!simCpmCache) simCpmCache = ACE_Schedule.cpm();
       var cpm = simCpmCache;
       var changed = false;
+      var skipTypes = { risk: 1, opportunity: 1 };
       ACE.all().forEach(function (a) {
         if (a._complete || a.kind !== 'manual') return;
+        if (skipTypes[a.type]) return;
         var finish = cpm.finishes[a.id];
+        if (a.type === 'material') {
+          var leadTag = a.tags.find(function (t) { return t.indexOf('lead:') === 0; });
+          var leadMo = leadTag ? parseFloat(leadTag.replace('lead:', '')) : 0;
+          if (simMonth >= leadMo) {
+            ACE.complete(a.id, 'M' + Math.round(simMonth));
+            changed = true;
+          }
+          return;
+        }
         if (finish !== undefined && simMonth >= finish) {
           var allReqsDone = a.requires.every(function (rid) {
             var r = ACE.get(rid); return r && r._complete;
@@ -110,6 +121,9 @@ const ACE_UI = (function () {
       if (now - lastRenderTime > 400) {
         lastRenderTime = now;
         renderContent();
+        renderSidebar();
+        var pctEl = document.querySelector('.topbar-pct');
+        if (pctEl) pctEl.textContent = ACE.summary().percent + '%';
       }
       if (simMonth >= maxMonth()) {
         simPlaying = false;
