@@ -228,7 +228,7 @@ var ACE_3D = (function () {
   function render() {
     if (!active || !gl) return;
 
-    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var dpr = window.devicePixelRatio || 1;
     var w = canvas.clientWidth * dpr;
     var h = canvas.clientHeight * dpr;
     if (canvas.width !== w || canvas.height !== h) {
@@ -314,7 +314,7 @@ var ACE_3D = (function () {
 
   function renderFallback() {
     if (!active) return;
-    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var dpr = window.devicePixelRatio || 1;
     var w = canvas.clientWidth;
     var h = canvas.clientHeight;
     canvas.width = w * dpr;

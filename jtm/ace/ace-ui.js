@@ -112,7 +112,7 @@ const ACE_UI = (function () {
     // Animated constraint graph background
     var cv = document.getElementById('splash-cv');
     if (cv) {
-      var dpr = Math.min(window.devicePixelRatio || 1, 2);
+      var dpr = window.devicePixelRatio || 1;
       var cw = cv.clientWidth, ch = cv.clientHeight;
       cv.width = cw * dpr; cv.height = ch * dpr;
       var ctx = cv.getContext('2d');
@@ -647,7 +647,7 @@ const ACE_UI = (function () {
     var cv = document.getElementById('gantt-cv');
     if (!cv) return;
     var cpm = ACE_Schedule.cpm();
-    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var dpr = window.devicePixelRatio || 1;
     var wrap = document.getElementById('gantt-wrap');
     var cw = wrap ? wrap.clientWidth : cv.clientWidth;
     var ch = wrap ? wrap.clientHeight : cv.clientHeight;
@@ -948,7 +948,7 @@ const ACE_UI = (function () {
     var cv = document.getElementById('scurve-cv');
     if (!cv) return;
     var wrap = document.getElementById('scurve-wrap');
-    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var dpr = window.devicePixelRatio || 1;
     var cw = wrap ? wrap.clientWidth : cv.clientWidth;
     var ch = wrap ? wrap.clientHeight : cv.clientHeight;
     if (cw < 10 || ch < 10) return;
@@ -1786,7 +1786,7 @@ const ACE_UI = (function () {
     var cv = document.getElementById(canvasId);
     if (!cv || !mcResults) return;
     var parent = cv.parentElement;
-    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var dpr = window.devicePixelRatio || 1;
     var cw = parent.clientWidth;
     var ch = parent.clientHeight;
     if (cw < 10 || ch < 10) return;
@@ -1920,7 +1920,7 @@ const ACE_UI = (function () {
     var cv = document.getElementById('risk-heatmap');
     if (!cv) return;
     var parent = cv.parentElement;
-    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var dpr = window.devicePixelRatio || 1;
     var cw = parent.clientWidth;
     var ch = parent.clientHeight;
     if (cw < 10 || ch < 10) return;
