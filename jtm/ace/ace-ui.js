@@ -87,20 +87,20 @@ const ACE_UI = (function () {
       '@keyframes pulse-glow{0%,100%{opacity:.6}50%{opacity:1}}';
     document.head.appendChild(style);
 
-    var html = '<div id="ace-splash" style="position:fixed;inset:0;z-index:200;cursor:pointer">' +
+    var html = '<div id="ace-splash" style="position:fixed;inset:0;z-index:200;cursor:pointer;background:linear-gradient(135deg,#0f1117,#1a1525,#0f1722)">' +
       '<canvas id="splash-cv" style="position:absolute;inset:0;width:100%;height:100%"></canvas>' +
-      '<div style="position:absolute;inset:0;background:rgba(26,29,33,.65);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px)"></div>' +
+      '<div style="position:absolute;inset:0;background:rgba(0,0,0,.3)"></div>' +
       '<div style="position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:24px">' +
-        '<div style="background:rgba(242,236,223,.06);border:1px solid rgba(242,236,223,.1);border-radius:20px;padding:48px 56px;max-width:520px;text-align:center;backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px)">' +
-          '<div style="font-family:Fraunces,serif;font-size:clamp(48px,10vw,72px);font-weight:700;color:#f2ecdf;letter-spacing:.12em;opacity:0;animation:si .8s ease forwards;line-height:1">ACE</div>' +
-          '<div style="width:60px;height:2px;background:linear-gradient(90deg,transparent,#a8401f,transparent);margin:12px auto;opacity:0;animation:si .6s ease .3s forwards"></div>' +
-          '<div style="font-family:Newsreader,serif;font-size:clamp(14px,3vw,18px);color:rgba(242,236,223,.7);opacity:0;animation:si .8s ease .4s forwards">Atomic Constraint Engine</div>' +
-          '<div style="font-family:IBM Plex Mono,monospace;font-size:clamp(10px,2vw,12px);color:#a8401f;margin-top:16px;opacity:0;animation:si .8s ease .7s forwards">' +
+        '<div style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:48px 56px;max-width:520px;text-align:center;backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);box-shadow:0 8px 32px rgba(0,0,0,.4)">' +
+          '<div style="font-family:Fraunces,serif;font-size:clamp(48px,10vw,72px);font-weight:700;color:#fff;letter-spacing:.12em;opacity:0;animation:si .8s ease forwards;line-height:1">ACE</div>' +
+          '<div style="width:60px;height:2px;background:linear-gradient(90deg,transparent,#ff7b4a,transparent);margin:12px auto;opacity:0;animation:si .6s ease .3s forwards"></div>' +
+          '<div style="font-family:Newsreader,serif;font-size:clamp(14px,3vw,18px);color:rgba(255,255,255,.7);opacity:0;animation:si .8s ease .4s forwards">Atomic Constraint Engine</div>' +
+          '<div style="font-family:IBM Plex Mono,monospace;font-size:clamp(10px,2vw,12px);color:#ff7b4a;margin-top:16px;opacity:0;animation:si .8s ease .7s forwards">' +
             ACE_Data.PLANT.name + '</div>' +
-          '<div style="font-family:IBM Plex Mono,monospace;font-size:clamp(9px,1.8vw,11px);color:rgba(154,144,119,.7);margin-top:4px;opacity:0;animation:si .8s ease .9s forwards">' +
+          '<div style="font-family:IBM Plex Mono,monospace;font-size:clamp(9px,1.8vw,11px);color:rgba(255,255,255,.4);margin-top:4px;opacity:0;animation:si .8s ease .9s forwards">' +
             s.atoms + ' atoms &middot; ' + ACE_Data.PLANT.units + '×' + ACE_Data.PLANT.mwe + ' MWe &middot; $' + Math.round(ACE_Data.PLANT.budget / 1e9) + 'B &middot; ' + ACE_Data.PLANT.baselineMonths + ' months</div>' +
           '<div style="margin-top:28px;opacity:0;animation:si .8s ease 1.2s forwards">' +
-            '<div style="font-family:IBM Plex Mono,monospace;font-size:10px;color:rgba(154,144,119,.5);animation:pulse-glow 2s ease infinite">click anywhere to enter</div>' +
+            '<div style="font-family:IBM Plex Mono,monospace;font-size:10px;color:rgba(255,255,255,.3);animation:pulse-glow 2s ease infinite">click anywhere to enter</div>' +
           '</div>' +
         '</div>' +
       '</div></div>';
@@ -132,17 +132,15 @@ const ACE_UI = (function () {
       function drawSplash() {
         if (!splashAnim) return;
         ctx.clearRect(0, 0, cw, ch);
-        ctx.fillStyle = '#14161a';
-        ctx.fillRect(0, 0, cw, ch);
 
         // Edges
         for (var a = 0; a < nodes.length; a++) {
           for (var b = a + 1; b < nodes.length; b++) {
             var dx = nodes[a].x - nodes[b].x, dy = nodes[a].y - nodes[b].y;
             var dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist < 120) {
-              ctx.strokeStyle = 'rgba(168,64,31,' + (0.15 * (1 - dist / 120)) + ')';
-              ctx.lineWidth = 0.5;
+            if (dist < 150) {
+              ctx.strokeStyle = 'rgba(255,123,74,' + (0.2 * (1 - dist / 150)) + ')';
+              ctx.lineWidth = 0.8;
               ctx.beginPath(); ctx.moveTo(nodes[a].x, nodes[a].y); ctx.lineTo(nodes[b].x, nodes[b].y); ctx.stroke();
             }
           }
@@ -154,8 +152,10 @@ const ACE_UI = (function () {
           if (n.x < 0 || n.x > cw) n.vx *= -1;
           if (n.y < 0 || n.y > ch) n.vy *= -1;
           ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
-          ctx.fillStyle = n.complete ? 'rgba(47,125,79,.6)' : 'rgba(168,64,31,.4)';
+          ctx.fillStyle = n.complete ? 'rgba(74,222,128,.7)' : 'rgba(255,123,74,.5)';
           ctx.fill();
+          ctx.strokeStyle = n.complete ? 'rgba(74,222,128,.3)' : 'rgba(255,123,74,.2)';
+          ctx.lineWidth = 4; ctx.stroke();
         });
 
         requestAnimationFrame(drawSplash);
