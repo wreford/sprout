@@ -511,6 +511,7 @@ const ACE_UI = (function () {
     var el = document.getElementById('content');
     if (!el) return;
     if (view !== 'model' && typeof ACE_3D !== 'undefined') ACE_3D.stop();
+    if (typeof ACE_FieldIQ !== 'undefined') ACE_FieldIQ.stop();
     switch (view) {
       case 'plan': renderPlan(el); break;
       case 'forecast': renderForecast(el); break;
