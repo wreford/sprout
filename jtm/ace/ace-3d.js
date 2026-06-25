@@ -330,12 +330,12 @@ var ACE_3D = (function () {
     var simM = (typeof ACE_UI !== 'undefined' && ACE_UI.getSimMonth) ? ACE_UI.getSimMonth() : 0;
     var pctDone = (typeof ACE !== 'undefined') ? ACE.summary().percent : 0;
 
-    // Dark blueprint background
-    c.fillStyle = '#1a1d21';
+    // Light paper background
+    c.fillStyle = '#f0ede6';
     c.fillRect(0, 0, w, h);
 
     // Subtle grid (isometric)
-    c.strokeStyle = 'rgba(44,93,120,.08)';
+    c.strokeStyle = 'rgba(0,0,0,.04)';
     c.lineWidth = 0.5;
     var gs = 30;
     for (var gx = 0; gx < w; gx += gs) { c.beginPath(); c.moveTo(gx, 0); c.lineTo(gx, h); c.stroke(); }
@@ -398,7 +398,7 @@ var ACE_3D = (function () {
         c.beginPath(); c.moveTo(tfl[0],tfl[1]); c.lineTo(tfr[0],tfr[1]); c.lineTo(tbr[0],tbr[1]); c.lineTo(tbl[0],tbl[1]); c.closePath(); c.fill();
         c.globalAlpha = 1;
         // Edges
-        c.strokeStyle = 'rgba(242,236,223,.3)';
+        c.strokeStyle = 'rgba(0,0,0,.15)';
         c.lineWidth = 1;
         c.beginPath(); c.moveTo(tfl[0],tfl[1]); c.lineTo(tfr[0],tfr[1]); c.lineTo(tbr[0],tbr[1]); c.lineTo(tbl[0],tbl[1]); c.closePath(); c.stroke();
         c.beginPath(); c.moveTo(fl[0],fl[1]); c.lineTo(tfl[0],tfl[1]); c.stroke();
@@ -408,7 +408,7 @@ var ACE_3D = (function () {
       // Label
       var lx = isoX(bx, bz - bd/2 - 8);
       var ly = isoY(bx, bz - bd/2 - 8, 0) + 4;
-      c.fillStyle = prog > 0.1 ? 'rgba(242,236,223,.7)' : 'rgba(154,144,119,.3)';
+      c.fillStyle = prog > 0.1 ? '#5a5448' : 'rgba(138,133,120,.4)';
       c.font = Math.max(9, 8 * s) + 'px IBM Plex Mono, monospace';
       c.textAlign = 'center';
       c.fillText(label, lx, ly);
@@ -419,14 +419,14 @@ var ACE_3D = (function () {
     }
 
     // Isometric ground plane
-    c.fillStyle = 'rgba(154,144,119,.06)';
+    c.fillStyle = 'rgba(0,0,0,.03)';
     c.beginPath();
     c.moveTo(isoX(-120, -80), isoY(-120, -80, 0));
     c.lineTo(isoX(180, -80), isoY(180, -80, 0));
     c.lineTo(isoX(180, 80), isoY(180, 80, 0));
     c.lineTo(isoX(-120, 80), isoY(-120, 80, 0));
     c.closePath(); c.fill();
-    c.strokeStyle = 'rgba(168,64,31,.2)'; c.lineWidth = 1; c.setLineDash([6,4]); c.stroke(); c.setLineDash([]);
+    c.strokeStyle = 'rgba(168,64,31,.15)'; c.lineWidth = 1; c.setLineDash([6,4]); c.stroke(); c.setLineDash([]);
 
     // Buildings (back to front for proper overlap)
     // Cooling Towers (far right, back)

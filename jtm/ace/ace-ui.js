@@ -14,7 +14,7 @@ const ACE_UI = (function () {
   'use strict';
 
   // -- State --
-  var view = 'model';
+  var view = 'plan';
   var selectedAtom = null;
   var editingAtom = false;
   var creatingAtom = false;
@@ -2797,7 +2797,7 @@ const ACE_UI = (function () {
   // ================================================================
 
   function renderModel(el) {
-    var html = '<div id="model-wrap" style="position:relative;width:100%;height:calc(100vh - 120px);min-height:400px;background:#1a1d21;border-radius:6px;overflow:hidden">';
+    var html = '<div id="model-wrap" style="position:relative;width:100%;height:calc(100vh - 120px);min-height:400px;background:#f0ede6;border:1px solid #e0dcd4;border-radius:10px;overflow:hidden">';
     html += '<canvas id="model-cv" style="width:100%;height:100%;display:block"></canvas>';
 
     // Camera toolbar
@@ -2811,7 +2811,7 @@ const ACE_UI = (function () {
     html += '</div>';
 
     // Stats overlay
-    html += '<div id="model-stats" style="position:absolute;bottom:12px;left:12px;font-family:IBM Plex Mono,monospace;font-size:11px;color:rgba(242,236,223,.7);z-index:10;pointer-events:none">';
+    html += '<div id="model-stats" style="position:absolute;bottom:12px;left:12px;font-family:IBM Plex Mono,monospace;font-size:11px;color:#8a8578;z-index:10;pointer-events:none">';
     var s = ACE.summary();
     html += ACE_Data.PLANT.name + '<br>';
     html += s.percent + '% complete &middot; M' + Math.round(simMonth) + '/' + maxMonth() + '<br>';
