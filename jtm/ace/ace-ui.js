@@ -232,7 +232,7 @@ const ACE_UI = (function () {
       if (scrub) scrub.value = simMonth;
       if (now - lastRenderTime > 400) {
         lastRenderTime = now;
-        renderContent();
+        if (view !== 'model') renderContent();
         // Update sidebar stats without full re-render (preserves extras tab state)
         var s2 = ACE.summary();
         var statEls = document.querySelectorAll('.sidebar-stat .stat-val');
@@ -241,6 +241,14 @@ const ACE_UI = (function () {
           statEls[1].textContent = s2.complete;
           statEls[2].textContent = s2.workable;
           statEls[3].textContent = s2.percent + '%';
+        }
+        // Update model stats if on model view
+        if (view === 'model') {
+          var ms = document.getElementById('model-stats');
+          if (ms) {
+            var s3 = ACE.summary();
+            ms.innerHTML = ACE_Data.PLANT.name + '<br>' + s3.percent + '% complete &middot; M' + Math.round(simMonth) + '/' + maxMonth() + '<br>' + s3.atoms + ' atoms &middot; ' + s3.workable + ' workable';
+          }
         }
         var pctEl = document.querySelector('.topbar-pct');
         if (pctEl) pctEl.textContent = s2.percent + '%';
@@ -368,10 +376,11 @@ const ACE_UI = (function () {
       render();
     });
     document.getElementById('btn-new-atom').addEventListener('click', function () {
+      view = 'plan';
       creatingAtom = true;
       editingAtom = false;
       selectedAtom = null;
-      renderContent();
+      render();
     });
     document.getElementById('btn-save').addEventListener('click', doSave);
     document.getElementById('btn-export-json').addEventListener('click', exportJSON);
@@ -2811,10 +2820,12 @@ const ACE_UI = (function () {
 
     // Present overlay (hidden by default)
     html += '<div id="present-overlay" style="display:none;position:absolute;inset:0;z-index:20;pointer-events:none">';
-    html += '<div id="present-card" style="position:absolute;bottom:24px;left:24px;right:24px;max-width:560px;background:rgba(34,28,16,.88);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid rgba(213,206,188,.2);border-radius:12px;padding:24px 28px;pointer-events:auto;color:#f2ecdf">';
-    html += '<div id="present-title" style="font-family:Fraunces,serif;font-size:28px;font-weight:700;margin-bottom:4px;color:#f2ecdf"></div>';
-    html += '<div id="present-sub" style="font-family:IBM Plex Mono,monospace;font-size:12px;color:#a8401f;margin-bottom:12px"></div>';
-    html += '<div id="present-body" style="font-size:14px;line-height:1.7;color:rgba(242,236,223,.85);white-space:pre-wrap"></div>';
+    html += '<div id="present-card" style="position:absolute;bottom:20px;left:20px;right:20px;max-width:620px;background:rgba(30,27,40,.92);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid rgba(200,182,255,.12);border-radius:14px;padding:28px 32px;pointer-events:auto;color:#e8dff5">';
+    html += '<div id="present-section" style="font-family:IBM Plex Mono,monospace;font-size:9px;text-transform:uppercase;letter-spacing:.12em;color:rgba(167,139,250,.6);margin-bottom:6px"></div>';
+    html += '<div id="present-title" style="font-family:Fraunces,serif;font-size:26px;font-weight:700;margin-bottom:4px;color:#f2ecdf;line-height:1.2"></div>';
+    html += '<div style="width:40px;height:2px;background:linear-gradient(90deg,#a78bfa,transparent);margin:8px 0 10px"></div>';
+    html += '<div id="present-sub" style="font-family:IBM Plex Mono,monospace;font-size:11px;color:#a78bfa;margin-bottom:14px"></div>';
+    html += '<div id="present-body" style="font-family:IBM Plex Mono,monospace;font-size:12px;line-height:1.75;color:rgba(232,223,245,.8);white-space:pre-wrap"></div>';
     html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px;padding-top:12px;border-top:1px solid rgba(213,206,188,.15)">';
     html += '<span id="present-count" style="font-family:IBM Plex Mono,monospace;font-size:10px;color:rgba(154,144,119,.7)"></span>';
     html += '<div style="display:flex;gap:8px">';
@@ -2862,6 +2873,8 @@ const ACE_UI = (function () {
   function showSlide() {
     var slide = ACE_3D.getSlide();
     if (!slide) return;
+    var sectionEl = document.getElementById('present-section');
+    if (sectionEl) sectionEl.textContent = slide.section || '';
     document.getElementById('present-title').textContent = slide.title;
     document.getElementById('present-sub').textContent = slide.sub;
     document.getElementById('present-body').textContent = slide.body;
