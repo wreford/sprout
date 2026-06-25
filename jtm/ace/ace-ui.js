@@ -658,13 +658,13 @@ const ACE_UI = (function () {
     var c = cv.getContext('2d');
     c.scale(dpr, dpr);
 
-    c.fillStyle = '#faf7ee';
+    c.fillStyle = '#14161e';
     c.fillRect(0, 0, cw, ch);
 
     var phases = ACE.query({ type: 'phase' });
     var milestones = ACE.query({ type: 'milestone' });
     if (!phases.length) {
-      c.fillStyle = '#9a9077';
+      c.fillStyle = 'rgba(232,234,237,.4)';
       c.font = '12px IBM Plex Mono, monospace';
       c.fillText('No phase atoms. Create some to see the schedule.', 20, 30);
       return;
@@ -676,11 +676,11 @@ const ACE_UI = (function () {
     var rowH = Math.min(28, (ch - padT - padB) / phases.length);
 
     // Month grid
-    c.strokeStyle = '#ede7d6';
+    c.strokeStyle = 'rgba(255,255,255,.06)';
     c.lineWidth = 0.5;
     c.font = '10px IBM Plex Mono, monospace';
     c.textAlign = 'center';
-    c.fillStyle = '#9a9077';
+    c.fillStyle = 'rgba(232,234,237,.4)';
     for (var m = 0; m <= maxFinish; m += 12) {
       var gx = labelW + (m / maxFinish) * chartW;
       c.beginPath();
@@ -692,7 +692,7 @@ const ACE_UI = (function () {
         c.fillStyle = 'rgba(154,144,119,0.5)';
         c.font = '9px IBM Plex Mono, monospace';
         c.fillText('Y' + (m / 12), gx, padT - 4);
-        c.fillStyle = '#9a9077';
+        c.fillStyle = 'rgba(232,234,237,.4)';
         c.font = '10px IBM Plex Mono, monospace';
       }
     }
@@ -796,7 +796,7 @@ const ACE_UI = (function () {
         c.fillText(label, x0 + 6, by + bh * 0.72);
       } else {
         // Outside bar (to the left)
-        c.fillStyle = (selectedAtom === p.id) ? '#a8401f' : '#544c3a';
+        c.fillStyle = (selectedAtom === p.id) ? '#ff7b4a' : 'rgba(232,234,237,.6)';
         c.font = '11px IBM Plex Mono, monospace';
         c.textAlign = 'right';
         var shortLabel = p.name.length > 18 ? p.name.slice(0, 17) + '.' : p.name;
@@ -959,7 +959,7 @@ const ACE_UI = (function () {
     c.scale(dpr, dpr);
 
     // Background
-    c.fillStyle = '#faf7ee';
+    c.fillStyle = '#14161e';
     c.fillRect(0, 0, cw, ch);
 
     var totalMonths = ACE_Data.PLANT.baselineMonths || 108;
@@ -978,18 +978,18 @@ const ACE_UI = (function () {
 
     // X axis labels (months)
     c.font = '9px IBM Plex Mono, monospace';
-    c.fillStyle = '#9a9077';
+    c.fillStyle = 'rgba(232,234,237,.4)';
     c.textAlign = 'center';
     var step = totalMonths <= 60 ? 6 : 12;
     for (var m = 0; m <= totalMonths; m += step) {
       var gx = pad.l + (m / totalMonths) * pw;
-      c.strokeStyle = '#ede7d6';
+      c.strokeStyle = 'rgba(255,255,255,.06)';
       c.lineWidth = 0.5;
       c.beginPath();
       c.moveTo(gx, pad.t);
       c.lineTo(gx, pad.t + ph);
       c.stroke();
-      c.fillStyle = '#9a9077';
+      c.fillStyle = 'rgba(232,234,237,.4)';
       c.fillText('M' + m, gx, pad.t + ph + 14);
     }
 
@@ -997,13 +997,13 @@ const ACE_UI = (function () {
     c.textAlign = 'right';
     for (var p2 = 0; p2 <= 100; p2 += 25) {
       var gy = pad.t + ph - (p2 / 100) * ph;
-      c.strokeStyle = '#ede7d6';
+      c.strokeStyle = 'rgba(255,255,255,.06)';
       c.lineWidth = 0.5;
       c.beginPath();
       c.moveTo(pad.l, gy);
       c.lineTo(pad.l + pw, gy);
       c.stroke();
-      c.fillStyle = '#9a9077';
+      c.fillStyle = 'rgba(232,234,237,.4)';
       c.fillText(p2 + '%', pad.l - 6, gy + 3);
     }
 
@@ -1077,7 +1077,7 @@ const ACE_UI = (function () {
     var pvEndT = 0.85;
     var pvEndPct = 100 * (3 * pvEndT * pvEndT - 2 * pvEndT * pvEndT * pvEndT);
     var pvLabelY = pad.t + ph - (pvEndPct / 100) * ph;
-    c.fillStyle = '#9a9077';
+    c.fillStyle = 'rgba(232,234,237,.4)';
     c.fillText('PV', pad.l + pw + 4, pvLabelY);
     // EV label
     if (currentSim > 0) {
