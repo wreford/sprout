@@ -5831,127 +5831,186 @@ const ACE_Map = (function () {
 
   function drawModelOverlay(info) {
     var ctx = info.canvas.getContext('2d');
-    var bounds = info.bounds;
     var size = info.size;
     var zoom = info.zoom || map.getZoom();
 
     ctx.clearRect(0, 0, size.x, size.y);
     if (!modelVisible) return;
 
-    var time = performance.now() / 1000;
     var simM = (typeof ACE_UI !== 'undefined' && ACE_UI.getSimMonth) ? ACE_UI.getSimMonth() : 0;
     var t = simM / (ACE_Data.PLANT.baselineMonths || 108);
 
-    function toPixel(lat, lng) {
+    function toP(lat, lng) {
       var pt = map.latLngToContainerPoint([lat, lng]);
-      return { x: pt.x, y: pt.y };
+      return [pt.x, pt.y];
     }
 
-    var progress = {
-      reactor: Math.min(1, Math.max(0, (t - 0.3) * 3)),
-      containment: Math.min(1, Math.max(0, (t - 0.2) * 2.5)),
-      turbine: Math.min(1, Math.max(0, (t - 0.25) * 3)),
-      cooling: Math.min(1, Math.max(0, (t - 0.15) * 2)),
-      aux: Math.min(1, Math.max(0, (t - 0.3) * 3)),
-      crane: t < 0.85 ? Math.min(1, t * 3) : Math.max(0, (1 - t) * 6)
-    };
-    if (typeof ACE !== 'undefined') {
-      var pct = function(id) { return ACE.percentComplete(id) / 100; };
-      progress.reactor = pct('PH-REACT') || progress.reactor;
-      progress.containment = pct('PH-CONTAIN') || progress.containment;
-      progress.turbine = pct('PH-MECH') || progress.turbine;
-      progress.aux = pct('PH-AUX') || progress.aux;
+    var progress = {};
+    var phaseMap = { reactor: 'PH-REACT', containment: 'PH-CONTAIN', turbine: 'PH-MECH', cooling: 'PH-AUX', aux: 'PH-AUX', pipe: 'PH-PIPE', elec: 'PH-ELEC', civil: 'PH-CIVIL' };
+    for (var k in phaseMap) {
+      progress[k] = typeof ACE !== 'undefined' ? ACE.percentComplete(phaseMap[k]) / 100 : Math.min(1, Math.max(0, (t - 0.2) * 2.5));
     }
 
-    var sc = Math.pow(2, zoom - 16) * 1.5;
-    ctx.globalAlpha = 0.75;
+    var sc = Math.pow(2, zoom - 16);
+    var depth = 6 * sc;
 
-    function draw3dBuilding(lat, lng, w, h, prog, color) {
-      var p = toPixel(lat, lng);
-      var bw = w * sc, fullH = h * sc;
-      // Ghost outline always
-      ctx.strokeStyle = color;
-      ctx.globalAlpha = 0.25;
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([4, 3]);
-      ctx.strokeRect(p.x - bw / 2, p.y - fullH, bw, fullH);
-      ctx.setLineDash([]);
-      ctx.globalAlpha = 0.75;
-      // Fill with progress
-      if (prog > 0.01) {
-        var bh = fullH * prog;
-        ctx.fillStyle = color;
-        ctx.fillRect(p.x - bw / 2, p.y - bh, bw, bh);
-        ctx.strokeStyle = 'rgba(255,255,255,.4)';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(p.x - bw / 2, p.y - bh, bw, bh);
-      }
-      // Label
-      ctx.fillStyle = color;
-      ctx.globalAlpha = 0.7;
-      ctx.font = Math.max(9, 10 * sc) + 'px IBM Plex Mono, monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText(Math.round(prog * 100) + '%', p.x, p.y + 12 * sc);
-      ctx.globalAlpha = 0.75;
-    }
+    function iso3dBox(lat, lng, w, d, h, prog, color, label) {
+      var base = toP(lat, lng);
+      var bx = base[0], by = base[1];
+      var pw = w * sc, pd = d * sc * 0.5, ph = h * sc;
+      var fillH = ph * Math.max(0.02, prog);
 
-    // Reactor
-    draw3dBuilding(44.3265, -81.5983, 40, 80, progress.reactor, '#a8401f');
-    // Containment dome (ghost + fill)
-    var rp = toPixel(44.3265, -81.5983);
-    var fullDomeR = 22 * sc;
-    ctx.strokeStyle = 'rgba(168,64,31,.25)'; ctx.lineWidth = 1.5; ctx.setLineDash([4,3]);
-    ctx.beginPath(); ctx.arc(rp.x, rp.y - 80 * sc, fullDomeR, Math.PI, 0); ctx.stroke();
-    ctx.setLineDash([]);
-    if (progress.containment > 0.05) {
-      var domeR = fullDomeR * progress.containment;
-      var domeY = rp.y - 80 * sc * Math.max(0.01, progress.reactor);
-      ctx.fillStyle = 'rgba(168,64,31,.5)';
-      ctx.beginPath(); ctx.arc(rp.x, domeY, domeR, Math.PI, 0); ctx.fill();
-    }
-    // Turbine
-    draw3dBuilding(44.3260, -81.5970, 60, 40, progress.turbine, '#2c5d78');
-    // Cooling towers (ghost + fill)
-    [[44.3275, -81.5960], [44.3275, -81.5945]].forEach(function(ll) {
-      var cp = toPixel(ll[0], ll[1]);
-      var ch2Full = 60 * sc;
-      // Ghost
-      ctx.strokeStyle = 'rgba(107,76,154,.2)'; ctx.lineWidth = 1; ctx.setLineDash([4,3]);
+      // Shadow
+      ctx.fillStyle = 'rgba(0,0,0,.08)';
       ctx.beginPath();
-      ctx.moveTo(cp.x - 18 * sc, cp.y); ctx.lineTo(cp.x - 12 * sc, cp.y - ch2Full);
-      ctx.lineTo(cp.x + 12 * sc, cp.y - ch2Full); ctx.lineTo(cp.x + 18 * sc, cp.y);
-      ctx.stroke(); ctx.setLineDash([]);
-    });
-    if (progress.cooling > 0) {
-      [[44.3275, -81.5960], [44.3275, -81.5945]].forEach(function(ll) {
-        var cp = toPixel(ll[0], ll[1]);
-        var ch2 = 60 * sc * progress.cooling;
-        ctx.fillStyle = 'rgba(107,76,154,.5)';
+      ctx.moveTo(bx - pw/2 + 4, by + 4);
+      ctx.lineTo(bx + pw/2 + 4, by + 4);
+      ctx.lineTo(bx + pw/2 + pd + 4, by - pd + 4);
+      ctx.lineTo(bx - pw/2 + pd + 4, by - pd + 4);
+      ctx.closePath(); ctx.fill();
+
+      // Ghost outline
+      ctx.strokeStyle = 'rgba(0,0,0,.12)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 2]);
+      // Front
+      ctx.strokeRect(bx - pw/2, by - ph, pw, ph);
+      // Right side
+      ctx.beginPath();
+      ctx.moveTo(bx + pw/2, by); ctx.lineTo(bx + pw/2 + pd, by - pd);
+      ctx.lineTo(bx + pw/2 + pd, by - pd - ph); ctx.lineTo(bx + pw/2, by - ph);
+      ctx.stroke();
+      // Top
+      ctx.beginPath();
+      ctx.moveTo(bx - pw/2, by - ph); ctx.lineTo(bx - pw/2 + pd, by - ph - pd);
+      ctx.lineTo(bx + pw/2 + pd, by - ph - pd); ctx.lineTo(bx + pw/2, by - ph);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      if (prog > 0.01) {
+        // Front face
+        ctx.fillStyle = color;
+        ctx.globalAlpha = 0.8;
+        ctx.fillRect(bx - pw/2, by - fillH, pw, fillH);
+        // Right face (darker)
+        ctx.globalAlpha = 0.55;
         ctx.beginPath();
-        ctx.moveTo(cp.x - 18 * sc, cp.y);
-        ctx.lineTo(cp.x - 12 * sc, cp.y - ch2);
-        ctx.lineTo(cp.x + 12 * sc, cp.y - ch2);
-        ctx.lineTo(cp.x + 18 * sc, cp.y);
-        ctx.fill();
-      });
-    }
-    // Aux
-    draw3dBuilding(44.3258, -81.5990, 30, 25, progress.aux, '#b8860b');
-    // Crane
-    if (progress.crane > 0) {
-      var crp = toPixel(44.3262, -81.5976);
-      var crH2 = 100 * sc * progress.crane;
-      ctx.strokeStyle = '#a8401f';
-      ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(crp.x, crp.y); ctx.lineTo(crp.x, crp.y - crH2); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(crp.x - 50 * sc, crp.y - crH2); ctx.lineTo(crp.x + 50 * sc, crp.y - crH2); ctx.stroke();
-      var swing = Math.sin(time * 1.5) * 5 * sc;
-      ctx.strokeStyle = 'rgba(168,64,31,.4)'; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(crp.x + 30 * sc + swing, crp.y - crH2);
-      ctx.lineTo(crp.x + 30 * sc + swing * 1.5, crp.y - crH2 * 0.4); ctx.stroke();
+        ctx.moveTo(bx + pw/2, by); ctx.lineTo(bx + pw/2 + pd, by - pd);
+        ctx.lineTo(bx + pw/2 + pd, by - pd - fillH); ctx.lineTo(bx + pw/2, by - fillH);
+        ctx.closePath(); ctx.fill();
+        // Top face (lighter)
+        if (prog > 0.95) {
+          ctx.globalAlpha = 0.35;
+          ctx.beginPath();
+          ctx.moveTo(bx - pw/2, by - fillH); ctx.lineTo(bx - pw/2 + pd, by - fillH - pd);
+          ctx.lineTo(bx + pw/2 + pd, by - fillH - pd); ctx.lineTo(bx + pw/2, by - fillH);
+          ctx.closePath(); ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+        // Edges
+        ctx.strokeStyle = 'rgba(0,0,0,.2)'; ctx.lineWidth = 0.8;
+        ctx.strokeRect(bx - pw/2, by - fillH, pw, fillH);
+      }
+
+      // Label
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#5a5448';
+      ctx.font = 'bold ' + Math.max(8, 9 * sc) + 'px IBM Plex Mono, monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(label, bx, by + 10 * sc);
+      if (prog > 0) {
+        ctx.fillStyle = color;
+        ctx.font = Math.max(7, 8 * sc) + 'px IBM Plex Mono, monospace';
+        ctx.fillText(Math.round(prog * 100) + '%', bx, by + 18 * sc);
+      }
     }
 
-    ctx.globalAlpha = 1.0;
+    function isoCylinder(lat, lng, r, h, prog, color, label) {
+      var base = toP(lat, lng);
+      var bx = base[0], by = base[1];
+      var pr = r * sc, ph = h * sc;
+      var fillH = ph * Math.max(0.02, prog);
+
+      // Shadow
+      ctx.fillStyle = 'rgba(0,0,0,.06)';
+      ctx.beginPath(); ctx.ellipse(bx + 3, by + 3, pr, pr * 0.4, 0, 0, Math.PI * 2); ctx.fill();
+
+      // Ghost
+      ctx.strokeStyle = 'rgba(0,0,0,.1)'; ctx.lineWidth = 1; ctx.setLineDash([3,2]);
+      ctx.beginPath(); ctx.ellipse(bx, by, pr, pr * 0.4, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(bx - pr, by); ctx.lineTo(bx - pr, by - ph); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(bx + pr, by); ctx.lineTo(bx + pr, by - ph); ctx.stroke();
+      ctx.beginPath(); ctx.ellipse(bx, by - ph, pr, pr * 0.4, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]);
+
+      if (prog > 0.01) {
+        // Body
+        ctx.fillStyle = color; ctx.globalAlpha = 0.7;
+        ctx.fillRect(bx - pr, by - fillH, pr * 2, fillH);
+        // Bottom ellipse
+        ctx.beginPath(); ctx.ellipse(bx, by, pr, pr * 0.4, 0, 0, Math.PI * 2); ctx.fill();
+        // Top ellipse
+        ctx.globalAlpha = 0.5;
+        ctx.beginPath(); ctx.ellipse(bx, by - fillH, pr, pr * 0.4, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+
+      ctx.fillStyle = '#5a5448';
+      ctx.font = 'bold ' + Math.max(8, 9 * sc) + 'px IBM Plex Mono, monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(label, bx, by + 10 * sc);
+    }
+
+    // Draw buildings back-to-front (north first)
+    // Cooling towers (far back)
+    isoCylinder(44.3278, -81.5955, 12, 50, progress.cooling, '#6b4c9a', 'CT-1');
+    isoCylinder(44.3278, -81.5940, 12, 50, progress.cooling, '#6b4c9a', 'CT-2');
+    // Electrical substation
+    iso3dBox(44.3272, -81.5935, 20, 15, 15, progress.elec, '#b8860b', 'ELEC');
+    // Turbine building (large, right of center)
+    iso3dBox(44.3262, -81.5962, 40, 25, 30, progress.turbine, '#2c5d78', 'TB');
+    // Reactor building (tall cylinder, left of center)
+    isoCylinder(44.3266, -81.5982, 16, 55, progress.reactor, '#a8401f', 'RB');
+    // Containment dome
+    if (progress.containment > 0.05) {
+      var rp2 = toP(44.3266, -81.5982);
+      var dR = 18 * sc * progress.containment;
+      ctx.fillStyle = 'rgba(168,64,31,.3)';
+      ctx.beginPath(); ctx.arc(rp2[0], rp2[1] - 55 * sc * progress.reactor, dR, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#a8401f'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(rp2[0], rp2[1] - 55 * sc * progress.reactor, dR, 0, Math.PI * 2); ctx.stroke();
+    }
+    // MCR
+    iso3dBox(44.3264, -81.5988, 15, 12, 12, progress.reactor, '#b13d2c', 'MCR');
+    // Auxiliary building
+    iso3dBox(44.3258, -81.5992, 22, 16, 18, progress.aux, '#b8860b', 'AUX');
+    // Service building
+    iso3dBox(44.3252, -81.5978, 18, 14, 12, progress.civil, '#2f7d4f', 'SB');
+    // Pipe shop
+    iso3dBox(44.3250, -81.5950, 25, 12, 10, progress.pipe, '#2c5d78', 'PIPE');
+    // Warehouse
+    iso3dBox(44.3246, -81.5962, 30, 18, 10, Math.min(1, t * 4), '#8a8578', 'WH');
+    // Batch plant
+    iso3dBox(44.3242, -81.5942, 18, 12, 14, progress.civil, '#8a8578', 'BATCH');
+
+    // Crane
+    var crP = toP(44.3264, -81.5975);
+    var crH2 = 65 * sc * (t < 0.85 ? Math.min(1, t * 3) : Math.max(0, (1 - t) * 6));
+    if (crH2 > 2) {
+      ctx.strokeStyle = '#a8401f'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(crP[0], crP[1]); ctx.lineTo(crP[0], crP[1] - crH2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(crP[0] - 30 * sc, crP[1] - crH2); ctx.lineTo(crP[0] + 30 * sc, crP[1] - crH2); ctx.stroke();
+      ctx.strokeStyle = 'rgba(168,64,31,.3)'; ctx.lineWidth = 1;
+      var sw = Math.sin(performance.now() / 700) * 4 * sc;
+      ctx.beginPath(); ctx.moveTo(crP[0] + 15 * sc + sw, crP[1] - crH2); ctx.lineTo(crP[0] + 15 * sc + sw * 1.3, crP[1] - crH2 * 0.4); ctx.stroke();
+    }
+
+    // Pipes connecting RB to TB
+    if (progress.pipe > 0.1) {
+      var pA = toP(44.3266, -81.5982), pB = toP(44.3262, -81.5962);
+      ctx.strokeStyle = 'rgba(44,93,120,.5)'; ctx.lineWidth = 2 * sc;
+      ctx.beginPath(); ctx.moveTo(pA[0] + 16 * sc, pA[1]); ctx.lineTo(pB[0] - 20 * sc, pB[1]); ctx.stroke();
+    }
 
     if (modelVisible) requestAnimationFrame(function() {
       if (modelOverlay && map && modelVisible) modelOverlay._redraw();
