@@ -793,19 +793,170 @@ const ACE_Map = (function () {
     else map.addLayer(layers[name]);
   }
 
+  var modelOverlay = null;
+  var modelVisible = false;
+
+  function toggleModel() {
+    modelVisible = !modelVisible;
+    if (!map) return modelVisible;
+    if (modelVisible) {
+      if (!modelOverlay) {
+        modelOverlay = L.canvasOverlay(drawModelOverlay).addTo(map);
+      } else {
+        map.addLayer(modelOverlay);
+      }
+    } else {
+      if (modelOverlay) map.removeLayer(modelOverlay);
+    }
+    return modelVisible;
+  }
+
+  function drawModelOverlay(info) {
+    var ctx = info.canvas.getContext('2d');
+    var bounds = info.bounds;
+    var size = info.size;
+    var zoom = info.zoom || map.getZoom();
+
+    ctx.clearRect(0, 0, size.x, size.y);
+    if (!modelVisible) return;
+
+    var time = performance.now() / 1000;
+    var simM = (typeof ACE_UI !== 'undefined' && ACE_UI.getSimMonth) ? ACE_UI.getSimMonth() : 0;
+    var t = simM / (ACE_Data.PLANT.baselineMonths || 108);
+
+    function toPixel(lat, lng) {
+      var pt = map.latLngToContainerPoint([lat, lng]);
+      return { x: pt.x, y: pt.y };
+    }
+
+    var progress = {
+      reactor: Math.min(1, Math.max(0, (t - 0.3) * 3)),
+      containment: Math.min(1, Math.max(0, (t - 0.2) * 2.5)),
+      turbine: Math.min(1, Math.max(0, (t - 0.25) * 3)),
+      cooling: Math.min(1, Math.max(0, (t - 0.15) * 2)),
+      aux: Math.min(1, Math.max(0, (t - 0.3) * 3)),
+      crane: t < 0.85 ? Math.min(1, t * 3) : Math.max(0, (1 - t) * 6)
+    };
+    if (typeof ACE !== 'undefined') {
+      var pct = function(id) { return ACE.percentComplete(id) / 100; };
+      progress.reactor = pct('PH-REACT') || progress.reactor;
+      progress.containment = pct('PH-CONTAIN') || progress.containment;
+      progress.turbine = pct('PH-MECH') || progress.turbine;
+      progress.aux = pct('PH-AUX') || progress.aux;
+    }
+
+    var sc = Math.pow(2, zoom - 16) * 1.5;
+    ctx.globalAlpha = 0.75;
+
+    function draw3dBuilding(lat, lng, w, h, prog, color) {
+      var p = toPixel(lat, lng);
+      var bw = w * sc, bh = h * sc * prog;
+      if (bh < 1) return;
+      ctx.fillStyle = color;
+      ctx.fillRect(p.x - bw / 2, p.y - bh, bw, bh);
+      ctx.strokeStyle = 'rgba(255,255,255,.3)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(p.x - bw / 2, p.y - bh, bw, bh);
+    }
+
+    // Reactor
+    draw3dBuilding(44.3265, -81.5983, 40, 80, progress.reactor, '#a8401f');
+    // Containment dome
+    if (progress.containment > 0.1) {
+      var rp = toPixel(44.3265, -81.5983);
+      var domeR = 20 * sc * progress.containment;
+      var domeY = rp.y - 80 * sc * progress.reactor;
+      ctx.fillStyle = 'rgba(168,64,31,.5)';
+      ctx.beginPath(); ctx.arc(rp.x, domeY, domeR, Math.PI, 0); ctx.fill();
+    }
+    // Turbine
+    draw3dBuilding(44.3260, -81.5970, 60, 40, progress.turbine, '#2c5d78');
+    // Cooling towers
+    if (progress.cooling > 0) {
+      [[44.3275, -81.5960], [44.3275, -81.5945]].forEach(function(ll) {
+        var cp = toPixel(ll[0], ll[1]);
+        var ch2 = 60 * sc * progress.cooling;
+        ctx.fillStyle = 'rgba(107,76,154,.5)';
+        ctx.beginPath();
+        ctx.moveTo(cp.x - 18 * sc, cp.y);
+        ctx.lineTo(cp.x - 12 * sc, cp.y - ch2);
+        ctx.lineTo(cp.x + 12 * sc, cp.y - ch2);
+        ctx.lineTo(cp.x + 18 * sc, cp.y);
+        ctx.fill();
+      });
+    }
+    // Aux
+    draw3dBuilding(44.3258, -81.5990, 30, 25, progress.aux, '#b8860b');
+    // Crane
+    if (progress.crane > 0) {
+      var crp = toPixel(44.3262, -81.5976);
+      var crH2 = 100 * sc * progress.crane;
+      ctx.strokeStyle = '#a8401f';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(crp.x, crp.y); ctx.lineTo(crp.x, crp.y - crH2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(crp.x - 50 * sc, crp.y - crH2); ctx.lineTo(crp.x + 50 * sc, crp.y - crH2); ctx.stroke();
+      var swing = Math.sin(time * 1.5) * 5 * sc;
+      ctx.strokeStyle = 'rgba(168,64,31,.4)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(crp.x + 30 * sc + swing, crp.y - crH2);
+      ctx.lineTo(crp.x + 30 * sc + swing * 1.5, crp.y - crH2 * 0.4); ctx.stroke();
+    }
+
+    ctx.globalAlpha = 1.0;
+
+    if (modelVisible) requestAnimationFrame(function() {
+      if (modelOverlay && map && modelVisible) modelOverlay._redraw();
+    });
+  }
+
+  // L.canvasOverlay plugin (lightweight)
+  if (typeof L !== 'undefined') {
+    L.canvasOverlay = function(drawFn) {
+      var layer = L.Layer.extend({
+        onAdd: function(m) {
+          this._map = m;
+          var canvas = L.DomUtil.create('canvas', 'leaflet-canvas-overlay');
+          var pane = m.getPane('overlayPane');
+          pane.appendChild(canvas);
+          this._canvas = canvas;
+          this._drawFn = drawFn;
+          m.on('moveend zoomend resize', this._redraw, this);
+          this._redraw();
+        },
+        onRemove: function(m) {
+          L.DomUtil.remove(this._canvas);
+          m.off('moveend zoomend resize', this._redraw, this);
+        },
+        _redraw: function() {
+          var m = this._map;
+          if (!m) return;
+          var size = m.getSize();
+          this._canvas.width = size.x;
+          this._canvas.height = size.y;
+          this._canvas.style.width = size.x + 'px';
+          this._canvas.style.height = size.y + 'px';
+          var topLeft = m.containerPointToLayerPoint([0, 0]);
+          L.DomUtil.setPosition(this._canvas, topLeft);
+          this._drawFn({ canvas: this._canvas, bounds: m.getBounds(), size: size, zoom: m.getZoom() });
+        }
+      });
+      return new layer();
+    };
+  }
+
   function refresh() {
     if (map) map.invalidateSize();
   }
 
   function destroy() {
     if (map) { map.remove(); map = null; }
-    markers = []; layers = {};
+    markers = []; layers = {}; modelOverlay = null; modelVisible = false;
   }
 
   return {
     init: init, destroy: destroy, refresh: refresh,
     addPin: addPin, removePin: removePin,
     toggleMeasure: toggleMeasure, toggleLayer: toggleLayer,
+    toggleModel: toggleModel,
     buildings: buildings, constructionZones: constructionZones
   };
 })();
@@ -1368,6 +1519,7 @@ const ACE_Extras = (function () {
 
     // Toolbar
     html += '<div style="display:flex;gap:4px;flex-wrap:wrap">';
+    html += '<button class="btn-card" id="map-btn-model" style="font-weight:600">3D Model</button>';
     html += '<button class="btn-card" id="map-btn-measure">Measure</button>';
     html += '<button class="btn-card" id="map-btn-pin">Drop Pin</button>';
     html += '<button class="btn-card btn-sm" id="map-lyr-zones" data-layer="zones">Zones</button>';
@@ -1395,6 +1547,13 @@ const ACE_Extras = (function () {
       ACE_Map.destroy();
       ACE_Map.init(document.getElementById('ace-map'));
     }, 50);
+
+    // 3D Model overlay
+    document.getElementById('map-btn-model').addEventListener('click', function () {
+      var on = ACE_Map.toggleModel();
+      this.classList.toggle('btn-apply', on);
+      this.textContent = on ? '3D On' : '3D Model';
+    });
 
     // Measure button
     document.getElementById('map-btn-measure').addEventListener('click', function () {
