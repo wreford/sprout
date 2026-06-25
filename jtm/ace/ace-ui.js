@@ -156,7 +156,8 @@ const ACE_UI = (function () {
           ACE_Triage.show(triggered[0].id);
         }
       }
-      ACE_Extras._currentMonth = simMonth;
+      if (typeof ACE_Extras !== 'undefined') ACE_Extras._currentMonth = simMonth;
+      if (typeof ACE_SimEvents !== 'undefined') ACE_SimEvents.check(simMonth);
       var moEl = document.getElementById('sim-month');
       if (moEl) moEl.textContent = 'M' + Math.round(simMonth) + '/' + maxMonth();
       var scrub = document.getElementById('sim-scrub');
@@ -431,6 +432,9 @@ const ACE_UI = (function () {
     // Top half: Gantt canvas
     html += '<div class="dash-gantt" id="gantt-wrap"><canvas id="gantt-cv"></canvas></div>';
 
+    // S-Curve (Earned Value) chart
+    html += '<div style="height:180px;margin:8px 0" id="scurve-wrap"><canvas id="scurve-cv"></canvas></div>';
+
     // Bottom half: selected atom detail or creation form or summary
     html += '<div id="plan-detail">';
     if (creatingAtom) {
@@ -453,6 +457,9 @@ const ACE_UI = (function () {
 
     // Draw Gantt
     setTimeout(function () { drawPlanGantt(); }, 20);
+
+    // Draw S-Curve
+    setTimeout(function () { drawSCurve(); }, 30);
 
     // Wire WBS filter
     var wbsSearch = document.getElementById('wbs-search');
@@ -718,6 +725,14 @@ const ACE_UI = (function () {
       c.font = 'bold 10px IBM Plex Mono, monospace';
       c.textAlign = 'center';
       c.fillText('Now (M' + currentMonth + ')', cmx, padT - 10);
+      // Pulse glow on now line
+      var pulseAlpha = 0.3 + 0.3 * Math.sin(performance.now() / 500);
+      c.strokeStyle = 'rgba(177,61,44,' + pulseAlpha + ')';
+      c.lineWidth = 6;
+      c.beginPath();
+      c.moveTo(cmx, padT);
+      c.lineTo(cmx, padT + phases.length * rowH);
+      c.stroke();
     }
 
     // Sim month indicator line
@@ -741,6 +756,13 @@ const ACE_UI = (function () {
       c.font = 'bold 10px IBM Plex Mono, monospace';
       c.textAlign = 'center';
       c.fillText('Sim M' + Math.round(simMonth), smx, padT - 12);
+      var simPulse = 0.2 + 0.2 * Math.sin(performance.now() / 400);
+      c.strokeStyle = 'rgba(47,125,79,' + simPulse + ')';
+      c.lineWidth = 8;
+      c.beginPath();
+      c.moveTo(smx, padT);
+      c.lineTo(smx, padT + phases.length * rowH);
+      c.stroke();
     }
 
     // Click handler
@@ -788,6 +810,170 @@ const ACE_UI = (function () {
       }
     };
     cv.onmouseleave = function () { hideGanttTooltip(); };
+  }
+
+  // -- S-Curve (Earned Value Management) chart --
+
+  function drawSCurve() {
+    var cv = document.getElementById('scurve-cv');
+    if (!cv) return;
+    var wrap = document.getElementById('scurve-wrap');
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var cw = wrap ? wrap.clientWidth : cv.clientWidth;
+    var ch = wrap ? wrap.clientHeight : cv.clientHeight;
+    if (cw < 10 || ch < 10) return;
+    cv.width = cw * dpr;
+    cv.height = ch * dpr;
+    cv.style.width = cw + 'px';
+    cv.style.height = ch + 'px';
+    var c = cv.getContext('2d');
+    c.scale(dpr, dpr);
+
+    // Background
+    c.fillStyle = '#faf7ee';
+    c.fillRect(0, 0, cw, ch);
+
+    var totalMonths = ACE_Data.PLANT.baselineMonths || 108;
+    var pad = { l: 44, r: 60, t: 18, b: 28 };
+    var pw = cw - pad.l - pad.r;
+    var ph = ch - pad.t - pad.b;
+
+    // Axes
+    c.strokeStyle = '#9a9077';
+    c.lineWidth = 0.5;
+    c.beginPath();
+    c.moveTo(pad.l, pad.t);
+    c.lineTo(pad.l, pad.t + ph);
+    c.lineTo(pad.l + pw, pad.t + ph);
+    c.stroke();
+
+    // X axis labels (months)
+    c.font = '9px IBM Plex Mono, monospace';
+    c.fillStyle = '#9a9077';
+    c.textAlign = 'center';
+    var step = totalMonths <= 60 ? 6 : 12;
+    for (var m = 0; m <= totalMonths; m += step) {
+      var gx = pad.l + (m / totalMonths) * pw;
+      c.strokeStyle = '#ede7d6';
+      c.lineWidth = 0.5;
+      c.beginPath();
+      c.moveTo(gx, pad.t);
+      c.lineTo(gx, pad.t + ph);
+      c.stroke();
+      c.fillStyle = '#9a9077';
+      c.fillText('M' + m, gx, pad.t + ph + 14);
+    }
+
+    // Y axis labels (percent)
+    c.textAlign = 'right';
+    for (var p2 = 0; p2 <= 100; p2 += 25) {
+      var gy = pad.t + ph - (p2 / 100) * ph;
+      c.strokeStyle = '#ede7d6';
+      c.lineWidth = 0.5;
+      c.beginPath();
+      c.moveTo(pad.l, gy);
+      c.lineTo(pad.l + pw, gy);
+      c.stroke();
+      c.fillStyle = '#9a9077';
+      c.fillText(p2 + '%', pad.l - 6, gy + 3);
+    }
+
+    // -- BUDGET line (linear 0 to 100%) --
+    c.strokeStyle = '#2c5d78';
+    c.lineWidth = 1.5;
+    c.setLineDash([]);
+    c.beginPath();
+    c.moveTo(pad.l, pad.t + ph);
+    c.lineTo(pad.l + pw, pad.t);
+    c.stroke();
+
+    // -- PLANNED VALUE line (S-curve: 3t^2 - 2t^3, dashed gray) --
+    c.strokeStyle = '#9a9077';
+    c.lineWidth = 1.5;
+    c.setLineDash([6, 4]);
+    c.beginPath();
+    var pvFirst = true;
+    for (var mi = 0; mi <= totalMonths; mi++) {
+      var t = mi / totalMonths;
+      var pvPct = 100 * (3 * t * t - 2 * t * t * t);
+      var px = pad.l + (mi / totalMonths) * pw;
+      var py = pad.t + ph - (pvPct / 100) * ph;
+      if (pvFirst) { c.moveTo(px, py); pvFirst = false; } else { c.lineTo(px, py); }
+    }
+    c.stroke();
+    c.setLineDash([]);
+
+    // -- EARNED VALUE line (solid green up to simMonth) --
+    var summary = ACE.summary();
+    var currentSim = Math.max(0, simMonth);
+    if (currentSim > 0) {
+      c.strokeStyle = '#2f7d4f';
+      c.lineWidth = 2;
+      c.setLineDash([]);
+      c.beginPath();
+      c.moveTo(pad.l, pad.t + ph);
+      // Draw EV as a line from 0 to current earned value at simMonth
+      // Use proportional progress: at simMonth, we have summary.percent earned
+      var evPct = summary.percent;
+      var evSteps = Math.max(1, Math.round(currentSim));
+      for (var si = 0; si <= evSteps; si++) {
+        var sFrac = si / evSteps;
+        // Interpolate EV using an S-curve shape scaled to current progress
+        var evVal = evPct * (3 * sFrac * sFrac - 2 * sFrac * sFrac * sFrac);
+        var ex = pad.l + ((si / evSteps) * currentSim / totalMonths) * pw;
+        var ey = pad.t + ph - (evVal / 100) * ph;
+        if (si === 0) { c.moveTo(ex, ey); } else { c.lineTo(ex, ey); }
+      }
+      c.stroke();
+
+      // Current simMonth vertical marker
+      var smx = pad.l + (currentSim / totalMonths) * pw;
+      c.strokeStyle = '#2f7d4f';
+      c.lineWidth = 1.5;
+      c.setLineDash([3, 3]);
+      c.beginPath();
+      c.moveTo(smx, pad.t);
+      c.lineTo(smx, pad.t + ph);
+      c.stroke();
+      c.setLineDash([]);
+    }
+
+    // -- Line labels --
+    c.font = '9px IBM Plex Mono, monospace';
+    // Budget label (top-right end of line)
+    c.fillStyle = '#2c5d78';
+    c.textAlign = 'left';
+    c.fillText('Budget', pad.l + pw + 4, pad.t + 4);
+    // PV label (near end of S-curve)
+    var pvEndT = 0.85;
+    var pvEndPct = 100 * (3 * pvEndT * pvEndT - 2 * pvEndT * pvEndT * pvEndT);
+    var pvLabelY = pad.t + ph - (pvEndPct / 100) * ph;
+    c.fillStyle = '#9a9077';
+    c.fillText('PV', pad.l + pw + 4, pvLabelY);
+    // EV label
+    if (currentSim > 0) {
+      var evEndX = pad.l + (currentSim / totalMonths) * pw;
+      var evEndY = pad.t + ph - (summary.percent / 100) * ph;
+      c.fillStyle = '#2f7d4f';
+      c.fillText('EV', evEndX + 4, evEndY - 4);
+    }
+
+    // -- SPI and CPI in top-right corner --
+    var es = ACE_Schedule.earnedSchedule(Math.max(1, Math.round(currentSim)));
+    var spiVal = isFinite(es.spi_t) ? es.spi_t : 1.0;
+    var budgetPct = currentSim > 0 ? (currentSim / totalMonths) * 100 : 0;
+    var cpiVal = budgetPct > 0 ? summary.percent / budgetPct : 1.0;
+
+    c.font = 'bold 10px IBM Plex Mono, monospace';
+    c.textAlign = 'right';
+    var metricsX = pad.l + pw;
+    var metricsY = pad.t + 14;
+
+    c.fillStyle = currentSim < 1 ? '#9a9077' : spiVal >= 0.95 ? '#2f7d4f' : spiVal < 0.85 ? '#b13d2c' : '#9a9077';
+    c.fillText('SPI: ' + (currentSim < 1 ? '--' : spiVal.toFixed(2)), metricsX, metricsY);
+
+    c.fillStyle = cpiVal >= 0.95 ? '#2f7d4f' : cpiVal < 0.85 ? '#b13d2c' : '#9a9077';
+    c.fillText('CPI: ' + cpiVal.toFixed(2), metricsX, metricsY + 14);
   }
 
   function roundRect(ctx, x, y, w, h, r) {
@@ -847,6 +1033,20 @@ const ACE_UI = (function () {
       html += kpiBox('M' + Math.round(mcResults.p50.finish), 'MC P50', '');
       html += kpiBox('M' + Math.round(mcResults.p80.finish), 'MC P80', '');
     }
+
+    // EVM KPIs
+    var esData = ACE_Schedule.earnedSchedule(Math.max(1, Math.round(simMonth)));
+    var spiKpi = isFinite(esData.spi_t) ? esData.spi_t : 1.0;
+    var spiCls = simMonth < 1 ? '' : spiKpi >= 0.95 ? 'kpi-good' : spiKpi < 0.85 ? 'kpi-bad' : '';
+    html += kpiBox(simMonth < 1 ? '--' : spiKpi.toFixed(2), 'SPI', spiCls);
+
+    var budgetVal = ACE_Data.PLANT.budget || 58e9;
+    var budgetStr = '$' + Math.round(budgetVal / 1e9) + 'B';
+    html += kpiBox(budgetStr, 'Budget', '');
+
+    var eacVal = spiKpi > 0 ? budgetVal / spiKpi : budgetVal;
+    var eacStr = '$' + Math.round(eacVal / 1e9) + 'B';
+    html += kpiBox(eacStr, 'EAC', eacVal > budgetVal * 1.05 ? 'kpi-bad' : '');
     html += '</div>';
 
     // Type breakdown
@@ -1364,6 +1564,9 @@ const ACE_UI = (function () {
     });
     html += '</div>';
 
+    html += '<div class="section-lbl" style="margin-top:12px">Risk Matrix</div>';
+    html += '<div style="height:200px"><canvas id="risk-heatmap"></canvas></div>';
+
     html += '</div>';
     html += '</div>';
 
@@ -1371,6 +1574,7 @@ const ACE_UI = (function () {
 
     // Draw histogram
     setTimeout(function () { drawForecastHistogram('fc-hist-sched'); }, 20);
+    setTimeout(function(){ drawRiskHeatmap(); }, 30);
 
     // Wire
     document.querySelectorAll('[data-mc-n]').forEach(function (btn) {
@@ -1580,6 +1784,129 @@ const ACE_UI = (function () {
       var mx = pad.l + ((m - minF) / range) * pw;
       c.fillText('M' + m, mx, pad.t + ph + 28);
     }
+  }
+
+  function drawRiskHeatmap() {
+    var cv = document.getElementById('risk-heatmap');
+    if (!cv) return;
+    var parent = cv.parentElement;
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var cw = parent.clientWidth;
+    var ch = parent.clientHeight;
+    if (cw < 10 || ch < 10) return;
+    cv.width = cw * dpr;
+    cv.height = ch * dpr;
+    cv.style.width = cw + 'px';
+    cv.style.height = ch + 'px';
+    var c = cv.getContext('2d');
+    c.scale(dpr, dpr);
+
+    var pad = { l: 44, r: 16, t: 16, b: 30 };
+    var pw = cw - pad.l - pad.r;
+    var ph = ch - pad.t - pad.b;
+    var cols = 5;
+    var rows = 5;
+    var cellW = pw / cols;
+    var cellH = ph / rows;
+
+    // Background
+    c.fillStyle = '#1a1a18';
+    c.fillRect(0, 0, cw, ch);
+
+    // Draw grid cells with risk-level colors
+    for (var row = 0; row < rows; row++) {
+      for (var col = 0; col < cols; col++) {
+        // row 0 = top = highest probability (5), col 0 = left = lowest impact (1)
+        var pLevel = rows - row;   // 5 at top, 1 at bottom
+        var iLevel = col + 1;     // 1 at left, 5 at right
+        var score = pLevel * iLevel;
+        var color;
+        if (score >= 15) color = '#b13d2c';
+        else if (score >= 8) color = '#a87718';
+        else color = '#2f7d4f';
+
+        var cx = pad.l + col * cellW;
+        var cy = pad.t + row * cellH;
+        c.fillStyle = color;
+        c.globalAlpha = 0.35;
+        c.fillRect(cx, cy, cellW, cellH);
+        c.globalAlpha = 1.0;
+
+        // Cell border
+        c.strokeStyle = '#333';
+        c.lineWidth = 0.5;
+        c.strokeRect(cx, cy, cellW, cellH);
+      }
+    }
+
+    // Y axis labels (probability)
+    c.fillStyle = '#6a6050';
+    c.font = '9px IBM Plex Mono, monospace';
+    c.textAlign = 'right';
+    var probLabels = ['20%', '40%', '60%', '80%', '100%'];
+    for (var yi = 0; yi < rows; yi++) {
+      var yCenter = pad.t + yi * cellH + cellH / 2;
+      c.fillText(probLabels[rows - 1 - yi], pad.l - 4, yCenter + 3);
+    }
+
+    // X axis labels (impact)
+    c.textAlign = 'center';
+    var impactLabels = ['2', '4', '6', '8', '10'];
+    for (var xi = 0; xi < cols; xi++) {
+      var xCenter = pad.l + xi * cellW + cellW / 2;
+      c.fillText(impactLabels[xi], xCenter, pad.t + ph + 14);
+    }
+
+    // Axis titles
+    c.fillStyle = '#555';
+    c.font = '9px IBM Plex Mono, monospace';
+    c.textAlign = 'center';
+    c.fillText('Impact →', pad.l + pw / 2, ch - 2);
+
+    c.save();
+    c.translate(10, pad.t + ph / 2);
+    c.rotate(-Math.PI / 2);
+    c.fillText('Probability →', 0, 0);
+    c.restore();
+
+    // Plot risk atoms
+    var risks = ACE.query({ type: 'risk' });
+    risks.forEach(function (r) {
+      var prob = riskProb(r);
+      var impact = riskImpact(r);
+      if (prob <= 0 && impact <= 0) return;
+
+      // Map impact (0-10) to column (0-4)
+      var colIdx = Math.min(4, Math.max(0, Math.floor(impact / 2 - 0.001)));
+      if (impact <= 0) colIdx = 0;
+      // Map probability (0-1) to row; row 0 = top = high prob
+      var rowIdx = Math.min(4, Math.max(0, Math.floor(prob * 5 - 0.001)));
+      if (prob <= 0) rowIdx = 0;
+      var drawRow = rows - 1 - rowIdx; // invert so high prob is at top
+
+      var dotX = pad.l + colIdx * cellW + cellW / 2;
+      var dotY = pad.t + drawRow * cellH + cellH / 2;
+
+      // Determine dot color by score
+      var pLevel = rowIdx + 1;
+      var iLevel = colIdx + 1;
+      var score = pLevel * iLevel;
+      var dotColor;
+      if (score >= 15) dotColor = '#b13d2c';
+      else if (score >= 8) dotColor = '#a87718';
+      else dotColor = '#2f7d4f';
+
+      // Draw dot with bright ring
+      c.beginPath();
+      c.arc(dotX, dotY, 5, 0, Math.PI * 2);
+      c.fillStyle = dotColor;
+      c.globalAlpha = 0.9;
+      c.fill();
+      c.globalAlpha = 1.0;
+      c.strokeStyle = '#e8dcc8';
+      c.lineWidth = 1.2;
+      c.stroke();
+    });
   }
 
   // ================================================================
@@ -1871,6 +2198,7 @@ const ACE_UI = (function () {
     if (verb === 'help') {
       termPrint('Commands: query <type>, atom <id>, risks, mc [n], forecast,');
       termPrint('  status, workable, settle, complete <id> [evidence],');
+      termPrint('  blocked, critical, weather, flex, tour,');
       termPrint('  export json|csv, clear, help');
     }
     else if (verb === 'clear') {
@@ -1938,6 +2266,45 @@ const ACE_UI = (function () {
       if (parts[1] === 'json') { exportJSON(); termPrint('Exported JSON'); }
       else if (parts[1] === 'csv') { exportCSV(); termPrint('Exported CSV'); }
       else termPrint('Usage: export json | export csv');
+    }
+    else if (verb === 'blocked') {
+      var blocked = ACE.all().filter(function(a) {
+        if (a._complete || a.kind === 'derived') return false;
+        return a.requires.some(function(rid) { var r = ACE.get(rid); return r && !r._complete; });
+      });
+      termPrint(blocked.length + ' blocked atoms:');
+      blocked.slice(0, 20).forEach(function(a) {
+        var blockers = a.requires.filter(function(rid) { var r = ACE.get(rid); return r && !r._complete; });
+        termPrint('  ' + a.id + '  blocked by: ' + blockers.join(', '));
+      });
+      if (blocked.length > 20) termPrint('  ... +' + (blocked.length - 20) + ' more');
+    }
+    else if (verb === 'critical') {
+      var cp = ACE_Schedule.cpm();
+      termPrint('Critical path (' + cp.criticalPath.length + ' items):');
+      cp.criticalPath.forEach(function(id) {
+        var a = ACE.get(id);
+        termPrint('  ' + id + '  M' + Math.round(cp.starts[id]) + '-M' + Math.round(cp.finishes[id]) + '  ' + (a ? a.name : ''));
+      });
+      termPrint('Project finish: M' + Math.round(cp.projectFinish));
+    }
+    else if (verb === 'weather') {
+      if (typeof ACE_Weather !== 'undefined') {
+        var w = ACE_Weather.getData();
+        if (w) termPrint('Tiverton ON: ' + Math.round(w.temperature) + '°C, wind ' + Math.round(w.windspeed) + 'km/h');
+        else termPrint('Weather data unavailable');
+      } else termPrint('Weather module not loaded');
+    }
+    else if (verb === 'flex') {
+      if (typeof ACE_FLEX !== 'undefined') {
+        var pkgs = ACE_FLEX.getPackages();
+        termPrint('FLEX packages:');
+        pkgs.forEach(function(p) { termPrint('  ' + p.id + '  ' + p.name + '  [' + p.status.toUpperCase() + ']  crew:' + p.crew + '  est:' + p.est); });
+      } else termPrint('FLEX module not loaded');
+    }
+    else if (verb === 'tour') {
+      if (typeof ACE_Tour !== 'undefined') { ACE_Tour.start(); termPrint('Tour started'); }
+      else termPrint('Tour not available');
     }
     else if (cmd.trim()) {
       termPrint('Unknown: ' + verb + '. Type "help".');

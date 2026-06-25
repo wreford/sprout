@@ -734,6 +734,156 @@ const ACE_Storage = (function () {
 
 
 // ================================================================
+// ACE_Tour — Guided walkthrough of the interface
+// ================================================================
+
+var ACE_Tour = (function () {
+  'use strict';
+  var step = -1;
+  var steps = [
+    { target: '#gantt-wrap', title: 'Gantt Schedule', text: 'Your project timeline. 14 phases from Site Prep to Commercial Operation. Red bars are on the critical path. Click any bar for details.', tab: 'plan' },
+    { target: '.dash-kpis', title: 'Key Metrics', text: '8 KPIs at a glance. Track atoms, progress, workable items, critical path length, and Monte Carlo forecasts.', tab: 'plan' },
+    { target: '#btn-play', title: 'Simulation', text: 'Press Play to simulate construction. Atoms auto-complete based on the CPM schedule. Speed up to 10x. Triage events will pause for your decision.', tab: 'plan' },
+    { target: '[data-view="forecast"]', title: 'Monte Carlo Forecast', text: 'Click Forecast to see probability distributions. 1000 iterations sample risk impacts. P50/P80/P90 show confidence levels.', tab: null },
+    { target: '[data-view="constraints"]', title: 'IWP Readiness', text: 'Track Install Work Package readiness. See which IWPs are workable, blocked, or complete. Manage constraints.', tab: null },
+    { target: '[data-view="triage"]', title: 'Triage Decisions', text: '8 construction decision points. When the sim hits a triage month, you choose Option A or B with cost/schedule trade-offs.', tab: null },
+    { target: '.terminal', title: 'Terminal', text: 'Power user interface. Type "help" for commands. Query atoms, run Monte Carlo, check risks, export data.', tab: 'explore' }
+  ];
+
+  function start() { step = -1; next(); }
+  function next() {
+    dismiss();
+    step++;
+    if (step >= steps.length) { step = -1; return; }
+    var s = steps[step];
+    if (s.tab) {
+      var tabBtn = document.querySelector('[data-view="' + s.tab + '"]');
+      if (tabBtn) tabBtn.click();
+      setTimeout(function () { showStep(s); }, 300);
+    } else { showStep(s); }
+  }
+  function showStep(s) {
+    var target = document.querySelector(s.target);
+    var rect = target ? target.getBoundingClientRect() : { top: 200, left: 200, width: 100, height: 40 };
+    // Highlight box
+    var hl = document.createElement('div');
+    hl.id = 'tour-highlight';
+    hl.style.cssText = 'position:fixed;z-index:299;border:3px solid #a8401f;border-radius:8px;pointer-events:none;box-shadow:0 0 0 9999px rgba(34,28,16,0.55);transition:all .3s ease';
+    hl.style.top = (rect.top - 6) + 'px';
+    hl.style.left = (rect.left - 6) + 'px';
+    hl.style.width = (rect.width + 12) + 'px';
+    hl.style.height = (rect.height + 12) + 'px';
+    document.body.appendChild(hl);
+    // Card
+    var card = document.createElement('div');
+    card.id = 'tour-card';
+    var cardTop = rect.bottom + 16;
+    var cardLeft = Math.min(rect.left, window.innerWidth - 360);
+    if (cardTop + 160 > window.innerHeight) cardTop = rect.top - 170;
+    if (cardLeft < 10) cardLeft = 10;
+    card.style.cssText = 'position:fixed;z-index:300;background:#faf6ed;border:1px solid #d5cebc;border-radius:10px;padding:16px 20px;width:340px;box-shadow:0 12px 48px rgba(34,28,16,0.3);animation:card-in .2s ease';
+    card.style.top = cardTop + 'px';
+    card.style.left = cardLeft + 'px';
+    card.innerHTML = '<div style="font-family:Fraunces,serif;font-size:15px;font-weight:600;margin-bottom:6px">' + s.title + '</div>' +
+      '<div style="font-size:13px;line-height:1.6;color:#544c3a;margin-bottom:12px">' + s.text + '</div>' +
+      '<div style="display:flex;gap:8px;justify-content:space-between;align-items:center">' +
+      '<span style="font-family:IBM Plex Mono,monospace;font-size:10px;color:#9a9077">' + (step + 1) + '/' + steps.length + '</span>' +
+      '<div style="display:flex;gap:6px">' +
+      '<button id="tour-skip" style="background:none;border:1px solid #d5cebc;padding:6px 12px;border-radius:6px;font-size:11px;cursor:pointer;font-family:IBM Plex Mono,monospace">Skip</button>' +
+      '<button id="tour-next" style="background:#a8401f;color:#faf6ed;border:none;padding:6px 14px;border-radius:6px;font-size:11px;cursor:pointer;font-family:IBM Plex Mono,monospace;font-weight:500">' + (step < steps.length - 1 ? 'Next' : 'Finish') + '</button>' +
+      '</div></div>';
+    document.body.appendChild(card);
+    document.getElementById('tour-next').addEventListener('click', next);
+    document.getElementById('tour-skip').addEventListener('click', function () { step = steps.length; dismiss(); });
+  }
+  function dismiss() {
+    var hl = document.getElementById('tour-highlight');
+    var card = document.getElementById('tour-card');
+    if (hl) hl.remove();
+    if (card) card.remove();
+  }
+  return { start: start, next: next, dismiss: dismiss };
+})();
+
+
+// ================================================================
+// ACE_SimEvents — Background construction narrative events
+// ================================================================
+
+var ACE_SimEvents = (function () {
+  'use strict';
+
+  var events = [
+    // Phase 1: Site Prep (months 1-8)
+    { minMonth: 1, maxMonth: 8, text: 'Topsoil strip complete in reactor building footprint — 2400 m³ stockpiled' },
+    { minMonth: 1, maxMonth: 8, text: 'Dewatering wells DW-01 through DW-06 operational — water table lowered 3.2m' },
+    { minMonth: 1, maxMonth: 8, text: 'Batch plant BP-1 commissioned — first trial batch 35 MPa passed slump and air tests' },
+    { minMonth: 1, maxMonth: 8, text: 'Survey control network established — 14 monuments set, geodetic tie confirmed' },
+    { minMonth: 1, maxMonth: 8, text: 'Temporary construction power energized — 13.8 kV feeder from switchyard' },
+    // Phase 2: Excavation & Foundation (months 6-14)
+    { minMonth: 6, maxMonth: 14, text: 'Excavation to elevation 76.5m complete — rock quality confirmed Class I' },
+    { minMonth: 6, maxMonth: 14, text: 'Concrete batch 47 placed in RB basemat — 28°C, slump test passed' },
+    { minMonth: 6, maxMonth: 14, text: 'Rebar cage RB-RC-08 tied and inspected — 42 tonnes Grade 60' },
+    { minMonth: 6, maxMonth: 14, text: 'Formwork stripped from containment wall section CW-14' },
+    { minMonth: 6, maxMonth: 14, text: 'Mudmat pour complete in turbine building — 380 m³ placed continuously' },
+    // Phase 3: Containment (months 12-24)
+    { minMonth: 12, maxMonth: 24, text: 'Containment wall lift CW-22 poured — 62 m³, vibration monitoring nominal' },
+    { minMonth: 12, maxMonth: 24, text: 'Post-tensioning tendon T-14 stressed to 80% GUTS — elongation within 5%' },
+    { minMonth: 12, maxMonth: 24, text: 'Containment liner plate LP-07 welded — NDE MT inspection acceptable' },
+    { minMonth: 12, maxMonth: 24, text: 'Dome ring beam rebar placed — 780 bars tied, QC hold point cleared' },
+    { minMonth: 12, maxMonth: 24, text: 'Containment penetration CP-34 sleeve installed and seal-welded' },
+    // Phase 4: Reactor Building internals (months 20-32)
+    { minMonth: 20, maxMonth: 32, text: 'Calandria tube CT-380 rolled and expanded — torque within spec' },
+    { minMonth: 20, maxMonth: 32, text: 'Moderator piping spool MP-12 fit-up complete — weld prep inspected' },
+    { minMonth: 20, maxMonth: 32, text: 'Reactor vault steel liner section RVL-05 set — plumb and level verified' },
+    { minMonth: 20, maxMonth: 32, text: 'Fuelling machine bridge rail alignment checked — within 0.5mm tolerance' },
+    { minMonth: 20, maxMonth: 32, text: 'End shield ES-2 lower section positioned — optical survey confirmed' },
+    // Phase 5: Primary Heat Transport (months 28-40)
+    { minMonth: 28, maxMonth: 40, text: 'NDE radiography on weld PHT-W-034 — acceptable per N285.0' },
+    { minMonth: 28, maxMonth: 40, text: 'Heavy lift: Steam Generator SG-2 set on supports — 315 tonnes' },
+    { minMonth: 28, maxMonth: 40, text: 'PHT header H-4 positioned in reactor vault — rigging plan executed' },
+    { minMonth: 28, maxMonth: 40, text: 'Hydrostatic test on moderator loop 3 — held at 1.5x design pressure' },
+    { minMonth: 28, maxMonth: 40, text: 'Feeder pipe FP-227 bent and installed — wall thickness verified by UT' },
+    // Phase 6: Turbine & BOP (months 24-42)
+    { minMonth: 24, maxMonth: 42, text: 'Turbine pedestal concrete placement complete — 1200 m³ mass pour' },
+    { minMonth: 24, maxMonth: 42, text: 'Condenser tube bundle CB-2 rolled in — 4800 titanium tubes' },
+    { minMonth: 24, maxMonth: 42, text: 'Cable tray CT-12A installed in turbine hall — 340m routed' },
+    { minMonth: 24, maxMonth: 42, text: 'Generator stator lowered into position — 280 tonnes, 0.1mm alignment' },
+    { minMonth: 24, maxMonth: 42, text: 'Main transformer T1 oil fill complete — 68,000 litres, DGA baseline taken' },
+    // Phase 7: Electrical & I&C (months 32-48)
+    { minMonth: 32, maxMonth: 48, text: 'Class III bus 3A energized — protection relay settings verified' },
+    { minMonth: 32, maxMonth: 48, text: 'DCS cabinet row R-14 powered on — 240 I/O points loop-checked' },
+    { minMonth: 32, maxMonth: 48, text: 'Neutron flux detector NFD-7 installed in ion chamber — cabling terminated' },
+    { minMonth: 32, maxMonth: 48, text: 'Emergency power generator EPG-2 first start — reached rated speed in 8s' },
+    { minMonth: 32, maxMonth: 48, text: 'Fire detection zone FZ-22 commissioned — 36 detectors, panel alarm test passed' },
+    // Phase 8: Commissioning (months 44-60)
+    { minMonth: 44, maxMonth: 60, text: 'Hot conditioning of PHT system started — 260°C, chemistry sampling normal' },
+    { minMonth: 44, maxMonth: 60, text: 'Containment integrated leak rate test — 0.08% volume/day, within acceptance' },
+    { minMonth: 44, maxMonth: 60, text: 'Safety system functional test SST-04 complete — shutdown system 1 trip verified' },
+    { minMonth: 44, maxMonth: 60, text: 'First fuel bundle loaded into channel R-12 — fuelling machine operation nominal' },
+    { minMonth: 44, maxMonth: 60, text: 'Approach to critical — sustained fission achieved, flux doubling time stable' },
+  ];
+
+  function check(month) {
+    if (Math.random() > 0.20) return null;
+    var applicable = [];
+    for (var i = 0; i < events.length; i++) {
+      if (month >= events[i].minMonth && month <= events[i].maxMonth) {
+        applicable.push(events[i]);
+      }
+    }
+    if (applicable.length === 0) return null;
+    var picked = applicable[Math.floor(Math.random() * applicable.length)];
+    var narrative = 'M' + month + ' — ' + picked.text;
+    ACE_Narrative.record('SIM', 'sim-event', narrative, false);
+    return narrative;
+  }
+
+  return { check: check };
+})();
+
+
+// ================================================================
 // ACE_Extras — Orchestrator + View Renderers
 // ================================================================
 
@@ -752,6 +902,10 @@ const ACE_Extras = (function () {
   function _patchTopbar() {
     var topbar = document.getElementById('topbar');
     if (!topbar) return;
+    if (!topbar.querySelector('.topbar-pct')) {
+      setTimeout(_patchTopbar, 500);
+      return;
+    }
 
     // Weather display
     var weatherEl = document.createElement('span');
@@ -764,6 +918,12 @@ const ACE_Extras = (function () {
     // Export buttons
     var controls = topbar.querySelector('.topbar-controls');
     if (controls) {
+      // Tour button
+      var tourBtn = document.createElement('button');
+      tourBtn.className = 'btn-ctrl';
+      tourBtn.textContent = 'Tour';
+      tourBtn.addEventListener('click', function () { ACE_Tour.start(); });
+
       var exportGroup = document.createElement('div');
       exportGroup.className = 'topbar-group';
       exportGroup.innerHTML =
@@ -772,8 +932,10 @@ const ACE_Extras = (function () {
       // Insert before the percentage display
       var pctEl = controls.querySelector('.topbar-pct');
       if (pctEl) {
+        controls.insertBefore(tourBtn, pctEl);
         controls.insertBefore(exportGroup, pctEl);
       } else {
+        controls.appendChild(tourBtn);
         controls.appendChild(exportGroup);
       }
 
