@@ -269,9 +269,16 @@ var ACE_3D = (function () {
   }
 
   function start(cvs) {
-    if (!initGL(cvs)) {
-      // Fallback: 2D canvas rendering
-      startFallback(cvs);
+    var glOk = false;
+    try { glOk = initGL(cvs); } catch (e) { glOk = false; }
+    if (!glOk) {
+      // Replace canvas with a fresh one for 2D fallback
+      var parent = cvs.parentElement;
+      var newCvs = document.createElement('canvas');
+      newCvs.id = cvs.id;
+      newCvs.style.cssText = cvs.style.cssText;
+      parent.replaceChild(newCvs, cvs);
+      startFallback(newCvs);
       return;
     }
     active = true;
