@@ -82,25 +82,93 @@ const ACE_UI = (function () {
 
   function showSplash(onDone) {
     var s = ACE.summary();
-    var html = '<div id="ace-splash" style="position:fixed;inset:0;z-index:200;background:var(--ink);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;cursor:pointer">' +
-      '<div style="font-family:Fraunces,serif;font-size:64px;font-weight:700;color:var(--paper);letter-spacing:0.1em;opacity:0;animation:splash-in 0.8s ease forwards">ACE</div>' +
-      '<div style="font-family:Newsreader,serif;font-size:16px;color:var(--faint);opacity:0;animation:splash-in 0.8s ease 0.3s forwards">Atomic Constraint Engine</div>' +
-      '<div style="font-family:IBM Plex Mono,monospace;font-size:12px;color:var(--oxide);opacity:0;animation:splash-in 0.8s ease 0.6s forwards">' +
-        ACE_Data.PLANT.name + ' -- ' + s.atoms + ' atoms / ' + ACE_Data.PLANT.units + '×' + ACE_Data.PLANT.mwe + ' MWe</div>' +
-      '<div style="font-family:IBM Plex Mono,monospace;font-size:11px;color:var(--faint);opacity:0;animation:splash-in 0.8s ease 0.9s forwards;margin-top:24px">click to enter &middot; press ? for shortcuts</div>' +
-      '</div>';
     var style = document.createElement('style');
-    style.textContent = '@keyframes splash-in{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}';
+    style.textContent = '@keyframes si{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}' +
+      '@keyframes pulse-glow{0%,100%{opacity:.6}50%{opacity:1}}';
     document.head.appendChild(style);
+
+    var html = '<div id="ace-splash" style="position:fixed;inset:0;z-index:200;cursor:pointer">' +
+      '<canvas id="splash-cv" style="position:absolute;inset:0;width:100%;height:100%"></canvas>' +
+      '<div style="position:absolute;inset:0;background:rgba(26,29,33,.65);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px)"></div>' +
+      '<div style="position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:24px">' +
+        '<div style="background:rgba(242,236,223,.06);border:1px solid rgba(242,236,223,.1);border-radius:20px;padding:48px 56px;max-width:520px;text-align:center;backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px)">' +
+          '<div style="font-family:Fraunces,serif;font-size:clamp(48px,10vw,72px);font-weight:700;color:#f2ecdf;letter-spacing:.12em;opacity:0;animation:si .8s ease forwards;line-height:1">ACE</div>' +
+          '<div style="width:60px;height:2px;background:linear-gradient(90deg,transparent,#a8401f,transparent);margin:12px auto;opacity:0;animation:si .6s ease .3s forwards"></div>' +
+          '<div style="font-family:Newsreader,serif;font-size:clamp(14px,3vw,18px);color:rgba(242,236,223,.7);opacity:0;animation:si .8s ease .4s forwards">Atomic Constraint Engine</div>' +
+          '<div style="font-family:IBM Plex Mono,monospace;font-size:clamp(10px,2vw,12px);color:#a8401f;margin-top:16px;opacity:0;animation:si .8s ease .7s forwards">' +
+            ACE_Data.PLANT.name + '</div>' +
+          '<div style="font-family:IBM Plex Mono,monospace;font-size:clamp(9px,1.8vw,11px);color:rgba(154,144,119,.7);margin-top:4px;opacity:0;animation:si .8s ease .9s forwards">' +
+            s.atoms + ' atoms &middot; ' + ACE_Data.PLANT.units + '×' + ACE_Data.PLANT.mwe + ' MWe &middot; $' + Math.round(ACE_Data.PLANT.budget / 1e9) + 'B &middot; ' + ACE_Data.PLANT.baselineMonths + ' months</div>' +
+          '<div style="margin-top:28px;opacity:0;animation:si .8s ease 1.2s forwards">' +
+            '<div style="font-family:IBM Plex Mono,monospace;font-size:10px;color:rgba(154,144,119,.5);animation:pulse-glow 2s ease infinite">click anywhere to enter</div>' +
+          '</div>' +
+        '</div>' +
+      '</div></div>';
+
     var div = document.createElement('div');
     div.innerHTML = html;
     document.body.appendChild(div.firstChild);
+
+    // Animated constraint graph background
+    var cv = document.getElementById('splash-cv');
+    if (cv) {
+      var dpr = Math.min(window.devicePixelRatio || 1, 2);
+      var cw = cv.clientWidth, ch = cv.clientHeight;
+      cv.width = cw * dpr; cv.height = ch * dpr;
+      var ctx = cv.getContext('2d');
+      ctx.scale(dpr, dpr);
+
+      var nodes = [];
+      for (var i = 0; i < 40; i++) {
+        nodes.push({
+          x: Math.random() * cw, y: Math.random() * ch,
+          vx: (Math.random() - 0.5) * 0.4, vy: (Math.random() - 0.5) * 0.4,
+          r: 2 + Math.random() * 3,
+          complete: Math.random() > 0.6
+        });
+      }
+
+      var splashAnim = true;
+      function drawSplash() {
+        if (!splashAnim) return;
+        ctx.clearRect(0, 0, cw, ch);
+        ctx.fillStyle = '#14161a';
+        ctx.fillRect(0, 0, cw, ch);
+
+        // Edges
+        for (var a = 0; a < nodes.length; a++) {
+          for (var b = a + 1; b < nodes.length; b++) {
+            var dx = nodes[a].x - nodes[b].x, dy = nodes[a].y - nodes[b].y;
+            var dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < 120) {
+              ctx.strokeStyle = 'rgba(168,64,31,' + (0.15 * (1 - dist / 120)) + ')';
+              ctx.lineWidth = 0.5;
+              ctx.beginPath(); ctx.moveTo(nodes[a].x, nodes[a].y); ctx.lineTo(nodes[b].x, nodes[b].y); ctx.stroke();
+            }
+          }
+        }
+
+        // Nodes
+        nodes.forEach(function (n) {
+          n.x += n.vx; n.y += n.vy;
+          if (n.x < 0 || n.x > cw) n.vx *= -1;
+          if (n.y < 0 || n.y > ch) n.vy *= -1;
+          ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
+          ctx.fillStyle = n.complete ? 'rgba(47,125,79,.6)' : 'rgba(168,64,31,.4)';
+          ctx.fill();
+        });
+
+        requestAnimationFrame(drawSplash);
+      }
+      drawSplash();
+    }
+
     function dismiss() {
       var splash = document.getElementById('ace-splash');
       if (splash) {
-        splash.style.transition = 'opacity 0.4s ease';
+        splash.style.transition = 'opacity 0.5s ease';
         splash.style.opacity = '0';
-        setTimeout(function () { splash.remove(); onDone(); }, 400);
+        setTimeout(function () { splash.remove(); if (typeof splashAnim !== 'undefined') splashAnim = false; onDone(); }, 500);
       }
     }
     document.getElementById('ace-splash').addEventListener('click', dismiss);
