@@ -60,18 +60,74 @@ const ACE_UI = (function () {
 
   // -- Init --
 
+  // -- Simulation state --
+  var simMonth = 0, simPlaying = false, simSpeed = 1;
+  var lastFrame = performance.now();
+  var lastRenderTime = 0;
+  var simCpmCache = null;
+
+  function maxMonth() { return ACE_Data.PLANT.baselineMonths || 120; }
+
   function init() {
     ACE_Data.load();
+    simCpmCache = ACE_Schedule.cpm();
     runMC(mcIterations);
     render();
     document.addEventListener('keydown', onGlobalKey);
     window.addEventListener('resize', function () { renderContent(); });
+    requestAnimationFrame(simLoop);
+  }
+
+  function simLoop(now) {
+    var dt = (now - lastFrame) / 1000;
+    lastFrame = now;
+    if (simPlaying) {
+      simMonth = Math.min(maxMonth(), simMonth + dt * simSpeed * 0.5);
+      if (!simCpmCache) simCpmCache = ACE_Schedule.cpm();
+      var cpm = simCpmCache;
+      var changed = false;
+      ACE.all().forEach(function (a) {
+        if (a._complete || a.kind !== 'manual') return;
+        var finish = cpm.finishes[a.id];
+        if (finish !== undefined && simMonth >= finish) {
+          var allReqsDone = a.requires.every(function (rid) {
+            var r = ACE.get(rid); return r && r._complete;
+          });
+          if (allReqsDone) {
+            ACE.complete(a.id, 'M' + Math.round(simMonth));
+            changed = true;
+          }
+        }
+      });
+      if (changed) {
+        ACE.settle();
+        simCpmCache = ACE_Schedule.cpm();
+      }
+      var moEl = document.getElementById('sim-month');
+      if (moEl) moEl.textContent = 'M' + Math.round(simMonth) + '/' + maxMonth();
+      var scrub = document.getElementById('sim-scrub');
+      if (scrub) scrub.value = simMonth;
+      if (now - lastRenderTime > 400) {
+        lastRenderTime = now;
+        renderContent();
+      }
+      if (simMonth >= maxMonth()) {
+        simPlaying = false;
+        var pb = document.getElementById('btn-play');
+        if (pb) pb.textContent = 'Play';
+        runMC(mcIterations);
+        renderContent();
+        renderSidebar();
+      }
+    }
+    requestAnimationFrame(simLoop);
   }
 
   // -- Mutation helper: settle + MC after changes --
 
   function afterMutation() {
     ACE.settle();
+    simCpmCache = null;
     runMC(mcIterations);
     renderContent();
     renderSidebar();
@@ -106,14 +162,19 @@ const ACE_UI = (function () {
       '</div>' +
       '<div class="topbar-controls">' +
         '<div class="topbar-group">' +
+          '<button class="btn-ctrl" id="btn-play">' + (simPlaying ? 'Pause' : 'Play') + '</button>' +
+          '<button class="btn-ctrl" id="btn-speed">' + simSpeed + 'x</button>' +
+          '<button class="btn-ctrl" id="btn-reset-sim" title="Reset simulation">Reset</button>' +
+        '</div>' +
+        '<div class="topbar-group" style="flex:1;max-width:250px">' +
+          '<input type="range" id="sim-scrub" min="0" max="' + maxMonth() + '" value="' + simMonth + '" step="0.1" style="width:100%;accent-color:var(--oxide)">' +
+        '</div>' +
+        '<span id="sim-month" style="font:600 11px var(--mono);min-width:65px">M' + Math.round(simMonth) + '/' + maxMonth() + '</span>' +
+        '<div class="topbar-group">' +
           '<button class="btn-ctrl" id="btn-new-atom">+ Atom</button>' +
         '</div>' +
         '<div class="topbar-group">' +
           '<button class="btn-ctrl" id="btn-save">Save</button>' +
-          '<button class="btn-ctrl" id="btn-load">Load</button>' +
-          '<button class="btn-ctrl" id="btn-clear-data">Clear</button>' +
-        '</div>' +
-        '<div class="topbar-group">' +
           '<button class="btn-ctrl" id="btn-export-json">JSON</button>' +
           '<button class="btn-ctrl" id="btn-export-csv">CSV</button>' +
         '</div>' +
@@ -123,6 +184,37 @@ const ACE_UI = (function () {
     document.getElementById('btn-menu').addEventListener('click', function () {
       document.getElementById('sidebar').classList.toggle('sidebar-open');
     });
+    document.getElementById('btn-play').addEventListener('click', function () {
+      if (!simPlaying && simMonth >= maxMonth()) {
+        simMonth = 0;
+        ACE_Data.load();
+        simCpmCache = ACE_Schedule.cpm();
+        runMC(mcIterations);
+        renderSidebar();
+      }
+      simPlaying = !simPlaying;
+      this.textContent = simPlaying ? 'Pause' : 'Play';
+    });
+    document.getElementById('btn-speed').addEventListener('click', function () {
+      simSpeed = simSpeed === 1 ? 2 : simSpeed === 2 ? 5 : simSpeed === 5 ? 10 : 1;
+      this.textContent = simSpeed + 'x';
+    });
+    document.getElementById('sim-scrub').addEventListener('input', function () {
+      simMonth = parseFloat(this.value);
+      simPlaying = false;
+      simCpmCache = null;
+      document.getElementById('btn-play').textContent = 'Play';
+      renderContent();
+    });
+    document.getElementById('btn-reset-sim').addEventListener('click', function () {
+      simMonth = 0;
+      simPlaying = false;
+      simCpmCache = null;
+      ACE_Data.load();
+      simCpmCache = ACE_Schedule.cpm();
+      runMC(mcIterations);
+      render();
+    });
     document.getElementById('btn-new-atom').addEventListener('click', function () {
       creatingAtom = true;
       editingAtom = false;
@@ -130,13 +222,6 @@ const ACE_UI = (function () {
       renderContent();
     });
     document.getElementById('btn-save').addEventListener('click', doSave);
-    document.getElementById('btn-load').addEventListener('click', doLoad);
-    document.getElementById('btn-clear-data').addEventListener('click', function () {
-      if (confirm('Clear all saved data from localStorage?')) {
-        localStorage.removeItem('ace-atoms');
-        localStorage.removeItem('ace-durations');
-      }
-    });
     document.getElementById('btn-export-json').addEventListener('click', exportJSON);
     document.getElementById('btn-export-csv').addEventListener('click', exportCSV);
   }
@@ -560,6 +645,29 @@ const ACE_UI = (function () {
       c.font = 'bold 10px IBM Plex Mono, monospace';
       c.textAlign = 'center';
       c.fillText('Now (M' + currentMonth + ')', cmx, padT - 10);
+    }
+
+    // Sim month indicator line
+    if (simMonth > 0 && simMonth <= maxFinish) {
+      var smx = labelW + (simMonth / maxFinish) * chartW;
+      c.strokeStyle = '#2f7d4f';
+      c.lineWidth = 2.5;
+      c.setLineDash([]);
+      c.beginPath();
+      c.moveTo(smx, padT - 6);
+      c.lineTo(smx, padT + phases.length * rowH + 6);
+      c.stroke();
+      // Triangle marker at top
+      c.fillStyle = '#2f7d4f';
+      c.beginPath();
+      c.moveTo(smx - 5, padT - 8);
+      c.lineTo(smx + 5, padT - 8);
+      c.lineTo(smx, padT - 2);
+      c.closePath();
+      c.fill();
+      c.font = 'bold 10px IBM Plex Mono, monospace';
+      c.textAlign = 'center';
+      c.fillText('Sim M' + Math.round(simMonth), smx, padT - 12);
     }
 
     // Click handler
@@ -2019,6 +2127,28 @@ const ACE_UI = (function () {
       e.preventDefault();
       searchOpen = true;
       renderSearchOverlay();
+    }
+    if (e.code === 'Space') {
+      e.preventDefault();
+      simPlaying = !simPlaying;
+      var pb = document.getElementById('btn-play');
+      if (pb) pb.textContent = simPlaying ? 'Pause' : 'Play';
+    }
+    if (e.code === 'ArrowLeft') {
+      e.preventDefault();
+      simMonth = Math.max(0, simMonth - (e.shiftKey ? 6 : 1));
+      simPlaying = false;
+      var pb2 = document.getElementById('btn-play');
+      if (pb2) pb2.textContent = 'Play';
+      renderContent();
+    }
+    if (e.code === 'ArrowRight') {
+      e.preventDefault();
+      simMonth = Math.min(maxMonth(), simMonth + (e.shiftKey ? 6 : 1));
+      simPlaying = false;
+      var pb3 = document.getElementById('btn-play');
+      if (pb3) pb3.textContent = 'Play';
+      renderContent();
     }
   }
 
