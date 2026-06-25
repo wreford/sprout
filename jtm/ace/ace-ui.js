@@ -14,7 +14,7 @@ const ACE_UI = (function () {
   'use strict';
 
   // -- State --
-  var view = 'plan';
+  var view = 'model';
   var selectedAtom = null;
   var editingAtom = false;
   var creatingAtom = false;
@@ -362,6 +362,7 @@ const ACE_UI = (function () {
     var el = document.getElementById('sidebar');
     var s = ACE.summary();
     var tabs = [
+      { id: 'model', label: 'Model' },
       { id: 'plan', label: 'Plan' },
       { id: 'forecast', label: 'Forecast' },
       { id: 'constraints', label: 'Constraints' },
@@ -413,11 +414,13 @@ const ACE_UI = (function () {
   function renderContent() {
     var el = document.getElementById('content');
     if (!el) return;
+    if (view !== 'model' && typeof ACE_3D !== 'undefined') ACE_3D.stop();
     switch (view) {
       case 'plan': renderPlan(el); break;
       case 'forecast': renderForecast(el); break;
       case 'constraints': renderConstraints(el); break;
       case 'explore': renderExplore(el); break;
+      case 'model': if (typeof ACE_3D !== 'undefined') renderModel(el); break;
     }
     if (searchOpen) renderSearchOverlay();
   }
@@ -2553,6 +2556,12 @@ const ACE_UI = (function () {
 
     if (e.key === '/') { e.preventDefault(); searchOpen = true; renderSearchOverlay(); }
     if (e.key === '?') { e.preventDefault(); showShortcuts(); }
+    // Presentation arrow keys override sim controls
+    if (typeof ACE_3D !== 'undefined' && ACE_3D.isPresenting() && view === 'model') {
+      if (e.code === 'ArrowRight' || e.code === 'Space') { e.preventDefault(); ACE_3D.nextSlide(); showSlide(); return; }
+      if (e.code === 'ArrowLeft') { e.preventDefault(); ACE_3D.prevSlide(); showSlide(); return; }
+      if (e.key === 'Escape') { e.preventDefault(); ACE_3D.togglePresent(); document.getElementById('present-overlay').style.display='none'; document.getElementById('btn-present').textContent='Present'; return; }
+    }
     if (e.code === 'Space') {
       e.preventDefault();
       simPlaying = !simPlaying;
@@ -2575,10 +2584,19 @@ const ACE_UI = (function () {
       if (pb3) pb3.textContent = 'Play';
       renderContent();
     }
+    if (e.key === '0') { view = 'model'; render(); }
     if (e.key === '1') { view = 'plan'; render(); }
     if (e.key === '2') { view = 'forecast'; render(); }
     if (e.key === '3') { view = 'constraints'; render(); }
     if (e.key === '4') { view = 'explore'; render(); }
+    if (e.key === 'p' && !e.ctrlKey && !e.metaKey && view === 'model' && typeof ACE_3D !== 'undefined') {
+      var on = ACE_3D.togglePresent();
+      var overlay = document.getElementById('present-overlay');
+      if (overlay) { overlay.style.display = on ? 'block' : 'none'; }
+      var pb4 = document.getElementById('btn-present');
+      if (pb4) pb4.textContent = on ? 'Exit' : 'Present';
+      if (on) showSlide();
+    }
     if (e.key === 'r' && !e.ctrlKey && !e.metaKey) {
       simMonth = 0; simPlaying = false; simCpmCache = null;
       ACE_Data.load(); simCpmCache = ACE_Schedule.cpm();
@@ -2648,8 +2666,98 @@ const ACE_UI = (function () {
     return escHtml(s);
   }
 
+  // ================================================================
+  // VIEW 5: MODEL -- 3D Construction + Presentation
+  // ================================================================
+
+  function renderModel(el) {
+    var html = '<div id="model-wrap" style="position:relative;width:100%;height:calc(100vh - 60px);background:#221c10;border-radius:6px;overflow:hidden">';
+    html += '<canvas id="model-cv" style="width:100%;height:100%;display:block"></canvas>';
+
+    // Camera toolbar
+    html += '<div id="model-toolbar" style="position:absolute;top:12px;left:12px;display:flex;gap:6px;flex-wrap:wrap;z-index:10">';
+    var cams = ACE_3D.CAMS;
+    for (var k in cams) {
+      html += '<button class="btn-ctrl model-cam-btn" data-cam="' + k + '">' + cams[k].label + '</button>';
+    }
+    html += '<span style="border-left:1px solid rgba(154,144,119,.5);margin:0 2px"></span>';
+    html += '<button class="btn-ctrl" id="btn-present">Present</button>';
+    html += '</div>';
+
+    // Stats overlay
+    html += '<div id="model-stats" style="position:absolute;bottom:12px;left:12px;font-family:IBM Plex Mono,monospace;font-size:11px;color:rgba(242,236,223,.7);z-index:10;pointer-events:none">';
+    var s = ACE.summary();
+    html += ACE_Data.PLANT.name + '<br>';
+    html += s.percent + '% complete &middot; M' + Math.round(simMonth) + '/' + maxMonth() + '<br>';
+    html += s.atoms + ' atoms &middot; ' + s.workable + ' workable';
+    html += '</div>';
+
+    // Present overlay (hidden by default)
+    html += '<div id="present-overlay" style="display:none;position:absolute;inset:0;z-index:20;pointer-events:none">';
+    html += '<div id="present-card" style="position:absolute;bottom:24px;left:24px;right:24px;max-width:560px;background:rgba(34,28,16,.88);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid rgba(213,206,188,.2);border-radius:12px;padding:24px 28px;pointer-events:auto;color:#f2ecdf">';
+    html += '<div id="present-title" style="font-family:Fraunces,serif;font-size:28px;font-weight:700;margin-bottom:4px;color:#f2ecdf"></div>';
+    html += '<div id="present-sub" style="font-family:IBM Plex Mono,monospace;font-size:12px;color:#a8401f;margin-bottom:12px"></div>';
+    html += '<div id="present-body" style="font-size:14px;line-height:1.7;color:rgba(242,236,223,.85);white-space:pre-wrap"></div>';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px;padding-top:12px;border-top:1px solid rgba(213,206,188,.15)">';
+    html += '<span id="present-count" style="font-family:IBM Plex Mono,monospace;font-size:10px;color:rgba(154,144,119,.7)"></span>';
+    html += '<div style="display:flex;gap:8px">';
+    html += '<button class="btn-ctrl" id="btn-prev-slide" style="color:#f2ecdf;border-color:rgba(213,206,188,.3)">Prev</button>';
+    html += '<button class="btn-ctrl" id="btn-next-slide" style="background:#a8401f;color:#f2ecdf;border-color:#a8401f">Next</button>';
+    html += '</div></div></div></div>';
+
+    html += '</div>';
+    el.innerHTML = html;
+
+    // Start 3D
+    var cvs = document.getElementById('model-cv');
+    ACE_3D.stop();
+    setTimeout(function () { ACE_3D.start(cvs); }, 50);
+
+    // Camera buttons
+    el.querySelectorAll('[data-cam]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        ACE_3D.setCamera(btn.dataset.cam);
+        el.querySelectorAll('.model-cam-btn').forEach(function (b) { b.style.background = ''; b.style.color = ''; });
+        btn.style.background = 'rgba(242,236,223,.15)';
+      });
+    });
+
+    // Present button
+    document.getElementById('btn-present').addEventListener('click', function () {
+      var on = ACE_3D.togglePresent();
+      var overlay = document.getElementById('present-overlay');
+      overlay.style.display = on ? 'block' : 'none';
+      this.textContent = on ? 'Exit' : 'Present';
+      if (on) showSlide();
+    });
+
+    // Slide navigation
+    document.getElementById('btn-next-slide').addEventListener('click', function () {
+      ACE_3D.nextSlide();
+      showSlide();
+    });
+    document.getElementById('btn-prev-slide').addEventListener('click', function () {
+      ACE_3D.prevSlide();
+      showSlide();
+    });
+  }
+
+  function showSlide() {
+    var slide = ACE_3D.getSlide();
+    if (!slide) return;
+    document.getElementById('present-title').textContent = slide.title;
+    document.getElementById('present-sub').textContent = slide.sub;
+    document.getElementById('present-body').textContent = slide.body;
+    document.getElementById('present-count').textContent = (ACE_3D.getSlideIdx() + 1) + ' / ' + ACE_3D.getSlideCount();
+
+    // Animate camera based on slide
+    var camMap = ['orbit', 'orbit', 'reactor', 'aerial', 'orbit', 'ground', 'crane', 'turbine', 'orbit'];
+    if (camMap[ACE_3D.getSlideIdx()]) ACE_3D.setCamera(camMap[ACE_3D.getSlideIdx()]);
+  }
+
   // -- Public API --
-  return { init: init };
+  function getSimMonth() { return simMonth; }
+  return { init: init, getSimMonth: getSimMonth };
 
 })();
 
