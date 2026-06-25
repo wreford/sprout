@@ -72,10 +72,42 @@ const ACE_UI = (function () {
     ACE_Data.load();
     simCpmCache = ACE_Schedule.cpm();
     runMC(mcIterations);
-    render();
-    document.addEventListener('keydown', onGlobalKey);
-    window.addEventListener('resize', function () { renderContent(); });
-    requestAnimationFrame(simLoop);
+    showSplash(function () {
+      render();
+      document.addEventListener('keydown', onGlobalKey);
+      window.addEventListener('resize', function () { renderContent(); });
+      requestAnimationFrame(simLoop);
+    });
+  }
+
+  function showSplash(onDone) {
+    var s = ACE.summary();
+    var html = '<div id="ace-splash" style="position:fixed;inset:0;z-index:200;background:var(--ink);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;cursor:pointer">' +
+      '<div style="font-family:Fraunces,serif;font-size:64px;font-weight:700;color:var(--paper);letter-spacing:0.1em;opacity:0;animation:splash-in 0.8s ease forwards">ACE</div>' +
+      '<div style="font-family:Newsreader,serif;font-size:16px;color:var(--faint);opacity:0;animation:splash-in 0.8s ease 0.3s forwards">Atomic Constraint Engine</div>' +
+      '<div style="font-family:IBM Plex Mono,monospace;font-size:12px;color:var(--oxide);opacity:0;animation:splash-in 0.8s ease 0.6s forwards">' +
+        ACE_Data.PLANT.name + ' -- ' + s.atoms + ' atoms / ' + ACE_Data.PLANT.units + '×' + ACE_Data.PLANT.mwe + ' MWe</div>' +
+      '<div style="font-family:IBM Plex Mono,monospace;font-size:11px;color:var(--faint);opacity:0;animation:splash-in 0.8s ease 0.9s forwards;margin-top:24px">click to enter &middot; press ? for shortcuts</div>' +
+      '</div>';
+    var style = document.createElement('style');
+    style.textContent = '@keyframes splash-in{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}';
+    document.head.appendChild(style);
+    var div = document.createElement('div');
+    div.innerHTML = html;
+    document.body.appendChild(div.firstChild);
+    function dismiss() {
+      var splash = document.getElementById('ace-splash');
+      if (splash) {
+        splash.style.transition = 'opacity 0.4s ease';
+        splash.style.opacity = '0';
+        setTimeout(function () { splash.remove(); onDone(); }, 400);
+      }
+    }
+    document.getElementById('ace-splash').addEventListener('click', dismiss);
+    document.addEventListener('keydown', function handler(e) {
+      document.removeEventListener('keydown', handler);
+      dismiss();
+    });
   }
 
   function simLoop(now) {
@@ -2132,43 +2164,28 @@ const ACE_UI = (function () {
   // ================================================================
 
   function onGlobalKey(e) {
-    // Don't intercept when typing in inputs
     var tag = (e.target.tagName || '').toLowerCase();
     if (tag === 'input' || tag === 'textarea' || tag === 'select') {
       if (e.key === 'Escape') {
         e.target.blur();
         closeSearch();
-        var ov = document.getElementById('atom-overlay');
-        if (ov) ov.remove();
-        var co = document.getElementById('clear-overlay');
-        if (co) co.remove();
-        var lo = document.getElementById('link-overlay');
-        if (lo) lo.remove();
+        dismissOverlays();
       }
       return;
     }
 
     if (e.key === 'Escape') {
       closeSearch();
-      var ov2 = document.getElementById('atom-overlay');
-      if (ov2) { ov2.remove(); return; }
-      var co2 = document.getElementById('clear-overlay');
-      if (co2) { co2.remove(); return; }
-      var lo2 = document.getElementById('link-overlay');
-      if (lo2) { lo2.remove(); return; }
-      if (selectedAtom) {
+      if (!dismissOverlays() && selectedAtom) {
         selectedAtom = null;
         editingAtom = false;
         renderContent();
-        return;
       }
+      return;
     }
 
-    if (e.key === '/') {
-      e.preventDefault();
-      searchOpen = true;
-      renderSearchOverlay();
-    }
+    if (e.key === '/') { e.preventDefault(); searchOpen = true; renderSearchOverlay(); }
+    if (e.key === '?') { e.preventDefault(); showShortcuts(); }
     if (e.code === 'Space') {
       e.preventDefault();
       simPlaying = !simPlaying;
@@ -2191,6 +2208,56 @@ const ACE_UI = (function () {
       if (pb3) pb3.textContent = 'Play';
       renderContent();
     }
+    if (e.key === '1') { view = 'plan'; render(); }
+    if (e.key === '2') { view = 'forecast'; render(); }
+    if (e.key === '3') { view = 'constraints'; render(); }
+    if (e.key === '4') { view = 'explore'; render(); }
+    if (e.key === 'r' && !e.ctrlKey && !e.metaKey) {
+      simMonth = 0; simPlaying = false; simCpmCache = null;
+      ACE_Data.load(); simCpmCache = ACE_Schedule.cpm();
+      if (typeof ACE_Triage !== 'undefined') ACE_Triage.resetFired();
+      if (typeof ACE_Narrative !== 'undefined') ACE_Narrative.clear();
+      runMC(mcIterations); render();
+    }
+  }
+
+  function dismissOverlays() {
+    var ids = ['atom-overlay', 'clear-overlay', 'link-overlay', 'shortcuts-overlay'];
+    for (var i = 0; i < ids.length; i++) {
+      var el = document.getElementById(ids[i]);
+      if (el) { el.remove(); return true; }
+    }
+    return false;
+  }
+
+  function showShortcuts() {
+    if (document.getElementById('shortcuts-overlay')) return;
+    var shortcuts = [
+      ['Space', 'Play / Pause simulation'],
+      ['Arrow Left', 'Step back 1 month (Shift: 6)'],
+      ['Arrow Right', 'Step forward 1 month (Shift: 6)'],
+      ['/', 'Search atoms'],
+      ['?', 'Show this help'],
+      ['1-4', 'Switch views (Plan / Forecast / Constraints / Explore)'],
+      ['R', 'Reset simulation'],
+      ['Escape', 'Close overlay / deselect']
+    ];
+    var html = '<div class="overlay" id="shortcuts-overlay"><div class="card" style="max-width:420px">' +
+      '<div class="card-header"><div class="card-title">Keyboard Shortcuts</div>' +
+      '<button class="card-close" onclick="document.getElementById(\'shortcuts-overlay\').remove()">[x]</button></div>' +
+      '<table style="width:100%;font-size:13px">';
+    shortcuts.forEach(function (s) {
+      html += '<tr style="border-bottom:1px solid var(--border)">' +
+        '<td style="padding:8px 12px;font-family:IBM Plex Mono,monospace;font-size:11px;color:var(--oxide);font-weight:500;width:120px">' + s[0] + '</td>' +
+        '<td style="padding:8px 12px">' + s[1] + '</td></tr>';
+    });
+    html += '</table></div></div>';
+    var div = document.createElement('div');
+    div.innerHTML = html;
+    document.body.appendChild(div.firstChild);
+    document.getElementById('shortcuts-overlay').addEventListener('click', function (e) {
+      if (e.target.id === 'shortcuts-overlay') e.target.remove();
+    });
   }
 
   // ================================================================
