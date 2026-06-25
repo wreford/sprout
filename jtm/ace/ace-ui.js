@@ -132,9 +132,17 @@ const ACE_UI = (function () {
       if (now - lastRenderTime > 400) {
         lastRenderTime = now;
         renderContent();
-        renderSidebar();
+        // Update sidebar stats without full re-render (preserves extras tab state)
+        var s2 = ACE.summary();
+        var statEls = document.querySelectorAll('.sidebar-stat .stat-val');
+        if (statEls.length >= 4) {
+          statEls[0].textContent = s2.atoms;
+          statEls[1].textContent = s2.complete;
+          statEls[2].textContent = s2.workable;
+          statEls[3].textContent = s2.percent + '%';
+        }
         var pctEl = document.querySelector('.topbar-pct');
-        if (pctEl) pctEl.textContent = ACE.summary().percent + '%';
+        if (pctEl) pctEl.textContent = s2.percent + '%';
       }
       if (simMonth >= maxMonth()) {
         simPlaying = false;

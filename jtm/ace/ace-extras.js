@@ -782,40 +782,38 @@ const ACE_Extras = (function () {
     }
   }
 
-  // Add new views to sidebar
-  function _patchSidebar() {
-    // Override renderSidebar to include new tabs
-    // We do this by observing DOM mutations on the sidebar
-    var observer = new MutationObserver(function () {
-      var sidebar = document.getElementById('sidebar');
-      if (!sidebar) return;
-      var tabs = sidebar.querySelector('.sidebar-tabs');
-      if (!tabs) return;
-      // Check if extras tabs already added
-      if (tabs.querySelector('[data-view="triage"]')) return;
+  var EXTRA_TABS = [
+    { id: 'triage', label: 'Triage' },
+    { id: 'flex', label: 'FLEX' },
+    { id: 'narrative', label: 'Narrative' },
+    { id: 'fieldiq', label: 'FieldIQ' },
+    { id: 'map', label: 'Map' }
+  ];
 
-      var extraTabs = [
-        { id: 'triage', label: 'Triage' },
-        { id: 'flex', label: 'FLEX' },
-        { id: 'narrative', label: 'Narrative' },
-        { id: 'fieldiq', label: 'FieldIQ' },
-        { id: 'map', label: 'Map' }
-      ];
+  function _injectExtraTabs() {
+    var sidebar = document.getElementById('sidebar');
+    if (!sidebar) return;
+    var tabs = sidebar.querySelector('.sidebar-tabs');
+    if (!tabs) return;
+    if (tabs.querySelector('[data-view="triage"]')) return;
 
-      extraTabs.forEach(function (t) {
-        var btn = document.createElement('button');
-        btn.className = 'sidebar-tab';
-        btn.dataset.view = t.id;
-        btn.textContent = t.label;
-        btn.addEventListener('click', function () {
-          // Deactivate all tabs
-          tabs.querySelectorAll('.sidebar-tab').forEach(function (tb) { tb.classList.remove('active'); });
-          btn.classList.add('active');
-          ACE_Extras.renderView(t.id);
-        });
-        tabs.appendChild(btn);
+    EXTRA_TABS.forEach(function (t) {
+      var btn = document.createElement('button');
+      btn.className = 'sidebar-tab';
+      btn.dataset.view = t.id;
+      btn.textContent = t.label;
+      btn.addEventListener('click', function () {
+        tabs.querySelectorAll('.sidebar-tab').forEach(function (tb) { tb.classList.remove('active'); });
+        btn.classList.add('active');
+        ACE_Extras.renderView(t.id);
       });
+      tabs.appendChild(btn);
     });
+  }
+
+  function _patchSidebar() {
+    _injectExtraTabs();
+    var observer = new MutationObserver(function () { _injectExtraTabs(); });
     observer.observe(document.getElementById('sidebar') || document.body, { childList: true, subtree: true });
   }
 
