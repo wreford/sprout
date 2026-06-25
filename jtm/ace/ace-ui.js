@@ -2820,12 +2820,12 @@ const ACE_UI = (function () {
 
     // Present overlay (hidden by default)
     html += '<div id="present-overlay" style="display:none;position:absolute;inset:0;z-index:20;pointer-events:none">';
-    html += '<div id="present-card" style="position:absolute;bottom:20px;left:20px;right:20px;max-width:620px;background:rgba(30,27,40,.92);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid rgba(200,182,255,.12);border-radius:14px;padding:28px 32px;pointer-events:auto;color:#e8dff5">';
-    html += '<div id="present-section" style="font-family:IBM Plex Mono,monospace;font-size:9px;text-transform:uppercase;letter-spacing:.12em;color:rgba(167,139,250,.6);margin-bottom:6px"></div>';
-    html += '<div id="present-title" style="font-family:Fraunces,serif;font-size:26px;font-weight:700;margin-bottom:4px;color:#f2ecdf;line-height:1.2"></div>';
-    html += '<div style="width:40px;height:2px;background:linear-gradient(90deg,#a78bfa,transparent);margin:8px 0 10px"></div>';
-    html += '<div id="present-sub" style="font-family:IBM Plex Mono,monospace;font-size:11px;color:#a78bfa;margin-bottom:14px"></div>';
-    html += '<div id="present-body" style="font-family:IBM Plex Mono,monospace;font-size:12px;line-height:1.75;color:rgba(232,223,245,.8);white-space:pre-wrap"></div>';
+    html += '<div id="present-card" style="position:absolute;bottom:20px;left:20px;right:20px;max-width:620px;background:rgba(26,26,26,.92);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:28px 32px;pointer-events:auto;color:#f5f3ee">';
+    html += '<div id="present-section" style="font-family:IBM Plex Mono,monospace;font-size:9px;text-transform:uppercase;letter-spacing:.12em;color:rgba(168,64,31,.7);margin-bottom:6px"></div>';
+    html += '<div id="present-title" style="font-family:Fraunces,serif;font-size:26px;font-weight:700;margin-bottom:4px;color:#f5f3ee;line-height:1.2"></div>';
+    html += '<div style="width:40px;height:2px;background:linear-gradient(90deg,#a8401f,transparent);margin:8px 0 10px"></div>';
+    html += '<div id="present-sub" style="font-family:IBM Plex Mono,monospace;font-size:11px;color:#a8401f;margin-bottom:14px"></div>';
+    html += '<div id="present-body" style="font-family:IBM Plex Mono,monospace;font-size:12px;line-height:1.75;color:rgba(245,243,238,.8);white-space:pre-wrap"></div>';
     html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px;padding-top:12px;border-top:1px solid rgba(213,206,188,.15)">';
     html += '<span id="present-count" style="font-family:IBM Plex Mono,monospace;font-size:10px;color:rgba(154,144,119,.7)"></span>';
     html += '<div style="display:flex;gap:8px">';
