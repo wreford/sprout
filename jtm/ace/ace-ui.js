@@ -2095,7 +2095,7 @@ const ACE_UI = (function () {
     html += '<div style="margin-top:16px">';
     html += '<div class="section-lbl" style="margin-bottom:4px">Terminal</div>';
     html += '<div class="terminal" id="term-out">' + renderTermLines() + '<span class="term-blink"></span></div>';
-    html += '<div class="term-prompt"><span class="term-caret">C:\\NDX&gt;</span><input class="term-field" id="term-in" autofocus></div>';
+    html += '<div class="term-prompt"><span class="term-caret">ace ></span><input class="term-field" id="term-in" placeholder="type a command..." autofocus></div>';
     html += '</div>';
 
     el.innerHTML = html;
@@ -2671,7 +2671,7 @@ const ACE_UI = (function () {
   // ================================================================
 
   function renderModel(el) {
-    var html = '<div id="model-wrap" style="position:relative;width:100%;height:calc(100vh - 60px);background:#221c10;border-radius:6px;overflow:hidden">';
+    var html = '<div id="model-wrap" style="position:relative;width:100%;height:calc(100vh - 120px);min-height:400px;background:#1a1d21;border-radius:6px;overflow:hidden">';
     html += '<canvas id="model-cv" style="width:100%;height:100%;display:block"></canvas>';
 
     // Camera toolbar

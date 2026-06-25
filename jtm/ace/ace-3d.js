@@ -352,10 +352,11 @@ var ACE_3D = (function () {
 
     // -- Buildings (always show outlines, fill with progress) --
     function bldg(x, y, bw, bh, prog, color, label) {
-      // Ghost outline (always visible)
-      c.strokeStyle = 'rgba(154,144,119,.25)';
-      c.lineWidth = 1;
-      c.setLineDash([4, 3]);
+      // Ghost outline (always visible) with subtle pulse
+      var ghostAlpha = 0.2 + 0.1 * Math.sin(time * 1.5);
+      c.strokeStyle = 'rgba(168,130,90,' + ghostAlpha + ')';
+      c.lineWidth = 1.5;
+      c.setLineDash([6, 4]);
       c.strokeRect(x - bw / 2, y - bh, bw, bh);
       c.setLineDash([]);
       // Fill with progress
