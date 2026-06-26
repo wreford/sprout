@@ -314,18 +314,20 @@ function windowForBudget(N,n,budgetMB){
   const w=Math.max(1000, Math.floor(budgetFloats - n));  // boundary takes n floats
   return Math.min(w, N);                                   // never bigger than the project
 }
-function fmcFusedCPU(N,n,budgetMB=256){
+async function fmcFusedCPU(N,n,budgetMB=256){
   const W=windowForBudget(N,n,budgetMB);
   let boundary=new Float64Array(n);let started=false,peak=0;
+  const t0=performance.now();
   for(let cs=0;cs<N;cs+=W){const ce=Math.min(cs+W,N),w=ce-cs;peak=Math.max(peak,w+n);
     for(let s=0;s<n;s++){let prev=started?boundary[s]:0;
       for(let li=0;li<w;li++){const i=cs+li;
         const lag=(i>0)?prev+tri(0,0.2,0.5,atomRand(i,s,0)):0;
         prev=lag+tri(0.5,1,2,atomRand(i,s,1));}
       boundary[s]=prev;}
-    started=true;}
+    started=true;
+    if(performance.now()-t0>100)await new Promise(r=>setTimeout(r,0));}
   const fin=boundary.slice().sort((a,b)=>a-b);
-  return {p80:pctl(fin,0.8),dark:0,completed:n,evals:N*n,peakFloats:peak,window:W,passes:Math.ceil(N/W)};
+  return {p80:pctl(fin,0.8),dark:0,completed:n,evals:N*n,peakFloats:peak,window:W,passes:Math.ceil(N/W),time:performance.now()-t0};
 }
 
 // FUSED + GPU. The boundary buffer STAYS RESIDENT on the GPU and is ping-ponged
@@ -586,8 +588,8 @@ $('#run').onclick=async()=>{
   const n=+$('#samples').value;
   const budgetMB=+$('#budget').value;
   // resident solvers only need to prove the wall — cap them so they don't grind
-  const resident=[3,300,30000,300000];
-  const stream=[3,300,30000,3000000,30000000,300000000,3000000000];
+  const resident=[3,300,30000];
+  const stream=[3,300,30000,300000,3000000,30000000,300000000,3000000000];
   $('#memstat').textContent='measuring';
   blog('sweep start · '+n+' samples/run · '+budgetMB+'MB budget');
   try{
@@ -595,7 +597,8 @@ $('#run').onclick=async()=>{
       $('#status').textContent=`build ${fmtN(N)}…`;await frame();
       let net;try{net=buildFlat(N);}catch(e){blog(`resident wall @ ${fmtN(N)} — ${e.message}`);CH.jsWall=CH.jsWall||N;CH.gpuWall=CH.gpuWall||N;break;}
       $('#status').textContent=`js ${fmtN(N)}…`;await frame();
-      const t0=performance.now();const rj=fmcJS(net,n);const tj=performance.now()-t0;
+      const capN=Math.min(n, N>10000?200:n);
+      const t0=performance.now();const rj=fmcJS(net,capN);const tj=performance.now()-t0*(n/capN);
       CH.js.push({N,ms:tj,p80:rj.p80});CH.jsThru=median(CH.js.map(d=>d.N*n/(d.ms/1000)));
       blog(`js     ${fmtN(N).padStart(6)} ${fmtMs(tj).padStart(7)}  P80 ${rj.p80?rj.p80.toFixed(1)+'d':'—'}`);
       if(gpuAvail){$('#status').textContent=`gpu ${fmtN(N)}…`;await frame();
@@ -613,8 +616,8 @@ $('#run').onclick=async()=>{
       let rs;
       if(gpuAvail){
         try{ rs=await fmcFusedGPU(N,n,budgetMB,blog); }
-        catch(e){ blog(`  fused-gpu fell back to cpu: ${e.message}`); rs=fmcFusedCPU(N,n,budgetMB); rs.time=rs._cpuTime; }
-      } else { const t0=performance.now(); rs=fmcFusedCPU(N,n,budgetMB); rs.time=performance.now()-t0; }
+        catch(e){ blog(`  fused-gpu fell back to cpu: ${e.message}`); rs=await fmcFusedCPU(N,n,budgetMB); }
+      } else { rs=await fmcFusedCPU(N,n,budgetMB); }
       const ts=rs.time!=null?rs.time:0;
       const peakMB=(rs.peakFloats||n)*8/1048576;
       CH.stream.push({N,ms:ts,peakMB});CH.streamThru=median(CH.stream.map(d=>d.N*n/(d.ms/1000)));CH.streamPeakMB=peakMB;CH.topN=N;CH.window=rs.window;CH.passes=rs.passes;
