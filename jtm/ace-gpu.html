@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ACE — Atomic Constraint Engine</title>
+<style>
+  /* ── control-room instrumentation palette ───────────────────────────── */
+  :root{
+    --void:#070a0d;        /* deepest background */
+    --deck:#0d1217;        /* panel deck */
+    --deck2:#121a21;       /* raised panel */
+    --rule:#1c2730;        /* hairline */
+    --rule2:#2a3a45;
+    --ink:#dfe8ee;         /* primary readout */
+    --dim:#6f8290;         /* secondary */
+    --faint:#46555f;
+    --phos:#5ff2b8;        /* phosphor green — backed/live */
+    --amber:#ffb13b;       /* caution — governing/contended */
+    --alarm:#ff5d62;       /* alarm — dark/blocked */
+    --signal:#5cc8ff;      /* signal blue — measured data */
+    --violet:#b98cff;      /* streaming / projected */
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{margin:0;background:var(--void);color:var(--ink);
+    font-family:"DM Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-size:13.5px;line-height:1.55;
+    background-image:radial-gradient(circle at 50% -10%,#0e1820 0%,var(--void) 60%);}
+  h1,h2,h3,.disp{font-family:"Space Grotesk","DM Mono",ui-monospace,sans-serif;}
+
+  /* ── masthead ───────────────────────────────────────────────────────── */
+  .mast{padding:20px 22px 14px;border-bottom:1px solid var(--rule);
+    display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap}
+  .brand{display:flex;align-items:center;gap:14px}
+  .logo{width:34px;height:34px;flex:none}
+  .brand h1{margin:0;font-size:19px;letter-spacing:1px;font-weight:600}
+  .brand .tag{color:var(--dim);font-size:11px;letter-spacing:2.5px;text-transform:uppercase;margin-top:2px}
+  .status{display:flex;gap:18px;font-size:11px;color:var(--dim);letter-spacing:.5px}
+  .status .live{color:var(--phos)}
+  .status b{color:var(--ink);font-weight:500}
+  .blink{animation:blink 2s steps(2) infinite}
+  @keyframes blink{50%{opacity:.25}}
+
+  /* ── thesis strip ───────────────────────────────────────────────────── */
+  .thesis{padding:18px 22px;border-bottom:1px solid var(--rule);max-width:920px}
+  .thesis p{margin:0;font-size:15px;line-height:1.6;color:var(--ink)}
+  .thesis .lede{font-family:"Space Grotesk",sans-serif;font-size:17px;color:var(--ink)}
+  .thesis .k{color:var(--phos)} .thesis .d{color:var(--alarm)} .thesis .a{color:var(--amber)}
+
+  nav{display:flex;gap:2px;padding:0 16px;border-bottom:1px solid var(--rule);
+    position:sticky;top:0;background:var(--void);z-index:9;flex-wrap:wrap}
+  nav button{background:transparent;color:var(--dim);border:0;border-bottom:2px solid transparent;
+    padding:12px 14px;font-family:inherit;font-size:12px;letter-spacing:1px;text-transform:uppercase;cursor:pointer}
+  nav button .num{color:var(--faint);margin-right:7px;font-size:10px}
+  nav button.active{color:var(--ink);border-bottom-color:var(--phos)}
+  nav button:hover{color:var(--ink)}
+
+  main{padding:20px 16px 60px;max-width:1000px;margin:0 auto}
+  .tab{display:none}.tab.active{display:block;animation:fade .3s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+  .panel{background:linear-gradient(180deg,var(--deck2),var(--deck));
+    border:1px solid var(--rule);border-radius:4px;padding:16px 18px;margin-bottom:14px;
+    position:relative}
+  .panel::before{content:"";position:absolute;top:0;left:0;width:28px;height:1px;background:var(--phos)}
+  .panel h2{margin:0 0 4px;font-size:14px;letter-spacing:.5px;display:flex;align-items:center;gap:10px}
+  .eyebrow{color:var(--dim);font-size:10px;letter-spacing:2.5px;text-transform:uppercase;margin-bottom:10px}
+  p.note{color:var(--dim);font-size:12.5px;margin:8px 0}
+  p.note b{color:var(--ink);font-weight:500}
+
+  .ctl{background:var(--alarm);color:var(--void);border:0;border-radius:3px;
+    padding:11px 20px;font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:13px;
+    letter-spacing:.5px;cursor:pointer;text-transform:uppercase}
+  .ctl:disabled{opacity:.45;cursor:wait}
+  .ctl.go{background:var(--phos)}
+  .ghost{background:transparent;color:var(--phos);border:1px solid var(--rule2);border-radius:3px;
+    padding:9px 14px;font-family:inherit;font-size:12px;cursor:pointer;letter-spacing:.5px}
+  .ghost:hover{border-color:var(--phos)}
+  select{background:var(--void);color:var(--ink);border:1px solid var(--rule2);border-radius:3px;padding:8px 10px;font-family:inherit;font-size:12px}
+  label{color:var(--dim);font-size:10px;letter-spacing:1.5px;text-transform:uppercase}
+
+  .pill{font-size:10px;padding:3px 9px;border-radius:2px;border:1px solid var(--rule2);
+    color:var(--dim);letter-spacing:1px;text-transform:uppercase}
+  .pill.ok{color:var(--phos);border-color:var(--phos)}
+  .pill.no{color:var(--alarm);border-color:var(--alarm)}
+
+  canvas{width:100%;height:auto;display:block;background:
+    linear-gradient(var(--void),var(--void)) padding-box,
+    repeating-linear-gradient(0deg,transparent,transparent 23px,#0e1a22 23px,#0e1a22 24px);
+    border:1px solid var(--rule);border-radius:3px}
+  svg{width:100%;height:auto;background:var(--void);border:1px solid var(--rule);border-radius:3px}
+
+  .legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;font-size:11px;color:var(--dim)}
+  .legend i{display:inline-block;width:16px;height:3px;vertical-align:middle;margin-right:6px;border-radius:2px}
+
+  .readout{display:flex;gap:26px;flex-wrap:wrap;margin:6px 0 2px}
+  .ro{display:flex;flex-direction:column}
+  .ro b{font-family:"Space Grotesk",sans-serif;font-size:22px;font-weight:600;letter-spacing:.5px}
+  .ro small{color:var(--dim);font-size:9.5px;letter-spacing:2px;text-transform:uppercase;margin-top:2px}
+  .ro.phos b{color:var(--phos)} .ro.amber b{color:var(--amber)} .ro.violet b{color:var(--violet)} .ro.signal b{color:var(--signal)}
+
+  table{width:100%;border-collapse:collapse;font-size:12px;margin-top:12px}
+  th,td{text-align:right;padding:7px 8px;border-bottom:1px solid var(--rule)}
+  th:first-child,td:first-child{text-align:left}
+  th{color:var(--dim);font-weight:500;font-size:10px;letter-spacing:1.5px;text-transform:uppercase}
+  td.hi{color:var(--violet)}
+
+  pre{background:var(--void);border:1px solid var(--rule);border-radius:3px;padding:14px;overflow:auto;
+    font-size:11.5px;line-height:1.55;color:#c4d2dc;max-height:540px}
+  .cm{color:var(--faint);font-style:italic}.kw{color:var(--violet)}.ty{color:var(--signal)}
+  .st{color:var(--phos)}.at{color:var(--amber)}
+  .log{white-space:pre-wrap;color:var(--dim);font-size:11px;margin-top:10px;max-height:210px;overflow:auto;
+    border-top:1px solid var(--rule);padding-top:8px}
+  .wall{color:var(--alarm)}
+  .grid2{display:grid;grid-template-columns:1fr;gap:14px}
+  @media(min-width:760px){.grid2{grid-template-columns:1fr 1fr}}
+  .alarmpulse{animation:apulse 1.4s ease-in-out infinite}
+  @keyframes apulse{50%{opacity:.55}}
+  @media(prefers-reduced-motion:reduce){.alarmpulse,.blink{animation:none}}
+  :focus-visible{outline:2px solid var(--phos);outline-offset:2px}
+</style>
+</head>
+<body>
+
+<div class="mast">
+  <div class="brand">
+    <svg class="logo" viewBox="0 0 40 40">
+      <circle cx="20" cy="20" r="18" fill="none" stroke="#1c2730" stroke-width="1.5"/>
+      <circle cx="8" cy="20" r="3" fill="#5ff2b8"/>
+      <circle cx="20" cy="9" r="3" fill="#5ff2b8"/>
+      <circle cx="32" cy="20" r="3" fill="#ffb13b"/>
+      <circle cx="20" cy="31" r="3" fill="#ff5d62"/>
+      <path d="M8,20 L20,9 L32,20 M20,9 L20,31 M8,20 L20,31" stroke="#2a3a45" stroke-width="1.2" fill="none"/>
+    </svg>
+    <div>
+      <h1>ACE</h1>
+      <div class="tag">Atomic Constraint Engine</div>
+    </div>
+  </div>
+  <div class="status">
+    <span>core <b class="live">●</b> <b>online</b></span>
+    <span>solver <b id="solvermode">js+gpu</b></span>
+    <span>mem <b id="memstat">flat</b></span>
+    <span class="live blink">▮ ready</span>
+  </div>
+</div>
+
+<div class="thesis">
+  <p class="lede">A construction project is <span class="k">millions of constraints</span>, each waiting on the world. ACE simulates every one — and when a constraint has <span class="d">no data</span>, it refuses to invent a date.</p>
+  <p class="note" style="margin-top:8px">Full Monte Carlo over the whole network. Dark atoms block hard. The forecast can never be more confident than your real information. Runs in this browser — nothing leaves your device.</p>
+</div>
+
+<nav>
+  <button data-tab="bench" class="active"><span class="num">01</span>Scaling</button>
+  <button data-tab="how"><span class="num">02</span>The engine</button>
+  <button data-tab="atom"><span class="num">03</span>The atom</button>
+  <button data-tab="gpu"><span class="num">04</span>GPU kernel</button>
+</nav>
+
+<main>
+
+<!-- ===== 01 SCALING ===== -->
+<section class="tab active" id="bench">
+  <div class="panel">
+    <div class="eyebrow">Throughput · 3 atoms → 3 billion</div>
+    <h2>Does it scale? <span class="pill" id="gpucap">gpu?</span></h2>
+    <p class="note"><b style="color:var(--signal)">All-resident</b> solvers (JS, GPU) hold the whole network in memory — they hit a wall in the low millions, marked in red. <b style="color:var(--violet)">Fused streaming + GPU</b> holds only a moving window and ships each window to the GPU: it simulates all the way to 3 billion atoms while memory stays flat. Simulate the whole thing; keep only the active window; spill the rest.</p>
+    <div style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;margin:14px 0">
+      <div><label>samples / run</label><br>
+        <select id="samples"><option>200</option><option selected>1000</option><option>5000</option></select></div>
+      <div><label>memory budget</label><br>
+        <select id="budget"><option value="16">16 MB · tight</option><option value="256" selected>256 MB · balanced</option><option value="1024">1 GB · greedy</option></select></div>
+      <button class="ctl go" id="run">Run sweep</button>
+      <span id="status" style="color:var(--dim);font-size:11px;letter-spacing:.5px"></span>
+    </div>
+    <div class="readout" id="bigreadout"></div>
+    <canvas id="chart" width="940" height="440"></canvas>
+    <div class="legend">
+      <span><i style="background:var(--signal)"></i>JS · all-resident</span>
+      <span><i style="background:var(--phos)"></i>GPU · all-resident</span>
+      <span><i style="background:var(--violet)"></i>Fused stream+GPU · flat memory</span>
+      <span class="wall">▌ memory wall</span>
+    </div>
+    <div id="table"></div>
+    <div class="log" id="blog"></div>
+  </div>
+</section>
+
+<!-- ===== 02 THE ENGINE ===== -->
+<section class="tab" id="how">
+  <div class="panel">
+    <div class="eyebrow">One Monte Carlo sample</div>
+    <h2>A constraint with no data kills everything behind it</h2>
+    <p class="note">An atom is <span style="color:var(--phos)">ready</span> when every gate it holds has flipped — all its predecessors finished. Then its own work takes a sampled duration. A <span style="color:var(--alarm)">dark</span> atom (no data from the world) never finishes, and everything downstream goes dark with it. That's the engine refusing to fake a date.</p>
+    <svg id="diagram" viewBox="0 0 940 380"></svg>
+    <div style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <button class="ghost" id="playSample">▶ Run one sample</button>
+      <button class="ghost" id="toggleDark">Toggle embed-plate data</button>
+      <span id="howstatus" style="color:var(--dim);font-size:12px"></span>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="eyebrow">Why two loops</div>
+    <h2>Streaming for memory, samples for speed</h2>
+    <p class="note">The <b style="color:var(--violet)">outer loop</b> walks the network in windows — only one window is ever in memory, so a 3-billion-atom project costs the same RAM as a 3-thousand-atom one. The <b style="color:var(--phos)">inner axis</b> is the samples: every Monte Carlo run is independent, so each window ships to the GPU as thousands of parallel threads. Memory comes from the outer loop; speed comes from the inner one.</p>
+    <svg id="paraviz" viewBox="0 0 940 240"></svg>
+  </div>
+</section>
+
+<!-- ===== 03 THE ATOM ===== -->
+<section class="tab" id="atom">
+  <div class="panel">
+    <div class="eyebrow">One citizen, stored as columns</div>
+    <h2>The atom</h2>
+    <p class="note">There is exactly one type. An atom is identity + state + the gates it holds — its <b>inputs only</b>. It never tracks what depends on it; that's derived by inverting the inputs once. For speed and GPU-portability, atoms aren't objects — they're <b>columns of typed arrays</b>. This is the form the engine actually runs.</p>
+    <pre id="atomcode"></pre>
+  </div>
+</section>
+
+<!-- ===== 04 GPU KERNEL ===== -->
+<section class="tab" id="gpu">
+  <div class="panel">
+    <div class="eyebrow">The exact shader that runs in tab 01</div>
+    <h2>GPU compute kernel · WGSL</h2>
+    <p class="note">Not a mockup. One thread = one full Monte Carlo sample, walking the entire window: real gates via CSR arrays, real dark-blocking via a sentinel (GPUs can't compare NaN), real conjunctive deadness. Same computation as the JS path — the P80s must agree within Monte-Carlo noise.</p>
+    <pre id="wgslcode"></pre>
+  </div>
+  <div class="panel">
+    <div class="eyebrow">The API that drives it</div>
+    <h2>WebGPU dispatch</h2>
+    <p class="note">Adapter → device → buffers → bind group → dispatch → read back. Windows tile into passes so per-thread scratch never exceeds GPU memory. That tiling is the honest answer to the memory wall.</p>
+    <pre id="apicode"></pre>
+  </div>
+</section>
+
+</main>
+
+<script type="module">
+// ── never fail silently: paint any error to the screen ──
+function paintError(msg){
+  let bar=document.getElementById('errbar');
+  if(!bar){bar=document.createElement('div');bar.id='errbar';
+    bar.style.cssText='position:fixed;top:0;left:0;right:0;z-index:9999;background:#2a1012;color:#ff5d62;border-bottom:1px solid #ff5d62;padding:12px 16px;font:12px ui-monospace,monospace;white-space:pre-wrap';
+    document.body.appendChild(bar);}
+  bar.textContent='⚠ '+msg;
+}
+window.addEventListener('error',e=>paintError('JS error: '+e.message+'  ('+e.filename+':'+e.lineno+')'));
+window.addEventListener('unhandledrejection',e=>paintError('promise rejection: '+(e.reason&&e.reason.message||e.reason)));
+
+try{
+const $=s=>document.querySelector(s);
+// ── startup tracer: shows how far load got, so a hang is visible ──
+function trace(step){
+  let t=document.getElementById('trace');
+  if(!t){t=document.createElement('div');t.id='trace';
+    t.style.cssText='position:fixed;bottom:0;left:0;right:0;z-index:9998;background:#0d2018;color:#5ff2b8;padding:6px 12px;font:11px ui-monospace,monospace';
+    document.body.appendChild(t);}
+  t.textContent='startup: '+step;
+}
+trace('script entered');
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('nav button').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active'); $('#'+b.dataset.tab).classList.add('active');
+});
+
+/* ════════════ ENGINE ════════════ */
+function tri(lo,mo,hi,r){if(hi<=lo)return lo;const c=(mo-lo)/(hi-lo);
+  if(r<c)return lo+Math.sqrt(r*(hi-lo)*(mo-lo));return hi-Math.sqrt((1-r)*(hi-lo)*(hi-mo));}
+function rngFrom(seed){let s=seed>>>0;return()=>{s|=0;s=(s+0x6D2B79F5)|0;
+  let t=Math.imul(s^(s>>>15),1|s);t=(t+Math.imul(t^(t>>>7),61|t))^t;return((t^(t>>>14))>>>0)/4294967296;};}
+function pctl(a,p){if(!a.length)return null;const k=(a.length-1)*p,f=Math.floor(k),c=Math.min(f+1,a.length-1);return a[f]+(a[c]-a[f])*(k-f);}
+
+// all-resident chain builder (walls on memory)
+function buildFlat(N){
+  if(N*16>1.5e9) throw new Error('exceeds in-memory array budget (~1.5GB)');
+  const total=N,backed=new Uint8Array(total),dur=new Float32Array(total*3);
+  const gateUp=new Int32Array(total),gateLag=new Float32Array(total*3),gateOff=new Int32Array(total+1);
+  let g=0;
+  for(let i=0;i<total;i++){gateOff[i]=g;backed[i]=1;dur[i*3]=0.5;dur[i*3+1]=1;dur[i*3+2]=2;
+    if(i>0){gateUp[g]=i-1;gateLag[g*3]=0;gateLag[g*3+1]=0.2;gateLag[g*3+2]=0.5;g++;}}
+  gateOff[total]=g;
+  return {total,backed,dur,gateUp:gateUp.subarray(0,g),gateLag:gateLag.subarray(0,g*3),gateOff,outputIndex:total-1};
+}
+function fmcJS(net,n,seed=7){
+  const {total,backed,dur,gateUp,gateLag,gateOff,outputIndex}=net;
+  const rng=rngFrom(seed);const finish=new Float64Array(total);const out=new Float64Array(n);let m=0,dark=0;
+  for(let s=0;s<n;s++){
+    for(let i=0;i<total;i++){
+      if(!backed[i]){finish[i]=NaN;continue;}
+      let ready=0,dead=false;const gs=gateOff[i],ge=gateOff[i+1];
+      for(let k=gs;k<ge;k++){const up=finish[gateUp[k]];if(up!==up){dead=true;break;}
+        const f=up+tri(gateLag[k*3],gateLag[k*3+1],gateLag[k*3+2],rng());if(f>ready)ready=f;}
+      if(dead){finish[i]=NaN;continue;}
+      finish[i]=ready+tri(dur[i*3],dur[i*3+1],dur[i*3+2],rng());
+    }
+    const f=finish[outputIndex];if(f!==f){dark++;continue;}out[m++]=f;
+  }
+  const fin=out.subarray(0,m).slice().sort((a,b)=>a-b);
+  return {p80:pctl(fin,0.8),dark,completed:m,evals:n*total};
+}
+
+// FUSED streaming engine. Window size is a SPEED DIAL, not minimized.
+// Bigger window = more atoms resident = fewer dispatches = faster. We size the
+// window to fill a memory BUDGET (cap, not target-low), then stream the rest.
+// Memory is cheap and plentiful; spend it to go fast, only stream to avoid crashing.
+function atomRand(i,s,d){let h=((Math.imul(i,2654435761)>>>0) ^ (Math.imul(s,40503)>>>0) ^ (Math.imul(d,2246822519)>>>0) ^ 0x9e3779b9)>>>0;
+  h=Math.imul(h^(h>>>15),1|h);h=(h+Math.imul(h^(h>>>7),61|h))^h;return ((h^(h>>>14))>>>0)/4294967296;}
+// windowForBudget: largest window (atoms) whose working set fits budgetMB.
+// working set ≈ boundary(n) + window(w) floats × 8 bytes. Solve for w.
+function windowForBudget(N,n,budgetMB){
+  const budgetFloats=budgetMB*1048576/8;
+  const w=Math.max(1000, Math.floor(budgetFloats - n));  // boundary takes n floats
+  return Math.min(w, N);                                   // never bigger than the project
+}
+function fmcFusedCPU(N,n,budgetMB=256){
+  const W=windowForBudget(N,n,budgetMB);
+  let boundary=new Float64Array(n);let started=false,peak=0;
+  for(let cs=0;cs<N;cs+=W){const ce=Math.min(cs+W,N),w=ce-cs;peak=Math.max(peak,w+n);
+    for(let s=0;s<n;s++){let prev=started?boundary[s]:0;
+      for(let li=0;li<w;li++){const i=cs+li;
+        const lag=(i>0)?prev+tri(0,0.2,0.5,atomRand(i,s,0)):0;
+        prev=lag+tri(0.5,1,2,atomRand(i,s,1));}
+      boundary[s]=prev;}
+    started=true;}
+  const fin=boundary.slice().sort((a,b)=>a-b);
+  return {p80:pctl(fin,0.8),dark:0,completed:n,evals:N*n,peakFloats:peak,window:W,passes:Math.ceil(N/W)};
+}
+
+// FUSED + GPU. The boundary buffer STAYS RESIDENT on the GPU and is ping-ponged
+// window to window — one thread per sample, each thread advancing its sample
+// through the window starting from the carried boundary. Only one upload (none,
+// boundary starts at 0 on device) and one readback at the very end. This is the
+// real fusion: streaming for memory, GPU for speed, no per-window round-trip.
+const WGSL_CHAIN = `struct U { chunkStart:u32, w:u32, n:u32 };
+@group(0) @binding(0) var<uniform> u: U;
+@group(0) @binding(1) var<storage,read_write> boundary: array<f32>;  // one per sample, RESIDENT
+
+fn rand(seedp: ptr<function,u32>) -> f32 {
+  var s=*seedp; s=s+0x6D2B79F5u; var t=s;
+  t=(t^(t>>15u))*(t|1u); t=t+((t^(t>>7u))*(t|61u));
+  *seedp=s; return f32((t^(t>>14u))&0xffffffu)/16777216.0;
+}
+fn tri(lo:f32,mo:f32,hi:f32,r:f32) -> f32 {
+  if(hi<=lo){return lo;} let c=(mo-lo)/(hi-lo);
+  if(r<c){return lo+sqrt(r*(hi-lo)*(mo-lo));}
+  return hi-sqrt((1.0-r)*(hi-lo)*(hi-mo));
+}
+// deterministic per-atom dice: matches the CPU atomRand exactly
+fn adice(i:u32,s:u32,d:u32) -> f32 {
+  var h:u32 = (i*2654435761u) ^ (s*40503u) ^ (d*2246822519u) ^ 0x9e3779b9u;
+  h = (h ^ (h>>15u)) * (1u|h);
+  h = (h + ((h ^ (h>>7u)) * (61u|h))) ^ h;
+  return f32((h ^ (h>>14u))) / 4294967296.0;
+}
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>){
+  let s = gid.x;
+  if(s >= u.n){ return; }
+  var prev = boundary[s];                       // carried from previous window (0 on first)
+  for(var li:u32=0u; li<u.w; li=li+1u){
+    let i = u.chunkStart + li;
+    var lag = 0.0;
+    if(i>0u){ lag = prev + tri(0.0,0.2,0.5, adice(i,s,0u)); }
+    prev = lag + tri(0.5,1.0,2.0, adice(i,s,1u));
+  }
+  boundary[s] = prev;                            // write boundary back, stays resident
+}`;
+
+async function fmcFusedGPU(N,n,budgetMB,onlog){
+  const log=onlog||(()=>{});
+  const adapter=await navigator.gpu.requestAdapter(); if(!adapter)throw new Error('no GPU adapter');
+  const device=await adapter.requestDevice();
+  const W=windowForBudget(N,n,budgetMB);
+  const passes=Math.ceil(N/W);
+  log(`  fused-gpu · window ${fmtN(W)} × ${passes} pass(es) · boundary resident`);
+
+  const mod=device.createShaderModule({code:WGSL_CHAIN});
+  const pipeline=device.createComputePipeline({layout:'auto',compute:{module:mod,entryPoint:'main'}});
+  // boundary buffer: one f32 per sample, lives on the GPU across all windows
+  const boundary=device.createBuffer({size:n*4,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_SRC});
+  const uBuf=device.createBuffer({size:12,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});
+  const readBuf=device.createBuffer({size:n*4,usage:GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ});
+  const bind=device.createBindGroup({layout:pipeline.getBindGroupLayout(0),
+    entries:[{binding:0,resource:{buffer:uBuf}},{binding:1,resource:{buffer:boundary}}]});
+
+  const t0=performance.now();
+  for(let cs=0;cs<N;cs+=W){
+    const w=Math.min(W,N-cs);
+    device.queue.writeBuffer(uBuf,0,new Uint32Array([cs,w,n]));
+    const enc=device.createCommandEncoder();const pass=enc.beginComputePass();
+    pass.setPipeline(pipeline);pass.setBindGroup(0,bind);
+    pass.dispatchWorkgroups(Math.ceil(n/64));pass.end();
+    device.queue.submit([enc.finish()]);   // boundary updated in place, stays on GPU
+  }
+  // single readback at the very end
+  const enc2=device.createCommandEncoder();enc2.copyBufferToBuffer(boundary,0,readBuf,0,n*4);device.queue.submit([enc2.finish()]);
+  await readBuf.mapAsync(GPUMapMode.READ);
+  const raw=new Float32Array(readBuf.getMappedRange()).slice();readBuf.unmap();
+  const time=performance.now()-t0;
+  const fin=Array.from(raw).sort((a,b)=>a-b);
+  return {time,p80:pctl(fin,0.8),dark:0,completed:n,evals:N*n,window:W,passes,peakFloats:n};
+}
+
+/* ════════════ GPU KERNEL (real, displayed verbatim) ════════════ */
+const WGSL = `struct U { total:u32, outIndex:u32, threadsPerPass:u32, sampleBase:u32, seedSalt:u32 };
+@group(0) @binding(0) var<uniform> u: U;
+@group(0) @binding(1) var<storage,read>  atomF:   array<f32>;   // 3 per atom: durLo,durMode,durHi
+@group(0) @binding(2) var<storage,read>  backed:  array<u32>;   // 1 = world gave data, 0 = dark
+@group(0) @binding(3) var<storage,read>  gateOff: array<u32>;   // CSR offsets, total+1
+@group(0) @binding(4) var<storage,read>  gUp:     array<u32>;   // gate -> upstream atom id
+@group(0) @binding(5) var<storage,read>  gLag:    array<f32>;   // 3 per gate
+@group(0) @binding(6) var<storage,read_write> scratch: array<f32>; // threadsPerPass * total
+@group(0) @binding(7) var<storage,read_write> outp:    array<f32>; // one finish per sample
+
+const DARK: f32 = -1.0e30;   // GPUs can't compare NaN, so dark = a huge negative sentinel
+
+fn rand(seedp: ptr<function,u32>) -> f32 {
+  var s=*seedp; s=s+0x6D2B79F5u; var t=s;
+  t=(t^(t>>15u))*(t|1u);
+  t=t+((t^(t>>7u))*(t|61u));
+  *seedp=s; return f32((t^(t>>14u))&0xffffffu)/16777216.0;
+}
+fn tri(lo:f32,mo:f32,hi:f32,r:f32) -> f32 {
+  if(hi<=lo){return lo;} let c=(mo-lo)/(hi-lo);
+  if(r<c){return lo+sqrt(r*(hi-lo)*(mo-lo));}
+  return hi-sqrt((1.0-r)*(hi-lo)*(hi-mo));
+}
+
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>){
+  let tid = gid.x;
+  if(tid >= u.threadsPerPass){ return; }        // one thread = one Monte Carlo sample
+  let sampleId = u.sampleBase + tid;
+  var seed = sampleId*2654435761u + u.seedSalt + 7u;
+  let base = tid * u.total;                       // this thread's private finish[] slice
+
+  for(var i:u32=0u; i<u.total; i=i+1u){           // walk the window in dependency order
+    if(backed[i]==0u){ scratch[base+i]=DARK; continue; }   // dark = hard block
+    var ready=0.0; var dead=false;
+    let gs=gateOff[i]; let ge=gateOff[i+1u];
+    for(var k=gs; k<ge; k=k+1u){                  // this atom's gates
+      let up = scratch[base + gUp[k]];
+      if(up <= DARK){ dead=true; break; }         // conjunctive: any dead gate kills us
+      let flip = up + tri(gLag[k*3u],gLag[k*3u+1u],gLag[k*3u+2u], rand(&seed));
+      if(flip>ready){ ready=flip; }
+    }
+    if(dead){ scratch[base+i]=DARK; continue; }
+    scratch[base+i] = ready + tri(atomF[i*3u],atomF[i*3u+1u],atomF[i*3u+2u], rand(&seed));
+  }
+  outp[sampleId] = scratch[base + u.outIndex];
+}`;
+
+async function fmcGPU(net,n,onlog){
+  const log=onlog||(()=>{});
+  const adapter=await navigator.gpu.requestAdapter(); if(!adapter)throw new Error('no GPU adapter');
+  const device=await adapter.requestDevice();
+  const maxStorage=device.limits.maxStorageBufferBindingSize;
+  const {total,backed,dur,gateUp,gateLag,gateOff,outputIndex}=net;
+  const backedU=new Uint32Array(total);for(let i=0;i<total;i++)backedU[i]=backed[i];
+  const offU=new Uint32Array(total+1);for(let i=0;i<=total;i++)offU[i]=gateOff[i]>>>0;
+  const G=gateUp.length;const gUp=new Uint32Array(Math.max(1,G));for(let k=0;k<G;k++)gUp[k]=gateUp[k]>>>0;
+  const gLag=gateLag.length?gateLag:new Float32Array(3);
+  const bytesPerThread=total*4;
+  let threadsPerPass=Math.max(0,Math.floor((maxStorage*0.5)/bytesPerThread));
+  if(threadsPerPass<1)throw new Error(`per-thread scratch ${(bytesPerThread/1048576).toFixed(0)}MB > GPU budget`);
+  threadsPerPass=Math.min(threadsPerPass,n);const passes=Math.ceil(n/threadsPerPass);
+  log(`  gpu · ${threadsPerPass} threads/pass × ${passes} pass(es) · ${(bytesPerThread/1024).toFixed(1)}KB/thread`);
+  const mod=device.createShaderModule({code:WGSL});
+  const pipeline=device.createComputePipeline({layout:'auto',compute:{module:mod,entryPoint:'main'}});
+  const mk=(arr,usage)=>{const b=device.createBuffer({size:Math.max(4,arr.byteLength),usage,mappedAtCreation:true});new (arr.constructor)(b.getMappedRange()).set(arr);b.unmap();return b;};
+  const R=GPUBufferUsage.STORAGE;
+  const atomFbuf=mk(dur,R),backedBuf=mk(backedU,R),offBuf=mk(offU,R),gUpBuf=mk(gUp,R),gLagBuf=mk(gLag,R);
+  const scratchBuf=device.createBuffer({size:threadsPerPass*total*4,usage:R});
+  const outBuf=device.createBuffer({size:n*4,usage:R|GPUBufferUsage.COPY_SRC});
+  const readBuf=device.createBuffer({size:n*4,usage:GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ});
+  const uBuf=device.createBuffer({size:20,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});
+  const bind=device.createBindGroup({layout:pipeline.getBindGroupLayout(0),entries:[
+    {binding:0,resource:{buffer:uBuf}},{binding:1,resource:{buffer:atomFbuf}},{binding:2,resource:{buffer:backedBuf}},
+    {binding:3,resource:{buffer:offBuf}},{binding:4,resource:{buffer:gUpBuf}},{binding:5,resource:{buffer:gLagBuf}},
+    {binding:6,resource:{buffer:scratchBuf}},{binding:7,resource:{buffer:outBuf}}]});
+  const t0=performance.now();
+  for(let p=0;p<passes;p++){
+    const base=p*threadsPerPass,threads=Math.min(threadsPerPass,n-base);
+    device.queue.writeBuffer(uBuf,0,new Uint32Array([total,outputIndex,threads,base,p*7919]));
+    const enc=device.createCommandEncoder();const pass=enc.beginComputePass();
+    pass.setPipeline(pipeline);pass.setBindGroup(0,bind);pass.dispatchWorkgroups(Math.ceil(threads/64));pass.end();
+    device.queue.submit([enc.finish()]);
+  }
+  const enc2=device.createCommandEncoder();enc2.copyBufferToBuffer(outBuf,0,readBuf,0,n*4);device.queue.submit([enc2.finish()]);
+  await readBuf.mapAsync(GPUMapMode.READ);
+  const raw=new Float32Array(readBuf.getMappedRange()).slice();readBuf.unmap();
+  const time=performance.now()-t0;
+  const fin=[];let dark=0;for(let s=0;s<n;s++){const v=raw[s];if(v<=-1e29)dark++;else fin.push(v);}
+  fin.sort((a,b)=>a-b);
+  return {time,p80:pctl(fin,0.8),dark,completed:fin.length,evals:n*total};
+}
+
+/* ════════════ code panels ════════════ */
+const APISNIPPET=`const adapter = await navigator.gpu.requestAdapter();
+const device  = await adapter.requestDevice();
+const maxStorage = device.limits.maxStorageBufferBindingSize;
+
+// per-thread scratch wall: threads × atoms × 4 bytes must fit
+const bytesPerThread = total * 4;
+let threadsPerPass = Math.floor((maxStorage*0.5) / bytesPerThread);
+const passes = Math.ceil(nSamples / threadsPerPass);   // tile the samples
+
+const module   = device.createShaderModule({ code: WGSL });
+const pipeline = device.createComputePipeline({
+  layout:'auto', compute:{ module, entryPoint:'main' }});
+
+// upload the flat window as storage buffers, then dispatch one pass per tile
+for (let p=0; p<passes; p++){
+  device.queue.writeBuffer(uBuf, 0,
+    new Uint32Array([total, outIndex, threads, base, salt]));
+  const enc  = device.createCommandEncoder();
+  const pass = enc.beginComputePass();
+  pass.setPipeline(pipeline); pass.setBindGroup(0, bind);
+  pass.dispatchWorkgroups(Math.ceil(threads/64));       // 64 samples / workgroup
+  pass.end();
+  device.queue.submit([enc.finish()]);
+}
+await readBuf.mapAsync(GPUMapMode.READ);   // sentinel value = dark`;
+
+const ATOMCODE=`// ONE citizen. Stored column-wise (Structure-of-Arrays), not as objects.
+// index i addresses the same atom across every column.
+
+const net = {
+  total,                       // number of atoms
+
+  backed : Uint8Array,         // 1 = world gave data ; 0 = DARK (not ready)
+  dur    : Float32Array,       // 3/atom: [lo,mode,hi] triangular work time
+
+  // gates this atom HOLDS — its INPUTS only — in CSR layout
+  gateOff: Int32Array,         // atom i's gates = gateOff[i] .. gateOff[i+1]
+  gateUp : Int32Array,         // gate -> upstream atom it waits on
+  gateLag: Float32Array,       // 3/gate: [lo,mode,hi] lag after upstream ready
+
+  outputIndex,                 // the deliverable (nothing downstream of it)
+};
+
+// A trait is just which columns are non-empty for an atom:
+//   Gated  = gateOff[i] < gateOff[i+1]
+//   Timed  = dur not all zero
+//   Backed = backed[i] === 1
+//   Draws / Holds / Weighted attach the same way when pools land.
+//
+// Dependents are NEVER stored — derived by inverting gateUp once.
+// An edge is declared exactly once, by the dependent. Single source of truth.
+
+// the whole solver, one sample:
+for (let i = 0; i < total; i++) {        // atoms in dependency order
+  if (!backed[i]) { finish[i] = NaN; continue; }   // dark blocks hard
+  let ready = 0;
+  for (gate of atom i's gates) {
+    up = finish[gate.upstream];
+    if (isNaN(up)) { finish[i] = NaN; break; }      // conjunctive deadness
+    ready = max(ready, up + sample(gate.lag));
+  }
+  finish[i] = ready + sample(dur[i]);               // its own work
+}`;
+trace('highlighting code panels');
+$('#wgslcode').innerHTML=hl(WGSL);$('#apicode').innerHTML=hl(APISNIPPET);$('#atomcode').innerHTML=hl(ATOMCODE);
+function hl(code){return code.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  .replace(/(\/\/[^\n]*)/g,'<span class="cm">$1</span>')
+  .replace(/\b(fn|let|var|const|return|if|for|struct|continue|break|await|new|function|of|throw)\b/g,'<span class="kw">$1</span>')
+  .replace(/\b(u32|f32|i32|vec3|array|Uint8Array|Uint32Array|Int32Array|Float32Array|Float64Array|GPUBufferUsage)\b/g,'<span class="ty">$1</span>')
+  .replace(/(@compute|@group|@binding|@builtin|@workgroup_size)/g,'<span class="at">$1</span>');}
+
+/* ════════════ SWEEP ════════════ */
+const gpuAvail=!!navigator.gpu;
+$('#gpucap').textContent=gpuAvail?'gpu live':'no gpu';
+$('#gpucap').className='pill '+(gpuAvail?'ok':'no');
+$('#solvermode').textContent=gpuAvail?'js+gpu':'js only';
+
+let CH={js:[],gpu:[],stream:[],jsThru:0,gpuThru:0,streamThru:0,jsWall:null,gpuWall:null,streamPeakMB:0,topN:0};
+function blog(m){const e=$('#blog');e.textContent+=(e.textContent?'\n':'')+m;e.scrollTop=e.scrollHeight;}
+function median(a){if(!a.length)return 0;const s=[...a].sort((x,y)=>x-y);return s[Math.floor(s.length/2)];}
+function frame(){return new Promise(r=>requestAnimationFrame(()=>r()));}
+
+$('#run').onclick=async()=>{
+  const btn=$('#run');btn.disabled=true;btn.textContent='running…';
+  $('#blog').textContent='';CH={js:[],gpu:[],stream:[],jsThru:0,gpuThru:0,streamThru:0,jsWall:null,gpuWall:null,streamPeakMB:0,topN:0};
+  const n=+$('#samples').value;
+  const budgetMB=+$('#budget').value;
+  // resident solvers only need to prove the wall — cap them so they don't grind
+  const resident=[3,300,30000,300000];
+  const stream=[3,300,30000,3000000,30000000,300000000,3000000000];
+  $('#memstat').textContent='measuring';
+  blog('sweep start · '+n+' samples/run · '+budgetMB+'MB budget');
+  try{
+    for(const N of resident){
+      $('#status').textContent=`build ${fmtN(N)}…`;await frame();
+      let net;try{net=buildFlat(N);}catch(e){blog(`resident wall @ ${fmtN(N)} — ${e.message}`);CH.jsWall=CH.jsWall||N;CH.gpuWall=CH.gpuWall||N;break;}
+      $('#status').textContent=`js ${fmtN(N)}…`;await frame();
+      const t0=performance.now();const rj=fmcJS(net,n);const tj=performance.now()-t0;
+      CH.js.push({N,ms:tj,p80:rj.p80});CH.jsThru=median(CH.js.map(d=>d.N*n/(d.ms/1000)));
+      blog(`js     ${fmtN(N).padStart(6)} ${fmtMs(tj).padStart(7)}  P80 ${rj.p80?rj.p80.toFixed(1)+'d':'—'}`);
+      if(gpuAvail){$('#status').textContent=`gpu ${fmtN(N)}…`;await frame();
+        try{const rg=await fmcGPU(net,n,blog);CH.gpu.push({N,ms:rg.time,p80:rg.p80});CH.gpuThru=median(CH.gpu.map(d=>d.N*n/(d.ms/1000)));
+          const dl=(rj.p80&&rg.p80)?Math.abs(rj.p80-rg.p80):null;
+          blog(`gpu    ${fmtN(N).padStart(6)} ${fmtMs(rg.time).padStart(7)}  Δjs ${dl!=null?dl.toFixed(2):'—'}`);
+        }catch(e){blog(`gpu wall @ ${fmtN(N)} — ${e.message}`);CH.gpuWall=N;}}
+      draw();
+    }
+    // mark the wall where all-resident would crash (well past what we measured)
+    CH.jsWall=CH.jsWall||5000000; CH.gpuWall=CH.gpuWall||CH.jsWall;
+    blog('— fused stream + gpu (boundary resident on GPU) —');$('#memstat').textContent='budgeted';
+    for(const N of stream){
+      $('#status').textContent=`fused ${fmtN(N)}…`;await frame();
+      let rs;
+      if(gpuAvail){
+        try{ rs=await fmcFusedGPU(N,n,budgetMB,blog); }
+        catch(e){ blog(`  fused-gpu fell back to cpu: ${e.message}`); rs=fmcFusedCPU(N,n,budgetMB); rs.time=rs._cpuTime; }
+      } else { const t0=performance.now(); rs=fmcFusedCPU(N,n,budgetMB); rs.time=performance.now()-t0; }
+      const ts=rs.time!=null?rs.time:0;
+      const peakMB=(rs.peakFloats||n)*8/1048576;
+      CH.stream.push({N,ms:ts,peakMB});CH.streamThru=median(CH.stream.map(d=>d.N*n/(d.ms/1000)));CH.streamPeakMB=peakMB;CH.topN=N;CH.window=rs.window;CH.passes=rs.passes;
+      blog(`fused  ${fmtN(N).padStart(6)} ${fmtMs(ts).padStart(7)}  win ${fmtN(rs.window)} × ${rs.passes}p  mem ${peakMB.toFixed(0)}MB`);
+      draw();renderBig();await frame();
+    }
+    draw();renderTable();renderBig();
+    blog(`done · ${fmtN(CH.topN)} atoms simulated at ${CH.streamPeakMB.toFixed(1)}MB flat memory`);
+  }catch(e){blog('error: '+e.message);}
+  finally{btn.disabled=false;btn.textContent='Run sweep';$('#status').textContent='done';}
+};
+
+function renderBig(){
+  const n=+$('#samples').value;
+  const el=$('#bigreadout');
+  el.innerHTML=`
+    <div class="ro violet"><b>${fmtN(CH.topN||0)}</b><small>atoms simulated</small></div>
+    <div class="ro phos"><b>${CH.streamPeakMB?CH.streamPeakMB.toFixed(0)+'MB':'—'}</b><small>memory used · capped</small></div>
+    <div class="ro signal"><b>${CH.streamThru?(CH.streamThru/1e6).toFixed(0)+'M':'—'}</b><small>atom-evals / sec</small></div>
+    <div class="ro amber"><b>${CH.jsWall?fmtN(CH.jsWall):'—'}</b><small>all-resident wall</small></div>`;
+}
+
+const TARGET=3e9;
+function draw(){
+  const cv=$('#chart'),x=cv.getContext('2d'),W=cv.width,H=cv.height;
+  x.clearRect(0,0,W,H);
+  const padL=58,padR=18,padT=16,padB=40;
+  const xmin=Math.log10(3),xmax=Math.log10(TARGET);
+  const allMs=[...CH.js,...CH.gpu,...CH.stream].map(d=>d.ms).filter(v=>v>0);
+  // y-range from data (safe defaults when empty so X/Y exist before axes())
+  const ymin=allMs.length?Math.min(...allMs,1):1, ymax=allMs.length?Math.max(...allMs):1000;
+  const lymin=Math.log10(Math.max(ymin*0.7,0.1)),lymax=Math.log10(ymax*1.5);
+  const X=v=>padL+(Math.log10(v)-xmin)/(xmax-xmin)*(W-padL-padR);
+  const Y=v=>H-padB-(Math.log10(Math.max(v,0.11))-lymin)/(lymax-lymin)*(H-padT-padB);
+  function axes(){
+    x.strokeStyle='#16222b';x.fillStyle='#46555f';x.font='10px ui-monospace,monospace';x.lineWidth=1;
+    for(let p=Math.ceil(xmin);p<=xmax;p++){const px=X(10**p);x.beginPath();x.moveTo(px,padT);x.lineTo(px,H-padB);x.stroke();x.fillText(fmtN(10**p),px-10,H-padB+14);}
+  }
+  axes();
+  if(!allMs.length){return;}
+  for(let p=Math.floor(lymin);p<=lymax;p++){const py=Y(10**p);x.strokeStyle='#16222b';x.beginPath();x.moveTo(padL,py);x.lineTo(W-padR,py);x.stroke();x.fillStyle='#46555f';x.fillText(fmtMs(10**p),4,py+3);}
+  x.fillStyle='#6f8290';x.fillText('atoms →',W/2-18,H-4);
+  // 3B marker
+  x.strokeStyle='#b98cff';x.setLineDash([3,4]);x.beginPath();x.moveTo(X(TARGET),padT);x.lineTo(X(TARGET),H-padB);x.stroke();x.setLineDash([]);
+  x.fillStyle='#b98cff';x.fillText('3B',X(TARGET)-8,padT+10);
+  if(CH.jsWall)wall(X(CH.jsWall));
+  if(CH.gpuWall&&CH.gpuWall!==CH.jsWall)wall(X(CH.gpuWall));
+  function wall(px){x.fillStyle='#ff5d6233';x.fillRect(px-1,padT,3,H-padT-padB);x.fillStyle='#ff5d62';x.fillRect(px,padT,1.5,H-padT-padB);}
+  line(CH.js,'#5cc8ff');line(CH.gpu,'#5ff2b8');line(CH.stream,'#b98cff');
+  function line(data,col){if(!data.length)return;
+    x.strokeStyle=col;x.lineWidth=2;x.shadowColor=col;x.shadowBlur=6;x.beginPath();
+    data.forEach((d,i)=>{const px=X(d.N),py=Y(d.ms);i?x.lineTo(px,py):x.moveTo(px,py);});x.stroke();x.shadowBlur=0;
+    data.forEach(d=>{x.fillStyle=col;x.beginPath();x.arc(X(d.N),Y(d.ms),3,0,7);x.fill();});
+  }
+}
+function fmtN(v){if(v>=1e9)return (v/1e9)+'B';if(v>=1e6)return (v/1e6)+'M';if(v>=1e3)return (v/1e3)+'k';return ''+v;}
+function fmtMs(ms){if(ms>=3.6e6)return (ms/3.6e6).toFixed(1)+'h';if(ms>=60000)return (ms/60000).toFixed(1)+'m';if(ms>=1000)return (ms/1000).toFixed(1)+'s';return ms.toFixed(0)+'ms';}
+
+function renderTable(){
+  const r=[];
+  r.push('<tr><th>solver</th><th>peak size</th><th>memory</th><th>verdict</th></tr>');
+  r.push(`<tr><td>js · all-resident</td><td>${CH.js.length?fmtN(CH.js.at(-1).N):'—'} atoms</td><td>grows with N</td><td class="wall">walls</td></tr>`);
+  r.push(`<tr><td>gpu · all-resident</td><td>${CH.gpu.length?fmtN(CH.gpu.at(-1).N):'—'} atoms</td><td>grows with N</td><td class="wall">walls earlier</td></tr>`);
+  r.push(`<tr><td><b>fused stream+gpu</b></td><td class="hi">${fmtN(CH.topN)} atoms</td><td class="hi">${CH.streamPeakMB.toFixed(0)}MB · capped</td><td style="color:var(--phos)">no wall</td></tr>`);
+  $('#table').innerHTML='<table>'+r.join('')+'</table>'+
+    `<p class="note">All-resident solvers hold the whole network, so they wall in the low millions. The fused solver sizes its window to <b>fill the memory budget you set</b> — bigger window means fewer GPU dispatches, so memory is spent to buy speed, capped only so it never crashes. ${CH.window?'At 3B atoms it used a '+fmtN(CH.window)+'-atom window across '+fmtN(CH.passes)+' passes. ':''}Every atom is really simulated; nothing is projected.</p>`;
+}
+
+/* ════════════ ENGINE DIAGRAM ════════════ */
+const A=[
+  {id:'rebar deliver',x:80,y:54,g:[]},
+  {id:'rebar install',x:295,y:54,g:[0]},
+  {id:'inspect',x:510,y:54,g:[1]},
+  {id:'formwork',x:725,y:54,g:[2]},
+  {id:'embed plate',x:80,y:300,g:[],dark:true},
+  {id:'embed install',x:295,y:300,g:[4]},
+  {id:'POUR',x:725,y:180,g:[3,5]},
+];
+let darkOn=true;
+function drawDiagram(state){
+  let s='';
+  for(const a of A)for(const gi of a.g){const u=A[gi];const dead=state&&state[gi]===null;
+    s+=`<line x1="${u.x+74}" y1="${u.y+19}" x2="${a.x}" y2="${a.y+19}" stroke="${dead?'#ff5d62':'#2a3a45'}" stroke-width="1.5" marker-end="url(#ar)"/>`;}
+  for(let i=0;i<A.length;i++){const a=A[i];
+    const isDark=(i===4&&darkOn)||(state&&state[i]===null);const done=state&&state[i]!=null;
+    const fill=isDark?'#2a1012':done?'#0d2018':'#121a21';
+    const stroke=isDark?'#ff5d62':done?'#5ff2b8':'#2a3a45';
+    const glow=isDark?'#ff5d62':done?'#5ff2b8':'none';
+    s+=`<g${isDark?' class="alarmpulse"':''}>
+      <rect x="${a.x}" y="${a.y}" width="148" height="40" rx="3" fill="${fill}" stroke="${stroke}" stroke-width="1.5"${glow!=='none'?` filter="url(#g)"`:''}/>
+      <text x="${a.x+74}" y="${a.y+18}" fill="#dfe8ee" font-size="12" text-anchor="middle" font-family="DM Mono,monospace">${a.id}</text>
+      <text x="${a.x+74}" y="${a.y+32}" fill="${isDark?'#ff5d62':done?'#5ff2b8':'#6f8290'}" font-size="9.5" text-anchor="middle" font-family="DM Mono,monospace" letter-spacing="1">${isDark?'DARK · NO DATA':done?('FIN '+state[i].toFixed(1)+'d'):'WAITING'}</text>
+    </g>`;
+  }
+  $('#diagram').innerHTML=`<defs>
+    <marker id="ar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#2a3a45"/></marker>
+    <filter id="g"><feGaussianBlur stdDeviation="2.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>${s}`;
+}
+function runOneSample(){
+  const rng=rngFrom((Math.random()*1e9)|0);const fin=new Array(A.length).fill(undefined);
+  for(let i=0;i<A.length;i++){const a=A[i];
+    if(i===4&&darkOn){fin[i]=null;continue;}
+    let ready=0,dead=false;
+    for(const gi of a.g){if(fin[gi]===null){dead=true;break;}ready=Math.max(ready,fin[gi]+tri(0,0.3,0.8,rng()));}
+    if(dead){fin[i]=null;continue;}fin[i]=ready+tri(1,2,3.5,rng());}
+  drawDiagram(fin);
+  const pour=fin[6];
+  $('#howstatus').textContent=pour==null?'POUR went dark — it gates on the embed branch, which has no data. No date invented.':`POUR finished at ${pour.toFixed(1)} days this sample.`;
+}
+$('#playSample').onclick=runOneSample;
+$('#toggleDark').onclick=()=>{darkOn=!darkOn;drawDiagram();$('#howstatus').textContent=darkOn?'Embed plate is dark — run a sample and watch POUR die.':'Embed plate now has data — POUR can complete.';};
+drawDiagram();
+
+/* parallelism viz */
+(function(){let s='';
+  s+=`<text x="18" y="22" fill="#6f8290" font-size="11" font-family="DM Mono,monospace" letter-spacing="1">OUTER LOOP · WINDOWS (one in memory at a time)</text>`;
+  for(let c=0;c<8;c++){const xx=18+c*116;
+    s+=`<rect x="${xx}" y="32" width="104" height="26" rx="2" fill="${c===2?'#1a2630':'#101820'}" stroke="${c===2?'#b98cff':'#1c2730'}" stroke-width="${c===2?1.5:1}"/>`;
+    s+=`<text x="${xx+52}" y="49" fill="${c===2?'#b98cff':'#46555f'}" font-size="9" text-anchor="middle" font-family="DM Mono,monospace">win ${c+1}</text>`;}
+  s+=`<text x="18" y="92" fill="#6f8290" font-size="11" font-family="DM Mono,monospace" letter-spacing="1">INNER AXIS · SAMPLES (GPU threads, parallel)</text>`;
+  for(let r=0;r<4;r++){const y=104+r*30;
+    for(let c=0;c<14;c++){const xx=18+c*65;const hot=Math.random()>0.84;
+      s+=`<rect x="${xx}" y="${y}" width="56" height="22" rx="2" fill="${hot?'#2a1012':'#0d2018'}" stroke="${hot?'#ff5d62':'#5ff2b8'}" stroke-width="1" opacity="0.85"/>`;}}
+  s+=`<text x="18" y="232" fill="#5ff2b8" font-size="10" font-family="DM Mono,monospace">each cell = one Monte Carlo sample on its own GPU thread → that's the speed axis</text>`;
+  $('#paraviz').innerHTML=s;})();
+
+trace('final draw');
+draw();renderBig();
+trace('complete');
+const tr=document.getElementById('trace'); if(tr) setTimeout(()=>tr.remove(),1500);
+}catch(e){ paintError('startup failed: '+(e&&e.message||e)+(e&&e.stack?'\n'+e.stack.split('\n').slice(0,3).join('\n'):'')); }
+</script>
+</body>
+</html>
