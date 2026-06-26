@@ -223,7 +223,7 @@
   <div class="panel">
     <div class="eyebrow">The exact shader that runs in tab 01</div>
     <h2>GPU compute kernel · WGSL</h2>
-    <p class="note">Not a mockup. One thread = one full Monte Carlo sample, walking the entire window: real gates via CSR arrays, real dark-blocking via a sentinel (GPUs can't compare NaN), real conjunctive deadness. Same computation as the JS path — the P80s must agree within Monte-Carlo noise.</p>
+    <p class="note">Not a mockup. One thread = one full Monte Carlo sample, walking the entire window: real gates via CSR arrays, real dark-blocking via a <b style="color:var(--alarm)">−1 sentinel</b> (finish time can never be negative, so −1 means "missing — no data from the world"), real conjunctive deadness. Same computation as the JS path — the P80s must agree within Monte-Carlo noise.</p>
     <pre id="wgslcode"></pre>
   </div>
   <div class="panel">
@@ -288,14 +288,14 @@ function fmcJS(net,n,seed=7){
   const rng=rngFrom(seed);const finish=new Float64Array(total);const out=new Float64Array(n);let m=0,dark=0;
   for(let s=0;s<n;s++){
     for(let i=0;i<total;i++){
-      if(!backed[i]){finish[i]=NaN;continue;}
+      if(!backed[i]){finish[i]=-1;continue;}
       let ready=0,dead=false;const gs=gateOff[i],ge=gateOff[i+1];
-      for(let k=gs;k<ge;k++){const up=finish[gateUp[k]];if(up!==up){dead=true;break;}
+      for(let k=gs;k<ge;k++){const up=finish[gateUp[k]];if(up<0){dead=true;break;}
         const f=up+tri(gateLag[k*3],gateLag[k*3+1],gateLag[k*3+2],rng());if(f>ready)ready=f;}
-      if(dead){finish[i]=NaN;continue;}
+      if(dead){finish[i]=-1;continue;}
       finish[i]=ready+tri(dur[i*3],dur[i*3+1],dur[i*3+2],rng());
     }
-    const f=finish[outputIndex];if(f!==f){dark++;continue;}out[m++]=f;
+    const f=finish[outputIndex];if(f<0){dark++;continue;}out[m++]=f;
   }
   const fin=out.subarray(0,m).slice().sort((a,b)=>a-b);
   return {p80:pctl(fin,0.8),dark,completed:m,evals:n*total};
@@ -416,7 +416,7 @@ const WGSL = `struct U { total:u32, outIndex:u32, threadsPerPass:u32, sampleBase
 @group(0) @binding(6) var<storage,read_write> scratch: array<f32>; // threadsPerPass * total
 @group(0) @binding(7) var<storage,read_write> outp:    array<f32>; // one finish per sample
 
-const DARK: f32 = -1.0e30;   // GPUs can't compare NaN, so dark = a huge negative sentinel
+const DARK: f32 = -1.0;   // finish time is always ≥ 0, so −1 = missing (no data from the world)
 
 fn rand(seedp: ptr<function,u32>) -> f32 {
   var s=*seedp; s=s+0x6D2B79F5u; var t=s;
@@ -439,7 +439,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>){
   let base = tid * u.total;                       // this thread's private finish[] slice
 
   for(var i:u32=0u; i<u.total; i=i+1u){           // walk the window in dependency order
-    if(backed[i]==0u){ scratch[base+i]=DARK; continue; }   // dark = hard block
+    if(backed[i]==0u){ scratch[base+i]=DARK; continue; }   // missing = hard block
     var ready=0.0; var dead=false;
     let gs=gateOff[i]; let ge=gateOff[i+1u];
     for(var k=gs; k<ge; k=k+1u){                  // this atom's gates
@@ -494,7 +494,7 @@ async function fmcGPU(net,n,onlog){
   await readBuf.mapAsync(GPUMapMode.READ);
   const raw=new Float32Array(readBuf.getMappedRange()).slice();readBuf.unmap();
   const time=performance.now()-t0;
-  const fin=[];let dark=0;for(let s=0;s<n;s++){const v=raw[s];if(v<=-1e29)dark++;else fin.push(v);}
+  const fin=[];let dark=0;for(let s=0;s<n;s++){const v=raw[s];if(v<0)dark++;else fin.push(v);}
   fin.sort((a,b)=>a-b);
   return {time,p80:pctl(fin,0.8),dark,completed:fin.length,evals:n*total};
 }
@@ -524,7 +524,7 @@ for (let p=0; p<passes; p++){
   pass.end();
   device.queue.submit([enc.finish()]);
 }
-await readBuf.mapAsync(GPUMapMode.READ);   // sentinel value = dark`;
+await readBuf.mapAsync(GPUMapMode.READ);   // −1 = missing (no data)`;
 
 const ATOMCODE=`// ONE citizen. Stored column-wise (Structure-of-Arrays), not as objects.
 // index i addresses the same atom across every column.
@@ -532,7 +532,7 @@ const ATOMCODE=`// ONE citizen. Stored column-wise (Structure-of-Arrays), not as
 const net = {
   total,                       // number of atoms
 
-  backed : Uint8Array,         // 1 = world gave data ; 0 = DARK (not ready)
+  backed : Uint8Array,         // 1 = world gave data ; 0 = dark (missing)
   dur    : Float32Array,       // 3/atom: [lo,mode,hi] triangular work time
 
   // gates this atom HOLDS — its INPUTS only — in CSR layout
@@ -554,11 +554,11 @@ const net = {
 
 // the whole solver, one sample:
 for (let i = 0; i < total; i++) {        // atoms in dependency order
-  if (!backed[i]) { finish[i] = NaN; continue; }   // dark blocks hard
+  if (!backed[i]) { finish[i] = -1; continue; }    // dark = missing, blocks hard
   let ready = 0;
   for (gate of atom i's gates) {
     up = finish[gate.upstream];
-    if (isNaN(up)) { finish[i] = NaN; break; }      // conjunctive deadness
+    if (up < 0) { finish[i] = -1; break; }           // conjunctive: any missing gate kills us
     ready = max(ready, up + sample(gate.lag));
   }
   finish[i] = ready + sample(dur[i]);               // its own work
@@ -612,12 +612,18 @@ $('#run').onclick=async()=>{
     CH.jsWall=CH.jsWall||5000000; CH.gpuWall=CH.gpuWall||CH.jsWall;
     blog('— fused stream + gpu (boundary resident on GPU) —');$('#memstat').textContent='budgeted';
     for(const N of stream){
+      // Skip huge sizes on CPU-only — would freeze
+      if(!gpuAvail && N > 3000000) { blog(`skipped ${fmtN(N)} — too large without GPU`); continue; }
       $('#status').textContent=`fused ${fmtN(N)}…`;await frame();
       let rs;
+      try {
       if(gpuAvail){
         try{ rs=await fmcFusedGPU(N,n,budgetMB,blog); }
-        catch(e){ blog(`  fused-gpu fell back to cpu: ${e.message}`); rs=await fmcFusedCPU(N,n,budgetMB); }
+        catch(e){ blog(`  fused-gpu fell back to cpu: ${e.message}`);
+          if(N > 3000000){ blog(`  skipped — too large for CPU fallback`); continue; }
+          rs=await fmcFusedCPU(N,n,budgetMB); }
       } else { rs=await fmcFusedCPU(N,n,budgetMB); }
+      } catch(e) { blog(`  error at ${fmtN(N)}: ${e.message}`); continue; }
       const ts=rs.time!=null?rs.time:0;
       const peakMB=(rs.peakFloats||n)*8/1048576;
       CH.stream.push({N,ms:ts,peakMB});CH.streamThru=median(CH.stream.map(d=>d.N*n/(d.ms/1000)));CH.streamPeakMB=peakMB;CH.topN=N;CH.window=rs.window;CH.passes=rs.passes;
