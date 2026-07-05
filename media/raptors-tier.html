@@ -1481,6 +1481,7 @@ async function exportMP4() {
   if (typeof VideoEncoder === 'undefined') { status.textContent = 'WebCodecs not supported.'; return; }
   playing = false; stopSpeech();
   const chunks = [];
+  let encoderFailed = null;
   // H.264 requires EVEN dimensions
   const width = Math.floor(cv.width / 2) * 2;
   const height = Math.floor(cv.height / 2) * 2;
@@ -1489,12 +1490,33 @@ async function exportMP4() {
   const tctx = temp.getContext('2d', { alpha: false });
   const encoder = new VideoEncoder({
     output: chunk => { const buf = new Uint8Array(chunk.byteLength); chunk.copyTo(buf); chunks.push(buf); },
-    error: err => { status.textContent = 'Encoder error: ' + err.message; }
+    error: err => { encoderFailed = err; status.textContent = 'Encoder error: ' + err.message; }
   });
+  // Try codecs from highest capability down — 1080p 60fps needs Level 4.2+
+  const candidates = [
+    'avc1.640034', // High L5.2 (up to 4K)
+    'avc1.640033', // High L5.1
+    'avc1.64002A', // High L4.2 (1080p@60)
+    'avc1.640028', // High L4.0 (1080p@30)
+    'avc1.42E02A', // Baseline L4.2
+    'avc1.42E028', // Baseline L4.0
+    'avc1.42E01F'  // Baseline L3.1 (720p fallback)
+  ];
+  let codec = null;
+  for (const c of candidates) {
+    try {
+      const s = await VideoEncoder.isConfigSupported({ codec: c, width, height, bitrate: 8_000_000, framerate: FPS });
+      if (s.supported) { codec = c; break; }
+    } catch (_) { /* try next */ }
+  }
+  if (!codec) {
+    status.textContent = 'No H.264 codec supports ' + width + '×' + height + '@' + FPS + '. Try WebM instead.';
+    return;
+  }
   try {
-    encoder.configure({ codec: 'avc1.42E01F', width, height, bitrate: 8_000_000, framerate: FPS });
+    encoder.configure({ codec, width, height, bitrate: 8_000_000, framerate: FPS });
   } catch (err) {
-    status.textContent = 'MP4 not available in this browser. Try WebM.';
+    status.textContent = 'MP4 config failed: ' + err.message + '. Try WebM instead.';
     return;
   }
   const totalFrames = Math.floor(TOTAL);
@@ -1529,10 +1551,10 @@ async function exportMP4() {
   status.textContent = 'Packaging…';
   // Package with a minimal MP4 muxer — simple approach: use MediaSource-compatible container via mp4-muxer polyfill inline
   // For simplicity, use the built-in encoder output stitched into a raw H.264 file (Annex B format works with many editors)
-  const totalLen = chunks.reduce((s, c) => s + c.data.byteLength, 0);
+  const totalLen = chunks.reduce((s, c) => s + c.byteLength, 0);
   const combined = new Uint8Array(totalLen);
   let off = 0;
-  for (const c of chunks) { combined.set(c.data, off); off += c.data.byteLength; }
+  for (const c of chunks) { combined.set(c, off); off += c.byteLength; }
   // This produces a raw H.264 stream (.h264) — not a container. To get MP4, we need a muxer.
   // Fallback: save as .h264 stream which can be remuxed with ffmpeg -i in.h264 -c copy out.mp4
   const blob = new Blob([combined], { type: 'video/mp4' });

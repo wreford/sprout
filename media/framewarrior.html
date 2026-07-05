@@ -945,7 +945,14 @@ document.getElementById('exp-mp4').addEventListener('click', async () => {
     output: chunk => { const buf = new Uint8Array(chunk.byteLength); chunk.copyTo(buf); chunks.push(buf); },
     error: e => { modalStatus.textContent = 'Encoder error: ' + e.message; }
   });
-  encoder.configure({ codec: 'avc1.42E01F', width, height, bitrate: 8_000_000, framerate: state.fps });
+  // Probe codecs from highest capability down — 1080p 60fps needs Level 4.2+
+  const candidates = ['avc1.640034','avc1.640033','avc1.64002A','avc1.640028','avc1.42E02A','avc1.42E028','avc1.42E01F'];
+  let codec = null;
+  for (const c of candidates) {
+    try { const s = await VideoEncoder.isConfigSupported({ codec: c, width, height, bitrate: 8_000_000, framerate: state.fps }); if (s.supported) { codec = c; break; } } catch(_){}
+  }
+  if (!codec) { modalStatus.textContent = 'No H.264 codec supports ' + width + '×' + height + '@' + state.fps + '. Try WebM.'; return; }
+  encoder.configure({ codec, width, height, bitrate: 8_000_000, framerate: state.fps });
   const t0 = performance.now();
   await renderOffline(async (f) => {
     tctx.drawImage(previewCanvas, 0, 0, width, height);

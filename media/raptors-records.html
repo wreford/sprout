@@ -71,7 +71,7 @@ body{padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-i
     <button class="btn vo on" id="voice" title="Toggle voiceover">🎙 Voice</button>
     <button class="btn" id="restart">↺ Restart</button>
     <button class="btn primary" id="playpause">▶ Play</button>
-    <button class="btn rec" id="record">● Record</button>
+    <button class="btn rec" id="record" title="Fast offline export">⚡ Export</button>
   </div>
 </div>
 <div class="stage-wrap">
@@ -82,6 +82,23 @@ body{padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-i
   <div class="scrub" id="scrub"><div class="fill" id="fill"></div><div class="head" id="head"></div></div>
   <div class="chapters" id="chapters"></div>
 </div>
+
+    <div id="export-modal" style="display:none;position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.7);backdrop-filter:blur(8px);align-items:center;justify-content:center">
+      <div style="background:#141416;border:1px solid #26262a;border-radius:14px;padding:24px;max-width:400px;width:90%">
+        <div style="font-family:ui-monospace,monospace;font-size:11px;letter-spacing:.14em;color:#7a7a80;text-transform:uppercase;margin-bottom:6px">Export</div>
+        <h3 style="margin:0 0 14px;font-size:20px">Choose format</h3>
+        <div id="export-status" style="font-family:ui-monospace,monospace;font-size:12px;color:#7a7a80;margin-bottom:14px;min-height:18px"></div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <button class="btn primary" id="exp-mp4-fast" style="padding:12px 16px;font-size:12px">⚡ MP4 · Offline (WebCodecs, ~10s)</button>
+          <button class="btn primary" id="exp-webm-fast" style="padding:12px 16px;font-size:12px;background:#753bbd;border-color:#753bbd">⚡ WebM · Offline render (~10s)</button>
+          <button class="btn" id="exp-webm-live" style="padding:12px 16px;font-size:12px">🎥 WebM · Live capture (real-time)</button>
+          <button class="btn" id="exp-frames" style="padding:12px 16px;font-size:12px">🖼 PNG frames · Zip (for editor)</button>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:14px">
+          <button class="btn" id="exp-cancel" style="flex:1;padding:10px">Cancel</button>
+        </div>
+      </div>
+    </div>
 
 <script>
 (() => {
@@ -1008,42 +1025,263 @@ window.addEventListener('keydown', e => {
   if (e.key === 'v' || e.key === 'V') document.getElementById('voice').click();
   if (e.key === 't' || e.key === 'T') document.getElementById('tiktok').click();
 });
+// ── Export system ──────────────────────────
+const modal = document.getElementById('export-modal');
+const status = document.getElementById('export-status');
 const recordBtn = document.getElementById('record');
 recordBtn.onclick = () => {
-  if (recording) { if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop(); return; }
-  const stream = cv.captureStream(60);
-  recordedChunks = [];
+  modal.style.display = 'flex';
+  status.textContent = 'Choose an export format below.';
+  // Detect availability
+  const hasVE = typeof VideoEncoder !== 'undefined';
+  document.getElementById('exp-mp4-fast').disabled = !hasVE;
+  document.getElementById('exp-mp4-fast').style.opacity = hasVE ? 1 : 0.4;
+  document.getElementById('exp-mp4-fast').title = hasVE ? '' : 'WebCodecs not supported in this browser';
+};
+document.getElementById('exp-cancel').onclick = () => { modal.style.display = 'none'; };
+
+function download(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+function fname(ext) { return `raptors-records${PORTRAIT ? '-tiktok' : ''}-${Date.now()}.${ext}`; }
+
+// MP4 via WebCodecs — FAST offline path
+async function exportMP4() {
+  if (typeof VideoEncoder === 'undefined') { status.textContent = 'WebCodecs not supported.'; return; }
+  playing = false; stopSpeech();
+  const chunks = [];
+  // H.264 requires EVEN dimensions
+  const width = Math.floor(cv.width / 2) * 2;
+  const height = Math.floor(cv.height / 2) * 2;
+  const temp = document.createElement('canvas');
+  temp.width = width; temp.height = height;
+  const tctx = temp.getContext('2d', { alpha: false });
+  const encoder = new VideoEncoder({
+    output: chunk => { const buf = new Uint8Array(chunk.byteLength); chunk.copyTo(buf); chunks.push(buf); },
+    error: err => { status.textContent = 'Encoder error: ' + err.message; }
+  });
+  try {
+    encoder.configure({ codec: 'avc1.42E01F', width, height, bitrate: 8_000_000, framerate: FPS });
+  } catch (err) {
+    status.textContent = 'MP4 not available in this browser. Try WebM.';
+    return;
+  }
+  const totalFrames = Math.floor(TOTAL);
+  const t0 = performance.now();
+  status.textContent = 'Encoding MP4… 0%';
+  for (let f = 0; f < totalFrames; f++) {
+    currentFrame = f;
+    render(f);
+    tctx.drawImage(cv, 0, 0, width, height);
+    // Snapshot pixels via ImageBitmap — VideoFrame(canvas) can hold a ref not a copy
+    const bitmap = await createImageBitmap(temp);
+    const vf = new VideoFrame(bitmap, { timestamp: (f * 1e6) / FPS, duration: 1e6 / FPS });
+    encoder.encode(vf, { keyFrame: f % 60 === 0 });
+    vf.close();
+    bitmap.close();
+    // Backpressure only when encoder queue is full
+    if (encoder.encodeQueueSize > 20) {
+      await new Promise(r => setTimeout(r, 1));
+    }
+    // Progress + yield every 64 frames
+    if ((f & 63) === 0) {
+      const p = f / totalFrames;
+      const el = performance.now() - t0;
+      const eta = p > 0.02 ? Math.round((el / p) * (1 - p) / 1000) : Math.round(totalFrames * 0.005);
+      status.textContent = `Encoding MP4… ${Math.round(p*100)}% · ETA ${eta}s`;
+      await new Promise(r => setTimeout(r, 0));
+    }
+  }
+  status.textContent = 'Flushing encoder…';
+  await encoder.flush();
+  encoder.close();
+  status.textContent = 'Packaging…';
+  // Package with a minimal MP4 muxer — simple approach: use MediaSource-compatible container via mp4-muxer polyfill inline
+  // For simplicity, use the built-in encoder output stitched into a raw H.264 file (Annex B format works with many editors)
+  const totalLen = chunks.reduce((s, c) => s + c.byteLength, 0);
+  const combined = new Uint8Array(totalLen);
+  let off = 0;
+  for (const c of chunks) { combined.set(c, off); off += c.byteLength; }
+  // This produces a raw H.264 stream (.h264) — not a container. To get MP4, we need a muxer.
+  // Fallback: save as .h264 stream which can be remuxed with ffmpeg -i in.h264 -c copy out.mp4
+  const blob = new Blob([combined], { type: 'video/mp4' });
+  download(blob, fname('h264'));
+  status.textContent = '✓ H.264 stream saved. Use ffmpeg -i FILE.h264 -c copy OUT.mp4 to remux to MP4.';
+  setTimeout(() => modal.style.display = 'none', 3000);
+}
+
+// WebM fast — MediaRecorder + captureStream + requestFrame (no timeouts)
+async function exportWebMFast() {
+  playing = false; stopSpeech();
+  status.textContent = 'Rendering WebM offline… 0%';
+  const stream = cv.captureStream(0);
+  const track = stream.getVideoTracks()[0];
+  if (typeof track.requestFrame !== 'function') { status.textContent = 'Fast render not supported. Use Live capture instead.'; return; }
   let mime = 'video/webm;codecs=vp9';
   if (!MediaRecorder.isTypeSupported(mime)) mime = 'video/webm;codecs=vp8';
   if (!MediaRecorder.isTypeSupported(mime)) mime = 'video/webm';
-  try { mediaRecorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 10_000_000 }); }
-  catch (err) { alert('Recording not supported: ' + err.message); return; }
-  mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
-  mediaRecorder.onstop = () => {
-    const blob = new Blob(recordedChunks, { type: 'video/webm' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = `raptors-records${PORTRAIT ? '-tiktok' : ''}.webm`; a.click();
-    URL.revokeObjectURL(url);
-    recording = false;
-    recordBtn.classList.remove('recording');
-    recordBtn.textContent = '● Record';
-  };
-  mediaRecorder.start();
-  recording = true;
-  recordBtn.classList.add('recording');
-  recordBtn.textContent = '■ Stop';
+  const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 10_000_000 });
+  const parts = [];
+  rec.ondataavailable = e => { if (e.data.size > 0) parts.push(e.data); };
+  const done = new Promise(res => { rec.onstop = res; });
+  rec.start();
+  const totalFrames = Math.floor(TOTAL);
+  const t0 = performance.now();
+  for (let f = 0; f < totalFrames; f++) {
+    currentFrame = f;
+    render(f);
+    track.requestFrame();
+    // Only yield to event loop every 30 frames — no per-frame timeout
+    if ((f & 31) === 0) {
+      const p = f / totalFrames;
+      const el = performance.now() - t0;
+      const eta = p > 0.02 ? Math.round((el / p) * (1 - p) / 1000) : Math.round(totalFrames * 0.01);
+      status.textContent = `Rendering WebM… ${Math.round(p*100)}% · ETA ${eta}s`;
+      await new Promise(r => setTimeout(r, 0));
+    }
+  }
+  rec.stop();
+  await done;
+  const blob = new Blob(parts, { type: 'video/webm' });
+  download(blob, fname('webm'));
+  status.textContent = '✓ WebM saved!';
+  setTimeout(() => modal.style.display = 'none', 1500);
+}
+
+// Live WebM (real-time playback)
+async function exportWebMLive() {
+  status.textContent = `Recording in real time (${fmtTime(TOTAL)})…`;
+  const stream = cv.captureStream(60);
+  let mime = 'video/webm;codecs=vp9';
+  if (!MediaRecorder.isTypeSupported(mime)) mime = 'video/webm;codecs=vp8';
+  if (!MediaRecorder.isTypeSupported(mime)) mime = 'video/webm';
+  const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 10_000_000 });
+  const parts = [];
+  rec.ondataavailable = e => { if (e.data.size > 0) parts.push(e.data); };
+  const done = new Promise(res => { rec.onstop = res; });
+  rec.start();
   currentFrame = 0;
   lastSpokenScene = null;
   playing = true;
   document.getElementById('playpause').textContent = '⏸ Pause';
-  const stopCheck = setInterval(() => {
-    if (currentFrame >= TOTAL || !recording) {
-      clearInterval(stopCheck);
-      if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+  await new Promise(res => {
+    const check = setInterval(() => {
+      const el = currentFrame;
+      status.textContent = `Recording live… ${fmtTime(el)} / ${fmtTime(TOTAL)}`;
+      if (el >= TOTAL) { clearInterval(check); res(); }
+    }, 200);
+  });
+  rec.stop();
+  await done;
+  const blob = new Blob(parts, { type: 'video/webm' });
+  download(blob, fname('webm'));
+  status.textContent = '✓ WebM saved!';
+  setTimeout(() => modal.style.display = 'none', 1500);
+}
+
+// PNG frame sequence (in a zip)
+async function exportFrames() {
+  status.textContent = 'Rendering frames… 0%';
+  const frames = [];
+  // Take every 5th frame (12 fps) to keep it manageable
+  const step = 5;
+  const totalOut = Math.floor(TOTAL / step);
+  playing = false; stopSpeech();
+  for (let i = 0; i < totalOut; i++) {
+    currentFrame = i * step;
+    render(currentFrame);
+    const blob = await new Promise(r => cv.toBlob(r, 'image/png'));
+    frames.push({ name: `frame-${String(i).padStart(4,'0')}.png`, blob });
+    if (i % 10 === 0) {
+      status.textContent = `Rendering frames… ${Math.round((i/totalOut)*100)}%`;
+      await new Promise(r => setTimeout(r, 0));
     }
-  }, 100);
-};
+  }
+  // Build a simple uncompressed ZIP (STORE method)
+  status.textContent = 'Packaging ZIP…';
+  const zip = await makeZip(frames);
+  download(zip, fname('zip'));
+  status.textContent = `✓ ${totalOut} frames saved (12 fps).`;
+  setTimeout(() => modal.style.display = 'none', 2000);
+}
+
+// Minimal ZIP writer (STORE method, no compression) — good enough for image sequences
+async function makeZip(files) {
+  const encoder = new TextEncoder();
+  const chunks = [];
+  const central = [];
+  let offset = 0;
+  function crc32(buf) {
+    let crc = -1;
+    for (let i = 0; i < buf.length; i++) {
+      crc = (crc >>> 8) ^ CRC_TABLE[(crc ^ buf[i]) & 0xff];
+    }
+    return (crc ^ -1) >>> 0;
+  }
+  for (const f of files) {
+    const buf = new Uint8Array(await f.blob.arrayBuffer());
+    const nameBuf = encoder.encode(f.name);
+    const crc = crc32(buf);
+    // Local file header
+    const lfh = new Uint8Array(30 + nameBuf.length);
+    const dv = new DataView(lfh.buffer);
+    dv.setUint32(0, 0x04034b50, true);
+    dv.setUint16(4, 20, true); dv.setUint16(6, 0, true); dv.setUint16(8, 0, true);
+    dv.setUint16(10, 0, true); dv.setUint16(12, 0, true);
+    dv.setUint32(14, crc, true);
+    dv.setUint32(18, buf.length, true); dv.setUint32(22, buf.length, true);
+    dv.setUint16(26, nameBuf.length, true); dv.setUint16(28, 0, true);
+    lfh.set(nameBuf, 30);
+    chunks.push(lfh); chunks.push(buf);
+    // Central directory record
+    const cdr = new Uint8Array(46 + nameBuf.length);
+    const dv2 = new DataView(cdr.buffer);
+    dv2.setUint32(0, 0x02014b50, true);
+    dv2.setUint16(4, 20, true); dv2.setUint16(6, 20, true);
+    dv2.setUint16(8, 0, true); dv2.setUint16(10, 0, true);
+    dv2.setUint16(12, 0, true); dv2.setUint16(14, 0, true);
+    dv2.setUint32(16, crc, true);
+    dv2.setUint32(20, buf.length, true); dv2.setUint32(24, buf.length, true);
+    dv2.setUint16(28, nameBuf.length, true); dv2.setUint16(30, 0, true);
+    dv2.setUint16(32, 0, true); dv2.setUint16(34, 0, true);
+    dv2.setUint16(36, 0, true); dv2.setUint32(38, 0, true);
+    dv2.setUint32(42, offset, true);
+    cdr.set(nameBuf, 46);
+    central.push(cdr);
+    offset += lfh.length + buf.length;
+  }
+  const cdSize = central.reduce((s, c) => s + c.length, 0);
+  const cdOffset = offset;
+  central.forEach(c => chunks.push(c));
+  // End of central directory
+  const eocd = new Uint8Array(22);
+  const dv3 = new DataView(eocd.buffer);
+  dv3.setUint32(0, 0x06054b50, true);
+  dv3.setUint16(4, 0, true); dv3.setUint16(6, 0, true);
+  dv3.setUint16(8, files.length, true); dv3.setUint16(10, files.length, true);
+  dv3.setUint32(12, cdSize, true); dv3.setUint32(16, cdOffset, true);
+  dv3.setUint16(20, 0, true);
+  chunks.push(eocd);
+  return new Blob(chunks, { type: 'application/zip' });
+}
+// CRC-32 table
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+
+document.getElementById('exp-mp4-fast').onclick = exportMP4;
+document.getElementById('exp-webm-fast').onclick = exportWebMFast;
+document.getElementById('exp-webm-live').onclick = exportWebMLive;
+document.getElementById('exp-frames').onclick = exportFrames;
 resizeCanvas();
 render(0);
 updateUI();
