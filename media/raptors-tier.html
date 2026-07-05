@@ -69,7 +69,7 @@ body{padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-i
     <span class="live">Every Raptor All-Star, Ranked</span>
   </div>
   <div class="controls">
-    <button class="btn tik" id="tiktok" title="Toggle TikTok 9:16">📱 TikTok</button>
+    <button class="btn tik on" id="tiktok" title="Toggle aspect ratio">📱 9:16</button>
     <button class="btn vo on" id="voice" title="Toggle voiceover">🎙 Voice</button>
     <button class="btn" id="restart">↺ Restart</button>
     <button class="btn primary" id="playpause">▶ Play</button>
@@ -77,7 +77,7 @@ body{padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-i
   </div>
 </div>
 <div class="stage-wrap">
-  <div class="stage h" id="stage"><canvas class="canvas" id="cv"></canvas></div>
+  <div class="stage v" id="stage"><canvas class="canvas" id="cv"></canvas></div>
 </div>
 <div class="playbar">
   <div class="timecode"><b id="tc">0:00</b> / 3:20</div>
@@ -91,7 +91,7 @@ body{padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-i
 
 // ── COMPOSITION DIMENSIONS ─────────────────────────────
 const FPS = 60;
-let PORTRAIT = false; // toggle TikTok mode
+let PORTRAIT = true; // TikTok 9:16 default
 function W() { return PORTRAIT ? 1080 : 1920; }
 function H() { return PORTRAIT ? 1920 : 1080; }
 
@@ -367,18 +367,194 @@ function drawIntro(f) {
 //  360-720 accolades (6s → 12s)
 //  720-1000 tier stamp (12s → 16.7s)
 //  1000-1200 fade out (16.7s → 20s)
+// TikTok 9:16 native layout — vertical stack, big and readable
+function drawPlayerScenePortrait(p, f) {
+  const cx = cv.width / 2;
+
+  // Hero card at top — jersey number + tier badge + name
+  const cardIn = spring(f, 0, { stiffness: 80, damping: 14 });
+  const cardOp = interp(f, 0, 30, { toVal: 1 });
+  const cardW = px(960);
+  const cardH = pxY(680);
+  const cardX = cx - cardW / 2;
+  const cardY = pxY(120);
+
+  ctx.save();
+  ctx.globalAlpha = cardOp;
+  ctx.translate(0, (1 - cardIn) * pxY(200));
+
+  // Card
+  const cg = ctx.createLinearGradient(cardX, cardY, cardX, cardY + cardH);
+  cg.addColorStop(0, shade(p.color, 30));
+  cg.addColorStop(0.6, shade(p.color, -30));
+  cg.addColorStop(1, shade(p.color, -60));
+  ctx.fillStyle = cg;
+  roundRect(ctx, cardX, cardY, cardW, cardH, px(32));
+  ctx.fill();
+  ctx.strokeStyle = shade(p.color, 60);
+  ctx.lineWidth = px(4);
+  roundRect(ctx, cardX, cardY, cardW, cardH, px(32));
+  ctx.stroke();
+
+  // Giant jersey number background
+  ctx.save();
+  ctx.globalAlpha = 0.16;
+  ctx.fillStyle = '#000';
+  ctx.font = `900 ${px(560)}px -apple-system, sans-serif`;
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText(p.jersey, cardX + cardW - px(30), cardY + cardH - pxY(20));
+  ctx.restore();
+
+  // Basketball emblem top-right
+  ctx.save();
+  ctx.translate(cardX + cardW - px(90), cardY + pxY(90));
+  drawBasketball(0, 0, px(60));
+  ctx.restore();
+
+  // Tier badge top-left
+  const tierBadgeIn = spring(f, 60, { stiffness: 120, damping: 15 });
+  ctx.save();
+  ctx.translate(cardX + px(40), cardY + pxY(40));
+  ctx.scale(tierBadgeIn, tierBadgeIn);
+  const tierC = TIERS.find(t => t.id === p.tier).color;
+  ctx.fillStyle = tierC;
+  roundRect(ctx, 0, 0, px(100), pxY(100), px(18));
+  ctx.fill();
+  ctx.fillStyle = '#000';
+  ctx.font = `900 ${px(64)}px -apple-system, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(p.tier, px(50), pxY(50));
+  ctx.restore();
+
+  // Name — huge, wraps over 2 lines
+  const nameParts = p.name.split(' ');
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = '#fff';
+  ctx.font = `800 ${px(72)}px -apple-system, sans-serif`;
+  ctx.fillText(nameParts[0], cardX + px(50), cardY + cardH - pxY(310));
+  ctx.font = `900 ${px(96)}px -apple-system, sans-serif`;
+  ctx.fillText(nameParts.slice(1).join(' '), cardX + px(50), cardY + cardH - pxY(230));
+
+  // Years + jersey
+  ctx.font = `600 ${px(28)}px "SF Mono", monospace`;
+  ctx.fillStyle = 'rgba(255,255,255,.85)';
+  ctx.fillText(`${p.years}  ·  ${p.jersey}`, cardX + px(50), cardY + cardH - pxY(130));
+
+  // All-Star count
+  ctx.font = `900 ${px(40)}px -apple-system, sans-serif`;
+  ctx.fillStyle = '#ffcc00';
+  ctx.fillText(`${p.allstar.length}× ALL-STAR`, cardX + px(50), cardY + cardH - pxY(80));
+
+  ctx.restore();
+
+  // ── STATS panel below the card ─────────────
+  const statsY0 = cardY + cardH + pxY(60);
+  const statsIn = spring(f, 90, { stiffness: 80, damping: 14 });
+  const statsOp = interp(f, 90, 130, { toVal: 1 });
+
+  ctx.save();
+  ctx.globalAlpha = statsOp;
+  ctx.translate(0, (1 - statsIn) * pxY(120));
+
+  // Header
+  ctx.font = `800 ${px(26)}px "SF Mono", monospace`;
+  ctx.fillStyle = '#7a7a80';
+  ctx.textAlign = 'left';
+  ctx.fillText('CAREER STATS · AS A RAPTOR', cardX, statsY0);
+
+  const stats = [
+    { label:'PPG', value: p.stats.ppg.toFixed(1), max:30 },
+    { label:'RPG', value: p.stats.rpg.toFixed(1), max:15 },
+    { label:'APG', value: p.stats.apg.toFixed(1), max:10 },
+    { label:'SPG', value: p.stats.spg.toFixed(1), max:2.5 },
+    { label:'BPG', value: p.stats.bpg.toFixed(1), max:3 },
+    { label:'FG%', value: (p.stats.fg*100).toFixed(1)+'%', raw:p.stats.fg, rawMax:0.55 },
+    { label:'GP',  value: p.stats.gp+'',           max:700, raw:p.stats.gp }
+  ];
+  const barX = cardX + px(140);
+  const barW = cardW - px(280);
+  const rowH = pxY(84);
+  stats.forEach((s, i) => {
+    const delay = 110 + i * 22;
+    const rowIn = spring(f, delay, { stiffness: 120, damping: 16 });
+    const rowOp = interp(f, delay, delay + 20, { toVal: 1 });
+    const yRow = statsY0 + pxY(60) + i * rowH;
+    ctx.save();
+    ctx.globalAlpha = rowOp;
+    ctx.translate((1 - rowIn) * px(80), 0);
+    // Label
+    ctx.font = `800 ${px(28)}px "SF Mono", monospace`;
+    ctx.fillStyle = '#7a7a80';
+    ctx.textAlign = 'left';
+    ctx.fillText(s.label, cardX, yRow + pxY(38));
+    // Bar bg
+    ctx.fillStyle = 'rgba(255,255,255,.06)';
+    roundRect(ctx, barX, yRow + pxY(24), barW, pxY(30), px(6));
+    ctx.fill();
+    // Bar fill
+    let ratio = (s.raw !== undefined ? s.raw : parseFloat(s.value)) / (s.rawMax !== undefined ? s.rawMax : s.max);
+    ratio = Math.max(0, Math.min(1, ratio));
+    const growing = interp(f, delay, delay + 40, { toVal: 1 });
+    const bg = ctx.createLinearGradient(barX, 0, barX + barW * ratio * growing, 0);
+    bg.addColorStop(0, p.color); bg.addColorStop(1, shade(p.color, 40));
+    ctx.fillStyle = bg;
+    roundRect(ctx, barX, yRow + pxY(24), barW * ratio * growing, pxY(30), px(6));
+    ctx.fill();
+    // Value
+    ctx.font = `900 ${px(40)}px -apple-system, sans-serif`;
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'right';
+    ctx.fillText(s.value, cardX + cardW, yRow + pxY(46));
+    ctx.restore();
+  });
+  ctx.restore();
+
+  // Big TIER STAMP overlay near end
+  const stampIn = spring(f, 720, { stiffness: 200, damping: 14 });
+  const stampOp = interp(f, 720, 780, { toVal: 1 });
+  if (stampOp > 0) {
+    ctx.save();
+    ctx.globalAlpha = stampOp * 0.92;
+    ctx.translate(cx, cv.height / 2);
+    ctx.rotate(-0.18);
+    ctx.scale(stampIn + 0.4, stampIn + 0.4);
+    const tC = TIERS.find(t => t.id === p.tier).color;
+    ctx.strokeStyle = tC;
+    ctx.lineWidth = px(16);
+    roundRect(ctx, -px(360), -pxY(180), px(720), pxY(360), px(32));
+    ctx.stroke();
+    ctx.fillStyle = tC;
+    ctx.font = `900 ${px(260)}px -apple-system, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`${p.tier} TIER`, 0, 0);
+    ctx.restore();
+  }
+
+  // Fade out
+  const fadeOut = interp(f, 1080, 1200, { toVal: 1 });
+  if (fadeOut > 0) {
+    ctx.fillStyle = `rgba(0,0,0,${fadeOut})`;
+    ctx.fillRect(0, 0, cv.width, cv.height);
+  }
+}
+
 function drawPlayerScene(p, f) {
+  if (PORTRAIT) { drawPlayerScenePortrait(p, f); return; }
   const cx = cv.width / 2, cy = cv.height / 2;
-  const isPortrait = PORTRAIT;
+  const isPortrait = false;
 
   // Left column: big card (or top card in portrait)
   const cardIn = spring(f, 0, { stiffness: 80, damping: 14 });
   const cardOp = interp(f, 0, 30, { toVal: 1 });
 
-  const cardW = isPortrait ? px(900) : px(700);
-  const cardH = isPortrait ? pxY(700) : pxY(900);
-  const cardX = isPortrait ? cx - cardW/2 : px(80);
-  const cardY = isPortrait ? pxY(140) : (cv.height - cardH) / 2;
+  const cardW = px(700);
+  const cardH = pxY(900);
+  const cardX = px(80);
+  const cardY = (cv.height - cardH) / 2;
 
   ctx.save();
   ctx.globalAlpha = cardOp;
@@ -402,7 +578,7 @@ function drawPlayerScene(p, f) {
   ctx.save();
   ctx.globalAlpha = 0.14;
   ctx.fillStyle = '#000';
-  ctx.font = `900 ${px(isPortrait ? 500 : 700)}px -apple-system, sans-serif`;
+  ctx.font = `900 ${px(700)}px -apple-system, sans-serif`;
   ctx.textAlign = 'right';
   ctx.textBaseline = 'bottom';
   ctx.fillText(p.jersey, cardX + cardW - px(30), cardY + cardH - pxY(30));
@@ -456,9 +632,9 @@ function drawPlayerScene(p, f) {
   ctx.restore();
 
   // ── Right column: stats + accolades ────
-  const rightX = isPortrait ? cx - px(450) : px(830);
-  const rightY = isPortrait ? pxY(880) : pxY(120);
-  const rightW = isPortrait ? px(900) : px(1010);
+  const rightX = px(830);
+  const rightY = pxY(120);
+  const rightW = px(1010);
 
   // STATS panel
   const statsIn = spring(f, 90, { stiffness: 80, damping: 14 });
@@ -584,9 +760,9 @@ function drawPlayerScene(p, f) {
 function drawTierBoard(f) {
   const cx = cv.width / 2;
   const isPortrait = PORTRAIT;
-  const boardX = isPortrait ? px(60) : px(200);
+  const boardX = isPortrait ? px(40) : px(200);
   const boardW = cv.width - boardX*2;
-  const boardY = pxY(160);
+  const boardY = pxY(isPortrait ? 220 : 160);
 
   // Title
   const titleOp = interp(f, 0, 30, { toVal: 1 });
@@ -602,9 +778,9 @@ function drawTierBoard(f) {
   ctx.restore();
 
   // Tier rows
-  const rowH = pxY(180);
+  const rowH = pxY(isPortrait ? 350 : 180);
   TIERS.forEach((t, ti) => {
-    const rowY = boardY + ti * (rowH + pxY(12));
+    const rowY = boardY + ti * (rowH + pxY(16));
     const delay = 40 + ti * 30;
     const rowIn = spring(f, delay, { stiffness: 100, damping: 15 });
     const rowOp = interp(f, delay, delay + 30, { toVal: 1 });
@@ -613,7 +789,7 @@ function drawTierBoard(f) {
     ctx.translate((1 - rowIn) * -px(100), 0);
 
     // Tier label box
-    const labelW = pxY(180);
+    const labelW = isPortrait ? px(160) : pxY(180);
     const bg = ctx.createLinearGradient(boardX, rowY, boardX + labelW, rowY);
     bg.addColorStop(0, t.color); bg.addColorStop(1, shade(t.color, -30));
     ctx.fillStyle = bg;
@@ -636,14 +812,17 @@ function drawTierBoard(f) {
 
     // Players in this tier — alphabetical (already sorted)
     const players = playersInTier(t.id);
-    const chipW = (boardW - labelW - px(24) - (players.length-1) * px(12)) / Math.max(1, players.length);
+    const cols = isPortrait ? Math.min(players.length, 3) : players.length;
+    const chipGap = px(12);
+    const chipsArea = boardW - labelW - px(24);
+    const chipW = (chipsArea - (cols-1) * chipGap) / Math.max(1, cols);
+    const chipH = isPortrait ? (rowH - pxY(40)) : (rowH - pxY(40));
     players.forEach((p, pi) => {
       const dp = delay + 40 + pi * 20;
       const chipIn = spring(f, dp, { stiffness: 140, damping: 16 });
       const chipOp = interp(f, dp, dp + 25, { toVal: 1 });
-      const chipX = boardX + labelW + px(24) + pi * (chipW + px(12));
+      const chipX = boardX + labelW + px(24) + pi * (chipW + chipGap);
       const chipY = rowY + pxY(20);
-      const chipH = rowH - pxY(40);
       ctx.save();
       ctx.globalAlpha = rowOp * chipOp;
       ctx.translate(0, (1 - chipIn) * pxY(80));
@@ -835,10 +1014,17 @@ document.getElementById('voice').onclick = function() {
 document.getElementById('tiktok').onclick = function() {
   PORTRAIT = !PORTRAIT;
   this.classList.toggle('on', PORTRAIT);
+  this.textContent = PORTRAIT ? '📱 9:16' : '🖥 16:9';
   const stage = document.getElementById('stage');
   stage.classList.toggle('h', !PORTRAIT);
   stage.classList.toggle('v', PORTRAIT);
-  setTimeout(() => { resizeCanvas(); render(currentFrame); }, 320);
+  // Wait for CSS transition to finish, then rebuild canvas at new size
+  requestAnimationFrame(() => {
+    setTimeout(() => {
+      resizeCanvas();
+      render(currentFrame);
+    }, 350);
+  });
 };
 
 // Scrub
