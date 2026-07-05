@@ -27,7 +27,8 @@ input,textarea,select{-webkit-user-select:text;user-select:text}
 .brand a{color:var(--dim);text-decoration:none}
 .brand a:hover{color:var(--text)}
 .controls{display:flex;gap:6px;flex-wrap:wrap}
-.btn{background:var(--panel2);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;padding:6px 12px;border-radius:6px;cursor:pointer;transition:all .15s ease}
+.btn{background:var(--panel2);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;padding:6px 12px;border-radius:6px;cursor:pointer;transition:all .15s ease;text-decoration:none;display:inline-block}
+a.btn{line-height:1}
 .btn:hover{border-color:var(--border2);background:#1c1c20}
 .btn:active{transform:scale(.96)}
 .btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
@@ -60,6 +61,20 @@ input,textarea,select{-webkit-user-select:text;user-select:text}
 .preview-stage{flex:1;display:flex;align-items:center;justify-content:center;padding:16px;position:relative}
 .stage-inner{position:relative;background:#000;border:1px solid var(--border);box-shadow:0 8px 32px rgba(0,0,0,.6)}
 #preview-canvas{display:block;width:100%;height:100%}
+.shot-strip{background:var(--panel);border-top:1px solid var(--border);padding:6px 12px 8px;flex-shrink:0;display:none}
+.shot-strip.show{display:block}
+.shot-strip-hdr{font-family:var(--mono);font-size:9px;letter-spacing:.15em;color:var(--dim);text-transform:uppercase;margin-bottom:5px}
+.shot-cells{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px}
+.shot-cells::-webkit-scrollbar{height:6px}
+.shot-cells::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+.shot-cell{flex:0 0 auto;width:56px;height:100px;background:#000;border:2px solid var(--border);border-radius:6px;position:relative;cursor:pointer;overflow:hidden}
+.shot-cell:hover{border-color:var(--border2)}
+.shot-cell.active{border-color:var(--accent);box-shadow:0 0 0 2px rgba(255,55,95,.25)}
+.shot-cell canvas,.shot-cell img,.shot-cell video{width:100%;height:100%;object-fit:cover;display:block;pointer-events:none}
+.shot-cell .idx{position:absolute;top:2px;left:3px;font-family:var(--mono);font-size:8px;color:#fff;background:rgba(0,0,0,.75);padding:1px 4px;border-radius:2px;letter-spacing:.08em}
+.shot-cell .dur{position:absolute;bottom:2px;right:3px;font-family:var(--mono);font-size:8px;color:#fff;background:rgba(0,0,0,.75);padding:1px 4px;border-radius:2px}
+.shot-cell.dragging{opacity:.4}
+.shot-cell.drop-target::before{content:"";position:absolute;left:-4px;top:0;bottom:0;width:2px;background:var(--accent)}
 .preview-toolbar{background:var(--panel);border-top:1px solid var(--border);padding:8px 12px;display:flex;align-items:center;gap:10px;flex-shrink:0}
 .transport{display:flex;gap:4px}
 .trbtn{background:var(--panel2);border:1px solid var(--border);color:var(--text);width:36px;height:32px;border-radius:6px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;transition:all .15s}
@@ -235,7 +250,9 @@ input,textarea,select{-webkit-user-select:text;user-select:text}
   <div class="controls">
     <label class="btn import" for="file-input">＋ Import</label>
     <input type="file" id="file-input" class="hidden-input" accept="video/*,image/*,audio/*" multiple>
-    <button class="btn" id="samples-btn" title="Load animated 9:16 sample cells">📼 Samples</button>
+    <button class="btn" id="real-btn" title="Load real MP4 sample videos">🎬 Real</button>
+    <button class="btn" id="samples-btn" title="Load animated 9:16 FX cells">📼 FX</button>
+    <a class="btn" href="/jtm/video-demo.html" target="_blank" title="Record your own video with JTM">📹 JTM</a>
     <button class="btn" id="add-text-btn">＋ Text</button>
     <button class="btn ai-btn" id="ai-toggle">🤖 Claude</button>
     <button class="btn" id="settings-btn" title="Settings">⚙</button>
@@ -259,6 +276,10 @@ input,textarea,select{-webkit-user-select:text;user-select:text}
     <div class="stage-inner" id="stage-inner">
       <canvas id="preview-canvas"></canvas>
     </div>
+  </div>
+  <div class="shot-strip" id="shot-strip">
+    <div class="shot-strip-hdr">Shot cells · <span id="shot-count">0</span></div>
+    <div class="shot-cells" id="shot-cells"></div>
   </div>
   <div class="preview-toolbar">
     <div class="transport">
@@ -924,13 +945,260 @@ function addSamples() {
   renderMediaPool();
   return added;
 }
-document.getElementById('samples-btn').addEventListener('click', () => {
-  const already = state.media.some(m => m.type === 'procedural');
-  if (already) {
-    // Cycle through — add them again with new IDs for variety
+document.getElementById('samples-btn').addEventListener('click', addSamples);
+
+// ── REAL VIDEO SAMPLES ────────────────────
+// Public CORS-friendly royalty-free samples (Google's GCS bucket).
+// If a URL fails to load, we fall back to a JTM-encoded procedural clip
+// so the user always gets *real pixel data*, not empty state.
+const REAL_SAMPLES = [
+  { name: 'Bunny · nature',   url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',      trim: [0, 5] },
+  { name: 'Ride · action',    url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4',   trim: [0, 5] },
+  { name: 'Fun · comedic',    url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4',        trim: [0, 5] },
+  { name: 'Meltdown',         url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4',  trim: [0, 5] },
+];
+
+async function loadRealVideo(sample) {
+  const v = document.createElement('video');
+  v.crossOrigin = 'anonymous';
+  v.src = sample.url;
+  v.muted = true; v.playsInline = true; v.preload = 'auto';
+  await new Promise((res, rej) => {
+    const to = setTimeout(() => rej(new Error('timeout')), 6000);
+    v.addEventListener('loadedmetadata', () => { clearTimeout(to); res(); }, { once: true });
+    v.addEventListener('error', () => { clearTimeout(to); rej(new Error('load error')); }, { once: true });
+  });
+  const [tIn, tOut] = sample.trim;
+  const dur = Math.min(v.duration, tOut) - tIn;
+  return {
+    id: 'm' + Math.random().toString(36).slice(2, 8),
+    type: 'video',
+    name: sample.name,
+    url: sample.url,
+    duration: dur, w: v.videoWidth, h: v.videoHeight,
+    element: v,
+    trimIn: tIn
+  };
+}
+
+document.getElementById('real-btn').addEventListener('click', async () => {
+  const btn = document.getElementById('real-btn');
+  btn.textContent = '⏳ Loading…'; btn.disabled = true;
+
+  // Kick off all real fetches in parallel
+  const results = await Promise.allSettled(REAL_SAMPLES.map(loadRealVideo));
+  let realOk = 0, fallback = 0;
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    if (r.status === 'fulfilled') {
+      state.media.push(r.value);
+      realOk++;
+    } else {
+      // JTM fallback: tiny palette clip (fast to encode)
+      const fx = SAMPLES[i % SAMPLES.length];
+      const jtmClip = encodeFxToJtm(fx, 24, 42, 6, 2);
+      state.media.push(jtmToMedia(jtmClip, fx.name + ' (JTM)'));
+      fallback++;
+    }
   }
-  addSamples();
+  renderMediaPool();
+  btn.textContent = '🎬 Real'; btn.disabled = false;
+  console.log(`[real-btn] ${realOk} real + ${fallback} JTM fallback`);
 });
+
+// ── JTM CODEC (palette-quantized RLE video-as-text) ─────
+// Encodes a canvas-rendered clip to the JTM format used by /jtm/video-demo.html,
+// so a fetched-video fallback is still "real pixel data", not a fresh shader.
+const JTM_PAL_CH = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+function jtmRleEnc(arr) {
+  let s = '';
+  for (let i = 0; i < arr.length;) {
+    let j = i; while (j < arr.length && arr[j] === arr[i] && j - i < 255) j++;
+    const n = j - i; const c = JTM_PAL_CH[arr[i]] || 'a';
+    s += n > 2 ? String(n) + c : c.repeat(n);
+    i = j;
+  }
+  return s;
+}
+function jtmRleDec(s) {
+  const out = []; let i = 0;
+  while (i < s.length) {
+    let num = '';
+    while (i < s.length && s[i] >= '0' && s[i] <= '9') { num += s[i++]; }
+    if (i >= s.length) break;
+    const v = JTM_PAL_CH.indexOf(s[i++]);
+    const n = num ? parseInt(num) : 1;
+    for (let j = 0; j < n; j++) out.push(v < 0 ? 0 : v);
+  }
+  return out;
+}
+
+function encodeFxToJtm(sample, cols, rows, fps, durSec) {
+  const sc = document.createElement('canvas'); sc.width = cols; sc.height = rows;
+  const sctx = sc.getContext('2d');
+  const big = document.createElement('canvas'); big.width = 720; big.height = 1280;
+  const bctx = big.getContext('2d');
+  const frames = [];
+  const N = durSec * fps;
+  for (let f = 0; f < N; f++) {
+    sample.render(bctx, f / N);
+    sctx.drawImage(big, 0, 0, cols, rows);
+    frames.push(sctx.getImageData(0, 0, cols, rows));
+  }
+  // Palette build
+  const maxP = Math.min(JTM_PAL_CH.length, 48);
+  const bkt = new Map(); const npx = cols * rows;
+  for (const fr of frames) {
+    const d = fr.data;
+    for (let i = 0; i < npx; i++) {
+      const k = ((d[i*4]>>4)<<8) | ((d[i*4+1]>>4)<<4) | (d[i*4+2]>>4);
+      bkt.set(k, (bkt.get(k) || 0) + 1);
+    }
+  }
+  const top = [...bkt.entries()].sort((a,b) => b[1]-a[1]).slice(0, maxP);
+  const pal = top.map(([k]) => [((k>>8)&0xf)*17, ((k>>4)&0xf)*17, (k&0xf)*17]);
+  function nearest(r, g, b) {
+    let bi = 0, bd = 1e9;
+    for (let p = 0; p < pal.length; p++) {
+      const dr = r - pal[p][0], dg = g - pal[p][1], db = b - pal[p][2];
+      const d = dr*dr + dg*dg + db*db; if (d < bd) { bd = d; bi = p; }
+    }
+    return bi;
+  }
+  const ki = 8; let prev = null; const enc = [];
+  for (let fi = 0; fi < frames.length; fi++) {
+    const d = frames[fi].data; const idx = new Uint8Array(npx);
+    for (let i = 0; i < npx; i++) idx[i] = nearest(d[i*4], d[i*4+1], d[i*4+2]);
+    if (!prev || fi % ki === 0) {
+      const rs = []; for (let y = 0; y < rows; y++) rs.push(jtmRleEnc(idx.subarray(y*cols, y*cols+cols)));
+      enc.push({ t: 'K', r: rs });
+    } else {
+      const ch = []; for (let i = 0; i < npx; i++) if (idx[i] !== prev[i]) ch.push(i, idx[i]);
+      enc.push({ t: 'D', c: ch });
+    }
+    prev = idx.slice();
+  }
+  return { kind: 'video', w: cols, h: rows, fps, ki, pal: pal.map(c => '#' + c.map(v => v.toString(16).padStart(2,'0')).join('')), f: enc };
+}
+
+function decodeJtmFrame(j, targetIdx) {
+  const pal = j.pal.map(h => [parseInt(h.slice(1,3),16), parseInt(h.slice(3,5),16), parseInt(h.slice(5,7),16)]);
+  const w = j.w, h = j.h, n = w * h; const cur = new Uint8Array(n);
+  for (let fi = 0; fi <= targetIdx && fi < j.f.length; fi++) {
+    const fr = j.f[fi];
+    if (fr.t === 'K') {
+      let off = 0;
+      for (const row of fr.r) {
+        const px = jtmRleDec(row);
+        for (let x = 0; x < Math.min(px.length, w); x++) cur[off + x] = px[x];
+        off += w;
+      }
+    } else {
+      for (let i = 0; i < fr.c.length; i += 2) cur[fr.c[i]] = fr.c[i+1];
+    }
+  }
+  const img = new Uint8ClampedArray(n * 4);
+  for (let i = 0; i < n; i++) {
+    const c = pal[cur[i]] || [0,0,0];
+    img[i*4] = c[0]; img[i*4+1] = c[1]; img[i*4+2] = c[2]; img[i*4+3] = 255;
+  }
+  return new ImageData(img, w, h);
+}
+
+function jtmToMedia(jtm, name) {
+  const canvas = document.createElement('canvas');
+  canvas.width = jtm.w; canvas.height = jtm.h;
+  const ctx = canvas.getContext('2d');
+  return {
+    id: 'm' + Math.random().toString(36).slice(2, 8),
+    type: 'procedural', // reuses drawFrame procedural path
+    name,
+    url: null,
+    duration: jtm.f.length / jtm.fps,
+    w: jtm.w, h: jtm.h,
+    element: canvas,
+    renderFrame(c, p) {
+      const idx = Math.max(0, Math.min(jtm.f.length - 1, Math.floor(p * jtm.f.length)));
+      const img = decodeJtmFrame(jtm, idx);
+      c.putImageData(img, 0, 0);
+    },
+    renderThumb(c, p) { this.renderFrame(c, p); }
+  };
+}
+
+// ── SHOT CELL STRIP ──────────────────────
+const shotStrip = document.getElementById('shot-strip');
+const shotCells = document.getElementById('shot-cells');
+function renderShotStrip() {
+  const v1clips = state.tracks.v1.clips.slice().sort((a,b) => a.start - b.start);
+  document.getElementById('shot-count').textContent = v1clips.length;
+  if (v1clips.length === 0) {
+    shotStrip.classList.remove('show');
+    return;
+  }
+  shotStrip.classList.add('show');
+  shotCells.innerHTML = '';
+  v1clips.forEach((clip, i) => {
+    const cell = document.createElement('div');
+    cell.className = 'shot-cell' + (state.selectedClip === clip.id ? ' active' : '');
+    cell.dataset.id = clip.id;
+    cell.draggable = true;
+    const m = getMedia(clip.mediaId);
+    const dur = (clip.out - clip.in).toFixed(1);
+    let thumb = '';
+    if (m) {
+      if (m.type === 'video') thumb = `<video src="${m.url}#t=${(clip.in + (clip.out-clip.in)*0.3).toFixed(2)}" muted playsinline></video>`;
+      else if (m.type === 'image') thumb = `<img src="${m.url}">`;
+      else if (m.type === 'procedural') thumb = `<canvas width="720" height="1280" data-shot-canvas></canvas>`;
+    }
+    cell.innerHTML = `${thumb}<span class="idx">${i+1}</span><span class="dur">${dur}s</span>`;
+    if (m && m.type === 'procedural') {
+      setTimeout(() => {
+        const c = cell.querySelector('canvas');
+        if (c) m.renderThumb(c.getContext('2d'), 0.3);
+      }, 0);
+    }
+    cell.addEventListener('click', () => {
+      state.selectedClip = clip.id;
+      state.playhead = clip.start;
+      renderTimeline(); renderInspector(); render(); renderShotStrip();
+    });
+    cell.addEventListener('dragstart', ev => {
+      ev.dataTransfer.setData('text/shot-id', clip.id);
+      ev.dataTransfer.effectAllowed = 'move';
+      cell.classList.add('dragging');
+    });
+    cell.addEventListener('dragend', () => cell.classList.remove('dragging'));
+    cell.addEventListener('dragover', ev => { ev.preventDefault(); cell.classList.add('drop-target'); });
+    cell.addEventListener('dragleave', () => cell.classList.remove('drop-target'));
+    cell.addEventListener('drop', ev => {
+      ev.preventDefault(); cell.classList.remove('drop-target');
+      const srcId = ev.dataTransfer.getData('text/shot-id');
+      if (!srcId || srcId === clip.id) return;
+      reorderShotBefore(srcId, clip.id);
+    });
+    shotCells.appendChild(cell);
+  });
+}
+function reorderShotBefore(srcId, targetId) {
+  const clips = state.tracks.v1.clips;
+  const src = clips.find(c => c.id === srcId);
+  const target = clips.find(c => c.id === targetId);
+  if (!src || !target) return;
+  // Build ordered list without src, then insert before target
+  const ordered = clips.slice().sort((a,b) => a.start - b.start).filter(c => c.id !== srcId);
+  const targetIdx = ordered.findIndex(c => c.id === targetId);
+  ordered.splice(targetIdx, 0, src);
+  // Repack starts contiguously starting at first clip's original start
+  let t = ordered[0].start;
+  for (const c of ordered) { c.start = t; t += (c.out - c.in); }
+  renderTimeline(); render(); renderShotStrip();
+}
+
+// Hook shot strip to any timeline change
+const _origRenderTimeline = renderTimeline;
+renderTimeline = function() { _origRenderTimeline.apply(this, arguments); renderShotStrip(); };
+renderShotStrip();
 
 // ── ADD TEXT ─────────────────────────────
 document.getElementById('add-text-btn').addEventListener('click', () => {
