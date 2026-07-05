@@ -1500,7 +1500,13 @@ async function exportMP4() {
   if (typeof VideoEncoder === 'undefined') { status.textContent = 'WebCodecs not supported.'; return; }
   status.textContent = 'Encoding MP4… 0%';
   const chunks = [];
-  const width = cv.width, height = cv.height;
+  // H.264 requires EVEN dimensions — round down to nearest even
+  const width = Math.floor(cv.width / 2) * 2;
+  const height = Math.floor(cv.height / 2) * 2;
+  // Draw through a temp canvas that's guaranteed even
+  const temp = document.createElement('canvas');
+  temp.width = width; temp.height = height;
+  const tctx = temp.getContext('2d');
   const encoder = new VideoEncoder({
     output: chunk => { const buf = new Uint8Array(chunk.byteLength); chunk.copyTo(buf); chunks.push({ data: buf, ts: chunk.timestamp, dur: chunk.duration, type: chunk.type }); },
     error: err => { status.textContent = 'Encoder error: ' + err.message; }
@@ -1519,7 +1525,8 @@ async function exportMP4() {
   const t0 = performance.now();
   let frameIndex = 0;
   await offlineFrames(async (f, total) => {
-    const bitmap = await createImageBitmap(cv);
+    tctx.drawImage(cv, 0, 0, width, height);
+    const bitmap = await createImageBitmap(temp);
     const vf = new VideoFrame(bitmap, {
       timestamp: (f * 1e6) / FPS,
       duration: 1e6 / FPS
