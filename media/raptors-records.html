@@ -1063,10 +1063,17 @@ async function exportMP4() {
     output: chunk => { const buf = new Uint8Array(chunk.byteLength); chunk.copyTo(buf); chunks.push(buf); },
     error: err => { status.textContent = 'Encoder error: ' + err.message; }
   });
+  // Probe codecs from highest capability down — 1080p 60fps needs Level 4.2+
+  const candidates = ['avc1.640034','avc1.640033','avc1.64002A','avc1.640028','avc1.42E02A','avc1.42E028','avc1.42E01F'];
+  let codec = null;
+  for (const c of candidates) {
+    try { const s = await VideoEncoder.isConfigSupported({ codec: c, width, height, bitrate: 8_000_000, framerate: FPS }); if (s.supported) { codec = c; break; } } catch(_){}
+  }
+  if (!codec) { status.textContent = 'No H.264 codec supports ' + width + '×' + height + '@' + FPS + '. Try WebM.'; return; }
   try {
-    encoder.configure({ codec: 'avc1.42E01F', width, height, bitrate: 8_000_000, framerate: FPS });
+    encoder.configure({ codec, width, height, bitrate: 8_000_000, framerate: FPS });
   } catch (err) {
-    status.textContent = 'MP4 not available in this browser. Try WebM.';
+    status.textContent = 'MP4 config failed: ' + err.message + '. Try WebM.';
     return;
   }
   const totalFrames = Math.floor(TOTAL);
