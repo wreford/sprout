@@ -1504,15 +1504,17 @@ async function exportMP4() {
     currentFrame = f;
     render(f);
     tctx.drawImage(cv, 0, 0, width, height);
-    // Pass canvas directly — no createImageBitmap (saves 5-10ms per frame)
-    const vf = new VideoFrame(temp, { timestamp: (f * 1e6) / FPS, duration: 1e6 / FPS });
+    // Snapshot pixels via ImageBitmap — VideoFrame(canvas) can hold a ref not a copy
+    const bitmap = await createImageBitmap(temp);
+    const vf = new VideoFrame(bitmap, { timestamp: (f * 1e6) / FPS, duration: 1e6 / FPS });
     encoder.encode(vf, { keyFrame: f % 60 === 0 });
     vf.close();
+    bitmap.close();
     // Backpressure only when encoder queue is full
     if (encoder.encodeQueueSize > 20) {
       await new Promise(r => setTimeout(r, 1));
     }
-    // Progress + yield every 60 frames
+    // Progress + yield every 64 frames
     if ((f & 63) === 0) {
       const p = f / totalFrames;
       const el = performance.now() - t0;
