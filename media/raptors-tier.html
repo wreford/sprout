@@ -1476,71 +1476,52 @@ function download(blob, filename) {
 }
 function fname(ext) { return `raptors-all-stars${PORTRAIT ? '-tiktok' : ''}-${Date.now()}.${ext}`; }
 
-// Render each frame offline (much faster than real-time playback)
-async function offlineFrames(onFrame, onProgress) {
-  playing = false; stopSpeech();
-  const startFrame = 0;
-  const endFrame = TOTAL;
-  const totalFrames = Math.floor(endFrame - startFrame);
-  const yieldEvery = 30; // yield every 30 frames (0.5s of video)
-  for (let f = 0; f < totalFrames; f++) {
-    currentFrame = startFrame + f;
-    render(currentFrame);
-    await onFrame(f, totalFrames);
-    if (f % yieldEvery === 0) {
-      onProgress(f / totalFrames);
-      await new Promise(r => setTimeout(r, 0));
-    }
-  }
-  onProgress(1);
-}
-
-// MP4 via WebCodecs
+// MP4 via WebCodecs — FAST offline path
 async function exportMP4() {
   if (typeof VideoEncoder === 'undefined') { status.textContent = 'WebCodecs not supported.'; return; }
-  status.textContent = 'Encoding MP4… 0%';
+  playing = false; stopSpeech();
   const chunks = [];
-  // H.264 requires EVEN dimensions — round down to nearest even
+  // H.264 requires EVEN dimensions
   const width = Math.floor(cv.width / 2) * 2;
   const height = Math.floor(cv.height / 2) * 2;
-  // Draw through a temp canvas that's guaranteed even
   const temp = document.createElement('canvas');
   temp.width = width; temp.height = height;
-  const tctx = temp.getContext('2d');
+  const tctx = temp.getContext('2d', { alpha: false });
   const encoder = new VideoEncoder({
-    output: chunk => { const buf = new Uint8Array(chunk.byteLength); chunk.copyTo(buf); chunks.push({ data: buf, ts: chunk.timestamp, dur: chunk.duration, type: chunk.type }); },
+    output: chunk => { const buf = new Uint8Array(chunk.byteLength); chunk.copyTo(buf); chunks.push(buf); },
     error: err => { status.textContent = 'Encoder error: ' + err.message; }
   });
   try {
-    encoder.configure({
-      codec: 'avc1.42E01F',
-      width, height,
-      bitrate: 8_000_000,
-      framerate: FPS
-    });
+    encoder.configure({ codec: 'avc1.42E01F', width, height, bitrate: 8_000_000, framerate: FPS });
   } catch (err) {
     status.textContent = 'MP4 not available in this browser. Try WebM.';
     return;
   }
+  const totalFrames = Math.floor(TOTAL);
   const t0 = performance.now();
-  let frameIndex = 0;
-  await offlineFrames(async (f, total) => {
+  status.textContent = 'Encoding MP4… 0%';
+  for (let f = 0; f < totalFrames; f++) {
+    currentFrame = f;
+    render(f);
     tctx.drawImage(cv, 0, 0, width, height);
-    const bitmap = await createImageBitmap(temp);
-    const vf = new VideoFrame(bitmap, {
-      timestamp: (f * 1e6) / FPS,
-      duration: 1e6 / FPS
-    });
+    // Pass canvas directly — no createImageBitmap (saves 5-10ms per frame)
+    const vf = new VideoFrame(temp, { timestamp: (f * 1e6) / FPS, duration: 1e6 / FPS });
     encoder.encode(vf, { keyFrame: f % 60 === 0 });
     vf.close();
-    bitmap.close();
-    frameIndex++;
-  }, p => {
-    const pct = Math.round(p * 100);
-    const el = performance.now() - t0;
-    const eta = p > 0 ? Math.round((el / p) * (1 - p) / 1000) : 0;
-    status.textContent = `Encoding MP4… ${pct}%  ·  ETA ${eta}s`;
-  });
+    // Backpressure only when encoder queue is full
+    if (encoder.encodeQueueSize > 20) {
+      await new Promise(r => setTimeout(r, 1));
+    }
+    // Progress + yield every 60 frames
+    if ((f & 63) === 0) {
+      const p = f / totalFrames;
+      const el = performance.now() - t0;
+      const eta = p > 0.02 ? Math.round((el / p) * (1 - p) / 1000) : Math.round(totalFrames * 0.005);
+      status.textContent = `Encoding MP4… ${Math.round(p*100)}% · ETA ${eta}s`;
+      await new Promise(r => setTimeout(r, 0));
+    }
+  }
+  status.textContent = 'Flushing encoder…';
   await encoder.flush();
   encoder.close();
   status.textContent = 'Packaging…';
@@ -1558,14 +1539,13 @@ async function exportMP4() {
   setTimeout(() => modal.style.display = 'none', 3000);
 }
 
-// WebM via VideoEncoder+webm-muxer (Chrome) or fallback: use MediaRecorder + captureStream with frame stepping
+// WebM fast — MediaRecorder + captureStream + requestFrame (no timeouts)
 async function exportWebMFast() {
+  playing = false; stopSpeech();
   status.textContent = 'Rendering WebM offline… 0%';
-  // Use MediaRecorder against a captureStream where we push frames via requestFrame
-  const stream = cv.captureStream(0); // 0 = only push on requestFrame
+  const stream = cv.captureStream(0);
   const track = stream.getVideoTracks()[0];
-  const hasRequestFrame = typeof track.requestFrame === 'function';
-  if (!hasRequestFrame) { status.textContent = 'Fast render not supported. Use Live capture instead.'; return; }
+  if (typeof track.requestFrame !== 'function') { status.textContent = 'Fast render not supported. Use Live capture instead.'; return; }
   let mime = 'video/webm;codecs=vp9';
   if (!MediaRecorder.isTypeSupported(mime)) mime = 'video/webm;codecs=vp8';
   if (!MediaRecorder.isTypeSupported(mime)) mime = 'video/webm';
@@ -1574,16 +1554,21 @@ async function exportWebMFast() {
   rec.ondataavailable = e => { if (e.data.size > 0) parts.push(e.data); };
   const done = new Promise(res => { rec.onstop = res; });
   rec.start();
+  const totalFrames = Math.floor(TOTAL);
   const t0 = performance.now();
-  await offlineFrames(async () => {
+  for (let f = 0; f < totalFrames; f++) {
+    currentFrame = f;
+    render(f);
     track.requestFrame();
-    await new Promise(r => setTimeout(r, 1)); // let the frame commit
-  }, p => {
-    const pct = Math.round(p * 100);
-    const el = performance.now() - t0;
-    const eta = p > 0 ? Math.round((el / p) * (1 - p) / 1000) : 0;
-    status.textContent = `Rendering WebM… ${pct}%  ·  ETA ${eta}s`;
-  });
+    // Only yield to event loop every 30 frames — no per-frame timeout
+    if ((f & 31) === 0) {
+      const p = f / totalFrames;
+      const el = performance.now() - t0;
+      const eta = p > 0.02 ? Math.round((el / p) * (1 - p) / 1000) : Math.round(totalFrames * 0.01);
+      status.textContent = `Rendering WebM… ${Math.round(p*100)}% · ETA ${eta}s`;
+      await new Promise(r => setTimeout(r, 0));
+    }
+  }
   rec.stop();
   await done;
   const blob = new Blob(parts, { type: 'video/webm' });

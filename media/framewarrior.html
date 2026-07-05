@@ -901,22 +901,32 @@ function fname(ext) { return `framewarrior-${Date.now()}.${ext}`; }
 async function renderOffline(onFrame, onProgress) {
   const dur = projectDuration();
   const totalFrames = Math.floor(dur * state.fps);
+  // Group frames by video source to minimize seeks
+  let lastVideoEl = null;
+  let lastSeekTarget = -1;
+  const useSeeked = (v) => new Promise(res => {
+    const done = () => { v.removeEventListener('seeked', done); res(); };
+    v.addEventListener('seeked', done);
+  });
   for (let i = 0; i < totalFrames; i++) {
     state.playhead = i / state.fps;
-    // Sync video elements
     const active = activeClipsAt(state.playhead);
     if (active.video) {
       const m = getMedia(active.video.clip.mediaId);
       if (m && m.type === 'video') {
         const target = active.video.clip.in + active.video.localT;
-        m.element.currentTime = target;
-        // Wait a tick for the seek to render
-        await new Promise(res => setTimeout(res, 8));
+        // Only wait for seek if it's meaningfully different
+        if (m.element !== lastVideoEl || Math.abs(target - lastSeekTarget) > 0.05) {
+          m.element.currentTime = target;
+          lastVideoEl = m.element;
+          lastSeekTarget = target;
+          await useSeeked(m.element);
+        }
       }
     }
     drawFrame(state.playhead);
     await onFrame(i, totalFrames);
-    if (i % 15 === 0) { onProgress(i / totalFrames); await new Promise(r => setTimeout(r, 0)); }
+    if ((i & 31) === 0) { onProgress(i / totalFrames); await new Promise(r => setTimeout(r, 0)); }
   }
   onProgress(1);
 }
@@ -939,10 +949,12 @@ document.getElementById('exp-mp4').addEventListener('click', async () => {
   const t0 = performance.now();
   await renderOffline(async (f) => {
     tctx.drawImage(previewCanvas, 0, 0, width, height);
-    const bitmap = await createImageBitmap(temp);
-    const vf = new VideoFrame(bitmap, { timestamp: (f * 1e6) / state.fps, duration: 1e6 / state.fps });
+    // Pass canvas directly — no createImageBitmap (saves 5-10ms per frame)
+    const vf = new VideoFrame(temp, { timestamp: (f * 1e6) / state.fps, duration: 1e6 / state.fps });
     encoder.encode(vf, { keyFrame: f % 60 === 0 });
-    vf.close(); bitmap.close();
+    vf.close();
+    // Backpressure only when encoder queue is full
+    if (encoder.encodeQueueSize > 20) await new Promise(r => setTimeout(r, 1));
   }, p => {
     const pct = Math.round(p * 100);
     const el = performance.now() - t0;
@@ -970,7 +982,7 @@ document.getElementById('exp-webm-fast').addEventListener('click', async () => {
   const done = new Promise(res => { rec.onstop = res; });
   rec.start();
   const t0 = performance.now();
-  await renderOffline(async () => { track.requestFrame(); await new Promise(r => setTimeout(r, 1)); }, p => {
+  await renderOffline(async () => { track.requestFrame(); }, p => {
     const pct = Math.round(p * 100);
     const el = performance.now() - t0;
     const eta = p > 0 ? Math.round((el / p) * (1 - p) / 1000) : 0;
