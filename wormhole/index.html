@@ -151,7 +151,8 @@ input,select{font-size:16px}
   font-family:var(--serif);font-size:15.5px;line-height:1.58;
   color:rgba(255,255,255,.92);max-width:44ch;
   text-shadow:0 1px 3px rgba(0,0,0,.65),0 2px 10px rgba(0,0,0,.65);
-  max-height:14lh;overflow:hidden;position:relative
+  max-height:14lh;overflow:hidden;position:relative;cursor:pointer;
+  touch-action:pan-y
 }
 .card .extract::after{
   content:"";position:absolute;left:0;right:0;bottom:0;height:2.4lh;pointer-events:none;
@@ -170,8 +171,27 @@ input,select{font-size:16px}
 .card .read-cta:active{transform:translateY(1px) scale(.98)}
 .card .read-cta .arr{font-family:var(--disp);font-weight:900;font-size:14px}
 .card .related{
-  display:flex;gap:6px;flex-wrap:wrap;margin-top:14px;max-width:44ch
+  display:flex;gap:6px;flex-wrap:wrap;margin-top:14px;max-width:44ch;align-items:center
 }
+.card .rel-toggle{
+  padding:7px 12px 7px 12px;background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.2);
+  border-radius:100px;color:rgba(255,255,255,.96);
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;font-weight:700;text-transform:uppercase;
+  cursor:pointer;transition:all .14s var(--ease);
+  backdrop-filter:blur(12px) saturate(1.4);-webkit-backdrop-filter:blur(12px) saturate(1.4);
+  box-shadow:0 2px 8px rgba(0,0,0,.28);text-shadow:0 1px 3px rgba(0,0,0,.4);
+  display:inline-flex;align-items:center;gap:8px
+}
+.card .rel-toggle .rel-tag{color:var(--electric);font-weight:900;font-size:12px;line-height:1}
+.card .rel-toggle .rel-count{
+  padding:1px 7px;background:var(--electric);color:var(--bg);
+  border-radius:100px;font-size:9.5px;font-weight:700;letter-spacing:.03em;
+  text-shadow:none
+}
+.card .rel-toggle:hover{border-color:var(--electric);color:var(--electric)}
+.card .related.open .rel-toggle{background:rgba(94,234,212,.16);border-color:var(--electric);color:var(--electric)}
+.card .related.open .rel-toggle .rel-count{background:transparent;color:var(--electric);border:1px solid var(--electric)}
+.card .related:not(.open) .rel{display:none}
 .card .related .rel{
   padding:6px 12px;background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.2);
   border-radius:100px;color:#fff;font-family:var(--mono);font-size:10.5px;letter-spacing:.04em;font-weight:600;
@@ -179,8 +199,10 @@ input,select{font-size:16px}
   backdrop-filter:blur(12px) saturate(1.4);-webkit-backdrop-filter:blur(12px) saturate(1.4);
   white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis;
   box-shadow:0 2px 8px rgba(0,0,0,.28);
-  text-shadow:0 1px 3px rgba(0,0,0,.4)
+  text-shadow:0 1px 3px rgba(0,0,0,.4);
+  animation:relin .18s var(--ease) both
 }
+@keyframes relin{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:none}}
 .card .related .rel:hover{background:rgba(255,255,255,.2);border-color:var(--electric);color:var(--electric);transform:translateY(-1px)}
 .card .related .rel:active{transform:translateY(0) scale(.97)}
 .card .related .rel::before{content:"↗\00a0";opacity:.72}
@@ -1018,6 +1040,7 @@ function appendCard(a) {
 
   // Lazy-load related
   loadRelated(card, a);
+  wireExtractOpen(card, a);
 
   if (FEED.io) FEED.io.observe(card);
 }
@@ -1027,7 +1050,13 @@ async function loadRelated(card, a) {
   const items = await fetchRelated(a.title);
   if (!rel) return;
   if (!items.length) { rel.remove(); return; }
-  rel.innerHTML = items.slice(0, 5).map(x => `<button class="rel" data-title="${escapeAttr(x.title)}">${escapeHtml(x.title)}</button>`).join('');
+  const chips = items.slice(0, 5);
+  rel.innerHTML = `<button class="rel-toggle" data-act="rel-toggle"><span class="rel-tag">☍</span>Related<span class="rel-count">${chips.length}</span></button>` +
+    chips.map(x => `<button class="rel" data-title="${escapeAttr(x.title)}">${escapeHtml(x.title)}</button>`).join('');
+  rel.querySelector('.rel-toggle').addEventListener('click', e => {
+    e.stopPropagation();
+    rel.classList.toggle('open');
+  });
   rel.querySelectorAll('.rel').forEach(b => b.addEventListener('click', async e => {
     e.stopPropagation();
     const t = b.dataset.title;
@@ -1035,6 +1064,30 @@ async function loadRelated(card, a) {
     if (article) insertNextCard(article);
     else toast('couldn\'t load ' + t);
   }));
+}
+
+// Wire the extract so any scroll/touch gesture inside it opens the reader
+function wireExtractOpen(card, a) {
+  const extract = card.querySelector('.extract');
+  if (!extract) return;
+  let opened = false;
+  const trigger = () => {
+    if (opened) return;
+    opened = true;
+    openReadSheet(a);
+    setTimeout(() => { opened = false; }, 500);
+  };
+  extract.addEventListener('wheel', e => {
+    if (Math.abs(e.deltaY) > 3) { e.preventDefault(); trigger(); }
+  }, { passive:false });
+  let sY = null;
+  extract.addEventListener('touchstart', e => { sY = e.touches[0].clientY; }, { passive:true });
+  extract.addEventListener('touchmove', e => {
+    if (sY == null) return;
+    const dy = Math.abs(e.touches[0].clientY - sY);
+    if (dy > 10) { sY = null; trigger(); }
+  }, { passive:true });
+  extract.addEventListener('click', () => trigger());
 }
 
 async function jumpToRelated(a) {
@@ -1099,6 +1152,7 @@ function insertNextCard(a) {
   }
   wireCardActions(card, a);
   loadRelated(card, a);
+  wireExtractOpen(card, a);
   if (FEED.io) FEED.io.observe(card);
 
   card.scrollIntoView({ behavior:'smooth', block:'start' });

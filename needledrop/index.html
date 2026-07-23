@@ -327,7 +327,8 @@ body::after{
 .btnrow{display:flex;flex-direction:column;gap:8px;margin-top:12px}
 .mcard .foot{margin-top:14px;font-family:var(--mono);font-size:9.5px;color:var(--dimmer);letter-spacing:.1em}
 .mcard .foot a{color:var(--cream-dim);border-bottom:1px dotted var(--dimmer);text-decoration:none}
-.mcard .status{margin-top:10px;font-family:var(--mono);font-size:10.5px;color:var(--dim);letter-spacing:.06em;min-height:14px}
+.mcard .status{margin-top:10px;font-family:var(--mono);font-size:10.5px;color:var(--dim);letter-spacing:.06em;min-height:14px;line-height:1.55;text-align:left}
+.mcard .status code{font-family:var(--mono);background:rgba(255,255,255,.06);padding:1px 5px;border-radius:4px;color:var(--cream)}
 .mcard .status.err{color:var(--bad)}
 .mcard .status.load{color:var(--dial)}
 
@@ -622,12 +623,32 @@ function transform(raw, genre, decade) {
   return out;
 }
 
+function fetchWithTimeout(url, ms = 9000) {
+  const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const to = ctrl ? setTimeout(() => ctrl.abort(), ms) : null;
+  const opts = { headers:{ 'accept':'application/json' } };
+  if (ctrl) opts.signal = ctrl.signal;
+  return fetch(url, opts)
+    .then(r => { if (to) clearTimeout(to); if (!r.ok) throw new Error('http ' + r.status); return r.json(); })
+    .catch(e => { if (to) clearTimeout(to); throw e; });
+}
+
 async function fetchPool(genre, decade) {
   const terms = shuffle(TERMS.slice()).slice(0, 5);
-  const results = await Promise.allSettled(terms.map(term => {
-    const url = `https://itunes.apple.com/search?media=music&entity=song&limit=200&term=${encodeURIComponent(term)}`;
-    return fetch(url).then(r => r.json()).then(j => j.results || []);
-  }));
+  const buildUrl = term => `https://itunes.apple.com/search?media=music&entity=song&country=us&limit=200&term=${encodeURIComponent(term)}`;
+
+  // Try iTunes with per-term retry (one retry after 900ms)
+  async function attempt(term) {
+    try {
+      const j = await fetchWithTimeout(buildUrl(term));
+      return j.results || [];
+    } catch(_) {
+      await new Promise(r => setTimeout(r, 900));
+      const j = await fetchWithTimeout(buildUrl(term));
+      return j.results || [];
+    }
+  }
+  const results = await Promise.allSettled(terms.map(attempt));
   const raw = [];
   let failed = 0;
   for (const r of results) {
@@ -915,8 +936,10 @@ async function startGame() {
     renderRound();
   } catch(e) {
     setup.className = 'status err';
-    setup.textContent = 'Couldn\'t reach iTunes. Check your connection or open on a real domain.';
+    setup.innerHTML = `Couldn't reach the iTunes preview API. This usually means a content blocker (AdGuard, Brave shields, iOS content blockers, corporate DNS filter) is blocking <code>itunes.apple.com/search</code>. Turn it off for this site and hit the button again.<br><br><button class="btnbig" id="retryBtn" style="margin-top:8px">Try again ↻</button>`;
     $('startBtn').disabled = false;
+    const rb = $('retryBtn');
+    if (rb) rb.addEventListener('click', startGame);
   }
 }
 
