@@ -656,14 +656,20 @@ async function fetchArticle(title) {
   } catch(e) { return null; }
 }
 async function fetchRelated(title) {
+  // Wikipedia REST /page/related was deprecated in 2023. Use MediaWiki's
+  // "morelike:" search which finds articles with similar content.
   try {
-    const t = encodeURIComponent(title.replace(/ /g, '_'));
-    const r = await fetch(`${apiBase()}/page/related/${t}`, {
-      headers:{ 'accept':'application/json' }
-    });
+    const t = title.replace(/ /g, '_');
+    const u = `https://${state.lang}.wikipedia.org/w/api.php?action=query&format=json&list=search` +
+              `&srsearch=morelike:${encodeURIComponent(t)}&srlimit=8&srnamespace=0&origin=*`;
+    const r = await fetch(u);
     if (!r.ok) return [];
     const j = await r.json();
-    return (j.pages || []).slice(0, 8).map(p => ({ title: p.titles && p.titles.normalized || p.title }));
+    const results = (j.query && j.query.search) || [];
+    return results
+      .filter(p => p.title && p.title !== title)
+      .slice(0, 8)
+      .map(p => ({ title: p.title }));
   } catch(e) { return []; }
 }
 async function searchWiki(q) {
