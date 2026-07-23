@@ -244,6 +244,38 @@ canvas#stage{
 .chip.endless{background:linear-gradient(135deg,#fff,#c4a1ff);color:#fff}
 .chip.endless .lbl{color:#fff}
 
+/* Dedication banner on intro */
+.dedication{
+  display:inline-block;padding:8px 18px;margin-bottom:14px;
+  background:linear-gradient(90deg,#ff5eab 0%,#ffcc00 25%,#30d158 50%,#0a84ff 75%,#bf5af2 100%);
+  background-size:400% 100%;
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+  font-family:var(--disp);font-weight:900;font-style:italic;font-size:20px;
+  letter-spacing:-.02em;
+  animation:rainbow-shift 4s ease-in-out infinite,dedication-bounce 2.4s ease-in-out infinite;
+  filter:drop-shadow(0 2px 0 rgba(255,255,255,.8))
+}
+@keyframes rainbow-shift{50%{background-position:100% 0}}
+@keyframes dedication-bounce{
+  0%,100%{transform:translateY(0) rotate(-1deg)}
+  50%{transform:translateY(-3px) rotate(1deg)}
+}
+.dedication .heart{
+  display:inline-block;color:#ff5eab;
+  -webkit-text-fill-color:#ff5eab;
+  animation:heart-throb 1.2s ease-in-out infinite;
+  transform-origin:center;font-size:22px;margin-left:2px
+}
+@keyframes heart-throb{
+  0%,100%{transform:scale(1)}
+  15%{transform:scale(1.35)}
+  30%{transform:scale(1)}
+  45%{transform:scale(1.25)}
+}
+
+/* Voice toggle button (in HUD) */
+.iconbtn.voice{background:linear-gradient(135deg,#fff,#ffe6f4)}
+
 .hint-tap{
   position:fixed;bottom:calc(env(safe-area-inset-bottom) + 18px);left:50%;transform:translateX(-50%);
   z-index:8;pointer-events:none;
@@ -267,6 +299,7 @@ canvas#stage{
     <div class="chip"><div><div class="lbl">Score</div><div class="n" id="score">0</div></div></div>
     <div class="chip time" id="timeChip"><div><div class="lbl">Time</div><div class="n" id="time">60</div></div></div>
     <button class="iconbtn" id="pauseBtn" title="Pause">||</button>
+    <button class="iconbtn voice" id="voiceBtn" title="Voice on/off">🔊</button>
     <button class="iconbtn" id="muteBtn" title="Sound">♪</button>
   </div>
 </div>
@@ -278,6 +311,7 @@ canvas#stage{
 <!-- Intro modal -->
 <div class="modal show" id="intro">
   <div class="mcard">
+    <div class="dedication">For <span>liller</span> &amp; <span>kenzo</span> <span class="heart">♡</span></div>
     <div class="tag">Presenting</div>
     <h1><span class="sq">Squish</span><span class="bob">Bob</span></h1>
     <p>He is <em>very hungry.</em> He wants pants. He does not care whose.</p>
@@ -397,6 +431,8 @@ const POWER_PANTS = [
   { emoji:'🎈', name:'SLOW-MO',      color:'#c9dcff', points:2, power:'slowmo' },
   { emoji:'🌟', name:'MEGA STAR',    color:'#ffe74c', points:5, power:'freeze' },
 ];
+// JACKSON THE CAT — the rarest drop (2%). Not pants at all. Worth 15 points!
+const JACKSON = { emoji:'🐱', name:'JACKSON', color:'#ffb47a', points:15, isJackson:true };
 const BAD_PANTS = [
   { emoji:'🥦', name:'BROCCOLI',     color:'#a3d99e', points:-2 },
   { emoji:'🌵', name:'CACTUS',       color:'#88c48a', points:-2 },
@@ -484,6 +520,59 @@ const SFX = {
     beep(1320, 0.24, 0.24, 'sine', 0.2);
   }
 };
+
+/* ── Voice (Web Speech API — funny high-pitched TTS) ── */
+const VOICE = { on: localStorage.getItem('sb-voice') !== '0', chosen:null, chance:0.42, lastAt:0 };
+function pickVoice() {
+  if (!window.speechSynthesis) return null;
+  const voices = window.speechSynthesis.getVoices();
+  if (!voices.length) return null;
+  const pref = voices.find(v => /Samantha|Google.*Female|Karen|Zoe|Kids|Junior|Fiona/i.test(v.name))
+            || voices.find(v => v.lang && v.lang.startsWith('en'))
+            || voices[0];
+  return pref;
+}
+function speak(text, opts = {}) {
+  if (!window.speechSynthesis || !VOICE.on || State.muted) return;
+  // Throttle
+  const now = performance.now();
+  if (now - VOICE.lastAt < 400) return;
+  VOICE.lastAt = now;
+  window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  if (!VOICE.chosen) VOICE.chosen = pickVoice();
+  if (VOICE.chosen) u.voice = VOICE.chosen;
+  u.rate = opts.rate != null ? opts.rate : (1.05 + Math.random() * 0.35);
+  u.pitch = opts.pitch != null ? opts.pitch : (1.5 + Math.random() * 0.4);
+  u.volume = opts.volume != null ? opts.volume : 0.85;
+  window.speechSynthesis.speak(u);
+}
+// Voices load asynchronously in some browsers
+if (typeof window !== 'undefined' && window.speechSynthesis) {
+  try { window.speechSynthesis.onvoiceschanged = () => { VOICE.chosen = pickVoice(); }; } catch(e) {}
+}
+function maybeSpeak(bank) {
+  if (Math.random() > VOICE.chance) return;
+  const line = bank[Math.floor(Math.random() * bank.length)];
+  speak(line);
+}
+
+/* ── Voice line banks (kid-safe wackiness) ── */
+const VL_START     = ['Feed the cube!','Here we go!','Let\'s eat some pants!','Ready set munch!','I\'m hungry!'];
+const VL_YUM_LO    = ['Yum!','Nice!','More!','Tasty!','Mmm!','Delish!','Oo!','Yay!','Good one!','Yummers!'];
+const VL_YUM_HI    = ['Wowzers!','No way!','Legendary!','Yes yes yes!','So good!','Amazing!','Combo!','Un-real!','Fabulous!','Slay!'];
+const VL_YUCK      = ['Ew!','Yuck!','No thank you!','Gross!','My tummy!','Blegh!','Cursed!','Absolutely not!','Get it away!','Bad pants!'];
+const VL_SPARKLE   = ['Sparkle mode!','Everything shines!','Double points!','Sparkle time!','Bling bling!'];
+const VL_DIAMOND   = ['A diamond!','So shiny!','Fancy!','Big shiny!'];
+const VL_MAGNET    = ['Magnet time!','Come to me!','Pants please!'];
+const VL_TIME      = ['Extra time!','More time!','Five more!'];
+const VL_BOOM      = ['Ka-boom!','Wipeout!','Boom!','Cleared!'];
+const VL_SLOW      = ['Slow motion!','Sloooow!','Chill mode!'];
+const VL_FREEZE    = ['Freeze!','Everybody freeze!','Ice time!'];
+const VL_JACKSON   = ['Meoooow!','Jackson!','A cat!','Kitty!','It\'s Jackson!','Purrr!','Hello Jackson!'];
+const VL_ACH       = ['New badge!','Nice unlock!','You did it!','Achievement!','So good!'];
+const VL_END_HI    = ['Wow that was epic!','New high score!','You legend!','Champion!'];
+const VL_END_LO    = ['Not bad!','Try again?','You got this next time.','SquishBob is proud.'];
 
 /* ── Music: procedural chiptune loop with lookahead scheduler ── */
 const MUSIC = {
@@ -831,67 +920,73 @@ function update(dt) {
    Actions
    ══════════════════════════════════════════════════════ */
 function spawnPants() {
-  // 6% power-up, 22% bad, else good
+  // 2% Jackson, 6% power-up, 22% bad, else good
   const roll = Math.random();
-  let def, good = true, power = null;
-  if (roll < 0.06) {
+  let def, good = true, power = null, isJackson = false;
+  if (roll < 0.02) {
+    def = JACKSON;
+    isJackson = true;
+  } else if (roll < 0.08) {
     def = POWER_PANTS[Math.floor(Math.random() * POWER_PANTS.length)];
     power = def.power;
-  } else if (roll < 0.28) {
+  } else if (roll < 0.30) {
     def = BAD_PANTS[Math.floor(Math.random() * BAD_PANTS.length)];
     good = false;
   } else {
     def = GOOD_PANTS[Math.floor(Math.random() * GOOD_PANTS.length)];
   }
-  const w = 62, h = 74;
+  const w = isJackson ? 78 : 62, h = isJackson ? 78 : 74;
   const baseFall = State.slowT > 0 ? State.fallSpeed * 0.4 : State.fallSpeed;
-  const isFrozen = State.freezeT > 0 && !good;   // freeze pants: bad pants pause
+  const isFrozen = State.freezeT > 0 && !good;
   State.pants.push({
     x: 20 + Math.random() * (W - 40),
     y: -h,
-    vy: isFrozen ? 0 : baseFall + Math.random() * 40,
+    vy: isFrozen ? 0 : (isJackson ? baseFall * 0.75 : baseFall + Math.random() * 40),
     rot: (Math.random() - 0.5) * 0.6,
-    spin: (Math.random() - 0.5) * 1.5,
+    spin: (Math.random() - 0.5) * (isJackson ? 0.8 : 1.5),
     phase: Math.random() * Math.PI * 2,
-    w, h, r: 34,
-    def, good, power, frozen: isFrozen
+    w, h, r: isJackson ? 38 : 34,
+    def, good, power, frozen: isFrozen, isJackson
   });
+  if (isJackson) speak(pick(VL_JACKSON), { rate: 1.0, pitch: 1.9, volume: 0.9 });
 }
 
 function activatePower(power, x, y) {
   SFX.powerup(); haptic(20);
   State._powers = (State._powers || 0) + 1;
-  const el = $('sparkleMode');
-  if (power === 'magnet') {
-    State.magnetT = 3.0;
-    showCombo('MAGNET!');
-  } else if (power === 'time') {
-    State.time += 5;
-    updateHUD();
-    showCombo('+5 SECONDS!');
-  } else if (power === 'slowmo') {
-    State.slowT = 4.0;
-    // slow existing pants too
-    for (const p of State.pants) p.vy *= 0.5;
-    showCombo('SLOW-MO!');
-  } else if (power === 'freeze') {
-    State.freezeT = 4.0;
-    for (const p of State.pants) if (!p.good) { p.vy = 0; p.frozen = true; }
-    showCombo('MEGA FREEZE!');
-  } else if (power === 'boom') {
-    // Clear ALL pants and turn them into particles
-    for (const p of State.pants) burst(p.x, p.y, p.def.color, 10);
-    State.pants = [];
-    SFX.boom();
-    State.shake = 12;
-    showCombo('BOOM!');
-  }
+  if (power === 'magnet') { State.magnetT = 3.0; showCombo('MAGNET!'); speak(pick(VL_MAGNET), { pitch: 1.7 }); }
+  else if (power === 'time') { State.time += 5; updateHUD(); showCombo('+5 SECONDS!'); speak(pick(VL_TIME), { pitch: 1.7 }); }
+  else if (power === 'slowmo') { State.slowT = 4.0; for (const p of State.pants) p.vy *= 0.5; showCombo('SLOW-MO!'); speak(pick(VL_SLOW), { pitch: 1.6, rate: 0.9 }); }
+  else if (power === 'freeze') { State.freezeT = 4.0; for (const p of State.pants) if (!p.good) { p.vy = 0; p.frozen = true; } showCombo('MEGA FREEZE!'); speak(pick(VL_FREEZE), { pitch: 1.8 }); }
+  else if (power === 'boom') { for (const p of State.pants) burst(p.x, p.y, p.def.color, 10); State.pants = []; SFX.boom(); State.shake = 12; showCombo('BOOM!'); speak(pick(VL_BOOM), { pitch: 1.4, rate: 1.1 }); }
 }
 
 function eat(p) {
   const isGood = p.good;
+  // JACKSON — special mega-catch
+  if (p.isJackson) {
+    const pts = p.def.points * (State.sparkleMode ? 2 : 1);
+    State.score += pts;
+    State.combo++;
+    State.eaten++;
+    if (State.combo > State.bestCombo) State.bestCombo = State.combo;
+    State.bob.mood = 'star';
+    State.shake = Math.max(State.shake, 14);
+    speechBubble('JACKSON!!', p.x, p.y - 20, false);
+    // Rainbow explosion
+    for (let i = 0; i < 40; i++) {
+      const c = pick(['#ff5eab','#ffcc00','#30d158','#0a84ff','#bf5af2','#fff']);
+      burst(p.x + (Math.random()-.5) * 30, p.y + (Math.random()-.5) * 30, c, 4);
+    }
+    SFX.bigEat(); SFX.sparkle();
+    speak(pick(VL_JACKSON), { rate: 1.0, pitch: 1.8 });
+    haptic([25, 40, 25, 40, 60]);
+    setTimeout(() => { if (State.bob.mood === 'star') State.bob.mood = 'happy'; }, 900);
+    checkAchievements();
+    updateHUD();
+    return;
+  }
   if (p.power) {
-    // Power-up: score + trigger effect
     State.score += p.def.points * (State.sparkleMode ? 2 : 1);
     State.combo++;
     State.eaten++;
@@ -909,7 +1004,10 @@ function eat(p) {
     State.combo++;
     State.eaten++;
     if (State.combo > State.bestCombo) State.bestCombo = State.combo;
-    if (p.def.name === 'DIAMOND') State._diamonds = (State._diamonds || 0) + 1;
+    if (p.def.name === 'DIAMOND') {
+      State._diamonds = (State._diamonds || 0) + 1;
+      maybeSpeak(VL_DIAMOND);
+    }
     if (State.combo >= 3) showCombo(`x${State.combo}!`);
     if (State.combo % 5 === 0 && State.combo > 0) triggerSparkle();
     State.bob.mood = pts >= 3 ? 'star' : (pts >= 2 ? 'star' : 'heart');
@@ -918,6 +1016,9 @@ function eat(p) {
     burst(p.x, p.y, p.def.color, 22);
     if (pts >= 2) SFX.bigEat(); else SFX.eat();
     if (State.combo >= 3) SFX.combo(State.combo);
+    // Voice — bigger combos = HI bank
+    if (State.combo >= 5 && State.combo % 3 === 0) maybeSpeak(VL_YUM_HI);
+    else maybeSpeak(VL_YUM_LO);
     haptic(15);
     if (pts >= 3) State.shake = Math.max(State.shake, 6);
   } else {
@@ -929,6 +1030,7 @@ function eat(p) {
     speechBubble(pick(YUCK_PHRASES), p.x, p.y - 20, true);
     burst(p.x, p.y, '#ff5e88', 14);
     SFX.bad();
+    maybeSpeak(VL_YUCK);
     haptic([30, 40, 30]);
     setTimeout(() => { if (State.bob.mood === 'dizzy') State.bob.mood = 'happy'; }, 800);
   }
@@ -955,6 +1057,7 @@ function showAchievement(title) {
   el.innerHTML = `<div class="k">Achievement</div><div class="t">${title}</div>`;
   document.body.appendChild(el);
   setTimeout(() => el.remove(), 3200);
+  setTimeout(() => speak(pick(VL_ACH), { pitch: 1.8 }), 250);
 }
 
 function onSkip(p) {
@@ -974,6 +1077,7 @@ function triggerSparkle() {
   SFX.sparkle();
   setMusicMood('hype');
   State.shake = 10;
+  speak(pick(VL_SPARKLE), { rate: 1.2, pitch: 1.9 });
   for (let i = 0; i < 30; i++) {
     burst(Math.random() * W, Math.random() * H, i % 2 ? '#ffe74c' : '#ff8ec7', 6);
   }
@@ -1258,6 +1362,7 @@ function drawSwirl(cx, cy, s) {
 }
 
 function drawPants(p) {
+  if (p.isJackson) { drawJackson(p); return; }
   ctx.save();
   ctx.translate(p.x, p.y);
   ctx.rotate(p.rot);
@@ -1306,6 +1411,90 @@ function drawPants(p) {
     ctx.stroke();
     ctx.setLineDash([]);
   }
+  ctx.restore();
+}
+
+function drawJackson(p) {
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  ctx.rotate(p.rot);
+  const w = p.w, h = p.h;
+
+  // Sparkle halo
+  ctx.save();
+  ctx.globalAlpha = 0.35 + Math.sin(performance.now() * 0.008) * 0.15;
+  const halo = ctx.createRadialGradient(0, 0, 4, 0, 0, w * 0.9);
+  halo.addColorStop(0, 'rgba(255,231,76,0.7)');
+  halo.addColorStop(1, 'rgba(255,231,76,0)');
+  ctx.fillStyle = halo;
+  ctx.beginPath(); ctx.arc(0, 0, w * 0.9, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+
+  // Cat body — round orange gradient
+  const grd = ctx.createLinearGradient(0, -h/2, 0, h/2);
+  grd.addColorStop(0, '#ffcc99');
+  grd.addColorStop(0.55, '#ff9040');
+  grd.addColorStop(1, '#d1611c');
+  ctx.fillStyle = grd;
+  ctx.beginPath(); ctx.arc(0, 4, w * 0.45, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(90,40,10,0.55)'; ctx.lineWidth = 2.5;
+  ctx.stroke();
+
+  // Ears
+  ctx.fillStyle = '#ff9040';
+  ctx.strokeStyle = 'rgba(90,40,10,0.6)'; ctx.lineWidth = 2.2;
+  ctx.beginPath();
+  ctx.moveTo(-w*0.28, -h*0.20); ctx.lineTo(-w*0.38, -h*0.42); ctx.lineTo(-w*0.12, -h*0.28); ctx.closePath();
+  ctx.fill(); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(w*0.28, -h*0.20); ctx.lineTo(w*0.38, -h*0.42); ctx.lineTo(w*0.12, -h*0.28); ctx.closePath();
+  ctx.fill(); ctx.stroke();
+  // Ear inner
+  ctx.fillStyle = '#ffd0b2';
+  ctx.beginPath(); ctx.moveTo(-w*0.28, -h*0.22); ctx.lineTo(-w*0.32, -h*0.35); ctx.lineTo(-w*0.20, -h*0.28); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(w*0.28, -h*0.22); ctx.lineTo(w*0.32, -h*0.35); ctx.lineTo(w*0.20, -h*0.28); ctx.closePath(); ctx.fill();
+
+  // Eyes (big and sparkly)
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(-w*0.16, -h*0.02, w*0.09, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(w*0.16, -h*0.02, w*0.09, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#2b1f3a';
+  ctx.beginPath(); ctx.ellipse(-w*0.16, -h*0.02, w*0.04, w*0.07, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(w*0.16, -h*0.02, w*0.04, w*0.07, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(-w*0.14, -h*0.05, w*0.02, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(w*0.18, -h*0.05, w*0.02, 0, Math.PI * 2); ctx.fill();
+
+  // Nose (pink triangle)
+  ctx.fillStyle = '#ff5e88';
+  ctx.beginPath();
+  ctx.moveTo(0, h*0.10);
+  ctx.lineTo(-6, h*0.03);
+  ctx.lineTo(6, h*0.03);
+  ctx.closePath(); ctx.fill();
+  // Mouth
+  ctx.strokeStyle = '#2b1f3a'; ctx.lineWidth = 2.2; ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(0, h*0.11);
+  ctx.quadraticCurveTo(-6, h*0.18, -10, h*0.15);
+  ctx.moveTo(0, h*0.11);
+  ctx.quadraticCurveTo(6, h*0.18, 10, h*0.15);
+  ctx.stroke();
+  // Whiskers
+  ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(-w*0.09, h*0.06); ctx.lineTo(-w*0.32, h*0.03);
+  ctx.moveTo(-w*0.09, h*0.09); ctx.lineTo(-w*0.32, h*0.12);
+  ctx.moveTo(w*0.09, h*0.06); ctx.lineTo(w*0.32, h*0.03);
+  ctx.moveTo(w*0.09, h*0.09); ctx.lineTo(w*0.32, h*0.12);
+  ctx.stroke();
+
+  // Name label
+  ctx.font = `bold 10px "IBM Plex Mono", monospace`;
+  ctx.fillStyle = '#8a3600';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('JACKSON', 0, h*0.45);
+
   ctx.restore();
 }
 
@@ -1365,6 +1554,7 @@ function startGame() {
   setMusicMood('chill');
   startMusic();
   updateHUD();
+  setTimeout(() => speak(pick(VL_START), { pitch: 1.7, rate: 1.15 }), 200);
 }
 
 function endGame() {
@@ -1390,6 +1580,11 @@ function endGame() {
   $('end').classList.add('show');
   // Final achievement check
   checkAchievements();
+  // Voice line
+  setTimeout(() => {
+    if (isHigh || State.score >= 50) speak(pick(VL_END_HI), { pitch: 1.7, rate: 1.1 });
+    else speak(pick(VL_END_LO), { pitch: 1.7, rate: 1.05 });
+  }, 400);
 }
 
 function pauseGame() {
@@ -1424,6 +1619,16 @@ function wire() {
     State.muted = true;
     $('muteBtn').textContent = '♪̸';
   }
+  // Voice toggle
+  const vb = $('voiceBtn');
+  vb.textContent = VOICE.on ? '🔊' : '🔇';
+  vb.addEventListener('click', () => {
+    VOICE.on = !VOICE.on;
+    localStorage.setItem('sb-voice', VOICE.on ? '1' : '0');
+    vb.textContent = VOICE.on ? '🔊' : '🔇';
+    if (!VOICE.on) { try { window.speechSynthesis && window.speechSynthesis.cancel(); } catch(e) {} }
+    else speak('Voice on!', { pitch: 1.7 });
+  });
   // Load selected skin
   const savedSkin = localStorage.getItem('sb-skin');
   if (savedSkin && SKINS.find(s => s.id === savedSkin)) State.bob.skin = savedSkin;
