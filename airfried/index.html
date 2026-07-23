@@ -212,6 +212,15 @@ a{color:var(--hot);text-decoration:none}
 .scene-hdr .eye{font-family:var(--mono);font-size:10px;color:var(--dim);letter-spacing:.24em;text-transform:uppercase;margin-bottom:4px}
 .scene-hdr h2{font-family:var(--disp);font-weight:900;font-size:26px;letter-spacing:-.02em;line-height:1}
 
+/* ══════ Play frame (canvas-based camera + slot) ══════ */
+.play-frame{
+  position:relative;width:100%;aspect-ratio:9/16;max-height:70dvh;
+  border-radius:22px;overflow:hidden;background:#000;
+  border:2px solid rgba(255,55,95,.5);
+  box-shadow:0 24px 60px rgba(255,55,95,.2),inset 0 0 0 1px rgba(255,255,255,.06)
+}
+.play-frame canvas{width:100%;height:100%;display:block}
+
 /* ══════ Camera / recording ══════ */
 .cam-frame{
   position:relative;width:100%;aspect-ratio:9/16;max-height:70vh;
@@ -405,22 +414,57 @@ function toast(msg) {
 
 const state = {
   view:'intro',
-  pool:[],           // pre-fetched meals for the reels
-  target:null,       // the meal you have to eat
+  pool:[],
+  target:null,
+  targetLocked:false,  // when ?m=<id> was set
   score:JSON.parse(localStorage.getItem('af-score') || '{"eaten":0,"skipped":0,"streak":0}'),
-  stream:null,       // getUserMedia stream
-  recorder:null,     // MediaRecorder for composited output
-  rawRecorder:null,  // fallback: MediaRecorder for raw stream
+  stream:null,
+  recorder:null,
   chunks:[],
   recording:false,
-  recStart:0,
-  recTimer:null,
-  outputBlob:null,   // final video Blob for playback + share
+  outputBlob:null,
   mimeType:'',
   canvas:null,
   canvasCtx:null,
   drawRaf:0,
-  countdownRaf:0,
+  play:null,           // per-play state
+};
+
+/* ═══════════ Sound (Web Audio, no external files) ═══════════ */
+let audioCtx = null;
+function ensureAudio() {
+  if (!audioCtx) {
+    try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+    catch(e) { audioCtx = null; return; }
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+function beep(freq, dur, vol = 0.15, type = 'square', delay = 0) {
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime + delay;
+  const osc = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  osc.type = type; osc.frequency.value = freq;
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(vol, t + 0.005);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  osc.connect(g); g.connect(audioCtx.destination);
+  osc.start(t); osc.stop(t + dur + 0.02);
+}
+const SFX = {
+  tick(){ beep(380 + Math.random() * 140, 0.03, 0.06, 'square'); },
+  clunk(){ beep(180, 0.06, 0.16, 'triangle'); },
+  countBeep(){ beep(700, 0.14, 0.2, 'sine'); },
+  goBeep(){ beep(880, 0.22, 0.25, 'sine'); beep(1320, 0.18, 0.18, 'sine', 0.12); },
+  reelLand(){ beep(680, 0.09, 0.22, 'triangle'); beep(1000, 0.14, 0.18, 'triangle', 0.06); },
+  jackpot(){
+    beep(600, 0.14, 0.24, 'triangle');
+    beep(800, 0.14, 0.24, 'triangle', 0.1);
+    beep(1000, 0.14, 0.24, 'triangle', 0.2);
+    beep(1200, 0.28, 0.28, 'sine', 0.3);
+    beep(1600, 0.28, 0.2, 'sine', 0.35);
+  },
+  camClick(){ beep(240, 0.04, 0.14, 'square'); beep(320, 0.03, 0.12, 'square', 0.03); },
 };
 
 /* ═══════════ Meal pool ═══════════ */
@@ -437,29 +481,31 @@ async function loadMealPool(n = 18) {
 /* ═══════════ Intro ═══════════ */
 function renderIntro() {
   state.view = 'intro';
+  const locked = state.targetLocked && state.target;
   $('scene').innerHTML = `
     <div class="intro">
-      <div class="eye">Snapchat × Deal or No Deal × Buffet</div>
+      <div class="eye">${locked ? 'From WTF · locked target' : 'Snapchat × Deal or No Deal × Buffet'}</div>
       <h1><span class="g">Air</span> <span class="g2">Fried.</span></h1>
-      <p class="sub">Spin the roulette. React on camera. <b>Post it before you eat it.</b></p>
+      <p class="sub">${locked
+        ? `Fate has spoken: <b>${state.target.strMeal}</b>. Now record your reaction while the wheel makes it official.`
+        : `Spin the roulette. React on camera. <b>Post it before you eat it.</b>`}</p>
       <div class="rules">
-        <div class="rule"><span class="num">1.</span><span class="txt">Slot machine lands on a meal you <em>have to eat</em>.</span></div>
-        <div class="rule"><span class="num">2.</span><span class="txt">Camera counts down, records your face.</span></div>
-        <div class="rule"><span class="num">3.</span><span class="txt">Meal is burned into the video. Share it.</span></div>
+        <div class="rule"><span class="num">1.</span><span class="txt">Tap play — camera opens, mic on, <em>recording starts</em>.</span></div>
+        <div class="rule"><span class="num">2.</span><span class="txt">Countdown 3-2-1-GO. Wheel spins with clickety-clack.</span></div>
+        <div class="rule"><span class="num">3.</span><span class="txt">Reels land. React. Share the video — meal + spin + face all baked in.</span></div>
       </div>
       <div class="stats" id="stats"></div>
-      <button class="bigbtn" id="start"><span class="ic">🎰</span>Spin the wheel</button>
+      <button class="bigbtn" id="start"><span class="ic">🎰</span>${locked ? 'Face this meal' : 'Spin the wheel'}</button>
       <div class="hint">requires camera + mic · works best in Safari or Chrome · <b>${quirkyMediaSupport()}</b></div>
     </div>`;
   renderStats();
   $('start').addEventListener('click', async () => {
     const btn = $('start');
     btn.classList.add('busy');
-    if (state.pool.length < 6) {
-      state.pool = await loadMealPool(18);
-    }
+    ensureAudio();  // unlock Web Audio on user gesture
+    if (state.pool.length < 6) state.pool = await loadMealPool(18);
     btn.classList.remove('busy');
-    renderSlot();
+    renderPlay();
   });
 }
 function renderStats() {
@@ -483,123 +529,111 @@ function quirkyMediaSupport() {
   return 'permission prompt incoming';
 }
 
-/* ═══════════ Slot machine ═══════════ */
-function renderSlot() {
-  state.view = 'slot';
-  const pool = state.pool;
-  const target = pick(pool);
-  state.target = target;
-  const reelHtml = idx => {
-    // Build a long reel with target landing at position 6 (last visible slot)
-    const items = [];
-    const landAt = 6;
-    for (let i = 0; i < landAt; i++) items.push(pick(pool));
-    items.push(target); // landing
-    items.push(pick(pool), pick(pool));
-    return `<div class="reel" id="reel${idx}">
-      <div class="reel-track" id="track${idx}">
-        ${items.map(m => `
-          <div class="reel-slot">
-            <img src="${m.strMealThumb}" alt="">
-            <div class="reel-name">${m.strMeal.slice(0, 22)}</div>
-          </div>`).join('')}
-      </div>
-    </div>`;
-  };
-  $('scene').innerHTML = `
-    <div class="scene-hdr">
-      <div class="eye">Landed on…</div>
-      <h2 style="color:var(--dim)" id="slot-title">the reels are spinning</h2>
-    </div>
-    <div class="slot-frame" id="slot-frame">
-      <div class="slot-reels">
-        ${reelHtml(1)}${reelHtml(2)}${reelHtml(3)}
-      </div>
-      <div class="slot-line"></div>
-      <div class="slot-verdict" id="slot-verdict">
-        <div class="k">You have to eat</div>
-        <div class="n" id="slot-target">${target.strMeal}</div>
-      </div>
-    </div>
-    <div class="slot-actions" id="slot-actions">
-    </div>`;
-
-  // Measure a reel-slot to know how far to spin
-  setTimeout(() => {
-    const slot = document.querySelector('.reel-slot');
-    if (!slot) return;
-    const h = slot.getBoundingClientRect().height;
-    // Position 6 needs to land in visible frame — the reel shows ~3 slots. Land row 6 at row 1.
-    const distance = h * 5;
-    // Slight stagger per reel
-    ['track1','track2','track3'].forEach((id, i) => {
-      const el = $(id);
-      if (!el) return;
-      el.style.transitionDuration = (2.5 + i * 0.6) + 's';
-      el.style.transform = `translateY(-${distance}px)`;
-    });
-    setTimeout(landSlot, 3600);
-  }, 60);
-}
-function landSlot() {
-  const frame = $('slot-frame');
-  if (frame) frame.classList.add('landed');
-  const title = $('slot-title');
-  if (title) { title.textContent = state.target.strMeal; title.style.color = 'var(--text)'; }
-  const actions = $('slot-actions');
-  if (actions) {
-    actions.innerHTML = `
-      <button class="bigbtn ghost" id="respin"><span class="ic">🔁</span>Re-spin</button>
-      <button class="bigbtn" id="face-it"><span class="ic">📸</span>Face it · Record reaction</button>`;
-    $('respin').addEventListener('click', () => {
-      state.score.skipped++;
-      state.score.streak = 0;
-      saveScore();
-      renderSlot();
-    });
-    $('face-it').addEventListener('click', () => {
-      renderCamera();
-    });
-  }
-}
 function saveScore() { localStorage.setItem('af-score', JSON.stringify(state.score)); }
 
-/* ═══════════ Camera + recording ═══════════ */
-async function renderCamera() {
-  state.view = 'camera';
+/* ═══════════ Play scene — camera + slot machine on one canvas ═══════════ */
+/*
+   Timeline (approximate):
+     0.0s   press SPIN, get camera, start recording
+     0.5s   countdown "3" (beep)
+     1.5s   countdown "2" (beep)
+     2.5s   countdown "1" (beep)
+     3.5s   "GO" + reels start spinning (goBeep)
+     3.5-9.0s  reels spin, ticks every ~120ms
+     9.0s   reel 1 lands (chime)
+     9.7s   reel 2 lands (chime)
+    10.4s   reel 3 lands (chime + JACKPOT)
+    10.5-13.5s  reaction hold (3s)
+    13.5s   stop recording
+*/
+const PHASES = {
+  INIT:     { name:'init'     },
+  CAM_WAIT: { name:'cam-wait' },
+  C3:       { name:'c3',    at: 500 },
+  C2:       { name:'c2',    at: 1500 },
+  C1:       { name:'c1',    at: 2500 },
+  GO:       { name:'go',    at: 3500 },
+  SPIN:     { name:'spin',  at: 3500 },
+  LAND1:    { name:'land1', at: 9000 },
+  LAND2:    { name:'land2', at: 9700 },
+  LAND3:    { name:'land3', at: 10400 },
+  HOLD:     { name:'hold',  at: 10500 },
+  STOP:     { name:'stop',  at: 13500 },
+};
+
+async function renderPlay() {
+  state.view = 'play';
+  state.play = {
+    phase: 'init', t0: 0, lastTickMs: 0,
+    reelOffsets: [0, 0, 0], reelSpeeds: [0, 0, 0],
+    reelLanded: [false, false, false],
+    countShown: { 3:false, 2:false, 1:false, go:false, spin:false, land1:false, land2:false, land3:false, jackpot:false },
+    poolImgs: [],
+    targetImg: null,
+  };
+
+  // Ensure we have a target
+  if (!state.target) {
+    if (state.pool.length < 6) state.pool = await loadMealPool(18);
+    state.target = pick(state.pool);
+  }
+  if (state.pool.length < 6) state.pool = await loadMealPool(18);
+
+  // Ensure the pool always contains the target
+  if (!state.pool.find(m => m.idMeal === state.target.idMeal)) state.pool.unshift(state.target);
+
+  // Preload images for the reels
+  const imgs = [];
+  for (const m of state.pool.slice(0, 15)) {
+    const i = new Image();
+    i.crossOrigin = 'anonymous';
+    i.src = m.strMealThumb;
+    imgs.push({ img: i, meal: m });
+  }
+  state.play.poolImgs = imgs;
+  const t = new Image();
+  t.crossOrigin = 'anonymous'; t.src = state.target.strMealThumb;
+  state.play.targetImg = t;
+
   $('scene').innerHTML = `
     <div class="scene-hdr">
       <div class="eye">You have to eat</div>
-      <h2>${state.target.strMeal}</h2>
+      <h2 id="play-title">${state.target.strMeal}</h2>
     </div>
-    <div class="cam-frame" id="cam-frame">
-      <video id="cam-video" autoplay playsinline muted></video>
-      <div class="cam-badge"><span class="dot"></span>LIVE</div>
-      <div class="cam-time" id="cam-time">00:00</div>
-      <div class="cam-food">
-        <img src="${state.target.strMealThumb}" alt="">
-        <div class="txt">
-          <div class="k">Target</div>
-          <div class="n">${state.target.strMeal}</div>
-        </div>
-      </div>
+    <div class="play-frame" id="play-frame">
+      <canvas id="play-canvas" width="540" height="960"></canvas>
+      <video id="cam-video" autoplay playsinline muted style="display:none"></video>
     </div>
     <div class="cam-controls">
-      <button class="ctl-btn" id="cam-cancel">← Back</button>
-      <button class="rec-btn" id="rec" title="Start recording"></button>
-      <button class="ctl-btn" id="cam-info" style="visibility:hidden">i</button>
+      <button class="ctl-btn" id="play-cancel">← Back</button>
+      <button class="rec-btn" id="play-rec" title="Spin + record"></button>
+      <button class="ctl-btn" id="mute-btn" title="Sound">🔊</button>
     </div>
-    <div class="hint" style="text-align:center;margin-top:12px">tap the button to start · counts down from 3</div>`;
+    <div class="hint" style="text-align:center;margin-top:12px">tap the button · countdown, spin, and recording all start</div>`;
 
-  $('cam-cancel').addEventListener('click', () => { stopStream(); renderSlot(); });
-  $('rec').addEventListener('click', () => {
-    if (state.recording) stopRecording();
-    else startCountdownAndRecord();
+  $('play-cancel').addEventListener('click', () => { cleanupPlay(); renderIntro(); });
+  $('mute-btn').addEventListener('click', () => {
+    state.muted = !state.muted;
+    $('mute-btn').textContent = state.muted ? '🔇' : '🔊';
   });
+  $('play-rec').addEventListener('click', async () => {
+    if (state.recording) return;
+    ensureAudio();
+    await startPlayback();
+  });
+}
 
+function cleanupPlay() {
+  cancelAnimationFrame(state.drawRaf);
+  if (state.stream) { state.stream.getTracks().forEach(t => t.stop()); state.stream = null; }
+  state.play = null; state.canvas = null; state.canvasCtx = null;
+}
+
+async function startPlayback() {
+  // Get camera
   try {
     state.stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 1280 }, frameRate: { ideal: 30 } },
+      video: { facingMode:'user', width:{ ideal:720 }, height:{ ideal:1280 }, frameRate:{ ideal:30 } },
       audio: true
     });
     const v = $('cam-video');
@@ -610,193 +644,321 @@ async function renderCamera() {
       <div class="scene-hdr"><h2>Camera denied</h2></div>
       <div class="err">
         <b>Camera or mic access was blocked.</b>
-        <em>enable it in your browser settings and try again. or share your screen recording instead.</em>
+        <em>enable it in your browser settings and try again.</em>
       </div>
       <div style="text-align:center;margin-top:14px">
         <button class="bigbtn ghost" id="try-again"><span class="ic">←</span>Back</button>
       </div>`;
     const b = $('try-again');
     if (b) b.addEventListener('click', () => renderIntro());
+    return;
   }
-}
 
-function startCountdownAndRecord() {
-  const frame = $('cam-frame');
-  if (!frame) return;
-  let n = 3;
-  const overlay = document.createElement('div');
-  overlay.className = 'countdown';
-  overlay.innerHTML = `<div class="n">${n}</div>`;
-  frame.appendChild(overlay);
-  const step = () => {
-    n--;
-    if (n === 0) {
-      overlay.innerHTML = `<div class="n go">GO</div>`;
-      setTimeout(() => { overlay.remove(); startRecording(); }, 700);
-    } else if (n < 0) {
-      overlay.remove();
-    } else {
-      overlay.innerHTML = `<div class="n">${n}</div>`;
-      setTimeout(step, 1000);
-    }
-  };
-  setTimeout(step, 1000);
-}
-
-function startRecording() {
-  if (!state.stream) return;
-
-  // Build compositing canvas that draws webcam + burned-in overlay
-  const canvas = document.createElement('canvas');
-  const v = $('cam-video');
-  canvas.width = 540; canvas.height = 960;
+  // Set up canvas as display + record source
+  const canvas = $('play-canvas');
   const ctx = canvas.getContext('2d');
   state.canvas = canvas; state.canvasCtx = ctx;
 
-  const targetImg = new Image();
-  targetImg.crossOrigin = 'anonymous';
-  targetImg.src = state.target.strMealThumb;
-
-  const draw = () => {
-    // Mirror-flip webcam like a selfie
-    ctx.save();
-    ctx.scale(-1, 1);
-    // Fit-cover the video into canvas
-    if (v && v.videoWidth) {
-      const vr = v.videoWidth / v.videoHeight;
-      const cr = canvas.width / canvas.height;
-      let dw, dh, dx, dy;
-      if (vr > cr) { dh = canvas.height; dw = dh * vr; dx = -(dw - canvas.width) / 2; dy = 0; }
-      else { dw = canvas.width; dh = dw / vr; dx = 0; dy = -(dh - canvas.height) / 2; }
-      ctx.drawImage(v, -dx - dw, dy, dw, dh);
-    } else {
-      ctx.fillStyle = '#000'; ctx.fillRect(-canvas.width, 0, canvas.width, canvas.height);
-    }
-    ctx.restore();
-
-    // Bottom overlay: meal thumb + name + hashtag
-    const barH = 140;
-    ctx.fillStyle = 'rgba(0,0,0,0)';
-    const grd = ctx.createLinearGradient(0, canvas.height - barH - 40, 0, canvas.height);
-    grd.addColorStop(0, 'rgba(0,0,0,0)');
-    grd.addColorStop(1, 'rgba(0,0,0,0.9)');
-    ctx.fillStyle = grd;
-    ctx.fillRect(0, canvas.height - barH - 40, canvas.width, barH + 40);
-
-    // Meal thumbnail box
-    const pad = 18;
-    const imgSize = 78;
-    if (targetImg.complete) {
-      ctx.save();
-      const bx = pad, by = canvas.height - barH + 20;
-      // rounded rect clip
-      ctx.beginPath();
-      ctx.roundRect ? ctx.roundRect(bx, by, imgSize, imgSize, 12) : ctx.rect(bx, by, imgSize, imgSize);
-      ctx.closePath(); ctx.clip();
-      ctx.drawImage(targetImg, bx, by, imgSize, imgSize);
-      ctx.restore();
-    }
-
-    // Text
-    ctx.fillStyle = '#ff375f';
-    ctx.font = 'bold 15px "IBM Plex Mono", monospace';
-    ctx.textAlign = 'left';
-    ctx.fillText('YOU HAD TO EAT', pad + imgSize + 14, canvas.height - barH + 42);
-
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 22px "Fraunces", Georgia, serif';
-    const maxNameW = canvas.width - pad - imgSize - 14 - pad;
-    let name = state.target.strMeal;
-    let mw = ctx.measureText(name).width;
-    if (mw > maxNameW) {
-      while (name.length && ctx.measureText(name + '…').width > maxNameW) name = name.slice(0, -1);
-      name = name + '…';
-    }
-    ctx.fillText(name, pad + imgSize + 14, canvas.height - barH + 68);
-
-    // Hashtag
-    ctx.fillStyle = 'rgba(255,255,255,.75)';
-    ctx.font = 'bold 12px "IBM Plex Mono", monospace';
-    ctx.fillText('#AirFried · taskiap.com/airfried', pad + imgSize + 14, canvas.height - barH + 92);
-
-    // Top badge: LIVE dot + timer
-    ctx.fillStyle = 'rgba(0,0,0,.7)';
-    ctx.beginPath();
-    ctx.roundRect ? ctx.roundRect(14, 14, 92, 30, 14) : ctx.rect(14, 14, 92, 30);
-    ctx.fill();
-    ctx.fillStyle = '#ff375f';
-    ctx.beginPath(); ctx.arc(28, 29, 5, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 11px "IBM Plex Mono", monospace';
-    ctx.fillText('REC · AIR FRIED', 40, 33);
-
-    state.drawRaf = requestAnimationFrame(draw);
-  };
-  draw();
-
-  // Grab audio from webcam stream, video from canvas
-  let stream;
+  // Start MediaRecorder on canvas + camera audio
+  const mimes = [
+    'video/mp4;codecs=avc1,mp4a.40.2', 'video/mp4',
+    'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'
+  ];
+  const mime = mimes.find(m => window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) || '';
+  state.mimeType = mime;
   try {
     const canvasStream = canvas.captureStream(30);
     const audioTracks = state.stream.getAudioTracks();
     if (audioTracks.length) canvasStream.addTrack(audioTracks[0]);
-    stream = canvasStream;
-  } catch (e) {
-    stream = state.stream;
-  }
-
-  // Pick best supported mime type
-  const mimes = [
-    'video/mp4;codecs=avc1,mp4a.40.2',
-    'video/mp4',
-    'video/webm;codecs=vp9,opus',
-    'video/webm;codecs=vp8,opus',
-    'video/webm'
-  ];
-  const mime = mimes.find(m => window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) || '';
-  state.mimeType = mime;
-
-  try {
     state.recorder = mime
-      ? new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 2_500_000 })
-      : new MediaRecorder(stream);
+      ? new MediaRecorder(canvasStream, { mimeType: mime, videoBitsPerSecond: 2_800_000 })
+      : new MediaRecorder(canvasStream);
+    state.chunks = [];
+    state.recorder.ondataavailable = e => { if (e.data && e.data.size > 0) state.chunks.push(e.data); };
+    state.recorder.onstop = () => finalizeRecording();
+    state.recorder.start(200);
+    state.recording = true;
   } catch (e) {
-    console.warn('MediaRecorder failed', e);
-    toast('recorder unavailable — try Chrome / Safari');
-    stopStream(); renderIntro(); return;
+    console.warn('recorder failed', e);
+    toast('recorder unavailable');
+    cleanupPlay(); return;
   }
 
-  state.chunks = [];
-  state.recorder.ondataavailable = e => { if (e.data && e.data.size > 0) state.chunks.push(e.data); };
-  state.recorder.onstop = () => finalizeRecording();
-  state.recorder.start(200);
-  state.recording = true;
-  state.recStart = performance.now();
+  // Kick off animation
+  state.play.t0 = performance.now();
+  state.play.phase = 'countdown';
+  drawLoop();
 
-  const rec = $('rec');
-  if (rec) { rec.classList.add('recording'); rec.title = 'Stop recording'; }
-  const timer = $('cam-time');
-  const MAX_MS = 8000;
-  state.recTimer = setInterval(() => {
-    const ms = performance.now() - state.recStart;
-    if (timer) timer.textContent = fmtTime(ms);
-    if (ms >= MAX_MS) stopRecording();
-  }, 90);
+  // Hide record button while recording
+  const rec = $('play-rec');
+  if (rec) { rec.classList.add('recording'); rec.title = 'Recording…'; }
 }
 
-function fmtTime(ms) {
-  const s = Math.floor(ms / 1000);
-  const t = Math.floor((ms % 1000) / 100);
-  return `00:0${s}.${t}`;
+function drawLoop() {
+  const canvas = state.canvas;
+  const ctx = state.canvasCtx;
+  const v = $('cam-video');
+  if (!canvas || !ctx) return;
+  const now = performance.now();
+  const t = now - state.play.t0;
+  const p = state.play;
+
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // ── Camera in top region (0 - 55% height, ~528px)
+  const camH = Math.round(canvas.height * 0.55);
+  if (v && v.videoWidth) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, canvas.width, camH);
+    ctx.clip();
+    ctx.scale(-1, 1);
+    const vr = v.videoWidth / v.videoHeight;
+    const cr = canvas.width / camH;
+    let dw, dh, dx, dy;
+    if (vr > cr) { dh = camH; dw = dh * vr; dx = -(dw - canvas.width) / 2; dy = 0; }
+    else { dw = canvas.width; dh = dw / vr; dx = 0; dy = -(dh - camH) / 2; }
+    ctx.drawImage(v, -dx - dw, dy, dw, dh);
+    ctx.restore();
+  }
+
+  // ── Vertical gradient between camera and slots
+  const grd = ctx.createLinearGradient(0, camH - 30, 0, camH + 40);
+  grd.addColorStop(0, 'rgba(0,0,0,0)');
+  grd.addColorStop(1, 'rgba(0,0,0,.85)');
+  ctx.fillStyle = grd;
+  ctx.fillRect(0, camH - 30, canvas.width, 70);
+
+  // ── Slot machine bottom region
+  const slotY = camH + 10;
+  const slotH = canvas.height - slotY - 90;
+  drawSlotMachine(ctx, 20, slotY, canvas.width - 40, slotH, t);
+
+  // ── Countdown / overlays
+  drawOverlays(ctx, canvas, t);
+
+  // ── Bottom watermark strip
+  drawWatermark(ctx, canvas);
+
+  // Trigger sound events at phase boundaries
+  advancePhaseSounds(t);
+
+  // Continue until STOP
+  if (t >= PHASES.STOP.at) {
+    stopRecording();
+    return;
+  }
+  state.drawRaf = requestAnimationFrame(drawLoop);
+}
+
+function drawSlotMachine(ctx, x, y, w, h, t) {
+  const gap = 10;
+  const reelW = Math.floor((w - gap * 2) / 3);
+  const p = state.play;
+  const spinStart = PHASES.SPIN.at;
+  const landsAt = [PHASES.LAND1.at, PHASES.LAND2.at, PHASES.LAND3.at];
+
+  // Background panel (chunky slot machine chrome)
+  ctx.save();
+  ctx.fillStyle = 'rgba(20,20,30,.9)';
+  roundedRect(ctx, x, y, w, h, 18); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,55,95,.35)';
+  ctx.lineWidth = 2;
+  roundedRect(ctx, x, y, w, h, 18); ctx.stroke();
+  ctx.restore();
+
+  for (let r = 0; r < 3; r++) {
+    const rx = x + 8 + r * (reelW + gap);
+    const ry = y + 8;
+    const rw = reelW - 4;
+    const rh = h - 16;
+
+    // Update offset
+    let landed = t >= landsAt[r];
+    p.reelLanded[r] = landed;
+
+    if (t < spinStart) {
+      // pre-spin: still (show first pool image)
+      p.reelOffsets[r] = 0;
+    } else if (!landed) {
+      // spinning
+      const elapsed = (t - spinStart) / 1000;
+      p.reelOffsets[r] += 1000 * (0.016) * (1 + r * 0.15);   // steady scroll
+    } else {
+      // just landed — snap once
+      // (offset stays put)
+    }
+
+    // Draw reel
+    ctx.save();
+    ctx.beginPath();
+    roundedRect(ctx, rx, ry, rw, rh, 12); ctx.clip();
+    ctx.fillStyle = '#0a0a10'; ctx.fillRect(rx, ry, rw, rh);
+
+    const imgH = rw;                              // square images
+    const centerY = ry + rh / 2;
+    const pool = p.poolImgs;
+
+    if (landed) {
+      // Draw target image centered
+      const img = p.targetImg;
+      if (img && img.complete && img.naturalWidth) {
+        ctx.drawImage(img, rx, centerY - imgH / 2, rw, imgH);
+      } else {
+        ctx.fillStyle = '#333'; ctx.fillRect(rx, centerY - imgH / 2, rw, imgH);
+      }
+      // Glow border
+      ctx.strokeStyle = '#ff375f'; ctx.lineWidth = 3;
+      ctx.strokeRect(rx + 1.5, centerY - imgH / 2 + 1.5, rw - 3, imgH - 3);
+    } else if (t < spinStart) {
+      // idle: show one image
+      const img = pool[r % pool.length]?.img;
+      if (img && img.complete && img.naturalWidth) ctx.drawImage(img, rx, centerY - imgH / 2, rw, imgH);
+    } else {
+      // spinning: draw scrolling column
+      const off = p.reelOffsets[r];
+      const startI = Math.floor(off / imgH);
+      const yShift = off % imgH;
+      for (let i = -1; i < Math.ceil(rh / imgH) + 1; i++) {
+        const idx = ((startI + i + r) % pool.length + pool.length) % pool.length;
+        const img = pool[idx].img;
+        const yy = centerY - imgH / 2 + i * imgH - yShift;
+        if (img && img.complete && img.naturalWidth) ctx.drawImage(img, rx, yy, rw, imgH);
+        else { ctx.fillStyle = '#222'; ctx.fillRect(rx, yy, rw, imgH); }
+      }
+      // Fade top/bottom
+      const fadeH = 30;
+      const g1 = ctx.createLinearGradient(0, ry, 0, ry + fadeH);
+      g1.addColorStop(0, 'rgba(10,10,16,1)'); g1.addColorStop(1, 'rgba(10,10,16,0)');
+      ctx.fillStyle = g1; ctx.fillRect(rx, ry, rw, fadeH);
+      const g2 = ctx.createLinearGradient(0, ry + rh - fadeH, 0, ry + rh);
+      g2.addColorStop(0, 'rgba(10,10,16,0)'); g2.addColorStop(1, 'rgba(10,10,16,1)');
+      ctx.fillStyle = g2; ctx.fillRect(rx, ry + rh - fadeH, rw, fadeH);
+    }
+
+    ctx.restore();
+  }
+
+  // Center payline
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255,55,95,.4)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(x + 12, y + h / 2); ctx.lineTo(x + w - 12, y + h / 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawOverlays(ctx, canvas, t) {
+  const p = state.play;
+  // Countdown
+  const countdownFor = n => {
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,.5)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 240px "Fraunces", Georgia, serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const alpha = fadeAlpha((t - phaseAt(n)) / 800);
+    ctx.globalAlpha = alpha;
+    if (n === 'go') { ctx.fillStyle = '#ff375f'; ctx.font = 'bold 140px "Fraunces"'; ctx.fillText('GO', canvas.width / 2, canvas.height / 2); }
+    else ctx.fillText(String(n), canvas.width / 2, canvas.height / 2);
+    ctx.restore();
+  };
+  const phaseAt = n => n === 3 ? PHASES.C3.at : n === 2 ? PHASES.C2.at : n === 1 ? PHASES.C1.at : PHASES.GO.at;
+  const fadeAlpha = x => x < 0 ? 0 : x < 0.15 ? x / 0.15 : x < 0.7 ? 1 : x < 1 ? (1 - (x - 0.7) / 0.3) : 0;
+  if (t >= PHASES.C3.at && t < PHASES.C2.at) countdownFor(3);
+  else if (t >= PHASES.C2.at && t < PHASES.C1.at) countdownFor(2);
+  else if (t >= PHASES.C1.at && t < PHASES.GO.at) countdownFor(1);
+  else if (t >= PHASES.GO.at && t < PHASES.SPIN.at + 800) countdownFor('go');
+
+  // Landing "YOU HAVE TO EAT" reveal
+  if (t >= PHASES.LAND3.at) {
+    const since = (t - PHASES.LAND3.at) / 800;
+    const alpha = since < 0.1 ? since / 0.1 : 1;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    const barY = 30;
+    const barH = 92;
+    ctx.fillStyle = 'rgba(255,55,95,.92)';
+    roundedRect(ctx, 20, barY, canvas.width - 40, barH, 18); ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 14px "IBM Plex Mono", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('YOU HAVE TO EAT', canvas.width / 2, barY + 32);
+    ctx.font = 'bold 30px "Fraunces", serif';
+    let name = state.target.strMeal;
+    if (ctx.measureText(name).width > canvas.width - 80) {
+      while (name.length && ctx.measureText(name + '…').width > canvas.width - 80) name = name.slice(0, -1);
+      name += '…';
+    }
+    ctx.fillText(name, canvas.width / 2, barY + 72);
+    ctx.restore();
+  }
+}
+
+function drawWatermark(ctx, canvas) {
+  // Bottom watermark bar
+  ctx.save();
+  const barH = 60;
+  const y = canvas.height - barH;
+  const grd = ctx.createLinearGradient(0, y, 0, canvas.height);
+  grd.addColorStop(0, 'rgba(0,0,0,.4)'); grd.addColorStop(1, 'rgba(0,0,0,.9)');
+  ctx.fillStyle = grd; ctx.fillRect(0, y, canvas.width, barH);
+  ctx.fillStyle = '#ff375f';
+  ctx.font = 'bold 15px "IBM Plex Mono", monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText('#AirFried', 20, y + 24);
+  ctx.fillStyle = 'rgba(255,255,255,.75)';
+  ctx.font = '12px "IBM Plex Mono", monospace';
+  ctx.fillText('taskiap.com/airfried', 20, y + 44);
+  // REC dot
+  ctx.fillStyle = '#ff375f';
+  ctx.beginPath(); ctx.arc(canvas.width - 30, y + 22, 6, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 11px "IBM Plex Mono", monospace';
+  ctx.textAlign = 'right';
+  ctx.fillText('REC', canvas.width - 42, y + 26);
+  ctx.restore();
+}
+
+function advancePhaseSounds(t) {
+  const p = state.play;
+  const shown = p.countShown;
+  if (t >= PHASES.C3.at && !shown[3]) { shown[3] = true; if (!state.muted) SFX.countBeep(); }
+  if (t >= PHASES.C2.at && !shown[2]) { shown[2] = true; if (!state.muted) SFX.countBeep(); }
+  if (t >= PHASES.C1.at && !shown[1]) { shown[1] = true; if (!state.muted) SFX.countBeep(); }
+  if (t >= PHASES.GO.at && !shown.go) { shown.go = true; if (!state.muted) SFX.goBeep(); }
+  if (t >= PHASES.SPIN.at && !shown.spin) { shown.spin = true; if (!state.muted) SFX.camClick(); }
+  // ticks during spin
+  if (t >= PHASES.SPIN.at && t < PHASES.LAND1.at) {
+    if (t - p.lastTickMs > 110 + Math.random() * 60) {
+      p.lastTickMs = t;
+      if (!state.muted) SFX.tick();
+    }
+  }
+  if (t >= PHASES.LAND1.at && !shown.land1) { shown.land1 = true; if (!state.muted) SFX.reelLand(); }
+  if (t >= PHASES.LAND2.at && !shown.land2) { shown.land2 = true; if (!state.muted) SFX.reelLand(); }
+  if (t >= PHASES.LAND3.at && !shown.land3) { shown.land3 = true; if (!state.muted) SFX.reelLand(); setTimeout(() => { if (!state.muted) SFX.jackpot(); }, 200); }
+}
+
+function roundedRect(ctx, x, y, w, h, r) {
+  const rr = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  if (ctx.roundRect) { ctx.roundRect(x, y, w, h, rr); return; }
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x, y + h, rr);
+  ctx.arcTo(x, y + h, x, y, rr);
+  ctx.arcTo(x, y, x + w, y, rr);
+  ctx.closePath();
 }
 
 function stopRecording() {
   if (!state.recording) return;
   state.recording = false;
   cancelAnimationFrame(state.drawRaf);
-  clearInterval(state.recTimer);
-  const rec = $('rec');
-  if (rec) rec.classList.remove('recording');
   try { state.recorder.stop(); } catch (e) {}
 }
 
@@ -869,7 +1031,9 @@ function renderPlayback() {
   $('share-again').addEventListener('click', () => {
     URL.revokeObjectURL(url);
     state.outputBlob = null;
-    renderSlot();
+    // If target was locked via ?m=, unlock it so re-spin picks fresh
+    if (!state.targetLocked) state.target = null;
+    renderPlay();
   });
 }
 
@@ -878,9 +1042,24 @@ function slugify(s) {
 }
 
 /* ═══════════ Init ═══════════ */
-renderIntro();
-// Warm up the pool in the background so intro → slot is instant
-loadMealPool(18).then(pool => { state.pool = pool; });
+(async function init() {
+  const p = new URLSearchParams(location.search);
+  const mealId = p.get('m');
+  if (mealId) {
+    // Locked target from WTF deep link
+    try {
+      const j = await fetch(`${API}/lookup.php?i=${mealId}`).then(r => r.json());
+      const meal = j.meals && j.meals[0];
+      if (meal) {
+        state.target = meal;
+        state.targetLocked = true;
+      }
+    } catch(e) {}
+  }
+  renderIntro();
+  // Warm up the pool in the background so intro → play is instant
+  loadMealPool(18).then(pool => { state.pool = pool; });
+})();
 </script>
 </body>
 </html>

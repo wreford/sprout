@@ -763,7 +763,7 @@ const KEYWORDS = {
   pascal: 'program procedure function begin end if then else for while do var const type record',
   ada: 'procedure function begin end if then else elsif for while loop return package',
   prolog: 'is not fail true',
-  sprout: 'let def if else while for return true false nil',
+  sprout: 'and or not mod',
 };
 
 const KWSET = Object.fromEntries(Object.entries(KEYWORDS).map(([k,v]) => [k, new Set(v.split(/\s+/))]));
@@ -775,7 +775,7 @@ function esc(s) {
 function highlight(code, lang) {
   const kws = KWSET[lang] || new Set();
   const commentPatterns = {
-    py: /^(#.*)/, ruby: /^(#.*)/, bash: /^(#.*)/, r: /^(#.*)/, perl: /^(#.*)/, nim: /^(#.*)/, elixir: /^(#.*)/, crystal: /^(#.*)/, julia: /^(#.*)/, sprout: /^(#.*)/,
+    py: /^(#.*)/, ruby: /^(#.*)/, bash: /^(#.*)/, r: /^(#.*)/, perl: /^(#.*)/, nim: /^(#.*)/, elixir: /^(#.*)/, crystal: /^(#.*)/, julia: /^(#.*)/, sprout: /^(--.*)/,
     js: /^(\/\/.*|\/\*[\s\S]*?\*\/)/, ts: /^(\/\/.*|\/\*[\s\S]*?\*\/)/, c: /^(\/\/.*|\/\*[\s\S]*?\*\/)/,
     cpp: /^(\/\/.*|\/\*[\s\S]*?\*\/)/, cs: /^(\/\/.*|\/\*[\s\S]*?\*\/)/, java: /^(\/\/.*|\/\*[\s\S]*?\*\/)/,
     kotlin: /^(\/\/.*|\/\*[\s\S]*?\*\/)/, swift: /^(\/\/.*|\/\*[\s\S]*?\*\/)/, zig: /^(\/\/.*)/, dart: /^(\/\/.*|\/\*[\s\S]*?\*\/)/,
@@ -939,9 +939,9 @@ const FEATURES = [
   prolog:{code:'sprout(Seed, Result) :-\n    atom_concat(Seed, \' grew\', Result).',
           sem:'Predicates. The comma is `and`; the semicolon is `or`.',
           quirks:['Uppercase leading letter marks a logic variable; lowercase is an atom.','Backtracking on failure explores alternative bindings — no `return`.','Runs bidirectionally when written pure: query with either arg unknown.']},
-  sprout:{code:'def sprout seed:\n    seed + " grew"',
-          sem:'Definition inside indented block; the last expression is returned.',
-          quirks:['`|` pipes a value through subsequent expressions.','Meta fields use `#` prefix on the call site.','`@` marks decorator functions that wrap the callable.']},
+  sprout:{code:'sprout : [seed | seed + " grew"]',
+          sem:'A block `[params | body]` is the callable primitive; the colon binds it to a name. The last expression is the return value — there is no `return` keyword.',
+          quirks:['Multi-param blocks `[a, b | ...]` are transparently curried into a chain of single-arg blocks.','`[@ + 1]` uses the implicit-param shorthand `@` — no pipe needed for a one-arg lambda.','A block is a value like any other: pass it around, store it in a cell, call it with `block call arg`.']},
 }},
 
 // ═════ COMMENT ═════
@@ -1057,9 +1057,9 @@ const FEATURES = [
   prolog:{code:'% sprout the seed idea\nsprout("seedling").',
           sem:'`%` to EOL. Block `/* ... */` also legal in most Prolog dialects.',
           quirks:['Structured comments used for documentation vary by implementation.']},
-  sprout:{code:'# sprout the seed idea\nlet name: "seedling"',
-          sem:'`#` to EOL when NOT followed by an identifier (which would be a meta-field).',
-          quirks:['`# field:` at column 0 defines a meta field on the enclosing declaration — meta before code.','Doc strings: a top-level string literal immediately below `def` is captured as documentation.']},
+  sprout:{code:'-- sprout the seed idea\nname : "seedling"',
+          sem:'`--` to end of line. No block comment form — line-oriented on purpose.',
+          quirks:['`--` was chosen so `#` stays free for meta-field prefixes like `#type` and `#doc`.','A comment can trail an expression on the same line: `x : 42  -- the answer`.','Comments never span lines; indentation still matters on the line they sit on.']},
 }},
 
 // ═════ VARIABLE ═════
@@ -1175,9 +1175,9 @@ const FEATURES = [
   prolog:{code:'sprout("seedling").',
           sem:'Prolog does not have variables in the imperative sense; facts and rules bind at query time.',
           quirks:['Logic variables (like `X`, `Sprout`) unify to values within a query and become unbound again after.']},
-  sprout:{code:'let sprout: "seedling"',
-          sem:'`let` creates an immutable binding scoped to the enclosing block.',
-          quirks:['`let` cannot be shadowed inside the same scope — rebinding is a parse error.','`let sprout | grow` pipes the value on assignment (macro form).']},
+  sprout:{code:'sprout : "seedling"',
+          sem:'Colon-bind: name on the left, value on the right. No `let` keyword — the colon IS the binding form. Scope is the enclosing block.',
+          quirks:['The right-hand side is greedy: it consumes the whole message chain up to the next newline or comma.','Rebinding with `:` in a nested block shadows the outer name; there is no `mut` — you build a new cell instead.','`@` names the implicit self / current-cell inside a block; it is not something you bind.']},
 }},
 
 // ═════ IF ═════
@@ -1293,9 +1293,9 @@ const FEATURES = [
   prolog:{code:'( Sprout = "seedling" -> grow ; wait ).',
           sem:'Soft-cut style. Green cuts are pure; red cuts are the imperative escape hatch.',
           quirks:['`->` commits to the branch — no backtracking after the arrow.','`;` is disjunction (or).']},
-  sprout:{code:'if sprout = "seedling":\n    grow!\nelse:\n    wait!',
-          sem:'Expression. Value of the matched branch is returned.',
-          quirks:['`!` marks a side-effecting call.','`else if` chains via `elif` shorthand.']},
+  sprout:{code:'sprout = "seedling" ? [| grow] [| wait]',
+          sem:'No `if` keyword — `?` is the ternary and it is an expression. It takes two arguments: the then-branch and the else-branch. The matched branch is the value of the whole thing.',
+          quirks:['Wrap the condition in parens when it contains an operator that binds tighter than you expect: `(x > 0) ? a b`.','Bare values are eager (`? "yes" "no"`); block form `[| ...]` is lazy — only the matched branch runs.','Chain by nesting: `x > 0 ? [| "pos"] [| x < 0 ? [| "neg"] [| "zero"]]`.']},
 }},
 
 // ═════ ARRAY ═════
@@ -1411,9 +1411,9 @@ const FEATURES = [
   prolog:{code:'sprout([seed, leaf, stem]).',
           sem:'Lists are `[Head|Tail]` cons cells.',
           quirks:['Difference lists — a common Prolog pattern for O(1) append.','No mutation.']},
-  sprout:{code:'let sprout: [seed, leaf, stem]',
-          sem:'Persistent vector — indexed, growable via `|` push.',
-          quirks:['`sprout | grow` produces a new vector with `grow` appended.','Destructure with `let [a, b, c]: sprout`.']},
+  sprout:{code:'sprout : ["seed", "leaf", "stem"]',
+          sem:'Cells are the one collection type. Bare values become 1-based indexed slots; `key: val` pairs would add named fields to the same cell.',
+          quirks:['Indexing is 1-based: `sprout at 1` returns `"seed"`.','Cells are persistent — `sprout push "root"` returns a new cell, never mutates the original.','The empty cell `[]` doubles as the falsy value; there is no separate `nil`, `null`, or `false`.']},
 }},
 
 // ═════ PRINT / LOG ═════
@@ -1529,9 +1529,9 @@ const FEATURES = [
   prolog:{code:'write(sprout), nl.',
           sem:'`write` prints the term; `nl` writes a newline.',
           quirks:['`writeln` combines both in most implementations.','`format("~w~n", [sprout])` for format-string style.']},
-  sprout:{code:'"sprout" | out!',
-          sem:'Pipe the string through the `out!` builtin. `!` marks side-effecting call.',
-          quirks:['`out!` inserts newline; `write!` does not.','Meta field `#stream: stderr` redirects.']},
+  sprout:{code:'"sprout" say',
+          sem:'Postfix message send. `say` prints with a newline; `print` writes exact bytes; `show` is the pretty-print alias.',
+          quirks:['Everything is a message send — `say` is a builtin method on any value, not a keyword or a function call.','`say` returns its receiver, so it chains: `"sprout" upper say lower say`.','The empty cell `[]` prints literally as `[]`; numbers print without a decimal when integral.']},
 }},
 
 ];

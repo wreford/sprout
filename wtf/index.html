@@ -425,6 +425,17 @@ body.doom-locked{position:fixed;width:100%;overflow:hidden}
   border-top-color:var(--hot);border-radius:50%;
   animation:spin 1s linear infinite;z-index:2
 }
+
+.doom-loading-card{background:radial-gradient(circle at center,rgba(20,20,30,.8),#000);align-items:center;justify-content:center;flex-direction:column;gap:16px}
+.doom-loading-card .loading-spin{display:flex;gap:8px;align-items:center}
+.doom-loading-card .ls-dot{width:12px;height:12px;border-radius:50%;background:var(--hot);animation:ls-bounce 1.4s ease-in-out infinite}
+.doom-loading-card .ls-dot:nth-child(2){animation-delay:.2s;background:var(--pink)}
+.doom-loading-card .ls-dot:nth-child(3){animation-delay:.4s;background:var(--amber)}
+@keyframes ls-bounce{0%,100%{transform:scale(1) translateY(0);opacity:1}50%{transform:scale(1.2) translateY(-8px);opacity:.6}}
+.doom-loading-card .loading-txt{
+  font-family:var(--mono);font-size:11px;letter-spacing:.14em;
+  color:rgba(255,255,255,.6);text-transform:uppercase
+}
 .doom-info{
   position:absolute;left:0;right:0;bottom:0;z-index:3;
   padding:52px 22px calc(env(safe-area-inset-bottom) + 30px);
@@ -478,6 +489,23 @@ body.doom-locked{position:fixed;width:100%;overflow:hidden}
 .doom-side .act:hover{transform:scale(1.08);background:rgba(0,0,0,.75)}
 .doom-side .act:active{transform:scale(.94)}
 .doom-side .act.on{background:linear-gradient(135deg,var(--hot),var(--pink));border-color:transparent;animation:pump .4s var(--ease)}
+.doom-side .act.airfried{background:linear-gradient(135deg,var(--amber),var(--hot));border-color:transparent;box-shadow:0 4px 14px rgba(255,204,0,.4)}
+.doom-side .act.airfried:hover{filter:brightness(1.15)}
+
+/* Heart-burst on double-tap */
+.heart-burst{position:absolute;inset:0;pointer-events:none;z-index:5;overflow:hidden}
+.heart-pop{
+  position:absolute;transform:translate(-50%,-50%);color:var(--hot);
+  font-size:120px;line-height:1;pointer-events:none;
+  text-shadow:0 0 30px rgba(255,55,95,.7),0 8px 24px rgba(0,0,0,.5);
+  animation:heart-fly .9s var(--ease) forwards
+}
+@keyframes heart-fly{
+  0%{opacity:0;transform:translate(-50%,-50%) scale(.2) rotate(-8deg)}
+  15%{opacity:1;transform:translate(-50%,-50%) scale(1.2) rotate(6deg)}
+  30%{transform:translate(-50%,-50%) scale(1) rotate(-4deg)}
+  100%{opacity:0;transform:translate(-50%,-120%) scale(.6) rotate(0)}
+}
 @keyframes pump{0%{transform:scale(1)}30%{transform:scale(1.3)}60%{transform:scale(.94)}100%{transform:scale(1)}}
 .doom-side .lbl{font-family:var(--mono);font-size:10px;color:rgba(255,255,255,.85);margin-top:4px;letter-spacing:.05em;font-weight:600;text-shadow:0 1px 3px rgba(0,0,0,.7)}
 .doom-side .col{display:flex;flex-direction:column;align-items:center;gap:3px}
@@ -1336,6 +1364,41 @@ function healthTag(m) {
   return null;
 }
 
+// Rough cooking time estimate from instructions
+function cookTime(m) {
+  const txt = (m.strInstructions || '').toLowerCase();
+  // Look for explicit "X hours" or "X minutes"
+  const hrs = [...txt.matchAll(/(\d+)\s*(?:hour|hr)/g)].reduce((s,m) => s + Number(m[1]) * 60, 0);
+  const mins = [...txt.matchAll(/(\d+)\s*(?:minutes?|mins?)/g)].reduce((s,m) => s + Number(m[1]), 0);
+  const total = hrs + mins;
+  if (total >= 30) return total;
+  // Estimate from instruction length + ingredient count if no explicit times
+  const paras = txt.split(/\r?\n/).filter(l => l.trim()).length;
+  const ings = countIngredients(m);
+  return Math.max(15, Math.min(180, paras * 4 + ings * 3));
+}
+
+function difficultyStars(m) {
+  const ings = countIngredients(m);
+  const time = cookTime(m);
+  const complexity = (m.strInstructions || '').length;
+  let stars = 1;
+  if (ings > 8 || time > 45 || complexity > 800) stars = 2;
+  if (ings > 12 || time > 90 || complexity > 1500) stars = 3;
+  if (ings > 16 || time > 120 || complexity > 2500) stars = 4;
+  return stars;
+}
+
+// Time-of-day → suggested category bias
+function timeOfDayMeal() {
+  const h = new Date().getHours();
+  if (h < 10) return { emoji:'☕', label:'breakfast time', suggest:'Breakfast' };
+  if (h < 14) return { emoji:'🥗', label:'lunch time', suggest:null };
+  if (h < 17) return { emoji:'🍎', label:'afternoon snack', suggest:'Side' };
+  if (h < 22) return { emoji:'🍽', label:'dinner time', suggest:null };
+  return { emoji:'🌙', label:'late night', suggest:'Dessert' };
+}
+
 function loadQuip() {
   const m = MODE_QUIPS[state.diet];
   return pick(m ? [...m.load, ...LOADING_QUIPS] : LOADING_QUIPS);
@@ -1677,10 +1740,11 @@ $('share-copy-btn').addEventListener('click', () => copyLink($('share-link').val
    ═══════════════════════════════════════════════════════════════════════ */
 const DOOM = {
   el:null, queue:[], seen:new Set(), busy:false, currentIndex:0, io:null, warmed:new Set(),
-  BUFFER_AHEAD:7,        // start fetching more when this close to end
-  BATCH_SIZE:6,          // meals per fetch batch
-  MIN_QUEUE:12,          // target queue size
-  WARM_AHEAD:6,          // preload image for next N cards
+  BUFFER_AHEAD:10,       // start fetching more when this close to end
+  BATCH_SIZE:8,          // meals per fetch batch
+  MIN_QUEUE:18,          // target queue size (always keep this many ahead)
+  WARM_AHEAD:10,         // preload image for next N cards
+  scrollScheduled:false,
 };
 function warmImage(src) {
   if (!src || DOOM.warmed.has(src)) return;
@@ -1716,10 +1780,23 @@ async function fetchDoomBatch(n) {
 async function fillDoomQueue() {
   if (DOOM.busy) return;
   DOOM.busy = true;
+  showDoomLoadingCard();
   try {
     const need = Math.max(0, DOOM.MIN_QUEUE - DOOM.queue.length);
     if (need > 0) {
-      const meals = await fetchDoomBatch(Math.max(DOOM.BATCH_SIZE, need));
+      let meals = await fetchDoomBatch(Math.max(DOOM.BATCH_SIZE, need));
+      // If we got fewer than requested (or the seen set drained the pool), do a second pass
+      const gotNew = meals.filter(m => !DOOM.seen.has(m.idMeal));
+      if (gotNew.length < DOOM.BATCH_SIZE / 2) {
+        // Rotate seen — start allowing repeats after a while
+        if (DOOM.seen.size > 60) {
+          const arr = [...DOOM.seen];
+          DOOM.seen = new Set(arr.slice(-20));
+        }
+        // Try again for randoms
+        const extra = await fetchDoomBatch(DOOM.BATCH_SIZE).catch(() => []);
+        meals = [...gotNew, ...extra];
+      }
       for (const m of meals) {
         if (!DOOM.seen.has(m.idMeal)) {
           DOOM.seen.add(m.idMeal);
@@ -1729,7 +1806,27 @@ async function fillDoomQueue() {
         }
       }
     }
-  } finally { DOOM.busy = false; }
+  } catch(e) {
+    console.warn('queue fill failed', e);
+  } finally {
+    DOOM.busy = false;
+    removeDoomLoadingCard();
+    // Recursively top up if still under threshold (forever scroll)
+    if (DOOM.queue.length < DOOM.MIN_QUEUE - 4) setTimeout(fillDoomQueue, 300);
+  }
+}
+
+function showDoomLoadingCard() {
+  if (!DOOM.el) return;
+  if (DOOM.el.querySelector('.doom-loading-card')) return;
+  const el = document.createElement('div');
+  el.className = 'doom-card doom-loading-card';
+  el.innerHTML = `<div class="loading-spin"><div class="ls-dot"></div><div class="ls-dot"></div><div class="ls-dot"></div></div><div class="loading-txt">finding more meals…</div>`;
+  DOOM.el.appendChild(el);
+}
+function removeDoomLoadingCard() {
+  if (!DOOM.el) return;
+  DOOM.el.querySelectorAll('.doom-loading-card').forEach(el => el.remove());
 }
 function appendDoomCard(meal) {
   const card = document.createElement('div');
@@ -1738,6 +1835,10 @@ function appendDoomCard(meal) {
   const h = healthTag(meal);
   const isCatOn = state.categories.includes(meal.strCategory);
   const isCuiOn = state.cuisines.includes(meal.strArea);
+  const time = cookTime(meal);
+  const timeStr = time >= 60 ? `${Math.floor(time/60)}h${time%60?' '+(time%60)+'m':''}` : `${time}m`;
+  const stars = difficultyStars(meal);
+  const dots = '●'.repeat(stars) + '○'.repeat(4 - stars);
   card.innerHTML = `
     <div class="bg" style="background-image:url('${meal.strMealThumb}')"></div>
     <div class="img-frame"><img src="${meal.strMealThumb}" alt="${meal.strMeal}" decoding="async"></div>
@@ -1745,7 +1846,7 @@ function appendDoomCard(meal) {
       <div class="col"><button class="act ${isFav(meal.idMeal) ? 'on' : ''}" data-act="fav">${isFav(meal.idMeal) ? '♥' : '♡'}</button><span class="lbl">save</span></div>
       <div class="col"><button class="act" data-act="share">↗</button><span class="lbl">share</span></div>
       <div class="col"><button class="act" data-act="details">ⓘ</button><span class="lbl">details</span></div>
-      <div class="col"><button class="act" data-act="recipe">☰</button><span class="lbl">recipe</span></div>
+      <div class="col"><button class="act airfried" data-act="airfried">🎰</button><span class="lbl">face it</span></div>
     </div>
     <div class="doom-info">
       <div class="tags">
@@ -1754,8 +1855,15 @@ function appendDoomCard(meal) {
         ${meal.strArea ? `<button class="tag ${isCuiOn ? 'on' : ''}" data-filter-type="cuisine" data-filter-val="${meal.strArea}">${cuisineFlag(meal.strArea)} ${meal.strArea}<span class="plus">+</span></button>` : ''}
       </div>
       <h2>${meal.strMeal}</h2>
-      <div class="meta"><b>${(ingredientsFrom(meal).length)}</b> ingredients<span class="dot">·</span>tap ⓘ for the recipe</div>
-    </div>`;
+      <div class="meta">
+        <span title="Ingredients"><b>${(ingredientsFrom(meal).length)}</b> ingredients</span>
+        <span class="dot">·</span>
+        <span title="Estimated cooking time">⏱ <b>${timeStr}</b></span>
+        <span class="dot">·</span>
+        <span title="Difficulty ${stars}/4"><span style="letter-spacing:.06em;color:var(--amber)">${dots}</span></span>
+      </div>
+    </div>
+    <div class="heart-burst" data-burst></div>`;
   DOOM.el.appendChild(card);
   card.querySelector('[data-act="fav"]').addEventListener('click', e => {
     e.stopPropagation();
@@ -1772,9 +1880,9 @@ function appendDoomCard(meal) {
     e.stopPropagation();
     openDetailsSheet(meal);
   });
-  card.querySelector('[data-act="recipe"]').addEventListener('click', e => {
+  card.querySelector('[data-act="airfried"]').addEventListener('click', e => {
     e.stopPropagation();
-    openDetailsSheet(meal);
+    location.href = `/airfried/?m=${meal.idMeal}`;
   });
   // Clickable filter tags
   card.querySelectorAll('.tag[data-filter-type]').forEach(el => el.addEventListener('click', e => {
@@ -1782,7 +1890,41 @@ function appendDoomCard(meal) {
     const type = el.dataset.filterType, val = el.dataset.filterVal;
     toggleFilter(type, val);
   }));
+
+  // Double-tap to save (TikTok-style heart burst)
+  let lastTap = 0;
+  card.addEventListener('click', e => {
+    if (e.target.closest('.doom-side, .tag, [data-act]')) return; // ignore taps on controls
+    const now = Date.now();
+    if (now - lastTap < 320) {
+      // Double tap: burst heart at pointer
+      const rect = card.getBoundingClientRect();
+      const x = (e.clientX || (rect.left + rect.width/2)) - rect.left;
+      const y = (e.clientY || (rect.top + rect.height/2)) - rect.top;
+      burstHeart(card, x, y);
+      if (!isFav(meal.idMeal)) toggleFav(meal);
+      const b = card.querySelector('[data-act="fav"]');
+      if (b) { b.textContent = '♥'; b.classList.add('on'); }
+      updateFavCount();
+      lastTap = 0;
+    } else {
+      lastTap = now;
+    }
+  });
+
   if (DOOM.io) DOOM.io.observe(card);
+}
+
+function burstHeart(card, x, y) {
+  const el = card.querySelector('[data-burst]');
+  if (!el) return;
+  const h = document.createElement('div');
+  h.className = 'heart-pop';
+  h.style.left = x + 'px';
+  h.style.top = y + 'px';
+  h.textContent = '♥';
+  el.appendChild(h);
+  setTimeout(() => h.remove(), 900);
 }
 
 function toggleFilter(type, val) {
@@ -2011,7 +2153,7 @@ function openDetailsSheet(meal) {
       <button class="action" data-act="shopping">🛒 Shopping list</button>
       ${yt ? `<a class="action" href="${yt}" target="_blank" rel="noopener">▶ Watch</a>` : ''}
       ${src ? `<a class="action" href="${src}" target="_blank" rel="noopener">↗ Source</a>` : ''}
-      <button class="action primary" data-act="recipe">☰ Open full recipe</button>
+      <a class="action primary" href="/airfried/?m=${meal.idMeal}" style="background:linear-gradient(135deg,var(--amber),var(--hot))">🎰 Face this meal · Air Fried</a>
     </div>`;
 
   body.querySelector('[data-act="save"]').addEventListener('click', e => {
