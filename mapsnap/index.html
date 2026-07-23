@@ -1,0 +1,1295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1">
+<meta name="theme-color" content="#0a0a10">
+<meta name="description" content="MapSnap — drop a pin, ship a memory. Personal photo journal on a map.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,700;0,9..144,900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%230a0a10'/%3E%3Cpath d='M16 7 C11.5 7 8 10.4 8 14.7 C8 20.6 16 26 16 26 C16 26 24 20.6 24 14.7 C24 10.4 20.5 7 16 7 Z' fill='%23ff375f' stroke='%23ff2d92' stroke-width='1'/%3E%3Ccircle cx='16' cy='14.6' r='3' fill='%23fff'/%3E%3C/svg%3E">
+<title>MapSnap · drop a pin, ship a memory</title>
+<style>
+:root{
+  --bg:#0a0a10; --bg2:#12121a; --panel:#191926; --panel2:#22222e;
+  --border:#26262e; --border2:#3a3a48;
+  --text:#f5f5f7; --text-dim:#c9c9d3; --dim:#8a8a98; --dimmer:#5a5a68; --faint:#3a3a48;
+  --hot:#ff375f; --pink:#ff2d92; --amber:#ffcc00; --violet:#bf5af2; --cyan:#5ee7f0; --green:#30d158;
+  --hot-glow:rgba(255,55,95,.45); --pink-glow:rgba(255,45,146,.35);
+  --disp:'Fraunces',Georgia,serif;
+  --sans:-apple-system,BlinkMacSystemFont,'Inter','Segoe UI',Roboto,sans-serif;
+  --mono:'IBM Plex Mono',ui-monospace,'SF Mono',Menlo,monospace;
+  --ease:cubic-bezier(.16,1,.3,1);
+  --safe-b:env(safe-area-inset-bottom,0px);
+  --safe-t:env(safe-area-inset-top,0px);
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--sans);overflow:hidden;-webkit-font-smoothing:antialiased;overscroll-behavior:none}
+button{background:none;border:none;cursor:pointer;color:inherit;font:inherit}
+input,textarea,select{font-family:inherit;color:inherit}
+input:focus,textarea:focus{outline:none}
+::selection{background:rgba(255,55,95,.35);color:#fff}
+
+/* ══════ Top nav ══════ */
+.top{
+  position:fixed;top:0;left:0;right:0;z-index:400;
+  padding:calc(10px + var(--safe-t)) 14px 10px;
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  background:linear-gradient(180deg,rgba(10,10,16,.94),rgba(10,10,16,.72) 70%,transparent);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)
+}
+.brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit;flex-shrink:0}
+.brand-mark{
+  width:38px;height:38px;border-radius:11px;
+  background:radial-gradient(circle at 30% 30%,var(--hot),var(--pink) 55%,#7a0a3a);
+  display:flex;align-items:center;justify-content:center;position:relative;
+  box-shadow:0 6px 18px var(--hot-glow),inset 0 1px 0 rgba(255,255,255,.15);
+  border:1px solid rgba(255,255,255,.06)
+}
+.brand-mark::after{
+  content:"";width:12px;height:12px;border-radius:50%;background:#fff;
+  box-shadow:0 0 0 3px rgba(255,255,255,.14)
+}
+.wordmark{display:flex;flex-direction:column;line-height:1;gap:3px}
+.wordmark .n{font-family:var(--disp);font-weight:900;font-size:20px;letter-spacing:-.015em}
+.wordmark .n .lp{background:linear-gradient(120deg,var(--hot),var(--pink) 60%,var(--amber));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.wordmark .t{font-family:var(--mono);font-size:9px;letter-spacing:.24em;color:var(--dim);text-transform:uppercase}
+.top-r{display:flex;gap:6px;align-items:center;flex-shrink:0}
+.icon-btn{
+  width:40px;height:40px;border-radius:11px;
+  background:rgba(25,25,38,.85);border:1px solid var(--border2);
+  color:var(--text);display:flex;align-items:center;justify-content:center;
+  font-size:16px;transition:all .15s var(--ease);text-decoration:none;
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);position:relative
+}
+.icon-btn:hover{border-color:var(--hot);color:var(--hot)}
+.icon-btn .count{
+  position:absolute;top:-4px;right:-4px;min-width:16px;height:16px;border-radius:8px;
+  background:var(--hot);color:#fff;font-family:var(--mono);font-size:9px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;padding:0 4px;
+  border:1px solid var(--bg)
+}
+
+/* ══════ Map ══════ */
+.map-wrap{position:absolute;inset:0;background:#0a0d18}
+#map{width:100%;height:100%;background:#0a0d18}
+.leaflet-container{background:#0a0d18 !important;font-family:var(--sans)}
+.leaflet-tile{filter:brightness(.72) contrast(1.06) invert(.9) hue-rotate(180deg) saturate(.6)}
+.leaflet-bar{border:1px solid var(--border2) !important;background:var(--panel) !important;box-shadow:0 4px 12px rgba(0,0,0,.6) !important;border-radius:9px !important;overflow:hidden}
+.leaflet-bar a{background:var(--panel) !important;color:var(--text) !important;border-bottom:1px solid var(--border) !important}
+.leaflet-bar a:hover{background:var(--panel2) !important;color:var(--hot) !important}
+.leaflet-control-attribution{background:rgba(0,0,0,.65) !important;color:var(--dim) !important;font-size:9px !important;padding:2px 6px !important;border-radius:6px 0 0 0}
+.leaflet-control-attribution a{color:var(--dim) !important}
+.leaflet-control-zoom{margin-top:80px !important}
+
+/* Custom snap marker (photo thumbnail) */
+.snap-marker{
+  width:44px;height:44px;border-radius:50%;
+  background:var(--panel);border:2px solid transparent;
+  padding:2px;box-shadow:0 4px 14px rgba(0,0,0,.55),0 0 0 2px rgba(255,55,95,.9);
+  position:relative;transition:transform .18s var(--ease)
+}
+.snap-marker::before{
+  content:"";position:absolute;inset:-6px;border-radius:50%;
+  background:conic-gradient(from 0deg,var(--hot),var(--pink),var(--amber),var(--hot));
+  opacity:.5;filter:blur(4px);z-index:-1
+}
+.snap-marker img{width:100%;height:100%;border-radius:50%;object-fit:cover;display:block}
+.snap-marker::after{
+  content:"";position:absolute;bottom:-4px;left:50%;transform:translateX(-50%);
+  width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;
+  border-top:7px solid var(--hot);filter:drop-shadow(0 2px 3px rgba(0,0,0,.4))
+}
+.snap-marker:hover{transform:scale(1.08)}
+.snap-marker.new-pin{
+  background:radial-gradient(circle at 30% 30%,var(--hot),var(--pink));
+  animation:bounce-in .5s var(--ease)
+}
+.snap-marker.new-pin::after{border-top-color:var(--pink)}
+.snap-marker.new-pin .pulse{
+  position:absolute;inset:0;border-radius:50%;background:var(--hot);
+  animation:pulse-ring 1.8s ease-out infinite;opacity:.6
+}
+@keyframes pulse-ring{0%{transform:scale(1);opacity:.65}100%{transform:scale(2.4);opacity:0}}
+@keyframes bounce-in{0%{transform:scale(0) translateY(-40px);opacity:0}60%{transform:scale(1.15)}100%{transform:scale(1)}}
+
+/* Leaflet popup styling */
+.leaflet-popup-content-wrapper{
+  background:linear-gradient(180deg,var(--panel),var(--bg2)) !important;
+  color:var(--text) !important;border:1px solid var(--border2) !important;
+  border-radius:14px !important;box-shadow:0 20px 48px rgba(0,0,0,.7) !important;
+  padding:0 !important;overflow:hidden
+}
+.leaflet-popup-content{margin:0 !important;width:280px !important;line-height:1.4 !important;font-family:var(--sans) !important}
+.leaflet-popup-tip{background:var(--panel) !important;border:1px solid var(--border2) !important}
+.leaflet-popup-close-button{color:var(--dim) !important;padding:8px !important;font-size:20px !important;font-weight:normal !important}
+.leaflet-popup-close-button:hover{color:var(--hot) !important}
+.pop{overflow:hidden}
+.pop-img{width:100%;height:180px;object-fit:cover;background:#000;display:block}
+.pop-body{padding:12px 14px}
+.pop-caption{font-family:var(--disp);font-weight:600;font-size:15px;line-height:1.3;margin-bottom:6px;color:var(--text);letter-spacing:-.005em}
+.pop-meta{font-family:var(--mono);font-size:10px;color:var(--dim);letter-spacing:.04em;line-height:1.5;margin-bottom:8px}
+.pop-meta .addr{color:var(--text-dim);display:block;margin-bottom:2px}
+.pop-badges{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px}
+.pop-badge{
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.05em;
+  padding:3px 8px;border-radius:10px;background:var(--panel2);
+  border:1px solid var(--border);color:var(--text-dim);display:inline-flex;align-items:center;gap:4px
+}
+.pop-badge.weather{color:var(--amber);border-color:rgba(255,204,0,.3);background:rgba(255,204,0,.06)}
+.pop-badge.sun{color:var(--pink);border-color:rgba(255,45,146,.3);background:rgba(255,45,146,.06)}
+.pop-badge.time{color:var(--cyan);border-color:rgba(94,231,240,.3);background:rgba(94,231,240,.06)}
+.pop-wiki{margin-bottom:10px;padding:8px 10px;background:rgba(191,90,242,.06);border:1px solid rgba(191,90,242,.25);border-radius:8px;font-family:var(--mono);font-size:10.5px;line-height:1.5;color:var(--text-dim)}
+.pop-wiki .lbl{color:var(--violet);letter-spacing:.14em;text-transform:uppercase;font-size:9px;font-weight:600;display:block;margin-bottom:3px}
+.pop-wiki a{color:var(--text-dim);text-decoration:none;border-bottom:1px dashed var(--dimmer)}
+.pop-wiki a:hover{color:var(--violet)}
+.pop-actions{display:flex;gap:6px}
+.pop-btn{
+  flex:1;padding:9px 10px;background:var(--panel2);border:1px solid var(--border2);
+  border-radius:8px;font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;
+  color:var(--text);text-transform:uppercase;font-weight:600;cursor:pointer;transition:all .15s
+}
+.pop-btn:hover{border-color:var(--hot);color:var(--hot)}
+.pop-btn.share{background:linear-gradient(135deg,var(--hot),var(--pink));border-color:var(--hot);color:#fff}
+.pop-btn.share:hover{filter:brightness(1.1);color:#fff}
+.pop-btn.del{color:var(--dim)}
+.pop-btn.del:hover{color:var(--hot);border-color:var(--hot)}
+
+/* ══════ Crosshair marker while placing ══════ */
+.placing-marker{
+  animation:placing-pulse 1s ease-in-out infinite;
+  width:24px;height:24px;border-radius:50%;
+  background:var(--hot);border:3px solid #fff;
+  box-shadow:0 0 0 4px var(--hot-glow),0 4px 14px rgba(255,55,95,.6)
+}
+@keyframes placing-pulse{50%{transform:scale(1.15)}}
+
+/* ══════ Hint bar ══════ */
+.hint{
+  position:fixed;top:calc(76px + var(--safe-t));left:50%;transform:translateX(-50%);z-index:300;
+  padding:8px 16px;background:rgba(10,10,16,.9);border:1px solid var(--border2);border-radius:22px;
+  font-family:var(--mono);font-size:11px;letter-spacing:.06em;color:var(--text-dim);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);pointer-events:none;
+  display:flex;align-items:center;gap:8px;box-shadow:0 8px 24px rgba(0,0,0,.5);
+  max-width:90vw;text-align:center;transition:opacity .3s
+}
+.hint b{color:var(--hot);font-weight:500}
+.hint .dot{width:6px;height:6px;border-radius:50%;background:var(--hot);animation:blip 1.5s ease-in-out infinite}
+@keyframes blip{50%{opacity:.3}}
+.hint.hidden{opacity:0;pointer-events:none}
+
+/* ══════ Bottom sheet ══════ */
+.sheet-bg{
+  position:fixed;inset:0;background:rgba(0,0,0,.55);backdrop-filter:blur(6px);
+  -webkit-backdrop-filter:blur(6px);z-index:500;opacity:0;pointer-events:none;
+  transition:opacity .25s var(--ease)
+}
+.sheet-bg.show{opacity:1;pointer-events:auto}
+.sheet{
+  position:fixed;left:50%;bottom:0;z-index:600;
+  width:100%;max-width:520px;transform:translate(-50%,105%);
+  background:linear-gradient(180deg,var(--panel),var(--bg2));
+  border:1px solid var(--border2);border-bottom:none;border-radius:22px 22px 0 0;
+  padding:14px 18px calc(20px + var(--safe-b));
+  transition:transform .35s var(--ease);
+  max-height:92vh;overflow-y:auto;overscroll-behavior:contain;
+  box-shadow:0 -20px 60px rgba(0,0,0,.6)
+}
+.sheet.show{transform:translate(-50%,0) !important}
+/* base .show handled by rule above */
+.sheet::-webkit-scrollbar{width:6px}
+.sheet::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+.sheet-handle{width:44px;height:5px;background:var(--border2);border-radius:3px;margin:0 auto 12px}
+.sheet-hdr{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:14px;gap:12px}
+.sheet-hdr h2{font-family:var(--disp);font-weight:900;font-size:22px;letter-spacing:-.02em}
+.sheet-hdr h2 .g{background:linear-gradient(120deg,var(--hot),var(--pink) 60%,var(--amber));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sheet-hdr .close{
+  width:32px;height:32px;border-radius:8px;background:var(--panel2);border:1px solid var(--border);
+  color:var(--dim);font-size:18px;display:flex;align-items:center;justify-content:center
+}
+.sheet-hdr .close:hover{color:var(--hot);border-color:var(--hot)}
+
+.coord-row{
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;color:var(--dim);
+  padding:8px 12px;background:var(--panel2);border-radius:8px;margin-bottom:12px;
+  display:flex;align-items:center;gap:8px
+}
+.coord-row .lat,.coord-row .lng{color:var(--text)}
+
+/* Photo capture area */
+.photo-area{
+  position:relative;width:100%;aspect-ratio:4/3;
+  background:var(--panel2);border:1px dashed var(--border2);border-radius:14px;
+  display:flex;align-items:center;justify-content:center;overflow:hidden;margin-bottom:12px;
+  cursor:pointer;transition:border-color .2s
+}
+.photo-area:hover{border-color:var(--hot);border-style:solid}
+.photo-area.has-photo{border-style:solid;border-color:var(--border2);background:#000}
+.photo-area img,.photo-area video,.photo-area canvas{
+  width:100%;height:100%;object-fit:cover;display:block;position:absolute;inset:0
+}
+.photo-area video{transform:scaleX(-1)}
+.photo-placeholder{text-align:center;padding:20px;pointer-events:none;position:relative;z-index:2}
+.photo-placeholder .ic{
+  width:56px;height:56px;border-radius:14px;
+  background:linear-gradient(135deg,var(--hot),var(--pink));
+  display:flex;align-items:center;justify-content:center;margin:0 auto 12px;
+  font-size:26px;box-shadow:0 8px 20px var(--hot-glow)
+}
+.photo-placeholder .n{font-family:var(--disp);font-weight:700;font-size:16px;letter-spacing:-.01em;margin-bottom:4px}
+.photo-placeholder .d{font-family:var(--mono);font-size:10.5px;color:var(--dim);letter-spacing:.06em;text-transform:uppercase}
+
+.photo-controls{
+  position:absolute;bottom:12px;left:50%;transform:translateX(-50%);z-index:3;
+  display:flex;gap:8px;align-items:center
+}
+.photo-controls.hidden{display:none}
+.shutter{
+  width:56px;height:56px;border-radius:50%;
+  background:#fff;border:4px solid rgba(255,255,255,.4);
+  box-shadow:0 6px 18px rgba(0,0,0,.5);cursor:pointer;transition:transform .1s;
+  padding:0
+}
+.shutter:active{transform:scale(.92)}
+.shutter::after{content:"";display:block;width:100%;height:100%;border-radius:50%;background:#fff;border:2px solid #000}
+.photo-mini-btn{
+  width:40px;height:40px;border-radius:50%;background:rgba(0,0,0,.6);color:#fff;
+  border:1px solid rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;
+  font-size:16px;cursor:pointer;backdrop-filter:blur(8px)
+}
+
+.field{margin-bottom:12px}
+.field label{
+  display:block;font-family:var(--mono);font-size:9.5px;letter-spacing:.2em;
+  color:var(--dim);text-transform:uppercase;margin-bottom:6px;font-weight:600
+}
+.field input,.field textarea{
+  width:100%;padding:12px 14px;background:var(--panel2);border:1px solid var(--border);
+  border-radius:10px;color:var(--text);font-size:16px;font-family:var(--sans);
+  transition:border-color .15s;line-height:1.4;resize:none
+}
+.field input:focus,.field textarea:focus{border-color:var(--hot)}
+.field textarea{min-height:56px}
+.field .counter{font-family:var(--mono);font-size:9.5px;color:var(--dim);letter-spacing:.06em;text-align:right;margin-top:4px}
+.field .counter.warn{color:var(--amber)}
+.field .counter.err{color:var(--hot)}
+
+.addr-loading{
+  font-family:var(--mono);font-size:10.5px;color:var(--dim);letter-spacing:.06em;
+  padding:10px 12px;background:var(--panel2);border-radius:8px;margin-bottom:12px;
+  display:flex;align-items:center;gap:8px
+}
+.addr-loading .spin{
+  width:12px;height:12px;border:2px solid var(--border2);border-top-color:var(--hot);
+  border-radius:50%;animation:spin 1s linear infinite
+}
+@keyframes spin{100%{transform:rotate(360deg)}}
+
+.env-info{
+  display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px
+}
+.env-tile{
+  padding:8px 10px;background:var(--panel2);border:1px solid var(--border);border-radius:8px;
+  display:flex;align-items:center;gap:8px
+}
+.env-tile .k{font-family:var(--mono);font-size:9px;color:var(--dim);letter-spacing:.14em;text-transform:uppercase;margin-bottom:2px}
+.env-tile .v{font-family:var(--disp);font-weight:600;font-size:13.5px;letter-spacing:-.005em;color:var(--text)}
+.env-tile .ic{font-size:22px;flex-shrink:0}
+.env-tile.wx .ic{color:var(--amber)}
+.env-tile.sun .ic{color:var(--pink)}
+
+.save-btn{
+  width:100%;padding:15px;margin-top:6px;
+  background:linear-gradient(135deg,var(--hot),var(--pink) 65%,#c81050);
+  border:none;border-radius:12px;color:#fff;
+  font-family:var(--disp);font-weight:900;font-size:17px;letter-spacing:-.01em;
+  cursor:pointer;transition:transform .12s,box-shadow .15s;
+  box-shadow:0 8px 22px var(--hot-glow)
+}
+.save-btn:hover{transform:translateY(-1px);box-shadow:0 12px 28px var(--hot-glow)}
+.save-btn:active{transform:translateY(0)}
+.save-btn:disabled{opacity:.4;cursor:not-allowed;box-shadow:none;transform:none}
+
+/* ══════ Drawer (snaps list) ══════ */
+.drawer{
+  position:fixed;top:0;right:0;bottom:0;width:min(400px,88vw);z-index:550;
+  background:linear-gradient(180deg,var(--panel),var(--bg2));
+  border-left:1px solid var(--border2);
+  padding:calc(14px + var(--safe-t)) 16px calc(20px + var(--safe-b));
+  transform:translateX(105%);transition:transform .32s var(--ease);
+  overflow-y:auto;overscroll-behavior:contain;box-shadow:-20px 0 60px rgba(0,0,0,.6)
+}
+.drawer.show{transform:translateX(0)}
+.drawer::-webkit-scrollbar{width:6px}
+.drawer::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+.drawer-hdr{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:14px}
+.drawer-hdr h2{font-family:var(--disp);font-weight:900;font-size:22px;letter-spacing:-.02em}
+.drawer-hdr .close{
+  width:32px;height:32px;border-radius:8px;background:var(--panel2);border:1px solid var(--border);
+  color:var(--dim);font-size:18px;display:flex;align-items:center;justify-content:center
+}
+.drawer-hdr .close:hover{color:var(--hot);border-color:var(--hot)}
+
+.drawer-stats{
+  display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:14px
+}
+.drawer-stat{padding:9px 10px;background:var(--panel2);border:1px solid var(--border);border-radius:9px;text-align:center}
+.drawer-stat .k{font-family:var(--mono);font-size:9px;letter-spacing:.14em;color:var(--dim);text-transform:uppercase;margin-bottom:3px}
+.drawer-stat .v{font-family:var(--disp);font-weight:900;font-size:20px;letter-spacing:-.01em}
+.drawer-stat .v.hot{color:var(--hot)}
+.drawer-stat .v.pink{color:var(--pink)}
+.drawer-stat .v.amber{color:var(--amber)}
+
+.drawer-actions{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap}
+.drawer-actions .btn{
+  flex:1;min-width:calc(50% - 3px);padding:9px 10px;background:var(--panel2);border:1px solid var(--border);
+  border-radius:8px;color:var(--text-dim);font-family:var(--mono);font-size:10px;letter-spacing:.08em;
+  cursor:pointer;transition:all .15s;text-transform:uppercase;font-weight:600
+}
+.drawer-actions .btn:hover{border-color:var(--border2);color:var(--text)}
+.drawer-actions .btn.danger:hover{color:var(--hot);border-color:var(--hot)}
+
+.snaps-list h3{
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.22em;color:var(--dim);
+  text-transform:uppercase;margin-bottom:10px;font-weight:600;display:flex;justify-content:space-between
+}
+.snap-card{
+  display:flex;gap:12px;padding:10px;background:var(--panel2);border:1px solid var(--border);
+  border-radius:10px;margin-bottom:8px;cursor:pointer;transition:all .15s;position:relative;overflow:hidden
+}
+.snap-card:hover{border-color:var(--hot);transform:translateX(-2px)}
+.snap-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--hot);opacity:.6}
+.snap-thumb{
+  width:56px;height:56px;border-radius:8px;object-fit:cover;flex-shrink:0;
+  background:var(--panel);border:1px solid var(--border)
+}
+.snap-info{flex:1;min-width:0}
+.snap-info .cap{
+  font-family:var(--disp);font-weight:600;font-size:14px;letter-spacing:-.005em;line-height:1.25;
+  margin-bottom:3px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical
+}
+.snap-info .meta{font-family:var(--mono);font-size:9.5px;color:var(--dim);letter-spacing:.04em;line-height:1.4}
+.snap-info .meta .addr{color:var(--text-dim)}
+.snaps-empty{padding:40px 16px;text-align:center;color:var(--dim);font-family:var(--mono);font-size:12px;letter-spacing:.06em;line-height:1.6}
+.snaps-empty .big{font-family:var(--disp);font-size:28px;color:var(--hot);margin-bottom:8px}
+
+/* ══════ Toast ══════ */
+.toast{
+  position:fixed;top:calc(78px + var(--safe-t));left:50%;transform:translate(-50%,-20px);
+  background:rgba(10,10,16,.95);color:var(--text);padding:10px 18px;border-radius:22px;
+  font-family:var(--mono);font-size:11.5px;z-index:900;opacity:0;pointer-events:none;
+  transition:all .25s var(--ease);border:1px solid var(--border2);
+  box-shadow:0 12px 32px rgba(0,0,0,.6);letter-spacing:.04em;max-width:88vw;text-align:center
+}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+.toast.hot{border-color:var(--hot);color:var(--hot)}
+.toast.pink{border-color:var(--pink);color:var(--pink)}
+.toast.amber{border-color:var(--amber);color:var(--amber)}
+.toast.green{border-color:var(--green);color:var(--green)}
+
+/* ══════ FAB / place mode ══════ */
+.fab{
+  position:fixed;bottom:calc(24px + var(--safe-b));right:20px;z-index:400;
+  width:60px;height:60px;border-radius:50%;
+  background:linear-gradient(135deg,var(--hot),var(--pink));
+  color:#fff;border:none;font-size:28px;font-weight:600;
+  box-shadow:0 10px 28px var(--hot-glow),0 4px 8px rgba(0,0,0,.4);
+  display:flex;align-items:center;justify-content:center;
+  transition:transform .2s var(--ease);cursor:pointer
+}
+.fab:hover{transform:scale(1.06)}
+.fab:active{transform:scale(.96)}
+.fab.mode-cancel{background:linear-gradient(135deg,#555,#333)}
+.fab .ic{transition:transform .2s}
+.fab.mode-cancel .ic{transform:rotate(45deg)}
+
+/* ══════ Empty state banner ══════ */
+.empty-banner{
+  position:fixed;bottom:calc(100px + var(--safe-b));left:50%;transform:translateX(-50%);z-index:300;
+  padding:12px 20px;background:rgba(10,10,16,.94);border:1px solid var(--border2);border-radius:16px;
+  font-family:var(--mono);font-size:11px;letter-spacing:.06em;color:var(--text-dim);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);pointer-events:none;
+  display:flex;align-items:center;gap:10px;text-align:center;max-width:88vw;
+  box-shadow:0 12px 32px rgba(0,0,0,.5);transition:opacity .3s
+}
+.empty-banner.hidden{opacity:0;pointer-events:none}
+.empty-banner b{color:var(--hot);font-family:var(--disp);font-weight:900;letter-spacing:-.01em;font-size:13px}
+
+@media (max-width:520px){
+  .drawer{width:100vw}
+  .env-info{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<nav class="top">
+  <a href="/" class="brand" aria-label="MapSnap home">
+    <div class="brand-mark"></div>
+    <div class="wordmark">
+      <div class="n">Map<span class="lp">Snap</span></div>
+      <div class="t">drop a pin, ship a memory</div>
+    </div>
+  </a>
+  <div class="top-r">
+    <button class="icon-btn" id="btn-drawer" title="My snaps" aria-label="Open snaps drawer">
+      <span aria-hidden="true">☰</span>
+      <span class="count" id="snap-count" style="display:none">0</span>
+    </button>
+    <a href="/" class="icon-btn" title="Home" aria-label="Home">⌂</a>
+  </div>
+</nav>
+
+<div class="map-wrap"><div id="map" role="application" aria-label="Interactive map"></div></div>
+
+<div class="hint" id="hint">
+  <span class="dot"></span>
+  <span id="hint-text"><b>Tap the map</b> or the + button to drop a pin</span>
+</div>
+
+<div class="empty-banner" id="empty-banner">
+  <span>◇</span>
+  <span><b>Your map is empty.</b> Drop your first snap.</span>
+</div>
+
+<button class="fab" id="fab" aria-label="Drop pin">
+  <span class="ic">＋</span>
+</button>
+
+<!-- Bottom sheet -->
+<div class="sheet-bg" id="sheet-bg"></div>
+<div class="sheet" id="sheet" role="dialog" aria-labelledby="sheet-title">
+  <div class="sheet-handle"></div>
+  <div class="sheet-hdr">
+    <h2 id="sheet-title">New <span class="g">snap</span></h2>
+    <button class="close" id="sheet-close" aria-label="Close">×</button>
+  </div>
+  <div class="coord-row" id="coord-row">
+    <span>◉</span>
+    <span class="lat" id="sheet-lat">—</span>
+    <span style="color:var(--dimmer)">·</span>
+    <span class="lng" id="sheet-lng">—</span>
+  </div>
+
+  <div class="addr-loading" id="addr-row">
+    <span class="spin"></span>
+    <span id="addr-text">Looking up address…</span>
+  </div>
+
+  <div class="env-info" id="env-info">
+    <div class="env-tile wx"><span class="ic" id="wx-ic">◈</span><div><div class="k">Weather</div><div class="v" id="wx-v">loading…</div></div></div>
+    <div class="env-tile sun"><span class="ic">◐</span><div><div class="k">Sun</div><div class="v" id="sun-v">loading…</div></div></div>
+  </div>
+
+  <div class="photo-area" id="photo-area">
+    <video id="cam-video" style="display:none" autoplay playsinline muted></video>
+    <canvas id="cam-canvas" style="display:none"></canvas>
+    <img id="photo-preview" style="display:none" alt="Snap preview">
+    <div class="photo-placeholder" id="photo-placeholder">
+      <div class="ic">◉</div>
+      <div class="n">Take a photo</div>
+      <div class="d">Camera · Gallery</div>
+    </div>
+    <div class="photo-controls hidden" id="cam-controls">
+      <button class="photo-mini-btn" id="cam-switch" title="Switch camera">⤾</button>
+      <button class="shutter" id="cam-shutter" aria-label="Capture"></button>
+      <button class="photo-mini-btn" id="cam-close" title="Close">×</button>
+    </div>
+  </div>
+  <div style="display:flex;gap:6px;margin-bottom:14px">
+    <button class="pop-btn" id="btn-camera">◉ Camera</button>
+    <button class="pop-btn" id="btn-gallery">▲ Upload</button>
+  </div>
+  <input type="file" id="file-input" accept="image/*" capture="environment" style="display:none">
+
+  <div class="field">
+    <label for="caption-input">Caption</label>
+    <textarea id="caption-input" placeholder="What's this memory?" maxlength="140"></textarea>
+    <div class="counter" id="cap-counter">0 / 140</div>
+  </div>
+
+  <button class="save-btn" id="save-btn" disabled>Save snap ⇢</button>
+</div>
+
+<!-- Drawer -->
+<div class="drawer" id="drawer" role="dialog" aria-labelledby="drawer-title">
+  <div class="drawer-hdr">
+    <h2 id="drawer-title">Your <span style="background:linear-gradient(120deg,var(--hot),var(--pink));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">snaps</span></h2>
+    <button class="close" id="drawer-close" aria-label="Close">×</button>
+  </div>
+  <div class="drawer-stats">
+    <div class="drawer-stat"><div class="k">Snaps</div><div class="v hot" id="stat-total">0</div></div>
+    <div class="drawer-stat"><div class="k">Places</div><div class="v pink" id="stat-places">0</div></div>
+    <div class="drawer-stat"><div class="k">Days</div><div class="v amber" id="stat-days">0</div></div>
+  </div>
+  <div class="drawer-actions">
+    <button class="btn" id="btn-fit">◇ Fit map</button>
+    <button class="btn" id="btn-locate">◉ My location</button>
+    <button class="btn" id="btn-export">↓ Export JSON</button>
+    <button class="btn" id="btn-import">↑ Import JSON</button>
+    <button class="btn danger" id="btn-clear" style="flex-basis:100%">✕ Clear all snaps</button>
+  </div>
+  <input type="file" id="import-input" accept="application/json,.json" style="display:none">
+  <div class="snaps-list">
+    <h3>All snaps <span id="snaps-total-lbl" style="color:var(--dim)">0</span></h3>
+    <div id="snaps-container"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+
+/* ═══════════════════════════════════════════════════════════════════════
+   IndexedDB — tiny wrapper for photo blobs + snap records
+   ═══════════════════════════════════════════════════════════════════════ */
+const IDB = (() => {
+  const DB = 'mapsnap-v1';
+  const STORE = 'snaps';
+  let dbP = null;
+  function open() {
+    if (dbP) return dbP;
+    dbP = new Promise((res, rej) => {
+      const r = indexedDB.open(DB, 1);
+      r.onupgradeneeded = e => {
+        const d = e.target.result;
+        if (!d.objectStoreNames.contains(STORE)) {
+          const s = d.createObjectStore(STORE, { keyPath: 'id' });
+          s.createIndex('ts', 'ts');
+        }
+      };
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    });
+    return dbP;
+  }
+  async function tx(mode = 'readonly') {
+    const d = await open();
+    return d.transaction(STORE, mode).objectStore(STORE);
+  }
+  return {
+    async put(snap) {
+      const s = await tx('readwrite');
+      return new Promise((r, j) => { const q = s.put(snap); q.onsuccess = () => r(q.result); q.onerror = () => j(q.error); });
+    },
+    async del(id) {
+      const s = await tx('readwrite');
+      return new Promise((r, j) => { const q = s.delete(id); q.onsuccess = r; q.onerror = () => j(q.error); });
+    },
+    async all() {
+      const s = await tx();
+      return new Promise((r, j) => {
+        const out = [];
+        const q = s.openCursor();
+        q.onsuccess = e => { const c = e.target.result; if (c) { out.push(c.value); c.continue(); } else r(out); };
+        q.onerror = () => j(q.error);
+      });
+    },
+    async clear() {
+      const s = await tx('readwrite');
+      return new Promise((r, j) => { const q = s.clear(); q.onsuccess = r; q.onerror = () => j(q.error); });
+    }
+  };
+})();
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Utils
+   ═══════════════════════════════════════════════════════════════════════ */
+const $ = id => document.getElementById(id);
+const WX_CODES = {
+  0:['☀','clear'], 1:['◐','mostly clear'], 2:['⛅','partly cloudy'], 3:['☁','cloudy'],
+  45:['◈','foggy'], 48:['◈','icy fog'],
+  51:['❄','light drizzle'], 53:['❄','drizzle'], 55:['❄','heavy drizzle'],
+  61:['☂','light rain'], 63:['☂','rain'], 65:['☂','heavy rain'],
+  71:['❆','light snow'], 73:['❆','snow'], 75:['❆','heavy snow'],
+  77:['❆','snow grains'],
+  80:['☂','rain showers'], 81:['☂','heavy showers'], 82:['☂','violent showers'],
+  85:['❆','snow showers'], 86:['❆','heavy snow showers'],
+  95:['⚡','thunderstorm'], 96:['⚡','storm + hail'], 99:['⚡','severe storm']
+};
+function wxLabel(code){ return WX_CODES[code] || ['◈','unknown']; }
+
+function toast(msg, kind = '') {
+  const t = $('toast');
+  t.textContent = msg;
+  t.className = 'toast show ' + kind;
+  clearTimeout(t._tm);
+  t._tm = setTimeout(() => t.classList.remove('show'), 2400);
+}
+
+function fmtCoord(n, positive, negative){
+  const abs = Math.abs(n).toFixed(4);
+  return `${abs}° ${n >= 0 ? positive : negative}`;
+}
+function fmtLat(n){ return fmtCoord(n, 'N', 'S'); }
+function fmtLng(n){ return fmtCoord(n, 'E', 'W'); }
+function fmtDateShort(ts){
+  const d = new Date(ts);
+  return d.toLocaleDateString(undefined, { month:'short', day:'numeric' }) + ' · ' + d.toLocaleTimeString(undefined, { hour:'2-digit', minute:'2-digit' });
+}
+function fmtTimeShort(ts){
+  const d = new Date(ts);
+  return d.toLocaleTimeString(undefined, { hour:'2-digit', minute:'2-digit' });
+}
+function ageStr(ts){
+  const dt = Date.now() - ts;
+  const m = Math.floor(dt / 60000); if (m < 1) return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60); if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24); if (d < 7) return `${d}d ago`;
+  return new Date(ts).toLocaleDateString();
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Rate-limited fetch — Nominatim asks for 1 req/sec
+   ═══════════════════════════════════════════════════════════════════════ */
+const NOMINATIM_QUEUE = { last: 0, min: 1100 };
+async function nominatimReverse(lat, lng) {
+  const wait = Math.max(0, NOMINATIM_QUEUE.last + NOMINATIM_QUEUE.min - Date.now());
+  if (wait) await new Promise(r => setTimeout(r, wait));
+  NOMINATIM_QUEUE.last = Date.now();
+  const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&zoom=16&addressdetails=1`;
+  const r = await fetch(url, { headers: { 'Accept-Language': (navigator.language || 'en') } });
+  if (!r.ok) throw new Error('nominatim ' + r.status);
+  return r.json();
+}
+async function openMeteo(lat, lng){
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,weather_code,wind_speed_10m&timezone=auto`;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error('open-meteo ' + r.status);
+  return r.json();
+}
+async function sunriseSunset(lat, lng){
+  const url = `https://api.sunrise-sunset.org/json?lat=${lat}&lng=${lng}&formatted=0`;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error('sunrise-sunset ' + r.status);
+  return r.json();
+}
+async function wikiNearby(lat, lng, radius = 1000){
+  const url = `https://en.wikipedia.org/w/api.php?action=query&list=geosearch&gsradius=${radius}&gscoord=${lat}|${lng}&gslimit=3&format=json&origin=*`;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error('wiki ' + r.status);
+  return r.json();
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   State
+   ═══════════════════════════════════════════════════════════════════════ */
+const state = {
+  snaps: [],                // {id, ts, lat, lng, caption, address, photoBlob, photoDataURL, weather, sun, wiki}
+  markers: new Map(),       // id -> Leaflet marker
+  placing: null,            // {lat, lng, marker}
+  photoDataURL: null,       // pending photo
+  photoBlob: null,          // pending blob
+  camStream: null,
+  camFacing: 'environment',
+  addrCache: '',
+  weatherCache: null,
+  sunCache: null,
+  wikiCache: null,
+};
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Map — resilient to Leaflet CDN failing (still shows UI)
+   ═══════════════════════════════════════════════════════════════════════ */
+let map = null;
+const mapAvail = typeof L !== 'undefined';
+if (mapAvail) {
+  map = L.map('map', {
+    zoomControl: true, attributionControl: true, worldCopyJump: true, minZoom: 2
+  }).setView([51.505, -0.09], 13); // London default
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OSM · MapSnap', maxZoom: 19, subdomains: 'abc'
+  }).addTo(map);
+
+  // Geolocate on load
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(pos => {
+      map.setView([pos.coords.latitude, pos.coords.longitude], 15);
+    }, () => {}, { timeout: 5000, maximumAge: 60000 });
+  }
+
+  // Long-press support for touch: hold ~600ms
+  let longPressTimer = null, longPressLatLng = null;
+  map.on('mousedown touchstart', e => {
+    if (!e.latlng) return;
+    longPressLatLng = e.latlng;
+    clearTimeout(longPressTimer);
+    longPressTimer = setTimeout(() => {
+      if (longPressLatLng) startPlacing(longPressLatLng.lat, longPressLatLng.lng);
+    }, 600);
+  });
+  map.on('mouseup touchend touchcancel mousemove touchmove', () => {
+    clearTimeout(longPressTimer);
+  });
+  map.on('click', e => {
+    clearTimeout(longPressTimer);
+    startPlacing(e.latlng.lat, e.latlng.lng);
+  });
+} else {
+  // Graceful fallback: paint a themed backdrop
+  const el = document.getElementById('map');
+  el.style.background = `
+    radial-gradient(1200px 800px at 30% 25%, rgba(255,55,95,.10), transparent 55%),
+    radial-gradient(900px 700px at 78% 70%, rgba(255,45,146,.09), transparent 55%),
+    radial-gradient(700px 600px at 10% 90%, rgba(191,90,242,.08), transparent 55%),
+    linear-gradient(180deg, #0a0d18, #050810)`;
+  el.style.display = 'flex';
+  el.style.alignItems = 'center';
+  el.style.justifyContent = 'center';
+  el.innerHTML = `<div style="text-align:center;padding:20px;font-family:var(--mono);font-size:11px;letter-spacing:.14em;color:var(--dim);text-transform:uppercase">◈ map tiles offline</div>`;
+  console.warn('Leaflet not loaded — UI-only fallback active');
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Rendering snap markers
+   ═══════════════════════════════════════════════════════════════════════ */
+function markerIcon(dataURL, isNew = false) {
+  const html = `<div class="snap-marker ${isNew ? 'new-pin' : ''}">${isNew ? '<div class="pulse"></div>' : ''}${dataURL ? `<img src="${dataURL}" alt="">` : ''}</div>`;
+  return L.divIcon({ html, className: '', iconSize: [48, 56], iconAnchor: [24, 52] });
+}
+function addSnapMarker(snap) {
+  if (!mapAvail) return null;
+  const m = L.marker([snap.lat, snap.lng], { icon: markerIcon(snap.photoDataURL) }).addTo(map);
+  m.on('click', () => openSnapPopup(snap, m));
+  state.markers.set(snap.id, m);
+  return m;
+}
+function refreshMarker(snap) {
+  const old = state.markers.get(snap.id);
+  if (old) map.removeLayer(old);
+  addSnapMarker(snap);
+}
+
+/* Snap popup */
+function openSnapPopup(snap, marker) {
+  const wx = snap.weather;
+  const wxTxt = wx ? `${wxLabel(wx.code)[0]} ${Math.round(wx.temp)}°C · ${wxLabel(wx.code)[1]}` : '';
+  const sunTxt = snap.sun ? `↑ ${snap.sun.sunrise} · ↓ ${snap.sun.sunset}` : '';
+  const wiki = snap.wiki && snap.wiki.length ? snap.wiki.slice(0, 2) : [];
+  const html = `
+    <div class="pop">
+      <img class="pop-img" src="${snap.photoDataURL}" alt="Snap">
+      <div class="pop-body">
+        <div class="pop-caption">${escapeHTML(snap.caption || 'Untitled snap')}</div>
+        <div class="pop-meta">
+          <span class="addr">◉ ${escapeHTML(snap.address || 'Somewhere on Earth')}</span>
+          <span>${new Date(snap.ts).toLocaleString()} · ${ageStr(snap.ts)}</span>
+        </div>
+        <div class="pop-badges">
+          ${wxTxt ? `<span class="pop-badge weather">${wxTxt}</span>` : ''}
+          ${sunTxt ? `<span class="pop-badge sun">${sunTxt}</span>` : ''}
+          <span class="pop-badge time">${fmtLat(snap.lat)} ${fmtLng(snap.lng)}</span>
+        </div>
+        ${wiki.length ? `
+          <div class="pop-wiki">
+            <span class="lbl">Nearby on Wikipedia</span>
+            ${wiki.map(w => `<a href="https://en.wikipedia.org/?curid=${w.pageid}" target="_blank" rel="noopener">${escapeHTML(w.title)}</a>`).join(' <span style="color:var(--dimmer)">·</span> ')}
+          </div>` : ''}
+        <div class="pop-actions">
+          <button class="pop-btn share" data-act="share">↗ Share</button>
+          <button class="pop-btn" data-act="download">↓ Save</button>
+          <button class="pop-btn del" data-act="delete">✕</button>
+        </div>
+      </div>
+    </div>`;
+  marker.bindPopup(html, { maxWidth: 300, minWidth: 280, className: 'snap-popup' }).openPopup();
+  setTimeout(() => {
+    const pop = document.querySelector('.leaflet-popup-content .pop-actions');
+    if (!pop) return;
+    pop.addEventListener('click', e => {
+      const btn = e.target.closest('.pop-btn');
+      if (!btn) return;
+      const act = btn.dataset.act;
+      if (act === 'share') shareSnap(snap);
+      else if (act === 'download') downloadSnap(snap);
+      else if (act === 'delete') deleteSnap(snap);
+    });
+  }, 0);
+}
+function escapeHTML(s){ return String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Placing a pin — kicks off bottom sheet
+   ═══════════════════════════════════════════════════════════════════════ */
+function startPlacing(lat, lng) {
+  cancelPlacing();
+  let m = null;
+  if (mapAvail) {
+    const icon = L.divIcon({
+      html: '<div class="placing-marker"></div>', className: '', iconSize: [24, 24], iconAnchor: [12, 12]
+    });
+    m = L.marker([lat, lng], { icon, draggable: true, zIndexOffset: 500 }).addTo(map);
+    m.on('dragend', e => {
+      const p = e.target.getLatLng();
+      state.placing.lat = p.lat;
+      state.placing.lng = p.lng;
+      updateCoordDisplay();
+      fetchContext(p.lat, p.lng);
+    });
+  }
+  state.placing = { lat, lng, marker: m };
+  $('fab').classList.add('mode-cancel');
+  $('fab').setAttribute('aria-label', 'Cancel placing');
+  openSheet();
+  updateCoordDisplay();
+  fetchContext(lat, lng);
+}
+
+function cancelPlacing() {
+  if (state.placing && state.placing.marker && mapAvail) {
+    map.removeLayer(state.placing.marker);
+  }
+  state.placing = null;
+  state.photoBlob = null;
+  state.photoDataURL = null;
+  state.addrCache = '';
+  state.weatherCache = null;
+  state.sunCache = null;
+  state.wikiCache = null;
+  stopCamera();
+  $('fab').classList.remove('mode-cancel');
+  $('fab').setAttribute('aria-label', 'Drop pin');
+  $('photo-preview').style.display = 'none';
+  $('photo-preview').src = '';
+  $('photo-placeholder').style.display = 'block';
+  $('photo-area').classList.remove('has-photo');
+  $('caption-input').value = '';
+  updateCounter();
+  updateSaveState();
+}
+
+function updateCoordDisplay() {
+  if (!state.placing) return;
+  $('sheet-lat').textContent = fmtLat(state.placing.lat);
+  $('sheet-lng').textContent = fmtLng(state.placing.lng);
+}
+
+function openSheet() {
+  $('sheet').classList.add('show');
+  $('sheet-bg').classList.add('show');
+  $('hint').classList.add('hidden');
+}
+function closeSheet() {
+  $('sheet').classList.remove('show');
+  $('sheet-bg').classList.remove('show');
+  cancelPlacing();
+  updateHint();
+}
+
+$('sheet-close').addEventListener('click', closeSheet);
+$('sheet-bg').addEventListener('click', closeSheet);
+
+/* Fetch address + weather + sun + wiki in parallel */
+async function fetchContext(lat, lng) {
+  $('addr-row').style.display = 'flex';
+  $('addr-text').textContent = 'Looking up address…';
+  $('wx-v').textContent = 'loading…';
+  $('sun-v').textContent = 'loading…';
+
+  // Nominatim (rate limited)
+  nominatimReverse(lat, lng).then(res => {
+    const a = res.address || {};
+    const name = res.display_name || '';
+    const short = [a.road || a.pedestrian || a.neighbourhood || a.suburb, a.city || a.town || a.village || a.hamlet, a.country_code ? a.country_code.toUpperCase() : a.country].filter(Boolean).join(', ') || name.split(',').slice(0, 3).join(',').trim();
+    state.addrCache = short;
+    $('addr-text').textContent = short || 'Unknown location';
+  }).catch(() => {
+    state.addrCache = `${lat.toFixed(3)}, ${lng.toFixed(3)}`;
+    $('addr-text').textContent = 'Address unavailable';
+  });
+
+  // Open-Meteo
+  openMeteo(lat, lng).then(res => {
+    const cur = res.current || {};
+    const [ic, txt] = wxLabel(cur.weather_code);
+    state.weatherCache = { code: cur.weather_code, temp: cur.temperature_2m, wind: cur.wind_speed_10m, text: txt };
+    $('wx-ic').textContent = ic;
+    $('wx-v').textContent = `${Math.round(cur.temperature_2m)}°C · ${txt}`;
+  }).catch(() => { $('wx-v').textContent = 'unavailable'; });
+
+  // Sunrise-sunset
+  sunriseSunset(lat, lng).then(res => {
+    if (res.status !== 'OK') throw new Error('sun status');
+    const r = res.results;
+    const sunrise = fmtTimeShort(new Date(r.sunrise).getTime());
+    const sunset = fmtTimeShort(new Date(r.sunset).getTime());
+    state.sunCache = { sunrise, sunset };
+    $('sun-v').textContent = `↑${sunrise} ↓${sunset}`;
+  }).catch(() => { $('sun-v').textContent = 'unavailable'; });
+
+  // Wikipedia nearby
+  wikiNearby(lat, lng, 1500).then(res => {
+    const items = ((res.query && res.query.geosearch) || []).map(g => ({ pageid: g.pageid, title: g.title, dist: g.dist }));
+    state.wikiCache = items;
+  }).catch(() => { state.wikiCache = []; });
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Photo capture — getUserMedia OR file input fallback
+   ═══════════════════════════════════════════════════════════════════════ */
+async function startCamera() {
+  const video = $('cam-video');
+  try {
+    if (state.camStream) stopCamera();
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: state.camFacing, width: { ideal: 1280 }, height: { ideal: 960 } },
+      audio: false
+    });
+    state.camStream = stream;
+    video.srcObject = stream;
+    video.style.display = 'block';
+    $('photo-placeholder').style.display = 'none';
+    $('cam-controls').classList.remove('hidden');
+    $('photo-area').classList.add('has-photo');
+    $('photo-preview').style.display = 'none';
+  } catch (e) {
+    toast('Camera unavailable — using upload', 'amber');
+    $('file-input').click();
+  }
+}
+function stopCamera() {
+  if (state.camStream) {
+    state.camStream.getTracks().forEach(t => t.stop());
+    state.camStream = null;
+  }
+  $('cam-video').style.display = 'none';
+  $('cam-controls').classList.add('hidden');
+}
+function capturePhoto() {
+  const video = $('cam-video');
+  const canvas = $('cam-canvas');
+  if (!video.videoWidth) { toast('Camera not ready', 'amber'); return; }
+  // Downscale to reasonable max side
+  const MAX = 1400;
+  const scale = Math.min(1, MAX / Math.max(video.videoWidth, video.videoHeight));
+  canvas.width = Math.round(video.videoWidth * scale);
+  canvas.height = Math.round(video.videoHeight * scale);
+  const ctx = canvas.getContext('2d');
+  if (state.camFacing === 'user') { ctx.translate(canvas.width, 0); ctx.scale(-1, 1); }
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  canvas.toBlob(blob => {
+    setPhoto(blob);
+    stopCamera();
+  }, 'image/jpeg', 0.85);
+}
+function setPhoto(blob) {
+  state.photoBlob = blob;
+  const url = URL.createObjectURL(blob);
+  const img = $('photo-preview');
+  img.src = url;
+  img.style.display = 'block';
+  $('photo-placeholder').style.display = 'none';
+  $('photo-area').classList.add('has-photo');
+  // Also compute base64 preview (for markers + storage)
+  const reader = new FileReader();
+  reader.onload = () => {
+    state.photoDataURL = reader.result;
+    updateSaveState();
+  };
+  reader.readAsDataURL(blob);
+}
+async function fileToBlob(f) {
+  // Downscale big images to prevent bloat
+  const bmp = await createImageBitmap(f).catch(() => null);
+  if (!bmp) return f;
+  const MAX = 1400;
+  const scale = Math.min(1, MAX / Math.max(bmp.width, bmp.height));
+  const w = Math.round(bmp.width * scale), h = Math.round(bmp.height * scale);
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  canvas.getContext('2d').drawImage(bmp, 0, 0, w, h);
+  return new Promise(res => canvas.toBlob(b => res(b || f), 'image/jpeg', 0.85));
+}
+
+$('btn-camera').addEventListener('click', () => {
+  // Prefer inline camera; fall back to native picker via <input capture>
+  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) startCamera();
+  else $('file-input').click();
+});
+$('btn-gallery').addEventListener('click', () => {
+  const inp = $('file-input');
+  inp.removeAttribute('capture'); // pure gallery
+  inp.click();
+  setTimeout(() => inp.setAttribute('capture', 'environment'), 500);
+});
+$('file-input').addEventListener('change', async e => {
+  const f = e.target.files && e.target.files[0];
+  if (!f) return;
+  const blob = await fileToBlob(f);
+  setPhoto(blob);
+  e.target.value = '';
+});
+$('photo-area').addEventListener('click', e => {
+  // Only respond when placeholder shown or preview clicked
+  if (state.camStream) return;
+  if (e.target.closest('.photo-controls')) return;
+  $('btn-camera').click();
+});
+$('cam-shutter').addEventListener('click', capturePhoto);
+$('cam-close').addEventListener('click', stopCamera);
+$('cam-switch').addEventListener('click', () => {
+  state.camFacing = state.camFacing === 'environment' ? 'user' : 'environment';
+  startCamera();
+});
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Caption + save
+   ═══════════════════════════════════════════════════════════════════════ */
+$('caption-input').addEventListener('input', () => { updateCounter(); updateSaveState(); });
+function updateCounter() {
+  const v = $('caption-input').value;
+  const c = $('cap-counter');
+  c.textContent = `${v.length} / 140`;
+  c.className = 'counter' + (v.length >= 140 ? ' err' : v.length >= 120 ? ' warn' : '');
+}
+function updateSaveState() {
+  $('save-btn').disabled = !(state.photoDataURL && state.placing);
+}
+
+$('save-btn').addEventListener('click', async () => {
+  if (!state.placing || !state.photoDataURL) return;
+  const snap = {
+    id: 'snap-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7),
+    ts: Date.now(),
+    lat: state.placing.lat,
+    lng: state.placing.lng,
+    caption: $('caption-input').value.trim(),
+    address: state.addrCache || '',
+    photoDataURL: state.photoDataURL,
+    weather: state.weatherCache,
+    sun: state.sunCache,
+    wiki: state.wikiCache || []
+  };
+  try {
+    await IDB.put(snap);
+    state.snaps.push(snap);
+    addSnapMarker(snap);
+    // Fly to the new marker with a little theatrics
+    if (mapAvail) map.flyTo([snap.lat, snap.lng], Math.max(map.getZoom(), 15), { duration: 0.8 });
+    toast(`◇ Snap shipped · ${snap.address ? snap.address.split(',')[0] : 'saved'}`, 'hot');
+    closeSheet();
+    updateCounts();
+  } catch (e) {
+    console.error(e);
+    toast('Save failed: ' + (e.message || e), 'hot');
+  }
+});
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Share + download + delete
+   ═══════════════════════════════════════════════════════════════════════ */
+async function shareSnap(snap) {
+  const text = `${snap.caption || 'A MapSnap'} — ${snap.address || ''}\nhttps://www.openstreetmap.org/?mlat=${snap.lat}&mlon=${snap.lng}#map=17/${snap.lat}/${snap.lng}`;
+  try {
+    const blob = await (await fetch(snap.photoDataURL)).blob();
+    const file = new File([blob], `mapsnap-${snap.id}.jpg`, { type: blob.type || 'image/jpeg' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: 'MapSnap', text });
+      toast('Shared', 'green');
+      return;
+    }
+    if (navigator.share) {
+      await navigator.share({ title: 'MapSnap', text });
+      toast('Shared', 'green');
+      return;
+    }
+    downloadSnap(snap);
+    toast('Downloaded (share not supported)', 'amber');
+  } catch (e) {
+    if (e.name === 'AbortError') return;
+    console.error(e);
+    downloadSnap(snap);
+  }
+}
+function downloadSnap(snap) {
+  const a = document.createElement('a');
+  a.href = snap.photoDataURL;
+  a.download = `mapsnap-${snap.id}.jpg`;
+  document.body.appendChild(a); a.click(); a.remove();
+  toast('Downloaded', 'green');
+}
+async function deleteSnap(snap) {
+  if (!confirm('Delete this snap?')) return;
+  await IDB.del(snap.id);
+  state.snaps = state.snaps.filter(s => s.id !== snap.id);
+  const m = state.markers.get(snap.id);
+  if (m && mapAvail) { map.removeLayer(m); state.markers.delete(snap.id); }
+  toast('Snap deleted', 'hot');
+  updateCounts();
+  if ($('drawer').classList.contains('show')) renderDrawer();
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Drawer / list
+   ═══════════════════════════════════════════════════════════════════════ */
+function openDrawer() {
+  renderDrawer();
+  $('drawer').classList.add('show');
+}
+function closeDrawer() { $('drawer').classList.remove('show'); }
+$('btn-drawer').addEventListener('click', openDrawer);
+$('drawer-close').addEventListener('click', closeDrawer);
+
+function renderDrawer() {
+  const sorted = state.snaps.slice().sort((a, b) => b.ts - a.ts);
+  $('stat-total').textContent = state.snaps.length;
+  const places = new Set(state.snaps.map(s => (s.address || '').split(',').slice(0, 2).join(',').trim().toLowerCase()));
+  $('stat-places').textContent = places.size;
+  const days = new Set(state.snaps.map(s => new Date(s.ts).toDateString()));
+  $('stat-days').textContent = days.size;
+  $('snaps-total-lbl').textContent = state.snaps.length;
+  const c = $('snaps-container');
+  if (!sorted.length) {
+    c.innerHTML = `<div class="snaps-empty"><div class="big">◇</div>No snaps yet.<br>Drop a pin on the map and take your first photo.</div>`;
+    return;
+  }
+  c.innerHTML = sorted.map(s => `
+    <div class="snap-card" data-id="${s.id}">
+      <img class="snap-thumb" src="${s.photoDataURL}" alt="">
+      <div class="snap-info">
+        <div class="cap">${escapeHTML(s.caption || 'Untitled snap')}</div>
+        <div class="meta">
+          <span class="addr">${escapeHTML((s.address || 'Unknown location').split(',').slice(0, 2).join(','))}</span><br>
+          ${fmtDateShort(s.ts)} · ${s.weather ? Math.round(s.weather.temp) + '°C ' + wxLabel(s.weather.code)[1] : ''}
+        </div>
+      </div>
+    </div>`).join('');
+  c.querySelectorAll('.snap-card').forEach(el => {
+    el.addEventListener('click', () => {
+      const s = state.snaps.find(x => x.id === el.dataset.id);
+      if (!s) return;
+      closeDrawer();
+      map.flyTo([s.lat, s.lng], Math.max(map.getZoom(), 15), { duration: 0.6 });
+      const marker = state.markers.get(s.id);
+      if (marker) setTimeout(() => openSnapPopup(s, marker), 700);
+    });
+  });
+}
+
+$('btn-fit').addEventListener('click', () => {
+  if (!state.snaps.length) { toast('No snaps to fit', 'amber'); return; }
+  if (!mapAvail) { toast('Map offline', 'amber'); return; }
+  const bounds = L.latLngBounds(state.snaps.map(s => [s.lat, s.lng]));
+  map.fitBounds(bounds, { padding: [80, 80], maxZoom: 15 });
+  closeDrawer();
+});
+$('btn-locate').addEventListener('click', () => {
+  if (!navigator.geolocation) { toast('No geolocation', 'amber'); return; }
+  navigator.geolocation.getCurrentPosition(p => {
+    if (mapAvail) map.flyTo([p.coords.latitude, p.coords.longitude], 16, { duration: 0.6 });
+    closeDrawer();
+  }, () => toast('Location denied', 'hot'));
+});
+$('btn-export').addEventListener('click', () => {
+  const dump = { app: 'mapsnap', version: 1, exportedAt: new Date().toISOString(), snaps: state.snaps };
+  const blob = new Blob([JSON.stringify(dump, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `mapsnap-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+  toast(`Exported ${state.snaps.length} snaps`, 'green');
+});
+$('btn-import').addEventListener('click', () => $('import-input').click());
+$('import-input').addEventListener('change', async e => {
+  const f = e.target.files && e.target.files[0];
+  if (!f) return;
+  try {
+    const text = await f.text();
+    const dump = JSON.parse(text);
+    if (!dump.snaps || !Array.isArray(dump.snaps)) throw new Error('bad format');
+    let added = 0;
+    for (const s of dump.snaps) {
+      if (!s.id || !s.lat || !s.lng || !s.photoDataURL) continue;
+      if (state.snaps.find(x => x.id === s.id)) continue;
+      await IDB.put(s);
+      state.snaps.push(s);
+      addSnapMarker(s);
+      added++;
+    }
+    toast(`Imported ${added} snaps`, 'green');
+    updateCounts();
+    renderDrawer();
+  } catch (err) {
+    toast('Import failed: ' + err.message, 'hot');
+  }
+  e.target.value = '';
+});
+$('btn-clear').addEventListener('click', async () => {
+  if (!state.snaps.length) { toast('Nothing to clear', 'amber'); return; }
+  if (!confirm(`Delete all ${state.snaps.length} snaps? This cannot be undone.`)) return;
+  await IDB.clear();
+  if (mapAvail) state.markers.forEach(m => map.removeLayer(m));
+  state.markers.clear();
+  state.snaps = [];
+  updateCounts();
+  renderDrawer();
+  toast('All snaps cleared', 'hot');
+});
+
+/* ═══════════════════════════════════════════════════════════════════════
+   FAB behavior
+   ═══════════════════════════════════════════════════════════════════════ */
+$('fab').addEventListener('click', () => {
+  if (state.placing) { closeSheet(); return; }
+  // Drop pin at map center
+  const c = mapAvail ? map.getCenter() : { lat: 51.505, lng: -0.09 };
+  startPlacing(c.lat, c.lng);
+});
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Counts + hint
+   ═══════════════════════════════════════════════════════════════════════ */
+function updateCounts() {
+  const n = state.snaps.length;
+  const b = $('snap-count');
+  b.textContent = n;
+  b.style.display = n > 0 ? 'flex' : 'none';
+  updateHint();
+}
+function updateHint() {
+  const has = state.snaps.length > 0;
+  $('empty-banner').classList.toggle('hidden', has);
+  const hint = $('hint');
+  if (has) hint.classList.add('hidden');
+  else hint.classList.remove('hidden');
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Bootstrap
+   ═══════════════════════════════════════════════════════════════════════ */
+(async function boot() {
+  try {
+    const snaps = await IDB.all();
+    state.snaps = snaps;
+    snaps.forEach(addSnapMarker);
+    updateCounts();
+    if (snaps.length && mapAvail) {
+      // Fit to snaps if they exist
+      const b = L.latLngBounds(snaps.map(s => [s.lat, s.lng]));
+      if (snaps.length > 1) map.fitBounds(b, { padding: [80, 80], maxZoom: 14 });
+      else map.setView([snaps[0].lat, snaps[0].lng], 14);
+    }
+  } catch (e) { console.warn('boot failed', e); }
+  updateHint();
+})();
+
+// Auto-hide hint after 10s regardless
+setTimeout(() => { if (!state.snaps.length) return; $('hint').classList.add('hidden'); }, 10000);
+
+// Handy shortcut: Esc closes sheets
+window.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    if ($('sheet').classList.contains('show')) closeSheet();
+    else if ($('drawer').classList.contains('show')) closeDrawer();
+  }
+});
+</script>
+</body>
+</html>
