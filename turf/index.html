@@ -1,0 +1,868 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0a0a0f">
+<meta name="description" content="TurfLoop — claim territory by running closed loops. You vs an AI. Winner has the most land at end.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23000814'/%3E%3Cpath d='M8 20 L14 8 L22 22 L18 14 L12 22 Z' fill='none' stroke='%2330d158' stroke-width='2'/%3E%3C/svg%3E">
+<title>TurfLoop · claim territory by loops</title>
+<style>
+:root{
+  --bg:#050810; --bg2:#0a0d18; --panel:#12141f; --panel2:#1a1d2b; --border:#22263a; --border2:#2e344a;
+  --text:#f5f5f7; --dim:#8a8a98; --dimmer:#5a5a68; --faint:#3a3a48;
+  --you:#30d158; --you-dim:#0a5a24; --you-glow:rgba(48,209,88,.4);
+  --ai:#ff375f; --ai-dim:#6a0a20; --ai-glow:rgba(255,55,95,.4);
+  --gold:#ffcc00; --violet:#bf5af2; --cyan:#5ee7f0;
+  --disp:'Fraunces',Georgia,serif;
+  --sans:-apple-system,BlinkMacSystemFont,'Inter','Segoe UI',Roboto,sans-serif;
+  --mono:'IBM Plex Mono',ui-monospace,monospace;
+  --ease:cubic-bezier(.16,1,.3,1);
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--sans);overflow:hidden;-webkit-font-smoothing:antialiased}
+body{display:grid;grid-template-columns:340px 1fr;grid-template-rows:56px 1fr;grid-template-areas:"top top" "side map"}
+@media(max-width:800px){body{grid-template-columns:1fr;grid-template-rows:56px auto 1fr;grid-template-areas:"top" "side" "map"} .side{max-height:280px}}
+button{background:none;border:none;cursor:pointer;color:inherit;font:inherit}
+input,select,textarea{font-family:inherit;color:inherit}
+::selection{background:rgba(48,209,88,.3);color:#fff}
+
+/* ══════ Top ══════ */
+.top{
+  grid-area:top;display:flex;align-items:center;justify-content:space-between;
+  padding:0 18px;gap:14px;background:linear-gradient(180deg,rgba(18,20,31,.94),rgba(10,13,24,.85));
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  border-bottom:1px solid rgba(255,255,255,.05);z-index:20
+}
+.brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit;flex-shrink:0}
+.mark{width:36px;height:36px;border-radius:9px;background:radial-gradient(circle at 30% 30%,var(--you),#0a5a24);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-weight:700;font-size:12px;color:#000;border:1px solid var(--you-dim);position:relative}
+.mark::before{content:"⤴";}
+.wordmark{display:flex;flex-direction:column;line-height:1;gap:3px}
+.wordmark .n{font-family:var(--disp);font-weight:900;font-size:19px;letter-spacing:-.01em}
+.wordmark .n .lp{color:var(--you)}
+.wordmark .t{font-family:var(--mono);font-size:9.5px;letter-spacing:.22em;color:var(--dim);text-transform:uppercase}
+
+.top-mid{flex:1;display:flex;justify-content:center;gap:22px;font-family:var(--mono);font-size:11.5px}
+.score{display:flex;flex-direction:column;line-height:1.1;align-items:center;gap:2px}
+.score .lbl{font-size:9.5px;letter-spacing:.2em;color:var(--dim);text-transform:uppercase}
+.score .v{font-family:var(--disp);font-weight:900;font-size:22px;letter-spacing:-.01em}
+.score.you .v{color:var(--you);text-shadow:0 0 12px var(--you-glow)}
+.score.ai .v{color:var(--ai);text-shadow:0 0 12px var(--ai-glow)}
+.score .u{font-family:var(--mono);font-size:9px;color:var(--dim);letter-spacing:.1em;margin-left:3px}
+
+.top-r{display:flex;gap:6px;align-items:center;flex-shrink:0}
+.icon-btn{width:36px;height:36px;border-radius:9px;background:var(--panel);border:1px solid var(--border);color:var(--text);display:flex;align-items:center;justify-content:center;font-size:15px;transition:all .15s;text-decoration:none}
+.icon-btn:hover{border-color:var(--border2);color:var(--you)}
+
+.timer{
+  font-family:var(--mono);padding:6px 14px;border-radius:20px;
+  background:var(--panel);border:1px solid var(--border);color:var(--text);
+  display:flex;align-items:center;gap:8px;font-size:11.5px;font-weight:600;letter-spacing:.04em
+}
+.timer.active{background:linear-gradient(135deg,rgba(48,209,88,.15),rgba(191,90,242,.08));border-color:rgba(48,209,88,.4);color:var(--you)}
+.timer.warn{background:rgba(255,204,0,.1);border-color:rgba(255,204,0,.35);color:var(--gold)}
+.timer.crit{background:rgba(255,55,95,.1);border-color:rgba(255,55,95,.35);color:var(--ai)}
+.timer .dot{width:6px;height:6px;border-radius:50%;background:currentColor;animation:pulse 1.5s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.3}}
+
+/* ══════ Side ══════ */
+.side{
+  grid-area:side;background:var(--bg2);border-right:1px solid var(--border);
+  overflow-y:auto;padding:16px 14px 24px
+}
+.side::-webkit-scrollbar{width:8px}
+.side::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
+
+/* Setup panel */
+.setup h3{
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.22em;color:var(--dim);
+  text-transform:uppercase;margin-bottom:10px;font-weight:600
+}
+.duration-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-bottom:16px}
+.dur-opt{
+  padding:10px;background:var(--panel);border:1px solid var(--border);border-radius:9px;
+  cursor:pointer;transition:all .15s;text-align:left
+}
+.dur-opt:hover{border-color:var(--border2)}
+.dur-opt.on{background:linear-gradient(135deg,rgba(48,209,88,.12),rgba(48,209,88,.02));border-color:rgba(48,209,88,.4)}
+.dur-opt .n{font-family:var(--disp);font-weight:600;font-size:14px;margin-bottom:3px}
+.dur-opt .d{font-family:var(--mono);font-size:10px;color:var(--dim);letter-spacing:.04em}
+
+.setup-row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)}
+.setup-row .lbl{font-family:var(--mono);font-size:11px;color:var(--dim);letter-spacing:.06em;text-transform:uppercase}
+.setup-row select{background:var(--panel);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:6px;font-family:var(--mono);font-size:11.5px}
+
+.big-cta{
+  width:100%;padding:14px;margin-top:16px;background:linear-gradient(135deg,var(--you),#0a5a24);
+  border:none;border-radius:10px;color:#000;font-family:var(--disp);font-weight:900;font-size:16px;
+  cursor:pointer;transition:transform .15s,box-shadow .15s;
+  box-shadow:0 6px 18px rgba(48,209,88,.3);letter-spacing:-.005em
+}
+.big-cta:hover{transform:translateY(-1px);box-shadow:0 10px 26px rgba(48,209,88,.4)}
+.big-cta:active{transform:translateY(0)}
+
+/* Playing panel */
+.play-hdr{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px}
+.play-hdr h3{font-family:var(--disp);font-weight:600;font-size:15px;letter-spacing:-.01em;color:var(--text)}
+.play-hdr .badge{font-family:var(--mono);font-size:9.5px;color:var(--you);letter-spacing:.15em;text-transform:uppercase;padding:2px 8px;background:rgba(48,209,88,.08);border:1px solid rgba(48,209,88,.3);border-radius:12px}
+
+.instructions{
+  padding:12px;background:var(--panel);border-left:3px solid var(--you);border-radius:0 8px 8px 0;
+  font-size:13px;line-height:1.55;color:var(--text-dim);margin-bottom:14px
+}
+.instructions b{color:var(--you);font-weight:600}
+
+.gps-toggle{display:flex;background:var(--panel);border:1px solid var(--border);border-radius:9px;padding:3px;margin-bottom:12px}
+.gps-toggle button{
+  flex:1;padding:7px 10px;font-family:var(--mono);font-size:11px;color:var(--dim);
+  letter-spacing:.06em;border-radius:6px;cursor:pointer;transition:all .15s;text-transform:uppercase
+}
+.gps-toggle button.on{background:var(--you);color:#000;font-weight:600}
+
+.loops-list{margin-top:16px}
+.loops-list h3{font-family:var(--mono);font-size:9.5px;letter-spacing:.22em;color:var(--dim);text-transform:uppercase;margin-bottom:10px;font-weight:600;display:flex;justify-content:space-between}
+.loop-card{
+  padding:10px 12px;background:var(--panel);border:1px solid var(--border);border-radius:8px;
+  margin-bottom:6px;font-size:12.5px;cursor:pointer;transition:border-color .15s
+}
+.loop-card:hover{border-color:var(--border2)}
+.loop-card.you{border-left:3px solid var(--you)}
+.loop-card.ai{border-left:3px solid var(--ai)}
+.loop-card .n{font-family:var(--disp);font-weight:600;font-size:13px;margin-bottom:2px}
+.loop-card .m{font-family:var(--mono);font-size:10px;color:var(--dim);letter-spacing:.03em}
+.loop-card .m .who{color:var(--you)}
+.loop-card.ai .m .who{color:var(--ai)}
+
+.stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:14px}
+.stat{padding:8px 10px;background:var(--panel);border:1px solid var(--border);border-radius:8px}
+.stat .k{font-family:var(--mono);font-size:9px;letter-spacing:.18em;color:var(--dim);text-transform:uppercase;margin-bottom:3px}
+.stat .v{font-family:var(--disp);font-weight:700;font-size:16px;letter-spacing:-.01em}
+.stat.you .v{color:var(--you)}
+.stat.ai .v{color:var(--ai)}
+
+/* Achievements */
+.ach-block{margin-top:20px}
+.ach{
+  display:flex;align-items:flex-start;gap:10px;padding:10px 12px;
+  background:var(--panel);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;
+  transition:all .15s;opacity:.5
+}
+.ach.unlocked{opacity:1;background:linear-gradient(135deg,rgba(255,204,0,.06),var(--panel));border-color:rgba(255,204,0,.3)}
+.ach .ic{width:28px;height:28px;border-radius:7px;background:var(--panel2);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+.ach.unlocked .ic{background:linear-gradient(135deg,var(--gold),#c99a00);color:#000}
+.ach .info{flex:1;min-width:0}
+.ach .n{font-family:var(--disp);font-weight:600;font-size:13.5px;line-height:1.15;margin-bottom:2px}
+.ach .d{font-family:var(--mono);font-size:10px;color:var(--dim);letter-spacing:.02em;line-height:1.35}
+
+/* Actions */
+.side-actions{display:flex;gap:6px;margin-top:14px}
+.side-actions .btn{
+  flex:1;padding:8px 10px;background:var(--panel);border:1px solid var(--border);
+  border-radius:7px;color:var(--text-dim);font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;
+  cursor:pointer;transition:all .15s;text-transform:uppercase
+}
+.side-actions .btn:hover{border-color:var(--border2);color:var(--text)}
+.side-actions .btn.danger{color:var(--ai);border-color:rgba(255,55,95,.25)}
+.side-actions .btn.danger:hover{background:rgba(255,55,95,.08);border-color:var(--ai)}
+
+/* ══════ Map ══════ */
+.map{grid-area:map;position:relative;background:#000}
+#map{width:100%;height:100%;background:#000}
+.leaflet-container{background:#0a0d18 !important;font-family:var(--sans)}
+/* Dark themed tile hue-shift */
+.leaflet-tile{filter:brightness(0.7) contrast(1.05) invert(0.92) hue-rotate(180deg) saturate(0.65)}
+/* leaflet controls dark */
+.leaflet-bar{border:1px solid var(--border2) !important;background:var(--panel) !important;box-shadow:0 4px 12px rgba(0,0,0,.5) !important}
+.leaflet-bar a{background:var(--panel) !important;color:var(--text) !important;border-bottom:1px solid var(--border) !important}
+.leaflet-bar a:hover{background:var(--panel2) !important;color:var(--you) !important}
+.leaflet-control-attribution{background:rgba(0,0,0,.6) !important;color:var(--dim) !important;font-size:9px !important}
+.leaflet-control-attribution a{color:var(--dim) !important}
+
+.map-overlay{
+  position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:400;
+  background:rgba(10,13,24,.9);border:1px solid var(--border2);border-radius:22px;
+  padding:8px 16px;font-family:var(--mono);font-size:11.5px;color:var(--text);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  letter-spacing:.04em;display:flex;align-items:center;gap:10px;pointer-events:none;
+  box-shadow:0 8px 24px rgba(0,0,0,.5)
+}
+.map-overlay .dot{width:8px;height:8px;border-radius:50%;background:var(--you);animation:pulse 1.5s infinite}
+.map-overlay b{color:var(--you)}
+
+.finish-loop{
+  position:absolute;bottom:20px;left:50%;transform:translateX(-50%);z-index:400;
+  padding:12px 24px;background:linear-gradient(135deg,var(--you),#0a5a24);
+  color:#000;border:none;border-radius:24px;font-family:var(--disp);font-weight:700;font-size:15px;
+  cursor:pointer;box-shadow:0 8px 24px rgba(48,209,88,.4);
+  display:none;align-items:center;gap:10px;letter-spacing:-.005em
+}
+.finish-loop.show{display:inline-flex}
+.finish-loop:hover{transform:translateX(-50%) scale(1.03)}
+.finish-loop:disabled{opacity:.4;cursor:not-allowed}
+
+.cancel-btn{
+  position:absolute;bottom:20px;right:20px;z-index:400;
+  padding:10px 16px;background:rgba(10,13,24,.9);border:1px solid var(--border2);
+  color:var(--dim);border-radius:20px;font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;
+  cursor:pointer;text-transform:uppercase;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)
+}
+.cancel-btn:hover{color:var(--ai);border-color:var(--ai)}
+
+/* Popup */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(10px);z-index:200;display:none;align-items:center;justify-content:center;padding:20px}
+.modal-bg.show{display:flex}
+.modal{
+  background:linear-gradient(180deg,var(--panel),var(--bg2));border:1px solid var(--border2);
+  border-radius:16px;max-width:520px;width:100%;overflow:hidden;box-shadow:0 32px 80px rgba(0,0,0,.7);
+  animation:pop .3s var(--ease)
+}
+@keyframes pop{0%{opacity:0;transform:scale(.96) translateY(8px)}100%{opacity:1;transform:none}}
+.modal-hdr{padding:24px 28px 8px;text-align:center}
+.modal-hdr .k{font-family:var(--mono);font-size:10px;letter-spacing:.22em;color:var(--gold);text-transform:uppercase;margin-bottom:8px;font-weight:600}
+.modal-hdr h2{font-family:var(--disp);font-weight:900;font-size:28px;letter-spacing:-.02em;margin-bottom:6px}
+.modal-hdr .sub{color:var(--dim);font-size:14px;line-height:1.5}
+.modal-body{padding:18px 28px 24px}
+.winner-scores{display:flex;justify-content:center;gap:24px;padding:20px 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin-bottom:20px}
+.winner-scores .side-score{text-align:center}
+.winner-scores .side-score .name{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin-bottom:6px}
+.winner-scores .side-score.you .name{color:var(--you)}
+.winner-scores .side-score.ai .name{color:var(--ai)}
+.winner-scores .side-score .val{font-family:var(--disp);font-weight:900;font-size:36px;letter-spacing:-.02em}
+.winner-scores .side-score.you .val{color:var(--you)}
+.winner-scores .side-score.ai .val{color:var(--ai)}
+.winner-scores .side-score .u{font-family:var(--mono);font-size:10.5px;color:var(--dim);margin-top:2px}
+.modal-actions{display:flex;gap:8px}
+.modal-actions button{
+  flex:1;padding:12px 14px;border-radius:8px;font-family:var(--mono);font-size:11px;letter-spacing:.08em;
+  text-transform:uppercase;cursor:pointer;font-weight:600
+}
+.modal-actions .primary{background:linear-gradient(135deg,var(--you),#0a5a24);color:#000;border:none}
+.modal-actions .secondary{background:var(--panel2);border:1px solid var(--border);color:var(--text)}
+
+/* Toast */
+.toast{
+  position:fixed;top:70px;left:50%;transform:translate(-50%,-20px);
+  background:rgba(0,0,0,.9);color:#fff;padding:10px 18px;border-radius:22px;
+  font-family:var(--mono);font-size:12px;z-index:300;opacity:0;pointer-events:none;
+  transition:all .25s var(--ease);border:1px solid var(--border2);box-shadow:0 12px 32px rgba(0,0,0,.5);
+  letter-spacing:.04em
+}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+.toast.gold{border-color:var(--gold);color:var(--gold)}
+.toast.you{border-color:var(--you);color:var(--you)}
+.toast.ai{border-color:var(--ai);color:var(--ai)}
+</style>
+</head>
+<body>
+
+<nav class="top">
+  <a href="/" class="brand" aria-label="Home">
+    <div class="mark"></div>
+    <div class="wordmark">
+      <div class="n">Turf<span class="lp">Loop</span></div>
+      <div class="t">claim by loops</div>
+    </div>
+  </a>
+  <div class="top-mid" id="score-strip" style="display:none">
+    <div class="score you"><span class="lbl">You</span><span class="v"><span id="you-area">0</span><span class="u">km²</span></span></div>
+    <div class="timer" id="timer"><span class="dot"></span><span id="time-left">—</span></div>
+    <div class="score ai"><span class="lbl">AI</span><span class="v"><span id="ai-area">0</span><span class="u">km²</span></span></div>
+  </div>
+  <div class="top-r">
+    <a href="/" class="icon-btn" title="Home">⌂</a>
+  </div>
+</nav>
+
+<aside class="side" id="side"></aside>
+
+<main class="map">
+  <div id="map"></div>
+  <div class="map-overlay" id="map-overlay" style="display:none">
+    <span class="dot"></span>
+    <span id="overlay-text">Click to place your first waypoint</span>
+  </div>
+  <button class="finish-loop" id="finish-loop">◇ Close the loop</button>
+  <button class="cancel-btn" id="cancel-loop" style="display:none">Cancel</button>
+</main>
+
+<div class="modal-bg" id="modal-bg">
+  <div class="modal" id="modal"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Config · game presets
+   ═══════════════════════════════════════════════════════════════════════ */
+const DURATIONS = [
+  { id:'sprint',   n:'Sprint',   ms: 60*60*1000,          ai:'aggressive', d:'1 hour · fast AI' },
+  { id:'evening',  n:'Evening',  ms: 4*60*60*1000,        ai:'aggressive', d:'4 hours' },
+  { id:'day',      n:'Day',      ms: 24*60*60*1000,       ai:'balanced',   d:'24 hours' },
+  { id:'week',     n:'Week',     ms: 7*24*60*60*1000,     ai:'balanced',   d:'7 days' },
+  { id:'month',    n:'Month',    ms: 30*24*60*60*1000,    ai:'chill',      d:'30 days · slow AI' },
+  { id:'year',     n:'Year',     ms: 365*24*60*60*1000,   ai:'chill',      d:'365 days' },
+];
+
+const ACHIEVEMENTS = [
+  { id:'first-blood',   ic:'🎯', n:'First blood',          d:'Claim your first territory' },
+  { id:'triangle',      ic:'△',  n:'Triangulate',          d:'Close a 3-point loop' },
+  { id:'big-loop',      ic:'⬡',  n:'Big loop',             d:'Claim > 0.1 km² in one loop' },
+  { id:'huge-loop',     ic:'⬢',  n:'Massive loop',         d:'Claim > 1 km² in one loop' },
+  { id:'quintuple',     ic:'✦',  n:'Cartographer',         d:'Own 5 territories at once' },
+  { id:'decagon',       ic:'⚡',  n:'Prolific',             d:'Own 10 territories at once' },
+  { id:'landslide',     ic:'👑', n:'Landslide victory',    d:'Beat the AI by more than 2x' },
+  { id:'underdog',      ic:'🐺', n:'Underdog',             d:'Win after being behind 60%+' },
+  { id:'territorialist',ic:'🏴', n:'Territorialist',       d:'Claim 25+ total territories' },
+  { id:'marathon',      ic:'🏔', n:'Marathon',             d:'Play a game longer than 7 days' },
+  { id:'yearling',      ic:'🌍', n:'Yearling',             d:'Complete a year-long game' },
+  { id:'shutout',       ic:'⚔',  n:'Shutout',              d:'Beat the AI while it has zero territory' },
+];
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Persisted achievements
+   ═══════════════════════════════════════════════════════════════════════ */
+const unlockedAch = new Set(JSON.parse(localStorage.getItem('turf-ach') || '[]'));
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Game state
+   ═══════════════════════════════════════════════════════════════════════ */
+const state = {
+  phase: 'setup', // setup | playing | ended
+  duration: DURATIONS[0],
+  aiLevel: 'balanced',
+  startedAt: 0,
+  endsAt: 0,
+  center: null, // [lat, lng]
+  yourLoops: [],   // { id, points, area, color, layer, timestamp }
+  aiLoops: [],
+  drawingPoints: [], // WIP polygon in progress
+  drawingLayer: null,
+  drawingMarkers: [],
+  gpsMode: false,
+  gpsWatchId: null,
+  gpsPath: [],       // realtime GPS coords being recorded
+  gpsPathLayer: null,
+  aiTimer: null,
+  tickTimer: null,
+  achievementsUnlockedThisGame: new Set(),
+};
+
+const $ = id => document.getElementById(id);
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Map init
+   ═══════════════════════════════════════════════════════════════════════ */
+const map = L.map('map', {
+  zoomControl: true,
+  attributionControl: true,
+}).setView([51.505, -0.09], 15); // London default
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap contributors',
+  maxZoom: 19,
+}).addTo(map);
+
+// Try to center on user's location on load
+if (navigator.geolocation) {
+  navigator.geolocation.getCurrentPosition(pos => {
+    map.setView([pos.coords.latitude, pos.coords.longitude], 16);
+    state.center = [pos.coords.latitude, pos.coords.longitude];
+  }, () => {}, { timeout: 4000 });
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Geometry · polygon area on a sphere (approx km²)
+   Uses the spherical excess formula.
+   ═══════════════════════════════════════════════════════════════════════ */
+const R = 6371.0088; // earth radius km
+function polygonArea(latlngs) {
+  if (latlngs.length < 3) return 0;
+  let total = 0;
+  for (let i = 0; i < latlngs.length; i++) {
+    const p1 = latlngs[i];
+    const p2 = latlngs[(i + 1) % latlngs.length];
+    const lat1 = p1[0] * Math.PI / 180, lat2 = p2[0] * Math.PI / 180;
+    const lng1 = p1[1] * Math.PI / 180, lng2 = p2[1] * Math.PI / 180;
+    total += (lng2 - lng1) * (2 + Math.sin(lat1) + Math.sin(lat2));
+  }
+  return Math.abs(total * R * R / 2);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Setup screen
+   ═══════════════════════════════════════════════════════════════════════ */
+function renderSetup() {
+  const side = $('side');
+  side.innerHTML = `
+    <div class="setup">
+      <h3>1 · Pick a game length</h3>
+      <div class="duration-grid" id="dur-grid">
+        ${DURATIONS.map(d => `
+          <button class="dur-opt ${state.duration.id === d.id ? 'on' : ''}" data-id="${d.id}">
+            <div class="n">${d.n}</div><div class="d">${d.d}</div>
+          </button>`).join('')}
+      </div>
+
+      <h3>2 · AI opponent</h3>
+      <div class="setup-row">
+        <span class="lbl">Difficulty</span>
+        <select id="ai-level">
+          <option value="chill">Chill · casual pace</option>
+          <option value="balanced" selected>Balanced · plays every ~5 min</option>
+          <option value="aggressive">Aggressive · relentless</option>
+        </select>
+      </div>
+      <div class="setup-row">
+        <span class="lbl">AI focus</span>
+        <select id="ai-strategy">
+          <option value="spread">Spread wide</option>
+          <option value="compact" selected>Cluster near you</option>
+          <option value="mixed">Mix it up</option>
+        </select>
+      </div>
+
+      <h3 style="margin-top:16px">3 · Ready?</h3>
+      <button class="big-cta" id="start-btn">Start game</button>
+
+      <div class="ach-block">
+        <h3 style="display:flex;justify-content:space-between">
+          Achievements
+          <span style="color:var(--gold);letter-spacing:.06em">${unlockedAch.size} / ${ACHIEVEMENTS.length}</span>
+        </h3>
+        ${ACHIEVEMENTS.map(a => `
+          <div class="ach ${unlockedAch.has(a.id) ? 'unlocked' : ''}">
+            <div class="ic">${a.ic}</div>
+            <div class="info">
+              <div class="n">${a.n}</div>
+              <div class="d">${a.d}</div>
+            </div>
+          </div>`).join('')}
+      </div>
+    </div>
+  `;
+  $('dur-grid').addEventListener('click', e => {
+    const b = e.target.closest('.dur-opt'); if (!b) return;
+    state.duration = DURATIONS.find(d => d.id === b.dataset.id);
+    state.duration.aiLevel = $('ai-level').value;
+    renderSetup();
+    $('ai-level').value = state.duration.aiLevel || 'balanced';
+  });
+  $('ai-level').addEventListener('change', e => { state.duration.aiLevel = e.target.value; });
+  $('start-btn').addEventListener('click', startGame);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Playing screen
+   ═══════════════════════════════════════════════════════════════════════ */
+function renderPlaying() {
+  const side = $('side');
+  const yourArea = state.yourLoops.reduce((s, l) => s + l.area, 0);
+  const aiArea = state.aiLoops.reduce((s, l) => s + l.area, 0);
+  side.innerHTML = `
+    <div class="play-hdr">
+      <h3>Game in progress</h3>
+      <span class="badge">${state.duration.n}</span>
+    </div>
+
+    <div class="instructions">
+      ${state.gpsMode
+        ? '<b>GPS mode.</b> Walk or run — your path is recorded. Tap <b>Close loop</b> when you\'re back near the start.'
+        : '<b>Click the map</b> to drop waypoints and draw a loop. When it looks closed, tap <b>Close the loop</b> below.'}
+    </div>
+
+    <div class="gps-toggle">
+      <button class="${!state.gpsMode ? 'on' : ''}" data-mode="click">✎ Click mode</button>
+      <button class="${state.gpsMode ? 'on' : ''}" data-mode="gps">◉ GPS mode</button>
+    </div>
+
+    <div class="stats-grid">
+      <div class="stat you"><div class="k">Your loops</div><div class="v">${state.yourLoops.length}</div></div>
+      <div class="stat ai"><div class="k">AI loops</div><div class="v">${state.aiLoops.length}</div></div>
+      <div class="stat you"><div class="k">Your km²</div><div class="v">${yourArea.toFixed(3)}</div></div>
+      <div class="stat ai"><div class="k">AI km²</div><div class="v">${aiArea.toFixed(3)}</div></div>
+    </div>
+
+    <div class="loops-list">
+      <h3>Territories <span style="color:var(--dim)">${state.yourLoops.length + state.aiLoops.length}</span></h3>
+      ${[...state.yourLoops.map(l=>({...l,who:'you'})), ...state.aiLoops.map(l=>({...l,who:'ai'}))].sort((a,b)=>b.timestamp-a.timestamp).slice(0,10).map(l => `
+        <div class="loop-card ${l.who}" data-id="${l.id}">
+          <div class="n">${l.name}</div>
+          <div class="m"><span class="who">${l.who.toUpperCase()}</span> · ${l.area.toFixed(3)} km² · ${l.points.length} pts</div>
+        </div>`).join('') || '<div style="color:var(--dim);font-family:var(--mono);font-size:11px;padding:8px 0">No territories claimed yet</div>'}
+    </div>
+
+    <div class="side-actions">
+      <button class="btn" id="fit-btn">Fit map</button>
+      <button class="btn danger" id="quit-btn">Concede</button>
+    </div>
+  `;
+
+  document.querySelectorAll('.gps-toggle button').forEach(b => b.addEventListener('click', () => {
+    const mode = b.dataset.mode;
+    if (mode === 'gps') startGpsMode(); else stopGpsMode();
+  }));
+  document.querySelectorAll('.loop-card').forEach(c => c.addEventListener('click', () => {
+    const l = [...state.yourLoops, ...state.aiLoops].find(x => x.id === c.dataset.id);
+    if (l && l.layer) map.fitBounds(l.layer.getBounds(), { padding: [40, 40] });
+  }));
+  $('fit-btn').addEventListener('click', fitAll);
+  $('quit-btn').addEventListener('click', () => { if (confirm('Concede the game?')) endGame(); });
+  updateScores();
+}
+
+function fitAll() {
+  const all = [...state.yourLoops, ...state.aiLoops];
+  if (!all.length) return;
+  const group = L.featureGroup(all.map(l => l.layer));
+  map.fitBounds(group.getBounds(), { padding: [40, 40] });
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Start game
+   ═══════════════════════════════════════════════════════════════════════ */
+function startGame() {
+  state.phase = 'playing';
+  state.startedAt = Date.now();
+  state.endsAt = state.startedAt + state.duration.ms;
+  state.yourLoops = []; state.aiLoops = []; state.achievementsUnlockedThisGame = new Set();
+  state.center = [map.getCenter().lat, map.getCenter().lng];
+  $('score-strip').style.display = 'flex';
+  renderPlaying();
+  bindMapClicks();
+  scheduleAiMoves();
+  startTicker();
+  showOverlay('Click to place your first waypoint');
+}
+
+function endGame() {
+  state.phase = 'ended';
+  clearInterval(state.tickTimer);
+  clearTimeout(state.aiTimer);
+  stopGpsMode();
+  hideOverlay();
+  showResults();
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Drawing loops (click mode)
+   ═══════════════════════════════════════════════════════════════════════ */
+let mapClickHandler = null;
+function bindMapClicks() {
+  if (mapClickHandler) map.off('click', mapClickHandler);
+  mapClickHandler = e => { if (!state.gpsMode) addPoint(e.latlng); };
+  map.on('click', mapClickHandler);
+}
+
+function addPoint(latlng) {
+  state.drawingPoints.push([latlng.lat, latlng.lng]);
+  drawWip();
+  showOverlay(`${state.drawingPoints.length} waypoint${state.drawingPoints.length !== 1 ? 's' : ''} · ${state.drawingPoints.length >= 3 ? 'Close the loop when ready' : `${3 - state.drawingPoints.length} more to make a loop`}`);
+  $('finish-loop').classList.toggle('show', state.drawingPoints.length >= 3);
+  $('cancel-loop').style.display = state.drawingPoints.length > 0 ? 'inline-block' : 'none';
+}
+function drawWip() {
+  if (state.drawingLayer) map.removeLayer(state.drawingLayer);
+  state.drawingMarkers.forEach(m => map.removeLayer(m));
+  state.drawingMarkers = [];
+  if (state.drawingPoints.length === 0) return;
+  const style = { color: '#30d158', weight: 3, opacity: 1, dashArray: '6,6', fill: state.drawingPoints.length >= 3, fillColor: '#30d158', fillOpacity: 0.15 };
+  if (state.drawingPoints.length >= 3) {
+    state.drawingLayer = L.polygon(state.drawingPoints, style).addTo(map);
+  } else {
+    state.drawingLayer = L.polyline(state.drawingPoints, style).addTo(map);
+  }
+  state.drawingPoints.forEach((p, i) => {
+    const m = L.circleMarker(p, {
+      radius: 5, color: '#30d158', fillColor: i === 0 ? '#fff' : '#30d158', fillOpacity: 1, weight: 2
+    }).addTo(map);
+    state.drawingMarkers.push(m);
+  });
+}
+function cancelWip() {
+  state.drawingPoints = [];
+  if (state.drawingLayer) map.removeLayer(state.drawingLayer);
+  state.drawingMarkers.forEach(m => map.removeLayer(m));
+  state.drawingMarkers = [];
+  state.drawingLayer = null;
+  $('finish-loop').classList.remove('show');
+  $('cancel-loop').style.display = 'none';
+  hideOverlay();
+}
+function finishLoop() {
+  const pts = state.drawingPoints.slice();
+  if (pts.length < 3) return;
+  const area = polygonArea(pts);
+  const layer = L.polygon(pts, {
+    color: '#30d158', weight: 2, opacity: 1, fillColor: '#30d158', fillOpacity: 0.28
+  }).addTo(map);
+  const loop = {
+    id: 'you-' + Date.now(),
+    name: nameFor('you', state.yourLoops.length + 1),
+    points: pts, area, layer, timestamp: Date.now(),
+  };
+  state.yourLoops.push(loop);
+  cancelWip();
+  checkAchievements(loop);
+  renderPlaying();
+  toast(`Claimed ${loop.name} · ${area.toFixed(3)} km²`, 'you');
+}
+
+$('finish-loop').addEventListener('click', () => {
+  if (state.gpsMode) finishGpsLoop();
+  else finishLoop();
+});
+$('cancel-loop').addEventListener('click', cancelWip);
+
+function nameFor(who, n) {
+  const words = who === 'you'
+    ? ['Verdant Reach','Meadow Grove','Northgate','Bright Hollow','Grasslands','Cedar Rise','Fernwood','Willow Bend','Kites Field','Longview','Elmwood','Bramble Point','High Ridge']
+    : ['Iron Basin','Shadow Fen','Black Marsh','Ashcroft','Gloamside','Rust Reach','Twilight Camp','Coldspring','Hollow Pass','Grimwood','Sable Rise'];
+  return words[(n - 1) % words.length] + (n > words.length ? ' ' + Math.ceil(n / words.length) : '');
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   GPS mode
+   ═══════════════════════════════════════════════════════════════════════ */
+function startGpsMode() {
+  if (!navigator.geolocation) { toast('Geolocation not available', 'ai'); return; }
+  state.gpsMode = true;
+  state.gpsPath = [];
+  if (state.gpsPathLayer) map.removeLayer(state.gpsPathLayer);
+  state.gpsPathLayer = L.polyline([], { color: '#30d158', weight: 4, opacity: 0.85 }).addTo(map);
+  state.gpsWatchId = navigator.geolocation.watchPosition(pos => {
+    const p = [pos.coords.latitude, pos.coords.longitude];
+    state.gpsPath.push(p);
+    state.gpsPathLayer.setLatLngs(state.gpsPath);
+    if (state.gpsPath.length === 1) map.setView(p, 17);
+    showOverlay(`GPS · ${state.gpsPath.length} points · ${(pathLength(state.gpsPath) * 1000).toFixed(0)} m walked`);
+    if (state.gpsPath.length >= 3) $('finish-loop').classList.add('show');
+  }, err => { toast('GPS error: ' + err.message, 'ai'); state.gpsMode = false; renderPlaying(); }, { enableHighAccuracy: true, maximumAge: 5000 });
+  renderPlaying();
+}
+function stopGpsMode() {
+  if (state.gpsWatchId != null && navigator.geolocation) navigator.geolocation.clearWatch(state.gpsWatchId);
+  state.gpsWatchId = null; state.gpsMode = false;
+  if (state.gpsPathLayer) map.removeLayer(state.gpsPathLayer);
+  state.gpsPath = [];
+  state.gpsPathLayer = null;
+}
+function pathLength(pts) {
+  let sum = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const [a1, a2] = [pts[i-1][0]*Math.PI/180, pts[i][0]*Math.PI/180];
+    const dLat = a2 - a1, dLon = (pts[i][1] - pts[i-1][1]) * Math.PI/180;
+    const h = Math.sin(dLat/2)**2 + Math.cos(a1)*Math.cos(a2)*Math.sin(dLon/2)**2;
+    sum += 2 * R * Math.asin(Math.sqrt(h));
+  }
+  return sum;
+}
+function finishGpsLoop() {
+  if (state.gpsPath.length < 3) return;
+  // simplify by taking every Nth point
+  const step = Math.max(1, Math.floor(state.gpsPath.length / 40));
+  const pts = state.gpsPath.filter((_, i) => i % step === 0);
+  const area = polygonArea(pts);
+  if (area < 0.0001) { toast('Loop too small', 'ai'); return; }
+  const layer = L.polygon(pts, { color: '#30d158', weight: 2, opacity: 1, fillColor: '#30d158', fillOpacity: 0.28 }).addTo(map);
+  const loop = { id: 'you-' + Date.now(), name: nameFor('you', state.yourLoops.length + 1), points: pts, area, layer, timestamp: Date.now() };
+  state.yourLoops.push(loop);
+  state.gpsPath = [];
+  if (state.gpsPathLayer) { state.gpsPathLayer.setLatLngs([]); }
+  $('finish-loop').classList.remove('show');
+  checkAchievements(loop);
+  renderPlaying();
+  toast(`Claimed ${loop.name} · ${area.toFixed(3)} km²`, 'you');
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   AI opponent
+   ═══════════════════════════════════════════════════════════════════════ */
+function aiIntervalMs() {
+  // Fit ~10-30 AI moves into the game duration based on level
+  const level = state.duration.aiLevel || 'balanced';
+  const target = level === 'aggressive' ? 40 : level === 'balanced' ? 20 : 10;
+  return Math.max(30 * 1000, state.duration.ms / target);
+}
+function scheduleAiMoves() {
+  clearTimeout(state.aiTimer);
+  const delay = aiIntervalMs() * (0.5 + Math.random() * 0.8);
+  state.aiTimer = setTimeout(() => {
+    if (state.phase !== 'playing') return;
+    doAiMove();
+    scheduleAiMoves();
+  }, delay);
+}
+function doAiMove() {
+  // Pick center: near you or spread depending on strategy
+  const strategy = ($('ai-strategy') && $('ai-strategy').value) || 'compact';
+  let cx, cy;
+  const yourCenters = state.yourLoops.map(l => centroid(l.points));
+  if (strategy === 'compact' && yourCenters.length) {
+    const base = yourCenters[yourCenters.length - 1];
+    cx = base[0] + (Math.random() - 0.5) * 0.006;
+    cy = base[1] + (Math.random() - 0.5) * 0.008;
+  } else if (strategy === 'spread' || !state.center) {
+    const c = state.center || [map.getCenter().lat, map.getCenter().lng];
+    cx = c[0] + (Math.random() - 0.5) * 0.02;
+    cy = c[1] + (Math.random() - 0.5) * 0.03;
+  } else {
+    if (Math.random() < 0.5 && yourCenters.length) {
+      const base = yourCenters[Math.floor(Math.random() * yourCenters.length)];
+      cx = base[0] + (Math.random() - 0.5) * 0.008;
+      cy = base[1] + (Math.random() - 0.5) * 0.012;
+    } else {
+      const c = state.center || [map.getCenter().lat, map.getCenter().lng];
+      cx = c[0] + (Math.random() - 0.5) * 0.02;
+      cy = c[1] + (Math.random() - 0.5) * 0.03;
+    }
+  }
+  // Generate a rough n-gon
+  const n = 5 + Math.floor(Math.random() * 5);
+  const radius = 0.002 + Math.random() * 0.006; // deg-ish
+  const jitter = 0.35;
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    const r = radius * (1 - jitter + Math.random() * jitter * 2);
+    pts.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r * 1.4]); // ellipse for realism
+  }
+  const area = polygonArea(pts);
+  const layer = L.polygon(pts, { color: '#ff375f', weight: 2, opacity: 1, fillColor: '#ff375f', fillOpacity: 0.24 }).addTo(map);
+  const loop = { id: 'ai-' + Date.now(), name: nameFor('ai', state.aiLoops.length + 1), points: pts, area, layer, timestamp: Date.now() };
+  state.aiLoops.push(loop);
+  renderPlaying();
+  toast(`AI claimed ${loop.name} · ${area.toFixed(3)} km²`, 'ai');
+}
+function centroid(pts) {
+  const sx = pts.reduce((s, p) => s + p[0], 0);
+  const sy = pts.reduce((s, p) => s + p[1], 0);
+  return [sx / pts.length, sy / pts.length];
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Ticker · timer + game end
+   ═══════════════════════════════════════════════════════════════════════ */
+function startTicker() {
+  clearInterval(state.tickTimer);
+  state.tickTimer = setInterval(() => {
+    const now = Date.now();
+    const left = state.endsAt - now;
+    const t = $('timer');
+    if (left <= 0) { $('time-left').textContent = 'Ended'; endGame(); return; }
+    $('time-left').textContent = fmtRemain(left);
+    t.classList.remove('warn', 'crit'); t.classList.add('active');
+    if (left < state.duration.ms * 0.1) t.classList.add('crit');
+    else if (left < state.duration.ms * 0.3) t.classList.add('warn');
+  }, 500);
+}
+function fmtRemain(ms) {
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s left`;
+  const m = Math.floor(s / 60); if (m < 60) return `${m}m ${s % 60}s`;
+  const h = Math.floor(m / 60); if (h < 24) return `${h}h ${m % 60}m`;
+  const d = Math.floor(h / 24); return `${d}d ${h % 24}h`;
+}
+function updateScores() {
+  $('you-area').textContent = state.yourLoops.reduce((s, l) => s + l.area, 0).toFixed(3);
+  $('ai-area').textContent = state.aiLoops.reduce((s, l) => s + l.area, 0).toFixed(3);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Achievements
+   ═══════════════════════════════════════════════════════════════════════ */
+function unlock(id) {
+  if (unlockedAch.has(id) || state.achievementsUnlockedThisGame.has(id)) return;
+  unlockedAch.add(id);
+  state.achievementsUnlockedThisGame.add(id);
+  localStorage.setItem('turf-ach', JSON.stringify([...unlockedAch]));
+  const ach = ACHIEVEMENTS.find(a => a.id === id);
+  toast(`Achievement · ${ach.ic} ${ach.n}`, 'gold');
+}
+function checkAchievements(loop) {
+  if (state.yourLoops.length === 1) unlock('first-blood');
+  if (loop && loop.points.length === 3) unlock('triangle');
+  if (loop && loop.area > 0.1) unlock('big-loop');
+  if (loop && loop.area > 1) unlock('huge-loop');
+  if (state.yourLoops.length >= 5) unlock('quintuple');
+  if (state.yourLoops.length >= 10) unlock('decagon');
+  if (state.yourLoops.length + state.aiLoops.length >= 25 && state.yourLoops.length >= 25) unlock('territorialist');
+  if (state.duration.ms > 7 * 24 * 60 * 60 * 1000) unlock('marathon');
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Results modal
+   ═══════════════════════════════════════════════════════════════════════ */
+function showResults() {
+  const you = state.yourLoops.reduce((s, l) => s + l.area, 0);
+  const ai = state.aiLoops.reduce((s, l) => s + l.area, 0);
+  const total = you + ai;
+  const youPct = total > 0 ? (you / total * 100) : 0;
+  const winner = you > ai ? 'you' : ai > you ? 'ai' : 'tie';
+  if (winner === 'you') {
+    if (ai === 0) unlock('shutout');
+    if (you > ai * 2 && ai > 0) unlock('landslide');
+  }
+  if (state.duration.id === 'year') unlock('yearling');
+
+  const modal = $('modal');
+  modal.innerHTML = `
+    <div class="modal-hdr">
+      <div class="k">${winner === 'you' ? 'Victory' : winner === 'ai' ? 'Defeat' : 'A tie'}</div>
+      <h2>${winner === 'you' ? 'You claimed the land' : winner === 'ai' ? 'The AI won' : 'Neither of you claimed enough'}</h2>
+      <div class="sub">${winner === 'you' ? `You took ${youPct.toFixed(0)}% of the total claimed area over ${state.duration.n.toLowerCase()}.` : winner === 'ai' ? `You held ${youPct.toFixed(0)}%. Better luck next round.` : 'Equal ground. Restart?'}</div>
+    </div>
+    <div class="modal-body">
+      <div class="winner-scores">
+        <div class="side-score you"><div class="name">You</div><div class="val">${you.toFixed(3)}</div><div class="u">km² · ${state.yourLoops.length} loops</div></div>
+        <div class="side-score ai"><div class="name">AI</div><div class="val">${ai.toFixed(3)}</div><div class="u">km² · ${state.aiLoops.length} loops</div></div>
+      </div>
+      ${state.achievementsUnlockedThisGame.size > 0 ? `<div style="text-align:center;margin-bottom:14px;padding:10px;background:rgba(255,204,0,.06);border:1px solid rgba(255,204,0,.3);border-radius:8px">
+        <div style="font-family:var(--mono);font-size:10.5px;color:var(--gold);letter-spacing:.14em;margin-bottom:6px">Achievements unlocked this game</div>
+        <div style="font-size:18px;line-height:1.6">${[...state.achievementsUnlockedThisGame].map(id => { const a = ACHIEVEMENTS.find(x => x.id === id); return `<span style="margin:0 4px">${a.ic}</span>`; }).join('')}</div>
+      </div>` : ''}
+      <div class="modal-actions">
+        <button class="secondary" id="modal-close">Keep viewing map</button>
+        <button class="primary" id="modal-new">Start new game</button>
+      </div>
+    </div>
+  `;
+  $('modal-bg').classList.add('show');
+  $('modal-close').addEventListener('click', () => { $('modal-bg').classList.remove('show'); });
+  $('modal-new').addEventListener('click', () => {
+    // Clear map
+    state.yourLoops.forEach(l => map.removeLayer(l.layer));
+    state.aiLoops.forEach(l => map.removeLayer(l.layer));
+    state.yourLoops = []; state.aiLoops = [];
+    $('score-strip').style.display = 'none';
+    $('modal-bg').classList.remove('show');
+    state.phase = 'setup';
+    renderSetup();
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   UI utils
+   ═══════════════════════════════════════════════════════════════════════ */
+let toastTimer = null;
+function toast(msg, kind = '') {
+  const t = $('toast');
+  t.textContent = msg;
+  t.className = 'toast show ' + kind;
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
+}
+function showOverlay(text) { $('overlay-text').textContent = text; $('map-overlay').style.display = 'flex'; }
+function hideOverlay() { $('map-overlay').style.display = 'none'; }
+
+// Init
+renderSetup();
+</script>
+</body>
+</html>
