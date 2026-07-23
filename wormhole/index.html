@@ -211,8 +211,33 @@ input,select{font-size:16px}
   display:flex;align-items:center;justify-content:center;border:2px solid #000
 }
 
+/* Category strip */
+.cats{
+  position:fixed;top:calc(env(safe-area-inset-top) + 58px);left:0;right:0;z-index:108;
+  padding:0 max(14px,env(safe-area-inset-right)) 8px max(14px,env(safe-area-inset-left));
+  pointer-events:auto;overflow-x:auto;overscroll-behavior-x:contain;
+  -webkit-overflow-scrolling:touch;scrollbar-width:none;
+  display:flex;gap:6px;align-items:center
+}
+.cats::-webkit-scrollbar{display:none}
+.cats::before,.cats::after{content:"";flex-shrink:0;width:0}
+.cchip{
+  flex-shrink:0;padding:6px 12px;border-radius:16px;
+  background:rgba(20,20,26,.6);border:1px solid rgba(255,255,255,.16);color:#fff;
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;font-weight:600;text-transform:uppercase;
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);cursor:pointer;
+  transition:all .14s var(--ease);min-height:32px;display:inline-flex;align-items:center;gap:5px
+}
+.cchip:hover{background:rgba(20,20,26,.8);border-color:rgba(255,255,255,.28)}
+.cchip.on{
+  background:linear-gradient(135deg,var(--violet),var(--hot));border-color:transparent;color:#fff;
+  box-shadow:0 4px 14px rgba(191,90,242,.35)
+}
+.cchip .em{width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.6;flex-shrink:0}
+.cchip.on .em{opacity:1}
+
 .hint{
-  position:fixed;top:calc(env(safe-area-inset-top) + 66px);left:50%;transform:translateX(-50%);
+  position:fixed;top:calc(env(safe-area-inset-top) + 110px);left:50%;transform:translateX(-50%);
   z-index:105;pointer-events:none;
   padding:7px 16px;background:rgba(0,0,0,.65);border:1px solid rgba(255,255,255,.14);
   border-radius:20px;color:rgba(255,255,255,.9);
@@ -355,6 +380,8 @@ input,select{font-size:16px}
   </div>
 </nav>
 
+<div class="cats" id="cats"></div>
+
 <div class="hint" id="hint">↑ swipe through the sum of human knowledge ↑</div>
 
 <!-- Language sheet -->
@@ -443,10 +470,31 @@ const LANGS = [
 const $ = id => document.getElementById(id);
 const state = {
   lang: localStorage.getItem('wh-lang') || 'en',
+  cat: localStorage.getItem('wh-cat') || 'all',
   favs: JSON.parse(localStorage.getItem('wh-favs') || '[]'),
   seen: new Set(),
-  cache: JSON.parse(localStorage.getItem('wh-cache') || '{}')
+  cache: JSON.parse(localStorage.getItem('wh-cache') || '{}'),
+  catPool: {},   // key: cat + lang -> array of candidate titles
 };
+
+/* Category tags → Wikipedia categories to sample from
+   Each user-facing category maps to real Wikipedia category names.
+   Sampling: pick random Wiki category → categorymembers → pick random title. */
+const CATS = [
+  { key:'all',     label:'All',         wiki:null },
+  { key:'science', label:'Science',     wiki:['Physics','Biology','Chemistry','Astronomy','Neuroscience','Geology','Ecology','Genetics','Mathematics','Space exploration','Quantum mechanics'] },
+  { key:'history', label:'History',     wiki:['Ancient history','Middle Ages','Wars','World War II','Cold War','Ancient Rome','Ancient Egypt','Historical events','19th century','20th century','Roman Empire','Napoleonic Wars'] },
+  { key:'geo',     label:'Geography',   wiki:['Countries','Cities','Rivers','Mountains','Islands','Landforms','Capitals in Europe','Capitals in Asia','Deserts','Volcanoes','World Heritage Sites','National parks'] },
+  { key:'arts',    label:'Arts',        wiki:['Paintings','Sculptures','Museums','Literature','Poetry','Philosophy','Novels','Ancient philosophy','Art movements','Renaissance art','Impressionism','Modernist writers'] },
+  { key:'sports',  label:'Sports',      wiki:['Association football','Basketball','Cricket','Motorsport','Olympic Games','Tennis','Cycling','Boxing','Athletics events','Formula One','Olympic sports'] },
+  { key:'tech',    label:'Tech',        wiki:['Computing','Internet','Software','Programming languages','Video games','Computer hardware','Operating systems','Artificial intelligence','Cryptography','Web technologies','Robotics'] },
+  { key:'nature',  label:'Nature',      wiki:['Mammals','Birds','Fish','Plants','Reptiles','Insects','Marine biology','National parks','Ecosystems','Trees','Fungi'] },
+  { key:'music',   label:'Music',       wiki:['Musicians','Music genres','Albums','Composers','Classical music','Jazz musicians','Rock musicians','Bands','Songs','Music theory'] },
+  { key:'film',    label:'Film & TV',   wiki:['Films','Actors','Film directors','Television series','Animated films','Documentary films','Film awards','Academy Award winners','Directors','Sitcoms'] },
+  { key:'people',  label:'People',      wiki:['Scientists','Explorers','Inventors','Nobel laureates','Presidents','Philosophers','Emperors','Kings','Queens','Astronauts','Mathematicians','Composers'] },
+  { key:'food',    label:'Food',        wiki:['Foods','National dishes','Cuisines','Beverages','Fruits','Vegetables','Cocktails','Cheeses','Bread','Coffee','Tea','Wine'] },
+  { key:'weird',   label:'Weird',       wiki:['Cryptids','Urban legends','Unexplained phenomena','Conspiracy theories','Paranormal','Pseudoscience','Unsolved deaths','Mysteries','Folklore'] },
+];
 
 function apiBase() { return `https://${state.lang}.wikipedia.org/api/rest_v1`; }
 
@@ -491,6 +539,15 @@ function cachePut(k, v) {
 
 /* ═══════════ Fetchers ═══════════ */
 async function fetchRandomArticle() {
+  // If a category is selected, sample from that category
+  if (state.cat && state.cat !== 'all') {
+    const c = CATS.find(x => x.key === state.cat);
+    if (c && c.wiki && c.wiki.length) {
+      const a = await sampleFromCategory(c);
+      if (a) return a;
+      // Fallback to pure random if sample fails
+    }
+  }
   try {
     const r = await fetch(`${apiBase()}/page/random/summary`, {
       headers:{ 'accept':'application/json' }
@@ -500,6 +557,42 @@ async function fetchRandomArticle() {
   } catch(e) {
     return null;
   }
+}
+
+async function sampleFromCategory(catDef) {
+  // Refresh the pool of candidate titles for this cat + lang
+  const poolKey = state.lang + ':' + catDef.key;
+  let pool = state.catPool[poolKey];
+  if (!pool || pool.length < 4) {
+    // Fetch categorymembers for a random subcategory root
+    const root = catDef.wiki[Math.floor(Math.random() * catDef.wiki.length)];
+    try {
+      const u = `https://${state.lang}.wikipedia.org/w/api.php?action=query&format=json&list=categorymembers` +
+                `&cmtitle=${encodeURIComponent('Category:' + root)}&cmnamespace=0&cmlimit=100&cmtype=page&origin=*`;
+      const r = await fetch(u);
+      const j = await r.json();
+      const members = (j.query && j.query.categorymembers) || [];
+      const titles = members
+        .map(m => m.title)
+        .filter(t => !/^List of |^Index of |^Timeline of | \(disambiguation\)$/i.test(t));
+      pool = (pool || []).concat(titles);
+      state.catPool[poolKey] = pool;
+    } catch(e) {}
+  }
+  if (!pool || !pool.length) return null;
+  // Pop a random title
+  const idx = Math.floor(Math.random() * pool.length);
+  const title = pool.splice(idx, 1)[0];
+  const article = await fetchArticle(title);
+  if (article && (article.description || article.extract)) return article;
+  // If dud article, try one more from the pool
+  if (pool.length) {
+    const idx2 = Math.floor(Math.random() * pool.length);
+    const t2 = pool.splice(idx2, 1)[0];
+    const a2 = await fetchArticle(t2);
+    if (a2) return a2;
+  }
+  return null;
 }
 async function fetchArticle(title) {
   const key = state.lang + ':' + title;
@@ -911,6 +1004,7 @@ document.querySelectorAll('[data-close]').forEach(el => el.addEventListener('cli
 /* ═══════════ Reset ═══════════ */
 function resetFeed() {
   state.seen.clear();
+  state.catPool = {};
   FEED.queue = [];
   FEED.currentIndex = 0;
   FEED.el.querySelectorAll('.card').forEach(el => el.remove());
@@ -919,10 +1013,31 @@ function resetFeed() {
 }
 
 /* ═══════════ Init ═══════════ */
+function renderCats() {
+  const box = $('cats');
+  box.innerHTML = CATS.map(c => `<button class="cchip ${c.key === state.cat ? 'on' : ''}" data-cat="${c.key}"><span class="em"></span>${c.label}</button>`).join('');
+  box.querySelectorAll('[data-cat]').forEach(b => b.addEventListener('click', () => {
+    const k = b.dataset.cat;
+    if (k === state.cat) return;
+    state.cat = k;
+    localStorage.setItem('wh-cat', k);
+    box.querySelectorAll('.cchip').forEach(x => x.classList.toggle('on', x.dataset.cat === k));
+    resetFeed();
+    const label = CATS.find(x => x.key === k).label;
+    toast(k === 'all' ? 'showing everything' : `filtered: ${label}`);
+  }));
+  // Scroll the active chip into view
+  requestAnimationFrame(() => {
+    const on = box.querySelector('.cchip.on');
+    if (on) on.scrollIntoView({ behavior:'auto', block:'nearest', inline:'center' });
+  });
+}
+
 async function init() {
   FEED.el = $('feed');
   $('lang-code').textContent = state.lang.toUpperCase();
   $('lang-btn').addEventListener('click', openLangSheet);
+  renderCats();
   $('search-btn').addEventListener('click', openSearchSheet);
   $('favs-btn').addEventListener('click', openFavs);
   $('fav-close').addEventListener('click', closeFavs);
