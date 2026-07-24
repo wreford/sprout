@@ -193,19 +193,23 @@ main{
   letter-spacing:1em;font-size:.9em
 }
 
-/* Text-to-speech visual cues · paragraph glows, current word lights up */
-.body .w{transition:background .18s var(--ease),color .18s var(--ease),text-shadow .18s var(--ease);border-radius:3px}
-.body p.tts-active,.body .parenthetical.tts-active,.body .day.tts-active{
-  background:linear-gradient(180deg,rgba(196,139,255,.08),rgba(196,139,255,.02));
-  border-radius:10px;padding:.35em .6em;margin-left:-.6em;margin-right:-.6em;
-  box-shadow:inset 3px 0 0 var(--accent);
-  transition:background .35s var(--ease),padding .35s var(--ease)
+/* Text-to-speech visual cues · pure background+color, zero layout shift */
+.body p,.body .day,.body .parenthetical{position:relative;transition:background-color .35s var(--ease)}
+.body p.tts-active,.body .day.tts-active,.body .parenthetical.tts-active{
+  background:linear-gradient(90deg,rgba(196,139,255,.10),rgba(196,139,255,.02) 60%,transparent)
 }
+.body p.tts-active::before,.body .day.tts-active::before,.body .parenthetical.tts-active::before{
+  content:"";position:absolute;
+  top:.1em;bottom:.1em;left:-14px;width:3px;border-radius:2px;
+  background:var(--accent);box-shadow:0 0 14px var(--accent);
+  animation:ttsBar .8s var(--ease) both
+}
+@keyframes ttsBar{from{opacity:0;transform:scaleY(.6)}to{opacity:1;transform:none}}
+.body .w{transition:background-color .12s linear,color .12s linear,text-shadow .12s linear;border-radius:3px}
 .body .w.w-now{
-  background:linear-gradient(180deg,rgba(196,139,255,.5),rgba(124,58,237,.3));
+  background-color:rgba(196,139,255,.45);
   color:#fff;
-  text-shadow:0 0 14px rgba(196,139,255,.75),0 1px 3px rgba(0,0,0,.4);
-  padding:1px 2px;margin:0 -1px;border-radius:4px
+  text-shadow:0 0 12px rgba(196,139,255,.7)
 }
 /* TTS play button — glowing pulse when reading */
 .tico#ttsBtn.on{
@@ -366,6 +370,18 @@ main{
   transition:all .16s var(--ease)
 }
 .settings .reset-btn:hover{background:rgba(255,80,80,.16);border-color:rgba(255,80,80,.4);color:#ff8080}
+.settings .voice-select{
+  width:100%;padding:12px 14px;border-radius:12px;
+  background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.14);
+  color:var(--ink);font-family:var(--serif);font-size:14px;font-weight:500;
+  appearance:none;-webkit-appearance:none;cursor:pointer;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a898c8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'></polyline></svg>");
+  background-repeat:no-repeat;background-position:right 12px center;
+  padding-right:38px
+}
+.settings .voice-select:focus{outline:none;border-color:var(--accent);background-color:rgba(196,139,255,.06)}
+.settings .voice-select option{background:#1a0e30;color:var(--ink)}
+.settings .voice-hint{font-family:var(--mono);font-size:10px;color:var(--dim);line-height:1.55;letter-spacing:.04em;margin-top:8px}
 
 /* Welcome modal · purple void with liquid glass */
 .modal{
@@ -628,6 +644,11 @@ main{
       </div>
     </div>
     <div class="sec">
+      <div class="lbl">Reading voice</div>
+      <select class="voice-select" id="voiceSel"></select>
+      <div class="voice-hint">If the voice sounds robotic on iPhone, open Settings ▸ Accessibility ▸ Spoken Content ▸ Voices and download the "Enhanced" or "Premium" English voices — they'll show up here.</div>
+    </div>
+    <div class="sec">
       <div class="lbl">Progress</div>
       <button class="reset-btn" id="resetReadBtn">Reset read markers</button>
     </div>
@@ -667,6 +688,7 @@ const State = {
   read:new Set(JSON.parse(localStorage.getItem('bite-read') || '[]')),
   size:parseInt(localStorage.getItem('bite-size') || '19', 10),
   lh:parseFloat(localStorage.getItem('bite-lh') || '1.7'),
+  voiceName:localStorage.getItem('bite-voice') || '',
   tts:{ playing:false, cancelling:false, currentUtter:null, currentPara:null }
 };
 
@@ -890,7 +912,7 @@ function applyLh() {
   document.documentElement.style.setProperty('--body-lh', String(State.lh));
   document.querySelectorAll('#lhGrid button').forEach(b => b.classList.toggle('on', Math.abs(parseFloat(b.dataset.lh) - State.lh) < 0.01));
 }
-function openSettings() { $('setDrawer').classList.add('show'); $('setBg').classList.add('show'); }
+function openSettings() { $('setDrawer').classList.add('show'); $('setBg').classList.add('show'); populateVoiceSelect(); }
 function closeSettings() { $('setDrawer').classList.remove('show'); $('setBg').classList.remove('show'); }
 
 /* ═════════ Wire ═════════ */
@@ -904,6 +926,13 @@ function wire() {
   $('prevBtn').addEventListener('click', () => renderEpisode(Math.max(0, State.epIndex - 1)));
   $('nextBtn').addEventListener('click', () => renderEpisode(Math.min(State.book.episodes.length - 1, State.epIndex + 1)));
   $('ttsBtn').addEventListener('click', () => { if (State.tts.playing) stopTts(); else startTts(); });
+  const vsel = $('voiceSel');
+  if (vsel) vsel.addEventListener('change', () => {
+    State.voiceName = vsel.value;
+    try { localStorage.setItem('bite-voice', State.voiceName); } catch(e) {}
+    // If TTS is currently playing, stop it so the next start uses the new voice
+    if (State.tts.playing) stopTts();
+  });
   $('markBtn').addEventListener('click', () => {
     const ep = State.book.episodes[State.epIndex];
     if (!ep) return;
@@ -956,22 +985,32 @@ function ensureVoicesLoaded() {
     setTimeout(finish, 600);
   });
 }
+/* Novelty / joke voices to skip — they exist on Mac + iOS and always sound robotic */
+const TTS_NOVELTY = /Albert|Bad News|Bahh|Bells|Boing|Bubbles|Cellos|Deranged|Good News|Hysterical|Jester|Junior|Kathy|Organ|Pipe Organ|Ralph|Superstar|Trinoids|Whisper|Wobble|Zarvox|Fred|Grandma|Grandpa|Reed|Rocko|Sandy|Shelley|Eddy|Flo|Rishi/i;
+
+function scoreVoice(v) {
+  const n = v.name || '';
+  if (TTS_NOVELTY.test(n)) return -100;
+  let s = 0;
+  if (/Siri/i.test(n)) s += 50;                                    // iOS 17+ Siri voices — best on iOS
+  if (/Premium/i.test(n)) s += 40;                                 // Apple Premium tier
+  if (/Enhanced/i.test(n)) s += 30;                                // Apple Enhanced tier
+  if (/Natural/i.test(n)) s += 30;                                 // Microsoft Natural
+  if (/Neural/i.test(n)) s += 30;                                  // Google/MS Neural
+  if (/Multilingual/i.test(n)) s += 20;                            // iOS 17 multilingual voices
+  if (!v.localService) s += 15;                                    // Cloud voices — usually better
+  if (/Ava|Zoe|Serena|Moira|Aria|Jenny|Emma|Ryan|Guy/i.test(n)) s += 10;
+  if (/Samantha|Karen|Daniel|Nicky/i.test(n)) s += 5;
+  if (v.default) s += 3;
+  return s;
+}
 function pickBestVoice(voices) {
   const en = voices.filter(v => (v.lang || '').toLowerCase().startsWith('en'));
   const pool = en.length ? en : voices;
-  const patterns = [
-    /Ava.*Premium/i, /Ava.*Enhanced/i, /Zoe.*Premium/i, /Zoe.*Enhanced/i,
-    /Samantha.*Enhanced/i, /Karen.*Premium/i, /Neural/i, /Premium/i,
-    /Natural/i, /Enhanced/i,
-    /Ava/i, /Samantha/i, /Zoe/i, /Karen/i, /Serena/i, /Moira/i,
-    /Google.*UK.*English.*Female/i, /Google.*US.*English/i,
-    /Microsoft.*Natural/i, /Microsoft.*Aria/i, /Microsoft.*Jenny/i
-  ];
-  for (const p of patterns) {
-    const v = pool.find(vo => p.test(vo.name || ''));
-    if (v) return v;
-  }
-  return pool.find(v => v.default) || pool[0] || null;
+  const ranked = pool.map(v => ({ v, s: scoreVoice(v) }))
+                     .filter(x => x.s > -100)
+                     .sort((a, b) => b.s - a.s);
+  return (ranked[0] && ranked[0].v) || pool[0] || null;
 }
 
 function wrapWordsIn(el) {
@@ -1013,13 +1052,37 @@ function prepareBodyForTts() {
   return paras;
 }
 
+function getSelectedVoice(voices) {
+  if (State.voiceName) {
+    const found = voices.find(v => v.name === State.voiceName);
+    if (found) return found;
+  }
+  return pickBestVoice(voices);
+}
+
+function populateVoiceSelect() {
+  const sel = document.getElementById('voiceSel');
+  if (!sel) return;
+  ensureVoicesLoaded().then(voices => {
+    const en = voices.filter(v => (v.lang || '').toLowerCase().startsWith('en'));
+    const pool = en.length ? en : voices;
+    const ranked = pool.map(v => ({ v, s: scoreVoice(v) }))
+                       .sort((a, b) => b.s - a.s);
+    const current = getSelectedVoice(voices);
+    sel.innerHTML = ranked.map(({ v, s }) => {
+      const tag = s >= 30 ? ' · Enhanced' : (s > 0 ? ' · Standard' : ' · Novelty');
+      return `<option value="${v.name.replace(/"/g,'&quot;')}"${current && v.name === current.name ? ' selected' : ''}>${v.name}${tag}</option>`;
+    }).join('');
+  });
+}
+
 async function startTts() {
   if (!('speechSynthesis' in window)) { alert('Your browser does not support text-to-speech.'); return; }
   if (State.tts.playing) return;
   const paras = prepareBodyForTts();
   if (!paras || !paras.length) return;
   const voices = await ensureVoicesLoaded();
-  const voice = pickBestVoice(voices);
+  const voice = getSelectedVoice(voices);
 
   State.tts.playing = true;
   State.tts.cancelling = false;
@@ -1040,10 +1103,10 @@ async function startTts() {
     const utter = new SpeechSynthesisUtterance(text);
     if (voice) utter.voice = voice;
     utter.lang = (voice && voice.lang) || 'en-US';
-    // Voice cues: parentheticals softer and slower, day-kickers steadier
-    if (p.classList.contains('parenthetical')) { utter.rate = 0.92; utter.pitch = 0.94; utter.volume = 0.85; }
-    else if (p.classList.contains('day')) { utter.rate = 0.94; utter.pitch = 0.95; }
-    else { utter.rate = 1.0; utter.pitch = 1.0; }
+    // Rates set below 1.0 — slower feels much more human on default voices
+    if (p.classList.contains('parenthetical')) { utter.rate = 0.86; utter.pitch = 0.95; utter.volume = 0.82; }
+    else if (p.classList.contains('day')) { utter.rate = 0.88; utter.pitch = 0.97; }
+    else { utter.rate = 0.93; utter.pitch = 1.0; }
 
     utter.onboundary = e => {
       if (e.name && e.name !== 'word') return;
