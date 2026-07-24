@@ -193,6 +193,32 @@ main{
   letter-spacing:1em;font-size:.9em
 }
 
+/* Text-to-speech visual cues · paragraph glows, current word lights up */
+.body .w{transition:background .18s var(--ease),color .18s var(--ease),text-shadow .18s var(--ease);border-radius:3px}
+.body p.tts-active,.body .parenthetical.tts-active,.body .day.tts-active{
+  background:linear-gradient(180deg,rgba(196,139,255,.08),rgba(196,139,255,.02));
+  border-radius:10px;padding:.35em .6em;margin-left:-.6em;margin-right:-.6em;
+  box-shadow:inset 3px 0 0 var(--accent);
+  transition:background .35s var(--ease),padding .35s var(--ease)
+}
+.body .w.w-now{
+  background:linear-gradient(180deg,rgba(196,139,255,.5),rgba(124,58,237,.3));
+  color:#fff;
+  text-shadow:0 0 14px rgba(196,139,255,.75),0 1px 3px rgba(0,0,0,.4);
+  padding:1px 2px;margin:0 -1px;border-radius:4px
+}
+/* TTS play button — glowing pulse when reading */
+.tico#ttsBtn.on{
+  background:linear-gradient(135deg,var(--accent),var(--deep));
+  color:#fff;border-color:transparent;
+  box-shadow:0 6px 20px var(--glow),inset 0 1px 0 rgba(255,255,255,.35);
+  animation:ttsPulse 1.6s ease-in-out infinite
+}
+@keyframes ttsPulse{
+  0%,100%{box-shadow:0 6px 20px var(--glow),inset 0 1px 0 rgba(255,255,255,.35)}
+  50%{box-shadow:0 6px 30px rgba(196,139,255,.6),inset 0 1px 0 rgba(255,255,255,.45)}
+}
+
 /* Reader controls (sticky bottom) */
 .reader-nav{
   position:fixed;left:0;right:0;bottom:0;z-index:15;
@@ -535,6 +561,9 @@ main{
   </button>
   <div class="brand"><div class="mark"></div>Bite <em>Bite</em> Bite</div>
   <div class="r">
+    <button class="tico" id="ttsBtn" title="Read aloud">
+      <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M8 5v14l11-7z"/></svg>
+    </button>
     <button class="tico" id="markBtn" title="Bookmark">
       <svg viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4z"/></svg>
     </button>
@@ -636,9 +665,9 @@ const State = {
   book:null,           // parsed { arcs, episodes }
   epIndex:0,           // 0-based episode index
   read:new Set(JSON.parse(localStorage.getItem('bite-read') || '[]')),
-  theme:localStorage.getItem('bite-theme') || 'auto',
   size:parseInt(localStorage.getItem('bite-size') || '19', 10),
   lh:parseFloat(localStorage.getItem('bite-lh') || '1.7'),
+  tts:{ playing:false, cancelling:false, currentUtter:null, currentPara:null }
 };
 
 /* ═════════ Parser ═════════ */
@@ -712,6 +741,7 @@ function setArcAtmosphere(arcN) {
 }
 
 function renderEpisode(epIdx) {
+  stopTts();
   State.epIndex = epIdx;
   const ep = State.book.episodes[epIdx];
   if (!ep) return;
@@ -873,6 +903,7 @@ function wire() {
   $('setBg').addEventListener('click', closeSettings);
   $('prevBtn').addEventListener('click', () => renderEpisode(Math.max(0, State.epIndex - 1)));
   $('nextBtn').addEventListener('click', () => renderEpisode(Math.min(State.book.episodes.length - 1, State.epIndex + 1)));
+  $('ttsBtn').addEventListener('click', () => { if (State.tts.playing) stopTts(); else startTts(); });
   $('markBtn').addEventListener('click', () => {
     const ep = State.book.episodes[State.epIndex];
     if (!ep) return;
@@ -911,6 +942,165 @@ function wire() {
     if (e.key === 'ArrowLeft' && !e.target.closest('input,select,textarea')) $('prevBtn').click();
     if (e.key === 'ArrowRight' && !e.target.closest('input,select,textarea')) $('nextBtn').click();
   });
+}
+
+/* ═════════ Text-to-speech ═════════ */
+function ensureVoicesLoaded() {
+  return new Promise(resolve => {
+    if (!('speechSynthesis' in window)) return resolve([]);
+    const v = speechSynthesis.getVoices();
+    if (v && v.length) return resolve(v);
+    let done = false;
+    const finish = () => { if (done) return; done = true; resolve(speechSynthesis.getVoices() || []); };
+    speechSynthesis.onvoiceschanged = finish;
+    setTimeout(finish, 600);
+  });
+}
+function pickBestVoice(voices) {
+  const en = voices.filter(v => (v.lang || '').toLowerCase().startsWith('en'));
+  const pool = en.length ? en : voices;
+  const patterns = [
+    /Ava.*Premium/i, /Ava.*Enhanced/i, /Zoe.*Premium/i, /Zoe.*Enhanced/i,
+    /Samantha.*Enhanced/i, /Karen.*Premium/i, /Neural/i, /Premium/i,
+    /Natural/i, /Enhanced/i,
+    /Ava/i, /Samantha/i, /Zoe/i, /Karen/i, /Serena/i, /Moira/i,
+    /Google.*UK.*English.*Female/i, /Google.*US.*English/i,
+    /Microsoft.*Natural/i, /Microsoft.*Aria/i, /Microsoft.*Jenny/i
+  ];
+  for (const p of patterns) {
+    const v = pool.find(vo => p.test(vo.name || ''));
+    if (v) return v;
+  }
+  return pool.find(v => v.default) || pool[0] || null;
+}
+
+function wrapWordsIn(el) {
+  if (!el || el.dataset.wrapped === '1') return;
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, {
+    acceptNode: n => n.parentNode.closest('.w') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT
+  });
+  const nodes = [];
+  let n; while (n = walker.nextNode()) nodes.push(n);
+  for (const node of nodes) {
+    const text = node.nodeValue;
+    if (!text) continue;
+    const parts = text.split(/(\s+)/);
+    let charOff = 0;
+    const frag = document.createDocumentFragment();
+    for (const part of parts) {
+      if (!part) continue;
+      if (/^\s+$/.test(part)) {
+        frag.appendChild(document.createTextNode(part));
+      } else {
+        const s = document.createElement('span');
+        s.className = 'w';
+        s.textContent = part;
+        s.dataset.off = String(charOff);
+        frag.appendChild(s);
+      }
+      charOff += part.length;
+    }
+    node.parentNode.replaceChild(frag, node);
+  }
+  el.dataset.wrapped = '1';
+}
+
+function prepareBodyForTts() {
+  const body = document.getElementById('epBody');
+  if (!body) return null;
+  const paras = [...body.querySelectorAll('p, .day, .parenthetical')];
+  paras.forEach(wrapWordsIn);
+  return paras;
+}
+
+async function startTts() {
+  if (!('speechSynthesis' in window)) { alert('Your browser does not support text-to-speech.'); return; }
+  if (State.tts.playing) return;
+  const paras = prepareBodyForTts();
+  if (!paras || !paras.length) return;
+  const voices = await ensureVoicesLoaded();
+  const voice = pickBestVoice(voices);
+
+  State.tts.playing = true;
+  State.tts.cancelling = false;
+  updateTtsButton();
+
+  let i = 0;
+  const speakOne = () => {
+    if (State.tts.cancelling || i >= paras.length) { finishTts(); return; }
+    const p = paras[i];
+    const words = [...p.querySelectorAll('.w')];
+    const text = p.textContent;
+    if (!text.trim()) { i++; return speakOne(); }
+    p.classList.add('tts-active');
+    State.tts.currentPara = p;
+    // Auto-scroll paragraph into view
+    try { p.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch(e) {}
+
+    const utter = new SpeechSynthesisUtterance(text);
+    if (voice) utter.voice = voice;
+    utter.lang = (voice && voice.lang) || 'en-US';
+    // Voice cues: parentheticals softer and slower, day-kickers steadier
+    if (p.classList.contains('parenthetical')) { utter.rate = 0.92; utter.pitch = 0.94; utter.volume = 0.85; }
+    else if (p.classList.contains('day')) { utter.rate = 0.94; utter.pitch = 0.95; }
+    else { utter.rate = 1.0; utter.pitch = 1.0; }
+
+    utter.onboundary = e => {
+      if (e.name && e.name !== 'word') return;
+      // Find the last word whose offset is <= charIndex
+      let idx = -1;
+      for (let j = 0; j < words.length; j++) {
+        const off = parseInt(words[j].dataset.off, 10);
+        if (off <= e.charIndex) idx = j; else break;
+      }
+      if (idx >= 0) {
+        words.forEach(w => w.classList.remove('w-now'));
+        words[idx].classList.add('w-now');
+      }
+    };
+    utter.onend = () => {
+      words.forEach(w => w.classList.remove('w-now'));
+      p.classList.remove('tts-active');
+      i++;
+      // A brief inter-paragraph beat (150ms) — feels like reading aloud
+      setTimeout(speakOne, 150);
+    };
+    utter.onerror = () => {
+      words.forEach(w => w.classList.remove('w-now'));
+      p.classList.remove('tts-active');
+      i++;
+      setTimeout(speakOne, 60);
+    };
+    State.tts.currentUtter = utter;
+    speechSynthesis.speak(utter);
+  };
+  speakOne();
+}
+
+function stopTts() {
+  if (!State.tts.playing) return;
+  State.tts.cancelling = true;
+  try { speechSynthesis.cancel(); } catch(e) {}
+  finishTts();
+}
+
+function finishTts() {
+  State.tts.playing = false;
+  State.tts.currentUtter = null;
+  State.tts.currentPara = null;
+  document.querySelectorAll('.tts-active').forEach(el => el.classList.remove('tts-active'));
+  document.querySelectorAll('.w-now').forEach(el => el.classList.remove('w-now'));
+  updateTtsButton();
+}
+
+function updateTtsButton() {
+  const btn = document.getElementById('ttsBtn');
+  if (!btn) return;
+  btn.classList.toggle('on', State.tts.playing);
+  btn.title = State.tts.playing ? 'Stop reading' : 'Read aloud';
+  btn.innerHTML = State.tts.playing
+    ? `<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>`
+    : `<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M8 5v14l11-7z"/></svg>`;
 }
 
 /* ═════════ Init ═════════ */
