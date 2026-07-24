@@ -275,6 +275,40 @@ button{background:none;border:none;cursor:pointer;color:inherit;font:inherit}
 }
 @keyframes hintfade{0%{opacity:0}12%{opacity:1}75%{opacity:1}100%{opacity:0}}
 
+/* Preload screen · shown while probing all 50 APIs */
+#preload{
+  position:fixed;inset:0;z-index:300;
+  display:flex;align-items:center;justify-content:center;
+  padding:24px calc(env(safe-area-inset-right) + 24px) calc(env(safe-area-inset-bottom) + 24px) calc(env(safe-area-inset-left) + 24px);
+  background:radial-gradient(ellipse 90% 60% at 50% 30%, #1a1233 0%, #0a0716 60%, #050308 100%);
+  transition:opacity .5s var(--ease)
+}
+#preload.gone{opacity:0;pointer-events:none}
+#preload::before{
+  content:"";position:absolute;inset:-20%;pointer-events:none;
+  background:
+    radial-gradient(38% 32% at 22% 24%, rgba(196,139,255,.28), transparent 65%),
+    radial-gradient(44% 34% at 82% 68%, rgba(255,122,198,.24), transparent 68%),
+    radial-gradient(30% 26% at 60% 12%, rgba(130,255,228,.16), transparent 70%);
+  filter:blur(40px);animation:pl-aurora 12s ease-in-out infinite alternate
+}
+@keyframes pl-aurora{0%{transform:translate3d(-3%,-2%,0)}100%{transform:translate3d(3%,2%,0)}}
+#preload .pl-inner{position:relative;z-index:1;width:100%;max-width:340px;text-align:center;display:flex;flex-direction:column;gap:22px;align-items:center}
+#preload .pl-brand{display:inline-flex;align-items:center;gap:12px;font-family:var(--disp);font-weight:900;font-size:30px;letter-spacing:-.03em;color:#fff}
+#preload .pl-badge{
+  width:40px;height:40px;border-radius:11px;
+  background:linear-gradient(135deg,var(--mint),var(--violet) 50%,var(--pink) 80%,var(--amber));
+  display:flex;align-items:center;justify-content:center;
+  color:#0f0a1e;font-family:var(--disp);font-weight:900;font-size:19px;
+  box-shadow:0 8px 22px rgba(196,139,255,.45),inset 0 1px 0 rgba(255,255,255,.5)
+}
+#preload .pl-title{background:linear-gradient(112deg,var(--mint),var(--violet) 50%,var(--pink) 82%,var(--amber));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+#preload .pl-status{font-family:var(--mono);font-size:11px;color:var(--dim);letter-spacing:.16em;text-transform:uppercase;font-weight:600}
+#preload .pl-bar{width:100%;height:6px;border-radius:100px;background:rgba(255,255,255,.06);overflow:hidden;box-shadow:inset 0 1px 0 rgba(0,0,0,.4)}
+#preload .pl-fill{height:100%;border-radius:100px;background:linear-gradient(90deg,var(--mint),var(--violet),var(--pink),var(--amber));box-shadow:0 0 14px rgba(196,139,255,.6);transition:width .18s var(--ease)}
+#preload .pl-count{font-family:var(--mono);font-size:10.5px;color:var(--text);letter-spacing:.16em;text-transform:uppercase;font-weight:700;opacity:.85}
+#preload .pl-count b{color:var(--mint);font-weight:800}
+
 /* Kind tints */
 .card[data-kind="quote"]{--accent:var(--pink);--tint:rgba(255,122,198,.24);--tint-border:rgba(255,122,198,.4)}
 .card[data-kind="fact"]{--accent:var(--mint);--tint:rgba(130,255,228,.22);--tint-border:rgba(130,255,228,.4)}
@@ -567,16 +601,35 @@ const APIS = [
    ═══════════════════════════════════════════════════════ */
 const state = {
   cat: 'all',
-  seen: [],   // ids already served
+  seen: [],           // ids already served
+  dead: new Set(),    // ids that failed the probe or a runtime call
+  probing: false,
 };
 const FEED = { el:null, cards:[], currentIndex:0, io:null, busy:false };
 
-function activeApis() {
-  return state.cat === 'all' ? APIS : APIS.filter(a => a.cat === state.cat);
+/* Cached probe results — 24h TTL */
+const CACHE_KEY = 'fifty-alive-v1';
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+function loadCache() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null');
+    if (!raw || !raw.ts || Date.now() - raw.ts > CACHE_TTL_MS) return null;
+    return raw;
+  } catch(e) { return null; }
 }
+function saveCache(deadIds) {
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), dead: [...deadIds] })); } catch(e) {}
+}
+
+function activeApis() {
+  const alive = APIS.filter(a => !state.dead.has(a.id));
+  return state.cat === 'all' ? alive : alive.filter(a => a.cat === state.cat);
+}
+function aliveCount() { return APIS.length - state.dead.size; }
 
 function pickNextApi() {
   const pool = activeApis();
+  if (!pool.length) return null;
   const unseen = pool.filter(a => !state.seen.includes(a.id));
   const src = unseen.length ? unseen : pool;
   const pick = rand(src);
@@ -592,11 +645,34 @@ async function refill() {
     const need = Math.max(0, 4 - (FEED.cards.length - FEED.currentIndex));
     for (let i = 0; i < need; i++) {
       const api = pickNextApi();
+      if (!api) { renderEmpty(); break; }
       const el = appendPending(api);
-      // fire and forget; each card fills itself in
       hydrateCard(el, api);
     }
   } finally { FEED.busy = false; }
+}
+
+function renderEmpty() {
+  if (FEED.el.querySelector('.card')) return;
+  const el = document.createElement('div');
+  el.className = 'card err';
+  el.dataset.kind = 'quote';
+  el.innerHTML = `
+    <div class="kicker"><span class="cat">nothing live</span></div>
+    <div class="body">
+      <div class="msg">
+        <strong>No APIs answered.</strong>
+        You might be offline, behind a firewall, or every public API on the list happens to be down right now.
+        Try reshuffling in a moment.
+      </div>
+    </div>
+    <div class="foot"><button class="again" data-act="again">Try again</button></div>`;
+  el.querySelector('[data-act="again"]').addEventListener('click', () => {
+    state.dead.clear();
+    saveCache(state.dead);
+    reset();
+  });
+  FEED.el.appendChild(el);
 }
 
 function appendPending(api) {
@@ -629,6 +705,9 @@ async function hydrateCard(el, api) {
     if (!c) throw new Error('normalize returned nothing');
     renderCard(el, api, c);
   } catch (err) {
+    // Mark dead so we stop rolling this API into the feed
+    state.dead.add(api.id);
+    saveCache(state.dead);
     renderError(el, api, err);
   }
 }
@@ -756,16 +835,17 @@ function reset() {
 function openSheet() { renderSheet(); $('sheet').classList.add('show'); $('sheetBg').classList.add('show'); }
 function closeSheet() { $('sheet').classList.remove('show'); $('sheetBg').classList.remove('show'); }
 function renderSheet() {
+  const alive = APIS.filter(a => !state.dead.has(a.id));
   $('cats').innerHTML = CATS.map(c => {
-    const count = c.k === 'all' ? APIS.length : APIS.filter(a => a.cat === c.k).length;
-    return `<button class="cat-btn ${state.cat === c.k ? 'on' : ''}" data-cat="${c.k}">${c.label}<span class="lbl">${count} apis</span></button>`;
+    const count = c.k === 'all' ? alive.length : alive.filter(a => a.cat === c.k).length;
+    return `<button class="cat-btn ${state.cat === c.k ? 'on' : ''}" data-cat="${c.k}">${c.label}<span class="lbl">${count} live</span></button>`;
   }).join('');
   $('cats').querySelectorAll('.cat-btn').forEach(b => b.addEventListener('click', () => {
     state.cat = b.dataset.cat;
     renderSheet();
     reset();
   }));
-  $('apiList').innerHTML = APIS.filter(a => state.cat === 'all' || a.cat === state.cat)
+  $('apiList').innerHTML = alive.filter(a => state.cat === 'all' || a.cat === state.cat)
     .map(a => `<button class="api-row" data-id="${a.id}"><span class="n">${escapeHtml(a.name)}</span><span class="k">${a.kind}</span></button>`).join('');
   $('apiList').querySelectorAll('.api-row').forEach(b => b.addEventListener('click', () => {
     const api = APIS.find(x => x.id === b.dataset.id);
@@ -786,6 +866,77 @@ function renderSheet() {
     if (FEED.io) FEED.io.observe(el);
     el.scrollIntoView({ behavior:'smooth', block:'start' });
   }));
+}
+
+/* ═══════════════════════════════════════════════════════
+   Probing · call every API once at load, hide the dead ones
+   ═══════════════════════════════════════════════════════ */
+const PROBE_TIMEOUT_MS = 6000;
+
+async function probeApi(api) {
+  try {
+    const raw = await Promise.race([
+      api.fetch(),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('probe-timeout')), PROBE_TIMEOUT_MS))
+    ]);
+    const c = api.normalize(raw);
+    if (!c) throw new Error('normalize returned nothing');
+    // For image kinds, sanity-check the URL loads (many "alive" image APIs return dead URLs)
+    if (c.kind === 'image' && c.url) {
+      await new Promise((res, rej) => {
+        const img = new Image();
+        const t = setTimeout(() => rej(new Error('img-timeout')), 5000);
+        img.onload = () => { clearTimeout(t); res(); };
+        img.onerror = () => { clearTimeout(t); rej(new Error('img-fail')); };
+        img.decoding = 'async';
+        img.src = c.url;
+      });
+    } else if (c.kind === 'image' && !c.url) {
+      throw new Error('no image url');
+    }
+    return { id: api.id, alive: true };
+  } catch (e) {
+    return { id: api.id, alive: false, err: e && e.message || String(e) };
+  }
+}
+
+async function probeAll(onProgress) {
+  state.probing = true;
+  let done = 0;
+  const results = await Promise.all(APIS.map(api => probeApi(api).then(r => {
+    done++;
+    if (onProgress) onProgress(done, APIS.length, r);
+    return r;
+  })));
+  state.dead = new Set(results.filter(r => !r.alive).map(r => r.id));
+  state.probing = false;
+  saveCache(state.dead);
+  return results;
+}
+
+function showPreload() {
+  const pl = document.createElement('div');
+  pl.id = 'preload';
+  pl.innerHTML = `
+    <div class="pl-inner">
+      <div class="pl-brand"><span class="pl-badge">50</span><span class="pl-title">Fifty</span></div>
+      <div class="pl-status" id="plStatus">Warming up 50 open APIs…</div>
+      <div class="pl-bar"><div class="pl-fill" id="plFill" style="width:0%"></div></div>
+      <div class="pl-count" id="plCount">0 / ${APIS.length}</div>
+    </div>`;
+  document.body.appendChild(pl);
+  return pl;
+}
+function updatePreload(done, total, alive) {
+  const pct = Math.round((done / total) * 100);
+  const fill = document.getElementById('plFill');
+  const count = document.getElementById('plCount');
+  if (fill) fill.style.width = pct + '%';
+  if (count) count.textContent = `${alive} live · ${done} / ${total}`;
+}
+function hidePreload() {
+  const pl = document.getElementById('preload');
+  if (pl) { pl.classList.add('gone'); setTimeout(() => pl.remove(), 500); }
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -823,7 +974,25 @@ async function init() {
     });
   }, { passive: true });
 
-  refill();
+  // Probe: use cache if fresh, otherwise ping everything with a preload screen
+  const cached = loadCache();
+  if (cached) {
+    state.dead = new Set(cached.dead || []);
+    refill();
+    // Re-probe silently in the background so future loads have fresh data
+    setTimeout(() => probeAll(() => {}).catch(() => {}), 800);
+  } else {
+    showPreload();
+    let alive = 0;
+    try {
+      await probeAll((done, total, r) => {
+        if (r.alive) alive++;
+        updatePreload(done, total, alive);
+      });
+    } catch (e) { /* keep going even if some fail */ }
+    hidePreload();
+    refill();
+  }
 }
 init();
 </script>
