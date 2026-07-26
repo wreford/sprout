@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#0e1420">
+<meta name="description" content="Hexicon — a Boggle-style word game on a hex grid. Trace adjacent tiles to spell words, longer is better. Every word is checked against a live dictionary.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Hexicon">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="format-detection" content="telephone=no">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,700;0,9..144,900;1,9..144,900&family=IBM+Plex+Mono:wght@500;700&family=Inter:wght@600;800&display=swap" rel="stylesheet">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%230e1420'/%3E%3Cpolygon points='16,4 27,10 27,22 16,28 5,22 5,10' fill='%23ffd23f'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='Fraunces,Georgia,serif' font-weight='900' font-size='18' fill='%230e1420'%3EH%3C/text%3E%3C/svg%3E">
+<title>Hexicon — hex-tile word game</title>
+<style>
+:root{
+  --bg:#0d1420;
+  --bg-2:#141d2e;
+  --surface:#1a2536;
+  --line:rgba(255,255,255,.09);
+  --line-2:rgba(255,255,255,.2);
+  --text:#f0e9d6;
+  --text-2:#c4bca6;
+  --dim:#8a8074;
+  --dimmer:#4e4a3f;
+  --hex-face:#f5ecd8;
+  --hex-face-2:#e6dbbf;
+  --hex-ink:#2a1e10;
+  --amber:#ffd23f;
+  --amber-dark:#c49a20;
+  --lime:#a1e56b;
+  --cyan:#5eead4;
+  --hot:#ff5aa8;
+  --deep:#2b3550;
+  --disp:'Fraunces',Georgia,serif;
+  --sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  --mono:'IBM Plex Mono',ui-monospace,monospace;
+  --ease:cubic-bezier(.16,1,.3,1);
+  --squish:cubic-bezier(.34,1.56,.64,1);
+  --pad-x:max(14px,env(safe-area-inset-left));
+  --pad-x-r:max(14px,env(safe-area-inset-right));
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html{height:100%;-webkit-text-size-adjust:100%;overflow:hidden}
+html,body{
+  color:var(--text);font-family:var(--sans);
+  overscroll-behavior:none;overflow:hidden;
+  -webkit-font-smoothing:antialiased
+}
+body{
+  position:fixed;inset:0;width:100%;height:100%;
+  background:
+    radial-gradient(60% 40% at 10% 0%, rgba(255,210,63,.14), transparent 62%),
+    radial-gradient(70% 45% at 100% 30%, rgba(94,234,212,.10), transparent 62%),
+    radial-gradient(80% 50% at 50% 120%, rgba(161,229,107,.10), transparent 62%),
+    linear-gradient(180deg,#0f1728 0%,var(--bg) 100%);
+  display:flex;flex-direction:column
+}
+button,a,input{touch-action:manipulation}
+button{background:none;border:none;cursor:pointer;color:inherit;font:inherit}
+::selection{background:rgba(255,210,63,.28);color:#fff}
+
+/* Top nav */
+.top{
+  padding:calc(env(safe-area-inset-top) + 10px) var(--pad-x-r) 8px var(--pad-x);
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  flex-shrink:0
+}
+.top .brand{
+  display:flex;align-items:center;gap:10px;
+  font-family:var(--disp);font-weight:900;font-style:italic;font-size:22px;color:var(--text);letter-spacing:-.03em
+}
+.top .brand .badge{
+  width:32px;height:32px;
+  clip-path:polygon(50% 0%, 93% 25%, 93% 75%, 50% 100%, 7% 75%, 7% 25%);
+  background:linear-gradient(135deg,var(--amber),var(--amber-dark));
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--disp);font-weight:900;font-size:16px;color:var(--bg);
+  box-shadow:0 4px 12px rgba(255,210,63,.42)
+}
+.top .brand em{color:var(--amber);font-style:italic}
+.top .actions{display:flex;gap:6px}
+.tico{
+  width:38px;height:38px;border-radius:50%;
+  background:rgba(255,255,255,.06);color:var(--text);border:1px solid var(--line);
+  font-size:14px;font-weight:600;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  backdrop-filter:blur(10px);
+  transition:all .16s var(--squish)
+}
+.tico:hover{background:rgba(255,255,255,.12);border-color:var(--amber);color:var(--amber)}
+.tico:active{transform:scale(.94)}
+
+/* HUD */
+.hud{
+  padding:0 var(--pad-x-r) 8px var(--pad-x);
+  display:grid;grid-template-columns:1.2fr 1fr 1.2fr;gap:8px;
+  flex-shrink:0
+}
+.hud .cell{
+  padding:10px 12px;border-radius:14px;
+  background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.02));
+  border:1px solid var(--line);text-align:center;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.1)
+}
+.hud .cell .k{font-family:var(--mono);font-size:9px;letter-spacing:.2em;color:var(--dim);text-transform:uppercase;font-weight:700}
+.hud .cell .v{font-family:var(--disp);font-weight:900;font-size:24px;color:var(--text);letter-spacing:-.02em;line-height:1;margin-top:3px;font-variant-numeric:tabular-nums}
+.hud .cell.score .v{color:var(--amber)}
+.hud .cell.time .v{color:var(--cyan)}
+.hud .cell.time.low .v{color:var(--hot);animation:tick .6s ease-in-out infinite alternate}
+@keyframes tick{0%{opacity:1}100%{opacity:.55}}
+.hud .cell.pop .v{animation:pop .35s var(--squish)}
+@keyframes pop{0%,100%{transform:scale(1)}30%{transform:scale(1.16)}}
+
+/* Current word tray */
+.tray{
+  padding:0 var(--pad-x-r) 6px var(--pad-x);flex-shrink:0
+}
+.tray .row{
+  display:flex;align-items:center;gap:8px;
+  padding:10px 12px;border-radius:14px;
+  background:linear-gradient(180deg,rgba(255,210,63,.08),rgba(255,210,63,.02));
+  border:1px solid rgba(255,210,63,.28);
+  min-height:52px
+}
+.tray .word{
+  flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-family:var(--disp);font-weight:900;font-style:italic;font-size:24px;color:var(--text);letter-spacing:.02em;
+  text-shadow:0 0 20px rgba(255,210,63,.22)
+}
+.tray .word.empty{color:var(--dim);font-style:normal;font-weight:400;font-family:var(--sans);font-size:13px;letter-spacing:.02em;text-shadow:none}
+.tray .word .pts{color:var(--amber);font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.06em;margin-left:8px;vertical-align:middle}
+.tray .btn{
+  padding:9px 14px;border-radius:100px;
+  background:rgba(255,255,255,.06);border:1px solid var(--line);color:var(--text);
+  font-family:var(--mono);font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;
+  min-height:38px;cursor:pointer;transition:all .16s var(--squish)
+}
+.tray .btn:hover{border-color:var(--text);background:rgba(255,255,255,.12)}
+.tray .btn.primary{background:linear-gradient(180deg,var(--amber),var(--amber-dark));color:var(--bg);border-color:transparent;box-shadow:0 4px 12px rgba(255,210,63,.4)}
+.tray .btn.primary:hover{filter:brightness(1.06)}
+.tray .btn:disabled{opacity:.4;cursor:default}
+.tray .btn.checking{background:linear-gradient(180deg,var(--cyan),#39c4b0);color:var(--bg);border-color:transparent}
+
+/* Hex grid — SVG */
+.board-wrap{
+  flex:1;min-height:0;position:relative;
+  display:flex;align-items:center;justify-content:center;
+  padding:6px var(--pad-x-r) 6px var(--pad-x)
+}
+svg.hex-grid{
+  width:100%;height:100%;
+  max-width:520px;max-height:100%;
+  display:block;overflow:visible
+}
+.hex-grid .hex-tile{
+  cursor:pointer;
+  transition:fill .18s var(--ease),transform .18s var(--squish);
+  transform-origin:center;transform-box:fill-box
+}
+.hex-grid .hex-tile:hover{fill:#fff}
+.hex-grid .hex-tile.on{fill:var(--cyan)}
+.hex-grid .hex-tile.win{fill:var(--lime);animation:tile-win .5s var(--squish)}
+@keyframes tile-win{0%{transform:scale(1)}30%{transform:scale(1.14)}100%{transform:scale(1)}}
+.hex-grid .hex-tile.miss{fill:var(--hot);animation:tile-miss .4s ease}
+@keyframes tile-miss{0%,100%{transform:translateX(0)}25%{transform:translateX(-4px)}75%{transform:translateX(4px)}}
+.hex-grid .hex-letter{
+  font-family:var(--disp);font-weight:900;font-size:34px;fill:var(--hex-ink);
+  text-anchor:middle;dominant-baseline:central;
+  pointer-events:none;user-select:none;
+  transition:fill .18s var(--ease)
+}
+.hex-grid .hex-tile.on + .hex-letter,.hex-grid .hex-tile.win + .hex-letter,.hex-grid .hex-tile.miss + .hex-letter{fill:var(--bg)}
+.hex-grid .hex-value{
+  font-family:var(--mono);font-weight:700;font-size:10px;fill:rgba(42,30,16,.6);
+  text-anchor:end;pointer-events:none;user-select:none
+}
+.hex-grid path.link{
+  fill:none;stroke:var(--amber);stroke-width:6;stroke-linecap:round;stroke-linejoin:round;
+  opacity:.85;pointer-events:none;
+  filter:drop-shadow(0 0 8px rgba(255,210,63,.6))
+}
+
+/* Found words strip */
+.found-wrap{
+  padding:0 var(--pad-x-r) calc(env(safe-area-inset-bottom) + 10px) var(--pad-x);
+  flex-shrink:0
+}
+.found-hdr{
+  display:flex;align-items:baseline;justify-content:space-between;padding:0 2px 6px;
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.2em;color:var(--dim);text-transform:uppercase;font-weight:700
+}
+.found-hdr .n{color:var(--amber);font-weight:800}
+.found{
+  display:flex;gap:6px;overflow-x:auto;overflow-y:hidden;
+  scrollbar-width:none;-webkit-overflow-scrolling:touch;
+  padding:2px 2px 4px
+}
+.found::-webkit-scrollbar{display:none}
+.found .word{
+  flex-shrink:0;padding:7px 12px;border-radius:100px;
+  background:rgba(255,255,255,.06);border:1px solid var(--line);color:var(--text-2);
+  font-family:var(--disp);font-weight:700;font-size:14px;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:8px;
+  animation:word-in .35s var(--squish) both
+}
+.found .word .p{color:var(--amber);font-family:var(--mono);font-size:10px;font-weight:800;letter-spacing:.04em}
+@keyframes word-in{from{opacity:0;transform:translateY(6px) scale(.9)}to{opacity:1;transform:none}}
+.found .empty{color:var(--dim);font-family:var(--sans);font-size:12px;font-style:italic;padding:4px 8px}
+
+/* Toast */
+.toast{
+  position:fixed;top:calc(env(safe-area-inset-top) + 88px);left:50%;transform:translateX(-50%);
+  z-index:180;padding:10px 18px;background:var(--bg-2);color:var(--text);
+  border-radius:100px;border:1px solid var(--line);
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;font-weight:700;
+  box-shadow:0 10px 24px rgba(0,0,0,.45);
+  animation:tin .28s var(--ease),tout .28s 1.6s var(--ease) forwards;pointer-events:none
+}
+.toast.good{background:linear-gradient(180deg,var(--lime),#8dcc5a);color:var(--bg);border-color:transparent}
+.toast.bad{background:linear-gradient(180deg,var(--hot),#e63e8e);color:#fff;border-color:transparent}
+@keyframes tin{from{opacity:0;transform:translate(-50%,-10px)}to{opacity:1;transform:translate(-50%,0)}}
+@keyframes tout{to{opacity:0;transform:translate(-50%,-10px)}}
+
+/* Modal */
+.modal{
+  position:fixed;inset:0;z-index:220;display:none;
+  align-items:center;justify-content:center;padding:20px;
+  background:radial-gradient(ellipse at center,rgba(13,20,32,.75),rgba(13,20,32,.94));
+  backdrop-filter:blur(12px)
+}
+.modal.show{display:flex;animation:mf .28s var(--ease)}
+@keyframes mf{from{opacity:0}to{opacity:1}}
+.mcard{
+  width:100%;max-width:380px;text-align:center;
+  padding:28px 26px 22px;border-radius:22px;
+  background:linear-gradient(180deg,var(--bg-2),var(--bg));
+  border:1px solid var(--line-2);
+  box-shadow:0 30px 60px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.08);
+  animation:mc-in .4s var(--squish) both
+}
+@keyframes mc-in{from{opacity:0;transform:scale(.9) translateY(20px)}to{opacity:1;transform:none}}
+.mcard .k{font-family:var(--mono);font-size:10px;letter-spacing:.28em;color:var(--amber);text-transform:uppercase;font-weight:700;margin-bottom:4px}
+.mcard h2{font-family:var(--disp);font-weight:900;font-style:italic;font-size:30px;color:var(--text);letter-spacing:-.025em;line-height:1;margin-bottom:14px}
+.mcard .big-score{font-family:var(--disp);font-weight:900;font-style:italic;font-size:64px;color:var(--amber);letter-spacing:-.04em;line-height:1;margin:12px 0 6px;font-variant-numeric:tabular-nums}
+.mcard .stats{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin:14px 0 18px}
+.mcard .stats .cell{padding:9px 6px;border-radius:12px;background:rgba(255,255,255,.05);border:1px solid var(--line)}
+.mcard .stats .cell .k2{font-family:var(--mono);font-size:8.5px;letter-spacing:.14em;color:var(--dim);text-transform:uppercase;font-weight:700}
+.mcard .stats .cell .v2{font-family:var(--disp);font-weight:900;font-size:18px;color:var(--text);letter-spacing:-.02em;margin-top:2px;font-variant-numeric:tabular-nums}
+.mcard .stats .cell.best.new .v2{color:var(--amber)}
+.mcard .stats .cell.best.new .v2::after{content:" ★";color:var(--amber)}
+.mcard .btnrow{display:flex;gap:8px}
+.mcard .btnrow .btn{
+  flex:1;padding:13px 16px;border-radius:100px;
+  font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;font-weight:800;
+  min-height:48px;cursor:pointer;
+  background:rgba(255,255,255,.06);border:1px solid var(--line-2);color:var(--text)
+}
+.mcard .btnrow .btn.primary{background:linear-gradient(180deg,var(--amber),var(--amber-dark));color:var(--bg);border-color:transparent;box-shadow:0 6px 16px rgba(255,210,63,.4)}
+
+/* Help panel */
+.help-bg{position:fixed;inset:0;z-index:180;background:rgba(13,20,32,.7);backdrop-filter:blur(6px);display:none;opacity:0;transition:opacity .2s var(--ease)}
+.help-bg.show{display:block;opacity:1}
+.help{
+  position:fixed;left:0;right:0;bottom:0;z-index:190;
+  background:linear-gradient(180deg,var(--bg-2),var(--bg));
+  border-top:1px solid var(--line);border-radius:22px 22px 0 0;
+  transform:translateY(100%);transition:transform .3s var(--ease);
+  padding:20px 24px calc(env(safe-area-inset-bottom) + 20px);
+  max-height:82dvh;overflow-y:auto;
+  box-shadow:0 -20px 60px rgba(0,0,0,.55)
+}
+.help.show{transform:none}
+.help h3{font-family:var(--disp);font-weight:900;font-style:italic;font-size:22px;color:var(--text);letter-spacing:-.02em;margin-bottom:10px}
+.help p{font-family:var(--sans);font-size:14.5px;line-height:1.55;color:var(--text-2);margin-bottom:10px}
+.help .close-help{margin-top:12px;padding:12px 18px;border-radius:100px;background:var(--surface);border:1px solid var(--line-2);color:var(--text);font-family:var(--mono);font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;min-height:48px;width:100%;cursor:pointer}
+.help table{width:100%;border-collapse:collapse;margin:8px 0 12px;font-family:var(--mono);font-size:12px}
+.help td{padding:6px 8px;border-bottom:1px dashed var(--line)}
+.help td:first-child{color:var(--amber);font-weight:800;width:40%}
+.help td:last-child{color:var(--text);font-weight:700;text-align:right;font-family:var(--disp);font-size:16px}
+</style>
+</head>
+<body>
+
+<nav class="top">
+  <div class="brand"><span class="badge">H</span>Hexicon</div>
+  <div class="actions">
+    <button class="tico" id="helpBtn" title="How to play">?</button>
+    <button class="tico" id="newBtn" title="New game">↻</button>
+  </div>
+</nav>
+
+<div class="hud">
+  <div class="cell score" id="scoreCell"><div class="k">Score</div><div class="v" id="scoreV">0</div></div>
+  <div class="cell time" id="timeCell"><div class="k">Time</div><div class="v" id="timeV">2:00</div></div>
+  <div class="cell" id="bestCell"><div class="k">Best</div><div class="v" id="bestV">—</div></div>
+</div>
+
+<div class="tray">
+  <div class="row">
+    <div class="word empty" id="wordV">Tap adjacent tiles to spell a word</div>
+    <button class="btn" id="clearBtn" disabled>Clear</button>
+    <button class="btn primary" id="submitBtn" disabled>Submit</button>
+  </div>
+</div>
+
+<div class="board-wrap">
+  <svg class="hex-grid" id="grid" viewBox="0 0 500 560" preserveAspectRatio="xMidYMid meet"></svg>
+</div>
+
+<div class="found-wrap">
+  <div class="found-hdr"><span>Words found</span><span class="n" id="foundN">0</span></div>
+  <div class="found" id="foundList"><span class="empty">No words yet</span></div>
+</div>
+
+<!-- End of round modal -->
+<div class="modal" id="modal">
+  <div class="mcard">
+    <div class="k" id="mTag">Time up</div>
+    <h2 id="mTitle">Final score</h2>
+    <div class="big-score" id="mScore">0</div>
+    <div class="stats">
+      <div class="cell"><div class="k2">Words</div><div class="v2" id="mWords">0</div></div>
+      <div class="cell"><div class="k2">Longest</div><div class="v2" id="mLongest">—</div></div>
+      <div class="cell best" id="mBestCell"><div class="k2">Best</div><div class="v2" id="mBest">—</div></div>
+    </div>
+    <div class="btnrow">
+      <button class="btn" id="mCloseBtn">Close</button>
+      <button class="btn primary" id="mAgainBtn">Play again</button>
+    </div>
+  </div>
+</div>
+
+<!-- Help sheet -->
+<div class="help-bg" id="helpBg"></div>
+<aside class="help" id="help">
+  <h3>How to play</h3>
+  <p><strong>Tap adjacent hex tiles</strong> to trace a word — each tile can only be used once per word. Tap the last tile again to undo it.</p>
+  <p>Words must be <strong>at least 3 letters</strong> and appear in a real dictionary. We check each submission live against the Free Dictionary API.</p>
+  <p>Scoring by length:</p>
+  <table>
+    <tr><td>3 letters</td><td>3</td></tr>
+    <tr><td>4 letters</td><td>5</td></tr>
+    <tr><td>5 letters</td><td>8</td></tr>
+    <tr><td>6 letters</td><td>13</td></tr>
+    <tr><td>7 letters</td><td>21</td></tr>
+    <tr><td>8+</td><td>40</td></tr>
+  </table>
+  <p>You have <strong>2 minutes</strong> per round. Best score persists per device.</p>
+  <button class="close-help" id="helpClose">Got it</button>
+</aside>
+
+<script>
+'use strict';
+
+const $ = id => document.getElementById(id);
+
+/* ═══════════════════════════════════════════════════════
+   Config
+   ═══════════════════════════════════════════════════════ */
+const ROUND_SECONDS = 120;
+const ROWS = 5;
+const COLS = 5;             // 5×5 pointy-top offset grid
+const HEX_R = 44;           // radius in SVG units
+const SCORE = { 3:3, 4:5, 5:8, 6:13, 7:21 };  // 8+ falls through
+function scoreFor(len) { return len >= 8 ? 40 : (SCORE[len] || 0); }
+
+/* Scrabble-ish letter bag (weighted) */
+const BAG = ('EEEEEEEEEEEE' + 'AAAAAAAAA' + 'IIIIIIIII' + 'OOOOOOOO' + 'NNNNNN' + 'RRRRRR' + 'TTTTTT'
+  + 'LLLL' + 'SSSS' + 'UUUU' + 'DDDD' + 'GGG' + 'BB' + 'CC' + 'MM' + 'PP' + 'FF' + 'HH' + 'VV' + 'WW' + 'YY'
+  + 'K' + 'J' + 'X' + 'Q' + 'Z').split('');
+const VOWELS = new Set(['A','E','I','O','U']);
+function randomLetter() { return BAG[Math.floor(Math.random() * BAG.length)]; }
+function makeLetters(n) {
+  // Ensure roughly 35-40% vowels for playability
+  const out = [];
+  for (let i = 0; i < n; i++) out.push(randomLetter());
+  let vowelCount = out.filter(l => VOWELS.has(l)).length;
+  const target = Math.round(n * 0.38);
+  while (vowelCount < target) {
+    const idx = Math.floor(Math.random() * n);
+    if (VOWELS.has(out[idx])) continue;
+    out[idx] = 'AEIOU'[Math.floor(Math.random() * 5)];
+    vowelCount++;
+  }
+  return out;
+}
+
+/* ═══════════════════════════════════════════════════════
+   Hex geometry — pointy-top, odd-r offset
+   ═══════════════════════════════════════════════════════ */
+const HEX_W = Math.sqrt(3) * HEX_R;
+const HEX_H = 2 * HEX_R;
+const ROW_STEP = HEX_H * 0.75;
+
+function hexCenter(row, col) {
+  // Odd rows shifted right by HEX_W/2
+  const x = col * HEX_W + (row % 2) * (HEX_W / 2) + HEX_W / 2 + 4;
+  const y = row * ROW_STEP + HEX_R + 4;
+  return { x, y };
+}
+function hexPointsAt(cx, cy, r) {
+  // Pointy-top hex — vertices at 30, 90, 150, 210, 270, 330°
+  const pts = [];
+  for (let i = 0; i < 6; i++) {
+    const a = Math.PI / 3 * i - Math.PI / 2;
+    pts.push([cx + r * Math.cos(a), cy + r * Math.sin(a)].map(n => n.toFixed(2)).join(','));
+  }
+  return pts.join(' ');
+}
+function areNeighbors(a, b) {
+  const dx = a.x - b.x, dy = a.y - b.y;
+  const d = Math.sqrt(dx * dx + dy * dy);
+  return d < HEX_R * 1.9 && d > 1;   // adjacent hexes are ~sqrt(3)*R apart
+}
+
+/* ═══════════════════════════════════════════════════════
+   State
+   ═══════════════════════════════════════════════════════ */
+const state = {
+  cells: [],        // { row, col, letter, x, y, el:{tile,letter}, index }
+  path: [],         // indices in state.cells
+  found: [],        // { word, points }
+  score: 0,
+  timeLeft: ROUND_SECONDS,
+  timer: null,
+  best: parseInt(localStorage.getItem('hexicon-best') || '0', 10) || 0,
+  loading: false
+};
+
+/* ═══════════════════════════════════════════════════════
+   Board
+   ═══════════════════════════════════════════════════════ */
+function buildBoard() {
+  const total = ROWS * COLS;
+  const letters = makeLetters(total);
+  const svg = $('grid');
+  svg.innerHTML = '';
+  state.cells = [];
+
+  // Compute viewBox from grid dimensions
+  const width = COLS * HEX_W + HEX_W / 2 + 8;
+  const height = (ROWS - 1) * ROW_STEP + HEX_H + 8;
+  svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+
+  // Link path (drawn first so tiles sit on top)
+  const link = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  link.setAttribute('class', 'link');
+  link.setAttribute('d', '');
+  svg.appendChild(link);
+  state.linkEl = link;
+
+  let idx = 0;
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const letter = letters[idx];
+      const { x, y } = hexCenter(r, c);
+      // Skip if the hex would extend past the viewBox for odd-row overflow — but 5x5 fits
+      const tile = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+      tile.setAttribute('class', 'hex-tile');
+      tile.setAttribute('points', hexPointsAt(x, y, HEX_R - 2));
+      tile.setAttribute('fill', 'var(--hex-face)');
+      tile.dataset.i = idx;
+
+      const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      text.setAttribute('class', 'hex-letter');
+      text.setAttribute('x', x);
+      text.setAttribute('y', y + 1);
+      text.textContent = letter === 'Q' ? 'Qu' : letter;
+
+      svg.appendChild(tile);
+      svg.appendChild(text);
+
+      const cellIdx = idx;
+      tile.addEventListener('click', () => onTapHex(cellIdx));
+      state.cells.push({ row:r, col:c, letter, x, y, tile, text, index: idx });
+      idx++;
+    }
+  }
+}
+
+function onTapHex(i) {
+  const cell = state.cells[i];
+  if (!cell) return;
+
+  // If tile is the last in path — pop it (undo)
+  if (state.path.length && state.path[state.path.length - 1] === i) {
+    state.path.pop();
+    refreshPath();
+    return;
+  }
+  // If tile is already in path — ignore
+  if (state.path.includes(i)) return;
+
+  // Must be adjacent to the last tile (or first tile of the word)
+  if (state.path.length) {
+    const last = state.cells[state.path[state.path.length - 1]];
+    if (!areNeighbors(cell, last)) return;
+  }
+  state.path.push(i);
+  refreshPath();
+  ensureTimer();
+}
+
+function refreshPath() {
+  // Update tile 'on' class
+  state.cells.forEach(c => c.tile.classList.remove('on'));
+  state.path.forEach(pi => state.cells[pi].tile.classList.add('on'));
+  // Update link path
+  if (state.path.length > 1) {
+    const d = state.path.map((pi, idx) => {
+      const c = state.cells[pi];
+      return (idx === 0 ? 'M' : 'L') + c.x.toFixed(1) + ',' + c.y.toFixed(1);
+    }).join(' ');
+    state.linkEl.setAttribute('d', d);
+  } else {
+    state.linkEl.setAttribute('d', '');
+  }
+  // Word display + buttons
+  const word = state.path.map(pi => state.cells[pi].letter).join('');
+  const submit = $('submitBtn');
+  const clear = $('clearBtn');
+  const wordEl = $('wordV');
+  if (word.length === 0) {
+    wordEl.textContent = 'Tap adjacent tiles to spell a word';
+    wordEl.classList.add('empty');
+    submit.disabled = true; clear.disabled = true;
+  } else {
+    // Q → Qu display convention
+    const display = word.replace(/Q/g, 'Qu');
+    const len = display.length;
+    const pts = scoreFor(len);
+    wordEl.innerHTML = `${display}${pts ? ` <span class="pts">+${pts}</span>` : ''}`;
+    wordEl.classList.remove('empty');
+    submit.disabled = word.length < 3;
+    clear.disabled = false;
+  }
+}
+
+function clearPath() {
+  state.path = [];
+  refreshPath();
+}
+
+/* ═══════════════════════════════════════════════════════
+   Word check — Free Dictionary API
+   ═══════════════════════════════════════════════════════ */
+async function isRealWord(word) {
+  try {
+    const r = await fetch('https://api.dictionaryapi.dev/api/v2/entries/en/' + encodeURIComponent(word.toLowerCase()));
+    return r.ok;
+  } catch (e) {
+    return false;
+  }
+}
+
+async function submitWord() {
+  if (state.loading) return;
+  const raw = state.path.map(pi => state.cells[pi].letter).join('');
+  if (raw.length < 3) return;
+  const display = raw.replace(/Q/g, 'Qu');
+  const wordKey = display.toLowerCase();
+
+  // Already found?
+  if (state.found.some(w => w.word.toLowerCase() === wordKey)) {
+    flashPath('miss');
+    toast('Already found', 'bad');
+    setTimeout(clearPath, 350);
+    return;
+  }
+
+  state.loading = true;
+  const btn = $('submitBtn'); btn.classList.add('checking'); btn.textContent = 'Checking…';
+  const ok = await isRealWord(wordKey);
+  btn.classList.remove('checking'); btn.textContent = 'Submit';
+  state.loading = false;
+  if (!ok) {
+    flashPath('miss');
+    toast('Not a word', 'bad');
+    setTimeout(clearPath, 400);
+    return;
+  }
+  // Score it
+  const pts = scoreFor(display.length);
+  state.score += pts;
+  state.found.unshift({ word: display, points: pts });
+  updateHUD(true);
+  renderFound();
+  flashPath('win');
+  toast(`+${pts} · ${display}`, 'good');
+  setTimeout(clearPath, 420);
+}
+
+function flashPath(cls) {
+  state.path.forEach(pi => {
+    const c = state.cells[pi];
+    c.tile.classList.add(cls);
+    setTimeout(() => c.tile.classList.remove(cls), 500);
+  });
+}
+
+/* ═══════════════════════════════════════════════════════
+   HUD + found
+   ═══════════════════════════════════════════════════════ */
+function updateHUD(pop) {
+  $('scoreV').textContent = state.score.toLocaleString();
+  $('timeV').textContent = fmtTime(state.timeLeft);
+  $('bestV').textContent = state.best ? state.best.toLocaleString() : '—';
+  $('timeCell').classList.toggle('low', state.timeLeft <= 15);
+  if (pop) {
+    const cell = $('scoreCell');
+    cell.classList.remove('pop'); void cell.offsetWidth; cell.classList.add('pop');
+  }
+}
+function fmtTime(s) {
+  s = Math.max(0, s);
+  const m = Math.floor(s / 60);
+  return `${m}:${String(s % 60).padStart(2, '0')}`;
+}
+function renderFound() {
+  const box = $('foundList');
+  const n = state.found.length;
+  $('foundN').textContent = n;
+  if (!n) { box.innerHTML = '<span class="empty">No words yet</span>'; return; }
+  box.innerHTML = state.found.map(w => `<span class="word">${escapeHtml(w.word)} <span class="p">+${w.points}</span></span>`).join('');
+}
+function escapeHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+/* ═══════════════════════════════════════════════════════
+   Timer
+   ═══════════════════════════════════════════════════════ */
+function ensureTimer() {
+  if (state.timer) return;
+  state.timer = setInterval(() => {
+    state.timeLeft--;
+    updateHUD();
+    if (state.timeLeft <= 0) endGame();
+  }, 1000);
+}
+function endGame() {
+  clearInterval(state.timer); state.timer = null;
+  const isBest = state.score > state.best;
+  if (isBest) { state.best = state.score; try { localStorage.setItem('hexicon-best', String(state.best)); } catch(e) {} }
+  const longest = state.found.reduce((m, w) => w.word.length > m.length ? w.word : m, '');
+  $('mScore').textContent = state.score.toLocaleString();
+  $('mWords').textContent = state.found.length;
+  $('mLongest').textContent = longest ? longest : '—';
+  $('mBest').textContent = state.best.toLocaleString();
+  $('mBestCell').classList.toggle('new', isBest);
+  $('mTag').textContent = isBest && state.best ? 'New best' : 'Time up';
+  $('mTitle').textContent = state.score > 0 ? 'Final score' : 'Nothing this round';
+  $('modal').classList.add('show');
+  updateHUD();
+}
+
+/* ═══════════════════════════════════════════════════════
+   Init
+   ═══════════════════════════════════════════════════════ */
+function newGame() {
+  clearInterval(state.timer); state.timer = null;
+  state.score = 0; state.found = []; state.path = [];
+  state.timeLeft = ROUND_SECONDS;
+  buildBoard();
+  refreshPath();
+  renderFound();
+  updateHUD();
+  $('modal').classList.remove('show');
+}
+
+function toast(msg, kind) {
+  document.querySelectorAll('.toast').forEach(t => t.remove());
+  const el = document.createElement('div');
+  el.className = 'toast' + (kind ? ' ' + kind : '');
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2200);
+}
+
+/* Wire */
+$('newBtn').addEventListener('click', () => { if (confirm('End this round and start a new one?')) newGame(); });
+$('submitBtn').addEventListener('click', submitWord);
+$('clearBtn').addEventListener('click', clearPath);
+$('mAgainBtn').addEventListener('click', newGame);
+$('mCloseBtn').addEventListener('click', () => $('modal').classList.remove('show'));
+$('helpBtn').addEventListener('click', () => { $('help').classList.add('show'); $('helpBg').classList.add('show'); });
+$('helpClose').addEventListener('click', () => { $('help').classList.remove('show'); $('helpBg').classList.remove('show'); });
+$('helpBg').addEventListener('click', () => { $('help').classList.remove('show'); $('helpBg').classList.remove('show'); });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { $('modal').classList.remove('show'); $('help').classList.remove('show'); $('helpBg').classList.remove('show'); clearPath(); }
+  if (e.key === 'Enter' && !$('submitBtn').disabled) submitWord();
+  if (e.key === 'Backspace' && state.path.length) { state.path.pop(); refreshPath(); }
+});
+
+newGame();
+</script>
+</body>
+</html>
