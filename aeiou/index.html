@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#faf3ea">
+<meta name="description" content="AEIOU — a candy-coloured word game. Swipe adjacent tiles to spell words. Tiles pop, letters cascade, vowels are gems.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="AEIOU">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="format-detection" content="telephone=no">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,700;0,9..144,900;1,9..144,900&family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=JetBrains+Mono:wght@600;800&display=swap" rel="stylesheet">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23fff4e0'/%3E%3Ctext x='16' y='24' text-anchor='middle' font-family='Fraunces,serif' font-weight='900' font-style='italic' font-size='22' fill='%23ff2d84'%3EA%3C/text%3E%3C/svg%3E">
+<title>AEIOU — swipe words, watch them fall</title>
+<style>
+:root{
+  --bg:#fdf5eb;
+  --ink:#2b1a2e;
+  --ink-2:#5a4358;
+  --dim:#9b8891;
+  --pink:#ff2d84;
+  --pink-2:#ffa6d1;
+  --orange:#ff8c42;
+  --orange-2:#ffc79a;
+  --gold:#ffc933;
+  --gold-2:#ffe9a3;
+  --cyan:#4cc4ff;
+  --cyan-2:#a3e2ff;
+  --purple:#a266ff;
+  --purple-2:#d3b5ff;
+  --lime:#a1e56b;
+  --cream:#fff7ec;
+  --cream-2:#f6ead4;
+  --disp:'Fraunces',Georgia,serif;
+  --sans:'Bricolage Grotesque',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,monospace;
+  --ease:cubic-bezier(.16,1,.3,1);
+  --squish:cubic-bezier(.34,1.56,.64,1);
+  --pad-x:max(14px,env(safe-area-inset-left));
+  --pad-x-r:max(14px,env(safe-area-inset-right));
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html{height:100%;-webkit-text-size-adjust:100%;overflow:hidden}
+html,body{color:var(--ink);font-family:var(--sans);overscroll-behavior:none;overflow:hidden;-webkit-font-smoothing:antialiased}
+body{
+  position:fixed;inset:0;width:100%;height:100%;
+  background:
+    radial-gradient(60% 45% at 15% 0%, rgba(255,45,132,.20), transparent 55%),
+    radial-gradient(70% 45% at 100% 20%, rgba(162,102,255,.18), transparent 60%),
+    radial-gradient(60% 50% at 50% 110%, rgba(76,196,255,.22), transparent 60%),
+    linear-gradient(180deg, #fff4e0 0%, #fdf5eb 40%, #fce8f0 100%);
+  display:flex;flex-direction:column;
+  touch-action:none
+}
+button{background:none;border:none;cursor:pointer;color:inherit;font:inherit;touch-action:manipulation}
+::selection{background:rgba(255,45,132,.24);color:#fff}
+
+.stage{
+  position:fixed;inset:0;z-index:2;overflow:hidden;
+  padding:calc(env(safe-area-inset-top) + 10px) var(--pad-x-r) calc(env(safe-area-inset-bottom) + 10px) var(--pad-x)
+}
+
+/* Brand pill */
+.brand{
+  position:absolute;top:calc(env(safe-area-inset-top) + 12px);left:50%;transform:translateX(-50%);z-index:5;
+  display:inline-flex;align-items:center;gap:2px;
+  padding:8px 16px;border-radius:100px;
+  background:linear-gradient(180deg,rgba(255,255,255,.9),rgba(255,255,255,.7));
+  border:1px solid rgba(0,0,0,.06);
+  box-shadow:0 4px 14px rgba(255,45,132,.14);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)
+}
+.brand .letter{font-family:var(--disp);font-style:italic;font-weight:900;font-size:22px;letter-spacing:-.02em;line-height:1}
+.brand .letter.a{color:var(--pink)}
+.brand .letter.e{color:var(--orange)}
+.brand .letter.i{color:var(--gold)}
+.brand .letter.o{color:var(--cyan)}
+.brand .letter.u{color:var(--purple)}
+
+/* HUD pills */
+.corner{position:absolute;z-index:5;display:flex;flex-direction:column;gap:6px;pointer-events:none}
+.corner > *{pointer-events:auto}
+.corner.tl{top:calc(env(safe-area-inset-top) + 12px);left:var(--pad-x);align-items:flex-start}
+.corner.tr{top:calc(env(safe-area-inset-top) + 12px);right:var(--pad-x-r);align-items:flex-end}
+.corner.br{bottom:calc(env(safe-area-inset-bottom) + 74px);right:var(--pad-x-r);align-items:flex-end;flex-direction:row;gap:6px}
+
+.pill{
+  padding:8px 14px;border-radius:16px;min-width:78px;
+  background:linear-gradient(180deg,#fff,rgba(255,255,255,.88));
+  border:1px solid rgba(43,26,46,.08);
+  box-shadow:0 6px 14px rgba(43,26,46,.08),inset 0 1px 0 rgba(255,255,255,.6);
+  text-align:center;line-height:1
+}
+.pill .k{font-family:var(--mono);font-size:9px;letter-spacing:.2em;color:var(--dim);text-transform:uppercase;font-weight:800}
+.pill .v{font-family:var(--disp);font-weight:900;font-style:italic;font-size:22px;letter-spacing:-.025em;margin-top:3px;font-variant-numeric:tabular-nums;color:var(--ink)}
+.pill.score .v{background:linear-gradient(135deg,var(--pink),var(--purple));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.pill.best .v{color:var(--ink-2)}
+.pill.streak{display:none;padding:8px 12px}
+.pill.streak.on{display:block;animation:pill-bounce .4s var(--squish)}
+.pill.streak .v{color:var(--pink);font-size:18px}
+@keyframes pill-bounce{0%{transform:scale(.7)}50%{transform:scale(1.15)}100%{transform:scale(1)}}
+.pill.pop{animation:pop .35s var(--squish)}
+@keyframes pop{0%,100%{transform:scale(1)}30%{transform:scale(1.16)}}
+
+.tico{
+  width:40px;height:40px;border-radius:50%;
+  background:#fff;color:var(--ink);border:1px solid rgba(43,26,46,.08);
+  font-size:16px;font-weight:700;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  transition:all .16s var(--squish);
+  box-shadow:0 4px 10px rgba(43,26,46,.1)
+}
+.tico:active{transform:scale(.9)}
+.tico:hover{background:var(--cream)}
+
+/* Word tray */
+.tray{
+  position:absolute;left:var(--pad-x);right:var(--pad-x-r);
+  top:calc(env(safe-area-inset-top) + 62px);z-index:4;
+  display:flex;justify-content:center
+}
+.tray .row{
+  display:flex;align-items:center;gap:10px;
+  padding:10px 20px;border-radius:100px;
+  background:linear-gradient(180deg,#fff,rgba(255,255,255,.88));
+  border:1.5px solid rgba(255,45,132,.28);
+  min-height:48px;max-width:min(100%,520px);
+  box-shadow:0 4px 20px rgba(255,45,132,.14),inset 0 1px 0 rgba(255,255,255,.6)
+}
+.tray .word{
+  flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-family:var(--disp);font-weight:900;font-style:italic;font-size:22px;color:var(--ink);letter-spacing:.02em;
+  text-align:center
+}
+.tray .word.empty{color:var(--dim);font-style:normal;font-weight:600;font-family:var(--sans);font-size:13px;letter-spacing:.01em}
+.tray .word .pts{color:var(--pink);font-family:var(--mono);font-size:11.5px;font-weight:800;margin-left:10px}
+.tray .badge-live{display:none;padding:5px 10px;border-radius:100px;background:linear-gradient(180deg,var(--pink),var(--purple));color:#fff;font-family:var(--mono);font-size:9.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;box-shadow:0 4px 10px rgba(162,102,255,.4)}
+.tray.checking .badge-live{display:inline-flex}
+
+/* Board */
+.board-wrap{
+  position:absolute;inset:calc(env(safe-area-inset-top) + 126px) var(--pad-x-r) calc(env(safe-area-inset-bottom) + 130px) var(--pad-x);
+  z-index:3;
+  display:flex;align-items:center;justify-content:center
+}
+svg.grid{width:100%;height:100%;display:block;overflow:visible;touch-action:none;-webkit-user-select:none;user-select:none}
+.grid .cell{
+  cursor:grab;
+  transition:transform .22s var(--squish);
+  transform-origin:center;transform-box:fill-box
+}
+.grid .cell rect.tile{
+  transition:filter .18s var(--ease),stroke .18s var(--ease),stroke-width .18s var(--ease)
+}
+.grid .cell.on rect.tile{
+  stroke:#fff;stroke-width:4;
+  filter:drop-shadow(0 0 12px rgba(255,255,255,.95)) drop-shadow(0 0 22px rgba(255,45,132,.5))
+}
+.grid .cell.on{transform:scale(1.08)}
+.grid .cell.pop{animation:cell-pop .45s var(--squish) forwards}
+@keyframes cell-pop{
+  0%{transform:scale(1);opacity:1}
+  40%{transform:scale(1.28) rotate(4deg);opacity:1}
+  100%{transform:scale(0);opacity:0}
+}
+.grid .cell.fall{animation:cell-fall .38s var(--squish)}
+@keyframes cell-fall{
+  0%{transform:translateY(-40px);opacity:0}
+  70%{transform:translateY(4px);opacity:1}
+  100%{transform:translateY(0);opacity:1}
+}
+.grid .cell.miss rect.tile{
+  animation:cell-miss .38s ease;stroke:var(--pink);stroke-width:3
+}
+@keyframes cell-miss{0%,100%{transform:translateX(0)}25%{transform:translateX(-3px)}75%{transform:translateX(3px)}}
+.grid .letter{
+  font-family:var(--disp);font-weight:900;font-style:italic;font-size:26px;
+  text-anchor:middle;dominant-baseline:central;
+  pointer-events:none;user-select:none;letter-spacing:-.02em
+}
+.grid .cell.vowel .letter{fill:#fff;text-shadow:0 1px 2px rgba(0,0,0,.14)}
+.grid .cell:not(.vowel) .letter{fill:#3a1e2e}
+.grid path.link{
+  fill:none;stroke:url(#candy);stroke-width:10;stroke-linecap:round;stroke-linejoin:round;
+  pointer-events:none;opacity:.94;
+  filter:drop-shadow(0 3px 10px rgba(162,102,255,.4)) drop-shadow(0 0 6px rgba(255,255,255,.75))
+}
+.grid path.link.win{stroke:url(#win)}
+.grid path.link.miss{stroke:url(#miss)}
+
+/* Points popup */
+.pt-pop{
+  position:fixed;z-index:180;pointer-events:none;
+  font-family:var(--disp);font-weight:900;font-style:italic;font-size:52px;letter-spacing:-.03em;
+  color:var(--pink);text-shadow:0 3px 0 #d21c6d,0 6px 24px rgba(255,45,132,.4);
+  animation:pt-float 1.15s var(--squish) forwards;
+  transform:translate(-50%,-50%)
+}
+.pt-pop.gem{background:linear-gradient(135deg,var(--pink),var(--gold),var(--cyan),var(--purple));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;text-shadow:none;filter:drop-shadow(0 4px 12px rgba(162,102,255,.55))}
+.pt-pop .x{font-family:var(--mono);font-size:22px;font-weight:800;font-style:normal;letter-spacing:.02em;color:var(--purple);vertical-align:6px;margin-left:6px;-webkit-text-fill-color:currentColor}
+@keyframes pt-float{
+  0%{opacity:0;transform:translate(-50%,-50%) scale(.4)}
+  20%{opacity:1;transform:translate(-50%,-50%) scale(1.14)}
+  100%{opacity:0;transform:translate(-50%,-140%) scale(.95)}
+}
+
+/* Confetti dot */
+.dot{
+  position:fixed;z-index:170;width:10px;height:10px;border-radius:50%;pointer-events:none;
+  animation:dot-fly .9s ease-out forwards
+}
+@keyframes dot-fly{
+  0%{opacity:1;transform:translate(-50%,-50%) scale(1)}
+  100%{opacity:0;transform:translate(calc(-50% + var(--tx)),calc(-50% + var(--ty))) scale(.4)}
+}
+
+/* Rarity flash */
+.flash{
+  position:fixed;top:36%;left:50%;transform:translate(-50%,-50%);z-index:190;
+  padding:10px 22px 12px;border-radius:100px;pointer-events:none;
+  background:linear-gradient(180deg,#fff,rgba(255,255,255,.9));
+  border:2px solid var(--pink);
+  color:var(--pink);font-family:var(--disp);font-weight:900;font-style:italic;font-size:32px;letter-spacing:-.02em;line-height:1;
+  box-shadow:0 20px 60px rgba(255,45,132,.28),0 0 60px rgba(255,45,132,.2);
+  animation:flash-in .9s var(--squish) both
+}
+.flash.rain{background:linear-gradient(135deg,var(--pink),var(--gold),var(--cyan),var(--purple));color:#fff;border-color:transparent;font-size:36px;text-shadow:0 2px 12px rgba(0,0,0,.2)}
+@keyframes flash-in{
+  0%{opacity:0;transform:translate(-50%,-50%) scale(.4)}
+  25%{opacity:1;transform:translate(-50%,-50%) scale(1.18)}
+  70%{transform:translate(-50%,-50%) scale(1)}
+  100%{opacity:0;transform:translate(-50%,-140%) scale(.95)}
+}
+
+/* Toast */
+.toast{
+  position:fixed;top:calc(env(safe-area-inset-top) + 118px);left:50%;transform:translateX(-50%);
+  z-index:180;padding:10px 18px;border-radius:100px;
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;font-weight:800;text-transform:uppercase;
+  background:#fff;color:var(--ink);border:1px solid rgba(43,26,46,.12);
+  box-shadow:0 10px 24px rgba(43,26,46,.14);
+  animation:tin .28s var(--ease),tout .28s 1.6s var(--ease) forwards;pointer-events:none
+}
+.toast.good{background:linear-gradient(180deg,var(--lime),#89e02b);color:#0a1503;border-color:transparent}
+.toast.bad{background:linear-gradient(180deg,var(--pink),#e6207a);color:#fff;border-color:transparent}
+@keyframes tin{from{opacity:0;transform:translate(-50%,-10px)}to{opacity:1;transform:translate(-50%,0)}}
+@keyframes tout{to{opacity:0;transform:translate(-50%,-10px)}}
+
+/* Found strip */
+.found-wrap{
+  position:absolute;left:0;right:0;bottom:0;z-index:4;
+  padding:0 var(--pad-x-r) calc(env(safe-area-inset-bottom) + 12px) var(--pad-x)
+}
+.found-hdr{display:flex;align-items:baseline;justify-content:space-between;padding:0 2px 6px;font-family:var(--mono);font-size:9.5px;letter-spacing:.2em;color:var(--dim);text-transform:uppercase;font-weight:800}
+.found-hdr .n{color:var(--pink);font-weight:800;font-size:11px}
+.found{display:flex;gap:6px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;-webkit-overflow-scrolling:touch;padding:2px 2px 4px;touch-action:pan-x}
+.found::-webkit-scrollbar{display:none}
+.found .word{
+  flex-shrink:0;padding:7px 14px;border-radius:100px;
+  background:#fff;border:1px solid rgba(255,45,132,.24);color:var(--ink);
+  font-family:var(--disp);font-weight:700;font-style:italic;font-size:15px;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:8px;
+  box-shadow:0 3px 8px rgba(255,45,132,.1);
+  animation:word-in .35s var(--squish) both
+}
+.found .word .p{color:var(--pink);font-family:var(--mono);font-size:10.5px;font-weight:800;font-style:normal;letter-spacing:.04em}
+@keyframes word-in{from{opacity:0;transform:translateY(6px) scale(.85)}to{opacity:1;transform:none}}
+.found .empty{color:var(--dim);font-family:var(--sans);font-size:12.5px;font-style:italic;padding:6px 10px;font-weight:500}
+
+/* Modal */
+.modal{position:fixed;inset:0;z-index:220;display:none;align-items:center;justify-content:center;padding:20px;background:rgba(255,244,224,.72);backdrop-filter:blur(14px)}
+.modal.show{display:flex;animation:mf .28s var(--ease)}
+@keyframes mf{from{opacity:0}to{opacity:1}}
+.mcard{
+  width:100%;max-width:380px;text-align:center;
+  padding:30px 26px 22px;border-radius:24px;
+  background:#fff;border:1px solid rgba(43,26,46,.08);
+  box-shadow:0 30px 60px rgba(43,26,46,.14),inset 0 1px 0 rgba(255,255,255,.9);
+  animation:mc-in .4s var(--squish) both;position:relative
+}
+@keyframes mc-in{from{opacity:0;transform:scale(.9) translateY(20px)}to{opacity:1;transform:none}}
+.mcard .k{font-family:var(--mono);font-size:10.5px;letter-spacing:.28em;color:var(--pink);text-transform:uppercase;font-weight:800;margin-bottom:4px}
+.mcard h2{font-family:var(--disp);font-weight:900;font-style:italic;font-size:30px;color:var(--ink);letter-spacing:-.025em;line-height:1;margin-bottom:8px}
+.mcard .big{font-family:var(--disp);font-weight:900;font-style:italic;font-size:66px;letter-spacing:-.04em;line-height:1;margin:12px 0 6px;font-variant-numeric:tabular-nums;background:linear-gradient(135deg,var(--pink),var(--purple));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.mcard .stats{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin:14px 0 18px}
+.mcard .stats .cell{padding:10px 4px;border-radius:14px;background:var(--cream);border:1px solid rgba(43,26,46,.06)}
+.mcard .stats .k2{font-family:var(--mono);font-size:9px;letter-spacing:.14em;color:var(--dim);text-transform:uppercase;font-weight:800}
+.mcard .stats .v2{font-family:var(--disp);font-weight:900;font-style:italic;font-size:18px;color:var(--ink);letter-spacing:-.02em;margin-top:3px;font-variant-numeric:tabular-nums}
+.mcard .stats .cell.new .v2{color:var(--pink)}
+.mcard .stats .cell.new .v2::after{content:" ★";color:var(--gold)}
+.mcard .btnrow{display:flex;gap:8px}
+.mcard .btnrow .btn{
+  flex:1;padding:14px 16px;border-radius:100px;
+  font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;font-weight:800;
+  min-height:50px;cursor:pointer;
+  background:var(--cream);border:1px solid rgba(43,26,46,.1);color:var(--ink)
+}
+.mcard .btnrow .btn.primary{background:linear-gradient(135deg,var(--pink),var(--purple));color:#fff;border-color:transparent;box-shadow:0 6px 18px rgba(162,102,255,.4)}
+
+/* Help */
+.help-bg{position:fixed;inset:0;z-index:180;background:rgba(43,26,46,.5);backdrop-filter:blur(6px);display:none;opacity:0;transition:opacity .2s var(--ease)}
+.help-bg.show{display:block;opacity:1}
+.help{
+  position:fixed;left:0;right:0;bottom:0;z-index:190;
+  background:#fff;border-radius:24px 24px 0 0;
+  transform:translateY(100%);transition:transform .3s var(--ease);
+  padding:22px 24px calc(env(safe-area-inset-bottom) + 22px);
+  max-height:82dvh;overflow-y:auto;
+  box-shadow:0 -20px 60px rgba(43,26,46,.24)
+}
+.help.show{transform:none}
+.help h3{font-family:var(--disp);font-weight:900;font-style:italic;font-size:26px;color:var(--ink);letter-spacing:-.02em;margin-bottom:12px}
+.help h3 em{background:linear-gradient(135deg,var(--pink),var(--purple));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;font-style:italic}
+.help p{font-family:var(--sans);font-size:14.5px;line-height:1.55;color:var(--ink-2);margin-bottom:10px}
+.help p strong{color:var(--ink);font-weight:800}
+.help p em{color:var(--pink);font-style:normal;font-weight:800}
+.help .vowels{display:flex;gap:6px;justify-content:center;margin:14px 0;flex-wrap:wrap}
+.help .vowels .v{width:44px;height:44px;border-radius:12px;font-family:var(--disp);font-style:italic;font-weight:900;font-size:22px;color:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 10px rgba(43,26,46,.15)}
+.help .vowels .a{background:linear-gradient(135deg,var(--pink),#e6207a)}
+.help .vowels .e{background:linear-gradient(135deg,var(--orange),#e07020)}
+.help .vowels .i{background:linear-gradient(135deg,var(--gold),#e0a010)}
+.help .vowels .o{background:linear-gradient(135deg,var(--cyan),#1e9ce0)}
+.help .vowels .u{background:linear-gradient(135deg,var(--purple),#7a3fe0)}
+.help table{width:100%;border-collapse:collapse;margin:8px 0 14px;font-family:var(--mono);font-size:12.5px}
+.help td{padding:8px;border-bottom:1px dashed rgba(43,26,46,.1)}
+.help td:first-child{color:var(--pink);font-weight:800;width:60%}
+.help td:last-child{color:var(--ink);font-weight:700;text-align:right;font-family:var(--disp);font-style:italic;font-size:17px}
+.help .close-help{margin-top:14px;padding:14px 18px;border-radius:100px;background:linear-gradient(135deg,var(--pink),var(--purple));border:none;color:#fff;font-family:var(--mono);font-size:11.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;min-height:52px;width:100%;cursor:pointer;box-shadow:0 6px 18px rgba(162,102,255,.35)}
+</style>
+</head>
+<body>
+
+<div class="stage">
+  <div class="brand">
+    <span class="letter a">A</span>
+    <span class="letter e">E</span>
+    <span class="letter i">I</span>
+    <span class="letter o">O</span>
+    <span class="letter u">U</span>
+  </div>
+
+  <div class="corner tl">
+    <div class="pill score" id="scoreCell"><div class="k">Score</div><div class="v" id="scoreV">0</div></div>
+    <div class="pill streak" id="streakCell"><div class="k">Combo</div><div class="v" id="streakV">×2</div></div>
+  </div>
+  <div class="corner tr">
+    <div class="pill best"><div class="k">Best</div><div class="v" id="bestV">—</div></div>
+  </div>
+  <div class="corner br">
+    <button class="tico" id="helpBtn" title="How to play">?</button>
+    <button class="tico" id="newBtn" title="New game">↻</button>
+  </div>
+
+  <div class="tray" id="tray">
+    <div class="row">
+      <div class="word empty" id="wordV">Swipe adjacent tiles to spell a word</div>
+      <span class="badge-live">Checking</span>
+    </div>
+  </div>
+
+  <div class="board-wrap">
+    <svg class="grid" id="grid" viewBox="0 0 600 700" preserveAspectRatio="xMidYMid meet">
+      <defs>
+        <linearGradient id="a-face" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ff6aac"/><stop offset="1" stop-color="#ff2d84"/></linearGradient>
+        <linearGradient id="e-face" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffb27b"/><stop offset="1" stop-color="#ff8c42"/></linearGradient>
+        <linearGradient id="i-face" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe58a"/><stop offset="1" stop-color="#ffc933"/></linearGradient>
+        <linearGradient id="o-face" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8fdcff"/><stop offset="1" stop-color="#4cc4ff"/></linearGradient>
+        <linearGradient id="u-face" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c69bff"/><stop offset="1" stop-color="#a266ff"/></linearGradient>
+        <linearGradient id="c-face" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fffaf0"/><stop offset="1" stop-color="#f4e6d0"/></linearGradient>
+        <linearGradient id="candy" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stop-color="#ff2d84"/><stop offset=".5" stop-color="#ffc933"/><stop offset="1" stop-color="#a266ff"/>
+        </linearGradient>
+        <linearGradient id="win" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#a1e56b"/><stop offset="1" stop-color="#4cc4ff"/></linearGradient>
+        <linearGradient id="miss" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#ff2d84"/><stop offset="1" stop-color="#ff8c42"/></linearGradient>
+      </defs>
+    </svg>
+  </div>
+
+  <div class="found-wrap">
+    <div class="found-hdr"><span>Words spelled · endless</span><span class="n" id="foundN">0</span></div>
+    <div class="found" id="foundList"><span class="empty">No words yet — swipe to spell one</span></div>
+  </div>
+</div>
+
+<div class="modal" id="modal">
+  <div class="mcard">
+    <div class="k" id="mTag">Session ended</div>
+    <h2 id="mTitle">Final score</h2>
+    <div class="big" id="mScore">0</div>
+    <div class="stats">
+      <div class="cell"><div class="k2">Words</div><div class="v2" id="mWords">0</div></div>
+      <div class="cell"><div class="k2">Longest</div><div class="v2" id="mLongest">—</div></div>
+      <div class="cell" id="mBestCell"><div class="k2">Best</div><div class="v2" id="mBest">—</div></div>
+    </div>
+    <div class="btnrow">
+      <button class="btn" id="mCloseBtn">Close</button>
+      <button class="btn primary" id="mAgainBtn">Play again</button>
+    </div>
+  </div>
+</div>
+
+<div class="help-bg" id="helpBg"></div>
+<aside class="help" id="help">
+  <h3>How <em>AEIOU</em> works</h3>
+  <p><strong>Swipe across adjacent tiles</strong> to trace a word. Diagonals count. Release to submit; a live dictionary checks it.</p>
+  <div class="vowels">
+    <div class="v a">A</div><div class="v e">E</div><div class="v i">I</div><div class="v o">O</div><div class="v u">U</div>
+  </div>
+  <p><em>Vowels are gems</em> — every vowel in your word adds <strong>+2</strong>. A word with <em>3+ vowels</em> is a <strong>gem drop</strong> and scores <em>×2</em>.</p>
+  <p>Words clear their tiles, letters <em>cascade down</em>, and new letters fall in from the top. Chain another word within <em>7 seconds</em> to unlock a combo (×2 → ×3 → ×4).</p>
+  <p>Score by length:</p>
+  <table>
+    <tr><td>3 letters</td><td>10</td></tr>
+    <tr><td>4 letters</td><td>25</td></tr>
+    <tr><td>5 letters</td><td>50</td></tr>
+    <tr><td>6 letters</td><td>100</td></tr>
+    <tr><td>7 letters</td><td>200</td></tr>
+    <tr><td>8+</td><td>400</td></tr>
+  </table>
+  <p><em>Endless.</em> No timer, no lose state — chase your best score.</p>
+  <button class="close-help" id="helpClose">Got it</button>
+</aside>
+
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const escapeHtml = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+const COLS = 6, ROWS = 7;
+const CELL = 88;        // px in svg units
+const GAP = 6;
+const RADIUS = 16;
+
+const VOWELS = new Set(['A','E','I','O','U']);
+const SCORE = { 3:10, 4:25, 5:50, 6:100, 7:200 };
+const scoreFor = len => len >= 8 ? 400 : (SCORE[len] || 0);
+const VOWEL_BONUS = 2;
+const GEM_THRESHOLD = 3;      // 3+ vowels = ×2 gem drop
+const COMBO_WINDOW = 7000;
+
+const BAG = ('AAAAAAAAAA'+'EEEEEEEEEEEE'+'IIIIIIIIII'+'OOOOOOOO'+'UUUUUU'
+  +'NNNNN'+'RRRRR'+'TTTTT'+'LLLL'+'SSSS'+'DDDD'
+  +'GGG'+'BB'+'CC'+'MM'+'PP'+'FF'+'HH'+'VV'+'WW'+'YY'
+  +'K'+'J'+'X'+'Q'+'Z').split('');
+function rndLetter(){ return BAG[Math.floor(Math.random()*BAG.length)]; }
+function makeLetters(n){
+  const out = [];
+  for (let i=0;i<n;i++) out.push(rndLetter());
+  let vowels = out.filter(l=>VOWELS.has(l)).length;
+  const target = Math.round(n * 0.42);
+  while (vowels < target){
+    const idx = Math.floor(Math.random()*n);
+    if (VOWELS.has(out[idx])) continue;
+    out[idx] = 'AEIOU'[Math.floor(Math.random()*5)];
+    vowels++;
+  }
+  return out;
+}
+
+const RARITY = [
+  {min:8, name:'STARBURST!', cls:'rain'},
+  {min:7, name:'JACKPOT!', cls:'rain'},
+  {min:6, name:'RAINBOW!', cls:'rain'},
+  {min:5, name:'SPARKLE', cls:''},
+  {min:4, name:'SWEET', cls:''},
+  {min:3, name:'POP', cls:''}
+];
+function rarityFor(len){ for (const r of RARITY) if (len >= r.min) return r; return null; }
+
+const state = {
+  grid: [],         // [row][col] = { letter, tile, cellEl, letterEl } or null
+  path: [],         // [{r,c}]
+  found: [],
+  score: 0,
+  best: parseInt(localStorage.getItem('aeiou-best')||'0',10)||0,
+  loading: false,
+  dragging: false, activePointer: null,
+  combo: 1, comboUntil: 0, comboTimer: null,
+  seq: 0                             // for unique element ids on cascade
+};
+
+function pxAt(r, c){
+  return {
+    x: c * (CELL + GAP) + CELL/2,
+    y: r * (CELL + GAP) + CELL/2
+  };
+}
+function svgSize(){
+  return {
+    w: COLS * CELL + (COLS-1) * GAP,
+    h: ROWS * CELL + (ROWS-1) * GAP
+  };
+}
+
+function makeCell(r, c, letter){
+  const svg = $('grid');
+  const g = document.createElementNS('http://www.w3.org/2000/svg','g');
+  g.setAttribute('class', 'cell' + (VOWELS.has(letter) ? ' vowel' : ''));
+  g.dataset.r = r; g.dataset.c = c;
+  const { x, y } = pxAt(r, c);
+  const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
+  rect.setAttribute('class','tile');
+  rect.setAttribute('x', x - CELL/2);
+  rect.setAttribute('y', y - CELL/2);
+  rect.setAttribute('width', CELL);
+  rect.setAttribute('height', CELL);
+  rect.setAttribute('rx', RADIUS);
+  rect.setAttribute('fill', fillFor(letter));
+  rect.setAttribute('stroke', 'rgba(43,26,46,.08)');
+  rect.setAttribute('stroke-width', '1');
+  // subtle inner highlight for gem feel
+  const hi = document.createElementNS('http://www.w3.org/2000/svg','rect');
+  hi.setAttribute('x', x - CELL/2 + 6);
+  hi.setAttribute('y', y - CELL/2 + 5);
+  hi.setAttribute('width', CELL - 12);
+  hi.setAttribute('height', 10);
+  hi.setAttribute('rx', 6);
+  hi.setAttribute('fill', 'rgba(255,255,255,.35)');
+  hi.setAttribute('pointer-events','none');
+  const text = document.createElementNS('http://www.w3.org/2000/svg','text');
+  text.setAttribute('class','letter');
+  text.setAttribute('x', x);
+  text.setAttribute('y', y + 2);
+  text.textContent = letter === 'Q' ? 'Qu' : letter;
+  g.appendChild(rect);
+  g.appendChild(hi);
+  g.appendChild(text);
+  svg.appendChild(g);
+  return { letter, r, c, x, y, el: g, tile: rect, letterEl: text };
+}
+function fillFor(letter){
+  if (letter === 'A') return 'url(#a-face)';
+  if (letter === 'E') return 'url(#e-face)';
+  if (letter === 'I') return 'url(#i-face)';
+  if (letter === 'O') return 'url(#o-face)';
+  if (letter === 'U') return 'url(#u-face)';
+  return 'url(#c-face)';
+}
+
+function buildBoard(){
+  const svg = $('grid');
+  const defs = svg.querySelector('defs');
+  svg.innerHTML = '';
+  if (defs) svg.appendChild(defs);
+  const {w, h} = svgSize();
+  svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  const letters = makeLetters(COLS * ROWS);
+  state.grid = [];
+  const linkEl = document.createElementNS('http://www.w3.org/2000/svg','path');
+  linkEl.setAttribute('class','link'); linkEl.setAttribute('d','');
+  svg.appendChild(linkEl);
+  state.linkEl = linkEl;
+  for (let r=0; r<ROWS; r++){
+    const row = [];
+    for (let c=0; c<COLS; c++){
+      const cell = makeCell(r, c, letters[r*COLS + c]);
+      row.push(cell);
+    }
+    state.grid.push(row);
+  }
+}
+
+/* -- Interaction -- */
+function cellFromPoint(x, y){
+  const el = document.elementFromPoint(x, y);
+  if (!el) return null;
+  const g = el.closest('.cell');
+  if (!g) return null;
+  const r = parseInt(g.dataset.r, 10), c = parseInt(g.dataset.c, 10);
+  if (isNaN(r) || isNaN(c)) return null;
+  return { r, c };
+}
+
+function isAdjacent(a, b){
+  const dr = Math.abs(a.r - b.r), dc = Math.abs(a.c - b.c);
+  return (dr <= 1 && dc <= 1) && (dr + dc > 0);
+}
+
+function refreshPath(){
+  // Clear .on
+  state.grid.forEach(row => row.forEach(c => c && c.el.classList.remove('on')));
+  state.path.forEach(({r,c}) => { const cell = state.grid[r][c]; if (cell) cell.el.classList.add('on'); });
+  // Draw link
+  if (state.path.length > 1){
+    const d = state.path.map(({r,c}, idx) => {
+      const {x,y} = pxAt(r,c);
+      return (idx === 0 ? 'M' : 'L') + x.toFixed(1) + ',' + y.toFixed(1);
+    }).join(' ');
+    state.linkEl.setAttribute('d', d);
+    state.linkEl.classList.remove('win','miss');
+  } else {
+    state.linkEl.setAttribute('d','');
+    state.linkEl.classList.remove('win','miss');
+  }
+  const word = state.path.map(({r,c}) => state.grid[r][c] ? state.grid[r][c].letter : '').join('');
+  const display = word.replace(/Q/g, 'Qu');
+  const el = $('wordV');
+  if (word.length === 0){
+    el.textContent = 'Swipe adjacent tiles to spell a word';
+    el.classList.add('empty');
+  } else {
+    const pts = scoreFor(display.length);
+    el.innerHTML = `${escapeHtml(display)}${pts ? ` <span class="pts">+${pts}</span>` : ''}`;
+    el.classList.remove('empty');
+  }
+}
+
+function addToPath(pos){
+  if (!pos) return;
+  const cell = state.grid[pos.r] && state.grid[pos.r][pos.c];
+  if (!cell) return;
+  if (state.path.some(p => p.r === pos.r && p.c === pos.c)) return;
+  if (state.path.length){
+    const last = state.path[state.path.length-1];
+    if (!isAdjacent(last, pos)) return;
+  }
+  state.path.push(pos);
+  refreshPath();
+  buzz();
+}
+function handleDragTo(pos){
+  const path = state.path;
+  if (path.length >= 2){
+    const prev = path[path.length-2];
+    if (prev.r === pos.r && prev.c === pos.c){ path.pop(); refreshPath(); return; }
+  }
+  addToPath(pos);
+}
+
+function wireGrid(){
+  const svg = $('grid');
+  svg.addEventListener('pointerdown', e => {
+    if (state.loading) return;
+    e.preventDefault();
+    const pos = cellFromPoint(e.clientX, e.clientY);
+    if (!pos) return;
+    try { svg.setPointerCapture(e.pointerId); } catch(_){}
+    state.dragging = true; state.activePointer = e.pointerId;
+    state.path = []; refreshPath();
+    addToPath(pos);
+  });
+  svg.addEventListener('pointermove', e => {
+    if (!state.dragging || e.pointerId !== state.activePointer) return;
+    const pos = cellFromPoint(e.clientX, e.clientY);
+    if (!pos) return;
+    const last = state.path[state.path.length-1];
+    if (last && last.r === pos.r && last.c === pos.c) return;
+    handleDragTo(pos);
+  });
+  const endDrag = e => {
+    if (!state.dragging) return;
+    if (e && e.pointerId !== undefined && e.pointerId !== state.activePointer) return;
+    state.dragging = false; state.activePointer = null;
+    try { svg.releasePointerCapture(e.pointerId); } catch(_){}
+    if (state.path.length >= 3) submitWord();
+    else clearPath();
+  };
+  svg.addEventListener('pointerup', endDrag);
+  svg.addEventListener('pointercancel', endDrag);
+}
+function clearPath(){ state.path = []; refreshPath(); }
+function buzz(){ try { if (navigator.vibrate) navigator.vibrate(5); } catch(_){} }
+
+async function fetchWord(word){
+  try {
+    const r = await fetch('https://api.dictionaryapi.dev/api/v2/entries/en/' + encodeURIComponent(word.toLowerCase()));
+    return r.ok;
+  } catch(e){ return false; }
+}
+
+async function submitWord(){
+  if (state.loading) return;
+  const raw = state.path.map(({r,c}) => state.grid[r][c].letter).join('');
+  if (raw.length < 3){ clearPath(); return; }
+  const display = raw.replace(/Q/g,'Qu');
+  const key = display.toLowerCase();
+  if (state.found.some(w => w.word.toLowerCase() === key)){
+    flashLink('miss'); toast('Already found','bad'); setTimeout(clearPath, 350); return;
+  }
+  state.loading = true;
+  $('tray').classList.add('checking');
+  const ok = await fetchWord(key);
+  $('tray').classList.remove('checking');
+  state.loading = false;
+  if (!ok){
+    flashLink('miss'); toast('Not a word','bad'); setTimeout(clearPath, 380); return;
+  }
+  const vowels = raw.split('').filter(l => VOWELS.has(l)).length;
+  const gem = vowels >= GEM_THRESHOLD;
+  const base = scoreFor(display.length);
+  const bonus = vowels * VOWEL_BONUS;
+  const subtotal = (base + bonus) * (gem ? 2 : 1);
+  const combo = updateCombo();
+  const pts = subtotal * combo;
+  state.score += pts;
+  state.found.unshift({ word: display, points: pts, gem, combo, vowels });
+  updateHUD(true);
+  renderFound();
+  flashLink('win');
+  // Confetti + points-pop from last tile
+  const last = state.path[state.path.length-1];
+  if (last){
+    const g = state.grid[last.r][last.c];
+    if (g){
+      const rect = g.el.getBoundingClientRect();
+      const cx = rect.left + rect.width/2, cy = rect.top + rect.height/2;
+      showPoints(cx, cy, pts, { gem, mult: combo });
+      if (gem) confettiAt(cx, cy);
+    }
+  }
+  const rare = rarityFor(display.length);
+  if (rare) showFlash(rare.name, rare.cls);
+  buzz();
+  // Cascade
+  const clearing = state.path.slice();
+  state.path = []; refreshPath();
+  setTimeout(() => { cascade(clearing); saveBest(); }, 260);
+}
+
+function updateCombo(){
+  const now = performance.now();
+  if (now < state.comboUntil) state.combo = Math.min(4, state.combo + 1);
+  else state.combo = 1;
+  state.comboUntil = now + COMBO_WINDOW;
+  clearTimeout(state.comboTimer);
+  const cell = $('streakCell');
+  if (state.combo > 1){
+    $('streakV').textContent = '×' + state.combo;
+    cell.classList.add('on');
+    void cell.offsetWidth;
+    state.comboTimer = setTimeout(hideCombo, COMBO_WINDOW + 250);
+  }
+  return state.combo;
+}
+function hideCombo(){ state.combo = 1; $('streakCell').classList.remove('on'); }
+
+function saveBest(){
+  if (state.score > state.best){
+    state.best = state.score;
+    try { localStorage.setItem('aeiou-best', String(state.best)); } catch(_){}
+    updateHUD();
+  }
+}
+
+function cascade(clearingPath){
+  // Pop the tiles in the path
+  clearingPath.forEach(({r,c}) => {
+    const cell = state.grid[r][c];
+    if (!cell) return;
+    cell.el.classList.add('pop');
+    setTimeout(() => cell.el.remove(), 460);
+    state.grid[r][c] = null;
+  });
+  // Wait for pop then drop remaining down + refill
+  setTimeout(() => {
+    for (let c=0; c<COLS; c++){
+      // Collect non-null from bottom up
+      const stack = [];
+      for (let r=ROWS-1; r>=0; r--){
+        if (state.grid[r][c]) stack.push(state.grid[r][c]);
+      }
+      // Place them from bottom
+      for (let r=ROWS-1; r>=0; r--) state.grid[r][c] = null;
+      let rowIdx = ROWS-1;
+      stack.forEach(cell => {
+        state.grid[rowIdx][c] = cell;
+        cell.r = rowIdx;
+        cell.el.dataset.r = rowIdx;
+        // Reposition
+        const {x,y} = pxAt(rowIdx, c);
+        cell.x = x; cell.y = y;
+        cell.tile.setAttribute('x', x - CELL/2);
+        cell.tile.setAttribute('y', y - CELL/2);
+        cell.letterEl.setAttribute('x', x);
+        cell.letterEl.setAttribute('y', y + 2);
+        // Also move the highlight rect (2nd child)
+        const hi = cell.el.children[1];
+        if (hi){ hi.setAttribute('x', x - CELL/2 + 6); hi.setAttribute('y', y - CELL/2 + 5); }
+        rowIdx--;
+      });
+      // Refill empty rows from top
+      for (let r=rowIdx; r>=0; r--){
+        const letter = rndLetter();
+        const cell = makeCell(r, c, letter);
+        cell.el.classList.add('fall');
+        state.grid[r][c] = cell;
+      }
+    }
+  }, 300);
+}
+
+function flashLink(cls){
+  state.linkEl.classList.add(cls);
+  state.path.forEach(({r,c}) => {
+    const cell = state.grid[r][c];
+    if (!cell) return;
+    if (cls === 'miss'){
+      cell.el.classList.add('miss');
+      setTimeout(() => cell.el.classList.remove('miss'), 500);
+    }
+  });
+  setTimeout(() => state.linkEl.classList.remove(cls), 500);
+}
+
+function showPoints(x, y, pts, opts){
+  const el = document.createElement('div');
+  el.className = 'pt-pop' + (opts && opts.gem ? ' gem' : '');
+  const multStr = opts && opts.mult > 1 ? `<span class="x">×${opts.mult}</span>` : '';
+  el.innerHTML = `+${pts}${multStr}`;
+  el.style.left = x + 'px'; el.style.top = y + 'px';
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 1250);
+}
+
+const CONFETTI_COLORS = ['#ff2d84','#ff8c42','#ffc933','#4cc4ff','#a266ff','#a1e56b'];
+function confettiAt(cx, cy){
+  for (let i=0; i<18; i++){
+    const d = document.createElement('div');
+    d.className = 'dot';
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 60 + Math.random() * 120;
+    d.style.setProperty('--tx', (Math.cos(angle) * dist) + 'px');
+    d.style.setProperty('--ty', (Math.sin(angle) * dist) + 'px');
+    d.style.background = CONFETTI_COLORS[i % CONFETTI_COLORS.length];
+    d.style.left = cx + 'px'; d.style.top = cy + 'px';
+    document.body.appendChild(d);
+    setTimeout(() => d.remove(), 950);
+  }
+}
+
+function showFlash(name, cls){
+  document.querySelectorAll('.flash').forEach(el => el.remove());
+  const el = document.createElement('div');
+  el.className = 'flash' + (cls ? ' ' + cls : '');
+  el.textContent = name;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 900);
+}
+
+function toast(msg, kind){
+  document.querySelectorAll('.toast').forEach(t => t.remove());
+  const el = document.createElement('div');
+  el.className = 'toast' + (kind ? ' ' + kind : '');
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2100);
+}
+
+function updateHUD(pop){
+  $('scoreV').textContent = state.score.toLocaleString();
+  $('bestV').textContent = state.best ? state.best.toLocaleString() : '—';
+  if (pop){
+    const cell = $('scoreCell');
+    cell.classList.remove('pop'); void cell.offsetWidth; cell.classList.add('pop');
+  }
+}
+function renderFound(){
+  const box = $('foundList');
+  const n = state.found.length;
+  $('foundN').textContent = n;
+  if (!n){ box.innerHTML = '<span class="empty">No words yet — swipe to spell one</span>'; return; }
+  box.innerHTML = state.found.map(w => {
+    const marks = (w.gem ? '💎' : '') + (w.combo > 1 ? `×${w.combo}` : '');
+    return `<span class="word">${escapeHtml(w.word)}${marks ? ` <span class="p">${marks}</span>` : ''} <span class="p">+${w.points}</span></span>`;
+  }).join('');
+}
+
+function endSession(){
+  const isBest = state.score > state.best;
+  if (isBest){ state.best = state.score; try { localStorage.setItem('aeiou-best', String(state.best)); } catch(_){} }
+  const longest = state.found.reduce((m, w) => w.word.length > m.length ? w.word : m, '');
+  $('mScore').textContent = state.score.toLocaleString();
+  $('mWords').textContent = state.found.length;
+  $('mLongest').textContent = longest || '—';
+  $('mBest').textContent = state.best.toLocaleString();
+  $('mBestCell').classList.toggle('new', isBest);
+  $('mTag').textContent = isBest && state.best ? 'New best 💎' : 'Session ended';
+  $('mTitle').textContent = state.score > 0 ? 'Final score' : 'Nothing spelled';
+  $('modal').classList.add('show');
+  updateHUD();
+}
+function newGame(){
+  state.score = 0; state.found = []; state.path = [];
+  state.combo = 1; state.comboUntil = 0; hideCombo();
+  buildBoard();
+  refreshPath();
+  renderFound();
+  updateHUD();
+  $('modal').classList.remove('show');
+}
+
+$('newBtn').addEventListener('click', () => {
+  if (state.score > 0) endSession();
+  else newGame();
+});
+$('mAgainBtn').addEventListener('click', newGame);
+$('mCloseBtn').addEventListener('click', () => $('modal').classList.remove('show'));
+$('helpBtn').addEventListener('click', () => { $('help').classList.add('show'); $('helpBg').classList.add('show'); });
+$('helpClose').addEventListener('click', () => { $('help').classList.remove('show'); $('helpBg').classList.remove('show'); });
+$('helpBg').addEventListener('click', () => { $('help').classList.remove('show'); $('helpBg').classList.remove('show'); });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape'){ $('modal').classList.remove('show'); $('help').classList.remove('show'); $('helpBg').classList.remove('show'); clearPath(); }
+});
+
+newGame();
+wireGrid();
+</script>
+</body>
+</html>
