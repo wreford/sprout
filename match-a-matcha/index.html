@@ -143,8 +143,25 @@ button{background:none;border:none;cursor:pointer;color:inherit;font:inherit}
   border:1px solid var(--line);
   color:var(--ink);
   transform:rotateY(180deg);
-  font-size:min(48px,10vw)
+  font-size:min(48px,10vw);
+  overflow:hidden;padding:0
 }
+.tile .face img{
+  position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;
+  background:var(--cream-2)
+}
+.tile .face .cap{
+  position:absolute;left:0;right:0;bottom:0;z-index:2;
+  padding:6px 8px 7px;
+  font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.08em;
+  color:#fff;text-transform:uppercase;text-align:center;line-height:1.15;
+  background:linear-gradient(180deg,transparent,rgba(46,37,23,.9));
+  text-shadow:0 1px 3px rgba(0,0,0,.6);
+  opacity:0;transition:opacity .35s var(--ease) .1s;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap
+}
+.tile.matched .face .cap{opacity:1}
+.tile .face .emo{font-size:min(48px,10vw);position:relative;z-index:1}
 .tile.flipped .back{transform:rotateY(-180deg)}
 .tile.flipped .face{transform:rotateY(0deg)}
 .tile.matched .face{
@@ -302,13 +319,95 @@ const state = {
   moves: 0,
   seconds: 0,
   timer: null,
-  first: null,      // { i, icon, el }
-  lock: false,      // ignore taps while checking
+  first: null,
+  lock: false,
   matched: 0,
   total: 0,
-  best: {}          // per diff → seconds
+  best: {},         // per diff → seconds
+  items: [],        // { id, name, image } — real matcha/Japanese photos
+  loading: false
 };
 try { state.best = JSON.parse(localStorage.getItem('mam-best') || '{}'); } catch(e) {}
+
+/* ═══════════════════════════════════════════════════════
+   Fetch real matcha / Japanese recipe images
+   TheMealDB (search + Japanese area) with LoremFlickr fallback.
+   Cache 24h in localStorage so we don't hammer the API.
+   ═══════════════════════════════════════════════════════ */
+const POOL_KEY = 'mam-pool-v1';
+const POOL_TTL_MS = 24 * 60 * 60 * 1000;
+
+function loadPoolCache() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(POOL_KEY) || 'null');
+    if (!raw || !raw.ts || Date.now() - raw.ts > POOL_TTL_MS) return null;
+    return raw.items || null;
+  } catch(e) { return null; }
+}
+function savePoolCache(items) {
+  try { localStorage.setItem(POOL_KEY, JSON.stringify({ ts: Date.now(), items })); } catch(e) {}
+}
+
+async function fetchPool() {
+  const queries = ['matcha','green tea','tea','mochi','dango','soba','tofu','miso'];
+  const cocktails = ['matcha','green tea','sake'];
+  const seen = new Map(); // id → { id, name, image }
+
+  const takeMeal = m => {
+    if (!m || !m.idMeal || !m.strMealThumb) return;
+    if (seen.has('m'+m.idMeal)) return;
+    seen.set('m'+m.idMeal, { id:'m'+m.idMeal, name:m.strMeal, image:m.strMealThumb });
+  };
+  const takeDrink = d => {
+    if (!d || !d.idDrink || !d.strDrinkThumb) return;
+    if (seen.has('d'+d.idDrink)) return;
+    seen.set('d'+d.idDrink, { id:'d'+d.idDrink, name:d.strDrink, image:d.strDrinkThumb });
+  };
+
+  // Fire all queries in parallel
+  const mealSearches = queries.map(q =>
+    fetch(`https://www.themealdb.com/api/json/v1/1/search.php?s=${encodeURIComponent(q)}`)
+      .then(r => r.json()).then(j => (j.meals || []).forEach(takeMeal))
+      .catch(() => {})
+  );
+  const drinkSearches = cocktails.map(q =>
+    fetch(`https://www.thecocktaildb.com/api/json/v1/1/search.php?s=${encodeURIComponent(q)}`)
+      .then(r => r.json()).then(j => (j.drinks || []).forEach(takeDrink))
+      .catch(() => {})
+  );
+  const japaneseFilter = fetch('https://www.themealdb.com/api/json/v1/1/filter.php?a=Japanese')
+    .then(r => r.json()).then(j => (j.meals || []).forEach(m => takeMeal({
+      idMeal: m.idMeal, strMeal: m.strMeal, strMealThumb: m.strMealThumb
+    }))).catch(() => {});
+
+  await Promise.all([...mealSearches, ...drinkSearches, japaneseFilter]);
+  const items = [...seen.values()];
+  return items;
+}
+
+async function ensurePool() {
+  if (state.items.length >= 12) return;
+  const cached = loadPoolCache();
+  if (cached && cached.length >= 12) { state.items = cached; return; }
+  if (state.loading) return;
+  state.loading = true;
+  try {
+    const items = await fetchPool();
+    if (items.length >= 12) {
+      state.items = items;
+      savePoolCache(items);
+    } else {
+      // Fall back to LoremFlickr matcha keyword — always available
+      const kws = ['matcha','tea,green','japanese,dessert','mochi','dango','wagashi','tofu','miso','ramen','sushi','tempura','ceremony'];
+      state.items = kws.map((kw, i) => ({
+        id:'lf'+i, name:kw.replace(/,/g,' & '),
+        image:`https://loremflickr.com/500/500/${encodeURIComponent(kw)}?lock=${i+1}`
+      }));
+    }
+  } catch(e) {
+    state.items = [];
+  } finally { state.loading = false; }
+}
 
 function fmtTime(s) {
   const m = Math.floor(s / 60);
@@ -326,6 +425,8 @@ function shuffle(a) {
   return b;
 }
 
+function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
 function newGame() {
   clearInterval(state.timer); state.timer = null;
   state.moves = 0; state.seconds = 0;
@@ -334,25 +435,39 @@ function newGame() {
   const d = DIFFS[state.diff] || DIFFS.med;
   const pairs = (d.cols * d.rows) / 2;
   state.total = pairs;
-  const chosen = shuffle(ICONS).slice(0, pairs);
+
+  // Prefer real photos when we have enough; otherwise emoji fallback
+  let chosen;
+  const useReal = state.items && state.items.length >= pairs;
+  if (useReal) {
+    chosen = shuffle(state.items).slice(0, pairs).map(x => ({ key:x.id, name:x.name, image:x.image }));
+  } else {
+    chosen = shuffle(ICONS).slice(0, pairs).map(icon => ({ key:icon, name:'', emoji:icon }));
+  }
   const deck = shuffle(chosen.concat(chosen));
 
   const board = $('board');
   board.style.setProperty('--cols', d.cols);
   board.innerHTML = '';
-  deck.forEach((icon, i) => {
+  deck.forEach((item, i) => {
     const el = document.createElement('div');
     el.className = 'tile';
     el.dataset.i = i;
-    el.dataset.icon = icon;
+    el.dataset.key = item.key;
     el.style.animationDelay = (i * 18) + 'ms';
-    el.innerHTML = `<div class="back"><span class="mark">MM</span></div><div class="face">${icon}</div>`;
+    const face = item.image
+      ? `<img src="${esc(item.image)}" alt="${esc(item.name)}" loading="lazy"><div class="cap">${esc(item.name)}</div>`
+      : `<span class="emo">${item.emoji}</span>`;
+    el.innerHTML = `<div class="back"><span class="mark">MM</span></div><div class="face">${face}</div>`;
     el.addEventListener('click', () => onTap(el));
     board.appendChild(el);
   });
 
   updateHUD();
   document.querySelectorAll('.chip[data-diff]').forEach(c => c.classList.toggle('on', c.dataset.diff === state.diff));
+
+  // If we don't have a pool yet, load one and refresh on next round
+  if (!useReal && !state.loading) ensurePool();
 }
 
 function onTap(el) {
@@ -370,7 +485,7 @@ function onTap(el) {
   updateHUD(true);
 
   const a = state.first, b = el;
-  if (a.dataset.icon === b.dataset.icon) {
+  if (a.dataset.key === b.dataset.key) {
     // Match
     state.lock = true;
     setTimeout(() => {
@@ -476,7 +591,20 @@ $('nextBtn').addEventListener('click', () => {
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') $('modal').classList.remove('show'); });
 
-newGame();
+async function init() {
+  // Try the localStorage cache first for an instant start with real photos
+  const cached = loadPoolCache();
+  if (cached && cached.length >= 12) state.items = cached;
+  newGame();
+  // If we started with fallback emojis, load the pool in the background
+  // and swap on the next round
+  if (!state.items.length) {
+    await ensurePool();
+    // If a game is in progress, don't disturb — the fetched pool
+    // will be used on the next "new game" / "again" / diff change.
+  }
+}
+init();
 </script>
 </body>
 </html>
