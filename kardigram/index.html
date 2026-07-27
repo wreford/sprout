@@ -640,6 +640,20 @@ input:focus-visible,textarea:focus-visible,select:focus-visible{outline:none;bor
 }
 .budget-note strong{color:var(--yellow);font-family:var(--disp);font-weight:900;font-size:11px;letter-spacing:.14em;text-transform:uppercase;margin-right:6px}
 .budget-note em{color:var(--yellow);font-style:normal;font-weight:700}
+/* White card preview for Budget */
+.white-card-preview{
+  margin:14px 0 18px;padding:20px 20px 16px;
+  border-radius:14px;background:var(--surface-2);border:1.5px solid var(--line-2);
+  display:flex;flex-direction:column;gap:14px;align-items:center
+}
+.white-card-preview .wc{
+  width:min(220px,60vw);aspect-ratio:6/4;
+  background:linear-gradient(160deg,#fefdfb,#f4ecd6);
+  border-radius:8px;box-shadow:0 22px 44px -12px rgba(0,0,0,.45), inset 0 0 0 1px rgba(0,0,0,.06);
+  display:flex;align-items:center;justify-content:center
+}
+.white-card-preview .wc .lbl{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;color:#8a7d6a;text-transform:uppercase;font-weight:700}
+.white-card-preview .hint{font-family:var(--sans);font-size:12.5px;line-height:1.5;color:var(--ink-2);text-align:center;font-weight:500;max-width:420px}
 .size-tile .shape{margin:0 auto 10px;background:var(--ink-2);border-radius:2px;opacity:.9}
 .size-tile.on .shape{background:var(--pink)}
 .size-tile.standard .shape{width:26px;height:36px}
@@ -2669,8 +2683,10 @@ function creditCommunityArtist(id){
 }
 
 const MSG_LIMIT = 260;
+const MSG_LIMIT_BUDGET = 100;
+function msgLimit(){ return isBudget() ? MSG_LIMIT_BUDGET : MSG_LIMIT; }
 const CARD_SIZES = [
-  { id:'budget',   name:'Budget',   dim:'4×6 in',   price:4,  shape:'postcard', budget:true, sub:'Mailed as a postcard · no envelope · no wax' },
+  { id:'budget',   name:'Budget',   dim:'4×6 in',   price:5,  shape:'postcard', budget:true, sub:'White card · 100 chars, handwritten' },
   { id:'mini',     name:'Mini',     dim:'3.5×5 in', price:5,  shape:'postcard' },
   { id:'postcard', name:'Postcard', dim:'4×6 in',   price:6,  shape:'postcard' },
   { id:'square',   name:'Square',   dim:'5×5 in',   price:9,  shape:'square'   },
@@ -3034,8 +3050,8 @@ function rollNumber(el, from, to, duration){
 }
 function stepOK(idx){
   if (idx <= 0) return !!cart.occasion;
-  if (idx <= 1) return (cart.design !== null && cart.design !== undefined) || (cart.upload && cart.upload.useAsFront && cart.upload.dataUrl);
-  if (idx <= 2) return cart.message.trim().length > 2 && cart.message.length <= MSG_LIMIT;
+  if (idx <= 1) return isBudget() || (cart.design !== null && cart.design !== undefined) || (cart.upload && cart.upload.useAsFront && cart.upload.dataUrl);
+  if (idx <= 2) return cart.message.trim().length > 2 && cart.message.length <= msgLimit();
   if (idx <= 3) return true;
   if (idx <= 4) return cart.recipient.name.trim() && cart.recipient.address.trim() && cart.recipient.city.trim() && cart.recipient.postal.trim() && cart.sender.trim();
   return true;
@@ -3390,6 +3406,33 @@ function renderOccasions(){
 /* --- Designs --- */
 async function renderDesigns(){
   const o = occ(cart.occasion);
+  // Budget → stripped-down design step: white card preview + size picker only
+  if (isBudget()){
+    $('wizBody').innerHTML = `
+      <h1 class="wiz-title">Pick your <span class="c">size</span>.</h1>
+      <p class="wiz-sub">Budget cards ship as a blank white postcard — no art on the front. The space is for the handwritten note that comes next.</p>
+      <div class="white-card-preview">
+        <div class="wc"><span class="lbl">White · 4×6 in · 300 gsm cotton</span></div>
+        <div class="hint">The note lands here, hand-written in ink by a working calligrapher in London Ontario. Sender + address printed on the back.</div>
+      </div>
+      <div class="size-block">
+        <div class="hd-row"><span class="t">Card size</span><span class="n">Change size to unlock the full designer</span></div>
+        <div class="size-grid">
+          ${CARD_SIZES.map(s => `<button class="size-tile ${s.shape} ${s.budget?'budget':''} ${cart.cardSize===s.id?'on':''}" data-s="${s.id}">
+            <div class="shape"></div>
+            <div class="n">${s.name}</div>
+            <div class="dim">${s.dim}</div>
+            <div class="p">${money(s.price)}</div>
+          </button>`).join('')}
+        </div>
+        <div class="budget-note"><strong>Budget</strong> · white 4×6 card · 100 chars · handwritten by a calligrapher · mailed as a postcard · $5 flat.</div>
+      </div>`;
+    document.querySelectorAll('.size-tile').forEach(b => b.addEventListener('click', () => {
+      cart.cardSize = b.dataset.s; saveCart();
+      renderDesigns(); updateStickyBar();
+    }));
+    return;
+  }
   const up = cart.upload || (cart.upload = { dataUrl:'', filter:'original', useAsFront:false, layout:'single', photos:[] });
   up.layout = up.layout || 'single';
   up.photos = up.photos || [];
@@ -3695,16 +3738,16 @@ function renderMessage(){
   const hasAttach = !!(cart.attachUrl && cart.attachUrl.trim());
   $('wizBody').innerHTML = `
     <h1 class="wiz-title">Write the <span class="c">note</span>.</h1>
-    <p class="wiz-sub">Up to 260 characters. Tap a starter or cycle a curated ${cart.occasion ? escapeHtml(occ(cart.occasion).n).toLowerCase() : ''} quote if you're stuck. Attach a link for a QR on the back. Sign it in your own hand — a real writer copies your signature onto the card.</p>
+    <p class="wiz-sub">${isBudget() ? 'Up to <strong style="color:var(--yellow)">100 characters</strong>. A working calligrapher in London Ontario writes it out by hand, in ink, on the white card. No fonts, no filters — the writing is real.' : `Up to 260 characters. Tap a starter or cycle a curated ${cart.occasion ? escapeHtml(occ(cart.occasion).n).toLowerCase() : ''} quote if you're stuck. Attach a link for a QR on the back. Sign it in your own hand — a real writer copies your signature onto the card.`}</p>
     <div class="compose">
       <div class="preview-col">
         <div class="card-face" id="preview"></div>
       </div>
       <div class="editor">
         <div class="field">
-          <div class="lbl"><span>Your note</span><span class="count" id="charCount">0 / ${MSG_LIMIT}</span></div>
+          <div class="lbl"><span>Your note</span><span class="count" id="charCount">0 / ${msgLimit()}</span></div>
           <div class="read-time" id="readTime">Reads in — seconds</div>
-          <textarea id="msgIn" maxlength="${MSG_LIMIT+50}" placeholder="A few plain lines. Keep it real.">${escapeHtml(cart.message)}</textarea>
+          <textarea id="msgIn" maxlength="${msgLimit()+20}" placeholder="A few plain lines. Keep it real.">${escapeHtml(cart.message)}</textarea>
           <div class="helper-row">
             <button class="helper-btn" id="rollQuote">Try a quote</button>
             <button class="helper-btn" id="prompt-shuffle">Shuffle starters</button>
@@ -3801,7 +3844,8 @@ function renderMessage(){
   const updateCount = () => {
     const msg = cart.message || '';
     const l = msg.length;
-    const el = $('charCount'); el.textContent = `${l} / ${MSG_LIMIT}`; el.classList.toggle('over', l > MSG_LIMIT);
+    const lim = msgLimit();
+    const el = $('charCount'); el.textContent = `${l} / ${lim}`; el.classList.toggle('over', l > lim);
     const words = msg.trim() ? msg.trim().split(/\s+/).length : 0;
     const secs = Math.max(3, Math.round(words / 3.2)); // ~200 wpm reading speed
     const rt = $('readTime'); if (rt){
@@ -3812,7 +3856,7 @@ function renderMessage(){
   const rerenderSide = () => { if (side === 'inside') renderInside(); else if (side === 'front') renderFront(); else renderBack(); };
   updateCount();
   $('msgIn').addEventListener('input', e => {
-    let v = e.target.value; if (v.length > MSG_LIMIT) { v = v.slice(0, MSG_LIMIT); e.target.value = v; }
+    let v = e.target.value; const lim = msgLimit(); if (v.length > lim) { v = v.slice(0, lim); e.target.value = v; }
     cart.message = v; saveCart();
     if (side === 'inside') renderInside();
     updateCount(); updateStickyBar(); if (typeof renderTone === 'function') renderTone(); if (typeof renderChips === 'function') renderChips();
@@ -3953,7 +3997,7 @@ function renderMessage(){
     const quotes = OCC_QUOTES[cart.occasion] || OCC_QUOTES.just;
     quoteIdx = (quoteIdx + 1) % quotes.length;
     const q = quotes[quoteIdx];
-    const t = `"${q.t}" — ${q.a}`.slice(0, MSG_LIMIT);
+    const t = `"${q.t}" — ${q.a}`.slice(0, msgLimit());
     cart.message = t; saveCart(); $('msgIn').value = t;
     if (side === 'inside') renderInside();
     updateCount(); updateStickyBar(); if (typeof renderTone === 'function') renderTone(); if (typeof renderChips === 'function') renderChips();
