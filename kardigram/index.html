@@ -628,6 +628,17 @@ input:focus-visible,textarea:focus-visible,select:focus-visible{outline:none;bor
 }
 .size-tile:hover{border-color:var(--line-strong)}
 .size-tile.on{border-color:var(--pink);background:linear-gradient(160deg,#3a0a1e,#0a1128)}
+.size-tile.budget{border-style:dashed;position:relative}
+.size-tile.budget::before{content:'BUDGET';position:absolute;top:-8px;left:50%;transform:translateX(-50%);padding:2px 8px;border-radius:100px;background:var(--yellow);color:var(--bg);font-family:var(--disp);font-size:8.5px;font-weight:900;letter-spacing:.14em;text-transform:uppercase;white-space:nowrap;box-shadow:0 3px 8px rgba(246,201,74,.4)}
+.size-tile.budget.on{border-color:var(--yellow);background:linear-gradient(160deg,#4a3805,#170b2e)}
+.size-tile.budget.on .p{color:var(--yellow)}
+.size-tile .sub{font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.02em;margin-top:4px;line-height:1.25;font-weight:600;text-transform:none}
+.budget-note{
+  margin-top:12px;padding:12px 14px;border-radius:10px;
+  background:rgba(246,201,74,.10);border:1px solid rgba(246,201,74,.34);
+  font-family:var(--sans);font-size:12.5px;line-height:1.5;color:var(--ink-2);font-weight:500
+}
+.budget-note strong{color:var(--yellow);font-family:var(--disp);font-weight:900;font-size:11px;letter-spacing:.14em;text-transform:uppercase;margin-right:6px}
 .size-tile .shape{margin:0 auto 10px;background:var(--ink-2);border-radius:2px;opacity:.9}
 .size-tile.on .shape{background:var(--pink)}
 .size-tile.standard .shape{width:26px;height:36px}
@@ -2658,6 +2669,7 @@ function creditCommunityArtist(id){
 
 const MSG_LIMIT = 260;
 const CARD_SIZES = [
+  { id:'budget',   name:'Budget',   dim:'4×6 in',   price:4,  shape:'postcard', budget:true, sub:'Mailed as a postcard · no envelope · no wax' },
   { id:'mini',     name:'Mini',     dim:'3.5×5 in', price:5,  shape:'postcard' },
   { id:'postcard', name:'Postcard', dim:'4×6 in',   price:6,  shape:'postcard' },
   { id:'square',   name:'Square',   dim:'5×5 in',   price:9,  shape:'square'   },
@@ -2665,7 +2677,8 @@ const CARD_SIZES = [
   { id:'tall',     name:'Tall',     dim:'4×9 in',   price:10, shape:'tall'     },
   { id:'grand',    name:'Grand',    dim:'7×10 in',  price:12, shape:'grand'    }
 ];
-function currentSize(){ return CARD_SIZES.find(s => s.id === (cart.cardSize || 'standard')) || CARD_SIZES[3]; }
+function currentSize(){ return CARD_SIZES.find(s => s.id === (cart.cardSize || 'standard')) || CARD_SIZES[4]; }
+function isBudget(){ return !!(currentSize() && currentSize().budget); }
 /* Print finishes — extra $ on the card, integer only */
 const FINISHES = [
   { id:'matte',      name:'Matte',       hint:'300gsm cotton',       up:0, tone:'#a49b8e' },
@@ -3435,15 +3448,16 @@ async function renderDesigns(){
       ${(singleActive && up.dataUrl) || (!singleActive && up.photos.length === lay.n) ? `<button class="use-btn ${up.useAsFront?'on':''}" id="upUse">${up.useAsFront ? 'Using your photos ✓' : 'Use on card front'}</button>` : ''}
     </div>
     <div class="size-block">
-      <div class="hd-row"><span class="t">Card size</span><span class="n">Priced per envelope</span></div>
+      <div class="hd-row"><span class="t">Card size</span><span class="n">All prices include postage</span></div>
       <div class="size-grid">
-        ${CARD_SIZES.map(s => `<button class="size-tile ${s.shape} ${cart.cardSize===s.id?'on':''}" data-s="${s.id}">
+        ${CARD_SIZES.map(s => `<button class="size-tile ${s.shape} ${s.budget?'budget':''} ${cart.cardSize===s.id?'on':''}" data-s="${s.id}">
           <div class="shape"></div>
           <div class="n">${s.name}</div>
           <div class="dim">${s.dim}</div>
           <div class="p">${money(s.price)}</div>
         </button>`).join('')}
       </div>
+      ${isBudget() ? `<div class="budget-note"><strong>Budget</strong> · mailed as a postcard. No envelope, no wax seal, no return address. Everything else — art, headline, note on the back — is the same as a full kardigram.</div>` : ''}
     </div>
     <div class="finish-block">
       <div class="hd-row"><span class="t">Print finish</span><span class="n">${escapeHtml(currentFinish().name)} · ${escapeHtml(currentFinish().hint)}</span></div>
@@ -3487,10 +3501,14 @@ async function renderDesigns(){
       </div>
     </div>
     <div class="design-grid" id="designGrid"></div>`;
-  // Card size picker
+  // Card size picker — re-render so the Budget note appears/disappears
   document.querySelectorAll('.size-tile').forEach(b => b.addEventListener('click', () => {
+    const prev = cart.cardSize;
     cart.cardSize = b.dataset.s; saveCart();
-    document.querySelectorAll('.size-tile').forEach(x => x.classList.toggle('on', x.dataset.s === cart.cardSize));
+    const nowBudget = isBudget();
+    const wasBudget = CARD_SIZES.find(x => x.id === prev)?.budget;
+    if (nowBudget !== wasBudget){ renderDesigns(); }
+    else { document.querySelectorAll('.size-tile').forEach(x => x.classList.toggle('on', x.dataset.s === cart.cardSize)); }
     updateStickyBar();
   }));
   // Finish picker
@@ -4202,8 +4220,9 @@ function renderDeliver(){
     <div class="env-block">
       <div class="hd-row">
         <span class="t">Envelope</span>
-        <span class="n">${escapeHtml(currentEnv().name)} · ${escapeHtml(currentWax().name)} wax</span>
+        <span class="n">${isBudget() ? 'Skipped · budget postcard' : escapeHtml(currentEnv().name) + ' · ' + escapeHtml(currentWax().name) + ' wax'}</span>
       </div>
+      ${isBudget() ? `<div class="budget-note" style="margin-bottom:14px"><strong>Budget</strong> · your card ships as a postcard. No envelope, no wax, no return address. Change the card size on step 02 to unlock the envelope options.</div>` : ''}
       <div class="env-preview" id="envPreview">
         <div class="envM" style="--env-color:${currentEnv().body};--env-color-flap:${currentEnv().flap}">
           <div class="flap"></div>
