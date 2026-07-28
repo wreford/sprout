@@ -1565,7 +1565,16 @@ html.rock-mode .brand .k1{
 @media (min-width:640px){ .v-share-sheet{align-items:center} .v-share-panel{border-radius:22px} }
 .v-share-panel .close{position:absolute;top:12px;right:12px;width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.06);border:1px solid var(--line-2);color:var(--ink);cursor:pointer;font-size:16px}
 .v-share-panel .k{font-family:var(--mono);font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--yellow);font-weight:800;margin-bottom:6px}
-.v-share-panel h3{font-family:var(--serif);font-style:italic;font-weight:400;font-size:28px;color:var(--ink);letter-spacing:-.01em}
+.v-share-panel h3{font-family:var(--serif);font-style:italic;font-weight:400;font-size:24px;color:var(--ink);letter-spacing:-.01em;line-height:1.2;margin-top:4px}
+/* Preparing-your-card toast while we base64 the art image */
+.v-loading{
+  position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 40px);transform:translate(-50%, 20px);
+  padding:14px 22px;border-radius:100px;background:var(--surface-2);border:1.5px solid var(--yellow);
+  font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--yellow);font-weight:800;
+  box-shadow:0 20px 40px -12px rgba(0,0,0,.5);z-index:85;opacity:0;transition:opacity .2s ease, transform .3s var(--squish)
+}
+.v-loading.show{opacity:1;transform:translate(-50%, 0)}
+.v-loading::before{content:'';display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--yellow);margin-right:10px;vertical-align:middle;animation:pulse-live 1.1s ease-in-out infinite}
 .v-share-panel h3 .p{color:var(--pink);font-weight:500}
 .v-share-panel .d{font-family:var(--sans);font-size:13.5px;line-height:1.55;color:var(--ink-2);font-weight:500;margin-top:8px}
 .v-url-row{display:flex;gap:8px;margin-top:16px}
@@ -5286,8 +5295,134 @@ function decodeVirtualUrl(){
     return JSON.parse(decodeURIComponent(escape(atob(b))));
   } catch(_){ return null; }
 }
-function openVirtualShare(url){
-  // Render a small share sheet with copy + native share
+/* Fetch an image (via same-origin or CORS) and return a base64 data URI.
+   If the fetch or read fails, return the original URL untouched so the card
+   still functions online. */
+async function imageToDataURL(url){
+  if (!url || url.startsWith('data:')) return url;
+  try {
+    const r = await fetch(url, { mode: 'cors', cache: 'force-cache' });
+    if (!r.ok) return url;
+    const blob = await r.blob();
+    return await new Promise((res, rej) => {
+      const fr = new FileReader();
+      fr.onload = () => res(fr.result);
+      fr.onerror = rej;
+      fr.readAsDataURL(blob);
+    });
+  } catch(_){ return url; }
+}
+
+/* Build a fully self-contained HTML one-pager for the virtual card.
+   Everything is inlined — art image as a data URI, all CSS in a <style> block,
+   all interaction in a small <script>. The file opens in any browser, works
+   offline, and doesn't rot if the museum API URL later moves or expires. */
+async function makeVirtualHTML(){
+  const artDataUrl = await imageToDataURL(cart.designImg || '');
+  const doodle = (typeof currentDoodle === 'function') ? currentDoodle() : null;
+  const senderName = (cart.sender || 'A friend').trim();
+  const recipName = (cart.recipient?.name || 'You').trim();
+  const headline = cart.frontHeadline || (typeof occ === 'function' && occ(cart.occasion)?.tag) || '';
+  const msg = cart.message || '';
+  const artist = cart.designArtist || 'Public domain';
+  const title = cart.designTitle || 'Untitled';
+  const attach = cart.attachUrl || '';
+  const yr = new Date().getFullYear();
+  const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const doodleBlock = doodle ? `<div class="doodle" aria-hidden="true"><svg viewBox="0 0 48 48" width="64" height="64">${doodle.svg}</svg></div>` : '';
+  const attachBlock = attach && /^https?:/.test(attach) ? `<a class="attach" href="${esc(attach)}" target="_blank" rel="noopener">Open the link they attached</a>` : '';
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>${esc(senderName)} sent you a card · kardigram</title>
+<meta name="theme-color" content="#1a1c20">
+<meta property="og:title" content="${esc(senderName)} sent you a card">
+<meta property="og:description" content="${esc(headline || 'A kardigram just for you.')}">
+<meta property="og:type" content="website">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,500;1,400;1,500&family=Caveat:wght@600;700&family=JetBrains+Mono:wght@700&family=Bagel+Fat+One&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:radial-gradient(ellipse at 50% 30%,rgba(255,61,107,.05) 0%,transparent 60%),linear-gradient(180deg,#23262c 0%,#1a1c20 100%);color:#eef0f4;font-family:'Fraunces',Georgia,serif;min-height:100dvh;overflow:hidden}
+body{display:flex;flex-direction:column}
+.stage{flex:1;display:flex;align-items:center;justify-content:center;padding:calc(env(safe-area-inset-top) + 40px) 24px 20px;position:relative}
+.envelope{position:relative;width:min(340px,82vw);aspect-ratio:5/3.3;perspective:900px;cursor:pointer;filter:drop-shadow(0 30px 60px rgba(0,0,0,.55));transition:transform .4s cubic-bezier(.34,1.56,.64,1),opacity .3s ease}
+.envelope .body{position:absolute;inset:0;background:linear-gradient(160deg,#faf6ec,#ede4d1);border-radius:6px;box-shadow:inset 0 0 0 1.5px rgba(26,28,32,.14)}
+.envelope .body .to{position:absolute;left:50%;top:56%;transform:translate(-50%,-50%);font-family:'Fraunces',Georgia,serif;font-style:italic;font-size:26px;color:#3a1e04;letter-spacing:-.005em;text-align:center;line-height:1.15;padding:0 20px}
+.envelope .flap{position:absolute;top:0;left:0;right:0;height:60%;background:linear-gradient(180deg,#e2d2af,#c9b78e);clip-path:polygon(0 0,100% 0,50% 100%);transform-origin:top center;transition:transform .9s cubic-bezier(.2,.9,.35,1);z-index:3;box-shadow:0 4px 10px rgba(0,0,0,.14)}
+.envelope .seal{position:absolute;left:50%;top:52%;transform:translate(-50%,-50%);width:60px;height:60px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#ff6b8f 0%,#d3373c 55%,#7a1418 100%);color:#fff;font-family:'Bagel Fat One',cursive;font-size:28px;display:flex;align-items:center;justify-content:center;z-index:4;box-shadow:0 6px 18px rgba(0,0,0,.42),inset 0 0 12px rgba(0,0,0,.35);transition:transform .4s cubic-bezier(.2,.9,.35,1),opacity .3s ease}
+.opened .envelope{transform:translateY(140px) scale(.4);opacity:.24}
+.opened .envelope .flap{transform:rotateX(180deg)}
+.opened .envelope .seal{opacity:0;transform:translate(-50%,-50%) scale(1.6)}
+.card{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) translateY(20px) scale(.85);width:min(360px,84vw);aspect-ratio:5/7;border-radius:12px;overflow:hidden;background:#2c3037;opacity:0;pointer-events:none;box-shadow:0 40px 90px -20px rgba(0,0,0,.7),0 0 0 1px rgba(220,225,235,.12);transition:transform .7s cubic-bezier(.34,1.56,.64,1) .25s,opacity .4s ease .25s}
+.opened .card{transform:translate(-50%,-50%) translateY(0) scale(1);opacity:1;pointer-events:auto}
+.front{position:relative;width:100%;height:60%;background:#0d0f13}
+.front img{width:100%;height:100%;object-fit:cover;display:block}
+.headline{position:absolute;left:16px;right:16px;bottom:14px;font-family:'Fraunces',Georgia,serif;font-style:italic;font-size:24px;color:#f0f2f6;letter-spacing:-.005em;line-height:1.15;text-shadow:0 2px 12px rgba(0,0,0,.7)}
+.inside{padding:20px 22px 22px;background:linear-gradient(180deg,#f6ead4,#efe1c2);height:40%;color:#1a1a24;display:flex;flex-direction:column;justify-content:space-between;position:relative}
+.note{font-family:'Caveat',cursive;font-size:22px;line-height:1.35;white-space:pre-wrap;color:#2a2216;font-weight:600}
+.sig{font-family:'Caveat',cursive;font-size:22px;color:#7a1418;text-align:right;font-weight:700;margin-top:8px}
+.doodle{position:absolute;right:16px;bottom:14px;color:#7a1418;opacity:.85}
+.caption{text-align:center;font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:#8c919c;font-weight:700;padding:0 20px 12px;transition:opacity .3s ease}
+.opened .caption{opacity:0;pointer-events:none}
+.actions{display:flex;flex-direction:column;align-items:center;gap:14px;padding:0 20px calc(env(safe-area-inset-bottom) + 20px);opacity:0;pointer-events:none;transition:opacity .4s ease .8s}
+.opened .actions{opacity:1;pointer-events:auto}
+.cta{display:inline-flex;align-items:center;gap:8px;padding:14px 22px;border-radius:100px;background:#ff3d6b;color:#fff;text-decoration:none;font-family:'JetBrains Mono',monospace;font-size:11.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;box-shadow:0 12px 28px -8px rgba(255,61,107,.55);transition:transform .16s cubic-bezier(.34,1.56,.64,1)}
+.cta:hover{transform:translateY(-2px)}
+.attach{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#f6c94a;font-weight:700;text-decoration:underline}
+.branding{font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:.16em;color:#5a5f6a;text-transform:uppercase;font-weight:700}
+.branding a{color:#8c919c;text-decoration:none}
+.branding a:hover{color:#f6c94a}
+.credit{font-family:'JetBrains Mono',monospace;font-size:8.5px;letter-spacing:.14em;color:rgba(26,26,36,.5);text-transform:uppercase;font-weight:700;position:absolute;left:16px;bottom:4px}
+</style></head>
+<body>
+<div class="stage">
+  <div class="envelope" id="env" tabindex="0" role="button" aria-label="Envelope containing the card">
+    <div class="flap"></div>
+    <div class="body"><div class="to">To ${esc(recipName)}</div></div>
+    <div class="seal">k</div>
+  </div>
+  <div class="card">
+    <div class="front">
+      <img src="${esc(artDataUrl)}" alt="${esc(title)}">
+      <div class="headline">${esc(headline)}</div>
+    </div>
+    <div class="inside">
+      <div class="note">${esc(msg)}</div>
+      <div class="sig">— ${esc(senderName)}</div>
+      ${doodleBlock}
+      <div class="credit">${esc(title)} · ${esc(artist)}</div>
+    </div>
+  </div>
+</div>
+<div class="caption">Tap the envelope</div>
+<div class="actions">
+  <a class="cta" href="https://kardigram.co/">Send them one back — free →</a>
+  ${attachBlock}
+  <div class="branding"><a href="https://kardigram.co/" target="_blank" rel="noopener">Made with kardigram.co · ${yr}</a></div>
+</div>
+<script>
+(function(){
+  var stage = document.querySelector('body');
+  var env = document.getElementById('env');
+  var opened = false;
+  function open(){
+    if (opened) return;
+    opened = true;
+    stage.classList.add('opened');
+    try { navigator.vibrate && navigator.vibrate([25,20,40]); } catch(_){}
+  }
+  env.addEventListener('click', open);
+  env.addEventListener('keydown', function(e){ if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
+  setTimeout(open, 2400);
+})();
+<\/script>
+</body></html>`;
+}
+
+function openVirtualShare({ url, html, senderName }){
+  // Sender's share sheet: primary action is the downloadable HTML file.
+  // Fallback: URL link that streams the same viewer from kardigram.co.
   let sheet = document.getElementById('vShareSheet');
   if (!sheet){
     sheet = document.createElement('div');
@@ -5297,39 +5432,64 @@ function openVirtualShare(url){
       <div class="v-share-panel" role="dialog" aria-modal="true" aria-label="Share your virtual card">
         <button class="close" aria-label="Close">×</button>
         <div class="k">Your virtual card is ready</div>
-        <h3>Send them the <span class="p">link</span>.</h3>
-        <p class="d">Anywhere. Text, email, DM, a slack thread. Whoever opens it sees the wax-sealed envelope open into the card, reads your note, and can send one back — free.</p>
-        <div class="v-url-row"><input readonly value=""><button class="v-copy">Copy</button></div>
-        <div class="v-row">
-          <button class="v-share-native">Share via device</button>
-          <a class="v-share-sms">Text it</a>
-          <a class="v-share-mail">Email it</a>
+        <h3>A tiny HTML <span class="p">file</span>. Airdrop, text, email — it's yours.</h3>
+        <p class="d">Self-contained — the art is embedded, so it works offline forever. Nothing is uploaded. Whoever opens it sees the wax-sealed envelope open into your card.</p>
+        <div class="v-row" style="margin-top:16px">
+          <button class="v-share-native">Share the file</button>
+          <button class="v-download">Download</button>
         </div>
-        <div class="v-foot">Free · nothing is uploaded · the card lives entirely in the link</div>
+        <details style="margin-top:16px">
+          <summary style="cursor:pointer;font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;color:var(--muted);text-transform:uppercase;font-weight:700">Or share a link instead</summary>
+          <div class="v-url-row" style="margin-top:12px"><input readonly value=""><button class="v-copy">Copy</button></div>
+          <div class="v-row" style="margin-top:8px">
+            <a class="v-share-sms">Text it</a>
+            <a class="v-share-mail">Email it</a>
+          </div>
+          <div class="v-foot" style="margin-top:12px">The link streams the viewer from kardigram.co. The file version works offline and doesn't depend on us being online.</div>
+        </details>
       </div>`;
     document.body.appendChild(sheet);
     sheet.querySelector('.close').addEventListener('click', () => sheet.classList.remove('show'));
     sheet.addEventListener('click', e => { if (e.target === sheet) sheet.classList.remove('show'); });
   }
+  const safeName = 'card-from-' + (senderName || 'a-friend').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '.html';
+  const blob = new Blob([html], { type: 'text/html' });
+  // Link block
   const input = sheet.querySelector('input');
   input.value = url;
   const smsBody = encodeURIComponent(`Card for you — ${url}`);
   sheet.querySelector('.v-share-sms').href = `sms:?&body=${smsBody}`;
   sheet.querySelector('.v-share-mail').href = `mailto:?subject=${encodeURIComponent('A card for you')}&body=${smsBody}`;
   sheet.querySelector('.v-copy').onclick = async () => {
-    try { await navigator.clipboard.writeText(url); sheet.querySelector('.v-copy').textContent = 'Copied ✓'; }
+    try { await navigator.clipboard.writeText(url); sheet.querySelector('.v-copy').textContent = 'Copied'; }
     catch(_){ input.select(); document.execCommand && document.execCommand('copy'); }
+  };
+  // File block · primary
+  sheet.querySelector('.v-download').onclick = () => {
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = objectUrl; a.download = safeName;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 1200);
+    sheet.querySelector('.v-download').textContent = 'Downloaded';
   };
   sheet.querySelector('.v-share-native').onclick = async () => {
     try {
-      if (navigator.share) await navigator.share({ title: 'kardigram', text: 'I sent you a card', url });
+      const file = new File([blob], safeName, { type: 'text/html' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })){
+        await navigator.share({ files: [file], title: 'kardigram', text: 'I sent you a card' });
+      } else if (navigator.share) {
+        await navigator.share({ title: 'kardigram', text: 'I sent you a card', url });
+      } else {
+        sheet.querySelector('.v-download').click();
+      }
     } catch(_){}
   };
   sheet.classList.add('show');
 }
 
 function sendCard(){
-  // Virtual mode · generate link + open share sheet, skip the print/tracker flow
+  // Virtual mode · build the self-contained HTML one-pager (image inlined) and open the share sheet.
   if (cart.sendMode === 'virtual'){
     const url = makeVirtualUrl();
     const orderId = 'KG-V-' + Math.random().toString(36).slice(2, 5).toUpperCase();
@@ -5350,7 +5510,21 @@ function sendCard(){
       virtualUrl: url
     });
     show('landing'); clearStickyBar();
-    setTimeout(() => openVirtualShare(url), 220);
+    // Loading toast while we base64 the art image
+    const loading = document.createElement('div');
+    loading.className = 'v-loading';
+    loading.textContent = 'Wrapping your card…';
+    document.body.appendChild(loading);
+    setTimeout(() => loading.classList.add('show'), 20);
+    (async () => {
+      try {
+        const html = await makeVirtualHTML();
+        openVirtualShare({ url, html, senderName: cart.sender || 'a-friend' });
+      } finally {
+        loading.classList.remove('show');
+        setTimeout(() => loading.remove(), 300);
+      }
+    })();
     return;
   }
   return _sendCardPhysical();
