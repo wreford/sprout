@@ -2739,32 +2739,7 @@ footer .links a:hover{color:var(--ink)}
   <div class="tt-hint">Swipe up · double-tap ♥ · tap USE THIS</div>
 </div>
 
-<!-- Virtual card viewer · full-screen recipient experience for #v=... URLs -->
-<div id="vView" class="v-view" aria-hidden="true">
-  <div class="v-stage">
-    <div class="v-envelope" id="vEnvelope" aria-label="Envelope containing the card">
-      <div class="v-flap"></div>
-      <div class="v-body"><div class="v-to" id="vTo">To you</div></div>
-      <div class="v-seal" id="vSeal">k</div>
-    </div>
-    <div class="v-card" id="vCard" aria-hidden="true">
-      <div class="v-front">
-        <img id="vArt" alt="">
-        <div class="v-headline" id="vHeadline"></div>
-      </div>
-      <div class="v-inside">
-        <div class="v-note" id="vNote"></div>
-        <div class="v-sig" id="vSig"></div>
-      </div>
-    </div>
-  </div>
-  <div class="v-caption" id="vCaption">Tap the envelope</div>
-  <div class="v-actions" id="vActions">
-    <a class="v-cta" id="vSendBack" href="./">Send them one back — free <span>→</span></a>
-    <a class="v-attach" id="vAttach" href="" target="_blank" rel="noopener" hidden>Open the link they attached ↗</a>
-    <div class="v-branding"><a href="./" target="_blank" rel="noopener">Made with kardigram.co</a></div>
-  </div>
-</div>
+<!-- (Virtual card viewer retired — virtual cards are PDFs now.) -->
 
 <!-- In-app image editor · crop, rotate, flip, zoom · aspect locked to card size -->
 <div class="editor-view" id="editorView" aria-hidden="true" role="dialog" aria-label="Edit photo">
@@ -2866,67 +2841,13 @@ footer .links a:hover{color:var(--ink)}
 <script>
 'use strict';
 
-/* Virtual viewer boot · runs FIRST so a recipient landing on #v=... never sees
-   the composer flicker. Hides every .view + retunes body chrome, populates the
-   viewer, wires the tap-to-open interaction, then bails out. */
+/* Legacy #v=... viewer is retired · virtual cards are PDFs now. If anyone
+   opens an old link, strip the fragment and land on the composer instead. */
 window.__vMode = false;
-(function bootVirtualViewer(){
-  const hash = location.hash || '';
-  const m = /^#v=([A-Za-z0-9_\-]+)/.exec(hash);
-  if (!m) return;
-  let payload;
-  try {
-    let b = m[1].replace(/-/g, '+').replace(/_/g, '/');
-    while (b.length % 4) b += '=';
-    payload = JSON.parse(decodeURIComponent(escape(atob(b))));
-  } catch(_){ return; }
-  window.__vMode = true;
-  const paint = () => {
-    const v = document.getElementById('vView'); if (!v) return;
-    // Hide the composer
-    document.querySelectorAll('.view').forEach(el => el.classList.remove('show'));
-    document.querySelectorAll('.ticker, .top, .draft-banner').forEach(el => el.style.display = 'none');
-    document.body.style.overflow = 'hidden';
-    v.classList.add('show'); v.setAttribute('aria-hidden', 'false');
-    // Populate
-    document.getElementById('vTo').textContent = 'To ' + (payload.r || 'you');
-    document.getElementById('vArt').src = payload.d || '';
-    document.getElementById('vHeadline').textContent = payload.h || '';
-    document.getElementById('vNote').textContent = payload.m || '';
-    document.getElementById('vSig').textContent = '— ' + (payload.s || 'a friend');
-    const at = document.getElementById('vAttach');
-    if (payload.l && /^https?:/.test(payload.l)){
-      at.href = payload.l; at.hidden = false;
-    }
-    // Send-back link: navigate to composer without the fragment
-    const back = document.getElementById('vSendBack');
-    if (back){
-      back.href = location.pathname + location.search;
-      back.addEventListener('click', e => { e.preventDefault(); location.replace(location.pathname + location.search); });
-    }
-    // Open on tap · pointerdown fires before click (faster on mobile), stopPropagation
-    // on inner nodes so a tap on the seal/flap still counts as "open the envelope"
-    const env = document.getElementById('vEnvelope');
-    let opened = false;
-    const openIt = () => {
-      if (opened) return;
-      opened = true;
-      v.classList.add('opened');
-      try { navigator.vibrate && navigator.vibrate([25, 20, 40]); } catch(_){}
-    };
-    // ANY tap anywhere on the whole viewer opens the envelope — even the caption
-    // that literally says "Tap the envelope". touchstart for pre-Pointer-Events
-    // iOS Safari, click for keyboard/mouse, pointerdown for modern touch.
-    const openHandlers = ['touchstart', 'pointerdown', 'click'];
-    openHandlers.forEach(evt => v.addEventListener(evt, openIt, { passive: true }));
-    env.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openIt(); } });
-    env.setAttribute('tabindex', '0'); env.setAttribute('role', 'button');
-    // Fallback: auto-open after 6 s if the recipient still hasn't tapped
-    setTimeout(openIt, 6000);
-    document.title = `${payload.s || 'Someone'} sent you a card · kardigram`;
-  };
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', paint);
-  else paint();
+(function stripLegacyVirtualHash(){
+  if (/^#v=/.test(location.hash || '')) {
+    history.replaceState(null, '', location.pathname + location.search);
+  }
 })();
 const $ = id => document.getElementById(id);
 const escapeHtml = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -5318,7 +5239,12 @@ async function jpegBlobToPDF(jpegBlob, pdfW = 612, pdfH = 792){
    kardigram.co footer. No JavaScript in the output. The recipient just opens the
    PDF anywhere and reads it. */
 async function makeVirtualPDF(){
-  const artDataUrl = await imageToDataURL(cart.designImg || '');
+  // Fetch + base64 the art. If fetch fails (CORS), we get back the raw URL —
+  // drawing that into canvas would taint it and blow up toBlob later. So we
+  // only draw when we know we have a safe data URL.
+  const rawArt = cart.designImg || '';
+  const artDataUrl = await imageToDataURL(rawArt);
+  const safeArt = (artDataUrl && artDataUrl.startsWith('data:')) ? artDataUrl : '';
   const senderName = (cart.sender || 'A friend').trim();
   const recipName = (cart.recipient?.name || 'You').trim();
   const headline = cart.frontHeadline || (typeof occ === 'function' && occ(cart.occasion)?.tag) || '';
@@ -5333,31 +5259,42 @@ async function makeVirtualPDF(){
   const ctx = cvs.getContext('2d');
   // Card background — cream
   ctx.fillStyle = '#faf6ec'; ctx.fillRect(0, 0, W, H);
-  // Load and draw the art at the top 55% of the card, object-fit: cover
+  // Load and draw the art. Only if we have a safe data URL so we never taint.
   await new Promise((resolve) => {
-    if (!artDataUrl){ resolve(); return; }
-    const im = new Image(); im.crossOrigin = 'anonymous';
+    if (!safeArt){ resolve(); return; }
+    const im = new Image();
     im.onload = () => {
-      const artH = Math.round(H * 0.55);
-      const iw = im.width, ih = im.height;
-      const scale = Math.max(W / iw, artH / ih);
-      const dw = iw * scale, dh = ih * scale;
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(0, 0, W, artH); ctx.clip();
-      ctx.drawImage(im, (W - dw) / 2, (artH - dh) / 2, dw, dh);
-      ctx.restore();
-      // Bottom edge shadow line
-      const grad = ctx.createLinearGradient(0, artH - 40, 0, artH);
-      grad.addColorStop(0, 'rgba(0,0,0,0)');
-      grad.addColorStop(1, 'rgba(0,0,0,.28)');
-      ctx.fillStyle = grad; ctx.fillRect(0, artH - 40, W, 40);
+      try {
+        const artH = Math.round(H * 0.55);
+        const iw = im.width, ih = im.height;
+        const scale = Math.max(W / iw, artH / ih);
+        const dw = iw * scale, dh = ih * scale;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(0, 0, W, artH); ctx.clip();
+        ctx.drawImage(im, (W - dw) / 2, (artH - dh) / 2, dw, dh);
+        ctx.restore();
+        const grad = ctx.createLinearGradient(0, artH - 40, 0, artH);
+        grad.addColorStop(0, 'rgba(0,0,0,0)');
+        grad.addColorStop(1, 'rgba(0,0,0,.28)');
+        ctx.fillStyle = grad; ctx.fillRect(0, artH - 40, W, 40);
+      } catch(_){}
       resolve();
     };
     im.onerror = () => resolve();
-    im.src = artDataUrl;
+    im.src = safeArt;
     setTimeout(resolve, 3000);
   });
+  // Placeholder if art couldn't load — a graphite panel with the title, so the
+  // top of the card still looks intentional instead of blank cream.
+  if (!safeArt){
+    const artH = Math.round(H * 0.55);
+    ctx.fillStyle = '#2c3037'; ctx.fillRect(0, 0, W, artH);
+    ctx.fillStyle = '#8c919c';
+    ctx.font = '700 22px "JetBrains Mono", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('ART · COULDN\'T EMBED', W / 2, artH / 2);
+  }
   const artH = Math.round(H * 0.55);
   // Headline overlay on the art
   if (headline){
@@ -5432,7 +5369,20 @@ async function makeVirtualPDF(){
   ctx.font = '800 16px "JetBrains Mono", monospace';
   ctx.fillText('KARDIGRAM.CO · SEND A CARD, FREE', W / 2, H - 20);
 
-  const jpegBlob = await new Promise(r => cvs.toBlob(r, 'image/jpeg', 0.92));
+  // toBlob throws SecurityError on some browsers if the canvas is tainted.
+  // We already guard by only drawing safe data URLs, but wrap in try/catch too.
+  let jpegBlob = null;
+  try {
+    jpegBlob = await new Promise((r, rej) => { try { cvs.toBlob(b => b ? r(b) : rej(new Error('null')), 'image/jpeg', 0.92); } catch(e){ rej(e); } });
+  } catch(e){
+    // Fallback: blank out the art region and try once more
+    ctx.fillStyle = '#2c3037'; ctx.fillRect(0, 0, W, Math.round(H * 0.55));
+    ctx.fillStyle = '#8c919c';
+    ctx.font = '700 22px "JetBrains Mono", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('ART · COULDN\'T EMBED', W / 2, Math.round(H * 0.55) / 2);
+    jpegBlob = await new Promise(r => cvs.toBlob(r, 'image/jpeg', 0.92));
+  }
   if (!jpegBlob) throw new Error('canvas export failed');
   return jpegBlobToPDF(jpegBlob);
 }
