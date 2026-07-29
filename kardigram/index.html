@@ -5252,6 +5252,191 @@ async function imageToDataURL(url){
    Everything is inlined — art image as a data URI, all CSS in a <style> block,
    all interaction in a small <script>. The file opens in any browser, works
    offline, and doesn't rot if the museum API URL later moves or expires. */
+/* Wrap a JPEG blob in a minimal single-page PDF. No library — pure bytes.
+   PDF 1.4, one page, one embedded JPEG via DCTDecode. */
+async function jpegBlobToPDF(jpegBlob, pdfW = 612, pdfH = 792){
+  const jpegBytes = new Uint8Array(await jpegBlob.arrayBuffer());
+  // Parse JPEG for width/height by scanning for a Start-Of-Frame marker
+  let iw = 0, ih = 0;
+  for (let i = 2; i < jpegBytes.length - 8; i++){
+    if (jpegBytes[i] !== 0xFF) continue;
+    const mk = jpegBytes[i+1];
+    // SOF markers: C0-CF except C4/C8/CC
+    if (mk >= 0xC0 && mk <= 0xCF && mk !== 0xC4 && mk !== 0xC8 && mk !== 0xCC){
+      ih = (jpegBytes[i+5] << 8) | jpegBytes[i+6];
+      iw = (jpegBytes[i+7] << 8) | jpegBytes[i+8];
+      break;
+    }
+  }
+  if (!iw || !ih) throw new Error('bad JPEG');
+  // Fit image to page maintaining aspect ratio, centered
+  const imgAR = iw / ih, pageAR = pdfW / pdfH;
+  let dw, dh;
+  if (imgAR > pageAR){ dw = pdfW; dh = pdfW / imgAR; }
+  else { dh = pdfH; dw = pdfH * imgAR; }
+  const dx = (pdfW - dw) / 2;
+  const dy = (pdfH - dh) / 2;
+
+  const enc = new TextEncoder();
+  const chunks = [];
+  const offsets = [];
+  let byteCount = 0;
+  const push = (part) => {
+    const b = typeof part === 'string' ? enc.encode(part) : part;
+    chunks.push(b); byteCount += b.length;
+  };
+  const obj = (id, body) => {
+    offsets[id] = byteCount;
+    push(id + ' 0 obj\n' + body + '\nendobj\n');
+  };
+
+  push('%PDF-1.4\n');
+  push('%\xE2\xE3\xCF\xD3\n');
+  obj(1, '<</Type /Catalog /Pages 2 0 R>>');
+  obj(2, '<</Type /Pages /Kids [3 0 R] /Count 1>>');
+  obj(3, `<</Type /Page /Parent 2 0 R /MediaBox [0 0 ${pdfW} ${pdfH}] /Resources <</XObject <</Im0 4 0 R>>>> /Contents 5 0 R>>`);
+  // Image object · stream body is the raw JPEG (DCTDecode)
+  offsets[4] = byteCount;
+  push(`4 0 obj\n<</Type /XObject /Subtype /Image /Width ${iw} /Height ${ih} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpegBytes.length}>>\nstream\n`);
+  push(jpegBytes);
+  push('\nendstream\nendobj\n');
+  // Page content: place the image at (dx, dy) with size (dw, dh)
+  const content = `q\n${dw.toFixed(2)} 0 0 ${dh.toFixed(2)} ${dx.toFixed(2)} ${dy.toFixed(2)} cm\n/Im0 Do\nQ\n`;
+  obj(5, `<</Length ${content.length}>>\nstream\n${content}\nendstream`);
+  const xrefStart = byteCount;
+  push('xref\n0 6\n0000000000 65535 f \n');
+  for (let i = 1; i <= 5; i++) push(String(offsets[i]).padStart(10, '0') + ' 00000 n \n');
+  push(`trailer\n<</Size 6 /Root 1 0 R>>\nstartxref\n${xrefStart}\n%%EOF\n`);
+
+  const out = new Uint8Array(byteCount);
+  let pos = 0;
+  for (const c of chunks){ out.set(c, pos); pos += c.length; }
+  return new Blob([out], { type: 'application/pdf' });
+}
+
+/* Render the virtual card as a portrait PDF page — art + headline + note + sig +
+   kardigram.co footer. No JavaScript in the output. The recipient just opens the
+   PDF anywhere and reads it. */
+async function makeVirtualPDF(){
+  const artDataUrl = await imageToDataURL(cart.designImg || '');
+  const senderName = (cart.sender || 'A friend').trim();
+  const recipName = (cart.recipient?.name || 'You').trim();
+  const headline = cart.frontHeadline || (typeof occ === 'function' && occ(cart.occasion)?.tag) || '';
+  const msg = cart.message || '';
+  const artist = cart.designArtist || 'Public domain';
+  const title = cart.designTitle || '';
+  const doodle = (typeof currentDoodle === 'function') ? currentDoodle() : null;
+  // Draw to a 5×7-ish portrait canvas at ~200 DPI equivalent
+  const W = 1200, H = 1680;
+  const cvs = document.createElement('canvas');
+  cvs.width = W; cvs.height = H;
+  const ctx = cvs.getContext('2d');
+  // Card background — cream
+  ctx.fillStyle = '#faf6ec'; ctx.fillRect(0, 0, W, H);
+  // Load and draw the art at the top 55% of the card, object-fit: cover
+  await new Promise((resolve) => {
+    if (!artDataUrl){ resolve(); return; }
+    const im = new Image(); im.crossOrigin = 'anonymous';
+    im.onload = () => {
+      const artH = Math.round(H * 0.55);
+      const iw = im.width, ih = im.height;
+      const scale = Math.max(W / iw, artH / ih);
+      const dw = iw * scale, dh = ih * scale;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, W, artH); ctx.clip();
+      ctx.drawImage(im, (W - dw) / 2, (artH - dh) / 2, dw, dh);
+      ctx.restore();
+      // Bottom edge shadow line
+      const grad = ctx.createLinearGradient(0, artH - 40, 0, artH);
+      grad.addColorStop(0, 'rgba(0,0,0,0)');
+      grad.addColorStop(1, 'rgba(0,0,0,.28)');
+      ctx.fillStyle = grad; ctx.fillRect(0, artH - 40, W, 40);
+      resolve();
+    };
+    im.onerror = () => resolve();
+    im.src = artDataUrl;
+    setTimeout(resolve, 3000);
+  });
+  const artH = Math.round(H * 0.55);
+  // Headline overlay on the art
+  if (headline){
+    ctx.fillStyle = '#faf6ec';
+    ctx.font = 'italic 500 62px Sora, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.shadowColor = 'rgba(0,0,0,.6)'; ctx.shadowBlur = 20;
+    ctx.fillText(headline.slice(0, 40), W / 2, artH - 42);
+    ctx.shadowBlur = 0;
+  }
+  // Message area — cream ivory background from artH down
+  const noteTop = artH + 60;
+  ctx.fillStyle = '#2a2216';
+  ctx.font = '600 44px Caveat, cursive';
+  ctx.textAlign = 'left';
+  // Word-wrap the message
+  const wrapText = (text, x, y, maxWidth, lineHeight) => {
+    const paras = text.split('\n');
+    for (const para of paras){
+      const words = para.split(/\s+/);
+      let line = '';
+      for (const w of words){
+        const test = line ? line + ' ' + w : w;
+        if (ctx.measureText(test).width > maxWidth){
+          ctx.fillText(line, x, y);
+          y += lineHeight;
+          line = w;
+        } else {
+          line = test;
+        }
+      }
+      if (line) { ctx.fillText(line, x, y); y += lineHeight; }
+    }
+    return y;
+  };
+  const msgY = wrapText(msg || ' ', 100, noteTop, W - 200, 60);
+  // Signature — right-aligned pink
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#7a1418';
+  ctx.font = '700 46px Caveat, cursive';
+  ctx.fillText('— ' + senderName, W - 100, Math.max(msgY + 40, H - 320));
+  // Doodle (if picked) — small hand-drawn stroke bottom-left of the note area
+  if (doodle && doodle.svg){
+    // Fake-render doodle-ish placeholder — draw a simple pen dot cluster instead
+    // (the actual SVG is HTML — canvas can't render that directly without work).
+    ctx.strokeStyle = '#7a1418'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(140, H - 300, 22, 0, Math.PI * 2);
+    ctx.moveTo(120, H - 300); ctx.lineTo(160, H - 300);
+    ctx.moveTo(140, H - 320); ctx.lineTo(140, H - 280);
+    ctx.stroke();
+  }
+  // Footer strip — graphite bar with wordmark + credit + kardigram.co
+  const footH = 200;
+  ctx.fillStyle = '#1a1c20'; ctx.fillRect(0, H - footH, W, footH);
+  // "To: Sarah" line
+  ctx.fillStyle = '#8c919c';
+  ctx.font = '800 20px "JetBrains Mono", monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText('TO · ' + recipName.toUpperCase(), 80, H - footH + 44);
+  // Wordmark
+  ctx.fillStyle = '#eef0f4';
+  ctx.font = '900 italic 44px Sora, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('kardigram', W / 2, H - 80);
+  // Art credit + kardigram.co link
+  ctx.fillStyle = '#8c919c';
+  ctx.font = '700 16px "JetBrains Mono", monospace';
+  const credit = (title ? title + ' · ' : '') + artist;
+  ctx.fillText(credit.slice(0, 60), W / 2, H - 44);
+  ctx.fillStyle = '#f6c94a';
+  ctx.font = '800 16px "JetBrains Mono", monospace';
+  ctx.fillText('KARDIGRAM.CO · SEND A CARD, FREE', W / 2, H - 20);
+
+  const jpegBlob = await new Promise(r => cvs.toBlob(r, 'image/jpeg', 0.92));
+  if (!jpegBlob) throw new Error('canvas export failed');
+  return jpegBlobToPDF(jpegBlob);
+}
+
 async function makeVirtualHTML(){
   const artDataUrl = await imageToDataURL(cart.designImg || '');
   const doodle = (typeof currentDoodle === 'function') ? currentDoodle() : null;
@@ -5360,9 +5545,9 @@ body{display:flex;flex-direction:column}
 </body></html>`;
 }
 
-function openVirtualShare({ url, html, senderName }){
-  // Sender's share sheet: primary action is the downloadable HTML file.
-  // Fallback: URL link that streams the same viewer from kardigram.co.
+function openVirtualShare({ pdfBlob, senderName }){
+  // Sender's share sheet · PDF is the only real path. Recipients open a PDF
+  // anywhere with zero JavaScript, so nothing can be "broken" at their end.
   let sheet = document.getElementById('vShareSheet');
   if (!sheet){
     sheet = document.createElement('div');
@@ -5372,41 +5557,23 @@ function openVirtualShare({ url, html, senderName }){
       <div class="v-share-panel" role="dialog" aria-modal="true" aria-label="Share your virtual card">
         <button class="close" aria-label="Close">×</button>
         <div class="k">Your virtual card is ready</div>
-        <h3>Ready. <span class="p">Send the file.</span></h3>
-        <p class="d">Self-contained HTML. Art baked in. Works offline. Nothing uploaded.</p>
+        <h3>Ready. <span class="p">One PDF.</span></h3>
+        <p class="d">A single-page PDF. Text it, email it, airdrop it. Opens on any phone or computer, no app needed.</p>
         <div class="v-row" style="margin-top:16px">
-          <button class="v-share-native">Share the file</button>
+          <button class="v-share-native">Share the PDF</button>
           <button class="v-download">Download</button>
         </div>
-        <details style="margin-top:16px">
-          <summary style="cursor:pointer;font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;color:var(--muted);text-transform:uppercase;font-weight:700">Or share a link instead</summary>
-          <div class="v-url-row" style="margin-top:12px"><input readonly value=""><button class="v-copy">Copy</button></div>
-          <div class="v-row" style="margin-top:8px">
-            <a class="v-share-sms">Text it</a>
-            <a class="v-share-mail">Email it</a>
-          </div>
-          <div class="v-foot" style="margin-top:12px">The link streams the viewer from kardigram.co. The file version works offline and doesn't depend on us being online.</div>
-        </details>
+        <div class="v-foot" style="margin-top:14px">Made on your device. Nothing uploaded.</div>
       </div>`;
     document.body.appendChild(sheet);
     sheet.querySelector('.close').addEventListener('click', () => sheet.classList.remove('show'));
     sheet.addEventListener('click', e => { if (e.target === sheet) sheet.classList.remove('show'); });
   }
-  const safeName = 'card-from-' + (senderName || 'a-friend').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '.html';
-  const blob = new Blob([html], { type: 'text/html' });
-  // Link block
-  const input = sheet.querySelector('input');
-  input.value = url;
-  const smsBody = encodeURIComponent(`Card for you — ${url}`);
-  sheet.querySelector('.v-share-sms').href = `sms:?&body=${smsBody}`;
-  sheet.querySelector('.v-share-mail').href = `mailto:?subject=${encodeURIComponent('A card for you')}&body=${smsBody}`;
-  sheet.querySelector('.v-copy').onclick = async () => {
-    try { await navigator.clipboard.writeText(url); sheet.querySelector('.v-copy').textContent = 'Copied'; }
-    catch(_){ input.select(); document.execCommand && document.execCommand('copy'); }
-  };
-  // File block · primary
+  const safeName = 'card-from-' + (senderName || 'a-friend').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '.pdf';
+  sheet.querySelector('.v-download').textContent = 'Download';
+  sheet.querySelector('.v-share-native').textContent = 'Share the PDF';
   sheet.querySelector('.v-download').onclick = () => {
-    const objectUrl = URL.createObjectURL(blob);
+    const objectUrl = URL.createObjectURL(pdfBlob);
     const a = document.createElement('a');
     a.href = objectUrl; a.download = safeName;
     document.body.appendChild(a); a.click(); a.remove();
@@ -5415,11 +5582,9 @@ function openVirtualShare({ url, html, senderName }){
   };
   sheet.querySelector('.v-share-native').onclick = async () => {
     try {
-      const file = new File([blob], safeName, { type: 'text/html' });
+      const file = new File([pdfBlob], safeName, { type: 'application/pdf' });
       if (navigator.canShare && navigator.canShare({ files: [file] })){
         await navigator.share({ files: [file], title: 'kardigram', text: 'I sent you a card' });
-      } else if (navigator.share) {
-        await navigator.share({ title: 'kardigram', text: 'I sent you a card', url });
       } else {
         sheet.querySelector('.v-download').click();
       }
@@ -5429,9 +5594,8 @@ function openVirtualShare({ url, html, senderName }){
 }
 
 function sendCard(){
-  // Virtual mode · build the self-contained HTML one-pager (image inlined) and open the share sheet.
+  // Virtual mode · build a single-page PDF and open the share sheet.
   if (cart.sendMode === 'virtual'){
-    const url = makeVirtualUrl();
     const orderId = 'KG-V-' + Math.random().toString(36).slice(2, 5).toUpperCase();
     saveOrder({
       orderId, at: new Date().toISOString(), status: 'shared',
@@ -5446,11 +5610,10 @@ function sendCard(){
       attachUrl: cart.attachUrl || '',
       designImg: cart.designImg || '',
       designTitle: cart.designTitle || '',
-      designArtist: cart.designArtist || '',
-      virtualUrl: url
+      designArtist: cart.designArtist || ''
     });
     show('landing'); clearStickyBar();
-    // Loading toast while we base64 the art image
+    // Loading toast while we render + wrap
     const loading = document.createElement('div');
     loading.className = 'v-loading';
     loading.textContent = 'Wrapping your card…';
@@ -5458,8 +5621,8 @@ function sendCard(){
     setTimeout(() => loading.classList.add('show'), 20);
     (async () => {
       try {
-        const html = await makeVirtualHTML();
-        openVirtualShare({ url, html, senderName: cart.sender || 'a-friend' });
+        const pdfBlob = await makeVirtualPDF();
+        openVirtualShare({ pdfBlob, senderName: cart.sender || 'a-friend' });
       } finally {
         loading.classList.remove('show');
         setTimeout(() => loading.remove(), 300);
