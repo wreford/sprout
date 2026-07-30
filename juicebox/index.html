@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#1a1c20">
+<meta name="description" content="Juicebox Dash — an endless runner. Jump the haters, grab the gold, never spill the juice.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%231a1c20'/%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%23f6c94a' stroke-width='4'/%3E%3C/svg%3E">
+<title>Juicebox Dash</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:ital,wght@0,700;0,800;0,900;1,800&family=JetBrains+Mono:wght@700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#1a1c20; --surface:#23262c; --surface-2:#2c3037;
+  --ink:#eef0f4; --ink-2:#c8ccd5; --muted:#8c919c;
+  --pink:#ff3d6b; --yellow:#f6c94a; --yellow-2:#ffdb7d; --silver:#c0c5cf;
+  --disp:'Sora',-apple-system,'Segoe UI',Roboto,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;background:var(--bg);color:var(--ink);font-family:var(--disp);overflow:hidden;touch-action:manipulation;user-select:none;-webkit-user-select:none}
+#wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
+canvas{display:block;width:100%;height:100%}
+.hud{
+  position:fixed;top:calc(env(safe-area-inset-top) + 12px);left:0;right:0;z-index:5;
+  display:flex;justify-content:space-between;align-items:flex-start;padding:0 16px;pointer-events:none
+}
+.chip{
+  padding:8px 14px;border-radius:100px;background:rgba(26,28,32,.72);border:1px solid rgba(220,225,235,.16);
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  font-family:var(--mono);font-size:12px;font-weight:800;letter-spacing:.1em;color:var(--silver)
+}
+.chip .y{color:var(--yellow)}
+.chip .p{color:var(--pink)}
+#boost{
+  position:fixed;top:calc(env(safe-area-inset-top) + 56px);left:50%;transform:translateX(-50%) scale(.8);z-index:5;
+  padding:6px 16px;border-radius:100px;background:linear-gradient(90deg,var(--pink),var(--yellow));color:#1a1c20;
+  font-family:var(--disp);font-weight:900;font-size:12px;letter-spacing:.14em;text-transform:uppercase;
+  opacity:0;transition:opacity .2s ease,transform .2s cubic-bezier(.34,1.56,.64,1);pointer-events:none
+}
+#boost.on{opacity:1;transform:translateX(-50%) scale(1)}
+.panel{
+  position:fixed;inset:0;z-index:10;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;
+  background:rgba(26,28,32,.78);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  padding:24px;text-align:center;transition:opacity .25s ease;cursor:pointer
+}
+.panel.hide{opacity:0;pointer-events:none}
+.panel .k{font-family:var(--mono);font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--yellow);font-weight:800}
+.panel h1{font-size:clamp(38px,10vw,64px);font-weight:900;letter-spacing:-.03em;line-height:.95;text-transform:uppercase}
+.panel h1 .y{color:var(--yellow)} .panel h1 .p{color:var(--pink)}
+.panel .sub{font-size:15px;color:var(--ink-2);font-weight:600;max-width:340px;line-height:1.5}
+.panel .sub b{color:var(--yellow)}
+.panel .big{
+  margin-top:6px;padding:18px 34px;border-radius:14px;background:var(--pink);color:#fff;border:none;cursor:pointer;
+  font-family:var(--disp);font-weight:900;font-size:16px;letter-spacing:.04em;text-transform:uppercase;min-height:58px;
+  box-shadow:0 16px 36px -8px rgba(255,61,107,.6);transition:transform .16s cubic-bezier(.34,1.56,.64,1)
+}
+.panel .big:active{transform:scale(.95)}
+.panel .score-line{font-family:var(--mono);font-size:13px;color:var(--silver);font-weight:800;letter-spacing:.1em}
+.panel .score-line .n{color:var(--yellow);font-size:22px}
+.panel .best{font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.14em;font-weight:700;text-transform:uppercase}
+.panel img.hero-sprite{height:150px;image-rendering:pixelated;filter:drop-shadow(0 16px 28px rgba(0,0,0,.55))}
+#loading{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;background:var(--bg);
+  font-family:var(--mono);font-size:11px;letter-spacing:.2em;color:var(--muted);text-transform:uppercase;font-weight:700}
+.foot{position:fixed;bottom:calc(env(safe-area-inset-bottom) + 10px);left:0;right:0;text-align:center;z-index:5;pointer-events:none;
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;color:var(--muted);text-transform:uppercase;font-weight:700}
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="cv"></canvas></div>
+
+<div class="hud">
+  <div class="chip"><span class="y" id="hudScore">0</span> · GOLD</div>
+  <div class="chip">BEST <span class="p" id="hudBest">0</span></div>
+</div>
+<div id="boost">Sugar rush</div>
+
+<div class="panel" id="startPanel">
+  <span class="k">Juicebox Dash</span>
+  <h1>Run. <span class="y">Sip.</span> <span class="p">Repeat.</span></h1>
+  <img class="hero-sprite" id="startSprite" alt="">
+  <p class="sub">Jump the spikes. Grab the <b>gold rings</b>. Juice pouches hit different — <b>sugar rush</b> makes you briefly unstoppable.</p>
+  <button class="big" id="startBtn">Tap to run</button>
+  <div class="best" id="startBest"></div>
+</div>
+
+<div class="panel hide" id="overPanel">
+  <span class="k">Juice spilled</span>
+  <h1 id="overTitle">Ouch.</h1>
+  <img class="hero-sprite" id="overSprite" alt="">
+  <div class="score-line"><span class="n" id="overScore">0</span> GOLD · <span id="overDist">0</span>m</div>
+  <div class="best" id="overBest"></div>
+  <button class="big" id="againBtn">Run it back</button>
+</div>
+
+<div class="foot">Tap / space · jump &nbsp;&nbsp; swipe down / ↓ · slide</div>
+<div id="loading">Slicing sprites…</div>
+
+<script>
+'use strict';
+/* ============================================================
+   Juicebox Dash · endless runner
+   The sprite sheet is auto-sliced at load: the gray grid
+   background is chroma-keyed to transparent, then frames are
+   found by scanning for fully-transparent column gaps. No
+   hand-typed frame rects anywhere.
+   ============================================================ */
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+let W = 0, H = 0, DPR = 1;
+function resize(){
+  DPR = Math.min(devicePixelRatio || 1, 2);
+  W = innerWidth; H = innerHeight;
+  cv.width = W * DPR; cv.height = H * DPR;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+addEventListener('resize', resize); resize();
+
+/* ---------- sprite pipeline ---------- */
+const FRAMES = [];       // { cv, w, h } per pose
+let SHEET_READY = false;
+function keyAndSlice(img){
+  const sw = img.naturalWidth, sh = img.naturalHeight;
+  const off = document.createElement('canvas');
+  off.width = sw; off.height = sh;
+  const octx = off.getContext('2d', { willReadFrequently: true });
+  octx.drawImage(img, 0, 0);
+  const id = octx.getImageData(0, 0, sw, sh);
+  const d = id.data;
+  // Border-seeded flood fill: only kill grayish pixels CONNECTED to the outside.
+  // A global key would also erase the character's white gloves + eyes; those are
+  // interior whites sealed off by dark outlines, so the flood never reaches them.
+  const grayish = (i) => {
+    const r = d[i], g = d[i+1], b = d[i+2];
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    return mx > 120 && (mx - mn) < 46;   // loose — JPEG noise rides on the gray
+  };
+  const seen = new Uint8Array(sw * sh);
+  const stack = [];
+  for (let x = 0; x < sw; x++){ stack.push(x, 0, x, sh - 1); }
+  for (let y = 0; y < sh; y++){ stack.push(0, y, sw - 1, y); }
+  while (stack.length){
+    const y = stack.pop(), x = stack.pop();
+    if (x < 0 || y < 0 || x >= sw || y >= sh) continue;
+    const p = y * sw + x;
+    if (seen[p]) continue;
+    seen[p] = 1;
+    if (!grayish(p * 4)) continue;
+    d[p * 4 + 3] = 0;
+    stack.push(x + 1, y, x - 1, y, x, y + 1, x, y - 1);
+  }
+  octx.putImageData(id, 0, 0);
+  // Column occupancy — a column counts only if it has REAL content (>=4 px),
+  // so stray JPEG-noise pixels can't bridge two sprites together
+  const colHas = new Uint8Array(sw);
+  for (let x = 0; x < sw; x++){
+    let n = 0;
+    for (let y = 0; y < sh; y++){
+      if (d[(y * sw + x) * 4 + 3] > 24 && ++n >= 4){ colHas[x] = 1; break; }
+    }
+  }
+  const runs = [];
+  let s = -1;
+  for (let x = 0; x <= sw; x++){
+    const on = x < sw && colHas[x];
+    if (on && s < 0) s = x;
+    if (!on && s >= 0){
+      if (x - s > 20) runs.push([s, x]);   // ignore specks
+      s = -1;
+    }
+  }
+  // Merge runs separated by tiny gaps (inner-sprite gaps like an arm)
+  let merged = [];
+  for (const r of runs){
+    const last = merged[merged.length - 1];
+    if (last && r[0] - last[1] < 8) last[1] = r[1];
+    else merged.push([...r]);
+  }
+  // Fallback: if gap detection under-splits (noise bridges), force 6 equal
+  // columns across the content extent and tight-crop each
+  if (merged.length < 4){
+    const left = merged.length ? merged[0][0] : 0;
+    const right = merged.length ? merged[merged.length - 1][1] : sw;
+    const step = (right - left) / 6;
+    merged = [];
+    for (let i = 0; i < 6; i++) merged.push([Math.round(left + i * step), Math.round(left + (i + 1) * step)]);
+  }
+  // For each run, find vertical bounds and crop
+  for (const [x0, x1] of merged){
+    let y0 = sh, y1 = 0;
+    for (let y = 0; y < sh; y++){
+      for (let x = x0; x < x1; x++){
+        if (d[(y * sw + x) * 4 + 3] > 24){ if (y < y0) y0 = y; if (y > y1) y1 = y; break; }
+      }
+    }
+    if (y1 <= y0) continue;
+    const fw = x1 - x0, fh = y1 - y0 + 1;
+    const f = document.createElement('canvas');
+    f.width = fw; f.height = fh;
+    f.getContext('2d').drawImage(off, x0, y0, fw, fh, 0, 0, fw, fh);
+    FRAMES.push({ cv: f, w: fw, h: fh });
+  }
+}
+const sheet = new Image();
+sheet.onload = () => {
+  keyAndSlice(sheet);
+  SHEET_READY = FRAMES.length >= 4;
+  document.getElementById('loading').style.display = 'none';
+  // Start-screen sprite (idle pose) + game-over sprite (victory pose)
+  const idle = FRAMES[4] || FRAMES[0];
+  const win  = FRAMES[5] || FRAMES[FRAMES.length - 1];
+  if (idle) document.getElementById('startSprite').src = idle.cv.toDataURL();
+  if (win)  document.getElementById('overSprite').src  = win.cv.toDataURL();
+};
+sheet.onerror = () => { document.getElementById('loading').textContent = 'SPRITES MISSING'; };
+sheet.src = 'sprites.jpg';
+
+/* Frame roles (left→right on the sheet):
+   0 run-A · 1 run-B · 2 jump · 3 slide · 4 idle · 5 victory */
+const F_RUN_A = 0, F_RUN_B = 1, F_JUMP = 2, F_SLIDE = 3, F_IDLE = 4, F_WIN = 5;
+function frame(i){ return FRAMES[Math.min(i, FRAMES.length - 1)] || FRAMES[0]; }
+
+/* ---------- game state ---------- */
+const G = {
+  running: false,
+  t: 0, dist: 0, score: 0,
+  speed: 0, baseSpeed: 340,
+  groundY: 0,
+  px: 0, py: 0, vy: 0,
+  onGround: true, sliding: false, slideT: 0,
+  boost: 0,           // sugar-rush seconds remaining
+  obstacles: [],      // { x, w, h, kind }
+  pickups: [],        // { x, y, r, kind: 'ring'|'juice', t }
+  spawnIn: 0.9,
+  runPhase: 0,
+  shake: 0,
+  dead: false
+};
+let best = 0;
+try { best = parseInt(localStorage.getItem('juicebox-best') || '0', 10) || 0; } catch(_){}
+document.getElementById('hudBest').textContent = best;
+document.getElementById('startBest').textContent = best ? `Best run · ${best} gold` : 'First run — make it count';
+
+const PLAYER_H = 118;   // draw height of the runner
+function playerBox(){
+  const f = frame(G.sliding ? F_SLIDE : (G.onGround ? F_RUN_A : F_JUMP));
+  const h = G.sliding ? PLAYER_H * .62 : PLAYER_H;
+  const w = h * (f ? f.w / f.h : .6);
+  return { x: G.px - w * .32, y: G.py - h, w: w * .64, h };  // forgiving hitbox
+}
+
+function reset(){
+  G.t = 0; G.dist = 0; G.score = 0;
+  G.speed = G.baseSpeed;
+  G.groundY = H - Math.max(90, H * .16);
+  G.px = Math.max(70, W * .18);
+  G.py = G.groundY; G.vy = 0;
+  G.onGround = true; G.sliding = false; G.slideT = 0;
+  G.boost = 0; G.obstacles = []; G.pickups = [];
+  G.spawnIn = 1.1; G.runPhase = 0; G.shake = 0; G.dead = false;
+  document.getElementById('hudScore').textContent = '0';
+}
+
+/* ---------- input ---------- */
+function jump(){
+  if (!G.running || G.dead) return;
+  if (G.onGround){
+    G.vy = -Math.max(720, H * 1.06);
+    G.onGround = false; G.sliding = false;
+    blip(420, .06);
+  }
+}
+function slide(){
+  if (!G.running || G.dead || !G.onGround) return;
+  G.sliding = true; G.slideT = .55;
+  blip(180, .05);
+}
+addEventListener('keydown', e => {
+  if (e.repeat) return;
+  if (e.code === 'Space' || e.code === 'ArrowUp'){ e.preventDefault(); jump(); }
+  if (e.code === 'ArrowDown'){ e.preventDefault(); slide(); }
+});
+let touchY0 = null;
+cv.addEventListener('touchstart', e => { touchY0 = e.touches[0].clientY; jump(); }, { passive: true });
+cv.addEventListener('touchmove', e => {
+  if (touchY0 === null) return;
+  if (e.touches[0].clientY - touchY0 > 46){ slide(); touchY0 = null; }
+}, { passive: true });
+cv.addEventListener('mousedown', jump);
+
+/* ---------- tiny audio ---------- */
+let AC = null;
+function blip(freq, dur){
+  try {
+    AC = AC || new (window.AudioContext || window.webkitAudioContext)();
+    const o = AC.createOscillator(), g = AC.createGain();
+    o.type = 'square'; o.frequency.value = freq;
+    g.gain.setValueAtTime(.06, AC.currentTime);
+    g.gain.exponentialRampToValueAtTime(.001, AC.currentTime + dur);
+    o.connect(g); g.connect(AC.destination);
+    o.start(); o.stop(AC.currentTime + dur);
+  } catch(_){}
+}
+
+/* ---------- spawning ---------- */
+function spawn(){
+  const r = Math.random();
+  if (r < .55){
+    // spike cluster (1–3)
+    const n = 1 + (Math.random() * 3 | 0);
+    const w = n * 26;
+    G.obstacles.push({ x: W + 60, w, h: 34, kind: 'spike' });
+  } else if (r < .75){
+    // tall crate — must slide? no: crate you jump; bar you slide
+    G.obstacles.push({ x: W + 60, w: 44, h: 64, kind: 'crate' });
+  } else {
+    // floating bar — slide under it
+    G.obstacles.push({ x: W + 60, w: 90, h: 26, kind: 'bar' });
+  }
+  // pickups sprinkled after obstacles
+  if (Math.random() < .8){
+    const n = 3 + (Math.random() * 3 | 0);
+    const arcUp = Math.random() < .5;
+    for (let i = 0; i < n; i++){
+      const yBase = arcUp ? G.groundY - 150 - Math.sin(i / (n-1) * Math.PI) * 70 : G.groundY - 46;
+      G.pickups.push({ x: W + 240 + i * 44, y: yBase, r: 13, kind: 'ring', t: Math.random() * 6 });
+    }
+  }
+  if (Math.random() < .16){
+    G.pickups.push({ x: W + 200 + Math.random() * 240, y: G.groundY - 120 - Math.random() * 80, r: 17, kind: 'juice', t: 0 });
+  }
+}
+
+/* ---------- update ---------- */
+function update(dt){
+  G.t += dt;
+  const boosted = G.boost > 0;
+  if (boosted) G.boost -= dt;
+  const spd = G.speed * (boosted ? 1.55 : 1);
+  G.dist += spd * dt / 42;
+  G.speed = G.baseSpeed + Math.min(340, G.t * 9);
+
+  // physics
+  const grav = Math.max(1900, H * 2.6);
+  G.vy += grav * dt;
+  G.py += G.vy * dt;
+  if (G.py >= G.groundY){ G.py = G.groundY; G.vy = 0; G.onGround = true; }
+  if (G.sliding){ G.slideT -= dt; if (G.slideT <= 0) G.sliding = false; }
+
+  // spawn
+  G.spawnIn -= dt;
+  if (G.spawnIn <= 0){
+    spawn();
+    G.spawnIn = .8 + Math.random() * .9 - Math.min(.45, G.t * .008);
+  }
+
+  // move world
+  for (const o of G.obstacles) o.x -= spd * dt;
+  for (const p of G.pickups){ p.x -= spd * dt; p.t += dt; }
+  G.obstacles = G.obstacles.filter(o => o.x + o.w > -80);
+  G.pickups = G.pickups.filter(p => p.x > -60 && !p.got);
+
+  // collisions
+  const pb = playerBox();
+  for (const p of G.pickups){
+    const cx = Math.max(pb.x, Math.min(p.x, pb.x + pb.w));
+    const cy = Math.max(pb.y, Math.min(p.y, pb.y + pb.h));
+    if ((cx - p.x) ** 2 + (cy - p.y) ** 2 < p.r * p.r * 2.1){
+      p.got = true;
+      if (p.kind === 'ring'){ G.score++; blip(880, .05); }
+      else { G.boost = 3.2; G.score += 3; blip(660, .09); blip(990, .12); }
+      document.getElementById('hudScore').textContent = G.score;
+    }
+  }
+  document.getElementById('boost').classList.toggle('on', boosted);
+  if (!boosted){
+    for (const o of G.obstacles){
+      const oy = o.kind === 'bar' ? G.groundY - 96 : G.groundY - o.h;
+      const box = { x: o.x, y: oy, w: o.w, h: o.kind === 'bar' ? o.h : o.h };
+      if (pb.x < box.x + box.w && pb.x + pb.w > box.x && pb.y < box.y + box.h && pb.y + pb.h > box.y){
+        die(); break;
+      }
+    }
+  }
+  G.runPhase += spd * dt / 46;
+  if (G.shake > 0) G.shake -= dt * 8;
+}
+function die(){
+  G.dead = true; G.running = false; G.shake = 2;
+  blip(120, .3);
+  const isBest = G.score > best;
+  if (isBest){ best = G.score; try { localStorage.setItem('juicebox-best', String(best)); } catch(_){} }
+  document.getElementById('hudBest').textContent = best;
+  document.getElementById('overScore').textContent = G.score;
+  document.getElementById('overDist').textContent = Math.round(G.dist);
+  document.getElementById('overTitle').innerHTML = isBest ? 'New <span class="y">best!</span>' : 'Ouch.';
+  document.getElementById('overBest').textContent = isBest ? 'You beat your record' : `Best · ${best} gold`;
+  const sp = frame(isBest ? F_WIN : F_IDLE);
+  if (sp) document.getElementById('overSprite').src = sp.cv.toDataURL();
+  setTimeout(() => document.getElementById('overPanel').classList.remove('hide'), 420);
+}
+
+/* ---------- draw ---------- */
+function draw(){
+  // sky
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#23262c'); g.addColorStop(1, '#15171b');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  const shx = G.shake > 0 ? (Math.random() - .5) * G.shake * 8 : 0;
+  ctx.save(); ctx.translate(shx, 0);
+
+  // parallax grid — nod to the sprite sheet
+  ctx.strokeStyle = 'rgba(220,225,235,.05)'; ctx.lineWidth = 1;
+  const cell = 46, off = (G.dist * 4) % cell;
+  ctx.beginPath();
+  for (let x = -off; x < W; x += cell){ ctx.moveTo(x, 0); ctx.lineTo(x, H); }
+  for (let y = 0; y < H; y += cell){ ctx.moveTo(0, y); ctx.lineTo(W, y); }
+  ctx.stroke();
+
+  // ground
+  ctx.fillStyle = '#2c3037';
+  ctx.fillRect(0, G.groundY, W, H - G.groundY);
+  ctx.fillStyle = 'rgba(246,201,74,.85)';
+  ctx.fillRect(0, G.groundY, W, 3);
+  // dashed lane
+  ctx.strokeStyle = 'rgba(220,225,235,.12)'; ctx.lineWidth = 2;
+  ctx.setLineDash([26, 22]); ctx.lineDashOffset = -(G.dist * 10) % 48;
+  ctx.beginPath(); ctx.moveTo(0, G.groundY + 34); ctx.lineTo(W, G.groundY + 34); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // pickups
+  for (const p of G.pickups){
+    const bob = Math.sin(p.t * 5) * 4;
+    if (p.kind === 'ring'){
+      ctx.strokeStyle = '#f6c94a'; ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.arc(p.x, p.y + bob, p.r, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = '#ffdb7d'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(p.x - 2, p.y + bob - 2, p.r - 3, Math.PI * .9, Math.PI * 1.6); ctx.stroke();
+    } else {
+      // juice pouch
+      ctx.save(); ctx.translate(p.x, p.y + bob); ctx.rotate(Math.sin(p.t * 3) * .12);
+      ctx.fillStyle = '#2a6fd6'; ctx.beginPath();
+      ctx.moveTo(-13, -16); ctx.lineTo(13, -16); ctx.lineTo(16, 18); ctx.lineTo(-16, 18); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#f6c94a'; ctx.fillRect(-9, -6, 18, 14);
+      ctx.strokeStyle = '#eef0f4'; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.moveTo(6, -16); ctx.lineTo(12, -28); ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  // obstacles
+  for (const o of G.obstacles){
+    if (o.kind === 'spike'){
+      ctx.fillStyle = '#ff3d6b';
+      const n = Math.round(o.w / 26);
+      for (let i = 0; i < n; i++){
+        const bx = o.x + i * 26;
+        ctx.beginPath();
+        ctx.moveTo(bx, G.groundY); ctx.lineTo(bx + 13, G.groundY - o.h); ctx.lineTo(bx + 26, G.groundY);
+        ctx.closePath(); ctx.fill();
+      }
+    } else if (o.kind === 'crate'){
+      ctx.fillStyle = '#3a3f48';
+      ctx.fillRect(o.x, G.groundY - o.h, o.w, o.h);
+      ctx.strokeStyle = 'rgba(246,201,74,.5)'; ctx.lineWidth = 2;
+      ctx.strokeRect(o.x + 3, G.groundY - o.h + 3, o.w - 6, o.h - 6);
+    } else {
+      // bar — slide under
+      const y = G.groundY - 96;
+      ctx.fillStyle = '#c0c5cf';
+      ctx.fillRect(o.x, y, o.w, o.h);
+      ctx.fillStyle = '#ff3d6b';
+      ctx.fillRect(o.x, y, o.w, 5);
+      // posts
+      ctx.fillStyle = 'rgba(192,197,207,.4)';
+      ctx.fillRect(o.x + 4, y + o.h, 5, G.groundY - y - o.h);
+      ctx.fillRect(o.x + o.w - 9, y + o.h, 5, G.groundY - y - o.h);
+    }
+  }
+
+  // player
+  if (SHEET_READY){
+    let fi;
+    if (!G.onGround) fi = F_JUMP;
+    else if (G.sliding) fi = F_SLIDE;
+    else fi = (G.runPhase | 0) % 2 === 0 ? F_RUN_A : F_RUN_B;
+    if (G.dead) fi = F_IDLE;
+    const f = frame(fi);
+    if (f){
+      const h = G.sliding ? PLAYER_H * .62 : PLAYER_H;
+      const w = h * f.w / f.h;
+      if (G.boost > 0){
+        // sugar rush trail
+        ctx.globalAlpha = .25;
+        ctx.drawImage(f.cv, G.px - w / 2 - 26, G.py - h, w, h);
+        ctx.globalAlpha = .5;
+        ctx.drawImage(f.cv, G.px - w / 2 - 13, G.py - h, w, h);
+        ctx.globalAlpha = 1;
+      }
+      ctx.drawImage(f.cv, G.px - w / 2, G.py - h, w, h);
+    }
+  }
+  ctx.restore();
+}
+
+/* ---------- loop ---------- */
+let last = 0;
+function loop(ts){
+  requestAnimationFrame(loop);
+  const dt = Math.min(.033, (ts - last) / 1000 || 0);
+  last = ts;
+  if (G.running) update(dt);
+  draw();
+}
+requestAnimationFrame(loop);
+
+/* ---------- panels ---------- */
+function start(){
+  if (!SHEET_READY) return;
+  reset();
+  G.running = true;
+  document.getElementById('startPanel').classList.add('hide');
+  document.getElementById('overPanel').classList.add('hide');
+  blip(520, .08);
+}
+document.getElementById('startBtn').addEventListener('click', e => { e.stopPropagation(); start(); });
+document.getElementById('againBtn').addEventListener('click', e => { e.stopPropagation(); start(); });
+document.getElementById('startPanel').addEventListener('click', start);
+document.getElementById('overPanel').addEventListener('click', start);
+addEventListener('keydown', e => {
+  if (e.code === 'Space' && !G.running && SHEET_READY){
+    const over = !document.getElementById('overPanel').classList.contains('hide');
+    const st = !document.getElementById('startPanel').classList.contains('hide');
+    if (over || st){ e.preventDefault(); start(); }
+  }
+});
+</script>
+</body>
+</html>
