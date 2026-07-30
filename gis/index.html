@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1a1c20">
+<meta name="description" content="Maproom — open GIS files in the browser. GeoJSON, KML, GPX, zipped shapefiles. Nothing uploaded, everything local.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%231a1c20'/%3E%3Cpath d='M6 24 L12 8 L20 20 L26 6' fill='none' stroke='%23f6c94a' stroke-width='2.5' stroke-linejoin='round'/%3E%3Ccircle cx='12' cy='8' r='3' fill='%23ff3d6b'/%3E%3C/svg%3E">
+<title>Maproom · open GIS files</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800;900&family=JetBrains+Mono:wght@500;700;800&display=swap" rel="stylesheet">
+<!-- Vendored locally · no CDN dependency, works offline once cached -->
+<link rel="stylesheet" href="vendor/leaflet.css">
+<script src="vendor/leaflet.js"></script>
+<script src="vendor/togeojson.js"></script>
+<script src="vendor/shp.js"></script>
+<style>
+:root{
+  --bg:#1a1c20; --surface:#23262c; --surface-2:#2c3037;
+  --line:rgba(220,225,235,.12); --line-2:rgba(220,225,235,.22);
+  --ink:#eef0f4; --ink-2:#c8ccd5; --muted:#8c919c;
+  --pink:#ff3d6b; --yellow:#f6c94a; --silver:#c0c5cf;
+  --disp:'Sora',-apple-system,'Segoe UI',Roboto,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;background:var(--bg);color:var(--ink);font-family:var(--disp);overflow:hidden}
+#map{position:fixed;inset:0;background:var(--bg)}
+.leaflet-container{background:var(--bg);font-family:var(--disp)}
+.leaflet-popup-content-wrapper,.leaflet-popup-tip{background:var(--surface);color:var(--ink);border:1px solid var(--line-2);box-shadow:0 18px 40px -14px rgba(0,0,0,.7)}
+.leaflet-popup-content{margin:12px 14px;font-family:var(--mono);font-size:11.5px;line-height:1.6}
+.leaflet-popup-content table{border-collapse:collapse;max-width:260px}
+.leaflet-popup-content td{padding:2px 8px 2px 0;vertical-align:top;word-break:break-word}
+.leaflet-popup-content td.k{color:var(--yellow);font-weight:700;white-space:nowrap}
+.leaflet-control-zoom a{background:var(--surface) !important;color:var(--ink) !important;border-color:var(--line-2) !important}
+.topbar{
+  position:fixed;top:0;left:0;right:0;z-index:1000;
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:calc(env(safe-area-inset-top) + 12px) 16px 12px;
+  background:linear-gradient(180deg,rgba(26,28,32,.92),rgba(26,28,32,.55) 75%,transparent);pointer-events:none
+}
+.topbar>*{pointer-events:auto}
+.brand{font-weight:900;font-size:18px;letter-spacing:-.01em;text-transform:uppercase}
+.brand .y{color:var(--yellow)}
+.btn{
+  display:inline-flex;align-items:center;gap:8px;padding:11px 18px;border-radius:100px;
+  background:var(--pink);color:#fff;border:none;cursor:pointer;min-height:42px;
+  font-family:var(--disp);font-weight:800;font-size:12.5px;letter-spacing:.05em;text-transform:uppercase;
+  box-shadow:0 10px 26px -8px rgba(255,61,107,.55);transition:transform .15s cubic-bezier(.34,1.56,.64,1)
+}
+.btn:active{transform:scale(.94)}
+.btn.ghost{background:rgba(26,28,32,.75);border:1.5px solid var(--line-2);color:var(--ink-2);box-shadow:none;backdrop-filter:blur(8px)}
+.btn.ghost:hover{border-color:var(--yellow);color:var(--yellow)}
+/* Layers panel */
+.panel{
+  position:fixed;left:12px;bottom:calc(env(safe-area-inset-bottom) + 12px);z-index:1000;
+  width:min(340px, calc(100vw - 24px));max-height:44vh;display:flex;flex-direction:column;
+  background:rgba(35,38,44,.92);border:1.5px solid var(--line-2);border-radius:16px;overflow:hidden;
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  box-shadow:0 26px 50px -20px rgba(0,0,0,.7)
+}
+.panel .hd{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line);cursor:pointer}
+.panel .hd .t{font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--yellow);font-weight:800}
+.panel .hd .n{font-family:var(--mono);font-size:10px;color:var(--muted);font-weight:700}
+.panel .list{overflow-y:auto;flex:1}
+.panel.collapsed .list{display:none}
+.lyr{display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid var(--line)}
+.lyr:last-child{border-bottom:none}
+.lyr .dot{width:14px;height:14px;border-radius:4px;flex-shrink:0;border:2px solid rgba(255,255,255,.25)}
+.lyr .info{flex:1;min-width:0}
+.lyr .nm{font-size:12.5px;font-weight:700;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lyr .meta{font-family:var(--mono);font-size:9.5px;color:var(--muted);letter-spacing:.06em;font-weight:700;text-transform:uppercase}
+.lyr .ops{display:flex;gap:6px;flex-shrink:0}
+.lyr .ops button{
+  min-width:34px;height:30px;padding:0 8px;border-radius:8px;background:transparent;border:1.5px solid var(--line-2);
+  color:var(--ink-2);cursor:pointer;font-family:var(--mono);font-size:9px;font-weight:800;letter-spacing:.06em;text-transform:uppercase
+}
+.lyr .ops button:hover{border-color:var(--yellow);color:var(--yellow)}
+.lyr.off{opacity:.42}
+/* Drop zone */
+#drop{
+  position:fixed;inset:0;z-index:2000;display:none;align-items:center;justify-content:center;
+  background:rgba(26,28,32,.85);backdrop-filter:blur(8px);
+  border:4px dashed var(--yellow);border-radius:22px;margin:14px;
+  font-weight:900;font-size:clamp(22px,5vw,34px);letter-spacing:-.01em;color:var(--yellow);text-transform:uppercase;pointer-events:none
+}
+#drop.on{display:flex}
+/* Empty-state hero */
+.hero{
+  position:fixed;inset:0;z-index:900;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;
+  background:rgba(26,28,32,.68);backdrop-filter:blur(6px);padding:26px;text-align:center;transition:opacity .3s ease
+}
+.hero.hide{opacity:0;pointer-events:none}
+.hero .k{font-family:var(--mono);font-size:11px;letter-spacing:.22em;color:var(--yellow);font-weight:800;text-transform:uppercase}
+.hero h1{font-size:clamp(34px,9vw,56px);font-weight:900;letter-spacing:-.03em;line-height:.95;text-transform:uppercase}
+.hero h1 .y{color:var(--yellow)} .hero h1 .p{color:var(--pink)}
+.hero p{font-size:14.5px;color:var(--ink-2);font-weight:600;max-width:360px;line-height:1.55}
+.hero p b{color:var(--yellow)}
+.hero .row{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+.hero .fmt{font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--muted);font-weight:700;text-transform:uppercase}
+#toast{
+  position:fixed;top:calc(env(safe-area-inset-top) + 66px);left:50%;transform:translateX(-50%) translateY(-8px);z-index:1500;
+  padding:10px 18px;border-radius:100px;background:var(--surface);border:1.5px solid var(--yellow);color:var(--yellow);
+  font-family:var(--mono);font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;
+  opacity:0;transition:all .25s ease;pointer-events:none;max-width:88vw;text-align:center
+}
+#toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+#toast.err{border-color:var(--pink);color:var(--pink)}
+input[type=file]{display:none}
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div class="topbar">
+  <div class="brand">Map<span class="y">room</span></div>
+  <div style="display:flex;gap:8px">
+    <button class="btn ghost" id="sampleBtn">Sample</button>
+    <button class="btn" id="openBtn">Open files</button>
+  </div>
+</div>
+
+<div class="panel collapsed" id="panel">
+  <div class="hd" id="panelHd"><span class="t">Layers</span><span class="n" id="panelN">0</span></div>
+  <div class="list" id="lyrList"></div>
+</div>
+
+<div class="hero" id="hero">
+  <span class="k">Maproom</span>
+  <h1>Open <span class="y">GIS</span> files. <span class="p">Right here.</span></h1>
+  <p>Drop files anywhere, or tap open. Everything renders <b>locally in your browser</b> — nothing is uploaded, ever.</p>
+  <div class="row">
+    <button class="btn" id="heroOpen">Open files</button>
+    <button class="btn ghost" id="heroSample">Try a sample</button>
+  </div>
+  <span class="fmt">GeoJSON · KML · GPX · zipped Shapefile</span>
+</div>
+
+<div id="drop">Drop to add</div>
+<div id="toast"></div>
+<input type="file" id="fileIn" multiple accept=".geojson,.json,.kml,.gpx,.zip">
+
+<script>
+'use strict';
+/* Maproom · open GIS files fully client-side.
+   Map stack copied from TurfLoop (Leaflet 1.9.4). */
+const $ = id => document.getElementById(id);
+const map = L.map('map', { zoomControl: true, attributionControl: true }).setView([43.0, -81.2], 4);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; OpenStreetMap &copy; CARTO', maxZoom: 20, subdomains: 'abcd'
+}).addTo(map);
+
+const PALETTE = ['#f6c94a', '#ff3d6b', '#7fb3d5', '#7fb069', '#e07a5f', '#c084fc', '#5eead4', '#fca5a5'];
+let colorIdx = 0;
+const layers = [];   // { id, name, count, color, leaflet, geojson, visible }
+
+function toast(msg, err){
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.toggle('err', !!err);
+  t.classList.add('on');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => t.classList.remove('on'), 2600);
+}
+
+function propsTable(props){
+  const keys = Object.keys(props || {}).filter(k => props[k] !== null && props[k] !== '' && typeof props[k] !== 'object');
+  if (!keys.length) return '<em style="color:var(--muted)">no attributes</em>';
+  return '<table>' + keys.slice(0, 14).map(k =>
+    `<tr><td class="k">${escapeHtml(k)}</td><td>${escapeHtml(String(props[k]).slice(0, 120))}</td></tr>`
+  ).join('') + (keys.length > 14 ? `<tr><td class="k">…</td><td>${keys.length - 14} more</td></tr>` : '') + '</table>';
+}
+const escapeHtml = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+function addGeoJSON(gj, name){
+  if (!gj) return toast('Could not parse ' + name, true);
+  // Normalize to FeatureCollection
+  if (gj.type === 'Feature') gj = { type: 'FeatureCollection', features: [gj] };
+  if (gj.type !== 'FeatureCollection' || !Array.isArray(gj.features)) {
+    // Bare geometry?
+    if (gj.type && gj.coordinates) gj = { type: 'FeatureCollection', features: [{ type: 'Feature', properties: {}, geometry: gj }] };
+    else return toast('No features in ' + name, true);
+  }
+  if (!gj.features.length) return toast('Empty file · ' + name, true);
+  const color = PALETTE[colorIdx++ % PALETTE.length];
+  const lf = L.geoJSON(gj, {
+    style: () => ({ color, weight: 2.5, opacity: .9, fillColor: color, fillOpacity: .18 }),
+    pointToLayer: (f, latlng) => L.circleMarker(latlng, { radius: 6, color, weight: 2, fillColor: color, fillOpacity: .55 }),
+    onEachFeature: (f, l) => l.bindPopup(propsTable(f.properties))
+  }).addTo(map);
+  const rec = { id: 'lyr' + Date.now() + Math.random().toString(36).slice(2, 6), name, count: gj.features.length, color, leaflet: lf, geojson: gj, visible: true };
+  layers.push(rec);
+  renderPanel();
+  $('hero').classList.add('hide');
+  $('panel').classList.remove('collapsed');
+  try {
+    const b = lf.getBounds();
+    if (b.isValid()) map.fitBounds(b.pad(.12), { maxZoom: 15 });
+  } catch(_){}
+  toast(`${name} · ${rec.count} feature${rec.count > 1 ? 's' : ''}`);
+}
+
+function renderPanel(){
+  $('panelN').textContent = layers.length;
+  $('lyrList').innerHTML = layers.map(l => `
+    <div class="lyr ${l.visible ? '' : 'off'}" data-id="${l.id}">
+      <span class="dot" style="background:${l.color}"></span>
+      <div class="info">
+        <div class="nm">${escapeHtml(l.name)}</div>
+        <div class="meta">${l.count} feature${l.count === 1 ? '' : 's'}</div>
+      </div>
+      <div class="ops">
+        <button data-op="eye" title="Show / hide">${l.visible ? 'Hide' : 'Show'}</button>
+        <button data-op="zoom" title="Zoom to layer">Zoom</button>
+        <button data-op="dl" title="Download as GeoJSON">GJ</button>
+        <button data-op="x" title="Remove">×</button>
+      </div>
+    </div>`).join('');
+  $('lyrList').querySelectorAll('.lyr .ops button').forEach(b => b.addEventListener('click', e => {
+    const id = e.target.closest('.lyr').dataset.id;
+    const rec = layers.find(l => l.id === id); if (!rec) return;
+    const op = e.target.dataset.op;
+    if (op === 'eye'){
+      rec.visible = !rec.visible;
+      rec.visible ? rec.leaflet.addTo(map) : map.removeLayer(rec.leaflet);
+      renderPanel();
+    } else if (op === 'zoom'){
+      try { map.fitBounds(rec.leaflet.getBounds().pad(.12), { maxZoom: 16 }); } catch(_){}
+    } else if (op === 'dl'){
+      const blob = new Blob([JSON.stringify(rec.geojson)], { type: 'application/geo+json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = rec.name.replace(/\.[^.]+$/, '') + '.geojson';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    } else if (op === 'x'){
+      map.removeLayer(rec.leaflet);
+      layers.splice(layers.indexOf(rec), 1);
+      renderPanel();
+      if (!layers.length) $('hero').classList.remove('hide');
+    }
+  }));
+}
+$('panelHd').addEventListener('click', () => $('panel').classList.toggle('collapsed'));
+
+/* ---------- file handling ---------- */
+async function handleFiles(fileList){
+  for (const file of fileList){
+    const name = file.name;
+    const ext = (name.split('.').pop() || '').toLowerCase();
+    try {
+      if (ext === 'geojson' || ext === 'json'){
+        addGeoJSON(JSON.parse(await file.text()), name);
+      } else if (ext === 'kml'){
+        const dom = new DOMParser().parseFromString(await file.text(), 'text/xml');
+        addGeoJSON(toGeoJSON.kml(dom), name);
+      } else if (ext === 'gpx'){
+        const dom = new DOMParser().parseFromString(await file.text(), 'text/xml');
+        addGeoJSON(toGeoJSON.gpx(dom), name);
+      } else if (ext === 'zip'){
+        toast('Reading shapefile…');
+        const out = await shp(await file.arrayBuffer());
+        // shpjs returns FC or array of FCs (multi-layer zips)
+        const fcs = Array.isArray(out) ? out : [out];
+        fcs.forEach((fc, i) => addGeoJSON(fc, fc.fileName ? fc.fileName + '.shp' : name + (fcs.length > 1 ? ` (${i + 1})` : '')));
+      } else {
+        toast('Unsupported: .' + ext, true);
+      }
+    } catch(err){
+      console.error(err);
+      toast('Failed to read ' + name, true);
+    }
+  }
+}
+$('fileIn').addEventListener('change', e => { handleFiles([...e.target.files]); e.target.value = ''; });
+$('openBtn').addEventListener('click', () => $('fileIn').click());
+$('heroOpen').addEventListener('click', () => $('fileIn').click());
+
+/* drag + drop */
+let dragDepth = 0;
+addEventListener('dragenter', e => { e.preventDefault(); dragDepth++; $('drop').classList.add('on'); });
+addEventListener('dragleave', e => { e.preventDefault(); if (--dragDepth <= 0){ dragDepth = 0; $('drop').classList.remove('on'); } });
+addEventListener('dragover', e => e.preventDefault());
+addEventListener('drop', e => {
+  e.preventDefault(); dragDepth = 0; $('drop').classList.remove('on');
+  if (e.dataTransfer?.files?.length) handleFiles([...e.dataTransfer.files]);
+});
+
+/* ---------- built-in sample ---------- */
+const SAMPLE = {
+  type: 'FeatureCollection',
+  features: [
+    { type:'Feature', properties:{ name:'kardigram studio', kind:'studio', city:'London ON' }, geometry:{ type:'Point', coordinates:[-81.2497, 42.9849] } },
+    { type:'Feature', properties:{ name:'Richmond Post', kind:'post office' }, geometry:{ type:'Point', coordinates:[-81.254, 42.99] } },
+    { type:'Feature', properties:{ name:'Thames River reach', kind:'river' }, geometry:{ type:'LineString', coordinates:[[-81.30,42.955],[-81.27,42.97],[-81.25,42.982],[-81.235,42.995],[-81.21,43.005]] } },
+    { type:'Feature', properties:{ name:'Delivery zone · same-day', cards_per_week: 74 }, geometry:{ type:'Polygon', coordinates:[[[-81.32,42.94],[-81.17,42.94],[-81.17,43.03],[-81.32,43.03],[-81.32,42.94]]] } }
+  ]
+};
+function loadSample(){ addGeoJSON(JSON.parse(JSON.stringify(SAMPLE)), 'london-sample.geojson'); }
+$('sampleBtn').addEventListener('click', loadSample);
+$('heroSample').addEventListener('click', loadSample);
+</script>
+</body>
+</html>
