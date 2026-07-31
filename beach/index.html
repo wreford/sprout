@@ -90,7 +90,7 @@ html,body{height:100%;background:var(--navy);color:var(--paper);font-family:var(
   <span class="k">A serious business presentation</span>
   <h1>Let's go to the<br><span class="b">freakin'</span> <span class="y">beach</span></h1>
   <button class="big">Play deck</button>
-  <span class="sub">Prepared for stakeholders L-kid + K-kid · Space pauses · Arrows skip</span>
+  <span class="sub">Contains 4 playable minigames · Crossover Chaos cast · Space pauses · Arrows skip</span>
 </div>
 
 <script>
@@ -503,6 +503,20 @@ const SCENES = [
 ];
 
 /* ============================================================
+   GAME STATE · declared before the player so scrubber marks,
+   render() and tick() can all reference it safely at eval time
+   ============================================================ */
+const GAME_AFTER = { 2: 'coffee', 4: 'loot', 6: 'gulls', 10: 'car' };
+const gamesDone = {};
+const KPI = { coffee: 0, loot: 0, gulls: 0, car: 0 };
+const KPI_MAX = { coffee: 10, loot: 15, gulls: 12, car: 8 };
+function kpiPct(){
+  const got = Object.values(KPI).reduce((a, b) => a + b, 0);
+  const max = Object.values(KPI_MAX).reduce((a, b) => a + b, 0);
+  return Math.round(got / max * 100);
+}
+
+/* ============================================================
    PLAYER
    ============================================================ */
 const TOTAL = SCENES.reduce((s, sc) => s + sc.dur, 0);
@@ -518,7 +532,8 @@ function sceneAt(gf){
 function render(){
   const { i, local } = sceneAt(frame);
   comp.innerHTML = SCENES[i].render(local);
-  document.getElementById('sceneLbl').textContent = `${i + 1} / ${SCENES.length} · ${SCENES[i].name}`;
+  const gameNext = (typeof GAME_AFTER !== 'undefined' && GAME_AFTER[i] && !gamesDone[i]) ? ' · MINIGAME AHEAD' : '';
+  document.getElementById('sceneLbl').textContent = `${i + 1} / ${SCENES.length} · ${SCENES[i].name}${gameNext}`;
   const p = frame / TOTAL;
   document.querySelector('#scrub .fill').style.width = (p * 100) + '%';
   document.querySelector('#scrub .knob').style.left = (p * 100) + '%';
@@ -549,7 +564,12 @@ requestAnimationFrame(tick);
 
 function updatePlayBtn(){ document.getElementById('bPlay').textContent = playing ? 'Pause' : (frame >= TOTAL - 1 ? 'Replay' : 'Play'); }
 function playPause(){
-  if (frame >= TOTAL - 1 && !playing) frame = 0;
+  if (frame >= TOTAL - 1 && !playing){
+    frame = 0;
+    /* Replay resets the run — games come back, KPIs re-earnable */
+    for (const k in gamesDone) delete gamesDone[k];
+    for (const k in KPI) KPI[k] = 0;
+  }
   playing = !playing; rafLast = 0;
   updatePlayBtn();
   if (typeof Music !== 'undefined'){ playing ? Music.start() : Music.stop(); }
@@ -562,6 +582,14 @@ document.getElementById('bPrev').addEventListener('click', () => {
 });
 document.getElementById('bNext').addEventListener('click', () => {
   const { i, start } = sceneAt(frame);
+  /* Next hits the same minigame gate as playback — no skipping the games */
+  if (GAME_AFTER[i] && !gamesDone[i]){
+    frame = i < SCENES.length - 1 ? start + SCENES[i].dur : TOTAL - 1;
+    playing = false; updatePlayBtn();
+    launchGame(i);
+    render();
+    return;
+  }
   frame = i < SCENES.length - 1 ? start + SCENES[i].dur : TOTAL - 1;
   render();
 });
@@ -575,7 +603,11 @@ addEventListener('keydown', e => {
 const scrub = document.getElementById('scrub');
 let marks = '';
 let acc = 0;
-for (const sc of SCENES.slice(0, -1)){ acc += sc.dur; marks += `<div class="mark" style="left:${acc / TOTAL * 100}%"></div>`; }
+SCENES.slice(0, -1).forEach((sc, i) => {
+  acc += sc.dur;
+  const gated = typeof GAME_AFTER !== 'undefined' && GAME_AFTER[i];
+  marks += `<div class="mark" style="left:${acc / TOTAL * 100}%;${gated ? 'background:#ff6b6b;width:4px;height:12px;top:5px' : ''}"></div>`;
+});
 scrub.insertAdjacentHTML('beforeend', marks);
 function scrubTo(clientX){
   const r = scrub.getBoundingClientRect();
@@ -593,16 +625,6 @@ addEventListener('pointerup', () => scrubbing = false);
    Keira, Jackson, Lily's Horse, Chippy, Sentient Poop Man,
    Pennywise's balloon, Crunchwrap Supreme. Win quotes verbatim.
    ============================================================ */
-const GAME_AFTER = { 2: 'coffee', 4: 'loot', 6: 'gulls', 10: 'car' };
-const gamesDone = {};
-const KPI = { coffee: 0, loot: 0, gulls: 0, car: 0 };
-const KPI_MAX = { coffee: 10, loot: 15, gulls: 12, car: 8 };
-function kpiPct(){
-  const got = Object.values(KPI).reduce((a, b) => a + b, 0);
-  const max = Object.values(KPI_MAX).reduce((a, b) => a + b, 0);
-  return Math.round(got / max * 100);
-}
-
 const QUOTES = {
   keiraWin:  ["Lucy's poop did the heavy lifting. I just aimed.", "Adding this to my college applications.", "I have 39 art assignments due and I just won a fight. Priorities.", "This is going in my Snapchat story IMMEDIATELY."],
   keiraLoss: ["Stop it, get some help. — me, to my opponent, lovingly.", "I fight like I do homework: last minute, panicked, somehow effective."],
