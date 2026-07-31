@@ -491,6 +491,12 @@ const SCENES = [
   + el(`<div style="font-weight:900;font-size:5vmax;color:#f6c94a;text-transform:uppercase;text-align:center;line-height:1">Get in<br>the car.</div>`,
       S({ left: '50%', top: '74%', transform: `translate(-50%,-50%) ` + slamY(f, 100, 400), opacity: f > 100 ? 1 : 0 }))
   + conf
+  + (typeof kpiPct === 'function' ? (() => {
+      const p = kpiPct();
+      const grade = p >= 80 ? ['EXCEEDS EXPECTATIONS', '#57b06b'] : p >= 50 ? ['MEETS EXPECTATIONS (BARELY)', '#f6c94a'] : ['SEE ME AFTER CLASS', '#ff6b6b'];
+      return el(`<div class="stamp" style="font-size:1.5vmax;color:${grade[1]};background:transparent">BEACH READINESS: ${p}% · ${grade[0]}</div>`,
+        S({ left: '50%', top: '10%', transform: 'translateX(-50%) ' + pop(f, 130) + ' rotate(-3deg)', opacity: f > 130 ? 1 : 0 }));
+    })() : '')
   + el(`<div class="kick" style="font-size:1vmax;color:#f7f4ec55">SUNSCREEN IS NOT OPTIONAL · THIS DECK IS LEGALLY BINDING</div>`,
       S({ left: '50%', bottom: '5%', transform: 'translateX(-50%)', 'white-space': 'nowrap', opacity: fade(f, 150, 170) }));
 }},
@@ -523,8 +529,18 @@ function tick(ts){
   if (!rafLast) rafLast = ts;
   const adv = (ts - rafLast) / (1000 / FPS);
   if (adv >= 1){
+    const prevScene = sceneAt(frame).i;
     frame = Math.min(TOTAL - 1, frame + Math.round(adv));
     rafLast = ts;
+    /* minigame gate · crossing out of a scene that has a game pauses the deck */
+    const nowScene = sceneAt(frame).i;
+    if (nowScene !== prevScene && GAME_AFTER[prevScene] && !gamesDone[prevScene]){
+      frame = sceneAt(frame).start;          // park at the top of the next scene
+      playing = false; updatePlayBtn();
+      launchGame(prevScene);
+      render();
+      return;
+    }
     if (frame >= TOTAL - 1){ playing = false; updatePlayBtn(); if (typeof Music !== 'undefined') Music.stop(); }
     render();
   }
@@ -570,6 +586,304 @@ let scrubbing = false;
 scrub.addEventListener('pointerdown', e => { scrubbing = true; playing = false; updatePlayBtn(); scrubTo(e.clientX); });
 addEventListener('pointermove', e => { if (scrubbing) scrubTo(e.clientX); });
 addEventListener('pointerup', () => scrubbing = false);
+
+/* ============================================================
+   MINIGAMES · the presentation fights back.
+   Cast imported straight from Crossover Chaos (games/showdown.html):
+   Keira, Jackson, Lily's Horse, Chippy, Sentient Poop Man,
+   Pennywise's balloon, Crunchwrap Supreme. Win quotes verbatim.
+   ============================================================ */
+const GAME_AFTER = { 2: 'coffee', 4: 'loot', 6: 'gulls', 10: 'car' };
+const gamesDone = {};
+const KPI = { coffee: 0, loot: 0, gulls: 0, car: 0 };
+const KPI_MAX = { coffee: 10, loot: 15, gulls: 12, car: 8 };
+function kpiPct(){
+  const got = Object.values(KPI).reduce((a, b) => a + b, 0);
+  const max = Object.values(KPI_MAX).reduce((a, b) => a + b, 0);
+  return Math.round(got / max * 100);
+}
+
+const QUOTES = {
+  keiraWin:  ["Lucy's poop did the heavy lifting. I just aimed.", "Adding this to my college applications.", "I have 39 art assignments due and I just won a fight. Priorities.", "This is going in my Snapchat story IMMEDIATELY."],
+  keiraLoss: ["Stop it, get some help. — me, to my opponent, lovingly.", "I fight like I do homework: last minute, panicked, somehow effective."],
+  jacksonWin: ["*slow blink* ...That means I love you. And also I won.", "*knocks your health bar off the table*", "Meow. That's cat for \"you're pathetic.\""],
+  jacksonHome: "Meow. I have coursework.",
+  horse: "*NEIGH!* (he wanted the carrots)",
+  poop: "The Sentient Poop Man is NOT loot.",
+  penny: "You'll float. LATER. After the beach.",
+};
+const pick = a => a[(Math.random() * a.length) | 0];
+
+let mgEl = null;
+function mgOpen(){
+  const r = comp.getBoundingClientRect();
+  mgEl = document.createElement('div');
+  mgEl.id = 'mg';
+  mgEl.style.cssText = `position:fixed;left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px;z-index:8;overflow:hidden;border-radius:14px;touch-action:none;user-select:none;cursor:crosshair;font-family:var(--disp)`;
+  document.body.appendChild(mgEl);
+  return mgEl;
+}
+function mgClose(){ if (mgEl){ mgEl.remove(); mgEl = null; } }
+const spr = (emoji, size) => `<div style="font-size:${size}vmax;line-height:1;filter:drop-shadow(0 4px 8px rgba(0,0,0,.35))">${emoji}</div>`;
+
+function mgChrome(host, { title, goal, color }){
+  host.insertAdjacentHTML('beforeend', `
+    <div style="position:absolute;inset:0;background:rgba(16,36,62,.55);backdrop-filter:blur(1px)"></div>
+    <div id="mgIntro" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1vmax;background:rgba(16,36,62,.88);z-index:5;text-align:center;padding:3vmax">
+      <div class="kick" style="font-size:1.2vmax;color:#f6c94a;letter-spacing:.24em">STAKEHOLDER INTERVENTION · MINIGAME</div>
+      <div style="font-weight:900;font-size:3.4vmax;color:#f7f4ec;text-transform:uppercase;letter-spacing:-.02em">${title}</div>
+      <div style="font-family:var(--mono);font-weight:800;font-size:1.2vmax;color:${color}">${goal}</div>
+      <button id="mgGo" style="margin-top:1vmax;padding:1.2vmax 2.6vmax;border-radius:1vmax;background:${color};color:#10243e;border:none;cursor:pointer;font-family:var(--disp);font-weight:900;font-size:1.4vmax;text-transform:uppercase;letter-spacing:.04em">Start</button>
+      <button id="mgSkip" style="background:none;border:none;color:#f7f4ec66;cursor:pointer;font-family:var(--mono);font-size:.95vmax;font-weight:700;letter-spacing:.14em;text-transform:uppercase">Skip · KPI unverified</button>
+    </div>
+    <div id="mgHud" style="position:absolute;top:1.2vmax;left:1.6vmax;right:1.6vmax;display:flex;justify-content:space-between;z-index:4;pointer-events:none">
+      <span class="kick" style="font-size:1.1vmax;color:#f7f4ec;background:rgba(16,36,62,.7);padding:.4vmax 1vmax;border-radius:2vmax" id="mgScore"></span>
+      <span class="kick" style="font-size:1.1vmax;color:#f6c94a;background:rgba(16,36,62,.7);padding:.4vmax 1vmax;border-radius:2vmax" id="mgTime"></span>
+    </div>
+    <div id="mgField" style="position:absolute;inset:0;z-index:3"></div>
+    <div id="mgToast" style="position:absolute;left:50%;top:24%;transform:translateX(-50%);z-index:6;font-family:var(--mono);font-weight:800;font-size:1.2vmax;color:#f7f4ec;background:rgba(16,36,62,.9);border:2px solid #f6c94a;border-radius:2vmax;padding:.7vmax 1.6vmax;opacity:0;transition:opacity .2s;max-width:80%;text-align:center;pointer-events:none"></div>`);
+}
+function mgToast(msg){
+  const t = mgEl.querySelector('#mgToast');
+  t.textContent = msg; t.style.opacity = 1;
+  clearTimeout(mgToast._t);
+  mgToast._t = setTimeout(() => t.style.opacity = 0, 1600);
+}
+function mgResult(host, { pass, score, max, quote, who }, done){
+  host.insertAdjacentHTML('beforeend', `
+    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1.2vmax;background:rgba(16,36,62,.92);z-index:7;text-align:center;padding:3vmax">
+      <div style="font-size:5vmax">${who}</div>
+      <div style="font-weight:900;font-size:3vmax;color:${pass ? '#57b06b' : '#ff6b6b'};text-transform:uppercase">${pass ? 'KPI met' : 'KPI missed'} · ${score}/${max}</div>
+      <div style="font-family:var(--mono);font-weight:800;font-size:1.25vmax;color:#f7f4ec;max-width:44vmax;line-height:1.6">"${quote}"</div>
+      <button id="mgDone" style="padding:1.2vmax 2.6vmax;border-radius:1vmax;background:#f6c94a;color:#10243e;border:none;cursor:pointer;font-family:var(--disp);font-weight:900;font-size:1.4vmax;text-transform:uppercase">Back to the deck</button>
+    </div>`);
+  host.querySelector('#mgDone').addEventListener('click', done);
+}
+
+function launchGame(sceneIdx){
+  const key = GAME_AFTER[sceneIdx];
+  gamesDone[sceneIdx] = true;
+  const host = mgOpen();
+  const finish = (score) => {
+    KPI[key] = Math.max(0, Math.min(KPI_MAX[key], score));
+    mgClose();
+    playing = true; rafLast = 0; updatePlayBtn();
+    if (typeof Music !== 'undefined') Music.start();
+  };
+  GAMES[key](host, finish);
+}
+
+const GAMES = {
+
+/* --- COFFEE RUN · Keira catches cups, dodges carrots. Lily's Horse objects. --- */
+coffee(host, finish){
+  mgChrome(host, { title: 'Coffee Run', goal: 'Keira catches 10 cups · carrots are NOT coffee', color: '#57b06b' });
+  const field = host.querySelector('#mgField');
+  field.insertAdjacentHTML('beforeend',
+    `<div id="p" style="position:absolute;bottom:2%;left:45%;width:8%;text-align:center">${spr('📱', 4.4)}<div class="kick" style="font-size:.75vmax;color:#f7f4ec">KEIRA</div></div>
+     <div id="horse" style="position:absolute;bottom:2%;right:1%;width:9%;text-align:center;transition:transform .3s">${spr('🐴', 4.6)}<div class="kick" style="font-size:.75vmax;color:#f7f4ec">LILY'S HORSE</div></div>`);
+  let score = 0, t = 24, px = 45, run = true, drops = [], spawnT = 0;
+  const p = field.querySelector('#p'), horse = field.querySelector('#horse');
+  const move = e => {
+    const r = host.getBoundingClientRect();
+    px = clamp(((e.touches ? e.touches[0].clientX : e.clientX) - r.left) / r.width * 100 - 4, 0, 88);
+  };
+  host.addEventListener('pointermove', move);
+  host.addEventListener('touchmove', move, { passive: true });
+  let last = 0;
+  function loop(ts){
+    if (!run) return;
+    requestAnimationFrame(loop);
+    const dt = Math.min(.04, (ts - last) / 1000 || 0); last = ts;
+    t -= dt;
+    spawnT -= dt;
+    if (spawnT <= 0){
+      spawnT = .55 + Math.random() * .35;
+      const carrot = Math.random() < .3;
+      const d = document.createElement('div');
+      d.style.cssText = `position:absolute;top:-8%;left:${5 + Math.random() * 85}%;font-size:2.6vmax;line-height:1`;
+      d.textContent = carrot ? '🥕' : '☕';
+      d.dataset.c = carrot ? 1 : 0;
+      d.dataset.y = -8;
+      field.appendChild(d); drops.push(d);
+    }
+    for (const d of [...drops]){
+      const y = parseFloat(d.dataset.y) + dt * (26 + (24 - t) * 1.2);
+      d.dataset.y = y; d.style.top = y + '%';
+      const dx = Math.abs(parseFloat(d.style.left) - px - 4);
+      if (y > 84 && y < 96 && dx < 6){
+        if (d.dataset.c === '1'){ score = Math.max(0, score - 2); mgToast(QUOTES.horse); horse.style.transform = 'scale(1.3) rotate(-8deg)'; setTimeout(() => horse.style.transform = '', 350); }
+        else { score++; }
+        d.remove(); drops.splice(drops.indexOf(d), 1);
+      } else if (y > 104){ d.remove(); drops.splice(drops.indexOf(d), 1); }
+    }
+    p.style.left = px + '%';
+    host.querySelector('#mgScore').textContent = `CUPS · ${score}/10`;
+    host.querySelector('#mgTime').textContent = Math.ceil(t) + 'S';
+    if (t <= 0 || score >= 10){
+      run = false;
+      const pass = score >= 10;
+      mgResult(host, { pass, score, max: 10, who: '📱', quote: pass ? pick(QUOTES.keiraWin) : pick(QUOTES.keiraLoss) }, () => finish(score));
+    }
+  }
+  host.querySelector('#mgGo').addEventListener('click', () => { host.querySelector('#mgIntro').remove(); requestAnimationFrame(loop); });
+  host.querySelector('#mgSkip').addEventListener('click', () => finish(0));
+},
+
+/* --- LOOT SCOOP · tap the loot, never the Poop Man. Chippy steals. --- */
+loot(host, finish){
+  mgChrome(host, { title: 'Loot Scoop', goal: 'Tap 15 chudworthy treats · the Poop Man is NOT loot', color: '#f6c94a' });
+  const field = host.querySelector('#mgField');
+  let score = 0, t = 22, run = true, spawnT = 0, chippyT = 4;
+  const LOOT = ['🍬', '🍫', '🥤', '🍭', '🌯'];
+  let last = 0;
+  function loop(ts){
+    if (!run) return;
+    requestAnimationFrame(loop);
+    const dt = Math.min(.04, (ts - last) / 1000 || 0); last = ts;
+    t -= dt; spawnT -= dt; chippyT -= dt;
+    if (spawnT <= 0){
+      spawnT = .5;
+      const bad = Math.random() < .22;
+      const d = document.createElement('div');
+      d.style.cssText = `position:absolute;left:${6 + Math.random() * 84}%;top:${12 + Math.random() * 68}%;font-size:3vmax;line-height:1;cursor:pointer;transition:transform .12s;transform:scale(0)`;
+      d.textContent = bad ? '💩' : LOOT[(Math.random() * LOOT.length) | 0];
+      field.appendChild(d);
+      requestAnimationFrame(() => d.style.transform = 'scale(1)');
+      d.addEventListener('pointerdown', () => {
+        if (bad){ score = Math.max(0, score - 3); mgToast(QUOTES.poop); }
+        else score++;
+        d.remove();
+      });
+      setTimeout(() => d.remove(), 1900);
+    }
+    if (chippyT <= 0){
+      chippyT = 5 + Math.random() * 3;
+      const c = document.createElement('div');
+      c.style.cssText = `position:absolute;bottom:4%;left:-10%;font-size:3vmax;line-height:1;transition:left 2.6s linear`;
+      c.textContent = '🐹';
+      field.appendChild(c);
+      requestAnimationFrame(() => c.style.left = '108%');
+      mgToast('Chippy is stealing unattended loot.');
+      setTimeout(() => c.remove(), 2800);
+    }
+    host.querySelector('#mgScore').textContent = `LOOT · ${score}/15`;
+    host.querySelector('#mgTime').textContent = Math.ceil(t) + 'S';
+    if (t <= 0 || score >= 15){
+      run = false;
+      const pass = score >= 15;
+      mgResult(host, { pass, score, max: 15, who: pass ? '🐹' : '💩', quote: pass ? 'Chippy believed in me. That\'s all that matters.' : QUOTES.poop }, () => finish(score));
+    }
+  }
+  host.querySelector('#mgGo').addEventListener('click', () => { host.querySelector('#mgIntro').remove(); requestAnimationFrame(loop); });
+  host.querySelector('#mgSkip').addEventListener('click', () => finish(0));
+},
+
+/* --- SHAWARMA DEFENSE · Jackson bonks gulls. Pennywise's balloon is a trap. --- */
+gulls(host, finish){
+  mgChrome(host, { title: 'Shawarma Defense', goal: 'Jackson bonks 12 gulls · do NOT tap the balloon', color: '#4fc3f7' });
+  const field = host.querySelector('#mgField');
+  field.insertAdjacentHTML('beforeend',
+    `<div style="position:absolute;bottom:2%;left:50%;transform:translateX(-50%);text-align:center">${spr('🌯', 4)}<div class="kick" style="font-size:.75vmax;color:#f7f4ec">THE SHAWARMA</div></div>
+     <div id="jx" style="position:absolute;bottom:2%;left:34%;text-align:center">${spr('🐈‍⬛', 3.8)}<div class="kick" style="font-size:.75vmax;color:#f7f4ec">JACKSON · SECURITY</div></div>`);
+  let score = 0, t = 22, run = true, spawnT = 0, balloonT = 6;
+  let last = 0;
+  function loop(ts){
+    if (!run) return;
+    requestAnimationFrame(loop);
+    const dt = Math.min(.04, (ts - last) / 1000 || 0); last = ts;
+    t -= dt; spawnT -= dt; balloonT -= dt;
+    if (spawnT <= 0){
+      spawnT = .8 - (22 - t) * .014;
+      const g = document.createElement('div');
+      const fromLeft = Math.random() < .5;
+      g.style.cssText = `position:absolute;top:${8 + Math.random() * 30}%;left:${fromLeft ? -8 : 104}%;font-size:2.8vmax;line-height:1;cursor:pointer;transition:left ${2.4 + Math.random()}s linear, top 2.6s ease-in;transform:scaleX(${fromLeft ? 1 : -1})`;
+      g.textContent = '🕊️';
+      field.appendChild(g);
+      requestAnimationFrame(() => { g.style.left = '47%'; g.style.top = '78%'; });
+      g.addEventListener('pointerdown', () => {
+        score++;
+        g.style.transition = 'top .5s ease-in, transform .5s';
+        g.style.transform += ' rotate(180deg)';
+        g.style.top = '110%';
+        setTimeout(() => g.remove(), 500);
+        const jx = field.querySelector('#jx');
+        jx.style.transform = 'scale(1.25)'; setTimeout(() => jx.style.transform = '', 200);
+      }, { once: true });
+      setTimeout(() => g.remove(), 3600);
+    }
+    if (balloonT <= 0){
+      balloonT = 7 + Math.random() * 4;
+      const b = document.createElement('div');
+      b.style.cssText = `position:absolute;bottom:-10%;left:${15 + Math.random() * 70}%;font-size:3.4vmax;line-height:1;cursor:pointer;transition:bottom 5s linear`;
+      b.textContent = '🎈';
+      field.appendChild(b);
+      requestAnimationFrame(() => b.style.bottom = '110%');
+      b.addEventListener('pointerdown', () => { score = Math.max(0, score - 3); mgToast(QUOTES.penny); b.remove(); }, { once: true });
+      setTimeout(() => b.remove(), 5200);
+    }
+    host.querySelector('#mgScore').textContent = `GULLS BONKED · ${score}/12`;
+    host.querySelector('#mgTime').textContent = Math.ceil(t) + 'S';
+    if (t <= 0 || score >= 12){
+      run = false;
+      const pass = score >= 12;
+      mgResult(host, { pass, score, max: 12, who: '🐈‍⬛', quote: pass ? pick(QUOTES.jacksonWin) : 'Meow. That was embarrassing. For you.' }, () => finish(score));
+    }
+  }
+  host.querySelector('#mgGo').addEventListener('click', () => { host.querySelector('#mgIntro').remove(); requestAnimationFrame(loop); });
+  host.querySelector('#mgSkip').addEventListener('click', () => finish(0));
+},
+
+/* --- GET IN THE CAR · whack-a-mole boarding. Jackson refuses (homeschooled). --- */
+car(host, finish){
+  mgChrome(host, { title: 'Get In The Car', goal: 'Load 8 passengers · Jackson stays home. He is HOMESCHOOLED.', color: '#ff6b6b' });
+  const field = host.querySelector('#mgField');
+  field.insertAdjacentHTML('beforeend',
+    `<div style="position:absolute;bottom:3%;right:4%;font-size:5vmax;line-height:1">🚗</div>
+     <div id="carCnt" class="kick" style="position:absolute;bottom:2%;right:15%;font-size:1.2vmax;color:#f7f4ec"></div>`);
+  const SPOTS = [[14,22],[38,18],[64,24],[20,52],[48,48],[72,52],[30,72],[58,70]];
+  let score = 0, t = 20, run = true, popT = 0;
+  let last = 0;
+  function loop(ts){
+    if (!run) return;
+    requestAnimationFrame(loop);
+    const dt = Math.min(.04, (ts - last) / 1000 || 0); last = ts;
+    t -= dt; popT -= dt;
+    if (popT <= 0){
+      popT = .65;
+      const [x, y] = SPOTS[(Math.random() * SPOTS.length) | 0];
+      const roll = Math.random();
+      const who = roll < .34 ? '📱' : roll < .62 ? '🌸' : roll < .8 ? '🐶' : roll < .93 ? '🐈‍⬛' : '💩';
+      const good = who === '📱' || who === '🌸' || who === '🐶';
+      const d = document.createElement('div');
+      d.style.cssText = `position:absolute;left:${x}%;top:${y}%;font-size:3.4vmax;line-height:1;cursor:pointer;transform:scale(0);transition:transform .16s cubic-bezier(.34,1.56,.64,1)`;
+      d.textContent = who;
+      field.appendChild(d);
+      requestAnimationFrame(() => d.style.transform = 'scale(1)');
+      d.addEventListener('pointerdown', () => {
+        if (good){
+          score++;
+          d.style.transition = 'all .45s ease-in';
+          d.style.left = '86%'; d.style.top = '84%'; d.style.transform = 'scale(.3)';
+          setTimeout(() => d.remove(), 460);
+        } else if (who === '🐈‍⬛'){ score = Math.max(0, score - 2); mgToast(QUOTES.jacksonHome); d.remove(); }
+        else { score = Math.max(0, score - 3); mgToast(QUOTES.poop); d.remove(); }
+      }, { once: true });
+      setTimeout(() => { d.style.transform = 'scale(0)'; setTimeout(() => d.remove(), 180); }, 1100);
+    }
+    field.querySelector('#carCnt').textContent = `LOADED · ${score}/8`;
+    host.querySelector('#mgScore').textContent = `PASSENGERS · ${score}/8`;
+    host.querySelector('#mgTime').textContent = Math.ceil(t) + 'S';
+    if (t <= 0 || score >= 8){
+      run = false;
+      const pass = score >= 8;
+      mgResult(host, { pass, score, max: 8, who: '🚗', quote: pass ? 'NEIGH! *victory trot* (the horse is NOT coming, stop asking)' : 'The car left without you. It\'s a metaphor. Also a car.' }, () => finish(score));
+    }
+  }
+  host.querySelector('#mgGo').addEventListener('click', () => { host.querySelector('#mgIntro').remove(); requestAnimationFrame(loop); });
+  host.querySelector('#mgSkip').addEventListener('click', () => finish(0));
+},
+};
 
 /* ============================================================
    MUSIC · original 16-bit-style driving loop (Road Rash spirit)
