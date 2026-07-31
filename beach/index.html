@@ -80,6 +80,7 @@ html,body{height:100%;background:var(--navy);color:var(--paper);font-family:var(
       <button id="bPrev" title="Previous scene">Prev</button>
       <button id="bPlay" class="play">Pause</button>
       <button id="bNext" title="Next scene">Next</button>
+      <button id="bMusic" title="Music on/off">Music: On</button>
     </div>
     <div class="lbl" id="sceneLbl"></div>
   </div>
@@ -524,7 +525,7 @@ function tick(ts){
   if (adv >= 1){
     frame = Math.min(TOTAL - 1, frame + Math.round(adv));
     rafLast = ts;
-    if (frame >= TOTAL - 1){ playing = false; updatePlayBtn(); }
+    if (frame >= TOTAL - 1){ playing = false; updatePlayBtn(); if (typeof Music !== 'undefined') Music.stop(); }
     render();
   }
 }
@@ -535,6 +536,7 @@ function playPause(){
   if (frame >= TOTAL - 1 && !playing) frame = 0;
   playing = !playing; rafLast = 0;
   updatePlayBtn();
+  if (typeof Music !== 'undefined'){ playing ? Music.start() : Music.stop(); }
 }
 document.getElementById('bPlay').addEventListener('click', playPause);
 document.getElementById('bPrev').addEventListener('click', () => {
@@ -569,12 +571,122 @@ scrub.addEventListener('pointerdown', e => { scrubbing = true; playing = false; 
 addEventListener('pointermove', e => { if (scrubbing) scrubTo(e.clientX); });
 addEventListener('pointerup', () => scrubbing = false);
 
+/* ============================================================
+   MUSIC · original 16-bit-style driving loop (Road Rash spirit)
+   Genesis-ish: detuned saw lead, square bass, noise drums.
+   Look-ahead step sequencer at 148 BPM, 8-bar loop.
+   ============================================================ */
+const Music = (() => {
+  let ctx = null, master = null, timer = null, step = 0, nextT = 0;
+  let enabled = true;
+  const BPM = 148, SPB = 60 / BPM / 2;      // eighth-note step length
+  const N = (name) => {                      // note name → Hz
+    const m = /^([A-G]#?)(\d)$/.exec(name);
+    const idx = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'].indexOf(m[1]);
+    return 440 * Math.pow(2, (idx - 9) / 12 + (m[2] - 4));
+  };
+  /* 64-step (8-bar) patterns · '' = rest */
+  const BASS = [
+    'E2','E2','E2','E2','E2','E2','G2','A2',  'E2','E2','E2','E2','D2','D2','B1','B1',
+    'E2','E2','E2','E2','E2','E2','G2','A2',  'C3','C3','B2','B2','A2','A2','G2','A2',
+    'E2','E2','E2','E2','E2','E2','G2','A2',  'E2','E2','E2','E2','D2','D2','B1','B1',
+    'C3','C3','C3','C3','D3','D3','D3','D3',  'E3','E3','D3','B2','A2','G2','A2','B2',
+  ];
+  const LEAD = [
+    '','','','','','','','',                  '','','','','','','','',
+    'E4','','G4','E4','A4','','G4','E4',      'D4','','E4','','','','','',
+    'E4','','G4','E4','A4','','B4','A4',      'G4','','E4','','D4','','E4','',
+    'C5','','B4','A4','B4','','A4','G4',      'E4','','G4','','A4','','B4','',
+  ];
+  const KICK  = [1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,1];   // per bar-of-16? we use per-2-bars slice below
+  function drum(i){
+    const b = i % 8;
+    return { kick: b === 0 || b === 4 || (i % 32 === 30), snare: b === 2 || b === 6, hat: true };
+  }
+  function ensure(){
+    if (ctx) return;
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    master = ctx.createGain();
+    master.gain.value = .14;
+    const comp = ctx.createDynamicsCompressor();
+    master.connect(comp); comp.connect(ctx.destination);
+  }
+  function osc(type, freq, t, dur, vol, detune = 0){
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = type; o.frequency.value = freq; o.detune.value = detune;
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(.001, t + dur);
+    o.connect(g); g.connect(master);
+    o.start(t); o.stop(t + dur + .02);
+  }
+  function noise(t, dur, vol, hp){
+    const len = Math.ceil(ctx.sampleRate * dur);
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    const src = ctx.createBufferSource(); src.buffer = buf;
+    const f = ctx.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = hp;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(.001, t + dur);
+    src.connect(f); f.connect(g); g.connect(master);
+    src.start(t);
+  }
+  function scheduleStep(i, t){
+    const bass = BASS[i % 64];
+    if (bass) osc('square', N(bass), t, SPB * .9, .30);
+    const lead = LEAD[i % 64];
+    if (lead){
+      osc('sawtooth', N(lead), t, SPB * 1.7, .16);
+      osc('sawtooth', N(lead), t, SPB * 1.7, .12, 9);   // detune shimmer
+    }
+    const dr = drum(i);
+    if (dr.kick){
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(120, t);
+      o.frequency.exponentialRampToValueAtTime(38, t + .1);
+      g.gain.setValueAtTime(.7, t);
+      g.gain.exponentialRampToValueAtTime(.001, t + .13);
+      o.connect(g); g.connect(master); o.start(t); o.stop(t + .15);
+    }
+    if (dr.snare) noise(t, .1, .3, 1400);
+    if (dr.hat) noise(t, .03, i % 2 ? .07 : .11, 6000);
+  }
+  function tickSched(){
+    while (nextT < ctx.currentTime + .12){
+      scheduleStep(step, nextT);
+      step++; nextT += SPB;
+    }
+  }
+  return {
+    start(){
+      if (!enabled) return;
+      ensure();
+      ctx.resume();
+      if (!timer){ nextT = ctx.currentTime + .05; timer = setInterval(tickSched, 25); }
+    },
+    stop(){ if (timer){ clearInterval(timer); timer = null; } if (ctx) ctx.suspend(); },
+    toggle(){
+      enabled = !enabled;
+      if (!enabled) this.stop();
+      else if (playing) this.start();
+      document.getElementById('bMusic').textContent = 'Music: ' + (enabled ? 'On' : 'Off');
+      return enabled;
+    },
+    get enabled(){ return enabled; }
+  };
+})();
+document.getElementById('bMusic').addEventListener('click', () => Music.toggle());
+
 /* tap to start */
 document.getElementById('tapstart').addEventListener('click', () => {
   document.getElementById('tapstart').classList.add('hide');
   frame = 0; playing = true; rafLast = 0; updatePlayBtn();
+  Music.start();
 });
 comp.addEventListener('click', playPause);
+document.addEventListener('visibilitychange', () => { if (document.hidden) Music.stop(); else if (playing) Music.start(); });
 
 render();
 </script>
