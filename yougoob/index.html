@@ -19,8 +19,12 @@
   --body:'Roboto',system-ui,sans-serif;
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html{scroll-behavior:smooth}
 html,body{height:100%;background:var(--bg);color:var(--ink);font-family:var(--body)}
 body{min-height:100dvh;overflow-x:hidden}
+#loadbar{position:fixed;top:0;left:0;height:3px;width:0;z-index:60;opacity:0;
+  background:linear-gradient(90deg,#ff0040,#ff8a00,#ffb020);transition:width .4s ease,opacity .3s}
+#loadbar.on{opacity:1;width:82%}
 button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
 img{display:block}
 ::selection{background:rgba(255,0,64,.35)}
@@ -57,6 +61,7 @@ header{position:sticky;top:0;z-index:30;background:rgba(15,15,15,.94);backdrop-f
 .chip:active{transform:scale(.93)}
 .chip.on{background:var(--ink);color:#0f0f0f;font-weight:700}
 .chip.hot{background:linear-gradient(90deg,#ff0040,#ff8a00);color:#fff;font-weight:700}
+.chip.star{background:linear-gradient(90deg,#ff2e88,#ff6ba8);color:#fff;font-weight:700;box-shadow:0 3px 12px rgba(255,46,136,.35)}
 
 main{max-width:900px;margin:0 auto;padding-bottom:calc(env(safe-area-inset-bottom) + 40px)}
 
@@ -105,11 +110,14 @@ main{max-width:900px;margin:0 auto;padding-bottom:calc(env(safe-area-inset-botto
 /* list */
 .uptitle{font-family:var(--disp);font-weight:700;font-size:14px;color:var(--dim);padding:14px 14px 4px;letter-spacing:.02em}
 #list{padding:6px 0}
-.vid{display:block;width:100%;text-align:left;padding:8px 12px;transition:background .12s;animation:cardIn .4s cubic-bezier(.2,1,.4,1) both}
+.vid{display:block;width:100%;text-align:left;padding:8px 12px;transition:background .12s,transform .1s;animation:cardIn .4s cubic-bezier(.2,1,.4,1) both}
 @keyframes cardIn{0%{opacity:0;transform:translateY(16px) scale(.98)}100%{opacity:1;transform:none}}
 .vid:hover{background:var(--bg2)}
+.vid:active{transform:scale(.985)}
 .vid .thumb{position:relative;width:100%;aspect-ratio:16/9;border-radius:12px;overflow:hidden;background:#000}
-.vid .thumb img{width:100%;height:100%;object-fit:cover}
+.vid .thumb::after{content:"";position:absolute;inset:0;z-index:1;pointer-events:none;background:linear-gradient(180deg,rgba(0,0,0,.32) 0,transparent 26%,transparent 74%,rgba(0,0,0,.22) 100%)}
+.vid .thumb img{width:100%;height:100%;object-fit:cover;transition:transform .35s ease}
+.vid:hover .thumb img{transform:scale(1.045)}
 .vid .thumb .dur{position:absolute;right:6px;bottom:6px;background:rgba(0,0,0,.82);color:#fff;font-size:11px;font-weight:700;padding:1px 5px;border-radius:5px;z-index:3}
 .vid .thumb .play{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .16s;background:rgba(0,0,0,.25);z-index:2}
 .vid:hover .thumb .play{opacity:1}
@@ -148,6 +156,7 @@ footer b{color:var(--dim)}
 </style>
 </head>
 <body>
+<div id="loadbar"></div>
 
 <header>
   <div class="hrow">
@@ -397,16 +406,17 @@ const EMPTY = [['nothing. nada. zilch. 🫥','youGoob searched every tube and fo
 function hashStr(s){ let h = 2166136261; for (let i = 0; i < s.length; i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0); }
 const isHorse = s => /\bhorse|pony|equestrian|equine|stallion|mare|foal/i.test(s || '');
 
-/* featured channels — one tap = a real search for that creator */
+/* featured channels — English-language only · one tap = a real search */
 const CREATORS = [
-  ['Moriah Elizabeth','#ff6ba8'], ['Mark Rober','#4da3ff'], ['Kurzgesagt','#ffb020'], ['Veritasium','#22c07a'],
-  ['SciShow','#4da3ff'], ['Vsauce','#ff0040'], ['Steve Mould','#b79bff'], ['MinutePhysics','#ffb020'],
-  ['NileRed','#22c07a'], ['Physics Girl','#ff6ba8'], ['MrBeast','#ff0040'], ['Lena','#ff6ba8'], ['Lana','#b79bff'],
+  ['Moriah Elizabeth','#ff6ba8'], ['Lisa and Lena','#ff2e88'], ['MrBeast','#ff0040'], ['Mark Rober','#4da3ff'],
+  ['Kurzgesagt','#ffb020'], ['Veritasium','#22c07a'], ['SciShow','#4da3ff'], ['Vsauce','#9b6bff'],
+  ['TED-Ed','#e0402e'], ['National Geographic','#ffb020'], ['BBC Earth','#22c07a'], ['CGP Grey','#4da3ff'],
+  ['Numberphile','#ff6ba8'], ['Steve Mould','#9b6bff'], ['NileRed','#22c07a'], ['Physics Girl','#ff2e88'],
 ];
-const chanInit = n => n.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
+const chanInit = n => { const w = n.split(/\s+/).filter(x => x && !/^(and|the|of|&)$/i.test(x)); return ((w[0]||'?')[0] + (w[1] ? w[1][0] : '')).toUpperCase(); };
 
 /* ═════════ state ═════════ */
-const CHIPS = ['Trending','Science 🔬','Moriah Elizabeth','Lena','Lana','Horses 🐴','Surprise 🎲','Music','Kids','Gaming','Comedy','Learning','News','History'];
+const CHIPS = ['Trending','Science 🔬','Moriah Elizabeth','Lisa and Lena','Horses 🐴','Surprise 🎲','Music','Kids','Gaming','Comedy','Learning','News','History'];
 let mode = 'browse', results = [], current = null, activeChip = 'Trending';
 let history = JSON.parse(localStorage.getItem('yougoob-hist') || '[]');
 const initials = s => (s || '?').replace(/[^A-Za-z0-9 ]/g,'').split(' ').filter(Boolean)[0]?.[0]?.toUpperCase() || '?';
@@ -414,15 +424,20 @@ const initials = s => (s || '?').replace(/[^A-Za-z0-9 ]/g,'').split(' ').filter(
 function toast(msg){ const t = $('toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('on'), 2200); }
 
 function renderChannels(){
-  $('channels').innerHTML = CREATORS.map(c => `<button class="chan" data-q="${c[0]}"><div class="cav" style="background:${c[1]}">${chanInit(c[0])}</div><div class="cn">${c[0]}</div></button>`).join('');
+  $('channels').innerHTML = CREATORS.map(c => `<button class="chan" data-q="${c[0]}">
+    <div class="cav" style="background:radial-gradient(circle at 35% 30%,#ffffff55,${c[1]} 66%);box-shadow:0 6px 18px ${c[1]}55,0 0 0 2px rgba(255,255,255,.1) inset">${chanInit(c[0])}</div>
+    <div class="cn">${c[0]}</div></button>`).join('');
   $('channels').querySelectorAll('.chan').forEach(b => b.addEventListener('click', () => { SFX.pop(); $('search').value = ''; $('clr').style.display = 'none'; doSearch(b.dataset.q); }));
 }
 function showChannels(on){ $('channels').classList.toggle('on', on); $('chtitle').style.display = on ? 'block' : 'none'; }
 
 function renderChips(){
   $('chips').innerHTML = CHIPS.filter(c => c !== 'History' || history.length).map(c => {
-    const on = c === activeChip, hot = c.startsWith('Horses') || c.startsWith('Surprise');
-    return `<button class="chip ${on ? 'on' : hot ? 'hot' : ''}" data-c="${c}">${c === 'History' ? '🕑 History' : c}</button>`;
+    const on = c === activeChip;
+    const hot = c.startsWith('Horses') || c.startsWith('Surprise');
+    const star = c === 'Moriah Elizabeth' || c === 'Lisa and Lena';
+    const cls = on ? 'on' : star ? 'star' : hot ? 'hot' : '';
+    return `<button class="chip ${cls}" data-c="${c}">${c === 'History' ? '🕑 History' : c}</button>`;
   }).join('');
   $('chips').querySelectorAll('.chip').forEach(b => b.addEventListener('click', () => {
     SFX.pop();
@@ -456,6 +471,7 @@ function videoCard(v, i){
 function renderList(vids, upNext){
   $('uptitle').style.display = upNext ? 'block' : 'none';
   if (upNext) $('uptitle').textContent = 'Up next (allegedly)';
+  $('loadbar').classList.remove('on');
   if (!vids.length){ const e = pick(EMPTY); $('list').innerHTML = `<div class="msg"><div class="big">${e[0]}</div>${e[1]}</div>`; return; }
   $('list').innerHTML = vids.map((v, i) => videoCard(v, i)).join('');
   $('list').querySelectorAll('.vid').forEach(b => b.addEventListener('click', () => {
@@ -465,7 +481,7 @@ function renderList(vids, upNext){
   }));
   if (vids.some(v => isHorse(v.title))) gallopHorse();
 }
-function skeletons(){ $('list').innerHTML = `<div class="loadmsg">${pick(LOADING)}</div>` + Array.from({ length: 6 }, () => `<div class="skel"><div class="sh"></div></div>`).join(''); $('uptitle').style.display = 'none'; }
+function skeletons(){ $('loadbar').classList.add('on'); $('list').innerHTML = `<div class="loadmsg">${pick(LOADING)}</div>` + Array.from({ length: 6 }, () => `<div class="skel"><div class="sh"></div></div>`).join(''); $('uptitle').style.display = 'none'; }
 
 const cleanChip = c => c.replace(/[^ -~]/g, '').trim();     // strip emoji → search query
 function shyNote(n){ $('note').textContent = `the tubes are being shy 🙈 · here are ${n} certified goobs you can still watch`; }
