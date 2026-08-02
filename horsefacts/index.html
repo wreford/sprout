@@ -156,45 +156,93 @@ addEventListener('resize', sizeComp);
    ============================================================ */
 function HORSE(f, o = {}){
   const gait = o.gait || 'trot';
-  const spd = { gallop: 2.2, trot: 3.4, prance: 5, idle: 9, eat: 9 }[gait];
-  const amp = { gallop: 30, trot: 18, prance: 26, idle: 2, eat: 2 }[gait];
-  const L = i => Math.sin(f / spd + i * 1.7) * amp;
-  const bob = Math.abs(Math.sin(f / spd)) * (gait === 'idle' || gait === 'eat' ? 2 : 7);
+  const P = {
+    gallop: { spd: 2.6, swing: 40, knee: 40, lift: 15, bob: 10, mane: 6 },
+    trot:   { spd: 3.6, swing: 26, knee: 26, lift: 9,  bob: 6,  mane: 7 },
+    prance: { spd: 4.4, swing: 15, knee: 54, lift: 12, bob: 6,  mane: 6 },
+    idle:   { spd: 11,  swing: 4,  knee: 8,  lift: 1,  bob: 2,  mane: 11 },
+    eat:    { spd: 11,  swing: 3,  knee: 6,  lift: 1,  bob: 1.5, mane: 11 },
+  }[gait];
+  const t = f / P.spd;
+  const step = t * 2;
+  const bob = Math.abs(Math.sin(step)) * P.bob;
+  const sway = (gait === 'gallop' || gait === 'prance') ? Math.sin(step) * 2.2 : 0;
   const blink = Math.sin(f / 13) < -.92;
-  const headDip = gait === 'eat' ? 26 + Math.sin(f / 6) * 6 : 0;
-  const tailW = Math.sin(f / 5) * 14;
-  const leg = (x, a, back) => `
-    <g transform="translate(${x} 118) rotate(${a})">
-      <rect x="-7" y="0" width="14" height="58" rx="7" fill="${back ? '#8f5f3e' : '#a9744f'}" stroke="#3a2e26" stroke-width="4"/>
-      <rect x="-8" y="52" width="16" height="14" rx="5" fill="#3a2e26"/>
-    </g>`;
-  const sway = (gait === 'gallop' || gait === 'prance') ? Math.sin(f / spd) * 2.4 : 0;
-  const earFlick = Math.sin(f / 21) > .93 ? -18 : 0;
+  const headDip = gait === 'eat' ? 24 + Math.sin(f / 6) * 5 : (gait === 'prance' ? -7 : 0);
+  const earFlick = Math.sin(f / 19) > .9 ? -15 : 0;
+  const coat = '#b57c50', coatD = '#8c5c39', coatL = '#cf9a6d', mane = '#59392320', maneC = '#5b3c25', hoof = '#2c241e', out = '#3a2e26';
+  const U = 28, Lg = 30;
+  const D2R = Math.PI / 180;
+  /* two-segment articulated leg: hip → knee → hoof, with a real step cycle */
+  function limb(hx, hy, ph, hind, shade){
+    const th1 = (P.swing * Math.sin(ph)) * D2R;
+    const lift = Math.max(0, Math.sin(ph + (hind ? 2.5 : 0.7)));
+    const th2 = (hind ? 1 : -1) * (P.knee * lift) * D2R;
+    const kx = hx + Math.sin(th1) * U, ky = hy + Math.cos(th1) * U;
+    const fx = kx + Math.sin(th1 + th2) * Lg, fy = ky + Math.cos(th1 + th2) * Lg - lift * P.lift;
+    const col = shade ? coatD : coat;
+    const ang = (th1 + th2) / D2R;
+    return `<path d="M${hx} ${hy} L${kx.toFixed(1)} ${ky.toFixed(1)} L${fx.toFixed(1)} ${fy.toFixed(1)}" fill="none" stroke="${out}" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M${hx} ${hy} L${kx.toFixed(1)} ${ky.toFixed(1)} L${fx.toFixed(1)} ${fy.toFixed(1)}" fill="none" stroke="${col}" stroke-width="10.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <g transform="translate(${fx.toFixed(1)} ${fy.toFixed(1)}) rotate(${ang.toFixed(1)})"><rect x="-6.5" y="-1" width="13" height="12" rx="3.5" fill="${hoof}"/></g>`;
+  }
+  const off = {
+    gallop: [0, 3.5, 1.0, 4.4], trot: [0, Math.PI, Math.PI, 0],
+    prance: [0, Math.PI, Math.PI * .5, Math.PI * 1.5], idle: [0, .5, .25, .7], eat: [0, .3, .15, .45],
+  }[gait];
+  /* far pair (behind body, darker), near pair (in front) */
+  const legFar  = limb(98, 116, step + off[0], true, true) + limb(190, 113, step + off[1], false, true);
+  const legNear = limb(110, 118, step + off[2], true, false) + limb(202, 115, step + off[3], false, false);
+  /* flowing mane down the neck crest */
+  let maneS = '';
+  for (let i = 0; i < 8; i++){
+    const u = i / 7, bx = 236 - 44 * u, by = 52 + 34 * u, w = Math.sin(t * 1.4 + i * .7) * P.mane;
+    maneS += `<path d="M${bx.toFixed(1)} ${by.toFixed(1)} q${(-12 + w).toFixed(1)} 11 ${(-7 + w).toFixed(1)} 24" stroke="${maneC}" stroke-width="${(8 - u * 3).toFixed(1)}" fill="none" stroke-linecap="round"/>`;
+  }
+  /* flowing tail */
+  let tailS = '';
+  for (let i = 0; i < 7; i++){
+    const w = Math.sin(t * 1.2 + i * .55) * (P.mane + 5);
+    tailS += `<path d="M74 92 q${(-30 + w).toFixed(1)} ${18 + i * 2} ${(-22 + w).toFixed(1)} ${54 + i * 2}" stroke="${maneC}" stroke-width="${(10 - i).toFixed(1)}" fill="none" stroke-linecap="round"/>`;
+  }
   return `<svg viewBox="0 0 300 200" width="100%" style="overflow:visible">
-    <ellipse cx="150" cy="188" rx="${86 - bob * 2}" ry="9" fill="rgba(58,46,38,.13)"/>
-    <g transform="translate(0 ${-bob}) rotate(${sway} 150 100)">
-      <g transform="translate(52 88) rotate(${tailW})">
-        <path d="M0 0 q-30 10 -26 48 q-2 -34 14 -40 q-14 16 -8 36 q2 -26 20 -32" fill="#6b4a30" stroke="#3a2e26" stroke-width="3" stroke-linejoin="round"/>
+    <ellipse cx="150" cy="190" rx="${(84 - bob * 1.6).toFixed(1)}" ry="8" fill="rgba(58,46,38,.14)"/>
+    <g transform="translate(0 ${(-bob).toFixed(1)}) rotate(${sway.toFixed(2)} 150 108)">
+      ${tailS}
+      ${legFar}
+      <!-- barrel -->
+      <path d="M72 104 C64 78 104 68 150 70 C182 71 204 78 214 96 C222 110 218 128 200 134 C160 143 108 143 84 134 C70 129 68 116 72 104 Z"
+        fill="${coat}" stroke="${out}" stroke-width="5" stroke-linejoin="round"/>
+      <path d="M78 96 C96 76 150 72 196 84 C176 78 120 78 88 96 Z" fill="${coatD}" opacity=".55"/>
+      <path d="M92 134 C130 142 172 141 200 132 C176 138 120 139 92 134 Z" fill="${coatL}" opacity=".5"/>
+      <!-- neck + head (dips when eating / lifts when prancing) -->
+      <g transform="rotate(${headDip} 198 92)">
+        <path d="M182 96 C188 66 206 50 232 52 L250 62 C230 70 210 86 202 110 C196 118 182 116 178 106 Z"
+          fill="${coat}" stroke="${out}" stroke-width="5" stroke-linejoin="round"/>
+        <path d="M186 92 C194 68 210 54 232 54 L238 60 C214 66 198 82 190 104 Z" fill="${coatD}" opacity=".5"/>
+        ${maneS}
+        <!-- head -->
+        <path d="M228 50 C246 42 262 48 266 62 C269 74 264 88 251 94 L236 96 C226 88 222 64 228 50 Z"
+          fill="${coat}" stroke="${out}" stroke-width="5" stroke-linejoin="round"/>
+        <path d="M251 92 C262 88 267 78 266 66 C270 78 268 90 255 96 Z" fill="${coatL}" opacity=".55"/>
+        <!-- ears -->
+        <path d="M232 34 l3 -16 l11 12 z" fill="${coat}" stroke="${out}" stroke-width="4" stroke-linejoin="round" transform="rotate(${earFlick} 236 30)"/>
+        <path d="M246 34 l11 -13 l4 15 z" fill="${coatD}" stroke="${out}" stroke-width="4" stroke-linejoin="round"/>
+        <!-- forelock -->
+        <path d="M234 40 q4 -14 14 -18 q-3 12 1 16 q-8 4 -11 12 z" fill="${maneC}"/>
+        <!-- muzzle + nostril + mouth -->
+        <ellipse cx="258" cy="82" rx="10" ry="9" fill="${coatL}" stroke="${out}" stroke-width="3.5"/>
+        <ellipse cx="260" cy="79" rx="2.6" ry="3.6" fill="${out}"/>
+        <path d="M252 90 q7 3 12 0" stroke="${out}" stroke-width="3" fill="none" stroke-linecap="round"/>
+        <!-- eye -->
+        <ellipse cx="242" cy="60" rx="5.2" ry="${blink ? .9 : 5.6}" fill="#1c1712"/>
+        ${blink ? '' : '<circle cx="244" cy="58" r="1.7" fill="#fff" opacity=".85"/>'}
+        ${o.acc === 'shades' ? `<rect x="230" y="52" width="26" height="12" rx="5" fill="#161616"/><path d="M243 58 h4" stroke="#161616" stroke-width="4"/><path d="M230 56 l-12 -3" stroke="#161616" stroke-width="4" stroke-linecap="round"/>` : ''}
+        ${o.acc === 'crown' ? `<path d="M226 34 l4 -14 l8 9 l7 -14 l7 14 l8 -9 l4 14 z" fill="#f2c14e" stroke="${out}" stroke-width="3" stroke-linejoin="round"/><circle cx="240" cy="24" r="2.4" fill="#e88ca6"/>` : ''}
+        ${o.acc === 'carrot' ? `<g transform="rotate(${(Math.sin(f / 4) * 6).toFixed(1)} 268 84)"><path d="M266 86 l30 8 l-26 8 z" fill="#f28c3b" stroke="${out}" stroke-width="3" stroke-linejoin="round"/><path d="M295 92 l12 -5 M295 94 l12 0 M295 96 l11 5" stroke="#7fae5e" stroke-width="3.5" stroke-linecap="round"/></g>` : ''}
       </g>
-      ${leg(95, L(0), true)}
-      ${leg(120, L(2), true)}
-      ${leg(185, L(1), false)}
-      ${leg(208, L(3), false)}
-      <ellipse cx="150" cy="100" rx="78" ry="44" fill="#a9744f" stroke="#3a2e26" stroke-width="5"/>
-      <path d="M205 78 q18 -34 40 -44 l6 12 q6 -8 14 -8 l-4 26 q-2 18 -24 22 q-16 3 -24 -2 z" fill="#a9744f" stroke="#3a2e26" stroke-width="5" stroke-linejoin="round" transform="rotate(${headDip} 210 80)"/>
-      <g transform="rotate(${headDip} 210 80)">
-        <path d="M243 34 l6 -16 l8 14 z" fill="#a9744f" stroke="#3a2e26" stroke-width="4" stroke-linejoin="round" transform="rotate(${earFlick} 248 32)"/>
-        <path d="M256 36 l10 -12 l4 16 z" fill="#8f5f3e" stroke="#3a2e26" stroke-width="4" stroke-linejoin="round"/>
-        <path d="M208 70 q14 -32 34 -40 q-4 14 2 16 q-10 8 -14 24 z" fill="#6b4a30"/>
-        <ellipse cx="248" cy="52" rx="4.5" ry="${blink ? .8 : 5}" fill="#3a2e26"/>
-        <circle cx="264" cy="70" r="2.6" fill="#3a2e26"/>
-        <path d="M252 78 q7 3 12 -1" stroke="#3a2e26" stroke-width="3" fill="none" stroke-linecap="round"/>
-        ${o.acc === 'shades' ? `<rect x="238" y="46" width="22" height="11" rx="4" fill="#3a2e26"/><path d="M238 50 h-14" stroke="#3a2e26" stroke-width="3"/>` : ''}
-        ${o.acc === 'crown' ? `<path d="M232 24 l4 -12 l7 8 l6 -12 l6 12 l7 -8 l3 12 z" fill="#f2c14e" stroke="#3a2e26" stroke-width="3" stroke-linejoin="round"/>` : ''}
-        ${o.acc === 'carrot' ? `<g transform="rotate(${Math.sin(f / 4) * 6} 268 82)"><path d="M268 82 l26 10 l-24 6 z" fill="#f28c3b" stroke="#3a2e26" stroke-width="3" stroke-linejoin="round"/><path d="M292 90 l10 -4 M292 92 l10 2" stroke="#7fae5e" stroke-width="3" stroke-linecap="round"/></g>` : ''}
-      </g>
-      <path d="M112 62 q20 -18 52 -14" stroke="#6b4a30" stroke-width="9" fill="none" stroke-linecap="round"/>
-      ${o.acc === 'ribbon' ? `<circle cx="150" cy="64" r="10" fill="#e88ca6" stroke="#3a2e26" stroke-width="3"/><path d="M144 70 l-6 12 M156 70 l6 12" stroke="#e88ca6" stroke-width="5" stroke-linecap="round"/>` : ''}
+      ${o.acc === 'ribbon' ? `<circle cx="150" cy="70" r="11" fill="#e88ca6" stroke="${out}" stroke-width="3"/><path d="M143 77 l-7 13 M157 77 l7 13" stroke="#e88ca6" stroke-width="6" stroke-linecap="round"/><circle cx="150" cy="70" r="3.5" fill="#fff"/>` : ''}
+      ${legNear}
     </g>
   </svg>`;
 }
