@@ -166,6 +166,7 @@ h1.logo .u{text-decoration:underline wavy var(--red) 4px;text-underline-offset:8
     <button class="sizebtn" data-s="20"><i style="width:18px;height:18px"></i></button>
     <button class="toolbtn" id="undoBtn">↩ Undo</button>
     <button class="toolbtn" id="clearBtn">✕ Clear</button>
+    <button class="toolbtn" id="autoBtn" style="color:#5b9bd9">🎲 Draw for me</button>
   </div>
   <button class="mainbtn" id="doneBtn" disabled>Looks perfect →</button>
 </div>
@@ -279,9 +280,19 @@ const HOUSE_RULES = [
   "no refunds on talent.",
   "the critic is watching. draw brave.",
 ];
+/* lines reserved for people who hit the button instead of drawing */
+const CRITIC_AUTO = [
+  "You didn't even draw this one.",
+  "Outsourcing your art. In THIS economy.",
+  "The robot has more soul than you today.",
+  "Commissioned. Like a true renaissance patron.",
+  "Lazy. Effective. Lazy.",
+  "I watched you press the button. We all did.",
+];
 let critLine = null;
 function critique(done, fxName){
-  const pool = CRITIC_LINES.filter(l => l !== critLine);
+  const base = (autoDrawn && Math.random() < .65) ? CRITIC_AUTO : CRITIC_LINES;
+  const pool = base.filter(l => l !== critLine);
   critLine = pool[(Math.random() * pool.length) | 0];
   $('criticLine').textContent = critLine;
   const fx = $('criticFx');
@@ -369,6 +380,7 @@ function redrawPad(){
 pad.addEventListener('pointerdown', e => {
   e.preventDefault();
   pad.setPointerCapture(e.pointerId);
+  autoDrawn = false;
   curStroke = { color: brush.color, size: brush.size, erase: brush.erase, pts: [padPos(e)] };
   strokes.push(curStroke);
   redrawPad();
@@ -385,11 +397,121 @@ $('undoBtn').addEventListener('click', () => {
   $('doneBtn').disabled = !strokes.some(s => !s.erase);
 });
 $('clearBtn').addEventListener('click', () => {
-  SFX.click(); strokes = []; redrawPad(); $('doneBtn').disabled = true;
+  SFX.click(); strokes = []; redrawPad(); $('doneBtn').disabled = true; autoDrawn = false;
+});
+
+/* ═════════ "draw for me" · a robot with crayons ═════════ */
+let autoDrawn = false;
+const J = (v, j) => v + (Math.random() * 2 - 1) * j;
+const st = (color, size, pts) => ({ color, size, erase: false, pts });
+const dotp = (x, y) => [{ x, y }];
+function ringPts(cx, cy, rx, ry, jit, n = 26){
+  const pts = [];
+  for (let i = 0; i <= n; i++){
+    const a = i / n * Math.PI * 2;
+    pts.push({ x: cx + Math.cos(a) * J(rx, jit), y: cy + Math.sin(a) * J(ry, jit) });
+  }
+  return pts;
+}
+function genDoodle(kind){
+  const C = PAD / 2, ink = '#34405c';
+  const pal = COLORS.slice(1);
+  const body = pal[(Math.random() * pal.length) | 0];
+  let acc = pal[(Math.random() * pal.length) | 0];
+  if (acc === body) acc = pal[(pal.indexOf(body) + 3) % pal.length];
+  const S = [];
+  if (kind === 'loot'){
+    const t = Math.random();
+    if (t < .34){ /* star */
+      const pts = [];
+      for (let i = 0; i <= 10; i++){
+        const a = -Math.PI / 2 + i / 10 * Math.PI * 2, r = i % 2 ? 62 : 132;
+        pts.push({ x: C + Math.cos(a) * J(r, 9), y: C + Math.sin(a) * J(r, 9) });
+      }
+      S.push(st(body, 20, pts));
+      S.push(st(ink, 16, dotp(C - 20, C - 2)), st(ink, 16, dotp(C + 20, C - 2)));
+      S.push(st(ink, 11, [{ x: C - 16, y: C + 26 }, { x: C, y: C + 38 }, { x: C + 16, y: C + 26 }]));
+    } else if (t < .67){ /* coin */
+      S.push(st(body, 20, ringPts(C, C, 118, 118, 7)));
+      S.push(st(ink, 14, [{ x: C + 34, y: C - 52 }, { x: C - 30, y: C - 34 }, { x: C + 30, y: C + 34 }, { x: C - 34, y: C + 52 }]));
+      S.push(st(ink, 14, [{ x: C, y: C - 82 }, { x: C, y: C + 82 }]));
+    } else { /* gem */
+      S.push(st(body, 20, [{ x: C - 112, y: C - 44 }, { x: C + 112, y: C - 44 }, { x: C, y: C + 122 }, { x: C - 112, y: C - 44 }]));
+      S.push(st(acc, 11, [{ x: C - 58, y: C - 44 }, { x: C, y: C + 44 }, { x: C + 58, y: C - 44 }]));
+      S.push(st(acc, 11, [{ x: C - 150, y: C - 110 }, { x: C - 128, y: C - 88 }]), st(acc, 11, [{ x: C + 150, y: C - 110 }, { x: C + 128, y: C - 88 }]));
+    }
+  } else if (kind === 'powerup'){
+    if (Math.random() < .5){ /* bolt */
+      S.push(st(body, 20, [
+        { x: C - 26, y: C - 150 }, { x: C + 52, y: C - 150 }, { x: C + 8, y: C - 34 }, { x: C + 78, y: C - 34 },
+        { x: C - 52, y: C + 158 }, { x: C - 4, y: C + 16 }, { x: C - 74, y: C + 16 }, { x: C - 26, y: C - 150 },
+      ].map(p => ({ x: J(p.x, 5), y: J(p.y, 5) }))));
+      S.push(st(acc, 11, [{ x: C - 130, y: C - 60 }, { x: C - 172, y: C - 60 }]), st(acc, 11, [{ x: C + 130, y: C + 40 }, { x: C + 172, y: C + 40 }]));
+    } else { /* potion */
+      S.push(st(body, 20, ringPts(C, C + 44, 96, 100, 8)));
+      S.push(st(body, 16, [{ x: C - 34, y: C - 42 }, { x: C - 34, y: C - 120 }]), st(body, 16, [{ x: C + 34, y: C - 42 }, { x: C + 34, y: C - 120 }]));
+      S.push(st(ink, 20, [{ x: C - 44, y: C - 128 }, { x: C + 44, y: C - 128 }]));
+      S.push(st(acc, 16, dotp(C - 30, C + 30)), st(acc, 16, dotp(C + 24, C + 66)), st(acc, 16, dotp(C + 2, C + 6)));
+    }
+  } else { /* hero / enemy creature */
+    const rx = 92 + Math.random() * 58, ry = 92 + Math.random() * 58;
+    S.push(st(body, 20, ringPts(C, C, rx, ry, 11)));
+    const ey = C - 22, eo = 32 + Math.random() * 18;
+    const eyes = Math.random() < .2 ? 1 : Math.random() < .85 ? 2 : 3;
+    if (eyes === 1) S.push(st(ink, 20, dotp(C, ey)));
+    else {
+      S.push(st(ink, 20, dotp(C - eo, ey)), st(ink, 20, dotp(C + eo, ey)));
+      if (eyes === 3) S.push(st(ink, 20, dotp(C, ey - 40)));
+    }
+    if (kind === 'enemy'){
+      const m = [];
+      for (let i = 0; i <= 6; i++) m.push({ x: C - 44 + i * 14.6, y: C + 40 + (i % 2 ? -16 : 8) });
+      S.push(st(ink, 11, m));
+      const n = 5, sp = [];
+      for (let i = 0; i <= n * 2; i++){
+        const x = C - rx + i * (rx * 2) / (n * 2);
+        sp.push({ x: J(x, 5), y: J(i % 2 ? C - ry - 48 : C - ry + 4, 6) });
+      }
+      S.push(st(acc, 14, sp));
+      if (Math.random() < .55) for (let i = -1; i <= 1; i++)
+        S.push(st(body, 14, [{ x: C + i * 52, y: C + ry - 8 }, { x: J(C + i * 60, 8), y: C + ry + 54 }]));
+      if (Math.random() < .5){
+        S.push(st(ink, 11, [{ x: C - eo - 22, y: ey - 40 }, { x: C - eo + 14, y: ey - 22 }]));
+        S.push(st(ink, 11, [{ x: C + eo + 22, y: ey - 40 }, { x: C + eo - 14, y: ey - 22 }]));
+      }
+    } else {
+      S.push(st(ink, 11, [{ x: C - 30, y: C + 30 }, { x: C, y: C + 52 }, { x: C + 30, y: C + 30 }]));
+      if (Math.random() < .65){
+        const ax = J(C, 24);
+        S.push(st(body, 11, [{ x: C, y: C - ry }, { x: ax, y: C - ry - 72 }]));
+        S.push(st(acc, 20, dotp(ax, C - ry - 88)));
+      }
+      if (Math.random() < .5){
+        S.push(st(body, 14, [{ x: C - rx + 6, y: C + 12 }, { x: C - rx - 52, y: J(C - 24, 30) }]));
+        S.push(st(body, 14, [{ x: C + rx - 6, y: C + 12 }, { x: C + rx + 52, y: J(C - 24, 30) }]));
+      }
+      S.push(st('#f58fb6', 13, dotp(C - eo - 6, C + 10)), st('#f58fb6', 13, dotp(C + eo + 6, C + 10)));
+    }
+  }
+  return S;
+}
+$('autoBtn').addEventListener('click', () => {
+  SFX.wave();
+  const kind = midDrawKind === 'powerup' ? 'powerup'
+    : midDrawKind === 'newEnemy' ? 'enemy'
+    : PHASES[phaseIdx].key;
+  strokes = genDoodle(kind);
+  redrawPad();
+  autoDrawn = true;
+  $('doneBtn').disabled = false;
+  $('padWrap').style.animation = 'none';
+  void $('padWrap').offsetWidth;
+  $('padWrap').style.animation = 'popIn .3s ease';
 });
 
 function resetPad(){
   strokes = []; curStroke = null;
+  autoDrawn = false;
   redrawPad();
   $('doneBtn').disabled = true;
 }
@@ -491,8 +613,11 @@ function sizeGame(){
 addEventListener('resize', sizeGame);
 
 let running = false, paused = false, breakPending = false, raf = 0, lastT = 0;
-let ship, bullets, enemies, drops, parts, wave, score, lives, fireT, shakeT;
+let ship, bullets, enemies, drops, parts, pops, wave, score, lives, fireT, shakeT, graceT, streak;
 const active = { triple: 0, rapid: 0, big: 0, slow: 0, shield: false };
+function scorePop(x, y, txt, c = '#34405c'){
+  pops.push({ x, y, txt, c, t: .9 });
+}
 let hi = +localStorage.getItem('scribble-hi') || 0;
 $('introHi').textContent = hi ? `high score · ${hi}` : '';
 
@@ -518,8 +643,8 @@ function startGame(){
   sizeGame();
   const hs = fit(sprites.hero, Math.min(W * .17, 76));
   ship = { x: W / 2, tx: W / 2, y: H - hs.h / 2 - Math.max(24, H * .05), w: hs.w, h: hs.h, inv: 0 };
-  bullets = []; enemies = []; drops = []; parts = [];
-  wave = 0; score = 0; lives = 3; fireT = 0; shakeT = 0;
+  bullets = []; enemies = []; drops = []; parts = []; pops = [];
+  wave = 0; score = 0; lives = 3; fireT = 0; shakeT = 0; graceT = 0; streak = 0;
   active.triple = 0; active.rapid = 0; active.big = 0; active.slow = 0; active.shield = false;
   paused = false; breakPending = false; midDrawKind = null;
   $('score').textContent = '0';
@@ -566,9 +691,13 @@ function spawnWave(){
         spr,
         x: (W / (Math.min(n, 6) + 1)) * ((i % 6) + 1) + (Math.random() * 24 - 12),
         y: -40 - Math.floor(i / 6) * (s.h + 46) - Math.random() * 30,
-        w: s.w, h: s.h, hp: 1 + Math.floor(wave / 5), maxhp: 1 + Math.floor(wave / 5),
-        vy: 26 + wave * 4.5, sway: 26 + Math.random() * 30, ph: Math.random() * 9, boss: false, flash: 0
+        w: s.w, h: s.h, hp: Math.min(3, 1 + Math.floor(wave / 5)), maxhp: Math.min(3, 1 + Math.floor(wave / 5)),
+        vy: Math.min(88, 26 + wave * 4.5), sway: 26 + Math.random() * 30, ph: Math.random() * 9, boss: false, flash: 0
       });
+    }
+    /* one enemy per wave is guaranteed to carry a power-up */
+    if (powerPool.length){
+      enemies[(Math.random() * enemies.length) | 0].carry = powerPool[(Math.random() * powerPool.length) | 0];
     }
   }
 }
@@ -582,6 +711,8 @@ function burst(x, y, cols, n = 12, big = false){
 
 function loseLife(){
   lives--;
+  streak = 0;
+  graceT = 1.1;
   livesUI();
   SFX.hurt();
   shakeT = .4;
@@ -602,6 +733,9 @@ function loop(ts){
 
   /* update */
   for (const k of ['triple', 'rapid', 'big', 'slow']) if (active[k] > 0) active[k] -= dt;
+  if (graceT > 0) graceT -= dt;
+  for (const p of pops){ p.t -= dt; p.y -= 46 * dt; }
+  pops = pops.filter(p => p.t > 0);
   const slowK = active.slow > 0 ? .45 : 1;
   ship.x += (ship.tx - ship.x) * Math.min(1, dt * 14);
   if (ship.inv > 0) ship.inv -= dt;
@@ -616,7 +750,7 @@ function loop(ts){
       bullets.push({ x: ship.x, y: ship.y - ship.h / 2, vy: -640, vx: 0, r, dmg });
     }
     SFX.pew();
-    fireT = active.rapid > 0 ? .11 : .27;
+    fireT = active.rapid > 0 ? .11 : .24;
   }
   bullets = bullets.filter(b => { b.y += b.vy * dt; b.x += b.vx * dt; return b.y > -20 && b.x > -20 && b.x < W + 20; });
 
@@ -646,12 +780,20 @@ function loop(ts){
           e.dead = true;
           score += e.boss ? 100 : 10;
           $('score').textContent = score;
+          scorePop(e.x, e.y, e.boss ? '+100' : '+10');
+          streak++;
+          if (streak % 10 === 0){ toast(`${streak} IN A ROW!!`); SFX.wave(); }
           SFX.pop();
           burst(e.x, e.y, e.spr.colors, e.boss ? 34 : 12, e.boss);
-          if (e.boss || Math.random() < .18){
+          if (e.carry){
+            const s = fit(e.carry.sp, Math.min(W * .11, 48));
+            drops.push({ kind: 'power', p: e.carry, x: e.x, y: e.y, w: s.w, h: s.h, vy: 105, rot: 0, vr: (Math.random() - .5) * 4 });
+          } else if (lives < 3 && Math.random() < .07){
+            drops.push({ kind: 'heart', x: e.x, y: e.y, w: 34, h: 34, vy: 115, rot: 0, vr: (Math.random() - .5) * 3 });
+          } else if (e.boss || Math.random() < .18){
             const s = fit(sprites.loot, Math.min(W * .1, 44));
             drops.push({ kind: 'loot', x: e.x, y: e.y, w: s.w, h: s.h, vy: 120, rot: 0, vr: (Math.random() - .5) * 5 });
-          } else if (powerPool.length && Math.random() < .14){
+          } else if (powerPool.length && Math.random() < .12){
             const p = powerPool[(Math.random() * powerPool.length) | 0];
             const s = fit(p.sp, Math.min(W * .11, 48));
             drops.push({ kind: 'power', p, x: e.x, y: e.y, w: s.w, h: s.h, vy: 105, rot: 0, vr: (Math.random() - .5) * 4 });
@@ -669,6 +811,8 @@ function loop(ts){
           active.shield = false;
           SFX.pop();
           toast('shield ate that one!!');
+        } else if (graceT > 0){
+          SFX.pop();          /* mercy window — pops for free right after a hit */
         } else {
           loseLife();
         }
@@ -689,9 +833,16 @@ function loop(ts){
         SFX.coin(); SFX.wave();
         toast(`★ ${fx.name} ★`);
         burst(d.x, d.y, d.p.sp.colors, 14);
+      } else if (d.kind === 'heart'){
+        lives = Math.min(3, lives + 1);
+        livesUI();
+        SFX.coin(); SFX.wave();
+        toast('extra life!!');
+        scorePop(d.x, d.y, '♥', '#ef5d6f');
       } else {
         score += 25;
         $('score').textContent = score;
+        scorePop(d.x, d.y, '+25', '#f79e4f');
         SFX.coin();
         burst(d.x, d.y, sprites.loot.colors, 8);
       }
@@ -733,6 +884,15 @@ function loop(ts){
     if (e.flash > 0){ ctx.globalAlpha = .45; }
     ctx.drawImage(e.spr.img, -e.w / 2, -e.h / 2, e.w, e.h);
     ctx.restore();
+    if (e.carry){
+      ctx.strokeStyle = 'rgba(99,195,124,.75)';
+      ctx.lineWidth = 3;
+      ctx.setLineDash([6, 6]);
+      ctx.beginPath();
+      ctx.arc(e.x, e.y, Math.max(e.w, e.h) / 2 + 8, 0, 7);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
     if (e.boss){
       const bw = e.w * .9, p = e.hp / e.maxhp;
       ctx.fillStyle = 'rgba(52,64,92,.18)';
@@ -754,7 +914,19 @@ function loop(ts){
       ctx.stroke();
       ctx.setLineDash([]);
     }
-    ctx.drawImage(d.kind === 'power' ? d.p.sp.img : sprites.loot.img, -d.w / 2, -d.h / 2, d.w, d.h);
+    if (d.kind === 'heart'){
+      ctx.fillStyle = '#ef5d6f';
+      ctx.strokeStyle = '#c23a4c';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(0, 13);
+      ctx.bezierCurveTo(-24, -8, -9, -26, 0, -10);
+      ctx.bezierCurveTo(9, -26, 24, -8, 0, 13);
+      ctx.fill();
+      ctx.stroke();
+    } else {
+      ctx.drawImage(d.kind === 'power' ? d.p.sp.img : sprites.loot.img, -d.w / 2, -d.h / 2, d.w, d.h);
+    }
     ctx.restore();
   }
   /* ship */
@@ -780,6 +952,14 @@ function loop(ts){
     ctx.beginPath();
     ctx.arc(p.x, p.y, p.r, 0, 7);
     ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  for (const p of pops){
+    ctx.globalAlpha = Math.min(1, p.t / .5);
+    ctx.fillStyle = p.c;
+    ctx.font = '700 22px "Gochi Hand", cursive';
+    ctx.textAlign = 'center';
+    ctx.fillText(p.txt, p.x, p.y);
   }
   ctx.globalAlpha = 1;
   ctx.restore();
