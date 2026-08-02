@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#fbf7ee">
+<meta name="description" content="Scribble Squadron — you can't play until you draw the game. Doodle a hero, an enemy, and treasure; then fight your own art.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23fbf7ee'/%3E%3Cpath d='M7 25 L22 7 l3 3 L10 28 l-4 1 z' fill='%23ffcf4d' stroke='%2334405c' stroke-width='2' stroke-linejoin='round'/%3E%3Cpath d='M22 7 l3 3' stroke='%2334405c' stroke-width='2'/%3E%3Cpath d='M6 12 q3 -6 8 -3' stroke='%23ff7d94' stroke-width='2.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+<title>Scribble Squadron · draw it, then fight it</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Gochi+Hand&family=Baloo+2:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#fbf7ee; --grid:#d9e8f5; --ink:#34405c; --ink-soft:#8a93ab;
+  --red:#ef5d6f; --orange:#f79e4f; --yellow:#ffcf4d; --green:#63c37c; --blue:#5b9bd9; --purple:#9b7fd4; --pink:#f58fb6; --brown:#a9744f;
+  --disp:'Baloo 2',system-ui,sans-serif;
+  --hand:'Gochi Hand',cursive;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden;color:var(--ink);font-family:var(--disp);
+  background:
+    linear-gradient(var(--grid) 1px,transparent 1px),
+    linear-gradient(90deg,var(--grid) 1px,transparent 1px),
+    var(--paper);
+  background-size:26px 26px,26px 26px;
+  user-select:none;-webkit-user-select:none;touch-action:none}
+button{font-family:var(--disp);cursor:pointer;border:none;background:none;color:inherit}
+
+@keyframes wobble{0%,100%{transform:rotate(-2deg)}50%{transform:rotate(2deg)}}
+@keyframes popIn{0%{transform:scale(.4) rotate(-8deg);opacity:0}70%{transform:scale(1.08)}100%{transform:scale(1);opacity:1}}
+@keyframes toastUp{0%{transform:translate(-50%,14px);opacity:0}15%{transform:translate(-50%,0);opacity:1}85%{transform:translate(-50%,0);opacity:1}100%{transform:translate(-50%,-12px);opacity:0}}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-9px)}50%{transform:translateX(8px)}75%{transform:translateX(-5px)}}
+
+.screen{position:fixed;inset:0;z-index:5;display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:22px;text-align:center}
+.screen.on{display:flex}
+
+.kick{font-weight:800;font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-soft)}
+h1.logo{font-family:var(--hand);font-size:54px;line-height:.95;transform:rotate(-2deg)}
+h1.logo .u{text-decoration:underline wavy var(--red) 4px;text-underline-offset:8px}
+.hand{font-family:var(--hand)}
+.sub{font-family:var(--hand);font-size:21px;color:var(--ink);max-width:340px;line-height:1.35}
+
+.mainbtn{
+  font-weight:800;font-size:20px;padding:14px 40px;border-radius:999px;color:#fff;
+  background:var(--ink);box-shadow:0 6px 0 #1f2740,0 14px 26px rgba(52,64,92,.25);
+  transition:transform .1s,box-shadow .1s
+}
+.mainbtn:active{transform:translateY(5px);box-shadow:0 1px 0 #1f2740}
+.mainbtn.alt{background:var(--red);box-shadow:0 6px 0 #c23a4c,0 14px 26px rgba(239,93,111,.3)}
+.mainbtn.alt:active{box-shadow:0 1px 0 #c23a4c}
+.mainbtn:disabled{opacity:.35;transform:none}
+
+/* ══ draw phase ══ */
+#draw .stepchip{
+  font-weight:800;font-size:13px;letter-spacing:.12em;color:#fff;background:var(--accent,#ef5d6f);
+  padding:5px 16px;border-radius:999px;text-transform:uppercase
+}
+#drawTitle{font-family:var(--hand);font-size:38px;line-height:1;transform:rotate(-1.5deg)}
+#drawHint{font-family:var(--hand);font-size:18px;color:var(--ink-soft);margin-top:-6px}
+#padWrap{
+  position:relative;background:#fff;border-radius:18px;padding:8px;
+  box-shadow:0 4px 0 rgba(52,64,92,.12),0 16px 34px rgba(52,64,92,.16);
+  animation:popIn .3s ease
+}
+#pad{
+  display:block;border-radius:12px;touch-action:none;cursor:crosshair;
+  background:
+    linear-gradient(#e9f1fa 1px,transparent 1px),
+    linear-gradient(90deg,#e9f1fa 1px,transparent 1px),
+    #fff;
+  background-size:22px 22px
+}
+.toolrow{display:flex;gap:8px;align-items:center;justify-content:center;flex-wrap:wrap}
+.swatch{
+  width:34px;height:34px;border-radius:50%;border:3px solid transparent;
+  box-shadow:inset 0 -3px 0 rgba(0,0,0,.15);transition:transform .12s
+}
+.swatch.onSel{border-color:var(--ink);transform:scale(1.18)}
+.swatch.eraser{background:#fff;border:2px dashed var(--ink-soft);font-size:15px;display:flex;align-items:center;justify-content:center}
+.swatch.eraser.onSel{border:3px solid var(--ink)}
+.sizebtn{
+  width:38px;height:38px;border-radius:12px;background:#fff;box-shadow:0 2px 0 rgba(52,64,92,.15);
+  display:flex;align-items:center;justify-content:center
+}
+.sizebtn.onSel{background:var(--ink)}
+.sizebtn i{border-radius:50%;background:var(--ink);display:block}
+.sizebtn.onSel i{background:#fff}
+.toolbtn{
+  font-weight:800;font-size:14px;padding:9px 16px;border-radius:12px;background:#fff;
+  box-shadow:0 2px 0 rgba(52,64,92,.15);color:var(--ink)
+}
+.toolbtn:active{transform:translateY(2px);box-shadow:none}
+
+/* ══ play ══ */
+#playWrap{position:fixed;inset:0;z-index:3;display:none}
+#playWrap.on{display:block}
+#gameCanvas{position:absolute;inset:0;width:100%;height:100%}
+#hud{
+  position:absolute;top:0;left:0;right:0;display:flex;align-items:center;justify-content:space-between;
+  padding:calc(env(safe-area-inset-top) + 10px) 16px 0;pointer-events:none;z-index:4
+}
+.hudcard{background:rgba(255,255,255,.85);border-radius:14px;padding:5px 14px;box-shadow:0 3px 10px rgba(52,64,92,.14)}
+#score{font-family:var(--hand);font-size:26px;min-width:80px;text-align:left}
+#waveLbl{font-family:var(--hand);font-size:19px;color:var(--ink-soft)}
+#livesBox{display:flex;gap:6px;align-items:center}
+#livesBox img{width:26px;height:26px;object-fit:contain;transition:opacity .3s,transform .3s}
+#livesBox img.gone{opacity:.15;transform:rotate(60deg) scale(.8)}
+#toast{
+  position:absolute;left:50%;top:22%;transform:translateX(-50%);z-index:5;pointer-events:none;
+  font-family:var(--hand);font-size:30px;color:var(--ink);opacity:0;white-space:nowrap;
+  background:rgba(255,255,255,.85);padding:4px 22px;border-radius:999px;box-shadow:0 4px 14px rgba(52,64,92,.15)
+}
+#toast.go{animation:toastUp 1.5s ease forwards}
+
+/* ══ game over gallery ══ */
+.gallery{display:flex;gap:12px;justify-content:center}
+.frame{
+  background:#fff;padding:8px 8px 4px;border-radius:10px;box-shadow:0 3px 0 rgba(52,64,92,.12),0 10px 22px rgba(52,64,92,.14);
+  display:flex;flex-direction:column;align-items:center;animation:wobble 3s ease-in-out infinite
+}
+.frame:nth-child(2){animation-delay:.4s}
+.frame:nth-child(3){animation-delay:.8s}
+.frame img{width:76px;height:76px;object-fit:contain}
+.frame .cap{font-family:var(--hand);font-size:14px;color:var(--ink-soft)}
+.statrow{display:flex;justify-content:space-between;width:min(280px,80vw);font-weight:800;font-size:15px;color:var(--ink-soft)}
+.statrow b{font-family:var(--hand);font-size:20px;color:var(--ink)}
+.newhi{font-family:var(--hand);font-size:22px;color:var(--orange);animation:wobble 1s ease-in-out infinite}
+</style>
+</head>
+<body>
+
+<!-- INTRO -->
+<div class="screen on" id="intro">
+  <div class="kick">An art supply emergency</div>
+  <h1 class="logo">Scribble<br><span class="u">Squadron</span></h1>
+  <p class="sub">This game ships with <b>no graphics.</b><br>You draw the hero. You draw the enemy.<br>You draw the treasure. Then it all comes alive and tries to get you.</p>
+  <button class="mainbtn alt" id="introBtn">Grab a pencil</button>
+  <div class="kick" id="introHi"></div>
+</div>
+
+<!-- DRAW -->
+<div class="screen" id="draw">
+  <span class="stepchip" id="stepChip">Doodle 1 of 3</span>
+  <div id="drawTitle">Draw your HERO</div>
+  <div id="drawHint">the brave one. give it a face. or seven.</div>
+  <div id="padWrap"><canvas id="pad"></canvas></div>
+  <div class="toolrow" id="palette"></div>
+  <div class="toolrow">
+    <button class="sizebtn" data-s="5"><i style="width:6px;height:6px"></i></button>
+    <button class="sizebtn onSel" data-s="11"><i style="width:11px;height:11px"></i></button>
+    <button class="sizebtn" data-s="20"><i style="width:18px;height:18px"></i></button>
+    <button class="toolbtn" id="undoBtn">↩ Undo</button>
+    <button class="toolbtn" id="clearBtn">✕ Clear</button>
+  </div>
+  <button class="mainbtn" id="doneBtn" disabled>Looks perfect →</button>
+</div>
+
+<!-- PLAY -->
+<div id="playWrap">
+  <canvas id="gameCanvas"></canvas>
+  <div id="hud">
+    <div class="hudcard" id="score">0</div>
+    <div class="hudcard" id="waveLbl">wave 1</div>
+    <div class="hudcard" id="livesBox"></div>
+  </div>
+  <div id="toast"></div>
+</div>
+
+<!-- OVER -->
+<div class="screen" id="over">
+  <div class="kick">The gallery closes</div>
+  <div id="overTitle" style="font-family:var(--hand);font-size:44px;transform:rotate(-1.5deg)">Art was destroyed.</div>
+  <div class="gallery" id="gallery"></div>
+  <div class="statrow"><span>Score</span><b id="ovScore">0</b></div>
+  <div class="statrow"><span>Wave reached</span><b id="ovWave">1</b></div>
+  <div class="statrow"><span>High score</span><b id="ovHi">0</b></div>
+  <div class="newhi" id="newHi" style="display:none">★ new high score! ★</div>
+  <button class="mainbtn alt" id="againBtn">Same doodles, go again</button>
+  <button class="mainbtn" id="redrawBtn">Draw new doodles</button>
+</div>
+
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+
+/* ═════════ sounds · soft pencil-case bleeps ═════════ */
+const SFX = (() => {
+  let ctx = null;
+  const on = () => { if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)(); ctx.resume(); };
+  function t(f, t0, d, type = 'triangle', v = .1, slide = 0){
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = type; o.frequency.setValueAtTime(f, ctx.currentTime + t0);
+    if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(40, f + slide), ctx.currentTime + t0 + d);
+    g.gain.setValueAtTime(v, ctx.currentTime + t0);
+    g.gain.exponentialRampToValueAtTime(.001, ctx.currentTime + t0 + d);
+    o.connect(g); g.connect(ctx.destination);
+    o.start(ctx.currentTime + t0); o.stop(ctx.currentTime + t0 + d + .02);
+  }
+  return {
+    click(){ on(); t(600, 0, .07, 'triangle', .09, 200); },
+    pew(){ on(); t(880, 0, .08, 'triangle', .05, -300); },
+    pop(){ on(); t(320, 0, .1, 'square', .07, 260); },
+    coin(){ on(); t(988, 0, .07, 'square', .06); t(1319, .07, .12, 'square', .06); },
+    hurt(){ on(); t(180, 0, .25, 'sawtooth', .11, -70); },
+    wave(){ on(); [523, 659, 784].forEach((f, i) => t(f, i * .08, .14, 'triangle', .09)); },
+    boss(){ on(); [196, 185, 175].forEach((f, i) => t(f, i * .16, .22, 'sawtooth', .1)); },
+    over(){ on(); [440, 392, 349, 294].forEach((f, i) => t(f, i * .18, .26, 'triangle', .1)); },
+    hi(){ on(); [523, 659, 784, 1047, 1319].forEach((f, i) => t(f, i * .09, .18, 'triangle', .1)); },
+  };
+})();
+
+/* ═════════ draw phase ═════════ */
+const PHASES = [
+  { key: 'hero', chip: 'Doodle 1 of 3', title: 'Draw your HERO', hint: 'the brave one. give it a face. or seven.', accent: '#5b9bd9' },
+  { key: 'enemy', chip: 'Doodle 2 of 3', title: 'Draw the ENEMY', hint: 'something evil. a blob. a broccoli. your sibling.', accent: '#ef5d6f' },
+  { key: 'loot', chip: 'Doodle 3 of 3', title: 'Draw the TREASURE', hint: 'worth 25 points. money, tacos, a tiny crown…', accent: '#f79e4f' },
+];
+const COLORS = ['#34405c', '#ef5d6f', '#f79e4f', '#ffcf4d', '#63c37c', '#5b9bd9', '#9b7fd4', '#f58fb6', '#a9744f'];
+const PAD = 560;                     // backing resolution
+const pad = $('pad'), pctx = pad.getContext('2d', { willReadFrequently: true });
+pad.width = PAD; pad.height = PAD;
+
+let phaseIdx = 0;
+let strokes = [];                    // {color,size,pts:[{x,y}], erase}
+let curStroke = null;
+let brush = { color: COLORS[0], size: 11, erase: false };
+const sprites = {};                  // key -> {img(canvas), w, h, colors[], data(dataURL)}
+
+function sizePad(){
+  const s = Math.min(window.innerWidth - 56, window.innerHeight * .46, 380);
+  pad.style.width = s + 'px'; pad.style.height = s + 'px';
+}
+sizePad(); addEventListener('resize', sizePad);
+
+function paletteUI(){
+  $('palette').innerHTML = COLORS.map(c =>
+    `<button class="swatch ${c === brush.color && !brush.erase ? 'onSel' : ''}" data-c="${c}" style="background:${c}"></button>`
+  ).join('') + `<button class="swatch eraser ${brush.erase ? 'onSel' : ''}" data-e="1">⌫</button>`;
+}
+$('palette').addEventListener('click', e => {
+  const b = e.target.closest('.swatch');
+  if (!b) return;
+  SFX.click();
+  if (b.dataset.e){ brush.erase = true; }
+  else { brush.erase = false; brush.color = b.dataset.c; }
+  paletteUI();
+});
+document.querySelectorAll('.sizebtn').forEach(b => b.addEventListener('click', () => {
+  SFX.click();
+  document.querySelectorAll('.sizebtn').forEach(x => x.classList.remove('onSel'));
+  b.classList.add('onSel');
+  brush.size = +b.dataset.s;
+}));
+
+function padPos(e){
+  const r = pad.getBoundingClientRect();
+  return { x: (e.clientX - r.left) / r.width * PAD, y: (e.clientY - r.top) / r.height * PAD };
+}
+function drawStroke(s){
+  pctx.globalCompositeOperation = s.erase ? 'destination-out' : 'source-over';
+  pctx.strokeStyle = s.color;
+  pctx.lineWidth = s.size * (s.erase ? 2.6 : 1) * (PAD / 380);
+  pctx.lineCap = 'round'; pctx.lineJoin = 'round';
+  pctx.beginPath();
+  s.pts.forEach((p, i) => i ? pctx.lineTo(p.x, p.y) : pctx.moveTo(p.x, p.y));
+  if (s.pts.length === 1){ pctx.lineTo(s.pts[0].x + .01, s.pts[0].y + .01); }
+  pctx.stroke();
+  pctx.globalCompositeOperation = 'source-over';
+}
+function redrawPad(){
+  pctx.clearRect(0, 0, PAD, PAD);
+  strokes.forEach(drawStroke);
+}
+pad.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  pad.setPointerCapture(e.pointerId);
+  curStroke = { color: brush.color, size: brush.size, erase: brush.erase, pts: [padPos(e)] };
+  strokes.push(curStroke);
+  redrawPad();
+  $('doneBtn').disabled = !strokes.some(s => !s.erase);
+});
+pad.addEventListener('pointermove', e => {
+  if (!curStroke) return;
+  curStroke.pts.push(padPos(e));
+  drawStroke(curStroke);
+});
+addEventListener('pointerup', () => curStroke = null);
+$('undoBtn').addEventListener('click', () => {
+  SFX.click(); strokes.pop(); redrawPad();
+  $('doneBtn').disabled = !strokes.some(s => !s.erase);
+});
+$('clearBtn').addEventListener('click', () => {
+  SFX.click(); strokes = []; redrawPad(); $('doneBtn').disabled = true;
+});
+
+function beginPhase(i){
+  phaseIdx = i;
+  const p = PHASES[i];
+  $('stepChip').textContent = p.chip;
+  $('stepChip').style.background = p.accent;
+  $('drawTitle').textContent = p.title;
+  $('drawHint').textContent = p.hint;
+  strokes = []; curStroke = null;
+  redrawPad();
+  $('doneBtn').disabled = true;
+  show('draw');
+}
+
+/* sprite from pad: trim to content, keep colors for particles */
+function makeSprite(){
+  const d = pctx.getImageData(0, 0, PAD, PAD);
+  let x0 = PAD, y0 = PAD, x1 = 0, y1 = 0;
+  const cols = [];
+  for (let y = 0; y < PAD; y += 2){
+    for (let x = 0; x < PAD; x += 2){
+      const a = d.data[(y * PAD + x) * 4 + 3];
+      if (a > 20){
+        if (x < x0) x0 = x; if (x > x1) x1 = x;
+        if (y < y0) y0 = y; if (y > y1) y1 = y;
+        if (cols.length < 240 && Math.random() < .1){
+          const i = (y * PAD + x) * 4;
+          cols.push(`rgb(${d.data[i]},${d.data[i + 1]},${d.data[i + 2]})`);
+        }
+      }
+    }
+  }
+  const padPx = 10;
+  x0 = Math.max(0, x0 - padPx); y0 = Math.max(0, y0 - padPx);
+  x1 = Math.min(PAD, x1 + padPx); y1 = Math.min(PAD, y1 + padPx);
+  const w = Math.max(20, x1 - x0), h = Math.max(20, y1 - y0);
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  c.getContext('2d').drawImage(pad, x0, y0, w, h, 0, 0, w, h);
+  return { img: c, w, h, colors: cols.length ? cols : ['#34405c'], data: c.toDataURL() };
+}
+
+$('doneBtn').addEventListener('click', () => {
+  SFX.wave();
+  sprites[PHASES[phaseIdx].key] = makeSprite();
+  if (phaseIdx < 2) beginPhase(phaseIdx + 1);
+  else startGame();
+});
+
+/* ═════════ screens ═════════ */
+function show(id){
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('on'));
+  $('playWrap').classList.remove('on');
+  if (id === 'play') $('playWrap').classList.add('on');
+  else $(id).classList.add('on');
+}
+$('introBtn').addEventListener('click', () => { SFX.click(); beginPhase(0); });
+
+/* ═════════ the game ═════════ */
+const cv = $('gameCanvas'), ctx = cv.getContext('2d');
+let W = 0, H = 0, DPR = 1;
+function sizeGame(){
+  DPR = Math.min(2, window.devicePixelRatio || 1);
+  W = window.innerWidth; H = window.innerHeight;
+  cv.width = W * DPR; cv.height = H * DPR;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+addEventListener('resize', sizeGame);
+
+let running = false, raf = 0, lastT = 0;
+let ship, bullets, enemies, drops, parts, wave, score, lives, fireT, waveBreakT, shakeT;
+let hi = +localStorage.getItem('scribble-hi') || 0;
+$('introHi').textContent = hi ? `high score · ${hi}` : '';
+
+function fit(sp, target){
+  const k = target / Math.max(sp.w, sp.h);
+  return { w: sp.w * k, h: sp.h * k };
+}
+
+function livesUI(){
+  $('livesBox').innerHTML = [0, 1, 2].map(i =>
+    `<img src="${sprites.hero.data}" class="${i >= lives ? 'gone' : ''}" alt="">`
+  ).join('');
+}
+function toast(msg){
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.remove('go');
+  void t.offsetWidth;
+  t.classList.add('go');
+}
+
+function startGame(){
+  sizeGame();
+  const hs = fit(sprites.hero, Math.min(W * .17, 76));
+  ship = { x: W / 2, tx: W / 2, y: H - hs.h / 2 - Math.max(24, H * .05), w: hs.w, h: hs.h, inv: 0 };
+  bullets = []; enemies = []; drops = []; parts = [];
+  wave = 0; score = 0; lives = 3; fireT = 0; waveBreakT = .6; shakeT = 0;
+  $('score').textContent = '0';
+  livesUI();
+  show('play');
+  running = true; lastT = 0;
+  cancelAnimationFrame(raf);
+  raf = requestAnimationFrame(loop);
+}
+
+function spawnWave(){
+  wave++;
+  $('waveLbl').textContent = 'wave ' + wave;
+  const isBoss = wave % 4 === 0;
+  if (isBoss){
+    SFX.boss();
+    toast('THE BIG ONE!!');
+    const s = fit(sprites.enemy, Math.min(W * .5, 230));
+    enemies.push({
+      x: W / 2, y: -s.h, w: s.w, h: s.h,
+      hp: 8 + wave * 2, maxhp: 8 + wave * 2,
+      vy: 7 + wave * .4, sway: W * .18, ph: Math.random() * 9, boss: true, flash: 0
+    });
+  } else {
+    SFX.wave();
+    toast(['more of them!!', 'they multiplied!!', 'your art returns!!', 'incoming doodles!!'][wave % 4]);
+    const n = Math.min(6 + wave * 2, 22);
+    const s = fit(sprites.enemy, Math.min(W * .14, 62));
+    for (let i = 0; i < n; i++){
+      enemies.push({
+        x: (W / (Math.min(n, 6) + 1)) * ((i % 6) + 1) + (Math.random() * 24 - 12),
+        y: -40 - Math.floor(i / 6) * (s.h + 46) - Math.random() * 30,
+        w: s.w, h: s.h, hp: 1 + Math.floor(wave / 5), maxhp: 1 + Math.floor(wave / 5),
+        vy: 26 + wave * 4.5, sway: 26 + Math.random() * 30, ph: Math.random() * 9, boss: false, flash: 0
+      });
+    }
+  }
+}
+
+function burst(x, y, cols, n = 12, big = false){
+  for (let i = 0; i < n; i++){
+    const a = Math.random() * Math.PI * 2, v = 60 + Math.random() * (big ? 260 : 160);
+    parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 40, r: (big ? 5 : 3) + Math.random() * 4, c: cols[(Math.random() * cols.length) | 0], t: .55 + Math.random() * .3 });
+  }
+}
+
+function loseLife(){
+  lives--;
+  livesUI();
+  SFX.hurt();
+  shakeT = .4;
+  ship.inv = 1.4;
+  if (lives <= 0){
+    running = false;
+    setTimeout(gameOver, 700);
+  }
+}
+
+function loop(ts){
+  if (!running) return;
+  raf = requestAnimationFrame(loop);
+  if (!lastT) lastT = ts;
+  const dt = Math.min(.05, (ts - lastT) / 1000);
+  lastT = ts;
+
+  /* update */
+  ship.x += (ship.tx - ship.x) * Math.min(1, dt * 14);
+  if (ship.inv > 0) ship.inv -= dt;
+  fireT -= dt;
+  if (fireT <= 0 && enemies.length){
+    bullets.push({ x: ship.x, y: ship.y - ship.h / 2, vy: -640 });
+    SFX.pew();
+    fireT = .27;
+  }
+  bullets = bullets.filter(b => (b.y += b.vy * dt) > -20);
+
+  if (!enemies.length){
+    waveBreakT -= dt;
+    if (waveBreakT <= 0){ spawnWave(); waveBreakT = 1.1; }
+  }
+
+  const bottomLine = ship.y + ship.h / 2 + 6;
+  for (const e of enemies){
+    e.y += e.vy * dt;
+    e.ph += dt * (e.boss ? 1.1 : 2.2);
+    e.x += Math.cos(e.ph) * e.sway * dt;
+    e.x = Math.max(e.w / 2, Math.min(W - e.w / 2, e.x));
+    if (e.flash > 0) e.flash -= dt;
+    /* bullet hits */
+    for (const b of bullets){
+      if (!b.dead && Math.abs(b.x - e.x) < e.w / 2 && Math.abs(b.y - e.y) < e.h / 2){
+        b.dead = true;
+        e.hp--; e.flash = .1;
+        if (e.hp <= 0){
+          e.dead = true;
+          score += e.boss ? 100 : 10;
+          $('score').textContent = score;
+          SFX.pop();
+          burst(e.x, e.y, sprites.enemy.colors, e.boss ? 34 : 12, e.boss);
+          if (e.boss || Math.random() < .18){
+            const s = fit(sprites.loot, Math.min(W * .1, 44));
+            drops.push({ x: e.x, y: e.y, w: s.w, h: s.h, vy: 120, rot: 0, vr: (Math.random() - .5) * 5 });
+          }
+        }
+      }
+    }
+    /* reached the hero line or hit the ship */
+    if (!e.dead){
+      const hitShip = ship.inv <= 0 && Math.abs(e.x - ship.x) < (e.w + ship.w) / 2.4 && Math.abs(e.y - ship.y) < (e.h + ship.h) / 2.4;
+      if (e.y - e.h / 2 > bottomLine || hitShip){
+        e.dead = true;
+        burst(e.x, Math.min(e.y, bottomLine), sprites.enemy.colors, 10);
+        loseLife();
+      }
+    }
+  }
+  enemies = enemies.filter(e => !e.dead);
+  bullets = bullets.filter(b => !b.dead);
+
+  for (const d of drops){
+    d.y += d.vy * dt; d.rot += d.vr * dt;
+    if (Math.abs(d.x - ship.x) < (d.w + ship.w) / 2 && Math.abs(d.y - ship.y) < (d.h + ship.h) / 2){
+      d.dead = true;
+      score += 25;
+      $('score').textContent = score;
+      SFX.coin();
+      burst(d.x, d.y, sprites.loot.colors, 8);
+    }
+  }
+  drops = drops.filter(d => !d.dead && d.y < H + 40);
+
+  for (const p of parts){
+    p.t -= dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 300 * dt;
+  }
+  parts = parts.filter(p => p.t > 0);
+  if (shakeT > 0) shakeT -= dt;
+
+  /* render */
+  ctx.clearRect(0, 0, W, H);
+  ctx.save();
+  if (shakeT > 0) ctx.translate((Math.random() - .5) * 10, (Math.random() - .5) * 10);
+
+  /* hero line (dashed pencil) */
+  ctx.strokeStyle = 'rgba(52,64,92,.18)';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([10, 8]);
+  ctx.beginPath();
+  ctx.moveTo(0, bottomLine + 8);
+  ctx.lineTo(W, bottomLine + 8);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  for (const b of bullets){
+    ctx.fillStyle = '#34405c';
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, 4.2, 0, 7);
+    ctx.fill();
+  }
+  for (const e of enemies){
+    ctx.save();
+    ctx.translate(e.x, e.y);
+    ctx.rotate(Math.sin(e.ph * 1.4) * .14);
+    if (e.flash > 0){ ctx.globalAlpha = .45; }
+    ctx.drawImage(sprites.enemy.img, -e.w / 2, -e.h / 2, e.w, e.h);
+    ctx.restore();
+    if (e.boss){
+      const bw = e.w * .9, p = e.hp / e.maxhp;
+      ctx.fillStyle = 'rgba(52,64,92,.18)';
+      ctx.fillRect(e.x - bw / 2, e.y - e.h / 2 - 14, bw, 8);
+      ctx.fillStyle = '#ef5d6f';
+      ctx.fillRect(e.x - bw / 2, e.y - e.h / 2 - 14, bw * p, 8);
+    }
+  }
+  for (const d of drops){
+    ctx.save();
+    ctx.translate(d.x, d.y);
+    ctx.rotate(d.rot);
+    ctx.drawImage(sprites.loot.img, -d.w / 2, -d.h / 2, d.w, d.h);
+    ctx.restore();
+  }
+  /* ship */
+  ctx.save();
+  ctx.translate(ship.x, ship.y);
+  ctx.rotate((ship.tx - ship.x) * .0022);
+  if (ship.inv > 0) ctx.globalAlpha = (Math.sin(ship.inv * 24) > 0) ? .25 : .85;
+  ctx.drawImage(sprites.hero.img, -ship.w / 2, -ship.h / 2, ship.w, ship.h);
+  ctx.restore();
+
+  for (const p of parts){
+    ctx.globalAlpha = Math.max(0, p.t / .6);
+    ctx.fillStyle = p.c;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, 7);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+/* input */
+addEventListener('pointermove', e => { if (running) ship.tx = e.clientX; });
+addEventListener('pointerdown', e => { if (running) ship.tx = e.clientX; });
+addEventListener('keydown', e => {
+  if (!running) return;
+  if (e.code === 'ArrowLeft') ship.tx = Math.max(30, ship.tx - 48);
+  if (e.code === 'ArrowRight') ship.tx = Math.min(W - 30, ship.tx + 48);
+});
+
+/* ═════════ over ═════════ */
+function gameOver(){
+  $('ovScore').textContent = score;
+  $('ovWave').textContent = wave;
+  const newHi = score > hi;
+  if (newHi){ hi = score; localStorage.setItem('scribble-hi', hi); }
+  $('ovHi').textContent = hi;
+  $('newHi').style.display = newHi ? 'block' : 'none';
+  $('overTitle').textContent = newHi ? 'A masterpiece!!' : wave >= 8 ? 'Gallery-worthy.' : wave >= 4 ? 'Solid scribbling.' : 'Art was destroyed.';
+  $('gallery').innerHTML = [
+    ['hero', 'the hero · by you'],
+    ['enemy', 'the enemy · by you'],
+    ['loot', 'the loot · by you'],
+  ].map(([k, cap], i) => `<div class="frame" style="transform:rotate(${[-3, 2, -2][i]}deg)"><img src="${sprites[k].data}" alt=""><span class="cap">${cap}</span></div>`).join('');
+  show('over');
+  (newHi ? SFX.hi : SFX.over)();
+}
+$('againBtn').addEventListener('click', () => { SFX.click(); startGame(); });
+$('redrawBtn').addEventListener('click', () => { SFX.click(); beginPhase(0); });
+
+paletteUI();
+</script>
+</body>
+</html>
