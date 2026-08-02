@@ -60,6 +60,19 @@ header{position:sticky;top:0;z-index:30;background:rgba(15,15,15,.94);backdrop-f
 
 main{max-width:900px;margin:0 auto;padding-bottom:calc(env(safe-area-inset-bottom) + 40px)}
 
+/* channels strip */
+.chtitle{font-family:var(--disp);font-weight:700;font-size:14px;color:var(--dim);padding:14px 14px 2px}
+#channels{display:none;gap:14px;overflow-x:auto;padding:8px 14px 4px;scrollbar-width:none}
+#channels::-webkit-scrollbar{display:none}
+#channels.on{display:flex}
+.chan{flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:6px;width:74px;background:none}
+.chan .cav{width:62px;height:62px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  font-family:var(--disp);font-weight:800;color:#fff;font-size:20px;box-shadow:0 4px 12px rgba(0,0,0,.45);
+  border:2px solid rgba(255,255,255,.12);transition:transform .12s}
+.chan:hover .cav{transform:translateY(-2px)}
+.chan:active .cav{transform:scale(.9)}
+.chan .cn{font-size:10.5px;color:var(--dim);text-align:center;line-height:1.2;font-weight:500}
+
 /* player */
 #player{display:none;background:#000;position:sticky;top:0;z-index:15}
 #player.on{display:block;animation:pin .3s ease}
@@ -148,6 +161,8 @@ footer b{color:var(--dim)}
 <main>
   <div id="player"><div class="pwrap" id="pwrap"></div></div>
   <div class="pmeta" id="pmeta"></div>
+  <div class="chtitle" id="chtitle" style="display:none">channels to goob 🫡</div>
+  <div id="channels"></div>
   <div class="uptitle" id="uptitle" style="display:none"></div>
   <div id="list"></div>
   <div class="note" id="note"></div>
@@ -266,45 +281,94 @@ function gallopHorse(){
 }
 const HORSE_TOASTS = ['🐴 HORSE DETECTED — Lily approves', '🐴 a wild Lily\'s horse appears', '🐴 neigh means neigh', '🐴 certified horse content', '🐴 the horse has entered the chat'];
 
-/* ═════════ Piped API ═════════ */
-const INSTANCES = ['https://pipedapi.kavin.rocks','https://pipedapi-libre.kavin.rocks','https://api.piped.yt','https://pipedapi.adminforge.de','https://pipedapi.reallyaweso.me'];
-let goodInstance = null;
-async function piped(pathAndQuery){
-  const order = goodInstance ? [goodInstance, ...INSTANCES.filter(i => i !== goodInstance)] : INSTANCES;
-  for (const base of order){
-    try { const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 6500);
-      const r = await fetch(base + pathAndQuery, { signal: ctl.signal }); clearTimeout(to);
-      if (r.ok){ goodInstance = base; return await r.json(); } } catch (e){}
-  }
+/* ═════════ backends · Piped + Invidious, whichever answers ═════════ */
+const PIPED = ['https://pipedapi.kavin.rocks','https://pipedapi.adminforge.de','https://pipedapi.reallyaweso.me','https://api.piped.private.coffee','https://pipedapi.leptons.xyz','https://pipedapi.r4fo.com'];
+const INV = ['https://invidious.nerdvpn.de','https://inv.nadeko.net','https://invidious.jing.rocks','https://iv.ggtyler.dev','https://invidious.privacyredirect.com'];
+let goodPiped = null, goodInv = null;
+async function tryJSON(url, ms = 6000){
+  try { const c = new AbortController(); const to = setTimeout(() => c.abort(), ms);
+    const r = await fetch(url, { signal: c.signal }); clearTimeout(to);
+    if (r.ok) return await r.json(); } catch (e){}
   return null;
 }
+const ord = (good, list) => good ? [good, ...list.filter(x => x !== good)] : list;
 const idFrom = u => { const m = (u || '').match(/[?&]v=([\w-]{6,})/) || (u || '').match(/([\w-]{11})/); return m ? m[1] : ''; };
-function mapItem(it){
+function mapItem(it){    // Piped shape
   const id = idFrom(it.url || it.videoId || ''); if (!id) return null;
   return { id, title: it.title || 'Untitled', channel: it.uploaderName || it.uploader || 'Unknown',
     thumb: it.thumbnail || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`, duration: it.duration || 0, views: it.views || 0 };
 }
+function mapInv(it){     // Invidious shape
+  const id = it.videoId; if (!id) return null;
+  const th = (it.videoThumbnails && (it.videoThumbnails.find(t => /hqdefault|high/i.test((t.quality || '') + (t.url || ''))) || it.videoThumbnails[0]));
+  return { id, title: it.title || 'Untitled', channel: it.author || 'Unknown',
+    thumb: (th && th.url) || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`, duration: it.lengthSeconds || 0, views: it.viewCount || 0 };
+}
+async function searchVideos(q){
+  for (const b of ord(goodPiped, PIPED)){
+    const j = await tryJSON(b + '/search?q=' + encodeURIComponent(q) + '&filter=videos');
+    const items = j && (j.items || j);
+    if (Array.isArray(items)){ const v = items.filter(x => x.type ? /stream/i.test(x.type) : true).map(mapItem).filter(Boolean); if (v.length){ goodPiped = b; return v; } }
+  }
+  for (const b of ord(goodInv, INV)){
+    const j = await tryJSON(b + '/api/v1/search?q=' + encodeURIComponent(q) + '&type=video');
+    if (Array.isArray(j)){ const v = j.filter(x => x.videoId).map(mapInv).filter(Boolean); if (v.length){ goodInv = b; return v; } }
+  }
+  return null;
+}
+async function trendingVideos(){
+  for (const b of ord(goodPiped, PIPED)){
+    const j = await tryJSON(b + '/trending?region=US');
+    const items = Array.isArray(j) ? j : (j && j.items);
+    if (Array.isArray(items)){ const v = items.map(mapItem).filter(Boolean); if (v.length){ goodPiped = b; return v; } }
+  }
+  for (const b of ord(goodInv, INV)){
+    const j = await tryJSON(b + '/api/v1/trending?region=US');
+    if (Array.isArray(j)){ const v = j.map(mapInv).filter(Boolean); if (v.length){ goodInv = b; return v; } }
+  }
+  return null;
+}
 const fmtDur = s => { if (!s || s < 0) return ''; const h = s/3600|0, m = (s%3600)/60|0, x = s%60|0; return (h ? h+':'+String(m).padStart(2,'0') : m)+':'+String(x).padStart(2,'0'); };
 const fmtViews = v => { if (!v) return ''; if (v>=1e9) return (v/1e9).toFixed(1)+'B goobs'; if (v>=1e6) return (v/1e6).toFixed(1)+'M goobs'; if (v>=1e3) return (v/1e3).toFixed(0)+'K goobs'; return v+' goobs'; };
 
-/* ═════════ fallback catalog ═════════ */
+/* ═════════ fallback catalog · real, famous, embeddable ═════════
+   Plays even when both API backends are down. Curated top-viewed
+   music/viral/kids videos with stable IDs. */
 const FALLBACK = [
   ['dQw4w9WgXcQ','Rick Astley - Never Gonna Give You Up','Rick Astley',213,1600000000],
   ['9bZkp7q19f0','PSY - GANGNAM STYLE','officialpsy',253,5200000000],
   ['kJQP7kiw5Fk','Luis Fonsi - Despacito ft. Daddy Yankee','Luis Fonsi',282,8500000000],
+  ['XqZsoesa55w','Baby Shark Dance','Pinkfong Baby Shark',136,15000000000],
   ['fJ9rUzIMcZQ','Queen - Bohemian Rhapsody','Queen Official',355,1800000000],
-  ['OPf0YbXqDm0','Mark Ronson - Uptown Funk ft. Bruno Mars','Mark Ronson',270,5000000000],
+  ['OPf0YbXqDm0','Mark Ronson - Uptown Funk ft. Bruno Mars','Mark Ronson',270,5100000000],
   ['JGwWNGJdvx8','Ed Sheeran - Shape of You','Ed Sheeran',264,6200000000],
   ['RgKAFK5djSk','Wiz Khalifa - See You Again ft. Charlie Puth','Wiz Khalifa',237,6300000000],
   ['CevxZvSJLk8','Katy Perry - Roar','Katy Perry',269,4000000000],
-  ['hT_nvWreIhg','OneRepublic - Counting Stars','OneRepublic',257,4300000000],
-  ['YQHsXMglC9A','Adele - Hello','Adele',367,3300000000],
-  ['2Vv-BfVoq4g','Ed Sheeran - Perfect','Ed Sheeran',275,3900000000],
-  ['e-ORhEE9VVg','Taylor Swift - Blank Space','Taylor Swift',271,3400000000],
-  ['lWA2pjMjpBs','Katy Perry - Dark Horse ft. Juicy J','Katy Perry',264,3600000000],
-  ['09R8_2nJtjg','Maroon 5 - Sugar','Maroon 5',302,4000000000],
-  ['pRpeEdMmmQ0','Shakira - Waka Waka','Shakira',211,3600000000],
-  ['SlPhMPnQ58k','Maroon 5 - Memories','Maroon 5',200,900000000],
+  ['hT_nvWreIhg','OneRepublic - Counting Stars','OneRepublic',257,4400000000],
+  ['YQHsXMglC9A','Adele - Hello','Adele',367,3400000000],
+  ['2Vv-BfVoq4g','Ed Sheeran - Perfect','Ed Sheeran',275,4000000000],
+  ['e-ORhEE9VVg','Taylor Swift - Blank Space','Taylor Swift',271,3500000000],
+  ['lWA2pjMjpBs','Katy Perry - Dark Horse ft. Juicy J','Katy Perry',264,3700000000],
+  ['09R8_2nJtjg','Maroon 5 - Sugar','Maroon 5',302,4100000000],
+  ['pRpeEdMmmQ0','Shakira - Waka Waka (This Time for Africa)','Shakira',211,3700000000],
+  ['SlPhMPnQ58k','Maroon 5 - Memories','Maroon 5',200,920000000],
+  ['lp-EO5I60KA','Ed Sheeran - Thinking Out Loud','Ed Sheeran',281,3700000000],
+  ['60ItHLz5WEA','Alan Walker - Faded','Alan Walker',212,3900000000],
+  ['450p7goxZqg','John Legend - All of Me','John Legend',300,2900000000],
+  ['nfWlot6h_JM','Taylor Swift - Shake It Off','Taylor Swift',242,3600000000],
+  ['KQ6zr6kCPj8','LMFAO - Party Rock Anthem','LMFAOVEVO',263,2000000000],
+  ['fRh_vgS2dFE','Justin Bieber - Sorry','Justin Bieber',221,3800000000],
+  ['kffacxfA7G4','Justin Bieber - Baby ft. Ludacris','Justin Bieber',225,3200000000],
+  ['QGJuMBdaqIw','Katy Perry - Firework','Katy Perry',227,1800000000],
+  ['hLQl3WQQoQ0','Adele - Someone Like You','Adele',285,2200000000],
+  ['ktvTqknDobU','Imagine Dragons - Radioactive','ImagineDragons',224,1500000000],
+  ['7wtfhZwyrcc','Imagine Dragons - Believer','ImagineDragons',204,2100000000],
+  ['kXYiU_JCYtU','Linkin Park - Numb','Linkin Park',188,2000000000],
+  ['eVTXPUF4Oz4','Linkin Park - In The End','Linkin Park',217,1900000000],
+  ['1w7OgIMMRc4',"Guns N' Roses - Sweet Child O' Mine",'Guns N Roses',356,1600000000],
+  ['hTWKbfoikeg','Nirvana - Smells Like Teen Spirit','Nirvana',279,1700000000],
+  ['djV11Xbc914','a-ha - Take On Me','a-ha',225,1900000000],
+  ['y6120QOlsfU','Darude - Sandstorm','Darude',235,270000000],
 ];
 const fbVideos = () => FALLBACK.map(f => ({ id:f[0], title:f[1], channel:f[2], thumb:`https://i.ytimg.com/vi/${f[0]}/hqdefault.jpg`, duration:f[3], views:f[4] }));
 function fbSearch(q){ const s = q.toLowerCase(); const hits = fbVideos().filter(v => (v.title+' '+v.channel).toLowerCase().includes(s)); return hits.length ? hits : fbVideos(); }
@@ -325,13 +389,27 @@ const EMPTY = [['nothing. nada. zilch. 🫥','youGoob searched every tube and fo
 function hashStr(s){ let h = 2166136261; for (let i = 0; i < s.length; i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0); }
 const isHorse = s => /\bhorse|pony|equestrian|equine|stallion|mare|foal/i.test(s || '');
 
+/* featured channels — one tap = a real search for that creator */
+const CREATORS = [
+  ['Moriah Elizabeth','#ff6ba8'], ['Mark Rober','#4da3ff'], ['Kurzgesagt','#ffb020'], ['Veritasium','#22c07a'],
+  ['SciShow','#4da3ff'], ['Vsauce','#ff0040'], ['Steve Mould','#b79bff'], ['MinutePhysics','#ffb020'],
+  ['NileRed','#22c07a'], ['Physics Girl','#ff6ba8'], ['MrBeast','#ff0040'], ['Lena','#ff6ba8'], ['Lana','#b79bff'],
+];
+const chanInit = n => n.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
+
 /* ═════════ state ═════════ */
-const CHIPS = ['Trending','Horses 🐴','Surprise 🎲','Music','Gaming','Comedy','Live','Learning','Sports','News','History'];
+const CHIPS = ['Trending','Science 🔬','Moriah Elizabeth','Lena','Lana','Horses 🐴','Surprise 🎲','Music','Kids','Gaming','Comedy','Learning','News','History'];
 let mode = 'browse', results = [], current = null, activeChip = 'Trending';
 let history = JSON.parse(localStorage.getItem('yougoob-hist') || '[]');
 const initials = s => (s || '?').replace(/[^A-Za-z0-9 ]/g,'').split(' ').filter(Boolean)[0]?.[0]?.toUpperCase() || '?';
 
 function toast(msg){ const t = $('toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('on'), 2200); }
+
+function renderChannels(){
+  $('channels').innerHTML = CREATORS.map(c => `<button class="chan" data-q="${c[0]}"><div class="cav" style="background:${c[1]}">${chanInit(c[0])}</div><div class="cn">${c[0]}</div></button>`).join('');
+  $('channels').querySelectorAll('.chan').forEach(b => b.addEventListener('click', () => { SFX.pop(); $('search').value = ''; $('clr').style.display = 'none'; doSearch(b.dataset.q); }));
+}
+function showChannels(on){ $('channels').classList.toggle('on', on); $('chtitle').style.display = on ? 'block' : 'none'; }
 
 function renderChips(){
   $('chips').innerHTML = CHIPS.filter(c => c !== 'History' || history.length).map(c => {
@@ -381,27 +459,27 @@ function renderList(vids, upNext){
 }
 function skeletons(){ $('list').innerHTML = `<div class="loadmsg">${pick(LOADING)}</div>` + Array.from({ length: 6 }, () => `<div class="skel"><div class="sh"></div></div>`).join(''); $('uptitle').style.display = 'none'; }
 
+const cleanChip = c => c.replace(/[^ -~]/g, '').trim();     // strip emoji → search query
+function shyNote(n){ $('note').textContent = `the tubes are being shy 🙈 · here are ${n} certified goobs you can still watch`; }
+
 async function load(chip){
-  mode = 'browse'; setChrome(); renderChips(); skeletons(); $('note').textContent = '';
-  const q = chip === 'Trending' ? '' : chip;
-  let vids = [];
-  if (!q){ const j = await piped('/trending?region=US'); vids = (Array.isArray(j) ? j : (j && j.items) || []).map(mapItem).filter(Boolean); }
-  else { const j = await piped('/search?q=' + encodeURIComponent(q + ' videos') + '&filter=videos'); const items = (j && (j.items || j)) || [];
-    vids = (Array.isArray(items) ? items : []).filter(x => (x.type ? /stream/i.test(x.type) : true)).map(mapItem).filter(Boolean); }
-  if (!vids.length){ vids = q ? fbSearch(q) : fbVideos(); $('note').textContent = "couldn't reach the tubes · showing youGoob classics"; }
+  mode = 'browse'; setChrome(); renderChips(); showChannels(chip === 'Trending'); skeletons(); $('note').textContent = '';
+  const q = chip === 'Trending' ? '' : cleanChip(chip);
+  if (isHorse(q)) gallopHorse();
+  let vids = q ? await searchVideos(q) : await trendingVideos();
+  if (!vids || !vids.length){ vids = q ? fbSearch(q) : fbVideos(); shyNote(vids.length); }
   results = vids; renderList(vids, false);
 }
 async function doSearch(q){
-  activeChip = ''; renderChips(); mode = 'browse'; setChrome(); skeletons(); $('note').textContent = '';
+  activeChip = ''; renderChips(); showChannels(false); mode = 'browse'; setChrome(); skeletons(); $('note').textContent = '';
   if (isHorse(q)) gallopHorse();
-  const j = await piped('/search?q=' + encodeURIComponent(q) + '&filter=videos'); const items = (j && (j.items || j)) || [];
-  let vids = (Array.isArray(items) ? items : []).filter(x => (x.type ? /stream/i.test(x.type) : true)).map(mapItem).filter(Boolean);
-  if (!vids.length){ vids = fbSearch(q); $('note').textContent = "search couldn't reach the tubes · showing close-ish classics"; }
+  let vids = await searchVideos(q);
+  if (!vids || !vids.length){ vids = fbSearch(q); shyNote(vids.length); }
   results = vids; renderList(vids, false);
 }
 
 function openVideo(v){
-  current = v; mode = 'watch'; setChrome();
+  current = v; mode = 'watch'; setChrome(); showChannels(false);
   history = [v, ...history.filter(h => h.id !== v.id)].slice(0, 30);
   localStorage.setItem('yougoob-hist', JSON.stringify(history));
   toast(`▶ brought to you by ${pick(SPONSORS)}`);
@@ -431,7 +509,7 @@ function openVideo(v){
 }
 
 function showHistory(){
-  mode = 'browse'; setChrome(); renderChips(); $('note').textContent = '';
+  mode = 'browse'; setChrome(); renderChips(); showChannels(false); $('note').textContent = '';
   if (!history.length){ $('list').innerHTML = `<div class="msg"><div class="big">no history yet 🍿</div>go watch something questionable.</div>`; $('uptitle').style.display = 'none'; return; }
   results = history.slice(); renderList(history, false);
 }
@@ -441,7 +519,7 @@ function setChrome(){
   $('chips').style.display = watch ? 'none' : 'flex';
   if (!watch){ $('player').classList.remove('on'); $('pmeta').classList.remove('on'); $('pwrap').innerHTML = ''; }
 }
-function goBrowse(){ mode = 'browse'; current = null; setChrome(); renderList(results.length ? results : fbVideos(), false); window.scrollTo({ top: 0 }); }
+function goBrowse(){ mode = 'browse'; current = null; setChrome(); showChannels(false); renderList(results.length ? results : fbVideos(), false); window.scrollTo({ top: 0 }); }
 
 /* ═════════ events ═════════ */
 $('back').addEventListener('click', () => { SFX.blip(); goBrowse(); });
@@ -458,6 +536,7 @@ let goobers = 3400 + (hashStr(location.href) % 900);
 setInterval(() => { goobers += (Math.random() * 12 | 0) - 5; $('ticker').textContent = `🟢 ${goobers.toLocaleString()} goobers online right now (probably)`; }, 1400);
 $('ticker').textContent = `🟢 ${goobers.toLocaleString()} goobers online right now (probably)`;
 
+renderChannels();
 renderChips();
 load('Trending');
 setTimeout(() => toast(`welcome, goober #${(hashStr(location.href + Date.now() % 1e6) % 9000 + 1000)} 🫡`), 700);
