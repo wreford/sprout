@@ -32,8 +32,15 @@ button{font-family:var(--disp);cursor:pointer;border:none;background:none;color:
 @keyframes toastUp{0%{transform:translate(-50%,14px);opacity:0}15%{transform:translate(-50%,0);opacity:1}85%{transform:translate(-50%,0);opacity:1}100%{transform:translate(-50%,-12px);opacity:0}}
 @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-9px)}50%{transform:translateX(8px)}75%{transform:translateX(-5px)}}
 
-.screen{position:fixed;inset:0;z-index:5;display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:22px;text-align:center}
+.screen{
+  position:fixed;inset:0;z-index:5;display:none;flex-direction:column;align-items:center;justify-content:center;
+  gap:14px;padding:22px 22px calc(env(safe-area-inset-bottom) + 26px);text-align:center;overflow-y:auto
+}
 .screen.on{display:flex}
+/* the draw screen stacks from the top and stays reachable under
+   Safari's bottom bar — never center-clipped on short viewports */
+#draw{justify-content:flex-start;gap:9px;padding:max(12px,env(safe-area-inset-top)) 16px calc(env(safe-area-inset-bottom) + 110px)}
+#draw > *{flex-shrink:0}
 
 .kick{font-weight:800;font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-soft)}
 h1.logo{font-family:var(--hand);font-size:54px;line-height:.95;transform:rotate(-2deg)}
@@ -56,8 +63,8 @@ h1.logo .u{text-decoration:underline wavy var(--red) 4px;text-underline-offset:8
   font-weight:800;font-size:13px;letter-spacing:.12em;color:#fff;background:var(--accent,#ef5d6f);
   padding:5px 16px;border-radius:999px;text-transform:uppercase
 }
-#drawTitle{font-family:var(--hand);font-size:38px;line-height:1;transform:rotate(-1.5deg)}
-#drawHint{font-family:var(--hand);font-size:18px;color:var(--ink-soft);margin-top:-6px}
+#drawTitle{font-family:var(--hand);font-size:clamp(26px,7.5vw,38px);line-height:1;transform:rotate(-1.5deg)}
+#drawHint{font-family:var(--hand);font-size:clamp(15px,4.4vw,18px);color:var(--ink-soft);margin-top:-4px}
 #padWrap{
   position:relative;background:#fff;border-radius:18px;padding:8px;
   box-shadow:0 4px 0 rgba(52,64,92,.12),0 16px 34px rgba(52,64,92,.16);
@@ -71,23 +78,23 @@ h1.logo .u{text-decoration:underline wavy var(--red) 4px;text-underline-offset:8
     #fff;
   background-size:22px 22px
 }
-.toolrow{display:flex;gap:8px;align-items:center;justify-content:center;flex-wrap:wrap}
+.toolrow{display:flex;gap:6px;align-items:center;justify-content:center;flex-wrap:wrap}
 .swatch{
-  width:34px;height:34px;border-radius:50%;border:3px solid transparent;
+  width:30px;height:30px;border-radius:50%;border:3px solid transparent;
   box-shadow:inset 0 -3px 0 rgba(0,0,0,.15);transition:transform .12s
 }
 .swatch.onSel{border-color:var(--ink);transform:scale(1.18)}
 .swatch.eraser{background:#fff;border:2px dashed var(--ink-soft);font-size:15px;display:flex;align-items:center;justify-content:center}
 .swatch.eraser.onSel{border:3px solid var(--ink)}
 .sizebtn{
-  width:38px;height:38px;border-radius:12px;background:#fff;box-shadow:0 2px 0 rgba(52,64,92,.15);
+  width:34px;height:34px;border-radius:11px;background:#fff;box-shadow:0 2px 0 rgba(52,64,92,.15);
   display:flex;align-items:center;justify-content:center
 }
 .sizebtn.onSel{background:var(--ink)}
 .sizebtn i{border-radius:50%;background:var(--ink);display:block}
 .sizebtn.onSel i{background:#fff}
 .toolbtn{
-  font-weight:800;font-size:14px;padding:9px 16px;border-radius:12px;background:#fff;
+  font-weight:800;font-size:13px;padding:8px 12px;border-radius:11px;background:#fff;
   box-shadow:0 2px 0 rgba(52,64,92,.15);color:var(--ink)
 }
 .toolbtn:active{transform:translateY(2px);box-shadow:none}
@@ -332,11 +339,24 @@ let curStroke = null;
 let brush = { color: COLORS[0], size: 11, erase: false };
 const sprites = {};                  // key -> {img(canvas), w, h, colors[], data(dataURL)}
 
+function applyPad(s){ pad.style.width = s + 'px'; pad.style.height = s + 'px'; }
 function sizePad(){
-  const s = Math.min(window.innerWidth - 56, window.innerHeight * .46, 380);
-  pad.style.width = s + 'px'; pad.style.height = s + 'px';
+  /* first guess from the VISIBLE viewport (Safari's bars eat real space)… */
+  const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+  let s = Math.max(200, Math.min(window.innerWidth - 44, vh - 300, 380));
+  applyPad(s);
+  /* …then measure: if the draw screen still overflows (wrapped tool
+     rows, small phones), the pad gives back exactly the overflow */
+  requestAnimationFrame(() => {
+    const scr = document.getElementById('draw');
+    if (!scr.classList.contains('on')) return;
+    const over = scr.scrollHeight - scr.clientHeight;
+    if (over > 2) applyPad(Math.max(200, s - over - 8));
+  });
 }
-sizePad(); addEventListener('resize', sizePad);
+sizePad();
+addEventListener('resize', sizePad);
+if (window.visualViewport) window.visualViewport.addEventListener('resize', sizePad);
 
 function paletteUI(){
   $('palette').innerHTML = COLORS.map(c =>
@@ -527,6 +547,7 @@ function beginPhase(i){
   $('houseRule').textContent = i === 0 ? HOUSE_RULES[0] : HOUSE_RULES[(Math.random() * HOUSE_RULES.length) | 0];
   resetPad();
   show('draw');
+  sizePad();
 }
 function beginMidDraw(kind){
   midDrawKind = kind;
@@ -544,6 +565,7 @@ function beginMidDraw(kind){
   $('houseRule').textContent = HOUSE_RULES[(Math.random() * HOUSE_RULES.length) | 0];
   resetPad();
   show('draw');
+  sizePad();
 }
 
 /* sprite from pad: trim to content, keep colors for particles */
