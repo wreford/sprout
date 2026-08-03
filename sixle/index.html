@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f7f6f3">
+<meta name="description" content="Sixle — the six-letter word of the day. Six letters, six tries, one word a day.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23f7f6f3'/%3E%3Ctext x='3' y='23' font-family='sans-serif' font-size='17' font-weight='800' fill='%232d4a6e'%3ES%3C/text%3E%3Ctext x='13' y='23' font-family='sans-serif' font-size='17' font-weight='800' fill='%23d4a843'%3Ex%3C/text%3E%3Ccircle cx='24' cy='21' r='2.4' fill='%23b52d7d'/%3E%3Ccircle cx='29' cy='21' r='2.4' fill='%2317999d'/%3E%3C/svg%3E">
+<title>Sixle — six letter wordle</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* ── palette · lifted from the Sixle logo ── */
+  :root {
+    --navy: #2d4a6e;        /* S */
+    --sage: #94b897;        /* i */
+    --gold: #d4a843;        /* x */
+    --gold-deep: #b18a2e;
+    --coral: #ee7452;       /* l */
+    --coral-deep: #cf5a3a;
+    --purple: #9a7ec6;      /* e */
+    --teal: #17999d;        /* e */
+    --teal-deep: #0f7e82;
+    --magenta: #b52d7d;     /* dot */
+    --bg: #f7f6f3;
+    --ink: #2d3a4e;
+    --sub: #7b869a;
+    --tile-border: #d9d6cf;
+    --tile-empty: #ffffff;
+    --absent: #9aa0ad;
+    --absent-deep: #7d8390;
+    --key-bg: #ffffff;
+    --key-ink: #2d3a4e;
+    --key-shadow: rgba(45, 74, 110, .16);
+    --card: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #151a22;
+      --ink: #eef1f6;
+      --sub: #8d99ad;
+      --tile-border: #34404f;
+      --tile-empty: #1d242e;
+      --absent: #45505e;
+      --absent-deep: #37414d;
+      --key-bg: #27303c;
+      --key-ink: #eef1f6;
+      --key-shadow: rgba(0, 0, 0, .45);
+      --card: #202834;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Fredoka", ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
+    min-height: 100dvh;
+    user-select: none; -webkit-user-select: none;
+  }
+  button { font: inherit; border: none; background: none; color: inherit; cursor: pointer; }
+
+  .app {
+    max-width: 480px; margin: 0 auto;
+    padding: 10px 12px calc(14px + env(safe-area-inset-bottom));
+    display: flex; flex-direction: column; min-height: 100dvh; gap: 8px;
+  }
+
+  /* ── header · logo-style wordmark ── */
+  header { display: flex; align-items: center; gap: 10px; padding: 6px 2px 2px; }
+  .brand { line-height: 1; }
+  .wordmark { font-size: 30px; font-weight: 700; letter-spacing: .5px; }
+  .wordmark .lS { color: var(--navy); }
+  .wordmark .lI { color: var(--sage); }
+  .wordmark .lX { color: var(--gold); }
+  .wordmark .lL { color: var(--coral); }
+  .wordmark .lE { color: var(--purple); }
+  .wordmark .d1 { color: var(--magenta); }
+  .wordmark .d2 { color: var(--teal); }
+  .wordmark .d3 { color: var(--navy); }
+  .tag {
+    font-size: 9px; font-weight: 600; letter-spacing: .28em; text-transform: uppercase;
+    color: var(--sub); margin-top: 3px;
+  }
+  .day-pill {
+    font-size: 12.5px; font-weight: 600; color: #fff;
+    background: var(--magenta); border-radius: 999px; padding: 4px 11px;
+  }
+  .spacer { flex: 1; }
+  .icon-btn {
+    font-weight: 700; font-size: 16px; width: 38px; height: 38px;
+    border-radius: 14px; background: var(--key-bg); color: var(--key-ink);
+    box-shadow: 0 3px 0 var(--key-shadow);
+    transition: transform .08s ease;
+  }
+  .icon-btn:active { transform: translateY(2px) scale(.94); box-shadow: 0 1px 0 var(--key-shadow); }
+
+  /* ── board ── */
+  .board-wrap { flex: 1; display: grid; place-items: center; min-height: 0; }
+  .board { display: grid; grid-template-rows: repeat(6, 1fr); gap: 7px; width: min(100%, 380px); }
+  .row { display: grid; grid-template-columns: repeat(6, 1fr); gap: 7px; }
+  .row.shake { animation: shake .45s; }
+  @keyframes shake {
+    10%, 90% { transform: translateX(-2px); }
+    20%, 80% { transform: translateX(4px); }
+    30%, 50%, 70% { transform: translateX(-6px); }
+    40%, 60% { transform: translateX(6px); }
+  }
+  .tile {
+    aspect-ratio: 1; display: grid; place-items: center;
+    font-size: clamp(19px, 6vw, 28px); font-weight: 700; text-transform: uppercase;
+    border-radius: 15px; background: var(--tile-empty);
+    border: 2.5px solid var(--tile-border); color: var(--ink);
+    transition: border-color .1s;
+  }
+  .tile.filled { border-color: var(--absent); animation: plop .18s ease; }
+  @keyframes plop { 0% { transform: scale(.85); } 55% { transform: scale(1.1); } 100% { transform: scale(1); } }
+  .tile.reveal { animation: flip .55s cubic-bezier(.34,1.56,.64,1) both; }
+  @keyframes flip {
+    0%   { transform: scaleY(1); }
+    35%  { transform: scaleY(.05) scaleX(1.1); }
+    65%  { transform: scaleY(1.16) scaleX(.94); }
+    82%  { transform: scaleY(.95) scaleX(1.03); }
+    100% { transform: scaleY(1); }
+  }
+  .tile.correct { background: var(--teal);   border-color: var(--teal-deep);   color: #fff; box-shadow: inset 0 -4px 0 var(--teal-deep); }
+  .tile.present { background: var(--gold);   border-color: var(--gold-deep);   color: #fff; box-shadow: inset 0 -4px 0 var(--gold-deep); }
+  .tile.absent  { background: var(--absent); border-color: var(--absent-deep); color: #fff; box-shadow: inset 0 -4px 0 var(--absent-deep); }
+  .tile.win { animation: bounce .6s ease both; }
+  @keyframes bounce {
+    0%,100% { transform: translateY(0); }
+    35% { transform: translateY(-14px) scaleY(1.08); }
+    60% { transform: translateY(2px) scaleY(.94); }
+    80% { transform: translateY(-4px); }
+  }
+
+  /* ── keyboard ── */
+  .keyboard { display: flex; flex-direction: column; gap: 7px; }
+  .krow { display: flex; gap: 5px; justify-content: center; }
+  .key {
+    font-weight: 600; font-size: 15px; text-transform: uppercase;
+    flex: 1; max-width: 44px; height: 54px; border-radius: 13px;
+    background: var(--key-bg); color: var(--key-ink);
+    box-shadow: 0 3.5px 0 var(--key-shadow);
+    transition: transform .07s ease, background .25s, color .25s;
+    touch-action: manipulation;
+  }
+  .key:active { transform: translateY(2.5px) scale(.93); box-shadow: 0 1px 0 var(--key-shadow); }
+  .key.wide { max-width: 70px; flex: 1.6; font-size: 12px; }
+  .key.enter { background: var(--teal); color: #fff; box-shadow: 0 3.5px 0 var(--teal-deep); }
+  .key.backk { background: var(--coral); color: #fff; box-shadow: 0 3.5px 0 var(--coral-deep); }
+  .key.correct { background: var(--teal); color: #fff; box-shadow: 0 3.5px 0 var(--teal-deep); }
+  .key.present { background: var(--gold); color: #fff; box-shadow: 0 3.5px 0 var(--gold-deep); }
+  .key.absent  { background: var(--absent); color: #fff; box-shadow: 0 3.5px 0 var(--absent-deep); opacity: .7; }
+
+  /* ── dialogs ── */
+  .overlay {
+    position: fixed; inset: 0; z-index: 40; display: none;
+    align-items: center; justify-content: center;
+    background: rgba(20, 26, 36, .45); backdrop-filter: blur(4px);
+    padding: 18px;
+  }
+  .overlay.open { display: flex; }
+  .dlg {
+    width: min(92vw, 380px); max-height: 86dvh; overflow: auto;
+    background: var(--card); color: var(--ink);
+    border-radius: 22px; padding: 22px;
+    box-shadow: 0 20px 60px rgba(0,0,0,.35);
+    animation: dlgIn .28s cubic-bezier(.34,1.56,.64,1);
+  }
+  @keyframes dlgIn { 0% { transform: scale(.8) translateY(14px); opacity: 0; } 100% { transform: none; opacity: 1; } }
+  .dlg-inner { display: flex; flex-direction: column; gap: 13px; text-align: center; }
+  .dlg-inner h2 { font-size: 24px; }
+  .dlg-inner p { font-size: 14.5px; line-height: 1.5; }
+  .answer-reveal {
+    font-size: 26px; font-weight: 700; letter-spacing: 6px; text-transform: uppercase;
+    color: var(--teal);
+  }
+  .dlg-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  .btn {
+    font-weight: 700; color: #fff; background: var(--teal);
+    border-radius: 999px; padding: 11px 24px;
+    box-shadow: 0 4px 0 var(--teal-deep);
+    transition: transform .08s;
+  }
+  .btn:active { transform: translateY(2px); box-shadow: 0 2px 0 var(--teal-deep); }
+  .btn.gold { background: var(--gold); box-shadow: 0 4px 0 var(--gold-deep); }
+  .btn.gold:active { box-shadow: 0 2px 0 var(--gold-deep); }
+  .btn.ghost { background: var(--key-bg); color: var(--key-ink); box-shadow: 0 4px 0 var(--key-shadow); }
+  .btn.ghost:active { box-shadow: 0 2px 0 var(--key-shadow); }
+  .mini-grid { font-size: 17px; line-height: 1.25; letter-spacing: 1px; }
+  .countdown { font-size: 13px; color: var(--sub); }
+  .countdown b { color: var(--ink); font-variant-numeric: tabular-nums; }
+
+  .rules { text-align: left; font-size: 14.5px; }
+  .rules .demo { display: flex; gap: 5px; margin: 8px 0; }
+  .rules .demo .tile { width: 40px; height: 40px; aspect-ratio: auto; font-size: 18px; border-radius: 11px; }
+
+  /* ── stats ── */
+  .statrow4 { display: flex; gap: 8px; }
+  .stat4 { flex: 1; background: var(--bg); border-radius: 14px; padding: 10px 4px; }
+  .stat4 .v { font-size: 22px; font-weight: 700; }
+  .stat4 .k { font-size: 9.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--sub); margin-top: 2px; }
+  .dist { display: flex; flex-direction: column; gap: 5px; text-align: left; }
+  .dist .drow { display: flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600; }
+  .dist .dn { width: 12px; color: var(--sub); }
+  .dist .dbar {
+    min-width: 22px; height: 20px; border-radius: 7px;
+    background: var(--absent); color: #fff; font-size: 12px; font-weight: 700;
+    display: flex; align-items: center; justify-content: flex-end; padding: 0 7px;
+    transition: width .5s cubic-bezier(.16,1,.3,1);
+  }
+  .dist .dbar.hot { background: var(--teal); }
+
+  /* ── toast ── */
+  #toast {
+    position: fixed; top: 16px; left: 50%;
+    transform: translateX(-50%) translateY(-90px);
+    background: var(--ink); color: var(--bg);
+    font-weight: 600; font-size: 14px; padding: 10px 20px; border-radius: 999px;
+    z-index: 99; transition: transform .3s cubic-bezier(.34,1.56,.64,1);
+    pointer-events: none; max-width: 90vw; text-align: center;
+  }
+  #toast.show { transform: translateX(-50%) translateY(0); }
+
+  /* ── confetti ── */
+  .confetti {
+    position: fixed; z-index: 60; width: 9px; height: 13px; border-radius: 2px; pointer-events: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tile, .row, .key, #toast, .dlg { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div class="brand">
+        <div class="wordmark"><span class="lS">S</span><span class="lI">i</span><span class="lX">x</span><span class="lL">l</span><span class="lE">e</span><span class="d1">.</span><span class="d2">.</span><span class="d3">.</span></div>
+        <div class="tag">Six letter wordle</div>
+      </div>
+      <span class="day-pill" id="dayPill">#—</span>
+      <div class="spacer"></div>
+      <button class="icon-btn" id="statsBtn" aria-label="Statistics">▤</button>
+      <button class="icon-btn" id="helpBtn" aria-label="How to play">?</button>
+    </header>
+
+    <div class="board-wrap">
+      <div class="board" id="board" role="grid" aria-label="Sixle board"></div>
+    </div>
+
+    <div class="keyboard" id="keyboard"></div>
+  </div>
+
+  <!-- end dialog -->
+  <div class="overlay" id="endOverlay">
+    <div class="dlg"><div class="dlg-inner">
+      <h2 id="endTitle">Nice!</h2>
+      <p id="endSub"></p>
+      <div class="answer-reveal" id="endWord"></div>
+      <div class="mini-grid" id="endGrid"></div>
+      <div class="statrow4" id="endStats"></div>
+      <div class="dlg-actions">
+        <button class="btn" id="shareBtn">Share result</button>
+        <button class="btn ghost" id="closeEndBtn">Close</button>
+      </div>
+      <p class="countdown" id="countdown"></p>
+    </div></div>
+  </div>
+
+  <!-- help dialog -->
+  <div class="overlay" id="helpOverlay">
+    <div class="dlg"><div class="dlg-inner rules">
+      <h2 style="text-align:center">How to play</h2>
+      <p>Guess the <b>six-letter word</b> in six tries. Every guess must be a real word — checked against a live dictionary.</p>
+      <div class="demo">
+        <div class="tile correct">S</div><div class="tile">P</div><div class="tile">R</div><div class="tile">O</div><div class="tile">U</div><div class="tile">T</div>
+      </div>
+      <p><b style="color:var(--teal)">Teal</b> — right letter, right spot.</p>
+      <div class="demo">
+        <div class="tile">P</div><div class="tile present">L</div><div class="tile">A</div><div class="tile">N</div><div class="tile">E</div><div class="tile">T</div>
+      </div>
+      <p><b style="color:var(--gold)">Gold</b> — in the word, wrong spot.</p>
+      <p>Slate means the letter isn't in the word. One new word every day at midnight.</p>
+      <div class="dlg-actions">
+        <button class="btn" id="closeHelpBtn">Got it</button>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- stats dialog -->
+  <div class="overlay" id="statsOverlay">
+    <div class="dlg"><div class="dlg-inner">
+      <h2>Statistics</h2>
+      <div class="statrow4" id="statsRow"></div>
+      <p style="font-weight:600;font-size:13px;color:var(--sub);letter-spacing:.08em;text-transform:uppercase">Guess distribution</p>
+      <div class="dist" id="distChart"></div>
+      <div class="dlg-actions">
+        <button class="btn ghost" id="closeStatsBtn">Close</button>
+      </div>
+    </div></div>
+  </div>
+
+  <div id="toast"></div>
+
+<script>
+(() => {
+  'use strict';
+  // ---------- answers (six letters, family-friendly) ----------
+  const ANSWERS = ("absorb accent across action active advice agency almost always amount animal answer anthem anyone appeal arctic around artist aspect assist attack author autumn bakery bamboo banana banner barrel basket battle beacon beauty become before behind belief better beyond bishop bitter blazer bounce branch breath breeze bridge bright broken bronze bubble bucket budget bullet bundle burden butter cactus camera campus canary candle cannon canvas canyon carbon career carrot castle cattle celery cement center cereal chance change charge cheese cherry choice chorus church cinema circle citrus clever client closet cloudy coffee column combat comedy common copper corner cosmic cotton county couple coupon course cousin coyote cradle crayon create credit crisis crunch custom dagger damage danger dazzle debate decade decide defend degree delete demand depart desert design desire detail device dinner direct divide doctor dollar domain donkey double dragon drawer driven during easily editor effect effort either eleven empire employ enable energy engine enough entire escape estate ethics exceed except expand expect expert export extend fabric falcon family famous farmer faucet fellow fierce figure filter finale finger finish flavor flight floral flower follow forest forget formal format fossil foster fourth freeze fridge friend frozen future galaxy gallon garage garden garlic gather gender gentle geyser ginger glance global glossy golden gospel gossip gotten gravel growth guitar hammer handle happen harbor hazard health heaven height helmet herald hidden hockey hollow hunger hunter icicle ignite impact import income indeed indoor infant inform injury insect inside intact intend invite island jacket jaguar jargon jersey jigsaw jockey jungle junior kernel kettle kidney kitten knight ladder lagoon laptop latest launch lawyer layout league legacy legend length lentil lesson letter likely liquid listen little lively lizard locker lonely lounge lumber luxury magnet makeup mammal manage manner mantle marble margin marine marker market master matter meadow medium mellow melody member memory mentor merger method middle mighty minute mirror mobile modern modest moment monkey mosaic mostly mother motion murmur muscle museum mystic napkin narrow nation native nature nearby nectar needle nephew nickel nimble nobody normal notice notion novice nozzle number nugget nutmeg object obtain occupy office offset onward orange orchid origin orphan outfit output oxygen oyster packet paddle palace pantry parade parent parrot pastel pastry patrol peanut pebble pencil people pepper period permit person phrase picnic pigeon pillow pirate pistol planet plasma please plenty pocket poetry police polish pollen ponder poster potato powder praise prefer pretty priest prince prison profit proper public puddle puppet purple pursue puzzle python quartz quiver rabbit racket radish raffle ragged rather ravine reason recall recent recipe record reduce reform refuge regard region relate relief remain remedy remind remote rental repair repeat report rescue resort result retail retain return reveal review reward rhythm ribbon riddle ripple rocket rotate rubber rugged runway saddle safari safety sailor salmon sample sandal satire savory scenic scheme school scrape screen script season second secret sector secure select senior sesame settle shadow shield shovel shower shrine signal silent silver simple singer single sister sketch slight smooth soccer socket sodium sonnet sorbet source speech sphere spider spiral spirit splash sponge spring sprout square squash stable staple static statue steady stereo sticky stitch stormy strand stream street stride strike string stroll strong studio subtle subway suburb summer summit sunset supper supply survey switch symbol syntax system tackle tailor talent target tavern temple tender tennis thread thrive throne ticket timber tissue toffee tomato tongue toward trader travel treaty tremor tribal trophy tunnel turkey turnip turtle tuxedo twelve twenty umpire unfold unique united unless update uphill upside urgent useful utmost vacuum valley vanity velvet vendor verify vessel victor violet violin virtue vision visual volume voyage waffle walnut wander wealth weekly willow window winner winter wisdom within wizard wonder wooden worthy yellow yogurt zenith zephyr zigzag zipper zombie").split(" ");
+
+  // ---------- daily word ----------
+  const EPOCH = new Date(2026, 0, 1);
+  const today = new Date();
+  const localMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const dayNum = Math.floor((localMidnight - EPOCH) / 86400000) + 1;
+  const idx = ((dayNum * 2654435761) >>> 0) % ANSWERS.length;
+  const ANSWER = ANSWERS[idx];
+  const ANSWER_SET = new Set(ANSWERS);
+  document.getElementById("dayPill").textContent = "#" + dayNum;
+
+  // ---------- state ----------
+  const ROWS = 6, COLS = 6;
+  let row = 0, col = 0, busy = false, over = false, won = false;
+  const guesses = [];
+  const marksHistory = [];
+  const keyState = {};
+  const dictCache = new Map();
+  const $ = id => document.getElementById(id);
+
+  // ---------- board ----------
+  const board = $("board");
+  const tiles = [];
+  for (let r = 0; r < ROWS; r++) {
+    const rowEl = document.createElement("div");
+    rowEl.className = "row";
+    const rowTiles = [];
+    for (let c = 0; c < COLS; c++) {
+      const t = document.createElement("div");
+      t.className = "tile";
+      rowEl.appendChild(t);
+      rowTiles.push(t);
+    }
+    board.appendChild(rowEl);
+    tiles.push(rowTiles);
+  }
+
+  // ---------- keyboard ----------
+  const layout = [
+    "qwertyuiop".split(""),
+    "asdfghjkl".split(""),
+    ["enter", ..."zxcvbnm".split(""), "back"]
+  ];
+  const keyEls = {};
+  const kb = $("keyboard");
+  layout.forEach(rowKeys => {
+    const kr = document.createElement("div");
+    kr.className = "krow";
+    rowKeys.forEach(k => {
+      const b = document.createElement("button");
+      b.className = "key" + (k === "enter" ? " wide enter" : k === "back" ? " wide backk" : "");
+      b.textContent = k === "back" ? "⌫" : k;
+      b.setAttribute("aria-label", k);
+      b.addEventListener("click", () => press(k));
+      kr.appendChild(b);
+      if (k.length === 1) keyEls[k] = b;
+    });
+    kb.appendChild(kr);
+  });
+
+  document.addEventListener("keydown", e => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const k = e.key.toLowerCase();
+    if (k === "enter") press("enter");
+    else if (k === "backspace") press("back");
+    else if (/^[a-z]$/.test(k)) press(k);
+  });
+
+  function press(k) {
+    if (busy || over) return;
+    if (k === "enter") { submit(); return; }
+    if (k === "back") {
+      if (col > 0) { col--; const t = tiles[row][col]; t.textContent = ""; t.classList.remove("filled"); }
+      return;
+    }
+    if (col < COLS) {
+      const t = tiles[row][col];
+      t.textContent = k;
+      t.classList.add("filled");
+      col++;
+    }
+  }
+
+  // ---------- dictionary (Datamuse, fail-open offline) ----------
+  async function isWord(w) {
+    if (ANSWER_SET.has(w)) return true;
+    if (dictCache.has(w)) return dictCache.get(w);
+    try {
+      const ctl = new AbortController();
+      const to = setTimeout(() => ctl.abort(), 4000);
+      const res = await fetch("https://api.datamuse.com/words?sp=" + w + "&max=5", { signal: ctl.signal });
+      clearTimeout(to);
+      const data = await res.json();
+      const ok = data.some(d => d.word === w);
+      dictCache.set(w, ok);
+      return ok;
+    } catch (e) {
+      return true;
+    }
+  }
+
+  // ---------- scoring ----------
+  function score(guess) {
+    const marks = new Array(COLS).fill("absent");
+    const counts = {};
+    for (let i = 0; i < COLS; i++) {
+      const a = ANSWER[i];
+      if (guess[i] === a) marks[i] = "correct";
+      else counts[a] = (counts[a] || 0) + 1;
+    }
+    for (let i = 0; i < COLS; i++) {
+      if (marks[i] === "correct") continue;
+      const g = guess[i];
+      if (counts[g] > 0) { marks[i] = "present"; counts[g]--; }
+    }
+    return marks;
+  }
+
+  function paintRow(r, guess, marks, animate) {
+    marks.forEach((m, i) => {
+      const t = tiles[r][i];
+      const apply = () => {
+        t.textContent = guess[i];
+        t.classList.add(m);
+        if (animate) t.classList.add("reveal");
+        const rank = { absent: 0, present: 1, correct: 2 };
+        if (!keyState[guess[i]] || rank[m] > rank[keyState[guess[i]]]) {
+          keyState[guess[i]] = m;
+          keyEls[guess[i]].classList.remove("correct", "present", "absent");
+          keyEls[guess[i]].classList.add(m);
+        }
+      };
+      animate ? setTimeout(apply, i * 220) : apply();
+    });
+  }
+
+  // ---------- persistence ----------
+  const STATE_KEY = "sixle-state";
+  function saveState() {
+    localStorage.setItem(STATE_KEY, JSON.stringify({ day: dayNum, guesses }));
+  }
+  function restoreState() {
+    let s = null;
+    try { s = JSON.parse(localStorage.getItem(STATE_KEY) || "null"); } catch (e) {}
+    if (!s || s.day !== dayNum || !Array.isArray(s.guesses)) return;
+    s.guesses.forEach(g => {
+      if (row >= ROWS || over) return;
+      const marks = score(g);
+      guesses.push(g); marksHistory.push(marks);
+      paintRow(row, g, marks, false);
+      if (g === ANSWER) { won = true; over = true; }
+      else if (row === ROWS - 1) { over = true; }
+      else row++;
+    });
+    if (over) setTimeout(() => finish(false), 350);
+  }
+
+  // ---------- stats ----------
+  const STATS_KEY = "sixle-stats";
+  function loadStats() {
+    try { return JSON.parse(localStorage.getItem(STATS_KEY) || "null") || {}; } catch (e) { return {}; }
+  }
+  function recordResult() {
+    const s = loadStats();
+    if (s.recordedDay === dayNum) return s;   // once per day
+    s.played = (s.played || 0) + 1;
+    s.dist = s.dist || [0, 0, 0, 0, 0, 0];
+    if (won) {
+      s.wins = (s.wins || 0) + 1;
+      s.dist[guesses.length - 1]++;
+      s.streak = (s.lastWinDay === dayNum - 1) ? (s.streak || 0) + 1 : 1;
+      s.maxStreak = Math.max(s.maxStreak || 0, s.streak);
+      s.lastWinDay = dayNum;
+    } else {
+      s.streak = 0;
+    }
+    s.recordedDay = dayNum;
+    localStorage.setItem(STATS_KEY, JSON.stringify(s));
+    return s;
+  }
+  function statCells(s) {
+    const winPct = s.played ? Math.round((s.wins || 0) / s.played * 100) : 0;
+    return [
+      [s.played || 0, "Played"], [winPct + "%", "Win rate"],
+      [s.streak || 0, "Streak"], [s.maxStreak || 0, "Best"],
+    ].map(x => `<div class="stat4"><div class="v">${x[0]}</div><div class="k">${x[1]}</div></div>`).join("");
+  }
+  function distChart(s) {
+    const dist = s.dist || [0, 0, 0, 0, 0, 0];
+    const max = Math.max(1, ...dist);
+    return dist.map((n, i) =>
+      `<div class="drow"><span class="dn">${i + 1}</span>
+        <div class="dbar ${won && over && guesses.length === i + 1 ? "hot" : ""}" style="width:${8 + (n / max) * 88}%">${n}</div>
+      </div>`).join("");
+  }
+
+  // ---------- submit ----------
+  async function submit() {
+    if (col < COLS) { rejectRow("Need six letters"); return; }
+    const guess = tiles[row].map(t => t.textContent).join("");
+    if (guesses.includes(guess)) { rejectRow("Already tried that one"); return; }
+    busy = true;
+    const ok = await isWord(guess);
+    if (!ok) { busy = false; rejectRow("Not in the dictionary"); return; }
+
+    const marks = score(guess);
+    guesses.push(guess);
+    marksHistory.push(marks);
+    saveState();
+    paintRow(row, guess, marks, true);
+
+    setTimeout(() => {
+      busy = false;
+      if (guess === ANSWER) {
+        won = true; over = true;
+        tiles[row].forEach((t, i) => setTimeout(() => t.classList.add("win"), i * 70));
+        confetti();
+        setTimeout(() => finish(true), 900);
+      } else if (row === ROWS - 1) {
+        over = true;
+        finish(true);
+      } else {
+        row++; col = 0;
+      }
+    }, COLS * 220 + 350);
+  }
+
+  function rejectRow(msg) {
+    const rowEl = board.children[row];
+    rowEl.classList.remove("shake");
+    void rowEl.offsetWidth;
+    rowEl.classList.add("shake");
+    toast(msg);
+  }
+
+  // ---------- confetti · logo palette ----------
+  function confetti() {
+    const hues = ["#2d4a6e", "#94b897", "#d4a843", "#ee7452", "#9a7ec6", "#17999d", "#b52d7d"];
+    for (let i = 0; i < 60; i++) {
+      const c = document.createElement("div");
+      c.className = "confetti";
+      c.style.cssText = `left:${(i * 61) % 100}vw;top:-3vh;background:${hues[i % hues.length]}`;
+      document.body.appendChild(c);
+      const drift = ((i * 37) % 40) - 20;
+      c.animate(
+        [{ transform: "translate(0,0) rotate(0)", opacity: 1 },
+         { transform: `translate(${drift}px, 108vh) rotate(${540 + (i % 5) * 120}deg)`, opacity: .9 }],
+        { duration: 2100 + (i % 10) * 160, delay: (i % 20) * 55, easing: "cubic-bezier(.2,.5,.6,1)", fill: "forwards" }
+      ).onfinish = () => c.remove();
+    }
+  }
+
+  // ---------- share ----------
+  const EMOJI = { correct: "🟦", present: "🟨", absent: "⬛" };
+  function shareText() {
+    const tries = won ? guesses.length : "X";
+    const grid = marksHistory.map(m => m.map(x => EMOJI[x]).join("")).join("\n");
+    return "Sixle #" + dayNum + " " + tries + "/6\n\n" + grid + "\n\ntaskiap.com/sixle";
+  }
+  async function doShare() {
+    const text = shareText();
+    if (navigator.share) {
+      try { await navigator.share({ text }); return; } catch (e) { if (e.name === "AbortError") return; }
+    }
+    try { await navigator.clipboard.writeText(text); toast("Copied to clipboard"); }
+    catch (e) { toast("Couldn't copy — long-press to select"); }
+  }
+
+  // ---------- dialogs ----------
+  const open = id => $(id).classList.add("open");
+  const close = id => $(id).classList.remove("open");
+  ["endOverlay", "helpOverlay", "statsOverlay"].forEach(id => {
+    $(id).addEventListener("click", e => { if (e.target === $(id)) close(id); });
+  });
+
+  let cdTimer = null;
+  function tickCountdown() {
+    const mid = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+    const ms = mid - new Date();
+    if (ms <= 0) { $("countdown").innerHTML = "New word is ready — refresh!"; return; }
+    const h = String(Math.floor(ms / 3600000)).padStart(2, "0");
+    const m = String(Math.floor(ms % 3600000 / 60000)).padStart(2, "0");
+    const s = String(Math.floor(ms % 60000 / 1000)).padStart(2, "0");
+    $("countdown").innerHTML = `New word in <b>${h}:${m}:${s}</b>`;
+  }
+
+  function finish(justEnded) {
+    const stats = recordResult();
+    $("endTitle").textContent = won
+      ? ["Genius", "Sharp", "Solid", "Nice", "Close one", "Phew"][guesses.length - 1]
+      : "Out of tries";
+    $("endSub").textContent = won ? "Got it in " + guesses.length + "/6." : "The word was:";
+    $("endWord").textContent = won ? "" : ANSWER;
+    $("endGrid").innerHTML = marksHistory.map(m => m.map(x => EMOJI[x]).join("")).join("<br>");
+    $("endStats").innerHTML = statCells(stats);
+    tickCountdown();
+    clearInterval(cdTimer);
+    cdTimer = setInterval(tickCountdown, 1000);
+    open("endOverlay");
+  }
+
+  $("shareBtn").addEventListener("click", doShare);
+  $("closeEndBtn").addEventListener("click", () => close("endOverlay"));
+  $("helpBtn").addEventListener("click", () => open("helpOverlay"));
+  $("closeHelpBtn").addEventListener("click", () => close("helpOverlay"));
+  $("statsBtn").addEventListener("click", () => {
+    const s = loadStats();
+    $("statsRow").innerHTML = statCells(s);
+    $("distChart").innerHTML = distChart(s);
+    open("statsOverlay");
+  });
+  $("closeStatsBtn").addEventListener("click", () => close("statsOverlay"));
+
+  // ---------- toast ----------
+  const tEl = $("toast");
+  let toastTimer;
+  function toast(msg) {
+    tEl.textContent = msg;
+    tEl.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => tEl.classList.remove("show"), 1800);
+  }
+
+  // ---------- first-run help + resume ----------
+  restoreState();
+  if (!localStorage.getItem("sixle-seen") && !guesses.length) {
+    localStorage.setItem("sixle-seen", "1");
+    setTimeout(() => open("helpOverlay"), 400);
+  }
+})();
+</script>
+</body>
+</html>
