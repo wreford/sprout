@@ -25,7 +25,11 @@ html,body{height:100%;overflow:hidden;user-select:none;-webkit-user-select:none;
 .kick{font-family:var(--mono);font-weight:800;font-size:10px;letter-spacing:.24em;color:var(--r);text-transform:uppercase}
 h1{font-weight:900;font-size:clamp(34px,10vw,58px);line-height:.95;letter-spacing:-.03em;text-transform:uppercase}
 h1 .z{color:var(--r)}
-.stripes{height:10px;background:repeating-linear-gradient(-55deg,var(--w) 0 14px,var(--k) 14px 28px)}
+.stripes{height:10px;background:repeating-linear-gradient(-55deg,var(--w) 0 14px,var(--k) 14px 28px);
+  background-size:200% 100%;animation:stripeMove 14s linear infinite}
+@keyframes stripeMove{to{background-position:-80px 0}}
+.page{animation:pageIn .28s cubic-bezier(.2,.9,.3,1)}
+@keyframes pageIn{from{opacity:0;transform:translateY(14px)}}
 .btn{display:block;width:100%;padding:15px 20px;border:2px solid var(--w);background:var(--w);color:var(--k);
   font-family:var(--disp);font-weight:900;font-size:15px;letter-spacing:.04em;text-transform:uppercase;cursor:pointer;min-height:54px}
 .btn:active{transform:translate(2px,2px)}
@@ -52,6 +56,42 @@ h1 .z{color:var(--r)}
 #foeStats{font-family:var(--mono);font-size:10px;color:#ffffff88;margin-top:4px;letter-spacing:.06em}
 .shake{animation:shk .3s}
 @keyframes shk{25%{transform:translateX(-7px)}75%{transform:translateX(7px)}}
+.hitflash::after{content:'';position:absolute;inset:0;background:var(--r);animation:hflash .28s;pointer-events:none}
+@keyframes hflash{0%{opacity:.85}100%{opacity:0}}
+.card.played{transform:translateY(-34px) scale(1.08);opacity:0;transition:transform .16s,opacity .16s}
+.fnum{position:fixed;z-index:50;font-family:var(--mono);font-weight:800;font-size:22px;pointer-events:none;
+  text-shadow:2px 2px 0 #000;animation:fnum .8s forwards}
+@keyframes fnum{from{transform:translateY(0);opacity:1}to{transform:translateY(-56px);opacity:0}}
+#pflash{position:fixed;inset:0;z-index:45;pointer-events:none;background:radial-gradient(ellipse at center,transparent 40%,var(--r));
+  opacity:0}
+#pflash.on{animation:pfl .4s}
+@keyframes pfl{0%{opacity:.7}100%{opacity:0}}
+#turnBanner{position:fixed;left:50%;top:38%;transform:translate(-50%,-50%) scaleX(0);z-index:44;pointer-events:none;
+  background:var(--r);color:var(--w);font-family:var(--mono);font-weight:800;letter-spacing:.3em;font-size:14px;
+  padding:.6em 2em;white-space:nowrap}
+#turnBanner.on{animation:tb .8s}
+@keyframes tb{0%{transform:translate(-50%,-50%) scaleX(0)}18%{transform:translate(-50%,-50%) scaleX(1)}
+  82%{transform:translate(-50%,-50%) scaleX(1)}100%{transform:translate(-50%,-50%) scaleX(0)}}
+.ceremony{position:fixed;inset:0;z-index:60;background:#000000e8;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:14px}
+.ceremony .duo{display:flex;gap:10px;align-items:center}
+.ceremony .duo .card{width:110px;min-height:150px;animation:slamIn .5s cubic-bezier(.6,0,.4,1) forwards}
+.ceremony .duo .card:last-child{animation-name:slamIn2}
+@keyframes slamIn{to{transform:translateX(56px) rotate(-6deg)}}
+@keyframes slamIn2{to{transform:translateX(-56px) rotate(6deg)}}
+.ceremony .result{width:140px;animation:resultPop .4s cubic-bezier(.2,1.6,.4,1)}
+@keyframes resultPop{from{transform:scale(0) rotate(-8deg)}}
+.ceremony .zap{font-weight:900;font-size:44px;color:var(--r);animation:zapPulse .5s infinite alternate}
+@keyframes zapPulse{to{transform:scale(1.25)}}
+#stampV{position:fixed;left:50%;top:40%;transform:translate(-50%,-50%) rotate(-8deg) scale(0);z-index:55;pointer-events:none;
+  border:6px solid var(--r);color:var(--r);font-weight:900;font-size:clamp(38px,12vw,64px);letter-spacing:.06em;
+  padding:.15em .5em;text-transform:uppercase;background:#000000cc}
+#stampV.on{animation:stampIn .9s cubic-bezier(.2,1.5,.4,1) forwards}
+@keyframes stampIn{0%{transform:translate(-50%,-50%) rotate(-8deg) scale(2.4);opacity:0}
+  35%{transform:translate(-50%,-50%) rotate(-8deg) scale(1);opacity:1}
+  100%{transform:translate(-50%,-50%) rotate(-8deg) scale(1);opacity:1}}
+.ovlDeck{position:fixed;inset:0;z-index:58;background:#000000f0;overflow-y:auto;padding:20px}
+.ovlDeck .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px;max-width:640px;margin:0 auto}
 /* hand */
 #hand{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px}
 .card{border:2px solid var(--w);background:var(--k);cursor:pointer;position:relative;display:flex;flex-direction:column;
@@ -104,6 +144,9 @@ h1 .z{color:var(--r)}
 <body>
 <div id="app"></div>
 <div id="toast"></div>
+<div id="pflash"></div>
+<div id="turnBanner">FOE ACTS</div>
+<div id="stampV">K.O.</div>
 
 <script>
 'use strict';
@@ -160,6 +203,85 @@ const JTM = {
 
 const $ = s => document.querySelector(s);
 const app = document.getElementById('app');
+
+/* ---------- audio · dry, percussive, monochrome ---------- */
+let ACTX = null, AMASTER = null;
+function audio(){
+  if (ACTX) return ACTX;
+  ACTX = new (window.AudioContext || window.webkitAudioContext)();
+  AMASTER = ACTX.createGain(); AMASTER.gain.value = .15;
+  const dc = ACTX.createDynamicsCompressor();
+  AMASTER.connect(dc); dc.connect(ACTX.destination);
+  return ACTX;
+}
+function tone(type, f0, f1, dur, vol, delay = 0){
+  audio();
+  const t = ACTX.currentTime + delay;
+  const o = ACTX.createOscillator(), g = ACTX.createGain();
+  o.type = type; o.frequency.setValueAtTime(f0, t);
+  if (f1) o.frequency.exponentialRampToValueAtTime(Math.max(f1, 20), t + dur);
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.001, t + dur);
+  o.connect(g); g.connect(AMASTER); o.start(t); o.stop(t + dur + .03);
+}
+function nzz(dur, vol, hp, delay = 0){
+  audio();
+  const t = ACTX.currentTime + delay;
+  const len = Math.ceil(ACTX.sampleRate * dur);
+  const buf = ACTX.createBuffer(1, len, ACTX.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  const src = ACTX.createBufferSource(); src.buffer = buf;
+  const f = ACTX.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = hp;
+  const g = ACTX.createGain(); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.001, t + dur);
+  src.connect(f); f.connect(g); g.connect(AMASTER); src.start(t);
+}
+const SFX = {
+  click(){ nzz(.03, .12, 3000); },
+  play(){ nzz(.05, .15, 1400); tone('sine', 300, 180, .1, .25); },
+  hit(big){ nzz(.08, .35, 300); tone('sine', big ? 200 : 150, 50, .18, .5); },
+  block(){ tone('triangle', 700, 500, .1, .25); },
+  heal(){ tone('sine', 523, null, .25, .18); tone('sine', 784, null, .3, .14, .08); },
+  power(){ tone('sawtooth', 110, 220, .35, .2); },
+  playerHit(){ nzz(.12, .3, 200); tone('sawtooth', 240, 90, .3, .3); },
+  bell(){ tone('triangle', 880, null, .5, .3); tone('triangle', 1320, null, .4, .12, .05); },
+  victory(){ [330, 494, 659].forEach((f, i) => tone('square', f, null, .18, .18, i * .09)); },
+  blend(){ tone('sawtooth', 80, 640, .5, .25); nzz(.3, .2, 800, .35); tone('square', 660, 880, .2, .2, .45); },
+  death(){ tone('sawtooth', 220, 40, 1.1, .3); nzz(.6, .18, 150, .2); },
+  ach(){ tone('triangle', 1047, null, .15, .2); tone('triangle', 1568, null, .25, .16, .09); },
+};
+addEventListener('pointerdown', e => { if (e.target.closest('.btn,.door,.card,.pill')) SFX.click(); });
+
+/* ---------- combat fx helpers ---------- */
+function floatNum(el, txt, col = 'var(--r)'){
+  if (!el) return;
+  const r = el.getBoundingClientRect();
+  const d = document.createElement('div');
+  d.className = 'fnum';
+  d.style.cssText += `left:${r.left + r.width * (0.35 + Math.random() * .3)}px;top:${r.top + r.height * .3}px;color:${col}`;
+  d.textContent = txt;
+  document.body.appendChild(d);
+  setTimeout(() => d.remove(), 850);
+}
+function foeFx(){
+  const fa = $('#foeArt'), fo = $('#foe');
+  if (fa){ fa.classList.remove('hitflash'); void fa.offsetWidth; fa.classList.add('hitflash'); }
+  if (fo){ fo.classList.remove('shake'); void fo.offsetWidth; fo.classList.add('shake'); }
+}
+function playerFx(){
+  const p = document.getElementById('pflash');
+  p.classList.remove('on'); void p.offsetWidth; p.classList.add('on');
+}
+function turnBanner(txt){
+  const b = document.getElementById('turnBanner');
+  b.textContent = txt;
+  b.classList.remove('on'); void b.offsetWidth; b.classList.add('on');
+}
+function stampFx(txt){
+  const s = document.getElementById('stampV');
+  s.textContent = txt;
+  s.classList.remove('on'); void s.offsetWidth; s.classList.add('on');
+  setTimeout(() => s.classList.remove('on'), 1000);
+}
 const ri = n => Math.floor(Math.random() * n);
 const rand = (a, b) => a + Math.random() * (b - a);
 const pick = a => a[ri(a.length)];
@@ -419,6 +541,7 @@ function bumpStat(k, n, isMax = false){
     META.achTiers[k] = tier;
     META.stripes += tier * 5;
     toast(`🏆 ${fam[1]} ${roman(tier)} · +${tier * 5} STRIPES`, 2000);
+    if (typeof SFX !== 'undefined') SFX.ach();
   }
   saveMeta();
 }
@@ -526,6 +649,7 @@ function screenMap(){
 /* ---------- battle ---------- */
 let B = null;
 function startBattle(kind){
+  if (kind === 'boss' || kind === 'elite') SFX.bell();
   const foe = makeFoe(R.floor, kind === 'boss' ? 'boss' : kind === 'elite' ? 'elite' : 'normal');
   B = { foe, kind, hand: [], drawPile: [...R.deck].sort(() => Math.random() - .5), discard: [],
     energy: 3, maxEnergy: 3, block: 0, str: relicSum('str'), autoblk: relicSum('autoblk'),
@@ -582,11 +706,23 @@ function renderBattle(){
   const hand = $('#hand');
   B.hand.forEach((c, i) => {
     const cd = el(cardHtml(c, B.energy < c.cost));
-    cd.onclick = () => playCard(i);
+    cd.onclick = () => playCard(i, cd);
     hand.appendChild(cd);
     JTM.css('card-' + c.id, cd.querySelector('.art'));
   });
   $('#bEnd').onclick = endTurn;
+  /* tap DECK pill anywhere to inspect the deck */
+  p.querySelectorAll('.pill').forEach(pl => {
+    if (pl.textContent.startsWith('DECK')) pl.onclick = showDeck;
+  });
+}
+function showDeck(){
+  const o = el(`<div class="ovlDeck"><div style="max-width:640px;margin:0 auto 12px;display:flex;justify-content:space-between;align-items:center">
+    <span class="kick">YOUR DECK · ${R.deck.length} CARDS</span>
+    <button class="btn red" style="width:auto;min-height:40px;padding:8px 16px" id="dClose">Close</button></div>
+    <div class="grid">${R.deck.map(c => cardHtml(c)).join('')}</div></div>`);
+  document.body.appendChild(o);
+  o.querySelector('#dClose').onclick = () => o.remove();
 }
 function cardHtml(c, unplayable = false){
   return `<div class="card ${c.type === 'pow' ? 'pow' : ''} ${c.blend ? 'blend' : ''} ${unplayable ? 'unplayable' : ''}">
@@ -596,63 +732,85 @@ function cardHtml(c, unplayable = false){
     <div class="fx">${c.desc}</div>
   </div>`;
 }
-function playCard(i){
-  if (B.over) return;
+function playCard(i, cardEl){
+  if (B.over || B.busy) return;
   const c = B.hand[i];
   if (!c || B.energy < c.cost) return;
-  B.energy -= c.cost;
-  B.played++;
-  bumpStat('cards', 1);
-  let dmg = 0;
-  if (c.frenzy) dmg = 3 * B.played;
-  else if (c.dmg) dmg = c.dmg;
-  if (dmg){
-    dmg += B.str;
-    if (B.firstHit){ dmg += B.firstHit; B.firstHit = 0; }
-    const f = B.foe;
-    const absorbed = Math.min(f.blk, dmg);
-    f.blk -= absorbed;
-    f.hp -= (dmg - absorbed);
-    bumpStat('damage', dmg);
-    $('#foe') && $('#foe').classList.add('shake');
-  }
-  if (c.self) R.hp = Math.max(1, R.hp - c.self);
-  if (c.blk){ B.block += c.blk; bumpStat('blocks', c.blk); }
-  if (c.heal) R.hp = Math.min(R.mhp, R.hp + c.heal);
-  if (c.weak) B.foe.weak = Math.max(B.foe.weak, c.weak + 1);
-  if (c.str) B.str += c.str;
-  if (c.autoblk) B.autoblk += c.autoblk;
-  if (c.draw) drawCards(c.draw);
-  B.hand.splice(i, 1);
-  if (c.type !== 'pow') B.discard.push(c);
-  if (B.foe.hp <= 0){ winBattle(); return; }
-  renderBattle();
+  B.busy = true;
+  if (cardEl) cardEl.classList.add('played');
+  SFX.play();
+  setTimeout(() => {
+    B.busy = false;
+    if (B.over) return;
+    B.energy -= c.cost;
+    B.played++;
+    bumpStat('cards', 1);
+    let dmg = 0;
+    if (c.frenzy) dmg = 3 * B.played;
+    else if (c.dmg) dmg = c.dmg;
+    if (dmg){
+      dmg += B.str;
+      if (B.firstHit){ dmg += B.firstHit; B.firstHit = 0; }
+      const f = B.foe;
+      const absorbed = Math.min(f.blk, dmg);
+      f.blk -= absorbed;
+      f.hp -= (dmg - absorbed);
+      bumpStat('damage', dmg);
+    }
+    if (c.self) R.hp = Math.max(1, R.hp - c.self);
+    if (c.blk){ B.block += c.blk; bumpStat('blocks', c.blk); SFX.block(); }
+    if (c.heal){ R.hp = Math.min(R.mhp, R.hp + c.heal); SFX.heal(); }
+    if (c.weak) B.foe.weak = Math.max(B.foe.weak, c.weak + 1);
+    if (c.str) B.str += c.str;
+    if (c.autoblk) B.autoblk += c.autoblk;
+    if (c.str || c.autoblk) SFX.power();
+    if (c.draw) drawCards(c.draw);
+    B.hand.splice(i, 1);
+    if (c.type !== 'pow') B.discard.push(c);
+    const dead = B.foe.hp <= 0;
+    renderBattle();
+    if (dmg){
+      SFX.hit(dmg >= 12);
+      foeFx();
+      floatNum($('#foeArt'), '-' + dmg);
+    }
+    if (c.blk) floatNum($('#hpbar'), '+' + c.blk + ' BLK', 'var(--w)');
+    if (dead){ winBattle(); return; }
+  }, cardEl ? 150 : 0);
 }
 function endTurn(){
-  if (B.over) return;
-  /* foe acts */
-  const f = B.foe;
-  const kind = f.pat[f.pi % f.pat.length];
-  f.pi++;
-  if (kind === 'atk'){
-    const n = Math.max(1, f.atk + f.str - (f.weak ? 2 : 0));
-    const absorbed = Math.min(B.block, n);
-    const through = n - absorbed;
-    R.hp -= through;
-    if (f.weak) f.weak--;
-    if (through > 0 && R.hp <= 0){ loseRun(); return; }
-  } else if (kind === 'blk') f.blk += Math.round(f.atk * .8);
-  else f.str += 1 + Math.floor(R.floor / 8);
-  /* new player turn */
-  B.turn++;
-  B.discard.push(...B.hand);
-  B.hand = [];
-  B.block = B.autoblk;
-  if (B.autoblk) bumpStat('blocks', B.autoblk);
-  B.energy = B.maxEnergy + (relicSum('energy3') && B.turn % 3 === 0 ? 1 : 0);
-  drawCards(5);
-  saveRun();
-  renderBattle();
+  if (B.over || B.busy) return;
+  B.busy = true;
+  turnBanner(B.foe.name + ' ACTS');
+  setTimeout(() => {
+    if (B.over){ B.busy = false; return; }
+    const f = B.foe;
+    const kind = f.pat[f.pi % f.pat.length];
+    f.pi++;
+    let through = 0;
+    if (kind === 'atk'){
+      const n = Math.max(1, f.atk + f.str - (f.weak ? 2 : 0));
+      const absorbed = Math.min(B.block, n);
+      through = n - absorbed;
+      R.hp -= through;
+      if (f.weak) f.weak--;
+      if (through > 0){ playerFx(); SFX.playerHit(); }
+      else SFX.block();
+    } else if (kind === 'blk') f.blk += Math.round(f.atk * .8);
+    else f.str += 1 + Math.floor(R.floor / 8);
+    if (through > 0 && R.hp <= 0){ B.busy = false; loseRun(); return; }
+    B.turn++;
+    B.discard.push(...B.hand);
+    B.hand = [];
+    B.block = B.autoblk;
+    if (B.autoblk) bumpStat('blocks', B.autoblk);
+    B.energy = B.maxEnergy + (relicSum('energy3') && B.turn % 3 === 0 ? 1 : 0);
+    drawCards(5);
+    saveRun();
+    renderBattle();
+    if (through > 0) floatNum($('#hpbar'), '-' + through);
+    B.busy = false;
+  }, 650);
 }
 function winBattle(){
   B.over = true;
@@ -665,7 +823,10 @@ function winBattle(){
   const heal = relicSum('healAfter');
   if (heal) R.hp = Math.min(R.mhp, R.hp + heal);
   saveMeta(); saveRun();
-  screenReward(gold, B.kind);
+  stampFx(B.kind === 'boss' ? 'BOSS DOWN' : 'K.O.');
+  SFX.victory();
+  const g2 = gold, k2 = B.kind;
+  setTimeout(() => screenReward(g2, k2), 950);
 }
 function screenReward(gold, kind){
   const picks = [];
@@ -747,13 +908,27 @@ function screenBlend(){
   });
   $('#bDo').onclick = () => {
     const [a, b] = sel.sort((x, y) => y - x);
-    const nc = blendCards(R.deck[a], R.deck[b]);
+    const cA = R.deck[a], cB = R.deck[b];
+    const nc = blendCards(cA, cB);
     R.deck.splice(a, 1); R.deck.splice(b, 1);
     R.deck.push(nc);
     bumpStat('blends', 1);
     saveRun();
-    toast(`⚡ BLENDED: ${nc.name.toUpperCase()}`, 2200);
-    screenMap();
+    /* the blend ceremony · two cards enter, one card leaves */
+    SFX.blend();
+    const cer = el(`<div class="ceremony">
+      <span class="kick">THE BLENDER ACCEPTS YOUR OFFERING</span>
+      <div class="duo">${cardHtml(cA)}<div class="zap">⚡</div>${cardHtml(cB)}</div>
+      <div class="resultWrap" style="display:none"><div class="result">${cardHtml(nc)}</div></div>
+    </div>`);
+    document.body.appendChild(cer);
+    setTimeout(() => {
+      cer.querySelector('.duo').style.display = 'none';
+      cer.querySelector('.resultWrap').style.display = 'block';
+      cer.querySelector('.kick').textContent = 'IT IS CALLED ' + nc.name.toUpperCase() + '. IT IS YOURS.';
+      SFX.bell();
+    }, 900);
+    setTimeout(() => { cer.remove(); toast(`⚡ BLENDED: ${nc.name.toUpperCase()}`, 1800); screenMap(); }, 2300);
   };
   $('#bBack').onclick = screenRest;
 }
@@ -795,6 +970,8 @@ function screenShop(){
 }
 /* ---------- death ---------- */
 function loseRun(){
+  SFX.death();
+  stampFx('FELL');
   const floor = R.floor;
   const earned = 10 + floor * 4;
   META.stripes += earned;
