@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#4a1f6e">
+<meta name="description" content="Lily's WordCrush — crush words, match candy. Works fully offline.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="WordCrush">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon-192.png">
+<title>Lily's WordCrush</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg1:#5b2a86; --bg2:#3d1560; --panel:#4a1f6e; --panelD:#3a1458;
+  --cream:#f7edd8; --creamD:#e8d9bc; --ink:#3a2a1a;
+  --pink:#ff7dbb; --pinkD:#e8479a; --gold:#f6c94a; --mint:#6fd6a8; --blue:#6cb8f0; --lav:#c9a2f0;
+  --f:'Baloo 2','Sora',-apple-system,'Segoe UI',Roboto,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden;user-select:none;-webkit-user-select:none;touch-action:manipulation;
+  font-family:var(--f);color:#fff;
+  background:radial-gradient(120% 90% at 20% 0%,#7a3aa8 0%,var(--bg1) 40%,var(--bg2) 100%)}
+#app{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  padding:calc(env(safe-area-inset-top) + 8px) 10px calc(env(safe-area-inset-bottom) + 8px);gap:9px}
+/* ---- header ---- */
+#title{text-align:center;line-height:1;filter:drop-shadow(0 3px 0 rgba(0,0,0,.25))}
+#title .l1{font-weight:800;font-size:clamp(20px,5.6vmin,30px);color:#ffb3d6;letter-spacing:.02em}
+#title .l2{font-weight:800;font-size:clamp(24px,7vmin,38px);letter-spacing:.01em}
+#title .l2 .w{color:var(--gold)} #title .l2 .c{color:var(--lav)}
+/* ---- hud ---- */
+#hud{display:flex;gap:8px;width:min(96vw,560px)}
+.hcard{flex:1;background:linear-gradient(180deg,var(--panel),var(--panelD));border:2px solid #8a54c0;
+  border-radius:16px;padding:7px 10px;text-align:center;box-shadow:0 4px 0 rgba(0,0,0,.25)}
+.hcard .k{font-size:clamp(9px,2.3vmin,12px);font-weight:800;letter-spacing:.12em;color:#d9bff2;text-transform:uppercase}
+.hcard .v{font-size:clamp(18px,5vmin,26px);font-weight:800;line-height:1.1}
+#goalV .gem{display:inline-block;width:.85em;height:.85em;border-radius:50%;vertical-align:-.08em;margin-right:.25em;
+  background:radial-gradient(circle at 32% 30%,#ffd0e8,#ff7dbb 55%,#c8327e);box-shadow:0 0 6px #ff7dbb88}
+#bar{height:8px;border-radius:6px;background:#2c0f47;margin-top:5px;overflow:hidden}
+#bar div{height:100%;width:0;border-radius:6px;background:linear-gradient(90deg,var(--gold),#ffde8a);transition:width .4s}
+/* ---- word preview ---- */
+#preview{height:clamp(30px,6vmin,38px);display:flex;align-items:center;justify-content:center;gap:8px;min-width:60%}
+#pword{font-weight:800;font-size:clamp(18px,5vmin,26px);letter-spacing:.14em;color:#fff;text-transform:uppercase}
+#pscore{font-weight:800;font-size:clamp(13px,3.4vmin,17px);color:var(--gold);background:#00000030;border-radius:100px;padding:.1em .6em;display:none}
+/* ---- board ---- */
+#boardWrap{position:relative;background:linear-gradient(180deg,#6a34a0,#552586);border:3px solid #9a64d0;
+  border-radius:22px;padding:8px;box-shadow:0 8px 0 rgba(0,0,0,.28), inset 0 2px 10px rgba(0,0,0,.3)}
+#board{position:relative;touch-action:none}
+.tile{position:absolute;display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(180deg,#fdf6e5,var(--cream) 60%,var(--creamD));
+  border-radius:22%;color:var(--ink);font-weight:800;
+  box-shadow:0 3px 0 #b89f78, inset 0 1px 0 #fff;
+  transition:transform .26s cubic-bezier(.3,1.5,.5,1), opacity .2s;will-change:transform}
+.tile .dot{position:absolute;right:12%;bottom:10%;width:16%;height:16%;border-radius:50%;opacity:.85}
+.tile.gem{background:linear-gradient(180deg,#ffe3f1,#ffc4e0 60%,#f0a2c8)}
+.tile.gem::after{content:'';position:absolute;left:10%;top:8%;width:22%;height:22%;border-radius:50%;
+  background:radial-gradient(circle at 32% 30%,#ffd0e8,#ff7dbb 55%,#c8327e);box-shadow:0 0 8px #ff7dbbaa}
+.tile.striped{background:repeating-linear-gradient(90deg,#bfe2fa 0 12%,#8ecdf5 12% 24%);color:#123a5c}
+.tile.wild{background:linear-gradient(180deg,#ffe9a8,#ffd766 60%,#f0b83a);color:#6e4a00}
+.tile.sel{transform-origin:center;background:linear-gradient(180deg,#ffd6ea,#ff9dc9 60%,#f077ae);color:#7e1c4e;
+  box-shadow:0 0 0 3px #fff, 0 0 18px #ff7dbb;z-index:3}
+.tile.hintP{animation:hintPulse .55s ease-in-out 3}
+@keyframes hintPulse{50%{transform:var(--tf) scale(1.14);box-shadow:0 0 0 3px #fff,0 0 20px var(--gold)}}
+.tile.pop{transform:var(--tf) scale(0) rotate(20deg)!important;opacity:0}
+.tile.shake{animation:shk .3s}
+@keyframes shk{25%{margin-left:-5px}75%{margin-left:5px}}
+.spark{position:absolute;border-radius:50%;pointer-events:none;z-index:9}
+/* ---- powerup tray ---- */
+#tray{display:flex;gap:8px;width:min(96vw,560px)}
+.pw{flex:1;background:linear-gradient(180deg,var(--panel),var(--panelD));border:2px solid #8a54c0;border-radius:16px;
+  padding:6px 4px 7px;text-align:center;cursor:pointer;box-shadow:0 4px 0 rgba(0,0,0,.25);position:relative;color:#fff;font-family:var(--f)}
+.pw .ic{font-size:clamp(17px,4.6vmin,24px);line-height:1.2;filter:drop-shadow(0 2px 2px rgba(0,0,0,.3))}
+.pw .nm{font-size:clamp(9px,2.3vmin,12px);font-weight:800;letter-spacing:.06em;color:#d9bff2}
+.pw .ct{position:absolute;top:-7px;right:-4px;background:var(--pinkD);border:2px solid #fff;border-radius:100px;
+  min-width:22px;height:22px;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;padding:0 4px}
+.pw.armed{outline:3px solid var(--gold);transform:translateY(-2px)}
+.pw:disabled,.pw.none{opacity:.45}
+/* ---- footer ---- */
+#foot{display:flex;gap:8px}
+.fbtn{background:#00000028;border:1.5px solid #ffffff38;color:#e8d9f8;border-radius:100px;
+  padding:7px 13px;font-family:var(--f);font-weight:700;font-size:clamp(11px,2.7vmin,13px);cursor:pointer}
+/* ---- toast ---- */
+#toast{position:fixed;left:50%;top:18%;transform:translateX(-50%) scale(0);z-index:30;pointer-events:none;
+  font-weight:800;font-size:clamp(15px,4vmin,22px);letter-spacing:.04em;
+  background:#fff;color:#7e1c4e;border-radius:100px;padding:.45em 1.1em;
+  box-shadow:0 6px 20px rgba(0,0,0,.35);transition:transform .2s cubic-bezier(.2,1.6,.4,1);white-space:nowrap}
+#toast.on{transform:translateX(-50%) scale(1) rotate(-2deg)}
+/* ---- overlays ---- */
+.ovl{position:fixed;inset:0;z-index:40;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:14px;background:rgba(30,10,50,.82);backdrop-filter:blur(10px);text-align:center;padding:26px}
+.ovl.hide{display:none}
+.ovl h2{font-size:clamp(26px,8vmin,44px);font-weight:800;line-height:1.05}
+.ovl h2 .p{color:var(--pink)} .ovl h2 .g{color:var(--gold)}
+.ovl p{font-size:clamp(13px,3.4vmin,16px);font-weight:600;color:#e2d2f5;line-height:1.7;max-width:34em}
+.ovl .big{padding:15px 34px;border-radius:100px;border:none;cursor:pointer;min-height:54px;
+  background:linear-gradient(180deg,#ff9dc9,var(--pinkD));color:#fff;font-family:var(--f);font-weight:800;
+  font-size:clamp(15px,3.8vmin,18px);letter-spacing:.03em;box-shadow:0 6px 0 #a02068,0 14px 30px rgba(232,71,154,.45)}
+.ovl .big:active{transform:translateY(3px);box-shadow:0 3px 0 #a02068}
+.ovl .minor{background:none;border:1.5px solid #ffffff44;color:#d9bff2;border-radius:100px;padding:9px 18px;
+  font-family:var(--f);font-weight:700;font-size:13px;cursor:pointer}
+#stars{font-size:clamp(34px,11vmin,60px);letter-spacing:.1em;filter:drop-shadow(0 4px 0 rgba(0,0,0,.3))}
+.statline{font-weight:800;color:var(--gold);font-size:clamp(14px,3.6vmin,18px)}
+#offlineBadge{position:fixed;right:10px;top:calc(env(safe-area-inset-top) + 8px);z-index:5;font-size:10px;font-weight:800;
+  letter-spacing:.1em;color:#c9f0d8;background:#1e5c3a99;border:1px solid #6fd6a8;border-radius:100px;padding:3px 9px;display:none}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="title"><div class="l1">Lily's</div><div class="l2"><span class="w">Word</span><span class="c">Crush</span></div></div>
+  <div id="hud">
+    <div class="hcard"><div class="k">♥ Moves</div><div class="v" id="movesV">16</div></div>
+    <div class="hcard"><div class="k">Goal</div><div class="v" id="goalV"><span class="gem"></span><span id="gemV">0/8</span></div></div>
+    <div class="hcard"><div class="k" id="lvlK">Level 1</div><div class="v" id="scoreV" style="font-size:clamp(13px,3.4vmin,17px)">0</div><div id="bar"><div></div></div></div>
+  </div>
+  <div id="preview"><span id="pword"></span><span id="pscore"></span></div>
+  <div id="boardWrap"><div id="board"></div></div>
+  <div id="tray">
+    <button class="pw" id="pwHint"><span class="ct">3</span><div class="ic">🪄</div><div class="nm">Hint</div></button>
+    <button class="pw" id="pwShuf"><span class="ct">3</span><div class="ic">🍬</div><div class="nm">Shuffle</div></button>
+    <button class="pw" id="pwPaint"><span class="ct">2</span><div class="ic">🖌️</div><div class="nm">Paint</div></button>
+    <button class="pw" id="pwSmash"><span class="ct">2</span><div class="ic">🔨</div><div class="nm">Smash</div></button>
+  </div>
+  <div id="foot">
+    <button class="fbtn" id="fSound">🔔 Sounds</button>
+    <button class="fbtn" id="fMusic">🎵 Music</button>
+    <button class="fbtn" id="fInstall">📲 Save app</button>
+    <button class="fbtn" id="fHelp">❓</button>
+  </div>
+</div>
+<div id="offlineBadge">✓ OFFLINE READY</div>
+<div id="toast"></div>
+
+<div class="ovl" id="intro">
+  <h2>Lily's <span class="g">Word</span><span class="p">Crush</span></h2>
+  <p><b>Drag through letters</b> to spell words — any direction, corners count.
+  Words crush their tiles and candy rains down. Collect the <b style="color:var(--pink)">pink candies</b> to beat each level.<br>
+  Long words (6+) make <b style="color:var(--blue)">striped tiles</b> that blast a whole row and column. The whole dictionary is in here — every real word works, even offline.</p>
+  <button class="big" id="playBtn">Play</button>
+  <p style="font-size:11px;opacity:.7">112,716 words on board · no internet needed after first visit</p>
+</div>
+
+<div class="ovl hide" id="win">
+  <div id="stars">⭐⭐⭐</div>
+  <h2>Level <span class="g" id="winLvl">1</span> crushed<span class="p">!</span></h2>
+  <p class="statline" id="winStats"></p>
+  <p id="winJoke" style="font-size:12px"></p>
+  <button class="big" id="nextBtn">Next level</button>
+</div>
+
+<div class="ovl hide" id="lose">
+  <h2>Out of moves<span class="p">!</span></h2>
+  <p>So close! The candies believe in you. Same level, fresh board — no harm done.</p>
+  <button class="big" id="retryBtn">Try again</button>
+</div>
+
+<div class="ovl hide" id="help">
+  <h2>How to <span class="p">play</span></h2>
+  <p style="text-align:left">🍭 <b>Drag</b> through touching letters (diagonals too) to spell a word, then let go.<br>
+  💗 Crush <b>pink candy tiles</b> to fill the level goal.<br>
+  💙 Words of 6+ letters leave a <b>striped tile</b> — use it in a word to blast its row + column.<br>
+  🪄 <b>Hint</b> finds a word · 🍬 <b>Shuffle</b> remixes the board<br>
+  🖌️ <b>Paint</b> turns a tile into a gold ★ wildcard · 🔨 <b>Smash</b> crushes any one tile.<br>
+  🎁 Beat a level → +1 of every power-up.</p>
+  <button class="big" id="helpClose">Got it</button>
+  <button class="minor" id="resetBtn">Reset all progress</button>
+</div>
+
+<div class="ovl hide" id="install">
+  <h2>Save the <span class="p">app</span></h2>
+  <p id="installMsg" style="text-align:left"></p>
+  <button class="big" id="installGo" style="display:none">Install now</button>
+  <button class="minor" id="installClose">Close</button>
+</div>
+
+<script src="dict.js"></script>
+<script>
+'use strict';
+/* ============================================================
+   LILY'S WORDCRUSH · crush words, match candy · fully offline
+   ============================================================ */
+const $ = id => document.getElementById(id);
+const rand = (a, b) => a + Math.random() * (b - a);
+const ri = n => Math.floor(Math.random() * n);
+
+/* ---------- dictionary ---------- */
+const DICT = new Set(DICT_RAW.split(' '));
+const BY_LEN = {};
+for (const w of DICT){ (BY_LEN[w.length] = BY_LEN[w.length] || []).push(w); }
+let PREFIX = null;
+function buildPrefixes(){
+  PREFIX = new Set();
+  for (const w of DICT){
+    const m = Math.min(w.length, 6);
+    for (let i = 1; i <= m; i++) PREFIX.add(w.slice(0, i));
+  }
+}
+setTimeout(buildPrefixes, 60);   /* off the critical path */
+
+function isWord(w){
+  if (!w.includes('?')) return DICT.has(w);
+  const bucket = BY_LEN[w.length];
+  if (!bucket) return false;
+  const re = new RegExp('^' + w.replace(/\?/g, '[a-z]') + '$');
+  return bucket.some(x => re.test(x));
+}
+
+/* ---------- letters ---------- */
+const VAL = { a:1,b:3,c:3,d:2,e:1,f:4,g:2,h:4,i:1,j:8,k:5,l:1,m:3,n:1,o:1,p:3,q:10,r:1,s:1,t:1,u:1,v:4,w:4,x:8,y:4,z:10 };
+const BAG = 'eeeeeeeeeeeeaaaaaaaaaiiiiiiiiioooooooonnnnnnrrrrrrttttttllllssssuuuuddddgggbbccmmppffhhvvwwyykjx';
+const drawLetter = () => BAG[ri(BAG.length)];
+
+/* ---------- state ---------- */
+const N = 8;
+let grid = [];            /* [r][c] -> {ch, gem, striped, wild, el} or null */
+let cell = 40, gap = 5;
+let path = [], dragging = false, busy = false, mode = null;
+const G = {
+  lvl: 1, score: 0, moves: 16, gems: 0, goal: 8, starsTotal: 0,
+  powers: { hint: 3, shuf: 3, paint: 2, smash: 2 },
+  sound: true, music: true,
+};
+function save(){
+  localStorage.setItem('wordcrush', JSON.stringify({
+    lvl: G.lvl, score: G.score, starsTotal: G.starsTotal, powers: G.powers, sound: G.sound, music: G.music }));
+}
+function load(){
+  try {
+    const s = JSON.parse(localStorage.getItem('wordcrush') || 'null');
+    if (s){ Object.assign(G, { lvl: s.lvl, score: s.score, starsTotal: s.starsTotal || 0, sound: s.sound !== false, music: s.music !== false }); Object.assign(G.powers, s.powers || {}); }
+  } catch {}
+}
+load();
+const goalFor = l => Math.min(6 + Math.floor((l - 1) / 2) * 2, 18);
+const movesFor = l => 16;
+
+/* ---------- board layout ---------- */
+const board = $('board');
+function sizeBoard(){
+  const availW = Math.min(innerWidth * .94, 560) - 22;
+  const chrome = 320;      /* header+hud+tray+foot approx */
+  const availH = innerHeight - chrome;
+  const side = Math.max(240, Math.min(availW, availH));
+  cell = Math.floor((side - gap * (N - 1)) / N);
+  const real = cell * N + gap * (N - 1);
+  board.style.width = real + 'px';
+  board.style.height = real + 'px';
+  for (let r = 0; r < N; r++) for (let c = 0; c < N; c++){
+    const t = grid[r] && grid[r][c];
+    if (t) place(t, r, c, false);
+  }
+}
+function xy(r, c){ return [c * (cell + gap), r * (cell + gap)]; }
+function place(t, r, c, animate = true){
+  const [x, y] = xy(r, c);
+  t.el.style.width = cell + 'px';
+  t.el.style.height = cell + 'px';
+  t.el.style.fontSize = (cell * .52) + 'px';
+  if (!animate) t.el.style.transition = 'none';
+  t.el.style.setProperty('--tf', `translate(${x}px,${y}px)`);
+  t.el.style.transform = `translate(${x}px,${y}px)`;
+  if (!animate){ void t.el.offsetWidth; t.el.style.transition = ''; }
+}
+function makeTile(r, c, drop = 0){
+  const t = { ch: drawLetter(), gem: Math.random() < .15, striped: false, wild: false, el: document.createElement('div') };
+  t.el.className = 'tile' + (t.gem ? ' gem' : '');
+  t.el.textContent = t.ch.toUpperCase();
+  const dots = ['#ff7dbb', '#6fd6a8', '#6cb8f0', '#f6c94a'];
+  t.el.insertAdjacentHTML('beforeend', `<span class="dot" style="background:${dots[ri(4)]}"></span>`);
+  board.appendChild(t.el);
+  if (drop){
+    const [x] = xy(r, c);
+    t.el.style.transition = 'none';
+    t.el.style.transform = `translate(${x}px,${-(drop) * (cell + gap) - cell}px)`;
+    void t.el.offsetWidth;
+    t.el.style.transition = '';
+  }
+  place(t, r, c);
+  return t;
+}
+function redraw(t){
+  t.el.className = 'tile' + (t.gem ? ' gem' : '') + (t.striped ? ' striped' : '') + (t.wild ? ' wild' : '');
+  t.el.childNodes[0].nodeValue = t.wild ? '★' : t.ch.toUpperCase();
+}
+function fillBoard(){
+  board.innerHTML = '';
+  grid = Array.from({ length: N }, () => Array(N).fill(null));
+  for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) grid[r][c] = makeTile(r, c, N - r);
+  ensurePlayable();
+}
+
+/* ---------- HUD ---------- */
+function hud(){
+  $('movesV').textContent = G.moves;
+  $('gemV').textContent = G.gems + '/' + G.goal;
+  $('lvlK').textContent = 'Level ' + G.lvl;
+  $('scoreV').textContent = G.score.toLocaleString();
+  $('bar').firstElementChild.style.width = Math.min(100, G.gems / G.goal * 100) + '%';
+  for (const [k, id] of [['hint', 'pwHint'], ['shuf', 'pwShuf'], ['paint', 'pwPaint'], ['smash', 'pwSmash']]){
+    $(id).querySelector('.ct').textContent = G.powers[k];
+    $(id).classList.toggle('none', G.powers[k] <= 0);
+  }
+}
+let toastT = null;
+function toast(msg, ms = 1400){
+  const t = $('toast'); t.textContent = msg; t.classList.add('on');
+  clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), ms);
+}
+
+/* ---------- selection ---------- */
+function tileAt(px, py){
+  const rc = board.getBoundingClientRect();
+  const x = px - rc.left, y = py - rc.top;
+  const c = Math.floor(x / (cell + gap)), r = Math.floor(y / (cell + gap));
+  if (r < 0 || r >= N || c < 0 || c >= N) return null;
+  const [tx, ty] = xy(r, c);
+  const cx = tx + cell / 2, cy = ty + cell / 2;
+  if (Math.abs(x - cx) > cell * .46 || Math.abs(y - cy) > cell * .46) return null;
+  return { r, c };
+}
+function pathWord(){ return path.map(p => grid[p.r][p.c].wild ? '?' : grid[p.r][p.c].ch).join(''); }
+function pathScore(){
+  const w = pathWord();
+  let s = 0;
+  for (const p of path){ const t = grid[p.r][p.c]; s += t.wild ? 0 : VAL[t.ch]; if (t.gem) s += 5; }
+  const mult = [0, 0, 0, 1, 1.5, 2, 3, 4, 5, 6][w.length] || 6;
+  return Math.round(s * mult * 10);
+}
+function updatePreview(){
+  const w = pathWord();
+  $('pword').textContent = w.toUpperCase().replace(/\?/g, '★');
+  const ok = w.length >= 3 && isWord(w);
+  $('pscore').style.display = ok ? 'inline-block' : 'none';
+  if (ok) $('pscore').textContent = '+' + pathScore();
+  $('pword').style.color = ok ? '#8affc4' : '#fff';
+}
+function clearSel(){
+  for (const p of path) grid[p.r][p.c].el.classList.remove('sel');
+  path = []; updatePreview();
+}
+board.addEventListener('pointerdown', e => {
+  if (busy) return;
+  const hit = tileAt(e.clientX, e.clientY);
+  if (!hit) return;
+  if (mode){ applyMode(hit); return; }
+  dragging = true; path = [hit];
+  grid[hit.r][hit.c].el.classList.add('sel');
+  SFX.plink(0);
+  updatePreview();
+  board.setPointerCapture(e.pointerId);
+});
+board.addEventListener('pointermove', e => {
+  if (!dragging || busy) return;
+  const hit = tileAt(e.clientX, e.clientY);
+  if (!hit) return;
+  const last = path[path.length - 1];
+  if (hit.r === last.r && hit.c === last.c) return;
+  /* step back */
+  if (path.length > 1 && hit.r === path[path.length - 2].r && hit.c === path[path.length - 2].c){
+    grid[last.r][last.c].el.classList.remove('sel');
+    path.pop(); SFX.plink(path.length - 1); updatePreview(); return;
+  }
+  if (Math.abs(hit.r - last.r) > 1 || Math.abs(hit.c - last.c) > 1) return;
+  if (path.some(p => p.r === hit.r && p.c === hit.c)) return;
+  path.push(hit);
+  grid[hit.r][hit.c].el.classList.add('sel');
+  SFX.plink(path.length - 1);
+  updatePreview();
+});
+addEventListener('pointerup', () => {
+  if (!dragging) return;
+  dragging = false;
+  submit();
+});
+
+/* ---------- submit / crush / cascade ---------- */
+async function submit(){
+  const w = pathWord();
+  if (w.length < 3){ clearSel(); return; }
+  if (!isWord(w)){
+    SFX.soft();
+    for (const p of path) grid[p.r][p.c].el.classList.add('shake');
+    setTimeout(() => { for (const p of path) grid[p.r][p.c] && grid[p.r][p.c].el.classList.remove('shake'); clearSel(); }, 320);
+    return;
+  }
+  busy = true;
+  const pts = pathScore();
+  G.score += pts;
+  G.moves--;
+  SFX.word(w.length);
+  toast(`${w.toUpperCase().replace(/\?/g, '★')} · +${pts}`, 1100);
+  /* striped blast expansion */
+  const kill = new Set(path.map(p => p.r + ',' + p.c));
+  for (const p of path){
+    const t = grid[p.r][p.c];
+    if (t.striped){
+      for (let i = 0; i < N; i++){ kill.add(p.r + ',' + i); kill.add(i + ',' + p.c); }
+      SFX.blast();
+    }
+  }
+  const spot = path[Math.floor(path.length / 2)];
+  const makeStriped = w.length >= 6;
+  await crushCells([...kill].map(s => s.split(',').map(Number)), makeStriped ? spot : null);
+  clearSel();
+  hud(); save();
+  if (G.gems >= G.goal){ levelWin(); return; }
+  if (G.moves <= 0){ SFX.soft(); $('lose').classList.remove('hide'); busy = false; return; }
+  ensurePlayable();
+  busy = false;
+}
+function sparkAt(r, c, col){
+  const rc = board.getBoundingClientRect();
+  const [x, y] = xy(r, c);
+  for (let i = 0; i < 5; i++){
+    const s = document.createElement('div');
+    s.className = 'spark';
+    const sz = rand(4, 9);
+    s.style.cssText = `left:${rc.left + x + cell / 2}px;top:${rc.top + y + cell / 2}px;width:${sz}px;height:${sz}px;background:${col};position:fixed`;
+    document.body.appendChild(s);
+    const a = rand(0, Math.PI * 2), sp = rand(30, 120);
+    const t0 = performance.now();
+    (function anim(now){
+      const dt = (now - t0) / 1000;
+      if (dt > .6){ s.remove(); return; }
+      s.style.transform = `translate(${Math.cos(a) * sp * dt}px,${Math.sin(a) * sp * dt + 160 * dt * dt}px)`;
+      s.style.opacity = 1 - dt / .6;
+      requestAnimationFrame(anim);
+    })(t0);
+  }
+}
+function crushCells(cells, stripedSpot){
+  return new Promise(res => {
+    let gemsGot = 0;
+    for (const [r, c] of cells){
+      const t = grid[r][c];
+      if (!t) continue;
+      if (t.gem){ gemsGot++; }
+      t.el.classList.add('pop');
+      sparkAt(r, c, t.gem ? '#ff7dbb' : '#f6c94a');
+      grid[r][c] = null;
+      const el = t.el;
+      setTimeout(() => el.remove(), 240);
+    }
+    if (gemsGot){ G.gems += gemsGot; SFX.gem(); }
+    setTimeout(() => {
+      /* gravity */
+      for (let c = 0; c < N; c++){
+        let write = N - 1;
+        for (let r = N - 1; r >= 0; r--){
+          if (grid[r][c]){
+            if (write !== r){ grid[write][c] = grid[r][c]; grid[r][c] = null; place(grid[write][c], write, c); }
+            write--;
+          }
+        }
+        let drop = 1;
+        for (let r = write; r >= 0; r--){ grid[r][c] = makeTile(r, c, drop++); }
+      }
+      if (stripedSpot){
+        const t = grid[stripedSpot.r][stripedSpot.c];
+        if (t){ t.striped = true; t.gem = false; redraw(t); }
+      }
+      SFX.cascade();
+      setTimeout(res, 300);
+    }, 230);
+  });
+}
+
+/* ---------- playability guard + hint search ---------- */
+function findWord(maxLen = 6){
+  if (!PREFIX) return null;
+  const dirs = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+  let best = null;
+  const seen = Array.from({ length: N }, () => Array(N).fill(false));
+  function dfs(r, c, word, cells){
+    if (word.length >= 3 && DICT.has(word)){
+      const gems = cells.filter(([rr, cc]) => grid[rr][cc].gem).length;
+      const key = word.length + gems * 2;
+      if (!best || key > best.key) best = { word, cells: [...cells], key };
+    }
+    if (word.length >= maxLen || !PREFIX.has(word)) return;
+    for (const [dr, dc] of dirs){
+      const nr = r + dr, nc = c + dc;
+      if (nr < 0 || nr >= N || nc < 0 || nc >= N || seen[nr][nc] || !grid[nr][nc] || grid[nr][nc].wild) continue;
+      seen[nr][nc] = true;
+      dfs(nr, nc, word + grid[nr][nc].ch, [...cells, [nr, nc]]);
+      seen[nr][nc] = false;
+    }
+  }
+  for (let r = 0; r < N; r++) for (let c = 0; c < N; c++){
+    if (!grid[r][c] || grid[r][c].wild) continue;
+    seen[r][c] = true;
+    dfs(r, c, grid[r][c].ch, [[r, c]]);
+    seen[r][c] = false;
+  }
+  return best;
+}
+function ensurePlayable(){
+  if (!PREFIX){ setTimeout(ensurePlayable, 150); return; }
+  if (!findWord(4)){ toast('Fresh letters! 🍬'); shuffleBoard(false); }
+}
+function shuffleBoard(costs = true){
+  const tiles = [];
+  for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) tiles.push(grid[r][c]);
+  for (let i = tiles.length - 1; i > 0; i--){ const j = ri(i + 1); [tiles[i], tiles[j]] = [tiles[j], tiles[i]]; }
+  let i = 0;
+  for (let r = 0; r < N; r++) for (let c = 0; c < N; c++){ grid[r][c] = tiles[i++]; place(grid[r][c], r, c); }
+  SFX.cascade();
+  setTimeout(ensurePlayable, 350);
+}
+
+/* ---------- power-ups ---------- */
+function arm(m, btn){
+  if (mode === m){ mode = null; btn.classList.remove('armed'); return; }
+  document.querySelectorAll('.pw').forEach(b => b.classList.remove('armed'));
+  mode = m; btn.classList.add('armed');
+  toast(m === 'paint' ? 'Tap a tile to make it a ★' : 'Tap a tile to smash it');
+}
+function applyMode(hit){
+  const t = grid[hit.r][hit.c];
+  if (!t) return;
+  if (mode === 'paint' && G.powers.paint > 0){
+    G.powers.paint--; t.wild = true; t.striped = false; redraw(t); SFX.gem();
+    sparkAt(hit.r, hit.c, '#f6c94a');
+  } else if (mode === 'smash' && G.powers.smash > 0){
+    G.powers.smash--; SFX.blast();
+    busy = true;
+    crushCells([[hit.r, hit.c]], null).then(() => { busy = false; hud(); save(); if (G.gems >= G.goal) levelWin(); else ensurePlayable(); });
+  }
+  mode = null;
+  document.querySelectorAll('.pw').forEach(b => b.classList.remove('armed'));
+  hud(); save();
+}
+$('pwHint').addEventListener('click', () => {
+  if (busy || G.powers.hint <= 0) return;
+  const f = findWord(6);
+  if (!f){ toast('No words — shuffling!'); shuffleBoard(false); return; }
+  G.powers.hint--; hud(); save();
+  SFX.plink(2);
+  f.cells.forEach(([r, c], i) => setTimeout(() => grid[r][c] && grid[r][c].el.classList.add('hintP'), i * 90));
+  setTimeout(() => f.cells.forEach(([r, c]) => grid[r][c] && grid[r][c].el.classList.remove('hintP')), 2400);
+});
+$('pwShuf').addEventListener('click', () => {
+  if (busy || G.powers.shuf <= 0) return;
+  G.powers.shuf--; hud(); save();
+  shuffleBoard();
+});
+$('pwPaint').addEventListener('click', () => { if (!busy && G.powers.paint > 0) arm('paint', $('pwPaint')); });
+$('pwSmash').addEventListener('click', () => { if (!busy && G.powers.smash > 0) arm('smash', $('pwSmash')); });
+
+/* ---------- level flow ---------- */
+const JOKES = [
+  'The candies held a small parade in your honour.',
+  'The dictionary is impressed. All 112,716 of it.',
+  'Somewhere, a horse just nodded approvingly.',
+  'Jackson watched the whole thing. He scores it 3.',
+  'The striped tiles tell stories about you now.',
+];
+function levelWin(){
+  busy = true;
+  SFX.levelup();
+  const stars = G.moves >= 6 ? 3 : G.moves >= 3 ? 2 : 1;
+  G.starsTotal += stars;
+  for (const k in G.powers) G.powers[k] = Math.min(9, G.powers[k] + 1);
+  $('stars').textContent = '⭐'.repeat(stars) + '☆'.repeat(3 - stars);
+  $('winLvl').textContent = G.lvl;
+  $('winStats').textContent = `Score ${G.score.toLocaleString()} · ⭐ total ${G.starsTotal} · +1 every power-up`;
+  $('winJoke').textContent = JOKES[ri(JOKES.length)];
+  $('win').classList.remove('hide');
+  G.lvl++;
+  save();
+}
+function startLevel(){
+  G.moves = movesFor(G.lvl);
+  G.gems = 0;
+  G.goal = goalFor(G.lvl);
+  fillBoard();
+  hud();
+  busy = false;
+}
+$('nextBtn').addEventListener('click', () => { $('win').classList.add('hide'); startLevel(); });
+$('retryBtn').addEventListener('click', () => { $('lose').classList.add('hide'); startLevel(); });
+
+/* ---------- soothing sounds ---------- */
+let ACTX = null, MASTER = null;
+function audio(){
+  if (ACTX) return ACTX;
+  ACTX = new (window.AudioContext || window.webkitAudioContext)();
+  MASTER = ACTX.createGain(); MASTER.gain.value = .14;
+  const lp = ACTX.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 3200; lp.Q.value = .4;
+  MASTER.connect(lp); lp.connect(ACTX.destination);
+  return ACTX;
+}
+const PENTA = [261.6, 293.7, 329.6, 392, 440, 523.3, 587.3, 659.3, 784, 880];
+function note(freq, t, dur, vol, type = 'sine'){
+  if (!G.sound) return;
+  const ctx = audio();
+  const o = ctx.createOscillator(), g = ctx.createGain();
+  o.type = type; o.frequency.value = freq;
+  g.gain.setValueAtTime(.0001, t);
+  g.gain.exponentialRampToValueAtTime(vol, t + .02);
+  g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+  o.connect(g); g.connect(MASTER); o.start(t); o.stop(t + dur + .05);
+}
+const SFX = {
+  plink(i){ const t = audio().currentTime; note(PENTA[Math.min(i, 9)], t, .35, .25, 'triangle'); },
+  soft(){ const t = audio().currentTime; note(164, t, .3, .2); note(147, t + .12, .4, .16); },
+  word(len){
+    const t = audio().currentTime;
+    const root = PENTA[Math.min(len - 3, 4)];
+    [1, 1.25, 1.5, 2].forEach((m, i) => note(root * m, t + i * .04, .7, .2, 'triangle'));
+  },
+  gem(){ const t = audio().currentTime; note(1047, t, .4, .16, 'triangle'); note(1319, t + .07, .5, .13, 'triangle'); },
+  cascade(){ const t = audio().currentTime; for (let i = 0; i < 4; i++) note(PENTA[9 - i], t + i * .06, .25, .07, 'sine'); },
+  blast(){ const t = audio().currentTime; note(220, t, .4, .25, 'triangle'); note(110, t, .5, .2); note(880, t + .05, .3, .1, 'triangle'); },
+  levelup(){ const t = audio().currentTime; PENTA.slice(0, 8).forEach((f, i) => note(f, t + i * .09, .8, .14, 'triangle')); },
+};
+/* gentle music box · generative lullaby */
+const Music = (() => {
+  let timer = null;
+  const seq = [0, 2, 4, 2, 5, 4, 2, 0, 3, 2, 0, 2, 4, 5, 7, 4];
+  let i = 0;
+  function tick(){
+    if (!G.music || !G.sound) return;
+    const ctx = audio();
+    const t = ctx.currentTime;
+    const f = PENTA[seq[i % 16]] * (i % 32 >= 16 ? .5 : 1);
+    note(f, t, 1.6, .05, 'sine');
+    note(f * 2, t, 1.2, .02, 'sine');
+    if (i % 8 === 0) note(PENTA[0] / 2, t, 2.4, .04, 'triangle');
+    i++;
+  }
+  return {
+    start(){ if (!timer) timer = setInterval(tick, 620); },
+    stop(){ clearInterval(timer); timer = null; },
+  };
+})();
+
+/* ---------- footer ---------- */
+function footHud(){
+  $('fSound').textContent = G.sound ? '🔔 Sounds' : '🔕 Muted';
+  $('fMusic').textContent = G.music ? '🎵 Music' : '🎵 Off';
+}
+$('fSound').addEventListener('click', () => { G.sound = !G.sound; footHud(); save(); });
+$('fMusic').addEventListener('click', () => { G.music = !G.music; footHud(); save(); if (G.music) Music.start(); });
+$('fHelp').addEventListener('click', () => $('help').classList.remove('hide'));
+$('helpClose').addEventListener('click', () => $('help').classList.add('hide'));
+$('resetBtn').addEventListener('click', () => {
+  localStorage.removeItem('wordcrush');
+  Object.assign(G, { lvl: 1, score: 0, starsTotal: 0, powers: { hint: 3, shuf: 3, paint: 2, smash: 2 } });
+  $('help').classList.add('hide');
+  startLevel(); hud(); toast('Fresh start! 💗');
+});
+
+/* ---------- install / PWA ---------- */
+let deferredPrompt = null;
+addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredPrompt = e; });
+$('fInstall').addEventListener('click', () => {
+  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  $('installGo').style.display = deferredPrompt ? 'inline-block' : 'none';
+  $('installMsg').innerHTML = ios
+    ? 'On iPhone/iPad:<br>1. Tap the <b>Share</b> button (square with arrow)<br>2. Tap <b>“Add to Home Screen”</b><br>3. Tap <b>Add</b> — done! WordCrush gets its own icon and works with no internet at all. Progress saves automatically.'
+    : deferredPrompt
+      ? 'Tap <b>Install now</b> and WordCrush becomes a real app on this device — own icon, full screen, works completely offline.'
+      : 'Open your browser menu and choose <b>“Install app”</b> or <b>“Add to Home Screen.”</b> WordCrush then works completely offline with its own icon. Progress saves automatically.';
+  $('install').classList.remove('hide');
+});
+$('installGo').addEventListener('click', async () => {
+  if (deferredPrompt){ deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt = null; }
+  $('install').classList.add('hide');
+});
+$('installClose').addEventListener('click', () => $('install').classList.add('hide'));
+if ('serviceWorker' in navigator){
+  navigator.serviceWorker.register('sw.js').then(reg => {
+    const show = () => { $('offlineBadge').style.display = 'block'; setTimeout(() => $('offlineBadge').style.display = 'none', 3500); };
+    if (reg.active) show(); else reg.addEventListener('updatefound', () => {
+      reg.installing && reg.installing.addEventListener('statechange', function(){ if (this.state === 'activated') show(); });
+    });
+  }).catch(() => {});
+}
+
+/* ---------- boot ---------- */
+$('playBtn').addEventListener('click', () => {
+  $('intro').classList.add('hide');
+  audio().resume && audio().resume();
+  Music.start();
+});
+addEventListener('resize', sizeBoard);
+footHud();
+startLevel();
+sizeBoard();
+hud();
+window.WC = { G, grid: () => grid, findWord, submitWord: async (cells) => { path = cells; await submit(); }, isWord };  /* test hook */
+</script>
+</body>
+</html>
