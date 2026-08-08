@@ -153,8 +153,10 @@ h1 .z{color:var(--r)}
   display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-weight:800;font-size:13px;z-index:2}
 .card .art{height:56px;border-bottom:2px solid var(--w);position:relative;overflow:hidden;background:var(--k)}
 .card .art .jtm{position:absolute;inset:0;background-size:cover;background-position:center;filter:grayscale(1) contrast(1.15)}
-.card .nm{font-weight:900;font-size:11.5px;text-transform:uppercase;letter-spacing:.02em;padding:6px 7px 2px;line-height:1.15}
-.card .fx{font-family:var(--mono);font-weight:700;font-size:9.5px;color:#ffffffbb;padding:2px 7px 8px;line-height:1.5;flex:1}
+.card .nm{font-weight:900;font-size:11.5px;text-transform:uppercase;letter-spacing:.02em;padding:6px 7px 2px;line-height:1.15;
+  word-break:break-word;overflow-wrap:anywhere}
+.card .fx{font-family:var(--mono);font-weight:700;font-size:9.5px;color:#ffffffbb;padding:2px 7px 8px;line-height:1.5;flex:1;
+  display:-webkit-box;-webkit-line-clamp:7;-webkit-box-orient:vertical;overflow:hidden}
 .card .fx b{color:var(--r)}
 .card.blend{border-color:var(--r)}
 .card.blend .nm{color:var(--r)}
@@ -499,43 +501,82 @@ const BASE_CARDS = [
   { id: 'bray', name: 'Bray', cost: 0, type: 'skl', weak: 1, desc: 'Foe −2 attack next turn.' },
   { id: 'stripes', name: 'Stripes', cost: 2, type: 'pow', str: 1, desc: '<b>Power:</b> +1 damage on all attacks.' },
   { id: 'thickhide', name: 'Thick Hide', cost: 2, type: 'pow', autoblk: 2, desc: '<b>Power:</b> +2 block every turn.' },
+  /* mana */
+  { id: 'sugarcube', name: 'Sugar Cube', cost: 1, type: 'skl', energy: 2, desc: 'Gain <b>2</b> energy.' },
+  { id: 'wildoats', name: 'Wild Oats', cost: 0, type: 'skl', energy: 1, desc: 'Gain <b>1</b> energy.' },
+  /* draw */
+  { id: 'gallopbrain', name: 'Gallop Brain', cost: 2, type: 'skl', draw: 4, desc: 'Draw <b>4</b>.' },
+  { id: 'maneattr', name: 'Mane Attraction', cost: 1, type: 'skl', draw: 2, blk: 3, desc: 'Block <b>3</b>. Draw 2.' },
+  { id: 'powernap', name: 'Power Nap', cost: 2, type: 'skl', heal: 8, desc: 'Heal <b>8</b>.' },
+  /* weird shit */
+  { id: 'mirrorstripe', name: 'Mirror Stripe', cost: 1, type: 'atk', mirror: true, desc: 'Deal damage equal to your <b>block</b>.' },
+  { id: 'barcode', name: 'Barcode', cost: 1, type: 'atk', dmg: 1, multi: 7, desc: 'Deal <b>1</b>, seven times. Strength applies to <b>each</b>.' },
+  { id: 'hoofquake', name: 'Hoofquake', cost: 3, type: 'atk', quake: true, desc: 'Deal <b>8</b>, +1 per 3 cards in your discard.' },
+  { id: 'coinmane', name: 'Coin Mane', cost: 0, type: 'skl', gamble: true, desc: 'Flip a coin: gain <b>2 energy</b> or take <b>3</b>.' },
+  { id: 'echo', name: 'Echo', cost: 1, type: 'skl', echo: true, desc: 'Add a <b>copy</b> of a random card in your hand.' },
+  { id: 'molt', name: 'Molt', cost: 0, type: 'skl', molt: true, desc: 'Discard your hand. Draw that many.' },
+  { id: 'zebramath', name: 'Zebra Math', cost: 1, type: 'skl', zmath: true, desc: 'Draw cards equal to your <b>energy left</b>.' },
+  { id: 'longcon', name: 'The Long Con', cost: 2, type: 'pow', stripegen: 2, desc: '<b>Power:</b> +2 ◆ stripes every turn.' },
+  { id: 'qmark', name: '???', cost: 1, type: 'skl', mystery: true, desc: 'Does <b>something</b>. Nobody knows what. Not even the zebra.' },
 ];
 const cardById = {};
 BASE_CARDS.forEach(c => cardById[c.id] = c);
 function mkCard(id){ return { ...cardById[id], uid: Math.random().toString(36).slice(2) }; }
 /* blend two cards → portmanteau hybrid */
 function blendName(a, b){
-  const A = a.split(' ')[0], B = b.split(' ').pop();
-  return A.slice(0, Math.ceil(A.length / 2)) + B.slice(Math.floor(B.length / 2)).toLowerCase();
+  const A = (a || 'Blend').split(' ')[0], B = (b || 'Ling').split(' ').pop();
+  let n = A.slice(0, Math.ceil(A.length / 2)) + B.slice(Math.floor(B.length / 2)).toLowerCase();
+  n = n.replace(/[^A-Za-z?!\-']/g, '') || 'Blendling';
+  if (n.length < 3) n = 'Blendling';
+  return n.slice(0, 16);
 }
+/* blend-forever safety caps · chains of chains stay sane */
+const CAPS = { dmg: 999, blk: 999, draw: 5, heal: 60, weak: 3, str: 9, autoblk: 30, self: 9, energy: 4, multi: 10, stripegen: 12, cost: [0, 4] };
 function blendCards(a, b){
+  const num = (k, f = 1) => {
+    const v = Math.round(((a[k] || 0) + (b[k] || 0)) * f);
+    return v > 0 ? Math.min(v, CAPS[k] || 999) : undefined;
+  };
+  const flag = k => (a[k] || b[k]) ? true : undefined;
   const c = {
     uid: Math.random().toString(36).slice(2),
     id: 'blend', name: blendName(a.name, b.name),
-    cost: Math.max(1, Math.round((a.cost + b.cost) / 2)),
-    type: (a.type === 'pow' || b.type === 'pow') ? 'pow' : (a.dmg || b.dmg || a.frenzy || b.frenzy) ? 'atk' : 'skl',
+    cost: clamp(Math.round(((a.cost || 0) + (b.cost || 0)) / 2), CAPS.cost[0], CAPS.cost[1]),
     blend: true,
-    dmg: Math.round(((a.dmg || 0) + (b.dmg || 0)) * .85) || undefined,
-    blk: Math.round(((a.blk || 0) + (b.blk || 0)) * .85) || undefined,
-    draw: ((a.draw || 0) + (b.draw || 0)) || undefined,
-    heal: ((a.heal || 0) + (b.heal || 0)) || undefined,
-    weak: ((a.weak || 0) + (b.weak || 0)) || undefined,
-    str: ((a.str || 0) + (b.str || 0)) || undefined,
-    autoblk: ((a.autoblk || 0) + (b.autoblk || 0)) || undefined,
-    self: ((a.self || 0) + (b.self || 0)) || undefined,
-    frenzy: a.frenzy || b.frenzy || undefined,
+    dmg: num('dmg', .85), blk: num('blk', .85),
+    draw: num('draw'), heal: num('heal'), weak: num('weak'),
+    str: num('str'), autoblk: num('autoblk'), self: num('self'),
+    energy: num('energy'), stripegen: num('stripegen'),
+    frenzy: flag('frenzy'), mirror: flag('mirror'), quake: flag('quake'),
+    gamble: flag('gamble'), echo: flag('echo'), molt: flag('molt'),
+    zmath: flag('zmath'), mystery: flag('mystery'),
   };
+  /* multi-hit: keep the larger, +1 if both sides had one */
+  const am = a.multi || 0, bm = b.multi || 0;
+  if (am || bm) c.multi = Math.min(CAPS.multi, Math.max(am, bm) + (am && bm ? 1 : 0));
+  c.type = (a.type === 'pow' || b.type === 'pow') ? 'pow'
+    : (c.dmg || c.frenzy || c.mirror || c.quake) ? 'atk' : 'skl';
   const bits = [];
-  if (c.dmg) bits.push(`Deal <b>${c.dmg}</b>.`);
-  if (c.frenzy) bits.push(`Deal <b>3×</b> cards played.`);
+  if (c.dmg) bits.push(`Deal <b>${c.dmg}</b>${c.multi ? ` × <b>${c.multi}</b>` : ''}.`);
+  else if (c.multi) bits.push(`Hit × <b>${c.multi}</b>.`);
+  if (c.frenzy) bits.push(`+<b>3×</b> cards played.`);
+  if (c.mirror) bits.push(`+dmg = your <b>block</b>.`);
+  if (c.quake) bits.push(`+1 dmg per 3 discarded.`);
   if (c.self) bits.push(`Take <b>${c.self}</b>.`);
   if (c.blk) bits.push(`Block <b>${c.blk}</b>.`);
   if (c.draw) bits.push(`Draw ${c.draw}.`);
   if (c.heal) bits.push(`Heal <b>${c.heal}</b>.`);
+  if (c.energy) bits.push(`+<b>${c.energy}</b> energy.`);
   if (c.weak) bits.push(`Foe −2 atk.`);
-  if (c.str) bits.push(`<b>Power:</b> +${c.str} str.`);
-  if (c.autoblk) bits.push(`<b>Power:</b> +${c.autoblk} blk/turn.`);
-  c.desc = bits.join(' ');
+  if (c.zmath) bits.push(`Draw = energy left.`);
+  if (c.molt) bits.push(`Redraw hand.`);
+  if (c.echo) bits.push(`Copy a hand card.`);
+  if (c.gamble) bits.push(`Coin: +2⚡ or take 3.`);
+  if (c.mystery) bits.push(`Does <b>something</b>.`);
+  if (c.str) bits.push(`<b>Pow:</b> +${c.str} str.`);
+  if (c.autoblk) bits.push(`<b>Pow:</b> +${c.autoblk} blk/turn.`);
+  if (c.stripegen) bits.push(`<b>Pow:</b> +${c.stripegen} ◆/turn.`);
+  c.desc = bits.join(' ') || 'Does absolutely nothing. A collector\'s item.';
   return c;
 }
 
@@ -997,6 +1038,7 @@ function statChips(){
   if (B.block) bits.push(`<span class="chip">🛡 BLK ${B.block}</span>`);
   if (B.str) bits.push(`<span class="chip hot">⚔ STR +${B.str}</span>`);
   if (B.autoblk) bits.push(`<span class="chip">♻ AUTO-BLK ${B.autoblk}</span>`);
+  if (B.stripegen) bits.push(`<span class="chip hot">◆ +${B.stripegen}/TURN</span>`);
   if (B.firstHit) bits.push(`<span class="chip hot">☄ FIRST HIT +${B.firstHit}</span>`);
   return bits.join('') || '<span class="chip" style="opacity:.5">NO EFFECTS</span>';
 }
@@ -1042,6 +1084,8 @@ function renderBattle(){
       fx.innerHTML = fx.innerHTML.replace(`<b>${c.dmg}</b>`, `<b class="hot">${eff}</b>`);
     }
     if (c.frenzy) fx.innerHTML += ` <b class="hot">(NOW ${3 * (B.played + 1) + B.str})</b>`;
+    if (c.mirror) fx.innerHTML += ` <b class="hot">(NOW ${B.block + B.str})</b>`;
+    if (c.quake) fx.innerHTML += ` <b class="hot">(NOW ${8 + Math.floor(B.discard.length / 3) + B.str})</b>`;
     cd.onclick = () => playCard(i, cd);
     hand.appendChild(cd);
     JTM.css('card-' + c.id, cd.querySelector('.art'));
@@ -1090,28 +1134,72 @@ function playCard(i, cardEl){
     B.played++;
     bumpStat('cards', 1);
     R.scards = (R.scards || 0) + 1;
-    let dmg = 0;
-    if (c.frenzy) dmg = 3 * B.played;
-    else if (c.dmg) dmg = c.dmg;
-    if (dmg){
-      dmg += B.str;
-      if (B.firstHit){ dmg += B.firstHit; B.firstHit = 0; }
-      const f = B.foe;
-      const absorbed = Math.min(f.blk, dmg);
-      f.blk -= absorbed;
-      f.hp -= (dmg - absorbed);
-      bumpStat('damage', dmg);
-      R.sdmg = (R.sdmg || 0) + dmg;
+    /* remove self first so echo/molt see the true remaining hand */
+    B.hand.splice(i, 1);
+    /* ---- resource + weird effects (pre-damage) ---- */
+    if (c.energy){ B.energy = Math.min(9, B.energy + c.energy); SFX.power(); }
+    if (c.gamble){
+      if (Math.random() < .5){ B.energy = Math.min(9, B.energy + 2); toast('COIN: HEADS · +2 ENERGY ⚡', 1000); SFX.ach(); }
+      else { R.hp = Math.max(1, R.hp - 3); toast('COIN: TAILS · OW. −3 HP', 1000); playerFx(); SFX.playerHit(); }
     }
+    let myst = null;
+    if (c.mystery){
+      myst = pick(['dmg', 'blk', 'draw', 'energy', 'heal']);
+      toast('??? RESOLVES: ' + { dmg: '12 DAMAGE', blk: '12 BLOCK', draw: 'DRAW 3', energy: '+2 ENERGY', heal: 'HEAL 6' }[myst], 1200);
+      if (myst === 'blk'){ B.block += 12; bumpStat('blocks', 12); SFX.block(); }
+      if (myst === 'draw') drawCards(3);
+      if (myst === 'energy') B.energy = Math.min(9, B.energy + 2);
+      if (myst === 'heal'){ R.hp = Math.min(R.mhp, R.hp + 6); SFX.heal(); }
+    }
+    /* ---- damage (single or multi-hit) ---- */
+    let base = 0;
+    if (c.frenzy) base = 3 * B.played;
+    else if (c.mirror) base = B.block;
+    else if (c.quake) base = 8 + Math.floor(B.discard.length / 3);
+    else if (c.dmg) base = c.dmg;
+    if (myst === 'dmg') base += 12;
+    let dmg = 0;
+    if (base > 0 || c.multi){
+      const hits = Math.min(c.multi || 1, CAPS.multi);
+      for (let h = 0; h < hits; h++){
+        let d = Math.max(base, c.multi ? 1 : 0) + B.str;
+        if (h === 0 && B.firstHit){ d += B.firstHit; B.firstHit = 0; }
+        const f = B.foe;
+        const absorbed = Math.min(f.blk, d);
+        f.blk -= absorbed;
+        f.hp -= (d - absorbed);
+        dmg += d;
+      }
+      if (dmg > 0){
+        bumpStat('damage', dmg);
+        R.sdmg = (R.sdmg || 0) + dmg;
+      }
+    }
+    /* ---- the rest ---- */
     if (c.self) R.hp = Math.max(1, R.hp - c.self);
     if (c.blk){ B.block += c.blk; bumpStat('blocks', c.blk); SFX.block(); }
     if (c.heal){ R.hp = Math.min(R.mhp, R.hp + c.heal); SFX.heal(); }
     if (c.weak) B.foe.weak = Math.max(B.foe.weak, c.weak + 1);
-    if (c.str) B.str += c.str;
-    if (c.autoblk) B.autoblk += c.autoblk;
-    if (c.str || c.autoblk) SFX.power();
-    if (c.draw) drawCards(c.draw);
-    B.hand.splice(i, 1);
+    if (c.str) B.str = Math.min(99, B.str + c.str);
+    if (c.autoblk) B.autoblk = Math.min(99, B.autoblk + c.autoblk);
+    if (c.stripegen) B.stripegen = Math.min(99, (B.stripegen || 0) + c.stripegen);
+    if (c.str || c.autoblk || c.stripegen) SFX.power();
+    if (c.echo && B.hand.length){
+      const src = B.hand[ri(B.hand.length)];
+      if (B.hand.length < 10){
+        B.hand.push({ ...src, uid: Math.random().toString(36).slice(2) });
+        toast('ECHO: ' + src.name.toUpperCase() + ' ×2', 1000);
+      }
+    }
+    if (c.molt){
+      const n = B.hand.length;
+      B.discard.push(...B.hand);
+      B.hand = [];
+      drawCards(n);
+      if (n) toast('MOLTED ' + n + ' → DREW ' + n, 1000);
+    }
+    if (c.draw) drawCards(Math.min(c.draw, CAPS.draw));
+    if (c.zmath && B.energy > 0) drawCards(Math.min(B.energy, CAPS.draw));
     if (c.type !== 'pow') B.discard.push(c);
     const dead = B.foe.hp <= 0;
     renderBattle();
@@ -1156,6 +1244,7 @@ function endTurn(){
       else SFX.block();
     } else if (kind === 'blk') f.blk += Math.round(f.atk * .8);
     else f.str += 1 + Math.floor(R.floor / 8);
+    if (B.stripegen){ R.stripes += B.stripegen; }
     if (through > 0 && R.hp <= 0){ B.busy = false; loseRun(); return; }
     B.turn++;
     B.discard.push(...B.hand);
