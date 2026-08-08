@@ -165,6 +165,9 @@ h1 .z{color:var(--r)}
   display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-weight:800;font-size:13px;z-index:2}
 .card .art{height:56px;border-bottom:2px solid var(--w);position:relative;overflow:hidden;background:var(--k)}
 .card .art .jtm{position:absolute;inset:0;background-size:cover;background-position:center;filter:grayscale(1) contrast(1.15)}
+.card .art .glyph{position:absolute;top:2px;right:2px;background:var(--k);border:1px solid var(--w);color:var(--w);
+  font-family:var(--mono);font-weight:800;font-size:7px;letter-spacing:.08em;padding:1px 3px;z-index:2}
+.card .art .glyph.hot{border-color:var(--r);color:var(--r)}
 .card .nm{font-weight:900;font-size:11.5px;text-transform:uppercase;letter-spacing:.02em;padding:6px 7px 2px;line-height:1.15;
   word-break:break-word;overflow-wrap:anywhere}
 .card .fx{font-family:var(--mono);font-weight:700;font-size:9.5px;color:#ffffffbb;padding:2px 7px 8px;line-height:1.5;flex:1;
@@ -473,6 +476,7 @@ const ri = n => Math.floor(Math.random() * n);
 const rand = (a, b) => a + Math.random() * (b - a);
 const pick = a => a[ri(a.length)];
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const shuffle = a => { for (let i = a.length - 1; i > 0; i--){ const j = ri(i + 1); [a[i], a[j]] = [a[j], a[i]]; } return a; };   /* Fisher-Yates. Feynman was right. */
 let toastT = null;
 function toast(m, ms = 1600){
   const t = document.getElementById('toast');
@@ -509,7 +513,6 @@ const BASE_CARDS = [
   { id: 'herd', name: 'Herd Up', cost: 1, type: 'skl', blk: 9, desc: 'Block <b>9</b>.' },
   { id: 'dust', name: 'Dust Bath', cost: 1, type: 'skl', blk: 4, draw: 1, desc: 'Block <b>4</b>. Draw 1.' },
   { id: 'zoomies', name: 'Zoomies', cost: 1, type: 'skl', draw: 2, desc: 'Draw <b>2</b>.' },
-  { id: 'graze', name: 'Graze', cost: 1, type: 'skl', heal: 3, desc: 'Heal <b>3</b>.' },
   { id: 'bray', name: 'Bray', cost: 0, type: 'skl', weak: 1, desc: 'Foe −2 attack next turn.' },
   { id: 'stripes', name: 'Stripes', cost: 2, type: 'pow', str: 1, desc: '<b>Power:</b> +1 damage on all attacks.' },
   { id: 'thickhide', name: 'Thick Hide', cost: 2, type: 'pow', autoblk: 2, desc: '<b>Power:</b> +2 block every turn.' },
@@ -983,7 +986,7 @@ function makeFoe(floor, kind){
 const ACH_FAMS = [
   ['damage', 'Damage Dealt', 'stat'], ['cards', 'Cards Played', 'stat'], ['blocks', 'Block Gained', 'stat'],
   ['kills', 'Foes Dropped', 'stat'], ['blends', 'Cards Blended', 'stat'], ['floors', 'Best Floor', 'max'],
-  ['runs', 'Runs Started', 'stat'], ['bosses', 'Bosses Beaten', 'stat'],
+  ['bosses', 'Bosses Beaten', 'stat'],
 ];
 const thresh = n => Math.round(10 * Math.pow(2.7, n));            /* 10, 27, 73, 197… forever */
 function defaultMeta(){
@@ -1052,7 +1055,7 @@ function newRun(){
   R = {
     floor: 0, hp: 60 + META.bonusHp, mhp: 60 + META.bonusHp, stripes: 0,
     deck: ['bite', 'bite', 'bite', 'bite', 'kick', 'kick', 'hide', 'hide', 'hide', 'zoomies'].map(mkCard),
-    relics: [], turn: 0, sdmg: 0, scards: 0, sblends: 0,
+    relics: [], turn: 0, sdmg: 0, scards: 0, sblends: 0, menergy: 3,
   };
   for (let i = 0; i < META.startRelics; i++) R.relics.push(pick(RELICS));
   bumpStat('runs', 1);
@@ -1129,7 +1132,7 @@ function screenTitle(){
     <h1>Blended<br><span class="z">Zebra</span></h1>
     <div class="stripes"></div>
     <div class="sub">Climb forever. Blend anything. The savanna keeps score.<br>
-    HERD LEVEL ${META.herd} · <b style="color:var(--r)">◆ ${META.stripes}</b> STRIPES · BEST FLOOR ${META.stats.floors}</div>
+    <b style="color:var(--r)">◆ ${META.stripes}</b> STRIPES · BEST FLOOR ${META.stats.floors}</div>
     <button class="btn red" id="bRun">${R ? 'Continue run · floor ' + R.floor : 'New run'}</button>
     ${R ? '<button class="btn ghost" id="bAbandon">Abandon run</button>' : ''}
     <button class="btn" id="bUnlock">Unlocks (∞)</button>
@@ -1162,7 +1165,7 @@ function hudHtml(){
     <span class="pill">FLOOR <b>${R.floor}</b></span>
     <span class="pill">◆ <b>${R.stripes}</b></span>
     <span class="pill">DECK <b>${R.deck.length}</b></span>
-    <span class="pill">HERD <b>${META.herd}</b></span>
+    <span class="pill">⚡ MAX <b>${R.menergy || 3}</b></span>
   </div>
   <div id="hpbar" class="gwrap"><div class="ghost" style="width:${R.hp / R.mhp * 100}%"></div><div class="real" style="width:${R.hp / R.mhp * 100}%"></div><span>${R.hp} / ${R.mhp} HP</span></div>
   ${R.relics.length ? `<div class="relicRow">${R.relics.map(r => `<span class="relic" title="${r.desc}">${r.name}</span>`).join('')}</div>` : ''}`;
@@ -1183,6 +1186,7 @@ function screenMap(){
       { kind: 'rest', nm: 'Oasis', dd: 'heal up — or BLEND two cards', ic: '♨' },
       { kind: 'shop', nm: 'Trading Post', dd: 'spend stripes', ic: '◆' },
       { kind: 'fight', nm: 'Fight', dd: 'a different normal amount of teeth', ic: '⚔' },
+      { kind: 'myst', nm: '???', dd: 'a door that hums. probably fine.', ic: '❓' },
     ];
     const pool = R.floor < 3 ? extras.filter(e => e.kind !== 'elite') : extras;
     const two = [];
@@ -1202,6 +1206,7 @@ function screenMap(){
     wipe(() => {
       if (d.kind === 'rest') screenRest();
       else if (d.kind === 'shop') screenShop();
+      else if (d.kind === 'myst') mysteryDoor();
       else startBattle(d.kind === 'boss' ? 'boss' : d.kind === 'elite' ? 'elite' : 'fight');
     });
   });
@@ -1211,8 +1216,8 @@ function screenMap(){
 let B = null;
 function startBattle(kind){
   const foe = makeFoe(R.floor, kind === 'boss' ? 'boss' : kind === 'elite' ? 'elite' : 'normal');
-  B = { foe, kind, hand: [], drawPile: [...R.deck].sort(() => Math.random() - .5), discard: [],
-    energy: 3, maxEnergy: 3, block: 0, str: relicSum('str'), autoblk: relicSum('autoblk'),
+  B = { foe, kind, hand: [], drawPile: shuffle([...R.deck]), discard: [],
+    energy: R.menergy || 3, maxEnergy: R.menergy || 3, block: 0, str: relicSum('str'), autoblk: relicSum('autoblk'),
     played: 0, turn: 1, firstHit: relicSum('firstHit'), over: false, ending: false, won: false };
   drawCards(5 + relicSum('firstDraw'));
   Music.setBattle(true); Music.start();
@@ -1231,7 +1236,7 @@ function renderBattle2(){
 function drawCards(n){
   for (let i = 0; i < n; i++){
     if (!B.drawPile.length){
-      B.drawPile = B.discard.sort(() => Math.random() - .5);
+      B.drawPile = shuffle(B.discard);
       B.discard = [];
       if (!B.drawPile.length) return;
     }
@@ -1322,10 +1327,21 @@ function showDeck(){
   document.body.appendChild(o);
   o.querySelector('#dClose').onclick = () => o.remove();
 }
+function glyphFor(c){
+  if (c.mystery || c.gamble || c.echo || c.molt || c.zmath || c.mirror || c.quake || c.frenzy) return ['WYRD', 1];
+  if (c.type === 'pow') return ['PWR', 0];
+  if (c.energy) return ['NRG', 0];
+  if (c.dmg || c.multi) return ['ATK', 0];
+  if (c.blk) return ['DEF', 0];
+  if (c.draw) return ['DRW', 0];
+  return ['SKL', 0];
+}
 function cardHtml(c, unplayable = false){
+  const [g, hot] = glyphFor(c);
   return `<div class="card ${c.type === 'pow' ? 'pow' : ''} ${c.blend ? 'blend' : ''} ${unplayable ? 'unplayable' : ''}">
     <div class="cost">${c.cost}</div>
-    <div class="art" data-art="card-${c.id}">${zart(c.name + c.id, c.type === 'atk')}</div>
+    <div class="art" data-art="card-${c.id}">${zart(c.name + c.id, c.type === 'atk')}
+      <span class="glyph ${hot ? 'hot' : ''}">${g}</span></div>
     <div class="nm">${c.name}</div>
     <div class="fx">${c.desc}</div>
   </div>`;
@@ -1491,6 +1507,17 @@ function winBattle(){
   META.stripes += Math.floor(gold / 3);
   const heal = relicSum('healAfter');
   if (heal) R.hp = Math.min(R.mhp, R.hp + heal);
+  /* MIGRATION · every 10th floor: the herd moves, and so do your limits */
+  if (B.kind === 'boss' && R.floor % 10 === 0){
+    if ((R.menergy || 3) < 5){
+      R.menergy = (R.menergy || 3) + 1;
+      setTimeout(() => toast('⚡ MAX ENERGY → ' + R.menergy + ' · THE HERD BLESSES YOU', 2200), 1200);
+    }
+    R.hp = Math.min(R.mhp, R.hp + Math.round(R.mhp * .25));
+    R.stripes += 30 + R.floor;
+    const mfloor = R.floor, mgold = 30 + R.floor;
+    setTimeout(() => { stampFx('MIGRATION'); toast('FLOOR ' + mfloor + ' · +25% HP · +' + mgold + ' ◆ · THE HERD MOVES', 2400); SFX.victory(); }, 2400);
+  }
   saveMeta(); saveRun();
   stampFx(B.kind === 'boss' ? 'BOSS DOWN' : 'K.O.');
   SFX.victory();
@@ -1537,6 +1564,38 @@ function screenReward(gold, kind){
   });
   $('#bSkip').onclick = () => { saveRun(); screenMap(); };
   tut('reward', '#hand', 'LOOT', 'Pick <b>one</b> card — or skip. Skipping is a real strategy: a <b>small deck</b> draws its best cards more often. Hoarders get eaten around floor 9.');
+}
+/* ---------- the mystery door · the psycho's favourite ---------- */
+function mysteryDoor(){
+  const roll = Math.random();
+  if (roll < .3){
+    const owned = new Set(R.relics.map(r => r.id));
+    const av = RELICS.filter(r => !owned.has(r.id));
+    const relic = av.length ? pick(av) : genRelic(R.relics.length);
+    R.relics.push(relic);
+    if (relic.hp){ R.mhp += relic.hp; R.hp += relic.hp; }
+    relicPop(relic);
+    toast('THE DOOR CONTAINED A RELIC. NO QUESTIONS.', 1800);
+    saveRun();
+    setTimeout(screenMap, 1400);
+  } else if (roll < .55){
+    const g = 40 + R.floor * 2;
+    R.stripes += g;
+    toast('◆ +' + g + ' STRIPES. THE DOOR WAS GENEROUS TODAY.', 1800);
+    SFX.ach();
+    saveRun();
+    setTimeout(screenMap, 1200);
+  } else if (roll < .8){
+    toast('IT\'S AN AMBUSH! IT WAS ALWAYS AN AMBUSH!', 1600);
+    SFX.bell();
+    setTimeout(() => startBattle('elite'), 900);
+  } else {
+    R.hp = Math.max(1, R.hp - 8);
+    playerFx(); SFX.playerHit(); hapt(25);
+    toast('THE DOOR BIT YOU. −8 HP. IT WAS A TRAP. OBVIOUSLY.', 2000);
+    saveRun();
+    setTimeout(screenMap, 1400);
+  }
 }
 /* ---------- rest / blend ---------- */
 function screenRest(){
@@ -1609,9 +1668,10 @@ function screenBlend(){
 /* ---------- shop ---------- */
 function screenShop(){
   app.innerHTML = '';
-  const cards = [mkCard(pick(BASE_CARDS).id), mkCard(pick(BASE_CARDS).id)];
+  const cards = [mkCard(pick(BASE_CARDS).id)];
   const cardCost = 25 + R.floor * 2;
   const healCost = 15 + R.floor;
+  const banishCost = 45 + R.floor * 2;
   const owned = new Set(R.relics.map(r => r.id));
   const av = RELICS.filter(r => !owned.has(r.id));
   const relic = av.length ? pick(av) : genRelic(R.relics.length);
@@ -1620,17 +1680,39 @@ function screenShop(){
     ${hudHtml()}
     <div class="stripes"></div>
     <div class="big">Trading <span class="z">Post</span></div>
-    <div class="sub">A meerkat with a ledger. It has seen things.</div>
+    <div class="sub">A meerkat with a ledger. It has seen things. It also eats cards now.</div>
     <div id="hand">${cards.map((c, i) => `<div data-i="${i}">${cardHtml(c)}</div>`).join('')}</div>
-    <button class="btn" id="bC0">Buy card 1 · ◆ ${cardCost}</button>
-    <button class="btn" id="bC1">Buy card 2 · ◆ ${cardCost}</button>
+    <button class="btn" id="bC0">Buy this card · ◆ ${cardCost}</button>
     <button class="btn" id="bRelic">${relic.name} (${relic.desc}) · ◆ ${relicCost}</button>
+    <button class="btn" id="bBanish">BANISH a card — the meerkat eats it · ◆ ${banishCost}</button>
     <button class="btn" id="bHeal">Patch up · heal 20 · ◆ ${healCost}</button>
     <button class="btn red" id="bGo">Leave</button>
   </div>`);
   app.appendChild(p);
   p.querySelectorAll('#hand > div').forEach(dv => JTM.css('card-' + cards[+dv.dataset.i].id, dv.querySelector('.art')));
-  const priced = [['#bC0', cardCost], ['#bC1', cardCost], ['#bRelic', relicCost], ['#bHeal', healCost]];
+  $('#bBanish').onclick = () => {
+    if (R.stripes < banishCost){ toast('NOT ENOUGH STRIPES. THE MEERKAT STAYS HUNGRY.'); return; }
+    if (R.deck.length <= 5){ toast('DECK TOO THIN. EVEN THE MEERKAT HAS STANDARDS.'); return; }
+    const o = el(`<div class="ovlDeck"><div style="max-width:640px;margin:0 auto 12px;display:flex;justify-content:space-between;align-items:center">
+      <span class="kick">PICK A CARD · THE MEERKAT IS READY</span>
+      <button class="btn red" style="width:auto;min-height:40px;padding:8px 16px" id="banCancel">Cancel</button></div>
+      <div class="grid">${R.deck.map((c, i) => `<div data-i="${i}">${cardHtml(c)}</div>`).join('')}</div></div>`);
+    document.body.appendChild(o);
+    o.querySelector('#banCancel').onclick = () => o.remove();
+    o.querySelectorAll('.grid > div').forEach(dv => dv.onclick = () => {
+      const c = R.deck[+dv.dataset.i];
+      R.deck.splice(+dv.dataset.i, 1);
+      R.stripes -= banishCost;
+      saveRun();
+      o.remove();
+      const bb = $('#bBanish');
+      if (bb){ bb.disabled = true; bb.dataset.sold = 1; bb.textContent = 'THE MEERKAT IS FULL. IT ATE ' + c.name.toUpperCase(); }
+      toast('🍽 BANISHED: ' + c.name.toUpperCase() + ' · GONE FOREVER', 1800);
+      SFX.blend();
+      refreshAfford();
+    });
+  };
+  const priced = [['#bC0', cardCost], ['#bRelic', relicCost], ['#bBanish', banishCost], ['#bHeal', healCost]];
   function refreshAfford(){
     $('#hud') && ($('#hud').outerHTML = hudHtml().match(/<div id="hud">[\s\S]*?<\/div>/)[0]);
     priced.forEach(([sel, cost]) => {
@@ -1646,7 +1728,6 @@ function screenShop(){
     refreshAfford();
   };
   $('#bC0').onclick = e => buy(cardCost, () => R.deck.push(cards[0]), e.target);
-  $('#bC1').onclick = e => buy(cardCost, () => R.deck.push(cards[1]), e.target);
   $('#bRelic').onclick = e => buy(relicCost, () => { R.relics.push(relic); if (relic.hp){ R.mhp += relic.hp; R.hp += relic.hp; } relicPop(relic); }, e.target);
   $('#bHeal').onclick = e => buy(healCost, () => R.hp = Math.min(R.mhp, R.hp + 20), e.target);
   $('#bGo').onclick = () => wipe(screenMap);
@@ -1662,7 +1743,6 @@ function loseRun(){
   const stats = { dmg: R.sdmg || 0, cards: R.scards || 0, blends: R.sblends || 0, deck: R.deck.length, relics: R.relics.length };
   const earned = 10 + floor * 4;
   META.stripes += earned;
-  META.herd++;
   saveMeta();
   R = null; saveRun();
   app.innerHTML = '';
@@ -1670,7 +1750,7 @@ function loseRun(){
     <span class="kick">THE SAVANNA IS PATIENT</span>
     <div class="big">Run <span class="z">over</span></div>
     <div class="stripes"></div>
-    <div class="sub">Fell on floor ${floor}.<br>+${earned} ◆ stripes · herd level up → ${META.herd}</div>
+    <div class="sub">Fell on floor ${floor}.<br>+${earned} ◆ stripes banked for unlocks</div>
     <div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap">
       <span class="chip">⚔ ${stats.dmg} DMG</span><span class="chip">🃏 ${stats.cards} PLAYED</span>
       <span class="chip hot">⚡ ${stats.blends} BLENDS</span><span class="chip">📚 DECK ${stats.deck}</span>
