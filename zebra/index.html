@@ -318,19 +318,49 @@ function nzz(dur, vol, hp, delay = 0){
   const g = ACTX.createGain(); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.001, t + dur);
   src.connect(f); f.connect(g); g.connect(AMASTER); src.start(t);
 }
+/* ---------- sampled SFX layer · real audio fetched from the Phaser
+   examples library (see snd/README.md), decoded through the master bus,
+   pitch-randomized, layered over the synth. Synth alone if unloaded. */
+const SAMPLES = { hit: 'shot1.wav', hit2: 'shot2.wav', big: 'explosion.mp3', ko: 'blaster.mp3',
+  play: 'key.wav', click: 'numkey.wav', coin: 'pickup.wav', blend: 'squit.wav', swish: 'lazer.wav' };
+const SBUF = {};
+let samplesRequested = false;
+function loadSamples(){
+  if (samplesRequested) return;
+  samplesRequested = true;
+  audio();
+  Object.entries(SAMPLES).forEach(([k, f]) =>
+    fetch('snd/' + f).then(r => r.ok ? r.arrayBuffer() : Promise.reject())
+      .then(b => ACTX.decodeAudioData(b))
+      .then(buf => { SBUF[k] = buf; })
+      .catch(() => {}));
+}
+function smp(k, vol = .5, rate = 1, jitter = .12){
+  const b = SBUF[k];
+  if (!b) return false;
+  const s = ACTX.createBufferSource();
+  s.buffer = b;
+  s.playbackRate.value = rate * (1 - jitter / 2 + Math.random() * jitter);
+  const g = ACTX.createGain(); g.gain.value = vol;
+  s.connect(g); g.connect(AMASTER); s.start();
+  return true;
+}
 const SFX = {
-  click(){ nzz(.03, .12, 3000); },
-  play(){ nzz(.05, .15, 1400); tone('sine', 300, 180, .1, .25); },
-  hit(big){ nzz(.08, .35, 300); tone('sine', big ? 200 : 150, 50, .18, .5); },
-  block(){ tone('triangle', 700, 500, .1, .25); },
+  click(){ if (!smp('click', .22, 1.4)) nzz(.03, .12, 3000); },
+  play(){ smp('play', .35, 1.1); nzz(.05, .1, 1400); tone('sine', 300, 180, .1, .18); },
+  hit(big){
+    if (big) smp('big', .5, 1.05); else smp(Math.random() < .5 ? 'hit' : 'hit2', .4, 1.15);
+    nzz(.08, .25, 300); tone('sine', big ? 200 : 150, 50, .18, .45);   /* synth thump for body */
+  },
+  block(){ tone('triangle', 700, 500, .1, .25); smp('click', .3, .7); },
   heal(){ tone('sine', 523, null, .25, .18); tone('sine', 784, null, .3, .14, .08); },
-  power(){ tone('sawtooth', 110, 220, .35, .2); },
-  playerHit(){ nzz(.12, .3, 200); tone('sawtooth', 240, 90, .3, .3); },
+  power(){ tone('sawtooth', 110, 220, .35, .2); smp('swish', .25, .8); },
+  playerHit(){ smp('hit2', .45, .75); nzz(.12, .22, 200); tone('sawtooth', 240, 90, .3, .25); },
   bell(){ tone('triangle', 880, null, .5, .3); tone('triangle', 1320, null, .4, .12, .05); },
-  victory(){ [330, 494, 659].forEach((f, i) => tone('square', f, null, .18, .18, i * .09)); },
-  blend(){ tone('sawtooth', 80, 640, .5, .25); nzz(.3, .2, 800, .35); tone('square', 660, 880, .2, .2, .45); },
-  death(){ tone('sawtooth', 220, 40, 1.1, .3); nzz(.6, .18, 150, .2); },
-  ach(){ tone('triangle', 1047, null, .15, .2); tone('triangle', 1568, null, .25, .16, .09); },
+  victory(){ [330, 494, 659].forEach((f, i) => tone('square', f, null, .18, .18, i * .09)); smp('coin', .5, 1); },
+  blend(){ smp('blend', .55, .9); tone('sawtooth', 80, 640, .5, .22); tone('square', 660, 880, .2, .18, .45); },
+  death(){ smp('ko', .55, .7); tone('sawtooth', 220, 40, 1.1, .3); nzz(.6, .18, 150, .2); },
+  ach(){ smp('coin', .4, 1.3); tone('triangle', 1047, null, .15, .18); tone('triangle', 1568, null, .25, .14, .09); },
 };
 addEventListener('pointerdown', e => { if (e.target.closest('.btn,.door,.card,.pill')) SFX.click(); });
 
@@ -485,7 +515,7 @@ const Music = (() => {
     running(){ return !!timer; },
   };
 })();
-addEventListener('pointerdown', () => Music.start());
+addEventListener('pointerdown', () => { Music.start(); loadSamples(); });
 document.addEventListener('visibilitychange', () => { if (document.hidden) Music.stop(); else Music.start(); });
 const ri = n => Math.floor(Math.random() * n);
 const rand = (a, b) => a + Math.random() * (b - a);
