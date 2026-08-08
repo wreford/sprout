@@ -178,8 +178,18 @@ h1 .z{color:var(--r)}
 .card .fx{font-family:var(--mono);font-weight:700;font-size:9.5px;color:#ffffffbb;padding:2px 7px 8px;line-height:1.5;flex:1;
   display:-webkit-box;-webkit-line-clamp:7;-webkit-box-orient:vertical;overflow:hidden}
 .card .fx b{color:var(--r)}
-.card.blend{border-color:var(--r)}
 .card.blend .nm{color:var(--r)}
+/* rarity borders · brightness is the currency */
+.card.r0{border-color:#ffffff66}
+.card.r1{border-color:var(--w)}
+.card.r2{border-color:var(--r)}
+.card.r3{border-color:transparent;
+  background:linear-gradient(var(--k),var(--k)) padding-box,
+    repeating-linear-gradient(45deg,var(--r) 0 9px,var(--w) 9px 18px) border-box;
+  background-size:auto,300% 300%;animation:legendMove 4s linear infinite}
+@keyframes legendMove{to{background-position:0 0,60px 60px}}
+.rtag{position:absolute;bottom:2px;left:2px;background:var(--k);border:1px solid var(--r);color:var(--r);
+  font-family:var(--mono);font-weight:800;font-size:6.5px;letter-spacing:.1em;padding:1px 3px;z-index:2}
 .card.pow .art{background:repeating-linear-gradient(45deg,#111 0 8px,#000 8px 16px)}
 .card.sel{outline:3px solid var(--r);outline-offset:2px}
 /* battle bottom */
@@ -550,6 +560,11 @@ const BASE_CARDS = [
   { id: 'longcon', name: 'The Long Con', cost: 2, type: 'pow', stripegen: 2, desc: '<b>Power:</b> +2 ◆ stripes every turn.' },
   { id: 'qmark', name: '???', cost: 1, type: 'skl', mystery: true, desc: 'Does <b>something</b>. Nobody knows what. Not even the zebra.' },
 ];
+/* ---------- rarities · 0 common · 1 uncommon · 2 rare · 3 legendary (blend-only) ---------- */
+const RAR_NAMES = ['COMMON', 'UNCOMMON', 'RARE', 'LEGENDARY'];
+const RAR_U = ['headbutt', 'stampede', 'charge', 'muzzle', 'maneattr', 'mudroll', 'warnstripe', 'chomp', 'doublekick', 'nuzzle', 'sugarcube', 'powernap', 'gallopbrain', 'frenzy'];
+const RAR_R = ['stripes', 'thickhide', 'mirrorstripe', 'barcode', 'hoofquake', 'echo', 'molt', 'zebramath', 'longcon', 'qmark', 'coinmane'];
+BASE_CARDS.forEach(c => { c.rar = RAR_R.includes(c.id) ? 2 : RAR_U.includes(c.id) ? 1 : 0; });
 const cardById = {};
 BASE_CARDS.forEach(c => cardById[c.id] = c);
 function mkCard(id){ return { ...cardById[id], uid: Math.random().toString(36).slice(2) }; }
@@ -571,6 +586,7 @@ function blendCards(a, b){
   const flag = k => (a[k] || b[k]) ? true : undefined;
   const c = {
     uid: Math.random().toString(36).slice(2),
+    rar: Math.min(3, Math.max(a.rar || 0, b.rar || 0) + 1),   /* blending climbs the ladder · legendary is blend-only */
     id: 'blend', name: blendName(a.name, b.name),
     cost: clamp(Math.round(((a.cost || 0) + (b.cost || 0)) / 2), CAPS.cost[0], CAPS.cost[1]),
     blend: true,
@@ -1464,10 +1480,12 @@ function glyphFor(c){
 }
 function cardHtml(c, unplayable = false){
   const [g, hot] = glyphFor(c);
-  return `<div class="card ${c.type === 'pow' ? 'pow' : ''} ${c.blend ? 'blend' : ''} ${unplayable ? 'unplayable' : ''}">
+  const rar = c.rar || 0;
+  return `<div class="card r${rar} ${c.type === 'pow' ? 'pow' : ''} ${c.blend ? 'blend' : ''} ${unplayable ? 'unplayable' : ''}">
     <div class="cost">${c.cost}</div>
     <div class="art" data-art="card-${c.id}">${zart(c.name + c.id, c.type === 'atk')}
-      <span class="glyph ${hot ? 'hot' : ''}">${g}</span></div>
+      <span class="glyph ${hot ? 'hot' : ''}">${g}</span>
+      ${rar >= 2 ? `<span class="rtag">${RAR_NAMES[rar]}</span>` : ''}</div>
     <div class="nm">${c.name}</div>
     <div class="fx">${c.desc}</div>
   </div>`;
@@ -1659,8 +1677,19 @@ function screenReward(gold, kind){
   const picks = [];
   /* floors 1-4 deal simple commons; the deep pool opens at floor 5 */
   const pool = BASE_CARDS.filter(c => !['bite', 'hide'].includes(c.id) && (R.floor >= 5 || c.early));
+  /* rarity roll scales with the fight: bosses never deal commons */
+  const rollRar = () => {
+    const r = Math.random();
+    if (kind === 'boss') return r < .5 ? 2 : 1;
+    if (kind === 'elite') return r < .2 ? 2 : r < .55 ? 1 : 0;
+    return r < .08 ? 2 : r < .35 ? 1 : 0;
+  };
   while (picks.length < 3){
-    const c = pick(pool);
+    let rar = rollRar();
+    let sub = pool.filter(c => c.rar === rar);
+    while (!sub.length && rar > 0){ rar--; sub = pool.filter(c => c.rar === rar); }
+    if (!sub.length) sub = pool;
+    const c = pick(sub);
     if (!picks.some(p => p.id === c.id) || Math.random() < .2) picks.push(mkCard(c.id));
   }
   /* deep floors offer pre-blended exotics */
@@ -1785,6 +1814,7 @@ function screenBlend(){
     bumpStat('blends', 1);
     R.sblends = (R.sblends || 0) + 1;
     saveRun();
+    if (nc.rar === 3) setTimeout(() => { toast('⚡ LEGENDARY BLEND · IT HAS NO EQUAL', 2400); SFX.victory(); hapt(50); }, 2400);
     /* the blend ceremony · two cards enter, one card leaves */
     SFX.blend();
     const cer = el(`<div class="ceremony">
@@ -1808,7 +1838,7 @@ function screenBlend(){
 function screenShop(){
   app.innerHTML = '';
   const cards = [mkCard(pick(BASE_CARDS.filter(c => R.floor >= 5 || c.early)).id)];
-  const cardCost = 25 + R.floor * 2;
+  const cardCost = 18 + (cards[0].rar || 0) * 12 + R.floor * 2;
   const healCost = 15 + R.floor;
   const banishCost = 45 + R.floor * 2;
   const owned = new Set(R.relics.map(r => r.id));
