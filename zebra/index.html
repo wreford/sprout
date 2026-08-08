@@ -363,24 +363,98 @@ function relicPop(r){
   setTimeout(() => p.remove(), 2000);
   p.onclick = () => p.remove();
 }
-/* sparse battle drums · dry toms in the dark */
-const Drums = (() => {
-  let timer = null, step = 0;
-  function hit(){
-    if (META.music === false) return;
+/* ============================================================
+   MUSIC · 14-BIT SEXY™ (mathematically 7-bit. emotionally 14.)
+   92 BPM swung groove · Am7-Dm7-Fmaj7-E7 · walking bass ·
+   vibrato saw lead through a real bit-crusher and slap-back.
+   Chill everywhere; drums and lead wake up in battle.
+   ============================================================ */
+const Music = (() => {
+  let timer = null, step = 0, nextT = 0, battle = false, bus = null;
+  const BPM = 92, S16 = 60 / BPM / 4, SW = S16 * .33;
+  const N = m => 440 * Math.pow(2, (m - 69) / 12);
+  const PROG = [
+    { root: 45, chord: [57, 60, 64, 67] },   /* Am7 */
+    { root: 50, chord: [57, 62, 65, 69] },   /* Dm7 */
+    { root: 41, chord: [57, 60, 65, 69] },   /* Fmaj7 */
+    { root: 40, chord: [56, 59, 64, 68] },   /* E7 */
+  ];
+  const BASSPAT = [0, null, null, 7, null, null, 5, null, 0, null, 3, null, 5, null, 7, 10];
+  const RIFF = [76, 74, 72, 69, 67, 69, 72, 74, 76, 79, 76, 74, 72, 69, 67, 64];
+  function ensureBus(){
+    if (bus) return;
     audio();
-    const b = step % 16;
-    if (b === 0 || b === 6) tone('sine', 82, 40, .22, .4);           /* floor tom */
-    if (b === 10) tone('sine', 110, 55, .16, .3);
-    if (b % 2 === 0) nzz(.02, .04, 7000);                             /* dry tick */
-    if (b === 12 && Math.floor(step / 16) % 4 === 3) nzz(.12, .12, 1200);  /* brush turn */
-    step++;
+    bus = ACTX.createGain(); bus.gain.value = .8;
+    /* the fourteen bits (allegedly) */
+    const crush = ACTX.createWaveShaper();
+    const steps = 128, curve = new Float32Array(8192);
+    for (let i = 0; i < 8192; i++){ const x = i / 4096 - 1; curve[i] = Math.round(x * steps) / steps; }
+    crush.curve = curve;
+    const lp = ACTX.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2800; lp.Q.value = .5;
+    const delay = ACTX.createDelay(.7); delay.delayTime.value = S16 * 6;
+    const fb = ACTX.createGain(); fb.gain.value = .18;
+    const wet = ACTX.createGain(); wet.gain.value = .12;
+    bus.connect(crush); crush.connect(lp); lp.connect(AMASTER);
+    lp.connect(delay); delay.connect(fb); fb.connect(delay); delay.connect(wet); wet.connect(AMASTER);
+  }
+  function note(midi, t, dur, vol, type = 'square', vib = 0){
+    const o = ACTX.createOscillator(), g = ACTX.createGain();
+    o.type = type; o.frequency.value = N(midi);
+    if (vib){
+      const l = ACTX.createOscillator(), lg = ACTX.createGain();
+      l.frequency.value = 5.2; lg.gain.value = vib;
+      l.connect(lg); lg.connect(o.detune); l.start(t); l.stop(t + dur);
+    }
+    g.gain.setValueAtTime(.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + .025);
+    g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+    o.connect(g); g.connect(bus); o.start(t); o.stop(t + dur + .05);
+  }
+  function sched(i, t){
+    const bar = Math.floor(i / 16) % 4, pos = i % 16;
+    const P = PROG[bar];
+    const b = BASSPAT[pos];
+    if (b !== null) note(P.root + b, t, S16 * 1.9, .3, 'triangle');
+    if (pos === 0) P.chord.forEach((m, ci) => note(m, t + ci * .018, S16 * 13, .045, 'square', 7));
+    /* lead: shy in the menus, confident in a fight */
+    const leadOn = battle ? pos % 2 === 0 : (bar % 2 === 1 && pos % 4 === 0);
+    if (leadOn && Math.sin(i * 2.7) > -.1){
+      note(RIFF[(i * 7 + bar * 3) % 16], t, S16 * (battle ? 1.7 : 3.2), .085, 'sawtooth', 16);
+    }
+    /* drums (uncrushed, straight to master, for punch) */
+    if (pos === 0 || pos === 8) tone('sine', 105, 42, .15, .38);
+    if (pos === 4 || pos === 12) nzz(.05, .14, 1800);
+    if (battle){
+      if (pos % 2 === 0) nzz(.02, pos % 4 === 0 ? .07 : .04, 7000);
+      if (pos === 14 && bar % 2) tone('sine', 82, 48, .14, .25);
+    } else if (pos % 4 === 2) nzz(.02, .035, 8000);
+  }
+  function tick(){
+    while (nextT < ACTX.currentTime + .12){
+      sched(step, nextT + (step % 2 ? SW : 0));
+      step++; nextT += S16;
+    }
   }
   return {
-    start(){ if (!timer) timer = setInterval(hit, 170); },
+    start(){
+      if (META.music === false) return;
+      ensureBus(); ACTX.resume();
+      if (!timer){ nextT = ACTX.currentTime + .05; timer = setInterval(tick, 25); }
+    },
     stop(){ clearInterval(timer); timer = null; },
+    setBattle(b){ battle = b; },
+    on(){ return META.music !== false; },
+    toggle(){
+      META.music = META.music === false ? true : false;
+      saveMeta();
+      if (META.music === false) this.stop(); else this.start();
+      return this.on();
+    },
+    running(){ return !!timer; },
   };
 })();
+addEventListener('pointerdown', () => Music.start());
+document.addEventListener('visibilitychange', () => { if (document.hidden) Music.stop(); else Music.start(); });
 const ri = n => Math.floor(Math.random() * n);
 const rand = (a, b) => a + Math.random() * (b - a);
 const pick = a => a[ri(a.length)];
@@ -806,8 +880,15 @@ function screenTitle(){
     <button class="btn" id="bUnlock">Unlocks (∞)</button>
     <button class="btn" id="bAch">Achievements (∞)</button>
     <button class="btn ghost" id="bGuide">Field guide</button>
+    <button class="btn ghost" id="bMusic">♪ 14-bit sexy mode: ${Music.on() ? 'ON' : 'OFF'}</button>
+    <p style="font-family:var(--mono);font-size:9px;letter-spacing:.14em;color:#ffffff44">14-BIT: ALL THE BITS OF 16-BIT, MINUS THE TWO BORING ONES</p>
   </div>`);
   app.appendChild(p);
+  $('#bMusic').onclick = () => {
+    const on = Music.toggle();
+    $('#bMusic').textContent = `♪ 14-bit sexy mode: ${on ? 'ON' : 'OFF'}`;
+    toast(on ? '♪ THE GROOVE RETURNS' : 'SILENCE. ALSO A VIBE.');
+  };
   $('#bRun').onclick = () => {
     const first = !R && !(META.tips && META.tips.guide);
     if (first){ showGuide(() => { newRun(); screenMap(); }); return; }
@@ -877,7 +958,7 @@ function startBattle(kind){
     energy: 3, maxEnergy: 3, block: 0, str: relicSum('str'), autoblk: relicSum('autoblk'),
     played: 0, turn: 1, firstHit: relicSum('firstHit'), over: false, ending: false, won: false };
   drawCards(5 + relicSum('firstDraw'));
-  Drums.start();
+  Music.setBattle(true); Music.start();
   if (kind === 'boss' || kind === 'elite'){ splash(foe, renderBattle2); return; }
   renderBattle2();
 }
@@ -1093,7 +1174,7 @@ function winBattle(){
   if (B.won) return;
   B.won = true;
   B.over = true;
-  Drums.stop();
+  Music.setBattle(false);
   bumpStat('kills', 1);
   if (B.kind === 'boss') bumpStat('bosses', 1);
   const base = (B.kind === 'boss' ? 40 : B.kind === 'elite' ? 22 : 12) + Math.floor(R.floor * 1.5);
@@ -1265,7 +1346,7 @@ function screenShop(){
 }
 /* ---------- death ---------- */
 function loseRun(){
-  Drums.stop();
+  Music.setBattle(false);
   SFX.death();
   hapt([60, 40, 120]);
   stampFx('FELL');
