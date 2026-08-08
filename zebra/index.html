@@ -92,6 +92,27 @@ h1 .z{color:var(--r)}
   100%{transform:translate(-50%,-50%) rotate(-8deg) scale(1);opacity:1}}
 .ovlDeck{position:fixed;inset:0;z-index:58;background:#000000f0;overflow-y:auto;padding:20px}
 .ovlDeck .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px;max-width:640px;margin:0 auto}
+/* tutorial */
+#tutScrim{position:fixed;inset:0;z-index:70;background:#000000cc;display:flex;align-items:flex-end;justify-content:center;
+  padding:0 14px calc(env(safe-area-inset-bottom) + 22px)}
+.tutTarget{position:relative!important;z-index:71!important;outline:3px solid var(--r);outline-offset:4px}
+.tutBox{max-width:520px;width:100%;background:var(--k);border:2px solid var(--w);padding:16px;
+  animation:pageIn .25s cubic-bezier(.2,.9,.3,1)}
+.tutBox .tk{font-family:var(--mono);font-weight:800;font-size:10px;letter-spacing:.22em;color:var(--r);text-transform:uppercase;margin-bottom:8px}
+.tutBox .tb{font-family:var(--mono);font-weight:700;font-size:12.5px;line-height:1.9;color:var(--w);letter-spacing:.02em}
+.tutBox .tb b{color:var(--r)}
+.tutBox .btn{margin-top:12px}
+.guide{position:fixed;inset:0;z-index:72;background:#000000f2;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:16px;padding:22px;text-align:center}
+.guide .gstep{font-family:var(--mono);font-weight:800;font-size:10px;letter-spacing:.24em;color:#ffffff66}
+.guide .gt{font-weight:900;font-size:clamp(28px,8vw,44px);text-transform:uppercase;letter-spacing:-.02em}
+.guide .gt span{color:var(--r)}
+.guide .gb{font-family:var(--mono);font-weight:700;font-size:13px;line-height:2;color:#ffffffcc;max-width:34em;text-align:left}
+.guide .gb b{color:var(--r)}
+.guide .gnav{display:flex;gap:8px;width:100%;max-width:420px}
+.guide .dots{display:flex;gap:6px}
+.guide .dots i{width:10px;height:10px;background:#ffffff33}
+.guide .dots i.on{background:var(--r)}
 /* hand */
 #hand{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px}
 .card{border:2px solid var(--w);background:var(--k);cursor:pointer;position:relative;display:flex;flex-direction:column;
@@ -581,7 +602,7 @@ const ACH_FAMS = [
 const thresh = n => Math.round(10 * Math.pow(2.7, n));            /* 10, 27, 73, 197… forever */
 function defaultMeta(){
   return { stripes: 0, herd: 0, unlocks: 0, stats: { damage: 0, cards: 0, blocks: 0, kills: 0, blends: 0, floors: 0, runs: 0, bosses: 0 },
-    achTiers: {}, bonusHp: 0, bonusStripe: 0, startRelics: 0 };
+    achTiers: {}, bonusHp: 0, bonusStripe: 0, startRelics: 0, tips: {} };
 }
 let META = defaultMeta();
 function loadMeta(){
@@ -637,9 +658,63 @@ function loadRun(){
 function relicSum(k){ return R.relics.reduce((s, r) => s + (r[k] || 0), 0); }
 
 /* ============================================================
-   SCREENS
+   TUTORIAL · field guide + one-time coach marks
    ============================================================ */
 function el(html){ const d = document.createElement('div'); d.innerHTML = html; return d.firstElementChild; }
+function tut(id, sel, kick, body, cb){
+  META.tips = META.tips || {};
+  if (META.tips[id]){ cb && cb(); return; }
+  if (document.getElementById('tutScrim')){ cb && cb(); return; }   /* one at a time */
+  const target = sel ? document.querySelector(sel) : null;
+  if (target) target.classList.add('tutTarget');
+  const scrim = el(`<div id="tutScrim"><div class="tutBox">
+    <div class="tk">${kick}</div><div class="tb">${body}</div>
+    <button class="btn red">Got it</button></div></div>`);
+  document.body.appendChild(scrim);
+  scrim.querySelector('button').onclick = e => {
+    e.stopPropagation();
+    META.tips[id] = 1; saveMeta();
+    if (target) target.classList.remove('tutTarget');
+    scrim.remove();
+    cb && cb();
+  };
+}
+const GUIDE = [
+  { t: 'The <span>climb</span>', b: 'Endless floors. Pick a door, survive what\'s behind it. Every <b>5th floor is a boss</b>. Elites are the Rogues\' Gallery — worse people, better loot. There is no top. Only a personal best.' },
+  { t: 'Bat<span>tle</span>', b: 'Draw 5, spend <b>ENERGY</b> (the red pip) to play cards. The enemy <b>TELEGRAPHS</b> its next move — block the big hits, punish the off-turns. Block resets every turn. Powers stick for the whole fight.' },
+  { t: 'Ble<span>nd</span>', b: 'At an Oasis you can fuse <b>ANY two cards into one</b> — combined effects, one card, forever. Bite + Hide = <b>Bide</b>. Small decks that do two things per card is the whole zebra.' },
+  { t: 'Stri<span>pes</span>', b: '<b>◆ Stripes</b> drop from every battle. Spend them in-run at the Trading Post. A cut banks to your permanent wallet — that funds the <b>infinite unlock ladder</b> back at the title.' },
+  { t: 'For<span>ever</span>', b: 'Death feeds the herd: <b>+herd level, +stripes</b>, and achievements tier forever (×2.7 each). Every run starts a little stronger. The savanna keeps score.' },
+];
+function showGuide(cb){
+  let i = 0;
+  const g = el(`<div class="guide">
+    <div class="gstep"></div><div class="gt"></div><div class="stripes" style="width:100%;max-width:420px"></div>
+    <div class="gb"></div>
+    <div class="dots">${GUIDE.map(() => '<i></i>').join('')}</div>
+    <div class="gnav"><button class="btn ghost" id="gBack" style="flex:1">Back</button>
+    <button class="btn red" id="gNext" style="flex:2">Next</button></div>
+    <button class="btn ghost" id="gSkip" style="max-width:420px">Skip — I was raised by hyenas</button>
+  </div>`);
+  document.body.appendChild(g);
+  function paint(){
+    g.querySelector('.gstep').textContent = `FIELD GUIDE · ${i + 1} OF ${GUIDE.length}`;
+    g.querySelector('.gt').innerHTML = GUIDE[i].t;
+    g.querySelector('.gb').innerHTML = GUIDE[i].b;
+    g.querySelectorAll('.dots i').forEach((d, di) => d.classList.toggle('on', di === i));
+    g.querySelector('#gBack').style.visibility = i ? 'visible' : 'hidden';
+    g.querySelector('#gNext').textContent = i === GUIDE.length - 1 ? 'Let\'s climb' : 'Next';
+  }
+  const done = () => { META.tips = META.tips || {}; META.tips.guide = 1; saveMeta(); g.remove(); cb && cb(); };
+  g.querySelector('#gNext').onclick = () => { if (i === GUIDE.length - 1) done(); else { i++; paint(); SFX.click(); } };
+  g.querySelector('#gBack').onclick = () => { if (i > 0){ i--; paint(); } };
+  g.querySelector('#gSkip').onclick = done;
+  paint();
+}
+
+/* ============================================================
+   SCREENS
+   ============================================================ */
 function screenTitle(){
   app.innerHTML = '';
   const p = el(`<div class="page" style="justify-content:center;text-align:center;gap:16px">
@@ -652,9 +727,16 @@ function screenTitle(){
     ${R ? '<button class="btn ghost" id="bAbandon">Abandon run</button>' : ''}
     <button class="btn" id="bUnlock">Unlocks (∞)</button>
     <button class="btn" id="bAch">Achievements (∞)</button>
+    <button class="btn ghost" id="bGuide">Field guide</button>
   </div>`);
   app.appendChild(p);
-  $('#bRun').onclick = () => { if (!R) newRun(); screenMap(); };
+  $('#bRun').onclick = () => {
+    const first = !R && !(META.tips && META.tips.guide);
+    if (first){ showGuide(() => { newRun(); screenMap(); }); return; }
+    if (!R) newRun();
+    screenMap();
+  };
+  $('#bGuide').onclick = () => showGuide();
   if ($('#bAbandon')) $('#bAbandon').onclick = () => { R = null; saveRun(); screenTitle(); };
   $('#bUnlock').onclick = screenUnlocks;
   $('#bAch').onclick = screenAch;
@@ -705,6 +787,7 @@ function screenMap(){
     else if (d.kind === 'shop') screenShop();
     else startBattle(d.kind === 'boss' ? 'boss' : d.kind === 'elite' ? 'elite' : 'fight');
   });
+  tut('map', '.door', 'THE MAP', 'One door per floor. <b>Fights</b> pay stripes and cards, the <b>Oasis</b> heals or blends, the <b>Rogues\' Gallery</b> hits harder but drops relics. Every 5th floor: boss. Choose.');
 }
 /* ---------- battle ---------- */
 let B = null;
@@ -716,6 +799,12 @@ function startBattle(kind){
     played: 0, turn: 1, firstHit: relicSum('firstHit'), over: false };
   drawCards(5 + relicSum('firstDraw'));
   renderBattle();
+  /* first-battle walkthrough: intent → energy/cards → end turn */
+  setTimeout(() => {
+    tut('b1', '#foe', 'READ THE ENEMY', 'This is the foe. <b>INTENT</b> tells you its next move — an incoming <b>ATTACK n</b> means block or eat it. When it\'s BRACING or GETTING ANGRIER, that\'s your free turn to swing.',
+      () => tut('b2', '#hand', 'YOUR HAND', 'Cards cost <b>ENERGY</b> — the red pip. You have 3 per turn. Attacks deal damage, skills block or draw, <b>powers last all fight</b>. Tap to play.',
+        () => tut('b3', '#bEnd', 'END TURN', 'Done spending? <b>END TURN</b>. The foe acts, your leftover block evaporates, you draw a fresh 5. Go.')));
+  }, 400);
 }
 function drawCards(n){
   for (let i = 0; i < n; i++){
@@ -926,6 +1015,7 @@ function screenReward(gold, kind){
     dv.onclick = () => { R.deck.push(picks[+dv.dataset.i]); saveRun(); screenMap(); };
   });
   $('#bSkip').onclick = () => { saveRun(); screenMap(); };
+  tut('reward', '#hand', 'LOOT', 'Pick <b>one</b> card — or skip. Skipping is a real strategy: a <b>small deck</b> draws its best cards more often. Hoarders get eaten around floor 9.');
 }
 /* ---------- rest / blend ---------- */
 function screenRest(){
@@ -941,6 +1031,7 @@ function screenRest(){
   app.appendChild(p);
   $('#bHeal').onclick = () => { R.hp = Math.min(R.mhp, R.hp + Math.round(R.mhp * .3)); saveRun(); toast('RESTED. THE ZEBRA DREAMS IN STRIPES.'); screenMap(); };
   $('#bBlend').onclick = screenBlend;
+  tut('rest', '#bBlend', 'THE SIGNATURE MOVE', 'Healing is fine. <b>BLENDING is the game</b>: two cards become one permanent hybrid with both effects. Two decent cards in, one great card out — and your deck gets thinner. Do it.');
 }
 function screenBlend(){
   app.innerHTML = '';
@@ -991,6 +1082,7 @@ function screenBlend(){
     setTimeout(() => { cer.remove(); toast(`⚡ BLENDED: ${nc.name.toUpperCase()}`, 1800); screenMap(); }, 2300);
   };
   $('#bBack').onclick = screenRest;
+  tut('blendsel', '#hand', 'CHOOSE THE PARENTS', 'Tap <b>two cards</b>. Attack + block makes a hybrid that does both. Blending two attacks makes a bigger attack. There are no wrong answers, only funny names.');
 }
 /* ---------- shop ---------- */
 function screenShop(){
