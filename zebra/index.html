@@ -1418,7 +1418,7 @@ const thresh = n => Math.round(10 * Math.pow(2.2, n));            /* 10, 22, 48,
 function defaultMeta(){
   return { stripes: 0, herd: 0, unlocks: 0, stats: { damage: 0, cards: 0, blocks: 0, kills: 0, blends: 0, floors: 0, runs: 0, bosses: 0 },
     achTiers: {}, bonusHp: 0, bonusStripe: 0, startRelics: 0, tips: {}, bestiary: {}, tree: {},
-    marks: 0, migrations: 0, eraBest: 0, lastSeen: 0, pets: [], petSel: '', recipes: [],
+    marks: 0, migrations: 0, eraBest: 0, lastSeen: 0, pets: [], petSel: '', recipes: [], helpers: [], helperOn: {},
     clsOwned: ['zeb'], clsSel: 'zeb' };
 }
 let META = defaultMeta();
@@ -1429,6 +1429,8 @@ function loadMeta(){
   META.tree = META.tree || {};
   META.pets = META.pets || [];
   META.recipes = META.recipes || [];
+  META.helpers = META.helpers || [];
+  META.helperOn = META.helperOn || {};
   /* one-shot backfill for saves from before the Migration era — must never run
      again after a migration, or eraBest resurrects from lifetime best = free marks */
   if (!META.legacyEraDone && !META.migrations && !META.eraBest && META.stats.floors) META.eraBest = META.stats.floors;
@@ -1480,6 +1482,22 @@ const PETS = [
 ];
 function petSel(){ return PETS.find(p => p.id === META.petSel && (META.pets || []).includes(p.id)) || null; }
 function petVal(k){ const p = petSel(); return (p && p.fx[k]) || 0; }
+/* ---------- THE PIT CREW · unlockable auto-battle helpers ---------- */
+const HELPERS = [
+  { id: 'gary', ic: '📋', name: 'Gary (Intern #2)', cost: 400, ep: 'CLIPBOARD. AMBITION.',
+    desc: 'Auto-ends your turn when you can\'t afford any card. That\'s it. That\'s Gary.' },
+  { id: 'ox', ic: '🩸', name: 'Ox the Understudy', cost: 800, ep: 'SMELLS BLOOD. HELPS.',
+    desc: 'When one card would finish the foe, Ox plays it for you. Instantly. Gleefully.' },
+  { id: 'val', ic: '🧤', name: 'Val the Valet', cost: 1200, ep: 'LOOT, HANDLED.',
+    desc: 'Grabs your powerup drop automatically after battles, so you only pick the card.' },
+  { id: 'tempo', ic: '⏩', name: 'Tempo the Hummingbird', cost: 1600, ep: 'FASTER. ALWAYS FASTER.',
+    desc: 'Battle animations run at double speed. Tempo is already three fights ahead.' },
+  { id: 'coach', ic: '🎽', name: 'Coach Hoofstrong', cost: 2400, ep: 'TRUST THE PROCESS.',
+    desc: 'Unlocks the AUTO button in battle: full autopilot until you tap stop — or the Coach taps out below 25% HP.' },
+];
+function helperOwned(id){ return (META.helpers || []).includes(id); }
+function helperOn(id){ return helperOwned(id) && (META.helperOn || {})[id] !== false; }
+function DL(ms){ return helperOn('tempo') ? Math.round(ms * .5) : ms; }
 /* ---------- THE SKILL TREE · six branches · every tip grows forever ---------- */
 const TREE = [
   { br: 'HOOF', ic: '⚔', tag: 'HIT HARDER', nodes: [
@@ -2036,6 +2054,7 @@ function screenTitle(){
       <button class="btn mbtn" id="bHerd"><span>♞ The Herd</span><small>${(META.clsOwned || ['zeb']).length}/${CLASSES.length} zebras</small></button>
       <button class="btn mbtn" id="bPets"><span>♡ Pets</span><small>${(META.pets || []).length}/${PETS.length} befriended</small></button>
       <button class="btn mbtn" id="bRecipes"><span>⚗ Recipes</span><small>${(META.recipes || []).length}/${RECIPES.length} discovered</small></button>
+      <button class="btn mbtn" id="bCrew"><span>⚑ Pit Crew</span><small>${(META.helpers || []).length}/${HELPERS.length} hired · auto-battle</small></button>
       <button class="btn mbtn" id="bBest"><span>☠︎ Bestiary</span><small>${seen} catalogued</small></button>
       <button class="btn mbtn" id="bStats"><span>≡ Statistics</span><small>the full ledger</small></button>
       ${migVis ? `<button class="btn mbtn ${migReady ? 'claimable' : ''}" id="bMig"><span>☀︎ Migration</span><small>${migReady ? '+' + marksGain() + ' marks ready' : 'prestige reset'}</small></button>` : ''}
@@ -2066,8 +2085,47 @@ function screenTitle(){
   $('#bStats').onclick = screenStats;
   $('#bPets').onclick = screenPets;
   $('#bRecipes').onclick = screenRecipes;
+  $('#bCrew').onclick = screenCrew;
   if ($('#bMig')) $('#bMig').onclick = screenMigrate;
   if ($('#bInstall')) $('#bInstall').onclick = () => installApp();
+}
+function screenCrew(){
+  app.innerHTML = '';
+  const p = el(`<div class="page">
+    <span class="kick">THE PIT CREW · THEY FIGHT SO YOU CAN SNACK</span>
+    <div class="big">Pit <span class="z">Crew</span></div>
+    <div class="sub">◆ ${META.stripes} banked. Hire helpers with stripes, toggle them any time. The zebra remains the talent.</div>
+    <div class="stripes"></div>
+    ${HELPERS.map(h => {
+      const got = helperOwned(h.id);
+      const on = helperOn(h.id);
+      return `<div class="ach" style="gap:10px;${got ? '' : 'opacity:.75'}">
+        <div style="font-size:26px;flex-shrink:0;${got ? '' : 'filter:grayscale(1) brightness(.6)'}">${h.ic}</div>
+        <div style="flex:1"><div class="an">${h.name}${got && on ? ' <span style="color:var(--r)">· ON DUTY</span>' : got ? ' · OFF' : ''}</div>
+        <div class="ap">(${h.ep}) ${h.desc}</div></div>
+        <button class="btn ${got ? (on ? '' : 'red') : ''}" style="width:auto;min-height:40px;padding:8px 12px" data-id="${h.id}"
+          ${!got && META.stripes < h.cost ? 'disabled' : ''}>${got ? (on ? 'REST' : 'WORK') : '◆ ' + h.cost}</button>
+      </div>`;
+    }).join('')}
+    <button class="btn ghost" id="bBack">Back</button>
+  </div>`);
+  app.appendChild(p);
+  p.querySelectorAll('[data-id]').forEach(b => b.onclick = () => {
+    const h = HELPERS.find(x => x.id === b.dataset.id);
+    if (!helperOwned(h.id)){
+      if (META.stripes < h.cost) return;
+      META.stripes -= h.cost;
+      META.helpers = [...(META.helpers || []), h.id];
+      META.helperOn[h.id] = true;
+      SFX.ach(); hapt(20);
+      toast('⚑ ' + h.name.toUpperCase() + ' JOINS THE CREW', 1800);
+    } else {
+      META.helperOn[h.id] = !helperOn(h.id);
+      SFX.click();
+    }
+    saveMeta(); screenCrew();
+  });
+  $('#bBack').onclick = screenTitle;
 }
 function screenRecipes(){
   app.innerHTML = '';
@@ -2335,6 +2393,7 @@ function renderBattle(){
     <div id="btm">
       <div id="energy"><b>${B.energy}</b><span>ENERGY</span></div>
       <div id="piles">DRAW ${B.drawPile.length}<br><span id="discardBtn" style="cursor:pointer;text-decoration:underline">DISCARD ${B.discard.length}</span></div>
+      ${helperOwned('coach') ? `<button class="btn ${B.auto ? 'red' : ''}" id="bAuto" style="width:auto;padding:8px 12px;min-height:auto">${B.auto ? '⏸ STOP' : '🎽 AUTO'}</button>` : ''}
       <button class="btn red" id="bEnd" style="flex:1">End turn</button>
     </div>
   </div>`);
@@ -2369,6 +2428,13 @@ function renderBattle(){
   };
   /* nothing playable? light the way out */
   if (!B.hand.some(c => c.cost <= B.energy)) $('#bEnd').classList.add('pulse');
+  if ($('#bAuto')) $('#bAuto').onclick = () => {
+    B.auto = !B.auto;
+    if (B.auto){ toast('🎽 COACH TAKES THE REINS', 1200); autoTick(); }
+    else toast('THE ZEBRA RESUMES CONTROL', 1100);
+    renderBattle();
+  };
+  helperNudge();
   /* tap DECK pill anywhere to inspect the deck */
   p.querySelectorAll('.pill').forEach(pl => {
     if (pl.textContent.startsWith('DECK')) pl.onclick = showDeck;
@@ -2520,7 +2586,7 @@ function playCard(i, cardEl){
       setTimeout(winBattle, 520);
       return;
     }
-  }, cardEl ? 150 : 0);
+  }, cardEl ? DL(150) : 0);
 }
 function endTurn(){
   if (B.over || B.busy || B.ending) return;
@@ -2575,7 +2641,58 @@ function endTurn(){
     renderBattle();
     if (through > 0) floatNum($('#hpbar'), '-' + through);
     B.busy = false;
-  }, 650);
+    helperNudge();
+  }, DL(650));
+}
+/* ---------- pit crew battle brains ---------- */
+function singleKill(){
+  return B.hand.findIndex(c => c.cost <= B.energy && c.dmg &&
+    (c.dmg + B.str + (B.firstHit || 0)) * (c.multi || 1) >= B.foe.hp + (B.foe.blk || 0));
+}
+function helperNudge(){
+  if (!B || B.over || B.busy || B.auto) return;
+  clearTimeout(B.hnT);
+  B.hnT = setTimeout(() => {
+    if (!B || B.over || B.busy || B.auto || B.ending) return;
+    if (helperOn('ox')){
+      const kill = singleKill();
+      if (kill >= 0){ toast('🩸 OX SMELLS BLOOD', 900); playCard(kill); return; }
+    }
+    if (helperOn('gary') && !B.hand.some(c => c.cost <= B.energy) && B.hand.length){
+      toast('📋 GARY ENDS THE TURN. EFFICIENTLY.', 900);
+      endTurn();
+    }
+  }, DL(750));
+}
+function autoPolicy(){
+  const h = B.hand;
+  const kill = singleKill();
+  if (kill >= 0){ playCard(kill); return; }
+  const intentAtk = B.foe.pat[B.foe.pi % B.foe.pat.length] === 'atk';
+  if (intentAtk){
+    const inc = Math.max(1, B.foe.atk + B.foe.str - (B.foe.weak ? 2 : 0));
+    if (B.block < inc){
+      const bi = h.findIndex(c => c.cost <= B.energy && c.blk && !c.dmg);
+      if (bi >= 0){ playCard(bi); return; }
+    }
+  }
+  const atks = h.map((c, i) => [c, i]).filter(([c]) => c.cost <= B.energy && (c.dmg || c.frenzy))
+    .sort((a, b) => ((b[0].dmg || 0) * (b[0].multi || 1)) - ((a[0].dmg || 0) * (a[0].multi || 1)));
+  if (atks.length){ playCard(atks[0][1]); return; }
+  const safe = h.findIndex(c => c.cost <= B.energy && !c.gamble && !c.mystery && !c.molt);
+  if (safe >= 0){ playCard(safe); return; }
+  endTurn();
+}
+function autoTick(){
+  if (!B || B.over || !B.auto || !R) return;
+  if (R.hp / R.mhp < .25 && B.foe.hp > 0){
+    B.auto = false;
+    toast('🎽 COACH TAPS OUT — TOO RISKY BELOW 25% HP. YOUR CALL, CHAMP.', 2400);
+    renderBattle();
+    return;
+  }
+  if (!B.busy && !B.ending) autoPolicy();
+  setTimeout(autoTick, DL(480));
 }
 function winBattle(){
   if (B.won) return;
@@ -2609,7 +2726,7 @@ function winBattle(){
   stampFx(B.kind === 'boss' ? 'BOSS DOWN' : 'K.O.');
   SFX.victory();
   const g2 = gold, k2 = B.kind;
-  setTimeout(() => screenReward(g2, k2), 950);
+  setTimeout(() => screenReward(g2, k2), DL(950));
 }
 function screenReward(gold, kind){
   const picks = [];
@@ -2670,6 +2787,14 @@ function screenReward(gold, kind){
     const row = $('#powRow'); if (row) row.remove();
   };
   if (pows) p.querySelectorAll('.pow').forEach(dv => dv.onclick = () => takePow(pows[+dv.dataset.p]));
+  /* Val the Valet grabs the loot before you even look */
+  if (pows && helperOn('val')) setTimeout(() => {
+    if (!powTaken){
+      const pw = pows[0];
+      takePow(pw);
+      toast('🧤 VAL GRABBED: ' + pw.name.toUpperCase(), 1600);
+    }
+  }, DL(700));
   /* leaving without choosing? the zebra grabs one on the way out */
   const autoPow = () => { if (!powTaken){ const pw = pick(pows); takePow(pw); toast('⚡ GRABBED ' + pw.name.toUpperCase() + ' ON THE WAY OUT', 1500); } };
   if (relic) relicPop(relic);
@@ -3140,7 +3265,8 @@ window.ZB = { META, R: () => R, B: () => B, newRun, startBattle, playCard, endTu
   TREE, treeVal, nodeCost, treeOwned, screenTree,
   idleCollect, marksGain, marksMul, screenMigrate, screenStats, showRelics,
   PETS, petSel, petVal, screenPets, CLASSES, FOES, FOEART, PETART,
-  RECIPES, findRecipe, primeCard, screenRecipes, screenBlend };   /* test hook */
+  RECIPES, findRecipe, primeCard, screenRecipes, screenBlend,
+  HELPERS, helperOwned, helperOn, screenCrew, autoPolicy, autoTick, DL, renderBattle };   /* test hook */
 </script>
 </body>
 </html>
