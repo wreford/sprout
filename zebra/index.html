@@ -1626,9 +1626,9 @@ const ACH_FAMS = [
 ];
 const thresh = n => Math.round(10 * Math.pow(2.2, n));            /* 10, 22, 48, 106… forever */
 function defaultMeta(){
-  return { stripes: 0, herd: 0, unlocks: 0, stats: { damage: 0, cards: 0, blocks: 0, kills: 0, blends: 0, floors: 0, runs: 0, bosses: 0 },
+  return { stripes: 0, herd: 0, unlocks: 0, stats: { damage: 0, cards: 0, blocks: 0, kills: 0, blends: 0, floors: 0, runs: 0, bosses: 0, deaths: 0 },
     achTiers: {}, bonusHp: 0, bonusStripe: 0, startRelics: 0, tips: {}, bestiary: {}, tree: {},
-    marks: 0, migrations: 0, eraBest: 0, lastSeen: 0, pets: [], petSel: '', recipes: [], helpers: [], helperOn: {},
+    marks: 0, migrations: 0, eraBest: 0, lastSeen: 0, pets: [], petSel: '', recipes: [], helpers: [], helperOn: {}, trophies: [], worn: [],
     clsOwned: ['zeb'], clsSel: 'zeb' };
 }
 let META = defaultMeta();
@@ -1641,6 +1641,8 @@ function loadMeta(){
   META.recipes = META.recipes || [];
   META.helpers = META.helpers || [];
   META.helperOn = META.helperOn || {};
+  META.trophies = META.trophies || [];
+  META.worn = META.worn || [];
   /* one-shot backfill for saves from before the Migration era — must never run
      again after a migration, or eraBest resurrects from lifetime best = free marks */
   if (!META.legacyEraDone && !META.migrations && !META.eraBest && META.stats.floors) META.eraBest = META.stats.floors;
@@ -1650,8 +1652,9 @@ function saveMeta(){ localStorage.setItem('zebra-meta', JSON.stringify(META)); }
 function bumpStat(k, n, isMax = false){
   if (isMax) META.stats[k] = Math.max(META.stats[k], n);
   else META.stats[k] += n;
+  if (typeof checkTrophies === 'function') checkTrophies();
   const fam = ACH_FAMS.find(f => f[0] === k);
-  if (!fam) return;
+  if (!fam){ saveMeta(); return; }
   let tier = META.achTiers[k] || 0;
   while (META.stats[k] >= thresh(tier)){
     tier++;
@@ -1693,6 +1696,74 @@ const PETS = [
 function petSel(){ return PETS.find(p => p.id === META.petSel && (META.pets || []).includes(p.id)) || null; }
 function petVal(k){ const p = petSel(); return (p && p.fx[k]) || 0; }
 /* ---------- THE PIT CREW · unlockable auto-battle helpers ---------- */
+/* ---------- TROPHIES · funny milestones with WEARABLE prizes ---------- */
+const TROPHIES = [
+  { id: 'shades', name: 'Sixty-Seven Problems', stat: 'kills', need: 67, prize: 'SUNGLASSES', icon: '🕶',
+    ep: 'drop exactly 67 foes. the 67th one knew. deal with it.' },
+  { id: 'bandaid', name: 'First Faceplant', stat: 'deaths', need: 1, prize: 'BUTT BAND-AID', icon: '🩹',
+    ep: 'die once. the savanna kisses it better. on the butt.' },
+  { id: 'halo', name: 'Frequent Faller', stat: 'deaths', need: 10, prize: 'CROOKED HALO', icon: '😇',
+    ep: 'die ten times. heaven started a punch card.' },
+  { id: 'bowtie', name: 'Smoothie Sommelier', stat: 'blends', need: 30, prize: 'RED BOWTIE', icon: '🎀',
+    ep: 'blend 30 cards. "ah yes, a 2024 Bimies. impudent nose."' },
+  { id: 'tophat', name: 'Upstairs Resident', stat: 'floors', need: 50, prize: 'TOP HAT', icon: '🎩',
+    ep: 'reach floor 50. you live here now. dress accordingly.' },
+  { id: 'crown', name: 'Apex Apex', stat: 'bosses', need: 10, prize: 'TINY CROWN', icon: '👑',
+    ep: 'topple 10 bosses. the food chain has a new middle manager.' },
+  { id: 'scar', name: 'Menace to Ecology', stat: 'damage', need: 5000, prize: 'COOL SCAR', icon: '⚔',
+    ep: 'deal 5,000 damage. the scar is decorative. the trauma is real.' },
+  { id: 'sweatband', name: 'Card Cardio', stat: 'cards', need: 500, prize: 'SWEATBAND', icon: '🏃',
+    ep: 'play 500 cards. shuffling counts as cardio. legally.' },
+  { id: 'partyhat', name: 'Serial Optimist', stat: 'runs', need: 20, prize: 'PARTY HAT', icon: '🥳',
+    ep: 'start 20 runs. every single one felt like The One.' },
+  { id: 'monocle', name: 'Emotionally Guarded', stat: 'blocks', need: 500, prize: 'MONOCLE', icon: '🧐',
+    ep: 'gain 500 block. inspect threats before declining them.' },
+  { id: 'mohawk', name: 'The Lawnmower', stat: 'kills', need: 500, prize: 'RED MOHAWK', icon: '🔥',
+    ep: 'drop 500 foes. the mane files for creative independence.' },
+  { id: 'jetpack', name: 'Sky Zebra', stat: 'floors', need: 100, prize: 'TINY JETPACK', icon: '🚀',
+    ep: 'reach floor 100. gravity becomes a suggestion.' },
+];
+function trophyEarned(id){ return (META.trophies || []).includes(id); }
+function checkTrophies(){
+  TROPHIES.forEach(t => {
+    if (trophyEarned(t.id) || (META.stats[t.stat] || 0) < t.need) return;
+    META.trophies = [...(META.trophies || []), t.id];
+    if ((META.worn || []).length < 3) META.worn = [...(META.worn || []), t.id];
+    saveMeta();
+    setTimeout(() => {
+      stampFx('TROPHY');
+      toast(`🏆 ${t.name.toUpperCase()} · PRIZE: ${t.prize} ${t.icon} — THE ZEBRA IS WEARING IT`, 3200);
+      SFX.victory && SFX.victory();
+    }, 400);
+  });
+}
+/* wearable prize art · drawn on the zebra, stacked shamelessly */
+const WORN_ART = {
+  shades: f => `<path d="M87 30 h9 v6 h-9 z M100 30 h9 v6 h-9 z" fill="#0a0a0a" stroke="#f2f2f2" stroke-width="1.4"/>
+    <path d="M96 32 h4 M87 31 l-6 -2" stroke="#0a0a0a" stroke-width="2"/>`,
+  bandaid: f => `<g transform="rotate(-24 34 46)"><rect x="27" y="43" width="15" height="7" rx="2" fill="#f2f2f2"/>
+    <path d="M31 44 v5 M38 44 v5" stroke="#0a0a0a" stroke-width="1.2"/></g>`,
+  halo: f => `<ellipse cx="${99 + Math.sin(f / 9) * 1.5}" cy="8" rx="11" ry="3" fill="none" stroke="#f2f2f2" stroke-width="2.5" transform="rotate(${8 + Math.sin(f / 7) * 4} 99 8)"/>`,
+  bowtie: f => `<path d="M83 47 l-7 -4 v9 z M83 47 l7 -4 v9 z" fill="var(--r)" stroke="#f2f2f2" stroke-width="1.2"/><circle cx="83" cy="47" r="1.8" fill="#f2f2f2"/>`,
+  tophat: f => `<rect x="90" y="2" width="17" height="14" fill="#0a0a0a" stroke="#f2f2f2" stroke-width="1.6"/>
+    <rect x="86" y="15" width="25" height="3.5" fill="#0a0a0a" stroke="#f2f2f2" stroke-width="1.4"/>
+    <rect x="90" y="11" width="17" height="3.5" fill="var(--r)"/>`,
+  crown: f => `<path d="M91 12 l2 -8 l4 5 l3 -7 l3 7 l4 -5 l2 8 z" fill="var(--r)" stroke="#f2f2f2" stroke-width="1.3"/>`,
+  scar: f => `<path d="M90 26 l5 9 M93 27 l-4 2 M95 31 l-4 2" stroke="#f2f2f2" stroke-width="1.6"/>`,
+  sweatband: f => `<path d="M87 24 q10 -5 22 -1" stroke="var(--r)" stroke-width="5" fill="none"/>`,
+  partyhat: f => `<g transform="rotate(14 100 12)"><path d="M92 16 L100 -4 L108 16 Z" fill="var(--r)" stroke="#f2f2f2" stroke-width="1.4"/>
+    <path d="M94 11 h11 M96 5 h7" stroke="#f2f2f2" stroke-width="1.6"/>
+    <circle cx="100" cy="-5" r="2.4" fill="#f2f2f2"/></g>`,
+  monocle: f => `<circle cx="97" cy="34" r="5.5" fill="none" stroke="#f2f2f2" stroke-width="1.8"/>
+    <path d="M97 40 q3 8 -1 14" stroke="#f2f2f2" stroke-width="1.2" fill="none"/>`,
+  mohawk: f => [0, 1, 2, 3].map(i => `<path d="M${86 + i * 6} ${19 - i} l${2 + Math.sin(f / 6 + i) * 1.5} -11 l4 9" fill="var(--r)"/>`).join(''),
+  jetpack: f => `<rect x="46" y="24" width="9" height="16" rx="4" fill="#4a4a4a" stroke="#f2f2f2" stroke-width="1.4"/>
+    <path d="M48 41 q2 ${5 + (f % 6)} 2.5 ${7 + (f % 4) * 2} M52 41 q-1 ${4 + ((f + 3) % 6)} -1.5 ${6 + ((f + 2) % 4) * 2}" stroke="var(--r)" stroke-width="2.5" fill="none"/>`,
+};
+function wornArt(f){
+  if (typeof META === 'undefined' || !META.worn) return '';
+  return META.worn.filter(id => trophyEarned(id)).map(id => (WORN_ART[id] || (() => ''))(f)).join('');
+}
 const HELPERS = [
   { id: 'gary', ic: '📋', name: 'Gary (Intern #2)', cost: 400, ep: 'CLIPBOARD. AMBITION.',
     desc: 'Auto-ends your turn when you can\'t afford any card. That\'s it. That\'s Gary.' },
@@ -1968,6 +2039,7 @@ function ZEB(f, pose = 'idle', cls = 'zeb'){
         <path d="M84 44 l8 7 l8 -7 z" fill="${R}"/>` : ''}
       ${cls === 'mirage' ? `<ellipse cx="97" cy="34" rx="2.8" ry="${blink ? .8 : 3.2}" fill="${R}"/>
         <path d="M84 12 q6 ${Math.sin(f / 6) * 4 - 3} 12 0 q6 ${Math.cos(f / 7) * 4 - 3} 12 0" stroke="${R}" stroke-width="1.6" fill="none" opacity=".55"/>` : ''}
+      ${cls !== 'mirage' ? wornArt(f) : ''}
       ${cls === 'moon' ? `<circle cx="99" cy="29" r="19" fill="none" stroke="#f2f2f2" stroke-width="2" opacity=".75"/>
         <path d="M86 18 a19 19 0 0 1 10 -6" stroke="#f2f2f2" stroke-width="1.5" fill="none" opacity=".5"/>
         <text x="${70 + Math.cos(f / 8) * 4}" y="${12 + Math.sin(f / 8) * 3}" font-size="7" fill="${R}">✦</text>
@@ -3456,6 +3528,7 @@ function loseRun(){
   stampFx(newBest ? 'NEW BEST' : 'FELL');
   const floor = R.floor;
   const stats = { dmg: R.sdmg || 0, cards: R.scards || 0, blends: R.sblends || 0, deck: R.deck.length, relics: R.relics.length };
+  bumpStat('deaths', 1);
   const earned = Math.round((15 + floor * 6) * marksMul());
   META.stripes += earned;
   saveMeta();
@@ -3657,15 +3730,43 @@ function screenAch(){
       <div class="tick">${tier ? '★' + tier : '—'}</div></div>`;
   }).join('');
   const totalTiers = Object.values(META.achTiers).reduce((a, b) => a + b, 0);
+  const worn = META.worn || [];
+  const trophyRows = TROPHIES.map(t => {
+    const got = trophyEarned(t.id);
+    const wearing = worn.includes(t.id);
+    const cur = META.stats[t.stat] || 0;
+    return `<div class="ach" style="${got ? '' : 'opacity:.65'}">
+      <div style="font-size:22px;flex-shrink:0;${got ? '' : 'filter:grayscale(1) brightness(.6)'}">${t.icon}</div>
+      <div style="flex:1"><div class="an">${t.name}${wearing ? ' <span style="color:var(--r)">· WEARING</span>' : ''}</div>
+      <div class="ap">${t.ep}<br><b style="color:${got ? 'var(--r)' : '#ffffff66'}">PRIZE: ${t.prize}</b> · ${Math.min(cur, t.need).toLocaleString()}/${t.need.toLocaleString()}</div></div>
+      ${got ? `<button class="btn slim ${wearing ? '' : 'red'}" style="width:auto" data-wear="${t.id}">${wearing ? 'DOFF' : 'WEAR'}</button>` : '<div class="tick">🔒</div>'}
+    </div>`;
+  }).join('');
   const p = el(`<div class="page">
+    <span class="kick m" style="color:var(--r)">THE TROPHY CASE · PRIZES GO ON THE ZEBRA · WEAR UP TO 3</span>
+    <div style="display:flex;justify-content:center"><div class="liveArt" data-rig="zeb" data-pose="trot" style="width:150px;height:104px;position:relative"></div></div>
+    ${trophyRows}
+    <div class="stripes"></div>
     <span class="kick">EVERY FAMILY TIERS FOREVER · ×2.2 EACH TIME</span>
     <div class="big">Achievements <span class="z">∞</span></div>
     <div class="sub">${totalTiers} tiers earned · each pays stripes on unlock</div>
-    <div class="stripes"></div>
     ${rows}
     <button class="btn ghost" id="bBack">Back</button>
   </div>`);
   app.appendChild(p);
+  p.querySelectorAll('[data-wear]').forEach(b => b.onclick = () => {
+    const id = b.dataset.wear;
+    if ((META.worn || []).includes(id)){
+      META.worn = META.worn.filter(x => x !== id);
+      toast('DOFFED. THE ZEBRA FEELS NAKED.', 1300);
+    } else {
+      if ((META.worn || []).length >= 3){ toast('THREE ACCESSORIES MAX. THIS IS A SAVANNA, NOT A RUNWAY.', 1800); return; }
+      META.worn = [...(META.worn || []), id];
+      SFX.ach();
+      toast('WEARING: ' + (TROPHIES.find(t => t.id === id) || {}).prize, 1400);
+    }
+    saveMeta(); screenAch();
+  });
   $('#bBack').onclick = screenTitle;
 }
 
@@ -3758,7 +3859,7 @@ window.ZB = { META, R: () => R, B: () => B, newRun, startBattle, playCard, endTu
   screenMap, screenTitle, JTM, bumpStat, thresh, rollPowerups, applyPowerup, screenReward,
   TREE, treeVal, nodeCost, treeOwned, screenTree,
   idleCollect, marksGain, marksMul, screenMigrate, screenStats, showRelics,
-  PETS, petSel, petVal, screenPets, CLASSES, FOES, FOEART, PETART,
+  PETS, petSel, petVal, screenPets, CLASSES, FOES, FOEART, PETART, TROPHIES, checkTrophies, trophyEarned,
   RECIPES, findRecipe, primeCard, screenRecipes, screenBlend,
   HELPERS, helperOwned, helperOn, screenCrew, autoPolicy, autoTick, DL, renderBattle,
   screenDrop, suggestedStart, dropKit, Music };   /* test hook */
