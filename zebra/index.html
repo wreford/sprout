@@ -89,6 +89,7 @@ h1 .z{color:var(--r)}
   35%{transform:translate(-50%,-50%) rotate(-8deg) scale(1);opacity:1}
   100%{transform:translate(-50%,-50%) rotate(-8deg) scale(1);opacity:1}}
 .ovlDeck{position:fixed;inset:0;z-index:58;background:#000000f0;overflow-y:auto;padding:20px}
+.hoardOvl{background:#000;z-index:60}
 .ovlDeck .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px;max-width:640px;margin:0 auto}
 /* deep polish */
 #wipe{position:fixed;inset:0;z-index:80;pointer-events:none;transform:translateX(-102%);
@@ -1125,6 +1126,7 @@ const thresh = n => Math.round(10 * Math.pow(2.2, n));            /* 10, 22, 48,
 function defaultMeta(){
   return { stripes: 0, herd: 0, unlocks: 0, stats: { damage: 0, cards: 0, blocks: 0, kills: 0, blends: 0, floors: 0, runs: 0, bosses: 0 },
     achTiers: {}, bonusHp: 0, bonusStripe: 0, startRelics: 0, tips: {}, bestiary: {}, tree: {},
+    marks: 0, migrations: 0, eraBest: 0, lastSeen: 0,
     clsOwned: ['zeb'], clsSel: 'zeb' };
 }
 let META = defaultMeta();
@@ -1133,6 +1135,8 @@ function loadMeta(){
   catch {}
   META.stats = { ...defaultMeta().stats, ...(META.stats || {}) };
   META.tree = META.tree || {};
+  /* players from before the Migration era: their whole legend counts as this era */
+  if (!META.eraBest && META.stats.floors) META.eraBest = META.stats.floors;
 }
 function saveMeta(){ localStorage.setItem('zebra-meta', JSON.stringify(META)); }
 function bumpStat(k, n, isMax = false){
@@ -1201,6 +1205,14 @@ const TREE = [
     { id: 'blend5', name: 'Master Chef', desc: 'New blends get +2 more damage & block', cost: 650, fx: { blendBonus: 2 } },
     { id: 'blendX', name: 'Endless Smoothie', desc: '+1 blend bonus · repeatable forever', cost: 900, rep: 1.5, fx: { blendBonus: 1 } },
   ]},
+  { br: 'GRAZE', ic: '🌾', tag: 'EARN WHILE AWAY', nodes: [
+    { id: 'graze1', name: 'Slow Graze', desc: 'Earn 4 ◆/hour while you\'re away (up to 8h)', cost: 60, fx: { idleRate: 4 } },
+    { id: 'graze2', name: 'Night Graze', desc: '+6 more ◆/hour while away', cost: 140, fx: { idleRate: 6 } },
+    { id: 'graze3', name: 'Dream Herd', desc: 'Away earnings cap extends to 20 hours', cost: 300, fx: { idleCap: 12 } },
+    { id: 'graze4', name: 'Sleepwalker', desc: '+12 more ◆/hour while away', cost: 550, fx: { idleRate: 12 } },
+    { id: 'graze5', name: 'Deep Sleep Dividend', desc: 'Away 4+ hours? Earnings DOUBLE', cost: 800, fx: { idleDeep: 1 } },
+    { id: 'grazeX', name: 'Endless Graze', desc: '+5 ◆/hour · repeatable forever', cost: 1000, rep: 1.5, fx: { idleRate: 5 } },
+  ]},
   { br: 'WYRD', ic: '❓', tag: 'GET STRANGER', nodes: [
     { id: 'wyrd1', name: 'Lucky Tail Swish', desc: 'Powerups drop after EVERY fight', cost: 40, fx: { powAlways: 1 } },
     { id: 'wyrd2', name: 'Third Option', desc: 'Powerup drops offer 3 choices', cost: 100, fx: { powChoice: 1 } },
@@ -1226,6 +1238,103 @@ function treeClaimable(){
     const open = ni === 0 || nodeLvl(b.nodes[ni - 1].id) > 0;
     return open && (n.rep || nodeLvl(n.id) === 0) && META.stripes >= nodeCost(n);
   }));
+}
+/* ---------- GRAZE · idle earnings while away ---------- */
+function idleCollect(){
+  const now = Date.now();
+  const rate = treeVal('idleRate');
+  const last = META.lastSeen || 0;
+  if (rate && last){
+    const hrs = (now - last) / 3600000;
+    if (hrs >= .05){                                  /* 3+ minutes counts as "away" */
+      const capped = Math.min(hrs, 8 + treeVal('idleCap'));
+      let g = Math.floor(capped * rate);
+      const deep = treeVal('idleDeep') && hrs >= 4;
+      if (deep) g *= 2;
+      if (g > 0){
+        META.stripes += g;
+        setTimeout(() => {
+          toast('🌾 THE HERD GRAZED WHILE YOU WERE GONE · +' + g + ' ◆' + (deep ? ' · DEEP SLEEP ×2' : ''), 3400);
+          SFX.ach();
+        }, 900);
+      }
+    }
+  }
+  META.lastSeen = now;
+  saveMeta();
+}
+setInterval(() => { META.lastSeen = Date.now(); saveMeta(); }, 60000);
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden){ META.lastSeen = Date.now(); saveMeta(); }
+  else idleCollect();
+});
+/* ---------- THE GREAT MIGRATION · tiered resets, idle-game style ---------- */
+function marksGain(){ return Math.floor((META.eraBest || 0) / 5); }
+function marksMul(){ return 1 + .1 * (META.marks || 0); }
+function screenMigrate(){
+  app.innerHTML = '';
+  const g = marksGain();
+  const p = el(`<div class="page" style="justify-content:center;text-align:center;gap:14px">
+    <span class="kick">THE GREAT MIGRATION · ERA ${(META.migrations || 0) + 1}</span>
+    <div class="big">Migrate the <span class="z">Herd</span></div>
+    <div class="stripes"></div>
+    <div class="sub">The savanna dries up. The herd moves on — and remembers.<br>
+      Best floor this era: <b style="color:var(--r)">${META.eraBest || 0}</b> → earn <b style="color:var(--r)">☀ ${g} MARK${g === 1 ? '' : 'S'}</b> (1 per 5 floors)</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center">
+      <span class="chip hot">EACH ☀: +10% ALL STRIPES</span>
+      <span class="chip hot">EACH ☀: +2 START HP</span>
+      <span class="chip hot">EVERY 3rd ☀: +1 DAMAGE</span>
+    </div>
+    <div class="ach" style="text-align:left"><div><div class="an" style="color:var(--r)">RESETS</div>
+      <div class="ap">◆ stripes · the whole skill tree · your current run</div></div><div class="tick">☠</div></div>
+    <div class="ach" style="text-align:left"><div><div class="an">THE HERD KEEPS</div>
+      <div class="ap">☀ marks · achievements · playable zebras · bestiary · your legend</div></div><div class="tick">∞</div></div>
+    ${META.marks ? `<div class="sub">Current: ☀ ${META.marks} · ×${marksMul().toFixed(1)} stripes forever</div>` : ''}
+    <button class="btn red" id="bGo" ${g < 1 ? 'disabled' : ''}>${g < 1 ? 'REACH FLOOR 5 THIS ERA FIRST' : 'MIGRATE · GAIN ☀ ' + g}</button>
+    <button class="btn ghost" id="bBack">Not yet — still grass here</button>
+  </div>`);
+  app.appendChild(p);
+  $('#bGo').onclick = () => {
+    if (marksGain() < 1) return;
+    META.marks = (META.marks || 0) + marksGain();
+    META.migrations = (META.migrations || 0) + 1;
+    META.eraBest = 0;
+    META.stripes = 0;
+    META.tree = {};
+    saveMeta();
+    R = null; saveRun();
+    stampFx('THE HERD MOVES');
+    SFX.victory(); hapt([50, 40, 80]);
+    setTimeout(() => { toast('☀ ERA ' + (META.migrations + 1) + ' BEGINS · ×' + marksMul().toFixed(1) + ' STRIPES FOREVER', 3000); screenTitle(); }, 1200);
+  };
+  $('#bBack').onclick = screenTitle;
+}
+/* ---------- statistics ---------- */
+function screenStats(){
+  app.innerHTML = '';
+  const s = META.stats;
+  const row = (k, v) => `<div class="ach"><div class="an">${k}</div><div class="tick">${v}</div></div>`;
+  const p = el(`<div class="page">
+    <span class="kick">THE SAVANNA KEEPS SCORE · LIFETIME</span>
+    <div class="big">Stat<span class="z">istics</span></div>
+    <div class="stripes"></div>
+    ${row('Runs started', s.runs)}
+    ${row('Best floor ever', s.floors)}
+    ${row('Best floor this era', META.eraBest || 0)}
+    ${row('Foes dropped', s.kills)}
+    ${row('Bosses beaten', s.bosses)}
+    ${row('Total damage dealt', s.damage)}
+    ${row('Cards played', s.cards)}
+    ${row('Block gained', s.blocks)}
+    ${row('Cards blended', s.blends)}
+    ${row('Skill tree nodes', treeOwned())}
+    ${row('◆ banked right now', META.stripes)}
+    ${row('☀ Migration marks', (META.marks || 0) + (META.migrations ? ' · ERA ' + (META.migrations + 1) : ''))}
+    ${META.marks ? row('Stripe multiplier', '×' + marksMul().toFixed(1)) : ''}
+    <button class="btn ghost" id="bBack">Back</button>
+  </div>`);
+  app.appendChild(p);
+  $('#bBack').onclick = screenTitle;
 }
 
 /* ============================================================
@@ -1363,7 +1472,7 @@ setInterval(() => {
 let R = null;
 function newRun(){
   const cls = CLASSES.find(c => c.id === META.clsSel && (META.clsOwned || ['zeb']).includes(c.id)) || CLASSES[0];
-  const thp = 60 + META.bonusHp + treeVal('hp');
+  const thp = 60 + META.bonusHp + treeVal('hp') + 2 * (META.marks || 0);
   R = {
     floor: 0, hp: thp, mhp: thp, stripes: treeVal('startGold'), bestAtStart: META.stats.floors,
     deck: ['bite', 'bite', 'bite', 'bite', 'kick', 'kick', 'hide', 'hide', 'hide', 'zoomies'].map(mkCard),
@@ -1417,7 +1526,7 @@ const GUIDE = [
   { t: 'Bat<span>tle</span>', b: 'Draw 5, spend <b>ENERGY</b> (the red pip) to play cards. The enemy <b>TELEGRAPHS</b> its next move — block the big hits, punish the off-turns. Block resets every turn. Powers stick for the whole fight.' },
   { t: 'Ble<span>nd</span>', b: 'At an Oasis you can fuse <b>ANY two cards into one</b> — combined effects, one card, forever. Bite + Hide = <b>Bide</b>. Small decks that do two things per card is the whole zebra.' },
   { t: 'Stri<span>pes</span>', b: '<b>◆ Stripes</b> drop from every battle. Spend them in-run at the Trading Post. Half banks to your permanent wallet — that feeds the <b>SKILL TREE</b> back at the title: six branches, every tip repeatable forever.' },
-  { t: 'For<span>ever</span>', b: 'Death feeds the herd: <b>+stripes for the tree</b>, and achievements tier forever. Every run starts a little stronger. The savanna keeps score.' },
+  { t: 'For<span>ever</span>', b: 'Death feeds the herd: <b>+stripes for the tree</b>, achievements tier forever, the <b>GRAZE branch earns while you sleep</b>, and when an era ends, the <b>GREAT MIGRATION</b> trades everything for permanent ☀ marks. The savanna keeps score.' },
 ];
 function showGuide(cb){
   let i = 0;
@@ -1456,13 +1565,15 @@ function screenTitle(){
     <h1>Blended<br><span class="z">Zebra</span></h1>
     <div class="stripes"></div>
     <div class="sub">Climb forever. Blend anything. The savanna keeps score.<br>
-    <b style="color:var(--r)">◆ ${META.stripes}</b> STRIPES · BEST FLOOR ${META.stats.floors}</div>
+    <b style="color:var(--r)">◆ ${META.stripes}</b> STRIPES · BEST FLOOR ${META.stats.floors}${META.marks ? `<br>☀ ${META.marks} MARKS · ERA ${(META.migrations || 0) + 1} · ×${marksMul().toFixed(1)} STRIPES` : ''}</div>
     <button class="btn red" id="bRun">${R ? 'Continue run · floor ' + R.floor : 'New run'}</button>
     ${R ? '<button class="btn ghost" id="bAbandon">Abandon run</button>' : ''}
     <button class="btn ${treeClaimable() ? 'claimable' : ''}" id="bUnlock">🌿 Skill Tree (${treeOwned()} · ∞)${treeClaimable() ? ' · GROWTH READY' : ''}</button>
     <button class="btn" id="bAch">Achievements (∞)</button>
     <button class="btn" id="bHerd">The Herd (${(META.clsOwned || ['zeb']).length}/${CLASSES.length})</button>
     <button class="btn" id="bBest">Bestiary</button>
+    <button class="btn" id="bStats">Statistics</button>
+    ${(META.stats.floors >= 10 || META.migrations) ? `<button class="btn ${marksGain() >= 1 ? 'claimable' : ''}" id="bMig">☀ Great Migration${marksGain() >= 1 ? ' · +' + marksGain() + ' ☀ READY' : ''}</button>` : ''}
     <button class="btn ghost" id="bGuide">Field guide</button>
     <button class="btn ghost" id="bMusic">♪ 14-bit sexy mode: ${Music.on() ? 'ON' : 'OFF'}</button>
     <p style="font-family:var(--mono);font-size:9px;letter-spacing:.14em;color:#ffffff44">14-BIT: ALL THE BITS OF 16-BIT, MINUS THE TWO BORING ONES</p>
@@ -1485,6 +1596,8 @@ function screenTitle(){
   $('#bAch').onclick = screenAch;
   $('#bBest').onclick = screenBestiary;
   $('#bHerd').onclick = screenHerd;
+  $('#bStats').onclick = screenStats;
+  if ($('#bMig')) $('#bMig').onclick = screenMigrate;
 }
 function hudHtml(){
   return `<div id="hud">
@@ -1494,16 +1607,52 @@ function hudHtml(){
     <span class="pill">⚡ MAX <b>${R.menergy || 3}</b></span>
   </div>
   <div id="hpbar" class="gwrap"><div class="ghost" style="width:${R.hp / R.mhp * 100}%"></div><div class="real" style="width:${R.hp / R.mhp * 100}%"></div><span>${R.hp} / ${R.mhp} HP</span></div>
-  ${R.relics.length ? `<div class="relicRow">${(() => {
-    const m = {};
-    R.relics.forEach(r => { (m[r.name] = m[r.name] || { r, n: 0 }).n++; });
-    return Object.values(m).map(({ r, n }) => `<span class="relic" title="${r.desc}">${r.name}${n > 1 ? ' ×' + n : ''}</span>`).join('');
-  })()}</div>` : ''}`;
+  ${relicChips()}`;
 }
+/* declutter: relics collapse into totals — tap for the full hoard */
+function relicChips(){
+  if (!R || !R.relics.length) return '';
+  const sums = [
+    ['str', v => `⚔ +${v}`], ['firstHit', v => `☄ +${v}`], ['autoblk', v => `🛡 +${v}/T`],
+    ['healAfter', v => `♥ +${v}/WIN`], ['hp', v => `♥ +${v} MAX`],
+    ['goldMul', v => `◆ +${Math.round(v * 100)}%`], ['firstDraw', v => `🃏 +${v}`],
+  ];
+  const chips = sums.map(([k, f]) => { const v = relicSum(k); return v ? `<span class="chip">${f(v)}</span>` : ''; }).join('');
+  return `<div class="relicRow" id="relicSum" role="button" style="cursor:pointer">${chips}
+    <span class="chip hot">◈ ${R.relics.length} RELIC${R.relics.length > 1 ? 'S' : ''} · DETAIL ▸</span></div>`;
+}
+function showRelics(){
+  if (!R || document.querySelector('.hoardOvl')) return;
+  const m = {};
+  R.relics.forEach(r => { (m[r.name] = m[r.name] || { r, n: 0 }).n++; });
+  const o = el(`<div class="ovlDeck hoardOvl"><div style="max-width:640px;margin:0 auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <span class="kick">THE HOARD · ◈ ${R.relics.length}</span>
+      <button class="btn red" style="width:auto;min-height:40px;padding:8px 16px" id="hoardX">Close</button></div>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      ${Object.values(m).sort((a, b) => b.n - a.n).map(({ r, n }) => `<div class="ach">
+        <div><div class="an">${r.name}${n > 1 ? ` <span style="color:var(--r)">×${n}</span>` : ''}</div>
+        <div class="ap">${r.desc}</div></div>${r.pw ? '<div class="tick">POW</div>' : '<div class="tick">RELIC</div>'}</div>`).join('')}
+    </div>
+    <div class="stripes" style="margin:14px 0"></div>
+    <span class="kick">THIS RUN</span>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
+      <span class="chip">⚔ ${R.sdmg || 0} DMG DEALT</span><span class="chip">🃏 ${R.scards || 0} PLAYED</span>
+      <span class="chip hot">⚡ ${R.sblends || 0} BLENDS</span><span class="chip">📚 DECK ${R.deck.length}</span>
+      <span class="chip">◆ ${R.stripes} CARRIED</span><span class="chip">♥ ${R.hp}/${R.mhp}</span>
+    </div>
+  </div></div>`);
+  document.body.appendChild(o);
+  o.querySelector('#hoardX').onclick = () => o.remove();
+  o.onclick = e => { if (e.target === o) o.remove(); };
+}
+document.addEventListener('click', e => { if (e.target.closest && e.target.closest('#relicSum')) showRelics(); });
 /* ---------- map ---------- */
 function screenMap(){
   R.floor++;
   bumpStat('floors', R.floor, true);
+  META.eraBest = Math.max(META.eraBest || 0, R.floor);
+  saveMeta();
   saveRun();
   const isBoss = R.floor % 5 === 0;
   app.innerHTML = '';
@@ -1548,7 +1697,7 @@ function startBattle(kind){
   const foe = makeFoe(R.floor, kind === 'boss' ? 'boss' : kind === 'elite' ? 'elite' : 'normal');
   B = { foe, kind, hand: [], drawPile: shuffle([...R.deck]), discard: [],
     energy: (R.menergy || 3) + treeVal('t1energy'), maxEnergy: R.menergy || 3, block: 0,
-    str: relicSum('str') + treeVal('str'), autoblk: relicSum('autoblk') + treeVal('autoblk'),
+    str: relicSum('str') + treeVal('str') + Math.floor((META.marks || 0) / 3), autoblk: relicSum('autoblk') + treeVal('autoblk'),
     played: 0, turn: 1, firstHit: relicSum('firstHit') + treeVal('firstHit') + (R.cls === 'pirate' ? 4 : 0), over: false, ending: false, won: false };
   drawCards(5 + relicSum('firstDraw') + treeVal('firstDraw') + (R.cls === 'wizard' ? 1 : 0));
   Music.setBattle(true); Music.start();
@@ -1865,7 +2014,7 @@ function winBattle(){
   bumpStat('kills', 1);
   if (B.kind === 'boss') bumpStat('bosses', 1);
   const base = (B.kind === 'boss' ? 50 : B.kind === 'elite' ? 28 : 16) + Math.floor(R.floor * 2);
-  const gold = Math.round(base * (1 + relicSum('goldMul') + treeVal('goldMul') + (R.cls === 'pirate' ? .4 : 0))) + META.bonusStripe + treeVal('flat');
+  const gold = Math.round(base * (1 + relicSum('goldMul') + treeVal('goldMul') + (R.cls === 'pirate' ? .4 : 0)) * marksMul()) + META.bonusStripe + treeVal('flat');
   R.stripes += gold;
   META.stripes += Math.floor(gold / 2);
   const heal = relicSum('healAfter');
@@ -2156,7 +2305,7 @@ function loseRun(){
   stampFx(newBest ? 'NEW BEST' : 'FELL');
   const floor = R.floor;
   const stats = { dmg: R.sdmg || 0, cards: R.scards || 0, blends: R.sblends || 0, deck: R.deck.length, relics: R.relics.length };
-  const earned = 15 + floor * 6;
+  const earned = Math.round((15 + floor * 6) * marksMul());
   META.stripes += earned;
   saveMeta();
   R = null; saveRun();
@@ -2191,6 +2340,7 @@ function treeGrowth(){
     ['firstDraw', v => `🃏 +${v} ON T1`], ['thin', v => `📚 −${v} BITE`], ['t1energy', v => `⚡ +${v} T1`],
     ['menergy', v => `⚡ START ${3 + v}`], ['blendHeal', v => `♥ BLEND +${v}`],
     ['blendBonus', v => `⚡ BLENDS +${v}`], ['startBlend', v => `⚡ ${v} PRE-BLEND`],
+    ['idleRate', v => `🌾 +${v}◆/HR AWAY`], ['idleCap', v => `🌾 CAP ${8 + v}H`], ['idleDeep', () => `🌾 DEEP ×2`],
     ['powAlways', () => `POW 100%`], ['powChoice', () => `POW ×3`],
     ['safeDoor', () => `❓ BITE-PROOF`], ['relic', v => `◈ +${v} RELIC`], ['pick4', () => `🃏 4 PICKS`],
   ];
@@ -2202,7 +2352,7 @@ function screenTree(keepScroll){
   app.innerHTML = '';
   const grow = treeGrowth();
   const p = el(`<div class="page">
-    <span class="kick">THE SKILL TREE · SIX BRANCHES · EVERY TIP GROWS FOREVER</span>
+    <span class="kick">THE SKILL TREE · SEVEN BRANCHES · EVERY TIP GROWS FOREVER</span>
     <div class="big">Skill <span class="z">Tree</span></div>
     <div class="sub"><b style="color:var(--r)">◆ ${META.stripes}</b> STRIPES · ${treeOwned()} NODES CLAIMED</div>
     ${grow ? `<div id="growRow">${grow}</div>` : ''}
@@ -2211,7 +2361,7 @@ function screenTree(keepScroll){
     ${TREE.map((b, bi) => {
       const done = b.nodes.filter(n => nodeLvl(n.id) > 0).length;
       return `<div class="branch">
-      <div class="bh"><span class="bic">${b.ic}</span><div><div class="bn">${b.br}</div><div class="bt">${b.tag} · ${done}/6</div></div></div>
+      <div class="bh"><span class="bic">${b.ic}</span><div><div class="bn">${b.br}</div><div class="bt">${b.tag} · ${done}/${b.nodes.length}</div></div></div>
       ${b.nodes.map((n, ni) => {
         const lvl = nodeLvl(n.id);
         const open = ni === 0 || nodeLvl(b.nodes[ni - 1].id) > 0;
@@ -2226,7 +2376,7 @@ function screenTree(keepScroll){
       }).join('')}
     </div>`; }).join('')}
     </div></div>
-    <div id="swipeHint">⟶ FOUR MORE BRANCHES THAT WAY ⟶</div>
+    <div id="swipeHint">⟶ MORE BRANCHES THAT WAY ⟶</div>
     <button class="btn ghost" id="bBack">Back</button>
   </div>`);
   app.appendChild(p);
@@ -2255,7 +2405,7 @@ function screenTree(keepScroll){
   p.querySelectorAll('.tnode.poor').forEach(dv => dv.onclick = () => toast('NOT ENOUGH STRIPES. THE TREE IS PATIENT.', 1300));
   p.querySelectorAll('.tnode.lock').forEach(dv => dv.onclick = () => toast('CLAIM THE NODE BELOW IT FIRST. TREES GROW UPWARD.', 1300));
   $('#bBack').onclick = screenTitle;
-  tut('tree', '#treeRow', 'THE SKILL TREE', 'Six branches, claimed <b>bottom-up</b> with banked ◆ stripes. The top node of every branch is <b>repeatable forever</b> — costs grow, the zebra grows faster. Swipe sideways to see all six.');
+  tut('tree', '#treeRow', 'THE SKILL TREE', 'Seven branches, claimed <b>bottom-up</b> with banked ◆ stripes. The top node of every branch is <b>repeatable forever</b> — costs grow, the zebra grows faster. GRAZE even earns while you sleep. Swipe sideways.');
 }
 function screenHerd(){
   app.innerHTML = '';
@@ -2367,10 +2517,12 @@ function screenAch(){
 /* ---------- boot ---------- */
 loadMeta();
 loadRun();
+idleCollect();
 screenTitle();
 window.ZB = { META, R: () => R, B: () => B, newRun, startBattle, playCard, endTurn, blendCards, mkCard,
   screenMap, screenTitle, JTM, bumpStat, thresh, rollPowerups, applyPowerup, screenReward,
-  TREE, treeVal, nodeCost, treeOwned, screenTree };   /* test hook */
+  TREE, treeVal, nodeCost, treeOwned, screenTree,
+  idleCollect, marksGain, marksMul, screenMigrate, screenStats, showRelics };   /* test hook */
 </script>
 </body>
 </html>
