@@ -1293,8 +1293,10 @@ function loadMeta(){
   META.stats = { ...defaultMeta().stats, ...(META.stats || {}) };
   META.tree = META.tree || {};
   META.pets = META.pets || [];
-  /* players from before the Migration era: their whole legend counts as this era */
-  if (!META.eraBest && META.stats.floors) META.eraBest = META.stats.floors;
+  /* one-shot backfill for saves from before the Migration era — must never run
+     again after a migration, or eraBest resurrects from lifetime best = free marks */
+  if (!META.legacyEraDone && !META.migrations && !META.eraBest && META.stats.floors) META.eraBest = META.stats.floors;
+  META.legacyEraDone = 1;
 }
 function saveMeta(){ localStorage.setItem('zebra-meta', JSON.stringify(META)); }
 function bumpStat(k, n, isMax = false){
@@ -1440,7 +1442,8 @@ function idleCollect(){
   META.lastSeen = now;
   saveMeta();
 }
-setInterval(() => { META.lastSeen = Date.now(); saveMeta(); }, 60000);
+/* heartbeat only while visible — a hidden tab must age so GRAZE can pay out */
+setInterval(() => { if (!document.hidden){ META.lastSeen = Date.now(); saveMeta(); } }, 60000);
 document.addEventListener('visibilitychange', () => {
   if (document.hidden){ META.lastSeen = Date.now(); saveMeta(); }
   else idleCollect();
@@ -1641,7 +1644,7 @@ function PETART(id, f = 0){
       <ellipse cx="54" cy="36" rx="2" ry="${blink ? .8 : 2.4}" fill="${W}"/>
       <path d="M60 38 l9 ${(f % 40) < 8 ? 6 : 2} l-9 2 z" fill="${R}"/>
       <path d="M34 44 q-6 4 -3 10" stroke="${W}" stroke-width="2" fill="none"/>
-      <path d="M36 59 v5 M44 59 v5" stroke="${W}" stroke-width="2"/>`,
+      <path d="M36 59 v5 M44 59 v5" stroke="${W}" stroke-width="2"/></g>`,
     sirrolls: () => { const roll = f * 3 % 360; return `
       <g transform="rotate(${roll} 26 50)"><circle cx="26" cy="50" r="13" fill="${D}"/>
         <path d="M15 45 q11 -6 22 0 M15 55 q11 6 22 0" stroke="${K}" stroke-width="3" fill="none"/></g>
@@ -1659,7 +1662,7 @@ function PETART(id, f = 0){
       <ellipse cx="40" cy="21" rx="1.6" ry="${blink ? .6 : 2}" fill="${K}"/>
       <rect x="46" y="${36 + Math.sin(f / 7) * 2}" width="11" height="15" fill="${W}" stroke="${K}" stroke-width="1.5"/>
       ${[0, 1].map(i => `<path d="M48 ${41 + Math.sin(f / 7) * 2 + i * 4} h7" stroke="${K}" stroke-width="1"/>`).join('')}
-      <path d="M31 62 h4 M39 62 h4" stroke="${G}" stroke-width="2.5"/>`,
+      <path d="M31 62 h4 M39 62 h4" stroke="${G}" stroke-width="2.5"/></g>`,
     turbo: () => { const slide = Math.sin(f / 30) * 6; return `<g transform="translate(${slide} 0)">
       <path d="M18 58 q14 6 30 0" stroke="${W}" stroke-width="2" fill="none" opacity=".4"/>
       <ellipse cx="38" cy="52" rx="16" ry="8" fill="${G}"/>
@@ -1681,7 +1684,7 @@ function PETART(id, f = 0){
         <path d="M60 36 l7 2 l-7 3 z" fill="${R}"/>
         <path d="M58 42 l3 4" stroke="${R}" stroke-width="2"/>
       </g>
-      <path d="M33 60 v5 M43 60 v5" stroke="${R}" stroke-width="2.5"/>`; },
+      <path d="M33 60 v5 M43 60 v5" stroke="${R}" stroke-width="2.5"/></g>`; },
     rock: () => { const look = Math.sin(f / 25) * 2.5; return `
       <path d="M20 62 q-2 -18 12 -24 q16 -8 26 4 q8 10 2 20 z" fill="${D}"/>
       <path d="M28 46 l8 -6 M46 40 l8 8" stroke="${K}" stroke-width="1.5" opacity=".6"/>
@@ -1708,7 +1711,7 @@ function PETART(id, f = 0){
       <path d="M49 43 l3 2 l3 -2" stroke="${W}" stroke-width="1.5" fill="none"/>
       <path d="M44 42 l-7 -1 M44 44 l-7 2 M60 42 l7 -1 M60 44 l7 2" stroke="${W}" stroke-width="1" opacity=".7"/>
       <path d="M46 47 a7 7 0 0 0 12 0" stroke="${R}" stroke-width="2.5" fill="none"/>
-      <path d="M32 62 v4 M44 62 v4" stroke="${K}" stroke-width="3"/>`; },
+      <path d="M32 62 v4 M44 62 v4" stroke="${K}" stroke-width="3"/></g>`; },
   };
   return `<svg viewBox="0 0 76 72" width="100%" height="100%" preserveAspectRatio="xMidYMid meet" style="position:absolute;inset:0">
     <ellipse cx="38" cy="66" rx="22" ry="2.5" fill="#ffffff1c"/>
@@ -1777,7 +1780,11 @@ function newRun(){
     if (bi >= 0) R.deck.splice(bi, 1);
   }
   for (let i = 0; i < treeVal('startBlend'); i++) R.deck.push(blendCards(mkCard(pick(BASE_CARDS).id), mkCard(pick(BASE_CARDS).id)));
-  for (let i = 0; i < META.startRelics + treeVal('relic'); i++) R.relics.push(pick(RELICS));
+  for (let i = 0; i < META.startRelics + treeVal('relic'); i++){
+    const r = pick(RELICS);
+    R.relics.push(r);
+    if (r.hp){ R.mhp += r.hp; R.hp += r.hp; }
+  }
   bumpStat('runs', 1);
   saveRun();
 }
@@ -1887,8 +1894,8 @@ function screenTitle(){
   $('#bRun').onclick = () => {
     const first = !R && !(META.tips && META.tips.guide);
     if (first){ showGuide(() => { newRun(); screenMap(); }); return; }
-    if (!R) newRun();
-    screenMap();
+    if (!R){ newRun(); screenMap(); return; }
+    screenMap(true);   /* continuing: floor was already counted when first shown */
   };
   $('#bGuide').onclick = () => showGuide();
   if ($('#bAbandon')) $('#bAbandon').onclick = () => { R = null; saveRun(); screenTitle(); };
@@ -1966,6 +1973,20 @@ function relicChips(){
   return `<div class="relicRow" id="relicSum" role="button" style="cursor:pointer">${chips}
     <span class="chip hot">◈ ${R.relics.length} RELIC${R.relics.length > 1 ? 'S' : ''} · DETAIL ▸</span></div>`;
 }
+/* re-render the HUD trio (pills, hp bar, relic chips) in place after mid-screen mutations */
+function refreshHud(){
+  if (!R || !document.querySelector('#hud')) return;
+  const wrap = document.createElement('div');
+  wrap.innerHTML = hudHtml();
+  [['#hud'], ['#hpbar'], ['#relicSum']].forEach(([sel]) => {
+    const cur = document.querySelector(sel), nw = wrap.querySelector(sel);
+    if (cur && nw) cur.replaceWith(nw);
+    else if (!cur && nw && sel === '#relicSum'){
+      const hp = document.querySelector('#hpbar');
+      if (hp) hp.after(nw);
+    }
+  });
+}
 function showRelics(){
   if (!R || document.querySelector('.hoardOvl')) return;
   const m = {};
@@ -1993,11 +2014,14 @@ function showRelics(){
 }
 document.addEventListener('click', e => { if (e.target.closest && e.target.closest('#relicSum')) showRelics(); });
 /* ---------- map ---------- */
-function screenMap(){
-  R.floor++;
-  bumpStat('floors', R.floor, true);
-  META.eraBest = Math.max(META.eraBest || 0, R.floor);
-  saveMeta();
+function screenMap(noAdvance){
+  /* Continue-from-title re-shows the CURRENT floor — reloading must not skip floors */
+  if (!noAdvance){
+    R.floor++;
+    bumpStat('floors', R.floor, true);
+    META.eraBest = Math.max(META.eraBest || 0, R.floor);
+    saveMeta();
+  }
   saveRun();
   const isBoss = R.floor % 5 === 0;
   app.innerHTML = '';
@@ -2081,7 +2105,8 @@ function foeIntent(){
   const f = B.foe;
   const kind = f.pat[f.pi % f.pat.length];
   if (kind === 'atk'){
-    const n = Math.max(1, f.atk + f.str - (f.weak ? 2 : 0));
+    /* mirror the real resolution math — goth passive + pet damage cut included */
+    const n = Math.max(1, f.atk + f.str - (f.weak ? 2 : 0) - (R.cls === 'goth' ? 1 : 0) - petVal('dmgCut'));
     return `<span class="intIc">⚔</span> INTENT: <b>ATTACK ${n}</b>`;
   }
   if (kind === 'blk') return '<span class="intIc">🛡</span> INTENT: BRACING (+block)';
@@ -2265,7 +2290,7 @@ function playCard(i, cardEl){
     if (c.self) R.hp = Math.max(1, R.hp - c.self);
     if (c.blk){ B.block += c.blk; bumpStat('blocks', c.blk); SFX.block(); }
     if (c.heal){ R.hp = Math.min(R.mhp, R.hp + c.heal); SFX.heal(); }
-    if (c.weak) B.foe.weak = Math.max(B.foe.weak, c.weak + 1);
+    if (c.weak) B.foe.weak = Math.max(B.foe.weak, c.weak);
     if (c.str) B.str = Math.min(99, B.str + c.str);
     if (c.autoblk) B.autoblk = Math.min(99, B.autoblk + c.autoblk);
     if (c.stripegen) B.stripegen = Math.min(99, (B.stripegen || 0) + c.stripegen);
@@ -2337,6 +2362,7 @@ function endTurn(){
       } else {
         const n = Math.max(1, f.atk + f.str - (f.weak ? 2 : 0) - (R.cls === 'goth' ? 1 : 0) - petVal('dmgCut'));
         const absorbed = Math.min(B.block, n);
+        B.block -= absorbed;          /* spent block is gone — robo carries only the remainder */
         through = n - absorbed;
         R.hp -= through;
         if (f.weak) f.weak--;
@@ -2433,9 +2459,12 @@ function screenReward(gold, kind){
     const owned = new Set(R.relics.map(r => r.id));
     const av = RELICS.filter(r => !owned.has(r.id));
     relic = av.length ? pick(av) : genRelic(R.relics.length);
+    /* apply BEFORE the HUD renders so the chips, count, and hp bar are already true */
+    R.relics.push(relic);
+    if (relic.hp){ R.mhp += relic.hp; R.hp += relic.hp; }
   }
-  /* almost every fight drops a powerup — pick one of two (tree: every fight, three choices) */
-  const pows = (!relicDrop && (treeVal('powAlways') || Math.random() < .85)) ? rollPowerups(2 + (treeVal('powChoice') ? 1 : 0)) : null;
+  /* almost every fight drops a powerup — Lucky Tail Swish makes it EVERY fight, elites and bosses included */
+  const pows = (treeVal('powAlways') || (!relicDrop && Math.random() < .85)) ? rollPowerups(2 + (treeVal('powChoice') ? 1 : 0)) : null;
   const p = el(`<div class="page">
     ${hudHtml()}
     <div class="stripes"></div>
@@ -2453,17 +2482,14 @@ function screenReward(gold, kind){
     if (powTaken) return;
     powTaken = true;
     applyPowerup(pw);
+    refreshHud();
     toast('⚡ ' + pw.name.toUpperCase(), 1400);
     const row = $('#powRow'); if (row) row.remove();
   };
   if (pows) p.querySelectorAll('.pow').forEach(dv => dv.onclick = () => takePow(pows[+dv.dataset.p]));
   /* leaving without choosing? the zebra grabs one on the way out */
   const autoPow = () => { if (!powTaken){ const pw = pick(pows); takePow(pw); toast('⚡ GRABBED ' + pw.name.toUpperCase() + ' ON THE WAY OUT', 1500); } };
-  if (relic){
-    R.relics.push(relic);
-    if (relic.hp){ R.mhp += relic.hp; R.hp += relic.hp; }
-    relicPop(relic);
-  }
+  if (relic) relicPop(relic);
   p.querySelectorAll('#hand > div').forEach(dv => {
     JTM.css('card-' + picks[+dv.dataset.i].id, dv.querySelector('.art'));
     dv.onclick = () => {
@@ -2642,7 +2668,7 @@ function screenShop(){
   };
   const priced = [['#bC0', cardCost], ['#bRelic', relicCost], ['#bBanish', banishCost], ['#bHeal', healCost]];
   function refreshAfford(){
-    $('#hud') && ($('#hud').outerHTML = hudHtml().match(/<div id="hud">[\s\S]*?<\/div>/)[0]);
+    refreshHud();
     priced.forEach(([sel, cost]) => {
       const b = $(sel);
       if (b && !b.dataset.sold && R.stripes < cost){ b.disabled = true; b.style.color = 'var(--r)'; }
@@ -2869,7 +2895,7 @@ function screenAch(){
   }).join('');
   const totalTiers = Object.values(META.achTiers).reduce((a, b) => a + b, 0);
   const p = el(`<div class="page">
-    <span class="kick">EVERY FAMILY TIERS FOREVER · ×2.7 EACH TIME</span>
+    <span class="kick">EVERY FAMILY TIERS FOREVER · ×2.2 EACH TIME</span>
     <div class="big">Achievements <span class="z">∞</span></div>
     <div class="sub">${totalTiers} tiers earned · each pays stripes on unlock</div>
     <div class="stripes"></div>
