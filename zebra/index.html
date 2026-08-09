@@ -217,6 +217,29 @@ h1 .z{color:var(--r)}
 .ach.pow{border-color:var(--r);animation:powIn .35s cubic-bezier(.2,1.6,.4,1) both}
 .ach.pow:active{transform:scale(.97)}
 @keyframes powIn{from{opacity:0;transform:translateY(8px) scale(.96)}to{opacity:1}}
+/* skill tree */
+#treeWrap{overflow-x:auto;margin:0 -16px;padding:2px 16px 6px;-webkit-overflow-scrolling:touch;scrollbar-width:thin}
+#treeRow{display:flex;gap:16px;width:max-content;align-items:flex-end}
+.branch{width:158px;flex:0 0 auto;display:flex;flex-direction:column-reverse}
+.bh{display:flex;gap:8px;align-items:center;border:1.5px solid var(--r);padding:8px 10px;background:var(--r)}
+.bh .bic{font-size:16px}
+.bh .bn{font-weight:900;font-size:13px;letter-spacing:.06em;color:#fff}
+.bh .bt{font-family:var(--mono);font-size:8px;font-weight:800;letter-spacing:.16em;color:#ffffffcc}
+.tnode{border:1.5px solid #ffffff30;padding:8px 9px;position:relative;margin-bottom:16px}
+.tnode::after{content:'';position:absolute;left:50%;bottom:-16px;width:2px;height:16px;background:#ffffff30}
+.tnode.own{border-color:var(--r);background:#ffffff08}
+.tnode.own::after,.tnode.avail::after{background:var(--r)}
+.tnode.avail{border-color:#f2f2f2;cursor:pointer;animation:availPulse 2.2s ease-in-out infinite}
+@keyframes availPulse{0%,100%{box-shadow:0 0 0 0 #e8232a00}50%{box-shadow:0 0 0 3px #e8232a55}}
+.tnode.avail:active{transform:scale(.97)}
+.tnode.poor{border-color:#ffffff55;cursor:pointer}
+.tnode.lock{opacity:.35;cursor:pointer}
+.tnode.rep .tn::before{content:'∞ ';color:var(--r)}
+.tnode .tn{font-weight:800;font-size:11px;text-transform:uppercase;line-height:1.25}
+.tnode .tn .lv{color:var(--r);font-family:var(--mono);font-size:10px}
+.tnode .td{font-family:var(--mono);font-size:8.5px;color:#ffffff88;margin-top:3px;letter-spacing:.02em;line-height:1.5}
+.tnode .tc{font-family:var(--mono);font-weight:800;font-size:10px;margin-top:5px;color:var(--r)}
+.tnode.own .tc{color:#f2f2f2}
 #toast{position:fixed;left:50%;top:12%;transform:translateX(-50%) scale(0);z-index:40;pointer-events:none;
   font-family:var(--mono);font-weight:800;font-size:clamp(11px,3vmin,15px);letter-spacing:.06em;text-transform:uppercase;
   background:var(--w);color:var(--k);border:3px solid var(--r);padding:.55em 1.1em;white-space:nowrap;
@@ -634,6 +657,12 @@ function blendCards(a, b){
   /* multi-hit: keep the larger, +1 if both sides had one */
   const am = a.multi || 0, bm = b.multi || 0;
   if (am || bm) c.multi = Math.min(CAPS.multi, Math.max(am, bm) + (am && bm ? 1 : 0));
+  /* skill tree: Smooth Operator lineage sweetens every new blend */
+  const bb = typeof treeVal === 'function' ? treeVal('blendBonus') : 0;
+  if (bb){
+    if (c.dmg) c.dmg = Math.min(CAPS.dmg, c.dmg + bb);
+    if (c.blk) c.blk = Math.min(CAPS.blk, c.blk + bb);
+  }
   c.type = (a.type === 'pow' || b.type === 'pow') ? 'pow'
     : (c.dmg || c.frenzy || c.mirror || c.quake) ? 'atk' : 'skl';
   const bits = [];
@@ -694,13 +723,13 @@ const POWERUPS = [
   () => ({ name: 'Quick Sip', desc: 'Heal 10 HP right now', now: r => r.hp = Math.min(r.mhp, r.hp + 10) }),
   () => ({ name: 'Stripe Dividend', desc: 'Stripes, right now', now: r => { const g = 20 + r.floor * 2; r.stripes += g; toast('◆ +' + g + ' STRIPES', 1200); } }),
 ];
-function rollPowerups(){
-  const two = [];
-  while (two.length < 2){
+function rollPowerups(n = 2){
+  const out = [];
+  while (out.length < Math.min(n, POWERUPS.length)){
     const p = pick(POWERUPS)();
-    if (!two.some(x => x.name === p.name)) two.push(p);
+    if (!out.some(x => x.name === p.name)) out.push(p);
   }
-  return two;
+  return out;
 }
 function applyPowerup(p){
   if (p.now){ p.now(R); }
@@ -1086,7 +1115,7 @@ const ACH_FAMS = [
 const thresh = n => Math.round(10 * Math.pow(2.2, n));            /* 10, 22, 48, 106… forever */
 function defaultMeta(){
   return { stripes: 0, herd: 0, unlocks: 0, stats: { damage: 0, cards: 0, blocks: 0, kills: 0, blends: 0, floors: 0, runs: 0, bosses: 0 },
-    achTiers: {}, bonusHp: 0, bonusStripe: 0, startRelics: 0, tips: {}, bestiary: {},
+    achTiers: {}, bonusHp: 0, bonusStripe: 0, startRelics: 0, tips: {}, bestiary: {}, tree: {},
     clsOwned: ['zeb'], clsSel: 'zeb' };
 }
 let META = defaultMeta();
@@ -1094,6 +1123,7 @@ function loadMeta(){
   try { META = { ...defaultMeta(), ...JSON.parse(localStorage.getItem('zebra-meta') || '{}') }; }
   catch {}
   META.stats = { ...defaultMeta().stats, ...(META.stats || {}) };
+  META.tree = META.tree || {};
 }
 function saveMeta(){ localStorage.setItem('zebra-meta', JSON.stringify(META)); }
 function bumpStat(k, n, isMax = false){
@@ -1120,16 +1150,68 @@ const CLASSES = [
   { id: 'disco', name: 'DISCO ZEBRA', cost: 600, ep: 'THE GROOVE IS ARMOR.', desc: 'Every 3rd card each turn refunds 1 energy · starts with double Zoomies.' },
   { id: 'robo', name: 'ROBO ZEBRA', cost: 950, ep: 'FIRMWARE: VENGEANCE.', desc: 'BLOCK CARRIES OVER between turns · starts with Mud Roll.' },
 ];
-/* infinite unlock ladder */
-function unlockDef(n){
-  const kinds = [
-    i => ({ name: `Thicker Hide ${roman(i)}`, desc: `+${3 + i} starting max HP`, apply: m => m.bonusHp += 3 + i }),
-    i => ({ name: `Scavenger ${roman(i)}`, desc: `+${5 * i} stripes after every battle`, apply: m => m.bonusStripe += 5 * i }),
-    i => ({ name: `Herd Blessing ${roman(i)}`, desc: `Start each run with a bonus relic`, apply: m => m.startRelics += 1 }),
-  ];
-  const i = Math.floor(n / kinds.length) + 1;
-  return { cost: Math.round(35 * Math.pow(1.55, n)), ...kinds[n % kinds.length](i) };
+/* ---------- THE SKILL TREE · six branches · every tip grows forever ---------- */
+const TREE = [
+  { br: 'HOOF', ic: '⚔', tag: 'HIT HARDER', nodes: [
+    { id: 'hoof1', name: 'Sharpened Hooves', desc: '+1 damage on all attacks', cost: 30, fx: { str: 1 } },
+    { id: 'hoof2', name: 'Warm-Up Buck', desc: 'First attack each battle +3', cost: 70, fx: { firstHit: 3 } },
+    { id: 'hoof3', name: 'Mean Streak', desc: '+1 more damage on all attacks', cost: 150, fx: { str: 1 } },
+    { id: 'hoof4', name: 'Opening Argument', desc: 'First attack each battle +5 more', cost: 300, fx: { firstHit: 5 } },
+    { id: 'hoof5', name: 'Unresolved Issues', desc: '+2 more damage on all attacks', cost: 550, fx: { str: 2 } },
+    { id: 'hoofX', name: 'Endless Spite', desc: '+1 damage · repeatable forever', cost: 800, rep: 1.5, fx: { str: 1 } },
+  ]},
+  { br: 'HIDE', ic: '🛡', tag: 'GET THICKER', nodes: [
+    { id: 'hide1', name: 'Thick Skin', desc: '+8 starting max HP', cost: 30, fx: { hp: 8 } },
+    { id: 'hide2', name: 'Dust Bath Ritual', desc: '+1 block every turn', cost: 70, fx: { autoblk: 1 } },
+    { id: 'hide3', name: 'Thicker Skin', desc: '+12 more max HP', cost: 150, fx: { hp: 12 } },
+    { id: 'hide4', name: 'Mud Armor', desc: '+2 more block every turn', cost: 300, fx: { autoblk: 2 } },
+    { id: 'hide5', name: 'Ancestral Callus', desc: 'Survive lethal damage once per run (cling on at 1 HP)', cost: 600, fx: { phoenix: 1 } },
+    { id: 'hideX', name: 'Endless Hide', desc: '+6 max HP · repeatable forever', cost: 800, rep: 1.5, fx: { hp: 6 } },
+  ]},
+  { br: 'HERD', ic: '◆', tag: 'GET RICHER', nodes: [
+    { id: 'herd1', name: 'Scavenger Eye', desc: '+5 stripes after every battle', cost: 30, fx: { flat: 5 } },
+    { id: 'herd2', name: 'Haggler', desc: 'Trading Post: 15% off everything', cost: 70, fx: { shopOff: .15 } },
+    { id: 'herd3', name: 'Stripe Interest', desc: '+15% stripes from battles', cost: 150, fx: { goldMul: .15 } },
+    { id: 'herd4', name: 'Seed Money', desc: 'Start each run with 40 stripes', cost: 300, fx: { startGold: 40 } },
+    { id: 'herd5', name: 'Compound Stripes', desc: '+20% more stripes from battles', cost: 550, fx: { goldMul: .2 } },
+    { id: 'herdX', name: 'Endless Greed', desc: '+5 after-battle stripes · repeatable forever', cost: 800, rep: 1.5, fx: { flat: 5 } },
+  ]},
+  { br: 'MIND', ic: '🧠', tag: 'THINK FASTER', nodes: [
+    { id: 'mind1', name: 'Morning Zoomies', desc: '+1 card drawn on turn 1', cost: 40, fx: { firstDraw: 1 } },
+    { id: 'mind2', name: 'Lighter Saddlebags', desc: 'Start runs with one less Bite in the deck', cost: 90, fx: { thin: 1 } },
+    { id: 'mind3', name: 'Gallop Brain', desc: '+1 more card on turn 1', cost: 200, fx: { firstDraw: 1 } },
+    { id: 'mind4', name: 'Deep Breaths', desc: '+1 energy on turn 1 of every battle', cost: 400, fx: { t1energy: 1 } },
+    { id: 'mind5', name: 'Enlightened Equine', desc: 'Start every run at 4 max energy', cost: 750, fx: { menergy: 1 } },
+    { id: 'mindX', name: 'Endless Thoughts', desc: '+3 max HP & +3 after-battle stripes · repeatable forever', cost: 900, rep: 1.5, fx: { hp: 3, flat: 3 } },
+  ]},
+  { br: 'BLEND', ic: '⚡', tag: 'FUSE HARDER', nodes: [
+    { id: 'blend1', name: 'Blend Curious', desc: 'Blending at the Oasis also heals 6 HP', cost: 40, fx: { blendHeal: 6 } },
+    { id: 'blend2', name: 'Pre-Blended', desc: 'Start each run with a random blended card', cost: 100, fx: { startBlend: 1 } },
+    { id: 'blend3', name: 'Smooth Operator', desc: 'New blends get +1 damage & +1 block', cost: 220, fx: { blendBonus: 1 } },
+    { id: 'blend4', name: 'Double Batch', desc: 'Start with a second blended card', cost: 400, fx: { startBlend: 1 } },
+    { id: 'blend5', name: 'Master Chef', desc: 'New blends get +2 more damage & block', cost: 650, fx: { blendBonus: 2 } },
+    { id: 'blendX', name: 'Endless Smoothie', desc: '+1 blend bonus · repeatable forever', cost: 900, rep: 1.5, fx: { blendBonus: 1 } },
+  ]},
+  { br: 'WYRD', ic: '❓', tag: 'GET STRANGER', nodes: [
+    { id: 'wyrd1', name: 'Lucky Tail Swish', desc: 'Powerups drop after EVERY fight', cost: 40, fx: { powAlways: 1 } },
+    { id: 'wyrd2', name: 'Third Option', desc: 'Powerup drops offer 3 choices', cost: 100, fx: { powChoice: 1 } },
+    { id: 'wyrd3', name: 'Door Whisperer', desc: '??? doors can no longer bite you', cost: 220, fx: { safeDoor: 1 } },
+    { id: 'wyrd4', name: 'Relic Magnet', desc: 'Start each run with a bonus relic', cost: 400, fx: { relic: 1 } },
+    { id: 'wyrd5', name: 'Two-Headed Zebra', desc: 'Card rewards show 4 picks instead of 3', cost: 700, fx: { pick4: 1 } },
+    { id: 'wyrdX', name: 'Endless Weird', desc: '+1 starting relic · repeatable forever', cost: 1000, rep: 1.6, fx: { relic: 1 } },
+  ]},
+];
+function nodeLvl(id){ return (META.tree || {})[id] || 0; }
+function nodeCost(n){ return n.rep ? Math.round(n.cost * Math.pow(n.rep, nodeLvl(n.id))) : n.cost; }
+function treeVal(k){
+  let s = 0;
+  TREE.forEach(b => b.nodes.forEach(n => {
+    const lvl = nodeLvl(n.id);
+    if (lvl && n.fx[k]) s += n.fx[k] * lvl;
+  }));
+  return s;
 }
+function treeOwned(){ return TREE.reduce((s, b) => s + b.nodes.reduce((t, n) => t + nodeLvl(n.id), 0), 0); }
 
 /* ============================================================
    HOUSE RIGS · the zebra herself, the meerkat, the oasis
@@ -1266,17 +1348,24 @@ setInterval(() => {
 let R = null;
 function newRun(){
   const cls = CLASSES.find(c => c.id === META.clsSel && (META.clsOwned || ['zeb']).includes(c.id)) || CLASSES[0];
+  const thp = 60 + META.bonusHp + treeVal('hp');
   R = {
-    floor: 0, hp: 60 + META.bonusHp, mhp: 60 + META.bonusHp, stripes: 0, bestAtStart: META.stats.floors,
+    floor: 0, hp: thp, mhp: thp, stripes: treeVal('startGold'), bestAtStart: META.stats.floors,
     deck: ['bite', 'bite', 'bite', 'bite', 'kick', 'kick', 'hide', 'hide', 'hide', 'zoomies'].map(mkCard),
-    relics: [], turn: 0, sdmg: 0, scards: 0, sblends: 0, menergy: 3, cls: cls.id,
+    relics: [], turn: 0, sdmg: 0, scards: 0, sblends: 0, menergy: 3 + treeVal('menergy'), cls: cls.id,
+    phoenix: treeVal('phoenix') > 0,
   };
   if (cls.id === 'wizard'){ R.deck.push(mkCard('zebramath'), mkCard(pick(RAR_R))); }
   if (cls.id === 'pirate'){ R.deck.push(mkCard('coinmane')); }
   if (cls.id === 'goth'){ R.mhp += 15; R.hp += 15; R.deck.push(mkCard('thickhide')); }
   if (cls.id === 'disco'){ R.deck.push(mkCard('zoomies'), mkCard('zoomies')); }
   if (cls.id === 'robo'){ R.deck.push(mkCard('mudroll')); }
-  for (let i = 0; i < META.startRelics; i++) R.relics.push(pick(RELICS));
+  for (let i = 0; i < treeVal('thin'); i++){
+    const bi = R.deck.findIndex(c => c.id === 'bite');
+    if (bi >= 0) R.deck.splice(bi, 1);
+  }
+  for (let i = 0; i < treeVal('startBlend'); i++) R.deck.push(blendCards(mkCard(pick(BASE_CARDS).id), mkCard(pick(BASE_CARDS).id)));
+  for (let i = 0; i < META.startRelics + treeVal('relic'); i++) R.relics.push(pick(RELICS));
   bumpStat('runs', 1);
   saveRun();
 }
@@ -1312,8 +1401,8 @@ const GUIDE = [
   { t: 'The <span>climb</span>', b: 'Endless floors. Pick a door, survive what\'s behind it. Every <b>5th floor is a boss</b>. Elites are the Rogues\' Gallery — worse people, better loot. There is no top. Only a personal best.' },
   { t: 'Bat<span>tle</span>', b: 'Draw 5, spend <b>ENERGY</b> (the red pip) to play cards. The enemy <b>TELEGRAPHS</b> its next move — block the big hits, punish the off-turns. Block resets every turn. Powers stick for the whole fight.' },
   { t: 'Ble<span>nd</span>', b: 'At an Oasis you can fuse <b>ANY two cards into one</b> — combined effects, one card, forever. Bite + Hide = <b>Bide</b>. Small decks that do two things per card is the whole zebra.' },
-  { t: 'Stri<span>pes</span>', b: '<b>◆ Stripes</b> drop from every battle. Spend them in-run at the Trading Post. A cut banks to your permanent wallet — that funds the <b>infinite unlock ladder</b> back at the title.' },
-  { t: 'For<span>ever</span>', b: 'Death feeds the herd: <b>+herd level, +stripes</b>, and achievements tier forever (×2.7 each). Every run starts a little stronger. The savanna keeps score.' },
+  { t: 'Stri<span>pes</span>', b: '<b>◆ Stripes</b> drop from every battle. Spend them in-run at the Trading Post. Half banks to your permanent wallet — that feeds the <b>SKILL TREE</b> back at the title: six branches, every tip repeatable forever.' },
+  { t: 'For<span>ever</span>', b: 'Death feeds the herd: <b>+stripes for the tree</b>, and achievements tier forever. Every run starts a little stronger. The savanna keeps score.' },
 ];
 function showGuide(cb){
   let i = 0;
@@ -1355,7 +1444,7 @@ function screenTitle(){
     <b style="color:var(--r)">◆ ${META.stripes}</b> STRIPES · BEST FLOOR ${META.stats.floors}</div>
     <button class="btn red" id="bRun">${R ? 'Continue run · floor ' + R.floor : 'New run'}</button>
     ${R ? '<button class="btn ghost" id="bAbandon">Abandon run</button>' : ''}
-    <button class="btn" id="bUnlock">Unlocks (∞)</button>
+    <button class="btn" id="bUnlock">🌿 Skill Tree (${treeOwned()} · ∞)</button>
     <button class="btn" id="bAch">Achievements (∞)</button>
     <button class="btn" id="bHerd">The Herd (${(META.clsOwned || ['zeb']).length}/${CLASSES.length})</button>
     <button class="btn" id="bBest">Bestiary</button>
@@ -1377,7 +1466,7 @@ function screenTitle(){
   };
   $('#bGuide').onclick = () => showGuide();
   if ($('#bAbandon')) $('#bAbandon').onclick = () => { R = null; saveRun(); screenTitle(); };
-  $('#bUnlock').onclick = screenUnlocks;
+  $('#bUnlock').onclick = () => screenTree();
   $('#bAch').onclick = screenAch;
   $('#bBest').onclick = screenBestiary;
   $('#bHerd').onclick = screenHerd;
@@ -1443,9 +1532,10 @@ let B = null;
 function startBattle(kind){
   const foe = makeFoe(R.floor, kind === 'boss' ? 'boss' : kind === 'elite' ? 'elite' : 'normal');
   B = { foe, kind, hand: [], drawPile: shuffle([...R.deck]), discard: [],
-    energy: R.menergy || 3, maxEnergy: R.menergy || 3, block: 0, str: relicSum('str'), autoblk: relicSum('autoblk'),
-    played: 0, turn: 1, firstHit: relicSum('firstHit') + (R.cls === 'pirate' ? 4 : 0), over: false, ending: false, won: false };
-  drawCards(5 + relicSum('firstDraw') + (R.cls === 'wizard' ? 1 : 0));
+    energy: (R.menergy || 3) + treeVal('t1energy'), maxEnergy: R.menergy || 3, block: 0,
+    str: relicSum('str') + treeVal('str'), autoblk: relicSum('autoblk') + treeVal('autoblk'),
+    played: 0, turn: 1, firstHit: relicSum('firstHit') + treeVal('firstHit') + (R.cls === 'pirate' ? 4 : 0), over: false, ending: false, won: false };
+  drawCards(5 + relicSum('firstDraw') + treeVal('firstDraw') + (R.cls === 'wizard' ? 1 : 0));
   Music.setBattle(true); Music.start();
   if (kind === 'boss' || kind === 'elite'){ splash(foe, renderBattle2); return; }
   renderBattle2();
@@ -1727,6 +1817,13 @@ function endTurn(){
     } else if (kind === 'blk') f.blk += Math.round(f.atk * .8);
     else f.str += 1 + Math.floor(R.floor / 8);
     if (B.stripegen){ R.stripes += B.stripegen; }
+    if (through > 0 && R.hp <= 0 && R.phoenix){
+      R.phoenix = false;
+      R.hp = 1;
+      stampFx('ANCESTRAL CALLUS');
+      toast('THE ANCESTORS SAY: NOT YET. · 1 HP', 2400);
+      SFX.bell(); hapt([40, 30, 40]);
+    }
     if (through > 0 && R.hp <= 0){ B.busy = false; loseRun(); return; }
     B.turn++;
     B.discard.push(...B.hand);
@@ -1753,7 +1850,7 @@ function winBattle(){
   bumpStat('kills', 1);
   if (B.kind === 'boss') bumpStat('bosses', 1);
   const base = (B.kind === 'boss' ? 50 : B.kind === 'elite' ? 28 : 16) + Math.floor(R.floor * 2);
-  const gold = Math.round(base * (1 + relicSum('goldMul') + (R.cls === 'pirate' ? .4 : 0))) + META.bonusStripe;
+  const gold = Math.round(base * (1 + relicSum('goldMul') + treeVal('goldMul') + (R.cls === 'pirate' ? .4 : 0))) + META.bonusStripe + treeVal('flat');
   R.stripes += gold;
   META.stripes += Math.floor(gold / 2);
   const heal = relicSum('healAfter');
@@ -1786,7 +1883,8 @@ function screenReward(gold, kind){
     if (kind === 'elite') return r < .2 ? 2 : r < .55 ? 1 : 0;
     return r < .08 ? 2 : r < .35 ? 1 : 0;
   };
-  while (picks.length < 3){
+  const nPicks = 3 + (treeVal('pick4') ? 1 : 0);
+  while (picks.length < nPicks){
     let rar = rollRar();
     let sub = pool.filter(c => c.rar === rar);
     while (!sub.length && rar > 0){ rar--; sub = pool.filter(c => c.rar === rar); }
@@ -1796,7 +1894,7 @@ function screenReward(gold, kind){
   }
   /* deep floors offer pre-blended exotics */
   if (R.floor >= 8 && Math.random() < .4){
-    picks[2] = blendCards(mkCard(pick(BASE_CARDS).id), mkCard(pick(BASE_CARDS).id));
+    picks[nPicks - 1] = blendCards(mkCard(pick(BASE_CARDS).id), mkCard(pick(BASE_CARDS).id));
   }
   app.innerHTML = '';
   const relicDrop = (kind === 'elite' || kind === 'boss');
@@ -1806,8 +1904,8 @@ function screenReward(gold, kind){
     const av = RELICS.filter(r => !owned.has(r.id));
     relic = av.length ? pick(av) : genRelic(R.relics.length);
   }
-  /* almost every fight drops a powerup — pick one of two */
-  const pows = (!relicDrop && Math.random() < .85) ? rollPowerups() : null;
+  /* almost every fight drops a powerup — pick one of two (tree: every fight, three choices) */
+  const pows = (!relicDrop && (treeVal('powAlways') || Math.random() < .85)) ? rollPowerups(2 + (treeVal('powChoice') ? 1 : 0)) : null;
   const p = el(`<div class="page">
     ${hudHtml()}
     <div class="stripes"></div>
@@ -1874,6 +1972,13 @@ function mysteryDoor(){
     toast('IT\'S AN AMBUSH! IT WAS ALWAYS AN AMBUSH!', 1600);
     SFX.bell();
     setTimeout(() => startBattle('elite'), 900);
+  } else if (treeVal('safeDoor')){
+    const g = 15 + R.floor;
+    R.stripes += g;
+    toast('THE DOOR TRIED TO BITE. YOU WERE ALREADY ELSEWHERE. ◆ +' + g, 2000);
+    SFX.ach();
+    saveRun();
+    setTimeout(screenMap, 1400);
   } else {
     R.hp = Math.max(1, R.hp - 8);
     playerFx(); SFX.playerHit(); hapt(25);
@@ -1931,6 +2036,8 @@ function screenBlend(){
     R.deck.push(nc);
     bumpStat('blends', 1);
     R.sblends = (R.sblends || 0) + 1;
+    const bh = treeVal('blendHeal');
+    if (bh){ R.hp = Math.min(R.mhp, R.hp + bh); setTimeout(() => toast('🌿 THE BLEND NOURISHES · +' + bh + ' HP', 1500), 2500); }
     saveRun();
     if (nc.rar === 3) setTimeout(() => { toast('⚡ LEGENDARY BLEND · IT HAS NO EQUAL', 2400); SFX.victory(); hapt(50); }, 2400);
     /* the blend ceremony · two cards enter, one card leaves */
@@ -1956,13 +2063,14 @@ function screenBlend(){
 function screenShop(){
   app.innerHTML = '';
   const cards = [mkCard(pick(BASE_CARDS.filter(c => R.floor >= 5 || c.early)).id)];
-  const cardCost = 18 + (cards[0].rar || 0) * 12 + R.floor * 2;
-  const healCost = 15 + R.floor;
-  const banishCost = 45 + R.floor * 2;
+  const off = 1 - treeVal('shopOff');
+  const cardCost = Math.round((18 + (cards[0].rar || 0) * 12 + R.floor * 2) * off);
+  const healCost = Math.round((15 + R.floor) * off);
+  const banishCost = Math.round((45 + R.floor * 2) * off);
   const owned = new Set(R.relics.map(r => r.id));
   const av = RELICS.filter(r => !owned.has(r.id));
   const relic = av.length ? pick(av) : genRelic(R.relics.length);
-  const relicCost = 40 + R.floor * 2;
+  const relicCost = Math.round((40 + R.floor * 2) * off);
   const p = el(`<div class="page">
     ${hudHtml()}
     <div class="stripes"></div>
@@ -2042,7 +2150,7 @@ function loseRun(){
     <span class="kick">${byBlender ? 'BLACK AND WHITE AND RED ALL OVER' : newBest ? '★ NEW BEST FLOOR · THE HERD IS IMPRESSED ★' : 'THE SAVANNA IS PATIENT'}</span>
     <div class="big">Run <span class="z">over</span></div>
     <div class="stripes"></div>
-    <div class="sub">Fell on floor ${floor}.<br>+${earned} ◆ stripes banked for unlocks</div>
+    <div class="sub">Fell on floor ${floor}.<br>+${earned} ◆ stripes banked for the skill tree</div>
     <div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap">
       <span class="chip">⚔ ${stats.dmg} DMG</span><span class="chip">🃏 ${stats.cards} PLAYED</span>
       <span class="chip hot">⚡ ${stats.blends} BLENDS</span><span class="chip">📚 DECK ${stats.deck}</span>
@@ -2057,32 +2165,50 @@ function loseRun(){
   $('#bTitle').onclick = screenTitle;
 }
 /* ---------- meta screens ---------- */
-function screenUnlocks(){
+function screenTree(keepScroll){
+  const prevScroll = keepScroll && $('#treeWrap') ? $('#treeWrap').scrollLeft : 0;
   app.innerHTML = '';
-  const n = META.unlocks;
-  const items = [unlockDef(n), unlockDef(n + 1), unlockDef(n + 2)];
   const p = el(`<div class="page">
-    <span class="kick">PERMANENT UNLOCKS · THE LADDER NEVER ENDS</span>
-    <div class="big">Unlocks <span class="z">∞</span></div>
-    <div class="sub">◆ ${META.stripes} stripes · ${n} claimed</div>
+    <span class="kick">THE SKILL TREE · SIX BRANCHES · EVERY TIP GROWS FOREVER</span>
+    <div class="big">Skill <span class="z">Tree</span></div>
+    <div class="sub"><b style="color:var(--r)">◆ ${META.stripes}</b> STRIPES · ${treeOwned()} NODES CLAIMED · swipe sideways, climb upward</div>
     <div class="stripes"></div>
-    ${items.map((u, i) => `<div class="ach"><div><div class="an">${u.name}</div><div class="ap">${u.desc}</div></div>
-      <button class="btn ${i === 0 ? 'red' : ''}" style="width:auto;min-height:40px;padding:8px 14px" data-i="${i}" ${i > 0 || META.stripes < u.cost ? 'disabled' : ''}>◆ ${u.cost}</button></div>`).join('')}
-    <div class="sub">next tiers preview only — claim in order. the ladder is infinite. so is the zebra.</div>
+    <div id="treeWrap"><div id="treeRow">
+    ${TREE.map((b, bi) => `<div class="branch">
+      <div class="bh"><span class="bic">${b.ic}</span><div><div class="bn">${b.br}</div><div class="bt">${b.tag}</div></div></div>
+      ${b.nodes.map((n, ni) => {
+        const lvl = nodeLvl(n.id);
+        const open = ni === 0 || nodeLvl(b.nodes[ni - 1].id) > 0;
+        const cost = nodeCost(n);
+        const own = lvl > 0 && !n.rep;
+        const st = own ? 'own' : open ? (META.stripes >= cost ? 'avail' : 'poor') : 'lock';
+        return `<div class="tnode ${st} ${n.rep ? 'rep' : ''}" data-b="${bi}" data-n="${ni}">
+          <div class="tn">${n.name}${n.rep && lvl ? ` <span class="lv">Lv.${lvl}</span>` : ''}</div>
+          <div class="td">${n.desc}</div>
+          <div class="tc">${own ? '✔ CLAIMED' : open ? '◆ ' + cost : '🔒 ◆ ' + cost}</div>
+        </div>`;
+      }).join('')}
+    </div>`).join('')}
+    </div></div>
     <button class="btn ghost" id="bBack">Back</button>
   </div>`);
   app.appendChild(p);
-  p.querySelector('[data-i="0"]').onclick = () => {
-    const u = unlockDef(META.unlocks);
-    if (META.stripes < u.cost) return;
-    META.stripes -= u.cost;
-    u.apply(META);
-    META.unlocks++;
+  if (prevScroll) $('#treeWrap').scrollLeft = prevScroll;
+  p.querySelectorAll('.tnode.avail').forEach(dv => dv.onclick = () => {
+    const n = TREE[+dv.dataset.b].nodes[+dv.dataset.n];
+    const cost = nodeCost(n);
+    if (META.stripes < cost) return;
+    META.stripes -= cost;
+    META.tree[n.id] = nodeLvl(n.id) + 1;
     saveMeta();
-    toast('UNLOCKED: ' + u.name.toUpperCase());
-    screenUnlocks();
-  };
+    SFX.ach(); hapt(15);
+    toast('🌿 ' + n.name.toUpperCase() + (n.rep ? ' Lv.' + META.tree[n.id] : '') + ' · YOURS FOREVER', 1600);
+    screenTree(true);
+  });
+  p.querySelectorAll('.tnode.poor').forEach(dv => dv.onclick = () => toast('NOT ENOUGH STRIPES. THE TREE IS PATIENT.', 1300));
+  p.querySelectorAll('.tnode.lock').forEach(dv => dv.onclick = () => toast('CLAIM THE NODE BELOW IT FIRST. TREES GROW UPWARD.', 1300));
   $('#bBack').onclick = screenTitle;
+  tut('tree', '#treeRow', 'THE SKILL TREE', 'Six branches, claimed <b>bottom-up</b> with banked ◆ stripes. The top node of every branch is <b>repeatable forever</b> — costs grow, the zebra grows faster. Swipe sideways to see all six.');
 }
 function screenHerd(){
   app.innerHTML = '';
@@ -2196,7 +2322,8 @@ loadMeta();
 loadRun();
 screenTitle();
 window.ZB = { META, R: () => R, B: () => B, newRun, startBattle, playCard, endTurn, blendCards, mkCard,
-  screenMap, screenTitle, JTM, bumpStat, unlockDef, thresh, rollPowerups, applyPowerup, screenReward };   /* test hook */
+  screenMap, screenTitle, JTM, bumpStat, thresh, rollPowerups, applyPowerup, screenReward,
+  TREE, treeVal, nodeCost, treeOwned, screenTree };   /* test hook */
 </script>
 </body>
 </html>
