@@ -1406,10 +1406,10 @@ const QUIPS = {
   hacker: ['*hacks*', 'password?', 'i\'m in. (the fridge)'],
 };
 function scaleFoe(base, floor, mult = 1){
-  const s = 1 + floor * .15;
+  const s = 1 + floor * .17;
   return {
     ...base, mhp: Math.round(base.hp * s * mult), hp: Math.round(base.hp * s * mult),
-    atk: Math.round(base.atk * (1 + floor * .105) * mult),
+    atk: Math.round(base.atk * (1 + floor * .115) * mult),
     blk: 0, str: 0, pi: 0, weak: 0,
   };
 }
@@ -1734,6 +1734,12 @@ function ZEB(f, pose = 'idle', cls = 'zeb'){
     extra = `<path d="M112 30 a26 26 0 0 1 0 52" stroke="#8a8a8a" stroke-width="5" fill="none" opacity=".85"/>`;
   }
   if (pose === 'win'){ gT = `rotate(-16 30 90)`; }
+  if (pose === 'die'){
+    gT = `rotate(172 60 66) translate(0 -18)`;
+    eye = `<path d="M93 30 l7 7 M100 30 l-7 7" stroke="${K}" stroke-width="2.4"/>`;
+    extra = `<path d="M108 44 q6 5 4 10" stroke="${R}" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+      <text x="16" y="18" font-size="9" fill="#8a8a8a" opacity="${.4 + Math.sin(f / 5) * .3}">✦</text>`;
+  }
   return `<svg viewBox="0 0 130 100" width="100%" height="100%" preserveAspectRatio="xMidYMid meet" style="position:absolute;inset:0">
     <ellipse cx="60" cy="96" rx="42" ry="3.5" fill="#ffffff22"/>
     <g opacity="${cls === 'ghost' ? .6 : 1}" transform="${gT} translate(0 ${cls === 'ghost' ? -bob * 2.4 - 4 : -bob})">
@@ -2718,6 +2724,11 @@ function endTurn(){
       }
     } else if (kind === 'blk') f.blk += Math.round(f.atk * .8);
     else f.str += 1 + Math.floor(R.floor / 8);
+    /* SUNSET RULE · linger past turn 12 and the savanna turns on you — no infinite stalling */
+    if (B.turn >= 12){
+      f.str += 1;
+      if (B.turn === 12) toast('🌇 THE SUN SETS. IT GETS BOLDER EVERY TURN NOW.', 2200);
+    }
     if (B.stripegen){ R.stripes += B.stripegen; }
     if (through > 0 && R.hp <= 0 && R.phoenix){
       R.phoenix = false;
@@ -2726,7 +2737,18 @@ function endTurn(){
       toast('THE ANCESTORS SAY: NOT YET. · 1 HP', 2400);
       SFX.bell(); hapt([40, 30, 40]);
     }
-    if (through > 0 && R.hp <= 0){ B.busy = false; loseRun(); return; }
+    if (through > 0 && R.hp <= 0){
+      /* the fall deserves to be seen: legs up, X eyes, one long beat */
+      B.over = true; B.ending = true; B.busy = false;
+      B.zebPose = 'die'; B.zebUntil = 0;
+      Music.setBattle(false);
+      SFX.death(); hapt([60, 40, 120]);
+      const appEl = document.getElementById('app');
+      if (appEl){ appEl.classList.remove('bigshake'); void appEl.offsetWidth; appEl.classList.add('bigshake'); }
+      setTimeout(() => toast(pick(['THE HERD LOOKS AWAY.', 'THE VULTURE TAKES NOTES.', 'THE SAVANNA GOES QUIET.']), 1700), 500);
+      setTimeout(loseRun, 2100);
+      return;
+    }
     B.turn++;
     B.discard.push(...B.hand);
     B.hand = [];
@@ -2864,7 +2886,7 @@ function screenReward(gold, kind){
     if (relic.hp){ R.mhp += relic.hp; R.hp += relic.hp; }
   }
   /* almost every fight drops a powerup — Lucky Tail Swish makes it EVERY fight, elites and bosses included */
-  const pows = (treeVal('powAlways') || (!relicDrop && Math.random() < .6)) ? rollPowerups(2 + treeVal('powChoice')) : null;
+  const pows = (treeVal('powAlways') || (!relicDrop && Math.random() < .5)) ? rollPowerups(2 + treeVal('powChoice')) : null;
   const p = el(`<div class="page">
     ${hudHtml()}
     <div class="stripes"></div>
@@ -2992,7 +3014,15 @@ function screenBlend(){
   app.appendChild(p);
   const hand = $('#hand');
   R.deck.forEach((c, i) => {
-    const cd = el(cardHtml(c));
+    const locked = c.type === 'pow';
+    const cd = el(cardHtml(c, locked));
+    if (locked){
+      cd.style.position = 'relative';
+      cd.insertAdjacentHTML('beforeend', '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#000000a8;font-family:var(--mono);font-weight:800;font-size:9px;letter-spacing:.1em;color:#ffffff88;text-align:center">🔒 SINGLE-USE<br>WON\'T BLEND</div>');
+      cd.onclick = () => toast('POWERS ARE SINGLE-USE — THE BLENDER REFUSES THEM.', 1500);
+      hand.appendChild(cd);
+      return;
+    }
     cd.onclick = () => {
       const at = sel.indexOf(i);
       if (at >= 0) sel.splice(at, 1);
@@ -3014,6 +3044,7 @@ function screenBlend(){
   $('#bDo').onclick = () => {
     const [a, b] = sel.sort((x, y) => y - x);
     const cA = R.deck[a], cB = R.deck[b];
+    if (cA.type === 'pow' || cB.type === 'pow'){ toast('POWERS ARE SINGLE-USE — THE BLENDER REFUSES THEM.', 1500); return; }
     /* ancestral recipe? the blender remembers the old ways */
     const rec = findRecipe(cA, cB);
     const firstFind = rec && !(META.recipes || []).includes(rec.out);
@@ -3134,8 +3165,7 @@ function screenShop(){
 /* ---------- death ---------- */
 function loseRun(){
   Music.setBattle(false);
-  SFX.death();
-  hapt([60, 40, 120]);
+  if (!(B && B.ending)){ SFX.death(); hapt([60, 40, 120]); }   /* the death beat may have played already */
   const byBlender = !!(B && B.foe && B.foe.id === 'blender');
   const newBest = R.floor > (R.bestAtStart || 0);
   stampFx(newBest ? 'NEW BEST' : 'FELL');
