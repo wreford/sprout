@@ -25,8 +25,9 @@
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;overflow:hidden;user-select:none;-webkit-user-select:none;touch-action:manipulation;
   font-family:var(--disp);color:var(--w);background:var(--k)}
-#app{position:fixed;inset:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;
+#app{position:fixed;inset:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;
   padding:calc(env(safe-area-inset-top) + 10px) 12px calc(env(safe-area-inset-bottom) + 14px)}
+@media (prefers-reduced-motion: reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
 .page{max-width:640px;margin:0 auto;display:flex;flex-direction:column;gap:12px;min-height:100%}
 .hide{display:none!important}
 .kick{font-family:var(--mono);font-weight:800;font-size:10px;letter-spacing:.24em;color:var(--r);text-transform:uppercase}
@@ -228,11 +229,11 @@ h1 .z{color:var(--r)}
   bottom:calc(env(safe-area-inset-bottom) + 10px);width:min(100vw - 24px,616px);z-index:34;
   background:#000000f2;padding:7px;border:1.5px solid #ffffff2e}
 .battlePage{padding-bottom:150px}
-#energy{width:52px;height:52px;border:2px solid var(--r);color:var(--w);background:var(--k);flex-shrink:0;
+#energy{width:50px;height:50px;border:2px solid var(--r);color:var(--w);background:var(--k);flex-shrink:0;
   display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:var(--mono);font-weight:800}
 #energy b{font-size:19px;color:var(--r)}
 #energy span{font-size:8px;letter-spacing:.1em}
-#piles{font-family:var(--mono);font-size:10px;color:#ffffff88;letter-spacing:.08em;line-height:1.8}
+#piles{font-family:var(--mono);font-size:9px;color:#ffffff88;letter-spacing:.05em;line-height:1.55;min-width:0;flex:1}
 /* map doors */
 .door{border:2px solid var(--w);padding:16px;cursor:pointer;display:flex;justify-content:space-between;align-items:center}
 .door:active{transform:translate(2px,2px)}
@@ -678,11 +679,24 @@ const rand = (a, b) => a + Math.random() * (b - a);
 const pick = a => a[ri(a.length)];
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const shuffle = a => { for (let i = a.length - 1; i > 0; i--){ const j = ri(i + 1); [a[i], a[j]] = [a[j], a[i]]; } return a; };   /* Fisher-Yates. Feynman was right. */
-let toastT = null;
+let toastT = null, toastQ = [], toastBusy = false;
 function toast(m, ms = 1600){
+  toastQ.push([m, ms]);
+  if (toastQ.length > 3) toastQ = toastQ.slice(-3);   /* keep it moving, drop the backlog */
+  if (!toastBusy) toastNext();
+}
+function toastNext(){
+  const item = toastQ.shift();
+  if (!item){ toastBusy = false; return; }
+  toastBusy = true;
+  const [m, ms] = item;
   const t = document.getElementById('toast');
   t.textContent = m; t.classList.add('on');
-  clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), ms);
+  clearTimeout(toastT);
+  toastT = setTimeout(() => {
+    t.classList.remove('on');
+    setTimeout(toastNext, 190);
+  }, ms);
 }
 
 /* ---------- procedural zebra art (fallback when no JTM image) ---------- */
@@ -2159,7 +2173,7 @@ function screenTitle(){
       <span class="chip">BEST FLOOR ${META.stats.floors}</span>
       ${META.marks ? `<span class="chip hot">☀︎ ${META.marks} · ERA ${(META.migrations || 0) + 1}</span><span class="chip">×${marksMul().toFixed(1)} STRIPES</span>` : ''}
     </div>
-    <button class="btn red" id="bRun">${R ? 'Continue run · floor ' + R.floor : 'New run'}</button>
+    <button class="btn red" id="bRun">${R ? 'Continue · floor ' + R.floor + ' · ♥ ' + R.hp + '/' + R.mhp : 'New run'}</button>
     ${R ? '<button class="btn ghost slim" id="bAbandon" style="max-width:420px">Abandon run</button>' : ''}
     <div class="menuGrid">
       <button class="btn mbtn ${claim ? 'claimable' : ''}" id="bUnlock"><span>⚘ Skill Tree</span><small>${treeOwned()} claimed${claim ? ' · GROWTH READY' : ' · ∞'}</small></button>
@@ -2374,10 +2388,10 @@ function hudHtml(){
   return `<div id="hud">
     <span class="pill">FLOOR <b>${R.floor}</b></span>
     <span class="pill">◆ <b>${R.stripes}</b></span>
-    <span class="pill">DECK <b>${R.deck.length}</b></span>
+    <span class="pill" style="cursor:pointer">DECK <b>${R.deck.length}</b> ▾</span>
     <span class="pill">⚡ MAX <b>${R.menergy || 3}</b></span>
   </div>
-  <div id="hpbar" class="gwrap"><div class="ghost" style="width:${R.hp / R.mhp * 100}%"></div><div class="real" style="width:${R.hp / R.mhp * 100}%"></div><span>${R.hp} / ${R.mhp} HP</span></div>
+  <div id="hpbar" class="gwrap"><div class="ghost" style="transition:width .5s ease .25s;width:${R.hp / R.mhp * 100}%"></div><div class="real" style="width:${R.hp / R.mhp * 100}%"></div><span>${R.hp} / ${R.mhp} HP</span></div>
   ${relicChips()}`;
 }
 /* declutter: relics collapse into totals — tap for the full hoard */
@@ -2576,8 +2590,8 @@ function renderBattle(){
           ? `<b style="color:var(--r)">⚔ ${Math.max(0, Math.max(1, B.foe.atk + B.foe.str - (B.foe.weak ? 2 : 0) - (R.cls === 'goth' ? 1 : 0) - petVal('dmgCut')) - B.block)} gets through</b>`
           : '<span style="opacity:.6">no hit coming</span>'}<br>
         <span style="opacity:.7">${HELPERS.filter(h => helperOn(h.id)).map(h => h.ic).join(' ') || ''}</span></div>
-      ${helperOwned('coach') ? `<button class="btn ${B.auto ? 'red' : ''}" id="bAuto" style="width:auto;padding:8px 12px;min-height:auto">${B.auto ? '⏸ STOP' : '🎽 AUTO'}</button>` : ''}
-      <button class="btn ghost" id="bTune" style="width:auto;min-height:auto;padding:8px 10px;font-size:13px">${Music.on() ? '♪' : '♪̸'}</button>
+      ${helperOwned('coach') ? `<button class="btn ${B.auto ? 'red' : ''}" id="bAuto" style="width:auto;padding:8px 12px;min-height:auto">${B.auto ? '⏸ STOP' : 'AUTO'}</button>` : ''}
+      <button class="btn ghost" id="bTune" style="width:auto;min-height:auto;padding:8px 10px;font-size:13px;opacity:${Music.on() ? 1 : .35}">♪</button>
       <button class="btn red" id="bEnd" style="flex:1">End turn</button>
     </div>
   </div>`);
@@ -2626,7 +2640,7 @@ function renderBattle(){
   };
   if ($('#bTune')) $('#bTune').onclick = () => {
     const on = Music.toggle();
-    $('#bTune').textContent = on ? '♪' : '♪̸';
+    $('#bTune').style.opacity = on ? 1 : .35;
     toast(on ? '♪ BACK TO THE GROOVE' : 'MUSIC OFF. RESPECT THE SILENCE.', 1100);
   };
   helperNudge();
