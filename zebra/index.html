@@ -214,6 +214,9 @@ h1 .z{color:var(--r)}
 .ach .an{font-weight:800;font-size:13px;text-transform:uppercase}
 .ach .ap{font-family:var(--mono);font-size:10px;color:#ffffff88;letter-spacing:.05em;margin-top:2px}
 .ach .tick{font-family:var(--mono);font-weight:800;color:var(--r);font-size:12px;white-space:nowrap}
+.ach.pow{border-color:var(--r);animation:powIn .35s cubic-bezier(.2,1.6,.4,1) both}
+.ach.pow:active{transform:scale(.97)}
+@keyframes powIn{from{opacity:0;transform:translateY(8px) scale(.96)}to{opacity:1}}
 #toast{position:fixed;left:50%;top:12%;transform:translateX(-50%) scale(0);z-index:40;pointer-events:none;
   font-family:var(--mono);font-weight:800;font-size:clamp(11px,3vmin,15px);letter-spacing:.06em;text-transform:uppercase;
   background:var(--w);color:var(--k);border:3px solid var(--r);padding:.55em 1.1em;white-space:nowrap;
@@ -680,6 +683,36 @@ function genRelic(n){    /* infinite relic ladder for deep floors */
 }
 function roman(n){ const R = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X']; return n <= 10 ? R[n] : 'X' + roman(n - 10); }
 
+/* ---------- powerups · a little something after (almost) every fight ---------- */
+const POWERUPS = [
+  () => ({ name: 'Sharp Hoof', desc: '+1 damage on all attacks', str: 1 }),
+  () => ({ name: 'Tough Skin', desc: '+4 max HP', hp: 4 }),
+  () => ({ name: 'Dust Cloak', desc: '+1 block every turn', autoblk: 1 }),
+  () => ({ name: 'Cud Stash', desc: 'Heal 2 after each battle', healAfter: 2 }),
+  () => ({ name: 'Shiny Pebble', desc: '+10% stripes from battles', goldMul: .1 }),
+  () => ({ name: 'War Snort', desc: 'First attack each battle +3', firstHit: 3 }),
+  () => ({ name: 'Quick Sip', desc: 'Heal 10 HP right now', now: r => r.hp = Math.min(r.mhp, r.hp + 10) }),
+  () => ({ name: 'Stripe Dividend', desc: 'Stripes, right now', now: r => { const g = 20 + r.floor * 2; r.stripes += g; toast('◆ +' + g + ' STRIPES', 1200); } }),
+];
+function rollPowerups(){
+  const two = [];
+  while (two.length < 2){
+    const p = pick(POWERUPS)();
+    if (!two.some(x => x.name === p.name)) two.push(p);
+  }
+  return two;
+}
+function applyPowerup(p){
+  if (p.now){ p.now(R); }
+  else {
+    R.relics.push({ name: p.name, desc: p.desc, pw: true,
+      ...['str', 'hp', 'autoblk', 'healAfter', 'goldMul', 'firstHit'].reduce((o, k) => (p[k] != null && (o[k] = p[k]), o), {}) });
+    if (p.hp){ R.mhp += p.hp; R.hp += p.hp; }
+  }
+  SFX.ach();
+  saveRun();
+}
+
 /* ---------- enemies · endless scaling ---------- */
 const FOES = [
   { id: 'hyena', name: 'Giggling Hyena', hp: 14, atk: 5, pat: ['atk', 'atk', 'blk'] },
@@ -1050,7 +1083,7 @@ const ACH_FAMS = [
   ['kills', 'Foes Dropped', 'stat'], ['blends', 'Cards Blended', 'stat'], ['floors', 'Best Floor', 'max'],
   ['bosses', 'Bosses Beaten', 'stat'],
 ];
-const thresh = n => Math.round(10 * Math.pow(2.7, n));            /* 10, 27, 73, 197… forever */
+const thresh = n => Math.round(10 * Math.pow(2.2, n));            /* 10, 22, 48, 106… forever */
 function defaultMeta(){
   return { stripes: 0, herd: 0, unlocks: 0, stats: { damage: 0, cards: 0, blocks: 0, kills: 0, blends: 0, floors: 0, runs: 0, bosses: 0 },
     achTiers: {}, bonusHp: 0, bonusStripe: 0, startRelics: 0, tips: {}, bestiary: {},
@@ -1072,8 +1105,8 @@ function bumpStat(k, n, isMax = false){
   while (META.stats[k] >= thresh(tier)){
     tier++;
     META.achTiers[k] = tier;
-    META.stripes += tier * 5;
-    toast(`🏆 ${fam[1]} ${roman(tier)} · +${tier * 5} STRIPES`, 2000);
+    META.stripes += tier * 8;
+    toast(`🏆 ${fam[1]} ${roman(tier)} · +${tier * 8} STRIPES`, 2000);
     if (typeof SFX !== 'undefined') SFX.ach();
   }
   saveMeta();
@@ -1081,11 +1114,11 @@ function bumpStat(k, n, isMax = false){
 /* ---------- THE HERD · playable zebras, unlocked with stripes ---------- */
 const CLASSES = [
   { id: 'zeb', name: 'ZEBRA', cost: 0, ep: 'JUST A ZEBRA. THE CLASSIC.', desc: 'Balanced. Stripey. Free.' },
-  { id: 'wizard', name: 'WIZARD ZEBRA', cost: 150, ep: 'CASTS. ALLEGEDLY.', desc: '+1 draw on turn 1 · starts with Zebra Math and a random RARE.' },
-  { id: 'pirate', name: 'PIRATE ZEBRA', cost: 300, ep: 'EVERYTHING IS LOOT.', desc: '+40% stripes from battles · first attack each fight +4 · starts with Coin Mane.' },
-  { id: 'goth', name: 'GOTH ZEBRA', cost: 500, ep: "IT'S NOT A PHASE.", desc: '+15 max HP · takes 1 less from every attack · starts with Thick Hide. Stripes inverted, obviously.' },
-  { id: 'disco', name: 'DISCO ZEBRA', cost: 800, ep: 'THE GROOVE IS ARMOR.', desc: 'Every 3rd card each turn refunds 1 energy · starts with double Zoomies.' },
-  { id: 'robo', name: 'ROBO ZEBRA', cost: 1300, ep: 'FIRMWARE: VENGEANCE.', desc: 'BLOCK CARRIES OVER between turns · starts with Mud Roll.' },
+  { id: 'wizard', name: 'WIZARD ZEBRA', cost: 100, ep: 'CASTS. ALLEGEDLY.', desc: '+1 draw on turn 1 · starts with Zebra Math and a random RARE.' },
+  { id: 'pirate', name: 'PIRATE ZEBRA', cost: 220, ep: 'EVERYTHING IS LOOT.', desc: '+40% stripes from battles · first attack each fight +4 · starts with Coin Mane.' },
+  { id: 'goth', name: 'GOTH ZEBRA', cost: 380, ep: "IT'S NOT A PHASE.", desc: '+15 max HP · takes 1 less from every attack · starts with Thick Hide. Stripes inverted, obviously.' },
+  { id: 'disco', name: 'DISCO ZEBRA', cost: 600, ep: 'THE GROOVE IS ARMOR.', desc: 'Every 3rd card each turn refunds 1 energy · starts with double Zoomies.' },
+  { id: 'robo', name: 'ROBO ZEBRA', cost: 950, ep: 'FIRMWARE: VENGEANCE.', desc: 'BLOCK CARRIES OVER between turns · starts with Mud Roll.' },
 ];
 /* infinite unlock ladder */
 function unlockDef(n){
@@ -1095,7 +1128,7 @@ function unlockDef(n){
     i => ({ name: `Herd Blessing ${roman(i)}`, desc: `Start each run with a bonus relic`, apply: m => m.startRelics += 1 }),
   ];
   const i = Math.floor(n / kinds.length) + 1;
-  return { cost: Math.round(40 * Math.pow(1.7, n)), ...kinds[n % kinds.length](i) };
+  return { cost: Math.round(35 * Math.pow(1.55, n)), ...kinds[n % kinds.length](i) };
 }
 
 /* ============================================================
@@ -1357,7 +1390,11 @@ function hudHtml(){
     <span class="pill">⚡ MAX <b>${R.menergy || 3}</b></span>
   </div>
   <div id="hpbar" class="gwrap"><div class="ghost" style="width:${R.hp / R.mhp * 100}%"></div><div class="real" style="width:${R.hp / R.mhp * 100}%"></div><span>${R.hp} / ${R.mhp} HP</span></div>
-  ${R.relics.length ? `<div class="relicRow">${R.relics.map(r => `<span class="relic" title="${r.desc}">${r.name}</span>`).join('')}</div>` : ''}`;
+  ${R.relics.length ? `<div class="relicRow">${(() => {
+    const m = {};
+    R.relics.forEach(r => { (m[r.name] = m[r.name] || { r, n: 0 }).n++; });
+    return Object.values(m).map(({ r, n }) => `<span class="relic" title="${r.desc}">${r.name}${n > 1 ? ' ×' + n : ''}</span>`).join('');
+  })()}</div>` : ''}`;
 }
 /* ---------- map ---------- */
 function screenMap(){
@@ -1715,14 +1752,14 @@ function winBattle(){
   META.bestiary[B.foe.id] = (META.bestiary[B.foe.id] || 0) + 1;
   bumpStat('kills', 1);
   if (B.kind === 'boss') bumpStat('bosses', 1);
-  const base = (B.kind === 'boss' ? 40 : B.kind === 'elite' ? 22 : 12) + Math.floor(R.floor * 1.5);
+  const base = (B.kind === 'boss' ? 50 : B.kind === 'elite' ? 28 : 16) + Math.floor(R.floor * 2);
   const gold = Math.round(base * (1 + relicSum('goldMul') + (R.cls === 'pirate' ? .4 : 0))) + META.bonusStripe;
   R.stripes += gold;
-  META.stripes += Math.floor(gold / 3);
+  META.stripes += Math.floor(gold / 2);
   const heal = relicSum('healAfter');
   if (heal) R.hp = Math.min(R.mhp, R.hp + heal);
-  /* MIGRATION · every 10th floor: the herd moves, and so do your limits */
-  if (B.kind === 'boss' && R.floor % 10 === 0){
+  /* MIGRATION · every boss down: the herd moves, and so do your limits */
+  if (B.kind === 'boss'){
     if ((R.menergy || 3) < 5){
       R.menergy = (R.menergy || 3) + 1;
       setTimeout(() => toast('⚡ MAX ENERGY → ' + R.menergy + ' · THE HERD BLESSES YOU', 2200), 1200);
@@ -1769,16 +1806,31 @@ function screenReward(gold, kind){
     const av = RELICS.filter(r => !owned.has(r.id));
     relic = av.length ? pick(av) : genRelic(R.relics.length);
   }
+  /* almost every fight drops a powerup — pick one of two */
+  const pows = (!relicDrop && Math.random() < .85) ? rollPowerups() : null;
   const p = el(`<div class="page">
     ${hudHtml()}
     <div class="stripes"></div>
-    <span class="kick">VICTORY · +${gold} ◆ STRIPES${relic ? ' · RELIC GET' : ''}</span>
+    <span class="kick">VICTORY · +${gold} ◆ STRIPES${relic ? ' · RELIC GET' : ''}${pows ? ' · POWERUP DROP' : ''}</span>
     ${relic ? `<div class="ach"><div><div class="an" style="color:var(--r)">${relic.name}</div><div class="ap">${relic.desc}</div></div><div class="tick">RELIC</div></div>` : ''}
+    ${pows ? `<div id="powRow">${pows.map((pw, i) => `<div class="ach pow" data-p="${i}" style="cursor:pointer">
+      <div><div class="an" style="color:var(--r)">${pw.name}</div><div class="ap">${pw.desc}</div></div><div class="tick">POW ▸</div></div>`).join('')}</div>` : ''}
     <div class="big">Take a <span class="z">card</span></div>
     <div id="hand">${picks.map((c, i) => `<div data-i="${i}" style="--i:${i}">${cardHtml(c)}</div>`).join('')}</div>
     <button class="btn ghost" id="bSkip">Skip card</button>
   </div>`);
   app.appendChild(p);
+  let powTaken = !pows;
+  const takePow = pw => {
+    if (powTaken) return;
+    powTaken = true;
+    applyPowerup(pw);
+    toast('⚡ ' + pw.name.toUpperCase(), 1400);
+    const row = $('#powRow'); if (row) row.remove();
+  };
+  if (pows) p.querySelectorAll('.pow').forEach(dv => dv.onclick = () => takePow(pows[+dv.dataset.p]));
+  /* leaving without choosing? the zebra grabs one on the way out */
+  const autoPow = () => { if (!powTaken){ const pw = pick(pows); takePow(pw); toast('⚡ GRABBED ' + pw.name.toUpperCase() + ' ON THE WAY OUT', 1500); } };
   if (relic){
     R.relics.push(relic);
     if (relic.hp){ R.mhp += relic.hp; R.hp += relic.hp; }
@@ -1787,6 +1839,7 @@ function screenReward(gold, kind){
   p.querySelectorAll('#hand > div').forEach(dv => {
     JTM.css('card-' + picks[+dv.dataset.i].id, dv.querySelector('.art'));
     dv.onclick = () => {
+      autoPow();
       const c = picks[+dv.dataset.i];
       R.deck.push(c);
       saveRun();
@@ -1794,8 +1847,8 @@ function screenReward(gold, kind){
       wipe(screenMap);
     };
   });
-  $('#bSkip').onclick = () => { saveRun(); screenMap(); };
-  tut('reward', '#hand', 'LOOT', 'Pick <b>one</b> card — or skip. Skipping is a real strategy: a <b>small deck</b> draws its best cards more often. Hoarders get eaten around floor 9.');
+  $('#bSkip').onclick = () => { autoPow(); saveRun(); screenMap(); };
+  tut('reward', '#hand', 'LOOT', 'Tap a <b>powerup</b> when one drops — they stack forever. Then pick <b>one</b> card, or skip. Skipping is a real strategy: a <b>small deck</b> draws its best cards more often. Hoarders get eaten around floor 9.');
 }
 /* ---------- the mystery door · the psycho's favourite ---------- */
 function mysteryDoor(){
@@ -1909,7 +1962,7 @@ function screenShop(){
   const owned = new Set(R.relics.map(r => r.id));
   const av = RELICS.filter(r => !owned.has(r.id));
   const relic = av.length ? pick(av) : genRelic(R.relics.length);
-  const relicCost = 50 + R.floor * 3;
+  const relicCost = 40 + R.floor * 2;
   const p = el(`<div class="page">
     ${hudHtml()}
     <div class="stripes"></div>
@@ -1980,7 +2033,7 @@ function loseRun(){
   stampFx(newBest ? 'NEW BEST' : 'FELL');
   const floor = R.floor;
   const stats = { dmg: R.sdmg || 0, cards: R.scards || 0, blends: R.sblends || 0, deck: R.deck.length, relics: R.relics.length };
-  const earned = 10 + floor * 4;
+  const earned = 15 + floor * 6;
   META.stripes += earned;
   saveMeta();
   R = null; saveRun();
@@ -2143,7 +2196,7 @@ loadMeta();
 loadRun();
 screenTitle();
 window.ZB = { META, R: () => R, B: () => B, newRun, startBattle, playCard, endTurn, blendCards, mkCard,
-  screenMap, screenTitle, JTM, bumpStat, unlockDef, thresh };   /* test hook */
+  screenMap, screenTitle, JTM, bumpStat, unlockDef, thresh, rollPowerups, applyPowerup, screenReward };   /* test hook */
 </script>
 </body>
 </html>
