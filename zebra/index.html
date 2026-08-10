@@ -64,7 +64,24 @@ h1 .z{color:var(--r)}
 @keyframes shk{25%{transform:translateX(-7px)}75%{transform:translateX(7px)}}
 .hitflash::after{content:'';position:absolute;inset:0;background:var(--r);animation:hflash .28s;pointer-events:none}
 @keyframes hflash{0%{opacity:.55}100%{opacity:0}}
-.card.played{transform:translateY(-34px) scale(1.08);opacity:0;transition:transform .16s,opacity .16s}
+.card.played{transform:translateY(-72px) translateX(26px) rotate(9deg) scale(.65);opacity:0;transition:transform .3s cubic-bezier(.4,0,.85,.4),opacity .3s}
+.card.aiPick{border-color:var(--r)!important;box-shadow:0 0 0 3px #e8232a66;animation:aiPick .32s ease-out}
+@keyframes aiPick{50%{transform:translateY(-9px) scale(1.05)}}
+#foe{position:relative}
+.stunOrbit{position:absolute;left:14px;top:10px;width:110px;height:110px;pointer-events:none;z-index:3}
+.stunOrbit i{position:absolute;left:50%;top:12%;font-size:15px;font-style:normal;animation:orbitStar 1.7s linear infinite}
+.stunOrbit i:nth-child(2){animation-delay:-.85s;font-size:11px}
+@keyframes orbitStar{0%{transform:translateX(-27px) scale(.8);opacity:.95}25%{transform:translateX(0) translateY(-8px) scale(1.15)}
+  50%{transform:translateX(27px) scale(.8);opacity:.6}75%{transform:translateX(0) translateY(6px) scale(.55);opacity:.4}100%{transform:translateX(-27px) scale(.8);opacity:.95}}
+#energy.eBump{animation:eBump .32s}
+@keyframes eBump{45%{transform:scale(1.2)}}
+.chip.popIn{animation:chipPop .38s cubic-bezier(.2,1.6,.4,1)}
+@keyframes chipPop{from{transform:scale(.2)}60%{transform:scale(1.3)}}
+#intent.intPop{animation:chipPop .38s cubic-bezier(.2,1.6,.4,1)}
+#coinFx{position:fixed;left:50%;top:36%;font-size:52px;z-index:66;pointer-events:none;animation:coinFlip .8s ease-in-out forwards}
+@keyframes coinFlip{0%{transform:translate(-50%,-50%) rotateX(0) translateY(0)}
+  50%{transform:translate(-50%,-50%) rotateX(900deg) translateY(-70px)}
+  100%{transform:translate(-50%,-50%) rotateX(1800deg) translateY(0);opacity:0}}
 .fnum{position:fixed;z-index:50;font-family:var(--mono);font-weight:800;font-size:22px;pointer-events:none;
   text-shadow:2px 2px 0 #000;animation:fnum .8s forwards}
 @keyframes fnum{from{transform:translateY(0);opacity:1}to{transform:translateY(-56px);opacity:0}}
@@ -3634,6 +3651,7 @@ function renderBattle(){
   const p = el(`<div class="page battlePage">
     ${hudHtml()}
     <div id="foe">
+      ${f.stun ? '<div class="stunOrbit"><i>💫</i><i>✦</i></div>' : ''}
       <div id="foeArt" data-art="foe-${f.id}">${artFor(f, FOE_F)}</div>
       <div style="flex:1">
         <div id="foeName">${f.name}</div>
@@ -3746,6 +3764,15 @@ function renderBattle(){
     $('#bTune').style.opacity = on ? 1 : .35;
     toast(on ? '♪ BACK TO THE GROOVE' : 'MUSIC OFF. RESPECT THE SILENCE.', 1100);
   };
+  /* micro-animations · energy bumps, mult pops, fresh intent pops */
+  const enEl = $('#energy');
+  if (enEl && B._lastE !== undefined && B._lastE !== B.energy) enEl.classList.add('eBump');
+  B._lastE = B.energy;
+  const mcEl = $('#multChip');
+  if (mcEl && multNow() > (B._lastMult || 1)) mcEl.classList.add('popIn');
+  B._lastMult = multNow();
+  const inEl = $('#intent');
+  if (inEl && B._intentT !== B.turn){ inEl.classList.add('intPop'); B._intentT = B.turn; }
   helperNudge();
   /* tap DECK pill anywhere to inspect the deck */
   p.querySelectorAll('.pill').forEach(pl => {
@@ -3848,6 +3875,10 @@ function playCard(i, cardEl){
     /* ---- resource + weird effects (pre-damage) ---- */
     if (c.energy){ B.energy = Math.min(9, B.energy + c.energy); SFX.power(); }   /* red seal never doubles energy — that way lies infinity */
     if (c.gamble){
+      const cf = document.createElement('div');
+      cf.id = 'coinFx'; cf.textContent = '🪙';
+      document.body.appendChild(cf);
+      setTimeout(() => cf.remove(), 850);
       if (Math.random() < .5){ B.energy = Math.min(9, B.energy + 2); toast('COIN: HEADS · +2 ENERGY ⚡', 1000); SFX.ach(); }
       else { R.hp = Math.max(1, R.hp - 3); B.tookDmg = true; toast('COIN: TAILS · OW. −3 HP', 1000); playerFx(); SFX.playerHit(); }
     }
@@ -4083,10 +4114,37 @@ function canPlayAuto(c){
   const taxed = B.foe.rule === 'tax' && c.type === 'atk' ? 1 : 0;
   return c.cost + taxed <= B.energy;
 }
+function autoDmg(c){
+  /* the Coach's damage estimate — mirrors playCard: cresc, exec, mult, multi */
+  let base = c.frenzy ? 3 * (B.played + 1) : (c.dmg || 0);
+  if (c.cresc) base += B.turn * 2;
+  if (c.exec && B.foe.hp < B.foe.mhp / 2) base *= 2;
+  return Math.round((base + B.str) * (c.multi || 1) * multNow());
+}
 function singleKill(){
-  /* firstHit lands on the first hit only — mirror playCard's math exactly */
   return B.hand.findIndex(c => canPlayAuto(c) && c.dmg &&
-    (c.dmg + B.str) * (c.multi || 1) + (B.firstHit || 0) >= B.foe.hp + (B.foe.blk || 0));
+    autoDmg(c) + (B.firstHit || 0) >= B.foe.hp + (B.foe.blk || 0));
+}
+function pairLethal(){
+  /* can two affordable attacks finish it this turn? returns the first card's index */
+  const h = B.hand, need = B.foe.hp + (B.foe.blk || 0);
+  const tax = c => B.foe.rule === 'tax' && c.type === 'atk' ? 1 : 0;
+  for (let a = 0; a < h.length; a++) for (let b = 0; b < h.length; b++){
+    if (a === b) continue;
+    const ca = h[a], cb = h[b];
+    if (!canPlayAuto(ca) || !ca.dmg || !cb.dmg || cb.cursed) continue;
+    if (ca.cost + tax(ca) + cb.cost + tax(cb) > B.energy) continue;
+    if (autoDmg(ca) + autoDmg(cb) + (B.firstHit || 0) >= need) return a;
+  }
+  return -1;
+}
+/* the Coach picks a card, points at it, THEN plays it — autopilot you can watch */
+function aiPlay(i, note){
+  const cardEl = document.querySelectorAll('#hand .card')[i];
+  if (cardEl) cardEl.classList.add('aiPick');
+  if (note && Math.random() < .4) toast('🎽 ' + note, 950);
+  B.aiPending = true;
+  setTimeout(() => { B.aiPending = false; if (B && !B.over) playCard(i); }, 320);
 }
 function helperNudge(){
   if (!B || B.over || B.busy || B.auto) return;
@@ -4095,7 +4153,7 @@ function helperNudge(){
     if (!B || B.over || B.busy || B.auto || B.ending) return;
     if (helperOn('ox')){
       const kill = singleKill();
-      if (kill >= 0){ toast('🩸 OX SMELLS BLOOD', 900); playCard(kill); return; }
+      if (kill >= 0){ toast('🩸 OX SMELLS BLOOD', 900); aiPlay(kill); return; }
     }
     if (helperOn('gary') && !B.hand.some(canPlayAuto)){
       toast('📋 GARY ENDS THE TURN. EFFICIENTLY.', 900);
@@ -4104,22 +4162,50 @@ function helperNudge(){
   }, DL(750));
 }
 function autoPolicy(){
+  if (B.aiPending) return;
   const h = B.hand;
-  const kill = singleKill();
-  if (kill >= 0){ playCard(kill); return; }
   const intentAtk = B.foe.pat[B.foe.pi % B.foe.pat.length] === 'atk' && !B.foe.stun;
-  if (intentAtk){
-    const inc = Math.max(1, B.foe.atk + B.foe.str - (B.foe.weak ? 2 : 0) - (R.cls === 'goth' ? 1 : 0) - petVal('dmgCut'));
-    if (B.block < inc){
-      const bi = h.findIndex(c => canPlayAuto(c) && c.blk && !c.dmg);
-      if (bi >= 0){ playCard(bi); return; }
+  const inc = intentAtk ? Math.max(1, B.foe.atk + B.foe.str - (B.foe.weak ? 2 : 0) - (R.cls === 'goth' ? 1 : 0) - petVal('dmgCut')) : 0;
+  /* 1 · lethal, alone or as a one-two */
+  const kill = singleKill();
+  if (kill >= 0) return aiPlay(kill, 'FINISH IT.');
+  const pl = pairLethal();
+  if (pl >= 0) return aiPlay(pl, "THE OL' ONE-TWO.");
+  /* 2 · free value: 0-cost draw / energy / barter */
+  const free = h.findIndex(c => canPlayAuto(c) && c.cost === 0 && !c.dmg && !c.gamble && !c.mystery && !c.molt && (c.draw || c.energy || c.freeNext));
+  if (free >= 0) return aiPlay(free);
+  /* 3 · invest in powers while the fight is young */
+  if (B.turn <= 3 && (!intentAtk || B.block >= inc)){
+    const pow = h.findIndex(c => canPlayAuto(c) && c.type === 'pow');
+    if (pow >= 0) return aiPlay(pow, 'INVESTING. TRUST THE PROCESS.');
+  }
+  /* 4 · a hit is coming and the wall is short */
+  if (intentAtk && B.block < inc){
+    if (inc >= Math.max(8, R.hp * .25)){
+      const st = h.findIndex(c => canPlayAuto(c) && c.stun && !B.foe.stun && !B.foe.stunProof);
+      if (st >= 0) return aiPlay(st, 'SLEEP.');
+    }
+    const blocks = h.map((c, i) => [c, i]).filter(([c]) => canPlayAuto(c) && c.blk && !c.dmg)
+      .sort((x, y) => y[0].blk - x[0].blk);
+    if (blocks.length) return aiPlay(blocks[0][1], 'WALL UP.');
+    if (R.hp - inc < R.mhp * .35){
+      const hl = h.findIndex(c => canPlayAuto(c) && c.heal && !c.dmg);
+      if (hl >= 0) return aiPlay(hl, 'SNACK BREAK.');
     }
   }
+  /* 5 · attack, scored: damage-per-energy with exec / vamp / weak awareness */
+  const score = c => {
+    let s = autoDmg(c);
+    if (c.vamp && R.hp < R.mhp * .6) s *= 1.4;
+    if (c.weak && intentAtk) s += 4;
+    return s / Math.max(1, c.cost);
+  };
   const atks = h.map((c, i) => [c, i]).filter(([c]) => canPlayAuto(c) && (c.dmg || c.frenzy))
-    .sort((a, b) => ((b[0].dmg || 0) * (b[0].multi || 1)) - ((a[0].dmg || 0) * (a[0].multi || 1)));
-  if (atks.length){ playCard(atks[0][1]); return; }
+    .sort((a, b) => score(b[0]) - score(a[0]));
+  if (atks.length) return aiPlay(atks[0][1]);
+  /* 6 · filler, then yield */
   const safe = h.findIndex(c => canPlayAuto(c) && !c.gamble && !c.mystery && !c.molt);
-  if (safe >= 0){ playCard(safe); return; }
+  if (safe >= 0) return aiPlay(safe);
   endTurn();
 }
 function autoTick(){
