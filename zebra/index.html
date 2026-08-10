@@ -210,6 +210,8 @@ h1 .z{color:var(--r)}
 .twist .twtag{font-family:var(--mono);font-weight:800;font-size:10px;letter-spacing:.14em;color:var(--r);
   border:2px solid var(--r);padding:.6em .9em;opacity:0;transition:opacity .5s}
 .twist .twtag.on{opacity:1}
+.twist .twSkip{position:absolute;top:12px;right:12px;width:auto;min-height:34px;padding:6px 14px;font-size:11px;opacity:.6;z-index:2}
+.twist .tw{position:relative}
 /* modifier tags ride the top of the card, legible at a glance */
 .modTags{position:absolute;top:3px;left:3px;right:22px;display:flex;flex-wrap:wrap;gap:2px;z-index:3;pointer-events:none}
 .modTags span{font-family:var(--mono);font-weight:800;font-size:6.5px;letter-spacing:.1em;line-height:1;
@@ -1100,7 +1102,8 @@ function blendCards(a, b){
   /* motif lineage: the child's stripes carry both parents' shapes, forever */
   c.motifs = [...new Set([...motifsOf(a), ...motifsOf(b)])].slice(0, 4);
   /* skill tree + chef: Smooth Operator lineage sweetens every new blend */
-  const bb = (typeof treeVal === 'function' ? treeVal('blendBonus') : 0) + (typeof R === 'object' && R && R.cls === 'chef' ? 1 : 0);
+  const bb = (typeof treeVal === 'function' ? treeVal('blendBonus') : 0) + (typeof R === 'object' && R && R.cls === 'chef' ? 1 : 0)
+    + (typeof META === 'object' && META && META.authorPen ? 1 : 0);
   if (bb){
     if (c.dmg) c.dmg = Math.min(CAPS.dmg, c.dmg + bb);
     if (c.blk) c.blk = Math.min(CAPS.blk, c.blk + bb);
@@ -2329,7 +2332,7 @@ function defaultMeta(){
   return { stripes: 0, herd: 0, unlocks: 0, stats: { damage: 0, cards: 0, blocks: 0, kills: 0, blends: 0, floors: 0, runs: 0, bosses: 0, deaths: 0 },
     achTiers: {}, bonusHp: 0, bonusStripe: 0, startRelics: 0, tips: {}, bestiary: {}, tree: {},
     marks: 0, migrations: 0, eraBest: 0, lastSeen: 0, pets: [], petSel: '', recipes: [], helpers: [], helperOn: {}, trophies: [], worn: [],
-    seen: {}, stake: 0, ghost: null, heirloom: null, lastBlends: [], weekly: {}, lore: [], counters: 0, twists: [],
+    seen: {}, stake: 0, ghost: null, heirloom: null, lastBlends: [], weekly: {}, lore: [], counters: 0, twists: [], story: 'full',
     nextWorld: null, lastWorld: null,
     clsOwned: ['zeb'], clsSel: 'zeb' };
 }
@@ -2351,6 +2354,8 @@ function loadMeta(){
  META.stake = META.stake || 0;
   META.lore = META.lore || [];
   META.twists = META.twists || [];
+  META.story = META.story || 'full';
+  META.shopVisits = META.shopVisits || 0;
   META.counters = META.counters || 0;
   if (META.nextWorld === undefined) META.nextWorld = null;
   if (META.lastWorld === undefined) META.lastWorld = null;
@@ -2586,6 +2591,10 @@ function treeClaimable(){
 }
 /* ---------- GRAZE · idle earnings while away ---------- */
 function idleCollect(){
+  if (!twistSeen('graze') && (META.stats.cards || 0) >= 120 && treeVal('idleRate') > 0){
+    META.grazeBoost = 1; saveMeta();
+    fireTwist('graze');
+  }
   const now = Date.now();
   const rate = treeVal('idleRate');
   const last = META.lastSeen || 0;
@@ -2662,6 +2671,24 @@ const LORE = [
     x: 'There is a floor where the stripes stop alternating. Two whites in a row. Nobody who has seen it has agreed to describe it twice.' },
   { id: 'last', t: 'THE LAST PAGE', need: M => M.stats.floors >= 45, at: 'floor 45',
     x: 'Somebody has read ahead. The grass at the end is already flat.' },
+  { id: 'names', t: 'ON NAMES', need: M => !!M.zebName, at: 'naming your zebra',
+    x: 'Naming yourself is the only edit the savanna cannot undo. It hates this. It has tried.' },
+  { id: 'water', t: 'THE WATERING HOLE', need: M => (M.dayStreak || 0) >= 3, at: 'a 3-day streak',
+    x: 'The water is not for drinking. It is for checking whether your reflection has been revised overnight. Most mornings it has not. Most.' },
+  { id: 'pets', t: 'ON COMPANY', need: M => (M.pets || []).length >= 1, at: 'your first pet',
+    x: 'The oxpecker is not helping you. It is proofreading you, at close range, for free, and it has never once found nothing.' },
+  { id: 'crew', t: 'THE PIT CREW', need: M => (M.helpers || []).length >= 1, at: 'hiring anyone',
+    x: 'Gary is not stupid. Gary has read the end of the ledger and decided the correct response is a clipboard.' },
+  { id: 'stake', t: 'ON DIFFICULTY', need: M => (M.stake || 0) >= 1, at: 'raising the stake',
+    x: 'You asked the savanna to try harder. It was already trying. What you actually asked for was to be worth more when it works.' },
+  { id: 'wx', t: 'THE WEATHER', need: M => M.stats.runs >= 8, at: '8 runs',
+    x: 'Weather is the author changing their mind about the scene halfway through. The heat is not cruelty. It is a rewrite you are standing in.' },
+  { id: 'code', t: 'THE SAVANNA CODE', need: M => !!M.lastWorld, at: 'finishing a run',
+    x: 'Every savanna has a number. Give the number to somebody else and the same grass grows for them, in the same order, with the same teeth. This should not be possible. It is six characters long.' },
+  { id: 'blendlore', t: 'ON AUTHORSHIP', need: M => M.stats.blends >= 60, at: '60 blends',
+    x: 'A blend is the only object in the savanna with two parents and no author. That is why the Blender wants them. That is why God cannot read them.' },
+  { id: 'end', t: 'THE END OF THE NOTES', need: M => (M.twists || []).length >= 6, at: 'six revelations',
+    x: 'Whoever left these stopped here, mid-thought, and the handwriting does not resume. There is a lot of blank page after this. Somebody expected to keep going.' },
 ];
 function checkLore(){
   if (typeof META === 'undefined' || !META.stats) return;
@@ -2686,6 +2713,7 @@ function checkLore(){
 }
 /* found notes recirculate as whispers in quiet places */
 function loreWhisper(){
+  if (storyMode() === 'off') return;
   const found = (META.lore || []).map(id => LORE.find(l => l.id === id)).filter(Boolean);
   if (!found.length || Math.random() > .35) return;
   const l = pick(found);
@@ -2865,6 +2893,46 @@ const TWISTS = {
       'The grass keeps moving after the wind stops.'],
     tag: 'YOUR RUNS ARE NOW APPENDED TO THE SCRIPTURE · SOMEBODY WILL READ THEM',
   },
+  graze: {
+    t: 'THE GRAZE',
+    lines: ['You have been eating the same paragraph for some time now.',
+      'It grows back overnight, in the same order, with the same commas.',
+      'That is not a field. That is a page being reprinted.',
+      'You have read it eleven thousand times and you still chew it.'],
+    tag: 'GRAZING NOW PAYS DOUBLE · YOU KNOW WHAT YOU ARE READING',
+  },
+  meerkat: {
+    t: 'THE MEERKAT',
+    lines: ['You look at the top of the ledger, where the names are.',
+      'Above yours, in the same hand, is one that has been crossed out',
+      'so hard the page is torn. Beside it, a small drawing of a meerkat.',
+      'It sees you looking. It closes the book. It does not charge you today.'],
+    tag: 'THE MEERKAT KNOWS YOU KNOW · EVERY SHOP IS 10% CHEAPER, FOREVER',
+  },
+  herd: {
+    t: 'THE HERD',
+    lines: ['You migrate. It is not a decision, it is a tense change.',
+      'On the far bank you count the herd and get one.',
+      'One animal, with a great many legs, remembering itself in pieces.',
+      'You are not in the herd. You are the part of it doing the counting.'],
+    tag: 'YOU ARE THE HERD · EVERY MARK IS WORTH MORE NOW',
+  },
+  vultures: {
+    t: 'THE VULTURES',
+    lines: ['They have never once landed early. Not once.',
+      'They are not waiting for you to stop moving.',
+      'They are waiting for the line to end, and the line ends where',
+      'it ends whether or not you are still standing in it.'],
+    tag: 'THEY SETTLE YOUR ESTATE NOW · DEATH BANKS 25% MORE STRIPES',
+  },
+  pen: {
+    t: 'THE SECOND PEN',
+    lines: ['Twice now you have finished somebody else\'s sentence.',
+      'This time, in the grass where God fell, there is a second pen.',
+      'It is chewed. It is the right size for a mouth.',
+      'Nobody stops you. That is the whole twist. Nobody was ever going to.'],
+    tag: 'YOU WRITE NOW · EVERY BLEND YOU MAKE COMES OUT STRONGER, FOREVER',
+  },
   first: {
     t: 'THE FIRST ZEBRA',
     lines: ['You have read every note. In the margin of the last one,',
@@ -2882,10 +2950,20 @@ function fireTwist(id, after){
   screenTwist(id, after);
   return true;
 }
+function storyMode(){ return META.story || 'full'; }
 function screenTwist(id, after){
   const t = TWISTS[id];
   if (!t){ after && after(); return; }
+  /* STORY: OFF — the rule still changes, you just get the receipt */
+  if (storyMode() === 'off'){
+    toast(t.t + ' · ' + t.tag, 3000);
+    SFX.lore && SFX.lore();
+    after && after();
+    return;
+  }
+  const brief = storyMode() === 'brief';
   const o = el(`<div class="twist"><div class="tw">
+    <button class="btn ghost twSkip" id="twX">Skip</button>
     <div class="twk">SOMETHING RESOLVES</div>
     <div class="twt">${t.t}</div>
     <div class="stripes" style="width:100%;max-width:420px"></div>
@@ -2897,23 +2975,31 @@ function screenTwist(id, after){
   Music.setBattle(false);
   SFX.lore && SFX.lore();
   const box = o.querySelector('.twl');
-  let i = 0;
+  let i = 0, done = false;
+  const finish = () => {
+    if (done) return;
+    done = true;
+    box.innerHTML = t.lines.map(l => `<p>${l}</p>`).join('');
+    o.querySelector('.twtag').classList.add('on');
+    o.querySelector('#twGo').style.visibility = 'visible';
+    SFX.bell && SFX.bell();
+  };
   const step = () => {
+    if (done) return;
     if (i < t.lines.length){
       const p = document.createElement('p');
       p.textContent = t.lines[i++];
       box.appendChild(p);
       SFX.click && SFX.click();
       setTimeout(step, 1250);
-    } else {
-      o.querySelector('.twtag').classList.add('on');
-      const b = o.querySelector('#twGo');
-      b.style.visibility = 'visible';
-      SFX.bell && SFX.bell();
-    }
+    } else finish();
   };
-  setTimeout(step, 550);
-  o.querySelector('#twGo').onclick = () => { o.remove(); after && after(); };
+  if (brief) finish(); else setTimeout(step, 550);
+  /* tap anywhere to fast-forward, Skip to leave entirely */
+  o.onclick = e => { if (e.target.closest('button')) return; finish(); };
+  const out = () => { o.remove(); after && after(); };
+  o.querySelector('#twGo').onclick = out;
+  o.querySelector('#twX').onclick = out;
 }
 /* ---------- daily systems · the savanna runs on a calendar ---------- */
 function todayKey(){ const d = new Date(); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); }
@@ -2989,7 +3075,7 @@ function confettiFx(){
   }
 }
 /* ---------- THE GREAT MIGRATION · tiered resets, idle-game style ---------- */
-function marksGain(){ return Math.floor(Math.floor((META.eraBest || 0) / 5) * (1 + .25 * (META.stake || 0))); }
+function marksGain(){ return Math.floor(Math.floor((META.eraBest || 0) / 5) * (1 + .25 * (META.stake || 0)) * (META.herdKnown ? 1.2 : 1)); }
 function marksMul(){ return Math.min(3, 1 + .1 * (META.marks || 0)); }   /* prestige pays, but the savanna caps it at ×3 */
 function screenMigrate(){
   app.innerHTML = '';
@@ -3049,6 +3135,7 @@ function screenMigrate(){
  META.ghost = null;   /* new era, new ghosts */
     saveMeta();
  R = null; saveRun();
+    if (!twistSeen('herd')){ META.herdKnown = 1; saveMeta(); setTimeout(() => fireTwist('herd'), 1600); }
     stampFx('THE HERD MOVES');
  Music.jingle('migrate');
  SFX.victory(); hapt([50, 40, 80]);
@@ -3588,6 +3675,7 @@ function screenTitle(){
       ${(META.migrations || 0) >= 1 || META.stats.floors >= 15 ? `<button class="btn mbtn ghost" id="bStake"><span>▲ Stake ${META.stake ? ['I', 'II', 'III', 'IV', 'V'][META.stake - 1] : 'OFF'}</span><small>harder savanna · +${(META.stake || 0) * 25}% marks</small></button>` : ''}
       <button class="btn mbtn ghost" id="bGuide"><span>✎ Field Guide</span><small>how to zebra</small></button>
       <button class="btn mbtn ghost" id="bMusic"><span>♪ Music</span><small>${Music.on() ? 'on · 14-bit sexy' : 'off'}</small></button>
+      <button class="btn mbtn ghost" id="bStory"><span>¶ Story</span><small>${{ full: 'full · takes its time', brief: 'brief · no typewriter', off: 'off · just the rules' }[storyMode()]}</small></button>
       ${feats.find(f => f.id === 'bYt').ok ? `<button class="btn mbtn ghost" id="bYt"><span>▷ Watch & Play</span><small>${fresh.includes('bYt') ? ' NEW!' : 'tiny tv · bottom of screen'}</small></button>` : ''}
       ${typeof IS_STANDALONE !== 'undefined' && IS_STANDALONE ? '' : `<button class="btn mbtn" id="bInstall"><span>▣ Save to Phone</span><small>home screen · plays offline</small></button>`}
     </div>
@@ -3638,6 +3726,13 @@ function screenTitle(){
     toast(POKE_LINES[Math.min(pokes, POKE_LINES.length - 1)], 1400);
     if (pokes === POKE_LINES.length - 1) confettiFx();
     pokes++;
+  };
+  $('#bStory').onclick = () => {
+    META.story = { full: 'brief', brief: 'off', off: 'full' }[storyMode()];
+    saveMeta();
+    toast('¶ STORY: ' + storyMode().toUpperCase() + ' · ' +
+      { full: 'REVEALS PLAY OUT IN FULL', brief: 'REVEALS APPEAR INSTANTLY', off: 'NO REVEALS — THE RULES STILL CHANGE' }[storyMode()], 2600);
+    screenTitle();
   };
   $('#bMusic').onclick = () => {
     const on = Music.toggle();
@@ -4225,8 +4320,13 @@ function screenVictory(s){
   $('#bTitle2').onclick = () => { R = null; saveRun(); screenTitle(); };
 }
 function screenRegion(){
-  loreWhisper();
   const rg = regionOf(R.floor);
+  if (storyMode() === 'off'){
+    toast(rg.name.toUpperCase() + ' · ' + (rg.law.id === 'none' ? 'NO LOCAL LAW' : rg.law.nm + ' · ' + rg.law.txt.toUpperCase()), 3000);
+    screenMap(true);
+    return;
+  }
+  loreWhisper();
   app.innerHTML = '';
   const p = el(`<div class="page" style="justify-content:center;text-align:center;gap:14px">
     <span class="kick">YOU CROSS INTO NEW COUNTRY</span>
@@ -5181,13 +5281,15 @@ function winBattle(){
   if (!META.bestiary[B.foe.id]) toast('¶ BESTIARY: ' + B.foe.name + ' CATALOGUED', 1600);
  META.bestiary[B.foe.id] = (META.bestiary[B.foe.id] || 0) + 1;
   if (B.foe.summit){
- META.stats.wins = (META.stats.wins || 0) + 1;
- META.summitBest = Math.max(META.summitBest || 0, R.floor);
+    META.stats.wins = (META.stats.wins || 0) + 1;
+    if ((META.stats.wins || 0) >= 2 && !twistSeen('pen')) META.authorPen = 1;
+    META.summitBest = Math.max(META.summitBest || 0, R.floor);
     saveMeta();
     const snap = { floor: R.floor, deck: R.deck.length, dmg: R.sdmg || 0, blends: R.sblends || 0,
       relics: R.relics.length, world: R.world, cls: R.cls, hp: R.hp, mhp: R.mhp };
     setTimeout(() => {
       if (!twistSeen('read')) fireTwist('read', () => screenVictory(snap));
+      else if (META.authorPen && !twistSeen('pen')) fireTwist('pen', () => screenVictory(snap));
       else screenVictory(snap);
     }, 1400);
     return;
@@ -5715,10 +5817,17 @@ function screenShop(){
     if (!twistSeen('ledger')){ fireTwist('ledger', () => screenShop()); return; }
     setTimeout(() => toast('THE LEDGER SAYS YOU STOP ON FLOOR ' + R.prophecy + '. IT HAS BEEN RIGHT BEFORE.', 3400), 700);
   }
+  META.shopVisits = (META.shopVisits || 0) + 1;
+  if (META.shopVisits >= 12 && !twistSeen('meerkat')){
+    META.meerkatOff = 1; saveMeta();
+    fireTwist('meerkat', () => screenShop());
+    return;
+  }
+  saveMeta();
   app.innerHTML = '';
   const cards = [mkCard(pick(BASE_CARDS.filter(c => !c.secret && (R.floor >= 5 || c.early))).id)];
   const stakeUp = 1 + .1 * (META.stake || 0);
-  const off = (1 - treeVal('shopOff')) * stakeUp * (R.wkShopOff || 1) * (1 - (regionLaw().shopOff || 0));
+  const off = (1 - treeVal('shopOff')) * stakeUp * (R.wkShopOff || 1) * (1 - (regionLaw().shopOff || 0)) * (META.meerkatOff ? .9 : 1);
   const cardCost = Math.round((18 + (cards[0].rar || 0) * 12 + R.floor * 2) * off);
   const healCost = Math.round((15 + R.floor) * off);
   const banishCost = Math.round((45 + R.floor * 2) * off);
@@ -6182,6 +6291,7 @@ function loseRun(){
   const stats = { dmg: R.sdmg || 0, cards: R.scards || 0, blends: R.sblends || 0, deck: R.deck.length, relics: R.relics.length };
   const wcode = R.world != null ? worldCode(R.world) : null;
   bumpStat('deaths', 1);
+  if (!twistSeen('vultures') && (META.stats.deaths || 0) >= 8){ META.vultureCut = 1; saveMeta(); }
   delete R._pf;   /* death resolves the fight — no flee refund from the grave */
   /* THE GHOST · your dead deck gets a second career as the Mirage's script */
  META.ghost = { name: META.zebName || 'YOU', floor: R.floor,
@@ -6191,7 +6301,7 @@ function loseRun(){
   /* WEEKLY ledger */
   if (R.weekly){ META.weekly = META.weekly || {}; META.weekly[R.weekly] = Math.max(META.weekly[R.weekly] || 0, R.floor); }
   logRun(B && B.foe ? B.foe.name : 'the savanna');
-  const earned = Math.round((15 + floor * 6) * marksMul());
+  const earned = Math.round((15 + floor * 6) * marksMul() * (META.vultureCut ? 1.25 : 1));
  META.stripes += earned;
   saveMeta();
  R = null; saveRun();
@@ -6213,6 +6323,7 @@ function loseRun(){
     <button class="btn ghost" id="bTitle">Title</button>
   </div>`);
   app.appendChild(p);
+  if (META.vultureCut && !twistSeen('vultures')) setTimeout(() => fireTwist('vultures'), 2200);
   $('#bShareD').onclick = () => shareCard({ floor, deck: stats.deck, dmg: stats.dmg, blends: stats.blends,
     relics: stats.relics, world: wcode ? parseWorldCode(wcode) : 0, killer, won: false });
   $('#bAgain').onclick = () => { newRun(); screenMap(); };
