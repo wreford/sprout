@@ -49,6 +49,7 @@ const SP = '/tmp/claude-0/-home-user-sprout/12b11e48-c931-5cfc-8740-403ce467b352
       if (has('bC0') || has('bPakS') || has('bBanish') || has('bWheel')) return 'shop';
       if (has('bDo')) return 'blend';
       if (has('bBlend')) return 'rest';
+      if (has('bInto')) return 'region';
       if (has('bRun')) return 'title';
       if (txt.includes('WHERE DOES THE HERD')) return 'drop';
       return 'unknown';
@@ -137,6 +138,12 @@ const SP = '/tmp/claude-0/-home-user-sprout/12b11e48-c931-5cfc-8740-403ce467b352
             } else { const bk = document.querySelector('#bBack'); if (bk) bk.click(); }
           }
           else if (s === 'death'){ Q.cur.deathFloor = Q.cur.maxFloor; Q.cur.endedBy = 'death'; return { done: true, why: 'died to ' + (Q.cur.lastFoe || '?') }; }
+          else if (s === 'region'){
+            const rg = regionOf(ZB.R().floor);
+            Q.seenRegions = Q.seenRegions || {}; Q.seenRegions[rg.name] = 1;
+            Q.seenLaws = Q.seenLaws || {}; Q.seenLaws[rg.law.id] = (Q.seenLaws[rg.law.id] || 0) + 1;
+            document.getElementById('bInto').click();
+          }
           else if (s === 'drop'){ const b = document.querySelector('.btn'); if (b) b.click(); }
 
           else if (s === 'title'){ const b = document.querySelector('#bRun'); if (b) b.click(); }
@@ -203,6 +210,8 @@ const SP = '/tmp/claude-0/-home-user-sprout/12b11e48-c931-5cfc-8740-403ce467b352
   console.log('STALLS          :', agg.stalls.length ? JSON.stringify(agg.stalls) : 'NONE — always progressing ✅');
   console.log('content seen    : traits', JSON.stringify(agg.traits), '\n                  verbs', JSON.stringify(agg.verbs), '\n                  fights', JSON.stringify(agg.kinds));
   console.log('screens visited :', JSON.stringify(agg.screens));
+  console.log('regions visited :', await page.evaluate(() => Object.keys(window.QA.seenRegions || {}).join(' · ') || 'none'));
+  console.log('laws seen       :', await page.evaluate(() => JSON.stringify(window.QA.seenLaws || {})));
   console.log('harness nudges  :', await page.evaluate(() => window.QA.nudges || 0), '(bot escapes; not game stalls)');
   console.log('crashes         :', crashes.length ? crashes.slice(0, 5) : 'none');
   await browser.close();

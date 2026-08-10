@@ -2496,6 +2496,62 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden){ META.lastSeen = Date.now(); saveMeta(); }
   else idleCollect();
 });
+/* ============================================================
+   THE WORLD · procedurally generated regions, five floors each.
+   Every run rolls a fresh world seed, so the map is different every
+   time — but deterministic within a run, so it never rerolls on you.
+   ============================================================ */
+function srng(seed){ let s = (seed >>> 0) || 1; return () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296; }
+const BIOMES = [
+  { id: 'pan',   adj: ['Cracked', 'Salt', 'Bleached', 'Bone', 'Glass'],   noun: ['Pan', 'Flats', 'Basin'],   ic: '▨', amb: 'nothing grows here. nothing forgives here.' },
+  { id: 'grass', adj: ['Tall', 'Whispering', 'Nervous', 'Endless'],       noun: ['Grass', 'Reach', 'Sea'],   ic: '⋀', amb: 'the grass is chest-high and full of opinions.' },
+  { id: 'kopje', adj: ['Broken', 'Leaning', 'Red', 'Vulture'],            noun: ['Kopje', 'Rocks', 'Spine'], ic: '◭', amb: 'stone stacked by nobody, for no reason.' },
+  { id: 'water', adj: ['Shrinking', 'Muddy', 'Last', 'Borrowed'],         noun: ['Delta', 'Hole', 'Bend'],   ic: '≈', amb: 'water. briefly. everyone knows.' },
+  { id: 'wood',  adj: ['Thorn', 'Sideways', 'Patient', 'Whistling'],      noun: ['Wood', 'Scrub', 'Thicket'],ic: '⑂', amb: 'every branch is a small weapon.' },
+  { id: 'ash',   adj: ['Burnt', 'Warm', 'Smoking', 'Yesterday\'s'],       noun: ['Ash', 'Burn', 'Char'],     ic: '░', amb: 'it burned last week. it is still deciding how it feels.' },
+  { id: 'dune',  adj: ['Walking', 'Singing', 'Hungry', 'Slow'],           noun: ['Dunes', 'Drift', 'Sand'],  ic: '◠', amb: 'the ground moves. slowly. with intent.' },
+  { id: 'hill',  adj: ['Long', 'Bald', 'Grazing', 'Forgotten'],           noun: ['Hills', 'Rise', 'Downs'],  ic: '⌒', amb: 'up, then up again. the savanna is showing off.' },
+];
+const LANDMARKS = ['Bone Ridge', 'The Whistling Gap', 'Old Tracks', 'A Suspicious Cairn', 'The Wrong Waterhole',
+  'Somebody\'s Horn', 'The Lean-To', 'Flat Rock', 'The Complaining Tree', 'Three Stones', 'The Shortcut (It Is Not)',
+  'Vulture Post', 'The Chewed Fence', 'A Tidy Skull', 'The Long Puddle', 'Gnu Crossing', 'The Echo Bend',
+  'Half A Fence', 'The Sitting Stone', 'Termite City Hall'];
+const LAWS = [
+  { id: 'none',  nm: 'NO LOCAL LAW',   txt: 'the savanna is merely itself' },
+  { id: 'heat',  nm: 'THE HEAT LAW',   txt: 'foes +1 atk · stripes +25%', atk: 1, goldMul: .25 },
+  { id: 'thin',  nm: 'THIN AIR',       txt: 'foes −20% HP · but +2 atk', hpMul: .8, atk: 2 },
+  { id: 'trade', nm: 'TRADE WINDS',    txt: 'shops −25% · more trading posts', shopOff: .25, w: { shop: 3 } },
+  { id: 'long',  nm: 'LONG GRASS',     txt: 'rogues everywhere · better loot', w: { elite: 3 }, goldMul: .15 },
+  { id: 'quiet', nm: 'THE QUIET',      txt: 'no rogues here · stripes −20%', noElite: 1, goldMul: -.2 },
+  { id: 'bones', nm: 'OLD BONES',      txt: 'start every fight with 5 block', startBlock: 5 },
+  { id: 'crowd', nm: 'THE CROWDING',   txt: 'more fights, fewer oases', w: { fight: 3, rest: 0 } },
+  { id: 'green', nm: 'GREEN SEASON',   txt: 'oases everywhere · foes +1 atk', w: { rest: 3 }, atk: 1 },
+  { id: 'wyrd',  nm: 'WYRD WEATHER',   txt: 'mystery doors multiply', w: { myst: 3 } },
+];
+function genRegion(i){
+  const rnd = srng(((R && R.world) || 20260810) * 7919 + i * 104729 + 13);
+  const pk = a => a[Math.floor(rnd() * a.length)];
+  const b = pk(BIOMES);
+  /* the first region is always plain — you learn the game before the world gets ideas */
+  const law = i === 0 ? LAWS[0] : pk(LAWS);
+  const marks = [];
+  while (marks.length < 5){ const m = pk(LANDMARKS); if (!marks.includes(m)) marks.push(m); }
+  return { i, name: pk(b.adj) + ' ' + pk(b.noun), ic: b.ic, amb: b.amb, law, marks, biome: b.id };
+}
+function regionOf(floor){ return genRegion(Math.max(0, Math.floor((floor - 1) / 5))); }
+function regionLaw(){ return (R ? regionOf(R.floor).law : LAWS[0]) || LAWS[0]; }
+/* the five-stop route through the current region, current stop marked */
+function routeStrip(){
+  const rg = regionOf(R.floor), at = ((R.floor - 1) % 5);
+  return `<div style="display:flex;gap:4px;width:100%;max-width:420px;font-family:var(--mono);font-size:8px;letter-spacing:.06em">
+    ${rg.marks.map((m, i) => {
+      const done = i < at, here = i === at, boss = i === 4;
+      return `<div title="${m}" style="flex:1;text-align:center;padding:3px 1px;border-top:2px solid ${here ? 'var(--r)' : done ? '#ffffff55' : '#ffffff1c'};
+        color:${here ? 'var(--r)' : done ? '#ffffff77' : '#ffffff33'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+        ${boss ? '☠ ' : ''}${here ? '▸ ' : done ? '✓ ' : ''}${m.toUpperCase()}</div>`;
+    }).join('')}
+  </div>`;
+}
 /* ---------- daily systems · the savanna runs on a calendar ---------- */
 function todayKey(){ const d = new Date(); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); }
 function dailyGift(){
@@ -2984,6 +3040,7 @@ function newRun(){
     relics: [], turn: 0, sdmg: 0, scards: 0, sblends: 0, menergy: 3 + treeVal('menergy'), cls: cls.id,
     phoenix: treeVal('phoenix') > 0,
     wx: WEATHER[Math.floor(Math.random() * WEATHER.length)].id,
+    world: Math.floor(Math.random() * 1e9),   /* a whole savanna, freshly generated */
   };
   if (cls.id === 'wizard'){ R.deck.push(mkCard('zebramath'), mkCard(pick(RAR_R))); }
   if (cls.id === 'pirate'){ R.deck.push(mkCard('coinmane')); }
@@ -3569,6 +3626,14 @@ function screenMap(noAdvance){
      Best-floor + era credit is granted in winBattle, not here: a floor only counts once
      you've actually won on it (drop starts can't inflate the record). */
   if (!noAdvance){ R.floor++; savannaMoment(); setTimeout(collectRent, 1900); }
+  /* crossing into fresh country */
+  if (R.floor > 1 && (R.floor - 1) % 5 === 0 && R.lastRegion !== regionOf(R.floor).i){
+    R.lastRegion = regionOf(R.floor).i;
+    saveRun();
+    screenRegion();
+    return;
+  }
+  R.lastRegion = regionOf(R.floor).i;
   bountyBump('floor', R.floor, true);
   Music.scene(null);
   saveRun();
@@ -3591,7 +3656,18 @@ function screenMap(noAdvance){
       if (e.kind === 'fight' && Math.random() < .3)
         e.tag = pick([['double', 'DOUBLE ◆'], ['pack', '+PACK'], ['angry', 'ANGRY · +50% ◆']]);
     });
-    const pool = R.floor < 3 ? extras.filter(e => e.kind !== 'elite') : extras;
+    /* THE LOCAL LAW bends what this region even offers */
+    const law = regionOf(R.floor).law;
+    let pool = R.floor < 3 ? extras.filter(e => e.kind !== 'elite') : extras;
+    if (law.noElite) pool = pool.filter(e => e.kind !== 'elite');
+    if (law.w){
+      const weighted = [];
+      pool.forEach(e => {
+        const n = law.w[e.kind] === undefined ? 1 : law.w[e.kind];
+        for (let k = 0; k < n; k++) weighted.push(e);
+      });
+      if (weighted.length >= 2) pool = weighted;
+    }
     const two = [];
     while (two.length < 2){ const c = pick(pool); if (!two.includes(c)) two.push(c); }
     doors.push(...two);
@@ -3600,6 +3676,13 @@ function screenMap(noAdvance){
     <div class="motes">${[...Array(6)].map(() => `<i style="left:${Math.random() * 100}%;animation-duration:${9 + Math.random() * 14}s;animation-delay:-${Math.random() * 12}s"></i>`).join('')}</div>
     ${hudHtml()}
     <div class="stripes"></div>
+    <div style="width:100%;max-width:420px;text-align:left">
+      <div style="font-family:var(--mono);font-weight:800;font-size:10px;letter-spacing:.14em;color:var(--r)">
+        ${regionOf(R.floor).ic} ${regionOf(R.floor).name.toUpperCase()} · REGION ${regionOf(R.floor).i + 1}</div>
+      <div style="font-family:var(--mono);font-size:8.5px;letter-spacing:.1em;color:#ffffff55;margin:2px 0 5px">
+        ${regionLaw().id === 'none' ? regionOf(R.floor).amb.toUpperCase() : '⚖ ' + regionLaw().nm + ' · ' + regionLaw().txt.toUpperCase()}</div>
+    </div>
+    ${routeStrip()}
     <span class="kick">FLOOR ${R.floor} · CHOOSE A PATH${isBoss ? '' : ' · BOSS IN ' + (5 - R.floor % 5)} · <span title="${wxOf().desc}">${wxOf().ic} ${wxOf().name}</span></span>
     ${doors.map((d, i) => `<div class="door ${d.kind === 'elite' || d.kind === 'boss' ? 'elite' : ''} ${d.boss ? 'pulse' : ''}" data-i="${i}">
       <div><div class="dn">${d.nm}${d.tag ? `<span class="doorTag">${d.tag[1]}</span>` : ''}</div><div class="dd">${d.dd}</div></div><div class="ic">${d.ic}</div></div>`).join('')}
@@ -3619,6 +3702,30 @@ function screenMap(noAdvance){
   });
   tut('map', '.door', 'THE MAP', 'One door per floor. <b>Fights</b> pay stripes and cards, the <b>Oasis</b> heals or blends, the <b>Rogues\' Gallery</b> hits harder but drops relics. Every 5th floor: boss. Choose.');
 }
+function screenRegion(){
+  const rg = regionOf(R.floor);
+  app.innerHTML = '';
+  const p = el(`<div class="page" style="justify-content:center;text-align:center;gap:14px">
+    <span class="kick">YOU CROSS INTO NEW COUNTRY</span>
+    <div style="font-size:64px;line-height:1;color:var(--r)">${rg.ic}</div>
+    <div class="big">${rg.name}</div>
+    <div class="stripes"></div>
+    <div class="sub">${rg.amb}</div>
+    <div class="ach" style="text-align:left"><div>
+      <div class="an" style="color:${rg.law.id === 'none' ? 'var(--w)' : 'var(--r)'}">⚖ ${rg.law.nm}</div>
+      <div class="ap">${rg.law.txt}</div></div><div class="tick">LAW</div></div>
+    <div style="font-family:var(--mono);font-weight:800;font-size:8.5px;letter-spacing:.14em;color:#ffffff55;width:100%;max-width:420px;text-align:left">THE ROUTE AHEAD</div>
+    ${rg.marks.map((m, i) => `<div class="ach" style="text-align:left;${i === 4 ? 'border-color:var(--r)' : ''}">
+      <div><div class="an" style="font-size:12px">${i === 4 ? '☠ ' : ''}${m}</div>
+      <div class="ap">${i === 4 ? 'the boss is waiting here' : 'floor ' + (rg.i * 5 + i + 1)}</div></div>
+      <div class="tick">${i + 1}/5</div></div>`).join('')}
+    <button class="btn red" id="bInto">Into the ${rg.name.split(' ').slice(-1)[0]}</button>
+  </div>`);
+  app.appendChild(p);
+  stampFx('NEW COUNTRY');
+  SFX.bell();
+  $('#bInto').onclick = () => wipe(() => screenMap(true));
+}
 /* ---------- battle ---------- */
 let B = null;
 function startBattle(kind){
@@ -3626,6 +3733,9 @@ function startBattle(kind){
   R.crossUp = 0;
   if (R.wx === 'heat') foe.atk += 1;
   if (R.wx === 'fog') foe.atk = Math.max(1, foe.atk - 1);
+  const rlaw = regionLaw();
+  if (rlaw.atk) foe.atk += rlaw.atk;
+  if (rlaw.hpMul){ foe.mhp = Math.max(4, Math.round(foe.mhp * rlaw.hpMul)); foe.hp = foe.mhp; }
   if (R.cls === 'cowboy'){ foe.weak = 2; }
   if (petVal('stare') && Math.random() < .3){
     foe.weak = Math.max(foe.weak, 1);
@@ -3640,6 +3750,7 @@ function startBattle(kind){
     played: 0, turn: 1,
     firstHit: relicSum('firstHit') + treeVal('firstHit') + petVal('firstHit') + (R.cls === 'pirate' ? 4 : 0),
     over: false, ending: false, won: false };
+  if (rlaw.startBlock) B.block = rlaw.startBlock;
   drawCards(5 + relicSum('firstDraw') + treeVal('firstDraw') + petVal('firstDraw') + (R.cls === 'wizard' ? 1 : 0) + (R.cls === 'moon' ? 1 : 0) + (hasVoucher('hand6') ? 1 : 0));
   if (foe.rule === 'lock') B.lockUid = B.hand[0] && B.hand[0].uid;
   /* battles are not save points: snapshot so a mid-fight reload can't keep in-fight gains */
@@ -4490,7 +4601,7 @@ function winBattle(){
   delete R._pf;               /* the fight resolved — its gains are real now */
   R.clearedFloor = R.floor;   /* reload + Continue must not re-deal this floor's doors */
   const base = (B.kind === 'boss' ? 50 : B.kind === 'elite' ? 28 : 16) + Math.floor(R.floor * 2);
-  const wxMul = R.wx === 'heat' ? 1.4 : R.wx === 'fog' ? .8 : 1;
+  const wxMul = (R.wx === 'heat' ? 1.4 : R.wx === 'fog' ? .8 : 1) * (1 + (regionLaw().goldMul || 0));
   let gold = Math.round(base * (1 + relicSum('goldMul') + treeVal('goldMul') + petVal('goldMul') + (R.cls === 'pirate' ? .4 : 0)) * marksMul() * wxMul) + META.bonusStripe + treeVal('flat') + petVal('flat');
   if (R.doorTag === 'double' || R.doorTag === 'angry'){ gold = Math.round(gold * (R.doorTag === 'double' ? 2 : 1.5)); setTimeout(() => toast('🚪 DOOR TAG PAID OUT · ◆ ' + gold, 1800), 1000); }
   if (R.wkGold) gold = Math.round(gold * R.wkGold);
@@ -4952,7 +5063,7 @@ function screenShop(){
   app.innerHTML = '';
   const cards = [mkCard(pick(BASE_CARDS.filter(c => !c.secret && (R.floor >= 5 || c.early))).id)];
   const stakeUp = 1 + .1 * (META.stake || 0);
-  const off = (1 - treeVal('shopOff')) * stakeUp * (R.wkShopOff || 1);
+  const off = (1 - treeVal('shopOff')) * stakeUp * (R.wkShopOff || 1) * (1 - (regionLaw().shopOff || 0));
   const cardCost = Math.round((18 + (cards[0].rar || 0) * 12 + R.floor * 2) * off);
   const healCost = Math.round((15 + R.floor) * off);
   const banishCost = Math.round((45 + R.floor * 2) * off);
