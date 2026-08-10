@@ -3587,7 +3587,8 @@ function seerLine(f){
 }
 function multNow(){
   if (B && B.foe.rule === 'dull') return 1;
-  return 1 + (B ? B.mult : 0);
+  /* capped ×4 — the herd is powerful, not omnipotent */
+  return Math.min(4, 1 + (B ? B.mult : 0));
 }
 function statChips(){
   const bits = [];
@@ -3824,7 +3825,7 @@ function playCard(i, cardEl){
     /* remove self first so echo/molt see the true remaining hand */
     B.hand.splice(i, 1);
     /* ---- resource + weird effects (pre-damage) ---- */
-    if (c.energy){ B.energy = Math.min(9, B.energy + c.energy * sealX); SFX.power(); }
+    if (c.energy){ B.energy = Math.min(9, B.energy + c.energy); SFX.power(); }   /* red seal never doubles energy — that way lies infinity */
     if (c.gamble){
       if (Math.random() < .5){ B.energy = Math.min(9, B.energy + 2); toast('COIN: HEADS · +2 ENERGY ⚡', 1000); SFX.ach(); }
       else { R.hp = Math.max(1, R.hp - 3); toast('COIN: TAILS · OW. −3 HP', 1000); playerFx(); SFX.playerHit(); }
@@ -3880,7 +3881,10 @@ function playCard(i, cardEl){
       descFor(src);
       toast('😤 THE GRUDGE GROWS · NOW ' + src.dmg, 1000);
     }
-    if (c.stun){ B.foe.stun = 1; toast('💫 ' + B.foe.name.toUpperCase() + ' FORGETS WHAT IT WAS DOING', 1400); SFX.power(); }
+    if (c.stun){
+      if (B.foe.stunProof){ toast('IT\'S WISE TO THE TRICK NOW — NO CHAIN-STUNNING.', 1500); }
+      else { B.foe.stun = 1; toast('💫 ' + B.foe.name.toUpperCase() + ' FORGETS WHAT IT WAS DOING', 1400); SFX.power(); }
+    }
     if (c.freeNext){ B.freeNext = 1; }
     if (c.self) R.hp = Math.max(1, R.hp - c.self);
     if (c.blk){ B.block += c.blk * sealX; bumpStat('blocks', c.blk * sealX); SFX.block(); }
@@ -3962,9 +3966,10 @@ function endTurn(){
     f.pi++;
     if (f.stun){
       f.stun = 0;
+      f.stunProof = 2;   /* wakes wary — immune to the next stun attempt, wears off after a turn */
       kind = 'stunned';
       toast('💫 IT STANDS THERE. MAJESTICALLY CONFUSED.', 1500);
-    }
+    } else if (f.stunProof) f.stunProof--;
     let through = 0;
     if (kind === 'atk'){
       if (R.cls === 'ninja' && !B.ninjaDodge){
@@ -4342,6 +4347,7 @@ function resolveMystery(){
 function screenRest(){
   Music.scene('oasis');
   R.oasisBlends = 0;
+  R.distilled = 0;
   app.innerHTML = '';
   const p = el(`<div class="page">
     ${hudHtml()}
@@ -4535,6 +4541,8 @@ function screenBlend(){
   };
   window.__glassOn = () => glassOn;
   if ($('#bDistill')) $('#bDistill').onclick = () => {
+    /* one distill per oasis — otherwise distill→reblend becomes a free +1/+1 pump every visit */
+    if (R.distilled){ toast('THE STILL IS COOLING DOWN. ONE DISTILL PER OASIS.', 1600); return; }
     const cands = R.deck.map((c, i) => [c, i]).filter(([c]) => c.pA && c.pB);
     const o = el(`<div class="ovlDeck"><div style="max-width:640px;margin:0 auto 12px;display:flex;justify-content:space-between;align-items:center">
       <span class="kick">DISTILL · A BLEND SPLITS BACK INTO ITS PARENTS · EACH +1</span>
@@ -4553,6 +4561,7 @@ function screenBlend(){
       });
       R.deck.splice(i, 1);
       R.deck.push(...kids);
+      R.distilled = 1;
       saveRun();
       o.remove();
       SFX.blend(); stampFx('DISTILLED');
@@ -4833,6 +4842,10 @@ function mkCursed(){
 }
 /* ---------- FIELD BLENDER · blending as a combat verb ---------- */
 function combatBlend(){
+  /* the button gates too — but the function must defend itself */
+  if (!B || B.over){ return; }
+  if (B.blended){ toast('THE FIELD BLENDER RUNS ONCE PER FIGHT. IT NEEDS A MINUTE.', 1500); return; }
+  if (B.energy < 2){ toast('FIELD BLEND COSTS ⚡2. YOU HAVE ' + B.energy + '.', 1300); return; }
   const sel = [];
   const cands = B.hand.map((c, i) => [c, i]).filter(([c]) => c.type !== 'pow' && !c.cursed);
   if (cands.length < 2){ toast('NOT ENOUGH BLENDABLE CARDS IN HAND.', 1300); return; }
