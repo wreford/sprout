@@ -2673,6 +2673,12 @@ function newRun(){
     R.relics.push(r);
     if (r.hp){ R.mhp += r.hp; R.hp += r.hp; }
   }
+  /* beginner's luck: the savanna goes easy on your first two runs. after that, it's personal. */
+  if ((META.stats.runs || 0) < 2){
+    R.mhp += 10; R.hp += 10;
+    R.deck.push(mkCard('sugarcube'));
+    setTimeout(() => toast('🍬 WELCOME SNACK + 10 HP · THE SAVANNA GOES EASY. TWICE. THEN NEVER AGAIN.', 3000), 1100);
+  }
   bumpStat('runs', 1);
   saveRun();
 }
@@ -2752,6 +2758,23 @@ function screenTitle(){
   const migReady = marksGain() >= 1;
   const tiers = Object.values(META.achTiers || {}).reduce((a, b) => a + b, 0);
   const seen = Object.keys(META.bestiary || {}).length;
+  /* progressive reveal: start with one button, earn the rest by playing */
+  const S = META.stats;
+  const feats = [
+    { id: 'bUnlock', nm: '⚘ SKILL TREE', hint: 'finish your first run', ok: S.deaths >= 1 || S.floors >= 2 || treeOwned() > 0 },
+    { id: 'bBest', nm: '☠︎ BESTIARY', hint: 'drop 3 foes', ok: S.kills >= 3 },
+    { id: 'bAch', nm: '✦ ACHIEVEMENTS', hint: 'drop 5 foes', ok: S.kills >= 5 },
+    { id: 'bRecipes', nm: '⚗ RECIPES', hint: 'blend at an oasis', ok: S.blends >= 1 || (META.recipes || []).length > 0 },
+    { id: 'bStats', nm: '≡ STATISTICS', hint: 'start a second run', ok: S.runs >= 2 },
+    { id: 'bounty', nm: '☑ BOUNTY BOARD', hint: 'start a second run', ok: S.runs >= 2 },
+    { id: 'bYt', nm: '📺 WATCH & PLAY', hint: 'reach floor 5', ok: S.floors >= 5 },
+    { id: 'bHerd', nm: '♞ THE HERD', hint: 'reach floor 8', ok: S.floors >= 8 || (META.clsOwned || []).length > 1 },
+    { id: 'bPets', nm: '♡ PETS', hint: 'reach floor 12', ok: S.floors >= 12 || (META.pets || []).length > 0 },
+    { id: 'bCrew', nm: '⚑ PIT CREW', hint: 'reach floor 15', ok: S.floors >= 15 || (META.helpers || []).length > 0 },
+  ];
+  META.revealed = META.revealed || {};
+  const fresh = feats.filter(f => f.ok && !META.revealed[f.id]).map(f => f.id);
+  const nextFeat = feats.find(f => !f.ok);
   const p = el(`<div class="page" style="justify-content:center;text-align:center;gap:13px">
     <span class="kick">AN ENDLESS DECKBUILDER</span>
     <div id="heroScene"><div id="sun"></div><div class="liveArt" data-rig="zeb" data-pose="trot"></div>
@@ -2766,26 +2789,28 @@ function screenTitle(){
     </div>
     <button class="btn red" id="bRun">${R ? 'Continue · floor ' + R.floor + ' · ♥ ' + R.hp + '/' + R.mhp : 'New run'}</button>
     ${R ? '<button class="btn ghost slim" id="bAbandon" style="max-width:420px">Abandon run</button>' : ''}
-    <div style="max-width:420px;width:100%;text-align:left">
+    ${feats.find(f => f.id === 'bounty').ok ? `<div style="max-width:420px;width:100%;text-align:left">
       <div style="font-family:var(--mono);font-weight:800;font-size:8.5px;letter-spacing:.14em;color:#ffffff55;margin-bottom:4px">☑ TODAY'S BOUNTIES · RESET AT MIDNIGHT</div>
       ${bList.map(b => `<div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;padding:3px 0;border-bottom:1px solid #ffffff12;${b.done ? 'opacity:.45;text-decoration:line-through' : ''}">
         <span>${b.done ? '☑' : '☐'} ${b.txt.toUpperCase()}</span><span style="color:var(--r)">${b.done ? 'PAID' : Math.min(b.got, b.need) + '/' + b.need + ' · ◆' + Math.round(b.reward * marksMul())}</span></div>`).join('')}
-    </div>
+    </div>` : ''}
     <div class="menuGrid">
-      <button class="btn mbtn ${claim ? 'claimable' : ''}" id="bUnlock"><span>⚘ Skill Tree</span><small>${treeOwned()} claimed${claim ? ' · GROWTH READY' : ' · ∞'}</small></button>
-      <button class="btn mbtn" id="bAch"><span>✦ Achievements</span><small>${tiers} tiers · ${(META.trophies || []).length}/${TROPHIES.length} trophies</small></button>
-      <button class="btn mbtn" id="bHerd"><span>♞ The Herd</span><small>${(META.clsOwned || ['zeb']).length}/${CLASSES.length} zebras</small></button>
-      <button class="btn mbtn" id="bPets"><span>♡ Pets</span><small>${(META.pets || []).length}/${PETS.length} befriended</small></button>
-      <button class="btn mbtn" id="bRecipes"><span>⚗ Recipes</span><small>${(META.recipes || []).length}/${RECIPES.length} discovered</small></button>
-      <button class="btn mbtn" id="bCrew"><span>⚑ Pit Crew</span><small>${(META.helpers || []).length}/${HELPERS.length} hired · auto-battle</small></button>
-      <button class="btn mbtn" id="bBest"><span>☠︎ Bestiary</span><small>${seen} catalogued</small></button>
-      <button class="btn mbtn" id="bStats"><span>≡ Statistics</span><small>the full ledger</small></button>
+      ${feats.find(f => f.id === 'bUnlock').ok ? `<button class="btn mbtn ${claim || fresh.includes('bUnlock') ? 'claimable' : ''}" id="bUnlock"><span>⚘ Skill Tree</span><small>${fresh.includes('bUnlock') ? '🔓 NEW!' : treeOwned() + ' claimed' + (claim ? ' · GROWTH READY' : ' · ∞')}</small></button>` : ''}
+      ${feats.find(f => f.id === 'bAch').ok ? `<button class="btn mbtn ${fresh.includes('bAch') ? 'claimable' : ''}" id="bAch"><span>✦ Achievements</span><small>${fresh.includes('bAch') ? '🔓 NEW!' : tiers + ' tiers · ' + (META.trophies || []).length + '/' + TROPHIES.length + ' trophies'}</small></button>` : ''}
+      ${feats.find(f => f.id === 'bHerd').ok ? `<button class="btn mbtn ${fresh.includes('bHerd') ? 'claimable' : ''}" id="bHerd"><span>♞ The Herd</span><small>${fresh.includes('bHerd') ? '🔓 NEW!' : (META.clsOwned || ['zeb']).length + '/' + CLASSES.length + ' zebras'}</small></button>` : ''}
+      ${feats.find(f => f.id === 'bPets').ok ? `<button class="btn mbtn ${fresh.includes('bPets') ? 'claimable' : ''}" id="bPets"><span>♡ Pets</span><small>${fresh.includes('bPets') ? '🔓 NEW!' : (META.pets || []).length + '/' + PETS.length + ' befriended'}</small></button>` : ''}
+      ${feats.find(f => f.id === 'bRecipes').ok ? `<button class="btn mbtn ${fresh.includes('bRecipes') ? 'claimable' : ''}" id="bRecipes"><span>⚗ Recipes</span><small>${fresh.includes('bRecipes') ? '🔓 NEW!' : (META.recipes || []).length + '/' + RECIPES.length + ' discovered'}</small></button>` : ''}
+      ${feats.find(f => f.id === 'bCrew').ok ? `<button class="btn mbtn ${fresh.includes('bCrew') ? 'claimable' : ''}" id="bCrew"><span>⚑ Pit Crew</span><small>${fresh.includes('bCrew') ? '🔓 NEW!' : (META.helpers || []).length + '/' + HELPERS.length + ' hired · auto-battle'}</small></button>` : ''}
+      ${feats.find(f => f.id === 'bBest').ok ? `<button class="btn mbtn ${fresh.includes('bBest') ? 'claimable' : ''}" id="bBest"><span>☠︎ Bestiary</span><small>${fresh.includes('bBest') ? '🔓 NEW!' : seen + ' catalogued'}</small></button>` : ''}
+      ${feats.find(f => f.id === 'bStats').ok ? `<button class="btn mbtn" id="bStats"><span>≡ Statistics</span><small>the full ledger</small></button>` : ''}
       ${migVis ? `<button class="btn mbtn ${migReady ? 'claimable' : ''}" id="bMig"><span>☀︎ Migration</span><small>${migReady ? '+' + marksGain() + ' marks ready' : 'prestige reset'}</small></button>` : ''}
       <button class="btn mbtn ghost" id="bGuide"><span>✎ Field Guide</span><small>how to zebra</small></button>
       <button class="btn mbtn ghost" id="bMusic"><span>♪ Music</span><small>${Music.on() ? 'on · 14-bit sexy' : 'off'}</small></button>
-      <button class="btn mbtn ghost" id="bYt"><span>📺 Watch & Play</span><small>tiny tv · bottom of screen</small></button>
+      ${feats.find(f => f.id === 'bYt').ok ? `<button class="btn mbtn ghost" id="bYt"><span>📺 Watch & Play</span><small>${fresh.includes('bYt') ? '🔓 NEW!' : 'tiny tv · bottom of screen'}</small></button>` : ''}
       ${typeof IS_STANDALONE !== 'undefined' && IS_STANDALONE ? '' : `<button class="btn mbtn" id="bInstall"><span>📲 Save to Phone</span><small>home screen · plays offline</small></button>`}
     </div>
+    ${nextFeat ? `<p style="font-family:var(--mono);font-weight:800;font-size:9px;letter-spacing:.12em;color:#ffffff55">
+      🔒 NEXT UNLOCK: <span style="color:var(--r)">${nextFeat.nm}</span> — ${nextFeat.hint.toUpperCase()}</p>` : ''}
     <p style="font-family:var(--mono);font-size:9px;letter-spacing:.14em;color:#ffffff44">${pick([
       '14-BIT: ALL THE BITS OF 16-BIT, MINUS THE TWO BORING ONES',
       'NO ZEBRAS WERE BLENDED IN A WAY THEY DIDN\'T CONSENT TO',
@@ -2793,6 +2818,12 @@ function screenTitle(){
       'GARY SAYS HI. THAT\'S ALL GARY SAYS.',
       'WHAT IS BLACK AND WHITE AND RED ALL OVER? DON\'T THINK ABOUT IT.',
       'FLOOR ∞ EXISTS. NOBODY HAS SEEN IT. TELL US IF YOU DO.',
+      'THE ZEBRA IS TAPPABLE. THE ZEBRA IS AWARE OF THIS.',
+      'EVERY ENEMY HAS A BACKSTORY. MOST OF THEM ARE EMBARRASSING.',
+      'STRIPES ARE STORED IN THE STRIPES.',
+      'THE MEERKAT\'S PRICES REFLECT A DIFFICULT ECONOMY.',
+      'GRASS-FED. GRASS-FINISHED. GRASS-MOTIVATED.',
+      'LEGALLY, THE BLENDER IS A SMOOTHIE ENTHUSIAST.',
     ])}</p>
   </div>`);
   app.appendChild(p);
@@ -2800,6 +2831,32 @@ function screenTitle(){
     SFX.ach && SFX.ach();
     toast('💧 THE WATERING HOLE PROVIDES · DAY ' + gift.streak + (gift.streak > 1 ? ' STREAK' : '') + ' · +' + gift.g + ' ◆', 3000);
   }, 700);
+  /* fanfare for every newly-earned menu button */
+  if (fresh.length){
+    fresh.forEach((id, i) => {
+      META.revealed[id] = 1;
+      const f = feats.find(x => x.id === id);
+      setTimeout(() => { toast('🔓 UNLOCKED: ' + f.nm + ' — IT\'S ON THE TITLE NOW', 2400); SFX.ach && SFX.ach(); }, 1200 + i * 2600);
+    });
+    confettiFx();
+    saveMeta();
+  }
+  /* the zebra is tappable. the zebra has feelings about this. */
+  const hero = $('#heroScene');
+  hero.style.cursor = 'pointer';
+  let pokes = 0;
+  const POKE_LINES = ['*poke* ...rude.', 'THE ZEBRA IS WORKING.', 'ok. that was my ribs.',
+    'do you also pet lions? be honest.', 'the zebra remembers this.', 'one more. see what happens.',
+    'THAT\'S IT. *files complaint with the herd*', 'fine. you\'re herd now. welcome.'];
+  hero.onclick = () => {
+    const rig = hero.querySelector('.liveArt');
+    if (rig) rig.dataset.pose = ['atk', 'hurt', 'win', 'trot'][pokes % 4];
+    SFX.click && SFX.click();
+    hapt(8);
+    toast(POKE_LINES[Math.min(pokes, POKE_LINES.length - 1)], 1400);
+    if (pokes === POKE_LINES.length - 1) confettiFx();
+    pokes++;
+  };
   $('#bMusic').onclick = () => {
     const on = Music.toggle();
     $('#bMusic').innerHTML = `<span>♪ Music</span><small>${on ? 'on · 14-bit sexy' : 'off'}</small>`;
@@ -2817,17 +2874,17 @@ function screenTitle(){
   };
   $('#bGuide').onclick = () => showGuide();
   if ($('#bAbandon')) $('#bAbandon').onclick = () => { logRun('a sudden loss of interest'); R = null; saveRun(); screenTitle(); };
-  $('#bUnlock').onclick = () => screenTree();
-  $('#bAch').onclick = screenAch;
-  $('#bBest').onclick = screenBestiary;
-  $('#bHerd').onclick = screenHerd;
-  $('#bStats').onclick = screenStats;
-  $('#bPets').onclick = screenPets;
-  $('#bRecipes').onclick = screenRecipes;
-  $('#bCrew').onclick = screenCrew;
+  if ($('#bUnlock')) $('#bUnlock').onclick = () => screenTree();
+  if ($('#bAch')) $('#bAch').onclick = screenAch;
+  if ($('#bBest')) $('#bBest').onclick = screenBestiary;
+  if ($('#bHerd')) $('#bHerd').onclick = screenHerd;
+  if ($('#bStats')) $('#bStats').onclick = screenStats;
+  if ($('#bPets')) $('#bPets').onclick = screenPets;
+  if ($('#bRecipes')) $('#bRecipes').onclick = screenRecipes;
+  if ($('#bCrew')) $('#bCrew').onclick = screenCrew;
   if ($('#bMig')) $('#bMig').onclick = screenMigrate;
   if ($('#bInstall')) $('#bInstall').onclick = () => installApp();
-  $('#bYt').onclick = () => { toggleYt(); toast(document.getElementById('ytDock') ? '📺 TAP V / TC / N / DD TO SWITCH · ✕ TO CLOSE' : '📺 CLOSED', 1800); };
+  if ($('#bYt')) $('#bYt').onclick = () => { toggleYt(); toast(document.getElementById('ytDock') ? '📺 TAP V / TC / N / DD TO SWITCH · ✕ TO CLOSE' : '📺 CLOSED', 1800); };
 }
 function screenCrew(){
   app.innerHTML = '';
@@ -3262,6 +3319,20 @@ function renderBattle(){
     JTM.css('card-' + c.id, cd.querySelector('.art'));
   });
   $('#bEnd').onclick = endTurn;
+  /* the foe is pokeable. the foe did not consent to this. */
+  $('#foeArt').onclick = () => {
+    if (!B || B.over || B.busy) return;
+    B.pokes = (B.pokes || 0) + 1;
+    const fa = $('#foeArt');
+    if (fa && !fa.classList.contains('foeDie')){ fa.classList.remove('foeHit'); void fa.offsetWidth; fa.classList.add('foeHit'); }
+    SFX.click && SFX.click();
+    if (B.pokes <= 3){
+      const q = (QUIPS[B.foe.id] && Math.random() < .5) ? pick(QUIPS[B.foe.id]) :
+        pick(['you poked it. bold.', 'it noticed. it minded.', '*poke* the foe is mildly insulted.',
+          'this is not petting-zoo behavior.', 'it has a lawyer. (the chicken.)', 'poking is not a card.']);
+      toast(q.toUpperCase(), 1400);
+    } else toast('IT IS IGNORING YOU NOW. PLAY A CARD.', 1300);
+  };
   $('#drawBtn').onclick = () => {
     if (!B.drawPile.length){ toast('DRAW PILE IS EMPTY. THE SHUFFLE COMETH.'); return; }
     /* sorted, not in order — you know WHAT's left, never WHEN */
