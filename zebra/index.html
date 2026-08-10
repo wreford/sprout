@@ -2220,6 +2220,7 @@ function defaultMeta(){
     achTiers: {}, bonusHp: 0, bonusStripe: 0, startRelics: 0, tips: {}, bestiary: {}, tree: {},
     marks: 0, migrations: 0, eraBest: 0, lastSeen: 0, pets: [], petSel: '', recipes: [], helpers: [], helperOn: {}, trophies: [], worn: [],
     seen: {}, stake: 0, ghost: null, heirloom: null, lastBlends: [], weekly: {}, lore: [], counters: 0,
+    nextWorld: null, lastWorld: null,
     clsOwned: ['zeb'], clsSel: 'zeb' };
 }
 let META = defaultMeta();
@@ -2240,6 +2241,8 @@ function loadMeta(){
   META.stake = META.stake || 0;
   META.lore = META.lore || [];
   META.counters = META.counters || 0;
+  if (META.nextWorld === undefined) META.nextWorld = null;
+  if (META.lastWorld === undefined) META.lastWorld = null;
   /* one-shot backfill for saves from before the Migration era — must never run
      again after a migration, or eraBest resurrects from lifetime best = free marks */
   if (!META.legacyEraDone && !META.migrations && !META.eraBest && META.stats.floors) META.eraBest = META.stats.floors;
@@ -2613,6 +2616,60 @@ function genRegion(i){
   const marks = [];
   while (marks.length < 5){ const m = pk(LANDMARKS); if (!marks.includes(m)) marks.push(m); }
   return { i, name: pk(b.adj) + ' ' + pk(b.noun), ic: b.ic, amb: b.amb, law, marks, biome: b.id };
+}
+/* THE SAVANNA CODE · a world seed you can read out loud, replay, or dare a friend with */
+function worldCode(n){
+  const s = (n >>> 0).toString(36).toUpperCase().padStart(6, '0').slice(-6);
+  return s.slice(0, 3) + '-' + s.slice(3);
+}
+function parseWorldCode(s){
+  const c = String(s || '').toUpperCase().replace(/[^0-9A-Z]/g, '');
+  if (c.length < 3 || c.length > 8) return null;
+  const n = parseInt(c, 36);
+  return Number.isFinite(n) ? (n >>> 0) : null;
+}
+function screenWorldCode(){
+  app.innerHTML = '';
+  const cur = R ? R.world : (META.lastWorld || null);
+  const p = el(`<div class="page" style="justify-content:center;text-align:center;gap:14px">
+    <span class="kick">EVERY RUN GENERATES A SAVANNA · THIS ONE HAS A NAME</span>
+    <div class="big">The Savanna <span class="z">Code</span></div>
+    <div class="stripes"></div>
+    ${cur != null ? `<div class="sub">${R ? 'The world you are standing in' : 'Your last savanna'}</div>
+      <div style="font-family:var(--mono);font-weight:900;font-size:clamp(28px,9vw,44px);letter-spacing:.12em;color:var(--r);border:2px solid var(--r);padding:.3em .5em">${worldCode(cur)}</div>
+      <div style="display:flex;gap:8px;width:100%;max-width:420px">
+        <button class="btn" id="bCopy" style="flex:1">Copy code</button>
+        <button class="btn ghost" id="bReplay" style="flex:1">Replay this world</button>
+      </div>` : '<div class="sub">Start a run and this savanna gets a code.</div>'}
+    <div class="ach" style="text-align:left"><div><div class="an">RUN SOMEBODY ELSE'S SAVANNA</div>
+      <div class="ap">Same code, same regions, same laws, same landmarks. Your deck and your mistakes are your own.</div></div><div class="tick">🌍</div></div>
+    <button class="btn red" id="bEnter">Enter a code</button>
+    ${META.nextWorld != null ? `<div class="sub" style="color:var(--r)">NEXT RUN IS LOCKED TO ${worldCode(META.nextWorld)} · <span id="bClear" style="text-decoration:underline;cursor:pointer">clear it</span></div>` : ''}
+    <button class="btn ghost" id="bBack">Back</button>
+  </div>`);
+  app.appendChild(p);
+  if ($('#bCopy')) $('#bCopy').onclick = () => {
+    const t = worldCode(cur);
+    try { navigator.clipboard.writeText(t); } catch {}
+    toast('📋 ' + t + ' COPIED · GO RUIN SOMEONE\'S DAY WITH IT', 2400);
+  };
+  if ($('#bReplay')) $('#bReplay').onclick = () => {
+    META.nextWorld = cur; saveMeta();
+    toast('🌍 NEXT RUN RETURNS TO ' + worldCode(cur), 2400);
+    screenWorldCode();
+  };
+  $('#bEnter').onclick = () => {
+    const v = prompt('SAVANNA CODE (e.g. ' + worldCode(cur != null ? cur : 123456) + ')', '');
+    if (v === null) return;
+    const n = parseWorldCode(v);
+    if (n === null){ toast('THAT IS NOT A SAVANNA. TRY LETTERS AND NUMBERS.', 2200); return; }
+    META.nextWorld = n; saveMeta();
+    stampFx('WORLD SET');
+    toast('🌍 NEXT RUN GENERATES ' + worldCode(n), 2600);
+    screenWorldCode();
+  };
+  if ($('#bClear')) $('#bClear').onclick = () => { META.nextWorld = null; saveMeta(); screenWorldCode(); };
+  $('#bBack').onclick = screenTitle;
 }
 function regionOf(floor){ return genRegion(Math.max(0, Math.floor((floor - 1) / 5))); }
 function regionLaw(){ return (R ? regionOf(R.floor).law : LAWS[0]) || LAWS[0]; }
@@ -3117,7 +3174,7 @@ function newRun(){
     relics: [], turn: 0, sdmg: 0, scards: 0, sblends: 0, menergy: 3 + treeVal('menergy'), cls: cls.id,
     phoenix: treeVal('phoenix') > 0,
     wx: WEATHER[Math.floor(Math.random() * WEATHER.length)].id,
-    world: Math.floor(Math.random() * 1e9),   /* a whole savanna, freshly generated */
+    world: (META.nextWorld != null ? META.nextWorld : Math.floor(Math.random() * 1e9)),
   };
   if (cls.id === 'wizard'){ R.deck.push(mkCard('zebramath'), mkCard(pick(RAR_R))); }
   if (cls.id === 'pirate'){ R.deck.push(mkCard('coinmane')); }
@@ -3155,6 +3212,12 @@ function newRun(){
     R.deck.push(mkCard('sugarcube'));
     setTimeout(() => toast('🍬 WELCOME SNACK + 10 HP · THE SAVANNA GOES EASY. TWICE. THEN NEVER AGAIN.', 3000), 1100);
   }
+  META.lastWorld = R.world;
+  if (META.nextWorld != null){
+    setTimeout(() => toast('🌍 SAVANNA ' + worldCode(R.world) + ' · AS REQUESTED', 2600), 1400);
+    META.nextWorld = null;
+  }
+  saveMeta();
   bumpStat('runs', 1);
   saveRun();
 }
@@ -3197,6 +3260,10 @@ const GUIDE = [
   { t: 'The <span>mult</span>', b: 'Damage is now <b>chips × MULT</b>. HOLO cards and <b>HERD HANDS</b> (3 cards sharing a stripe motif in one turn) raise your mult — everything you play that turn hits harder. Bosses carry <b>HOUSE RULES</b> that warp the fight. Read the sign.' },
   { t: 'The back <span>room</span>', b: 'The Post sells <b>PACKS</b>, <b>SEALS</b> (red = twice, blue = boomerang, gold = pays, purple = draws), <b>VOUCHERS</b>, rentals, a wheel, and DNA duplication. Held stripes earn <b>INTEREST</b> — 1 per 10, cap 5. Saving is a strategy now.' },
   { t: 'Lo<span>ot</span>', b: 'Feats earn <b>🏆 TROPHIES</b> with real prizes — 67 kills is sunglasses, and yes, <b>the zebra wears them</b> (pick any 3 in ✦ Achievements). Veterans past floor 10 also choose a <b>🪂 DROP POINT</b>: start deep, geared up, records only count floors you actually win.' },
+  { t: 'The <span>counter</span>', b: 'Every boss <b>WINDS UP</b> before its big move, and the intent line tells you the answer — "GO IN: play a MULTI-HIT card". Answer it and the boss <b>STAGGERS</b>: it loses its turn and takes <b>+50%</b> for two turns. Ignore it and the haymaker lands at <b>DOUBLE</b>. Bosses are puzzles, not walls.' },
+  { t: 'Who they <span>are</span>', b: 'Foes carry <b>TRAITS</b> shown as a chip: 🌵 spiky (hitting it costs you 2), 💨 slippery (20% dodge), 🪨 armored (every hit lands −2), ♻ regen, 💥 volatile (explodes on death), 🏳 coward. They also act beyond hitting — <b>FLURRY</b>, heal, steal your stripes, curse your deck, wind up, or copy your last card.' },
+  { t: 'The <span>world</span>', b: 'Every run generates a savanna. Five floors make a <b>REGION</b> — its own name, landmarks, and a <b>LOCAL LAW</b> that rewrites the rules: Old Bones starts every fight with 5 block, The Quiet deletes rogues, Trade Winds cuts shop prices. Read the law on arrival and pick doors accordingly.' },
+  { t: 'The <span>scripture</span>', b: 'Playing recovers <b>📜 FIELD NOTES</b> — 21 of them, each off a real milestone. They explain what the savanna actually is, and the answer is unhinged. Stripes are a written language. The Blender is an editor. You are a sentence.' },
 ];
 function showGuide(cb){
   let i = 0;
@@ -3245,6 +3312,7 @@ function screenTitle(){
     { id: 'bRecipes', nm: '⚗ RECIPES', hint: 'blend at an oasis', ok: S.blends >= 1 || (META.recipes || []).length > 0 },
     { id: 'bStats', nm: '≡ STATISTICS', hint: 'start a second run', ok: S.runs >= 2 },
     { id: 'bLore', nm: '📜 THE SCRIPTURE', hint: 'recover your first field note', ok: (META.lore || []).length > 0 },
+    { id: 'bWorld', nm: '🌍 SAVANNA CODE', hint: 'finish a run', ok: S.runs >= 2 || !!META.lastWorld },
     { id: 'bounty', nm: '☑ BOUNTY BOARD', hint: 'start a second run', ok: S.runs >= 2 },
     { id: 'bYt', nm: '📺 WATCH & PLAY', hint: 'reach floor 5', ok: S.floors >= 5 },
     { id: 'bHerd', nm: '♞ THE HERD', hint: 'reach floor 8', ok: S.floors >= 8 || (META.clsOwned || []).length > 1 },
@@ -3283,6 +3351,7 @@ function screenTitle(){
       ${feats.find(f => f.id === 'bBest').ok ? `<button class="btn mbtn ${fresh.includes('bBest') ? 'claimable' : ''}" id="bBest"><span>☠︎ Bestiary</span><small>${fresh.includes('bBest') ? '🔓 NEW!' : seen + ' catalogued'}</small></button>` : ''}
       ${feats.find(f => f.id === 'bStats').ok ? `<button class="btn mbtn" id="bStats"><span>≡ Statistics</span><small>the full ledger</small></button>` : ''}
       ${feats.find(f => f.id === 'bLore').ok ? `<button class="btn mbtn ${fresh.includes('bLore') ? 'claimable' : ''}" id="bLore"><span>📜 The Scripture</span><small>${fresh.includes('bLore') ? '🔓 NEW!' : (META.lore || []).length + '/' + LORE.length + ' field notes'}</small></button>` : ''}
+      ${feats.find(f => f.id === 'bWorld').ok ? `<button class="btn mbtn ghost ${fresh.includes('bWorld') ? 'claimable' : ''}" id="bWorld"><span>🌍 Savanna Code</span><small>${META.nextWorld != null ? 'locked to ' + worldCode(META.nextWorld) : R ? worldCode(R.world) : 'share · replay'}</small></button>` : ''}
       ${migVis ? `<button class="btn mbtn ${migReady ? 'claimable' : ''}" id="bMig"><span>☀︎ Migration</span><small>${migReady ? '+' + marksGain() + ' marks ready' : 'prestige reset'}</small></button>` : ''}
       <button class="btn mbtn ghost" id="bColl"><span>🂠 Collection</span><small>${Object.keys(META.seen || {}).filter(k => cardById[k]).length}/${BASE_CARDS.length} witnessed</small></button>
       ${META.stats.floors >= 5 ? `<button class="btn mbtn ghost" id="bWeekly"><span>🗓 Weekly</span><small>${weekMut().name.toLowerCase()} · best ${(META.weekly || {})[weekKey()] || '—'}</small></button>` : ''}
@@ -3373,6 +3442,7 @@ function screenTitle(){
   if ($('#bHerd')) $('#bHerd').onclick = screenHerd;
   if ($('#bStats')) $('#bStats').onclick = screenStats;
   if ($('#bLore')) $('#bLore').onclick = screenLore;
+  if ($('#bWorld')) $('#bWorld').onclick = screenWorldCode;
   if ($('#bPets')) $('#bPets').onclick = screenPets;
   if ($('#bRecipes')) $('#bRecipes').onclick = screenRecipes;
   if ($('#bCrew')) $('#bCrew').onclick = screenCrew;
@@ -4429,6 +4499,9 @@ function endTurn(){
         stampFx('WIND-UP');
         toast(g.cue + ' — ' + g.hint, 3600);
         SFX.bell(); hapt([30, 60, 30]);
+        /* the first time a boss ever winds up, explain the whole mechanic once */
+        setTimeout(() => tut('tell', '#intent', 'IT IS WINDING UP',
+          'Bosses telegraph their big move. The <b>intent line tells you the answer</b> — do that thing this turn and it <b>STAGGERS</b>: loses its turn and takes <b>+50%</b> for two turns. Ignore it and the haymaker lands at <b>DOUBLE</b>.'), 900);
       }
     } else if (kind === 'blk') f.blk += Math.round(f.atk * .8);
     else if (kind === 'heal'){
@@ -5625,6 +5698,7 @@ function loseRun(){
   stampFx(newBest ? 'NEW BEST' : 'FELL');
   const floor = R.floor;
   const stats = { dmg: R.sdmg || 0, cards: R.scards || 0, blends: R.sblends || 0, deck: R.deck.length, relics: R.relics.length };
+  const wcode = R.world != null ? worldCode(R.world) : null;
   bumpStat('deaths', 1);
   delete R._pf;   /* death resolves the fight — no flee refund from the grave */
   /* THE GHOST · your dead deck gets a second career as the Mirage's script */
@@ -5644,7 +5718,7 @@ function loseRun(){
     <span class="kick">${byBlender ? 'BLACK AND WHITE AND RED ALL OVER' : newBest ? '★ NEW BEST FLOOR · THE HERD IS IMPRESSED ★' : 'THE SAVANNA IS PATIENT'}</span>
     <div class="big">Run <span class="z">over</span></div>
     <div class="stripes"></div>
-    <div class="sub">${META.zebName ? META.zebName + ' fell' : 'Fell'} on floor ${floor}.<br>+${earned} ◆ stripes banked for the skill tree</div>
+    <div class="sub">${META.zebName ? META.zebName + ' fell' : 'Fell'} on floor ${floor}${wcode ? ' of savanna <b style="color:var(--r)">' + wcode + '</b>' : ''}.<br>+${earned} ◆ stripes banked for the skill tree</div>
     <div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap">
       <span class="chip">⚔ ${stats.dmg} DMG</span><span class="chip">🃏 ${stats.cards} PLAYED</span>
       <span class="chip hot">⚡ ${stats.blends} BLENDS</span><span class="chip">📚 DECK ${stats.deck}</span>
