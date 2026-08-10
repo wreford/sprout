@@ -1283,6 +1283,38 @@ const BOSSES = [
   { id: 'blender', name: 'THE BLENDER', hp: 130, atk: 17, pat: ['atk', 'buff', 'atk', 'atk'] },
   { id: 'mirage', name: 'THE OTHER ZEBRA', hp: 155, atk: 19, pat: ['atk', 'blk', 'atk', 'buff'] },
 ];
+/* ---------- SPECIES TRAITS · passives that make a foe a somebody ---------- */
+const TRAIT_INFO = {
+  thorns:   { ic: '🌵', nm: 'SPIKY',    txt: 'hitting it costs 2 HP' },
+  dodgy:    { ic: '💨', nm: 'SLIPPERY', txt: '20% to dodge your attacks' },
+  armored:  { ic: '🪨', nm: 'ARMORED',  txt: 'every hit lands −2' },
+  regen:    { ic: '♻', nm: 'REGEN',    txt: 'heals 2 every turn' },
+  volatile: { ic: '💥', nm: 'VOLATILE', txt: 'explodes on death' },
+  coward:   { ic: '🏳', nm: 'COWARD',   txt: 'may cower below 25% HP' },
+};
+const FOE_TRAITS = {
+  porcupine: 'thorns', hedgehog: 'thorns', termite: 'thorns',
+  mosquito: 'dodgy', gecko: 'dodgy', springbok: 'dodgy', hare: 'dodgy', bat: 'dodgy',
+  tortoise: 'armored', rhino: 'armored', pangolin: 'armored', buffalo: 'armored', crab2: 'armored',
+  slug: 'regen', python: 'regen', lioness: 'regen', iguana: 'regen',
+  beetle: 'volatile', toad: 'volatile', owl: 'volatile',
+  impala: 'coward', antelope: 'coward', chickee: 'coward', chameleon: 'coward', opossum: 'coward',
+};
+/* SIGNATURE MOVES · verbs beyond hit/block/angry: heal, multi, steal, curse, enrage, mimic */
+const FOE_PATS = {
+  hyena: ['atk', 'heal', 'atk', 'atk'], vulture: ['steal', 'atk', 'blk'], jackal: ['steal', 'atk', 'atk'],
+  croc: ['multi', 'blk', 'atk'], baboon: ['enrage', 'atk', 'blk', 'atk'], cheetah: ['multi', 'atk', 'blk'],
+  seagull: ['steal', 'atk', 'atk'], trashmba: ['steal', 'blk', 'atk'], cobra: ['curse', 'atk', 'atk'],
+  parrot: ['curse', 'atk', 'blk'], gorilla: ['enrage', 'atk', 'atk'], beest: ['enrage', 'atk', 'buff'],
+  wilddog: ['multi', 'atk', 'atk'], monitor: ['heal', 'blk', 'atk'], panther: ['heal', 'atk', 'atk'],
+};
+const BOSS_PATS = {
+  alpha: ['atk', 'heal', 'buff', 'atk'],      /* laughs the damage off */
+  lion: ['enrage', 'atk', 'atk', 'blk'],      /* winds up the king hit */
+  crocking: ['multi', 'blk', 'buff', 'atk'],  /* snap. snap. snap. */
+  blender: ['multi', 'buff', 'atk', 'atk'],   /* WHIRL */
+  mirage: ['mimic', 'atk', 'blk', 'buff'],    /* your own move, backwards */
+};
 /* ---------- THE ROGUES' GALLERY · fictional villain archetypes (elites) ---------- */
 const VILLAINS = [
   { id: 'felon', name: 'THE FELON', ep: 'CONVICTED OF EVERYTHING', hp: 34, atk: 9, pat: ['atk', 'atk', 'blk'] },
@@ -2094,6 +2126,12 @@ const BOSS_RULES = [
   { id: 'leech', txt: 'HOUSE RULE: IT HEALS 2 EVERY TURN' },
   { id: 'dull', txt: 'HOUSE RULE: YOUR MULT IS CAPPED AT ×1' },
 ];
+function foeFlavor(foe){
+  if (BOSS_PATS[foe.id]) foe.pat = BOSS_PATS[foe.id];
+  else if (FOE_PATS[foe.id]) foe.pat = FOE_PATS[foe.id];
+  foe.trait = FOE_TRAITS[foe.id] || null;
+  return foe;
+}
 function makeFoe(floor, kind){
   if (kind === 'boss'){
     const bi = Math.floor(floor / 5) - 1;
@@ -2103,7 +2141,8 @@ function makeFoe(floor, kind){
     /* every boss warps one rule -- read the sign before you swing */
     foe.rule = BOSS_RULES[bi % BOSS_RULES.length].id;
     foe.ruleTxt = BOSS_RULES[bi % BOSS_RULES.length].txt;
-    return foe;
+    foe.boss = 1;
+    return foeFlavor(foe);
   }
   if (kind === 'elite'){
     /* THE GHOST · Mirage pilots your last dead deck. it read the whole thing. */
@@ -2123,16 +2162,20 @@ function makeFoe(floor, kind){
         hp: Math.round((a.hp + b.hp) * .85), atk: Math.max(a.atk, b.atk) + 1,
         pat: [...a.pat, ...b.pat] }, floor, 1.2);
       foe.vill = true; foe.fused = 1; foe.ep = 'TWO OF THEM. IN ONE. BUREAUCRATICALLY.';
+      foe.trait = pick(['thorns', 'dodgy', 'armored', 'regen', 'volatile']);
       return foe;
     }
     /* elites are the Rogues' Gallery — fictional villain archetypes */
     const v = pick(VILLAINS);
     const foe = scaleFoe(v, floor, 1.3);
     foe.vill = true;
+    /* every rogue carries a personal flaw or advantage */
+    foe.trait = pick(['thorns', 'dodgy', 'armored', 'regen', 'volatile', 'coward']);
+    if (!FOE_PATS[v.id] && Math.random() < .6) foe.pat = pick([['steal','atk','atk'],['enrage','atk','blk'],['curse','atk','atk'],['multi','blk','atk'],['heal','atk','atk']]);
     return foe;
   }
   const f = pick(FOES.slice(0, clamp(2 + Math.floor(floor / 2), 2, FOES.length)));
-  return scaleFoe(f, floor, 1);
+  return foeFlavor(scaleFoe(f, floor, 1));
 }
 
 /* ============================================================
@@ -3614,6 +3657,15 @@ function foeIntent(){
     return `<span class="intIc">⚔</span> INTENT: <b>ATTACK ${n}</b>` + seerLine(f);
   }
   if (kind === 'blk') return '<span class="intIc">🛡</span> INTENT: BRACING (+block)' + seerLine(f);
+  if (kind === 'heal') return '<span class="intIc">🍖</span> INTENT: <b>PATCHING UP</b>' + seerLine(f);
+  if (kind === 'multi'){
+    const per = Math.max(1, Math.round((f.atk + f.str) * .45) - (R.cls === 'goth' ? 1 : 0) - petVal('dmgCut'));
+    return `<span class="intIc">⚡</span> INTENT: <b>FLURRY ${per} × 3</b>` + seerLine(f);
+  }
+  if (kind === 'steal') return '<span class="intIc">💰</span> INTENT: <b style="color:var(--r)">GOING FOR YOUR STRIPES</b>' + seerLine(f);
+  if (kind === 'curse') return '<span class="intIc">🕷</span> INTENT: <b style="color:var(--r)">A GIFT FOR YOUR DECK</b>' + seerLine(f);
+  if (kind === 'enrage') return '<span class="intIc">😤</span> INTENT: <b style="color:var(--r)">WINDING UP</b>' + seerLine(f);
+  if (kind === 'mimic') return '<span class="intIc">🪞</span> INTENT: <b>COPYING YOUR HOMEWORK</b>' + seerLine(f);
   return '<span class="intIc">📈</span> INTENT: <b style="color:var(--r)">GETTING ANGRIER</b>' + seerLine(f);
 }
 function hasVoucher(id){ return R && (R.vouchers || []).includes(id); }
@@ -3621,6 +3673,17 @@ function seerLine(f){
   if (!hasVoucher('seer')) return '';
   const nk = f.pat[(f.pi + 1) % f.pat.length];
   return ` <span style="opacity:.55">· then ${nk === 'atk' ? '⚔' : nk === 'blk' ? '🛡' : '📈'}</span>`;
+}
+function incomingDmg(){
+  /* what the foe's telegraphed move will actually try to put through */
+  const f = B.foe;
+  if (f.stun) return 0;
+  const k = f.pat[f.pi % f.pat.length];
+  const one = Math.max(1, f.atk + f.str - (f.weak ? 2 : 0) - (R.cls === 'goth' ? 1 : 0) - petVal('dmgCut'));
+  if (k === 'atk') return one;
+  if (k === 'multi') return Math.max(1, Math.round((f.atk + f.str) * .45) - (R.cls === 'goth' ? 1 : 0) - petVal('dmgCut')) * 3;
+  if (k === 'enrage') return 0;   /* the hit comes NEXT turn — bigger */
+  return 0;
 }
 function multNow(){
   if (B && B.foe.rule === 'dull') return 1;
@@ -3640,6 +3703,12 @@ function statChips(){
 }
 function foeChips(){
   const f = B.foe, bits = [];
+  if (f.trait && TRAIT_INFO[f.trait]){
+    const t = TRAIT_INFO[f.trait];
+    bits.push(`<span class="chip hot" title="${t.txt}">${t.ic} ${t.nm}</span>`);
+  }
+  if (f.phase2) bits.push('<span class="chip hot">🔥 SECOND WIND</span>');
+  if (f.stole) bits.push(`<span class="chip">💰 ${f.stole} STOLEN</span>`);
   if (f.blk) bits.push(`<span class="chip">🛡 ${f.blk}</span>`);
   if (f.str) bits.push(`<span class="chip hot">⚔ +${f.str}</span>`);
   if (f.weak) bits.push(`<span class="chip">💫 WEAK</span>`);
@@ -3670,8 +3739,8 @@ function renderBattle(){
     <div id="btm">
       <div id="energy"><b>${B.energy}</b><span>ENERGY</span></div>
       <div id="piles"><span id="drawBtn" style="cursor:pointer;text-decoration:underline">DRAW ${B.drawPile.length}</span> · <span id="discardBtn" style="cursor:pointer;text-decoration:underline">DISC ${B.discard.length}</span><br>
-        ${B.foe.pat[B.foe.pi % B.foe.pat.length] === 'atk' && !B.foe.stun && B.foe.hp > 0
-          ? `<b style="color:var(--r)">⚔ ${Math.max(0, Math.max(1, B.foe.atk + B.foe.str - (B.foe.weak ? 2 : 0) - (R.cls === 'goth' ? 1 : 0) - petVal('dmgCut')) - B.block)} gets through</b>`
+        ${incomingDmg() > 0 && B.foe.hp > 0
+          ? `<b style="color:var(--r)">⚔ ${Math.max(0, incomingDmg() - B.block)} gets through</b>`
           : '<span style="opacity:.6">no hit coming</span>'}<br>
         <span style="opacity:.7">${HELPERS.filter(h => helperOn(h.id)).map(h => h.ic).join(' ') || ''}</span></div>
       ${helperOwned('coach')
@@ -3901,19 +3970,30 @@ function playCard(i, cardEl){
     if (c.exec && B.foe.hp < B.foe.mhp / 2){ base *= 2; toast('⚔ COUP DE GRASS · DOUBLED', 1000); }
     if (myst === 'dmg') base += 12;
     let dmg = 0, blocked = 0;
-    if ((base > 0 || c.multi) && !wildMiss){
+    const dodged = B.foe.trait === 'dodgy' && (base > 0 || c.multi) && !wildMiss && Math.random() < .2;
+    if (dodged){
+      toast('💨 MISSED. IT WASN\'T THERE. IT IS NOW. SMUGLY.', 1600);
+      floatNum($('#foeArt'), 'MISS', '#8a8a8a');
+    }
+    if ((base > 0 || c.multi) && !wildMiss && !dodged){
       const hits = Math.min((c.multi || 1) + (sealX > 1 ? Math.min(c.multi || 1, 3) : 0), CAPS.multi + 3);
       for (let h = 0; h < hits; h++){
         let d = Math.max(base, c.multi ? 1 : 0) + B.str;
         if (h === 0 && B.firstHit){ d += B.firstHit; B.firstHit = 0; }
         if (c.ed === 'inv') d = Math.round(d * 1.5);
         d = Math.round(d * multNow());   /* THE MULT · chips × mult, savanna edition */
+        if (B.foe.trait === 'armored') d = Math.max(1, d - 2);   /* 🪨 every hit lands lighter */
         const f = B.foe;
         const absorbed = Math.min(f.blk, d);
         f.blk -= absorbed;
         f.hp -= (d - absorbed);
         dmg += d - absorbed;        /* only damage that lands counts */
         blocked += absorbed;
+      }
+      if (B.foe.trait === 'thorns' && (dmg > 0 || blocked > 0)){
+        R.hp = Math.max(1, R.hp - 2); B.tookDmg = true;
+        floatNum($('#hpbar'), '−2 🌵', 'var(--r)');
+        playerFx();
       }
       if (dmg > 0 || blocked > 0){
         if (dmg > 0){ bumpStat('damage', dmg); R.sdmg = (R.sdmg || 0) + dmg; B.fdmg += dmg; B.bestHit = Math.max(B.bestHit, dmg); B.peakMult = Math.max(B.peakMult, multNow()); }
@@ -4000,8 +4080,18 @@ function playCard(i, cardEl){
     if (dead && !B.ending){
       B.ending = true;
       const fa = $('#foeArt');
-      if (fa) fa.classList.add(pick(['foeDie', 'foeDie2', 'foeDie3', 'foeDie4', 'foeDie5']));
+      if (fa) fa.classList.add(B.foe.trait === 'volatile' ? 'foeDie4' : pick(['foeDie', 'foeDie2', 'foeDie3', 'foeDie4', 'foeDie5']));
       hapt(60);
+      if (B.foe.trait === 'volatile'){
+        const bang = Math.max(3, Math.round(B.foe.atk * .7));
+        const ab = Math.min(B.block, bang);
+        B.block -= ab;
+        const t = bang - ab;
+        if (t > 0){ R.hp = Math.max(1, R.hp - t); B.tookDmg = true; playerFx(); SFX.playerHit(); }
+        const a2 = document.getElementById('app');
+        if (a2){ a2.classList.remove('bigshake'); void a2.offsetWidth; a2.classList.add('bigshake'); }
+        setTimeout(() => toast('💥 IT EXPLODED ON THE WAY OUT.' + (t > 0 ? ' −' + t + ' HP. RUDE.' : ' YOUR BLOCK ATE IT. NICE.'), 2400), 250);
+      }
       setTimeout(winBattle, 520);
       return;
     }
@@ -4044,7 +4134,52 @@ function endTurn(){
         else { SFX.block(); B.zebPose = 'blk'; B.zebUntil = Date.now() + 450; }
       }
     } else if (kind === 'blk') f.blk += Math.round(f.atk * .8);
-    else {
+    else if (kind === 'heal'){
+      const h = Math.max(3, Math.round(f.mhp * .09));
+      f.hp = Math.min(f.mhp, f.hp + h);
+      floatNum($('#foeArt'), '+' + h + ' ♥', '#8a8a8a');
+      toast(pick(['🍖 IT ATE SOMETHING. IT LOOKS BETTER.', '♻ IT LICKS ITS WOUNDS. RUDELY.', '🍖 SNACK BREAK. FOR IT.']) + ' +' + h, 1700);
+      SFX.heal();
+    } else if (kind === 'multi'){
+      const per = Math.max(1, Math.round((f.atk + f.str) * .45) - (R.cls === 'goth' ? 1 : 0) - petVal('dmgCut'));
+      let tot = 0;
+      for (let k = 0; k < 3; k++){
+        const ab = Math.min(B.block, per);
+        B.block -= ab;
+        const t = per - ab;
+        R.hp -= t; tot += t;
+      }
+      through = tot;
+      if (tot > 0){ B.tookDmg = true; playerFx(); SFX.playerHit(); hapt([15, 40, 15, 40, 15]); B.zebPose = 'hurt'; B.zebUntil = Date.now() + 550; }
+      else { SFX.block(); B.zebPose = 'blk'; B.zebUntil = Date.now() + 450; }
+      toast('⚡ FLURRY · ' + per + ' × 3' + (tot ? ' · −' + tot + ' HP' : ' · ALL BLOCKED'), 1900);
+    } else if (kind === 'steal'){
+      const amt = Math.min(R.stripes, 6 + R.floor);
+      if (amt > 0){
+        R.stripes -= amt;
+        f.stole = (f.stole || 0) + amt;
+        floatNum($('#hpbar'), '−' + amt + ' ◆', 'var(--r)');
+        toast('💰 IT TOOK ◆' + amt + ' AND POCKETED IT. KILL IT TO GET IT BACK.', 2400);
+      } else {
+        f.blk += Math.round(f.atk * .6);
+        toast('💰 IT WENT FOR YOUR WALLET. YOU\'RE BROKE. IT BRACES INSTEAD.', 2000);
+      }
+    } else if (kind === 'curse'){
+      const tk = mkCursed();
+      R.deck.push(tk); B.discard.push(tk);
+      toast('🕷 IT SPAT A TICK INTO YOUR DECK. UNPLAYABLE. THE MEERKAT EATS THOSE.', 2600);
+      SFX.bell();
+    } else if (kind === 'enrage'){
+      f.winding = 1;
+      f.str += 2 + Math.floor(R.floor / 10);
+      toast(pick(['😤 IT IS WINDING UP. THAT LOOKS EXPENSIVE.', '😤 IT PAWS THE GROUND. BLOCK. NOW.', '😤 SOMETHING BIG IS COMING.']), 2200);
+      SFX.power();
+    } else if (kind === 'mimic'){
+      const last = B.discard[B.discard.length - 1];
+      if (last && last.blk){ f.blk += Math.min(20, last.blk); toast('🪞 IT COPIED YOUR ' + last.name.toUpperCase() + ' · +' + Math.min(20, last.blk) + ' 🛡', 2000); }
+      else if (last && last.dmg){ f.str += 2; toast('🪞 IT STUDIED YOUR ' + last.name.toUpperCase() + ' · ⚔ +2', 2000); }
+      else { f.blk += Math.round(f.atk * .5); toast('🪞 IT MIMICS YOU. BADLY.', 1600); }
+    } else {
       f.str += 1 + Math.floor(R.floor / 8);
       /* elites with buff turns sometimes leave a TICK in your discard. it itches forever. */
       if ((B.kind === 'elite' || f.fused) && Math.random() < .25){
@@ -4053,6 +4188,16 @@ function endTurn(){
         toast('🕷 IT FLICKED A TICK INTO YOUR DECK. UNPLAYABLE. THE MEERKAT EATS THOSE.', 2400);
       }
     }
+    /* ---- SPECIES TRAITS · passive personalities ---- */
+    if (f.trait === 'regen' && f.hp > 0 && f.hp < f.mhp){
+      f.hp = Math.min(f.mhp, f.hp + 2);
+      floatNum($('#foeArt'), '+2 ♻', '#8a8a8a');
+    }
+    if (f.trait === 'coward' && f.hp > 0 && f.hp < f.mhp * .25 && !f.cowered && Math.random() < .5){
+      f.cowered = 1;
+      f.blk += Math.round(f.mhp * .12);
+      toast('🏳 IT PANICS AND CURLS UP. ' + pick(['THIS IS EMBARRASSING FOR EVERYONE.', 'IT IS SORRY. IT IS ALSO STILL HERE.', 'FEAR: AN EFFECTIVE ARMOR.']), 2400);
+    }
     /* GHOST DECK · the mirage plays your dead cards back at you, by name */
     if (f.gdeck && f.gdeck.length && f.hp > 0){
       const gc = pick(f.gdeck);
@@ -4060,6 +4205,18 @@ function endTurn(){
       toast('👻 THE MIRAGE PLAYS: ' + gc.name.toUpperCase() + (gc.blk ? ' · +' + gc.blk + ' 🛡' : ''), 1700);
     }
     if (f.rule === 'leech' && f.hp > 0){ f.hp = Math.min(f.mhp, f.hp + 2); }
+    /* SECOND WIND · every boss changes when the fight turns */
+    if (f.boss && !f.phase2 && f.hp > 0 && f.hp < f.mhp * .5){
+      f.phase2 = 1;
+      f.str += 3;
+      f.pat = ['atk', 'atk', 'multi', 'atk'];
+      f.pi = 0;
+      stampFx('SECOND WIND');
+      toast('🔥 ' + f.name + ' STOPS PLAYING AROUND. ⚔ +3 · NEW PATTERN.', 3000);
+      SFX.bell(); hapt([50, 30, 90]);
+      const fa = $('#foeArt');
+      if (fa){ fa.classList.remove('bigshake'); void fa.offsetWidth; fa.classList.add('bigshake'); }
+    }
     /* SUNSET RULE · linger past turn 12 and the savanna turns on you — no infinite stalling */
     if (B.turn >= 12){
       f.str += 1;
@@ -4164,8 +4321,10 @@ function helperNudge(){
 function autoPolicy(){
   if (B.aiPending) return;
   const h = B.hand;
-  const intentAtk = B.foe.pat[B.foe.pi % B.foe.pat.length] === 'atk' && !B.foe.stun;
-  const inc = intentAtk ? Math.max(1, B.foe.atk + B.foe.str - (B.foe.weak ? 2 : 0) - (R.cls === 'goth' ? 1 : 0) - petVal('dmgCut')) : 0;
+  const nextK = B.foe.pat[B.foe.pi % B.foe.pat.length];
+  const inc = incomingDmg();
+  const intentAtk = inc > 0;
+  const winding = B.foe.winding || nextK === 'enrage';   /* something huge lands next turn */
   /* 1 · lethal, alone or as a one-two */
   const kill = singleKill();
   if (kill >= 0) return aiPlay(kill, 'FINISH IT.');
@@ -4174,10 +4333,16 @@ function autoPolicy(){
   /* 2 · free value: 0-cost draw / energy / barter */
   const free = h.findIndex(c => canPlayAuto(c) && c.cost === 0 && !c.dmg && !c.gamble && !c.mystery && !c.molt && (c.draw || c.energy || c.freeNext));
   if (free >= 0) return aiPlay(free);
-  /* 3 · invest in powers while the fight is young */
-  if (B.turn <= 3 && (!intentAtk || B.block >= inc)){
+  /* 3 · invest in powers while the fight is young (never while it's winding up) */
+  if (B.turn <= 3 && !winding && (!intentAtk || B.block >= inc)){
     const pow = h.findIndex(c => canPlayAuto(c) && c.type === 'pow');
     if (pow >= 0) return aiPlay(pow, 'INVESTING. TRUST THE PROCESS.');
+  }
+  /* 4a · it's winding up — get the wall up BEFORE the haymaker */
+  if (winding && !intentAtk){
+    const bw = B.hand.map((c, i) => [c, i]).filter(([c]) => canPlayAuto(c) && c.blk)
+      .sort((x, y) => y[0].blk - x[0].blk);
+    if (bw.length && B.block < 14) return aiPlay(bw[0][1], 'IT\'S WINDING UP. BRACE.');
   }
   /* 4 · a hit is coming and the wall is short */
   if (intentAtk && B.block < inc){
@@ -4226,6 +4391,10 @@ function winBattle(){
   META.bestiary = META.bestiary || {};
   if (!META.bestiary[B.foe.id]) toast('📖 BESTIARY: ' + B.foe.name + ' CATALOGUED', 1600);
   META.bestiary[B.foe.id] = (META.bestiary[B.foe.id] || 0) + 1;
+  if (B.foe.stole){
+    R.stripes += B.foe.stole;
+    setTimeout(() => toast('💰 YOU SHOOK ◆' + B.foe.stole + ' OUT OF IT. RESTITUTION.', 2400), 1000);
+  }
   bumpStat('kills', 1);
   if (B.kind === 'boss') bumpStat('bosses', 1);
   bumpStat('floors', R.floor, true);
