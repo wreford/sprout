@@ -1050,7 +1050,7 @@ function blendCards(a, b){
   if (!c.unstable && Math.random() < .09){
     c.ed = pick(['foil', 'holo', 'inv', 'neg']);
     if (c.ed === 'foil' && c.dmg) c.dmg = Math.min(CAPS.dmg, c.dmg + 4);
-    if (c.ed === 'neg'){ c.cost = 0; if (typeof R === 'object' && R){ R.mhp = Math.max(20, R.mhp - 1); R.hp = Math.min(R.hp, R.mhp); } }
+    if (c.ed === 'neg'){ c.cost = 0; }   /* the −1 max-HP price is charged by applyNeg() only when the card is actually KEPT */
   }
   if (typeof R === 'object' && R && R.wkBlend){ if (c.dmg) c.dmg += R.wkBlend; if (c.blk) c.blk += R.wkBlend; }
   markSeen('blend'); if (c.ed) markSeen('ed:' + c.ed);
@@ -1094,6 +1094,12 @@ function descFor(c){
   if (c.trophyOf) bits.unshift('<b>TROPHY</b> of ' + c.trophyOf + '.');
   c.desc = bits.join(' ') || 'Does absolutely nothing. A collector\'s item.';
   return c;
+}
+function applyNeg(c){
+  if (c && c.ed === 'neg' && typeof R === 'object' && R){
+    R.mhp = Math.max(20, R.mhp - 1); R.hp = Math.min(R.hp, R.mhp);
+    toast('⬛ NEGATIVE EDITION · COSTS 0 · THE PRICE WAS −1 MAX HP', 1800);
+  }
 }
 /* ---------- RECIPES · the ancestral blends · discover them all ---------- */
 const RECIPES = [
@@ -3122,6 +3128,16 @@ function screenTitle(){
       if (META.stats.floors >= 10){ screenDrop(); return; }   /* veterans pick a drop point */
       newRun(); screenMap(); return;
     }
+    /* mid-fight reload = fleeing: forfeit the fight's provisional gains, pay in hide */
+    if (R._pf){
+      R.stripes = R._pf.s;
+      try { const d = JSON.parse(R._pf.d); if (Array.isArray(d) && d.length) R.deck = d; } catch {}
+      delete R._pf;
+      R.doorTag = null;
+      R.hp = Math.max(1, R.hp - Math.ceil(R.mhp * .1));
+      saveRun();
+      setTimeout(() => toast('🏃 YOU FLED MID-FIGHT. GAINS FORFEITED · −10% HP · THE HERD SAW EVERYTHING.', 3000), 800);
+    }
     /* if the saved run already beat this floor, advance — no re-farming a won fight */
     screenMap(!(R.clearedFloor === R.floor));
   };
@@ -3464,7 +3480,7 @@ function screenMap(noAdvance){
   /* Continue-from-title re-shows the CURRENT floor — reloading must not skip floors.
      Best-floor + era credit is granted in winBattle, not here: a floor only counts once
      you've actually won on it (drop starts can't inflate the record). */
-  if (!noAdvance){ R.floor++; savannaMoment(); collectRent(); }
+  if (!noAdvance){ R.floor++; savannaMoment(); setTimeout(collectRent, 1900); }
   bountyBump('floor', R.floor, true);
   Music.scene(null);
   saveRun();
@@ -3518,7 +3534,8 @@ function screenMap(noAdvance){
 /* ---------- battle ---------- */
 let B = null;
 function startBattle(kind){
-  const foe = makeFoe(R.floor, kind === 'boss' ? 'boss' : kind === 'elite' ? 'elite' : 'normal');
+  const foe = makeFoe(R.floor + (R.crossUp || 0), kind === 'boss' ? 'boss' : kind === 'elite' ? 'elite' : 'normal');
+  R.crossUp = 0;
   if (R.wx === 'heat') foe.atk += 1;
   if (R.wx === 'fog') foe.atk = Math.max(1, foe.atk - 1);
   if (R.cls === 'cowboy'){ foe.weak = 2; }
@@ -3537,6 +3554,9 @@ function startBattle(kind){
     over: false, ending: false, won: false };
   drawCards(5 + relicSum('firstDraw') + treeVal('firstDraw') + petVal('firstDraw') + (R.cls === 'wizard' ? 1 : 0) + (R.cls === 'moon' ? 1 : 0) + (hasVoucher('hand6') ? 1 : 0));
   if (foe.rule === 'lock') B.lockUid = B.hand[0] && B.hand[0].uid;
+  /* battles are not save points: snapshot so a mid-fight reload can't keep in-fight gains */
+  R._pf = { s: R.stripes, d: JSON.stringify(R.deck) };
+  saveRun();
   /* the savanna has spectators, and they have opinions */
   if (kind === 'fight' && Math.random() < .09) setTimeout(() => { if (B && !B.over) toast(pick(HECKLES), 2600); }, 2600);
   const track = Music.newTrack(kind === 'boss');
@@ -3791,7 +3811,7 @@ function playCard(i, cardEl){
     /* GOLD SEAL pays on sight · HOLO feeds the turn's mult · HERD HANDS: 3 shared stripes = the pattern pays */
     if (c.seal === 'gold'){ R.stripes += 5; floatNum($('#energy'), '+5 ◆', 'var(--w)'); }
     if (c.ed === 'holo'){ B.mult += 1; toast('◈ HOLO · MULT × ' + multNow().toFixed(1).replace('.0', ''), 900); }
-    motifsOf(c).forEach(m => {
+    motifsOf(c).slice(0, 2).forEach(m => {   /* 4-motif dynasties don't quad-dip the herd */
       B.motifCnt[m] = (B.motifCnt[m] || 0) + 1;
       if (B.motifCnt[m] === 3){ B.mult += 1; toast('🦓 HERD HAND · 3× ' + m.toUpperCase() + ' · +1 MULT', 1400); SFX.power(); }
       if (B.motifCnt[m] === 4){ B.mult += 1; drawCards(1); toast('🦓 FULL HERD · +1 MULT · DRAW 1', 1400); SFX.ach(); }
@@ -3810,6 +3830,7 @@ function playCard(i, cardEl){
     if (c.quirk === 'wild' && c.dmg && Math.random() < .1){
       wildMiss = true;
       R.hp = Math.max(1, R.hp - c.dmg);
+      B.tookDmg = true;
       playerFx(); SFX.playerHit();
       toast('🎲 WILD! IT HIT YOU. −' + c.dmg + '. THE BLENDER SHRUGS.', 1600);
     }
@@ -3828,7 +3849,7 @@ function playCard(i, cardEl){
     if (c.energy){ B.energy = Math.min(9, B.energy + c.energy); SFX.power(); }   /* red seal never doubles energy — that way lies infinity */
     if (c.gamble){
       if (Math.random() < .5){ B.energy = Math.min(9, B.energy + 2); toast('COIN: HEADS · +2 ENERGY ⚡', 1000); SFX.ach(); }
-      else { R.hp = Math.max(1, R.hp - 3); toast('COIN: TAILS · OW. −3 HP', 1000); playerFx(); SFX.playerHit(); }
+      else { R.hp = Math.max(1, R.hp - 3); B.tookDmg = true; toast('COIN: TAILS · OW. −3 HP', 1000); playerFx(); SFX.playerHit(); }
     }
     let myst = null;
     if (c.mystery){
@@ -3850,7 +3871,7 @@ function playCard(i, cardEl){
     if (myst === 'dmg') base += 12;
     let dmg = 0, blocked = 0;
     if ((base > 0 || c.multi) && !wildMiss){
-      const hits = Math.min((c.multi || 1) * sealX, CAPS.multi * 2);
+      const hits = Math.min((c.multi || 1) + (sealX > 1 ? Math.min(c.multi || 1, 3) : 0), CAPS.multi + 3);
       for (let h = 0; h < hits; h++){
         let d = Math.max(base, c.multi ? 1 : 0) + B.str;
         if (h === 0 && B.firstHit){ d += B.firstHit; B.firstHit = 0; }
@@ -3886,20 +3907,20 @@ function playCard(i, cardEl){
       else { B.foe.stun = 1; toast('💫 ' + B.foe.name.toUpperCase() + ' FORGETS WHAT IT WAS DOING', 1400); SFX.power(); }
     }
     if (c.freeNext){ B.freeNext = 1; }
-    if (c.self) R.hp = Math.max(1, R.hp - c.self);
+    if (c.self){ R.hp = Math.max(1, R.hp - c.self); B.tookDmg = true; }
     if (c.blk){ B.block += c.blk * sealX; bumpStat('blocks', c.blk * sealX); SFX.block(); }
     if (c.heal){
       const before = R.hp;
-      const healed = (B.foe.rule === 'leech' ? c.heal : c.heal) * sealX;
+      const healed = Math.max(1, Math.floor((B.foe.rule === 'leech' ? c.heal / 2 : c.heal) * sealX));
       R.hp = Math.min(R.mhp, R.hp + healed);
       const spill = healed - (R.hp - before);
       if (c.overblk && spill > 0){ B.block += spill; bumpStat('blocks', spill); floatNum($('#hpbar'), '+' + spill + ' BLK (CUD)', 'var(--w)'); }
       SFX.heal();
     }
-    if (c.weak) B.foe.weak = Math.max(B.foe.weak, c.weak);
-    if (c.str) B.str = Math.min(99, B.str + c.str);
-    if (c.autoblk) B.autoblk = Math.min(99, B.autoblk + c.autoblk);
-    if (c.stripegen) B.stripegen = Math.min(99, (B.stripegen || 0) + c.stripegen);
+    if (c.weak) B.foe.weak = Math.max(B.foe.weak, c.weak * sealX);
+    if (c.str) B.str = Math.min(99, B.str + c.str * sealX);
+    if (c.autoblk) B.autoblk = Math.min(99, B.autoblk + c.autoblk * sealX);
+    if (c.stripegen) B.stripegen = Math.min(99, (B.stripegen || 0) + c.stripegen * sealX);
     if (c.str || c.autoblk || c.stripegen) SFX.power();
     if (c.echo && B.hand.length){
       const src = B.hand[ri(B.hand.length)];
@@ -4004,7 +4025,7 @@ function endTurn(){
     /* GHOST DECK · the mirage plays your dead cards back at you, by name */
     if (f.gdeck && f.gdeck.length && f.hp > 0){
       const gc = pick(f.gdeck);
-      if (gc.blk){ f.blk += gc.blk; }
+      if (gc.blk){ f.blk += Math.min(12, gc.blk); }   /* the mirage remembers your wall, not the whole fortress */
       toast('👻 THE MIRAGE PLAYS: ' + gc.name.toUpperCase() + (gc.blk ? ' · +' + gc.blk + ' 🛡' : ''), 1700);
     }
     if (f.rule === 'leech' && f.hp > 0){ f.hp = Math.min(f.mhp, f.hp + 2); }
@@ -4055,9 +4076,16 @@ function endTurn(){
   }, DL(650));
 }
 /* ---------- pit crew battle brains ---------- */
+function canPlayAuto(c){
+  /* the crew must respect the same gates playCard enforces: curses, lock rule, tax rule */
+  if (c.cursed) return false;
+  if (B.foe.rule === 'lock' && c.uid === B.lockUid) return false;
+  const taxed = B.foe.rule === 'tax' && c.type === 'atk' ? 1 : 0;
+  return c.cost + taxed <= B.energy;
+}
 function singleKill(){
   /* firstHit lands on the first hit only — mirror playCard's math exactly */
-  return B.hand.findIndex(c => c.cost <= B.energy && c.dmg &&
+  return B.hand.findIndex(c => canPlayAuto(c) && c.dmg &&
     (c.dmg + B.str) * (c.multi || 1) + (B.firstHit || 0) >= B.foe.hp + (B.foe.blk || 0));
 }
 function helperNudge(){
@@ -4069,7 +4097,7 @@ function helperNudge(){
       const kill = singleKill();
       if (kill >= 0){ toast('🩸 OX SMELLS BLOOD', 900); playCard(kill); return; }
     }
-    if (helperOn('gary') && !B.hand.some(c => c.cost <= B.energy)){
+    if (helperOn('gary') && !B.hand.some(canPlayAuto)){
       toast('📋 GARY ENDS THE TURN. EFFICIENTLY.', 900);
       endTurn();
     }
@@ -4083,14 +4111,14 @@ function autoPolicy(){
   if (intentAtk){
     const inc = Math.max(1, B.foe.atk + B.foe.str - (B.foe.weak ? 2 : 0) - (R.cls === 'goth' ? 1 : 0) - petVal('dmgCut'));
     if (B.block < inc){
-      const bi = h.findIndex(c => c.cost <= B.energy && c.blk && !c.dmg);
+      const bi = h.findIndex(c => canPlayAuto(c) && c.blk && !c.dmg);
       if (bi >= 0){ playCard(bi); return; }
     }
   }
-  const atks = h.map((c, i) => [c, i]).filter(([c]) => c.cost <= B.energy && (c.dmg || c.frenzy))
+  const atks = h.map((c, i) => [c, i]).filter(([c]) => canPlayAuto(c) && (c.dmg || c.frenzy))
     .sort((a, b) => ((b[0].dmg || 0) * (b[0].multi || 1)) - ((a[0].dmg || 0) * (a[0].multi || 1)));
   if (atks.length){ playCard(atks[0][1]); return; }
-  const safe = h.findIndex(c => c.cost <= B.energy && !c.gamble && !c.mystery && !c.molt);
+  const safe = h.findIndex(c => canPlayAuto(c) && !c.gamble && !c.mystery && !c.molt);
   if (safe >= 0){ playCard(safe); return; }
   endTurn();
 }
@@ -4121,6 +4149,7 @@ function winBattle(){
   B.over = true;
   B.zebPose = 'win'; B.zebUntil = 0;
   Music.setBattle(false);
+  delete R._pf;               /* the fight resolved — its gains are real now */
   R.clearedFloor = R.floor;   /* reload + Continue must not re-deal this floor's doors */
   const base = (B.kind === 'boss' ? 50 : B.kind === 'elite' ? 28 : 16) + Math.floor(R.floor * 2);
   const wxMul = R.wx === 'heat' ? 1.4 : R.wx === 'fog' ? .8 : 1;
@@ -4129,7 +4158,7 @@ function winBattle(){
   if (R.wkGold) gold = Math.round(gold * R.wkGold);
   R.stripes += gold;
   /* INTEREST · the meerkat pays 1 per 10 banked, cap 5. save-vs-spend is now a real fight. */
-  const intr = Math.min(5, Math.floor(R.stripes / 10));
+  const intr = Math.min(5 + Math.floor(R.floor / 10), Math.floor(R.stripes / 10));
   if (intr){ R.stripes += intr; setTimeout(() => toast('🏦 INTEREST · +' + intr + ' ◆ (1 PER 10 HELD, CAP 5)', 1600), 1600); }
   META.stripes += Math.floor(gold / 2);
   const heal = relicSum('healAfter') + petVal('healAfter') + (R.wx === 'drizzle' ? 3 : 0);
@@ -4171,9 +4200,9 @@ function winBattle(){
 function mkTrophyCard(foe){
   const c = { uid: Math.random().toString(36).slice(2), id: 'trophy', trophyOf: foe.name,
     name: foe.name.split(' ')[0].charAt(0) + foe.name.split(' ')[0].slice(1).toLowerCase() + ' Mount',
-    cost: 1, type: 'atk', rar: 2, blend: false,
-    dmg: clamp(foe.atk + 3, 5, 26) };
-  if (foe.pat.includes('blk')) c.blk = 4;
+    cost: 2, type: 'atk', rar: 2, blend: false,
+    dmg: clamp(foe.atk + 3, 5, 18) };
+  if (foe.pat.includes('blk')) c.blk = 3;
   if (foe.pat.filter(k => k === 'buff').length) c.weak = 1;
   descFor(c);
   markSeen('trophy');
@@ -4344,10 +4373,9 @@ function resolveMystery(){
   }
 }
 /* ---------- rest / blend ---------- */
-function screenRest(){
+function screenRest(revisit){
   Music.scene('oasis');
-  R.oasisBlends = 0;
-  R.distilled = 0;
+  if (!revisit){ R.oasisBlends = 0; R.distilled = 0; }   /* Never-mind must not re-arm the still */
   app.innerHTML = '';
   const p = el(`<div class="page">
     ${hudHtml()}
@@ -4427,7 +4455,11 @@ function screenBlend(){
         bDo.classList.add('pulse');
         bDo.textContent = 'Blend — discover it';
       } else {
-        const result = rr ? primeCard(rr.out) : blendCards(cA, cB);
+        /* cache the roll so the confirmed blend IS the previewed card — no reroll lies */
+        const pk = sel.slice().sort().join('|');
+        if (!window.__prevRoll || window.__prevRoll.k !== pk)
+          window.__prevRoll = { k: pk, c: rr ? primeCard(rr.out) : blendCards(cA, cB) };
+        const result = window.__prevRoll.c;
         $('#prevKick').textContent = rr ? '📖 KNOWN RECIPE · PERFECTED' : 'THE RESULT';
         $('#prevCard').innerHTML = cardHtml(result);
         bDo.classList.remove('pulse');
@@ -4446,10 +4478,15 @@ function screenBlend(){
     /* ancestral recipe? the blender remembers the old ways */
     const rec = findRecipe(cA, cB);
     const firstFind = rec && !(META.recipes || []).includes(rec.out);
-    const nc = rec ? primeCard(rec.out) : blendCards(cA, cB);
+    const pk = sel.slice().sort().join('|');
+    const nc = (window.__prevRoll && window.__prevRoll.k === pk) ? window.__prevRoll.c
+      : rec ? primeCard(rec.out) : blendCards(cA, cB);
+    window.__prevRoll = null;
+    applyNeg(nc);
     if (typeof window.__glassOn === 'function' && window.__glassOn()){
-      if (nc.dmg) nc.dmg = Math.min(CAPS.dmg, nc.dmg * 2);
-      if (nc.blk) nc.blk = Math.min(CAPS.blk, nc.blk * 2);
+      const gx = nc.prime ? 1.5 : 2;   /* recipe ★ cards are already ×1.3 — glass stacks gently */
+      if (nc.dmg) nc.dmg = Math.min(CAPS.dmg, Math.round(nc.dmg * gx));
+      if (nc.blk) nc.blk = Math.min(CAPS.blk, Math.round(nc.blk * gx));
       nc.glass = 1; descFor(nc);
       markSeen('glass');
     }
@@ -4530,7 +4567,7 @@ function screenBlend(){
       if (again) screenBlend(); else screenMap();
     }, 3100);
   };
-  $('#bBack').onclick = screenRest;
+  $('#bBack').onclick = () => screenRest(true);
   let glassOn = false;
   if ($('#bGlassT')) $('#bGlassT').onclick = e => {
     glassOn = !glassOn;
@@ -4670,8 +4707,8 @@ function screenShop(){
     }, e.target);
   };
   $('#bRent').onclick = e => buy(10, () => {
-    const r = rentalStock();
-    r.rent = 1;
+    const r = { ...rentalStock(), rent: 1 };   /* a copy — the stock object must never live in R.relics */
+    R._rental = null;                          /* next shop rolls fresh stock */
     R.relics.push(r);
     if (r.hp){ R.mhp += r.hp; R.hp += r.hp; }
     relicPop(r);
@@ -4680,6 +4717,7 @@ function screenShop(){
   $('#bWheel').onclick = e => {
     if (R.stripes < wheelCost()){ toast('NOT ENOUGH STRIPES. THE WHEEL JUDGES IN SILENCE.'); return; }
     R.stripes -= wheelCost();
+    R._spins = (R._spins || 0) + 1;
     spinWheel();
     saveRun();
     refreshAfford();
@@ -4688,10 +4726,11 @@ function screenShop(){
   refreshAfford();
 }
 /* ---------- back room machinery ---------- */
-function packCost(t){ const base = { std: 25, anc: 55, wild: 40 }[t] + R.floor * 2; return Math.round(base * (hasVoucher('packoff') ? .7 : 1) * (1 + .1 * (META.stake || 0))); }
-function sealCost(){ return Math.round((30 + R.floor) * (1 + .1 * (META.stake || 0))); }
-function dnaCost(){ return Math.round((70 + R.floor * 2) * (1 + .1 * (META.stake || 0))); }
-function wheelCost(){ return 12; }
+function backOff(){ return (1 - treeVal('shopOff')) * (1 + .1 * (META.stake || 0)) * (R.wkShopOff || 1); }
+function packCost(t){ const base = { std: 25, anc: 55, wild: 40 }[t] + R.floor * 2; return Math.round(base * (hasVoucher('packoff') ? .7 : 1) * backOff()); }
+function sealCost(){ return Math.round((30 + R.floor) * backOff()); }
+function dnaCost(){ return Math.round((70 + R.floor * 2) * backOff()); }
+function wheelCost(){ return (12 + Math.floor(R.floor / 2)) + 8 * (R._spins || 0); }   /* each spin this visit costs more */
 const VOUCHERS = [
   { id: 'hand6', name: 'Bigger Saddlebag', desc: '+1 card drawn every turn', cost: 60 },
   { id: 'blend2', name: 'Second Pitcher', desc: 'the Oasis blender runs twice per visit', cost: 50 },
@@ -4705,7 +4744,7 @@ function voucherStock(){
   return un[R.floor % un.length];
 }
 function rentalStock(){
-  if (!R._rental) R._rental = genRelic(R.relics.length + 4);
+  if (!R._rental || R._rentalFloor !== R.floor){ R._rental = genRelic(R.relics.length + 4); R._rentalFloor = R.floor; }
   return R._rental;
 }
 function collectRent(){
@@ -5027,6 +5066,7 @@ function loseRun(){
   const floor = R.floor;
   const stats = { dmg: R.sdmg || 0, cards: R.scards || 0, blends: R.sblends || 0, deck: R.deck.length, relics: R.relics.length };
   bumpStat('deaths', 1);
+  delete R._pf;   /* death resolves the fight — no flee refund from the grave */
   /* THE GHOST · your dead deck gets a second career as the Mirage's script */
   META.ghost = { name: META.zebName || 'YOU', floor: R.floor,
     deck: R.deck.filter(c => !c.cursed && c.type !== 'pow').slice(0, 20).map(c => ({ name: c.name, dmg: c.dmg || 0, blk: c.blk || 0 })) };
