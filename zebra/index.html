@@ -1324,7 +1324,7 @@ const BOSS_TELLS = {
     hint: 'GO IN — play a MULTI-HIT card',
     test: c => (c.multi || 0) > 1,
     win: 'YOU WENT IN THE MOUTH. EVERYONE SAID DON\'T. IT WORKED.', fail: 'THE JAWS CLOSE. ON YOU. OBVIOUSLY.' },
-  blender: { cue: '🌀 BLADES SPINNING UP · IT WANTS SOMETHING TO BLEND',
+  blender: { cue: '🌀 BLADES SPINNING UP · THE EDITOR HAS NOTES',
     hint: 'FEED IT — play a BLENDED card',
     test: c => !!(c.blend || c.prime),
     win: 'IT BLENDED YOUR BLEND. THE MOTOR IS SMOKING.', fail: 'IT REACHES FULL SPEED. YOU ARE THE SMOOTHIE.' },
@@ -2219,7 +2219,7 @@ function defaultMeta(){
   return { stripes: 0, herd: 0, unlocks: 0, stats: { damage: 0, cards: 0, blocks: 0, kills: 0, blends: 0, floors: 0, runs: 0, bosses: 0, deaths: 0 },
     achTiers: {}, bonusHp: 0, bonusStripe: 0, startRelics: 0, tips: {}, bestiary: {}, tree: {},
     marks: 0, migrations: 0, eraBest: 0, lastSeen: 0, pets: [], petSel: '', recipes: [], helpers: [], helperOn: {}, trophies: [], worn: [],
-    seen: {}, stake: 0, ghost: null, heirloom: null, lastBlends: [], weekly: {},
+    seen: {}, stake: 0, ghost: null, heirloom: null, lastBlends: [], weekly: {}, lore: [], counters: 0,
     clsOwned: ['zeb'], clsSel: 'zeb' };
 }
 let META = defaultMeta();
@@ -2238,6 +2238,8 @@ function loadMeta(){
   META.weekly = META.weekly || {};
   META.lastBlends = META.lastBlends || [];
   META.stake = META.stake || 0;
+  META.lore = META.lore || [];
+  META.counters = META.counters || 0;
   /* one-shot backfill for saves from before the Migration era — must never run
      again after a migration, or eraBest resurrects from lifetime best = free marks */
   if (!META.legacyEraDone && !META.migrations && !META.eraBest && META.stats.floors) META.eraBest = META.stats.floors;
@@ -2248,6 +2250,7 @@ function bumpStat(k, n, isMax = false){
   if (isMax) META.stats[k] = Math.max(META.stats[k], n);
   else META.stats[k] += n;
   if (typeof checkTrophies === 'function') checkTrophies();
+  if (typeof checkLore === 'function') checkLore();
   const fam = ACH_FAMS.find(f => f[0] === k);
   if (!fam){ saveMeta(); return; }
   let tier = META.achTiers[k] || 0;
@@ -2497,6 +2500,79 @@ document.addEventListener('visibilitychange', () => {
   else idleCollect();
 });
 /* ============================================================
+   THE STRIPE SCRIPTURE · field notes recovered through play.
+   The conceit: stripes are a written language, the savanna is a page,
+   and blending is copy-editing. Each note unlocks off a real milestone.
+   ============================================================ */
+const LORE = [
+  { id: 'first', t: 'THE FIRST STRIPE', need: M => M.stats.kills >= 1, at: 'your first kill',
+    x: 'Before the grass there was one line. It was not decorative. It was a sentence, and it was about you.' },
+  { id: 'read', t: 'ON READING', need: M => M.stats.kills >= 15, at: '15 foes dropped',
+    x: 'Stripes are read top to bottom by anything with a mouth. Most predators are simply poor readers who have decided to argue.' },
+  { id: 'plural', t: 'THE PLURAL', need: M => M.stats.kills >= 60, at: '60 foes dropped',
+    x: '"Herd" is not a group noun. It is one animal with a distributed body and a bad memory. You are a finger. Act like it.' },
+  { id: 'editor', t: 'THE EDITOR', need: M => M.stats.blends >= 1, at: 'your first blend',
+    x: 'The Blender is not a machine. It is an editor. It has opinions about your sentence, and it has hands.' },
+  { id: 'revision', t: 'REVISION', need: M => M.stats.blends >= 12, at: '12 blends',
+    x: 'Two cards enter, one leaves. This is not violence, it is copy-editing. The screaming is traditional.' },
+  { id: 'style', t: 'THE STYLE GUIDE', need: M => (M.recipes || []).length >= 5, at: '5 recipes discovered',
+    x: 'Certain pairings were correct before anyone was alive to be correct about them. The ancestors did not invent the recipes. They found them, already written, inside a rock.' },
+  { id: 'foot', t: 'FOOTNOTES', need: M => (M.recipes || []).length >= 20, at: '20 recipes discovered',
+    x: 'Every ★ is a footnote in a book nobody has finished. The footnotes are winning.' },
+  { id: 'death1', t: 'THE PARAGRAPH BREAK', need: M => M.stats.deaths >= 1, at: 'your first death',
+    x: 'Death is a paragraph break. The grass keeps your punctuation and returns your consonants. Roughly.' },
+  { id: 'proof', t: 'THE PROOFREADERS', need: M => M.stats.deaths >= 6, at: '6 deaths',
+    x: 'Vultures are not scavengers, they are proofreaders. They circle because your sentence contains an error and they are being polite about its location.' },
+  { id: 'ledger', t: 'THE LEDGER', need: M => M.stats.floors >= 12, at: 'floor 12',
+    x: 'The meerkat\'s ledger predates the meerkat. It was found already open, already written in. Some entries concern you and are in the future tense.' },
+  { id: 'moon', t: 'THE HOLE IN THE SKY', need: M => M.stats.bosses >= 1, at: 'your first boss',
+    x: 'The moon is where a stripe was removed for being untrue. It has not grown back. Nothing has been said about it since.' },
+  { id: 'draft', t: 'THE DRAFT', need: M => M.stats.bosses >= 4, at: '4 bosses',
+    x: 'The Other Zebra is a draft of you that was rejected for being too honest. It kept your face out of spite.' },
+  { id: 'sunset', t: 'THE DEADLINE', need: M => M.stats.floors >= 18, at: 'floor 18',
+    x: 'Past a certain hour the savanna stops pretending to be a place and remembers that it is a deadline.' },
+  { id: 'marks', t: 'PUNCTUATION', need: M => (M.migrations || 0) >= 1, at: 'your first migration',
+    x: '☀ marks are punctuation. Each ends a clause. The herd has been writing one enormous sentence and has not yet needed a period.' },
+  { id: 'grass', t: 'HANDWRITING', need: M => M.stats.cards >= 250, at: '250 cards played',
+    x: 'Grass is the savanna\'s handwriting. Grazing is reading. This is why the zebra is always chewing and never finished.' },
+  { id: 'tick', t: 'THE TYPO', need: M => M.stats.blends >= 25, at: '25 blends',
+    x: 'A Tick is a typo. It cannot be played because it does not mean anything. It stays in your deck because typos have rights.' },
+  { id: 'counter', t: 'ON INTERRUPTION', need: M => (M.counters || 0) >= 3, at: '3 boss counters landed',
+    x: 'A boss winding up is a sentence about to end badly. Interrupt it and you have not won. You have edited.' },
+  { id: 'trophy', t: 'ON WEARING', need: M => (M.trophies || []).length >= 1, at: 'your first trophy',
+    x: 'Wearing a dead thing\'s name is legal. Wearing its face is discouraged. Wearing its sunglasses is mandatory.' },
+  { id: 'region', t: 'THE MARGINS', need: M => M.stats.floors >= 22, at: 'floor 22',
+    x: 'Regions are paragraphs. The laws are the local grammar. Nobody agreed to any of it and everybody obeys.' },
+  { id: 'inf', t: 'FLOOR ∞', need: M => M.stats.floors >= 30, at: 'floor 30',
+    x: 'There is a floor where the stripes stop alternating. Two whites in a row. Nobody who has seen it has agreed to describe it twice.' },
+  { id: 'last', t: 'THE LAST PAGE', need: M => M.stats.floors >= 45, at: 'floor 45',
+    x: 'Somebody has read ahead. The grass at the end is already flat.' },
+];
+function checkLore(){
+  if (typeof META === 'undefined' || !META.stats) return;
+  META.lore = META.lore || [];
+  LORE.forEach(l => {
+    if (META.lore.includes(l.id)) return;
+    let ok = false;
+    try { ok = l.need(META); } catch {}
+    if (!ok) return;
+    META.lore.push(l.id);
+    saveMeta();
+    setTimeout(() => {
+      stampFx('FIELD NOTE');
+      toast('📜 RECOVERED: ' + l.t + ' · READ IT IN THE SCRIPTURE', 3000);
+      SFX.bell && SFX.bell();
+    }, 700);
+  });
+}
+/* found notes recirculate as whispers in quiet places */
+function loreWhisper(){
+  const found = (META.lore || []).map(id => LORE.find(l => l.id === id)).filter(Boolean);
+  if (!found.length || Math.random() > .35) return;
+  const l = pick(found);
+  setTimeout(() => toast('📜 ' + l.x.toUpperCase(), 4200), 1400);
+}
+/* ============================================================
    THE WORLD · procedurally generated regions, five floors each.
    Every run rolls a fresh world seed, so the map is different every
    time — but deterministic within a run, so it never rerolls on you.
@@ -2635,6 +2711,7 @@ function screenMigrate(){
     <span class="kick">THE GREAT MIGRATION · ERA ${(META.migrations || 0) + 1}</span>
     <div class="big">Migrate the <span class="z">Herd</span></div>
     <div class="stripes"></div>
+    <div class="sub" style="font-size:10px;color:#ffffff66">☀ MARKS ARE PUNCTUATION. EACH ONE ENDS A CLAUSE.</div>
     <div class="sub">The savanna dries up. The herd moves on — and remembers.<br>
       Best floor this era: <b style="color:var(--r)">${META.eraBest || 0}</b> → earn <b style="color:var(--r)">☀ ${g} MARK${g === 1 ? '' : 'S'}</b> (1 per 5 floors)</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center">
@@ -3167,6 +3244,7 @@ function screenTitle(){
     { id: 'bAch', nm: '✦ ACHIEVEMENTS', hint: 'drop 5 foes', ok: S.kills >= 5 },
     { id: 'bRecipes', nm: '⚗ RECIPES', hint: 'blend at an oasis', ok: S.blends >= 1 || (META.recipes || []).length > 0 },
     { id: 'bStats', nm: '≡ STATISTICS', hint: 'start a second run', ok: S.runs >= 2 },
+    { id: 'bLore', nm: '📜 THE SCRIPTURE', hint: 'recover your first field note', ok: (META.lore || []).length > 0 },
     { id: 'bounty', nm: '☑ BOUNTY BOARD', hint: 'start a second run', ok: S.runs >= 2 },
     { id: 'bYt', nm: '📺 WATCH & PLAY', hint: 'reach floor 5', ok: S.floors >= 5 },
     { id: 'bHerd', nm: '♞ THE HERD', hint: 'reach floor 8', ok: S.floors >= 8 || (META.clsOwned || []).length > 1 },
@@ -3204,6 +3282,7 @@ function screenTitle(){
       ${feats.find(f => f.id === 'bCrew').ok ? `<button class="btn mbtn ${fresh.includes('bCrew') ? 'claimable' : ''}" id="bCrew"><span>⚑ Pit Crew</span><small>${fresh.includes('bCrew') ? '🔓 NEW!' : (META.helpers || []).length + '/' + HELPERS.length + ' hired · auto-battle'}</small></button>` : ''}
       ${feats.find(f => f.id === 'bBest').ok ? `<button class="btn mbtn ${fresh.includes('bBest') ? 'claimable' : ''}" id="bBest"><span>☠︎ Bestiary</span><small>${fresh.includes('bBest') ? '🔓 NEW!' : seen + ' catalogued'}</small></button>` : ''}
       ${feats.find(f => f.id === 'bStats').ok ? `<button class="btn mbtn" id="bStats"><span>≡ Statistics</span><small>the full ledger</small></button>` : ''}
+      ${feats.find(f => f.id === 'bLore').ok ? `<button class="btn mbtn ${fresh.includes('bLore') ? 'claimable' : ''}" id="bLore"><span>📜 The Scripture</span><small>${fresh.includes('bLore') ? '🔓 NEW!' : (META.lore || []).length + '/' + LORE.length + ' field notes'}</small></button>` : ''}
       ${migVis ? `<button class="btn mbtn ${migReady ? 'claimable' : ''}" id="bMig"><span>☀︎ Migration</span><small>${migReady ? '+' + marksGain() + ' marks ready' : 'prestige reset'}</small></button>` : ''}
       <button class="btn mbtn ghost" id="bColl"><span>🂠 Collection</span><small>${Object.keys(META.seen || {}).filter(k => cardById[k]).length}/${BASE_CARDS.length} witnessed</small></button>
       ${META.stats.floors >= 5 ? `<button class="btn mbtn ghost" id="bWeekly"><span>🗓 Weekly</span><small>${weekMut().name.toLowerCase()} · best ${(META.weekly || {})[weekKey()] || '—'}</small></button>` : ''}
@@ -3293,6 +3372,7 @@ function screenTitle(){
   if ($('#bBest')) $('#bBest').onclick = screenBestiary;
   if ($('#bHerd')) $('#bHerd').onclick = screenHerd;
   if ($('#bStats')) $('#bStats').onclick = screenStats;
+  if ($('#bLore')) $('#bLore').onclick = screenLore;
   if ($('#bPets')) $('#bPets').onclick = screenPets;
   if ($('#bRecipes')) $('#bRecipes').onclick = screenRecipes;
   if ($('#bCrew')) $('#bCrew').onclick = screenCrew;
@@ -3433,6 +3513,32 @@ function screenDrop(){
   });
   $('#bBack').onclick = screenTitle;
 }
+function screenLore(){
+  app.innerHTML = '';
+  const found = META.lore || [];
+  const pct = Math.round(found.length / LORE.length * 100);
+  const p = el(`<div class="page">
+    <span class="kick">RECOVERED FIELD NOTES · THE SAVANNA IS A PAGE</span>
+    <div class="big">The Stripe <span class="z">Scripture</span></div>
+    <div class="sub">${found.length}/${LORE.length} recovered. Nobody wrote these. They were found, in that order, by animals who could not read.</div>
+    <div class="gwrap" style="height:10px;width:100%;max-width:420px;background:#ffffff14;position:relative">
+      <div class="real" style="width:${pct}%"></div></div>
+    <div class="stripes"></div>
+    ${LORE.map((l, i) => {
+      const got = found.includes(l.id);
+      return `<div class="ach" style="text-align:left;${got ? '' : 'opacity:.5'}">
+        <div><div class="an" style="${got ? 'color:var(--r)' : ''}">${got ? l.t : '█████ ' + '█'.repeat(3 + (i % 5))}</div>
+        <div class="ap" style="line-height:1.6">${got ? l.x : 'recovered at: ' + l.at}</div></div>
+        <div class="tick">${got ? '📜' : '·'}</div></div>`;
+    }).join('')}
+    <div class="sub" style="font-size:10px">${found.length === LORE.length
+      ? 'You have read every note. The sentence continues without you. It always did.'
+      : 'The rest are out there, under things, in the future tense.'}</div>
+    <button class="btn ghost" id="bBack">Back</button>
+  </div>`);
+  app.appendChild(p);
+  $('#bBack').onclick = screenTitle;
+}
 function screenRecipes(){
   app.innerHTML = '';
   const known = META.recipes || [];
@@ -3461,6 +3567,7 @@ function screenRecipes(){
   const p = el(`<div class="page">
     <span class="kick">THE ANCESTRAL COOKBOOK · BLEND THESE PAIRS AT AN OASIS</span>
     <div class="big">Rec<span class="z">ipes</span></div>
+    <div class="sub" style="font-size:10px;color:#ffffff66">THE ANCESTORS DID NOT INVENT THESE. THEY FOUND THEM, ALREADY WRITTEN, INSIDE A ROCK.</div>
     <div class="sub">${known.length}/${RECIPES.length} discovered. A recipe blend comes out <b style="color:var(--r)">PERFECTED ★</b> — full strength, +1 rarity, +40 ◆ the first time. Generic blends can still <b>MUTATE</b>. The ancestors knew things.</div>
     <div class="gwrap" style="height:10px;width:100%;max-width:420px;background:#ffffff14;position:relative">
       <div class="real" style="width:${pct}%"></div></div>
@@ -3703,6 +3810,7 @@ function screenMap(noAdvance){
   tut('map', '.door', 'THE MAP', 'One door per floor. <b>Fights</b> pay stripes and cards, the <b>Oasis</b> heals or blends, the <b>Rogues\' Gallery</b> hits harder but drops relics. Every 5th floor: boss. Choose.');
 }
 function screenRegion(){
+  loreWhisper();
   const rg = regionOf(R.floor);
   app.innerHTML = '';
   const p = el(`<div class="page" style="justify-content:center;text-align:center;gap:14px">
@@ -4178,6 +4286,8 @@ function playCard(i, cardEl){
       B.foe.tell = 0;
       B.foe.stagger = 1;
       B.foe.vuln = 2;
+      META.counters = (META.counters || 0) + 1;
+      checkLore();
       stampFx('COUNTER!');
       confettiFx();
       toast('🥊 ' + g.win + ' · IT LOSES ITS TURN AND TAKES +50%', 3200);
@@ -4824,6 +4934,7 @@ function resolveMystery(){
 /* ---------- rest / blend ---------- */
 function screenRest(revisit){
   Music.scene('oasis');
+  if (!revisit) loreWhisper();   /* the water talks */
   if (!revisit){ R.oasisBlends = 0; R.distilled = 0; }   /* Never-mind must not re-arm the still */
   app.innerHTML = '';
   const p = el(`<div class="page">
