@@ -243,9 +243,6 @@ h1 .z{color:var(--r)}
   bottom:calc(env(safe-area-inset-bottom) + 10px);width:min(100vw - 24px,616px);z-index:34;
   background:#000000f2;padding:7px;border:1.5px solid #ffffff2e}
 .battlePage{padding-bottom:150px}
-/* youtube dock pins to the bottom edge; in battle it lifts above the fixed footer */
-#ytDock{bottom:0}
-body:has(.battlePage) #ytDock{bottom:calc(env(safe-area-inset-bottom) + 158px);border-bottom:2px solid var(--w)}
 #energy{width:50px;height:50px;border:2px solid var(--r);color:var(--w);background:var(--k);flex-shrink:0;
   display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:var(--mono);font-weight:800}
 #energy b{font-size:19px;color:var(--r)}
@@ -2027,18 +2024,26 @@ const TROPHIES = [
     ep: 'reach floor 100. gravity becomes a suggestion.' },
 ];
 function trophyEarned(id){ return (META.trophies || []).includes(id); }
+let trophyQ = [];
 function checkTrophies(){
   TROPHIES.forEach(t => {
     if (trophyEarned(t.id) || (META.stats[t.stat] || 0) < t.need) return;
     META.trophies = [...(META.trophies || []), t.id];
     if ((META.worn || []).length < 3) META.worn = [...(META.worn || []), t.id];
     saveMeta();
-    setTimeout(() => {
-      stampFx('TROPHY');
-      toast(`🏆 ${t.name.toUpperCase()} · PRIZE: ${t.prize} ${t.icon} — THE ZEBRA IS WEARING IT`, 3200);
-      SFX.victory && SFX.victory();
-    }, 400);
+    trophyQ.push(t);
+    /* mid-battle the ceremony would bury your hand — hold it for the victory lap */
+    if (!(typeof B !== 'undefined' && B && !B.over)) flushTrophies();
   });
+}
+function flushTrophies(){
+  if (!trophyQ.length) return;
+  const q = trophyQ.splice(0);
+  q.forEach((t, i) => setTimeout(() => {
+    stampFx('TROPHY');
+    toast(`🏆 ${t.name.toUpperCase()} · PRIZE: ${t.prize} ${t.icon} — THE ZEBRA IS WEARING IT`, 2600);
+    SFX.victory && SFX.victory();
+  }, 400 + i * 2800));
 }
 /* wearable prize art · drawn on the zebra, stacked shamelessly */
 const WORN_ART = {
@@ -2213,9 +2218,9 @@ function screenMigrate(){
       <span class="chip hot">EVERY 3rd ☀: +1 DAMAGE</span>
     </div>
     <div class="ach" style="text-align:left"><div><div class="an" style="color:var(--r)">RESETS</div>
-      <div class="ap">◆ stripes · the whole skill tree · your current run</div></div><div class="tick">☠</div></div>
+      <div class="ap">◆ stripes · the whole skill tree · your current run</div></div><div class="tick" style="color:var(--r)">GONE</div></div>
     <div class="ach" style="text-align:left"><div><div class="an">THE HERD KEEPS</div>
-      <div class="ap">☀ marks · achievements · playable zebras · pets · bestiary · your legend</div></div><div class="tick">∞</div></div>
+      <div class="ap">☀ marks · achievements · playable zebras · pets · bestiary · your legend</div></div><div class="tick">KEPT</div></div>
     ${META.marks ? `<div class="sub">Current: ☀ ${META.marks} · ×${marksMul().toFixed(1)} stripes forever</div>` : ''}
     <button class="btn red" id="bGo" ${g < 1 ? 'disabled' : ''}>${g < 1 ? 'REACH FLOOR 5 THIS ERA FIRST' : 'MIGRATE · GAIN ☀ ' + g}</button>
     <button class="btn ghost" id="bBack">Not yet — still grass here</button>
@@ -2676,7 +2681,7 @@ function screenTitle(){
     ${R ? '<button class="btn ghost slim" id="bAbandon" style="max-width:420px">Abandon run</button>' : ''}
     <div class="menuGrid">
       <button class="btn mbtn ${claim ? 'claimable' : ''}" id="bUnlock"><span>⚘ Skill Tree</span><small>${treeOwned()} claimed${claim ? ' · GROWTH READY' : ' · ∞'}</small></button>
-      <button class="btn mbtn" id="bAch"><span>✦ Achievements</span><small>${tiers} tiers · ∞</small></button>
+      <button class="btn mbtn" id="bAch"><span>✦ Achievements</span><small>${tiers} tiers · ${(META.trophies || []).length}/${TROPHIES.length} trophies</small></button>
       <button class="btn mbtn" id="bHerd"><span>♞ The Herd</span><small>${(META.clsOwned || ['zeb']).length}/${CLASSES.length} zebras</small></button>
       <button class="btn mbtn" id="bPets"><span>♡ Pets</span><small>${(META.pets || []).length}/${PETS.length} befriended</small></button>
       <button class="btn mbtn" id="bRecipes"><span>⚗ Recipes</span><small>${(META.recipes || []).length}/${RECIPES.length} discovered</small></button>
@@ -2686,7 +2691,6 @@ function screenTitle(){
       ${migVis ? `<button class="btn mbtn ${migReady ? 'claimable' : ''}" id="bMig"><span>☀︎ Migration</span><small>${migReady ? '+' + marksGain() + ' marks ready' : 'prestige reset'}</small></button>` : ''}
       <button class="btn mbtn ghost" id="bGuide"><span>✎ Field Guide</span><small>how to zebra</small></button>
       <button class="btn mbtn ghost" id="bMusic"><span>♪ Music</span><small>${Music.on() ? 'on · 14-bit sexy' : 'off'}</small></button>
-      <button class="btn mbtn ghost" id="bYt"><span>📺 Watch & Play</span><small>science in the corner</small></button>
       ${typeof IS_STANDALONE !== 'undefined' && IS_STANDALONE ? '' : `<button class="btn mbtn" id="bInstall"><span>📲 Save to Phone</span><small>home screen · plays offline</small></button>`}
     </div>
     <p style="font-family:var(--mono);font-size:9px;letter-spacing:.14em;color:#ffffff44">${pick([
@@ -2725,7 +2729,6 @@ function screenTitle(){
   $('#bCrew').onclick = screenCrew;
   if ($('#bMig')) $('#bMig').onclick = screenMigrate;
   if ($('#bInstall')) $('#bInstall').onclick = () => installApp();
-  $('#bYt').onclick = () => { toggleYt(); toast(document.getElementById('ytDock') ? '📺 DRAG IT ANYWHERE · TAP V / TC / BN' : '📺 CLOSED', 1800); };
 }
 function screenCrew(){
   app.innerHTML = '';
@@ -3509,6 +3512,7 @@ function winBattle(){
     'THE HERD WOULD CLAP IF HOOVES WORKED THAT WAY.',
   ]), 1900), 700);
   const g2 = gold, k2 = B.kind;
+  setTimeout(flushTrophies, 1400);   /* trophies earned mid-fight get their parade now */
   setTimeout(() => screenReward(g2, k2), DL(950));
 }
 function screenReward(gold, kind){
@@ -4110,41 +4114,6 @@ function screenAch(){
 }
 
 /* ---------- boot ---------- */
-/* ---------- 📺 tiny youtube dock · play AND watch ---------- */
-const YT_TABS = [
-  { k: 'V', name: 'Veritasium', src: 'https://www.youtube-nocookie.com/embed/videoseries?list=UUHnyfMqiRRG1u-2MsSQLbXA' },
-  { k: 'TC', name: 'Technology Connections', src: 'https://www.youtube-nocookie.com/embed/videoseries?list=UUy0tKL1T7wFoYcxCe0xjN6Q' },
-  { k: 'N', name: 'Angry Video Game Nerd', src: 'https://www.youtube-nocookie.com/embed/videoseries?list=UU0M0rxSz3IF0CsSour1iWmw' },
-  { k: 'DD', name: 'Doug DeMuro', src: 'https://www.youtube-nocookie.com/embed/videoseries?list=UUsqjHFMB_JYTaEnf_vmTNqg' },
-];
-function toggleYt(){
-  const ex = document.getElementById('ytDock');
-  if (ex){ ex.remove(); return; }
-  /* pinned to the bottom edge, centered — battle footer sits above it */
-  const d = el(`<div id="ytDock" style="position:fixed;left:50%;transform:translateX(-50%);width:min(100vw,240px);z-index:33;
-      background:#000;border:2px solid var(--w);border-bottom:none;box-shadow:0 -6px 24px #000c;padding-bottom:env(safe-area-inset-bottom)">
-    <div id="ytBar" style="display:flex;align-items:center;gap:4px;padding:4px 6px;background:#111">
-      <span style="font-family:var(--mono);font-weight:800;font-size:8px;letter-spacing:.12em;color:#ffffff66">📺 WATCH</span>
-      <span style="flex:1"></span>
-      ${YT_TABS.map((t, i) => `<button data-yt="${i}" title="${t.name}" style="background:none;border:1.5px solid #ffffff44;color:#fff;
-        font-family:var(--mono);font-weight:800;font-size:8.5px;padding:2px 5px;cursor:pointer">${t.k}</button>`).join('')}
-      <button id="ytX" style="background:var(--r);border:none;color:#fff;font-weight:800;font-size:10px;padding:2px 7px;cursor:pointer">✕</button>
-    </div>
-    <iframe id="ytFrame" src="${YT_TABS[0].src}" frameborder="0"
-      allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen
-      style="display:block;width:100%;aspect-ratio:16/9;border:none"></iframe>
-  </div>`);
-  document.body.appendChild(d);
-  d.querySelectorAll('[data-yt]').forEach(b => b.onclick = () => {
-    const t = YT_TABS[+b.dataset.yt];
-    document.getElementById('ytFrame').src = t.src;
-    d.querySelectorAll('[data-yt]').forEach(x => x.style.borderColor = '#ffffff44');
-    b.style.borderColor = 'var(--r)';
-    toast('📺 ' + t.name.toUpperCase(), 1200);
-  });
-  d.querySelector('[data-yt="0"]').style.borderColor = 'var(--r)';
-  d.querySelector('#ytX').onclick = () => d.remove();
-}
 /* ---------- save to phone · PWA install ---------- */
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 let installEv = null;
