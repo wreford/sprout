@@ -1308,12 +1308,37 @@ const FOE_PATS = {
   parrot: ['curse', 'atk', 'blk'], gorilla: ['enrage', 'atk', 'atk'], beest: ['enrage', 'atk', 'buff'],
   wilddog: ['multi', 'atk', 'atk'], monitor: ['heal', 'blk', 'atk'], panther: ['heal', 'atk', 'atk'],
 };
+/* ---------- BOSS TELLS · Punch-Out rules: it winds up, you answer, it eats floor.
+   Miss the window and the haymaker lands DOUBLE. Answer it and the boss staggers:
+   loses its turn and takes +50% for two turns. ---------- */
+const BOSS_TELLS = {
+  alpha: { cue: '😂 THE GIGGLE FIT · IT CAN\'T BREATHE',
+    hint: 'SHUT IT UP — play anything that WEAKENS',
+    test: c => !!c.weak,
+    win: 'YOU SHUT IT UP MID-LAUGH.', fail: 'IT FINISHES THE JOKE. THE JOKE WAS YOU.' },
+  lion: { cue: '🦁 THE ROAR · IT IS FILLING ITS LUNGS',
+    hint: 'BRACE — play a card that BLOCKS 5+',
+    test: c => (c.blk || 0) >= 5,
+    win: 'IT ROARED INTO YOUR WALL. THAT SOUNDED EXPENSIVE.', fail: 'THE ROAR LANDS. YOUR EARS FILE A COMPLAINT.' },
+  crocking: { cue: '🐊 JAWS WIDE · THE SOFT PALATE IS RIGHT THERE',
+    hint: 'GO IN — play a MULTI-HIT card',
+    test: c => (c.multi || 0) > 1,
+    win: 'YOU WENT IN THE MOUTH. EVERYONE SAID DON\'T. IT WORKED.', fail: 'THE JAWS CLOSE. ON YOU. OBVIOUSLY.' },
+  blender: { cue: '🌀 BLADES SPINNING UP · IT WANTS SOMETHING TO BLEND',
+    hint: 'FEED IT — play a BLENDED card',
+    test: c => !!(c.blend || c.prime),
+    win: 'IT BLENDED YOUR BLEND. THE MOTOR IS SMOKING.', fail: 'IT REACHES FULL SPEED. YOU ARE THE SMOOTHIE.' },
+  mirage: { cue: '🪞 MIRROR STANCE · IT IS COPYING YOU EXACTLY',
+    hint: 'REPEAT YOURSELF — play the SAME card twice this turn',
+    test: (c, B) => (B.turnIds || []).filter(x => x === c.id).length >= 2,
+    win: 'IT COPIED THE COPY. NOW THERE ARE TOO MANY OF IT.', fail: 'IT HAS YOUR MOVES AND YOUR FACE. UNFAIR.' },
+};
 const BOSS_PATS = {
-  alpha: ['atk', 'heal', 'buff', 'atk'],      /* laughs the damage off */
-  lion: ['enrage', 'atk', 'atk', 'blk'],      /* winds up the king hit */
-  crocking: ['multi', 'blk', 'buff', 'atk'],  /* snap. snap. snap. */
-  blender: ['multi', 'buff', 'atk', 'atk'],   /* WHIRL */
-  mirage: ['mimic', 'atk', 'blk', 'buff'],    /* your own move, backwards */
+  alpha: ['tell', 'atk', 'heal', 'atk'],        /* giggles, then bites */
+  lion: ['tell', 'atk', 'atk', 'blk'],          /* the roar */
+  crocking: ['tell', 'atk', 'blk', 'multi'],    /* jaws wide, then shut */
+  blender: ['tell', 'atk', 'buff', 'multi'],    /* WHIRL */
+  mirage: ['tell', 'atk', 'blk', 'mimic'],      /* your own move, backwards */
 };
 /* ---------- THE ROGUES' GALLERY · fictional villain archetypes (elites) ---------- */
 const VILLAINS = [
@@ -3652,7 +3677,13 @@ function drawCards(n){
 }
 function foeIntent(){
   const f = B.foe;
-  if (f.stun) return '<span class="intIc">💫</span> INTENT: <b>NONE. IT FORGOT.</b>';
+  if (f.stun || f.stagger) return '<span class="intIc">💫</span> INTENT: <b>NONE. IT FORGOT.</b>';
+  if (f.tell && BOSS_TELLS[f.id]){
+    const g = BOSS_TELLS[f.id];
+    const n = Math.max(1, (f.atk + f.str) * 2 - (f.weak ? 2 : 0) - (R.cls === 'goth' ? 1 : 0) - petVal('dmgCut'));
+    return `<span class="intIc">🥊</span> INTENT: <b style="color:var(--r)">HAYMAKER ${n}</b>` +
+      `<br><span style="font-size:10px;letter-spacing:.08em">${g.hint}</span>`;
+  }
   const kind = f.pat[f.pi % f.pat.length];
   if (kind === 'atk'){
     /* mirror the real resolution math — goth passive + pet damage cut included */
@@ -3669,6 +3700,11 @@ function foeIntent(){
   if (kind === 'curse') return '<span class="intIc">🕷</span> INTENT: <b style="color:var(--r)">A GIFT FOR YOUR DECK</b>' + seerLine(f);
   if (kind === 'enrage') return '<span class="intIc">😤</span> INTENT: <b style="color:var(--r)">WINDING UP</b>' + seerLine(f);
   if (kind === 'mimic') return '<span class="intIc">🪞</span> INTENT: <b>COPYING YOUR HOMEWORK</b>' + seerLine(f);
+  if (kind === 'tell'){
+    const g = BOSS_TELLS[f.id];
+    return `<span class="intIc">🥊</span> INTENT: <b style="color:var(--r)">WINDING UP</b>` +
+      (g ? ` <span style="opacity:.85">· ${g.hint}</span>` : '') + seerLine(f);
+  }
   return '<span class="intIc">📈</span> INTENT: <b style="color:var(--r)">GETTING ANGRIER</b>' + seerLine(f);
 }
 function hasVoucher(id){ return R && (R.vouchers || []).includes(id); }
@@ -3682,7 +3718,7 @@ function incomingDmg(){
   const f = B.foe;
   if (f.stun) return 0;
   const k = f.pat[f.pi % f.pat.length];
-  const one = Math.max(1, f.atk + f.str - (f.weak ? 2 : 0) - (R.cls === 'goth' ? 1 : 0) - petVal('dmgCut'));
+  const one = Math.max(1, (f.atk + f.str) * (f.tell ? 2 : 1) - (f.weak ? 2 : 0) - (R.cls === 'goth' ? 1 : 0) - petVal('dmgCut'));
   if (k === 'atk') return one;
   if (k === 'multi') return Math.max(1, Math.round((f.atk + f.str) * .45) - (R.cls === 'goth' ? 1 : 0) - petVal('dmgCut')) * 3;
   if (k === 'enrage') return 0;   /* the hit comes NEXT turn — bigger */
@@ -3710,6 +3746,8 @@ function foeChips(){
     const t = TRAIT_INFO[f.trait];
     bits.push(`<span class="chip hot" title="${t.txt}">${t.ic} ${t.nm}</span>`);
   }
+  if (f.tell) bits.push('<span class="chip hot">🥊 WIND-UP · COUNTER IT</span>');
+  if (f.vuln) bits.push('<span class="chip hot">🎯 STAGGERED · +50% DMG</span>');
   if (f.phase2) bits.push('<span class="chip hot">🔥 SECOND WIND</span>');
   if (f.stole) bits.push(`<span class="chip">💰 ${f.stole} STOLEN</span>`);
   if (f.blk) bits.push(`<span class="chip">🛡 ${f.blk}</span>`);
@@ -3986,6 +4024,7 @@ function playCard(i, cardEl){
         if (c.ed === 'inv') d = Math.round(d * 1.5);
         d = Math.round(d * multNow());   /* THE MULT · chips × mult, savanna edition */
         if (B.foe.trait === 'armored') d = Math.max(1, d - 2);   /* 🪨 every hit lands lighter */
+        if (B.foe.vuln) d = Math.round(d * 1.5);                  /* 🥊 staggered: open season */
         const f = B.foe;
         const absorbed = Math.min(f.blk, d);
         f.blk -= absorbed;
@@ -4019,6 +4058,21 @@ function playCard(i, cardEl){
     if (c.stun){
       if (B.foe.stunProof){ toast('IT\'S WISE TO THE TRICK NOW — NO CHAIN-STUNNING.', 1500); }
       else { B.foe.stun = 1; toast('💫 ' + B.foe.name.toUpperCase() + ' FORGETS WHAT IT WAS DOING', 1400); SFX.power(); }
+    }
+    /* THE COUNTER · answer the wind-up and the boss eats floor */
+    B.turnIds = B.turnIds || [];
+    B.turnIds.push(c.id);
+    if (B.foe.tell && BOSS_TELLS[B.foe.id] && BOSS_TELLS[B.foe.id].test(c, B)){
+      const g = BOSS_TELLS[B.foe.id];
+      B.foe.tell = 0;
+      B.foe.stagger = 1;
+      B.foe.vuln = 2;
+      stampFx('COUNTER!');
+      confettiFx();
+      toast('🥊 ' + g.win + ' · IT LOSES ITS TURN AND TAKES +50%', 3200);
+      SFX.victory(); hapt([40, 30, 80]);
+      const fa = $('#foeArt');
+      if (fa){ fa.classList.remove('foeHit'); void fa.offsetWidth; fa.classList.add('foeHit'); }
     }
     if (c.freeNext){ B.freeNext = 1; }
     if (c.self){ R.hp = Math.max(1, R.hp - c.self); B.tookDmg = true; }
@@ -4109,12 +4163,17 @@ function endTurn(){
     const f = B.foe;
     let kind = f.pat[f.pi % f.pat.length];
     f.pi++;
-    if (f.stun){
+    if (f.stagger){
+      f.stagger = 0;
+      kind = 'stunned';
+      toast('🥊 STAGGERED. IT IS SEEING TWO OF YOU. BOTH ANNOYING.', 2000);
+    } else if (f.stun){
       f.stun = 0;
       f.stunProof = 2;   /* wakes wary — immune to the next stun attempt, wears off after a turn */
       kind = 'stunned';
       toast('💫 IT STANDS THERE. MAJESTICALLY CONFUSED.', 1500);
     } else if (f.stunProof) f.stunProof--;
+    if (f.vuln) f.vuln--;
     let through = 0;
     if (kind === 'atk'){
       if (R.cls === 'ninja' && !B.ninjaDodge){
@@ -4127,7 +4186,13 @@ function endTurn(){
         toast('*phases* GHOSTS DON\'T TAKE DAMAGE. RUDE OF THEM.', 1500);
         SFX.block(); B.zebPose = 'blk'; B.zebUntil = Date.now() + 450;
       } else {
-        const n = Math.max(1, f.atk + f.str - (f.weak ? 2 : 0) - (R.cls === 'goth' ? 1 : 0) - petVal('dmgCut'));
+        const hay = f.tell ? 2 : 1;   /* unanswered wind-up = the big one */
+        if (hay > 1){
+          f.tell = 0;
+          const g = BOSS_TELLS[f.id];
+          if (g) setTimeout(() => toast('💢 ' + g.fail, 2600), 300);
+        }
+        const n = Math.max(1, (f.atk + f.str) * hay - (f.weak ? 2 : 0) - (R.cls === 'goth' ? 1 : 0) - petVal('dmgCut'));
         const absorbed = Math.min(B.block, n);
         B.block -= absorbed;          /* spent block is gone — robo carries only the remainder */
         through = n - absorbed;
@@ -4135,6 +4200,14 @@ function endTurn(){
         if (f.weak) f.weak--;
         if (through > 0){ B.tookDmg = true; playerFx(); SFX.playerHit(); hapt(25); B.zebPose = 'hurt'; B.zebUntil = Date.now() + 550; }
         else { SFX.block(); B.zebPose = 'blk'; B.zebUntil = Date.now() + 450; }
+      }
+    } else if (kind === 'tell'){
+      const g = BOSS_TELLS[f.id];
+      f.tell = 1;
+      if (g){
+        stampFx('WIND-UP');
+        toast(g.cue + ' — ' + g.hint, 3600);
+        SFX.bell(); hapt([30, 60, 30]);
       }
     } else if (kind === 'blk') f.blk += Math.round(f.atk * .8);
     else if (kind === 'heal'){
@@ -4246,6 +4319,7 @@ function endTurn(){
       return;
     }
     B.turn++;
+    B.turnIds = [];   /* the mirage counter is per-turn */
     /* PURPLE seals pay out on the way to the discard */
     const purples = Math.min(2, B.hand.filter(c => c.seal === 'purple').length);
     B.discard.push(...B.hand);
@@ -4328,6 +4402,12 @@ function autoPolicy(){
   const inc = incomingDmg();
   const intentAtk = inc > 0;
   const winding = B.foe.winding || nextK === 'enrage';   /* something huge lands next turn */
+  /* 0 · a boss is winding up and we know the answer */
+  if (B.foe.tell && BOSS_TELLS[B.foe.id]){
+    const g = BOSS_TELLS[B.foe.id];
+    const ci = h.findIndex(c => canPlayAuto(c) && g.test(c, { turnIds: [...(B.turnIds || []), c.id] }));
+    if (ci >= 0) return aiPlay(ci, 'COUNTER IT.');
+  }
   /* 1 · lethal, alone or as a one-two */
   const kill = singleKill();
   if (kill >= 0) return aiPlay(kill, 'FINISH IT.');
