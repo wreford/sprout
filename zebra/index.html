@@ -166,6 +166,7 @@ h1 .z{color:var(--r)}
 .gwrap .ghost{position:absolute;left:0;top:0;bottom:0;background:#ffffff55;transition:width .8s .3s}
 .gwrap .real{position:absolute;left:0;top:0;bottom:0;background:var(--r);transition:width .25s}
 #bEnd.pulse{animation:endPulse 1s infinite}
+#bDo.pulse,.door.pulse{animation:endPulse 1.2s infinite}
 @keyframes endPulse{50%{box-shadow:0 0 0 2px var(--r);filter:brightness(1.12)}}
 #energy.dry{animation:shk .3s}
 #app.bigshake{animation:shk .3s}
@@ -2624,11 +2625,12 @@ function tut(id, sel, kick, body, cb){
 const GUIDE = [
   { t: 'The <span>climb</span>', b: 'Endless floors. Pick a door, survive what\'s behind it. Every <b>5th floor is a boss</b>. Elites are the Rogues\' Gallery — worse people, better loot. There is no top. Only a personal best.' },
   { t: 'Bat<span>tle</span>', b: 'Draw 5, spend <b>ENERGY</b> (the red pip) to play cards. The enemy <b>TELEGRAPHS</b> its next move — block the big hits, punish the off-turns. Block resets every turn. Powers stick for the whole fight.' },
-  { t: 'Ble<span>nd</span>', b: 'At an Oasis you can fuse <b>ANY two cards into one</b> — combined effects, one card, forever. Bite + Hide = <b>Bide</b>. Small decks that do two things per card is the whole zebra.' },
-  { t: 'Rec<span>ipes</span>', b: 'Some pairs are <b>ANCESTRAL RECIPES</b> — Bite + Kick makes a perfected <b>Headbutt ★</b>, stronger than any generic blend. Fourteen exist. The ⚗ cookbook on the title keeps score and drops hints. Find them all and the ancestors pay out.' },
+  { t: 'Ble<span>nd</span>', b: 'At an Oasis you can fuse <b>ANY two cards into one</b> — combined effects, one card, forever. Bite + Zoomies = <b>Bimies</b>. Small decks that do two things per card is the whole zebra.' },
+  { t: 'Rec<span>ipes</span>', b: `Some pairs are <b>ANCESTRAL RECIPES</b> — Bite + Kick makes a perfected <b>Headbutt ★</b>, stronger than any generic blend. ${RECIPES.length} exist, some only reachable by blending blends. The ⚗ cookbook on the title keeps score and drops hints. Find them all and the ancestors pay out.` },
   { t: 'Stri<span>pes</span>', b: '<b>◆ Stripes</b> drop from every battle. Spend them in-run at the Trading Post. Half banks to your permanent wallet — that feeds the <b>SKILL TREE</b> back at the title: seven branches, every tip repeatable forever.' },
   { t: 'The <span>staff</span>', b: 'Stripes also hire the <b>♡ PETS</b> (one rides along, Jackson stares foes into weakness) and the <b>⚑ PIT CREW</b> — auto-battle helpers from Gary, who ends dead turns, up to Coach Hoofstrong\'s full <b>AUTO</b> button.' },
   { t: 'For<span>ever</span>', b: 'Death feeds the herd: <b>+stripes for the tree</b>, achievements tier forever, the <b>GRAZE branch earns while you sleep</b>, and when an era ends, the <b>GREAT MIGRATION</b> trades everything for permanent ☀ marks. The savanna keeps score.' },
+  { t: 'Lo<span>ot</span>', b: 'Feats earn <b>🏆 TROPHIES</b> with real prizes — 67 kills is sunglasses, and yes, <b>the zebra wears them</b> (pick any 3 in ✦ Achievements). Veterans past floor 10 also choose a <b>🪂 DROP POINT</b>: start deep, geared up, records only count floors you actually win.' },
 ];
 function showGuide(cb){
   let i = 0;
@@ -2715,7 +2717,8 @@ function screenTitle(){
       if (META.stats.floors >= 10){ screenDrop(); return; }   /* veterans pick a drop point */
       newRun(); screenMap(); return;
     }
-    screenMap(true);   /* continuing: floor was already counted when first shown */
+    /* if the saved run already beat this floor, advance — no re-farming a won fight */
+    screenMap(!(R.clearedFloor === R.floor));
   };
   $('#bGuide').onclick = () => showGuide();
   if ($('#bAbandon')) $('#bAbandon').onclick = () => { R = null; saveRun(); screenTitle(); };
@@ -3269,7 +3272,7 @@ function playCard(i, cardEl){
     else if (c.quake) base = 8 + Math.floor(B.discard.length / 3);
     else if (c.dmg) base = c.dmg;
     if (myst === 'dmg') base += 12;
-    let dmg = 0;
+    let dmg = 0, blocked = 0;
     if (base > 0 || c.multi){
       const hits = Math.min(c.multi || 1, CAPS.multi);
       for (let h = 0; h < hits; h++){
@@ -3279,15 +3282,15 @@ function playCard(i, cardEl){
         const absorbed = Math.min(f.blk, d);
         f.blk -= absorbed;
         f.hp -= (d - absorbed);
-        dmg += d;
+        dmg += d - absorbed;        /* only damage that lands counts */
+        blocked += absorbed;
       }
-      if (dmg > 0){
-        bumpStat('damage', dmg);
-        R.sdmg = (R.sdmg || 0) + dmg;
+      if (dmg > 0 || blocked > 0){
+        if (dmg > 0){ bumpStat('damage', dmg); R.sdmg = (R.sdmg || 0) + dmg; }
         const fa = $('#foeArt');
         if (fa && !fa.classList.contains('foeDie')){ fa.classList.remove('foeHit'); void fa.offsetWidth; fa.classList.add('foeHit'); }
         impactFx();
-        floatNum($('#foeArt'), '−' + dmg, dmg >= 15 ? '#f2f2f2' : 'var(--r)');
+        floatNum($('#foeArt'), dmg > 0 ? '−' + dmg : 'BLOCKED', dmg >= 15 ? '#f2f2f2' : dmg > 0 ? 'var(--r)' : '#8a8a8a');
         /* lunge lands after the re-render, on the fresh node */
         setTimeout(() => { const yz = $('#youZeb'); if (yz) yz.classList.add('lunge'); }, 30);
       }
@@ -3320,12 +3323,11 @@ function playCard(i, cardEl){
     if (c.type !== 'pow') B.discard.push(c);
     const dead = B.foe.hp <= 0;
     renderBattle();
-    if (dmg){
+    if (dmg || blocked){
       B.zebPose = 'atk'; B.zebUntil = Date.now() + 380;
       SFX.hit(dmg >= 12);
       hapt(dmg >= 15 ? 30 : 12);
       foeFx();
-      floatNum($('#foeArt'), '-' + dmg);
       if (dmg >= 15){
         const a = document.getElementById('app');
         a.classList.remove('bigshake'); void a.offsetWidth; a.classList.add('bigshake');
@@ -3407,6 +3409,7 @@ function endTurn(){
     B.hand = [];
     if (R.cls === 'granny') R.hp = Math.min(R.mhp, R.hp + 2);   /* grandma endures */
     B.block = (R.cls === 'robo' ? B.block : 0) + B.autoblk;   /* robo firmware retains block */
+    B.foe.blk = Math.ceil((B.foe.blk || 0) * .5);   /* stale foe block erodes — turtles can't wall forever */
     if (B.autoblk) bumpStat('blocks', B.autoblk);
     B.energy = B.maxEnergy + (relicSum('energy3') && B.turn % 3 === 0 ? 1 : 0);
     drawCards(5);
@@ -3419,8 +3422,9 @@ function endTurn(){
 }
 /* ---------- pit crew battle brains ---------- */
 function singleKill(){
+  /* firstHit lands on the first hit only — mirror playCard's math exactly */
   return B.hand.findIndex(c => c.cost <= B.energy && c.dmg &&
-    (c.dmg + B.str + (B.firstHit || 0)) * (c.multi || 1) >= B.foe.hp + (B.foe.blk || 0));
+    (c.dmg + B.str) * (c.multi || 1) + (B.firstHit || 0) >= B.foe.hp + (B.foe.blk || 0));
 }
 function helperNudge(){
   if (!B || B.over || B.busy || B.auto) return;
@@ -3431,7 +3435,7 @@ function helperNudge(){
       const kill = singleKill();
       if (kill >= 0){ toast('🩸 OX SMELLS BLOOD', 900); playCard(kill); return; }
     }
-    if (helperOn('gary') && !B.hand.some(c => c.cost <= B.energy) && B.hand.length){
+    if (helperOn('gary') && !B.hand.some(c => c.cost <= B.energy)){
       toast('📋 GARY ENDS THE TURN. EFFICIENTLY.', 900);
       endTurn();
     }
@@ -3443,7 +3447,7 @@ function autoPolicy(){
   if (kill >= 0){ playCard(kill); return; }
   const intentAtk = B.foe.pat[B.foe.pi % B.foe.pat.length] === 'atk';
   if (intentAtk){
-    const inc = Math.max(1, B.foe.atk + B.foe.str - (B.foe.weak ? 2 : 0));
+    const inc = Math.max(1, B.foe.atk + B.foe.str - (B.foe.weak ? 2 : 0) - (R.cls === 'goth' ? 1 : 0) - petVal('dmgCut'));
     if (B.block < inc){
       const bi = h.findIndex(c => c.cost <= B.energy && c.blk && !c.dmg);
       if (bi >= 0){ playCard(bi); return; }
@@ -3470,9 +3474,7 @@ function autoTick(){
 function winBattle(){
   if (B.won) return;
   B.won = true;
-  B.over = true;
-  B.zebPose = 'win'; B.zebUntil = 0;
-  Music.setBattle(false);
+  /* stat bumps land while B.over is still false so trophy fanfare defers to the parade */
   META.bestiary = META.bestiary || {};
   if (!META.bestiary[B.foe.id]) toast('📖 BESTIARY: ' + B.foe.name + ' CATALOGUED', 1600);
   META.bestiary[B.foe.id] = (META.bestiary[B.foe.id] || 0) + 1;
@@ -3481,6 +3483,10 @@ function winBattle(){
   bumpStat('floors', R.floor, true);
   META.stats.climb = Math.max(META.stats.climb || 0, R.floor - (R.startFloor || 0));
   META.eraBest = Math.max(META.eraBest || 0, R.floor);
+  B.over = true;
+  B.zebPose = 'win'; B.zebUntil = 0;
+  Music.setBattle(false);
+  R.clearedFloor = R.floor;   /* reload + Continue must not re-deal this floor's doors */
   const base = (B.kind === 'boss' ? 50 : B.kind === 'elite' ? 28 : 16) + Math.floor(R.floor * 2);
   const gold = Math.round(base * (1 + relicSum('goldMul') + treeVal('goldMul') + petVal('goldMul') + (R.cls === 'pirate' ? .4 : 0)) * marksMul()) + META.bonusStripe + treeVal('flat') + petVal('flat');
   R.stripes += gold;
@@ -3549,6 +3555,7 @@ function screenReward(gold, kind){
     /* apply BEFORE the HUD renders so the chips, count, and hp bar are already true */
     R.relics.push(relic);
     if (relic.hp){ R.mhp += relic.hp; R.hp += relic.hp; }
+    saveRun();   /* a reload here must not eat the relic */
   }
   /* almost every fight drops a powerup — Lucky Tail Swish makes it EVERY fight, elites and bosses included */
   const pows = (treeVal('powAlways') || (!relicDrop && Math.random() < .5)) ? rollPowerups(2 + treeVal('powChoice')) : null;
@@ -3908,7 +3915,7 @@ function treeGrowth(){
     ['menergy', v => `⚡ START ${3 + v}`], ['blendHeal', v => `♥ BLEND +${v}`],
     ['blendBonus', v => `⚡ BLENDS +${v}`], ['startBlend', v => `⚡ ${v} PRE-BLEND`],
     ['idleRate', v => `🌾 +${v}◆/HR AWAY`], ['idleCap', v => `🌾 CAP ${8 + v}H`], ['idleDeep', () => `🌾 DEEP ×2`],
-    ['powAlways', () => `POW 100%`], ['powChoice', () => `POW ×3`],
+    ['powAlways', () => `POW 100%`], ['powChoice', v => `POW ×${2 + v}`],
     ['safeDoor', () => `❓ BITE-PROOF`], ['relic', v => `◈ +${v} RELIC`], ['pick4', () => `🃏 4 PICKS`],
   ];
   return G.map(([k, f]) => { const v = treeVal(k); return v ? `<span class="chip hot">${f(v)}</span>` : ''; }).join('');
