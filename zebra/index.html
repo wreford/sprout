@@ -95,6 +95,8 @@ h1 .z{color:var(--r)}
 #turnBanner.on{animation:tb .8s}
 @keyframes tb{0%{transform:translate(-50%,-50%) scaleX(0)}18%{transform:translate(-50%,-50%) scaleX(1)}
   82%{transform:translate(-50%,-50%) scaleX(1)}100%{transform:translate(-50%,-50%) scaleX(0)}}
+.cerSkip{position:absolute;bottom:calc(env(safe-area-inset-bottom) + 16px);left:50%;transform:translateX(-50%);
+  width:auto;min-height:38px;padding:8px 18px;font-size:11px;opacity:.5;z-index:3}
 .ceremony{position:fixed;inset:0;z-index:60;background:#000000e8;display:flex;flex-direction:column;
   align-items:center;justify-content:center;gap:14px}
 .ceremony .duo{display:flex;gap:10px;align-items:center}
@@ -154,6 +156,13 @@ h1 .z{color:var(--r)}
   font-family:var(--mono);font-weight:800;font-size:8.5px;letter-spacing:.04em;line-height:1.4}
 .bcell .bname b{color:var(--r)}
 .card.recHint{box-shadow:0 0 0 2px #e8232a44;animation:recShimmer 1.6s ease-in-out infinite}
+/* THE RADAR · this card is half of a recipe you have never made */
+.card.pairable{outline:1px dashed #e8232a99;outline-offset:-5px}
+.card.pairable .nm::before{content:'⚗ ';color:var(--r)}
+.radar{font-family:var(--mono);font-weight:800;font-size:9px;letter-spacing:.1em;color:var(--r);
+  border:1px solid #e8232a4d;padding:6px 8px;width:100%;max-width:640px;line-height:1.5}
+.radar b{font-size:11px}
+.radar.dry{color:#ffffff66;border-color:#ffffff26}
 @keyframes recShimmer{0%,100%{box-shadow:0 0 0 2px #e8232a33}50%{box-shadow:0 0 0 3px #e8232a66}}
 .foeHit{animation:foeHit .28s ease}
 @keyframes foeHit{0%{transform:translateX(0)}18%{transform:translateX(-7px) rotate(-1.6deg) scale(1.07,.9)}
@@ -1028,6 +1037,20 @@ function herdRow(){
       <b>${STRIPE_NM[m] || m.toUpperCase()}</b> ${dots}</span>`;
   }).join('')}${multNow() > 1 ? `<span class="herd full" id="herdChip">HERD ×${multNow().toFixed(1).replace('.0', '')}</span>` : ''}</div>`;
 }
+/* which cards in your deck are one blend away from an ancestral recipe you've never made */
+function livePairs(){
+  const found = new Set(META.recipes || []);
+  const d = (R && R.deck || []).filter(c => c.type !== 'pow' && !c.cursed);
+  const outs = new Set(), uids = new Set();
+  for (let i = 0; i < d.length; i++)
+    for (let j = i + 1; j < d.length; j++){
+      const r = findRecipe(d[i], d[j]);
+      if (r && !found.has(r.out)){ outs.add(r.out); uids.add(d[i].uid); uids.add(d[j].uid); }
+    }
+  /* if most of the deck is involved the marks tell you nothing — drop them and say so */
+  const dense = d.length > 0 && uids.size / d.length > .6;
+  return { n: outs.size, uids: dense ? new Set() : uids, dense };
+}
 function motifsOf(c){
   if (c.motifs && c.motifs.length) return c.motifs;
   const m = MOTIF_MAP[c.id];
@@ -1414,7 +1437,7 @@ const FOES = [
   { id: 'baboon', name: 'Loud Baboon', hp: 22, atk: 7, pat: ['buff', 'atk', 'atk'] },
   { id: 'tortoise', name: 'Ancient Tortoise', hp: 36, atk: 5, pat: ['blk', 'blk', 'atk'] },
   { id: 'flamingo', name: 'Passive-Aggressive Flamingo', hp: 24, atk: 8, pat: ['buff', 'blk', 'atk'] },
-  { id: 'mosquito', name: 'Your Personal Mosquito', hp: 10, atk: 11, pat: ['atk', 'atk', 'atk'] },
+  { id: 'mosquito', name: 'Your Personal Mosquito', hp: 10, atk: 6, pat: ['atk', 'atk', 'atk'] },
   { id: 'lioness', name: 'Bored Lioness', hp: 30, atk: 9, pat: ['atk', 'atk', 'buff'] },
   { id: 'badger', name: 'Honey Badger (Doesn\'t Care)', hp: 28, atk: 10, pat: ['atk', 'buff', 'atk'] },
   { id: 'gnu', name: 'A Literal Gnu', hp: 34, atk: 9, pat: ['atk', 'blk', 'buff'] },
@@ -2051,6 +2074,9 @@ GEN_FOES.forEach(([id, name, body, gag], i) => {
  FOES.push({ id, name, hp: 9 + Math.round(i * .72), atk: 3 + Math.round(i * .13),
     pat: [['atk','atk','blk'], ['atk','blk','atk'], ['buff','atk','atk'], ['atk','buff','blk','atk'], ['blk','atk','atk'], ['atk','atk','buff']][i % 6] });
 });
+/* the bottom of the roster died to a single hand — nobody learns a card game that way.
+   Small foes now take two or three turns; they still can't really hurt you. */
+FOES.forEach(f => { if (f.hp < 20) f.hp = Math.round(f.hp * 2.2); });
 FOES.sort((a, b) => a.hp - b.hp);
 function genFeat(id){
   if (GEN_FEAT[id]) return GEN_FEAT[id];
@@ -2450,7 +2476,7 @@ function makeFoe(floor, kind){
     if (!FOE_PATS[v.id] && Math.random() < .6) foe.pat = pick([['steal','atk','atk'],['enrage','atk','blk'],['curse','atk','atk'],['multi','blk','atk'],['heal','atk','atk']]);
     return foe;
   }
-  const f = pick(FOES.slice(0, clamp(2 + Math.floor(floor / 2), 2, FOES.length)));
+  const f = pick(FOES.slice(0, clamp(5 + floor, 5, FOES.length)));   /* meet the savanna, not one lizard */
   return foeFlavor(scaleFoe(f, floor, 1));
 }
 
@@ -5692,6 +5718,8 @@ function screenReward(gold, kind){
       <div><div class="an" style="color:var(--r)">${pw.ic || '*'} ${pw.name}</div><div class="ap">${pw.desc}</div></div><div class="tick">POW ▸</div></div>`).join('')}</div>` : ''}
     <div class="big">Take a <span class="z">card</span></div>
     <div id="hand">${picks.map((c, i) => `<div data-i="${i}" style="--i:${i}">${cardHtml(c)}</div>`).join('')}</div>
+    ${R.deck.filter(c => c.type !== 'pow' && !c.cursed).length >= 2
+      ? `<button class="btn" id="bRBlend">⚗ Blend two instead${(() => { const n = livePairs().n; return n ? ` · ${n} ancestral pairing${n > 1 ? 's' : ''} in your deck` : ''; })()}</button>` : ''}
     <button class="btn ghost" id="bSkip">Skip card</button>
   </div>`);
   app.appendChild(p);
@@ -5742,7 +5770,11 @@ function screenReward(gold, kind){
     if (R.doorTag === 'pack'){ R.doorTag = null; saveRun(); openPack('std', 0, screenMap); return; }
  R.doorTag = null; saveRun(); screenMap();
   }
-  tut('reward', '#hand', 'LOOT', 'Tap a <b>powerup</b> when one drops — they stack forever. Then pick <b>one</b> card, or skip. Skipping is a real strategy: a <b>small deck</b> draws its best cards more often. Hoarders get eaten around floor 9.');
+  if ($('#bRBlend')) $('#bRBlend').onclick = () => {
+    autoPow();
+    wipe(() => screenBlend({ quick: 1, exit: afterReward, back: () => screenReward(gold, kind) }));
+  };
+  tut('reward', '#hand', 'LOOT', 'Tap a <b>powerup</b> when one drops. Then take <b>one</b> card — or <b>BLEND TWO</b> you already own into a single better one. Growing wide and fusing deep are different games. A <b>small, sharp deck</b> draws its best cards more often.');
 }
 /* ---------- the mystery door · the psycho's favourite ---------- */
 function mysteryDoor(){
@@ -5846,16 +5878,25 @@ function screenRest(revisit){
   $('#bBlend').onclick = screenBlend;
   tut('rest', '#bBlend', 'THE SIGNATURE MOVE', 'Healing is fine. <b>BLENDING is the game</b>: two cards become one permanent hybrid with both effects. Two decent cards in, one great card out — and your deck gets thinner. Do it.');
 }
-function screenBlend(){
+function screenBlend(opt){
   if (!R) return screenTitle();   /* the run ended under this screen — don't render a ghost */
+  opt = opt || {};
+  const exit = opt.exit || screenMap;                    /* where a finished blend goes */
+  const back = opt.back || (() => screenRest(true));     /* where "never mind" goes */
+  const quick = !!opt.quick;                             /* the field blender: no glass, no still */
   app.innerHTML = '';
   const sel = [];
+  const lp = livePairs();
   const p = el(`<div class="page">
     ${hudHtml()}
     <span class="kick">SELECT TWO CARDS · THEY BECOME ONE · FOREVER</span>
+    ${lp.n ? `<div class="radar">⚗ <b>${lp.n}</b> ANCESTRAL PAIRING${lp.n > 1 ? 'S' : ''} SLEEPING IN THIS DECK · ${
+        lp.dense ? 'IT IS FULL OF THEM — TRY ANYTHING' : 'MARKED BELOW'}<br>
+      <span style="opacity:.7">pick one card and its partners light up</span></div>`
+      : `<div class="radar dry">⚗ NOTHING ANCESTRAL IN HERE RIGHT NOW · BLEND ANYWAY, OR GO COLLECT STRANGER CARDS</div>`}
     <div style="display:flex;gap:8px;align-items:center">
-      ${tierOn('glass') ? '<button class="btn ghost slim" id="bGlassT" style="width:auto;min-height:36px;padding:6px 12px;font-size:11px">GLASS: OFF</button>' : ''}
-      ${R.deck.some(c => c.pA) ? '<button class="btn ghost slim" id="bDistill" style="width:auto;min-height:36px;padding:6px 12px;font-size:11px">⚗ DISTILL a blend</button>' : ''}
+      ${!quick && tierOn('glass') ? '<button class="btn ghost slim" id="bGlassT" style="width:auto;min-height:36px;padding:6px 12px;font-size:11px">GLASS: OFF</button>' : ''}
+      ${!quick && R.deck.some(c => c.pA) ? '<button class="btn ghost slim" id="bDistill" style="width:auto;min-height:36px;padding:6px 12px;font-size:11px">⚗ DISTILL a blend</button>' : ''}
     </div>
     <div id="hand"></div>
     <div id="blendPrev" style="display:none;text-align:center">
@@ -5863,13 +5904,14 @@ function screenBlend(){
       <div id="prevCard" style="max-width:150px;margin:6px auto 0"></div>
     </div>
     <button class="btn red" id="bDo" disabled>Blend</button>
-    <button class="btn ghost" id="bBack">Never mind</button>
+    <button class="btn ghost" id="bBack">${quick ? 'Never mind — take a card instead' : 'Never mind'}</button>
   </div>`);
   app.appendChild(p);
   const hand = $('#hand');
  R.deck.forEach((c, i) => {
     const locked = c.type === 'pow';
     const cd = el(cardHtml(c, locked));
+    if (!locked && lp.uids.has(c.uid)) cd.classList.add('pairable');
     if (locked){
       cd.style.position = 'relative';
       cd.insertAdjacentHTML('beforeend', '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#000000a8;font-family:var(--mono);font-weight:800;font-size:9px;letter-spacing:.1em;color:#ffffff88;text-align:center"> SINGLE-USE<br>WON\'T BLEND</div>');
@@ -5993,13 +6035,27 @@ function screenBlend(){
       <div class="duo">${cardHtml(cA)}<div class="zap">*</div>${cardHtml(cB)}</div>
       <div class="resultWrap" style="display:none"><div class="rays ${rec || mut ? 'hotR' : ''}"></div><div class="result">${cardHtml(nc)}</div></div>
     </div>`);
+    let again = false;
     document.body.appendChild(cer);
+    cer.insertAdjacentHTML('beforeend', '<button class="btn ghost cerSkip" id="cerX">Tap to skip</button>');
+    const cerT = [];
+    let cerDone = false;
+    const finishCer = () => {
+      if (cerDone) return;
+      cerDone = true;
+      cerT.forEach(clearTimeout);
+      cer.remove();
+      toast(`* BLENDED: ${nc.name.toUpperCase()}` + (again ? ' · SECOND PITCHER READY' : ''), 1800);
+      if (again) screenBlend(opt); else exit();
+    };
+    cer.onclick = finishCer;
     /* the zap quickens as the blender spools up */
-    setTimeout(() => { const z = cer.querySelector('.zap'); if (z) z.style.animationDuration = '.14s'; }, 550);
+    const T = quick ? .68 : 1;   /* the field blender doesn't do the full ceremony every single fight */
+    cerT.push(setTimeout(() => { const z = cer.querySelector('.zap'); if (z) z.style.animationDuration = '.14s'; }, 550 * T));
     /* 1: cards spiral into the vortex */
-    setTimeout(() => { cer.classList.add('suck'); }, 950);
+    cerT.push(setTimeout(() => { cer.classList.add('suck'); }, 950 * T));
     /* 2: flash, shockwave, screen shake — and the child bursts out on the rays */
-    setTimeout(() => {
+    cerT.push(setTimeout(() => {
       cer.classList.add('boom');
       cer.querySelector('.duo').style.display = 'none';
       cer.querySelector('.resultWrap').style.display = 'flex';
@@ -6015,16 +6071,12 @@ function screenBlend(){
       if (rec || mut) confettiFx();
       if (firstFind) Music.jingle('discover');
       else SFX.bell();
-    }, 1450);
+    }, 1450 * T));
  R.oasisBlends = (R.oasisBlends || 0) + 1;
-    const again = hasVoucher('blend2') && R.oasisBlends < 2 && R.deck.filter(c => c.type !== 'pow').length >= 2;
-    setTimeout(() => {
-      cer.remove();
-      toast(`* BLENDED: ${nc.name.toUpperCase()}` + (again ? ' · SECOND PITCHER READY' : ''), 1800);
-      if (again) screenBlend(); else screenMap();
-    }, 3100);
+ again = hasVoucher('blend2') && R.oasisBlends < 2 && R.deck.filter(c => c.type !== 'pow').length >= 2;
+    cerT.push(setTimeout(finishCer, 3100 * T));
   };
-  $('#bBack').onclick = () => screenRest(true);
+  $('#bBack').onclick = back;
   let glassOn = false;
   if ($('#bGlassT')) $('#bGlassT').onclick = e => {
     glassOn = !glassOn;
