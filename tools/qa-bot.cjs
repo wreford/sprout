@@ -15,7 +15,7 @@ const SP = '/tmp/claude-0/-home-user-sprout/12b11e48-c931-5cfc-8740-403ce467b352
   const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
   const page = await browser.newPage({ viewport: { width: 393, height: 852 } });
   const crashes = [];
-  page.on('pageerror', e => crashes.push('PAGEERROR: ' + e.message));
+  page.on('pageerror', e => crashes.push('PAGEERROR: ' + e.message + '\n    ' + String(e.stack || '').split('\n').slice(1, 5).join('\n    ')));
   page.on('console', m => { if (m.type() === 'error' && !/TUNNEL|net::ERR|fonts|404/i.test(m.text())) crashes.push('CONSOLE: ' + m.text()); });
 
   await page.goto('http://localhost:8899/zebra/', { waitUntil: 'domcontentloaded' });
@@ -39,6 +39,7 @@ const SP = '/tmp/claude-0/-home-user-sprout/12b11e48-c931-5cfc-8740-403ce467b352
       const has = id => !!document.getElementById(id);
       const txt = document.body.textContent.toUpperCase();
       if (document.querySelector('#tutScrim')) return 'tut';
+      if (document.querySelector('.twist')) return 'twist';
       if (document.querySelector('.ovlDeck')) return 'overlay';
       if (document.querySelector('.ceremony')) return 'ceremony';
       if (has('btm') && document.querySelector('#hand')) return 'battle';
@@ -81,6 +82,7 @@ const SP = '/tmp/claude-0/-home-user-sprout/12b11e48-c931-5cfc-8740-403ce467b352
 
         try {
           if (s === 'tut'){ const b = document.querySelector('#tutScrim button'); if (b) b.click(); }
+          else if (s === 'twist'){ const b = document.querySelector('#twGo,#twX,.twist .btn'); if (b) b.click(); }
           else if (s === 'overlay'){
             const x = document.querySelector('#dcClose,#dClose,#dwClose,#cbX,#dsX,.ovlDeck .btn.red');
             if (x) x.click();
