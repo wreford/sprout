@@ -1014,13 +1014,16 @@ function herdRow(){
   const counts = {};
   Object.entries(B.motifCnt || {}).forEach(([m, n]) => counts[m] = n);
   B.hand.forEach(c => herdMotifs(c).forEach(m => { if (!(m in counts)) counts[m] = 0; }));
+  /* rank by what you have gathered, then by what your hand can still gather */
+  const inHand = {};
+  B.hand.forEach(c => herdMotifs(c).forEach(m => inHand[m] = (inHand[m] || 0) + 1));
   const rows = Object.entries(counts)
-    .filter(([, n]) => n > 0 || Object.keys(counts).length <= 4)
-    .sort((a, b) => b[1] - a[1]).slice(0, 4);
+    .sort((a, b) => (b[1] - a[1]) || ((inHand[b[0]] || 0) - (inHand[a[0]] || 0)) || a[0].localeCompare(b[0]))
+    .slice(0, 4);
   if (!rows.length) return '';
   return `<div class="herdRow"><span class="hk">◧ HERD</span>${rows.map(([m, n]) => {
     const cls = n >= 3 ? 'full' : n === 2 ? 'close' : '';
-    const dots = [0, 1, 2].map(i => i < n ? '●' : '○').join('');
+    const dots = '●'.repeat(Math.min(n, 3)) + '○'.repeat(Math.max(0, 3 - n)) + (n >= 4 ? '+' + (n - 3) : '');
     return `<span class="herd ${cls}" title="three ${STRIPE_NM[m] || m} cards in one turn = +1 herd">
       <b>${STRIPE_NM[m] || m.toUpperCase()}</b> ${dots}</span>`;
   }).join('')}${multNow() > 1 ? `<span class="herd full" id="herdChip">HERD ×${multNow().toFixed(1).replace('.0', '')}</span>` : ''}</div>`;
@@ -1248,7 +1251,7 @@ function descFor(c){
   if (c.autoblk) bits.push(`<b>Pow:</b> +${c.autoblk} blk/turn.`);
   if (c.stripegen) bits.push(`<b>Pow:</b> +${c.stripegen} ◆/turn.`);
   if (c.unstable) bits.push('<b>UNSTABLE:</b> rerolls every play.');
-  if (c.glass) bits.push('<b>GLASS:</b> ×2, may shatter.');
+  if (c.glass) bits.push('<b>GLASS:</b> numbers already doubled · 1-in-4 it shatters.');
   if (c.quirk === 'eager') bits.push('First play each fight: <b>free</b>.');
   if (c.quirk === 'wild') bits.push('<b>WILD:</b> 10% hits you.');
   if (c.ed === 'inv') bits.push('<b>INVERTED:</b> its damage ×1.5.');
@@ -4172,7 +4175,7 @@ function hudHtml(){
     <span class="pill" style="cursor:pointer">DECK <b>${R.deck.length}</b> ▾</span>
     <span class="pill">* MAX <b>${R.menergy || 3}</b></span>
   </div>
-  <div id="hpbar" class="gwrap"><div class="ghost" style="transition:width .5s ease .25s;width:${R.hp / R.mhp * 100}%"></div><div class="real" style="width:${R.hp / R.mhp * 100}%"></div><span>${R.hp} / ${R.mhp} HP</span></div>
+  <div id="hpbar" class="gwrap"><div class="ghost" style="transition:width .5s ease .25s;width:${hpPct()}%"></div><div class="real" style="width:${hpPct()}%"></div><span>${Math.max(0, R.hp)} / ${R.mhp} HP</span></div>
   ${relicChips()}`;
 }
 /* declutter: relics collapse into totals — tap for the full hoard */
@@ -4268,6 +4271,7 @@ const HECKLES = [
   '◠ THE MEERKAT IS SELLING TICKETS TO THIS. HALF PRICE.',
 ];
 function screenMap(noAdvance){
+  if (!R) return screenTitle();   /* the run ended under this screen — don't render a ghost */
   /* Continue-from-title re-shows the CURRENT floor — reloading must not skip floors.
  Best-floor + era credit is granted in winBattle, not here: a floor only counts once
      you've actually won on it (drop starts can't inflate the record). */
@@ -4464,6 +4468,7 @@ function screenVictory(s){
   $('#bTitle2').onclick = () => { R = null; saveRun(); screenTitle(); };
 }
 function screenRegion(){
+  if (!R) return screenTitle();   /* the run ended under this screen — don't render a ghost */
   const rg = regionOf(R.floor);
   if (storyMode() === 'off'){
     toast(rg.name.toUpperCase() + ' · ' + (rg.law.id === 'none' ? 'NO LOCAL LAW' : rg.law.nm + ' · ' + rg.law.txt.toUpperCase()), 3000);
@@ -4616,11 +4621,17 @@ function multNow(){
 }
 /* what a card COSTS right now · NEGATIVE cards are free wherever they came from */
 function costOf(c){ return c.ed === 'neg' ? 0 : (c.cost || 0); }
+/* health bars clamp · an overkill used to hand CSS a negative width, which it simply ignored */
+function barPct(v, max){ return Math.max(0, Math.min(100, (v / (max || 1)) * 100)); }
+function hpPct(){ return R ? barPct(R.hp, R.mhp) : 0; }
 /* the single source of truth for damage. playCard resolves it, the hand prints it,
    and the Coach reads it — so the number on the card is never a lie. */
-function baseDmg(c){
+function baseDmg(c, played){
+  /* `played` is how many cards INCLUDING this one will have been played when it lands.
+     playCard has already bumped the counter by the time it swings; the hand preview hasn't. */
+  const pl = played === undefined ? B.played + 1 : played;
   let base = 0;
-  if (c.frenzy) base = 3 * (B.played + 1);
+  if (c.frenzy) base = 3 * pl;
   else if (c.mirror) base = B.block;
   else if (c.quake) base = 8 + Math.floor(B.discard.length / 3);
   else if (c.dmg) base = c.dmg;
@@ -4648,11 +4659,16 @@ function perHit(c, base, first, mult){
   if (B.foe.vuln) d = Math.round(d * 1.5);
   return d;
 }
-/* total damage a card will try to land this instant, multi-hits included */
+/* how many times a card swings · a RED SEAL does everything twice, multi-hits included */
+function hitsOf(c){
+  const sealX = c.seal === 'red' ? 2 : 1;
+  return Math.min((c.multi || 1) + (sealX > 1 ? Math.min(c.multi || 1, 3) : 0), CAPS.multi + 3);
+}
+/* total damage a card will try to land this instant, every hit counted */
 function liveDmg(c){
   const base = baseDmg(c);
   if (!(base > 0 || c.multi)) return 0;
-  const hits = c.multi || 1;
+  const hits = hitsOf(c);
   let t = 0;
   for (let h = 0; h < hits; h++) t += perHit(c, base, h === 0);
   return t;
@@ -4687,6 +4703,7 @@ function foeChips(){
   return bits.join('');
 }
 function renderBattle(){
+  if (!R) return screenTitle();   /* the run ended under this screen — don't render a ghost */
   app.innerHTML = '';
   const f = B.foe;
   const p = el(`<div class="page battlePage">
@@ -4697,9 +4714,9 @@ function renderBattle(){
       <div style="flex:1">
         <div id="foeName">${f.name}</div>
         ${f.ep ? `<div style="font-family:var(--mono);font-weight:800;font-size:9.5px;letter-spacing:.1em;color:var(--r)">(${f.ep})</div>` : ''}
-        <div id="foeHp" class="gwrap"><div class="ghost" style="width:${f.hp / f.mhp * 100}%"></div><div class="real" style="width:${f.hp / f.mhp * 100}%"></div></div>
+        <div id="foeHp" class="gwrap"><div class="ghost" style="width:${barPct(f.hp, f.mhp)}%"></div><div class="real" style="width:${barPct(f.hp, f.mhp)}%"></div></div>
         <div id="intent">${foeIntent()}</div>
-        <div id="foeStats" style="margin-top:5px">HP ${f.hp}/${f.mhp} &nbsp;${foeChips()}</div>
+        <div id="foeStats" style="margin-top:5px">HP ${Math.max(0, f.hp)}/${f.mhp} &nbsp;${foeChips()}</div>
       </div>
     </div>
     <div class="zline" style="display:flex;align-items:center;flex-wrap:wrap;gap:6px">
@@ -4742,11 +4759,13 @@ function renderBattle(){
     const hit = perHit(c, baseDmg(c), true), live = liveDmg(c);
     if (live > 0){
       if (c.dmg && hit !== c.dmg) fx.innerHTML = fx.innerHTML.replace(`<b>${c.dmg}</b>`, `<b class="hot">${hit}</b>`);
-      if (c.multi) fx.innerHTML += ` <b class="hot">= ${live}</b>`;
+      if (hitsOf(c) > 1) fx.innerHTML += ` <b class="hot">× ${hitsOf(c)} = ${live}</b>`;
       else if (c.frenzy || c.mirror || c.quake) fx.innerHTML += ` <b class="hot">→ ${live}</b>`;
     }
     /* one card away from a herd? say so on the card itself. */
-    if (tierOn('mult') && herdMotifs(c).some(m => (B.motifCnt[m] || 0) === 2)) cd.classList.add('herdReady');
+    /* two down means the third gathers the herd; three down means the fourth gathers it again */
+    if (tierOn('mult') && herdMotifs(c).some(m => { const n = B.motifCnt[m] || 0; return n === 2 || n === 3; }))
+ cd.classList.add('herdReady');
     cd.onclick = () => playCard(i, cd);
     hand.appendChild(cd);
  JTM.css('card-' + c.id, cd.querySelector('.art'));
@@ -4958,7 +4977,7 @@ function playCard(i, cardEl){
       if (myst === 'heal'){ R.hp = Math.min(R.mhp, R.hp + 6); SFX.heal(); }
     }
     /* ---- damage (single or multi-hit) ---- */
-    let base = baseDmg(c);
+    let base = baseDmg(c, B.played);   /* B.played already counts this card */
     if (c.exec && B.foe.hp < B.foe.mhp / 2) toast(' COUP DE GRASS · DOUBLED', 1000);
     if (myst === 'dmg') base += 12;
     let dmg = 0, blocked = 0;
@@ -4977,7 +4996,7 @@ function playCard(i, cardEl){
       floatNum($('#foeArt'), 'NO CLIP', '#8a8a8a');
     }
     if ((base > 0 || c.multi) && !wildMiss && !dodged){
-      const hits = Math.min((c.multi || 1) + (sealX > 1 ? Math.min(c.multi || 1, 3) : 0), CAPS.multi + 3);
+      const hits = hitsOf(c);
       for (let h = 0; h < hits; h++){
         const d = perHit(c, base, h === 0, multNow());
         if (h === 0) B.firstHit = 0;
@@ -5168,7 +5187,7 @@ function endTurn(){
         const absorbed = Math.min(B.block, n);
  B.block -= absorbed;          /* spent block is gone — robo carries only the remainder */
         through = n - absorbed;
- R.hp -= through;
+ R.hp = Math.max(0, R.hp - through);
         if (f.weak) f.weak--;
         if (through > 0){ B.tookDmg = true; playerFx(); SFX.playerHit(); hapt(25); B.zebPose = 'hurt'; B.zebUntil = Date.now() + 550; }
         else { SFX.block(); B.zebPose = 'blk'; B.zebUntil = Date.now() + 450; }
@@ -5204,7 +5223,7 @@ function endTurn(){
         const ab = Math.min(B.block, n);
         B.block -= ab;
         through = n - ab;
-        R.hp -= through;
+        R.hp = Math.max(0, R.hp - through);
         if (through > 0){ B.tookDmg = true; playerFx(); SFX.playerHit(); hapt(25); B.zebPose = 'hurt'; B.zebUntil = Date.now() + 550; }
         toast('IT FLAILS AT A PHYSICALLY IMPOSSIBLE ANGLE AND CONNECTS ANYWAY. ' + n + '.', 2800);
       }
@@ -5252,7 +5271,7 @@ function endTurn(){
         const ab = Math.min(B.block, per);
  B.block -= ab;
         const t = per - ab;
- R.hp -= t; tot += t;
+ R.hp = Math.max(0, R.hp - t); tot += t;
       }
       through = tot;
       if (tot > 0){ B.tookDmg = true; playerFx(); SFX.playerHit(); hapt([15, 40, 15, 40, 15]); B.zebPose = 'hurt'; B.zebUntil = Date.now() + 550; }
@@ -5549,9 +5568,10 @@ function winBattle(){
   if (R.doorTag === 'double' || R.doorTag === 'angry'){ gold = Math.round(gold * (R.doorTag === 'double' ? 2 : 1.5)); setTimeout(() => toast(' DOOR TAG PAID OUT · ◆ ' + gold, 1800), 1000); }
   if (R.wkGold) gold = Math.round(gold * R.wkGold);
  R.stripes += gold;
-  /* INTEREST · the meerkat pays 1 per 10 banked, cap 5. save-vs-spend is now a real fight. */
-  const intr = Math.min(5 + Math.floor(R.floor / 10), Math.floor(R.stripes / 10));
-  if (intr){ R.stripes += intr; setTimeout(() => toast(' INTEREST · +' + intr + ' ◆ (1 PER 10 HELD, CAP 5)', 1600), 1600); }
+  /* INTEREST · the meerkat pays 1 per 10 banked. the cap grows a point every 10 floors. */
+  const icap = 5 + Math.floor(R.floor / 10);
+  const intr = Math.min(icap, Math.floor(R.stripes / 10));
+  if (intr){ R.stripes += intr; setTimeout(() => toast(' INTEREST · +' + intr + ' ◆ (1 PER 10 HELD · CAP ' + icap + ')', 1600), 1600); }
  META.stripes += Math.floor(gold / 2);
   const heal = relicSum('healAfter') + petVal('healAfter') + (R.wx === 'drizzle' ? 3 : 0);
   if (heal) R.hp = Math.min(R.mhp, R.hp + heal);
@@ -5610,6 +5630,7 @@ function mkTrophyCard(foe){
   return c;
 }
 function screenReward(gold, kind){
+  if (!R) return screenTitle();   /* the run ended under this screen — don't render a ghost */
   const picks = [];
   /* floors 1-4 deal simple commons; the deep pool opens at floor 5 */
   const pool = BASE_CARDS.filter(c => !c.secret && !['bite', 'hide'].includes(c.id) && (R.floor >= 5 || c.early));
@@ -5725,6 +5746,7 @@ function screenReward(gold, kind){
 }
 /* ---------- the mystery door · the psycho's favourite ---------- */
 function mysteryDoor(){
+  if (!R) return screenTitle();   /* the run ended under this screen — don't render a ghost */
   /* a beat of dread first — the door deserves theatre */
   app.innerHTML = '';
   const tease = el(`<div class="page" style="justify-content:center;text-align:center;gap:14px">
@@ -5775,6 +5797,7 @@ function resolveMystery(){
 }
 /* ---------- rest / blend ---------- */
 function screenRest(revisit){
+  if (!R) return screenTitle();   /* the run ended under this screen — don't render a ghost */
   Music.scene('oasis');
   /* it said it would find you */
   if (!revisit && META.firstZebra && !R.metFirst && R.floor >= 4 && Math.random() < .3){
@@ -5824,6 +5847,7 @@ function screenRest(revisit){
   tut('rest', '#bBlend', 'THE SIGNATURE MOVE', 'Healing is fine. <b>BLENDING is the game</b>: two cards become one permanent hybrid with both effects. Two decent cards in, one great card out — and your deck gets thinner. Do it.');
 }
 function screenBlend(){
+  if (!R) return screenTitle();   /* the run ended under this screen — don't render a ghost */
   app.innerHTML = '';
   const sel = [];
   const p = el(`<div class="page">
@@ -6043,6 +6067,7 @@ function screenBlend(){
 }
 /* ---------- shop ---------- */
 function screenShop(){
+  if (!R) return screenTitle();   /* the run ended under this screen — don't render a ghost */
   Music.scene('shop');
   /* the ledger writes your ending in advance, once you are deep enough to care */
   if (R.floor >= 12 && !R.prophecy){
@@ -6394,6 +6419,7 @@ function combatBlend(){
 }
 /* ---------- ZEBRA CROSSING · black, white, red. pick a stripe. ---------- */
 function screenCrossing(){
+  if (!R) return screenTitle();   /* the run ended under this screen — don't render a ghost */
   app.innerHTML = '';
   const p = el(`<div class="page">
     ${hudHtml()}
