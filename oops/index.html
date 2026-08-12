@@ -31,6 +31,7 @@ canvas{display:block;width:100%;height:100%}
 .pill{background:#ffffffe6;border:3px solid var(--ink);border-radius:100px;padding:5px 13px;
   font-weight:800;font-size:clamp(13px,3.6vmin,18px);box-shadow:0 4px 0 #27304333}
 .pill.coin{color:#a8760a}
+.pill.shield{color:#e8558f;font-size:clamp(15px,4vmin,20px);padding:3px 12px}
 #lane{position:absolute;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top) + 58px);
   background:#273043dd;color:#fff;border-radius:100px;padding:3px 14px;font-family:var(--mono);
   font-weight:800;font-size:clamp(9px,2.6vmin,12px);letter-spacing:.12em;z-index:5;pointer-events:none}
@@ -62,7 +63,7 @@ canvas{display:block;width:100%;height:100%}
   text-transform:uppercase}
 
 /* safety card — the one bit that is not joking */
-/* the panel is dark and sets white text — this card is cream, so it takes its colour back */
+/* the panel is dark and sets white text — this card is cream, so it takes its color back */
 #safety{background:var(--cream);color:var(--ink);border:4px solid var(--ink);border-radius:18px;
   padding:14px 16px;max-width:420px;text-align:left;box-shadow:0 8px 0 var(--ink)}
 #safety *{color:inherit}
@@ -91,6 +92,7 @@ canvas{display:block;width:100%;height:100%}
   <canvas id="cv"></canvas>
   <div id="hud">
     <span class="pill" id="pScore">0</span>
+    <span class="pill shield" id="pShield" style="display:none">☂</span>
     <span class="pill coin" id="pCoin">◉ 0</span>
   </div>
   <div id="lane">STAGE 1 · GET TO THE ICE CREAM</div>
@@ -121,7 +123,7 @@ canvas{display:block;width:100%;height:100%}
         <li>Cross at a <b>crosswalk</b> or a light. Every time.</li>
         <li><b>Stop. Look left, right, left again.</b> Then listen.</li>
         <li>Make <b>eye contact with the driver</b> before you step out. If you cannot see their eyes, they cannot see you.</li>
-        <li>A big truck needs the <b>length of a football pitch</b> to stop. It cannot swerve for you.</li>
+        <li>A big truck needs the <b>length of a football field</b> to stop. It cannot swerve for you.</li>
         <li>Trucks have <b>enormous blind spots</b> — right at the front, right behind, and down both sides.</li>
         <li>Headphones off. Phone down. Hood back.</li>
       </ul>
@@ -237,7 +239,7 @@ const LINES = {
   start: ['Lily. Age: unbothered. Objective: the other side. Obstacles: everything.',
           'She has looked both ways. She has looked a third way. Off she goes.',
           'Today Lily attempts the road. The road is undefeated.'],
-  near:  ['Ooh. That was close.', 'That truck knew her name.', 'A breeze. From a lorry.',
+  near:  ['Ooh. That was close.', 'That truck knew her name.', 'That truck had a breeze.',
           'She felt the wind on that one.'],
   death: ['Oops. No more Lily.', 'She has become a decal.', 'Lily is now part of the road surface.',
           'That was a truck. That was clearly a truck.', 'She has been folded into the infrastructure.',
@@ -247,7 +249,17 @@ const LINES = {
           'She made it. Somebody give that girl an ice cream.'],
   coin:  ['Coin.', 'She is rich now.', 'Money.'],
   fit:   ['New outfit. Fashion is a form of protection. Legally, it is not.'],
-  idle:  ['Lily. The road is that way.', 'We are all waiting.', 'Take your time. The trucks certainly will.'],
+  idle:  ['Lily. The road is that way.', 'We are all waiting.', 'Take your time. The trucks certainly will.',
+          'Is this a strategy? Is standing still the strategy?', 'The ice cream is melting. I am just saying.'],
+  shield:['An umbrella! Against a truck! Incredible. It will work exactly once.',
+          'She has found protection. It is a small pink umbrella. We move on.',
+          'Umbrella acquired. Physics has been notified and is furious.'],
+  saved: ['THE UMBRELLA HELD. I have no further comments.',
+          'Saved by an umbrella. Do not write this down.',
+          'Somehow. Somehow that worked. She is out of umbrellas now.'],
+  jackson:['Jackson! On a skateboard! Nobody taught him that.',
+          'The cat has coins. Do not ask where the cat got coins.',
+          'That was Jackson. He is homeschooled. This is recess.'],
 };
 
 /* ============================================================
@@ -353,26 +365,28 @@ const G = { rows: [], lily: null, cam: 0, camZ: 1, camZTarget: 1, shake: 0, anch
   stage: 1, score: 0, coins: 0, phase: 'title', goalRow: 0, idle: 0, t: 0, slow: 1, focus: null };
 
 const PLAY_Z = 1;                                         /* tiles are sized so COLS exactly fills the width */
-const STAGE_GOAL = s => 10 + s * 2;                       /* rows to cross */
+const STAGE_GOAL = s => 8 + s * 2;                        /* rows to cross */
 function makeRow(y, stage){
   if (y === 0 || y === 1) return { y, type: 'grass', deco: decoFor(y), coin: null };
   if (y >= G.goalRow) return { y, type: 'goal', deco: [], coin: null };
   /* difficulty ramps with the stage and how far along the street you are */
-  const roadish = clamp(.42 + stage * .05 + (y / Math.max(1, G.goalRow)) * .18, 0, .82);
+  const roadish = clamp(.4 + stage * .045 + (y / Math.max(1, G.goalRow)) * .14, 0, .74);
   if (Math.random() < roadish){
     const dir = Math.random() < .5 ? 1 : -1;
-    const speed = (1.7 + Math.random() * 1.5 + stage * .28) * dir;
+    const speed = (1.15 + Math.random() * 1.1 + stage * .22) * dir;
     const big = Math.random() < .55 + stage * .03;        /* big trucks get more common */
-    const gap = big ? 4.6 + Math.random() * 3 : 3.4 + Math.random() * 3;
+    const gap = (big ? 6.2 + Math.random() * 3 : 4.8 + Math.random() * 3) - Math.min(1.6, stage * .18);
     const cars = [];
     const n = Math.max(1, Math.floor(COLS * 2.2 / gap));
     for (let i = 0; i < n; i++)
       cars.push({ x: i * gap + Math.random() * .8, big, honk: 0,
-        kind: big ? (Math.random() < .35 ? 'bus' : 'truck') : 'car' });
+        kind: big ? (Math.random() < .3 ? 'bus' : Math.random() < .18 ? 'icecream' : 'truck')
+                  : (Math.random() < .12 ? 'jackson' : 'car') });
     return { y, type: 'road', dir, speed, cars, span: n * gap, deco: [], coin: null };
   }
   const coin = Math.random() < .3 ? { c: 1 + ri(COLS - 2), got: false } : null;
-  return { y, type: 'grass', deco: decoFor(y), coin };
+  const power = (!coin && Math.random() < .16) ? { c: 1 + ri(COLS - 2), got: false } : null;
+  return { y, type: 'grass', deco: decoFor(y), coin, power };
 }
 function decoFor(y){
   const d = [];
@@ -389,12 +403,14 @@ function buildStage(stage){
   G.rows = [];
   /* Crossy Road's real trick is the safe strip. Never more than a few lanes
      of traffic before somewhere to stand and think about your choices. */
-  const maxRun = stage < 3 ? 2 : 3;
+  const maxRun = stage < 2 ? 1 : stage < 4 ? 2 : 3;
   let run = 0;
   for (let y = 0; y <= G.goalRow + 3; y++){
     let row;
     if (run >= maxRun && y < G.goalRow){
-      row = { y, type: 'grass', deco: decoFor(y), coin: Math.random() < .45 ? { c: 1 + ri(COLS - 2), got: false } : null };
+      const c = Math.random() < .45 ? { c: 1 + ri(COLS - 2), got: false } : null;
+      row = { y, type: 'grass', deco: decoFor(y), coin: c,
+        power: (!c && Math.random() < .2) ? { c: 1 + ri(COLS - 2), got: false } : null };
     } else {
       row = makeRow(y, stage);
     }
@@ -410,6 +426,7 @@ function buildStage(stage){
   G.lily = { c: Math.floor(COLS / 2), r: 0, x: Math.floor(COLS / 2), y: 0, face: 0,
     hop: 0, from: null, to: null, dead: false, squash: 0, spin: 0, dir: 0, nearT: 0 };
   G.cam = 0; G.camZ = PLAY_Z; G.camZTarget = PLAY_Z; G.shake = 0; G.idle = 0; G.slow = 1; G.focus = null;
+  G.shield = false;
   G.anchor = .74; G.anchorT = .74;
 }
 
@@ -472,6 +489,17 @@ function drawDeco(row){
       ctx.beginPath(); ctx.ellipse(px, py - s * .16, s * .26, s * .2, 0, 0, 7); ctx.fill();
     }
   }
+  if (row.power && !row.power.got){
+    const [px, py] = worldToScreen(row.power.c, row.y);
+    const s = TILE * G.camZ, bob = Math.sin(G.t / 200 + row.y) * s * .06;
+    ctx.save(); ctx.translate(px, py - s * .36 + bob);
+    ctx.fillStyle = '#ff6fa8';
+    ctx.beginPath(); ctx.arc(0, 0, s * .19, Math.PI, 0); ctx.fill();
+    ctx.strokeStyle = '#4a3628'; ctx.lineWidth = s * .03; ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, s * .2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(-s * .04, s * .2, s * .04, -1.2, 1.6); ctx.stroke();
+    ctx.restore();
+  }
   if (row.coin && !row.coin.got){
     const [px, py] = worldToScreen(row.coin.c, row.y);
     const s = TILE * G.camZ, bob = Math.sin(G.t / 220 + row.y) * s * .07;
@@ -483,71 +511,116 @@ function drawDeco(row){
   }
 }
 function drawTruck(row, car){
+  /* seen from above: you get the roof, the windshield at the nose, and the
+     wheels poking out along both flanks. */
   const s = TILE * G.camZ;
-  const len = (car.big ? 2.5 : 1.5) * s;
+  const len = (car.kind === 'jackson' ? .9 : car.big ? 2.5 : 1.5) * s;
   const [px, py] = worldToScreen(car.x, row.y);
-  if (px < -len * 1.5 || px > W + len * 1.5) return;
-  const h = s * (car.big ? .62 : .5);
-  const y = py - s * .5 - h / 2;
+  if (px < -len * 1.6 || px > W + len * 1.6) return;
+  const wdt = s * (car.kind === 'jackson' ? .42 : car.big ? .66 : .56);
+  const cy = py - s * .5;
   const flip = row.dir < 0 ? -1 : 1;
+  const ink = '#20242e';
   ctx.save();
-  ctx.translate(px, y + h / 2);
+  ctx.translate(px, cy);
   ctx.scale(flip, 1);
   const x0 = -len / 2;
-  /* shadow */
-  ctx.fillStyle = '#0000002e';
-  ctx.beginPath(); ctx.ellipse(0, h * .56, len * .48, h * .17, 0, 0, 7); ctx.fill();
-  if (car.kind === 'bus'){
-    ctx.fillStyle = car.col || (car.col = pick(['#ffb02e', '#e8554a', '#2aa5a0']));
-    ctx.beginPath();
-    if (ctx.roundRect) ctx.roundRect(x0, -h / 2, len, h, s * .1); else ctx.rect(x0, -h / 2, len, h);
-    ctx.fill();
-    ctx.strokeStyle = '#273043'; ctx.lineWidth = s * .045; ctx.stroke();
-    /* a row of windows, and somebody's elbow out of one */
-    ctx.fillStyle = '#8fd6ff';
-    for (let i = 0; i < 5; i++)
-      ctx.fillRect(x0 + len * (.08 + i * .17), -h * .3, len * .12, h * .34);
-    ctx.fillStyle = '#f4d9c0';
-    ctx.fillRect(x0 + len * .42, -h * .06, len * .07, h * .12);
-  } else if (car.big){
-    /* trailer */
-    ctx.fillStyle = car.col || (car.col = pick(['#eef2f8', '#ef4d3d', '#3f6ea8', '#ffc93c', '#2aa5a0']));
-    ctx.fillRect(x0, -h / 2, len * .66, h);
-    ctx.strokeStyle = '#273043'; ctx.lineWidth = s * .045;
-    ctx.strokeRect(x0, -h / 2, len * .66, h);
-    /* cab */
-    ctx.fillStyle = '#e7ecf5';
-    ctx.fillRect(x0 + len * .66, -h * .42, len * .34, h * .84);
-    ctx.strokeRect(x0 + len * .66, -h * .42, len * .34, h * .84);
-    /* windscreen */
-    ctx.fillStyle = '#8fd6ff';
-    ctx.fillRect(x0 + len * .84, -h * .3, len * .13, h * .34);
-  } else {
-    ctx.fillStyle = car.col || (car.col = pick(['#ef4d3d', '#ffc93c', '#3f6ea8', '#8b5cf6', '#2aa5a0']));
-    ctx.beginPath();
-    if (ctx.roundRect) ctx.roundRect(x0, -h / 2, len, h, s * .12); else ctx.rect(x0, -h / 2, len, h);
-    ctx.fill();
-    ctx.strokeStyle = '#273043'; ctx.lineWidth = s * .045; ctx.stroke();
-    ctx.fillStyle = '#8fd6ff';
-    ctx.fillRect(x0 + len * .55, -h * .3, len * .3, h * .36);
+  ctx.fillStyle = '#00000024';
+  ctx.beginPath(); ctx.ellipse(0, wdt * .5, len * .5, wdt * .3, 0, 0, 7); ctx.fill();
+
+  if (car.kind === 'jackson'){
+    /* the cat, on a skateboard, going faster than anything else on this road */
+    ctx.fillStyle = '#c96a2e';
+    if (ctx.roundRect){ ctx.beginPath(); ctx.roundRect(x0, -wdt * .22, len, wdt * .44, wdt * .2); ctx.fill(); }
+    else ctx.fillRect(x0, -wdt * .22, len, wdt * .44);
+    ctx.fillStyle = ink;
+    [x0 + len * .22, x0 + len * .78].forEach(wx => {
+      ctx.beginPath(); ctx.ellipse(wx, -wdt * .3, len * .07, wdt * .1, 0, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(wx, wdt * .3, len * .07, wdt * .1, 0, 0, 7); ctx.fill();
+    });
+    ctx.fillStyle = '#1c1c22';
+    ctx.beginPath(); ctx.ellipse(0, -wdt * .06, len * .3, wdt * .34, 0, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.arc(len * .26, -wdt * .1, wdt * .28, 0, 7); ctx.fill();
+    [[-1], [1]].forEach(([d]) => { ctx.beginPath();
+      ctx.moveTo(len * .18, d * wdt * .3);
+      ctx.lineTo(len * .3, d * wdt * .62);
+      ctx.lineTo(len * .38, d * wdt * .22); ctx.closePath(); ctx.fill(); });
+    ctx.fillStyle = '#f6c94a';
+    ctx.beginPath(); ctx.arc(len * .33, -wdt * .24, wdt * .08, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.arc(len * .33, wdt * .04, wdt * .08, 0, 7); ctx.fill();
+    ctx.restore();
+    return;
   }
-  /* wheels */
-  ctx.fillStyle = '#20242e';
-  const wr = h * .2;
-  [x0 + len * .18, x0 + len * .8].forEach(wx => {
-    ctx.beginPath(); ctx.arc(wx, h * .46, wr, 0, 7); ctx.fill();
+
+  const body = car.col || (car.col =
+    car.kind === 'icecream' ? '#ffd9ec'
+    : car.kind === 'bus' ? pick(['#ffb02e', '#e8554a', '#2aa5a0'])
+    : car.big ? pick(['#eef2f8', '#ef4d3d', '#3f6ea8', '#ffc93c', '#2aa5a0'])
+    : pick(['#ef4d3d', '#ffc93c', '#3f6ea8', '#8b5cf6', '#2aa5a0', '#eef2f8']));
+  /* wheels first so they sit under the body */
+  ctx.fillStyle = ink;
+  const axles = car.big ? [.14, .58, .76, .9] : [.2, .78];
+  axles.forEach(a => {
+    ctx.beginPath(); ctx.ellipse(x0 + len * a, -wdt * .52, len * .05, wdt * .14, 0, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(x0 + len * a, wdt * .52, len * .05, wdt * .14, 0, 0, 7); ctx.fill();
   });
-  /* headlights, because they are coming for her */
+  /* hull */
+  ctx.fillStyle = body;
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(x0, -wdt / 2, len, wdt, s * .1); else ctx.rect(x0, -wdt / 2, len, wdt);
+  ctx.fill();
+  ctx.strokeStyle = '#273043'; ctx.lineWidth = s * .04; ctx.stroke();
+  /* roof detail */
+  if (car.big){
+    ctx.fillStyle = '#00000018';
+    ctx.fillRect(x0 + len * .06, -wdt * .34, len * .56, wdt * .68);
+    ctx.strokeStyle = '#00000024'; ctx.lineWidth = s * .02;
+    for (let i = 1; i < 5; i++){
+      ctx.beginPath();
+      ctx.moveTo(x0 + len * (.06 + i * .11), -wdt * .34);
+      ctx.lineTo(x0 + len * (.06 + i * .11), wdt * .34);
+      ctx.stroke();
+    }
+  }
+  /* windshield at the nose */
+  ctx.fillStyle = '#8fd6ff';
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(x0 + len * (car.big ? .74 : .58), -wdt * .34, len * (car.big ? .2 : .3), wdt * .68, s * .05);
+  else ctx.rect(x0 + len * (car.big ? .74 : .58), -wdt * .34, len * (car.big ? .2 : .3), wdt * .68);
+  ctx.fill();
+  if (car.kind === 'bus'){
+    ctx.fillStyle = '#8fd6ff';
+    for (let i = 0; i < 4; i++){
+      ctx.fillRect(x0 + len * (.1 + i * .16), -wdt * .5, len * .1, wdt * .1);
+      ctx.fillRect(x0 + len * (.1 + i * .16), wdt * .4, len * .1, wdt * .1);
+    }
+  }
+  if (car.kind === 'icecream'){
+    /* a giant cone bolted to the roof, as is traditional */
+    ctx.fillStyle = '#f6c94a';
+    ctx.beginPath();
+    ctx.moveTo(x0 + len * .3, -wdt * .1);
+    ctx.lineTo(x0 + len * .42, wdt * .1);
+    ctx.lineTo(x0 + len * .18, wdt * .1);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#fff3f8';
+    ctx.beginPath(); ctx.arc(x0 + len * .3, -wdt * .16, wdt * .18, 0, 7); ctx.fill();
+    ctx.fillStyle = '#e8558f';
+    ctx.beginPath(); ctx.arc(x0 + len * .3, -wdt * .22, wdt * .07, 0, 7); ctx.fill();
+  }
+  /* headlights */
   ctx.fillStyle = '#fff6c8';
-  ctx.beginPath(); ctx.arc(x0 + len * .97, 0, s * .06, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.arc(x0 + len * .98, -wdt * .3, s * .05, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.arc(x0 + len * .98, wdt * .3, s * .05, 0, 7); ctx.fill();
   ctx.restore();
+
   if (car.honk > 0){
     ctx.save();
     ctx.globalAlpha = clamp(car.honk, 0, 1);
     ctx.fillStyle = '#fff';
     ctx.font = `800 ${s * .34}px ${getComputedStyle(document.body).fontFamily}`;
     ctx.textAlign = 'center';
-    ctx.fillText('HONK', px, y - s * .2);
+    ctx.fillText('HONK', px, cy - s * .5);
     ctx.restore();
   }
 }
@@ -594,15 +667,15 @@ function drawLily(){
   ctx.fillStyle = F.leg;
   [[-1, stride], [1, -stride]].forEach(([d, o]) => {
     ctx.beginPath();
-    if (ctx.roundRect) ctx.roundRect(d * s * .095 - s * .045, -s * .12 + o, s * .09, s * .13, s * .045);
-    else ctx.rect(d * s * .095 - s * .045, -s * .12 + o, s * .09, s * .13);
+    if (ctx.roundRect) ctx.roundRect(d * s * .085 - s * .042, -s * .13 + o, s * .084, s * .1, s * .042);
+    else ctx.rect(d * s * .085 - s * .042, -s * .13 + o, s * .084, s * .1);
     ctx.fill();
   });
   /* shoes */
   ctx.fillStyle = '#e8554a';
   [[-1, stride], [1, -stride]].forEach(([d, o]) => {
     ctx.beginPath();
-    ctx.ellipse(d * s * .095, s * .005 + o, s * .058, s * .034, 0, 0, 7);
+    ctx.ellipse(d * s * .085, -s * .015 + o, s * .06, s * .04, 0, 0, 7);
     ctx.fill();
   });
 
@@ -618,8 +691,8 @@ function drawLily(){
   /* ---- body · small, because the head is the star ---- */
   ctx.fillStyle = F.top;
   ctx.beginPath();
-  if (ctx.roundRect) ctx.roundRect(-s * .135, -s * .3, s * .27, s * .2, s * .085);
-  else ctx.rect(-s * .135, -s * .3, s * .27, s * .2);
+  if (ctx.roundRect) ctx.roundRect(-s * .15, -s * .28, s * .3, s * .17, s * .075);
+  else ctx.rect(-s * .15, -s * .28, s * .3, s * .17);
   ctx.fill();
   ctx.strokeStyle = ink; ctx.lineWidth = lw; ctx.stroke();
   if (F.vest){
@@ -638,13 +711,13 @@ function drawLily(){
   ctx.fillStyle = SKIN;
   [[-1, swing], [1, -swing]].forEach(([d, o]) => {
     ctx.beginPath();
-    ctx.ellipse(d * s * .165, -s * .235 - o, s * .038, s * .052, d * .4, 0, 7);
+    ctx.ellipse(d * s * .175, -s * .215 - o, s * .045, s * .045, d * .4, 0, 7);
     ctx.fill();
     ctx.strokeStyle = ink; ctx.lineWidth = lw * .8; ctx.stroke();
   });
 
   /* ---- HEAD ---- */
-  const hy = -s * .48, hr = s * .215;
+  const hy = -s * .44, hr = s * .225;
   const fx0 = dir * s * .012;
   /* back of the bob, a touch wider than the face so it frames it */
   ctx.fillStyle = HAIR_D;
@@ -661,11 +734,11 @@ function drawLily(){
   ctx.fillStyle = HAIR;
   ctx.beginPath();
   ctx.moveTo(fx0 - hr * 1.2, hy - hr * 1.2);
-  ctx.lineTo(fx0 - hr * 1.2, hy - hr * .02);
-  ctx.quadraticCurveTo(fx0 - hr * .78, hy - hr * .04, fx0 - hr * .58, hy - hr * .3);
-  ctx.quadraticCurveTo(fx0 - hr * .34, hy + hr * .04, fx0 - hr * .06, hy - hr * .26);
-  ctx.quadraticCurveTo(fx0 + hr * .22, hy + hr * .06, fx0 + hr * .5, hy - hr * .26);
-  ctx.quadraticCurveTo(fx0 + hr * .8, hy + hr * .02, fx0 + hr * 1.2, hy - hr * .2);
+  ctx.lineTo(fx0 - hr * 1.2, hy + hr * .3);
+  ctx.quadraticCurveTo(fx0 - hr * .78, hy + hr * .3, fx0 - hr * .56, hy + hr * .04);
+  ctx.quadraticCurveTo(fx0 - hr * .3, hy + hr * .34, fx0 - hr * .02, hy + hr * .06);
+  ctx.quadraticCurveTo(fx0 + hr * .26, hy + hr * .36, fx0 + hr * .54, hy + hr * .06);
+  ctx.quadraticCurveTo(fx0 + hr * .84, hy + hr * .32, fx0 + hr * 1.2, hy + hr * .12);
   ctx.lineTo(fx0 + hr * 1.2, hy - hr * 1.2);
   ctx.closePath(); ctx.fill();
   ctx.restore();
@@ -673,19 +746,19 @@ function drawLily(){
   [-1, 1].forEach(d => {
     ctx.fillStyle = '#ff8fb4';
     ctx.beginPath();
-    ctx.ellipse(fx0 + d * hr * .92, hy - hr * .42, hr * .16, hr * .13, d * .5, 0, 7);
+    ctx.ellipse(fx0 + d * hr * .9, hy - hr * .18, hr * .16, hr * .13, d * .5, 0, 7);
     ctx.fill();
     ctx.strokeStyle = ink; ctx.lineWidth = lw * .6; ctx.stroke();
     ctx.fillStyle = HAIR;
     ctx.beginPath();
-    ctx.ellipse(fx0 + d * hr * 1.24, hy - hr * .52, hr * .3, hr * .26, d * .35, 0, 7);
+    ctx.ellipse(fx0 + d * hr * 1.22, hy - hr * .28, hr * .3, hr * .26, d * .35, 0, 7);
     ctx.fill();
     ctx.strokeStyle = ink; ctx.lineWidth = lw * .75; ctx.stroke();
   });
 
   /* ---- face ---- */
   const fx = dir * s * .012;
-  const ex = hr * .38, ey = hy + hr * .12;
+  const ex = hr * .36, ey = hy + hr * .46;   /* low in the head · she is looking up at you */
   const blink = (!L.dead && Math.floor(G.t / 2600) % 2 === 0 && (G.t % 2600) > 2480) ? .12 : 1;
   if (expr === 'dead'){
     ctx.strokeStyle = ink; ctx.lineWidth = s * .028;
@@ -707,7 +780,7 @@ function drawLily(){
     /* brows say more than eyes do */
     ctx.strokeStyle = HAIR_D; ctx.lineWidth = s * .017;
     [-1, 1].forEach(d => {
-      const bx = fx + d * ex, by = ey - hr * .34 + (expr === 'worry' ? hr * .06 : 0);
+      const bx = fx + d * ex, by = ey - hr * .26 + (expr === 'worry' ? hr * .05 : 0);
       const tilt = expr === 'worry' ? -d * hr * .1 : expr === 'go' ? d * hr * .07 : 0;
       ctx.beginPath();
       ctx.moveTo(bx - hr * .13, by + tilt); ctx.lineTo(bx + hr * .13, by - tilt);
@@ -717,11 +790,11 @@ function drawLily(){
   /* blush */
   ctx.fillStyle = '#ff9aa8'; ctx.globalAlpha = .5;
   [-1, 1].forEach(d => { ctx.beginPath();
-    ctx.ellipse(fx + d * hr * .62, ey + hr * .3, hr * .17, hr * .1, 0, 0, 7); ctx.fill(); });
+    ctx.ellipse(fx + d * hr * .66, ey + hr * .2, hr * .17, hr * .1, 0, 0, 7); ctx.fill(); });
   ctx.globalAlpha = 1;
   /* mouth */
   ctx.strokeStyle = ink; ctx.lineWidth = s * .019;
-  const my = ey + hr * .45;
+  const my = ey + hr * .32;
   ctx.beginPath();
   if (expr === 'worry') ctx.arc(fx, my + hr * .1, hr * .16, Math.PI + .3, -.3);
   else if (expr === 'dead') ctx.arc(fx, my + hr * .12, hr * .14, Math.PI + .35, -.35);
@@ -868,7 +941,15 @@ function stepLily(dt){
     puff(L.x, L.y, 10, '#ffd75e');
     if (Math.random() < .25) Voice.say(pick(LINES.coin), { rate: 1.1 });
   }
-  /* reached the far pavement */
+  if (row && row.power && !row.power.got && Math.round(L.x) === row.power.c && L.hop === 0){
+    row.power.got = true;
+    G.shield = true;
+    Music.unlock();
+    puff(L.x, L.y, 12, '#ff9ec4');
+    $('pShield').style.display = 'inline-block';
+    Voice.say(pick(LINES.shield), { rate: 1.04 });
+  }
+  /* reached the far sidewalk */
   if (L.r >= G.goalRow && !L.dead && G.phase === 'play') win();
 }
 function stepTraffic(dt){
@@ -894,6 +975,17 @@ function hitTest(){
     const len = car.big ? 2.5 : 1.5;
     const half = len / 2 + .34;
     const d = Math.abs(car.x - L.x);
+    if (car.kind === 'jackson'){
+      /* the cat is a hazard to nobody. He is, however, worth three coins. */
+      if (d < half && !car.met){
+        car.met = true;
+        G.coins += 3;
+        $('pCoin').textContent = '◉ ' + (SV.coins + G.coins);
+        Music.coin(); puff(L.x, L.y, 14, '#ffd75e');
+        Voice.say(pick(LINES.jackson), { rate: 1.02 });
+      }
+      continue;
+    }
     if (d < half){ die(car); return; }
     /* a near miss is worth a line and a honk */
     if (d < half + .75 && car.honk <= 0 && !L.nearT){
@@ -910,6 +1002,21 @@ function hitTest(){
    ============================================================ */
 function die(car){
   const L = G.lily;
+  /* the umbrella takes the hit. Physically absurd. Emotionally necessary. */
+  if (G.shield && !L.dead){
+    G.shield = false;
+    L.nearT = 900;
+    $('pShield').style.display = 'none';
+    G.shake = .7; G.slow = .35;
+    Music.horn();
+    puff(L.x, L.y, 16, '#ff9ec4');
+    if (navigator.vibrate) navigator.vibrate(40);
+    Voice.say(pick(LINES.saved), { rate: 1.05 });
+    /* bump her back one row so she isn't standing in the same truck */
+    const back = Math.max(0, L.r - 1);
+    L.r = back; L.y = back; L.hop = 0; L.from = null; L.to = null;
+    return;
+  }
   L.dead = true;
   L.squash = 0;
   G.phase = 'dying';
@@ -1046,6 +1153,7 @@ function startStage(stage){
   G.phase = 'play';
   $('pScore').textContent = '0';
   $('pCoin').textContent = '◉ ' + SV.coins;
+  $('pShield').style.display = 'none';
   $('lane').textContent = `STREET ${stage} · ${G.goalRow} LANES TO THE ICE CREAM`;
   show(null);
   Music.start();
