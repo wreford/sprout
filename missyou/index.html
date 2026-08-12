@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#f7f1e4">
+<meta name="description" content="Missing You — a presentation by Dad. With a dance number by Jackson the black cat.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Missing You">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23f7f1e4'/%3E%3Cpath d='M16 27q-9 0-9-8 0-6 4-8l-2-7 4 3q3-1 6 0l4-3-2 7q4 2 4 8 0 8-9 8z' fill='%231c1c22'/%3E%3Ccircle cx='12.5' cy='19' r='1.6' fill='%23f6c94a'/%3E%3Ccircle cx='19.5' cy='19' r='1.6' fill='%23f6c94a'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,700;9..144,900&family=JetBrains+Mono:wght@600;800&display=swap" rel="stylesheet">
+<title>Missing You · a presentation by Dad</title>
+<style>
+:root{
+  --paper:#f7f1e4; --ink:#1e2434; --coral:#e0483e; --sun:#f6c94a;
+  --sea:#2f7fbf; --moss:#3f7a53; --dim:#1e243488;
+  --disp:'Fraunces',Georgia,serif;
+  --mono:'JetBrains Mono',ui-monospace,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden;background:#12161f;color:var(--ink);
+  font-family:var(--mono);user-select:none;-webkit-user-select:none}
+#shell{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;
+  padding:calc(env(safe-area-inset-top) + 8px) 10px calc(env(safe-area-inset-bottom) + 8px)}
+/* the composition is a fixed 16:9 stage that scales to fit — Remotion-style */
+#stageWrap{position:relative;width:100%;max-width:1100px;aspect-ratio:16/9;max-height:78vh}
+#comp{position:absolute;inset:0;overflow:hidden;background:var(--paper);border-radius:10px;
+  box-shadow:0 26px 70px -26px #000;container-type:size}
+.el{position:absolute}
+.kick{font-family:var(--mono);font-weight:800;letter-spacing:.24em;text-transform:uppercase}
+.stamp{font-family:var(--mono);font-weight:800;letter-spacing:.14em;text-transform:uppercase;
+  border:2px solid currentColor;padding:.18em .5em;border-radius:.3em}
+
+/* ---------- controls ---------- */
+#bar{display:flex;align-items:center;gap:8px;width:100%;max-width:1100px;color:#e9e2d2}
+#bPlay{background:var(--sun);border:none;color:#1e2434;font-family:var(--mono);font-weight:800;
+  font-size:13px;letter-spacing:.1em;text-transform:uppercase;padding:11px 18px;border-radius:100px;cursor:pointer}
+#bPlay:active{transform:translateY(2px)}
+.ctl{background:#ffffff14;border:1px solid #ffffff26;color:#e9e2d2;font-family:var(--mono);font-weight:800;
+  font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:9px 12px;border-radius:100px;cursor:pointer}
+.ctl.on{background:var(--coral);border-color:var(--coral);color:#fff}
+#scrub{position:relative;flex:1;height:6px;background:#ffffff1f;border-radius:100px;cursor:pointer}
+#scrub .fill{position:absolute;inset:0;width:0;background:var(--coral);border-radius:100px}
+#scrub .knob{position:absolute;top:50%;left:0;width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;
+  background:#fff;box-shadow:0 2px 6px #0009}
+#sceneLbl{font-size:10.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#e9e2d2aa;
+  min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#hint{font-size:10.5px;letter-spacing:.08em;color:#e9e2d288;text-align:center}
+@media (max-width:560px){ #sceneLbl{display:none} }
+</style>
+</head>
+<body>
+<div id="shell">
+  <div id="stageWrap"><div id="comp"></div></div>
+  <div id="bar">
+    <button id="bPlay">Play</button>
+    <button class="ctl" id="bBack">◀</button>
+    <button class="ctl" id="bFwd">▶</button>
+    <div id="scrub"><div class="fill"></div><div class="knob"></div></div>
+    <button class="ctl on" id="bMusic">♪</button>
+    <button class="ctl" id="bDance">Dance!</button>
+    <span id="sceneLbl">1 / 8</span>
+  </div>
+  <div id="hint">Tap <b>Play</b> · <b>Dance!</b> jumps straight to Jackson's number · ← → to step</div>
+</div>
+
+<script>
+'use strict';
+const FPS = 30;
+const comp = document.getElementById('comp');
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+/* ---------- animation helpers (the house set) ---------- */
+function interp(f, [f0, f1], [v0, v1], ease){
+  const t = clamp((f - f0) / (f1 - f0), 0, 1);
+  return v0 + (v1 - v0) * (ease ? ease(t) : t);
+}
+const easeOut = t => 1 - Math.pow(1 - t, 3);
+function spring(f, delay = 0, stiffness = .55){
+  const t = clamp((f - delay) / (FPS * .9), 0, 1);
+  if (t <= 0) return 0;
+  if (t >= 1) return 1;
+  return 1 - Math.pow(1 - t, 2) * Math.cos(t * Math.PI * 2.2 * stiffness);
+}
+const pop   = (f, d) => `scale(${spring(f, d)})`;
+const slamY = (f, d, from = -300) => `translateY(${interp(spring(f, d), [0, 1], [from, 0])}px)`;
+const slamX = (f, d, from = -600) => `translateX(${interp(spring(f, d), [0, 1], [from, 0])}px)`;
+const fade  = (f, a, b) => clamp(interp(f, [a, b], [0, 1]), 0, 1);
+function el(html, style){ return `<div class="el" style="${style}">${html}</div>`; }
+const S = obj => Object.entries(obj).map(([k, v]) => `${k}:${v}`).join(';');
+
+/* ============================================================
+   JACKSON
+   One articulated cat. Everything that moves is an argument, so the
+   dance scene can pose him per frame instead of owning a second cat.
+   ============================================================ */
+function jackson(o){
+  const p = Object.assign({ bop: 0, lean: 0, tail: 0, armL: 0, armR: 0, blink: 1,
+    ear: 0, squash: 1, tongue: 0, shades: 0, rim: '' }, o);
+  const b = p.bop, sq = p.squash;
+  /* a black cat on a dark stage is a rumour. On dark scenes he gets a rim light. */
+  const rim = p.rim, edge = rim || '#0c0c10', ew = rim ? 3.2 : 3;
+  return `<svg viewBox="0 0 160 190" width="100%" style="overflow:visible">
+    <ellipse cx="80" cy="182" rx="${44 - b * .5}" ry="7" fill="#0000002e"/>
+    <g transform="translate(80,${150 - b}) rotate(${p.lean}) scale(${1 / sq},${sq}) translate(-80,${-150 + b})">
+      <!-- tail -->
+      ${rim ? `<path d="M112 150 q ${26 + p.tail} -10 ${18 + p.tail * .7} -46"
+        stroke="${rim}" stroke-width="16" fill="none" stroke-linecap="round"/>` : ''}
+      <path d="M112 150 q ${26 + p.tail} -10 ${18 + p.tail * .7} -46"
+        stroke="#1c1c22" stroke-width="13" fill="none" stroke-linecap="round"/>
+      <!-- back legs -->
+      <ellipse cx="60" cy="${162 - b * .3}" rx="13" ry="10" fill="#14141a" stroke="${edge}" stroke-width="${ew - 1}"/>
+      <ellipse cx="100" cy="${162 - b * .3}" rx="13" ry="10" fill="#14141a" stroke="${edge}" stroke-width="${ew - 1}"/>
+      <!-- body -->
+      <path d="M80 168 q-38 0-38-34 q0-26 20-34 q18-7 36 0 q20 8 20 34 q0 34-38 34"
+        fill="#1c1c22" stroke="${edge}" stroke-width="${ew}"/>
+      <!-- white chest tuft -->
+      <path d="M80 152 q-9-14 0-30 q9 16 0 30" fill="#efe6d4" opacity=".9"/>
+      <!-- front paws · the dancing arms, drawn rim-first so they read on any stage -->
+      ${[['L', p.armL, 46, -1], ['R', p.armR, 114, 1]].map(([, amt, x0, dir]) => {
+        const d = `M${x0} 132 q${dir * (16 + amt * 6)} ${-4 - amt * 30} ${dir * (24 + amt * 10)} ${-10 - amt * 40}`;
+        return (rim ? `<path d="${d}" stroke="${rim}" stroke-width="14" fill="none" stroke-linecap="round"/>` : '')
+          + `<path d="${d}" stroke="#1c1c22" stroke-width="11" fill="none" stroke-linecap="round"/>`
+          + `<circle cx="${x0 + dir * (24 + amt * 10)}" cy="${122 - amt * 40}" r="7" fill="#1c1c22" stroke="${edge}" stroke-width="${ew - 1}"/>`;
+      }).join('')}
+      <!-- head -->
+      <g transform="translate(80,${96 - b * .6}) rotate(${p.lean * .5}) translate(-80,${-96 + b * .6})">
+        <path d="M54 74 l-5-24 18 11 M106 74 l5-24 -18 11" fill="#1c1c22" stroke="${edge}" stroke-width="${ew}"
+          transform="rotate(${p.ear},80,74)"/>
+        <ellipse cx="80" cy="96" rx="34" ry="30" fill="#1c1c22" stroke="${edge}" stroke-width="${ew}"/>
+        ${p.shades
+          ? `<path d="M52 90 h56 v3 h-56z" fill="#0c0c10"/>
+             <rect x="52" y="88" width="24" height="15" rx="4" fill="#0c0c10"/>
+             <rect x="84" y="88" width="24" height="15" rx="4" fill="#0c0c10"/>
+             <path d="M60 91 l8 9" stroke="#ffffff5c" stroke-width="3"/>
+             <path d="M92 91 l8 9" stroke="#ffffff5c" stroke-width="3"/>`
+          : `<ellipse cx="68" cy="93" rx="6.5" ry="${7.5 * p.blink}" fill="#f6c94a"/>
+             <ellipse cx="92" cy="93" rx="6.5" ry="${7.5 * p.blink}" fill="#f6c94a"/>
+             <ellipse cx="68" cy="93" rx="2.6" ry="${5.5 * p.blink}" fill="#0c0c10"/>
+             <ellipse cx="92" cy="93" rx="2.6" ry="${5.5 * p.blink}" fill="#0c0c10"/>
+             <circle cx="70.5" cy="90" r="1.7" fill="#fff"/><circle cx="94.5" cy="90" r="1.7" fill="#fff"/>`}
+        <path d="M76 105 q4 4 8 0" stroke="#0c0c10" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+        ${p.tongue ? `<ellipse cx="80" cy="${110 + p.tongue * 3}" rx="5" ry="${4 * p.tongue}" fill="#e0483e"/>` : ''}
+        <path d="M46 100 l-18-5 M46 106 l-18 3 M114 100 l18-5 M114 106 l18 3"
+          stroke="#57576a" stroke-width="2.2" stroke-linecap="round"/>
+      </g>
+    </g>
+  </svg>`;
+}
+
+/* a small, plain kid-drawn heart */
+const HEART = c => `<svg viewBox="0 0 40 36" width="100%"><path d="M20 34 C6 24 2 16 2 11 A9 9 0 0 1 20 8 A9 9 0 0 1 38 11 C38 16 34 24 20 34z" fill="${c}"/></svg>`;
+
+/* ============================================================
+   SCENES
+   ============================================================ */
+const SCENES = [
+
+/* 1 · TITLE ---------------------------------------------------- */
+{ dur: 165, name: 'Title', render(f){
+  const blink = (Math.floor(f / 64) % 2 === 0 && f % 64 > 58) ? .12 : 1;
+  return el('', S({ inset: 0, background: 'radial-gradient(90% 70% at 22% 20%,#fffaf0 0%,var(--paper) 60%)' }))
+  + el(`<div class="kick" style="font-size:1.5cqw;color:var(--coral)">Q3 FAMILY REVIEW · INTERNAL · VERY INTERNAL</div>`,
+      S({ left: '7%', top: '13%', transform: slamX(f, 0) }))
+  + el(`<div style="font-family:var(--disp);font-weight:900;font-size:9cqw;line-height:.86;letter-spacing:-.03em">
+        I miss<br>you<span style="color:var(--coral)">.</span></div>`,
+      S({ left: '7%', top: '20%', transform: slamY(f, 8, 260) }))
+  + el(`<div style="font-family:var(--mono);font-weight:800;font-size:1.7cqw;line-height:1.9;color:var(--dim)">
+        A PRESENTATION BY <b style="color:var(--ink)">DAD</b><br>
+        WITH A DANCE NUMBER BY <b style="color:var(--ink)">JACKSON</b></div>`,
+      S({ left: '7%', top: '63%', opacity: fade(f, 44, 66) }))
+  + el(`<div class="stamp" style="font-size:1.1cqw;color:var(--moss)">SLIDES: 8 · FEELINGS: MANY</div>`,
+      S({ left: '7%', top: '80%', opacity: fade(f, 62, 82) }))
+  + el(jackson({ bop: Math.sin(f / 11) * 4, tail: Math.sin(f / 8) * 14, blink }),
+      S({ right: '9%', bottom: '6%', width: '26%', transform: pop(f, 26) }))
+  + el(HEART('#e0483e'), S({ right: '31%', top: '22%', width: '4%',
+      transform: pop(f, 70) + ` translateY(${Math.sin(f / 13) * 8}px)`, opacity: fade(f, 70, 84) }))
+  + el(HEART('#f6c94a'), S({ right: '38%', top: '34%', width: '2.6%',
+      transform: pop(f, 84) + ` translateY(${Math.sin(f / 10 + 2) * 7}px)`, opacity: fade(f, 84, 96) }));
+}},
+
+/* 2 · AGENDA ---------------------------------------------------- */
+{ dur: 200, name: 'The agenda', render(f){
+  const rows = [
+    ['01', 'Missing you', '9:00'],
+    ['02', 'Missing you (cont.)', '9:15'],
+    ['03', 'A short break', '10:00'],
+    ['04', 'During which: missing you', '10:05'],
+    ['05', "Jackson's remarks", '10:30'],
+    ['06', 'JACKSON DANCES', '10:45'],
+    ['07', 'Findings, hugging', '11:15'],
+  ];
+  return el(`<div class="kick" style="font-size:1.5cqw;color:var(--sea)">AGENDA · PLEASE HOLD QUESTIONS</div>`,
+      S({ left: '7%', top: '10%', transform: slamX(f, 0) }))
+  + el(`<div style="font-family:var(--disp);font-weight:900;font-size:5cqw;letter-spacing:-.02em">Today's agenda</div>`,
+      S({ left: '7%', top: '16%', transform: slamY(f, 6, 180) }))
+  + rows.map((r, i) => {
+      const hot = i === 5;
+      return el(`<div style="display:flex;align-items:baseline;gap:1.6cqw;border-bottom:2px dotted #1e243433;padding-bottom:.5cqw">
+        <span style="font-family:var(--mono);font-weight:800;font-size:1.3cqw;color:${hot ? 'var(--coral)' : 'var(--dim)'}">${r[0]}</span>
+        <span style="font-family:var(--disp);font-weight:${hot ? 900 : 700};font-size:${hot ? 3 : 2.2}cqw;
+          color:${hot ? 'var(--coral)' : 'var(--ink)'}">${r[1]}</span>
+        <span style="margin-left:auto;font-family:var(--mono);font-weight:800;font-size:1.15cqw;color:var(--dim)">${r[2]}</span>
+      </div>`, S({ left: '7%', width: '62%', top: (28 + i * 9.4) + '%',
+        transform: slamX(f, 14 + i * 8, 700), opacity: f > 14 + i * 8 ? 1 : 0 }));
+    }).join('')
+  + el(jackson({ bop: Math.sin(f / 12) * 3, tail: Math.sin(f / 7) * 20, ear: Math.sin(f / 30) * 5 }),
+      S({ right: '5%', bottom: '8%', width: '21%', transform: pop(f, 40) }))
+  + el(`<div style="background:#fff;border:3px solid var(--ink);border-radius:1.4cqw;padding:.7cqw 1.1cqw;
+        font-family:var(--mono);font-weight:800;font-size:1.1cqw">item six is mine</div>`,
+      S({ right: '24%', bottom: '32%', transform: pop(f, 120) + ` translateY(${Math.sin(f / 14) * 5}px)`,
+        opacity: fade(f, 120, 134) }));
+}},
+
+/* 3 · THE DATA -------------------------------------------------- */
+{ dur: 230, name: 'The data', render(f){
+  const hours = ['6a', '8a', '10a', '12p', '2p', '4p', '6p', '8p', '10p'];
+  const vals  = [72, 78, 81, 88, 84, 91, 96, 99, 100];
+  return el(`<div class="kick" style="font-size:1.5cqw;color:var(--moss)">FIG. 1 · THOUGHTS OF YOU, PER HOUR</div>`,
+      S({ left: '7%', top: '10%', transform: slamX(f, 0) }))
+  + el(`<div style="font-family:var(--disp);font-weight:900;font-size:4.6cqw;letter-spacing:-.02em;line-height:1">
+        The numbers are<br><span style="color:var(--coral)">not improving.</span></div>`,
+      S({ left: '7%', top: '16%', transform: slamY(f, 6, 180) }))
+  /* chart */
+  + hours.map((h, i) => {
+      const g = clamp((f - (30 + i * 7)) / 22, 0, 1);
+      const hh = vals[i] * easeOut(g);
+      return el(`<div style="width:100%;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:.4cqw">
+          <span style="font-family:var(--mono);font-weight:800;font-size:1cqw;color:var(--dim);opacity:${g}">${Math.round(hh)}</span>
+          <div style="width:100%;height:${hh}%;background:${i === 8 ? 'var(--coral)' : 'var(--sea)'};border-radius:.4cqw .4cqw 0 0"></div>
+          <span style="font-family:var(--mono);font-weight:800;font-size:.95cqw;color:var(--dim)">${h}</span>
+        </div>`,
+        S({ left: (8 + i * 9.4) + '%', bottom: '12%', width: '7.4%', height: '38%' }));
+    }).join('')
+  + el(`<div style="border-top:3px dashed var(--coral)"></div>`,
+      S({ left: '7%', width: '86%', bottom: '46%', opacity: fade(f, 120, 140) }))
+  + el(`<div style="font-family:var(--mono);font-weight:800;font-size:1.15cqw;color:var(--coral)">CAPACITY</div>`,
+      S({ left: '7%', bottom: '48.5%', opacity: fade(f, 126, 146) }))
+  + el(`<div style="font-family:var(--mono);font-weight:800;font-size:1.3cqw;line-height:1.8;color:var(--dim)">
+        METHODOLOGY: I counted.<br>MARGIN OF ERROR: none, I was very thorough.</div>`,
+      S({ left: '7%', bottom: '3%', opacity: fade(f, 150, 172) }));
+}},
+
+/* 4 · THE QUIET HOUSE ------------------------------------------- */
+{ dur: 230, name: 'The quiet house', render(f){
+  const items = [
+    ['The kitchen', 'Clean. Stayed clean. Unsettling.'],
+    ['The good spot on the couch', 'Unclaimed. No one is fighting for it.'],
+    ['The snack drawer', 'Fully stocked. This has never happened.'],
+    ['The volume', 'Nine. Should be a forty.'],
+    ['Jackson', 'Has taken up residence on your bed. Refuses comment.'],
+  ];
+  return el('', S({ inset: 0, background: 'linear-gradient(180deg,#eef2f6 0%,var(--paper) 70%)' }))
+  + el(`<div class="kick" style="font-size:1.5cqw;color:var(--sea)">SITE INSPECTION · THE HOUSE, WITHOUT YOU</div>`,
+      S({ left: '7%', top: '10%', transform: slamX(f, 0) }))
+  + el(`<div style="font-family:var(--disp);font-weight:900;font-size:4.8cqw;letter-spacing:-.02em">It's so <span style="color:var(--sea)">tidy</span> in here.</div>`,
+      S({ left: '7%', top: '16%', transform: slamY(f, 6, 180) }))
+  + items.map((it, i) => el(
+      `<div style="display:flex;gap:1.2cqw;align-items:baseline">
+        <span style="font-family:var(--mono);font-weight:800;font-size:1.5cqw;color:var(--sea)">✓</span>
+        <span><b style="font-family:var(--disp);font-weight:900;font-size:1.9cqw">${it[0]}</b>
+        <span style="font-family:var(--mono);font-weight:600;font-size:1.2cqw;color:var(--dim)"> — ${it[1]}</span></span>
+      </div>`,
+      S({ left: '7%', width: '60%', top: (30 + i * 10) + '%',
+        transform: slamX(f, 16 + i * 12, 600), opacity: f > 16 + i * 12 ? 1 : 0 }))).join('')
+  + el(jackson({ bop: Math.sin(f / 16) * 2, tail: Math.sin(f / 11) * 8,
+      blink: (Math.floor(f / 50) % 2 === 0 && f % 50 > 44) ? .1 : 1 }),
+      S({ right: '7%', bottom: '10%', width: '22%', transform: pop(f, 70) }))
+  + el(`<div style="font-family:var(--mono);font-weight:800;font-size:1.2cqw;color:var(--dim);max-width:40cqw">
+        No one has said <b style="color:var(--ink)">"I'm bored"</b> in ${8 + Math.floor(f / 40)} hours. I would love to hear it.</div>`,
+      S({ left: '7%', bottom: '6%', opacity: fade(f, 160, 182) }));
+}},
+
+/* 5 · JACKSON'S REMARKS ----------------------------------------- */
+{ dur: 210, name: "Jackson's remarks", render(f){
+  const blink = (Math.floor(f / 46) % 2 === 0 && f % 46 > 40) ? .1 : 1;
+  const lines = [
+    [30,  'He was handed the microphone.'],
+    [70,  'He looked at it.'],
+    [110, 'He looked at me.'],
+    [150, 'He has elected to express himself another way.'],
+  ];
+  return el('', S({ inset: 0, background: 'radial-gradient(70% 90% at 70% 50%,#fffdf7 0%,var(--paper) 70%)' }))
+  + el(`<div class="kick" style="font-size:1.5cqw;color:var(--coral)">ITEM 05 · PREPARED REMARKS</div>`,
+      S({ left: '7%', top: '11%', transform: slamX(f, 0) }))
+  + el(`<div style="font-family:var(--disp);font-weight:900;font-size:4.4cqw;letter-spacing:-.02em;line-height:1">
+        Jackson would<br>like to say<br><span style="color:var(--coral)">nothing.</span></div>`,
+      S({ left: '7%', top: '19%', transform: slamY(f, 8, 200) }))
+  + lines.map(([d, t], i) => el(
+      `<div style="font-family:var(--mono);font-weight:800;font-size:1.25cqw;color:var(--dim)">${t}</div>`,
+      S({ left: '7%', top: (56 + i * 7.5) + '%', opacity: fade(f, d, d + 16),
+        transform: `translateX(${interp(f, [d, d + 16], [-24, 0], easeOut)}px)` }))).join('')
+  /* the microphone, ignored */
+  + el(`<svg viewBox="0 0 40 120" width="100%">
+        <rect x="14" y="60" width="12" height="56" rx="4" fill="#2b2b33"/>
+        <rect x="8" y="8" width="24" height="58" rx="12" fill="#3a3a44" stroke="#0c0c10" stroke-width="3"/>
+        <path d="M12 16 h16 M12 24 h16 M12 32 h16 M12 40 h16" stroke="#0c0c10" stroke-width="2.4"/>
+      </svg>`,
+      S({ right: '34%', bottom: '8%', width: '4.5%', transform: pop(f, 24) + ' rotate(-8deg)' }))
+  + el(jackson({ bop: Math.sin(f / 22) * 2, tail: Math.sin(f / 6) * 26, blink,
+      ear: Math.sin(f / 18) * 7 }),
+      S({ right: '8%', bottom: '7%', width: '25%', transform: pop(f, 16) }))
+  + el(`<div style="background:#fff;border:3px solid var(--ink);border-radius:1.4cqw;padding:.7cqw 1.2cqw;
+        font-family:var(--mono);font-weight:800;font-size:1.15cqw">…</div>`,
+      S({ right: '30%', top: '26%', transform: pop(f, 120) + ` translateY(${Math.sin(f / 15) * 5}px)`,
+        opacity: fade(f, 120, 134) }))
+  + el(`<div style="font-family:var(--disp);font-weight:900;font-size:2.4cqw;color:var(--coral)">Hit it, Jackson.</div>`,
+      S({ left: '7%', bottom: '5%', opacity: fade(f, 180, 200), transform: pop(f, 180) }));
+}},
+
+/* 6 · THE DANCE ------------------------------------------------- */
+{ dur: 560, name: 'JACKSON DANCES', render(f){
+  const BPM = 112, beat = f / FPS * (BPM / 60);
+  const bounce = Math.abs(Math.sin(beat * Math.PI));
+  const half   = Math.sin(beat * Math.PI);
+  const move   = Math.floor(beat / 8) % 5;          /* a new move every 8 beats */
+  const hue    = (beat * 14) % 360;
+
+  /* the routine */
+  let pose;
+  if (move === 0)      pose = { bop: bounce * 16, lean: half * 7, tail: half * 34, armL: bounce, armR: 0,
+                                squash: 1 + bounce * .07, shades: 1 };
+  else if (move === 1) pose = { bop: bounce * 10, lean: half * 16, tail: -half * 30, armL: bounce, armR: bounce,
+                                squash: 1 + bounce * .05, shades: 1 };
+  else if (move === 2) pose = { bop: bounce * 22, lean: 0, tail: Math.sin(beat * 6) * 30,
+                                armL: 1, armR: 1, squash: 1 + bounce * .12, shades: 1, tongue: bounce };
+  else if (move === 3) pose = { bop: bounce * 8, lean: half * 26, tail: half * 40, armL: 0, armR: bounce,
+                                squash: 1, shades: 1, ear: half * 10 };
+  else                 pose = { bop: bounce * 18, lean: Math.sin(beat * Math.PI / 2) * 34,
+                                tail: Math.sin(beat * 3) * 44, armL: bounce, armR: 1 - bounce,
+                                squash: 1 + bounce * .09, shades: 1, tongue: bounce * .6 };
+  const MOVES = ['THE PAW RAISE', 'THE DOUBLE SCOOP', 'THE FULL FLOOF', 'THE LEAN', 'THE JACKSON'];
+
+  /* disco floor */
+  let floor = '';
+  for (let r = 0; r < 4; r++) for (let c = 0; c < 10; c++){
+    const lit = (Math.floor(beat) + r + c) % 3 === 0;
+    floor += el('', S({ left: (2 + c * 9.7) + '%', bottom: (2 + r * 6) + '%', width: '9%', height: '5.4%',
+      background: lit ? `hsl(${(hue + c * 24) % 360} 90% 62%)` : '#1a1a26',
+      opacity: lit ? .28 + bounce * .4 : .5, 'border-radius': '.3cqw' }));
+  }
+  /* light beams */
+  let beams = '';
+  for (let i = 0; i < 5; i++){
+    const a = Math.sin(beat * .8 + i * 1.3) * 26;
+    beams += el('', S({ left: (10 + i * 20) + '%', top: '-14%', width: '11%', height: '78%',
+      background: `linear-gradient(180deg,hsl(${(hue + i * 70) % 360} 95% 66% / ${.34 + bounce * .3}),transparent 78%)`,
+      transform: `rotate(${a}deg)`, 'transform-origin': '50% 0%', filter: 'blur(6px)' }));
+  }
+  /* sparkles on the beat */
+  let sparks = '';
+  for (let i = 0; i < 14; i++){
+    const t = (beat * .5 + i * .137) % 1;
+    sparks += el('✦', S({ left: ((i * 37) % 96) + '%', top: (8 + ((i * 53) % 70)) + '%',
+      color: `hsl(${(hue + i * 40) % 360} 96% 72%)`, 'font-size': (0.8 + (i % 3) * .5) + 'cqw',
+      opacity: (1 - t) * .9, transform: `scale(${.6 + t}) rotate(${t * 180}deg)` }));
+  }
+  return el('', S({ inset: 0, background: 'radial-gradient(80% 70% at 50% 26%,#2a2140 0%,#120e1c 70%)' }))
+  + beams + floor + sparks
+  /* the mirror ball */
+  + el(`<div style="width:100%;aspect-ratio:1;border-radius:50%;
+        background:conic-gradient(from ${beat * 40}deg,#cfd7e6,#7d8aa3,#eef2f8,#8b98ad,#cfd7e6);
+        box-shadow:0 0 4cqw hsl(${hue} 90% 70% / .6)"></div>`,
+      S({ left: '50%', top: '3%', width: '7%', transform: `translateX(-50%) scale(${1 + bounce * .06})` }))
+  + el(`<div class="kick" style="font-size:1.5cqw;color:hsl(${hue} 95% 74%)">ITEM 06 · THE NUMBER</div>`,
+      S({ left: '6%', top: '9%', transform: slamX(f, 0) }))
+  + el(`<div style="font-family:var(--disp);font-weight:900;font-size:6cqw;color:#fff;line-height:.9;
+        letter-spacing:-.03em;text-shadow:0 0 3cqw hsl(${hue} 95% 66% / .8)">JACKSON<br>
+        <span style="color:hsl(${hue} 95% 72%)">DANCES.</span></div>`,
+      S({ left: '6%', top: '15%', transform: slamY(f, 6, 240) }))
+  /* the cat himself */
+  + el(jackson(Object.assign(pose, { rim: `hsl(${hue} 92% 70% / .82)` })), S({ left: '50%', bottom: '9%', width: '30%',
+      transform: `translateX(-50%) translateX(${Math.sin(beat * Math.PI / 4) * 9}cqw) ${pop(f, 10)}` }))
+  /* move name */
+  + el(`<div style="font-family:var(--mono);font-weight:800;font-size:1.5cqw;letter-spacing:.2em;
+        color:#fff;background:hsl(${hue} 90% 58% / .85);padding:.5cqw 1.1cqw;border-radius:100px">
+        ${MOVES[move]}</div>`,
+      S({ left: '6%', bottom: '12%', transform: `scale(${1 + bounce * .05})` }))
+  + el(`<div style="font-family:var(--mono);font-weight:800;font-size:1.15cqw;color:#ffffff9e">
+        he has been practising · he will not admit this</div>`,
+      S({ left: '6%', bottom: '6%', opacity: fade(f, 60, 90) }))
+  /* crowd of hearts */
+  + [0, 1, 2, 3, 4, 5].map(i => {
+      const t = ((beat * .34) + i * .17) % 1;
+      return el(HEART(`hsl(${(hue + i * 55) % 360} 92% 68%)`),
+        S({ right: (5 + i * 4.4) + '%', bottom: (6 + t * 74) + '%', width: '3.4%',
+          opacity: (1 - t) * .95, transform: `rotate(${Math.sin(t * 8 + i) * 22}deg)` }));
+    }).join('');
+}},
+
+/* 7 · FINDINGS -------------------------------------------------- */
+{ dur: 210, name: 'Findings', render(f){
+  const rows = [
+    ['THE HOUSE', 'Standing. Tidy. Wrong.', 'var(--sea)'],
+    ['THE CAT', 'Thriving. Suspiciously talented.', 'var(--moss)'],
+    ['THE SNACKS', 'Untouched. A monument.', 'var(--sun)'],
+    ['DAD', 'Fine. Completely fine. Made a slideshow.', 'var(--coral)'],
+  ];
+  return el(`<div class="kick" style="font-size:1.5cqw;color:var(--coral)">ITEM 07 · FINDINGS &amp; RECOMMENDATIONS</div>`,
+      S({ left: '7%', top: '10%', transform: slamX(f, 0) }))
+  + el(`<div style="font-family:var(--disp);font-weight:900;font-size:5cqw;letter-spacing:-.02em">In conclusion</div>`,
+      S({ left: '7%', top: '16%', transform: slamY(f, 6, 180) }))
+  + rows.map((r, i) => el(
+      `<div style="display:flex;align-items:center;gap:1.4cqw;border-left:.5cqw solid ${r[2]};padding-left:1.2cqw">
+        <span style="font-family:var(--mono);font-weight:800;font-size:1.35cqw;min-width:11cqw;color:${r[2]}">${r[0]}</span>
+        <span style="font-family:var(--disp);font-weight:700;font-size:2.1cqw">${r[1]}</span>
+      </div>`,
+      S({ left: '7%', width: '74%', top: (30 + i * 12) + '%',
+        transform: slamX(f, 16 + i * 13, 700), opacity: f > 16 + i * 13 ? 1 : 0 }))).join('')
+  + el(`<div style="font-family:var(--mono);font-weight:800;font-size:1.3cqw;color:var(--dim)">
+        RECOMMENDATION: <b style="color:var(--ink)">come home when you're ready. Have the best time until then.</b></div>`,
+      S({ left: '7%', bottom: '8%', opacity: fade(f, 130, 156) }))
+  + el(jackson({ bop: Math.sin(f / 13) * 5, tail: Math.sin(f / 8) * 22, armR: Math.max(0, Math.sin(f / 9)),
+      shades: f % 120 < 60 ? 1 : 0 }),
+      S({ right: '6%', bottom: '9%', width: '22%', transform: pop(f, 44) }));
+}},
+
+/* 8 · THE CLOSE ------------------------------------------------- */
+{ dur: 240, name: 'See you soon', render(f){
+  const beat = f / FPS * (112 / 60);
+  return el('', S({ inset: 0, background: 'radial-gradient(80% 80% at 50% 40%,#fffaf0 0%,var(--paper) 65%)' }))
+  + el(`<div class="kick" style="font-size:1.5cqw;color:var(--coral)">END OF PRESENTATION · THANK YOU FOR COMING</div>`,
+      S({ left: '50%', top: '12%', transform: `translateX(-50%) ${slamY(f, 0, -120)}`, 'text-align': 'center' }))
+  + el(`<div style="font-family:var(--disp);font-weight:900;font-size:8cqw;line-height:.9;letter-spacing:-.03em;text-align:center">
+        Love you<span style="color:var(--coral)">,</span><br>see you soon</div>`,
+      S({ left: '50%', top: '22%', width: '86%', transform: 'translateX(-50%)',
+        opacity: fade(f, 10, 34), 'text-align': 'center' }))
+  + el(`<div style="font-family:var(--mono);font-weight:800;font-size:1.6cqw;color:var(--dim);text-align:center">
+        — DAD <span style="color:var(--ink)">&amp;</span> JACKSON</div>`,
+      S({ left: '50%', top: '50%', width: '80%', transform: 'translateX(-50%)', opacity: fade(f, 46, 70) }))
+  + el(jackson({ bop: Math.abs(Math.sin(beat * Math.PI)) * 9, tail: Math.sin(beat * 2) * 26,
+      armL: Math.max(0, Math.sin(beat * Math.PI)), blink: (Math.floor(f / 52) % 2 === 0 && f % 52 > 46) ? .1 : 1 }),
+      S({ left: '50%', bottom: '2%', width: '20%', transform: `translateX(-50%) ${pop(f, 60)}` }))
+  /* rising hearts */
+  + Array.from({ length: 12 }, (_, i) => {
+      const t = ((f / 150) + i * .083) % 1;
+      return el(HEART(['#e0483e', '#f6c94a', '#2f7fbf', '#3f7a53'][i % 4]),
+        S({ left: (6 + (i * 8.1) % 88) + '%', bottom: (t * 96) + '%', width: (2 + (i % 3)) + '%',
+          opacity: (1 - t) * .9, transform: `rotate(${Math.sin(t * 7 + i) * 26}deg)` }));
+    }).join('');
+}},
+];
+
+/* ============================================================
+   MUSIC · one original loop. Warm during the slides, full disco
+   for item six, because item six has been waiting all week.
+   ============================================================ */
+const Music = (() => {
+  let ac = null, on = true, timer = null, step = 0, master = null, started = false;
+  const BPM = 112, SPB = 60 / BPM / 2;              /* eighth notes */
+  /* an original hook — bouncy, major, nobody's but ours */
+  const BASS = [0, 0, 7, 0, 5, 5, 3, 3, 0, 0, 7, 0, 8, 8, 7, 7];
+  const LEAD = [12, null, 16, 19, null, 16, 12, null, 14, null, 17, 21, null, 17, 14, null];
+  const root = 130.81;                              /* C3 */
+  const hz = semi => root * Math.pow(2, semi / 12);
+
+  function ctx(){
+    if (!ac){
+      ac = new (window.AudioContext || window.webkitAudioContext)();
+      master = ac.createGain(); master.gain.value = .5;
+      const comp = ac.createDynamicsCompressor();
+      comp.threshold.value = -16; comp.ratio.value = 6;
+      master.connect(comp); comp.connect(ac.destination);
+    }
+    return ac;
+  }
+  function tone(type, f, t, dur, vol, glide){
+    const a = ctx();
+    const o = a.createOscillator(), g = a.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(f, t);
+    if (glide) o.frequency.exponentialRampToValueAtTime(glide, t + dur);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(vol, t + .015);
+    g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+    o.connect(g); g.connect(master);
+    o.start(t); o.stop(t + dur + .02);
+  }
+  function noise(t, dur, vol, hp){
+    const a = ctx();
+    const n = a.createBufferSource();
+    const b = a.createBuffer(1, Math.ceil(a.sampleRate * dur), a.sampleRate);
+    const d = b.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+    n.buffer = b;
+    const f = a.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = hp;
+    const g = a.createGain(); g.gain.value = vol;
+    n.connect(f); f.connect(g); g.connect(master);
+    n.start(t); n.stop(t + dur);
+  }
+  function schedule(){
+    const a = ctx(), t = a.currentTime + .06;
+    const s = step % 16;
+    const disco = (typeof sceneAt === 'function') && sceneAt(frame).i === 5;
+    /* kick on the quarters */
+    if (s % 4 === 0) tone('sine', 110, t, .17, disco ? .5 : .32, 42);
+    /* hats */
+    if (disco || s % 4 === 2) noise(t, .045, disco ? .1 : .05, 7000);
+    /* bass */
+    tone('triangle', hz(BASS[s]) / 2, t, SPB * .92, disco ? .3 : .17);
+    /* lead — only once the party starts */
+    if (disco && LEAD[s] !== null) tone('square', hz(LEAD[s]), t, SPB * .8, .1);
+    /* off-beat disco stab */
+    if (disco && s % 4 === 2){
+      [0, 4, 7].forEach(iv => tone('sawtooth', hz(12 + iv), t, .12, .045));
+    }
+    step++;
+  }
+  return {
+    start(){
+      if (!on) return;
+      ctx().resume && ctx().resume();
+      if (started) return;
+      started = true;
+      schedule();
+      timer = setInterval(schedule, SPB * 1000);
+    },
+    stop(){ clearInterval(timer); timer = null; started = false; },
+    toggle(){ on = !on; if (!on) this.stop(); else if (playing) this.start(); return on; },
+    on(){ return on; },
+  };
+})();
+
+/* ============================================================
+   PLAYER
+   ============================================================ */
+const TOTAL = SCENES.reduce((s, sc) => s + sc.dur, 0);
+const DANCE_I = SCENES.findIndex(s => s.name === 'JACKSON DANCES');
+let frame = 0, playing = false, rafLast = 0;
+function sceneAt(gf){
+  let acc = 0;
+  for (let i = 0; i < SCENES.length; i++){
+    if (gf < acc + SCENES[i].dur) return { i, local: gf - acc, start: acc };
+    acc += SCENES[i].dur;
+  }
+  const last = SCENES.length - 1;
+  return { i: last, local: SCENES[last].dur - 1, start: TOTAL - SCENES[last].dur };
+}
+function render(){
+  const { i, local } = sceneAt(frame);
+  comp.innerHTML = SCENES[i].render(local);
+  document.getElementById('sceneLbl').textContent = `${i + 1} / ${SCENES.length} · ${SCENES[i].name}`;
+  const p = frame / (TOTAL - 1);
+  document.querySelector('#scrub .fill').style.width = (p * 100) + '%';
+  document.querySelector('#scrub .knob').style.left = (p * 100) + '%';
+}
+function tick(ts){
+  requestAnimationFrame(tick);
+  if (!playing) return;
+  if (!rafLast) rafLast = ts;
+  const adv = (ts - rafLast) / (1000 / FPS);
+  if (adv >= 1){
+    frame = Math.min(TOTAL - 1, frame + Math.round(adv));
+    rafLast = ts;
+    if (frame >= TOTAL - 1){ playing = false; updateBtn(); Music.stop(); }
+    render();
+  }
+}
+requestAnimationFrame(tick);
+function updateBtn(){
+  document.getElementById('bPlay').textContent = playing ? 'Pause' : (frame >= TOTAL - 1 ? 'Replay' : 'Play');
+}
+function playPause(){
+  if (frame >= TOTAL - 1 && !playing) frame = 0;
+  playing = !playing;
+  rafLast = 0;
+  if (playing) Music.start(); else Music.stop();
+  updateBtn(); render();
+}
+function jumpTo(gf){
+  frame = clamp(Math.round(gf), 0, TOTAL - 1);
+  render(); updateBtn();
+}
+document.getElementById('bPlay').addEventListener('click', playPause);
+document.getElementById('bBack').addEventListener('click', () => jumpTo(sceneAt(frame).start - 1));
+document.getElementById('bFwd').addEventListener('click', () => {
+  const s = sceneAt(frame);
+  jumpTo(s.start + SCENES[s.i].dur);
+});
+document.getElementById('bMusic').addEventListener('click', e => {
+  const on = Music.toggle();
+  e.currentTarget.classList.toggle('on', on);
+  e.currentTarget.textContent = on ? '♪' : '♪̸';
+});
+/* the button the kids will actually press */
+document.getElementById('bDance').addEventListener('click', () => {
+  jumpTo(sceneAt(0).start + SCENES.slice(0, DANCE_I).reduce((s, x) => s + x.dur, 0));
+  if (!playing){ playing = true; rafLast = 0; Music.start(); updateBtn(); }
+});
+const scrub = document.getElementById('scrub');
+function scrubTo(e){
+  const r = scrub.getBoundingClientRect();
+  jumpTo(((e.clientX - r.left) / r.width) * (TOTAL - 1));
+}
+scrub.addEventListener('pointerdown', e => { scrub.setPointerCapture(e.pointerId); scrubTo(e); });
+scrub.addEventListener('pointermove', e => { if (e.buttons) scrubTo(e); });
+addEventListener('keydown', e => {
+  if (e.key === ' '){ e.preventDefault(); playPause(); }
+  if (e.key === 'ArrowRight') jumpTo(frame + 15);
+  if (e.key === 'ArrowLeft') jumpTo(frame - 15);
+});
+render();
+
+/* test hook */
+window.MY = { SCENES, TOTAL, sceneAt, jumpTo, render, get frame(){ return frame; },
+  get playing(){ return playing; }, playPause, jackson, DANCE_I };
+</script>
+</body>
+</html>
