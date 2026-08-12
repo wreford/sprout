@@ -1,0 +1,986 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#7ec850">
+<meta name="description" content="Oops! No More Lily — a hoppy road-crossing game. Dodge enormous trucks, unlock outfits, and please use a crosswalk in real life.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="No More Lily">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%237ec850'/%3E%3Cpath d='M10 13a6 6 0 0 1 12 0v3H10z' fill='%23a9793f'/%3E%3Ccircle cx='16' cy='16' r='5' fill='%23f6d2b0'/%3E%3Ccircle cx='14' cy='16' r='1' fill='%23273043'/%3E%3Ccircle cx='18' cy='16' r='1' fill='%23273043'/%3E%3Crect x='11' y='21' width='10' height='7' rx='2.5' fill='%232aa5a0'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&family=JetBrains+Mono:wght@700;800&display=swap" rel="stylesheet">
+<title>Oops! No More Lily</title>
+<style>
+:root{
+  --grass:#7ec850; --grass2:#6fb845; --road:#4a4f5c; --ink:#273043;
+  --cream:#fff8e7; --sun:#ffc93c; --tomato:#ef4d3d; --sky:#8fd6ff; --teal:#2aa5a0;
+  --disp:'Baloo 2',system-ui,sans-serif; --mono:'JetBrains Mono',ui-monospace,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden;background:#20262f;color:var(--ink);
+  font-family:var(--disp);user-select:none;-webkit-user-select:none;touch-action:none}
+#app{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
+#wrap{position:relative;height:100%;aspect-ratio:9/16;max-width:100%;overflow:hidden;background:var(--grass)}
+canvas{display:block;width:100%;height:100%}
+
+/* ---------- hud ---------- */
+#hud{position:absolute;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:flex-start;
+  padding:calc(env(safe-area-inset-top) + 10px) 12px 0;pointer-events:none;z-index:5}
+.pill{background:#ffffffe6;border:3px solid var(--ink);border-radius:100px;padding:5px 13px;
+  font-weight:800;font-size:clamp(13px,3.6vmin,18px);box-shadow:0 4px 0 #27304333}
+.pill.coin{color:#a8760a}
+#lane{position:absolute;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top) + 58px);
+  background:#273043dd;color:#fff;border-radius:100px;padding:3px 14px;font-family:var(--mono);
+  font-weight:800;font-size:clamp(9px,2.6vmin,12px);letter-spacing:.12em;z-index:5;pointer-events:none}
+
+/* ---------- narrator caption ---------- */
+#cap{position:absolute;left:50%;bottom:calc(env(safe-area-inset-bottom) + 84px);transform:translateX(-50%) scale(.9);
+  background:#273043f2;color:#fff;border-radius:14px;padding:9px 15px;max-width:88%;text-align:center;
+  font-weight:800;font-size:clamp(13px,3.7vmin,18px);line-height:1.25;opacity:0;z-index:6;
+  transition:opacity .18s,transform .18s;pointer-events:none;box-shadow:0 6px 0 #0004}
+#cap.on{opacity:1;transform:translateX(-50%) scale(1)}
+
+/* ---------- panels ---------- */
+.panel{position:absolute;inset:0;z-index:20;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:12px;padding:26px 18px;text-align:center;overflow:auto;
+  background:linear-gradient(180deg,#8fd6ff 0%,#7ec850 100%)}
+.panel.dark{background:#273043;color:#fff}
+.panel h1{font-size:clamp(34px,10vmin,60px);line-height:.95;letter-spacing:-.02em;text-transform:uppercase;
+  color:var(--cream);text-shadow:0 5px 0 var(--ink),0 8px 0 #0003}
+.panel h2{font-size:clamp(24px,7.5vmin,42px);line-height:1;color:var(--cream);text-shadow:0 4px 0 var(--ink)}
+.btn{display:block;width:100%;max-width:340px;border:4px solid var(--ink);border-radius:100px;
+  background:var(--sun);color:var(--ink);font-family:var(--disp);font-weight:800;
+  font-size:clamp(15px,4.4vmin,20px);padding:13px 20px;cursor:pointer;box-shadow:0 6px 0 var(--ink)}
+.btn:active{transform:translateY(4px);box-shadow:0 2px 0 var(--ink)}
+.btn.alt{background:var(--cream)}
+.btn.ghost{background:transparent;color:var(--cream);border-color:var(--cream);box-shadow:0 6px 0 #0003}
+.small{font-size:clamp(11px,3.1vmin,14px);line-height:1.6;max-width:400px;color:var(--ink)}
+.panel.dark .small{color:#e7ecf5}
+.mono{font-family:var(--mono);font-weight:800;letter-spacing:.1em;font-size:clamp(9px,2.6vmin,12px);
+  text-transform:uppercase}
+
+/* safety card — the one bit that is not joking */
+/* the panel is dark and sets white text — this card is cream, so it takes its colour back */
+#safety{background:var(--cream);color:var(--ink);border:4px solid var(--ink);border-radius:18px;
+  padding:14px 16px;max-width:420px;text-align:left;box-shadow:0 8px 0 var(--ink)}
+#safety *{color:inherit}
+#safety b{color:var(--tomato)!important}
+#safety ul{margin:8px 0 0 18px;font-size:clamp(11px,3vmin,13.5px);line-height:1.75}
+
+/* wardrobe */
+#rack{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:10px;width:100%;max-width:420px}
+.fit{background:#fff8e7;border:4px solid var(--ink);border-radius:14px;padding:6px;cursor:pointer;
+  box-shadow:0 5px 0 var(--ink)}
+.fit.on{background:var(--sun)}
+.fit.locked{opacity:.55;background:#d9d2c2}
+.fit svg{width:100%;display:block}
+.fit .fn{font-weight:800;font-size:10.5px;line-height:1.2;margin-top:3px}
+.fit .fc{font-family:var(--mono);font-weight:800;font-size:9px;color:#a8760a}
+
+/* controls hint */
+#pad{position:absolute;left:0;right:0;bottom:0;height:34%;z-index:4}
+#hint{position:absolute;left:50%;bottom:calc(env(safe-area-inset-bottom) + 12px);transform:translateX(-50%);
+  font-family:var(--mono);font-weight:800;font-size:clamp(9px,2.5vmin,11px);letter-spacing:.1em;
+  color:#ffffffcc;text-shadow:0 2px 0 #0006;z-index:5;pointer-events:none;white-space:nowrap}
+</style>
+</head>
+<body>
+<div id="app"><div id="wrap">
+  <canvas id="cv"></canvas>
+  <div id="hud">
+    <span class="pill" id="pScore">0</span>
+    <span class="pill coin" id="pCoin">◉ 0</span>
+  </div>
+  <div id="lane">STAGE 1 · GET TO THE ICE CREAM</div>
+  <div id="cap"></div>
+  <div id="pad"></div>
+  <div id="hint">TAP = HOP · SWIPE = TURN · ARROWS WORK TOO</div>
+
+  <!-- TITLE -->
+  <div class="panel" id="pTitle">
+    <div class="mono" style="color:#273043">A GAME ABOUT LOOKING BOTH WAYS</div>
+    <h1>Oops!<br>No more<br>Lily</h1>
+    <div class="small"><b>Lily</b> would like to get to the other side.<br>
+      There are trucks. There are so many trucks.</div>
+    <button class="btn" id="bPlay">Hop to it</button>
+    <button class="btn alt" id="bFits">Wardrobe</button>
+    <button class="btn ghost" id="bSafety">Road safety bit</button>
+    <div class="mono" id="best" style="color:#273043"></div>
+  </div>
+
+  <!-- SAFETY -->
+  <div class="panel dark" id="pSafety" style="display:none">
+    <div class="mono" style="color:var(--sun)">THE SERIOUS SLIDE · SORRY</div>
+    <h2 style="color:var(--sun)">Do not<br>do this</h2>
+    <div id="safety">
+      <div style="font-weight:800;font-size:clamp(12px,3.4vmin,15px)">
+        This is a cartoon. Real roads are worse and have no retry button.</div>
+      <ul>
+        <li>Cross at a <b>crosswalk</b> or a light. Every time.</li>
+        <li><b>Stop. Look left, right, left again.</b> Then listen.</li>
+        <li>Make <b>eye contact with the driver</b> before you step out. If you cannot see their eyes, they cannot see you.</li>
+        <li>A big truck needs the <b>length of a football pitch</b> to stop. It cannot swerve for you.</li>
+        <li>Trucks have <b>enormous blind spots</b> — right at the front, right behind, and down both sides.</li>
+        <li>Headphones off. Phone down. Hood back.</li>
+      </ul>
+      <div style="margin-top:9px;font-weight:800;font-size:clamp(11px,3.1vmin,13.5px)">
+        The real Lily uses the crosswalk. Be like the real Lily.</div>
+    </div>
+    <button class="btn" id="bSafeOk">Understood</button>
+  </div>
+
+  <!-- WARDROBE -->
+  <div class="panel" id="pFits" style="display:none">
+    <div class="mono" style="color:#273043">WARDROBE · <span id="coinTot">0</span> COINS</div>
+    <h2>Fits</h2>
+    <div id="rack"></div>
+    <button class="btn alt" id="bFitsBack">Back</button>
+  </div>
+
+  <!-- DEATH -->
+  <div class="panel dark" id="pDead" style="display:none">
+    <div class="mono" style="color:var(--tomato)" id="deadKick">FLATTENED</div>
+    <h2 style="color:var(--tomato)" id="deadTitle">Oops.</h2>
+    <div class="small" id="deadLine">No more Lily.</div>
+    <div class="mono" style="color:#fff" id="deadStats"></div>
+    <button class="btn" id="bAgain">Again!</button>
+    <button class="btn ghost" id="bHome">Title</button>
+  </div>
+
+  <!-- WIN -->
+  <div class="panel" id="pWin" style="display:none;background:linear-gradient(180deg,#ffc93c 0%,#7ec850 100%)">
+    <div class="mono" style="color:#273043" id="winKick">STAGE CLEAR</div>
+    <h2 id="winTitle">She made it!</h2>
+    <div class="small" id="winLine"></div>
+    <div class="mono" id="winStats" style="color:#273043"></div>
+    <button class="btn" id="bNext">Next street</button>
+    <button class="btn ghost" id="bHome2" style="color:#273043;border-color:#273043">Title</button>
+  </div>
+</div></div>
+
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const ri = n => Math.floor(Math.random() * n);
+const pick = a => a[ri(a.length)];
+
+/* ============================================================
+   WARDROBE · hair stays light brown, everything else is negotiable
+   ============================================================ */
+const HAIR = '#a9793f', HAIR_D = '#8a5f2e', SKIN = '#f6d2b0', SKIN_D = '#e0b892';
+const FITS = [
+  { id: 'classic', n: 'Classic',    cost: 0,   top: '#2aa5a0', leg: '#3f6ea8' },
+  { id: 'hivis',   n: 'High-Vis',   cost: 15,  top: '#e8ff4a', leg: '#3a3f4a', vest: 1, hat: '#ffb02e',
+    quip: 'The only outfit in this game that would actually help.' },
+  { id: 'dino',    n: 'Dino Onesie',cost: 40,  top: '#4cbf6a', leg: '#4cbf6a', spikes: 1, hood: '#4cbf6a' },
+  { id: 'banana',  n: 'Banana',     cost: 80,  top: '#ffd93b', leg: '#ffd93b', hood: '#ffd93b', peel: 1 },
+  { id: 'astro',   n: 'Astronaut',  cost: 130, top: '#eef2f8', leg: '#eef2f8', helmet: 1 },
+  { id: 'ballet',  n: 'Ballet',     cost: 190, top: '#ff9ec4', leg: '#ffd9e8', tutu: 1 },
+  { id: 'jackson', n: 'Jackson',    cost: 260, top: '#1c1c22', leg: '#1c1c22', ears: 1,
+    quip: 'The cat is not amused. The cat is never amused.' },
+];
+function save(){
+  try { return JSON.parse(localStorage.getItem('oops') || 'null') ||
+    { coins: 0, best: 0, fit: 'classic', owned: ['classic'], safety: 0, wins: 0, deaths: 0 }; }
+  catch { return { coins: 0, best: 0, fit: 'classic', owned: ['classic'], safety: 0, wins: 0, deaths: 0 }; }
+}
+function store(mut){ const s = save(); mut(s); try { localStorage.setItem('oops', JSON.stringify(s)); } catch (e) {} return s; }
+let SV = save();
+const fitOf = id => FITS.find(f => f.id === id) || FITS[0];
+
+/* ============================================================
+   THE NARRATOR · text to speech, deadpan, slightly too invested
+   ============================================================ */
+const Voice = (() => {
+  let on = true, v = null, warm = false;
+  function best(){
+    if (v) return v;
+    const list = (window.speechSynthesis && speechSynthesis.getVoices()) || [];
+    if (!list.length) return null;
+    v = list.find(x => /daniel|google uk english male|arthur|oliver/i.test(x.name))
+     || list.find(x => /en-GB/i.test(x.lang))
+     || list.find(x => /en/i.test(x.lang)) || list[0];
+    return v;
+  }
+  if (window.speechSynthesis) speechSynthesis.onvoiceschanged = () => { v = null; best(); };
+  return {
+    say(text, opt){
+      caption(text);
+      if (!on || !window.speechSynthesis) return;
+      try {
+        const u = new SpeechSynthesisUtterance(text);
+        const b = best(); if (b) u.voice = b;
+        u.rate = (opt && opt.rate) || .98;
+        u.pitch = (opt && opt.pitch) || .85;
+        u.volume = .95;
+        speechSynthesis.cancel();
+        speechSynthesis.speak(u);
+      } catch (e) {}
+    },
+    warm(){ if (warm || !window.speechSynthesis) return; warm = true;
+      try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); } catch (e) {} },
+    toggle(){ on = !on; if (!on && window.speechSynthesis) speechSynthesis.cancel(); return on; },
+    shush(){ try { speechSynthesis.cancel(); } catch (e) {} },
+  };
+})();
+let capT = null;
+function caption(t, ms = 2600){
+  const c = $('cap');
+  c.textContent = t; c.classList.add('on');
+  clearTimeout(capT);
+  capT = setTimeout(() => c.classList.remove('on'), ms);
+}
+const LINES = {
+  start: ['Lily. Age: unbothered. Objective: the other side. Obstacles: everything.',
+          'She has looked both ways. She has looked a third way. Off she goes.',
+          'Today Lily attempts the road. The road is undefeated.'],
+  near:  ['Ooh. That was close.', 'That truck knew her name.', 'A breeze. From a lorry.',
+          'She felt the wind on that one.'],
+  death: ['Oops. No more Lily.', 'She has become a decal.', 'Lily is now part of the road surface.',
+          'That was a truck. That was clearly a truck.', 'She has been folded into the infrastructure.',
+          'The truck driver did not even notice. That is the sad part.'],
+  win:   ['Lily has crossed the road. Nobody is impressed except me. I am extremely impressed.',
+          'The other side! It looks exactly like the first side.',
+          'She made it. Somebody give that girl an ice cream.'],
+  coin:  ['Coin.', 'She is rich now.', 'Money.'],
+  fit:   ['New outfit. Fashion is a form of protection. Legally, it is not.'],
+  idle:  ['Lily. The road is that way.', 'We are all waiting.', 'Take your time. The trucks certainly will.'],
+};
+
+/* ============================================================
+   MUSIC · one original chiptune loop, jaunty, slightly nervous
+   ============================================================ */
+const Music = (() => {
+  let ac = null, on = true, timer = null, step = 0, bus = null;
+  const BPM = 132, SPB = 60 / BPM / 2;
+  const ROOT = 261.63;                                   /* C4 */
+  const BASS = [0, 0, 7, 7, 5, 5, 3, 3, -2, -2, 5, 5, 7, 7, 11, 11];
+  const LEAD = [12, 16, 19, 16, 12, 14, 17, 14, 12, 19, 24, 19, 16, 14, 12, null];
+  const hz = s => ROOT * Math.pow(2, s / 12);
+  function ctx(){
+    if (!ac){
+      ac = new (window.AudioContext || window.webkitAudioContext)();
+      bus = ac.createGain(); bus.gain.value = .34;
+      const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 6200;
+      bus.connect(lp); lp.connect(ac.destination);
+    }
+    return ac;
+  }
+  function blip(type, f, t, dur, vol){
+    const a = ctx(), o = a.createOscillator(), g = a.createGain();
+    o.type = type; o.frequency.setValueAtTime(f, t);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(vol, t + .01);
+    g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+    o.connect(g); g.connect(bus); o.start(t); o.stop(t + dur + .02);
+  }
+  function nz(t, dur, vol, hp){
+    const a = ctx(), n = a.createBufferSource();
+    const b = a.createBuffer(1, Math.ceil(a.sampleRate * dur), a.sampleRate);
+    const d = b.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+    n.buffer = b;
+    const f = a.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = hp;
+    const g = a.createGain(); g.gain.value = vol;
+    n.connect(f); f.connect(g); g.connect(bus);
+    n.start(t); n.stop(t + dur);
+  }
+  function beat(){
+    const a = ctx(), t = a.currentTime + .05, s = step % 16;
+    if (s % 4 === 0) blip('sine', 92, t, .13, .5);
+    if (s % 4 === 2) nz(t, .04, .10, 7500);
+    blip('triangle', hz(BASS[s]) / 2, t, SPB * .9, .26);
+    if (LEAD[s] !== null) blip('square', hz(LEAD[s]), t, SPB * .78, .10);
+    step++;
+  }
+  return {
+    start(){ if (!on) return; const a = ctx(); a.resume && a.resume(); if (timer) return; beat();
+      timer = setInterval(beat, SPB * 1000); },
+    stop(){ clearInterval(timer); timer = null; },
+    toggle(){ on = !on; if (!on) this.stop(); else this.start(); return on; },
+    /* one-shots share the bus so everything ducks together */
+    hop(){ const a = ctx(); blip('square', 520, a.currentTime, .07, .16); blip('square', 780, a.currentTime + .05, .06, .12); },
+    coin(){ const a = ctx(); blip('square', 988, a.currentTime, .07, .18); blip('square', 1319, a.currentTime + .06, .12, .16); },
+    splat(){ const a = ctx(); nz(a.currentTime, .3, .4, 300); blip('sawtooth', 180, a.currentTime, .3, .3); },
+    horn(){ const a = ctx(); blip('sawtooth', 180, a.currentTime, .34, .3); blip('sawtooth', 226, a.currentTime, .34, .26); },
+    win(){ const a = ctx(); [0, 4, 7, 12].forEach((n, i) => blip('square', hz(12 + n), a.currentTime + i * .09, .26, .18)); },
+    unlock(){ const a = ctx(); [0, 7, 12, 16, 19].forEach((n, i) => blip('square', hz(n), a.currentTime + i * .07, .3, .16)); },
+  };
+})();
+
+/* ============================================================
+   WORLD
+   ============================================================ */
+const cv = $('cv'), ctx = cv.getContext('2d');
+let W = 360, H = 640, DPR = 1;
+const COLS = 7;   /* portrait screen · fewer, wider lanes keeps every column visible */
+let TILE = 40;
+function sizeCanvas(){
+  const r = $('wrap').getBoundingClientRect();
+  W = Math.max(240, Math.round(r.width)); H = Math.max(400, Math.round(r.height));
+  DPR = Math.min(2, window.devicePixelRatio || 1);
+  cv.width = W * DPR; cv.height = H * DPR;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  TILE = W / COLS;
+}
+const G = { rows: [], lily: null, cam: 0, camZ: 1, camZTarget: 1, shake: 0, anchor: .74, anchorT: .74,
+  stage: 1, score: 0, coins: 0, phase: 'title', goalRow: 0, idle: 0, t: 0, slow: 1, focus: null };
+
+const PLAY_Z = 1;                                         /* tiles are sized so COLS exactly fills the width */
+const STAGE_GOAL = s => 10 + s * 2;                       /* rows to cross */
+function makeRow(y, stage){
+  if (y === 0 || y === 1) return { y, type: 'grass', deco: decoFor(y), coin: null };
+  if (y >= G.goalRow) return { y, type: 'goal', deco: [], coin: null };
+  /* difficulty ramps with the stage and how far along the street you are */
+  const roadish = clamp(.42 + stage * .05 + (y / Math.max(1, G.goalRow)) * .18, 0, .82);
+  if (Math.random() < roadish){
+    const dir = Math.random() < .5 ? 1 : -1;
+    const speed = (1.7 + Math.random() * 1.5 + stage * .28) * dir;
+    const big = Math.random() < .55 + stage * .03;        /* big trucks get more common */
+    const gap = big ? 4.6 + Math.random() * 3 : 3.4 + Math.random() * 3;
+    const cars = [];
+    const n = Math.max(1, Math.floor(COLS * 2.2 / gap));
+    for (let i = 0; i < n; i++) cars.push({ x: i * gap + Math.random() * .8, big, honk: 0 });
+    return { y, type: 'road', dir, speed, cars, span: n * gap, deco: [], coin: null };
+  }
+  const coin = Math.random() < .3 ? { c: 1 + ri(COLS - 2), got: false } : null;
+  return { y, type: 'grass', deco: decoFor(y), coin };
+}
+function decoFor(y){
+  const d = [];
+  const n = ri(3);
+  for (let i = 0; i < n; i++){
+    const c = ri(COLS);
+    if (c === Math.floor(COLS / 2) && y < 3) continue;     /* keep the start lane walkable */
+    d.push({ c, k: Math.random() < .5 ? 'tree' : 'bush', s: .8 + Math.random() * .5 });
+  }
+  return d;
+}
+function buildStage(stage){
+  G.goalRow = STAGE_GOAL(stage);
+  G.rows = [];
+  /* Crossy Road's real trick is the safe strip. Never more than a few lanes
+     of traffic before somewhere to stand and think about your choices. */
+  const maxRun = stage < 3 ? 2 : 3;
+  let run = 0;
+  for (let y = 0; y <= G.goalRow + 3; y++){
+    let row;
+    if (run >= maxRun && y < G.goalRow){
+      row = { y, type: 'grass', deco: decoFor(y), coin: Math.random() < .45 ? { c: 1 + ri(COLS - 2), got: false } : null };
+    } else {
+      row = makeRow(y, stage);
+    }
+    run = row.type === 'road' ? run + 1 : 0;
+    G.rows.push(row);
+  }
+  /* never start the street with a road right in front of her face */
+  G.rows[2] = { y: 2, type: 'grass', deco: [], coin: null };
+  G.lily = { c: Math.floor(COLS / 2), r: 0, x: Math.floor(COLS / 2), y: 0, face: 0,
+    hop: 0, from: null, to: null, dead: false, squash: 0, spin: 0 };
+  G.cam = 0; G.camZ = PLAY_Z; G.camZTarget = PLAY_Z; G.shake = 0; G.idle = 0; G.slow = 1; G.focus = null;
+  G.anchor = .74; G.anchorT = .74;
+}
+
+/* ---------- camera ---------- */
+function camFocusY(){ return G.lily ? G.lily.y : 0; }
+function worldToScreen(cx, cy){
+  const z = G.camZ;
+  const px = (cx + .5 - COLS / 2) * TILE * z + W / 2;
+  const py = H * G.anchor - (cy - G.cam) * TILE * z;
+  return [px, py];
+}
+
+/* ---------- drawing ---------- */
+function drawRow(row){
+  const [, py] = worldToScreen(0, row.y);
+  const h = TILE * G.camZ;
+  const top = py - h;
+  if (top > H + h || py < -h) return;
+  const w = W;
+  if (row.type === 'grass'){
+    ctx.fillStyle = row.y % 2 ? '#7ec850' : '#76c04a';
+    ctx.fillRect(0, top, w, h + 1);
+  } else if (row.type === 'goal'){
+    ctx.fillStyle = '#ffd97a'; ctx.fillRect(0, top, w, h + 1);
+    /* bunting stripes */
+    for (let i = 0; i < COLS; i++){
+      ctx.fillStyle = i % 2 ? '#ffc93c' : '#ffe6a8';
+      ctx.fillRect(i * TILE * G.camZ + (W / 2 - COLS / 2 * TILE * G.camZ), top, TILE * G.camZ / 1, h * .18);
+    }
+  } else {
+    ctx.fillStyle = '#4a4f5c'; ctx.fillRect(0, top, w, h + 1);
+    ctx.fillStyle = '#3f4450'; ctx.fillRect(0, top, w, h * .06);
+    /* dashes */
+    ctx.fillStyle = '#e9edf5aa';
+    const dw = TILE * G.camZ * .3;
+    for (let x = -TILE; x < w + TILE; x += dw * 2.4)
+      ctx.fillRect(x, top + h / 2 - h * .035, dw, h * .07);
+  }
+}
+function drawDeco(row){
+  for (const d of row.deco){
+    const [px, py] = worldToScreen(d.c, row.y);
+    const s = TILE * G.camZ * d.s;
+    if (d.k === 'tree'){
+      ctx.fillStyle = '#7a5230';
+      ctx.fillRect(px - s * .07, py - s * .45, s * .14, s * .45);
+      ctx.fillStyle = '#3f8f3a';
+      ctx.beginPath(); ctx.arc(px, py - s * .58, s * .32, 0, 7); ctx.fill();
+      ctx.fillStyle = '#4fa845';
+      ctx.beginPath(); ctx.arc(px - s * .08, py - s * .66, s * .22, 0, 7); ctx.fill();
+    } else {
+      ctx.fillStyle = '#4e9c46';
+      ctx.beginPath(); ctx.ellipse(px, py - s * .16, s * .26, s * .2, 0, 0, 7); ctx.fill();
+    }
+  }
+  if (row.coin && !row.coin.got){
+    const [px, py] = worldToScreen(row.coin.c, row.y);
+    const s = TILE * G.camZ, bob = Math.sin(G.t / 220 + row.y) * s * .07;
+    ctx.save(); ctx.translate(px, py - s * .34 + bob);
+    ctx.scale(Math.cos(G.t / 260 + row.y) * .55 + .45, 1);
+    ctx.fillStyle = '#ffc93c'; ctx.beginPath(); ctx.arc(0, 0, s * .17, 0, 7); ctx.fill();
+    ctx.strokeStyle = '#a8760a'; ctx.lineWidth = s * .04; ctx.stroke();
+    ctx.restore();
+  }
+}
+function drawTruck(row, car){
+  const s = TILE * G.camZ;
+  const len = (car.big ? 2.5 : 1.5) * s;
+  const [px, py] = worldToScreen(car.x, row.y);
+  if (px < -len * 1.5 || px > W + len * 1.5) return;
+  const h = s * (car.big ? .62 : .5);
+  const y = py - s * .5 - h / 2;
+  const flip = row.dir < 0 ? -1 : 1;
+  ctx.save();
+  ctx.translate(px, y + h / 2);
+  ctx.scale(flip, 1);
+  const x0 = -len / 2;
+  /* shadow */
+  ctx.fillStyle = '#0000002e';
+  ctx.beginPath(); ctx.ellipse(0, h * .56, len * .48, h * .17, 0, 0, 7); ctx.fill();
+  if (car.big){
+    /* trailer */
+    ctx.fillStyle = car.col || (car.col = pick(['#eef2f8', '#ef4d3d', '#3f6ea8', '#ffc93c', '#2aa5a0']));
+    ctx.fillRect(x0, -h / 2, len * .66, h);
+    ctx.strokeStyle = '#273043'; ctx.lineWidth = s * .045;
+    ctx.strokeRect(x0, -h / 2, len * .66, h);
+    /* cab */
+    ctx.fillStyle = '#e7ecf5';
+    ctx.fillRect(x0 + len * .66, -h * .42, len * .34, h * .84);
+    ctx.strokeRect(x0 + len * .66, -h * .42, len * .34, h * .84);
+    /* windscreen */
+    ctx.fillStyle = '#8fd6ff';
+    ctx.fillRect(x0 + len * .84, -h * .3, len * .13, h * .34);
+  } else {
+    ctx.fillStyle = car.col || (car.col = pick(['#ef4d3d', '#ffc93c', '#3f6ea8', '#8b5cf6', '#2aa5a0']));
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(x0, -h / 2, len, h, s * .12); else ctx.rect(x0, -h / 2, len, h);
+    ctx.fill();
+    ctx.strokeStyle = '#273043'; ctx.lineWidth = s * .045; ctx.stroke();
+    ctx.fillStyle = '#8fd6ff';
+    ctx.fillRect(x0 + len * .55, -h * .3, len * .3, h * .36);
+  }
+  /* wheels */
+  ctx.fillStyle = '#20242e';
+  const wr = h * .2;
+  [x0 + len * .18, x0 + len * .8].forEach(wx => {
+    ctx.beginPath(); ctx.arc(wx, h * .46, wr, 0, 7); ctx.fill();
+  });
+  /* headlights, because they are coming for her */
+  ctx.fillStyle = '#fff6c8';
+  ctx.beginPath(); ctx.arc(x0 + len * .97, 0, s * .06, 0, 7); ctx.fill();
+  ctx.restore();
+  if (car.honk > 0){
+    ctx.save();
+    ctx.globalAlpha = clamp(car.honk, 0, 1);
+    ctx.fillStyle = '#fff';
+    ctx.font = `800 ${s * .34}px ${getComputedStyle(document.body).fontFamily}`;
+    ctx.textAlign = 'center';
+    ctx.fillText('HONK', px, y - s * .2);
+    ctx.restore();
+  }
+}
+/* ---------- Lily ---------- */
+function drawLily(){
+  const L = G.lily;
+  if (!L) return;
+  const s = TILE * G.camZ;
+  const [px, py] = worldToScreen(L.x, L.y);
+  const F = fitOf(SV.fit);
+  const lift = Math.sin(L.hop * Math.PI) * s * .42;
+  const sq = L.dead ? clamp(1 - L.squash, .12, 1) : 1 + Math.sin(L.hop * Math.PI) * .1;
+  const wide = L.dead ? 1 + L.squash * 1.5 : 1 - Math.sin(L.hop * Math.PI) * .06;
+  ctx.save();
+  /* shadow stays on the ground */
+  ctx.fillStyle = '#00000030';
+  ctx.beginPath(); ctx.ellipse(px, py - s * .06, s * .3 * wide, s * .1, 0, 0, 7); ctx.fill();
+  ctx.translate(px, py - lift);
+  ctx.rotate(L.spin);
+  ctx.scale(wide, sq);
+  ctx.translate(0, -s * .06);
+  const lw = s * .05;
+  ctx.lineJoin = 'round';
+  /* legs */
+  ctx.strokeStyle = F.leg; ctx.lineWidth = s * .11; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-s * .1, -s * .06); ctx.lineTo(-s * .12, 0);
+  ctx.moveTo(s * .1, -s * .06); ctx.lineTo(s * .12, 0); ctx.stroke();
+  /* tutu */
+  if (F.tutu){
+    ctx.fillStyle = '#ffd9e8';
+    ctx.beginPath(); ctx.moveTo(-s * .3, -s * .16); ctx.lineTo(s * .3, -s * .16);
+    ctx.lineTo(s * .16, -s * .3); ctx.lineTo(-s * .16, -s * .3); ctx.closePath(); ctx.fill();
+  }
+  /* body */
+  ctx.fillStyle = F.top;
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(-s * .17, -s * .38, s * .34, s * .3, s * .09);
+  else ctx.rect(-s * .17, -s * .38, s * .34, s * .3);
+  ctx.fill();
+  ctx.strokeStyle = '#273043'; ctx.lineWidth = lw; ctx.stroke();
+  /* hi-vis stripes */
+  if (F.vest){
+    ctx.fillStyle = '#eef2f8';
+    ctx.fillRect(-s * .17, -s * .3, s * .34, s * .05);
+    ctx.fillRect(-s * .17, -s * .2, s * .34, s * .05);
+  }
+  /* banana peel flaps */
+  if (F.peel){
+    ctx.fillStyle = '#ffd93b'; ctx.strokeStyle = '#c9a218'; ctx.lineWidth = lw * .8;
+    [-1, 1].forEach(d => { ctx.beginPath(); ctx.moveTo(d * s * .14, -s * .5);
+      ctx.quadraticCurveTo(d * s * .34, -s * .44, d * s * .26, -s * .28); ctx.stroke(); });
+  }
+  /* arms */
+  ctx.strokeStyle = SKIN; ctx.lineWidth = s * .075;
+  const swing = Math.sin(L.hop * Math.PI) * s * .1;
+  ctx.beginPath();
+  ctx.moveTo(-s * .16, -s * .32); ctx.lineTo(-s * .26, -s * .2 - swing);
+  ctx.moveTo(s * .16, -s * .32); ctx.lineTo(s * .26, -s * .2 - swing);
+  ctx.stroke();
+  /* head */
+  ctx.fillStyle = SKIN;
+  ctx.beginPath(); ctx.arc(0, -s * .5, s * .17, 0, 7); ctx.fill();
+  ctx.strokeStyle = '#273043'; ctx.lineWidth = lw; ctx.stroke();
+  /* LIGHT BROWN HAIR — bob with a fringe, two little bunches */
+  ctx.fillStyle = HAIR;
+  ctx.beginPath(); ctx.arc(0, -s * .53, s * .19, Math.PI, 0); ctx.fill();
+  ctx.fillRect(-s * .19, -s * .53, s * .38, s * .12);
+  ctx.beginPath(); ctx.arc(-s * .19, -s * .44, s * .07, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.arc(s * .19, -s * .44, s * .07, 0, 7); ctx.fill();
+  ctx.fillStyle = HAIR_D;
+  ctx.beginPath(); ctx.arc(0, -s * .56, s * .13, Math.PI, 0); ctx.fill();
+  /* face — only when she is facing us-ish */
+  if (!L.dead || L.squash < .5){
+    ctx.fillStyle = '#273043';
+    const ey = -s * .5, ex = s * .06;
+    if (L.dead){
+      ctx.lineWidth = s * .035; ctx.strokeStyle = '#273043';
+      [-1, 1].forEach(d => { ctx.beginPath();
+        ctx.moveTo(d * ex - s * .04, ey - s * .04); ctx.lineTo(d * ex + s * .04, ey + s * .04);
+        ctx.moveTo(d * ex + s * .04, ey - s * .04); ctx.lineTo(d * ex - s * .04, ey + s * .04);
+        ctx.stroke(); });
+    } else {
+      ctx.beginPath(); ctx.arc(-ex, ey, s * .026, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.arc(ex, ey, s * .026, 0, 7); ctx.fill();
+      ctx.strokeStyle = '#273043'; ctx.lineWidth = s * .022;
+      ctx.beginPath(); ctx.arc(0, -s * .45, s * .05, .2, Math.PI - .2); ctx.stroke();
+    }
+  }
+  /* headgear */
+  if (F.hat){
+    ctx.fillStyle = F.hat;
+    ctx.beginPath(); ctx.arc(0, -s * .58, s * .17, Math.PI, 0); ctx.fill();
+    ctx.fillRect(-s * .21, -s * .59, s * .42, s * .05);
+    ctx.strokeStyle = '#273043'; ctx.lineWidth = lw * .8; ctx.stroke();
+  }
+  if (F.hood){
+    ctx.fillStyle = F.hood;
+    ctx.beginPath(); ctx.arc(0, -s * .53, s * .21, Math.PI * 1.05, Math.PI * 1.95); ctx.fill();
+  }
+  if (F.spikes){
+    ctx.fillStyle = '#2f8f4a';
+    for (let i = 0; i < 3; i++){
+      ctx.beginPath();
+      ctx.moveTo(-s * .02, -s * .44 + i * s * .1);
+      ctx.lineTo(-s * .16, -s * .40 + i * s * .1);
+      ctx.lineTo(-s * .02, -s * .36 + i * s * .1);
+      ctx.fill();
+    }
+  }
+  if (F.ears){
+    ctx.fillStyle = '#1c1c22';
+    [-1, 1].forEach(d => { ctx.beginPath();
+      ctx.moveTo(d * s * .07, -s * .64); ctx.lineTo(d * s * .17, -s * .78);
+      ctx.lineTo(d * s * .19, -s * .58); ctx.fill(); });
+  }
+  if (F.helmet){
+    ctx.strokeStyle = '#eef2f8'; ctx.lineWidth = s * .04;
+    ctx.beginPath(); ctx.arc(0, -s * .5, s * .24, 0, 7); ctx.stroke();
+    ctx.fillStyle = '#8fd6ff44';
+    ctx.beginPath(); ctx.arc(0, -s * .5, s * .24, 0, 7); ctx.fill();
+  }
+  ctx.restore();
+  /* the flattened silhouette gets tyre tracks, because comedy */
+  if (L.dead && L.squash > .55){
+    ctx.save();
+    ctx.globalAlpha = clamp((L.squash - .55) * 2, 0, .5);
+    ctx.fillStyle = '#20242e';
+    for (let i = -3; i <= 3; i++) ctx.fillRect(px + i * s * .09, py - s * .1, s * .04, s * .16);
+    ctx.restore();
+  }
+}
+function drawGoalBanner(){
+  const row = G.rows[G.goalRow];
+  if (!row) return;
+  const [px, py] = worldToScreen(COLS / 2 - .5, G.goalRow);
+  const s = TILE * G.camZ;
+  if (py < -s * 2 || py > H + s * 2) return;
+  ctx.save();
+  ctx.translate(px, py - s * .9);
+  ctx.fillStyle = '#fff8e7'; ctx.strokeStyle = '#273043'; ctx.lineWidth = s * .06;
+  const bw = s * 3.4, bh = s * .5;
+  if (ctx.roundRect){ ctx.beginPath(); ctx.roundRect(-bw / 2, -bh / 2, bw, bh, s * .14); ctx.fill(); ctx.stroke(); }
+  else { ctx.fillRect(-bw / 2, -bh / 2, bw, bh); ctx.strokeRect(-bw / 2, -bh / 2, bw, bh); }
+  ctx.fillStyle = '#27043';
+  ctx.fillStyle = '#273043';
+  ctx.font = `800 ${s * .28}px ${getComputedStyle(document.body).fontFamily}`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('ICE CREAM', 0, 0);
+  ctx.restore();
+}
+function draw(){
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#7ec850'; ctx.fillRect(0, 0, W, H);   /* the world continues past the frame */
+  if (G.shake > 0){
+    ctx.translate((Math.random() - .5) * G.shake * 14, (Math.random() - .5) * G.shake * 14);
+  }
+  const first = Math.max(0, Math.floor(G.cam - 4));
+  const last = Math.min(G.rows.length - 1, Math.ceil(G.cam + 18 / G.camZ));
+  for (let y = first; y <= last; y++) if (G.rows[y]) drawRow(G.rows[y]);
+  for (let y = first; y <= last; y++){
+    const row = G.rows[y]; if (!row) continue;
+    drawDeco(row);
+    if (row.type === 'road') for (const car of row.cars) drawTruck(row, car);
+  }
+  drawGoalBanner();
+  drawLily();
+}
+
+/* ============================================================
+   MOVEMENT
+   ============================================================ */
+function tryHop(dc, dr){
+  const L = G.lily;
+  if (!L || L.dead || G.phase !== 'play' || L.hop > 0) return;
+  const nc = clamp(L.c + dc, 0, COLS - 1);
+  const nr = L.r + dr;
+  if (nr < 0) return;
+  if (nr >= G.rows.length) return;
+  /* trees block */
+  const row = G.rows[nr];
+  if (row && row.deco.some(d => d.c === nc && d.k === 'tree')) { Music.hop(); return; }
+  if (nc === L.c && nr === L.r) return;
+  L.from = { c: L.c, r: L.r };
+  L.to = { c: nc, r: nr };
+  L.c = nc; L.r = nr;
+  L.hop = 1;
+  G.idle = 0;
+  Music.hop();
+  if (dr > 0){
+    G.score = Math.max(G.score, L.r);
+    $('pScore').textContent = G.score;
+  }
+}
+function stepLily(dt){
+  const L = G.lily;
+  if (!L) return;
+  if (L.hop > 0){
+    L.hop = Math.max(0, L.hop - dt / 150);
+    const t = 1 - L.hop;
+    L.x = L.from.c + (L.to.c - L.from.c) * t;
+    L.y = L.from.r + (L.to.r - L.from.r) * t;
+    if (L.hop === 0){ L.x = L.to.c; L.y = L.to.r; }
+  }
+  /* coin pickup */
+  const row = G.rows[Math.round(L.y)];
+  if (row && row.coin && !row.coin.got && Math.round(L.x) === row.coin.c && L.hop === 0){
+    row.coin.got = true;
+    G.coins++;
+    $('pCoin').textContent = '◉ ' + (SV.coins + G.coins);
+    Music.coin();
+    if (Math.random() < .25) Voice.say(pick(LINES.coin), { rate: 1.1 });
+  }
+  /* reached the far pavement */
+  if (L.r >= G.goalRow && !L.dead && G.phase === 'play') win();
+}
+function stepTraffic(dt){
+  const speedScale = dt / 1000 * G.slow;
+  for (const row of G.rows){
+    if (row.type !== 'road') continue;
+    for (const car of row.cars){
+      car.x += row.speed * speedScale;
+      if (car.honk > 0) car.honk -= dt / 700;
+      /* wrap around the street */
+      const len = car.big ? 2.5 : 1.5;
+      if (row.speed > 0 && car.x - len > COLS + 2) car.x -= row.span;
+      if (row.speed < 0 && car.x + len < -2) car.x += row.span;
+    }
+  }
+}
+function hitTest(){
+  const L = G.lily;
+  if (!L || L.dead || G.phase !== 'play') return;
+  const row = G.rows[Math.round(L.y)];
+  if (!row || row.type !== 'road') return;
+  for (const car of row.cars){
+    const len = car.big ? 2.5 : 1.5;
+    const half = len / 2 + .34;
+    const d = Math.abs(car.x - L.x);
+    if (d < half){ die(car); return; }
+    /* a near miss is worth a line and a honk */
+    if (d < half + .75 && car.honk <= 0 && !L.nearT){
+      car.honk = 1;
+      L.nearT = 700;
+      Music.horn();
+      if (Math.random() < .5) Voice.say(pick(LINES.near), { rate: 1.12, pitch: .95 });
+    }
+  }
+}
+
+/* ============================================================
+   THE TWO BIG MOMENTS · both zoom in
+   ============================================================ */
+function die(car){
+  const L = G.lily;
+  L.dead = true;
+  L.squash = 0;
+  G.phase = 'dying';
+  G.shake = 1;
+  G.slow = .18;                       /* slow motion for the indignity */
+  G.camZTarget = PLAY_Z * 2.1;        /* ZOOM */
+  G.anchorT = .5;                     /* ...and centre the indignity */
+  Music.splat();
+  Music.stop();
+  if (navigator.vibrate) navigator.vibrate([60, 40, 120]);
+  setTimeout(() => {
+    const line = pick(LINES.death);
+    Voice.say(line, { rate: .92, pitch: .8 });
+    SV = store(s => { s.coins += G.coins; s.deaths = (s.deaths || 0) + 1;
+      s.best = Math.max(s.best || 0, G.score); });
+    $('deadKick').textContent = pick(['FLATTENED', 'ABSORBED BY THE ROAD', 'FULLY LAMINATED', 'ONE WITH THE ASPHALT']);
+    $('deadTitle').textContent = 'Oops.';
+    $('deadLine').textContent = line;
+    $('deadStats').innerHTML = `LANES CROSSED <b>${G.score}</b> · COINS <b>+${G.coins}</b><br>BEST <b>${SV.best}</b>`;
+    show('pDead');
+    G.phase = 'dead';
+  }, 1500);
+}
+function win(){
+  G.phase = 'winning';
+  G.camZTarget = PLAY_Z * 1.75;       /* ZOOM */
+  G.anchorT = .5;                     /* ...on her, for once */
+  G.slow = .4;
+  Music.win();
+  const gained = checkUnlocks();
+  setTimeout(() => {
+    const line = pick(LINES.win);
+    Voice.say(line, { rate: 1, pitch: .9 });
+    SV = store(s => { s.coins += G.coins; s.wins = (s.wins || 0) + 1;
+      s.best = Math.max(s.best || 0, G.score); });
+    $('winKick').textContent = 'STREET ' + G.stage + ' CLEARED';
+    $('winTitle').textContent = pick(['She made it!', 'Alive!', 'Not squashed!']);
+    $('winLine').textContent = line + (gained ? ` And she unlocked the ${gained} outfit.` : '');
+    $('winStats').innerHTML = `LANES <b>${G.score}</b> · COINS <b>+${G.coins}</b> · TOTAL <b>${SV.coins}</b>`;
+    show('pWin');
+    G.phase = 'won';
+  }, 1400);
+}
+function checkUnlocks(){
+  const total = SV.coins + G.coins;
+  let got = null;
+  for (const f of FITS){
+    if (!SV.owned.includes(f.id) && total >= f.cost){
+      SV = store(s => { if (!s.owned.includes(f.id)) s.owned.push(f.id); });
+      got = f.n;
+      Music.unlock();
+    }
+  }
+  return got;
+}
+
+/* ============================================================
+   LOOP
+   ============================================================ */
+let last = 0;
+function loop(ts){
+  requestAnimationFrame(loop);
+  const dt = Math.min(50, ts - last) || 16;
+  last = ts;
+  G.t += dt;
+  if (G.phase === 'title' || G.phase === 'menu'){ draw(); return; }
+  stepTraffic(dt);
+  stepLily(dt);
+  if (G.lily && G.lily.nearT > 0) G.lily.nearT -= dt;
+  if (G.phase === 'play'){
+    hitTest();
+    G.idle += dt;
+    if (G.idle > 9000){ G.idle = 0; Voice.say(pick(LINES.idle), { rate: 1.05 }); }
+  }
+  if (G.lily && G.lily.dead && G.lily.squash < 1) G.lily.squash = Math.min(1, G.lily.squash + dt / 260);
+  /* camera */
+  const targetCam = G.lily ? Math.max(0, G.lily.y - 1.6) : 0;
+  G.cam += (targetCam - G.cam) * Math.min(1, dt / 130);
+  G.camZ += (G.camZTarget - G.camZ) * Math.min(1, dt / 240);
+  G.anchor += (G.anchorT - G.anchor) * Math.min(1, dt / 240);
+  if (G.shake > 0) G.shake = Math.max(0, G.shake - dt / 500);
+  if (G.slow < 1 && G.phase === 'play') G.slow = Math.min(1, G.slow + dt / 900);
+  draw();
+}
+requestAnimationFrame(loop);
+
+/* ============================================================
+   INPUT
+   ============================================================ */
+let tStart = null;
+function onDown(e){
+  if (G.phase !== 'play') return;
+  const t = e.touches ? e.touches[0] : e;
+  tStart = { x: t.clientX, y: t.clientY, t: Date.now() };
+}
+function onUp(e){
+  if (G.phase !== 'play' || !tStart) return;
+  const t = (e.changedTouches ? e.changedTouches[0] : e);
+  const dx = t.clientX - tStart.x, dy = t.clientY - tStart.y;
+  const ad = Math.hypot(dx, dy);
+  tStart = null;
+  if (ad < 26){ tryHop(0, 1); return; }              /* tap = forward */
+  if (Math.abs(dx) > Math.abs(dy)) tryHop(dx > 0 ? 1 : -1, 0);
+  else tryHop(0, dy < 0 ? 1 : -1);
+}
+const wrap = $('wrap');
+wrap.addEventListener('pointerdown', onDown);
+wrap.addEventListener('pointerup', onUp);
+addEventListener('keydown', e => {
+  const k = e.key;
+  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(k)) e.preventDefault();
+  if (k === 'ArrowUp' || k === 'w' || k === ' ') tryHop(0, 1);
+  if (k === 'ArrowDown' || k === 's') tryHop(0, -1);
+  if (k === 'ArrowLeft' || k === 'a') tryHop(-1, 0);
+  if (k === 'ArrowRight' || k === 'd') tryHop(1, 0);
+});
+
+/* ============================================================
+   SCREENS
+   ============================================================ */
+const PANELS = ['pTitle', 'pSafety', 'pFits', 'pDead', 'pWin'];
+function show(id){
+  PANELS.forEach(p => $(p).style.display = (p === id ? 'flex' : 'none'));
+  const inGame = !id;
+  $('hud').style.display = inGame ? 'flex' : 'none';
+  $('lane').style.display = inGame ? 'block' : 'none';
+  $('hint').style.display = inGame ? 'block' : 'none';
+}
+function startStage(stage){
+  G.stage = stage;
+  G.score = 0; G.coins = 0;
+  buildStage(stage);
+  G.phase = 'play';
+  $('pScore').textContent = '0';
+  $('pCoin').textContent = '◉ ' + SV.coins;
+  $('lane').textContent = `STREET ${stage} · ${G.goalRow} LANES TO THE ICE CREAM`;
+  show(null);
+  Music.start();
+  Voice.say(stage === 1 ? pick(LINES.start) : `Street ${stage}. The trucks have been notified.`, { rate: 1 });
+}
+$('bPlay').addEventListener('click', () => {
+  Voice.warm();
+  if (!SV.safety){ show('pSafety'); return; }
+  startStage(1);
+});
+$('bSafety').addEventListener('click', () => { Voice.warm(); show('pSafety'); });
+$('bSafeOk').addEventListener('click', () => {
+  SV = store(s => s.safety = 1);
+  startStage(1);
+});
+$('bAgain').addEventListener('click', () => startStage(1));
+$('bNext').addEventListener('click', () => startStage(G.stage + 1));
+$('bHome').addEventListener('click', goTitle);
+$('bHome2').addEventListener('click', goTitle);
+$('bFitsBack').addEventListener('click', goTitle);
+$('bFits').addEventListener('click', openFits);
+function goTitle(){
+  G.phase = 'title';
+  Music.stop(); Voice.shush();
+  SV = save();
+  $('best').textContent = SV.best ? `BEST: ${SV.best} LANES · ${SV.coins} COINS` : '';
+  show('pTitle');
+}
+/* ---------- wardrobe ---------- */
+function fitThumb(f){
+  return `<svg viewBox="0 0 60 68">
+    <rect x="18" y="40" width="8" height="18" rx="4" fill="${f.leg}"/>
+    <rect x="34" y="40" width="8" height="18" rx="4" fill="${f.leg}"/>
+    ${f.tutu ? `<path d="M12 40 h36 l-9-9 h-18z" fill="#ffd9e8"/>` : ''}
+    <rect x="17" y="26" width="26" height="20" rx="7" fill="${f.top}" stroke="#273043" stroke-width="2.5"/>
+    ${f.vest ? `<rect x="17" y="31" width="26" height="3.4" fill="#eef2f8"/>
+                <rect x="17" y="38" width="26" height="3.4" fill="#eef2f8"/>` : ''}
+    <circle cx="30" cy="17" r="11" fill="${SKIN}" stroke="#273043" stroke-width="2.5"/>
+    <path d="M18 16 a12 12 0 0 1 24 0 v4 h-24z" fill="${HAIR}"/>
+    <path d="M20 13 a10 10 0 0 1 20 0z" fill="${HAIR_D}"/>
+    <circle cx="18" cy="21" r="4.4" fill="${HAIR}"/><circle cx="42" cy="21" r="4.4" fill="${HAIR}"/>
+    ${f.hat ? `<path d="M18 12 a12 12 0 0 1 24 0z" fill="${f.hat}" stroke="#273043" stroke-width="2"/>
+               <rect x="15" y="11" width="30" height="4" rx="2" fill="${f.hat}" stroke="#273043" stroke-width="2"/>` : ''}
+    ${f.hood ? `<path d="M17 17 a13 13 0 0 1 26 0z" fill="${f.hood}"/>` : ''}
+    ${f.ears ? `<path d="M22 8 l4-9 5 8z M38 8 l-4-9 -5 8z" fill="#1c1c22"/>` : ''}
+    ${f.helmet ? `<circle cx="30" cy="17" r="15" fill="#8fd6ff44" stroke="#eef2f8" stroke-width="2.5"/>` : ''}
+    ${f.spikes ? `<path d="M17 24 l-7 3 7 3z M17 32 l-7 3 7 3z" fill="#2f8f4a"/>` : ''}
+    <circle cx="26" cy="18" r="1.7" fill="#273043"/><circle cx="34" cy="18" r="1.7" fill="#273043"/>
+  </svg>`;
+}
+function openFits(){
+  SV = save();
+  $('coinTot').textContent = SV.coins;
+  $('rack').innerHTML = FITS.map(f => {
+    const owned = SV.owned.includes(f.id);
+    const on = SV.fit === f.id;
+    return `<div class="fit ${on ? 'on' : ''} ${owned ? '' : 'locked'}" data-f="${f.id}">
+      ${fitThumb(f)}<div class="fn">${f.n}</div>
+      <div class="fc">${owned ? (on ? 'WEARING' : 'TAP TO WEAR') : '◉ ' + f.cost}</div></div>`;
+  }).join('');
+  $('rack').querySelectorAll('.fit').forEach(d => d.addEventListener('click', () => {
+    const f = fitOf(d.dataset.f);
+    if (SV.owned.includes(f.id)){
+      SV = store(s => s.fit = f.id);
+      if (f.quip) Voice.say(f.quip, { rate: 1.02 });
+      else Voice.say(pick(LINES.fit), { rate: 1.02 });
+      Music.coin();
+    } else if (SV.coins >= f.cost){
+      SV = store(s => { s.coins -= f.cost; s.owned.push(f.id); s.fit = f.id; });
+      Music.unlock();
+      Voice.say(f.quip || pick(LINES.fit), { rate: 1.02 });
+    } else {
+      Voice.say(`That one costs ${f.cost} coins. Lily is ${f.cost - SV.coins} short.`, { rate: 1.05 });
+    }
+    openFits();
+  }));
+  show('pFits');
+}
+
+/* ---------- boot ---------- */
+function boot(){
+  sizeCanvas();
+  buildStage(1);
+  goTitle();
+}
+addEventListener('resize', () => { sizeCanvas(); });
+boot();
+
+/* test hook */
+window.OOPS = { G, FITS, save, store, startStage, tryHop, die, win, show, openFits, sizeCanvas,
+  get lily(){ return G.lily; }, LINES, buildStage };
+</script>
+</body>
+</html>
