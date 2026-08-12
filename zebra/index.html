@@ -4530,7 +4530,12 @@ function screenRegion(){
   $('#bInto').onclick = () => wipe(() => screenMap(true));
 }
 /* ---------- battle ---------- */
-let B = null;
+let B = null, BID = 0;
+/* Combat resolves on timers. If a fight ends and the next one starts before an old
+   timer fires, that timer used to land on the NEW battle — awarding the last fight's
+   loot, or marking a live fight finished and stranding the run. Every callback now
+   checks it is still talking to the battle it was scheduled for. */
+function sameBattle(id){ return !!B && B.bid === id; }
 function startBattle(kind){
   if (!R) return screenTitle();
   const foe = makeFoe(R.floor + (R.crossUp || 0), kind === 'boss' ? 'boss' : kind === 'elite' ? 'elite' : 'normal');
@@ -4546,7 +4551,7 @@ function startBattle(kind){
     setTimeout(() => toast('JACKSON IS STARING. THE FOE IS UNCOMFORTABLE.', 1800), 900);
   }
   if (R.doorTag === 'angry'){ foe.mhp = Math.round(foe.mhp * 1.25); foe.hp = foe.mhp; }
- B = { foe, kind, hand: [], drawPile: shuffle([...R.deck]), discard: [],
+ B = { bid: ++BID, foe, kind, hand: [], drawPile: shuffle([...R.deck]), discard: [],
     mult: 0, fdmg: 0, bestHit: 0, peakMult: 1, blended: 0, motifCnt: {}, eagerUsed: {}, blueUsed: {},
     energy: (R.menergy || 3) + treeVal('t1energy') + petVal('t1energy') + (R.wx === 'tail' ? 1 : 0), maxEnergy: R.menergy || 3, block: 0,
     str: relicSum('str') + treeVal('str') + Math.min(5, Math.floor((META.marks || 0) / 3)),
@@ -4938,7 +4943,9 @@ function playCard(i, cardEl){
  B.busy = true;
   if (cardEl) cardEl.classList.add('played');
  SFX.play();
+  const pbid = B.bid;
   setTimeout(() => {
+    if (!sameBattle(pbid)) return;   /* this card belonged to a fight that is over */
  B.busy = false;
     if (B.over) return;
     if (B.freeNext){ B.freeNext = 0; if (costOf(c)) toast(' BARTERED · FREE', 900); }
@@ -5166,7 +5173,8 @@ function playCard(i, cardEl){
         if (a2){ a2.classList.remove('bigshake'); void a2.offsetWidth; a2.classList.add('bigshake'); }
         setTimeout(() => toast(' IT EXPLODED ON THE WAY OUT.' + (t > 0 ? ' −' + t + ' HP. RUDE.' : ' YOUR BLOCK ATE IT. NICE.'), 2400), 250);
       }
-      setTimeout(winBattle, 520);
+      const wbid = B.bid;
+      setTimeout(() => { if (sameBattle(wbid)) winBattle(); }, 520);
       return;
     }
   }, cardEl ? DL(150) : 0);
@@ -5175,7 +5183,9 @@ function endTurn(){
   if (B.over || B.busy || B.ending) return;
  B.busy = true;
   turnBanner(B.foe.name + ' ACTS');
+  const ebid = B.bid;
   setTimeout(() => {
+    if (!sameBattle(ebid)) return;   /* that foe's turn belonged to a finished fight */
     if (B.over){ B.busy = false; return; }
     const f = B.foe;
     let kind = f.pat[f.pi % f.pat.length];
@@ -5558,7 +5568,7 @@ function autoTick(){
   setTimeout(autoTick, DL(480));
 }
 function winBattle(){
-  if (B.won) return;
+  if (!B || B.won || B.over) return;   /* already resolved, or a stale timer found a new fight */
  B.won = true;
   /* stat bumps land while B.over is still false so trophy fanfare defers to the parade */
  META.bestiary = META.bestiary || {};
