@@ -326,6 +326,29 @@ function sizeCanvas(){
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   TILE = W / COLS;
 }
+let puffs = [];
+function puff(x, y, n, col){
+  for (let i = 0; i < n; i++){
+    const a = Math.random() * Math.PI * 2;
+    puffs.push({ x, y, vx: Math.cos(a) * (.6 + Math.random()), vy: -Math.abs(Math.sin(a)) * (.5 + Math.random()) - .3,
+      r: .06 + Math.random() * .07, t: 0, col: col || '#ffffff' });
+  }
+}
+function puffTick(dt){
+  const d = dt / 1000;
+  for (const p of puffs){ p.t += d; p.x += p.vx * d; p.y += p.vy * d; p.vy += .9 * d; }
+  puffs = puffs.filter(p => p.t < .55);
+}
+function drawPuffs(){
+  for (const p of puffs){
+    const [px, py] = worldToScreen(p.x, p.y);
+    const s = TILE * G.camZ;
+    ctx.globalAlpha = clamp(1 - p.t / .55, 0, .85);
+    ctx.fillStyle = p.col;
+    ctx.beginPath(); ctx.arc(px, py - s * .1, s * p.r * (1 + p.t), 0, 7); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
 const G = { rows: [], lily: null, cam: 0, camZ: 1, camZTarget: 1, shake: 0, anchor: .74, anchorT: .74,
   stage: 1, score: 0, coins: 0, phase: 'title', goalRow: 0, idle: 0, t: 0, slow: 1, focus: null };
 
@@ -343,7 +366,9 @@ function makeRow(y, stage){
     const gap = big ? 4.6 + Math.random() * 3 : 3.4 + Math.random() * 3;
     const cars = [];
     const n = Math.max(1, Math.floor(COLS * 2.2 / gap));
-    for (let i = 0; i < n; i++) cars.push({ x: i * gap + Math.random() * .8, big, honk: 0 });
+    for (let i = 0; i < n; i++)
+      cars.push({ x: i * gap + Math.random() * .8, big, honk: 0,
+        kind: big ? (Math.random() < .35 ? 'bus' : 'truck') : 'car' });
     return { y, type: 'road', dir, speed, cars, span: n * gap, deco: [], coin: null };
   }
   const coin = Math.random() < .3 ? { c: 1 + ri(COLS - 2), got: false } : null;
@@ -376,10 +401,14 @@ function buildStage(stage){
     run = row.type === 'road' ? run + 1 : 0;
     G.rows.push(row);
   }
+  /* mark the last road before the goal as a zebra crossing — a small nod to the
+     safety card, and a landmark that tells you the ice cream is close */
+  for (let y = G.goalRow - 1; y >= 0; y--)
+    if (G.rows[y] && G.rows[y].type === 'road'){ G.rows[y].zebra = true; break; }
   /* never start the street with a road right in front of her face */
   G.rows[2] = { y: 2, type: 'grass', deco: [], coin: null };
   G.lily = { c: Math.floor(COLS / 2), r: 0, x: Math.floor(COLS / 2), y: 0, face: 0,
-    hop: 0, from: null, to: null, dead: false, squash: 0, spin: 0 };
+    hop: 0, from: null, to: null, dead: false, squash: 0, spin: 0, dir: 0, nearT: 0 };
   G.cam = 0; G.camZ = PLAY_Z; G.camZTarget = PLAY_Z; G.shake = 0; G.idle = 0; G.slow = 1; G.focus = null;
   G.anchor = .74; G.anchorT = .74;
 }
@@ -413,11 +442,18 @@ function drawRow(row){
   } else {
     ctx.fillStyle = '#4a4f5c'; ctx.fillRect(0, top, w, h + 1);
     ctx.fillStyle = '#3f4450'; ctx.fillRect(0, top, w, h * .06);
-    /* dashes */
-    ctx.fillStyle = '#e9edf5aa';
-    const dw = TILE * G.camZ * .3;
-    for (let x = -TILE; x < w + TILE; x += dw * 2.4)
-      ctx.fillRect(x, top + h / 2 - h * .035, dw, h * .07);
+    if (row.zebra){
+      /* the last road before the ice cream is a proper crossing. Take the hint. */
+      ctx.fillStyle = '#eef2f8';
+      const bw = TILE * G.camZ * .34;
+      for (let x = -TILE; x < w + TILE; x += bw * 2)
+        ctx.fillRect(x, top + h * .12, bw, h * .76);
+    } else {
+      ctx.fillStyle = '#e9edf5aa';
+      const dw = TILE * G.camZ * .3;
+      for (let x = -TILE; x < w + TILE; x += dw * 2.4)
+        ctx.fillRect(x, top + h / 2 - h * .035, dw, h * .07);
+    }
   }
 }
 function drawDeco(row){
@@ -461,7 +497,19 @@ function drawTruck(row, car){
   /* shadow */
   ctx.fillStyle = '#0000002e';
   ctx.beginPath(); ctx.ellipse(0, h * .56, len * .48, h * .17, 0, 0, 7); ctx.fill();
-  if (car.big){
+  if (car.kind === 'bus'){
+    ctx.fillStyle = car.col || (car.col = pick(['#ffb02e', '#e8554a', '#2aa5a0']));
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(x0, -h / 2, len, h, s * .1); else ctx.rect(x0, -h / 2, len, h);
+    ctx.fill();
+    ctx.strokeStyle = '#273043'; ctx.lineWidth = s * .045; ctx.stroke();
+    /* a row of windows, and somebody's elbow out of one */
+    ctx.fillStyle = '#8fd6ff';
+    for (let i = 0; i < 5; i++)
+      ctx.fillRect(x0 + len * (.08 + i * .17), -h * .3, len * .12, h * .34);
+    ctx.fillStyle = '#f4d9c0';
+    ctx.fillRect(x0 + len * .42, -h * .06, len * .07, h * .12);
+  } else if (car.big){
     /* trailer */
     ctx.fillStyle = car.col || (car.col = pick(['#eef2f8', '#ef4d3d', '#3f6ea8', '#ffc93c', '#2aa5a0']));
     ctx.fillRect(x0, -h / 2, len * .66, h);
@@ -503,125 +551,228 @@ function drawTruck(row, car){
     ctx.restore();
   }
 }
-/* ---------- Lily ---------- */
+/* ---------- Lily ----------
+   Chibi proportions: the head is the point. Big round face, light brown bob
+   with a fringe and two bunches, blush, and an expression that reacts to
+   whatever is about to happen to her. */
+function lilyExpr(){
+  const L = G.lily;
+  if (!L) return 'happy';
+  if (L.dead) return 'dead';
+  if (G.phase === 'winning' || G.phase === 'won') return 'win';
+  if (L.nearT > 0) return 'worry';
+  if (L.hop > 0) return 'go';
+  return 'happy';
+}
 function drawLily(){
   const L = G.lily;
   if (!L) return;
   const s = TILE * G.camZ;
   const [px, py] = worldToScreen(L.x, L.y);
   const F = fitOf(SV.fit);
-  const lift = Math.sin(L.hop * Math.PI) * s * .42;
-  const sq = L.dead ? clamp(1 - L.squash, .12, 1) : 1 + Math.sin(L.hop * Math.PI) * .1;
-  const wide = L.dead ? 1 + L.squash * 1.5 : 1 - Math.sin(L.hop * Math.PI) * .06;
+  const expr = lilyExpr();
+  const lift = Math.sin(L.hop * Math.PI) * s * .46;
+  const breathe = L.dead ? 0 : Math.sin(G.t / 620) * .012;
+  const sq = L.dead ? clamp(1 - L.squash, .12, 1) : 1 + Math.sin(L.hop * Math.PI) * .12 + breathe;
+  const wide = L.dead ? 1 + L.squash * 1.5 : 1 - Math.sin(L.hop * Math.PI) * .07 - breathe;
+  const dir = L.dir || 0;                       /* -1 left · 0 forward · 1 right */
+  const ink = '#4a3628';                        /* warm outline, not navy */
+
   ctx.save();
-  /* shadow stays on the ground */
-  ctx.fillStyle = '#00000030';
-  ctx.beginPath(); ctx.ellipse(px, py - s * .06, s * .3 * wide, s * .1, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = '#00000026';
+  ctx.beginPath();
+  ctx.ellipse(px, py - s * .04, s * .26 * wide, s * .085, 0, 0, 7);
+  ctx.fill();
   ctx.translate(px, py - lift);
   ctx.rotate(L.spin);
   ctx.scale(wide, sq);
-  ctx.translate(0, -s * .06);
-  const lw = s * .05;
-  ctx.lineJoin = 'round';
-  /* legs */
-  ctx.strokeStyle = F.leg; ctx.lineWidth = s * .11; ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.moveTo(-s * .1, -s * .06); ctx.lineTo(-s * .12, 0);
-  ctx.moveTo(s * .1, -s * .06); ctx.lineTo(s * .12, 0); ctx.stroke();
-  /* tutu */
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  const lw = s * .035;
+
+  /* ---- legs ---- */
+  const stride = Math.sin(L.hop * Math.PI) * s * .05;
+  ctx.fillStyle = F.leg;
+  [[-1, stride], [1, -stride]].forEach(([d, o]) => {
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(d * s * .095 - s * .045, -s * .12 + o, s * .09, s * .13, s * .045);
+    else ctx.rect(d * s * .095 - s * .045, -s * .12 + o, s * .09, s * .13);
+    ctx.fill();
+  });
+  /* shoes */
+  ctx.fillStyle = '#e8554a';
+  [[-1, stride], [1, -stride]].forEach(([d, o]) => {
+    ctx.beginPath();
+    ctx.ellipse(d * s * .095, s * .005 + o, s * .058, s * .034, 0, 0, 7);
+    ctx.fill();
+  });
+
+  /* ---- tutu ---- */
   if (F.tutu){
     ctx.fillStyle = '#ffd9e8';
-    ctx.beginPath(); ctx.moveTo(-s * .3, -s * .16); ctx.lineTo(s * .3, -s * .16);
-    ctx.lineTo(s * .16, -s * .3); ctx.lineTo(-s * .16, -s * .3); ctx.closePath(); ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(-s * .27, -s * .13); ctx.lineTo(s * .27, -s * .13);
+    ctx.lineTo(s * .13, -s * .26); ctx.lineTo(-s * .13, -s * .26);
+    ctx.closePath(); ctx.fill();
   }
-  /* body */
+
+  /* ---- body · small, because the head is the star ---- */
   ctx.fillStyle = F.top;
   ctx.beginPath();
-  if (ctx.roundRect) ctx.roundRect(-s * .17, -s * .38, s * .34, s * .3, s * .09);
-  else ctx.rect(-s * .17, -s * .38, s * .34, s * .3);
+  if (ctx.roundRect) ctx.roundRect(-s * .135, -s * .3, s * .27, s * .2, s * .085);
+  else ctx.rect(-s * .135, -s * .3, s * .27, s * .2);
   ctx.fill();
-  ctx.strokeStyle = '#273043'; ctx.lineWidth = lw; ctx.stroke();
-  /* hi-vis stripes */
+  ctx.strokeStyle = ink; ctx.lineWidth = lw; ctx.stroke();
   if (F.vest){
-    ctx.fillStyle = '#eef2f8';
-    ctx.fillRect(-s * .17, -s * .3, s * .34, s * .05);
-    ctx.fillRect(-s * .17, -s * .2, s * .34, s * .05);
+    ctx.fillStyle = '#f4f8ff';
+    ctx.fillRect(-s * .135, -s * .255, s * .27, s * .035);
+    ctx.fillRect(-s * .135, -s * .19, s * .27, s * .035);
   }
-  /* banana peel flaps */
   if (F.peel){
-    ctx.fillStyle = '#ffd93b'; ctx.strokeStyle = '#c9a218'; ctx.lineWidth = lw * .8;
-    [-1, 1].forEach(d => { ctx.beginPath(); ctx.moveTo(d * s * .14, -s * .5);
-      ctx.quadraticCurveTo(d * s * .34, -s * .44, d * s * .26, -s * .28); ctx.stroke(); });
+    ctx.strokeStyle = '#e0b81c'; ctx.lineWidth = lw * .9;
+    [-1, 1].forEach(d => { ctx.beginPath(); ctx.moveTo(d * s * .1, -s * .38);
+      ctx.quadraticCurveTo(d * s * .3, -s * .34, d * s * .22, -s * .2); ctx.stroke(); });
   }
-  /* arms */
-  ctx.strokeStyle = SKIN; ctx.lineWidth = s * .075;
-  const swing = Math.sin(L.hop * Math.PI) * s * .1;
-  ctx.beginPath();
-  ctx.moveTo(-s * .16, -s * .32); ctx.lineTo(-s * .26, -s * .2 - swing);
-  ctx.moveTo(s * .16, -s * .32); ctx.lineTo(s * .26, -s * .2 - swing);
-  ctx.stroke();
-  /* head */
+
+  /* ---- arms · little stubs that swing ---- */
+  const swing = Math.sin(L.hop * Math.PI) * s * .08;
   ctx.fillStyle = SKIN;
-  ctx.beginPath(); ctx.arc(0, -s * .5, s * .17, 0, 7); ctx.fill();
-  ctx.strokeStyle = '#273043'; ctx.lineWidth = lw; ctx.stroke();
-  /* LIGHT BROWN HAIR — bob with a fringe, two little bunches */
-  ctx.fillStyle = HAIR;
-  ctx.beginPath(); ctx.arc(0, -s * .53, s * .19, Math.PI, 0); ctx.fill();
-  ctx.fillRect(-s * .19, -s * .53, s * .38, s * .12);
-  ctx.beginPath(); ctx.arc(-s * .19, -s * .44, s * .07, 0, 7); ctx.fill();
-  ctx.beginPath(); ctx.arc(s * .19, -s * .44, s * .07, 0, 7); ctx.fill();
+  [[-1, swing], [1, -swing]].forEach(([d, o]) => {
+    ctx.beginPath();
+    ctx.ellipse(d * s * .165, -s * .235 - o, s * .038, s * .052, d * .4, 0, 7);
+    ctx.fill();
+    ctx.strokeStyle = ink; ctx.lineWidth = lw * .8; ctx.stroke();
+  });
+
+  /* ---- HEAD ---- */
+  const hy = -s * .48, hr = s * .215;
+  const fx0 = dir * s * .012;
+  /* back of the bob, a touch wider than the face so it frames it */
   ctx.fillStyle = HAIR_D;
-  ctx.beginPath(); ctx.arc(0, -s * .56, s * .13, Math.PI, 0); ctx.fill();
-  /* face — only when she is facing us-ish */
-  if (!L.dead || L.squash < .5){
-    ctx.fillStyle = '#273043';
-    const ey = -s * .5, ex = s * .06;
-    if (L.dead){
-      ctx.lineWidth = s * .035; ctx.strokeStyle = '#273043';
-      [-1, 1].forEach(d => { ctx.beginPath();
-        ctx.moveTo(d * ex - s * .04, ey - s * .04); ctx.lineTo(d * ex + s * .04, ey + s * .04);
-        ctx.moveTo(d * ex + s * .04, ey - s * .04); ctx.lineTo(d * ex - s * .04, ey + s * .04);
-        ctx.stroke(); });
-    } else {
-      ctx.beginPath(); ctx.arc(-ex, ey, s * .026, 0, 7); ctx.fill();
-      ctx.beginPath(); ctx.arc(ex, ey, s * .026, 0, 7); ctx.fill();
-      ctx.strokeStyle = '#273043'; ctx.lineWidth = s * .022;
-      ctx.beginPath(); ctx.arc(0, -s * .45, s * .05, .2, Math.PI - .2); ctx.stroke();
-    }
+  ctx.beginPath();
+  ctx.ellipse(fx0, hy + hr * .1, hr * 1.14, hr * 1.12, 0, 0, 7);
+  ctx.fill();
+  /* face */
+  ctx.fillStyle = SKIN;
+  ctx.beginPath(); ctx.arc(fx0, hy, hr, 0, 7); ctx.fill();
+  ctx.strokeStyle = ink; ctx.lineWidth = lw; ctx.stroke();
+  /* the fringe · a proper scalloped sweep across the top of the face */
+  ctx.save();
+  ctx.beginPath(); ctx.arc(fx0, hy, hr, 0, 7); ctx.clip();
+  ctx.fillStyle = HAIR;
+  ctx.beginPath();
+  ctx.moveTo(fx0 - hr * 1.2, hy - hr * 1.2);
+  ctx.lineTo(fx0 - hr * 1.2, hy - hr * .02);
+  ctx.quadraticCurveTo(fx0 - hr * .78, hy - hr * .04, fx0 - hr * .58, hy - hr * .3);
+  ctx.quadraticCurveTo(fx0 - hr * .34, hy + hr * .04, fx0 - hr * .06, hy - hr * .26);
+  ctx.quadraticCurveTo(fx0 + hr * .22, hy + hr * .06, fx0 + hr * .5, hy - hr * .26);
+  ctx.quadraticCurveTo(fx0 + hr * .8, hy + hr * .02, fx0 + hr * 1.2, hy - hr * .2);
+  ctx.lineTo(fx0 + hr * 1.2, hy - hr * 1.2);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+  /* bunches · up and out, drawn after the face so the ties show */
+  [-1, 1].forEach(d => {
+    ctx.fillStyle = '#ff8fb4';
+    ctx.beginPath();
+    ctx.ellipse(fx0 + d * hr * .92, hy - hr * .42, hr * .16, hr * .13, d * .5, 0, 7);
+    ctx.fill();
+    ctx.strokeStyle = ink; ctx.lineWidth = lw * .6; ctx.stroke();
+    ctx.fillStyle = HAIR;
+    ctx.beginPath();
+    ctx.ellipse(fx0 + d * hr * 1.24, hy - hr * .52, hr * .3, hr * .26, d * .35, 0, 7);
+    ctx.fill();
+    ctx.strokeStyle = ink; ctx.lineWidth = lw * .75; ctx.stroke();
+  });
+
+  /* ---- face ---- */
+  const fx = dir * s * .012;
+  const ex = hr * .38, ey = hy + hr * .12;
+  const blink = (!L.dead && Math.floor(G.t / 2600) % 2 === 0 && (G.t % 2600) > 2480) ? .12 : 1;
+  if (expr === 'dead'){
+    ctx.strokeStyle = ink; ctx.lineWidth = s * .028;
+    [-1, 1].forEach(d => {
+      const x = fx + d * ex, r = hr * .19;
+      ctx.beginPath(); ctx.moveTo(x - r, ey - r); ctx.lineTo(x + r, ey + r);
+      ctx.moveTo(x + r, ey - r); ctx.lineTo(x - r, ey + r); ctx.stroke();
+    });
+  } else {
+    const eh = (expr === 'worry' ? 1.25 : expr === 'win' ? .55 : 1) * blink;
+    [-1, 1].forEach(d => {
+      ctx.fillStyle = '#3a2c22';
+      ctx.beginPath(); ctx.ellipse(fx + d * ex, ey, hr * .13, hr * .17 * eh, 0, 0, 7); ctx.fill();
+      if (blink > .5){
+        ctx.fillStyle = '#fff';
+        ctx.beginPath(); ctx.arc(fx + d * ex - hr * .05, ey - hr * .06, hr * .055, 0, 7); ctx.fill();
+      }
+    });
+    /* brows say more than eyes do */
+    ctx.strokeStyle = HAIR_D; ctx.lineWidth = s * .017;
+    [-1, 1].forEach(d => {
+      const bx = fx + d * ex, by = ey - hr * .34 + (expr === 'worry' ? hr * .06 : 0);
+      const tilt = expr === 'worry' ? -d * hr * .1 : expr === 'go' ? d * hr * .07 : 0;
+      ctx.beginPath();
+      ctx.moveTo(bx - hr * .13, by + tilt); ctx.lineTo(bx + hr * .13, by - tilt);
+      ctx.stroke();
+    });
   }
-  /* headgear */
+  /* blush */
+  ctx.fillStyle = '#ff9aa8'; ctx.globalAlpha = .5;
+  [-1, 1].forEach(d => { ctx.beginPath();
+    ctx.ellipse(fx + d * hr * .62, ey + hr * .3, hr * .17, hr * .1, 0, 0, 7); ctx.fill(); });
+  ctx.globalAlpha = 1;
+  /* mouth */
+  ctx.strokeStyle = ink; ctx.lineWidth = s * .019;
+  const my = ey + hr * .45;
+  ctx.beginPath();
+  if (expr === 'worry') ctx.arc(fx, my + hr * .1, hr * .16, Math.PI + .3, -.3);
+  else if (expr === 'dead') ctx.arc(fx, my + hr * .12, hr * .14, Math.PI + .35, -.35);
+  else if (expr === 'go' || expr === 'win'){
+    ctx.fillStyle = '#c94a55';
+    ctx.beginPath(); ctx.ellipse(fx, my, hr * .16, hr * .13, 0, 0, 7); ctx.fill();
+    ctx.beginPath();
+  } else ctx.arc(fx, my - hr * .06, hr * .17, .28, Math.PI - .28);
+  ctx.stroke();
+
+  /* ---- headgear ---- */
   if (F.hat){
     ctx.fillStyle = F.hat;
-    ctx.beginPath(); ctx.arc(0, -s * .58, s * .17, Math.PI, 0); ctx.fill();
-    ctx.fillRect(-s * .21, -s * .59, s * .42, s * .05);
-    ctx.strokeStyle = '#273043'; ctx.lineWidth = lw * .8; ctx.stroke();
+    ctx.beginPath(); ctx.arc(fx, hy - hr * .12, hr * 1.02, Math.PI, 0); ctx.fill();
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(fx - hr * 1.28, hy - hr * .2, hr * 2.56, hr * .3, hr * .14);
+    else ctx.rect(fx - hr * 1.28, hy - hr * .2, hr * 2.56, hr * .3);
+    ctx.fill();
+    ctx.strokeStyle = ink; ctx.lineWidth = lw * .8; ctx.stroke();
   }
   if (F.hood){
     ctx.fillStyle = F.hood;
-    ctx.beginPath(); ctx.arc(0, -s * .53, s * .21, Math.PI * 1.05, Math.PI * 1.95); ctx.fill();
+    ctx.beginPath(); ctx.arc(fx, hy, hr * 1.18, Math.PI * 1.02, Math.PI * 1.98); ctx.fill();
+    ctx.strokeStyle = ink; ctx.lineWidth = lw * .7; ctx.stroke();
   }
   if (F.spikes){
     ctx.fillStyle = '#2f8f4a';
     for (let i = 0; i < 3; i++){
       ctx.beginPath();
-      ctx.moveTo(-s * .02, -s * .44 + i * s * .1);
-      ctx.lineTo(-s * .16, -s * .40 + i * s * .1);
-      ctx.lineTo(-s * .02, -s * .36 + i * s * .1);
+      ctx.moveTo(-s * .01, -s * .29 + i * s * .075);
+      ctx.lineTo(-s * .15, -s * .26 + i * s * .075);
+      ctx.lineTo(-s * .01, -s * .23 + i * s * .075);
       ctx.fill();
     }
   }
   if (F.ears){
     ctx.fillStyle = '#1c1c22';
     [-1, 1].forEach(d => { ctx.beginPath();
-      ctx.moveTo(d * s * .07, -s * .64); ctx.lineTo(d * s * .17, -s * .78);
-      ctx.lineTo(d * s * .19, -s * .58); ctx.fill(); });
+      ctx.moveTo(fx + d * hr * .5, hy - hr * .82);
+      ctx.lineTo(fx + d * hr * .92, hy - hr * 1.5);
+      ctx.lineTo(fx + d * hr * 1.02, hy - hr * .58);
+      ctx.closePath(); ctx.fill(); });
   }
   if (F.helmet){
-    ctx.strokeStyle = '#eef2f8'; ctx.lineWidth = s * .04;
-    ctx.beginPath(); ctx.arc(0, -s * .5, s * .24, 0, 7); ctx.stroke();
-    ctx.fillStyle = '#8fd6ff44';
-    ctx.beginPath(); ctx.arc(0, -s * .5, s * .24, 0, 7); ctx.fill();
+    ctx.strokeStyle = '#eef2f8'; ctx.lineWidth = s * .03;
+    ctx.beginPath(); ctx.arc(fx, hy, hr * 1.34, 0, 7); ctx.stroke();
+    ctx.fillStyle = '#8fd6ff33';
+    ctx.beginPath(); ctx.arc(fx, hy, hr * 1.34, 0, 7); ctx.fill();
   }
   ctx.restore();
+
   /* the flattened silhouette gets tyre tracks, because comedy */
   if (L.dead && L.squash > .55){
     ctx.save();
@@ -667,6 +818,7 @@ function draw(){
   }
   drawGoalBanner();
   drawLily();
+  drawPuffs();
 }
 
 /* ============================================================
@@ -683,6 +835,8 @@ function tryHop(dc, dr){
   const row = G.rows[nr];
   if (row && row.deco.some(d => d.c === nc && d.k === 'tree')) { Music.hop(); return; }
   if (nc === L.c && nr === L.r) return;
+  if (dc) L.dir = dc > 0 ? 1 : -1;
+  else if (dr > 0) L.dir = 0;
   L.from = { c: L.c, r: L.r };
   L.to = { c: nc, r: nr };
   L.c = nc; L.r = nr;
@@ -702,7 +856,7 @@ function stepLily(dt){
     const t = 1 - L.hop;
     L.x = L.from.c + (L.to.c - L.from.c) * t;
     L.y = L.from.r + (L.to.r - L.from.r) * t;
-    if (L.hop === 0){ L.x = L.to.c; L.y = L.to.r; }
+    if (L.hop === 0){ L.x = L.to.c; L.y = L.to.r; puff(L.x, L.y, 4, '#ffffffcc'); }
   }
   /* coin pickup */
   const row = G.rows[Math.round(L.y)];
@@ -711,6 +865,7 @@ function stepLily(dt){
     G.coins++;
     $('pCoin').textContent = '◉ ' + (SV.coins + G.coins);
     Music.coin();
+    puff(L.x, L.y, 10, '#ffd75e');
     if (Math.random() < .25) Voice.say(pick(LINES.coin), { rate: 1.1 });
   }
   /* reached the far pavement */
@@ -823,6 +978,7 @@ function loop(ts){
   if (G.phase === 'title' || G.phase === 'menu'){ draw(); return; }
   stepTraffic(dt);
   stepLily(dt);
+  puffTick(dt);
   if (G.lily && G.lily.nearT > 0) G.lily.nearT -= dt;
   if (G.phase === 'play'){
     hitTest();
