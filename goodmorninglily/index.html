@@ -1,0 +1,751 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>Good Morning, Lily</title>
+<meta name="description" content="A very small, very soft puzzle. Nine pieces, soothing sounds, and a good morning at the end.">
+<meta name="apple-mobile-web-app-title" content="Morning Lily">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#f3dcc0">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=JetBrains+Mono:wght@700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#4a3628; --cream:#fffaf1; --gold:#ffcf7a; --gold-d:#e8a83c;
+  --blush:#f3b6c0; --mint:#8fcfc4; --mono:'JetBrains Mono',monospace; --disp:'Baloo 2',system-ui,sans-serif;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden;overscroll-behavior:none;position:fixed;inset:0;width:100%}
+body{margin:0;background:#2b2f52;font-family:var(--disp);color:var(--ink);user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+#wrap{position:absolute;inset:0;touch-action:none}
+canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.mono{font-family:var(--mono);font-weight:800;letter-spacing:.09em;font-size:clamp(9px,2.6vmin,12px)}
+.topbar{position:absolute;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:center;
+  padding:calc(10px + env(safe-area-inset-top)) 14px 0;z-index:5;pointer-events:none}
+.topbar>*{pointer-events:auto}
+.pill{background:#ffffffcc;backdrop-filter:blur(6px);border-radius:100px;padding:6px 13px;
+  font-family:var(--mono);font-weight:800;font-size:clamp(9px,2.4vmin,11px);letter-spacing:.06em;color:var(--ink);
+  box-shadow:0 4px 14px rgba(60,40,30,.14)}
+#bMute{background:#ffffffcc;backdrop-filter:blur(6px);border:none;border-radius:100px;padding:7px 13px;
+  font-family:var(--disp);font-weight:700;font-size:clamp(10px,2.6vmin,12px);color:var(--ink);cursor:pointer;
+  box-shadow:0 4px 14px rgba(60,40,30,.14)}
+#bMute.off{opacity:.55}
+.hint{position:absolute;left:0;right:0;bottom:calc(14px + env(safe-area-inset-bottom));text-align:center;
+  color:#fff;text-shadow:0 2px 8px rgba(0,0,0,.25);z-index:4;pointer-events:none}
+.panel{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:10px;text-align:center;padding:24px;z-index:6}
+.panel .card{background:#fffaf1ee;backdrop-filter:blur(10px);border-radius:28px;padding:28px 26px 26px;
+  max-width:360px;width:100%;box-shadow:0 20px 60px rgba(50,30,20,.28);display:flex;flex-direction:column;align-items:center;gap:9px}
+.panel h1{font-size:clamp(28px,7.4vmin,42px);line-height:1.02;margin:2px 0 0;font-weight:800;color:var(--ink)}
+.panel .small{font-size:clamp(13px,3.4vmin,15px);color:#6b5644;font-weight:600;max-width:290px;margin:0}
+.btn{margin-top:8px;border:none;border-radius:100px;padding:14px 34px;background:var(--gold);color:var(--ink);
+  font-family:var(--disp);font-weight:800;font-size:clamp(15px,3.8vmin,18px);cursor:pointer;
+  box-shadow:0 8px 20px rgba(232,168,60,.45);transition:transform .12s}
+.btn:active{transform:scale(.96)}
+.foot{margin-top:4px;font-size:clamp(10px,2.6vmin,12px);color:#8a6f57;font-weight:600}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="cv"></canvas>
+
+  <div class="topbar">
+    <button id="bMute">Sound on</button>
+    <div class="pill" id="streak">Your first morning</div>
+  </div>
+
+  <div class="hint mono" id="hint" style="display:none">DRAG A PIECE INTO PLACE</div>
+
+  <div class="panel" id="pTitle">
+    <div class="card">
+      <div class="mono" style="color:#a8825a">A VERY SMALL, VERY SOFT PUZZLE</div>
+      <h1>Good Morning,<br>Lily</h1>
+      <div class="small">Nine little pieces. Soothing sounds. No timer chasing you — though we'll quietly time it anyway.</div>
+      <button class="btn" id="bPlay">Play</button>
+      <div class="foot" id="bestLine"></div>
+    </div>
+  </div>
+
+  <div class="panel" id="pWin" style="display:none">
+    <div class="card">
+      <div class="mono" style="color:#a8825a">RISE AND SHINE</div>
+      <h1>Good morning,<br>Lily!</h1>
+      <div class="small" id="winStreak"></div>
+      <div class="foot" id="winTime"></div>
+      <button class="btn" id="bAgain">Another morning</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const clamp = (a,b,c) => Math.max(b,Math.min(c,a));
+const ri = n => Math.floor(Math.random()*n);
+
+/* ============================================================
+   COLOUR
+   ============================================================ */
+const INK = '#4a3628';
+const HAIR = '#a9793f', HAIR_D = '#8a5f2e', SKIN = '#f6d2b0';
+function hexToRgb(h){ h=h.replace('#',''); return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)]; }
+function lerpColor(a,b,t){
+  t = clamp(t,0,1);
+  const A=hexToRgb(a),B=hexToRgb(b);
+  const r=Math.round(A[0]+(B[0]-A[0])*t), g=Math.round(A[1]+(B[1]-A[1])*t), bl=Math.round(A[2]+(B[2]-A[2])*t);
+  return `rgb(${r},${g},${bl})`;
+}
+function roundRectPath(ctx,x,y,w,h,r){
+  if (ctx.roundRect){ ctx.beginPath(); ctx.roundRect(x,y,w,h,r); return; }
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
+}
+function windowPath(ctx,x,y,w,h){
+  const r = w/2;
+  ctx.beginPath();
+  ctx.moveTo(x,y+h); ctx.lineTo(x,y+r);
+  ctx.arc(x+w/2,y+r,r,Math.PI,2*Math.PI);
+  ctx.lineTo(x+w,y+h); ctx.closePath();
+}
+
+/* ============================================================
+   THE PICTURE · one fixed square scene, animated but never
+   randomised — the same room, every morning, like a ritual
+   ============================================================ */
+const MASTER = 720;
+const master = document.createElement('canvas');
+master.width = MASTER; master.height = MASTER;
+const mctx = master.getContext('2d');
+
+const STARS = Array.from({length:22}, () => ({ x:Math.random(), y:Math.random()*.5, r:.6+Math.random()*1.4, ph:Math.random()*10 }));
+
+function skyColors(sunP){
+  return [
+    lerpColor('#232a52','#8fc6ea', sunP*1.3),
+    lerpColor('#5a4a86','#ffd6a8', (sunP-.15)/.6),
+    lerpColor('#b3577a','#ffedc6', (sunP-.05)/.7),
+  ];
+}
+function drawSky(ctx,w,h,sunP){
+  const [c0,c1,c2] = skyColors(sunP);
+  const g = ctx.createLinearGradient(0,0,0,h);
+  g.addColorStop(0,c0); g.addColorStop(.55,c1); g.addColorStop(1,c2);
+  ctx.fillStyle = g; ctx.fillRect(0,0,w,h);
+}
+function drawStars(ctx,w,h,t,sunP){
+  const alpha = clamp(1 - sunP*1.6, 0, 1);
+  if (alpha <= 0) return;
+  ctx.save();
+  for (const s of STARS){
+    const tw = .5 + .5*Math.sin(t/900 + s.ph);
+    ctx.globalAlpha = alpha * (.4 + .6*tw);
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(s.x*w, s.y*h, s.r, 0, 7); ctx.fill();
+  }
+  ctx.restore();
+}
+function drawSun(ctx,w,h,sunP){
+  const cx = w*.5, groundY = h*.78;
+  const cy = groundY - sunP*h*.5;
+  const r = w*.11;
+  const glow = ctx.createRadialGradient(cx,cy,0,cx,cy,r*3.2);
+  glow.addColorStop(0,'rgba(255,214,140,.55)'); glow.addColorStop(1,'rgba(255,214,140,0)');
+  ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(cx,cy,r*3.2,0,7); ctx.fill();
+  ctx.fillStyle = lerpColor('#ffb178','#ffe28a', sunP);
+  ctx.beginPath(); ctx.arc(cx,cy,r,0,7); ctx.fill();
+}
+function drawRooftops(ctx,w,h){
+  const groundY = h*.78;
+  const seq = [.10,.06,.14,.05,.16,.08,.12,.07,.11,.09];
+  const hgt = [.10,.16,.07,.13,.09,.15,.06,.12,.08,.11];
+  ctx.fillStyle = '#4b3a63';
+  ctx.beginPath(); ctx.moveTo(0,h); ctx.lineTo(0,groundY);
+  let x = 0;
+  seq.forEach((wf,i) => {
+    const bw = wf*w;
+    ctx.lineTo(x, groundY - hgt[i]*h*.6);
+    ctx.lineTo(x + bw*.5, groundY - hgt[i]*h*.6 - h*.03);
+    ctx.lineTo(x + bw, groundY - hgt[(i+1)%hgt.length]*h*.5);
+    x += bw;
+  });
+  ctx.lineTo(w,groundY); ctx.lineTo(w,h); ctx.closePath(); ctx.fill();
+}
+function drawClouds(ctx,w,h,t,sunP,count,band){
+  ctx.save();
+  ctx.fillStyle = `rgba(255,255,255,${.35+sunP*.35})`;
+  for (let i = 0; i < count; i++){
+    const speed = .02 + (i%3)*.01;
+    const x = ((t*speed/1000) + i*137) % (w+200) - 100;
+    const y = band[0]*h + (i%3)*(band[1]-band[0])*h/3;
+    ctx.beginPath(); ctx.ellipse(x,y,46,16,0,0,7);
+    ctx.ellipse(x+30,y+4,30,13,0,0,7); ctx.ellipse(x-28,y+5,28,12,0,0,7); ctx.fill();
+  }
+  ctx.restore();
+}
+function drawCurtain(ctx,x,topY,h,dir){
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,214,214,.85)';
+  ctx.beginPath();
+  ctx.moveTo(x,topY);
+  ctx.quadraticCurveTo(x+dir*46, topY+h*.35, x+dir*14, topY+h*.62);
+  ctx.quadraticCurveTo(x+dir*40, topY+h*.8, x, topY+h);
+  ctx.lineTo(x-dir*26, topY+h);
+  ctx.quadraticCurveTo(x-dir*10, topY+h*.5, x-dir*26, topY);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+function drawFairyLights(ctx,sunP){
+  const alpha = clamp(1 - sunP*1.4, 0, 1);
+  if (alpha <= .02) return;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(120,90,70,.5)'; ctx.lineWidth = 2;
+  const y0 = 18;
+  ctx.beginPath(); ctx.moveTo(40,y0);
+  for (let x = 40; x <= 680; x += 64) ctx.quadraticCurveTo(x+32,y0+16,x+64,y0);
+  ctx.stroke();
+  for (let x = 40; x <= 680; x += 64){
+    ctx.globalAlpha = alpha * (.6 + .4*Math.sin(x));
+    ctx.fillStyle = '#ffe9a8';
+    ctx.beginPath(); ctx.arc(x,y0+13,5,0,7); ctx.fill();
+  }
+  ctx.restore();
+}
+function drawNightstand(ctx,sunP){
+  const x=70,y=470,w=110,h=90;
+  ctx.fillStyle = '#c98a5a';
+  roundRectPath(ctx,x,y,w,h,10); ctx.fill();
+  ctx.strokeStyle = '#8a5c34'; ctx.lineWidth = 3; ctx.stroke();
+  ctx.fillStyle = '#d97a52';
+  ctx.beginPath(); ctx.moveTo(x+22,y-4); ctx.lineTo(x+w-22,y-4);
+  ctx.lineTo(x+w-30,y-46); ctx.lineTo(x+30,y-46); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#6fae6a';
+  [[-14,-70,26,40,-.3],[10,-76,22,36,.25],[-2,-92,20,34,0]].forEach(([dx,dy,rw,rh,rot]) => {
+    ctx.save(); ctx.translate(x+w/2+dx,y+dy); ctx.rotate(rot);
+    ctx.beginPath(); ctx.ellipse(0,0,rw,rh,0,0,7); ctx.fill(); ctx.restore();
+  });
+  const a = clamp(1 - sunP*1.3, 0, .6);
+  if (a > .02){
+    ctx.save(); ctx.globalAlpha = a;
+    const g = ctx.createRadialGradient(x+w+6,y+10,0,x+w+6,y+10,70);
+    g.addColorStop(0,'rgba(255,214,140,.7)'); g.addColorStop(1,'rgba(255,214,140,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x+w+6,y+10,70,0,7); ctx.fill();
+    ctx.restore();
+  }
+}
+function drawJackson(ctx,t,cx,cy){
+  const breathe = 1 + Math.sin(t/1100)*.02;
+  ctx.save(); ctx.translate(cx,cy); ctx.scale(1,breathe);
+  ctx.fillStyle = '#1c1c22';
+  ctx.beginPath(); ctx.ellipse(0,0,72,44,0,0,7); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(-44,-24); ctx.lineTo(-56,-46); ctx.lineTo(-28,-32); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(-14,-38); ctx.lineTo(-8,-58); ctx.lineTo(6,-38); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = '#0c0c10'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.arc(-34,-14,7,.2,Math.PI-.2); ctx.stroke();
+  ctx.beginPath(); ctx.arc(-14,-16,6,.2,Math.PI-.2); ctx.stroke();
+  ctx.fillStyle = '#e8a0a8';
+  ctx.beginPath(); ctx.arc(-24,-4,3.4,0,7); ctx.fill();
+  ctx.restore();
+
+  const flick = Math.sin(t/900)*.35;
+  ctx.save(); ctx.translate(cx+58,cy+2); ctx.rotate(flick*.3);
+  ctx.strokeStyle = '#1c1c22'; ctx.lineWidth = 16; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(0,0);
+  ctx.quadraticCurveTo(34,-10+flick*14, 30,-42+flick*10); ctx.stroke();
+  ctx.restore();
+}
+function drawLilySleeping(ctx,t,wake,cx,cy){
+  const r = 95;
+  ctx.fillStyle = HAIR_D;
+  ctx.beginPath(); ctx.ellipse(cx,cy+6,r*1.5,r*1.15,0,0,7); ctx.fill();
+  ctx.fillStyle = HAIR;
+  ctx.beginPath(); ctx.ellipse(cx,cy+2,r*1.42,r*1.06,0,0,7); ctx.fill();
+  ctx.strokeStyle = HAIR_D; ctx.lineWidth = 3; ctx.globalAlpha = .5;
+  [[-1,-.2],[-.6,.3],[.4,.3],[.9,-.1]].forEach(([dx,dy]) => {
+    ctx.beginPath();
+    ctx.moveTo(cx+dx*r*1.1, cy+dy*r*.4);
+    ctx.quadraticCurveTo(cx+dx*r*1.3, cy+dy*r*.4+40, cx+dx*r*1.0, cy+dy*r*.4+80);
+    ctx.stroke();
+  });
+  ctx.globalAlpha = 1;
+
+  ctx.fillStyle = SKIN;
+  ctx.beginPath(); ctx.arc(cx,cy,r*.72,0,7); ctx.fill();
+  ctx.strokeStyle = INK; ctx.lineWidth = 4; ctx.stroke();
+
+  ctx.fillStyle = '#ff9aa8'; ctx.globalAlpha = .5;
+  ctx.beginPath(); ctx.ellipse(cx-r*.42,cy+r*.14,r*.14,r*.09,0,0,7); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(cx+r*.42,cy+r*.14,r*.14,r*.09,0,0,7); ctx.fill();
+  ctx.globalAlpha = 1;
+
+  const ex = r*.3, ey = cy - r*.02;
+  [-1,1].forEach(d => {
+    const x = cx + d*ex;
+    ctx.globalAlpha = 1 - wake;
+    ctx.strokeStyle = INK; ctx.lineWidth = 4; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.arc(x,ey,r*.13,.15,Math.PI-.15); ctx.stroke();
+    ctx.globalAlpha = wake;
+    ctx.fillStyle = '#3a2c22';
+    ctx.beginPath(); ctx.ellipse(x,ey,r*.1,r*.13,0,0,7); ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(x-r*.03,ey-r*.05,r*.03,0,7); ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+
+  ctx.strokeStyle = INK; ctx.lineWidth = 3.4;
+  ctx.beginPath();
+  const my = cy + r*.32;
+  ctx.arc(cx, my - wake*r*.03, r*(.14+wake*.05), .25, Math.PI-.25);
+  ctx.stroke();
+
+  const za = clamp(1 - wake*3, 0, 1) * (.55 + .45*Math.sin(t/500));
+  if (za > .02){
+    ctx.save();
+    ctx.globalAlpha = za; ctx.fillStyle = INK;
+    ctx.font = "700 26px 'Baloo 2', sans-serif";
+    ctx.fillText('z', cx+r*.9, cy-r*.7 - Math.sin(t/600)*4);
+    ctx.font = "700 18px 'Baloo 2', sans-serif";
+    ctx.fillText('z', cx+r*1.1, cy-r*.95 - Math.sin(t/600+1)*4);
+    ctx.restore();
+  }
+}
+function drawBed(ctx,t,sunP,wake){
+  ctx.fillStyle = '#c98a5a';
+  roundRectPath(ctx,150,400,420,90,26); ctx.fill();
+  ctx.strokeStyle = '#8a5c34'; ctx.lineWidth = 4; ctx.stroke();
+
+  ctx.fillStyle = '#8fcfc4';
+  roundRectPath(ctx,120,560,480,160,34); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,.55)';
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 7; c++){
+    const px = 155 + c*62 + (r%2 ? 20 : 0), py = 600 + r*45;
+    if (px > 560) continue;
+    ctx.beginPath(); ctx.arc(px,py,5,0,7); ctx.fill();
+  }
+  ctx.strokeStyle = 'rgba(255,255,255,.5)'; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.moveTo(140,592); ctx.quadraticCurveTo(360,610,580,592); ctx.stroke();
+
+  ctx.fillStyle = '#fff8ef';
+  roundRectPath(ctx,230,470,260,110,44); ctx.fill();
+  ctx.strokeStyle = '#eadcc4'; ctx.lineWidth = 3; ctx.stroke();
+
+  drawJackson(ctx,t,520,610);
+  drawLilySleeping(ctx,t,wake,360,505);
+}
+function drawScene(ctx,t,sunP,wake){
+  ctx.clearRect(0,0,MASTER,MASTER);
+  const wg = ctx.createLinearGradient(0,0,0,MASTER);
+  wg.addColorStop(0, lerpColor('#efd9e0','#f8ecd9', sunP));
+  wg.addColorStop(1, '#f3dcc0');
+  ctx.fillStyle = wg; ctx.fillRect(0,0,MASTER,MASTER);
+
+  const wx=110, wy=40, ww=500, wh=380;
+  ctx.save();
+  windowPath(ctx,wx,wy,ww,wh); ctx.clip();
+  ctx.translate(wx,wy);
+  drawSky(ctx,ww,wh,sunP);
+  drawStars(ctx,ww,wh,t,sunP);
+  drawSun(ctx,ww,wh,sunP);
+  drawRooftops(ctx,ww,wh);
+  drawClouds(ctx,ww,wh,t,sunP,3,[.12,.32]);
+  ctx.restore();
+
+  ctx.save();
+  windowPath(ctx,wx,wy,ww,wh);
+  ctx.lineWidth = 14; ctx.strokeStyle = '#fff8ee'; ctx.stroke();
+  ctx.lineWidth = 6; ctx.strokeStyle = '#e7d3b8'; ctx.stroke();
+  ctx.strokeStyle = '#fff8ee'; ctx.lineWidth = 8;
+  ctx.beginPath(); ctx.moveTo(wx+ww/2, wy+ww*.03); ctx.lineTo(wx+ww/2, wy+wh); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(wx+18, wy+wh*.62); ctx.lineTo(wx+ww-18, wy+wh*.62); ctx.stroke();
+  ctx.restore();
+
+  drawCurtain(ctx, wx+10, wy-6, wh+10, 1);
+  drawCurtain(ctx, wx+ww-10, wy-6, wh+10, -1);
+  drawFairyLights(ctx,sunP);
+
+  ctx.fillStyle = '#e8b8a0';
+  ctx.beginPath(); ctx.ellipse(150,700,180,40,0,0,7); ctx.fill();
+
+  drawNightstand(ctx,sunP);
+  drawBed(ctx,t,sunP,wake);
+}
+
+/* ============================================================
+   PUZZLE STATE
+   ============================================================ */
+const GRID = 3;
+let S = {
+  phase:'title', pieces:[], lockedCount:0,
+  sunProgress:.15, sunTarget:.15, wake:0, solved:false,
+  startTime:0, dragId:-1, lastT:0,
+};
+function shuffle(a){ for (let i=a.length-1;i>0;i--){ const j=ri(i+1); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+
+function newPuzzle(fromSave){
+  const order = shuffle([...Array(GRID*GRID).keys()]);
+  S.pieces = [];
+  let idx = 0;
+  for (let row = 0; row < GRID; row++) for (let col = 0; col < GRID; col++){
+    S.pieces.push({
+      i:idx, row, col,
+      sx:col*(MASTER/GRID), sy:row*(MASTER/GRID), ssize:MASTER/GRID,
+      locked:false, dragging:false, pop:1,
+      jx:(Math.random()-.5), jy:(Math.random()-.5),
+      trayIdx:order[idx],
+    });
+    idx++;
+  }
+  if (fromSave && fromSave.locked){
+    fromSave.locked.forEach((v,i) => { if (v && S.pieces[i]) S.pieces[i].locked = true; });
+  }
+  S.lockedCount = S.pieces.filter(p => p.locked).length;
+  S.sunTarget = S.sunProgress = .15 + S.lockedCount/9*.55;
+  S.solved = S.lockedCount === GRID*GRID;
+  S.wake = S.solved ? 1 : 0;
+  S.startTime = performance.now();
+  computeLayout();
+}
+
+/* ============================================================
+   LAYOUT
+   ============================================================ */
+let W,H,DPR,LAY={};
+const cv = $('cv'), ctx = cv.getContext('2d');
+function sizeCanvas(){
+  W = innerWidth; H = innerHeight;
+  DPR = Math.min(2, window.devicePixelRatio || 1);
+  cv.width = W*DPR; cv.height = H*DPR;
+  cv.style.width = W+'px'; cv.style.height = H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  computeLayout();
+}
+function computeLayout(){
+  const topH = Math.max(50, H*.09);
+  const pad = Math.max(14, W*.035);
+  const fs = Math.min(W - pad*2, H*.48, 480);
+  const fx = (W-fs)/2;
+  const fy = topH + Math.max(8, H*.015);
+  const trayY0 = fy + fs + Math.max(10, H*.02);
+  const trayY1 = H - Math.max(34, H*.06);
+  LAY = { fx, fy, fs, cell:fs/GRID,
+    trayX0:pad, trayY0, trayW:(W-pad*2), trayH:Math.max(60, trayY1-trayY0) };
+  layoutPieceSlotsAndTray();
+}
+function layoutPieceSlotsAndTray(){
+  if (!S.pieces.length) return;
+  const cell = LAY.cell;
+  for (const p of S.pieces){
+    p.slotX = LAY.fx + cell*(p.col+.5);
+    p.slotY = LAY.fy + cell*(p.row+.5);
+    p.size = cell*.94;
+  }
+  assignTraySlots();
+  for (const p of S.pieces){
+    if (p.locked){ p.x = p.slotX; p.y = p.slotY; }
+    else if (!p.dragging){ p.x = p.trayX; p.y = p.trayY; }
+  }
+}
+function assignTraySlots(){
+  const unlocked = S.pieces.filter(p => !p.locked).sort((a,b) => a.trayIdx - b.trayIdx);
+  const cols = Math.max(3, Math.min(unlocked.length || 1, Math.floor(LAY.trayW/(LAY.cell*.78))));
+  const cellW = LAY.trayW/cols;
+  unlocked.forEach((p,i) => {
+    const col = i%cols, row = (i/cols)|0;
+    p.trayX = LAY.trayX0 + cellW*(col+.5) + p.jx*cellW*.22;
+    p.trayY = LAY.trayY0 + LAY.cell*.66*(row+.62) + p.jy*10;
+  });
+}
+
+/* ============================================================
+   DRAG
+   ============================================================ */
+function toLocal(e){ const r = cv.getBoundingClientRect(); return [e.clientX-r.left, e.clientY-r.top]; }
+function hit(px,py){
+  for (let k = S.pieces.length-1; k >= 0; k--){
+    const p = S.pieces[k];
+    if (p.locked) continue;
+    const r = p.size*.5;
+    if (Math.abs(px-p.x) < r && Math.abs(py-p.y) < r) return p;
+  }
+  return null;
+}
+cv.addEventListener('pointerdown', e => {
+  if (S.phase !== 'play') return;
+  ensureAudio();
+  const [x,y] = toLocal(e);
+  const p = hit(x,y);
+  if (!p) return;
+  p.dragging = true; S.dragId = p.i;
+  p.dragDX = p.x-x; p.dragDY = p.y-y;
+  S.pieces.splice(S.pieces.indexOf(p),1); S.pieces.push(p);
+  try { cv.setPointerCapture(e.pointerId); } catch(err){}
+});
+cv.addEventListener('pointermove', e => {
+  if (S.dragId < 0) return;
+  const p = S.pieces.find(p => p.i === S.dragId);
+  if (!p) return;
+  const [x,y] = toLocal(e);
+  p.x = x + p.dragDX; p.y = y + p.dragDY;
+});
+function endDrag(e){
+  if (S.dragId < 0) return;
+  const p = S.pieces.find(p => p.i === S.dragId);
+  S.dragId = -1;
+  if (!p) return;
+  p.dragging = false;
+  const d = Math.hypot(p.x-p.slotX, p.y-p.slotY);
+  if (d < LAY.cell*.42){
+    p.locked = true; p.x = p.slotX; p.y = p.slotY; p.pop = 1.28;
+    S.lockedCount++;
+    chime(S.lockedCount);
+    S.sunTarget = .15 + S.lockedCount/9*.55;
+    assignTraySlots();
+    saveProgress();
+    if (S.lockedCount === GRID*GRID) solve();
+  }
+}
+cv.addEventListener('pointerup', endDrag);
+cv.addEventListener('pointercancel', endDrag);
+
+/* ============================================================
+   AUDIO · a soft pad, a bird now and then, a chime per piece
+   ============================================================ */
+let AC=null, master0=null, padGain=null, filterNode=null, muted=false;
+function ensureAudio(){
+  if (AC){ if (AC.state === 'suspended') AC.resume(); return; }
+  AC = new (window.AudioContext || window.webkitAudioContext)();
+  master0 = AC.createGain(); master0.gain.value = muted ? 0 : .9; master0.connect(AC.destination);
+  filterNode = AC.createBiquadFilter(); filterNode.type = 'lowpass'; filterNode.frequency.value = 1200;
+  filterNode.connect(master0);
+  padGain = AC.createGain(); padGain.gain.value = .05; padGain.connect(filterNode);
+  [130.81,164.81,196.00,246.94].forEach((f,i) => {
+    const o = AC.createOscillator(); o.type = 'sine'; o.frequency.value = f*(1+(i%2?.0015:-.0015));
+    const g = AC.createGain(); g.gain.value = .5;
+    o.connect(g); g.connect(padGain); o.start();
+  });
+  const lfo = AC.createOscillator(); lfo.frequency.value = .05;
+  const lfoGain = AC.createGain(); lfoGain.gain.value = 380;
+  lfo.connect(lfoGain); lfoGain.connect(filterNode.frequency); lfo.start();
+  scheduleBird();
+}
+function setMuted(v){
+  muted = v; SV.muted = v;
+  if (master0) master0.gain.setTargetAtTime(muted?0:.9, AC.currentTime, .3);
+  $('bMute').textContent = muted ? 'Sound off' : 'Sound on';
+  $('bMute').classList.toggle('off', muted);
+  save();
+}
+const PENTA = [261.63,293.66,329.63,392.00,440.00,523.25,587.33,659.25,783.99];
+function chime(n){
+  if (!AC || muted) return;
+  const f = PENTA[clamp(n-1,0,PENTA.length-1)];
+  const o = AC.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+  const o2 = AC.createOscillator(); o2.type = 'sine'; o2.frequency.value = f*2;
+  const g = AC.createGain(); g.gain.value = 0;
+  o.connect(g); o2.connect(g); g.connect(master0);
+  const t0 = AC.currentTime;
+  g.gain.linearRampToValueAtTime(.16,t0+.02);
+  g.gain.exponentialRampToValueAtTime(.0001,t0+.9);
+  o.start(t0); o2.start(t0); o.stop(t0+.95); o2.stop(t0+.95);
+}
+function chordSwell(){
+  if (!AC || muted) return;
+  const t0 = AC.currentTime;
+  [261.63,329.63,392.00,523.25].forEach(f => {
+    const o = AC.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+    const g = AC.createGain(); g.gain.value = 0;
+    o.connect(g); g.connect(master0);
+    g.gain.linearRampToValueAtTime(.1,t0+1.0);
+    g.gain.linearRampToValueAtTime(0,t0+3.2);
+    o.start(t0); o.stop(t0+3.3);
+  });
+}
+let birdTimer = null;
+function scheduleBird(){
+  clearTimeout(birdTimer);
+  birdTimer = setTimeout(() => { birdChirp(); scheduleBird(); }, 2600 + Math.random()*4600);
+}
+function birdChirp(){
+  if (!AC || muted) return;
+  const n = 1 + (Math.random() < .4 ? 1 : 0);
+  for (let i = 0; i < n; i++) setTimeout(() => {
+    const o = AC.createOscillator(); o.type = 'sine';
+    const g = AC.createGain(); g.gain.value = 0;
+    o.connect(g); g.connect(master0);
+    const base = 2200 + Math.random()*1400;
+    const t0 = AC.currentTime;
+    o.frequency.setValueAtTime(base,t0);
+    o.frequency.exponentialRampToValueAtTime(base*1.4,t0+.06);
+    o.frequency.exponentialRampToValueAtTime(base*.9,t0+.15);
+    g.gain.linearRampToValueAtTime(.05,t0+.02);
+    g.gain.exponentialRampToValueAtTime(.0001,t0+.18);
+    o.start(t0); o.stop(t0+.2);
+  }, i*140);
+}
+function speak(text){
+  if (!('speechSynthesis' in window)) return;
+  try{
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.rate = .85; u.pitch = 1.05; u.volume = .9;
+    speechSynthesis.speak(u);
+  }catch(e){}
+}
+
+/* ============================================================
+   SAVE · streak, best time, and the puzzle in progress
+   ============================================================ */
+const SAVE_KEY = 'gml_v1';
+function loadSave(){ try{ return JSON.parse(localStorage.getItem(SAVE_KEY)) || {}; }catch(e){ return {}; } }
+let SV = loadSave();
+function save(){ try{ localStorage.setItem(SAVE_KEY, JSON.stringify(SV)); }catch(e){} }
+function saveProgress(){ SV.prog = { locked: S.pieces.map(p => !!p.locked) }; save(); }
+function clearProgress(){ SV.prog = null; save(); }
+function bumpStreak(){ SV.streak = (SV.streak||0)+1; save(); }
+function saveBest(sec){ if (!SV.best || sec < SV.best) SV.best = sec; save(); }
+function fmtTime(sec){ sec = Math.round(sec); return Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0'); }
+
+/* ============================================================
+   SCREENS
+   ============================================================ */
+function hasResumable(){ return !!(SV.prog && SV.prog.locked && SV.prog.locked.some(Boolean) && !SV.prog.locked.every(Boolean)); }
+function updateStreakUI(){
+  $('streak').textContent = SV.streak ? `${SV.streak} good morning${SV.streak===1?'':'s'}` : 'Your first morning';
+}
+function showTitle(){
+  S.phase = 'title';
+  $('pTitle').style.display = 'flex';
+  $('pWin').style.display = 'none';
+  $('hint').style.display = 'none';
+  $('bPlay').textContent = hasResumable() ? 'Continue' : 'Play';
+  $('bestLine').textContent = SV.best ? `Best morning: ${fmtTime(SV.best)}` : '';
+  updateStreakUI();
+}
+function startPlay(resume){
+  ensureAudio();
+  newPuzzle(resume ? SV.prog : null);
+  S.phase = 'play';
+  $('pTitle').style.display = 'none';
+  $('pWin').style.display = 'none';
+  $('hint').style.display = 'block';
+}
+function solve(){
+  S.solved = true;
+  const sec = (performance.now() - S.startTime)/1000;
+  saveBest(sec);
+  S.sunTarget = 1;
+  chordSwell();
+  clearProgress();
+  bumpStreak();
+  setTimeout(() => speak('Good morning, Lily.'), 700);
+  setTimeout(() => {
+    S.phase = 'win';
+    $('winTime').textContent = `This morning took ${fmtTime(sec)}.`;
+    $('winStreak').textContent = SV.streak === 1 ? 'Your first good morning.' : `${SV.streak} good mornings, and counting.`;
+    $('pWin').style.display = 'flex';
+    $('hint').style.display = 'none';
+    updateStreakUI();
+  }, 1500);
+}
+function anotherMorning(){
+  $('pWin').style.display = 'none';
+  $('hint').style.display = 'block';
+  S.solved = false; S.wake = 0; S.sunTarget = .15;
+  newPuzzle(null);
+  S.phase = 'play';
+}
+$('bPlay').addEventListener('click', () => startPlay(hasResumable()));
+$('bAgain').addEventListener('click', anotherMorning);
+$('bMute').addEventListener('click', () => setMuted(!muted));
+
+/* ============================================================
+   RENDER
+   ============================================================ */
+function update(dt){
+  S.sunProgress += (S.sunTarget - S.sunProgress) * Math.min(1, dt/900);
+  if (S.solved && S.wake < 1) S.wake = Math.min(1, S.wake + dt/1100);
+  for (const p of S.pieces){
+    if (p.locked || p.dragging){ p.pop += (1-p.pop)*Math.min(1,dt/160); continue; }
+    p.x += (p.trayX - p.x) * Math.min(1, dt/140);
+    p.y += (p.trayY - p.y) * Math.min(1, dt/140);
+  }
+}
+function drawFrameCard(x,y,s){
+  ctx.save();
+  ctx.shadowColor = 'rgba(60,40,30,.18)'; ctx.shadowBlur = 26; ctx.shadowOffsetY = 10;
+  ctx.fillStyle = '#fffaf1';
+  roundRectPath(ctx, x-14, y-14, s+28, s+28, 22);
+  ctx.fill();
+  ctx.restore();
+}
+function drawGridLines(){
+  ctx.save();
+  ctx.strokeStyle = 'rgba(74,54,40,.16)'; ctx.lineWidth = 1.5;
+  for (let i = 1; i < GRID; i++){
+    ctx.beginPath(); ctx.moveTo(LAY.fx+LAY.cell*i, LAY.fy); ctx.lineTo(LAY.fx+LAY.cell*i, LAY.fy+LAY.fs); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(LAY.fx, LAY.fy+LAY.cell*i); ctx.lineTo(LAY.fx+LAY.fs, LAY.fy+LAY.cell*i); ctx.stroke();
+  }
+  ctx.restore();
+}
+function drawPiece(p,t,isDrag){
+  const s = p.size * (p.pop||1) * (isDrag ? 1.06 : 1);
+  const tilt = p.locked ? 0 : p.jx*.12;
+  const bob = (p.locked || isDrag) ? 0 : Math.sin(t/700 + p.jx*8)*3;
+  ctx.save();
+  ctx.translate(p.x, p.y + bob);
+  ctx.rotate(tilt);
+  ctx.shadowColor = 'rgba(74,54,40,.28)';
+  ctx.shadowBlur = p.locked ? 0 : (isDrag ? 18 : 8);
+  ctx.shadowOffsetY = p.locked ? 0 : (isDrag ? 10 : 4);
+  roundRectPath(ctx, -s/2, -s/2, s, s, 10);
+  ctx.save(); ctx.clip();
+  ctx.drawImage(master, p.sx, p.sy, p.ssize, p.ssize, -s/2, -s/2, s, s);
+  ctx.restore();
+  if (!p.locked){ ctx.lineWidth = isDrag ? 3 : 2; ctx.strokeStyle = '#fff'; ctx.stroke(); }
+  ctx.restore();
+}
+function render(t){
+  const dt = t - (S.lastT || t); S.lastT = t;
+  update(dt);
+
+  drawSky(ctx,W,H,S.sunProgress);
+  drawClouds(ctx,W,H,t,S.sunProgress,4,[.06,.22]);
+
+  drawFrameCard(LAY.fx,LAY.fy,LAY.fs);
+  drawScene(mctx,t,S.sunProgress,S.wake);
+
+  ctx.save();
+  ctx.globalAlpha = S.solved ? 0 : .24;
+  ctx.drawImage(master, LAY.fx,LAY.fy,LAY.fs,LAY.fs);
+  ctx.restore();
+  if (!S.solved) drawGridLines();
+
+  for (const p of S.pieces) if (p.locked) drawPiece(p,t);
+  for (const p of S.pieces) if (!p.locked && !p.dragging) drawPiece(p,t);
+  for (const p of S.pieces) if (p.dragging) drawPiece(p,t,true);
+
+  requestAnimationFrame(render);
+}
+
+/* ============================================================
+   BOOT
+   ============================================================ */
+function boot(){
+  muted = !!SV.muted;
+  $('bMute').textContent = muted ? 'Sound off' : 'Sound on';
+  $('bMute').classList.toggle('off', muted);
+  sizeCanvas();
+  newPuzzle(null);
+  showTitle();
+  requestAnimationFrame(render);
+}
+window.addEventListener('resize', sizeCanvas);
+boot();
+
+window.GML = { S, get SV(){ return SV; }, newPuzzle, startPlay, solve, anotherMorning, chime,
+  get muted(){ return muted; }, setMuted, LAY: () => LAY };
+</script>
+</body>
+</html>
