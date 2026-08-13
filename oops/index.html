@@ -32,6 +32,9 @@ canvas{display:block;width:100%;height:100%}
   font-weight:800;font-size:clamp(13px,3.6vmin,18px);box-shadow:0 4px 0 #27304333}
 .pill.coin{color:#a8760a}
 .pill.shield{color:#e8558f;font-size:clamp(15px,4vmin,20px);padding:3px 12px}
+.pill.lives{display:flex;align-items:center;gap:2px;padding:5px 10px}
+.pill.lives svg{width:clamp(13px,3.4vmin,17px);display:block}
+.pill.lives .gone{opacity:.2}
 #lane{position:absolute;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top) + 58px);
   background:#273043dd;color:#fff;border-radius:100px;padding:3px 14px;font-family:var(--mono);
   font-weight:800;font-size:clamp(9px,2.6vmin,12px);letter-spacing:.12em;z-index:5;pointer-events:none}
@@ -92,6 +95,7 @@ canvas{display:block;width:100%;height:100%}
   <canvas id="cv"></canvas>
   <div id="hud">
     <span class="pill" id="pScore">0</span>
+    <span class="pill lives" id="pLives"></span>
     <span class="pill shield" id="pShield" style="display:none">☂</span>
     <span class="pill coin" id="pCoin">◉ 0</span>
   </div>
@@ -255,6 +259,12 @@ const LINES = {
           'Look at that stroke. Bold. Confident. Made of Lily.',
           'She is the crayon. The road is the paper. Art is pain.',
           'That is a solid two metres of Lily. The road council will bill you.'],
+  life:  ['That is one of Jackson\'s. {n} left. He is counting.',
+          'Jackson lent her nine. She is down to {n}. He has noticed.',
+          'Another cat life gone. {n} to go. Jackson wants them back.',
+          'Up she gets. {n} lives left, none of them hers.'],
+  lastlife:['That was the last one. Jackson has nothing left to lend.',
+          'Nine lives. All spent. Jackson is furious and also a cat.'],
   cats:  ['A cat. Just a cat. Ignore the cat.', 'Jackson has a brother, apparently.',
           'That cat has seen things. That cat has caused things.',
           'Do not pet the cat. There is no time. Actually — there is time.'],
@@ -393,7 +403,11 @@ function drawPuffs(){
   }
   ctx.globalAlpha = 1;
 }
+const LIVES_MAX = 9;   /* Jackson has agreed to lend her all of them */
+const CATHEAD = `<svg viewBox="0 0 24 22"><path d="M4 3l3 4h10l3-4 1 7a8 7 0 0 1-18 0z" fill="#1c1c22"/>
+  <circle cx="9" cy="12" r="1.6" fill="#f6c94a"/><circle cx="15" cy="12" r="1.6" fill="#f6c94a"/></svg>`;
 const G = { rows: [], lily: null, cam: 0, camZ: 1, camZTarget: 1, shake: 0, anchor: .24, anchorT: .24,
+  lives: LIVES_MAX,
   night: false, horse: false, pop: 0, stamp: '', stampT: 0, camX: 0, camXT: 0, crayon: null,
   stage: 1, score: 0, coins: 0, phase: 'title', goalRow: 0, idle: 0, t: 0, slow: 1, focus: null };
 
@@ -413,8 +427,8 @@ function makeRow(y, stage){
     const n = Math.max(1, Math.floor(COLS * 2.2 / gap));
     for (let i = 0; i < n; i++)
       cars.push({ x: i * gap + Math.random() * .8, big, honk: 0,
-        kind: big ? (Math.random() < .3 ? 'bus' : Math.random() < .18 ? 'icecream' : 'truck')
-                  : (Math.random() < .12 ? 'jackson' : 'car') });
+        kind: big ? (Math.random() < .28 ? 'bus' : Math.random() < .18 ? 'icecream' : 'truck')
+                  : pick(['car', 'car', 'car', 'taxi', 'police', 'pickup', 'jackson']) });
     return { y, type: 'road', dir, speed, cars, span: n * gap, deco: [], coin: null };
   }
   /* the sky and the ground are also trying to get her */
@@ -552,7 +566,8 @@ function buildStage(stage){
   /* never start the street with a road right in front of her face */
   G.rows[2] = { y: 2, type: 'grass', deco: [], coin: null };
   G.lily = { c: Math.floor(COLS / 2), r: 0, x: Math.floor(COLS / 2), y: 0, face: 0,
-    hop: 0, from: null, to: null, dead: false, squash: 0, spin: 0, dir: 0, nearT: 0, drag: null };
+    hop: 0, from: null, to: null, dead: false, squash: 0, spin: 0, dir: 0, nearT: 0, drag: null,
+    safeRow: 0, anim: null, at: 0, fly: 0, roll: 0, sink: 0 };
   G.cam = 0; G.camZ = PLAY_Z; G.camZTarget = PLAY_Z; G.shake = 0; G.idle = 0; G.slow = 1; G.focus = null;
   G.shield = false; G.pop = 0; G.stampT = 0; G.camX = 0; G.camXT = 0; G.crayon = null;
   G.anchor = .24; G.anchorT = .24;
@@ -578,6 +593,20 @@ function drawRow(row){
     ctx.fillStyle = row.y % 2 ? '#7ec850' : '#76c04a';
     if (row.type === 'graboid') ctx.fillStyle = row.y % 2 ? '#c8a86a' : '#bd9c5c';   /* loose dirt */
     ctx.fillRect(0, top, w, h + 1);
+    if (row.type !== 'graboid'){
+      /* tufts and the odd flower, seeded off the row so they never crawl */
+      for (let i = 0; i < 7; i++){
+        const gx = ((row.y * 71 + i * 137) % 100) / 100 * w;
+        const gy = top + h * (.25 + ((row.y + i * 3) % 5) / 8);
+        ctx.strokeStyle = '#00000014'; ctx.lineWidth = Math.max(1, h * .035);
+        ctx.beginPath(); ctx.moveTo(gx, gy); ctx.lineTo(gx + h * .07, gy - h * .13); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(gx, gy); ctx.lineTo(gx - h * .06, gy - h * .11); ctx.stroke();
+        if ((row.y * 7 + i) % 11 === 0){
+          ctx.fillStyle = ['#ffd93b', '#fff', '#ff9ec4'][(row.y + i) % 3];
+          ctx.beginPath(); ctx.arc(gx + h * .04, gy - h * .16, h * .05, 0, 7); ctx.fill();
+        }
+      }
+    }
     if (row.type === 'graboid'){
       ctx.strokeStyle = '#00000018'; ctx.lineWidth = 2;
       for (let i = 0; i < 5; i++){
@@ -593,7 +622,17 @@ function drawRow(row){
     }
   } else {
     ctx.fillStyle = '#4a4f5c'; ctx.fillRect(0, top, w, h + 1);
-    ctx.fillStyle = '#3f4450'; ctx.fillRect(0, top, w, h * .06);
+    /* asphalt is not one flat colour */
+    ctx.fillStyle = '#00000012';
+    for (let i = 0; i < 4; i++){
+      const gx = ((row.y * 53 + i * 97) % 100) / 100 * w;
+      ctx.beginPath(); ctx.ellipse(gx, top + h * (.3 + (i % 3) * .2), w * .09, h * .12, 0, 0, 7); ctx.fill();
+    }
+    /* curbs, so the road has an edge instead of just stopping */
+    ctx.fillStyle = '#b9bcc4'; ctx.fillRect(0, top, w, h * .055);
+    ctx.fillStyle = '#8f939c'; ctx.fillRect(0, top + h * .055, w, h * .03);
+    ctx.fillStyle = '#b9bcc4'; ctx.fillRect(0, top + h * .945, w, h * .055);
+    ctx.fillStyle = '#8f939c'; ctx.fillRect(0, top + h * .915, w, h * .03);
     if (row.zebra){
       /* the last road before the ice cream is a proper crossing. Take the hint. */
       ctx.fillStyle = '#eef2f8';
@@ -739,19 +778,72 @@ function drawTruck(row, car){
     ctx.fillStyle = '#8fd6ff';
     ctx.fillRect(x0 + len * .84, -h * .3, len * .13, h * .34);
   } else {
-    ctx.fillStyle = car.col || (car.col = pick(['#ef4d3d', '#ffc93c', '#3f6ea8', '#8b5cf6', '#2aa5a0', '#eef2f8']));
+    const taxi = car.kind === 'taxi', cop = car.kind === 'police', ute = car.kind === 'pickup';
+    ctx.fillStyle = car.col || (car.col = taxi ? '#ffc21e' : cop ? '#25355c'
+      : pick(['#ef4d3d', '#ffc93c', '#3f6ea8', '#8b5cf6', '#2aa5a0', '#eef2f8', '#e07a3c']));
+    /* lower body */
     ctx.beginPath();
-    if (ctx.roundRect) ctx.roundRect(x0, -h / 2, len, h, s * .12); else ctx.rect(x0, -h / 2, len, h);
+    if (ctx.roundRect) ctx.roundRect(x0, -h * .1, len, h * .6, s * .09);
+    else ctx.rect(x0, -h * .1, len, h * .6);
     ctx.fill();
-    ctx.strokeStyle = '#273043'; ctx.lineWidth = s * .045; ctx.stroke();
+    /* cabin · a pickup's is short and set back */
+    const cw = ute ? len * .42 : len * .62, cx = x0 + (ute ? len * .5 : len * .2);
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(cx, -h * .48, cw, h * .42, s * .08);
+    else ctx.rect(cx, -h * .48, cw, h * .42);
+    ctx.fill();
+    ctx.strokeStyle = '#273043'; ctx.lineWidth = s * .042; ctx.stroke();
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(x0, -h * .1, len, h * .6, s * .09);
+    else ctx.rect(x0, -h * .1, len, h * .6);
+    ctx.stroke();
+    /* glass, split by a door pillar */
     ctx.fillStyle = '#8fd6ff';
-    ctx.fillRect(x0 + len * .55, -h * .3, len * .3, h * .36);
+    ctx.fillRect(cx + cw * .06, -h * .42, cw * .38, h * .3);
+    if (!ute) ctx.fillRect(cx + cw * .52, -h * .42, cw * .38, h * .3);
+    /* pickup bed */
+    if (ute){ ctx.fillStyle = '#00000026'; ctx.fillRect(x0 + len * .06, -h * .06, len * .4, h * .2); }
+    /* door line and handle */
+    ctx.strokeStyle = '#00000033'; ctx.lineWidth = s * .022;
+    ctx.beginPath(); ctx.moveTo(x0 + len * .5, -h * .08); ctx.lineTo(x0 + len * .5, h * .42); ctx.stroke();
+    ctx.fillStyle = '#00000040';
+    ctx.fillRect(x0 + len * .55, h * .06, len * .07, h * .05);
+    /* mirror */
+    ctx.fillStyle = '#273043';
+    ctx.fillRect(x0 + len * (ute ? .9 : .82), -h * .3, len * .05, h * .09);
+    /* brake lights at the back */
+    ctx.fillStyle = '#e8352a';
+    ctx.fillRect(x0, -h * .04, len * .04, h * .14);
+    if (taxi){
+      ctx.fillStyle = '#273043';
+      ctx.fillRect(x0 + len * .38, -h * .58, len * .2, h * .11);
+      ctx.fillStyle = '#ffe9a0';
+      ctx.fillRect(x0 + len * .4, -h * .56, len * .16, h * .07);
+      /* checker stripe */
+      ctx.fillStyle = '#273043';
+      for (let i = 0; i < 7; i++) if (i % 2)
+        ctx.fillRect(x0 + len * (.06 + i * .12), h * .16, len * .12, h * .1);
+    }
+    if (cop){
+      const on = Math.floor(G.t / 220) % 2 === 0;
+      ctx.fillStyle = on ? '#ff3b30' : '#5b1f1c';
+      ctx.fillRect(x0 + len * .36, -h * .62, len * .12, h * .13);
+      ctx.fillStyle = on ? '#2d4a8a' : '#4a8aff';
+      ctx.fillRect(x0 + len * .5, -h * .62, len * .12, h * .13);
+      ctx.fillStyle = '#eef2f8';
+      ctx.fillRect(x0 + len * .1, h * .14, len * .34, h * .12);
+    }
   }
   /* wheels */
   ctx.fillStyle = '#20242e';
   const wr = h * .2;
   (car.big ? [x0 + len * .14, x0 + len * .5, x0 + len * .8] : [x0 + len * .18, x0 + len * .8])
-    .forEach(wx => { ctx.beginPath(); ctx.arc(wx, h * .46, wr, 0, 7); ctx.fill(); });
+    .forEach(wx => {
+      ctx.fillStyle = '#20242e';
+      ctx.beginPath(); ctx.arc(wx, h * .46, wr, 0, 7); ctx.fill();
+      ctx.fillStyle = '#5b606c';
+      ctx.beginPath(); ctx.arc(wx, h * .46, wr * .42, 0, 7); ctx.fill();
+    });
   /* headlights, because they are coming for her */
   ctx.fillStyle = '#fff6c8';
   ctx.beginPath(); ctx.arc(x0 + len * .97, 0, s * .06, 0, 7); ctx.fill();
@@ -836,10 +928,19 @@ function drawLily(){
   const [px, py] = worldToScreen(L.x, L.y);
   const F = fitOf(SV.fit);
   const expr = lilyExpr();
-  const lift = Math.sin(L.hop * Math.PI) * s * .46 + (G.horse && !L.dead ? s * .42 : 0);
+  const lift = Math.sin(L.hop * Math.PI) * s * .46 + (G.horse && !L.dead ? s * .42 : 0)
+    + (L.fly || 0) * s;
   const breathe = L.dead ? 0 : Math.sin(G.t / 620) * .012;
   const sq = L.dead ? clamp(1 - L.squash, .12, 1) : 1 + Math.sin(L.hop * Math.PI) * .12 + breathe;
-  const wide = L.dead ? 1 + L.squash * 1.5 + (L.wob || 0) : 1 - Math.sin(L.hop * Math.PI) * .07 - breathe;
+  let wide = L.dead ? 1 + L.squash * 1.5 + (L.wob || 0) : 1 - Math.sin(L.hop * Math.PI) * .07 - breathe;
+  let sq2 = sq, alpha = 1, sideways = (L.roll || 0) * s;
+  if (L.dead && L.anim === 'deflate'){ const k = 1 - (L.at || 0) * .9; wide = 1 + (L.at || 0) * .7; sq2 = k; }
+  if (L.dead && (L.anim === 'launch' || L.anim === 'spin' || L.anim === 'tumble' || L.anim === 'up')){
+    wide = 1; sq2 = 1;
+  }
+  if (L.dead && L.anim === 'ghost'){ alpha = 1 - (L.at || 0) * .9; wide = 1; sq2 = 1; }
+  if (L.dead && L.anim === 'down'){ sq2 = 1; wide = 1; }
+  if (L.dead && L.anim === 'shoes'){ alpha = clamp(1 - (L.at || 0) * 3, 0, 1); wide = 1; sq2 = 1; }
   const dir = L.dir || 0;                       /* -1 left · 0 forward · 1 right */
   if (G.horse && !L.dead) drawHorse(px, py, s, L.hop);
   const ink = '#4a3628';                        /* warm outline, not navy */
@@ -849,9 +950,20 @@ function drawLily(){
   ctx.beginPath();
   ctx.ellipse(px, py - s * .04, s * .26 * wide, s * .085, 0, 0, 7);
   ctx.fill();
-  ctx.translate(px, py - lift);
+  /* the shoes stay behind when she is knocked out of them */
+  if (L.dead && L.anim === 'shoes'){
+    ctx.fillStyle = '#e8554a';
+    [-1, 1].forEach(d => { ctx.beginPath();
+      ctx.ellipse(px + d * s * .09, py - s * .02, s * .06, s * .04, d * .3, 0, 7); ctx.fill(); });
+  }
+  ctx.translate(px + sideways, py - lift);
+  if (L.dead && L.anim === 'down'){
+    /* dragged under · clip her off at ground level as she goes */
+    ctx.beginPath(); ctx.rect(-s, -s * 1.4 + (L.sink || 0) * s * 1.5, s * 2, s * 1.6); ctx.clip();
+  }
+  ctx.globalAlpha = alpha;
   ctx.rotate(L.spin);
-  ctx.scale(wide, sq);
+  ctx.scale(wide, sq2);
   ctx.lineJoin = 'round'; ctx.lineCap = 'round';
   const lw = s * .035;
 
@@ -913,10 +1025,15 @@ function drawLily(){
   const hy = -s * .44, hr = s * .225;
   const fx0 = dir * s * .012;
   /* back of the bob, a touch wider than the face so it frames it */
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(fx0 - hr * 1.4, hy - hr * 1.6, hr * 2.8, hr * 1.72);   /* nothing below the jaw */
+  ctx.clip();
   ctx.fillStyle = HAIR_D;
   ctx.beginPath();
-  ctx.ellipse(fx0, hy + hr * .1, hr * 1.14, hr * 1.12, 0, 0, 7);
+  ctx.ellipse(fx0, hy - hr * .04, hr * 1.13, hr * 1.1, 0, 0, 7);
   ctx.fill();
+  ctx.restore();
   /* face */
   ctx.fillStyle = SKIN;
   ctx.beginPath(); ctx.arc(fx0, hy, hr, 0, 7); ctx.fill();
@@ -1049,23 +1166,34 @@ function drawLily(){
   }
 }
 /* the headlights reach much further than the truck — at night they arrive first */
-function drawBeam(row, car){
+function drawBeam(row, car, strength){
   const s = TILE * G.camZ;
   const [px, py] = worldToScreen(car.x, row.y);
-  const cy = py - s * .5;
+  const len = (car.kind === 'jackson' ? 1 : car.big ? 2.5 : 1.5) * s;
+  const h = s * (car.kind === 'jackson' ? .34 : car.big ? .62 : .5);
   const dir = row.dir > 0 ? 1 : -1;
-  const reach = s * 5.5;
-  const g = ctx.createLinearGradient(px, cy, px + dir * reach, cy);
-  g.addColorStop(0, 'rgba(255,246,200,.55)');
+  /* the beam starts at the BUMPER, not the middle of the vehicle */
+  const nose = px + dir * len * .5;
+  const cy = py - s * .5 - h * .1;
+  const reach = s * (strength > .4 ? 5.5 : 2.6);
+  const a = strength;
+  const g = ctx.createLinearGradient(nose, cy, nose + dir * reach, cy);
+  g.addColorStop(0, `rgba(255,246,200,${.6 * a})`);
+  g.addColorStop(.55, `rgba(255,246,200,${.22 * a})`);
   g.addColorStop(1, 'rgba(255,246,200,0)');
   ctx.save();
   ctx.fillStyle = g;
   ctx.beginPath();
-  ctx.moveTo(px, cy - s * .22);
-  ctx.lineTo(px + dir * reach, cy - s * .5);
-  ctx.lineTo(px + dir * reach, cy + s * .5);
-  ctx.lineTo(px, cy + s * .22);
+  ctx.moveTo(nose, cy - h * .3);
+  ctx.lineTo(nose + dir * reach, cy - s * .46);
+  ctx.lineTo(nose + dir * reach, cy + s * .46);
+  ctx.lineTo(nose, cy + h * .3);
   ctx.closePath(); ctx.fill();
+  /* the two lamps themselves */
+  ctx.globalAlpha = Math.min(1, a * 1.3);
+  ctx.fillStyle = '#fff8d0';
+  ctx.beginPath(); ctx.arc(nose, cy - h * .18, s * .05, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.arc(nose, cy + h * .18, s * .05, 0, 7); ctx.fill();
   ctx.restore();
 }
 function drawHeli(row){
@@ -1208,10 +1336,15 @@ function draw(){
   if (G.night){
     ctx.fillStyle = 'rgba(10,14,32,.72)';
     ctx.fillRect(0, 0, W, H);
-    for (let y = first; y <= last; y++){
-      const row = G.rows[y];
-      if (!row || row.type !== 'road') continue;
-      for (const car of row.cars) drawBeam(row, car);
+  }
+  /* headlights are always on. At night they are how you read the street; in
+     daylight they are a dim glow off the bumper. */
+  for (let y = first; y <= last; y++){
+    const row = G.rows[y];
+    if (!row || row.type !== 'road') continue;
+    for (const car of row.cars){
+      if (car.kind === 'jackson') continue;
+      drawBeam(row, car, G.night ? 1 : .22);
     }
   }
   for (let y = first; y <= last; y++){
@@ -1290,7 +1423,11 @@ function stepLily(dt){
     const t = 1 - L.hop;
     L.x = L.from.c + (L.to.c - L.from.c) * t;
     L.y = L.from.r + (L.to.r - L.from.r) * t;
-    if (L.hop === 0){ L.x = L.to.c; L.y = L.to.r; puff(L.x, L.y, 4, '#ffffffcc'); }
+    if (L.hop === 0){
+      L.x = L.to.c; L.y = L.to.r; puff(L.x, L.y, 4, '#ffffffcc');
+      const r = G.rows[L.r];
+      if (r && (r.type === 'grass' || r.type === 'goal')) L.safeRow = L.r;   /* checkpoint */
+    }
   }
   /* coin pickup */
   const row = G.rows[Math.round(L.y)];
@@ -1402,6 +1539,99 @@ function hitTest(){
 /* ============================================================
    THE TWO BIG MOMENTS · both zoom in
    ============================================================ */
+/* ============================================================
+   TWENTY WAYS TO LOSE
+   Each has its own stamp, its own headline, its own narrator and its own
+   animation. The meat crayon is one of them, not the whole show.
+   ============================================================ */
+const DEATHS = [
+  { id:'crayon', road:1, anim:'drag',    stamp:'MEAT CRAYON!', title:'Meat crayon.',
+    kick:['MEDIUM · WAXY','ONE CONTINUOUS STROKE','SIGNED, IN LILY'],
+    lines:['MEAT CRAYON. She has drawn a line down the whole street.',
+           'Look at that stroke. Bold. Confident. Made of Lily.',
+           'She is the crayon. The road is the paper. Art is pain.'] },
+  { id:'pancake', road:1, anim:'flat',   stamp:'SPLAT!', title:'Oops.',
+    kick:['FULLY LAMINATED','ONE WITH THE ASPHALT'],
+    lines:['Oops. No more Lily.','She has become a decal.',
+           'At least she left a beautiful corpse. Wide, but beautiful.'] },
+  { id:'pop', road:1, anim:'pop',        stamp:'POP!', title:'She popped.',
+    kick:['STRUCTURALLY SURPRISED','EXITED IN ALL DIRECTIONS'],
+    lines:['She popped. I did not know she could do that.',
+           'That was a wet sound and I am not describing it further.'] },
+  { id:'launch', road:1, anim:'launch',  stamp:'YEET!', title:'And she is gone.',
+    kick:['ALTITUDE: RUDE','LAST SEEN: UPWARDS'],
+    lines:['She has been punted into the next postcode.',
+           'Up she goes. Nobody is going to catch that.',
+           'That truck did not brake. That truck served.'] },
+  { id:'tumble', road:1, anim:'tumble',  stamp:'BONK!', title:'Rolled.',
+    kick:['SEVERAL REVOLUTIONS','NO LONGER FACING FORWARD'],
+    lines:['Walk it off! ...She cannot. But walk it off!',
+           'She bounced. Twice. The second one was worse.'] },
+  { id:'spin', road:1, anim:'spin',      stamp:'WHOOSH!', title:'Spun out.',
+    kick:['REVOLUTIONS: MANY','DIZZY, THEN FLAT'],
+    lines:['She is spinning. She is still spinning. She has stopped.',
+           'Physics has taken her out for a twirl.'] },
+  { id:'shoes', road:1, anim:'shoes',    stamp:'CLEAN OUT!', title:'Knocked out of her shoes.',
+    kick:['SHOES: REMAIN','LILY: DOES NOT'],
+    lines:['Knocked clean out of her shoes. The shoes are fine.',
+           'Two shoes. No Lily. Classic.'] },
+  { id:'deflate', road:1, anim:'deflate',stamp:'PFFFT.', title:'Deflated.',
+    kick:['ALL THE AIR','SLOWLY, THEN GONE'],
+    lines:['She is going down like a bouncy castle at closing time.',
+           'Need a bandage, son??? One bandage. For all of that.'] },
+  { id:'confetti', road:1, anim:'pop',   stamp:'SURPRISE!', title:'Party.',
+    kick:['CELEBRATORY','TECHNICALLY FESTIVE'],
+    lines:['She has gone off like a party popper. Nobody clap.',
+           'Confetti. Made of Lily. Do not eat it.'] },
+  { id:'sandwich', road:1, anim:'flat',  stamp:'PANINI!', title:'Sandwiched.',
+    kick:['TWO SLICES','PRESSED, NOT TOASTED'],
+    lines:['Two trucks. One Lily. You do the sandwich maths.',
+           'She has been pressed. Beautifully. Like a flower.'] },
+  { id:'skid', road:1, anim:'drag',      stamp:'SKRRRT!', title:'Skid mark.',
+    kick:['LONG · BLACK · REGRETTABLE','SEE ALSO: TYRE'],
+    lines:['That is going to take a lot of scrubbing.',
+           'The road council will bill you for that.'] },
+  { id:'origami', road:1, anim:'deflate',stamp:'FOLD!', title:'Folded.',
+    kick:['CREASED','NEATLY, IN THIRDS'],
+    lines:['She has been folded into the infrastructure.',
+           'Somebody folded her. Somebody did a very tidy job.'] },
+  { id:'star', road:1, anim:'spin',      stamp:'TWINKLE!', title:'Star wipe.',
+    kick:['SPARKLING','GONE, BUT SHINY'],
+    lines:['She has twinkled out of existence. Very glamorous.',
+           'A star is born and immediately run over.'] },
+  { id:'bowl', road:1, anim:'tumble',    stamp:'STRIKE!', title:'Strike.',
+    kick:['ALL TEN','PERFECT GAME'],
+    lines:['Straight down the middle. That is a strike.',
+           'She went over like the last pin. Bit sad, bit satisfying.'] },
+  { id:'puddle', road:1, anim:'deflate', stamp:'SPLOOSH!', title:'Puddle.',
+    kick:['LIQUID · LILY','ROOM TEMPERATURE'],
+    lines:['She is a puddle now. A tidy one.',
+           'Somebody get a mop. Mostly the mop.'] },
+  { id:'ghost', road:1, anim:'ghost',    stamp:'BOO.', title:'Ascended.',
+    kick:['DEPARTED','UPWARD, SLOWLY'],
+    lines:['Her soul is leaving. It looks annoyed.',
+           'She is floating off. She is waving. Rude.'] },
+  { id:'pixel', road:1, anim:'pop',      stamp:'404!', title:'Deleted.',
+    kick:['NOT FOUND','ASSET MISSING'],
+    lines:['She has been deleted. Somebody restore the backup.',
+           'Lily has stopped rendering. This is a her problem.'] },
+  { id:'yoink', heli:1, anim:'up',       stamp:'YOINK!', title:'Airlifted.',
+    kick:['ALTITUDE ACQUIRED','NO FLIGHT PLAN'],
+    lines:['The helicopter has taken her. That is a helicopter problem now.',
+           'Straight up. No warning. Very rude aviation.'] },
+  { id:'chomp', graboid:1, anim:'down',  stamp:'CHOMP!', title:'Eaten.',
+    kick:['SUBTERRANEAN','GONE UNDERGROUND'],
+    lines:['The ground ate her. The ground is full.',
+           'Tremors. In this economy.'] },
+  { id:'sink', graboid:1, anim:'down',   stamp:'GLORP!', title:'Swallowed.',
+    kick:['DOWNWARD','NO FORWARDING ADDRESS'],
+    lines:['She went under like a coin down a drain.',
+           'Whatever is under there has had enough of her.'] },
+];
+function pickDeath(car){
+  const want = car && car.heli ? 'heli' : car && car.graboid ? 'graboid' : 'road';
+  return pick(DEATHS.filter(d => d[want]));
+}
 function die(car){
   const L = G.lily;
   /* the umbrella takes the hit. Physically absurd. Emotionally necessary. */
@@ -1441,8 +1671,11 @@ function die(car){
   G.pop = 1;
   /* count the pieces. It is nearly always six or seven, for reasons. */
   G.pieces = Math.random() < .62 ? 6 + ri(2) : 4 + ri(6);
-  const dragged = car && !car.heli && !car.graboid;
-  G.stamp = car && car.heli ? 'YOINK!' : car && car.graboid ? 'CHOMP!' : 'MEAT CRAYON!';
+  const D = pickDeath(car);
+  G.death = D;
+  L.anim = D.anim; L.at = 0;
+  const dragged = D.anim === 'drag';
+  G.stamp = D.stamp;
   G.stampT = 1.8;
   if (dragged){
     /* she is on the bumper now, and the road is paper */
@@ -1456,21 +1689,21 @@ function die(car){
   G.anchorT = .5;                     /* ...and centre the indignity */
   Music.stop();
   if (navigator.vibrate) navigator.vibrate([60, 40, 120]);
+  const spent = --G.lives;
   setTimeout(() => {
-    const bench = dragged
-      ? [LINES.crayon, LINES.crayon, LINES.beauty, LINES.walkit, LINES.bandage]
-      : [LINES.death, LINES.death, LINES.beauty, LINES.walkit, LINES.bandage];
-    const line = (G.pieces === 6 || G.pieces === 7) && Math.random() < .45
+    if (spent > 0){ respawn(); return; }
+    const line = (G.pieces === 6 || G.pieces === 7) && Math.random() < .3
       ? `Six! ${G.pieces === 7 ? 'Seven!' : 'Six!'} Pieces of Lily!`
-      : pick(pick(bench));
+      : Math.random() < .78 ? pick(D.lines)
+      : pick(pick([LINES.beauty, LINES.walkit, LINES.bandage]));
     Voice.say(line, { rate: .92, pitch: .8 });
     SV = store(s => { s.coins += G.coins; s.deaths = (s.deaths || 0) + 1;
       s.best = Math.max(s.best || 0, G.score); });
-    $('deadKick').textContent = dragged
-      ? pick(['MEDIUM · WAXY', 'ONE CONTINUOUS STROKE', 'SIGNED, IN LILY', 'ROAD ART'])
-      : pick(['FLATTENED', 'ABSORBED BY THE ROAD', 'FULLY LAMINATED', 'ONE WITH THE ASPHALT']);
-    $('deadTitle').textContent = dragged ? 'Meat crayon.' : 'Oops.';
+    $('deadKick').textContent = pick(D.kick);
+    $('deadTitle').textContent = D.title;
     $('deadLine').textContent = line;
+    Voice.shush();
+    setTimeout(() => Voice.say(pick(LINES.lastlife), { rate: .98 }), 2200);
     $('deadStats').innerHTML =
       `<span style="color:var(--sun)">${G.pieces} PIECES OF LILY</span><br>` +
       `LANES CROSSED <b>${G.score}</b> · COINS <b>+${G.coins}</b> · BEST <b>${SV.best}</b>`;
@@ -1497,6 +1730,29 @@ function win(){
     show('pWin');
     G.phase = 'won';
   }, 1400);
+}
+function drawLives(){
+  const el = $('pLives');
+  if (!el) return;
+  let h = '';
+  for (let i = 0; i < LIVES_MAX; i++) h += `<span class="${i < G.lives ? '' : 'gone'}">${CATHEAD}</span>`;
+  el.innerHTML = h;
+}
+/* she does not restart the street. She gets up where she last stood still. */
+function respawn(){
+  const L = G.lily;
+  const back = Math.max(0, L.safeRow || 0);
+  L.dead = false; L.squash = 0; L.wob = 0; L.spin = 0; L.drag = null;
+  L.anim = null; L.at = 0; L.fly = 0; L.roll = 0; L.sink = 0;
+  L.r = back; L.y = back; L.x = L.c; L.hop = 0; L.from = null; L.to = null;
+  L.nearT = 1200;                       /* a moment of grace before the traffic notices */
+  G.phase = 'play';
+  G.camZTarget = PLAY_Z; G.anchorT = .24; G.camXT = 0;
+  G.slow = 1; G.crayon = null; G.pop = 0;
+  G.stamp = 'LIFE ' + (LIVES_MAX - G.lives) + ' OF 9'; G.stampT = 1.1;
+  drawLives();
+  Music.start();
+  Voice.say(pick(LINES.life).replace('{n}', G.lives), { rate: 1.04 });
 }
 function checkUnlocks(){
   const total = SV.coins + G.coins;
@@ -1541,10 +1797,25 @@ function loop(ts){
     /* flecks come off the crayon as it draws */
     if (Math.random() < .5) puff(G.lily.x, G.lily.y, 1, Math.random() < .5 ? G.crayon.col : G.crayon.skin);
   }
+  /* each loss animates its own way */
+  if (G.lily && G.lily.dead && G.lily.anim && G.lily.anim !== 'drag'){
+    const L = G.lily;
+    L.at = Math.min(1, (L.at || 0) + dt / 1100);
+    const e = L.at;
+    if (L.anim === 'launch'){ L.fly = Math.sin(e * 2.2) * 9 + e * 2; L.spin = e * 15; }
+    else if (L.anim === 'spin'){ L.spin = e * 22 * (1 - e * .5); }
+    else if (L.anim === 'tumble'){ L.spin = e * 9; L.roll = e * 2.4 * (L.dir || 1 || 1); }
+    else if (L.anim === 'ghost'){ L.fly = e * 3.2; }
+    else if (L.anim === 'up'){ L.fly = e * e * 7; L.spin = e * 4; }
+    else if (L.anim === 'down'){ L.sink = e; }
+  }
   if (G.lily && G.lily.dead && G.lily.squash < 1){
-    /* elastic overshoot so she wobbles flat instead of easing flat */
-    G.lily.squash = Math.min(1, G.lily.squash + dt / 210);
-    G.lily.wob = Math.sin(G.lily.squash * 22) * (1 - G.lily.squash) * .5;
+    const a = G.lily.anim;
+    if (a === 'flat' || a === 'drag' || a === 'deflate' || a === 'pop'){
+      /* elastic overshoot so she wobbles flat instead of easing flat */
+      G.lily.squash = Math.min(1, G.lily.squash + dt / 210);
+      G.lily.wob = Math.sin(G.lily.squash * 22) * (1 - G.lily.squash) * .5;
+    }
   }
   if (G.pop > 0) G.pop = Math.max(0, G.pop - dt / 420);
   if (G.stampT > 0) G.stampT -= dt / 1000;
@@ -1602,13 +1873,15 @@ function show(id){
   $('lane').style.display = inGame ? 'block' : 'none';
   $('hint').style.display = inGame ? 'block' : 'none';
 }
-function startStage(stage){
+function startStage(stage, keepLives){
   G.stage = stage;
+  if (!keepLives) G.lives = LIVES_MAX;
   G.score = 0; G.coins = 0;
   buildStage(stage);
   G.phase = 'play';
   $('pScore').textContent = '0';
   $('pCoin').textContent = '◉ ' + SV.coins;
+  drawLives();
   $('pShield').style.display = 'none';
   $('lane').textContent = `STREET ${stage}${G.night ? ' · NIGHT' : ''}${G.horse ? ' · ON HORSEBACK' : ''}`
     + ` · ${G.goalRow} LANES TO THE ICE CREAM`;
@@ -1630,7 +1903,7 @@ $('bSafeOk').addEventListener('click', () => {
   startStage(1);
 });
 $('bAgain').addEventListener('click', () => startStage(1));
-$('bNext').addEventListener('click', () => startStage(G.stage + 1));
+$('bNext').addEventListener('click', () => startStage(G.stage + 1, true));
 $('bHome').addEventListener('click', goTitle);
 $('bHome2').addEventListener('click', goTitle);
 $('bFitsBack').addEventListener('click', goTitle);
@@ -1703,7 +1976,7 @@ addEventListener('resize', () => { sizeCanvas(); });
 boot();
 
 /* test hook */
-window.OOPS = { G, FITS, save, store, startStage, tryHop, die, win, show, openFits, sizeCanvas,
+window.OOPS = { G, FITS, DEATHS, LIVES_MAX, save, store, startStage, tryHop, die, win, show, openFits, sizeCanvas,
   get lily(){ return G.lily; }, LINES, buildStage };
 </script>
 </body>
