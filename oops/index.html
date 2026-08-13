@@ -1016,6 +1016,9 @@ function drawLily(){
     wide = 1; sq2 = 1;
   }
   if (L.dead && L.anim === 'ghost'){ alpha = 1 - (L.at || 0) * .9; wide = 1; sq2 = 1; }
+  if (L.dead && L.anim === 'mist'){ alpha = clamp(1 - (L.at || 0) * 2.2, 0, 1); wide = 1; sq2 = 1; }
+  if (L.dead && L.anim === 'decor'){ alpha = clamp(1 - (L.at || 0) * 1.6, 0, 1); }
+  if (L.dead && L.anim === 'cake'){ wide = 1; sq2 = 1; }
   if (L.dead && L.anim === 'down'){ sq2 = 1; wide = 1; }
   if (L.dead && L.anim === 'shoes'){ alpha = clamp(1 - (L.at || 0) * 3, 0, 1); wide = 1; sq2 = 1; }
   const dir = L.dir || 0;                       /* -1 left · 0 forward · 1 right */
@@ -1052,7 +1055,7 @@ function drawLily(){
       ctx.ellipse(px + d * s * .09, py - s * .02, s * .06, s * .04, d * .3, 0, 7); ctx.fill(); });
   }
   ctx.translate(px + sideways, py - lift);
-  if (L.dead && L.anim === 'down'){
+  if (L.dead && (L.anim === 'down' || L.anim === 'worms')){
     /* dragged under · clip her off at ground level as she goes */
     ctx.beginPath(); ctx.rect(-s, -s * 1.4 + (L.sink || 0) * s * 1.5, s * 2, s * 1.6); ctx.clip();
   }
@@ -1477,6 +1480,17 @@ function drawGraboid(row){
 }
 /* the mark she leaves · thick, waxy, faintly translucent, exactly like a
    crayon that has been pressed too hard and is made of a child */
+/* the media she is working in · fingers, toes, and two things a butcher
+   would name out loud */
+const PAINTS = [
+  { dy:-.30, w:.05, col:'#f0b89a', name:'finger' },
+  { dy:-.22, w:.05, col:'#e8a98c', name:'finger' },
+  { dy:-.14, w:.05, col:'#f0b89a', name:'finger' },
+  { dy:-.06, w:.05, col:'#e09a7e', name:'toe' },
+  { dy: .02, w:.05, col:'#f0b89a', name:'toe' },
+  { dy: .10, w:.19, col:'#7a1f2c', name:'liver' },
+  { dy: .24, w:.11, col:'#b8546a', name:'bung' },
+];
 function drawCrayon(){
   const C = G.crayon;
   const s = TILE * G.camZ;
@@ -1484,6 +1498,36 @@ function drawCrayon(){
   const [bx] = worldToScreen(C.x, C.y);
   if (Math.abs(bx - ax) < 2) return;
   const y = ay - s * .16;
+  if (C.mode === 'fingers'){
+    ctx.save();
+    ctx.lineCap = 'round';
+    for (const P of PAINTS){
+      ctx.globalAlpha = P.name === 'liver' ? .9 : .82;
+      ctx.strokeStyle = P.col;
+      ctx.lineWidth = s * P.w;
+      /* each digit wanders a bit — nobody finger paints in a straight line */
+      ctx.beginPath();
+      const n = Math.max(3, Math.floor(Math.abs(bx - ax) / (s * .22)));
+      for (let i = 0; i <= n; i++){
+        const t = i / n;
+        const jx = ax + (bx - ax) * t;
+        const jy = y + P.dy * s + Math.sin(t * 9 + P.dy * 20) * s * .022;
+        i ? ctx.lineTo(jx, jy) : ctx.moveTo(jx, jy);
+      }
+      ctx.stroke();
+      /* the liver and the bung leave blobs where they caught */
+      if (P.w > .1){
+        ctx.globalAlpha = .55; ctx.fillStyle = P.col;
+        for (let i = 1; i < 4; i++){
+          const t = i / 4, jx = ax + (bx - ax) * t;
+          ctx.beginPath();
+          ctx.ellipse(jx, y + P.dy * s, s * P.w * .9, s * P.w * .55, 0, 0, 7); ctx.fill();
+        }
+      }
+    }
+    ctx.restore();
+    return;
+  }
   ctx.save();
   ctx.lineCap = 'round';
   /* the wide waxy body of the stroke */
@@ -1502,6 +1546,188 @@ function drawCrayon(){
     const t = i / n, jx = ax + (bx - ax) * t;
     const jy = y + Math.sin(i * 2.7) * s * .08;
     ctx.beginPath(); ctx.moveTo(jx, jy); ctx.lineTo(jx + (bx - ax) / n * .7, jy); ctx.stroke();
+  }
+  ctx.restore();
+}
+/* what happens around her after the truck · drawn under her, then over her */
+function drawDeathFX(layer){
+  const L = G.lily;
+  if (!L || !L.dead || !L.anim) return;
+  const a = L.anim, e = L.at || 0;
+  const s = TILE * G.camZ;
+  const [px, py] = worldToScreen(L.x, L.y);
+  ctx.save();
+
+  /* ROAD DECORATIONS · a string of her, hung the length of the lane */
+  if (a === 'decor'){
+    const grow = clamp((e - .12) / .5, 0, 1);
+    const span = s * 3.2 * grow;
+    const yy = py - s * (layer === 'under' ? .3 : .78);
+    if (layer === 'over'){
+      ctx.strokeStyle = '#6d5a3a'; ctx.lineWidth = s * .022;
+      ctx.beginPath();
+      for (let i = 0; i <= 20; i++){
+        const t = i / 20, jx = px - span + t * span * 2;
+        const jy = yy + Math.sin(t * Math.PI) * s * .16;
+        i ? ctx.lineTo(jx, jy) : ctx.moveTo(jx, jy);
+      }
+      ctx.stroke();
+      const F = fitOf(SV.fit);
+      const cols = [F.top, SKIN, HAIR, '#c2485a', F.leg, '#7a1f2c'];
+      for (let i = 0; i < 12; i++){
+        const t = (i + .5) / 12;
+        if (t > grow * 1.05) continue;
+        const jx = px - span + t * span * 2;
+        const jy = yy + Math.sin(t * Math.PI) * s * .16;
+        const sw = Math.sin(G.t / 240 + i) * .18;
+        ctx.save();
+        ctx.translate(jx, jy); ctx.rotate(sw);
+        ctx.fillStyle = cols[i % cols.length];
+        ctx.beginPath();
+        ctx.moveTo(-s * .07, 0); ctx.lineTo(s * .07, 0); ctx.lineTo(0, s * .19);
+        ctx.closePath(); ctx.fill();
+        ctx.strokeStyle = 'rgba(0,0,0,.25)'; ctx.lineWidth = s * .014; ctx.stroke();
+        ctx.restore();
+      }
+    }
+  }
+
+  /* WORM FOOD · they were up before she was down */
+  if (a === 'worms'){
+    const n = 9;
+    for (let i = 0; i < n; i++){
+      const behind = i % 2 === 0;
+      if ((layer === 'under') !== behind) continue;
+      const ang = i * 1.4, dist = s * (.28 + (i % 4) * .13);
+      const wx = px + Math.cos(ang) * dist;
+      const wy = py - s * .06 + Math.sin(ang) * dist * .34;
+      const up = clamp((e - i * .05) * 2.4, 0, 1);
+      if (up <= 0) continue;
+      ctx.strokeStyle = i % 3 ? '#e79fa8' : '#d4808f';
+      ctx.lineWidth = s * .052; ctx.lineCap = 'round';
+      ctx.beginPath();
+      for (let k = 0; k <= 8; k++){
+        const t = k / 8;
+        const jx = wx + Math.sin(t * 4 + G.t / 130 + i) * s * .06;
+        const jy = wy - t * s * .34 * up;
+        k ? ctx.lineTo(jx, jy) : ctx.moveTo(jx, jy);
+      }
+      ctx.stroke();
+      ctx.fillStyle = '#4a3628';
+      ctx.beginPath();
+      ctx.arc(wx + Math.sin(4 + G.t / 130 + i) * s * .06, wy - s * .34 * up, s * .018, 0, 7);
+      ctx.fill();
+    }
+  }
+
+  /* PINEAPPLE INSIDE OUT CAKE · turned out onto the road, cherry and all */
+  if (a === 'cake'){
+    const set = clamp(e * 1.6, 0, 1);
+    if (layer === 'under'){
+      ctx.fillStyle = '#b5751f';
+      ctx.beginPath(); ctx.ellipse(px, py - s * .04, s * .46 * set, s * .2 * set, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = '#e0a83c';
+      ctx.beginPath(); ctx.ellipse(px, py - s * .07, s * .4 * set, s * .17 * set, 0, 0, 7); ctx.fill();
+      /* the syrup, running off the edge */
+      ctx.fillStyle = '#c98a24';
+      for (let i = 0; i < 5; i++){
+        const t = -1 + i * .5;
+        ctx.beginPath();
+        ctx.ellipse(px + t * s * .3, py + s * .02, s * .05 * set, s * .07 * set, 0, 0, 7); ctx.fill();
+      }
+    } else if (set > .4){
+      /* rings and cherries, arranged with real care */
+      for (let i = 0; i < 3; i++){
+        const rx = px + (i - 1) * s * .26, ry = py - s * (.14 + Math.abs(i - 1) * .02);
+        ctx.fillStyle = '#f2c53d';
+        ctx.beginPath(); ctx.ellipse(rx, ry, s * .13, s * .07, 0, 0, 7); ctx.fill();
+        ctx.strokeStyle = '#d8a521'; ctx.lineWidth = s * .018; ctx.stroke();
+        ctx.fillStyle = '#e0a83c';
+        ctx.beginPath(); ctx.ellipse(rx, ry, s * .045, s * .025, 0, 0, 7); ctx.fill();
+        ctx.fillStyle = '#d33b4e';
+        ctx.beginPath(); ctx.arc(rx, ry - s * .01, s * .038, 0, 7); ctx.fill();
+        ctx.strokeStyle = '#4a7a2a'; ctx.lineWidth = s * .016;
+        ctx.beginPath(); ctx.moveTo(rx, ry - s * .04);
+        ctx.lineTo(rx + s * .03, ry - s * .09); ctx.stroke();
+      }
+    }
+  }
+
+  /* VULTURE BUFFET · three of them, and they were early */
+  if (a === 'vulture' && layer === 'over'){
+    for (let i = 0; i < 3; i++){
+      const arrive = clamp((e - .1 - i * .12) * 3, 0, 1);
+      if (arrive <= 0) continue;
+      const side = i === 1 ? 0 : (i === 0 ? -1 : 1);
+      const bx = px + side * s * .46 + (i === 1 ? s * .1 : 0);
+      const drop = (1 - arrive) * s * 2.2;
+      const by = py - s * .16 - drop;
+      const peck = arrive > .9 ? Math.max(0, Math.sin(G.t / 210 + i * 2)) : 0;
+      ctx.save();
+      ctx.translate(bx, by);
+      if (arrive < 1){                        /* wings out on the way down */
+        ctx.fillStyle = '#3a3540';
+        [-1, 1].forEach(d => { ctx.beginPath();
+          ctx.ellipse(d * s * .22, -s * .12, s * .2, s * .07, d * .5, 0, 7); ctx.fill(); });
+      }
+      ctx.fillStyle = '#2f2b35';               /* hunched body */
+      ctx.beginPath(); ctx.ellipse(0, -s * .12, s * .15, s * .17, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = '#4a4450';               /* ruff */
+      ctx.beginPath(); ctx.ellipse(0, -s * .2, s * .13, s * .06, 0, 0, 7); ctx.fill();
+      ctx.save();
+      ctx.translate(side * s * .06, -s * .26);
+      ctx.rotate(peck * 1.1 + side * .2);      /* the head goes down, and in */
+      ctx.fillStyle = '#e2a9a2';
+      ctx.beginPath(); ctx.arc(0, 0, s * .062, 0, 7); ctx.fill();
+      ctx.fillStyle = '#f0d27a';
+      ctx.beginPath();
+      ctx.moveTo(0, s * .01); ctx.lineTo(side * s * .13 || s * .13, s * .05);
+      ctx.lineTo(0, s * .07); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#20242e';
+      ctx.beginPath(); ctx.arc(side * s * .02, -s * .015, s * .014, 0, 7); ctx.fill();
+      ctx.restore();
+      ctx.strokeStyle = '#c9a24a'; ctx.lineWidth = s * .022;
+      [-1, 1].forEach(d => { ctx.beginPath();
+        ctx.moveTo(d * s * .05, s * .02); ctx.lineTo(d * s * .05, s * .08); ctx.stroke(); });
+      ctx.restore();
+    }
+  }
+
+  /* RED MIST · she is weather now */
+  if (a === 'mist'){
+    const bloom = clamp(e * 1.5, 0, 1);
+    const fade = e < .72 ? 1 : clamp(1 - (e - .72) / .28, 0, 1);
+    if (layer === 'under'){
+      /* what lands · a stain the shape of a girl-shaped cloud */
+      ctx.globalAlpha = clamp(e * 2, 0, 1) * .5;
+      ctx.fillStyle = '#8e1524';
+      for (let i = 0; i < 22; i++){
+        const ang = i * 2.4, d = s * bloom * (.25 + (i % 6) * .22);
+        ctx.beginPath();
+        ctx.ellipse(px + Math.cos(ang) * d, py - s * .04 + Math.sin(ang) * d * .28,
+          s * .05 * (.6 + (i % 3) * .4), s * .028 * (.6 + (i % 3) * .4), 0, 0, 7);
+        ctx.fill();
+      }
+    } else {
+      /* the cloud itself · thick, red, and hanging exactly where she was */
+      ctx.globalAlpha = fade * .62;
+      ctx.fillStyle = '#c2273f';
+      for (let i = 0; i < 34; i++){
+        const ang = i * 1.7 + G.t / 2400, d = s * bloom * (.18 + (i % 6) * .19);
+        ctx.beginPath();
+        ctx.arc(px + Math.cos(ang) * d, py - s * .26 + Math.sin(ang) * d * .62,
+          s * .17 * (.55 + (i % 4) * .22), 0, 7);
+        ctx.fill();
+      }
+      ctx.globalAlpha = fade * .5;
+      ctx.fillStyle = '#8e1524';
+      for (let i = 0; i < 30; i++){
+        const ang = i * 2.9, d = s * bloom * (.5 + (i % 5) * .3);
+        ctx.beginPath();
+        ctx.arc(px + Math.cos(ang) * d, py - s * .24 + Math.sin(ang) * d * .55, s * .026, 0, 7);
+        ctx.fill();
+      }
+    }
   }
   ctx.restore();
 }
@@ -1562,7 +1788,9 @@ function draw(){
     if (row.type === 'graboid') drawGraboid(row);
   }
   drawGoalBanner();
+  drawDeathFX('under');
   drawLily();
+  drawDeathFX('over');
   drawPuffs();
   if (G.pop > 0 && G.lily){
     const s = TILE * G.camZ;
@@ -1782,10 +2010,6 @@ const DEATHS = [
     kick:['SEVERAL REVOLUTIONS','NO LONGER FACING FORWARD'],
     lines:['Walk it off! ...She cannot. But walk it off!',
            'She bounced. Twice. The second one was worse.'] },
-  { id:'spin', road:1, anim:'spin',      stamp:'WHOOSH!', title:'Spun out.',
-    kick:['REVOLUTIONS: MANY','DIZZY, THEN FLAT'],
-    lines:['She is spinning. She is still spinning. She has stopped.',
-           'Physics has taken her out for a twirl.'] },
   { id:'shoes', road:1, anim:'shoes',    stamp:'CLEAN OUT!', title:'Knocked out of her shoes.',
     kick:['SHOES: REMAIN','LILY: DOES NOT'],
     lines:['Knocked clean out of her shoes. The shoes are fine.',
@@ -1802,34 +2026,61 @@ const DEATHS = [
     kick:['TWO SLICES','PRESSED, NOT TOASTED'],
     lines:['Two trucks. One Lily. You do the sandwich maths.',
            'She has been pressed. Beautifully. Like a flower.'] },
-  { id:'skid', road:1, anim:'drag',      stamp:'SKRRRT!', title:'Skid mark.',
-    kick:['LONG · BLACK · REGRETTABLE','SEE ALSO: TYRE'],
-    lines:['That is going to take a lot of scrubbing.',
-           'The road council will bill you for that.'] },
   { id:'origami', road:1, anim:'deflate',stamp:'FOLD!', title:'Folded.',
     kick:['CREASED','NEATLY, IN THIRDS'],
     lines:['She has been folded into the infrastructure.',
            'Somebody folded her. Somebody did a very tidy job.'] },
-  { id:'star', road:1, anim:'spin',      stamp:'TWINKLE!', title:'Star wipe.',
-    kick:['SPARKLING','GONE, BUT SHINY'],
-    lines:['She has twinkled out of existence. Very glamorous.',
-           'A star is born and immediately run over.'] },
-  { id:'bowl', road:1, anim:'tumble',    stamp:'STRIKE!', title:'Strike.',
-    kick:['ALL TEN','PERFECT GAME'],
-    lines:['Straight down the middle. That is a strike.',
-           'She went over like the last pin. Bit sad, bit satisfying.'] },
-  { id:'puddle', road:1, anim:'deflate', stamp:'SPLOOSH!', title:'Puddle.',
-    kick:['LIQUID · LILY','ROOM TEMPERATURE'],
-    lines:['She is a puddle now. A tidy one.',
-           'Somebody get a mop. Mostly the mop.'] },
-  { id:'ghost', road:1, anim:'ghost',    stamp:'BOO.', title:'Ascended.',
-    kick:['DEPARTED','UPWARD, SLOWLY'],
-    lines:['Her soul is leaving. It looks annoyed.',
-           'She is floating off. She is waving. Rude.'] },
-  { id:'pixel', road:1, anim:'pop',      stamp:'404!', title:'Deleted.',
-    kick:['NOT FOUND','ASSET MISSING'],
-    lines:['She has been deleted. Somebody restore the backup.',
-           'Lily has stopped rendering. That is between Lily and the renderer.'] },
+  { id:'ghost', road:1, anim:'ghost',    stamp:'CLOCKED OFF!', title:'Left the body.',
+    kick:['DEPARTED','UPWARD, SLOWLY','BODY: STILL DOWN THERE'],
+    lines:['Her soul left first. It saw what was coming and it did not wait.',
+           'She is floating off. She is waving. Rude.',
+           'The soul is going up and the rest of her is going nowhere.'] },
+  { id:'fingers', road:1, anim:'fingers', stamp:'FINGER PAINTING!', title:'Finger painting.',
+    kick:['FIVE FINGERS · TEN TOES','ALSO THE LIVER','ALSO THE BUNG','MIXED MEDIA'],
+    lines:['Finger painting! And toe painting. And liver. And bung.',
+           'Every finger got its own lane. The liver did the wide one.',
+           'She has painted the road with parts nobody paints with.',
+           'Ten toes, ten stripes, one liver, one bung. Fridge-worthy.'] },
+  { id:'decor', road:1, anim:'decor',   stamp:'ROAD DECORATIONS!', title:'Road decorations.',
+    kick:['SEASONAL','HUNG WITH CARE','ONE LILY, EVENLY SPACED'],
+    lines:['Road decorations. Somebody has strung her up the whole lane.',
+           'She is bunting now. Festive, evenly spaced, slightly damp.',
+           'Every lamp post got a bit. Very thoughtful of the truck.',
+           'The council will take these down in January.'] },
+  { id:'worms', road:1, anim:'worms',   stamp:'WORM FOOD!', title:'Worm food.',
+    kick:['DOWNWARD · DELICIOUS','SOIL: ENRICHED','THE WORMS ARE UP'],
+    lines:['Worm food. They came up for her before she even went down.',
+           'The worms are queueing. The worms have been waiting all game.',
+           'She is compost with a hair ribbon.',
+           'Good news for the soil. Bad news for everyone else.'] },
+  { id:'cake', road:1, anim:'cake',     stamp:'INSIDE OUT CAKE!', title:'Pineapple inside out cake.',
+    kick:['GLAZED','SERVES TWELVE','TURNED OUT ONTO THE PLATE'],
+    lines:['Pineapple inside out cake. The outside is now the inside.',
+           'Turned out onto the road, still warm, cherry on top.',
+           'That is a bake. That is a whole bake.',
+           'Somebody has put a cherry on her. That is the worst part.'] },
+  { id:'vulture', road:1, anim:'vulture', stamp:'VULTURE BUFFET!', title:'Vulture buffet.',
+    kick:['ALL YOU CAN EAT','BIRDS: THREE','TIPPING NOT REQUIRED'],
+    lines:['Vulture buffet. They were circling before the truck arrived.',
+           'Three vultures. One Lily. No queue.',
+           'They have started with the good bits. They always do.',
+           'The birds knew. The birds always know.'] },
+  { id:'mist', road:1, anim:'mist',     stamp:'RED MIST!', title:'Red mist.',
+    kick:['FINELY ATOMISED','AIRBORNE','DO NOT INHALE'],
+    lines:['Red mist. She is weather now.',
+           'She has gone fine. Very fine. Breathe through your mouth.',
+           'That was a Lily. That is now a light drizzle.',
+           'The whole lane got a bit of her. Evenly.'] },
+  { id:'tender', road:1, anim:'flat',   stamp:'TENDERISED!', title:'Tenderised.',
+    kick:['WELL BEATEN','REST FOR TEN MINUTES','FOOD SAFE: NO'],
+    lines:['Tenderised. Beautifully. A chef would weep.',
+           'Beaten flat, rested, and absolutely not served.',
+           'She has been worked over like a cheap cut.'] },
+  { id:'mince', road:1, anim:'pop',     stamp:'MINCED!', title:'Minced.',
+    kick:['THROUGH THE GRILLE','MEDIUM COARSE','ONE PASS'],
+    lines:['Straight through the grille. That is a mince.',
+           'One pass. Medium coarse. Do not ask what for.',
+           'She went in as a girl and came out as a texture.'] },
   { id:'yoink', heli:1, anim:'up',       stamp:'YOINK!', title:'Airlifted.',
     kick:['ALTITUDE ACQUIRED','NO FLIGHT PLAN','WINCHED','CARGO: ONE LILY'],
     lines:['A hook came down. A hook went up. She was attached to the hook.',
@@ -1901,7 +2152,7 @@ function die(car){
   const D = pickDeath(car);
   G.death = D;
   L.anim = D.anim; L.at = 0;
-  const dragged = D.anim === 'drag';
+  const dragged = D.anim === 'drag' || D.anim === 'fingers';
   G.stamp = D.stamp;
   G.stampT = 1.8;
   if (dragged){
@@ -1909,7 +2160,8 @@ function die(car){
     const row = G.rows[Math.round(L.y)];
     const dir = row && row.type === 'road' ? (row.speed > 0 ? 1 : -1) : 1;
     L.drag = { dir, t: 0, dur: 1.15 };
-    G.crayon = { y: Math.round(L.y), x0: L.x, x: L.x, col: F.top, skin: SKIN };
+    G.crayon = { y: Math.round(L.y), x0: L.x, x: L.x, col: F.top, skin: SKIN,
+                 mode: D.anim === 'fingers' ? 'fingers' : 'crayon' };
     G.camXT = L.x + .5 - COLS / 2;
   }
   G.camZTarget = PLAY_Z * 2.1;        /* ZOOM */
@@ -2025,7 +2277,7 @@ function loop(ts){
     if (Math.random() < .5) puff(G.lily.x, G.lily.y, 1, Math.random() < .5 ? G.crayon.col : G.crayon.skin);
   }
   /* each loss animates its own way */
-  if (G.lily && G.lily.dead && G.lily.anim && G.lily.anim !== 'drag'){
+  if (G.lily && G.lily.dead && G.lily.anim && G.lily.anim !== 'drag' && G.lily.anim !== 'fingers'){
     const L = G.lily;
     L.at = Math.min(1, (L.at || 0) + dt / 1100);
     const e = L.at;
@@ -2041,10 +2293,14 @@ function loop(ts){
       L.winch = 1 - clamp((e - .28) / .72, 0, 1);
     }
     else if (L.anim === 'down'){ L.sink = e; }
+    else if (L.anim === 'worms'){ L.sink = e * .55; }
+    else if (L.anim === 'mist'){ L.spin = e * 1.2; }
+    else if (L.anim === 'cake'){ L.flip = Math.min(1, e * 2.4); L.spin = Math.PI * L.flip; }
   }
   if (G.lily && G.lily.dead && G.lily.squash < 1){
     const a = G.lily.anim;
-    if (a === 'flat' || a === 'drag' || a === 'deflate' || a === 'pop'){
+    if (a === 'flat' || a === 'drag' || a === 'fingers' || a === 'deflate' ||
+        a === 'pop' || a === 'decor' || a === 'vulture'){
       /* elastic overshoot so she wobbles flat instead of easing flat */
       G.lily.squash = Math.min(1, G.lily.squash + dt / 210);
       G.lily.wob = Math.sin(G.lily.squash * 22) * (1 - G.lily.squash) * .5;
