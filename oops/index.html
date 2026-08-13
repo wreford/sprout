@@ -242,6 +242,10 @@ const LINES = {
           'Today Lily attempts the road. The road is undefeated.'],
   near:  ['Ooh. That was close.', 'That truck knew her name.', 'That truck had a breeze.',
           'She felt the wind on that one.'],
+  crayon:['MEAT CRAYON. She has drawn a line down the whole street.',
+          'Look at that stroke. Bold. Confident. Made of Lily.',
+          'She is the crayon. The road is the paper. Art is pain.',
+          'That is a solid two metres of Lily. The road council will bill you.'],
   death: ['Oops. No more Lily.', 'She popped. I did not know she could do that.',
           'That was a wet sound and I am not describing it further.', 'She has become a decal.', 'Lily is now part of the road surface.',
           'That was a truck. That was clearly a truck.', 'She has been folded into the infrastructure.',
@@ -374,7 +378,7 @@ function drawPuffs(){
   ctx.globalAlpha = 1;
 }
 const G = { rows: [], lily: null, cam: 0, camZ: 1, camZTarget: 1, shake: 0, anchor: .24, anchorT: .24,
-  night: false, horse: false, pop: 0, stamp: '', stampT: 0,
+  night: false, horse: false, pop: 0, stamp: '', stampT: 0, camX: 0, camXT: 0, crayon: null,
   stage: 1, score: 0, coins: 0, phase: 'title', goalRow: 0, idle: 0, t: 0, slow: 1, focus: null };
 
 const PLAY_Z = 1;                                         /* tiles are sized so COLS exactly fills the width */
@@ -447,9 +451,9 @@ function buildStage(stage){
   /* never start the street with a road right in front of her face */
   G.rows[2] = { y: 2, type: 'grass', deco: [], coin: null };
   G.lily = { c: Math.floor(COLS / 2), r: 0, x: Math.floor(COLS / 2), y: 0, face: 0,
-    hop: 0, from: null, to: null, dead: false, squash: 0, spin: 0, dir: 0, nearT: 0 };
+    hop: 0, from: null, to: null, dead: false, squash: 0, spin: 0, dir: 0, nearT: 0, drag: null };
   G.cam = 0; G.camZ = PLAY_Z; G.camZTarget = PLAY_Z; G.shake = 0; G.idle = 0; G.slow = 1; G.focus = null;
-  G.shield = false;
+  G.shield = false; G.pop = 0; G.stampT = 0; G.camX = 0; G.camXT = 0; G.crayon = null;
   G.anchor = .24; G.anchorT = .24;
 }
 
@@ -457,7 +461,7 @@ function buildStage(stage){
 function camFocusY(){ return G.lily ? G.lily.y : 0; }
 function worldToScreen(cx, cy){
   const z = G.camZ;
-  const px = (cx + .5 - COLS / 2) * TILE * z + W / 2;
+  const px = (cx + .5 - COLS / 2 - G.camX) * TILE * z + W / 2;
   const py = H * G.anchor + (cy - G.cam) * TILE * z;
   return [px, py];
 }
@@ -1029,6 +1033,36 @@ function drawGraboid(row){
     ctx.fill();
   }
 }
+/* the mark she leaves · thick, waxy, faintly translucent, exactly like a
+   crayon that has been pressed too hard and is made of a child */
+function drawCrayon(){
+  const C = G.crayon;
+  const s = TILE * G.camZ;
+  const [ax, ay] = worldToScreen(C.x0, C.y);
+  const [bx] = worldToScreen(C.x, C.y);
+  if (Math.abs(bx - ax) < 2) return;
+  const y = ay - s * .16;
+  ctx.save();
+  ctx.lineCap = 'round';
+  /* the wide waxy body of the stroke */
+  ctx.globalAlpha = .85;
+  ctx.strokeStyle = C.col; ctx.lineWidth = s * .3;
+  ctx.beginPath(); ctx.moveTo(ax, y); ctx.lineTo(bx, y); ctx.stroke();
+  /* a lighter core, because crayon never lays down evenly */
+  ctx.globalAlpha = .6;
+  ctx.strokeStyle = C.skin; ctx.lineWidth = s * .12;
+  ctx.beginPath(); ctx.moveTo(ax, y - s * .03); ctx.lineTo(bx, y - s * .03); ctx.stroke();
+  /* grain · the streaky bits that make it read as wax and not paint */
+  ctx.globalAlpha = .32;
+  ctx.strokeStyle = '#20242e'; ctx.lineWidth = s * .022;
+  const n = Math.max(2, Math.floor(Math.abs(bx - ax) / (s * .16)));
+  for (let i = 0; i < n; i++){
+    const t = i / n, jx = ax + (bx - ax) * t;
+    const jy = y + Math.sin(i * 2.7) * s * .08;
+    ctx.beginPath(); ctx.moveTo(jx, jy); ctx.lineTo(jx + (bx - ax) / n * .7, jy); ctx.stroke();
+  }
+  ctx.restore();
+}
 function drawGoalBanner(){
   const row = G.rows[G.goalRow];
   if (!row) return;
@@ -1058,6 +1092,7 @@ function draw(){
   const first = Math.max(0, Math.floor(G.cam - 4));
   const last = Math.min(G.rows.length - 1, Math.ceil(G.cam + 18 / G.camZ));
   for (let y = first; y <= last; y++) if (G.rows[y]) drawRow(G.rows[y]);
+  if (G.crayon) drawCrayon();
   for (let y = first; y <= last; y++){
     const row = G.rows[y]; if (!row) continue;
     drawDeco(row);
@@ -1098,9 +1133,15 @@ function draw(){
     ctx.translate(W / 2, H * .42);
     ctx.rotate(-.12);
     ctx.scale(1 + (1 - k) * .1, 1 + (1 - k) * .1);
-    ctx.font = `800 ${W * .17}px ${getComputedStyle(document.body).fontFamily}`;
+    /* long words like MEAT CRAYON! must still fit the frame */
+    const fam = getComputedStyle(document.body).fontFamily;
+    let fs = W * .17;
+    ctx.font = `800 ${fs}px ${fam}`;
+    const wantW = W * .86;
+    const measured = ctx.measureText(G.stamp).width;
+    if (measured > wantW){ fs *= wantW / measured; ctx.font = `800 ${fs}px ${fam}`; }
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.lineWidth = W * .018; ctx.strokeStyle = '#273043';
+    ctx.lineWidth = fs * .1; ctx.strokeStyle = '#273043';
     ctx.strokeText(G.stamp, 0, 0);
     ctx.fillStyle = '#ffd93b';
     ctx.fillText(G.stamp, 0, 0);
@@ -1275,20 +1316,31 @@ function die(car){
   puff(L.x, L.y, 14, HAIR);
   puff(L.x, L.y, 10, '#ff9aa8');
   G.pop = 1;
-  G.stamp = car && car.heli ? 'YOINK!' : car && car.graboid ? 'CHOMP!' : 'SPLAT!';
-  G.stampT = 1.6;
+  const dragged = car && !car.heli && !car.graboid;
+  G.stamp = car && car.heli ? 'YOINK!' : car && car.graboid ? 'CHOMP!' : 'MEAT CRAYON!';
+  G.stampT = 1.8;
+  if (dragged){
+    /* she is on the bumper now, and the road is paper */
+    const row = G.rows[Math.round(L.y)];
+    const dir = row && row.type === 'road' ? (row.speed > 0 ? 1 : -1) : 1;
+    L.drag = { dir, t: 0, dur: 1.15 };
+    G.crayon = { y: Math.round(L.y), x0: L.x, x: L.x, col: F.top, skin: SKIN };
+    G.camXT = L.x + .5 - COLS / 2;
+  }
   G.camZTarget = PLAY_Z * 2.1;        /* ZOOM */
   G.anchorT = .5;                     /* ...and centre the indignity */
   Music.splat();
   Music.stop();
   if (navigator.vibrate) navigator.vibrate([60, 40, 120]);
   setTimeout(() => {
-    const line = pick(LINES.death);
+    const line = pick(dragged ? LINES.crayon : LINES.death);
     Voice.say(line, { rate: .92, pitch: .8 });
     SV = store(s => { s.coins += G.coins; s.deaths = (s.deaths || 0) + 1;
       s.best = Math.max(s.best || 0, G.score); });
-    $('deadKick').textContent = pick(['FLATTENED', 'ABSORBED BY THE ROAD', 'FULLY LAMINATED', 'ONE WITH THE ASPHALT']);
-    $('deadTitle').textContent = 'Oops.';
+    $('deadKick').textContent = dragged
+      ? pick(['MEDIUM · WAXY', 'ONE CONTINUOUS STROKE', 'SIGNED, IN LILY', 'ROAD ART'])
+      : pick(['FLATTENED', 'ABSORBED BY THE ROAD', 'FULLY LAMINATED', 'ONE WITH THE ASPHALT']);
+    $('deadTitle').textContent = dragged ? 'Meat crayon.' : 'Oops.';
     $('deadLine').textContent = line;
     $('deadStats').innerHTML = `LANES CROSSED <b>${G.score}</b> · COINS <b>+${G.coins}</b><br>BEST <b>${SV.best}</b>`;
     show('pDead');
@@ -1347,6 +1399,17 @@ function loop(ts){
     G.idle += dt;
     if (G.idle > 9000){ G.idle = 0; Voice.say(pick(LINES.idle), { rate: 1.05 }); }
   }
+  /* the stroke · she is dragged along the lane leaving a thick waxy line */
+  if (G.lily && G.lily.drag && G.lily.drag.t < G.lily.drag.dur){
+    const D = G.lily.drag;
+    D.t += dt / 1000;
+    const ease = 1 - Math.pow(1 - clamp(D.t / D.dur, 0, 1), 2);
+    G.lily.x = clamp(G.crayon.x0 + D.dir * ease * 3.6, -1.5, COLS + .5);
+    if (G.crayon) G.crayon.x = G.lily.x;
+    G.camXT = G.lily.x + .5 - COLS / 2;
+    /* flecks come off the crayon as it draws */
+    if (Math.random() < .5) puff(G.lily.x, G.lily.y, 1, Math.random() < .5 ? G.crayon.col : G.crayon.skin);
+  }
   if (G.lily && G.lily.dead && G.lily.squash < 1){
     /* elastic overshoot so she wobbles flat instead of easing flat */
     G.lily.squash = Math.min(1, G.lily.squash + dt / 210);
@@ -1359,6 +1422,7 @@ function loop(ts){
   G.cam += (targetCam - G.cam) * Math.min(1, dt / 130);
   G.camZ += (G.camZTarget - G.camZ) * Math.min(1, dt / 240);
   G.anchor += (G.anchorT - G.anchor) * Math.min(1, dt / 240);
+  G.camX += (G.camXT - G.camX) * Math.min(1, dt / 260);
   if (G.shake > 0) G.shake = Math.max(0, G.shake - dt / 500);
   if (G.slow < 1 && G.phase === 'play') G.slow = Math.min(1, G.slow + dt / 900);
   draw();
