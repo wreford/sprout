@@ -242,10 +242,22 @@ const LINES = {
           'Today Lily attempts the road. The road is undefeated.'],
   near:  ['Ooh. That was close.', 'That truck knew her name.', 'That truck had a breeze.',
           'She felt the wind on that one.'],
+  beauty:['At least she left a beautiful corpse.',
+          'At least she left a beautiful corpse. Wide, but beautiful.',
+          'A beautiful corpse. Structurally, a rug. But beautiful.'],
+  walkit:['Walk it off! ...She cannot. But walk it off!',
+          'WALK IT OFF. That is coaching. That is all I have.',
+          'Shake it off. Rub some dirt on it. Ignore the geometry.'],
+  bandage:['Need a bandage, son??? One bandage. For all of that.',
+          'Need a bandage, son??? I have one bandage and a lot of Lily.',
+          'Somebody get a bandage. Somebody get a mop. Mostly the mop.'],
   crayon:['MEAT CRAYON. She has drawn a line down the whole street.',
           'Look at that stroke. Bold. Confident. Made of Lily.',
           'She is the crayon. The road is the paper. Art is pain.',
           'That is a solid two metres of Lily. The road council will bill you.'],
+  cats:  ['A cat. Just a cat. Ignore the cat.', 'Jackson has a brother, apparently.',
+          'That cat has seen things. That cat has caused things.',
+          'Do not pet the cat. There is no time. Actually — there is time.'],
   death: ['Oops. No more Lily.', 'She popped. I did not know she could do that.',
           'That was a wet sound and I am not describing it further.', 'She has become a decal.', 'Lily is now part of the road surface.',
           'That was a truck. That was clearly a truck.', 'She has been folded into the infrastructure.',
@@ -332,7 +344,11 @@ const Music = (() => {
     /* one-shots share the bus so everything ducks together */
     hop(){ const a = ctx(); blip('square', 520, a.currentTime, .07, .16); blip('square', 780, a.currentTime + .05, .06, .12); },
     coin(){ const a = ctx(); blip('square', 988, a.currentTime, .07, .18); blip('square', 1319, a.currentTime + .06, .12, .16); },
-    splat(){ const a = ctx(); nz(a.currentTime, .3, .4, 300); blip('sawtooth', 180, a.currentTime, .3, .3); },
+    splat(){ const a = ctx(); nz(a.currentTime, .34, .45, 260); blip('sawtooth', 190, a.currentTime, .3, .32);
+      blip('sine', 90, a.currentTime, .22, .3); },
+    pop2(){ const a = ctx(); nz(a.currentTime, .16, .3, 900); blip('sine', 260, a.currentTime, .14, .22); },
+    meow(){ const a = ctx(); blip('sawtooth', 620, a.currentTime, .16, .07, 430);
+      blip('sawtooth', 430, a.currentTime + .14, .2, .05, 520); },
     horn(){ const a = ctx(); blip('sawtooth', 180, a.currentTime, .34, .3); blip('sawtooth', 226, a.currentTime, .34, .26); },
     win(){ const a = ctx(); [0, 4, 7, 12].forEach((n, i) => blip('square', hz(12 + n), a.currentTime + i * .09, .26, .18)); },
     unlock(){ const a = ctx(); [0, 7, 12, 16, 19].forEach((n, i) => blip('square', hz(n), a.currentTime + i * .07, .3, .16)); },
@@ -385,7 +401,7 @@ const PLAY_Z = 1;                                         /* tiles are sized so 
 const STAGE_GOAL = s => 8 + s * 2;                        /* rows to cross */
 function makeRow(y, stage){
   if (y === 0 || y === 1) return { y, type: 'grass', deco: decoFor(y), coin: null };
-  if (y >= G.goalRow) return { y, type: 'goal', deco: [], coin: null };
+  if (y >= G.goalRow) return { y, type: 'goal', deco: [], coin: null, cats: catsFor(y) };
   /* difficulty ramps with the stage and how far along the street you are */
   const roadish = clamp(.4 + stage * .045 + (y / Math.max(1, G.goalRow)) * .14, 0, .74);
   if (Math.random() < roadish){
@@ -410,7 +426,92 @@ function makeRow(y, stage){
       speed: .9 + Math.random() * .7 + stage * .1, erupt: 0, deco: [], coin: null, power: null };
   const coin = Math.random() < .3 ? { c: 1 + ri(COLS - 2), got: false } : null;
   const power = (!coin && Math.random() < .16) ? { c: 1 + ri(COLS - 2), got: false } : null;
-  return { y, type: 'grass', deco: decoFor(y), coin, power };
+  return { y, type: 'grass', deco: decoFor(y), coin, power, cats: catsFor(y) };
+}
+/* the neighbourhood is full of Jackson's relatives and none of them help */
+const CAT_ACTS = ['loaf', 'sit', 'sleep', 'stare', 'box', 'roll'];
+const CAT_COLS = ['#1c1c22', '#1c1c22', '#5a4636', '#c9782e', '#8d8d99', '#f2ede2'];
+function catsFor(y){
+  if (Math.random() > .55) return [];
+  const n = Math.random() < .28 ? 2 : 1;
+  const out = [];
+  for (let i = 0; i < n; i++)
+    out.push({ c: ri(COLS), act: pick(CAT_ACTS), col: pick(CAT_COLS),
+      ph: Math.random() * 100, flip: Math.random() < .5 ? -1 : 1, pet: 0 });
+  return out;
+}
+function drawCat(row, cat){
+  const s = TILE * G.camZ;
+  const [px, py] = worldToScreen(cat.c, row.y);
+  if (py < -s * 2 || py > H + s * 2) return;
+  const t = G.t / 1000 + cat.ph;
+  const breathe = Math.sin(t * 1.6) * s * .012;
+  const dark = '#0c0c10';
+  ctx.save();
+  ctx.translate(px, py - s * .06);
+  ctx.scale(cat.flip, 1);
+  ctx.fillStyle = '#00000022';
+  ctx.beginPath(); ctx.ellipse(0, 0, s * .2, s * .06, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = cat.col;
+  if (cat.act === 'box'){
+    /* sitting in a box, obviously */
+    ctx.fillStyle = '#c9a06a';
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(-s * .19, -s * .17, s * .38, s * .17, s * .02);
+    else ctx.rect(-s * .19, -s * .17, s * .38, s * .17);
+    ctx.fill();
+    ctx.strokeStyle = '#8a6a44'; ctx.lineWidth = s * .02; ctx.stroke();
+    ctx.fillStyle = cat.col;
+    ctx.beginPath(); ctx.arc(0, -s * .21 + breathe, s * .11, 0, 7); ctx.fill();
+    [-1, 1].forEach(d => { ctx.beginPath();
+      ctx.moveTo(d * s * .04, -s * .3 + breathe); ctx.lineTo(d * s * .1, -s * .38 + breathe);
+      ctx.lineTo(d * s * .11, -s * .26 + breathe); ctx.closePath(); ctx.fill(); });
+  } else if (cat.act === 'sleep' || cat.act === 'loaf'){
+    /* a loaf. Legs are a rumour. */
+    ctx.beginPath();
+    ctx.ellipse(0, -s * .1 + breathe, s * .19, s * .11, 0, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.arc(s * .15, -s * .15 + breathe, s * .095, 0, 7); ctx.fill();
+    [-1, 1].forEach(d => { ctx.beginPath();
+      ctx.moveTo(s * .12 + d * s * .02, -s * .23 + breathe);
+      ctx.lineTo(s * .15 + d * s * .04, -s * .31 + breathe);
+      ctx.lineTo(s * .19 + d * s * .02, -s * .2 + breathe); ctx.closePath(); ctx.fill(); });
+    if (cat.act === 'sleep'){
+      ctx.fillStyle = '#ffffffcc';
+      ctx.font = `800 ${s * .16}px ${getComputedStyle(document.body).fontFamily}`;
+      ctx.save(); ctx.scale(cat.flip, 1);
+      ctx.fillText('z', cat.flip * s * .24, -s * .34 - Math.sin(t * 2) * s * .05);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = '#f6c94a';
+      ctx.beginPath(); ctx.ellipse(s * .13, -s * .15 + breathe, s * .015, s * .022, 0, 0, 7); ctx.fill();
+    }
+  } else if (cat.act === 'roll'){
+    /* on its back, legs up, deeply unhelpful */
+    ctx.beginPath(); ctx.ellipse(0, -s * .09, s * .2, s * .1, 0, 0, 7); ctx.fill();
+    ctx.strokeStyle = cat.col; ctx.lineWidth = s * .035; ctx.lineCap = 'round';
+    [-.09, -.02, .05, .12].forEach((x, i) => { ctx.beginPath();
+      ctx.moveTo(x * s, -s * .16);
+      ctx.lineTo(x * s + Math.sin(t * 3 + i) * s * .02, -s * .26); ctx.stroke(); });
+    ctx.fillStyle = '#efe6d4';
+    ctx.beginPath(); ctx.ellipse(-s * .02, -s * .08, s * .1, s * .06, 0, 0, 7); ctx.fill();
+  } else {
+    /* sitting upright, tail curled, staring at something you cannot see */
+    ctx.strokeStyle = cat.col; ctx.lineWidth = s * .05; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-s * .12, -s * .03);
+    ctx.quadraticCurveTo(-s * .26, -s * .05 + Math.sin(t * 2.2) * s * .04, -s * .2, -s * .18);
+    ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(0, -s * .11 + breathe, s * .1, s * .13, 0, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.arc(0, -s * .25 + breathe, s * .095, 0, 7); ctx.fill();
+    [-1, 1].forEach(d => { ctx.beginPath();
+      ctx.moveTo(d * s * .035, -s * .32 + breathe); ctx.lineTo(d * s * .085, -s * .41 + breathe);
+      ctx.lineTo(d * s * .1, -s * .28 + breathe); ctx.closePath(); ctx.fill(); });
+    ctx.fillStyle = '#f6c94a';
+    const blink = (Math.floor(t * .6) % 2 === 0 && (t * .6 % 1) > .93) ? .15 : 1;
+    [-1, 1].forEach(d => { ctx.beginPath();
+      ctx.ellipse(d * s * .035, -s * .26 + breathe, s * .016, s * .022 * blink, 0, 0, 7); ctx.fill(); });
+  }
+  ctx.restore();
 }
 function decoFor(y){
   const d = [];
@@ -436,7 +537,7 @@ function buildStage(stage){
     let row;
     if (run >= maxRun && y < G.goalRow){
       const c = Math.random() < .45 ? { c: 1 + ri(COLS - 2), got: false } : null;
-      row = { y, type: 'grass', deco: decoFor(y), coin: c,
+      row = { y, type: 'grass', deco: decoFor(y), coin: c, cats: catsFor(y),
         power: (!c && Math.random() < .2) ? { c: 1 + ri(COLS - 2), got: false } : null };
     } else {
       row = makeRow(y, stage);
@@ -1100,6 +1201,7 @@ function draw(){
   for (let y = first; y <= last; y++){
     const row = G.rows[y]; if (!row) continue;
     drawDeco(row);
+    if (row.cats) for (const cat of row.cats) drawCat(row, cat);
     if (row.type === 'road') for (const car of row.cars) drawTruck(row, car);
   }
   /* NIGHT · the street goes dark and you read the traffic by its headlights */
@@ -1199,6 +1301,15 @@ function stepLily(dt){
     Music.coin();
     puff(L.x, L.y, 10, '#ffd75e');
     if (Math.random() < .25) Voice.say(pick(LINES.coin), { rate: 1.1 });
+  }
+  if (row && row.cats && L.hop === 0){
+    for (const cat of row.cats){
+      if (cat.pet || Math.round(L.x) !== cat.c) continue;
+      cat.pet = 1;
+      Music.meow();
+      puff(L.x, L.y, 6, '#ffffffcc');
+      if (Math.random() < .6) Voice.say(pick(LINES.cats), { rate: 1.06 });
+    }
   }
   if (row && row.power && !row.power.got && Math.round(L.x) === row.power.c && L.hop === 0){
     row.power.got = true;
@@ -1315,11 +1426,21 @@ function die(car){
   G.slow = .18;                       /* slow motion for the indignity */
   /* the pop · a wet burst of her own colours, a shockwave, and a stamp */
   const F = fitOf(SV.fit);
-  puff(L.x, L.y, 26, F.top);
-  puff(L.x, L.y, 18, SKIN);
-  puff(L.x, L.y, 14, HAIR);
-  puff(L.x, L.y, 10, '#ff9aa8');
+  /* THE POP · she does not deflate, she goes everywhere, twice */
+  puff(L.x, L.y, 40, F.top);
+  puff(L.x, L.y, 28, SKIN);
+  puff(L.x, L.y, 22, HAIR);
+  puff(L.x, L.y, 16, '#ff9aa8');
+  puff(L.x, L.y, 14, F.leg);
+  Music.splat();
+  setTimeout(() => { if (!G.lily) return;
+    puff(G.lily.x, G.lily.y, 22, F.top); puff(G.lily.x, G.lily.y, 14, SKIN);
+    G.pop = Math.max(G.pop, .8); Music.pop2(); }, 190);
+  setTimeout(() => { if (!G.lily) return;
+    puff(G.lily.x, G.lily.y, 12, HAIR); G.pop = Math.max(G.pop, .5); }, 400);
   G.pop = 1;
+  /* count the pieces. It is nearly always six or seven, for reasons. */
+  G.pieces = Math.random() < .62 ? 6 + ri(2) : 4 + ri(6);
   const dragged = car && !car.heli && !car.graboid;
   G.stamp = car && car.heli ? 'YOINK!' : car && car.graboid ? 'CHOMP!' : 'MEAT CRAYON!';
   G.stampT = 1.8;
@@ -1333,11 +1454,15 @@ function die(car){
   }
   G.camZTarget = PLAY_Z * 2.1;        /* ZOOM */
   G.anchorT = .5;                     /* ...and centre the indignity */
-  Music.splat();
   Music.stop();
   if (navigator.vibrate) navigator.vibrate([60, 40, 120]);
   setTimeout(() => {
-    const line = pick(dragged ? LINES.crayon : LINES.death);
+    const bench = dragged
+      ? [LINES.crayon, LINES.crayon, LINES.beauty, LINES.walkit, LINES.bandage]
+      : [LINES.death, LINES.death, LINES.beauty, LINES.walkit, LINES.bandage];
+    const line = (G.pieces === 6 || G.pieces === 7) && Math.random() < .45
+      ? `Six! ${G.pieces === 7 ? 'Seven!' : 'Six!'} Pieces of Lily!`
+      : pick(pick(bench));
     Voice.say(line, { rate: .92, pitch: .8 });
     SV = store(s => { s.coins += G.coins; s.deaths = (s.deaths || 0) + 1;
       s.best = Math.max(s.best || 0, G.score); });
@@ -1346,7 +1471,9 @@ function die(car){
       : pick(['FLATTENED', 'ABSORBED BY THE ROAD', 'FULLY LAMINATED', 'ONE WITH THE ASPHALT']);
     $('deadTitle').textContent = dragged ? 'Meat crayon.' : 'Oops.';
     $('deadLine').textContent = line;
-    $('deadStats').innerHTML = `LANES CROSSED <b>${G.score}</b> · COINS <b>+${G.coins}</b><br>BEST <b>${SV.best}</b>`;
+    $('deadStats').innerHTML =
+      `<span style="color:var(--sun)">${G.pieces} PIECES OF LILY</span><br>` +
+      `LANES CROSSED <b>${G.score}</b> · COINS <b>+${G.coins}</b> · BEST <b>${SV.best}</b>`;
     show('pDead');
     G.phase = 'dead';
   }, 1500);
