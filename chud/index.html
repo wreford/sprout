@@ -40,18 +40,21 @@ canvas{display:block}
 #board .brow .nm{overflow:hidden;text-overflow:ellipsis;max-width:96px}
 #board .brow.me .nm{color:#7dffb0}
 #meters{position:absolute;left:10px;top:calc(52px + env(safe-area-inset-top));display:flex;
-  flex-direction:column;gap:5px;width:150px}
-.meter{flex:1;background:var(--panel);border-radius:10px;padding:4px 7px 5px;color:#fff;
+  flex-direction:column;gap:4px;width:142px}
+.meter{flex:1;background:var(--panel);border-radius:10px;padding:3px 7px 5px;color:#fff;
   backdrop-filter:blur(8px);box-shadow:0 5px 14px rgba(0,0,0,.3)}
+.meter .dot{width:7px;height:7px;border-radius:2px;display:inline-block;margin-right:4px;
+  transform:rotate(45deg);vertical-align:0}
 .meter .ml{font-family:var(--mono);font-weight:800;font-size:10px;letter-spacing:.04em;
   white-space:nowrap;overflow:hidden;display:flex;justify-content:space-between}
 .meter .tier{color:#ffd75e}
 .meter .mb{height:7px;border-radius:100px;background:rgba(255,255,255,.18);overflow:hidden;margin-top:2px}
 .meter .mf{height:100%;border-radius:100px;transition:width .3s}
-#quip{position:absolute;left:10px;right:10px;bottom:calc(14px + env(safe-area-inset-bottom));z-index:6;
-  background:var(--panel);backdrop-filter:blur(8px);color:#fff;border-radius:14px;padding:9px 13px;
+#quip{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(14px + env(safe-area-inset-bottom));z-index:6;
+  background:var(--panel);backdrop-filter:blur(8px);color:#fff;border-radius:100px;padding:9px 18px;
   font-weight:700;font-size:clamp(12px,3.3vmin,14.5px);line-height:1.25;pointer-events:none;
-  box-shadow:0 6px 18px rgba(20,40,60,.35);opacity:0;transition:opacity .3s;text-align:center}
+  box-shadow:0 6px 18px rgba(20,40,60,.35);opacity:0;transition:opacity .3s;text-align:center;
+  max-width:72%;width:max-content}
 .panel{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:10;padding:22px;
   background:rgba(30,60,90,.45)}
 #pTitle{background:#f6efe3;padding:0;flex-direction:column;align-items:stretch;justify-content:flex-start}
@@ -137,6 +140,13 @@ canvas{display:block}
   font-family:var(--mono);font-weight:800;font-size:9.5px;cursor:pointer;display:none;
   box-shadow:0 5px 14px rgba(224,72,62,.4)}
 #bSab.off{filter:grayscale(.7);opacity:.6}
+#rush{position:absolute;left:50%;top:calc(158px + env(safe-area-inset-top));transform:translateX(-50%);
+  z-index:6;background:linear-gradient(#ff8a5e,#e0483e);color:#fff;border-radius:100px;padding:5px 16px;
+  font-family:var(--mono);font-weight:800;font-size:12px;display:none;
+  box-shadow:0 0 22px rgba(224,72,62,.7),0 6px 16px rgba(0,0,0,.4)}
+#bCam{position:absolute;right:10px;bottom:calc(86px + env(safe-area-inset-bottom));z-index:7;
+  background:var(--panel);backdrop-filter:blur(8px);border:none;border-radius:10px;
+  padding:7px 11px;color:#fff;font-family:var(--mono);font-weight:800;font-size:10px;cursor:pointer;display:none}
 </style>
 </head>
 <body>
@@ -156,6 +166,8 @@ canvas{display:block}
   <button id="vacBtn">VAC</button>
   <div id="mission"></div>
   <button id="bSab">SABOTAGE</button>
+  <div id="rush">RUSH HOUR</div>
+  <button id="bCam">CAM · COUCH</button>
   <button id="bFull">⛶ FULLSCREEN</button>
   <button id="bZen">☁ SOUNDS</button>
   <div id="installSheet">
@@ -393,7 +405,7 @@ function loadSave(){ try{ return JSON.parse(localStorage.getItem(SAVE_KEY))||{};
 let SV=loadSave();
 function save(){ try{ localStorage.setItem(SAVE_KEY,JSON.stringify(SV)); }catch(e){} }
 
-let G=null;
+let G=null, moneyShown=0;
 const WIN_REBIRTHS=2;                      /* finish this many full sets to win */
 function newGame(){
   G={ running:false, over:false, money:40, t:0, startAt:0,
@@ -407,6 +419,7 @@ function newGame(){
     goldenT:52000, goldenOn:0, pandaT:26000, panda:null,
     vac:0, vacFireT:0, badT:11000, mission:null, missionNextT:0,
     sabCost:150, sabCd:0, retalT:0,
+    rushT:40000, rushWarnT:0, rushOn:0,
     bots:BOTS.map(b=>({ ...b, counts:{snack:0,game:0,pants:0,coat:0}, rebirths:0, done:false })),
     winner:null, camA:0, camDrag:null };
 }
@@ -944,6 +957,9 @@ function bumpCombo(){
   if(G.combo===5||G.combo===10||G.combo===15||G.combo===20){
     stampFx(G.combo>=20?'UNTOUCHABLE!':G.combo>=15?'RAMPAGE!':G.combo>=10?'ON FIRE!':'HEATING UP!');
     fanfare();
+    fovPulse=5;
+    if(G.combo===10){ spawnLucky(); quip('Combo 10. A lucky block appears as tribute.',Math.random()<.4); }
+    if(G.combo===20){ G.frenzyT=Math.max(G.frenzyT,8000); $('frenzy').style.display='block'; }
     const me=lilObjs.me&&lilObjs.me.chud;
     if(me){ me.userData.hop=1; }
     if(G.combo===10) quip('Ten in a row. Certified couch reflexes.',Math.random()<.5);
@@ -981,7 +997,8 @@ function collectItem(mesh){
   G.counts[t.id]++;
   bumpCombo();
   const gold=mesh.userData.epic?6:(mesh.userData.golden?3:1);
-  const val=Math.round((t.val+G.levels[t.id]*2)*incomeMult(G.rebirths)*comboMult()*gold);
+  const rush=G.rushOn>0?2:1;
+  const val=Math.round((t.val+G.levels[t.id]*2)*incomeMult(G.rebirths)*comboMult()*gold*rush);
   if(!G.vacFireT){ G.vac=Math.min(100,G.vac+8); updateVacBtn(); }
   missionProg('item',t.id);
   if(mesh.userData.golden) missionProg('golden');
@@ -993,7 +1010,7 @@ function collectItem(mesh){
   fly.userData={t:0,fly:true,
     from:mesh.position.clone(), to:new THREE.Vector3(0,4.6,12.6)};
   confetti.push(fly);
-  popS(); kaching();
+  blip(440+Math.min(G.combo,20)*42,.09,'sine',.14); kaching();
   burst(mesh.position,t.col);
   if(mesh.userData.blob) scene.remove(mesh.userData.blob);
   addFloater((mesh.userData.epic?'EPIC +$':'+$')+val,mesh.position,mesh.userData.epic?'#d8b8ff':undefined);
@@ -1008,6 +1025,7 @@ function rebirth(){
   G.rebirths++;
   if(G.rebirths>=WIN_REBIRTHS){ endGame('me'); return; }
   TYPES.forEach(t=>G.counts[t.id]=0);
+  fovPulse=8;
   fanfare(); stampFx('REBIRTH '+G.rebirths+'!');
   quip(pick(LINES.rebirth)+' Everything is worth more now.',true);
   clearMyStacks();
@@ -1023,6 +1041,7 @@ function updateVacBtn(){
 function fireVac(){
   if(!G||G.vac<100) return;
   G.vac=0; updateVacBtn();
+  shake=.5; fovPulse=6;
   blip(90,.5,'sawtooth',.16); setTimeout(()=>blip(700,.25,'sine',.12),150);
   stampFx('CHUD VAC!');
   if(G.panda) denyPanda();
@@ -1092,6 +1111,7 @@ function buySab(){
     p.rotation.y=Math.PI; scene.add(p);
     burst(p.position,0x8a8f9a);
     setTimeout(()=>scene.remove(p),2600); }
+  shake=.5;
   stampFx('SABOTAGE!');
   kaching();
   quip(pick(LINES.sab)+' '+lead.name+' lost progress.',Math.random()<.6);
@@ -1133,6 +1153,7 @@ function spawnPanda(){
   p.userData={stole:0};
   scene.add(p);
   G.panda=p;
+  shake=.55;
   stampFx('TRASH PANDA!');
   blip(240,.2,'square',.12);
   quip('TRASH PANDA on the belt. Tap it before it eats your loot.',Math.random()<.7);
@@ -1290,7 +1311,7 @@ function buildMeters(){
   TYPES.forEach(t=>{
     const el=document.createElement('div');
     el.className='meter'; el.id='m_'+t.id;
-    el.innerHTML=`<div class="ml"><span>${t.label} <span class="tier"></span></span><span class="cnt">0/${t.goal}</span></div>
+    el.innerHTML=`<div class="ml"><span><i class="dot" style="background:${t.hudCol}"></i>${t.label} <span class="tier"></span></span><span class="cnt">0/${t.goal}</span></div>
       <div class="mb"><div class="mf" style="background:${t.hudCol};width:0%"></div></div>`;
     m.appendChild(el);
   });
@@ -1308,18 +1329,18 @@ function syncBoard(){
   const rows=[{name:'You',p:overall(G.counts,G.rebirths),r:G.rebirths,me:true},
     ...G.bots.map(b=>({name:b.name,p:overall(b.counts,b.rebirths),r:b.rebirths}))]
     .sort((a,b)=>b.p-a.p);
-  $('board').innerHTML=rows.map(r=>
-    `<div class="brow${r.me?' me':''}"><span class="nm">${r.name}</span><span>R${r.r} ${Math.round((r.p-r.r)*100)}%</span></div>`).join('');
+  $('board').innerHTML=rows.map((r,i)=>
+    `<div class="brow${r.me?' me':''}"><span class="nm">${i+1}. ${r.name}</span><span>R${r.r} ${Math.round((r.p-r.r)*100)}%</span></div>`).join('');
 }
 
 /* ============================================================
    LOOP
    ============================================================ */
-function beltSpeed(){ return .0052/(1+G.beltLv*.35); }
+function beltSpeed(){ return .0052/(1+G.beltLv*.35)*(G&&G.rushOn>0?1.45:1); }
 function update(dt){
   if(!G.running) return;
   /* droppers drop · frenzy doubles the pace */
-  const fz=G.frenzyT>0?2:1;
+  const fz=(G.frenzyT>0?2:1)*(G.rushOn>0?2:1);
   if(G.frenzyT>0){ G.frenzyT-=dt; if(G.frenzyT<=0) $('frenzy').style.display='none'; }
   /* GOLDEN HOUR · a 10s window where every drop lands gold-plated (3x) */
   if(G.goldenOn>0){
@@ -1344,6 +1365,26 @@ function update(dt){
   if(G.vacFireT>0) G.vacFireT=Math.max(0,G.vacFireT-dt);
   /* next mission after a breather */
   if(G.mission&&G.mission.done){ G.missionNextT-=dt; if(G.missionNextT<=0) newMission(); }
+  /* RUSH HOUR · warned, then everything doubles for 9 seconds */
+  if(G.rushOn>0){
+    G.rushOn-=dt;
+    if(G.rushOn<=0) $('rush').style.display='none';
+  } else if(G.rushWarnT>0){
+    G.rushWarnT-=dt;
+    if(G.rushWarnT<=0){
+      G.rushOn=9000;
+      $('rush').textContent='RUSH HOUR · EVERYTHING ×2';
+      stampFx('RUSH HOUR!'); fanfare(); fovPulse=5;
+    }
+  } else {
+    G.rushT-=dt;
+    if(G.rushT<=0){
+      G.rushT=55000+Math.random()*20000; G.rushWarnT=3000;
+      $('rush').style.display='block';
+      $('rush').textContent='RUSH HOUR INCOMING…';
+      quip('RUSH HOUR incoming. Stretch the thumb.',Math.random()<.5);
+    }
+  }
   /* sabotage cooldown + the raccoon's revenge */
   if(G.sabCd>0){ G.sabCd-=dt; if(G.sabCd<=0) syncSab(); }
   if(G.retalT>0){ G.retalT-=dt;
@@ -1355,7 +1396,7 @@ function update(dt){
     G.spawnT[t.id]-=dt;
     if(G.spawnT[t.id]<=0){
       G.spawnT[t.id]=Math.max(900, 4100/(1+lvl*.5))/fz;
-      if(G.items.length<16) spawnItem(t.id);
+      if(G.items.length<(G.rushOn>0?24:16)) spawnItem(t.id);
     }
   });
   /* lucky blocks arrive on their own clock */
@@ -1464,6 +1505,10 @@ function update(dt){
     if(o.name==='cloud'){ o.position.x+=o.userData.v*dt*.001;
       if(o.position.x>110) o.position.x=-110; }
   });
+  /* money ticker rolls toward the real number */
+  moneyShown+=(G.money-moneyShown)*Math.min(1,dt*.012);
+  if(Math.abs(G.money-moneyShown)<1) moneyShown=G.money;
+  $('money').textContent='$'+Math.floor(moneyShown);
   /* pads pulse */
   pads.forEach((p,i)=>{
     p.userData.disc.material.emissiveIntensity=.24+Math.sin(G.t/300+i)*.14;
@@ -1474,17 +1519,39 @@ function update(dt){
     }
   });
 }
+/* three cameras: the classic overview, a low belt-side action cam,
+   and a slow self-driving cinema orbit */
+const CAM_MODES=[
+  {id:'couch',  label:'COUCH',  r:44, h:29, lx:0,ly:1,  lz:7,  fov:50},
+  {id:'action', label:'ACTION', r:26, h:13, lx:0,ly:1.6,lz:17, fov:54},
+  {id:'cinema', label:'CINEMA', r:50, h:22, lx:0,ly:2,  lz:4,  fov:46, auto:.00012},
+];
+let camMode=0, cinA=0, shake=0, fovPulse=0;
+function setCam(i){
+  camMode=((i%CAM_MODES.length)+CAM_MODES.length)%CAM_MODES.length;
+  SV.cam=camMode; save();
+  const b=$('bCam'); if(b) b.textContent='CAM · '+CAM_MODES[camMode].label;
+}
 function animate(){
   requestAnimationFrame(animate);
   const dt=Math.min(60,clock?clock.getDelta()*1000:16);
   if(G){ G.t=performance.now(); update(dt); }
   /* camera */
   if(camera){
-    const a=(G?G.camA:0);
-    const r=44, h=29;
-    const tx=Math.sin(a)*r, tz=Math.cos(a)*r*.9+7;
-    camera.position.lerp(new THREE.Vector3(tx,h,tz),.06);
-    camera.lookAt(0,1,7);
+    const M=CAM_MODES[camMode];
+    let a=(G?G.camA:0);
+    if(M.auto){ cinA+=dt*M.auto; a=cinA; }
+    const tx=Math.sin(a)*M.r, tz=M.auto?Math.cos(a)*M.r+7:Math.cos(a)*M.r*.9+7;
+    camera.position.lerp(new THREE.Vector3(tx,M.h,tz),.08);
+    if(shake>0){
+      shake=Math.max(0,shake-dt*.004);
+      camera.position.x+=(Math.random()-.5)*shake;
+      camera.position.y+=(Math.random()-.5)*shake*.6;
+    }
+    camera.lookAt(M.lx,M.ly,M.lz);
+    if(fovPulse>0) fovPulse=Math.max(0,fovPulse-dt*.02);
+    const wantF=M.fov+(G&&G.frenzyT>0?3:0)+fovPulse;
+    if(Math.abs(camera.fov-wantF)>.05){ camera.fov+=(wantF-camera.fov)*.15; camera.updateProjectionMatrix(); }
     renderer.render(scene,camera);
   }
 }
@@ -1513,8 +1580,19 @@ function onTap(e){
   if(hits.length){
     let m=hits[0].object;
     while(m&&m.parent!==items3d) m=m.parent;
-    if(m) collectItem(m);
+    if(m){ collectItem(m); return; }
   }
+  /* forgiving aim: a near-miss still grabs the closest landed loot
+     (bills and broccoli only trigger on a direct hit) */
+  let best=null, bd=48;
+  G.items.forEach(m=>{
+    if(!m.userData.landed||m.userData.type==='bad') return;
+    const v=m.position.clone().project(camera);
+    const sx=(v.x+1)/2*r.width, sy=(1-v.y)/2*r.height;
+    const d=Math.hypot(sx-(e.clientX-r.left), sy-(e.clientY-r.top));
+    if(d<bd){ bd=d; best=m; }
+  });
+  if(best) collectItem(best);
 }
 let dragX=null;
 function bindInput(){
@@ -1573,6 +1651,10 @@ document.querySelectorAll('.ambChip').forEach(ch=>{
   ch.addEventListener('click',()=>ambToggle(ch.dataset.amb));
 });
 $('vacBtn').addEventListener('click',()=>{ ensureAC(); fireVac(); });
+$('bCam').addEventListener('click',()=>{
+  setCam(camMode+1);
+  quip(CAM_MODES[camMode].label.toLowerCase()+' cam. Directors hate him.');
+});
 $('bSab').addEventListener('click',()=>{ ensureAC(); buySab(); });
 $('bZen').addEventListener('click',()=>{
   const any=Object.values(AMB.on).some(Boolean);
@@ -1587,7 +1669,7 @@ function startGame(){
   ensureAC();
   goFullscreen();
   if(G&&G.panda){ scene.remove(G.panda); }
-  ['frenzy','golden','combo'].forEach(id=>$(id).style.display='none');
+  ['frenzy','golden','combo','rush'].forEach(id=>$(id).style.display='none');
   clearPiles();
   newGame();
   G.running=true; G.startAt=performance.now();
@@ -1600,13 +1682,16 @@ function startGame(){
   syncHud(); syncPads(); syncBoard();
   $('vacBtn').style.display='block'; updateVacBtn();
   $('bSab').style.display='block'; syncSab();
+  $('bCam').style.display='block';
+  $('rush').style.display='none';
+  moneyShown=G.money;
   newMission();
   quip(pick(LINES.start),true);
 }
 function endGame(winnerId){
   if(G.over) return;
   G.running=false; G.over=true; G.winner=winnerId;
-  ['vacBtn','mission','bSab'].forEach(id=>$(id).style.display='none');
+  ['vacBtn','mission','bSab','bCam','rush'].forEach(id=>$(id).style.display='none');
   const won=winnerId==='me';
   SV.runs=(SV.runs||0)+1;
   if(won) SV.wins=(SV.wins||0)+1;
@@ -1641,6 +1726,7 @@ document.addEventListener('dblclick',e=>e.preventDefault(),{passive:false});
 
 function boot(){
   $('bestLine').textContent=SV.runs?`${SV.wins||0} golden remotes in ${SV.runs} games`:'';
+  setCam(SV.cam||0);
   if(SV.amb) SV.amb.forEach(k=>{ AMB.on[k]=false; });   /* chips reflect save, audio starts on gesture */
   document.querySelectorAll('.ambChip').forEach(ch=>ch.classList.toggle('on',!!(SV.amb||[]).includes(ch.dataset.amb)));
   if(typeof THREE==='undefined'){
@@ -1671,6 +1757,7 @@ boot();
 window.CT={ get G(){return G;}, startGame, endGame, spawnItem, spawnLucky, collectItem, buyPad, padCost,
   spawnPanda, denyPanda, tickPanda, makeItem, comboMult, bumpCombo, breakCombo,
   spawnBad, makeBad, fireVac, updateVacBtn, buySab, syncSab, newMission, missionProg, syncMission,
+  setCam, CAM_MODES, get camMode(){return camMode;}, get camera(){return camera;},
   globalCost, goalOf, overall, rebirth, rollLucky, beltSpeed, WIN_REBIRTHS,
   ambToggle, AMB, get britVoice(){return britVoice;}, LINES,
   TYPES, BOTS, tickBots, progressOf, setDone, save:()=>SV, syncBoard, syncHud,
