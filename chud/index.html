@@ -1076,7 +1076,7 @@ function collectItem(mesh){
   const gold=mesh.userData.epic?6:(mesh.userData.golden?3:1);
   const rush=G.rushOn>0?2:1;
   const val=Math.round((t.val+G.levels[t.id]*2)*incomeMult(G.rebirths)*comboMult()*gold*rush);
-  if(!G.vacFireT){ G.vac=Math.min(100,G.vac+8); updateVacBtn(); }
+  if(!G.vacFireT){ G.vac=Math.min(100,G.vac+5); updateVacBtn(); }
   missionProg('item',t.id);
   if(mesh.userData.golden) missionProg('golden');
   G.money+=val; G.taps++;
@@ -1087,6 +1087,7 @@ function collectItem(mesh){
   fly.userData={t:0,fly:true,
     from:mesh.position.clone(), to:new THREE.Vector3(0,4.6,12.6)};
   confetti.push(fly);
+  try{ navigator.vibrate&&navigator.vibrate(8); }catch(e){}
   blip(440+Math.min(G.combo,20)*42,.09,'sine',.14); kaching();
   burst(mesh.position,t.col);
   if(mesh.userData.blob) scene.remove(mesh.userData.blob);
@@ -1331,12 +1332,12 @@ function tickBots(dt){
   const myOv=overall(G.counts,G.rebirths);
   G.bots.forEach(b=>{
     if(b.done) return;
-    let rate=b.speed*.62;                      /* longer rounds · slower base */
+    let rate=b.speed*.8;                       /* the player hoovers now — keep up */
     if(b.burst) rate*= (Math.random()<.25 ? 1+b.burst*3 : 1-b.burst*.5);
     if(b.fade) rate*= clamp(1.3-mins*b.fade,.35,1.3);
     /* rubber band: the race stays a race */
     const bOv=overall(b.counts,b.rebirths);
-    rate*=clamp(1+(myOv-bOv)*.4,.7,1.5);
+    rate*=clamp(1+(myOv-bOv)*.45,.7,1.8);
     /* they chase whatever they're missing most */
     const needs=TYPES.filter(t=>b.counts[t.id]<goalOf(t,b.rebirths))
       .sort((a,c)=>(b.counts[a.id]/goalOf(a,b.rebirths))-(b.counts[c.id]/goalOf(c,b.rebirths)));
@@ -1414,7 +1415,7 @@ function syncBoard(){
 /* ============================================================
    LOOP
    ============================================================ */
-function beltSpeed(){ return .0052/(1+G.beltLv*.35)*(G&&G.rushOn>0?1.45:1); }
+function beltSpeed(){ return .006/(1+G.beltLv*.35)*(G&&G.rushOn>0?1.45:1); }
 function update(dt){
   if(!G.running) return;
   /* droppers drop · frenzy doubles the pace */
@@ -1438,7 +1439,7 @@ function update(dt){
   else { G.pandaT-=dt; if(G.pandaT<=0) spawnPanda(); }
   /* bills and broccoli roll out among the loot */
   G.badT-=dt;
-  if(G.badT<=0){ G.badT=6500+Math.random()*5500; if(G.items.length<18) spawnBad(); }
+  if(G.badT<=0){ G.badT=5200+Math.random()*4800; if(G.items.length<26) spawnBad(); }
   /* vac cooldown while it inhales */
   if(G.vacFireT>0) G.vacFireT=Math.max(0,G.vacFireT-dt);
   /* next mission after a breather */
@@ -1473,13 +1474,13 @@ function update(dt){
     if(lvl<=0) return;
     G.spawnT[t.id]-=dt;
     if(G.spawnT[t.id]<=0){
-      G.spawnT[t.id]=Math.max(900, 4100/(1+lvl*.5))/fz;
-      if(G.items.length<(G.rushOn>0?24:16)) spawnItem(t.id);
+      G.spawnT[t.id]=Math.max(700, 2800/(1+lvl*.45))/fz;
+      if(G.items.length<(G.rushOn>0?32:24)) spawnItem(t.id);
     }
   });
   /* lucky blocks arrive on their own clock */
   G.luckyT-=dt;
-  if(G.luckyT<=0){ G.luckyT=18000+Math.random()*14000; if(G.items.length<16) spawnLucky(); }
+  if(G.luckyT<=0){ G.luckyT=15000+Math.random()*12000; if(G.items.length<28) spawnLucky(); }
   /* the auto-chud drone collects the item closest to the bin */
   if(G.autoLv>0){
     G.autoT-=dt;
@@ -1682,13 +1683,51 @@ function onTap(e){
   if(best) collectItem(best);
 }
 let dragX=null;
+function castAt(e){
+  const r=renderer.domElement.getBoundingClientRect();
+  pointer.x=((e.clientX-r.left)/r.width)*2-1;
+  pointer.y=-((e.clientY-r.top)/r.height)*2+1;
+  ray.setFromCamera(pointer,camera);
+}
+function itemUnder(e){
+  castAt(e);
+  const hits=ray.intersectObjects(items3d.children,true);
+  if(hits.length){ let m=hits[0].object; while(m&&m.parent!==items3d) m=m.parent; return m; }
+  return null;
+}
+const _beltPlane=()=>new THREE.Plane(new THREE.Vector3(0,1,0),-1.7);
+function overBelt(e){
+  castAt(e);
+  const v=new THREE.Vector3();
+  if(!ray.ray.intersectPlane(_beltPlane(),v)) return false;
+  return Math.abs(v.z-20)<3.4 && v.x>-17 && v.x<18;
+}
 function bindInput(){
   const el=renderer.domElement;
-  el.addEventListener('pointerdown',e=>{ dragX={x:e.clientX,a:G?G.camA:0,moved:false}; });
+  el.addEventListener('pointerdown',e=>{
+    /* a drag that starts on loot or the belt is a HARVEST SWIPE;
+       anywhere else it orbits the camera */
+    const harvest=!!(G&&G.running&&(itemUnder(e)||overBelt(e)));
+    dragX={x:e.clientX,a:G?G.camA:0,moved:false,harvest,lastT:0};
+  });
   el.addEventListener('pointermove',e=>{
     if(!dragX) return;
     const dx=e.clientX-dragX.x;
     if(Math.abs(dx)>8) dragX.moved=true;
+    if(dragX.harvest){
+      if(!G||!G.running) return;
+      const now=performance.now();
+      if(now-dragX.lastT<36) return;
+      dragX.lastT=now;
+      ensureAC();
+      if(G.panda){
+        castAt(e);
+        if(ray.intersectObject(G.panda,true).length){ denyPanda(); return; }
+      }
+      const m=itemUnder(e);
+      if(m) collectItem(m);
+      return;
+    }
     if(G) G.camA=clamp(dragX.a - dx*.004, -.9, .9);
   });
   el.addEventListener('pointerup',e=>{
@@ -1772,7 +1811,9 @@ function startGame(){
   $('rush').style.display='none';
   moneyShown=G.money;
   newMission();
-  quip(pick(LINES.start),true);
+  if(!SV.swipeHint){ SV.swipeHint=true; save();
+    quip('SWIPE across the belt to hoover loot. Steer around the bills.',true); }
+  else quip(pick(LINES.start),true);
 }
 function endGame(winnerId){
   if(G.over) return;
@@ -1844,7 +1885,7 @@ window.CT={ get G(){return G;}, startGame, endGame, spawnItem, spawnLucky, colle
   spawnPanda, denyPanda, tickPanda, makeItem, comboMult, bumpCombo, breakCombo,
   spawnBad, makeBad, fireVac, updateVacBtn, buySab, syncSab, newMission, missionProg, syncMission,
   setCam, CAM_MODES, get camMode(){return camMode;}, get camera(){return camera;},
-  LUCKY_ROLLS, syncShield, GLOBALS,
+  LUCKY_ROLLS, syncShield, GLOBALS, itemUnder, overBelt,
   globalCost, goalOf, overall, rebirth, rollLucky, beltSpeed, WIN_REBIRTHS,
   ambToggle, AMB, get britVoice(){return britVoice;}, LINES,
   TYPES, BOTS, tickBots, progressOf, setDone, save:()=>SV, syncBoard, syncHud,
