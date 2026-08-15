@@ -264,8 +264,8 @@ const LINES={
   anita:['Anita Slehrpee refuses to put down the cup. Respect.','Anita sipped. The economy trembled.',
     'Anita said the cup is her emotional support beverage.','Anita is the main character and she knows it.',
     'Anita\'s slurp echoed across four islands. Canon event.'],
-  bin:['One fell in the bin. The bin says thank you.','The bin ate again. This is fine.',
-    'To the loot in the bin: F.','Bin: 1. You: still on the couch. Worth it.'],
+  bin:['It rotted. Right there on the grass. F.','Loot expired. The chud mourns briefly.',
+    'That one returned to the earth. Unclaimed.','Gone. Not eaten. Just gone.'],
   frenzy:['FRENZY. It\'s raining loot. Certified goblin mode.','Double drops. Let\'s gooo.',
     'The dropper has entered its villain era.'],
   rebirth:['REBIRTH. Same couch, new lore.','New lap. The couch remembers everything.',
@@ -434,7 +434,7 @@ function newGame(){
     sabCost:150, sabCd:0, retalT:0,
     rushT:40000, rushWarnT:0, rushOn:0,
     bots:BOTS.map(b=>({ ...b, counts:{snack:0,game:0,pants:0,coat:0}, rebirths:0, done:false })),
-    winner:null, camA:0, camDrag:null };
+    winner:null, camA:0, camDrag:null, tx:0, tz:26 };
 }
 function goalOf(t,rebirths){ return Math.round(t.goal*Math.pow(1.5,rebirths)); }
 function tierOf(rebirths){ return rebirths+1; }
@@ -530,33 +530,6 @@ function initThree(){
   buildPlot({x:24,z:-14,ry:-.7,who:'anita',col:0xff6ea8,name:'Anita Slehrpee'});
 
   items3d=new THREE.Group(); scene.add(items3d);
-  /* THE CONVEYOR · loot rides it toward the bin. The bin is not your friend. */
-  const beltG=new THREE.Group();
-  const belt=new THREE.Mesh(new THREE.BoxGeometry(30,.7,4),
-    new THREE.MeshStandardMaterial({color:0x3a3f4c,roughness:.7}));
-  belt.position.set(0,.9,20); belt.receiveShadow=true; belt.castShadow=true; beltG.add(belt);
-  /* moving tread stripes */
-  window.__treads=[];
-  for(let i=0;i<10;i++){
-    const tr=new THREE.Mesh(new THREE.BoxGeometry(1.2,.12,3.6),
-      new THREE.MeshStandardMaterial({color:0x5a6070,roughness:.6}));
-    tr.position.set(-14+i*3,1.32,20);
-    beltG.add(tr); __treads.push(tr);
-  }
-  [-1,1].forEach(d=>{ const rail=new THREE.Mesh(new THREE.BoxGeometry(30,.4,.5),
-    new THREE.MeshStandardMaterial({color:0xffcf5e,roughness:.4}));
-    rail.position.set(0,1.4,20+d*2.1); beltG.add(rail); });
-  /* the bin at the end */
-  [-12,-4,4,12].forEach(lx=>{ const leg=new THREE.Mesh(new THREE.BoxGeometry(.6,1,3.4),
-    new THREE.MeshStandardMaterial({color:0x2e323c,roughness:.7}));
-    leg.position.set(lx,.45,20); beltG.add(leg); });
-  const bin=new THREE.Mesh(new THREE.CylinderGeometry(1.8,1.4,3,14),
-    new THREE.MeshStandardMaterial({color:0x8a2e2e,roughness:.6}));
-  bin.position.set(17.5,1.5,20); bin.castShadow=true; beltG.add(bin);
-  const binLip=new THREE.Mesh(new THREE.TorusGeometry(1.8,.22,8,18),
-    new THREE.MeshStandardMaterial({color:0xb04040,roughness:.5}));
-  binLip.rotation.x=Math.PI/2; binLip.position.set(17.5,3,20); beltG.add(binLip);
-  scene.add(beltG);
   /* the auto-collector drone · dormant until purchased */
   const drone=new THREE.Group();
   const body=new THREE.Mesh(new THREE.SphereGeometry(.9,12,10),
@@ -766,13 +739,14 @@ function makeBad(){
 function spawnBad(){
   const mesh=makeBad();
   const kind=mesh.userData.kind;
-  const x=-14-Math.random()*2, z=20;
+  const sp2=yardSpot();
+  const x=sp2.x, z=sp2.z;
   mesh.position.set(x,10,z);
   const blob=new THREE.Mesh(blobGeo(),
     new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:.14}));
-  blob.rotation.x=-Math.PI/2; blob.position.set(x,1.35,z);
+  blob.rotation.x=-Math.PI/2; blob.position.set(x,.06,z);
   scene.add(blob);
-  mesh.userData={type:'bad',kind,vy:0,landed:false,age:0,spin:(Math.random()-.5)*2,blob};
+  mesh.userData={type:'bad',kind,vy:0,landed:false,age:0,rot:14000,spin:(Math.random()-.5)*2,blob};
   items3d.add(mesh);
   G.items.push(mesh);
 }
@@ -853,7 +827,7 @@ function makeItem(type){
 }
 /* upgrade pads in front of your couch */
 const GLOBALS=[
-  { id:'belt', label:'BELT BRAKES', col:0x8fd6ff, upBase:120, d:'slows the conveyor', px:-24, pz:20 },
+  { id:'belt', label:'SNEAKERS', col:0x8fd6ff, upBase:120, d:'run faster', px:-24, pz:20 },
   { id:'auto', label:'AUTO-CHUD',  col:0x3ddc84, upBase:260, d:'collects for you', px:24, pz:20 },
   { id:'hands',label:'BIG HANDS',  col:0xffcf5e, upBase:200, d:'chance a grab counts twice', px:-18.5, pz:25.8 },
 ];
@@ -937,15 +911,32 @@ function drawTag(p,txt,cost){
    GAMEPLAY
    ============================================================ */
 const blobGeo=()=>new THREE.CircleGeometry(1,20);
+function yardSpot(typeId){
+  for(let i=0;i<8;i++){
+    let x,z;
+    if(typeId&&Math.random()<.6){
+      /* most drops rain near their own dropper pad — running routes matter */
+      const pi=TYPES.findIndex(t2=>t2.id===typeId);
+      x=-11+pi*7.3+(Math.random()-.5)*9; z=21+Math.random()*10;
+    } else { x=-16+Math.random()*32; z=3.5+Math.random()*28; }
+    x=clamp(x,-16.5,16.5); z=clamp(z,3,32);
+    if(Math.abs(x)<4.8&&z>9&&z<15.5) continue;       /* the couch */
+    if(Math.abs(x)<3&&Math.abs(z-21.6)<3) continue;  /* the TV */
+    return {x,z};
+  }
+  return {x:0,z:28};
+}
 function spawnItem(type,opts){
   const mesh=makeItem(type);
-  const x=-14-Math.random()*2, z=20;             /* onto the belt's left end */
-  mesh.position.set(x,10,z);
+  const sp2=yardSpot(type);
+  const x=sp2.x, z=sp2.z;
+  mesh.position.set(x,10+Math.random()*3,z);
   const blob=new THREE.Mesh(blobGeo(),
     new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:.14}));
-  blob.rotation.x=-Math.PI/2; blob.position.set(x,1.35,z);
+  blob.rotation.x=-Math.PI/2; blob.position.set(x,.06,z);
   scene.add(blob);
-  mesh.userData={type,vy:0,landed:false,age:0,spin:(Math.random()-.5)*2,blob,golden:false,epic:false};
+  mesh.userData={type,vy:0,landed:false,age:0,rot:14000+Math.random()*3000,
+    spin:(Math.random()-.5)*2,blob,golden:false,epic:false};
   const epic=opts&&opts.epic!==undefined?opts.epic:Math.random()<.06;
   if(epic&&!(G.goldenOn>0)){
     /* EPIC drop: worth 6x, rides the belt faster — blink and it is binned */
@@ -979,8 +970,9 @@ function spawnLucky(){
     new THREE.MeshStandardMaterial({map:luckyTexture(gold),roughness:.35,
       emissive:gold?0xf2b33d:0x2a5adf,emissiveIntensity:.25}));
   mesh.castShadow=true;
-  mesh.position.set(-14,10,20);
-  mesh.userData={type:'lucky',gold,vy:0,landed:false,age:0,spin:1.5,blob:null};
+  const sp2=yardSpot();
+  mesh.position.set(sp2.x,12,sp2.z);
+  mesh.userData={type:'lucky',gold,vy:0,landed:false,age:0,rot:18000,spin:1.5,blob:null};
   items3d.add(mesh);
   G.items.push(mesh);
 }
@@ -1084,8 +1076,10 @@ function collectItem(mesh){
   const fly=mesh.clone();
   fly.position.copy(mesh.position);
   scene.add(fly);
-  fly.userData={t:0,fly:true,
-    from:mesh.position.clone(), to:new THREE.Vector3(0,4.6,12.6)};
+  const meC=lilObjs.me&&lilObjs.me.chud;
+  fly.userData={t:0,fly:true, from:mesh.position.clone(),
+    to:meC?new THREE.Vector3(meC.position.x,meC.position.y+1.7,meC.position.z)
+         :new THREE.Vector3(0,4.6,12.6)};
   confetti.push(fly);
   try{ navigator.vibrate&&navigator.vibrate(8); }catch(e){}
   blip(440+Math.min(G.combo,20)*42,.09,'sine',.14); kaching();
@@ -1137,7 +1131,7 @@ const MISSION_T=[
   {w:2, make:()=>({type:'lucky', n:1, desc:'Pop a lucky block'})},
   {w:1, make:()=>({type:'panda', n:1, desc:'Deny a trash panda'})},
   {w:1, make:()=>({type:'golden', n:2, desc:'Grab 2 golden drops'})},
-  {w:1, make:()=>({type:'dodge', n:3, desc:'Let 3 bills/veg hit the bin'})},
+  {w:1, make:()=>({type:'dodge', n:3, desc:'Outlast 3 bills (let them rot)'})},
 ];
 function wPick(arr){ const tot=arr.reduce((a,x)=>a+x.w,0); let r=Math.random()*tot;
   for(const x of arr){ if(r<x.w) return x; r-=x.w; } return arr[0]; }
@@ -1226,7 +1220,7 @@ function buildPanda(){
 function spawnPanda(){
   const p=buildPanda();
   p.scale.setScalar(1.35);
-  p.position.set(18,1.35,20);
+  p.position.set(18,1.35,8+Math.random()*20);
   p.rotation.y=Math.PI;                                    /* face down-belt */
   p.userData={stole:0};
   scene.add(p);
@@ -1234,7 +1228,7 @@ function spawnPanda(){
   shake=.55;
   stampFx('TRASH PANDA!');
   blip(240,.2,'square',.12);
-  quip('TRASH PANDA on the belt. Tap it before it eats your loot.',Math.random()<.7);
+  quip('TRASH PANDA in the yard. Run it down or tap it.',Math.random()<.7);
 }
 function tickPanda(dt){
   const p=G.panda; if(!p) return;
@@ -1244,7 +1238,7 @@ function tickPanda(dt){
   for(let i=G.items.length-1;i>=0;i--){
     const m=G.items[i], u=m.userData;
     if(!u.landed||u.type==='lucky') continue;
-    if(Math.abs(m.position.x-p.position.x)<1.4){
+    if(Math.abs(m.position.x-p.position.x)<1.6&&Math.abs(m.position.z-p.position.z)<2.4){
       if(u.blob) scene.remove(u.blob);
       items3d.remove(m); G.items.splice(i,1);
       p.userData.stole++;
@@ -1305,7 +1299,7 @@ function buyPad(type){
     const cost=globalCost(type);
     if(G.money<cost){ quip('Not enough money. Tap more loot.'); blip(160,.15,'sawtooth',.12); return false; }
     G.money-=cost;
-    if(type==='belt'){ G.beltLv++; quip('Belt brakes LV'+G.beltLv+'. The conveyor relaxes.',Math.random()<.4); }
+    if(type==='belt'){ G.beltLv++; quip('Sneakers LV'+G.beltLv+'. The waddle quickens.',Math.random()<.4); }
     else if(type==='hands'){ G.handsLv++; quip('BIG HANDS LV'+G.handsLv+'. Sometimes one grab counts twice.',Math.random()<.4); }
     else { G.autoLv++; quip(G.autoLv===1?'AUTO-CHUD online. It collects so you truly never move.':'Auto-Chud LV'+G.autoLv+'. Faster grabs.',Math.random()<.4); }
     kaching(); syncHud(); syncPads();
@@ -1415,7 +1409,6 @@ function syncBoard(){
 /* ============================================================
    LOOP
    ============================================================ */
-function beltSpeed(){ return .006/(1+G.beltLv*.35)*(G&&G.rushOn>0?1.45:1); }
 function update(dt){
   if(!G.running) return;
   /* droppers drop · frenzy doubles the pace */
@@ -1488,7 +1481,7 @@ function update(dt){
       G.autoT=Math.max(1200, 4200-G.autoLv*800);
       const ripe=G.items.filter(m=>m.userData.landed&&m.userData.type!=='lucky'&&m.userData.type!=='bad');
       if(ripe.length){
-        ripe.sort((a,b)=>b.position.x-a.position.x);
+        ripe.sort((a,b)=>a.userData.rot-b.userData.rot);
         const target=ripe[0];
         if(window.__drone){ __drone.position.x=target.position.x; __drone.position.z=target.position.z; }
         collectItem(target);
@@ -1497,11 +1490,6 @@ function update(dt){
     if(window.__drone){ __drone.visible=true;
       __drone.position.y=5.4+Math.sin(G.t/400)*.4; }
   }
-  /* the treads crawl */
-  if(window.__treads) __treads.forEach(tr=>{
-    tr.position.x+=beltSpeed()*dt;
-    if(tr.position.x>15) tr.position.x=-15;
-  });
   /* physics-lite */
   for(let i=G.items.length-1;i>=0;i--){
     const m=G.items[i];
@@ -1510,22 +1498,22 @@ function update(dt){
       u.vy-=dt*.00004;
       m.position.y+=u.vy*dt;
       m.rotation.y+=u.spin*dt*.002;
-      if(u.blob){ const k=clamp(1-(m.position.y-1.6)/9,.3,1);
+      if(u.blob){ const k=clamp(1-(m.position.y-1)/9,.3,1);
         u.blob.scale.set(k,k,1); u.blob.material.opacity=.16*k; }
-      if(m.position.y<=1.7){ m.position.y=1.7; u.landed=true; u.vy=0; popS(); }
+      if(m.position.y<=1){ m.position.y=1; u.landed=true; u.vy=0; popS(); }
     } else {
       u.age+=dt;
-      /* riding the belt toward the bin */
-      m.position.x+=beltSpeed()*dt*(u.type==='lucky'?.8:(u.epic?1.55:1));
-      m.position.y=1.7+Math.sin(G.t/300+m.position.x)*.1;
+      /* sitting on the grass, slowly going bad */
+      m.position.y=1+Math.sin(G.t/300+m.position.x)*.08;
       m.rotation.y+=dt*.0012;
-      if(u.blob){ u.blob.position.x=m.position.x; }
-      if(m.position.x>16){ /* into the bin */
+      u.rot-=dt;
+      m.visible=u.rot>2600||Math.floor(G.t/140)%2===0;   /* blink when about to rot */
+      if(u.rot<=0){
         if(u.blob) scene.remove(u.blob);
         items3d.remove(m); G.items.splice(i,1);
         if(u.type==='bad'){
           G.money+=6;
-          addFloater('+$6 dodged',new THREE.Vector3(15,2.6,20));
+          addFloater('+$6 outlasted',m.position);
           missionProg('dodge');
           if(Math.random()<.25) quip(pick(LINES.dodge));
           syncHud();
@@ -1563,6 +1551,38 @@ function update(dt){
     m.rotation.x+=dt*.01; m.rotation.y+=dt*.013;
     if(u.t>.8){ scene.remove(m); confetti.splice(i,1); }
   }
+  /* THE CHUD RUNS · steer him over the loot */
+  const me=lilObjs.me&&lilObjs.me.chud;
+  if(me&&me.parent===scene){
+    const dx=G.tx-me.position.x, dz=G.tz-me.position.z;
+    const d=Math.hypot(dx,dz);
+    const sp=.0078*(1+G.beltLv*.25)*dt;
+    let moving=false;
+    if(d>.35){
+      const st=Math.min(sp,d);
+      me.position.x+=dx/d*st; me.position.z+=dz/d*st;
+      const want=Math.atan2(dx,dz);
+      let dr=want-me.rotation.y;
+      while(dr>Math.PI)dr-=2*Math.PI; while(dr<-Math.PI)dr+=2*Math.PI;
+      me.rotation.y+=dr*Math.min(1,dt*.02);
+      moving=true;
+    }
+    let hop=0;
+    if(me.userData.hop>0){ me.userData.hop=Math.max(0,me.userData.hop-dt/450);
+      hop=Math.sin((1-me.userData.hop)*Math.PI)*1.2*me.userData.hop; }
+    me.position.y=1.4+(moving?Math.abs(Math.sin(G.t/110))*.42:Math.sin(G.t/700)*.08)+hop;
+    /* collect by contact — bills included, watch your step */
+    for(let i2=G.items.length-1;i2>=0;i2--){
+      const m2=G.items[i2];
+      if(!m2.userData.landed) continue;
+      const ix=m2.position.x-me.position.x, iz=m2.position.z-me.position.z;
+      if(ix*ix+iz*iz<5.3) collectItem(m2);
+    }
+    if(G.panda){
+      const px=G.panda.position.x-me.position.x, pz=G.panda.position.z-me.position.z;
+      if(px*px+pz*pz<7.2) denyPanda();
+    }
+  }
   /* combo clock */
   if(G.combo>0){ G.comboT-=dt; if(G.comboT<=0) breakCombo(); }
   /* floaters rise */
@@ -1576,6 +1596,7 @@ function update(dt){
   tickBots(dt);
   /* idle couch breathing + celebration hops */
   for(const k in lilObjs){
+    if(k==='me'&&G.running) continue;      /* he is up. he is running. historic. */
     const c=lilObjs[k].chud;
     if(!c) continue;
     let hop=0;
@@ -1608,7 +1629,7 @@ function update(dt){
    and a slow self-driving cinema orbit */
 const CAM_MODES=[
   {id:'couch',  label:'COUCH',  r:44, h:29, lx:0,ly:1,  lz:7,  fov:50},
-  {id:'action', label:'ACTION', r:26, h:13, lx:0,ly:1.6,lz:17, fov:54},
+  {id:'follow', label:'FOLLOW', follow:true, fov:55},
   {id:'cinema', label:'CINEMA', r:50, h:22, lx:0,ly:2,  lz:4,  fov:46, auto:.00012},
 ];
 let camMode=0, cinA=0, shake=0, fovPulse=0;
@@ -1629,14 +1650,21 @@ function animate(){
     /* portrait pulls back + climbs so the whole belt still fits */
     const port=camera.aspect<1;
     const pr=port?1.55:1, ph=port?1.35:1;
-    const tx=Math.sin(a)*M.r*pr, tz=M.auto?Math.cos(a)*M.r*pr+7:Math.cos(a)*M.r*.9*pr+7;
-    camera.position.lerp(new THREE.Vector3(tx,M.h*ph,tz),.08);
+    const meC=lilObjs.me&&lilObjs.me.chud;
+    if(M.follow&&G&&G.running&&meC){
+      const mp=meC.position;
+      camera.position.lerp(new THREE.Vector3(mp.x*.92,13*ph,mp.z+16*pr),.1);
+    } else {
+      const tx=Math.sin(a)*(M.r||44)*pr, tz=M.auto?Math.cos(a)*M.r*pr+7:Math.cos(a)*(M.r||44)*.9*pr+7;
+      camera.position.lerp(new THREE.Vector3(tx,(M.h||29)*ph,tz),.08);
+    }
     if(shake>0){
       shake=Math.max(0,shake-dt*.004);
       camera.position.x+=(Math.random()-.5)*shake;
       camera.position.y+=(Math.random()-.5)*shake*.6;
     }
-    camera.lookAt(M.lx,M.ly,M.lz);
+    if(M.follow&&G&&G.running&&meC){ camera.lookAt(meC.position.x,2.2,meC.position.z-2); }
+    else camera.lookAt(M.lx||0,M.ly||1,M.lz||7);
     if(fovPulse>0) fovPulse=Math.max(0,fovPulse-dt*.02);
     const wantF=M.fov+(port?6:0)+(G&&G.frenzyT>0?3:0)+fovPulse;
     if(Math.abs(camera.fov-wantF)>.05){ camera.fov+=(wantF-camera.fov)*.15; camera.updateProjectionMatrix(); }
@@ -1664,23 +1692,6 @@ function onTap(e){
     while(p&&!p.userData.type) p=p.parent;
     if(p){ buyPad(p.userData.type); return; }
   }
-  const hits=ray.intersectObjects(items3d.children,true);
-  if(hits.length){
-    let m=hits[0].object;
-    while(m&&m.parent!==items3d) m=m.parent;
-    if(m){ collectItem(m); return; }
-  }
-  /* forgiving aim: a near-miss still grabs the closest landed loot
-     (bills and broccoli only trigger on a direct hit) */
-  let best=null, bd=48;
-  G.items.forEach(m=>{
-    if(!m.userData.landed||m.userData.type==='bad') return;
-    const v=m.position.clone().project(camera);
-    const sx=(v.x+1)/2*r.width, sy=(1-v.y)/2*r.height;
-    const d=Math.hypot(sx-(e.clientX-r.left), sy-(e.clientY-r.top));
-    if(d<bd){ bd=d; best=m; }
-  });
-  if(best) collectItem(best);
 }
 let dragX=null;
 function castAt(e){
@@ -1689,43 +1700,40 @@ function castAt(e){
   pointer.y=-((e.clientY-r.top)/r.height)*2+1;
   ray.setFromCamera(pointer,camera);
 }
-function itemUnder(e){
-  castAt(e);
-  const hits=ray.intersectObjects(items3d.children,true);
-  if(hits.length){ let m=hits[0].object; while(m&&m.parent!==items3d) m=m.parent; return m; }
-  return null;
-}
-const _beltPlane=()=>new THREE.Plane(new THREE.Vector3(0,1,0),-1.7);
-function overBelt(e){
+function groundPoint(e){
   castAt(e);
   const v=new THREE.Vector3();
-  if(!ray.ray.intersectPlane(_beltPlane(),v)) return false;
-  return Math.abs(v.z-20)<3.4 && v.x>-17 && v.x<18;
+  if(!ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0,1,0),0),v)) return null;
+  if(Math.abs(v.x)>44||Math.abs(v.z)>44) return null;
+  return v;
+}
+function setRunTarget(v){
+  if(!G) return;
+  G.tx=clamp(v.x,-16.5,16.5);
+  G.tz=clamp(v.z,2.5,32);
 }
 function bindInput(){
   const el=renderer.domElement;
   el.addEventListener('pointerdown',e=>{
-    /* a drag that starts on loot or the belt is a HARVEST SWIPE;
-       anywhere else it orbits the camera */
-    const harvest=!!(G&&G.running&&(itemUnder(e)||overBelt(e)));
-    dragX={x:e.clientX,a:G?G.camA:0,moved:false,harvest,lastT:0};
+    /* touching the ground steers the chud; touching the sky orbits the camera */
+    let mode='cam';
+    if(G&&G.running){
+      const gp=groundPoint(e);
+      if(gp){ mode='move'; setRunTarget(gp); ensureAC(); }
+    }
+    dragX={x:e.clientX,a:G?G.camA:0,moved:false,mode,lastT:0};
   });
   el.addEventListener('pointermove',e=>{
     if(!dragX) return;
     const dx=e.clientX-dragX.x;
     if(Math.abs(dx)>8) dragX.moved=true;
-    if(dragX.harvest){
+    if(dragX.mode==='move'){
       if(!G||!G.running) return;
       const now=performance.now();
-      if(now-dragX.lastT<36) return;
+      if(now-dragX.lastT<30) return;
       dragX.lastT=now;
-      ensureAC();
-      if(G.panda){
-        castAt(e);
-        if(ray.intersectObject(G.panda,true).length){ denyPanda(); return; }
-      }
-      const m=itemUnder(e);
-      if(m) collectItem(m);
+      const gp=groundPoint(e);
+      if(gp) setRunTarget(gp);
       return;
     }
     if(G) G.camA=clamp(dragX.a - dx*.004, -.9, .9);
@@ -1797,6 +1805,11 @@ function startGame(){
   ['frenzy','golden','combo','rush','shield'].forEach(id=>$(id).style.display='none');
   clearPiles();
   newGame();
+  const meC=lilObjs.me&&lilObjs.me.chud;
+  if(meC){
+    if(meC.parent!==scene) scene.attach(meC);   /* off the couch. historic. */
+    meC.position.set(0,1.4,26); meC.rotation.set(0,0,0);
+  }
   G.running=true; G.startAt=performance.now();
   $('pTitle').style.display='none';
   $('pEnd').style.display='none';
@@ -1811,8 +1824,8 @@ function startGame(){
   $('rush').style.display='none';
   moneyShown=G.money;
   newMission();
-  if(!SV.swipeHint){ SV.swipeHint=true; save();
-    quip('SWIPE across the belt to hoover loot. Steer around the bills.',true); }
+  if(!SV.runHint){ SV.runHint=true; save();
+    quip('DRAG anywhere on the grass to run. Walk over loot to grab it. Do NOT step on bills.',true); }
   else quip(pick(LINES.start),true);
 }
 function endGame(winnerId){
@@ -1885,8 +1898,9 @@ window.CT={ get G(){return G;}, startGame, endGame, spawnItem, spawnLucky, colle
   spawnPanda, denyPanda, tickPanda, makeItem, comboMult, bumpCombo, breakCombo,
   spawnBad, makeBad, fireVac, updateVacBtn, buySab, syncSab, newMission, missionProg, syncMission,
   setCam, CAM_MODES, get camMode(){return camMode;}, get camera(){return camera;},
-  LUCKY_ROLLS, syncShield, GLOBALS, itemUnder, overBelt,
-  globalCost, goalOf, overall, rebirth, rollLucky, beltSpeed, WIN_REBIRTHS,
+  LUCKY_ROLLS, syncShield, GLOBALS, yardSpot, setRunTarget,
+  get me(){return lilObjs.me&&lilObjs.me.chud;}, moveTo:(x,z)=>{ if(G){G.tx=x;G.tz=z;} },
+  globalCost, goalOf, overall, rebirth, rollLucky, WIN_REBIRTHS,
   ambToggle, AMB, get britVoice(){return britVoice;}, LINES,
   TYPES, BOTS, tickBots, progressOf, setDone, save:()=>SV, syncBoard, syncHud,
   get scene(){return scene;}, get items(){return G?G.items:[]}, addToPile, myPile:()=>myPile, botPiles:()=>botPiles };
