@@ -37,11 +37,13 @@ canvas{display:block}
   font-weight:800;font-size:clamp(8.5px,2.3vmin,10.5px);line-height:1.7;white-space:nowrap}
 #board .brow .nm{overflow:hidden;text-overflow:ellipsis;max-width:96px}
 #board .brow.me .nm{color:#7dffb0}
-#meters{display:flex;gap:5px;margin-top:6px}
+#meters{position:absolute;left:10px;top:calc(52px + env(safe-area-inset-top));display:flex;
+  flex-direction:column;gap:5px;width:150px}
 .meter{flex:1;background:var(--panel);border-radius:10px;padding:4px 7px 5px;color:#fff;
   backdrop-filter:blur(8px);box-shadow:0 5px 14px rgba(0,0,0,.3)}
-.meter .ml{font-family:var(--mono);font-weight:800;font-size:clamp(7.5px,2vmin,9.5px);letter-spacing:.04em;
-  white-space:nowrap;overflow:hidden}
+.meter .ml{font-family:var(--mono);font-weight:800;font-size:10px;letter-spacing:.04em;
+  white-space:nowrap;overflow:hidden;display:flex;justify-content:space-between}
+.meter .tier{color:#ffd75e}
 .meter .mb{height:7px;border-radius:100px;background:rgba(255,255,255,.18);overflow:hidden;margin-top:2px}
 .meter .mf{height:100%;border-radius:100px;transition:width .3s}
 #quip{position:absolute;left:10px;right:10px;bottom:calc(14px + env(safe-area-inset-bottom));z-index:6;
@@ -63,6 +65,21 @@ canvas{display:block}
 .foot{font-size:clamp(9.5px,2.4vmin,11px);color:#8a94a0;font-weight:600;margin-top:2px}
 #loadNote{position:absolute;inset:0;display:none;align-items:center;justify-content:center;z-index:9;
   color:#fff;font-weight:800;font-size:16px;text-shadow:0 2px 8px rgba(0,0,0,.4)}
+/* landscape only · the couch is wide, the game is wide */
+#rotate{position:absolute;inset:0;z-index:60;display:none;flex-direction:column;align-items:center;
+  justify-content:center;gap:14px;background:#141824;text-align:center;padding:30px}
+#rotate .ph{width:54px;height:92px;border:4px solid #fff;border-radius:12px;
+  animation:turnme 1.6s ease-in-out infinite}
+@keyframes turnme{0%,20%{transform:rotate(0)}60%,100%{transform:rotate(90deg)}}
+#rotate .rt{font-weight:800;font-size:clamp(16px,4vmin,22px)}
+#rotate .rs{font-weight:600;font-size:13px;color:#8a94a8}
+@media (orientation:portrait){ #rotate{display:flex} }
+#bFull{position:absolute;right:10px;bottom:calc(10px + env(safe-area-inset-bottom));z-index:7;
+  background:var(--panel);backdrop-filter:blur(8px);border:none;border-radius:10px;
+  padding:7px 11px;color:#fff;font-family:var(--mono);font-weight:800;font-size:10px;cursor:pointer;display:none}
+#frenzy{position:absolute;left:50%;top:calc(54px + env(safe-area-inset-top));transform:translateX(-50%);
+  z-index:6;background:linear-gradient(#ffcf5e,#f2a33d);color:var(--ink);border-radius:100px;padding:5px 16px;
+  font-family:var(--mono);font-weight:800;font-size:12px;display:none;box-shadow:0 6px 16px rgba(242,163,61,.5)}
 </style>
 </head>
 <body>
@@ -76,6 +93,13 @@ canvas{display:block}
   </div>
   <div id="quip"></div>
   <div id="loadNote">Unboxing the couch…</div>
+  <div id="frenzy">FRENZY ×2</div>
+  <button id="bFull">⛶ FULLSCREEN</button>
+  <div id="rotate">
+    <div class="ph"></div>
+    <div class="rt">Turn your device sideways</div>
+    <div class="rs">Chud Tycoon is a landscape experience. The couch demands it.</div>
+  </div>
 
   <div class="panel" id="pTitle">
     <div class="card">
@@ -165,19 +189,29 @@ let SV=loadSave();
 function save(){ try{ localStorage.setItem(SAVE_KEY,JSON.stringify(SV)); }catch(e){} }
 
 let G=null;
+const WIN_REBIRTHS=2;                      /* finish this many full sets to win */
 function newGame(){
-  G={ running:false, over:false, money:20, t:0, startAt:0,
+  G={ running:false, over:false, money:25, t:0, startAt:0,
     counts:{snack:0,game:0,pants:0,coat:0},
     levels:{snack:1,game:0,pants:0,coat:0},
     spawnT:{snack:0,game:0,pants:0,coat:0},
     items:[], floaters:[], taps:0,
-    bots:BOTS.map(b=>({ ...b, counts:{snack:0,game:0,pants:0,coat:0}, done:false })),
+    rebirths:0, beltLv:0, autoLv:0, autoT:0,
+    luckyT:16000, frenzyT:0, missed:0,
+    bots:BOTS.map(b=>({ ...b, counts:{snack:0,game:0,pants:0,coat:0}, rebirths:0, done:false })),
     winner:null, camA:0, camDrag:null };
 }
-function progressOf(counts){
-  return TYPES.reduce((a,t)=>a+Math.min(1,counts[t.id]/t.goal),0)/TYPES.length;
+function goalOf(t,rebirths){ return Math.round(t.goal*Math.pow(1.5,rebirths)); }
+function tierOf(rebirths){ return rebirths+1; }
+function incomeMult(rebirths){ return 1+rebirths*.75; }
+function overall(counts,rebirths){
+  return rebirths + TYPES.reduce((a,t)=>a+Math.min(1,counts[t.id]/goalOf(t,rebirths)),0)/TYPES.length;
 }
-function setDone(counts){ return TYPES.every(t=>counts[t.id]>=t.goal); }
+function progressOf(counts,rebirths){
+  rebirths=rebirths||0;
+  return TYPES.reduce((a,t)=>a+Math.min(1,counts[t.id]/goalOf(t,rebirths)),0)/TYPES.length;
+}
+function setDone(counts,rebirths){ return TYPES.every(t=>counts[t.id]>=goalOf(t,rebirths||0)); }
 
 /* ============================================================
    THREE · the plastic world
@@ -261,6 +295,41 @@ function initThree(){
   buildPlot({x:24,z:-14,ry:-.7,who:'anita',col:0xff6ea8,name:'Anita Slehrpee'});
 
   items3d=new THREE.Group(); scene.add(items3d);
+  /* THE CONVEYOR · loot rides it toward the bin. The bin is not your friend. */
+  const beltG=new THREE.Group();
+  const belt=new THREE.Mesh(new THREE.BoxGeometry(30,.7,4),
+    new THREE.MeshStandardMaterial({color:0x3a3f4c,roughness:.7}));
+  belt.position.set(0,.9,20); belt.receiveShadow=true; belt.castShadow=true; beltG.add(belt);
+  /* moving tread stripes */
+  window.__treads=[];
+  for(let i=0;i<10;i++){
+    const tr=new THREE.Mesh(new THREE.BoxGeometry(1.2,.12,3.6),
+      new THREE.MeshStandardMaterial({color:0x5a6070,roughness:.6}));
+    tr.position.set(-14+i*3,1.32,20);
+    beltG.add(tr); __treads.push(tr);
+  }
+  [-1,1].forEach(d=>{ const rail=new THREE.Mesh(new THREE.BoxGeometry(30,.4,.5),
+    new THREE.MeshStandardMaterial({color:0xffcf5e,roughness:.4}));
+    rail.position.set(0,1.4,20+d*2.1); beltG.add(rail); });
+  /* the bin at the end */
+  const bin=new THREE.Mesh(new THREE.CylinderGeometry(1.8,1.4,3,14),
+    new THREE.MeshStandardMaterial({color:0x8a2e2e,roughness:.6}));
+  bin.position.set(17.5,1.5,20); bin.castShadow=true; beltG.add(bin);
+  const binLip=new THREE.Mesh(new THREE.TorusGeometry(1.8,.22,8,18),
+    new THREE.MeshStandardMaterial({color:0xb04040,roughness:.5}));
+  binLip.rotation.x=Math.PI/2; binLip.position.set(17.5,3,20); beltG.add(binLip);
+  scene.add(beltG);
+  /* the auto-collector drone · dormant until purchased */
+  const drone=new THREE.Group();
+  const body=new THREE.Mesh(new THREE.SphereGeometry(.9,12,10),
+    new THREE.MeshStandardMaterial({color:0x8fd6ff,roughness:.3,emissive:0x2a5a88,emissiveIntensity:.4}));
+  const eye=new THREE.Mesh(new THREE.CylinderGeometry(.3,.3,.2,10),
+    new THREE.MeshBasicMaterial({color:0xffffff}));
+  eye.rotation.x=Math.PI/2; eye.position.z=.8;
+  drone.add(body,eye);
+  drone.position.set(-10,6,20); drone.visible=false; drone.name='drone';
+  scene.add(drone);
+  window.__drone=drone;
   buildPads();
 }
 function plastic(col){ return new THREE.MeshStandardMaterial({color:col,roughness:.45,metalness:.02}); }
@@ -419,6 +488,10 @@ function makeItem(type){
   return g;
 }
 /* upgrade pads in front of your couch */
+const GLOBALS=[
+  { id:'belt', label:'BELT BRAKES', col:0x8fd6ff, upBase:120, d:'slows the conveyor' },
+  { id:'auto', label:'AUTO-CHUD',  col:0x3ddc84, upBase:260, d:'collects for you' },
+];
 function buildPads(){
   pads=[];
   TYPES.forEach((t,i)=>{
@@ -435,11 +508,30 @@ function buildPads(){
     const tag=labelSprite('…',{w:8,size:46,col:'#fff'});
     tag.position.y=2.6;
     g.add(tag);
-    g.position.set(-9+i*6,.8,25.5);
+    g.position.set(-11+i*7.3,.8,25.5);
     g.userData={type:t.id,disc,tag};
     scene.add(g); pads.push(g);
   });
+  GLOBALS.forEach((t,i)=>{
+    const g=new THREE.Group();
+    const disc=new THREE.Mesh(new THREE.CylinderGeometry(2,2.2,.5,24),
+      new THREE.MeshStandardMaterial({color:t.col,emissive:t.col,emissiveIntensity:.3,roughness:.35}));
+    disc.castShadow=true; disc.receiveShadow=true; g.add(disc);
+    const ring=new THREE.Mesh(new THREE.TorusGeometry(2.35,.1,8,32),
+      new THREE.MeshBasicMaterial({color:t.col,transparent:true,opacity:.8}));
+    ring.rotation.x=Math.PI/2; ring.position.y=.3; g.add(ring);
+    const tag=labelSprite('…',{w:8,size:46,col:'#fff'});
+    tag.position.y=2.6; g.add(tag);
+    g.position.set(-24+i*48,.8,20);        /* flanking the belt ends */
+    g.userData={type:t.id,disc,tag,ring,global:true};
+    scene.add(g); pads.push(g);
+  });
   syncPads();
+}
+function globalCost(id){
+  const t=GLOBALS.find(x=>x.id===id);
+  const lv=id==='belt'?G.beltLv:G.autoLv;
+  return Math.round(t.upBase*Math.pow(1.7,lv));
 }
 function padCost(t){
   const lvl=G.levels[t.id];
@@ -448,18 +540,31 @@ function padCost(t){
 function syncPads(){
   if(!G) return;
   pads.forEach(p=>{
+    let txt,cost;
+    if(p.userData.global){
+      const gt=GLOBALS.find(x=>x.id===p.userData.type);
+      const lv=p.userData.type==='belt'?G.beltLv:G.autoLv;
+      cost=globalCost(p.userData.type);
+      txt=(lv===0?'BUY ':'LV'+lv+' ')+gt.label.split(' ')[0]+' $'+cost;
+      drawTag(p,txt,cost); return;
+    }
     const t=TYPES.find(x=>x.id===p.userData.type);
     const lvl=G.levels[t.id];
-    const cost=padCost(t);
-    const txt=(lvl===0?'BUY ':'LV'+lvl+' ')+t.label.slice(0,6)+' $'+cost;
-    const cv=p.userData.tag.material.map.image;
-    const c=cv.getContext('2d');
-    c.clearRect(0,0,512,128);
-    c.font="800 44px 'Baloo 2', sans-serif"; c.textAlign='center'; c.textBaseline='middle';
-    c.lineWidth=10; c.strokeStyle='rgba(20,30,40,.85)'; c.strokeText(txt,256,64);
-    c.fillStyle=G.money>=cost?'#a8ffd0':'#ffb8b0'; c.fillText(txt,256,64);
-    p.userData.tag.material.map.needsUpdate=true;
+    cost=padCost(t);
+    txt=(lvl===0?'BUY ':'LV'+lvl+' ')+t.label.slice(0,6)+' $'+cost;
+    drawTag(p,txt,cost);
   });
+}
+function drawTag(p,txt,cost){
+  const cv=p.userData.tag.material.map.image;
+  const c=cv.getContext('2d');
+  c.clearRect(0,0,512,128);
+  let fs=44; c.font=`800 ${fs}px 'Baloo 2', sans-serif`;
+  while(c.measureText(txt).width>480&&fs>24){ fs-=3; c.font=`800 ${fs}px 'Baloo 2', sans-serif`; }
+  c.textAlign='center'; c.textBaseline='middle';
+  c.lineWidth=10; c.strokeStyle='rgba(20,30,40,.85)'; c.strokeText(txt,256,64);
+  c.fillStyle=G.money>=cost?'#a8ffd0':'#ffb8b0'; c.fillText(txt,256,64);
+  p.userData.tag.material.map.needsUpdate=true;
 }
 
 /* ============================================================
@@ -468,15 +573,50 @@ function syncPads(){
 const blobGeo=()=>new THREE.CircleGeometry(1,20);
 function spawnItem(type){
   const mesh=makeItem(type);
-  const x=-7+Math.random()*14, z=18+Math.random()*8;
-  mesh.position.set(x,12,z);
+  const x=-14-Math.random()*2, z=20;             /* onto the belt's left end */
+  mesh.position.set(x,10,z);
   const blob=new THREE.Mesh(blobGeo(),
     new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:.14}));
-  blob.rotation.x=-Math.PI/2; blob.position.set(x,.42,z);
+  blob.rotation.x=-Math.PI/2; blob.position.set(x,1.35,z);
   scene.add(blob);
   mesh.userData={type,vy:0,landed:false,age:0,spin:(Math.random()-.5)*2,blob};
   items3d.add(mesh);
   G.items.push(mesh);
+}
+function luckyTexture(gold){
+  const cv=document.createElement('canvas'); cv.width=cv.height=128;
+  const c=cv.getContext('2d');
+  c.fillStyle=gold?'#f2b33d':'#3d7fe8'; c.fillRect(0,0,128,128);
+  c.fillStyle='rgba(255,255,255,.25)'; c.fillRect(0,0,128,20); c.fillRect(0,108,128,20);
+  c.font="800 84px 'Baloo 2', sans-serif"; c.textAlign='center'; c.textBaseline='middle';
+  c.lineWidth=10; c.strokeStyle='#141824'; c.strokeText('?',64,70);
+  c.fillStyle='#fff'; c.fillText('?',64,70);
+  const t=new THREE.CanvasTexture(cv); t.colorSpace=THREE.SRGBColorSpace; return t;
+}
+function spawnLucky(){
+  const gold=Math.random()<.15;
+  const mesh=new THREE.Mesh(new THREE.BoxGeometry(2,2,2),
+    new THREE.MeshStandardMaterial({map:luckyTexture(gold),roughness:.35,
+      emissive:gold?0xf2b33d:0x2a5adf,emissiveIntensity:.25}));
+  mesh.castShadow=true;
+  mesh.position.set(-14,10,20);
+  mesh.userData={type:'lucky',gold,vy:0,landed:false,age:0,spin:1.5,blob:null};
+  items3d.add(mesh);
+  G.items.push(mesh);
+}
+const LUCKY_ROLLS=[
+  { pct:40, name:'CASH!',   fx:()=>{ const v=Math.round(60*incomeMult(G.rebirths)); G.money+=v; return '+$'+v; } },
+  { pct:30, name:'LOOT RAIN', fx:()=>{ for(let i=0;i<5;i++) setTimeout(()=>spawnItem(pick(TYPES).id),i*260); return '5 drops incoming'; } },
+  { pct:20, name:'FRENZY ×2', fx:()=>{ G.frenzyT=15000; $('frenzy').style.display='block'; return 'double drops · 15s'; } },
+  { pct:10, name:'A DUD.',  fx:()=>{ blip(140,.3,'sawtooth',.12); return 'the block was empty. classic.' } },
+];
+function rollLucky(gold){
+  let r=Math.random()*100, roll=LUCKY_ROLLS[0];
+  for(const L of LUCKY_ROLLS){ if(r<L.pct){ roll=L; break; } r-=L.pct; }
+  if(gold && roll.name==='A DUD.') roll=LUCKY_ROLLS[0];      /* gold never duds */
+  const msg=roll.fx();
+  quip((gold?'GOLD BLOCK: ':'Lucky block: ')+roll.name+' '+msg, roll.name!=='A DUD.');
+  if(roll.name!=='A DUD.') fanfare();
 }
 let confetti=[];
 function burst(pos,col){
@@ -489,9 +629,18 @@ function burst(pos,col){
   }
 }
 function collectItem(mesh){
+  if(mesh.userData.type==='lucky'){
+    G.taps++;
+    burst(mesh.position,mesh.userData.gold?0xf2b33d:0x3d7fe8);
+    items3d.remove(mesh);
+    G.items=G.items.filter(m=>m!==mesh);
+    rollLucky(mesh.userData.gold);
+    syncHud(); syncPads();
+    return;
+  }
   const t=TYPES.find(x=>x.id===mesh.userData.type);
   G.counts[t.id]++;
-  const val=t.val+G.levels[t.id]*2;
+  const val=Math.round((t.val+G.levels[t.id]*2)*incomeMult(G.rebirths));
   G.money+=val; G.taps++;
   popS(); kaching();
   burst(mesh.position,t.col);
@@ -502,7 +651,25 @@ function collectItem(mesh){
   G.items=G.items.filter(m=>m!==mesh);
   if(Math.random()<.12) quip(pick(LINES.collect));
   syncHud(); syncPads();
-  if(setDone(G.counts)) endGame('me');
+  if(setDone(G.counts,G.rebirths)) rebirth();
+}
+function rebirth(){
+  G.rebirths++;
+  if(G.rebirths>=WIN_REBIRTHS){ endGame('me'); return; }
+  TYPES.forEach(t=>G.counts[t.id]=0);
+  fanfare(); stampFx('REBIRTH '+G.rebirths+'!');
+  quip('REBIRTH! Everything is worth more, the goals are bigger, and the couch remembers.',true);
+  clearMyStacks();
+  syncHud(); syncPads(); syncBoard();
+}
+function stampFx(txt){
+  const sp=labelSprite(txt,{col:'#ffd75e',w:22,size:64});
+  sp.position.set(0,12,10);
+  sp.userData={t:0};
+  scene.add(sp); G.floaters.push(sp);
+}
+function clearMyStacks(){
+  for(const k in myPile){ myPile[k].meshes.forEach(m=>scene.remove(m)); myPile[k].meshes=[]; myPile[k].n=0; }
 }
 function addFloater(text,pos){
   const sp=labelSprite(text,{col:'#b8ffd8',w:6,size:52});
@@ -522,6 +689,15 @@ function addToPile(pile,t){
   a.meshes.push(m); a.n++;
 }
 function buyPad(type){
+  if(type==='belt'||type==='auto'){
+    const cost=globalCost(type);
+    if(G.money<cost){ quip('Not enough money. Tap more loot.'); blip(160,.15,'sawtooth',.12); return false; }
+    G.money-=cost;
+    if(type==='belt'){ G.beltLv++; quip('Belt brakes LV'+G.beltLv+'. The conveyor relaxes.',Math.random()<.4); }
+    else { G.autoLv++; quip(G.autoLv===1?'AUTO-CHUD online. It collects so you truly never move.':'Auto-Chud LV'+G.autoLv+'. Faster grabs.',Math.random()<.4); }
+    kaching(); syncHud(); syncPads();
+    return true;
+  }
   const t=TYPES.find(x=>x.id===type);
   const cost=padCost(t);
   if(G.money<cost){ quip('Not enough money. Tap more loot.'); blip(160,.15,'sawtooth',.12); return false; }
@@ -540,27 +716,49 @@ function tickBots(dt){
   if(botTick<900) return;
   botTick=0;
   const mins=(performance.now()-G.startAt)/60000;
+  const myOv=overall(G.counts,G.rebirths);
   G.bots.forEach(b=>{
     if(b.done) return;
-    let rate=b.speed;
+    let rate=b.speed*.62;                      /* longer rounds · slower base */
     if(b.burst) rate*= (Math.random()<.25 ? 1+b.burst*3 : 1-b.burst*.5);
     if(b.fade) rate*= clamp(1.3-mins*b.fade,.35,1.3);
+    /* rubber band: the race stays a race */
+    const bOv=overall(b.counts,b.rebirths);
+    rate*=clamp(1+(myOv-bOv)*.4,.7,1.5);
     /* they chase whatever they're missing most */
-    const needs=TYPES.filter(t=>b.counts[t.id]<t.goal)
-      .sort((a,c)=>(b.counts[a.id]/a.goal)-(b.counts[c.id]/c.goal));
-    if(!needs.length) return;
+    const needs=TYPES.filter(t=>b.counts[t.id]<goalOf(t,b.rebirths))
+      .sort((a,c)=>(b.counts[a.id]/goalOf(a,b.rebirths))-(b.counts[c.id]/goalOf(c,b.rebirths)));
+    /* a completed set must rebirth even though nothing is "needed" */
+    if(!needs.length){
+      if(setDone(b.counts,b.rebirths)){
+        b.rebirths++;
+        TYPES.forEach(t=>b.counts[t.id]=0);
+        const pile=botPiles[b.id];
+        if(pile) for(const k in pile){ pile[k].meshes.forEach(m=>scene.remove(m)); pile[k].meshes=[]; }
+        quip(b.name+' REBIRTHED. They are on lap '+(b.rebirths+1)+'.',Math.random()<.5);
+        if(b.rebirths>=WIN_REBIRTHS&&!b.done){ b.done=true; endGame(b.id); }
+      }
+      return;
+    }
     /* weighted progress: roughly one full set in ~4 min at speed 1 */
     const gain=rate*(0.55+Math.random()*.5);
     let left=gain;
     for(const t of needs.slice(0,2)){
       const add=Math.min(left, t.goal*0.018*gain*4/(t.goal/10));
       if(Math.random()<.75){
-        b.counts[t.id]=Math.min(t.goal,b.counts[t.id]+ (Math.random()<gain?1:0));
+        b.counts[t.id]=Math.min(goalOf(t,b.rebirths),b.counts[t.id]+ (Math.random()<gain?1:0));
         if(Math.random()<.5) addToPile(botPiles[b.id],t);
       }
       left-=add;
     }
-    if(setDone(b.counts)&&!b.done){ b.done=true; endGame(b.id); }
+    if(setDone(b.counts,b.rebirths)){
+      b.rebirths++;
+      TYPES.forEach(t=>b.counts[t.id]=0);
+      const pile=botPiles[b.id];
+      if(pile) for(const k in pile){ pile[k].meshes.forEach(m=>scene.remove(m)); pile[k].meshes=[]; }
+      quip(b.name+' REBIRTHED. They are on lap '+(b.rebirths+1)+'.',Math.random()<.5);
+      if(b.rebirths>=WIN_REBIRTHS&&!b.done){ b.done=true; endGame(b.id); }
+    }
   });
   botQuipT+=1;
   if(botQuipT>=9){ botQuipT=0;
@@ -578,7 +776,7 @@ function buildMeters(){
   TYPES.forEach(t=>{
     const el=document.createElement('div');
     el.className='meter'; el.id='m_'+t.id;
-    el.innerHTML=`<div class="ml">${t.label} <span class="cnt">0/${t.goal}</span></div>
+    el.innerHTML=`<div class="ml"><span>${t.label} <span class="tier"></span></span><span class="cnt">0/${t.goal}</span></div>
       <div class="mb"><div class="mf" style="background:${t.hudCol};width:0%"></div></div>`;
     m.appendChild(el);
   });
@@ -586,33 +784,61 @@ function buildMeters(){
 function syncHud(){
   $('money').textContent='$'+Math.floor(G.money);
   TYPES.forEach(t=>{
-    const el=$('m_'+t.id);
-    el.querySelector('.cnt').textContent=Math.min(G.counts[t.id],t.goal)+'/'+t.goal;
-    el.querySelector('.mf').style.width=clamp(G.counts[t.id]/t.goal*100,0,100)+'%';
+    const el=$('m_'+t.id), goal=goalOf(t,G.rebirths);
+    el.querySelector('.cnt').textContent=Math.min(G.counts[t.id],goal)+'/'+goal;
+    el.querySelector('.tier').textContent='T'+tierOf(G.rebirths);
+    el.querySelector('.mf').style.width=clamp(G.counts[t.id]/goal*100,0,100)+'%';
   });
 }
 function syncBoard(){
-  const rows=[{name:'You',p:progressOf(G.counts),me:true},
-    ...G.bots.map(b=>({name:b.name,p:progressOf(b.counts)}))]
+  const rows=[{name:'You',p:overall(G.counts,G.rebirths),r:G.rebirths,me:true},
+    ...G.bots.map(b=>({name:b.name,p:overall(b.counts,b.rebirths),r:b.rebirths}))]
     .sort((a,b)=>b.p-a.p);
   $('board').innerHTML=rows.map(r=>
-    `<div class="brow${r.me?' me':''}"><span class="nm">${r.name}</span><span>${Math.round(r.p*100)}%</span></div>`).join('');
+    `<div class="brow${r.me?' me':''}"><span class="nm">${r.name}</span><span>R${r.r} ${Math.round((r.p-r.r)*100)}%</span></div>`).join('');
 }
 
 /* ============================================================
    LOOP
    ============================================================ */
+function beltSpeed(){ return .0052/(1+G.beltLv*.35); }
 function update(dt){
   if(!G.running) return;
-  /* droppers drop */
+  /* droppers drop · frenzy doubles the pace */
+  const fz=G.frenzyT>0?2:1;
+  if(G.frenzyT>0){ G.frenzyT-=dt; if(G.frenzyT<=0) $('frenzy').style.display='none'; }
   TYPES.forEach(t=>{
     const lvl=G.levels[t.id];
     if(lvl<=0) return;
     G.spawnT[t.id]-=dt;
     if(G.spawnT[t.id]<=0){
-      G.spawnT[t.id]=Math.max(1100, 4600/(1+lvl*.5));
-      if(G.items.length<14) spawnItem(t.id);
+      G.spawnT[t.id]=Math.max(950, 4600/(1+lvl*.5))/fz;
+      if(G.items.length<16) spawnItem(t.id);
     }
+  });
+  /* lucky blocks arrive on their own clock */
+  G.luckyT-=dt;
+  if(G.luckyT<=0){ G.luckyT=22000+Math.random()*16000; if(G.items.length<16) spawnLucky(); }
+  /* the auto-chud drone collects the item closest to the bin */
+  if(G.autoLv>0){
+    G.autoT-=dt;
+    if(G.autoT<=0){
+      G.autoT=Math.max(1200, 4200-G.autoLv*800);
+      const ripe=G.items.filter(m=>m.userData.landed&&m.userData.type!=='lucky');
+      if(ripe.length){
+        ripe.sort((a,b)=>b.position.x-a.position.x);
+        const target=ripe[0];
+        if(window.__drone){ __drone.position.x=target.position.x; __drone.position.z=target.position.z; }
+        collectItem(target);
+      }
+    }
+    if(window.__drone){ __drone.visible=true;
+      __drone.position.y=5.4+Math.sin(G.t/400)*.4; }
+  }
+  /* the treads crawl */
+  if(window.__treads) __treads.forEach(tr=>{
+    tr.position.x+=beltSpeed()*dt;
+    if(tr.position.x>15) tr.position.x=-15;
   });
   /* physics-lite */
   for(let i=G.items.length-1;i>=0;i--){
@@ -622,16 +848,24 @@ function update(dt){
       u.vy-=dt*.00004;
       m.position.y+=u.vy*dt;
       m.rotation.y+=u.spin*dt*.002;
-      if(u.blob){ const k=clamp(1-(m.position.y-1)/11,.3,1);
+      if(u.blob){ const k=clamp(1-(m.position.y-1.6)/9,.3,1);
         u.blob.scale.set(k,k,1); u.blob.material.opacity=.16*k; }
-      if(m.position.y<=1){ m.position.y=1; u.landed=true; u.vy=0; popS(); }
+      if(m.position.y<=1.7){ m.position.y=1.7; u.landed=true; u.vy=0; popS(); }
     } else {
       u.age+=dt;
-      m.position.y=1+Math.sin(G.t/400+m.position.x)*.15;
+      /* riding the belt toward the bin */
+      m.position.x+=beltSpeed()*dt*(u.type==='lucky'?.8:1);
+      m.position.y=1.7+Math.sin(G.t/300+m.position.x)*.1;
       m.rotation.y+=dt*.0012;
-      if(u.age>9000){ /* the chud was too slow. It despawns, disappointed. */
+      if(u.blob){ u.blob.position.x=m.position.x; }
+      if(m.position.x>16){ /* into the bin */
         if(u.blob) scene.remove(u.blob);
         items3d.remove(m); G.items.splice(i,1);
+        if(u.type!=='lucky'){
+          G.missed++;
+          blip(160,.18,'sawtooth',.1);
+          if(Math.random()<.3) quip('One fell in the bin. The bin says thank you.');
+        }
       }
     }
   }
@@ -737,14 +971,26 @@ function clearPiles(){
   wipe(myPile); Object.values(botPiles).forEach(wipe);
   if(items3d){ [...items3d.children].forEach(m=>items3d.remove(m)); }
 }
+function goFullscreen(){
+  const el=document.documentElement;
+  const req=el.requestFullscreen||el.webkitRequestFullscreen;
+  if(req){ try{ req.call(el,{navigationUI:'hide'}).catch?.(()=>{}); }catch(e){} }
+  try{ if(screen.orientation&&screen.orientation.lock) screen.orientation.lock('landscape').catch(()=>{}); }catch(e){}
+}
+document.addEventListener('fullscreenchange',()=>{
+  $('bFull').style.display=document.fullscreenElement?'none':(G&&G.running?'block':'none');
+});
+$('bFull').addEventListener('click',goFullscreen);
 function startGame(){
   ensureAC();
+  goFullscreen();
   clearPiles();
   newGame();
   G.running=true; G.startAt=performance.now();
   $('pTitle').style.display='none';
   $('pEnd').style.display='none';
   $('hud').style.display='block';
+  $('bFull').style.display=document.fullscreenElement?'none':'block';
   syncHud(); syncPads(); syncBoard();
   quip(pick(LINES.start),true);
 }
@@ -766,7 +1012,8 @@ function endGame(winnerId){
     $('endTitle').innerHTML=won?'Golden <em>Remote!</em>':(b.name.split(' ')[0])+' <em>wins.</em>';
     $('endLine').textContent=won?pick(LINES.win):b.name+' '+pick(LINES.lose);
     $('endStats').innerHTML=
-      TYPES.map(t=>t.label+' '+G.counts[t.id]+'/'+t.goal).join(' · ')+
+      `REBIRTHS ${G.rebirths}/${WIN_REBIRTHS} · MISSED ${G.missed} · `+
+      TYPES.map(t=>t.label+' '+G.counts[t.id]).join(' · ')+
       `<br>TAPS ${G.taps} · $${Math.floor(G.money)} LEFT · ${SV.wins||0} REMOTES IN ${SV.runs} GAMES`;
     $('pEnd').style.display='flex';
     $('hud').style.display='none';
@@ -809,7 +1056,8 @@ function boot(){
 }
 boot();
 
-window.CT={ get G(){return G;}, startGame, endGame, spawnItem, collectItem, buyPad, padCost,
+window.CT={ get G(){return G;}, startGame, endGame, spawnItem, spawnLucky, collectItem, buyPad, padCost,
+  globalCost, goalOf, overall, rebirth, rollLucky, beltSpeed, WIN_REBIRTHS,
   TYPES, BOTS, tickBots, progressOf, setDone, save:()=>SV, syncBoard, syncHud,
   get scene(){return scene;}, get items(){return G?G.items:[]}, addToPile, myPile:()=>myPile, botPiles:()=>botPiles };
 </script>
