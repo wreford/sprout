@@ -259,6 +259,13 @@ input[type="color"]{width:100%;height:32px;border:1px solid var(--line);border-r
           <button id="btnExportAll" disabled>Export ALL parts</button>
         </div>
         <button id="bShare" style="display:none">Share / Save to Photos</button>
+        <label class="small" style="margin-top:6px">Hybrid ebook &amp; captions (same timing, different containers)</label>
+        <div class="btnrow">
+          <button id="bEpub" disabled>Read-aloud EPUB</button>
+          <button id="bSrt" disabled>SRT</button>
+          <button id="bVtt" disabled>VTT</button>
+        </div>
+        <div class="status" id="hyStatus">EPUB 3 with media overlays — Apple Books / Thorium read it aloud and highlight each sentence. Needs words + audio.</div>
         <div class="status" id="exStatus">Records the 1080×1920 TikTok frame in real time (a 90 s part takes 90 s). Keep the tab in front — on iPhone, use Share to send it straight to Photos or TikTok.</div>
       </div>
     </div>
@@ -432,6 +439,7 @@ async function loadAudio(file){
   $("audioName").textContent=file.name+" ("+(file.size/1048576).toFixed(1)+" MB)";
   $("btnTranscribe").disabled=false;
   syncAlignBtn();
+  syncHybridBtns();
   setStatus($("audioStatus"),"Reading tags...");
   try{
     const meta=await parseID3(file);
@@ -690,6 +698,7 @@ function ingestTranscript(data){
     try{ const j=JSON.stringify(data); if(j.length<2_500_000) localStorage.setItem(TX_KEY,j); }catch(e){}
   }
   buildSegments();
+  syncHybridBtns();
 }
 
 $("btnSaveTx").addEventListener("click",()=>{
@@ -1127,6 +1136,190 @@ function drawCaptions(t){
 }
 
 /* ============================================================
+   HYBRID EXPORTS · read-aloud EPUB 3 (media overlays) + SRT/VTT
+============================================================ */
+const CRC_T=(()=>{ const t=new Uint32Array(256);
+  for(let n=0;n<256;n++){ let c=n;
+    for(let k=0;k<8;k++) c=c&1?0xEDB88320^(c>>>1):c>>>1;
+    t[n]=c>>>0; }
+  return t; })();
+function crc32(u8){
+  let c=0xFFFFFFFF;
+  for(let i=0;i<u8.length;i++) c=CRC_T[(c^u8[i])&255]^(c>>>8);
+  return (c^0xFFFFFFFF)>>>0;
+}
+/* store-only zip — EPUB requires the mimetype entry uncompressed anyway */
+function makeZip(entries){
+  const enc=new TextEncoder();
+  const parts=[], central=[];
+  let offset=0;
+  for(const e of entries){
+    const name=enc.encode(e.name);
+    const data=e.data instanceof Uint8Array?e.data:enc.encode(e.data);
+    const crc=crc32(data);
+    const head=new DataView(new ArrayBuffer(30));
+    head.setUint32(0,0x04034b50,true);
+    head.setUint16(4,20,true);
+    head.setUint32(14,crc,true);
+    head.setUint32(18,data.length,true);
+    head.setUint32(22,data.length,true);
+    head.setUint16(26,name.length,true);
+    parts.push(new Uint8Array(head.buffer),name,data);
+    const cd=new DataView(new ArrayBuffer(46));
+    cd.setUint32(0,0x02014b50,true);
+    cd.setUint16(4,20,true); cd.setUint16(6,20,true);
+    cd.setUint32(16,crc,true);
+    cd.setUint32(20,data.length,true);
+    cd.setUint32(24,data.length,true);
+    cd.setUint16(28,name.length,true);
+    cd.setUint32(42,offset,true);
+    central.push(new Uint8Array(cd.buffer),name);
+    offset+=30+name.length+data.length;
+  }
+  let cdSize=0;
+  for(const c of central) cdSize+=c.length;
+  const eocd=new DataView(new ArrayBuffer(22));
+  eocd.setUint32(0,0x06054b50,true);
+  eocd.setUint16(8,entries.length,true);
+  eocd.setUint16(10,entries.length,true);
+  eocd.setUint32(12,cdSize,true);
+  eocd.setUint32(16,offset,true);
+  return new Blob([...parts,...central,new Uint8Array(eocd.buffer)],{type:"application/epub+zip"});
+}
+function sentencesFromWords(){
+  const sents=[]; let cur=[];
+  for(const w of S.words){
+    cur.push(w);
+    if(/[.!?]["')\]]*$/.test(w.text)){ sents.push(cur); cur=[]; }
+  }
+  if(cur.length) sents.push(cur);
+  return sents;
+}
+const smilClock=t=>t.toFixed(3)+"s";
+function xesc(t){ return String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+async function buildEpub(){
+  const title=$("titleText").value.trim()||"Audiobook";
+  const sents=sentencesFromWords();
+  const audioName="audio"+(S.audioFile.name.match(/\.[a-z0-9]+$/i)||[".mp3"])[0].toLowerCase();
+  const audioType=S.audioFile.type||"audio/mpeg";
+  const dur=S.words[S.words.length-1].end;
+  const spans=[], pars=[];
+  sents.forEach((sw,i)=>{
+    const id="s"+String(i+1).padStart(4,"0");
+    spans.push('<span id="'+id+'">'+xesc(sw.map(w=>w.text).join(" "))+"</span>");
+    pars.push('<par id="p'+String(i+1).padStart(4,"0")+'"><text src="text.xhtml#'+id+'"/>'+
+      '<audio src="'+audioName+'" clipBegin="'+smilClock(sw[0].start)+'" clipEnd="'+smilClock(sw[sw.length-1].end)+'"/></par>');
+  });
+  const paras=[];
+  for(let i=0;i<spans.length;i+=4) paras.push("<p>"+spans.slice(i,i+4).join(" ")+"</p>");
+  const xhtml='<?xml version="1.0" encoding="utf-8"?>\n'+
+    '<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head>'+
+    "<title>"+xesc(title)+"</title>"+
+    "<style>body{font-family:Georgia,serif;line-height:1.7;margin:5% 8%} "+
+    "h1{font-size:1.6em} .-epub-media-overlay-active{background:#f5d76e;color:#000}</style>"+
+    "</head><body><h1>"+xesc(title)+"</h1>"+paras.join("\n")+"</body></html>";
+  const smil='<?xml version="1.0" encoding="utf-8"?>\n'+
+    '<smil xmlns="http://www.w3.org/ns/SMIL" xmlns:epub="http://www.idpf.org/2007/ops" version="3.0">'+
+    '<body><seq id="seq1" epub:textref="text.xhtml" epub:type="chapter">'+pars.join("")+"</seq></body></smil>";
+  const hasCover=!!S.coverImg;
+  let coverData=null;
+  if(hasCover){
+    const cc=document.createElement("canvas");
+    cc.width=S.coverImg.width; cc.height=S.coverImg.height;
+    cc.getContext("2d").drawImage(S.coverImg,0,0);
+    const cb=await new Promise(r=>cc.toBlob(r,"image/jpeg",.88));
+    coverData=new Uint8Array(await cb.arrayBuffer());
+  }
+  const uid="urn:uuid:teaser-"+(title.toLowerCase().replace(/[^a-z0-9]+/g,"-"))+"-readaloud";
+  const opf='<?xml version="1.0" encoding="utf-8"?>\n'+
+    '<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid">'+
+    '<metadata xmlns:dc="http://purl.org/dc/elements/1.1/">'+
+    '<dc:identifier id="uid">'+uid+"</dc:identifier>"+
+    "<dc:title>"+xesc(title)+"</dc:title><dc:language>en</dc:language>"+
+    '<meta property="dcterms:modified">2026-01-01T00:00:00Z</meta>'+
+    '<meta property="media:duration">'+smilClock(dur)+"</meta>"+
+    '<meta property="media:duration" refines="#smil">'+smilClock(dur)+"</meta>"+
+    '<meta property="media:active-class">-epub-media-overlay-active</meta>'+
+    (hasCover?'<meta name="cover" content="cover"/>':"")+
+    "</metadata><manifest>"+
+    '<item id="text" href="text.xhtml" media-type="application/xhtml+xml" media-overlay="smil"/>'+
+    '<item id="smil" href="sync.smil" media-type="application/smil+xml"/>'+
+    '<item id="aud" href="'+audioName+'" media-type="'+audioType+'"/>'+
+    (hasCover?'<item id="cover" href="cover.jpg" media-type="image/jpeg" properties="cover-image"/>':"")+
+    '<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>'+
+    '</manifest><spine><itemref idref="text"/></spine></package>';
+  const nav='<?xml version="1.0" encoding="utf-8"?>\n'+
+    '<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>Contents</title></head>'+
+    '<body><nav epub:type="toc"><ol><li><a href="text.xhtml">'+xesc(title)+"</a></li></ol></nav></body></html>";
+  const container='<?xml version="1.0" encoding="utf-8"?>\n'+
+    '<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'+
+    '<rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>';
+  const audioBytes=new Uint8Array(await S.audioFile.arrayBuffer());
+  const entries=[
+    {name:"mimetype",data:"application/epub+zip"},
+    {name:"META-INF/container.xml",data:container},
+    {name:"OEBPS/content.opf",data:opf},
+    {name:"OEBPS/nav.xhtml",data:nav},
+    {name:"OEBPS/text.xhtml",data:xhtml},
+    {name:"OEBPS/sync.smil",data:smil},
+    {name:"OEBPS/"+audioName,data:audioBytes},
+  ];
+  if(coverData) entries.push({name:"OEBPS/cover.jpg",data:coverData});
+  return makeZip(entries);
+}
+function srtStamp(t,sep){
+  const h=String(Math.floor(t/3600)).padStart(2,"0");
+  const m=String(Math.floor(t/60)%60).padStart(2,"0");
+  const sec=String(Math.floor(t)%60).padStart(2,"0");
+  const ms=String(Math.round((t%1)*1000)).padStart(3,"0");
+  return h+":"+m+":"+sec+sep+ms;
+}
+function captionCues(){
+  if(!S.groups) buildGroups();
+  return S.groups.map(g=>({start:g.start,end:g.end,text:g.words.map(w=>w.text).join(" ")}));
+}
+function buildSrt(){
+  return captionCues().map((c,i)=>
+    (i+1)+"\n"+srtStamp(c.start,",")+" --> "+srtStamp(c.end,",")+"\n"+c.text+"\n").join("\n");
+}
+function buildVtt(){
+  return "WEBVTT\n\n"+captionCues().map(c=>
+    srtStamp(c.start,".")+" --> "+srtStamp(c.end,".")+"\n"+c.text+"\n").join("\n");
+}
+function saveBlob(blob,name){
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob); a.download=name; a.click();
+}
+function syncHybridBtns(){
+  const hasWords=!!(S.words&&S.words.length);
+  $("bSrt").disabled=$("bVtt").disabled=!hasWords;
+  $("bEpub").disabled=!(hasWords&&S.audioFile);
+}
+$("bEpub").addEventListener("click",async()=>{
+  if(!S.words||!S.audioFile) return;
+  $("bEpub").disabled=true;
+  setStatus($("hyStatus"),"Packing EPUB (embedding the audio)...");
+  try{
+    const blob=await buildEpub();
+    const name=sanitize($("titleText").value)+"-readaloud.epub";
+    S.lastEpub={size:blob.size,name};
+    saveBlob(blob,name);
+    setStatus($("hyStatus"),"Saved "+name+" ("+(blob.size/1048576).toFixed(1)+" MB) — open in Apple Books or Thorium and hit play.","ok");
+  }catch(err){
+    setStatus($("hyStatus"),"EPUB failed: "+err.message,"err");
+  }
+  syncHybridBtns();
+});
+$("bSrt").addEventListener("click",()=>{
+  saveBlob(new Blob([buildSrt()],{type:"text/plain"}),sanitize($("titleText").value)+".srt");
+  setStatus($("hyStatus"),"SRT saved — drop it on YouTube / video editors.","ok");
+});
+$("bVtt").addEventListener("click",()=>{
+  saveBlob(new Blob([buildVtt()],{type:"text/vtt"}),sanitize($("titleText").value)+".vtt");
+  setStatus($("hyStatus"),"VTT saved — web players and <track> tags eat these.","ok");
+});
+
+/* ============================================================
    PLAYBACK + DEMO CLOCK
 ============================================================ */
 let rafId=null, lastFrame=0;
@@ -1470,7 +1663,8 @@ draw();
 
 window.TS={ S, draw, buildSegments, ingestTranscript, selectSeg, groupAt, nowT,
   stopExport, loadAudio, alignFree, startExport, fastExport, realtimeExport, splitMp3,
-  finishExport, saveSettings, restoreSettings, THEMES, get theme(){return theme;} };
+  finishExport, saveSettings, restoreSettings, buildEpub, buildSrt, buildVtt,
+  sentencesFromWords, makeZip, THEMES, get theme(){return theme;} };
 </script>
 </body>
 </html>
