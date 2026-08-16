@@ -1,0 +1,891 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Teaser Studio — audiobook → TikTok shorts</title>
+<meta name="description" content="Drop an MP3, get word-perfect karaoke captions from ElevenLabs Scribe, and record cinematic 1080×1920 TikTok teaser parts — cover art, audio-reactive waveform, popping words, follow-for-part-N end cards.">
+<meta name="theme-color" content="#0a0d14">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* canvas-critical fonts are vendored locally — the render never waits on a CDN */
+@font-face{font-family:'Archivo Black';font-style:normal;font-weight:400;
+  src:url(fonts/archivo-black.woff2) format('woff2')}
+@font-face{font-family:'Fraunces';font-style:normal;font-weight:900;
+  src:url(fonts/fraunces-900.woff2) format('woff2')}
+@font-face{font-family:'JetBrains Mono';font-style:normal;font-weight:700;
+  src:url(fonts/jetbrains-mono-700.woff2) format('woff2')}
+</style>
+<style>
+:root{
+  --bg:#0a0d14; --panel:#11151f; --panel2:#161b28; --line:#232a3a; --text:#d5dae4; --dim:#7d8698;
+  --hot:#e8452f; --hot2:#8f1f14; --ok:#6fd08c; --err:#e5605e;
+  --mono:'JetBrains Mono',ui-monospace,monospace; --sans:'Inter',system-ui,sans-serif; --disp:'Fraunces',serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--bg);color:var(--text);font-family:var(--sans)}
+::selection{background:var(--hot);color:#fff}
+
+header{display:flex;align-items:baseline;gap:14px;padding:18px 26px 14px;border-bottom:1px solid var(--line)}
+header h1{font-family:var(--disp);font-weight:900;font-size:21px;letter-spacing:.01em}
+header h1 .dot{color:var(--hot)}
+header .sub{font-family:var(--mono);font-size:10.5px;color:var(--dim);letter-spacing:.06em}
+header .demo{margin-left:auto}
+
+.layout{display:grid;grid-template-columns:430px 1fr;min-height:calc(100vh - 58px)}
+@media (max-width:960px){.layout{grid-template-columns:1fr}}
+
+.rail{border-right:1px solid var(--line);padding:22px 26px 50px}
+.step{margin-bottom:24px}
+.step-head{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.step-num{font-family:var(--mono);font-size:10.5px;color:var(--hot);border:1px solid var(--hot2);
+  border-radius:3px;padding:1px 7px;min-width:26px;text-align:center}
+.step-head h2{font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase}
+.step-body{padding-left:36px;display:flex;flex-direction:column;gap:9px}
+label.small{font-size:10.5px;color:var(--dim);letter-spacing:.03em}
+input[type="password"],input[type="text"],select{width:100%;background:var(--panel);border:1px solid var(--line);
+  color:var(--text);border-radius:6px;padding:9px 11px;font-family:var(--mono);font-size:12px}
+input:focus,select:focus,button:focus{outline:2px solid var(--hot2);outline-offset:1px}
+button{background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:6px;
+  padding:9px 13px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:var(--sans);transition:border-color .15s}
+button:hover:not(:disabled){border-color:var(--hot)}
+button:disabled{opacity:.4;cursor:default}
+button.primary{background:linear-gradient(#ff5b42,#d63a24);border-color:#d63a24;color:#fff;
+  box-shadow:0 6px 18px rgba(232,69,47,.3)}
+button.primary:hover:not(:disabled){filter:brightness(1.1)}
+.btnrow{display:flex;gap:8px;flex-wrap:wrap}
+.filedrop{border:1px dashed var(--line);border-radius:8px;padding:16px;text-align:center;font-size:12px;
+  color:var(--dim);cursor:pointer;transition:all .15s}
+.filedrop:hover{border-color:var(--hot);color:var(--text)}
+.filedrop.loaded{border-style:solid;border-color:var(--hot2);color:var(--text);
+  background:rgba(232,69,47,.05)}
+.filedrop .fname{font-family:var(--mono);font-size:11px;display:block;margin-top:4px;color:var(--hot);word-break:break-all}
+.meter{height:6px;background:var(--panel);border-radius:3px;overflow:hidden;display:none}
+.meter .fill{height:100%;width:0%;background:linear-gradient(90deg,var(--hot),#ff8a5e);transition:width .2s}
+.status{font-family:var(--mono);font-size:10.5px;color:var(--dim);min-height:14px;line-height:1.5}
+.status.ok{color:var(--ok)} .status.err{color:var(--err)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.field{display:flex;flex-direction:column;gap:4px}
+input[type="range"]{accent-color:var(--hot);width:100%}
+input[type="color"]{width:100%;height:32px;border:1px solid var(--line);border-radius:6px;background:var(--panel);padding:2px}
+.check{display:flex;align-items:center;gap:8px;font-size:12px}
+.check input{accent-color:var(--hot)}
+.themes{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}
+.theme{border:2px solid var(--line);border-radius:8px;height:44px;cursor:pointer;position:relative;overflow:hidden}
+.theme.on{border-color:var(--hot);box-shadow:0 0 0 2px rgba(232,69,47,.25)}
+.theme span{position:absolute;left:6px;bottom:3px;font-family:var(--mono);font-size:8px;letter-spacing:.08em;
+  color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.8)}
+
+.stage{padding:22px 26px 50px;display:flex;gap:26px;flex-wrap:wrap;align-items:flex-start}
+.phone{width:302px;flex:0 0 auto;border:1px solid var(--line);border-radius:22px;overflow:hidden;background:#000;
+  position:relative;box-shadow:0 30px 80px rgba(0,0,0,.5)}
+.phone canvas{width:100%;display:block}
+.rec-dot{position:absolute;top:12px;right:14px;width:11px;height:11px;border-radius:50%;background:var(--err);
+  display:none;animation:blink 1s infinite;box-shadow:0 0 12px rgba(229,96,94,.8)}
+@keyframes blink{50%{opacity:.25}}
+@media (prefers-reduced-motion:reduce){.rec-dot{animation:none}}
+.playbar{display:flex;gap:8px;margin-top:12px;align-items:center}
+.playbar .time{font-family:var(--mono);font-size:11px;color:var(--dim)}
+.segpanel{flex:1 1 380px;min-width:300px}
+.segpanel h3{font-size:12px;text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.seglist{border:1px solid var(--line);border-radius:8px;max-height:600px;overflow-y:auto;background:var(--panel)}
+.seg{display:flex;align-items:center;gap:12px;padding:10px 13px;border-bottom:1px solid var(--line);cursor:pointer;
+  font-family:var(--mono);font-size:12px}
+.seg:last-child{border-bottom:none}
+.seg:hover{background:var(--panel2)}
+.seg.active{background:var(--panel2);box-shadow:inset 3px 0 0 var(--hot)}
+.seg .part{color:var(--hot);min-width:64px;font-weight:700}
+.seg .range{color:var(--text)}
+.seg .wc{color:var(--dim);margin-left:auto}
+.empty{padding:20px;font-size:12px;color:var(--dim);text-align:center;line-height:1.7}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Teaser Studio<span class="dot">.</span></h1>
+  <span class="sub">MP3 → SCRIBE WORD TIMESTAMPS → 1080×1920 KARAOKE SHORTS</span>
+  <button class="demo" id="btnDemo">▶ Demo style (no key needed)</button>
+</header>
+
+<div class="layout">
+  <div class="rail">
+
+    <div class="step">
+      <div class="step-head"><span class="step-num">1</span><h2>API key</h2></div>
+      <div class="step-body">
+        <input type="password" id="apiKey" placeholder="xi-api-key (kept in memory only)" autocomplete="off">
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-head"><span class="step-num">2</span><h2>Audio</h2></div>
+      <div class="step-body">
+        <div class="filedrop" id="audioDrop">Drop MP3 here or click to browse<span class="fname" id="audioName"></span></div>
+        <input type="file" id="audioFile" accept="audio/*" hidden>
+        <div class="status" id="audioStatus"></div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-head"><span class="step-num">3</span><h2>Transcript</h2></div>
+      <div class="step-body">
+        <div class="btnrow">
+          <button class="primary" id="btnTranscribe" disabled>Transcribe</button>
+          <button id="btnSaveTx" disabled>Save JSON</button>
+          <button id="btnLoadTx">Load JSON</button>
+          <input type="file" id="txFile" accept=".json" hidden>
+        </div>
+        <div class="meter" id="upMeter"><div class="fill" id="upFill"></div></div>
+        <div class="status" id="txStatus">No transcript yet. Transcribe once, save the JSON, reload it free forever.</div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-head"><span class="step-num">4</span><h2>Parts</h2></div>
+      <div class="step-body">
+        <div class="grid2">
+          <div class="field">
+            <label class="small" for="segLen">Target length</label>
+            <select id="segLen">
+              <option value="60">60 s</option>
+              <option value="90" selected>90 s</option>
+              <option value="120">120 s</option>
+              <option value="180">180 s</option>
+              <option value="300">300 s</option>
+            </select>
+          </div>
+          <div class="field">
+            <label class="small">&nbsp;</label>
+            <button id="btnSegment" disabled>Build parts</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-head"><span class="step-num">5</span><h2>Look</h2></div>
+      <div class="step-body">
+        <div class="themes" id="themes"></div>
+        <div class="field">
+          <label class="small" for="titleText">Title on video</label>
+          <input type="text" id="titleText" placeholder="Book title">
+        </div>
+        <div class="grid2">
+          <div class="field">
+            <label class="small" for="wordsPer">Words per group</label>
+            <select id="wordsPer"><option>3</option><option selected>4</option><option>5</option><option>6</option></select>
+          </div>
+          <div class="field">
+            <label class="small" for="capSize">Caption size <span id="capSizeVal" style="color:var(--hot)">92</span></label>
+            <input type="range" id="capSize" min="56" max="128" value="92">
+          </div>
+          <div class="field">
+            <label class="small" for="accentColor">Highlight</label>
+            <input type="color" id="accentColor" value="#e8452f">
+          </div>
+          <div class="field">
+            <label class="small" for="bgColor">Backdrop</label>
+            <input type="color" id="bgColor" value="#0a111c">
+          </div>
+        </div>
+        <label class="check"><input type="checkbox" id="showCover" checked> Cover art (ID3 or upload) with slow zoom</label>
+        <label class="check"><input type="checkbox" id="showWave" checked> Audio-reactive waveform</label>
+        <label class="check"><input type="checkbox" id="showPart" checked> Part pill</label>
+        <label class="check"><input type="checkbox" id="showProg" checked> Progress bar</label>
+        <label class="check"><input type="checkbox" id="showEnd" checked> "Follow for part N+1" end card</label>
+        <label class="check"><input type="checkbox" id="showSafe"> TikTok safe-area guides (preview only)</label>
+        <div class="btnrow">
+          <button id="btnCoverUpload">Upload cover image</button>
+          <input type="file" id="coverFile" accept="image/*" hidden>
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-head"><span class="step-num">6</span><h2>Export</h2></div>
+      <div class="step-body">
+        <button class="primary" id="btnExport" disabled>Export selected part</button>
+        <div class="status" id="exStatus">Records in real time (a 90 s part takes 90 s). Keep the tab in front.</div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="stage">
+    <div>
+      <div class="phone">
+        <canvas id="cv" width="1080" height="1920"></canvas>
+        <div class="rec-dot" id="recDot"></div>
+      </div>
+      <div class="playbar">
+        <button id="btnPlay" disabled>Play</button>
+        <span class="time" id="timeLabel">--:-- / --:--</span>
+      </div>
+    </div>
+    <div class="segpanel">
+      <h3>Parts</h3>
+      <div class="seglist" id="segList">
+        <div class="empty">Transcribe (or load a transcript, or hit <b>Demo style</b> up top),<br>then build parts and export each one as a short.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<audio id="player" hidden></audio>
+
+<script>
+"use strict";
+
+/* ============================================================
+   STATE
+============================================================ */
+const S={
+  audioFile:null, audioURL:null,
+  words:null, segments:[], segIdx:-1,
+  coverImg:null, groups:null,
+  recording:false, audioCtx:null, srcNode:null, streamDest:null, analyser:null,
+  demo:false, demoT0:0, demoClock:0,
+  lastExport:null,
+};
+const $=id=>document.getElementById(id);
+const cv=$("cv"), ctx=cv.getContext("2d");
+const player=$("player");
+const W=1080,H=1920;
+
+function fmt(t){ t=Math.max(0,t|0); return ((t/60)|0)+":"+String(t%60).padStart(2,"0"); }
+function setStatus(el,msg,cls){ el.textContent=msg; el.className="status"+(cls?" "+cls:""); }
+function sanitize(s){ return (s||"audiobook").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/(^-|-$)/g,""); }
+
+/* ============================================================
+   THEMES
+============================================================ */
+const THEMES=[
+  { id:'midnight', name:'MIDNIGHT', bg:'#0a111c', bg2:'#13233c', accent:'#e8452f', text:'#f2ede4', dimText:'rgba(242,237,228,.5)', inkOnAccent:'#0a0d12' },
+  { id:'amber',    name:'AMBER',    bg:'#0c0e12', bg2:'#241a08', accent:'#f5a524', text:'#f5efe2', dimText:'rgba(245,239,226,.5)', inkOnAccent:'#14100a' },
+  { id:'neon',     name:'NEON',     bg:'#0b0614', bg2:'#1d0b33', accent:'#c3f53c', text:'#f0eaff', dimText:'rgba(240,234,255,.5)', inkOnAccent:'#101405' },
+  { id:'paper',    name:'PAPER',    bg:'#f2ede3', bg2:'#e0d6c4', accent:'#c0392b', text:'#181410', dimText:'rgba(24,20,16,.5)', inkOnAccent:'#fff6ea' },
+];
+let theme=THEMES[0];
+$("themes").innerHTML=THEMES.map(t=>
+  `<div class="theme${t.id==='midnight'?' on':''}" data-t="${t.id}"
+     style="background:linear-gradient(160deg,${t.bg},${t.bg2});"><span style="color:${t.accent}">${t.name}</span></div>`).join('');
+document.querySelectorAll('.theme').forEach(el=>el.addEventListener('click',()=>{
+  theme=THEMES.find(t=>t.id===el.dataset.t);
+  document.querySelectorAll('.theme').forEach(e=>e.classList.toggle('on',e===el));
+  $("accentColor").value=theme.accent;
+  $("bgColor").value=theme.bg;
+  draw();
+}));
+
+/* film grain, pre-rendered */
+const grain=document.createElement('canvas'); grain.width=270; grain.height=480;
+(()=>{ const g=grain.getContext('2d'); const d=g.createImageData(270,480);
+  for(let i=0;i<d.data.length;i+=4){ const v=Math.random()*255|0; d.data[i]=d.data[i+1]=d.data[i+2]=v; d.data[i+3]=14; }
+  g.putImageData(d,0,0); })();
+
+/* ============================================================
+   ID3 · title + cover
+============================================================ */
+async function parseID3(file){
+  const head=new Uint8Array(await file.slice(0,10).arrayBuffer());
+  if(head[0]!==0x49||head[1]!==0x44||head[2]!==0x33) return {};
+  const size=(head[6]<<21)|(head[7]<<14)|(head[8]<<7)|head[9];
+  const tag=new Uint8Array(await file.slice(10,10+size).arrayBuffer());
+  const out={}; let i=0;
+  const dec=new TextDecoder("latin1");
+  while(i<tag.length-10){
+    const fid=dec.decode(tag.slice(i,i+4));
+    if(!/^[A-Z0-9]{4}$/.test(fid)) break;
+    const fsize=(tag[i+4]<<21)|(tag[i+5]<<14)|(tag[i+6]<<7)|tag[i+7];
+    const body=tag.slice(i+10,i+10+fsize);
+    if(fid==="TIT2"&&body.length>1){
+      const enc=body[0];
+      const txt=enc===3||enc===0
+        ? new TextDecoder(enc===3?"utf-8":"latin1").decode(body.slice(1))
+        : new TextDecoder("utf-16").decode(body.slice(1));
+      out.title=txt.replace(/\0+$/,"").trim();
+    }
+    if(fid==="APIC"){
+      let p=1, mimeEnd=p;
+      while(mimeEnd<body.length&&body[mimeEnd]!==0) mimeEnd++;
+      const mime=dec.decode(body.slice(p,mimeEnd));
+      p=mimeEnd+1; p+=1;
+      while(p<body.length&&body[p]!==0) p++;
+      p+=1;
+      out.coverURL=URL.createObjectURL(new Blob([body.slice(p)],{type:mime||"image/png"}));
+    }
+    i+=10+fsize;
+  }
+  return out;
+}
+
+/* ============================================================
+   AUDIO LOAD
+============================================================ */
+$("audioDrop").addEventListener("click",()=>$("audioFile").click());
+$("audioDrop").addEventListener("dragover",e=>e.preventDefault());
+$("audioDrop").addEventListener("drop",e=>{ e.preventDefault(); if(e.dataTransfer.files[0]) loadAudio(e.dataTransfer.files[0]); });
+$("audioFile").addEventListener("change",e=>{ if(e.target.files[0]) loadAudio(e.target.files[0]); });
+
+async function loadAudio(file){
+  S.audioFile=file; S.demo=false;
+  if(S.audioURL) URL.revokeObjectURL(S.audioURL);
+  S.audioURL=URL.createObjectURL(file);
+  player.src=S.audioURL;
+  $("audioDrop").classList.add("loaded");
+  $("audioName").textContent=file.name+" ("+(file.size/1048576).toFixed(1)+" MB)";
+  $("btnTranscribe").disabled=false;
+  setStatus($("audioStatus"),"Reading tags...");
+  try{
+    const meta=await parseID3(file);
+    if(meta.title&&!$("titleText").value) $("titleText").value=meta.title;
+    if(meta.coverURL){ const img=new Image(); img.onload=()=>{ S.coverImg=img; draw(); }; img.src=meta.coverURL; }
+    setStatus($("audioStatus"),meta.title?'Loaded. Title: "'+meta.title+'"':"Loaded.","ok");
+  }catch(err){ setStatus($("audioStatus"),"Loaded (tag parse skipped).","ok"); }
+  player.addEventListener("loadedmetadata",()=>{ updateTimeLabel(); draw(); },{once:true});
+  if(S.words){ $("btnPlay").disabled=false; $("btnExport").disabled=S.segIdx<0; }
+}
+
+$("btnCoverUpload").addEventListener("click",()=>$("coverFile").click());
+$("coverFile").addEventListener("change",e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const img=new Image(); img.onload=()=>{ S.coverImg=img; draw(); };
+  img.src=URL.createObjectURL(f);
+});
+
+/* ============================================================
+   TRANSCRIPTION · ElevenLabs Scribe
+============================================================ */
+$("btnTranscribe").addEventListener("click",()=>{
+  const key=$("apiKey").value.trim();
+  if(!key){ setStatus($("txStatus"),"Enter your API key first.","err"); return; }
+  if(!S.audioFile) return;
+  const form=new FormData();
+  form.append("model_id","scribe_v1");
+  form.append("file",S.audioFile);
+  form.append("tag_audio_events","false");
+  form.append("diarize","false");
+  const xhr=new XMLHttpRequest();
+  xhr.open("POST","https://api.elevenlabs.io/v1/speech-to-text");
+  xhr.setRequestHeader("xi-api-key",key);
+  $("upMeter").style.display="block";
+  $("btnTranscribe").disabled=true;
+  setStatus($("txStatus"),"Uploading...");
+  xhr.upload.onprogress=e=>{
+    if(e.lengthComputable){
+      const pct=Math.round(e.loaded/e.total*100);
+      $("upFill").style.width=pct+"%";
+      setStatus($("txStatus"),pct===100?"Uploaded. Transcribing (long files take minutes)...":"Uploading "+pct+"%");
+    }
+  };
+  xhr.onerror=()=>{ $("btnTranscribe").disabled=false;
+    setStatus($("txStatus"),"Network error. Check connection / key.","err"); };
+  xhr.onload=()=>{
+    $("btnTranscribe").disabled=false;
+    $("upMeter").style.display="none";
+    if(xhr.status<200||xhr.status>=300){
+      let msg="API error "+xhr.status;
+      try{ msg+=": "+(JSON.parse(xhr.responseText).detail?.message||xhr.responseText.slice(0,200)); }catch(e){}
+      setStatus($("txStatus"),msg,"err");
+      return;
+    }
+    try{
+      ingestTranscript(JSON.parse(xhr.responseText));
+      setStatus($("txStatus"),S.words.length+" words. Save the JSON so you never pay for this file again.","ok");
+    }catch(err){ setStatus($("txStatus"),"Could not parse response: "+err.message,"err"); }
+  };
+  xhr.send(form);
+});
+
+function ingestTranscript(data){
+  const words=(data.words||[])
+    .filter(w=>w.type==="word"||w.type===undefined)
+    .map(w=>({text:w.text,start:w.start,end:w.end}));
+  if(!words.length) throw new Error("no word entries in response");
+  S.words=words; S.rawTranscript=data; S.groups=null;
+  $("btnSaveTx").disabled=false;
+  $("btnSegment").disabled=false;
+  buildSegments();
+}
+
+$("btnSaveTx").addEventListener("click",()=>{
+  const blob=new Blob([JSON.stringify(S.rawTranscript)],{type:"application/json"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download=sanitize($("titleText").value)+"-transcript.json";
+  a.click();
+});
+$("btnLoadTx").addEventListener("click",()=>$("txFile").click());
+$("txFile").addEventListener("change",async e=>{
+  const f=e.target.files[0]; if(!f) return;
+  try{
+    ingestTranscript(JSON.parse(await f.text()));
+    setStatus($("txStatus"),"Transcript loaded: "+S.words.length+" words.","ok");
+  }catch(err){ setStatus($("txStatus"),"Bad transcript file: "+err.message,"err"); }
+});
+
+/* ============================================================
+   PARTS · pause-seeking segmentation (from the original tool)
+============================================================ */
+$("btnSegment").addEventListener("click",buildSegments);
+$("segLen").addEventListener("change",()=>{ if(S.words) buildSegments(); });
+
+function buildSegments(){
+  if(!S.words) return;
+  const target=parseFloat($("segLen").value);
+  const words=S.words, segs=[];
+  let i0=0;
+  while(i0<words.length){
+    const t0=words[i0].start;
+    let iHard=i0;
+    while(iHard<words.length-1&&words[iHard].end<t0+target) iHard++;
+    let iCut=iHard, bestGap=-1;
+    const windowStart=t0+target*0.85;
+    for(let j=iHard;j>i0;j--){
+      if(words[j].end<windowStart) break;
+      const gap=(j<words.length-1)?words[j+1].start-words[j].end:0;
+      if(gap>bestGap){ bestGap=gap; iCut=j; }
+    }
+    segs.push({ i:segs.length+1, start:words[i0].start, end:words[iCut].end, wordStart:i0, wordEnd:iCut });
+    i0=iCut+1;
+  }
+  S.segments=segs;
+  renderSegList();
+  selectSeg(0);
+}
+
+function renderSegList(){
+  const list=$("segList");
+  list.innerHTML="";
+  if(!S.segments.length){ list.innerHTML='<div class="empty">No parts.</div>'; return; }
+  for(const seg of S.segments){
+    const div=document.createElement("div");
+    div.className="seg"; div.dataset.i=seg.i-1;
+    div.innerHTML='<span class="part">part '+String(seg.i).padStart(2,"0")+'</span>'+
+      '<span class="range">'+fmt(seg.start)+" – "+fmt(seg.end)+'</span>'+
+      '<span class="wc">'+(seg.wordEnd-seg.wordStart+1)+' w</span>';
+    div.addEventListener("click",()=>selectSeg(seg.i-1));
+    list.appendChild(div);
+  }
+}
+
+function selectSeg(idx){
+  if(idx<0||idx>=S.segments.length) return;
+  S.segIdx=idx;
+  document.querySelectorAll(".seg").forEach(el=>el.classList.toggle("active",+el.dataset.i===idx));
+  const seg=S.segments[idx];
+  if(player.src&&!S.demo) player.currentTime=seg.start;
+  if(S.demo) S.demoClock=seg.start;
+  $("btnPlay").disabled=!(player.src||S.demo);
+  $("btnExport").disabled=!player.src||S.demo;
+  buildGroups();
+  updateTimeLabel();
+  draw();
+}
+
+/* ============================================================
+   CAPTION GROUPS
+============================================================ */
+function buildGroups(){
+  if(!S.words) return;
+  const per=parseInt($("wordsPer").value,10);
+  const groups=[];
+  for(let i=0;i<S.words.length;i+=per){
+    const slice=S.words.slice(i,i+per);
+    groups.push({ words:slice, start:slice[0].start, end:slice[slice.length-1].end });
+  }
+  S.groups=groups;
+}
+$("wordsPer").addEventListener("change",()=>{ buildGroups(); draw(); });
+
+function groupAt(t){
+  const g=S.groups;
+  if(!g||!g.length) return null;
+  let lo=0,hi=g.length-1;
+  while(lo<hi){ const mid=(lo+hi)>>1; if(g[mid].end<t) lo=mid+1; else hi=mid; }
+  return g[lo];
+}
+
+/* ============================================================
+   DRAW · the sexy part
+============================================================ */
+["capSize","accentColor","bgColor","showCover","showWave","showPart","showProg","showEnd","showSafe","titleText"]
+  .forEach(id=>$(id).addEventListener("input",()=>{
+    if(id==="capSize") $("capSizeVal").textContent=$("capSize").value;
+    draw();
+  }));
+
+function nowT(){
+  if(S.demo) return S.demoClock;
+  return player.currentTime||(S.segIdx>=0?S.segments[S.segIdx].start:0);
+}
+
+function roundRect(c,x,y,w,h,r){
+  c.beginPath();
+  c.moveTo(x+r,y);
+  c.arcTo(x+w,y,x+w,y+h,r); c.arcTo(x+w,y+h,x,y+h,r);
+  c.arcTo(x,y+h,x,y,r); c.arcTo(x,y,x+w,y,r);
+  c.closePath();
+}
+
+let waveData=new Uint8Array(64);
+function sampleWave(t){
+  if(S.analyser&&!player.paused&&!S.demo){
+    const buf=new Uint8Array(S.analyser.frequencyBinCount);
+    S.analyser.getByteFrequencyData(buf);
+    for(let i=0;i<64;i++) waveData[i]=buf[Math.floor(i*buf.length/96)];
+  } else {
+    for(let i=0;i<64;i++)
+      waveData[i]=90+70*Math.abs(Math.sin(t*2.1+i*.4))*Math.abs(Math.sin(t*.7+i*.13));
+  }
+}
+
+function draw(){
+  const t=nowT();
+  const accent=$("accentColor").value;
+  const bg=$("bgColor").value;
+  const hasCover=$("showCover").checked&&S.coverImg;
+
+  /* backdrop: vertical gradient + accent aura + vignette */
+  const grad=ctx.createLinearGradient(0,0,0,H);
+  grad.addColorStop(0,bg);
+  grad.addColorStop(.5,theme.bg2);
+  grad.addColorStop(1,bg);
+  ctx.fillStyle=grad;
+  ctx.fillRect(0,0,W,H);
+  const aura=ctx.createRadialGradient(W/2,560,60,W/2,560,720);
+  aura.addColorStop(0,accent+"2e"); aura.addColorStop(1,accent+"00");
+  ctx.fillStyle=aura;
+  ctx.fillRect(0,0,W,H);
+
+  /* cover · slow ken-burns + glow */
+  if(hasCover){
+    const base=560;
+    const zoom=1+0.028*Math.sin(t*0.21);
+    const size=base*zoom;
+    const x=(W-size)/2, y=300+(base-size)/2;
+    ctx.save();
+    ctx.shadowColor=accent+"66"; ctx.shadowBlur=90; ctx.shadowOffsetY=24;
+    roundRect(ctx,x,y,size,size,30);
+    ctx.fillStyle="#000"; ctx.fill();
+    ctx.restore();
+    ctx.save();
+    roundRect(ctx,x,y,size,size,30);
+    ctx.clip();
+    ctx.drawImage(S.coverImg,x,y,size,size);
+    ctx.restore();
+    ctx.save();
+    ctx.strokeStyle="rgba(255,255,255,.16)"; ctx.lineWidth=3;
+    roundRect(ctx,x,y,size,size,30); ctx.stroke();
+    ctx.restore();
+  }
+
+  /* title */
+  const title=$("titleText").value.trim();
+  if(title){
+    ctx.fillStyle=theme.text;
+    ctx.font='900 60px "Fraunces", Georgia, serif';
+    ctx.textAlign="center";
+    ctx.fillText(title.toUpperCase(),W/2,hasCover?972:400);
+  }
+
+  /* part pill */
+  if($("showPart").checked&&S.segIdx>=0){
+    const label="PART "+S.segments[S.segIdx].i;
+    ctx.font='700 40px "JetBrains Mono", monospace';
+    const tw=ctx.measureText(label).width;
+    const px=W/2-tw/2-26, py=(hasCover?1010:440), pw=tw+52, ph=64;
+    ctx.strokeStyle=accent; ctx.lineWidth=3;
+    roundRect(ctx,px,py,pw,ph,32); ctx.stroke();
+    ctx.fillStyle=accent;
+    ctx.textAlign="center";
+    ctx.fillText(label,W/2,py+45);
+  }
+
+  /* waveform */
+  if($("showWave").checked){
+    sampleWave(t);
+    const wy=hasCover?1148:560, ww=W-320, bx=160, bw=ww/64;
+    for(let i=0;i<64;i++){
+      const v=waveData[i]/255;
+      const bh=8+v*74;
+      ctx.fillStyle=i/64<((t%3)/3)?accent:"rgba(255,255,255,.22)";
+      ctx.fillStyle=accent;
+      ctx.globalAlpha=.25+v*.75;
+      roundRect(ctx,bx+i*bw+1.5,wy-bh/2,bw-3,bh,3);
+      ctx.fill();
+    }
+    ctx.globalAlpha=1;
+  }
+
+  /* captions */
+  drawCaptions(t);
+
+  /* progress */
+  if($("showProg").checked&&S.segIdx>=0){
+    const seg=S.segments[S.segIdx];
+    const frac=Math.min(1,Math.max(0,(t-seg.start)/(seg.end-seg.start)));
+    ctx.fillStyle="rgba(255,255,255,.12)";
+    roundRect(ctx,80,H-118,W-160,10,5); ctx.fill();
+    ctx.save();
+    ctx.shadowColor=accent; ctx.shadowBlur=18;
+    ctx.fillStyle=accent;
+    roundRect(ctx,80,H-118,Math.max(10,(W-160)*frac),10,5); ctx.fill();
+    ctx.restore();
+  }
+
+  /* end card · the teaser hook */
+  if($("showEnd").checked&&S.segIdx>=0){
+    const seg=S.segments[S.segIdx];
+    const lead=seg.end-t;
+    if(lead<=2.6){
+      const k=Math.min(1,(2.6-lead)/.6);
+      ctx.fillStyle="rgba(4,6,10,"+(.82*k)+")";
+      ctx.fillRect(0,0,W,H);
+      ctx.globalAlpha=k;
+      ctx.textAlign="center";
+      const last=seg.i>=S.segments.length;
+      ctx.fillStyle=accent;
+      ctx.font='900 92px "Archivo Black", "Inter", sans-serif';
+      ctx.fillText(last?"THE END":"FOLLOW FOR",W/2,H/2-40);
+      if(!last) ctx.fillText("PART "+(seg.i+1),W/2,H/2+72);
+      if(title){
+        ctx.fillStyle=theme.dimText;
+        ctx.font='600 44px "Fraunces", serif';
+        ctx.fillText(title.toUpperCase(),W/2,H/2+(last?80:196));
+      }
+      ctx.globalAlpha=1;
+    }
+  }
+
+  /* grain */
+  ctx.save();
+  ctx.globalAlpha=.5;
+  ctx.drawImage(grain,0,0,W,H);
+  ctx.restore();
+
+  /* safe-area guides (never while recording) */
+  if($("showSafe").checked&&!S.recording){
+    ctx.strokeStyle="rgba(111,208,140,.55)";
+    ctx.setLineDash([14,10]); ctx.lineWidth=3;
+    ctx.strokeRect(40,220,W-80,H-220-320);
+    ctx.setLineDash([]);
+    ctx.fillStyle="rgba(111,208,140,.8)";
+    ctx.font='500 26px "JetBrains Mono", monospace';
+    ctx.textAlign="left";
+    ctx.fillText("TikTok UI margins — keep it inside",56,206);
+  }
+
+  updateTimeLabel();
+}
+
+function drawCaptions(t){
+  const g=groupAt(t);
+  if(!g) return;
+  const size=parseInt($("capSize").value,10);
+  const accent=$("accentColor").value;
+  const font='400 '+size+'px "Archivo Black", "Inter", sans-serif';
+  ctx.font=font;
+  ctx.textAlign="left";
+  ctx.textBaseline="alphabetic";
+  const maxW=W-140;
+  const spaceW=ctx.measureText(" ").width;
+  const lines=[]; let line=[],lineW=0;
+  for(const w of g.words){
+    const ww=ctx.measureText(w.text).width;
+    if(line.length&&lineW+spaceW+ww>maxW){ lines.push({words:line,width:lineW}); line=[]; lineW=0; }
+    line.push({...w,w:ww});
+    lineW+=(line.length>1?spaceW:0)+ww;
+  }
+  if(line.length) lines.push({words:line,width:lineW});
+  const lineH=size*1.28;
+  const blockH=lines.length*lineH;
+  let y=1430-blockH/2+size*.8;
+  for(const ln of lines){
+    let x=(W-ln.width)/2;
+    for(const w of ln.words){
+      const active=t>=w.start&&t<w.end;
+      if(active){
+        /* pop: the active word swells from its own centre */
+        const age=Math.min(1,(t-w.start)/.12);
+        const pop=1+.10*(1-Math.pow(1-age,3));
+        const cx=x+w.w/2, cy=y-size*.35;
+        ctx.save();
+        ctx.translate(cx,cy); ctx.scale(pop,pop); ctx.translate(-cx,-cy);
+        const pad=size*.18;
+        ctx.shadowColor=accent+"aa"; ctx.shadowBlur=34;
+        ctx.fillStyle=accent;
+        roundRect(ctx,x-pad,y-size*.82-pad,w.w+pad*2,size*1.05+pad*2,size*.18);
+        ctx.fill();
+        ctx.shadowBlur=0;
+        ctx.fillStyle=theme.inkOnAccent;
+        ctx.fillText(w.text,x,y);
+        ctx.restore();
+      } else {
+        ctx.save();
+        ctx.shadowColor="rgba(0,0,0,.65)"; ctx.shadowBlur=16;
+        ctx.fillStyle=t>=w.end?theme.text:theme.dimText;
+        ctx.fillText(w.text,x,y);
+        ctx.restore();
+      }
+      x+=w.w+spaceW;
+    }
+    y+=lineH;
+  }
+}
+
+/* ============================================================
+   PLAYBACK + DEMO CLOCK
+============================================================ */
+let rafId=null, lastFrame=0;
+function loop(ts){
+  if(S.demo){
+    if(lastFrame) S.demoClock+=Math.min(.1,(ts-lastFrame)/1000);
+    lastFrame=ts;
+    const seg=S.segments[S.segIdx];
+    if(seg&&S.demoClock>=seg.end) S.demoClock=seg.start;   /* demo loops forever */
+    draw();
+    rafId=requestAnimationFrame(loop);
+    return;
+  }
+  draw();
+  if(S.segIdx>=0&&player.currentTime>=S.segments[S.segIdx].end){
+    if(S.recording) stopExport();
+    player.pause();
+  }
+  if(!player.paused) rafId=requestAnimationFrame(loop);
+  else { $("btnPlay").textContent="Play"; rafId=null; }
+}
+
+$("btnPlay").addEventListener("click",()=>{
+  if(S.demo){
+    if(rafId){ cancelAnimationFrame(rafId); rafId=null; lastFrame=0; $("btnPlay").textContent="Play"; }
+    else { lastFrame=0; rafId=requestAnimationFrame(loop); $("btnPlay").textContent="Pause"; }
+    return;
+  }
+  if(player.paused){
+    if(S.segIdx>=0&&(player.currentTime<S.segments[S.segIdx].start||player.currentTime>=S.segments[S.segIdx].end))
+      player.currentTime=S.segments[S.segIdx].start;
+    ensureAudioGraph();
+    player.play();
+    $("btnPlay").textContent="Pause";
+    if(!rafId) rafId=requestAnimationFrame(loop);
+  } else player.pause();
+});
+
+function updateTimeLabel(){
+  if(S.segIdx<0){ $("timeLabel").textContent="--:-- / --:--"; return; }
+  const seg=S.segments[S.segIdx];
+  const t=Math.max(0,nowT()-seg.start);
+  $("timeLabel").textContent=fmt(t)+" / "+fmt(seg.end-seg.start);
+}
+
+/* ============================================================
+   DEMO · style without spending a cent
+============================================================ */
+const DEMO_TEXT=("The lake took her at eleven forty on a Saturday night and it took her quietly. "+
+"There was a fire on the beach that night and forty kids around it. "+
+"The ones who saw anything at all saw this. A girl walking out onto the dark water "+
+"like the lake was a hallway in her own house. Then splashing out past the point. "+
+"Then a sound that might have been her name and might have been a loon. "+
+"Then flashlights sweeping a black lake that gave back nothing at all.").split(" ");
+$("btnDemo").addEventListener("click",()=>{
+  S.demo=true; S.audioFile=null;
+  let t=0.3;
+  const words=DEMO_TEXT.map(txt=>{
+    const dur=.16+Math.min(.34,txt.length*.035);
+    const w={text:txt,start:t,end:t+dur};
+    t+=dur+( /[.?!]$/.test(txt) ? .5 : .06 );
+    return w;
+  });
+  ingestTranscript({words});
+  if(!$("titleText").value) $("titleText").value="LAST JUNE";
+  $("btnPlay").disabled=false;
+  $("btnExport").disabled=true;
+  setStatus($("txStatus"),"Demo words loaded — style away. Transcribe a real MP3 when ready.","ok");
+  if(!rafId){ lastFrame=0; rafId=requestAnimationFrame(loop); $("btnPlay").textContent="Pause"; }
+});
+
+/* ============================================================
+   EXPORT · canvas + audio → MediaRecorder
+============================================================ */
+function ensureAudioGraph(){
+  if(S.audioCtx){ S.audioCtx.resume(); return; }
+  S.audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+  S.srcNode=S.audioCtx.createMediaElementSource(player);
+  S.streamDest=S.audioCtx.createMediaStreamDestination();
+  S.analyser=S.audioCtx.createAnalyser();
+  S.analyser.fftSize=256;
+  S.srcNode.connect(S.analyser);
+  S.srcNode.connect(S.audioCtx.destination);
+  S.srcNode.connect(S.streamDest);
+}
+
+let recorder=null, recChunks=[];
+function pickMime(){
+  const candidates=['video/mp4;codecs="avc1.42E01E,mp4a.40.2"',"video/mp4",'video/webm;codecs="vp9,opus"',"video/webm"];
+  for(const m of candidates) if(MediaRecorder.isTypeSupported(m)) return m;
+  return "";
+}
+
+$("btnExport").addEventListener("click",()=>{
+  if(S.recording||S.segIdx<0||S.demo) return;
+  ensureAudioGraph();
+  const seg=S.segments[S.segIdx];
+  player.pause();
+  player.currentTime=seg.start;
+  const mime=pickMime();
+  if(!mime){ setStatus($("exStatus"),"MediaRecorder unsupported in this browser.","err"); return; }
+  const stream=cv.captureStream(30);
+  S.streamDest.stream.getAudioTracks().forEach(tr=>stream.addTrack(tr));
+  recChunks=[];
+  recorder=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:8_000_000});
+  recorder.ondataavailable=e=>{ if(e.data.size) recChunks.push(e.data); };
+  recorder.onstop=()=>{
+    const ext=mime.startsWith("video/mp4")?"mp4":"webm";
+    const blob=new Blob(recChunks,{type:mime.split(";")[0]});
+    S.lastExport={size:blob.size,name:sanitize($("titleText").value)+"-part-"+String(seg.i).padStart(2,"0")+"."+ext};
+    const a=document.createElement("a");
+    a.href=URL.createObjectURL(blob);
+    a.download=S.lastExport.name;
+    a.click();
+    setStatus($("exStatus"),"Saved "+a.download+" ("+(blob.size/1048576).toFixed(1)+" MB)","ok");
+  };
+  S.recording=true;
+  $("recDot").style.display="block";
+  $("btnExport").disabled=true;
+  setStatus($("exStatus"),"Recording part "+seg.i+" — keep the tab in front...");
+  player.play().then(()=>{
+    recorder.start(1000);
+    if(!rafId) rafId=requestAnimationFrame(loop);
+    $("btnPlay").textContent="Pause";
+  });
+});
+
+function stopExport(){
+  if(!S.recording) return;
+  S.recording=false;
+  $("recDot").style.display="none";
+  $("btnExport").disabled=false;
+  if(recorder&&recorder.state!=="inactive") recorder.stop();
+}
+
+/* first paint once the display fonts are in — canvas fonts must be
+   loaded explicitly or fillText silently falls back */
+if(document.fonts&&document.fonts.load){
+  Promise.all([
+    document.fonts.load('400 92px "Archivo Black"'),
+    document.fonts.load('900 60px "Fraunces"'),
+    document.fonts.load('700 40px "JetBrains Mono"'),
+  ]).then(draw).catch(()=>{});
+}
+draw();
+
+window.TS={ S, draw, buildSegments, ingestTranscript, selectSeg, groupAt, nowT,
+  stopExport, loadAudio, THEMES, get theme(){return theme;} };
+</script>
+</body>
+</html>
