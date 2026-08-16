@@ -237,8 +237,8 @@ input[type="color"]{width:100%;height:32px;border:1px solid var(--line);border-r
             <input type="color" id="bgColor" value="#0a111c">
           </div>
         </div>
-        <label class="check"><input type="checkbox" id="coverBg" checked> Cover art fills the background</label>
-        <label class="check"><input type="checkbox" id="showCover"> Cover card with slow zoom</label>
+        <label class="check"><input type="checkbox" id="coverBg" checked> Background image fills the frame</label>
+        <label class="check"><input type="checkbox" id="showCover" checked> Art card (never cropped, never stretched)</label>
         <label class="check"><input type="checkbox" id="showWave" checked> Audio-reactive waveform</label>
         <label class="check"><input type="checkbox" id="showPart" checked> Part pill</label>
         <label class="check"><input type="checkbox" id="showProg" checked> Progress bar</label>
@@ -247,9 +247,12 @@ input[type="color"]{width:100%;height:32px;border:1px solid var(--line);border-r
         <label class="check"><input type="checkbox" id="showDust" checked> Drifting embers</label>
         <label class="check"><input type="checkbox" id="showSafe"> TikTok safe-area guides (preview only)</label>
         <div class="btnrow">
-          <label class="filebtn" for="coverFile">Upload cover image</label>
+          <label class="filebtn" for="coverFile">Upload art</label>
           <input type="file" id="coverFile" accept="image/*,.jpg,.jpeg,.png,.webp" hidden>
+          <label class="filebtn" for="bgFile">Upload background</label>
+          <input type="file" id="bgFile" accept="image/*,.jpg,.jpeg,.png,.webp" hidden>
         </div>
+        <div class="status">Art comes from the MP3's tags automatically; the background uses the art unless you upload a separate one.</div>
       </div>
     </div>
 
@@ -272,6 +275,17 @@ input[type="color"]{width:100%;height:32px;border:1px solid var(--line);border-r
           <button id="bVtt" disabled>VTT</button>
         </div>
         <div class="status" id="hyStatus">EPUB 3 with media overlays — Apple Books / Thorium read it aloud and highlight each sentence. Needs words + audio.</div>
+        <details>
+          <summary style="font-size:11px;color:var(--dim);cursor:pointer">Which file goes where?</summary>
+          <div class="status" style="margin-top:8px;line-height:2">
+            <b style="color:var(--text)">MP4</b> — TikTok, Reels, Shorts, iOS Photos. The default; plays everywhere.<br>
+            <b style="color:var(--text)">WebM</b> — automatic fallback if the browser can't make MP4. TikTok web takes it; iOS Photos won't.<br>
+            <b style="color:var(--text)">Read-aloud EPUB</b> — the ebook+audiobook hybrid for Apple Books / Thorium.<br>
+            <b style="color:var(--text)">SRT</b> — upload as YouTube captions, or import into CapCut / Premiere.<br>
+            <b style="color:var(--text)">VTT</b> — captions for web players.<br>
+            <b style="color:var(--text)">Timing JSON</b> — this app's save file; reload it to skip re-aligning.
+          </div>
+        </details>
         <div class="status" id="exStatus">Records the 1080×1920 TikTok frame in real time (a 90 s part takes 90 s). Keep the tab in front — on iPhone, use Share to send it straight to Photos or TikTok.</div>
       </div>
     </div>
@@ -329,6 +343,13 @@ const S={
   lastExport:null,
 };
 const $=id=>document.getElementById(id);
+/* auto-accent: adopt the art's colour unless the user changed the accent */
+function maybeAutoAccent(){
+  if(!S.coverImg) return;
+  if($("accentColor").value.toLowerCase()!==theme.accent.toLowerCase()) return;
+  const a=coverAccent();
+  if(a){ $("accentColor").value=a; saveSettings(); }
+}
 const esc2=t=>String(t??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const SET_KEY='teaser_set_v1', TX_KEY='teaser_tx_v1';
 const SET_IDS=['titleText','hookText','handleText','accentColor','bgColor','capSize','capStyle','wordsPer','segLen','syncOff'];
@@ -480,7 +501,7 @@ async function loadAudio(file){
   try{
     const meta=await parseID3(file);
     if(meta.title&&!$("titleText").value) $("titleText").value=meta.title;
-    if(meta.coverURL){ const img=new Image(); img.onload=()=>{ S.coverImg=img; $("bMatchCover").disabled=false; draw(); }; img.src=meta.coverURL; }
+    if(meta.coverURL){ const img=new Image(); img.onload=()=>{ S.coverImg=img; $("bMatchCover").disabled=false; maybeAutoAccent(); draw(); }; img.src=meta.coverURL; }
     setStatus($("audioStatus"),meta.title?'Loaded. Title: "'+meta.title+'"':"Loaded.","ok");
   }catch(err){ setStatus($("audioStatus"),"Loaded (tag parse skipped).","ok"); }
   player.addEventListener("loadedmetadata",()=>{ updateTimeLabel(); draw(); },{once:true});
@@ -489,7 +510,12 @@ async function loadAudio(file){
 
 $("coverFile").addEventListener("change",e=>{
   const f=e.target.files[0]; if(!f) return;
-  const img=new Image(); img.onload=()=>{ S.coverImg=img; $("bMatchCover").disabled=false; draw(); };
+  const img=new Image(); img.onload=()=>{ S.coverImg=img; $("bMatchCover").disabled=false; maybeAutoAccent(); draw(); };
+  img.src=URL.createObjectURL(f);
+});
+$("bgFile").addEventListener("change",e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const img=new Image(); img.onload=()=>{ S.bgImg=img; draw(); };
   img.src=URL.createObjectURL(f);
 });
 
@@ -1062,8 +1088,8 @@ function draw(tOverride){
   ctx.fillStyle=grad;
   ctx.fillRect(0,0,W,H);
   /* cover art fills the frame, slow drift, scrim for caption legibility */
-  if($("coverBg").checked&&S.coverImg){
-    const img=S.coverImg;
+  if($("coverBg").checked&&(S.bgImg||S.coverImg)){
+    const img=S.bgImg||S.coverImg;
     const zoom=1.07+0.035*Math.sin(t*0.17);
     const scale=Math.max(W/img.width,H/img.height)*zoom;
     const dw=img.width*scale, dh=img.height*scale;
@@ -1095,27 +1121,36 @@ function draw(tOverride){
     ctx.globalAlpha=1;
   }
 
-  /* cover · slow ken-burns + glow */
+  /* art card · aspect-true, contained, slow ken-burns + glow */
+  let artBottom=0;
   if(hasCover){
-    const base=560;
+    const img=S.coverImg;
+    const maxW=560, maxH=660;
+    const sc=Math.min(maxW/img.width,maxH/img.height);
+    const bw=img.width*sc, bh=img.height*sc;
     const zoom=1+0.028*Math.sin(t*0.21);
-    const size=base*zoom;
-    const x=(W-size)/2, y=300+(base-size)/2;
+    const w2=bw*zoom, h2=bh*zoom;
+    const x=(W-w2)/2, y=290+(bh-h2)/2;
+    S.lastArtBox={x,y,w:w2,h:h2,ratio:w2/h2};
     ctx.save();
     ctx.shadowColor=accent+"66"; ctx.shadowBlur=90; ctx.shadowOffsetY=24;
-    roundRect(ctx,x,y,size,size,30);
+    roundRect(ctx,x,y,w2,h2,26);
     ctx.fillStyle="#000"; ctx.fill();
     ctx.restore();
     ctx.save();
-    roundRect(ctx,x,y,size,size,30);
+    roundRect(ctx,x,y,w2,h2,26);
     ctx.clip();
-    ctx.drawImage(S.coverImg,x,y,size,size);
+    ctx.drawImage(img,x,y,w2,h2);
     ctx.restore();
     ctx.save();
     ctx.strokeStyle="rgba(255,255,255,.16)"; ctx.lineWidth=3;
-    roundRect(ctx,x,y,size,size,30); ctx.stroke();
+    roundRect(ctx,x,y,w2,h2,26); ctx.stroke();
     ctx.restore();
+    artBottom=290+bh;
   }
+  const titleY=hasCover?artBottom+84:400;
+  const pillY=hasCover?titleY+36:440;
+  const waveY=hasCover?pillY+140:560;
 
   /* title */
   const title=$("titleText").value.trim();
@@ -1123,7 +1158,7 @@ function draw(tOverride){
     ctx.fillStyle=theme.text;
     ctx.font='900 60px "Fraunces", Georgia, serif';
     ctx.textAlign="center";
-    ctx.fillText(title.toUpperCase(),W/2,hasCover?972:400);
+    ctx.fillText(title.toUpperCase(),W/2,titleY);
   }
 
   /* part pill */
@@ -1131,7 +1166,7 @@ function draw(tOverride){
     const label="PART "+S.segments[S.segIdx].i;
     ctx.font='700 40px "JetBrains Mono", monospace';
     const tw=ctx.measureText(label).width;
-    const px=W/2-tw/2-26, py=(hasCover?1010:440), pw=tw+52, ph=64;
+    const px=W/2-tw/2-26, py=pillY, pw=tw+52, ph=64;
     ctx.strokeStyle=accent; ctx.lineWidth=3;
     roundRect(ctx,px,py,pw,ph,32); ctx.stroke();
     ctx.fillStyle=accent;
@@ -1142,7 +1177,7 @@ function draw(tOverride){
   /* waveform */
   if($("showWave").checked){
     sampleWave(t);
-    const wy=hasCover?1148:560, ww=W-320, bx=160, bw=ww/64;
+    const wy=waveY, ww=W-320, bx=160, bw=ww/64;
     for(let i=0;i<64;i++){
       const v=waveData[i<32?i:63-i]/255;   /* mirrored — symmetric reads better */
       const bh=8+v*74;
@@ -1819,10 +1854,10 @@ async function fastExport(seg){
         video:{codec:"V_VP9",width:1080,height:1920,frameRate:fps},
         audio:{codec:"A_OPUS",numberOfChannels:2,sampleRate:sr}});
     }
-    let vErr=null,aErr=null;
+    let vErr=null,aErr=null,aChunks=0;
     const venc=new VideoEncoder({output:(c,m)=>muxer.addVideoChunk(c,m),error:e=>vErr=e});
     venc.configure({codec:cfg.vcodec,width:1080,height:1920,bitrate:8_000_000,framerate:fps,latencyMode:"realtime"});
-    const aenc=new AudioEncoder({output:(c,m)=>muxer.addAudioChunk(c,m),error:e=>aErr=e});
+    const aenc=new AudioEncoder({output:(c,m)=>{ aChunks++; muxer.addAudioChunk(c,m); },error:e=>aErr=e});
     aenc.configure({codec:cfg.acodec,numberOfChannels:2,sampleRate:sr,bitrate:192_000});
     /* audio: interleave the segment's samples into planar stereo chunks */
     const chN=buf.numberOfChannels;
@@ -1853,6 +1888,8 @@ async function fastExport(seg){
       }
     }
     await venc.flush(); await aenc.flush();
+    if(!aChunks) throw new Error("audio encoder produced nothing");
+    S.lastAudioChunks=aChunks;
     muxer.finalize();
     const ext=cfg.container;
     const blob=new Blob([muxer.target.buffer],{type:"video/"+ext});
@@ -1870,22 +1907,34 @@ async function fastExport(seg){
   }
 }
 
+S.fastSupported=null;
+(async()=>{
+  try{
+    if(window.Mp4Muxer&&"VideoEncoder" in window&&"AudioEncoder" in window)
+      S.fastSupported=!!(await pickFastConfig(44100));
+    else S.fastSupported=false;
+  }catch(e){ S.fastSupported=false; }
+})();
 function startExport(){
   if(S.recording||S.rendering||S.segIdx<0||S.demo) return;
   const seg=S.segments[S.segIdx];
-  if(window.Mp4Muxer&&"VideoEncoder" in window&&"AudioEncoder" in window){
-    fastExport(seg).catch(err=>{
-      setStatus($("exStatus"),"Fast render unavailable ("+String(err.message).slice(0,80)+") — recording in real time instead...","err");
-      realtimeExport();
-    });
-    return;
-  }
-  realtimeExport();
+  /* decide synchronously so the realtime path keeps the user gesture —
+     a gestureless AudioContext on iOS records silence */
+  if(S.fastSupported===false){ realtimeExport(); return; }
+  fastExport(seg).catch(err=>{
+    S.fastSupported=false;
+    setStatus($("exStatus"),"Fast render unavailable ("+String(err.message).slice(0,80)+") — tap Export again to record in real time (with sound).","err");
+  });
 }
 
 function realtimeExport(){
   if(S.recording||S.segIdx<0||S.demo) return;
   ensureAudioGraph();
+  try{ S.audioCtx.resume(); }catch(e){}
+  setTimeout(()=>{
+    if(S.recording&&S.audioCtx&&S.audioCtx.state!=="running")
+      setStatus($("exStatus"),"Audio is blocked by the browser — stop, tap the Play button once, then export again.","err");
+  },800);
   const seg=S.segments[S.segIdx];
   player.pause();
   player.currentTime=seg.start;
@@ -1975,7 +2024,7 @@ window.TS={ S, draw, buildSegments, ingestTranscript, selectSeg, groupAt, nowT,
   stopExport, loadAudio, alignFree, startExport, fastExport, realtimeExport, splitMp3,
   finishExport, saveSettings, restoreSettings, buildEpub, buildSrt, buildVtt,
   sentencesFromWords, makeZip, autoPilot, analyzeAudio, alignTokens, planPieces, usePiece,
-  THEMES, get theme(){return theme;} };
+  maybeAutoAccent, coverAccent, THEMES, get theme(){return theme;} };
 </script>
 </body>
 </html>
