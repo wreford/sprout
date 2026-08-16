@@ -96,7 +96,9 @@ input[type="color"]{width:100%;height:32px;border:1px solid var(--line);border-r
 .segpanel h3{font-size:12px;text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
 .seglist{border:1px solid var(--line);border-radius:8px;max-height:600px;overflow-y:auto;background:var(--panel)}
 .seg{display:flex;align-items:center;gap:12px;padding:10px 13px;border-bottom:1px solid var(--line);cursor:pointer;
-  font-family:var(--mono);font-size:12px}
+  font-family:var(--mono);font-size:12px;flex-wrap:wrap}
+.seg .pv{flex-basis:100%;color:var(--dim);font-size:10.5px;margin-top:3px;font-style:italic;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .seg:last-child{border-bottom:none}
 .seg:hover{background:var(--panel2)}
 .seg.active{background:var(--panel2);box-shadow:inset 3px 0 0 var(--hot)}
@@ -182,6 +184,18 @@ input[type="color"]{width:100%;height:32px;border:1px solid var(--line);border-r
           <label class="small" for="titleText">Title on video</label>
           <input type="text" id="titleText" placeholder="Book title">
         </div>
+        <div class="field">
+          <label class="small" for="hookText">Hook line (big text at the top — the scroll-stopper)</label>
+          <input type="text" id="hookText" placeholder="she walked into the lake and never came back">
+        </div>
+        <div class="field">
+          <label class="small" for="capStyle">Caption style</label>
+          <select id="capStyle">
+            <option value="boxed" selected>Boxed highlight</option>
+            <option value="outline">Bold outline</option>
+            <option value="glow">Neon glow</option>
+          </select>
+        </div>
         <div class="grid2">
           <div class="field">
             <label class="small" for="wordsPer">Words per group</label>
@@ -205,7 +219,9 @@ input[type="color"]{width:100%;height:32px;border:1px solid var(--line);border-r
         <label class="check"><input type="checkbox" id="showWave" checked> Audio-reactive waveform</label>
         <label class="check"><input type="checkbox" id="showPart" checked> Part pill</label>
         <label class="check"><input type="checkbox" id="showProg" checked> Progress bar</label>
+        <label class="check"><input type="checkbox" id="showIntro" checked> "Part N" intro card (first 1.4 s)</label>
         <label class="check"><input type="checkbox" id="showEnd" checked> "Follow for part N+1" end card</label>
+        <label class="check"><input type="checkbox" id="showDust" checked> Drifting embers</label>
         <label class="check"><input type="checkbox" id="showSafe"> TikTok safe-area guides (preview only)</label>
         <div class="btnrow">
           <label class="filebtn" for="coverFile">Upload cover image</label>
@@ -217,7 +233,14 @@ input[type="color"]{width:100%;height:32px;border:1px solid var(--line);border-r
     <div class="step">
       <div class="step-head"><span class="step-num">5</span><h2>Export</h2></div>
       <div class="step-body">
-        <button class="primary" id="btnExport" disabled>Export selected part</button>
+        <div class="field">
+          <label class="small" for="syncOff">Sync nudge <span id="syncOffVal" style="color:var(--hot)">0.00 s</span> — captions early? drag right</label>
+          <input type="range" id="syncOff" min="-2" max="2" step="0.05" value="0">
+        </div>
+        <div class="btnrow">
+          <button class="primary" id="btnExport" disabled>Export selected part</button>
+          <button id="btnExportAll" disabled>Export ALL parts</button>
+        </div>
         <button id="bShare" style="display:none">Share / Save to Photos</button>
         <div class="status" id="exStatus">Records the 1080×1920 TikTok frame in real time (a 90 s part takes 90 s). Keep the tab in front — on iPhone, use Share to send it straight to Photos or TikTok.</div>
       </div>
@@ -262,6 +285,33 @@ const S={
   lastExport:null,
 };
 const $=id=>document.getElementById(id);
+const esc2=t=>String(t??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const SET_KEY='teaser_set_v1', TX_KEY='teaser_tx_v1';
+const SET_IDS=['titleText','hookText','accentColor','bgColor','capSize','capStyle','wordsPer','segLen','syncOff'];
+const SET_CHECKS=['coverBg','showCover','showWave','showPart','showProg','showEnd','showIntro','showDust','showSafe'];
+function saveSettings(){
+  try{
+    const o={theme:theme.id};
+    SET_IDS.forEach(id=>o[id]=$(id).value);
+    SET_CHECKS.forEach(id=>o[id]=$(id).checked);
+    localStorage.setItem(SET_KEY,JSON.stringify(o));
+  }catch(e){}
+}
+function restoreSettings(){
+  try{
+    const o=JSON.parse(localStorage.getItem(SET_KEY));
+    if(!o) return;
+    SET_IDS.forEach(id=>{ if(o[id]!==undefined) $(id).value=o[id]; });
+    SET_CHECKS.forEach(id=>{ if(o[id]!==undefined) $(id).checked=o[id]; });
+    if(o.theme){
+      const el=document.querySelector('.theme[data-t="'+o.theme+'"]');
+      if(el){ theme=THEMES.find(t2=>t2.id===o.theme)||theme;
+        document.querySelectorAll('.theme').forEach(e=>e.classList.toggle('on',e===el)); }
+    }
+    $("capSizeVal").textContent=$("capSize").value;
+    $("syncOffVal").textContent=(+$("syncOff").value).toFixed(2)+" s";
+  }catch(e){}
+}
 const cv=$("cv"), ctx=cv.getContext("2d");
 const player=$("player");
 const W=1080,H=1920;
@@ -288,6 +338,7 @@ document.querySelectorAll('.theme').forEach(el=>el.addEventListener('click',()=>
   document.querySelectorAll('.theme').forEach(e=>e.classList.toggle('on',e===el));
   $("accentColor").value=theme.accent;
   $("bgColor").value=theme.bg;
+  saveSettings();
   draw();
 }));
 
@@ -495,11 +546,15 @@ function ingestTranscript(data){
   S.words=words; S.rawTranscript=data; S.groups=null;
   $("btnSaveTx").disabled=false;
   $("btnSegment").disabled=false;
+  if(!data.demo){
+    try{ const j=JSON.stringify(data); if(j.length<2_500_000) localStorage.setItem(TX_KEY,j); }catch(e){}
+  }
   buildSegments();
 }
 
 $("btnSaveTx").addEventListener("click",()=>{
-  const blob=new Blob([JSON.stringify(S.rawTranscript)],{type:"application/json"});
+  const payload={...S.rawTranscript,syncOffset:parseFloat($("syncOff").value||0)};
+  const blob=new Blob([JSON.stringify(payload)],{type:"application/json"});
   const a=document.createElement("a");
   a.href=URL.createObjectURL(blob);
   a.download=sanitize($("titleText").value)+"-transcript.json";
@@ -508,7 +563,10 @@ $("btnSaveTx").addEventListener("click",()=>{
 $("txFile").addEventListener("change",async e=>{
   const f=e.target.files[0]; if(!f) return;
   try{
-    ingestTranscript(JSON.parse(await f.text()));
+    const data=JSON.parse(await f.text());
+    ingestTranscript(data);
+    if(typeof data.syncOffset==="number"){ $("syncOff").value=data.syncOffset;
+      $("syncOffVal").textContent=data.syncOffset.toFixed(2)+" s"; }
     setStatus($("txStatus"),"Transcript loaded: "+S.words.length+" words.","ok");
   }catch(err){ setStatus($("txStatus"),"Bad transcript file: "+err.message,"err"); }
 });
@@ -550,9 +608,11 @@ function renderSegList(){
   for(const seg of S.segments){
     const div=document.createElement("div");
     div.className="seg"; div.dataset.i=seg.i-1;
+    const first=S.words.slice(seg.wordStart,Math.min(seg.wordStart+8,seg.wordEnd+1)).map(w=>w.text).join(" ");
     div.innerHTML='<span class="part">part '+String(seg.i).padStart(2,"0")+'</span>'+
       '<span class="range">'+fmt(seg.start)+" – "+fmt(seg.end)+'</span>'+
-      '<span class="wc">'+(seg.wordEnd-seg.wordStart+1)+' w</span>';
+      '<span class="wc">'+(seg.wordEnd-seg.wordStart+1)+' w</span>'+
+      '<span class="pv">'+esc2(first)+'…</span>';
     div.addEventListener("click",()=>selectSeg(seg.i-1));
     list.appendChild(div);
   }
@@ -567,6 +627,7 @@ function selectSeg(idx){
   if(S.demo) S.demoClock=seg.start;
   $("btnPlay").disabled=!(player.src||S.demo);
   $("btnExport").disabled=!player.src||S.demo;
+  $("btnExportAll").disabled=!player.src||S.demo||S.segments.length<2;
   buildGroups();
   updateTimeLabel();
   draw();
@@ -585,7 +646,7 @@ function buildGroups(){
   }
   S.groups=groups;
 }
-$("wordsPer").addEventListener("change",()=>{ buildGroups(); draw(); });
+$("wordsPer").addEventListener("change",()=>{ buildGroups(); saveSettings(); draw(); });
 
 function groupAt(t){
   const g=S.groups;
@@ -598,9 +659,12 @@ function groupAt(t){
 /* ============================================================
    DRAW · the sexy part
 ============================================================ */
-["capSize","accentColor","bgColor","coverBg","showCover","showWave","showPart","showProg","showEnd","showSafe","titleText"]
+["capSize","accentColor","bgColor","coverBg","showCover","showWave","showPart","showProg","showEnd",
+ "showIntro","showDust","showSafe","titleText","hookText","capStyle","syncOff"]
   .forEach(id=>$(id).addEventListener("input",()=>{
     if(id==="capSize") $("capSizeVal").textContent=$("capSize").value;
+    if(id==="syncOff") $("syncOffVal").textContent=(+$("syncOff").value).toFixed(2)+" s";
+    saveSettings();
     draw();
   }));
 
@@ -662,6 +726,20 @@ function draw(){
   ctx.fillStyle=aura;
   ctx.fillRect(0,0,W,H);
 
+  /* drifting embers · deterministic from t so exports match previews */
+  if($("showDust").checked){
+    for(let i=0;i<26;i++){
+      const seed=(i*997)%613;
+      const speed=26+(i%7)*9;
+      const py=H+30-((t*speed+seed*13)%(H+140));
+      const px=((seed*1.7*97)%W)+Math.sin(t*.4+seed)*36;
+      ctx.globalAlpha=.07+.15*((i%5)/4);
+      ctx.fillStyle=accent;
+      ctx.beginPath(); ctx.arc(px,py,2+(i%4),0,7); ctx.fill();
+    }
+    ctx.globalAlpha=1;
+  }
+
   /* cover · slow ken-burns + glow */
   if(hasCover){
     const base=560;
@@ -711,7 +789,7 @@ function draw(){
     sampleWave(t);
     const wy=hasCover?1148:560, ww=W-320, bx=160, bw=ww/64;
     for(let i=0;i<64;i++){
-      const v=waveData[i]/255;
+      const v=waveData[i<32?i:63-i]/255;   /* mirrored — symmetric reads better */
       const bh=8+v*74;
       ctx.fillStyle=i/64<((t%3)/3)?accent:"rgba(255,255,255,.22)";
       ctx.fillStyle=accent;
@@ -722,8 +800,35 @@ function draw(){
     ctx.globalAlpha=1;
   }
 
-  /* captions */
-  drawCaptions(t);
+  /* hook line · the scroll-stopper up top */
+  const hook=$("hookText").value.trim();
+  if(hook){
+    ctx.font='400 54px "Archivo Black", "Inter", sans-serif';
+    ctx.textAlign="center";
+    const maxHW=W-140;
+    const wordsH=hook.split(" ");
+    const linesH=[]; let cur="";
+    for(const w of wordsH){
+      const tryLine=cur?cur+" "+w:w;
+      if(ctx.measureText(tryLine).width>maxHW&&cur){ linesH.push(cur); cur=w; }
+      else cur=tryLine;
+    }
+    if(cur) linesH.push(cur);
+    let hy=150;
+    for(const ln of linesH.slice(0,2)){
+      ctx.save();
+      ctx.shadowColor="rgba(0,0,0,.7)"; ctx.shadowBlur=18;
+      ctx.fillStyle=theme.text;
+      ctx.fillText(ln,W/2,hy);
+      ctx.restore();
+      hy+=66;
+    }
+    ctx.fillStyle=accent;
+    ctx.fillRect(W/2-60,hy-38,120,7);
+  }
+
+  /* captions · nudged by the sync offset */
+  drawCaptions(t+parseFloat($("syncOff").value||0));
 
   /* progress */
   if($("showProg").checked&&S.segIdx>=0){
@@ -736,6 +841,27 @@ function draw(){
     ctx.fillStyle=accent;
     roundRect(ctx,80,H-118,Math.max(10,(W-160)*frac),10,5); ctx.fill();
     ctx.restore();
+  }
+
+  /* intro card · orient the viewer, then get out of the way */
+  if($("showIntro").checked&&S.segIdx>=0){
+    const el2=t-S.segments[S.segIdx].start;
+    if(el2>=0&&el2<1.4){
+      const k=el2<1?1:1-(el2-1)/.4;
+      ctx.fillStyle="rgba(4,6,10,"+(.8*Math.max(0,Math.min(1,k))).toFixed(3)+")";
+      ctx.fillRect(0,0,W,H);
+      ctx.globalAlpha=Math.max(0,Math.min(1,k));
+      ctx.textAlign="center";
+      if(title){
+        ctx.fillStyle=theme.text;
+        ctx.font='900 64px "Fraunces", Georgia, serif';
+        ctx.fillText(title.toUpperCase(),W/2,H/2-110);
+      }
+      ctx.fillStyle=accent;
+      ctx.font='400 128px "Archivo Black", "Inter", sans-serif';
+      ctx.fillText("PART "+S.segments[S.segIdx].i,W/2,H/2+48);
+      ctx.globalAlpha=1;
+    }
   }
 
   /* end card · the teaser hook */
@@ -809,27 +935,49 @@ function drawCaptions(t){
     let x=(W-ln.width)/2;
     for(const w of ln.words){
       const active=t>=w.start&&t<w.end;
+      const style=$("capStyle").value;
       if(active){
-        /* pop: the active word swells from its own centre */
         const age=Math.min(1,(t-w.start)/.12);
         const pop=1+.10*(1-Math.pow(1-age,3));
         const cx=x+w.w/2, cy=y-size*.35;
         ctx.save();
         ctx.translate(cx,cy); ctx.scale(pop,pop); ctx.translate(-cx,-cy);
-        const pad=size*.18;
-        ctx.shadowColor=accent+"aa"; ctx.shadowBlur=34;
-        ctx.fillStyle=accent;
-        roundRect(ctx,x-pad,y-size*.82-pad,w.w+pad*2,size*1.05+pad*2,size*.18);
-        ctx.fill();
-        ctx.shadowBlur=0;
-        ctx.fillStyle=theme.inkOnAccent;
-        ctx.fillText(w.text,x,y);
+        if(style==="boxed"){
+          const pad=size*.18;
+          ctx.shadowColor=accent+"aa"; ctx.shadowBlur=34;
+          ctx.fillStyle=accent;
+          roundRect(ctx,x-pad,y-size*.82-pad,w.w+pad*2,size*1.05+pad*2,size*.18);
+          ctx.fill();
+          ctx.shadowBlur=0;
+          ctx.fillStyle=theme.inkOnAccent;
+          ctx.fillText(w.text,x,y);
+        } else if(style==="outline"){
+          ctx.lineJoin="round";
+          ctx.strokeStyle="rgba(6,8,14,.92)"; ctx.lineWidth=size*.2;
+          ctx.strokeText(w.text,x,y);
+          ctx.fillStyle=accent;
+          ctx.fillText(w.text,x,y);
+        } else {
+          ctx.shadowColor=accent; ctx.shadowBlur=44;
+          ctx.fillStyle=accent;
+          ctx.fillText(w.text,x,y);
+          ctx.shadowBlur=22;
+          ctx.fillText(w.text,x,y);
+        }
         ctx.restore();
       } else {
         ctx.save();
-        ctx.shadowColor="rgba(0,0,0,.65)"; ctx.shadowBlur=16;
-        ctx.fillStyle=t>=w.end?theme.text:theme.dimText;
-        ctx.fillText(w.text,x,y);
+        if(style==="outline"){
+          ctx.lineJoin="round";
+          ctx.strokeStyle="rgba(6,8,14,.85)"; ctx.lineWidth=size*.2;
+          ctx.strokeText(w.text,x,y);
+          ctx.fillStyle=t>=w.end?theme.text:theme.dimText;
+          ctx.fillText(w.text,x,y);
+        } else {
+          ctx.shadowColor="rgba(0,0,0,.65)"; ctx.shadowBlur=16;
+          ctx.fillStyle=t>=w.end?theme.text:theme.dimText;
+          ctx.fillText(w.text,x,y);
+        }
         ctx.restore();
       }
       x+=w.w+spaceW;
@@ -902,7 +1050,7 @@ $("btnDemo").addEventListener("click",()=>{
     t+=dur+( /[.?!]$/.test(txt) ? .5 : .06 );
     return w;
   });
-  ingestTranscript({words});
+  ingestTranscript({words,demo:true});
   if(!$("titleText").value) $("titleText").value="LAST JUNE";
   $("btnPlay").disabled=false;
   $("btnExport").disabled=true;
@@ -932,7 +1080,8 @@ function pickMime(){
   return "";
 }
 
-$("btnExport").addEventListener("click",()=>{
+S.batch=null; S.exportCount=0;
+function startExport(){
   if(S.recording||S.segIdx<0||S.demo) return;
   ensureAudioGraph();
   const seg=S.segments[S.segIdx];
@@ -961,17 +1110,36 @@ $("btnExport").addEventListener("click",()=>{
     a.href=URL.createObjectURL(blob);
     a.download=S.lastExport.name;
     a.click();
-    setStatus($("exStatus"),"Saved "+S.lastExport.name+" ("+(blob.size/1048576).toFixed(1)+" MB)"+(S.shareFile?" — or tap Share to send it to Photos / TikTok.":""),"ok");
+    S.exportCount++;
+    setStatus($("exStatus"),"Saved "+S.lastExport.name+" ("+(blob.size/1048576).toFixed(1)+" MB)"+(S.shareFile?" — tap Share to send it to Photos / TikTok.":""),"ok");
+    if(S.batch&&S.batch.length){
+      const next=S.batch.shift();
+      setTimeout(()=>{ selectSeg(next); startExport(); },800);
+    } else if(S.batch){
+      S.batch=null;
+      $("btnExportAll").textContent="Export ALL parts";
+      setStatus($("exStatus"),"Batch done — "+S.exportCount+" parts saved.","ok");
+    }
   };
   S.recording=true;
   $("recDot").style.display="block";
   $("btnExport").disabled=true;
-  setStatus($("exStatus"),"Recording part "+seg.i+" — keep the tab in front...");
+  const batchNote=S.batch?" (batch "+(S.exportCount+1)+"/"+(S.exportCount+1+S.batch.length)+")":"";
+  setStatus($("exStatus"),"Recording part "+seg.i+batchNote+" — keep the tab in front...");
   player.play().then(()=>{
     recorder.start(1000);
     if(!rafId) rafId=requestAnimationFrame(loop);
     $("btnPlay").textContent="Pause";
   });
+}
+$("btnExport").addEventListener("click",startExport);
+$("btnExportAll").addEventListener("click",()=>{
+  if(S.demo||!S.segments.length) return;
+  if(S.batch){ S.batch=null; $("btnExportAll").textContent="Export ALL parts"; return; }
+  S.batch=S.segments.map((_,i)=>i).filter(i=>i!==0);
+  $("btnExportAll").textContent="Stop after this part";
+  selectSeg(0);
+  startExport();
 });
 
 $("bShare").addEventListener("click",()=>{
@@ -985,6 +1153,15 @@ function stopExport(){
   if(recorder&&recorder.state!=="inactive") recorder.stop();
 }
 
+restoreSettings();
+try{
+  const tx=JSON.parse(localStorage.getItem(TX_KEY));
+  if(tx&&tx.words&&tx.words.length){
+    ingestTranscript(tx);
+    setStatus($("alStatus"),"Last session's word timing restored ("+S.words.length+" words). Load the same MP3 to play or export.","ok");
+  }
+}catch(e){}
+
 /* first paint once the display fonts are in — canvas fonts must be
    loaded explicitly or fillText silently falls back */
 if(document.fonts&&document.fonts.load){
@@ -997,7 +1174,8 @@ if(document.fonts&&document.fonts.load){
 draw();
 
 window.TS={ S, draw, buildSegments, ingestTranscript, selectSeg, groupAt, nowT,
-  stopExport, loadAudio, alignFree, THEMES, get theme(){return theme;} };
+  stopExport, loadAudio, alignFree, startExport, saveSettings, restoreSettings,
+  THEMES, get theme(){return theme;} };
 </script>
 </body>
 </html>
