@@ -197,6 +197,7 @@ input[type="color"]{width:100%;height:32px;border:1px solid var(--line);border-r
       <div class="step-head"><span class="step-num">4</span><h2>Look</h2></div>
       <div class="step-body">
         <div class="themes" id="themes"></div>
+        <div class="btnrow"><button id="bMatchCover" disabled>Match colours to cover art</button></div>
         <div class="field">
           <label class="small" for="titleText">Title on video</label>
           <input type="text" id="titleText" placeholder="Book title">
@@ -204,6 +205,10 @@ input[type="color"]{width:100%;height:32px;border:1px solid var(--line);border-r
         <div class="field">
           <label class="small" for="hookText">Hook line (big text at the top — the scroll-stopper)</label>
           <input type="text" id="hookText" placeholder="she walked into the lake and never came back">
+        </div>
+        <div class="field">
+          <label class="small" for="handleText">Your handle (shown on intro + end cards)</label>
+          <input type="text" id="handleText" placeholder="@yourhandle">
         </div>
         <div class="field">
           <label class="small" for="capStyle">Caption style</label>
@@ -325,7 +330,7 @@ const S={
 const $=id=>document.getElementById(id);
 const esc2=t=>String(t??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const SET_KEY='teaser_set_v1', TX_KEY='teaser_tx_v1';
-const SET_IDS=['titleText','hookText','accentColor','bgColor','capSize','capStyle','wordsPer','segLen','syncOff'];
+const SET_IDS=['titleText','hookText','handleText','accentColor','bgColor','capSize','capStyle','wordsPer','segLen','syncOff'];
 const SET_CHECKS=['coverBg','showCover','showWave','showPart','showProg','showEnd','showIntro','showDust','showSafe'];
 function saveSettings(){
   try{
@@ -379,6 +384,35 @@ document.querySelectorAll('.theme').forEach(el=>el.addEventListener('click',()=>
   saveSettings();
   draw();
 }));
+
+function coverAccent(){
+  if(!S.coverImg) return null;
+  const c2=document.createElement("canvas"); c2.width=c2.height=40;
+  const g=c2.getContext("2d");
+  g.drawImage(S.coverImg,0,0,40,40);
+  const d=g.getImageData(0,0,40,40).data;
+  let best=null,bestScore=-1;
+  for(let i=0;i<d.length;i+=4){
+    const r=d[i],gg=d[i+1],b=d[i+2];
+    const mx=Math.max(r,gg,b),mn=Math.min(r,gg,b);
+    const sat=mx?(mx-mn)/mx:0, val=mx/255;
+    const score=sat*sat*val;
+    if(score>bestScore){ bestScore=score; best=[r,gg,b]; }
+  }
+  if(!best) return null;
+  /* punch it up so it reads as an accent */
+  const mx=Math.max(...best,1);
+  const boost=best.map(v=>Math.min(255,Math.round(v*(235/mx))));
+  const hex=v=>v.toString(16).padStart(2,"0");
+  return "#"+hex(boost[0])+hex(boost[1])+hex(boost[2]);
+}
+$("bMatchCover").addEventListener("click",()=>{
+  const a=coverAccent();
+  if(!a) return;
+  $("accentColor").value=a;
+  saveSettings();
+  draw();
+});
 
 /* film grain, pre-rendered */
 const grain=document.createElement('canvas'); grain.width=270; grain.height=480;
@@ -444,7 +478,7 @@ async function loadAudio(file){
   try{
     const meta=await parseID3(file);
     if(meta.title&&!$("titleText").value) $("titleText").value=meta.title;
-    if(meta.coverURL){ const img=new Image(); img.onload=()=>{ S.coverImg=img; draw(); }; img.src=meta.coverURL; }
+    if(meta.coverURL){ const img=new Image(); img.onload=()=>{ S.coverImg=img; $("bMatchCover").disabled=false; draw(); }; img.src=meta.coverURL; }
     setStatus($("audioStatus"),meta.title?'Loaded. Title: "'+meta.title+'"':"Loaded.","ok");
   }catch(err){ setStatus($("audioStatus"),"Loaded (tag parse skipped).","ok"); }
   player.addEventListener("loadedmetadata",()=>{ updateTimeLabel(); draw(); },{once:true});
@@ -453,7 +487,7 @@ async function loadAudio(file){
 
 $("coverFile").addEventListener("change",e=>{
   const f=e.target.files[0]; if(!f) return;
-  const img=new Image(); img.onload=()=>{ S.coverImg=img; draw(); };
+  const img=new Image(); img.onload=()=>{ S.coverImg=img; $("bMatchCover").disabled=false; draw(); };
   img.src=URL.createObjectURL(f);
 });
 
@@ -612,29 +646,50 @@ async function alignFree(){
     }
     const speech=merged.filter(r=>r[1]-r[0]>=.12);
     if(!speech.length) throw new Error("no speech detected");
-    const toks=text.replace(/\s+/g," ").trim().split(" ");
-    const wts=toks.map(w=>Math.max(2,w.replace(/[^A-Za-z0-9']/g,"").length)+(/[,;:.!?]["')\]]*$/.test(w)?2:0));
-    const totalW=wts.reduce((a,b)=>a+b,0);
-    const totalD=speech.reduce((a,r)=>a+(r[1]-r[0]),0);
-    const words=[]; let ri=0, pos=speech[0][0];
-    for(let i=0;i<toks.length;i++){
-      let remain=wts[i]/totalW*totalD;
-      const start=pos;
-      while(remain>0&&ri<speech.length){
-        const avail=speech[ri][1]-pos;
-        if(avail>=remain){ pos+=remain; remain=0; }
-        else { remain-=avail; ri++; if(ri<speech.length) pos=speech[ri][0]; else { pos=speech[speech.length-1][1]; remain=0; } }
+    /* syllable nuclei: energy peaks inside each speech block estimate how
+       many spoken syllables it actually carries — robust to rate changes */
+    const sm=env.map((v,i)=>(env[i-1]||v)*.25+v*.5+(env[i+1]||v)*.25);
+    const capRaw=speech.map(r=>{
+      const i0=Math.floor(r[0]/.02), i1=Math.floor(r[1]/.02);
+      let n=0, last=-10;
+      for(let i=Math.max(1,i0);i<Math.min(sm.length-1,i1);i++){
+        if(sm[i]>thr&&sm[i]>=sm[i-1]&&sm[i]>sm[i+1]&&(i*.02-last)>=.09){ n++; last=i*.02; }
       }
-      words.push({text:toks[i],start:Math.max(0,start),end:Math.max(start+.05,pos)});
+      return Math.max(1,n);
+    });
+    /* blend measured syllable capacity with duration so a flat or noisy
+       envelope degrades gracefully to the duration-proportional model */
+    const durs=speech.map(r=>r[1]-r[0]);
+    const sumCap=capRaw.reduce((a,b)=>a+b,0), sumDur=durs.reduce((a,b)=>a+b,0);
+    const cap=speech.map((r,i)=>.5*(capRaw[i]/sumCap)+.5*(durs[i]/sumDur));
+    const sumC=cap.reduce((a,b)=>a+b,0);
+    const syl=w=>{
+      const m=w.toLowerCase().replace(/[^a-z]/g,"").match(/[aeiouy]+/g);
+      return Math.max(1,m?m.length:1);
+    };
+    const toks=text.replace(/\s+/g," ").trim().split(" ");
+    const wts=toks.map(w=>syl(w)+(/[,;:.!?]["')\]]*$/.test(w)?.6:0));
+    const totalW=wts.reduce((a,b)=>a+b,0);
+    /* map capacity-space position -> time inside its region */
+    const words=[]; let ri=0, used=0;   /* used = capacity consumed in region ri */
+    for(let i=0;i<toks.length;i++){
+      let remain=wts[i]/totalW*sumC;
+      const start=speech[ri][0]+(used/cap[ri])*(speech[ri][1]-speech[ri][0]);
+      while(remain>0&&ri<speech.length){
+        const avail=cap[ri]-used;
+        if(avail>=remain){ used+=remain; remain=0; }
+        else { remain-=avail; if(ri<speech.length-1){ ri++; used=0; } else { used=cap[ri]; remain=0; } }
+      }
+      const end=speech[ri][0]+(used/cap[ri])*(speech[ri][1]-speech[ri][0]);
+      words.push({text:toks[i],start:Math.max(0,start),end:Math.max(start+.05,end)});
       /* narrators pause at sentence ends: snap the next sentence to the
          next speech block when this one is nearly spent */
       if(/[.!?]["')\]]*$/.test(toks[i])&&ri<speech.length-1){
-        const tail=speech[ri][1]-pos, rlen=speech[ri][1]-speech[ri][0];
-        if(tail<rlen*.45){ ri++; pos=speech[ri][0]; }
+        if(cap[ri]-used<cap[ri]*.45){ ri++; used=0; }
       }
     }
     ingestTranscript({words,aligned:true});
-    setStatus($("alStatus"),toks.length+" words timed across "+speech.length+" speech blocks. $0.","ok");
+    setStatus($("alStatus"),toks.length+" words timed across "+speech.length+" speech blocks ("+capRaw.reduce((a,b)=>a+b,0)+" syllable peaks). $0.","ok");
   }catch(err){
     setStatus($("alStatus"),"Could not align: "+err.message+". Very long files can exceed phone memory — split the MP3 into chapters.","err");
   }
@@ -758,10 +813,28 @@ function renderSegList(){
     const div=document.createElement("div");
     div.className="seg"; div.dataset.i=seg.i-1;
     const first=S.words.slice(seg.wordStart,Math.min(seg.wordStart+8,seg.wordEnd+1)).map(w=>w.text).join(" ");
+    const done=(doneSet()[sanitize($("titleText").value)]||[]).includes(seg.i);
     div.innerHTML='<span class="part">part '+String(seg.i).padStart(2,"0")+'</span>'+
       '<span class="range">'+fmt(seg.start)+" – "+fmt(seg.end)+'</span>'+
+      (done?'<span style="color:var(--ok);font-weight:700">✓</span>':"")+
       '<span class="wc">'+(seg.wordEnd-seg.wordStart+1)+' w</span>'+
       '<span class="pv">'+esc2(first)+'…</span>';
+    const cp=document.createElement("button");
+    cp.textContent="Copy caption";
+    cp.style.cssText="font-size:10px;padding:3px 8px;margin-left:auto";
+    cp.addEventListener("click",ev=>{
+      ev.stopPropagation();
+      const title=$("titleText").value.trim()||"Audiobook";
+      const hook=$("hookText").value.trim();
+      const tag=sanitize(title).replace(/-/g,"");
+      const cap2=title+" — Part "+seg.i+(hook?"\n"+hook:"")+
+        "\n\u201C"+first+"…\u201D"+
+        "\n\n#BookTok #audiobook #"+tag+" #fyp"+(seg.i<S.segments.length?" — part "+(seg.i+1)+" tomorrow":"");
+      (navigator.clipboard?navigator.clipboard.writeText(cap2):Promise.reject()).then(
+        ()=>{ cp.textContent="Copied!"; setTimeout(()=>cp.textContent="Copy caption",1200); },
+        ()=>{ cp.textContent="Clipboard blocked"; setTimeout(()=>cp.textContent="Copy caption",1500); });
+    });
+    div.appendChild(cp);
     div.addEventListener("click",()=>selectSeg(seg.i-1));
     list.appendChild(div);
   }
@@ -809,7 +882,7 @@ function groupAt(t){
    DRAW · the sexy part
 ============================================================ */
 ["capSize","accentColor","bgColor","coverBg","showCover","showWave","showPart","showProg","showEnd",
- "showIntro","showDust","showSafe","titleText","hookText","capStyle","syncOff"]
+ "showIntro","showDust","showSafe","titleText","hookText","handleText","capStyle","syncOff"]
   .forEach(id=>$(id).addEventListener("input",()=>{
     if(id==="capSize") $("capSizeVal").textContent=$("capSize").value;
     if(id==="syncOff") $("syncOffVal").textContent=(+$("syncOff").value).toFixed(2)+" s";
@@ -1009,6 +1082,12 @@ function draw(tOverride){
       ctx.fillStyle=accent;
       ctx.font='400 128px "Archivo Black", "Inter", sans-serif';
       ctx.fillText("PART "+S.segments[S.segIdx].i,W/2,H/2+48);
+      const hd=$("handleText").value.trim();
+      if(hd){
+        ctx.fillStyle=theme.dimText;
+        ctx.font='700 42px "JetBrains Mono", monospace';
+        ctx.fillText(hd,W/2,H/2+150);
+      }
       ctx.globalAlpha=1;
     }
   }
@@ -1032,6 +1111,12 @@ function draw(tOverride){
         ctx.fillStyle=theme.dimText;
         ctx.font='600 44px "Fraunces", serif';
         ctx.fillText(title.toUpperCase(),W/2,H/2+(last?80:196));
+      }
+      const hd2=$("handleText").value.trim();
+      if(hd2){
+        ctx.fillStyle=accent;
+        ctx.font='700 46px "JetBrains Mono", monospace';
+        ctx.fillText(hd2,W/2,H/2+(last?170:290));
       }
       ctx.globalAlpha=1;
     }
@@ -1414,8 +1499,22 @@ function pickMime(){
 }
 
 S.batch=null; S.exportCount=0; S.rendering=false;
+const DONE_KEY='teaser_done_v1';
+function doneSet(){
+  try{ return JSON.parse(localStorage.getItem(DONE_KEY))||{}; }catch(e){ return {}; }
+}
+function markDone(segI){
+  try{
+    const all=doneSet(), k=sanitize($("titleText").value);
+    all[k]=Array.from(new Set([...(all[k]||[]),segI]));
+    localStorage.setItem(DONE_KEY,JSON.stringify(all));
+  }catch(e){}
+  renderSegList();
+  document.querySelectorAll(".seg").forEach(el=>el.classList.toggle("active",+el.dataset.i===S.segIdx));
+}
 function finishExport(blob,ext,seg,mode,secs){
   S.exportCount++;
+  markDone(seg.i);
   S.lastExport={size:blob.size,mode,
     name:sanitize($("titleText").value)+"-part-"+String(seg.i).padStart(2,"0")+"."+ext};
   try{
