@@ -151,7 +151,8 @@ input[type="color"]{width:100%;height:32px;border:1px solid var(--line);border-r
           <label class="filebtn" for="textFile">Load text file (.txt / .md)</label>
           <input type="file" id="textFile" accept=".txt,.md,.text,text/plain,text/markdown" hidden>
         </div>
-        <button class="primary" id="btnAlign" disabled>Align text to audio — free, on-device</button>
+        <button class="primary" id="btnAuto" disabled>AUTO-PILOT — split + align the whole book</button>
+        <button id="btnAlign" disabled>Align just this chunk</button>
         <div class="status" id="alStatus">No key, no upload: the audio is scanned locally for pauses and every word is timed to it.</div>
         <details id="proBox">
           <summary style="font-size:11px;color:var(--dim);cursor:pointer">Optional: ElevenLabs Scribe (word-perfect stamps, needs a key)</summary>
@@ -465,6 +466,7 @@ $("audioFile").addEventListener("change",e=>{ if(e.target.files[0]) loadAudio(e.
 
 async function loadAudio(file){
   S.audioFile=file; S.demo=false; S.decoded=null;
+  S.book=null; S.bookPiece=-1;
   $("btnSplit").disabled=false;
   if(S.audioURL) URL.revokeObjectURL(S.audioURL);
   S.audioURL=URL.createObjectURL(file);
@@ -497,17 +499,7 @@ $("coverFile").addEventListener("change",e=>{
 ============================================================ */
 const BR1=[0,32,40,48,56,64,80,96,112,128,160,192,224,256,320];
 const BR2=[0,8,16,24,32,40,48,56,64,80,96,112,128,144,160];
-async function splitMp3(){
-  const f=S.audioFile;
-  if(!f) return;
-  if(!/\.mp3$/i.test(f.name)&&f.type!=="audio/mpeg"){
-    setStatus($("splitStatus"),"Only raw MP3 files can be split this way (m4a/m4b are containers).","err");
-    return;
-  }
-  $("btnSplit").disabled=true;
-  setStatus($("splitStatus"),"Scanning frames...");
-  try{
-    const target=+$("splitLen").value;
+async function scanMp3(f,target){
     const head=new Uint8Array(await f.slice(0,10).arrayBuffer());
     let pos=0;
     if(head[0]===0x49&&head[1]===0x44&&head[2]===0x33)
@@ -524,6 +516,7 @@ async function splitMp3(){
         bytes=new Uint8Array(await f.slice(pos,Math.min(f.size,pos+CHUNK)).arrayBuffer());
         if(bytes.length<4) break;
         setStatus($("splitStatus"),"Scanning... "+Math.round(pos/f.size*100)+"%");
+        setStatus($("alStatus"),$("alStatus").textContent.replace(/scanning.*$/i,"scanning "+Math.round(pos/f.size*100)+"%"));
         await new Promise(r=>setTimeout(r,0));
       }
       const o=pos-bufStart;
@@ -549,6 +542,20 @@ async function splitMp3(){
     }
     if(cuts[cuts.length-1]<f.size){ cuts.push(f.size); cutT.push(tAcc); }
     if(frames<100) throw new Error("no MP3 frames found — is this really an MP3?");
+    return {cuts,cutT,frames,tAcc};
+}
+async function splitMp3(){
+  const f=S.audioFile;
+  if(!f) return;
+  if(!/\.mp3$/i.test(f.name)&&f.type!=="audio/mpeg"){
+    setStatus($("splitStatus"),"Only raw MP3 files can be split this way (m4a/m4b are containers).","err");
+    return;
+  }
+  $("btnSplit").disabled=true;
+  setStatus($("splitStatus"),"Scanning frames...");
+  try{
+    const target=+$("splitLen").value;
+    const {cuts,cutT,frames,tAcc}=await scanMp3(f,target);
     const base=f.name.replace(/\.mp3$/i,"");
     const list=$("splitList");
     list.innerHTML="";
@@ -581,29 +588,85 @@ async function splitMp3(){
 $("btnSplit").addEventListener("click",splitMp3);
 
 /* ============================================================
-   FREE ALIGNMENT · decode locally, find the narration's pauses,
-   time the pasted words across the speech between them
+   AUDIO ANALYSIS · decode to 8 kHz mono (tiny), find speech
+   blocks and syllable nuclei. Phone-safe even for long pieces.
 ============================================================ */
+async function analyzeAudio(arrayBuffer){
+  const oc=new OfflineAudioContext(1,8000,8000);
+  const buf=await oc.decodeAudioData(arrayBuffer);
+  const sr=buf.sampleRate, ch=buf.getChannelData(0);
+  const hop=Math.floor(sr*.02);
+  const env=[];
+  for(let i=0;i<ch.length;i+=hop){
+    let sum=0; const end=Math.min(ch.length,i+hop);
+    for(let j=i;j<end;j+=2) sum+=ch[j]*ch[j];
+    env.push(Math.sqrt(sum/Math.max(1,(end-i)/2)));
+  }
+  const sorted=[...env].sort((a,b)=>a-b);
+  const floor=sorted[Math.floor(sorted.length*.15)]||0;
+  const peak=sorted[Math.floor(sorted.length*.95)]||1;
+  const thr=floor+(peak-floor)*.12;
+  const regions=[]; let on=false,st=0;
+  for(let i=0;i<env.length;i++){
+    const v=env[i]>thr;
+    if(v&&!on){ on=true; st=i*.02; }
+    else if(!v&&on){ on=false; regions.push([st,i*.02]); }
+  }
+  if(on) regions.push([st,env.length*.02]);
+  const merged=[];
+  for(const r of regions){
+    if(merged.length&&r[0]-merged[merged.length-1][1]<.18) merged[merged.length-1][1]=r[1];
+    else merged.push([r[0],r[1]]);
+  }
+  const speech=merged.filter(r=>r[1]-r[0]>=.12);
+  if(!speech.length) throw new Error("no speech detected");
+  const sm=env.map((v,i)=>(env[i-1]||v)*.25+v*.5+(env[i+1]||v)*.25);
+  const capRaw=speech.map(r=>{
+    const i0=Math.floor(r[0]/.02), i1=Math.floor(r[1]/.02);
+    let n=0, last=-10;
+    for(let i=Math.max(1,i0);i<Math.min(sm.length-1,i1);i++){
+      if(sm[i]>thr&&sm[i]>=sm[i-1]&&sm[i]>sm[i+1]&&(i*.02-last)>=.09){ n++; last=i*.02; }
+    }
+    return Math.max(1,n);
+  });
+  const durs=speech.map(r=>r[1]-r[0]);
+  const sumCap=capRaw.reduce((a,b)=>a+b,0), sumDur=durs.reduce((a,b)=>a+b,0);
+  const cap=speech.map((r,i)=>.5*(capRaw[i]/sumCap)+.5*(durs[i]/sumDur));
+  return { speech, cap, sumC:cap.reduce((a,b)=>a+b,0),
+    nuclei:sumCap, speechDur:sumDur, dur:buf.duration };
+}
+const wtOf=w=>{
+  const m=w.toLowerCase().replace(/[^a-z]/g,"").match(/[aeiouy]+/g);
+  return Math.max(1,m?m.length:1)+(/[,;:.!?]["')\]]*$/.test(w)?.6:0);
+};
+function alignTokens(an,toks){
+  const {speech,cap}=an;
+  const sumC=cap.reduce((a,b)=>a+b,0);
+  const wts=toks.map(wtOf);
+  const totalW=wts.reduce((a,b)=>a+b,0);
+  const words=[]; let ri=0, used=0;
+  for(let i=0;i<toks.length;i++){
+    let remain=wts[i]/totalW*sumC;
+    const start=speech[ri][0]+(used/cap[ri])*(speech[ri][1]-speech[ri][0]);
+    while(remain>0&&ri<speech.length){
+      const avail=cap[ri]-used;
+      if(avail>=remain){ used+=remain; remain=0; }
+      else { remain-=avail; if(ri<speech.length-1){ ri++; used=0; } else { used=cap[ri]; remain=0; } }
+    }
+    const end=speech[ri][0]+(used/cap[ri])*(speech[ri][1]-speech[ri][0]);
+    words.push({text:toks[i],start:Math.max(0,start),end:Math.max(start+.05,end)});
+    if(/[.!?]["')\]]*$/.test(toks[i])&&ri<speech.length-1){
+      if(cap[ri]-used<cap[ri]*.45){ ri++; used=0; }
+    }
+  }
+  return words;
+}
 function syncAlignBtn(){
-  $("btnAlign").disabled=!(S.audioFile&&$("bookText").value.trim());
+  const ready=!!(S.audioFile&&$("bookText").value.trim());
+  $("btnAlign").disabled=!ready;
+  $("btnAuto").disabled=!ready;
 }
 $("bookText").addEventListener("input",syncAlignBtn);
-$("textFile").addEventListener("change",async e=>{
-  const f=e.target.files[0];
-  if(!f) return;
-  try{
-    let t=await f.text();
-    /* strip html tags if someone feeds an html-ish file, collapse whitespace */
-    if(/^\s*</.test(t)) t=t.replace(/<[^>]+>/g," ");
-    t=t.replace(/\r/g,"").replace(/[ \t]+/g," ").replace(/\n{2,}/g,"\n").trim();
-    $("bookText").value=t;
-    syncAlignBtn();
-    setStatus($("alStatus"),f.name+" loaded — "+t.split(/\s+/).length+" words. Hit Align when the audio is in.","ok");
-  }catch(err){
-    setStatus($("alStatus"),"Could not read "+f.name+": "+err.message,"err");
-  }
-  e.target.value="";
-});
 
 async function alignFree(){
   const text=$("bookText").value.trim();
@@ -612,90 +675,153 @@ async function alignFree(){
   setStatus($("alStatus"),"Decoding audio locally...");
   try{
     if(S.audioFile.size>110*1048576)
-      throw new Error("this file is too big to decode in one go (" +
-        (S.audioFile.size/1048576).toFixed(0)+" MB) — use the splitter in step 1 to cut it into chapters first");
-    const ab=await S.audioFile.arrayBuffer();
-    const ac=new (window.AudioContext||window.webkitAudioContext)();
-    const buf=await ac.decodeAudioData(ab);
-    try{ ac.close(); }catch(e){}
-    setStatus($("alStatus"),"Scanning for pauses...");
-    await new Promise(r=>setTimeout(r,30));
-    const sr=buf.sampleRate, ch=buf.getChannelData(0);
-    const hop=Math.floor(sr*.02);
-    const env=[];
-    for(let i=0;i<ch.length;i+=hop){
-      let sum=0; const end=Math.min(ch.length,i+hop);
-      for(let j=i;j<end;j+=4) sum+=ch[j]*ch[j];
-      env.push(Math.sqrt(sum/Math.max(1,(end-i)/4)));
-    }
-    const sorted=[...env].sort((a,b)=>a-b);
-    const floor=sorted[Math.floor(sorted.length*.15)]||0;
-    const peak=sorted[Math.floor(sorted.length*.95)]||1;
-    const thr=floor+(peak-floor)*.12;
-    const regions=[]; let on=false,st=0;
-    for(let i=0;i<env.length;i++){
-      const v=env[i]>thr;
-      if(v&&!on){ on=true; st=i*.02; }
-      else if(!v&&on){ on=false; regions.push([st,i*.02]); }
-    }
-    if(on) regions.push([st,env.length*.02]);
-    const merged=[];
-    for(const r of regions){
-      if(merged.length&&r[0]-merged[merged.length-1][1]<.18) merged[merged.length-1][1]=r[1];
-      else merged.push([r[0],r[1]]);
-    }
-    const speech=merged.filter(r=>r[1]-r[0]>=.12);
-    if(!speech.length) throw new Error("no speech detected");
-    /* syllable nuclei: energy peaks inside each speech block estimate how
-       many spoken syllables it actually carries — robust to rate changes */
-    const sm=env.map((v,i)=>(env[i-1]||v)*.25+v*.5+(env[i+1]||v)*.25);
-    const capRaw=speech.map(r=>{
-      const i0=Math.floor(r[0]/.02), i1=Math.floor(r[1]/.02);
-      let n=0, last=-10;
-      for(let i=Math.max(1,i0);i<Math.min(sm.length-1,i1);i++){
-        if(sm[i]>thr&&sm[i]>=sm[i-1]&&sm[i]>sm[i+1]&&(i*.02-last)>=.09){ n++; last=i*.02; }
-      }
-      return Math.max(1,n);
-    });
-    /* blend measured syllable capacity with duration so a flat or noisy
-       envelope degrades gracefully to the duration-proportional model */
-    const durs=speech.map(r=>r[1]-r[0]);
-    const sumCap=capRaw.reduce((a,b)=>a+b,0), sumDur=durs.reduce((a,b)=>a+b,0);
-    const cap=speech.map((r,i)=>.5*(capRaw[i]/sumCap)+.5*(durs[i]/sumDur));
-    const sumC=cap.reduce((a,b)=>a+b,0);
-    const syl=w=>{
-      const m=w.toLowerCase().replace(/[^a-z]/g,"").match(/[aeiouy]+/g);
-      return Math.max(1,m?m.length:1);
-    };
+      throw new Error("this file is too big to decode in one go ("+(S.audioFile.size/1048576).toFixed(0)+
+        " MB) — use AUTO-PILOT, which splits and aligns it piece by piece");
+    const an=await analyzeAudio(await S.audioFile.arrayBuffer());
     const toks=text.replace(/\s+/g," ").trim().split(" ");
-    const wts=toks.map(w=>syl(w)+(/[,;:.!?]["')\]]*$/.test(w)?.6:0));
-    const totalW=wts.reduce((a,b)=>a+b,0);
-    /* map capacity-space position -> time inside its region */
-    const words=[]; let ri=0, used=0;   /* used = capacity consumed in region ri */
-    for(let i=0;i<toks.length;i++){
-      let remain=wts[i]/totalW*sumC;
-      const start=speech[ri][0]+(used/cap[ri])*(speech[ri][1]-speech[ri][0]);
-      while(remain>0&&ri<speech.length){
-        const avail=cap[ri]-used;
-        if(avail>=remain){ used+=remain; remain=0; }
-        else { remain-=avail; if(ri<speech.length-1){ ri++; used=0; } else { used=cap[ri]; remain=0; } }
-      }
-      const end=speech[ri][0]+(used/cap[ri])*(speech[ri][1]-speech[ri][0]);
-      words.push({text:toks[i],start:Math.max(0,start),end:Math.max(start+.05,end)});
-      /* narrators pause at sentence ends: snap the next sentence to the
-         next speech block when this one is nearly spent */
-      if(/[.!?]["')\]]*$/.test(toks[i])&&ri<speech.length-1){
-        if(cap[ri]-used<cap[ri]*.45){ ri++; used=0; }
-      }
+    const textSyl=toks.reduce((a,w)=>a+wtOf(w),0);
+    if(textSyl>an.nuclei*2.5){
+      setStatus($("alStatus"),"This text looks ~"+(textSyl/Math.max(1,an.nuclei)).toFixed(1)+
+        "× longer than this audio chunk. If it is the WHOLE book, load the full MP3 and hit AUTO-PILOT — it splits and matches everything for you.","err");
+      syncAlignBtn();
+      return;
     }
+    const words=alignTokens(an,toks);
+    S.book=null; S.bookPiece=-1;
     ingestTranscript({words,aligned:true});
-    setStatus($("alStatus"),toks.length+" words timed across "+speech.length+" speech blocks ("+capRaw.reduce((a,b)=>a+b,0)+" syllable peaks). $0.","ok");
+    setStatus($("alStatus"),toks.length+" words timed across "+an.speech.length+" speech blocks ("+an.nuclei+" syllable peaks). $0.","ok");
   }catch(err){
-    setStatus($("alStatus"),"Could not align: "+err.message+". Very long files can exceed phone memory — split the MP3 into chapters.","err");
+    setStatus($("alStatus"),"Could not align: "+err.message+".","err");
   }
   syncAlignBtn();
 }
 $("btnAlign").addEventListener("click",alignFree);
+
+/* ============================================================
+   AUTO-PILOT · whole-book mode. Split the audio, listen to each
+   piece, apportion the text by measured capacity, align it all.
+============================================================ */
+function makeWavPiece(file,header,byteFrom,byteTo){
+  /* clone the 44-byte header with corrected sizes over a PCM slice */
+  const h=new Uint8Array(44);
+  h.set(header);
+  const dv=new DataView(h.buffer);
+  const dataLen=byteTo-byteFrom;
+  dv.setUint32(4,36+dataLen,true);
+  dv.setUint32(40,dataLen,true);
+  return new Blob([h,file.slice(byteFrom,byteTo)],{type:"audio/wav"});
+}
+async function planPieces(f,targetSec){
+  if(/\.mp3$/i.test(f.name)||f.type==="audio/mpeg"){
+    const {cuts,cutT}=await scanMp3(f,targetSec);
+    const base=f.name.replace(/\.[a-z0-9]+$/i,"");
+    const out=[];
+    for(let i=0;i<cuts.length-1;i++)
+      out.push({ name:base+"-"+String(i+1).padStart(2,"0")+".mp3",
+        blob:f.slice(i===0?0:cuts[i],cuts[i+1],"audio/mpeg"),
+        dur:cutT[i+1]-cutT[i] });
+    return out;
+  }
+  if(/\.wav$/i.test(f.name)||f.type==="audio/wav"||f.type==="audio/x-wav"){
+    const header=new Uint8Array(await f.slice(0,44).arrayBuffer());
+    const dv=new DataView(header.buffer);
+    if(dv.getUint32(0,false)!==0x52494646) return [{name:f.name,blob:f,dur:0}];
+    const srr=dv.getUint32(24,true), block=dv.getUint16(32,true)||2;
+    const bytesPerSec=srr*block;
+    const dataStart=44, dataEnd=f.size;
+    const step=Math.max(block,Math.floor(targetSec*bytesPerSec/block)*block);
+    const out=[]; let i=0;
+    for(let off=dataStart;off<dataEnd;off+=step){
+      const to=Math.min(dataEnd,off+step);
+      out.push({ name:f.name.replace(/\.wav$/i,"")+"-"+String(++i).padStart(2,"0")+".wav",
+        blob:makeWavPiece(f,header,off,to), dur:(to-off)/bytesPerSec });
+    }
+    return out;
+  }
+  return [{name:f.name,blob:f,dur:0}];
+}
+async function autoPilot(opts){
+  const f=S.audioFile, text=$("bookText").value.trim();
+  if(!f||!text) return;
+  $("btnAuto").disabled=true; $("btnAlign").disabled=true;
+  try{
+    const targetSec=(opts&&opts.targetSec)||900;
+    setStatus($("alStatus"),"Auto-pilot: scanning the audio...");
+    await new Promise(r=>setTimeout(r,20));
+    const pieces=await planPieces(f,targetSec);
+    const anns=[];
+    for(let i=0;i<pieces.length;i++){
+      setStatus($("alStatus"),"Auto-pilot: listening to piece "+(i+1)+"/"+pieces.length+"...");
+      await new Promise(r=>setTimeout(r,20));
+      anns.push(await analyzeAudio(await pieces[i].blob.arrayBuffer()));
+    }
+    /* apportion the text by measured capacity, boundaries snapped to sentence ends */
+    const toks=text.replace(/\s+/g," ").trim().split(" ");
+    const wts=toks.map(wtOf);
+    const totalW=wts.reduce((a,b)=>a+b,0);
+    const capT=anns.map(a=>a.nuclei+a.speechDur*4);      /* stable blend */
+    const grand=capT.reduce((a,b)=>a+b,0);
+    const slices=[]; let idx=0;
+    for(let p=0;p<pieces.length;p++){
+      if(p===pieces.length-1){ slices.push([idx,toks.length]); break; }
+      const budget=capT[p]/grand*totalW;
+      let j=idx, acc=0;
+      while(j<toks.length&&acc<budget){ acc+=wts[j]; j++; }
+      let best=j, bestD=1e9;
+      for(let k=Math.max(idx+1,j-16);k<Math.min(toks.length+1,j+16);k++){
+        if(k===toks.length||/[.!?]["')\]]*$/.test(toks[k-1])){
+          const d=Math.abs(k-j);
+          if(d<bestD){ bestD=d; best=k; }
+        }
+      }
+      slices.push([idx,best]); idx=best;
+    }
+    S.book={ pieces:pieces.map((pc,p)=>({ name:pc.name, blob:pc.blob, dur:anns[p].dur,
+      words:slices[p][1]>slices[p][0]?alignTokens(anns[p],toks.slice(slices[p][0],slices[p][1])):[] })) };
+    S.bookPiece=-1;
+    buildBookSegments();
+    await usePiece(0);
+    selectSeg(0);
+    try{
+      const save2={book:true,pieces:S.book.pieces.map(pc=>({name:pc.name,dur:pc.dur,words:pc.words}))};
+      const j=JSON.stringify(save2);
+      if(j.length<2_500_000) localStorage.setItem(TX_KEY,j);
+      S.rawTranscript=save2;
+      $("btnSaveTx").disabled=false;
+    }catch(e){}
+    const nW=S.book.pieces.reduce((a,pc)=>a+pc.words.length,0);
+    setStatus($("alStatus"),"Auto-pilot done: "+pieces.length+" pieces, "+nW+" words, "+S.segments.length+" parts. Everything is matched — just export.","ok");
+  }catch(err){
+    setStatus($("alStatus"),"Auto-pilot failed: "+err.message,"err");
+  }
+  syncAlignBtn();
+}
+$("btnAuto").addEventListener("click",()=>autoPilot());
+
+function buildBookSegments(){
+  const target=parseFloat($("segLen").value);
+  S.segments=[];
+  S.book.pieces.forEach((pc,pi)=>{
+    for(const sg of segmentWords(pc.words,target))
+      S.segments.push({...sg,piece:pi,i:S.segments.length+1});
+  });
+  renderSegList();
+  $("btnSegment").disabled=false;
+  syncHybridBtns();
+}
+async function usePiece(pi){
+  if(!S.book||S.bookPiece===pi) return;
+  const pc=S.book.pieces[pi];
+  const file=new File([pc.blob],pc.name,{type:pc.blob.type||"audio/mpeg"});
+  S.audioFile=file; S.decoded=null;
+  if(S.audioURL) URL.revokeObjectURL(S.audioURL);
+  S.audioURL=URL.createObjectURL(file);
+  player.src=S.audioURL;
+  $("audioName").textContent=pc.name+" (piece "+(pi+1)+"/"+S.book.pieces.length+")";
+  S.bookPiece=pi;
+  S.words=pc.words;
+  buildGroups();
+}
 
 /* ============================================================
    TRANSCRIPTION · ElevenLabs Scribe (optional)
@@ -781,10 +907,8 @@ $("txFile").addEventListener("change",async e=>{
 $("btnSegment").addEventListener("click",buildSegments);
 $("segLen").addEventListener("change",()=>{ if(S.words) buildSegments(); });
 
-function buildSegments(){
-  if(!S.words) return;
-  const target=parseFloat($("segLen").value);
-  const words=S.words, segs=[];
+function segmentWords(words,target){
+  const segs=[];
   let i0=0;
   while(i0<words.length){
     const t0=words[i0].start;
@@ -800,7 +924,12 @@ function buildSegments(){
     segs.push({ i:segs.length+1, start:words[i0].start, end:words[iCut].end, wordStart:i0, wordEnd:iCut });
     i0=iCut+1;
   }
-  S.segments=segs;
+  return segs;
+}
+function buildSegments(){
+  if(S.book){ buildBookSegments(); selectSeg(0); return; }
+  if(!S.words) return;
+  S.segments=segmentWords(S.words,parseFloat($("segLen").value));
   renderSegList();
   selectSeg(0);
 }
@@ -812,9 +941,11 @@ function renderSegList(){
   for(const seg of S.segments){
     const div=document.createElement("div");
     div.className="seg"; div.dataset.i=seg.i-1;
-    const first=S.words.slice(seg.wordStart,Math.min(seg.wordStart+8,seg.wordEnd+1)).map(w=>w.text).join(" ");
+    const src=(S.book&&seg.piece!==undefined)?S.book.pieces[seg.piece].words:S.words;
+    const first=src.slice(seg.wordStart,Math.min(seg.wordStart+8,seg.wordEnd+1)).map(w=>w.text).join(" ");
     const done=(doneSet()[sanitize($("titleText").value)]||[]).includes(seg.i);
     div.innerHTML='<span class="part">part '+String(seg.i).padStart(2,"0")+'</span>'+
+      ((S.book&&seg.piece!==undefined)?'<span class="wc">pc'+(seg.piece+1)+'</span>':"")+
       '<span class="range">'+fmt(seg.start)+" – "+fmt(seg.end)+'</span>'+
       (done?'<span style="color:var(--ok);font-weight:700">✓</span>':"")+
       '<span class="wc">'+(seg.wordEnd-seg.wordStart+1)+' w</span>'+
@@ -840,8 +971,10 @@ function renderSegList(){
   }
 }
 
-function selectSeg(idx){
+async function selectSeg(idx){
   if(idx<0||idx>=S.segments.length) return;
+  const seg0=S.segments[idx];
+  if(S.book&&seg0.piece!==undefined&&seg0.piece!==S.bookPiece) await usePiece(seg0.piece);
   S.segIdx=idx;
   document.querySelectorAll(".seg").forEach(el=>el.classList.toggle("active",+el.dataset.i===idx));
   const seg=S.segments[idx];
@@ -1284,6 +1417,7 @@ const smilClock=t=>t.toFixed(3)+"s";
 function xesc(t){ return String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 async function buildEpub(){
   const title=$("titleText").value.trim()||"Audiobook";
+  if(S.book) return buildBookEpub(title);
   const sents=sentencesFromWords();
   const audioName="audio"+(S.audioFile.name.match(/\.[a-z0-9]+$/i)||[".mp3"])[0].toLowerCase();
   const audioType=S.audioFile.type||"audio/mpeg";
@@ -1352,6 +1486,83 @@ async function buildEpub(){
   if(coverData) entries.push({name:"OEBPS/cover.jpg",data:coverData});
   return makeZip(entries);
 }
+async function buildBookEpub(title){
+  const spans=[], pars=[], entries=[], manifest=[];
+  let sid=0, totalDur=0;
+  for(let p=0;p<S.book.pieces.length;p++){
+    const pc=S.book.pieces[p];
+    const audioName="audio-"+String(p+1).padStart(2,"0")+(pc.name.match(/\.[a-z0-9]+$/i)||[".mp3"])[0].toLowerCase();
+    entries.push({name:"OEBPS/"+audioName,data:new Uint8Array(await pc.blob.arrayBuffer())});
+    manifest.push('<item id="aud'+p+'" href="'+audioName+'" media-type="'+(pc.blob.type||"audio/mpeg")+'"/>');
+    const sents=[]; let cur=[];
+    for(const w of pc.words){
+      cur.push(w);
+      if(/[.!?]["')\]]*$/.test(w.text)){ sents.push(cur); cur=[]; }
+    }
+    if(cur.length) sents.push(cur);
+    for(const sw of sents){
+      sid++;
+      const id="s"+String(sid).padStart(5,"0");
+      spans.push('<span id="'+id+'">'+xesc(sw.map(w=>w.text).join(" "))+"</span>");
+      pars.push('<par id="p'+String(sid).padStart(5,"0")+'"><text src="text.xhtml#'+id+'"/>'+
+        '<audio src="'+audioName+'" clipBegin="'+smilClock(sw[0].start)+'" clipEnd="'+smilClock(sw[sw.length-1].end)+'"/></par>');
+    }
+    totalDur+=pc.dur||((pc.words[pc.words.length-1]||{end:0}).end);
+  }
+  const paras=[];
+  for(let i=0;i<spans.length;i+=4) paras.push("<p>"+spans.slice(i,i+4).join(" ")+"</p>");
+  const xhtml='<?xml version="1.0" encoding="utf-8"?>\n'+
+    '<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head>'+
+    "<title>"+xesc(title)+"</title>"+
+    "<style>body{font-family:Georgia,serif;line-height:1.7;margin:5% 8%} "+
+    "h1{font-size:1.6em} .-epub-media-overlay-active{background:#f5d76e;color:#000}</style>"+
+    "</head><body><h1>"+xesc(title)+"</h1>"+paras.join("\n")+"</body></html>";
+  const smil='<?xml version="1.0" encoding="utf-8"?>\n'+
+    '<smil xmlns="http://www.w3.org/ns/SMIL" xmlns:epub="http://www.idpf.org/2007/ops" version="3.0">'+
+    '<body><seq id="seq1" epub:textref="text.xhtml" epub:type="chapter">'+pars.join("")+"</seq></body></smil>";
+  let coverData=null;
+  if(S.coverImg){
+    const cc=document.createElement("canvas");
+    cc.width=S.coverImg.width; cc.height=S.coverImg.height;
+    cc.getContext("2d").drawImage(S.coverImg,0,0);
+    const cb=await new Promise(r=>cc.toBlob(r,"image/jpeg",.88));
+    coverData=new Uint8Array(await cb.arrayBuffer());
+  }
+  const opf='<?xml version="1.0" encoding="utf-8"?>\n'+
+    '<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid">'+
+    '<metadata xmlns:dc="http://purl.org/dc/elements/1.1/">'+
+    '<dc:identifier id="uid">urn:uuid:teaser-book-readaloud</dc:identifier>'+
+    "<dc:title>"+xesc(title)+"</dc:title><dc:language>en</dc:language>"+
+    '<meta property="dcterms:modified">2026-01-01T00:00:00Z</meta>'+
+    '<meta property="media:duration">'+smilClock(totalDur)+"</meta>"+
+    '<meta property="media:duration" refines="#smil">'+smilClock(totalDur)+"</meta>"+
+    '<meta property="media:active-class">-epub-media-overlay-active</meta>'+
+    (coverData?'<meta name="cover" content="cover"/>':"")+
+    "</metadata><manifest>"+
+    '<item id="text" href="text.xhtml" media-type="application/xhtml+xml" media-overlay="smil"/>'+
+    '<item id="smil" href="sync.smil" media-type="application/smil+xml"/>'+
+    manifest.join("")+
+    (coverData?'<item id="cover" href="cover.jpg" media-type="image/jpeg" properties="cover-image"/>':"")+
+    '<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>'+
+    '</manifest><spine><itemref idref="text"/></spine></package>';
+  const nav='<?xml version="1.0" encoding="utf-8"?>\n'+
+    '<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>Contents</title></head>'+
+    '<body><nav epub:type="toc"><ol><li><a href="text.xhtml">'+xesc(title)+"</a></li></ol></nav></body></html>";
+  const container='<?xml version="1.0" encoding="utf-8"?>\n'+
+    '<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'+
+    '<rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>';
+  const all=[
+    {name:"mimetype",data:"application/epub+zip"},
+    {name:"META-INF/container.xml",data:container},
+    {name:"OEBPS/content.opf",data:opf},
+    {name:"OEBPS/nav.xhtml",data:nav},
+    {name:"OEBPS/text.xhtml",data:xhtml},
+    {name:"OEBPS/sync.smil",data:smil},
+    ...entries,
+  ];
+  if(coverData) all.push({name:"OEBPS/cover.jpg",data:coverData});
+  return makeZip(all);
+}
 function srtStamp(t,sep){
   const h=String(Math.floor(t/3600)).padStart(2,"0");
   const m=String(Math.floor(t/60)%60).padStart(2,"0");
@@ -1376,9 +1587,9 @@ function saveBlob(blob,name){
   a.href=URL.createObjectURL(blob); a.download=name; a.click();
 }
 function syncHybridBtns(){
-  const hasWords=!!(S.words&&S.words.length);
+  const hasWords=!!((S.words&&S.words.length)||(S.book&&S.book.pieces.some(p=>p.words.length)));
   $("bSrt").disabled=$("bVtt").disabled=!hasWords;
-  $("bEpub").disabled=!(hasWords&&S.audioFile);
+  $("bEpub").disabled=!(hasWords&&(S.audioFile||S.book));
 }
 $("bEpub").addEventListener("click",async()=>{
   if(!S.words||!S.audioFile) return;
@@ -1532,7 +1743,7 @@ function finishExport(blob,ext,seg,mode,secs){
   setStatus($("exStatus"),"Saved "+S.lastExport.name+" ("+(blob.size/1048576).toFixed(1)+" MB)"+spd+(S.shareFile?" — tap Share for Photos / TikTok.":""),"ok");
   if(S.batch&&S.batch.length){
     const next=S.batch.shift();
-    setTimeout(()=>{ selectSeg(next); startExport(); },500);
+    setTimeout(async()=>{ await selectSeg(next); startExport(); },500);
   } else if(S.batch){
     S.batch=null;
     $("btnExportAll").textContent="Export ALL parts";
@@ -1763,7 +1974,8 @@ draw();
 window.TS={ S, draw, buildSegments, ingestTranscript, selectSeg, groupAt, nowT,
   stopExport, loadAudio, alignFree, startExport, fastExport, realtimeExport, splitMp3,
   finishExport, saveSettings, restoreSettings, buildEpub, buildSrt, buildVtt,
-  sentencesFromWords, makeZip, THEMES, get theme(){return theme;} };
+  sentencesFromWords, makeZip, autoPilot, analyzeAudio, alignTokens, planPieces, usePiece,
+  THEMES, get theme(){return theme;} };
 </script>
 </body>
 </html>
