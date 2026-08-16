@@ -37,7 +37,7 @@ e.g. `foe-goon.png` = the hooded knife guy, `foe-don.png` = cigar mob boss,
 
 Images pasted into chat reach the assistant as pixels only — they never land
 on disk. To install art: commit files into this folder via GitHub's web
-upload (Add file → Upload files on wreford/sprout, path `zebra/art/`), or
+upload (Add file → Upload files on the repo, path `zebra/art/`), or
 send them as file attachments in a session where uploads hit the filesystem.
 A full sheet is fine too — it can be sliced into tiles here. Fictional
 archetypes only; sprites of real people won't be wired in.
