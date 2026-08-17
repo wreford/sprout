@@ -267,7 +267,10 @@ input[type="color"]{width:100%;height:32px;border:1px solid var(--line);border-r
           <button class="primary" id="btnExport" disabled>Export selected part</button>
           <button id="btnExportAll" disabled>Export ALL parts</button>
         </div>
-        <button id="bShare" style="display:none">Share / Save to Photos</button>
+        <div class="btnrow">
+          <button id="bShare" style="display:none">Save to Photos</button>
+          <button id="bDl" style="display:none;font-size:10.5px">Download instead</button>
+        </div>
         <label class="small" style="margin-top:6px">Hybrid ebook &amp; captions (same timing, different containers)</label>
         <div class="btnrow">
           <button id="bEpub" disabled>Read-aloud EPUB</button>
@@ -1763,26 +1766,34 @@ function finishExport(blob,ext,seg,mode,secs){
   markDone(seg.i);
   S.lastExport={size:blob.size,mode,
     name:sanitize($("titleText").value)+"-part-"+String(seg.i).padStart(2,"0")+"."+ext};
-  try{
-    const f=new File([blob],S.lastExport.name,{type:blob.type});
-    if(navigator.canShare&&navigator.canShare({files:[f]})){
-      S.shareFile=f;
-      $("bShare").style.display="inline-block";
-    }
-  }catch(e){}
-  const a=document.createElement("a");
-  a.href=URL.createObjectURL(blob);
-  a.download=S.lastExport.name;
-  a.click();
   const spd=(mode==="fast"&&secs)?(" in "+secs.toFixed(1)+"s — "+((seg.end-seg.start)/secs).toFixed(1)+"× real time"):"";
-  setStatus($("exStatus"),"Saved "+S.lastExport.name+" ("+(blob.size/1048576).toFixed(1)+" MB)"+spd+(S.shareFile?" — tap Share for Photos / TikTok.":""),"ok");
+  if(S.shareFiles){
+    try{
+      const f=new File([blob],S.lastExport.name,{type:blob.type});
+      let total=S.outbox.reduce((a2,x)=>a2+x.size,0)+f.size;
+      while(total>850*1048576&&S.outbox.length){ total-=S.outbox.shift().size; }
+      S.outbox.push(f);
+      const sb=$("bShare");
+      sb.style.display="inline-block";
+      sb.classList.add("primary");
+      sb.textContent="Save to Photos ("+S.outbox.length+")";
+      $("bDl").style.display="inline-block";
+      setStatus($("exStatus"),"Rendered "+S.lastExport.name+" ("+(blob.size/1048576).toFixed(1)+" MB)"+spd+" — tap SAVE TO PHOTOS.","ok");
+    }catch(e){}
+  } else {
+    const a=document.createElement("a");
+    a.href=URL.createObjectURL(blob);
+    a.download=S.lastExport.name;
+    a.click();
+    setStatus($("exStatus"),"Saved "+S.lastExport.name+" ("+(blob.size/1048576).toFixed(1)+" MB)"+spd,"ok");
+  }
   if(S.batch&&S.batch.length){
     const next=S.batch.shift();
     setTimeout(async()=>{ await selectSeg(next); startExport(); },500);
   } else if(S.batch){
     S.batch=null;
     $("btnExportAll").textContent="Export ALL parts";
-    setStatus($("exStatus"),"Batch done — "+S.exportCount+" parts saved.","ok");
+    setStatus($("exStatus"),"Batch done — "+S.exportCount+" parts rendered."+(S.shareFiles?" Tap SAVE TO PHOTOS to put them all in your library at once.":""),"ok");
   }
 }
 
@@ -1907,6 +1918,10 @@ async function fastExport(seg){
   }
 }
 
+S.outbox=[];
+try{
+  S.shareFiles=!!(navigator.canShare&&navigator.canShare({files:[new File([new Blob([1])],"t.mp4",{type:"video/mp4"})]}));
+}catch(e){ S.shareFiles=false; }
 S.fastSupported=null;
 (async()=>{
   try{
@@ -1972,7 +1987,27 @@ $("btnExportAll").addEventListener("click",()=>{
 });
 
 $("bShare").addEventListener("click",()=>{
-  if(S.shareFile&&navigator.share) navigator.share({files:[S.shareFile]}).catch(()=>{});
+  if(!S.outbox.length||!navigator.share) return;
+  navigator.share({files:[...S.outbox]}).then(()=>{
+    S.outbox=[];
+    $("bShare").style.display="none";
+    $("bShare").classList.remove("primary");
+    setStatus($("exStatus"),"Saved to Photos.","ok");
+  }).catch(()=>{
+    if(S.outbox.length>1){
+      S.outbox=[S.outbox[S.outbox.length-1]];
+      $("bShare").textContent="Save to Photos (1)";
+      setStatus($("exStatus"),"Share cancelled or too large — queue trimmed to the newest part; tap again, or use Download instead.","err");
+    }
+  });
+});
+$("bDl").addEventListener("click",()=>{
+  for(const f of S.outbox){
+    const a=document.createElement("a");
+    a.href=URL.createObjectURL(f);
+    a.download=f.name;
+    a.click();
+  }
 });
 function stopExport(){
   if(!S.recording) return;
