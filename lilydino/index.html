@@ -24,6 +24,12 @@ canvas{display:block;position:absolute;inset:0;width:100%;height:100%}
   box-shadow:2px 3px 0 rgba(58,50,48,.25)}
 .chip b{color:var(--red)}
 #comboChip{transform:rotate(1.4deg);display:none}
+#musChip{pointer-events:auto;cursor:pointer;transform:rotate(1deg)}
+@keyframes bpop{0%{transform:translateX(-50%) rotate(-2deg) scale(.3)}
+  60%{transform:translateX(-50%) rotate(-2deg) scale(1.15)}
+  100%{transform:translateX(-50%) rotate(-2deg) scale(1)}}
+@keyframes wig{0%,100%{transform:rotate(0)}25%{transform:rotate(-3deg)}75%{transform:rotate(3deg)}}
+.itemBtn.on{animation:wig .4s ease}
 #items{position:absolute;left:0;right:0;bottom:calc(10px + env(safe-area-inset-bottom));display:none;
   justify-content:center;gap:12px;z-index:6}
 .itemBtn{width:clamp(74px,20vmin,104px);height:clamp(74px,20vmin,104px);border:3px solid var(--ink);
@@ -61,6 +67,7 @@ canvas{display:block;position:absolute;inset:0;width:100%;height:100%}
 <div id="hud">
   <div class="chip">wave <b id="hWave">1</b> · <span id="hScore">0</span></div>
   <div class="chip" id="comboChip">combo ×<b id="hCombo">2</b></div>
+  <button class="chip" id="musChip">♫ music: on</button>
 </div>
 
 <div id="items">
@@ -205,6 +212,112 @@ function chompS(){ if(!AC)return; const t0=AC.currentTime;
 function grumpS(){ if(!AC)return; const t0=AC.currentTime;
   plink(196,t0,.2,.12); plink(185,t0+.1,.25,.12); }
 
+/* ---------------- MUSIC · toy step-sequencer, original tune ----------------
+   square-wave boops, toy piano, woodblock, critter chirps. 16th-note grid
+   with a little swing; grows brighter and quicker as the waves climb. */
+const MUS={ on:SV.music!==false, step:0, next:0, timer:null, bpm:104 };
+const NF=n=>440*Math.pow(2,(n-69)/12);
+/* 32 steps = 2 bars · midi numbers, 0 = rest (original melody, C major) */
+const MELO_A=[76,0,79,0, 76,0,72,0, 74,76,0,79, 0,0,76,0,
+              77,0,81,0, 77,0,74,0, 76,77,79,77, 76,0,72,0];
+const MELO_B=[72,0,76,0, 79,0,84,0, 81,79,0,76, 0,0,74,0,
+              77,0,74,0, 71,0,74,0, 72,0,67,0,  72,0,0,0];
+const BASS  =[48,0,0,0, 43,0,0,0, 45,0,0,0, 41,0,0,0,
+              41,0,0,0, 43,0,0,0, 48,0,0,0, 43,0,0,0];
+let MELO=MELO_A, barFlip=0;
+function vLead(f,t,d){
+  const o=AC.createOscillator(),g=AC.createGain(),lp=AC.createBiquadFilter();
+  o.type="square";
+  o.frequency.setValueAtTime(f*1.4,t);
+  o.frequency.exponentialRampToValueAtTime(f,t+.03);
+  lp.type="lowpass"; lp.frequency.value=2400;
+  g.gain.setValueAtTime(.055,t);
+  g.gain.exponentialRampToValueAtTime(.001,t+d);
+  o.connect(lp); lp.connect(g); g.connect(AC.destination);
+  o.start(t); o.stop(t+d+.05);
+}
+function vToy(f,t,d){
+  const o=AC.createOscillator(),o2=AC.createOscillator(),g=AC.createGain();
+  o.type="triangle"; o.frequency.value=f;
+  o2.type="sine"; o2.frequency.value=f*3.01;
+  const g2=AC.createGain(); g2.gain.value=.15;
+  g.gain.setValueAtTime(.06,t);
+  g.gain.exponentialRampToValueAtTime(.001,t+d);
+  o.connect(g); o2.connect(g2); g2.connect(g); g.connect(AC.destination);
+  o.start(t); o.stop(t+d+.05); o2.start(t); o2.stop(t+d+.05);
+}
+function vBass(f,t){
+  const o=AC.createOscillator(),g=AC.createGain();
+  o.type="sine"; o.frequency.setValueAtTime(f,t);
+  g.gain.setValueAtTime(.11,t);
+  g.gain.exponentialRampToValueAtTime(.001,t+.26);
+  o.connect(g); g.connect(AC.destination);
+  o.start(t); o.stop(t+.3);
+}
+function vBlock(t){
+  const o=AC.createOscillator(),g=AC.createGain();
+  o.type="square"; o.frequency.value=1700;
+  g.gain.setValueAtTime(.05,t);
+  g.gain.exponentialRampToValueAtTime(.001,t+.035);
+  o.connect(g); g.connect(AC.destination);
+  o.start(t); o.stop(t+.05);
+}
+function vChirp(t){
+  const o=AC.createOscillator(),g=AC.createGain();
+  o.type="triangle";
+  o.frequency.setValueAtTime(1150,t);
+  o.frequency.exponentialRampToValueAtTime(640,t+.1);
+  o.frequency.exponentialRampToValueAtTime(900,t+.16);
+  g.gain.setValueAtTime(.06,t);
+  g.gain.exponentialRampToValueAtTime(.001,t+.2);
+  o.connect(g); g.connect(AC.destination);
+  o.start(t); o.stop(t+.24);
+}
+function playStep(st,t){
+  const wv=G?G.wave:1;
+  const m=MELO[st];
+  if(m) (st%8<4?vLead:vToy)(NF(m),t,.22);
+  const b=BASS[st];
+  if(b) vBass(NF(b),t);
+  if(st%8===0) vBlock(t);
+  if(wv>=3&&st%4===2) vBlock(t+.001);
+  if(wv>=2&&st===12) vChirp(t);
+  if(st===31){ barFlip^=1; MELO=barFlip?MELO_B:MELO_A; }
+}
+function musTick(){
+  if(!MUS.on||!AC||!G||!G.running) return;
+  const spb=60/MUS.bpm/4;
+  while(MUS.next<AC.currentTime+.14){
+    const swing=(MUS.step%2===1)?spb*.16:0;
+    playStep(MUS.step,Math.max(AC.currentTime,MUS.next+swing));
+    MUS.step=(MUS.step+1)%32;
+    MUS.next+=spb;
+  }
+}
+function startMusic(){
+  if(!MUS.on) return;
+  ensureAC();
+  if(!AC) return;
+  MUS.step=0; MUS.next=AC.currentTime+.1; MELO=MELO_A; barFlip=0;
+  if(MUS.timer) clearInterval(MUS.timer);
+  MUS.timer=setInterval(musTick,40);
+}
+function stopMusic(sleepy){
+  if(MUS.timer){ clearInterval(MUS.timer); MUS.timer=null; }
+  if(sleepy&&AC&&MUS.on){
+    const t0=AC.currentTime;
+    [72,67,64,60].forEach((n,i)=>vToy(NF(n),t0+i*.28,.6));
+  }
+}
+function syncMusChip(){ $("musChip").textContent="♫ music: "+(MUS.on?"on":"off"); }
+$("musChip").addEventListener("click",()=>{
+  MUS.on=!MUS.on;
+  SV.music=MUS.on; save();
+  syncMusChip();
+  if(MUS.on&&G&&G.running) startMusic(); else stopMusic(false);
+});
+syncMusChip();
+
 /* ---------------- game state ---------------- */
 const ITEMS=["bear","milk","song"];
 const ITEM_COL={bear:"#c99a63",milk:"#fdf6ec",song:"#5a8fd0"};
@@ -213,7 +326,7 @@ function newGame(){
   G={ running:false, over:false, t:0, wave:0, score:0, combo:0, comboT:0,
     pillows:3, dinos:[], throws:[], zs:[], feathers:[], toasts:0,
     item:"bear", spawnT:800, toSpawn:0, waveDone:false, boss:null,
-    lilyArm:0, sunSleep:0, shake:0 };
+    lilyArm:0, lilyHop:0, hearts:[], sunSleep:0, shake:0 };
 }
 const SPECIES=[
   { id:"bronto", col:"#8fbf6a", speed:.016, hp:1, big:1.15 },
@@ -229,7 +342,8 @@ function spawnDino(forceSpec,forceWeak){
   const sp=forceSpec||pool[Math.floor(Math.random()*pool.length)];
   const d={ id:Math.random(), sp, x:W+80, y:groundY(),
     weak:forceWeak||ITEMS[Math.floor(Math.random()*3)],
-    hp:sp.hp, state:"walk", st:0, grump:0, scale:sp.big*(0.9+Math.random()*.25),
+    hp:sp.hp, state:"walk", st:0, grump:0, blink:Math.random()*7,
+    scale:sp.big*(0.9+Math.random()*.25),
     fly:sp.id==="ptero", seed:Math.random()*100 };
   if(d.fly) d.y=groundY()-H*.16-Math.random()*H*.1;
   G.dinos.push(d);
@@ -244,6 +358,7 @@ function spawnBoss(){
 }
 function startWave(){
   G.wave++;
+  MUS.bpm=104+Math.min(24,G.wave*2);
   G.waveDone=false;
   G.toSpawn=3+G.wave*2;
   G.spawnT=400;
@@ -251,6 +366,7 @@ function startWave(){
   const bn=$("waveBanner");
   bn.textContent=G.wave%4===0?"WAVE "+G.wave+" · BOSS!":"WAVE "+G.wave+"!";
   bn.style.display="block";
+  bn.style.animation="none"; void bn.offsetWidth; bn.style.animation="bpop .5s";
   setTimeout(()=>bn.style.display="none",1500);
   if(G.wave%4===0){ spawnBoss(); G.toSpawn=Math.max(2,G.toSpawn-4); }
 }
@@ -266,7 +382,7 @@ document.querySelectorAll(".itemBtn").forEach(b=>b.addEventListener("click",()=>
   ensureAC();
   G&&(G.item=b.dataset.item);
   document.querySelectorAll(".itemBtn").forEach(x=>x.classList.toggle("on",x===b));
-  plink(660,AC?AC.currentTime:0,.15,.08);
+  if(AC){ plink(660,AC.currentTime,.12,.07); plink(880,AC.currentTime+.07,.14,.07); }
 }));
 cv.addEventListener("pointerdown",e=>{
   if(!G||!G.running) return;
@@ -299,7 +415,13 @@ function resolveHit(d,item){
       G.combo++; G.comboT=4000;
       const pts=(d.boss?50:10)*Math.max(1,G.combo);
       G.score+=pts;
+      G.hearts.push({x:d.x,y:d.y-90*d.scale,t:0,dx:-14},{x:d.x,y:d.y-100*d.scale,t:-220,dx:16});
       if(G.combo>=2){ $("comboChip").style.display="block"; $("hCombo").textContent=G.combo; }
+      if(G.combo===3||G.combo===5||G.combo===8||G.combo===12){
+        G.lilyHop=1;
+        toast("shhh… combo ×"+G.combo+"!");
+        if(AC&&MUS.on){ const t0=AC.currentTime; [79,84,88].forEach((n,i)=>vToy(NF(n),t0+i*.09,.4)); }
+      }
       if(d.boss){ G.boss=null; toast("MEGA-REX is out cold. legendary."); G.shake=.8; }
     } else {
       /* boss: needs a new gift each hit */
@@ -323,6 +445,11 @@ function update(dt){
   if(G.comboT>0){ G.comboT-=dt; if(G.comboT<=0){ G.combo=0; $("comboChip").style.display="none"; } }
   if(G.shake>0) G.shake=Math.max(0,G.shake-dt/400);
   G.lilyArm=Math.max(0,G.lilyArm-dt/250);
+  G.lilyHop=Math.max(0,G.lilyHop-dt/420);
+  for(let i=G.hearts.length-1;i>=0;i--){
+    const h=G.hearts[i]; h.t+=dt;
+    if(h.t>2000) G.hearts.splice(i,1);
+  }
   /* spawns */
   if(G.toSpawn>0){
     G.spawnT-=dt;
@@ -419,6 +546,10 @@ function drawPaper(){
     X.stroke();
   });
   X.beginPath(); X.moveTo(sx-8,sy+14); X.quadraticCurveTo(sx,sy+(lid>.6?12:19),sx+8,sy+14); X.stroke();
+  X.save(); X.globalAlpha=.5; X.fillStyle="#ef9b8a";
+  X.beginPath(); X.ellipse(sx-19,sy+7,5,3,0,0,7); X.fill();
+  X.beginPath(); X.ellipse(sx+19,sy+7,5,3,0,0,7); X.fill();
+  X.restore();
   /* scribble clouds */
   for(let c=0;c<3;c++){
     const cx=((G.t/40+c*W/2.6)% (W+220))-110;
@@ -443,7 +574,7 @@ function drawFort(){
   /* Lily · guard of the fort, standing on the top pillow, holding her gift */
   const LS=Math.min(1.5,Math.max(1.05,H/620));
   const topPillowY=gy-24-Math.max(0,G.pillows-1)*40;
-  const ly=G.pillows>0?topPillowY-20:gy-6;
+  const ly=(G.pillows>0?topPillowY-20:gy-6)-G.lilyHop*Math.sin(G.lilyHop*Math.PI)*26;
   const lx=fx-16;
   const bob=Math.sin(G.t/600)*2;
   /* legs */
@@ -485,7 +616,9 @@ function drawDino(d){
   const yawning=d.state==="yawn";
   X.save();
   if(sleeping){ X.translate(x,y); X.scale(.62,.62); X.translate(-x,-y); }
-  const legSwing=Math.sin(G.t/140+d.seed)*(d.state==="walk"||d.state==="grumpy"?9:0)*s;
+  const walking=d.state==="walk"||d.state==="grumpy";
+  if(walking&&!d.fly) X.translate(0,-Math.abs(Math.sin(G.t/170+d.seed*3))*5*s);
+  const legSwing=Math.sin(G.t/140+d.seed)*(walking?9:0)*s;
   if(d.sp.id==="bronto"){
     crayonFill(oval(x,y-40*s,58*s,34*s),col,k,4);
     crayonStroke(oval(x,y-40*s,58*s,34*s),true,"#3a3230",4.5,k,4);
@@ -531,8 +664,17 @@ function drawDino(d){
     crayonStroke([[x-24*s,y-10*s],[x-26*s+legSwing,y+14*s]],false,"#3a3230",4.5,k+31,2);
     crayonStroke([[x+22*s,y-10*s],[x+24*s-legSwing,y+14*s]],false,"#3a3230",4.5,k+32,2);
   }
-  /* tail */
-  crayonStroke([[x-(d.fly?24:52)*s,y-(d.fly?2:34)*s],[x-(d.fly?40:86)*s,y-(d.fly?6:20)*s]],false,"#3a3230",4.5,k+35,3);
+  /* tail · wags when happy-ish */
+  const wag=Math.sin(G.t/220+d.seed*5)*(walking?9:2)*s;
+  crayonStroke([[x-(d.fly?24:52)*s,y-(d.fly?2:34)*s],[x-(d.fly?40:86)*s,y-(d.fly?6:20)*s-wag]],false,"#3a3230",4.5,k+35,3);
+  /* grumpy steam puffs */
+  if(d.state==="grumpy"){
+    const pk=(d.st%700)/700;
+    X.save();
+    X.globalAlpha=.5*(1-pk);
+    crayonStroke(oval(x+30*s,y-(120+pk*36)*d.scale,9+pk*7,7+pk*5,8),true,"#8a8f9a",3,k+51,3);
+    X.restore();
+  }
   X.restore();
 
   /* dream bubble */
@@ -556,7 +698,8 @@ function drawDino(d){
 function drawFace(d,fx,fy,s,sleeping,yawning){
   X.save();
   X.strokeStyle="#3a3230"; X.lineWidth=2.6*s; X.lineCap="round";
-  if(sleeping){
+  const blinking=!sleeping&&((G.t/2800+(d.blink||0))%1)<.07;
+  if(sleeping||blinking){
     X.beginPath(); X.moveTo(fx-7*s,fy); X.quadraticCurveTo(fx-4*s,fy+3*s,fx-1*s,fy); X.stroke();
     X.beginPath(); X.moveTo(fx+3*s,fy); X.quadraticCurveTo(fx+6*s,fy+3*s,fx+9*s,fy); X.stroke();
   } else {
@@ -617,6 +760,24 @@ function drawZs(){
   }
   X.textAlign="left";
 }
+function drawHearts(){
+  for(const h of G.hearts){
+    if(h.t<0) continue;
+    const k=h.t/2000;
+    const hx=h.x+Math.sin(h.t/260)*10+h.dx*k, hy=h.y-k*90;
+    const sz=8+Math.sin(k*Math.PI)*4;
+    X.save();
+    X.globalAlpha=1-k;
+    X.fillStyle="#ef7d9b";
+    X.strokeStyle="#3a3230"; X.lineWidth=2;
+    X.beginPath();
+    X.moveTo(hx,hy+sz*.8);
+    X.bezierCurveTo(hx-sz,hy,hx-sz*.6,hy-sz*.8,hx,hy-sz*.2);
+    X.bezierCurveTo(hx+sz*.6,hy-sz*.8,hx+sz,hy,hx,hy+sz*.8);
+    X.fill(); X.stroke();
+    X.restore();
+  }
+}
 function drawFeathers(){
   for(const f of G.feathers){
     X.save();
@@ -637,7 +798,7 @@ function loop(ts){
     G.dinos.filter(d=>d.state==="sleep").forEach(drawDino);
     drawFort();
     G.dinos.filter(d=>d.state!=="sleep").forEach(drawDino);
-    drawThrows(); drawZs(); drawFeathers();
+    drawThrows(); drawZs(); drawFeathers(); drawHearts();
   }
   requestAnimationFrame(loop);
 }
@@ -654,9 +815,11 @@ function startGame(){
   $("hScore").textContent="0";
   $("comboChip").style.display="none";
   startWave();
+  startMusic();
 }
 function endGame(){
   G.running=false; G.over=true;
+  stopMusic(true);
   SV.best=Math.max(SV.best||0,G.score);
   SV.bestWave=Math.max(SV.bestWave||0,G.wave);
   save();
@@ -675,7 +838,7 @@ if(SV.best) $("best").textContent="best: "+SV.best+" pts · wave "+(SV.bestWave|
 newGame();
 
 window.LD={ get G(){return G;}, startGame, endGame, spawnDino, spawnBoss, startWave,
-  throwItem, resolveHit, ITEMS, SPECIES, fortX, groundY,
+  throwItem, resolveHit, ITEMS, SPECIES, fortX, groundY, MUS, startMusic, stopMusic,
   selectItem:i=>{ G.item=i; }, save:()=>SV };
 </script>
 </body>
