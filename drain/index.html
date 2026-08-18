@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>Lily Unclogs the Drain</title>
+<meta name="description" content="A tiny game about one horrible job. Drag the hair out of the shower drain — smooth and steady or it snaps — before the tub overflows. So much hair.">
+<meta name="theme-color" content="#e8f4f4">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Gochi+Hand&family=Patrick+Hand&display=swap" rel="stylesheet">
+<style>
+:root{ --tile:#e8f4f4; --grout:#c6dcdc; --water:#7fc9cf; --chrome:#b8c4cc; --hair:#2f2a2e;
+  --pink:#ef7d9b; --gold:#f0b64a; --ink:#25333a;
+  --hand:'Gochi Hand',cursive; --hand2:'Patrick Hand',cursive; }
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden;position:fixed;inset:0;width:100%;touch-action:none;overscroll-behavior:none}
+body{background:var(--tile);font-family:var(--hand2);color:var(--ink);user-select:none;-webkit-user-select:none}
+canvas{display:block;position:absolute;inset:0;width:100%;height:100%}
+#hud{position:absolute;top:0;left:0;right:0;display:none;justify-content:space-between;gap:8px;
+  padding:calc(8px + env(safe-area-inset-top)) 12px 0;pointer-events:none;z-index:5}
+.chip{font-family:var(--hand);font-size:clamp(15px,4.2vmin,23px);background:rgba(255,255,255,.8);
+  border:2.5px solid var(--ink);border-radius:14px;padding:2px 12px;transform:rotate(-1deg);
+  box-shadow:2px 3px 0 rgba(37,51,58,.25)}
+.chip b{color:var(--pink)}
+#tubChip{transform:rotate(1.2deg)}
+#tubChip.high{border-color:var(--pink);color:var(--pink);animation:pulse .6s infinite}
+@keyframes pulse{50%{opacity:.55}}
+#hint{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(22px + env(safe-area-inset-bottom));
+  z-index:6;font-family:var(--hand);font-size:clamp(15px,4.2vmin,22px);color:#5d7b83;display:none;
+  pointer-events:none;white-space:nowrap}
+#toast{position:absolute;left:50%;top:18%;transform:translateX(-50%) rotate(-1.5deg);z-index:7;display:none;
+  font-family:var(--hand);font-size:clamp(22px,6vmin,36px);color:var(--ink);background:rgba(255,255,255,.9);
+  border:3px solid var(--ink);border-radius:16px;padding:4px 18px;white-space:nowrap;pointer-events:none;
+  box-shadow:3px 4px 0 rgba(37,51,58,.25)}
+#panel{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:10;
+  background:rgba(232,244,244,.95);flex-direction:column;gap:6px;text-align:center;padding:24px}
+#panel h1{font-family:var(--hand);font-size:clamp(32px,8.5vmin,62px);line-height:1.04;transform:rotate(-2deg)}
+#panel h1 .l{color:var(--pink)}
+#panel h1 .d{color:#4a6b73}
+#panel .sub{font-family:var(--hand);font-size:clamp(16px,4.4vmin,25px);color:#6d8a92;transform:rotate(1deg)}
+#panel p{font-size:clamp(15px,4vmin,20px);max-width:520px;line-height:1.45}
+#panel p b{color:var(--pink)}
+#panel p i{color:#3f7d86;font-style:normal}
+#bigBtn{font-family:var(--hand);font-size:clamp(22px,6vmin,32px);border:3.5px solid var(--ink);
+  border-radius:20px;background:#fff;color:var(--ink);padding:10px 34px;cursor:pointer;margin-top:8px;
+  box-shadow:4px 5px 0 rgba(37,51,58,.3);transform:rotate(-1deg)}
+#bigBtn:active{transform:rotate(-1deg) translateY(3px);box-shadow:2px 2px 0 rgba(37,51,58,.3)}
+#best{font-size:clamp(13px,3.4vmin,17px);color:#6d8a92}
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+
+<div id="hud">
+  <div class="chip">pulled <b id="hLen">0</b> cm</div>
+  <div class="chip" id="tubChip">tub <b id="hTub">0%</b></div>
+  <div class="chip" id="musChip" style="pointer-events:auto;cursor:pointer">♫ on</div>
+</div>
+
+<div id="hint">drag away from the drain · slow and steady</div>
+<div id="toast">…</div>
+
+<div id="panel">
+  <h1><span class="l">LILY</span> unclogs <span class="d">THE DRAIN</span></h1>
+  <div class="sub">so much hair</div>
+  <p><b>Drag away from the drain</b> to pull. Go <i>smooth and steady</i> — yank too hard and the clump <b>snaps</b>. Stop whenever you like… except the tub is filling up.</p>
+  <p>Every clump you land drains the water. Every snap makes it worse. How much hair is in there? Yes.</p>
+  <button id="bigBtn">ROLL UP SLEEVES</button>
+  <div id="best"></div>
+</div>
+
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+const cv=$("cv"), X=cv.getContext("2d",{alpha:false});
+let W=innerWidth,H=innerHeight,DPR=Math.min(2,devicePixelRatio||1);
+function resize(){
+  W=cv.clientWidth||innerWidth; H=cv.clientHeight||innerHeight;
+  DPR=Math.min(2,devicePixelRatio||1);
+  cv.width=Math.round(W*DPR); cv.height=Math.round(H*DPR);
+  X.setTransform(DPR,0,0,DPR,0,0);
+}
+resize(); addEventListener("resize",resize);
+if(window.visualViewport) visualViewport.addEventListener("resize",resize);
+
+const SAVE_KEY="drain_v1";
+let SV={}; try{ SV=JSON.parse(localStorage.getItem(SAVE_KEY))||{}; }catch(e){}
+function save(){ try{ localStorage.setItem(SAVE_KEY,JSON.stringify(SV)); }catch(e){} }
+
+/* ---------------- sound ---------------- */
+let AC=null;
+function ensureAC(){ if(!AC){ try{ AC=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} }
+  if(AC&&AC.state==="suspended") AC.resume(); }
+function nbuf(sec){ const n=Math.floor(AC.sampleRate*sec),b=AC.createBuffer(1,n,AC.sampleRate),d=b.getChannelData(0);
+  for(let i=0;i<n;i++) d[i]=Math.random()*2-1; return b; }
+function tone(f,t0,dur,type,vol,f2){
+  if(!AC) return;
+  const o=AC.createOscillator(),g=AC.createGain();
+  o.type=type||"sine"; o.frequency.setValueAtTime(f,t0);
+  if(f2) o.frequency.exponentialRampToValueAtTime(f2,t0+dur);
+  g.gain.setValueAtTime(vol||.1,t0); g.gain.exponentialRampToValueAtTime(.001,t0+dur);
+  o.connect(g); g.connect(AC.destination); o.start(t0); o.stop(t0+dur+.05);
+}
+let squelchAt=0;
+function squelch(v){
+  if(!AC||AC.currentTime-squelchAt<.07) return;
+  squelchAt=AC.currentTime;
+  const t=AC.currentTime;
+  const s=AC.createBufferSource(); s.buffer=nbuf(.12);
+  const f=AC.createBiquadFilter(); f.type="bandpass";
+  f.frequency.setValueAtTime(300+v*900,t); f.Q.value=2.2;
+  const g=AC.createGain();
+  g.gain.setValueAtTime(.001,t); g.gain.linearRampToValueAtTime(.05+v*.09,t+.02);
+  g.gain.exponentialRampToValueAtTime(.001,t+.12);
+  s.connect(f); f.connect(g); g.connect(AC.destination); s.start(t); s.stop(t+.14);
+}
+function snapS(){ if(!AC)return; const t=AC.currentTime;
+  tone(900,t,.07,"square",.13,180);
+  const s=AC.createBufferSource(); s.buffer=nbuf(.1);
+  const g=AC.createGain(); g.gain.setValueAtTime(.14,t); g.gain.exponentialRampToValueAtTime(.001,t+.1);
+  s.connect(g); g.connect(AC.destination); s.start(t); s.stop(t+.12); }
+function gurgle(){ if(!AC)return; const t=AC.currentTime;
+  for(let i=0;i<7;i++) tone(150+Math.random()*180,t+i*.06,.14,"sine",.07,90); }
+function ding(){ if(!AC)return; const t=AC.currentTime;
+  [784,988,1175,1568].forEach((f,i)=>tone(f,t+i*.07,.35,"triangle",.09)); }
+function splash(){ if(!AC)return; const t=AC.currentTime;
+  const s=AC.createBufferSource(); s.buffer=nbuf(.5);
+  const f=AC.createBiquadFilter(); f.type="lowpass"; f.frequency.setValueAtTime(2200,t);
+  f.frequency.exponentialRampToValueAtTime(300,t+.5);
+  const g=AC.createGain(); g.gain.setValueAtTime(.2,t); g.gain.exponentialRampToValueAtTime(.001,t+.5);
+  s.connect(f); f.connect(g); g.connect(AC.destination); s.start(t); s.stop(t+.55); }
+
+/* drippy background music · original, plinky bathroom */
+const MUS={ on:SV.music!==false, step:0, next:0, timer:null };
+const NF=n=>440*Math.pow(2,(n-69)/12);
+const DRIP=[72,0,0,76, 0,0,79,0, 0,74,0,0, 76,0,0,0,
+            67,0,0,72, 0,0,76,0, 0,71,0,0, 72,0,0,0];
+function vDrip(f,t){
+  if(!AC) return;
+  const o=AC.createOscillator(),g=AC.createGain();
+  o.type="sine"; o.frequency.setValueAtTime(f*1.6,t); o.frequency.exponentialRampToValueAtTime(f,t+.06);
+  g.gain.setValueAtTime(.055,t); g.gain.exponentialRampToValueAtTime(.001,t+.45);
+  o.connect(g); g.connect(AC.destination); o.start(t); o.stop(t+.5);
+}
+function musTick(){
+  if(!MUS.on||!AC||!G||G.mode!=="play") return;
+  const spb=60/84/4;
+  while(MUS.next<AC.currentTime+.15){
+    const n=DRIP[MUS.step];
+    if(n) vDrip(NF(n),Math.max(AC.currentTime,MUS.next));
+    MUS.step=(MUS.step+1)%32; MUS.next+=spb;
+  }
+}
+function startMusic(){ if(!MUS.on) return; ensureAC(); if(!AC) return;
+  MUS.step=0; MUS.next=AC.currentTime+.1;
+  if(MUS.timer) clearInterval(MUS.timer);
+  MUS.timer=setInterval(musTick,45); }
+function stopMusic(){ if(MUS.timer){ clearInterval(MUS.timer); MUS.timer=null; } }
+function syncMus(){ $("musChip").textContent="♫ "+(MUS.on?"on":"off"); }
+$("musChip").addEventListener("click",e=>{ e.stopPropagation();
+  MUS.on=!MUS.on; SV.music=MUS.on; save(); syncMus();
+  if(MUS.on&&G&&G.mode==="play") startMusic(); else stopMusic(); });
+syncMus();
+
+/* ---------------- geometry ---------------- */
+function drainX(){ return W*.5; }
+function drainY(){ return H*.62; }
+function drainR(){ return Math.min(W,H)*.13; }
+
+/* ---------------- state ---------------- */
+const EWS=["ew","EW","ewwww","oh that's long","nope nope nope","who even",
+  "that is NOT mine","how","still going","this is a wig now","science should look at this"];
+let G=null;
+function newGame(){
+  G={ mode:"play", tt:0, score:0, water:.18, clump:null, level:0,
+      drag:null, tension:0, strain:0, shake:0, bubbles:[], won:[], toastT:0, wobble:0 };
+  nextClump();
+}
+function nextClump(){
+  G.level++;
+  const target=34+G.level*16+Math.random()*10;
+  G.clump={ target, got:0, seed:Math.random()*99, n:5+Math.min(7,G.level), pull:{x:drainX(),y:drainY()-drainR()} };
+  G.strain=0; G.tension=0;
+}
+/* tolerance narrows as the clumps get worse */
+function safeSpeed(){ return Math.max(.55,1.35-G.level*.055); }
+function waterRate(){ return .0000105*(1+G.level*.12); }
+
+/* ---------------- input ---------------- */
+function ptOf(e){ const r=cv.getBoundingClientRect(); return {x:e.clientX-r.left,y:e.clientY-r.top}; }
+cv.addEventListener("pointerdown",e=>{
+  if(!G||G.mode!=="play") return;
+  e.preventDefault(); ensureAC();
+  if(!MUS.timer) startMusic();
+  const p=ptOf(e);
+  G.drag={x:p.x,y:p.y,lx:p.x,ly:p.y};
+  G.clump.pull={x:p.x,y:p.y};
+});
+addEventListener("pointermove",e=>{
+  if(!G||G.mode!=="play"||!G.drag) return;
+  const p=ptOf(e);
+  const d=Math.hypot(p.x-G.drag.lx,p.y-G.drag.ly);
+  /* only pulling AWAY from the drain counts */
+  const was=Math.hypot(G.drag.lx-drainX(),G.drag.ly-drainY());
+  const now=Math.hypot(p.x-drainX(),p.y-drainY());
+  const away=Math.max(0,now-was);
+  const unit=Math.min(W,H);
+  G.clump.got+=away/unit*46;
+  G.tension=G.tension*.72+(d/unit*60)*.28;
+  if(away>.3) squelch(Math.min(1,G.tension/2));
+  G.drag.lx=p.x; G.drag.ly=p.y;
+  G.clump.pull={x:p.x,y:p.y};
+});
+function release(){ if(G&&G.drag){ G.drag=null; G.tension=0; } }
+addEventListener("pointerup",release);
+addEventListener("pointercancel",release);
+
+function toast(t,ms){
+  const el=$("toast"); el.textContent=t; el.style.display="block";
+  clearTimeout(G.toastT); G.toastT=setTimeout(()=>el.style.display="none",ms||1200);
+}
+
+/* ---------------- rules ---------------- */
+function snap(){
+  const lost=G.clump.got*.5;
+  G.clump.got-=lost;
+  G.strain=0; G.tension=0; G.drag=null;
+  G.water=Math.min(1,G.water+.05);
+  G.shake=1; G.wobble=1;
+  snapS();
+  toast("SNAP!",900);
+}
+function landClump(){
+  const cm=Math.round(G.clump.target);
+  G.score+=cm;
+  G.water=Math.max(0,G.water-.26);
+  G.won.push({t:0,cm});
+  for(let i=0;i<14;i++) G.bubbles.push({x:drainX()+(Math.random()-.5)*drainR()*2,
+    y:drainY(),r:3+Math.random()*7,t:0,v:.4+Math.random()*.7});
+  ding(); gurgle();
+  $("hLen").textContent=G.score;
+  toast(EWS[Math.min(EWS.length-1,G.level-1)]+" · +"+cm+"cm",1100);
+  nextClump();
+}
+function overflow(){
+  G.mode="over";
+  stopMusic(); splash();
+  SV.best=Math.max(SV.best||0,G.score);
+  SV.deep=Math.max(SV.deep||0,G.level-1);
+  save();
+  $("hud").style.display="none"; $("hint").style.display="none";
+  const p=$("panel"); p.style.display="flex";
+  p.querySelector("h1").innerHTML='<span class="d">THE TUB</span> <span class="l">OVERFLOWED</span>';
+  p.querySelector(".sub").textContent="water everywhere. towels: insufficient.";
+  p.querySelectorAll("p")[0].innerHTML="You hauled <b>"+G.score+" cm</b> of hair out of that drain — about <i>"+(G.score/100).toFixed(2)+" metres</i> — before it beat you.";
+  p.querySelectorAll("p")[1].innerHTML="Clump <b>"+G.level+"</b> was the one that got you.";
+  $("bigBtn").textContent="TRY AGAIN";
+  $("best").textContent="best: "+(SV.best||0)+" cm · clump "+((SV.deep||0)+1);
+}
+
+/* ---------------- update ---------------- */
+function update(dt){
+  if(G.mode!=="play") return;
+  G.tt+=dt;
+  if(G.shake>0) G.shake=Math.max(0,G.shake-dt/300);
+  if(G.wobble>0) G.wobble=Math.max(0,G.wobble-dt/700);
+  for(let i=G.bubbles.length-1;i>=0;i--){ const b=G.bubbles[i]; b.t+=dt; b.y-=b.v*dt*.06;
+    if(b.t>1400) G.bubbles.splice(i,1); }
+  for(let i=G.won.length-1;i>=0;i--){ G.won[i].t+=dt; if(G.won[i].t>1200) G.won.splice(i,1); }
+
+  /* strain builds while you yank */
+  if(G.drag){
+    if(G.tension>safeSpeed()) G.strain=Math.min(1.4,G.strain+dt/430);
+    else G.strain=Math.max(0,G.strain-dt/520);
+    if(G.strain>=1) snap();
+  } else {
+    G.tension*=Math.pow(.9,dt/16);
+    G.strain=Math.max(0,G.strain-dt/380);
+  }
+
+  /* the tub keeps filling */
+  G.water=Math.min(1,G.water+waterRate()*dt);
+  if(G.water>=1){ overflow(); return; }
+
+  if(G.clump.got>=G.clump.target) landClump();
+
+  $("hTub").textContent=Math.round(G.water*100)+"%";
+  $("tubChip").classList.toggle("high",G.water>.7);
+  $("hint").style.display=G.score===0&&G.level===1?"block":"none";
+}
+
+/* ---------------- drawing ---------------- */
+function drawTiles(){
+  X.fillStyle="#eef7f7"; X.fillRect(0,0,W,H);
+  const s=Math.max(44,Math.min(W,H)*.13);
+  X.strokeStyle="#d4e6e6"; X.lineWidth=3;
+  for(let x=0;x<=W+s;x+=s){ X.beginPath(); X.moveTo(x,0); X.lineTo(x,H); X.stroke(); }
+  for(let y=0;y<=H+s;y+=s){ X.beginPath(); X.moveTo(0,y); X.lineTo(W,y); X.stroke(); }
+  /* soft basin shading toward the drain */
+  const g=X.createRadialGradient(drainX(),drainY(),drainR()*.4,drainX(),drainY(),Math.max(W,H)*.6);
+  g.addColorStop(0,"rgba(150,190,196,.30)"); g.addColorStop(1,"rgba(150,190,196,0)");
+  X.fillStyle=g; X.fillRect(0,0,W,H);
+}
+function drawWater(){
+  const lvl=G.water;
+  if(lvl<=0.01) return;
+  const top=H-(H*.92)*lvl;
+  X.save();
+  X.globalAlpha=.62;
+  X.fillStyle="#7fc9cf";
+  const waveY=x=>top+Math.sin(x/58+G.tt/420)*4+Math.sin(x/23-G.tt/300)*2;
+  X.beginPath();
+  X.moveTo(0,H);
+  X.lineTo(0,waveY(0));
+  for(let x=18;x<W;x+=18) X.lineTo(x,waveY(x));
+  X.lineTo(W,waveY(W));            /* land exactly on the right edge */
+  X.lineTo(W,H); X.closePath(); X.fill();
+  X.restore();
+  X.strokeStyle="rgba(255,255,255,.75)"; X.lineWidth=3;
+  X.beginPath();
+  X.moveTo(0,waveY(0));
+  for(let x=18;x<W;x+=18) X.lineTo(x,waveY(x));
+  X.lineTo(W,waveY(W));
+  X.stroke();
+}
+function drawDrain(){
+  const cx=drainX(), cy=drainY(), r=drainR();
+  X.save();
+  /* wet ring */
+  X.fillStyle="rgba(120,170,178,.35)";
+  X.beginPath(); X.ellipse(cx,cy,r*1.5,r*1.5,0,0,7); X.fill();
+  /* chrome */
+  const g=X.createRadialGradient(cx-r*.3,cy-r*.35,r*.15,cx,cy,r);
+  g.addColorStop(0,"#eef3f6"); g.addColorStop(.6,"#c2ced6"); g.addColorStop(1,"#93a2ac");
+  X.fillStyle=g;
+  X.beginPath(); X.arc(cx,cy,r,0,7); X.fill();
+  X.strokeStyle="#7d8b95"; X.lineWidth=4; X.stroke();
+  /* dark hole */
+  X.fillStyle="#20282c";
+  X.beginPath(); X.arc(cx,cy,r*.62,0,7); X.fill();
+  /* grate bars */
+  X.strokeStyle="#aab6be"; X.lineWidth=Math.max(4,r*.12); X.lineCap="round";
+  for(let i=-2;i<=2;i++){
+    const off=i*(r*.26);
+    const half=Math.sqrt(Math.max(0,(r*.62)**2-off*off));
+    X.beginPath(); X.moveTo(cx+off,cy-half); X.lineTo(cx+off,cy+half); X.stroke();
+  }
+  X.restore();
+}
+function drawHair(){
+  const c=G.clump;
+  if(!c) return;
+  const cx=drainX(), cy=drainY();
+  const prog=Math.min(1,c.got/c.target);
+  /* the pull point: where your finger is, or resting just above the drain */
+  const px=G.drag?c.pull.x:cx+Math.sin(G.tt/700)*6;
+  const py=G.drag?c.pull.y:cy-drainR()*1.15-prog*40;
+  const dx=px-cx, dy=py-cy;
+  const dist=Math.hypot(dx,dy)||1;
+  /* strain colour */
+  const hot=Math.min(1,G.strain);
+  const col=hot>.02?"rgb("+Math.round(47+hot*180)+","+Math.round(42-hot*10)+","+Math.round(46+hot*20)+")":"#2f2a2e";
+  X.save();
+  X.lineCap="round";
+  for(let i=0;i<c.n;i++){
+    const t=(i/(c.n-1)-.5);
+    const sway=Math.sin(G.tt/380+i*1.7+c.seed)*(6+G.wobble*16);
+    const mx=cx+dx*.45+(-dy/dist)*(t*46+sway);
+    const my=cy+dy*.45+(dx/dist)*(t*46+sway)*.5;
+    X.strokeStyle=col;
+    X.globalAlpha=.55+.45*(1-Math.abs(t)*1.2);
+    X.lineWidth=Math.max(2,(4.2-Math.abs(t)*2.4)*(Math.min(W,H)/700));
+    X.beginPath();
+    X.moveTo(cx+t*10,cy);
+    X.quadraticCurveTo(mx,my,px+t*16,py+Math.sin(i*2.1+G.tt/300)*4);
+    X.stroke();
+  }
+  X.globalAlpha=1;
+  /* the wet clump riding on your finger */
+  const blob=10+prog*30;
+  X.fillStyle=col;
+  X.beginPath();
+  for(let a=0;a<12;a++){
+    const an=a/12*Math.PI*2;
+    const rr=blob*(.72+.36*Math.abs(Math.sin(an*3+c.seed+G.tt/600)));
+    const bx=px+Math.cos(an)*rr, by=py+Math.sin(an)*rr*.82;
+    if(a===0) X.moveTo(bx,by); else X.lineTo(bx,by);
+  }
+  X.closePath(); X.fill();
+  /* strands escaping the blob */
+  X.strokeStyle=col; X.lineWidth=2;
+  for(let i=0;i<5;i++){
+    const an=(i/5)*Math.PI*2+G.tt/900;
+    X.beginPath();
+    X.moveTo(px,py);
+    X.quadraticCurveTo(px+Math.cos(an)*blob*1.5,py+Math.sin(an)*blob*1.2,
+      px+Math.cos(an+.6)*blob*2.1,py+Math.sin(an+.6)*blob*1.7);
+    X.stroke();
+  }
+  X.restore();
+
+  /* tension gauge · a ring around the drain */
+  const gr=drainR()*1.34;
+  X.save();
+  X.lineWidth=Math.max(6,drainR()*.16); X.lineCap="round";
+  X.strokeStyle="rgba(255,255,255,.65)";
+  X.beginPath(); X.arc(cx,cy,gr,Math.PI*.75,Math.PI*2.25); X.stroke();
+  const frac=Math.min(1,Math.max(G.tension/Math.max(.001,safeSpeed()),G.strain));
+  X.strokeStyle=G.strain>.55?"#e0483e":G.strain>.15?"#f0b64a":"#5cc08a";
+  X.beginPath(); X.arc(cx,cy,gr,Math.PI*.75,Math.PI*.75+Math.PI*1.5*Math.min(1,frac)); X.stroke();
+  X.restore();
+
+  /* progress toward this clump */
+  const bw=Math.min(240,W*.55), bx=cx-bw/2, by=Math.min(cy+drainR()*1.9,H-100);
+  X.fillStyle="rgba(255,255,255,.8)";
+  X.beginPath(); X.roundRect?X.roundRect(bx,by,bw,12,6):X.rect(bx,by,bw,12); X.fill();
+  X.fillStyle="#5cc08a";
+  X.beginPath(); X.roundRect?X.roundRect(bx,by,Math.max(4,bw*prog),12,6):X.rect(bx,by,bw*prog,12); X.fill();
+  X.strokeStyle="#25333a"; X.lineWidth=2.5;
+  X.beginPath(); X.roundRect?X.roundRect(bx,by,bw,12,6):X.rect(bx,by,bw,12); X.stroke();
+  X.font="700 "+Math.round(Math.min(20,W*.045))+"px 'Patrick Hand'";
+  X.fillStyle="#25333a"; X.textAlign="center";
+  X.fillText(Math.round(c.got)+" / "+Math.round(c.target)+" cm",cx,by+34);
+  X.textAlign="left";
+}
+function drawBubbles(){
+  for(const b of G.bubbles){
+    X.save(); X.globalAlpha=Math.max(0,1-b.t/1400);
+    X.strokeStyle="#fff"; X.lineWidth=2.5;
+    X.beginPath(); X.arc(b.x,b.y,b.r,0,7); X.stroke();
+    X.restore();
+  }
+  for(const w of G.won){
+    const k=w.t/1200;
+    X.save(); X.globalAlpha=1-k;
+    X.font="700 "+Math.round(Math.min(34,W*.08))+"px 'Gochi Hand'";
+    X.fillStyle="#5cc08a"; X.textAlign="center";
+    X.fillText("+"+w.cm+"cm",drainX(),drainY()-drainR()*1.6-k*70);
+    X.textAlign="left"; X.restore();
+  }
+}
+function drawLily(){
+  /* a little reaction portrait in the corner */
+  const s=Math.min(1.1,Math.max(.72,Math.min(W,H)/620));
+  const lx=W-58*s, ly=H-56*s-(H*.02);
+  const grossed=G.strain>.5||G.water>.75;
+  X.save();
+  X.translate(lx,ly);
+  X.fillStyle="#f3c9a5"; X.strokeStyle="#25333a"; X.lineWidth=3.4;
+  X.beginPath(); X.arc(0,0,22*s,0,7); X.fill(); X.stroke();
+  X.strokeStyle="#6b4426"; X.lineWidth=5*s;
+  X.beginPath(); X.moveTo(-20*s,-10*s); X.quadraticCurveTo(0,-30*s,20*s,-10*s); X.stroke();
+  X.beginPath(); X.moveTo(-19*s,-8*s); X.quadraticCurveTo(-30*s,10*s,-24*s,22*s); X.stroke();
+  X.strokeStyle="#25333a"; X.lineWidth=2.6*s;
+  if(grossed){
+    X.beginPath(); X.moveTo(-11*s,-4*s); X.lineTo(-3*s,-1*s); X.stroke();
+    X.beginPath(); X.moveTo(11*s,-4*s); X.lineTo(3*s,-1*s); X.stroke();
+    X.beginPath(); X.moveTo(-7*s,10*s); X.quadraticCurveTo(0,3*s,7*s,10*s); X.stroke();
+  } else {
+    X.beginPath(); X.arc(-7*s,-2*s,2.4*s,0,7); X.stroke();
+    X.beginPath(); X.arc(7*s,-2*s,2.4*s,0,7); X.stroke();
+    X.beginPath(); X.moveTo(-6*s,8*s); X.quadraticCurveTo(0,13*s,6*s,8*s); X.stroke();
+  }
+  X.restore();
+}
+
+let last=0;
+function loop(ts){
+  const dt=Math.min(60,ts-(last||ts)); last=ts;
+  if(cv.clientWidth&&(Math.abs(cv.clientWidth-W)>1||Math.abs(cv.clientHeight-H)>1)) resize();
+  if(G){
+    update(dt);
+    X.save();
+    if(G.shake>0) X.translate((Math.random()-.5)*9*G.shake,(Math.random()-.5)*7*G.shake);
+    drawTiles(); drawWater(); drawDrain(); drawHair(); drawBubbles(); drawLily();
+    X.restore();
+  }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+/* ---------------- flow ---------------- */
+function start(){
+  ensureAC(); newGame();
+  $("panel").style.display="none";
+  $("hud").style.display="flex";
+  $("hLen").textContent="0";
+  startMusic();
+}
+$("bigBtn").addEventListener("click",start);
+newGame(); G.mode="title";
+if(SV.best) $("best").textContent="best: "+SV.best+" cm · clump "+((SV.deep||0)+1);
+
+window.DR={ get G(){return G;}, start, newGame, nextClump, landClump, snap, overflow,
+  drainX, drainY, drainR, safeSpeed, MUS, toast };
+</script>
+</body>
+</html>
