@@ -155,6 +155,19 @@ canvas{display:block;position:absolute;inset:0;width:100%;height:100%}
 #notes{margin-top:14px;font-size:11.5px;color:var(--dim);line-height:1.7;max-width:34ch}
 #notes b{color:var(--text);font-weight:600}
 
+/* ---- face crop sheet ---- */
+#faceIn{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden}
+#crop{position:absolute;inset:0;z-index:18;display:none;flex-direction:column;
+  align-items:center;justify-content:center;gap:14px;padding:22px 16px;
+  background:rgba(8,5,14,.94);backdrop-filter:blur(6px)}
+#crop.show{display:flex}
+#cropStage{position:relative;width:min(340px,84vw);aspect-ratio:1;border-radius:20px;
+  overflow:hidden;background:#150e1c;touch-action:none;cursor:grab}
+#cropStage canvas{position:absolute;inset:0;width:100%;height:100%}
+#cropMask{position:absolute;inset:0;pointer-events:none}
+#cropZoom{width:min(340px,84vw);accent-color:var(--gold)}
+#crop .cap{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--dim)}
+#crop .lead{font-size:12px;color:var(--dim);max-width:30ch;line-height:1.6;text-align:center}
 #load{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:20;
   background:var(--bg);font-family:var(--disp);font-size:20px;letter-spacing:.3em;color:var(--gold)}
 
@@ -180,6 +193,30 @@ canvas{display:block;position:absolute;inset:0;width:100%;height:100%}
   <div class="chip" id="cLook">look <b id="hLook">—</b></div>
   <div class="chip" id="cSkin">skin</div>
   <div class="chip" id="cPose">pose</div>
+  <input type="file" id="faceIn" accept="image/*,.jpg,.jpeg,.png,.heic,.heif,.webp">
+  <label class="chip" id="cFace" for="faceIn">face</label>
+  <div class="chip" id="cFaceOff" style="display:none">drawn face</div>
+</div>
+
+<div id="crop">
+  <div class="cap">position your face</div>
+  <div id="cropStage">
+    <canvas id="cropCv"></canvas>
+    <svg id="cropMask" viewBox="0 0 100 100" preserveAspectRatio="none">
+      <defs><mask id="om"><rect width="100" height="100" fill="#fff"/>
+        <ellipse cx="50" cy="50" rx="33" ry="41" fill="#000"/></mask></defs>
+      <rect width="100" height="100" fill="rgba(8,5,14,.72)" mask="url(#om)"/>
+      <ellipse cx="50" cy="50" rx="33" ry="41" fill="none"
+        stroke="rgba(242,200,121,.85)" stroke-width="0.5"/>
+    </svg>
+  </div>
+  <input type="range" id="cropZoom" min="100" max="320" value="140">
+  <div class="lead">Drag to move, slide to zoom. Fill the oval with your face —
+    brow to chin.</div>
+  <div class="btnrow">
+    <button class="btn" id="cropOk">use this face</button>
+    <button class="btn ghost" id="cropCancel">cancel</button>
+  </div>
 </div>
 
 <div id="vfy"></div>
@@ -212,6 +249,7 @@ canvas{display:block;position:absolute;inset:0;width:100%;height:100%}
     <button class="btn" id="bPlay">start a show</button>
     <button class="btn ghost" id="bStudio">free studio</button>
   </div>
+  <div class="kick" style="margin-top:18px;opacity:.8">free studio · put your own face on her</div>
   <div class="kick" id="bestLine" style="margin-top:26px"></div>
 </div>
 
@@ -634,6 +672,7 @@ function buildModel(){
   BODY.skull=skull;
   const face=buildFace();          /* authored head-local, like every head piece */
   headG.add(face);
+  if(facePlate){ headG.add(facePlate); face.visible=false; }
   g.add(neck,headG);
   BODY.head=headG; BODY.face=face;
 
@@ -646,6 +685,159 @@ function buildModel(){
   BODY.root=g;
   return g;
 }
+
+/* ═══════════════════════════════════════════════════════════
+   YOUR FACE · a photo mapped onto the front of the head
+   The plate is a patch of the same ellipsoid the skull is built from,
+   pushed a hair proud of it, so the photo curves with the head instead
+   of floating on a flat card. The texture is feathered to nothing at
+   its edge, which is what blends it into the modelled skin.
+   ═══════════════════════════════════════════════════════════ */
+let facePlate=null, faceTex=null;
+function faceTexture(src,crop){
+  const N=512;
+  const c=document.createElement("canvas"); c.width=c.height=N;
+  const x=c.getContext("2d");
+  x.drawImage(src,crop.x,crop.y,crop.s,crop.s,0,0,N,N);
+  /* feather to transparent on an oval, so there is no visible seam */
+  x.globalCompositeOperation="destination-in";
+  x.save(); x.translate(N/2,N/2); x.scale(1,1.12);
+  const gr=x.createRadialGradient(0,0,N*.17,0,0,N*.42);
+  gr.addColorStop(0,"rgba(0,0,0,1)");
+  gr.addColorStop(.58,"rgba(0,0,0,1)");
+  gr.addColorStop(.82,"rgba(0,0,0,.55)");
+  gr.addColorStop(1,"rgba(0,0,0,0)");
+  x.fillStyle=gr; x.beginPath(); x.arc(0,0,N*.42,0,TAU); x.fill();
+  x.restore();
+  return c;
+}
+/* Average the middle of the crop — cheeks and nose, skipping the feathered
+   edge — and paint the rest of the body that colour. A photo face on a body
+   two shades lighter reads as a mask; matched, it reads as her. */
+function faceMeanColour(canvas){
+  const c=document.createElement("canvas"); c.width=c.height=8;
+  const x=c.getContext("2d",{willReadFrequently:true});
+  try{
+    x.drawImage(canvas,canvas.width*.30,canvas.height*.34,
+                canvas.width*.40,canvas.height*.34,0,0,8,8);
+    const d=x.getImageData(0,0,8,8).data;
+    let r=0,gg=0,b=0,n=0;
+    for(let i=0;i<d.length;i+=4){
+      if(d[i+3]<140) continue;
+      r+=d[i]; gg+=d[i+1]; b+=d[i+2]; n++;
+    }
+    if(n<8) return null;
+    return {r:Math.round(r/n),g:Math.round(gg/n),b:Math.round(b/n)};
+  }catch(e){ return null; }
+}
+function applyFace(canvas){
+  removeFace();
+  const mean=faceMeanColour(canvas);
+  if(mean){
+    skinMat.color.setStyle(`rgb(${mean.r},${mean.g},${mean.b})`);
+    faceMatched=true;
+  }
+  const t=new THREE.CanvasTexture(canvas);
+  t.colorSpace=THREE.SRGBColorSpace;
+  t.anisotropy=Math.min(8,renderer.capabilities.getMaxAnisotropy());
+  faceTex=t;
+  const geo=new THREE.SphereGeometry(1,60,60,
+    Math.PI/2-0.86, 1.72,   /* the front of the head, left ear to right */
+    0.66, 1.34);            /* hairline down to under the chin */
+  facePlate=new THREE.Mesh(geo,new THREE.MeshStandardMaterial({
+    map:t,transparent:true,roughness:.72,metalness:0,
+    envMapIntensity:.55,depthWrite:false,side:THREE.FrontSide}));
+  facePlate.scale.set(HA.x*1.012,HA.y*1.012,HA.z*1.012);
+  facePlate.renderOrder=3;
+  facePlate.name="facePlate";
+  facePlate.userData.att="head";
+  if(BODY.head) BODY.head.add(facePlate);
+  if(BODY.face) BODY.face.visible=false;
+  $("cFaceOff").style.display="";
+  try{ localStorage.setItem("poser_face",canvas.toDataURL("image/jpeg",.82)); }catch(e){}
+}
+let faceMatched=false;
+function removeFace(){
+  if(faceMatched){ setSkin(skinIdx); faceMatched=false; }
+  if(facePlate){
+    if(facePlate.parent) facePlate.parent.remove(facePlate);
+    facePlate.geometry.dispose(); facePlate.material.dispose();
+    facePlate=null;
+  }
+  if(faceTex){ faceTex.dispose(); faceTex=null; }
+  if(BODY.face) BODY.face.visible=true;
+  $("cFaceOff").style.display="none";
+}
+
+/* ---- the crop sheet ---- */
+const CROP={img:null,zoom:1.4,ox:0,oy:0,drag:null};
+function openCrop(img){
+  CROP.img=img; CROP.zoom=1.4; CROP.ox=0; CROP.oy=0;
+  $("cropZoom").value=140;
+  $("crop").classList.add("show");
+  drawCrop();
+}
+function drawCrop(){
+  const cv2=$("cropCv"), box=$("cropStage").getBoundingClientRect();
+  const D=Math.max(1,Math.round(Math.min(box.width,box.height)*Math.min(2,devicePixelRatio||1)));
+  cv2.width=cv2.height=D;
+  const x=cv2.getContext("2d");
+  x.fillStyle="#150e1c"; x.fillRect(0,0,D,D);
+  const im=CROP.img; if(!im) return;
+  const base=D/Math.min(im.width,im.height);
+  const sc=base*CROP.zoom;
+  const w=im.width*sc, h=im.height*sc;
+  x.drawImage(im,(D-w)/2+CROP.ox*D,(D-h)/2+CROP.oy*D,w,h);
+}
+/* the visible square maps back to a source rect for the texture */
+function cropRect(){
+  const im=CROP.img, D=1;
+  const base=1/Math.min(im.width,im.height);
+  const sc=base*CROP.zoom;
+  const w=im.width*sc, h=im.height*sc;
+  const left=(D-w)/2+CROP.ox*D, top=(D-h)/2+CROP.oy*D;
+  const s=1/sc;
+  return {x:(0-left)/sc, y:(0-top)/sc, s};
+}
+(function(){
+  const stage=$("cropStage");
+  stage.addEventListener("pointerdown",e=>{
+    CROP.drag={x:e.clientX,y:e.clientY,ox:CROP.ox,oy:CROP.oy};
+    stage.setPointerCapture&&stage.setPointerCapture(e.pointerId);
+  });
+  addEventListener("pointermove",e=>{
+    if(!CROP.drag) return;
+    const box=stage.getBoundingClientRect();
+    CROP.ox=CROP.drag.ox+(e.clientX-CROP.drag.x)/box.width;
+    CROP.oy=CROP.drag.oy+(e.clientY-CROP.drag.y)/box.height;
+    drawCrop();
+  });
+  addEventListener("pointerup",()=>{ CROP.drag=null; });
+  $("cropZoom").addEventListener("input",e=>{ CROP.zoom=+e.target.value/100; drawCrop(); });
+  $("cropCancel").addEventListener("click",()=>$("crop").classList.remove("show"));
+  $("cropOk").addEventListener("click",()=>{
+    if(!CROP.img) return;
+    applyFace(faceTexture(CROP.img,cropRect()));
+    $("crop").classList.remove("show");
+  });
+})();
+$("faceIn").addEventListener("change",e=>{
+  const f=e.target.files&&e.target.files[0];
+  e.target.value="";
+  if(!f) return;
+  const fr=new FileReader();
+  fr.onload=()=>{
+    const im=new Image();
+    im.onload=()=>openCrop(im);
+    im.onerror=()=>alert("That image would not decode — try a JPEG or PNG.");
+    im.src=fr.result;
+  };
+  fr.readAsDataURL(f);
+});
+$("cFaceOff").addEventListener("click",()=>{
+  removeFace();
+  try{ localStorage.removeItem("poser_face"); }catch(e){}
+});
 
 /* ═══════════════════════════════════════════════════════════
    POSES · the joint groups earn their keep
@@ -1899,6 +2091,16 @@ function frame(ts){
 
 /* boot */
 buildModel();
+/* a face you added last time comes back with you */
+try{
+  const saved=localStorage.getItem("poser_face");
+  if(saved){
+    const im=new Image();
+    im.onload=()=>{ const c=document.createElement("canvas");
+      c.width=c.height=512; c.getContext("2d").drawImage(im,0,0,512,512); applyFace(c); };
+    im.src=saved;
+  }
+}catch(e){}
 setPose(1);
 groundModel(); frameModel(); cam.dist=cam.want; cam.tgt.y=cam.tgtWant;
 renderSlots();
@@ -1911,7 +2113,8 @@ requestAnimationFrame(frame);
 window.FS={THREE,scene,renderer,camera,model,pedestal,LIGHTS,BODY,RIG,cam,
   WARDROBE,SLOTS,outfit,worn,wear,randomLook,setSkin,setPose,POSES,verify,showVerify,PAL,
   groundModel,frameModel,modelBox,G,THEMES,judge,startShow,startDressing,startWalk,
-  enterStudio,goHome,look,RUNWAY,
+  enterStudio,goHome,look,RUNWAY,applyFace,removeFace,faceTexture,openCrop,
+  get facePlate(){return facePlate;},
   setSlot:s=>{curSlot=s;renderSlots();renderRack();}};
 </script>
 </body>
