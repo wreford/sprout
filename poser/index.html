@@ -156,7 +156,18 @@ canvas{display:block;position:absolute;inset:0;width:100%;height:100%}
 #notes b{color:var(--text);font-weight:600}
 
 /* ---- face crop sheet ---- */
-#faceIn{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden}
+#faceIn,#modelIn{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden}
+#toast{position:absolute;left:50%;bottom:calc(var(--dockh,104px) + 62px);z-index:17;
+  transform:translateX(-50%);background:var(--panel);backdrop-filter:blur(14px);
+  border:1px solid var(--line);border-radius:100px;padding:9px 17px;font-size:11.5px;
+  font-weight:600;opacity:0;transition:opacity .2s;pointer-events:none;white-space:nowrap;
+  max-width:92vw;overflow:hidden;text-overflow:ellipsis}
+#toast.show{opacity:1}
+#busy{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:19;
+  background:var(--panel);backdrop-filter:blur(14px);border:1px solid var(--line);
+  border-radius:14px;padding:14px 22px;font-size:12px;letter-spacing:.1em;
+  text-transform:uppercase;font-weight:600;display:none}
+#busy.show{display:block}
 #crop{position:absolute;inset:0;z-index:18;display:none;flex-direction:column;
   align-items:center;justify-content:center;gap:14px;padding:22px 16px;
   background:rgba(8,5,14,.94);backdrop-filter:blur(6px)}
@@ -196,7 +207,12 @@ canvas{display:block;position:absolute;inset:0;width:100%;height:100%}
   <input type="file" id="faceIn" accept="image/*,.jpg,.jpeg,.png,.heic,.heif,.webp">
   <label class="chip" id="cFace" for="faceIn">face</label>
   <div class="chip" id="cFaceOff" style="display:none">drawn face</div>
+  <input type="file" id="modelIn" accept=".glb,.gltf,model/gltf-binary,model/gltf+json">
+  <label class="chip" id="cModel" for="modelIn">model</label>
+  <div class="chip" id="cModelOff" style="display:none">drawn model</div>
 </div>
+<div id="busy">loading model…</div>
+<div id="toast"></div>
 
 <div id="crop">
   <div class="cap">position your face</div>
@@ -274,8 +290,9 @@ canvas{display:block;position:absolute;inset:0;width:100%;height:100%}
 
 <div id="load">LOADING</div>
 
-<script src="three.min.js"></script>
-<script>
+<script type="module">
+import * as THREE from "./three.module.min.js";
+import { GLTFLoader } from "./GLTFLoader.js";
 "use strict";
 const $=id=>document.getElementById(id);
 const cv=$("cv");
@@ -860,6 +877,7 @@ function setPose(i){
   const c=$("cPose"); if(c) c.innerHTML="pose <b>"+p.name+"</b>";
 }
 function applyPose(k){
+  if(CUSTOM.root) return;
   if(!BODY.armL||!poseT.azL===undefined) return;
   const L=(a,b)=>a+(b-a)*k;
   BODY.armL.rotation.z=L(BODY.armL.rotation.z,poseT.azL);
@@ -1414,6 +1432,7 @@ function attach(obj,att){
 }
 
 function wear(slot,id){
+  if(CUSTOM.root){ toast("The wardrobe is cut for the drawn model"); return false; }
   if(!WARDROBE[slot]) return false;
   const def=WARDROBE[slot].find(x=>x.id===id);
   if(!def){ console.warn("no such piece",slot,id); return false; }
@@ -1563,7 +1582,7 @@ function clipCount(mesh){
 }
 function verify(){
   const problems=[];
-  let meshes=0,tris=0,lathes=0,inverted=0,clipped=0;
+  let meshes=0,tris=0,lathes=0,inverted=0,clipped=0,imported=0;
   const bb=new THREE.Box3();
 
   scene.traverse(o=>{
@@ -1571,6 +1590,15 @@ function verify(){
     const label=o.name||o.geometry?.type||o.type;
     if(o.userData.stage){                       /* stage props: only sanity, not size */
       if(!o.geometry||!o.geometry.attributes.position) problems.push(label+": no geometry");
+      return;
+    }
+    if(o.userData.imported){                    /* somebody else's model, not mine to audit */
+      imported++;
+      const gg=o.geometry;
+      if(!gg||!gg.attributes.position){ problems.push(label+": imported mesh has no geometry"); return; }
+      const idx=gg.index;
+      tris+=(idx?idx.count:gg.attributes.position.count)/3;
+      meshes++;
       return;
     }
     meshes++;
@@ -1605,7 +1633,8 @@ function verify(){
   bb.setFromObject(model);
   const size=bb.getSize(new THREE.Vector3());
   const height=size.y, width=size.x;
-  if(!(height>1.7&&height<2.7)) problems.push("model height out of range: "+height.toFixed(2));
+  if(!(height>1.7&&height<2.7)&&!CUSTOM.root)
+    problems.push("model height out of range: "+height.toFixed(2));
   const groundGap=bb.min.y-RISER;               /* 0 means standing exactly on the riser */
   if(groundGap<-.015) problems.push("clips through the riser by "+Math.abs(groundGap).toFixed(3));
   if(groundGap> .015) problems.push("floating above the riser by "+groundGap.toFixed(3));
@@ -1616,14 +1645,14 @@ function verify(){
   if(size.x>fitX) problems.push("wider than the frame ("+size.x.toFixed(2)+" > "+fitX.toFixed(2)+")");
 
   /* the skull itself, not whatever hairstyle is sitting on it */
-  if(BODY.skull){
+  if(BODY.skull&&!CUSTOM.root){
     const hb=new THREE.Box3().setFromObject(BODY.skull);
     const hy=hb.getSize(_v3).y;
     const ratio=height/hy;
     if(ratio<4.5||ratio>9) problems.push("head-to-body ratio off: "+ratio.toFixed(1)+" heads");
   }
   /* every worn slot in `outfit` should have real geometry in the scene */
-  Object.entries(outfit).forEach(([slot,id])=>{
+  if(!CUSTOM.root) Object.entries(outfit).forEach(([slot,id])=>{
     if(id!=="none"&&!worn[slot]) problems.push("slot "+slot+" says "+id+" but nothing is worn");
   });
 
@@ -1631,7 +1660,7 @@ function verify(){
   if(BODY.skull){ const hb=new THREE.Box3().setFromObject(BODY.skull);
     heads=height/Math.max(.001,hb.getSize(_v3).y); }
   return { ok:problems.length===0, problems, meshes, tris:Math.round(tris),
-    lathes, inverted, clipped, heads:+heads.toFixed(2),
+    lathes, inverted, clipped, imported, heads:+heads.toFixed(2),
     modelHeight:+height.toFixed(3), modelWidth:+width.toFixed(3),
     groundGap:+groundGap.toFixed(3), pieces:Object.keys(worn).length };
 }
@@ -1666,7 +1695,9 @@ function updateStats(){
     }
   });
   $("stat").innerHTML=`<b>${meshes}</b> meshes · <b>${(tri/1000).toFixed(1)}k</b> tris<br>`+
-    `<b>${Object.values(outfit).filter(v=>v!=="none").length}</b> pieces · 0 files loaded`;
+    (CUSTOM.root
+      ? `imported model${CUSTOM.clips?" · "+CUSTOM.clips.length+" clips":""}`
+      : `<b>${Object.values(outfit).filter(v=>v!=="none").length}</b> pieces · 0 files loaded`);
   const d=WARDROBE.dress.find(x=>x.id===outfit.dress);
   $("hLook").textContent=(d&&d.id!=="none")?d.name:"separates";
 }
@@ -1677,6 +1708,7 @@ function showVerify(){
   let h=`<h4>geometry audit</h4>`;
   h+=row("meshes",v.meshes);
   h+=row("triangles",v.tris.toLocaleString());
+  if(v.imported) h+=row("imported meshes",v.imported);
   h+=row("lathe pieces",v.lathes+" · "+v.inverted+" inverted",v.inverted===0);
   h+=row("garment fit",v.clipped?v.clipped+" clipping":"no skin showing",v.clipped===0);
   h+=row("model height",v.modelHeight.toFixed(2)+" u",v.modelHeight>1.7&&v.modelHeight<2.7);
@@ -1691,6 +1723,106 @@ function showVerify(){
   $("vfy").innerHTML=h;
   return v;
 }
+
+/* ═══════════════════════════════════════════════════════════
+   BRING YOUR OWN MODEL
+   Meshy, Sketchfab, Mixamo, anything that exports .glb — download it on
+   the device and load it here. It is normalised to the same two units the
+   drawn body occupies, stood on the riser, and lit by the same rig. If it
+   ships animation clips the first one plays on the runway.
+   The wardrobe is cut against the drawn body's measurements, so it steps
+   aside while an imported model is in.
+   ═══════════════════════════════════════════════════════════ */
+let toastT=0;
+function toast(msg){
+  const el=$("toast"); if(!el) return;
+  el.textContent=msg; el.classList.add("show");
+  clearTimeout(toastT); toastT=setTimeout(()=>el.classList.remove("show"),2000);
+}
+const CUSTOM={root:null,mixer:null,clips:null,action:null};
+const gltfLoader=new GLTFLoader();
+
+function clearCustom(){
+  if(CUSTOM.action){ CUSTOM.action.stop(); CUSTOM.action=null; }
+  if(CUSTOM.mixer){ CUSTOM.mixer.uncacheRoot(CUSTOM.root); CUSTOM.mixer=null; }
+  if(CUSTOM.root){
+    model.remove(CUSTOM.root);
+    CUSTOM.root.traverse(o=>{
+      if(o.isMesh){
+        if(o.geometry) o.geometry.dispose();
+        const mats=Array.isArray(o.material)?o.material:[o.material];
+        mats.forEach(m=>{ if(!m) return;
+          ["map","normalMap","roughnessMap","metalnessMap","emissiveMap","aoMap"]
+            .forEach(k=>{ if(m[k]&&m[k].dispose) m[k].dispose(); });
+          m.dispose(); });
+      }
+    });
+    CUSTOM.root=null;
+  }
+  CUSTOM.clips=null;
+  if(BODY.root&&!BODY.root.parent) model.add(BODY.root);
+  $("cModelOff").style.display="none";
+}
+function useCustomModel(gltf){
+  clearCustom();
+  const root=gltf.scene||gltf.scenes[0];
+  if(!root){ toast("That file has no scene in it"); return; }
+  root.traverse(o=>{
+    if(o.isMesh){
+      o.castShadow=true; o.receiveShadow=true;
+      o.userData.imported=true;
+      const mats=Array.isArray(o.material)?o.material:[o.material];
+      mats.forEach(m=>{ if(m&&"envMapIntensity" in m) m.envMapIntensity=.85; });
+    }
+  });
+  /* normalise: two units tall, centred over the riser, feet on the deck */
+  const bb=new THREE.Box3().setFromObject(root);
+  const size=bb.getSize(new THREE.Vector3());
+  if(!Number.isFinite(size.y)||size.y<1e-6){ toast("That model has no size"); return; }
+  root.scale.setScalar(2.05/size.y);
+  root.updateMatrixWorld(true);
+  const bb2=new THREE.Box3().setFromObject(root);
+  root.position.x-=(bb2.min.x+bb2.max.x)/2;
+  root.position.z-=(bb2.min.z+bb2.max.z)/2;
+  root.position.y-=bb2.min.y;
+  CUSTOM.root=root;
+  /* the drawn body leaves entirely — hiding it would still count toward
+     the bounding box the camera frames against */
+  if(BODY.root&&BODY.root.parent) model.remove(BODY.root);
+  model.add(root);
+  if(gltf.animations&&gltf.animations.length){
+    CUSTOM.clips=gltf.animations;
+    CUSTOM.mixer=new THREE.AnimationMixer(root);
+    CUSTOM.action=CUSTOM.mixer.clipAction(gltf.animations[0]);
+    CUSTOM.action.play();
+  }
+  $("cModelOff").style.display="";
+  groundModel(); frameModel();
+  toast(CUSTOM.clips?("Loaded · "+CUSTOM.clips.length+" animation"+(CUSTOM.clips.length>1?"s":""))
+                    :"Model loaded");
+}
+$("modelIn").addEventListener("change",e=>{
+  const f=e.target.files&&e.target.files[0];
+  e.target.value="";
+  if(!f) return;
+  $("busy").classList.add("show");
+  const fr=new FileReader();
+  fr.onerror=()=>{ $("busy").classList.remove("show"); toast("Could not read that file"); };
+  fr.onload=()=>{
+    try{
+      gltfLoader.parse(fr.result,"",
+        gltf=>{ $("busy").classList.remove("show"); useCustomModel(gltf); },
+        err=>{ $("busy").classList.remove("show");
+          console.warn(err); toast("That is not a glTF this can read"); });
+    }catch(err){
+      $("busy").classList.remove("show");
+      console.warn(err); toast("That file would not parse");
+    }
+  };
+  fr.readAsArrayBuffer(f);
+});
+$("cModelOff").addEventListener("click",()=>{ clearCustom(); groundModel(); frameModel();
+  toast("Back to the drawn model"); });
 
 /* ═══════════════════════════════════════════════════════════
    THE SHOW · a theme, a clock, a walk, and a panel of judges
@@ -1726,7 +1858,7 @@ try{ G.best=+(localStorage.getItem("poser_best")||0)||0; }catch(e){}
 function resetRig(){
   model.position.set(0,model.position.y,0);
   model.rotation.set(0,0,0);
-  if(!BODY.root) return;
+  if(CUSTOM.root||!BODY.root) return;
   BODY.root.rotation.set(0,0,0); BODY.root.position.set(0,0,0);
   BODY.shinL.rotation.x=0; BODY.shinR.rotation.x=0;
   BODY.head.rotation.set(0,0,0);
@@ -1891,7 +2023,19 @@ function walkFrame(dt,ts){
   /* stride */
   const striding=k<.86;
   const ph=ts/300;
-  if(striding){
+  if(CUSTOM.root){
+    /* an imported model brings its own motion, or simply glides.
+       This branch has to close out the walk itself — it catches every custom
+       case, so the procedural turn below is never reached. */
+    if(CUSTOM.mixer) CUSTOM.mixer.update(dt/1000);
+    else if(striding) CUSTOM.root.rotation.y=Math.sin(ph)*.06;
+    if(striding){
+      model.position.x=Math.sin(ph)*.03;
+    }else{
+      model.position.x+=(0-model.position.x)*.12;
+      if(k>=1&&!w.done){ w.done=true; setTimeout(endWalk,720); }
+    }
+  }else if(striding){
     const sw=.52;
     BODY.legL.rotation.x=Math.sin(ph)*sw;
     BODY.legR.rotation.x=-Math.sin(ph)*sw;
@@ -2080,7 +2224,8 @@ function frame(ts){
   /* breath + settle into the pose */
   applyPose(Math.min(1,dt*.006));
   if(poseSettle>0&&--poseSettle%6===0){ groundModel(); frameModel(); }
-  if(BODY.root){
+  if(CUSTOM.mixer) CUSTOM.mixer.update(dt/1000);
+  if(BODY.root&&!CUSTOM.root){
     const b=Math.sin(ts/1500);
     BODY.root.position.y=b*.005;
     if(BODY.torso) BODY.torso.scale.set(1+b*.004,1,1+b*.004);
@@ -2114,7 +2259,7 @@ window.FS={THREE,scene,renderer,camera,model,pedestal,LIGHTS,BODY,RIG,cam,
   WARDROBE,SLOTS,outfit,worn,wear,randomLook,setSkin,setPose,POSES,verify,showVerify,PAL,
   groundModel,frameModel,modelBox,G,THEMES,judge,startShow,startDressing,startWalk,
   enterStudio,goHome,look,RUNWAY,applyFace,removeFace,faceTexture,openCrop,
-  get facePlate(){return facePlate;},
+  get facePlate(){return facePlate;},CUSTOM,useCustomModel,clearCustom,gltfLoader,toast,
   setSlot:s=>{curSlot=s;renderSlots();renderRack();}};
 </script>
 </body>
