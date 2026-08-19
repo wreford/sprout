@@ -19,8 +19,12 @@
 html,body{height:100%;overflow:hidden;position:fixed;inset:0;width:100%;
   touch-action:none;overscroll-behavior:none}
 body{background:var(--bg);color:var(--text);font-family:var(--sans);
-  user-select:none;-webkit-user-select:none}
-canvas{display:block;position:absolute;inset:0;width:100%;height:100%}
+  user-select:none;-webkit-user-select:none;
+  -webkit-touch-callout:none}
+/* a press-and-hold on iOS otherwise raises the selection callout, which
+   cancels the pointer stream halfway through a squeeze */
+canvas{display:block;position:absolute;inset:0;width:100%;height:100%;
+  touch-action:none;-webkit-touch-callout:none;-webkit-user-select:none}
 
 .chip{background:var(--panel);backdrop-filter:blur(14px);border:1px solid var(--line);
   border-radius:100px;padding:8px 15px;font-size:11px;font-weight:600;letter-spacing:.1em;
@@ -248,7 +252,7 @@ const TYPES={
 };
 const PLACEABLE=["white","black","cyst","milia","ingrown","unibrow","gunk"];
 const TOOLS=[
-  {id:"squeeze", nm:"squeeze", ic:"👌", hint:"Press and hold on a bump until it goes"},
+  {id:"squeeze", nm:"squeeze", ic:"👌", hint:"Hold on a bump — or tap it a few times"},
   {id:"tweeze",  nm:"tweezers",ic:"🥢", hint:"Press an ingrown hair and drag away to draw it out"},
   {id:"pluck",   nm:"pluck",   ic:"✂️", hint:"Drag across the brow to take the hairs out"},
   {id:"brush",   nm:"brush",   ic:"🪥", hint:"Scrub back and forth over the plaque"},
@@ -728,7 +732,7 @@ function addBlem(type,ix,iy){
   const r=rnd(T.r[0],T.r[1])*unit;
   S.blems.push({id:"b"+(S.blems.length)+"_"+Math.round(Math.random()*1e6),
     type,x:ix,y:iy,r,rot:rnd(0,TAU),seed:Math.random()*1000,
-    skin:sampleSkin(ix,iy),swell:0,hit:0,hp:T.hp,done:false});
+    skin:sampleSkin(ix,iy),swell:0,press:0,hit:0,hp:T.hp,done:false});
   sfx("place");
 }
 function addHairAt(ix,iy,ang){
@@ -794,12 +798,17 @@ function autoInfest(){
 /* ═══════════════════════════════════════════════════════════
    TREATING
    ═══════════════════════════════════════════════════════════ */
+/* A small blemish on a phone is a 22px dot. Reaching for it with a fingertip
+   needs a target nearer 60px, so the hit area has a floor measured in screen
+   pixels rather than in blemish radii. */
 function hitBlem(ix,iy,slack){
+  const floor=30/Math.max(.0001,view.s);
   let best=null,bd=1e9;
   for(const b of S.blems){
     if(b.done) continue;
+    const reach=Math.max(b.r*(slack||2.0),floor);
     const d=Math.hypot(b.x-ix,b.y-iy);
-    if(d<b.r*(slack||1.8)&&d<bd){ bd=d; best=b; }
+    if(d<reach&&d<bd){ bd=d; best=b; }
   }
   return best;
 }
@@ -810,10 +819,11 @@ function popBlem(b){
   if(b.hit<b.hp){
     sfx("squelch",.6);
     burst(sx,sy,4,"228,206,140",120*view.s,Math.max(1.6,b.r*view.s*.12));
-    b.swell=0;
+    b.press=0; b.swell=0;
+    toast("Not all of it — go again ("+b.hit+"/"+b.hp+")");
     return;
   }
-  b.done=true; b.swell=0;
+  b.done=true; b.swell=0; b.press=0;
   sfx("pop",b.type==="cyst"?1:.8);
   const col=b.type==="black"?"70,48,36":b.type==="cyst"?"236,214,150":"248,236,178";
   const n=b.type==="cyst"?26:b.type==="milia"?7:15;
@@ -890,11 +900,16 @@ function updateMeter(){
 /* ═══════════════════════════════════════════════════════════
    INPUT
    ═══════════════════════════════════════════════════════════ */
-let ptr=null, pinch=null, pressT=0, holding=null, lastBrush=0;
+const SQUEEZE_MS=520;      /* a full press-and-hold */
+const TAP_MS=240;          /* anything shorter counts as a tap */
+const TAP_PUSH=.36;        /* and a tap is worth this much pressure */
+let ptr=null, pinch=null, holding=null, lastBrush=0, missT=0, missX=0, missY=0;
 cv.addEventListener("pointerdown",e=>{
   if(S.screen!=="infest"&&S.screen!=="treat") return;
   ac();
-  cv.setPointerCapture&&cv.setPointerCapture(e.pointerId);
+  /* capture is a nicety, not a requirement — on some touch stacks it throws,
+     and an exception here used to abort the whole press */
+  try{ cv.setPointerCapture&&cv.setPointerCapture(e.pointerId); }catch(err){}
   ptr={x:e.clientX,y:e.clientY,x0:e.clientX,y0:e.clientY,moved:0,t:performance.now()};
   const ix=toImgX(e.clientX), iy=toImgY(e.clientY);
 
@@ -909,14 +924,14 @@ cv.addEventListener("pointerdown",e=>{
     const b=hitBlem(ix,iy);
     if(b){
       if(TYPES[b.type].tool!=="squeeze"){ wrongTool(b); return; }
-      holding=b; pressT=performance.now();
-    }
+      holding=b;
+    }else{ missT=performance.now(); missX=e.clientX; missY=e.clientY; }
   }else if(S.tool==="tweeze"){
     const b=hitBlem(ix,iy);
     if(b){
       if(TYPES[b.type].tool!=="tweeze"){ wrongTool(b); return; }
       holding=b; b.pull=0;
-    }
+    }else{ missT=performance.now(); missX=e.clientX; missY=e.clientY; }
   }else if(S.tool==="pluck"){
     pluckAt(ix,iy,brushRadius());
   }else if(S.tool==="brush"){
@@ -943,14 +958,26 @@ addEventListener("pointermove",e=>{
     const now=performance.now();
     if(now-lastBrush>60){ lastBrush=now; sfx("brush",.7); }
   }else if(S.tool==="squeeze"&&holding){
-    /* sliding off cancels the squeeze */
-    if(Math.hypot(holding.x-ix,holding.y-iy)>holding.r*3){ holding.swell=0; holding=null; }
+    /* only a deliberate slide off it lets go — a fingertip rolls several
+       pixels during a half second hold and that must not count */
+    if(Math.hypot(e.clientX-ptr.x0,e.clientY-ptr.y0)>58) holding=null;
   }
 });
 function endPtr(){
   if(holding){
-    if(S.tool==="tweeze"&&!holding.done){ holding.pull=0; toast("It slipped — pull further"); }
-    holding.swell=0; holding=null;
+    const quick=ptr&&(performance.now()-ptr.t)<TAP_MS;
+    if(S.tool==="squeeze"&&!holding.done){
+      /* a tap is worth a shove of pressure, so jabbing at it works too */
+      if(quick){
+        holding.press=clamp((holding.press||0)+TAP_PUSH,0,1);
+        if(holding.press>=1) popBlem(holding);
+        else sfx("squelch",.4);
+      }
+    }else if(S.tool==="tweeze"&&!holding.done){
+      holding.pull=0;
+      if(!quick) toast("It slipped — pull further");
+    }
+    holding=null;
   }
   ptr=null; strokeLast=null;
   updateMeter();
@@ -1019,12 +1046,21 @@ function frame(ts){
   g.drawImage(S.base,view.x,view.y,S.base.width*view.s,S.base.height*view.s);
   g.restore();
 
-  /* squeeze build-up */
-  if(holding&&S.tool==="squeeze"&&!holding.done){
-    const t=clamp((ts-pressT)/620,0,1);
-    holding.swell=t;
-    if(t>=1) popBlem(holding), holding=null;
-    else if(Math.random()<.10) sfx("squelch",.25+t*.4);
+  /* Squeeze pressure is stored ON the blemish and only bleeds away slowly.
+     A dropped gesture — a wobble, a browser-cancelled pointer, a finger
+     lifting early — costs you a little progress instead of all of it, so it
+     is never possible to press something repeatedly and watch nothing
+     happen. */
+  for(const b of S.blems){
+    if(b.done){ b.press=0; b.swell=0; continue; }
+    if(b===holding&&S.tool==="squeeze"){
+      b.press=clamp((b.press||0)+dt*1000/SQUEEZE_MS,0,1);
+      if(b.press>=1){ popBlem(b); holding=null; }
+      else if(Math.random()<.09) sfx("squelch",.25+b.press*.5);
+    }else if(b.press>0){
+      b.press=Math.max(0,b.press-dt*.5);
+    }
+    b.swell=b.press||0;
   }
   /* hairs finishing their exit */
   for(const h of S.hairs){
@@ -1045,6 +1081,16 @@ function frame(ts){
       g.beginPath(); g.arc(toScreenX(b.x),toScreenY(b.y),b.r*view.s*(1.6+ (1-k)*.9),0,TAU); g.stroke();
       g.restore();
     }
+    if(b.press>.015&&!b.done){
+      const x=toScreenX(b.x),y=toScreenY(b.y);
+      const rr=Math.max(16,b.r*view.s*1.9);
+      g.save();
+      g.strokeStyle="rgba(255,255,255,.22)"; g.lineWidth=3.5;
+      g.beginPath(); g.arc(x,y,rr,0,TAU); g.stroke();
+      g.strokeStyle="rgba(255,209,102,.95)"; g.lineWidth=3.5; g.lineCap="round";
+      g.beginPath(); g.arc(x,y,rr,-Math.PI/2,-Math.PI/2+TAU*b.press); g.stroke();
+      g.restore();
+    }
     if(b===holding&&S.tool==="tweeze"&&b.pull>0){
       const x=toScreenX(b.x),y=toScreenY(b.y);
       g.save(); g.strokeStyle=`rgba(255,209,102,.9)`; g.lineWidth=3; g.lineCap="round";
@@ -1061,6 +1107,12 @@ function frame(ts){
     g.restore();
   }
 
+  /* pressing empty skin should still answer you */
+  if(missT&&ts-missT<420){
+    const k=1-(ts-missT)/420;
+    g.save(); g.strokeStyle=`rgba(255,255,255,${.32*k})`; g.lineWidth=2;
+    g.beginPath(); g.arc(missX,missY,14+(1-k)*26,0,TAU); g.stroke(); g.restore();
+  }
   stepParts(dt); drawParts();
   if(S.splat){ g.save(); g.globalAlpha=.92;
     g.drawImage(S.splat,0,0,S.splat.width/DPR,S.splat.height/DPR); g.restore(); }
@@ -1229,7 +1281,7 @@ function loadCase(rec){
     const sx=im.width/(rec.w||im.width), sy=im.height/(rec.h||im.height);
     S.blems=(rec.blems||[]).map(b=>({id:"b"+Math.random(),type:b.t,x:b.x*sx,y:b.y*sy,
       r:b.r*sx,rot:b.rot,seed:b.s,skin:{r:b.sk[0],g:b.sk[1],b:b.sk[2]},
-      swell:0,hit:b.h||0,hp:TYPES[b.t].hp,done:!!b.d}));
+      swell:0,press:0,hit:b.h||0,hp:TYPES[b.t].hp,done:!!b.d}));
     S.hairs=(rec.hairs||[]).map(h=>({x:h.x*sx,y:h.y*sy,ang:h.a,len:h.l*sx,w:h.w*sx,
       curl:h.c,out:h.o?1:0,src:"brow"}));
     S.gunk=(rec.gunk||[]).map(k=>({x:k.x*sx,y:k.y*sy,r:k.r*sx,a:k.a,seed:k.s,gone:!!k.g}));
@@ -1278,6 +1330,9 @@ function esc(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",
    FINISH · before / after, then share
    ═══════════════════════════════════════════════════════════ */
 function finish(){
+  /* the auto-finish is queued on a timer; by the time it fires the player may
+     have already gone back to the wardrobe or started a new case */
+  if(S.screen!=="treat") return;
   saveCase(false);
   const before=compositeState(true);      /* every blemish, as first placed */
   const after=compositeState(false);      /* only what is still there */
