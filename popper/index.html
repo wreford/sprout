@@ -792,7 +792,7 @@ function autoInfest(){
   }
   const my=cy+ry*.62;
   for(let i=0;i<16;i++) addGunkAt(cx+rnd(-rx*.36,rx*.36),my+rnd(-6,6)*unit);
-  sfx("place"); renderDock(); updateMeter(); toast("Infested");
+  sfx("place"); refreshDock(); updateMeter(); toast("Infested");
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -906,6 +906,7 @@ const TAP_PUSH=.36;        /* and a tap is worth this much pressure */
 let ptr=null, pinch=null, holding=null, lastBrush=0, missT=0, missX=0, missY=0;
 cv.addEventListener("pointerdown",e=>{
   if(S.screen!=="infest"&&S.screen!=="treat") return;
+  if(e.target!==cv) return;
   ac();
   /* capture is a nicety, not a requirement — on some touch stacks it throws,
      and an exception here used to abort the whole press */
@@ -981,7 +982,7 @@ function endPtr(){
   }
   ptr=null; strokeLast=null;
   updateMeter();
-  if(S.screen==="infest") renderDock();
+  refreshDock();
 }
 addEventListener("pointerup",endPtr);
 addEventListener("pointercancel",endPtr);
@@ -1148,7 +1149,7 @@ function go(s){
   if(s==="done") $("scDone").classList.add("show");
   if(s==="infest"||s==="treat"){
     $("caseName").textContent=S.name;
-    fitView(); renderDock(); updateMeter();
+    fitView(); renderDock(true); updateMeter();
   }
   if(s==="treat"){
     /* start in close — this is a macro game, not a portrait viewer */
@@ -1157,7 +1158,33 @@ function go(s){
     showHint(TOOLS.find(t=>t.id===S.tool).hint);
   }
 }
-function renderDock(){
+/* Update the labels and the selected state without touching the DOM
+   structure. Replacing innerHTML mid-tap eats the click. */
+function refreshDock(){
+  if(S.screen==="infest"){
+    document.querySelectorAll("#tools [data-p]").forEach(b=>{
+      const k=b.dataset.p;
+      const n=k==="unibrow"?S.hairs.filter(h=>h.src==="brow").length
+             :k==="gunk"?S.gunk.length
+             :S.blems.filter(x=>x.type===k).length;
+      const ct=b.querySelector(".ct");
+      if(ct) ct.textContent=(n||"")+"\u00a0";
+      b.classList.toggle("on",S.place===k);
+    });
+  }else if(S.screen==="treat"){
+    document.querySelectorAll("#tools [data-t]").forEach(b=>{
+      const left=countFor(b.dataset.t);
+      const ct=b.querySelector(".ct");
+      if(ct) ct.textContent=(left||"")+"\u00a0";
+      b.classList.toggle("on",S.tool===b.dataset.t);
+    });
+  }
+}
+let dockMode=null;
+function renderDock(force){
+  /* only rebuild when the dock is actually a different dock */
+  if(!force&&dockMode===S.screen){ refreshDock(); return; }
+  dockMode=S.screen;
   const tools=$("tools"), row=$("dockRow");
   if(S.screen==="infest"){
     tools.innerHTML=PLACEABLE.map(k=>{
@@ -1170,7 +1197,7 @@ function renderDock(){
         <div class="ct">${n||""}&nbsp;</div></button>`;
     }).join("");
     tools.querySelectorAll("[data-p]").forEach(b=>b.onclick=()=>{
-      S.place=b.dataset.p; renderDock();
+      S.place=b.dataset.p; refreshDock();
       showHint(TYPES[S.place].stroke?"Drag to draw it on":"Tap to place");
     });
     row.innerHTML=`<button class="chip" id="dAuto">auto infest</button>
@@ -1192,7 +1219,7 @@ function renderDock(){
         <div class="ct">${left||""}&nbsp;</div></button>`;
     }).join("");
     tools.querySelectorAll("[data-t]").forEach(b=>b.onclick=()=>{
-      S.tool=b.dataset.t; renderDock();
+      S.tool=b.dataset.t; refreshDock();
       showHint(TOOLS.find(t=>t.id===S.tool).hint);
     });
     row.innerHTML=`<button class="chip" id="dFit">fit</button>
@@ -1216,7 +1243,7 @@ function undoPlace(){
   else{
     for(let i=S.blems.length-1;i>=0;i--) if(S.blems[i].type===S.place){ S.blems.splice(i,1); break; }
   }
-  renderDock(); updateMeter();
+  refreshDock(); updateMeter();
 }
 let toastT=0;
 function toast(msg){
