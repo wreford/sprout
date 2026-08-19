@@ -1,0 +1,1424 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>Pimple Simulator</title>
+<meta name="description" content="Take a photo, infest it with procedurally rendered blemishes, save the case for later, then pop, tweeze, pluck and brush it clean.">
+<meta name="theme-color" content="#0d0a0e">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d0a0e; --panel:rgba(24,18,24,.86); --line:rgba(255,255,255,.13);
+  --text:#f6f0ee; --dim:#a3949a; --acc:#ff5c5c; --acc2:#ffd166; --ok:#6ee7a8;
+  --sans:'Inter',system-ui,-apple-system,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden;position:fixed;inset:0;width:100%;
+  touch-action:none;overscroll-behavior:none}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);
+  user-select:none;-webkit-user-select:none}
+canvas{display:block;position:absolute;inset:0;width:100%;height:100%}
+
+.chip{background:var(--panel);backdrop-filter:blur(14px);border:1px solid var(--line);
+  border-radius:100px;padding:8px 15px;font-size:11px;font-weight:600;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--dim);cursor:pointer;white-space:nowrap;display:inline-block}
+.chip.on{color:#1a1114;background:linear-gradient(180deg,#ffe9a8,var(--acc2));border-color:var(--acc2)}
+.chip.warn{color:#1a1114;background:linear-gradient(180deg,#ff8f8f,var(--acc));border-color:var(--acc)}
+.btn{background:linear-gradient(180deg,#ff8080,var(--acc));color:#fff;border:none;border-radius:100px;
+  padding:14px 30px;font-size:13px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;
+  cursor:pointer;box-shadow:0 10px 30px rgba(255,92,92,.28);font-family:var(--sans)}
+.btn.alt{background:linear-gradient(180deg,#ffe9a8,var(--acc2));color:#241a10;
+  box-shadow:0 10px 30px rgba(255,209,102,.22)}
+.btn.ghost{background:transparent;color:var(--dim);border:1px solid var(--line);box-shadow:none;
+  padding:12px 24px;font-size:11.5px}
+.btn:disabled{opacity:.4}
+
+/* ---- top bar ---- */
+#top{position:absolute;left:0;right:0;top:0;z-index:8;display:none;align-items:center;gap:8px;
+  padding:calc(9px + env(safe-area-inset-top)) 10px 9px;
+  background:linear-gradient(180deg,rgba(13,10,14,.92),rgba(13,10,14,0))}
+#top.show{display:flex}
+#top .grow{flex:1;min-width:0}
+#caseName{font-size:12.5px;font-weight:700;letter-spacing:.02em;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+#caseSub{font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--dim);margin-top:3px}
+#meterWrap{height:4px;border-radius:4px;background:rgba(255,255,255,.10);margin-top:6px;overflow:hidden}
+#meter{height:100%;width:0;border-radius:4px;
+  background:linear-gradient(90deg,var(--acc),var(--acc2),var(--ok));transition:width .25s}
+
+/* ---- bottom dock ---- */
+#dock{position:absolute;left:0;right:0;bottom:0;z-index:8;display:none;flex-direction:column;gap:8px;
+  padding:10px 8px calc(10px + env(safe-area-inset-bottom));
+  background:linear-gradient(0deg,rgba(13,10,14,.94) 46%,rgba(13,10,14,0))}
+#dock.show{display:flex}
+#tools{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:2px}
+#tools::-webkit-scrollbar{display:none}
+.tool{flex:0 0 auto;min-width:74px;border-radius:14px;border:2px solid var(--line);
+  background:rgba(255,255,255,.05);padding:8px 10px 7px;cursor:pointer;text-align:center}
+.tool .ic{font-size:19px;line-height:1.1}
+.tool .nm{font-size:8.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);
+  font-weight:700;margin-top:3px}
+.tool .ct{font-size:8.5px;color:var(--acc2);font-weight:700;margin-top:1px;font-variant-numeric:tabular-nums}
+.tool.on{border-color:var(--acc2);background:rgba(255,209,102,.12)}
+.tool.on .nm{color:var(--acc2)}
+#dockRow{display:flex;gap:7px;justify-content:center;flex-wrap:wrap}
+
+/* ---- screens ---- */
+.screen{position:absolute;inset:0;z-index:14;display:none;flex-direction:column;align-items:center;
+  justify-content:center;text-align:center;padding:26px 20px;overflow-y:auto;
+  background:radial-gradient(110% 80% at 50% 34%,rgba(46,22,28,.55),rgba(9,6,10,.96))}
+.screen.show{display:flex}
+.h1{font-size:clamp(30px,8.4vmin,54px);font-weight:800;letter-spacing:-.02em;line-height:1}
+.h1 em{font-style:normal;color:var(--acc)}
+.kick{font-size:10.5px;letter-spacing:.3em;text-transform:uppercase;color:var(--dim);margin-top:12px}
+.lead{font-size:13px;color:var(--dim);line-height:1.65;max-width:33ch;margin-top:16px}
+.stack{display:flex;flex-direction:column;gap:10px;align-items:center;margin-top:26px;width:100%}
+.row{display:flex;gap:9px;justify-content:center;flex-wrap:wrap}
+
+/* file input must be a real label — a JS-clicked hidden input is unreliable on iOS */
+#file{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden}
+label.btn{display:inline-block}
+
+/* ---- clinic ---- */
+#cases{display:flex;flex-direction:column;gap:9px;width:min(430px,94vw);margin-top:20px}
+.case{display:flex;align-items:center;gap:12px;padding:9px;border-radius:14px;
+  border:1px solid var(--line);background:rgba(255,255,255,.045);cursor:pointer;text-align:left}
+.case img{width:52px;height:52px;border-radius:10px;object-fit:cover;flex:0 0 auto;
+  background:#241a20}
+.case .m{flex:1;min-width:0}
+.case .t{font-size:13px;font-weight:700}
+.case .s{font-size:10px;color:var(--dim);margin-top:3px;letter-spacing:.06em}
+.case .x{padding:9px 11px;border-radius:10px;border:1px solid var(--line);color:var(--dim);
+  font-size:11px;font-weight:700;background:transparent;cursor:pointer;flex:0 0 auto}
+.empty{font-size:12.5px;color:var(--dim);margin-top:22px;line-height:1.7}
+
+/* ---- before / after ---- */
+#ba{position:relative;width:min(420px,90vw);aspect-ratio:3/4;border-radius:16px;overflow:hidden;
+  margin-top:18px;border:1px solid var(--line);background:#1a1218;touch-action:none}
+#ba canvas{position:absolute;inset:0;width:100%;height:100%}
+#baAfter{clip-path:inset(0 0 0 50%)}
+#baHandle{position:absolute;top:0;bottom:0;left:50%;width:2px;background:#fff;
+  box-shadow:0 0 12px rgba(0,0,0,.6);z-index:3;pointer-events:none}
+#baHandle::after{content:'';position:absolute;top:50%;left:50%;width:34px;height:34px;
+  transform:translate(-50%,-50%);border-radius:50%;background:#fff;
+  box-shadow:0 2px 12px rgba(0,0,0,.5)}
+#baLabels{position:absolute;left:0;right:0;bottom:8px;display:flex;justify-content:space-between;
+  padding:0 12px;z-index:4;font-size:9.5px;letter-spacing:.2em;text-transform:uppercase;
+  font-weight:700;text-shadow:0 1px 6px rgba(0,0,0,.8);pointer-events:none}
+
+/* ---- toast ---- */
+#toast{position:absolute;left:50%;bottom:calc(178px + env(safe-area-inset-bottom));z-index:16;
+  transform:translateX(-50%);background:var(--panel);backdrop-filter:blur(14px);
+  border:1px solid var(--line);border-radius:100px;padding:9px 17px;font-size:11.5px;
+  font-weight:600;opacity:0;transition:opacity .2s;pointer-events:none;white-space:nowrap;
+  max-width:92vw;overflow:hidden;text-overflow:ellipsis}
+#toast.show{opacity:1}
+
+#hint{position:absolute;left:50%;top:calc(76px + env(safe-area-inset-top));z-index:7;
+  transform:translateX(-50%);font-size:11px;color:var(--dim);letter-spacing:.05em;
+  background:var(--panel);backdrop-filter:blur(10px);border:1px solid var(--line);
+  border-radius:100px;padding:7px 15px;pointer-events:none;display:none;text-align:center;
+  max-width:92vw}
+#hint.show{display:block}
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+
+<div id="top">
+  <button class="chip" id="bBack">back</button>
+  <div class="grow">
+    <div id="caseName">—</div>
+    <div id="caseSub">—</div>
+    <div id="meterWrap"><div id="meter"></div></div>
+  </div>
+  <button class="chip" id="bSound">sound</button>
+</div>
+
+<div id="hint"></div>
+
+<div id="dock">
+  <div id="tools"></div>
+  <div id="dockRow"></div>
+</div>
+
+<div id="toast"></div>
+
+<div class="screen show" id="scStart">
+  <div class="h1">Pimple <em>Simulator</em></div>
+  <div class="kick">dermatology, but yours</div>
+  <div class="lead">Bring a photo. Cover it in whiteheads, cysts, ingrown hairs,
+    a unibrow and a decade of plaque. Save the case. Come back and clear it.</div>
+  <div class="stack">
+    <input type="file" id="file" accept="image/*,.jpg,.jpeg,.png,.heic,.heif,.webp">
+    <label class="btn" for="file">use a photo</label>
+    <div class="row">
+      <button class="btn alt" id="bPractice">practice skin</button>
+      <button class="btn ghost" id="bClinic">clinic</button>
+    </div>
+  </div>
+  <div class="lead" style="font-size:11px;margin-top:26px;opacity:.75">
+    Your photo never leaves the device. Saved cases live in this browser only.</div>
+</div>
+
+<div class="screen" id="scClinic">
+  <div class="h1">Clinic</div>
+  <div class="kick">saved cases</div>
+  <div id="cases"></div>
+  <div class="stack"><button class="btn ghost" id="bClinicBack">back</button></div>
+</div>
+
+<div class="screen" id="scDone">
+  <div class="h1" id="doneTitle">Clear</div>
+  <div class="kick" id="doneSub">—</div>
+  <div id="ba">
+    <canvas id="baBefore"></canvas>
+    <canvas id="baAfter"></canvas>
+    <div id="baHandle"></div>
+    <div id="baLabels"><span>before</span><span>after</span></div>
+  </div>
+  <div class="stack">
+    <div class="row">
+      <button class="btn" id="bShare">share</button>
+      <button class="btn alt" id="bAgain">re-infest</button>
+    </div>
+    <button class="btn ghost" id="bDoneHome">home</button>
+  </div>
+</div>
+
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+const cv=$("cv"), g=cv.getContext("2d");
+const TAU=Math.PI*2;
+const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+const lerp=(a,b,t)=>a+(b-a)*t;
+const rnd=(a,b)=>a+Math.random()*(b-a);
+const pick=a=>a[(Math.random()*a.length)|0];
+
+/* deterministic per-blemish jitter, so a saved case looks identical when reopened */
+function hash(n){ let x=Math.sin(n*127.1)*43758.5453; return x-Math.floor(x); }
+const jit=(seed,i)=>hash(seed*31.7+i*7.13)*2-1;
+
+let W=1,H=1,DPR=1;
+function resize(){
+  W=cv.clientWidth||innerWidth; H=cv.clientHeight||innerHeight;
+  DPR=Math.min(2.5,devicePixelRatio||1);
+  cv.width=Math.round(W*DPR); cv.height=Math.round(H*DPR);
+  g.setTransform(DPR,0,0,DPR,0,0);
+  fitView();
+}
+addEventListener("resize",()=>{ resize(); if(S.screen==="done"&&S.repaintBA) setTimeout(S.repaintBA,60); });
+if(window.visualViewport) visualViewport.addEventListener("resize",resize);
+
+/* ═══════════════════════════════════════════════════════════
+   STATE
+   ═══════════════════════════════════════════════════════════ */
+const S={
+  screen:"start",          /* start | clinic | infest | treat | done */
+  base:null,               /* canvas holding the photo at working resolution */
+  photoURL:null,           /* jpeg dataURL, for saving */
+  blems:[], hairs:[], gunk:[],
+  marks:[],                /* healed craters and plucked follicles */
+  parts:[],                /* flying ejecta */
+  splat:null,              /* lens splatter, in screen space */
+  tool:"squeeze",
+  place:"white",
+  id:null, name:"", born:0,
+  view:{s:1,x:0,y:0},
+  sound:true,
+  totalStart:0,
+};
+const view=S.view;
+
+/* ═══════════════════════════════════════════════════════════
+   BLEMISH CATALOGUE
+   ═══════════════════════════════════════════════════════════ */
+const TYPES={
+  white:  {nm:"whitehead", ic:"⚪", tool:"squeeze", r:[14,23], hp:1, worth:10, stroke:false},
+  black:  {nm:"blackhead", ic:"⚫", tool:"squeeze", r:[10,16], hp:1, worth:12, stroke:false},
+  cyst:   {nm:"cyst",      ic:"🔴", tool:"squeeze", r:[24,36], hp:3, worth:30, stroke:false},
+  milia:  {nm:"milia",     ic:"✨", tool:"squeeze", r:[7,11],  hp:1, worth:6,  stroke:false},
+  ingrown:{nm:"ingrown",   ic:"🪝", tool:"tweeze",  r:[12,19], hp:1, worth:22, stroke:false},
+  unibrow:{nm:"unibrow",   ic:"🐛", tool:"pluck",   stroke:true, worth:3},
+  gunk:   {nm:"teeth gunk",ic:"🦷", tool:"brush",   stroke:true, worth:4},
+};
+const PLACEABLE=["white","black","cyst","milia","ingrown","unibrow","gunk"];
+const TOOLS=[
+  {id:"squeeze", nm:"squeeze", ic:"👌", hint:"Press and hold on a bump until it goes"},
+  {id:"tweeze",  nm:"tweezers",ic:"🥢", hint:"Press an ingrown hair and drag away to draw it out"},
+  {id:"pluck",   nm:"pluck",   ic:"✂️", hint:"Drag across the brow to take the hairs out"},
+  {id:"brush",   nm:"brush",   ic:"🪥", hint:"Scrub back and forth over the plaque"},
+];
+
+/* ═══════════════════════════════════════════════════════════
+   VIEW TRANSFORM · image space ↔ screen space
+   ═══════════════════════════════════════════════════════════ */
+function topPad(){ return S.screen==="start"||S.screen==="clinic"?0:78; }
+function botPad(){ return S.screen==="infest"||S.screen==="treat"?150:0; }
+function fitView(zoom){
+  if(!S.base) return;
+  const availW=W-10, availH=H-topPad()-botPad()-8;
+  const fit=Math.min(availW/S.base.width,availH/S.base.height);
+  view.fit=fit;
+  const s=fit*(zoom||1);
+  view.s=s;
+  view.x=(W-S.base.width*s)/2;
+  view.y=topPad()+(availH-S.base.height*s)/2;
+}
+const toScreenX=x=>x*view.s+view.x;
+const toScreenY=y=>y*view.s+view.y;
+const toImgX=x=>(x-view.x)/view.s;
+const toImgY=y=>(y-view.y)/view.s;
+
+/* ═══════════════════════════════════════════════════════════
+   SOUND · everything synthesised, no files
+   ═══════════════════════════════════════════════════════════ */
+let AC=null;
+function ac(){
+  if(!AC){ try{ AC=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ return null; } }
+  if(AC.state==="suspended") AC.resume();
+  return AC;
+}
+function noiseBuf(sec){
+  const c=ac(); if(!c) return null;
+  const n=Math.max(1,(c.sampleRate*sec)|0);
+  const b=c.createBuffer(1,n,c.sampleRate), d=b.getChannelData(0);
+  for(let i=0;i<n;i++) d[i]=Math.random()*2-1;
+  return b;
+}
+function sfx(kind,amt){
+  if(!S.sound) return;
+  const c=ac(); if(!c) return;
+  const t=c.currentTime, out=c.createGain(); out.connect(c.destination);
+  const a=amt===undefined?1:amt;
+  if(kind==="pop"){
+    const src=c.createBufferSource(); src.buffer=noiseBuf(.22);
+    const f=c.createBiquadFilter(); f.type="bandpass"; f.Q.value=3.5;
+    f.frequency.setValueAtTime(1900,t); f.frequency.exponentialRampToValueAtTime(180,t+.19);
+    out.gain.setValueAtTime(.55*a,t); out.gain.exponentialRampToValueAtTime(.001,t+.22);
+    src.connect(f); f.connect(out); src.start(t); src.stop(t+.24);
+    const o=c.createOscillator(), og=c.createGain();
+    o.type="sine"; o.frequency.setValueAtTime(420,t); o.frequency.exponentialRampToValueAtTime(90,t+.11);
+    og.gain.setValueAtTime(.30*a,t); og.gain.exponentialRampToValueAtTime(.001,t+.13);
+    o.connect(og); og.connect(c.destination); o.start(t); o.stop(t+.14);
+  }else if(kind==="squelch"){
+    const src=c.createBufferSource(); src.buffer=noiseBuf(.4); src.loop=true;
+    const f=c.createBiquadFilter(); f.type="lowpass";
+    f.frequency.setValueAtTime(300+900*a,t);
+    out.gain.setValueAtTime(.001,t); out.gain.linearRampToValueAtTime(.12*a,t+.05);
+    out.gain.linearRampToValueAtTime(.001,t+.20);
+    src.connect(f); f.connect(out); src.start(t); src.stop(t+.22);
+  }else if(kind==="pluck"){
+    const o=c.createOscillator(), og=c.createGain();
+    o.type="triangle"; o.frequency.setValueAtTime(1500,t);
+    o.frequency.exponentialRampToValueAtTime(300,t+.06);
+    og.gain.setValueAtTime(.22*a,t); og.gain.exponentialRampToValueAtTime(.001,t+.08);
+    o.connect(og); og.connect(c.destination); o.start(t); o.stop(t+.09);
+  }else if(kind==="brush"){
+    const src=c.createBufferSource(); src.buffer=noiseBuf(.12);
+    const f=c.createBiquadFilter(); f.type="highpass"; f.frequency.value=2200;
+    out.gain.setValueAtTime(.09*a,t); out.gain.exponentialRampToValueAtTime(.001,t+.11);
+    src.connect(f); f.connect(out); src.start(t); src.stop(t+.12);
+  }else if(kind==="place"){
+    const o=c.createOscillator(), og=c.createGain();
+    o.type="sine"; o.frequency.setValueAtTime(660,t);
+    og.gain.setValueAtTime(.07,t); og.gain.exponentialRampToValueAtTime(.001,t+.07);
+    o.connect(og); og.connect(c.destination); o.start(t); o.stop(t+.08);
+  }else if(kind==="nope"){
+    const o=c.createOscillator(), og=c.createGain();
+    o.type="square"; o.frequency.setValueAtTime(150,t);
+    og.gain.setValueAtTime(.05,t); og.gain.exponentialRampToValueAtTime(.001,t+.10);
+    o.connect(og); og.connect(c.destination); o.start(t); o.stop(t+.11);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   SKIN SAMPLING · a blemish is tinted from the skin under it,
+   which is the single thing that makes it sit in the photo
+   ═══════════════════════════════════════════════════════════ */
+let sampC=null,sampG=null;
+function sampleSkin(x,y){
+  if(!S.base) return {r:222,g:178,b:152};
+  if(!sampC){ sampC=document.createElement("canvas"); sampC.width=sampC.height=1;
+    sampG=sampC.getContext("2d",{willReadFrequently:true}); }
+  try{
+    sampG.clearRect(0,0,1,1);
+    sampG.drawImage(S.base,clamp(x-3,0,S.base.width-7),clamp(y-3,0,S.base.height-7),7,7,0,0,1,1);
+    const d=sampG.getImageData(0,0,1,1).data;
+    if(d[3]<8) return {r:222,g:178,b:152};
+    return {r:d[0],g:d[1],b:d[2]};
+  }catch(e){ return {r:222,g:178,b:152}; }
+}
+const mix=(c1,c2,t)=>({r:lerp(c1.r,c2.r,t),g:lerp(c1.g,c2.g,t),b:lerp(c1.b,c2.b,t)});
+const rgba=(c,a)=>`rgba(${c.r|0},${c.g|0},${c.b|0},${a})`;
+const RED={r:196,g:52,b:44}, PUS={r:252,g:238,b:184}, DARK={r:34,g:20,b:16};
+
+/* ═══════════════════════════════════════════════════════════
+   BLEMISH RENDERING
+   Layers composited the way the real thing reads in a photo:
+   reddening multiplies, the dome lightens on the lit side and
+   darkens on the other, the head sits on top, specular screens.
+   ═══════════════════════════════════════════════════════════ */
+const LX=-0.34, LY=-0.40;      /* light comes from the upper left */
+
+function drawBlem(g,b,now){
+  const t=b.swell||0;
+  const r=b.r*(1+t*0.30)*view.s;
+  if(r<0.6) return;
+  const x=toScreenX(b.x), y=toScreenY(b.y);
+  const sk=b.skin, seed=b.seed;
+  const infl=mix(sk,RED,.58);
+  const dome=mix(sk,{r:255,g:220,b:198},.34);
+  const shade=mix(sk,DARK,.38);
+
+  /* 1 · inflammation — three offset blobs so the edge is never a clean circle */
+  g.save(); g.globalCompositeOperation="multiply";
+  for(let i=0;i<3;i++){
+    const rr=r*(1.58-i*.20)*(1+jit(seed,i)*.13);
+    const ox=x+jit(seed,i+10)*r*.24, oy=y+jit(seed,i+20)*r*.24;
+    const gr=g.createRadialGradient(ox,oy,r*.30,ox,oy,rr);
+    const a=(b.type==="cyst"?.46:b.type==="milia"?.09:.30)*(1+t*.6);
+    gr.addColorStop(0,rgba(infl,a));
+    gr.addColorStop(.62,rgba(infl,a*.50));
+    gr.addColorStop(1,rgba(infl,0));
+    g.fillStyle=gr; g.beginPath(); g.arc(ox,oy,rr,0,TAU); g.fill();
+  }
+  g.restore();
+
+  /* 2 · the bump. A raised thing reads from three cues: it occludes light
+     where it meets the skin, its lit side brightens, its far side darkens.
+     Painting all three is what stops this looking like a printed dot. */
+  g.save(); g.globalCompositeOperation="multiply";
+  const og=g.createRadialGradient(x,y,r*.62,x,y,r*1.22);
+  og.addColorStop(0,rgba(shade,0));
+  og.addColorStop(.52,rgba(shade,.30));
+  og.addColorStop(1,rgba(shade,0));
+  g.fillStyle=og; g.beginPath(); g.arc(x,y,r*1.22,0,TAU); g.fill();
+
+  const fg=g.createRadialGradient(x-LX*r*.62,y-LY*r*.62,r*.06,x-LX*r*.3,y-LY*r*.3,r*1.02);
+  fg.addColorStop(0,rgba(shade,.40)); fg.addColorStop(.8,rgba(shade,0));
+  g.fillStyle=fg; g.beginPath(); g.arc(x,y,r,0,TAU); g.fill();
+  g.restore();
+
+  g.save(); g.globalCompositeOperation="screen";
+  const dg=g.createRadialGradient(x+LX*r*.40,y+LY*r*.40,r*.04,x+LX*r*.2,y+LY*r*.2,r*.94);
+  dg.addColorStop(0,rgba(dome,.44)); dg.addColorStop(.55,rgba(dome,.16));
+  dg.addColorStop(1,rgba(dome,0));
+  g.fillStyle=dg; g.beginPath(); g.arc(x,y,r,0,TAU); g.fill();
+  g.restore();
+
+  /* 3 · the head */
+  if(b.type==="white"||b.type==="milia"||(b.type==="cyst"&&b.hit>0)){
+    const hr=r*(b.type==="milia"?.46:.40)*(1+t*.55);
+    const hx=x+LX*r*.10, hy=y+LY*r*.10;
+    const hg=g.createRadialGradient(hx+LX*hr*.3,hy+LY*hr*.3,hr*.08,hx,hy,hr);
+    const pus=mix(PUS,sk,b.type==="milia"?.30:.10);
+    hg.addColorStop(0,rgba(mix(pus,{r:255,g:255,b:255},.42),.98));
+    hg.addColorStop(.60,rgba(pus,.94));
+    hg.addColorStop(1,rgba(mix(pus,infl,.6),0));
+    g.fillStyle=hg; g.beginPath(); g.ellipse(hx,hy,hr,hr*.88,b.rot,0,TAU); g.fill();
+  }else if(b.type==="black"){
+    const pr=r*.40;
+    g.save(); g.globalCompositeOperation="multiply";
+    const pg=g.createRadialGradient(x,y,pr*.05,x,y,pr*1.5);
+    pg.addColorStop(0,"rgba(22,13,10,.96)"); pg.addColorStop(.5,"rgba(40,26,20,.65)");
+    pg.addColorStop(1,"rgba(40,26,20,0)");
+    g.fillStyle=pg; g.beginPath(); g.arc(x,y,pr*1.5,0,TAU); g.fill();
+    g.restore();
+    g.strokeStyle=rgba(mix(sk,DARK,.22),.5); g.lineWidth=Math.max(.5,r*.09);
+    g.beginPath(); g.arc(x,y,pr*1.28,0,TAU); g.stroke();
+  }else if(b.type==="ingrown"){
+    /* the hair coiled under a thin layer of skin */
+    g.save(); g.globalCompositeOperation="multiply"; g.globalAlpha=.55;
+    g.strokeStyle="rgba(30,18,14,.9)"; g.lineWidth=Math.max(.8,r*.16);
+    g.lineCap="round"; g.beginPath();
+    const a0=b.rot;
+    for(let i=0;i<=12;i++){
+      const a=a0+i/12*TAU*.82, rr=r*.46*(1-i/40);
+      const px=x+Math.cos(a)*rr, py=y+Math.sin(a)*rr*.8;
+      i?g.lineTo(px,py):g.moveTo(px,py);
+    }
+    g.stroke(); g.restore();
+  }
+
+  /* 4 · specular — the wet highlight that says raised, not painted on */
+  if(b.type!=="black"){
+    g.save(); g.globalCompositeOperation="screen";
+    const sx=x+LX*r*.46, sy=y+LY*r*.46, sr=r*.30;
+    const spg=g.createRadialGradient(sx,sy,0,sx,sy,sr);
+    spg.addColorStop(0,`rgba(255,255,255,${.55+t*.3})`);
+    spg.addColorStop(1,"rgba(255,255,255,0)");
+    g.fillStyle=spg; g.beginPath(); g.ellipse(sx,sy,sr,sr*.72,b.rot,0,TAU); g.fill();
+    g.restore();
+  }
+}
+
+function drawMark(g,m,now){
+  const age=(now-m.t)/1000, life=m.type==="pop"?7:4;
+  const k=clamp(1-age/life,0,1);
+  if(k<=0) return false;
+  const r=m.r*view.s, x=toScreenX(m.x), y=toScreenY(m.y);
+  g.save(); g.globalCompositeOperation="multiply";
+  const c=mix(m.skin,RED,.55);
+  const gr=g.createRadialGradient(x,y,r*.1,x,y,r*1.5);
+  gr.addColorStop(0,rgba(c,.42*k)); gr.addColorStop(1,rgba(c,0));
+  g.fillStyle=gr; g.beginPath(); g.arc(x,y,r*1.5,0,TAU); g.fill();
+  g.restore();
+  if(m.type==="pop"&&k>.55){
+    g.save(); g.globalCompositeOperation="multiply";
+    const dg=g.createRadialGradient(x,y,0,x,y,r*.5);
+    dg.addColorStop(0,`rgba(120,30,26,${(k-.55)*1.4})`); dg.addColorStop(1,"rgba(120,30,26,0)");
+    g.fillStyle=dg; g.beginPath(); g.arc(x,y,r*.5,0,TAU); g.fill();
+    g.restore();
+  }
+  return true;
+}
+
+/* ---- hairs: unibrow bristles and extracted ingrowns ---- */
+function drawHair(g,h){
+  if(h.out>=1) return;
+  const x=toScreenX(h.x), y=toScreenY(h.y);
+  const len=h.len*view.s*(1-h.out);
+  if(len<.7) return;
+  /* Walk the shaft accumulating curvature and taper the width to nothing at
+     the tip, then fill it as one polygon. A constant-width polyline reads as
+     handwriting; a tapered one reads as a hair. */
+  const N=7, W0=Math.max(.6,h.w*view.s);
+  const L=[],R=[];
+  let px=x,py=y,a=h.ang;
+  L.push([px-Math.sin(a)*W0*.5,py+Math.cos(a)*W0*.5]);
+  R.push([px+Math.sin(a)*W0*.5,py-Math.cos(a)*W0*.5]);
+  for(let i=1;i<=N;i++){
+    a+=h.curl/N;
+    px+=Math.cos(a)*len/N; py+=Math.sin(a)*len/N;
+    const hw=W0*.5*Math.pow(1-i/N,.34);   /* holds width, sharpens only at the tip */
+    L.push([px-Math.sin(a)*hw,py+Math.cos(a)*hw]);
+    R.push([px+Math.sin(a)*hw,py-Math.cos(a)*hw]);
+  }
+  /* a faint shadow at each root: a hundred of them overlapping is what turns
+     a hundred separate strokes into one brow */
+  if(h.src==="brow"&&h.out<=0){
+    g.save(); g.globalCompositeOperation="multiply";
+    const sr=W0*2.4;
+    const rg=g.createRadialGradient(x,y,0,x,y,sr);
+    rg.addColorStop(0,"rgba(58,38,28,.30)"); rg.addColorStop(1,"rgba(58,38,28,0)");
+    g.fillStyle=rg; g.beginPath(); g.arc(x,y,sr,0,TAU); g.fill();
+    g.restore();
+  }
+  g.save();
+  const tn=h.tone||34;
+  g.fillStyle=`rgba(${tn},${tn*.64|0},${tn*.50|0},${(h.alpha||.88)-h.out*.5})`;
+  g.beginPath();
+  L.forEach((p,i)=>i?g.lineTo(p[0],p[1]):g.moveTo(p[0],p[1]));
+  for(let i=R.length-1;i>=0;i--) g.lineTo(R[i][0],R[i][1]);
+  g.closePath(); g.fill();
+  g.restore();
+  if(h.out>0){
+    g.save(); g.globalCompositeOperation="multiply";
+    const gr=g.createRadialGradient(x,y,0,x,y,h.w*view.s*3.2);
+    gr.addColorStop(0,`rgba(178,44,40,${.5*h.out})`); gr.addColorStop(1,"rgba(178,44,40,0)");
+    g.fillStyle=gr; g.beginPath(); g.arc(x,y,h.w*view.s*3.2,0,TAU); g.fill();
+    g.restore();
+  }
+}
+
+/* ---- plaque: irregular deposits along the gum line ---- */
+function drawGunk(g,k){
+  if(k.gone) return;
+  const x=toScreenX(k.x), y=toScreenY(k.y), r=k.r*view.s;
+  if(r<.5) return;
+  const a=k.a;
+  /* three soft lobes with different tints — a hard-edged polygon reads as a
+     gemstone, and plaque is anything but crisp */
+  g.save(); g.globalCompositeOperation="multiply";
+  for(let i=0;i<3;i++){
+    const ox=x+jit(k.seed,i)*r*.42, oy=y+jit(k.seed,i+7)*r*.30;
+    const rr=r*(1.0-i*.16)*(1+jit(k.seed,i+3)*.18);
+    const c=i===0?{r:198,g:166,b:92}:i===1?{r:170,g:134,b:64}:{r:132,g:100,b:44};
+    const gr=g.createRadialGradient(ox-rr*.25,oy-rr*.25,rr*.08,ox,oy,rr);
+    gr.addColorStop(0,rgba(c,.62*a));
+    gr.addColorStop(.55,rgba(c,.40*a));
+    gr.addColorStop(1,rgba(c,0));
+    g.fillStyle=gr; g.beginPath(); g.ellipse(ox,oy,rr,rr*.80,0,0,TAU); g.fill();
+  }
+  /* the darker seam where it packs against the gum */
+  const eg=g.createRadialGradient(x,y+r*.46,r*.08,x,y+r*.46,r*.92);
+  eg.addColorStop(0,`rgba(92,62,28,${.42*a})`); eg.addColorStop(1,"rgba(92,62,28,0)");
+  g.fillStyle=eg; g.beginPath(); g.ellipse(x,y+r*.46,r*.92,r*.46,0,0,TAU); g.fill();
+  g.restore();
+  /* dry crust catching the light, plus a little grain */
+  g.save(); g.globalCompositeOperation="overlay"; g.globalAlpha=.42*a;
+  const hg=g.createRadialGradient(x-r*.30,y-r*.34,0,x-r*.30,y-r*.34,r*.62);
+  hg.addColorStop(0,"rgba(255,246,206,.9)"); hg.addColorStop(1,"rgba(255,246,206,0)");
+  g.fillStyle=hg; g.beginPath(); g.arc(x-r*.28,y-r*.30,r*.62,0,TAU); g.fill();
+  g.restore();
+  g.save(); g.globalAlpha=.34*a;
+  for(let i=0;i<4;i++){
+    const ang=hash(k.seed+i*3.1)*TAU, d=hash(k.seed+i*5.7)*r*.55;
+    g.fillStyle=i%2?"rgba(244,232,182,.8)":"rgba(112,84,38,.7)";
+    g.beginPath(); g.arc(x+Math.cos(ang)*d,y+Math.sin(ang)*d*.75,r*.10,0,TAU); g.fill();
+  }
+  g.restore();
+}
+
+/* ═══════════════════════════════════════════════════════════
+   PARTICLES + SPLATTER
+   ═══════════════════════════════════════════════════════════ */
+function burst(sx,sy,n,col,spd,size){
+  for(let i=0;i<n;i++){
+    const a=rnd(0,TAU), v=rnd(spd*.35,spd);
+    S.parts.push({x:sx,y:sy,vx:Math.cos(a)*v,vy:Math.sin(a)*v-rnd(0,spd*.4),
+      r:rnd(size*.45,size),life:1,col,spin:rnd(0,TAU)});
+  }
+}
+function stepParts(dt){
+  const sp=S.parts;
+  for(let i=sp.length-1;i>=0;i--){
+    const p=sp[i];
+    p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy+=900*dt; p.vx*=.99;
+    p.life-=dt*.85;
+    if(p.life<=0||p.y>H+60){
+      if(p.life<=0&&p.r>2.2&&S.splat) stick(p);
+      sp.splice(i,1);
+    }
+  }
+}
+function stick(p){
+  const sg=S.splat.getContext("2d");
+  sg.save();
+  const gr=sg.createRadialGradient(p.x,p.y,0,p.x,p.y,p.r*1.7);
+  gr.addColorStop(0,`rgba(${p.col},.85)`); gr.addColorStop(.65,`rgba(${p.col},.55)`);
+  gr.addColorStop(1,`rgba(${p.col},0)`);
+  sg.fillStyle=gr;
+  sg.beginPath();
+  for(let i=0;i<=8;i++){
+    const a=i/8*TAU, rr=p.r*(1.0+Math.sin(i*2.7+p.spin)*.45);
+    const px=p.x+Math.cos(a)*rr, py=p.y+Math.sin(a)*rr;
+    i?sg.lineTo(px,py):sg.moveTo(px,py);
+  }
+  sg.closePath(); sg.fill();
+  for(let i=0;i<3;i++){
+    const a=rnd(0,TAU), d=rnd(p.r*1.4,p.r*3.4), rr=rnd(.8,p.r*.34);
+    sg.fillStyle=`rgba(${p.col},.5)`;
+    sg.beginPath(); sg.arc(p.x+Math.cos(a)*d,p.y+Math.sin(a)*d,rr,0,TAU); sg.fill();
+  }
+  sg.restore();
+}
+function drawParts(){
+  for(const p of S.parts){
+    g.save(); g.globalAlpha=clamp(p.life,0,1);
+    const gr=g.createRadialGradient(p.x-p.r*.3,p.y-p.r*.3,0,p.x,p.y,p.r);
+    gr.addColorStop(0,`rgba(255,255,255,.9)`);
+    gr.addColorStop(.4,`rgba(${p.col},1)`);
+    gr.addColorStop(1,`rgba(${p.col},.55)`);
+    g.fillStyle=gr; g.beginPath(); g.arc(p.x,p.y,p.r,0,TAU); g.fill();
+    g.restore();
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   PRACTICE SKIN · procedural macro skin, so the game works
+   before you have handed it a photo
+   ═══════════════════════════════════════════════════════════ */
+function practiceSkin(){
+  const c=document.createElement("canvas"); c.width=900; c.height=1200;
+  const x=c.getContext("2d");
+  const base={r:226,g:180,b:154};
+  x.fillStyle=rgba(base,1); x.fillRect(0,0,900,1200);
+  /* broad tone variation */
+  for(let i=0;i<70;i++){
+    const px=rnd(-100,1000), py=rnd(-100,1300), r=rnd(90,320);
+    const tint=mix(base,Math.random()<.5?{r:246,g:206,b:180}:{r:196,g:146,b:126},rnd(.2,.6));
+    const gr=x.createRadialGradient(px,py,0,px,py,r);
+    gr.addColorStop(0,rgba(tint,rnd(.06,.20))); gr.addColorStop(1,rgba(tint,0));
+    x.fillStyle=gr; x.beginPath(); x.arc(px,py,r,0,TAU); x.fill();
+  }
+  /* pores */
+  for(let i=0;i<34000;i++){
+    const px=Math.random()*900, py=Math.random()*1200;
+    const rr=rnd(.7,1.9), a=rnd(.05,.17);
+    x.fillStyle=`rgba(146,102,86,${a})`;
+    x.beginPath(); x.ellipse(px,py,rr,rr*rnd(.55,1.05),rnd(0,TAU),0,TAU); x.fill();
+    if(Math.random()<.40){
+      x.fillStyle=`rgba(255,240,226,${a*.85})`;
+      x.beginPath(); x.arc(px-rr*.5,py-rr*.5,rr*.45,0,TAU); x.fill();
+    }
+  }
+  /* the fine creases that cross every pore field */
+  for(let i=0;i<260;i++){
+    const px=Math.random()*900, py=Math.random()*1200, a=rnd(0,TAU), L=rnd(30,150);
+    x.strokeStyle=`rgba(150,104,86,${rnd(.05,.14)})`;
+    x.lineWidth=rnd(.6,1.6);
+    x.beginPath(); x.moveTo(px,py);
+    x.quadraticCurveTo(px+Math.cos(a)*L*.5+rnd(-14,14),py+Math.sin(a)*L*.5+rnd(-14,14),
+                       px+Math.cos(a)*L,py+Math.sin(a)*L);
+    x.stroke();
+  }
+  /* vellus hair */
+  x.lineCap="round";
+  for(let i=0;i<900;i++){
+    const px=Math.random()*900, py=Math.random()*1200;
+    const a=rnd(0,TAU), L=rnd(4,16);
+    x.strokeStyle=`rgba(120,88,66,${rnd(.05,.18)})`;
+    x.lineWidth=rnd(.5,1.2);
+    x.beginPath(); x.moveTo(px,py);
+    x.quadraticCurveTo(px+Math.cos(a)*L*.5,py+Math.sin(a)*L*.5-2,
+                       px+Math.cos(a+.5)*L,py+Math.sin(a+.5)*L);
+    x.stroke();
+  }
+  /* soft studio falloff */
+  const vg=x.createRadialGradient(380,420,120,450,600,860);
+  vg.addColorStop(0,"rgba(255,240,226,.20)"); vg.addColorStop(.55,"rgba(0,0,0,0)");
+  vg.addColorStop(1,"rgba(38,20,16,.34)");
+  x.fillStyle=vg; x.fillRect(0,0,900,1200);
+  return c;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   CASE LIFECYCLE
+   ═══════════════════════════════════════════════════════════ */
+function newCase(srcCanvas,photoURL,name){
+  S.base=srcCanvas; S.photoURL=photoURL;
+  S.blems=[]; S.hairs=[]; S.gunk=[]; S.marks=[]; S.parts=[];
+  S.id="c"+Date.now().toString(36); S.name=name||"Case "+new Date().toLocaleDateString();
+  S.born=Date.now();
+  S.splat=document.createElement("canvas");
+  S.splat.width=Math.round(W*DPR); S.splat.height=Math.round(H*DPR);
+  S.splat.getContext("2d").setTransform(DPR,0,0,DPR,0,0);
+  go("infest");
+}
+function loadPhotoFile(f){
+  if(!f) return;
+  const fr=new FileReader();
+  fr.onerror=()=>toast("Could not read that file");
+  fr.onload=()=>{
+    const im=new Image();
+    im.onerror=()=>toast("That image would not decode — try a JPEG or PNG");
+    im.onload=()=>{
+      const MAX=1400;
+      const sc=Math.min(1,MAX/Math.max(im.width,im.height));
+      const c=document.createElement("canvas");
+      c.width=Math.round(im.width*sc); c.height=Math.round(im.height*sc);
+      c.getContext("2d").drawImage(im,0,0,c.width,c.height);
+      let url=null;
+      try{
+        const sm=document.createElement("canvas");
+        const s2=Math.min(1,900/Math.max(c.width,c.height));
+        sm.width=Math.round(c.width*s2); sm.height=Math.round(c.height*s2);
+        sm.getContext("2d").drawImage(c,0,0,sm.width,sm.height);
+        url=sm.toDataURL("image/jpeg",.76);
+      }catch(e){}
+      newCase(c,url,"Case "+new Date().toLocaleDateString());
+    };
+    im.src=fr.result;
+  };
+  fr.readAsDataURL(f);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   PLACING
+   ═══════════════════════════════════════════════════════════ */
+function addBlem(type,ix,iy){
+  const T=TYPES[type];
+  const unit=Math.max(S.base.width,S.base.height)/900;
+  const r=rnd(T.r[0],T.r[1])*unit;
+  S.blems.push({id:"b"+(S.blems.length)+"_"+Math.round(Math.random()*1e6),
+    type,x:ix,y:iy,r,rot:rnd(0,TAU),seed:Math.random()*1000,
+    skin:sampleSkin(ix,iy),swell:0,hit:0,hp:T.hp,done:false});
+  sfx("place");
+}
+function addHairAt(ix,iy,ang){
+  const unit=Math.max(S.base.width,S.base.height)/900;
+  /* a brow is hairs lying ALONG the brow and fanning, with a lot of length
+     variance. Uniform verticals read as a lawn. */
+  S.hairs.push({x:ix,y:iy,ang:ang+rnd(-.55,.55),
+    len:rnd(10,24)*unit*(Math.random()<.28?1.55:1),
+    w:rnd(1.6,3.0)*unit,curl:rnd(-.55,.55),out:0,src:"brow",
+    tone:20+((Math.random()*44)|0),alpha:rnd(.62,.95)});
+}
+function addGunkAt(ix,iy){
+  const unit=Math.max(S.base.width,S.base.height)/900;
+  S.gunk.push({x:ix,y:iy,r:rnd(11,20)*unit,a:rnd(.8,1),seed:Math.random()*1000,gone:false});
+}
+/* stroke placement: unibrow and plaque are drawn along a drag */
+let strokeLast=null;
+function strokePlace(ix,iy){
+  const unit=Math.max(S.base.width,S.base.height)/900;
+  const step=(S.place==="unibrow"?2.6:8)*unit;
+  if(strokeLast){
+    const dx=ix-strokeLast.x, dy=iy-strokeLast.y, d=Math.hypot(dx,dy);
+    if(d<step) return;
+    const ang=Math.atan2(dy,dx);
+    const n=Math.min(40,Math.floor(d/step));
+    for(let i=1;i<=n;i++){
+      const px=strokeLast.x+dx*(i/n), py=strokeLast.y+dy*(i/n);
+      if(S.place==="unibrow"){
+        /* hairs follow the direction you dragged — that is the brow line */
+        for(let k=0;k<4;k++) addHairAt(px+rnd(-3,3)*unit,py+rnd(-7,7)*unit,ang);
+      }
+      else addGunkAt(px+rnd(-3,3)*unit,py+rnd(-3,3)*unit);
+    }
+    strokeLast={x:ix,y:iy};
+  }else{
+    strokeLast={x:ix,y:iy};
+    if(S.place==="unibrow") addHairAt(ix,iy,-Math.PI/2);
+    else addGunkAt(ix,iy);
+  }
+}
+function autoInfest(){
+  const w=S.base.width,h=S.base.height;
+  const cx=w*.5, cy=h*.46, rx=w*.30, ry=h*.30;
+  const n=18+((Math.random()*10)|0);
+  for(let i=0;i<n;i++){
+    const a=rnd(0,TAU), d=Math.sqrt(Math.random());
+    addBlem(pick(["white","white","white","black","black","cyst","milia","ingrown"]),
+      cx+Math.cos(a)*rx*d, cy+Math.sin(a)*ry*d);
+  }
+  const unit=Math.max(w,h)/900;
+  const by=cy-ry*.55;
+  for(let i=0;i<130;i++){
+    const px=cx+rnd(-rx*.46,rx*.46);
+    /* brows sweep outward from the middle of the face */
+    const dir=px<cx?Math.PI+rnd(.02,.42):-rnd(.02,.42);
+    addHairAt(px,by+rnd(-8,8)*unit,dir);
+  }
+  const my=cy+ry*.62;
+  for(let i=0;i<16;i++) addGunkAt(cx+rnd(-rx*.36,rx*.36),my+rnd(-6,6)*unit);
+  sfx("place"); renderDock(); updateMeter(); toast("Infested");
+}
+
+/* ═══════════════════════════════════════════════════════════
+   TREATING
+   ═══════════════════════════════════════════════════════════ */
+function hitBlem(ix,iy,slack){
+  let best=null,bd=1e9;
+  for(const b of S.blems){
+    if(b.done) continue;
+    const d=Math.hypot(b.x-ix,b.y-iy);
+    if(d<b.r*(slack||1.8)&&d<bd){ bd=d; best=b; }
+  }
+  return best;
+}
+function popBlem(b){
+  b.hit++;
+  const sx=toScreenX(b.x), sy=toScreenY(b.y);
+  const T=TYPES[b.type];
+  if(b.hit<b.hp){
+    sfx("squelch",.6);
+    burst(sx,sy,4,"228,206,140",120*view.s,Math.max(1.6,b.r*view.s*.12));
+    b.swell=0;
+    return;
+  }
+  b.done=true; b.swell=0;
+  sfx("pop",b.type==="cyst"?1:.8);
+  const col=b.type==="black"?"70,48,36":b.type==="cyst"?"236,214,150":"248,236,178";
+  const n=b.type==="cyst"?26:b.type==="milia"?7:15;
+  burst(sx,sy,n,col,(b.type==="cyst"?300:210)*view.s,Math.max(1.8,b.r*view.s*.20));
+  S.marks.push({x:b.x,y:b.y,r:b.r*1.05,skin:b.skin,t:performance.now(),type:"pop"});
+  score(T.worth);
+}
+function tweezeStep(b,dragDist){
+  const need=b.r*3.2;
+  b.pull=clamp(dragDist/need,0,1);
+  if(b.pull>=1&&!b.done){
+    b.done=true;
+    sfx("pluck",1);
+    const sx=toScreenX(b.x), sy=toScreenY(b.y);
+    burst(sx,sy,8,"210,180,150",150*view.s,Math.max(1.4,b.r*view.s*.14));
+    S.hairs.push({x:b.x,y:b.y,ang:rnd(0,TAU),len:b.r*3.4,w:b.r*.16,curl:rnd(-1.2,1.2),
+      out:0,flying:true,t:performance.now()});
+    S.marks.push({x:b.x,y:b.y,r:b.r*.9,skin:b.skin,t:performance.now(),type:"pluck"});
+    score(TYPES.ingrown.worth);
+  }
+}
+function pluckAt(ix,iy,rad){
+  let n=0;
+  for(const h of S.hairs){
+    if(h.out>0||h.flying) continue;
+    if(Math.hypot(h.x-ix,h.y-iy)<rad){ h.out=0.001; h.pullT=performance.now(); n++; }
+  }
+  if(n){ sfx("pluck",clamp(n/4,.3,1)); score(n*TYPES.unibrow.worth); }
+  return n;
+}
+function brushAt(ix,iy,rad){
+  let n=0;
+  for(const k of S.gunk){
+    if(k.gone) continue;
+    const d=Math.hypot(k.x-ix,k.y-iy);
+    if(d<rad+k.r){
+      k.a-=.34;
+      if(k.a<=.05){
+        k.gone=true; n++;
+        const sx=toScreenX(k.x), sy=toScreenY(k.y);
+        burst(sx,sy,5,"232,214,150",90*view.s,Math.max(1.2,k.r*view.s*.24));
+        score(TYPES.gunk.worth);
+      }
+    }
+  }
+  return n;
+}
+
+let SCORE=0;
+function score(n){ SCORE+=n; updateMeter(); }
+function remaining(){
+  let n=0;
+  for(const b of S.blems) if(!b.done) n++;
+  for(const h of S.hairs) if(!h.flying&&h.out<=0) n++;
+  for(const k of S.gunk) if(!k.gone) n++;
+  return n;
+}
+function totalCount(){
+  return S.blems.length+S.hairs.filter(h=>!h.flying).length+S.gunk.length;
+}
+function updateMeter(){
+  const tot=S.totalStart||1, left=remaining();
+  const pct=S.screen==="treat"?clamp((tot-left)/tot,0,1)*100:0;
+  $("meter").style.width=pct+"%";
+  $("caseSub").textContent=S.screen==="treat"
+    ? left+" left · "+SCORE+" pts"
+    : totalCount()+" placed";
+  if(S.screen==="treat"&&left===0&&tot>0&&!S.finished){
+    S.finished=true;
+    setTimeout(finish,900);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   INPUT
+   ═══════════════════════════════════════════════════════════ */
+let ptr=null, pinch=null, pressT=0, holding=null, lastBrush=0;
+cv.addEventListener("pointerdown",e=>{
+  if(S.screen!=="infest"&&S.screen!=="treat") return;
+  ac();
+  cv.setPointerCapture&&cv.setPointerCapture(e.pointerId);
+  ptr={x:e.clientX,y:e.clientY,x0:e.clientX,y0:e.clientY,moved:0,t:performance.now()};
+  const ix=toImgX(e.clientX), iy=toImgY(e.clientY);
+
+  if(S.screen==="infest"){
+    if(TYPES[S.place].stroke){ strokeLast=null; strokePlace(ix,iy); }
+    else { addBlem(S.place,ix,iy); }
+    updateMeter();
+    return;
+  }
+  /* treating */
+  if(S.tool==="squeeze"){
+    const b=hitBlem(ix,iy);
+    if(b){
+      if(TYPES[b.type].tool!=="squeeze"){ wrongTool(b); return; }
+      holding=b; pressT=performance.now();
+    }
+  }else if(S.tool==="tweeze"){
+    const b=hitBlem(ix,iy);
+    if(b){
+      if(TYPES[b.type].tool!=="tweeze"){ wrongTool(b); return; }
+      holding=b; b.pull=0;
+    }
+  }else if(S.tool==="pluck"){
+    pluckAt(ix,iy,brushRadius());
+  }else if(S.tool==="brush"){
+    brushAt(ix,iy,brushRadius());
+  }
+});
+addEventListener("pointermove",e=>{
+  if(!ptr) return;
+  const dx=e.clientX-ptr.x, dy=e.clientY-ptr.y;
+  ptr.moved+=Math.hypot(dx,dy);
+  ptr.x=e.clientX; ptr.y=e.clientY;
+  const ix=toImgX(e.clientX), iy=toImgY(e.clientY);
+
+  if(S.screen==="infest"){
+    if(TYPES[S.place].stroke) strokePlace(ix,iy);
+    return;
+  }
+  if(S.tool==="tweeze"&&holding){
+    tweezeStep(holding,Math.hypot(e.clientX-ptr.x0,e.clientY-ptr.y0)/view.s);
+  }else if(S.tool==="pluck"){
+    pluckAt(ix,iy,brushRadius());
+  }else if(S.tool==="brush"){
+    const n=brushAt(ix,iy,brushRadius());
+    const now=performance.now();
+    if(now-lastBrush>60){ lastBrush=now; sfx("brush",.7); }
+  }else if(S.tool==="squeeze"&&holding){
+    /* sliding off cancels the squeeze */
+    if(Math.hypot(holding.x-ix,holding.y-iy)>holding.r*3){ holding.swell=0; holding=null; }
+  }
+});
+function endPtr(){
+  if(holding){
+    if(S.tool==="tweeze"&&!holding.done){ holding.pull=0; toast("It slipped — pull further"); }
+    holding.swell=0; holding=null;
+  }
+  ptr=null; strokeLast=null;
+  updateMeter();
+  if(S.screen==="infest") renderDock();
+}
+addEventListener("pointerup",endPtr);
+addEventListener("pointercancel",endPtr);
+
+function brushRadius(){ return 26/view.s; }
+function wrongTool(b){
+  sfx("nope");
+  b.nope=performance.now();
+  toast("That needs the "+TOOLS.find(t=>t.id===TYPES[b.type].tool).nm);
+}
+
+/* pinch to zoom while treating */
+cv.addEventListener("touchstart",e=>{
+  if(e.touches.length===2){
+    ptr=null; holding=null;
+    const [a,b]=e.touches;
+    pinch={d:Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY),s:view.s,
+      cx:(a.clientX+b.clientX)/2,cy:(a.clientY+b.clientY)/2,vx:view.x,vy:view.y};
+  }
+},{passive:true});
+cv.addEventListener("touchmove",e=>{
+  if(pinch&&e.touches.length===2){
+    const [a,b]=e.touches;
+    const d=Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);
+    const ns=clamp(pinch.s*d/Math.max(1,pinch.d),view.fit*.8,view.fit*6);
+    const k=ns/pinch.s;
+    view.s=ns;
+    view.x=pinch.cx-(pinch.cx-pinch.vx)*k;
+    view.y=pinch.cy-(pinch.cy-pinch.vy)*k;
+  }
+},{passive:true});
+cv.addEventListener("touchend",()=>{ pinch=null; },{passive:true});
+cv.addEventListener("wheel",e=>{
+  if(S.screen!=="treat"&&S.screen!=="infest") return;
+  e.preventDefault();
+  const ns=clamp(view.s*(1-e.deltaY*.0016),view.fit*.8,view.fit*6);
+  const k=ns/view.s;
+  view.x=e.clientX-(e.clientX-view.x)*k;
+  view.y=e.clientY-(e.clientY-view.y)*k;
+  view.s=ns;
+},{passive:false});
+
+/* ═══════════════════════════════════════════════════════════
+   FRAME
+   ═══════════════════════════════════════════════════════════ */
+let last=0;
+function frame(ts){
+  requestAnimationFrame(frame);
+  const dt=Math.min(.05,(ts-(last||ts))/1000); last=ts;
+  if(cv.clientWidth&&(Math.abs(cv.clientWidth-W)>1||Math.abs(cv.clientHeight-H)>1)) resize();
+
+  g.clearRect(0,0,W,H);
+  if(!S.base||S.screen==="start"||S.screen==="clinic"||S.screen==="done"){
+    drawIdleBackdrop(ts);
+    stepParts(dt); drawParts();
+    return;
+  }
+
+  /* the photo */
+  g.save();
+  g.imageSmoothingQuality="high";
+  g.drawImage(S.base,view.x,view.y,S.base.width*view.s,S.base.height*view.s);
+  g.restore();
+
+  /* squeeze build-up */
+  if(holding&&S.tool==="squeeze"&&!holding.done){
+    const t=clamp((ts-pressT)/620,0,1);
+    holding.swell=t;
+    if(t>=1) popBlem(holding), holding=null;
+    else if(Math.random()<.10) sfx("squelch",.25+t*.4);
+  }
+  /* hairs finishing their exit */
+  for(const h of S.hairs){
+    if(h.out>0&&h.out<1) h.out=clamp(h.out+dt*2.6,0,1);
+    if(h.flying) h.out=clamp(h.out+dt*1.6,0,1);
+  }
+
+  /* healed marks first, then live blemishes on top */
+  for(let i=S.marks.length-1;i>=0;i--) if(!drawMark(g,S.marks[i],ts)) S.marks.splice(i,1);
+  for(const k of S.gunk) drawGunk(g,k);
+  for(const h of S.hairs) drawHair(g,h);
+  for(const b of S.blems){
+    if(b.done) continue;
+    drawBlem(g,b,ts);
+    if(b.nope&&ts-b.nope<420){
+      const k=1-(ts-b.nope)/420;
+      g.save(); g.strokeStyle=`rgba(255,120,120,${k})`; g.lineWidth=2;
+      g.beginPath(); g.arc(toScreenX(b.x),toScreenY(b.y),b.r*view.s*(1.6+ (1-k)*.9),0,TAU); g.stroke();
+      g.restore();
+    }
+    if(b===holding&&S.tool==="tweeze"&&b.pull>0){
+      const x=toScreenX(b.x),y=toScreenY(b.y);
+      g.save(); g.strokeStyle=`rgba(255,209,102,.9)`; g.lineWidth=3; g.lineCap="round";
+      g.beginPath(); g.arc(x,y,b.r*view.s*2.1,-Math.PI/2,-Math.PI/2+TAU*b.pull); g.stroke();
+      g.restore();
+    }
+  }
+
+  /* tool cursor */
+  if(ptr&&(S.tool==="pluck"||S.tool==="brush")&&S.screen==="treat"){
+    g.save();
+    g.strokeStyle="rgba(255,255,255,.55)"; g.lineWidth=1.5;
+    g.beginPath(); g.arc(ptr.x,ptr.y,brushRadius()*view.s,0,TAU); g.stroke();
+    g.restore();
+  }
+
+  stepParts(dt); drawParts();
+  if(S.splat){ g.save(); g.globalAlpha=.92;
+    g.drawImage(S.splat,0,0,S.splat.width/DPR,S.splat.height/DPR); g.restore(); }
+}
+
+function drawIdleBackdrop(ts){
+  const gr=g.createRadialGradient(W*.5,H*.34,20,W*.5,H*.5,Math.max(W,H)*.8);
+  gr.addColorStop(0,"#2a1820"); gr.addColorStop(1,"#0b070c");
+  g.fillStyle=gr; g.fillRect(0,0,W,H);
+  for(let i=0;i<9;i++){
+    const t=ts/2600+i*.7;
+    const x=W*(.5+Math.sin(t*.8+i)*.36), y=H*(.5+Math.cos(t*.6+i*1.3)*.34);
+    const r=28+Math.sin(t+i)*10;
+    g.save(); g.globalAlpha=.10;
+    const bg=g.createRadialGradient(x-r*.3,y-r*.3,0,x,y,r);
+    bg.addColorStop(0,"rgba(255,220,190,.9)"); bg.addColorStop(1,"rgba(200,90,80,0)");
+    g.fillStyle=bg; g.beginPath(); g.arc(x,y,r,0,TAU); g.fill();
+    g.restore();
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   SCREENS + DOCK
+   ═══════════════════════════════════════════════════════════ */
+function go(s){
+  S.screen=s;
+  ["scStart","scClinic","scDone"].forEach(k=>$(k).classList.remove("show"));
+  $("top").classList.toggle("show",s==="infest"||s==="treat");
+  $("dock").classList.toggle("show",s==="infest"||s==="treat");
+  $("hint").classList.remove("show");
+  if(s==="start") $("scStart").classList.add("show");
+  if(s==="clinic"){ $("scClinic").classList.add("show"); renderCases(); }
+  if(s==="done") $("scDone").classList.add("show");
+  if(s==="infest"||s==="treat"){
+    $("caseName").textContent=S.name;
+    fitView(); renderDock(); updateMeter();
+  }
+  if(s==="treat"){
+    /* start in close — this is a macro game, not a portrait viewer */
+    fitView(Math.min(2.2,Math.max(1.35,(H*.62)/(S.base.height*view.fit))));
+    S.totalStart=totalCount(); S.finished=false; SCORE=0;
+    showHint(TOOLS.find(t=>t.id===S.tool).hint);
+  }
+}
+function renderDock(){
+  const tools=$("tools"), row=$("dockRow");
+  if(S.screen==="infest"){
+    tools.innerHTML=PLACEABLE.map(k=>{
+      const T=TYPES[k];
+      const n=k==="unibrow"?S.hairs.filter(h=>h.src==="brow").length
+             :k==="gunk"?S.gunk.length
+             :S.blems.filter(b=>b.type===k).length;
+      return `<button class="tool${S.place===k?" on":""}" data-p="${k}">
+        <div class="ic">${T.ic}</div><div class="nm">${T.nm}</div>
+        <div class="ct">${n||""}&nbsp;</div></button>`;
+    }).join("");
+    tools.querySelectorAll("[data-p]").forEach(b=>b.onclick=()=>{
+      S.place=b.dataset.p; renderDock();
+      showHint(TYPES[S.place].stroke?"Drag to draw it on":"Tap to place");
+    });
+    row.innerHTML=`<button class="chip" id="dAuto">auto infest</button>
+      <button class="chip" id="dUndo">undo</button>
+      <button class="chip" id="dSave">save for later</button>
+      <button class="chip warn" id="dTreat">start popping</button>`;
+    $("dAuto").onclick=autoInfest;
+    $("dUndo").onclick=undoPlace;
+    $("dSave").onclick=()=>saveCase(true);
+    $("dTreat").onclick=()=>{
+      if(totalCount()===0){ toast("Place something first"); return; }
+      go("treat");
+    };
+  }else{
+    tools.innerHTML=TOOLS.map(t=>{
+      const left=countFor(t.id);
+      return `<button class="tool${S.tool===t.id?" on":""}" data-t="${t.id}">
+        <div class="ic">${t.ic}</div><div class="nm">${t.nm}</div>
+        <div class="ct">${left||""}&nbsp;</div></button>`;
+    }).join("");
+    tools.querySelectorAll("[data-t]").forEach(b=>b.onclick=()=>{
+      S.tool=b.dataset.t; renderDock();
+      showHint(TOOLS.find(t=>t.id===S.tool).hint);
+    });
+    row.innerHTML=`<button class="chip" id="dFit">fit</button>
+      <button class="chip" id="dSave2">save</button>
+      <button class="chip" id="dFinish">finish</button>`;
+    $("dFit").onclick=()=>fitView(view.s>view.fit*1.05?1:1.7);
+    $("dSave2").onclick=()=>saveCase(true);
+    $("dFinish").onclick=finish;
+  }
+}
+function countFor(tool){
+  if(tool==="squeeze") return S.blems.filter(b=>!b.done&&TYPES[b.type].tool==="squeeze").length;
+  if(tool==="tweeze")  return S.blems.filter(b=>!b.done&&b.type==="ingrown").length;
+  if(tool==="pluck")   return S.hairs.filter(h=>!h.flying&&h.out<=0).length;
+  if(tool==="brush")   return S.gunk.filter(k=>!k.gone).length;
+  return 0;
+}
+function undoPlace(){
+  if(S.place==="unibrow"){ for(let i=0;i<6;i++) S.hairs.pop(); }
+  else if(S.place==="gunk"){ for(let i=0;i<4;i++) S.gunk.pop(); }
+  else{
+    for(let i=S.blems.length-1;i>=0;i--) if(S.blems[i].type===S.place){ S.blems.splice(i,1); break; }
+  }
+  renderDock(); updateMeter();
+}
+let toastT=0;
+function toast(msg){
+  const el=$("toast"); el.textContent=msg; el.classList.add("show");
+  clearTimeout(toastT); toastT=setTimeout(()=>el.classList.remove("show"),1900);
+}
+let hintT=0;
+function showHint(msg){
+  const el=$("hint"); el.textContent=msg; el.classList.add("show");
+  clearTimeout(hintT); hintT=setTimeout(()=>el.classList.remove("show"),2600);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   SAVE / LOAD · cases live in localStorage on this device only
+   ═══════════════════════════════════════════════════════════ */
+const KEY="pimplesim_cases";
+function readCases(){
+  try{ return JSON.parse(localStorage.getItem(KEY)||"[]"); }catch(e){ return []; }
+}
+function writeCases(list){
+  try{ localStorage.setItem(KEY,JSON.stringify(list)); return true; }
+  catch(e){ toast("Storage full — delete a case in the clinic"); return false; }
+}
+function serialise(){
+  return {
+    id:S.id, name:S.name, born:S.born, at:Date.now(), photo:S.photoURL,
+    w:S.base.width, h:S.base.height,
+    blems:S.blems.map(b=>({t:b.type,x:Math.round(b.x),y:Math.round(b.y),
+      r:+b.r.toFixed(1),rot:+b.rot.toFixed(2),s:+b.seed.toFixed(1),
+      sk:[b.skin.r|0,b.skin.g|0,b.skin.b|0],d:b.done?1:0,h:b.hit})),
+    hairs:S.hairs.filter(h=>!h.flying).map(h=>({x:Math.round(h.x),y:Math.round(h.y),
+      a:+h.ang.toFixed(2),l:+h.len.toFixed(1),w:+h.w.toFixed(2),c:+h.curl.toFixed(2),
+      o:h.out>0?1:0})),
+    gunk:S.gunk.map(k=>({x:Math.round(k.x),y:Math.round(k.y),r:+k.r.toFixed(1),
+      a:+k.a.toFixed(2),s:+k.seed.toFixed(1),g:k.gone?1:0})),
+  };
+}
+function saveCase(announce){
+  if(!S.base) return;
+  if(!S.photoURL){
+    try{
+      const sm=document.createElement("canvas");
+      const s2=Math.min(1,900/Math.max(S.base.width,S.base.height));
+      sm.width=Math.round(S.base.width*s2); sm.height=Math.round(S.base.height*s2);
+      sm.getContext("2d").drawImage(S.base,0,0,sm.width,sm.height);
+      S.photoURL=sm.toDataURL("image/jpeg",.76);
+    }catch(e){}
+  }
+  const list=readCases().filter(c=>c.id!==S.id);
+  list.unshift(serialise());
+  while(list.length>8) list.pop();
+  if(writeCases(list)&&announce) toast("Saved to the clinic");
+}
+function loadCase(rec){
+  const im=new Image();
+  im.onerror=()=>toast("That case's photo is gone");
+  im.onload=()=>{
+    const c=document.createElement("canvas");
+    c.width=im.width; c.height=im.height;
+    c.getContext("2d").drawImage(im,0,0);
+    S.base=c; S.photoURL=rec.photo;
+    const sx=im.width/(rec.w||im.width), sy=im.height/(rec.h||im.height);
+    S.blems=(rec.blems||[]).map(b=>({id:"b"+Math.random(),type:b.t,x:b.x*sx,y:b.y*sy,
+      r:b.r*sx,rot:b.rot,seed:b.s,skin:{r:b.sk[0],g:b.sk[1],b:b.sk[2]},
+      swell:0,hit:b.h||0,hp:TYPES[b.t].hp,done:!!b.d}));
+    S.hairs=(rec.hairs||[]).map(h=>({x:h.x*sx,y:h.y*sy,ang:h.a,len:h.l*sx,w:h.w*sx,
+      curl:h.c,out:h.o?1:0,src:"brow"}));
+    S.gunk=(rec.gunk||[]).map(k=>({x:k.x*sx,y:k.y*sy,r:k.r*sx,a:k.a,seed:k.s,gone:!!k.g}));
+    S.marks=[]; S.parts=[];
+    S.id=rec.id; S.name=rec.name; S.born=rec.born||Date.now();
+    S.splat=document.createElement("canvas");
+    S.splat.width=Math.round(W*DPR); S.splat.height=Math.round(H*DPR);
+    S.splat.getContext("2d").setTransform(DPR,0,0,DPR,0,0);
+    go(remaining()>0?"treat":"infest");
+  };
+  im.src=rec.photo;
+}
+function renderCases(){
+  const list=readCases(), el=$("cases");
+  if(!list.length){
+    el.innerHTML=`<div class="empty">No saved cases yet.<br>Infest something and hit <b>save for later</b>.</div>`;
+    return;
+  }
+  el.innerHTML=list.map(c=>{
+    const n=(c.blems||[]).filter(b=>!b.d).length
+           +(c.hairs||[]).filter(h=>!h.o).length
+           +(c.gunk||[]).filter(k=>!k.g).length;
+    const d=new Date(c.at||c.born||Date.now());
+    return `<div class="case" data-id="${c.id}">
+      <img src="${c.photo||""}" alt="">
+      <div class="m"><div class="t">${esc(c.name||"Case")}</div>
+        <div class="s">${n} to clear · ${d.toLocaleDateString()}</div></div>
+      <button class="x" data-del="${c.id}">del</button></div>`;
+  }).join("");
+  el.querySelectorAll(".case").forEach(node=>{
+    node.onclick=e=>{
+      if(e.target.dataset.del) return;
+      const rec=readCases().find(c=>c.id===node.dataset.id);
+      if(rec) loadCase(rec);
+    };
+  });
+  el.querySelectorAll("[data-del]").forEach(b=>b.onclick=e=>{
+    e.stopPropagation();
+    writeCases(readCases().filter(c=>c.id!==b.dataset.del));
+    renderCases();
+  });
+}
+function esc(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+/* ═══════════════════════════════════════════════════════════
+   FINISH · before / after, then share
+   ═══════════════════════════════════════════════════════════ */
+function finish(){
+  saveCase(false);
+  const before=compositeState(true);      /* every blemish, as first placed */
+  const after=compositeState(false);      /* only what is still there */
+  const cleared=(S.totalStart||0)-remaining();
+  $("doneTitle").textContent=remaining()===0?"All clear":"Session over";
+  $("doneSub").textContent=cleared+" cleared · "+SCORE+" points";
+  go("done");
+  /* the panel has to be on screen before it can be measured — sizing a
+     canvas against a display:none box gives you a 1px canvas */
+  const paint=()=>{ paintBA($("baBefore"),before); paintBA($("baAfter"),after); };
+  requestAnimationFrame(()=>requestAnimationFrame(paint));
+  S.repaintBA=paint;
+}
+/* Draw the case at full image resolution, with the blemishes as they were
+   placed ("before") or as they stand now ("after"). The renderers take the
+   context and read the shared view transform, so the same code that paints
+   the screen paints the export — no second, drifting copy of the artwork. */
+function compositeState(showAll){
+  const c=document.createElement("canvas");
+  c.width=S.base.width; c.height=S.base.height;
+  const x=c.getContext("2d");
+  x.drawImage(S.base,0,0);
+  const old={s:view.s,x:view.x,y:view.y};
+  view.s=1; view.x=0; view.y=0;
+  try{
+    for(const k of S.gunk){
+      if(showAll) drawGunk(x,{...k,gone:false,a:Math.max(k.a,.85)});
+      else if(!k.gone) drawGunk(x,k);
+    }
+    for(const h of S.hairs){
+      if(h.flying) continue;
+      if(showAll) drawHair(x,{...h,out:0});
+      else drawHair(x,h);
+    }
+    for(const b of S.blems){
+      if(showAll) drawBlem(x,{...b,swell:0,hit:0},performance.now());
+      else if(!b.done) drawBlem(x,b,performance.now());
+    }
+  } finally {
+    view.s=old.s; view.x=old.x; view.y=old.y;
+  }
+  return c;
+}
+
+function paintBA(canvas,src){
+  const box=$("ba").getBoundingClientRect();
+  if(box.width<8||box.height<8) return;
+  const w=Math.round(box.width*DPR), h=Math.round(box.height*DPR);
+  canvas.width=w; canvas.height=h;
+  const x=canvas.getContext("2d");
+  const sc=Math.max(w/src.width,h/src.height);
+  const dw=src.width*sc, dh=src.height*sc;
+  x.drawImage(src,(w-dw)/2,(h-dh)/2,dw,dh);
+}
+/* before/after slider */
+(function(){
+  const ba=$("ba");
+  let dragging=false;
+  const setPos=cx=>{
+    const r=ba.getBoundingClientRect();
+    const p=clamp((cx-r.left)/r.width,0,1);
+    $("baAfter").style.clipPath=`inset(0 0 0 ${p*100}%)`;
+    $("baHandle").style.left=(p*100)+"%";
+  };
+  ba.addEventListener("pointerdown",e=>{ dragging=true; setPos(e.clientX); });
+  addEventListener("pointermove",e=>{ if(dragging) setPos(e.clientX); });
+  addEventListener("pointerup",()=>dragging=false);
+})();
+
+async function share(){
+  const c=document.createElement("canvas");
+  const src=compositeState(false);
+  const bef=compositeState(true);
+  const pad=Math.round(src.width*.02);
+  c.width=src.width*2+pad*3; c.height=src.height+pad*2+Math.round(src.width*.09);
+  const x=c.getContext("2d");
+  x.fillStyle="#0d0a0e"; x.fillRect(0,0,c.width,c.height);
+  x.drawImage(bef,pad,pad);
+  x.drawImage(src,pad*2+src.width,pad);
+  x.fillStyle="#f6f0ee";
+  x.font=`700 ${Math.round(src.width*.045)}px Inter, system-ui, sans-serif`;
+  x.textAlign="center";
+  x.fillText("BEFORE",pad+src.width/2,c.height-pad*1.2);
+  x.fillText("AFTER",pad*2+src.width*1.5,c.height-pad*1.2);
+  x.fillStyle="#ff5c5c";
+  x.font=`800 ${Math.round(src.width*.030)}px Inter, system-ui, sans-serif`;
+  x.fillText("PIMPLE SIMULATOR · "+SCORE+" PTS",c.width/2,pad*.72+src.width*.022);
+
+  const blob=await new Promise(res=>c.toBlob(res,"image/jpeg",.92));
+  if(!blob){ toast("Could not build the image"); return; }
+  const file=new File([blob],"pimple-simulator.jpg",{type:"image/jpeg"});
+  /* on iOS the share sheet is the only route to the photo library —
+     a download link lands in Files instead */
+  if(navigator.canShare&&navigator.canShare({files:[file]})){
+    try{ await navigator.share({files:[file],title:"Pimple Simulator"}); return; }
+    catch(e){ if(e&&e.name==="AbortError") return; }
+  }
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url; a.download="pimple-simulator.jpg";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),4000);
+  toast("Saved to your downloads");
+}
+
+/* ═══════════════════════════════════════════════════════════
+   WIRING
+   ═══════════════════════════════════════════════════════════ */
+$("file").addEventListener("change",e=>{ ac(); loadPhotoFile(e.target.files&&e.target.files[0]); e.target.value=""; });
+$("bPractice").onclick=()=>{ ac(); newCase(practiceSkin(),null,"Practice skin"); };
+$("bClinic").onclick=()=>go("clinic");
+$("bClinicBack").onclick=()=>go("start");
+$("bDoneHome").onclick=()=>go("start");
+$("bAgain").onclick=()=>{
+  S.blems.forEach(b=>{ b.done=false; b.hit=0; b.swell=0; });
+  S.hairs.forEach(h=>{ h.out=0; });
+  S.hairs=S.hairs.filter(h=>!h.flying);
+  S.gunk.forEach(k=>{ k.gone=false; k.a=Math.max(k.a,.8); });
+  S.marks=[]; S.parts=[];
+  if(S.splat) S.splat.getContext("2d").clearRect(0,0,W,H);
+  go("infest");
+};
+$("bShare").onclick=share;
+$("bBack").onclick=()=>{
+  if(S.screen==="treat") go("infest");
+  else { saveCase(false); go("start"); }
+};
+$("bSound").onclick=()=>{
+  S.sound=!S.sound;
+  $("bSound").classList.toggle("on",S.sound);
+  $("bSound").textContent=S.sound?"sound":"muted";
+};
+$("bSound").classList.add("on");
+
+resize();
+requestAnimationFrame(frame);
+
+window.PS={S,TYPES,TOOLS,go,newCase,practiceSkin,addBlem,addHairAt,addGunkAt,autoInfest,
+  popBlem,pluckAt,brushAt,hitBlem,remaining,totalCount,saveCase,readCases,writeCases,
+  loadCase,finish,share,compositeState,fitView,toImgX,toImgY,toScreenX,toScreenY,
+  get score(){return SCORE;}};
+</script>
+</body>
+</html>
