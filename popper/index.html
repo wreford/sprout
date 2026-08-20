@@ -6,6 +6,9 @@
 <title>Pimple Simulator</title>
 <meta name="description" content="Take a photo, infest it with procedurally rendered blemishes, save the case for later, then pop, tweeze, pluck and brush it clean.">
 <meta name="theme-color" content="#0d0a0e">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -43,7 +46,8 @@ canvas{display:block;position:absolute;inset:0;width:100%;height:100%;
 /* ---- top bar ---- */
 #top{position:absolute;left:0;right:0;top:0;z-index:8;display:none;align-items:center;gap:8px;
   padding:calc(9px + env(safe-area-inset-top)) 10px 9px;
-  background:linear-gradient(180deg,rgba(13,10,14,.92),rgba(13,10,14,0))}
+  background:linear-gradient(180deg,rgba(13,10,14,.96) 40%,rgba(13,10,14,.72) 74%,rgba(13,10,14,0));
+  text-shadow:0 1px 6px rgba(0,0,0,.85)}
 #top.show{display:flex}
 #top .grow{flex:1;min-width:0}
 #caseName{font-size:12.5px;font-weight:700;letter-spacing:.02em;overflow:hidden;
@@ -166,6 +170,7 @@ label.btn{display:inline-block}
   </div>
   <div class="lead" style="font-size:11px;margin-top:26px;opacity:.75">
     Your photo never leaves the device. Saved cases live in this browser only.</div>
+  <div class="kick" style="margin-top:14px;opacity:.5;font-size:9px" id="build">build 2026-08-19b</div>
 </div>
 
 <div class="screen" id="scClinic">
@@ -228,6 +233,10 @@ const S={
   blems:[], hairs:[], gunk:[],
   marks:[],                /* healed craters and plucked follicles */
   parts:[],                /* flying ejecta */
+  ropes:[],                /* strings of pus, mid air */
+  beads:[],                /* blood, welling and running */
+  drips:[],                /* splatter running down the lens */
+  vile:0,                  /* how disgusting this session got */
   splat:null,              /* lens splatter, in screen space */
   tool:"squeeze",
   place:"white",
@@ -247,13 +256,17 @@ const TYPES={
   cyst:   {nm:"cyst",      ic:"🔴", tool:"squeeze", r:[24,36], hp:3, worth:30, stroke:false},
   milia:  {nm:"milia",     ic:"✨", tool:"squeeze", r:[7,11],  hp:1, worth:6,  stroke:false},
   ingrown:{nm:"ingrown",   ic:"🪝", tool:"tweeze",  r:[12,19], hp:1, worth:22, stroke:false},
+  boil:   {nm:"boil",      ic:"🤢", tool:"squeeze", r:[30,44], hp:4, worth:55, stroke:false},
+  botfly: {nm:"botfly",    ic:"🐛", tool:"tweeze",  r:[16,24], hp:1, worth:60, stroke:false},
+  scab:   {nm:"scab",      ic:"🩸", tool:"tweeze",  r:[18,30], hp:1, worth:26, stroke:false},
+  wart:   {nm:"wart",      ic:"🥦", tool:"tweeze",  r:[13,20], hp:1, worth:24, stroke:false},
   unibrow:{nm:"unibrow",   ic:"🐛", tool:"pluck",   stroke:true, worth:3},
   gunk:   {nm:"teeth gunk",ic:"🦷", tool:"brush",   stroke:true, worth:4},
 };
-const PLACEABLE=["white","black","cyst","milia","ingrown","unibrow","gunk"];
+const PLACEABLE=["white","black","cyst","boil","milia","ingrown","botfly","scab","wart","unibrow","gunk"];
 const TOOLS=[
   {id:"squeeze", nm:"squeeze", ic:"👌", hint:"Hold on a bump — or tap it a few times"},
-  {id:"tweeze",  nm:"tweezers",ic:"🥢", hint:"Press an ingrown hair and drag away to draw it out"},
+  {id:"tweeze",  nm:"tweezers",ic:"🥢", hint:"Press it and drag away — keep pulling until it lets go"},
   {id:"pluck",   nm:"pluck",   ic:"✂️", hint:"Drag across the brow to take the hairs out"},
   {id:"brush",   nm:"brush",   ic:"🪥", hint:"Scrub back and forth over the plaque"},
 ];
@@ -316,6 +329,28 @@ function sfx(kind,amt){
     out.gain.setValueAtTime(.001,t); out.gain.linearRampToValueAtTime(.12*a,t+.05);
     out.gain.linearRampToValueAtTime(.001,t+.20);
     src.connect(f); f.connect(out); src.start(t); src.stop(t+.22);
+  }else if(kind==="schlop"){
+    /* longer, wetter, with a tail — the sound people replay */
+    const src=c.createBufferSource(); src.buffer=noiseBuf(.5);
+    const f=c.createBiquadFilter(); f.type="lowpass"; f.Q.value=6;
+    f.frequency.setValueAtTime(2600,t); f.frequency.exponentialRampToValueAtTime(140,t+.42);
+    out.gain.setValueAtTime(.001,t);
+    out.gain.linearRampToValueAtTime(.62*a,t+.03);
+    out.gain.exponentialRampToValueAtTime(.001,t+.46);
+    src.connect(f); f.connect(out); src.start(t); src.stop(t+.48);
+    const o=c.createOscillator(), og=c.createGain();
+    o.type="sine"; o.frequency.setValueAtTime(300,t);
+    o.frequency.exponentialRampToValueAtTime(56,t+.24);
+    og.gain.setValueAtTime(.34*a,t); og.gain.exponentialRampToValueAtTime(.001,t+.27);
+    o.connect(og); og.connect(c.destination); o.start(t); o.stop(t+.28);
+  }else if(kind==="peel"){
+    const src=c.createBufferSource(); src.buffer=noiseBuf(.35);
+    const f=c.createBiquadFilter(); f.type="bandpass"; f.Q.value=1.6;
+    f.frequency.setValueAtTime(600,t); f.frequency.linearRampToValueAtTime(2600,t+.30);
+    out.gain.setValueAtTime(.001,t);
+    out.gain.linearRampToValueAtTime(.30*a,t+.06);
+    out.gain.exponentialRampToValueAtTime(.001,t+.33);
+    src.connect(f); f.connect(out); src.start(t); src.stop(t+.35);
   }else if(kind==="pluck"){
     const o=c.createOscillator(), og=c.createGain();
     o.type="triangle"; o.frequency.setValueAtTime(1500,t);
@@ -449,6 +484,75 @@ function drawBlem(g,b,now){
     g.stroke(); g.restore();
   }
 
+  else if(b.type==="boil"){
+    /* an angry dome that only shows a head once you have started on it */
+    g.save(); g.globalCompositeOperation="multiply";
+    const ag=g.createRadialGradient(x,y,r*.2,x,y,r*1.15);
+    ag.addColorStop(0,rgba(mix(sk,{r:150,g:30,b:30},.62),.42));
+    ag.addColorStop(1,rgba(mix(sk,RED,.5),0));
+    g.fillStyle=ag; g.beginPath(); g.arc(x,y,r*1.15,0,TAU); g.fill();
+    g.restore();
+    if(b.hit>0){
+      const hr=r*(.20+b.hit*.10);
+      const hx=x+LX*r*.08, hy=y+LY*r*.08;
+      const hg=g.createRadialGradient(hx,hy,hr*.1,hx,hy,hr);
+      hg.addColorStop(0,"rgba(255,250,225,.98)");
+      hg.addColorStop(.6,rgba(mix(PUS,{r:214,g:170,b:90},.4),.95));
+      hg.addColorStop(1,rgba(mix(PUS,infl,.7),0));
+      g.fillStyle=hg; g.beginPath(); g.ellipse(hx,hy,hr,hr*.9,b.rot,0,TAU); g.fill();
+    }
+  }else if(b.type==="botfly"){
+    /* a breathing hole, and something pale shifting under the skin */
+    const wr=r*.30, wob=Math.sin(now/240+seed)*r*.10;
+    g.save(); g.globalCompositeOperation="multiply"; g.globalAlpha=.5;
+    const lg=g.createRadialGradient(x+wob,y,r*.05,x+wob,y,r*.62);
+    lg.addColorStop(0,"rgba(226,214,178,.9)"); lg.addColorStop(1,"rgba(226,214,178,0)");
+    g.fillStyle=lg; g.beginPath(); g.ellipse(x+wob,y,r*.62,r*.40,b.rot,0,TAU); g.fill();
+    g.restore();
+    const pg=g.createRadialGradient(x,y,0,x,y,wr);
+    pg.addColorStop(0,"rgba(18,10,8,.96)"); pg.addColorStop(.7,"rgba(52,30,22,.8)");
+    pg.addColorStop(1,"rgba(52,30,22,0)");
+    g.fillStyle=pg; g.beginPath(); g.arc(x,y,wr,0,TAU); g.fill();
+  }else if(b.type==="scab"){
+    /* a dry crust with cracks in it */
+    g.save();
+    const cr=mix(mix(sk,{r:96,g:26,b:20},.78),DARK,.30);
+    g.fillStyle=rgba(cr,.94);
+    g.beginPath();
+    for(let i=0;i<=11;i++){
+      const a=i/11*TAU, rr=r*(.80+jit(seed,i)*.30);
+      const px=x+Math.cos(a)*rr, py=y+Math.sin(a)*rr*.86;
+      i?g.lineTo(px,py):g.moveTo(px,py);
+    }
+    g.closePath(); g.fill();
+    g.strokeStyle="rgba(28,10,8,.55)"; g.lineWidth=Math.max(.6,r*.05);
+    for(let i=0;i<4;i++){
+      const a=jit(seed,i+40)*Math.PI;
+      g.beginPath(); g.moveTo(x,y);
+      g.lineTo(x+Math.cos(a)*r*.8,y+Math.sin(a)*r*.7); g.stroke();
+    }
+    g.restore();
+  }else if(b.type==="wart"){
+    /* cauliflower: a cluster of lobes rather than one dome */
+    const wm=mix(sk,{r:180,g:140,b:118},.55);
+    for(let i=0;i<7;i++){
+      const a=i/7*TAU, d=i===0?0:r*.42;
+      const lx=x+Math.cos(a)*d, ly=y+Math.sin(a)*d*.9, lr=r*(i===0?.52:.36);
+      const lg=g.createRadialGradient(lx+LX*lr*.4,ly+LY*lr*.4,lr*.1,lx,ly,lr);
+      lg.addColorStop(0,rgba(mix(wm,{r:255,g:255,b:255},.28),.95));
+      lg.addColorStop(.7,rgba(wm,.9));
+      lg.addColorStop(1,rgba(wm,0));
+      g.fillStyle=lg; g.beginPath(); g.arc(lx,ly,lr,0,TAU); g.fill();
+    }
+    g.save(); g.globalCompositeOperation="multiply"; g.globalAlpha=.5;
+    for(let i=0;i<9;i++){
+      const a=hash(seed+i*2.7)*TAU, d=hash(seed+i*4.1)*r*.7;
+      g.fillStyle="rgba(70,40,30,.8)";
+      g.beginPath(); g.arc(x+Math.cos(a)*d,y+Math.sin(a)*d*.9,r*.07,0,TAU); g.fill();
+    }
+    g.restore();
+  }
+
   /* 4 · specular — the wet highlight that says raised, not painted on */
   if(b.type!=="black"){
     g.save(); g.globalCompositeOperation="screen";
@@ -472,6 +576,13 @@ function drawMark(g,m,now){
   gr.addColorStop(0,rgba(c,.42*k)); gr.addColorStop(1,rgba(c,0));
   g.fillStyle=gr; g.beginPath(); g.arc(x,y,r*1.5,0,TAU); g.fill();
   g.restore();
+  if(m.type==="raw"&&k>.25){
+    g.save(); g.globalCompositeOperation="multiply";
+    const rg=g.createRadialGradient(x,y,0,x,y,r*.9);
+    rg.addColorStop(0,`rgba(196,70,64,${k*.75})`); rg.addColorStop(1,"rgba(196,70,64,0)");
+    g.fillStyle=rg; g.beginPath(); g.arc(x,y,r*.9,0,TAU); g.fill();
+    g.restore();
+  }
   if(m.type==="pop"&&k>.55){
     g.save(); g.globalCompositeOperation="multiply";
     const dg=g.createRadialGradient(x,y,0,x,y,r*.5);
@@ -570,6 +681,117 @@ function drawGunk(g,k){
 }
 
 /* ═══════════════════════════════════════════════════════════
+   THE WET BITS · ropes of pus, blood that runs, splatter that drips
+   ═══════════════════════════════════════════════════════════ */
+function rope(sx,sy,len,col){
+  const a=rnd(-2.6,-0.5);
+  S.ropes.push({x:sx,y:sy,vx:Math.cos(a)*rnd(90,240),vy:Math.sin(a)*rnd(90,220),
+    len,col,t:0,pts:[{x:sx,y:sy}],life:1});
+}
+function stepRopes(dt){
+  for(let i=S.ropes.length-1;i>=0;i--){
+    const R=S.ropes[i];
+    R.t+=dt;
+    R.x+=R.vx*dt; R.y+=R.vy*dt; R.vy+=1500*dt; R.vx*=.98;
+    R.pts.push({x:R.x,y:R.y});
+    if(R.pts.length>R.len) R.pts.shift();
+    if(R.y>H+40||R.t>1.5){
+      /* it lands as a smear rather than vanishing */
+      if(S.splat&&R.y<H+20) smear(R);
+      S.ropes.splice(i,1);
+    }
+  }
+}
+function smear(R){
+  const sg=S.splat.getContext("2d");
+  sg.save();
+  sg.strokeStyle=`rgba(${R.col},.62)`;
+  sg.lineWidth=rnd(3,7); sg.lineCap="round"; sg.lineJoin="round";
+  sg.beginPath();
+  R.pts.forEach((p,i)=>i?sg.lineTo(p.x,p.y):sg.moveTo(p.x,p.y));
+  sg.stroke();
+  sg.restore();
+}
+function drawRopes(){
+  for(const R of S.ropes){
+    if(R.pts.length<2) continue;
+    g.save();
+    g.strokeStyle=`rgba(${R.col},.92)`;
+    g.lineCap="round"; g.lineJoin="round";
+    for(let w=0;w<2;w++){
+      g.lineWidth=w?2.5:6;
+      g.strokeStyle=w?`rgba(255,255,255,.55)`:`rgba(${R.col},.92)`;
+      g.beginPath();
+      R.pts.forEach((p,i)=>i?g.lineTo(p.x,p.y):g.moveTo(p.x,p.y));
+      g.stroke();
+    }
+    g.restore();
+  }
+}
+function bleed(ix,iy,r){
+  S.beads.push({x:ix,y:iy,r,vy:0,t:0,trail:[]});
+}
+function stepBeads(dt){
+  for(let i=S.beads.length-1;i>=0;i--){
+    const b=S.beads[i];
+    b.t+=dt;
+    if(b.t>0.5){                       /* it wells up, then runs */
+      b.vy+=0.05*dt; b.y+=b.vy;
+      if(b.trail.length===0||Math.hypot(b.y-b.trail[b.trail.length-1].y,0)>1.5)
+        b.trail.push({x:b.x,y:b.y});
+      if(b.trail.length>90) b.trail.shift();
+    }
+    if(b.t>14) S.beads.splice(i,1);
+  }
+}
+function drawBeads(now){
+  for(const b of S.beads){
+    const k=clamp(1-(b.t-10)/4,0,1);
+    const r=b.r*view.s*Math.min(1,b.t*3);
+    if(r<.4) continue;
+    g.save(); g.globalCompositeOperation="multiply";
+    if(b.trail.length>1){
+      g.strokeStyle=`rgba(122,14,14,${.55*k})`;
+      g.lineWidth=Math.max(1,r*1.1); g.lineCap="round";
+      g.beginPath();
+      b.trail.forEach((p,i)=>{ const sx=toScreenX(p.x),sy=toScreenY(p.y);
+        i?g.lineTo(sx,sy):g.moveTo(sx,sy); });
+      g.stroke();
+    }
+    const x=toScreenX(b.x), y=toScreenY(b.y);
+    const gr=g.createRadialGradient(x-r*.3,y-r*.3,0,x,y,r);
+    gr.addColorStop(0,`rgba(190,36,30,${.92*k})`);
+    gr.addColorStop(1,`rgba(96,8,10,${.85*k})`);
+    g.fillStyle=gr; g.beginPath(); g.arc(x,y,r,0,TAU); g.fill();
+    g.restore();
+    g.save(); g.globalCompositeOperation="screen"; g.globalAlpha=.5*k;
+    g.fillStyle="rgba(255,190,190,.8)";
+    g.beginPath(); g.arc(x-r*.34,y-r*.36,r*.26,0,TAU); g.fill();
+    g.restore();
+  }
+}
+/* splatter on the lens slowly runs down the glass */
+let dripT=0;
+function stepDrips(dt,now){
+  if(!S.splat) return;
+  dripT+=dt;
+  if(dripT<0.5) return;
+  dripT=0;
+  const sg=S.splat.getContext("2d");
+  for(let i=S.drips.length-1;i>=0;i--){
+    const d=S.drips[i];
+    d.y+=d.v;
+    d.v=Math.min(d.v*1.06,2.2);
+    sg.save();
+    sg.strokeStyle=`rgba(${d.col},.30)`;
+    sg.lineWidth=d.w; sg.lineCap="round";
+    sg.beginPath(); sg.moveTo(d.x,d.y-d.v*3); sg.lineTo(d.x,d.y); sg.stroke();
+    sg.restore();
+    if(d.y>H+10||--d.life<=0) S.drips.splice(i,1);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
    PARTICLES + SPLATTER
    ═══════════════════════════════════════════════════════════ */
 function burst(sx,sy,n,col,spd,size){
@@ -593,6 +815,9 @@ function stepParts(dt){
 }
 function stick(p){
   const sg=S.splat.getContext("2d");
+  /* anything big enough starts running down the glass */
+  if(p.r>3.4&&S.drips.length<40&&Math.random()<.5)
+    S.drips.push({x:p.x,y:p.y,v:.35,w:Math.max(1.5,p.r*.55),col:p.col,life:120});
   sg.save();
   const gr=sg.createRadialGradient(p.x,p.y,0,p.x,p.y,p.r*1.7);
   gr.addColorStop(0,`rgba(${p.col},.85)`); gr.addColorStop(.65,`rgba(${p.col},.55)`);
@@ -688,6 +913,7 @@ function practiceSkin(){
 function newCase(srcCanvas,photoURL,name){
   S.base=srcCanvas; S.photoURL=photoURL;
   S.blems=[]; S.hairs=[]; S.gunk=[]; S.marks=[]; S.parts=[];
+  S.ropes=[]; S.beads=[]; S.drips=[]; S.vile=0;
   S.id="c"+Date.now().toString(36); S.name=name||"Case "+new Date().toLocaleDateString();
   S.born=Date.now();
   S.splat=document.createElement("canvas");
@@ -779,7 +1005,8 @@ function autoInfest(){
   const n=18+((Math.random()*10)|0);
   for(let i=0;i<n;i++){
     const a=rnd(0,TAU), d=Math.sqrt(Math.random());
-    addBlem(pick(["white","white","white","black","black","cyst","milia","ingrown"]),
+    addBlem(pick(["white","white","black","black","cyst","milia","ingrown",
+                  "boil","botfly","scab","wart"]),
       cx+Math.cos(a)*rx*d, cy+Math.sin(a)*ry*d);
   }
   const unit=Math.max(w,h)/900;
@@ -817,33 +1044,61 @@ function popBlem(b){
   const sx=toScreenX(b.x), sy=toScreenY(b.y);
   const T=TYPES[b.type];
   if(b.hit<b.hp){
-    sfx("squelch",.6);
-    burst(sx,sy,4,"228,206,140",120*view.s,Math.max(1.6,b.r*view.s*.12));
+    sfx("schlop",.7);
+    burst(sx,sy,6,"228,206,140",150*view.s,Math.max(1.8,b.r*view.s*.14));
+    rope(sx,sy,10+b.hit*4,"242,228,168");
+    S.vile+=6;
     b.press=0; b.swell=0;
     toast("Not all of it — go again ("+b.hit+"/"+b.hp+")");
     return;
   }
   b.done=true; b.swell=0; b.press=0;
-  sfx("pop",b.type==="cyst"?1:.8);
-  const col=b.type==="black"?"70,48,36":b.type==="cyst"?"236,214,150":"248,236,178";
-  const n=b.type==="cyst"?26:b.type==="milia"?7:15;
-  burst(sx,sy,n,col,(b.type==="cyst"?300:210)*view.s,Math.max(1.8,b.r*view.s*.20));
+  const big=b.type==="cyst"||b.type==="boil";
+  sfx(big?"schlop":"pop",big?1:.8);
+  const col=b.type==="black"?"70,48,36":big?"234,210,142":"248,236,178";
+  const n=b.type==="boil"?38:b.type==="cyst"?26:b.type==="milia"?7:15;
+  burst(sx,sy,n,col,(big?340:210)*view.s,Math.max(1.8,b.r*view.s*.20));
+  /* the rope is the bit that makes people wince */
+  const ropes=b.type==="boil"?3:big?2:b.type==="milia"?0:1;
+  for(let i=0;i<ropes;i++) rope(sx,sy,14+i*6,col);
+  if(big){ bleed(b.x,b.y,b.r*.16); if(b.type==="boil") bleed(b.x+b.r*.2,b.y,b.r*.12); }
+  S.vile+=big?26:b.type==="black"?12:8;
   S.marks.push({x:b.x,y:b.y,r:b.r*1.05,skin:b.skin,t:performance.now(),type:"pop"});
   score(T.worth);
 }
 function tweezeStep(b,dragDist){
-  const need=b.r*3.2;
+  const need=b.r*(b.type==="botfly"?4.4:b.type==="wart"?3.8:3.2);
   b.pull=clamp(dragDist/need,0,1);
-  if(b.pull>=1&&!b.done){
-    b.done=true;
+  if(b.pull<1||b.done) return;
+  b.done=true;
+  const sx=toScreenX(b.x), sy=toScreenY(b.y);
+  if(b.type==="botfly"){
+    sfx("schlop",1);
+    burst(sx,sy,18,"222,206,158",190*view.s,Math.max(2,b.r*view.s*.20));
+    rope(sx,sy,16,"226,210,160");
+    bleed(b.x,b.y,b.r*.18);
+    S.vile+=40;
+  }else if(b.type==="scab"){
+    sfx("peel",1);
+    burst(sx,sy,12,"120,40,32",150*view.s,Math.max(1.6,b.r*view.s*.18));
+    bleed(b.x,b.y,b.r*.20);
+    S.vile+=22;
+  }else if(b.type==="wart"){
     sfx("pluck",1);
-    const sx=toScreenX(b.x), sy=toScreenY(b.y);
+    burst(sx,sy,10,"186,150,124",160*view.s,Math.max(1.5,b.r*view.s*.16));
+    rope(sx,sy,8,"212,186,156");
+    bleed(b.x,b.y,b.r*.12);
+    S.vile+=18;
+  }else{
+    sfx("pluck",1);
     burst(sx,sy,8,"210,180,150",150*view.s,Math.max(1.4,b.r*view.s*.14));
     S.hairs.push({x:b.x,y:b.y,ang:rnd(0,TAU),len:b.r*3.4,w:b.r*.16,curl:rnd(-1.2,1.2),
       out:0,flying:true,t:performance.now()});
-    S.marks.push({x:b.x,y:b.y,r:b.r*.9,skin:b.skin,t:performance.now(),type:"pluck"});
-    score(TYPES.ingrown.worth);
+    S.vile+=10;
   }
+  S.marks.push({x:b.x,y:b.y,r:b.r*.9,skin:b.skin,t:performance.now(),
+    type:b.type==="scab"?"raw":"pluck"});
+  score(TYPES[b.type].worth);
 }
 function pluckAt(ix,iy,rad){
   let n=0;
@@ -1114,6 +1369,9 @@ function frame(ts){
     g.save(); g.strokeStyle=`rgba(255,255,255,${.32*k})`; g.lineWidth=2;
     g.beginPath(); g.arc(missX,missY,14+(1-k)*26,0,TAU); g.stroke(); g.restore();
   }
+  stepBeads(dt); drawBeads(ts);
+  stepRopes(dt); drawRopes();
+  stepDrips(dt,ts);
   stepParts(dt); drawParts();
   if(S.splat){ g.save(); g.globalAlpha=.92;
     g.drawImage(S.splat,0,0,S.splat.width/DPR,S.splat.height/DPR); g.restore(); }
@@ -1232,7 +1490,7 @@ function renderDock(force){
 }
 function countFor(tool){
   if(tool==="squeeze") return S.blems.filter(b=>!b.done&&TYPES[b.type].tool==="squeeze").length;
-  if(tool==="tweeze")  return S.blems.filter(b=>!b.done&&b.type==="ingrown").length;
+  if(tool==="tweeze")  return S.blems.filter(b=>!b.done&&TYPES[b.type].tool==="tweeze").length;
   if(tool==="pluck")   return S.hairs.filter(h=>!h.flying&&h.out<=0).length;
   if(tool==="brush")   return S.gunk.filter(k=>!k.gone).length;
   return 0;
@@ -1312,7 +1570,7 @@ function loadCase(rec){
     S.hairs=(rec.hairs||[]).map(h=>({x:h.x*sx,y:h.y*sy,ang:h.a,len:h.l*sx,w:h.w*sx,
       curl:h.c,out:h.o?1:0,src:"brow"}));
     S.gunk=(rec.gunk||[]).map(k=>({x:k.x*sx,y:k.y*sy,r:k.r*sx,a:k.a,seed:k.s,gone:!!k.g}));
-    S.marks=[]; S.parts=[];
+    S.marks=[]; S.parts=[]; S.ropes=[]; S.beads=[]; S.drips=[]; S.vile=0;
     S.id=rec.id; S.name=rec.name; S.born=rec.born||Date.now();
     S.splat=document.createElement("canvas");
     S.splat.width=Math.round(W*DPR); S.splat.height=Math.round(H*DPR);
@@ -1365,7 +1623,9 @@ function finish(){
   const after=compositeState(false);      /* only what is still there */
   const cleared=(S.totalStart||0)-remaining();
   $("doneTitle").textContent=remaining()===0?"All clear":"Session over";
-  $("doneSub").textContent=cleared+" cleared · "+SCORE+" points";
+  const V=S.vile;
+  const grade=V>900?"biohazard":V>600?"revolting":V>350?"grim":V>150?"unpleasant":"tame";
+  $("doneSub").textContent=cleared+" cleared · "+SCORE+" points · "+grade;
   go("done");
   /* the panel has to be on screen before it can be measured — sizing a
      canvas against a display:none box gives you a 1px canvas */
@@ -1478,7 +1738,7 @@ $("bAgain").onclick=()=>{
   S.hairs.forEach(h=>{ h.out=0; });
   S.hairs=S.hairs.filter(h=>!h.flying);
   S.gunk.forEach(k=>{ k.gone=false; k.a=Math.max(k.a,.8); });
-  S.marks=[]; S.parts=[];
+  S.marks=[]; S.parts=[]; S.ropes=[]; S.beads=[]; S.drips=[]; S.vile=0;
   if(S.splat) S.splat.getContext("2d").clearRect(0,0,W,H);
   go("infest");
 };
@@ -1498,6 +1758,7 @@ resize();
 requestAnimationFrame(frame);
 
 window.PS={S,TYPES,TOOLS,go,newCase,practiceSkin,addBlem,addHairAt,addGunkAt,autoInfest,
+  tweezeStep,rope,bleed,
   popBlem,pluckAt,brushAt,hitBlem,remaining,totalCount,saveCase,readCases,writeCases,
   loadCase,finish,share,compositeState,fitView,toImgX,toImgY,toScreenX,toScreenY,
   get score(){return SCORE;}};
