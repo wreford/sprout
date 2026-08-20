@@ -204,6 +204,7 @@ canvas{display:block;position:absolute;inset:0;width:100%;height:100%}
   <div class="chip" id="cLook">look <b id="hLook">—</b></div>
   <div class="chip" id="cSkin">skin</div>
   <div class="chip" id="cPose">pose</div>
+  <div class="chip" id="cHorse">horse</div>
   <input type="file" id="faceIn" accept="image/*,.jpg,.jpeg,.png,.heic,.heif,.webp">
   <label class="chip" id="cFace" for="faceIn">face</label>
   <div class="chip" id="cFaceOff" style="display:none">drawn face</div>
@@ -1521,8 +1522,11 @@ function groundModel(){
   if(Number.isFinite(b.min.y)) model.position.y=RISER-b.min.y;
 }
 function frameModel(){
-  const b=modelBox();
-  if(!Number.isFinite(b.min.y)) return;
+  const mb=modelBox();
+  if(!Number.isFinite(mb.min.y)) return;
+  const b=mb.clone();
+  /* the horse is beside her, not inside the model group — frame them both */
+  if(HORSE.root&&HORSE.root.visible) b.union(new THREE.Box3().setFromObject(HORSE.root));
   b.getSize(_gs);
   const h=_gs.y, w=Math.max(_gs.x,_gs.z*.7);
   const half=Math.tan(camera.fov*Math.PI/360);
@@ -1582,7 +1586,7 @@ function clipCount(mesh){
 }
 function verify(){
   const problems=[];
-  let meshes=0,tris=0,lathes=0,inverted=0,clipped=0,imported=0;
+  let meshes=0,tris=0,lathes=0,inverted=0,clipped=0,imported=0,horseMeshes=0;
   const bb=new THREE.Box3();
 
   scene.traverse(o=>{
@@ -1590,6 +1594,19 @@ function verify(){
     const label=o.name||o.geometry?.type||o.type;
     if(o.userData.stage){                       /* stage props: only sanity, not size */
       if(!o.geometry||!o.geometry.attributes.position) problems.push(label+": no geometry");
+      return;
+    }
+    if(o.userData.horse){                       /* hers, and authored the same way */
+      horseMeshes++;
+      const hg=o.geometry;
+      if(!hg||!hg.attributes.position){ problems.push(label+": horse mesh has no geometry"); return; }
+      for(let i=0;i<hg.attributes.position.array.length;i++){
+        if(!Number.isFinite(hg.attributes.position.array[i])){ problems.push(label+": NaN vertex in the horse"); break; }
+      }
+      if(o.userData.lathe&&checkOutward(o)<.5){ inverted++; problems.push(label+": horse lathe is inside-out"); }
+      const hidx=hg.index;
+      tris+=(hidx?hidx.count:hg.attributes.position.count)/3;
+      meshes++;
       return;
     }
     if(o.userData.imported){                    /* somebody else's model, not mine to audit */
@@ -1638,6 +1655,10 @@ function verify(){
   const groundGap=bb.min.y-RISER;               /* 0 means standing exactly on the riser */
   if(groundGap<-.015) problems.push("clips through the riser by "+Math.abs(groundGap).toFixed(3));
   if(groundGap> .015) problems.push("floating above the riser by "+groundGap.toFixed(3));
+  if(HORSE.root){
+    const hb=new THREE.Box3().setFromObject(HORSE.root);
+    if(Math.abs(hb.min.y)>.03) problems.push("the horse is not on the floor: "+hb.min.y.toFixed(3));
+  }
   /* she has to actually fit in shot */
   const half=Math.tan(camera.fov*Math.PI/360);
   const fitY=2*half*cam.dist, fitX=fitY*camera.aspect;
@@ -1660,7 +1681,7 @@ function verify(){
   if(BODY.skull){ const hb=new THREE.Box3().setFromObject(BODY.skull);
     heads=height/Math.max(.001,hb.getSize(_v3).y); }
   return { ok:problems.length===0, problems, meshes, tris:Math.round(tris),
-    lathes, inverted, clipped, imported, heads:+heads.toFixed(2),
+    lathes, inverted, clipped, imported, horse:horseMeshes, heads:+heads.toFixed(2),
     modelHeight:+height.toFixed(3), modelWidth:+width.toFixed(3),
     groundGap:+groundGap.toFixed(3), pieces:Object.keys(worn).length };
 }
@@ -1709,6 +1730,7 @@ function showVerify(){
   h+=row("meshes",v.meshes);
   h+=row("triangles",v.tris.toLocaleString());
   if(v.imported) h+=row("imported meshes",v.imported);
+  if(v.horse) h+=row("horse meshes",v.horse);
   h+=row("lathe pieces",v.lathes+" · "+v.inverted+" inverted",v.inverted===0);
   h+=row("garment fit",v.clipped?v.clipped+" clipping":"no skin showing",v.clipped===0);
   h+=row("model height",v.modelHeight.toFixed(2)+" u",v.modelHeight>1.7&&v.modelHeight<2.7);
@@ -1722,6 +1744,242 @@ function showVerify(){
           v.problems.map(p=>`<div style="color:var(--bad);opacity:.85">· ${p}</div>`).join("");
   $("vfy").innerHTML=h;
   return v;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   LILY'S HORSE
+   Built the same way she is — lathes, capsules and joint groups — so it
+   stands beside her in the studio and walks the runway at her shoulder.
+   It lives in the scene rather than inside the model group, because the
+   model group gets lifted onto the riser and a horse should be on the
+   floor next to it, not floating at deck height.
+   ═══════════════════════════════════════════════════════════ */
+const COATS=[
+  {id:"chestnut",nm:"chestnut",coat:0x6a3115,mane:0x2e1809,hoof:0x241c14,horn:null},
+  {id:"palomino",nm:"palomino",coat:0xbe8434,mane:0xf3e6c8,hoof:0x2c2115,horn:null},
+  {id:"dapple",  nm:"dapple",  coat:0x76767f,mane:0x33333b,hoof:0x22222a,horn:null},
+  {id:"midnight",nm:"midnight",coat:0x241d26,mane:0x110e14,hoof:0x0e0b12,horn:null},
+  {id:"unicorn", nm:"unicorn", coat:0xf3e8ee,mane:0xff7ab8,hoof:0xf2c879,horn:0xf2c879},
+];
+const HORSE={root:null,legs:[],lows:[],head:null,tail:null,coat:-1,base:0};
+
+function tapered(r0,r1,len,mat){
+  const m=shade(new THREE.CylinderGeometry(r1,r0,len,18),mat);
+  return m;
+}
+function horseLeg(front,side,C){
+  /* shoulder (or hip) at the top, then knee, then fetlock, then hoof */
+  const leg=new THREE.Group();
+  const hip=shade(SPH(front?.105:.125),C.coat);
+  hip.scale.set(.85,1,1.1);
+  leg.add(hip);
+  const upper=tapered(front?.105:.125,.070,.36,C.coat);
+  upper.position.y=-.18; leg.add(upper);
+
+  const low=new THREE.Group(); low.position.y=-.36; leg.add(low);
+  const knee=shade(SPH(.066),C.coat); knee.scale.set(1,.88,1); low.add(knee);
+  const cannon=tapered(.058,.046,.34,C.coat);
+  cannon.position.y=-.17; low.add(cannon);
+  const fet=shade(SPH(.054),C.coat); fet.position.y=-.34; low.add(fet);
+  const pastern=tapered(.046,.050,.08,C.coat); pastern.position.y=-.385; low.add(pastern);
+  const hoof=shade(new THREE.CylinderGeometry(.064,.056,.095,16),C.hoof);
+  hoof.position.y=-.472; low.add(hoof);
+  /* a feather of hair over the fetlock, because Lily will look for it */
+  const feather=shade(SPH(.066,14,12),C.mane);
+  feather.scale.set(.9,.70,.9); feather.position.y=-.372; low.add(feather);
+
+  leg.position.set(side*(front?.175:.195),.92,front?.46:-.60);
+  return {leg,low};
+}
+function buildHorse(idx){
+  const c=COATS[((idx%COATS.length)+COATS.length)%COATS.length];
+  const C={
+    coat:M.matte(c.coat),        /* velvet's sheen washes a coat out to nothing */
+    mane:M.matte(c.mane),
+    hoof:M.matte(c.hoof),
+    dark:M.matte(0x1a1116),
+    tack:M.velvet(0x6d1436),
+    gold:M.metal(PAL.gold),
+  };
+  const g=new THREE.Group();
+
+  /* barrel — a lathe laid on its side, so the belly and the girth curve */
+  const barrelG=new THREE.Group();
+  barrelG.scale.set(.80,1,1);          /* a horse is deep, not round */
+  const barrel=lathe([
+    [.02,-.88],[.14,-.855],[.25,-.78],[.318,-.60],[.348,-.34],[.352,-.04],
+    [.338,.22],[.305,.42],[.252,.56],[.172,.64],[.02,.68],
+  ],44,C.coat);
+  barrel.rotation.x=Math.PI/2;
+  barrel.position.set(0,1.10,-.03);
+  barrelG.add(barrel);
+  g.add(barrelG);
+
+  /* neck, tilted up and forward from the withers */
+  const neckG=new THREE.Group();
+  neckG.position.set(0,1.34,.36);
+  /* about 45 degrees off horizontal — steeper than this and it reads giraffe */
+  neckG.rotation.x=-0.86;
+  const neck=lathe([[.02,-.16],[.268,-.07],[.244,.09],[.200,.28],[.164,.44],[.02,.51]],30,C.coat);
+  neck.scale.set(.72,1,1);            /* narrow across, deep front to back */
+  neckG.add(neck);
+  g.add(neckG);
+
+  /* head */
+  const headG=new THREE.Group();
+  headG.position.set(0,.47,.02);
+  headG.rotation.x=1.16;              /* the face points down the way it grazes */
+  const skull=shade(SPH(.138,26,20),C.coat);
+  skull.scale.set(.80,1.00,.94); skull.position.y=.050;
+  const cheek=shade(SPH(.126,20,16),C.coat);
+  cheek.scale.set(.78,.92,.90); cheek.position.set(0,-.035,-.050);
+  /* the face narrows to the nose — a flat end makes it a shoebox */
+  const muzzle=lathe([[.02,.52],[.052,.495],[.076,.44],[.078,.30],[.094,.14],[.106,.04],[.02,-.01]],26,C.coat);
+  muzzle.scale.set(.80,1,1); muzzle.position.y=-.02;
+  headG.add(skull,cheek,muzzle);
+  [-1,1].forEach(sd=>{
+    const ear=shade(new THREE.ConeGeometry(.046,.155,14),C.coat);
+    ear.position.set(sd*.072,.235,-.020); ear.rotation.set(-.10,0,sd*.22);
+    const inner=shade(new THREE.ConeGeometry(.027,.108,12),C.mane);
+    inner.position.set(sd*.072,.232,.004); inner.rotation.set(-.10,0,sd*.22);
+    const eye=shade(SPH(.034,16,12),C.dark,false);
+    eye.scale.set(.72,.92,.72); eye.position.set(sd*.108,.070,.028);
+    const glint=shade(SPH(.010,10,8),new THREE.MeshBasicMaterial({color:0xffffff}),false);
+    glint.position.set(sd*.119,.090,.052);
+    const nostril=shade(SPH(.023,12,10),C.dark,false);
+    nostril.scale.set(.8,1.1,.7); nostril.position.set(sd*.036,.005,.470);
+    headG.add(ear,inner,eye,glint,nostril);
+  });
+  /* bridle + a browband with a stone in it */
+  const noseband=shade(new THREE.TorusGeometry(.098,.013,10,26),C.tack);
+  noseband.position.set(0,.005,.32); noseband.rotation.x=Math.PI/2; noseband.scale.set(.82,1,.92);
+  const brow=shade(new THREE.TorusGeometry(.138,.012,10,26),C.tack);
+  brow.position.set(0,.140,.015); brow.rotation.x=Math.PI/2; brow.scale.set(.86,1,1);
+  const stone=shade(new THREE.OctahedronGeometry(.030),M.gem(PAL.rose),false);
+  stone.position.set(0,.146,.130);
+  headG.add(noseband,brow,stone);
+  if(c.horn){
+    const horn=shade(new THREE.ConeGeometry(.042,.34,16),M.metal(c.horn));
+    horn.position.set(0,.345,.050); horn.rotation.x=-.20;
+    const twist=shade(new THREE.TorusGeometry(.034,.008,8,30,Math.PI*4),M.metal(c.horn));
+    twist.position.set(0,.325,.050); twist.rotation.x=Math.PI/2-.20; twist.scale.set(1,1,3.6);
+    headG.add(horn,twist);
+  }
+  neckG.add(headG);
+  HORSE.head=headG;
+
+  /* mane down the crest, and a forelock between the ears */
+  /* the mane rides the crest, so each lock has to sit outside the neck's
+     radius at its own height — a fixed offset buries the ones at the base */
+  for(let i=0;i<26;i++){
+    const t=i/25;
+    const r=.262-.100*t;
+    const lock=shade(SPH(.062,12,10),C.mane);
+    lock.scale.set(.30,1.7+Math.sin(i*1.7)*.6,.86);
+    lock.position.set(Math.sin(i*2.1)*.014,-.10+t*.58,-(r+.028));
+    neckG.add(lock);
+  }
+  for(let i=0;i<6;i++){
+    const f=shade(SPH(.040,10,8),C.mane);
+    f.scale.set(.38,1.7,.6);
+    f.position.set((i-2.5)*.026,.225,.055);
+    f.rotation.z=(i-2.5)*.11;
+    headG.add(f);
+  }
+
+  /* tail */
+  const tailG=new THREE.Group();
+  tailG.position.set(0,1.36,-.76); tailG.rotation.x=0.42;
+  const dock=lathe([[.02,-.56],[.084,-.44],[.104,-.14],[.074,.02],[.02,.06]],20,C.mane);
+  tailG.add(dock);
+  for(let i=0;i<20;i++){
+    const a=i/20*TAU;
+    const strand=shade(SPH(.042,10,8),C.mane);
+    strand.scale.set(.5,3.6+Math.sin(i*2.3)*1.1,.5);
+    strand.position.set(Math.cos(a)*.062,-.38,Math.sin(a)*.052);
+    tailG.add(strand);
+  }
+  g.add(tailG);
+  HORSE.tail=tailG;
+
+  /* saddle blanket, because a show horse is turned out */
+  /* a blanket lies OVER the back — a lathe of revolution wrapped it right
+     round the barrel like a bandage */
+  const padG=new THREE.Group(); padG.scale.set(.80,1,1);
+  const arc=2.3;
+  const pad=shade(new THREE.CylinderGeometry(.392,.392,.62,28,1,true,Math.PI-arc/2,arc),C.tack);
+  pad.material.side=THREE.DoubleSide;
+  pad.rotation.x=Math.PI/2; pad.position.set(0,1.10,-.06);
+  const trim=shade(new THREE.CylinderGeometry(.400,.400,.045,28,1,true,Math.PI-arc/2,arc),C.gold);
+  trim.material.side=THREE.DoubleSide;
+  trim.rotation.x=Math.PI/2; trim.position.set(0,1.10,-.365);
+  padG.add(pad,trim); g.add(padG);
+
+  /* legs */
+  HORSE.legs=[]; HORSE.lows=[];
+  [[1,-1],[1,1],[0,-1],[0,1]].forEach(([front,side])=>{
+    const L=horseLeg(!!front,side,C);
+    g.add(L.leg); HORSE.legs.push(L.leg); HORSE.lows.push(L.low);
+  });
+
+  g.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true; o.userData.horse=true; } });
+  return g;
+}
+function setHorse(idx){
+  if(HORSE.root){
+    scene.remove(HORSE.root);
+    HORSE.root.traverse(o=>{ if(o.isMesh&&o.geometry) o.geometry.dispose(); });
+    HORSE.root=null; HORSE.legs=[]; HORSE.lows=[]; HORSE.head=null; HORSE.tail=null;
+  }
+  HORSE.coat=idx;
+  const chip=$("cHorse");
+  if(idx<0){
+    if(chip) chip.classList.remove("on"), chip.textContent="horse";
+    frameModel();
+    return;
+  }
+  HORSE.root=buildHorse(idx);
+  HORSE.root.position.set(-1.12,0,-.05);
+  HORSE.root.rotation.y=0.20;
+  scene.add(HORSE.root);
+  /* stand it on the floor by measuring, the same way she is grounded —
+     the hooves came out 25mm shy of the deck when the numbers were guessed */
+  HORSE.root.updateMatrixWorld(true);
+  const hb=new THREE.Box3().setFromObject(HORSE.root);
+  HORSE.base=Number.isFinite(hb.min.y)?-hb.min.y:0;
+  HORSE.root.position.y=HORSE.base;
+  if(chip){ chip.classList.add("on"); chip.innerHTML="horse <b>"+COATS[idx%COATS.length].nm+"</b>"; }
+  frameModel();
+}
+function horseIdle(ts){
+  if(!HORSE.root) return;
+  const b=Math.sin(ts/1600);
+  HORSE.root.position.y=HORSE.base+b*.006;
+  if(HORSE.head) HORSE.head.rotation.z=Math.sin(ts/2400)*.05;
+  if(HORSE.tail) HORSE.tail.rotation.z=Math.sin(ts/1900)*.10;
+  HORSE.legs.forEach(l=>{ l.rotation.x*=.88; });
+  HORSE.lows.forEach(l=>{ l.rotation.x*=.88; });
+}
+function horseWalk(ts,striding){
+  if(!HORSE.root) return;
+  const ph=ts/300;
+  if(striding){
+    /* diagonal pairs, the way a horse actually moves */
+    const sw=.30;
+    HORSE.legs[0].rotation.x= Math.sin(ph)*sw;
+    HORSE.legs[1].rotation.x=-Math.sin(ph)*sw;
+    HORSE.legs[2].rotation.x=-Math.sin(ph)*sw;
+    HORSE.legs[3].rotation.x= Math.sin(ph)*sw;
+    HORSE.lows[0].rotation.x=Math.max(0,-Math.sin(ph-.6))*.40;
+    HORSE.lows[1].rotation.x=Math.max(0, Math.sin(ph-.6))*.40;
+    HORSE.lows[2].rotation.x=Math.max(0, Math.sin(ph-.6))*.34;
+    HORSE.lows[3].rotation.x=Math.max(0,-Math.sin(ph-.6))*.34;
+    HORSE.root.position.y=HORSE.base+Math.abs(Math.sin(ph))*.016;
+    if(HORSE.head) HORSE.head.rotation.x=.46+Math.sin(ph*2)*.045;
+    if(HORSE.tail) HORSE.tail.rotation.z=Math.sin(ph*.8)*.14;
+  }else{
+    horseIdle(ts);
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -1858,6 +2116,7 @@ try{ G.best=+(localStorage.getItem("poser_best")||0)||0; }catch(e){}
 function resetRig(){
   model.position.set(0,model.position.y,0);
   model.rotation.set(0,0,0);
+  if(HORSE.root) HORSE.root.position.z=-.05;
   if(CUSTOM.root||!BODY.root) return;
   BODY.root.rotation.set(0,0,0); BODY.root.position.set(0,0,0);
   BODY.shinL.rotation.x=0; BODY.shinR.rotation.x=0;
@@ -2023,6 +2282,10 @@ function walkFrame(dt,ts){
   /* stride */
   const striding=k<.86;
   const ph=ts/300;
+  if(HORSE.root){
+    HORSE.root.position.z=model.position.z-.05;
+    horseWalk(ts,striding);
+  }
   if(CUSTOM.root){
     /* an imported model brings its own motion, or simply glides.
        This branch has to close out the walk itself — it catches every custom
@@ -2186,6 +2449,11 @@ $("bHome").addEventListener("click",goHome);
 $("go").addEventListener("click",startWalk);
 $("cSkin").addEventListener("click",()=>setSkin(skinIdx+1));
 $("cPose").addEventListener("click",()=>setPose(poseIdx+1));
+$("cHorse").addEventListener("click",()=>{
+  /* off, then through the coats, then off again */
+  const n=HORSE.coat+1;
+  setHorse(n>=COATS.length?-1:n);
+});
 
 /* ═══════════════════════════════════════════════════════════
    LOOP
@@ -2225,6 +2493,7 @@ function frame(ts){
   applyPose(Math.min(1,dt*.006));
   if(poseSettle>0&&--poseSettle%6===0){ groundModel(); frameModel(); }
   if(CUSTOM.mixer) CUSTOM.mixer.update(dt/1000);
+  horseIdle(ts);
   if(BODY.root&&!CUSTOM.root){
     const b=Math.sin(ts/1500);
     BODY.root.position.y=b*.005;
@@ -2259,6 +2528,7 @@ window.FS={THREE,scene,renderer,camera,model,pedestal,LIGHTS,BODY,RIG,cam,
   WARDROBE,SLOTS,outfit,worn,wear,randomLook,setSkin,setPose,POSES,verify,showVerify,PAL,
   groundModel,frameModel,modelBox,G,THEMES,judge,startShow,startDressing,startWalk,
   enterStudio,goHome,look,RUNWAY,applyFace,removeFace,faceTexture,openCrop,
+  HORSE,COATS,setHorse,buildHorse,
   get facePlate(){return facePlate;},CUSTOM,useCustomModel,clearCustom,gltfLoader,toast,
   setSlot:s=>{curSlot=s;renderSlots();renderRack();}};
 </script>
