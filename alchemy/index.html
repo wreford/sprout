@@ -1,0 +1,1134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>Crucible — combine everything</title>
+<meta name="description" content="Start with water, fire, earth and air. Drag things together and see what falls out. Twelve thousand combinations, every one of them reachable, all of it offline.">
+<meta name="theme-color" content="#0a0910">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0a0910; --panel:rgba(24,21,34,.88); --line:rgba(255,255,255,.12);
+  --text:#f2eefc; --dim:#9d94b4; --acc:#8b7bff; --acc2:#ffcf6b; --ok:#6ee7a8;
+  --sans:'Inter',system-ui,-apple-system,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden;position:fixed;inset:0;width:100%;
+  overscroll-behavior:none;-webkit-touch-callout:none}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);
+  user-select:none;-webkit-user-select:none;touch-action:manipulation}
+
+/* ---- board ---- */
+#board{position:absolute;left:0;right:0;top:0;bottom:0;overflow:hidden;touch-action:none;
+  background:
+    radial-gradient(80% 50% at 50% 12%,rgba(139,123,255,.14),transparent 70%),
+    radial-gradient(60% 40% at 82% 68%,rgba(255,207,107,.08),transparent 70%),
+    var(--bg)}
+.chip{position:absolute;display:flex;align-items:center;gap:7px;padding:8px 13px 8px 10px;
+  border-radius:100px;border:1px solid var(--line);background:var(--panel);
+  backdrop-filter:blur(12px);font-size:13px;font-weight:600;white-space:nowrap;
+  box-shadow:0 6px 22px rgba(0,0,0,.45);cursor:grab;touch-action:none;z-index:2;
+  transform:translate(-50%,-50%)}
+.chip .em{font-size:19px;line-height:1}
+.chip.drag{cursor:grabbing;z-index:40;box-shadow:0 14px 40px rgba(0,0,0,.6);
+  border-color:var(--acc)}
+.chip.target{border-color:var(--acc2);box-shadow:0 0 0 3px rgba(255,207,107,.28)}
+.chip.pop{animation:pop .34s ease-out}
+@keyframes pop{0%{transform:translate(-50%,-50%) scale(.4);opacity:0}
+  60%{transform:translate(-50%,-50%) scale(1.14)}100%{transform:translate(-50%,-50%) scale(1)}}
+.chip.gone{animation:gone .22s ease-in forwards;pointer-events:none}
+@keyframes gone{to{transform:translate(-50%,-50%) scale(.3);opacity:0}}
+
+/* ---- top ---- */
+#top{position:absolute;left:0;right:0;top:0;z-index:9;display:flex;align-items:center;gap:8px;
+  padding:calc(9px + env(safe-area-inset-top)) 10px 9px;
+  background:linear-gradient(180deg,rgba(10,9,16,.95) 45%,rgba(10,9,16,0));
+  pointer-events:none}
+#top>*{pointer-events:auto}
+.brand{font-size:15px;font-weight:800;letter-spacing:.10em}
+.brand i{font-style:normal;color:var(--acc2)}
+#stats{flex:1;font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--dim);
+  line-height:1.5;min-width:0}
+#stats b{color:var(--acc2);font-variant-numeric:tabular-nums}
+.btn{background:var(--panel);border:1px solid var(--line);border-radius:100px;
+  padding:7px 13px;font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--dim);cursor:pointer;font-family:var(--sans);white-space:nowrap}
+.btn.on{color:#191024;background:linear-gradient(180deg,#ffe6a8,var(--acc2));border-color:var(--acc2)}
+.btn.hot{color:#fff;background:linear-gradient(180deg,#a293ff,var(--acc));border-color:var(--acc)}
+
+/* ---- palette ---- */
+#dock{position:absolute;left:0;right:0;bottom:0;z-index:10;display:flex;flex-direction:column;
+  background:linear-gradient(0deg,rgba(10,9,16,.98) 72%,rgba(10,9,16,.86));
+  border-top:1px solid var(--line);
+  padding:8px 8px calc(8px + env(safe-area-inset-bottom));gap:7px;
+  max-height:52vh;transition:transform .22s}
+#dock.hid{transform:translateY(calc(100% - 44px))}
+#dockBar{display:flex;align-items:center;gap:7px}
+#search{flex:1;min-width:0;background:rgba(255,255,255,.06);border:1px solid var(--line);
+  border-radius:100px;padding:8px 14px;color:var(--text);font-size:13px;font-family:var(--sans);
+  outline:none}
+#search::placeholder{color:#6d6480}
+#pal{display:flex;flex-wrap:wrap;gap:6px;overflow-y:auto;padding:2px;
+  scrollbar-width:thin;align-content:flex-start}
+.pit{display:flex;align-items:center;gap:6px;padding:6px 11px 6px 8px;border-radius:100px;
+  border:1px solid var(--line);background:rgba(255,255,255,.05);font-size:12px;font-weight:600;
+  cursor:pointer;white-space:nowrap}
+.pit .em{font-size:16px;line-height:1}
+.pit.new{border-color:var(--ok);box-shadow:0 0 0 2px rgba(110,231,168,.2)}
+
+/* ---- toast + banner ---- */
+#toast{position:absolute;left:50%;bottom:calc(52vh + 14px);transform:translateX(-50%);z-index:14;
+  background:var(--panel);backdrop-filter:blur(14px);border:1px solid var(--line);
+  border-radius:100px;padding:9px 17px;font-size:12px;font-weight:600;opacity:0;
+  transition:opacity .2s;pointer-events:none;white-space:nowrap;max-width:92vw;
+  overflow:hidden;text-overflow:ellipsis}
+#toast.show{opacity:1}
+#found{position:absolute;left:50%;top:38%;transform:translate(-50%,-50%);z-index:15;
+  text-align:center;pointer-events:none;opacity:0}
+#found.show{animation:found 1.5s ease-out}
+@keyframes found{0%{opacity:0;transform:translate(-50%,-50%) scale(.7)}
+  16%{opacity:1;transform:translate(-50%,-50%) scale(1)}
+  74%{opacity:1}100%{opacity:0;transform:translate(-50%,-50%) scale(1.04)}}
+#found .e{font-size:64px;line-height:1}
+#found .n{font-size:21px;font-weight:800;margin-top:8px}
+#found .k{font-size:9.5px;letter-spacing:.3em;text-transform:uppercase;color:var(--acc2);margin-top:7px}
+
+/* ---- screens ---- */
+.screen{position:absolute;inset:0;z-index:20;display:none;flex-direction:column;align-items:center;
+  justify-content:center;text-align:center;padding:26px 20px;overflow-y:auto;
+  background:radial-gradient(100% 70% at 50% 30%,rgba(46,36,86,.6),rgba(8,7,13,.97))}
+.screen.show{display:flex}
+.h1{font-size:clamp(34px,10vmin,64px);font-weight:800;letter-spacing:-.02em;line-height:1}
+.h1 i{font-style:normal;color:var(--acc2)}
+.kick{font-size:10.5px;letter-spacing:.3em;text-transform:uppercase;color:var(--dim);margin-top:12px}
+.lead{font-size:13px;color:var(--dim);line-height:1.7;max-width:34ch;margin-top:18px}
+.big{margin-top:24px;background:linear-gradient(180deg,#a293ff,var(--acc));color:#fff;border:none;
+  border-radius:100px;padding:14px 34px;font-size:13px;font-weight:800;letter-spacing:.15em;
+  text-transform:uppercase;cursor:pointer;font-family:var(--sans);
+  box-shadow:0 10px 30px rgba(139,123,255,.3)}
+.row{display:flex;gap:9px;justify-content:center;flex-wrap:wrap;margin-top:12px}
+
+#logList{width:min(460px,94vw);margin-top:16px;display:flex;flex-direction:column;gap:5px;
+  max-height:58vh;overflow-y:auto}
+.lrow{display:flex;align-items:center;gap:9px;padding:8px 11px;border-radius:11px;
+  border:1px solid var(--line);background:rgba(255,255,255,.04);font-size:12.5px;text-align:left}
+.lrow .em{font-size:17px}
+.lrow .nm{flex:1;font-weight:600}
+.lrow .rec{font-size:10.5px;color:var(--dim)}
+</style>
+</head>
+<body>
+<div id="board"></div>
+
+<div id="top">
+  <div class="brand">CRU<i>CIBLE</i></div>
+  <div id="stats">—</div>
+  <button class="btn" id="bLog">log</button>
+  <button class="btn" id="bClear">clear</button>
+</div>
+
+<div id="found"><div class="e"></div><div class="n"></div><div class="k">new</div></div>
+<div id="toast"></div>
+
+<div id="dock">
+  <div id="dockBar">
+    <input id="search" placeholder="search your elements" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <button class="btn" id="bHint">hint</button>
+    <button class="btn" id="bHide">hide</button>
+  </div>
+  <div id="pal"></div>
+</div>
+
+<div class="screen show" id="scStart">
+  <div class="h1">CRU<i>CIBLE</i></div>
+  <div class="kick">combine everything</div>
+  <div class="lead">Four things to begin with. Drag one onto another and see what
+    falls out. Twelve thousand combinations, no internet involved, and every
+    single element reachable from these four — that part is checked, not hoped.</div>
+  <button class="big" id="bPlay">begin</button>
+  <div class="row"><button class="btn" id="bReset">wipe progress</button></div>
+  <div class="kick" id="startStat" style="margin-top:26px;opacity:.7"></div>
+</div>
+
+<div class="screen" id="scLog">
+  <div class="h1" style="font-size:34px">Log</div>
+  <div class="kick" id="logSub">—</div>
+  <div id="logList"></div>
+  <button class="big" id="bLogBack">back</button>
+</div>
+
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+
+/* ═══════════════════════════════════════════════════════════
+   THE TABLE
+   id | Name | emoji | tags | adjective form (if it can modify)
+   A thing with an adjective is a MODIFIER. A thing tagged creature,
+   artifact or place is a NOUN. Any modifier meets any noun — that one
+   rule is what carries the count past ten thousand without ten thousand
+   lines of hand-written recipes.
+   ═══════════════════════════════════════════════════════════ */
+const TABLE=`
+water|Water|💧|base nature liquid
+fire|Fire|🔥|base nature energy|Fire
+earth|Earth|🪨|base nature solid
+air|Air|💨|base nature gas
+mud|Mud|🟤|nature solid
+steam|Steam|♨️|nature gas
+lava|Lava|🌋|nature liquid|Lava
+energy|Energy|⚡|nature abstract
+rain|Rain|🌧️|nature weather
+dust|Dust|🌫️|nature solid
+sea|Sea|🌊|nature liquid place|Sea|ca
+ocean|Ocean|🌊|nature liquid place|Ocean|ca
+river|River|🏞️|nature liquid place|River|ca
+lake|Lake|🏞️|nature liquid place
+cloud|Cloud|☁️|nature weather|Cloud
+storm|Storm|⛈️|nature weather|Storm
+lightning|Lightning|🌩️|nature weather|Lightning
+thunder|Thunder|🔊|nature weather|Thunder
+ice|Ice|🧊|nature solid material|Ice
+snow|Snow|❄️|nature weather|Snow
+frost|Frost|🌨️|nature weather|Frost
+mist|Mist|🌫️|nature weather
+sand|Sand|🏜️|nature solid material|Sand
+stone|Stone|🪨|nature solid material|Stone
+mountain|Mountain|⛰️|nature place|Mountain|ca
+volcano|Volcano|🌋|nature place
+island|Island|🏝️|nature place|Island|ca
+beach|Beach|🏖️|nature place
+desert|Desert|🏜️|nature place|Desert|ca
+swamp|Swamp|🐸|nature place|Swamp|ca
+forest|Forest|🌲|nature place|Forest|ca
+jungle|Jungle|🌴|nature place|Jungle|ca
+cave|Cave|🕳️|nature place|Cave|ca
+tundra|Tundra|🥶|nature place
+canyon|Canyon|🏜️|nature place
+waterfall|Waterfall|💦|nature place
+geyser|Geyser|⛲|nature
+glacier|Glacier|🧊|nature place
+wave|Wave|🌊|nature
+tide|Tide|🌊|nature
+earthquake|Earthquake|💥|nature
+tsunami|Tsunami|🌊|nature
+tornado|Tornado|🌪️|nature weather
+hurricane|Hurricane|🌀|nature weather
+wind|Wind|🍃|nature weather|Wind
+rainbow|Rainbow|🌈|nature|Rainbow
+sky|Sky|🌌|nature place|Sky|ca
+sun|Sun|☀️|cosmic|Sun
+moon|Moon|🌙|cosmic|Moon
+star|Star|⭐|cosmic|Star
+space|Space|🌌|cosmic place
+planet|Planet|🪐|cosmic
+comet|Comet|☄️|cosmic
+meteor|Meteor|☄️|cosmic
+galaxy|Galaxy|🌌|cosmic
+blackhole|Black Hole|🕳️|cosmic
+eclipse|Eclipse|🌒|cosmic
+aurora|Aurora|🌌|cosmic
+gravity|Gravity|🌍|abstract
+pressure|Pressure|🗜️|abstract
+heat|Heat|🌡️|abstract
+cold|Cold|🥶|abstract
+ash|Ash|🌫️|nature solid|Ash
+smoke|Smoke|💨|nature gas
+coal|Coal|🪨|material
+oil|Oil|🛢️|liquid material
+obsidian|Obsidian|⬛|material|Obsidian
+salt|Salt|🧂|material
+crystal|Crystal|💎|material|Crystal
+plant|Plant|🌱|life plant
+seed|Seed|🌰|life plant
+grass|Grass|🌿|life plant
+tree|Tree|🌳|life plant
+flower|Flower|🌸|life plant
+moss|Moss|🍀|life plant
+mushroom|Mushroom|🍄|life plant
+vine|Vine|🌿|life plant
+cactus|Cactus|🌵|life plant
+bamboo|Bamboo|🎋|life plant
+wood|Wood|🪵|material|Wooden
+leaf|Leaf|🍃|life plant
+fruit|Fruit|🍎|food
+wheat|Wheat|🌾|life plant food
+hay|Hay|🌾|life plant
+algae|Algae|🟢|life
+lily|Water Lily|🪷|life plant
+life|Life|✨|life abstract
+bacteria|Bacteria|🦠|life
+egg|Egg|🥚|life food
+fish|Fish|🐟|life creature
+frog|Frog|🐸|life creature
+lizard|Lizard|🦎|life creature
+snake|Snake|🐍|life creature
+turtle|Turtle|🐢|life creature
+dinosaur|Dinosaur|🦖|life creature
+bird|Bird|🐦|life creature
+eagle|Eagle|🦅|life creature
+owl|Owl|🦉|life creature
+crow|Crow|🐦‍⬛|life creature
+penguin|Penguin|🐧|life creature
+wolf|Wolf|🐺|life creature
+dog|Dog|🐕|life creature
+cat|Cat|🐈|life creature
+horse|Horse|🐎|life creature
+cow|Cow|🐄|life creature
+pig|Pig|🐖|life creature
+sheep|Sheep|🐑|life creature
+chicken|Chicken|🐔|life creature
+mouse|Mouse|🐁|life creature
+rabbit|Rabbit|🐇|life creature
+deer|Deer|🦌|life creature
+bear|Bear|🐻|life creature
+lion|Lion|🦁|life creature
+tiger|Tiger|🐅|life creature
+elephant|Elephant|🐘|life creature
+monkey|Monkey|🐒|life creature
+bat|Bat|🦇|life creature
+bee|Bee|🐝|life creature
+ant|Ant|🐜|life creature
+butterfly|Butterfly|🦋|life creature
+spider|Spider|🕷️|life creature
+shark|Shark|🦈|life creature
+whale|Whale|🐋|life creature
+dolphin|Dolphin|🐬|life creature
+octopus|Octopus|🐙|life creature
+crab|Crab|🦀|life creature
+jellyfish|Jellyfish|🪼|life creature
+human|Human|🧍|life creature
+dragon|Dragon|🐉|life creature myth
+phoenix|Phoenix|🔥|life creature myth
+unicorn|Unicorn|🦄|life creature myth
+griffin|Griffin|🦅|life creature myth
+mermaid|Mermaid|🧜|life creature myth
+golem|Golem|🗿|life creature myth
+ghost|Ghost|👻|life creature myth|Ghost
+zombie|Zombie|🧟|life creature myth
+vampire|Vampire|🧛|life creature myth
+werewolf|Werewolf|🐺|life creature myth
+giant|Giant|🗿|life creature myth|Giant
+fairy|Fairy|🧚|life creature myth
+troll|Troll|👹|life creature myth
+kraken|Kraken|🐙|life creature myth
+metal|Metal|🔩|material|Metal
+iron|Iron|⚙️|material|Iron
+gold|Gold|🥇|material|Golden
+silver|Silver|🥈|material|Silver
+copper|Copper|🟠|material|Copper
+bronze|Bronze|🟫|material|Bronze
+steel|Steel|🔗|material|Steel
+glass|Glass|🪟|material|Glass
+clay|Clay|🟤|material|Clay
+brick|Brick|🧱|material|Brick
+ceramic|Ceramic|🏺|material
+diamond|Diamond|💎|material|Diamond
+ruby|Ruby|❤️|material|Ruby
+emerald|Emerald|💚|material|Emerald
+pearl|Pearl|🦪|material|Pearl
+amber|Amber|🟡|material|Amber
+jade|Jade|💚|material|Jade
+marble|Marble|🏛️|material|Marble
+bone|Bone|🦴|material|Bone
+leather|Leather|🟫|material|Leather
+wool|Wool|🧶|material
+silk|Silk|🧵|material|Silk
+paper|Paper|📄|material|Paper
+rubber|Rubber|⚫|material
+plastic|Plastic|🧴|material|Plastic
+wax|Wax|🕯️|material
+soap|Soap|🧼|material
+sugar|Sugar|🍬|material food
+ink|Ink|🖋️|material
+tool|Tool|🔧|made artifact
+wheel|Wheel|☸️|made artifact
+axe|Axe|🪓|made artifact
+hammer|Hammer|🔨|made artifact
+knife|Knife|🔪|made artifact
+sword|Sword|⚔️|made artifact
+shield|Shield|🛡️|made artifact
+armour|Armour|🥋|made artifact
+spear|Spear|🔱|made artifact
+bow|Bow|🏹|made artifact
+arrow|Arrow|➡️|made artifact
+needle|Needle|🪡|made artifact
+thread|Thread|🧵|made artifact
+cloth|Cloth|🧻|made artifact
+rope|Rope|🪢|made artifact
+net|Net|🕸️|made artifact
+boat|Boat|⛵|made artifact
+ship|Ship|🚢|made artifact
+sail|Sail|⛵|made artifact
+cart|Cart|🛒|made artifact
+car|Car|🚗|made artifact
+train|Train|🚂|made artifact
+plane|Plane|✈️|made artifact
+rocket|Rocket|🚀|made artifact
+engine|Engine|⚙️|made artifact
+wire|Wire|🔌|made artifact
+battery|Battery|🔋|made artifact
+electricity|Electricity|⚡|abstract
+magnet|Magnet|🧲|made artifact
+computer|Computer|💻|made artifact
+robot|Robot|🤖|made artifact creature|Robot
+phone|Phone|📱|made artifact
+clock|Clock|🕰️|made artifact
+lens|Lens|🔍|made artifact
+telescope|Telescope|🔭|made artifact
+microscope|Microscope|🔬|made artifact
+mirror|Mirror|🪞|made artifact
+lamp|Lamp|💡|made artifact
+candle|Candle|🕯️|made artifact
+torch|Torch|🔦|made artifact
+lantern|Lantern|🏮|made artifact
+key|Key|🔑|made artifact
+lock|Lock|🔒|made artifact
+door|Door|🚪|made artifact
+crown|Crown|👑|made artifact
+ring|Ring|💍|made artifact
+cup|Cup|🥤|made artifact
+bell|Bell|🔔|made artifact
+coin|Coin|🪙|made artifact
+statue|Statue|🗿|made artifact
+mask|Mask|🎭|made artifact
+box|Box|📦|made artifact
+flute|Flute|🎶|made artifact
+drum|Drum|🥁|made artifact
+compass|Compass|🧭|made artifact
+dagger|Dagger|🗡️|made artifact
+throne|Throne|🪑|made artifact
+book|Book|📖|made artifact
+map|Map|🗺️|made artifact
+flag|Flag|🚩|made artifact
+kite|Kite|🪁|made artifact
+umbrella|Umbrella|☂️|made artifact
+basket|Basket|🧺|made artifact
+barrel|Barrel|🛢️|made artifact
+anchor|Anchor|⚓|made artifact
+chain|Chain|⛓️|made artifact
+gear|Gear|⚙️|made artifact
+house|House|🏠|place made
+wall|Wall|🧱|place made
+castle|Castle|🏰|place made|Castle|ca
+tower|Tower|🗼|place made
+bridge|Bridge|🌉|place made
+road|Road|🛣️|place made
+city|City|🏙️|place made|City|ca
+village|Village|🏘️|place made
+farm|Farm|🚜|place made
+well|Well|🕳️|place made
+windmill|Windmill|🌬️|place made
+pyramid|Pyramid|🔺|place made
+temple|Temple|⛩️|place made
+library|Library|📚|place made
+market|Market|🏪|place made
+harbour|Harbour|⚓|place made
+mine|Mine|⛏️|place made
+garden|Garden|🌷|place made
+maze|Maze|🌀|place made
+ruins|Ruins|🏚️|place made|Ruined|ca
+bread|Bread|🍞|food
+dough|Dough|🥟|food
+flour|Flour|🌾|food
+milk|Milk|🥛|food
+cheese|Cheese|🧀|food
+butter|Butter|🧈|food
+soup|Soup|🍲|food
+wine|Wine|🍷|food
+beer|Beer|🍺|food
+tea|Tea|🍵|food
+coffee|Coffee|☕|food
+chocolate|Chocolate|🍫|food
+honey|Honey|🍯|food
+jam|Jam|🍓|food
+pie|Pie|🥧|food
+cake|Cake|🍰|food
+pizza|Pizza|🍕|food
+icecream|Ice Cream|🍦|food
+juice|Juice|🧃|food
+idea|Idea|💡|abstract
+story|Story|📜|abstract
+music|Music|🎵|abstract
+art|Art|🎨|abstract
+dance|Dance|💃|abstract
+language|Language|🗣️|abstract
+writing|Writing|✍️|abstract
+knowledge|Knowledge|🧠|abstract
+science|Science|🔬|abstract
+magic|Magic|✨|abstract|Magic
+spell|Spell|📜|abstract
+wizard|Wizard|🧙|life creature
+witch|Witch|🧙‍♀️|life creature
+spirit|Spirit|👻|abstract
+soul|Soul|💫|abstract
+death|Death|💀|abstract|Dead
+love|Love|❤️|abstract
+war|War|⚔️|abstract
+peace|Peace|🕊️|abstract
+time|Time|⏳|abstract|Ancient
+money|Money|💰|abstract
+king|King|🤴|life creature
+queen|Queen|👸|life creature
+kingdom|Kingdom|🏰|place
+empire|Empire|🏛️|place
+law|Law|⚖️|abstract
+luck|Luck|🍀|abstract
+dream|Dream|💭|abstract|Dream
+nightmare|Nightmare|😱|abstract
+shadow|Shadow|🌑|abstract|Shadow
+light|Light|💡|abstract|Radiant
+void|Void|🕳️|abstract|Void
+chaos|Chaos|🌀|abstract|Chaos
+order|Order|📐|abstract
+curse|Curse|☠️|abstract|Cursed
+blessing|Blessing|🙏|abstract|Blessed
+tiny|Tiny|🐜|abstract|Tiny
+titan|Titan|🗿|life creature myth|Titanic
+`;
+
+/* ═══════════════════════════════════════════════════════════
+   THE RECIPE BOOK · the hand-written half
+   ═══════════════════════════════════════════════════════════ */
+const BOOK=`
+air+fire=energy
+earth+water=mud
+fire+water=steam
+earth+fire=lava
+air+water=rain
+air+earth=dust
+air+air=pressure
+fire+fire=heat
+water+water=sea
+earth+earth=mountain
+air+steam=cloud
+cloud+cloud=storm
+energy+storm=lightning
+air+lightning=thunder
+air+energy=wind
+earth+wind=sand
+sand+sand=desert
+earth+sea=island
+sand+sea=beach
+rain+rain=river
+river+river=lake
+lake+lake=ocean
+earth+pressure=stone
+fire+mountain=volcano
+lava+water=obsidian
+air+lava=ash
+ash+fire=smoke
+air+mountain=cold
+cold+water=ice
+cloud+cold=snow
+air+ice=frost
+air+rain=mist
+ice+mountain=glacier
+cold+earth=tundra
+sea+wind=wave
+moon+sea=tide
+earth+energy=earthquake
+earthquake+wave=tsunami
+wind+wind=tornado
+sea+storm=hurricane
+rain+sun=rainbow
+air+cloud=sky
+sky+sky=space
+fire+sky=sun
+sky+stone=moon
+energy+sky=star
+star+star=galaxy
+earth+star=planet
+ice+space=comet
+space+stone=meteor
+galaxy+pressure=blackhole
+moon+sun=eclipse
+lightning+sky=aurora
+planet+planet=gravity
+stone+wind=cave
+earth+river=canyon
+mountain+river=waterfall
+volcano+water=geyser
+sea+sun=salt
+plant+pressure=coal
+stone+time=crystal
+coal+pressure=diamond
+pressure+swamp=oil
+energy+sea=life
+life+mud=bacteria
+life+water=algae
+earth+life=plant
+plant+time=seed
+earth+plant=grass
+plant+plant=tree
+tree+tree=forest
+forest+rain=jungle
+plant+sun=flower
+plant+stone=moss
+plant+swamp=mushroom
+jungle+tree=vine
+desert+plant=cactus
+jungle+plant=bamboo
+tree+wind=leaf
+tool+tree=wood
+flower+lake=lily
+flower+time=fruit
+farm+grass=wheat
+sun+wheat=hay
+mud+plant=swamp
+bacteria+time=egg
+egg+sea=fish
+egg+swamp=frog
+earth+egg=lizard
+grass+lizard=snake
+lizard+stone=turtle
+giant+lizard=dinosaur
+dinosaur+time=bird
+bird+mountain=eagle
+bird+forest=owl
+bird+shadow=crow
+bird+ice=penguin
+bird+farm=chicken
+forest+life=wolf
+human+wolf=dog
+tiny+wolf=cat
+grass+life=horse
+farm+hay=cow
+cloud+farm=sheep
+farm+mud=pig
+tiny+life=mouse
+grass+tiny=rabbit
+forest+horse=deer
+cave+forest=bear
+cat+desert=lion
+cat+jungle=tiger
+giant+jungle=elephant
+human+jungle=monkey
+bird+cave=bat
+flower+life=bee
+earth+tiny=ant
+flower+wind=butterfly
+life+net=spider
+fish+war=shark
+fish+giant=whale
+fish+idea=dolphin
+sea+spider=octopus
+sea+stone=crab
+ghost+sea=jellyfish
+clay+life=human
+seed+seed=tiny
+human+mountain=giant
+giant+giant=titan
+fire+lizard=dragon
+bird+fire=phoenix
+horse+magic=unicorn
+eagle+lion=griffin
+fish+human=mermaid
+life+stone=golem
+death+human=ghost
+curse+human=zombie
+bat+human=vampire
+bat+wolf=werewolf
+human+tiny=fairy
+cave+human=troll
+giant+octopus=kraken
+human+magic=wizard
+curse+wizard=witch
+fire+stone=metal
+earth+metal=iron
+metal+sun=gold
+metal+moon=silver
+fire+metal=copper
+copper+iron=bronze
+coal+iron=steel
+fire+sand=glass
+mud+sand=clay
+clay+fire=brick
+clay+wheel=ceramic
+crystal+fire=ruby
+crystal+plant=emerald
+sand+shark=pearl
+time+tree=amber
+stone+water=jade
+pressure+stone=marble
+death+life=bone
+cow+knife=leather
+knife+sheep=wool
+plant+spider=silk
+water+wood=paper
+heat+tree=rubber
+heat+oil=plastic
+fire+tree=wax
+ash+oil=soap
+heat+plant=sugar
+coal+water=ink
+human+stone=tool
+stone+tool=wheel
+tool+wood=axe
+iron+tool=hammer
+metal+tool=knife
+iron+war=sword
+iron+wall=shield
+cloth+iron=armour
+knife+wood=spear
+rope+wood=bow
+stone+wood=arrow
+iron+tiny=needle
+needle+wool=thread
+thread+thread=cloth
+grass+thread=rope
+rope+rope=net
+river+wood=boat
+boat+cloth=sail
+boat+iron=ship
+wheel+wood=cart
+cart+engine=car
+car+iron=train
+car+sky=plane
+fire+plane=rocket
+fire+iron=engine
+metal+thread=wire
+energy+wire=battery
+battery+wire=electricity
+electricity+iron=magnet
+electricity+knowledge=computer
+computer+human=robot
+computer+wire=phone
+gear+time=clock
+glass+sand=lens
+lens+star=telescope
+lens+tiny=microscope
+glass+silver=mirror
+fire+glass=lamp
+thread+wax=candle
+fire+wood=torch
+candle+glass=lantern
+iron+lock=key
+box+iron=lock
+wall+wood=door
+gold+king=crown
+gold+love=ring
+clay+water=cup
+air+metal=bell
+metal+money=coin
+art+stone=statue
+art+wood=mask
+tool+wheel=box
+music+wood=flute
+leather+wood=drum
+iron+magnet=compass
+iron+knife=dagger
+king+stone=throne
+paper+writing=book
+island+paper=map
+cloth+wind=flag
+paper+wind=kite
+cloth+rain=umbrella
+grass+rope=basket
+iron+wood=barrel
+iron+ship=anchor
+iron+ring=chain
+iron+wheel=gear
+human+wood=house
+brick+brick=wall
+king+wall=castle
+sky+wall=tower
+river+road=bridge
+cart+stone=road
+house+house=village
+village+village=city
+human+plant=farm
+stone+rain=well
+wheel+wind=windmill
+desert+stone=pyramid
+peace+stone=temple
+book+house=library
+house+money=market
+city+ship=harbour
+cave+iron=mine
+flower+house=garden
+wall+wall=maze
+city+time=ruins
+stone+wheat=flour
+flour+water=dough
+dough+fire=bread
+cow+human=milk
+milk+time=cheese
+milk+pressure=butter
+fish+water=soup
+fruit+time=wine
+water+wheat=beer
+leaf+water=tea
+heat+seed=coffee
+seed+sugar=chocolate
+bee+flower=honey
+fruit+sugar=jam
+dough+fruit=pie
+dough+sugar=cake
+cheese+dough=pizza
+ice+milk=icecream
+fruit+pressure=juice
+sky+star=light
+human+light=idea
+idea+language=story
+air+idea=music
+idea+rainbow=art
+human+music=dance
+human+human=language
+language+paper=writing
+book+human=knowledge
+knowledge+knowledge=science
+energy+idea=magic
+magic+writing=spell
+life+time=death
+flower+human=love
+king+king=war
+time+war=peace
+glass+wind=time
+gold+paper=money
+gold+human=king
+king+love=queen
+city+king=kingdom
+kingdom+war=empire
+order+writing=law
+coin+rainbow=luck
+human+shadow=dream
+dream+shadow=nightmare
+earth+light=shadow
+space+space=void
+energy+void=chaos
+chaos+idea=order
+death+magic=curse
+life+magic=blessing
+idea+life=soul
+air+soul=spirit
+`;
+
+/* ═══════════════════════════════════════════════════════════
+   BUILD
+   ═══════════════════════════════════════════════════════════ */
+const EL={}, RECIPES={};
+TABLE.trim().split("\n").forEach(line=>{
+  const p=line.split("|");
+  if(p.length<4) return;
+  const tags=p[3].trim().split(/\s+/);
+  EL[p[0]]={id:p[0],n:p[1],e:p[2],tags,mod:(p[4]||"").trim()||null,
+    /* which kinds of noun this adjective is allowed on: c reature, a rtifact,
+       p lace. A place modifying another place gives you "Earth Mountain". */
+    on:(p[5]||"cap").trim(),
+    noun:tags.includes("creature")||tags.includes("artifact")||tags.includes("place"),
+    kind:tags.includes("creature")?"c":tags.includes("artifact")?"a":"p",
+    depth:0,mods:[]};
+});
+/* the book uses a few shorthand ids that resolve to a real one; anything
+   still unresolved after this is a typo and gets reported by verify() */
+/* No aliases. Every recipe names real ids, so a duplicate pair is a real
+   duplicate and the parser can shout about it. */
+const ALIAS={};
+const badRecipes=[], dupRecipes=[];
+BOOK.trim().split("\n").forEach(line=>{
+  const m=line.match(/^([a-z0-9]+)\+([a-z0-9]+)=([a-z0-9]+)$/);
+  if(!m){ if(line.trim()) badRecipes.push(line); return; }
+  const a=ALIAS[m[1]]||m[1], b=ALIAS[m[2]]||m[2], r=ALIAS[m[3]]||m[3];
+  if(!EL[a]||!EL[b]||!EL[r]){ badRecipes.push(line+" (unknown id)"); return; }
+  const key=[a,b].sort().join("+");
+  /* A second recipe for the same pair silently replaced the first, which is
+     how half the tree ended up unreachable. Collisions are now errors. */
+  if(RECIPES[key]) dupRecipes.push(key+" = "+RECIPES[key]+" then "+r+"  ("+line+")");
+  else if(a===r||b===r) badRecipes.push(line+" (makes one of its own ingredients)");
+  else RECIPES[key]=r;
+});
+
+const MODS=Object.values(EL).filter(e=>e.mod);
+const NOUNS=Object.values(EL).filter(e=>e.noun);
+const MAX_DEPTH=2;
+
+/* the compositional half: a modifier meets a noun */
+function compoundOf(m,n){
+  if(!m.mod||!n.noun) return null;
+  if(!(m.on||"cap").includes(n.kind)) return null;
+  if(n.depth>=MAX_DEPTH) return null;
+  if(n.mods.includes(m.mod)) return null;      /* no Fire Fire Wolf */
+  if(n.id===m.id) return null;
+  const id="c:"+m.mod+":"+n.id;
+  if(!EL[id]){
+    EL[id]={id,n:m.mod+" "+n.n,e:n.e,tags:n.tags.slice(),mod:null,noun:true,
+      on:"cap",kind:n.kind,depth:n.depth+1,mods:n.mods.concat([m.mod]),made:true};
+  }
+  return id;
+}
+function combine(a,b){
+  const A=EL[a], B=EL[b];
+  if(!A||!B) return null;
+  const hit=RECIPES[[a,b].sort().join("+")];
+  if(hit) return hit;
+  return compoundOf(A,B)||compoundOf(B,A);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   HOW BIG IS IT, ACTUALLY
+   Counts every unordered pair that yields something, rather than
+   trusting the arithmetic. Reported on the title screen.
+   ═══════════════════════════════════════════════════════════ */
+function census(){
+  const seeds=Object.keys(EL).filter(k=>!EL[k].made);
+  let pairs=0;
+  const results=new Set();
+  for(let i=0;i<seeds.length;i++){
+    for(let j=i;j<seeds.length;j++){
+      const r=combine(seeds[i],seeds[j]);
+      if(r){ pairs++; results.add(r); }
+    }
+  }
+  /* one more layer: the depth-1 compounds can take a second modifier */
+  let deep=0;
+  const depth1=[...results].filter(r=>EL[r]&&EL[r].depth===1);
+  for(const d of depth1) for(const m of MODS) if(compoundOf(m,EL[d])) deep++;
+  return {base:seeds.length,pairs,deep,total:pairs+deep,
+    reachable:results.size,recipes:Object.keys(RECIPES).length};
+}
+const CENSUS=census();
+
+/* ═══════════════════════════════════════════════════════════
+   SAVE
+   ═══════════════════════════════════════════════════════════ */
+const KEY="crucible_v1";
+const S={found:{},log:[],board:[]};
+function load(){
+  try{
+    const r=JSON.parse(localStorage.getItem(KEY)||"null");
+    if(r&&r.found){ S.found=r.found; S.log=r.log||[]; }
+  }catch(e){}
+  ["water","fire","earth","air"].forEach(k=>S.found[k]=1);
+}
+function save(){
+  try{ localStorage.setItem(KEY,JSON.stringify({found:S.found,log:S.log.slice(-400)})); }
+  catch(e){}
+}
+load();
+
+/* compounds discovered in a past session have to be re-registered, because
+   they are generated on demand and do not exist in the table */
+Object.keys(S.found).forEach(id=>{
+  if(!EL[id]&&id.startsWith("c:")){
+    const [,mod,rest]=id.split(":");
+    const base=EL[rest];
+    if(base) compoundOf({mod,noun:false,id:"?"},base);
+  }
+});
+
+/* ═══════════════════════════════════════════════════════════
+   BOARD
+   ═══════════════════════════════════════════════════════════ */
+const board=$("board");
+let chips=[], nextChip=1, drag=null;
+
+function chipAt(id,x,y,pop){
+  const el=document.createElement("div");
+  el.className="chip"+(pop?" pop":"");
+  el.innerHTML=`<span class="em">${EL[id].e}</span><span>${EL[id].n}</span>`;
+  el.style.left=x+"px"; el.style.top=y+"px";
+  el.dataset.id=id; el.dataset.k=nextChip++;
+  board.appendChild(el);
+  const c={id,x,y,el};
+  chips.push(c);
+  return c;
+}
+function removeChip(c,anim){
+  const i=chips.indexOf(c);
+  if(i>=0) chips.splice(i,1);
+  if(anim){ c.el.classList.add("gone"); setTimeout(()=>c.el.remove(),240); }
+  else c.el.remove();
+}
+function freeSpot(){
+  const w=board.clientWidth, h=board.clientHeight;
+  const top=90, bot=h-(dockOpen?h*.52:70)-30;
+  for(let t=0;t<50;t++){
+    const x=60+Math.random()*(w-120);
+    const y=top+Math.random()*Math.max(40,bot-top);
+    if(!chips.some(c=>Math.hypot(c.x-x,c.y-y)<74)) return {x,y};
+  }
+  return {x:w/2+(Math.random()*80-40),y:(top+bot)/2+(Math.random()*80-40)};
+}
+function spawn(id){
+  const p=freeSpot();
+  chipAt(id,p.x,p.y,true);
+}
+
+board.addEventListener("pointerdown",e=>{
+  const el=e.target.closest(".chip");
+  if(!el) return;
+  const c=chips.find(x=>x.el===el);
+  if(!c) return;
+  try{ el.setPointerCapture(e.pointerId); }catch(err){}
+  drag={c,dx:e.clientX-c.x,dy:e.clientY-c.y,moved:0};
+  el.classList.add("drag");
+});
+addEventListener("pointermove",e=>{
+  if(!drag) return;
+  const c=drag.c;
+  const nx=e.clientX-drag.dx, ny=e.clientY-drag.dy;
+  drag.moved+=Math.hypot(nx-c.x,ny-c.y);
+  c.x=clamp(nx,20,board.clientWidth-20);
+  c.y=clamp(ny,60,board.clientHeight-20);
+  c.el.style.left=c.x+"px"; c.el.style.top=c.y+"px";
+  const t=nearest(c);
+  chips.forEach(o=>o.el.classList.toggle("target",o===t));
+});
+/* Dropping a chip into the tray is how you get rid of it. A plain tap used
+   to delete it, which is a horrible thing to discover by accident. */
+function overTray(c){
+  const d=$("dock").getBoundingClientRect();
+  return c.y>d.top+8;
+}
+function nearest(c){
+  let best=null,bd=68;
+  for(const o of chips){
+    if(o===c) continue;
+    const d=Math.hypot(o.x-c.x,o.y-c.y);
+    if(d<bd){ bd=d; best=o; }
+  }
+  return best;
+}
+addEventListener("pointerup",()=>{
+  if(!drag) return;
+  const c=drag.c;
+  c.el.classList.remove("drag");
+  chips.forEach(o=>o.el.classList.remove("target"));
+  const t=nearest(c);
+  if(t){ tryCombine(c,t); }
+  else if(overTray(c)){ removeChip(c,true); }  /* drag it down to put it back */
+  drag=null;
+});
+addEventListener("pointercancel",()=>{
+  if(drag){ drag.c.el.classList.remove("drag"); chips.forEach(o=>o.el.classList.remove("target")); }
+  drag=null;
+});
+
+function tryCombine(a,b){
+  const r=combine(a.id,b.id);
+  if(!r){
+    toast("Nothing comes of it");
+    b.el.animate([{transform:"translate(-50%,-50%) rotate(0)"},
+      {transform:"translate(-50%,-50%) rotate(-4deg)"},
+      {transform:"translate(-50%,-50%) rotate(4deg)"},
+      {transform:"translate(-50%,-50%) rotate(0)"}],{duration:220});
+    return;
+  }
+  const x=(a.x+b.x)/2, y=(a.y+b.y)/2;
+  removeChip(a,true); removeChip(b,true);
+  const fresh=!S.found[r];
+  setTimeout(()=>{
+    chipAt(r,x,y,true);
+    if(fresh){
+      S.found[r]=1;
+      S.log.push({r,a:a.id,b:b.id,t:Date.now()});
+      save(); renderPal(); showFound(r);
+    }else{
+      renderPal();
+    }
+    updateStats();
+  },130);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   UI
+   ═══════════════════════════════════════════════════════════ */
+let toastT=0;
+function toast(m){
+  const el=$("toast"); el.textContent=m; el.classList.add("show");
+  clearTimeout(toastT); toastT=setTimeout(()=>el.classList.remove("show"),1500);
+}
+function showFound(id){
+  const f=$("found");
+  f.querySelector(".e").textContent=EL[id].e;
+  f.querySelector(".n").textContent=EL[id].n;
+  f.classList.remove("show"); void f.offsetWidth; f.classList.add("show");
+}
+function updateStats(){
+  const n=Object.keys(S.found).length;
+  $("stats").innerHTML=`<b>${n}</b> found · <b>${S.log.length}</b> combos made<br>`+
+    `of <b>${CENSUS.pairs.toLocaleString()}</b> in the crucible`;
+}
+let dockOpen=true;
+function renderPal(){
+  const q=$("search").value.trim().toLowerCase();
+  const ids=Object.keys(S.found).filter(id=>EL[id]).sort((a,b)=>{
+    const A=EL[a],B=EL[b];
+    if(A.depth!==B.depth) return A.depth-B.depth;
+    return A.n.localeCompare(B.n);
+  });
+  const show=q?ids.filter(id=>EL[id].n.toLowerCase().includes(q)):ids;
+  $("pal").innerHTML=show.map(id=>
+    `<button class="pit" data-id="${id}"><span class="em">${EL[id].e}</span>${EL[id].n}</button>`
+  ).join("")||`<div style="color:var(--dim);font-size:12px;padding:8px">nothing matches</div>`;
+  $("pal").querySelectorAll(".pit").forEach(b=>b.onclick=()=>spawn(b.dataset.id));
+}
+$("search").addEventListener("input",renderPal);
+$("bHide").onclick=()=>{
+  dockOpen=!dockOpen;
+  $("dock").classList.toggle("hid",!dockOpen);
+  $("bHide").textContent=dockOpen?"hide":"show";
+};
+$("bClear").onclick=()=>{ chips.slice().forEach(c=>removeChip(c,true)); };
+$("bHint").onclick=()=>{
+  /* a pair you own that makes something you have not seen */
+  const own=Object.keys(S.found).filter(id=>EL[id]);
+  for(let t=0;t<4000;t++){
+    const a=own[(Math.random()*own.length)|0], b=own[(Math.random()*own.length)|0];
+    const r=combine(a,b);
+    if(r&&!S.found[r]){ toast(EL[a].n+" + "+EL[b].n+" → ?"); return; }
+  }
+  toast("Nothing obvious left — try something stranger");
+};
+$("bLog").onclick=()=>{
+  const rows=S.log.slice().reverse().slice(0,300);
+  $("logSub").textContent=rows.length+" discoveries, newest first";
+  $("logList").innerHTML=rows.map(e=>{
+    const R=EL[e.r],A=EL[e.a],B=EL[e.b];
+    if(!R) return "";
+    return `<div class="lrow"><span class="em">${R.e}</span>`+
+      `<span class="nm">${R.n}</span>`+
+      `<span class="rec">${A?A.n:"?"} + ${B?B.n:"?"}</span></div>`;
+  }).join("")||`<div class="lrow"><span class="nm">Nothing yet.</span></div>`;
+  $("scLog").classList.add("show");
+};
+$("bLogBack").onclick=()=>$("scLog").classList.remove("show");
+$("bPlay").onclick=()=>{
+  $("scStart").classList.remove("show");
+  if(!chips.length) ["water","fire","earth","air"].forEach(spawn);
+};
+$("bReset").onclick=()=>{
+  S.found={}; S.log=[];
+  try{ localStorage.removeItem(KEY); }catch(e){}
+  load(); save(); renderPal(); updateStats();
+  chips.slice().forEach(c=>removeChip(c,false));
+  toast("Back to four elements");
+};
+
+addEventListener("resize",()=>{
+  chips.forEach(c=>{
+    c.x=clamp(c.x,20,board.clientWidth-20);
+    c.y=clamp(c.y,60,board.clientHeight-20);
+    c.el.style.left=c.x+"px"; c.el.style.top=c.y+"px";
+  });
+});
+
+$("startStat").innerHTML=
+  `${CENSUS.base} elements · ${CENSUS.recipes} hand-written recipes<br>`+
+  `${CENSUS.pairs.toLocaleString()} combinations, and they keep going after that`;
+if(badRecipes.length||dupRecipes.length)
+  console.warn("crucible: "+badRecipes.length+" bad, "+dupRecipes.length+" duplicate recipes");
+renderPal(); updateStats();
+
+window.CR={EL,RECIPES,MODS,NOUNS,combine,compoundOf,census,CENSUS,S,save,load,
+  spawn,chips,tryCombine,renderPal,badRecipes,dupRecipes,ALIAS,BOOK,TABLE,
+  get found(){return Object.keys(S.found).length;}};
+</script>
+</body>
+</html>
