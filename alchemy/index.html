@@ -241,8 +241,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);
   60%{opacity:1;transform:translate(-50%,4px) scale(1.02)}
   100%{opacity:1;transform:translate(-50%,0) scale(1)}}
 #found .e{font-size:66px;line-height:1;filter:drop-shadow(0 8px 24px rgba(0,0,0,.7))}
-#found .e .ic,#found .e img{width:136px;height:136px}
-#sheet .e .ic,#sheet .e img{width:118px;height:118px}
+#found .e .ic,#found .e img{width:184px;height:184px}
+#sheet .e .ic,#sheet .e img{width:176px;height:176px}
 #found .e .ic,#sheet .e .ic{margin:0 auto;overflow:visible}
 #found .e img,#sheet .e img{border-radius:28px;object-fit:cover;
   box-shadow:0 12px 40px rgba(0,0,0,.7),inset 0 0 0 1px rgba(255,255,255,.2)}
@@ -7767,7 +7767,7 @@ function saveImg(){
    rather than blanking an element for good because you went through a
    tunnel once. */
 const WAPI="https://en.wikipedia.org/w/api.php?format=json&origin=*&";
-const THUMB="&prop=pageimages&piprop=thumbnail&pithumbsize=512";
+const THUMB="&prop=pageimages&piprop=thumbnail&pithumbsize=320";
 function wapi(q){
   return fetch(WAPI+q,{headers:{Accept:"application/json"}})
     .then(r=>r.ok?r.json():Promise.reject(new Error(r.status)));
@@ -7830,6 +7830,19 @@ function pumpSearch(){
 }
 const IMGTAG=u=>'<img src="'+u+'" alt="" loading="lazy" referrerpolicy="no-referrer"'+
   ' onerror="imgFail(this)">';
+/* wikipedia thumb URLs carry their size — rewrite it for a crisp detail shot */
+function bigUrl(u){ return u?u.replace(/\/(\d{2,4})px-/,"/900px-"):u; }
+function imgBigFail(img){
+  const fb=img.getAttribute("data-fb");
+  if(fb&&img.src!==fb){ img.src=fb; return; }
+  imgFail(img);
+}
+function iconBigHTML(id){
+  const t=wikiTitle(id), u=t&&IMG[t];
+  const inner=u?'<img src="'+bigUrl(u)+'" data-fb="'+u+'" alt="" referrerpolicy="no-referrer"'+
+    ' onerror="imgBigFail(this)">':'<span class="em">'+EL[id].e+'</span>';
+  return '<span class="ic" data-em="'+EL[id].e+'">'+inner+'</span>';
+}
 function iconHTML(id){
   const t=wikiTitle(id), u=t&&IMG[t];
   const inner=u?IMGTAG(u):'<span class="em">'+EL[id].e+'</span>';
@@ -8636,7 +8649,7 @@ let foundT=0, foundSaid="";
 function showFound(id,a,b){
   const f=$("found");
   f.style.setProperty("--cc",colOf(id));
-  f.querySelector(".e").innerHTML=iconHTML(id);
+  f.querySelector(".e").innerHTML=iconBigHTML(id);
   needImg(id);
   f.querySelector(".n").textContent=EL[id].n;
   f.querySelector(".rec").textContent=
@@ -9131,23 +9144,32 @@ function renderPal(){
         :'Nothing here yet. Try another tab.')+'</div>');
   const rb=$("pal").querySelector("#palRet");
   if(rb) rb.onclick=()=>{ showSpent=!showSpent; sfx("tick"); renderPal(); };
-  $("pal").querySelectorAll(".pit").forEach(b=>{
-    let hold=null, held=false;
-    const id=b.dataset.id;
-    b.addEventListener("pointerdown",()=>{
-      held=false;
-      hold=setTimeout(()=>{ held=true; openSheet(id); },430);
+  if(!renderPal.wired){
+    renderPal.wired=true;
+    const pal=$("pal");
+    let hold=null, held=false, target=null;
+    const cancel=()=>{ clearTimeout(hold); target=null; };
+    pal.addEventListener("pointerdown",e=>{
+      const b=e.target.closest(".pit");
+      if(!b||!b.dataset.id) return;
+      target=b; held=false;
+      hold=setTimeout(()=>{ held=true; openSheet(b.dataset.id); },430);
     });
-    const cancel=()=>{ clearTimeout(hold); };
-    b.addEventListener("pointerup",()=>{
-      cancel();
-      if(held) return;
+    pal.addEventListener("pointerup",e=>{
+      const b=e.target.closest(".pit");
+      clearTimeout(hold);
+      if(!b||b!==target||held){ target=null; return; }
+      target=null;
+      const id=b.dataset.id;
       if(S.fresh[id]){ delete S.fresh[id]; save(); b.classList.remove("fresh"); }
       spawn(id,null,pillFrom(b));
     });
-    b.addEventListener("pointerleave",cancel);
-    b.addEventListener("pointercancel",cancel);
-  });
+    pal.addEventListener("pointerout",e=>{
+      if(target&&e.target.closest(".pit")===target&&
+         !(e.relatedTarget&&target.contains(e.relatedTarget))) cancel();
+    });
+    pal.addEventListener("pointercancel",cancel);
+  }
   renderRecent();
   renderTabs();
 }
@@ -9170,7 +9192,7 @@ function openSheet(id){
   const e=EL[id];
   const s=$("sheet");
   sheetId=id;
-  s.querySelector(".e").innerHTML=iconHTML(id);
+  s.querySelector(".e").innerHTML=iconBigHTML(id);
   needImg(id);
   s.querySelector(".n").textContent=e.n;
   s.querySelector(".meta").textContent=CATS.find(c=>c.id===catOf(e)).n+
