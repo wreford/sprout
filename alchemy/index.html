@@ -203,19 +203,6 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);
 }
 
 /* ── announcements ───────────────────────────────────────── */
-/* undo sits where your thumb already is, and only when there is
-   something to undo */
-#undo{position:absolute;left:12px;bottom:calc(var(--dockH) + 58px);z-index:26;
-  display:flex;align-items:center;gap:7px;padding:9px 15px 9px 12px;border-radius:100px;
-  background:rgba(20,16,34,.93);backdrop-filter:blur(14px);border:1px solid rgba(255,255,255,.14);
-  color:var(--text);font-family:var(--sans);font-size:11px;font-weight:800;
-  letter-spacing:.1em;text-transform:uppercase;cursor:pointer;
-  box-shadow:0 10px 30px rgba(0,0,0,.5);
-  opacity:0;transform:translateY(10px) scale(.9);pointer-events:none;
-  transition:opacity .18s,transform .18s cubic-bezier(.2,1.4,.4,1)}
-#undo.show{opacity:1;transform:none;pointer-events:auto}
-#undo:active{transform:scale(.94)}
-#undo b{font-size:15px;font-weight:400;line-height:1}
 .pit .star{margin-left:5px;color:var(--acc2);font-size:10px;line-height:1}
 .pit.pin{border-color:color-mix(in srgb,var(--acc2) 60%,transparent)}
 #toast{position:absolute;left:50%;bottom:calc(var(--dockH) + 14px);transform:translateX(-50%) translateY(8px);
@@ -438,7 +425,6 @@ body.screening #toast,body.screening #found,body.screening #pair{
   <button class="mi danger" id="bWipe" role="menuitem"><span>⟲</span>Wipe progress</button>
 </div>
 <div id="pair"></div>
-<button id="undo"><b>↶</b>undo</button>
 <div id="streak"></div>
 
 <div id="found">
@@ -3028,7 +3014,12 @@ function combine(a,b){
   if(!A||!B) return null;
   const hit=RECIPES[[a,b].sort().join("+")];
   if(hit) return hit;
-  return compoundOf(A,B)||compoundOf(B,A);
+  /* canonical order, so Water+Fire is the same question as Fire+Water —
+     including pairs like Ghost+Giant where either side could be the
+     adjective. Which one modifies is decided by the ids, not by which
+     chip you happened to pick up. */
+  const [x,y]=a<b?[A,B]:[B,A];
+  return compoundOf(x,y)||compoundOf(y,x);
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -4611,32 +4602,6 @@ function stepMerges(dt){
     if(k>=1){ merges.splice(i,1); finishMerge(m); }
   }
 }
-let undoable=null, undoT=0;
-function offerUndo(u){
-  undoable=u;
-  $("undo").classList.add("show");
-  clearTimeout(undoT);
-  undoT=setTimeout(()=>{ undoable=null; $("undo").classList.remove("show"); },9000);
-}
-function doUndo(){
-  if(!undoable){ toast("Nothing to undo"); sfx("nope"); return; }
-  const u=undoable; undoable=null;
-  clearTimeout(undoT); $("undo").classList.remove("show");
-  S.stats.undos++;
-  if(u.sweep){
-    /* the whole table comes back where it was */
-    u.sweep.slice(0,60).forEach((c,i)=>setTimeout(()=>spawn(c.i,{x:c.x,y:c.y}),i*36));
-    sfx("tick"); buzz(10); toast("Back on the table"); checkAch();
-    return;
-  }
-  /* the result goes back in the pot; the discovery itself is kept, because
-     un-discovering something you already read about would be spiteful */
-  const res=chips.find(c=>c.id===u.res&&!c.busy);
-  if(res){ ring(res.x,res.y,rgbOf(res.id),52,2,0.36); removeChip(res); }
-  spawn(u.a.id,{x:u.a.x,y:u.a.y});
-  spawn(u.b.id,{x:u.b.x,y:u.b.y});
-  sfx("tick"); buzz(10); toast("Put back"); checkAch();
-}
 function finishMerge(m){
   S.made[m.res]=(S.made[m.res]||0)+1;
   S.stats.fusions++;
@@ -4669,7 +4634,6 @@ function finishMerge(m){
   }else{
     streak=0; hideStreak(); sfx("merge");
   }
-  offerUndo({a:{id:m.a.id,x:m.ax,y:m.ay},b:{id:m.b.id,x:m.bx,y:m.by},res:m.res});
   updateStats(); touchBoard(); checkAch();
 }
 
@@ -4924,7 +4888,6 @@ const ACH=[
   {id:"fuse1k", n:"Actual Alchemist", g:"⚗️", d:"A thousand fusions.",                   m:()=>[S.stats.fusions,1000]},
   {id:"pref50", n:"Adjective Abuser", g:"🏷️", d:"Forge 50 prefixed things.",             m:()=>[S.stats.prefixed,50]},
   {id:"hint10", n:"Just Tell Me",     g:"💡", d:"Take 10 hints.",                        m:()=>[S.stats.hints,10]},
-  {id:"undo10", n:"Second Thoughts",  g:"↶",  d:"Undo 10 fusions.",                      m:()=>[S.stats.undos,10]},
   {id:"sweep5", n:"Table Manners",    g:"🧹", d:"Clear the table 5 times.",              m:()=>[S.stats.sweeps,5]},
   {id:"tidy20", n:"Feng Shui",        g:"🧭", d:"Tidy 20 times.",                        m:()=>[S.stats.tidies,20]},
   {id:"amb10",  n:"Audiophile",       g:"🎧", d:"Unlock every soundscape.",              m:()=>[ambCount(),AMBIENCE.length]},
@@ -5265,7 +5228,6 @@ $("bSweep").onclick=()=>{
     },i*28);
   });
   S.stats.sweeps++;
-  offerUndo({sweep:snap});
   sfx("tick"); buzz(8);
   toast("Swept "+snap.length+" off the table");
   checkAch();
@@ -5361,7 +5323,6 @@ $("bWipe").onclick=()=>{
   S.made={}; S.ach={};
   S.stats={fusions:0,prefixed:0,hints:0,undos:0,sweeps:0,tidies:0};
   renderAchBadge();
-  undoable=null; $("undo").classList.remove("show");
   try{ localStorage.removeItem(KEY); }catch(e){}
   load(); save(); renderPal(); updateStats(); refreshStart(); renderAchBadge(); renderCol(); renderAmb();
   chips.slice().forEach(removeChip);
@@ -5372,7 +5333,6 @@ addEventListener("resize",()=>{
   sizeFX();
   chips.forEach(c=>{ measure(c); c.x=clamp(c.x,26,W-26); c.y=clamp(c.y,66,H-26); });
 });
-$("undo").onclick=doUndo;
 addEventListener("keydown",e=>{
   const typing=/^(INPUT|TEXTAREA)$/.test((e.target||{}).tagName||"");
   if(typing){
@@ -5386,7 +5346,6 @@ addEventListener("keydown",e=>{
   if(!typing&&!e.metaKey&&!e.ctrlKey&&!e.altKey){
     const k=e.key.toLowerCase();
     if(k==="/"){ e.preventDefault(); $("search").focus(); return; }
-    if(k==="z"){ doUndo(); return; }
     if(k==="t"){ $("bClear").click(); return; }
     if(k==="h"){ $("bHint").click(); return; }
     if(k==="l"){ $("bLog").click(); return; }
@@ -5420,10 +5379,10 @@ if(photos){ ownedIds().forEach(needImg); pumpImg(); }
 
 window.CR={EL,RECIPES,MODS,NOUNS,combine,compoundOf,census,CENSUS,S,save,load,
   spawn,chips,renderPal,badRecipes,dupRecipes,classless,TAKES,ALIAS,BOOK,TABLE,
-  doUndo,offerUndo,snapBoard,restoreBoard,touchBoard,visibleIds,paintPin,
+  snapBoard,restoreBoard,touchBoard,visibleIds,paintPin,
   ACH,checkAch,renderAch,usefulness,GODS,
   renderCol,exportCode,importCode,BASE_IDS,encId,decId,
-  get undoable(){return undoable;}, get showMade(){return showMade;},
+  get showMade(){return showMade;},
   LORE,loreOf,LOREBOOK,
   IMG,WIKI,wikiTitle,needImg,pumpImg,pumpSearch,iconHTML,paintIcons,setPhotos,imgFail,
   get photos(){return photos;}, get imgQueue(){return wq.length+winflight+sq.length+sinflight;},
