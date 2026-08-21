@@ -8348,7 +8348,7 @@ function refreshGlints(){
   const hot=new Set();
   for(let i=0;i<live.length;i++){
     for(let j=i+1;j<live.length;j++){
-      const r=combine(live[i].id,live[j].id);
+      const r=combineLive(live[i].id,live[j].id);
       if(r&&!S.found[r]){ hot.add(i); hot.add(j); }
     }
   }
@@ -8486,8 +8486,15 @@ addEventListener("pointercancel",endDrag);
 /* ═══════════════════════════════════════════════════════════
    THE FUSION · the bit worth watching
    ═══════════════════════════════════════════════════════════ */
+function combineLive(a,b){
+  /* the player-facing combine: when prefixed things are hidden they are
+     not made, hinted, glinted, auto-found, or counted — anywhere */
+  const r=combine(a,b);
+  if(r&&!showMade&&(String(r).startsWith("c:")||(EL[r]&&EL[r].made))) return null;
+  return r;
+}
 function startMerge(a,b){
-  const res=combine(a.id,b.id);
+  const res=combineLive(a.id,b.id);
   const mx=(a.x+b.x)/2, my=(a.y+b.y)/2;
   if(!res){
     sfx("nope");
@@ -8824,7 +8831,7 @@ function autoAttempt(){
   if(own.length<2) return null;
   const x=own[(Math.random()*own.length)|0], y=own[(Math.random()*own.length)|0];
   if(x===y) return null;
-  const r=combine(x,y);
+  const r=combineLive(x,y);
   return (r&&!S.found[r])?{a:x,b:y,r}:null;
 }
 function smartAttempt(){
@@ -8834,7 +8841,7 @@ function smartAttempt(){
     const i=key.indexOf("+"), x=key.slice(0,i), y=key.slice(i+1);
     if(S.found[x]&&S.found[y]) return {a:x,b:y,r};
   }
-  for(const m of MODS){
+  if(showMade) for(const m of MODS){
     if(!S.found[m.id]) continue;
     for(const o of NOUNS){
       if(o.made||!S.found[o.id]||m.id===o.id) continue;
@@ -8989,15 +8996,16 @@ const ORDERS=[
   {k:"useful",n:"next finds"},
   {k:"simplest",n:"simplest"},{k:"newest",n:"newest"},
   {k:"az",n:"a–z"},{k:"category",n:"by kind"}];
-let order="useful", showMade=true;
-try{ showMade=localStorage.getItem("crucible_made")!=="0"; }catch(e){}
+let order="useful", showMade=false;
+try{ const sm=localStorage.getItem("crucible_made");
+  if(sm!==null) showMade=sm==="1"; }catch(e){}
 try{ const o=localStorage.getItem("crucible_order"); if(o&&ORDERS.some(x=>x.k===o)) order=o; }catch(e){}
 /* how many still-undiscovered things each element can make with what you
    own right now. This is the answer to "why is my table fifty dusts when
    I should be using Fire and Water". Cached until the next find. */
 let useKey=-1, useMap={};
 function usefulness(){
-  const n=Object.keys(S.found).length;
+  const n=Object.keys(S.found).length*2+(showMade?1:0);
   if(n===useKey) return useMap;
   /* not the n-squared sweep: only two kinds of pair can ever produce
      anything — a written recipe, and a modifier meeting a noun. Walking
@@ -9013,16 +9021,18 @@ function usefulness(){
       if(x!==y) map[y]=(map[y]||0)+1;
     }
   }
-  const mods=MODS.filter(m=>S.found[m.id]);
-  const nouns=NOUNS.filter(o=>S.found[o.id]&&!o.made);
-  for(const m of mods){
-    for(const o of nouns){
-      if(m.id===o.id) continue;
-      const [p,q]=m.id<o.id?[m,o]:[o,m];
-      const r=compoundOf(p,q)||compoundOf(q,p);
-      if(r&&!S.found[r]){
-        map[m.id]=(map[m.id]||0)+1;
-        map[o.id]=(map[o.id]||0)+1;
+  if(showMade){
+    const mods=MODS.filter(m=>S.found[m.id]);
+    const nouns=NOUNS.filter(o=>S.found[o.id]&&!o.made);
+    for(const m of mods){
+      for(const o of nouns){
+        if(m.id===o.id) continue;
+        const [p,q]=m.id<o.id?[m,o]:[o,m];
+        const r=compoundOf(p,q)||compoundOf(q,p);
+        if(r&&!S.found[r]){
+          map[m.id]=(map[m.id]||0)+1;
+          map[o.id]=(map[o.id]||0)+1;
+        }
       }
     }
   }
@@ -9053,7 +9063,7 @@ function sortIds(ids){
    already been found. Nothing left to give; it leaves the palette. */
 let spentKey=-1, spentCache={};
 function spentMap(){
-  const n=Object.keys(S.found).length;
+  const n=Object.keys(S.found).length*2+(showMade?1:0);
   if(n===spentKey) return spentCache;
   const open={};
   for(const key in RECIPES){
@@ -9061,7 +9071,7 @@ function spentMap(){
     const i=key.indexOf("+");
     open[key.slice(0,i)]=1; open[key.slice(i+1)]=1;
   }
-  for(const m of MODS){
+  if(showMade) for(const m of MODS){
     for(const o of NOUNS){
       if(o.made||m.id===o.id) continue;
       const [p,q]=m.id<o.id?[m,o]:[o,m];
@@ -9171,7 +9181,7 @@ function openSheet(id){
     : "One of the four you started with.";
   let live=0;
   const own=ownedIds();
-  for(const o of own) if(combine(id,o)) live++;
+  for(const o of own) if(combineLive(id,o)) live++;
   howMade+="<br>It pairs with <b>"+live+"</b> of the "+own.length+" things you own.";
   if(e.mod) howMade+='<br>It is an adjective: it can go in front of things.';
   s.querySelector(".made").innerHTML=
@@ -9289,8 +9299,9 @@ $("bMade").onclick=()=>{
   showMade=!showMade;
   try{ localStorage.setItem("crucible_made",showMade?"1":"0"); }catch(e){}
   $("bMade").querySelector(".k").textContent=showMade?"shown":"hidden";
-  renderPal(); sfx("tick");
-  toast(showMade?"Showing everything":"Prefixed things hidden");
+  renderPal(); refreshGlints(); sfx("tick");
+  toast(showMade?"Prefixed things are back in play"
+               :"Prefixed things hidden — no longer made, hinted, or counted");
 };
 $("bHelp").onclick=()=>{ setMenu(false); refreshStart(); $("scStart").classList.add("show"); };
 $("bSearchX").onclick=()=>{
@@ -9332,7 +9343,7 @@ $("bHint").onclick=()=>{
   const own=ownedIds();
   for(let t=0;t<6000;t++){
     const a=own[(Math.random()*own.length)|0], b=own[(Math.random()*own.length)|0];
-    const r=combine(a,b);
+    const r=combineLive(a,b);
     if(r&&!S.found[r]){
       toast(EL[a].n+" + "+EL[b].n+" → ?");
       /* put them both on the table so the hint is actionable */
