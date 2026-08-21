@@ -368,6 +368,11 @@ body.screening #toast,body.screening #found,body.screening #pair{
 .amb .st{font-size:9px;letter-spacing:.2em;text-transform:uppercase;font-weight:800;
   color:var(--dim);flex-shrink:0}
 .amb.lock{opacity:.45}
+.achwrap{width:min(470px,94vw);margin-top:14px;display:flex;flex-direction:column;gap:7px;
+  max-height:56vh;overflow-y:auto;scrollbar-width:thin}
+.pit .use{margin-left:5px;font-size:9px;font-weight:800;color:var(--ok);
+  background:rgba(110,231,168,.14);border-radius:100px;padding:1px 6px;
+  font-variant-numeric:tabular-nums}
 .amb.on{border-color:var(--ok);background:rgba(110,231,168,.09)}
 .amb.on .st{color:var(--ok)}
 .amb.on .g{animation:pulse 2.4s ease-in-out infinite}
@@ -414,6 +419,7 @@ body.screening #toast,body.screening #found,body.screening #pair{
   <div class="brand">CRU<i>CIBLE</i></div>
   <div id="stats">—<div id="bar"><div id="barFill"></div></div></div>
   <button class="btn" id="bClear">tidy</button>
+  <button class="btn" id="bSweep">clear</button>
   <button class="btn" id="bLog">log</button>
   <button class="btn" id="bMenu" aria-label="more" aria-expanded="false">•••</button>
 </div>
@@ -424,6 +430,7 @@ body.screening #toast,body.screening #found,body.screening #pair{
   <button class="mi" id="bVoice" role="menuitem"><span>🗣</span>Narrator<span class="k">on</span></button>
   <button class="mi" id="bCol" role="menuitem"><span>▦</span>Collection<span class="k">0</span></button>
   <button class="mi" id="bAmb" role="menuitem"><span>🎧</span>Soundscapes<span class="k">0</span></button>
+  <button class="mi" id="bAch" role="menuitem"><span>🏆</span>Achievements<span class="k">0/19</span></button>
   <button class="mi" id="bSort" role="menuitem"><span>↕</span>Order<span class="k">simplest</span></button>
   <button class="mi" id="bMade" role="menuitem"><span>⧉</span>Prefixed things<span class="k">shown</span></button>
   <div class="msep"></div>
@@ -517,6 +524,13 @@ body.screening #toast,body.screening #found,body.screening #pair{
       pins and your rank. The discovery log stays where it was made.</div>
   </div>
   <button class="big ghost" id="bCodeBack" style="margin-top:16px">back</button>
+</div>
+
+<div class="screen" id="scAch">
+  <div class="h1" style="font-size:32px">Achievements</div>
+  <div class="kick" id="achSub">—</div>
+  <div id="achList" class="achwrap"></div>
+  <button class="big" id="bAchBack">back</button>
 </div>
 
 <div class="screen" id="scAmb">
@@ -3007,7 +3021,8 @@ function loreOf(id){
    SAVE
    ═══════════════════════════════════════════════════════════ */
 const KEY="crucible_v1";
-const S={found:{},log:[],fresh:{},miles:{},pins:{},board:[]};
+const S={found:{},log:[],fresh:{},miles:{},pins:{},board:[],made:{},
+  stats:{fusions:0,prefixed:0,hints:0,undos:0,sweeps:0,tidies:0},ach:{}};
 function load(){
   try{
     const r=JSON.parse(localStorage.getItem(KEY)||"null");
@@ -3015,6 +3030,8 @@ function load(){
       S.found=r.found; S.log=r.log||[];
       S.fresh=r.fresh||{}; S.miles=r.miles||{};
       S.pins=r.pins||{}; S.board=Array.isArray(r.board)?r.board:[];
+      S.made=r.made||{}; S.ach=r.ach||{};
+      S.stats=Object.assign({fusions:0,prefixed:0,hints:0,undos:0,sweeps:0,tidies:0},r.stats||{});
     }
   }catch(e){}
   ["water","fire","earth","air"].forEach(k=>S.found[k]=1);
@@ -3022,7 +3039,7 @@ function load(){
 function save(){
   try{ localStorage.setItem(KEY,JSON.stringify(
     {found:S.found,log:S.log.slice(-400),fresh:S.fresh,miles:S.miles,
-     pins:S.pins,board:S.board})); }
+     pins:S.pins,board:S.board,made:S.made,stats:S.stats,ach:S.ach})); }
   catch(e){}
 }
 load();
@@ -3925,15 +3942,25 @@ function doUndo(){
   if(!undoable){ toast("Nothing to undo"); sfx("nope"); return; }
   const u=undoable; undoable=null;
   clearTimeout(undoT); $("undo").classList.remove("show");
+  S.stats.undos++;
+  if(u.sweep){
+    /* the whole table comes back where it was */
+    u.sweep.slice(0,60).forEach((c,i)=>setTimeout(()=>spawn(c.i,{x:c.x,y:c.y}),i*36));
+    sfx("tick"); buzz(10); toast("Back on the table"); checkAch();
+    return;
+  }
   /* the result goes back in the pot; the discovery itself is kept, because
      un-discovering something you already read about would be spiteful */
   const res=chips.find(c=>c.id===u.res&&!c.busy);
   if(res){ ring(res.x,res.y,rgbOf(res.id),52,2,0.36); removeChip(res); }
   spawn(u.a.id,{x:u.a.x,y:u.a.y});
   spawn(u.b.id,{x:u.b.x,y:u.b.y});
-  sfx("tick"); buzz(10); toast("Put back");
+  sfx("tick"); buzz(10); toast("Put back"); checkAch();
 }
 function finishMerge(m){
+  S.made[m.res]=(S.made[m.res]||0)+1;
+  S.stats.fusions++;
+  if(EL[m.res]&&EL[m.res].made) S.stats.prefixed++;
   const rgb=rgbOf(m.res);
   removeChip(m.a); removeChip(m.b);
   const fresh=m.fresh;
@@ -3963,7 +3990,7 @@ function finishMerge(m){
     streak=0; hideStreak(); sfx("merge");
   }
   offerUndo({a:{id:m.a.id,x:m.ax,y:m.ay},b:{id:m.b.id,x:m.bx,y:m.by},res:m.res});
-  updateStats(); touchBoard();
+  updateStats(); touchBoard(); checkAch();
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -4190,7 +4217,76 @@ function importCode(txt){
   (data.m||[]).forEach(m=>{ S.miles[m]=1; });
   ["water","fire","earth","air"].forEach(k=>S.found[k]=1);
   save(); renderPal(); updateStats(); renderAmb(); renderCol(); refreshStart();
+  checkAch();
   return {ok:true,n};
+}
+
+/* ═══════════════════════════════════════════════════════════
+   ACHIEVEMENTS · for doing a thing an unreasonable number of times
+   Counts come from S.made and S.stats, which are lifetime counters —
+   the log is capped at 400 so it cannot be trusted with this job.
+   ═══════════════════════════════════════════════════════════ */
+const GODS=["zeus","thor","odin","loki","anubis","ra","hades","poseidon",
+            "athena","hermes","freya","oracle"];
+const madeN=id=>S.made[id]||0;
+const ACH=[
+  {id:"crab1",  n:"Carcinisation",    g:"🦀", d:"Make your first crab. Everything gets here eventually.", m:()=>[madeN("crab"),1]},
+  {id:"crab50", n:"Crabworthy",       g:"🦀", d:"Collect 50 crabs.",                     m:()=>[madeN("crab"),50]},
+  {id:"steam100",n:"Locomotive",      g:"♨️", d:"Raise 100 steams.",                     m:()=>[madeN("steam"),100]},
+  {id:"dust50", n:"Dust Bunny",       g:"🌫️", d:"Kick up 50 dusts.",                     m:()=>[madeN("dust"),50]},
+  {id:"mud25",  n:"Mudlark",          g:"🟤", d:"Mix 25 muds.",                          m:()=>[madeN("mud"),25]},
+  {id:"gold10", n:"Midas",            g:"🪙", d:"Strike gold 10 times.",                 m:()=>[madeN("gold"),10]},
+  {id:"dragon1",n:"Here Be Dragons",  g:"🐉", d:"Make a dragon.",                        m:()=>[madeN("dragon"),1]},
+  {id:"homer1", n:"Mmm, Fish",        g:"📺", d:"A fish and a lightbulb walk into a power plant.", m:()=>[S.found.homer?1:0,1]},
+  {id:"minion1",n:"Banana Management",g:"🥽", d:"Assemble a Minion.",                    m:()=>[S.found.minion?1:0,1]},
+  {id:"gods12", n:"Full Pantheon",    g:"⚡", d:"Find all twelve gods.",                 m:()=>[GODS.filter(g=>S.found[g]).length,12]},
+  {id:"fuse100",n:"Line Cook",        g:"🍳", d:"A hundred fusions.",                    m:()=>[S.stats.fusions,100]},
+  {id:"fuse1k", n:"Actual Alchemist", g:"⚗️", d:"A thousand fusions.",                   m:()=>[S.stats.fusions,1000]},
+  {id:"pref50", n:"Adjective Abuser", g:"🏷️", d:"Forge 50 prefixed things.",             m:()=>[S.stats.prefixed,50]},
+  {id:"hint10", n:"Just Tell Me",     g:"💡", d:"Take 10 hints.",                        m:()=>[S.stats.hints,10]},
+  {id:"undo10", n:"Second Thoughts",  g:"↶",  d:"Undo 10 fusions.",                      m:()=>[S.stats.undos,10]},
+  {id:"sweep5", n:"Table Manners",    g:"🧹", d:"Clear the table 5 times.",              m:()=>[S.stats.sweeps,5]},
+  {id:"tidy20", n:"Feng Shui",        g:"🧭", d:"Tidy 20 times.",                        m:()=>[S.stats.tidies,20]},
+  {id:"amb10",  n:"Audiophile",       g:"🎧", d:"Unlock every soundscape.",              m:()=>[ambCount(),AMBIENCE.length]},
+  {id:"pin5",   n:"Curator",          g:"★",  d:"Have 5 things pinned at once.",         m:()=>[Object.keys(S.pins).length,5]},
+];
+let achQueue=0;
+function checkAch(){
+  let hit=false;
+  for(const a of ACH){
+    if(S.ach[a.id]) continue;
+    const [cur,goal]=a.m();
+    if(cur<goal) continue;
+    S.ach[a.id]=1; hit=true;
+    /* stagger, in case one fusion lands several at once */
+    const delay=achQueue*1400; achQueue++;
+    setTimeout(()=>{
+      confetti(46); flash([255,207,107],0.5); sfx("mile"); buzz([14,40,16]);
+      toast("🏆 Achievement · "+a.n);
+      say("Achievement. "+a.n+".");
+      achQueue=Math.max(0,achQueue-1);
+    },delay);
+  }
+  if(hit){ save(); renderAchBadge(); }
+}
+function renderAchBadge(){
+  const b=$("bAch");
+  if(b) b.querySelector(".k").textContent=Object.keys(S.ach).length+"/"+ACH.length;
+}
+function renderAch(){
+  renderAchBadge();
+  const done=Object.keys(S.ach).length;
+  $("achSub").textContent=done?done+" of "+ACH.length+" earned":
+    "do things an unreasonable number of times";
+  $("achList").innerHTML=ACH.map((a,i)=>{
+    const got=!!S.ach[a.id];
+    const [cur,goal]=a.m();
+    return '<div class="amb'+(got?" on":" lock")+'" style="cursor:default;animation-delay:'+
+      Math.min(i*22,300)+'ms">'+
+      '<span class="g">'+(got?a.g:"🔒")+'</span>'+
+      '<span class="t"><b>'+a.n+'</b><s>'+a.d+'</s></span>'+
+      '<span class="st">'+(got?"earned":Math.min(cur,goal)+"/"+goal)+'</span></div>';
+  }).join("");
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -4198,15 +4294,40 @@ function importCode(txt){
    ═══════════════════════════════════════════════════════════ */
 let dockOpen=true, curTab="all";
 const ORDERS=[
+  {k:"useful",n:"next finds"},
   {k:"simplest",n:"simplest"},{k:"newest",n:"newest"},
   {k:"az",n:"a–z"},{k:"category",n:"by kind"}];
-let order="simplest", showMade=true;
+let order="useful", showMade=true;
 try{ showMade=localStorage.getItem("crucible_made")!=="0"; }catch(e){}
 try{ const o=localStorage.getItem("crucible_order"); if(o&&ORDERS.some(x=>x.k===o)) order=o; }catch(e){}
+/* how many still-undiscovered things each element can make with what you
+   own right now. This is the answer to "why is my table fifty dusts when
+   I should be using Fire and Water". Cached until the next find. */
+let useKey=-1, useMap={};
+function usefulness(){
+  const n=Object.keys(S.found).length;
+  if(n===useKey) return useMap;
+  const own=ownedIds();
+  const map={};
+  for(let i=0;i<own.length;i++){
+    for(let j=i;j<own.length;j++){
+      const r=combine(own[i],own[j]);
+      if(r&&!S.found[r]){
+        map[own[i]]=(map[own[i]]||0)+1;
+        if(j!==i) map[own[j]]=(map[own[j]]||0)+1;
+      }
+    }
+  }
+  useKey=n; useMap=map;
+  return map;
+}
 function sortIds(ids){
   const E=id=>EL[id], byName=(a,b)=>E(a).n.localeCompare(E(b).n);
   let cmp;
-  if(order==="newest"){
+  if(order==="useful"){
+    const u=usefulness();
+    cmp=(a,b)=>(u[b]||0)-(u[a]||0)||E(a).depth-E(b).depth||byName(a,b);
+  }else if(order==="newest"){
     const seen={}; S.log.forEach((l,i)=>{ seen[l.r]=i; });
     cmp=(a,b)=>(seen[b]==null?-1:seen[b])-(seen[a]==null?-1:seen[a])||byName(a,b);
   }else if(order==="az"){
@@ -4239,6 +4360,7 @@ function visibleIds(){
 }
 function renderPal(){
   const q=$("search").value.trim().toLowerCase();
+  const U=order==="useful"?usefulness():null;
   let ids=sortIds(visibleIds());
   ids.slice(0,220).forEach(needImg);
   if(curTab!=="all") ids=ids.filter(id=>catOf(EL[id])===curTab);
@@ -4248,6 +4370,7 @@ function renderPal(){
     '" data-id="'+id+'" style="--c:'+colOf(id)+
     ';animation-delay:'+Math.min(i*10,320)+'ms">'+
     iconHTML(id)+EL[id].n+(S.pins[id]?'<span class="star">★</span>':"")+
+    (U&&U[id]?'<span class="use">'+U[id]+'</span>':"")+
     '</button>').join("")
     :'<div class="empty">'+(q?'Nothing you own matches “'+q.replace(/</g,"&lt;")+'”.'
         :'Nothing here yet. Try another tab.')+'</div>';
@@ -4334,6 +4457,7 @@ $("bSheetPin").onclick=()=>{
   if(S.pins[sheetId]) delete S.pins[sheetId]; else S.pins[sheetId]=1;
   save(); paintPin(); renderPal(); sfx("tick");
   toast(S.pins[sheetId]?"Pinned to the top":"Unpinned");
+  checkAch();
 };
 $("bSheetPut").onclick=()=>{
   if(!sheetId) return;
@@ -4403,6 +4527,8 @@ $("bCodeLoad").onclick=()=>{
   $("scCode").classList.remove("show");
 };
 $("bAmbBack").onclick=()=>$("scAmb").classList.remove("show");
+$("bAch").onclick=()=>{ setMenu(false); renderAch(); $("scAch").classList.add("show"); sfx("tick"); };
+$("bAchBack").onclick=()=>$("scAch").classList.remove("show");
 $("bSort").onclick=()=>{
   const i=ORDERS.findIndex(o=>o.k===order);
   order=ORDERS[(i+1)%ORDERS.length].k;
@@ -4435,6 +4561,7 @@ $("bClear").onclick=()=>{
     c.y=top+r*rowH;
     c.tsc=1.12; setTimeout(()=>{ c.tsc=1; },150);
   });
+  S.stats.tidies++; checkAch();
   sfx("tick"); toast("Tidied");
 };
 const HINT_MS=60000;
@@ -4449,6 +4576,20 @@ function tickHint(){
   b.classList.add("cool");
 }
 setInterval(tickHint,250); tickHint();
+$("bSweep").onclick=()=>{
+  if(!chips.length){ toast("Nothing on the table"); sfx("nope"); return; }
+  const snap=chips.filter(c=>!c.busy).map(c=>({i:c.id,x:Math.round(c.x),y:Math.round(c.y)}));
+  chips.slice().forEach((c,i)=>{
+    setTimeout(()=>{
+      if(chips.includes(c)){ ring(c.x,c.y,rgbOf(c.id),36,2,0.3); removeChip(c); }
+    },i*28);
+  });
+  S.stats.sweeps++;
+  offerUndo({sweep:snap});
+  sfx("tick"); buzz(8);
+  toast("Swept "+snap.length+" off the table");
+  checkAch();
+};
 $("bHint").onclick=()=>{
   if(hintLeft()>0){
     sfx("nope");
@@ -4458,6 +4599,7 @@ $("bHint").onclick=()=>{
   lastHint=Date.now();
   try{ localStorage.setItem("crucible_hint",String(lastHint)); }catch(e){}
   tickHint();
+  S.stats.hints++; checkAch();
   const own=ownedIds();
   for(let t=0;t<6000;t++){
     const a=own[(Math.random()*own.length)|0], b=own[(Math.random()*own.length)|0];
@@ -4536,9 +4678,12 @@ $("bWipe").onclick=()=>{
   wipeArm=0;
   $("bWipe").innerHTML='<span>⟲</span>Wipe progress';
   S.found={}; S.log=[]; S.fresh={}; S.miles={}; S.pins={}; S.board=[];
+  S.made={}; S.ach={};
+  S.stats={fusions:0,prefixed:0,hints:0,undos:0,sweeps:0,tidies:0};
+  renderAchBadge();
   undoable=null; $("undo").classList.remove("show");
   try{ localStorage.removeItem(KEY); }catch(e){}
-  load(); save(); renderPal(); updateStats(); refreshStart(); renderCol(); renderAmb();
+  load(); save(); renderPal(); updateStats(); refreshStart(); renderAchBadge(); renderCol(); renderAmb();
   chips.slice().forEach(removeChip);
   setMenu(false);
   toast("Back to four elements");
@@ -4567,6 +4712,8 @@ addEventListener("keydown",e=>{
     if(k==="l"){ $("bLog").click(); return; }
     if(k==="m"){ $("bMenu").click(); return; }
     if(k==="c"){ $("bCol").click(); return; }
+    if(k==="x"){ $("bSweep").click(); return; }
+    if(k==="a"){ $("bAch").click(); return; }
   }
   if(e.key==="Escape"){
     setMenu(false);
@@ -4575,6 +4722,7 @@ addEventListener("keydown",e=>{
     $("scAmb").classList.remove("show");
     $("scCol").classList.remove("show");
     $("scCode").classList.remove("show");
+    $("scAch").classList.remove("show");
     hideFound(); hush();
   }
 });
@@ -4593,6 +4741,7 @@ if(photos){ ownedIds().forEach(needImg); pumpImg(); }
 window.CR={EL,RECIPES,MODS,NOUNS,combine,compoundOf,census,CENSUS,S,save,load,
   spawn,chips,renderPal,badRecipes,dupRecipes,classless,TAKES,ALIAS,BOOK,TABLE,
   doUndo,offerUndo,snapBoard,restoreBoard,touchBoard,visibleIds,paintPin,
+  ACH,checkAch,renderAch,usefulness,GODS,
   renderCol,exportCode,importCode,BASE_IDS,encId,decId,
   get undoable(){return undoable;}, get showMade(){return showMade;},
   LORE,loreOf,LOREBOOK,
