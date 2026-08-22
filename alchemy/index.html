@@ -12476,21 +12476,35 @@ load();
    CATEGORIES · colour is how you read the board at a glance
    ═══════════════════════════════════════════════════════════ */
 const CATS=[
-  {id:"all",    n:"All",    c:"#cfc6ee"},
-  {id:"nature", n:"Nature", c:"#5ec8ff"},
-  {id:"life",   n:"Life",   c:"#6ee7a8"},
-  {id:"craft",  n:"Craft",  c:"#ffb35e"},
-  {id:"mind",   n:"Mind",   c:"#c98bff"},
-  {id:"forged", n:"Forged", c:"#ffcf6b"},
+  {id:"all",     n:"All",       c:"#cfc6ee"},
+  {id:"nature",  n:"Nature",    c:"#5ec8ff"},
+  {id:"places",  n:"Places",    c:"#57d4c8"},
+  {id:"animals", n:"Animals",   c:"#6ee7a8"},
+  {id:"plants",  n:"Plants",    c:"#a2d96b"},
+  {id:"people",  n:"People",    c:"#ffb35e"},
+  {id:"myth",    n:"Myth",      c:"#c98bff"},
+  {id:"body",    n:"Body",      c:"#ff8ba7"},
+  {id:"food",    n:"Food",      c:"#ffd36b"},
+  {id:"objects", n:"Objects",   c:"#e6a06b"},
+  {id:"materials",n:"Materials",c:"#a8b6cc"},
+  {id:"ideas",   n:"Ideas",     c:"#8f9bff"},
 ];
 const CATC={}; CATS.forEach(c=>CATC[c.id]=c.c);
 function catOf(e){
   if(!e) return "nature";
-  if(e.made) return "forged";
   const t=e.tags;
-  if(t.includes("life")||t.includes("plant")||t.includes("creature")) return "life";
-  if(t.includes("made")||t.includes("material")||t.includes("artifact")||t.includes("food")) return "craft";
-  if(t.includes("abstract")&&!t.includes("nature")) return "mind";
+  if(t.includes("creature")){
+    if(t.includes("person")) return "people";
+    if(t.includes("mythic")) return "myth";
+    return "animals";
+  }
+  if(t.includes("plant")) return "plants";
+  if(t.includes("food")) return "food";
+  if(t.includes("place")) return "places";
+  if(t.includes("material")) return "materials";
+  if(t.includes("made")||t.includes("artifact")) return "objects";
+  if(t.includes("life")) return "body";
+  if(t.includes("abstract")) return "ideas";
   return "nature";
 }
 const colOf=id=>CATC[catOf(EL[id])]||"#cfc6ee";
@@ -14886,11 +14900,13 @@ function firstPages(j){
 }
 const wq=[], sq=[], wseen={};
 let winflight=0, sinflight=0, wtimer=0;
-function needImg(id){
+function needImg(id,urgent){
   if(!photos) return;
   const t=wikiTitle(id);
   if(!t||Object.prototype.hasOwnProperty.call(IMG,t)||wseen[t]) return;
-  wseen[t]=1; wq.push(t);
+  wseen[t]=1;
+  if(urgent){ wq.unshift(t); clearTimeout(wtimer); pumpImg(); return; }
+  wq.push(t);
   /* let the queue fill for a moment so one request covers the whole
      palette instead of one request per pill */
   clearTimeout(wtimer); wtimer=setTimeout(pumpImg,70);
@@ -14949,7 +14965,9 @@ function iconBigHTML(id){
   const t=wikiTitle(id), u=t&&IMG[t];
   const inner=u?'<img src="'+bigUrl(u)+'" data-fb="'+u+'" alt="" referrerpolicy="no-referrer"'+
     ' onerror="imgBigFail(this)">':'<span class="em">'+EL[id].e+'</span>';
-  return '<span class="ic" data-em="'+EL[id].e+'">'+inner+'</span>';
+  /* keep data-wt so a photo that lands mid-reveal still swaps in */
+  return '<span class="ic" data-em="'+EL[id].e+'"'+
+         (t?' data-wt="'+t.replace(/"/g,"&quot;")+'"':"")+'>'+inner+'</span>';
 }
 function iconHTML(id){
   const t=wikiTitle(id), u=t&&IMG[t];
@@ -14971,7 +14989,11 @@ function paintIcons(t){
   const sel='[data-wt="'+t.replace(/"/g,'\\"')+'"]';
   document.querySelectorAll(sel).forEach(n=>{
     if(n.querySelector("img")) return;
-    n.innerHTML=IMGTAG(u);
+    /* the detail views deserve the big print, not the palette thumb */
+    n.innerHTML=n.closest("#found,#sheet")
+      ?'<img src="'+bigUrl(u)+'" data-fb="'+u+'" alt="" referrerpolicy="no-referrer"'+
+       ' onerror="imgBigFail(this)">'
+      :IMGTAG(u);
   });
 }
 function setPhotos(on){
@@ -15610,6 +15632,8 @@ addEventListener("pointercancel",endDrag);
 function combineLive(a,b){ return combine(a,b); }
 function startMerge(a,b){
   const res=combineLive(a.id,b.id);
+  /* fetch the photograph now, so it beats the reveal card */
+  if(res&&!S.found[res]) needImg(res,true);
   const mx=(a.x+b.x)/2, my=(a.y+b.y)/2;
   if(!res){
     sfx("nope");
@@ -16426,12 +16450,28 @@ $("bSweep").onclick=()=>{
 $("bHint").onclick=()=>{
   S.stats.hints++; checkAch();
   const own=ownedIds();
+  const shuffled=a=>{ a=a.slice(); for(let i=a.length-1;i>0;i--){
+    const j=(Math.random()*(i+1))|0; [a[i],a[j]]=[a[j],a[i]]; } return a; };
+  /* first choice: finish something already sitting on the table */
+  const live=shuffled(chips.filter(c=>!c.busy&&!c.fly));
+  for(const c of live){
+    for(const b of shuffled(own)){
+      const r=combineLive(c.id,b);
+      if(r&&!S.found[r]){
+        toast(EL[c.id].n+" + "+EL[b].n+" → ?");
+        c.el.classList.add("glint");
+        setTimeout(()=>{ if(chips.includes(c)) refreshGlints(); },2600);
+        spawn(b,{x:clamp(c.x+120,40,W-40),y:clamp(c.y,90,H-200)});
+        return;
+      }
+    }
+  }
+  /* empty or exhausted table: fall back to any owned pair */
   for(let t=0;t<6000;t++){
     const a=own[(Math.random()*own.length)|0], b=own[(Math.random()*own.length)|0];
     const r=combineLive(a,b);
     if(r&&!S.found[r]){
       toast(EL[a].n+" + "+EL[b].n+" → ?");
-      /* put them both on the table so the hint is actionable */
       spawn(a,{x:W/2-72,y:H*0.34}); spawn(b,{x:W/2+72,y:H*0.34});
       return;
     }
