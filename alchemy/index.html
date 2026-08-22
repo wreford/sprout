@@ -425,6 +425,7 @@ body.screening #toast,body.screening #found,body.screening #pair{
   <button class="mi" id="bAmb" role="menuitem"><span>🎧</span>Soundscapes<span class="k">0</span></button>
   <button class="mi" id="bAch" role="menuitem"><span>🏆</span>Achievements<span class="k">0/19</span></button>
   <button class="mi" id="bAuto" role="menuitem"><span>🤖</span>Automata<span class="k">0/6</span></button>
+  <button class="mi" id="bRet" role="menuitem"><span>🏁</span>Retired things<span class="k">hidden</span></button>
   <button class="mi" id="bSort" role="menuitem"><span>↕</span>Order<span class="k">simplest</span></button>
   <div class="msep"></div>
   <button class="mi" id="bHelp" role="menuitem"><span>◎</span>Progress &amp; rules</button>
@@ -15154,9 +15155,8 @@ function importCode(txt){
   (data.p||[]).forEach(v=>{ const id=decId(v); if(id) S.pins[id]=1; });
   (data.m||[]).forEach(m=>{ S.miles[m]=1; });
   ["water","fire","earth","air"].forEach(k=>S.found[k]=1);
-  save(); renderPal(); updateStats(); renderAmb(); renderCol(); renderAutoBadge();
-setTimeout(offlineSweep,900);
-setInterval(save,45000); refreshStart();
+  save(); renderPal(); updateStats(); renderAmb(); renderCol();
+  renderAutoBadge(); refreshStart();
   checkAch();
   return {ok:true,n};
 }
@@ -15416,6 +15416,14 @@ function spentMap(){
   return sp;
 }
 let showSpent=false;
+try{ showSpent=localStorage.getItem("crucible_retired")==="1"; }catch(e){}
+function setShowSpent(v){
+  showSpent=v;
+  try{ localStorage.setItem("crucible_retired",v?"1":"0"); }catch(e){}
+  const k=$("bRet")&&$("bRet").querySelector(".k");
+  if(k) k.textContent=v?"shown":"hidden";
+  renderPal();
+}
 function ownedIds(){
   return Object.keys(S.found).filter(id=>EL[id]);
 }
@@ -15441,8 +15449,8 @@ function renderPal(){
   ids.slice(0,220).forEach(needImg);
   if(curTab!=="all") ids=ids.filter(id=>catOf(EL[id])===curTab);
   if(q) ids=ids.filter(id=>EL[id].n.toLowerCase().includes(q));
-  const nSpent=ids.filter(id=>SP[id]&&!S.pins[id]).length;
-  if(!q&&!showSpent) ids=ids.filter(id=>!SP[id]||S.pins[id]);
+  const nSpent=ids.filter(id=>SP[id]&&!S.pins[id]&&!S.fresh[id]).length;
+  if(!q&&!showSpent) ids=ids.filter(id=>!SP[id]||S.pins[id]||S.fresh[id]);
   $("pal").innerHTML=(ids.length?ids.map((id,i)=>
     '<button class="pit'+(S.fresh[id]?" fresh":"")+(S.pins[id]?" pin":"")+
     (SP[id]?" done":"")+
@@ -15457,7 +15465,7 @@ function renderPal(){
       (q?'Nothing you own matches “'+q.replace(/</g,"&lt;")+'”.'
         :'Nothing here yet. Try another tab.')+'</div>');
   const rb=$("pal").querySelector("#palRet");
-  if(rb) rb.onclick=()=>{ showSpent=!showSpent; sfx("tick"); renderPal(); };
+  if(rb) rb.onclick=()=>{ setShowSpent(!showSpent); sfx("tick"); };
   if(!renderPal.wired){
     renderPal.wired=true;
     const pal=$("pal");
@@ -15489,9 +15497,11 @@ function renderPal(){
 }
 function renderRecent(){
   const seen={}, out=[];
+  const SP=spentMap();
   for(let i=S.log.length-1;i>=0&&out.length<7;i--){
     const id=S.log[i].r;
     if(seen[id]||!EL[id]) continue;
+    if(!showSpent&&SP[id]&&!S.fresh[id]&&!S.pins[id]) continue;
     seen[id]=1; out.push(id);
   }
   $("recent").innerHTML=out.map(id=>
@@ -15621,6 +15631,11 @@ $("bCodeLoad").onclick=()=>{
 $("bAmbBack").onclick=()=>$("scAmb").classList.remove("show");
 $("bAch").onclick=()=>{ setMenu(false); renderAch(); $("scAch").classList.add("show"); sfx("tick"); };
 $("bAuto").onclick=()=>{ setMenu(false); renderAuto(); $("scAuto").classList.add("show"); sfx("tick"); };
+$("bRet").onclick=()=>{
+  setShowSpent(!showSpent); sfx("tick");
+  toast(showSpent?"Retired things are back on the shelf"
+               :"Retired things hidden — every blend of theirs is found");
+};
 $("bAutoBack").onclick=()=>$("scAuto").classList.remove("show");
 $("bAchBack").onclick=()=>$("scAch").classList.remove("show");
 $("bSort").onclick=()=>{
@@ -15799,7 +15814,10 @@ $("bSort").querySelector(".k").textContent=ORDERS.find(o=>o.k===order).n;
 renderPal(); updateStats(); refreshStart();
 $("bPhoto").querySelector(".k").textContent=photos?"on":"off";
 setVoice(voiceOn);
-renderAmb(); renderCol();
+renderAmb(); renderCol(); renderAutoBadge();
+$("bRet").querySelector(".k").textContent=showSpent?"shown":"hidden";
+setTimeout(offlineSweep,900);
+setInterval(save,45000);
 if(photos){ ownedIds().forEach(needImg); pumpImg(); }
 
 window.CR={EL,RECIPES,MODS,NOUNS,combine,compoundOf,census,CENSUS,S,save,load,
@@ -15807,7 +15825,7 @@ window.CR={EL,RECIPES,MODS,NOUNS,combine,compoundOf,census,CENSUS,S,save,load,
   snapBoard,restoreBoard,touchBoard,visibleIds,paintPin,refreshGlints,
   ACH,checkAch,renderAch,usefulness,GODS,
   AUTOMATA,autoUnlocked,autoAttempt,smartAttempt,autoFind,offlineSweep,renderAuto,spentMap,
-  get showSpent(){return showSpent;}, set showSpent(v){showSpent=v;},
+  get showSpent(){return showSpent;}, set showSpent(v){showSpent=v;}, setShowSpent,
   renderCol,exportCode,importCode,BASE_IDS,encId,decId,
   LORE,loreOf,LOREBOOK,
   IMG,WIKI,wikiTitle,needImg,pumpImg,pumpSearch,iconHTML,paintIcons,setPhotos,imgFail,
