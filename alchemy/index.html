@@ -101,6 +101,28 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);
   color:var(--dim);line-height:1.5;white-space:nowrap;overflow:hidden}
 #stats b{color:var(--acc2);font-variant-numeric:tabular-nums}
 #stats i.tot{font-style:normal}
+#rbSearch{width:min(470px,94vw);margin-top:14px;padding:13px 18px;border-radius:100px;
+  border:1px solid var(--line);background:rgba(255,255,255,.06);color:var(--text);
+  font-family:var(--sans);font-size:15px;outline:none}
+#rbSearch:focus{border-color:color-mix(in srgb,var(--acc2) 55%,transparent)}
+.rbrow{border:1px solid var(--line);background:rgba(255,255,255,.045);border-radius:15px;
+  padding:12px 14px;text-align:left;animation:pit .3s cubic-bezier(.2,1.3,.4,1) backwards}
+.rbrow .rbhead{display:flex;align-items:center;gap:10px;font-size:15px;font-weight:800}
+.rbrow .rbhead .st{margin-left:auto;font-size:9px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--ok);font-weight:800}
+.rbrow .rbhead .st.miss{color:var(--dim)}
+.rbrec{display:flex;align-items:center;gap:8px;margin-top:9px;flex-wrap:wrap}
+.rbrec s{text-decoration:none;color:var(--dim);font-weight:800}
+.rbi{display:inline-flex;align-items:center;gap:7px;padding:5px 12px 5px 7px;border-radius:100px;
+  border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.03);color:var(--dim);
+  font-family:var(--sans);font-size:12.5px;font-weight:650;cursor:pointer}
+.rbi.got{color:var(--text);border-color:color-mix(in srgb,var(--ok) 45%,transparent)}
+.rbi .ic{width:22px;height:22px}
+.rbi .ic img{width:22px;height:22px;border-radius:6px}
+.rbi .em{font-size:16px}
+.rbgo{margin-left:auto;padding:5px 13px;border-radius:100px;border:1px solid var(--line);
+  background:rgba(110,231,168,.12);color:var(--ok);font-family:var(--sans);
+  font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;cursor:pointer}
 @media (max-width:520px){
   .btn{padding:6px 8px;font-size:9px;letter-spacing:.05em}
   .brand{font-size:12px;letter-spacing:.09em}
@@ -437,6 +459,7 @@ body.screening #toast,body.screening #found,body.screening #pair{
   <button class="mi" id="bAch" role="menuitem"><span>🏆</span>Achievements<span class="k">0/19</span></button>
   <button class="mi" id="bAuto" role="menuitem"><span>🤖</span>Automata<span class="k">0/6</span></button>
   <button class="mi" id="bRet" role="menuitem"><span>🏁</span>Retired things<span class="k">hidden</span></button>
+  <button class="mi" id="bBook" role="menuitem"><span>📖</span>Recipe book</button>
   <button class="mi" id="bSort" role="menuitem"><span>↕</span>Order<span class="k">simplest</span></button>
   <div class="msep"></div>
   <button class="mi" id="bHelp" role="menuitem"><span>◎</span>Progress &amp; rules</button>
@@ -542,6 +565,14 @@ body.screening #toast,body.screening #found,body.screening #pair{
   <div class="kick" id="autoSub">they blend while you sleep</div>
   <div id="autoList" class="achwrap"></div>
   <button class="big" id="bAutoBack">back</button>
+</div>
+
+<div class="screen" id="scBook">
+  <div class="h1" style="font-size:32px">Recipe Book</div>
+  <div class="kick">type anything — even things you have not found yet</div>
+  <input id="rbSearch" autocomplete="off" spellcheck="false" placeholder="what do you want to make?">
+  <div id="rbList" class="achwrap"></div>
+  <button class="big" id="bBookBack">back</button>
 </div>
 
 <div class="screen" id="scAmb">
@@ -16056,6 +16087,57 @@ function renderAuto(){
       '</s></div><span class="st">'+(on?"working":"locked")+'</span></div>';
   }).join("");
 }
+/* ═══════════════════════════════════════════════════════════
+   RECIPE BOOK · type a name, see how it is made — found or not
+   ═══════════════════════════════════════════════════════════ */
+let RECOF=null;
+function recipesFor(id){
+  if(!RECOF){
+    RECOF={};
+    for(const k in RECIPES){
+      const r=RECIPES[k], i=k.indexOf("+");
+      (RECOF[r]=RECOF[r]||[]).push([k.slice(0,i),k.slice(i+1)]);
+    }
+  }
+  return RECOF[id]||[];
+}
+function renderBook(){
+  const q=$("rbSearch").value.trim().toLowerCase();
+  const L=$("rbList");
+  if(!q){
+    L.innerHTML='<div class="empty">Try “crowd”, “semen”, “uranus”, “dad bod”…</div>';
+    return;
+  }
+  const base=Object.values(EL).filter(e=>!e.made&&e.n.toLowerCase().includes(q));
+  base.sort((a,b)=>a.n.toLowerCase().indexOf(q)-b.n.toLowerCase().indexOf(q)
+    ||a.n.length-b.n.length||a.n.localeCompare(b.n));
+  const hits=base.slice(0,20);
+  hits.forEach(e=>{ needImg(e.id); recipesFor(e.id).slice(0,3).forEach(([a,b])=>{ needImg(a); needImg(b); }); });
+  const ing=id=>'<button class="rbi'+(S.found[id]?" got":"")+'" data-go="'+id+'">'+
+    iconHTML(id)+EL[id].n+'</button>';
+  L.innerHTML=hits.length?hits.map(e=>{
+    const ownScore=([a,b])=>(S.found[a]?1:0)+(S.found[b]?1:0);
+    const recs=recipesFor(e.id).slice()
+      .sort((x,y)=>ownScore(y)-ownScore(x)).slice(0,3);
+    const rows=recs.length?recs.map(([a,b])=>
+      '<div class="rbrec">'+ing(a)+'<s>+</s>'+ing(b)+
+      (S.found[a]&&S.found[b]?'<button class="rbgo" data-a="'+a+'" data-b="'+b+'">place</button>':"")+
+      '</div>').join("")
+      :'<div class="rbrec"><s>one of the four you start with</s></div>';
+    return '<div class="rbrow'+(S.found[e.id]?" got":"")+'"><div class="rbhead">'+
+      iconHTML(e.id)+'<b>'+e.n+'</b><span class="st'+(S.found[e.id]?"":" miss")+'">'+
+      (S.found[e.id]?"found":"not yet")+'</span></div>'+rows+'</div>';
+  }).join(""):'<div class="empty">Nothing is called that.</div>';
+  L.querySelectorAll(".rbi").forEach(b=>b.onclick=()=>{
+    $("rbSearch").value=EL[b.dataset.go].n; renderBook(); sfx("tick");
+  });
+  L.querySelectorAll(".rbgo").forEach(b=>b.onclick=()=>{
+    $("scBook").classList.remove("show");
+    spawn(b.dataset.a,{x:W/2-72,y:H*0.34});
+    spawn(b.dataset.b,{x:W/2+72,y:H*0.34});
+    sfx("tick"); toast("On the table — put them together");
+  });
+}
 const GODS=["zeus","thor","odin","loki","anubis","ra","hades","poseidon",
             "athena","hermes","freya","oracle"];
 const madeN=id=>S.made[id]||0;
@@ -16410,6 +16492,13 @@ $("bCodeLoad").onclick=()=>{
 $("bAmbBack").onclick=()=>$("scAmb").classList.remove("show");
 $("bAch").onclick=()=>{ setMenu(false); renderAch(); $("scAch").classList.add("show"); sfx("tick"); };
 $("bAuto").onclick=()=>{ setMenu(false); renderAuto(); $("scAuto").classList.add("show"); sfx("tick"); };
+$("bBook").onclick=()=>{
+  setMenu(false); $("scBook").classList.add("show");
+  renderBook(); sfx("tick");
+  setTimeout(()=>$("rbSearch").focus(),250);
+};
+$("bBookBack").onclick=()=>$("scBook").classList.remove("show");
+$("rbSearch").addEventListener("input",renderBook);
 $("bRet").onclick=()=>{
   setShowSpent(!showSpent); sfx("tick");
   toast(showSpent?"Retired things are back on the shelf"
