@@ -1,4 +1,3 @@
-// structural health: dup recipe pairs, census, reachability, boot errors
 const { chromium } = require('playwright');
 (async () => {
   const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });

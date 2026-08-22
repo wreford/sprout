@@ -1,5 +1,3 @@
-// recipe vetter: checks a candidate list against the live engine.
-// usage: node vet.cjs candidates.txt  → writes recipes-good.txt
 const { chromium } = require('playwright');
 const fs = require('fs');
 (async () => {

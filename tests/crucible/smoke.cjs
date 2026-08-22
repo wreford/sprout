@@ -1,4 +1,3 @@
-// quick end-to-end smoke: boot, fuse, hint, toggles, automata, codes
 const { chromium } = require('playwright');
 (async () => {
   const errs=[];
