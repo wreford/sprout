@@ -4688,8 +4688,8 @@ function renderDeliver(){
     </div>` : '';
   const isVirtual = cart.sendMode === 'virtual';
   $('wizBody').innerHTML = `
-    <h1 class="wiz-title">${isVirtual ? 'Send them a <span class="p">link</span>.' : 'Where to <span class="p">mail it</span>.'}</h1>
-    <p class="wiz-sub">${isVirtual ? 'Free. Shareable link. Works anywhere.' : 'Canada or US. Postage in.'}</p>
+    <h1 class="wiz-title">${isVirtual ? 'Send them a <span class="p">PDF</span>.' : 'Where to <span class="p">mail it</span>.'}</h1>
+    <p class="wiz-sub">${isVirtual ? 'Free. A one-page PDF you text, email, or AirDrop.' : 'Canada or US. Postage in.'}</p>
     <div class="send-mode" role="tablist">
       <button data-sm="physical" class="${!isVirtual?'on':''}" role="tab" aria-selected="${!isVirtual}">
         <span class="k">Physical</span>
@@ -4697,13 +4697,13 @@ function renderDeliver(){
       </button>
       <button data-sm="virtual" class="${isVirtual?'on':''}" role="tab" aria-selected="${isVirtual}">
         <span class="k">Virtual</span>
-        <span class="t">Shareable link. <strong style="color:var(--yellow)">Free</strong></span>
+        <span class="t">One-page PDF. <strong style="color:var(--yellow)">Free</strong></span>
       </button>
     </div>
     ${isVirtual ? '' : `<div class="country-toggle" id="ctry"><button data-c="CA" class="${r.country==='CA'?'on':''}">Canada</button><button data-c="US" class="${r.country==='US'?'on':''}">United States</button></div>`}
     ${isVirtual ? `
     <div class="virtual-block">
-      <div class="v-badge">Free · shareable link · no address needed</div>
+      <div class="v-badge">Free · one-page PDF · no address needed</div>
       <div class="field"><div class="lbl">From (your name)</div><input id="dSender" placeholder="Alex" value="${escapeHtml(cart.sender)}"></div>
       <div class="field"><div class="lbl">Recipient's first name <span style="color:var(--muted);font-weight:500">· goes on the envelope in the viewer</span></div><input id="dName" placeholder="Sam" value="${escapeHtml(r.name)}"></div>
       <div class="v-hint">You'll get a link to send. Text it, email it, DM it — it opens the card in a browser with a wax-sealed envelope opening animation. Recipients can send one back for free too.</div>
@@ -5156,9 +5156,9 @@ function decodeVirtualUrl(){
    still functions online. */
 async function imageToDataURL(url){
   if (!url || url.startsWith('data:')) return url;
-  try {
-    const r = await fetch(url, { mode: 'cors', cache: 'force-cache' });
-    if (!r.ok) return url;
+  const grab = async (u) => {
+    const r = await fetch(u, { mode: 'cors', cache: 'force-cache' });
+    if (!r.ok) throw new Error('http ' + r.status);
     const blob = await r.blob();
     return await new Promise((res, rej) => {
       const fr = new FileReader();
@@ -5166,13 +5166,19 @@ async function imageToDataURL(url){
       fr.onerror = rej;
       fr.readAsDataURL(blob);
     });
-  } catch(_){ return url; }
+  };
+  try { return await grab(url); } catch(_){}
+  /* Museums that skip CORS headers (the Met, some CDNs) tank the direct fetch,
+     which used to leave the PDF with an ART · COULDN'T EMBED panel. Re-fetch
+     through the weserv image proxy, which serves everything with CORS on. */
+  try {
+    if (/^https?:\/\//i.test(url)){
+      return await grab('https://images.weserv.nl/?url=' + encodeURIComponent(url.replace(/^https?:\/\//i, '')));
+    }
+  } catch(_){}
+  return url;
 }
 
-/* Build a fully self-contained HTML one-pager for the virtual card.
-   Everything is inlined — art image as a data URI, all CSS in a <style> block,
-   all interaction in a small <script>. The file opens in any browser, works
-   offline, and doesn't rot if the museum API URL later moves or expires. */
 /* Wrap a JPEG blob in a minimal single-page PDF. No library — pure bytes.
    PDF 1.4, one page, one embedded JPEG via DCTDecode. */
 async function jpegBlobToPDF(jpegBlob, pdfW = 612, pdfH = 792){
@@ -5239,6 +5245,13 @@ async function jpegBlobToPDF(jpegBlob, pdfW = 612, pdfH = 792){
    kardigram.co footer. No JavaScript in the output. The recipient just opens the
    PDF anywhere and reads it. */
 async function makeVirtualPDF(){
+  // Make sure the display faces are actually loaded before we draw them into
+  // the canvas — otherwise the first PDF of a session renders in Times.
+  try {
+    await Promise.all(['600 44px Caveat', '700 46px Caveat', 'italic 500 62px Sora',
+      '900 italic 44px Sora', '700 16px "JetBrains Mono"', '800 20px "JetBrains Mono"']
+      .map(f => document.fonts.load(f)));
+  } catch(_){}
   // Fetch + base64 the art. If fetch fails (CORS), we get back the raw URL —
   // drawing that into canvas would taint it and blow up toBlob later. So we
   // only draw when we know we have a safe data URL.
@@ -5311,6 +5324,9 @@ async function makeVirtualPDF(){
   ctx.font = '600 44px Caveat, cursive';
   ctx.textAlign = 'left';
   // Word-wrap the message
+  // Word-wrap, but never run the note into the signature or the footer — a
+  // long message ellipsizes on its last visible line instead of overprinting.
+  const noteMaxY = H - 380;
   const wrapText = (text, x, y, maxWidth, lineHeight) => {
     const paras = text.split('\n');
     for (const para of paras){
@@ -5319,6 +5335,7 @@ async function makeVirtualPDF(){
       for (const w of words){
         const test = line ? line + ' ' + w : w;
         if (ctx.measureText(test).width > maxWidth){
+          if (y + lineHeight > noteMaxY){ ctx.fillText(line.replace(/.{2}$/, '') + '…', x, y); return y + lineHeight; }
           ctx.fillText(line, x, y);
           y += lineHeight;
           line = w;
@@ -5326,7 +5343,10 @@ async function makeVirtualPDF(){
           line = test;
         }
       }
-      if (line) { ctx.fillText(line, x, y); y += lineHeight; }
+      if (line) {
+        if (y + lineHeight > noteMaxY){ ctx.fillText(line, x, y); return y + lineHeight; }
+        ctx.fillText(line, x, y); y += lineHeight;
+      }
     }
     return y;
   };
@@ -5335,7 +5355,7 @@ async function makeVirtualPDF(){
   ctx.textAlign = 'right';
   ctx.fillStyle = '#7a1418';
   ctx.font = '700 46px Caveat, cursive';
-  ctx.fillText('— ' + senderName, W - 100, Math.max(msgY + 40, H - 320));
+  ctx.fillText('— ' + senderName, W - 100, Math.min(Math.max(msgY + 40, H - 320), H - 250));
   // Doodle (if picked) — small hand-drawn stroke bottom-left of the note area
   if (doodle && doodle.svg){
     // Fake-render doodle-ish placeholder — draw a simple pen dot cluster instead
@@ -5385,114 +5405,6 @@ async function makeVirtualPDF(){
   }
   if (!jpegBlob) throw new Error('canvas export failed');
   return jpegBlobToPDF(jpegBlob);
-}
-
-async function makeVirtualHTML(){
-  const artDataUrl = await imageToDataURL(cart.designImg || '');
-  const doodle = (typeof currentDoodle === 'function') ? currentDoodle() : null;
-  const senderName = (cart.sender || 'A friend').trim();
-  const recipName = (cart.recipient?.name || 'You').trim();
-  const headline = cart.frontHeadline || (typeof occ === 'function' && occ(cart.occasion)?.tag) || '';
-  const msg = cart.message || '';
-  const artist = cart.designArtist || 'Public domain';
-  const title = cart.designTitle || 'Untitled';
-  const attach = cart.attachUrl || '';
-  const yr = new Date().getFullYear();
-  const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-  const doodleBlock = doodle ? `<div class="doodle" aria-hidden="true"><svg viewBox="0 0 48 48" width="64" height="64">${doodle.svg}</svg></div>` : '';
-  const attachBlock = attach && /^https?:/.test(attach) ? `<a class="attach" href="${esc(attach)}" target="_blank" rel="noopener">Open the link they attached</a>` : '';
-  return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>${esc(senderName)} sent you a card · kardigram</title>
-<meta name="theme-color" content="#1a1c20">
-<meta property="og:title" content="${esc(senderName)} sent you a card">
-<meta property="og:description" content="${esc(headline || 'A kardigram just for you.')}">
-<meta property="og:type" content="website">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Sora:ital,wght@0,700;0,900;1,700&family=Caveat:wght@600;700&family=JetBrains+Mono:wght@700&family=Bagel+Fat+One&display=swap" rel="stylesheet">
-<style>
-*{box-sizing:border-box;margin:0;padding:0}
-html,body{background:radial-gradient(ellipse at 50% 30%,rgba(255,61,107,.05) 0%,transparent 60%),linear-gradient(180deg,#23262c 0%,#1a1c20 100%);color:#eef0f4;font-family:'Sora',sans-serif;min-height:100dvh;overflow:hidden}
-body{display:flex;flex-direction:column}
-.stage{flex:1;display:flex;align-items:center;justify-content:center;padding:calc(env(safe-area-inset-top) + 40px) 24px 20px;position:relative;touch-action:manipulation;cursor:pointer}
-.envelope{position:relative;width:min(340px,82vw);aspect-ratio:5/3.3;perspective:900px;cursor:pointer;touch-action:manipulation;filter:drop-shadow(0 30px 60px rgba(0,0,0,.55));transition:transform .4s cubic-bezier(.34,1.56,.64,1),opacity .3s ease}
-.envelope .body{position:absolute;inset:0;background:linear-gradient(160deg,#faf6ec,#ede4d1);border-radius:6px;box-shadow:inset 0 0 0 1.5px rgba(26,28,32,.14)}
-.envelope .body .to{position:absolute;left:0;right:0;bottom:14%;font-family:'Sora',sans-serif;font-style:italic;font-size:22px;color:#3a1e04;letter-spacing:-.005em;text-align:center;line-height:1.15;padding:0 24px}
-.envelope .flap{position:absolute;top:0;left:0;right:0;height:60%;background:linear-gradient(180deg,#e2d2af,#c9b78e);clip-path:polygon(0 0,100% 0,50% 100%);transform-origin:top center;transition:transform .9s cubic-bezier(.2,.9,.35,1);z-index:3;box-shadow:0 4px 10px rgba(0,0,0,.14)}
-.envelope .seal{position:absolute;left:50%;top:52%;transform:translate(-50%,-50%);width:60px;height:60px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#ff6b8f 0%,#d3373c 55%,#7a1418 100%);color:#fff;font-family:'Bagel Fat One',cursive;font-size:28px;display:flex;align-items:center;justify-content:center;z-index:4;box-shadow:0 6px 18px rgba(0,0,0,.42),inset 0 0 12px rgba(0,0,0,.35);transition:transform .4s cubic-bezier(.2,.9,.35,1),opacity .3s ease}
-.opened .envelope{transform:translateY(140px) scale(.4);opacity:.24}
-.opened .envelope .flap{transform:rotateX(180deg)}
-.opened .envelope .seal{opacity:0;transform:translate(-50%,-50%) scale(1.6)}
-.card{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) translateY(20px) scale(.85);width:min(360px,84vw);aspect-ratio:5/7;border-radius:12px;overflow:hidden;background:#2c3037;opacity:0;pointer-events:none;box-shadow:0 40px 90px -20px rgba(0,0,0,.7),0 0 0 1px rgba(220,225,235,.12);transition:transform .7s cubic-bezier(.34,1.56,.64,1) .25s,opacity .4s ease .25s}
-.opened .card{transform:translate(-50%,-50%) translateY(0) scale(1);opacity:1;pointer-events:auto}
-.front{position:relative;width:100%;height:60%;background:#0d0f13}
-.front img{width:100%;height:100%;object-fit:cover;display:block}
-.headline{position:absolute;left:16px;right:16px;bottom:14px;font-family:'Sora',sans-serif;font-style:italic;font-size:24px;color:#f0f2f6;letter-spacing:-.005em;line-height:1.15;text-shadow:0 2px 12px rgba(0,0,0,.7)}
-.inside{padding:20px 22px 22px;background:linear-gradient(180deg,#f6ead4,#efe1c2);height:40%;color:#1a1a24;display:flex;flex-direction:column;justify-content:space-between;position:relative}
-.note{font-family:'Caveat',cursive;font-size:22px;line-height:1.35;white-space:pre-wrap;color:#2a2216;font-weight:600}
-.sig{font-family:'Caveat',cursive;font-size:22px;color:#7a1418;text-align:right;font-weight:700;margin-top:8px}
-.doodle{position:absolute;right:16px;bottom:14px;color:#7a1418;opacity:.85}
-.caption{text-align:center;font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:#8c919c;font-weight:700;padding:0 20px 12px;transition:opacity .3s ease}
-.opened .caption{opacity:0;pointer-events:none}
-.actions{display:flex;flex-direction:column;align-items:center;gap:14px;padding:0 20px calc(env(safe-area-inset-bottom) + 20px);opacity:0;pointer-events:none;transition:opacity .4s ease .8s}
-.opened .actions{opacity:1;pointer-events:auto}
-.cta{display:inline-flex;align-items:center;gap:8px;padding:14px 22px;border-radius:100px;background:#ff3d6b;color:#fff;text-decoration:none;font-family:'JetBrains Mono',monospace;font-size:11.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;box-shadow:0 12px 28px -8px rgba(255,61,107,.55);transition:transform .16s cubic-bezier(.34,1.56,.64,1)}
-.cta:hover{transform:translateY(-2px)}
-.attach{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#f6c94a;font-weight:700;text-decoration:underline}
-.branding{font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:.16em;color:#5a5f6a;text-transform:uppercase;font-weight:700}
-.branding a{color:#8c919c;text-decoration:none}
-.branding a:hover{color:#f6c94a}
-.credit{font-family:'JetBrains Mono',monospace;font-size:8.5px;letter-spacing:.14em;color:rgba(26,26,36,.5);text-transform:uppercase;font-weight:700;position:absolute;left:16px;bottom:4px}
-</style></head>
-<body>
-<div class="stage">
-  <div class="envelope" id="env" tabindex="0" role="button" aria-label="Envelope containing the card">
-    <div class="flap"></div>
-    <div class="body"><div class="to">To ${esc(recipName)}</div></div>
-    <div class="seal">k</div>
-  </div>
-  <div class="card">
-    <div class="front">
-      <img src="${esc(artDataUrl)}" alt="${esc(title)}">
-      <div class="headline">${esc(headline)}</div>
-    </div>
-    <div class="inside">
-      <div class="note">${esc(msg)}</div>
-      <div class="sig">— ${esc(senderName)}</div>
-      ${doodleBlock}
-      <div class="credit">${esc(title)} · ${esc(artist)}</div>
-    </div>
-  </div>
-</div>
-<div class="caption">Tap the envelope</div>
-<div class="actions">
-  <a class="cta" href="https://kardigram.co/">Send them one back — free →</a>
-  ${attachBlock}
-  <div class="branding"><a href="https://kardigram.co/" target="_blank" rel="noopener">Made with kardigram.co · ${yr}</a></div>
-</div>
-<script>
-(function(){
-  var body = document.body;
-  var env = document.getElementById('env');
-  var opened = false;
-  function open(){
-    if (opened) return;
-    opened = true;
-    body.classList.add('opened');
-    try { navigator.vibrate && navigator.vibrate([25,20,40]); } catch(_){}
-  }
-  // ANY tap anywhere opens the envelope. touchstart for old iOS, pointerdown
-  // for modern touch, click for keyboard/mouse. All bound on document so the
-  // caption "Tap the envelope" (or literally any pixel) also fires it.
-  ['touchstart','pointerdown','click'].forEach(function(evt){
-    document.addEventListener(evt, open, { passive: true });
-  });
-  env.addEventListener('keydown', function(e){ if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
-  setTimeout(open, 6000);
-})();
-<\/script>
-</body></html>`;
 }
 
 function openVirtualShare({ pdfBlob, senderName }){
