@@ -3477,8 +3477,227 @@ function wxCode(code){
   if (code <= 99) return 'STRM';
   return '—';
 }
-function qrURL(text, size=200){
-  return `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(text || 'hello from kardigram')}&margin=6&color=0e0d0c&bgcolor=fbfaf5`;
+/* Minimal QR encoder — byte mode, EC level M, versions 1-10, auto mask. */
+const QR_BLOCKS = {
+  1:[[1,26,16]], 2:[[1,44,28]], 3:[[1,70,44]], 4:[[2,50,32]], 5:[[2,67,43]],
+  6:[[4,43,27]], 7:[[4,49,31]], 8:[[2,60,38],[2,61,39]], 9:[[3,58,36],[2,59,37]],
+  10:[[4,69,43],[1,70,44]]
+};
+const QR_ALIGN = { 1:[],2:[6,18],3:[6,22],4:[6,26],5:[6,30],6:[6,34],7:[6,22,38],8:[6,24,42],9:[6,26,46],10:[6,28,50] };
+const GF_EXP = new Uint8Array(512), GF_LOG = new Uint8Array(256);
+(function(){
+  let x = 1;
+  for (let i = 0; i < 255; i++){
+    GF_EXP[i] = x; GF_LOG[x] = i;
+    x <<= 1; if (x & 0x100) x ^= 0x11d;
+  }
+  for (let i = 255; i < 512; i++) GF_EXP[i] = GF_EXP[i - 255];
+})();
+function gfMul(a, b){ return (a && b) ? GF_EXP[GF_LOG[a] + GF_LOG[b]] : 0; }
+function rsGen(n){
+  let g = [1];
+  for (let i = 0; i < n; i++){
+    const ng = new Array(g.length + 1).fill(0);
+    for (let j = 0; j < g.length; j++){
+      ng[j] ^= gfMul(g[j], GF_EXP[i]);
+      ng[j + 1] ^= g[j];
+    }
+    g = ng;
+  }
+  return g.reverse();
+}
+function rsEC(data, n){
+  const gen = rsGen(n);
+  const res = new Uint8Array(data.length + n);
+  res.set(data);
+  for (let i = 0; i < data.length; i++){
+    const f = res[i];
+    if (!f) continue;
+    for (let j = 1; j < gen.length; j++) res[i + j] ^= gfMul(gen[j], f);
+  }
+  return res.slice(data.length);
+}
+function bch(value, poly, shift){
+  let v = value << shift;
+  const deg = 32 - Math.clz32(poly);
+  while (v && (32 - Math.clz32(v)) >= deg) v ^= poly << ((32 - Math.clz32(v)) - deg);
+  return v;
+}
+function qrModules(text){
+  const bytes = [];
+  const enc = unescape(encodeURIComponent(String(text)));
+  for (let i = 0; i < enc.length; i++) bytes.push(enc.charCodeAt(i) & 0xff);
+  let ver = 0, dataCap = 0;
+  for (let v = 1; v <= 10; v++){
+    const cap = QR_BLOCKS[v].reduce((s, [n, , d]) => s + n * d, 0) - (v >= 10 ? 3 : 2);
+    if (bytes.length <= cap){ ver = v; dataCap = QR_BLOCKS[v].reduce((s, [n, , d]) => s + n * d, 0); break; }
+  }
+  if (!ver) return null;
+  const bits = [];
+  const put = (val, n) => { for (let i = n - 1; i >= 0; i--) bits.push((val >> i) & 1); };
+  put(4, 4);
+  put(bytes.length, ver >= 10 ? 16 : 8);
+  bytes.forEach(b => put(b, 8));
+  put(0, Math.min(4, dataCap * 8 - bits.length));
+  while (bits.length % 8) bits.push(0);
+  const data = [];
+  for (let i = 0; i < bits.length; i += 8){
+    let b = 0;
+    for (let j = 0; j < 8; j++) b = (b << 1) | bits[i + j];
+    data.push(b);
+  }
+  const pads = [0xec, 0x11];
+  let pi = 0;
+  while (data.length < dataCap) data.push(pads[(pi++) % 2]);
+  const blocks = [], ecs = [];
+  let off = 0;
+  for (const [n, total, dlen] of QR_BLOCKS[ver]){
+    for (let b = 0; b < n; b++){
+      const d = new Uint8Array(data.slice(off, off + dlen));
+      off += dlen;
+      blocks.push(d);
+      ecs.push(rsEC(d, total - dlen));
+    }
+  }
+  const stream = [];
+  const maxD = Math.max(...blocks.map(b => b.length));
+  for (let i = 0; i < maxD; i++) for (const b of blocks) if (i < b.length) stream.push(b[i]);
+  const maxE = Math.max(...ecs.map(b => b.length));
+  for (let i = 0; i < maxE; i++) for (const e of ecs) if (i < e.length) stream.push(e[i]);
+  const size = 17 + ver * 4;
+  const M = Array.from({length: size}, () => new Int8Array(size).fill(-1));
+  const setF = (r, c, v) => { if (r >= 0 && r < size && c >= 0 && c < size) M[r][c] = v; };
+  const finder = (r, c) => {
+    for (let dr = -1; dr <= 7; dr++) for (let dc = -1; dc <= 7; dc++){
+      const inRing = dr >= 0 && dr <= 6 && dc >= 0 && dc <= 6 &&
+        (dr === 0 || dr === 6 || dc === 0 || dc === 6 || (dr >= 2 && dr <= 4 && dc >= 2 && dc <= 4));
+      setF(r + dr, c + dc, inRing ? 1 : 0);
+    }
+  };
+  finder(0, 0); finder(0, size - 7); finder(size - 7, 0);
+  const al = QR_ALIGN[ver];
+  for (const r of al) for (const c of al){
+    if (M[r][c] !== -1) continue;
+    for (let dr = -2; dr <= 2; dr++) for (let dc = -2; dc <= 2; dc++)
+      setF(r + dr, c + dc, (Math.max(Math.abs(dr), Math.abs(dc)) !== 1) ? 1 : 0);
+  }
+  for (let i = 8; i < size - 8; i++){
+    if (M[6][i] === -1) M[6][i] = (i % 2) ? 0 : 1;
+    if (M[i][6] === -1) M[i][6] = (i % 2) ? 0 : 1;
+  }
+  M[size - 8][8] = 1;
+  const fmtPos = [];
+  for (let i = 0; i <= 5; i++) fmtPos.push([8, i]);
+  fmtPos.push([8, 7], [8, 8], [7, 8]);
+  for (let i = 5; i >= 0; i--) fmtPos.push([i, 8]);
+  const fmtPos2 = [];
+  for (let i = 0; i < 7; i++) fmtPos2.push([size - 1 - i, 8]);
+  for (let i = 0; i < 8; i++) fmtPos2.push([8, size - 8 + i]);
+  fmtPos.forEach(([r, c]) => { if (M[r][c] === -1) M[r][c] = 0; });
+  fmtPos2.forEach(([r, c]) => { if (M[r][c] === -1) M[r][c] = 0; });
+  if (ver >= 7){
+    const vi = (ver << 12) | bch(ver, 0x1f25, 12);
+    for (let i = 0; i < 18; i++){
+      const b = (vi >> i) & 1;
+      M[Math.floor(i / 3)][size - 11 + (i % 3)] = b;
+      M[size - 11 + (i % 3)][Math.floor(i / 3)] = b;
+    }
+  }
+  const reserved = M.map(row => row.map(v => v !== -1));
+  let col = size - 1, row = size - 1, dir = -1, bi = 0;
+  const totBits = stream.length * 8;
+  while (col > 0){
+    if (col === 6) col--;
+    while (row >= 0 && row < size){
+      for (const c of [col, col - 1]){
+        if (M[row][c] !== -1) continue;
+        const bit = bi < totBits ? (stream[bi >> 3] >> (7 - (bi & 7))) & 1 : 0;
+        bi++;
+        M[row][c] = bit;
+      }
+      row += dir;
+    }
+    row -= dir; dir = -dir; col -= 2;
+  }
+  const maskFn = [
+    (r, c) => (r + c) % 2 === 0,
+    (r, c) => r % 2 === 0,
+    (r, c) => c % 3 === 0,
+    (r, c) => (r + c) % 3 === 0,
+    (r, c) => (Math.floor(r / 2) + Math.floor(c / 3)) % 2 === 0,
+    (r, c) => (r * c) % 2 + (r * c) % 3 === 0,
+    (r, c) => ((r * c) % 2 + (r * c) % 3) % 2 === 0,
+    (r, c) => ((r + c) % 2 + (r * c) % 3) % 2 === 0,
+  ];
+  const penalty = (G) => {
+    let p = 0;
+    for (let pass = 0; pass < 2; pass++){
+      for (let r = 0; r < size; r++){
+        let run = 1;
+        for (let c = 1; c <= size; c++){
+          const cur = c < size ? (pass ? G[c][r] : G[r][c]) : -2;
+          const prev = pass ? G[c - 1][r] : G[r][c - 1];
+          if (cur === prev) run++;
+          else { if (run >= 5) p += 3 + (run - 5); run = 1; }
+        }
+      }
+    }
+    for (let r = 0; r < size - 1; r++) for (let c = 0; c < size - 1; c++){
+      const v = G[r][c];
+      if (v === G[r][c + 1] && v === G[r + 1][c] && v === G[r + 1][c + 1]) p += 3;
+    }
+    const pat1 = [1,0,1,1,1,0,1,0,0,0,0], pat2 = [0,0,0,0,1,0,1,1,1,0,1];
+    for (let pass = 0; pass < 2; pass++){
+      for (let r = 0; r < size; r++) for (let c = 0; c <= size - 11; c++){
+        let m1 = true, m2 = true;
+        for (let k = 0; k < 11; k++){
+          const v = pass ? G[c + k][r] : G[r][c + k];
+          if (v !== pat1[k]) m1 = false;
+          if (v !== pat2[k]) m2 = false;
+        }
+        if (m1 || m2) p += 40;
+      }
+    }
+    let dark = 0;
+    for (let r = 0; r < size; r++) for (let c = 0; c < size; c++) dark += G[r][c];
+    p += Math.floor(Math.abs(dark * 100 / (size * size) - 50) / 5) * 10;
+    return p;
+  };
+  let best = null, bestP = Infinity, bestMask = 0;
+  for (let m = 0; m < 8; m++){
+    const G = M.map((rw, r) => rw.map((v, c) => reserved[r][c] ? (v === -1 ? 0 : v) : (maskFn[m](r, c) ? v ^ 1 : v)));
+    const fmt = (0 << 3) | m;
+    const fbits = ((fmt << 10) | bch(fmt, 0x537, 10)) ^ 0x5412;
+    for (let i = 0; i < 15; i++){
+      const b = (fbits >> (14 - i)) & 1;
+      const [r1, c1] = fmtPos[i]; G[r1][c1] = b;
+      const [r2, c2] = fmtPos2[i]; G[r2][c2] = b;
+    }
+    G[size - 8][8] = 1;
+    const p = penalty(G);
+    if (p < bestP){ bestP = p; best = G; bestMask = m; }
+  }
+  return best.map(r => Array.from(r));
+}
+function qrCanvas(text, size = 200){
+  const m = qrModules(text || 'https://kardigram.co/');
+  const cvs = document.createElement('canvas');
+  cvs.width = cvs.height = size;
+  const ctx = cvs.getContext('2d');
+  ctx.fillStyle = '#fbfaf5'; ctx.fillRect(0, 0, size, size);
+  if (!m) return cvs;
+  const n = m.length, quiet = 3;
+  const cell = size / (n + quiet * 2);
+  ctx.fillStyle = '#0e0d0c';
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++){
+    if (m[r][c]) ctx.fillRect((c + quiet) * cell, (r + quiet) * cell, Math.ceil(cell), Math.ceil(cell));
+  }
+  return cvs;
+}
+/* Generated locally now — no third-party QR service, works offline, and the
+   same modules can be drawn straight into the PDF canvas without tainting. */
+function qrURL(text, size = 200){
+  try { return qrCanvas(text, size).toDataURL('image/png'); } catch(_){ return ''; }
 }
 /* Wikipedia random article — with lead image */
 async function fetchWiki(){
@@ -5181,6 +5400,66 @@ async function imageToDataURL(url){
 
 /* Wrap a JPEG blob in a minimal single-page PDF. No library — pure bytes.
    PDF 1.4, one page, one embedded JPEG via DCTDecode. */
+async function jpegsToPDF(jpegBlobs, pdfW = 612, pdfH = 792){
+  const enc = new TextEncoder();
+  const chunks = [];
+  const offsets = [];
+  let byteCount = 0;
+  const push = (part) => {
+    const b = typeof part === 'string' ? enc.encode(part) : part;
+    chunks.push(b); byteCount += b.length;
+  };
+  const obj = (id, body) => {
+    offsets[id] = byteCount;
+    push(id + ' 0 obj\n' + body + '\nendobj\n');
+  };
+  const pages = [];
+  for (const blob of jpegBlobs){
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    let iw = 0, ih = 0;
+    for (let i = 2; i < bytes.length - 8; i++){
+      if (bytes[i] !== 0xFF) continue;
+      const mk = bytes[i+1];
+      if (mk >= 0xC0 && mk <= 0xCF && mk !== 0xC4 && mk !== 0xC8 && mk !== 0xCC){
+        ih = (bytes[i+5] << 8) | bytes[i+6];
+        iw = (bytes[i+7] << 8) | bytes[i+8];
+        break;
+      }
+    }
+    if (!iw || !ih) throw new Error('bad JPEG');
+    pages.push({ bytes, iw, ih });
+  }
+  push('%PDF-1.4\n');
+  push('%\xE2\xE3\xCF\xD3\n');
+  const nP = pages.length;
+  const kids = pages.map((_, i) => (3 + i * 3) + ' 0 R').join(' ');
+  obj(1, '<</Type /Catalog /Pages 2 0 R>>');
+  obj(2, `<</Type /Pages /Kids [${kids}] /Count ${nP}>>`);
+  pages.forEach((pg, i) => {
+    const pageId = 3 + i * 3, imgId = pageId + 1, contId = pageId + 2;
+    const imgAR = pg.iw / pg.ih, pageAR = pdfW / pdfH;
+    let dw, dh;
+    if (imgAR > pageAR){ dw = pdfW; dh = pdfW / imgAR; }
+    else { dh = pdfH; dw = pdfH * imgAR; }
+    const dx = (pdfW - dw) / 2, dy = (pdfH - dh) / 2;
+    obj(pageId, `<</Type /Page /Parent 2 0 R /MediaBox [0 0 ${pdfW} ${pdfH}] /Resources <</XObject <</Im0 ${imgId} 0 R>>>> /Contents ${contId} 0 R>>`);
+    offsets[imgId] = byteCount;
+    push(`${imgId} 0 obj\n<</Type /XObject /Subtype /Image /Width ${pg.iw} /Height ${pg.ih} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${pg.bytes.length}>>\nstream\n`);
+    push(pg.bytes);
+    push('\nendstream\nendobj\n');
+    const content = `q\n${dw.toFixed(2)} 0 0 ${dh.toFixed(2)} ${dx.toFixed(2)} ${dy.toFixed(2)} cm\n/Im0 Do\nQ\n`;
+    obj(contId, `<</Length ${content.length}>>\nstream\n${content}\nendstream`);
+  });
+  const maxId = 2 + nP * 3;
+  const xrefStart = byteCount;
+  push(`xref\n0 ${maxId + 1}\n0000000000 65535 f \n`);
+  for (let i = 1; i <= maxId; i++) push(String(offsets[i]).padStart(10, '0') + ' 00000 n \n');
+  push(`trailer\n<</Size ${maxId + 1} /Root 1 0 R>>\nstartxref\n${xrefStart}\n%%EOF\n`);
+  const out = new Uint8Array(byteCount);
+  let pos = 0;
+  for (const c of chunks){ out.set(c, pos); pos += c.length; }
+  return new Blob([out], { type: 'application/pdf' });
+}
 async function jpegBlobToPDF(jpegBlob, pdfW = 612, pdfH = 792){
   const jpegBytes = new Uint8Array(await jpegBlob.arrayBuffer());
   // Parse JPEG for width/height by scanning for a Start-Of-Frame marker
@@ -5244,89 +5523,97 @@ async function jpegBlobToPDF(jpegBlob, pdfW = 612, pdfH = 792){
 /* Render the virtual card as a portrait PDF page — art + headline + note + sig +
    kardigram.co footer. No JavaScript in the output. The recipient just opens the
    PDF anywhere and reads it. */
-async function makeVirtualPDF(){
-  // Make sure the display faces are actually loaded before we draw them into
-  // the canvas — otherwise the first PDF of a session renders in Times.
+async function makeVirtualPDF(src){
+  src = src || {
+    designImg: cart.designImg, designArtist: cart.designArtist, designTitle: cart.designTitle,
+    sender: cart.sender, recipientName: cart.recipient?.name,
+    frontHeadline: cart.frontHeadline || (typeof occ === 'function' && occ(cart.occasion)?.tag) || '',
+    message: cart.message, attachUrl: cart.attachUrl,
+    doodle: (typeof currentDoodle === 'function') ? currentDoodle() : null
+  };
   try {
-    await Promise.all(['600 44px Caveat', '700 46px Caveat', 'italic 500 62px Sora',
+    await Promise.all(['600 44px Caveat', '700 46px Caveat', 'italic 500 62px Sora', 'italic 500 84px Sora',
       '900 italic 44px Sora', '700 16px "JetBrains Mono"', '800 20px "JetBrains Mono"']
       .map(f => document.fonts.load(f)));
   } catch(_){}
-  // Fetch + base64 the art. If fetch fails (CORS), we get back the raw URL —
-  // drawing that into canvas would taint it and blow up toBlob later. So we
-  // only draw when we know we have a safe data URL.
-  const rawArt = cart.designImg || '';
-  const artDataUrl = await imageToDataURL(rawArt);
+  const artDataUrl = await imageToDataURL(src.designImg || '');
   const safeArt = (artDataUrl && artDataUrl.startsWith('data:')) ? artDataUrl : '';
-  const senderName = (cart.sender || 'A friend').trim();
-  const recipName = (cart.recipient?.name || 'You').trim();
-  const headline = cart.frontHeadline || (typeof occ === 'function' && occ(cart.occasion)?.tag) || '';
-  const msg = cart.message || '';
-  const artist = cart.designArtist || 'Public domain';
-  const title = cart.designTitle || '';
-  const doodle = (typeof currentDoodle === 'function') ? currentDoodle() : null;
-  // Draw to a 5×7-ish portrait canvas at ~200 DPI equivalent
+  const senderName = (src.sender || 'A friend').trim();
+  const recipName = (src.recipientName || 'You').trim();
+  const headline = src.frontHeadline || '';
+  const msg = src.message || '';
+  const artist = src.designArtist || 'Public domain';
+  const title = src.designTitle || '';
+  const attach = (src.attachUrl || '').trim();
   const W = 1200, H = 1680;
-  const cvs = document.createElement('canvas');
-  cvs.width = W; cvs.height = H;
-  const ctx = cvs.getContext('2d');
-  // Card background — cream
-  ctx.fillStyle = '#faf6ec'; ctx.fillRect(0, 0, W, H);
-  // Load and draw the art. Only if we have a safe data URL so we never taint.
-  await new Promise((resolve) => {
-    if (!safeArt){ resolve(); return; }
-    const im = new Image();
-    im.onload = () => {
-      try {
-        const artH = Math.round(H * 0.55);
-        const iw = im.width, ih = im.height;
-        const scale = Math.max(W / iw, artH / ih);
-        const dw = iw * scale, dh = ih * scale;
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(0, 0, W, artH); ctx.clip();
-        ctx.drawImage(im, (W - dw) / 2, (artH - dh) / 2, dw, dh);
-        ctx.restore();
-        const grad = ctx.createLinearGradient(0, artH - 40, 0, artH);
-        grad.addColorStop(0, 'rgba(0,0,0,0)');
-        grad.addColorStop(1, 'rgba(0,0,0,.28)');
-        ctx.fillStyle = grad; ctx.fillRect(0, artH - 40, W, 40);
-      } catch(_){}
-      resolve();
-    };
-    im.onerror = () => resolve();
-    im.src = safeArt;
-    setTimeout(resolve, 3000);
-  });
-  // Placeholder if art couldn't load — a graphite panel with the title, so the
-  // top of the card still looks intentional instead of blank cream.
-  if (!safeArt){
-    const artH = Math.round(H * 0.55);
-    ctx.fillStyle = '#2c3037'; ctx.fillRect(0, 0, W, artH);
-    ctx.fillStyle = '#8c919c';
-    ctx.font = '700 22px "JetBrains Mono", monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('ART · COULDN\'T EMBED', W / 2, artH / 2);
+  const jpeg = cvs => new Promise((r, rej) => { try { cvs.toBlob(b => b ? r(b) : rej(new Error('null')), 'image/jpeg', 0.92); } catch(e){ rej(e); } });
+
+  /* Page 1 — the front. Full-bleed art, headline low, wordmark corner. */
+  const c1 = document.createElement('canvas');
+  c1.width = W; c1.height = H;
+  const x1 = c1.getContext('2d');
+  x1.fillStyle = '#1a1c20'; x1.fillRect(0, 0, W, H);
+  let drew = false;
+  if (safeArt){
+    await new Promise((resolve) => {
+      const im = new Image();
+      im.onload = () => {
+        try {
+          const scale = Math.max(W / im.width, H / im.height);
+          x1.drawImage(im, (W - im.width * scale) / 2, (H - im.height * scale) / 2, im.width * scale, im.height * scale);
+          drew = true;
+        } catch(_){}
+        resolve();
+      };
+      im.onerror = () => resolve();
+      im.src = safeArt;
+      setTimeout(resolve, 4000);
+    });
   }
-  const artH = Math.round(H * 0.55);
-  // Headline overlay on the art
+  if (!drew){
+    const g = x1.createLinearGradient(0, 0, W, H);
+    g.addColorStop(0, '#23262c'); g.addColorStop(1, '#1a1c20');
+    x1.fillStyle = g; x1.fillRect(0, 0, W, H);
+    x1.strokeStyle = 'rgba(246,201,74,.35)'; x1.lineWidth = 3;
+    for (let r = 140; r <= 420; r += 70){ x1.beginPath(); x1.arc(W/2, H/2 - 80, r, 0, Math.PI * 2); x1.stroke(); }
+  }
+  const grad = x1.createLinearGradient(0, H - 460, 0, H);
+  grad.addColorStop(0, 'rgba(10,10,14,0)');
+  grad.addColorStop(1, 'rgba(10,10,14,.78)');
+  x1.fillStyle = grad; x1.fillRect(0, H - 460, W, 460);
   if (headline){
-    ctx.fillStyle = '#faf6ec';
-    ctx.font = 'italic 500 62px Sora, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.shadowColor = 'rgba(0,0,0,.6)'; ctx.shadowBlur = 20;
-    ctx.fillText(headline.slice(0, 40), W / 2, artH - 42);
-    ctx.shadowBlur = 0;
+    x1.fillStyle = '#faf6ec';
+    x1.font = 'italic 500 84px Sora, sans-serif';
+    x1.textAlign = 'center';
+    x1.shadowColor = 'rgba(0,0,0,.65)'; x1.shadowBlur = 26;
+    x1.fillText(headline.slice(0, 32), W / 2, H - 170);
+    x1.shadowBlur = 0;
   }
-  // Message area — cream ivory background from artH down
-  const noteTop = artH + 60;
-  ctx.fillStyle = '#2a2216';
-  ctx.font = '600 44px Caveat, cursive';
-  ctx.textAlign = 'left';
-  // Word-wrap the message
-  // Word-wrap, but never run the note into the signature or the footer — a
-  // long message ellipsizes on its last visible line instead of overprinting.
-  const noteMaxY = H - 380;
+  x1.fillStyle = 'rgba(250,246,236,.85)';
+  x1.font = '800 22px "JetBrains Mono", monospace';
+  x1.textAlign = 'center';
+  x1.fillText('FOR ' + recipName.toUpperCase().slice(0, 28) + ' · OPEN ME', W / 2, H - 90);
+  x1.font = '900 italic 34px Sora, sans-serif';
+  x1.textAlign = 'right';
+  x1.fillText('kardigram', W - 48, 76);
+
+  /* Page 2 — the inside. Cream, the note, the signature, the QR if attached. */
+  const c2 = document.createElement('canvas');
+  c2.width = W; c2.height = H;
+  const x2 = c2.getContext('2d');
+  x2.fillStyle = '#faf6ec'; x2.fillRect(0, 0, W, H);
+  x2.fillStyle = '#8c919c';
+  x2.font = '800 22px "JetBrains Mono", monospace';
+  x2.textAlign = 'left';
+  x2.fillText('TO · ' + recipName.toUpperCase().slice(0, 30), 100, 130);
+  x2.strokeStyle = 'rgba(42,34,22,.14)'; x2.lineWidth = 2;
+  x2.beginPath(); x2.moveTo(100, 160); x2.lineTo(W - 100, 160); x2.stroke();
+  const footH = 190;
+  const qrBlockH = attach ? 360 : 0;
+  const noteTop = 260;
+  const noteMaxY = H - footH - qrBlockH - 130;
+  x2.fillStyle = '#2a2216';
+  x2.font = '600 46px Caveat, cursive';
   const wrapText = (text, x, y, maxWidth, lineHeight) => {
     const paras = text.split('\n');
     for (const para of paras){
@@ -5334,9 +5621,9 @@ async function makeVirtualPDF(){
       let line = '';
       for (const w of words){
         const test = line ? line + ' ' + w : w;
-        if (ctx.measureText(test).width > maxWidth){
-          if (y + lineHeight > noteMaxY){ ctx.fillText(line.replace(/.{2}$/, '') + '…', x, y); return y + lineHeight; }
-          ctx.fillText(line, x, y);
+        if (x2.measureText(test).width > maxWidth){
+          if (y + lineHeight > noteMaxY){ x2.fillText(line.replace(/.{2}$/, '') + '…', x, y); return y + lineHeight; }
+          x2.fillText(line, x, y);
           y += lineHeight;
           line = w;
         } else {
@@ -5344,67 +5631,60 @@ async function makeVirtualPDF(){
         }
       }
       if (line) {
-        if (y + lineHeight > noteMaxY){ ctx.fillText(line, x, y); return y + lineHeight; }
-        ctx.fillText(line, x, y); y += lineHeight;
+        if (y + lineHeight > noteMaxY){ x2.fillText(line, x, y); return y + lineHeight; }
+        x2.fillText(line, x, y); y += lineHeight;
       }
     }
     return y;
   };
-  const msgY = wrapText(msg || ' ', 100, noteTop, W - 200, 60);
-  // Signature — right-aligned pink
-  ctx.textAlign = 'right';
-  ctx.fillStyle = '#7a1418';
-  ctx.font = '700 46px Caveat, cursive';
-  ctx.fillText('— ' + senderName, W - 100, Math.min(Math.max(msgY + 40, H - 320), H - 250));
-  // Doodle (if picked) — small hand-drawn stroke bottom-left of the note area
-  if (doodle && doodle.svg){
-    // Fake-render doodle-ish placeholder — draw a simple pen dot cluster instead
-    // (the actual SVG is HTML — canvas can't render that directly without work).
-    ctx.strokeStyle = '#7a1418'; ctx.lineWidth = 3; ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.arc(140, H - 300, 22, 0, Math.PI * 2);
-    ctx.moveTo(120, H - 300); ctx.lineTo(160, H - 300);
-    ctx.moveTo(140, H - 320); ctx.lineTo(140, H - 280);
-    ctx.stroke();
+  const msgY = wrapText(msg || ' ', 100, noteTop, W - 200, 64);
+  x2.textAlign = 'right';
+  x2.fillStyle = '#7a1418';
+  x2.font = '700 50px Caveat, cursive';
+  x2.fillText('— ' + senderName, W - 100, Math.min(msgY + 50, noteMaxY + 70));
+  if (src.doodle && src.doodle.svg){
+    x2.strokeStyle = '#7a1418'; x2.lineWidth = 3; x2.lineCap = 'round';
+    x2.beginPath();
+    x2.arc(140, noteMaxY + 55, 22, 0, Math.PI * 2);
+    x2.moveTo(120, noteMaxY + 55); x2.lineTo(160, noteMaxY + 55);
+    x2.moveTo(140, noteMaxY + 35); x2.lineTo(140, noteMaxY + 75);
+    x2.stroke();
   }
-  // Footer strip — graphite bar with wordmark + credit + kardigram.co
-  const footH = 200;
-  ctx.fillStyle = '#1a1c20'; ctx.fillRect(0, H - footH, W, footH);
-  // "To: Sarah" line
-  ctx.fillStyle = '#8c919c';
-  ctx.font = '800 20px "JetBrains Mono", monospace';
-  ctx.textAlign = 'left';
-  ctx.fillText('TO · ' + recipName.toUpperCase(), 80, H - footH + 44);
-  // Wordmark
-  ctx.fillStyle = '#eef0f4';
-  ctx.font = '900 italic 44px Sora, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText('kardigram', W / 2, H - 80);
-  // Art credit + kardigram.co link
-  ctx.fillStyle = '#8c919c';
-  ctx.font = '700 16px "JetBrains Mono", monospace';
+  if (attach){
+    const qy = H - footH - qrBlockH + 40;
+    try {
+      const q = qrCanvas(attach, 560);
+      x2.save();
+      x2.shadowColor = 'rgba(42,34,22,.18)'; x2.shadowBlur = 24;
+      x2.fillStyle = '#fbfaf5';
+      x2.fillRect(92, qy - 8, 296, 296);
+      x2.restore();
+      x2.drawImage(q, 100, qy, 280, 280);
+    } catch(_){}
+    x2.fillStyle = '#2a2216';
+    x2.font = '800 24px "JetBrains Mono", monospace';
+    x2.textAlign = 'left';
+    x2.fillText('SCAN ME —', 430, qy + 110);
+    x2.fillStyle = '#8c919c';
+    x2.font = '700 20px "JetBrains Mono", monospace';
+    x2.fillText(senderName.toUpperCase().slice(0, 20) + ' ATTACHED SOMETHING', 430, qy + 150);
+    x2.font = '500 17px "JetBrains Mono", monospace';
+    x2.fillText(attach.slice(0, 52) + (attach.length > 52 ? '…' : ''), 430, qy + 190);
+  }
+  x2.fillStyle = '#1a1c20'; x2.fillRect(0, H - footH, W, footH);
+  x2.fillStyle = '#eef0f4';
+  x2.font = '900 italic 44px Sora, sans-serif';
+  x2.textAlign = 'center';
+  x2.fillText('kardigram', W / 2, H - 78);
+  x2.fillStyle = '#8c919c';
+  x2.font = '700 16px "JetBrains Mono", monospace';
   const credit = (title ? title + ' · ' : '') + artist;
-  ctx.fillText(credit.slice(0, 60), W / 2, H - 44);
-  ctx.fillStyle = '#f6c94a';
-  ctx.font = '800 16px "JetBrains Mono", monospace';
-  ctx.fillText('KARDIGRAM.CO · SEND A CARD, FREE', W / 2, H - 20);
+  x2.fillText(credit.slice(0, 60), W / 2, H - 44);
+  x2.fillStyle = '#f6c94a';
+  x2.font = '800 16px "JetBrains Mono", monospace';
+  x2.fillText('KARDIGRAM.CO · SEND A CARD, FREE', W / 2, H - 20);
 
-  // toBlob throws SecurityError on some browsers if the canvas is tainted.
-  // We already guard by only drawing safe data URLs, but wrap in try/catch too.
-  let jpegBlob = null;
-  try {
-    jpegBlob = await new Promise((r, rej) => { try { cvs.toBlob(b => b ? r(b) : rej(new Error('null')), 'image/jpeg', 0.92); } catch(e){ rej(e); } });
-  } catch(e){
-    // Fallback: blank out the art region and try once more
-    ctx.fillStyle = '#2c3037'; ctx.fillRect(0, 0, W, Math.round(H * 0.55));
-    ctx.fillStyle = '#8c919c';
-    ctx.font = '700 22px "JetBrains Mono", monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('ART · COULDN\'T EMBED', W / 2, Math.round(H * 0.55) / 2);
-    jpegBlob = await new Promise(r => cvs.toBlob(r, 'image/jpeg', 0.92));
-  }
-  if (!jpegBlob) throw new Error('canvas export failed');
-  return jpegBlobToPDF(jpegBlob);
+  return jpegsToPDF([await jpeg(c1), await jpeg(c2)]);
 }
 
 function openVirtualShare({ pdfBlob, senderName }){
@@ -5419,8 +5699,8 @@ function openVirtualShare({ pdfBlob, senderName }){
       <div class="v-share-panel" role="dialog" aria-modal="true" aria-label="Share your virtual card">
         <button class="close" aria-label="Close">×</button>
         <div class="k">Your virtual card is ready</div>
-        <h3>Ready. <span class="p">One PDF.</span></h3>
-        <p class="d">A single-page PDF. Text it, email it, airdrop it. Opens on any phone or computer, no app needed.</p>
+        <h3>Ready. <span class="p">Front and inside.</span></h3>
+        <p class="d">A two-page PDF — the front of the card, then the inside with your note. Text it, email it, airdrop it. Opens anywhere, no app needed.</p>
         <div class="v-row" style="margin-top:16px">
           <button class="v-share-native">Share the PDF</button>
           <button class="v-download">Download</button>
@@ -5456,7 +5736,7 @@ function openVirtualShare({ pdfBlob, senderName }){
 }
 
 function sendCard(){
-  // Virtual mode · build a single-page PDF and open the share sheet.
+  // Virtual mode · build the two-page card PDF and open the share sheet.
   if (cart.sendMode === 'virtual'){
     const orderId = 'KG-V-' + Math.random().toString(36).slice(2, 5).toUpperCase();
     saveOrder({
@@ -5807,8 +6087,22 @@ function renderOrders(){
         <div class="n">${escapeHtml(o.occName || 'Card')} → ${escapeHtml(o.recipientName || 'Recipient')}</div>
         <div class="d"><span class="oid">${escapeHtml(o.orderId)}</span> · ${dfmt(o.at)} · ${o.cards} card${o.cards>1?'s':''}${o.mode !== 'single' ? ' · ' + escapeHtml(o.mode) : ''}</div>
       </div>
-      <div class="amt">${money(o.total)}<span class="r" data-r="${i}">Reorder →</span></div>
+      <div class="amt">${money(o.total)}${o.mode === 'virtual' ? `<span class="r" data-pdf="${i}">PDF ↓</span>` : ''}<span class="r" data-r="${i}">Reorder →</span></div>
     </div>`).join('')}</div>`;
+  body.querySelectorAll('[data-pdf]').forEach(el => el.addEventListener('click', async () => {
+    const o = orderHistory[parseInt(el.dataset.pdf, 10)]; if (!o) return;
+    el.textContent = '…';
+    try {
+      const pdfBlob = await makeVirtualPDF({
+        designImg: o.designImg, designArtist: o.designArtist, designTitle: o.designTitle,
+        sender: o.sender, recipientName: o.recipientName,
+        frontHeadline: o.frontHeadline, message: o.message, attachUrl: o.attachUrl, doodle: null
+      });
+      $('ordersModal').classList.remove('show');
+      openVirtualShare({ pdfBlob, senderName: o.sender || 'a-friend' });
+    } catch(_){ el.textContent = 'failed'; return; }
+    el.textContent = 'PDF ↓';
+  }));
   body.querySelectorAll('[data-r]').forEach(el => el.addEventListener('click', () => {
     const i = parseInt(el.dataset.r, 10);
     const src = orderHistory[i]; if (!src) return;
