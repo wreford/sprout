@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>ANSWERS WILL BE CHECKED</title>
+<style>
+  :root{
+    --phos:#ffb46b;          /* warm phosphor amber */
+    --phos-dim:#8a5a2e;
+    --phos-bright:#ffd9a8;
+    --bg:#0a0705;
+    --bad:#ff5c5c;
+    --glow:0 0 6px rgba(255,180,107,.45), 0 0 24px rgba(255,140,50,.12);
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{height:100%;}
+  body{
+    background:var(--bg);
+    color:var(--phos);
+    font-family:"IBM Plex Mono","SFMono-Regular",ui-monospace,Menlo,Consolas,monospace;
+    font-size:15px;
+    line-height:1.65;
+    overflow:hidden;
+    text-shadow:var(--glow);
+  }
+  /* CRT chrome */
+  #crt{
+    position:fixed;inset:0;
+    display:flex;flex-direction:column;
+    background:
+      radial-gradient(ellipse at center, rgba(255,180,107,.03), transparent 70%),
+      var(--bg);
+  }
+  #crt::before{ /* scanlines */
+    content:"";position:absolute;inset:0;pointer-events:none;z-index:50;
+    background:repeating-linear-gradient(to bottom, rgba(0,0,0,0) 0px, rgba(0,0,0,0) 2px, rgba(0,0,0,.22) 3px);
+    mix-blend-mode:multiply;
+  }
+  #crt::after{ /* vignette + curvature suggestion */
+    content:"";position:absolute;inset:0;pointer-events:none;z-index:51;
+    box-shadow:inset 0 0 140px rgba(0,0,0,.85);
+  }
+  #flicker{
+    position:absolute;inset:0;pointer-events:none;z-index:52;opacity:0;
+    background:rgba(255,220,180,.04);
+  }
+  @keyframes flick{0%{opacity:0}4%{opacity:1}8%{opacity:0}100%{opacity:0}}
+  .flick #flicker{animation:flick 3.1s steps(1) infinite;}
+
+  #bar{
+    flex:0 0 auto;
+    display:flex;justify-content:space-between;align-items:baseline;gap:1em;
+    padding:10px 16px 8px;
+    border-bottom:1px solid var(--phos-dim);
+    font-size:12px;letter-spacing:.14em;
+    color:var(--phos-dim);
+    user-select:none;
+  }
+  #bar .lvl{color:var(--phos);}
+  #bar .sig{white-space:nowrap;}
+  #bar .sig b{font-weight:400;color:var(--phos);}
+  #bar .sig.low b{color:var(--bad);text-shadow:0 0 6px rgba(255,92,92,.5);}
+
+  #scroll{
+    flex:1 1 auto;overflow-y:auto;
+    padding:22px 18px 40vh;
+    max-width:72ch;width:100%;margin:0 auto;
+    scrollbar-width:thin;scrollbar-color:var(--phos-dim) transparent;
+  }
+  #scroll p{margin:0 0 1.15em;}
+  #scroll p.sys{color:var(--phos-dim);font-size:13px;letter-spacing:.08em;}
+  #scroll p.you{color:var(--phos-bright);}
+  #scroll p.wall{color:var(--phos-bright);letter-spacing:.06em;}
+  #scroll p.bad{color:var(--bad);text-shadow:0 0 6px rgba(255,92,92,.4);}
+
+  .cursor::after{content:"▮";animation:blink 1.05s steps(1) infinite;margin-left:2px;}
+  @keyframes blink{50%{opacity:0}}
+
+  #choices{display:flex;flex-direction:column;gap:8px;margin:1.4em 0 0;}
+  button.ch{
+    all:unset;cursor:pointer;display:block;
+    padding:9px 12px;
+    border:1px solid var(--phos-dim);
+    color:var(--phos);
+    text-shadow:var(--glow);
+    font:inherit;line-height:1.5;
+  }
+  button.ch::before{content:"› ";color:var(--phos-dim);}
+  button.ch:hover,button.ch:focus-visible{
+    border-color:var(--phos);background:rgba(255,180,107,.07);outline:none;
+    color:var(--phos-bright);
+  }
+  input.term{
+    all:unset;display:block;width:100%;
+    border-bottom:1px solid var(--phos-dim);
+    padding:6px 2px;margin:.6em 0 0;
+    color:var(--phos-bright);font:inherit;caret-color:var(--phos);
+  }
+  input.term:focus{border-color:var(--phos);}
+  ::placeholder{color:var(--phos-dim);opacity:.7;}
+
+  #foot{
+    flex:0 0 auto;display:flex;gap:14px;justify-content:flex-end;
+    padding:8px 16px 12px;border-top:1px solid var(--phos-dim);
+    font-size:12px;letter-spacing:.12em;color:var(--phos-dim);user-select:none;
+  }
+  #foot span{cursor:pointer;}
+  #foot span:hover{color:var(--phos);}
+
+  /* journal overlay */
+  #jrn{
+    position:fixed;inset:6% 5%;z-index:60;display:none;
+    background:var(--bg);border:1px solid var(--phos);
+    padding:20px 18px;overflow-y:auto;
+    box-shadow:0 0 40px rgba(0,0,0,.9), inset 0 0 60px rgba(255,180,107,.03);
+  }
+  #jrn.open{display:block;}
+  #jrn h2{font-size:13px;letter-spacing:.2em;color:var(--phos-dim);margin-bottom:1em;font-weight:400;}
+  #jrn .ent{margin-bottom:1.1em;}
+  #jrn .ent i{display:block;font-style:normal;color:var(--phos-dim);font-size:12px;letter-spacing:.1em;}
+  #jrn .close{position:sticky;top:0;float:right;cursor:pointer;color:var(--phos-dim);}
+  #jrn .close:hover{color:var(--phos);}
+  #jrn .empty{color:var(--phos-dim);}
+
+  /* corruption cosmetics */
+  @keyframes split{
+    0%,92%{text-shadow:var(--glow);transform:none;}
+    93%{text-shadow:-2px 0 rgba(255,60,60,.8), 2px 0 rgba(80,160,255,.8);}
+    95%{text-shadow:2px 0 rgba(255,60,60,.8), -2px 0 rgba(80,160,255,.8);transform:translateX(1px);}
+    97%{text-shadow:var(--glow);transform:none;}
+  }
+  .unstable .gl{display:inline-block;animation:split 4.7s steps(1) infinite;}
+  .unstable #bar .lvl{animation:split 6.3s steps(1) infinite;}
+
+  @media (max-width:600px){
+    body{font-size:14px;}
+    #scroll{padding:18px 13px 45vh;}
+    #jrn{inset:4% 3%;}
+  }
+  @media (prefers-reduced-motion: reduce){
+    .flick #flicker,.unstable .gl,.unstable #bar .lvl{animation:none;}
+    .cursor::after{animation:none;}
+  }
+</style>
+</head>
+<body>
+<div id="crt" class="flick">
+  <div id="bar">
+    <span class="lvl" id="lvl">INTAKE</span>
+    <span class="sig" id="sig"></span>
+  </div>
+  <div id="scroll"></div>
+  <div id="foot">
+    <span id="btnSnd">SOUND OFF</span>
+    <span id="btnJrn">JOURNAL</span>
+  </div>
+  <div id="flicker"></div>
+</div>
+<div id="jrn">
+  <span class="close" id="jrnClose">CLOSE</span>
+  <h2>YOUR HANDWRITING</h2>
+  <div id="jrnBody"></div>
+</div>
+<script>
+/* ============================== ENGINE ============================== */
+const $=id=>document.getElementById(id);
+const scroll=$("scroll"), bar=$("sig"), lvlEl=$("lvl");
+
+const S={
+  intake:{},          // harvested answers
+  log:{},             // choice log: id -> label (echo ammunition)
+  coh:100,            // coherence, shown as SIGNAL
+  merges:0,
+  contra:0,
+  journal:[],         // {t:title,x:text}
+  flags:{},
+  loop:0,
+  item:null
+};
+
+const norm=s=>(s||"").toLowerCase().replace(/[^\p{L}\p{N} ]/gu,"").replace(/\s+/g," ").trim();
+const cap=s=>s? s[0].toUpperCase()+s.slice(1):s;
+function iv(k,fb){const v=(S.intake[k]||"").trim();return v||fb;}
+function NAME(){return iv("name","the applicant");}
+function CONTACT(){return iv("contact","no one");}
+function ADDRESS(){return iv("address","an address you no longer remember");}
+function HABIT(){return iv("habit","nothing in particular");}
+function SONG(){return iv("song","a song with no name");}
+
+/* ---- coherence / status bar ---- */
+function drawBar(){
+  const blocks=Math.max(0,Math.round(S.coh/10));
+  bar.innerHTML="SIGNAL <b>"+"▮".repeat(blocks)+"</b>"+"▯".repeat(10-blocks);
+  bar.classList.toggle("low",S.coh<40);
+  document.body.classList.toggle("unstable",S.coh<50);
+  if(audio.on)audio.tune();
+}
+function coh(d,silent){
+  S.coh=Math.max(0,Math.min(100,S.coh+d));
+  drawBar();
+  if(!silent&&d<=-8)sysLine("signal degradation detected");
+}
+function setLevel(t){lvlEl.textContent=t;}
+
+/* ---- typewriter ---- */
+let typing=false, skip=false, queue=Promise.resolve();
+const RM=matchMedia("(prefers-reduced-motion: reduce)").matches;
+function glitchWrap(text){
+  if(S.coh>=50)return text;
+  const words=text.split(" ");
+  if(words.length<4)return text;
+  const i=1+Math.floor(Math.random()*(words.length-2));
+  words[i]='<span class="gl">'+words[i]+'</span>';
+  return words.join(" ");
+}
+function type(text,cls){
+  queue=queue.then(()=>new Promise(res=>{
+    const p=document.createElement("p");
+    if(cls)p.className=cls;
+    scroll.appendChild(p);
+    p.classList.add("cursor");
+    const html=glitchWrap(text);
+    if(RM){p.innerHTML=html;p.classList.remove("cursor");end();return;}
+    // type plain text, swap to html (with glitch span) at completion
+    let i=0;typing=true;skip=false;
+    if(cls==="bad")audio.dread();
+    const step=()=>{
+      if(skip){i=text.length;}
+      p.textContent=text.slice(0,++i);
+      if(!skip&&i%3===0&&text[i-1]!==" ")audio.tick();
+      p.classList.add("cursor");
+      autoscroll();
+      if(i>=text.length){p.innerHTML=html;p.classList.remove("cursor");typing=false;end();}
+      else setTimeout(step, text[i-1]==="."?55:9);
+    };
+    step();
+    function end(){autoscroll();setTimeout(res,skip?60:260);}
+  }));
+  return queue;
+}
+function sysLine(t){type("["+t+"]","sys");}
+function autoscroll(){scroll.scrollTop=scroll.scrollHeight;}
+addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" ")skip=true;});
+scroll.addEventListener("pointerdown",()=>{skip=true;});
+
+/* ---- choices / inputs ---- */
+const choiceEchoes=[]; // {el, alts[]} — merge rewrites history
+function offer(list){
+  queue=queue.then(()=>{
+    const box=document.createElement("div");box.id="choices";
+    list.forEach(c=>{
+      const b=document.createElement("button");
+      b.className="ch";b.textContent=c.t;
+      b.onclick=()=>{
+        box.remove();
+        const p=document.createElement("p");p.className="you";p.textContent="› "+c.t;
+        scroll.appendChild(p);autoscroll();
+        choiceEchoes.push({el:p,alts:list.filter(o=>o!==c).map(o=>o.t)});
+        if(c.log)S.log[c.log]=c.t;
+        if(c.fx)c.fx();
+        go(c.go);
+      };
+      box.appendChild(b);
+    });
+    scroll.appendChild(box);autoscroll();
+  });
+}
+function ask(placeholder,key,next,fx){
+  queue=queue.then(()=>{
+    const inp=document.createElement("input");
+    inp.className="term";inp.placeholder=placeholder;inp.autocomplete="off";
+    inp.onkeydown=e=>{
+      if(e.key==="Enter"){
+        const v=inp.value.trim();
+        S.intake[key]=v;
+        const p=document.createElement("p");p.className="you";
+        p.textContent="› "+(v||"(left blank)");
+        inp.replaceWith(p);autoscroll();
+        if(fx)fx(v);
+        go(next);
+      }
+    };
+    scroll.appendChild(inp);autoscroll();
+    setTimeout(()=>inp.focus({preventScroll:true}),80);
+  });
+}
+
+/* ---- journal ---- */
+function jot(title,text){S.journal.push({t:title,x:text});bump()}
+function bump(){$("btnJrn").textContent="JOURNAL ("+S.journal.length+")";}
+$("btnJrn").onclick=()=>{
+  const b=$("jrnBody");b.innerHTML="";
+  if(!S.journal.length)b.innerHTML='<p class="empty">Nothing yet. You have written nothing down. Nothing can be taken.</p>';
+  S.journal.forEach((e,i)=>{
+    const d=document.createElement("div");d.className="ent";
+    d.innerHTML="<i>ENTRY "+String(i+1).padStart(2,"0")+" — "+e.t+"</i>"+e.x;
+    b.appendChild(d);
+  });
+  $("jrn").classList.add("open");
+};
+$("jrnClose").onclick=()=>$("jrn").classList.remove("open");
+
+/* ---- corruption: the merge ---- */
+const swaps=[["left","right"],["right","left"],["box cutter","water bottle"],["water bottle","box cutter"],
+             ["lanyard","box cutter"],["down","up"],["hum","voice"],["alone","followed"]];
+function corruptJournal(){
+  if(!S.journal.length)return;
+  const e=S.journal[Math.floor(Math.random()*S.journal.length)];
+  for(const[a,b]of swaps){
+    if(e.x.toLowerCase().includes(a)){e.x=e.x.replace(new RegExp(a,"i"),b);return;}
+  }
+  e.x=e.x+" I was calm when I wrote this.";
+}
+function rewriteHistory(){
+  const cands=choiceEchoes.filter(c=>c.alts.length);
+  if(!cands.length)return;
+  const c=cands[Math.floor(Math.random()*cands.length)];
+  c.el.textContent="› "+c.alts[Math.floor(Math.random()*c.alts.length)];
+  c.alts=[]; // only lie once per line
+}
+function merge(sceneAfter){
+  audio.drown();
+  S.merges++;coh(-15,true);
+  corruptJournal();rewriteHistory();
+  drawBar();
+  go(sceneAfter);
+}
+
+/* ---- audio: the hum ---- */
+const audio={on:false,ctx:null,o1:null,o2:null,g:null,
+  start(){
+    this.ctx=new (window.AudioContext||window.webkitAudioContext)();
+    this.g=this.ctx.createGain();this.g.gain.value=0.0;
+    this.o1=this.ctx.createOscillator();this.o1.type="sawtooth";this.o1.frequency.value=58;
+    this.o2=this.ctx.createOscillator();this.o2.type="sine";this.o2.frequency.value=120;
+    const f=this.ctx.createBiquadFilter();f.type="lowpass";f.frequency.value=180;
+    this.o1.connect(f);this.o2.connect(f);f.connect(this.g);this.g.connect(this.ctx.destination);
+    this.o1.start();this.o2.start();
+    this.g.gain.linearRampToValueAtTime(0.05,this.ctx.currentTime+2);
+    this.on=true;this.tune();
+  },
+  _noise(c){if(!this._nb){const b=c.createBuffer(1,c.sampleRate/2,c.sampleRate),d=b.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;this._nb=b;}return this._nb;},
+  sfx(fn){if(!this.on||!this.ctx)return;try{fn(this.ctx,this.ctx.currentTime);}catch(e){}},
+  tick(){ // typing: tiny filtered click, randomized so it never patterns
+    this.sfx((c,t)=>{const s=c.createBufferSource();s.buffer=this._noise(c);
+      const f=c.createBiquadFilter();f.type="bandpass";f.frequency.value=1600+Math.random()*1800;f.Q.value=9;
+      const g=c.createGain();g.gain.setValueAtTime(0.010+Math.random()*0.007,t);
+      g.gain.exponentialRampToValueAtTime(0.0001,t+0.028);
+      s.connect(f);f.connect(g);g.connect(c.destination);s.start(t);s.stop(t+0.03);});},
+  drawer(){ // section break: distant filing-cabinet thunk
+    this.sfx((c,t)=>{const s=c.createBufferSource();s.buffer=this._noise(c);
+      const f=c.createBiquadFilter();f.type="lowpass";f.frequency.value=140;
+      const g=c.createGain();g.gain.setValueAtTime(0.05,t);g.gain.exponentialRampToValueAtTime(0.0001,t+0.35);
+      s.connect(f);f.connect(g);g.connect(c.destination);s.start(t);s.stop(t+0.4);});},
+  dread(){ // bad line: two detuned sines swell and sink
+    this.sfx((c,t)=>{const g=c.createGain();g.gain.setValueAtTime(0.0001,t);
+      g.gain.linearRampToValueAtTime(0.028,t+0.9);g.gain.linearRampToValueAtTime(0.0001,t+2.6);
+      [46,46*1.028].forEach(fr=>{const o=c.createOscillator();o.type="sine";
+        o.frequency.setValueAtTime(fr,t);o.frequency.linearRampToValueAtTime(fr*0.94,t+2.6);
+        o.connect(g);o.start(t);o.stop(t+2.7);});
+      g.connect(c.destination);});},
+  drown(){ // merge: pitch falls through the floor under a noise wash
+    this.sfx((c,t)=>{const g=c.createGain();g.gain.setValueAtTime(0.05,t);
+      g.gain.exponentialRampToValueAtTime(0.0001,t+2.2);
+      const o=c.createOscillator();o.type="triangle";
+      o.frequency.setValueAtTime(110,t);o.frequency.exponentialRampToValueAtTime(28,t+2.0);
+      o.connect(g);o.start(t);o.stop(t+2.2);
+      const s=c.createBufferSource();s.buffer=this._noise(c);s.loop=true;
+      const f=c.createBiquadFilter();f.type="lowpass";f.frequency.setValueAtTime(900,t);
+      f.frequency.exponentialRampToValueAtTime(60,t+2.0);
+      const ng=c.createGain();ng.gain.setValueAtTime(0.03,t);ng.gain.exponentialRampToValueAtTime(0.0001,t+2.0);
+      s.connect(f);f.connect(ng);ng.connect(c.destination);s.start(t);s.stop(t+2.1);
+      g.connect(c.destination);});},
+  toll(){ // ending: one long, almost-resolving tone
+    this.sfx((c,t)=>{const g=c.createGain();g.gain.setValueAtTime(0.0001,t);
+      g.gain.linearRampToValueAtTime(0.035,t+0.4);g.gain.linearRampToValueAtTime(0.0001,t+3.4);
+      [92,138.6].forEach(fr=>{const o=c.createOscillator();o.type="sine";o.frequency.value=fr;
+        o.connect(g);o.start(t);o.stop(t+3.5);});
+      g.connect(c.destination);});},
+  tune(){ // detunes as coherence drops
+    if(!this.on)return;
+    const drift=(100-S.coh)*0.14;
+    this.o2.frequency.setTargetAtTime(120+drift,this.ctx.currentTime,0.8);
+  },
+  toggle(){
+    if(!this.ctx){this.start();$("btnSnd").textContent="SOUND ON";return;}
+    this.on=!this.on;
+    this.g.gain.setTargetAtTime(this.on?0.05:0,this.ctx.currentTime,0.3);
+    $("btnSnd").textContent=this.on?"SOUND ON":"SOUND OFF";
+  }
+};
+$("btnSnd").onclick=()=>audio.toggle();
+
+/* ---- scene runner ---- */
+function go(id){
+  const sc=SCENES[id];
+  if(!sc){type("[SCENE FAULT: "+id+"]","bad");return;}
+  sc(S);
+}
+function hr(){audio.drawer();sysLine("—".repeat(24));}
+</script>
+<script>
+/* ============================== SCENES ============================== */
+const SCENES={
+
+/* ------------------------- ACT 0 : INTAKE ------------------------- */
+a0_start(){
+  setLevel("INTAKE");drawBar();
+  if(S.loop>0){
+    type("The office is exactly as you left it. You have never been here before.","bad");
+  }
+  type("A waiting room. Beige carpet, a clock with no second hand, a fluorescent light making a sound like a held breath.");
+  type("Behind the reception glass, no one. On the counter: a clipboard, a chained pen, a form.");
+  type("STANDARD INTAKE — TO BE COMPLETED IN FULL. PLEASE ANSWER HONESTLY. ANSWERS WILL BE CHECKED.","wall");
+  if(S.loop>0)type("The handwriting on the sample line looks familiar in a way you decide not to think about.");
+  offer([{t:"Pick up the pen.",go:"a0_q1"}]);
+},
+a0_q1(){
+  type("1. FULL NAME.","sys");
+  ask("type your answer, press enter","name","a0_q2");
+},
+a0_q2(){
+  type("2. NAME SOMEONE WHO WOULD NOTICE IF YOU DISAPPEARED.","sys");
+  ask("first name is fine","contact","a0_q6");
+},
+a0_q6(){
+  type("3. REASON FOR APPLICATION.","sys");
+  offer([
+    {t:"I need the money.",go:"a0_submit",log:"motive"},
+    {t:"I answer ads. It's a thing I do.",go:"a0_submit",log:"motive"},
+    {t:"I don't remember applying.",go:"a0_submit",log:"motive"},
+    {t:"Leave it blank.",go:"a0_submit",log:"motive"}
+  ]);
+},
+a0_submit(){
+  type("You ring the bell. It makes no sound, but somewhere behind the wall, something stops moving in order to listen.");
+  type("The fluorescent light stutters — once, twice — and in the third darkness the floor forgets to be a floor.");
+  type("You do not fall so much as get filed.");
+  offer([{t:"—",go:"a1_arrive"}]);
+},
+
+/* ---------------------- ACT 1 : LEVEL 0, LOBBY ---------------------- */
+a1_arrive(){
+  setLevel("LEVEL 0 — LOBBY");
+  hr();
+  type("Yellow. That is the first fact and it is most of them. Wallpaper the color of old teeth, damp carpet, and a ceiling of fluorescent panels humming at a pitch you can feel in your fillings.");
+  type("Rooms open into rooms open into rooms. No doors close. No windows exist. The air tastes photocopied.");
+  type("Your phone is in your pocket. It has full battery and no signal, and the clock reads 00:00, and when you look again it reads 00:00.");
+  offer([{t:"Walk.",go:"a1_fork1"}]);
+},
+a1_fork1(){
+  type("The room ahead offers three of itself. Left, the carpet darkens with damp. Right, the light is steadier, almost kind. Straight on, the hum is louder — which could mean machinery, which could mean an exit, which could mean the thing the hum comes from.");
+  offer([
+    {t:"Left, into the damp.",go:"a1_after_fork",log:"fork1"},
+    {t:"Right, toward the steady light.",go:"a1_after_fork",log:"fork1"},
+    {t:"Straight, into the hum.",go:"a1_after_fork",log:"fork1"}
+  ]);
+},
+a1_after_fork(){
+  const f=S.log.fork1||"";
+  if(f.startsWith("Left"))type("The damp is not water. It has no smell at all, which is worse, and it deepens like the building is sweating from somewhere below.");
+  else if(f.startsWith("Right"))type("The steady light was a lie of distance. Up close each panel flickers in sequence, one after another, like something pacing overhead.");
+  else type("The hum swells and then — as you cross a particular seam in the carpet — stops entirely. In the silence you can hear your own pulse, and one other.");
+  type("You keep walking. Time passes, or repeats.");
+  go("a1_item");
+},
+a1_item(){
+  type("An overturned office chair, and beside it, laid out neatly on the carpet like a place setting: a staff lanyard with a blank badge, a box cutter with a fresh blade, and a half-full water bottle, still cold.");
+  type("Laid out. Neatly. For someone.");
+  offer([
+    {t:"Take the lanyard.",go:"a1_notebook",log:"item",fx:()=>S.item="lanyard"},
+    {t:"Take the box cutter.",go:"a1_notebook",log:"item",fx:()=>S.item="box cutter"},
+    {t:"Take the water bottle.",go:"a1_notebook",log:"item",fx:()=>S.item="water bottle"},
+    {t:"Touch nothing.",go:"a1_notebook",log:"item",fx:()=>S.item=null}
+  ]);
+},
+a1_notebook(){
+  if(S.item)type("The "+S.item+" goes in your pocket. The remaining objects look, briefly, disappointed.");
+  else type("You step around the arrangement. Behind you, you hear the soft sound of it being reset.");
+  type("Further on: a supply closet with no door, and inside, a spiral notebook and a pen that works. The first page is blank. All the pages are blank. The cardboard cover has a name field, unfilled.");
+  type("Paper remembers what heads forget. But out here, you suspect, paper can also be gotten to.");
+  offer([
+    {t:"Record your route so far.",go:"a1_writing",fx:()=>jot("ROUTE","Took the "+(S.log.fork1||"forward path").toLowerCase().replace(/[.,].*$/,"")+" at the first split. Hum on my left ever since. I am alone.")},
+    {t:"Record what you're carrying.",go:"a1_writing",fx:()=>jot("INVENTORY","Carrying: "+(S.item||"nothing")+", phone (00:00), this notebook. That is everything. If the list ever grows on its own, run.")},
+    {t:"Record your own name, before anything else.",go:"a1_writing",fx:()=>jot("ME","My name is "+NAME()+". I got here on a normal day. I do what I do with my hands when I'm nervous, and right now I am doing it.")}
+  ]);
+},
+a1_writing(){
+  type("You write. The pen is loud in the yellow quiet. Good — a fact is nailed down now. It can fade in your head and live on the page.");
+  type("Unless something edits the page.");
+  type("You round a corner and stop.");
+  type("Words on the wallpaper, written in ballpoint, at exactly your writing height:");
+  type("THE HUM STOPS WHEN YOU STOP. DON'T LET IT LEARN YOUR PACE.","wall");
+  type("Helpful. Deranged. And the thing you notice third, the thing you will not write down because writing it makes it real: you recognize the handwriting. From birthday cards. From grocery lists. From the form upstairs.");
+  type("It is yours.");
+  type("You realize your hands are busy — doing, all on their own, the thing they do when you're nervous. You watch them a moment. Name it. It will matter that you named it.");
+  ask("what your hands do when you're nervous","habit","a1_denial");
+},
+a1_denial(){
+  offer([
+    {t:"It's a coincidence. Handwriting is generic. Keep moving.",go:"a1_rest",log:"denial"},
+    {t:"Write beneath it: WHO ARE YOU.",go:"a1_reply",log:"denial"}
+  ]);
+},
+a1_reply(){
+  type("You print the three words under the message and step back.");
+  type("Nothing happens, for long enough that you feel foolish.");
+  type("Then you notice your reply is not where you wrote it. It is two rooms back, on a wall you already passed, in ink that has had years to fade.");
+  coh(-5,true);
+  go("a1_rest");
+},
+a1_rest(){
+  type("Hours in, or days. The yellow does not change and your legs do. There's an alcove ahead — dry carpet, a corner to put your back into. Every animal instinct says rest. Some newer instinct, born about an hour ago, says that sleeping here is how you get edited.");
+  offer([
+    {t:"Rest. Just for a moment.",go:"a1_rested",log:"rest"},
+    {t:"Keep walking. Keep the pace the hum has learned.",go:"a1_seam",log:"rest"}
+  ]);
+},
+a1_rested(){
+  type("You sleep like a dropped call.");
+  type("You dream you are filling out the form again, and in the dream your hand writes an answer you don't choose.");
+  type("You wake with the notebook open on your chest. You do not remember opening it.");
+  coh(-8);
+  corruptJournal();
+  go("a1_seam");
+},
+a1_seam(){
+  type("The carpet ends. Not at a wall — it simply ends, mid-room, at a seam, and past the seam is bare concrete sloping gently down, and set into the concrete, a hatch that predates the building above it.");
+  type("Cold air breathes up through the gap. It smells like a swimming pool at night.");
+  type("Behind you: yellow forever. Below you: at least it's a direction.");
+  type("You sit on the hatch lip to gather your legs, and your mind does what minds do at edges — it reaches for somewhere safe. The first address you ever memorized surfaces, whole, like it had been waiting.");
+  ask("that address, or just the street","address","a1_seam2");
+},
+a1_seam2(){
+  type("You say it once, under your breath, like a password. Then you climb down.");
+  go("a2_arrive");
+},
+
+/* --------------------- ACT 2 : LEVEL 1, THE WET --------------------- */
+a2_arrive(){
+  setLevel("LEVEL 1 — THE WET");
+  hr();
+  type("Down here the hum is gone and you miss it, because what replaced it is dripping — everywhere, arrhythmic, like a hundred clocks that gave up on agreeing.");
+  type("The arrhythmia gets under your skin fast. You catch yourself humming to give the dark a rhythm — the song that always surfaces when nothing else will.");
+  ask("what song","song","a2_arrive2");
+},
+a2_arrive2(){
+  type("It helps, for about a minute. Then you notice the drips nearest you have begun to keep your time.");
+  type("Concrete halls. An inch of standing water that is somehow perfectly clear and perfectly black at the same time. Pipes overhead going nowhere, carefully.");
+  type("Your footsteps make two sounds: the splash, and half a second later, a second splash, softer, from a corridor you cannot see.");
+  offer([{t:"Move on.",go:"a2_doors"}]);
+},
+a2_doors(){
+  type("A corridor of doors — the first doors you've seen. Steel, gray, unlabeled. Except one.");
+  type("One door has an address stenciled on it in municipal paint:");
+  type(ADDRESS().toUpperCase(),"wall");
+  type("You know that address the way you know your own heartbeat: by never having had to think about it. First bedroom. First front door. First everything.");
+  type("It has no business being here. Or you have no business being here, and it came to keep you company.");
+  offer([
+    {t:"Open it.",go:"a2_childhood",log:"door"},
+    {t:"Walk past. Whatever is in there is bait.",go:"a2_echo",log:"door",fx:()=>{type("You pass. Behind you, very quietly, the door opens anyway, and does not close.");coh(-4,true);}}
+  ]);
+},
+a2_childhood(){
+  type("Inside is your childhood bedroom, rendered by something that was only ever told about it.");
+  type("The proportions are right. The window is painted on. The bed has the correct blanket, and the blanket has no underside — you check, you don't know why you check, and you deeply regret checking.");
+  type("On the desk, a drawing you made as a kid. You remember making it. You remember it being of your family.");
+  type("It is a drawing of these hallways.");
+  offer([
+    {t:"Take the drawing.",go:"a2_echo",fx:()=>{S.flags.drawing=true;jot("EVIDENCE","Took a drawing from a copy of my old room. Child's crayon. It shows the yellow rooms and the hatch. Dated before I was born here. Before I was here. Dated before.");}},
+    {t:"Leave everything. Back out slowly.",go:"a2_echo",fx:()=>type("You back out. The painted window, as you go, darkens — as if outside it, something painted is arriving.")}
+  ]);
+},
+a2_echo(){
+  const item=S.item?("your "+S.item+" — the same "+S.item+", though yours is still in your pocket"):"nothing, its hands arranged as if holding something that had been taken from them";
+  const fork=(S.log.fork1||"straight").toLowerCase().includes("left")?"left":(S.log.fork1||"").toLowerCase().includes("right")?"right":"straight";
+  hr();
+  type("At the next junction there is a body.");
+  type("It sits against the wall, dry in all this wet, wearing your clothes. Not clothes like yours. Yours — down to the sleeve you snagged on the hatch an hour ago.");
+  type("Its face you do not look at, in the way you don't look directly at the sun, and for the same reason: you already know what it looks like.");
+  type("In its lap: a spiral notebook, and "+item+".");
+  type("Its notebook is open to a hand-drawn map. Your handwriting. It marks the first split in the yellow rooms and the route taken: "+fork+" — the same way you went. Every landmark checks out. And then, near the hatch, it marks a door you walked right past because it does not exist.");
+  type("Either the map is wrong, or your memory is. You are carrying the tiebreaker in your own pocket, and you are no longer sure you trust that either.");
+  offer([
+    {t:"Read the rest of its notebook.",go:"a2_echo_read",log:"echo"},
+    {t:"Search its pockets.",go:"a2_echo_pockets",log:"echo"},
+    {t:"Leave it be. Leave it everything.",go:"a2_skin",log:"echo",fx:()=>{type("You stand, in the drip and the dark, for as long as feels owed. Then you go. It is the first decent thing this place has let you do, and it steadies you more than rest ever did.");coh(5,true);}}
+  ]);
+},
+a2_echo_read(){
+  S.flags.readEcho=true;
+  type("You read.");
+  type("The early pages are yours — the same first facts, the same jokes to itself, the same careful capital letters when scared. Then the pages start describing things you haven't done yet.");
+  type("It writes about an archive below the wet. Cabinets to the ceiling. It writes: SHE KNOWS EVERYTHING I KNOW. SHE STOPPED KNOWING WHAT I KNOW WHEN I STARTED LYING TO MYSELF. That is underlined twice.");
+  type("The last page says: THE VENTS ARE SAFE. THE STAIRS ARE NOT. And then your signature, which you have never signed in your life.");
+  type("The knowledge goes in easily. Too easily — like it isn't arriving but returning. For a moment you remember writing it, remember the cold of this floor through those clothes, and the moment does not entirely end.");
+  coh(-10,true);
+  jot("BORROWED","Its notebook, mine now, wrote: vents safe, stairs not. She is below. Stop knowing what she knows.");
+  sysLine("signal degradation detected");
+  go("a2_skin");
+},
+a2_echo_pockets(){
+  type("Its pockets hold: a fistful of ballpoint pens, worn to stubs. A phone identical to yours, battery full, clock reading 00:00. And a folded intake form.");
+  type("Your form. Your handwriting. Every answer the same, except question two.");
+  type("NAME SOMEONE WHO WOULD NOTICE IF YOU DISAPPEARED, it asks, and in your handwriting, pressed hard enough to tear the paper, it says: STOP ASKING.");
+  S.flags.form=true;
+  coh(-6,true);
+  offer([
+    {t:"Take the form.",go:"a2_skin",fx:()=>jot("EVIDENCE","Took the other form. Same answers, except two. It stopped believing anyone would notice. That is the difference between us. Keep it the difference.")},
+    {t:"Put it back exactly as found.",go:"a2_skin"}
+  ]);
+},
+a2_skin(){
+  hr();
+  type("The corridor narrows. The dripping stops all at once, everywhere, the way a crowd stops talking.");
+  type("Ahead, the left wall is wrong. It takes your eyes a moment, because the wrongness is soft.");
+  type("The wall is covered in skin.");
+  type("Not in the way of horror movies — no gore, no seams. Just skin, wall-sized, faintly warm-looking, rising and falling as if the building is breathing through it. And you know it. You know that skin the way you'd know a voice on the phone from one syllable.");
+  type("It's "+CONTACT()+"'s.","bad");
+  type("The person you named. The person who would notice. Something in here read your form and made a wall out of your answer.");
+  offer([
+    {t:"Touch it. You have to know if it's warm.",go:"a2_skin_touch",log:"skin"},
+    {t:"Press against the far wall and pass without touching.",go:"a2_flood",log:"skin",fx:()=>{
+      type("You edge past, cheek to cold concrete, and at the narrowest point the skin of the wall moves — two hand-shapes rise beneath its surface and begin, gently, to do the thing you do with your hands when you're nervous. "+cap(HABIT())+". Your habit. Its hands.");
+      coh(-6,true);
+    }}
+  ]);
+},
+a2_skin_touch(){
+  type("It is warm.");
+  type("It is warm and at your touch it settles, contented, the exact contentment of someone you love falling asleep mid-sentence, and that — the tenderness — is the worst thing that has happened to you down here.");
+  type("You take your hand back. Your palm remembers the warmth for hours, like a burn.");
+  coh(-9,true);
+  go("a2_flood");
+},
+a2_flood(){
+  hr();
+  type("The corridor ends at a choice the building has clearly prepared for you.");
+  type("Down: a stairwell, half-flooded, the black water lying so still it looks solid. The steps are visible for one turn, then the water keeps them.");
+  type("Up and sideways: a wall vent, grate hanging open, big enough to crawl. From inside it, faint, in a voice that is yours the way a recording is yours, someone is humming "+SONG()+".");
+  if(S.flags.readEcho)type("The borrowed notebook, in your head, in your handwriting: THE VENTS ARE SAFE. THE STAIRS ARE NOT.","sys");
+  offer([
+    {t:"Take the stairs. Water is honest.",go:"a2_drown",log:"path"},
+    {t:"Climb into the vent, toward the humming.",go:"a2_vent",log:"path"}
+  ]);
+},
+a2_vent(){
+  type("You crawl. The vent is dry and close and the humming stays exactly one bend ahead the whole way — never nearer, never gone, patient as a metronome. "+cap(SONG())+", over and over, hummed by someone who learned it from your head.");
+  type("At the end you drop into a dry service corridor, and the humming stops mid-phrase, politely, like it only ever existed to walk you here.");
+  offer([{t:"Go on.",go:"a2_descend"}]);
+},
+a2_drown(){
+  type("Four steps down, the water takes your ankles. Six steps, your knees. It is not cold. That's the tell you catch too late — it is exactly blood-warm, and at the turn of the stair it does not deepen so much as decide, and the step you knew was there is not, and the water closes over you like a filing cabinet drawer.");
+  type("You do not drown. Drowning would be yours alone.","bad");
+  type("Instead: pressure, and a sensation like being averaged — rounded to the nearest you. Somewhere in the dark, briefly, you are holding your own hand.");
+  hr();
+  type("You wake on dry concrete in a corridor you half-recognize, notebook on your chest, everything in its place. Almost everything. Almost its place.");
+  type("You do not remember climbing out. There may not have been an out. There may not have been an entirely you.");
+  sysLine("continuity restored from nearest available copy");
+  merge("a2_after_merge");
+},
+a2_after_merge(){
+  type("You check the notebook with shaking hands. The entries are all there, in your handwriting. You cannot shake the feeling that one of them is newly wrong — a word swapped, a fact rounded — but you cannot find it, which is worse than finding it.");
+  type("You keep moving, because the alternative is doing inventory on yourself, and you are afraid of the count.");
+  offer([{t:"Go on.",go:"a2_descend"}]);
+},
+a2_descend(){
+  hr();
+  type("The service corridor tilts downward and the concrete gives way to something older — tile, then stone, then a stair that was never poured, only found.");
+  type("A draft rises to meet you, dry and papery. Somewhere below, faintly, precisely, someone is opening and closing drawers.");
+  offer([{t:"Descend to the sound.",go:"a3_arrive"}]);
+},
+
+/* -------------------- ACT 3 : LEVEL Ø, THE ARCHIVE -------------------- */
+a3_arrive(){
+  setLevel("LEVEL Ø — THE ARCHIVE");
+  hr();
+  type("The stair opens into a room with no far wall. Filing cabinets, gunmetal gray, floor to a ceiling you have to take on faith. Aisle after aisle, lit by hanging bulbs that sway with no wind, keeping time.");
+  type("You pull the nearest drawer. Files, densely packed. Every folder tab bears the same name, typed:");
+  type(NAME().toUpperCase(),"wall");
+  type("The next drawer, the same. The next cabinet. The next aisle. You are standing in the middle of a warehouse of yourself, and the drawers go up forever, and most of them are full.");
+  offer([
+    {t:"Open a folder.",go:"a3_folder"},
+    {t:"Don't. Some counts you don't survive knowing.",go:"a3_her",fx:()=>coh(3,true)}
+  ]);
+},
+a3_folder(){
+  type("The folder holds a single sheet: an intake form, completed, in your handwriting. So does the next. So does the next. Small differences — an answer firmer here, a blank left there. One of them lists, under REASON FOR APPLICATION: \"to bring the rest of me home.\"");
+  type("You put it back the way you'd rebury something.");
+  coh(-5,true);
+  go("a3_her");
+},
+a3_her(){
+  hr();
+  type("A drawer closes itself two aisles over, unhurried.");
+  type("She steps out into your aisle the way you step out of a bathroom in your own house — at home, at ease, adjusting her sleeve. Your sleeve. Your build, your walk, your face wearing an expression you recognize from mirrors on your best days: rested. Certain. Finished being afraid.");
+  type("\"There you are,\" she says, in your voice, warmly, and the warmth is the threat. \"The new one. The wet one.\" She looks you over like a checklist. \"You put down "+CONTACT()+". On the form. Someone who'd notice.\"");
+  type("She lets it sit. Then, gently:");
+  type("\"Do you think it's been long enough, up there, to know if you were right?\"","bad");
+  offer([
+    {t:"\"They'd notice. They noticed things nobody else did.\"",go:"a3_reform",log:"faith"},
+    {t:"Say nothing. Give her nothing she doesn't already have.",go:"a3_reform",log:"faith",fx:()=>type("She smiles at the silence like an old friend. \"I used to do that,\" she says. \"The quiet. It doesn't hold, down here. You'll talk to yourself eventually. Everyone here does nothing else.\"")},
+  ]);
+},
+a3_reform(){
+  type("She walks as she talks, and you walk with her, because standing still near her feels like being filed.");
+  type("\"Here's the thing about this place,\" she says. \"It's a copier. Old one. Every hard choice, it runs a spare of you — the you that chose otherwise. Most spares smear. You've met the smears. Some of us hold.\" She taps her temple. Your temple. \"It only sustains one clean original. The door upstairs only opens for a complete one. So the question the Archive exists to settle is very simple.\"");
+  type("She stops at a reading desk, and on the desk is a fresh intake form, and a pen.");
+  type("\"Which of us is still them?\"");
+  type("\"The form upstairs was only page one,\" she says. \"You dictated the rest on the way down. Every answer you gave the dark \u2014 at the wall, at the hatch, in the wet \u2014 the dark filed.\"");
+  type("\"Sit. Answers will be checked. You wrote them yourself, after all — this should be the easiest test you've ever taken.\"","wall");
+  offer([{t:"Sit. Take the pen.",go:"a3_rq1"}]);
+},
+a3_rq1(){
+  type("2. NAME SOMEONE WHO WOULD NOTICE IF YOU DISAPPEARED.","sys");
+  ask("answer again, from memory","re_contact","a3_rq2",v=>{
+    if(norm(v)===norm(S.intake.contact||"")){coh(4,true);type("She glances at the page and something in her jaw tightens. \"Still holding,\" she says. \"Huh.\"");}
+    else{S.contra++;coh(-10,true);type("She reads it upside down without effort. \"That's not what you wrote,\" she says, kindly, and the kindness is a scalpel. \"I remember writing it. Do you?\"","bad");}
+  });
+},
+a3_rq2(){
+  type("SUPPLEMENTAL 1. THE ADDRESS YOU RECITED AT THE HATCH.","sys");
+  ask("answer again","re_address","a3_rq3",v=>{
+    if(norm(v)===norm(S.intake.address||"")){coh(4,true);type("A nod, grudging. The bulbs overhead sway a fraction slower.");}
+    else{S.contra++;coh(-10,true);type("\"No,\" she says softly, and writes something in the margin, and you would give anything to not know it is a correction.","bad");}
+  });
+},
+a3_rq3(){
+  type("SUPPLEMENTAL 2. WHAT YOUR HANDS DO, WHEN THEY THINK YOU AREN'T WATCHING.","sys");
+  ask("answer again","re_habit","a3_verdict",v=>{
+    if(norm(v)===norm(S.intake.habit||"")){coh(4,true);type("You realize, as you write it, that you are doing it. So is she. Neither of you mentions this.");}
+    else{S.contra++;coh(-10,true);type("She looks at your hands, then at the answer, then at your hands. \"One of those is lying,\" she says.","bad");}
+  });
+},
+a3_verdict(){
+  hr();
+  if(S.contra===0){
+    type("She squares the form on the desk, and for the first time her ease has a crack in it — hairline, but you'd know it anywhere. It's yours.");
+    type("\"Consistent,\" she says. \"All the way down. Do you know how rare that is, in this building? Even the walls contradict themselves.\"");
+  }else if(S.contra<3){
+    type("She squares the form and doesn't need to say the count aloud, so she says it aloud. \""+S.contra+"\" — she taps the page — \"place"+(S.contra>1?"s":"")+" where you and the record disagree. Down here, that's not a memory problem. That's a chain-of-custody problem. With yourself.\"");
+  }else{
+    type("She reads the form for a long, terrible time, and when she looks up it is with something you never wanted to see on your own face: pity.");
+    type("\"Oh,\" she says. \"You're further gone than I was.\"","bad");
+  }
+  go("a3_offer");
+},
+a3_offer(){
+  type("She caps the pen — your click, exactly — and lays it down between you like a border.");
+  type("\"So. Options. I've had longer to think about them, but they were always going to be yours.\"");
+  type("\"One: we merge. Willingly, cleanly — not like the water does it. Two rememberers, one set of memories, no seams. The door gets its complete original, and nobody has to stop existing. We just have to stop being separate. I'd carry you gently. I'd want the same.\"");
+  type("\"Two: we walk up together and let the door choose. Civilized. Right up until it opens once and only once, at which point, I'd imagine, less civilized.\"");
+  type("\"Three,\" — and she doesn't look at your pocket, which is how you know she has counted its contents — \"is the thing you're deciding whether you're capable of. For the record: I know every feint you'd try, because I invented them the same afternoon you did. And it registers as self-harm here. The building bills it to your account, not mine.\"");
+  offer([
+    {t:"\"Merge. Gently. I'm tired of being outnumbered by myself.\"",go:"a3_merge_yes",log:"deal"},
+    {t:"\"We walk up together. The door decides.\"",go:"a3_walk",log:"deal"},
+    {t:"Attack her, now, before she finishes being reasonable.",go:"a3_kill",log:"deal"}
+  ]);
+},
+a3_merge_yes(){
+  S.flags.mergedWillingly=true;
+  type("She exhales — years of it. \"Thank you,\" she says, and holds out your hand.");
+  type("You take it. It is exactly as warm as you are.");
+  go("end_sum");
+},
+a3_kill(){
+  S.flags.killed=true;
+  type("You are across the desk before you finish deciding — the "+(S.item==="box cutter"?"box cutter already open in your fist":"pen snatched up like a blade")+" — and she does not dodge.");
+  type("She does not dodge, and in the last instant you understand it isn't because you were fast.");
+  type("\"You wouldn't have either,\" she says, into your shoulder, without spite, as if settling an old bet with herself.","bad");
+  type("The Archive takes her the way water takes ink — no body, just drawers, everywhere, sliding open at once and then, one by one, closed. Filed.");
+  type("Something is billed to your account. You feel the withdrawal go through.");
+  coh(-25,true);
+  sysLine("signal degradation detected");
+  offer([{t:"Climb. Don't look at the cabinets. Climb.",go:"a4_door"}]);
+},
+a3_walk(){
+  S.flags.together=true;
+  type("\"Civilized,\" she agrees, and the two of you walk the aisles side by side, in step, because there is no other way you know how to walk.");
+  type("She talks, on the stairs. Small things. The wall that breathes. The song in the vents — \"it hums what we can't shed.\" It is the strangest conversation of your life and the easiest: she laughs at the start of your jokes.");
+  type("\"For what it's worth,\" she says at a landing, not looking at you, \"I hope it's you. Is that strange? Some nights I can't tell anymore if that's generosity or just… also wanting to win.\"");
+  offer([{t:"Climb the last stair.",go:"a4_door"}]);
+},
+
+/* --------------------------- THE DOOR --------------------------- */
+a4_door(){
+  setLevel("THE DOOR");
+  hr();
+  type("The last stair ends in a small gray room with nothing in it but a fire door. Push-bar. Scuffed paint. An EXIT sign with the light burnt out, which down here reads less like neglect and more like discretion.");
+  type("Through the gap at the threshold: air. Real air — cut grass, rain on asphalt, somebody's distant dinner. The smell alone rearranges your chest.");
+  type("The door hums. Not the fluorescent hum. A held note, waiting to see who arrives.");
+  if(S.flags.together){go("a4_standoff");return;}
+  const opts=[{t:"Push the bar. Open the door.",go:"a4_resolve"}];
+  if(S.merges>0&&!S.flags.killed)opts.push({t:"Stop. Listen to the stairwell behind you. Let the others catch up.",go:"end_sum_late"});
+  offer(opts);
+},
+a4_standoff(){
+  type("She stops beside you, close enough that your shadows pool into one.");
+  type("\"Once,\" she reminds you. \"It opens once.\"");
+  offer([
+    {t:"Step aside. Let her through.",go:"end_keeper",log:"final"},
+    {t:"Go through first. It has to be you.",go:"a4_resolve",log:"final",fx:()=>{S.flags.raced=true;}},
+    {t:"Take her hand instead. Merge, here, at the threshold.",go:"a3_merge_yes",log:"final"}
+  ]);
+},
+a4_resolve(){
+  if(S.flags.raced)type("You move first — of course you move first, she taught you nothing you didn't already know — and your hand hits the bar as her breath catches behind you.");
+  if(S.flags.killed){go("end_last");return;}
+  if(S.merges===0&&S.contra===0&&S.coh>=55){go("end_original");return;}
+  go("end_loop");
+},
+
+/* --------------------------- ENDINGS --------------------------- */
+end_original(){
+  hr();
+  type("The bar gives. The door opens.");
+  type("It opens for you — you feel it check, a pause like a held breath at a reception desk, some vast attention reading you top to bottom against a form filed long ago. Route: consistent. Record: uncorrupted. Answers: the same, all the way down.");
+  type("APPLICANT COMPLETE,","wall");
+  type("says no voice, anywhere, and the building lets go of you like a hand opening.");
+  type("A parking lot at dusk. Sodium lights coming on. The air is so specific — so unphotocopied — that you stand in it and shake.");
+  type("You still have the notebook. Every entry yours, every fact nailed down, carried out intact. You remembered who you were so hard the building couldn't file you. That was the whole trick. That was the only trick.");
+  type("You walk toward the lights, toward a phone call you intend to make to "+CONTACT()+", who would have noticed, who is about to get the chance to prove it.");
+  type("At the crosswalk you glance down. Your hands are busy — "+HABIT()+", the old habit, working away all on its own.");
+  type("You watch them for a while.");
+  type("You are almost completely sure it was always yours.","bad");
+  endCard("THE ORIGINAL","You came out whole, and provably you. Merges: 0. Contradictions: 0. The rarest exit — most who leave that door leave as an average.");
+},
+end_last(){
+  hr();
+  type("The bar gives. The door opens without checking. Whatever count it was waiting on, the count is now one.");
+  type("Outside: a parking lot at dusk. Sodium lights. Air like a pardon.");
+  type("You stand in it alone, which was the plan — say that much for you, you executed the plan — and after a while you find a dark shop window and look at your reflection, because there is a question you have been not-asking since the Archive.");
+  type("The reflection looks back: rested. Certain. Finished being afraid.");
+  type("You knew every feint she'd try, after all. She knew every feint you'd try. And when the drawers closed, one of you walked up those stairs, and both of you were sure it was them.");
+  type("Somewhere behind the glass your hands begin, gently, to do the thing they do when you are nervous.");
+  type("You don't remember starting.","bad");
+  endCard("THE LAST ONE","One of you left. The door didn't care which, and by the end, neither could you.");
+},
+end_sum(){
+  hr();
+  type("It is not like the water. The water rounds you off. This is the opposite — this is addition, done with care, the two records interleaved page by page so that nothing is lost, only re-shelved.");
+  type("You remember the yellow rooms twice, from two heights of fear. You remember choices you didn't make, and now did. You remember writing the message on the wallpaper, and reading it, and both memories are labeled MINE, and both labels are correct.");
+  type("You walk to the door with a gait that takes a few steps to agree with itself, and then does.");
+  type("The bar gives. The door does not hesitate. Arithmetic is arithmetic: everything of you that was in the building has arrived.");
+  type("Outside, dusk, sodium lights, air. Down the block a figure stands under a streetlight, waiting, worried — and you know before the face resolves that it is "+CONTACT()+", and the recognition hits from so many directions at once that you have to stop walking.");
+  type("You raise a hand. Some of you waves.");
+  type("You love them more than one person could.","bad");
+  endCard("THE SUM","You left as everyone you'd been. Nothing was lost. Whether anything singular was ever there again is a question you no longer have a minority to raise.");
+},
+end_sum_late(){
+  type("You take your hand off the bar and turn to the dark of the stairwell, and you say it out loud, because down here saying things out loud is signing them:");
+  type("\"All of me or none of me.\"");
+  type("The stairwell breathes. Then, from below — footsteps, in your gait, plural. Not hurrying. Sure of their welcome. You wait at the threshold, holding the door's attention like an open elevator, as the yous the water made climb up out of the wet to be counted.");
+  go("end_sum");
+},
+end_keeper(){
+  hr();
+  type("You step aside.");
+  type("She looks at you the way you have never once managed to look at yourself, and does not insult either of you by asking twice. The bar gives under her hands. Grass, rain, a distant dinner. The door closes on the smell of it, softly, like a clerk sliding a window shut.");
+  type("The hum stops.");
+  type("The whole building — the drip, the fluorescents, the held note — goes quiet, and in the quiet you understand the terms of what you just bought. It got its complete original out the door. It kept the spare.");
+  type("But here is what the building doesn't know, because nothing that copies can know it: you chose. Unanticipated, unfiled, off-form. For one moment on that threshold you were the most original thing in the archive.");
+  type("You go back down with the notebook and a fistful of pens.");
+  type("Somewhere above, a new arrival is ringing a bell that makes no sound. You find a wall at exactly their writing height. You have so much to tell you.","bad");
+  endCard("THE KEEPER","She got out. You stayed — and became the handwriting on the wall. Someone wrote to you once. Now you know who.");
+},
+end_loop(){
+  hr();
+  type("The bar gives. The door opens.");
+  type("Fluorescent light. Beige carpet. A clock with no second hand.");
+  type("The waiting room.","bad");
+  type("The door from the stairwell is, when you turn, a door to a supply closet, and it has always been that, and behind the reception glass no one is very patient with you.");
+  type("On the counter: a clipboard, a chained pen, a form. STANDARD INTAKE — TO BE COMPLETED IN FULL. The form is already filled out, in your handwriting.");
+  type("Every answer is yours. You check them with your finger, trembling, line by line — name, address, hands, song — yours, yours, yours, yours.");
+  type("Except question two.");
+  type("NAME SOMEONE WHO WOULD NOTICE IF YOU DISAPPEARED.","sys");
+  type("It says: "+(S.contra>0?"\"I no longer answer this one honestly.\"":"\""+cap(CONTACT())+", probably. It's been a while.\""),"bad");
+  type("The bell rings, by itself, to hurry you along. It makes no sound. Somewhere behind the wall, something that has been listening for a very long time settles in to listen again.");
+  type("The door only opens for a complete one. You arrived incomplete — rounded, edited, contradicted. The building, reasonably, is sending you back through processing.");
+  endCard("PROCESSING","Not complete enough to leave; the building re-files you and begins again. What you carry forward, it will be checking.");
+},
+
+/* end card */
+_(){}
+};
+function endCard(title,sub){
+  audio.toll();
+  type(" ");
+  sysLine("ENDING — "+title);
+  sysLine(sub);
+  sysLine("merges: "+S.merges+"   contradictions: "+S.contra+"   signal: "+S.coh+"%");
+  queue=queue.then(()=>{
+    const box=document.createElement("div");box.id="choices";
+    const b=document.createElement("button");b.className="ch";
+    b.textContent=(title==="PROCESSING")?"Pick up the pen.":"Begin again.";
+    b.onclick=()=>{
+      const loop=S.loop+1,snd=audio.on;
+      for(const k of Object.keys(S))delete S[k];
+      Object.assign(S,{intake:{},log:{},coh:100,merges:0,contra:0,journal:[],flags:{},loop,item:null});
+      choiceEchoes.length=0;scroll.innerHTML="";bump();drawBar();
+      go("a0_start");
+    };
+    box.appendChild(b);scroll.appendChild(box);autoscroll();
+  });
+}
+
+/* boot */
+bump();drawBar();
+sysLine("tap anywhere to fast-forward text");
+go("a0_start");
+</script>
+</body>
+</html>
