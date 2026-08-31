@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ANSWERS WILL BE CHECKED</title>
 <style>
   :root{
@@ -150,14 +150,14 @@
     <span class="lvl" id="lvl">INTAKE</span>
     <span class="sig" id="sig"></span>
   </div>
-  <div id="scroll"></div>
+  <div id="scroll" aria-live="polite"></div>
   <div id="foot">
     <span id="btnSnd">SOUND OFF</span>
     <span id="btnJrn">JOURNAL</span>
   </div>
   <div id="flicker"></div>
 </div>
-<div id="jrn">
+<div id="jrn" role="dialog" aria-modal="true" aria-label="Your handwriting — journal">
   <span class="close" id="jrnClose">CLOSE</span>
   <h2>YOUR HANDWRITING</h2>
   <div id="jrnBody"></div>
@@ -192,6 +192,7 @@ function SONG(){return iv("song","a song with no name");}
 function drawBar(){
   const blocks=Math.max(0,Math.round(S.coh/10));
   bar.innerHTML="SIGNAL <b>"+"▮".repeat(blocks)+"</b>"+"▯".repeat(10-blocks);
+  bar.setAttribute("aria-label","signal "+S.coh+" percent");
   bar.classList.toggle("low",S.coh<40);
   document.body.classList.toggle("unstable",S.coh<50);
   if(audio.on)audio.tune();
@@ -214,13 +215,14 @@ function glitchWrap(text){
   words[i]='<span class="gl">'+words[i]+'</span>';
   return words.join(" ");
 }
+const escHtml=s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 function type(text,cls){
   queue=queue.then(()=>new Promise(res=>{
     const p=document.createElement("p");
     if(cls)p.className=cls;
     scroll.appendChild(p);
     p.classList.add("cursor");
-    const html=glitchWrap(text);
+    const html=glitchWrap(escHtml(text));
     if(RM){p.innerHTML=html;p.classList.remove("cursor");end();return;}
     // type plain text, swap to html (with glitch span) at completion
     let i=0;typing=true;skip=false;
@@ -270,6 +272,7 @@ function ask(placeholder,key,next,fx){
   queue=queue.then(()=>{
     const inp=document.createElement("input");
     inp.className="term";inp.placeholder=placeholder;inp.autocomplete="off";
+    inp.maxLength=80;inp.setAttribute("aria-label",placeholder);
     inp.onkeydown=e=>{
       if(e.key==="Enter"){
         const v=inp.value.trim();
@@ -294,12 +297,13 @@ $("btnJrn").onclick=()=>{
   if(!S.journal.length)b.innerHTML='<p class="empty">Nothing yet. You have written nothing down. Nothing can be taken.</p>';
   S.journal.forEach((e,i)=>{
     const d=document.createElement("div");d.className="ent";
-    d.innerHTML="<i>ENTRY "+String(i+1).padStart(2,"0")+" — "+e.t+"</i>"+e.x;
+    d.innerHTML="<i>ENTRY "+String(i+1).padStart(2,"0")+" — "+escHtml(e.t)+"</i>"+escHtml(e.x);
     b.appendChild(d);
   });
   $("jrn").classList.add("open");
 };
 $("jrnClose").onclick=()=>$("jrn").classList.remove("open");
+addEventListener("keydown",e=>{if(e.key==="Escape")$("jrn").classList.remove("open");});
 
 /* ---- corruption: the merge ---- */
 const swaps=[["left","right"],["right","left"],["box cutter","water bottle"],["water bottle","box cutter"],
@@ -798,11 +802,13 @@ a4_door(){
 a4_standoff(){
   type("She stops beside you, close enough that your shadows pool into one.");
   type("\"Once,\" she reminds you. \"It opens once.\"");
-  offer([
+  const opts=[
     {t:"Step aside. Let her through.",go:"end_keeper",log:"final"},
     {t:"Go through first. It has to be you.",go:"a4_resolve",log:"final",fx:()=>{S.flags.raced=true;}},
     {t:"Take her hand instead. Merge, here, at the threshold.",go:"a3_merge_yes",log:"final"}
-  ]);
+  ];
+  if(S.merges>0)opts.push({t:"Wait. Listen to the stairwell. All of you deserves a say.",go:"end_sum_late",log:"final"});
+  offer(opts);
 },
 a4_resolve(){
   if(S.flags.raced)type("You move first — of course you move first, she taught you nothing you didn't already know — and your hand hits the bar as her breath catches behind you.");
@@ -895,7 +901,7 @@ function endCard(title,sub){
     const b=document.createElement("button");b.className="ch";
     b.textContent=(title==="PROCESSING")?"Pick up the pen.":"Begin again.";
     b.onclick=()=>{
-      const loop=S.loop+1,snd=audio.on;
+      const loop=S.loop+1;
       for(const k of Object.keys(S))delete S[k];
       Object.assign(S,{intake:{},log:{},coh:100,merges:0,contra:0,journal:[],flags:{},loop,item:null});
       choiceEchoes.length=0;scroll.innerHTML="";bump();drawBar();
