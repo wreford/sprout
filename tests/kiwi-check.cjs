@@ -9,6 +9,8 @@ const SOLUTIONS=[
   [['cactus',400,60],['wax',640,340]],
   [['gum',190,124],['gum',660,443],['cactus',868,50]],
   [['wax',430,340],['gum',795,449],['cactus',890,85]],
+  [['gum',430,488]],
+  [['gum',100,107],['cactus',430,60],['wax',640,340]],
 ];
 (async () => {
   const errs=[];
@@ -25,8 +27,8 @@ const SOLUTIONS=[
     days: document.querySelectorAll('.day').length,
     intro: document.getElementById('ovl').classList.contains('on'),
     canvas: !!document.getElementById('cv') }));
-  (boot.levels===8&&boot.days===8&&boot.intro&&boot.canvas)
-    ? ok('boots: 8 days, intro overlay, canvas') : fail('boot: '+JSON.stringify(boot));
+  (boot.levels===10&&boot.days===10&&boot.intro&&boot.canvas)
+    ? ok('boots: 10 days, intro overlay, canvas') : fail('boot: '+JSON.stringify(boot));
   await p.evaluate(()=>document.getElementById('ovlStart').click());
 
   const sane = await p.evaluate(()=>{
@@ -60,7 +62,7 @@ const SOLUTIONS=[
   }
 
   const prog = await p.evaluate(()=>({ day:KBM.P.day, done:Object.keys(KBM.P.done).length }));
-  (prog.day===8&&prog.done===8) ? ok('progress saved: day 8 unlocked, all 8 done') : fail('prog: '+JSON.stringify(prog));
+  (prog.day===10&&prog.done===10) ? ok('progress saved: day 10 unlocked, all 10 done') : fail('prog: '+JSON.stringify(prog));
 
   const reject = await p.evaluate(()=>{
     KBM.load(0);
@@ -73,7 +75,7 @@ const SOLUTIONS=[
   await p.reload({waitUntil:'domcontentloaded'});
   await p.waitForFunction(()=>window.KBM);
   const persist = await p.evaluate(()=>({ day:KBM.P.day, intro:document.getElementById('ovl').classList.contains('on') }));
-  (persist.day===8&&!persist.intro) ? ok('reload: progress persists, intro skipped for veterans') : fail('persist: '+JSON.stringify(persist));
+  (persist.day===10&&!persist.intro) ? ok('reload: progress persists, intro skipped for veterans') : fail('persist: '+JSON.stringify(persist));
 
   await p.evaluate(()=>KBM.load(2));
   await p.waitForTimeout(400);

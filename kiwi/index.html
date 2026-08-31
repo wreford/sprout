@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#fff3de">
-<meta name="description" content="Kiwi's Breakfast Machine — a contraption puzzle. Place bubble gum, a cactus, and a wax candle to send one gumball through ramps, ropes, weights, and catapults, so a small flightless bird gets breakfast without lifting a feather.">
+<meta name="description" content="Kiwi's Breakfast Machine — a contraption puzzle. Place bubble gum, a cactus, and a wax candle to send one gumball through ramps, ropes, weights, and catapults, so a small flightless bird gets breakfast without lifting a feather. From day nine, Lily and her horse join the machine.">
 <title>Kiwi's Breakfast Machine</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -117,6 +117,7 @@ const sThud=()=>tone(90,.22,"triangle",.2);
 const sLaunch=()=>{ tone(220,.1,"square",.12); tone(440,.12,"square",.1,.07); tone(660,.14,"square",.1,.14); };
 const sWin=()=>{ [523,659,784,1047].forEach((f,i)=>tone(f,.22,"triangle",.14,i*.12)); };
 const sFail=()=>{ tone(220,.25,"sawtooth",.09); tone(160,.3,"sawtooth",.09,.18); };
+const sNeigh=()=>{ tone(740,.1,"triangle",.11); tone(560,.12,"triangle",.1,.07); tone(420,.16,"triangle",.1,.15); };
 const buzz=p=>{ if(navigator.vibrate) navigator.vibrate(p); };
 
 const BOWL={x:842,y:430,w:112,h:78};
@@ -179,11 +180,28 @@ const LEVELS=[
   hint:"Everything you know. Burn the rope, launch the ball, let it bounce into the pit, bubble up, and pop it over the bowl.",
   win:"Day 8 — The full symphony. Kiwi ate, then asked about lunch.",
   fact:"New Zealanders are called Kiwis after the bird — the bird came first." },
+{ inv:{gum:1},
+  segs:[[30,110,300,150],[8,500,460,500],[460,380,460,500],[560,360,760,360],[612,316,708,316,.2]],
+  spikes:[[620,30]],
+  horse:{x:660,y:360,zone:[610,275,85,50],lv:[300,-402]},
+  hint:"Bubble the ball to the ceiling — gum goes in the pit. The hanging cactus pops it right over the horse, and the horse handles delivery.",
+  win:"Day 9 — Lily's horse kicked breakfast across the room. Lily is so proud.",
+  flabel:"Real horse fact",
+  fact:"Horses can sleep standing up — a locking joint in their legs holds them upright while they doze." },
+{ inv:{gum:1,cactus:1,wax:1},
+  segs:[[30,100,140,130],[60,460,380,472],[380,380,380,472],[402,326,546,314,.12],[404,322,404,286,.12],[546,322,546,286,.12],[610,352,670,352],[700,360,820,360],[744,312,812,312,.2],[830,170,830,470]],
+  ropes:[{x:640,y1:20,y2:250}],
+  saws:[{pan:[408,274,60,52],wz:[605,306,70,54],lv:[355,-774],arm:[470,321]}],
+  horse:{x:778,y:360,zone:[762,252,75,58],lv:[170,-740]},
+  hint:"The whole family: gum on the first slope, cactus over the cup, wax under the rope. The catapult throws the ball to the horse. Trust the horse.",
+  win:"Day 10 — Gum, fire, catapult, horse. Lily says the horse did most of the work.",
+  flabel:"Real horse fact",
+  fact:"A galloping horse's heart can pump around 250 litres of blood a minute. Breakfast delivery is light work." },
 ];
 
 let lvl=0, L=null, mode="edit", T=0;
 let inv={}, placements=[], ropes=[], weights=[], doors=[], saws=[], fgums=[], waitZones=[];
-let ball=null, stallT=0, capT=0, graceT=0, cereal=[], confetti=[], kiwiEat=0, popFx=[], trace=[];
+let ball=null, horseS=null, stallT=0, capT=0, graceT=0, cereal=[], confetti=[], kiwiEat=0, popFx=[], trace=[];
 
 function cap(t){ $("cap").textContent=t; $("cap").classList.add("on"); capT=2.4; }
 
@@ -207,6 +225,7 @@ function buildRun(){
   saws=(L.saws||[]).map(s=>({pan:s.pan,wz:s.wz,lv:s.lv,arm:s.arm,weightOn:false,fired:false,ft:0}));
   fgums=(L.fgums||[]).map(g=>({x:g[0],y:g[1],used:false}));
   placements.forEach(p=>{ p.used=false; if(p.t==="wax") p.lit=false; });
+  horseS=L.horse?{cool:0,anim:0}:null;
   waitZones=[...(L.waits||[]),...saws.map(s=>s.pan)];
 }
 function activeSegs(){
@@ -325,6 +344,16 @@ function step(dt){
       sLaunch(); buzz([20,40,20]); cap(pick(["LAUNCH.","The catapult has opinions.","Breakfast, airborne."]));
     }
   });
+  if(L.horse&&horseS){
+    if(horseS.cool>0) horseS.cool-=dt;
+    if(horseS.anim>0) horseS.anim-=dt;
+    if(horseS.cool<=0&&!ball.bubble&&ball.vy>40&&inRect(ball.x,ball.y,L.horse.zone)){
+      horseS.cool=1.2; horseS.anim=0.5;
+      ball.vx=L.horse.lv[0]; ball.vy=L.horse.lv[1];
+      sNeigh(); buzz([25,40,25]);
+      cap(pick(["The horse declines to explain.","Lily's horse: consulted. Breakfast: launched.","The horse says yes. Emphatically."]));
+    }
+  }
   if(inRect(ball.x,ball.y,[BOWL.x,BOWL.y,BOWL.w,BOWL.h])){ winRun(); return; }
   if(ball.y>H+70){ failRun("The breakfast has left the building."); return; }
   const sp=Math.hypot(ball.vx,ball.vy);
@@ -375,9 +404,9 @@ function showWin(){
   const allDone=Object.keys(P.done).length>=LEVELS.length;
   $("ovlBox").innerHTML=`
     <div class="big">🥣🥝${last?"👑":""}</div>
-    <h2>${last?"ALL 8 MORNINGS <i>COMPLETE</i>":"Kiwi is <i>fed</i>"}</h2>
+    <h2>${last?"ALL "+LEVELS.length+" MORNINGS <i>COMPLETE</i>":"Kiwi is <i>fed</i>"}</h2>
     <p>${L.win}</p>
-    <div class="fact"><b>Real kiwi fact:</b> ${L.fact}</div>
+    <div class="fact"><b>${L.flabel||"Real kiwi fact"}:</b> ${L.fact}</div>
     ${last?`<p>${allDone?"Kiwi is full. The machine rests. You are now, legally, a breakfast engineer.":""}</p>
       <button id="ovlNext">Play again from Day 1</button>`
     :`<button id="ovlNext">Day ${lvl+2} →</button>`}`;
@@ -395,6 +424,7 @@ function showIntro(){
       <li><span class="em">🌵</span><span><b>CACTUS</b> pops bubbles. Placement is everything.</span></li>
       <li><span class="em">🕯️</span><span><b>WAX</b> candles burn any rope above them. Falling weights make things happen.</span></li>
       <li><span class="em">🥣</span><span>Get the ball to the bowl. The bowl tips, cereal pours, Kiwi eats. (Kiwi eats the cereal, not the gumball. Kiwi has standards.)</span></li>
+      <li><span class="em">🐴</span><span>From Day 9, Lily and her horse join the machine. Land the ball on the saddle and the horse kicks it onward. The horse is very reliable about this.</span></li>
     </ul>
     <button id="ovlStart">Build the machine</button>`;
   $("ovl").classList.add("on");
@@ -556,6 +586,7 @@ function render(){
     ctx.strokeStyle=["#f5a623","#e8863f","#d9b64e","#c9762f"][c.c]; ctx.lineWidth=3;
     ctx.beginPath(); ctx.arc(c.x,c.y,c.r,0,7); ctx.stroke();
   });
+  if(L.horse) drawHorse(t);
   drawKiwi(t);
   popFx.forEach(p=>{
     ctx.strokeStyle="rgba(255,127,176,"+(p.t/0.4)+")"; ctx.lineWidth=3;
@@ -584,6 +615,46 @@ function render(){
     ctx.font="700 13px 'Baloo 2'"; ctx.textAlign="center";
     ctx.fillText("tap anywhere to place "+(selTool==="gum"?"🍬":selTool==="cactus"?"🌵":"🕯️"),480,528);
   }
+}
+function drawHorse(t){
+  const hx=L.horse.x, hy=L.horse.y;
+  const a=horseS&&horseS.anim>0?Math.sin((0.5-horseS.anim)/0.5*Math.PI)*0.34:0;
+  const lx=hx-58, hop=(horseS&&horseS.anim>0.15)||mode==="won"?Math.abs(Math.sin(t*8))*7:0;
+  ctx.save();
+  ctx.strokeStyle="#5a3a20"; ctx.lineWidth=2.5;
+  ctx.beginPath(); ctx.moveTo(lx+8,hy-38-hop); ctx.lineTo(hx-46,hy-70); ctx.stroke();
+  ctx.strokeStyle="#8a5a33"; ctx.lineWidth=3; ctx.lineCap="round";
+  ctx.beginPath(); ctx.moveTo(lx-4,hy-22+ (hop?-hop:0)); ctx.lineTo(lx-4,hy); ctx.moveTo(lx+4,hy-22+(hop?-hop:0)); ctx.lineTo(lx+4,hy); ctx.stroke();
+  ctx.fillStyle="#b48ae0";
+  ctx.beginPath(); ctx.moveTo(lx,hy-42-hop); ctx.lineTo(lx-11,hy-20-hop); ctx.lineTo(lx+11,hy-20-hop); ctx.closePath(); ctx.fill();
+  ctx.fillStyle="#f0c8a0";
+  ctx.beginPath(); ctx.arc(lx,hy-49-hop,8,0,7); ctx.fill();
+  ctx.strokeStyle="#6d4520"; ctx.lineWidth=3;
+  ctx.beginPath(); ctx.arc(lx-8,hy-52-hop,6,1.2,3.6); ctx.stroke();
+  ctx.fillStyle="#2c1f12";
+  ctx.beginPath(); ctx.arc(lx+3,hy-50-hop,1.3,0,7); ctx.fill();
+  ctx.translate(hx-24,hy); ctx.rotate(-a); ctx.translate(-(hx-24),-hy);
+  ctx.strokeStyle="#7a4a26"; ctx.lineWidth=5; ctx.lineCap="round";
+  ctx.beginPath(); ctx.moveTo(hx-24,hy-32); ctx.lineTo(hx-24,hy);
+  ctx.moveTo(hx-13,hy-32); ctx.lineTo(hx-13,hy); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(hx+18,hy-32); ctx.lineTo(hx+18+(a>0.05?15:0),hy-(a>0.05?16:0));
+  ctx.moveTo(hx+27,hy-32); ctx.lineTo(hx+27+(a>0.05?17:0),hy-(a>0.05?12:0)); ctx.stroke();
+  ctx.fillStyle="#a5683c";
+  ctx.beginPath(); ctx.ellipse(hx,hy-42,35,17,0,0,7); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(hx-24,hy-52); ctx.lineTo(hx-44,hy-76); ctx.lineTo(hx-30,hy-42); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(hx-48,hy-77,11,7,-0.45,0,7); ctx.fill();
+  ctx.fillStyle="#8a5227";
+  ctx.beginPath(); ctx.moveTo(hx-50,hy-84); ctx.lineTo(hx-46,hy-92); ctx.lineTo(hx-43,hy-83); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle="#6d3f1c"; ctx.lineWidth=3;
+  for(let i=0;i<4;i++){ ctx.beginPath(); ctx.moveTo(hx-30+i*5,hy-56+i*2); ctx.lineTo(hx-36+i*5,hy-46+i*2); ctx.stroke(); }
+  ctx.beginPath(); ctx.moveTo(hx+33,hy-46);
+  ctx.quadraticCurveTo(hx+48,hy-40,hx+44,hy-16); ctx.stroke();
+  ctx.fillStyle="#2c1f12";
+  ctx.beginPath(); ctx.arc(hx-50,hy-79,1.6,0,7); ctx.fill();
+  ctx.fillStyle="#e8503f";
+  ctx.beginPath(); ctx.roundRect?ctx.roundRect(hx-10,hy-58,22,9,3):ctx.rect(hx-10,hy-58,22,9); ctx.fill();
+  ctx.restore();
 }
 function drawGum(x,y){
   ctx.fillStyle="#ff7fb0";
