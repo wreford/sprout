@@ -33,13 +33,24 @@ const PNG='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAA
   });
   gen.length===0 ? ok('question generator: 600 draws — 4 unique in-category options, answer present') : fail(gen.join('|'));
 
+  const alias = await p.evaluate(()=>({
+    disp: WTV.clean('Grimpoteuthis|Dumbo octopus'),
+    para: WTV.clean('Fairy circle (arid grass)|Fairy circles'),
+    plain: WTV.clean('Blobfish'),
+    weird: WTV.CATS.find(c=>c.id==='weird'),
+  }));
+  (alias.disp==='Dumbo octopus'&&alias.para==='Fairy circles'&&alias.plain==='Blobfish'
+    &&alias.weird&&alias.weird.t.length>=70)
+    ? ok('weird category present ('+alias.weird.t.length+' subjects), aliases clean: "'+alias.disp+'"')
+    : fail('alias/weird: '+JSON.stringify(alias));
+
   await p.click('#btnGo');
   await p.waitForTimeout(700);
   const boot = await p.evaluate(()=>({
     cards: document.querySelectorAll('.card').length,
     imgOn: !!document.querySelector('.card img.on'),
     cats: document.querySelectorAll('.cat').length }));
-  (boot.cards>=4&&boot.imgOn&&boot.cats===9) ? ok('feed boots: 4 preloaded cards, image visible, 9 category chips') : fail(JSON.stringify(boot));
+  (boot.cards>=4&&boot.imgOn&&boot.cats===10) ? ok('feed boots: 4 preloaded cards, image visible, 10 category chips') : fail(JSON.stringify(boot));
 
   const firstTitle = asked[0];
   await p.evaluate(t=>{
@@ -90,6 +101,18 @@ const PNG='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAA
     return { q: txt[0], stripped: opts.every(o=>!o.startsWith('Flag of')) };
   });
   (catSwitch.q.includes('flag')&&catSwitch.stripped) ? ok('flags category: question swaps, "Flag of" stripped from options ('+catSwitch.q+')') : fail(JSON.stringify(catSwitch));
+
+  const beforeWeird = asked.length;
+  await p.evaluate(async ()=>{
+    document.querySelector('[data-c="weird"]').click();
+    await new Promise(r=>setTimeout(r,500));
+  });
+  const weirdQ = await p.evaluate(()=>document.querySelector('.card .q').textContent);
+  const weirdAsked = asked.slice(beforeWeird);
+  const titlesClean = weirdAsked.length>0 && weirdAsked.every(t=>!t.includes('|'));
+  (weirdQ.includes('What in the world')&&titlesClean)
+    ? ok('weird category: feed swaps, Wikipedia asked for real titles only ('+weirdAsked[0]+')')
+    : fail('weird switch: q="'+weirdQ+'" asked='+JSON.stringify(weirdAsked.slice(0,3)));
 
   await p.reload({waitUntil:'domcontentloaded'});
   await p.waitForFunction(()=>window.WTV);
