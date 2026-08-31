@@ -19,6 +19,20 @@ const SOLUTIONS=[
   const ctx = await b.newContext({viewport:{width:900,height:620},hasTouch:true});
   const p = await ctx.newPage();
   p.on('pageerror', e=>fail('PAGEERROR: '+e.message.slice(0,160)));
+  await p.addInitScript(()=>{
+    window.__played=[];
+    HTMLMediaElement.prototype.play=function(){ window.__played.push(this.src); return Promise.resolve(); };
+    HTMLMediaElement.prototype.pause=function(){ window.__paused=true; };
+  });
+  await p.route('**archive.org/advancedsearch.php**', r=>r.fulfill({ contentType:'application/json',
+    headers:{'access-control-allow-origin':'*'},
+    body: JSON.stringify({response:{docs:[{identifier:'mock-rag-1',title:'Mock Rag'},{identifier:'mock-rag-2',title:'Second Rag'}]}}) }));
+  await p.route('**archive.org/metadata/**', r=>{
+    const id=r.request().url().split('/metadata/')[1];
+    r.fulfill({ contentType:'application/json',
+      headers:{'access-control-allow-origin':'*'},
+      body: JSON.stringify({metadata:{title:'Maple Mock Rag ('+id+')'},files:[{name:'side-a.mp3',format:'VBR MP3'},{name:'cover.jpg',format:'JPEG'}]}) });
+  });
   await p.goto('http://localhost:8899/kiwi/', {waitUntil:'domcontentloaded'});
   await p.waitForFunction(()=>window.KBM);
 
@@ -30,6 +44,28 @@ const SOLUTIONS=[
   (boot.levels===10&&boot.days===10&&boot.intro&&boot.canvas)
     ? ok('boots: 10 days, intro overlay, canvas') : fail('boot: '+JSON.stringify(boot));
   await p.evaluate(()=>document.getElementById('ovlStart').click());
+
+  await p.evaluate(()=>document.dispatchEvent(new PointerEvent('pointerdown')));
+  await p.waitForFunction(()=>window.__played&&window.__played.length>0,{timeout:5000}).catch(()=>{});
+  const music = await p.evaluate(()=>({
+    n: KBM.MUSIC.list.length,
+    first: KBM.MUSIC.list[0]&&KBM.MUSIC.list[0].u,
+    played: window.__played,
+    cached: !!localStorage.getItem('kbm-tracks'),
+    cap: document.getElementById('cap').textContent }));
+  (music.n>=2&&music.first.includes('/download/mock-rag-1/side-a.mp3')
+    &&music.played.some(u=>u.includes('mock-rag-1'))&&music.cached&&music.cap.includes('\u266a'))
+    ? ok('music: free-API playlist resolved ('+music.n+' 78s), mp3 streaming, cached, credited in caption')
+    : fail('music: '+JSON.stringify(music));
+
+  const mtoggle = await p.evaluate(()=>{
+    document.getElementById('mus').click();
+    return { off: document.getElementById('mus').classList.contains('off'),
+      paused: !!window.__paused, pref: KBM.P.music };
+  });
+  (mtoggle.off&&mtoggle.paused&&mtoggle.pref===false)
+    ? ok('music toggle: pauses, dims button, saves pref') : fail('mtoggle: '+JSON.stringify(mtoggle));
+  await p.evaluate(()=>document.getElementById('mus').click());
 
   const sane = await p.evaluate(()=>{
     const probs=[];

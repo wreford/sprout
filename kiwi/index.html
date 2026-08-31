@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#fff3de">
-<meta name="description" content="Kiwi's Breakfast Machine — a contraption puzzle. Place bubble gum, a cactus, and a wax candle to send one gumball through ramps, ropes, weights, and catapults, so a small flightless bird gets breakfast without lifting a feather. From day nine, Lily and her horse join the machine.">
+<meta name="description" content="Kiwi's Breakfast Machine — a contraption puzzle. Place bubble gum, a cactus, and a wax candle to send one gumball through ramps, ropes, weights, and catapults, so a small flightless bird gets breakfast without lifting a feather. From day nine, Lily and her horse join the machine. Scored with public-domain ragtime 78s streamed from the Internet Archive.">
 <title>Kiwi's Breakfast Machine</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -29,8 +29,9 @@ body{background:linear-gradient(180deg,var(--bg),var(--bg2));color:var(--ink);
 .day.on{background:var(--teal);border-color:var(--teal);color:#fff}
 .day.done{background:var(--gold);border-color:var(--gold);color:#fff}
 .day:disabled{opacity:.35;cursor:default}
-#snd{width:30px;height:30px;border-radius:10px;border:2px solid var(--wood);background:var(--panel);
+#snd,#mus{width:30px;height:30px;border-radius:10px;border:2px solid var(--wood);background:var(--panel);
   cursor:pointer;font-size:14px}
+#mus.off,#snd.off{opacity:.4}
 #stage{flex:1;position:relative;display:flex;align-items:center;justify-content:center;
   padding:4px 10px;min-height:0}
 #cv{background:#fffdf6;border:4px solid var(--wood2);border-radius:16px;max-width:100%;
@@ -78,7 +79,8 @@ body{background:linear-gradient(180deg,var(--bg),var(--bg2));color:var(--ink);
 <div id="hdr">
   <h1>🥝 Kiwi's <span>Breakfast</span> Machine</h1>
   <div id="days"></div>
-  <button id="snd">🔊</button>
+  <button id="mus" title="music">🎵</button>
+  <button id="snd" title="sound effects">🔊</button>
 </div>
 <div id="stage">
   <canvas id="cv" width="960" height="540"></canvas>
@@ -93,7 +95,7 @@ const cv=$("cv"), ctx=cv.getContext("2d");
 const W=960,H=540,G=1400,DT=1/120;
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 
-let P={day:1,done:{},snd:true};
+let P={day:1,done:{},snd:true,music:true};
 try{ const s=JSON.parse(localStorage.getItem("kbm")||"null"); if(s) P=Object.assign(P,s); }catch(e){}
 const saveP=()=>{ try{ localStorage.setItem("kbm",JSON.stringify(P)); }catch(e){} };
 
@@ -119,6 +121,69 @@ const sWin=()=>{ [523,659,784,1047].forEach((f,i)=>tone(f,.22,"triangle",.14,i*.
 const sFail=()=>{ tone(220,.25,"sawtooth",.09); tone(160,.3,"sawtooth",.09,.18); };
 const sNeigh=()=>{ tone(740,.1,"triangle",.11); tone(560,.12,"triangle",.1,.07); tone(420,.16,"triangle",.1,.15); };
 const buzz=p=>{ if(navigator.vibrate) navigator.vibrate(p); };
+
+const MUSIC={list:[],idx:0,el:null,on:P.music!==false,started:false,resolving:null};
+function musicResolve(){
+  if(MUSIC.resolving) return MUSIC.resolving;
+  MUSIC.resolving=(async()=>{
+    try{
+      const c=JSON.parse(localStorage.getItem("kbm-tracks")||"null");
+      if(c&&c.t>Date.now()-6048e5&&c.list&&c.list.length){ MUSIC.list=c.list; return; }
+    }catch(e){}
+    try{
+      const q="https://archive.org/advancedsearch.php?q="+
+        encodeURIComponent("collection:(78rpm) AND mediatype:(audio) AND subject:(ragtime) AND year:[1900 TO 1922]")+
+        "&fl[]=identifier&fl[]=title&rows=16&page=1&output=json&sort[]=downloads+desc";
+      const j=await (await fetch(q)).json();
+      const docs=(j.response&&j.response.docs)||[];
+      const list=[];
+      for(const d of docs){
+        if(list.length>=6) break;
+        try{
+          const m=await (await fetch("https://archive.org/metadata/"+d.identifier)).json();
+          const f=(m.files||[]).find(f=>/VBR MP3/i.test(f.format||""))||(m.files||[]).find(f=>/\.mp3$/i.test(f.name||""));
+          if(f) list.push({u:"https://archive.org/download/"+d.identifier+"/"+encodeURIComponent(f.name),
+            t:(m.metadata&&m.metadata.title)||d.title||"78 rpm"});
+        }catch(e){}
+      }
+      if(list.length){
+        MUSIC.list=list;
+        try{ localStorage.setItem("kbm-tracks",JSON.stringify({t:Date.now(),list})); }catch(e){}
+      }
+    }catch(e){}
+  })();
+  return MUSIC.resolving;
+}
+async function musicStart(){
+  if(MUSIC.started||!MUSIC.on) return;
+  MUSIC.started=true;
+  await musicResolve();
+  if(!MUSIC.list.length){ MUSIC.started=false; return; }
+  if(!MUSIC.el){
+    MUSIC.el=new Audio();
+    MUSIC.el.volume=0.3;
+    MUSIC.el.onended=()=>{ MUSIC.idx=(MUSIC.idx+1)%MUSIC.list.length; musicCue(); };
+    MUSIC.el.onerror=()=>{
+      MUSIC.list.splice(MUSIC.idx,1);
+      if(MUSIC.list.length){ MUSIC.idx%=MUSIC.list.length; musicCue(); }
+    };
+  }
+  musicCue();
+}
+function musicCue(){
+  if(!MUSIC.on||!MUSIC.el||!MUSIC.list.length) return;
+  const tr=MUSIC.list[MUSIC.idx];
+  MUSIC.el.src=tr.u;
+  MUSIC.el.play().then(()=>{ cap("♪ "+tr.t+" — via the Internet Archive"); }).catch(()=>{});
+}
+function paintMus(){ $("mus").classList.toggle("off",!MUSIC.on); $("snd").classList.toggle("off",!P.snd); }
+$("mus").onclick=()=>{
+  MUSIC.on=!MUSIC.on; P.music=MUSIC.on; saveP(); paintMus();
+  if(!MUSIC.on){ if(MUSIC.el) MUSIC.el.pause(); }
+  else{ if(MUSIC.started&&MUSIC.el&&MUSIC.el.src){ MUSIC.el.play().catch(()=>{}); } else { MUSIC.started=false; musicStart(); } }
+};
+document.addEventListener("pointerdown",()=>musicStart(),{once:false});
+musicResolve();
 
 const BOWL={x:842,y:430,w:112,h:78};
 const BOWLSEGS=[[848,452,848,506,.1],[848,506,936,506,.1]];
@@ -455,8 +520,9 @@ function paintTray(){
   $("bReset").onclick=resetRun;
   $("bHint").onclick=()=>cap(L.hint);
 }
-$("snd").onclick=()=>{ P.snd=!P.snd; saveP(); $("snd").textContent=P.snd?"🔊":"🔇"; };
+$("snd").onclick=()=>{ P.snd=!P.snd; saveP(); $("snd").textContent=P.snd?"🔊":"🔇"; paintMus(); };
 $("snd").textContent=P.snd?"🔊":"🔇";
+paintMus();
 
 cv.addEventListener("pointerdown",e=>{
   if(mode!=="edit") return;
@@ -687,7 +753,7 @@ window.KBM={
   ff(sec){ let tt=0; while(tt<sec&&mode==="run"){ step(DT); tt+=DT;
     if(trace.length===0||tt-trace[trace.length-1].t>0.25) trace.push({t:+tt.toFixed(2),x:Math.round(ball.x),y:Math.round(ball.y),b:ball.bubble?1:0}); } },
   state(){ return {lvl,mode,x:Math.round(ball.x),y:Math.round(ball.y),bubble:ball.bubble,T:+T.toFixed(2)}; },
-  get trace(){ return trace; }, get P(){ return P; }, get inv(){ return inv; },
+  get trace(){ return trace; }, get P(){ return P; }, get inv(){ return inv; }, get MUSIC(){ return MUSIC; },
   probe(){ const s=saws[0];
     return { ball:{x:ball.x,y:ball.y,vx:+ball.vx.toFixed(1),vy:+ball.vy.toFixed(1),
       sp:+Math.hypot(ball.vx,ball.vy).toFixed(1),bubble:ball.bubble},
