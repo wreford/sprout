@@ -18,6 +18,12 @@ const PNG='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAA
   await p.route('**en.wikipedia.org/w/api.php**', route=>{
     const u=new URL(route.request().url());
     const title=u.searchParams.get('titles');
+    if(u.searchParams.get('prop')==='extracts'){
+      route.fulfill({ contentType:'application/json',
+        headers:{'access-control-allow-origin':'*'},
+        body: JSON.stringify({query:{pages:{1:{title, extract:'Mock fact: '+title+' is genuinely fascinating.'}}}}) });
+      return;
+    }
     asked.push(title);
     route.fulfill({ contentType:'application/json',
       headers:{'access-control-allow-origin':'*'},
@@ -58,8 +64,9 @@ const PNG='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAA
     cats: document.querySelectorAll('.cat').length }));
   (boot.cards>=4&&boot.imgOn&&boot.cats===10) ? ok('feed boots: 4 preloaded cards, image visible, 10 category chips') : fail(JSON.stringify(boot));
 
-  const vBoot = await p.evaluate(()=>({ n: window.__spoken.length, first: window.__spoken[0]||'' }));
-  (vBoot.n>=1&&vBoot.first.startsWith('Welcome to wikitriviator')&&vBoot.first.includes('?'))
+  const vBoot = await p.evaluate(()=>({ n: window.__spoken.length, first: window.__spoken[0]||'',
+    isQ: WTV.CATS.some(c=>c.q&&(window.__spoken[0]||'').includes(c.q)) }));
+  (vBoot.n>=1&&vBoot.first.startsWith('Welcome to wikitriviator')&&vBoot.isQ)
     ? ok('voiceover: welcome + first question spoken on start ("'+vBoot.first.slice(0,60)+'...")')
     : fail('voice boot: '+JSON.stringify(vBoot));
 
@@ -76,14 +83,38 @@ const PNG='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAA
   (right.streak===1&&right.green&&right.reveal.includes('streak 1')) ? ok('correct answer: green highlight, streak 1, reveal line') : fail(JSON.stringify(right));
 
   const vRight = await p.evaluate(t=>{
-    const last=window.__spoken[window.__spoken.length-1]||'';
+    const recent=window.__spoken.slice(-3);
     const disp=WTV.clean(t);
-    return { last, hasAns: last.includes(disp) };
+    const hit=recent.find(x=>x.includes(disp))||'';
+    return { hit, recent, ach: recent.some(x=>x.includes('Achievement unlocked')) };
   }, firstTitle);
-  vRight.hasAns ? ok('voiceover announces the correct answer ("'+vRight.last+'")') : fail('voice right: '+JSON.stringify(vRight));
+  (vRight.hit&&vRight.ach)
+    ? ok('voiceover announces the answer ("'+vRight.hit+'") then the achievement')
+    : fail('voice right: '+JSON.stringify(vRight));
   await p.waitForTimeout(1300);
   const advanced = await p.evaluate(()=>document.getElementById('feed').scrollTop>200);
   advanced ? ok('auto-scrolls to next card after a correct answer') : fail('no auto-advance');
+
+  const learn = await p.evaluate(async t=>{
+    document.querySelector('.card .reveal .learn').click();
+    await new Promise(r=>setTimeout(r,250));
+    return { on: document.getElementById('learn').classList.contains('on'),
+      title: document.getElementById('learnTitle').textContent,
+      body: document.getElementById('learnBody').textContent,
+      href: document.getElementById('learnLink').href };
+  }, firstTitle);
+  (learn.on&&learn.body.includes('Mock fact')&&learn.href.includes('en.wikipedia.org/wiki/'))
+    ? ok('learn more: panel opens with the Wikipedia extract + article link ('+learn.title+')')
+    : fail('learn: '+JSON.stringify(learn));
+  await p.evaluate(()=>{ document.getElementById('learnClose').click(); });
+  const learnClosed = await p.evaluate(()=>!document.getElementById('learn').classList.contains('on'));
+  learnClosed ? ok('learn more closes') : fail('learn panel stuck open');
+
+  const gam = await p.evaluate(()=>({ xp:WTV.P.xp, first:!!WTV.P.ach.first,
+    cs:Object.keys(WTV.P.cs).length, day:WTV.P.day.run, lvl:WTV.lvlOf(WTV.P.xp) }));
+  (gam.xp>=10&&gam.first&&gam.cs>=1&&gam.day>=1)
+    ? ok('gamification: '+gam.xp+' XP, First Blood unlocked, category stats tracked, day streak '+gam.day)
+    : fail('gam: '+JSON.stringify(gam));
 
   const cur = await p.evaluate(()=>Math.round(document.getElementById('feed').scrollTop/innerHeight));
   const title2 = asked[cur];
@@ -113,6 +144,45 @@ const PNG='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAA
     return +document.getElementById('nLike').textContent;
   });
   like>=1 ? ok('double-tap drops a heart, likes now '+like) : fail('like: '+like);
+
+  const sheet = await p.evaluate(()=>{
+    document.getElementById('rAcc').click();
+    const sh=document.getElementById('sheet');
+    return { on: sh.classList.contains('on'),
+      hasLvl: sh.textContent.includes('LEVEL'),
+      achCells: sh.querySelectorAll('.achv').length,
+      got: sh.querySelectorAll('.achv.got').length,
+      likedChips: sh.querySelectorAll('.likedchip').length };
+  });
+  (sheet.on&&sheet.hasLvl&&sheet.achCells===11&&sheet.got>=1&&sheet.likedChips>=1)
+    ? ok('rail opens stats sheet: level bar, 11 achievements ('+sheet.got+' unlocked), liked chips')
+    : fail('sheet: '+JSON.stringify(sheet));
+
+  const share = await p.evaluate(async ()=>{
+    window.__copied='';
+    Object.defineProperty(navigator,'share',{value:undefined,configurable:true});
+    navigator.clipboard.writeText=t=>{ window.__copied=t; return Promise.resolve(); };
+    document.getElementById('shareBig').click();
+    await new Promise(r=>setTimeout(r,150));
+    const toast=document.getElementById('toast').textContent;
+    return { copied: window.__copied, toast };
+  });
+  (share.copied.includes('wikitriviator')&&share.copied.includes('best streak')&&share.copied.includes('taskiap.com')&&share.toast.includes('copied'))
+    ? ok('share: stats copied to clipboard with link, toast confirms')
+    : fail('share: '+JSON.stringify(share));
+
+  const chipLearn = await p.evaluate(async ()=>{
+    document.querySelector('.likedchip').click();
+    await new Promise(r=>setTimeout(r,250));
+    const on=document.getElementById('learn').classList.contains('on');
+    const body=document.getElementById('learnBody').textContent;
+    document.getElementById('learnClose').click();
+    document.getElementById('sheetClose').click();
+    return { on, body, closed: !document.getElementById('sheet').classList.contains('on') };
+  });
+  (chipLearn.on&&chipLearn.body.includes('Mock fact')&&chipLearn.closed)
+    ? ok('liked chip reopens learn panel; sheet closes clean')
+    : fail('chipLearn: '+JSON.stringify(chipLearn));
 
   const catSwitch = await p.evaluate(async ()=>{
     document.querySelector('[data-c="flags"]').click();
@@ -156,8 +226,11 @@ const PNG='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAA
   await p.waitForFunction(()=>window.WTV);
   const persist = await p.evaluate(()=>({
     best:+document.getElementById('nBest').textContent,
-    voice:document.getElementById('nVoice').textContent }));
-  (persist.best>=1&&persist.voice==='OFF') ? ok('best streak and voice-off pref survive reload') : fail('persist: '+JSON.stringify(persist));
+    voice:document.getElementById('nVoice').textContent,
+    xp:WTV.P.xp, first:!!WTV.P.ach.first, liked:WTV.P.liked.length }));
+  (persist.best>=1&&persist.voice==='OFF'&&persist.xp>=10&&persist.first&&persist.liked>=1)
+    ? ok('reload keeps best streak, voice pref, '+persist.xp+' XP, achievements, and liked list')
+    : fail('persist: '+JSON.stringify(persist));
 
   await p.evaluate(()=>document.getElementById('btnGo').click());
   await p.waitForTimeout(500);
