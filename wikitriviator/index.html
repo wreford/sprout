@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="theme-color" content="#08090c">
-<meta name="description" content="wikitriviator — an endless vertical feed of picture trivia powered by live Wikipedia images. Swipe like it's a feed, guess what you're looking at, keep the streak alive. Eight categories, zero accounts.">
+<meta name="description" content="wikitriviator — an endless vertical feed of picture trivia powered by live Wikipedia images. Swipe like it's a feed, guess what you're looking at, keep the streak alive. Nine categories, a voiceover narrator, zero accounts.">
 <title>wikitriviator — swipe. guess. streak.</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -116,7 +116,7 @@ body{background:var(--bg);color:var(--ink);font-family:Inter,system-ui,sans-seri
   but this time, guess what you're looking at. Build the streak. Double-tap what you love.</p>
   <button class="go" id="btnGo">Start swiping</button>
   <div class="foot">images fetched live from wikipedia · no account · no tracking<br>
-  your streak stays on this device</div>
+  voiceover uses your browser's own voice · mute it on the rail · streak stays on this device</div>
 </div>
 <div id="topbar">
   <div id="brand">wiki<i>trivi</i><em>ator</em></div>
@@ -127,6 +127,7 @@ body{background:var(--bg);color:var(--ink);font-family:Inter,system-ui,sans-seri
   <div class="railbtn" id="rBest"><span class="ic">🏆</span><span class="n" id="nBest">0</span><span class="lbl">best</span></div>
   <div class="railbtn" id="rAcc"><span class="ic">🎯</span><span class="n" id="nAcc">–</span><span class="lbl">accuracy</span></div>
   <div class="railbtn" id="rLike"><span class="ic">❤️</span><span class="n" id="nLike">0</span><span class="lbl">likes</span></div>
+  <div class="railbtn" id="rVoice"><span class="ic">🎙️</span><span class="n" id="nVoice">ON</span><span class="lbl">voice</span></div>
 </div>
 <div id="feed"></div>
 <div id="offline">Wikipedia isn't answering right now — check your connection and swipe on.</div>
@@ -157,9 +158,63 @@ const clean=e=>{
   return t.replace(/^Flag of (the )?/,"").replace(/\s*\([^)]*\)\s*$/,"").replace(/, Rome$/,"");
 };
 
-let P={best:0,likes:0,right:0,tried:0};
+let P={best:0,likes:0,right:0,tried:0,voice:true};
 try{ const s=JSON.parse(localStorage.getItem("wtv")||"null"); if(s) P=Object.assign(P,s); }catch(e){}
 const saveP=()=>{ try{ localStorage.setItem("wtv",JSON.stringify(P)); }catch(e){} };
+
+const VOICE={on:P.voice!==false,started:false,v:null};
+function pickVoice(){
+  try{
+    const vs=speechSynthesis.getVoices().filter(v=>v.lang&&v.lang.slice(0,2)==="en");
+    VOICE.v=vs.find(v=>/Google US English/i.test(v.name))
+      ||vs.find(v=>/Natural|Aria|Samantha|Daniel/i.test(v.name))||vs[0]||null;
+  }catch(e){}
+}
+if("speechSynthesis" in window){ pickVoice(); speechSynthesis.onvoiceschanged=pickVoice; }
+function say(t,rate){
+  if(!VOICE.on||!VOICE.started||!("speechSynthesis" in window)) return;
+  try{
+    speechSynthesis.cancel();
+    const u=new SpeechSynthesisUtterance(t);
+    if(VOICE.v) u.voice=VOICE.v;
+    u.rate=rate||1.08; u.pitch=1.04;
+    speechSynthesis.speak(u);
+  }catch(e){}
+}
+const VO_Q=["","","","Okay, okay — ","No way you get this one. ","This one's free. ","Eyes up. ","Real ones know this. ","Don't overthink it. "];
+const VO_RIGHT=["Correct!","Let's go!","Too easy for you.","Big brain confirmed.","Clean hit.","You actually knew that?!","Undefeated."];
+const VO_HYPE={5:"Streak five. You're heating up.",10:"STREAK TEN. Certified menace.",15:"Fifteen straight. Wikipedia fears you.",20:"Twenty in a row. Go touch grass, champion.",30:"Thirty. I have nothing left to teach you."};
+const VO_WRONG=["Nope.","Not even close.","Ouch.","The disrespect.","Bold. Wrong, but bold."];
+const VO_RESET=["Streak gone. We move.","Back to zero, soldier.","That streak had a family."];
+const VO_CAT={mix:"Everything mode. Total chaos.",weird:"Weird mode. Buckle up.",
+  animals:"Animal mode.",landmarks:"Landmark mode. Get cultured.",food:"Food mode. Don't watch hungry.",
+  space:"Space mode. Look up.",dinos:"Dinosaur mode. Big lizards.",art:"Art mode. Pinkies up.",
+  flags:"Flag mode. Geography nerds, rise.",instruments:"Instrument mode. Band kids, assemble."};
+let activeCard=null;
+function sayQ(card,first){
+  if(!card||!card._q||card._answered) return;
+  say((first?"Welcome to wikitriviator. ":pick(VO_Q))+card._q.cat.q);
+}
+const voiceIO=new IntersectionObserver(es=>{
+  es.forEach(e=>{
+    if(e.isIntersecting&&e.intersectionRatio>=0.6&&activeCard!==e.target){
+      activeCard=e.target;
+      sayQ(e.target);
+    }
+  });
+},{threshold:[0.6]});
+function paintVoice(){
+  $("nVoice").textContent=VOICE.on?"ON":"OFF";
+  $("rVoice").style.opacity=VOICE.on?"1":"0.45";
+}
+$("rVoice").onclick=()=>{
+  VOICE.on=!VOICE.on; P.voice=VOICE.on; saveP(); paintVoice(); bump("rVoice");
+  if(!VOICE.on){ try{ speechSynthesis.cancel(); }catch(e){} }
+  else{ VOICE.started=true; say("Voice on. Let's cook."); }
+};
+document.addEventListener("visibilitychange",()=>{
+  if(document.hidden){ try{ speechSynthesis.cancel(); }catch(e){} }
+});
 
 let cat="mix", streak=0, served=[], failStreak=0;
 function poolCat(){
@@ -215,6 +270,7 @@ function addCard(){
     </div>
     <div class="swipehint">SWIPE UP ▲</div>`;
   const img=card.querySelector("img");
+  card._q=qd;
   let answered=false;
   card._load=async()=>{
     if(card._loaded) return; card._loaded=true;
@@ -232,8 +288,9 @@ function addCard(){
     }
   };
   card.querySelectorAll(".opt").forEach(b=>b.onclick=()=>{
-    if(answered) return; answered=true;
+    if(answered) return; answered=true; card._answered=true;
     const right=b.dataset.t===qd.answer;
+    const prevStreak=streak;
     P.tried++;
     const fx=card.querySelector(".verdictfx");
     card.querySelectorAll(".opt").forEach(x=>{
@@ -247,11 +304,13 @@ function addCard(){
       fx.textContent=streak>=10?"🔥":streak>=5?"⚡":"✅";
       fx.classList.add("pop"); bump("rStreak");
       card.querySelector(".reveal").innerHTML=`<b>${esc(clean(qd.answer))}</b> · streak ${streak} · from Wikipedia`;
+      say(VO_HYPE[streak]||pick(VO_RIGHT)+" "+clean(qd.answer)+".");
       setTimeout(()=>{ const nx=card.nextElementSibling; if(nx&&isNear(card)) nx.scrollIntoView({behavior:"smooth"}); },950);
     } else {
       streak=0;
       fx.textContent="❌"; fx.classList.add("pop");
       card.querySelector(".reveal").innerHTML=`it was <b>${esc(clean(qd.answer))}</b> · streak reset · from Wikipedia`;
+      say(pick(VO_WRONG)+" It was "+clean(qd.answer)+"."+(prevStreak>=3?" "+pick(VO_RESET):""));
       card.querySelector(".swipehint").classList.add("on");
       if(navigator.vibrate) navigator.vibrate(60);
     }
@@ -273,6 +332,7 @@ function addCard(){
   });
   $("feed").appendChild(card);
   io.observe(card);
+  voiceIO.observe(card);
   return card;
 }
 function isNear(card){
@@ -297,7 +357,7 @@ function ensureAhead(){
 }
 function resetFeed(){
   $("feed").innerHTML="";
-  served=[]; cardN=0;
+  served=[]; cardN=0; activeCard=null;
   for(let i=0;i<4;i++) addCard();
   $("feed").scrollTop=0;
 }
@@ -306,11 +366,19 @@ function paintCats(){
   $("cats").querySelectorAll(".cat").forEach(b=>b.onclick=()=>{
     if(cat===b.dataset.c) return;
     cat=b.dataset.c; streak=0; paintRail(); paintCats(); resetFeed();
+    const first=$("feed").children[0];
+    activeCard=first;
+    say((VO_CAT[cat]||"New category.")+(first&&first._q?" "+first._q.cat.q:""));
   });
 }
-$("btnGo").onclick=()=>{ $("intro").classList.add("hide"); };
-paintCats(); paintRail(); resetFeed();
-window.WTV={CATS,makeQ,clean,imgFor,addCard,resetFeed,get streak(){return streak;},
+$("btnGo").onclick=()=>{
+  $("intro").classList.add("hide");
+  VOICE.started=true;
+  activeCard=$("feed").children[0];
+  sayQ(activeCard,true);
+};
+paintCats(); paintRail(); paintVoice(); resetFeed();
+window.WTV={CATS,makeQ,clean,imgFor,addCard,resetFeed,say,VOICE,get streak(){return streak;},
   get P(){return P;},set cat(v){cat=v;},get cat(){return cat;},IMGC};
 </script>
 </body>

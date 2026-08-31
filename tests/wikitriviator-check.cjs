@@ -8,6 +8,12 @@ const PNG='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAA
   const ctx = await b.newContext({viewport:{width:400,height:850},isMobile:true,hasTouch:true});
   const p = await ctx.newPage();
   p.on('pageerror', e=>fail('PAGEERROR: '+e.message.slice(0,140)));
+  await p.addInitScript(()=>{
+    window.__spoken=[];
+    window.speechSynthesis.speak=u=>window.__spoken.push(u.text);
+    window.speechSynthesis.cancel=()=>{};
+    window.speechSynthesis.getVoices=()=>[];
+  });
   const asked=[];
   await p.route('**en.wikipedia.org/w/api.php**', route=>{
     const u=new URL(route.request().url());
@@ -52,6 +58,11 @@ const PNG='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAA
     cats: document.querySelectorAll('.cat').length }));
   (boot.cards>=4&&boot.imgOn&&boot.cats===10) ? ok('feed boots: 4 preloaded cards, image visible, 10 category chips') : fail(JSON.stringify(boot));
 
+  const vBoot = await p.evaluate(()=>({ n: window.__spoken.length, first: window.__spoken[0]||'' }));
+  (vBoot.n>=1&&vBoot.first.startsWith('Welcome to wikitriviator')&&vBoot.first.includes('?'))
+    ? ok('voiceover: welcome + first question spoken on start ("'+vBoot.first.slice(0,60)+'...")')
+    : fail('voice boot: '+JSON.stringify(vBoot));
+
   const firstTitle = asked[0];
   await p.evaluate(t=>{
     const card=document.querySelector('.card');
@@ -63,6 +74,13 @@ const PNG='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAA
     green: !!document.querySelector('.card .opt.right'),
     reveal: document.querySelector('.card .reveal').textContent }));
   (right.streak===1&&right.green&&right.reveal.includes('streak 1')) ? ok('correct answer: green highlight, streak 1, reveal line') : fail(JSON.stringify(right));
+
+  const vRight = await p.evaluate(t=>{
+    const last=window.__spoken[window.__spoken.length-1]||'';
+    const disp=WTV.clean(t);
+    return { last, hasAns: last.includes(disp) };
+  }, firstTitle);
+  vRight.hasAns ? ok('voiceover announces the correct answer ("'+vRight.last+'")') : fail('voice right: '+JSON.stringify(vRight));
   await p.waitForTimeout(1300);
   const advanced = await p.evaluate(()=>document.getElementById('feed').scrollTop>200);
   advanced ? ok('auto-scrolls to next card after a correct answer') : fail('no auto-advance');
@@ -83,6 +101,9 @@ const PNG='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAA
   }, cur);
   const streakOk = wrongRes.streak===0 || wrongRes.streak===1;
   (wrongRes.shows||wrongRes.streak===0) ? ok('wrong answer: reveal shows the truth, streak resets ('+wrongRes.streak+')') : fail(JSON.stringify(wrongRes));
+
+  const vWrong = await p.evaluate(()=>window.__spoken[window.__spoken.length-1]||'');
+  vWrong.includes('It was ') ? ok('voiceover deadpans the miss ("'+vWrong+'")') : fail('voice wrong: '+vWrong);
 
   const like = await p.evaluate(async ()=>{
     const iw=document.querySelectorAll('.card')[0].querySelector('.imgwrap');
@@ -114,10 +135,29 @@ const PNG='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAA
     ? ok('weird category: feed swaps, Wikipedia asked for real titles only ('+weirdAsked[0]+')')
     : fail('weird switch: q="'+weirdQ+'" asked='+JSON.stringify(weirdAsked.slice(0,3)));
 
+  const vCat = await p.evaluate(()=>window.__spoken[window.__spoken.length-1]||'');
+  (vCat.includes('Weird mode')&&vCat.includes('What in the world'))
+    ? ok('voiceover announces the category switch ("'+vCat+'")')
+    : fail('voice cat: '+vCat);
+
+  const vMute = await p.evaluate(async ()=>{
+    document.getElementById('rVoice').click();
+    const frozen=window.__spoken.length;
+    document.querySelector('[data-c="space"]').click();
+    await new Promise(r=>setTimeout(r,300));
+    return { lbl: document.getElementById('nVoice').textContent,
+      silent: window.__spoken.length===frozen, pref: WTV.P.voice };
+  });
+  (vMute.lbl==='OFF'&&vMute.silent&&vMute.pref===false)
+    ? ok('voice toggle mutes: OFF label, no speech on category switch, pref saved')
+    : fail('voice mute: '+JSON.stringify(vMute));
+
   await p.reload({waitUntil:'domcontentloaded'});
   await p.waitForFunction(()=>window.WTV);
-  const persist = await p.evaluate(()=>+document.getElementById('nBest').textContent);
-  persist>=1 ? ok('best streak survives reload') : fail('persist: '+persist);
+  const persist = await p.evaluate(()=>({
+    best:+document.getElementById('nBest').textContent,
+    voice:document.getElementById('nVoice').textContent }));
+  (persist.best>=1&&persist.voice==='OFF') ? ok('best streak and voice-off pref survive reload') : fail('persist: '+JSON.stringify(persist));
 
   await p.evaluate(()=>document.getElementById('btnGo').click());
   await p.waitForTimeout(500);
