@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#0a0a2a">
+<meta name="description" content="7-BIT PINBALL — a wacky super-retro pinball table. One bit short of the big consoles and proud of it: 127 colors (we counted), pop bumpers with faces, a UFO that abducts your ball, multiball, tilt, and a square-wave soundtrack.">
+<title>7-BIT PINBALL</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230a0a2a'/%3E%3Ccircle cx='16' cy='16' r='9' fill='%23f8f8f8'/%3E%3Ccircle cx='13' cy='13' r='3' fill='%2357d8f8'/%3E%3C/svg%3E">
+<style>
+:root{ --bg:#0a0a2a; --cab:#1a1050; --cyan:#57d8f8; --pink:#f85898; --yellow:#f8d800; }
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none}
+html,body{height:100%}
+body{background:
+  radial-gradient(ellipse at 50% -10%,#20185e 0%,var(--bg) 60%);
+  color:#e8e8ff;font-family:monospace;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;overflow:hidden;gap:8px;padding:8px}
+#cab{position:relative;border:6px solid #2a1a6a;border-radius:12px;background:#000;
+  box-shadow:0 0 0 3px #0e0838,0 18px 50px rgba(0,0,0,.7),0 0 44px rgba(87,216,248,.14);
+  line-height:0}
+#cv{image-rendering:pixelated;image-rendering:crisp-edges;display:block;
+  width:min(92vw,calc((100dvh - 120px) * 0.5555));aspect-ratio:160/288;background:#000}
+#scan{position:absolute;inset:0;pointer-events:none;border-radius:6px;
+  background:repeating-linear-gradient(0deg,transparent 0 2px,rgba(0,0,0,.22) 2px 3px),
+  radial-gradient(ellipse at center,transparent 55%,rgba(0,0,20,.4) 100%)}
+#scan.off{display:none}
+#pads{display:flex;gap:8px;align-items:stretch;width:min(92vw,460px)}
+.pad{flex:1;background:#160e46;border:3px solid #3a2a8a;border-radius:12px;color:var(--cyan);
+  font:700 13px monospace;letter-spacing:.08em;padding:14px 4px;cursor:pointer;text-align:center;
+  touch-action:none}
+.pad:active,.pad.dn{background:#2a1a7a;border-color:var(--cyan)}
+.pad.p{color:var(--yellow)}
+.pad.n{flex:.6;color:var(--pink)}
+#opts{display:flex;gap:10px;font:700 10px monospace;letter-spacing:.14em;color:#8a86c8}
+#opts button{background:none;border:0;color:#8a86c8;font:inherit;cursor:pointer;padding:4px}
+#opts button.on{color:var(--cyan)}
+#kbd{font:700 9px monospace;letter-spacing:.1em;color:#55508f;text-align:center;line-height:1.8}
+@media (hover:none){ #kbd{display:none} }
+</style>
+</head>
+<body>
+<div id="cab"><canvas id="cv" width="160" height="288"></canvas><div id="scan"></div></div>
+<div id="pads">
+  <button class="pad" id="padL">◀ FLIP</button>
+  <button class="pad n" id="padN">NUDGE</button>
+  <button class="pad p" id="padP">PLUNGE</button>
+  <button class="pad" id="padR">FLIP ▶</button>
+</div>
+<div id="opts">
+  <button id="oSnd" class="on">SFX</button>
+  <button id="oMus" class="on">MUSIC</button>
+  <button id="oScan" class="on">CRT</button>
+</div>
+<div id="kbd">Z / ← LEFT FLIP · / / → RIGHT FLIP · SPACE HOLD = PLUNGER · ↑ NUDGE · ENTER START</div>
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+const cv=$("cv"), ctx=cv.getContext("2d");
+ctx.imageSmoothingEnabled=false;
+const W=160,H=288,G=640,DT=1/240,BR=3.5;
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+
+let P={hi:0,snd:true,music:true,crt:true};
+try{ const s=JSON.parse(localStorage.getItem("pb7")||"null"); if(s) P=Object.assign(P,s); }catch(e){}
+const saveP=()=>{ try{ localStorage.setItem("pb7",JSON.stringify(P)); }catch(e){} };
+
+let AC=null;
+function bp(f,d,when,vol,type){
+  if(!P.snd&&type!=="music") return;
+  try{
+    AC=AC||new (window.AudioContext||window.webkitAudioContext)();
+    const t=AC.currentTime+(when||0);
+    const o=AC.createOscillator(), g=AC.createGain();
+    o.type=type==="music"?"triangle":"square"; o.frequency.setValueAtTime(f,t);
+    g.gain.setValueAtTime(vol||.08,t); g.gain.exponentialRampToValueAtTime(.001,t+d);
+    o.connect(g); g.connect(AC.destination); o.start(t); o.stop(t+d);
+  }catch(e){}
+}
+const sFlip=()=>bp(190,.05,0,.09);
+const sBump=n=>bp([760,880,990][n%3],.07,0,.1);
+const sSling=()=>bp(560,.06,0,.09);
+const sTarget=()=>{ bp(1050,.05,0,.09); bp(1400,.06,.05,.08); };
+const sLaunch=()=>{ for(let i=0;i<6;i++) bp(220+i*90,.04,i*.03,.07); };
+const sDrain=()=>{ bp(300,.12,0,.09); bp(200,.14,.1,.09); bp(130,.2,.2,.09); };
+const sUfo=()=>{ for(let i=0;i<8;i++) bp(600+Math.sin(i*1.7)*260,.06,i*.07,.07); };
+const sMulti=()=>{ [523,659,784,1047,784,1047].forEach((f,i)=>bp(f,.09,i*.07,.09)); };
+const sTilt=()=>{ bp(90,.5,0,.14); bp(85,.5,.05,.12); };
+const sOver=()=>{ [392,330,262,196].forEach((f,i)=>bp(f,.18,i*.14,.09)); };
+
+let musNext=0, musStep=0;
+const BASS=[98,0,98,0,131,0,87,0,98,0,98,0,73,0,87,0];
+const LEAD=[392,0,494,392,587,494,392,330,392,0,494,523,587,659,587,494];
+function musicTick(){
+  if(!P.music||!AC) return;
+  const spb=60/132/2;
+  while(musNext<AC.currentTime+0.25){
+    const b=BASS[musStep%16], l=LEAD[musStep%16];
+    if(b){ const o=AC.createOscillator(),g=AC.createGain();
+      o.type="square"; o.frequency.value=b;
+      g.gain.setValueAtTime(.035,musNext); g.gain.exponentialRampToValueAtTime(.001,musNext+spb*.9);
+      o.connect(g); g.connect(AC.destination); o.start(musNext); o.stop(musNext+spb); }
+    if(l&&musStep%2===0){ const o=AC.createOscillator(),g=AC.createGain();
+      o.type="triangle"; o.frequency.value=l;
+      g.gain.setValueAtTime(.05,musNext); g.gain.exponentialRampToValueAtTime(.001,musNext+spb*1.7);
+      o.connect(g); g.connect(AC.destination); o.start(musNext); o.stop(musNext+spb*1.8); }
+    musNext+=spb; musStep++;
+  }
+}
+
+const FONT={"0":[7,5,5,5,7],"1":[2,6,2,2,7],"2":[7,1,7,4,7],"3":[7,1,7,1,7],"4":[5,5,7,1,1],
+"5":[7,4,7,1,7],"6":[7,4,7,5,7],"7":[7,1,2,2,2],"8":[7,5,7,5,7],"9":[7,5,7,1,7],
+A:[2,5,7,5,5],B:[6,5,6,5,6],C:[7,4,4,4,7],D:[6,5,5,5,6],E:[7,4,6,4,7],F:[7,4,6,4,4],
+G:[7,4,5,5,7],H:[5,5,7,5,5],I:[7,2,2,2,7],J:[1,1,1,5,7],K:[5,5,6,5,5],L:[4,4,4,4,7],
+M:[5,7,7,5,5],N:[5,7,5,5,5],O:[7,5,5,5,7],P:[7,5,7,4,4],Q:[7,5,5,7,1],R:[6,5,6,5,5],
+S:[7,4,7,1,7],T:[7,2,2,2,2],U:[5,5,5,5,7],V:[5,5,5,5,2],W:[5,5,7,7,5],X:[5,5,2,5,5],
+Y:[5,5,2,2,2],Z:[7,1,2,4,7]," ":[0,0,0,0,0],".":[0,0,0,0,2],"!":[2,2,2,0,2],
+"-":[0,0,7,0,0],"'":[2,2,0,0,0],"(":[1,2,2,2,1],")":[4,2,2,2,4],"×":[0,5,2,5,0]};
+function txt(x,y,s,col,sc){
+  sc=sc||1; ctx.fillStyle=col;
+  for(let i=0;i<s.length;i++){
+    const g=FONT[s[i].toUpperCase()]||FONT[" "];
+    for(let r=0;r<5;r++) for(let c=0;c<3;c++)
+      if(g[r]>>(2-c)&1) ctx.fillRect(x+i*4*sc+c*sc,y+r*sc,sc,sc);
+  }
+}
+const tw=s=>s.length*4;
+
+const WALLS=[
+[6,60,6,196,.45],[6,196,16,196,.45],[16,196,16,238,.45],[16,238,52,255,.45],
+[154,20,154,288,.45],[143,60,143,238,.45],[143,238,134,238,.45],
+[134,196,134,238,.45],[134,238,106,255,.45],
+[6,60,8,44,.45],[8,44,16,32,.45],[16,32,30,23,.45],[30,23,48,20,.45],
+[48,20,112,20,.45],[112,20,130,23,.45],[130,23,144,32,.45],[144,32,152,44,.45],[152,44,154,56,.45],
+[26,208,26,232,.45],[26,232,40,232,.45],
+[134,208,134,232,.45],[120,232,134,232,.45],
+[34,60,34,88,.45],
+[143,281,154,281,.3],
+];
+const SLINGS=[
+{seg:[26,208,40,232],n:[.86,-.5],cool:0},
+{seg:[120,232,134,208],n:[-.86,-.5],cool:0},
+];
+const BUMPS=[{x:52,y:92,r:8,f:0},{x:80,y:72,r:8,f:0},{x:108,y:92,r:8,f:0}];
+const TGT=[{seg:[56,126,66,131],up:true,lbl:"7"},{seg:[70,124,80,129],up:true,lbl:"B"},{seg:[84,126,94,131],up:true,lbl:"T"}];
+const SAUCER={x:24,y:74,r:6,cool:0,hold:0,heldBall:null};
+const GATE=[140,34,152,44];
+const FLIP={
+  L:{px:58,py:257,len:19,rest:.52,flip:-.62,ang:.52,vel:0,on:false},
+  R:{px:102,py:257,len:19,rest:Math.PI-.52,flip:Math.PI+.62,ang:Math.PI-.52,vel:0,on:false},
+};
+
+const QUIPS=["7 BITS OUGHT TO BE ENOUGH FOR ANYBODY","127 COLORS. WE COUNTED.",
+"THE UFO IS NOT YOUR FRIEND","DO NOT TILT. THE MACHINE REMEMBERS.","INSERT NO COINS",
+"HALF THE BITS. TWICE THE HEART.","NOW WITH GRAVITY (PATENT PENDING)","FLIP RESPONSIBLY",
+"AS SEEN ON TV IN 1987","SPELL 7-B-T FOR MULTIBALL","EXTRA BALL AT 25000. PROBABLY.",
+"HIGH SCORES LIVE IN YOUR HEART. AND LOCALSTORAGE."];
+
+let mode="attract", balls=[], ballNum=1, score=0, mult=1, T=0;
+let plunging=false, plungeP=0, flash="", flashT=0, quipI=0, marqX=W;
+let nudges=[], tilted=false, extraGiven=false, bankFlash=0;
+
+function newBall(x,y,vx,vy){ return {x,y,vx:vx||0,vy:vy||0,lane:x>143}; }
+function serve(){
+  balls=[newBall(148.5,268,0,0)];
+  plungeP=0; tilted=false;
+}
+function startGame(){
+  mode="play"; score=0; ballNum=1; mult=1; extraGiven=false;
+  TGT.forEach(t=>t.up=true);
+  serve(); showFlash("BALL 1");
+}
+function showFlash(t){ flash=t; flashT=1.4; }
+function addScore(n){ if(tilted) return; score+=n*mult;
+  if(!extraGiven&&score>=25000){ extraGiven=true; ballNum--; showFlash("EXTRA BALL!"); sMulti(); } }
+
+function collSeg(b,r,s){
+  const dx=s[2]-s[0], dy=s[3]-s[1], L2=dx*dx+dy*dy||1;
+  let t=((b.x-s[0])*dx+(b.y-s[1])*dy)/L2; t=clamp(t,0,1);
+  const px=s[0]+t*dx, py=s[1]+t*dy;
+  let nx=b.x-px, ny=b.y-py;
+  const d=Math.hypot(nx,ny);
+  if(d>=r||d===0) return false;
+  nx/=d; ny/=d;
+  b.x=px+nx*r; b.y=py+ny*r;
+  const vn=b.vx*nx+b.vy*ny;
+  if(vn<0){
+    const rest=s[4]!==undefined?s[4]:.45;
+    b.vx-=(1+rest)*vn*nx; b.vy-=(1+rest)*vn*ny;
+  }
+  return true;
+}
+function flipSeg(f){ return [f.px,f.py,f.px+Math.cos(f.ang)*f.len,f.py+Math.sin(f.ang)*f.len]; }
+function collFlipper(b,f){
+  const s=flipSeg(f);
+  const dx=s[2]-s[0], dy=s[3]-s[1], L2=dx*dx+dy*dy||1;
+  let t=((b.x-s[0])*dx+(b.y-s[1])*dy)/L2; t=clamp(t,0,1);
+  const px=s[0]+t*dx, py=s[1]+t*dy;
+  let nx=b.x-px, ny=b.y-py;
+  const d=Math.hypot(nx,ny);
+  const r=BR+2.6;
+  if(d>=r||d===0) return;
+  nx/=d; ny/=d;
+  b.x=px+nx*r; b.y=py+ny*r;
+  const rr=t*f.len;
+  const sx=-Math.sin(f.ang)*f.vel*rr, sy=Math.cos(f.ang)*f.vel*rr;
+  const rvx=b.vx-sx, rvy=b.vy-sy;
+  const vn=rvx*nx+rvy*ny;
+  if(vn<0){
+    b.vx-=(1+.55)*vn*nx; b.vy-=(1+.55)*vn*ny;
+  }
+}
+function step(dt){
+  T+=dt;
+  if(flashT>0) flashT-=dt;
+  if(bankFlash>0) bankFlash-=dt;
+  SLINGS.forEach(s=>{ if(s.cool>0) s.cool-=dt; });
+  BUMPS.forEach(b=>{ if(b.f>0) b.f-=dt; });
+  if(SAUCER.cool>0) SAUCER.cool-=dt;
+  ["L","R"].forEach(k=>{
+    const f=FLIP[k], tgt=f.on&&!tilted?f.flip:f.rest;
+    const dir=Math.sign(tgt-f.ang);
+    if(dir!==0){
+      f.vel=dir*22;
+      f.ang+=f.vel*dt;
+      if((dir>0&&f.ang>=tgt)||(dir<0&&f.ang<=tgt)){ f.ang=tgt; f.vel=0; }
+    } else f.vel=0;
+  });
+  if(SAUCER.hold>0){
+    SAUCER.hold-=dt;
+    if(SAUCER.hold<=0&&SAUCER.heldBall){
+      SAUCER.heldBall.x=SAUCER.x+8; SAUCER.heldBall.y=SAUCER.y;
+      SAUCER.heldBall.vx=150; SAUCER.heldBall.vy=-60;
+      balls.push(SAUCER.heldBall); SAUCER.heldBall=null; SAUCER.cool=3;
+    }
+  }
+  if(mode!=="play") return;
+  if(plunging&&balls.some(b=>b.lane)) plungeP=Math.min(1,plungeP+dt*1.1);
+  nudges=nudges.filter(n=>T-n<1.5);
+  for(let i=balls.length-1;i>=0;i--){
+    const b=balls[i];
+    b.vy+=G*dt;
+    b.vx=clamp(b.vx,-600,600); b.vy=clamp(b.vy,-660,660);
+    b.x+=b.vx*dt; b.y+=b.vy*dt;
+    if(b.lane&&b.x<142&&b.y<60) b.lane=false;
+    WALLS.forEach(s=>collSeg(b,BR,s));
+    if(!b.lane) collSeg(b,BR,GATE);
+    TGT.forEach(tg=>{
+      if(tg.up&&collSeg(b,BR,tg.seg)){
+        tg.up=false; addScore(500); sTarget();
+        if(TGT.every(t=>!t.up)){
+          addScore(5000); showFlash("MULTIBALL!"); sMulti(); bankFlash=1;
+          mult=2;
+          balls.push(newBall(40,90,90,-50),newBall(46,84,130,-90));
+          setTimeout(()=>TGT.forEach(t=>t.up=true),900);
+        }
+      }
+    });
+    SLINGS.forEach(sl=>{
+      if(sl.cool<=0&&collSeg(b,BR,sl.seg)){
+        b.vx+=sl.n[0]*200; b.vy+=sl.n[1]*200;
+        sl.cool=.12; addScore(10); sSling();
+      }
+    });
+    BUMPS.forEach((bp2,bi)=>{
+      const dx=b.x-bp2.x, dy=b.y-bp2.y, d=Math.hypot(dx,dy);
+      if(d<BR+bp2.r&&d>0){
+        const nx=dx/d, ny=dy/d;
+        b.x=bp2.x+nx*(BR+bp2.r); b.y=bp2.y+ny*(BR+bp2.r);
+        b.vx=nx*250+b.vx*.15; b.vy=ny*250+b.vy*.15;
+        bp2.f=.15; addScore(100); sBump(bi);
+      }
+    });
+    if(SAUCER.cool<=0&&!SAUCER.heldBall&&Math.hypot(b.x-SAUCER.x,b.y-SAUCER.y)<SAUCER.r+BR-1){
+      SAUCER.heldBall=b; balls.splice(i,1);
+      SAUCER.hold=1.0; addScore(2500); showFlash("ABDUCTED!"); sUfo();
+      continue;
+    }
+    collFlipper(b,FLIP.L); collFlipper(b,FLIP.R);
+    if(b.y>H+10){
+      balls.splice(i,1);
+      if(balls.length===0&&!SAUCER.heldBall){
+        mult=1; sDrain();
+        if(ballNum>=3){
+          mode="over";
+          if(score>P.hi){ P.hi=score; saveP(); showFlash("NEW HIGH SCORE!"); }
+          sOver();
+        } else {
+          ballNum++; serve(); showFlash("BALL "+ballNum);
+        }
+      } else if(balls.length===1&&!SAUCER.heldBall){ mult=1; }
+    }
+  }
+}
+function launch(p){
+  const b=balls.find(b=>b.lane);
+  if(!b) return;
+  b.vy=-(300+360*clamp(p,0,1));
+  plungeP=0; sLaunch();
+}
+function nudge(){
+  if(mode!=="play"||tilted) return;
+  nudges.push(T);
+  balls.forEach(b=>{ b.vy-=26; b.vx+=9; });
+  if(nudges.length>3){ tilted=true; showFlash("TILT!"); sTilt(); }
+}
+
+const PAL={field:"#0f2f7c",wall:"#57d8f8",lane:"#0a2058",bump:["#f85898","#f8a800","#f85898"],
+  tgt:"#58f858",sling:"#f85898",flip:"#f8f8f8",ufo:"#b858f8",hud:"#f8d800",white:"#f8f8f8",
+  dim:"#3a56b0"};
+function seg2(s,col,w){
+  ctx.strokeStyle=col; ctx.lineWidth=w||2; ctx.lineCap="round";
+  ctx.beginPath(); ctx.moveTo(s[0],s[1]); ctx.lineTo(s[2],s[3]); ctx.stroke();
+}
+function render(){
+  ctx.fillStyle="#050514"; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle=PAL.field;
+  ctx.fillRect(6,20,148,268);
+  ctx.fillStyle=PAL.lane; ctx.fillRect(143,44,11,244);
+  ctx.fillStyle="#0c2868";
+  for(let y=28;y<280;y+=12) for(let x=12;x<140;x+=12) ctx.fillRect(x,y,2,2);
+  WALLS.forEach(s=>seg2(s,PAL.wall,2));
+  seg2(GATE,SAUCER.cool>0?PAL.dim:PAL.yellow||"#f8d800",1);
+  SLINGS.forEach((sl,i)=>{
+    ctx.fillStyle=sl.cool>0.06?"#fff":PAL.sling;
+    ctx.beginPath();
+    if(i===0){ ctx.moveTo(26,208); ctx.lineTo(40,232); ctx.lineTo(26,232); }
+    else{ ctx.moveTo(134,208); ctx.lineTo(120,232); ctx.lineTo(134,232); }
+    ctx.closePath(); ctx.fill();
+  });
+  BUMPS.forEach((b,i)=>{
+    ctx.fillStyle=b.f>0?"#fff":PAL.bump[i];
+    ctx.beginPath(); ctx.arc(b.x,b.y,b.r+(b.f>0?1:0),0,7); ctx.fill();
+    ctx.fillStyle="#050514";
+    ctx.fillRect(b.x-3,b.y-2,2,2); ctx.fillRect(b.x+1,b.y-2,2,2);
+    ctx.fillRect(b.x-2,b.y+2,4,1);
+  });
+  TGT.forEach(t=>{
+    if(t.up){ seg2(t.seg,bankFlash>0?"#fff":PAL.tgt,3);
+      txt((t.seg[0]+t.seg[2])/2-1,t.seg[1]-8,t.lbl,PAL.tgt); }
+    else txt((t.seg[0]+t.seg[2])/2-1,t.seg[1]-8,t.lbl,PAL.dim);
+  });
+  ctx.fillStyle=SAUCER.cool>0?PAL.dim:PAL.ufo;
+  ctx.beginPath(); ctx.ellipse(SAUCER.x,SAUCER.y+2,8,3.5,0,0,7); ctx.fill();
+  ctx.beginPath(); ctx.arc(SAUCER.x,SAUCER.y-1,4,Math.PI,0); ctx.fill();
+  if(SAUCER.heldBall){ ctx.fillStyle="#fff"; ctx.fillRect(SAUCER.x-1,SAUCER.y-8-((T*10)%4),2,2); }
+  ["L","R"].forEach(k=>{
+    const f=FLIP[k], s=flipSeg(f);
+    seg2(s,PAL.flip,5);
+    ctx.fillStyle="#f85898"; ctx.beginPath(); ctx.arc(s[2],s[3],2.4,0,7); ctx.fill();
+    ctx.fillStyle="#f8a800"; ctx.beginPath(); ctx.arc(f.px,f.py,3,0,7); ctx.fill();
+  });
+  if(mode==="play"&&balls.some(b=>b.lane)){
+    ctx.fillStyle="#3a2a8a"; ctx.fillRect(147,254,4,26);
+    ctx.fillStyle=PAL.hud; ctx.fillRect(147,280-plungeP*26,4,plungeP*26);
+  }
+  balls.forEach(b=>{
+    ctx.fillStyle="#f8f8f8"; ctx.beginPath(); ctx.arc(b.x,b.y,BR,0,7); ctx.fill();
+    ctx.fillStyle="#9ad8f8"; ctx.fillRect(b.x-2,b.y-2,1.5,1.5);
+  });
+  ctx.fillStyle="#050514"; ctx.fillRect(0,0,W,17);
+  if(mode==="attract"){
+    txt(80-tw("7-BIT")*1.5,40,"7-BIT",PAL.hud,3);
+    txt(80-tw("PINBALL")*1.5,62,"PINBALL",PAL.wall,3);
+    txt(80-tw("×WACKY×")/2,88,"×WACKY×",PAL.sling);
+    if(Math.floor(T*2)%2===0) txt(80-tw("PRESS START")/2,150,"PRESS START","#fff");
+    txt(80-tw("HI "+P.hi)/2,170,"HI "+P.hi,PAL.hud);
+    const q=QUIPS[quipI%QUIPS.length];
+    txt(80-tw(q.slice(0,38))/2,200,q.slice(0,38),PAL.dim);
+    txt(80-tw("SPELL 7-B-T = MULTIBALL")/2,220,"SPELL 7-B-T = MULTIBALL",PAL.tgt);
+    txt(80-tw("UFO = ABDUCTION BONUS")/2,232,"UFO = ABDUCTION BONUS",PAL.ufo);
+  } else {
+    const sc=String(score).padStart(7,"0");
+    txt(3,5,sc,PAL.hud,2);
+    txt(120,8,"BALL "+ballNum,PAL.wall);
+    if(mult>1) txt(120,2,"×2",PAL.sling);
+    if(tilted) txt(58,8,"TILT",PAL.sling);
+  }
+  if(mode==="over"){
+    ctx.fillStyle="rgba(5,5,20,.75)"; ctx.fillRect(0,60,W,90);
+    txt(80-tw("GAME OVER")*1,75,"GAME OVER",PAL.sling,2);
+    txt(80-tw("SCORE "+score)/2,100,"SCORE "+score,"#fff");
+    txt(80-tw("HI "+P.hi)/2,112,"HI "+P.hi,PAL.hud);
+    if(Math.floor(T*2)%2===0) txt(80-tw("PRESS START")/2,132,"PRESS START",PAL.wall);
+  }
+  if(flashT>0&&mode!=="attract"){
+    if(Math.floor(flashT*8)%2===0){
+      txt(80-tw(flash),158,flash,"#fff",2);
+    }
+  }
+  const q=QUIPS[quipI%QUIPS.length];
+  marqX-=0.6;
+  if(marqX<-tw(q)) { marqX=W; quipI++; }
+  ctx.fillStyle="#050514"; ctx.fillRect(0,281,W,7);
+  txt(marqX,282,q,PAL.dim);
+}
+
+let last=0;
+function frame(ts){
+  const dt=Math.min(.05,(ts-last)/1000||0); last=ts;
+  let n=0, acc=dt;
+  while(acc>=DT&&n<20){ step(DT); acc-=DT; n++; }
+  musicTick();
+  render();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+function press(k,on){
+  if(k==="L"){ FLIP.L.on=on; if(on){ sFlip(); } }
+  if(k==="R"){ FLIP.R.on=on; if(on){ sFlip(); } }
+  if(k==="P"){
+    if(on) plunging=true;
+    else { plunging=false; if(mode==="play") launch(plungeP); }
+  }
+  if(k==="N"&&on) nudge();
+  if(k==="S"&&on){ if(mode!=="play") startGame(); }
+}
+addEventListener("keydown",e=>{
+  if(e.repeat) return;
+  if(e.key==="ArrowLeft"||e.key==="z"||e.key==="Z") press("L",true);
+  if(e.key==="ArrowRight"||e.key==="/"||e.key==="'") press("R",true);
+  if(e.key==="ArrowDown"||e.key===" ") { press("P",true); e.preventDefault(); }
+  if(e.key==="ArrowUp") press("N",true);
+  if(e.key==="Enter") press("S",true);
+});
+addEventListener("keyup",e=>{
+  if(e.key==="ArrowLeft"||e.key==="z"||e.key==="Z") press("L",false);
+  if(e.key==="ArrowRight"||e.key==="/"||e.key==="'") press("R",false);
+  if(e.key==="ArrowDown"||e.key===" ") press("P",false);
+});
+[["padL","L"],["padR","R"],["padP","P"],["padN","N"]].forEach(([id,k])=>{
+  const el=$(id);
+  el.addEventListener("pointerdown",e=>{ e.preventDefault(); el.classList.add("dn"); press(k,true); if(mode!=="play"&&k!=="N") press("S",true); });
+  el.addEventListener("pointerup",()=>{ el.classList.remove("dn"); press(k,false); });
+  el.addEventListener("pointerleave",()=>{ el.classList.remove("dn"); press(k,false); });
+});
+cv.addEventListener("pointerdown",()=>{ if(mode!=="play") press("S",true); });
+$("oSnd").onclick=()=>{ P.snd=!P.snd; saveP(); $("oSnd").classList.toggle("on",P.snd); };
+$("oMus").onclick=()=>{ P.music=!P.music; saveP(); $("oMus").classList.toggle("on",P.music); };
+$("oScan").onclick=()=>{ P.crt=!P.crt; saveP(); $("oScan").classList.toggle("on",P.crt); $("scan").classList.toggle("off",!P.crt); };
+$("oSnd").classList.toggle("on",P.snd);
+$("oMus").classList.toggle("on",P.music);
+$("oScan").classList.toggle("on",P.crt);
+$("scan").classList.toggle("off",!P.crt);
+
+window.PB7={
+  start:startGame, launch, nudge,
+  setBall(x,y,vx,vy){ balls=[{x,y,vx,vy,lane:false}]; },
+  addBall(x,y,vx,vy){ balls.push({x,y,vx,vy,lane:false}); },
+  ff(sec){ let t=0; while(t<sec){ step(DT); t+=DT; } },
+  press,
+  state(){ return { mode, score, ballNum, onTable:balls.length+(SAUCER.heldBall?1:0),
+    lane:balls.some(b=>b.lane), tilted, mult, hi:P.hi,
+    targetsUp:TGT.filter(t=>t.up).length,
+    ball:balls[0]?{x:+balls[0].x.toFixed(1),y:+balls[0].y.toFixed(1),
+      vx:+balls[0].vx.toFixed(1),vy:+balls[0].vy.toFixed(1)}:null,
+    held:!!SAUCER.heldBall }; },
+  get P(){ return P; }, FLIP, TGT, BUMPS, SAUCER,
+};
+</script>
+</body>
+</html>
