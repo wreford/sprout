@@ -24,6 +24,31 @@ const SP='/tmp/claude-0/-home-user-sprout/12b11e48-c931-5cfc-8740-403ce467b352/s
     ? ok('plunger launch: ball crests the arc into the playfield (x='+launched.ball.x+')')
     : fail('launch: '+JSON.stringify(launched));
 
+  const power = await p.evaluate(()=>{
+    PB7.start();
+    PB7.press('P',true); PB7.ff(0.7);
+    const charged=PB7.state().power;
+    PB7.press('P',false);
+    let minx=999,miny=999;
+    for(let i=0;i<150;i++){ PB7.ff(1/60);
+      const bl=PB7.state().ball; if(bl){ minx=Math.min(minx,bl.x); miny=Math.min(miny,bl.y); } }
+    return { charged, minx:+minx.toFixed(1), miny:+miny.toFixed(1) };
+  });
+  (power.charged>0.5&&power.minx<60&&power.miny<70)
+    ? ok('full plunge: gauge charged to '+power.charged+', ball rockets around the arc to x'+power.minx)
+    : fail('full plunge too weak: '+JSON.stringify(power));
+
+  const half = await p.evaluate(()=>{
+    PB7.start(); PB7.launch(0.5);
+    let entered=false, miny=999;
+    for(let i=0;i<150;i++){ PB7.ff(1/60);
+      const bl=PB7.state().ball; if(bl){ if(bl.x<140) entered=true; miny=Math.min(miny,bl.y); } }
+    return { entered, miny:+miny.toFixed(1) };
+  });
+  (half.entered&&half.miny<120)
+    ? ok('half plunge: comfortably enters play (apex y'+half.miny+')')
+    : fail('half plunge too weak: '+JSON.stringify(half));
+
   const bump = await p.evaluate(()=>{
     const s0=PB7.state().score;
     PB7.setBall(80,110,0,-260); PB7.ff(0.6);
