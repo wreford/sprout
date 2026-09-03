@@ -101,6 +101,20 @@ const SP='/tmp/claude-0/-home-user-sprout/12b11e48-c931-5cfc-8740-403ce467b352/s
   (drain.ballNum===2&&drain.lane)
     ? ok('drain: ball 2 auto-served to the lane') : fail('drain: '+JSON.stringify(drain));
 
+  const unstick = await p.evaluate(()=>{
+    PB7.start(); PB7.launch(0.5); PB7.ff(0.4);
+    PB7.setBall(64,250,0,0); PB7.ff(0.6);
+    const before=PB7.state().ball;
+    PB7.nudge(); PB7.ff(0.35);
+    const after=PB7.state().ball;
+    const moved=after?Math.hypot(after.x-before.x,after.y-before.y):99;
+    return { before:[before.x,before.y], after:after?[after.x,after.y]:null,
+      moved:+moved.toFixed(1), tilted: PB7.state().tilted };
+  });
+  (unstick.moved>=8&&!unstick.tilted)
+    ? ok('nudge unsticks a ball cradled on the flipper (moved '+unstick.moved+'px, no tilt)')
+    : fail('nudge too weak for a stuck ball: '+JSON.stringify(unstick));
+
   const tilt = await p.evaluate(()=>{
     PB7.start(); PB7.launch(0.5); PB7.ff(0.4);
     PB7.setBall(80,120,0,0);
