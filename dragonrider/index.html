@@ -50,6 +50,8 @@ h1{font-size:1.5rem;font-weight:800;letter-spacing:.04em;color:var(--gold);
   border-radius:12px;padding:8px 12px;display:flex;flex-direction:column;
   align-items:center;justify-content:center;gap:3px;text-align:center;
 }
+#event>*{animation:evIn .28s ease-out}
+@keyframes evIn{0%{opacity:0;transform:translateY(6px)}100%{opacity:1;transform:none}}
 .ev-title{font-size:1.1rem;font-weight:700;line-height:1.15}
 .ev-sub{font-size:.95rem;color:var(--dim);line-height:1.25}
 .ev-sub b{color:var(--bone)}
@@ -70,6 +72,8 @@ h1{font-size:1.5rem;font-weight:800;letter-spacing:.04em;color:var(--gold);
 .controls button small{display:block;font-size:.78rem;font-weight:600;opacity:.85}
 .bRoll{background:linear-gradient(180deg,var(--ember),#e07a2e);color:#2a1305;box-shadow:0 4px 0 #a8551c}
 .bRoll:active{transform:translateY(2px);box-shadow:0 2px 0 #a8551c}
+.bRoll.pulse{animation:rollPulse 1.8s infinite}
+@keyframes rollPulse{50%{box-shadow:0 4px 0 #a8551c,0 0 18px rgba(255,154,74,.55)}}
 .bDive{background:var(--panel2);color:var(--rot);border:2px solid var(--rot);flex:.6}
 .bDive:disabled{border-color:var(--edge);color:var(--dim);opacity:.4}
 .bDive.ready{animation:diveGlow 1.6s infinite}
@@ -134,6 +138,7 @@ h1{font-size:1.5rem;font-weight:800;letter-spacing:.04em;color:var(--gold);
 <div class="overlay show" id="helpOv">
   <div class="card">
     <h2>🐉 Dragon Rider</h2>
+    <p class="rules-note" style="margin:-6px 0 8px">a push-your-luck dice adventure</p>
     <p>Claim <span class="k">3 sunfire relics</span>, then dive into the Necropolis and burn the <span class="w">Wraith King</span> — before the rot swallows the ring.</p>
     <p class="k">The twist — every turn you choose:</p>
     <p>Roll <b>two dice</b>. Fly one of them… <span class="w">and the rot creeps the other</span>, counted ahead of where you land. Both outcomes are shown before you pick. Choose the lesser evil.</p>
@@ -263,7 +268,7 @@ const CX=CW/2, CY=CW/2, RAD=158;
 const angOf=i=>i/N*2*Math.PI-Math.PI/2;
 const ptOf=i=>[CX+RAD*Math.cos(angOf(i)),CY+RAD*Math.sin(angOf(i))];
 
-let T=0, visAng=angOf(0), flying=false, wingBeat=0, parts=[], halos=[];
+let T=0, visAng=angOf(0), flying=false, wingBeat=0, parts=[], halos=[], landT=0, prevHeart=10, pipAnim=null;
 let fH=0,fRelic=0,fRot=0,fFury=0;
 let flashMsg="", flashT=0;
 function showFlash(t){ flashMsg=t; flashT=2.0; }
@@ -405,11 +410,13 @@ function drawDragon(){
   let d=targA-visAng;
   while(d<-0.001) d+=2*Math.PI;
   if(d>0.02){ visAng+=Math.min(d,(FAST?d:2.6*0.016)); flying=true; }
-  else { visAng=targA; flying=false; }
+  else { if(flying){ landT=0.28; sTick(); } visAng=targA; flying=false; }
+  if(landT>0) landT-=0.016;
   wingBeat+=(flying?13:5)*0.016;
   const r2=RAD, x=CX+r2*Math.cos(visAng), y=CY+r2*Math.sin(visAng)-26+(flying?0:Math.sin(T*2)*2);
   ctx.save();
   ctx.translate(x,y);
+  if(landT>0){ const q=landT/0.28; ctx.scale(1+q*.18,1-q*.15); }
   ctx.rotate(visAng+Math.PI/2+(flying?.15:0));
   const flap=Math.sin(wingBeat*3)*.7;
   ctx.fillStyle="rgba(255,154,74,.85)";
@@ -575,6 +582,17 @@ function lbl(x,y,text,color,align){
   ctx.fillText(text,x,y);
 }
 function drawHUD(){
+  if(phase==="boss"){
+    const bv=ctx.createRadialGradient(CX,CY,CW*.28,CX,CY,CW*.62);
+    bv.addColorStop(0,"rgba(0,0,0,0)");
+    bv.addColorStop(1,"rgba(6,20,14,"+(0.34+0.06*Math.sin(T*3))+")");
+    ctx.fillStyle=bv; ctx.fillRect(0,0,CW,CW);
+  }
+  if(heart!==prevHeart){
+    pipAnim={idx:Math.max(0,Math.min(9,(heart<prevHeart?heart:heart-1))),t:0.4,gain:heart>prevHeart};
+    prevHeart=heart;
+  }
+  if(pipAnim){ pipAnim.t-=0.016; if(pipAnim.t<=0) pipAnim=null; }
   fH=Math.max(0,fH-0.03); fRelic=Math.max(0,fRelic-0.03);
   fRot=Math.max(0,fRot-0.03); fFury=Math.max(0,fFury-0.03);
   if(flashT>0){
@@ -626,7 +644,11 @@ function drawHUD(){
     const hx=19+(i%5)*16, hy=CW-40+Math.floor(i/5)*16;
     const filled=i<heart;
     const danger=heart<=3&&filled;
-    const sc2=(6+(fH>0&&filled?1.6:0))*(danger?0.88+0.16*Math.sin(T*6):1);
+    let sc2=(6+(fH>0&&filled?1.6:0))*(danger?0.88+0.16*Math.sin(T*6):1);
+    if(pipAnim&&pipAnim.idx===i){
+      const q=pipAnim.t/0.4;
+      sc2*=pipAnim.gain?(1+q*.9):(1-q*.5)+q*Math.sin(T*40)*.15;
+    }
     heartPath(hx,hy,sc2);
     if(filled){
       const g=ctx.createLinearGradient(hx,hy-6,hx,hy+6);
@@ -714,7 +736,7 @@ function renderControls(){
   const c=$('controls');
   if(over){ c.innerHTML=''; return; }
   if(phase==="idle"){
-    c.innerHTML=`<button class="bRoll" id="bRoll">🎲 Roll the dice</button>
+    c.innerHTML=`<button class="bRoll pulse" id="bRoll">🎲 Roll the dice</button>
       <button class="bDive ${relics>=3?'ready':''}" id="bDive" ${relics>=3?'':'disabled'}>⚡ Dive</button>`;
     $('bRoll').onclick=roll;
     $('bDive').onclick=dive;
@@ -744,12 +766,19 @@ function optionsOf(){
   });
 }
 const OMENS={1:"TAILWIND",2:"BITTER COLD",3:"RESTLESS DEAD",4:"KIND SKIES",5:"WAR DRUMS",6:"MERCHANT BALLOON"};
+const sOmen=()=>{ tone(880,.4,0,.05,"sine"); tone(1320,.5,.1,.04,"sine"); };
 function applyOmen(o){
-  if(o===1){ omenTail=true; showFlash("OMEN: TAILWIND — BOTH DICE +1"); }
-  else if(o===2){ omenHealHalf=true; showFlash("OMEN: BITTER COLD — HEALING HALVED"); }
-  else if(o===3){ omenRotExtra=1; showFlash("OMEN: RESTLESS DEAD — ROT CREEPS TWICE"); }
-  else if(o===4){ showFlash("OMEN: KIND SKIES — HEAL 1"); healUp(1); }
-  else if(o===5){ omenFuryTmp=1; showFlash("OMEN: WAR DRUMS — +1 FURY THIS TURN"); }
+  sOmen();
+  if(o===1){ omenTail=true; showFlash("OMEN: TAILWIND");
+    info('🌬️ Tailwind','The winds favor you — <b>both dice +1</b> this turn.'); }
+  else if(o===2){ omenHealHalf=true; showFlash("OMEN: BITTER COLD");
+    info('❄️ Bitter Cold','Fires gutter — <b>healing is halved</b> this turn.'); }
+  else if(o===3){ omenRotExtra=1; showFlash("OMEN: RESTLESS DEAD");
+    info('🍄 Restless Dead','The rot will claim <b>two spaces</b> this turn.'); }
+  else if(o===4){ showFlash("OMEN: KIND SKIES");
+    info('🌤️ Kind Skies','Warm winds mend a wound — <b>heal 1</b>.'); healUp(1); }
+  else if(o===5){ omenFuryTmp=1; showFlash("OMEN: WAR DRUMS");
+    info('🥁 War Drums','Your blood sings — <b>+1 Fury</b> this turn.'); }
 }
 function roll(){
   if(phase!=="idle"||over) return;
@@ -798,6 +827,7 @@ async function choose(k){
   if(dice[0]===dice[1]) pendingRot=dice[0];
   dice=null; halos=[]; phase="anim"; renderControls();
   sPick();
+  tone(420,.25,0,.04,"sine"); tone(300,.3,.08,.04,"sine");
   info('You take wing',`Flying ${o.die} spaces…`);
   for(let s2=0;s2<o.die;s2++){ pos=(pos+1)%N; sTick(); await sleep(FAST?0:230); }
   await sleep(120);
@@ -969,7 +999,7 @@ function endGame(won,text){
       +(P.trialMax>P.trial?' TRIAL '+['','I','II','III'][P.trialMax]+' UNLOCKED.':'')
       +(P.trial===3?' You have cleared the final trial, rider.':''))
     :(text||'');
-  $('endStats').textContent=`${turns} turns · rot ${rot.size}/12 · record ${P.wins} wins in ${P.games} flights`;
+  $('endStats').textContent=`${TR().name} · ${turns} turns · rot ${rot.size}/12 · record ${P.wins} wins in ${P.games} flights`;
 }
 
 cv.addEventListener('pointerdown',e=>{

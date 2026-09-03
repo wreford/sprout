@@ -299,7 +299,7 @@ function cellOfPos(i,pos,pawnIdx){
 const px=c=>[c[0]*CELL+CELL/2, BY+c[1]*CELL+CELL/2];
 
 let rng=mulberry(Date.now()>>>0);
-let mode="attract", turn=0, deck=[], discard=[], card=null, forced=null, standings=null;
+let mode="attract", turn=0, deck=[], discard=[], card=null, forced=null, standings=null, lastMove=null;
 let phase="draw", legal=[], selPawn=-1, splitLeft=0, splitExclude=-1;
 let cpuT=0, animQ=[], flashMsg="", flashT=0, msg="", winner=-1, T=0, passT=0, cardAnim=0;
 const players=[];
@@ -310,7 +310,8 @@ const camYaw=()=>{
   if(P.cam==="orbit") return T*0.06+camU;
   return 0.10*Math.sin(T*0.13)+camU;
 };
-const camDist=()=>DIST+6*Math.sin(T*0.4);
+let introT=0;
+const camDist=()=>DIST+6*Math.sin(T*0.4)+introT*introT*90;
 const worldOf=c=>[(c[0]-7.5)*WU,(7.5-c[1])*WU];
 function proj(x,y,z){
   const yw=camYaw(), cyw=Math.cos(yw), syw=Math.sin(yw);
@@ -485,6 +486,7 @@ function applyLanding(i,pj){
   }
 }
 function execMove(i,m){
+  lastMove={i,pj:m.pj,t:1.4};
   const ps=players[i].pawns;
   if(m.t==="start"){ ps[m.pj].pos=0; applyLanding(i,m.pj); }
   else if(m.t==="smorey"){
@@ -676,7 +678,7 @@ function cpuTurn(){
 }
 function startGame(){
   buildSlides(); freshPlayers(); buildDeck();
-  animQ.length=0; flashT=0; parts.length=0; myToastsTaken=0;
+  animQ.length=0; flashT=0; parts.length=0; myToastsTaken=0; introT=1;
   mode="play"; winner=-1; turn=0; phase="draw"; card=null; legal=[]; msg=""; standings=null;
   showFlash("MALLOW GOES FIRST");
 }
@@ -684,6 +686,7 @@ function openSetup(){ mode="setup"; }
 let emberT=0;
 function update(dt){
   T+=dt;
+  if(introT>0) introT=Math.max(0,introT-dt*0.8);
   if(flashT>0) flashT-=dt;
   if(cardAnim>0) cardAnim-=dt;
   emberT-=dt;
@@ -705,6 +708,7 @@ function update(dt){
     if(f.z<-118||f.z>118) f.a=-f.a;
     f.y=14+10*Math.sin(T*.7+f.ph);
   });
+  if(lastMove){ lastMove.t-=dt; if(lastMove.t<=0) lastMove=null; }
   if(animQ.length){ animQ[0].t-=dt; if(animQ[0].t<=0) animQ.shift(); return; }
   if(mode!=="play") return;
   if(phase==="pass"){ passT-=dt; if(passT<=0){ msg=""; endTurn(false); } return; }
@@ -999,7 +1003,17 @@ function render(dt){
     v.x+=ddx*k; v.z+=ddz*k;
     if(dist>3) v.mv=true;
     else if(v.mv){ v.mv=false;
-      puff(v.x,v.z,5,["#c8b89a","#8a7a5e"],26,16); }
+      puff(v.x,v.z,5,["#c8b89a","#8a7a5e"],26,16);
+      bp(200+i*24,.05,0,.028,"triangle"); }
+    if(lastMove&&lastMove.i===i&&lastMove.pj===j&&!v.mv){
+      const lr=proj(v.x,1,v.z), la=clamp(lastMove.t/1.4,0,1);
+      add(lr[2]-7,()=>{
+        ctx.strokeStyle="rgba(255,216,74,"+(la*.8)+")"; ctx.lineWidth=2;
+        ctx.beginPath();
+        ctx.ellipse(lr[0],lr[1],(10+(1-la)*8)*lr[3],(10+(1-la)*8)*lr[3]*.5,0,0,7);
+        ctx.stroke();
+      });
+    }
     const lift=dist>2?Math.abs(Math.sin(T*13))*Math.min(11,dist*.28):0;
     const pg=proj(v.x,1,v.z), pb2=proj(v.x,7+lift,v.z);
     add(pg[2]-8,()=>{
@@ -1036,6 +1050,12 @@ function render(dt){
   { const lp=proj(0,0,-24);
     txt(lp[0]-tw("SUPER CAMP",1)/2,lp[1]+30,"SUPER CAMP","rgba(140,180,120,.55)",1); }
 
+  if(mode==="over"&&winner>=0){
+    const wv=ctx.createRadialGradient(208,BY+208,80,208,BY+208,320);
+    wv.addColorStop(0,"rgba(255,216,74,"+(0.08+0.04*Math.sin(T*2))+")");
+    wv.addColorStop(1,"rgba(255,216,74,0)");
+    ctx.fillStyle=wv; ctx.fillRect(0,BY-8,W,432);
+  }
   for(let i=0;i<4;i++){
     const hn=players[i].pawns.filter(p=>p.pos===HOME).length;
     const active=turn===i&&mode==="play";
@@ -1046,6 +1066,10 @@ function render(dt){
     drawPawnHD(i,x0+15,22,7,0);
     txt(x0+28,10,PL[i].n.slice(0,6),active?"#ffd84a":"#9aa8c8",1);
     txt(x0+28,19,hn+"/4",active?"#ffffff":"#7a88a8",2);
+    for(let hp2=0;hp2<4;hp2++){
+      ctx.fillStyle=hp2<hn?"#ffd84a":"rgba(255,255,255,.16)";
+      ctx.beginPath(); ctx.arc(x0+64+hp2*8,25,2.6,0,7); ctx.fill();
+    }
   }
   ctx.fillStyle="#0b1024"; ctx.fillRect(0,BY+416,W,H-BY-416);
   ctx.fillStyle="rgba(110,224,255,.18)"; ctx.fillRect(0,BY+416,W,2);
@@ -1065,6 +1089,8 @@ function render(dt){
   if(mode==="attract"){
     rr(24,BY+36,W-48,352,20,"rgba(8,12,30,.87)");
     glow(W/2,BY+86,120,"rgba(255,216,74,A)",.1);
+    drawPawnHD(0,58,BY+72+Math.sin(T*1.8)*3,10,0);
+    drawPawnHD(3,W-58,BY+72+Math.sin(T*1.8+2)*3,10,0);
     txt(W/2-tw("S'MOREY 5",5)/2,BY+56,"S'MOREY 5","#ffd84a",5);
     txt(W/2-tw("INFINITY BITS",3)/2,BY+92,"INFINITY BITS","#6ee0ff",3);
     txt(W/2-tw("ALL OF THE BITS. EVERY LAST ONE.",1)/2,BY+120,"ALL OF THE BITS. EVERY LAST ONE.","#ff7ab0",1);
