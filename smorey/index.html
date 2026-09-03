@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#0c1e10">
+<meta name="description" content="S'MOREY — the 7-BIT board game of marshmallow ambition. A s'more-and-camping take on the classic apologetic pursuit game: race your mallows from the tent to the campfire, ride log slides, toast opponents back to their tents, and play the dreaded S'MOREY card. No sixes. No nines. Camp rules.">
+<title>S'MOREY</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230c1e10'/%3E%3Ccircle cx='16' cy='14' r='8' fill='%23f8f8f8'/%3E%3Crect x='14' y='22' width='4' height='8' fill='%23b87838'/%3E%3C/svg%3E">
+<style>
+:root{ --bg:#0c1e10; --cyan:#57d8f8; --pink:#f85898; --yellow:#f8d800; --ember:#f85840; }
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none}
+html,body{height:100%}
+body{background:
+  radial-gradient(ellipse at 50% 110%,#2a3a14 0%,var(--bg) 55%);
+  color:#e8f0e0;font-family:monospace;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;overflow:hidden;gap:8px;padding:8px}
+#cab{position:relative;border:6px solid #3a4a1a;border-radius:12px;background:#000;
+  box-shadow:0 0 0 3px #14260c,0 18px 50px rgba(0,0,0,.7),0 0 44px rgba(248,88,64,.12);
+  line-height:0}
+#cv{image-rendering:pixelated;image-rendering:crisp-edges;display:block;
+  width:min(94vw,calc((100dvh - 110px) * 0.8));aspect-ratio:208/264;background:#000}
+#scan{position:absolute;inset:0;pointer-events:none;border-radius:6px;
+  background:repeating-linear-gradient(0deg,transparent 0 2px,rgba(0,0,0,.2) 2px 3px),
+  radial-gradient(ellipse at center,transparent 55%,rgba(0,10,0,.4) 100%)}
+#scan.off{display:none}
+#pads{display:flex;gap:8px;width:min(94vw,420px)}
+.pad{flex:1;background:#16300e;border:3px solid #3a5a1a;border-radius:12px;color:var(--yellow);
+  font:700 14px monospace;letter-spacing:.08em;padding:13px 4px;cursor:pointer;text-align:center;
+  touch-action:none}
+.pad:active{background:#2a4a16;border-color:var(--yellow)}
+.pad:disabled{opacity:.35}
+#opts{display:flex;gap:10px;font:700 10px monospace;letter-spacing:.14em;color:#7a9a6a}
+#opts button{background:none;border:0;color:#7a9a6a;font:inherit;cursor:pointer;padding:4px}
+#opts button.on{color:var(--cyan)}
+</style>
+</head>
+<body>
+<div id="cab"><canvas id="cv" width="208" height="264"></canvas><div id="scan"></div></div>
+<div id="pads"><button class="pad" id="padDraw">🔥 DRAW A CARD</button></div>
+<div id="opts">
+  <button id="oSnd" class="on">SFX</button>
+  <button id="oMus" class="on">MUSIC</button>
+  <button id="oScan" class="on">CRT</button>
+</div>
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+const cv=$("cv"), ctx=cv.getContext("2d");
+ctx.imageSmoothingEnabled=false;
+const CELL=13, BY=22, W=208, H=264;
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+
+let P={wins:0,games:0,snd:true,music:true,crt:true};
+try{ const s=JSON.parse(localStorage.getItem("sm7")||"null"); if(s) P=Object.assign(P,s); }catch(e){}
+const saveP=()=>{ try{ localStorage.setItem("sm7",JSON.stringify(P)); }catch(e){} };
+
+let AC=null;
+function bp(f,d,when,vol,type){
+  if(!P.snd) return;
+  try{
+    AC=AC||new (window.AudioContext||window.webkitAudioContext)();
+    const t=AC.currentTime+(when||0);
+    const o=AC.createOscillator(), g=AC.createGain();
+    o.type=type||"square"; o.frequency.setValueAtTime(f,t);
+    g.gain.setValueAtTime(vol||.07,t); g.gain.exponentialRampToValueAtTime(.001,t+d);
+    o.connect(g); g.connect(AC.destination); o.start(t); o.stop(t+d);
+  }catch(e){}
+}
+const sCard=()=>{ bp(500,.05,0,.07); bp(700,.06,.05,.06); };
+const sHop=()=>bp(340,.04,0,.05);
+const sBump=()=>{ bp(200,.1,0,.1); bp(140,.14,.08,.1); };
+const sSlide=()=>{ for(let i=0;i<5;i++) bp(400+i*80,.04,i*.04,.05); };
+const sHome=()=>{ [523,659,784].forEach((f,i)=>bp(f,.1,i*.07,.08,"triangle")); };
+const sMorey=()=>{ [740,620,880,740,1100].forEach((f,i)=>bp(f,.08,i*.06,.09)); };
+const sWin=()=>{ [523,659,784,1047,784,1047,1319].forEach((f,i)=>bp(f,.14,i*.1,.09,"triangle")); };
+const sNo=()=>bp(160,.18,0,.08);
+const buzz=p=>{ if(navigator.vibrate) navigator.vibrate(p); };
+
+let musNext=0, musStep=0;
+const MBASS=[131,0,98,0,110,0,98,0], MLEAD=[0,392,440,0,523,0,440,392,0,330,392,0,440,0,392,0];
+function musicTick(){
+  if(!P.music||!AC) return;
+  const spb=60/96/2;
+  while(musNext<AC.currentTime+0.25){
+    const b=MBASS[musStep%8], l=MLEAD[musStep%16];
+    if(b){ const o=AC.createOscillator(),g=AC.createGain();
+      o.type="triangle"; o.frequency.value=b;
+      g.gain.setValueAtTime(.045,musNext); g.gain.exponentialRampToValueAtTime(.001,musNext+spb*1.6);
+      o.connect(g); g.connect(AC.destination); o.start(musNext); o.stop(musNext+spb*1.7); }
+    if(l){ const o=AC.createOscillator(),g=AC.createGain();
+      o.type="square"; o.frequency.value=l;
+      g.gain.setValueAtTime(.022,musNext); g.gain.exponentialRampToValueAtTime(.001,musNext+spb*.8);
+      o.connect(g); g.connect(AC.destination); o.start(musNext); o.stop(musNext+spb); }
+    musNext+=spb; musStep++;
+  }
+}
+
+const FONT={"0":[7,5,5,5,7],"1":[2,6,2,2,7],"2":[7,1,7,4,7],"3":[7,1,7,1,7],"4":[5,5,7,1,1],
+"5":[7,4,7,1,7],"6":[7,4,7,5,7],"7":[7,1,2,2,2],"8":[7,5,7,5,7],"9":[7,5,7,1,7],
+A:[2,5,7,5,5],B:[6,5,6,5,6],C:[7,4,4,4,7],D:[6,5,5,5,6],E:[7,4,6,4,7],F:[7,4,6,4,4],
+G:[7,4,5,5,7],H:[5,5,7,5,5],I:[7,2,2,2,7],J:[1,1,1,5,7],K:[5,5,6,5,5],L:[4,4,4,4,7],
+M:[5,7,7,5,5],N:[5,7,5,5,5],O:[7,5,5,5,7],P:[7,5,7,4,4],Q:[7,5,5,7,1],R:[6,5,6,5,5],
+S:[7,4,7,1,7],T:[7,2,2,2,2],U:[5,5,5,5,7],V:[5,5,5,5,2],W:[5,5,7,7,5],X:[5,5,2,5,5],
+Y:[5,5,2,2,2],Z:[7,1,2,4,7]," ":[0,0,0,0,0],".":[0,0,0,0,2],"!":[2,2,2,0,2],
+"-":[0,0,7,0,0],"'":[2,2,0,0,0],"/":[1,1,2,4,4],"?":[7,1,3,0,2]};
+function txt(x,y,s,col,sc){
+  sc=sc||1; ctx.fillStyle=col;
+  for(let i=0;i<s.length;i++){
+    const g=FONT[s[i].toUpperCase()]||FONT[" "];
+    for(let r=0;r<5;r++) for(let c=0;c<3;c++)
+      if(g[r]>>(2-c)&1) ctx.fillRect(Math.round(x+i*4*sc+c*sc),Math.round(y+r*sc),sc,sc);
+  }
+}
+const tw=s=>s.length*4;
+
+function mulberry(seed){
+  let a=seed>>>0;
+  return function(){
+    a|=0; a=a+0x6D2B79F5|0;
+    let t=Math.imul(a^a>>>15,1|a);
+    t=t+Math.imul(t^t>>>7,61|t)^t;
+    return ((t^t>>>14)>>>0)/4294967296;
+  };
+}
+
+const SIDE=15, HOME=65, SAFE0=60;
+const PL=[
+{n:"MALLOW",c:"#f8f8f8",d:"#b8b8c8",human:true},
+{n:"CHOCO",c:"#b87838",d:"#7a4e22",human:false},
+{n:"GRAHAM",c:"#f8a800",d:"#a87400",human:false},
+{n:"EMBER",c:"#f85840",d:"#a83828",human:false}];
+const SAFEDIR=[[1,0],[0,1],[-1,0],[0,-1]];
+const POOLS=[[[3,3],[4,3],[3,4],[4,4]],[[11,3],[12,3],[11,4],[12,4]],
+  [[12,12],[11,12],[12,11],[11,11]],[[4,12],[3,12],[4,11],[3,11]]];
+const SLIDES=[];
+for(let i=0;i<4;i++){ SLIDES.push({abs:(i*15+2)%60,len:3,owner:i},{abs:(i*15+8)%60,len:4,owner:i}); }
+const DECKDEF=[[1,5],[2,4],[3,4],[4,4],[5,4],[7,4],[8,4],[10,4],[11,4],[12,4],["S",4]];
+
+const absOf=(i,rel)=>(i*15+rel)%60;
+function cellOfAbs(a){
+  const s=Math.floor(a/15), t=a%15;
+  if(s===0) return [t,0];
+  if(s===1) return [15,t];
+  if(s===2) return [15-t,15];
+  return [0,15-t];
+}
+function cellOfPos(i,pos,pawnIdx){
+  if(pos<0) return POOLS[i][pawnIdx];
+  if(pos<=59) return cellOfAbs(absOf(i,pos));
+  const br=cellOfAbs(absOf(i,59)), d=SAFEDIR[i];
+  if(pos<HOME) return [br[0]+d[0]*(pos-59),br[1]+d[1]*(pos-59)];
+  return [br[0]+d[0]*6,br[1]+d[1]*6];
+}
+const px=c=>[c[0]*CELL+CELL/2, BY+c[1]*CELL+CELL/2];
+
+let rng=mulberry(Date.now()>>>0);
+let mode="attract", turn=0, deck=[], discard=[], card=null, forced=null;
+let phase="draw", legal=[], selPawn=-1, splitLeft=0, splitExclude=-1;
+let cpuT=0, animQ=[], flashMsg="", flashT=0, msg="", winner=-1, T=0, passT=0;
+const players=[];
+function freshPlayers(){
+  players.length=0;
+  for(let i=0;i<4;i++) players.push({pawns:[{pos:-1},{pos:-1},{pos:-1},{pos:-1}]});
+}
+freshPlayers();
+function buildDeck(){
+  deck=[]; discard=[];
+  DECKDEF.forEach(([v,n])=>{ for(let k=0;k<n;k++) deck.push(v); });
+  for(let i=deck.length-1;i>0;i--){ const j=Math.floor(rng()*(i+1)); [deck[i],deck[j]]=[deck[j],deck[i]]; }
+}
+function drawCard(){
+  if(deck.length===0){ deck=discard; discard=[];
+    for(let i=deck.length-1;i>0;i--){ const j=Math.floor(rng()*(i+1)); [deck[i],deck[j]]=[deck[j],deck[i]]; } }
+  const c=forced!==null?forced:deck.pop();
+  if(forced!==null) forced=null; else discard.push(c);
+  return c;
+}
+function showFlash(t){ flashMsg=t; flashT=1.5; }
+
+function pawnAtAbs(a){
+  for(let i=0;i<4;i++) for(let j=0;j<4;j++){
+    const p=players[i].pawns[j];
+    if(p.pos>=0&&p.pos<=59&&absOf(i,p.pos)===a) return {pi:i,pj:j};
+  }
+  return null;
+}
+function ownAt(i,pos){
+  return players[i].pawns.some(p=>{
+    if(pos<=59&&p.pos>=0&&p.pos<=59) return absOf(i,p.pos)===absOf(i,pos);
+    return p.pos===pos&&pos<HOME&&pos>=SAFE0;
+  });
+}
+function destOf(i,pos,steps){
+  if(pos<0) return null;
+  if(pos>=HOME) return null;
+  let d=pos+steps;
+  if(steps<0){ if(d<0){ if(pos>59) return null; d+=60; } if(d>59&&pos>59===false) {} }
+  if(d>HOME) return null;
+  if(d<0) return null;
+  return d;
+}
+function movesFor(i,c){
+  const out=[];
+  const ps=players[i].pawns;
+  const addMove=(pj,steps)=>{
+    const d=destOf(i,ps[pj].pos,steps);
+    if(d===null) return;
+    if(d<HOME&&ownAt(i,d)&&!(d<=59&&absOf(i,d)===absOf(i,ps[pj].pos))) return;
+    out.push({t:"move",pj,steps,dest:d});
+  };
+  const addStart=pj=>{
+    if(ps[pj].pos!==-1) return;
+    if(players[i].pawns.some(p=>p.pos===0)) return;
+    out.push({t:"start",pj,dest:0});
+  };
+  if(c===1||c===2){ const pj=ps.findIndex(p=>p.pos===-1); if(pj>=0) addStart(pj);
+    ps.forEach((p,pj)=>addMove(pj,c)); }
+  else if(c===4){ ps.forEach((p,pj)=>addMove(pj,-4)); }
+  else if(c===10){ ps.forEach((p,pj)=>{ addMove(pj,10); addMove(pj,-1); }); }
+  else if(c===11){
+    ps.forEach((p,pj)=>{
+      addMove(pj,11);
+      if(p.pos>=0&&p.pos<=59){
+        for(let oi=0;oi<4;oi++){ if(oi===i) continue;
+          players[oi].pawns.forEach((op,oj)=>{
+            if(op.pos>=0&&op.pos<=59) out.push({t:"swap",pj,oi,oj,dest:-2});
+          });
+        }
+      }
+    });
+  }
+  else if(c==="S"){
+    const pj=ps.findIndex(p=>p.pos===-1);
+    if(pj>=0){
+      for(let oi=0;oi<4;oi++){ if(oi===i) continue;
+        players[oi].pawns.forEach((op,oj)=>{
+          if(op.pos>=0&&op.pos<=59) out.push({t:"smorey",pj,oi,oj,dest:-2});
+        });
+      }
+    }
+  }
+  else if(c===7){
+    for(let k=1;k<=7;k++){
+      ps.forEach((p,pj)=>{
+        const d=destOf(i,p.pos,k);
+        if(d===null) return;
+        if(d<HOME&&ownAt(i,d)) return;
+        if(k===7){ out.push({t:"move",pj,steps:7,dest:d}); return; }
+        const rem=7-k;
+        const canRest=ps.some((q,qj)=>{
+          if(qj===pj) return false;
+          const dd=destOf(i,q.pos,rem);
+          if(dd===null) return false;
+          if(dd<HOME&&ownAt(i,dd)&&dd!==d) return false;
+          return true;
+        });
+        if(canRest) out.push({t:"move",pj,steps:k,dest:d,split:true});
+      });
+    }
+  }
+  else { ps.forEach((p,pj)=>addMove(pj,c)); }
+  const seen={};
+  return out.filter(m=>{
+    const k=m.t+m.pj+"_"+(m.steps||0)+"_"+(m.oi!==undefined?m.oi+"."+m.oj:"");
+    if(seen[k]) return false; seen[k]=1; return true;
+  });
+}
+function progress(i,pj){ const p=players[i].pawns[pj].pos; return p<0?0:p>=HOME?70:p+5; }
+function bumpPawn(pi,pj){
+  players[pi].pawns[pj].pos=-1;
+  sBump(); buzz(30);
+}
+function applyLanding(i,pj){
+  const p=players[i].pawns[pj];
+  if(p.pos<0||p.pos>59) return;
+  let a=absOf(i,p.pos);
+  const hit=pawnAtAbs2(a,i,pj);
+  if(hit){ bumpPawn(hit.pi,hit.pj); showFlash("TOASTED! BACK TO THE TENT"); }
+  const sl=SLIDES.find(s=>s.abs===a&&s.owner!==i);
+  if(sl){
+    for(let k=1;k<=sl.len;k++){
+      const ca=(a+k)%60;
+      const v=pawnAtAbs2(ca,-1,-1);
+      if(v&&!(v.pi===i&&v.pj===pj)) { bumpPawn(v.pi,v.pj); }
+    }
+    const endAbs=(a+sl.len)%60;
+    p.pos=(endAbs-i*15+60)%60;
+    sSlide(); showFlash("LOG SLIDE! WHEEE");
+  }
+}
+function pawnAtAbs2(a,exI,exJ){
+  for(let i=0;i<4;i++) for(let j=0;j<4;j++){
+    if(i===exI&&j===exJ) continue;
+    const p=players[i].pawns[j];
+    if(p.pos>=0&&p.pos<=59&&absOf(i,p.pos)===a) return {pi:i,pj:j};
+  }
+  return null;
+}
+function execMove(i,m){
+  const ps=players[i].pawns;
+  if(m.t==="start"){ ps[m.pj].pos=0; applyLanding(i,m.pj); }
+  else if(m.t==="smorey"){
+    const victim=players[m.oi].pawns[m.oj];
+    const a=absOf(m.oi,victim.pos);
+    bumpPawn(m.oi,m.oj);
+    ps[m.pj].pos=(a-i*15+60)%60;
+    sMorey(); showFlash("S'MOREY!! YOINK!");
+    applyLanding(i,m.pj);
+  }
+  else if(m.t==="swap"){
+    const mine=ps[m.pj], theirs=players[m.oi].pawns[m.oj];
+    const myAbs=absOf(i,mine.pos), thAbs=absOf(m.oi,theirs.pos);
+    mine.pos=(thAbs-i*15+60)%60;
+    theirs.pos=(myAbs-m.oi*15+60)%60;
+    showFlash("SWAPPED SEATS!");
+    applyLanding(i,m.pj);
+  }
+  else {
+    ps[m.pj].pos=m.dest;
+    if(m.dest===HOME){ sHome(); showFlash(PL[i].n+" REACHED THE FIRE!"); }
+    else applyLanding(i,m.pj);
+  }
+  animQ.push({t:0.45});
+  if(players[i].pawns.every(p=>p.pos===HOME)){
+    mode="over"; winner=i;
+    P.games++; if(i===0) P.wins++;
+    saveP(); sWin(); buzz([50,80,50,80,120]);
+    return;
+  }
+}
+function afterMove(i,m){
+  if(m.split){
+    splitLeft=7-m.steps; splitExclude=m.pj;
+    phase="choose";
+    legal=movesForSplit(i,splitLeft,splitExclude);
+    if(legal.length===0){ endTurn(false); }
+    return;
+  }
+  endTurn(card===2);
+}
+function movesForSplit(i,rem,exclude){
+  const out=[];
+  players[i].pawns.forEach((p,pj)=>{
+    if(pj===exclude) return;
+    const d=destOf(i,p.pos,rem);
+    if(d===null) return;
+    if(d<HOME&&ownAt(i,d)) return;
+    out.push({t:"move",pj,steps:rem,dest:d});
+  });
+  return out;
+}
+function endTurn(again){
+  card=null; legal=[]; selPawn=-1; splitLeft=0; splitExclude=-1;
+  if(mode==="over") return;
+  if(!again) turn=(turn+1)%4;
+  phase=PL[turn].human?"draw":"cpu";
+  cpuT=0.85;
+}
+function humanDraw(){
+  if(mode!=="play"||phase!=="draw"||!PL[turn].human) return;
+  card=drawCard(); sCard();
+  legal=movesFor(turn,card);
+  if(legal.length===0){ phase="pass"; passT=1.2; sNo(); msg="NO MOVE. SIP COCOA."; }
+  else { phase="choose"; msg=""; }
+}
+function humanPlay(mi){
+  if(phase!=="choose") return;
+  const m=legal[mi]; if(!m) return;
+  const c=card;
+  execMove(turn,m);
+  if(mode==="over") return;
+  if(splitLeft===0&&!m.split) afterMove(turn,m);
+  else if(m.split){ afterMove(turn,m); }
+  else { endTurn(c===2&&splitLeft===0); }
+}
+function cpuScore(i,m){
+  let s=0;
+  if(m.t==="smorey") s=100+progress(m.oi,m.oj);
+  else if(m.t==="swap") s=(progress(m.oi,m.oj)-progress(i,m.pj))*1.2;
+  else if(m.t==="start") s=45;
+  else {
+    if(m.dest===HOME) s=95;
+    else if(m.dest>=SAFE0) s=70+(m.dest-SAFE0);
+    else s=10+(m.dest-players[i].pawns[m.pj].pos)*1.5;
+    if(m.dest<=59){
+      const a=absOf(i,m.dest);
+      if(pawnAtAbs2(a,i,m.pj)){ const v=pawnAtAbs2(a,i,m.pj); if(v.pi!==i) s+=75; }
+      const sl=SLIDES.find(x=>x.abs===a&&x.owner!==i);
+      if(sl) s+=sl.len*3;
+    }
+  }
+  return s;
+}
+function cpuTurn(){
+  card=drawCard(); sCard();
+  legal=movesFor(turn,card);
+  if(legal.length===0){ phase="pass"; passT=1.0; msg=PL[turn].n+" HAS NO MOVE"; return; }
+  let best=0,bs=-1e9;
+  legal.forEach((m,k)=>{ const s=cpuScore(turn,m); if(s>bs){ bs=s; best=k; } });
+  const m=legal[best], c=card;
+  execMove(turn,m);
+  if(mode==="over") return;
+  if(m.split){
+    const rest=movesForSplit(turn,7-m.steps,m.pj);
+    if(rest.length){
+      let b2=0,s2=-1e9;
+      rest.forEach((r,k)=>{ const s=cpuScore(turn,r); if(s>s2){ s2=s; b2=k; } });
+      execMove(turn,rest[b2]);
+      if(mode==="over") return;
+    }
+  }
+  endTurn(c===2);
+}
+function startGame(){
+  freshPlayers(); buildDeck();
+  animQ.length=0; flashT=0;
+  mode="play"; winner=-1; turn=0; phase="draw"; card=null; legal=[]; msg="";
+  showFlash("MALLOW GOES FIRST");
+}
+function update(dt){
+  T+=dt;
+  if(flashT>0) flashT-=dt;
+  if(animQ.length){ animQ[0].t-=dt; if(animQ[0].t<=0) animQ.shift(); return; }
+  if(mode!=="play") return;
+  if(phase==="pass"){ passT-=dt; if(passT<=0){ msg=""; endTurn(false); } return; }
+  if(phase==="cpu"){ cpuT-=dt; if(cpuT<=0){ cpuTurn(); } return; }
+}
+
+const CARDTXT={1:"ONE STEP. COZY.",2:"TWO! AND DRAW AGAIN",3:"THREE MARSHY STEPS",
+4:"FOUR BACK. RACCOON!",5:"FIVE! POWER WALK",7:"SEVEN. SPLIT IT LIKE FIREWOOD",
+8:"EIGHT! GREAT!",10:"TEN AHEAD OR ONE BACK",11:"ELEVEN OR SWAP SEATS",
+12:"TWELVE! SPRINT!",S:"S'MOREY! YOINK A SPOT"};
+function drawFire(cx,cy,t){
+  const f=Math.floor(t*8)%3;
+  ctx.fillStyle="#6a4a2a";
+  ctx.fillRect(cx-9,cy+5,18,3); ctx.fillRect(cx-7,cy+8,14,3);
+  ctx.fillStyle="#f85840";
+  ctx.fillRect(cx-5,cy-2+f,10,7-f);
+  ctx.fillStyle="#f8a800";
+  ctx.fillRect(cx-3,cy-5+((f+1)%3),6,8);
+  ctx.fillStyle="#f8d800";
+  ctx.fillRect(cx-1,cy-7+((f+2)%3),3,7);
+}
+function drawTent(cx,cy,col){
+  ctx.fillStyle=col;
+  ctx.beginPath(); ctx.moveTo(cx,cy-6); ctx.lineTo(cx-7,cy+5); ctx.lineTo(cx+7,cy+5); ctx.closePath(); ctx.fill();
+  ctx.fillStyle="#0c1e10"; ctx.fillRect(cx-1.5,cy-1,3,6);
+}
+function render(){
+  ctx.fillStyle="#0a1c0e"; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle="#f8f8d8";
+  for(let i=0;i<14;i++) ctx.fillRect((i*53+17)%W,(i*29+3)%16,1,1);
+  for(let a=0;a<60;a++){
+    const c=cellOfAbs(a);
+    ctx.fillStyle="#2a4a26";
+    ctx.fillRect(c[0]*CELL+1,BY+c[1]*CELL+1,CELL-2,CELL-2);
+  }
+  SLIDES.forEach(sl=>{
+    for(let k=0;k<=sl.len;k++){
+      const c=cellOfAbs((sl.abs+k)%60);
+      ctx.fillStyle=k===0?PL[sl.owner].c:"#3a5a33";
+      ctx.fillRect(c[0]*CELL+1,BY+c[1]*CELL+1,CELL-2,CELL-2);
+      if(k===0){ ctx.fillStyle="#0a1c0e";
+        const [mx,my]=px(c);
+        ctx.fillRect(mx-1.5,my-1.5,3,3); }
+    }
+  });
+  for(let i=0;i<4;i++){
+    for(let k=1;k<=5;k++){
+      const c=cellOfPos(i,59+k,0);
+      ctx.fillStyle=PL[i].d;
+      ctx.fillRect(c[0]*CELL+1,BY+c[1]*CELL+1,CELL-2,CELL-2);
+    }
+    const hc=cellOfPos(i,HOME,0), [hx,hy]=px(hc);
+    ctx.fillStyle="#1a3020";
+    ctx.fillRect(hc[0]*CELL,BY+hc[1]*CELL,CELL,CELL);
+    drawFire(hx,hy-1,T+i);
+    const pc=POOLS[i][0];
+    drawTent(pc[0]*CELL+CELL,BY+pc[1]*CELL-6,PL[i].c);
+    POOLS[i].forEach(c2=>{
+      ctx.strokeStyle=PL[i].d; ctx.lineWidth=1;
+      ctx.strokeRect(c2[0]*CELL+2.5,BY+c2[1]*CELL+2.5,CELL-5,CELL-5);
+    });
+  }
+  drawFire(W/2,BY+104,T);
+  txt(W/2-tw("CAMP")/2,BY+116,"CAMP","#4a6a3a");
+  if(mode==="play"&&phase==="choose"){
+    const movable=new Set(legal.map(m=>m.pj));
+    legal.forEach(m=>{
+      let c2;
+      if(m.t==="swap"||m.t==="smorey") c2=cellOfAbs(absOf(m.oi,players[m.oi].pawns[m.oj].pos));
+      else c2=cellOfPos(turn,m.dest,m.pj);
+      if(selPawn===-1||m.pj===selPawn){
+        if(Math.floor(T*4)%2===0){
+          ctx.strokeStyle="#f8d800"; ctx.lineWidth=1.5;
+          ctx.strokeRect(c2[0]*CELL+1.5,BY+c2[1]*CELL+1.5,CELL-3,CELL-3);
+        }
+      }
+    });
+    if(PL[turn].human) movable.forEach(pj=>{
+      const p=players[turn].pawns[pj];
+      const c2=cellOfPos(turn,p.pos,pj), [mx,my]=px(c2);
+      ctx.strokeStyle=selPawn===pj?"#57d8f8":"#f8f8f8";
+      ctx.beginPath(); ctx.arc(mx,my,6+Math.sin(T*6)*1,0,7); ctx.stroke();
+    });
+  }
+  for(let i=0;i<4;i++) players[i].pawns.forEach((p,j)=>{
+    if(p.pos===HOME) return;
+    const c2=cellOfPos(i,p.pos,j), [mx,my]=px(c2);
+    const prog=p.pos<0?0:p.pos/64;
+    ctx.fillStyle=PL[i].c;
+    ctx.beginPath(); ctx.arc(mx,my,4.2,0,7); ctx.fill();
+    if(i===0){ ctx.fillStyle="rgba(200,138,58,"+(prog*.55)+")";
+      ctx.beginPath(); ctx.arc(mx,my,4.2,0,7); ctx.fill(); }
+    ctx.fillStyle="#0a1c0e";
+    ctx.fillRect(mx-2,my-1.5,1.5,1.5); ctx.fillRect(mx+.8,my-1.5,1.5,1.5);
+  });
+  ctx.fillStyle="#08160a"; ctx.fillRect(0,0,W,BY-2);
+  for(let i=0;i<4;i++){
+    const hn=players[i].pawns.filter(p=>p.pos===HOME).length;
+    const x=6+i*52;
+    ctx.fillStyle=PL[i].c; ctx.beginPath(); ctx.arc(x,9,3.5,0,7); ctx.fill();
+    txt(x+7,6,hn+"/4",turn===i&&mode==="play"?"#f8d800":"#6a8a5a");
+    if(turn===i&&mode==="play") txt(x+7,13,"TURN","#f8d800");
+  }
+  ctx.fillStyle="#08160a"; ctx.fillRect(0,BY+208,W,H-BY-208);
+  if(mode==="attract"){
+    ctx.fillStyle="rgba(8,20,8,.82)"; ctx.fillRect(0,BY+20,W,170);
+    txt(W/2-tw("S'MOREY")*1.5,BY+34,"S'MOREY","#f8d800",3);
+    txt(W/2-tw("THE 7-BIT BOARD GAME")/2,BY+58,"THE 7-BIT BOARD GAME","#57d8f8");
+    txt(W/2-tw("OF MARSHMALLOW AMBITION")/2,BY+68,"OF MARSHMALLOW AMBITION","#57d8f8");
+    txt(W/2-tw("TENT TO CAMPFIRE. 4 MALLOWS.")/2,BY+88,"TENT TO CAMPFIRE. 4 MALLOWS.","#c8d8b8");
+    txt(W/2-tw("TOAST RIVALS BACK TO THEIR TENTS")/2,BY+98,"TOAST RIVALS BACK TO THEIR TENTS","#c8d8b8");
+    txt(W/2-tw("RIDE LOG SLIDES. FEAR THE S'MOREY")/2,BY+108,"RIDE LOG SLIDES. FEAR THE S'MOREY","#c8d8b8");
+    txt(W/2-tw("NO SIXES. NO NINES. CAMP RULES.")/2,BY+124,"NO SIXES. NO NINES. CAMP RULES.","#f85898");
+    if(Math.floor(T*2)%2===0) txt(W/2-tw("TAP TO CAMP")/2,BY+146,"TAP TO CAMP","#f8f8f8");
+    txt(W/2-tw("WINS "+P.wins+"/"+P.games)/2,BY+162,"WINS "+P.wins+"/"+P.games,"#f8d800");
+  }
+  if(mode==="over"){
+    ctx.fillStyle="rgba(8,20,8,.85)"; ctx.fillRect(0,BY+40,W,120);
+    const wn=PL[winner].n;
+    txt(W/2-tw(wn+" WINS CAMP")/2*2,BY+58,wn+" WINS CAMP",PL[winner].c,2);
+    txt(W/2-tw(winner===0?"S'MORES FOR EVERYONE. MOSTLY YOU.":"THE "+wn+" DYNASTY BEGINS")/2,BY+84,
+      winner===0?"S'MORES FOR EVERYONE. MOSTLY YOU.":"THE "+wn+" DYNASTY BEGINS","#c8d8b8");
+    txt(W/2-tw("WINS "+P.wins+"/"+P.games)/2,BY+100,"WINS "+P.wins+"/"+P.games,"#f8d800");
+    if(Math.floor(T*2)%2===0) txt(W/2-tw("TAP FOR A REMATCH")/2,BY+120,"TAP FOR A REMATCH","#f8f8f8");
+  }
+  if(mode==="play"){
+    if(card!==null){
+      ctx.fillStyle="#f8f0d8"; ctx.fillRect(4,BY+212,26,20);
+      ctx.fillStyle="#a83828";
+      txt(card==="S"?11:(String(card).length>1?9:13),BY+217,String(card),"#a83828",2);
+      const ct=splitLeft>0?"SPLIT! "+splitLeft+" LEFT":(CARDTXT[card]||"");
+      txt(36,BY+214,ct,"#e8f0d0");
+      txt(36,BY+224,PL[turn].human?(phase==="choose"?"TAP A GLOWING MALLOW":""):PL[turn].n+" IS THINKING","#7a9a6a");
+    } else {
+      txt(6,BY+214,PL[turn].human?"YOUR TURN. DRAW A CARD":PL[turn].n+"'S TURN","#e8f0d0");
+    }
+    if(msg) txt(6,BY+236,msg,"#f85898");
+    txt(W-tw("DECK "+deck.length)-4,BY+236,"DECK "+deck.length,"#6a8a5a");
+  }
+  if(flashT>0&&Math.floor(flashT*8)%2===0){
+    ctx.fillStyle="rgba(8,22,10,.85)";
+    ctx.fillRect(W/2-tw(flashMsg)/2-5,BY+185,tw(flashMsg)+10,13);
+    txt(W/2-tw(flashMsg)/2,BY+189,flashMsg,"#f8d800");
+  }
+}
+let last=0;
+function frame(ts){
+  const dt=Math.min(.05,(ts-last)/1000||0); last=ts;
+  update(dt); musicTick(); render();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+cv.addEventListener("pointerdown",e=>{
+  if(mode!=="play"){ startGame(); return; }
+  if(!PL[turn].human||phase!=="choose") return;
+  const rc=cv.getBoundingClientRect();
+  const x=(e.clientX-rc.left)*W/rc.width, y=(e.clientY-rc.top)*H/rc.height;
+  const cx=Math.floor(x/CELL), cy=Math.floor((y-BY)/CELL);
+  const hitPawn=legal.find(m=>{
+    const p=players[turn].pawns[m.pj];
+    const c2=cellOfPos(turn,p.pos,m.pj);
+    return c2[0]===cx&&c2[1]===cy;
+  });
+  if(hitPawn&&selPawn!==hitPawn.pj){ selPawn=hitPawn.pj; sHop(); return; }
+  const cands=legal.map((m,k)=>({m,k})).filter(({m})=>selPawn===-1||m.pj===selPawn);
+  const hit=cands.find(({m})=>{
+    let c2;
+    if(m.t==="swap"||m.t==="smorey") c2=cellOfAbs(absOf(m.oi,players[m.oi].pawns[m.oj].pos));
+    else c2=cellOfPos(turn,m.dest,m.pj);
+    return c2[0]===cx&&c2[1]===cy;
+  });
+  if(hit){ sHop(); humanPlay(hit.k); }
+});
+$("padDraw").addEventListener("pointerdown",e=>{
+  e.preventDefault();
+  if(mode!=="play"){ startGame(); return; }
+  humanDraw();
+});
+addEventListener("keydown",e=>{ if(e.key==="Enter"||e.key===" "){ if(mode!=="play") startGame(); else humanDraw(); } });
+$("oSnd").onclick=()=>{ P.snd=!P.snd; saveP(); $("oSnd").classList.toggle("on",P.snd); };
+$("oMus").onclick=()=>{ P.music=!P.music; saveP(); $("oMus").classList.toggle("on",P.music); };
+$("oScan").onclick=()=>{ P.crt=!P.crt; saveP(); $("oScan").classList.toggle("on",P.crt); $("scan").classList.toggle("off",!P.crt); };
+$("oSnd").classList.toggle("on",P.snd);
+$("oMus").classList.toggle("on",P.music);
+$("oScan").classList.toggle("on",P.crt);
+$("scan").classList.toggle("off",!P.crt);
+
+window.SM7={
+  start:startGame, draw:humanDraw, play:humanPlay,
+  seed(n){ rng=mulberry(n>>>0); },
+  setCard(v){ forced=v; },
+  setPawn(pi,pj,pos){ players[pi].pawns[pj].pos=pos; },
+  ff(sec){ let t=0; while(t<sec){ update(1/60); t+=1/60; } },
+  moves(){ return legal.map(m=>Object.assign({},m)); },
+  state(){ return { mode, turn, phase, card, deck:deck.length, winner,
+    splitLeft, wins:P.wins, games:P.games,
+    pawns: players.map(pl=>pl.pawns.map(p=>p.pos)) }; },
+  DECKDEF, SLIDES, PL, get P(){ return P; },
+};
+</script>
+</body>
+</html>
