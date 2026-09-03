@@ -95,6 +95,26 @@ const SP='/tmp/claude-0/-home-user-sprout/12b11e48-c931-5cfc-8740-403ce467b352/s
   (cam.a==='orbit'&&cam.lbl==='CAM ORBIT'&&cam.back==='sway')
     ? ok('camera toggles SWAY ↔ ORBIT') : fail('cam: '+JSON.stringify(cam));
 
+  const duo = await p.evaluate(()=>{
+    SM5.setHumans(2); SM5.start();
+    SM5.setCard(3); SM5.draw(); SM5.ff(1.5);
+    const st=SM5.state();
+    SM5.setHumans(1);
+    return { turn: st.turn, phase: st.phase, humans: st.humans };
+  });
+  (duo.turn===1&&duo.phase==='draw'&&duo.humans===2)
+    ? ok('pass-and-play: with 2 campers human, Choco waits for a human draw')
+    : fail('duo: '+JSON.stringify(duo));
+
+  const trophies = await p.evaluate(()=>{
+    SM5.openTrophies();
+    const m1=SM5.state().mode;
+    SM5.setup();
+    return { m1, m2: SM5.state().mode };
+  });
+  (trophies.m1==='trophies'&&trophies.m2==='setup')
+    ? ok('trophy cabinet opens and closes') : fail('trophies: '+JSON.stringify(trophies));
+
   const cpus = await p.evaluate(()=>{
     SM5.start(); SM5.setCard(3); SM5.draw(); SM5.ff(1.5);
     const d0=SM5.state().deck;
@@ -115,9 +135,9 @@ const SP='/tmp/claude-0/-home-user-sprout/12b11e48-c931-5cfc-8740-403ce467b352/s
     SM5.setRule('sudden',false);
     return st;
   });
-  (sudden.mode==='over'&&sudden.winner===0)
-    ? ok('SUDDEN S\'MORES: two mallows home ends it — Mallow wins')
-    : fail('sudden: '+JSON.stringify(sudden));
+  (sudden.mode==='over'&&sudden.winner===0&&sudden.standings&&sudden.standings[0]===0)
+    ? ok('SUDDEN S\'MORES: two mallows home ends it — Mallow tops the standings')
+    : fail('sudden: '+JSON.stringify({mode:sudden.mode,winner:sudden.winner,standings:sudden.standings}));
 
   const gam = await p.evaluate(()=>SM5.state());
   (gam.wins>=1&&gam.xp>=150&&gam.achCount>=2)

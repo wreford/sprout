@@ -103,6 +103,11 @@ h1{font-size:1.5rem;font-weight:800;letter-spacing:.04em;color:var(--gold);
    padding:11px 34px;cursor:pointer;touch-action:manipulation;box-shadow:0 4px 0 #a8551c}
 .rules-note{color:var(--dim)!important;font-size:.86rem!important;text-align:center;margin-top:6px}
 #endStats{text-align:center;color:var(--dim);margin-top:2px}
+.tBtn{flex:1;background:var(--panel2);border:2px solid var(--edge);border-radius:10px;
+  color:var(--dim);font-family:inherit;font-weight:800;font-size:1rem;padding:8px 4px;
+  cursor:pointer;touch-action:manipulation;box-shadow:none;margin:0!important;display:block}
+.tBtn.on{border-color:var(--gold);color:var(--gold)}
+.tBtn.lock{opacity:.4}
 </style>
 </head>
 <body>
@@ -110,7 +115,8 @@ h1{font-size:1.5rem;font-weight:800;letter-spacing:.04em;color:var(--gold);
   <header>
     <h1>🐉 Dragon Rider</h1>
     <div id="hbtns">
-      <button id="sndBtn">♪</button>
+      <button id="musBtn">♪</button>
+      <button id="sndBtn">🔊</button>
       <button id="helpBtn">?</button>
     </div>
   </header>
@@ -140,7 +146,9 @@ h1{font-size:1.5rem;font-weight:800;letter-spacing:.04em;color:var(--gold);
     <p><span class="w">Rotted ground</span> is always a fight; winning cleanses it.</p>
     <p><span class="k">Fights:</span> your die + Fury vs their die + power. Loser loses the difference; ties clash again. Before each clash you may <span class="f">breathe fire</span>: spend 1 heart for +2. When rot holds 6+, foes get <span class="w">+1</span>.</p>
     <p><span class="k">You lose</span> at 0 hearts, or 12 rotted spaces.</p>
+    <p>Every 3rd turn an <span class="k">omen</span> blows in — tailwinds, war drums, a merchant balloon with a bargain…</p>
     <p class="rules-note">Two dice, tokens, and nerve — still plays on a real table.</p>
+    <div id="trialRow" style="display:flex;gap:8px;margin-top:10px"></div>
     <button id="startBtn">Take wing</button>
   </div>
 </div>
@@ -161,24 +169,74 @@ const NAME={W:'barrow',V:'village',C:'relic cache',R:'roost',O:'open sky'};
 const ICO={W:'💀',V:'🏰',C:'💎',R:'🗼',O:'☁️'};
 const N=16, MAXH=10;
 
-let P={wins:0,games:0,snd:true};
+let P={wins:0,games:0,snd:true,music:true,trial:1,trialMax:1};
 try{ const s=JSON.parse(localStorage.getItem("dragonrider")||"null"); if(s) P=Object.assign(P,s); }catch(e){}
 const saveP=()=>{ try{ localStorage.setItem("dragonrider",JSON.stringify(P)); }catch(e){} };
 
+const TRIALS=[null,
+ {king:6,rotBoost:6,startRot:[],name:"TRIAL I"},
+ {king:8,rotBoost:5,startRot:[],name:"TRIAL II"},
+ {king:10,rotBoost:5,startRot:[3,11],name:"TRIAL III"}];
+const TR=()=>TRIALS[Math.min(3,Math.max(1,P.trial||1))];
 let pos=0, heart=10, fury=1, relics=0, rot=new Set(), turns=0, over=false;
 let phase="idle", dice=null, pendingRot=0, fight=null, king=null, FAST=false;
+let omenHealHalf=false, omenRotExtra=0, omenFuryTmp=0, kingRallied=false;
 let queue=[];
 const d6=()=>queue.length?queue.shift():1+Math.floor(Math.random()*6);
-const foeBoost=()=>rot.size>=6?1:0;
+const foeBoost=()=>rot.size>=TR().rotBoost?1:0;
 const sleep=ms=>new Promise(r=>setTimeout(r,FAST?0:ms));
 const $=id=>document.getElementById(id);
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 
-let AC=null;
+let AC=null, audioReady=false, musNext=0, musStep=0, ECHO=null;
+function ac(){
+  if(!AC){ try{ AC=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} }
+  return AC;
+}
+function echoNode(){
+  if(!ECHO&&ac()){
+    ECHO=AC.createDelay(1); ECHO.delayTime.value=.34;
+    const fb=AC.createGain(); fb.gain.value=.3;
+    const wet=AC.createGain(); wet.gain.value=.45;
+    ECHO.connect(fb); fb.connect(ECHO); ECHO.connect(wet); wet.connect(AC.destination);
+  }
+  return ECHO;
+}
+const HARP=[220,0,262,330,0,392,330,0,262,0,220,330,0,196,0,0,175,0,220,262,0,330,262,0,220,0,196,262,0,165,0,0];
+const HPAD=[[110,165,220],[98,147,196],[87,131,175],[82,123,165]];
+function musicTick(){
+  if(!P.music||!audioReady||!ac()) return;
+  try{
+    const spb=60/58/2;
+    while(musNext<AC.currentTime+0.4){
+      const bar=Math.floor(musStep/8)%4;
+      if(musStep%8===0) HPAD[bar].forEach((f,vi)=>{
+        const o=AC.createOscillator(),g=AC.createGain();
+        o.type="sine"; o.frequency.value=f;
+        g.gain.setValueAtTime(.0001,musNext);
+        g.gain.linearRampToValueAtTime(vi?0.02:0.03,musNext+spb*3);
+        g.gain.linearRampToValueAtTime(.0001,musNext+spb*8.4);
+        o.connect(g); g.connect(AC.destination);
+        o.start(musNext); o.stop(musNext+spb*8.5);
+      });
+      const n=HARP[musStep%32];
+      if(n){ const o=AC.createOscillator(),g=AC.createGain();
+        o.type="triangle"; o.frequency.value=n*2;
+        g.gain.setValueAtTime(.05,musNext); g.gain.exponentialRampToValueAtTime(.001,musNext+spb*1.6);
+        o.connect(g); g.connect(AC.destination);
+        if(echoNode()) g.connect(ECHO);
+        o.start(musNext); o.stop(musNext+spb*1.7); }
+      musNext+=spb; musStep++;
+    }
+  }catch(e){}
+}
+document.addEventListener("pointerdown",()=>{
+  if(!audioReady){ audioReady=true; ac(); if(AC) musNext=AC.currentTime; }
+});
 function tone(f,d,when,vol,type){
   if(!P.snd) return;
   try{
-    AC=AC||new (window.AudioContext||window.webkitAudioContext)();
+    if(!ac()) return;
     const t=AC.currentTime+(when||0);
     const o=AC.createOscillator(), g=AC.createGain();
     o.type=type||"triangle"; o.frequency.setValueAtTime(f,t);
@@ -207,6 +265,8 @@ const ptOf=i=>[CX+RAD*Math.cos(angOf(i)),CY+RAD*Math.sin(angOf(i))];
 
 let T=0, visAng=angOf(0), flying=false, wingBeat=0, parts=[], halos=[];
 let fH=0,fRelic=0,fRot=0,fFury=0;
+let flashMsg="", flashT=0;
+function showFlash(t){ flashMsg=t; flashT=2.0; }
 function puff(x,y,n,cols,spread,up){
   for(let k=0;k<n;k++){
     const a=Math.random()*7, sp=(spread||50)*(0.3+Math.random()*.7);
@@ -400,6 +460,13 @@ function render(){
   ctx.fillStyle="#f4ecd8"; ctx.beginPath(); ctx.arc(CW-52,43,13,0,7); ctx.fill();
   ctx.fillStyle="rgba(0,0,0,.1)";
   ctx.beginPath(); ctx.arc(CW-57,40,3.4,0,7); ctx.arc(CW-48,47,2.6,0,7); ctx.fill();
+  for(let cl2=0;cl2<2;cl2++){
+    const cx2=((T*9+cl2*260)%(CW+180))-90, cy2=110+cl2*180;
+    ctx.fillStyle="rgba(8,6,20,.10)";
+    ctx.beginPath();
+    ctx.ellipse(cx2,cy2,70,22,0,0,7); ctx.ellipse(cx2+44,cy2+8,46,16,0,0,7);
+    ctx.fill();
+  }
   ctx.strokeStyle="rgba(255,209,102,.14)"; ctx.lineWidth=2; ctx.setLineDash([4,9]);
   ctx.beginPath(); ctx.arc(CX,CY,RAD,0,7); ctx.stroke(); ctx.setLineDash([]);
   drawKeep();
@@ -424,7 +491,70 @@ function render(){
   }
   ctx.globalAlpha=1;
   drawDragon();
+  drawFoe();
   drawHUD();
+}
+function drawFoe(){
+  if(phase==="fight"&&fight){
+    const [x,y]=ptOf(pos);
+    const fx2=x+26, fy2=y-34+Math.sin(T*2.6)*4;
+    glow(fx2,fy2,16,fight.kind==='guardian'?"rgba(255,209,102,A)":"rgba(126,240,196,A)",.35);
+    if(fight.kind==='guardian'){
+      const g=ctx.createLinearGradient(fx2,fy2-10,fx2,fy2+10);
+      g.addColorStop(0,"#8a8a9e"); g.addColorStop(1,"#4a4a5e");
+      ctx.fillStyle=g;
+      ctx.beginPath();
+      ctx.moveTo(fx2,fy2-11); ctx.lineTo(fx2+8,fy2-5); ctx.lineTo(fx2+8,fy2+5);
+      ctx.lineTo(fx2,fy2+11); ctx.lineTo(fx2-8,fy2+5); ctx.lineTo(fx2-8,fy2-5);
+      ctx.closePath(); ctx.fill();
+      ctx.strokeStyle="#ffd166"; ctx.lineWidth=1.6;
+      ctx.beginPath(); ctx.moveTo(fx2,fy2-6); ctx.lineTo(fx2,fy2+6);
+      ctx.moveTo(fx2-5,fy2); ctx.lineTo(fx2+5,fy2); ctx.stroke();
+      ctx.fillStyle="#7ef0c4";
+      ctx.fillRect(fx2-3.4,fy2-2.6,2,2); ctx.fillRect(fx2+1.4,fy2-2.6,2,2);
+    } else {
+      ctx.fillStyle="rgba(230,240,255,.9)";
+      ctx.beginPath(); ctx.arc(fx2,fy2,6,0,7); ctx.fill();
+      ctx.fillStyle="rgba(230,240,255,.45)";
+      ctx.beginPath();
+      ctx.moveTo(fx2-5,fy2+3); ctx.quadraticCurveTo(fx2,fy2+15,fx2-2,fy2+18);
+      ctx.quadraticCurveTo(fx2+3,fy2+12,fx2+5,fy2+3); ctx.fill();
+      ctx.fillStyle="#131024";
+      ctx.fillRect(fx2-3,fy2-2,2,2.4); ctx.fillRect(fx2+1,fy2-2,2,2.4);
+    }
+  }
+  if(phase==="boss"&&king){
+    const kx=CX, ky=CY-46+Math.sin(T*2.2)*4;
+    glow(kx,ky,26,"rgba(126,240,196,A)",kingRallied?.55:.35);
+    ctx.fillStyle="rgba(20,14,36,.92)";
+    ctx.beginPath();
+    ctx.moveTo(kx-11,ky+16); ctx.quadraticCurveTo(kx-13,ky-8,kx,ky-14);
+    ctx.quadraticCurveTo(kx+13,ky-8,kx+11,ky+16);
+    ctx.quadraticCurveTo(kx,ky+11,kx-11,ky+16); ctx.fill();
+    ctx.fillStyle="#ffd166";
+    ctx.beginPath();
+    ctx.moveTo(kx-7,ky-13); ctx.lineTo(kx-5,ky-19); ctx.lineTo(kx-2,ky-14);
+    ctx.lineTo(kx,ky-20); ctx.lineTo(kx+2,ky-14); ctx.lineTo(kx+5,ky-19); ctx.lineTo(kx+7,ky-13);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle="#7ef0c4";
+    ctx.fillRect(kx-4,ky-9,2.4,2.6); ctx.fillRect(kx+1.6,ky-9,2.4,2.6);
+    ctx.strokeStyle="#9a9ab0"; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.moveTo(kx+12,ky+14); ctx.lineTo(kx+20,ky-16); ctx.stroke();
+    ctx.fillStyle="#c8c8d8";
+    ctx.beginPath(); ctx.moveTo(kx+20,ky-16); ctx.quadraticCurveTo(kx+8,ky-24,kx+10,ky-14);
+    ctx.closePath(); ctx.fill();
+  }
+}
+function breatheFire(tx,ty){
+  const [dx0,dy0]=ptOf(pos);
+  const sx0=dx0, sy0=dy0-26;
+  for(let k=0;k<16;k++){
+    const t2=k/16;
+    parts.push({x:sx0+(tx-sx0)*t2*.4,y:sy0+(ty-sy0)*t2*.4,
+      vx:(tx-sx0)*1.6+(Math.random()*30-15),vy:(ty-sy0)*1.6+(Math.random()*30-15),
+      life:.3+Math.random()*.25,age:0,
+      c:["#ffd166","#ff9a4a","#ff6a3a"][k%3],r:2+Math.random()*2.5,g:0});
+  }
 }
 function heartPath(x,y,s2){
   ctx.beginPath();
@@ -447,6 +577,19 @@ function lbl(x,y,text,color,align){
 function drawHUD(){
   fH=Math.max(0,fH-0.03); fRelic=Math.max(0,fRelic-0.03);
   fRot=Math.max(0,fRot-0.03); fFury=Math.max(0,fFury-0.03);
+  if(flashT>0){
+    flashT-=0.016;
+    const a2=clamp(flashT/0.3,0,1)*clamp((2.0-flashT)/0.25,0,1);
+    ctx.globalAlpha=a2;
+    ctx.font="800 15px Grenze,serif"; ctx.textAlign="center";
+    const fw2=ctx.measureText(flashMsg).width+26;
+    rr(CW/2-fw2/2,86,fw2,26,10,"rgba(14,9,28,.92)");
+    ctx.strokeStyle="rgba(255,209,102,.5)"; ctx.lineWidth=1.5;
+    rr(CW/2-fw2/2,86,fw2,26,10,null); ctx.stroke();
+    ctx.fillStyle="#ffd166";
+    ctx.fillText(flashMsg,CW/2,104);
+    ctx.globalAlpha=1;
+  }
   for(let i=0;i<3;i++){
     const gx=22+i*22, gy=24;
     if(i<relics){
@@ -478,6 +621,7 @@ function drawHUD(){
   ctx.fillText("+"+fury,28,fy+4);
   lbl(12,fy+16,"FURY","rgba(169,156,201,.7)");
   lbl(CW-12,68,"TURN "+turns,"rgba(169,156,201,.75)","right");
+  lbl(CW-12,80,TR().name,"rgba(255,209,102,.7)","right");
   for(let i=0;i<10;i++){
     const hx=19+(i%5)*16, hy=CW-40+Math.floor(i/5)*16;
     const filled=i<heart;
@@ -522,7 +666,7 @@ function rr2Stroke(){
   ctx.moveTo(4+r,4); ctx.arcTo(CW-4,4,CW-4,CW-4,r); ctx.arcTo(CW-4,CW-4,4,CW-4,r);
   ctx.arcTo(4,CW-4,4,4,r); ctx.arcTo(4,4,CW-4,4,r); ctx.closePath(); ctx.stroke();
 }
-(function loop(){ T+=0.016; render(); requestAnimationFrame(loop); })();
+(function loop(){ T+=0.016; musicTick(); render(); requestAnimationFrame(loop); })();
 
 function paint(){}
 const ev=$('event');
@@ -550,6 +694,7 @@ function takeDamage(d){
   puffAt(pos,10,["#ff5d7a","#c9303a"]); paint();
 }
 function healUp(h){
+  if(omenHealHalf) h=Math.ceil(h/2);
   if(h<=0)return;
   heart+=h; fH=1; sHeal();
   puffAt(pos,6,["#7fe08f","#c8ffd8"]); paint();
@@ -579,6 +724,11 @@ function renderControls(){
       `<button class="bOpt" id="bOpt${k}">🎲 ${o.die} → ${ICO[LAYOUT[o.dest]]} ${NAME[LAYOUT[o.dest]]}
         <small>rot ⇢ <b>${ICO[LAYOUT[o.rotTarget]]} ${NAME[LAYOUT[o.rotTarget]]}</b></small></button>`).join('');
     opts.forEach((o,k)=>$('bOpt'+k).onclick=()=>choose(k));
+  } else if(phase==="omen"){
+    c.innerHTML=`<button class="bFire" id="bBuy" ${heart>2?'':'disabled'}>🎈 Trade<small>−2 ❤️ for +1 🔥 forever</small></button>
+      <button class="bClaw" id="bPass">Wave it on</button>`;
+    $('bBuy').onclick=()=>omenChoice(true);
+    $('bPass').onclick=()=>omenChoice(false);
   } else if(phase==="fight"||phase==="boss"){
     const canFire=heart>1;
     c.innerHTML=`<button class="bClaw" id="bClaw">⚔️ Claw</button>
@@ -593,10 +743,44 @@ function optionsOf(){
     return { die, dest, rotTarget: rotTargetFrom(dest,dice[0]===die?dice[1]:dice[0]) };
   });
 }
+const OMENS={1:"TAILWIND",2:"BITTER COLD",3:"RESTLESS DEAD",4:"KIND SKIES",5:"WAR DRUMS",6:"MERCHANT BALLOON"};
+function applyOmen(o){
+  if(o===1){ omenTail=true; showFlash("OMEN: TAILWIND — BOTH DICE +1"); }
+  else if(o===2){ omenHealHalf=true; showFlash("OMEN: BITTER COLD — HEALING HALVED"); }
+  else if(o===3){ omenRotExtra=1; showFlash("OMEN: RESTLESS DEAD — ROT CREEPS TWICE"); }
+  else if(o===4){ showFlash("OMEN: KIND SKIES — HEAL 1"); healUp(1); }
+  else if(o===5){ omenFuryTmp=1; showFlash("OMEN: WAR DRUMS — +1 FURY THIS TURN"); }
+}
 function roll(){
   if(phase!=="idle"||over) return;
   turns++;
+  if(turns%3===0){
+    const o=d6();
+    if(o===6){
+      phase="omen";
+      info('🎈 Merchant Balloon','A wry trader drifts alongside. <b>2 hearts for +1 Fury, forever.</b>');
+      sPick(); renderControls();
+      return;
+    }
+    applyOmen(o);
+  }
+  offerDice();
+}
+function omenChoice(buy){
+  if(phase!=="omen") return;
+  if(buy&&heart>2){
+    heart-=2; fury++; fH=1; fFury=1; sRelic();
+    showFlash("BARGAIN STRUCK — +1 FURY");
+    puffAt(pos,8,["#ffd166","#7ac4ff"]);
+  } else if(buy){ showFlash("TOO FEW HEARTS TO TRADE"); }
+  else showFlash("THE BALLOON DRIFTS ON");
+  paint();
+  offerDice();
+}
+let omenTail=false;
+function offerDice(){
   dice=[d6(),d6()];
+  if(omenTail){ dice=[dice[0]+1,dice[1]+1]; omenTail=false; }
   phase="pick";
   const opts=optionsOf();
   halos=[{i:opts[0].dest,c:"rgba(255,209,102,A)",lbl:"🎲"+opts[0].die},
@@ -666,9 +850,14 @@ async function act(kindOfBlow){
   const f=isBoss?{ico:'👑',name:'Wraith King',power:4}:fight;
   const fire=kindOfBlow==='fire'&&heart>1;
   phase="anim"; renderControls();
-  if(fire){ heart--; fH=1; sFire(); puffAt(isBoss?pos:pos,8,["#ff9a4a","#ffd166"]); paint(); }
-  const my=d6(), their=d6(), fb=f.power+foeBoost();
-  const bonus=fury+(fire?2:0);
+  if(fire){
+    heart--; fH=1; sFire(); paint();
+    if(isBoss) breatheFire(CX,CY-40);
+    else { const [ix,iy]=ptOf(pos); breatheFire(ix+26,iy-34); }
+  }
+  const rallyPow=isBoss&&kingRallied?1:0;
+  const my=d6(), their=d6(), fb=f.power+foeBoost()+rallyPow;
+  const bonus=fury+omenFuryTmp+(fire?2:0);
   duelBanner(f.ico,f.name,fb,fire?'You draw deep and breathe fire…':'You strike with claw and tail…');
   ev.querySelector('.duel b').textContent='+'+bonus;
   sClash();
@@ -682,8 +871,14 @@ async function act(kindOfBlow){
       lineEl.innerHTML=`<b>${mine} beats ${theirs}</b> — sunfire scours him!`;
       puff(CX,CY-10,10,["#ffd166","#ff9a4a"]);
       if(king.hp<=0){ await sleep(700); return endGame(true); }
+      let cry='He rises again, colder…';
+      if(!kingRallied&&king.hp<=Math.ceil(TR().king/2)){
+        kingRallied=true; cry='HE RALLIES — the dark answers him. Power +1!';
+        showFlash("THE KING RALLIES"); shakeFx(); sRot();
+        puff(CX,CY-10,14,["#7ef0c4","#131024"]);
+      }
       await sleep(FAST?0:950);
-      phase="boss"; duelBanner('👑','Wraith King',fb,'He rises again, colder…'); renderControls();
+      phase="boss"; duelBanner('👑','Wraith King',fb+(!rallyPow&&kingRallied?1:0),cry); renderControls();
       return;
     }
     lineEl.innerHTML=`<b>${mine} beats ${theirs}</b> — the ${f.name} burns!`;
@@ -720,6 +915,7 @@ async function act(kindOfBlow){
 async function finishTurn(){
   if(over) return;
   await spreadRot(pendingRot);
+  omenHealHalf=false; omenRotExtra=0; omenFuryTmp=0;
   if(over) return;
   phase="idle";
   info('The ring turns','Roll again, rider.');
@@ -734,11 +930,19 @@ async function spreadRot(die){
   puffAt(t2,8,["#7ef0c4","#3a8a68"]);
   info('🍄 Rot claims the '+NAME[LAYOUT[t2]],`${rot.size} of 12 spaces lost.`);
   await sleep(700);
+  if(omenRotExtra>0&&rot.size<12){
+    omenRotExtra=0;
+    const t3=rotTargetFrom(t2,1);
+    rot.add(t3); paint(); sRot(); fRot=1;
+    puffAt(t3,8,["#7ef0c4","#3a8a68"]);
+    info('🍄 The restless dead claim the '+NAME[LAYOUT[t3]],`${rot.size} of 12 spaces lost.`);
+    await sleep(700);
+  }
   if(rot.size>=12) endGame(false,'The rot closes the ring. Nothing left to save.');
 }
 async function dive(){
   if(phase!=="idle"||over||relics<3) return;
-  king={hp:6};
+  king={hp:TR().king}; kingRallied=false;
   phase="boss";
   info('👑 The Necropolis','You fold your wings and dive into the dark.');
   puff(CX,CY-10,12,["#7ef0c4","#3a8a68"]);
@@ -748,7 +952,12 @@ async function dive(){
 }
 function endGame(won,text){
   over=true; phase="done"; renderControls(); paint();
-  P.games++; if(won) P.wins++; saveP();
+  P.games++;
+  if(won){
+    P.wins++;
+    if(P.trial===P.trialMax&&P.trialMax<3){ P.trialMax++; text=(text||''); }
+  }
+  saveP();
   if(won){ sWin(); buzz([50,80,50,80,120]);
     for(let k=0;k<40;k++) puff(Math.random()*CW,Math.random()*CW*.7,1,["#ffd166","#7ac4ff","#ff9a4a","#7fe08f"]);
   } else { sLose(); buzz(120); }
@@ -756,7 +965,9 @@ function endGame(won,text){
   ov.classList.toggle('lose',!won); ov.classList.add('show');
   $('endTitle').textContent=won?'🌅 Dawn breaks':'The ring falls';
   $('endText').textContent=won
-    ?'The Wraith King burns, and the rot withers with him. The villages light fires for you.'
+    ?('The Wraith King burns, and the rot withers with him. The villages light fires for you.'
+      +(P.trialMax>P.trial?' TRIAL '+['','I','II','III'][P.trialMax]+' UNLOCKED.':'')
+      +(P.trial===3?' You have cleared the final trial, rider.':''))
     :(text||'');
   $('endStats').textContent=`${turns} turns · rot ${rot.size}/12 · record ${P.wins} wins in ${P.games} flights`;
 }
@@ -779,10 +990,31 @@ $('startBtn').addEventListener('click',()=>$('helpOv').classList.remove('show'))
 $('sndBtn').addEventListener('click',()=>{ P.snd=!P.snd; saveP();
   $('sndBtn').classList.toggle('off',!P.snd); });
 $('sndBtn').classList.toggle('off',!P.snd);
+$('musBtn').addEventListener('click',()=>{ P.music=!P.music; saveP();
+  $('musBtn').classList.toggle('off',!P.music);
+  if(P.music&&AC) musNext=AC.currentTime; });
+$('musBtn').classList.toggle('off',!P.music);
+const trialRow=$('trialRow');
+function paintTrials(){
+  trialRow.innerHTML=[1,2,3].map(t=>{
+    const lock=t>P.trialMax;
+    return `<button class="tBtn ${P.trial===t?'on':''} ${lock?'lock':''}" data-t="${t}">
+      ${lock?'🔒 ':''}${TRIALS[t].name}</button>`;
+  }).join('');
+  trialRow.querySelectorAll('.tBtn').forEach(b2=>b2.onclick=()=>{
+    const t=+b2.dataset.t;
+    if(t>P.trialMax) return;
+    P.trial=t; saveP();
+    rot=new Set(TR().startRot); paint(); paintTrials();
+  });
+}
+paintTrials();
+rot=new Set(TR().startRot);
 paint(); renderControls();
 
 window.DR={
-  roll, choose, act, dive,
+  roll, choose, act, dive, omen:omenChoice,
+  setTrial(t){ if(t<=P.trialMax){ P.trial=t; saveP(); rot=new Set(TR().startRot); paint(); } },
   force(...v){ queue.push(...v); },
   clear(){ queue.length=0; },
   set fast(v){ FAST=v; },
@@ -792,11 +1024,13 @@ window.DR={
     if(o.fury!==undefined) fury=o.fury;
     if(o.relics!==undefined) relics=o.relics;
     if(o.rot!==undefined) rot=new Set(o.rot);
+    if(o.turns!==undefined) turns=o.turns;
     paint(); renderControls();
   },
   start(){ $('helpOv').classList.remove('show'); },
   state(){ return { pos, heart, fury, relics, rot:[...rot].sort((a,b)=>a-b),
     phase, over, turns, wins:P.wins, games:P.games,
+    trial:P.trial, trialMax:P.trialMax, music:P.music, kingRallied,
     kingHp: king?king.hp:null,
     options: phase==="pick"?optionsOf():null,
     end: $('endOv').classList.contains('show')?$('endTitle').textContent:null }; },

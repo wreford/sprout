@@ -42,7 +42,7 @@ const W=416, H=528, S=2, CELL=26, BY=44;
 cv.width=W*S; cv.height=H*S; ctx.scale(S,S);
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 
-let P={wins:0,games:0,snd:true,mus:"calm",board:"classic",cam:"sway",
+let P={wins:0,games:0,snd:true,mus:"calm",board:"classic",cam:"sway",humans:1,
   xp:0,ach:{},bw:{},suddenWin:false,untoastedWin:false,
   career:{toasts:0,smoreys:0,slides:0,homes:0},
   rules:{quick:false,spicy:false,gentle:false,sudden:false,slippery:false,cozy:false}};
@@ -51,6 +51,8 @@ if(!P.rules) P.rules={};
 ["quick","spicy","gentle","sudden","slippery","cozy"].forEach(k=>{ if(P.rules[k]===undefined) P.rules[k]=false; });
 if(!P.career) P.career={toasts:0,smoreys:0,slides:0,homes:0};
 if(!P.ach) P.ach={}; if(!P.bw) P.bw={}; if(P.xp===undefined) P.xp=0;
+if(!P.humans) P.humans=1;
+const isHuman=i=>i<Math.max(1,P.humans);
 const saveP=()=>{ try{ localStorage.setItem("sm5",JSON.stringify(P)); }catch(e){} };
 
 let AC=null, noiseBuf=null;
@@ -247,16 +249,16 @@ const LVLS=[[0,"CAMP NEWBIE"],[50,"EMBER TENDER"],[120,"STICK WHITTLER"],[220,"G
 [1450,"S'MORE SORCERER"],[2000,"MARSHMALLOW MONARCH"]];
 function lvlOf(){ let l=0; LVLS.forEach(([x],i)=>{ if(P.xp>=x) l=i; }); return l; }
 const ACH=[
-{id:"first",e:"🏆",n:"FIRST S'MORE",c:()=>P.wins>=1},
-{id:"bclassic",e:"🏕️",n:"CLASSIC CHAMP",c:()=>(P.bw.classic||0)>=1},
-{id:"bwhite",e:"🌊",n:"RIVER TAMER",c:()=>(P.bw.white||0)>=1},
-{id:"bstill",e:"🧘",n:"STILL MASTER",c:()=>(P.bw.still||0)>=1},
-{id:"broyale",e:"👑",n:"RAPIDS ROYALTY",c:()=>(P.bw.royale||0)>=1},
-{id:"btangle",e:"🪢",n:"UNTANGLED",c:()=>(P.bw.tangle||0)>=1},
-{id:"sudden",e:"⚡",n:"SPEED CAMPER",c:()=>P.suddenWin},
-{id:"untoasted",e:"🛡️",n:"NEVER TOASTED",c:()=>P.untoastedWin},
-{id:"toast25",e:"🔥",n:"SERIAL TOASTER",c:()=>P.career.toasts>=25},
-{id:"smorey10",e:"😈",n:"YOINK ARTIST",c:()=>P.career.smoreys>=10},
+{id:"first",e:"🏆",n:"FIRST S'MORE",d:"WIN A GAME",c:()=>P.wins>=1},
+{id:"bclassic",e:"🏕️",n:"CLASSIC CHAMP",d:"WIN ON CLASSIC CAMP",c:()=>(P.bw.classic||0)>=1},
+{id:"bwhite",e:"🌊",n:"RIVER TAMER",d:"WIN ON WHITEWATER",c:()=>(P.bw.white||0)>=1},
+{id:"bstill",e:"🧘",n:"STILL MASTER",d:"WIN ON STILLWATER",c:()=>(P.bw.still||0)>=1},
+{id:"broyale",e:"👑",n:"RAPIDS ROYALTY",d:"WIN ON RAPIDS ROYALE",c:()=>(P.bw.royale||0)>=1},
+{id:"btangle",e:"🪢",n:"UNTANGLED",d:"WIN ON THE TANGLE",c:()=>(P.bw.tangle||0)>=1},
+{id:"sudden",e:"⚡",n:"SPEED CAMPER",d:"WIN AT SUDDEN S'MORES",c:()=>P.suddenWin},
+{id:"untoasted",e:"🛡️",n:"NEVER TOASTED",d:"WIN WITHOUT BEING TOASTED",c:()=>P.untoastedWin},
+{id:"toast25",e:"🔥",n:"SERIAL TOASTER",d:"25 CAREER TOASTS",c:()=>P.career.toasts>=25},
+{id:"smorey10",e:"😈",n:"YOINK ARTIST",d:"10 CAREER YOINKS",c:()=>P.career.smoreys>=10},
 ];
 function xpAdd(n){
   const b4=lvlOf(); P.xp+=n; saveP();
@@ -297,7 +299,7 @@ function cellOfPos(i,pos,pawnIdx){
 const px=c=>[c[0]*CELL+CELL/2, BY+c[1]*CELL+CELL/2];
 
 let rng=mulberry(Date.now()>>>0);
-let mode="attract", turn=0, deck=[], discard=[], card=null, forced=null;
+let mode="attract", turn=0, deck=[], discard=[], card=null, forced=null, standings=null;
 let phase="draw", legal=[], selPawn=-1, splitLeft=0, splitExclude=-1;
 let cpuT=0, animQ=[], flashMsg="", flashT=0, msg="", winner=-1, T=0, passT=0, cardAnim=0;
 const players=[];
@@ -527,6 +529,11 @@ function execMove(i,m){
       if(myToastsTaken===0) P.untoastedWin=true;
       xpAdd(150); checkAch();
     }
+    standings=players.map((pl,pi)=>({
+      i:pi, n:PL[pi].n,
+      homes:pl.pawns.filter(p=>p.pos===HOME).length,
+      prog:pl.pawns.reduce((a2,p)=>a2+(p.pos<0?0:p.pos>=HOME?70:p.pos+5),0)
+    })).sort((a2,b2)=>b2.homes-a2.homes||b2.prog-a2.prog);
     saveP(); sWin(); buzz([50,80,50,80,120]);
     for(let k=0;k<60;k++) puff(Math.random()*240-120,Math.random()*240-120,1,
       ["#ffd84a","#6ee0ff","#ff7ab0","#8ee08a","#ffffff"],66,74);
@@ -561,11 +568,11 @@ function endTurn(again){
   card=null; legal=[]; selPawn=-1; splitLeft=0; splitExclude=-1;
   if(mode==="over") return;
   if(!again) turn=(turn+1)%4;
-  phase=PL[turn].human?"draw":"cpu";
+  phase=isHuman(turn)?"draw":"cpu";
   cpuT=0.85;
 }
 function humanDraw(){
-  if(mode!=="play"||phase!=="draw"||!PL[turn].human) return;
+  if(mode!=="play"||phase!=="draw"||!isHuman(turn)) return;
   card=drawCard(); sCard();
   legal=movesFor(turn,card);
   if(legal.length===0){ phase="pass"; passT=1.2; sNo(); msg="NO MOVE. SIP COCOA."; }
@@ -670,7 +677,7 @@ function cpuTurn(){
 function startGame(){
   buildSlides(); freshPlayers(); buildDeck();
   animQ.length=0; flashT=0; parts.length=0; myToastsTaken=0;
-  mode="play"; winner=-1; turn=0; phase="draw"; card=null; legal=[]; msg="";
+  mode="play"; winner=-1; turn=0; phase="draw"; card=null; legal=[]; msg=""; standings=null;
   showFlash("MALLOW GOES FIRST");
 }
 function openSetup(){ mode="setup"; }
@@ -793,6 +800,20 @@ function drawPawnHD(i,mx,my,r,lift,noShadow){
   ctx.beginPath(); ctx.arc(mx,yy+r*.28,r*.3,.3,Math.PI-.3); ctx.stroke();
   ctx.fillStyle="rgba(255,122,176,.35)";
   ctx.beginPath(); ctx.arc(mx-r*.58,yy+r*.12,1.8,0,7); ctx.arc(mx+r*.58,yy+r*.12,1.8,0,7); ctx.fill();
+}
+function moveBadge(m){
+  if(m.t==="smorey") return "💥";
+  if(m.t==="swap") return "🔁";
+  if(m.dest===HOME) return "🏕️";
+  if(m.dest>=SAFE0) return "⭐";
+  if(m.dest<=59){
+    const a2=absOf(turn,m.dest);
+    const v=pawnAtAbs2(a2,turn,m.pj);
+    if(v&&v.pi!==turn) return "💥";
+    const sl=SLIDES.find(x=>x.abs===a2&&(P.rules.slippery||x.owner!==turn));
+    if(sl) return "🌊";
+  }
+  return null;
 }
 const setupHits=[];
 let shootT=3;
@@ -945,14 +966,19 @@ function render(dt){
       if(selPawn===-1||m.pj===selPawn){
         const [gwx,gwz]=worldOf(c2);
         const gp=proj(gwx,6,gwz);
+        const badge=moveBadge(m);
         add(gp[2]-5,()=>{
           glow(gp[0],gp[1],15*gp[3],"rgba(255,216,74,A)",.3+.16*Math.sin(T*6));
           ctx.strokeStyle="rgba(255,216,74,"+(.6+.4*Math.sin(T*6))+")"; ctx.lineWidth=2.4;
           ctx.beginPath(); ctx.ellipse(gp[0],gp[1],9*gp[3],9*gp[3]*.5,0,0,7); ctx.stroke();
+          if(badge){
+            ctx.font=Math.round(11*gp[3])+"px serif"; ctx.textAlign="center";
+            ctx.fillText(badge,gp[0],gp[1]-14*gp[3]);
+          }
         });
       }
     });
-    if(PL[turn].human) movable.forEach(pj=>{
+    if(isHuman(turn)) movable.forEach(pj=>{
       const v=visOf(turn,pj);
       const rp=proj(v.x,1,v.z);
       add(rp[2]-6,()=>{
@@ -971,6 +997,9 @@ function render(dt){
     const ddx=twx-v.x, ddz=twz-v.z, dist=Math.hypot(ddx,ddz);
     const k=1-Math.exp(-dt*9);
     v.x+=ddx*k; v.z+=ddz*k;
+    if(dist>3) v.mv=true;
+    else if(v.mv){ v.mv=false;
+      puff(v.x,v.z,5,["#c8b89a","#8a7a5e"],26,16); }
     const lift=dist>2?Math.abs(Math.sin(T*13))*Math.min(11,dist*.28):0;
     const pg=proj(v.x,1,v.z), pb2=proj(v.x,7+lift,v.z);
     add(pg[2]-8,()=>{
@@ -1075,29 +1104,65 @@ function render(dt){
       txt(34,y+17,b.desc,"#7a88a8",1);
       setupHits.push({x:24,y,w:W-48,h:26,act:()=>{ P.board=b.id; saveP(); buildSlides(); }});
     });
-    txt(24,BY+212,"HOUSE RULES","#6ee0ff",1);
+    txt(24,BY+212,"CAMPERS","#6ee0ff",1);
+    ["SOLO","2P","3P","4P"].forEach((nm,k)=>{
+      const x2=24+k*((W-48)/4+0), bw3=(W-48-18)/4, x3=24+k*(bw3+6);
+      const on=P.humans===k+1;
+      rr(x3,BY+220,bw3,22,7,on?"rgba(160,110,60,.6)":"rgba(26,36,64,.8)");
+      if(on){ ctx.strokeStyle="#ffd84a"; ctx.lineWidth=2; rr(x3,BY+220,bw3,22,7,null); ctx.stroke(); }
+      txt(x3+bw3/2-tw(nm,1.4)/2,BY+225,nm,on?"#ffffff":"#9aa8c8",1.4);
+      setupHits.push({x:x3,y:BY+220,w:bw3,h:22,act:()=>{ P.humans=k+1; saveP(); }});
+    });
+    txt(24,BY+250,"HOUSE RULES","#6ee0ff",1);
     RULEDEF.forEach((r,k)=>{
-      const y=BY+222+k*30, on=P.rules[r.k];
-      rr(24,y,W-48,26,8,on?"rgba(70,120,60,.55)":"rgba(26,36,64,.8)");
-      if(on){ ctx.strokeStyle="#8ee08a"; ctx.lineWidth=2; rr(24,y,W-48,26,8,null); ctx.stroke(); }
-      txt(34,y+4,r.n+(on?"  ON":"  OFF"),on?"#ffffff":"#9aa8c8",1.6);
-      txt(34,y+17,r.desc,"#7a88a8",1);
-      setupHits.push({x:24,y,w:W-48,h:26,act:()=>{ P.rules[r.k]=!P.rules[r.k]; saveP(); }});
+      const y=BY+258+k*26, on=P.rules[r.k];
+      rr(24,y,W-48,22,7,on?"rgba(70,120,60,.55)":"rgba(26,36,64,.8)");
+      if(on){ ctx.strokeStyle="#8ee08a"; ctx.lineWidth=2; rr(24,y,W-48,22,7,null); ctx.stroke(); }
+      txt(34,y+3,r.n+(on?" ON":""),on?"#ffffff":"#9aa8c8",1.4);
+      txt(W-40-tw(r.desc,1),y+8,r.desc,"#7a88a8",1);
+      setupHits.push({x:24,y,w:W-48,h:22,act:()=>{ P.rules[r.k]=!P.rules[r.k]; saveP(); }});
     });
     const lv=lvlOf();
-    txt(24,BY+406,"LVL "+lv+" "+LVLS[lv][1]+" · "+P.xp+" XP · 🏆"+Object.keys(P.ach).length+"/"+ACH.length,"#7a88a8",1);
+    txt(24,BY+406,"LVL "+lv+" "+LVLS[lv][1]+" · "+P.xp+" XP · "+Object.keys(P.ach).length+"/"+ACH.length+" TROPHIES","#7a88a8",1);
   }
   if(mode==="over"){
-    rr(30,BY+90,W-60,200,20,"rgba(8,12,30,.9)");
+    rr(30,BY+74,W-60,250,20,"rgba(8,12,30,.9)");
     const wn=PL[winner].n;
-    txt(W/2-tw(wn+" WINS CAMP",3)/2,BY+112,wn+" WINS CAMP",PL[winner].c,3);
-    txt(W/2-tw(winner===0?"S'MORES FOR EVERYONE. MOSTLY YOU.":"THE "+wn+" DYNASTY BEGINS",1)/2,BY+150,
+    txt(W/2-tw(wn+" WINS CAMP",3)/2,BY+92,wn+" WINS CAMP",PL[winner].c,3);
+    txt(W/2-tw(winner===0?"S'MORES FOR EVERYONE. MOSTLY YOU.":"THE "+wn+" DYNASTY BEGINS",1)/2,BY+122,
       winner===0?"S'MORES FOR EVERYONE. MOSTLY YOU.":"THE "+wn+" DYNASTY BEGINS","#c8d8b8",1);
-    txt(W/2-tw("WINS "+P.wins+"/"+P.games)/2,BY+178,"WINS "+P.wins+"/"+P.games,"#ffd84a");
-    if(Math.floor(T*2)%2===0) txt(W/2-tw("TAP FOR SETUP")/2,BY+230,"TAP FOR SETUP","#ffffff");
+    if(standings){
+      const med=["🥇","🥈","🥉","🍂"];
+      standings.forEach((st2,k)=>{
+        const y2=BY+142+k*24;
+        ctx.font="14px serif"; ctx.textAlign="left";
+        ctx.fillText(med[k],W/2-88,y2+12);
+        drawPawnHD(st2.i,W/2-58,y2+7,7,0);
+        txt(W/2-42,y2+2,st2.n,PL[st2.i].c,1.6);
+        txt(W/2+34,y2+3,st2.homes+" HOME",k===0?"#ffd84a":"#7a88a8",1);
+      });
+    }
+    txt(W/2-tw("WINS "+P.wins+"/"+P.games,1)/2,BY+248,"WINS "+P.wins+"/"+P.games,"#ffd84a",1);
+    if(Math.floor(T*2)%2===0) txt(W/2-tw("TAP FOR SETUP")/2,BY+276,"TAP FOR SETUP","#ffffff");
+  }
+  if(mode==="trophies"){
+    rr(20,BY+20,W-40,388,20,"rgba(8,12,30,.94)");
+    txt(W/2-tw("TROPHY CABINET",3)/2,BY+34,"TROPHY CABINET","#ffd84a",3);
+    ACH.forEach((a2,k)=>{
+      const y2=BY+64+k*28, got=!!P.ach[a2.id];
+      ctx.globalAlpha=got?1:.4;
+      ctx.font="15px serif"; ctx.textAlign="left";
+      ctx.fillText(a2.e,34,y2+14);
+      txt(58,y2+2,a2.n,got?"#ffffff":"#9aa8c8",1.6);
+      txt(58,y2+15,a2.d||"",got?"#8ee08a":"#7a88a8",1);
+      ctx.globalAlpha=1;
+    });
+    const c2=P.career;
+    txt(30,BY+352,"CAREER · "+c2.toasts+" TOASTS · "+c2.smoreys+" YOINKS · "+c2.slides+" SLIDES · "+c2.homes+" HOME","#7a88a8",1);
+    txt(W/2-tw("TAP ANYWHERE TO RETURN",1)/2,BY+374,"TAP ANYWHERE TO RETURN","#c8d8b8",1);
   }
   if(mode==="play"){
-    if(phase==="draw"&&PL[turn].human){
+    if(phase==="draw"&&isHuman(turn)){
       panelButton("DRAW A CARD");
     } else if(card!==null){
       const ca=cardAnim>0?1-cardAnim/0.28:1;
@@ -1109,7 +1174,7 @@ function render(dt){
       ctx.restore();
       const ct=splitLeft>0?"SPLIT! "+splitLeft+" LEFT":(CARDTXT[card]||"");
       txt(74,BY+428,ct,"#eef0ff");
-      txt(74,BY+448,PL[turn].human?(phase==="choose"?"TAP A GLOWING MALLOW":""):PL[turn].n+" IS THINKING","#8a98b8",1);
+      txt(74,BY+448,isHuman(turn)?(phase==="choose"?"TAP A GLOWING MALLOW":""):PL[turn].n+" IS THINKING","#8a98b8",1);
     } else {
       txt(12,BY+432,PL[turn].n+"'S TURN","#eef0ff");
     }
@@ -1119,6 +1184,7 @@ function render(dt){
     txt(W-tw("DECK "+deck.length,1)-10,BY+498,"DECK "+deck.length,"#7a88a8",1);
   }
   else if(mode==="setup") panelButton("START CAMP");
+  else if(mode==="trophies") panelButton("BACK TO CAMP");
   else panelButton("SET UP CAMP");
   if(flashT>0){
     const a=clamp(flashT/0.3,0,1)*clamp((1.6-flashT)/0.25,0,1);
@@ -1146,7 +1212,7 @@ function toLocal(e){
   return [(e.clientX-rc.left)*W/rc.width,(e.clientY-rc.top)*H/rc.height];
 }
 function pickBoard(x,y){
-  if(!PL[turn].human||phase!=="choose") return;
+  if(!isHuman(turn)||phase!=="choose") return;
   let best=null, bd2=26;
   legal.forEach((m,k)=>{
     const pc=cellOfPos(turn,players[turn].pawns[m.pj].pos,m.pj);
@@ -1175,9 +1241,10 @@ cv.addEventListener("pointerdown",e=>{
   ptr={down:true,sx:x,sy:y,dragged:false,cam0:camU};
   if(y>BY+416){
     ptr.down=false;
+    if(mode==="trophies"){ mode="attract"; return; }
     if(mode==="attract"||mode==="over"){ sHop(); openSetup(); return; }
     if(mode==="setup"){ sHop(); startGame(); return; }
-    if(mode==="play"&&phase==="draw"&&PL[turn].human){ humanDraw(); return; }
+    if(mode==="play"&&phase==="draw"&&isHuman(turn)){ humanDraw(); return; }
     return;
   }
   if(mode==="setup"){
@@ -1186,7 +1253,13 @@ cv.addEventListener("pointerdown",e=>{
     if(h){ sHop(); h.act(); }
     return;
   }
-  if(mode==="attract"||mode==="over"){ ptr.down=false; openSetup(); return; }
+  if(mode==="trophies"){ ptr.down=false; mode="attract"; return; }
+  if(mode==="attract"){
+    ptr.down=false;
+    if(y>BY+270&&y<BY+306){ mode="trophies"; sHop(); return; }
+    openSetup(); return;
+  }
+  if(mode==="over"){ ptr.down=false; openSetup(); return; }
 });
 cv.addEventListener("pointermove",e=>{
   if(!ptr.down) return;
@@ -1233,12 +1306,15 @@ window.SM5={
   setBoard(id){ P.board=id; saveP(); buildSlides(); },
   setRule(k,v){ P.rules[k]=v; saveP(); },
   cycleMusic(){ $("oMus").click(); },
+  setHumans(n){ P.humans=Math.max(1,Math.min(4,n)); saveP(); },
+  openTrophies(){ mode="trophies"; },
   ff(sec){ let t=0; while(t<sec){ update(1/60); t+=1/60; } },
   moves(){ return legal.map(m=>Object.assign({},m)); },
   state(){ return { mode, turn, phase, card, deck:deck.length, winner,
     splitLeft, wins:P.wins, games:P.games, board:P.board, mus:P.mus, cam:P.cam,
     rules:Object.assign({},P.rules), slides:SLIDES.length, parts:parts.length,
     xp:P.xp, level:lvlOf(), achCount:Object.keys(P.ach).length,
+    humans:P.humans, standings:standings?standings.map(x=>x.i):null,
     career:Object.assign({},P.career),
     pawns: players.map(pl=>pl.pawns.map(p=>p.pos)) }; },
   BOARDS, RULEDEF, get SLIDES(){ return SLIDES; }, PL, get P(){ return P; },

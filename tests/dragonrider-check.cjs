@@ -39,7 +39,7 @@ const SP='/tmp/claude-0/-home-user-sprout/12b11e48-c931-5cfc-8740-403ce467b352/s
     : fail('heal: '+JSON.stringify(heal));
 
   const skip = await p.evaluate(async ()=>{
-    DR.setState({pos:0});
+    DR.setState({pos:0,turns:0});
     DR.force(2,5); DR.roll();
     await DR.choose(1);
     return DR.state();
@@ -49,7 +49,7 @@ const SP='/tmp/claude-0/-home-user-sprout/12b11e48-c931-5cfc-8740-403ce467b352/s
     : fail('skip: '+JSON.stringify(skip));
 
   const claw = await p.evaluate(async ()=>{
-    DR.setState({pos:0,heart:5,fury:1,rot:[1]});
+    DR.setState({pos:0,heart:5,fury:1,rot:[1],turns:0});
     DR.force(1,4); DR.roll();
     await DR.choose(0);
     const mid=DR.state().phase;
@@ -62,7 +62,7 @@ const SP='/tmp/claude-0/-home-user-sprout/12b11e48-c931-5cfc-8740-403ce467b352/s
     : fail('claw: '+JSON.stringify(claw));
 
   const fire = await p.evaluate(async ()=>{
-    DR.setState({pos:0,heart:10,fury:1,rot:[]});
+    DR.setState({pos:0,heart:10,fury:1,rot:[],turns:0});
     DR.force(1,4); DR.roll();
     await DR.choose(0);
     DR.force(1,2);
@@ -74,7 +74,7 @@ const SP='/tmp/claude-0/-home-user-sprout/12b11e48-c931-5cfc-8740-403ce467b352/s
     : fail('fire: '+JSON.stringify(fire));
 
   const tie = await p.evaluate(async ()=>{
-    DR.clear(); DR.setState({pos:0,heart:10,fury:1,rot:[]});
+    DR.clear(); DR.setState({pos:0,heart:10,fury:1,rot:[],turns:0});
     DR.force(1,4); DR.roll();
     await DR.choose(0);
     DR.force(2,2);
@@ -89,7 +89,7 @@ const SP='/tmp/claude-0/-home-user-sprout/12b11e48-c931-5cfc-8740-403ce467b352/s
     : fail('tie: '+JSON.stringify(tie));
 
   const relic = await p.evaluate(async ()=>{
-    DR.clear(); DR.setState({pos:3,heart:10,fury:1,relics:0,rot:[]});
+    DR.clear(); DR.setState({pos:3,heart:10,fury:1,relics:0,rot:[],turns:0});
     DR.force(1,2); DR.roll();
     await DR.choose(0);
     DR.force(6,1);
@@ -100,27 +100,83 @@ const SP='/tmp/claude-0/-home-user-sprout/12b11e48-c931-5cfc-8740-403ce467b352/s
     ? ok('guardian beaten at the cache: relic 1/3, fury rises')
     : fail('relic: '+JSON.stringify(relic));
 
+  const omens = await p.evaluate(async ()=>{
+    DR.clear(); DR.setState({pos:0,heart:5,fury:1,rot:[],turns:2});
+    DR.force(4, 2,5);
+    DR.roll();
+    const skies={ heart: DR.state().heart, phase: DR.state().phase };
+    await DR.choose(0);
+    DR.clear(); DR.setState({pos:0,heart:10,fury:1,rot:[],turns:2});
+    DR.force(6);
+    DR.roll();
+    const merchPhase=DR.state().phase;
+    DR.force(1,4);
+    DR.omen(true);
+    const merch={ heart: DR.state().heart, fury: DR.state().fury, phase: DR.state().phase };
+    await DR.choose(0);
+    DR.force(6,1); await DR.act('claw');
+    DR.clear(); DR.setState({pos:0,heart:10,fury:1,rot:[],turns:2});
+    DR.force(5, 1,4);
+    DR.roll();
+    await DR.choose(0);
+    DR.force(1,3);
+    await DR.act('claw');
+    const drums={ heart: DR.state().heart };
+    return { skies, merchPhase, merch, drums };
+  });
+  (omens.skies.heart===6&&omens.skies.phase==='pick'
+    &&omens.merchPhase==='omen'&&omens.merch.heart===8&&omens.merch.fury===2&&omens.merch.phase==='pick'
+    &&omens.drums.heart===9)
+    ? ok('omens: kind skies heals, merchant trades 2 hearts for fury, war drums add temp +1')
+    : fail('omens: '+JSON.stringify(omens));
+
+  const music = await p.evaluate(()=>{
+    const m0=DR.state().music;
+    document.getElementById('musBtn').click();
+    const m1=DR.state().music;
+    document.getElementById('musBtn').click();
+    return { m0, m1, m2: DR.state().music };
+  });
+  (music.m0===true&&music.m1===false&&music.m2===true)
+    ? ok('harp soundtrack toggles on the ♪ button') : fail('music: '+JSON.stringify(music));
+
   const boss = await p.evaluate(async ()=>{
-    DR.clear(); DR.setState({heart:10,fury:4,relics:3,rot:[]});
+    DR.clear(); DR.setState({heart:10,fury:4,relics:3,rot:[],turns:0});
     await DR.dive();
     const hp0=DR.state().kingHp;
     DR.force(6,1); await DR.act('claw');
-    const hp1=DR.state().kingHp;
+    const hp1=DR.state().kingHp, rallied=DR.state().kingRallied;
     DR.force(6,1); await DR.act('claw');
-    return { hp0, hp1, st: DR.state() };
+    return { hp0, hp1, rallied, st: DR.state() };
   });
-  (boss.hp0===6&&boss.hp1===1&&boss.st.over&&boss.st.end&&boss.st.end.includes('Dawn')&&boss.st.wins>=1)
-    ? ok('the dive: king bleeds by the margin (6→1), falls — Dawn breaks, win recorded')
+  (boss.hp0===6&&boss.hp1===1&&boss.rallied&&boss.st.over&&boss.st.end&&boss.st.end.includes('Dawn')
+    &&boss.st.wins>=1&&boss.st.trialMax>=2)
+    ? ok('the dive: king bleeds 6→1, RALLIES at half, falls — Trial II unlocks')
     : fail('boss: '+JSON.stringify(boss));
 
   await p.reload({waitUntil:'domcontentloaded'});
   await p.waitForFunction(()=>window.DR);
-  const persist = await p.evaluate(()=>DR.state().wins);
-  persist>=1 ? ok('win record survives reload ('+persist+')') : fail('persist: '+persist);
+  const persist = await p.evaluate(()=>({ wins: DR.state().wins, tm: DR.state().trialMax }));
+  (persist.wins>=1&&persist.tm>=2)
+    ? ok('win record and unlocked trials survive reload') : fail('persist: '+JSON.stringify(persist));
+
+  const trial2 = await p.evaluate(async ()=>{
+    DR.fast=true; DR.start();
+    DR.setTrial(2);
+    DR.setState({heart:10,fury:4,relics:3,rot:[],turns:0});
+    await DR.dive();
+    return { trial: DR.state().trial, kingHp: DR.state().kingHp };
+  });
+  (trial2.trial===2&&trial2.kingHp===8)
+    ? ok('Trial II: the Wraith King returns with 8 hearts') : fail('trial2: '+JSON.stringify(trial2));
+
+  await p.reload({waitUntil:'domcontentloaded'});
+  await p.waitForFunction(()=>window.DR);
+  await p.evaluate(()=>DR.setTrial(1));
 
   const death = await p.evaluate(async ()=>{
     DR.fast=true; DR.start();
-    DR.setState({pos:0,heart:1,fury:1,rot:[]});
+    DR.setState({pos:0,heart:1,fury:1,rot:[],turns:0});
     DR.force(1,4); DR.roll();
     await DR.choose(0);
     DR.force(1,6);
@@ -135,7 +191,7 @@ const SP='/tmp/claude-0/-home-user-sprout/12b11e48-c931-5cfc-8740-403ce467b352/s
   await p.waitForFunction(()=>window.DR);
   const rotloss = await p.evaluate(async ()=>{
     DR.fast=true; DR.start();
-    DR.setState({pos:4,heart:10,fury:1,rot:[0,1,2,3,6,7,8,9,10,12,13]});
+    DR.setState({pos:4,heart:10,fury:1,rot:[0,1,2,3,6,7,8,9,10,12,13],turns:0});
     DR.force(1,6); DR.roll();
     await DR.choose(0);
     return DR.state();
