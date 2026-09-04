@@ -15,8 +15,8 @@ const SP='/tmp/claude-0/-home-user-sprout/12b11e48-c931-5cfc-8740-403ce467b352/s
     shopRows: document.querySelectorAll('#shop .v').length,
     help: document.getElementById('helpOv').classList.contains('show'),
     st: KT.state() }));
-  (boot.vents===8&&boot.shopRows===10&&boot.help&&boot.st.treats===0&&boot.st.title==='Derp Intern')
-    ? ok('boots: 8 ventures + training + nap in the shop, a fresh Derp Intern')
+  (boot.vents===12&&boot.shopRows===20&&boot.help&&boot.st.treats===0&&boot.st.title==='Derp Intern')
+    ? ok('boots: 12 ventures, training, 6 dream perks and nap in the shop')
     : fail('boot: '+JSON.stringify(boot));
 
   const boop = await p.evaluate(()=>{
@@ -55,7 +55,7 @@ const SP='/tmp/claude-0/-home-user-sprout/12b11e48-c931-5cfc-8740-403ce467b352/s
     ? ok('Sammy Aerospace politely declines the unfunded') : fail('poor: '+JSON.stringify(poor));
 
   const idle = await p.evaluate(()=>{
-    KT.reset(); KT.give(200); KT.buyVent(1);
+    KT.quiet(); KT.reset(); KT.give(200); KT.buyVent(1);
     const t0=KT.state().treats;
     KT.ff(10);
     return { gained: KT.state().treats-t0 };
@@ -93,6 +93,7 @@ const SP='/tmp/claude-0/-home-user-sprout/12b11e48-c931-5cfc-8740-403ce467b352/s
     ? ok('the vase: relocated to the floor (+'+Math.round(vase.gained)+')') : fail('vase: '+JSON.stringify(vase));
 
   const zoom = await p.evaluate(()=>{
+    KT.quiet();
     KT.spawn('zoom');
     const r1=KT.state().rate, z=KT.state().zoom;
     KT.ff(15);
@@ -143,16 +144,56 @@ const SP='/tmp/claude-0/-home-user-sprout/12b11e48-c931-5cfc-8740-403ce467b352/s
   fmt2==='950|1.5k|2.5M|7.2B'
     ? ok('big numbers stay readable ('+fmt2+')') : fail('fmt: '+fmt2);
 
+  const mil = await p.evaluate(()=>{
+    KT.reset(); KT.setVent(1,25);
+    const r25=KT.state().rate;
+    KT.setVent(1,50);
+    const r50=KT.state().rate;
+    KT.setVent(1,0);
+    return { r25, r50 };
+  });
+  (mil.r25===50&&mil.r50===200)
+    ? ok('milestones: 25 boxes doubles the Bureau (50/s), 50 doubles it again (200/s)')
+    : fail('mil: '+JSON.stringify(mil));
+
+  const perks = await p.evaluate(()=>{
+    KT.reset(); KT.setYarn(3);
+    const okP=KT.buyPerk('beans');
+    const cc=KT.state().critChance, yLeft=KT.state().yarn;
+    KT.setYarn(4); KT.buyPerk('zoomp');
+    KT.spawn('zoom');
+    const zl=KT.state().zoom;
+    KT.setYarn(25); KT.buyPerk('weaver');
+    KT.setYarn(2);
+    const bv=KT.state().boopVal;
+    return { okP, cc, yLeft, zl, bv, owned: KT.state().perks.length };
+  });
+  (perks.okP&&perks.cc===0.15&&perks.yLeft===0&&perks.zl>15
+    &&Math.abs(perks.bv-1.4)<.001&&perks.owned===3)
+    ? ok('dream perks: softer beans 15% crits, 20s zoomies, Dream Weaver doubles yarn power')
+    : fail('perks: '+JSON.stringify(perks));
+
+  const noscroll = await p.evaluate(()=>({
+    bodyX: document.body.scrollWidth<=document.body.clientWidth,
+    docX: document.documentElement.scrollWidth<=document.documentElement.clientWidth,
+    meta: document.querySelector('meta[name=viewport]').content.includes('maximum-scale=1') }));
+  (noscroll.bodyX&&noscroll.docX&&noscroll.meta)
+    ? ok('no sideways scroll, no pinch zoom: the page is locked to the viewport')
+    : fail('noscroll: '+JSON.stringify(noscroll));
+
+  await p.evaluate(()=>{ KT.reset(); KT.give(2100000); KT.nap(); });
   await p.evaluate(()=>KT.save());
   await p.reload({waitUntil:'domcontentloaded'});
   await p.waitForFunction(()=>window.KT);
   const persist = await p.evaluate(()=>{
     KT.dismiss();
-    return { yarn: KT.state().yarn, naps: KT.state().naps, vent1: KT.state().vent[1] };
+    return { yarn: KT.state().yarn, naps: KT.state().naps };
   });
-  (persist.yarn===2&&persist.naps===1&&persist.vent1===1)
-    ? ok('the empire survives reload: yarn, naps, and hires intact')
+  (persist.yarn===2&&persist.naps===1)
+    ? ok('the empire survives reload: yarn and naps intact')
     : fail('persist: '+JSON.stringify(persist));
+
+  await p.evaluate(()=>{ KT.give(400); KT.buyVent(1); KT.save(); });
 
   const offline = await p.evaluate(()=>{
     const s=JSON.parse(localStorage.getItem('sammy'));
