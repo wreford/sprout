@@ -15,8 +15,9 @@ const SP='/tmp/claude-0/-home-user-sprout/12b11e48-c931-5cfc-8740-403ce467b352/s
     shopRows: document.querySelectorAll('#shop .v').length,
     help: document.getElementById('helpOv').classList.contains('show'),
     st: KT.state() }));
-  (boot.vents===12&&boot.shopRows===21&&boot.help&&boot.st.treats===0&&boot.st.title==='Derp Intern')
-    ? ok('boots: 12 ventures, training, 6 dream perks, nap and Save Keeper in the shop')
+  (boot.vents===12&&boot.shopRows===22&&boot.help&&boot.st.treats===0&&boot.st.title==='Derp Intern'
+    &&boot.st.eggs===0)
+    ? ok('boots: 12 ventures, training, 7 dream perks, nap and Save Keeper in the shop')
     : fail('boot: '+JSON.stringify(boot));
 
   const boop = await p.evaluate(()=>{
@@ -117,11 +118,11 @@ const SP='/tmp/claude-0/-home-user-sprout/12b11e48-c931-5cfc-8740-403ce467b352/s
     : fail('nap: '+JSON.stringify(nap));
 
   const mult = await p.evaluate(()=>{
-    const bv=KT.state().boopVal;
+    const st0=KT.state();
     KT.give(200); KT.buyVent(1);
-    return { bv, rate: KT.state().rate };
+    return { bv: st0.boopVal, em: st0.eggMult, rate: KT.state().rate, em2: KT.state().eggMult };
   });
-  (Math.abs(mult.bv-1.2)<.001&&Math.abs(mult.rate-1.2)<.01)
+  (Math.abs(mult.bv-1.2*mult.em)<.001&&Math.abs(mult.rate-1.2*mult.em2)<.01)
     ? ok('dream yarn pays forever: +20% on boops and ventures alike')
     : fail('mult: '+JSON.stringify(mult));
 
@@ -227,6 +228,139 @@ const SP='/tmp/claude-0/-home-user-sprout/12b11e48-c931-5cfc-8740-403ce467b352/s
     ? ok('Save Keeper: export makes a SAMMY1 file, garbage is refused, import restores the empire')
     : fail('saveio: '+JSON.stringify(saveio));
 
+  const egg1 = await p.evaluate(()=>{
+    KT.reset();
+    KT.boop();
+    const st=KT.state();
+    return { n: st.eggs, ids: st.eggIds,
+      btn: document.getElementById('eggBtn').style.display!=='none' };
+  });
+  (egg1.n===1&&egg1.ids.includes('boop1')&&egg1.btn)
+    ? ok('first secret: one boop unlocks First Contact and the \ud83e\udd5a album button appears')
+    : fail('egg1: '+JSON.stringify(egg1));
+
+  const album = await p.evaluate(()=>{
+    KT.openEggs();
+    const cells=document.querySelectorAll('#eggGrid .egg');
+    const got=document.querySelectorAll('#eggGrid .egg.got');
+    const title=document.getElementById('eggTitle').textContent;
+    cells[cells.length-1].click();
+    const hint=document.getElementById('eggHint').textContent;
+    KT.dismiss();
+    return { total: cells.length, got: got.length, title, hint, defs: KT.EGGS.length };
+  });
+  (album.total===50&&album.defs===50&&album.got===1&&album.title.includes('1/50')
+    &&album.hint.includes('every other secret'))
+    ? ok('the album: 50 secrets defined, one lit, hidden ones give cryptic hints')
+    : fail('album: '+JSON.stringify(album));
+
+  const eggBonus = await p.evaluate(()=>{
+    KT.reset();
+    KT.EGGS.slice(0,10).forEach(eg=>KT.egg(eg.id));
+    const em=KT.state().eggMult;
+    KT.give(200); KT.buyVent(1);
+    return { em, rate: KT.state().rate, bow: KT.state().hats.includes('bow') };
+  });
+  (Math.abs(eggBonus.em-1.1)<.001&&Math.abs(eggBonus.rate-1.1)<.01&&eggBonus.bow)
+    ? ok('secrets pay: 10 found = +10% production, and the Fancy Bow hat unlocks')
+    : fail('eggBonus: '+JSON.stringify(eggBonus));
+
+  const scenery = await p.evaluate(()=>{
+    KT.reset();
+    for(let k=0;k<5;k++) KT.tapAt(85,60);
+    [[130,196],[286,196],[208,222]].forEach(([x,y])=>KT.tapAt(x,y));
+    const ids=KT.state().eggIds;
+    return { win: ids.includes('window5'), paws: ids.includes('paws') };
+  });
+  (scenery.win&&scenery.paws)
+    ? ok('scenery secrets: five window taps (Bird Watcher), three paw prints (Follow the Paw Prints)')
+    : fail('scenery: '+JSON.stringify(scenery));
+
+  const grow = await p.evaluate(()=>{
+    KT.reset(); KT.quiet();
+    KT.give(2100000); KT.ff(1);
+    const deco=KT.state().deco.slice();
+    const held=KT.state().eggIds.includes('hold1m');
+    KT.nap(); KT.ff(1);
+    KT.setHat('party');
+    const st=KT.state();
+    return { deco, held, hats: st.hats, hat: st.hat, nap1: st.eggIds.includes('nap1'),
+      decoAfterNap: st.deco.length,
+      hatBtn: document.getElementById('hatBtn').style.display!=='none' };
+  });
+  (grow.deco.length===3&&grow.deco.includes('tank')&&grow.held
+    &&grow.hats.includes('party')&&grow.hat==='party'&&grow.nap1
+    &&grow.decoAfterNap===3&&grow.hatBtn)
+    ? ok('gradual unlocks: 3 room decorations at 2.1M lifetime, nap-proof, Party Cone worn')
+    : fail('grow: '+JSON.stringify(grow));
+
+  const wardrobe = await p.evaluate(()=>{
+    KT.openHats();
+    const rows=document.querySelectorAll('.hatRow');
+    const locked=document.querySelectorAll('.hatRow.lk');
+    const on=document.querySelector('.hatRow.on');
+    KT.dismiss();
+    return { rows: rows.length, locked: locked.length,
+      onName: on?on.querySelector('.nm').textContent:null };
+  });
+  (wardrobe.rows===9&&wardrobe.locked===7&&wardrobe.onName==='Party Cone')
+    ? ok('wardrobe: 9 rows, locked hats show their unlock riddle, Party Cone equipped')
+    : fail('wardrobe: '+JSON.stringify(wardrobe));
+
+  const giftT = await p.evaluate(()=>{
+    KT.reset(); KT.quiet(); KT.clearGift();
+    KT.give(30000); KT.ff(1);
+    const shown=KT.state().gift;
+    const t0=KT.state().treats;
+    KT.tapAt(56,186);
+    const gained=KT.state().treats-t0;
+    KT.ff(1);
+    return { shown, gained, again: KT.state().gift };
+  });
+  (giftT.shown&&giftT.gained>=300&&giftT.again===false)
+    ? ok('daily gift: appears at 25k lifetime, pays out (+'+Math.round(giftT.gained)+'), once per day')
+    : fail('gift: '+JSON.stringify(giftT));
+
+  const gold = await p.evaluate(()=>{
+    KT.reset(); KT.quiet();
+    KT.give(300); KT.buyVent(1);
+    const r1=KT.state().rate;
+    KT.spawn('gold');
+    const ev=KT.state().event;
+    KT.tapEvent();
+    const st=KT.state();
+    const r2=st.rate;
+    KT.ff(50);
+    return { r1, ev, gold: st.gold, golds: st.golds, r2, r3: KT.state().rate };
+  });
+  (gold.ev==='gold'&&gold.gold>40&&gold.golds===1
+    &&gold.r2>=gold.r1*1.9&&gold.r2<=gold.r1*2.1&&gold.r3<=gold.r1*1.1)
+    ? ok('golden yarn: tap it for ×2 production for 45 seconds, then it fades')
+    : fail('gold: '+JSON.stringify(gold));
+
+  const robo = await p.evaluate(()=>{
+    KT.reset(); KT.quiet(); KT.setYarn(12);
+    const okR=KT.buyPerk('robo');
+    const t0=KT.state().treats, b0=KT.state().boops;
+    KT.ff(10);
+    const st=KT.state();
+    return { okR, gained: st.treats-t0, boops: st.boops-b0 };
+  });
+  (robo.okR&&robo.gained>=9&&robo.gained<=11.5&&robo.boops>=9&&robo.boops<=11)
+    ? ok('Robo-Paw: 12 yarn buys an auto-booper, one boop per second while you watch')
+    : fail('robo: '+JSON.stringify(robo));
+
+  const meta = await p.evaluate(()=>{
+    KT.reset();
+    KT.EGGS.filter(eg=>eg.id!=='meta').forEach(eg=>KT.egg(eg.id));
+    const st=KT.state();
+    return { n: st.eggs, meta: st.eggIds.includes('meta'),
+      halo: st.hats.includes('halo'), em: st.eggMult };
+  });
+  (meta.n===50&&meta.meta&&meta.halo&&Math.abs(meta.em-1.5)<.001)
+    ? ok('The Completionist: 49 secrets found grants the 50th, the Golden Halo, and +50% forever')
+    : fail('meta: '+JSON.stringify(meta));
+
   const noscroll = await p.evaluate(()=>({
     bodyX: document.body.scrollWidth<=document.body.clientWidth,
     docX: document.documentElement.scrollWidth<=document.documentElement.clientWidth,
@@ -266,7 +400,7 @@ const SP='/tmp/claude-0/-home-user-sprout/12b11e48-c931-5cfc-8740-403ce467b352/s
     ? ok('offline earnings: an hour away pays half rate, with a welcome-back note')
     : fail('offline: '+JSON.stringify({shown:back.shown,treats:back.treats}));
 
-  await p.evaluate(()=>{ KT.dismiss(); KT.spawn('dot'); });
+  await p.evaluate(()=>{ KT.dismiss(); KT.setHat('party'); KT.spawn('dot'); });
   await p.waitForTimeout(700);
   await p.screenshot({path:SP+'sammy.png'});
   await ctx.close(); await b.close();
