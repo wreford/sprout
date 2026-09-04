@@ -15,8 +15,8 @@ const SP='/tmp/claude-0/-home-user-sprout/12b11e48-c931-5cfc-8740-403ce467b352/s
     shopRows: document.querySelectorAll('#shop .v').length,
     help: document.getElementById('helpOv').classList.contains('show'),
     st: KT.state() }));
-  (boot.vents===12&&boot.shopRows===20&&boot.help&&boot.st.treats===0&&boot.st.title==='Derp Intern')
-    ? ok('boots: 12 ventures, training, 6 dream perks and nap in the shop')
+  (boot.vents===12&&boot.shopRows===21&&boot.help&&boot.st.treats===0&&boot.st.title==='Derp Intern')
+    ? ok('boots: 12 ventures, training, 6 dream perks, nap and Save Keeper in the shop')
     : fail('boot: '+JSON.stringify(boot));
 
   const boop = await p.evaluate(()=>{
@@ -172,6 +172,60 @@ const SP='/tmp/claude-0/-home-user-sprout/12b11e48-c931-5cfc-8740-403ce467b352/s
     &&Math.abs(perks.bv-1.4)<.001&&perks.owned===3)
     ? ok('dream perks: softer beans 15% crits, 20s zoomies, Dream Weaver doubles yarn power')
     : fail('perks: '+JSON.stringify(perks));
+
+  const bulk = await p.evaluate(()=>{
+    KT.reset();
+    const c10=KT.bulkCost(0,10);
+    KT.give(c10);
+    const okB=KT.buyVent(0,10);
+    const st=KT.state();
+    return { c10, okB, owned: st.vent[0], left: st.treats };
+  });
+  (bulk.okB&&bulk.owned===10&&bulk.left===0&&bulk.c10>100)
+    ? ok('bulk hiring: ×10 untanglers for exactly '+bulk.c10+' treats, not a crumb more')
+    : fail('bulk: '+JSON.stringify(bulk));
+
+  const maxb = await p.evaluate(()=>{
+    KT.reset(); KT.give(1000);
+    const n=KT.maxAfford(0);
+    KT.buyVent(0,'max');
+    const st=KT.state();
+    return { n, owned: st.vent[0], left: st.treats, next: st.costs[0] };
+  });
+  (maxb.n>5&&maxb.owned===maxb.n&&maxb.left<maxb.next)
+    ? ok('MAX buy: '+maxb.n+' hires on 1000 treats, wallet left below the next price')
+    : fail('maxb: '+JSON.stringify(maxb));
+
+  const qtyUi = await p.evaluate(()=>{
+    KT.setQty(10);
+    const q1=KT.state().qty;
+    const lit=document.querySelector('#qtyRow button.on');
+    KT.setQty(1);
+    return { q1, pill: lit?lit.dataset.q:null,
+      pills: document.querySelectorAll('#qtyRow button').length };
+  });
+  (qtyUi.q1===10&&qtyUi.pill==='10'&&qtyUi.pills===3)
+    ? ok('quantity pills: ×1 / ×10 / MAX, selection lights up and sticks')
+    : fail('qtyUi: '+JSON.stringify(qtyUi));
+
+  const saveio = await p.evaluate(()=>{
+    KT.reset(); KT.give(777); KT.buyVent(0,3);
+    const kept=KT.state();
+    const s1=KT.exportStr();
+    KT.reset();
+    const okBad=KT.importStr('definitely not a sammy save');
+    const wiped=KT.state().treats;
+    const okGood=KT.importStr(s1);
+    const st=KT.state();
+    return { pfx: s1.startsWith('SAMMY1.'), okBad, wiped, okGood,
+      treats: st.treats, owned: st.vent[0],
+      wantTreats: kept.treats, wantOwned: kept.vent[0],
+      btns: !!document.getElementById('expBtn')&&!!document.getElementById('impBtn') };
+  });
+  (saveio.pfx&&saveio.okBad===false&&saveio.wiped===0&&saveio.okGood===true
+    &&saveio.treats===saveio.wantTreats&&saveio.owned===saveio.wantOwned&&saveio.btns)
+    ? ok('Save Keeper: export makes a SAMMY1 file, garbage is refused, import restores the empire')
+    : fail('saveio: '+JSON.stringify(saveio));
 
   const noscroll = await p.evaluate(()=>({
     bodyX: document.body.scrollWidth<=document.body.clientWidth,

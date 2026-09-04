@@ -62,6 +62,13 @@ h1{font-size:1.35rem;font-weight:800;color:var(--orange);
 .v button:active:not(:disabled){transform:translateY(2px);box-shadow:0 1px 0 #b05f22}
 .v button small{display:block;font-size:.72rem;font-weight:700;opacity:.85}
 .v button.can{animation:canPulse 1.6s infinite}
+#qtyRow{display:flex;align-items:center;gap:6px;padding:2px 4px}
+#qtyRow button{border:2px solid var(--edge);background:var(--panel);color:var(--dim);
+  border-radius:10px;font-family:inherit;font-weight:800;font-size:.85rem;padding:5px 12px;
+  cursor:pointer;touch-action:manipulation}
+#qtyRow button.on{color:var(--gold);border-color:var(--gold);background:var(--panel2)}
+.v.saveV button{background:linear-gradient(180deg,#8fd0e8,#5a9ac0);box-shadow:0 3px 0 #3d6a8a;
+  color:#102a3a;font-size:.82rem;padding:6px 8px}
 @keyframes canPulse{50%{box-shadow:0 3px 0 #b05f22,0 0 14px rgba(255,209,102,.55)}}
 .v.special button{background:linear-gradient(180deg,#ff9ec0,#e0608c);box-shadow:0 3px 0 #a83f64;color:#3a1020}
 .v.nap button{background:linear-gradient(180deg,#b09ae0,#8a6ac0);box-shadow:0 3px 0 #5d4390;color:#20143a}
@@ -112,6 +119,7 @@ h1{font-size:1.35rem;font-weight:800;color:var(--orange);
     <p>Spend treats on <span class="k">ventures</span> — from the Yarn Untangling Service (he makes it worse; people pay anyway) to Sammy Aerospace (he saw a bird; it was on the moon). Ventures earn treats even while you're away.</p>
     <p>Watch for <span class="p">the red dot</span>, wobbling vases, and sudden <span class="m">ZOOMIES</span> (all production ×3 — hold on to something).</p>
     <p>When the empire is big enough, Sammy can <span class="p">Take a Nap</span> — everything resets, but he dreams up permanent <span class="p">Dream Yarn</span> (+10% forever, each).</p>
+    <p>Your empire <span class="m">saves itself</span>, earns while you're away, and can be <span class="k">exported to a file</span> (💾 Save Keeper, bottom of the shop) to move between devices.</p>
     <p class="note">he's just a little guy</p>
     <button id="startBtn">Begin the empire</button>
   </div>
@@ -186,7 +194,7 @@ const HEADLINES=[
 ];
 const NAP_UNIT=500000;
 
-let G={treats:0,life:0,vent:VENTS.map(()=>0),boopLvl:0,yarn:0,yarnEarned:0,perks:{},
+let G={treats:0,life:0,vent:VENTS.map(()=>0),boopLvl:0,yarn:0,yarnEarned:0,perks:{},qty:1,
   boops:0,crits:0,dots:0,vases:0,naps:0,snd:true,music:true,ts:Date.now()};
 try{
   const s=JSON.parse(localStorage.getItem("sammy")||"null");
@@ -223,6 +231,37 @@ const offlineRate=()=>G.perks.sleep?1:0.5;
 const boopVal=()=>Math.pow(4,G.boopLvl)*yarnMult();
 const boopCost=()=>200*Math.pow(12,G.boopLvl);
 const ventCost=i=>Math.ceil(VENTS[i].c0*Math.pow(1.15,G.vent[i]));
+function bulkCost(i,n){
+  let c=0;
+  for(let k=0;k<n;k++) c+=Math.ceil(VENTS[i].c0*Math.pow(1.15,G.vent[i]+k));
+  return c;
+}
+function maxAfford(i){
+  let n=0,t2=G.treats;
+  while(n<2000){
+    const c=Math.ceil(VENTS[i].c0*Math.pow(1.15,G.vent[i]+n));
+    if(t2<c) break;
+    t2-=c; n++;
+  }
+  return n;
+}
+function exportStr(){
+  return "SAMMY1."+btoa(unescape(encodeURIComponent(JSON.stringify(G))));
+}
+function importStr(str){
+  try{
+    if(!str||!str.startsWith("SAMMY1.")) return false;
+    const o=JSON.parse(decodeURIComponent(escape(atob(str.slice(7)))));
+    if(typeof o.treats!=="number"||!Array.isArray(o.vent)) return false;
+    G=Object.assign(G,o);
+    while(G.vent.length<VENTS.length) G.vent.push(0);
+    if(!G.perks) G.perks={};
+    if(G.yarnEarned===undefined) G.yarnEarned=G.yarn;
+    save(); paint();
+    addFloat(208,120,"empire loaded! 💾","#8fe0b0");
+    return true;
+  }catch(e){ return false; }
+}
 const baseRate=()=>G.vent.reduce((a,c,i)=>a+c*VENTS[i].r*milMult(i),0)*yarnMult();
 let zoomT=0;
 const rate=()=>baseRate()*(zoomT>0?3:1);
@@ -299,6 +338,7 @@ document.addEventListener("pointerdown",()=>{
 ["gesturestart","gesturechange","gestureend"].forEach(ev2=>
   document.addEventListener(ev2,e=>e.preventDefault(),{passive:false}));
 document.addEventListener("dblclick",e=>e.preventDefault(),{passive:false});
+document.addEventListener("touchmove",e=>{ if(e.touches.length>1) e.preventDefault(); },{passive:false});
 let lastTouchEnd=0;
 document.addEventListener("touchend",e=>{
   const now=Date.now();
@@ -307,6 +347,7 @@ document.addEventListener("touchend",e=>{
 },{passive:false});
 
 let T=0, squash=0, blep=0, tilt=0, earFlick=0, petT=0, petting=false;
+let idleT=0, mewT=0, nextMew=20, stretchT=0, nextStretch=34;
 let floats=[], hearts=[], event=null, nextEvent=18+Math.random()*20;
 let headline=HEADLINES[0], headI=0, headT=10, megaT=0, FAST=false;
 function addFloat(x,y,txt2,col){
@@ -316,7 +357,7 @@ function earn(n){
   G.treats+=n; G.life+=n;
 }
 function boop(px2,py2){
-  G.boops++;
+  G.boops++; idleT=0;
   let v=boopVal(), crit=rng()<critChance();
   if(crit){ v*=10; G.crits++; megaT=1; sCrit(); buzz([20,30,20]);
     for(let k=0;k<6;k++) hearts.push({x:150+rng()*120,y:100+rng()*80,t:1.6,
@@ -329,10 +370,13 @@ function boop(px2,py2){
   addFloat(px2||208,(py2||140)-30,(crit?"MEGA DERP! +":"+")+fmt(v),crit?"#ff8ab0":"#ffd166");
   paint();
 }
-function buyVent(i){
-  const c=ventCost(i);
+function buyVent(i,qty){
+  let n=qty===undefined?1:(qty==="max"?maxAfford(i):qty);
+  if(n<1) return false;
+  const c=bulkCost(i,n);
   if(G.treats<c) return false;
-  G.treats-=c; G.vent[i]++;
+  G.treats-=c; G.vent[i]+=n;
+  idleT=0;
   sBuy(); buzz(12); save(); paint();
   return true;
 }
@@ -389,7 +433,16 @@ function tapEvent(){
 function step(dt){
   T+=dt;
   earn(rate()*dt);
-  if(petting){ petT+=dt; earn(rate()*0.5*dt);
+  idleT+=dt;
+  if(mewT>0) mewT-=dt;
+  if(stretchT>0) stretchT-=dt;
+  nextMew-=dt;
+  if(nextMew<=0){ nextMew=22+rng()*20;
+    if(idleT<45){ mewT=1.6; sMeow(); } }
+  nextStretch-=dt;
+  if(nextStretch<=0){ nextStretch=30+rng()*25;
+    if(idleT<45) stretchT=1.2; }
+  if(petting){ petT+=dt; idleT=0; earn(rate()*0.5*dt);
     if(Math.random()<dt*2.2) hearts.push({x:180+Math.random()*60,y:150,t:1.4}); }
   if(zoomT>0) zoomT-=dt;
   if(squash>0) squash-=dt*4;
@@ -409,11 +462,14 @@ function step(dt){
 function drawSammy(){
   const cx2=208, cy2=152;
   const sq=clamp(squash,0,1);
+  const loafing=idleT>45&&!petting;
   const zoomWob=zoomT>0?Math.sin(T*26)*5:0;
-  const breathe=1+Math.sin(T*1.7)*0.015;
+  const breathe=1+Math.sin(T*(loafing?0.9:1.7))*0.015;
+  const stretch=stretchT>0?Math.sin(clamp(stretchT/1.2,0,1)*Math.PI)*.12:0;
   ctx.save();
   ctx.translate(cx2+zoomWob,cy2);
-  ctx.scale((1+sq*.1)*breathe,(1-sq*.12)/breathe);
+  ctx.scale((1+sq*.1+stretch)*breathe,(1-sq*.12-stretch*.5)*(loafing?0.88:1)/breathe);
+  if(loafing) ctx.translate(0,8);
   if(tilt>0) ctx.rotate(Math.sin(clamp(tilt,0,1)*Math.PI)*.13);
   ctx.fillStyle="rgba(20,12,30,.32)";
   ctx.beginPath(); ctx.ellipse(0,58,50,10,0,0,7); ctx.fill();
@@ -475,7 +531,7 @@ function drawSammy(){
   ctx.ellipse(-22,hy+9,6.5,4.5,0,0,7);
   ctx.ellipse(22,hy+9,6.5,4.5,0,0,7);
   ctx.fill();
-  const happy=petting;
+  const happy=petting||loafing;
   const blink=Math.sin(T*.85)>0.982;
   if(happy||blink){
     ctx.strokeStyle="#4a2c10"; ctx.lineWidth=3; ctx.lineCap="round";
@@ -520,6 +576,29 @@ function drawSammy(){
     ctx.stroke();
   });
   ctx.restore();
+  if(loafing){
+    ctx.fillStyle="rgba(253,241,224,.85)";
+    ctx.font="700 13px 'Baloo 2'";
+    ctx.fillText("z",cx2+52,cy2-64+Math.sin(T*1.3)*3);
+    ctx.font="700 10px 'Baloo 2'";
+    ctx.fillText("z",cx2+62,cy2-76+Math.sin(T*1.3+1)*3);
+  }
+  if(mewT>0&&!loafing){
+    const ma=clamp(mewT/1.6,0,1);
+    ctx.globalAlpha=ma;
+    ctx.fillStyle="#fdf1e0";
+    ctx.beginPath();
+    ctx.roundRect?ctx.roundRect(cx2+40,cy2-92,46,24,10):ctx.rect(cx2+40,cy2-92,46,24);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(cx2+48,cy2-68); ctx.lineTo(cx2+44,cy2-58); ctx.lineTo(cx2+58,cy2-68);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle="#8a5a2e";
+    ctx.font="800 13px 'Baloo 2'"; ctx.textAlign="center";
+    ctx.fillText("mew!",cx2+63,cy2-75);
+    ctx.globalAlpha=1;
+    ctx.textAlign="left";
+  }
   for(let k2=0;k2<3;k2++){
     const sa=T*.7+k2*2.1;
     const sx2=cx2+Math.cos(sa)*70, sy2=cy2-30+Math.sin(sa*1.3)*34;
@@ -653,6 +732,9 @@ function render(){
 let shopDirty=true;
 function paint(){
   $('treats').textContent=fmt(G.treats);
+  document.querySelectorAll('#qtyRow button').forEach(b2=>{
+    b2.classList.toggle('on',String(G.qty)===b2.dataset.q);
+  });
   $('rate').textContent="+"+fmt(rate())+"/s"+(zoomT>0?" ⚡":"");
   if(G.yarn>0||G.naps>0){ $('yarnLbl').style.display=""; $('yarnLbl').textContent="🧶 "+G.yarn; }
   document.querySelectorAll('#shop .v').forEach((el,k)=>{
@@ -662,9 +744,11 @@ function paint(){
       el.classList.toggle('locked',!unlocked);
       el.querySelector('small').textContent=G.vent[i]>0?("×"+G.vent[i]+" · +"+fmt(G.vent[i]*VENTS[i].r*yarnMult())+"/s"):"";
       const b=el.querySelector('button');
-      b.disabled=G.treats<c||!unlocked;
-      b.classList.toggle('can',unlocked&&G.treats>=c);
-      b.innerHTML=unlocked?("hire<small>🍖 "+fmt(c)+"</small>"):"???";
+      const q=G.qty==="max"?Math.max(1,maxAfford(i)):G.qty;
+      const bc=bulkCost(i,q);
+      b.disabled=G.treats<bc||!unlocked;
+      b.classList.toggle('can',unlocked&&G.treats>=bc);
+      b.innerHTML=unlocked?("hire"+(q>1?" ×"+q:"")+"<small>🍖 "+fmt(bc)+"</small>"):"???";
       const nxt=[25,50,100,200,400].find(t2=>G.vent[i]<t2);
       const ds=el.querySelector('.ds');
       if(G.vent[i]>0&&nxt) ds.textContent=VENTS[i].d+" ×2 at "+nxt+"!";
@@ -693,6 +777,10 @@ function paint(){
 function buildShop(){
   const shop=$('shop');
   let html="";
+  html+=`<div id="qtyRow">
+    <span style="font-weight:800;font-size:.85rem;color:var(--dim)">buy</span>
+    <button data-q="1">×1</button><button data-q="10">×10</button><button data-q="max">MAX</button>
+  </div>`;
   html+=`<div class="v special boopU" data-i="-1">
     <div class="em">🐾</div>
     <div class="info"><div class="nm">Boop Training <small></small></div>
@@ -717,8 +805,43 @@ function buildShop(){
     <div class="info"><div class="nm">Take a Nap</div>
     <div class="ds">reset the empire. dream up permanent yarn (+10% each).</div></div>
     <button></button></div>`;
+  html+=`<div class="v saveV" data-i="-4">
+    <div class="em">💾</div>
+    <div class="info"><div class="nm">Save Keeper</div>
+    <div class="ds">download your empire as a file, or load one back in.</div></div>
+    <div style="display:flex;flex-direction:column;gap:5px">
+      <button id="expBtn" style="min-width:86px">export</button>
+      <button id="impBtn" style="min-width:86px">import</button>
+    </div></div>`;
+  html+=`<input type="file" id="impFile" accept=".txt,.sammy,.json" style="display:none">`;
   shop.innerHTML=html;
-  shop.querySelectorAll('.vent button').forEach((b,i)=>b.onclick=()=>buyVent(i));
+  shop.querySelectorAll('#qtyRow button').forEach(b2=>{
+    b2.onclick=()=>{ G.qty=b2.dataset.q==="max"?"max":+b2.dataset.q; save(); paint(); };
+  });
+  $('expBtn').onclick=()=>{
+    save();
+    const blob=new Blob([exportStr()],{type:"text/plain"});
+    const a2=document.createElement('a');
+    a2.href=URL.createObjectURL(blob);
+    a2.download="sammy-empire-"+new Date().toISOString().slice(0,10)+".txt";
+    document.body.appendChild(a2); a2.click(); a2.remove();
+    setTimeout(()=>URL.revokeObjectURL(a2.href),2000);
+    addFloat(208,120,"empire saved to file! 💾","#8fe0b0");
+    sBuy();
+  };
+  $('impBtn').onclick=()=>$('impFile').click();
+  $('impFile').addEventListener('change',e=>{
+    const f=e.target.files[0];
+    if(!f) return;
+    const rd=new FileReader();
+    rd.onload=()=>{
+      if(!importStr(String(rd.result).trim()))
+        addFloat(208,120,"that's not a sammy save 😿","#ff8ab0");
+    };
+    rd.readAsText(f);
+    e.target.value="";
+  });
+  shop.querySelectorAll('.vent button').forEach((b,i)=>b.onclick=()=>buyVent(i,G.qty));
   shop.querySelector('.boopU button').onclick=buyBoop;
   shop.querySelectorAll('.perkV').forEach(el=>{
     el.querySelector('button').onclick=()=>buyPerk(PERKS[+el.dataset.pk].id);
@@ -797,13 +920,15 @@ window.KT={
     G.boops=0; G.crits=0; G.dots=0; G.vases=0; G.naps=0; zoomT=0; event=null; save(); paint(); },
   setVent(i,n){ G.vent[i]=n; paint(); },
   quiet(){ nextEvent=1e9; event=null; },
+  exportStr, importStr, bulkCost, maxAfford,
+  setQty(q){ G.qty=q; paint(); },
   setYarn(n){ G.yarn=n; G.yarnEarned=Math.max(G.yarnEarned,n); paint(); },
   buyPerk,
   dismiss(){ $('helpOv').classList.remove('show'); $('backOv').classList.remove('show'); },
   state(){ return { treats:+G.treats.toFixed(2), life:+G.life.toFixed(2),
     vent:G.vent.slice(), boopLvl:G.boopLvl, boopVal:boopVal(), yarn:G.yarn,
     yarnEarned:G.yarnEarned, perks:Object.keys(G.perks),
-    critChance:critChance(), zoomLen:zoomLen(), offlineRate:offlineRate(),
+    critChance:critChance(), zoomLen:zoomLen(), offlineRate:offlineRate(), qty:G.qty,
     rate:+rate().toFixed(3), zoom:+zoomT.toFixed(1),
     event:event?event.type:null, napGain:napGain(),
     boops:G.boops, crits:G.crits, dots:G.dots, vases:G.vases, naps:G.naps,
