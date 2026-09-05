@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#101820">
+<title>Map Sketch</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+:root{--bg:#101820;--panel:#1b2732;--edge:#31445a;--ink:#ecf4fc;--dim:#8fa4bc;--acc:#54c8ff}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden;overscroll-behavior:none}
+body{background:var(--bg);color:var(--ink);font-family:system-ui,sans-serif;display:flex;justify-content:center}
+#app{width:100%;max-width:560px;height:100dvh;display:flex;flex-direction:column;gap:6px;padding:8px}
+#bar{display:flex;gap:5px;flex-wrap:wrap}
+#bar button{background:var(--panel);border:1px solid var(--edge);color:var(--ink);
+  border-radius:9px;padding:8px 11px;font-weight:700;font-size:.82rem;cursor:pointer}
+#bar button.on{border-color:var(--acc);color:var(--acc)}
+#map{flex:1;min-height:0;border-radius:12px;background:#0a1016;position:relative}
+#fallback{position:absolute;inset:0;display:none;touch-action:none}
+#msg{color:var(--dim);font-size:.74rem;text-align:center;min-height:1em}
+.dot{width:24px;height:24px;border-radius:50%;border:2px solid var(--edge);cursor:pointer;
+  display:inline-block;vertical-align:middle}
+.dot.on{border-color:#fff}
+.leaflet-container{background:#0a1016;border-radius:12px}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="bar">
+    <button data-t="pan" class="on">🖐 pan</button>
+    <button data-t="draw">✏️ draw</button>
+    <button data-t="pin">📍 pin</button>
+    <button data-t="measure">📏</button>
+    <button id="undoBtn">↩</button>
+    <button id="clearBtn">🗑</button>
+    <button id="geoBtn">🎯 me</button>
+    <button id="saveBtn">💾</button>
+    <button id="expBtn">⬇️ json</button>
+    <span class="dot on" data-c="#ff3b30" style="background:#ff3b30"></span>
+    <span class="dot" data-c="#ffcc00" style="background:#ffcc00"></span>
+    <span class="dot" data-c="#54c8ff" style="background:#54c8ff"></span>
+  </div>
+  <div id="map"><canvas id="fallback"></canvas></div>
+  <p id="msg">draw on the world — lines stick to their coordinates</p>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+let tool="pan",color="#ff3b30",map=null,fallbackMode=false;
+let items=[];
+let drawing=null;
+function say(t){$('msg').textContent=t;}
+let store={sketch:null};
+try{const s=JSON.parse(localStorage.getItem("mapsketch")||"null");if(s)store=s;}catch(e){}
+const persist=()=>{try{
+  store.sketch=items.map(it=>({t:it.t,c:it.c,ll:it.ll,label:it.label||""}));
+  localStorage.setItem("mapsketch",JSON.stringify(store));}catch(e){}};
+function haversine(a,b){
+  const R=6371000,toR=x=>x*Math.PI/180;
+  const dLat=toR(b[0]-a[0]),dLon=toR(b[1]-a[1]);
+  const h=Math.sin(dLat/2)**2+Math.cos(toR(a[0]))*Math.cos(toR(b[0]))*Math.sin(dLon/2)**2;
+  return 2*R*Math.asin(Math.sqrt(h));
+}
+function lineLen(ll){let d=0;for(let i=1;i<ll.length;i++)d+=haversine(ll[i-1],ll[i]);return d;}
+function fmtDist(m){return m>=1000?(m/1000).toFixed(2)+" km":Math.round(m)+" m";}
+function addItem(it){
+  items.push(it);
+  if(!fallbackMode)renderItem(it);
+  persist();
+  return it;
+}
+function renderItem(it){
+  if(it.t==="pin"){
+    it.layer=L.marker(it.ll[0]).addTo(map);
+    if(it.label)it.layer.bindPopup(it.label);
+  } else {
+    it.layer=L.polyline(it.ll,{color:it.c,weight:it.t==="measure"?3:4,
+      dashArray:it.t==="measure"?"6 6":null}).addTo(map);
+    if(it.t==="measure")it.layer.bindPopup(fmtDist(lineLen(it.ll))).openPopup();
+  }
+}
+function undo(){
+  const it=items.pop();
+  if(it&&it.layer)map.removeLayer(it.layer);
+  if(fallbackMode)drawFallback();
+  persist();
+}
+function clearAll(){
+  items.forEach(it=>it.layer&&map.removeLayer(it.layer));
+  items=[];persist();
+  if(fallbackMode)drawFallback();
+  say("wiped clean");
+}
+function initLeaflet(){
+  try{
+    if(!window.L)throw 0;
+    map=L.map('map',{zoomControl:true,doubleClickZoom:false}).setView([49.28,-123.12],13);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{
+      maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);
+    map.on('mousedown',startDraw);map.on('touchstart',()=>{});
+    map.on('mousemove',moveDraw);
+    map.on('mouseup',endDraw);
+    map.on('click',e=>{
+      if(tool==="pin"){
+        const label=prompt("pin label:")||"";
+        addItem({t:"pin",c:color,ll:[[e.latlng.lat,e.latlng.lng]],label});
+        say("pinned"+(label?": "+label:""));
+      }
+    });
+    (store.sketch||[]).forEach(sv=>{
+      const it={t:sv.t,c:sv.c,ll:sv.ll,label:sv.label};
+      items.push(it);renderItem(it);
+    });
+    if(items.length){
+      say(items.length+" saved marks restored");
+      const all=items.flatMap(i=>i.ll);
+      if(all.length)map.fitBounds(all,{maxZoom:16,padding:[30,30]});
+    }
+  }catch(e){enableFallback();}
+  setTimeout(()=>{
+    const tiles=document.querySelectorAll('.leaflet-tile-loaded');
+    if(!fallbackMode&&map&&tiles.length===0)say("tiles slow or offline — drawing still works on the blank map");
+  },5000);
+}
+function startDraw(e){
+  if(tool!=="draw"&&tool!=="measure")return;
+  map.dragging.disable();
+  drawing={t:tool==="measure"?"measure":"line",c:color,ll:[[e.latlng.lat,e.latlng.lng]]};
+  drawing.layer=L.polyline(drawing.ll,{color,weight:4}).addTo(map);
+}
+function moveDraw(e){
+  if(!drawing)return;
+  drawing.ll.push([e.latlng.lat,e.latlng.lng]);
+  drawing.layer.setLatLngs(drawing.ll);
+}
+function endDraw(){
+  if(!drawing)return;
+  map.removeLayer(drawing.layer);
+  const it=addItem({t:drawing.t,c:drawing.c,ll:drawing.ll});
+  if(it.t==="measure")say("measured "+fmtDist(lineLen(it.ll)));
+  drawing=null;
+  map.dragging.enable();
+}
+const fb=$("fallback"),fx=fb.getContext("2d");
+function enableFallback(){
+  fallbackMode=true;
+  fb.style.display="block";
+  const r=$("map").getBoundingClientRect();
+  fb.width=r.width*2;fb.height=r.height*2;fx.scale(2,2);
+  say("map engine offline — grid sketchpad mode");
+  drawFallback();
+  let cur=null;
+  fb.addEventListener('pointerdown',e=>{
+    const rc=fb.getBoundingClientRect();
+    cur={t:"line",c:color,ll:[[e.clientY-rc.top,e.clientX-rc.left]]};
+  });
+  fb.addEventListener('pointermove',e=>{
+    if(!cur)return;
+    const rc=fb.getBoundingClientRect();
+    cur.ll.push([e.clientY-rc.top,e.clientX-rc.left]);
+    drawFallback();fx.strokeStyle=cur.c;fx.lineWidth=3;
+    fx.beginPath();cur.ll.forEach(([y,x],i)=>i?fx.lineTo(x,y):fx.moveTo(x,y));fx.stroke();
+  });
+  ["pointerup","pointerleave"].forEach(ev=>fb.addEventListener(ev,()=>{
+    if(cur){items.push(cur);persist();}
+    cur=null;drawFallback();
+  }));
+}
+function drawFallback(){
+  fx.clearRect(0,0,fb.width,fb.height);
+  fx.strokeStyle="rgba(84,200,255,.12)";fx.lineWidth=1;
+  for(let g=0;g<fb.width;g+=40){fx.beginPath();fx.moveTo(g,0);fx.lineTo(g,fb.height);fx.stroke();}
+  for(let g=0;g<fb.height;g+=40){fx.beginPath();fx.moveTo(0,g);fx.lineTo(fb.width,g);fx.stroke();}
+  items.forEach(it=>{
+    fx.strokeStyle=it.c;fx.lineWidth=3;
+    fx.beginPath();it.ll.forEach(([y,x],i)=>i?fx.lineTo(x,y):fx.moveTo(x,y));fx.stroke();
+  });
+}
+document.querySelectorAll('#bar [data-t]').forEach(b=>b.onclick=()=>{
+  tool=b.dataset.t;
+  document.querySelectorAll('#bar [data-t]').forEach(x=>x.classList.toggle('on',x===b));
+  say({pan:"drag to move the map",draw:"drag to sketch — it sticks to the ground",
+    pin:"tap to drop a labelled pin",measure:"drag a line to measure it"}[tool]);
+});
+document.querySelectorAll('.dot').forEach(d=>d.onclick=()=>{
+  color=d.dataset.c;
+  document.querySelectorAll('.dot').forEach(x=>x.classList.toggle('on',x===d));
+});
+$('undoBtn').onclick=undo;
+$('clearBtn').onclick=()=>{if(confirm("clear the whole sketch?"))clearAll();};
+$('geoBtn').onclick=()=>{
+  if(!navigator.geolocation||!map){say("no location available");return;}
+  navigator.geolocation.getCurrentPosition(p=>{
+    map.setView([p.coords.latitude,p.coords.longitude],16);say("that's you");
+  },()=>say("location denied"));
+};
+$('saveBtn').onclick=()=>{persist();say("saved on-device ✓ ("+items.length+" marks)");};
+$('expBtn').onclick=()=>{
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([JSON.stringify({
+    exported:new Date().toISOString(),
+    items:items.map(it=>({t:it.t,c:it.c,ll:it.ll,label:it.label||""}))},null,1)],
+    {type:"application/json"}));
+  a.download="mapsketch.json";a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+  say("exported json ✓");
+};
+initLeaflet();
+window.MS={
+  addLine(ll,c){return addItem({t:"line",c:c||color,ll});},
+  addPin(lat,lon,label){return addItem({t:"pin",c:color,ll:[[lat,lon]],label:label||""});},
+  addMeasure(ll){return addItem({t:"measure",c:color,ll});},
+  lineLen,fmtDist,undo,clearAll,
+  tool:t=>{tool=t;},
+  items:()=>items.map(it=>({t:it.t,c:it.c,n:it.ll.length,label:it.label||""})),
+  ready:()=>!!map,fallback:()=>fallbackMode,
+  state(){return{items:items.length,tool,color,leaflet:!!map,fallback:fallbackMode};}
+};
+</script>
+</body>
+</html>

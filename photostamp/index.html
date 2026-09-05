@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#141a14">
+<title>Photo Stamp</title>
+<style>
+:root{--bg:#141a14;--panel:#1e281e;--edge:#32462f;--ink:#eef6ea;--dim:#96ab90;--acc:#8ae05a}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden;overscroll-behavior:none;touch-action:pan-y}
+body{background:var(--bg);color:var(--ink);font-family:system-ui,sans-serif;display:flex;justify-content:center}
+#app{width:100%;max-width:460px;height:100dvh;display:flex;flex-direction:column;gap:8px;padding:10px;overflow-y:auto}
+h1{font-size:1.1rem;color:var(--acc)}
+#cv{width:100%;border-radius:14px;background:#0c110c;min-height:200px}
+.row{display:flex;gap:6px}
+button,label.btn{flex:1;background:var(--panel);border:1px solid var(--edge);color:var(--ink);
+  border-radius:10px;padding:10px 6px;font-weight:700;font-size:.85rem;cursor:pointer;text-align:center}
+button.acc{background:var(--acc);color:#12300a;border-color:var(--acc)}
+input[type=file]{display:none}
+input[type=text],input[type=number]{background:var(--panel);border:1px solid var(--edge);color:var(--ink);
+  border-radius:10px;padding:9px 10px;font-size:.9rem;width:100%}
+.meta{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
+.meta div{background:var(--panel);border:1px solid var(--edge);border-radius:10px;padding:7px 9px}
+.meta small{display:block;color:var(--dim);font-size:.68rem;font-weight:700;text-transform:uppercase}
+.meta b{font-size:.86rem}
+#msg{color:var(--dim);font-size:.78rem;text-align:center;min-height:1em}
+</style>
+</head>
+<body>
+<div id="app">
+  <h1>📸 Photo Stamp</h1>
+  <canvas id="cv"></canvas>
+  <div class="row">
+    <label class="btn" for="file">📷 photo</label>
+    <button id="demoBtn">🧪 demo</button>
+    <button id="geoBtn">📍 locate</button>
+    <button id="tempBtn">🌡️ temp</button>
+  </div>
+  <input type="file" id="file" accept="image/*" capture="environment">
+  <div class="meta">
+    <div><small>lat</small><b id="mLat">—</b></div>
+    <div><small>lon</small><b id="mLon">—</b></div>
+    <div><small>temp</small><b id="mTemp">—</b></div>
+  </div>
+  <div class="row">
+    <input type="number" id="tempIn" placeholder="temp °C (manual)" step="0.1">
+    <input type="text" id="noteIn" placeholder="note (site, task…)" maxlength="60">
+  </div>
+  <div class="row">
+    <button id="shareBtn" class="acc">📤 share</button>
+    <button id="dlBtn" class="acc">⬇️ save PNG</button>
+  </div>
+  <p id="msg">add a photo, stamp it with the where + how cold, send it</p>
+</div>
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+const cv=$("cv"),ctx=cv.getContext("2d");
+const M={lat:null,lon:null,temp:null,note:"",when:new Date()};
+let img=null;
+function say(t){$('msg').textContent=t;}
+function fitDims(w,h){const mx=1280,f=Math.min(1,mx/Math.max(w,h));return[Math.round(w*f),Math.round(h*f)];}
+function draw(){
+  if(!img){cv.width=420;cv.height=240;
+    ctx.fillStyle="#0c110c";ctx.fillRect(0,0,420,240);
+    ctx.fillStyle="#32462f";ctx.font="600 15px system-ui";ctx.textAlign="center";
+    ctx.fillText("no photo yet",210,124);return;}
+  const[w,h]=fitDims(img.width,img.height);
+  cv.width=w;cv.height=h;
+  ctx.drawImage(img,0,0,w,h);
+  const bh=Math.max(64,Math.round(h*0.16));
+  const g=ctx.createLinearGradient(0,h-bh*1.5,0,h);
+  g.addColorStop(0,"rgba(0,0,0,0)");g.addColorStop(1,"rgba(0,0,0,.78)");
+  ctx.fillStyle=g;ctx.fillRect(0,h-bh*1.5,w,bh*1.5);
+  const fs=Math.max(15,Math.round(w/34));
+  ctx.textAlign="left";ctx.fillStyle="#fff";
+  ctx.font="700 "+fs+"px system-ui";
+  const line1=[
+    M.temp!=null?M.temp.toFixed(1)+"°C":null,
+    M.lat!=null?M.lat.toFixed(5)+", "+M.lon.toFixed(5):null
+  ].filter(Boolean).join("   ");
+  ctx.fillText(line1||"unstamped",14,h-bh+fs);
+  ctx.font="500 "+Math.round(fs*0.78)+"px system-ui";
+  ctx.fillStyle="rgba(255,255,255,.85)";
+  const dt=M.when;
+  const line2=[dt.toLocaleDateString()+" "+dt.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}),
+    M.note||null].filter(Boolean).join("  ·  ");
+  ctx.fillText(line2,14,h-bh+fs*2.05);
+  ctx.textAlign="right";ctx.fillStyle="rgba(255,255,255,.5)";
+  ctx.font="600 "+Math.round(fs*0.6)+"px system-ui";
+  ctx.fillText("photo stamp",w-12,h-12);
+  ctx.textAlign="left";
+}
+function paintMeta(){
+  $('mLat').textContent=M.lat!=null?M.lat.toFixed(4):"—";
+  $('mLon').textContent=M.lon!=null?M.lon.toFixed(4):"—";
+  $('mTemp').textContent=M.temp!=null?M.temp.toFixed(1)+"°":"—";
+  draw();
+}
+$('file').addEventListener('change',e=>{
+  const f=e.target.files[0];if(!f)return;
+  const i=new Image();
+  i.onload=()=>{img=i;M.when=new Date();say("photo loaded — stamp it");draw();};
+  i.src=URL.createObjectURL(f);
+});
+function loadDemo(){
+  const c=document.createElement('canvas');c.width=960;c.height=640;
+  const x=c.getContext('2d');
+  const sky=x.createLinearGradient(0,0,0,400);
+  sky.addColorStop(0,"#7ec8e8");sky.addColorStop(1,"#d8ecf4");
+  x.fillStyle=sky;x.fillRect(0,0,960,400);
+  x.fillStyle="#c8a878";x.fillRect(0,400,960,240);
+  x.fillStyle="#8a6a48";
+  [[120,240],[420,200],[700,260]].forEach(([bx,by])=>{
+    x.fillRect(bx,by,180,400-by+160);
+    x.fillStyle="#ffd97a";
+    for(let r=0;r<4;r++)for(let q=0;q<3;q++)x.fillRect(bx+20+q*52,by+22+r*54,30,34);
+    x.fillStyle="#8a6a48";
+  });
+  x.fillStyle="#e8b830";x.fillRect(560,120,14,290);
+  x.fillRect(430,120,270,12);
+  img=new Image();
+  img.onload=()=>{M.when=new Date();say("demo site loaded");draw();};
+  img.src=c.toDataURL();
+}
+$('demoBtn').onclick=loadDemo;
+$('geoBtn').onclick=()=>{
+  if(!navigator.geolocation){say("no geolocation on this device — type coords via note");return;}
+  say("locating…");
+  navigator.geolocation.getCurrentPosition(p=>{
+    M.lat=p.coords.latitude;M.lon=p.coords.longitude;
+    say("located ✓ — tap 🌡️ for live temperature");paintMeta();
+  },()=>say("location denied — you can still stamp temp + note"),{timeout:8000});
+};
+$('tempBtn').onclick=async()=>{
+  if(M.lat==null){say("locate first (📍) so I know where to ask about weather");return;}
+  say("asking open-meteo…");
+  try{
+    const r=await fetch("https://api.open-meteo.com/v1/forecast?latitude="+M.lat+
+      "&longitude="+M.lon+"&current=temperature_2m");
+    const j=await r.json();
+    M.temp=j.current.temperature_2m;
+    say("live temperature ✓");paintMeta();
+  }catch(e){say("weather offline — type the temp manually below");}
+};
+$('tempIn').addEventListener('input',e=>{
+  M.temp=e.target.value===""?null:+e.target.value;paintMeta();
+});
+$('noteIn').addEventListener('input',e=>{M.note=e.target.value;draw();});
+$('dlBtn').onclick=()=>{
+  if(!img){say("load a photo first");return;}
+  const a=document.createElement('a');
+  a.href=cv.toDataURL("image/png");
+  a.download="stamped-"+Date.now()+".png";a.click();
+  say("saved ✓");
+};
+$('shareBtn').onclick=()=>{
+  if(!img){say("load a photo first");return;}
+  cv.toBlob(async b=>{
+    const f=new File([b],"stamped.png",{type:"image/png"});
+    if(navigator.canShare&&navigator.canShare({files:[f]})){
+      try{await navigator.share({files:[f],title:"Photo Stamp"});say("shared ✓");}
+      catch(e){say("share cancelled");}
+    } else {$('dlBtn').click();}
+  });
+};
+draw();
+window.PS={
+  setMeta(o){Object.assign(M,o);if(o.when)M.when=new Date(o.when);paintMeta();},
+  loadDemo,
+  hasPhoto:()=>!!img,
+  dataURL:()=>cv.toDataURL(),
+  state(){return{lat:M.lat,lon:M.lon,temp:M.temp,note:M.note,hasPhoto:!!img,w:cv.width,h:cv.height};}
+};
+</script>
+</body>
+</html>
