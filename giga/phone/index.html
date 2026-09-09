@@ -26,6 +26,20 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<script>
+/* crash-loop guard — runs before the document parses so even a crash during
+   first paint counts. Two failed boots in a row = SAFE mode. */
+window.__SAFE=false;
+try{
+  var __bb=+(sessionStorage.getItem('giga-boot')||0);
+  if(__bb>=2){window.__SAFE=true;document.documentElement.className+=' safe';}
+  sessionStorage.setItem('giga-boot',String(__bb+1));
+  addEventListener('load',function(){setTimeout(function(){
+    try{sessionStorage.setItem('giga-boot','0');}catch(e){}},4000);});
+}catch(e){}
+window.__DPRCAP=window.__SAFE?1.2:2;
+window.__LITE=true;
+</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover, user-scalable=no">
 <title>GIGA · Phone Edition</title>
 <meta name="theme-color" content="#070B10">
@@ -436,17 +450,20 @@ body[data-dir="b"] .slide.on>*:not(style){animation-name:riseB}
 .slide.on .tbl tr{animation:rise .5s ease backwards}
 .slide.on .tbl tr:nth-child(2){animation-delay:.05s}.slide.on .tbl tr:nth-child(3){animation-delay:.1s}
 .slide.on .tbl tr:nth-child(4){animation-delay:.15s}.slide.on .tbl tr:nth-child(n+5){animation-delay:.2s}
-.chapcard .n{animation:chDrift 9s ease-in-out infinite alternate}
-.hist .yr{animation:chDrift 13s ease-in-out infinite alternate}
+.slide.on .chapcard .n{animation:chDrift 9s ease-in-out infinite alternate}
+.slide.on .hist .yr{animation:chDrift 13s ease-in-out infinite alternate}
 @keyframes chDrift{from{transform:translateX(0)}to{transform:translateX(20px)}}
 .hist .yr{transform:translateY(-50%)}
 @keyframes chDriftY{from{transform:translateY(-50%) translateX(0)}to{transform:translateY(-50%) translateX(18px)}}
-.hist .yr{animation-name:chDriftY}
+.slide.on .hist .yr{animation-name:chDriftY}
 #nav{bottom:96px}
 #moreCue{bottom:120px}
 #trwPanel{bottom:130px}
 @media (prefers-reduced-motion:reduce){
   .slide.on *,.punch,.chapcard .n,.hist .yr,#tickerTxt{animation:none!important}}
+/* hidden sheets must cost nothing: no layers, no animation ticks */
+.slide{visibility:hidden}
+.slide.on{visibility:visible}
 </style>
 </head>
 <body>
@@ -518,17 +535,8 @@ END CUT -->
    fixed; intermissions are the float; end time holds.
    ============================================================ */
 
-/* crash-loop guard: two consecutive failed boots switch the deck to SAFE mode
-   (no ambient canvas, no animations, low-res demos) so iOS can always recover */
-let SAFE=false;
-try{
-  const bb=+(sessionStorage.getItem('giga-boot')||0);
-  if(bb>=2){SAFE=true;document.documentElement.classList.add('safe');}
-  sessionStorage.setItem('giga-boot',String(bb+1));
-  addEventListener('load',()=>setTimeout(()=>{try{sessionStorage.setItem('giga-boot','0');}catch(e){}},4000));
-}catch(e){}
-window.__DPRCAP=SAFE?1.2:2;
-window.__LITE=true;
+/* SAFE mode is decided by the head sentinel before the document parses */
+let SAFE=!!window.__SAFE;
 
 let TOTAL = 0;                   // derived below: content plus float — never stored
 let   late  = 0;                 // late-start seconds consumed from float
@@ -1331,7 +1339,11 @@ function show(i){
   if(i<0||i>=S.length) return;
   document.body.dataset.dir=i<cur?'b':'f';
   if(cleanup){try{cleanup()}catch(e){} cleanup=null;}
-  if(cur>=0) document.getElementById('s'+cur).classList.remove('on');
+  if(cur>=0&&cur!==i){
+    const old=document.getElementById('s'+cur);
+    if(old){old.classList.remove('on');
+      old.querySelectorAll('canvas').forEach(c2=>{c2.width=1;c2.height=1;});}
+  } else if(cur>=0) document.getElementById('s'+cur).classList.remove('on');
   cur=i; slideStart=nowS(); slideAcc=0; SEEN.add(i);
   try{localStorage.setItem('giga-pocket-pos',JSON.stringify({cur:i,seen:[...SEEN]}));}catch(e){}
   const el=document.getElementById('s'+i);
@@ -1356,6 +1368,8 @@ function show(i){
   if(amb) amb.style.opacity=/chapcard/.test(S[i].html)?'0.55':(S[i].demo?'0.22':'0.35');
   requestAnimationFrame(()=>{
     if(cur!==i) return;
+    document.querySelectorAll('.slide:not(.on) canvas').forEach(c2=>{
+      if(c2.width>10){c2.width=1;c2.height=1;}});
     fitSheet(el);
     const cue=document.getElementById('moreCue');
     if(cue){const of2=el.scrollHeight>el.clientHeight+12;
