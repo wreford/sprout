@@ -390,6 +390,11 @@ p,li{font-size:16.5px;line-height:1.6}
   padding:10px 16px;font-family:var(--mono);font-size:12px;color:var(--ink);
   letter-spacing:.06em;white-space:nowrap;pointer-events:none}
 #coach.show{display:block;animation:coachIn .4s ease}
+canvas.demo{-webkit-mask-image:none!important;mask-image:none!important}
+.punch{animation:none!important;text-shadow:0 0 14px rgba(255,173,51,.22)}
+#tickerTxt{will-change:auto}
+.safe *,.safe *::before,.safe *::after{animation:none!important;transition:none!important}
+.safe #ambient{display:none}
 @keyframes coachIn{from{opacity:0;transform:translate(-50%,8px)}}
 .chapcard .tag{background:none;padding:0;letter-spacing:.02em;color:var(--dim)}
 #trwPanel{position:absolute;left:12px;right:12px;bottom:96px;z-index:18;display:none;
@@ -512,6 +517,18 @@ END CUT -->
    The schedule is derived, not stored: content durations are
    fixed; intermissions are the float; end time holds.
    ============================================================ */
+
+/* crash-loop guard: two consecutive failed boots switch the deck to SAFE mode
+   (no ambient canvas, no animations, low-res demos) so iOS can always recover */
+let SAFE=false;
+try{
+  const bb=+(sessionStorage.getItem('giga-boot')||0);
+  if(bb>=2){SAFE=true;document.documentElement.classList.add('safe');}
+  sessionStorage.setItem('giga-boot',String(bb+1));
+  addEventListener('load',()=>setTimeout(()=>{try{sessionStorage.setItem('giga-boot','0');}catch(e){}},4000));
+}catch(e){}
+window.__DPRCAP=SAFE?1.2:2;
+window.__LITE=true;
 
 let TOTAL = 0;                   // derived below: content plus float — never stored
 let   late  = 0;                 // late-start seconds consumed from float
@@ -1217,6 +1234,7 @@ add("CH 9 · COLOPHON",90,`<h2>Receipt</h2>
 function ambientBoot(){
   const c=document.getElementById('ambient'); if(!c) return;
   const g=c.getContext('2d');
+  if(window.__LITE){c.width=640;c.height=360;g.setTransform(640/1920,0,0,360/1080,0,0);}
   const r=mulberry(11), N=22, pts=[];
   for(let i=0;i<N;i++)pts.push({x:r()*1920,y:r()*1080,vx:(r()-0.5)*0.22,vy:(r()-0.5)*0.22});
   function frame(){
@@ -1242,6 +1260,7 @@ function ambientBoot(){
 
 /* ---------- fault trap: errors name themselves ---------- */
 window.addEventListener('error',e=>{
+  if(/ResizeObserver loop/.test(e.message||'')) return;
   const f=document.getElementById('fault'); if(!f) return;
   f.style.display='block';
   f.textContent='FAULT · '+(e.message||'script error')+
@@ -1290,7 +1309,13 @@ function fitSheet(el){
   }
   el.style.zoom='';el.style.paddingBottom='';
   let z=1;
-  while(z>0.7&&el.scrollHeight>el.clientHeight+4){z-=0.06;el.style.zoom=z.toFixed(2);}
+  const sh=el.scrollHeight, chh=el.clientHeight;
+  if(sh>chh+4){
+    z=Math.max(0.7,Math.min(1,chh/sh));
+    z=Math.round(z*50)/50;
+    el.style.zoom=z;
+    if(el.scrollHeight>el.clientHeight+4&&z>0.7){z=Math.max(0.7,z-0.04);el.style.zoom=z;}
+  }
   if(z<1) el.style.paddingBottom=(el.dataset.bpad/z)+'px';
 }
 function show(i){
@@ -1410,7 +1435,7 @@ function demoLoop(canvas,ratioFn,draw,period){
     const w=canvas.parentElement.clientWidth||600;
     if(w===W)return; W=w;
     const ratio=typeof ratioFn==='function'?ratioFn(w):ratioFn;
-    const res=Math.min(3,devicePixelRatio*(window.STAGE_SCALE||1));
+    const res=Math.min(window.__DPRCAP||2.5,devicePixelRatio*(window.STAGE_SCALE||1));
     canvas._res=res;
     canvas.width=w*res; canvas.height=w*ratio*res;
     canvas.style.height=(w*ratio)+'px';
@@ -2837,7 +2862,10 @@ function insightFor(i){
     w=tk.getBoundingClientRect().width||10;
     x=strip.clientWidth*0.92;
   };
-  (function loop(ts){
+  if(document.documentElement.classList.contains('safe')){
+    tk.style.transform='translate(8px,-50%)';
+    tk.style.fontSize='10px';
+  } else (function loop(ts){
     const dt=Math.min(.05,(ts-last)/1000||0);last=ts;
     const spd=Math.max(46,strip.clientWidth/24);
     if(!tkPaused){x-=dt*spd;if(x<-w)x=strip.clientWidth;}
@@ -2906,7 +2934,7 @@ function fitStage(){
 }
 addEventListener('resize',fitStage);fitStage();
 ── END CUT ── */
-ambientBoot();
+if(!SAFE) ambientBoot(); else {const a2=document.getElementById('ambient'); if(a2)a2.style.display='none';}
 if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>{
   const el=document.getElementById('s'+cur);if(el)fitSheet(el);});
 
