@@ -3,7 +3,7 @@ const POSTS = [
     slug: "sci-cci",
     title: "Two Numbers Your Project Doesn't Track",
     date: "2026-09-10",
-    tags: ["metrics", "evm", "certainty"],
+    tags: ["metrics", "evm", "certainty", "sci", "cci"],
     summary: "Earned value measures effort. Nothing measures whether anyone knows the ending. Two proposed indices: SCI and CCI."
   }
 ];
