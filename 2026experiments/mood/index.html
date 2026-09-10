@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta name="robots" content="noindex, nofollow">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#1c1420">
+<title>Mood Log</title>
+<style>
+:root{--bg:#1c1420;--panel:#2a1e30;--edge:#443050;--ink:#f6eefa;--dim:#ab96b8;--acc:#e05ab0;--gold:#ffd166}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden;overscroll-behavior:none;touch-action:pan-y}
+body{background:var(--bg);color:var(--ink);font-family:system-ui,sans-serif;display:flex;justify-content:center}
+#app{width:100%;max-width:460px;height:100dvh;display:flex;flex-direction:column;gap:8px;padding:10px;overflow-y:auto}
+header{display:flex;justify-content:space-between;align-items:baseline}
+h1{font-size:1.1rem;color:var(--acc)}
+#streak{color:var(--gold);font-weight:800;font-size:.85rem}
+#moods{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+#moods button{background:var(--panel);border:1px solid var(--edge);border-radius:12px;
+  font-size:1.5rem;padding:8px 0;cursor:pointer}
+#moods button.on{border-color:var(--acc);background:#3c2444;box-shadow:0 0 10px rgba(224,90,176,.4)}
+.card{background:var(--panel);border:1px solid var(--edge);border-radius:12px;padding:10px 12px}
+.card h2{font-size:.8rem;color:var(--dim);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
+input[type=range]{width:100%;accent-color:var(--acc)}
+input[type=text]{background:var(--bg);border:1px solid var(--edge);color:var(--ink);
+  border-radius:9px;padding:8px 10px;width:100%;font-size:.9rem;margin-top:6px}
+.row{display:flex;gap:6px}
+.row button{flex:1;background:var(--acc);color:#fff;border:none;border-radius:10px;
+  padding:10px;font-weight:800;font-size:.9rem;cursor:pointer}
+.row button.alt{background:var(--panel);border:1px solid var(--edge);color:var(--dim)}
+#grid{display:grid;grid-template-columns:repeat(14,1fr);gap:3px}
+#grid div{aspect-ratio:1;border-radius:4px;background:#241a2a;display:flex;align-items:center;
+  justify-content:center;font-size:.55rem}
+#hist{display:flex;flex-direction:column;gap:5px}
+.ent{display:flex;gap:8px;align-items:center;background:var(--bg);border:1px solid var(--edge);
+  border-radius:9px;padding:6px 9px;font-size:.82rem}
+.ent .em{font-size:1.2rem}
+.ent .wh{color:var(--dim);font-size:.7rem}
+.ent .del{margin-left:auto;color:var(--dim);cursor:pointer;font-weight:700}
+#stats{display:flex;gap:6px;text-align:center}
+#stats div{flex:1;background:var(--bg);border:1px solid var(--edge);border-radius:9px;padding:6px}
+#stats b{display:block;font-size:1.05rem}
+#stats small{color:var(--dim);font-size:.66rem}
+#msg{color:var(--dim);font-size:.76rem;text-align:center;min-height:1em}
+</style>
+</head>
+<body>
+<div id="app">
+  <header><h1>🫧 Mood Log</h1><span id="streak"></span></header>
+  <div id="moods"></div>
+  <div class="card">
+    <h2>how strong? <span id="intLbl" style="color:var(--ink)">3</span>/5</h2>
+    <input type="range" id="intensity" min="1" max="5" value="3">
+    <input type="text" id="note" placeholder="one line about why (optional)" maxlength="90">
+  </div>
+  <div class="row">
+    <button id="logBtn">log it</button>
+    <button id="shareBtn" class="alt">📤 share week</button>
+  </div>
+  <div class="card"><h2>last 8 weeks</h2><div id="grid"></div></div>
+  <div class="card"><h2>stats</h2><div id="stats"></div></div>
+  <div class="card"><h2>recent</h2><div id="hist"></div></div>
+  <p id="msg">how are you, actually?</p>
+</div>
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+const MOODS=[
+{e:"😄",n:"great",v:5},{e:"🙂",n:"good",v:4},{e:"😐",n:"meh",v:3},{e:"😔",n:"low",v:2},{e:"😢",n:"rough",v:1},
+{e:"😤",n:"frustrated",v:2},{e:"😰",n:"anxious",v:2},{e:"😴",n:"tired",v:3},{e:"🤒",n:"sick",v:2},{e:"🤩",n:"pumped",v:5},
+];
+let D={entries:[]};
+try{const s=JSON.parse(localStorage.getItem("moodlog")||"null");if(s&&Array.isArray(s.entries))D=s;}catch(e){}
+const save=()=>{try{localStorage.setItem("moodlog",JSON.stringify(D));}catch(e){}};
+let sel=null;
+function dayKey(d){return d.toISOString().slice(0,10);}
+function say(t){$('msg').textContent=t;}
+function logEntry(mi,intensity,note,when){
+  const w=when?new Date(when):new Date();
+  D.entries.unshift({m:mi,i:intensity,n:note||"",ts:w.getTime(),d:dayKey(w)});
+  if(D.entries.length>1000)D.entries.length=1000;
+  save();paint();
+  return D.entries[0];
+}
+function streak(){
+  const days=new Set(D.entries.map(e=>e.d));
+  let s=0,d=new Date();
+  if(!days.has(dayKey(d)))d.setDate(d.getDate()-1);
+  while(days.has(dayKey(d))){s++;d.setDate(d.getDate()-1);}
+  return s;
+}
+function paint(){
+  $('streak').textContent=streak()>0?"🔥 "+streak()+" day"+(streak()>1?"s":""):"";
+  const byDay={};
+  D.entries.forEach(e=>{(byDay[e.d]=byDay[e.d]||[]).push(e);});
+  let g="";
+  const today=new Date();
+  for(let k=55;k>=0;k--){
+    const d=new Date(today);d.setDate(d.getDate()-k);
+    const key=dayKey(d),es=byDay[key];
+    if(es){
+      const avg=es.reduce((a,e)=>a+MOODS[e.m].v,0)/es.length;
+      const hue=avg>=4?140:avg>=3?45:avg>=2?20:0;
+      g+=`<div style="background:hsl(${hue},60%,${25+avg*7}%)" title="${key}">${es[0]?MOODS[es[0].m].e:""}</div>`;
+    } else g+=`<div></div>`;
+  }
+  $('grid').innerHTML=g;
+  const n=D.entries.length;
+  const counts={};D.entries.forEach(e=>counts[e.m]=(counts[e.m]||0)+1);
+  const top=Object.entries(counts).sort((a,b)=>b[1]-a[1])[0];
+  const avg=n?(D.entries.reduce((a,e)=>a+MOODS[e.m].v,0)/n):0;
+  $('stats').innerHTML=`
+    <div><b>${n}</b><small>logged</small></div>
+    <div><b>${top?MOODS[+top[0]].e:"—"}</b><small>most felt</small></div>
+    <div><b>${n?avg.toFixed(1):"—"}</b><small>avg vibe /5</small></div>
+    <div><b>${streak()}</b><small>day streak</small></div>`;
+  $('hist').innerHTML=D.entries.slice(0,8).map((e,k)=>`<div class="ent">
+    <span class="em">${MOODS[e.m].e}</span>
+    <span><b>${MOODS[e.m].n}</b> ·${"▮".repeat(e.i)}${e.n?"<br>"+e.n:""}</span>
+    <span class="wh">${new Date(e.ts).toLocaleDateString([],{month:'short',day:'numeric'})}</span>
+    <span class="del" data-k="${k}">✕</span></div>`).join("")||
+    '<span style="color:var(--dim);font-size:.8rem">nothing yet — log your first mood</span>';
+  document.querySelectorAll('.del').forEach(el=>el.onclick=()=>{
+    D.entries.splice(+el.dataset.k,1);save();paint();say("entry removed");
+  });
+}
+$('moods').innerHTML=MOODS.map((m,i)=>`<button data-i="${i}" title="${m.n}">${m.e}</button>`).join("");
+document.querySelectorAll('#moods button').forEach(b=>b.onclick=()=>{
+  sel=+b.dataset.i;
+  document.querySelectorAll('#moods button').forEach(x=>x.classList.toggle('on',x===b));
+  say(MOODS[sel].n+" — set strength and log it");
+});
+$('intensity').addEventListener('input',e=>$('intLbl').textContent=e.target.value);
+$('logBtn').onclick=()=>{
+  if(sel===null){say("pick a mood first");return;}
+  logEntry(sel,+$('intensity').value,$('note').value.trim());
+  $('note').value="";
+  say(MOODS[sel].e+" logged — noticing counts");
+  if(navigator.vibrate)navigator.vibrate(15);
+};
+function weekText(){
+  const cut=Date.now()-7*864e5;
+  const es=D.entries.filter(e=>e.ts>=cut);
+  if(!es.length)return null;
+  const line=es.slice().reverse().map(e=>MOODS[e.m].e).join("");
+  return "my week in moods: "+line+" (avg "+
+    (es.reduce((a,e)=>a+MOODS[e.m].v,0)/es.length).toFixed(1)+"/5) · moodlog @ taskiap.com/mood/";
+}
+$('shareBtn').onclick=async()=>{
+  const t=weekText();
+  if(!t){say("nothing this week yet");return;}
+  if(navigator.share){try{await navigator.share({text:t});say("shared ✓");}catch(e){say("share cancelled");}}
+  else{try{await navigator.clipboard.writeText(t);say("copied to clipboard ✓");}catch(e){say(t);}}
+};
+paint();
+window.MD={
+  log:(mi,intensity,note,when)=>logEntry(mi,intensity||3,note,when),
+  entries:()=>D.entries.slice(),
+  streak,weekText,
+  clear(){D={entries:[]};save();paint();},
+  MOODS,
+  state(){return{count:D.entries.length,streak:streak(),moods:MOODS.length};}
+};
+</script>
+</body>
+</html>

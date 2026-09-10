@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta name="robots" content="noindex, nofollow">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#1a1414">
+<title>Voice Memo</title>
+<style>
+:root{--bg:#1a1414;--panel:#2a1e1e;--edge:#4a3232;--ink:#faeeee;--dim:#b89696;--acc:#ff5a5a}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden;overscroll-behavior:none;touch-action:pan-y}
+body{background:var(--bg);color:var(--ink);font-family:system-ui,sans-serif;display:flex;justify-content:center}
+#app{width:100%;max-width:460px;height:100dvh;display:flex;flex-direction:column;gap:10px;padding:12px}
+h1{font-size:1.1rem;color:var(--acc)}
+#wave{width:100%;height:90px;border-radius:12px;background:#110d0d}
+#recBtn{width:84px;height:84px;border-radius:50%;border:5px solid var(--edge);background:var(--acc);
+  margin:0 auto;cursor:pointer;transition:border-radius .2s, transform .2s}
+#recBtn.rec{border-radius:16px;transform:scale(.85);animation:pulse 1.2s infinite}
+@keyframes pulse{50%{box-shadow:0 0 0 14px rgba(255,90,90,.15)}}
+#timer{text-align:center;font-variant-numeric:tabular-nums;font-weight:800;font-size:1.3rem;color:var(--dim)}
+#memos{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:6px}
+.memo{background:var(--panel);border:1px solid var(--edge);border-radius:12px;padding:9px 12px}
+.memo .top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.memo b{font-size:.92rem}
+.memo small{color:var(--dim);font-size:.72rem}
+.memo .btns{display:flex;gap:8px}
+.memo .btns span{cursor:pointer;font-size:1rem}
+audio{width:100%;height:34px;margin-top:6px}
+#msg{color:var(--dim);font-size:.78rem;text-align:center;min-height:1em}
+</style>
+</head>
+<body>
+<div id="app">
+  <h1>🎙️ Voice Memo</h1>
+  <canvas id="wave"></canvas>
+  <div id="timer">0:00</div>
+  <button id="recBtn" aria-label="record"></button>
+  <div id="memos"></div>
+  <p id="msg">tap the big red thing and talk</p>
+</div>
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+const wave=$("wave"),wx=wave.getContext("2d");
+let db=null,media=null,rec=null,chunks=[],recT0=0,timerIv=null,analyser=null,recording=false;
+function say(t){$('msg').textContent=t;}
+function openDB(){
+  return new Promise((res,rej)=>{
+    const rq=indexedDB.open("voicememo",1);
+    rq.onupgradeneeded=()=>rq.result.createObjectStore("memos",{keyPath:"id"});
+    rq.onsuccess=()=>{db=rq.result;res();};
+    rq.onerror=()=>rej(rq.error);
+  });
+}
+const tx=mode=>db.transaction("memos",mode).objectStore("memos");
+function putMemo(m){return new Promise((res,rej)=>{const r=tx("readwrite").put(m);r.onsuccess=()=>res(m);r.onerror=()=>rej();});}
+function delMemo(id){return new Promise(res=>{tx("readwrite").delete(id).onsuccess=()=>res();});}
+function allMemos(){return new Promise(res=>{
+  const r=tx("readonly").getAll();r.onsuccess=()=>res(r.result.sort((a,b)=>b.id-a.id));});}
+function fmtT(s){return Math.floor(s/60)+":"+String(Math.floor(s%60)).padStart(2,"0");}
+async function paint(){
+  const ms=await allMemos();
+  $('memos').innerHTML=ms.map(m=>`<div class="memo" data-id="${m.id}">
+    <div class="top">
+      <span><b>${m.name}</b><br><small>${new Date(m.id).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})} · ${fmtT(m.dur)} · ${(m.blob.size/1024).toFixed(0)}kb</small></span>
+      <span class="btns">
+        <span data-a="ren" title="rename">✏️</span>
+        <span data-a="dl" title="download">⬇️</span>
+        <span data-a="del" title="delete">🗑</span>
+      </span>
+    </div>
+    <audio controls preload="none"></audio>
+  </div>`).join("")||'<p style="color:var(--dim);font-size:.85rem;text-align:center;margin-top:20px">no memos yet — your future self is listening</p>';
+  document.querySelectorAll('.memo').forEach(el=>{
+    const m=ms.find(x=>x.id===+el.dataset.id);
+    const au=el.querySelector('audio');
+    au.src=URL.createObjectURL(m.blob);
+    el.querySelectorAll('[data-a]').forEach(b=>b.onclick=async()=>{
+      if(b.dataset.a==="del"){await delMemo(m.id);paint();say("memo deleted");}
+      if(b.dataset.a==="ren"){const n=prompt("rename memo:",m.name);
+        if(n){m.name=n;await putMemo(m);paint();}}
+      if(b.dataset.a==="dl"){const a=document.createElement('a');
+        a.href=URL.createObjectURL(m.blob);
+        a.download=m.name.replace(/\W+/g,"-")+(m.blob.type.includes("mp4")?".m4a":".webm");
+        a.click();}
+    });
+  });
+}
+function drawWave(){
+  const w=wave.width=wave.clientWidth*2,h=wave.height=180;
+  wx.fillStyle="#110d0d";wx.fillRect(0,0,w,h);
+  if(analyser&&recording){
+    const data=new Uint8Array(analyser.frequencyBinCount);
+    analyser.getByteTimeDomainData(data);
+    wx.strokeStyle="#ff5a5a";wx.lineWidth=3;
+    wx.beginPath();
+    for(let i=0;i<data.length;i++){
+      const x=i/data.length*w,y=data[i]/255*h;
+      i?wx.lineTo(x,y):wx.moveTo(x,y);
+    }
+    wx.stroke();
+  } else {
+    wx.strokeStyle="#4a3232";wx.lineWidth=2;
+    wx.beginPath();wx.moveTo(0,h/2);wx.lineTo(w,h/2);wx.stroke();
+  }
+  requestAnimationFrame(drawWave);
+}
+async function startRec(){
+  try{
+    media=await navigator.mediaDevices.getUserMedia({audio:true});
+  }catch(e){say("microphone denied — allow mic access to record");return;}
+  const AC=new (window.AudioContext||window.webkitAudioContext)();
+  const src=AC.createMediaStreamSource(media);
+  analyser=AC.createAnalyser();analyser.fftSize=512;
+  src.connect(analyser);
+  const mime=MediaRecorder.isTypeSupported("audio/webm;codecs=opus")?"audio/webm;codecs=opus":
+    MediaRecorder.isTypeSupported("audio/mp4")?"audio/mp4":"";
+  rec=new MediaRecorder(media,mime?{mimeType:mime}:{});
+  chunks=[];
+  rec.ondataavailable=e=>chunks.push(e.data);
+  rec.onstop=async()=>{
+    const blob=new Blob(chunks,{type:rec.mimeType||"audio/webm"});
+    const dur=(Date.now()-recT0)/1000;
+    await putMemo({id:Date.now(),name:"memo "+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}),dur,blob});
+    media.getTracks().forEach(t=>t.stop());
+    paint();say("saved ✓ · "+fmtT(dur));
+  };
+  rec.start();
+  recording=true;recT0=Date.now();
+  $('recBtn').classList.add('rec');
+  timerIv=setInterval(()=>$('timer').textContent=fmtT((Date.now()-recT0)/1000),250);
+  say("recording — tap again to stop");
+}
+function stopRec(){
+  recording=false;
+  $('recBtn').classList.remove('rec');
+  clearInterval(timerIv);$('timer').textContent="0:00";
+  if(rec&&rec.state!=="inactive")rec.stop();
+}
+$('recBtn').onclick=()=>recording?stopRec():startRec();
+function fakeWav(sec){
+  const rate=8000,n=rate*sec,buf=new ArrayBuffer(44+n*2),v=new DataView(buf);
+  const ws=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i));};
+  ws(0,"RIFF");v.setUint32(4,36+n*2,true);ws(8,"WAVEfmt ");
+  v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);
+  v.setUint32(24,rate,true);v.setUint32(28,rate*2,true);
+  v.setUint16(32,2,true);v.setUint16(34,16,true);
+  ws(36,"data");v.setUint32(40,n*2,true);
+  for(let i=0;i<n;i++)v.setInt16(44+i*2,Math.sin(i/rate*440*6.283)*6000,true);
+  return new Blob([buf],{type:"audio/wav"});
+}
+openDB().then(paint).catch(()=>say("storage unavailable in this browser"));
+drawWave();
+window.VM={
+  list:allMemos,
+  async addFake(name,sec){
+    const m={id:Date.now()+Math.floor(Math.random()*99),name:name||"test tone",
+      dur:sec||1,blob:fakeWav(sec||1)};
+    await putMemo(m);await paint();return m.id;
+  },
+  async del(id){await delMemo(id);await paint();},
+  recording:()=>recording,
+  startRec,stopRec,
+  ready:()=>!!db,
+  state(){return{db:!!db,recording};}
+};
+</script>
+</body>
+</html>

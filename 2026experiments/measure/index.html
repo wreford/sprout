@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta name="robots" content="noindex, nofollow">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#131a17">
+<title>Measure</title>
+<style>
+:root{--bg:#131a17;--panel:#1d2a24;--edge:#32493d;--ink:#eafaf1;--dim:#93b3a2;--acc:#54e0a0;--warn:#ffd166}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden;overscroll-behavior:none;touch-action:pan-y}
+body{background:var(--bg);color:var(--ink);font-family:system-ui,sans-serif;display:flex;justify-content:center}
+#app{width:100%;max-width:460px;height:100dvh;display:flex;flex-direction:column;gap:8px;padding:10px;overflow-y:auto}
+h1{font-size:1.1rem;color:var(--acc)}
+#tabs{display:flex;gap:6px}
+#tabs button{flex:1;background:var(--panel);border:1px solid var(--edge);color:var(--dim);
+  border-radius:999px;padding:7px;font-weight:700;font-size:.82rem;cursor:pointer}
+#tabs button.on{color:var(--acc);border-color:var(--acc)}
+#cv{width:100%;border-radius:12px;background:#0b110e;touch-action:none}
+.row{display:flex;gap:6px}
+.row button,.row label{flex:1;background:var(--panel);border:1px solid var(--edge);color:var(--ink);
+  border-radius:10px;padding:9px 6px;font-weight:700;font-size:.82rem;cursor:pointer;text-align:center}
+.row button.on{border-color:var(--acc);color:var(--acc)}
+input[type=file]{display:none}
+#list{display:flex;flex-direction:column;gap:5px}
+.m{display:flex;justify-content:space-between;background:var(--panel);border:1px solid var(--edge);
+  border-radius:9px;padding:7px 10px;font-size:.84rem}
+.m b{color:var(--acc)}
+#msg{color:var(--dim);font-size:.76rem;text-align:center;min-height:1em}
+#rulerView{display:none}
+#ruler{width:100%;border-radius:12px;background:#fdf6e8;touch-action:none}
+.cal{display:flex;gap:8px;align-items:center;font-size:.8rem;color:var(--dim)}
+.cal input{flex:1;accent-color:var(--acc)}
+</style>
+</head>
+<body>
+<div id="app">
+  <h1>📐 Measure</h1>
+  <div id="tabs">
+    <button data-t="photo" class="on">photo measure</button>
+    <button data-t="ruler">screen ruler</button>
+  </div>
+  <div id="photoView">
+    <canvas id="cv"></canvas>
+    <div class="row">
+      <label for="file">📷 photo</label>
+      <button id="demoBtn">🧪 demo</button>
+      <button id="calBtn" class="on">📏 calibrate</button>
+    </div>
+    <input type="file" id="file" accept="image/*" capture="environment">
+    <div class="row">
+      <button id="distBtn">↔ distance</button>
+      <button id="areaBtn">▱ area</button>
+      <button id="clrBtn">🗑 clear</button>
+    </div>
+    <div id="list"></div>
+  </div>
+  <div id="rulerView">
+    <canvas id="ruler"></canvas>
+    <div class="cal">calibrate: hold a bank card (85.6mm) to the top edge
+      <input type="range" id="calSlide" min="2" max="8" step="0.02" value="3.78"></div>
+    <p class="hint" style="color:var(--dim);font-size:.75rem;text-align:center" id="calLbl"></p>
+  </div>
+  <p id="msg">calibrate with something you know, then measure anything in the shot</p>
+</div>
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+const cv=$("cv"),ctx=cv.getContext("2d");
+let img=null,mode="cal",pts=[],scale=null,unit="cm",results=[];
+function say(t){$('msg').textContent=t;}
+function setImg(i){
+  img=i;
+  const f=Math.min(1,880/Math.max(i.width,i.height));
+  cv.width=Math.round(i.width*f);cv.height=Math.round(i.height*f);
+  pts=[];draw();
+}
+function loadDemo(){
+  const c=document.createElement('canvas');c.width=880;c.height=580;
+  const x=c.getContext('2d');
+  x.fillStyle="#d8d2c4";x.fillRect(0,0,880,580);
+  x.fillStyle="#b8b2a0";x.fillRect(0,440,880,140);
+  x.fillStyle="#8a7a5e";x.fillRect(120,90,240,350);
+  x.fillStyle="#6a5a42";x.fillRect(140,110,200,310);
+  x.fillStyle="#e8e2d0";
+  x.fillRect(430,180,340,260);
+  x.strokeStyle="#8a7a5e";x.lineWidth=6;x.strokeRect(430,180,340,260);
+  x.strokeStyle="#8a7a5e";x.beginPath();
+  x.moveTo(600,180);x.lineTo(600,440);x.moveTo(430,310);x.lineTo(770,310);x.stroke();
+  x.fillStyle="#c04030";x.fillRect(120,60,240,18);
+  x.fillStyle="#222";x.font="700 20px system-ui";
+  x.fillText("door: 2.03 m tall (use for calibration)",120,540);
+  const i=new Image();
+  i.onload=()=>{setImg(i);say("demo loaded — the door is 2.03 m tall; calibrate on it");};
+  i.src=c.toDataURL();
+}
+function px(a,b){return Math.hypot(a[0]-b[0],a[1]-b[1]);}
+function fmtLen(v){
+  if(unit==="m")return v>=1?v.toFixed(2)+" m":(v*100).toFixed(1)+" cm";
+  if(unit==="cm")return v>=100?(v/100).toFixed(2)+" m":v.toFixed(1)+" cm";
+  if(unit==="mm")return v.toFixed(0)+" mm";
+  if(unit==="in")return v>=12?Math.floor(v/12)+"' "+(v%12).toFixed(1)+'"':v.toFixed(1)+'"';
+  if(unit==="ft")return v.toFixed(2)+" ft";
+  return v.toFixed(2)+" "+unit;
+}
+function draw(){
+  if(!img){cv.width=420;cv.height=250;
+    ctx.fillStyle="#0b110e";ctx.fillRect(0,0,420,250);
+    ctx.fillStyle="#32493d";ctx.font="600 15px system-ui";ctx.textAlign="center";
+    ctx.fillText("load a photo or the demo",210,130);ctx.textAlign="left";return;}
+  ctx.drawImage(img,0,0,cv.width,cv.height);
+  ctx.lineWidth=3;ctx.font="700 14px system-ui";
+  results.forEach(r=>{
+    ctx.strokeStyle=r.kind==="area"?"#ffd166":"#54e0a0";
+    ctx.fillStyle=ctx.strokeStyle;
+    ctx.beginPath();
+    r.pts.forEach((p,i)=>i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]));
+    if(r.kind==="area")ctx.closePath();
+    ctx.stroke();
+    const c=r.pts.reduce((a,p)=>[a[0]+p[0],a[1]+p[1]],[0,0]).map(v=>v/r.pts.length);
+    ctx.fillText(r.label,c[0]+6,c[1]-6);
+  });
+  ctx.fillStyle=mode==="cal"?"#ff8a5a":"#54e0a0";
+  pts.forEach(p=>{ctx.beginPath();ctx.arc(p[0],p[1],5,0,7);ctx.fill();});
+  if(pts.length>1){
+    ctx.strokeStyle=ctx.fillStyle;ctx.setLineDash([5,5]);
+    ctx.beginPath();pts.forEach((p,i)=>i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]));ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  if(scale){
+    ctx.fillStyle="rgba(0,0,0,.55)";ctx.fillRect(0,0,150,24);
+    ctx.fillStyle="#54e0a0";ctx.font="700 12px system-ui";
+    ctx.fillText("scale: "+(1/scale).toFixed(1)+" px / "+unit,8,16);
+  }
+}
+function tapAt(x,y){
+  if(!img)return;
+  pts.push([x,y]);
+  if(mode==="cal"&&pts.length===2){
+    const known=prompt("real length between the two points? e.g. 2.03 m · 85 cm · 36 in","2.03 m");
+    if(known){
+      const m=known.trim().match(/^([\d.]+)\s*(m|cm|mm|in|ft)?/);
+      if(m){
+        unit=m[2]||"m";
+        scale=(+m[1])/px(pts[0],pts[1]);
+        say("calibrated: photo is now measurable in "+unit+" — pick distance or area");
+      }
+    }
+    pts=[];
+  } else if(mode==="dist"&&pts.length===2){
+    if(!scale){say("calibrate first (two taps on something you know)");pts=[];draw();return;}
+    const d=px(pts[0],pts[1])*scale;
+    results.push({kind:"dist",pts:pts.slice(),label:fmtLen(d),val:d});
+    say("distance: "+fmtLen(d));
+    pts=[];paintList();
+  }
+  draw();
+}
+function closeArea(){
+  if(mode!=="area"||pts.length<3)return;
+  if(!scale){say("calibrate first");pts=[];draw();return;}
+  let a=0;
+  for(let i=0;i<pts.length;i++){
+    const p=pts[i],q=pts[(i+1)%pts.length];
+    a+=p[0]*q[1]-q[0]*p[1];
+  }
+  a=Math.abs(a/2)*scale*scale;
+  const lbl=a.toFixed(2)+" "+unit+"²";
+  results.push({kind:"area",pts:pts.slice(),label:lbl,val:a});
+  say("area: "+lbl);
+  pts=[];paintList();draw();
+}
+function paintList(){
+  $('list').innerHTML=results.map((r,i)=>
+    `<div class="m"><span>${r.kind==="area"?"▱ area":"↔ distance"} ${i+1}</span><b>${r.label}</b></div>`
+  ).join("");
+}
+cv.addEventListener('pointerdown',e=>{
+  const r=cv.getBoundingClientRect();
+  tapAt((e.clientX-r.left)*cv.width/r.width,(e.clientY-r.top)*cv.height/r.height);
+});
+cv.addEventListener('dblclick',closeArea);
+function setMode(m){
+  mode=m;pts=[];
+  $('calBtn').classList.toggle('on',m==="cal");
+  $('distBtn').classList.toggle('on',m==="dist");
+  $('areaBtn').classList.toggle('on',m==="area");
+  say({cal:"tap two points of KNOWN length, then type it",
+    dist:"tap two points to measure",
+    area:"tap corners, double-tap to close the shape"}[m]);
+  draw();
+}
+$('calBtn').onclick=()=>setMode("cal");
+$('distBtn').onclick=()=>setMode("dist");
+$('areaBtn').onclick=()=>setMode("area");
+$('clrBtn').onclick=()=>{results=[];pts=[];paintList();draw();say("cleared");};
+$('demoBtn').onclick=loadDemo;
+$('file').addEventListener('change',e=>{
+  const f=e.target.files[0];if(!f)return;
+  const i=new Image();
+  i.onload=()=>{setImg(i);scale=null;results=[];paintList();
+    say("photo in — calibrate on something with a known size");};
+  i.src=URL.createObjectURL(f);
+});
+const ru=$("ruler"),rx=ru.getContext("2d");
+let pxPerMM=3.78*(devicePixelRatio||1)/(devicePixelRatio||1);
+function drawRuler(){
+  const w=ru.clientWidth||420;
+  ru.width=w*2;ru.height=360;rx.setTransform(2,0,0,2,0,0);
+  rx.fillStyle="#fdf6e8";rx.fillRect(0,0,w,180);
+  rx.strokeStyle="#333";rx.fillStyle="#333";rx.lineWidth=1;
+  for(let mm=0;mm*pxPerMM<w;mm++){
+    const x=mm*pxPerMM;
+    const h=mm%10===0?26:mm%5===0?17:10;
+    rx.beginPath();rx.moveTo(x,0);rx.lineTo(x,h);rx.stroke();
+    if(mm%10===0&&mm>0){rx.font="600 11px system-ui";rx.fillText(mm/10,x-4,40);}
+  }
+  rx.font="700 12px system-ui";rx.fillText("cm",6,58);
+  const ppi=pxPerMM*25.4;
+  for(let s=0;s*ppi/16<w;s++){
+    const x=s*ppi/16;
+    const h=s%16===0?26:s%8===0?18:s%4===0?13:8;
+    rx.beginPath();rx.moveTo(x,180);rx.lineTo(x,180-h);rx.stroke();
+    if(s%16===0&&s>0){rx.fillText(s/16,x-3,180-32);}
+  }
+  rx.fillText("inches",6,180-52);
+  $('calLbl').textContent=(pxPerMM).toFixed(2)+" px/mm — slide until a real card spans exactly 85.6mm";
+}
+$('calSlide').addEventListener('input',e=>{pxPerMM=+e.target.value;drawRuler();});
+document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('#tabs button').forEach(x=>x.classList.toggle('on',x===b));
+  $('photoView').style.display=b.dataset.t==="photo"?"":"none";
+  $('rulerView').style.display=b.dataset.t==="ruler"?"block":"none";
+  if(b.dataset.t==="ruler")drawRuler();
+});
+setMode("cal");draw();
+window.ME={
+  loadDemo,tapAt,closeArea,setMode,
+  calibrate(pxDist,realLen,u){scale=realLen/pxDist;unit=u||"m";draw();},
+  results:()=>results.map(r=>({kind:r.kind,label:r.label,val:r.val})),
+  clear(){results=[];pts=[];paintList();draw();},
+  state(){return{mode,unit,scale,hasImg:!!img,results:results.length,pts:pts.length};}
+};
+</script>
+</body>
+</html>
