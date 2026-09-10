@@ -1,5 +1,12 @@
 const POSTS = [
   {
+    slug: "everything-is-a-constraint",
+    title: "Everything Is a Constraint",
+    date: "2026-09-10",
+    tags: ["constraints", "theory", "scheduling"],
+    summary: "Logic ties, materials, permits, weather, space, dose — one object wearing seven costumes."
+  },
+  {
     slug: "sci-cci",
     title: "Two Numbers Your Project Doesn't Track",
     date: "2026-09-10",
