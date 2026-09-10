@@ -7,6 +7,41 @@ const POSTS = [
     summary: "Logic ties, materials, permits, weather, space, dose — one object wearing seven costumes."
   },
   {
+    slug: "the-calendar-fights-back",
+    title: "The Calendar Fights Back",
+    date: "2026-09-10",
+    tags: ["constraints", "weather", "scheduling"],
+    summary: "Weather windows, crane slots, permit expiries. Half the schedule can't be rescheduled."
+  },
+  {
+    slug: "the-welder-is-on-vacation",
+    title: "The Only Qualified Welder Is on Vacation",
+    date: "2026-09-10",
+    tags: ["resources", "people", "scheduling"],
+    summary: "Resource-loaded schedules track roles. Jobs get stopped by people."
+  },
+  {
+    slug: "write-the-story-once",
+    title: "Write the Story Once",
+    date: "2026-09-10",
+    tags: ["capture", "field", "software"],
+    summary: "The daily log already contains the schedule update, the RFI, and the claim file. We retype it five times."
+  },
+  {
+    slug: "one-spine",
+    title: "One Spine",
+    date: "2026-09-10",
+    tags: ["wbs", "integration", "cost"],
+    summary: "Estimate, schedule, cost, work packages — four copies of the same breakdown, drifting."
+  },
+  {
+    slug: "green-costs-a-name",
+    title: "Green Should Cost a Name",
+    date: "2026-09-10",
+    tags: ["reporting", "trust", "quality"],
+    summary: "Status colors are free, so they lie. Signatures aren't."
+  },
+  {
     slug: "sci-cci",
     title: "Two Numbers Your Project Doesn't Track",
     date: "2026-09-10",
