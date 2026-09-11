@@ -1,66 +1,66 @@
 const POSTS = [
   {
     slug: "requirements-and-data-loss",
-    title: "Requirements and Data Loss",
+    title: "Turnover Is a Photocopy",
     date: "2026-09-11",
     tags: ["theory", "software"],
-    summary: "A requirement is born a database row and turned over as a photograph of one."
+    summary: "Born a database row, handed over as a photograph of one."
   },
   {
     slug: "recurring-work-is-invisible",
-    title: "Recurring Work Is Invisible",
+    title: "The 200-Day Bar",
     date: "2026-09-11",
     tags: ["scheduling", "theory"],
-    summary: "CPM has no verb for every Tuesday, so the scheduler draws one 200-day bar."
+    summary: "CPM has no verb for every Tuesday. Model the rule; derive two hundred facts."
   },
   {
     slug: "smartphones-are-cheap",
     title: "Smartphones Are Cheap",
     date: "2026-09-11",
     tags: ["field", "software"],
-    summary: "A crew-hour costs more than the phone in the foreman's pocket."
+    summary: "A crew-hour costs more than the foreman's phone."
   },
   {
     slug: "sticky-cubed",
     title: "Sticky³",
     date: "2026-09-11",
     tags: ["field", "theory"],
-    summary: "The sticky wall is the best scheduling interface ever shipped. Its flaw is amnesia."
+    summary: "The best scheduling interface ever shipped forgets by Friday."
   },
   {
     slug: "a-thousand-papercuts",
-    title: "A Thousand Papercuts Are Still Data",
+    title: "Papercuts Are Data",
     date: "2026-09-11",
     tags: ["metrics", "field"],
     summary: "Losses below the reporting threshold are invisible by design."
   },
   {
     slug: "people-matter",
-    title: "People Matter",
+    title: "Crews Have Memory",
     date: "2026-09-11",
     tags: ["field", "trust"],
-    summary: "The plan prices labor as a rate. Crews have memory."
+    summary: "Same trade, same rate, different job. Splitting a good crew appears in no schedule."
   },
   {
     slug: "weather-is-a-bitch",
     title: "Weather Is a Bitch",
     date: "2026-09-11",
     tags: ["constraints", "scheduling"],
-    summary: "The only risk with a free, public, daily probabilistic forecast — and we plan against averages."
+    summary: "The one risk whose distribution is published daily, free. We plan on averages."
   },
   {
     slug: "unknown-unknowns",
     title: "Unknown Unknowns",
     date: "2026-09-11",
     tags: ["metrics", "theory"],
-    summary: "You can't list them. You can count their arrival rate."
+    summary: "You can't list them. You can count them arriving."
   },
   {
     slug: "where-is-my-material",
     title: "Where the Hell Is My Material?",
     date: "2026-09-11",
     tags: ["field", "cost"],
-    summary: "Six systems know the spool's status. The crew's question takes three phone calls."
+    summary: "Six systems know the spool. The crew's question takes three calls."
   },
   {
     slug: "roadmaps-and-visio",
@@ -74,21 +74,21 @@ const POSTS = [
     title: "An Image Is Worth 1,000. A Video Is Worth…",
     date: "2026-09-11",
     tags: ["field", "trust"],
-    summary: "Every dispute is an argument about what the workface looked like on a date."
+    summary: "Every dispute is about what the workface looked like on a date."
   },
   {
     slug: "signatures-should-be-easy",
     title: "Signatures Should Be Easy",
     date: "2026-09-11",
     tags: ["trust", "software"],
-    summary: "Expensive in logistics, cheap in meaning. Invert it."
+    summary: "Expensive to give, cheap in meaning. Invert it."
   },
   {
     slug: "delegation-made-easy",
     title: "Delegation Made Easy",
     date: "2026-09-11",
     tags: ["trust", "field"],
-    summary: "Authority lives in out-of-office replies. Make it an object with an expiry."
+    summary: "Authority lives in out-of-office replies."
   },
   {
     slug: "programmable-procedures",
@@ -102,14 +102,14 @@ const POSTS = [
     title: "The Morning Question",
     date: "2026-09-11",
     tags: ["constraints", "field"],
-    summary: "Which constraints, killed today, release the most work? Nothing on site ranks that."
+    summary: "Which constraints, killed today, release the most work?"
   },
   {
     slug: "the-critical-path-is-a-coin-flip",
     title: "The Critical Path Is a Coin Flip",
     date: "2026-09-11",
     tags: ["scheduling", "metrics"],
-    summary: "The red line moves every update. The criticality percentage doesn't."
+    summary: "The red line moves every update. The percentage doesn't."
   },
   {
     slug: "assumed-true-until-checked",
@@ -123,14 +123,14 @@ const POSTS = [
     title: "Baselines Rot",
     date: "2026-09-11",
     tags: ["scheduling", "metrics"],
-    summary: "A baseline is one saved forecast with a contract stapled to it. Keep the series, score it all."
+    summary: "A baseline is one saved forecast with a contract stapled to it."
   },
   {
     slug: "nobody-reads-the-schedule",
     title: "Nobody Reads the Schedule",
     date: "2026-09-11",
     tags: ["scheduling", "field"],
-    summary: "The whiteboard silently becomes the real plan, and its decisions never flow back."
+    summary: "The whiteboard becomes the real plan and never writes back."
   },
   {
     slug: "everything-is-a-constraint",
@@ -144,35 +144,35 @@ const POSTS = [
     title: "The Calendar Fights Back",
     date: "2026-09-10",
     tags: ["constraints", "scheduling"],
-    summary: "Weather windows, crane slots, permit expiries. Windows break float math."
+    summary: "Forty days of float before a forty-one-day window is one day of float."
   },
   {
     slug: "the-welder-is-on-vacation",
-    title: "The Only Qualified Welder Is on Vacation",
+    title: "The Welder Is at a Wedding",
     date: "2026-09-10",
     tags: ["field", "scheduling"],
-    summary: "Aggregate histograms look healthy while one named person stops the job."
+    summary: "Aggregates hide singletons; singletons stop jobs."
   },
   {
     slug: "write-the-story-once",
     title: "Write the Story Once",
     date: "2026-09-10",
     tags: ["field", "software"],
-    summary: "The daily log feeds five systems. The fix is structure at capture — ACE — not AI reading diaries."
+    summary: "Structure at capture — ACE — not software reading diaries."
   },
   {
     slug: "one-spine",
     title: "One Spine",
     date: "2026-09-10",
     tags: ["cost", "theory"],
-    summary: "Cost, field and schedule each need a different rollup. Rollups are views; the mistake is copying."
+    summary: "Rollups are views. The mistake is materializing views into owned copies."
   },
   {
     slug: "green-costs-a-name",
     title: "Green Should Cost a Name",
     date: "2026-09-10",
     tags: ["trust", "field"],
-    summary: "Status colors are free, so they drift optimistic. Field quality solved this decades ago."
+    summary: "Green is often the color of nobody wanting the argument."
   },
   {
     slug: "sci-cci",
