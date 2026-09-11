@@ -1,5 +1,96 @@
 const POSTS = [
   {
+    slug: "recurring-work-is-invisible",
+    title: "Recurring Work Is Invisible",
+    date: "2026-09-11",
+    tags: ["scheduling", "theory"],
+    summary: "CPM has no verb for every Tuesday, so the scheduler draws one 200-day bar."
+  },
+  {
+    slug: "smartphones-are-cheap",
+    title: "Smartphones Are Cheap",
+    date: "2026-09-11",
+    tags: ["field", "software"],
+    summary: "A crew-hour costs more than the phone in the foreman's pocket."
+  },
+  {
+    slug: "sticky-cubed",
+    title: "Sticky³",
+    date: "2026-09-11",
+    tags: ["field", "theory"],
+    summary: "The sticky wall is the best scheduling interface ever shipped. Its flaw is amnesia."
+  },
+  {
+    slug: "a-thousand-papercuts",
+    title: "A Thousand Papercuts Are Still Data",
+    date: "2026-09-11",
+    tags: ["metrics", "field"],
+    summary: "Losses below the reporting threshold are invisible by design."
+  },
+  {
+    slug: "people-matter",
+    title: "People Matter",
+    date: "2026-09-11",
+    tags: ["field", "trust"],
+    summary: "The plan prices labor as a rate. Crews have memory."
+  },
+  {
+    slug: "weather-is-a-bitch",
+    title: "Weather Is a Bitch",
+    date: "2026-09-11",
+    tags: ["constraints", "scheduling"],
+    summary: "The only risk with a free, public, daily probabilistic forecast — and we plan against averages."
+  },
+  {
+    slug: "unknown-unknowns",
+    title: "Unknown Unknowns",
+    date: "2026-09-11",
+    tags: ["metrics", "theory"],
+    summary: "You can't list them. You can count their arrival rate."
+  },
+  {
+    slug: "where-is-my-material",
+    title: "Where the Hell Is My Material?",
+    date: "2026-09-11",
+    tags: ["field", "cost"],
+    summary: "Six systems know the spool's status. The crew's question takes three phone calls."
+  },
+  {
+    slug: "roadmaps-and-visio",
+    title: "Roadmaps and Visio",
+    date: "2026-09-11",
+    tags: ["theory", "trust"],
+    summary: "A picture that can't be queried can't be wrong. That's why it's popular."
+  },
+  {
+    slug: "a-video-is-worth",
+    title: "An Image Is Worth 1,000. A Video Is Worth…",
+    date: "2026-09-11",
+    tags: ["field", "trust"],
+    summary: "Every dispute is an argument about what the workface looked like on a date."
+  },
+  {
+    slug: "signatures-should-be-easy",
+    title: "Signatures Should Be Easy",
+    date: "2026-09-11",
+    tags: ["trust", "software"],
+    summary: "Expensive in logistics, cheap in meaning. Invert it."
+  },
+  {
+    slug: "delegation-made-easy",
+    title: "Delegation Made Easy",
+    date: "2026-09-11",
+    tags: ["trust", "field"],
+    summary: "Authority lives in out-of-office replies. Make it an object with an expiry."
+  },
+  {
+    slug: "programmable-procedures",
+    title: "Programmable Procedures",
+    date: "2026-09-11",
+    tags: ["software", "theory"],
+    summary: "A procedure in a PDF is advice. Crews run programs."
+  },
+  {
     slug: "the-morning-question",
     title: "The Morning Question",
     date: "2026-09-11",
