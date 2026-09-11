@@ -21,11 +21,11 @@ const POSTS = [
     summary: "A crew-hour costs more than the foreman's phone."
   },
   {
-    slug: "sticky-cubed",
-    title: "Sticky³",
+    slug: "stky-cubed",
+    title: "STKY³",
     date: "2026-09-11",
-    tags: ["field", "theory"],
-    summary: "The best scheduling interface ever shipped forgets by Friday."
+    tags: ["theory", "trust"],
+    summary: "Probability × severity × reversibility. In the corner, probability stops mattering."
   },
   {
     slug: "a-thousand-papercuts",
