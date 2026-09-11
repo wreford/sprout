@@ -1,5 +1,12 @@
 const POSTS = [
   {
+    slug: "requirements-and-data-loss",
+    title: "Requirements and Data Loss",
+    date: "2026-09-11",
+    tags: ["theory", "software"],
+    summary: "A requirement is born a database row and turned over as a photograph of one."
+  },
+  {
     slug: "recurring-work-is-invisible",
     title: "Recurring Work Is Invisible",
     date: "2026-09-11",
