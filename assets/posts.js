@@ -4,35 +4,35 @@ const POSTS = [
     title: "The Morning Question",
     date: "2026-09-11",
     tags: ["constraints", "field"],
-    summary: "Which constraints, killed today, release the most work? Everything else is ceremony."
+    summary: "Which constraints, killed today, release the most work? Nothing on site ranks that."
   },
   {
     slug: "the-critical-path-is-a-coin-flip",
     title: "The Critical Path Is a Coin Flip",
     date: "2026-09-11",
     tags: ["scheduling", "metrics"],
-    summary: "Run the schedule a thousand times and a different path goes critical in a lot of them."
+    summary: "The red line moves every update. The criticality percentage doesn't."
   },
   {
     slug: "assumed-true-until-checked",
     title: "Assumed True Until Checked",
     date: "2026-09-11",
     tags: ["constraints", "trust"],
-    summary: "An assumption is a constraint nobody is watching."
+    summary: "An assumption is a constraint someone chose not to verify yet."
   },
   {
     slug: "baselines-rot",
     title: "Baselines Rot",
     date: "2026-09-11",
     tags: ["scheduling", "metrics"],
-    summary: "A baseline is a photo of what we believed at sanction. We report against it for years."
+    summary: "A baseline is one saved forecast with a contract stapled to it. Keep the series, score it all."
   },
   {
     slug: "nobody-reads-the-schedule",
     title: "Nobody Reads the Schedule",
     date: "2026-09-11",
     tags: ["scheduling", "field"],
-    summary: "Five thousand activities, updated monthly, read by nobody who swings a tool."
+    summary: "The whiteboard silently becomes the real plan, and its decisions never flow back."
   },
   {
     slug: "everything-is-a-constraint",
@@ -46,35 +46,35 @@ const POSTS = [
     title: "The Calendar Fights Back",
     date: "2026-09-10",
     tags: ["constraints", "scheduling"],
-    summary: "Weather windows, crane slots, permit expiries. Half the schedule can't be rescheduled."
+    summary: "Weather windows, crane slots, permit expiries. Windows break float math."
   },
   {
     slug: "the-welder-is-on-vacation",
     title: "The Only Qualified Welder Is on Vacation",
     date: "2026-09-10",
     tags: ["field", "scheduling"],
-    summary: "Resource-loaded schedules track roles. Jobs get stopped by people."
+    summary: "Aggregate histograms look healthy while one named person stops the job."
   },
   {
     slug: "write-the-story-once",
     title: "Write the Story Once",
     date: "2026-09-10",
     tags: ["field", "software"],
-    summary: "The daily log already contains the schedule update, the RFI, and the claim file. We retype it five times."
+    summary: "The daily log feeds five systems. The fix is structure at capture — ACE — not AI reading diaries."
   },
   {
     slug: "one-spine",
     title: "One Spine",
     date: "2026-09-10",
     tags: ["cost", "theory"],
-    summary: "Estimate, schedule, cost, work packages — four copies of the same breakdown, drifting."
+    summary: "Cost, field and schedule each need a different rollup. Rollups are views; the mistake is copying."
   },
   {
     slug: "green-costs-a-name",
     title: "Green Should Cost a Name",
     date: "2026-09-10",
     tags: ["trust", "field"],
-    summary: "Status colors are free, so they lie. Signatures aren't."
+    summary: "Status colors are free, so they drift optimistic. Field quality solved this decades ago."
   },
   {
     slug: "sci-cci",
