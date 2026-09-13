@@ -18,7 +18,7 @@ const POSTS = [
     title: "Smartphones Are Cheap",
     date: "2026-09-11",
     tags: ["field", "software"],
-    summary: "A crew-hour costs more than the foreman's phone."
+    summary: "The barrier was never policy — personal phones are banned, company devices walk through every gate."
   },
   {
     slug: "stky-cubed",
