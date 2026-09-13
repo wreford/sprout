@@ -1,10 +1,10 @@
 const POSTS = [
   {
     slug: "requirements-and-data-loss",
-    title: "Turnover Is a Photocopy",
+    title: "The Two-Hour Wall",
     date: "2026-09-11",
-    tags: ["theory", "software"],
-    summary: "Born a database row, handed over as a photograph of one."
+    tags: ["constraints", "theory"],
+    summary: "One sentence in the fire code, followed for sixty years."
   },
   {
     slug: "recurring-work-is-invisible",
