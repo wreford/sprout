@@ -1,5 +1,12 @@
 const POSTS = [
   {
+    slug: "timesheet-extortion",
+    title: "Timesheet Extortion",
+    date: "2026-09-13",
+    tags: ["field", "software"],
+    summary: "The one form nobody skips. Attach the questions to it."
+  },
+  {
     slug: "requirements-and-data-loss",
     title: "The Two-Hour Wall",
     date: "2026-09-11",
