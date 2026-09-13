@@ -32,7 +32,7 @@ const POSTS = [
     title: "Papercuts Are Data",
     date: "2026-09-11",
     tags: ["field", "trust"],
-    summary: "STKY gets the attention. Papercuts still shouldn't happen twice for the same reason."
+    summary: "STKY gets the attention. Papercuts will happen twice for the same reason."
   },
   {
     slug: "people-matter",
