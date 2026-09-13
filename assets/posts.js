@@ -10,8 +10,8 @@ const POSTS = [
     slug: "recurring-work-is-invisible",
     title: "The 200-Day Bar",
     date: "2026-09-11",
-    tags: ["scheduling", "theory"],
-    summary: "CPM has no verb for every Tuesday. Model the rule; derive two hundred facts."
+    tags: ["scheduling", "constraints"],
+    summary: "Level of effort can never be late. This Tuesday's inspection can."
   },
   {
     slug: "smartphones-are-cheap",
