@@ -31,8 +31,8 @@ const POSTS = [
     slug: "a-thousand-papercuts",
     title: "Papercuts Are Data",
     date: "2026-09-11",
-    tags: ["metrics", "field"],
-    summary: "Losses below the reporting threshold are invisible by design."
+    tags: ["field", "trust"],
+    summary: "STKY gets the attention. Papercuts still shouldn't happen twice for the same reason."
   },
   {
     slug: "people-matter",
