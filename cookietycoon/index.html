@@ -77,6 +77,55 @@ function noiseSfx(dur,f0,f1,vol){
   v.gain.value=vol;src.connect(ff).connect(v).connect(MB);src.start();
 }
 function sizzle(){noiseSfx(0.7,2400,900,0.05);}
+function midi(n){return 440*Math.pow(2,(n-69)/12);}
+const SONGS=[
+  {bpm:126,vol:1,
+   bass:[48,55,57,53],
+   mel:[72,null,76,79,null,76,84,79,
+        74,null,71,74,79,null,74,71,
+        69,null,72,76,null,72,79,76,
+        77,74,null,71,67,null,71,74]},
+  {bpm:86,vol:0.85,
+   bass:[45,45,41,43],
+   mel:[69,null,null,72,null,null,71,null,
+        64,null,null,63,null,null,64,null,
+        69,null,null,76,null,null,74,null,
+        71,null,63,null,64,null,null,null]},
+];
+let mTimer=null,mStep=0,mNext=0;
+function schedNote(fr,t0,d,type,vol,det){
+  const o=AC.createOscillator(),v=AC.createGain();
+  o.type=type;o.frequency.value=fr;if(det)o.detune.value=det;
+  v.gain.setValueAtTime(0.0001,t0);
+  v.gain.linearRampToValueAtTime(vol,t0+0.025);
+  v.gain.exponentialRampToValueAtTime(0.0001,t0+d);
+  o.connect(v).connect(MB);o.start(t0);o.stop(t0+d+0.05);
+}
+function musicTick(){
+  if(!AC||!MB)return;
+  if(muted){mNext=AC.currentTime+0.12;return;}
+  const S=SONGS[(state!=="menu"&&day>=3)?1:0];
+  const stepDur=60/S.bpm/2;
+  if(mNext<AC.currentTime)mNext=AC.currentTime+0.05;
+  while(mNext<AC.currentTime+0.4){
+    const st=mStep%32;
+    if(st%8===0){
+      const b=S.bass[(st/8)|0];
+      schedNote(midi(b),mNext,stepDur*6.5,"triangle",0.03*S.vol);
+    }
+    const m=S.mel[st];
+    if(m!==null&&m!==undefined){
+      schedNote(midi(m),mNext,stepDur*1.7,"sine",0.02*S.vol);
+      if(S===SONGS[1])schedNote(midi(m),mNext,stepDur*1.7,"sine",0.012,9);
+    }
+    mNext+=stepDur;mStep++;
+  }
+}
+function ensureMusic(){
+  if(mTimer||!audio())return;
+  mNext=AC.currentTime+0.15;
+  mTimer=setInterval(musicTick,110);
+}
 function pourSfx(){noiseSfx(0.28,500,1400,0.04);}
 function tickSfx(){beep(1320+Math.random()*300,0.05,"sine",0.03);}
 function clickSfx(){beep(1600,0.04,"sine",0.02);}
@@ -451,7 +500,7 @@ function layout(){
 
 addEventListener("pointerdown",e=>{
   const r=cv.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;
-  audio();
+  audio();ensureMusic();
   if(x>W-104&&y<SAT+52){muted=!muted;if(muted)setDrone(false);return;}
   if(state==="menu"){day=1;money=0;tips=0;excel=0;upgrades={fryer:0,oven:0,keg:0,ladle:0,charm:0,register:0};startDay();return;}
   if(state==="over"){state="menu";return;}
@@ -704,9 +753,13 @@ function drawCustomers(t,dt){
     drawSprite(key,c.x,cyTop+wob,p,alpha);
     const bx=c.sx,by=cyTop-24;
     const ow=c.order.length*22+14;
+    g.save();
+    g.shadowColor="rgba(10,5,20,0.5)";g.shadowBlur=8;g.shadowOffsetY=3;
     g.fillStyle="rgba(240,236,224,0.94)";
+    g.beginPath();g.roundRect(bx-ow/2,by-26,ow,30,7);g.fill();
+    g.restore();
     g.strokeStyle="#241a38";g.lineWidth=2;
-    g.beginPath();g.roundRect(bx-ow/2,by-26,ow,30,7);g.fill();g.stroke();
+    g.beginPath();g.roundRect(bx-ow/2,by-26,ow,30,7);g.stroke();
     g.beginPath();g.moveTo(bx-5,by+4);g.lineTo(bx,by+12);g.lineTo(bx+5,by+4);g.closePath();
     g.fillStyle="rgba(240,236,224,0.94)";g.fill();
     const avail=tray.slice();
@@ -798,8 +851,11 @@ function drawUI(t){
     lines.forEach((l,i)=>g.fillText(l,W/2,my+2+i*16));
     g.globalAlpha=1;my+=bh2+6;
   }
-  g.font="13px 'Courier New',monospace";
-  for(const q of pops){g.globalAlpha=Math.max(0,q.t);g.fillStyle="#8fe08a";
+  g.font="bold 13px 'Courier New',monospace";
+  for(const q of pops){g.globalAlpha=Math.max(0,q.t);
+    g.fillStyle="rgba(10,5,20,0.8)";
+    g.fillText(q.txt,q.x+1.5,q.y-(1-q.t)*30+1.5);
+    g.fillStyle="#8fe08a";
     g.fillText(q.txt,q.x,q.y-(1-q.t)*30);g.globalAlpha=1;}
 }
 
@@ -1017,15 +1073,73 @@ function frame(ts){
     lighting(t);
   }
   if(state==="menu"){
-    const c2=card("COOKIE TYCOON",
-      ["Dorchester, Ontario. Population: enough.","Someone ran this stand for thirty years.",
-       "Nobody remembers a face. Only a ladle.","The paperwork is signed — R.","","~The stand is Keira's now.","",
-       "POUTINE $9 · COOKIES $5","COFFEE $6 · WINGS $8","~(wings are boneless. nuggets, for adults.)","",
-       "tap stations to cook","tap a customer to serve","",
-       best?("~best haul: $"+best):"~week one starts normal."],
-      "TAP TO OPEN THE STAND");
-    drawSprite("keira",c2.bx+26,c2.by+38,3);
-    drawSprite("cookie",c2.bx+c2.bw-52,c2.by+34,2.6);
+    g.fillStyle="rgba(10,6,18,0.72)";g.fillRect(0,0,W,H);
+    const bw=Math.min(360,W-28),bx=(W-bw)/2;
+    const bh2=Math.min(560,H*0.8),by=(H-bh2)/2+SAT*0.4;
+    g.save();
+    g.shadowColor="rgba(0,0,0,0.65)";g.shadowBlur=36;g.shadowOffsetY=12;
+    g.fillStyle="#241a38";
+    g.beginPath();g.roundRect(bx,by,bw,bh2,16);g.fill();
+    g.restore();
+    g.strokeStyle="#e8c46a";g.lineWidth=2.5;
+    g.beginPath();g.roundRect(bx,by,bw,bh2,16);g.stroke();
+    const rsM=mulberry(99);
+    for(let i=0;i<7;i++){
+      const sx3=bx+20+rsM()*(bw-40),sy3=by+20+rsM()*(bh2-40);
+      g.globalAlpha=0.25+0.55*Math.abs(Math.sin(t*1.4+i*1.9));
+      g.fillStyle="#e8c46a";
+      g.save();g.translate(sx3,sy3);
+      for(let a2=0;a2<4;a2++){g.rotate(1.5708);g.fillRect(-0.8,-4,1.6,4);}
+      g.restore();g.globalAlpha=1;
+    }
+    const pulse=1+Math.sin(t*2)*0.02;
+    g.save();g.translate(W/2,by+52);g.scale(pulse,pulse);
+    g.shadowColor="rgba(232,196,106,0.55)";g.shadowBlur=18;
+    g.fillStyle="#e8c46a";g.font="bold 25px 'Courier New',monospace";g.textAlign="center";
+    g.fillText("COOKIE TYCOON",0,0);
+    g.restore();
+    drawSprite("cookie",bx+20,by+34,2.4);
+    drawSprite("cookie",bx+bw-44,by+34,2.4);
+    g.textAlign="center";g.font="11.5px 'Courier New',monospace";
+    const story=["Dorchester, Ontario. Population: enough.",
+      "Someone ran this stand for thirty years.",
+      "Nobody remembers a face. Only a ladle.",
+      "The paperwork is signed — R.","",
+      "The stand is Keira's now."];
+    story.forEach((l,i)=>{
+      g.fillStyle=i===5?"#f0ecdc":"#b8a8d8";
+      g.fillText(l,W/2,by+90+i*19);});
+    const mpY=by+90+6*19+6,mpH=80;
+    g.save();
+    g.shadowColor="rgba(0,0,0,0.5)";g.shadowBlur=10;g.shadowOffsetY=4;
+    g.fillStyle="rgba(14,9,26,0.85)";
+    g.beginPath();g.roundRect(bx+20,mpY,bw-40,mpH,10);g.fill();
+    g.restore();
+    g.strokeStyle="rgba(232,196,106,0.55)";g.lineWidth=1.5;
+    g.beginPath();g.roundRect(bx+20,mpY,bw-40,mpH,10);g.stroke();
+    g.fillStyle="#f0ecdc";g.font="11px 'Courier New',monospace";
+    g.fillText("POUTINE $9 · COOKIES $7 · TARTS $6",W/2,mpY+22);
+    g.fillText("COFFEE $8 · WINGS $8 · SLUSH $5",W/2,mpY+42);
+    g.fillStyle="#8a7aa8";g.font="9px 'Courier New',monospace";
+    g.fillText("(wings are boneless. nuggets, for adults.)",W/2,mpY+62);
+    g.fillStyle="#b8a8d8";g.font="10.5px 'Courier New',monospace";
+    g.fillText("tap stations to cook · tap customers to serve",W/2,mpY+mpH+22);
+    g.fillStyle=best?"#e8c46a":"#8a7aa8";
+    g.fillText(best?("best haul: $"+best):"week one starts normal.",W/2,mpY+mpH+40);
+    const ky=by+bh2-124+Math.sin(t*2.6)*2;
+    g.fillStyle="rgba(0,0,0,0.35)";
+    g.beginPath();g.ellipse(W/2,by+bh2-70,30,7,0,0,6.29);g.fill();
+    drawSprite("keira",W/2-24,ky,3);
+    const btnY=by+bh2-56,btnGlow=0.4+Math.abs(Math.sin(t*2.6))*0.45;
+    g.save();
+    g.shadowColor=`rgba(143,224,138,${btnGlow})`;g.shadowBlur=18;
+    g.fillStyle="#284a30";
+    g.beginPath();g.roundRect(bx+28,btnY,bw-56,40,999);g.fill();
+    g.restore();
+    g.strokeStyle="#8fe08a";g.lineWidth=1.5;
+    g.beginPath();g.roundRect(bx+28,btnY,bw-56,40,999);g.stroke();
+    g.fillStyle="#8fe08a";g.font="bold 13px 'Courier New',monospace";
+    g.fillText("TAP TO OPEN THE STAND",W/2,btnY+25);
   }
   if(state==="shop"){
     g.fillStyle="rgba(16,10,26,0.9)";g.fillRect(0,0,W,H);
