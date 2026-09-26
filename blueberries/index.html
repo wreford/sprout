@@ -53,6 +53,46 @@ function popSfx(combo){beep(420+Math.min(combo,12)*55,0.14,"sine",0.14,760+combo
 function goldSfx(){beep(880,0.09,"triangle",0.14,1320);setTimeout(()=>beep(1320,0.12,"triangle",0.12,1760),70);}
 function missSfx(){beep(300,0.3,"sawtooth",0.06,120);}
 function overSfx(){beep(340,0.4,"triangle",0.1,160);setTimeout(()=>beep(220,0.6,"triangle",0.1,110),240);}
+function midi(n){return 440*Math.pow(2,(n-69)/12);}
+const TUNE={bpm:138,bass:[48,53,57,55],
+  mel:[72,76,79,76,84,79,76,79,
+       74,77,81,77,86,81,77,74,
+       76,79,81,79,88,84,79,76,
+       74,79,77,74,72,null,67,71]};
+let mTimer=null,mStep=0,mNext=0;
+function schedNote(fr,t0,d,type,vol){
+  const o=AC.createOscillator(),v=AC.createGain();
+  o.type=type;o.frequency.value=fr;
+  v.gain.setValueAtTime(0.0001,t0);
+  v.gain.linearRampToValueAtTime(vol,t0+0.02);
+  v.gain.exponentialRampToValueAtTime(0.0001,t0+d);
+  o.connect(v).connect(AC.destination);o.start(t0);o.stop(t0+d+0.05);
+}
+function musicTick(){
+  if(!AC)return;
+  if(muted||state!=="play"){mNext=AC.currentTime+0.12;return;}
+  const stepDur=60/TUNE.bpm/2;
+  if(mNext<AC.currentTime)mNext=AC.currentTime+0.05;
+  while(mNext<AC.currentTime+0.4){
+    const st=mStep%32;
+    if(st%8===0)schedNote(midi(TUNE.bass[(st/8)|0]),mNext,stepDur*6,"triangle",0.028);
+    const m=TUNE.mel[st];
+    if(m!==null&&(st%2===0||frenzyT>0))schedNote(midi(m),mNext,stepDur*1.6,"sine",0.018);
+    mNext+=stepDur;mStep++;
+  }
+}
+function ensureMusic(){
+  if(mTimer)return;
+  try{AC=AC||new (window.AudioContext||window.webkitAudioContext)();
+    if(AC.state==="suspended")AC.resume();}catch(e){return;}
+  if(!AC)return;
+  mNext=AC.currentTime+0.15;
+  mTimer=setInterval(musicTick,110);
+}
+document.addEventListener("visibilitychange",()=>{
+  if(!AC)return;
+  if(document.hidden)AC.suspend();else if(!muted)AC.resume();
+});
 
 const LINES={
   start:["Kenzie. The berries. They are FALLING.",
@@ -199,6 +239,13 @@ function doCatch(b){
   if(nw>wave){wave=nw;banner={txt:"wave "+(wave+1),t:2};
     if(Math.random()<0.7)say("wave","normal");}
 }
+function confetti(){
+  for(let i=0;i<60;i++){
+    const a=Math.random()*6.28,sp=80+Math.random()*260;
+    parts.push({x:W/2,y:H*0.3,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-120,
+      t:1+Math.random()*0.8,col:`hsl(${Math.random()*360} 85% 62%)`,r:2.5+Math.random()*3,gr:1});
+  }
+}
 function doMiss(b){
   if(b.kind==="acorn"){
     sparkle(b.x,groundY(),"#8a6238",4);return;
@@ -211,6 +258,7 @@ function doMiss(b){
   hearts--;combo=0;shakeT=0.3;missSfx();
   if(hearts<=0){
     state="over";overSfx();say("over","shock");
+    if(score>best&&best>0)confetti();
     if(score>best){best=score;try{localStorage.setItem("bb-best",""+best);}catch(e){}}
   }else if(b.kind==="gold")say("goldMiss","shock");
   else say(hearts===1?"lastHeart":"miss","shock");
@@ -219,6 +267,7 @@ function doMiss(b){
 function px(e){const r=cv.getBoundingClientRect();
   const t=e.touches?e.touches[0]:e;return t.clientX-r.left;}
 addEventListener("pointerdown",e=>{
+  ensureMusic();
   if(state==="menu"||state==="over"){start();return;}
   const x=px(e),y=e.clientY;
   if(x>W-56&&y<56){muted=!muted;return;}
