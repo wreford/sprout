@@ -44,23 +44,30 @@ setTimeout(resize,60);
 addEventListener("gesturestart",e=>e.preventDefault());
 function PS(){return Math.max(3,Math.floor(Math.min(W/130,H/240)));}
 
-let AC=null,muted=false,droneOsc=null,droneGain=null;
+let AC=null,muted=false,droneOsc=null,droneGain=null,MB=null;
 function audio(){try{AC=AC||new (window.AudioContext||window.webkitAudioContext)();
-  if(AC.state==="suspended")AC.resume();return AC;}catch(e){return null;}}
+  if(AC.state==="suspended")AC.resume();
+  if(AC&&!MB){
+    const mg=AC.createGain();mg.gain.value=0.55;
+    const lp=AC.createBiquadFilter();lp.type="lowpass";lp.frequency.value=3600;
+    mg.connect(lp).connect(AC.destination);MB=mg;
+  }
+  return AC;}catch(e){return null;}}
 function beep(f,d,type,vol,slide){
   if(muted)return;const a=audio();if(!a)return;
   const o=a.createOscillator(),v=a.createGain(),t=a.currentTime;
-  o.type=type||"square";o.frequency.setValueAtTime(f,t);
+  o.type=type||"sine";o.frequency.setValueAtTime(f,t);
   if(slide)o.frequency.exponentialRampToValueAtTime(slide,t+d);
-  v.gain.setValueAtTime(vol||0.07,t);
+  v.gain.setValueAtTime(0.0001,t);
+  v.gain.linearRampToValueAtTime(vol||0.045,t+0.018);
   v.gain.exponentialRampToValueAtTime(0.0001,t+d);
-  o.connect(v).connect(a.destination);o.start(t);o.stop(t+d);
+  o.connect(v).connect(MB);o.start(t);o.stop(t+d+0.02);
 }
-function kaching(){beep(880,0.08,"square",0.08);setTimeout(()=>beep(1318,0.14,"square",0.08),70);}
-function clickSfx(){beep(2400,0.03,"square",0.05);}
+function kaching(){beep(784,0.12,"sine",0.05);setTimeout(()=>beep(1175,0.18,"sine",0.045),80);}
+function clickSfx(){beep(1600,0.04,"sine",0.02);}
 function jingle(minor){
   const notes=minor?[392,466,587,466]:[523,659,784,1046];
-  notes.forEach((f2,i)=>setTimeout(()=>beep(f2,0.16,"triangle",0.09),i*120));
+  notes.forEach((f2,i)=>setTimeout(()=>beep(f2,0.22,"sine",0.04),i*150));
 }
 function rumble(){
   if(muted)return;const a=audio();if(!a)return;
@@ -68,25 +75,26 @@ function rumble(){
   for(let i=0;i<len;i++)ch[i]=(Math.random()*2-1)*(1-i/len);
   const src=a.createBufferSource(),f2=a.createBiquadFilter(),v=a.createGain();
   src.buffer=buf;f2.type="lowpass";f2.frequency.value=110;
-  v.gain.value=0.22;src.connect(f2).connect(v).connect(a.destination);src.start();
+  v.gain.value=0.1;f2.frequency.value=95;src.connect(f2).connect(v).connect(MB);src.start();
 }
-function buzz(){beep(140,0.2,"sawtooth",0.06,90);}
-function readyDing(){beep(1046,0.1,"triangle",0.09,1568);}
+function buzz(){beep(150,0.22,"sine",0.035,95);}
+function readyDing(){beep(880,0.14,"sine",0.04,1175);}
 function whisper(){
   if(muted)return;const a=audio();if(!a)return;
   const len=a.sampleRate*0.7,buf=a.createBuffer(1,len,a.sampleRate),ch=buf.getChannelData(0);
   for(let i=0;i<len;i++)ch[i]=(Math.random()*2-1)*(1-i/len)*0.4;
   const src=a.createBufferSource(),f=a.createBiquadFilter(),v=a.createGain();
   src.buffer=buf;f.type="bandpass";f.frequency.value=900+Math.random()*700;f.Q.value=6;
-  v.gain.value=0.05;src.connect(f).connect(v).connect(a.destination);src.start();
+  v.gain.value=0.02;src.connect(f).connect(v).connect(MB);src.start();
 }
 function setDrone(on,freq){
   const a=audio();if(!a)return;
   if(on&&!droneOsc&&!muted){
     droneOsc=a.createOscillator();droneGain=a.createGain();
-    droneOsc.type="sawtooth";droneOsc.frequency.value=freq||42;
-    droneGain.gain.value=0.028;
-    droneOsc.connect(droneGain).connect(a.destination);droneOsc.start();
+    droneOsc.type="triangle";droneOsc.frequency.value=freq||48;
+    droneGain.gain.value=0.0001;
+    droneGain.gain.linearRampToValueAtTime(0.012,a.currentTime+1.5);
+    droneOsc.connect(droneGain).connect(MB);droneOsc.start();
   }else if(!on&&droneOsc){try{droneOsc.stop();}catch(e){}droneOsc=null;droneGain=null;}
   if(droneOsc&&freq)droneOsc.frequency.value=freq;
 }
@@ -101,16 +109,18 @@ const FKEYS=["poutine","cookie","coffee","wings"];
 
 const SPR={};
 function defSprite(key,map,rows){SPR[key]={map,rows:rows.split("|")};}
-defSprite("keira",{h:"#c9622f",H:"#a34c22",s:"#ffdcc0",e:"#241f1c",a:"#f2ead8",t:"#3fa7a0",p:"#e8628a",m:"#d96a6a"},
-"....hhhhh......|...hhhhhhh.hh..|..hhssssshhhh..|..hsseeess.hh..|..hssssss..h...|..hssmmss..h...|...ssssss......|....ssss.......|..tttttttt.....|.tttttttttt....|.ttaaaaaatt....|.staaaaaats....|.staaaaaats....|..taaaaaat.....|..taaaaaat.....|..tt....tt.....");
-defSprite("cust",{h:"H",s:"#ffdcc0",e:"E",t:"T",m:"#b46a5e"},
-"...hhhhhh....|..hhhhhhhh...|..hsssssshh..|..hseesesh...|..hssssss....|..hssmmss....|...ssssss....|....ssss.....|..tttttttt...|.tttttttttt..|.sttttttttts.|.sttttttttts.|..tttttttt...|..tt....tt...");
-defSprite("leather",{h:"#6b5340",s:"#d9b08c",k:"#b39064",e:"#1a1010",t:"#7a4a3a",x:"#403026",a:"#8a8f96",z:"#3c4046"},
-"...hhhhhh....|..hhhhhhhh...|..hkkkkkkh...|..hkeekekh...|..hkxkkxk....|..hkkxxkk....|...kkkkkk....|....ssss.....|..tttttttt...|.tttttttttt..|.sttttttttts.|.stttttttttz.|..ttttttttaa.|..tt....ttza.");
-defSprite("deadite",{h:"#cfd6cc",s:"#c9d4c4",e:"#f6f3e8",t:"#5a6152",m:"#2c221e"},
-"...hhhhhh....|..hhhhhhhh...|..hsssssshh..|..hseesesh...|..hssssss....|..hsmmmmss...|...ssssss....|....ssss.....|..tttttttt...|.tttttttttt..|.sttttttttts.|.sttttttttts.|..tttttttt...|..tt....tt...");
-defSprite("bowie",{h:"#f0a54a",s:"#f5e9ef",e:"#8bb8d8",r:"#d84a5f",b:"#4a68d8",t:"#cfd8ea",m:"#c98ba0"},
-"...hhhhhh....|..hh.hh.hh...|..hsssssshh..|..hsersesh...|..hssrsss....|..hsmrmss....|...ssrsss....|....ssss.....|..ttttbttt...|.ttttbttttt..|.stttbtttts..|.sttbttttts..|..ttbttttt...|..tt....tt...");
+defSprite("keira",{o:"#241f30",h:"#d96a2f",P:"#b5521f",s:"#ffdcc0",E:"#241f30",m:"#c96a62",t:"#3fa7a0",A:"#f6efe2",c:"#b5793c",b:"#7a4a3a"},
+"....oooooooo....|...ohhhhhhhho...|..ohhhhhhhhhhoP.|..ohhsssssshhoP.|..ohsEssssEshoP.|..ohsssmmsssho..|...ossssssso....|....oossoo......|..otttttttttto..|.ottAAAAAAAAtto.|.osAAAAAAAAAAso.|.osAAcAAAAcAAso.|.otAAAAAAAAAAto.|..oAAAAAAAAAAo..|..oAAAAAAAAAAo..|..ott......tto..|..obb......bbo..");
+defSprite("cust",{o:"#241f30",H:"H",s:"#ffdcc0",E:"E",m:"#b4685e",T:"T",b:"#2c2438"},
+"...oooooooo...|..oHHHHHHHHo..|.oHHHHHHHHHHo.|.oHHssssssHHo.|.oHsEssssEsHo.|.oHsssmmsssHo.|..osssssssso..|...oossssoo...|..oTTTTTTTTo..|.oTTTTTTTTTTo.|.oTTTTTTTTTTo.|osTTTTTTTTTTso|osTTTTTTTTTTso|.oTTTTTTTTTTo.|..oTToooTTo...|..obbo..obbo..");
+defSprite("leather",{o:"#241f30",H:"#5a4534",k:"#c9a878",E:"#1a1010",x:"#4a3826",m:"#6e523a",T:"#6e4436",b:"#2c2438",a:"#9aa0a8",z:"#3c4046",s:"#d9b08c"},
+"...oooooooo...|..oHHHHHHHHo..|.oHHkkkkkkHHo.|.oHkkkkkkkkHo.|.oHkEkkkkEkHo.|.oHkxkkkkxkHo.|..okkxmmxkko..|...ookkkkoo...|..oTTTTTTTTo..|.oTTTTTTTTTToa|.oTTTTTTTTTToz|osTTTTTTTTTToa|osTTTTTTTTTToz|.oTTTTTTTTTToa|..oTToooTTo...|..obbo..obbo..");
+defSprite("deadite",{o:"#241f30",H:"#9aa694",s:"#c9d4c4",W:"#f6f3e8",m:"#241a16",T:"#4a5244",b:"#2c2438"},
+"...oooooooo...|..oHHHHHHHHo..|.oHHHHHHHHHHo.|.oHHssssssHHo.|.oHsWWssWWsHo.|.oHssssssssHo.|..osmmmmmmso..|...oossssoo...|..oTTTTTTTTo..|.oTTTTTTTTTTo.|.oTTTTTTTTTTo.|osTTTTTTTTTTso|osTTTTTTTTTTso|.oTTTTTTTTTTo.|..oTToooTTo...|..obbo..obbo..");
+defSprite("bowie",{o:"#3c3450",h:"#f0a54a",s:"#f5e9ef",E:"#8bb8d8",r:"#d84a5f",u:"#4a68d8",T:"#cfd8ea",m:"#c98ba0",b:"#8a90b8"},
+"..o.oooooo.o..|..ohhhhhhhho..|.ohhhhhhhhhho.|.ohhssssrshho.|.ohsEsssrEsho.|.ohssssrsssho.|..osssrsssso..|...oossssoo...|..oTTuTTTTTo..|.oTTTuTTTTTTo.|.oTTuTTTTTTTo.|osTTuTTTTTTTso|osTuTTTTTTTTso|.oTTTTTTTTTTo.|..oTToooTTo...|..obbo..obbo..");
+defSprite("ro",{o:"#241f30",G:"#c8c4bc",s:"#ffd8bc",E:"#241f30",m:"#b4685e",A:"#f6efe2",T:"#7a5a8a",b:"#2c2438",l:"#8a8f96"},
+"....oGGGGo....|...oGGGGGGo...|.oGGGGGGGGGGo.|.oGGssssssGGo.|.oGsEssssEsGo.|.oGsssmmsssGo.|..osssssssso..|...oossssoo...|..oTTTTTTTTol.|.oTAAAAAAAAol.|.oTAAAAAAAAol.|osTAAAAAAAAoll|osTAAAAAAAAToll|.oTTTTTTTTTTo.|..oTToooTTo...|..obbo..obbo..");
 defSprite("poutine",{b:"#d8433f",f:"#f2c14e",v:"#8a5a2b",p:"#5f9e3e"},
 ".bbbbbbbb.|bffpffpffb|bfvfvfvffb|bffpffvpfb|bvfvffvffb|.bbbbbbbb.");
 defSprite("cookie",{c:"#b5793c",o:"#241f1c",w:"#f5f0e6"},
@@ -137,6 +147,7 @@ function drawSprite(key,x,y,sc,alpha,flip){
   g.restore();
 }
 let curPal={hair:"#333",eye:"#241f1c",shirt:"#888"};
+const CHH=16;
 const HAIRS=["#3a2a20","#151210","#c9622f","#e8d27a","#6b6b70","#7a3a5e"];
 const SHIRTS=["#4a68d8","#3fa78a","#d8763f","#9a4ad8","#d84a5f","#4a4f58"];
 
@@ -144,20 +155,42 @@ let state="menu",day=1,money=0,served=0,servedTarget=5,rep=3;
 let best=0;try{best=parseInt(localStorage.getItem("ct-best")||"0",10)||0;}catch(e){}
 let tray=[],stations={},customers=[],spawnT=1.5,elapsed=0;
 let msgs=[],shopMsg="",glitchT=0,shake=0,eyeOpen=0;
-let intro=null,flick=1,flickTarget=1,lightsOutT=0,lightningT=0,nextLightning=4;
+let intro=null,flick=1,flickTarget=1,lightsOutT=0,lightningT=0,nextLightning=4,roDone=false;
 let snow=[],steam=[],leavers=[],coins=[],trayPop=0;
 const HOUSES=[["#f6c8d8","#e88aa8"],["#c8ecd9","#7cc9a2"],["#d8ccf2","#a48ad8"],
   ["#f7e6b5","#e0bd5f"],["#fcd9c4","#eda276"],["#cfe6f7","#85b8dd"]];
 function initSnow(){snow=[];for(let i=0;i<46;i++)snow.push({x:Math.random(),y:Math.random(),
   v:14+Math.random()*22,ph:Math.random()*6.28,r:1.2+Math.random()*2});}
 initSnow();
-let upgrades={fryer:false,oven:false,keg:false,charm:false};
+let upgrades={fryer:0,oven:0,keg:0,ladle:0,charm:0,register:0};
 const SHOP=[
-  {k:"fryer",name:"POSSESSED FRYER MK.II",desc:"wings cook twice as fast",price:35},
-  {k:"keg",name:"COLD BREW KEG",desc:"iced coffee pours instantly",price:40},
-  {k:"oven",name:"DOUBLE OVEN",desc:"cookies bake two at a time",price:45},
-  {k:"charm",name:"LUCKY ZAMBONI CHARM",desc:"customers wait 40% longer",price:60},
+  {k:"ladle",name:"RO'S GRAVY LADLE",tiers:[
+    {price:45,desc:"poutine builds 35% faster"},
+    {price:110,desc:"poutine builds twice as fast"},
+    {price:240,desc:"the ladle remembers. near-instant."}]},
+  {k:"fryer",name:"FRYER MK.II",tiers:[
+    {price:50,desc:"wings fry 35% faster"},
+    {price:120,desc:"wings fry twice as fast"},
+    {price:260,desc:"the fryer hums. wings appear."}]},
+  {k:"oven",name:"THE OVEN",tiers:[
+    {price:55,desc:"cookies bake 30% faster"},
+    {price:130,desc:"two cookies per bake"},
+    {price:280,desc:"faster still, and always two"}]},
+  {k:"keg",name:"COLD BREW KEG",tiers:[
+    {price:60,desc:"coffee pours 40% faster"},
+    {price:150,desc:"coffee pours instantly"}]},
+  {k:"charm",name:"LUCKY ZAMBONI CHARM",tiers:[
+    {price:70,desc:"customers wait 25% longer"},
+    {price:160,desc:"customers wait 50% longer"},
+    {price:340,desc:"customers wait almost forever"}]},
+  {k:"register",name:"BRASS REGISTER",tiers:[
+    {price:80,desc:"tips up 30%"},
+    {price:190,desc:"tips up 60%"},
+    {price:400,desc:"tips doubled. it purrs."}]},
 ];
+const LADLE_F=[1,0.65,0.5,0.35],FRYER_F=[1,0.65,0.45,0.3],
+  OVEN_F=[1,0.7,0.7,0.5],KEG_F=[1,0.6,0.12],
+  CHARM_F=[1,1.25,1.5,1.9],REG_F=[1,1.3,1.6,2];
 function resetStations(){FKEYS.forEach(k=>stations[k]={t:0,busy:false});}
 resetStations();
 
@@ -176,6 +209,23 @@ const LINES={
   bowie:["One iced coffee. The maze takes cream, no sugar.","You remind me of a babe. The babe ordered poutine.","Time keeps falling. So do my tips. Keep both."],
 };
 function pick(a){return a[(Math.random()*a.length)|0];}
+const STORY={
+  1:["Locking up, Keira finds a note taped under the register, in handwriting she knows from birthday cards:",
+     '"Feed them well. Keep the freezer shut. — Aunt Ro"',
+     "Aunt Ro. Who ran this stand for thirty years, and vanished during the '96 semifinal. They only ever found her ladle."],
+  2:["The radio won't turn off. It's playing a hockey game.",
+     "Third period, '96 semifinal. Live.",
+     "Keira unplugs it. It finishes the sentence anyway: «...and the crowd is STILL hungry, folks.»"],
+  3:["Freezer inventory: 40 boxes of nuggets, 12 tubs of gravy, and one box with no label.",
+     "It is warm.",
+     "Keira does what her aunt said. She keeps the freezer shut. She tapes a second layer of tape."],
+  4:["The man with the saw left a photograph on the counter.",
+     "It's Aunt Ro. Smiling. Holding HIS saw. On the back: 'family recipe — thanks for the batter, Ro.'",
+     "Keira locks the photo in the till. The till feels warmer than it should."],
+  5:["The cookbook's last page isn't a recipe. It's a map. The stand is on it. So is the freezer.",
+     "The freezer is drawn as a door.",
+     "Under it, in birthday-card handwriting: 'If a man made of glitter asks about me — I still owe him a dance.'"],
+};
 
 function spawnCustomer(force){
   if(customers.length>=3)return;
@@ -183,14 +233,17 @@ function spawnCustomer(force){
   if(force)kind=force;
   else if(day===4&&!customers.some(c=>c.kind==="leather")&&Math.random()<0.25)kind="leather";
   else if(day===5&&!customers.some(c=>c.kind==="deadite")&&Math.random()<0.3)kind="deadite";
+  else if(day>=6&&served>=3&&!roDone&&!customers.some(c=>c.kind==="ro")){kind="ro";roDone=true;}
   else if(day>=6&&!customers.some(c=>c.kind==="bowie")&&Math.random()<0.3)kind="bowie";
   const order=[];
-  if(kind==="leather")order.push("wings","wings","wings");
+  if(kind==="ro")order.push("poutine","cookie","coffee","wings");
+  else if(kind==="leather")order.push("wings","wings","wings");
   else if(kind==="deadite")order.push("cookie",Math.random()<0.5?"cookie":"coffee");
   else if(kind==="bowie")order.push("coffee",Math.random()<0.5?"poutine":"cookie");
   else{const n=1+((Math.random()*Math.min(3,1+day*0.6))|0);
     for(let i=0;i<n;i++)order.push(FKEYS[(Math.random()*4)|0]);}
-  const pat=(12+order.length*4)*(upgrades.charm?1.4:1);
+  let pat=(12+order.length*4)*CHARM_F[upgrades.charm];
+  if(kind==="ro")pat=45;
   customers.push({kind,order,pat,maxPat:pat,
     hair:HAIRS[(Math.random()*HAIRS.length)|0],
     shirt:SHIRTS[(Math.random()*SHIRTS.length)|0],
@@ -198,6 +251,8 @@ function spawnCustomer(force){
   if(kind==="leather"){say("K",pick(LINES.day4),4);setDrone(true,36);}
   if(kind==="deadite"){say("D",pick(LINES.deadite),4);whisper();}
   if(kind==="bowie"){say("B",pick(LINES.bowie),4.5);}
+  if(kind==="ro"){say("R","One of everything. Nice apron, kid. It was mine.",5);
+    say("K","...Aunt Ro?!",4);}
 }
 
 const DAYSUB=["","saturday · 9 am","sunday · still lovely","monday · the lights hum",
@@ -205,6 +260,7 @@ const DAYSUB=["","saturday · 9 am","sunday · still lovely","monday · the ligh
 function startDay(){
   state="play";served=0;servedTarget=4+day;tray=[];resetStations();
   customers=[];leavers=[];spawnT=2.0;elapsed=0;
+  if(day<6)roDone=false;
   intro={t:2.4,txt:"DAY "+day,sub:DAYSUB[Math.min(6,day)]||""};
   jingle(day>=3);
   nextLightning=3+Math.random()*5;
@@ -224,14 +280,16 @@ function make(k){
   const st=stations[k];if(st.busy||state!=="play")return;
   if(tray.length>=5){buzz();return;}
   let t=FOODS[k].time;
-  if(k==="wings"&&upgrades.fryer)t*=0.45;
-  if(k==="coffee"&&upgrades.keg)t=0.15;
+  if(k==="wings")t*=FRYER_F[upgrades.fryer];
+  if(k==="coffee")t*=KEG_F[upgrades.keg];
+  if(k==="poutine")t*=LADLE_F[upgrades.ladle];
+  if(k==="cookie")t*=OVEN_F[upgrades.oven];
   st.busy=true;st.t=t;st.total=t;
   beep(300,0.07,"square",0.05,420);
 }
 function finishItem(k){
   tray.push(k);trayPop=0.25;
-  if(k==="cookie"&&upgrades.oven&&tray.length<5)tray.push("cookie");
+  if(k==="cookie"&&upgrades.oven>=2&&tray.length<5)tray.push("cookie");
   readyDing();
 }
 function serve(ci){
@@ -242,15 +300,17 @@ function serve(ci){
     got.push(i);}
   got.sort((a,b)=>b-a).forEach(i=>tray.splice(i,1));
   let pay=0;for(const o of need)pay+=FOODS[o].price;
-  const tip=Math.round(pay*0.5*(c.pat/c.maxPat));
+  const tip=Math.round(pay*0.5*(c.pat/c.maxPat)*REG_F[upgrades.register]);
   let bonus=0;
   if(c.kind==="bowie"){bonus=20;say("B","A crystal. Nothing more.",3);}
   if(c.kind==="leather"){setDrone(day>=5);say("L","...family thanks you.",3);}
   if(c.kind==="deadite")say("D","the book is... satisfied.",3);
+  if(c.kind==="ro"){bonus=100;
+    say("R","Thirty years catering the maze. Your gravy's better. Don't tell anyone.",5);}
   money+=pay+tip+bonus;served++;
   kaching();
   const L2=layout();
-  pops.push({x:c.sx||W/2,y:L2.counterY-14*L2.p-40,txt:"$"+(pay+tip+bonus),t:1});
+  pops.push({x:c.sx||W/2,y:L2.counterY-CHH*L2.p-40,txt:"$"+(pay+tip+bonus),t:1});
   for(let i=0;i<5;i++)coins.push({x:c.sx,y:L2.counterY-40,t:0,
     dx:(Math.random()-0.5)*90,dy:-90-Math.random()*70});
   c.happy=true;c.vx=140;leavers.push(c);
@@ -274,25 +334,30 @@ addEventListener("pointerdown",e=>{
   const r=cv.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;
   audio();
   if(x>W-104&&y<SAT+52){muted=!muted;if(muted)setDrone(false);return;}
-  if(state==="menu"){day=1;money=0;upgrades={fryer:false,oven:false,keg:false,charm:false};startDay();return;}
+  if(state==="menu"){day=1;money=0;upgrades={fryer:0,oven:0,keg:0,ladle:0,charm:0,register:0};startDay();return;}
   if(state==="over"){state="menu";return;}
   if(state==="shop"){
-    const bw=Math.min(340,W-36),bx=(W-bw)/2,by0=H*0.16+74;
+    const bw=Math.min(340,W-36),bx=(W-bw)/2,by0=H*0.13+68;
     SHOP.forEach((it,i)=>{
-      const by=by0+i*62;
-      if(x>bx&&x<bx+bw&&y>by&&y<by+54){
-        if(upgrades[it.k]){shopMsg="already installed";return;}
-        if(money<it.price){shopMsg="not enough money";buzz();return;}
-        money-=it.price;upgrades[it.k]=true;shopMsg=it.name+" installed";kaching();
+      const by=by0+i*52;
+      if(x>bx&&x<bx+bw&&y>by&&y<by+46){
+        const lv=upgrades[it.k];
+        if(lv>=it.tiers.length){shopMsg="maxed out";return;}
+        const tier=it.tiers[lv];
+        if(money<tier.price){shopMsg="not enough money";buzz();return;}
+        money-=tier.price;upgrades[it.k]=lv+1;
+        shopMsg=it.name+" → level "+(lv+1);kaching();
       }
     });
-    const ny=by0+SHOP.length*62+16;
-    if(y>ny&&y<ny+52){
-      day++;
-      if(day>6)state="over";
-      else startDay();
+    const ny=by0+SHOP.length*52+12;
+    if(y>ny&&y<ny+50){
+      if(day>=6)state="over";
+      else state="story";
     }
     return;
+  }
+  if(state==="story"){
+    day++;startDay();return;
   }
   if(state!=="play")return;
   const L=layout();
@@ -302,7 +367,7 @@ addEventListener("pointerdown",e=>{
     if(tray.length){tray=[];buzz();}return;}
   for(let i=0;i<customers.length;i++){
     const cxp=L.slots[customers[i].slot];
-    if(Math.abs(x-cxp)<W*0.13&&y>L.counterY-14*L.p-80&&y<L.counterY+10){serve(i);return;}
+    if(Math.abs(x-cxp)<W*0.13&&y>L.counterY-CHH*L.p-80&&y<L.counterY+10){serve(i);return;}
   }
 });
 
@@ -470,7 +535,7 @@ function drawStand(t){
   const kxp=W*0.5-8*p*0.5,kyp=sy+62+Math.sin(t*2.6)*2;
   drawSprite("keira",kxp,kyp,p);
   if((t%3.7)<0.13){g.fillStyle="#ffdcc0";
-    g.fillRect(kxp+4*p,kyp+3*p,2*p,p);g.fillRect(kxp+7*p,kyp+3*p,2*p,p);}
+    g.fillRect(kxp+5*p,kyp+4*p,p,p);g.fillRect(kxp+10*p,kyp+4*p,p,p);}
 }
 
 function drawCustomers(t,dt){
@@ -484,7 +549,9 @@ function drawCustomers(t,dt){
     const key=c.kind==="cust"?"cust":c.kind;
     const alpha=c.kind==="bowie"?0.78+Math.sin(t*3)*0.12:1;
     if(c.kind==="deadite"&&Math.random()<0.02)glitchT=0.15;
-    const cyTop=L.counterY-14*p-6;
+    const cyTop=L.counterY-CHH*p-6;
+    g.fillStyle="rgba(20,12,30,0.3)";
+    g.beginPath();g.ellipse(c.sx,L.counterY-4,7*p*0.8,2.4*p*0.5,0,0,6.29);g.fill();
     drawSprite(key,c.x,cyTop+wob,p,alpha);
     const bx=c.sx,by=cyTop-24;
     const ow=c.order.length*22+14;
@@ -493,10 +560,23 @@ function drawCustomers(t,dt){
     g.beginPath();g.roundRect(bx-ow/2,by-26,ow,30,7);g.fill();g.stroke();
     g.beginPath();g.moveTo(bx-5,by+4);g.lineTo(bx,by+12);g.lineTo(bx+5,by+4);g.closePath();
     g.fillStyle="rgba(240,236,224,0.94)";g.fill();
-    c.order.forEach((o,i)=>drawSprite(o,bx-ow/2+8+i*22,by-21,2));
+    const avail=tray.slice();
+    c.order.forEach((o,i)=>{
+      const ix=bx-ow/2+8+i*22;
+      drawSprite(o,ix,by-21,2);
+      const ti=avail.indexOf(o);
+      if(ti>=0){avail.splice(ti,1);
+        g.strokeStyle="#6fce6a";g.lineWidth=2.5;g.lineCap="round";
+        g.beginPath();g.moveTo(ix+2,by-6);g.lineTo(ix+7,by-1);g.lineTo(ix+17,by-14);g.stroke();}
+    });
     const pr=Math.max(0,c.pat/c.maxPat);
     g.fillStyle="#241a38";g.fillRect(bx-ow/2,by+8,ow,4);
     g.fillStyle=pr>0.4?"#6fce6a":"#d8433f";g.fillRect(bx-ow/2,by+8,ow*pr,4);
+    if(pr<0.3){
+      const bnc=Math.abs(Math.sin(t*7))*5;
+      g.fillStyle="#d8433f";g.font="bold 16px 'Courier New',monospace";g.textAlign="center";
+      g.fillText("!",bx+ow/2+10,by-8-bnc);
+    }
   }
 }
 
@@ -551,8 +631,8 @@ function drawUI(t){
   for(const m of msgs){
     const a=Math.min(1,m.t);
     g.globalAlpha=a;
-    const col={K:"#f0ecdc",L:"#d8927a",D:"#aee0a0",B:"#8bb8d8"}[m.who]||"#f0ecdc";
-    const full=(m.who==="K"?"keira: ":m.who==="B"?"the ghost: ":"")+m.txt;
+    const col={K:"#f0ecdc",L:"#d8927a",D:"#aee0a0",B:"#8bb8d8",R:"#f2b6c8"}[m.who]||"#f0ecdc";
+    const full=(m.who==="K"?"keira: ":m.who==="B"?"the ghost: ":m.who==="R"?"aunt ro: ":"")+m.txt;
     const lines=[];let cur="";
     for(const w2 of full.split(" ")){
       const test=cur?cur+" "+w2:w2;
@@ -631,12 +711,12 @@ function drawIntro(){
   if(!intro)return;
   const a=Math.min(1,intro.t,(2.4-intro.t)*2.2);
   g.globalAlpha=Math.max(0,a);
-  g.fillStyle="rgba(12,7,22,0.55)";g.fillRect(0,H*0.3,W,H*0.2);
+  g.fillStyle="rgba(12,7,22,0.55)";g.fillRect(0,H*0.16,W,H*0.15);
   g.textAlign="center";
-  g.fillStyle="#f0ecdc";g.font="bold 34px 'Courier New',monospace";
-  g.fillText(intro.txt,W/2,H*0.39);
+  g.fillStyle="#f0ecdc";g.font="bold 32px 'Courier New',monospace";
+  g.fillText(intro.txt,W/2,H*0.225);
   g.fillStyle=day>=3?"#c98ba0":"#b8a8d8";g.font="13px 'Courier New',monospace";
-  g.fillText(intro.sub,W/2,H*0.45);
+  g.fillText(intro.sub,W/2,H*0.275);
   g.globalAlpha=1;
 }
 function card(title,lines,foot){
@@ -713,13 +793,13 @@ function frame(ts){
       const L2=layout();
       const hop=c.happy?-Math.abs(Math.sin((c.hopT||0)*9))*8:0;
       const key=c.kind==="cust"?"cust":c.kind;
-      drawSprite(key,c.x,L2.counterY-14*L2.p-6+hop,L2.p,c.kind==="bowie"?0.7:1);
+      drawSprite(key,c.x,L2.counterY-CHH*L2.p-6+hop,L2.p,c.kind==="bowie"?0.7:1);
       if(c.happy&&Math.random()<0.12){
         g.fillStyle="#ef6f96";g.font="12px 'Courier New',monospace";
-        g.fillText("♥",c.x+14+Math.random()*10,L2.counterY-14*L2.p-14);}
+        g.fillText("♥",c.x+14+Math.random()*10,L2.counterY-CHH*L2.p-14);}
       if(c.angry&&Math.random()<0.2){
         g.fillStyle="#d8433f";g.font="12px 'Courier New',monospace";
-        g.fillText("!",c.x+10,L2.counterY-14*L2.p-16);}
+        g.fillText("!",c.x+10,L2.counterY-CHH*L2.p-16);}
     }
     drawCustomers(t,dt);
     for(const q of steam){
@@ -735,44 +815,77 @@ function frame(ts){
   }
   if(state==="menu"){
     const c2=card("COOKIE TYCOON",
-      ["Keira runs the concession stand","at the arena. Saturday shift.","",
-       "DILL PICKLE POUTINE · $9","OREO-STUFFED COOKIES · $5","ICED COFFEE · $6",
-       "BONELESS WINGS · $8","~(nuggets, for adults)","",
+      ["Aunt Ro ran this stand for thirty years.","She vanished during the '96 semifinal.",
+       "They only ever found her ladle.","","~The stand is Keira's now.","",
+       "POUTINE $9 · COOKIES $5","COFFEE $6 · WINGS $8","~(wings are boneless. nuggets, for adults.)","",
        "tap stations to cook","tap a customer to serve","",
-       best?("~best haul: $"+best):"~it starts normal."],
+       best?("~best haul: $"+best):"~week one starts normal."],
       "TAP TO OPEN THE STAND");
     drawSprite("keira",c2.bx+26,c2.by+38,3);
     drawSprite("cookie",c2.bx+c2.bw-52,c2.by+34,2.6);
   }
   if(state==="shop"){
-    const c2=card("DAY "+day+" — CLOSED",["earnings so far: $"+money,"",shopMsg?"~"+shopMsg:"~invest in the stand:"],"");
-    const bw=Math.min(340,W-36),bx=(W-bw)/2,by0=H*0.16+74;
+    g.fillStyle="rgba(16,10,26,0.9)";g.fillRect(0,0,W,H);
+    g.textAlign="center";g.fillStyle="#e8c46a";g.font="bold 20px 'Courier New',monospace";
+    g.fillText("DAY "+day+" — CLOSED",W/2,H*0.13+SAT*0.5);
+    g.fillStyle="#f0ecdc";g.font="12px 'Courier New',monospace";
+    g.fillText("till: $"+money,W/2,H*0.13+24+SAT*0.5);
+    g.fillStyle="#b8a8d8";g.font="11px 'Courier New',monospace";
+    g.fillText(shopMsg||"invest in the stand:",W/2,H*0.13+44+SAT*0.5);
+    const bw=Math.min(340,W-36),bx=(W-bw)/2,by0=H*0.13+68;
     SHOP.forEach((it,i)=>{
-      const by=by0+i*62,own=upgrades[it.k];
-      g.fillStyle=own?"rgba(70,90,60,0.5)":"#31204a";
-      g.strokeStyle=own?"#6fce6a":"#e8c46a";g.lineWidth=1.5;
-      g.beginPath();g.roundRect(bx,by,bw,54,8);g.fill();g.stroke();
-      g.textAlign="left";g.fillStyle="#f0ecdc";g.font="bold 12px 'Courier New',monospace";
-      g.fillText(it.name,bx+12,by+21);
-      g.fillStyle="#b8a8d8";g.font="10px 'Courier New',monospace";
-      g.fillText(it.desc,bx+12,by+38);
-      g.textAlign="right";g.fillStyle=own?"#6fce6a":"#e8c46a";
-      g.font="bold 13px 'Courier New',monospace";
-      g.fillText(own?"OWNED":"$"+it.price,bx+bw-12,by+30);
+      const by=by0+i*52,lv=upgrades[it.k],max=it.tiers.length,maxed=lv>=max;
+      const afford=!maxed&&money>=it.tiers[lv].price;
+      g.fillStyle=maxed?"rgba(70,90,60,0.45)":afford?"#31204a":"rgba(38,28,58,0.6)";
+      g.strokeStyle=maxed?"#6fce6a":afford?"#e8c46a":"#5a4a78";g.lineWidth=1.5;
+      g.beginPath();g.roundRect(bx,by,bw,46,8);g.fill();g.stroke();
+      g.textAlign="left";g.fillStyle=afford||maxed?"#f0ecdc":"#8a7aa8";
+      g.font="bold 11px 'Courier New',monospace";
+      g.fillText(it.name,bx+12,by+17);
+      g.fillStyle="#b8a8d8";g.font="9px 'Courier New',monospace";
+      g.fillText(maxed?"fully upgraded":it.tiers[lv].desc,bx+12,by+33);
+      for(let d2=0;d2<max;d2++){
+        g.fillStyle=d2<lv?"#6fce6a":"rgba(240,236,220,0.2)";
+        g.beginPath();g.arc(bx+bw-86+d2*11,by+13,3.4,0,6.29);g.fill();
+      }
+      g.textAlign="right";g.fillStyle=maxed?"#6fce6a":afford?"#e8c46a":"#8a7aa8";
+      g.font="bold 12px 'Courier New',monospace";
+      g.fillText(maxed?"MAX":"$"+it.tiers[lv].price,bx+bw-12,by+35);
     });
-    const ny=by0+SHOP.length*62+16;
-    g.fillStyle="#8a3b3b";g.strokeStyle="#e8c46a";
-    g.beginPath();g.roundRect((W-bw)/2,ny,bw,52,8);g.fill();g.stroke();
+    const ny=by0+SHOP.length*52+12;
+    g.fillStyle="#8a3b3b";g.strokeStyle="#e8c46a";g.lineWidth=1.5;
+    g.beginPath();g.roundRect((W-bw)/2,ny,bw,50,8);g.fill();g.stroke();
     g.textAlign="center";g.fillStyle="#f0ecdc";g.font="bold 15px 'Courier New',monospace";
-    g.fillText(day>=6?"FACE THE FINAL SHIFT":"OPEN DAY "+(day+1),W/2,ny+31);
+    g.fillText(day>=6?"COUNT THE TILL":"CLOSE UP FOR THE NIGHT",W/2,ny+30);
+  }
+  if(state==="story"){
+    g.fillStyle="rgba(8,4,16,0.94)";g.fillRect(0,0,W,H);
+    const st2=STORY[Math.min(day,5)]||[];
+    g.textAlign="center";g.fillStyle="#c98ba0";g.font="bold 15px 'Courier New',monospace";
+    g.fillText("that night",W/2,H*0.26);
+    g.fillStyle="#f0ecdc";g.font="13px 'Courier New',monospace";
+    st2.forEach((l,i)=>{
+      const lines2=[];let cur="";
+      for(const w2 of l.split(" ")){const test=cur?cur+" "+w2:w2;
+        if(g.measureText(test).width>W-70&&cur){lines2.push(cur);cur=w2;}else cur=test;}
+      if(cur)lines2.push(cur);
+      lines2.forEach((l2,j)=>g.fillText(l2,W/2,H*0.34+i*54+j*18));
+    });
+    g.fillStyle="#8fe08a";g.font="bold 13px 'Courier New',monospace";
+    g.fillText("TAP TO SLEEP. BADLY.",W/2,H*0.82);
   }
   if(state==="over"){
-    card("SEASON SURVIVED",
-      ["Keira closed the stand with","","$"+money+" in the till","",
+    card("THE FREEZER OPENS",
+      [roDone?"Aunt Ro steps out, ladle first.":"Nobody comes. The tape held.",
+       roDone?"\"The maze audits its caterers":"~(you never served her. she waited.)",
+       roDone?"every thirty years. You passed.\"":"",
+       "","$"+money+" in the till",
        money>=best?"~NEW BEST HAUL":"~best haul: $"+best,"",
-       "The eye closed. The stairs left.","The ghost left a good review.","",
-       "~five stars. would haunt again."],
+       "The eye closed. The stairs left.",
+       roDone?"Ro takes the morning shift.":"The freezer hums, patient.","",
+       "~the ghost left five stars. would haunt again."],
       "TAP FOR A NEW SEASON");
+    if(roDone)drawSprite("ro",W/2-21,H*0.14+H*0.66-128,3);
   }
   drawIntro();
   scanlines();
@@ -784,7 +897,7 @@ requestAnimationFrame(frame);
 window.CT={
   get state(){return state},get money(){return money},get day(){return day},
   get tray(){return tray},get customers(){return customers},get served(){return served},
-  start(){day=1;money=0;upgrades={fryer:false,oven:false,keg:false,charm:false};startDay();},
+  start(){day=1;money=0;upgrades={fryer:0,oven:0,keg:0,ladle:0,charm:0,register:0};startDay();},
   make,cheatServe(){const c=customers[0];if(!c)return;tray=c.order.slice();serve(0);},
   setDay(d){day=d;startDay();},endDay,spawn(k){spawnCustomer(k);},
 };
