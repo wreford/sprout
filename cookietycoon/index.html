@@ -40,6 +40,11 @@ function resize(){DPR=Math.min(window.devicePixelRatio||1,2);
     SAT=Math.max(0,r.top);SAB=Math.max(0,H-r.bottom);}
 }
 resize();addEventListener("resize",resize);
+document.addEventListener("visibilitychange",()=>{
+  if(!AC)return;
+  if(document.hidden)AC.suspend();
+  else if(!muted)AC.resume();
+});
 setTimeout(resize,60);
 addEventListener("gesturestart",e=>e.preventDefault());
 function PS(){return Math.max(3,Math.floor(Math.min(W/130,H/240)));}
@@ -235,7 +240,7 @@ let tray=[],stations={},customers=[],spawnT=1.5,elapsed=0;
 let msgs=[],shopMsg="",glitchT=0,shake=0,eyeOpen=0;
 let intro=null,flick=1,flickTarget=1,lightsOutT=0,lightningT=0,nextLightning=4,roDone=false;
 let evBurn=0,evRush=0,nextEv=14,zambX=null,zambT=18,stickerDone=false,stick=null;
-let tips=0,excel=0,troyDone=false,troyHere=null;
+let tips=0,excel=0,troyDone=false,troyHere=null,streak=0,tickT=0;
 let menuOn={poutine:true,cookie:true,coffee:true,wings:true,tart:true,slush:true};
 function activeMenu(){return FKEYS.filter(k=>menuOn[k]);}
 let snow=[],steam=[],leavers=[],coins=[],trayPop=0;
@@ -334,7 +339,7 @@ function spawnCustomer(force){
   const act=activeMenu();
   const keep=o=>menuOn[o];
   if(kind==="troy")order.push("water");
-  else if(kind==="ro")order.push(...act);
+  else if(kind==="ro")order.push(...act.slice().sort(()=>Math.random()-0.5).slice(0,Math.min(4,act.length)));
   else if(kind==="dale")order.push(...["wings","wings","poutine"].filter(keep));
   else if(kind==="maga")order.push(...["coffee"].filter(keep));
   else if(kind==="leather")order.push(...["wings","wings","wings"].filter(keep));
@@ -369,7 +374,8 @@ const DAYSUB=["","saturday · 9 am","sunday · still lovely","monday · the ligh
   "tuesday · he brings his own apron","wednesday · the book wakes up","thursday · the maze arrives"];
 function startDay(){
   state="play";served=0;servedTarget=4+day;tray=[];resetStations();
-  customers=[];leavers=[];spawnT=2.0;elapsed=0;
+  customers=[];leavers=[];spawnT=0.9;elapsed=0;
+  craft=null;streak=0;
   if(day<6)roDone=false;
   troyHere=null;if(day===1)troyDone=false;
   intro={t:2.4,txt:"DAY "+day,sub:DAYSUB[Math.min(6,day)]||""};
@@ -389,8 +395,13 @@ function endDay(){
 
 const MIX=[["espresso","#6b4a2f"],["oat milk","#f0e6d4"],["drizzle","#e0a03c"]];
 function make(k){
-  const st=stations[k];if(st.busy||state!=="play"||craft)return;
+  const st=stations[k];if(state!=="play"||craft)return;
   if(!menuOn[k]){buzz();say("K","We don't make that anymore. Freedom.",2.5);return;}
+  if(st.ready){
+    craft={k,taps:st.decoTaps||0};
+    return;
+  }
+  if(st.busy)return;
   if(tray.length>=5){buzz();return;}
   if(k==="coffee"){
     st.busy=true;
@@ -411,13 +422,19 @@ function make(k){
 function craftDone(){
   if(!craft)return;
   const k=craft.k;
-  craft=null;stations[k].busy=false;
+  craft=null;
+  stations[k].busy=false;stations[k].ready=false;stations[k].decoTaps=0;
   finishItem(k);
 }
 function craftTap(x,y){
   if(!craft)return false;
   const L=layout(),pw=Math.min(330,W-30),px2=(W-pw)/2,py=L.trayY-158;
-  if(y<py||y>py+146||x<px2||x>px2+pw)return true;
+  if(y<py||y>py+146||x<px2||x>px2+pw){
+    if(craft.k==="cookie"){stations.cookie.decoTaps=craft.taps;}
+    else{stations.coffee.busy=false;}
+    craft=null;
+    return true;
+  }
   if(craft.k==="coffee"){
     const bw2=(pw-48)/3;
     for(let i=0;i<craft.opts.length;i++){
@@ -468,7 +485,8 @@ function serve(ci){
     got.push(i);}
   got.sort((a,b)=>b-a).forEach(i=>tray.splice(i,1));
   let pay=0;for(const o of need)pay+=FOODS[o].price;
-  const tip=Math.round(pay*0.5*(c.pat/c.maxPat)*REG_F[upgrades.register]);
+  const tip=Math.round(pay*0.5*(c.pat/c.maxPat)*REG_F[upgrades.register]
+    *(1+Math.min(streak,10)*0.08));
   let bonus=0;
   if(c.kind==="bowie"){bonus=20;say("B","A crystal. Nothing more.",3);}
   if(c.kind==="leather"){setDrone(day>=5);say("L","...family thanks you.",3);}
@@ -477,7 +495,7 @@ function serve(ci){
     say("R","Thirty years catering the maze. The gravy improved. Interesting.",5);}
   if(c.kind==="dale")say("K",pick(LINES.daleServe),3.5);
   if(c.kind==="maga")say("K",pick(LINES.magaServe),4);
-  money+=pay+tip+bonus;served++;
+  money+=pay+tip+bonus;served++;streak++;
   tips+=tip+bonus;
   if(c.pat/c.maxPat>=0.65){excel++;
     const L4=layout();
@@ -509,7 +527,7 @@ addEventListener("pointerdown",e=>{
   const r=cv.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;
   audio();ensureMusic();
   if(x>W-104&&y<SAT+52){muted=!muted;if(muted)setDrone(false);return;}
-  if(state==="menu"){day=1;money=0;tips=0;excel=0;upgrades={fryer:0,oven:0,keg:0,ladle:0,charm:0,register:0};menuOn={poutine:true,cookie:true,coffee:true,wings:true,tart:true,slush:true};startDay();return;}
+  if(state==="menu"){day=1;money=0;tips=0;excel=0;stickerDone=false;upgrades={fryer:0,oven:0,keg:0,ladle:0,charm:0,register:0};menuOn={poutine:true,cookie:true,coffee:true,wings:true,tart:true,slush:true};startDay();return;}
   if(state==="over"){state="menu";return;}
   if(state==="shop"){
     const bw=Math.min(340,W-36),bx=(W-bw)/2,by0=H*0.13+68;
@@ -568,8 +586,18 @@ addEventListener("pointerdown",e=>{
   }
   for(const st of L.stations)
     if(x>st.x&&x<st.x+st.w&&y>st.y&&y<st.y+st.h){make(st.k);return;}
-  if(y>L.trayY-6&&y<L.trayY+40&&x>W/2+40){
-    if(tray.length){tray=[];buzz();}return;}
+  if(y>L.trayY-6&&y<L.trayY+40){
+    if(x>W-88){if(tray.length){tray=[];buzz();}return;}
+    if(x>52&&x<52+tray.length*26+12){
+      const idx=Math.floor((x-54)/26);
+      if(idx>=0&&idx<tray.length){
+        tray.splice(idx,1);
+        beep(240,0.09,"sine",0.03,140);
+        return;
+      }
+    }
+    return;
+  }
   for(let i=0;i<customers.length;i++){
     const cxp=L.slots[customers[i].slot];
     if(Math.abs(x-cxp)<W*0.13&&y>L.counterY-CHH*L.p-80&&y<L.counterY+10){serve(i);return;}
@@ -792,14 +820,22 @@ function drawCustomers(t,dt){
     g.beginPath();g.moveTo(bx-5,by+4);g.lineTo(bx,by+12);g.lineTo(bx+5,by+4);g.closePath();
     g.fillStyle="rgba(240,236,224,0.94)";g.fill();
     const avail=tray.slice();
+    let matched=0;
     c.order.forEach((o,i)=>{
       const ix=bx-ow/2+8+i*22;
       drawSprite(o,ix,by-21,2);
       const ti=avail.indexOf(o);
-      if(ti>=0){avail.splice(ti,1);
+      if(ti>=0){avail.splice(ti,1);matched++;
         g.strokeStyle="#6fce6a";g.lineWidth=2.5;g.lineCap="round";
         g.beginPath();g.moveTo(ix+2,by-6);g.lineTo(ix+7,by-1);g.lineTo(ix+17,by-14);g.stroke();}
     });
+    if(matched===c.order.length&&state==="play"){
+      const gp=0.5+0.5*Math.sin(t*6);
+      g.strokeStyle=`rgba(143,224,138,${0.4+gp*0.6})`;g.lineWidth=3;
+      g.beginPath();g.roundRect(bx-ow/2-3,by-29,ow+6,36,10);g.stroke();
+      g.fillStyle="#8fe08a";g.font="bold 10px 'Courier New',monospace";g.textAlign="center";
+      g.fillText("SERVE!",bx,by-34-gp*3);
+    }
     const pr=Math.max(0,c.pat/c.maxPat);
     g.fillStyle="#241a38";g.fillRect(bx-ow/2,by+8,ow,4);
     g.fillStyle=pr>0.4?"#6fce6a":"#d8433f";g.fillRect(bx-ow/2,by+8,ow*pr,4);
@@ -840,7 +876,13 @@ function drawUI(t){
       g.fillStyle="#f0ecdc";g.font="bold 10px 'Courier New',monospace";g.textAlign="center";
       g.fillText("OFF THE MENU",0,4);g.restore();
     }
-    if(s.busy){
+    if(s.ready){
+      const rp2=0.5+0.5*Math.sin(t*6);
+      g.strokeStyle=`rgba(143,224,138,${0.5+rp2*0.5})`;g.lineWidth=2.5;
+      g.beginPath();g.roundRect(st.x-1,st.y-1,st.w+2,st.h+2,9);g.stroke();
+      g.fillStyle="#8fe08a";g.font="bold 8px 'Courier New',monospace";g.textAlign="center";
+      g.fillText("TAP TO DECORATE",st.x+st.w/2,st.y+st.h-5+rp2*1.5);
+    }else if(s.busy){
       g.fillStyle="#241a38";g.fillRect(st.x+6,st.y+st.h-9,st.w-12,5);
       g.fillStyle="#6fce6a";g.fillRect(st.x+6,st.y+st.h-9,(st.w-12)*(1-s.t/s.total),5);
     }
@@ -865,7 +907,7 @@ function drawUI(t){
   g.fillStyle="#b8a8d8";g.font="10px 'Courier New',monospace";
   g.fillText("DAY "+day+" · "+served+"/"+servedTarget,20,hy2+32);
   g.fillStyle="#8fe08a";
-  g.fillText("tips $"+tips+" · ★"+excel,20,hy2+47);
+  g.fillText("tips $"+tips+" · ★"+excel+(streak>=2?" · 🔥"+streak:""),20,hy2+47);
   g.textAlign="right";g.fillStyle=muted?"rgba(240,236,220,0.35)":"#f0ecdc";
   g.font="12px 'Courier New',monospace";g.fillText(muted?"[sound off]":"[sound on]",W-14,hy2+18);
   let my=H*0.085;
@@ -990,16 +1032,16 @@ function frame(ts){
     spawnT-=dt;
     if(spawnT<=0&&served+customers.length<servedTarget+2){
       spawnCustomer();
-      spawnT=(Math.max(2.2,5.5-day*0.4)+Math.random()*2)*(evRush>0?0.45:1);
+      spawnT=(Math.max(1.8,4.6-day*0.35)+Math.random()*1.4)*(evRush>0?0.45:1);
     }
     for(const k of FKEYS){const s=stations[k];
-      if(s.busy&&!(craft&&craft.k===k)){s.t-=dt;
-        if(s.t<=0){s.busy=false;
-          if(k==="cookie"&&!craft){s.busy=true;craft={k:"cookie",taps:0};}
-          else finishItem(k);}}}
+      if(s.busy&&!s.ready&&!(craft&&craft.k===k)){s.t-=dt;
+        if(s.t<=0){
+          if(k==="cookie"){s.ready=true;s.decoTaps=0;readyDing();}
+          else{s.busy=false;finishItem(k);}}}}
     for(let i=customers.length-1;i>=0;i--){
       const c=customers[i];c.pat-=dt;
-      if(c.pat<=0){c.angry=true;c.vx=-160;leavers.push(c);
+      if(c.pat<=0){c.angry=true;c.vx=-160;leavers.push(c);streak=0;
         customers.splice(i,1);customers.forEach((cc,j)=>cc.slot=j);
         say("K",pick(LINES.angry),2.5);buzz();served++;
         if(served>=servedTarget)endDay();}
@@ -1013,6 +1055,10 @@ function frame(ts){
           say("K",pick(LINES.rush),3);}
       }}
     evBurn=Math.max(0,evBurn-dt);evRush=Math.max(0,evRush-dt);
+    if(customers.some(c=>c.pat/c.maxPat<0.25)){
+      tickT-=dt;
+      if(tickT<=0){tickT=0.55;beep(520,0.045,"sine",0.022);}
+    }else tickT=0;
     zambT-=dt;
     if(zambT<=0&&zambX===null){zambX=-80;zambT=30+Math.random()*20;
       if(Math.random()<0.3)say("K",pick(LINES.zamb),3);}
@@ -1357,7 +1403,7 @@ requestAnimationFrame(frame);
 window.CT={
   get state(){return state},get money(){return money},get day(){return day},
   get tray(){return tray},get customers(){return customers},get served(){return served},
-  start(){day=1;money=0;tips=0;excel=0;upgrades={fryer:0,oven:0,keg:0,ladle:0,charm:0,register:0};menuOn={poutine:true,cookie:true,coffee:true,wings:true,tart:true,slush:true};startDay();},
+  start(){day=1;money=0;tips=0;excel=0;stickerDone=false;upgrades={fryer:0,oven:0,keg:0,ladle:0,charm:0,register:0};menuOn={poutine:true,cookie:true,coffee:true,wings:true,tart:true,slush:true};startDay();},
   make,cheatServe(){const c=customers[0];if(!c)return;tray=c.order.slice();serve(0);},
   setDay(d){day=d;startDay();},endDay,spawn(k){spawnCustomer(k);},
   get craft(){return craft},
