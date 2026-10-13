@@ -20,6 +20,22 @@
 <style>:root{--bg:#140d2b;--text:#e8e2f5;--muted:#9a8cc0;--gold:#ffd95e;--acc:#b48ae8;
   --pink:#ff9ac4;--cyan:#7ad8f0;--green:#8fe08a;--red:#ff6a5e;--teal:#5ee8c4;--orange:#ff9a5e;
   --neb1:#4a2a90;--neb2:#19336a;--tg2:#ff9ac4;--tg4:#7ad8f0}
+/* achievements */
+#mAch{position:fixed;top:calc(env(safe-area-inset-top) + 8px);left:50%;transform:translate(-50%,-190%);
+  z-index:97;background:#1e1440;border:1.5px solid var(--gold);border-radius:14px;padding:10px 16px;
+  display:flex;gap:10px;align-items:center;transition:transform 0.4s cubic-bezier(.2,1.3,.4,1);
+  box-shadow:0 10px 30px rgba(0,0,0,0.5);max-width:90%}
+#mAch.on{transform:translate(-50%,0)}
+#mAch .te{font-size:22px}
+#mAch .tt{font-size:10px;color:var(--gold);font-weight:800;letter-spacing:0.1em}
+#mAch .tn{font-size:13px;font-weight:800;color:var(--text)}
+.machRow{display:flex;gap:11px;align-items:center;padding:9px 4px;border-bottom:1px solid rgba(255,255,255,0.07)}
+.machRow .ae{font-size:22px;width:32px;text-align:center;filter:grayscale(1);opacity:0.3}
+.machRow.got .ae{filter:none;opacity:1}
+.machRow .an{font-weight:800;font-size:12.5px;color:#6a5f8a}
+.machRow.got .an{color:var(--text)}
+.machRow .ad{font-size:10.5px;color:#6a5f8a;margin-top:2px}
+.machRow .chk{margin-left:auto;color:var(--green);font-weight:900;font-size:13px}
 /* hint + report */
 #hintBtn{position:absolute;top:9px;right:11px;font-size:11.5px;font-weight:900;padding:8px 11px;
   border-radius:11px;border:1.5px solid rgba(255,217,94,0.5);background:rgba(255,217,94,0.1);
@@ -525,6 +541,8 @@ button.pill:active{transform:scale(0.94)}
   </div>
 </div>
 <div id="scroll"><div class="sh">🔥 HOT MATH TAKE</div><div class="sb" id="scrollB"></div></div>
+<div id="mAch"><span class="te" id="mAchE"></span>
+  <div><div class="tt">ACHIEVEMENT UNLOCKED</div><div class="tn" id="mAchN"></div></div></div>
 <script>
 "use strict";
 const $=id=>document.getElementById(id);
@@ -672,7 +690,7 @@ function chimeClick(){tone(880,0.05,0.02);}
 function haptic(ms){try{navigator.vibrate&&navigator.vibrate(ms);}catch(e){}}
 
 /* ---------- state ---------- */
-let SV={xp:0,gems:0,coupons:[],breakEnd:0,breakKind:"",amb:{},m:{},best:{}};
+let SV={xp:0,gems:0,coupons:[],breakEnd:0,breakKind:"",amb:{},mach:{},m:{},best:{}};
 try{SV={...SV,...JSON.parse(localStorage.getItem("mm-save")||"{}")};}catch(e){}
 function save(){try{localStorage.setItem("mm-save",JSON.stringify(SV));}catch(e){}}
 const RANKS=[[0,"Math Apprentice"],[10,"Numeric Conjurer"],[25,"Hexwright"],
@@ -1320,6 +1338,7 @@ function resolve(good){
     save();
     const rankAfter=rank().r;
     if(rankAfter!==rankBefore)setTimeout(()=>showRankUp(rankAfter),1100);
+    checkMAch();
     const who=(!dragon&&curSchool&&curSchool.grade===12)?["Nyah",NYAH]:["Keira",KEIRA];
     $("keiraSay").textContent=who[0]+": "+(dragon?pick(KEIRA.dragonHit):pick(who[1].right));
     if(dragon){
@@ -1330,7 +1349,7 @@ function resolve(good){
       if(dragon.left<=0){dragonEnd(false);return;}
       setTimeout(nextQ,900);
     }else{
-      setTimeout(nextQ,900);
+      setTimeout(nextQ,1500);
     }
   }else{
     chimeBad();haptic(80);burst(false);
@@ -1569,6 +1588,7 @@ function startDragonTimer(){
 function stopDragonTimer(){if(dragonTimer){clearInterval(dragonTimer);dragonTimer=null;}$("dTimer").textContent="";}
 function dragonEnd(slain){
   stopDragonTimer();
+  if(slain)setTimeout(checkMAch,600);
   if(slain&&window.confetti){
     try{
       confetti({particleCount:200,spread:110,startVelocity:42,origin:{y:0.6},
@@ -1900,6 +1920,7 @@ function trialEnd(){
   D.streak=(D.last===yest)?((D.streak||0)+1):1;
   D.last=today;
   D.hist[today]=right;
+  if(right===5)unlockM("trial5");
   const gWon=right*3+(right===5?5:0);
   SV.gems=(SV.gems||0)+gWon;
   save();
@@ -1982,7 +2003,8 @@ function openReport(){
     '<div class="egRow"><span>Daily Trial streak</span><b>🔥 '+(D.streak||0)+'</b></div>'+
     '<div class="egRow"><span>Exam Dragon best</span><b>'+(SV.best.dragon||0)+'/10</b></div>'+
     '<div class="egRow"><span>Grudges settled</span><b>'+(SV.settled||0)+'</b></div>'+
-    '<div class="egRow"><span>Arcade lifetime points</span><b>'+arcTotal+'</b></div>';
+    '<div class="egRow"><span>Arcade lifetime points</span><b>'+arcTotal+'</b></div>'+
+    '<div class="egRow"><span>Achievements</span><b>🏆 '+Object.keys(SV.mach||{}).length+'/'+MACH.length+'</b></div>';
   const sec=(g2,ttl,col)=>{
     html+='<div style="margin:16px 0 4px;font-family:Cinzel,Georgia,serif;font-weight:900;font-size:12px;letter-spacing:0.12em;color:'+col+'">'+ttl+'</div>';
     SCHOOLS.filter(s2=>s2.grade===g2).forEach(s2=>{
@@ -1994,6 +2016,13 @@ function openReport(){
   };
   sec(11,"KEIRA'S GRADE 11","#b48ae8");
   sec(12,"NYAH'S GRADE 12","#5ee8c4");
+  html+='<div style="margin:16px 0 4px;font-family:Cinzel,Georgia,serif;font-weight:900;font-size:12px;letter-spacing:0.12em;color:var(--gold)">🏆 ACHIEVEMENTS</div>';
+  MACH.forEach(a=>{
+    const got=!!(SV.mach||{})[a.id];
+    html+='<div class="machRow'+(got?" got":"")+'"><span class="ae">'+a.em+'</span>'+
+      '<div><div class="an">'+a.n+'</div><div class="ad">'+a.d+'</div></div>'+
+      (got?'<span class="chk">✓</span>':"")+'</div>';
+  });
   let weak=SCHOOLS[0];
   SCHOOLS.forEach(s2=>{if((SV.m[s2.id]||0)<(SV.m[weak.id]||0))weak=s2;});
   html+='<div id="oraclePre"><div class="op1">🔮 THE ORACLE PRESCRIBES</div>'+
@@ -2006,6 +2035,56 @@ function openReport(){
 }
 $("rankTap").onclick=()=>{audio();openReport();};
 $("repBack").onclick=()=>{audio();$("repOv").classList.remove("on");};
+
+/* ---------- achievements ---------- */
+const MACH=[
+{id:"first",em:"✨",n:"First Spark",d:"Answer your first question correctly"},
+{id:"xp100",em:"💯",n:"Century of Spells",d:"100 correct answers, lifetime"},
+{id:"supreme",em:"🧙‍♀️",n:"Mathamagician Supreme",d:"Reach the final rank"},
+{id:"dragonA",em:"🐉",n:"Dragonslayer",d:"Defeat the Exam Dragon 10/10"},
+{id:"trial5",em:"📅",n:"Perfect Trial",d:"Score 5/5 on a Daily Trial"},
+{id:"streak7",em:"🔥",n:"One Week Wizard",d:"Reach a 7-day trial streak"},
+{id:"grudge10",em:"😤",n:"Grudge Collector",d:"Settle 10 grudges"},
+{id:"coupon",em:"☕",n:"Dad's Wallet",d:"Buy a Starbucks coupon from the vault"},
+{id:"star5",em:"⭐",n:"Five-Star School",d:"Earn all 5 stars in any school"},
+{id:"arcade7",em:"🕹️",n:"Arcade Rat",d:"Set a score in all 7 arcade games"},
+{id:"themeA",em:"🎨",n:"Interior Decorator",d:"Switch to a different theme"},
+{id:"mixA",em:"🎧",n:"Sound Alchemist",d:"Turn on a focus sound"},
+];
+let mToastQ=[],mToastBusy=false;
+function unlockM(id){
+  SV.mach=SV.mach||{};
+  if(SV.mach[id])return;
+  SV.mach[id]=true;save();
+  const a=MACH.find(x=>x.id===id);
+  if(!a)return;
+  mToastQ.push(a);
+  pumpMToast();
+  chimeGood();
+}
+function pumpMToast(){
+  if(mToastBusy||!mToastQ.length)return;
+  mToastBusy=true;
+  const a=mToastQ.shift();
+  $("mAchE").textContent=a.em;
+  $("mAchN").textContent=a.n;
+  $("mAch").classList.add("on");
+  setTimeout(()=>{
+    $("mAch").classList.remove("on");
+    setTimeout(()=>{mToastBusy=false;pumpMToast();},450);
+  },2600);
+}
+function checkMAch(){
+  if(SV.xp>=1)unlockM("first");
+  if(SV.xp>=100)unlockM("xp100");
+  if(SV.xp>=150)unlockM("supreme");
+  if((SV.best.dragon||0)>=10)unlockM("dragonA");
+  if(((SV.daily||{}).streak||0)>=7)unlockM("streak7");
+  if((SV.settled||0)>=10)unlockM("grudge10");
+  if((SV.coupons||[]).length>=1)unlockM("coupon");
+  if(SCHOOLS.some(s2=>(SV.m[s2.id]||0)>=25))unlockM("star5");
+  if(["rune","tf","factor","order","est","match","graph"].every(k=>(SV.best[k]||0)>0))unlockM("arcade7");
+}
 
 /* ---------- themes ---------- */
 const THEMES={
@@ -2036,6 +2115,7 @@ function applyTheme(id){
   const mt=document.querySelector('meta[name="theme-color"]');
   if(mt)mt.setAttribute("content",t.bg);
   SV.theme=THEMES[id]?id:"arcana";save();
+  if(THEMES[id]&&id!=="arcana")unlockM("themeA");
   if($("themeOv").classList.contains("on"))renderThemes();
 }
 function renderThemes(){
@@ -2199,6 +2279,7 @@ function ambSet(k,v){
     if(!AMB.ch[k])return;
   }
   AMB.ch[k].gain.gain.setTargetAtTime(v*AMB.defs[k].vol,AC.currentTime,0.25);
+  if(v>0)unlockM("mixA");
 }
 function ambApplyAll(){
   for(const k in AMB.defs)if((SV.amb||{})[k]>0)ambSet(k,SV.amb[k]);
@@ -2282,6 +2363,7 @@ function buyReward(k){
   if(k==="bucks"){
     SV.coupons=SV.coupons||[];
     SV.coupons.push({code:"TROY-"+ri(1000,9999),ts:Date.now(),used:false});
+    unlockM("coupon");
     chimeGood();burst(true);
     if(window.confetti)try{confetti({particleCount:130,spread:95,origin:{y:0.5},
       colors:["#ffd95e","#ffeeb0","#fff"],scalar:1.2,disableForReducedMotion:true});}catch(e){}
@@ -2447,6 +2529,7 @@ function endGame(){
   SV.gems=(SV.gems||0)+gWon;
   if(!SV.best[k]||sc>SV.best[k])SV.best[k]=sc;
   save();
+  checkMAch();
   chimeGood();burst(true);
   const acc=AG.tries?Math.round(AG.hits/AG.tries*100):100;
   const ov=$("bigOv"),c=$("bigCard");
@@ -2927,6 +3010,7 @@ function drawJax(t){
 }
 requestAnimationFrame(jaxTick);
 
+checkMAch();
 if(SV.breakEnd&&SV.breakEnd>Date.now())openBreak();
 buildPad();renderHome();oracle();
 
@@ -2947,7 +3031,7 @@ window.MM={
     entry="99999";renderEntry();cast();
   },
   mcPick,openLesson,closeLesson,dadJoke,ambSet,openSound,applyTheme,
-  startTrial,startGrudge,recordGrudge,openReport,showRankUp,dateKey,
+  startTrial,startGrudge,recordGrudge,openReport,showRankUp,dateKey,unlockM,checkMAch,get MACH(){return MACH;},
   get trial(){return trial;},get grudge(){return grudge;},get JX(){return JX;},get THEMES(){return THEMES;},get AMB(){return AMB;},get LESSONS(){return LESSONS;},
   next(){nextQ();},
   gen(i){return SCHOOLS[i].gen();},
