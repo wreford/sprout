@@ -1,7 +1,7 @@
-/* Blended Zebra · offline service worker
+/* Blended Zebra Remix · offline service worker
    v2: the game shell updates network-first — installed players get new
    versions immediately when online, and the cache only serves offline. */
-const CACHE = 'zebra-v2';
+const CACHE = 'zebraremix-v1';
 const CORE = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png',
   './snd/shot1.wav', './snd/shot2.wav', './snd/key.wav', './snd/numkey.wav', './snd/pickup.wav',
   './snd/lazer.wav', './snd/squit.wav', './snd/explosion.mp3', './snd/blaster.mp3'];
