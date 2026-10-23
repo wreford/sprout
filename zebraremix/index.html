@@ -1898,6 +1898,19 @@ function applyPowerup(p){
   saveRun();
 }
 
+const HARD = {
+  hp0: 1.15, hpF: .17, atk0: 1.25, atkF: .10,  // scaleFoe: hp×(hp0+hpF·f), atk×(atk0+atkF·f^.9)  (was 1+.16f, 1+.10f^.9)
+  softAtk: 1.35, softMin: 5,                   // pool "sponges" (base hp<20) also get atk ×1.35, min 5
+  bossLag0: 3, bossLag: 3, p2str: 2,           // boss scaled at floor−lag (Alpha / rest); phase-2 str (was 3)
+  eliteMul: 1.3, eliteFrom: 2,                 // villain elite mult; elites allowed from F2 (was F3)
+  narrowsEvery: 10, narrowsAt: 3,              // THE NARROWS on F3, F13, F23… (narrowsAt −1 = off)
+  startHp: 60, powBase: .35, powTree: .70,     // start HP; powerup chance after normal fights (no wyrd1 / wyrd1)
+  shopHeal0: 25, shopHealF: 3, achPay: 5,      // patch-up (25+3f)·discount, once per floor; feats pay tier×5 (was 8)
+  fall0: 30, fallF: 8, fallBoss: 30, fallElite: 10, salvage: .25,  // death bank + pockets
+  xpFell: 20, xpFloor: 10, xpBoss: 25, xpElite: 8, xpBest: 30, xpStake: .20, xpSummit: 250,
+  blA: 40, blB: 12, blC: .25, pity: 20,        // blNeed(L)=round(blA+blB·L+blC·L²); pity covers deaths 1..pity
+};
+
 const FOES = [
   { id: 'hyena', name: 'Giggling Hyena', hp: 14, atk: 5, pat: ['atk', 'atk', 'blk'] },
   { id: 'vulture', name: 'Smug Vulture', hp: 12, atk: 4, pat: ['atk', 'buff', 'atk'] },
@@ -1922,7 +1935,7 @@ const FOES = [
 ];
 const BOSSES = [
   { id: 'alpha', name: 'ALPHA HYENA', hp: 60, atk: 11, pat: ['atk', 'atk', 'buff', 'atk'] },
-  { id: 'lion', name: 'THE LION HIMSELF', hp: 80, atk: 13, pat: ['buff', 'atk', 'atk', 'blk'] },
+  { id: 'lion', name: 'THE LION HIMSELF', hp: 72, atk: 12, pat: ['buff', 'atk', 'atk', 'blk'] },
   { id: 'crocking', name: 'CROC KING', hp: 100, atk: 15, pat: ['blk', 'atk', 'buff', 'atk'] },
   { id: 'blender', name: 'THE BLENDER', hp: 130, atk: 17, pat: ['atk', 'buff', 'atk', 'atk'] },
   { id: 'mirage', name: 'THE OTHER ZEBRA', hp: 155, atk: 19, pat: ['atk', 'blk', 'atk', 'buff'] },
@@ -2534,7 +2547,7 @@ GEN_FOES.forEach(([id, name, body, gag], i) => {
     pat: [['atk','atk','blk'], ['atk','blk','atk'], ['buff','atk','atk'], ['atk','buff','blk','atk'], ['blk','atk','atk'], ['atk','atk','buff']][i % 6] });
 });
 
-FOES.forEach(f => { if (f.hp < 20) f.hp = Math.round(f.hp * 2.2); });
+FOES.forEach(f => { if (f.hp < 20){ f.hp = Math.round(f.hp * 2.2); f.atk = Math.max(HARD.softMin, Math.round(f.atk * HARD.softAtk)); } });
 FOES.sort((a, b) => a.hp - b.hp);
 function genFeat(id){
   if (GEN_FEAT[id]) return GEN_FEAT[id];
@@ -2856,7 +2869,7 @@ const QUIPS = {
 Object.entries(GEN_QUIPS).forEach(([k, v]) => { QUIPS[k] = v; });
 function scaleFoe(base, floor, mult = 1){
   
-  let s = 1 + floor * .16, sa = 1 + .10 * Math.pow(floor, .9);
+  let s = HARD.hp0 + floor * HARD.hpF, sa = HARD.atk0 + HARD.atkF * Math.pow(floor, .9);
   if (floor > 30){ const w = Math.pow(floor - 30, 1.35) * .015; s += w; sa += w * .25; }
   const stk = 1 + .1 * ((META && META.stake) || 0);
   const wk = (typeof R === 'object' && R && R.wkFoe) || 1;
@@ -2893,7 +2906,7 @@ function makeFoe(floor, kind){
     const b = BOSSES[bi % BOSSES.length];
     const cycles = Math.floor(bi / BOSSES.length);
     
-    const foe = scaleFoe(b, Math.max(0, floor - 3), 1);
+    const foe = scaleFoe(b, Math.max(0, floor - (bi === 0 ? HARD.bossLag0 : HARD.bossLag)), 1);
     if (cycles > 0){
       foe.mhp = foe.hp = Math.round(foe.hp * (1 + cycles * .5));
       foe.atk = Math.round(foe.atk * (1 + cycles * .2));
@@ -2931,7 +2944,7 @@ function makeFoe(floor, kind){
     }
     
     const v = pick(VILLAINS);
-    const foe = scaleFoe(v, floor, 1.3);
+    const foe = scaleFoe(v, floor, HARD.eliteMul);
     foe.vill = true;
     
     foe.trait = pick(['thorns', 'dodgy', 'armored', 'regen', 'volatile', 'coward']);
@@ -2957,6 +2970,7 @@ function defaultMeta(){
     marks: 0, migrations: 0, eraBest: 0, lastSeen: 0, pets: [], petSel: '', recipes: [], helpers: [], helperOn: {}, trophies: [], worn: [],
     seen: {}, stake: 0, ghost: null, heirloom: null, lastBlends: [], weekly: {}, lore: [], counters: 0, twists: [], story: 'full',
     nextWorld: null, lastWorld: null,
+    blXp: 0, blLvl: 0, gifts: {}, giftPend: 0, giftOffer: null, giftLog: [], blInit: 0, blLast: null,
     clsOwned: ['zeb'], clsSel: 'zeb' };
 }
 let META = defaultMeta();
@@ -2982,6 +2996,11 @@ function loadMeta(){
   META.counters = META.counters || 0;
   if (META.nextWorld === undefined) META.nextWorld = null;
   if (META.lastWorld === undefined) META.lastWorld = null;
+  META.gifts = META.gifts || {}; META.giftLog = META.giftLog || [];
+  META.blXp = META.blXp || 0; META.blLvl = META.blLvl || 0; META.giftPend = META.giftPend || 0;
+  if (!META.blInit){ META.blInit = 1;
+    const L = Math.min(15, Math.ceil((META.stats.deaths || 0) * .6));            // veteran retro grant
+    if (L > META.blLvl){ META.giftPend += L - META.blLvl; META.blLvl = L; META.blXp = Math.max(META.blXp, blCum(L)); META.blVet = 1; } }
   
   if (!META.legacyEraDone && !META.migrations && !META.eraBest && META.stats.floors) META.eraBest = META.stats.floors;
  META.legacyEraDone = 1;
@@ -2999,12 +3018,14 @@ function bumpStat(k, n, isMax = false){
   while (META.stats[k] >= thresh(tier)){
     tier++;
  META.achTiers[k] = tier;
- META.stripes += tier * 8;
-    toast(`★ ${fam[1]} ${roman(tier)} · +${tier * 8} STRIPES`, 2000);
+    bank(tier * HARD.achPay, 'feats');
+    toast(`★ ${fam[1]} ${roman(tier)} · +${tier * HARD.achPay} STRIPES`, 2000);
     if (typeof SFX !== 'undefined') SFX.ach();
   }
   saveMeta();
 }
+function bank(n, src){ n = Math.max(0, Math.round(n || 0)); if (!n) return 0; META.stripes += n;
+  if (R){ R.bankLog = R.bankLog || {}; R.bankLog[src] = (R.bankLog[src] || 0) + n; } return n; }
 
 const CLASSES = [
   { id: 'zeb', name: 'ZEBRA', cost: 0, ep: 'JUST A ZEBRA. THE CLASSIC.', desc: 'Balanced. Stripey. Free.' },
@@ -3184,7 +3205,7 @@ const TREE = [
     { id: 'grazeX', name: 'Endless Graze', desc: '+5 ◆/hour · repeatable forever', cost: 1100, rep: 1.75, fx: { idleRate: 5 } },
   ]},
   { br: 'WYRD', ic: '?', tag: 'GET STRANGER', nodes: [
-    { id: 'wyrd1', name: 'Lucky Tail Swish', desc: 'Powerups drop after EVERY fight', cost: 40, fx: { powAlways: 1 } },
+    { id: 'wyrd1', name: 'Lucky Tail Swish', desc: 'Powerups drop twice as often (35% → 70%)', cost: 40, fx: { powAlways: 1 } },
     { id: 'wyrd2', name: 'Third Option', desc: 'Powerup drops offer 3 choices', cost: 100, fx: { powChoice: 1 } },
     { id: 'wyrd3', name: 'Door Whisperer', desc: '??? doors can no longer bite you', cost: 220, fx: { safeDoor: 1 } },
     { id: 'wyrd4', name: 'Relic Magnet', desc: 'Start each run with a bonus relic', cost: 400, fx: { relic: 1 } },
@@ -3193,9 +3214,68 @@ const TREE = [
     { id: 'wyrdX', name: 'Endless Weird', desc: '+1 starting relic · repeatable forever', cost: 1200, rep: 1.9, fx: { relic: 1 } },
   ]},
 ];
+const GIFTS = [
+  { id: 'thick', r: 0, name: 'Thick Coat', desc: '+6 max HP', max: 8, fx: { hp: 6 } },
+  { id: 'hoof', r: 0, name: 'Hard Hooves', desc: '+1 damage on all attacks', max: 4, fx: { str: 1 } },
+  { id: 'dirt', r: 0, name: 'Rolled in Dirt', desc: '+1 block every turn', max: 3, fx: { autoblk: 1 } },
+  { id: 'opener', r: 0, name: 'Opening Kick', desc: 'First attack each battle +4', max: 4, fx: { firstHit: 4 } },
+  { id: 'pocket', r: 0, name: 'Pocket Grass', desc: '+1 card on turn 1', max: 2, fx: { firstDraw: 1 } },
+  { id: 'purse', r: 0, name: 'Fat Purse', desc: 'Start each run with 30 ◆', max: 3, fx: { startGold: 30 } },
+  { id: 'fee', r: 0, name: 'Finder\'s Fee', desc: '+10% ◆ from battles', max: 3, fx: { goldMul: .10 } },
+  { id: 'brace', r: 0, name: 'Braced Stance', desc: 'Start every battle with 5 block', max: 3, fx: { startBlk: 5 } },
+  { id: 'lick', r: 0, name: 'Lick Wounds', desc: 'Heal 3 after every battle you win', max: 4, fx: { healAfter: 3 } },
+  { id: 'spring', r: 0, name: 'Deep Spring', desc: 'Oasis rest heals +10% max HP', max: 3, fx: { restPct: .10 } },
+  { id: 'hunter', r: 0, name: 'Hunter\'s Eye', desc: 'Every foe starts with 5% less HP (not God)', max: 3, fx: { foeHpCut: .05 } },
+  { id: 'filed', r: 0, name: 'Filed Teeth', desc: 'Starter Bites +2 damage, starter Hides +2 block', max: 2, fx: { starterUp: 2 } },
+  { id: 'snort', r: 0, name: 'Loud Snort', desc: 'Start every run with a Snort (deal 4 · foe −25% atk); it shuts the Alpha up', max: 2, fx: { startSnort: 1 } },
+  { id: 'callus', r: 1, name: 'Not Yet', desc: 'Survive lethal damage once more per run (1 HP)', max: 1, fx: { phoenix: 1 } },
+  { id: 'headstart', r: 1, name: 'Head Start', desc: '+1 energy on turn 1 of every battle', max: 2, fx: { t1energy: 1 } },
+  { id: 'hoard', r: 1, name: 'Trinket Hoard', desc: 'Start each run with a random relic', max: 2, fx: { relic: 1 } },
+  { id: 'mutant', r: 1, name: 'Born Blended', desc: 'Start each run with a random blended card', max: 2, fx: { startBlend: 1 } },
+  { id: 'elder', r: 1, name: 'Old Wisdom', desc: 'Start each run with a random RARE card', max: 2, fx: { startRare: 1 } },
+  { id: 'clover', r: 1, name: 'Four-Leaf Grass', desc: '+15% powerup chance after fights', max: 2, fx: { powChance: .15 } },
+  { id: 'skull', r: 1, name: 'Thick Skull', desc: 'Every enemy hit deals 1 less (min 1)', max: 3, fx: { armor: 1 } },
+  { id: 'reader', r: 1, name: 'Read the Room', desc: 'Any WEAKEN card also answers ANY boss wind-up (not God)', max: 1, fx: { tellAny: 1 } },
+  { id: 'feast', r: 1, name: 'Victory Feast', desc: 'Boss kills heal +20% more max HP', max: 2, fx: { bossHeal: .20 } },
+  { id: 'lung', r: 2, name: 'Third Lung', desc: '+1 max energy every run (start capped at 5)', max: 1, fx: { menergy: 1 } },
+  { id: 'herdmind', r: 2, name: 'Herd Mind', desc: 'Draw +1 card EVERY turn', max: 1, fx: { drawAll: 1 } },
+  { id: 'undying', r: 2, name: 'Undying', desc: '+1 lethal save; every save revives at 30% max HP', max: 1, fx: { phoenix: 1, phoenixPct: .30 } },
+  { id: 'pulse', r: 2, name: 'Heartbeat', desc: 'Every 3rd turn +1 energy', max: 1, fx: { energy3: 1 } },
+  { id: 'pact', r: 2, name: 'Vulture Pact', desc: '+40% Bloodline XP from every fall', max: 1, fx: { xpMul: .40 } },
+  { id: 'snack', r: 0, filler: 1, name: 'Herd Snack', desc: '+3 max HP. The well never runs dry.', max: Infinity, fx: { hp: 3 } },
+];
+function blNeed(L){ return Math.round(HARD.blA + HARD.blB * L + HARD.blC * L * L); }
+function blCum(L){ let s = 0; for (let i = 0; i < L; i++) s += blNeed(i); return s; }
+function blLevelOf(x){ let L = 0; while (x >= blCum(L + 1)) L++; return L; }
+function blAdd(x){ const L0 = META.blLvl || 0; META.blXp = (META.blXp || 0) + Math.max(0, Math.round(x));
+  const L1 = Math.max(L0, blLevelOf(META.blXp)); META.blLvl = L1; META.giftPend = (META.giftPend || 0) + L1 - L0; saveMeta(); return L1 - L0; }
+function giftsOwned(){ return Object.values(META.gifts || {}).reduce((s, n) => s + n, 0); }
+function rollGiftOffer(L){
+  const own = id => (META.gifts[id] || 0), G = id => GIFTS.find(g => g.id === id);
+  const fixed = { 1: ['thick', 'hoof', 'lick'], 2: ['callus', 'filed', 'brace'] }[L];
+  if (fixed && fixed.every(id => own(id) < G(id).max)) return fixed;
+  const avail = GIFTS.filter(g => !g.filler && own(g.id) < g.max);
+  const w = g => g.r === 0 ? 60 : g.r === 1 ? 34 : (L >= 10 ? 6 : 0);
+  const out = [];
+  if (L % 5 === 0){ const m = avail.filter(g => g.r === 2); if (m.length) out.push(pick(m).id); }   // milestone mythic
+  while (out.length < 3){
+    const pool = avail.filter(g => !out.includes(g.id) && w(g) > 0);
+    if (!pool.length){ if (!out.includes('snack')) out.push('snack'); break; }
+    let t = Math.random() * pool.reduce((s, g) => s + w(g), 0);
+    out.push((pool.find(g => (t -= w(g)) < 0) || pool[pool.length - 1]).id);
+  }
+  return out;
+}
+function takeGift(id){ const g = GIFTS.find(x => x.id === id); if (!g || !(META.giftPend > 0)) return false;
+  META.gifts[id] = (META.gifts[id] || 0) + 1; META.giftLog.push([META.blLvl - META.giftPend + 1, id]); META.giftPend--; META.giftOffer = null;
+  if (!META.giftPend) META.blVet = 0; saveMeta();
+  stampFx(g.name.toUpperCase()); SFX.ach(); hapt([20, 30, 50]); if (g.r === 2) confettiFx();
+  toast('☥ ' + g.name.toUpperCase() + ' · IN THE BLOOD FOREVER', 2000); return true; }
 function nodeLvl(id){ return (META.tree || {})[id] || 0; }
 function nodeCost(n){ return n.rep ? Math.round(n.cost * Math.pow(n.rep, nodeLvl(n.id))) : n.cost; }
-function treeVal(k){
+function giftVal(k){ let s = 0; for (const g of GIFTS){ const n = (META.gifts || {})[g.id] || 0; if (n && g.fx[k]) s += g.fx[k] * n; } return s; }
+function treeVal(k){ return treeOnly(k) + giftVal(k); }
+function treeOnly(k){
   let s = 0;
  TREE.forEach(b => b.nodes.forEach(n => {
     const lvl = nodeLvl(n.id);
@@ -3227,7 +3307,7 @@ function idleCollect(){
       const deep = treeVal('idleDeep') && hrs >= 4;
       if (deep) g *= 2;
       if (g > 0){
- META.stripes += g;
+        bank(g, 'graze');
         setTimeout(() => {
           toast('⁂ THE HERD GRAZED WHILE YOU WERE GONE · +' + g + ' ◆' + (deep ? ' · DEEP SLEEP ×2' : ''), 3400);
  SFX.ach();
@@ -3624,7 +3704,7 @@ function dailyGift(){
  META.dayStreak = META.dayLast === yk ? (META.dayStreak || 0) + 1 : 1;
  META.dayLast = day;
   const g = Math.round((20 + 20 * Math.min(7, META.dayStreak)) * marksMul());
- META.stripes += g;
+  bank(g, 'gift');
   saveMeta();
   return { g, streak: META.dayStreak };
 }
@@ -3666,7 +3746,7 @@ function bountyBump(k, n = 1, abs = false){
  META.bounty.list.forEach(b => {
     if (b.k !== k || b.done) return;
     b.got = abs ? Math.max(b.got, n) : b.got + n;
-    if (b.got >= b.need){ b.done = 1; META.stripes += Math.round(b.reward * marksMul()); paid = b; }
+    if (b.got >= b.need){ b.done = 1; bank(Math.round(b.reward * marksMul()), 'feats'); paid = b; }
   });
   saveMeta();
   if (paid) setTimeout(() => { toast('✓ BOUNTY: ' + paid.txt.toUpperCase() + ' · +' + Math.round(paid.reward * marksMul()) + ' ◆', 2600); SFX.ach && SFX.ach(); }, 800);
@@ -4092,15 +4172,16 @@ setInterval(() => {
 let R = null;
 function newRun(){
   const cls = CLASSES.find(c => c.id === META.clsSel && (META.clsOwned || ['zeb']).includes(c.id)) || CLASSES[0];
-  const thp = 60 + META.bonusHp + treeVal('hp') + Math.min(30, 2 * (META.marks || 0));
+  const thp = HARD.startHp + META.bonusHp + treeVal('hp') + Math.min(30, 2 * (META.marks || 0));
  R = {
-    floor: 0, hp: thp, mhp: thp, stripes: treeVal('startGold'), bestAtStart: META.stats.floors,
+    floor: 0, hp: thp, mhp: thp, stripes: treeVal('startGold'), bestAtStart: META.stats.floors, bossKills: 0, eliteKills: 0, bankLog: {},
     deck: ['bite', 'bite', 'bite', 'bite', 'kick', 'kick', 'hide', 'hide', 'hide', 'zoomies'].map(mkCard),
     relics: [], turn: 0, sdmg: 0, scards: 0, sblends: 0, menergy: 3 + treeVal('menergy'), cls: cls.id,
-    phoenix: treeVal('phoenix') > 0,
+    phoenix: treeVal('phoenix'),
     wx: WEATHER[Math.floor(Math.random() * WEATHER.length)].id,
     world: (META.nextWorld != null ? META.nextWorld : Math.floor(Math.random() * 1e9)),
   };
+  const up = treeVal('starterUp'); if (up) R.deck.forEach(c => { if (c.id === 'bite'){ c.dmg += up; descFor(c); } if (c.id === 'hide'){ c.blk += up; descFor(c); } });
   if (cls.id === 'wizard'){ R.deck.push(mkCard('zebramath'), mkCard(pick(RAR_R))); }
   if (cls.id === 'pirate'){ R.deck.push(mkCard('coinmane')); }
   if (cls.id === 'goth'){ R.mhp += 15; R.hp += 15; R.deck.push(mkCard('thickhide')); }
@@ -4112,6 +4193,9 @@ function newRun(){
   if (cls.id === 'ghost'){ R.deck.push(mkCard('powernap')); }
   if (cls.id === 'chef'){ R.deck.push(blendCards(mkCard(pick(BASE_CARDS.filter(c => !c.secret)).id), mkCard(pick(BASE_CARDS.filter(c => !c.secret)).id)), blendCards(mkCard(pick(BASE_CARDS.filter(c => !c.secret)).id), mkCard(pick(BASE_CARDS.filter(c => !c.secret)).id))); }
   if (cls.id === 'moon'){ R.menergy = Math.max(R.menergy, 4); }
+  for (let i = 0; i < treeVal('startSnort'); i++) R.deck.push(mkCard('snort'));
+  for (let i = 0; i < treeVal('startRare'); i++) R.deck.push(mkCard(pick(RAR_R)));
+  R.menergy = Math.min(5, R.menergy);
   for (let i = 0; i < treeVal('thin'); i++){
     const bi = R.deck.findIndex(c => c.id === 'bite');
     if (bi >= 0) R.deck.splice(bi, 1);
@@ -4131,12 +4215,7 @@ function newRun(){
  R.relics.push(r);
     if (r.hp){ R.mhp += r.hp; R.hp += r.hp; }
   }
-  
-  if ((META.stats.runs || 0) < 2){
- R.mhp += 10; R.hp += 10;
- R.deck.push(mkCard('sugarcube'));
-    setTimeout(() => toast('+ WELCOME SNACK + 10 HP · THE SAVANNA GOES EASY. TWICE. THEN NEVER AGAIN.', 3000), 1100);
-  }
+
  META.lastWorld = R.world;
   if (META.nextWorld != null){
     setTimeout(() => toast('◎ SAVANNA ' + worldCode(R.world) + ' · AS REQUESTED', 2600), 1400);
@@ -4372,7 +4451,7 @@ function screenTitle(){
     screenMap(!(R.clearedFloor === R.floor));
   };
   $('#bGuide').onclick = () => showGuide();
-  if ($('#bAbandon')) $('#bAbandon').onclick = () => { logRun('a sudden loss of interest'); R = null; saveRun(); screenTitle(); };
+  if ($('#bAbandon')) $('#bAbandon').onclick = () => { B = null; loseRun({ abandoned: 1 }); };
   if ($('#bUnlock')) $('#bUnlock').onclick = () => screenTree();
   if ($('#bAch')) $('#bAch').onclick = screenAch;
   if ($('#bBest')) $('#bBest').onclick = screenBestiary;
@@ -4759,10 +4838,11 @@ function screenMap(noAdvance){
   const isBoss = R.floor % 5 === 0;
   app.innerHTML = '';
   const doors = [];
+  let narrows = false;
   if (R.floor % SUMMIT_FLOOR === 0) doors.push({ kind: 'boss', nm: 'THE AUTHOR', dd: 'the grass here is already flat. somebody wrote it that way.', ic: '¶', boss: 1 });
   else if (isBoss) doors.push({ kind: 'boss', nm: 'BOSS DEN', dd: pick(['something large is breathing in there', 'the ground is vibrating. rhythmically.', 'even the vultures left', 'smells like main character']), ic: '☠', boss: 1 });
   else {
-    doors.push({ kind: 'fight', nm: 'Fight', dd: pick(['a normal amount of teeth', 'fresh tracks. impatient ones.', 'you hear chewing. confident chewing.', 'rustling, with attitude', 'something is doing warm-up stretches', 'the grass is judging you']), ic: '' });
+    const fightDoor = { kind: 'fight', nm: 'Fight', dd: pick(['a normal amount of teeth', 'fresh tracks. impatient ones.', 'you hear chewing. confident chewing.', 'rustling, with attitude', 'something is doing warm-up stretches', 'the grass is judging you']), ic: '' };
     const extras = [
       { kind: 'elite', nm: "Rogues' Gallery", dd: 'a terrible person awaits · better loot', ic: '≈' },
       { kind: 'rest', nm: 'Oasis', dd: 'heal up — or BLEND two cards', ic: '' },
@@ -4778,8 +4858,10 @@ function screenMap(noAdvance){
     });
     
     const law = regionOf(R.floor).law;
-    let pool = R.floor < 3 ? extras.filter(e => e.kind !== 'elite') : extras;
-    if (law.noElite) pool = pool.filter(e => e.kind !== 'elite');
+    narrows = HARD.narrowsAt >= 0 && R.floor % HARD.narrowsEvery === HARD.narrowsAt && !law.noElite;
+    doors.push(narrows ? extras.find(e => e.kind === 'elite') : fightDoor);
+    let pool = R.floor < HARD.eliteFrom ? extras.filter(e => e.kind !== 'elite') : extras;
+    if (law.noElite || narrows) pool = pool.filter(e => e.kind !== 'elite');
     if (law.w){
       const weighted = [];
       pool.forEach(e => {
@@ -4802,7 +4884,7 @@ function screenMap(noAdvance){
       <div style="font-family:var(--mono);font-size:8.5px;letter-spacing:.1em;color:#ffffff55">
         ${regionLaw().id === 'none' ? regionOf(R.floor).amb.toUpperCase() : '⚖ ' + regionLaw().nm + ' · ' + regionLaw().txt.toUpperCase()}</div>
     </div>
-    <span class="kick">${R.floor % SUMMIT_FLOOR === 0 ? 'FLOOR ' + R.floor + ' · THE AUTHOR IS WAITING' : 'FLOOR ' + R.floor + ' · CHOOSE A PATH' + (isBoss ? '' : ' · BOSS IN ' + (5 - R.floor % 5))} · <span title="${wxOf().desc}">${wxOf().ic} ${wxOf().name}</span></span>
+    <span class="kick">${R.floor % SUMMIT_FLOOR === 0 ? 'FLOOR ' + R.floor + ' · THE AUTHOR IS WAITING' : 'FLOOR ' + R.floor + (narrows ? ' · THE NARROWS · NO EASY FIGHT' : ' · CHOOSE A PATH') + (isBoss ? '' : ' · BOSS IN ' + (5 - R.floor % 5))} · <span title="${wxOf().desc}">${wxOf().ic} ${wxOf().name}</span></span>
     ${doors.map((d, i) => `<div class="door ${d.kind === 'elite' || d.kind === 'boss' ? 'elite' : d.kind} ${d.boss ? 'pulse' : ''}" data-i="${i}">
       <div><div class="dn">${d.nm}${d.tag ? `<span class="doorTag">${d.tag[1]}</span>` : ''}</div><div class="dd">${d.dd}</div></div><div class="ic">${d.ic}</div></div>`).join('')}
   </div>`);
@@ -4977,16 +5059,17 @@ function startBattle(kind){
     setTimeout(() => toast('JACKSON IS STARING. THE FOE IS UNCOMFORTABLE.', 1800), 900);
   }
   if (R.doorTag === 'angry'){ foe.mhp = Math.round(foe.mhp * 1.25); foe.hp = foe.mhp; }
+  const cut = Math.min(.3, treeVal('foeHpCut')); if (cut && !foe.summit){ foe.mhp = Math.max(4, Math.round(foe.mhp * (1 - cut))); foe.hp = foe.mhp; }
  B = { bid: ++BID, foe, kind, hand: [], drawPile: shuffle([...R.deck]), discard: [],
     mult: 0, fdmg: 0, bestHit: 0, peakMult: 1, blended: 0, motifCnt: {}, eagerUsed: {}, blueUsed: {},
     energy: (R.menergy || 3) + treeVal('t1energy') + petVal('t1energy') + (R.wx === 'tail' ? 1 : 0), maxEnergy: R.menergy || 3, block: 0,
     str: relicSum('str') + treeVal('str') + Math.min(5, Math.floor((META.marks || 0) / 3)),
     autoblk: relicSum('autoblk') + treeVal('autoblk') + petVal('autoblk'),
-    played: 0, turn: 1,
+    played: 0, turn: 1, armor: treeVal('armor'),
     firstHit: relicSum('firstHit') + treeVal('firstHit') + petVal('firstHit') + (R.cls === 'pirate' ? 4 : 0),
     over: false, ending: false, won: false };
-  if (rlaw.startBlock) B.block = rlaw.startBlock;
-  drawCards(5 + relicSum('firstDraw') + treeVal('firstDraw') + petVal('firstDraw') + (R.cls === 'wizard' ? 1 : 0) + (R.cls === 'moon' ? 1 : 0) + (hasVoucher('hand6') ? 1 : 0));
+  B.block = (rlaw.startBlock || 0) + treeVal('startBlk');
+  drawCards(5 + relicSum('firstDraw') + treeVal('firstDraw') + petVal('firstDraw') + (R.cls === 'wizard' ? 1 : 0) + (R.cls === 'moon' ? 1 : 0) + (hasVoucher('hand6') ? 1 : 0) + treeVal('drawAll'));
   if (foe.rule === 'lock') B.lockUid = B.hand[0] && B.hand[0].uid;
   
  R._pf = { s: R.stripes, d: JSON.stringify(R.deck) };
@@ -5027,8 +5110,10 @@ function foeSwing(f, mul = 1){
   const wk = f.weak ? Math.ceil(raw * .25) : 0;
   const goth = R.cls === 'goth' ? Math.max(1, Math.round(raw * .08)) : 0;
   const cut = petVal('dmgCut') ? Math.max(1, Math.round(raw * .07)) : 0;
-  return Math.max(1, Math.round(raw) - wk - goth - cut);
+  return Math.max(1, Math.round(raw) - wk - goth - cut - ((B && B.armor) || 0));
 }
+function answersTell(c, ctx){ const g = tellSpec(B.foe); return !!g && (g.test(c, ctx || B) || (!B.foe.summit && treeVal('tellAny') > 0 && !!c.weak)); }
+function tellHint(g){ return g.hint + (treeVal('tellAny') && !(B && B.foe && B.foe.summit) ? ' · OR ANY WEAKEN (READ THE ROOM)' : ''); }
 function foeIntent(){
   const f = B.foe;
   if (f.stagger) return '<span class="intIc">?</span> INTENT: <b>NONE. IT FORGOT.</b>';
@@ -5038,7 +5123,7 @@ function foeIntent(){
     const g = tellSpec(f);
     const n = foeSwing(f, 2);
     return `<span class="intIc">‡</span> INTENT: <b style="color:var(--r)">HAYMAKER ${n}</b>` +
-      `<br><span style="font-size:10px;letter-spacing:.08em">${g.hint}</span>`;
+      `<br><span style="font-size:10px;letter-spacing:.08em">${tellHint(g)}</span>`;
   }
   const kind = f.pat[f.pi % f.pat.length];
   if (kind === 'atk'){
@@ -5063,7 +5148,7 @@ function foeIntent(){
   if (kind === 'tell'){
     const g = tellSpec(f);
     return `<span class="intIc">‡</span> INTENT: <b style="color:var(--r)">WINDING UP</b>` +
-      (g ? ` <span style="opacity:.85">· ${g.hint}</span>` : '') + seerLine(f);
+      (g ? ` <span style="opacity:.85">· ${tellHint(g)}</span>` : '') + seerLine(f);
   }
   return '<span class="intIc">▲</span> INTENT: <b style="color:var(--r)">GETTING ANGRIER</b>' + seerLine(f);
 }
@@ -5520,7 +5605,7 @@ function playCard(i, cardEl){
     
  B.turnIds = B.turnIds || [];
  B.turnIds.push(c.id);
-    if (B.foe.tell && tellSpec(B.foe) && tellSpec(B.foe).test(c, B)){
+    if (B.foe.tell && answersTell(c)){
       const g = tellSpec(B.foe);
  B.foe.tell = 0;
  B.foe.stagger = 1;
@@ -5675,7 +5760,7 @@ function endTurn(){
       f.tell = 1;
       if (g){
         stampFx('WIND-UP');
-        toast(g.cue + ' — ' + g.hint, 3600);
+        toast(g.cue + ' — ' + tellHint(g), 3600);
  SFX.windUp(); hapt([30, 60, 30, 60, 30]);
         
         setTimeout(() => tut('tell', '#intent', 'IT IS WINDING UP',
@@ -5828,11 +5913,11 @@ function endTurn(){
     
     if (f.boss && !f.summit && !f.phase2 && f.hp > 0 && f.hp < f.mhp * .5){
       f.phase2 = 1;
-      f.str += 3;
-      f.pat = ['atk', 'atk', 'multi', 'atk'];
+      f.str += HARD.p2str;
+      f.pat = tellSpec(f) ? ['atk', 'tell', 'atk', 'multi'] : ['atk', 'atk', 'multi', 'atk'];
       f.pi = 0;
       stampFx('SECOND WIND');
-      toast('▲ ' + f.name + ' STOPS PLAYING AROUND.  +3 · NEW PATTERN.', 3000);
+      toast('▲ ' + f.name + ' STOPS PLAYING AROUND · +' + HARD.p2str + ' · WATCH FOR THE NEXT WIND-UP', 3000);
  SFX.bell(); hapt([50, 30, 90]);
       const fa = $('#foeArt');
       if (fa){ fa.classList.remove('bigshake'); void fa.offsetWidth; fa.classList.add('bigshake'); }
@@ -5843,13 +5928,8 @@ function endTurn(){
       if (B.turn === 12) toast(' THE SUN SETS. IT GETS BOLDER EVERY TURN NOW.', 2200);
     }
     if (B.stripegen){ R.stripes += B.stripegen; }
-    if (through > 0 && R.hp <= 0 && R.phoenix){
- R.phoenix = false;
- R.hp = 1;
-      stampFx('ANCESTRAL CALLUS');
-      toast('THE ANCESTORS SAY: NOT YET. · 1 HP', 2400);
- SFX.bell(); hapt([40, 30, 40]);
-    }
+    if (through > 0 && R.hp <= 0 && R.phoenix > 0){ R.phoenix--; R.hp = Math.max(1, Math.round(R.mhp * treeVal('phoenixPct')));
+      stampFx('ANCESTRAL CALLUS'); toast('THE ANCESTORS SAY: NOT YET · ' + R.hp + ' HP' + (R.phoenix > 0 ? ' · ' + R.phoenix + ' MORE' : ''), 2400); SFX.bell(); hapt([40, 30, 40]); }
     if (through > 0 && R.hp <= 0){
       
  B.over = true; B.ending = true; B.busy = false;
@@ -5873,8 +5953,8 @@ function endTurn(){
  B.block = (R.cls === 'robo' ? Math.ceil(B.block * .5) : 0) + B.autoblk;   
  B.foe.blk = Math.ceil((B.foe.blk || 0) * .5);   
     if (B.autoblk) bumpStat('blocks', B.autoblk);
- B.energy = B.maxEnergy + (relicSum('energy3') && B.turn % 3 === 0 ? 1 : 0);
-    drawCards(5 + (hasVoucher('hand6') ? 1 : 0) + purples);
+ B.energy = B.maxEnergy + ((relicSum('energy3') || treeVal('energy3')) && B.turn % 3 === 0 ? 1 : 0);
+    drawCards(5 + (hasVoucher('hand6') ? 1 : 0) + purples + treeVal('drawAll'));
     if (purples) toast('◍ PURPLE SEAL · +' + purples + ' DRAWN', 1000);
     if (B.foe.rule === 'lock') B.lockUid = B.hand[0] && B.hand[0].uid;
     saveRun();
@@ -5944,7 +6024,7 @@ function autoPolicy(){
   
   if (B.foe.tell && tellSpec(B.foe)){
     const g = tellSpec(B.foe);
-    const ci = h.findIndex(c => canPlayAuto(c) && g.test(c, { turnIds: [...(B.turnIds || []), c.id] }));
+    const ci = h.findIndex(c => canPlayAuto(c) && answersTell(c, { turnIds: [...(B.turnIds || []), c.id] }));
     if (ci >= 0) return aiPlay(ci, 'COUNTER IT.');
   }
   
@@ -6046,6 +6126,8 @@ function winBattle(){
  Music.setBattle(false);
   delete R._pf;               
  R.clearedFloor = R.floor;   
+  if (B.kind === 'boss') R.bossKills = (R.bossKills || 0) + 1;
+  if (B.kind === 'elite') R.eliteKills = (R.eliteKills || 0) + 1;
   const base = (B.kind === 'boss' ? 50 : B.kind === 'elite' ? 28 : 16) + Math.floor(R.floor * 2);
   const wxMul = (R.wx === 'heat' ? 1.4 : R.wx === 'fog' ? .8 : 1) * (1 + (regionLaw().goldMul || 0));
   const gmul = Math.min(2.5, 1 + relicSum('goldMul') + treeVal('goldMul') + petVal('goldMul') + (R.cls === 'pirate' ? .4 : 0));
@@ -6057,9 +6139,8 @@ function winBattle(){
   const icap = 5 + Math.floor(R.floor / 10);
   const intr = Math.min(icap, Math.floor(R.stripes / 10));
   if (intr){ R.stripes += intr; setTimeout(() => toast(' INTEREST · +' + intr + ' ◆ (1 PER 10 HELD · CAP ' + icap + ')', 1600), 1600); }
- META.stripes += Math.floor(gold / 2);
-  let heal = relicSum('healAfter') + petVal('healAfter') + (R.wx === 'drizzle' ? 3 : 0);
-  if (heal) heal += Math.round(R.mhp * .03);
+  const banked = bank(Math.floor(gold / 2), 'battle');
+  let heal = relicSum('healAfter') + petVal('healAfter') + treeVal('healAfter') + (R.wx === 'drizzle' ? 3 : 0);
   if (heal) R.hp = Math.min(R.mhp, R.hp + heal);
   
   bountyBump('wins');
@@ -6069,14 +6150,14 @@ function winBattle(){
   
   if (B.kind === 'boss'){
     const ecap = R.floor >= 100 ? 7 : R.floor >= 50 ? 6 : 5;
-    if ((R.menergy || 3) < ecap){
+    if (R.floor % 10 === 0 && (R.menergy || 3) < ecap){
  R.menergy = (R.menergy || 3) + 1;
       setTimeout(() => toast('* MAX ENERGY  ' + R.menergy + ' · THE HERD BLESSES YOU', 2200), 1200);
     }
- R.hp = Math.min(R.mhp, R.hp + Math.round(R.mhp * .15));
+    const bh = .15 + treeVal('bossHeal'); R.hp = Math.min(R.mhp, R.hp + Math.round(R.mhp * bh));
  R.stripes += 30 + R.floor;
     const mfloor = R.floor, mgold = 30 + R.floor;
-    setTimeout(() => { stampFx('MIGRATION'); toast('FLOOR ' + mfloor + ' · +25% HP · +' + mgold + ' ◆ · THE HERD MOVES', 2400); SFX.victory(); }, 2400);
+    setTimeout(() => { stampFx('MIGRATION'); toast('FLOOR ' + mfloor + ' · +' + Math.round(bh * 100) + '% HP · +' + mgold + ' ◆ · THE HERD MOVES', 2400); SFX.victory(); }, 2400);
   }
   saveMeta(); saveRun();
   stampFx(B.kind === 'boss' ? 'BOSS DOWN' : 'K.O.');
@@ -6091,7 +6172,7 @@ function winBattle(){
     'HR HAS BEEN NOTIFIED. HR IS A WARTHOG.',
     'THE HERD WOULD CLAP IF HOOVES WORKED THAT WAY.',
   ]), 1900), 700);
-  const g2 = gold, k2 = B.kind;
+  const g2 = gold, k2 = B.kind, b2 = banked;
   setTimeout(flushTrophies, 1400);   
   
   const twistId = (B.foe.id === 'blender' && !twistSeen('blender')) ? 'blender'
@@ -6099,10 +6180,10 @@ function winBattle(){
   if (twistId){
     if (twistId === 'blender') META.blendHeals = 1;
     saveMeta();
-    setTimeout(() => fireTwist(twistId, () => screenReward(g2, k2)), DL(950));
+    setTimeout(() => fireTwist(twistId, () => screenReward(g2, k2, b2)), DL(950));
     return;
   }
-  setTimeout(() => screenReward(g2, k2), DL(950));
+  setTimeout(() => screenReward(g2, k2, b2), DL(950));
 }
 
 function mkTrophyCard(foe){
@@ -6116,43 +6197,47 @@ function mkTrophyCard(foe){
   markSeen('trophy');
   return c;
 }
-function screenReward(gold, kind){
+function screenReward(gold, kind, banked){
   if (!R) return screenTitle();   
-  const picks = [];
+  const first = !(B && B.rewGiven); if (B) B.rewGiven = 1;
+  const picks = (B && B.rewPicks) || [];
+  if (!picks.length){
   
-  const pool = BASE_CARDS.filter(c => !c.secret && !['bite', 'hide'].includes(c.id) && (R.floor >= 5 || c.early));
+    const pool = BASE_CARDS.filter(c => !c.secret && !['bite', 'hide'].includes(c.id) && (R.floor >= 5 || c.early));
   
-  const rollRar = () => {
-    const r = Math.random();
-    if (kind === 'boss') return r < .5 ? 2 : 1;
-    if (kind === 'elite') return r < .2 ? 2 : r < .55 ? 1 : 0;
-    return r < .08 ? 2 : r < .35 ? 1 : 0;
-  };
-  const nPicks = 3 + (treeVal('pick4') ? 1 : 0);
-  while (picks.length < nPicks){
-    let rar = rollRar();
-    let sub = pool.filter(c => c.rar === rar);
-    while (!sub.length && rar > 0){ rar--; sub = pool.filter(c => c.rar === rar); }
-    if (!sub.length) sub = pool;
-    const c = pick(sub);
-    if (!picks.some(p => p.id === c.id) || Math.random() < .2) picks.push(mkCard(c.id));
+    const rollRar = () => {
+      const r = Math.random();
+      if (kind === 'boss') return r < .5 ? 2 : 1;
+      if (kind === 'elite') return r < .2 ? 2 : r < .55 ? 1 : 0;
+      return r < .08 ? 2 : r < .35 ? 1 : 0;
+    };
+    const nPicks = 3 + (treeVal('pick4') ? 1 : 0);
+    while (picks.length < nPicks){
+      let rar = rollRar();
+      let sub = pool.filter(c => c.rar === rar);
+      while (!sub.length && rar > 0){ rar--; sub = pool.filter(c => c.rar === rar); }
+      if (!sub.length) sub = pool;
+      const c = pick(sub);
+      if (!picks.some(p => p.id === c.id) || Math.random() < .2) picks.push(mkCard(c.id));
+    }
+  
+    if (R.floor >= 8 && Math.random() < .4){
+      picks[nPicks - 1] = blendCards(mkCard(pick(BASE_CARDS.filter(c => !c.secret)).id), mkCard(pick(BASE_CARDS.filter(c => !c.secret)).id));
+    }
+  
+    if (R.wkGlass && Math.random() < .3){
+      const gi = ri(picks.length), gc = picks[gi];
+      if (gc.dmg) gc.dmg = Math.min(CAPS.dmg, gc.dmg * 2);
+      if (gc.blk) gc.blk = Math.min(CAPS.blk, gc.blk * 2);
+      gc.glass = 1; descFor(gc);
+    }
+  
+    if (B && B.foe && !B.tookDmg) picks.push(mkTrophyCard(B.foe));
+    if (B) B.rewPicks = picks;
   }
-  
-  if (R.floor >= 8 && Math.random() < .4){
-    picks[nPicks - 1] = blendCards(mkCard(pick(BASE_CARDS.filter(c => !c.secret)).id), mkCard(pick(BASE_CARDS.filter(c => !c.secret)).id));
-  }
-  
-  if (R.wkGlass && Math.random() < .3){
-    const gi = ri(picks.length), gc = picks[gi];
-    if (gc.dmg) gc.dmg = Math.min(CAPS.dmg, gc.dmg * 2);
-    if (gc.blk) gc.blk = Math.min(CAPS.blk, gc.blk * 2);
-    gc.glass = 1; descFor(gc);
-  }
-  
-  const trophy = (B && B.foe && !B.tookDmg) ? mkTrophyCard(B.foe) : null;
-  if (trophy) picks.push(trophy);
+  const trophy = picks.find(c => c.trophyOf);
   app.innerHTML = '';
-  const relicDrop = (kind === 'elite' || kind === 'boss');
+  const relicDrop = first && (kind === 'elite' || kind === 'boss');
   let relic = null;
   if (relicDrop){
     const owned = new Set(R.relics.map(r => r.id));
@@ -6164,11 +6249,12 @@ function screenReward(gold, kind){
     saveRun();   
   }
   
-  const pows = (treeVal('powAlways') || (!relicDrop && Math.random() < .5)) ? rollPowerups(2 + treeVal('powChoice')) : null;
+  const pc = Math.min(.9, (treeVal('powAlways') ? HARD.powTree : HARD.powBase) + treeVal('powChance'));
+  const pows = first && (relicDrop || Math.random() < pc) ? rollPowerups(2 + treeVal('powChoice')) : null;
   const p = el(`<div class="page">
     ${hudHtml()}
     <div class="stripes"></div>
-    <span class="kick">VICTORY · +${gold} ◆ STRIPES${relic ? ' · RELIC GET' : ''}${pows ? ' · POWERUP DROP' : ''}</span>
+    <span class="kick">VICTORY · +${gold} ◆${banked ? ' · +' + banked + ' ◆ BANKED FOREVER' : ''}${relic ? ' · RELIC GET' : ''}${pows ? ' · POWERUP DROP' : ''}</span>
     ${B ? `<div style="display:flex;gap:6px;flex-wrap:wrap">
       <span class="chip"> ${B.fdmg || 0} DEALT</span><span class="chip hot">☄ BEST HIT ${B.bestHit || 0}</span>
       ${(B.peakMult || 1) > 1 ? `<span class="chip hot">◧ BEST HERD ×${B.peakMult.toFixed(1).replace('.0', '')}</span>` : ''}
@@ -6233,7 +6319,7 @@ function screenReward(gold, kind){
   }
   if ($('#bRBlend')) $('#bRBlend').onclick = () => {
     autoPow();
-    wipe(() => screenBlend({ quick: 1, exit: afterReward, back: () => screenReward(gold, kind) }));
+    wipe(() => screenBlend({ quick: 1, exit: afterReward, back: () => screenReward(gold, kind, banked) }));
   };
   tut('reward', '#hand', 'LOOT', 'Tap a <b>powerup</b> when one drops. Then take <b>one</b> card — or <b>BLEND TWO</b> you already own into a single better one. Growing wide and fusing deep are different games. A <b>small, sharp deck</b> draws its best cards more often.');
 }
@@ -6324,6 +6410,7 @@ function screenRest(revisit){
   }
   if (!revisit) loreWhisper();   
   if (!revisit){ R.oasisBlends = 0; R.distilled = 0; }   
+  const restAmt = Math.round(R.mhp * (.25 + treeVal('restPct')));
   app.innerHTML = '';
   const p = el(`<div class="page">
     ${hudHtml()}
@@ -6331,11 +6418,11 @@ function screenRest(revisit){
     <div class="big">The <span class="z">Oasis</span></div>
     <div class="liveArt" data-rig="oasis" style="width:100%;height:74px;position:relative"></div>
     <div class="sub">Quiet water. Red sky. A suspicious blender on a rock.</div>
-    <button class="btn" id="bHeal">Rest · heal ${Math.round(R.mhp * .25)} HP</button>
+    <button class="btn" id="bHeal">Rest · heal ${restAmt} HP</button>
     <button class="btn red" id="bBlend">BLEND two cards into one</button>
   </div>`);
   app.appendChild(p);
-  $('#bHeal').onclick = () => { R.hp = Math.min(R.mhp, R.hp + Math.round(R.mhp * .25)); saveRun(); toast('RESTED. THE ZEBRA DREAMS IN STRIPES.'); screenMap(); };
+  $('#bHeal').onclick = () => { R.hp = Math.min(R.mhp, R.hp + restAmt); saveRun(); toast('RESTED. THE ZEBRA DREAMS IN STRIPES.'); screenMap(); };
   $('#bBlend').onclick = screenBlend;
   tut('rest', '#bBlend', 'THE SIGNATURE MOVE', 'Healing is fine. <b>BLENDING is the game</b>: two cards become one permanent hybrid with both effects. Two decent cards in, one great card out — and your deck gets thinner. Do it.');
 }
@@ -6470,10 +6557,10 @@ function screenBlend(opt){
     }
     if (rec && firstFind){
  META.recipes = [...(META.recipes || []), rec.out];
- META.stripes += 40;
+      bank(40, 'feats');
       if (META.recipes.length === RECIPES.length && !META.masterChef){
  META.masterChef = 1;
- META.stripes += 500;
+        bank(500, 'feats');
         setTimeout(() => { stampFx('MASTER CHEF'); toast(' ALL ' + RECIPES.length + ' RECIPES KNOWN · +500 ◆ · THE ANCESTORS WEEP WITH PRIDE', 3200); SFX.victory(); }, 3000);
       }
       saveMeta();
@@ -6601,7 +6688,7 @@ function screenShop(){
   const stakeUp = 1 + .1 * (META.stake || 0);
   const off = (1 - treeVal('shopOff')) * stakeUp * (R.wkShopOff || 1) * (1 - (regionLaw().shopOff || 0)) * (META.meerkatOff ? .9 : 1);
   const cardCost = Math.round((18 + (cards[0].rar || 0) * 12 + R.floor * 2) * off);
-  const healCost = Math.round((15 + R.floor) * off);
+  const healCost = Math.round((HARD.shopHeal0 + HARD.shopHealF * R.floor) * off);
   const banishCost = Math.round((45 + R.floor * 2) * off);
   const owned = new Set(R.relics.map(r => r.id));
   const av = RELICS.filter(r => !owned.has(r.id));
@@ -6617,9 +6704,9 @@ function screenShop(){
     </div>
     <div id="hand">${cards.map((c, i) => `<div data-i="${i}">${cardHtml(c)}</div>`).join('')}</div>
     <button class="btn" id="bC0">Buy this card · ◆ ${cardCost}</button>
-    <button class="btn" id="bRelic">${relic.name} (${relic.desc}) · ◆ ${relicCost}</button>
-    <button class="btn" id="bBanish">BANISH a card — the meerkat eats it · ◆ ${banishCost}</button>
-    <button class="btn" id="bHeal">Patch up · heal 30% · ◆ ${healCost}</button>
+    ${R.shopRelicF === R.floor ? '<button class="btn" id="bRelic" disabled data-sold="1">SOLD · ONE RELIC PER FLOOR</button>' : `<button class="btn" id="bRelic">${relic.name} (${relic.desc}) · ◆ ${relicCost}</button>`}
+    ${R.shopBanF === R.floor ? '<button class="btn" id="bBanish" disabled data-sold="1">THE MEERKAT IS FULL</button>' : `<button class="btn" id="bBanish">BANISH a card — the meerkat eats it · ◆ ${banishCost}</button>`}
+    ${R.shopHealF === R.floor ? '<button class="btn" id="bHeal" disabled data-sold="1">PATCHED · ONE PER FLOOR</button>' : `<button class="btn" id="bHeal">Patch up · heal 30% · ◆ ${healCost}</button>`}
     <div class="stripes" style="height:6px"></div>
     <span class="kick">THE BACK ROOM · NEW STOCK</span>
     <button class="btn" id="bPakS">▤ Booster Pack · pick 1 of 3 · ◆ ${packCost('std')}</button>
@@ -6646,7 +6733,7 @@ function screenShop(){
     o.querySelectorAll('.grid > div').forEach(dv => dv.onclick = () => {
       const c = R.deck[+dv.dataset.i];
  R.deck.splice(+dv.dataset.i, 1);
- R.stripes -= banishCost;
+ R.stripes -= banishCost; R.shopBanF = R.floor;
       saveRun();
       o.remove();
       const bb = $('#bBanish');
@@ -6681,8 +6768,8 @@ function screenShop(){
     refreshAfford();
   };
   $('#bC0').onclick = e => buy(cardCost, () => R.deck.push(cards[0]), e.target);
-  $('#bRelic').onclick = e => buy(relicCost, () => { R.relics.push(relic); if (relic.hp){ R.mhp += relic.hp; R.hp += relic.hp; } relicPop(relic); }, e.target);
-  $('#bHeal').onclick = e => buy(healCost, () => R.hp = Math.min(R.mhp, R.hp + Math.max(20, Math.round(R.mhp * .3))), e.target);
+  $('#bRelic').onclick = e => buy(relicCost, () => { R.shopRelicF = R.floor; R.relics.push(relic); if (relic.hp){ R.mhp += relic.hp; R.hp += relic.hp; } relicPop(relic); }, e.target);
+  $('#bHeal').onclick = e => buy(healCost, () => { R.shopHealF = R.floor; R.hp = Math.min(R.mhp, R.hp + Math.max(20, Math.round(R.mhp * .3))); }, e.target);
   
   $('#bPakS').onclick = e => buy(packCost('std'), () => openPack('std', 0, () => screenShop()), e.target);
   $('#bPakA').onclick = e => buy(packCost('anc'), () => openPack('anc', 0, () => screenShop()), e.target);
@@ -6906,7 +6993,12 @@ function combatBlend(){
     const nc = rec ? primeCard(rec.out) : blendCards(cA, cB);
     if (firstFind){
  META.recipes = [...(META.recipes || []), rec.out];
- META.stripes += 40;
+      bank(40, 'feats');
+      if (META.recipes.length === RECIPES.length && !META.masterChef){
+ META.masterChef = 1;
+        bank(500, 'feats');
+        setTimeout(() => { stampFx('MASTER CHEF'); toast(' ALL ' + RECIPES.length + ' RECIPES KNOWN · +500 ◆ · THE ANCESTORS WEEP WITH PRIDE', 3200); SFX.victory(); }, 3000);
+      }
       setTimeout(() => { toast('¶ RECIPE DISCOVERED IN COMBAT · +40 ◆ · THE ANCESTORS APPROVE OF THE VIOLENCE', 2800); SFX.victory(); }, 1600);
       saveMeta();
     }
@@ -7054,16 +7146,17 @@ function cycleStake(){
   screenTitle();
 }
 
-function loseRun(){
+function loseRun(opt){
+  opt = opt || {}; const ab = !!opt.abandoned;
  Music.setBattle(false);
-  if (!(B && B.ending)){ SFX.death(); hapt([60, 40, 120]); }   
-  const byBlender = !!(B && B.foe && B.foe.id === 'blender');
-  const newBest = R.floor > (R.bestAtStart || 0);
-  stampFx(newBest ? 'NEW BEST' : 'FELL');
+  if (!ab && !(B && B.ending)){ SFX.death(); hapt([60, 40, 120]); }   
+  const byBlender = !ab && !!(B && B.foe && B.foe.id === 'blender');
+  const newBest = (R.clearedFloor || 0) > (R.bestAtStart || 0);
+  stampFx(ab ? 'WALKED OFF' : newBest ? 'NEW BEST' : 'FELL');
   const floor = R.floor;
   const stats = { dmg: R.sdmg || 0, cards: R.scards || 0, blends: R.sblends || 0, deck: R.deck.length, relics: R.relics.length };
   const wcode = R.world != null ? worldCode(R.world) : null;
-  bumpStat('deaths', 1);
+  if (!ab) bumpStat('deaths', 1);
   if (!twistSeen('vultures') && (META.stats.deaths || 0) >= 8){ META.vultureCut = 1; saveMeta(); }
   delete R._pf;   
   
@@ -7073,11 +7166,12 @@ function loseRun(){
  META.lastBlends = R.deck.filter(c => c.blend && !c.cursed).slice(0, 12).map(slimCard);
   
   if (R.weekly){ META.weekly = META.weekly || {}; META.weekly[R.weekly] = Math.max(META.weekly[R.weekly] || 0, R.floor); }
-  const killer = B && B.foe ? B.foe.name : 'the savanna';
+  const killer = ab ? 'a sudden loss of interest' : (B && B.foe ? B.foe.name : 'the savanna');
   logRun(killer);
-  const climbed = Math.max(0, floor - (R.startFloor || 0));
-  const earned = Math.round((15 + climbed * 6) * marksMul() * (META.vultureCut ? 1.25 : 1));
- META.stripes += earned;
+  const climbed = Math.max(0, floor - (R.startFloor || 0)), bk = R.bossKills || 0, ek = R.eliteKills || 0, held = R.stripes || 0;
+  bank(((ab ? 0 : HARD.fall0) + HARD.fallF * climbed + HARD.fallBoss * bk + HARD.fallElite * ek) * marksMul() * (META.vultureCut ? 1.25 : 1), 'fall');
+  bank(Math.floor(held * HARD.salvage), 'pockets');
+  const led = { ...(R.bankLog || {}) }, total = Object.values(led).reduce((s, v) => s + v, 0);
   saveMeta();
  R = null; saveRun();
   app.innerHTML = '';
@@ -7085,7 +7179,7 @@ function loseRun(){
     <span class="kick">${byBlender ? 'BLACK AND WHITE AND RED ALL OVER' : newBest ? '★ NEW BEST FLOOR · THE HERD IS IMPRESSED ★' : 'THE SAVANNA IS PATIENT'}</span>
     <div class="big">Run <span class="z">over</span></div>
     <div class="stripes"></div>
-    <div class="sub">${META.zebName ? META.zebName + ' fell' : 'Fell'} on floor ${floor}${wcode ? ' of savanna <b style="color:var(--r)">' + wcode + '</b>' : ''}.<br>+${earned} ◆ stripes banked for the skill tree</div>
+    <div class="sub">${META.zebName ? META.zebName + ' fell' : 'Fell'} on floor ${floor}${wcode ? ' of savanna <b style="color:var(--r)">' + wcode + '</b>' : ''}.<br>+${total} ◆ stripes banked this run</div>
     <div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap">
       <span class="chip"> ${stats.dmg} DMG</span><span class="chip">▭ ${stats.cards} PLAYED</span>
       <span class="chip hot">* ${stats.blends} BLENDS</span><span class="chip">≡ DECK ${stats.deck}</span>
@@ -7116,10 +7210,10 @@ function treeGrowth(){
     ['menergy', v => `* START ${3 + v}`], ['blendHeal', v => `♥ BLEND +${v}`],
     ['blendBonus', v => `* BLENDS +${v}`], ['startBlend', v => `* ${v} PRE-BLEND`],
     ['idleRate', v => `⁂ +${v}◆/HR AWAY`], ['idleCap', v => `⁂ CAP ${8 + v}H`], ['idleDeep', () => `⁂ DEEP ×2`],
-    ['powAlways', () => `POW 100%`], ['powChoice', v => `POW ×${2 + v}`],
+    ['powAlways', () => `POW 70%`], ['powChoice', v => `POW ×${2 + v}`],
     ['safeDoor', () => `? BITE-PROOF`], ['relic', v => `◈ +${v} RELIC`], ['pick4', () => `▭ 4 PICKS`],
   ];
-  return G.map(([k, f]) => { const v = treeVal(k); return v ? `<span class="chip hot">${f(v)}</span>` : ''; }).join('');
+  return G.map(([k, f]) => { const v = treeOnly(k); return v ? `<span class="chip hot">${f(v)}</span>` : ''; }).join('');
 }
 let lastBought = null;
 function screenTree(keepScroll){
