@@ -735,7 +735,7 @@ function wipe(cb){
 
 function splash(foe, cb){
   const s = el(`<div id="splash">
-    <div class="sk">${foe.ep ? "ROGUES' GALLERY" : 'FLOOR ' + R.floor + ' · BOSS'}</div>
+    <div class="sk">${foe.ep && (!foe.boss || foe.summit) ? "ROGUES' GALLERY" : 'FLOOR ' + R.floor + ' · BOSS'}</div>
     <div class="art">${artFor(foe, 0)}</div>
     <div class="sn">${foe.name}</div>
     ${foe.ep ? `<div class="sk">(${foe.ep})</div>` : ''}
@@ -2035,6 +2035,32 @@ const BOSS_PATS = {
   mirage: ['tell', 'atk', 'blk', 'mimic'],      
 };
 
+// ── TIERED BOSS POOLS · tier i = i-th boss floor of each 25-floor lap; [original, new A, new B] ──
+const BOSS_TIERS = [
+  ['alpha',    'hipporex', 'marabou'],
+  ['lion',     'termitequeen', 'honeybadger'],
+  ['crocking', 'elephantboard', 'pangolinprime'],
+  ['blender',  'sandstorm', 'dungbeetle'],
+  ['mirage',   'wildebeest', 'dryseason'],
+];
+const BOSSES2 = [];          // new bosses { id, name, ep, hp, atk, pat } (registered by the boss blocks below QUIPS)
+const BOSS_P2 = {};          // optional per-boss phase-2 pattern (default: the generic second-wind pattern)
+const BOSS_ORIG_FIRST = true; // serve a tier's original until it has been catalogued once (keeps first-run onboarding + twists)
+function bossById(id){ return BOSSES.find(b => b.id === id) || BOSSES2.find(b => b.id === id) || null; }
+function bossRoster(){ return BOSS_TIERS.flat().map(bossById).filter(Boolean); }
+function bossPick(bi){
+  const tier = bi % BOSS_TIERS.length, cycles = Math.floor(bi / BOSS_TIERS.length);
+  const anchor = BOSSES[tier];
+  const pool = BOSS_TIERS[tier].filter(id => bossById(id));
+  if (BOSS_ORIG_FIRST && !((typeof META === 'object' && META && META.bestiary) || {})[anchor.id])
+    return { b: anchor, tier, cycles, anchor };
+  const rnd = srng(((typeof R === 'object' && R && R.world) || 20260810) * 7919 + tier * 104729 + 4241);
+  rnd(); rnd();
+  const order = pool.slice();
+  for (let i = order.length - 1; i > 0; i--){ const j = Math.floor(rnd() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
+  return { b: bossById(order[cycles % order.length]) || anchor, tier, cycles, anchor };
+}
+
 const VILLAINS = [
   { id: 'goat', name: 'THE SIMULATED GOAT', ep: 'PHYSICS ARE A SUGGESTION', hp: 33, atk: 9,
     pat: ['clip', 'atk', 'ragdoll', 'atk', 'clip', 'buff'] },
@@ -2844,9 +2870,23 @@ function GOATART(f = 0){
     ${sink ? `<text x="60" y="30" font-family="monospace" font-size="7.5" fill="${G}" text-anchor="middle">NO COLLISION</text>` : ''}
   </svg>`;
 }
+// ── BOSSART2 · standalone boss rigs (tiered boss pools). Each rig: f => inner-svg fragment. ──
+const B2P = { K: '#000', W: '#f2f2f2', G: '#9a9a9a', D: '#4a4a4a', R: 'var(--r)',
+  bob: f => Math.sin(f / 8) * 2.5, blink: f => Math.sin(f / 13) < -.9, jig: f => Math.sin(f * 1.3) * 2 };
+const BOSSART2 = {};
+function BOSS2SVG(id, f = 0){
+  let inner = '';
+  try { inner = BOSSART2[id](f) || ''; } catch (e) { inner = ''; }
+  return `<svg viewBox="0 0 120 140" width="100%" height="100%" preserveAspectRatio="xMidYMid meet"
+    style="position:absolute;inset:0;background:#000">
+    <ellipse cx="60" cy="132" rx="${34 + Math.sin(f / 8) * 3}" ry="4" fill="#222"/>
+    ${inner}
+  </svg>`;
+}
 function artFor(foe, f = 0){
   if (foe.id === 'goat') return GOATART(f);
   if (foe.id === 'god') return GODART(f);
+  if (BOSSART2[foe.id]) return BOSS2SVG(foe.id, f);
   if (foe.vill) return VART(foe.id, f);
   if (foe.id === 'mirage') return ZEB(f, 'atk', 'mirage');   
   if (GEN_SPECS[foe.id]) return GENART(foe.id, f);
@@ -2898,6 +2938,595 @@ const QUIPS = {
   hacker: ['*hacks*', 'password?', 'i\'m in. (the fridge)'],
 };
 Object.entries(GEN_QUIPS).forEach(([k, v]) => { QUIPS[k] = v; });
+// ═══ BOSS dryseason · tier 5 slot B ═══
+// THE DRY SEASON · the drought itself: a sun that is also a skull, hanging over a lake bed that used to be a lake.
+// Tell: DANCE FOR RAIN — play 3 DIFFERENT cards this turn (new Set(B.turnIds).size >= 3).
+// Special: PARCH (a hit that it DRINKS: whatever gets past your block heals it. Fully blocked = it gets nothing).
+BOSSES2.push({ id: 'dryseason', name: 'THE DRY SEASON', ep: 'NO RAIN IN THE FORECAST. EVER.', hp: 150, atk: 19,
+  pat: ['tell', 'atk', 'parch', 'blk', 'multi'] });
+BOSS_TELLS.dryseason = { cue: '✦ THE SUN-SKULL · IT IS DRINKING THE SKY',
+  hint: 'DANCE FOR RAIN — play 3 DIFFERENT cards this turn',
+  test: (c, B) => new Set(B.turnIds || []).size >= 3,
+  win: 'ONE DROP OF RAIN LANDS ON IT. THE DRY SEASON IS DEEPLY OFFENDED.',
+  fail: 'THE SKY STAYS EMPTY. THE SUN COMES DOWN TO CHECK ON YOU PERSONALLY.' };
+BOSS_PATS.dryseason = ['tell', 'atk', 'parch', 'blk', 'multi'];
+BOSS_P2.dryseason = ['atk', 'tell', 'atk', 'parch', 'multi'];
+QUIPS.dryseason = ['it has not rained since i arrived.', 'you look moist. that will pass.',
+  'the watering hole is a hole now.', '*evaporates a puddle, slowly, at you*', 'zero percent. every day. zero.',
+  'thirsty? same. forever.', 'i am not hot. i am thorough.', 'the river left. it did not say goodbye.'];
+BOSSART2.dryseason = f => {
+  const { K, W, G, D, R } = B2P;
+  const bob = B2P.bob(f), blink = B2P.blink(f);
+  const n1 = v => v.toFixed(1);
+  const P = 100, ph = f % P;
+  const e = ph < 20 ? Math.sin((ph / 20) * Math.PI) : 0;              // the scorch: a 0.8 s flare every 4 s
+  const cx = 60, cy = 56;
+  // sun rays: one path, 12 rays, long/short, slowly turning; they flare during the scorch
+  const rot = f * .012;
+  let rays = '';
+  for (let i = 0; i < 12; i++){
+    const a = rot + i * Math.PI / 6, r0 = 35, r1 = (i % 2 ? 41 : 48) + e * 7;
+    rays += `M${n1(cx + Math.cos(a) * r0)} ${n1(cy + Math.sin(a) * r0)} L${n1(cx + Math.cos(a) * r1)} ${n1(cy + Math.sin(a) * r1)} `;
+  }
+  // heat shimmer between the sun and the ground
+  const wave = (y, amp, k) => {
+    let d = `M28 ${n1(y)}`;
+    for (let x = 34; x <= 92; x += 6) d += ` L${x} ${n1(y + Math.sin(x / 5 + f / 4 + k) * amp)}`;
+    return d;
+  };
+  const amp = 1.4 + e * 1.8, rise = e * 3;
+  const jaw = 2 + Math.sin(f / 8) * .8 + e * 7;                        // the jaw hangs; it drops wide on the scorch
+  const sock = blink ? 1.5 : 8.5 - e * 1.5;
+  const pr = 2.6 + e * 1.4;
+  return `<g transform="translate(0 ${n1(bob * .4)})">
+    <path d="${rays}" stroke="${G}" stroke-width="7" stroke-linecap="round"/>
+    <circle cx="${cx}" cy="${cy}" r="${n1(36 + e * 2)}" fill="${D}"/>
+    <path d="M10 126 L18 110 L102 110 L110 126 Z" fill="${D}"/>
+    <path d="M16 118 L30 115 L38 120 L52 116 L66 120 L80 115 L94 118 L106 116 M30 115 L28 110 M52 116 L55 126 M80 115 L82 110 M38 120 L34 126 M94 118 L99 126 M66 120 L70 126"
+      stroke="${K}" stroke-width="${n1(2.5 + e * 1.5)}" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M20 110 L22 96 L16 88 M22 96 L27 90 M21 102 L15 99" stroke="${G}" stroke-width="3" fill="none" stroke-linecap="round"/>
+    <path d="${wave(103 - rise, amp, 0)}" stroke="${G}" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" opacity=".7"/>
+    <g transform="translate(${cx} ${cy}) scale(${n1(1.1 + e * .05)}) translate(${-cx} ${-cy})">
+      <ellipse cx="60" cy="${n1(80 + jaw / 2)}" rx="15" ry="${n1(4 + jaw / 2)}" fill="${K}"/>
+      <path d="M44 ${n1(76 + jaw)} L76 ${n1(76 + jaw)} L74 ${n1(86 + jaw)} Q60 ${n1(93 + jaw)} 46 ${n1(86 + jaw)} Z" fill="${W}"/>
+      <path d="M51 ${n1(76 + jaw)} v5 M57 ${n1(76 + jaw)} v6 M63 ${n1(76 + jaw)} v6 M69 ${n1(76 + jaw)} v5" stroke="${K}" stroke-width="3" stroke-linecap="round"/>
+      <path d="M60 29 C77 29 87 41 87 55 C87 65 81 71 77 77 L43 77 C39 71 33 65 33 55 C33 41 43 29 60 29 Z" fill="${W}"/>
+      <path d="M51 71 v6 M57 70 v7 M63 70 v7 M69 71 v6" stroke="${K}" stroke-width="3" stroke-linecap="round"/>
+      <path d="M63 29 L58 36 L63 40 L58 46 M86 57 L79 61 L81 67" stroke="${K}" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      <ellipse cx="48.5" cy="53" rx="8" ry="${n1(sock)}" fill="${K}"/>
+      <ellipse cx="71.5" cy="53" rx="8" ry="${n1(sock)}" fill="${K}"/>
+      <path d="M37 42 L55 47 M83 42 L65 47" stroke="${K}" stroke-width="3.5" stroke-linecap="round"/>
+      ${blink ? '' : `<circle cx="49.5" cy="54" r="${n1(pr)}" fill="${R}"/><circle cx="70.5" cy="54" r="${n1(pr)}" fill="${R}"/>`}
+      <path d="M60 60 L55.5 68 Q60 66 64.5 68 Z" fill="${K}"/>
+    </g>
+    ${e > .35 ? `<text x="60" y="123" text-anchor="middle" font-family="monospace" font-size="9" font-weight="bold" fill="${W}">0% RAIN</text>` : ''}
+  </g>`;
+};
+// ═══ BOSS wildebeest · tier 5 slot A ═══
+// THE GREAT MIGRATION — one million wildebeest acting as one entity. Special: STAMPEDE (5-6 hits at 30%).
+BOSSES2.push({ id: 'wildebeest', name: 'THE GREAT MIGRATION', ep: 'ONE MILLION, ONE OPINION', hp: 148, atk: 18,
+  pat: ['tell', 'atk', 'blk', 'stampede', 'atk'] });
+BOSS_TELLS.wildebeest = { cue: '‡ ONE MILLION HOOVES · IT IS PICKING A DIRECTION',
+  hint: 'TURN THE LEADER — make your FIRST card an ATTACK',
+  test: (c, B) => c.type === 'atk' && (B.turnIds || []).length <= 1,
+  win: 'THE LEAD WILDEBEEST TURNS. ALL ONE MILLION FOLLOW IT INTO A TREE.',
+  fail: 'THE HERD DID NOT TURN. THE HERD WENT THROUGH YOU. THE HERD DID NOT NOTICE.' };
+BOSS_PATS.wildebeest = ['tell', 'atk', 'blk', 'stampede', 'atk'];
+BOSS_P2.wildebeest = ['atk', 'tell', 'atk', 'stampede'];
+QUIPS.wildebeest = ['we are going that way.', 'excuse us. excuse us. excuse us.', 'we do this every year. we never learn.',
+  'nobody is in charge. it works.', 'you are standing in the route.', '*one million hooves, politely*',
+  'the river is a formality.', 'gnu.'];
+BOSSART2.wildebeest = f => {
+  const { K, W, G, D, R } = B2P;
+  const bob = B2P.bob(f), blink = B2P.blink(f);
+  const t = f % 100, run = t < 20 ? Math.sin((t / 20) * Math.PI) : 0;          // stampede beat every 4 s
+  const sc = (d, s) => d.replace(/-?\d+(\.\d+)?/g, n => Math.round(n * s));
+  // the herd: two endless rows galloping right behind the leader; they shrink to nothing at the edges (horizon)
+  const row = (n, gap, spd, y, s0, ph) => {
+    let bd = '', lg = '', hn = '';
+    for (let i = 0; i < n; i++){
+      const x = ((i * gap + f * spd) % (n * gap)) - 18;
+      const s = s0 * Math.max(0, Math.min(1, (x + 1) / 16, (117 - x) / (36 * s0)));
+      if (s < .1) continue;
+      const g = f / 2.2 + i * 2.1 + ph, yy = Math.round(y + Math.abs(Math.sin(g)) * -(1.5 + run * 3));
+      const a = Math.round(Math.sin(g) * 4), X = Math.round(x);
+      bd += `M${X} ${yy}` + sc('q8 -4 16 -8q5 -2 7 1l6 8l2 5l-4 1l-6 -4l-2 6h-16l-4 -4z', s);
+      lg += `M${X} ${yy}` + sc(`m4 7l${a} 9m16 -9l${-a} 9`, s);
+      hn += `M${X} ${yy}` + sc('m22 -6q2 -6 7 -3', s);
+    }
+    return `<path d="${bd}" fill="${y < 50 ? '#3a3a3a' : D}"/>
+    <path d="${lg}" stroke="${y < 50 ? '#3a3a3a' : D}" stroke-width="${3 * s0}" stroke-linecap="round"/>
+    <path d="${hn}" stroke="${y < 50 ? '#7a7a7a' : G}" stroke-width="${2.2 * s0}" fill="none" stroke-linecap="round"/>`;
+  };
+  const sw = Math.sin(f / 6) * 1.5 + run * 3;                                   // beard sway
+  const dust = run > .05 ? [[16, 118, 8], [30, 124, 5], [104, 118, 8], [90, 124, 5]]
+    .map(([x, y, r]) => `M${Math.round(x - r * run)} ${y}a${(r * run).toFixed(1)} ${(r * run).toFixed(1)} 0 1 0 ${(2 * r * run).toFixed(1)} 0a${(r * run).toFixed(1)} ${(r * run).toFixed(1)} 0 1 0 ${(-2 * r * run).toFixed(1)} 0`).join('') : '';
+  return `<g transform="translate(0 ${(bob * .4).toFixed(2)})">
+    ${row(7, 22, .4, 40, .9, 0)}
+    ${row(6, 26, .7, 72, 1.2, 2)}
+    ${dust ? `<path d="${dust}" fill="#3a3a3a"/>` : ''}
+    <path d="M48 104 l-2 19 M72 104 l2 19" stroke="${G}" stroke-width="10" stroke-linecap="round"/>
+    <path d="M40 120 h12 v6 h-12 z M68 120 h12 v6 h-12 z" fill="${W}"/>
+    <ellipse cx="60" cy="98" rx="30" ry="15" fill="${G}"/>
+    <path d="M36 92 v12 M43 87 v20 M77 87 v20 M84 92 v12" stroke="${D}" stroke-width="4" stroke-linecap="round"/>
+    <g transform="translate(0 ${(run * 6).toFixed(1)}) rotate(${(run * 7 * Math.sin(f / 1.6)).toFixed(1)} 60 70)">
+      <path d="M43 52 Q30 58 22 53 Q30 45 43 48 Z M77 52 Q90 58 98 53 Q90 45 77 48 Z" fill="${G}"/>
+      <rect x="26" y="51" width="7" height="7" fill="${R}"/>
+      <path d="M46 46 Q29 50 25 40 Q22 31 30 26 M74 46 Q91 50 95 40 Q98 31 90 26" stroke="${W}" stroke-width="7" fill="none" stroke-linecap="round"/>
+      <path d="M41 46 Q60 34 79 46 L75 90 Q60 102 45 90 Z" fill="${G}"/>
+      <path d="M53 46 L67 46 L64 84 L56 84 Z" fill="${D}"/>
+      <path d="M47 44 l3 -10 l4 7 l6 -11 l6 11 l4 -7 l3 10 Z" fill="${D}"/>
+      <rect x="44" y="80" width="32" height="20" rx="9" fill="${D}"/>
+      <ellipse cx="53" cy="87" rx="3" ry="2.5" fill="${K}"/>
+      <ellipse cx="67" cy="87" rx="3" ry="2.5" fill="${K}"/>
+      <path d="M52 94 h16" stroke="${K}" stroke-width="3" stroke-linecap="round"/>
+      <ellipse cx="49" cy="61" rx="4" ry="${blink ? 1 : 4.8}" fill="${K}"/>
+      <ellipse cx="71" cy="61" rx="4" ry="${blink ? 1 : 4.8}" fill="${K}"/>
+      <path d="M43 ${(53 - run * 3).toFixed(1)} l10 2 M77 ${(53 - run * 3).toFixed(1)} l-10 2" stroke="${K}" stroke-width="3.2" stroke-linecap="round"/>
+      <path d="M51 99 q${(-2 + sw).toFixed(1)} 8 ${sw.toFixed(1)} 14 M56 100 q${(-1 + sw).toFixed(1)} 9 ${sw.toFixed(1)} 17 M60 100 q${sw.toFixed(1)} 10 ${sw.toFixed(1)} 19 M64 100 q${(1 + sw).toFixed(1)} 9 ${sw.toFixed(1)} 17 M69 99 q${(2 + sw).toFixed(1)} 8 ${sw.toFixed(1)} 14" stroke="${W}" stroke-width="3" fill="none" stroke-linecap="round"/>
+    </g>
+    ${run > .3 ? `<text x="84" y="20" font-family="monospace" font-size="10" fill="${W}">GNU.</text>` : ''}
+  </g>`;
+};
+// ═══ BOSS sandstorm · tier 4 slot A ═══
+// THE SANDSTORM · a howling wall of sand with eyes. Weather, but personally.
+// Tell: BREATHE — play a card that says ENERGY or FREE (energy / freeNext / gamble / zmath / 'eager' quirk: exactly the
+// cards whose rules text contains ENERGY or FREE).
+// Special: WHITEOUT (its number hides behind ??? ; sand that only HALF your block can stop, then it vanishes into itself: +block).
+BOSSES2.push({ id: 'sandstorm', name: 'THE SANDSTORM', ep: 'SCATTERED, WIDESPREAD, PERSONAL', hp: 122, atk: 16,
+  pat: ['tell', 'atk', 'whiteout', 'multi', 'atk'] });
+BOSS_TELLS.sandstorm = { cue: '§ THE WALL OF SAND · IT IS INHALING THE HORIZON',
+  hint: 'BREATHE — play a card that says ENERGY or FREE',
+  test: c => (c.energy || 0) > 0 || !!c.freeNext || !!c.gamble || !!c.zmath || c.quirk === 'eager',
+  win: 'YOU BREATHE IN FIRST. THE STORM HAS NOTHING LEFT TO INHALE. IT COUGHS.',
+  fail: 'THE HORIZON ARRIVES ALL AT ONCE. MOSTLY IN YOUR EARS.' };
+BOSS_PATS.sandstorm = ['tell', 'atk', 'whiteout', 'multi', 'atk'];
+BOSS_P2.sandstorm = ['atk', 'tell', 'atk', 'whiteout', 'multi'];
+QUIPS.sandstorm = ['hooooooo.', 'i am a front. a weather front.', 'visibility: me.',
+  'you have sand in places. i checked.', '*erodes a small rock, for practice*', 'scattered. widespread. inevitable.',
+  'the forecast was me.', 'close your eyes. it helps nobody.'];
+BOSSART2.sandstorm = f => {
+  const { K, W, G, D, R } = B2P;
+  const bob = B2P.bob(f), blink = B2P.blink(f);
+  const n1 = v => v.toFixed(1);
+  const P = 100, ph = f % P;
+  const e = ph < 20 ? Math.sin((ph / 20) * Math.PI) : 0;            // the gust: a 0.8 s howl every 4 s
+  const s1 = Math.sin(f / 9), s2 = Math.sin(f / 7 + 2);
+  const lean = 6 * e + s1 * 1.2;                                      // the wall leans into the wind (leftward)
+  const wind = f * 2.4 + e * 40;                                       // streaks drift left; the gust shoves them
+  // billows: the cauliflower top and flanks of a haboob. Each churns (radius + drift) out of phase.
+  const BL = [[22, 62, 14], [36, 42, 16], [58, 31, 18], [81, 36, 17], [98, 55, 14], [104, 80, 12], [14, 86, 12]]
+    .map(([x, y, r], i) => [x + Math.sin(f / 10 + i * 1.7) * 1.6, y + Math.cos(f / 12 + i) * 1.4, r + Math.sin(f / 8 + i * 2.1) * 1.3]);
+  const shade = BL.map(([x, y, r]) => `<circle cx="${n1(x + 3)}" cy="${n1(y + 3.5)}" r="${n1(r)}" fill="${D}"/>`).join('');
+  const puff = BL.map(([x, y, r]) => `<circle cx="${n1(x)}" cy="${n1(y)}" r="${n1(r)}" fill="${G}"/>`).join('');
+  // churning curls on three billows (one path; the dash crawl reads as rotation)
+  const curl = (x, y) => `M${n1(x - 6)} ${n1(y + 1)} q0 -7 7 -7 q7 0 7 7 q0 5 -5 5 q-4 0 -4 -4`;
+  const curls = curl(BL[1][0], BL[1][1]) + ' ' + curl(BL[3][0] + 4, BL[3][1] - 6) + ' ' + curl(BL[5][0] - 2, BL[5][1] + 2);
+  // dust kicked up where the wall meets the ground
+  const GP = [[8, 122, 6], [20, 125, 4.5], [110, 121, 6.5]].map(([x, y, r], i) => [x + Math.sin(f / 6 + i * 2) * 2, y - Math.abs(Math.sin(f / 9 + i)) * 3, r + Math.sin(f / 5 + i) * 1.2]);
+  const body = `M8 126 Q14 112 16 96 L20 56 L100 52 L106 96 Q108 112 114 126 Z`;
+  const streak = (d, col, w, dash, k, op) =>
+    `<path d="${d}" stroke="${col}" stroke-width="${w}" fill="none" stroke-linecap="round" stroke-dasharray="${dash}" stroke-dashoffset="${n1(-wind * k)}" opacity="${op}"/>`;
+  const my = 90 + e * 2, mrx = 6 + e * 6, mry = 6.5 + e * 9;          // the howl
+  const tw = 134 - (ph / 20) * 150;                                     // tumbleweed blows right-to-left during the gust
+  return `<g transform="translate(0 ${n1(bob * .4)})"><g transform="translate(60 126) scale(.88) translate(-60 -126)">
+    <circle cx="96" cy="${n1(20 + s1)}" r="10" fill="${R}"/>
+    <g transform="translate(${n1(60 + e * 3)} 126) skewX(${n1(lean)}) translate(-60 -126)">
+      ${shade}
+      <path d="${body}" fill="${G}"/>
+      ${puff}
+      ${streak(`M104 ${n1(76 + s2)} Q60 ${n1(82 + s1 * 2)} 16 ${n1(74 + s2)}`, D, 4, '20 10', 1, 1)}
+      ${streak(`M108 ${n1(106 + s1)} Q60 ${n1(100 + s2 * 2)} 14 ${n1(108 + s1)}`, D, 4, '26 9', .8, 1)}
+      <path d="${curls}" stroke="${D}" stroke-width="3" fill="none" stroke-linecap="round" stroke-dasharray="16 4" stroke-dashoffset="${n1(f * 1.2)}"/>
+      <path d="M37 ${n1(53 - e * 3)} L53 ${n1(61 - e)}" stroke="${K}" stroke-width="5" stroke-linecap="round"/>
+      <path d="M83 ${n1(53 - e * 3)} L67 ${n1(61 - e)}" stroke="${K}" stroke-width="5" stroke-linecap="round"/>
+      <ellipse cx="47" cy="68" rx="4.5" ry="${blink ? 1 : 5}" fill="${K}"/>
+      <ellipse cx="73" cy="68" rx="4.5" ry="${blink ? 1 : 5}" fill="${K}"/>
+      <ellipse cx="60" cy="${n1(my)}" rx="${n1(mrx)}" ry="${n1(mry)}" fill="${K}"/>
+    </g>
+    ${streak(`M28 ${n1(58 + s2)} L4 ${n1(55 + s1)} M14 ${n1(100 + s1)} L2 ${n1(98 + s2)} M118 ${n1(44 + s1)} L100 ${n1(46 + s2)}`, W, 3, '9 7', 1.3, .85)}
+    ${GP.map(([x, y, r]) => `<circle cx="${n1(x)}" cy="${n1(y)}" r="${n1(r)}" fill="${G}"/>`).join('')}
+    ${e > .15 ? streak(`M54 ${n1(my - 1)} L${n1(54 - 46 * e)} ${n1(my - 7)} M54 ${n1(my + 5)} L${n1(54 - 42 * e)} ${n1(my + 10)}`, W, 3, '8 5', 2, .9) : ''}
+    ${e > 0 ? `<g transform="translate(${n1(tw)} ${n1(113 - Math.abs(Math.sin(ph / 3)) * 10)}) rotate(${n1(-ph * 36)})">
+      <circle r="7" fill="none" stroke="${W}" stroke-width="2.5" stroke-dasharray="7 3"/>
+      <path d="M-5 -3 L5 3 M-4 4 L4 -5" stroke="${W}" stroke-width="2" stroke-linecap="round"/>
+    </g>` : ''}
+    ${e > .35 ? `<text x="62" y="${n1(30 - e * 3)}" text-anchor="middle" font-family="monospace" font-size="9" font-weight="bold" fill="${K}">HOOOOOOO</text>` : ''}
+  </g></g>`;
+};
+// ═══ BOSS dungbeetle · tier 4 slot B ═══
+// SISYPHUS THE BEETLE · a dung beetle pushing an ever-growing ball up a hill that is not there. Existential, determined.
+// Tell: PUSH BACK with a card that COSTS 2+ (the number on the card face = costOf: NEG edition shows 0 and does not count;
+// a free-next'd or taxed card still shows its printed cost, so it counts).
+// Special: ROLL. The ball grows one size per roll (cap 4) and is rolled at you for .8x/1.1x/1.4x/1.7x.
+// Countering a wind-up sends the ball back down the hill: the next roll restarts at size 1.
+BOSSES2.push({ id: 'dungbeetle', name: 'SISYPHUS THE BEETLE', ep: 'ONE MUST IMAGINE HIM HAPPY', hp: 126, atk: 16,
+  pat: ['tell', 'atk', 'roll', 'blk', 'atk'] });
+BOSS_TELLS.dungbeetle = { cue: '◍ THE BALL · IT IS ROLLING BACK AT YOU',
+  hint: 'PUSH BACK — play a card that COSTS 2 OR MORE',
+  test: c => c.ed !== 'neg' && (c.cost || 0) >= 2,
+  win: 'YOU PUSHED BACK. THE BALL ROLLS ALL THE WAY DOWN THE HILL, AND HE WALKS DOWN AFTER IT.',
+  fail: 'THE BALL WINS, AS IT USUALLY DOES. YOU ARE NOW PART OF THE BALL.' };
+BOSS_PATS.dungbeetle = ['tell', 'atk', 'roll', 'blk', 'atk'];
+BOSS_P2.dungbeetle = ['atk', 'tell', 'atk', 'roll', 'blk'];
+QUIPS.dungbeetle = ['*pushes*', 'the hill is the point.', 'tomorrow, the same hill.',
+  'it is dung. it is my dung.', 'i have read camus. he had it easy.', 'do i look happy? imagine harder.',
+  'you are standing on my progress.', 'almost at the top. again.'];
+BOSSART2.dungbeetle = f => {
+  const { K, W, G, D, R } = B2P;
+  const bob = B2P.bob(f), blink = B2P.blink(f);
+  const hv = (f % 100) < 20 ? Math.sin(((f % 100) / 20) * Math.PI) : 0;   // HEAVE beat every 4 s
+  const c4 = f % 400;                                                         // the ball grows for 4 beats, then rolls back down
+  const grow = c4 < 20 ? 1 - c4 / 20 : (c4 - 20) / 380;
+  const r = 23 + grow * 10;
+  const cx = 44 - hv * 3, cy = 124 - r;
+  const rot = -f * 2.2 - hv * 40;                                             // rolling on the spot, forever
+  const lump = (a, d, s) => `<circle cx="${(cx + Math.cos((a + rot) * Math.PI / 180) * r * d).toFixed(1)}" cy="${(cy + Math.sin((a + rot) * Math.PI / 180) * r * d).toFixed(1)}" r="${s}" fill="${G}"/>`;
+  const hx = cx + r * .93, hy = cy - r * .36;                                 // where his hands meet the ball
+  const say = ['again.', '*heave*', 'almost.', '*heave*'][Math.floor(f / 100) % 4];
+  return `<g transform="translate(0 ${bob * .4})">
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="${D}" stroke="${K}" stroke-width="3"/>
+    ${lump(20, .55, 4)}${lump(140, .6, 3.5)}${lump(250, .5, 4.5)}${lump(330, .2, 3)}
+    <path d="M${(cx + Math.cos((70 + rot) * Math.PI / 180) * r * .7).toFixed(1)} ${(cy + Math.sin((70 + rot) * Math.PI / 180) * r * .7).toFixed(1)} l${(Math.cos((160 + rot) * Math.PI / 180) * 9).toFixed(1)} ${(Math.sin((160 + rot) * Math.PI / 180) * 9).toFixed(1)}" stroke="${G}" stroke-width="3" stroke-linecap="round"/>
+    <g transform="rotate(${-8 + Math.sin(f / 9) * 6} ${cx} ${cy - r})">
+      <path d="M${cx} ${cy - r} v-20" stroke="${W}" stroke-width="3" stroke-linecap="round"/>
+      <path d="M${cx + 1} ${cy - r - 20} l-14 4 l14 5 z" fill="${R}"/>
+    </g>
+    <g transform="translate(${-hv * 3} 0) rotate(${-hv * 5} 96 124)">
+      <path d="M96 100 L108 112 L104 126 M88 104 L90 116 L84 126" stroke="${G}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      <path d="M90 80 L110 86 L114 100" stroke="${G}" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      <ellipse cx="91" cy="82" rx="16" ry="27" transform="rotate(-20 91 82)" fill="${G}" stroke="${K}" stroke-width="3"/>
+      <path d="M81 57 L100 108" stroke="${K}" stroke-width="3"/>
+      <path d="M97 66 q6 8 5 20" stroke="${W}" stroke-width="3.5" stroke-linecap="round" fill="none"/>
+      <path d="M78 58 L${(hx + 10).toFixed(1)} ${(hy + 10).toFixed(1)} L${hx.toFixed(1)} ${hy.toFixed(1)} M82 64 L${(hx + 12).toFixed(1)} ${(hy + 22).toFixed(1)} L${(hx + 1).toFixed(1)} ${(hy + 18).toFixed(1)}" stroke="${G}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      <ellipse cx="80" cy="54" rx="13" ry="10" transform="rotate(-20 80 54)" fill="${D}" stroke="${K}" stroke-width="3"/>
+      <path d="M63 34 q-9 -10 -5 -24 q2 -3 4 0 q2 12 10 20 z" fill="${G}" stroke="${K}" stroke-width="2.5" stroke-linejoin="round"/>
+      <circle cx="70" cy="43" r="13" fill="${G}" stroke="${K}" stroke-width="3"/>
+      <ellipse cx="64.5" cy="42" rx="4.5" ry="${blink ? 1 : 5}" fill="${W}" stroke="${K}" stroke-width="2"/>
+      <ellipse cx="75.5" cy="42" rx="4.5" ry="${blink ? 1 : 5}" fill="${W}" stroke="${K}" stroke-width="2"/>
+      ${blink ? '' : `<circle cx="63" cy="43.5" r="2.4" fill="${K}"/><circle cx="74" cy="43.5" r="2.4" fill="${K}"/>`}
+      <path d="M59 40 h11 M70 40 h11" stroke="${K}" stroke-width="3.5" stroke-linecap="round"/>
+      <path d="M65 51.5 h10" stroke="${K}" stroke-width="3.5" stroke-linecap="round"/>
+    </g>
+    ${hv > .25 ? `<text x="${say === 'again.' ? 10 : 6}" y="22" font-family="monospace" font-size="9" fill="${W}">${say}</text>` : ''}
+    ${hv > .25 ? `<path d="M${84 - hv * 3} ${30 - hv * 6} q3 4 0 6 q-3 -2 0 -6 z" fill="${W}"/>` : ''}
+  </g>`;
+};
+// ═══ BOSS pangolinprime · tier 3 slot B ═══
+// PANGOLIN PRIME · an armoured scale-tank that curls into an impregnable ball. (id is pangolinprime: 'pangolin' is a pool foe.)
+// Tell: crack the shell with ONE heavy hit: a single-hit attack whose printed damage is 8+ (quake cards print 8),
+// not multi-hit, not red-sealed (red seal doubles hits). Non-secret answers: kick (starter), headbutt, fullsend, charge,
+// chomp, lowblow, coupdegrass, stampede, hoofquake, bellyflop; plus 11 secret cards and upgraded/blended ones.
+// Special: CURL (curls up and rolls at you; the roll carries whatever shell/block it still has, so cracking it first shrinks the hit).
+BOSSES2.push({ id: 'pangolinprime', name: 'PANGOLIN PRIME', ep: 'IMPREGNABLE, ALLEGEDLY', hp: 100, atk: 14,
+  pat: ['tell', 'atk', 'blk', 'curl', 'atk'] });
+BOSS_TELLS.pangolinprime = { cue: '◆ SCALES FLARED · IT IS REARING UP',
+  hint: 'CRACK IT — play a single-hit attack of 8+ BASE DAMAGE',
+  test: c => c.type === 'atk' && ((c.dmg || 0) >= 8 || !!c.quake) && !((c.multi || 0) > 1) && c.seal !== 'red',
+  win: 'ONE SCALE CRACKS. IT STARES AT THE CRACK FOR A LONG TIME.',
+  fail: 'IT COMES DOWN ON YOU LIKE A DROPPED WARDROBE. A SCALY WARDROBE.' };
+BOSS_PATS.pangolinprime = ['tell', 'atk', 'blk', 'curl', 'atk'];
+BOSS_P2.pangolinprime = ['atk', 'tell', 'atk', 'blk', 'curl'];
+QUIPS.pangolinprime = ['i am not a pinecone.', 'the scales are load-bearing.', '*curls up* this is a meeting.',
+  'prime. as in the best one.', 'you are knocking on a door. i am the door.', 'mostly keratin. partly grudge.',
+  '*eats an ant, maintains eye contact*', 'the ball is a lifestyle.'];
+BOSSART2.pangolinprime = f => {
+  const { K, W, G, D, R } = B2P;
+  const bob = B2P.bob(f), blink = B2P.blink(f);
+  const P = 110, ph = f % P;
+  const e = ph < 20 ? Math.sin((ph / 20) * Math.PI) : 0;           // tongue lash + scale flare, 0.8 s every 4.4 s
+  const n1 = v => v.toFixed(1);
+  const sw = Math.sin(f / 11) * 3;                                    // tail sway
+  const hb = Math.sin(f / 8 + 1) * .8;                                // head lags the breath a little
+  // body: egg of scales, cx 60, cy 86, rx 33, ry 37 (y 49..123)
+  const rows = [58, 68, 78, 88, 98, 108, 117].map((y, i) => {
+    const dy = (y - 86) / 37, hw = 33 * Math.sqrt(Math.max(0, 1 - dy * dy)) - 2;
+    const s = 11, off = (i % 2) * s / 2, x0 = 60 - hw;
+    const dep = 4.5 + e * 3;                                          // scales flare open on the beat
+    let d = `M${n1(x0)} ${y}`, x = x0;
+    const first = s - off || s;
+    d += ` q${n1(first / 2)} ${dep} ${n1(first)} 0`; x += first;
+    while (x + s <= 60 + hw + .5){ d += ` q${s / 2} ${dep} ${s} 0`; x += s; }
+    if (60 + hw - x > 2){ const r = 60 + hw - x; d += ` q${n1(r / 2)} ${n1(dep * r / s)} ${n1(r)} 0`; }
+    return `<path d="${d}" stroke="${i % 3 === 1 ? W : G}" stroke-width="${i % 3 === 1 ? 2.5 : 3}" fill="none" stroke-linecap="round" opacity="${i % 3 === 1 ? .55 : 1}"/>`;
+  }).join('');
+  const L = 5 + e * 30;                                               // tongue: a red tip at rest, a lash on the beat
+  const tx = 60 + e * 24, ty = 69 + L * .55, flick = Math.sin(f * .9) * 1.2 * (1 - e);
+  return `<g transform="translate(0 ${n1(bob * .4)})">
+    <path d="M36 112 Q12 124 10 ${n1(102 + sw * .3)} Q9 ${n1(90 + sw)} ${n1(19 + sw)} ${n1(86 + sw * .4)}" stroke="${D}" stroke-width="15" fill="none" stroke-linecap="round"/>
+    <path d="M36 112 Q12 124 10 ${n1(102 + sw * .3)} Q9 ${n1(90 + sw)} ${n1(19 + sw)} ${n1(86 + sw * .4)}" stroke="#707070" stroke-width="11" fill="none" stroke-dasharray="3 6"/>
+    <ellipse cx="46" cy="123" rx="10" ry="5" fill="${G}"/>
+    <ellipse cx="74" cy="123" rx="10" ry="5" fill="${G}"/>
+    <path d="M39 125 l-3 3 M45 126 l-1 3.5 M75 126 l1 3.5 M81 125 l3 3" stroke="${W}" stroke-width="3" stroke-linecap="round"/>
+    <g transform="translate(60 86) scale(${n1(1 + e * .05)}) translate(-60 -86)">
+      <ellipse cx="60" cy="86" rx="33" ry="37" fill="${D}"/>
+      ${rows}
+    </g>
+    <path d="M33 68 Q34 82 48 84" stroke="${G}" stroke-width="8" fill="none" stroke-linecap="round"/>
+    <path d="M87 68 Q86 82 72 84" stroke="${G}" stroke-width="8" fill="none" stroke-linecap="round"/>
+    <path d="M48 84 q6 1 6 7 M48 84 q2 4 0 9" stroke="${W}" stroke-width="3" fill="none" stroke-linecap="round"/>
+    <path d="M72 84 q-6 1 -6 7 M72 84 q-2 4 0 9" stroke="${W}" stroke-width="3" fill="none" stroke-linecap="round"/>
+    <g transform="translate(0 ${n1(hb)})">
+      <path d="M60 68 Q${n1(60 + 2 + flick)} ${n1(68 + L * .6)} ${n1(tx + flick)} ${n1(ty)}" stroke="${R}" stroke-width="3" fill="none" stroke-linecap="round"/>
+      <path d="M41 35 Q41 17 60 17 Q79 17 79 35 Q79 45 68 55 Q63 68 60 69 Q57 68 52 55 Q41 45 41 35 Z" fill="${G}"/>
+      <ellipse cx="51.5" cy="41" rx="4" ry="${blink ? 1 : 4.5}" fill="${K}"/>
+      <ellipse cx="68.5" cy="41" rx="4" ry="${blink ? 1 : 4.5}" fill="${K}"/>
+      <path d="M39.5 37 Q39 15 60 15 Q81 15 80.5 37 q-3.4 2.6 -6.8 0 q-3.4 2.6 -6.8 0 q-3.4 2.6 -6.8 0 q-3.4 2.6 -6.8 0 q-3.4 2.6 -6.8 0 q-3.4 2.6 -6.8 0 Z" fill="${D}"/>
+      <path d="M46 27 q4.5 4 9 0 q4.5 4 9 0 q4.5 4 9 0" stroke="${G}" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+      <ellipse cx="60" cy="66.5" rx="3.2" ry="2.4" fill="${K}"/>
+    </g>
+    ${e > .35 ? `<text x="${n1(tx - 4)}" y="${n1(ty + 12)}" font-family="monospace" font-size="8" fill="${W}">ANT.</text>` : ''}
+  </g>`;
+};
+// ═══ BOSS elephantboard · tier 3 slot A ═══
+// THE BOARD OF ELEPHANTS · five elephants in suits at a long table; quarterly results are due.
+// Tell: play a card that DRAWS (read the fine print). Special: MOTION (the board votes on a published agenda that
+// rotates BONUSES -> LAYOFFS -> MEETING; the intent line always names the item, so nothing is random).
+BOSSES2.push({ id: 'elephantboard', name: 'THE BOARD OF ELEPHANTS', ep: 'QUARTERLY RESULTS ARE DUE', hp: 98, atk: 15,
+  pat: ['tell', 'atk', 'motion', 'blk', 'atk'] });
+BOSS_TELLS.elephantboard = { cue: '§ THE QUARTERLY REPORT · IT IS BEING PRESENTED',
+  hint: 'READ THE FINE PRINT — play a card that DRAWS',
+  test: c => (c.draw || 0) > 0,
+  win: 'YOU READ THE FINE PRINT. THE NUMBERS WERE MADE UP. THE BOARD ADJOURNS IN DISGRACE.',
+  fail: 'NOBODY READ THE REPORT. IT PASSED UNANIMOUSLY. IT WAS ABOUT HITTING YOU.' };
+BOSS_PATS.elephantboard = ['tell', 'atk', 'motion', 'blk', 'atk'];
+BOSS_P2.elephantboard = ['atk', 'tell', 'atk', 'motion', 'multi'];
+QUIPS.elephantboard = ['all in favour?', '*trumpets in agreement*', 'the minutes will show that you are small.',
+  'we never forget. we do minute it.', 'per my last trunk.', 'let\'s take this offline. you are offline.',
+  'synergy.', 'any other business? no? hit it.'];
+BOSSART2.elephantboard = f => {
+  const { K, W, G, D, R } = B2P;
+  const bob = B2P.bob(f), blink = B2P.blink(f);
+  const ph = f % 100;
+  const v = ph < 20 ? Math.sin((ph / 20) * Math.PI) : 0;          // THE VOTE: every trunk goes up, 0.8 s every 4 s
+  const L = (a, b) => (a + (b - a) * v).toFixed(1);                // rest pose -> raised-trunk pose
+  const flap = Math.sin(f / 9) * 2;
+  const M2 = '#7a7a7a', S = '#3a3a3a';
+  const seats = [[18, 79, -1], [39, 82, -1], [81, 82, 1], [102, 79, 1]];
+  // seated board member, behind the table: ear pair, head, eyes (two round-capped dots)
+  const back = ([x, y], k) => {
+    const bl = B2P.blink(f + (k + 1) * 23), e = flap * .4;
+    return `<path d="M${x - 17 - e} ${y - 2} a6.5 7.5 0 1 0 13 0 a6.5 7.5 0 1 0 -13 0 Z M${x + 4 + e} ${y - 2} a6.5 7.5 0 1 0 13 0 a6.5 7.5 0 1 0 -13 0 Z" fill="${D}"/>
+    <circle cx="${x}" cy="${y}" r="9.5" fill="${M2}"/>
+    <path d="M${x - 3.5} ${y - 2} h.01 M${x + 3.5} ${y - 2} h.01" stroke="${K}" stroke-width="${bl ? 1.5 : 4.5}" stroke-linecap="round"/>`;
+  };
+  // chairman trunk is drawn after the seated members (so their ears never hide it) and rests on the table;
+  // for the vote it swings out to the right of the face instead of across the eyes.
+  // member trunk, drawn over the table top so it rests on it (or goes up for the vote)
+  const trunk = ([x, y, t], k) => {
+    const sw = Math.sin(f / 10 + k * 1.7) * 1.5;
+    return `<path d="M${x} ${y + 3} Q${L(x, x + t * 2)} ${L(y + 12, y - 6)} ${L(x + t * 3 + sw, x + t * 10)} ${L(y + 16, y - 15)}" stroke="${M2}" stroke-width="5" fill="none" stroke-linecap="round"/>`;
+  };
+  return `<g transform="translate(0 ${bob * .4})">
+    <path d="M44 34 C${24 - flap} 24 ${14 - flap} 46 22 62 C28 72 42 72 47 62 Z M76 34 C${96 + flap} 24 ${106 + flap} 46 98 62 C92 72 78 72 73 62 Z" fill="${D}"/>
+    <path d="M36 94 Q38 76 60 74 Q82 76 84 94 Z" fill="${S}"/>
+    <path d="M53 75 L60 87 L67 75 Z" fill="${W}"/>
+    <path d="M58.2 78 h3.6 l1.8 10 l-3.6 4.5 l-3.6 -4.5 z" fill="${R}"/>
+    <ellipse cx="60" cy="46" rx="18" ry="19" fill="${G}"/>
+    <path d="M48 38 l8 2.5 M72 38 l-8 2.5" stroke="${K}" stroke-width="3.2" stroke-linecap="round"/>
+    <ellipse cx="53" cy="45" rx="3.6" ry="${blink ? 1 : 4.6}" fill="${K}"/>
+    <ellipse cx="67" cy="45" rx="3.6" ry="${blink ? 1 : 4.6}" fill="${K}"/>
+    <path d="M51 58 q-3.5 5 -1.5 9.5 M69 58 q3.5 5 1.5 9.5" stroke="${W}" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+    <path d="M6 96 Q8 86 18 85 Q28 86 30 96 Z M27 96 Q29 89 39 88 Q49 89 51 96 Z M69 96 Q71 89 81 88 Q91 89 93 96 Z M90 96 Q92 86 102 85 Q112 86 114 96 Z" fill="${S}"/>
+    ${seats.map(back).join('')}
+    <path d="${seats.map(([x, y]) => `M${x - 3.5} ${y + 5} q-2 3 0 5.5 M${x + 3.5} ${y + 5} q2 3 0 5.5`).join(' ')}" stroke="${W}" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+    <path d="M60 55 C60 ${L(64, 62)} ${L(61, 72)} ${L(72, 62)} ${L(57, 78)} ${L(80, 52)} C${L(53, 84)} ${L(86, 44)} ${L(50, 88)} ${L(88, 30)} ${L(51, 92)} ${L(82, 24)}" stroke="${G}" stroke-width="9" fill="none" stroke-linecap="round"/>
+    ${v < .3 ? `<path d="M56.5 61 h7 M56.5 65.5 h7" stroke="${D}" stroke-width="1.8" stroke-linecap="round"/>` : ''}
+    <rect x="4" y="93" width="112" height="6" fill="#c8c8c8"/>
+    <rect x="8" y="99" width="104" height="27" fill="${D}"/>
+    ${seats.map(trunk).join('')}
+    ${v > .25 ? `<text x="60" y="${12 - v * 2}" text-anchor="middle" font-size="9" fill="${W}" font-family="monospace">ALL IN FAVOUR</text>` : ''}
+  </g>`;
+};
+// ═══ BOSS honeybadger · tier 2 slot B ═══
+// THE HONEY BADGER · tiny, furious, entirely unbothered. Chewing a cobra. Tell: play a card that HEALS or
+// LIFESTEALS (it cannot process caring). Special: SHRUG (sheds its weak stacks, +str; +1 more str per stack shed).
+BOSSES2.push({ id: 'honeybadger', name: 'THE HONEY BADGER', ep: 'STILL DOES NOT CARE', hp: 76, atk: 12,
+  pat: ['tell', 'atk', 'shrug', 'multi', 'atk'] });
+BOSS_TELLS.honeybadger = { cue: '§ THE INDIFFERENCE · IT IS NOT CARING, HARD',
+  hint: 'SELF-CARE — play a card that HEALS or LIFESTEALS',
+  test: c => (c.heal || 0) > 0 || !!c.vamp,
+  win: 'YOU CARED ABOUT YOURSELF. IT HAS NEVER SEEN CARING. IT TRIPS OVER THE CONCEPT.',
+  fail: 'IT DID NOT CARE. NEITHER, BRIEFLY, DID YOUR RIBS.' };
+BOSS_PATS.honeybadger = ['tell', 'atk', 'shrug', 'multi', 'atk'];
+BOSS_P2.honeybadger = ['atk', 'tell', 'atk', 'shrug', 'multi'];
+QUIPS.honeybadger = ['*does not care, professionally*', 'i ate a cobra. it was fine.', 'bees? irrelevant.',
+  'i was stung four hundred times today.', '*shrug*', 'your feelings are noted. and ignored.',
+  'the other one was my cousin. i don\'t care.', 'the cobra is fine too. probably.'];
+BOSSART2.honeybadger = f => {
+  const { K, W, G, D, R } = B2P;
+  const bob = B2P.bob(f), blink = B2P.blink(f);
+  const sh = (f % 96) < 18 ? Math.sin(((f % 96) / 18) * Math.PI) : 0;   // SHRUG beat every 3.84 s
+  const sw = Math.sin(f / 6) * 3;                                          // the cobra sways (it is fine)
+  const lh = blink ? .8 : 4.6 - sh * 2.2;                                  // half-lidded; flatter mid-shrug
+  const ly = 86 + sh * 1.5;
+  const hx = 96 + sw, hy = 106 - Math.abs(sw) * .6;                        // cobra hood: upright, swaying, fine
+  const eye = x => `<path d="M${x - 5.5} ${ly} h11 a5.5 ${lh} 0 0 1 -11 0 z" fill="${W}"/>` +
+    (blink ? '' : `<circle cx="${x + .5}" cy="${ly + Math.min(2.2, lh * .5)}" r="2.4" fill="${K}"/>`);
+  return `<g transform="translate(0 ${bob * .4})">
+    <g transform="translate(0 ${-sh * 7})">
+      <path d="M94 54 q12 -6 9 -20" stroke="${D}" stroke-width="7" fill="none" stroke-linecap="round"/>
+      <path d="M12 112 Q10 42 60 38 Q110 42 108 112 Z" fill="${D}"/>
+      <path d="M14 84 Q14 36 60 33 Q106 36 106 84 Q86 64 60 64 Q34 64 14 84 Z" fill="${W}"/>
+    </g>
+    <path d="M38 108 v14 M82 108 v14" stroke="${D}" stroke-width="15" stroke-linecap="round"/>
+    <path d="M29 123 l-4 6 M35 125 l-2 6 M41 125 v6 M47 124 l2 6 M73 124 l-2 6 M79 125 v6 M85 125 l2 6 M91 123 l4 6" stroke="${W}" stroke-width="3.5" stroke-linecap="round"/>
+    <g transform="translate(0 ${sh * 4})">
+      <ellipse cx="60" cy="86" rx="26" ry="23" fill="${D}" stroke="${K}" stroke-width="3"/>
+      <path d="M35 84 Q35 64 60 64 Q85 64 85 84 Q76 78 66 79 L60 83 L54 79 Q44 78 35 84 Z" fill="${W}" stroke="${K}" stroke-width="2.5" stroke-linejoin="round"/>
+      ${eye(49)}${eye(71)}
+      <ellipse cx="60" cy="97" rx="7" ry="4.5" fill="${K}"/>
+      <path d="M51 104 h17" stroke="${K}" stroke-width="3.5" stroke-linecap="round"/>
+      <path d="M66 104 Q80 108 84 118 Q88 126 ${hx} ${hy + 6}" stroke="${R}" stroke-width="5" fill="none" stroke-linecap="round"/>
+      <path d="M${hx - 6.5} ${hy + 6} Q${hx - 9} ${hy - 5} ${hx} ${hy - 8} Q${hx + 9} ${hy - 5} ${hx + 6.5} ${hy + 6} Z" fill="${R}"/>
+      <path d="M${hx - 3} ${hy - 2} h1 M${hx + 2} ${hy - 2} h1" stroke="${K}" stroke-width="3" stroke-linecap="round"/>
+    </g>
+    ${sh > .35 ? `<text x="${8 - sh * 2}" y="26" font-size="10" fill="${W}" font-family="monospace">meh.</text>` : ''}
+  </g>`;
+};
+// ═══ BOSS termitequeen · tier 2 slot A ═══
+// THE TERMITE QUEEN · a vast pulsing queen wedged inside a cathedral mound. Tell: play a THIRD card this turn
+// (outwork the crew). Special: REBUILD (the workers dismantle your block and add it to the mound).
+BOSSES2.push({ id: 'termitequeen', name: 'THE TERMITE QUEEN', ep: 'LONG MAY SHE REBUILD', hp: 78, atk: 12,
+  pat: ['tell', 'atk', 'rebuild', 'atk', 'heal'] });
+BOSS_TELLS.termitequeen = { cue: '▨ THE ROYAL DECREE · IT IS SEALING YOU IN',
+  hint: 'OUTWORK IT — play your THIRD CARD this turn',
+  test: (c, B) => (B.turnIds || []).length >= 3,
+  win: 'THREE CARDS. THEY HAD TWO WORKERS ON SHIFT. UNION RULES.',
+  fail: 'THE WALL GOES UP. YOU ARE IN THE WALL. YOU ARE LOAD-BEARING.' };
+BOSS_PATS.termitequeen = ['tell', 'atk', 'rebuild', 'atk', 'heal'];
+BOSS_P2.termitequeen = ['atk', 'tell', 'atk', 'rebuild', 'multi'];
+QUIPS.termitequeen = ['i have laid four thousand eggs today.', 'the mound is a cathedral. you are mud.',
+  'my workers are rebuilding that. already.', '*pulses*', 'i do not walk. i am carried. constantly.',
+  'you are standing in someone\'s bedroom.', 'the colony thanks you for the materials.',
+  'every wall you build is a wall we keep.'];
+BOSSART2.termitequeen = f => {
+  const { K, W, G, D, R } = B2P;
+  const bob = B2P.bob(f), blink = B2P.blink(f);
+  const lay = (f % 100) < 20 ? Math.sin(((f % 100) / 20) * Math.PI) : 0;
+  const p = Math.sin(f / 5);
+  const arx = 38 + p * 1.5 - lay * 3, ary = 21 + p * 1.2 + lay * 2;
+  const egg = (f % 100) < 20 ? (f % 100) / 20 : 0;
+  const ant = Math.sin(f / 7) * 6;
+  const m = lay * 4;
+  const wk = (x0, y0, x1, y1, ph) => {
+    const t = ((f / 90) + ph) % 1, x = x0 + (x1 - x0) * t, y = y0 + (y1 - y0) * t;
+    return `<g transform="translate(${x.toFixed(1)} ${y.toFixed(1)})"><rect x="-3" y="-8" width="6" height="4" fill="${W}"/><ellipse cx="0" cy="0" rx="4" ry="3" fill="${G}"/></g>`;
+  };
+  const cx = 72, cy = 100;
+  return `<g transform="translate(0 ${bob * .35})">
+    <path d="M10 126 L20 64 L26 46 L30 22 L35 46 L44 38 L52 14 L60 2 L68 14 L76 38 L85 46 L90 24 L95 46 L100 64 L110 126 Z" fill="#3a3a3a"/>
+    <path d="M60 2 L52 14 L56 34 L60 28 L64 34 L68 14 Z" fill="${D}"/>
+    <path d="M28 126 V74 Q60 34 92 74 V126 Z" fill="${K}"/>
+    ${wk(102, 112, 90, 36, 0)}
+    <ellipse cx="${cx + arx - 4 + egg * 8}" cy="${cy + 6 + egg * 18}" rx="${egg ? 6 : 0}" ry="${egg ? 4.5 : 0}" fill="${W}"/>
+    <g transform="rotate(-8 ${cx} ${cy})">
+      <ellipse cx="${cx}" cy="${cy}" rx="${arx}" ry="${ary}" fill="#e2e2e2"/>
+      ${[-24, -12, 0, 12, 24].map(dx => `<path d="M${cx + dx * arx / 38} ${cy - ary + 2} q4 ${ary - 2} 0 ${ary * 2 - 4}" stroke="#7a7a7a" stroke-width="5" fill="none" stroke-linecap="round"/>`).join('')}
+      ${(() => { const t = ((f / 140) % 1), x = cx + 26 - t * 40, y = cy - ary * Math.sqrt(Math.max(0, 1 - ((x - cx) / arx) ** 2)) + 1;
+        return `<g transform="translate(${x.toFixed(1)} ${y.toFixed(1)})"><rect x="-3" y="-8" width="6" height="4" fill="${W}"/><ellipse cx="0" cy="0" rx="4" ry="3" fill="${D}"/></g>`; })()}
+    </g>
+    <g transform="translate(0 ${-lay * 3})">
+      <path d="M30 98 l-6 16 M38 100 l-2 16 M46 100 l4 15" stroke="${D}" stroke-width="3" stroke-linecap="round"/>
+      <ellipse cx="38" cy="94" rx="14" ry="10" fill="${D}"/>
+      <path d="M26 60 q-6 -12 ${-10 + ant} -20 M38 60 q4 -14 ${10 - ant} -20" stroke="${D}" stroke-width="3" fill="none" stroke-linecap="round"/>
+      <circle cx="32" cy="74" r="15" fill="${G}"/>
+      <path d="M24 84 q${-4 - m} 8 ${4 - m} 12 M40 84 q${4 + m} 8 ${-4 + m} 12" stroke="${K}" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+      <ellipse cx="26" cy="74" rx="4" ry="${blink ? 1 : 4.5}" fill="${K}"/>
+      <ellipse cx="39" cy="74" rx="4" ry="${blink ? 1 : 4.5}" fill="${K}"/>
+      <path d="M20 66 l9 3 M45 66 l-9 3" stroke="${K}" stroke-width="3" stroke-linecap="round"/>
+      <path d="M21 61 l2 -10 l5 6 l4 -9 l4 9 l5 -6 l2 10 z" fill="${R}"/>
+    </g>
+    ${egg ? `<text x="66" y="${70 - egg * 4}" font-family="monospace" font-size="7" fill="${W}">EGG NO.${4000 + Math.floor(f / 100)}</text>` : ''}
+  </g>`;
+};
+// ═══ BOSS marabou · tier 1 slot B ═══
+// THE MARABOU STORK, ESQ. — bald carrion-stork litigator. Everything is billable.
+BOSSES2.push({ id: 'marabou', name: 'MARABOU STORK, ESQ.', ep: 'BILLS IN SIX-MINUTE INCREMENTS', hp: 60, atk: 11,
+  pat: ['tell', 'atk', 'invoice', 'blk'] });
+BOSS_TELLS.marabou = { cue: '§ A LAWSUIT · IT IS DRAFTING ONE',
+  hint: 'FILE A MOTION — play a card that is NOT AN ATTACK',
+  test: c => c.type !== 'atk' && !c.cursed,
+  win: 'MOTION GRANTED. IT DID NOT EXPECT PAPERWORK FROM A ZEBRA.',
+  fail: 'THE GAVEL LANDS ON YOU. THE GAVEL WILL BE BILLED.' };
+BOSS_PATS.marabou = ['tell', 'atk', 'invoice', 'blk'];
+BOSS_P2.marabou = ['atk', 'tell', 'atk', 'invoice'];
+QUIPS.marabou = ['that will be billed.', '*adjusts monocle*', 'i also eat the dead. it is related.',
+  'objection. to your face.', 'my rates are reasonable. for a vulture.', '*tap tap tap* on the briefcase',
+  'please hold. i am billing someone else.', 'the court recognises the dead zebra.'];
+BOSSART2.marabou = f => {
+  const { K, W, G, D, R } = B2P;
+  const bob = B2P.bob(f), blink = B2P.blink(f);
+  const ph = (f % 100) / 18, bang = ph < 1 ? Math.sin(ph * Math.PI) : 0;   // gavel beat every 4 s
+  const gav = ph >= 1 ? 0 : ph < .35 ? -30 * Math.sin(ph / .35 * Math.PI / 2)      // wind back,
+    : ph < .55 ? -30 + 95 * ((ph - .35) / .2) : ph < .8 ? 65 : 65 * (1 - (ph - .8) / .2);   // slam, hold, return
+  const puff = 1 + Math.sin(f / 10) * .05 + bang * .22;                      // throat pouch breathes, inflates on the bang
+  const ey = blink ? 1 : 4.5;
+  return `<g transform="translate(0 ${bob * .4})">
+    <path d="M52 98 L50 126 M68 98 L70 126" stroke="${G}" stroke-width="4" stroke-linecap="round"/>
+    <path d="M42 126 h12 M66 126 h12" stroke="${G}" stroke-width="3" stroke-linecap="round"/>
+    <path d="M30 70 Q60 50 90 70 L94 104 L82 98 L74 108 L60 100 L46 108 L38 98 L26 104 Z" fill="${D}"/>
+    <path d="M48 64 L72 64 L66 104 L54 104 Z" fill="${W}"/>
+    <g transform="translate(60 80) scale(${puff}) translate(-60 -80)">
+      <path d="M55 68 Q47 86 60 94 Q73 86 65 68 Z" fill="${R}"/>
+    </g>
+    <path d="M22 98 v-6 h12 v6" stroke="${G}" stroke-width="3" fill="none"/>
+    <rect x="16" y="98" width="24" height="18" rx="2" fill="${G}"/>
+    <path d="M16 106 h24" stroke="${K}" stroke-width="2.5"/>
+    <path d="M30 76 Q26 88 28 96" stroke="${D}" stroke-width="7" stroke-linecap="round" fill="none"/>
+    <path d="M82 70 Q92 74 86 84" stroke="${K}" stroke-width="10" stroke-linecap="round" fill="none"/>
+    <path d="M82 70 Q92 74 86 84" stroke="${D}" stroke-width="7" stroke-linecap="round" fill="none"/>
+    <g transform="rotate(${gav} 86 84)">
+      <path d="M86 84 L91 67" stroke="${W}" stroke-width="3.5" stroke-linecap="round"/>
+      <rect x="83" y="57" width="18" height="10" rx="2" transform="rotate(17 92 62)" fill="${W}"/>
+    </g>
+    <path d="M48 64 L56 104 M72 64 L64 104" stroke="${K}" stroke-width="2.5"/>
+    <path d="M56 58 L64 58 L60 64 Z" fill="${G}"/>
+    <circle cx="60" cy="38" r="15" fill="${G}"/>
+    <path d="M52 24 q4 -8 8 -2 q4 -8 8 0" stroke="${W}" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+    <path d="M52 44 L68 44 L60 ${80 + bang * 4} Z" fill="#c8c8c8"/>
+    <path d="M60 46 L60 ${76 + bang * 4}" stroke="${D}" stroke-width="2"/>
+    <ellipse cx="53" cy="37" rx="3.5" ry="${ey}" fill="${K}"/>
+    <ellipse cx="67" cy="37" rx="3.5" ry="${ey}" fill="${K}"/>
+    <path d="M47 30 l10 3 M73 30 l-10 3" stroke="${K}" stroke-width="3.5" stroke-linecap="round"/>
+    <circle cx="67" cy="37" r="7" stroke="${W}" stroke-width="2.5" fill="none"/>
+    <path d="M74 39 Q78 52 72 60" stroke="${W}" stroke-width="1.5" fill="none"/>
+    ${ph > .5 && ph < .95 ? `<text x="60" y="13" font-size="10" font-family="monospace" font-weight="bold" text-anchor="middle" fill="${W}">BILLED.</text>` : ''}
+  </g>`;
+};
+// ═══ BOSS hipporex · tier 1 slot A ═══
+// HIPPOPOTAMUS REX · a vast, serene hippo, mostly submerged. Tell: feed the yawn a 0-cost card. Special: SUBMERGE.
+BOSSES2.push({ id: 'hipporex', name: 'HIPPOPOTAMUS REX', ep: 'SERENE. VAST. MOSTLY SUBMERGED.', hp: 58, atk: 11,
+  pat: ['tell', 'atk', 'submerge', 'atk', 'buff'] });
+BOSS_TELLS.hipporex = { cue: '◍ THE YAWN · IT IS OPENING. AND OPENING.',
+  hint: 'FEED IT — play a card that COSTS 0 (A SNACK)',
+  test: c => (c.ed === 'neg' || !c.cost) && !c.cursed,   // same number the card face shows (costOf): NEG edition shows 0
+  win: 'IT CHEWS THOUGHTFULLY. IT HAS FORGOTTEN WHAT IT WAS DOING.',
+  fail: 'THE YAWN CLOSES. YOU WERE IN IT. BRIEFLY.' };
+BOSS_PATS.hipporex = ['tell', 'atk', 'submerge', 'atk', 'buff'];
+BOSS_P2.hipporex = ['atk', 'tell', 'atk', 'submerge'];
+QUIPS.hipporex = ['*yawns. the river gets smaller.*', 'i am mostly beneath you.',
+  'the water and i have an understanding.', 'is that a snack. is it free.',
+  'i have not moved in eleven years.', 'serenity is a kind of threat.', '*blub*',
+  'my mouth opens 150 degrees. ask me why.'];
+BOSSART2.hipporex = f => {
+  const { K, W, G, D, R } = B2P;
+  const bob = B2P.bob(f), blink = B2P.blink(f);
+  const yb = (f % 100) < 22 ? Math.pow(Math.sin(((f % 100) / 22) * Math.PI), .6) : 0;   // THE YAWN, every 4 s
+  const up = yb * 28, sq = 1 - yb * .16;                    // upper jaw lifts and tips back (foreshortens)
+  const shut = blink || yb > .45;                           // eyes close in bliss mid-yawn
+  const ear = Math.sin(f / 9) * 7;
+  const wv = (Math.sin(f / 7) * 1.6).toFixed(2);            // waterline wobble
+  const rip = Math.sin(f / 10) * 2 + yb * 7;                // ripples spread when it yawns
+  const eye = x => shut ? `<path d="M${x - 5} 46 h10" stroke="${K}" stroke-width="3" stroke-linecap="round"/>`
+    : `<ellipse cx="${x}" cy="46" rx="4.5" ry="4.5" fill="${K}"/><path d="M${x - 6} 43.5 h12" stroke="${G}" stroke-width="4.5"/><path d="M${x - 6} 45.5 h12" stroke="${K}" stroke-width="2.5" stroke-linecap="round"/>`;
+  return `<g transform="translate(0 ${bob * .4})">
+    ${yb > .05 ? `<rect x="29" y="${92 - up}" width="62" height="${up + 2}" rx="8" fill="${D}"/>
+    <ellipse cx="60" cy="${90 - up * .4}" rx="${6 + yb * 12}" ry="${1 + up * .3}" fill="${K}"/>` : ''}
+    <rect x="25" y="88" width="70" height="24" rx="12" fill="${G}"/>
+    <ellipse cx="60" cy="93" rx="19" ry="4.5" fill="#7a7a7a"/>
+    <path d="M29 97 L36 ${80 - yb * 12} L43 97 z M77 97 L84 ${80 - yb * 12} L91 97 z" fill="${W}"/>
+    <g transform="translate(0 ${-up}) translate(60 95) scale(1 ${sq}) translate(-60 -95)">
+      <g transform="rotate(${ear} 35 37)"><ellipse cx="35" cy="37" rx="4.5" ry="7" fill="${D}"/></g>
+      <g transform="rotate(${-ear} 85 37)"><ellipse cx="85" cy="37" rx="4.5" ry="7" fill="${D}"/></g>
+      <ellipse cx="60" cy="57" rx="27" ry="20" fill="${G}"/>
+      <circle cx="45" cy="44" r="10" fill="${G}"/>
+      <circle cx="75" cy="44" r="10" fill="${G}"/>
+      ${eye(45)}${eye(75)}
+      <g transform="rotate(18 74 30)"><path d="M62 35 v-13 l5.5 6 l6 -9 l6 9 l5.5 -6 v13 z" fill="${R}"/><path d="M62 31 h23" stroke="${K}" stroke-width="2"/></g>
+      ${yb > .05 ? `<path d="M31 92 h9 l-4.5 ${6 + yb * 6} z M80 92 h9 l-4.5 ${6 + yb * 6} z" fill="${W}"/>` : ''}
+      <rect x="22" y="61" width="76" height="34" rx="16" fill="${G}"/>
+      <ellipse cx="49" cy="70" rx="4" ry="3" fill="${K}"/>
+      <ellipse cx="71" cy="70" rx="4" ry="3" fill="${K}"/>
+      ${yb > .05 ? '' : `<path d="M31 87 q29 8 58 0" stroke="${K}" stroke-width="3.5" fill="none" stroke-linecap="round"/>`}
+    </g>
+  </g>
+  ${yb > .3 ? `<text x="20" y="14" font-family="monospace" font-size="8" fill="${W}" text-anchor="middle">*yawn*</text>` : ''}
+  <path d="M8 99 q13 ${wv} 26 0 t26 0 t26 0 t26 0 V136 H8 z" fill="${K}"/>
+  <ellipse cx="60" cy="112" rx="42" ry="8" fill="#262626"/>
+  <path d="M8 99 q13 ${wv} 26 0 t26 0 t26 0 t26 0" stroke="#c8c8c8" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  <path d="M${(16 - rip).toFixed(1)} 107 h12 M${(92 + rip).toFixed(1)} 107 h12 M${(30 - rip).toFixed(1)} 122 h14 M${(76 + rip).toFixed(1)} 122 h14" stroke="#7a7a7a" stroke-width="2.5" stroke-linecap="round"/>`;
+};
 function scaleFoe(base, floor, mult = 1){
   
   let s = HARD.hp0 + floor * HARD.hpF, sa = HARD.atk0 + HARD.atkF * Math.pow(floor, .9);
@@ -2934,8 +3563,10 @@ function makeFoe(floor, kind){
   }
   if (kind === 'boss'){
     const bi = Math.max(0, Math.floor(floor / 5) - 1);
-    const b = BOSSES[bi % BOSSES.length];
-    const cycles = Math.floor(bi / BOSSES.length);
+    const { b: pick0, cycles, anchor } = bossPick(bi);
+    const b = pick0 === anchor ? pick0 : { ...pick0,
+      hp: Math.round(clamp(pick0.hp, anchor.hp * .85, anchor.hp * 1.15)),
+      atk: Math.round(clamp(pick0.atk, anchor.atk * .85, anchor.atk * 1.15)) };
     
     const foe = scaleFoe(b, Math.max(0, floor - (bi === 0 ? HARD.bossLag0 : HARD.bossLag)), 1);
     if (cycles > 0){
@@ -5203,6 +5834,16 @@ function foeIntent(){
   if (kind === 'steal') return '<span class="intIc">$</span> INTENT: <b style="color:var(--r)">GOING FOR YOUR STRIPES</b>' + seerLine(f);
   if (kind === 'curse') return '<span class="intIc">†</span> INTENT: <b style="color:var(--r)">A GIFT FOR YOUR DECK</b>' + seerLine(f);
   if (kind === 'enrage') return '<span class="intIc">▲</span> INTENT: <b style="color:var(--r)">WINDING UP</b>' + seerLine(f);
+  if (kind === 'submerge') return `<span class="intIc">◍</span> INTENT: <b>SUBMERGING +${Math.round(f.atk * .9)} ▣</b> · surfaces +1 str` + seerLine(f);
+  if (kind === 'invoice') return `<span class="intIc">§</span> INTENT: <b style="color:var(--r)">INVOICE ${foeSwing(f, .5) + Math.min(8, (B.turnIds || []).length)}</b> · +1 per card you play` + seerLine(f);
+  if (kind === 'rebuild') return `<span class="intIc">▨</span> INTENT: <b style="color:var(--r)">REBUILD +${Math.round(f.atk * .6) + Math.min(B.block || 0, f.atk * 2)}</b> · no hit · it takes the block you leave up (max ${f.atk * 2})` + seerLine(f);
+  if (kind === 'shrug') return `<span class="intIc">§</span> INTENT: <b style="color:var(--r)">SHRUG · +${2 + Math.min(3, f.weak || 0)}</b> · sheds weak, does not care` + seerLine(f);
+  if (kind === 'motion') return `<span class="intIc">§</span> INTENT: <b style="color:var(--r)">MOTION · ${['EXEC BONUSES +' + Math.max(2, Math.ceil(f.atk * .12)), 'LAYOFFS ' + foeSwing(f, 1.2), 'MANDATORY MEETING'][(f.elephantboard_m || 0) % 3]}</b> · ${['it gets stronger', 'a hit', 'a memo clogs your next draw'][(f.elephantboard_m || 0) % 3]}` + seerLine(f);
+  if (kind === 'curl') return `<span class="intIc">◆</span> INTENT: <b style="color:var(--r)">CURL &amp; ROLL ${foeSwing(f, .7) + Math.min(f.blk || 0, f.atk * 2)}</b> · its block rolls with it — crack it first` + seerLine(f);
+  if (kind === 'roll') return `<span class="intIc">◍</span> INTENT: <b style="color:var(--r)">ROLL ${foeSwing(f, .5 + ((f.counterN || 0) > (f.dungbeetle_cn || 0) && (f.dungbeetle_ball || 0) > 0 ? 1 : Math.min(4, (f.dungbeetle_ball || 0) + 1)) * .3)}</b> · ball size ${(f.counterN || 0) > (f.dungbeetle_cn || 0) && (f.dungbeetle_ball || 0) > 0 ? 1 : Math.min(4, (f.dungbeetle_ball || 0) + 1)}/4 · push back to reset it` + seerLine(f);
+  if (kind === 'whiteout') return `<span class="intIc">§</span> INTENT: <b style="color:var(--r)">WHITEOUT ???</b> · visibility zero · half your block faces the wrong way` + seerLine(f);
+  if (kind === 'stampede') return `<span class="intIc">*</span> INTENT: <b style="color:var(--r)">STAMPEDE ${foeSwing(f, .3)} × ${Math.min(6, 5 + (f.wildebeest_runs || 0))}</b> · the whole herd, one hoof at a time` + seerLine(f);
+  if (kind === 'parch') return `<span class="intIc">✦</span> INTENT: <b style="color:var(--r)">PARCH ${foeSwing(f, .8)}</b> · it drinks whatever gets through` + seerLine(f);
   if (kind === 'mimic') return '<span class="intIc">=</span> INTENT: <b>COPYING YOUR HOMEWORK</b>' + seerLine(f);
   if (kind === 'clip') return '<span class="intIc">▨</span> INTENT: <b>CLIPPING THROUGH THE WORLD</b>' + seerLine(f);
   if (kind === 'ragdoll') return '<span class="intIc">?</span> INTENT: <b style="color:var(--r)">UNSIMULATED FLAILING</b>' + seerLine(f);
@@ -5229,6 +5870,14 @@ function incomingDmg(){
   const one = foeSwing(f, f.tell ? 2 : 1);
   if (k === 'atk') return one;
   if (k === 'multi') return foeSwing(f, .45) * 3;
+  if (k === 'invoice') return foeSwing(f, .5) + Math.min(8, (B.turnIds || []).length);
+  if (k === 'shrug') return 0;
+  if (k === 'motion') return (f.elephantboard_m || 0) % 3 === 1 ? foeSwing(f, 1.2) : 0;
+  if (k === 'curl') return foeSwing(f, .7) + Math.min(f.blk || 0, f.atk * 2);
+  if (k === 'roll') return foeSwing(f, .5 + ((f.counterN || 0) > (f.dungbeetle_cn || 0) && (f.dungbeetle_ball || 0) > 0 ? 1 : Math.min(4, (f.dungbeetle_ball || 0) + 1)) * .3);
+  if (k === 'whiteout'){ const n = foeSwing(f, .5); return n - Math.min(Math.floor(B.block / 2), n) + B.block; }
+  if (k === 'stampede') return foeSwing(f, .3) * Math.min(6, 5 + (f.wildebeest_runs || 0));
+  if (k === 'parch') return foeSwing(f, .8);
   if (k === 'enrage') return 0;   
   return 0;
 }
@@ -5926,6 +6575,160 @@ function endTurn(){
       f.str += Math.max(2, Math.ceil(f.atk * .12));
       toast(pick(['▲ IT IS WINDING UP. THAT LOOKS EXPENSIVE.', '▲ IT PAWS THE GROUND. BLOCK. NOW.', '▲ SOMETHING BIG IS COMING.']), 2200);
  SFX.power();
+    } else if (kind === 'submerge'){
+      // SUBMERGE: sinks out of reach and surfaces +1 str. No damage. Adds 2×sb block; foe block is halved
+      // at your turn start, so you face exactly +sb (≈ .9 × atk) on your turn, which is what the toast says.
+      const sb = Math.round(f.atk * .9);
+      f.blk += sb * 2;
+      f.str += 1;
+      stampFx('SUBMERGED');
+      toast(pick(['◍ IT SINKS. ONLY THE CROWN REMAINS. +' + sb + ' ▣',
+        '◍ IT GOES UNDER. THE RIVER LOOKS SMUG. +' + sb + ' ▣',
+        '◍ BUBBLES. THEN NOTHING. THEN MORE HIPPO THAN BEFORE. +' + sb + ' ▣']), 2400);
+      SFX.block();
+    } else if (kind === 'invoice'){
+      // INVOICE: a light hit plus 1 per card you played this turn (itemised, capped at 8). Block absorbs it as usual.
+      const items = Math.min(8, (B.turnIds || []).length);
+      const n = foeSwing(f, .5) + items;
+      const ab = Math.min(B.block, n); B.block -= ab; const t = n - ab;
+      R.hp = Math.max(0, R.hp - t); through += t; if (f.weak) f.weak--;
+      if (t > 0){ B.tookDmg = true; playerFx(); SFX.playerHit(); hapt(25); B.zebPose = 'hurt'; B.zebUntil = Date.now() + 550; }
+      else { SFX.block(); B.zebPose = 'blk'; B.zebUntil = Date.now() + 450; }
+      stampFx('INVOICE');
+      toast('§ INVOICE · ' + n + ' · ITEMISED: ' + items + ' CARD' + (items === 1 ? '' : 'S') + ' AT 1 EACH' + (t > 0 ? ' · PAID IN HP: −' + t : ' · SETTLED IN BLOCK. IT IS DISAPPOINTED.'), 2600);
+    } else if (kind === 'rebuild'){
+      // REBUILD: the workers carry off your block (up to 2x atk) and mortar it into the mound, plus a base 60% atk.
+      // Telegraphed by the intent line; deals no damage. f.blk then halves at end of turn like any foe block.
+      const took = Math.max(0, Math.min(B.block || 0, f.atk * 2));
+      B.block -= took;
+      const gain = Math.round(f.atk * .6) + took;
+      f.blk += gain;
+      f.termitequeen_rebuilds = (f.termitequeen_rebuilds || 0) + 1;
+      floatNum($('#foeArt'), '+' + gain + ' ▣', '#8a8a8a');
+      toast(took > 0 ? '▨ REBUILD · THE WORKERS CARRIED OFF ' + took + ' OF YOUR BLOCK. IT IS PART OF THE MOUND NOW.'
+                     : '▨ REBUILD · NOTHING OF YOURS TO TAKE. THEY USE MUD. +' + gain + ' ▣', 2600);
+      SFX.block();
+    } else if (kind === 'shrug'){
+      // SHRUG: sheds every weak stack, then gains +2 str, +1 more per stack it shed (max +5).
+      // Deals no damage. Leaves no per-battle state behind. Never touches f.vuln (tell-counter reward stays intact).
+      const shed = f.weak || 0;
+      f.weak = 0;
+      const gain = 2 + Math.min(3, shed);
+      f.str += gain;
+      floatNum($('#foeArt'), '+' + gain + ' ▲', 'var(--r)');
+      stampFx('SHRUG');
+      toast(shed ? '§ IT SHRUGS OFF YOUR WEAKEN (' + shed + '). IT DID NOT CARE. +' + gain
+                 : '§ IT SHRUGS AT NOTHING IN PARTICULAR. IT STILL DOES NOT CARE. +' + gain, 2400);
+      SFX.power();
+    } else if (kind === 'motion'){
+      // MOTION: the board votes on the next item of a FIXED agenda (BONUSES -> LAYOFFS -> MEETING, repeating).
+      // The intent line names the item before it happens. Only LAYOFFS deals damage (1.2x, normal block).
+      const ag = (f.elephantboard_m || 0) % 3;
+      f.elephantboard_m = (f.elephantboard_m || 0) + 1;
+      const tally = ag === 1 ? '5–0' : '4–1';
+      stampFx('MOTION CARRIED');
+      if (ag === 0){
+        const g = Math.max(2, Math.ceil(f.atk * .12));
+        f.str += g;
+        floatNum($('#foeArt'), '+' + g + ' ▲', 'var(--r)');
+        toast('§ MOTION CARRIED ' + tally + ' · EXECUTIVE BONUSES · +' + g + ' STRENGTH. THE DISSENTING ELEPHANT HAS BEEN THANKED FOR ITS SERVICE.', 2800);
+        SFX.power();
+      } else if (ag === 1){
+        const n = foeSwing(f, 1.2); const ab = Math.min(B.block, n); B.block -= ab; const t = n - ab;
+        R.hp = Math.max(0, R.hp - t); through += t; if (f.weak) f.weak--;
+        if (t > 0){ B.tookDmg = true; playerFx(); SFX.playerHit(); hapt(25); B.zebPose = 'hurt'; B.zebUntil = Date.now() + 550; }
+        else { SFX.block(); B.zebPose = 'blk'; B.zebUntil = Date.now() + 450; }
+        toast('§ MOTION CARRIED ' + tally + ' · LAYOFFS · ' + n + (t ? ' · YOU HAVE BEEN LET GO. −' + t + ' HP' : ' · YOU NEGOTIATED A PACKAGE. ALL BLOCKED'), 2600);
+      } else {
+        const memo = mkCursed();
+        memo.name = 'Memo'; memo.desc = '<b>UNPLAYABLE.</b> From the board. Gone when the meeting ends.';
+        B.drawPile.push(memo);
+        const g = Math.round(f.atk * .5);
+        f.blk += g;
+        toast('§ MOTION CARRIED ' + tally + ' · MANDATORY MEETING · A MEMO TOPS YOUR NEXT DRAW. THE BOARD +' + g + ' ▣. IT RUNS LONG.', 2800);
+        SFX.bell();
+      }
+    } else if (kind === 'curl'){
+      // CURL: it tucks into a ball and rolls at you. Damage = foeSwing(f, .7) + whatever shell (f.blk) it still has on
+      // its turn (capped at 2x atk). The intent line shows the live total, so cracking its block on your turn shrinks the
+      // roll. Normal block applies. The shell is spent on the roll (f.blk = 0). No per-battle state left behind.
+      const sh = Math.min(f.blk || 0, f.atk * 2);
+      const n = foeSwing(f, .7) + sh; const ab = Math.min(B.block, n); B.block -= ab; const t = n - ab;
+      R.hp = Math.max(0, R.hp - t); through += t; if (f.weak) f.weak--;
+      if (t > 0){ B.tookDmg = true; playerFx(); SFX.playerHit(); hapt(25); B.zebPose = 'hurt'; B.zebUntil = Date.now() + 550; }
+      else { SFX.block(); B.zebPose = 'blk'; B.zebUntil = Date.now() + 450; }
+      f.blk = 0;
+      stampFx('CURL');
+      toast('◆ IT CURLS UP AND ROLLS · ' + n + (sh ? ' (' + sh + ' OF IT WAS SHELL)' : ' · NO SHELL LEFT, JUST MOMENTUM')
+        + (t ? ' · −' + t + ' HP' : ' · ALL BLOCKED. IT UNROLLS, EMBARRASSED.'), 2600);
+    } else if (kind === 'roll'){
+      // ROLL: the ball grows one size (cap 4) and is rolled at you at .5 + .3*size. If a wind-up was
+      // countered since the last roll, the ball went back down the hill: it restarts at size 1.
+      const back = (f.counterN || 0) > (f.dungbeetle_cn || 0) && (f.dungbeetle_ball || 0) > 0;
+      const sz = back ? 1 : Math.min(4, (f.dungbeetle_ball || 0) + 1);
+      f.dungbeetle_ball = sz; f.dungbeetle_cn = f.counterN || 0;
+      const n = foeSwing(f, .5 + sz * .3); const ab = Math.min(B.block, n); B.block -= ab; const t = n - ab;
+      R.hp = Math.max(0, R.hp - t); through += t; if (f.weak) f.weak--;
+      if (t > 0){ B.tookDmg = true; playerFx(); SFX.playerHit(); hapt(25); B.zebPose = 'hurt'; B.zebUntil = Date.now() + 550; }
+      else { SFX.block(); B.zebPose = 'blk'; B.zebUntil = Date.now() + 450; }
+      stampFx('ROLL');
+      toast(back ? '◍ THE BALL ROLLED BACK DOWN THE HILL. HE STARTS AGAIN. HE IS USED TO THIS. · ' + n
+        : '◍ THE BALL GROWS · SIZE ' + sz + (sz < 4 ? ' · IT WILL BE BIGGER NEXT TIME' : ' · IT CANNOT GET BIGGER. HE IS DISAPPOINTED.') + ' · ' + n, 2600);
+    } else if (kind === 'whiteout'){
+      // WHITEOUT: the storm swallows the arena. Only HALF your block is facing the right way (you cannot block what
+      // you cannot see), so a foeSwing(.5) gust meets floor(block/2); whatever block it used is spent. Then the storm
+      // loses itself inside itself: +block (atk x .5, halves each turn like 'blk'). The intent line hides the number
+      // behind ??? but incomingDmg is exact, so the footer's "N gets through" and autoPolicy's block call stay right.
+      // No per-battle state is kept.
+      const n = foeSwing(f, .5); const ab = Math.min(Math.floor(B.block / 2), n); B.block -= ab; const t = n - ab;
+      R.hp = Math.max(0, R.hp - t); through += t; if (f.weak) f.weak--;
+      if (t > 0){ B.tookDmg = true; playerFx(); SFX.playerHit(); hapt(25); B.zebPose = 'hurt'; B.zebUntil = Date.now() + 550; }
+      else { SFX.block(); B.zebPose = 'blk'; B.zebUntil = Date.now() + 450; }
+      const wb = Math.round(f.atk * .5);
+      f.blk += wb;
+      stampFx('WHITEOUT');
+      floatNum($('#foeArt'), '+' + wb + ' ▣', '#9a9a9a');
+      toast('§ WHITEOUT · ' + (t ? t + ' OF SAND GOT AROUND YOUR BLOCK' : 'YOU BLOCKED SAND. SOMEHOW') + ' · THE STORM IS SOMEWHERE IN THERE (+' + wb + ' ▣)', 2800);
+    } else if (kind === 'stampede'){
+      // STAMPEDE: the whole herd, one hoof at a time. 5 hits at 30% (6 from the second stampede on: more keep arriving).
+      const hits = Math.min(6, 5 + (f.wildebeest_runs || 0));
+      const per = foeSwing(f, .3);
+      let tot = 0;
+      for (let k = 0; k < hits; k++){
+        const ab = Math.min(B.block, per);
+        B.block -= ab;
+        const t = per - ab;
+        R.hp = Math.max(0, R.hp - t); tot += t;
+      }
+      through += tot;
+      if (f.weak) f.weak--;
+      f.wildebeest_runs = (f.wildebeest_runs || 0) + 1;
+      if (tot > 0){ B.tookDmg = true; playerFx(); SFX.playerHit(); hapt([15, 30, 15, 30, 15, 30, 15]); B.zebPose = 'hurt'; B.zebUntil = Date.now() + 550; }
+      else { SFX.block(); B.zebPose = 'blk'; B.zebUntil = Date.now() + 450; }
+      stampFx('STAMPEDE');
+      toast('* STAMPEDE · ' + per + ' × ' + hits + (tot ? ' · −' + tot + ' HP' : ' · ALL BLOCKED') + ' · ' +
+        pick(['THEY APOLOGISE ON THE WAY THROUGH.', 'NONE OF THEM KNOW WHY. ALL OF THEM AGREE.', 'MORE ARE STILL ARRIVING.']), 2400);
+    } else if (kind === 'parch'){
+      // PARCH: a 0.8x hit that block absorbs normally. Whatever gets THROUGH, the drought drinks (heals it, capped at mhp).
+      // Block it all and it drinks nothing. No per-battle state is kept.
+      const n = foeSwing(f, .8); const ab = Math.min(B.block, n); B.block -= ab; const t = n - ab;
+      R.hp = Math.max(0, R.hp - t); through += t; if (f.weak) f.weak--;
+      if (t > 0){ B.tookDmg = true; playerFx(); SFX.playerHit(); hapt(25); B.zebPose = 'hurt'; B.zebUntil = Date.now() + 550; }
+      else { SFX.block(); B.zebPose = 'blk'; B.zebUntil = Date.now() + 450; }
+      stampFx('PARCH');
+      if (t > 0){
+        const h = Math.max(0, Math.min(t, f.mhp - f.hp));   // capped at mhp
+        f.hp += h;
+        if (h > 0){
+          floatNum($('#foeArt'), '+' + h + ' ♥', '#9a9a9a');
+          SFX.heal();
+          toast('✦ PARCH · ' + n + ' · IT DRANK THE ' + h + ' THAT GOT THROUGH. IT IS STILL THIRSTY.', 2600);
+        } else {
+          toast('✦ PARCH · ' + n + ' · IT IS ALREADY FULL. IT DRINKS ANYWAY. OUT OF SPITE.', 2400);
+        }
+      } else {
+        toast('✦ PARCH · ' + n + ' · ALL BLOCKED. IT LICKS YOUR BLOCK. NOTHING. IT IS PARCHED.', 2400);
+      }
     } else if (kind === 'mimic'){
       const last = B.discard[B.discard.length - 1];
       if (last && last.blk){ f.blk += Math.min(20, last.blk); toast('= IT COPIED YOUR ' + last.name.toUpperCase() + ' · +' + Math.min(20, last.blk) + ' ▣', 2000); }
@@ -5977,7 +6780,7 @@ function endTurn(){
     if (f.boss && !f.summit && !f.phase2 && f.hp > 0 && f.hp < f.mhp * .5){
       f.phase2 = 1;
       f.str += HARD.p2str;
-      f.pat = tellSpec(f) ? ['atk', 'tell', 'atk', 'multi'] : ['atk', 'atk', 'multi', 'atk'];
+      f.pat = BOSS_P2[f.id] || (tellSpec(f) ? ['atk', 'tell', 'atk', 'multi'] : ['atk', 'atk', 'multi', 'atk']);
       f.pi = 0;
       stampFx('SECOND WIND');
       toast('▲ ' + f.name + ' STOPS PLAYING AROUND · +' + HARD.p2str + ' · WATCH FOR THE NEXT WIND-UP', 3000);
@@ -7493,7 +8296,7 @@ function screenBestiary(){
   clearInterval(BEST_T);
   const roster = [
     ...FOES.map(x => ({ ...x, kind: 'SAVANNA' })),
-    ...BOSSES.map(x => ({ ...x, kind: 'BOSS' })),
+    ...bossRoster().map(x => ({ ...x, kind: 'BOSS' })),
     ...VILLAINS.map(x => ({ ...x, kind: 'ROGUE', vill: true })),
   ];
   const seen = META.bestiary || {};
