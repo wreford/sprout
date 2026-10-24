@@ -499,6 +499,19 @@ h1 .z{color:var(--r)}
   white-space:normal;text-align:center;width:max-content;max-width:min(92vw,540px);line-height:1.45;
   transition:transform .18s cubic-bezier(.2,1.6,.4,1)}
 #toast.on{transform:translateX(-50%) scale(1) rotate(-1.5deg)}
+#ottoPill{position:fixed;left:12px;bottom:calc(env(safe-area-inset-bottom) + 12px);z-index:35;display:flex;align-items:center;gap:6px;
+  max-width:150px;min-height:44px;padding:3px 10px 3px 4px;background:var(--k);color:var(--w);border:2px solid var(--w);box-shadow:3px 3px 0 #e8232a66;
+  font-family:var(--mono);font-weight:800;font-size:11px;letter-spacing:.14em;line-height:1.2;text-align:left;cursor:pointer}
+#ottoPill svg{width:34px;height:34px;flex-shrink:0}
+#ottoPill small{display:block;font-size:8px;letter-spacing:.12em;opacity:.85;margin-top:2px}
+#ottoPill:active{transform:translate(2px,2px)}
+#ottoPill.drive{z-index:76;background:var(--r);border-color:var(--r);font-size:9.5px;letter-spacing:.08em;animation:ottoPulse 1.1s ease-in-out infinite}
+@keyframes ottoPulse{50%{box-shadow:0 0 0 4px #e8232a55,3px 3px 0 #ffffff33}}
+.ottoArt .ob{animation:ottoBob 1.6s ease-in-out infinite;transform-origin:20px 34px}
+.ottoArt .os{animation:ottoScarf .5s steps(2) infinite;transform-origin:14px 22px}
+@keyframes ottoBob{50%{transform:translateY(-1.5px) rotate(-4deg)}}
+@keyframes ottoScarf{50%{transform:rotate(14deg)}}
+#app.ottoPad{padding-bottom:calc(env(safe-area-inset-bottom) + 66px)}
 .relicRow{display:flex;gap:6px;flex-wrap:wrap}
 .relic{border:1.5px solid var(--r);padding:.3em .55em;font-family:var(--mono);font-weight:800;font-size:9.5px;letter-spacing:.04em;color:var(--w)}
 .zline{font-family:var(--mono);font-size:11px;letter-spacing:.06em;color:#ffffff88;line-height:2}
@@ -4075,10 +4088,269 @@ const HELPERS = [
     desc: 'Battle animations run at double speed. Tempo is already three fights ahead.' },
   { id: 'coach', ic: '§', name: 'Coach Hoofstrong', cost: 2400, ep: 'TRUST THE PROCESS.',
     desc: 'Unlocks the AUTO button in battle: full autopilot until you tap stop — or the Coach taps out below 25% HP.' },
+  { id: 'otto', ic: '✈︎', name: 'Otto Pilot', cost: 3600, ep: 'HANDS OFF THE WHEEL.', art: 1,
+    desc: 'An oxpecker in aviator goggles. Tap ▶ OTTO and he plays the whole game: doors, fights, loot, the Oasis, the Post, the funeral and the next run. He never taps out. Tap him again to take the wheel back.' },
 ];
 function helperOwned(id){ return (META.helpers || []).includes(id); }
 function helperOn(id){ return helperOwned(id) && (META.helperOn || {})[id] !== false; }
 function DL(ms){ return helperOn('tempo') ? Math.round(ms * .5) : ms; }
+const OTTO_ART = `<svg class="ottoArt" viewBox="0 0 40 40" aria-hidden="true"><g class="ob">
+  <path class="os" d="M14 22 q-7 -1 -12 -5 q2 7 11 8z" fill="#e8232a"/>
+  <path d="M9 27 l-7 6 l10 -3z" fill="#f2f2f2"/>
+  <ellipse cx="17" cy="25" rx="10" ry="7.5" fill="#f2f2f2"/>
+  <path d="M10 24 q7 -5 14 -1" stroke="#000" stroke-width="2.2" fill="none"/>
+  <circle cx="26" cy="15" r="7" fill="#f2f2f2"/>
+  <path d="M32 15 l7 1.6 l-7 2.2z" fill="#e8232a"/>
+  <path d="M19 13 h14" stroke="#000" stroke-width="2.4"/>
+  <circle cx="24.6" cy="13" r="3.3" fill="#000" stroke="#8a8a8a" stroke-width="1.2"/>
+  <circle cx="30.4" cy="13" r="3.3" fill="#000" stroke="#8a8a8a" stroke-width="1.2"/>
+  <circle cx="23.6" cy="12" r="1" fill="#e8232a"/><circle cx="29.4" cy="12" r="1" fill="#e8232a"/>
+  <path d="M14 32 v5 M20 32 v5" stroke="#e8232a" stroke-width="1.6"/></g></svg>`;
+const OT = { on: false, t: null, sig: '', same: 0, pk: '', pkAt: 0, turnKey: '', turnActs: 0, said: 0, blend: null, done: new WeakSet(), ticks: 0, acts: 0, confused: 0, log: [], hist: {} };
+function ottoSay(m, force){
+  const n = Date.now();
+  if (!force && (n - OT.said < 7000 || Math.random() < .45)) return;
+  OT.said = n; toast('OTTO: ' + m, 1500);
+}
+function ottoScreen(){
+  if ($('#bEnd')) return 'battle';
+  if ($('#bAgain')) return 'death';
+  if ($('#bRun')) return 'title';
+  if ($('#bSkip')) return 'reward';
+  if ($('#bBanish')) return 'shop';
+  if ($('#bBlend')) return 'oasis';
+  if (R && app.querySelector('.door')) return 'map';
+  return '';
+}
+function ottoPill(){
+  let p = $('#ottoPill');
+  if (!(OT.on || (helperOn('otto') && ottoScreen()))){ if (p) p.remove(); app.classList.remove('ottoPad'); return; }
+  if (!p){
+    p = document.createElement('button');
+    p.id = 'ottoPill'; p.type = 'button';
+    p.onclick = e => { e.stopPropagation(); OT.on ? ottoStop() : ottoEngage(); };
+    document.body.appendChild(p);
+  }
+  const k = OT.on ? 'd' : 'i';
+  if (p.dataset.k !== k){
+    p.dataset.k = k;
+    p.classList.toggle('drive', OT.on);
+    p.setAttribute('aria-pressed', OT.on ? 'true' : 'false');
+    p.setAttribute('aria-label', OT.on ? 'Otto is driving. Tap to stop' : 'Engage Otto Pilot');
+    p.innerHTML = OTTO_ART + (OT.on ? '<span>OTTO IS DRIVING<small>· TAP TO STOP ·</small></span>' : '<span>▶ OTTO</span>');
+  }
+  const btm = document.getElementById('btm');
+  p.style.bottom = btm ? `calc(env(safe-area-inset-bottom) + ${btm.offsetHeight + 18}px)` : '';
+  app.classList.toggle('ottoPad', !btm);
+}
+function ottoEngage(){
+  if (OT.on || !helperOn('otto')) return false;
+  Object.assign(OT, { on: true, sig: '', same: 0, pk: '', pkAt: Date.now(), turnKey: '', turnActs: 0, blend: null, done: new WeakSet() });
+  ottoPill(); SFX.click && SFX.click();
+  const go = () => {
+    if (!OT.on) return;
+    ottoSay(pick(['HANDS OFF THE WHEEL.', 'GOGGLES ON. SIT BACK.', 'I HAVE FLOWN THIS SAVANNA BEFORE. ONCE.', 'RELAX. I READ THE MANUAL. THE FIRST PAGE.']), true);
+    ottoSched();
+  };
+  if (META.tips && META.tips.otto) go();
+  else tut('otto', null, 'OTTO PILOT', 'Otto plays <b>everything</b>: doors, fights, loot, the Oasis, the Post, even the funeral and the next run. Tap <b>OTTO IS DRIVING</b> (or Escape) to take the wheel back, any time.', go);
+  return true;
+}
+function ottoStop(m){
+  if (!OT.on) return false;
+  OT.on = false; clearTimeout(OT.t); OT.t = null; OT.blend = null;
+  ottoPill();
+  toast(m || pick(['OTTO: YOUR WHEEL. I WAS NEVER HERE.', 'OTTO: FINE. DRIVE YOURSELF.', 'OTTO: GOGGLES OFF.']), m ? 2600 : 1500);
+  return true;
+}
+function ottoSched(ms){ clearTimeout(OT.t); OT.t = setTimeout(ottoTick, ms || DL(450)); }
+function ottoTick(){
+  OT.t = null;
+  if (!OT.on) return;
+  if (!helperOn('otto')){ ottoStop(); return; }
+  if (document.hidden){ OT.pkAt = Date.now(); OT.same = 0; ottoSched(1000); return; }
+  let a;
+  try { a = ottoStep(); } catch (e) { a = { s: 'err', a: String(e && e.message).slice(0, 40) }; }
+  if (!OT.on) return;
+  OT.ticks++; if (a.a) OT.acts++;
+  const r = R ? [R.floor, R.hp, R.deck.length, R.stripes].join() : '-', b = B && !B.over && B.foe ? [B.bid, B.turn, B.foe.hp, B.hand.length, B.energy].join() : '-';
+  const sig = a.s + '|' + r + '|' + b + '|' + (a.a || '') + '|' + META.stripes + '|' + (META.giftPend || 0);
+  OT.same = sig === OT.sig ? OT.same + 1 : 0; OT.sig = sig;
+  const pk = [a.s, R ? R.floor : '-', R ? R.deck.length : '-', B ? B.bid + ':' + B.turn : '-', META.stats.deaths, META.stripes, META.giftPend || 0].join('|');
+  if (pk !== OT.pk){ OT.pk = pk; OT.pkAt = Date.now(); }
+  OT.log.push(a.s + ':' + (a.a || '-')); if (OT.log.length > 40) OT.log.shift();
+  if (a.a){ const h = a.s + ':' + String(a.a).split(':')[0]; OT.hist[h] = (OT.hist[h] || 0) + 1; }
+  if (OT.same >= 40 || Date.now() - OT.pkAt > 60000){ OT.confused++; ottoStop('OTTO GOT CONFUSED · YOUR WHEEL'); return; }
+  ottoPill();
+  ottoSched();
+}
+function ottoVis(e){
+  if (!e || !e.isConnected) return false;
+  const r = e.getBoundingClientRect();
+  if (r.width <= 0 || r.height <= 0) return false;
+  for (let n = e; n && n.nodeType === 1; n = n.parentElement){ const cs = getComputedStyle(n); if (cs.display === 'none' || cs.visibility === 'hidden') return false; }
+  return true;
+}
+function ottoUsable(c){ return c.type !== 'pow' && !c.cursed; }
+function ottoRecipe(){
+  const d = R.deck.filter(ottoUsable), known = META.recipes || [];
+  for (let i = 0; i < d.length; i++) for (let j = i + 1; j < d.length; j++){
+    const r = findRecipe(d[i], d[j]);
+    if (r && !known.includes(r.out) && canPair(d[i], d[j])) return [d[i].uid, d[j].uid];
+  }
+  return null;
+}
+function ottoPair(){
+  const d = R.deck.filter(c => ottoUsable(c) && !isMaxed(c)).sort((a, b) => (a.blend ? 1 : 0) - (b.blend ? 1 : 0) || (a.rar || 0) - (b.rar || 0));
+  for (let i = 0; i < d.length; i++) for (let j = i + 1; j < d.length; j++) if (canPair(d[i], d[j])) return [d[i].uid, d[j].uid];
+  return null;
+}
+const OTTO_NOPE = ['bMig', 'bStake', 'bWeekly', 'bWorld', 'bPets', 'bHerd', 'bMusic', 'bStory', 'bInstall', 'bAbandon', 'bTitle', 'bTitle2', 'bShare', 'bShareD', 'bYt', 'bGlassT', 'bDistill', 'bBanish'];
+function ottoStep(){
+  const q = (s, r) => [...(r || document).querySelectorAll(s)].filter(ottoVis), q1 = (s, r) => q(s, r)[0] || null;
+  const hit = (e, a, again) => { if (!e) return null; if (!again){ if (OT.done.has(e)) return null; OT.done.add(e); } e.click(); return a; };
+  const S = (s, a) => ({ s, a: a || null });
+  const go = (e, a) => { const pg = app.firstElementChild, r = hit(e, a); if (r && pg) OT.done.add(pg); return r; };
+  const sims = r => q('[data-sim]', r).filter(e => e.dataset.sim !== 'skip' && !OT.done.has(e)).sort((x, y) => (parseFloat(y.dataset.sim) || 0) - (parseFloat(x.dataset.sim) || 0));
+  const sc = $('#tutScrim');
+  if (sc) return S('tip', hit(sc.querySelector('button'), 'tip'));
+  const tw = document.querySelector('.twist');
+  if (tw) return S('twist', hit([tw.querySelector('#twGo'), tw.querySelector('#twX')].find(ottoVis) || q1('button', tw), 'twist'));
+  const gd = document.querySelector('.guide');
+  if (gd) return S('guide', hit(q1('#gSkip', gd) || q1('#gNext', gd), 'guide'));
+  const cer = document.querySelector('.ceremony');
+  if (cer) return S('ceremony', hit(cer.querySelector('#cerX') || cer, 'ceremony'));
+  const rp = document.querySelector('.relicPop');
+  if (rp) return S('relic', hit(rp, 'relic'));
+  if ($('#splash')) return S('splash');
+  const wm = document.querySelector('.wm');
+  if (wm) return S('worldmap', hit(wm.querySelector('#bWmX'), 'close'));
+  const gdr = document.querySelector('.giftDraft');
+  if (gdr){
+    const g = sims(gdr)[0];
+    if (g){ ottoSay(pick(['THIS ONE. TRUST ME.', 'RAREST ONE. OBVIOUSLY.', 'THE ANCESTORS SEND THEIR REGARDS. I SEND MINE.'])); }
+    return S('gift', hit(g, 'gift'));
+  }
+  if ($('#impN')){ ottoStop('OTTO: OLD HERD OR NEW? THAT ONE IS YOUR CALL'); return S('legacy'); }
+  const ovs = [...document.querySelectorAll('.ovlDeck')].filter(ottoVis);
+  if (ovs.length){
+    const o = ovs[ovs.length - 1];
+    if (o.classList.contains('cinspect')) return S('inspect', hit(o, 'inspect'));
+    const ds = sims(o)[0];
+    if (ds) return S('overlay', hit(ds, 'overlay:sim'));
+    const pc = o.querySelector('.grid > div[data-i]');
+    if (pc) return S('overlay', hit(pc, 'overlay:card'));
+    return S('overlay', hit(q1('.btn.red', o) || q1('.btn', o) || o, 'overlay:close'));
+  }
+  if (app.firstElementChild && OT.done.has(app.firstElementChild)) return S('leaving');
+  if (!R && $('#bAgain')){
+    if (META.giftPend > 0){
+      const g = $('#bGift');
+      if (g && !OT.done.has(g)) return S('death', hit(g, 'gifts'));
+      openGiftDraft(refreshDeathBtns); return S('death', 'draft');
+    }
+    if (META.ottoSpend !== false){
+      const n = nextNode(), c = n && nodeCost(n);
+      if (n && META.stripes >= c){
+        META.stripes -= c; META.tree[n.id] = nodeLvl(n.id) + 1; saveMeta();
+        SFX.ach && SFX.ach();
+        toast('OTTO BOUGHT ⚘ ' + n.name.toUpperCase() + (n.rep ? ' LV.' + META.tree[n.id] : '') + '. YOU\'RE WELCOME.', 1600);
+        const bt = $('#bTree'); if (bt) bt.textContent = '⚘ Skill Tree · spend ◆ ' + META.stripes;
+        return S('death', 'tree:' + n.id);
+      }
+    }
+    const ag = $('#bAgain');
+    if (!OT.done.has(ag)) ottoSay(pick(['AGAIN. I ALMOST HAD IT.', 'THAT ONE WAS ON YOU, SOMEHOW.', 'RUNNING IT BACK. GOGGLES STAY ON.']), true);
+    return S('death', go(ag, 'again'));
+  }
+  if ($('#bRun')){
+    if (!R && META.giftPend > 0){ openGiftDraft(screenTitle); return S('title', 'draft'); }
+    return S('title', go($('#bRun'), R ? 'continue' : 'run'));
+  }
+  if (!R && $('#bCustomGo')) return S('drop', go(q1('.door.elite') || q1('.door'), 'drop'));
+  if (B && R && !B.over && !B.won && $('#bEnd')){
+    if (B.busy || B.ending || B.aiPending) return S('battle');
+    const key = B.bid + ':' + B.turn;
+    if (key !== OT.turnKey){ OT.turnKey = key; OT.turnActs = 0; }
+    if (++OT.turnActs > 40){ endTurn(); return S('battle', 'endTurn'); }
+    autoPolicy();
+    return S('battle', 'policy');
+  }
+  if (B && (B.over || B.won) && $('#bEnd')) return S('battle');
+  if (B && R && !B.over && !B.won && !$('#bEnd') && !app.querySelector('.door, #bSkip, #bHeal, #bGo, #bOn, #cpK')) return S('battle');
+  if (!R){ screenTitle(); return S('home', 'title'); }
+  const hpf = R.hp / R.mhp;
+  const doors = q('.door', app);
+  if (doors.length){
+    const ks = doors.map(d => d.classList.contains('pulse') ? 'boss' : ['elite', 'rest', 'shop', 'myst', 'cross', 'fight'].find(k => d.classList.contains(k)) || 'other');
+    const has = k => ks.indexOf(k), off = shopMul();
+    const heal = Math.round((HARD.shopHeal0 + HARD.shopHealF * R.floor) * off), relic = Math.round((40 + R.floor * 2) * off);
+    let i = has('boss');
+    if (i < 0 && doors.length === 1) i = 0;
+    if (i < 0 && hpf < .45) i = has('rest');
+    if (i < 0 && hpf < .5 && R.stripes >= heal) i = has('shop');
+    if (i < 0 && hpf >= .7 && (R.deck.some(canUpgrade) || ottoRecipe())) i = has('rest');
+    if (i < 0 && R.stripes >= relic) i = has('shop');
+    if (i < 0 && hpf > .75 && R.floor >= 3) i = has('elite');
+    if (i < 0) i = has('fight');
+    for (const k of ['rest', 'elite', 'shop', 'other', 'myst', 'cross']) if (i < 0) i = has(k);
+    if (i < 0) i = 0;
+    const a = go(doors[i], 'door:' + ks[i]);
+    if (a) ottoSay({ boss: 'BOSS DOOR. NOT THAT WE HAD A CHOICE.', rest: hpf < .45 ? 'TAKING THE OASIS. YOU LOOK TERRIBLE.' : 'OASIS. THE BLENDER HAS WORK FOR US.',
+      shop: 'QUICK STOP AT THE MEERKAT.', elite: 'ROGUES\' GALLERY. YOU LOOK FRESH. LET\'S FIX THAT.', fight: pick(['FIGHT DOOR. CLASSIC.', 'NORMAL AMOUNT OF TEETH. ACCEPTABLE.']),
+      myst: '??? IT IS. I ALSO DO NOT KNOW.', cross: 'ZEBRA CROSSING. LOOK BOTH WAYS.' }[ks[i]] || 'THAT ONE.');
+    return S('map', a);
+  }
+  const skip = $('#bSkip');
+  if (skip && ottoVis(skip)){
+    const pw = q1('#powRow .pow', app);
+    if (pw) return S('reward', hit(pw, 'pow'));
+    if (R.deck.length > 20){ ottoSay('DECK\'S FULL. TAKING THE STRIPES.'); return S('reward', go(skip, 'skip')); }
+    const cs = q('#hand > div', app);
+    if (!cs.length) return S('reward', go(skip, 'skip'));
+    let bi = 0, br = -1;
+    cs.forEach((c, i) => { const m = /\br(\d)\b/.exec((c.querySelector('.card') || {}).className || ''); const r = m ? +m[1] : 0; if (r > br){ br = r; bi = i; } });
+    return S('reward', go(cs[bi], 'card:r' + br));
+  }
+  if ($('#bBanish') && $('#bGo')){
+    const ok = s => { const b = $(s); return b && !b.disabled && !b.dataset.sold ? b : null; };
+    if (hpf < .6 && ok('#bHeal')){ ottoSay('PATCHING YOU UP. YOU\'RE LEAKING.'); return S('shop', hit($('#bHeal'), 'patch')); }
+    if (ok('#bRelic')){ ottoSay('SHINY. MINE. YOURS. OURS.'); return S('shop', hit($('#bRelic'), 'relic')); }
+    return S('shop', go($('#bGo'), 'leave'));
+  }
+  const bl = $('#bBlend');
+  if (bl && ($('#bHeal') || $('#bLeave'))){
+    const hl = $('#bHeal'), up = $('#bUpgrade'), lv = $('#bLeave');
+    if (hl && hpf < .7){ ottoSay('RESTING. YOU LOOK TERRIBLE.'); return S('oasis', hit(hl, 'rest')); }
+    if (up){ ottoSay('UPGRADING. BIGGER NUMBERS. BIGGER OTTO.'); return S('oasis', hit(up, 'upgrade')); }
+    const pr = !bl.disabled && (ottoRecipe() || (R.deck.length > 14 && ottoPair()));
+    if (pr){ OT.blend = pr; ottoSay(livePairs().n ? 'THE BLENDER IS HUMMING. I HEAR IT TOO.' : 'BLENDING. SOMETHING HAS TO GO.'); return S('oasis', hit(bl, 'blend')); }
+    return S('oasis', hit(hl || lv, hl ? 'rest' : 'leave'));
+  }
+  const bDo = $('#bDo');
+  if (bDo){
+    const pr = OT.blend || ottoRecipe() || ottoPair(), cards = [...$('#hand').querySelectorAll('.card')];
+    const ia = pr ? R.deck.findIndex(c => c.uid === pr[0]) : -1, ib = pr ? R.deck.findIndex(c => c.uid === pr[1]) : -1;
+    if (ia < 0 || ib < 0 || !cards[ia] || !cards[ib]){ OT.blend = null; return S('blend', hit($('#bBack'), 'back')); }
+    OT.blend = pr;
+    if (!cards[ia].classList.contains('sel')) return S('blend', hit(cards[ia], 'pickA', 1));
+    if (!cards[ib].classList.contains('sel')) return S('blend', hit(cards[ib], 'pickB', 1));
+    if (bDo.disabled){ OT.blend = null; return S('blend', hit($('#bBack'), 'back')); }
+    OT.blend = null;
+    return S('blend', hit(bDo, 'blend'));
+  }
+  if ($('#cpK')){
+    const w = hpf < .6;
+    ottoSay(w ? 'WHITE PATH. WE ARE NOT BRAVE TODAY.' : 'BLACK PATH. DOUBLE STRIPES. DOUBLE TEETH.');
+    return S('cross', go($(w ? '#cpW' : '#cpK'), w ? 'white' : 'black'));
+  }
+  for (const id of ['bOn', 'bInto', 'bTake']){ const e = $('#' + id); if (e && ottoVis(e)){ if (id === 'bOn') ottoSay('KEEP CLIMBING. I DID NOT BRING SNACKS FOR NOTHING.', true); return S('story', go(e, id)); } }
+  const btns = q('button, .btn', app);
+  if (!btns.length) return S('wait');
+  if (!$('#hud')){ screenTitle(); return S('home', 'title'); }
+  const ds = sims(app)[0] || btns.find(e => e.classList.contains('red') && !OTTO_NOPE.includes(e.id) && !e.disabled);
+  return S('unknown', ds ? hit(ds, 'unknown:' + (ds.id || ds.className)) : null);
+}
 
 const TREE = [
   { br: 'HOOF', ic: '', tag: 'HIT HARDER', nodes: [
@@ -5543,7 +5815,7 @@ const GUIDE = [
   { core: 1, t: 'Ble<span>nd</span>', b: 'Here is the good bit. At an <b>OASIS</b> you can <b>smash two of your cards into one</b> that does both things at once. It only happens there, so plan your route around the water. A blend can be blended <b>once more</b>; then it is <b>⚗ MAX</b> and the Oasis <b>UPGRADES</b> it instead: +1, +2, +3. Some pairs make secret <b>ancestral ★ cards</b>. Go find them.' },
   { t: 'Rec<span>ipes</span>', b: `Some pairs are <b>ANCESTRAL RECIPES</b> — Bite + Kick makes a perfected <b>Headbutt ★</b>, stronger than any generic blend. ${RECIPES.length} exist. ★ cards start at MAX, but recipes ignore MAX, so some recipes use a ★ card as an ingredient. The ⚗ cookbook on the title keeps score and drops hints. Find them all and the ancestors pay out.` },
   { t: 'Stri<span>pes</span>', b: '<b>◆ Stripes</b> drop from every battle. Spend them in-run at the Trading Post. Half banks to your permanent wallet — that feeds the <b>SKILL TREE</b> back at the title: seven branches, every tip repeatable forever.' },
-  { t: 'The <span>staff</span>', b: 'Stripes also hire the <b>♡ PETS</b> (one rides along, Jackson stares foes into weakness) and the <b>⚑ PIT CREW</b> — auto-battle helpers from Gary, who ends dead turns, up to Coach Hoofstrong\'s full <b>AUTO</b> button.' },
+  { t: 'The <span>staff</span>', b: 'Stripes also hire the <b>♡ PETS</b> (one rides along, Jackson stares foes into weakness) and the <b>⚑ PIT CREW</b> — auto-battle helpers from Gary, who ends dead turns, up to Coach Hoofstrong\'s full <b>AUTO</b> button — and <b>Otto Pilot</b>, an oxpecker in goggles who plays the whole game, deaths included, until you tap him.' },
   { t: 'For<span>ever</span>', b: 'Death feeds the herd: <b>+stripes for the tree</b>, achievements tier forever, the <b>GRAZE branch earns while you sleep</b>, and when an era ends, the <b>GREAT MIGRATION</b> trades everything for permanent ☀ marks. The savanna keeps score.' },
   { need: () => tierOn('mult'), t: 'The <span>herd</span>', b: 'Every card wears a <b>STRIPE</b> — printed bottom-right. <b>THREE OF A STRIPE</b> in one turn gathers the herd: <b>HERD ×2</b>, and everything after it hits that much harder. The row above your hand shows how close you are. Bosses carry <b>HOUSE RULES</b> that warp the fight. Read the sign.' },
   { t: 'The back <span>room</span>', b: 'The Post keeps it short: a <b>counter</b> (one card, one relic, a banish) and a <b>back room</b> of two items that change every floor: packs, a patch-up, <b>THE STAMP</b>, vouchers, the wheel, DNA, rentals. New ones join the rotation as you climb, and a patch-up always shows up when you are under half HP. Held stripes earn <b>INTEREST</b>: 1 per 10, cap 5.' },
@@ -5794,9 +6066,10 @@ function screenCrew(){
       const got = helperOwned(h.id);
       const on = helperOn(h.id);
       return `<div class="ach" style="gap:10px;${got ? '' : 'opacity:.75'}">
-        <div style="font-size:26px;flex-shrink:0;${got ? '' : 'filter:grayscale(1) brightness(.6)'}">${h.ic}</div>
+        <div style="font-size:26px;flex-shrink:0;${h.art ? 'width:44px;height:44px;' : ''}${got ? '' : 'filter:grayscale(1) brightness(.6)'}">${h.art ? OTTO_ART : h.ic}</div>
         <div style="flex:1"><div class="an">${h.name}${got && on ? ' <span style="color:var(--r)">· ON DUTY</span>' : got ? ' · OFF' : ''}</div>
-        <div class="ap">(${h.ep}) ${h.desc}</div></div>
+        <div class="ap">(${h.ep}) ${h.desc}</div>
+        ${h.id === 'otto' && got ? `<div class="ap" id="bOttoSpend" role="switch" aria-checked="${META.ottoSpend !== false}" style="cursor:pointer;margin-top:6px;color:${META.ottoSpend !== false ? 'var(--r)' : '#ffffff88'}">${META.ottoSpend !== false ? '■' : '□'} Otto spends banked stripes on the cheapest open skill-tree node</div>` : ''}</div>
         <button class="btn ${got ? (on ? '' : 'red') : ''}" style="width:auto;min-height:40px;padding:8px 12px" data-id="${h.id}"
           ${!got && META.stripes < h.cost ? 'disabled' : ''}>${got ? (on ? 'REST' : 'WORK') : '◆ ' + h.cost}</button>
       </div>`;
@@ -5819,6 +6092,7 @@ function screenCrew(){
     }
     saveMeta(); screenCrew();
   });
+  if ($('#bOttoSpend')) $('#bOttoSpend').onclick = () => { META.ottoSpend = META.ottoSpend === false; saveMeta(); SFX.click(); screenCrew(); };
   $('#bBack').onclick = screenTitle;
 }
 
@@ -7541,13 +7815,14 @@ function aiPlay(i, note){
   if (cardEl) cardEl.classList.add('aiPick');
   if (note && Math.random() < .4) toast('§ ' + note, 950);
  B.aiPending = true;
-  setTimeout(() => { B.aiPending = false; if (B && !B.over) playCard(i); }, 320);
+  const ot = OT.on;
+  setTimeout(() => { B.aiPending = false; if (ot && !OT.on){ if (cardEl) cardEl.classList.remove('aiPick'); return; } if (B && !B.over) playCard(i); }, 320);
 }
 function helperNudge(){
-  if (!B || B.over || B.busy || B.auto) return;
+  if (!B || B.over || B.busy || B.auto || OT.on) return;
   clearTimeout(B.hnT);
  B.hnT = setTimeout(() => {
-    if (!B || B.over || B.busy || B.auto || B.ending) return;
+    if (!B || B.over || B.busy || B.auto || B.ending || OT.on) return;
     if (helperOn('ox')){
       const kill = singleKill();
       if (kill >= 0){ toast('≈ OX SMELLS BLOOD', 900); aiPlay(kill); return; }
@@ -7633,13 +7908,13 @@ function autoPolicy(){
 }
 function autoTick(){
   if (!B || B.over || !B.auto || !R) return;
-  if (R.hp / R.mhp < .25 && B.foe.hp > 0){
+  if (R.hp / R.mhp < .25 && B.foe.hp > 0 && !OT.on){
  B.auto = false;
     toast('§ COACH TAPS OUT — TOO RISKY BELOW 25% HP. YOUR CALL, CHAMP.', 2400);
     renderBattle();
     return;
   }
-  if (!B.busy && !B.ending) autoPolicy();
+  if (!B.busy && !B.ending && !OT.on) autoPolicy();
   setTimeout(autoTick, DL(480));
 }
 function winBattle(){
@@ -9262,6 +9537,10 @@ function maybeImportLegacy(){
 loadMeta();
 loadRun();
 idleCollect();
+new MutationObserver(ottoPill).observe(app, { childList: true });
+addEventListener('resize', ottoPill);
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && OT.on) ottoStop(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden && OT.on){ OT.pkAt = Date.now(); OT.same = 0; ottoSched(); } });
 screenTitle();
 maybeImportLegacy();
 window.ZB = { get META(){ return META; }, R: () => R, B: () => B, newRun, startBattle, playCard, endTurn, blendCards, mkCard,
@@ -9271,6 +9550,7 @@ window.ZB = { get META(){ return META; }, R: () => R, B: () => B, newRun, startB
  PETS, petSel, petVal, screenPets, CLASSES, FOES, FOEART, PETART, TROPHIES, checkTrophies, trophyEarned,
  RECIPES, findRecipe, primeCard, screenRecipes, screenBlend,
  HELPERS, helperOwned, helperOn, screenCrew, autoPolicy, autoTick, DL, renderBattle,
+  otto: { engage: ottoEngage, stop: () => ottoStop(), on: () => OT.on, info: () => ({ on: OT.on, ticks: OT.ticks, acts: OT.acts, confused: OT.confused, log: OT.log.slice(-12), hist: { ...OT.hist } }) },
   screenDrop, suggestedStart, dropKit, Music, BASE_CARDS, foeIntent, incomingDmg,
   costOf, liveDmg, perHit, baseDmg, multNow, stripeName, herdMotifs, STRIPE_NM,
   HARD, GIFTS, giftVal, treeOnly, bank, openGiftDraft, screenBlood,
