@@ -388,6 +388,7 @@ h1 .z{color:var(--r)}
 .mmHd span{overflow:hidden;text-overflow:ellipsis;min-width:0}
 .mmHd span:first-child{flex-shrink:0;max-width:62%}
 .mmHd b{color:var(--w)} .mmHd i{font-style:normal;color:var(--r)}
+.trail.mmap{max-width:none}
 .mmap>svg{display:block;width:100%;height:auto}
 .mmap svg text,.wm svg text{font-family:var(--mono);font-weight:800}
 .mmap svg .h{paint-order:stroke;stroke:#000;stroke-width:3px;stroke-linejoin:round}
@@ -487,6 +488,7 @@ h1 .z{color:var(--r)}
   animation:wcGo .7s steps(2) 2.6s infinite alternate backwards}
 @keyframes wcGo{from{opacity:0}}
 body:has(.wmArr) #toast{bottom:auto;top:calc(env(safe-area-inset-top) + 96px)}
+body:has(>.wm:not(.wmOut)) #app *{animation-play-state:paused!important}
 @media (prefers-reduced-motion: reduce){
   .wm *,.mmap *,.doorIn,.door.pulse.doorIn,.wmCol{animation:none!important}
   .wmLift{display:none}
@@ -922,7 +924,9 @@ function turnBanner(txt){
   b.textContent = txt;
   b.classList.remove('on'); void b.offsetWidth; b.classList.add('on');
 }
+const arrHeld = () => !!document.querySelector('.wmArr:not(.wmOut)');
 function stampFx(txt){
+  if (arrHeld()){ setTimeout(() => stampFx(txt), 250); return; }
   const s = document.getElementById('stampV');
   s.textContent = txt;
   s.classList.remove('on'); void s.offsetWidth; s.classList.add('on');
@@ -1409,11 +1413,11 @@ function toastPlace(t){
   const bb = btmBox(), pt = parseFloat(getComputedStyle(app).paddingTop) || 10, lanes = [y0, (bb ? bb.top : H - 10) - 10 - h];
   for (let y = pt; y < H - h; y += 18) lanes.push(y);
   lanes.forEach((y, i) => lanes[i] = clamp(Math.round(y), 4, H - h - 4));
-  const hits = [...document.querySelectorAll('button,.card,.door,.gift,.crossPath,.tnode,.pill,#ytDock,h1,.kick,.chip,.bounty,.herdRow,#foe,#hpbar,.big,.sub,.ledger')].map(e => {
+  const hits = [...document.querySelectorAll('button,.card,.door,.gift,.crossPath,.tnode,.pill,#ytDock,#wmHere,h1,.kick,.chip,.bounty,.herdRow,#foe,#hpbar,.big,.sub,.ledger')].map(e => {
     const r = e.getBoundingClientRect();
     if (!r.width || r.bottom < 0 || r.top > H || e.closest('#toast')) return null;
     const x = clamp((r.left + r.right) / 2, 1, innerWidth - 1), y = clamp((r.top + r.bottom) / 2, 1, H - 1), top = document.elementFromPoint(x, y);
-    return top && (e.contains(top) || top.contains(e)) ? { r, k: e.matches('button,.card,.door,.gift,.crossPath,.tnode,.pill,#ytDock') ? 1 : .12 } : null;
+    return top && (e.contains(top) || top.contains(e)) ? { r, k: e.matches('button,.card,.door,.gift,.crossPath,.tnode,.pill,#ytDock,#wmHere') ? 1 : .12 } : null;
   }).filter(Boolean);
   const cost = y => hits.reduce((s, { r, k }) => s + k * Math.max(0, Math.min(r.right, l + w) - Math.max(r.left, l)) * Math.max(0, Math.min(r.bottom, y + h + 7) - Math.max(r.top, y - 7)), 0);
   let best = 0, bc = cost(lanes[0]);
@@ -5677,10 +5681,13 @@ function openWorldMap(s, opt){
     const lim = cd && sv ? (cd.offsetTop - sa.top - 128 * sv.getBoundingClientRect().width / WM_W) / sa.height : .5;
     wmFocus(o, arr ? Math.min(.36, lim) : .55, arr ? Math.max(.2, lim) : .8);
     const x = o.querySelector('#bWmX'); if (x) x.focus({ preventScroll: true });
+    const rePlace = () => { const tt = document.getElementById('toast'); if (!gone && !arr && tt && tt.classList.contains('on')) toastPlace(tt); };
+    rePlace();
     if (!anim) return;
     const fr = o.querySelector('#wmFrom'), hc = o.querySelector('#wmHere circle:not(.wmPing)'), col = o.querySelector('.wmCol');
-    const d = fr && hc ? fr.getBoundingClientRect().top - hc.getBoundingClientRect().top : 0;
-    o.style.setProperty('--pd', (arr ? 1.6 : Math.min(3.4, 1.2 + Math.max(0, d) / 1500)).toFixed(2) + 's');
+    const d = fr && hc ? fr.getBoundingClientRect().top - hc.getBoundingClientRect().top : 0, pdv = arr ? 1.6 : Math.min(3.4, 1.2 + Math.max(0, d) / 1500);
+    o.style.setProperty('--pd', pdv.toFixed(2) + 's');
+    tm.push(setTimeout(rePlace, (pdv + .9) * 1000));
     if (d > 4 && col){ col.style.setProperty('--pan', -Math.round(d) + 'px'); col.classList.add('wmPan'); }
     o.querySelectorAll('animateMotion').forEach(a => { try { a.beginElement(); } catch {} });
   });
@@ -5894,6 +5901,7 @@ function logRun(by){
 }
 
 function confettiFx(){
+  if (arrHeld()){ setTimeout(confettiFx, 250); return; }
   for (let i = 0; i < 26; i++){
     const c = document.createElement('div');
     c.style.cssText = `position:fixed;left:${8 + Math.random() * 84}vw;top:-14px;width:${4 + Math.random() * 5}px;height:${8 + Math.random() * 8}px;
@@ -7050,7 +7058,7 @@ function screenMap(noAdvance, hold){
     ${hudHtml()}
     <div class="stripes"></div>
     ${renderMiniMap({ world: R.world, floor: R.floor, path: R.path, start: R.startFloor || 0 }, { from, doors })}
-    <div style="width:100%;max-width:420px;text-align:left;margin:-2px 0 3px;display:flex;align-items:flex-end;gap:8px"><div style="flex:1;min-width:0">
+    <div style="width:100%;text-align:left;margin:-2px 0 3px;display:flex;align-items:flex-end;gap:8px"><div style="flex:1;min-width:0">
       ${R.prophecy && !R.brokeLedger ? `<div style="font-family:var(--mono);font-weight:800;font-size:8.5px;letter-spacing:.14em;color:var(--r);margin-bottom:3px">THE LEDGER SAYS: FLOOR ${R.prophecy}</div>` : ''}
       <div style="font-family:var(--mono);font-size:8.5px;letter-spacing:.1em;color:#ffffff55">
         ${regionLaw().id === 'none' ? regionOf(R.floor).amb.toUpperCase() : '⚖ ' + regionLaw().nm + ' · ' + regionLaw().txt.toUpperCase()}</div>
