@@ -163,7 +163,7 @@ h1 span{display:block;font-size:12px;color:var(--tx);margin-top:8px}
     <div id="team"><span class="empty">Tap fighters to build your team. Spend all 10 or don't.</span></div>
     <button id="fightBtn" disabled>FIGHT</button>
   </div>
-  <div class="foot"><button class="lnk" id="randomBtn">random brawl instead</button> · <span id="record"></span></div>
+  <div class="foot"><button class="lnk" id="randomBtn">random brawl instead</button> · <button class="lnk" id="sndBtn">♪ sound on</button> · <span id="record"></span></div>
 </div>
 
 <div id="arena" class="screen hidden">
@@ -189,7 +189,7 @@ h1 span{display:block;font-size:12px;color:var(--tx);margin-top:8px}
     </div>
   </div>
   <div id="log"></div>
-  <div id="ctrl"><button id="speedBtn">1× speed</button><button id="skipBtn">skip to the end</button></div>
+  <div id="ctrl"><button id="speedBtn">1× speed</button><button id="skipBtn">skip to the end</button><button id="sndBtn2">♪</button></div>
 </div>
 
 </div>
@@ -314,6 +314,7 @@ function newGame(daily){
   const enemy=draftEnemy(pool,costs,rnd);
   const enemyName=daily?`The ${DAYS[today.getDay()]} ${NOUNS[Math.floor(rnd()*NOUNS.length)]}`:`The Random ${NOUNS[Math.floor(rnd()*NOUNS.length)]}`;
   state={seed,daily,pool,costs,enemy,enemyName,team:[]};
+  Snd.scene('draft');
   renderDraft();
 }
 
@@ -322,6 +323,155 @@ const LS='wwwf.v1';
 function load(){try{return JSON.parse(localStorage.getItem(LS))||{w:0,l:0,days:{}}}catch(e){return {w:0,l:0,days:{}}}}
 function save(s){try{localStorage.setItem(LS,JSON.stringify(s))}catch(e){}}
 function recordLine(){const s=load();const d=s.days[dayKey];let t=`record ${s.w}–${s.l}`;if(d&&d.w)t+=' · today: beaten ✅';else if(d&&d.l)t+=` · today: ${d.l} loss${d.l>1?'es':''}`;return t}
+
+// ---------- sound: chiptune music + synth SFX (all Web Audio, no samples) ----------
+const SOUND_LS='wwwf.sound';
+const Snd=(()=>{
+  let A=null,master=null,out=null,fx=null,NB=null,W={},timer=null,nextT=0,holdT=0,cur=null,song=null,oi=0,st=0,pend=null;
+  const LOOK=.28, LG=[];
+  const N=m=>440*Math.pow(2,(m-69)/12);
+  const PC={c:0,d:2,e:4,f:5,g:7,a:9,b:11};
+  const pm=s=>{let i=1,acc=0;if(s[1]==='#'){acc=1;i=2}else if(s[1]==='b'&&s.length>2){acc=-1;i=2}return 12*(+s.slice(i)+1)+PC[s[0]]+acc};
+  function seq(p){const o=[];let d=4,s=0;p.split(/\s+/).forEach(tk=>{if(!tk||tk==='|')return;const [b,n]=tk.split('*'),[nt,dd]=b.split(':');if(dd)d=+dd;for(let k=0;k<(+n||1);k++){if(nt!=='r')o.push([s,nt.split('+').map(pm),d]);s+=d}});return [o,s]}
+  function hits(p){const cs=p.replace(/[\s|]/g,'');const o=[];for(let i=0;i<cs.length;i++)if(cs[i]!=='.')o.push([i,cs[i],1]);return [o,cs.length]}
+  function comp(sec){
+    if(sec._c)return sec._c; let L=0;
+    const vs=sec.v.map(([ins,p,v=1,t=0])=>{const [o,len]=ins==='drm'?hits(p):seq(p);L=Math.max(L,len);return [ins,o,len,v,t]});
+    const ev=new Array(L);
+    vs.forEach(([ins,o,len,v,t])=>{for(let off=0;off<L;off+=len)o.forEach(([s,n,d])=>{if(s+off>=L)return;(ev[s+off]=ev[s+off]||[]).push(ins==='drm'?['drm',n,d,v*VOL[n]]:[ins,n.map(m=>m+t),d,v*VOL[ins]])})});
+    return sec._c={ev,L};
+  }
+  const VOL={lead:.17,lead2:.13,arp:.07,bass:.22,tri:.15,b:.6,s:.32,h:.09,o:.14,c:.3};
+  function keep(g,e){LG.push([g,e]);if(LG.length>400)LG.splice(0,200)}
+  function fade(T){for(const x of LG){if(x[1]<=T)continue;try{x[0].gain.cancelScheduledValues(T);x[0].gain.setTargetAtTime(0,T,.04)}catch(e){}}LG.length=0}
+  function env(t,a,v,d,r,sus,dk,dst){const g=A.createGain();g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(v,t+a);if(dk)g.gain.setTargetAtTime(v*sus,t+a,dk);const rel=t+Math.max(d,a+.01);g.gain.setTargetAtTime(0,rel,r/4);g.connect(dst||out);keep(g,rel+r);return [g,rel+r]}
+  function osc(w,f,t,e,dst){const o=A.createOscillator();if(typeof w==='string')o.type=w;else o.setPeriodicWave(w);o.frequency.value=f;o.connect(dst);o.start(t);o.stop(e+.05);return o}
+  const INS={
+    lead(t,m,d,v){const [g,e]=env(t,.004,v,d*.9,.06,.55,.14);osc(W.p50,N(m),t,e,g)},
+    lead2(t,m,d,v){const [g,e]=env(t,.004,v,d*.9,.06,.55,.14);osc(W.p25,N(m),t,e,g)},
+    arp(t,m,d,v){const [g,e]=env(t,.003,v,Math.min(d,.11),.03,.5,.04);osc(W.p12,N(m),t,e,g)},
+    bass(t,m,d,v){const [g,e]=env(t,.004,v,d*.85,.04,.8,.2);osc('triangle',N(m),t,e,g)},
+    tri(t,m,d,v){const [g,e]=env(t,.01,v,d,.1,.8,.3);osc('triangle',N(m),t,e,g)},
+  };
+  function noise(t,v,a,tc,hp,dst){const s=A.createBufferSource(),g=A.createGain();s.buffer=NB;s.loop=true;g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(v,t+a);g.gain.setTargetAtTime(0,t+a,tc);let n=g;if(hp){const f=A.createBiquadFilter();f.type='highpass';f.frequency.value=hp;g.connect(f);n=f}n.connect(dst||out);s.connect(g);s.start(t,Math.random()*1.5,a+tc*6);keep(g,t+a+tc*6)}
+  function thud(t,f0,f1,ft,v,tc,dst){const g=A.createGain();g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(v,t+.004);g.gain.setTargetAtTime(0,t+.006,tc);g.connect(dst||out);keep(g,t+tc*6);const o=osc('triangle',f0,t,t+tc*6,g);o.frequency.setValueAtTime(f0,t);o.frequency.exponentialRampToValueAtTime(f1,t+ft)}
+  const DR={
+    b:(t,v)=>thud(t,180,45,.09,v,.08),
+    s:(t,v)=>{noise(t,v,.001,.045,1200);thud(t,230,120,.04,v*.4,.03)},
+    h:(t,v)=>noise(t,v,.001,.014,8000),
+    o:(t,v)=>noise(t,v,.001,.06,6000),
+    c:(t,v)=>noise(t,v,.002,.28,5000),
+  };
+  function play(e,t,S){if(e[0]==='drm'){DR[e[1]](t,e[3]);return}const f=INS[e[0]],d=e[2]*S;for(let i=0;i<e[1].length;i++)f(t,e[1][i],d,e[3])}
+  function pulse(duty){const n=40,re=new Float32Array(n),im=new Float32Array(n);for(let k=1;k<n;k++)re[k]=2/(k*Math.PI)*Math.sin(k*Math.PI*duty);return A.createPeriodicWave(re,im,{disableNormalization:false})}
+  function ensure(){
+    if(A)return;
+    A=new (window.AudioContext||window.webkitAudioContext)();
+    master=A.createGain();master.gain.value=.55;
+    const lp=A.createBiquadFilter();lp.type='lowpass';lp.frequency.value=8500;
+    const dc=A.createDynamicsCompressor();dc.threshold.value=-18;dc.ratio.value=4;dc.attack.value=.005;dc.release.value=.2;
+    master.connect(lp);lp.connect(dc);dc.connect(A.destination);
+    out=A.createGain();out.gain.value=.26;out.connect(master);
+    fx=A.createGain();fx.gain.value=.5;fx.connect(master);
+    NB=A.createBuffer(1,A.sampleRate*2,A.sampleRate);const nd=NB.getChannelData(0);for(let i=0;i<nd.length;i++)nd[i]=Math.random()*2-1;
+    W={p50:pulse(.5),p25:pulse(.25),p12:pulse(.125)};
+  }
+  function swap(T){const p=pend;pend=null;if(p.k===cur&&!p.re)return;fade(T);cur=p.k;song=SCORE[cur];oi=0;st=0}
+  function tick(){
+    const now=A.currentTime; if(nextT<now)nextT=now+.05;
+    while(nextT<now+LOOK){
+      if(nextT<holdT){nextT=holdT;continue}
+      if(pend)swap(nextT);
+      if(!song)return;
+      const S=60/song.bpm/4, sc=comp(song.sec[song.ord[oi]]), e=sc.ev[st];
+      if(e)for(let i=0;i<e.length;i++)play(e[i],nextT,S);
+      if(++st>=sc.L){st=0;if(++oi>=song.ord.length)oi=song.loop}
+      nextT+=S;
+    }
+  }
+  function on(){try{return localStorage.getItem(SOUND_LS)!=='0'}catch(e){return true}}
+  const api={
+    on,
+    start(){ if(!on())return; ensure(); try{A.resume().catch(()=>{})}catch(e){} if(!pend&&!cur)pend={k:'draft'}; if(!timer){nextT=Math.max(nextT,A.currentTime+.06);timer=setInterval(tick,50);tick()} },
+    stop(){ clearInterval(timer);timer=null;if(A)fade(A.currentTime+.02) },
+    scene(k){ pend={k}; if(on()&&A&&!timer)api.start() },
+    jingle(name,then){
+      if(!on()||!A)return; const J=SCORE.J[name]; if(!J)return;
+      const t0=A.currentTime+.04,S=60/J.bpm/4,c=comp(J); fade(t0);
+      for(let s=0;s<c.L;s++)if(c.ev[s])c.ev[s].forEach(e=>play(e,t0+s*S,S));
+      holdT=t0+c.L*S+.3; if(then)pend={k:then,re:true};
+    },
+    toggle(){ const v=!on(); try{localStorage.setItem(SOUND_LS,v?'1':'0')}catch(e){} if(v)api.start(); else api.stop(); return v },
+    running(){return !!timer},
+    // ---- SFX ----
+    sfx(name,big){
+      if(!on()||!A)return; const t=A.currentTime+.005;
+      const sq=(f0,f1,d,v,w)=>{const g=A.createGain();g.gain.setValueAtTime(v,t);g.gain.setTargetAtTime(0,t+d*.5,d*.25);g.connect(fx);keep(g,t+d*2);const o=osc(w||W.p25,f0,t,t+d*2,g);if(f1)o.frequency.exponentialRampToValueAtTime(f1,t+d)};
+      switch(name){
+        case 'tap': sq(1400,900,.04,.08); break;
+        case 'hit': noise(t,big?.5:.28,.001,big?.07:.04,900,fx); sq(big?300:220,60,big?.14:.09,big?.3:.2,W.p50); if(big)sq(1800,2400,.08,.1); break;
+        case 'miss': noise(t,.12,.03,.03,3000,fx); break;
+        case 'death': sq(440,55,.38,.25,W.p50); noise(t+.02,.3,.01,.1,500,fx); thud(t,120,35,.2,.5,.15,fx); break;
+        case 'charge': sq(120,900,.3,.18,W.p12); break;
+        case 'ko': thud(t,160,30,.25,.9,.25,fx); noise(t,.6,.005,.18,400,fx); sq(200,40,.4,.3,W.p50); break;
+      }
+    },
+  };
+  return api;
+})();
+
+// ---------- score ----------
+const SCORE=(()=>{
+  const x=(s,n)=>(s+' ').repeat(n);
+  const bs=(r,f)=>`${r}:2 ${r} ${f} ${r} ${r} ${f} ${r} ${f} `;           // bouncy eighth bass
+  const pump=(r,o)=>`${r}:2 ${r} ${o} ${r} ${r} ${o} ${r} ${o} `;        // driving eighths
+  const ar=(a,b,c)=>x(`${a}:1 ${b} ${c} ${b}`,4);                        // 16th arpeggio, one bar
+  const draft={name:'TALE OF THE TAPE',bpm:112,ord:[0,1,2,1,2],loop:1,sec:[
+    {v:[['bass',bs('a2','e3')+bs('a2','e3')],['drm','b.h.s.h.b.h.s.hh'+'b.h.s.h.b.h.s.ss']]},
+    {v:[['lead','e5:4 c5:2 d5:2 e5:4 a4:4 | f5:4 e5:2 d5:2 c5:8 | g4:2 a4:2 c5:4 e5:4 d5:4 | d5:4 b4:2 c5:2 d5:8 | e5:4 c5:2 d5:2 e5:4 g5:4 | a5:4 g5:2 f5:2 e5:8 | c5:2 d5:2 e5:4 g5:2 f5:2 e5:2 d5:2 | e5:8 b4:4 r:4'],
+        ['arp',ar('a4','c5','e5')+ar('f4','a4','c5')+ar('c4','e4','g4')+ar('g4','b4','d5')+ar('a4','c5','e5')+ar('f4','a4','c5')+ar('c4','e4','g4')+ar('e4','g#4','b4'),.9],
+        ['bass',bs('a2','e3')+bs('f2','c3')+bs('c3','g3')+bs('g2','d3')+bs('a2','e3')+bs('f2','c3')+bs('c3','g3')+bs('e2','b2')],
+        ['drm',x('b.h.s.h.b.h.s.hh',7)+'b.h.s.h.b.s.s.ss'],['drm','c'+'.'.repeat(127),.8]]},
+    {v:[['lead','d5:4 f5:2 e5:2 d5:4 a4:4 | g5:4 f5:2 e5:2 d5:8 | c5:2 d5:2 e5:4 g5:4 c6:4 | b5:4 g5:2 e5:2 g5:8 | f5:4 a5:2 g5:2 f5:4 d5:4 | g5:4 e5:2 d5:2 c5:8 | a4:2 b4:2 c5:4 e5:2 d5:2 c5:2 b4:2 | g#4:8 b4:4 r:4'],
+        ['lead2','d4:8 r:8 | r:16 | c4:8 r:8 | r:16 | f4:8 r:8 | r:16 | a3:8 r:8 | e4:8 r:8',.6],
+        ['arp',ar('d4','f4','a4')+ar('g4','b4','d5')+ar('c4','e4','g4')+ar('g4','b4','d5')+ar('f4','a4','c5')+ar('c4','e4','g4')+ar('a4','c5','e5')+ar('e4','g#4','b4'),.9],
+        ['bass',bs('d2','a2')+bs('g2','d3')+bs('c3','g3')+bs('g2','d3')+bs('f2','c3')+bs('c3','g3')+bs('a2','e3')+bs('e2','b2')],
+        ['drm',x('b.h.s.h.b.h.s.hh',7)+'b.h.s.h.b.s.s.ss']]},
+  ]};
+  const battle={name:'TEN POINTS OF FURY',bpm:160,ord:[0,1,2],loop:1,sec:[
+    {v:[['bass',pump('e2','e3')],['drm','b...b...b...ssss']]},
+    {v:[['lead','e5:2 e5:2 g5:2 e5:2 b5:4 a5:2 g5:2 | f#5:2 g5:2 a5:4 b4:8 | c5:2 d5:2 e5:4 g5:4 e5:4 | d5:2 c5:2 d5:4 a4:8 | e5:2 e5:2 g5:2 e5:2 b5:4 c6:2 b5:2 | a5:2 g5:2 f#5:4 e5:8 | c5:2 e5:2 g5:4 a5:2 g5:2 e5:2 d5:2 | d#5:4 f#5:4 b4:8'],
+        ['arp',x(ar('e4','g4','b4'),2)+ar('c4','e4','g4')+ar('d4','f#4','a4')+x(ar('e4','g4','b4'),2)+ar('c4','e4','g4')+ar('b3','d#4','f#4'),.8],
+        ['bass',x(pump('e2','e3'),2)+pump('c2','c3')+pump('d2','d3')+x(pump('e2','e3'),2)+pump('c2','c3')+pump('b1','b2')],
+        ['drm',x('b.h.s.hhb.hbs.h.',7)+'b.h.s.hhb.s.s.ss'],['drm','c'+'.'.repeat(127),.7]]},
+    {v:[['lead','c5:4 e5:4 g5:6 e5:2 | f#5:4 a5:4 d5:8 | d5:4 f#5:4 b5:6 a5:2 | g5:8 e5:8 | a4:3 c5:1 e5:4 a5:6 g5:2 | f#5:3 e5:1 d5:4 a5:4 f#5:4 | g5:6 a5:2 b5:4 g5:4 | f#5:12 d#5:4'],
+        ['lead2','c5:4 e5:4 g5:6 e5:2 | f#5:4 a5:4 d5:8 | d5:4 f#5:4 b5:6 a5:2 | g5:8 e5:8 | a4:3 c5:1 e5:4 a5:6 g5:2 | f#5:3 e5:1 d5:4 a5:4 f#5:4 | g5:6 a5:2 b5:4 g5:4 | f#5:12 d#5:4',.5,-12],
+        ['arp',ar('c4','e4','g4')+ar('d4','f#4','a4')+ar('b3','d4','f#4')+ar('e4','g4','b4')+ar('a3','c4','e4')+ar('d4','f#4','a4')+ar('g3','b3','d4')+ar('b3','d#4','f#4'),.8],
+        ['bass',pump('c2','c3')+pump('d2','d3')+pump('b1','b2')+pump('e2','e3')+pump('a1','a2')+pump('d2','d3')+pump('g1','g2')+pump('b1','b2')],
+        ['drm',x('b.h.s.hhb.hbs.h.',7)+'b.h.s.hhb.s.s.ss']]},
+  ]};
+  const battle2={name:'BAD GUYS OF THE DAY',bpm:150,ord:[0,1,2],loop:1,sec:[
+    {v:[['bass',pump('d2','d3')],['drm','b.s.b.s.b.s.ssss']]},
+    {v:[['lead','d5:4 f5:2 a5:2 d6:4 c6:2 a5:2 | bb5:4 a5:2 g5:2 f5:8 | f5:2 g5:2 a5:4 c6:4 a5:4 | g5:2 a5:2 g5:4 e5:8 | d5:4 f5:2 a5:2 d6:4 e6:2 d6:2 | bb5:4 a5:2 g5:2 f5:8 | g5:2 a5:2 bb5:4 d6:2 bb5:2 g5:2 bb5:2 | a5:4 c#6:4 a5:8'],
+        ['arp',ar('d4','f4','a4')+ar('bb3','d4','f4')+ar('f4','a4','c5')+ar('c4','e4','g4')+ar('d4','f4','a4')+ar('bb3','d4','f4')+ar('g3','bb3','d4')+ar('a3','c#4','e4'),.8],
+        ['bass',pump('d2','d3')+pump('bb1','bb2')+pump('f2','f3')+pump('c2','c3')+pump('d2','d3')+pump('bb1','bb2')+pump('g1','g2')+pump('a1','a2')],
+        ['drm',x('b.hhs.h.b.h.s.hh',7)+'b.hhs.h.b.s.s.ss'],['drm','c'+'.'.repeat(127),.7]]},
+    {v:[['lead','a5:2 a5:2 a5:2 g5:2 f5:4 d5:4 | e5:2 f5:2 g5:4 e5:8 | f5:2 f5:2 f5:2 e5:2 d5:4 bb4:4 | c5:2 d5:2 e5:4 c5:8 | a5:2 a5:2 a5:2 g5:2 f5:4 d5:4 | e5:2 f5:2 g5:4 a5:8 | bb5:2 a5:2 g5:4 f5:2 e5:2 d5:2 c#5:2 | d5:8 r:4 a4:2 c#5:2'],
+        ['lead2','r:4 d4:2 d4:2 r:4 d4:2 d4:2 | r:4 c4:2 c4:2 r:4 c4:2 c4:2 | r:4 bb3:2 bb3:2 r:4 bb3:2 bb3:2 | r:4 a3:2 a3:2 r:4 a3:2 a3:2',.5],
+        ['arp',ar('d4','f4','a4')+ar('c4','e4','g4')+ar('bb3','d4','f4')+ar('a3','c4','e4')+ar('d4','f4','a4')+ar('c4','e4','g4')+ar('bb3','d4','f4')+ar('a3','c#4','e4'),.8],
+        ['bass',pump('d2','d3')+pump('c2','c3')+pump('bb1','bb2')+pump('a1','a2')+pump('d2','d3')+pump('c2','c3')+pump('bb1','bb2')+pump('a1','a2')],
+        ['drm',x('b.hhs.h.b.h.s.hh',7)+'b.hhs.h.b.s.s.ss']]},
+  ]};
+  const J={
+    fight:{bpm:160,v:[['lead','e5:1 e5:1 e5:1 r:1 e5:2 g5:2 b5:6 r:2'],['lead2','e4:1 e4:1 e4:1 r:1 e4:2 g4:2 b4:6 r:2',.7],['bass','e2:2 e2:2 e2:2 e2:2 e2:8'],['drm','b.b.b.s.c.......']]},
+    victory:{bpm:140,v:[['lead','c5:2 e5:2 g5:2 c6:4 g5:2 c6:10 r:2'],['lead2','e4:2 g4:2 c5:2 e5:4 c5:2 e5:10 r:2',.8],['arp',x('c4:1 e4 g4 e4',6),.9],['bass','c2:4 g2:4 c2:4 c2:12'],['drm','b.s.b.s.b.ssc...........']]},
+    defeat:{bpm:96,v:[['lead','e4:4 eb4:4 d4:4 c#4:12'],['tri','c3:4 b2:4 bb2:4 a2:12'],['bass','a1:24'],['drm','b.......b.......b...............']]},
+    flawless:{bpm:150,v:[['lead','g5:1 a5:1 b5:1 c6:1 d6:2 g6:2 e6:2 g6:2 c7:8'],['lead2','e5:1 f#5:1 g5:1 a5:1 b5:2 d6:2 c6:2 d6:2 e6:8',.8],['arp',x('c4:1 e4 g4 c5',5),.9],['bass','c2:4 g2:4 c2:4 c2:8'],['drm','b.s.b.s.ssssc.......']]},
+  };
+  return {draft,battle,battle2,J};
+})();
+addEventListener('pointerdown',()=>Snd.start(),{passive:true});
+document.addEventListener('visibilitychange',()=>{if(document.hidden)Snd.stop();else Snd.start()});
 
 // ---------- draft UI ----------
 const $=id=>document.getElementById(id);
@@ -350,8 +500,8 @@ function renderTeam(){
   $('team').innerHTML=state.team.length?state.team.map((i,k)=>`<button class="chip" data-k="${k}">${spr(i,2,12)}<small>${state.costs[i]}</small></button>`).join(''):'<span class="empty">Tap fighters to build your team. Spend all 10 or don\'t.</span>';
   $('fightBtn').disabled=!state.team.length;
 }
-$('pool').addEventListener('click',e=>{const b=e.target.closest('.card');if(!b||b.disabled)return;state.team.push(b.dataset.id);renderTeam();renderPool()});
-$('team').addEventListener('click',e=>{const b=e.target.closest('.chip');if(!b)return;state.team.splice(+b.dataset.k,1);renderTeam();renderPool()});
+$('pool').addEventListener('click',e=>{const b=e.target.closest('.card');if(!b||b.disabled)return;Snd.sfx('tap');state.team.push(b.dataset.id);renderTeam();renderPool()});
+$('team').addEventListener('click',e=>{const b=e.target.closest('.chip');if(!b)return;Snd.sfx('tap');state.team.splice(+b.dataset.k,1);renderTeam();renderPool()});
 $('randomBtn').addEventListener('click',()=>newGame(false));
 $('fightBtn').addEventListener('click',()=>startFight());
 
@@ -360,7 +510,8 @@ let F=null; // fight state
 let speed=1, timer=null;
 function mkUnits(ids,side){return ids.map((id,i)=>{const r=BY[id];return {r,id,side,i,hp:r.hp,max:r.hp,cd:0.3+Math.random()*0.8/r.spd,alive:true,charged:false,venom:0,el:null}})}
 function startFight(){
-  F={L:mkUnits(state.team,'L'),R:mkUnits(state.enemy,'R'),t:0,done:false,firstBlood:false,finish:false,lastCrit:false,lostAny:false,critAt:-9,silent:false};
+  const prevTrack=F&&F.track;
+  F={track:prevTrack,L:mkUnits(state.team,'L'),R:mkUnits(state.enemy,'R'),t:0,done:false,firstBlood:false,finish:false,lastCrit:false,lostAny:false,critAt:-9,silent:false};
   $('draft').classList.add('hidden'); $('arena').classList.remove('hidden'); $('result').classList.add('hidden');
   $('hudEnemy').textContent=state.enemyName.replace(/^The /,'').toUpperCase();
   $('log').innerHTML='';
@@ -368,7 +519,8 @@ function startFight(){
     d.innerHTML=`<span class="em">${spr(u.id,3)}</span><span class="hb"><i></i></span>`;el.appendChild(d);u.el=d})};
   build(F.L,$('left')); build(F.R,$('right'));
   updateHud();
-  announce('ROUND 1',false,900,()=>{announce('FIGHT!',true,700);run()});
+  F.track=F.track==='battle'?'battle2':'battle'; Snd.stop();
+  announce('ROUND 1',false,900,()=>{announce('FIGHT!',true,700);Snd.jingle('fight',F.track);Snd.start();run()});
 }
 function run(){clearInterval(timer);timer=setInterval(step,50/speed)}
 function alive(a){return a.filter(u=>u.alive)}
@@ -396,7 +548,7 @@ function attack(a){
   const SIZE_MULT=[1,.75,.45,.25,.12];
   let base=a.r.atk*(0.75+0.5*Math.random());
   if(a.r.trait==='pack'){const n=alive(a.side==='L'?F.L:F.R).filter(u=>u!==a&&u.id===a.id).length;base*=1+Math.min(0.5,0.12*n)}
-  if(a.r.trait==='charge'&&!a.charged){base*=2;a.charged=true;log(`<b>${a.r.name}</b> charges!`)}
+  if(a.r.trait==='charge'&&!a.charged){base*=2;a.charged=true;log(`<b>${a.r.name}</b> charges!`);if(!F.silent)Snd.sfx('charge')}
   // a big attacker's swipe catches extra small targets
   const bigger=a.r.size-foes[0].r.size;
   let targets=[t];
@@ -404,7 +556,7 @@ function attack(a){
   targets.forEach((t,k)=>{
     if(!t.alive)return;
     let dodge=t.r.dodge*(1+Math.max(0,a.r.size-t.r.size)*0.2); dodge=Math.min(dodge,0.5);
-    if(Math.random()<dodge){float(t,'miss','miss');return}
+    if(Math.random()<dodge){float(t,'miss','miss');if(!F.silent)Snd.sfx('miss');return}
     let dmg=base*(1-t.r.arm)*(k?0.6:1);
     const diff=t.r.size-a.r.size;
     if(diff>=1&&a.r.trait!=='sting')dmg*=SIZE_MULT[Math.min(4,diff)];
@@ -413,13 +565,14 @@ function attack(a){
     dmg=Math.max(1,Math.round(dmg));
     t.hp-=dmg;
     float(t,dmg,crit?'crit':'');
+    if(!F.silent)Snd.sfx('hit',crit||a.r.size>=4);
     if(crit&&F.t-F.critAt>2&&!F.silent){F.critAt=F.t;announce('CRITICAL',false,500)}
     if(!F.silent){t.el.classList.add('hit');setTimeout(()=>t.el.classList.remove('hit'),120/speed)}
     if(t.hp<=0)kill(t,a,crit);
   });
 }
 function kill(t,a,crit){
-  t.hp=0;t.alive=false;t.el.classList.add('dead');
+  t.hp=0;t.alive=false;t.el.classList.add('dead');if(!F.silent)Snd.sfx('death');
   F.lastCrit=!!crit; if(t.side==='L')F.lostAny=true;
   if(!F.firstBlood){F.firstBlood=true;if(!F.silent)announce('FIRST BLOOD',true,600)}
   log(a?`<b>${a.r.name}</b> takes down <b>${t.r.name}</b>`:`<b>${t.r.name}</b> succumbs to venom`);
@@ -453,12 +606,17 @@ function finish(win,timeout){
   $('resSub').innerHTML=`${timeout?'Judges\' decision. ':''}Your team <span class="t">${emojiList(state.team)}</span> ${win?'beat':'lost to'} <b>${state.enemyName}</b> <span class="t">${emojiList(state.enemy)}</span> in ${secs}s${win?` with ${survivors} of ${F.L.length} standing.`:'.'}`;
   $('resRec').textContent=recordLine();
   setTimeout(()=>$('result').classList.remove('hidden'),F.silent?0:700/speed);
-  announce(win?'K.O.':'K.O.',!win,900);
+  announce('K.O.',!win,900);
+  Snd.sfx('ko'); setTimeout(()=>Snd.jingle(timeout?(win?'victory':'defeat'):win?(F.lostAny?'victory':'flawless'):'defeat','draft'),F.silent?50:350);
 }
 $('speedBtn').addEventListener('click',()=>{speed=speed===1?2:speed===2?4:1;$('speedBtn').textContent=speed+'× speed';if(F&&!F.done)run()});
 $('skipBtn').addEventListener('click',()=>{if(!F||F.done)return;F.silent=true;clearInterval(timer);clearTimeout(annT);$('announce').classList.remove('on');let n=0;while(!F.done&&n++<4000)step();});
 $('rematch').addEventListener('click',()=>{startFight()});
-$('redraft').addEventListener('click',()=>{$('arena').classList.add('hidden');$('draft').classList.remove('hidden');renderDraft()});
+$('redraft').addEventListener('click',()=>{$('arena').classList.add('hidden');$('draft').classList.remove('hidden');Snd.scene('draft');renderDraft()});
+function sndLabel(){const on=Snd.on();$('sndBtn').textContent=on?'♪ sound on':'♪ sound off';$('sndBtn2').textContent=on?'♪':'♪ off';$('sndBtn2').style.opacity=on?1:.5}
+$('sndBtn').addEventListener('click',()=>{Snd.toggle();sndLabel()});
+$('sndBtn2').addEventListener('click',()=>{Snd.toggle();sndLabel()});
+sndLabel();
 $('share').addEventListener('click',async()=>{
   const win=$('resTitle').textContent!=='DEFEAT';
   const plain=ids=>{const c={};ids.forEach(i=>c[i]=(c[i]||0)+1);return Object.keys(c).map(i=>BY[i].em+(c[i]>1?'×'+c[i]:'')).join('')};
