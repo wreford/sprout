@@ -421,6 +421,7 @@ h1 span{display:inline;font-size:13px;margin:0}
 .cbuild button span{font-size:20px;line-height:1}.cbuild b{font-size:13px;color:#fff;font-weight:400;line-height:1.05}.cbuild small{font-size:12px;color:var(--mut);line-height:1.05}.cbuild button:disabled{opacity:.45}
 .cled{font-size:14px}
 .cbuild.simp{grid-template-columns:1fr 1fr;margin:6px 0 8px}.cbuild.simp button{align-items:flex-start;text-align:left;padding:6px}.cled .bad,.cled b.bad{color:var(--red)}
+.saveTag{font-size:12px;color:var(--mut);text-align:right;margin:-2px 2px 2px;min-height:12px}
 .tabs{display:flex;gap:6px;margin:0 0 10px}.tabs button{flex:1;background:var(--panel);border:2px solid var(--line);color:var(--mut);font-family:"Press Start 2P",monospace;font-size:8px;padding:9px 2px;box-shadow:2px 2px 0 var(--ink);cursor:pointer}.tabs button.on{background:var(--gold);color:var(--ink);border-color:var(--gold)}
 .dem+.dem{border-top:2px dashed var(--line);padding-top:10px;margin-top:6px}
 .minor{text-align:center;font-size:15px;color:var(--mut);margin:-4px 0 8px}.minor .lnk{font-size:15px}
@@ -2695,7 +2696,22 @@ const PERKS={
 };
 const loadJ=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))||d}catch(e){return d}};
 const saveJ=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}};
-function saveDyn(){saveJ(DYN_LS,DYN)}
+// autosave: every change saves, the tab saves when you leave it, and a timer catches anything in between
+let SAVE_FAIL=false;
+function saveDyn(){
+  if(!DYN)return;
+  try{DYN.savedAt=Date.now();localStorage.setItem(DYN_LS,JSON.stringify(DYN));SAVE_FAIL=false}
+  catch(e){if(!SAVE_FAIL){SAVE_FAIL=true;DYN.toast=(DYN.toast?DYN.toast+'<br>':'')+'⚠️ Couldn’t save to this device (storage full or blocked). Your progress is only in this tab.'}}
+  const el=document.getElementById('saveTag');if(el)el.textContent=saveLabel();
+}
+function saveLabel(){
+  if(!DYN||!DYN.savedAt)return '';
+  if(SAVE_FAIL)return '⚠️ not saved';
+  const t=new Date(DYN.savedAt);return `💾 saved ${t.getHours()}:${String(t.getMinutes()).padStart(2,'0')} · auto`;
+}
+setInterval(()=>{if(MODE==='dyn'&&DYN&&!DYN.simming&&DYN.phase!=='over')saveDyn()},15000);
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&MODE==='dyn'&&DYN)saveDyn()});
+addEventListener('pagehide',()=>{if(MODE==='dyn'&&DYN)saveDyn()});
 
 // ---- players across time ----
 function baseOf(id){return LEG[id]||REALX[id]||(DYN&&DYN.players[id]?statsFor(DYN.players[id]):null)}
@@ -3507,7 +3523,7 @@ function eventHtml0(P){
 // ---------- dynasty screens ----------
 function show(id){['menu','draft','arena','locker'].forEach(s=>$(s).classList.toggle('hidden',s!==id))}
 function hearts(){return '♥'.repeat(Math.max(0,DYN.patience))+'♡'.repeat(Math.max(0,3-DYN.patience))}
-function headHtml(){return `<div class="lkTop"><span class="mk">${seasonLbl(DYN.year)}${DYN.year>PRESENT?' ✦':''}</span><span class="hearts" title="Owner patience">${hearts()}</span><span>💍 ${DYN.rings.length}</span><span>$${DYN.cash}</span><span>cap <b class="${payroll()>DYN.cap&&(DYN.phase==='trade'||DYN.phase==='lineup')?'over':''}">${payroll()}</b>/${DYN.cap}</span></div>${DYN.toast?`<div class="toast">${DYN.toast}</div>`:''}${DYN.news2.length?`<div class="toast news">${DYN.news2.join('<br>')}</div>`:''}`}
+function headHtml(){return `<div id="saveTag" class="saveTag">${saveLabel()}</div><div class="lkTop"><span class="mk">${seasonLbl(DYN.year)}${DYN.year>PRESENT?' ✦':''}</span><span class="hearts" title="Owner patience">${hearts()}</span><span>💍 ${DYN.rings.length}</span><span>$${DYN.cash}</span><span>cap <b class="${payroll()>DYN.cap&&(DYN.phase==='trade'||DYN.phase==='lineup')?'over':''}">${payroll()}</b>/${DYN.cap}</span></div>${DYN.toast?`<div class="toast">${DYN.toast}</div>`:''}${DYN.news2.length?`<div class="toast news">${DYN.news2.join('<br>')}</div>`:''}`}
 function prow(id,btns,extra){
   const r=BY[id],b=DYN.boost[id],bt=b?Object.keys(b).filter(k=>b[k]).map(k=>b[k]>0?`+${b[k]} ${STAT_LBL[k]||k}`:`<i class="bad">${b[k]} ${STAT_LBL[k]||k}</i>`).join(' '):'';
   const st=DYN.starters.includes(id);
@@ -3625,6 +3641,7 @@ function awardsHtml(y){const A=DYN.awards[y];if(!A)return '';const it=(l,a)=>a?`
 function showDyn(){MODE='dyn';setKits(DYN.cur&&DYN.teams[DYN.cur.opp]?DYN.teams[DYN.cur.opp].key:null);show('locker');renderDyn();Snd.scene(DYN.phase==='playoffs'?'playoffs':'draft')}
 function renderDyn(){
   const L=$('locker'),me=DYN.teams[0],ph=DYN.phase;let h='';
+  DYN.savedAt=DYN.savedAt||Date.now();
   if(DYN.view==='hist'){L.innerHTML=historyView();wire(L);L.scrollTop=0;return}
   if(ph==='season'&&DYN.day===0&&!DYN.hist.length)tip('season','82 games, then the playoffs. PLAY coaches a game live. SIM skips it with a coaching style, for when you have somewhere to be. Tap ★ for starters and any player for his card. Tap a player’s face to meet his family.');
   if(ph==='season'&&DYN.hist.length===1&&DYN.day===0)tip('hist','📜 History now shows banners, awards and your franchise leaders. Your grandkids will ask about them. Probably.');
@@ -3686,7 +3703,7 @@ function showMenu(){
   const saved=loadJ(DYN_LS,null),m=loadJ(META_LS,{runs:0,rings:0,seasons:0});
   const live=saved&&saved.v===3&&saved.phase!=='over'&&saved.phase!=='board';
   $('mContinue').classList.toggle('hidden',!live);
-  if(live)$('mContinue').innerHTML=`CONTINUE DYNASTY<small>${seasonLbl(saved.year)} · ${saved.rings.length} 💍 · ${'♥'.repeat(Math.max(0,saved.patience))}</small>`;
+  if(live)$('mContinue').innerHTML=`CONTINUE DYNASTY<small>${seasonLbl(saved.year)} · ${saved.rings.length} 💍 · ${'♥'.repeat(Math.max(0,saved.patience))}${saved.savedAt?` · saved ${new Date(saved.savedAt).toLocaleDateString(undefined,{month:'short',day:'numeric'})}`:''}</small>`;
   $('mStats').textContent=m.runs?`Dynasties ${m.runs} · Rings ${m.rings} 💍 · Seasons ${m.seasons}`:'No rings yet. Somebody has to be first.';
 }
 function loadDyn(){DYN=loadJ(DYN_LS,null);if(!DYN||DYN.v!==3){DYN=null;return}initDepth(DYN);DYN.trades=(DYN.trades||[]).map(o=>({ti:o.ti,get:[].concat(o.get),give:[].concat(o.give),why:o.why}));DYN.sel=[];DYN.ask=null;DYN.view=null;MODE='dyn';applyYear();showDyn()}
