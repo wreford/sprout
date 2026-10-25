@@ -343,6 +343,8 @@ h1 span{display:inline;font-size:13px;margin:0}
 .ovr{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;font-size:15px;color:var(--mut);margin-top:8px}
 .ovr b{color:#fff;font-weight:400;font-family:"Press Start 2P",monospace;font-size:10px}
 .ovr i{height:8px;background:var(--red);border:2px solid var(--ink);display:block}.ovr u{display:block;height:100%;background:var(--gold)}
+.tabs{display:flex;gap:6px;margin:0 0 10px}.tabs button{flex:1;background:var(--panel);border:2px solid var(--line);color:var(--mut);font-family:"Press Start 2P",monospace;font-size:8px;padding:9px 2px;box-shadow:2px 2px 0 var(--ink);cursor:pointer}.tabs button.on{background:var(--gold);color:var(--ink);border-color:var(--gold)}
+.dem+.dem{border-top:2px dashed var(--line);padding-top:10px;margin-top:6px}
 .minor{text-align:center;font-size:15px;color:var(--mut);margin:-4px 0 8px}.minor .lnk{font-size:15px}
 .fo .fac{display:flex;gap:8px;align-items:center;padding:4px 0;border-bottom:1px dashed var(--line)}
 .fo .fac .n{flex:1;display:flex;flex-direction:column;line-height:1.1}.fo .fac b{color:#fff;font-weight:400;font-size:17px}.fo .fac small{font-size:14px;color:var(--mut)}
@@ -2211,7 +2213,7 @@ XP.forEach(x=>{const r=REALX[x[0]],f=x[13];if(f.ft)r.ft=Math.max(20,Math.min(97,
 const REALS=Object.values(LEG).concat(Object.values(REALX));
 
 const DYN_LS='wwwnba.dyn', META_LS='wwwnba.meta';
-let DYN=null, MODE='daily', CTX=null, TIERCOST={};
+let DYN=null, MODE='daily', CTX=null, TIERCOST={}, TIERCUT=[99,99,99,99];
 // the 30 real franchises. nbaName() swaps in the name a franchise had in a given season.
 const NBA=[['hawks','Atlanta Hawks','E'],['celtics','Boston Celtics','E'],['nets','Brooklyn Nets','E'],['hornets','Charlotte Hornets','E'],['bulls','Chicago Bulls','E'],['cavs','Cleveland Cavaliers','E'],['pistons','Detroit Pistons','E'],['pacers','Indiana Pacers','E'],['heat','Miami Heat','E'],['bucks','Milwaukee Bucks','E'],['knicks','New York Knicks','E'],['magic','Orlando Magic','E'],['sixers','Philadelphia 76ers','E'],['raptors','Toronto Raptors','E'],['wizards','Washington Wizards','E'],
  ['mavs','Dallas Mavericks','W'],['nuggets','Denver Nuggets','W'],['warriors','Golden State Warriors','W'],['rockets','Houston Rockets','W'],['clippers','LA Clippers','W'],['lakers','Los Angeles Lakers','W'],['grizzlies','Memphis Grizzlies','W'],['wolves','Minnesota Timberwolves','W'],['pelicans','New Orleans Pelicans','W'],['thunder','Oklahoma City Thunder','W'],['suns','Phoenix Suns','W'],['blazers','Portland Trail Blazers','W'],['kings','Sacramento Kings','W'],['spurs','San Antonio Spurs','W'],['jazz','Utah Jazz','W']];
@@ -2277,9 +2279,13 @@ function applyYear(){
   leagueIds().forEach(id=>BY[id]=effOf(id,DYN.year));
   const act=DYN.teams.flatMap(T=>T.roster).concat(DYN.fa).sort((a,b)=>BY[b].power-BY[a].power), band=Math.ceil(act.length/5);
   TIERCOST={};act.forEach((id,i)=>TIERCOST[id]=5-Math.min(4,Math.floor(i/band)));
+  TIERCUT=[1,2,3,4].map(t=>BY[act[Math.min(act.length-1,t*band-1)]].power);
 }
 function restoreLegends(){ROSTER.forEach(r=>BY[r.id]=r)}
-function costOf(id){return DYN.rookie[id]!=null&&DYN.year<DYN.rookie[id]+3?1:(TIERCOST[id]||1)}
+// training makes a player worth more than his deal. Each 5 points of training counts as +1 ovr on the market.
+function trainedPts(id){const b=DYN.boost[id];return b?Object.values(b).reduce((a,v)=>a+v,0):0}
+function worthOf(id){const v=BY[id].power+Math.round(trainedPts(id)/5);return 5-TIERCUT.filter(c=>v<c).length}
+function costOf(id){const pd=DYN.pay&&DYN.pay[id];if(pd&&DYN.teams[0].roster.includes(id))return Math.max(pd,TIERCOST[id]||1);return DYN.rookie[id]!=null&&DYN.year<DYN.rookie[id]+3?1:(TIERCOST[id]||1)}
 function payroll(ids){return (ids||DYN.teams[0].roster).reduce((s,i)=>s+costOf(i),0)}
 function topFive(ids){return ids.slice().sort((a,b)=>BY[b].power-BY[a].power).slice(0,5)}
 function grade(v){return v>=95?'A+':v>=90?'A':v>=85?'B+':v>=80?'B':v>=74?'C':'D'}
@@ -2337,7 +2343,7 @@ let QS_LAST=null;
 function feed(t){(DYN.feed=DYN.feed||[]).unshift(t);if(DYN.feed.length>30)DYN.feed.length=30}
 function makeSchedule(){const days=[];for(let d=0;d<SEASON_DAYS;d++){const t=shuffle(DYN.teams.map((_,i)=>i),Math.random),p=[];for(let i=0;i<t.length;i+=2)p.push([t[i],t[i+1]]);days.push(p)}return days}
 function newSeason(){
-  renameTeams();
+  renameTeams();DYN.perkYr=0;
   DYN.teams.forEach(T=>{T.w=0;T.l=0;T.pd=0;T.sk=0});
   DYN.teams.slice(1).forEach(T=>{
     T.roster.sort((a,b)=>BY[b].power-BY[a].power);
@@ -2470,7 +2476,7 @@ function makeOffers(win){
   const me=DYN.teams[0].roster,tr=()=>({type:'train',pid:pick(me),k:pick(Object.keys(TRAIN))});
   const offers=[tr()];let b=tr();while(b.pid===offers[0].pid&&b.k===offers[0].k)b=tr();
   const pk=Object.keys(PERKS).filter(k=>!DYN.perks.includes(k)||k==='owner'||k==='capspace');
-  offers.push(win&&pk.length&&DYN.perks.length<5?{type:'perk',k:pick(pk)}:b);
+  offers.push(win&&pk.length&&DYN.perks.length<5&&(DYN.perkYr||0)<2&&Math.random()<.12?{type:'perk',k:pick(pk)}:b);
   return offers;
 }
 function takeOffer(o){
@@ -2479,6 +2485,7 @@ function takeOffer(o){
   else if(o.k==='owner')DYN.patience=Math.min(4,DYN.patience+1);
   else if(o.k==='capspace')DYN.cap+=2;
   else DYN.perks.push(o.k);
+  if(o.type==='perk')DYN.perkYr=(DYN.perkYr||0)+1;
   DYN.offers=null;saveDyn();showDyn();
 }
 
@@ -2497,6 +2504,7 @@ function offseason(){
   applyYear();
   if(y===PRESENT+1)news.unshift('Welcome to the future. Every new face from here on is somebody nobody has heard of yet.');
   DYN.news=news;DYN.phase='draft';DYN.props=4;aiTrades(2);
+  DYN.demands=DYN.teams[0].roster.filter(id=>{const w=worthOf(id),c=costOf(id);return trainedPts(id)>=6&&w>c&&Math.random()<.35+.2*(w-c)}).map(id=>({id,ask:worthOf(id),was:costOf(id)}));
   aiDraft();
 }
 function aiDraft(){
@@ -2574,6 +2582,23 @@ function propose(){
 }
 function cut(id){const me=DYN.teams[0];if(me.roster.length<=5&&DYN.phase!=='draft')return;me.roster=me.roster.filter(i=>i!==id);DYN.starters=DYN.starters.filter(i=>i!==id);DYN.fa.push(id);DYN.toast=`${BY[id].name} released. He took the good towels.`;saveDyn();showDyn()}
 function sign(id){const me=DYN.teams[0];if(me.roster.length>=8||payroll(me.roster.concat(id))>DYN.cap)return;me.roster.push(id);DYN.fa=DYN.fa.filter(i=>i!==id);DYN.toast=`${BY[id].name} signs. Somebody find him a jersey.`;Snd.sfx('tap');saveDyn();showDyn()}
+function resolveDemand(i,pay){
+  const d=DYN.demands[i],me=DYN.teams[0],nm=BY[d.id].name;DYN.demands.splice(i,1);
+  if(pay){(DYN.pay||(DYN.pay={}))[d.id]=d.ask;delete DYN.rookie[d.id];DYN.mood[d.id]=1;DYN.toast=`${nm} signs for $${d.ask}. He buys his mom a house. A modest one.`}
+  else if(Math.random()<.4){DYN.mood[d.id]=-1;DYN.toast=`${nm} tested the market. Nobody bit. He is back at $${d.was}, and a little grumpy.`}
+  else{
+    me.roster=me.roster.filter(i=>i!==d.id);DYN.starters=DYN.starters.filter(i=>i!==d.id);
+    const T=DYN.teams.slice(1).filter(T=>T.roster.length<8).sort((a,b)=>a.roster.length-b.roster.length)[0];
+    if(T){T.roster.push(d.id);DYN.toast=`${nm} walks. The ${T.name} sign him the same afternoon. They thank you for the training.`}
+    else{DYN.fa.push(d.id);DYN.toast=`${nm} walks into free agency.`}
+  }
+  Snd.sfx('tap');saveDyn();showDyn();
+}
+function demandsHtml(){
+  const D=DYN.demands||[];if(!D.length)return '';
+  return `<div class="event"><div class="h mk">💼 CONTRACT DEMANDS</div>${D.map((d,i)=>{const r=BY[d.id];return `<div class="dem"><div class="txt"><span class="evp">${spr(d.id,2,'L')}</span><b>${r.name}</b> got better on your watch (+${trainedPts(d.id)} training). His agent wants <b>$${d.ask}</b>. He makes $${d.was}.</div>
+    <div class="evbtns"><button class="pri" data-dem="${i}|1">PAY HIM $${d.ask}<small>cap ${payroll()}→${payroll()-d.was+d.ask} / ${DYN.cap}</small></button><button data-dem="${i}|0">LET HIM TEST FREE AGENCY<small>60% he signs somewhere else</small></button></div></div>`}).join('')}</div>`;
+}
 function toggleStarter(id){const s=DYN.starters;if(s.includes(id))DYN.starters=s.filter(i=>i!==id);else if(s.length<5)s.push(id);Snd.sfx('tap');saveDyn();showDyn()}
 
 // ---------- depth: injuries, development, morale, stats, awards, front office ----------
@@ -2809,7 +2834,7 @@ function prow(id,btns,extra){
 function teamName2(i){return i===0?DYN.teams[0].name:DYN.teams[i].name}
 function standingsHtml(){return `<div class="stand">${standings().map((i,k)=>{const T=DYN.teams[i];return `<div class="${i===0?'me':''}"><span>${k+1}. ${i===0?`<b>${DYN.teams[0].name}</b>`:T.name}</span><span>${T.w}–${T.l}</span></div>`}).join('')}</div>`}
 function offerHtml(o,i){
-  if(o.type==='train'){const r=BY[o.pid],T=TRAIN[o.k];return `<button class="offer" data-i="${i}"><span class="ot tr">TRAINING</span><span class="row">${spr(o.pid,2,'L')}<span><b>${T[0]}</b><br><small>${r.name} gets +${T[1]} ${T[2]} for good.</small></span></span></button>`}
+  if(o.type==='train'){const r=BY[o.pid],T=TRAIN[o.k];return `<button class="offer" data-i="${i}"><span class="ot tr">TRAINING</span><span class="row">${spr(o.pid,2,'L')}<span><b>${T[0]}</b><br><small>${r.name} gets +${T[1]} ${T[2]} for good.${costOf(o.pid)<=2?` <i class="bad">He is on a $${costOf(o.pid)} deal. Better players want paying.</i>`:''}</small></span></span></button>`}
   const P=PERKS[o.k];return `<button class="offer" data-i="${i}"><span class="ot pk">TEAM PERK</span><span class="row"><span class="pki">◆</span><span><b>${P.n}</b><br><small>${P.d}</small></span></span></button>`;
 }
 function rosterBlock(mode){
@@ -2836,6 +2861,8 @@ function wire(L){
   L.querySelectorAll('[data-card]').forEach(b=>b.onclick=e=>{e.stopPropagation();openCard(b.dataset.card)});
   L.querySelectorAll('[data-up]').forEach(b=>b.onclick=()=>upgrade(b.dataset.up));
   L.querySelectorAll('[data-ev]').forEach(b=>b.onclick=()=>resolveEvent(+b.dataset.ev));
+  L.querySelectorAll('[data-dem]').forEach(b=>b.onclick=()=>{const [i,y]=b.dataset.dem.split('|');resolveDemand(+i,y==='1')});
+  L.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{const [k,v]=b.dataset.tab.split('|');(DYN.tabs||(DYN.tabs={}))[k]=v;Snd.sfx('tap');showDyn()});
   L.querySelectorAll('[data-team]').forEach(x=>x.onchange=()=>{DYN.deskTeam=+x.value;showDyn()});
 }
 const DYNGO={
@@ -2843,7 +2870,7 @@ const DYNGO={
   offseason:()=>{offseason();saveDyn();showDyn()},
   pass:()=>draftPick(null),
   lineup:()=>{DYN.phase='lineup';DYN.ask=null;saveDyn();showDyn()},
-  start:()=>{if(DYN.starters.length!==5||payroll()>DYN.cap)return;newSeason();DYN.toast=`${seasonLbl(DYN.year)} tips off.`;saveDyn();showDyn()},
+  start:()=>{if((DYN.demands||[]).length||DYN.starters.length!==5||payroll()>DYN.cap)return;newSeason();DYN.toast=`${seasonLbl(DYN.year)} tips off.`;saveDyn();showDyn()},
   hist:()=>{DYN.view='hist';showDyn()},
   closeHist:()=>{DYN.view=null;showDyn()},
   west:()=>{DYN.showW=!DYN.showW;showDyn()},
@@ -2880,6 +2907,10 @@ function bracketHtml(){
   else P.rounds[P.r].forEach(s=>{h+=`<div class="ser${s.a===0||s.b===0?' me':''}"><span>${nm(s.a)} v ${nm(s.b)}</span><span>${s.w!=null?`${s.w===0?'You win':DYN.teams[s.w].name.split(' ').slice(-1)[0]+' win'} ${Math.max(s.wa,s.wb)}–${Math.min(s.wa,s.wb)}`:`${s.wa}–${s.wb}`}</span></div>`});
   return h+'</div>';
 }
+function tabsHtml(k,opts,def){
+  const cur=(DYN.tabs&&DYN.tabs[k])||def;
+  return [`<div class="tabs">${opts.map(([v,l])=>`<button class="${v===cur?'on':''}" data-tab="${k}|${v}">${l}</button>`).join('')}</div>`,cur];
+}
 function seasonView(ph){
   const me=DYN.teams[0],O=DYN.teams[DYN.cur.opp],tw=DYN.cur.twist,ready=!DYN.offers&&!DYN.pending&&DYN.starters.length===5,rk=confRank(myConf()).indexOf(0)+1;
   const prog=`<div class="prog"><span>${ph==='season'?`GAME ${DYN.day+1} / ${SEASON_DAYS}`:'PLAYOFFS'}</span><i><u style="width:${ph==='season'?100*DYN.day/SEASON_DAYS:100}%"></u></i><span>${me.w}–${me.l} · ${ordinal(rk)} ${confName(myConf())}</span></div>`;
@@ -2890,8 +2921,10 @@ function seasonView(ph){
   const feedH=DYN.feed&&DYN.feed.length?`<div class="offers feed"><div class="h mk">AROUND THE LEAGUE</div>${DYN.feed.slice(0,5).map(t=>`<div class="hint">${t}</div>`).join('')}</div>`:'';
   const tables=ph==='season'?confTable(myConf(),false)+(DYN.showW?confTable(otherConf(),false):''):'';
   const label=DYN.pending?'DECIDE FIRST':DYN.offers?'PICK A REWARD':DYN.starters.length!==5?'PICK 5 STARTERS':'PLAY';
-  return headHtml()+prog+eventHtml()+next+offers+(ph==='playoffs'?bracketHtml():'')+tables+feedH+rosterBlock('season')+
-    `<div class="minor"><button class="lnk" data-go="hist">📜 history</button>${ph==='season'?` · <button class="lnk" data-go="west">${DYN.showW?'hide':'show'} ${confName(otherConf())}</button>`:''}</div>
+  const [tb,t]=tabsHtml('season',[['roster','ROSTER'],['table',ph==='playoffs'?'BRACKET':'STANDINGS'],['league','LEAGUE']],'roster');
+  const body=t==='roster'?rosterBlock('season'):t==='table'?(ph==='playoffs'?bracketHtml():tables+`<div class="minor"><button class="lnk" data-go="west">${DYN.showW?'hide':'show'} ${confName(otherConf())}</button></div>`)
+    :(feedH||'<div class="offers"><div class="hint">Quiet around the league. Suspiciously quiet.</div></div>')+`<div class="minor"><button class="lnk" data-go="hist">📜 history, banners and awards</button></div>`;
+  return headHtml()+prog+eventHtml()+next+offers+tb+body+`
     <div class="btns"><button class="pri" data-go="play" ${ready?'':'disabled'}>${label}</button>${ph==='season'&&DYN.day<=DEADLINE_DAY?`<button data-go="desk">TRADE${DYN.trades.length?` · ${DYN.trades.length}`:''}</button>`:''}<button data-go="menu">☰</button></div>`;
 }
 function awardsHtml(y){const A=DYN.awards[y];if(!A)return '';const it=(l,a)=>a?`<div class="aw"><span class="l">${l}</span>${spr(a.id,2,a.team===0?'L':'R')}<span><b class="${a.team===0?'me':''}">${a.name}</b><br><small>${a.l}</small></span></div>`:'';return `<div class="awards2">${it('MVP',A.mvp)}${it('ROOKIE',A.roy)}${it('DEFENCE',A.dpoy)}${it('SCORING',A.scoring)}</div>`}
@@ -2911,7 +2944,7 @@ function renderDyn(){
       <div class="meta">All-time: ${m.runs} dynasties · ${m.rings} rings · ${m.seasons} seasons</div>
       <div class="btns"><button class="pri" data-go="newdyn">NEW DYNASTY</button><button data-go="menu">MENU</button></div></div>`;
   } else if(ph==='season'||ph==='playoffs'){
-    if(DYN.view==='desk'&&ph==='season'){L.innerHTML=headHtml()+tradeDesk('season')+frontOffice()+rosterBlock(DYN.ask?'trade':'season')+`<div class="btns"><button class="pri" data-go="closeDesk">← BACK TO THE SEASON</button></div>`;DYN.toast=null;DYN.news2=[];wire(L);return}
+    if(DYN.view==='desk'&&ph==='season'){const [tb,t]=tabsHtml('desk',[['trade','TRADES'],['fo','FRONT OFFICE']],'trade');L.innerHTML=headHtml()+tb+(t==='fo'?frontOffice():tradeDesk('season')+rosterBlock(DYN.ask?'trade':'season'))+`<div class="btns"><button class="pri" data-go="closeDesk">← BACK TO THE SEASON</button></div>`;DYN.toast=null;DYN.news2=[];wire(L);return}
     h=seasonView(ph);
   } else if(ph==='recap'){
     const last=DYN.hist[DYN.hist.length-1],champ=last.result==='champion';
@@ -2925,20 +2958,23 @@ function renderDyn(){
     const d=DYN.draft,mine=d.order[d.i]===0,full=me.roster.length>=8;
     const left=d.pros.filter(p=>!d.log.some(l=>l.id===p));
     const sleeper=left.slice(3).sort((a,b)=>(ceilingOf(b)-BY[b].power)-(ceilingOf(a)-BY[a].power))[0];
-    h=headHtml()+(DYN.news.length?`<div class="offers"><div class="h mk">OFFSEASON NEWS</div>${DYN.news.map(n=>`<div class="hint">· ${n}</div>`).join('')}</div>`:'')+
+    const [tb,t]=tabsHtml('draft',[['pros','DRAFT'],['news','NEWS'+(DYN.news.length?` · ${DYN.news.length}`:'')],['roster','ROSTER']],'pros');
+    h=headHtml()+tb+(t==='news'?`<div class="offers"><div class="h mk">OFFSEASON NEWS</div>${DYN.news.map(n=>`<div class="hint">· ${n}</div>`).join('')||'<div class="hint">Nothing happened. Somehow.</div>'}</div>`:'')+(t==='pros'?
       `<div class="offers"><div class="h mk">${DYN.year} DRAFT · ${mine?`YOU ARE ON THE CLOCK (PICK ${d.i+1})`:'DRAFT COMPLETE'}</div>
       ${d.log.map((l,k)=>[l,k]).slice(-6).map(([l,k])=>`<div class="hint">${k+1}. ${teamName2(l.ti)}: ${l.id?`<b>${BY[l.id].name}</b>`:'passed'}</div>`).join('')}
-      ${mine?left.slice().sort((a,b)=>ceilingOf(b)-ceilingOf(a)).slice(0,14).map(id=>{const r=BY[id],cg=grade(ceilingOf(id));return `<div class="pr">${spr(id,2,'L')}<span class="n"><b>${r.name}</b><small>${r.pos} · ${fmtCm(r.cm)} · now ${r.power} · ceiling <em>${cg}${baseOf(id).gen&&DYN.fac.scout<1?'?':''}</em>${DYN.fac.scout>=2&&id===sleeper?' · <em>💎 sleeper</em>':''} · ★ ${SIG[r.sig][0]}<br>${r.blurb}</small></span><button class="rel pickb" data-pick="${id}" ${full?'disabled':''}>DRAFT</button></div>`}).join('')+(full?'<div class="hint">Roster is full (8). Cut someone below to make room.</div>':'')+`<button class="lnk" data-go="pass">pass on this pick</button>`:''}
-      </div>${rosterBlock('draft')}
+      ${mine?left.slice().sort((a,b)=>ceilingOf(b)-ceilingOf(a)).slice(0,10).map(id=>{const r=BY[id],cg=grade(ceilingOf(id));return `<div class="pr">${spr(id,2,'L')}<span class="n"><b>${r.name}</b><small>${r.pos} · ${fmtCm(r.cm)} · now ${r.power} · ceiling <em>${cg}${baseOf(id).gen&&DYN.fac.scout<1?'?':''}</em>${DYN.fac.scout>=2&&id===sleeper?' · <em>💎 sleeper</em>':''} · ★ ${SIG[r.sig][0]}<br>${r.blurb}</small></span><button class="rel pickb" data-pick="${id}" ${full?'disabled':''}>DRAFT</button></div>`}).join('')+(full?'<div class="hint">Roster is full (8). Cut someone below to make room.</div>':'')+`<button class="lnk" data-go="pass">pass on this pick</button>`:''}
+      </div>`:'')+(t==='roster'?rosterBlock('draft'):'')+`
       <div class="btns">${mine?'':'<button class="pri" data-go="lineup">TRADES & LINEUP →</button>'}<button data-go="menu">☰</button></div>`;
   } else if(ph==='trade'||ph==='lineup'){
     const fa=DYN.fa.slice().sort((a,b)=>BY[b].power-BY[a].power).slice(0,8);
     const tradeHtml=tradeDesk('offseason');
     const faHtml=`<div class="offers"><div class="h mk">FREE AGENTS</div>${fa.map(id=>{const can=me.roster.length<8&&payroll(me.roster.concat(id))<=DYN.cap;return prow(id,`<button class="rel acc" data-sign="${id}" ${can?'':'disabled'}>SIGN</button>`)}).join('')||'<div class="hint">Nobody left. Even the guy from the YMCA signed somewhere.</div>'}</div>`;
-    const ready=DYN.starters.length===5&&payroll()<=DYN.cap;
+    const ready=!(DYN.demands||[]).length&&DYN.starters.length===5&&payroll()<=DYN.cap;
     const warn=payroll()>DYN.cap?`<div class="toast warn">Over the cap by ${payroll()-DYN.cap}. Cut or trade someone. Rookies cost 1 for three seasons, then they get paid like everyone else.</div>`:'';
-    h=headHtml()+warn+(ph==='trade'?tradeHtml:'')+frontOffice()+faHtml+rosterBlock(DYN.ask?'trade':'lineup')+
-      `<div class="btns"><button class="pri" data-go="start" ${ready?'':'disabled'}>${ready?`START ${seasonLbl(DYN.year)}`:DYN.starters.length!==5?'PICK 5 STARTERS ★':'OVER THE CAP'}</button><button data-go="menu">☰</button></div>`;
+    const [tb,t]=tabsHtml('off',[['roster','ROSTER'],['fa','FREE AGENTS']].concat(ph==='trade'?[['trade','TRADES']]:[]).concat([['fo','FRONT OFFICE']]),'roster');
+    const body=t==='fa'?faHtml+rosterBlock('lineup'):t==='trade'&&ph==='trade'?tradeHtml+rosterBlock(DYN.ask?'trade':'lineup'):t==='fo'?frontOffice():rosterBlock(DYN.ask?'trade':'lineup');
+    h=headHtml()+demandsHtml()+warn+tb+body+
+      `<div class="btns"><button class="pri" data-go="start" ${ready?'':'disabled'}>${ready?`START ${seasonLbl(DYN.year)}`:(DYN.demands||[]).length?'ANSWER THE AGENTS':DYN.starters.length!==5?'PICK 5 STARTERS ★':'OVER THE CAP'}</button><button data-go="menu">☰</button></div>`;
   }
   L.innerHTML=h;DYN.toast=null;DYN.news2=[];wire(L);
 }
