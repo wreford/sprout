@@ -208,6 +208,12 @@ h1 span{display:inline;font-size:13px;margin:0}
 #info .act:disabled{opacity:.35;box-shadow:none}
 #info .help{font-size:16px;color:var(--mut);line-height:1.2}
 #info .help b{color:var(--gold);font-weight:400}
+#meter{position:absolute;inset:0;z-index:12;background:#0f0b17dd;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:16px;text-align:center;cursor:pointer;touch-action:manipulation}
+#meter .dt{font-size:16px;color:var(--gold);text-shadow:3px 3px 0 var(--ink)}#meter .ds{font-size:18px;max-width:340px;line-height:1.2}
+.mbar{position:relative;width:86%;max-width:340px;height:34px;background:var(--panel);border:3px solid var(--line);box-shadow:3px 3px 0 var(--ink)}
+.mbar i{position:absolute;top:0;bottom:0;background:#3fbf4f}.mbar b{position:absolute;top:-8px;bottom:-8px;width:6px;margin-left:-3px;background:#fff;box-shadow:2px 0 0 var(--ink)}
+.mh{font-size:10px;color:var(--mut);animation:blink .6s steps(2) infinite}@keyframes blink{50%{opacity:.3}}
+#toBtn.pulse{border-color:var(--gold);color:var(--gold);animation:blink .5s steps(2) infinite}
 #decide{position:absolute;inset:0;z-index:11;background:#0f0b17ee;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:16px;text-align:center}
 #decide .dt{font-size:16px;color:var(--gold);text-shadow:3px 3px 0 var(--ink)}
 #decide .ds{font-size:18px;color:var(--tx);max-width:340px;line-height:1.2}
@@ -431,6 +437,7 @@ h1 span{display:inline;font-size:13px;margin:0}
   <div id="court">
     <div id="floor"><i class="mkl"></i><i class="mkc"></i><i class="mkk t"></i><i class="mkk b"></i><div class="hoop l"></div><div class="hoop r"></div><div id="ballfly"></div><div id="shotTxt" class="mk"></div></div>
     <div id="announce" class="mk"></div>
+    <div id="meter" class="hidden"><div class="dt mk" id="mTitle"></div><div class="ds" id="mSub"></div><div class="mbar"><i id="mZone"></i><b id="mNeedle"></b></div><div class="mh mk">TAP TO RELEASE</div></div>
     <div id="decide" class="hidden"><div class="dt mk" id="dTitle"></div><div class="ds" id="dSub"></div><div class="dopts" id="dOpts"></div></div>
     <div id="intro" class="hidden">
       <div class="row">
@@ -452,7 +459,7 @@ h1 span{display:inline;font-size:13px;margin:0}
     </div>
   </div>
   <div id="pbp"></div>
-  <div id="ctrl"><button id="speedBtn">1× speed</button><button id="skipBtn">skip to final</button><button id="sndBtn2">♪</button></div>
+  <div id="ctrl"><button id="toBtn">TIMEOUT · 3</button><button id="sndBtn2">♪</button></div>
 </div>
 </div>
 <script>
@@ -1002,7 +1009,7 @@ const QWIN=['We just played the right way.','Defence wins championships. Also of
 const QLOSS=['We gotta watch the film.','Shots were not falling. Mine especially.','Credit to them. Not a lot of credit.','I blame the jerseys.'];
 
 // ---------- game sim ----------
-let G=null, speed=(()=>{try{return +localStorage.getItem('wwwnba.speed')||1}catch(e){return 1}})(), timers=[];
+let G=null, speed=1, timers=[];
 const QSECS=60, OT_SECS=45;
 const clutchNow=()=>G.q>=4&&G.clock<=30;
 const qTag=()=>G.q<=4?'Q'+G.q:'OT'+(G.q>5?G.q-4:'');
@@ -1029,6 +1036,7 @@ function pregame(team){
 }
 function onFloor(side){return G[side].filter(u=>!u.out)}
 function startGame(){
+  $('toBtn').textContent='TIMEOUT · 3';$('toBtn').classList.remove('pulse');
   clearAll(); const prevTrack=G&&G.track;
   G={plan:{},focus:{},lastAsked:{},force:null,track:prevTrack,L:mkTeam(state.team,'L'),R:mkTeam(state.enemy,'R'),q:1,clock:QSECS,qAsked:{},pmod:{L:{},R:{}},sL:0,sR:0,poss:Math.random()<.5?'L':'R',done:false,ot:0,silent:false,used:{},flags:{},tout:false,fast:null,gift:null,highlight:null};
   const run=MODE==='dyn'&&CTX;
@@ -1113,6 +1121,8 @@ function simPossession(){
   const off=G.poss, dS=off==='L'?'R':'L', O=onFloor(off), D=onFloor(dS), mo=G.mod[off], md=G.mod[dS];
   const beats=[], clutch=clutchNow();
   const force=G.force&&off==='L'?G.force:null; G.force=null;
+  const dcall=off==='R'?G.dcall:null; if(off==='R')G.dcall=null;
+  const share=off==='L'&&G.share>0?G.share--:0;
   let secs=Math.min(G.clock,rnd(4,9)*(G.nash?.8:1)*(G.plan[off]==='slow'?1.45:1)*(G.plan.L==='press'||G.plan.R==='press'?.8:1));
   if(force)secs=G.clock;
   let fast=G.fast===off; G.fast=null;
@@ -1168,6 +1178,7 @@ function simPossession(){
   if(NOSHOOT(handler))pPass=1;
   if(force)pPass=0;
   if(fast)pPass*=.4;
+  if(share&&!force)pPass+=.25;
   const kerr=O.find(u=>has(u,'open'));
   if(kerr&&kerr!==handler&&has(handler,'personal')&&clutch&&Math.random()<.5){shooter=kerr;passer=handler}
   else if(Math.random()<pPass){shooter=wpick(O.filter(u=>u!==handler),u=>(u.r.usg+Math.max(u.r.ins,u.r.mid,u.r.thr)*.4)*(NOSHOOT(u)?.15:1)*(G.focus[off]===u?2.5:1));passer=handler}
@@ -1178,6 +1189,7 @@ function simPossession(){
     beats.push({at:.55,kind:'pass',from:shooter,to:other});
     passer=shooter;shooter=other;
   }
+  if(dcall==='double'){const star=O.slice().sort((a,b)=>b.r.power-a.r.power)[0];if(shooter===star&&O.length>1){passer=star;shooter=pick(O.filter(u=>u!==star));beats.push({at:.45,kind:'note',text:`Two on ${B(star)}. He has to give it up.`,quiet:true})}}
   const r=shooter.r, T=rt(shooter,'thr'), M=rt(shooter,'mid'), I=rt(shooter,'ins');
   let w3=r.thr<25?0:Math.pow(Math.max(1,T),2)*.85*(has(shooter,'whynot')?1.6:1), wm=Math.pow(Math.max(1,M),2)*.55, wr=Math.pow(Math.max(1,I),2)*(1+(r.spd-70)/120);
   if(has(shooter,'swat')&&Math.random()<.1)w3=1e9;
@@ -1186,7 +1198,7 @@ function simPossession(){
   if(force&&force.three){w3=1e9}
   const type=fast?'rim':wpick(['three','mid','rim'],t=>t==='three'?w3:t==='mid'?wm:wr);
   const logo=type==='three'&&(has(shooter,'nightnight')||has(shooter,'alien')||has(shooter,'stepback'))&&Math.random()<.25;
-  const defender=type==='rim'?wpick(D,u=>rt(u,'def')*(u.r.cm-170)):wpick(D,u=>rt(u,'def')+u.r.spd*.4);
+  let defender=type==='rim'?wpick(D,u=>rt(u,'def')*(u.r.cm-170)):wpick(D,u=>rt(u,'def')+u.r.spd*.4);
   let rating=type==='three'?T:type==='mid'?M:I;
   if(has(shooter,'swat')&&type==='three')rating=72;
   let p=(type==='three'?.37:type==='mid'?.44:.58)+(rating-75)*0.012-(rt(defender,'def')-75)*0.008+(r.power-75)*0.007-(defender.r.power-75)*0.004;
@@ -1195,6 +1207,10 @@ function simPossession(){
   if(G.plan[dS]==='press')p+=.03;
   if(fast)p+=.2+(G.perk.run&&off==='L'?.08:0); if(gift)p+=.15; if(rushed)p-=.12; if(shooter.streak>=2)p+=.04;
   if(clutch)p+=(cl(shooter)-75)*0.005;
+  const stp=G.stop&&G.stop[shooter.id];if(stp&&D.includes(stp)){defender=stp;p-=.04+(rt(stp,'def')-75)*.004}
+  if(dcall==='switch')p-=.07;
+  if(share&&passer)p+=.04;
+  if(force&&force.bonus)p+=force.bonus;
   if(passer){if(has(passer,'nolook')||has(passer,'joker'))p+=.06;if(has(passer,'pistol'))p+=.05;if(type==='three'&&(has(shooter,'open')||has(shooter,'corner')))p+=.08}
   if(logo)p-=.05;
   {const x=XS[r.sig];if(x){const f=x.fx;p+=(f[type]||0)+(clutch?f.clutch||0:0)+(fast?f.fast||0:0)}if(passer)p+=xf(passer,'ast')||0}
@@ -1348,7 +1364,7 @@ function quarterCall(){
 function showDecide(title,sub,opts,cb,cls){
   $('dTitle').textContent=title;$('dSub').innerHTML=sub;
   $('dOpts').className='dopts'+(cls?' '+cls:'');
-  $('dOpts').innerHTML=opts.map((o,i)=>`<button data-i="${i}">${o.pic?spr(o.pic,2,'L'):''}<b>${o.label}</b><small>${o.sub}</small></button>`).join('');
+  $('dOpts').innerHTML=opts.map((o,i)=>`<button data-i="${i}">${o.pic?spr(o.pic,2,o.side||'L'):''}<b>${o.label}</b><small>${o.sub}</small></button>`).join('');
   $('dOpts').onclick=e=>{const b=e.target.closest('button');if(!b)return;Snd.sfx('tap');$('decide').classList.add('hidden');cb(opts[+b.dataset.i].val)};
   $('decide').classList.remove('hidden');hapt(20);
 }
@@ -1374,12 +1390,13 @@ function nextPossession(){
   if(G.done)return;
   if(G.clock<=0){endPeriod();return}
   if(!G.qAsked[G.q]){G.qAsked[G.q]=1;if(quarterCall())return}
+  if(!G.silent&&interactive())return;
   const per=G.q, diff=G.sL-G.sR;
   if(G.poss==='L'&&!G.silent&&!G.lastAsked[per]&&G.q>=4&&G.clock<=12&&diff<=0&&diff>=-3){
     G.lastAsked[per]=1;
     const opts=onFloor('L').map(u=>({val:u.id,pic:u.id,label:last(u.r).toUpperCase(),sub:`${diff===-3?'3P '+u.r.thr:'shot '+Math.max(u.r.thr,u.r.mid,u.r.ins)} · clutch ${u.r.clu}${u.streak>=2||u.hot?' · 🔥':''}`}));
     announce('LAST SHOT',true,700); Snd.sfx('whistle');
-    showDecide('LAST SHOT',`${diff===0?'Tied':'Down '+(-diff)} with ${Math.ceil(G.clock)} seconds left.${diff===-3?' You need a three.':''} Who takes it?`,opts,id=>{G.force={id,three:diff===-3};const u=G.L.find(x=>x.id===id);pbp(`${stamp()}Everyone in the building knows it is going to <b>${last(u.r)}</b>.`);later(nextPossession,400/speed)},'five');
+    showDecide('LAST SHOT',`${diff===0?'Tied':'Down '+(-diff)} with ${Math.ceil(G.clock)} seconds left.${diff===-3?' You need a three.':''} Who takes it?`,opts,id=>{const u=G.L.find(x=>x.id===id);releaseMeter(u,(bonus,txt)=>{G.force={id,three:diff===-3,bonus};pbp(`${stamp()}Everyone in the building knows it is going to <b>${last(u.r)}</b>. ${txt.toLowerCase().replace(/^./,c=>c.toUpperCase())}.`);later(nextPossession,300)})});
     return;
   }
   if(Math.random()<.09*G.evMul&&runEvent()&&!G.silent){later(nextPossession,1500/speed);return}
@@ -1393,6 +1410,77 @@ function nextPossession(){
   tick();
   applyBeats(P,false);
   later(()=>{if(G.silent||G.done||G.q!==q0)return;finishPoss();$('clock').textContent=clockTxt();nextPossession()},realMs+60/speed);
+}
+// ---------- you coach between possessions: timeouts, hot hands, stoppers, the last stop ----------
+function interactive(){
+  if(G.to==null){G.to=3;G.aiTo=2;G.asked={};G.stop={};G.seen={L:G.sL,R:G.sR};G.run={L:0,R:0};G.share=0;G.pq={}}
+  // track runs
+  const dl=G.sL-G.seen.L,dr=G.sR-G.seen.R;G.seen={L:G.sL,R:G.sR};
+  if(dl>0&&!dr){G.run.L+=dl;G.run.R=0}else if(dr>0&&!dl){G.run.R+=dr;G.run.L=0}
+  $('toBtn').classList.toggle('pulse',G.run.R>=7&&G.to>0);
+  if(G.run.L>=8&&G.aiTo>0&&G.clock>10){
+    G.aiTo--;G.run.L=0;G.L.forEach(u=>{u.streak=0;if(u.hot>0)u.hot=0});
+    pbp(`${stamp()}<b>${state.enemyName}</b> call timeout to stop the run. Their coach is purple.`);announce('THEIR TIMEOUT',false,800);Snd.sfx('whistle');later(nextPossession,1300);return true}
+  if(G.toReq){G.toReq=false;G.to--;timeoutCall();return true}
+  const q=G.q,diff=G.sL-G.sR,ask=(k,f)=>{if(G.asked[k])return false;G.asked[k]=1;f();return true};
+  // last stop on defence
+  if(G.poss==='R'&&q>=4&&G.clock<=12&&diff>=0&&diff<=3)return ask('d'+q,()=>lastStop(diff));
+  if(G.clock<=12||(G.pq[q]||0)>=2)return false;
+  // one of yours is cooking
+  const hotL=onFloor('L').find(u=>u.streak>=3&&!G.asked['f'+u.id+q]);
+  if(hotL&&G.poss==='L'){G.pq[q]=(G.pq[q]||0)+1;return ask('f'+hotL.id+q,()=>heatCall(hotL))}
+  // one of theirs is cooking
+  const hotR=onFloor('R').find(u=>u.streak>=3&&!G.stop[u.id]&&!G.asked['s'+u.id]);
+  if(hotR&&G.poss==='R'){G.pq[q]=(G.pq[q]||0)+1;return ask('s'+hotR.id,()=>stopperCall(hotR))}
+  return false;
+}
+function resume(ms){later(nextPossession,ms||500)}
+function timeoutCall(){
+  $('toBtn').textContent=`TIMEOUT · ${G.to}`;$('toBtn').classList.remove('pulse');
+  const iced=G.R.filter(u=>u.streak>=2||u.hot>0);G.R.forEach(u=>{u.streak=0;if(u.hot>0)u.hot=0});G.L.forEach(u=>u.form+=2);G.run.R=0;
+  announce('TIMEOUT',false,700);Snd.sfx('whistle');
+  const keys=Object.keys(PLANS).filter(k=>k!==G.plan.L),opts=shuffle(keys,Math.random).slice(0,3).map(k=>({val:k,label:PLANS[k].n.toUpperCase(),sub:PLANS[k].d}));
+  opts.push({val:null,label:'KEEP THE PLAN',sub:`stay with ${PLANS[G.plan.L]?PLANS[G.plan.L].n:'it'}`});
+  showDecide(`TIMEOUT · ${G.sL}-${G.sR}`,`Huddle up. Everyone settles down (+2).${iced.length?` ${iced.map(u=>B(u)).join(' and ')} cool${iced.length>1?'':'s'} off.`:''} ${Math.ceil(G.clock)}s left in the quarter.`,opts,
+    k=>{if(k){applyPlan('L',k);pbp(`${stamp()}Timeout. New plan: <b>${PLANS[k].n}</b>. ${PLANS[k].line}`)}else pbp(`${stamp()}Timeout. Coach says the plan is fine. He draws it again anyway.`);resume(400)});
+}
+function heatCall(u){
+  announce('HEATING UP',false,700);Snd.sfx('crowd');
+  showDecide(`${last(u.r).toUpperCase()} IS COOKING`,`${B(u)} has hit three in a row. What now?`,[
+    {val:'feed',pic:u.id,label:'FEED HIM',sub:'he gets it every trip until your next call'},
+    {val:'share',label:'MOVE THE BALL',sub:'better looks for everyone, he sets up others'}],
+    v=>{if(v==='feed'){G.focus.L=u;G.feedN=6;pbp(`${stamp()}Everybody knows where the ball is going. <b>${last(u.r)}</b>.`)}else{G.share=6;pbp(`${stamp()}Coach wants ball movement. ${B(u)} becomes a decoy. A very hot decoy.`)}resume(400)});
+}
+function stopperCall(t){
+  announce('THEY ARE COOKING',true,700);Snd.sfx('whistle');
+  const opts=onFloor('L').slice().sort((a,b)=>b.r.def-a.r.def).slice(0,4).map(u=>({val:u.id,pic:u.id,label:last(u.r).toUpperCase(),sub:`def ${rt(u,'def')} · ${fmtCm(u.r.cm)}`}));
+  showDecide(`STOP ${last(t.r).toUpperCase()}`,`${B(t)} has hit three straight. Who guards him?`,opts,
+    id=>{const u=G.L.find(x=>x.id===id);G.stop[t.id]=u;t.streak=0;pbp(`${stamp()}${B(u)} picks up ${B(t)} full court. Personal now.`);resume(400)});
+}
+function lastStop(diff){
+  announce('GET A STOP',true,700);Snd.sfx('whistle');
+  const star=onFloor('R').slice().sort((a,b)=>b.r.power-a.r.power)[0];
+  const opts=[{val:'switch',label:'SWITCH EVERYTHING',sub:'every shot is contested'},{val:'double',pic:star.id,side:'R',label:`DOUBLE ${last(star.r).toUpperCase()}`,sub:'make someone else beat you'}];
+  if(diff===3)opts.push({val:'foul',label:'FOUL NOW',sub:'two free throws, no three'});
+  showDecide('LAST STOP',`${diff===0?'Tied':'Up '+diff}, ${Math.ceil(G.clock)} seconds left. Their ball.`,opts,v=>{
+    if(v==='foul'){const sh=wpick(onFloor('R'),u=>u.r.usg);const ft=ftTrip(sh,2,0,'R');G.clock=Math.max(0,G.clock-1);pbp(`${stamp()}You foul ${B(sh)} before he can shoot. ${ft.text}`);score(ft.sc);G.poss='L';$('clock').textContent=clockTxt();resume(1100);return}
+    G.dcall=v;pbp(`${stamp()}${v==='switch'?'Switch everything. Hands up. Nobody blinks.':`Two on ${B(star)}. Somebody else has to do it.`}`);resume(400)});
+}
+// timing meter: stop the needle in the green
+function releaseMeter(u,cb){
+  const M=$('meter'),z=$('mZone'),n=$('mNeedle'),w=Math.max(.1,Math.min(.24,.12+(cl(u)-70)/250));
+  const zl=.5-w/2+(Math.random()-.5)*.4;z.style.left=zl*100+'%';z.style.width=w*100+'%';
+  $('mTitle').textContent=last(u.r).toUpperCase()+' RISES';$('mSub').innerHTML=`Stop the bar in the green.${u.hot>0||u.streak>=2?' He is hot. 🔥':''}`;
+  M.classList.remove('hidden');hapt(20);
+  const t0=performance.now(),per=900-Math.min(300,(G.q>4?150:0)+(4-Math.min(4,G.clock/3))*40);let done=false,raf;
+  const pos=()=>{const t=((performance.now()-t0)/per)%2;return t<1?t:2-t};
+  const step=()=>{if(done)return;n.style.left=pos()*100+'%';raf=requestAnimationFrame(step)};step();
+  const stop=x=>{if(done)return;done=true;cancelAnimationFrame(raf);clearTimeout(to);M.onclick=null;
+    const c=zl+w/2,d=Math.abs(x-c);let bonus,txt;
+    if(x>=zl&&x<=zl+w){bonus=d<w*.18?.16:.1;txt=d<w*.18?'PERFECT RELEASE':'GOOD RELEASE'}else if(d<w){bonus=0;txt='LATE'}else{bonus=-.12;txt='BAD RELEASE'}
+    setTimeout(()=>{M.classList.add('hidden');announce(txt,bonus<0,600);cb(bonus,txt)},350)};
+  const to=setTimeout(()=>stop(-9),5000);
+  setTimeout(()=>{M.onclick=()=>{Snd.sfx('tap');stop(pos())}},150);
 }
 function hoopXY(side){return side==='L'?[97,50]:[3,50]}
 const REDSP=new Set(['POSTER','SWAT','NOT IN MY HOUSE','CHASE-DOWN','MUGGSY!','HE FORGOT','ANKLES','TECHNICAL','BACKBOARD BROKEN','TIED AT THE BUZZER']);
@@ -1520,9 +1608,7 @@ function finish(){
   Snd.sfx('buzzer'); shake(); flash(); hapt(win?[60,40,60,40,120]:[200]);
   announce('FINAL',!win,1000); later(show,1100/speed);
 }
-$('speedBtn').textContent=speed+'× speed';
-$('speedBtn').addEventListener('click',()=>{speed=speed===1?2:speed===2?4:1;$('speedBtn').textContent=speed+'× speed';(()=>{try{localStorage.setItem('wwwnba.speed',speed)}catch(e){}})()});
-$('skipBtn').addEventListener('click',()=>{if(!G||G.done)return;$('decide').classList.add('hidden');G.started=true;G.silent=true;clearAll();clearTimeout(annT);$('announce').classList.remove('on');$('intro').classList.add('hidden');let n=0;while(!G.done&&n++<2000)nextPossession();if(!G.done)finish()});
+$('toBtn').addEventListener('click',()=>{if(!G||G.done||!G.started||G.quick||G.silent)return;if((G.to??3)<=0){pbp(stamp()+'No timeouts left. Coach checks his pockets anyway.');return}if(G.toReq)return;G.toReq=true;$('toBtn').textContent='TIMEOUT…';Snd.sfx('whistle')});
 $('rematch').addEventListener('click',()=>startGame());
 $('redraft').addEventListener('click',()=>{clearAll();show('draft');restoreLegends();Snd.scene('draft');renderDraft()});
 $('share').addEventListener('click',async()=>{
