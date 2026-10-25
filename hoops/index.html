@@ -418,7 +418,8 @@ h1 span{display:inline;font-size:13px;margin:0}
 .ct[class*=b-]{background:#c2c3c7;border-color:#8b9bb4}.ct.b-arena{background:var(--kL,#feae34);border-color:var(--ink);font-size:28px}.ct.b-park{background:repeating-linear-gradient(45deg,#63c74d 0 4px,#5ab845 4px 8px)}
 .cbuild{display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px}.cbuild button{background:var(--panel2);border:2px solid var(--line);color:var(--tx);text-align:center;padding:4px 2px;display:flex;flex-direction:column;align-items:center;gap:1px;font-family:inherit;cursor:pointer}
 .cbuild button span{font-size:20px;line-height:1}.cbuild b{font-size:13px;color:#fff;font-weight:400;line-height:1.05}.cbuild small{font-size:12px;color:var(--mut);line-height:1.05}.cbuild button:disabled{opacity:.45}
-.cled{font-size:14px}.cled .bad,.cled b.bad{color:var(--red)}
+.cled{font-size:14px}
+.cbuild.simp{grid-template-columns:1fr 1fr;margin:6px 0 8px}.cbuild.simp button{align-items:flex-start;text-align:left;padding:6px}.cled .bad,.cled b.bad{color:var(--red)}
 .tabs{display:flex;gap:6px;margin:0 0 10px}.tabs button{flex:1;background:var(--panel);border:2px solid var(--line);color:var(--mut);font-family:"Press Start 2P",monospace;font-size:8px;padding:9px 2px;box-shadow:2px 2px 0 var(--ink);cursor:pointer}.tabs button.on{background:var(--gold);color:var(--ink);border-color:var(--gold)}
 .dem+.dem{border-top:2px dashed var(--line);padding-top:10px;margin-top:6px}
 .minor{text-align:center;font-size:15px;color:var(--mut);margin:-4px 0 8px}.minor .lnk{font-size:15px}
@@ -2685,6 +2686,7 @@ function quickSim(aIds,bIds,ctxL){
   if(ctxL){ctxL.perks.forEach(k=>{G.perk[k]=1;const P=PERKS[k];if(P.m)for(const x in P.m)G.mod.L[x]=(G.mod.L[x]||0)+P.m[x]});G.L.forEach(u=>u.bst=ctxL.boost[u.id]||{})}
   if(ctxL&&ctxL.arena)G.mod.L.all=(G.mod.L.all||0)+ctxL.arena;
   applyCtxExtras(G.L.concat(G.R),ctxL);
+  if(ctxL&&ctxL.plan){applyPlan('L',ctxL.plan);applyPlan('R',pick(Object.keys(PLANS)))}
   G.nash=G.L.concat(G.R).some(u=>has(u,'seven'));
   let k=0;while(!G.done&&k++<5000)nextPossession();
   addGameStats(G.L.concat(G.R));
@@ -2760,10 +2762,20 @@ function startDynGame(){
   state={dyn:true,daily:false,pool:[],costs,enemy:lineupOf(DYN.cur.opp),enemyName:'The '+opp.name,talk:pick(TALK),team:lineupOf(0)};
   startGame();
 }
-function simMyGame(quiet){
-  const opp=DYN.teams[DYN.cur.opp], r=quickSim(lineupOf(0),lineupOf(DYN.cur.opp),ctxNow());
-  if(!quiet)DYN.toast=`Simmed: ${r[0]>r[1]?'W':'L'} ${r[0]}-${r[1]} vs the ${opp.name}.`;
-  afterMyGame(r[0]>r[1],r[0],r[1]);if(!quiet)showDyn();
+function simMyGame(quiet,plan){
+  const opp=DYN.teams[DYN.cur.opp],ctx=ctxNow();if(plan)ctx.plan=plan;
+  const r=quickSim(lineupOf(0),lineupOf(DYN.cur.opp),ctx),win=r[0]>r[1];
+  const top=(QS_LAST||[]).filter(u=>u.side==='L').sort((a,b)=>b.pts-a.pts)[0];
+  if(!quiet)DYN.toast=`📋 ${plan?PLANS[plan].n+' · ':''}${win?'<b>WIN</b>':'<b>LOSS</b>'} ${r[0]}-${r[1]} vs the ${opp.name}.${top?` ${BY[top.id].name} had ${top.pts}.`:''}`;
+  afterMyGame(win,r[0],r[1]);
+  if(!quiet&&(DYN.phase==='season'||DYN.phase==='playoffs')&&!DYN.offers)DYN.offers=makeOffers(win);
+  if(!quiet){DYN.simPick=false;Snd.sfx(win?'crowd':'clank');showDyn()}
+}
+function simPickHtml(){
+  if(!DYN.simPick)return '';
+  return `<div class="event new"><div class="h mk">📋 SIM THIS GAME</div><div class="hint">Skip the game. Pick how your team plays it and get the result straight away.</div>
+    <div class="cbuild simp">${Object.keys(PLANS).map(k=>`<button data-simplan="${k}"><b>${PLANS[k].n}</b><small>${PLANS[k].d}</small></button>`).join('')}</div>
+    <div class="evbtns"><button data-go="simCancel">BACK<small>coach it live instead</small></button></div></div>`;
 }
 function leagueNotes(a,b){
   const top=(QS_LAST||[]).slice().sort((x,y)=>y.pts-x.pts)[0];
@@ -3479,6 +3491,7 @@ function wire(L){
   L.querySelectorAll('[data-card]').forEach(b=>b.onclick=e=>{e.stopPropagation();openCard(b.dataset.card)});
   L.querySelectorAll('[data-up]').forEach(b=>b.onclick=()=>upgrade(b.dataset.up));
   L.querySelectorAll('[data-ev]').forEach(b=>b.onclick=()=>resolveEvent(+b.dataset.ev));
+  L.querySelectorAll('[data-simplan]').forEach(b=>b.onclick=()=>simMyGame(false,b.dataset.simplan));
   L.querySelectorAll('[data-ct]').forEach(b=>b.onclick=()=>{const i=+b.dataset.ct;DYN.city.sel=DYN.city.sel===i?null:i;Snd.sfx('tap');showDyn()});
   L.querySelectorAll('[data-cb]').forEach(b=>b.onclick=()=>{const [i,k]=b.dataset.cb.split('|');cityBuild(+i,k)});
   L.querySelectorAll('[data-cu]').forEach(b=>b.onclick=()=>cityUp(+b.dataset.cu));
@@ -3489,7 +3502,9 @@ function wire(L){
   L.querySelectorAll('[data-team]').forEach(x=>x.onchange=()=>{DYN.deskTeam=+x.value;showDyn()});
 }
 const DYNGO={
-  play:()=>{if(DYN.offers||DYN.pending||DYN.starters.length!==5)return;startDynGame()},
+  play:()=>{if(DYN.offers||DYN.pending||DYN.starters.length!==5)return;DYN.simPick=false;startDynGame()},
+  sim:()=>{if(DYN.offers||DYN.pending||DYN.starters.length!==5)return;DYN.simPick=!DYN.simPick;Snd.sfx('tap');showDyn()},
+  simCancel:()=>{DYN.simPick=false;showDyn()},
   offseason:()=>{offseason();saveDyn();showDyn()},
   pass:()=>draftPick(null),
   lineup:()=>{DYN.phase='lineup';DYN.ask=null;saveDyn();showDyn()},
@@ -3549,15 +3564,15 @@ function seasonView(ph){
   const [tb,t]=tabsHtml('season',[['roster','ROSTER'],['table',ph==='playoffs'?'BRACKET':'STANDINGS'],['league','LEAGUE'],['city','CITY']],'roster');
   const body=t==='city'?cityHtml():t==='roster'?rosterBlock('season'):t==='table'?(ph==='playoffs'?bracketHtml():tables+`<div class="minor"><button class="lnk" data-go="west">${DYN.showW?'hide':'show'} ${confName(otherConf())}</button></div>`)
     :(feedH||'<div class="offers"><div class="hint">Quiet around the league. Suspiciously quiet.</div></div>')+`<div class="minor"><button class="lnk" data-go="hist">📜 history, banners and awards</button></div>`;
-  return headHtml()+prog+eventHtml()+next+offers+tb+body+`
-    <div class="btns"><button class="pri" data-go="play" ${ready?'':'disabled'}>${label}</button>${ph==='season'&&DYN.day<=DEADLINE_DAY?`<button data-go="desk">TRADE${DYN.trades.length?` · ${DYN.trades.length}`:''}</button>`:''}<button data-go="menu">☰</button></div>`;
+  return headHtml()+prog+eventHtml()+simPickHtml()+next+offers+tb+body+`
+    <div class="btns"><button class="pri" data-go="play" ${ready?'':'disabled'}>${label}</button><button data-go="sim" ${ready?'':'disabled'}>SIM</button>${ph==='season'&&DYN.day<=DEADLINE_DAY?`<button data-go="desk">TRADE${DYN.trades.length?` · ${DYN.trades.length}`:''}</button>`:''}<button data-go="menu">☰</button></div>`;
 }
 function awardsHtml(y){const A=DYN.awards[y];if(!A)return '';const it=(l,a)=>a?`<div class="aw"><span class="l">${l}</span>${spr(a.id,2,a.team===0?'L':'R')}<span><b class="${a.team===0?'me':''}">${a.name}</b><br><small>${a.l}</small></span></div>`:'';return `<div class="awards2">${it('MVP',A.mvp)}${it('ROOKIE',A.roy)}${it('DEFENCE',A.dpoy)}${it('SCORING',A.scoring)}</div>`}
 function showDyn(){MODE='dyn';setKits(DYN.cur&&DYN.teams[DYN.cur.opp]?DYN.teams[DYN.cur.opp].key:null);show('locker');renderDyn();Snd.scene(DYN.phase==='playoffs'?'playoffs':'draft')}
 function renderDyn(){
   const L=$('locker'),me=DYN.teams[0],ph=DYN.phase;let h='';
   if(DYN.view==='hist'){L.innerHTML=historyView();wire(L);L.scrollTop=0;return}
-  if(ph==='season'&&DYN.day===0&&!DYN.hist.length)tip('season','82 games, then the playoffs. You coach every one. Tap ★ for starters and any player for his card.');
+  if(ph==='season'&&DYN.day===0&&!DYN.hist.length)tip('season','82 games, then the playoffs. PLAY coaches a game live, SIM skips it with the coaching style you pick. Tap ★ for starters and any player for his card.');
   if(ph==='season'&&DYN.hist.length===1&&DYN.day===0)tip('hist','📜 History now shows banners, awards and your franchise leaders.');
   if(ph==='trade')tip('front','New each offseason: cash from wins buys front office upgrades. Players also develop, slump or get unhappy on the bench.');
   if(ph==='draft')tip('draft','Worst record picks first. Ceiling is how good a prospect can get. Rookies cost 1 for three seasons.');
