@@ -427,6 +427,7 @@ h1 span{display:inline;font-size:13px;margin:0}
 .jturbo{width:120px;height:4px;background:#140c1c99}.jturbo u{display:block;height:100%;background:var(--green)}.jturbo u.fire{background:var(--orange)}.jturbo.jsp2{margin-top:2px;height:3px}.jturbo.jsp2 u{background:#3b5fd6}.jturbo.jsp2 u.ready{background:#2ce8f5;box-shadow:0 0 6px #2ce8f5}
 #jamSc.late{color:var(--red);animation:scPulse .5s infinite}@keyframes scPulse{50%{opacity:.35}}
 #jamJoy{position:absolute;left:0;bottom:0;width:56%;height:62%;z-index:2;touch-action:none}
+#jam.fly #jamHud,#jam.fly #jamJoy,#jam.fly .jbs,#jam.fly #jamMsg{opacity:0;transition:opacity .3s}#jam.fly #jamC{touch-action:none}
 #jamKnob{position:absolute;left:78px;bottom:auto;top:calc(100% - 100px);width:132px;height:132px;margin:-66px 0 0 -66px;opacity:.5;pointer-events:none;transition:opacity .15s}
 #jamKnob::before,#jamKnob::after{content:'';position:absolute;background:rgba(22,20,34,.55);border:2px solid rgba(255,255,255,.4);border-radius:9px;box-shadow:inset 0 0 0 3px rgba(0,0,0,.2),0 2px 6px #0006}
 #jamKnob::before{left:0;top:44px;width:128px;height:40px}#jamKnob::after{left:44px;top:0;width:40px;height:128px}
@@ -4000,6 +4001,18 @@ function drawCity(){
   Promise.all(imgs.map(im=>im.decode?im.decode().catch(()=>{}):Promise.resolve())).then(()=>{tiles();cityRaf=requestAnimationFrame(step)});
 }
 const f2=v=>(v<0?'−':'+')+'$'+Math.abs(v).toFixed(1);
+// a flat pixel map of a district, drawn in one go: your own city, or a generated town for away games
+function fakeCity(seed){const h=hsh(String(seed||'town')),ks=['housing','housing','store','food','park','hotel','tower','bar','parking','radio','statue','housing','office','food'],g=[],own=[];
+  for(let i=0;i<CW*CH;i++){const r=(h*(i+3)*2654435761>>>0)%100;own.push(1);if(i===ARENA_AT)g.push({k:'arena',lv:1});else if(r<22)g.push(null);else{const k=ks[(r*7+i)%ks.length];g.push({k:BLD[k]?k:'housing',lv:1+(r%3===0?1:0)})}}
+  return {g,own,closed:{},fans:50}}
+function cityPix(C){C=C||fakeCity('x');const cv=document.createElement('canvas');cv.width=CMW;cv.height=CMH;const b=cv.getContext('2d');
+  pxR(b,0,0,CMW,CMH,CPAL.rd);
+  for(let i=0;i<=CW;i++){const x=i*(CT+CR);for(let y=0;y<CMH;y+=4)pxR(b,x+2,y,1,2,CPAL.ln)}
+  for(let j=0;j<=CH;j++){const y=j*(CT+CR);for(let x=0;x<CMW;x+=4)pxR(b,x,y+2,2,1,CPAL.ln)}
+  for(let i=0;i<=CW;i++)for(let j=0;j<=CH;j++)pxR(b,i*(CT+CR),j*(CT+CR),CR,CR,CPAL.rd2);
+  C.g.forEach((t,i)=>{const [x,y]=cityTileXY(i),k=!C.own[i]&&!t?'locked':t?t.k:'empty';pxR(b,x-1,y-1,CT+2,CT+2,C.own[i]?CPAL.sw2:'#5a3a2e');const cc=document.createElement('canvas');cc.width=cc.height=CT;(TILE_DRAW[k]||TILE_DRAW.empty)(cc.getContext('2d'),t?t.lv:1,i*7+3,JERSEY.L,0);b.drawImage(cc,x,y);
+    if(t&&t.k!=='arena'&&t.lv>1)for(let q=0;q<t.lv;q++)pxR(b,x+CT-4-q*3,y+1,2,2,CPAL.gold)});
+  return cv}
 function cityMapHtml(){
   const C=DYN.city,sel=C.sel,att=cityAtt(),pw=cityPower(),hap=cityHappy(),G1={home:1,att,r:pw.r,win:0};
   const tile=(t,i)=>{const [x,y]=cityTileXY(i);return `<button class="ctb" data-ct="${i}" title="${t?(t.k==='arena'?'Arena':BLD[t.k].n):C.own[i]?'Empty lot':'For sale'}" style="left:${x/CMW*100}%;top:${y/CMH*100}%;width:${CT/CMW*100}%;height:${CT/CMH*100}%"></button>`};
@@ -4982,13 +4995,40 @@ const JAM=(()=>{
     cancelAnimationFrame(raf);let lastT=performance.now();
     const loop=t=>{raf=requestAnimationFrame(loop);let dt=Math.min(.05,(t-lastT)/1000);lastT=t;if(!S)return;if(S.freeze>0){S.freeze-=dt;dt=0}
       if(S.replay){const R=S.replay;R.t+=dt*.45;const fr=R.frames[Math.min(R.frames.length-1,Math.floor(R.t*60))];if(fr)render(fr);if(R.t*60>=R.frames.length+20){S.replay=null;S.rec=[]}return}
-      step(dt);render();if(!S.over&&!S.paused&&!S.intro){S.rec.push({pl:S.pl.map(p=>({x:p.x,y:p.y,z:p.z,face:p.face,fr:frameOf(p),ball:S.ball.own===p,fire:p.fire,me:p===S.me})),b:{x:S.ball.x,y:S.ball.y,z:S.ball.z,own:!!S.ball.own},parts:S.parts.map(o=>({...o})),t:S.t});if(S.rec.length>110)S.rec.shift()}};raf=requestAnimationFrame(loop);
+      S._dt=dt;step(dt);render();if(!S.over&&!S.paused&&!S.intro){S.rec.push({pl:S.pl.map(p=>({x:p.x,y:p.y,z:p.z,face:p.face,fr:frameOf(p),ball:S.ball.own===p,fire:p.fire,me:p===S.me})),b:{x:S.ball.x,y:S.ball.y,z:S.ball.z,own:!!S.ball.own},parts:S.parts.map(o=>({...o})),t:S.t});if(S.rec.length>110)S.rec.shift()}};raf=requestAnimationFrame(loop);
     Snd.scene(S.n>2?(cfg.po?'playoff':S.fut>.45?'future':'iso'):'jam');Snd.start();Snd.crowd(.3);
     S.intro=true;const I=$j('jamIntro'),row=t=>S.pl.filter(p=>p.team===t).map(p=>`<span><img class="px" src="${isoSpr(p.r,p.kit,t?'def':'idle0',!t&&p.k===0).toDataURL()}"><small>${last(p.r).toUpperCase()}</small><i class="jsp">${p.sp}</i>${cfg.rivals&&cfg.rivals[p.id]?'<em class="jrv">RIVAL</em>':''}</span>`).join('');
     const rv=S.pl.find(p=>p.team===1&&cfg.rivals&&cfg.rivals[p.id]);
     I.innerHTML=`${rv?`<div class="jtalk"><b>${BY[rv.id]?BY[rv.id].name:last(rv.r)}:</b> ${pick(['"Same building, same result."','"I hope you kept the receipt."','"Tell your crowd to sit down."','"I was going to let you win. I changed my mind."','"Is this the team that let me go?"'])}<small>${cfg.rivals[rv.id].why}</small></div>`:''}<div class="ji t0" style="--c:${kits[0][0]}"><b class="mk">${cfg.names[0].toUpperCase()}${cfg.recs?` <small>${cfg.recs[0]}</small>`:''}</b><div class="jr">${row(0)}</div></div><div class="jvs mk">VS${cfg.venue?`<small>${cfg.venue}</small>`:''}</div><div class="ji t1" style="--c:${kits[1][0]}"><b class="mk">${cfg.names[1].toUpperCase()}${cfg.recs?` <small>${cfg.recs[1]}</small>`:''}</b><div class="jr">${row(1)}</div></div><div class="jtap">tap to tip off</div>`;
-    I.classList.remove('hidden');const go=()=>{if(!S||!S.intro)return;S.intro=false;I.classList.add('hidden');Snd.sfx('whistle');say('TIP OFF',1.2)};I.onclick=go;setTimeout(go,3200);
+    const go=()=>{if(!S||!S.intro)return;S.intro=false;I.classList.add('hidden');Snd.sfx('whistle');say('TIP OFF',1.2)};I.onclick=go;
+    const showIntro=()=>{if(!S||!S.intro)return;I.classList.remove('hidden');setTimeout(go,3200)};
+    if(cfg.noFly||VH<200)showIntro();else flyStart(1,showIntro);
   }
+  // ---- the flyover: a pseudo-3D pass over the district that tilts, turns and dives into the building ----
+  function flyCity(){const cfg=S.cfg;if(window.DYN&&DYN.city&&cfg.home)return DYN.city;return fakeCity((cfg.home===false?cfg.names[1]:cfg.names[0])+(cfg.year||''))}
+  function flyStart(dir,done){const city=cityPix(flyCity()),D=CMW*3,rot=document.createElement('canvas');rot.width=rot.height=D;const out=document.createElement('canvas');out.width=out.height=CT;{const oc=out.getContext('2d');grass(oc,5);oc.fillStyle='rgba(13,10,20,.5)';oc.fillRect(0,0,CT,CT);for(let k=0;k<3;k++){oc.fillStyle='#1b2e1f';oc.fillRect((k*9+3)%CT,(k*13+5)%CT,3,2)}}const pat=rot.getContext('2d').createPattern(out,'repeat');
+    const [ax,ay]=cityTileXY(ARENA_AT);S.fly={dir,t:0,len:dir>0?3.6:2.6,city,rot,D,pat,ar:[ax+CT/2,ay+CT/2],cc:[CMW/2,CMH/2],done,title:(S.cfg.venue||S.cfg.names[0]).split(' · ')[0].toUpperCase(),sub:S.cfg.home===false?`THE ${S.cfg.names[0].toUpperCase()} IN TOWN`:`${S.cfg.names[1].toUpperCase()} AT ${S.cfg.names[0].toUpperCase()}`};
+    $j('jam').classList.add('fly');const cvs=$j('jamC');cvs.onpointerdown=()=>{if(S&&S.fly)S.fly.t=Math.max(S.fly.t,S.fly.len*(S.fly.dir>0?.8:.95))}}
+  function flyEnd(){const F=S.fly;if(!F)return;S.fly=null;$j('jam').classList.remove('fly');$j('jamC').onpointerdown=null;if(F.done)F.done()}
+  function drawFly(dt){const F=S.fly;if(!F)return;F.t+=dt;const raw=Math.min(1,F.t/F.len),u=F.dir>0?raw:1-raw,e=u*u*(3-2*u);
+    // camera: pitch from a low glide to straight down, height from the whole town to one building, heading swings in, look-at drifts from downtown to the arena
+    const f=VH*.9,phi=.42+e*(Math.PI/2-.46),th=(1-e)*-.95,h=(CMW*1.1*(1-e)+CT*1.8*e)*f*Math.sin(phi)/VW,z=1;
+    const pv=[F.cc[0]+(F.ar[0]-F.cc[0])*e,F.cc[1]+(F.ar[1]-F.cc[1])*e];
+    const g=F.rot.getContext('2d');g.setTransform(1,0,0,1,0,0);g.fillStyle=F.pat;g.fillRect(0,0,F.D,F.D);g.translate(F.D/2,F.D/2);g.rotate(th);g.drawImage(F.city,-pv[0],-pv[1]);
+    const fade=F.dir>0?Math.min(1,(1-raw)/.18):Math.min(1,raw/.2);ctx.save();ctx.globalAlpha=fade;
+    // sky
+    const back=h/Math.tan(phi),hy=VH/2-f*Math.tan(phi);
+    if(hy>-VH){const sk=ctx.createLinearGradient(0,Math.max(-200,hy-VH*.6),0,Math.max(0,hy)+1);sk.addColorStop(0,'#0d0a14');sk.addColorStop(1,S.fut>.4?'#2a0f4a':'#124e89');ctx.fillStyle=sk;ctx.fillRect(0,0,VW,Math.max(0,hy)+1)}
+    ctx.fillStyle='#0e1a12';ctx.fillRect(0,Math.max(0,Math.floor(hy)+1),VW,VH);
+    const bd=3;for(let y=Math.max(0,Math.floor(hy)+1);y<VH;y+=bd){const al=Math.atan((y+bd/2-VH/2)/f),a=phi+al;if(a<=.02)continue;const sn=Math.sin(a),dist=h/Math.tan(a),sw=VW*h/(sn*f*z),sh=Math.max(.5,bd*h*Math.pow(Math.cos(al),2)/(f*sn*sn*z));
+      const sy=F.D/2-(dist-back)/z-sh/2,sx=F.D/2-sw/2;ctx.drawImage(F.rot,sx,sy,sw,sh,0,y,VW,bd);
+      const fog=Math.min(.7,Math.max(0,(dist-back)/(h*5)));if(fog>.02){ctx.fillStyle=`rgba(13,10,20,${fog})`;ctx.fillRect(0,y,VW,bd)}}
+    // night falls on the way in: lit windows glow where there are buildings, the arena throws a beam
+    const beam=F.dir>0?Math.max(0,(e-.55)/.45):e;if(beam>0){const [bx,by]=[VW/2,VH*.5];const rg=ctx.createRadialGradient(bx,by,0,bx,by,VW*.5);rg.addColorStop(0,`rgba(255,236,200,${.35*beam})`);rg.addColorStop(1,'rgba(255,236,200,0)');ctx.fillStyle=rg;ctx.fillRect(0,0,VW,VH)}
+    ctx.fillStyle='#000';ctx.fillRect(0,0,VW,Math.round(VH*.07));ctx.fillRect(0,VH-Math.round(VH*.07),VW,Math.round(VH*.07));
+    // title card
+    const tt=F.dir>0?Math.min(1,raw*4)*Math.min(1,(.72-raw)*6):Math.min(1,(raw-.3)*4);if(tt>0){ctx.globalAlpha=fade*Math.max(0,tt);ctx.textAlign='center';ctx.font='12px "Press Start 2P",monospace';ctx.fillStyle='#181425';ctx.fillText(F.title,VW/2+2,VH*.17+2);ctx.fillStyle='#feae34';ctx.fillText(F.title,VW/2,VH*.17);ctx.font='7px "Press Start 2P",monospace';ctx.fillStyle='#181425';ctx.fillText(F.dir>0?F.sub:'THANKS FOR COMING',VW/2+1,VH*.17+16);ctx.fillStyle='#f4f4f4';ctx.fillText(F.dir>0?F.sub:'THANKS FOR COMING',VW/2,VH*.17+15)}
+    ctx.restore();if(raw>=1)flyEnd()}
   const SP5=[[25,25],[18,8],[18,42],[4,5],[4,45]],SP2=[[20,12],[20,38]];
   // spots are measured from the hoop being attacked, so both teams space the same way
   function spot(p){const n=S.n>2?5:2,[hX]=tgt(p.team),dir=p.team===0?-1:1,b=S.ball,h=b.own&&b.own.team===p.team?b.own:null;
@@ -5191,6 +5231,7 @@ const JAM=(()=>{
     if(S.whiteout>0){ctx.fillStyle=`rgba(255,255,255,${Math.min(.55,S.whiteout*.8)})`;ctx.fillRect(0,0,VW,VH);S.whiteout-=.06}
     if(S.flash>0){const ctop=P(LEN+FM,0,0)[1]-cam.y;ctx.fillStyle='#ffffff';for(let i=0;i<4;i++){if(Math.random()>S.flash*.9)continue;const side=Math.random();const fx=side<.5?Math.random()*VW:(Math.random()<.5?Math.random()*VW*.12:VW-Math.random()*VW*.12),fy=side<.5?Math.random()*Math.max(20,ctop):Math.random()*VH*.7;ctx.globalAlpha=.9;ctx.fillRect(fx|0,fy|0,3,3);ctx.globalAlpha=1;ctx.save();ctx.globalCompositeOperation='lighter';light(fx,fy,26,26,'rgba(255,255,255,1)',.5);ctx.restore()}}
     if(snap){ctx.fillStyle='#000';ctx.fillRect(0,0,VW,22);ctx.fillRect(0,VH-22,VW,22);ctx.font='8px "Press Start 2P",monospace';ctx.textAlign='left';ctx.fillStyle=(S.t*4|0)%2?'#e43b44':'#ff8a8a';ctx.fillText('INSTANT REPLAY',6,VH-8);ctx.fillStyle='#fff';ctx.fillRect(VW-14,VH-16,3,8);ctx.fillRect(VW-9,VH-16,3,8);S.pl=live;S.ball=liveB;S.parts=[]}
+    if(S.fly)drawFly(S._dt||0);
     hud();
   }
   function drawP(p){const [x,y]=q(P(p.x,p.y,p.z)),im=isoSpr(p.r,p.kit,frameOf(p),S.ball.own===p,p.face),ds=DS(p.x),w=im.width*ds,h=im.height*ds;const sx=Math.round(x),sy=Math.round(y);
@@ -5231,7 +5272,8 @@ const JAM=(()=>{
       $j('jamEndS').innerHTML=`<div class="pog"><img class="px" src="${isoSpr(pog.r,pog.kit,'cheer',false).toDataURL()}" width="69" height="117" alt=""><div><b class="mk">PLAYER OF THE GAME</b><span>${pog.r.name}</span><small>${pog.st.pts} pts · ${pog.st.reb} reb · ${pog.st.ast} ast${pog.st.stl?` · ${pog.st.stl} stl`:''}${pog.st.blk?` · ${pog.st.blk} blk`:''} · ${pog.sp}</small></div></div><div class="bxs"><span style="background:${S.kits[0][0]}">${S.names[0].toUpperCase()}</span><b>${S.score[0]}</b><em>FINAL</em><b>${S.score[1]}</b><span style="background:${S.kits[1][0]}">${S.names[1].toUpperCase()}</span></div>
         <div class="bxt"><div>${A.fgm}/${A.fga}</div><div>FG</div><div>${B.fgm}/${B.fga}</div><div>${A.tpm}/${A.tpa}</div><div>3PT</div><div>${B.tpm}/${B.tpa}</div><div>${A.reb}</div><div>REB</div><div>${B.reb}</div><div>${A.ast}</div><div>AST</div><div>${B.ast}</div><div>${A.stl}/${A.blk}</div><div>STL/BLK</div><div>${B.stl}/${B.blk}</div></div>
         <div class="bxc"><div>${box(0)}</div><div>${box(1)}</div></div>`;
-      const hasEnd=!!S.cfg.onEnd;$j('jamAgain').textContent=hasEnd?'CONTINUE':'REMATCH';$j('jamMenu').style.display=hasEnd?'none':'';if(w)Snd.sfx('crowd')},1400)}
+      const hasEnd=!!S.cfg.onEnd;$j('jamAgain').textContent=hasEnd?'CONTINUE':'REMATCH';$j('jamMenu').style.display=hasEnd?'none':'';if(w)Snd.sfx('crowd')},S.cfg.noFly||VH<200?1400:3800);
+    if(!(S.cfg.noFly||VH<200))setTimeout(()=>{if(S&&S.over&&!S.fly)flyStart(-1,null)},1300)}
   // ---- controls ----
   function resize(){cv=$j('jamC');ctx=cv.getContext('2d');const r=cv.getBoundingClientRect(),dpr=devicePixelRatio||1;let PS=Math.max(1,Math.round(r.width*dpr/380));while(PS>1&&r.height*dpr/PS<400)PS--;VW=Math.max(160,Math.round(r.width*dpr/PS));VH=Math.max(160,Math.round(r.height*dpr/PS));cv.width=VW;cv.height=VH;cv.style.width=VW*PS/dpr+'px';cv.style.height=VH*PS/dpr+'px';ctx.imageSmoothingEnabled=false;try{const bx=$j('jbX').getBoundingClientRect(),kn=$j('jamKnob').getBoundingClientRect(),top=Math.min(bx.top,kn.top)-r.top,beside=(bx.left-kn.right)>=(WID+14)*K*PS/dpr;VISF=beside?.96:r.height>0&&top>r.height*.4?Math.min(.8,(top-6)/r.height):.74}catch(e){VISF=.74}if(S&&arena.length){const v=document.createElement('canvas');v.width=VW;v.height=VH;const vg=v.getContext('2d');const rg=vg.createRadialGradient(VW/2,VH/2,Math.min(VW,VH)*.35,VW/2,VH/2,Math.max(VW,VH)*.75);rg.addColorStop(0,'rgba(0,0,0,0)');rg.addColorStop(1,'rgba(8,4,16,.55)');vg.fillStyle=rg;vg.fillRect(0,0,VW,VH);vign=v}}
   function wire(){
