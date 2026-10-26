@@ -3301,7 +3301,10 @@ function payroll(ids){return (ids||DYN.teams[0].roster).reduce((s,i)=>s+costOf(i
 function topFive(ids){return ids.slice().sort((a,b)=>BY[b].power-BY[a].power).slice(0,5)}
 function grade(v){return v>=95?'A+':v>=90?'A':v>=85?'B+':v>=80?'B':v>=74?'C':'D'}
 function ceilingOf(id){const b=baseOf(id);return b.gen&&!(DYN&&DYN.fac&&DYN.fac.scout>=1)?b.power+((hsh(id)%11)-5):b.power}
-function tval(id){const b=baseOf(id);return BY[id].power+Math.max(0,Math.min(8,b.to-DYN.year))*1.3}
+// trade value: linear in rating, then a steep premium above 72 so a star is worth far more than two role players
+function tval(id){const b=baseOf(id),v=BY[id].power+Math.max(0,Math.min(6,b.to-DYN.year));return v+Math.pow(Math.max(0,v-72),2)/11}
+// what another team wants for one of its players: value, plus a premium for a true star, plus more if he is the best player on a winning team
+function askVal(ti,id){const T=DYN.teams[ti],gp=T.w+T.l,best=topFive(T.roster)[0]===id,good=gp?T.w/gp>=.5:false;return tval(id)+2+(BY[id].power>=88?6:0)+(best&&good?8:best?3:0)}
 function yrIn(id){return DYN.year-baseOf(id).from+1}
 
 // ---- quick simulation for games you don't watch ----
@@ -3690,11 +3693,11 @@ function doTrade(ti,get,give){
   logTx(`You get ${names(get)} from the ${T.name} for ${names(give)}.`);
   DYN.toast=`Trade done. ${names(get)} ${get.length>1?'join':'joins'} you. ${names(give)} ${give.length>1?'head':'heads'} to the ${T.name}, who are already sending fruit baskets.`;Snd.sfx('crowd');
 }
-function verdict(){const a=DYN.ask,sel=DYN.sel||[];if(!a||!sel.length)return null;const w=tradeWhy(sel,[a.id]);if(w)return [`Can't: ${w.toLowerCase()}${w==='TOO FEW LEFT'?'. Sign a free agent first.':''}`,'b'];const d=pkgVal(sel)-(tval(a.id)+2);return d>3?['Probably yes','g']:d>-3?['Coin flip','m']:['No chance','b']}
+function verdict(){const a=DYN.ask,sel=DYN.sel||[];if(!a||!sel.length)return null;const w=tradeWhy(sel,[a.id]);if(w)return [`Can't: ${w.toLowerCase()}${w==='TOO FEW LEFT'?'. Sign a free agent first.':''}`,'b'];const d=pkgVal(sel)-askVal(a.ti,a.id);return d>3?['Probably yes','g']:d>-3?['Coin flip','m']:['No chance','b']}
 function propose(){
   const a=DYN.ask,give=DYN.sel||[];if(!a||!give.length||DYN.props<=0||tradeWhy(give,[a.id]))return;
   DYN.props--;
-  const ok=pkgVal(give)+(Math.random()*6-3)>=tval(a.id)+2, why=tradeWhy(give,[a.id]);
+  const ok=pkgVal(give)+(Math.random()*6-3)>=askVal(a.ti,a.id), why=tradeWhy(give,[a.id]);
   if(ok&&!why)doTrade(a.ti,[a.id],give);
   else DYN.toast=ok?`They said yes, but it fails: ${why.toLowerCase()}.`:pick([`The ${DYN.teams[a.ti].name} hang up on you.`,`The ${DYN.teams[a.ti].name} laugh. Then they hang up.`,`The ${DYN.teams[a.ti].name} say they will "circle back". They will not.`,`The ${DYN.teams[a.ti].name} counter with a picture of a clown.`]);
   DYN.ask=null;DYN.sel=[];saveDyn();showDyn();
@@ -4541,7 +4544,7 @@ function tradeDesk(when){
   const me=DYN.teams[0],v=verdict();
   const offers=`<div class="offers"><div class="h mk">TRADE OFFERS</div>${DYN.trades.length?DYN.trades.map((o,k)=>{const why=tradeWhy(o.give,o.get);return `<div class="trade"><div class="hint">The ${DYN.teams[o.ti].name} offer${o.why?` · <i>${o.why}</i>`:''}</div>${o.get.map(id=>prow(id,'')).join('')}<div class="hint">for your <b>${o.give.map(i=>`${BY[i].name} (${BY[i].power}, yr ${yrIn(i)})`).join(' and ')}</b></div><button class="rel acc" data-acc="${k}" ${why?'disabled':''}>${why||'ACCEPT'}</button></div>`}).join(''):'<div class="hint">Nobody is calling. The phone is just ringing in your head.</div>'}</div>`;
   const ask=DYN.ask?`<div class="hint">You want <b>${BY[DYN.ask.id].name}</b> (${BY[DYN.ask.id].power}). Tap ✚ on up to two of your players below.</div>
-      <div class="meter"><span>Their ask</span><i><u style="width:${Math.min(100,(tval(DYN.ask.id)+2)/1.3)}%"></u></i><span>Your offer</span><i><u class="${v?v[1]:''}" style="width:${Math.min(100,pkgVal(DYN.sel||[])/1.3)}%"></u></i></div>
+      <div class="meter"><span>Their ask</span><i><u style="width:${Math.min(100,askVal(DYN.ask.ti,DYN.ask.id)/1.7)}%"></u></i><span>Your offer</span><i><u class="${v?v[1]:''}" style="width:${Math.min(100,pkgVal(DYN.sel||[])/1.7)}%"></u></i></div>
       <div class="hint">${v?`Scouts say: <b class="${v[1]}">${v[0]}</b>`:'Pick who to offer.'}</div>
       <div class="row2"><button class="rel acc" data-go="send" ${(DYN.sel||[]).length&&!tradeWhy(DYN.sel,[DYN.ask.id])?'':'disabled'}>MAKE THE CALL</button><button class="lnk" data-go="cancelAsk">never mind</button></div>`
     :DYN.props>0?(()=>{const ti=DYN.deskTeam||1,T=DYN.teams[ti];return `<select class="tsel" data-team>${DYN.teams.slice(1).map((X,k)=>`<option value="${k+1}" ${k+1===ti?'selected':''}>${X.name} (${X.w}–${X.l})</option>`).join('')}</select>`+[T].map(T=>`<div class="asks">${T.roster.slice().sort((a,b)=>BY[b].power-BY[a].power).map(id=>`<button class="ask" data-ask="${ti}|${id}">${spr(id,2,'R')}<span>${last(BY[id])}<br><small>${BY[id].power} · $${costOf(id)}</small></span></button>`).join('')}</div>`).join('')})():`<div class="hint">Out of calls ${when==='season'?'until the offseason':'this offseason'}.</div>`;
