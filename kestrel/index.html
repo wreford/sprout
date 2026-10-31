@@ -178,6 +178,7 @@ svg.spark{width:100%;height:56px;display:block;margin-top:6px}
 .bhead,.brow{display:grid;grid-template-columns:90px 70px 90px 110px 90px 60px 90px minmax(140px,1fr);gap:8px;padding:7px 10px;font-size:13px;align-items:center;min-width:760px}
 .bhead{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);background:var(--sunk)}
 .brow{border-top:1px solid var(--line);font-variant-numeric:tabular-nums}.brow.best{background:color-mix(in srgb,var(--hivis) 12%,var(--panel))}.brow.now{box-shadow:inset 4px 0 0 var(--ink)}
+.perkpick{display:grid;gap:8px}
 .medpop{position:fixed;right:20px;bottom:20px;z-index:80;background:var(--panel);border:1px solid var(--line);border-left:6px solid var(--hivis);padding:12px 16px;display:grid;gap:2px;box-shadow:var(--shadow);border-radius:4px;max-width:320px;animation:rise .3s both}
 .medpop b{font-family:var(--display);font-size:22px;text-transform:uppercase}
 .medals{display:grid;gap:8px}.medgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px}
@@ -674,6 +675,26 @@ function medCheck(){if(!st)return;const g=st.grades,T=ODDS_AT();
   res.forEach(w=>{if(w.res.g!=="best")return;if(w.id==="falcons")medGive("falcons");if(w.id==="ghost")medGive("walter");if(w.id==="maria")medGive("maria")})}
 function medalsHTML(){const M=medState(),n=MEDALS.filter(m=>M.got[m.id]).length;return `<div class="medals"><div class="grow"><span class="lbl">Medals · ${n} of ${MEDALS.length}</span></div><div class="medgrid">${MEDALS.map(m=>`<div class="med ${M.got[m.id]?"got":""}" title="${esc(m.d)}"><b>${esc(m.n)}</b><span>${esc(m.d)}</span></div>`).join("")}</div></div>`}
 
+const rankOf=sc=>sc>=18?"Builder's builder":sc>=13?"Steady hand":sc>=8?"Survivor":sc>=4?"Lessons learned":"Cautionary tale";
+
+// ---------- Perks: one pick at each promotion ----------
+const PERKS={
+ mentor:{n:"A mentor",d:"A retired director takes your calls. Every option's odds +5%."},
+ scheduler:{n:"A real scheduler",d:"The window narrows an extra week every turn."},
+ bench:{n:"A deep bench",d:"Every third turn you get a fourth attention."},
+ costeng:{n:"A cost engineer",d:"Cost overruns land 20% smaller."},
+ liaison:{n:"A regulator liaison",d:"Regulator +2 now. Regulator hits are halved."},
+ steward:{n:"The union steward's number",d:"Field +2 now. Field hits are halved."},
+ comms:{n:"A comms partner",d:"Comms +2 now. Comms hits are halved."},
+ nights:{n:"A strong night shift",d:"Things you leave alone cost 30% less schedule."},
+ safetypro:{n:"A safety lead you trust",d:"Safety +2 now. Safety hits are halved."},
+};
+const hasPerk=k=>!!(st&&st.perks&&st.perks.includes(k));
+function perkOffer(){const own=st.perks||[],ks=Object.keys(PERKS).filter(k=>!own.includes(k));for(let i=ks.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[ks[i],ks[j]]=[ks[j],ks[i]]}return ks.slice(0,3)}
+function perkTake(k){if(!st.offer||!st.offer.includes(k))return;(st.perks=st.perks||[]).push(k);st.offer=null;
+  if(k==="liaison")st.rep.r=Math.min(10,st.rep.r+2);if(k==="steward")st.rep.f=Math.min(10,st.rep.f+2);if(k==="comms")st.rep.cm=Math.min(10,st.rep.cm+2);if(k==="safetypro")st.s=Math.min(10,st.s+2);
+  st.log.push(`T${st.turn} · New on your team: ${PERKS[k].n.toLowerCase()}.`);Snd.play("best");save();closeModal()}
+
 // ---------- Past builds ----------
 const HIST_KEY="kestrel-builds";
 function buildsGet(){try{return JSON.parse(localStorage.getItem(HIST_KEY))||[]}catch(e){return []}}
@@ -731,18 +752,20 @@ function drawWeek(){
   if(p.length<4){const back=S.filter(s=>s.r<st.role&&!st.used.includes(s.id)).sort(()=>Math.random()-.5);p=p.concat(back.slice(0,4-p.length))}
   st.week=p.map(s=>({id:s.id,status:"open"}));
   st.used.push(...p.map(s=>s.id));
-  st.att=3; cur=null; dealAnim=true; st.snap={d:st.d,w:st.w,c:st.c,s:st.s};
+  st.att=3+(hasPerk("bench")&&st.turn%3===0?1:0); cur=null; dealAnim=true; st.snap={d:st.d,w:st.w,c:st.c,s:st.s};
 }
 function chance(sc,o){
   if(o.p>=1)return 1; if(o.p<=0)return 0;
   const xp=st.xp[sc.a]||0;
-  return Math.max(.05,Math.min(.97,o.p+Math.min(.1,xp*.025)-(st.mode==="hard"?.15:0)));
+  return Math.max(.05,Math.min(.97,o.p+Math.min(.1,xp*.025)-(st.mode==="hard"?.15:0)+(hasPerk("mentor")?.05:0)));
 }
 const ODDS_AT=()=>st.mode==="hard"?4:2;
 function showOdds(sc){return (st.xp[sc.a]||0)>=ODDS_AT()}
 
-function apply(e){
-  e=e||{};
+function apply(e,idle){
+  e=Object.assign({},e||{});
+  if(st.perks){const half=(k,p)=>{if(hasPerk(p)&&e[k]<0)e[k]=e[k]/2};half("r","liaison");half("f","steward");half("cm","comms");half("s","safetypro");
+    if(hasPerk("costeng")&&e.c>0)e.c=+(e.c*.8).toFixed(2);if(idle&&hasPerk("nights")&&e.d>0)e.d=+(e.d*.7).toFixed(1)}
   for(const k of Object.keys(REP)) if(e[k]) st.rep[k]=Math.max(-10,Math.min(10,st.rep[k]+e[k]));
   if(e.s) st.s=Math.max(-10,Math.min(10,st.s+e.s));
   if(e.c) st.c=+(st.c+e.c).toFixed(2);
@@ -844,7 +867,7 @@ function render(){
   </section>
   <section class="board">
     <div class="tags ${dealAnim?"deal":""}">
-      <div class="grow"><h2>Turn ${st.turn}</h2><span class="att" aria-label="${st.att} of 3 attention left">${[0,1,2].map(i=>`<i class="${i<st.att?"on":""}"></i>`).join("")}</span></div>
+      <div class="grow"><h2>Turn ${st.turn}</h2><span class="att" aria-label="${st.att} attention left">${[0,1,2,3].slice(0,Math.max(3,st.att)).map(i=>`<i class="${i<st.att?"on":""}"></i>`).join("")}</span></div>
       <p class="note">Four things need you. You have attention for three. Anything you don't open plays out on its own.</p>
       ${st.week.map((w,wi)=>{const sc=byId(w.id);return `<button class="tag ${w.status==="done"?"done":""}" data-id="${w.id}" aria-current="${cur===w.id}"><span class="kn kbonly">${"ASDF"[wi]}</span><span class="area"><span class="lbl">${esc(sc.a)}</span>${w.res?`<span class="lbl c-${w.res.g}">${GNAME[w.res.g]}</span>`:""}</span><span class="tt">${esc(sc.t)}</span></button>`}).join("")}
       <button class="btn" id="endturn">${st.att>0&&st.week.some(w=>w.status==="open")?"End turn early":"End turn"}</button>
@@ -855,6 +878,7 @@ function render(){
     <div class="panel"><span class="lbl">Career</span><h3>${ROLES[st.role]}</h3>
       <div class="ladder">${ROLES.map((r,i)=>`<div class="rung ${i<st.role?"on":i===st.role?"now":""}"><span></span><small>${r}</small></div>`).join("")}</div>
       <p class="note">${pool(st.role).length} situations left at this level before the next step.</p>
+      ${(st.perks||[]).length?`<span class="lbl" style="margin-top:6px">Your team</span><div class="reps">${st.perks.map(k=>`<span class="chip pos" title="${esc(PERKS[k].d)}"><b>${esc(PERKS[k].n)}</b></span>`).join("")}</div>`:""}
       <span class="lbl" style="margin-top:6px">Window width over time</span>${spark(st.hist)}</div>
     <div class="panel"><span class="lbl">Experience · odds unlock at ${ODDS_AT()}</span>${xpHTML()}</div>
     <div class="panel log"><span class="lbl">Site log</span>${st.log.length?`<ol reversed>${st.log.slice().reverse().slice(0,40).map(l=>`<li>${esc(l)}</li>`).join("")}</ol>`:'<p class="note">Nothing logged yet. Your first decisions land here.</p>'}</div>
@@ -913,6 +937,7 @@ function bind(){
   const hp=document.getElementById("help"); if(hp) hp.onclick=()=>toggleHelp(true);
   const e=document.getElementById("endturn"); if(e) e.onclick=endTurn;
   const n=document.getElementById("nextturn"); if(n){n.onclick=closeModal;n.focus()}
+  app.querySelectorAll("[data-perk]").forEach(b=>b.onclick=()=>perkTake(b.dataset.perk));const fp=app.querySelector("[data-perk]");if(fp)fp.focus();
 }
 function openTag(id,kb){if(cur!==id)Snd.play("open");cur=id;render();const d=document.getElementById("detail");if(d&&window.innerWidth<840)d.scrollIntoView({behavior:"smooth",block:"start"});if(kb){const o=document.querySelector(".opt:not(:disabled)")||document.querySelector("[data-goto]");if(o)o.focus({preventScroll:true})}}
 let confirmArm=false;
@@ -939,8 +964,8 @@ function choose(i){
 function endTurn(){
   if(modal||st.ended) return;
   const missed=[];
-  for(const w of st.week){ if(w.status!=="done"){const sc=byId(w.id);apply(sc.idle.e);w.status="missed";missed.push(sc);st.log.push(`T${st.turn} · ${sc.t}: left alone.`)} }
-  st.w=Math.max(2,+(st.w-1.5).toFixed(1));
+  for(const w of st.week){ if(w.status!=="done"){const sc=byId(w.id);apply(sc.idle.e,1);w.status="missed";missed.push(sc);st.log.push(`T${st.turn} · ${sc.t}: left alone.`)} }
+  st.w=Math.max(2,+(st.w-(hasPerk("scheduler")?2.5:1.5)).toFixed(1));
   const news=rollNews();if(news)medCount("news")>=10&&medGive("news10");
   const sn=st.snap||{d:st.d,w:st.w,c:st.c,s:st.s};
   const dd=+(st.d-sn.d).toFixed(1), dw=+(st.w-sn.w).toFixed(1), dc=+(st.c-sn.c).toFixed(2);
@@ -949,7 +974,7 @@ function endTurn(){
     if(st.role<3){
       const ra=repAvg(); st.role++;
       promo=ra>=1?`You're promoted to ${ROLES[st.role]}. People act on what you flag.`:ra>=-1?`You're promoted to ${ROLES[st.role]}, narrowly. A few people are waiting for you to slip.`:`You're made ${ROLES[st.role]} on probation. Nobody else wanted the job.`;
-      st.log.push(`T${st.turn} · Promoted to ${ROLES[st.role]}.`);
+      st.log.push(`T${st.turn} · Promoted to ${ROLES[st.role]}.`);st.offer=perkOffer();
     } else ending=true;
   }
   st.hist.push(st.w);
@@ -965,12 +990,13 @@ function endTurn(){
     ${news?`<div class="newsbox"><span class="lbl">Site news</span><p>${esc(news.t)}</p><div class="fx">${fxChips(news.e)}</div></div>`:""}
     ${handled.length?`<div><span class="lbl">You handled</span><ul>${handled.map(w=>`<li class="okk"><b>${esc(byId(w.id).t)}</b><span class="note">${GNAME[w.res.g]}</span></li>`).join("")}</ul></div>`:""}
     ${missed.length?`<div><span class="lbl">Left alone</span><ul>${missed.map(sc=>`<li><b>${esc(sc.t)}</b><span>${esc(sc.idle.x)}</span><div class="fx">${fxChips(sc.idle.e)}</div></li>`).join("")}</ul></div>`:`<p class="note">Nothing was left alone this turn.</p>`}
-    <div><button class="btn" id="nextturn">${ending?"See how it ended":"Start turn "+(st.turn+1)}</button></div>
+    ${st.offer?`<div class="perkpick"><span class="lbl">Pick one for your new team</span>${st.offer.map((k,i)=>`<button class="opt" data-perk="${k}"><span class="k">${i+1}</span><span><b>${esc(PERKS[k].n)}</b><br><span class="note">${esc(PERKS[k].d)}</span></span><span></span></button>`).join("")}</div>`:`<div><button class="btn" id="nextturn">${ending?"See how it ended":"Start turn "+(st.turn+1)}</button></div>`}
   </div></div>`;
   medCheck();st.pendingEnd=ending; st.ended=true;Snd.play(ending?"end":promo?"promo":"turn");
   save(); render();
 }
 function closeModal(){
+  if(st.offer)return;
   modal=null; st.ended=false;
   if(st.pendingEnd){st.over=true;st.pendingEnd=false;save();render();window.scrollTo({top:0});return}
   st.turn++; drawWeek(); save(); render(); window.scrollTo({top:0,behavior:"smooth"});
@@ -979,7 +1005,7 @@ document.addEventListener("keydown",e=>{
   if(helpOpen){if(e.key==="Escape"||e.key==="?"||e.key==="Enter"){e.preventDefault();toggleHelp(false)}return}
   if(e.key==="?"&&!e.metaKey&&!e.ctrlKey){e.preventDefault();toggleHelp(true);return}
   if(!st||st.over||e.metaKey||e.ctrlKey||e.altKey)return;
-  if(modal){if(e.key==="Enter"||e.key==="Escape"){e.preventDefault();closeModal()}return}
+  if(modal){if(st.offer){if(/^[1-3]$/.test(e.key)){e.preventDefault();perkTake(st.offer[+e.key-1])}return}if(e.key==="Enter"||e.key==="Escape"){e.preventDefault();closeModal()}return}
   if(e.target&&/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName))return;
   const k=e.key.toLowerCase(),ids=st.week.map(w=>w.id),i=ids.indexOf(cur);
   if(/^[1-4]$/.test(e.key)&&cur){choose(+e.key-1)}
@@ -996,8 +1022,8 @@ function renderEnd(){
   const fl=addWeeks(TARGET,st.final), late=Math.round(st.final);
   const g=st.grades, total=g.best+g.good+g.weak+g.wrong||1, sound=Math.round(100*(g.best+g.good)/total);
   const score=sound/10+st.s+repAvg()-Math.max(0,late)/8-Math.max(0,st.c)/15;
-  if(!st.medalled){st.medalled=1;medGive("finish");if(st.mode==="hard")medGive("hardfin");if(late<0)medGive("early");if(st.c<0)medGive("under");if(medCount("builds")>=3)medGive("builds3");if(score>=14)medGive("top");st.bid=Date.now();buildsAdd({id:st.bid,when:new Date().toLocaleDateString("en-CA",{month:"short",day:"numeric"}),mode:st.mode,fl:fmtMonth(fl),late,c:+st.c.toFixed(1),s:st.s,sound,rank:score>=14?"Builder's builder":score>=9?"Steady hand":score>=4?"Survivor":score>=0?"Lessons learned":"Cautionary tale",score:+score.toFixed(2)});save()}
-  const rank=score>=14?"Builder's builder":score>=9?"Steady hand":score>=4?"Survivor":score>=0?"Lessons learned":"Cautionary tale";
+  if(!st.medalled){st.medalled=1;medGive("finish");if(st.mode==="hard")medGive("hardfin");if(late<0)medGive("early");if(st.c<0)medGive("under");if(medCount("builds")>=3)medGive("builds3");if(score>=18)medGive("top");st.bid=Date.now();buildsAdd({id:st.bid,when:new Date().toLocaleDateString("en-CA",{month:"short",day:"numeric"}),mode:st.mode,fl:fmtMonth(fl),late,c:+st.c.toFixed(1),s:st.s,sound,rank:rankOf(score),score:+score.toFixed(2)});save()}
+  const rank=rankOf(score);
   const seg=k=>`<span class="" style="width:${100*g[k]/total}%;background:var(--${k==="best"?"ok":k==="good"?"info":k==="weak"?"warn":"bad"})" title="${GNAME[k]} ${g[k]}"></span>`;
   app.innerHTML=`<div class="stripe" aria-hidden="true"></div>
   <section class="title">
