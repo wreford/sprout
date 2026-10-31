@@ -324,6 +324,13 @@ kbd{background:var(--face);color:var(--face-ink);border:1px solid var(--dk);bord
 .top .lbl,.top .note{color:var(--face-ink)}.top h1{color:var(--face-ink)}
 /* Program Manager */
 .pm-group{padding-bottom:10px}
+.mapwin{padding-bottom:8px;gap:6px}.overview{display:grid;gap:10px}.overview>.gauge{align-content:start}.overview .reps{align-items:flex-start}@media (min-width:1100px){.overview{grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);align-items:stretch}.overview .gtrack{height:46px}}
+.mapwin canvas{width:100%;max-height:330px;aspect-ratio:384/232;object-fit:contain;image-rendering:pixelated;background:#0a2a0a;border:1px solid var(--dk);box-shadow:inset 1px 1px var(--lo)}
+.endmap{width:100%;image-rendering:pixelated;border:1px solid var(--dk);margin-top:6px}
+.maptip{min-height:16px}
+.awp{display:grid;gap:5px}.awrow{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(50px,1fr) 34px minmax(0,1fr);gap:6px;align-items:center;font-size:12px}
+.awn b{display:inline-block;width:15px;font-family:var(--mono)}.awst{font-size:11px;font-weight:700}.awst.hold{color:var(--bad)}.awst.rel{color:var(--ok)}
+.evm{display:flex;flex-wrap:wrap;gap:4px 12px;font:12px var(--mono);border-top:1px solid var(--line);padding-top:6px}
 .picons{display:flex;flex-wrap:wrap;gap:6px 4px}
 .picon{background:transparent;border:0;width:96px;display:grid;justify-items:center;gap:4px;padding:6px 2px;color:var(--ink);cursor:pointer}
 .picon span{font-size:12px;line-height:1.25;padding:1px 3px;text-align:center}
@@ -904,6 +911,89 @@ function buildsHTML(hiId){const L=buildsGet();if(!L.length)return "";const best=
   return `<div class="builds"><span class="lbl">Your builds · best rating: ${esc(best.rank)}</span><div class="btable" role="table"><div class="bhead" role="row"><span>Date</span><span>Mode</span><span>Fuel load</span><span>Schedule</span><span>Cost</span><span>Safety</span><span>Sound calls</span><span>Rating</span></div>
   ${L.slice(0,10).map(b=>`<div class="brow ${b.id===best.id?"best":""} ${b.id===hiId?"now":""}" role="row"><span>${esc(b.when)}</span><span>${{daily:"Daily",nightmare:"Nightmare"}[b.mode]||"Career"}</span><span>${esc(b.fl)}</span><span class="${b.late>0?"c-wrong":"c-best"}">${b.late===0?"on target":Math.abs(b.late)+" wk "+(b.late>0?"late":"early")}</span><span class="${b.c>0?"c-wrong":"c-best"}">${b.c>=0?"+":"−"}$${Math.abs(b.c).toFixed(1)}M</span><span>${sgn(b.s)}</span><span>${b.sound}%</span><span><b>${esc(b.rank)}</b></span></div>`).join("")}</div></div>`}
 
+// ---------- AWP: construction work areas, constraints and work packages ----------
+// Path of construction order. Each CWA has a footprint on the 20x20 site grid.
+const CWAS=[
+ {id:"u1",n:"Reactor Building 1",k:"reactor",x:4,y:3,w:4,h:4},
+ {id:"u2",n:"Reactor Building 2",k:"reactor",x:10,y:3,w:4,h:4},
+ {id:"aux",n:"Auxiliary Building",k:"aux",x:15,y:3,w:3,h:5},
+ {id:"tb",n:"Turbine Hall",k:"turbine",x:4,y:9,w:10,h:3},
+ {id:"intake",n:"Intake & Forebay",k:"intake",x:0,y:13,w:4,h:3},
+ {id:"swy",n:"Switchyard",k:"switch",x:15,y:11,w:4,h:4},
+ {id:"yard",n:"Laydown & Roads",k:"yard",x:8,y:14,w:6,h:4},
+];
+const CWA_BY={};CWAS.forEach(c=>CWA_BY[c.id]=c);
+const AREA_CWA={Concrete:"u1",Lifting:"u2",Quality:"aux",Engineering:"aux",Geotech:"intake",Environment:"intake",Weather:"yard",Logistics:"yard",Procurement:"swy",Operations:"swy",Security:"swy",Comms:"swy",Reporting:"tb",People:"tb",Culture:"tb",Commercial:"tb",Strategy:"u2",Regulator:"u1"};
+function cwaOf(sc){if(sc.cwa)return sc.cwa;if(AREA_CWA[sc.a])return AREA_CWA[sc.a];let h=0;for(const ch of sc.id)h=(h*31+ch.charCodeAt(0))>>>0;return ["u1","u2","tb"][h%3]}
+function simInit(){if(!st.prog){st.prog={};st.cons={};CWAS.forEach(c=>{st.prog[c.id]=0;st.cons[c.id]=c.id==="yard"||c.id==="u1"?1:0})}}
+const overall=()=>{if(!st||!st.prog)return 0;return CWAS.reduce((a,c)=>a+st.prog[c.id],0)/CWAS.length};
+const GAIN={best:14,good:9,weak:4,wrong:-3};
+function simChoose(sc,o,win){simInit();const c=cwaOf(sc);let dp=GAIN[o.g]+(win?0:-3),dc=0;
+  if((o.g==="best"||o.g==="good")&&st.cons[c]>0){st.cons[c]--;dc=-1}
+  if(o.g==="wrong"||(o.g==="weak"&&!win)){st.cons[c]++;dc=1}
+  st.prog[c]=Math.max(0,Math.min(100,st.prog[c]+dp));return {c,dp,dc}}
+function simIdle(sc){simInit();const c=cwaOf(sc);st.cons[c]++;return c}
+// end of turn: constraint-free work packages get released and the crews build
+function simTurn(){simInit();const rel=[];CWAS.forEach(c=>{if(st.cons[c.id]===0){st.prog[c.id]=Math.min(100,st.prog[c.id]+3);rel.push(c.id)}});return rel}
+// PMI earned value, in $M against a $4.8B budget at completion
+const BAC=4800;
+function evm(){const plan=D().per===5?14:17,pv=BAC*.85*Math.min(1,(st.turn-1)/plan+.02),ev=BAC*overall()/100,ac=ev+Math.max(0,st.c)+(st.c<0?st.c:0);
+  return {pv,ev,ac,spi:pv?ev/pv:1,cpi:ac>0?ev/ac:1}}
+function awpHTML(){simInit();const E=evm();
+  return `<div class="awp">${CWAS.map((c,i)=>{const p=st.prog[c.id],k=st.cons[c.id];return `<div class="awrow" data-cwa="${c.id}"><span class="awn"><b>${i+1}</b> ${esc(c.n)}</span><span class="xpbar"><b class="${p>=100?"full":""}" style="width:${p}%"></b></span><span class="lbl">${Math.round(p)}%</span><span class="awst ${k?"hold":"rel"}">${k?`${k} constraint${k===1?"":"s"}`:"IWP released"}</span></div>`}).join("")}</div>
+  <div class="evm"><span><b>PV</b> $${Math.round(E.pv)}M</span><span><b>EV</b> $${Math.round(E.ev)}M</span><span><b>AC</b> $${Math.round(E.ac)}M</span><span class="${E.spi<.9?"c-wrong":E.spi>=1?"c-best":""}"><b>SPI</b> ${E.spi.toFixed(2)}</span><span class="${E.cpi<.95?"c-wrong":E.cpi>=1?"c-best":""}"><b>CPI</b> ${E.cpi.toFixed(2)}</span></div>
+  <p class="note">A work package is released only when its area has no open constraints. Best and sound calls clear constraints; wrong calls and things left alone add them.</p>`}
+
+// ---------- The site map: 1995 isometric pixels ----------
+const MAP={W:384,H:232,ox:192,oy:34,t:0,raf:0,hover:null};
+const iso=(x,y)=>[MAP.ox+(x-y)*9,MAP.oy+(x+y)*4.5];
+const PAL={grass:["#3a8a2c","#47a033"],dirt:["#8a5a2b","#a06a35"],water:["#1f5fbf","#2a74d6"],road:"#6b6b6b",line:"#d8d8d8",conc:["#b8b8b0","#9a9a92","#7c7c76"],steel:"#4a6a8a",dome:["#e8e8e0","#c8c8c0"],hall:["#c8b890","#a89870","#887850"],red:"#e01818",yellow:"#ffd800",smoke:"rgba(80,80,80,.6)"};
+function mapTile(g,x,y,col){const [a,b]=iso(x,y);g.fillStyle=col;g.beginPath();g.moveTo(a,b);g.lineTo(a+9,b+4.5);g.lineTo(a,b+9);g.lineTo(a-9,b+4.5);g.closePath();g.fill()}
+// an iso box from tile (x,y,w,h) rising z pixels
+function mapBox(g,x,y,w,h,z,cols){const [ax,ay]=iso(x,y),[bx,by]=iso(x+w,y),[cx,cy]=iso(x+w,y+h),[dx,dy]=iso(x,y+h);
+  g.fillStyle=cols[1];g.beginPath();g.moveTo(dx,dy+4.5);g.lineTo(cx,cy+4.5);g.lineTo(cx,cy+4.5-z);g.lineTo(dx,dy+4.5-z);g.fill();
+  g.fillStyle=cols[2]||cols[1];g.beginPath();g.moveTo(cx,cy+4.5);g.lineTo(bx,by+4.5);g.lineTo(bx,by+4.5-z);g.lineTo(cx,cy+4.5-z);g.fill();
+  g.fillStyle=cols[0];g.beginPath();g.moveTo(ax,ay+4.5-z);g.lineTo(bx,by+4.5-z);g.lineTo(cx,cy+4.5-z);g.lineTo(dx,dy+4.5-z);g.closePath();g.fill()}
+function mapDraw(){const cv=document.getElementById("map");if(!cv||!st||!st.prog){MAP.raf=0;return}const g=cv.getContext("2d");g.imageSmoothingEnabled=false;MAP.t++;const T=MAP.t;
+  g.fillStyle="#0a2a0a";g.fillRect(0,0,MAP.W,MAP.H);
+  for(let y=0;y<20;y++)for(let x=0;x<20;x++){const water=y>=18||(x===0&&y>=16);mapTile(g,x,y,water?PAL.water[(x+y+(T>>4))&1]:PAL.grass[(x*7+y*3)&1])}
+  // roads
+  for(let x=0;x<20;x++)mapTile(g,x,8,PAL.road);for(let y=0;y<18;y++)mapTile(g,14,y,PAL.road);for(let x=3;x<14;x++)mapTile(g,x,13,PAL.road);
+  for(let x=0;x<20;x+=2)mapTile(g,x+.4,8.4,"#9a9a9a");
+  // CWAs back to front
+  const order=CWAS.slice().sort((a,b)=>(a.x+a.y)-(b.x+b.y));
+  for(const c of order){const p=st.prog[c.id],k=st.cons[c.id];
+    for(let y=c.y;y<c.y+c.h;y++)for(let x=c.x;x<c.x+c.w;x++)mapTile(g,x,y,p<12?PAL.dirt[(x+y)&1]:(c.k==="switch"||c.k==="yard")?"#8a8a7a":PAL.conc[1]);
+    if(MAP.hover===c.id){for(let y=c.y;y<c.y+c.h;y++)for(let x=c.x;x<c.x+c.w;x++)mapTile(g,x,y,"rgba(255,255,0,.35)")}
+    const st8=p<12?0:p<30?1:p<55?2:p<80?3:p<100?4:5;
+    if(c.k==="reactor"){if(st8>=1)mapBox(g,c.x+.3,c.y+.3,c.w-.6,c.h-.6,4,PAL.conc);if(st8>=2)mapBox(g,c.x+.5,c.y+.5,c.w-1,c.h-1,Math.min(34,6+(p-30)*.9),PAL.conc);
+      if(st8>=3){const [mx,my]=iso(c.x+c.w/2,c.y+c.h/2);const z=Math.min(34,6+(p-30)*.9),r=15;g.fillStyle=PAL.dome[1];g.beginPath();g.ellipse(mx,my+4.5-z,r,r*(st8>=4?.8:.35)*(p>=80?1:.6+.4*(p-55)/25),0,Math.PI,0);g.fill();g.fillStyle=PAL.dome[0];g.beginPath();g.ellipse(mx-3,my+2-z,r*.55,r*.3,0,Math.PI,0);g.fill()}}
+    else if(c.k==="turbine"){if(st8>=1)mapBox(g,c.x+.2,c.y+.2,c.w-.4,c.h-.4,3,PAL.conc);if(st8>=2)mapBox(g,c.x+.3,c.y+.3,c.w-.6,c.h-.6,Math.min(22,4+(p-30)*.5),st8>=4?PAL.hall:PAL.conc)}
+    else if(c.k==="aux"){if(st8>=1)mapBox(g,c.x+.3,c.y+.3,c.w-.6,c.h-.6,Math.min(30,3+p*.32),st8>=4?["#d0d0e0","#a0a0c0","#8080a0"]:PAL.conc)}
+    else if(c.k==="intake"){if(st8>=1)mapBox(g,c.x+.2,c.y+.4,c.w-.4,c.h-.8,Math.min(10,2+p*.1),PAL.conc);if(st8>=3)for(let i=0;i<3;i++)mapTile(g,c.x+.5+i,c.y+c.h-.2,PAL.water[(T>>3)&1])}
+    else if(c.k==="switch"){const n=Math.floor(p/20);for(let i=0;i<n;i++){const [tx,ty]=iso(c.x+.6+(i%3)*1.4,c.y+.6+Math.floor(i/3)*1.6);g.strokeStyle="#303030";g.lineWidth=1;g.beginPath();g.moveTo(tx-3,ty+4);g.lineTo(tx,ty-16);g.lineTo(tx+3,ty+4);g.moveTo(tx-5,ty-10);g.lineTo(tx+5,ty-10);g.stroke()}
+      if(n>=3){g.strokeStyle="#202020";g.beginPath();const [a1,b1]=iso(c.x+.6,c.y+.6),[a2,b2]=iso(c.x+3.4,c.y+.6);g.moveTo(a1,b1-15);g.lineTo(a2,b2-15);g.stroke()}}
+    else if(c.k==="yard"){const n=Math.floor(p/8)+2;for(let i=0;i<n;i++){const xx=c.x+.4+(i%5)*1.1,yy=c.y+.4+Math.floor(i/5)*1.2;mapBox(g,xx,yy,.8,.8,3+(i*5)%6,[["#c08040","#906030","#704820"],["#4a6a8a","#3a5a7a","#2a4a6a"],["#b0b0b0","#909090","#707070"]][i%3])}}
+    // tower crane while the structure is going up
+    if(c.k!=="yard"&&c.k!=="switch"&&p>=12&&p<96){const [cx,cy]=iso(c.x+.4,c.y+c.h-.4),hgt=58,a=(T/90+c.x)%(Math.PI*2),jx=Math.cos(a)*26,jy=Math.sin(a)*8;
+      g.strokeStyle=PAL.yellow;g.lineWidth=2;g.beginPath();g.moveTo(cx,cy);g.lineTo(cx,cy-hgt);g.stroke();g.lineWidth=1.5;g.beginPath();g.moveTo(cx-jx*.35,cy-hgt-jy*.35);g.lineTo(cx+jx,cy-hgt+jy);g.stroke();
+      g.strokeStyle="#202020";g.lineWidth=1;g.beginPath();g.moveTo(cx+jx*.8,cy-hgt+jy*.8);g.lineTo(cx+jx*.8,cy-hgt+jy*.8+14+Math.sin(T/20)*4);g.stroke();g.fillStyle="#202020";g.fillRect(cx+jx*.8-2,cy-hgt+jy*.8+14+Math.sin(T/20)*4,4,3)}
+    // constraints: red flags and smoke
+    if(k>0){const [fx,fy]=iso(c.x+c.w-.5,c.y+.5);for(let i=0;i<Math.min(k,4);i++){const x0=fx-6+i*5;g.fillStyle="#202020";g.fillRect(x0,fy-16,1,14);g.fillStyle=PAL.red;g.fillRect(x0+1,fy-16+((T>>3)+i)%2,5,4)}
+      if(k>=3)for(let i=0;i<3;i++){const ph=((T+i*30)%90)/90;g.fillStyle=PAL.smoke;g.beginPath();g.arc(fx-4+ph*6,fy-24-ph*24,2+ph*5,0,7);g.fill()}}
+    if(p>=100){const [fx,fy]=iso(c.x+c.w/2,c.y+c.h/2);g.fillStyle="#fff";g.fillRect(fx,fy-52,1,12);g.fillStyle=(T>>4)&1?"#ff0000":"#ffffff";g.fillRect(fx+1,fy-52,6,4)}}
+  // trucks on the roads
+  for(let i=0;i<4;i++){const ph=((T*.012+i*.27)%1);const onX=i%2===0,x=onX?ph*19:14,y=onX?8:ph*17;const [tx,ty]=iso(x+.5,y+.5);g.fillStyle=["#ff0000","#ffd800","#ffffff","#2060ff"][i];g.fillRect(tx-3,ty-1,6,3);g.fillStyle="#202020";g.fillRect(tx-2,ty+2,1,1);g.fillRect(tx+2,ty+2,1,1)}
+  // workers
+  for(const c of CWAS){if(st.prog[c.id]>=100||st.cons[c.id]>0)continue;for(let i=0;i<3;i++){const [wx,wy]=iso(c.x+.5+((T*.01+i*.3+c.x)%1)*(c.w-1),c.y+c.h-.2);g.fillStyle="#ff8000";g.fillRect(wx,wy-3,1,2);g.fillStyle="#ffd800";g.fillRect(wx,wy-4,1,1)}}
+  // HUD
+  g.fillStyle="rgba(0,0,0,.55)";g.fillRect(4,4,118,24);g.fillStyle="#fff";g.font="9px monospace";g.fillText(`SITE ${Math.round(overall())}% COMPLETE`,8,14);g.fillText(`IWPs ${CWAS.filter(c=>st.cons[c.id]===0).length}/${CWAS.length} RELEASED`,8,24);
+  MAP.raf=requestAnimationFrame(mapDraw)}
+function mapStart(){if(!MAP.raf)MAP.raf=requestAnimationFrame(mapDraw);const cv=document.getElementById("map");if(!cv)return;
+  cv.onmousemove=e=>{const r=cv.getBoundingClientRect(),mx=(e.clientX-r.left)*MAP.W/r.width,my=(e.clientY-r.top)*MAP.H/r.height;const u=((mx-MAP.ox)/9+(my-MAP.oy)/4.5)/2,v=((my-MAP.oy)/4.5-(mx-MAP.ox)/9)/2;
+    const c=CWAS.find(c=>u>=c.x&&u<c.x+c.w&&v>=c.y&&v<c.y+c.h);MAP.hover=c?c.id:null;const tip=document.getElementById("maptip");if(tip){tip.innerHTML=c?`<b>${esc(c.n)}</b> &middot; ${Math.round(st.prog[c.id])}% &middot; ${st.cons[c.id]?st.cons[c.id]+" open constraint"+(st.cons[c.id]===1?"":"s")+", IWP on hold":"IWP released"}`:"Hover over an area to inspect it."}};
+  cv.onmouseleave=()=>{MAP.hover=null}}
+
 // ---------- Site news: things that happen between turns ----------
 const NEWS=[
  {id:"cold",t:"A polar vortex parks over the lake for nine days. Everything outdoors slows down.",e:{d:.8}},
@@ -945,7 +1035,7 @@ const GRADES=["best","good","weak","wrong"];
 const GNAME={best:"Best call",good:"Sound",weak:"Weak",wrong:"Wrong call"};
 let st=null, cur=null, modal=null, prevStrip=null, dealAnim=true, lastCur=undefined;
 
-function fresh(mode){return{fan:[{d:6,w:44}],mode,turn:1,role:0,rep:{f:0,b:0,en:0,r:0,cm:0},s:0,c:0,d:6,w:44,xp:{},used:[],week:[],att:3,log:[],grades:{best:0,good:0,weak:0,wrong:0},luck:{good:0,bad:0},hist:[44],over:false,snap:null}}
+function fresh(mode){return{prog:null,cons:null,fan:[{d:6,w:44}],mode,turn:1,role:0,rep:{f:0,b:0,en:0,r:0,cm:0},s:0,c:0,d:6,w:44,xp:{},used:[],week:[],att:3,log:[],grades:{best:0,good:0,weak:0,wrong:0},luck:{good:0,bad:0},hist:[44],over:false,snap:null}}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(st))}catch(e){}}
 function loadSaved(){try{const v=localStorage.getItem(KEY);if(!v)return null;const o=JSON.parse(v);o.fan=o.fan||(o.hist||[]).map(w=>({d:o.d,w}));o.perks=o.perks||[];o.queue=o.queue||[];o.dec=o.dec||[];o.newsSeen=o.newsSeen||[];o.week=(o.week||[]).filter(w=>byId(w.id));return o}catch(e){return null}}
 function clearSaved(){try{localStorage.removeItem(KEY)}catch(e){}}
@@ -967,7 +1057,7 @@ function drawWeek(){
   if(p.length<PER_TURN()){const back=shuffle(S.filter(s=>s.r<st.role&&!st.used.includes(s.id)));p=p.concat(back.slice(0,PER_TURN()-p.length))}
   st.week=p.map(s=>({id:s.id,status:"open"}));
   st.used.push(...p.map(s=>s.id));
-  st.att=3+(hasPerk("bench")&&st.turn%3===0?1:0); cur=null; dealAnim=true; st.snap={d:st.d,w:st.w,c:st.c,s:st.s};
+  simInit();st.att=3+(hasPerk("bench")&&st.turn%3===0?1:0); cur=null; dealAnim=true; st.snap={d:st.d,w:st.w,c:st.c,s:st.s};
 }
 function chance(sc,o){
   if(o.p>=1)return 1; if(o.p<=0)return 0;
@@ -1203,14 +1293,18 @@ function render(){
     <div><span class="lbl">Turn · date</span><span class="v num">${st.turn} · ${fmtMonth(gameDate())}</span></div>
     <div><span class="lbl">Cost vs baseline</span><span class="v num ${flash("c")}">${st.c>=0?"+":"−"}$${Math.abs(st.c).toFixed(1)}M</span></div>
     <div><span class="lbl">Safety culture</span><span class="v num ${flash("s")}">${sgn(st.s)}</span></div>
+    <div><span class="lbl">Site complete · SPI / CPI</span><span class="v num">${Math.round(overall())}% · ${evm().spi.toFixed(2)} / ${evm().cpi.toFixed(2)}</span></div>
     <div><span class="lbl">Reputation</span><span class="v num ${flash("r")}">${strip.r>0?"+":""}${strip.r.toFixed(1)}</span></div>
   </section>
+  <div class="overview">
   <section class="gauge" id="gauge" data-title="Forecast - P10 to P90" aria-label="Fuel load forecast window">
     <div class="grow"><span class="lbl">Fuel load window · P10 to P90</span><span class="num"><b>${fmtMonth(p10)} – ${fmtMonth(p90)}</b> · ${Math.round(st.w)} wk wide · ${st.d>=0?Math.round(st.d)+" wk late":Math.round(-st.d)+" wk early"} at midpoint</span></div>
     <div><div class="gtrack" role="img" aria-label="Forecast window relative to the ${fmtMonth(TARGET)} target"><div class="gband" style="left:${left}%;width:${width}%"></div><div class="gtarget"></div></div>
     <div class="gscale"><span>−60 wk</span><span>−30</span><span></span><span>+30</span><span>+60 wk</span></div></div>
     <div class="reps">${Object.keys(REP).map(k=>`<span class="chip ${st.rep[k]>0?"pos":st.rep[k]<0?"neg":""}">${REP[k]} <b>${sgn(st.rep[k])}</b></span>`).join("")}</div>
   </section>
+  <section class="panel mapwin" data-title="Site Map - KESTREL.MAP"><canvas id="map" width="384" height="232" aria-label="Isometric map of the construction site. ${Math.round(overall())}% complete."></canvas><div class="maptip lbl" id="maptip">Hover over an area to inspect it.</div></section>
+  </div>
   <section class="board">
     <div class="tags ${dealAnim?"deal":""}" data-title="In-tray">
       <div class="grow"><h2>Turn ${st.turn}</h2><span class="att" aria-label="${st.att} attention left">${[0,1,2,3].slice(0,Math.max(3,st.att)).map(i=>`<i class="${i<st.att?"on":""}"></i>`).join("")}</span></div>
@@ -1220,6 +1314,7 @@ function render(){
     </div>
     <div class="panel act ${lastCur!==cur?"enter":""}" id="detail" data-title="${cur?esc(byId(cur).t):"Situation"}">${detailHTML()}</div>
   <aside class="side" aria-label="Career, experience and site log">
+    <div class="panel" data-title="AWP - Path of Construction">${awpHTML()}</div>
     <div class="panel" data-title="Career"><h3>${ROLES[st.role]}</h3>
       <div class="ladder">${ROLES.map((r,i)=>`<div class="rung ${i<st.role?"on":i===st.role?"now":""}"><span></span><small>${r}</small></div>`).join("")}</div>
       <p class="note">${pool(st.role).length} situations left at this level before the next step.</p>
@@ -1231,7 +1326,7 @@ function render(){
   </section>
   ${modal||""}`;
   prevStrip=strip;dealAnim=false;lastCur=cur;
-  bind();tutPaint();
+  bind();tutPaint();mapStart();
 }
 
 // the forecast band, turn by turn: P10 to P90 shaded, midpoint drawn, target at zero
@@ -1268,12 +1363,12 @@ function xpHTML(){
 function detailHTML(){
   if(!cur) return `<div class="empty">${I.hat}<span class="lbl">No situation open</span><h2>Pick your three</h2><p class="note">Open a tag on the left. You only get to open three, so read the titles and decide which ones need you most.</p></div>`;
   const w=st.week.find(x=>x.id===cur), sc=byId(cur);
-  let h=`<div class="grow"><span class="lbl">${esc(sc.a)} · ${ROLES[sc.r]}</span>${w.res?"":`<span class="lbl">${st.att} attention left</span>`}</div><h2>${esc(sc.t)}</h2><p class="scene">${gloss(esc(sc.x),1)}</p>`;
+  let h=`<div class="grow"><span class="lbl">${esc(sc.a)} · ${ROLES[sc.r]} · CWA: ${esc(CWA_BY[cwaOf(sc)].n)}</span>${w.res?"":`<span class="lbl">${st.att} attention left</span>`}</div><h2>${esc(sc.t)}</h2><p class="scene">${gloss(esc(sc.x),1)}</p>`;
   if(w.res){
     const r=w.res;
     h+=`<div class="result g-${r.g} ${justChose===cur?"fresh":""}">
       <span class="lbl">You chose</span><p><b>${esc(r.choice)}</b></p>
-      <p>${gloss(esc(r.out),1)}</p><div class="fx">${fxChips(r.e)}</div>
+      <p>${gloss(esc(r.out),1)}</p><div class="fx">${fxChips(r.e)}${r.sim?`<span class="chip ${r.sim.dp>=0?"pos":"neg"}">${esc(CWA_BY[r.sim.c].n)} <b>${r.sim.dp>=0?"+":""}${r.sim.dp}%</b></span>${r.sim.dc?`<span class="chip ${r.sim.dc<0?"pos":"neg"}">Constraint <b>${r.sim.dc<0?"cleared":"added"}</b></span>`:""}`:""}</div>
       <div class="outhead"><span class="stamp c-${r.g}">${GNAME[r.g]}</span>${r.luck?`<span class="lucky">${esc(r.luck)}</span>`:""}</div>
       <p>${esc(r.n)}</p>
       <p class="lesson">${esc(r.L)}</p></div>`;
@@ -1319,8 +1414,9 @@ function choose(i){
   if(!win&&o.no&&(o.g==="best"||o.g==="good")){luck="Good call, bad luck.";st.luck.bad++}
   else if(win&&o.no&&(o.g==="wrong"||o.g==="weak")&&c<.6){luck="You got away with it this time.";st.luck.good++}
   apply(r.e); st.xp[sc.a]=(st.xp[sc.a]||0)+(o.g==="best"?2:1); st.grades[o.g]++;
+  const sim=simChoose(sc,o,win||!o.no);
   const fo=o.fo&&(win||!o.no?o.fo.ok:o.fo.no);if(fo&&!st.used.includes(fo)&&!(st.queue||[]).includes(fo))(st.queue=st.queue||[]).push(fo);
-  w.status="done"; w.res={choice:o.t,out:r.x,e:r.e,g:o.g,n:o.n,L:sc.L,luck};(st.dec=st.dec||[]).push({t:st.turn,id:sc.id,i,g:o.g,win:win||!o.no,role:st.role}); st.att--;
+  w.status="done"; w.res={choice:o.t,out:r.x,e:r.e,g:o.g,n:o.n,L:sc.L,luck,sim};(st.dec=st.dec||[]).push({t:st.turn,id:sc.id,i,g:o.g,win:win||!o.no,role:st.role}); st.att--;
   st.log.push(`T${st.turn} · ${sc.t}: ${GNAME[o.g].toLowerCase()}.`);
   Snd.play("stamp");Snd.play(o.g);if(tutStep()===1)tutSet(2);justChose=cur;save(); render();justChose=null;medCheck();
 }
@@ -1328,8 +1424,9 @@ function choose(i){
 function endTurn(){
   if(modal||st.ended) return;
   const missed=[];
-  for(const w of st.week){ if(w.status!=="done"){const sc=byId(w.id);apply(sc.idle.e,1);w.status="missed";missed.push(sc);(st.dec=st.dec||[]).push({t:st.turn,id:sc.id,i:-1,g:"idle",role:st.role});st.log.push(`T${st.turn} · ${sc.t}: left alone.`)} }
+  for(const w of st.week){ if(w.status!=="done"){const sc=byId(w.id);apply(sc.idle.e,1);simIdle(sc);w.status="missed";missed.push(sc);(st.dec=st.dec||[]).push({t:st.turn,id:sc.id,i:-1,g:"idle",role:st.role});st.log.push(`T${st.turn} · ${sc.t}: left alone.`)} }
   st.w=Math.max(2,+(st.w-(hasPerk("scheduler")?1:0)-D().narrow).toFixed(1));
+  const released=simTurn();
   const news=rollNews();if(news)medCount("news")>=10&&medGive("news10");
   const sn=st.snap||{d:st.d,w:st.w,c:st.c,s:st.s};
   const dd=+(st.d-sn.d).toFixed(1), dw=+(st.w-sn.w).toFixed(1), dc=+(st.c-sn.c).toFixed(2);
@@ -1351,6 +1448,7 @@ function endTurn(){
       <div><span class="lbl">Window</span><span class="v num ${dw>0?"c-wrong":dw<0?"c-best":""}">${dw>0?"+":dw<0?"−":""}${Math.abs(dw)} wk</span></div>
       <div><span class="lbl">Cost</span><span class="v num ${dc>0?"c-wrong":dc<0?"c-best":""}">${dc>0?"+":dc<0?"−":""}$${Math.abs(dc)}M</span></div>
     </div>
+    <div class="newsbox"><span class="lbl">Site progress</span><p>${Math.round(overall())}% complete. ${released.length?`Work packages released: ${released.map(id=>esc(CWA_BY[id].n)).join(", ")}.`:"No work packages released: every area has open constraints."}</p></div>
     ${news?`<div class="newsbox"><span class="lbl">Site news</span><p>${esc(news.t)}</p><div class="fx">${fxChips(news.e)}</div></div>`:""}
     ${handled.length?`<div><span class="lbl">You handled</span><ul>${handled.map(w=>`<li class="okk"><b>${esc(byId(w.id).t)}</b><span class="note">${GNAME[w.res.g]}</span></li>`).join("")}</ul></div>`:""}
     ${missed.length?`<div><span class="lbl">Left alone</span><ul>${missed.map(sc=>`<li><b>${esc(sc.t)}</b><span>${esc(sc.idle.x)}</span><div class="fx">${fxChips(sc.idle.e)}</div></li>`).join("")}</ul></div>`:`<p class="note">Nothing was left alone this turn.</p>`}
@@ -1385,7 +1483,7 @@ document.addEventListener("keydown",e=>{
 
 function renderEnd(){
   setWinTitle("Nuclear Construction Tycoon - FINAL.RPT");
-  if(st.final==null){const z=(rnd()+rnd()+rnd()-1.5)/1.5;st.final=+(st.d+z*st.w/2.6).toFixed(1);save()}
+  if(st.final==null){const z=(rnd()+rnd()+rnd()-1.5)/1.5;st.short=Math.max(0,85-overall());st.final=+(st.d+z*st.w/2.6+st.short*.4).toFixed(1);save()}
   const fl=addWeeks(TARGET,st.final), late=Math.round(st.final);
   const g=st.grades, total=g.best+g.good+g.weak+g.wrong||1, sound=Math.round(100*(g.best+g.good)/total);
   const score=sound/10+st.s+repAvg()-Math.max(0,late)/8-Math.max(0,st.c)/15;
@@ -1395,13 +1493,14 @@ function renderEnd(){
   app.innerHTML=`<section class="title" data-title="Final Report">
     <div class="kicker"><span class="pill">${st.mode==="daily"?"Daily build · "+st.day:MODE_N[st.mode]}</span><span class="pill">${st.turn} turns</span></div>
     <span class="lbl">Unit 1 fuel load</span><h1>${fmtMonth(fl)}</h1>
-    <p class="lede">${late===0?"Right on the target.":Math.abs(late)+" weeks "+(late>0?"after":"ahead of")+" the "+fmtMonth(TARGET)+" target."} The build finished ${st.c>=0?"$"+st.c.toFixed(1)+"M over":"$"+Math.abs(st.c).toFixed(1)+"M under"} its baseline, with a safety culture of ${sgn(st.s)}.</p>
+    <p class="lede">${late===0?"Right on the target.":Math.abs(late)+" weeks "+(late>0?"after":"ahead of")+" the "+fmtMonth(TARGET)+" target."} The build finished ${st.c>=0?"$"+st.c.toFixed(1)+"M over":"$"+Math.abs(st.c).toFixed(1)+"M under"} its baseline, with a safety culture of ${sgn(st.s)}. The site was ${Math.round(overall())}% complete at the last turn${st.short>0?`, and finishing the last ${Math.round(st.short)}% cost ${Math.round(st.short*.4)} more weeks`:""}.</p>
     <div><span class="lbl">Your rating</span><p class="rank">${rank}</p></div>
     <div class="report">
       <div><span class="lbl">Decision quality</span><p class="num">${sound}% sound calls</p><div class="gbar">${GRADES.map(seg).join("")}</div><p class="note num">Best ${g.best} · Sound ${g.good} · Weak ${g.weak} · Wrong ${g.wrong}</p></div>
       <div><span class="lbl">Luck</span><p>Good calls that went badly: <b class="num">${st.luck.bad}</b></p><p>Bad calls you got away with: <b class="num">${st.luck.good}</b></p><p class="note">Judge the call, not the outcome.</p></div>
       <div><span class="lbl">Reputation</span><div class="reps">${Object.keys(REP).map(k=>`<span class="chip ${st.rep[k]>0?"pos":st.rep[k]<0?"neg":""}">${REP[k]} <b>${sgn(st.rep[k])}</b></span>`).join("")}</div></div>
       <div><span class="lbl">How the fog cleared</span>${fanHTML(st.final)}</div>
+      <div><span class="lbl">Earned value</span>${st.prog?`<p class="num">SPI ${evm().spi.toFixed(2)} &middot; CPI ${evm().cpi.toFixed(2)}</p><p class="note">EV $${Math.round(evm().ev)}M of a $${BAC}M budget at completion.</p><canvas id="map" width="384" height="232" class="endmap"></canvas>`:""}</div>
     </div>
     ${reviewHTML()}
     ${buildsHTML(st.bid)}
@@ -1409,6 +1508,7 @@ function renderEnd(){
     <div class="modes">${st.mode==="daily"?`<button class="btn" id="share">Copy result</button>`:""}<button class="btn ${st.mode==="daily"?"ghost":""}" id="again">Play again</button>${st.mode!=="nightmare"?`<button class="btn ghost" id="againhard">Try Nightmare</button>`:""}</div>
   </section>`;
   document.getElementById("again").onclick=()=>{clearSaved();start(st.mode==="nightmare"?"nightmare":"career")};
+  mapStart();
   app.querySelectorAll("[data-rv]").forEach(b=>b.onclick=()=>{revFilter=b.dataset.rv;const y=window.scrollY;renderEnd();window.scrollTo(0,y)});
   const sh=document.getElementById("share");if(sh)sh.onclick=()=>{const t=shareText();(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>{sh.textContent="Copied"},()=>{window.prompt("Copy your result",t)})};
   const ah=document.getElementById("againhard");if(ah)ah.onclick=()=>{clearSaved();start("nightmare")};
