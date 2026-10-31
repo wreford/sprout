@@ -104,6 +104,10 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-b
 .gl{text-decoration:underline dotted color-mix(in srgb,var(--ink) 55%,transparent);text-underline-offset:3px;cursor:help;position:relative}
 .gl:hover::after,.gl:focus::after{content:attr(data-tip);position:absolute;left:0;top:calc(100% + 4px);z-index:40;width:max-content;max-width:300px;background:var(--ink);color:var(--panel);padding:7px 9px;font:400 13px/1.4 var(--body);border-radius:3px;white-space:normal;text-transform:none;letter-spacing:0;box-shadow:var(--shadow);pointer-events:none}
 .glist{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:6px 18px;max-height:280px;overflow:auto;border-top:1px solid var(--line);padding-top:10px;margin:0}.glist dt{font-weight:600}.glist dd{margin:0 0 6px;font-size:13px;color:var(--muted)}
+.tut{position:fixed;left:20px;bottom:20px;z-index:70;max-width:360px;background:var(--ink);color:var(--panel);padding:14px 16px;border-radius:4px;display:grid;gap:8px;box-shadow:0 20px 40px -16px rgba(0,0,0,.5);animation:rise .3s both}
+.tut .lbl{color:color-mix(in srgb,var(--panel) 70%,transparent)}.tut p{font-size:15px}.tut .btn.ghost{color:var(--panel);box-shadow:inset 0 0 0 2px var(--panel)}
+.tut-hi{outline:3px solid var(--hivis);outline-offset:4px;border-radius:4px;animation:pulse 1.6s ease-in-out infinite}
+@keyframes pulse{50%{outline-color:color-mix(in srgb,var(--hivis) 35%,transparent)}}
 .keys{display:grid;grid-template-columns:auto 1fr;gap:8px 16px;align-items:center;margin:0}
 .keys dt{display:flex;gap:4px}.keys dd{margin:0}
 .opt:focus-visible{border-color:var(--ink);background:var(--panel)}
@@ -891,6 +895,26 @@ const GL_RE=new RegExp("\\b("+GLOSS.map(g=>g[0].replace(/[-]/g,"\\-")).sort((a,b
 // wraps the first use of each term in a block of already-escaped text
 function gloss(html,focusable){const seen=new Set();return html.replace(GL_RE,m=>{const g=GLOSS.find(x=>x[0].toLowerCase()===m.toLowerCase());if(!g||seen.has(g[0]))return m;seen.add(g[0]);return `<abbr class="gl" data-tip="${esc(g[1])}"${focusable?' tabindex="0"':""}>${m}</abbr>`})}
 
+// ---------- Tutorial: five coach marks on your first build ----------
+const TUT_KEY="kestrel-tut";
+const TUT=[
+ {sel:".tags",t:"Four situations need you this turn. Open one: click it, or press A."},
+ {sel:".opts",t:"Read it, then pick an option. The ? turns into real odds once you've built experience in this area."},
+ {sel:".att",t:"That spent one attention. You get three a turn, so one situation will always be left to play out on its own. Choose which.",ok:1},
+ {sel:".gauge",t:"This is the fuel load forecast. The band is what nobody knows yet. It narrows each turn. The yellow line is the target.",ok:1},
+ {sel:"#endturn",t:"When you're done, end the turn. You'll get a report on what happened, including what you left alone."},
+];
+function tutStep(){try{const v=localStorage.getItem(TUT_KEY);return v==null?0:+v}catch(e){return 99}}
+function tutSet(n){try{localStorage.setItem(TUT_KEY,String(n))}catch(e){}}
+function tutAdvance(from){if(tutStep()===from){tutSet(from+1);tutPaint()}}
+function tutPaint(){document.querySelectorAll(".tut-hi").forEach(e=>e.classList.remove("tut-hi"));const old=document.getElementById("tut");if(old)old.remove();
+  const n=tutStep();if(!st||st.over||modal||n>=TUT.length)return;const T=TUT[n],el=document.querySelector(T.sel);if(!el)return;el.classList.add("tut-hi");
+  document.body.insertAdjacentHTML("beforeend",`<div id="tut" class="tut" role="note"><span class="lbl">Getting started · ${n+1} of ${TUT.length}</span><p>${esc(T.t)}</p><div class="grow">${T.ok?`<button class="btn small" id="tutOk">Got it</button>`:"<span></span>"}<button class="btn ghost small" id="tutSkip">Skip the tour</button></div></div>`);
+  const card=document.getElementById("tut");if(innerWidth>=840){const r=el.getBoundingClientRect(),cw=card.offsetWidth,ch=card.offsetHeight;let x,y;
+    if(r.right+cw+24<innerWidth){x=r.right+16;y=Math.max(12,Math.min(innerHeight-ch-12,r.top))}else if(r.bottom+ch+16<innerHeight){x=Math.max(12,Math.min(innerWidth-cw-12,r.left));y=r.bottom+12}else{x=Math.max(12,Math.min(innerWidth-cw-12,r.left));y=Math.max(12,r.top-ch-12)}
+    Object.assign(card.style,{left:x+"px",top:y+"px",bottom:"auto"})}
+  const ok=document.getElementById("tutOk");if(ok)ok.onclick=()=>tutAdvance(n);document.getElementById("tutSkip").onclick=()=>{tutSet(99);tutPaint()}}
+
 // ---------- Help ----------
 let helpOpen=false;
 function helpHTML(){return `<div class="scrim" id="helpScrim" role="dialog" aria-modal="true" aria-labelledby="ht"><div class="modal" style="max-width:780px"><span class="lbl">Keyboard</span><h2 id="ht">Shortcuts</h2>
@@ -906,8 +930,8 @@ function helpHTML(){return `<div class="scrim" id="helpScrim" role="dialog" aria
    <dt><kbd>?</kbd></dt><dd>This list. <kbd>Esc</kbd> closes it.</dd>
   </dl><p class="note">Opening a situation is free. Choosing an option spends one attention.</p>
   <span class="lbl">Glossary · dotted words have a tooltip</span><dl class="glist">${GLOSS.slice().sort((a,b)=>a[0].localeCompare(b[0])).map(g=>`<dt>${esc(g[0])}</dt><dd>${esc(g[1])}</dd>`).join("")}</dl>
-  <div><button class="btn" id="helpClose">Got it</button></div></div></div>`}
-function toggleHelp(v){helpOpen=v===undefined?!helpOpen:v;const old=document.getElementById("helpScrim");if(old)old.remove();if(helpOpen){document.body.insertAdjacentHTML("beforeend",helpHTML());const sc=document.getElementById("helpScrim");sc.onclick=e=>{if(e.target===sc)toggleHelp(false)};const c=document.getElementById("helpClose");c.onclick=()=>toggleHelp(false);c.focus()}}
+  <div class="modes"><button class="btn" id="helpClose">Got it</button><button class="btn ghost small" id="tutAgain">Replay the tour</button></div></div></div>`}
+function toggleHelp(v){helpOpen=v===undefined?!helpOpen:v;const old=document.getElementById("helpScrim");if(old)old.remove();if(helpOpen){document.body.insertAdjacentHTML("beforeend",helpHTML());const sc=document.getElementById("helpScrim");sc.onclick=e=>{if(e.target===sc)toggleHelp(false)};const c=document.getElementById("helpClose");c.onclick=()=>toggleHelp(false);c.focus();document.getElementById("tutAgain").onclick=()=>{tutSet(0);toggleHelp(false);if(st)render()}}}
 
 // ---------- Icons ----------
 const I={
@@ -966,7 +990,7 @@ function render(){
   </section>
   ${modal||""}`;
   prevStrip=strip;dealAnim=false;lastCur=cur;
-  bind();
+  bind();tutPaint();
 }
 
 function spark(h){
@@ -1020,7 +1044,7 @@ function bind(){
   const n=document.getElementById("nextturn"); if(n){n.onclick=closeModal;n.focus()}
   app.querySelectorAll("[data-perk]").forEach(b=>b.onclick=()=>perkTake(b.dataset.perk));const fp=app.querySelector("[data-perk]");if(fp)fp.focus();
 }
-function openTag(id,kb){if(cur!==id)Snd.play("open");cur=id;render();const d=document.getElementById("detail");if(d&&window.innerWidth<840)d.scrollIntoView({behavior:"smooth",block:"start"});if(kb){const o=document.querySelector(".opt:not(:disabled)")||document.querySelector("[data-goto]");if(o)o.focus({preventScroll:true})}}
+function openTag(id,kb){if(cur!==id)Snd.play("open");cur=id;if(tutStep()===0)tutSet(1);render();const d=document.getElementById("detail");if(d&&window.innerWidth<840)d.scrollIntoView({behavior:"smooth",block:"start"});if(kb){const o=document.querySelector(".opt:not(:disabled)")||document.querySelector("[data-goto]");if(o)o.focus({preventScroll:true})}}
 let confirmArm=false;
 function confirmNew(){
   const q=document.getElementById("quit");
@@ -1039,7 +1063,7 @@ function choose(i){
   apply(r.e); st.xp[sc.a]=(st.xp[sc.a]||0)+(o.g==="best"?2:1); st.grades[o.g]++;
   w.status="done"; w.res={choice:o.t,out:r.x,e:r.e,g:o.g,n:o.n,L:sc.L,luck};(st.dec=st.dec||[]).push({t:st.turn,id:sc.id,i,g:o.g,win:win||!o.no,role:st.role}); st.att--;
   st.log.push(`T${st.turn} · ${sc.t}: ${GNAME[o.g].toLowerCase()}.`);
-  Snd.play("stamp");Snd.play(o.g);justChose=cur;save(); render();justChose=null;medCheck();
+  Snd.play("stamp");Snd.play(o.g);if(tutStep()===1)tutSet(2);justChose=cur;save(); render();justChose=null;medCheck();
 }
 
 function endTurn(){
@@ -1073,7 +1097,7 @@ function endTurn(){
     ${missed.length?`<div><span class="lbl">Left alone</span><ul>${missed.map(sc=>`<li><b>${esc(sc.t)}</b><span>${esc(sc.idle.x)}</span><div class="fx">${fxChips(sc.idle.e)}</div></li>`).join("")}</ul></div>`:`<p class="note">Nothing was left alone this turn.</p>`}
     ${st.offer?`<div class="perkpick"><span class="lbl">Pick one for your new team</span>${st.offer.map((k,i)=>`<button class="opt" data-perk="${k}"><span class="k">${i+1}</span><span><b>${esc(PERKS[k].n)}</b><br><span class="note">${esc(PERKS[k].d)}</span></span><span></span></button>`).join("")}</div>`:`<div><button class="btn" id="nextturn">${ending?"See how it ended":"Start turn "+(st.turn+1)}</button></div>`}
   </div></div>`;
-  medCheck();st.pendingEnd=ending; st.ended=true;Snd.play(ending?"end":promo?"promo":"turn");
+  medCheck();if(tutStep()===4)tutSet(5);st.pendingEnd=ending; st.ended=true;Snd.play(ending?"end":promo?"promo":"turn");
   save(); render();
 }
 function closeModal(){
@@ -1082,6 +1106,7 @@ function closeModal(){
   if(st.pendingEnd){st.over=true;st.pendingEnd=false;save();render();window.scrollTo({top:0});return}
   st.turn++; drawWeek(); save(); render(); window.scrollTo({top:0,behavior:"smooth"});
 }
+window.addEventListener("resize",()=>{if(document.getElementById("tut"))tutPaint()});
 document.addEventListener("keydown",e=>{
   if(helpOpen){if(e.key==="Escape"||e.key==="?"||e.key==="Enter"){e.preventDefault();toggleHelp(false)}return}
   if(e.key==="?"&&!e.metaKey&&!e.ctrlKey){e.preventDefault();toggleHelp(true);return}
