@@ -429,6 +429,8 @@ kbd{background:var(--face);color:var(--face-ink);border:1px solid var(--dk);bord
 
 /* juice */
 .scrim{z-index:200!important}.medpop{z-index:250}
+.saver{position:fixed;inset:0;width:100vw;height:100vh;z-index:1000;background:#000;cursor:none}
+.seg select{font:13px var(--body);padding:3px}
 .fxcanvas{position:fixed;inset:0;pointer-events:none;z-index:300}
 .redflash{position:fixed;inset:0;background:rgba(220,0,0,.18);pointer-events:none;z-index:290;animation:flash .45s ease-out forwards}@keyframes flash{to{opacity:0}}
 .wwin.main.shake{animation:shake .4s}@keyframes shake{20%{transform:translateX(-8px)}40%{transform:translateX(7px)}60%{transform:translateX(-5px)}80%{transform:translateX(3px)}}
@@ -2194,7 +2196,7 @@ function tutPaint(){document.querySelectorAll(".tut-hi").forEach(e=>e.classList.
 
 // ---------- Settings ----------
 const SET_KEY="kestrel-settings";
-let SET={size:0,motion:false};try{Object.assign(SET,JSON.parse(localStorage.getItem(SET_KEY))||{})}catch(e){}
+let SET={size:0,motion:false,saver:"starfield",saverMin:2};try{Object.assign(SET,JSON.parse(localStorage.getItem(SET_KEY))||{})}catch(e){}
 function setApply(){const r=document.documentElement;r.style.setProperty("--fs",[15,17,19][SET.size]+"px");r.classList.toggle("rm",!!SET.motion)}
 function setSave(){try{localStorage.setItem(SET_KEY,JSON.stringify(SET))}catch(e){}setApply()}
 setApply();
@@ -2205,6 +2207,7 @@ function setHTML(){return `<div class="scrim" id="setScrim" role="dialog" aria-m
   <div class="setrow"><span>Music${Mus.cur?` &middot; now playing <i>${SONGS[Mus.cur].n}</i>`:""}</span><div class="seg"><button class="chip ${Mus.on?"on":""}" data-mus="1">On</button><button class="chip ${!Mus.on?"on":""}" data-mus="0">Off</button></div></div>
   <div class="setrow"><span>Sound effects</span><div class="seg"><button class="chip ${Snd.on?"on":""}" data-snd="1">On</button><button class="chip ${!Snd.on?"on":""}" data-snd="0">Off</button></div></div>
   <div class="setrow"><span>Color scheme</span><div class="seg">${SCHEMES.map(k=>`<button class="chip ${(document.documentElement.dataset.theme||"default")===k?"on":""}" data-scheme="${k}">${SCHEME_N[k]}</button>`).join("")}</div></div>
+  <div class="setrow"><span>Screen saver</span><div class="seg"><select id="saverSel">${Object.keys(SAVERS).map(k=>`<option value="${k}" ${SET.saver===k?"selected":""}>${SAVERS[k]}</option>`).join("")}</select><select id="saverMin">${[[0,"Never"],[1,"1 minute"],[2,"2 minutes"],[5,"5 minutes"]].map(([v,l])=>`<option value="${v}" ${SET.saverMin===v?"selected":""}>${l}</option>`).join("")}</select><button class="chip" id="saverTry">Preview</button></div></div>
   <div class="setrow"><span>Data</span><div class="seg"><button class="chip" id="wipe">Erase medals and builds</button></div></div>
   <div><button class="btn" id="setClose">Done</button></div></div></div>`}
 function toggleSet(v){setOpen=v===undefined?!setOpen:v;const old=document.getElementById("setScrim");if(old)old.remove();if(!setOpen)return;document.body.insertAdjacentHTML("beforeend",setHTML());const sc=document.getElementById("setScrim");
@@ -2214,6 +2217,7 @@ function toggleSet(v){setOpen=v===undefined?!setOpen:v;const old=document.getEle
   sc.querySelectorAll("[data-mus]").forEach(b=>b.onclick=()=>{if((b.dataset.mus==="1")!==Mus.on)Mus.toggle();toggleSet(true)});
   sc.querySelectorAll("[data-snd]").forEach(b=>b.onclick=()=>{if((b.dataset.snd==="1")!==Snd.on)Snd.toggle();toggleSet(true)});
   sc.querySelectorAll("[data-scheme]").forEach(b=>b.onclick=()=>{applyTheme(b.dataset.scheme);toggleSet(true)});
+  document.getElementById("saverSel").onchange=e=>{SET.saver=e.target.value;setSave()};document.getElementById("saverMin").onchange=e=>{SET.saverMin=+e.target.value;setSave()};document.getElementById("saverTry").onclick=()=>{toggleSet(false);setTimeout(()=>Saver.start(SET.saver),150)};
   const w=document.getElementById("wipe");let armed=false;w.onclick=()=>{if(!armed){armed=true;w.textContent="Tap again to erase";return}try{localStorage.removeItem(MED_KEY);localStorage.removeItem(HIST_KEY);localStorage.removeItem(DAILY_KEY)}catch(e){}w.textContent="Erased";render()}}
 
 // ---------- Menus: a Windows 3.1 menu bar that actually works ----------
@@ -2509,6 +2513,35 @@ function dashHTML(){const K=(st.kpi||[]).slice(-30);if(K.length<2)return `<p cla
    ${card("Site built",`${Math.round(overall())}%`,"",spark2([{v:K.map(k=>CWAS.reduce((a,c)=>a+(k.prog[c.id]||0),0)/CWAS.length),c:"#000080"}],{min:0,max:100}))}
    ${card("Team mood",st.team?Math.round(st.team.reduce((a,m)=>a+m.morale,0)/st.team.length)+"%":"no team yet","",st.team?`<div class="moods">${st.team.map(m=>`<span title="${esc(m.n)}" style="height:${m.morale*.6}px;background:${m.morale>=60?"var(--ok)":m.morale>=35?"#c09000":"var(--bad)"}"></span>`).join("")}</div>`:"")}
   </div>`}
+
+// ---------- Screen savers, like the ones that came with the PC in 1995 ----------
+const SAVERS={starfield:"Starfield",mystify:"Mystify",pipes:"Pipes",hardhats:"Flying Hard Hats",marquee:"Marquee"};
+const Saver={on:false,raf:0,last:Date.now(),cv:null,
+  poke(){this.last=Date.now();if(this.on&&Date.now()-this.t0>350)this.stop()},
+  tick(){const m=SET.saverMin;if(this.on||!m||document.hidden)return;if(Date.now()-this.last>m*60000)this.start(SET.saver)},
+  start(k){if(this.on)return;this.on=true;this.t0=Date.now();const cv=this.cv=document.createElement("canvas");cv.className="saver";cv.width=innerWidth*devicePixelRatio;cv.height=innerHeight*devicePixelRatio;document.body.appendChild(cv);
+    const g=cv.getContext("2d"),W=cv.width,H=cv.height,dp=devicePixelRatio;g.fillStyle="#000";g.fillRect(0,0,W,H);const R=Math.random;let t=0;
+    const run=({
+     starfield:()=>{const S=[];for(let i=0;i<420;i++)S.push({x:(R()-.5)*W,y:(R()-.5)*H,z:R()*W});return ()=>{g.fillStyle="#000";g.fillRect(0,0,W,H);S.forEach(s=>{s.z-=W*.006;if(s.z<1){s.x=(R()-.5)*W;s.y=(R()-.5)*H;s.z=W}const k=W*.5/s.z,x=W/2+s.x*k,y=H/2+s.y*k,r=Math.max(.6,(1-s.z/W)*3.2)*dp;g.fillStyle="#fff";g.fillRect(x,y,r,r)})}},
+     mystify:()=>{const mk=()=>({p:[0,1,2,3].map(()=>({x:R()*W,y:R()*H,vx:(R()*2+1)*dp*(R()<.5?-1:1),vy:(R()*2+1)*dp*(R()<.5?-1:1)})),h:R()*360,tr:[]});const P=[mk(),mk()];
+       return ()=>{g.fillStyle="rgba(0,0,0,.08)";g.fillRect(0,0,W,H);P.forEach(q=>{q.p.forEach(v=>{v.x+=v.vx;v.y+=v.vy;if(v.x<0||v.x>W)v.vx*=-1;if(v.y<0||v.y>H)v.vy*=-1});q.h=(q.h+.4)%360;q.tr.push(q.p.map(v=>[v.x,v.y]));if(q.tr.length>7)q.tr.shift();
+         q.tr.forEach((pts,i)=>{g.strokeStyle=`hsl(${q.h},100%,${30+i*5}%)`;g.lineWidth=1.5*dp;g.beginPath();pts.forEach(([x,y],j)=>j?g.lineTo(x,y):g.moveTo(x,y));g.closePath();g.stroke()})})}},
+     pipes:()=>{const C=Math.round(44*dp),cols=Math.ceil(W/C),rows=Math.ceil(H/C);let grid,pipes,col;const reset=()=>{g.fillStyle="#000";g.fillRect(0,0,W,H);grid=new Set();pipes=[];newPipe()};
+       const newPipe=()=>{col=`hsl(${Math.floor(R()*12)*30},85%,50%)`;pipes.push({x:Math.floor(R()*cols),y:Math.floor(R()*rows),d:Math.floor(R()*4),c:col,n:0})};
+       const ball=(x,y,c,r)=>{const gr=g.createRadialGradient(x-r/3,y-r/3,1,x,y,r);gr.addColorStop(0,"#fff");gr.addColorStop(.3,c);gr.addColorStop(1,"#000");g.fillStyle=gr;g.beginPath();g.arc(x,y,r,0,7);g.fill()};
+       reset();let total=0;return ()=>{const p=pipes[pipes.length-1];if(R()<.25)p.d=(p.d+(R()<.5?1:3))%4;const dx=[1,0,-1,0][p.d],dy=[0,1,0,-1][p.d],nx=p.x+dx,ny=p.y+dy;
+         if(nx<0||ny<0||nx>=cols||ny>=rows||grid.has(nx+","+ny)||p.n>60){total++;if(total>9){reset();total=0}else newPipe();return}
+         const x0=p.x*C+C/2,y0=p.y*C+C/2,x1=nx*C+C/2,y1=ny*C+C/2,w=C*.55;const gr=dx?g.createLinearGradient(0,y0-w/2,0,y0+w/2):g.createLinearGradient(x0-w/2,0,x0+w/2,0);gr.addColorStop(0,"#000");gr.addColorStop(.35,p.c);gr.addColorStop(.5,"#fff");gr.addColorStop(.65,p.c);gr.addColorStop(1,"#000");
+         g.fillStyle=gr;if(dx)g.fillRect(Math.min(x0,x1),y0-w/2,C,w);else g.fillRect(x0-w/2,Math.min(y0,y1),w,C);if(R()<.2||p.n===0)ball(x0,y0,p.c,w*.75);grid.add(nx+","+ny);p.x=nx;p.y=ny;p.n++}},
+     hardhats:()=>{const H2=[];for(let i=0;i<40;i++)H2.push({a:R()*Math.PI*2,z:R()*1});const hat=(x,y,s)=>{g.fillStyle="#ffd800";g.beginPath();g.ellipse(x,y,s*1.15,s*.28,0,0,Math.PI*2);g.fill();g.beginPath();g.arc(x,y-s*.05,s*.8,Math.PI,0);g.fill();g.fillStyle="#c09000";g.fillRect(x-s*.12,y-s*.82,s*.24,s*.78);g.strokeStyle="#000";g.lineWidth=Math.max(1,s*.06);g.beginPath();g.arc(x,y-s*.05,s*.8,Math.PI,0);g.stroke()};
+       return ()=>{g.fillStyle="#000";g.fillRect(0,0,W,H);H2.sort((a,b)=>a.z-b.z).forEach(h=>{h.z+=.004;if(h.z>1){h.z=0;h.a=R()*Math.PI*2}const d=h.z*h.z*Math.max(W,H)*.75,x=W/2+Math.cos(h.a)*d,y=H/2+Math.sin(h.a)*d;hat(x,y,4*dp+h.z*h.z*60*dp)})}},
+     marquee:()=>{let x=W,y=H/2,h=0;const txt="Nuclear Construction Tycoon · Kestrel Point Generating Station · Units 1 & 2";g.font=`700 ${Math.round(64*dp)}px Arial`;const tw=g.measureText(txt).width;
+       return ()=>{g.fillStyle="#000";g.fillRect(0,0,W,H);g.font=`700 ${Math.round(64*dp)}px Arial`;h=(h+.5)%360;g.fillStyle=`hsl(${h},100%,60%)`;g.fillText(txt,x,y);x-=3*dp;if(x<-tw){x=W;y=H*(.2+R()*.6)}}},
+    })[k]||(()=>()=>{});
+    const step=run();const f=()=>{if(!this.on)return;t++;step();this.raf=requestAnimationFrame(f)};f()},
+  stop(){this.on=false;cancelAnimationFrame(this.raf);if(this.cv)this.cv.remove();this.cv=null;this.last=Date.now()}};
+["pointermove","pointerdown","keydown","wheel","touchstart"].forEach(ev=>addEventListener(ev,()=>Saver.poke(),{passive:true,capture:true}));
+setInterval(()=>Saver.tick(),5000);
 
 // ---------- Help ----------
 let helpOpen=false;
