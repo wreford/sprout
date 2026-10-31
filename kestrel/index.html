@@ -174,6 +174,11 @@ svg.spark{width:100%;height:56px;display:block;margin-top:6px}
 .modal li{border-left:3px solid var(--bad);padding-left:12px;display:grid;gap:4px}
 .modal li.okk{border-color:var(--ok)}
 .delta{display:flex;gap:16px;flex-wrap:wrap}
+.medpop{position:fixed;right:20px;bottom:20px;z-index:80;background:var(--panel);border:1px solid var(--line);border-left:6px solid var(--hivis);padding:12px 16px;display:grid;gap:2px;box-shadow:var(--shadow);border-radius:4px;max-width:320px;animation:rise .3s both}
+.medpop b{font-family:var(--display);font-size:22px;text-transform:uppercase}
+.medals{display:grid;gap:8px}.medgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px}
+.med{border:1px dashed var(--line);padding:8px 10px;border-radius:3px;display:grid;gap:2px;opacity:.55}.med b{font-family:var(--display);font-size:17px;text-transform:uppercase}.med span{font-size:12px;color:var(--muted)}
+.med.got{opacity:1;border-style:solid;border-color:var(--hivis);background:color-mix(in srgb,var(--hivis) 10%,var(--panel))}
 .newsbox{background:var(--sunk);border:1px solid var(--line);border-left:4px solid var(--hivis);padding:10px 12px;display:grid;gap:6px;border-radius:3px}
 .delta div{display:grid}
 .delta .v{font-family:var(--display);font-size:28px;font-weight:700}
@@ -622,6 +627,49 @@ idle:{x:"No reply to the grid operator. They escalated to the minister.",e:{cm:-
 idle:{x:"The offer lapsed.",e:{}},L:"Make it about the workforce."}
 ];
 
+// ---------- Medals: kept across builds ----------
+const MED_KEY="kestrel-medals";
+const MEDALS=[
+ {id:"first",n:"Hard Hat",d:"Make your first call."},
+ {id:"clean",n:"Clean Sweep",d:"Make three best calls in one turn."},
+ {id:"best10",n:"Sharp Eye",d:"Make 10 best calls in one build."},
+ {id:"best25",n:"Builder's Instinct",d:"Make 25 best calls in one build."},
+ {id:"pkg",n:"Package Lead",d:"Get promoted for the first time."},
+ {id:"dir",n:"Corner Office",d:"Reach construction director."},
+ {id:"finish",n:"Fuel Load",d:"Finish a build."},
+ {id:"hardfin",n:"Troubled Job",d:"Finish a build on hard."},
+ {id:"early",n:"Ahead of the Curve",d:"Load fuel before the target date."},
+ {id:"under",n:"Under Budget",d:"Finish under the cost baseline."},
+ {id:"safe8",n:"Safety Culture",d:"Reach a safety culture of +8."},
+ {id:"rep5",n:"Everybody's Friend",d:"All five reputations positive at once."},
+ {id:"fog",n:"The Fog Clears",d:"Narrow the window to 12 weeks or less."},
+ {id:"unlucky",n:"Judge the Call",d:"Five good calls that went badly in one build."},
+ {id:"lucky",n:"Got Away With It",d:"Get away with three bad calls in one build."},
+ {id:"falcons",n:"Falcon Friend",d:"Make the best call on the falcons."},
+ {id:"walter",n:"Found Walter",d:"Make the best call on the fourth-floor ghost."},
+ {id:"maria",n:"Listen to Maria",d:"Make the best call the night before fuel load."},
+ {id:"top",n:"Builder's Builder",d:"Earn the top rating."},
+ {id:"odds5",n:"Seen It Before",d:"Unlock the odds in five areas."},
+ {id:"news10",n:"Reads the Bulletin",d:"See 10 pieces of site news, across builds."},
+ {id:"builds3",n:"Career Builder",d:"Finish three builds."},
+];
+function medState(){try{return JSON.parse(localStorage.getItem(MED_KEY))||{got:{},n:{}}}catch(e){return {got:{},n:{}}}}
+function medSave(M){try{localStorage.setItem(MED_KEY,JSON.stringify(M))}catch(e){}}
+let medQ=[];
+function medGive(id){const M=medState();if(M.got[id])return;M.got[id]=Date.now();medSave(M);const m=MEDALS.find(x=>x.id===id);if(m){medQ.push(m);medShow()}}
+function medCount(k,v){const M=medState();M.n[k]=(M.n[k]||0)+(v||1);medSave(M);return M.n[k]}
+function medShow(){if(document.getElementById("medPop")||!medQ.length)return;const m=medQ.shift();document.body.insertAdjacentHTML("beforeend",`<div id="medPop" class="medpop" role="status"><span class="lbl">Medal</span><b>${esc(m.n)}</b><span class="note">${esc(m.d)}</span></div>`);Snd.play("promo");setTimeout(()=>{const e=document.getElementById("medPop");if(e)e.remove();medShow()},2600)}
+function medCheck(){if(!st)return;const g=st.grades,T=ODDS_AT();
+  if(g.best+g.good+g.weak+g.wrong>=1)medGive("first");
+  if(g.best>=10)medGive("best10");if(g.best>=25)medGive("best25");
+  if(st.role>=1)medGive("pkg");if(st.role>=3)medGive("dir");
+  if(st.s>=8)medGive("safe8");if(Object.values(st.rep).every(v=>v>0))medGive("rep5");
+  if(st.w<=12)medGive("fog");if(st.luck.bad>=5)medGive("unlucky");if(st.luck.good>=3)medGive("lucky");
+  if(Object.values(st.xp).filter(v=>v>=T).length>=5)medGive("odds5");
+  const res=st.week.filter(w=>w.res);if(res.length===3&&res.every(w=>w.res.g==="best"))medGive("clean");
+  res.forEach(w=>{if(w.res.g!=="best")return;if(w.id==="falcons")medGive("falcons");if(w.id==="ghost")medGive("walter");if(w.id==="maria")medGive("maria")})}
+function medalsHTML(){const M=medState(),n=MEDALS.filter(m=>M.got[m.id]).length;return `<div class="medals"><div class="grow"><span class="lbl">Medals · ${n} of ${MEDALS.length}</span></div><div class="medgrid">${MEDALS.map(m=>`<div class="med ${M.got[m.id]?"got":""}" title="${esc(m.d)}"><b>${esc(m.n)}</b><span>${esc(m.d)}</span></div>`).join("")}</div></div>`}
+
 // ---------- Site news: things that happen between turns ----------
 const NEWS=[
  {id:"cold",t:"A polar vortex parks over the lake for nine days. Everything outdoors slows down.",e:{d:.8}},
@@ -873,7 +921,7 @@ function choose(i){
   apply(r.e); st.xp[sc.a]=(st.xp[sc.a]||0)+(o.g==="best"?2:1); st.grades[o.g]++;
   w.status="done"; w.res={choice:o.t,out:r.x,e:r.e,g:o.g,n:o.n,L:sc.L,luck}; st.att--;
   st.log.push(`T${st.turn} · ${sc.t}: ${GNAME[o.g].toLowerCase()}.`);
-  Snd.play("stamp");Snd.play(o.g);justChose=cur;save(); render();justChose=null;
+  Snd.play("stamp");Snd.play(o.g);justChose=cur;save(); render();justChose=null;medCheck();
 }
 
 function endTurn(){
@@ -881,7 +929,7 @@ function endTurn(){
   const missed=[];
   for(const w of st.week){ if(w.status!=="done"){const sc=byId(w.id);apply(sc.idle.e);w.status="missed";missed.push(sc);st.log.push(`T${st.turn} · ${sc.t}: left alone.`)} }
   st.w=Math.max(2,+(st.w-1.5).toFixed(1));
-  const news=rollNews();
+  const news=rollNews();if(news)medCount("news")>=10&&medGive("news10");
   const sn=st.snap||{d:st.d,w:st.w,c:st.c,s:st.s};
   const dd=+(st.d-sn.d).toFixed(1), dw=+(st.w-sn.w).toFixed(1), dc=+(st.c-sn.c).toFixed(2);
   let promo="", ending=false;
@@ -907,7 +955,7 @@ function endTurn(){
     ${missed.length?`<div><span class="lbl">Left alone</span><ul>${missed.map(sc=>`<li><b>${esc(sc.t)}</b><span>${esc(sc.idle.x)}</span><div class="fx">${fxChips(sc.idle.e)}</div></li>`).join("")}</ul></div>`:`<p class="note">Nothing was left alone this turn.</p>`}
     <div><button class="btn" id="nextturn">${ending?"See how it ended":"Start turn "+(st.turn+1)}</button></div>
   </div></div>`;
-  st.pendingEnd=ending; st.ended=true;Snd.play(ending?"end":promo?"promo":"turn");
+  medCheck();st.pendingEnd=ending; st.ended=true;Snd.play(ending?"end":promo?"promo":"turn");
   save(); render();
 }
 function closeModal(){
@@ -936,6 +984,7 @@ function renderEnd(){
   const fl=addWeeks(TARGET,st.final), late=Math.round(st.final);
   const g=st.grades, total=g.best+g.good+g.weak+g.wrong||1, sound=Math.round(100*(g.best+g.good)/total);
   const score=sound/10+st.s+repAvg()-Math.max(0,late)/8-Math.max(0,st.c)/15;
+  if(!st.medalled){st.medalled=1;medGive("finish");if(st.mode==="hard")medGive("hardfin");if(late<0)medGive("early");if(st.c<0)medGive("under");if(medCount("builds")>=3)medGive("builds3");if(score>=14)medGive("top");save()}
   const rank=score>=14?"Builder's builder":score>=9?"Steady hand":score>=4?"Survivor":score>=0?"Lessons learned":"Cautionary tale";
   const seg=k=>`<span class="" style="width:${100*g[k]/total}%;background:var(--${k==="best"?"ok":k==="good"?"info":k==="weak"?"warn":"bad"})" title="${GNAME[k]} ${g[k]}"></span>`;
   app.innerHTML=`<div class="stripe" aria-hidden="true"></div>
@@ -950,6 +999,7 @@ function renderEnd(){
       <div><span class="lbl">Reputation</span><div class="reps">${Object.keys(REP).map(k=>`<span class="chip ${st.rep[k]>0?"pos":st.rep[k]<0?"neg":""}">${REP[k]} <b>${sgn(st.rep[k])}</b></span>`).join("")}</div></div>
       <div><span class="lbl">How the fog cleared</span>${spark(st.hist)}</div>
     </div>
+    ${medalsHTML()}
     <div class="modes"><button class="btn" id="again">Play again</button><button class="btn ghost" id="againhard">Try hard mode</button></div>
   </section>`;
   document.getElementById("again").onclick=()=>{clearSaved();start(st.mode)};
@@ -975,6 +1025,7 @@ function renderTitle(){
       <button class="mode hard" id="hard"><span class="lbl">New game</span><h3>Hard</h3><p class="note">A troubled job already 14 weeks late. Worse odds, a wider window, and a boss who doesn't trust you yet.</p></button>
     </div>
     <p class="note">${S.length} situations across four roles. Progress saves in this browser.</p>
+    ${medalsHTML()}
   </section>`;
   const c=document.getElementById("cont"); if(c) c.onclick=()=>{st=saved;modal=null;prevStrip=null;if(st.ended)closeModal();else render()};
   document.getElementById("normal").onclick=()=>start("normal");
