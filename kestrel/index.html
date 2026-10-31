@@ -194,6 +194,7 @@ svg.spark{width:100%;height:56px;display:block;margin-top:6px}
 .rv{border:1px solid var(--line);border-left:4px solid var(--info);background:var(--sunk);padding:10px 12px;border-radius:3px;display:grid;gap:5px;font-size:14px}
 .rv.g-best{border-left-color:var(--ok)}.rv.g-weak{border-left-color:var(--warn)}.rv.g-wrong{border-left-color:var(--bad)}.rv.idle{border-left-color:var(--muted);border-left-style:dashed}
 .rvbest{border-top:1px dashed var(--line);padding-top:5px}.rvbest .lbl{display:block;color:var(--ok)}.rvL{font-family:var(--display);font-size:17px;font-weight:600}
+.fan{width:100%;height:auto;display:block;margin-top:6px}.fan text{font:10px var(--mono);fill:var(--muted)}.fan .tg{fill:var(--ink);font-weight:600;letter-spacing:.08em}
 .perkpick{display:grid;gap:8px}
 .medpop{position:fixed;right:20px;bottom:20px;z-index:80;background:var(--panel);border:1px solid var(--line);border-left:6px solid var(--hivis);padding:12px 16px;display:grid;gap:2px;box-shadow:var(--shadow);border-radius:4px;max-width:320px;animation:rise .3s both}
 .medpop b{font-family:var(--display);font-size:22px;text-transform:uppercase}
@@ -771,7 +772,7 @@ const GRADES=["best","good","weak","wrong"];
 const GNAME={best:"Best call",good:"Sound",weak:"Weak",wrong:"Wrong call"};
 let st=null, cur=null, modal=null, prevStrip=null, dealAnim=true, lastCur=undefined;
 
-function fresh(mode){return{mode,turn:1,role:0,rep:{f:0,b:0,en:0,r:0,cm:0},s:0,c:0,d:6,w:44,xp:{},used:[],week:[],att:3,log:[],grades:{best:0,good:0,weak:0,wrong:0},luck:{good:0,bad:0},hist:[44],over:false,snap:null}}
+function fresh(mode){return{fan:[{d:6,w:44}],mode,turn:1,role:0,rep:{f:0,b:0,en:0,r:0,cm:0},s:0,c:0,d:6,w:44,xp:{},used:[],week:[],att:3,log:[],grades:{best:0,good:0,weak:0,wrong:0},luck:{good:0,bad:0},hist:[44],over:false,snap:null}}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(st))}catch(e){}}
 function loadSaved(){try{const v=localStorage.getItem(KEY);return v?JSON.parse(v):null}catch(e){return null}}
 function clearSaved(){try{localStorage.removeItem(KEY)}catch(e){}}
@@ -983,7 +984,7 @@ function render(){
       <div class="ladder">${ROLES.map((r,i)=>`<div class="rung ${i<st.role?"on":i===st.role?"now":""}"><span></span><small>${r}</small></div>`).join("")}</div>
       <p class="note">${pool(st.role).length} situations left at this level before the next step.</p>
       ${(st.perks||[]).length?`<span class="lbl" style="margin-top:6px">Your team</span><div class="reps">${st.perks.map(k=>`<span class="chip pos" title="${esc(PERKS[k].d)}"><b>${esc(PERKS[k].n)}</b></span>`).join("")}</div>`:""}
-      <span class="lbl" style="margin-top:6px">Window width over time</span>${spark(st.hist)}</div>
+      <span class="lbl" style="margin-top:6px">Forecast over time</span>${fanHTML()}</div>
     <div class="panel"><span class="lbl">Experience · odds unlock at ${ODDS_AT()}</span>${xpHTML()}</div>
     <div class="panel log"><span class="lbl">Site log</span>${st.log.length?`<ol reversed>${st.log.slice().reverse().slice(0,40).map(l=>`<li>${esc(l)}</li>`).join("")}</ol>`:'<p class="note">Nothing logged yet. Your first decisions land here.</p>'}</div>
   </aside>
@@ -993,6 +994,22 @@ function render(){
   bind();tutPaint();
 }
 
+// the forecast band, turn by turn: P10 to P90 shaded, midpoint drawn, target at zero
+function fanHTML(final){const F=(st.fan||[]).slice();if(F.length<2&&final==null)return `<p class="note">Builds as turns pass.</p>`;
+  const pts=F.length?F:[{d:st.d,w:st.w}];const W=320,H=150,P={l:34,r:8,t:10,b:20},n=pts.length;
+  let lo=Math.min(0,...pts.map(p=>p.d-p.w/2)),hi=Math.max(0,...pts.map(p=>p.d+p.w/2));if(final!=null){lo=Math.min(lo,final);hi=Math.max(hi,final)}lo=Math.floor(lo/10)*10;hi=Math.ceil(hi/10)*10||10;
+  const X=i=>P.l+(n<2?0:i/(n-1))*(W-P.l-P.r),Y=v=>P.t+(hi-v)/(hi-lo)*(H-P.t-P.b);
+  const top=pts.map((p,i)=>`${X(i).toFixed(1)},${Y(p.d+p.w/2).toFixed(1)}`),bot=pts.map((p,i)=>`${X(i).toFixed(1)},${Y(p.d-p.w/2).toFixed(1)}`).reverse(),mid=pts.map((p,i)=>`${X(i).toFixed(1)},${Y(p.d).toFixed(1)}`).join(" ");
+  const ticks=[];for(let v=lo;v<=hi;v+=hi-lo>80?40:20)ticks.push(v);
+  const last=pts[n-1];
+  return `<svg class="fan" viewBox="0 0 ${W} ${H}" role="img" aria-label="Forecast band over ${n} turns, now ${Math.round(last.d)} weeks from target with a ${Math.round(last.w)} week window">
+   ${ticks.map(v=>`<line x1="${P.l}" x2="${W-P.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)" stroke-width="1"/><text x="${P.l-4}" y="${Y(v)+3}" text-anchor="end">${v>0?"+":""}${v}</text>`).join("")}
+   <polygon points="${top.concat(bot).join(" ")}" fill="color-mix(in srgb,var(--info) 22%,transparent)" stroke="var(--info)" stroke-width="1"/>
+   <polyline points="${mid}" fill="none" stroke="var(--info)" stroke-width="2"/>
+   <line x1="${P.l}" x2="${W-P.r}" y1="${Y(0)}" y2="${Y(0)}" stroke="var(--hivis)" stroke-width="2"/><text x="${W-P.r}" y="${Y(0)-4}" text-anchor="end" class="tg">TARGET</text>
+   ${final!=null?`<circle cx="${X(n-1)}" cy="${Y(final)}" r="5" fill="var(--ink)" stroke="var(--panel)" stroke-width="2"/><text x="${X(n-1)-8}" y="${Y(final)+4}" text-anchor="end" class="tg">ACTUAL</text>`:`<circle cx="${X(n-1)}" cy="${Y(last.d)}" r="3.5" fill="var(--info)"/>`}
+   <text x="${P.l}" y="${H-4}">turn 1</text><text x="${W-P.r}" y="${H-4}" text-anchor="end">turn ${n}</text></svg>
+   <div class="grow"><span class="lbl">weeks from target</span><span class="lbl">now ${Math.round(last.w)} wk wide</span></div>`}
 function spark(h){
   const W=300,H=56,n=h.length;if(n<2)return `<p class="note">Builds as turns pass.</p>`;
   const mx=Math.max(...h,10),mn=0;
@@ -1082,7 +1099,7 @@ function endTurn(){
       st.log.push(`T${st.turn} · Promoted to ${ROLES[st.role]}.`);st.offer=perkOffer();
     } else ending=true;
   }
-  st.hist.push(st.w);
+  st.hist.push(st.w);(st.fan=st.fan||[]).push({d:st.d,w:st.w});
   const handled=st.week.filter(w=>w.res);
   modal=`<div class="scrim" role="dialog" aria-modal="true" aria-labelledby="mt"><div class="modal">
     <span class="lbl">End of turn ${st.turn}</span><h2 id="mt">${ending?"Last turn on the build":promo?"Promotion":"Turn report"}</h2>
@@ -1141,7 +1158,7 @@ function renderEnd(){
       <div><span class="lbl">Decision quality</span><p class="num">${sound}% sound calls</p><div class="gbar">${GRADES.map(seg).join("")}</div><p class="note num">Best ${g.best} · Sound ${g.good} · Weak ${g.weak} · Wrong ${g.wrong}</p></div>
       <div><span class="lbl">Luck</span><p>Good calls that went badly: <b class="num">${st.luck.bad}</b></p><p>Bad calls you got away with: <b class="num">${st.luck.good}</b></p><p class="note">Judge the call, not the outcome.</p></div>
       <div><span class="lbl">Reputation</span><div class="reps">${Object.keys(REP).map(k=>`<span class="chip ${st.rep[k]>0?"pos":st.rep[k]<0?"neg":""}">${REP[k]} <b>${sgn(st.rep[k])}</b></span>`).join("")}</div></div>
-      <div><span class="lbl">How the fog cleared</span>${spark(st.hist)}</div>
+      <div><span class="lbl">How the fog cleared</span>${fanHTML(st.final)}</div>
     </div>
     ${reviewHTML()}
     ${buildsHTML(st.bid)}
@@ -1182,7 +1199,7 @@ function renderTitle(){
   document.getElementById("hard").onclick=()=>start("hard");
   document.getElementById("daily").onclick=()=>start("daily");
 }
-function start(mode){st=fresh(mode);if(mode==="daily"){st.day=todayKey();st.rs=seedOf("kestrel"+st.day)}if(mode==="hard"){st.d=14;st.w=56;st.hist=[56];st.rep.b=-1}modal=null;prevStrip=null;drawWeek();save();render();window.scrollTo({top:0})}
+function start(mode){st=fresh(mode);if(mode==="hard")st.fan=[{d:14,w:56}];if(mode==="daily"){st.day=todayKey();st.rs=seedOf("kestrel"+st.day)}if(mode==="hard"){st.d=14;st.w=56;st.hist=[56];st.rep.b=-1}modal=null;prevStrip=null;drawWeek();save();render();window.scrollTo({top:0})}
 
 render();
 </script>
