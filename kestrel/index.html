@@ -329,6 +329,12 @@ kbd{background:var(--face);color:var(--face-ink);border:1px solid var(--dk);bord
 .stakes{display:inline-block;font:700 10px var(--body);letter-spacing:.05em;color:#fff;background:var(--bad);padding:1px 5px;margin-right:4px;vertical-align:1px}
 .opt.rk{border-style:dashed;border-color:var(--bad)}
 .outhead .die{width:22px;height:22px}
+.invest{display:grid;gap:6px}.invtog{display:flex;justify-content:space-between;align-items:center;width:100%}
+.pips{display:inline-flex;gap:3px}.pips i{width:10px;height:10px;border-radius:50%;border:1px solid var(--dk);background:var(--panel)}.pips i.on{background:#ffd800}
+.invlist{display:grid;gap:4px;background:var(--sunk);border:1px solid var(--dk);box-shadow:inset 1px 1px var(--lo);padding:6px;max-height:340px;overflow:auto}.invlist .note{margin:0 0 2px;color:var(--face-ink);font-size:12px}
+.inv{display:grid;grid-template-columns:36px 1fr;gap:6px;align-items:start;text-align:left;background:var(--panel);color:var(--ink);border:1px solid var(--line);padding:5px 8px;font-size:13px;cursor:pointer}
+.inv:hover:not(:disabled){background:var(--sel);color:var(--sel-ink)}.inv:hover:not(:disabled) small{color:var(--sel-ink)}.inv:disabled{opacity:.55;cursor:not-allowed}.inv.done{opacity:.75}
+.inv .ic{color:#c09000;font-size:11px;letter-spacing:1px;padding-top:2px}.inv small{color:var(--muted);font-size:11.5px}
 .qt{max-width:980px;width:100%;margin:0 auto}
 .qtstat{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;background:var(--sunk);border:1px solid var(--dk);padding:4px}
 .qtstat>span{display:grid;gap:2px;background:var(--sunk);box-shadow:inset 1px 1px var(--lo),inset -1px -1px var(--hi);padding:5px 10px;color:var(--face-ink)}.qtstat .lbl{color:var(--face-ink)}.qtstat b{font-size:20px}.qtstat small{font-size:13px;color:var(--bad)}
@@ -1169,6 +1175,8 @@ const MEDALS=[
  {id:"news10",n:"Reads the Bulletin",d:"See 10 pieces of site news, across builds."},
  {id:"builds3",n:"Career Builder",d:"Finish three builds."},
  {id:"gamble",n:"Fortune Favours",d:"Win a high-stakes gamble."},
+ {id:"coffee",n:"Coffee Run",d:"Buy the coffee ten times."},
+ {id:"investor",n:"Investor",d:"Spend 50 investment points, across builds."},
  {id:"qtfirst",n:"Quick Study",d:"Finish a Quick Technical shift."},
  {id:"qtstreak",n:"Hot Streak",d:"Six right in a row in Quick Technical."},
  {id:"qtperfect",n:"Clean Shift",d:"Twelve for twelve in Quick Technical."},
@@ -1256,7 +1264,7 @@ function simTurn(){simInit();const rel=[];CWAS.forEach(c=>{if(st.cons[c.id]===0)
 // PMI earned value, in $M against a $4.8B budget at completion
 const BAC=4800;
 function evm(){const plan=D().per===5?20:25,pv=BAC*.85*Math.min(1,(st.turn-1)/plan+.02),ev=BAC*overall()/100,ac=ev+Math.max(0,st.c)+(st.c<0?st.c:0);
-  return {pv,ev,ac,spi:pv?ev/pv:1,cpi:ac>0?ev/ac:1}}
+  return {pv,ev,ac,spi:st.turn<=1||!pv?1:ev/pv,cpi:ac>0?ev/ac:1}}
 function awpHTML(){simInit();const E=evm();
   return `<div class="awp">${CWAS.map((c,i)=>{const p=st.prog[c.id],k=st.cons[c.id];return `<div class="awrow" data-cwa="${c.id}"><span class="awn"><b>${i+1}</b> ${esc(c.n)}</span><span class="xpbar"><b class="${p>=100?"full":""}" style="width:${p}%"></b></span><span class="lbl">${Math.round(p)}%</span><span class="awst ${k?"hold":"rel"}">${k?`${k} blocker${k===1?"":"s"}`:"crews working"}</span></div>`}).join("")}</div>
   <div class="evm"><span><b>Planned</b> $${Math.round(E.pv)}M</span><span><b>Built</b> $${Math.round(E.ev)}M</span><span><b>Spent</b> $${Math.round(E.ac)}M</span><span class="${E.spi<.9?"c-wrong":E.spi>=1?"c-best":""}"><b>Pace</b> ${E.spi.toFixed(2)}</span><span class="${E.cpi<.95?"c-wrong":E.cpi>=1?"c-best":""}"><b>Value</b> ${E.cpi.toFixed(2)}</span></div>
@@ -1854,12 +1862,13 @@ function drawWeek(){
   if(p.length<PER_TURN()){const back=shuffle(S.filter(s=>s.r<st.role&&!st.used.includes(s.id)));p=p.concat(back.slice(0,PER_TURN()-p.length))}
   st.week=p.map(s=>({id:s.id,status:"open"}));
   st.used.push(...p.map(s=>s.id));
+  st.ip=IP_DAY();st.invT={};st.spent=[];
   simInit();st.att=3+(hasPerk("bench")&&st.turn%3===0?1:0); cur=null; dealAnim=true; st.snap={d:st.d,w:st.w,c:st.c,s:st.s};
 }
 function chance(sc,o){
   if(o.p>=1)return 1; if(o.p<=0)return 0;
   const xp=st.xp[sc.a]||0;
-  return Math.max(.05,Math.min(.97,o.p+Math.min(.1,xp*.025)-D().odds+(hasPerk("mentor")?.05:0)));
+  return Math.max(.05,Math.min(.97,o.p+Math.min(.1,xp*.025)-D().odds+(hasPerk("mentor")?.05:0)+(today("opex")?.05:0)+(owns("wx")&&/Weather|Concrete|Lifting/.test(sc.a)?.1:0)));
 }
 const DIE='<svg class="die" viewBox="0 0 16 16" width="18" height="18" shape-rendering="crispEdges" role="img" aria-label="chance"><rect x="1" y="1" width="14" height="14" rx="2" fill="#fff" stroke="#000"/><rect x="4" y="4" width="2" height="2" fill="#c00000"/><rect x="10" y="4" width="2" height="2" fill="#000"/><rect x="7" y="7" width="2" height="2" fill="#000"/><rect x="4" y="10" width="2" height="2" fill="#000"/><rect x="10" y="10" width="2" height="2" fill="#000"/></svg>';
 const DIFF={career:{odds:.18,at:4,d:16,w:58,b:-1,f:0,per:4,idle:1.25,narrow:1.3},nightmare:{odds:.24,at:5,d:24,w:64,b:-2,f:-1,per:5,idle:1.4,narrow:1.2}};
@@ -1867,13 +1876,13 @@ const D=()=>DIFF[st&&st.mode==="nightmare"?"nightmare":"career"];
 const ODDS_AT=()=>D().at;
 const PER_TURN=()=>st?D().per:4;
 const MODE_N={career:"Career",daily:"Daily build",nightmare:"Nightmare",normal:"Career",hard:"Career"};
-function showOdds(sc){return (st.xp[sc.a]||0)>=ODDS_AT()}
+function showOdds(sc){return today("opex")||(st.xp[sc.a]||0)>=ODDS_AT()}
 
 function apply(e,idle){
   e=Object.assign({},e||{});
   if(st.perks){const half=(k,p)=>{if(hasPerk(p)&&e[k]<0)e[k]=e[k]/2};half("r","liaison");half("f","steward");half("cm","comms");half("s","safetypro");
     if(hasPerk("costeng")&&e.c>0)e.c=+(e.c*.8).toFixed(2);if(idle&&hasPerk("nights")&&e.d>0)e.d=+(e.d*.7).toFixed(1)}
-  if(idle){if(e.d>0)e.d=+(e.d*D().idle).toFixed(1);if(e.c>0)e.c=+(e.c*D().idle).toFixed(2)}
+  if(idle){if(e.d>0)e.d=+(e.d*D().idle).toFixed(1);if(e.c>0)e.c=+(e.c*D().idle).toFixed(2);if(today("engineer"))for(const k in e)if(e[k]<0||k==='d'||k==='c')e[k]=+(e[k]*.5).toFixed(2)}
   for(const k of Object.keys(REP)) if(e[k]) st.rep[k]=Math.max(-10,Math.min(10,st.rep[k]+e[k]));
   if(e.s) st.s=Math.max(-10,Math.min(10,st.s+e.s));
   if(e.c) st.c=+(st.c+e.c).toFixed(2);
@@ -2172,6 +2181,34 @@ function qtRender(){setWinTitle("QUIKTECH.EXE - Quick Technical");setTimeout(mus
 function qtKey(e){const k=e.key;if(k==="Escape"){e.preventDefault();qtQuit();return}if(QT.done){if(k==="Enter"){e.preventDefault();qtStart()}return}
   if(!QT.ans&&/^[1-4]$/.test(k)){e.preventDefault();qtAnswer(+k-1)}else if(QT.ans&&(k==="Enter"||k===" "||k.toLowerCase()==="n")){e.preventDefault();qtNext()}}
 
+// ---------- Investments: a few points to spend each day ----------
+const INV=[
+ {k:"coffee",n:"Coffee run",c:1,d:"Field +1. Nobody forgets who brought the coffee.",f:()=>repAdd("f",1)},
+ {k:"toolbox",n:"Toolbox talk",c:1,d:"Safety +1.",f:()=>{st.s=Math.min(10,st.s+1)}},
+ {k:"walkdown",n:"Walkdown",c:1,d:"Clears one blocker in the most blocked area.",f:()=>{simInit();const c=CWAS.slice().sort((a,b)=>st.cons[b.id]-st.cons[a.id])[0];if(st.cons[c.id]>0){st.cons[c.id]--;return `A blocker cleared in ${c.n}.`}return "Nothing blocked. The walk was good exercise."}},
+ {k:"mentor",n:"Mentor an apprentice",c:1,d:"+1 experience in an area on today's list.",f:()=>{const a=byId((st.week[Math.floor(Math.random()*st.week.length)]||{}).id);if(a){st.xp[a.a]=(st.xp[a.a]||0)+1;return `+1 experience in ${a.a.toLowerCase()}.`}}},
+ {k:"regprep",n:"Regulator prep",c:1,d:"Regulator +1. Paperwork ready before anyone asks.",f:()=>repAdd("r",1)},
+ {k:"opex",n:"OPEX review",c:2,d:"Today: +5% on every chance, and you can see the odds.",today:1},
+ {k:"engineer",n:"Field engineer presence",c:2,d:"Today: anything left alone hits half as hard.",today:1},
+ {k:"lookahead",n:"Look-ahead schedule",c:2,d:"Window −1.5 weeks, finish −0.3 weeks.",f:()=>{st.w=Math.max(2,+(st.w-1.5).toFixed(1));st.d=+(st.d-.3).toFixed(1)}},
+ {k:"bbq",n:"Crew barbecue",c:2,d:"Field +2.",f:()=>repAdd("f",2)},
+ {k:"overtime",n:"Overtime weekend",c:2,d:"Finish −0.6 weeks. Safety −1, field −1, +$0.2M.",f:()=>{st.d=+(st.d-.6).toFixed(1);st.s=Math.max(-10,st.s-1);repAdd("f",-1);st.c=+(st.c+.2).toFixed(2)}},
+ {k:"phones",n:"Foreman smartphones",c:3,d:"Permanent. The window narrows half a week faster every turn.",perm:1},
+ {k:"wx",n:"Site weather station",c:3,d:"Permanent. +10% on weather, concrete and lifting calls.",perm:1},
+];
+function repAdd(k,v){st.rep[k]=Math.max(-10,Math.min(10,st.rep[k]+v))}
+const IP_DAY=()=>st.role>=2?4:3;
+const owns=k=>!!(st&&st.inv&&st.inv[k]);
+const today=k=>!!(st&&st.invT&&st.invT[k]);
+let invOpen=false;
+function invBuy(k){const it=INV.find(x=>x.k===k);if(!it||st.ip<it.c||(it.perm&&owns(k))||(!it.perm&&today(k)))return;st.ip-=it.c;
+  if(it.perm)(st.inv=st.inv||{})[k]=1;else (st.invT=st.invT||{})[k]=1;const msg=it.f?it.f():null;
+  st.log.push(`T${st.turn} · Invested in ${it.n.toLowerCase()}.${msg?" "+msg:""}`);(st.spent=st.spent||[]).push(it.n);medCount("ipSpent",it.c)>=50&&medGive("investor");if(k==="coffee")medCount("coffee")>=10&&medGive("coffee");
+  Snd.play("best");save();render()}
+function investHTML(){const ip=st.ip||0;
+  return `<div class="invest"><button class="btn small invtog" id="invtog" aria-expanded="${invOpen}">Invest <span class="pips">${"<i class=\"on\"></i>".repeat(ip)}${"<i></i>".repeat(Math.max(0,IP_DAY()-ip))}</span></button>
+  ${invOpen?`<div class="invlist"><p class="note">${ip} point${ip===1?"":"s"} left today. Unspent points don't carry over.</p>${INV.map(it=>{const done=it.perm?owns(it.k):today(it.k),can=!done&&ip>=it.c;return `<button class="inv ${done?"done":""}" data-inv="${it.k}" ${can?"":"disabled"}><span class="ic">${"●".repeat(it.c)}</span><span><b>${esc(it.n)}</b>${it.perm?` <small>permanent</small>`:""}<br><small>${done?(it.perm?"Owned.":"Done today."):esc(it.d)}</small></span></button>`}).join("")}</div>`:""}</div>`}
+
 // ---------- Help ----------
 let helpOpen=false;
 function helpHTML(){return `<div class="scrim" id="helpScrim" role="dialog" aria-modal="true" aria-labelledby="ht"><div class="modal" data-title="Help" style="max-width:780px"><h2 id="ht">Keyboard shortcuts</h2>
@@ -2185,6 +2222,7 @@ function helpHTML(){return `<div class="scrim" id="helpScrim" role="dialog" aria
    <dt><kbd>T</kbd></dt><dd>Next color scheme</dd>
    <dt><kbd>M</kbd></dt><dd>Sound effects on or off</dd>
    <dt><kbd>U</kbd></dt><dd>Music on or off</dd>
+   <dt><kbd>I</kbd></dt><dd>Open or close today's investments</dd>
    <dt><kbd>?</kbd></dt><dd>This list. <kbd>Esc</kbd> closes it.</dd>
    <dt>${DIE}</dt><dd>That choice depends on chance. No die means the outcome is certain.</dd>
   </dl><p class="note">Opening a situation is free. Choosing an option spends one attention.</p>
@@ -2243,6 +2281,7 @@ function render(){
       <div class="grow"><h2>Turn ${st.turn}</h2><span class="att" aria-label="${st.att} attention left">${[0,1,2,3].slice(0,Math.max(3,st.att)).map(i=>`<i class="${i<st.att?"on":""}"></i>`).join("")}</span></div>
       <p class="note">${st.week.length===5?"Five":"Four"} things need you. You have attention for ${st.att>3?"four this turn":"three"}. Anything you don't open plays out on its own.</p>
       ${st.week.map((w,wi)=>{const sc=byId(w.id);return `<button class="tag ${w.status==="done"?"done":""}" data-id="${w.id}" aria-current="${cur===w.id}"><span class="kn kbonly">${"ASDFG"[wi]}</span><span class="area"><span class="lbl">${sc.follow?`<b class="fu">Follow-up</b> · `:""}${esc(sc.a)}</span>${w.res?`<span class="lbl c-${w.res.g}">${GNAME[w.res.g]}</span>`:""}</span><span class="tt">${esc(sc.t)}</span></button>`}).join("")}
+      ${investHTML()}
       <button class="btn" id="endturn">${st.att>0&&st.week.some(w=>w.status==="open")?"End turn early":"End turn"}</button>
     </div>
     <div class="panel act ${lastCur!==cur?"enter":""}" id="detail" data-title="${cur?esc(byId(cur).t):"Situation"}">${detailHTML()}</div>
@@ -2328,6 +2367,8 @@ function bind(){
   const sn=document.getElementById("snd"); if(sn) sn.onclick=()=>Snd.toggle();
   const mu=document.getElementById("mus"); if(mu) mu.onclick=()=>Mus.toggle();
   app.querySelectorAll("[data-mt]").forEach(b=>b.onclick=()=>{Snd.play("tick");setMob(b.dataset.mt)});document.documentElement.dataset.mt=mobTab;
+  const it=document.getElementById("invtog");if(it)it.onclick=()=>{invOpen=!invOpen;Snd.play("tick");render()};
+  app.querySelectorAll("[data-inv]").forEach(b=>b.onclick=()=>invBuy(b.dataset.inv));
   const sg=document.getElementById("settings"); if(sg) sg.onclick=()=>toggleSet(true);
   const hp=document.getElementById("help"); if(hp) hp.onclick=()=>toggleHelp(true);
   const e=document.getElementById("endturn"); if(e) e.onclick=endTurn;
@@ -2363,7 +2404,7 @@ function endTurn(){
   if(modal||st.ended) return;
   const missed=[];
   for(const w of st.week){ if(w.status!=="done"){const sc=byId(w.id);apply(sc.idle.e,1);simIdle(sc);w.status="missed";missed.push(sc);(st.dec=st.dec||[]).push({t:st.turn,id:sc.id,i:-1,g:"idle",role:st.role});st.log.push(`T${st.turn} · ${sc.t}: left alone.`)} }
-  st.w=Math.max(2,+(st.w-(hasPerk("scheduler")?1:0)-D().narrow).toFixed(1));
+  st.w=Math.max(2,+(st.w-(hasPerk("scheduler")?1:0)-(owns("phones")?.5:0)-D().narrow).toFixed(1));
   const released=simTurn();
   const news=rollNews();if(news)medCount("news")>=10&&medGive("news10");
   const sn=st.snap||{d:st.d,w:st.w,c:st.c,s:st.s};
@@ -2388,6 +2429,7 @@ function endTurn(){
       <div><span class="lbl">Window</span><span class="v num ${dw>0?"c-wrong":dw<0?"c-best":""}">${dw>0?"+":dw<0?"−":""}${Math.abs(dw)} wk</span></div>
       <div><span class="lbl">Cost</span><span class="v num ${dc>0?"c-wrong":dc<0?"c-best":""}">${dc>0?"+":dc<0?"−":""}$${Math.abs(dc)}M</span></div>
     </div>
+    ${(st.spent||[]).length?`<div class="newsbox"><span class="lbl">Invested today</span><p>${st.spent.map(esc).join(", ")}.${st.ip?` ${st.ip} point${st.ip===1?"":"s"} went unspent.`:""}</p></div>`:st.ip?`<p class="note">${st.ip} investment point${st.ip===1?"":"s"} went unspent.</p>`:""}
     <div class="newsbox"><span class="lbl">Site progress</span><p>${Math.round(overall())}% complete. ${released.length?`Crews working in: ${released.map(id=>esc(CWA_BY[id].n)).join(", ")}.`:"No crews working: every area is blocked."}</p></div>
     ${news?`<div class="newsbox"><span class="lbl">Site news</span><p>${esc(news.t)}</p><div class="fx">${fxChips(news.e)}</div></div>`:""}
     ${handled.length?`<div><span class="lbl">You handled</span><ul>${handled.map(w=>`<li class="okk"><b>${esc(byId(w.id).t)}</b><span class="note">${GNAME[w.res.g]}</span></li>`).join("")}</ul></div>`:""}
@@ -2422,6 +2464,7 @@ document.addEventListener("keydown",e=>{
   else if(k==="t"){toggleTheme()}
   else if(k==="m"){Snd.toggle()}
   else if(k==="u"){Mus.toggle()}
+  else if(k==="i"){invOpen=!invOpen;render()}
 });
 
 function renderEnd(){
