@@ -490,6 +490,28 @@ function applyTheme(t){if(t)document.documentElement.dataset.theme=t;else delete
 try{applyTheme(localStorage.getItem(THEME_KEY))}catch(e){}
 function toggleTheme(){const dark=document.documentElement.dataset.theme?document.documentElement.dataset.theme==="dark":matchMedia("(prefers-color-scheme:dark)").matches;const t=dark?"light":"dark";applyTheme(t);try{localStorage.setItem(THEME_KEY,t)}catch(e){}}
 
+// ---------- Sound: small synth cues, no files ----------
+const SND_KEY="kestrel-sound";
+const Snd={on:true,ctx:null,
+  init(){try{this.on=localStorage.getItem(SND_KEY)!=="off"}catch(e){}},
+  ac(){if(!this.on)return null;if(!this.ctx){const A=window.AudioContext||window.webkitAudioContext;if(!A)return null;this.ctx=new A()}if(this.ctx.state==="suspended")this.ctx.resume();return this.ctx},
+  tone(f,t0,dur,type,vol,slide){const c=this.ac();if(!c)return;const o=c.createOscillator(),g=c.createGain(),t=c.currentTime+t0;o.type=type||"sine";o.frequency.setValueAtTime(f,t);if(slide)o.frequency.exponentialRampToValueAtTime(slide,t+dur);g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(vol||.08,t+.01);g.gain.exponentialRampToValueAtTime(.0001,t+dur);o.connect(g);g.connect(c.destination);o.start(t);o.stop(t+dur+.05)},
+  noise(t0,dur,vol,hp){const c=this.ac();if(!c)return;const n=c.createBuffer(1,c.sampleRate*dur,c.sampleRate),d=n.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*(1-i/d.length);const s=c.createBufferSource(),f=c.createBiquadFilter(),g=c.createGain();s.buffer=n;f.type="highpass";f.frequency.value=hp||800;g.gain.value=vol||.06;s.connect(f);f.connect(g);g.connect(c.destination);s.start(c.currentTime+t0)},
+  play(k){if(!this.on)return;try{({
+    open:()=>this.tone(880,0,.05,"triangle",.04),
+    stamp:()=>{this.noise(0,.09,.09,300);this.tone(110,0,.12,"square",.05,60)},
+    best:()=>{this.tone(523,.18,.12,"triangle",.07);this.tone(784,.28,.22,"triangle",.07)},
+    good:()=>{this.tone(523,.18,.18,"triangle",.06)},
+    weak:()=>{this.tone(392,.18,.2,"triangle",.05,330)},
+    wrong:()=>{this.tone(150,.18,.35,"sawtooth",.05,90)},
+    turn:()=>{this.tone(220,0,.5,"sawtooth",.035);this.tone(277,0,.5,"sawtooth",.03)},
+    promo:()=>{[523,659,784,1047].forEach((f,i)=>this.tone(f,i*.11,.4,"triangle",.06))},
+    end:()=>{[392,523,659,784,1047].forEach((f,i)=>this.tone(f,i*.16,.7,"triangle",.06))},
+    tick:()=>this.tone(1400,0,.02,"square",.015)
+  })[k]()}catch(e){}},
+  toggle(){this.on=!this.on;try{localStorage.setItem(SND_KEY,this.on?"on":"off")}catch(e){}if(this.on)this.play("best");render()}};
+Snd.init();
+
 // ---------- Help ----------
 let helpOpen=false;
 function helpHTML(){return `<div class="scrim" id="helpScrim" role="dialog" aria-modal="true" aria-labelledby="ht"><div class="modal"><span class="lbl">Keyboard</span><h2 id="ht">Shortcuts</h2>
@@ -501,6 +523,7 @@ function helpHTML(){return `<div class="scrim" id="helpScrim" role="dialog" aria
    <dt><kbd>E</kbd></dt><dd>End the turn</dd>
    <dt><kbd>Enter</kbd></dt><dd>Close the turn report and start the next turn</dd>
    <dt><kbd>T</kbd></dt><dd>Light or dark</dd>
+   <dt><kbd>M</kbd></dt><dd>Sound on or off</dd>
    <dt><kbd>?</kbd></dt><dd>This list. <kbd>Esc</kbd> closes it.</dd>
   </dl><p class="note">Opening a situation is free. Choosing an option spends one attention.</p>
   <div><button class="btn" id="helpClose">Got it</button></div></div></div>`}
@@ -508,6 +531,8 @@ function toggleHelp(v){helpOpen=v===undefined?!helpOpen:v;const old=document.get
 
 // ---------- Icons ----------
 const I={
+  sndOn:'<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path d="M16 9a4 4 0 0 1 0 6M19 6a8 8 0 0 1 0 12"/></svg>',
+  sndOff:'<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path d="M17 9l5 6M22 9l-5 6"/></svg>',
   theme:'<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg>',
   lock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><circle cx="12" cy="15.5" r="1.5" fill="currentColor"/></svg>',
   hat:'<svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true"><path d="M8 42h48v6H8z"/><path d="M14 42c0-12 8-20 18-20s18 8 18 20"/><path d="M28 22v-6h8v6"/><path d="M24 26v16M40 26v16"/></svg>'
@@ -527,7 +552,7 @@ function render(){
   app.innerHTML=`
   <div class="stripe" aria-hidden="true"></div>
   <header class="top"><div><span class="lbl">Kestrel Point Generating Station · Units 1 &amp; 2 · ${st.mode==="hard"?"Hard mode":"Normal mode"}</span><h1>Kestrel Point</h1></div>
-    <div class="modes"><span class="note kbonly">Keys: <kbd>↑</kbd><kbd>↓</kbd> situations · <kbd>1</kbd>–<kbd>4</kbd> choose · <kbd>N</kbd> next · <kbd>E</kbd> end turn</span><button class="iconbtn kbonly" id="help" title="Shortcuts (?)" aria-label="Keyboard shortcuts">?</button><button class="iconbtn" id="theme" title="Light or dark (T)" aria-label="Toggle light or dark theme">${I.theme}</button><button class="btn ghost small" id="quit">New game</button></div></header>
+    <div class="modes"><span class="note kbonly">Keys: <kbd>↑</kbd><kbd>↓</kbd> situations · <kbd>1</kbd>–<kbd>4</kbd> choose · <kbd>N</kbd> next · <kbd>E</kbd> end turn</span><button class="iconbtn kbonly" id="help" title="Shortcuts (?)" aria-label="Keyboard shortcuts">?</button><button class="iconbtn" id="snd" title="Sound (M)" aria-label="Sound ${Snd.on?"on":"off"}" aria-pressed="${Snd.on}">${Snd.on?I.sndOn:I.sndOff}</button><button class="iconbtn" id="theme" title="Light or dark (T)" aria-label="Toggle light or dark theme">${I.theme}</button><button class="btn ghost small" id="quit">New game</button></div></header>
   <section class="strip" aria-label="Status">
     <div><span class="lbl">Role</span><span class="v">${ROLES[st.role]}</span></div>
     <div><span class="lbl">Turn · date</span><span class="v num">${st.turn} · ${fmtMonth(gameDate())}</span></div>
@@ -608,11 +633,12 @@ function bind(){
   app.querySelectorAll(".opt").forEach(b=>b.onclick=()=>choose(+b.dataset.opt));
   const q=document.getElementById("quit"); if(q) q.onclick=confirmNew;
   const th=document.getElementById("theme"); if(th) th.onclick=toggleTheme;
+  const sn=document.getElementById("snd"); if(sn) sn.onclick=()=>Snd.toggle();
   const hp=document.getElementById("help"); if(hp) hp.onclick=()=>toggleHelp(true);
   const e=document.getElementById("endturn"); if(e) e.onclick=endTurn;
   const n=document.getElementById("nextturn"); if(n){n.onclick=closeModal;n.focus()}
 }
-function openTag(id,kb){cur=id;render();const d=document.getElementById("detail");if(d&&window.innerWidth<840)d.scrollIntoView({behavior:"smooth",block:"start"});if(kb){const o=document.querySelector(".opt:not(:disabled)")||document.querySelector("[data-goto]");if(o)o.focus({preventScroll:true})}}
+function openTag(id,kb){if(cur!==id)Snd.play("open");cur=id;render();const d=document.getElementById("detail");if(d&&window.innerWidth<840)d.scrollIntoView({behavior:"smooth",block:"start"});if(kb){const o=document.querySelector(".opt:not(:disabled)")||document.querySelector("[data-goto]");if(o)o.focus({preventScroll:true})}}
 let confirmArm=false;
 function confirmNew(){
   const q=document.getElementById("quit");
@@ -631,7 +657,7 @@ function choose(i){
   apply(r.e); st.xp[sc.a]=(st.xp[sc.a]||0)+(o.g==="best"?2:1); st.grades[o.g]++;
   w.status="done"; w.res={choice:o.t,out:r.x,e:r.e,g:o.g,n:o.n,L:sc.L,luck}; st.att--;
   st.log.push(`T${st.turn} · ${sc.t}: ${GNAME[o.g].toLowerCase()}.`);
-  justChose=cur;save(); render();justChose=null;
+  Snd.play("stamp");Snd.play(o.g);justChose=cur;save(); render();justChose=null;
 }
 
 function endTurn(){
@@ -663,7 +689,7 @@ function endTurn(){
     ${missed.length?`<div><span class="lbl">Left alone</span><ul>${missed.map(sc=>`<li><b>${esc(sc.t)}</b><span>${esc(sc.idle.x)}</span><div class="fx">${fxChips(sc.idle.e)}</div></li>`).join("")}</ul></div>`:`<p class="note">Nothing was left alone this turn.</p>`}
     <div><button class="btn" id="nextturn">${ending?"See how it ended":"Start turn "+(st.turn+1)}</button></div>
   </div></div>`;
-  st.pendingEnd=ending; st.ended=true;
+  st.pendingEnd=ending; st.ended=true;Snd.play(ending?"end":promo?"promo":"turn");
   save(); render();
 }
 function closeModal(){
@@ -684,6 +710,7 @@ document.addEventListener("keydown",e=>{
   else if(e.key==="ArrowDown"||e.key==="ArrowUp"){e.preventDefault();const n=i<0?0:(i+(e.key==="ArrowDown"?1:ids.length-1))%ids.length;openTag(ids[n],1)}
   else if(k==="n"){const nx=st.week.find(w=>w.status==="open"&&w.id!==cur);if(nx)openTag(nx.id,1)}
   else if(k==="t"){toggleTheme()}
+  else if(k==="m"){Snd.toggle()}
 });
 
 function renderEnd(){
