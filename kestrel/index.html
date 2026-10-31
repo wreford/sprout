@@ -174,6 +174,10 @@ svg.spark{width:100%;height:56px;display:block;margin-top:6px}
 .modal li{border-left:3px solid var(--bad);padding-left:12px;display:grid;gap:4px}
 .modal li.okk{border-color:var(--ok)}
 .delta{display:flex;gap:16px;flex-wrap:wrap}
+.builds{display:grid;gap:8px}.btable{display:grid;border:1px solid var(--line);border-radius:3px;overflow:auto}
+.bhead,.brow{display:grid;grid-template-columns:90px 70px 90px 110px 90px 60px 90px minmax(140px,1fr);gap:8px;padding:7px 10px;font-size:13px;align-items:center;min-width:760px}
+.bhead{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);background:var(--sunk)}
+.brow{border-top:1px solid var(--line);font-variant-numeric:tabular-nums}.brow.best{background:color-mix(in srgb,var(--hivis) 12%,var(--panel))}.brow.now{box-shadow:inset 4px 0 0 var(--ink)}
 .medpop{position:fixed;right:20px;bottom:20px;z-index:80;background:var(--panel);border:1px solid var(--line);border-left:6px solid var(--hivis);padding:12px 16px;display:grid;gap:2px;box-shadow:var(--shadow);border-radius:4px;max-width:320px;animation:rise .3s both}
 .medpop b{font-family:var(--display);font-size:22px;text-transform:uppercase}
 .medals{display:grid;gap:8px}.medgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px}
@@ -670,6 +674,14 @@ function medCheck(){if(!st)return;const g=st.grades,T=ODDS_AT();
   res.forEach(w=>{if(w.res.g!=="best")return;if(w.id==="falcons")medGive("falcons");if(w.id==="ghost")medGive("walter");if(w.id==="maria")medGive("maria")})}
 function medalsHTML(){const M=medState(),n=MEDALS.filter(m=>M.got[m.id]).length;return `<div class="medals"><div class="grow"><span class="lbl">Medals · ${n} of ${MEDALS.length}</span></div><div class="medgrid">${MEDALS.map(m=>`<div class="med ${M.got[m.id]?"got":""}" title="${esc(m.d)}"><b>${esc(m.n)}</b><span>${esc(m.d)}</span></div>`).join("")}</div></div>`}
 
+// ---------- Past builds ----------
+const HIST_KEY="kestrel-builds";
+function buildsGet(){try{return JSON.parse(localStorage.getItem(HIST_KEY))||[]}catch(e){return []}}
+function buildsAdd(b){const L=buildsGet();L.unshift(b);try{localStorage.setItem(HIST_KEY,JSON.stringify(L.slice(0,25)))}catch(e){}}
+function buildsHTML(hiId){const L=buildsGet();if(!L.length)return "";const best=L.reduce((a,b)=>b.score>a.score?b:a,L[0]);
+  return `<div class="builds"><span class="lbl">Your builds · best rating: ${esc(best.rank)}</span><div class="btable" role="table"><div class="bhead" role="row"><span>Date</span><span>Mode</span><span>Fuel load</span><span>Schedule</span><span>Cost</span><span>Safety</span><span>Sound calls</span><span>Rating</span></div>
+  ${L.slice(0,10).map(b=>`<div class="brow ${b.id===best.id?"best":""} ${b.id===hiId?"now":""}" role="row"><span>${esc(b.when)}</span><span>${b.mode==="hard"?"Hard":b.mode==="daily"?"Daily":"Normal"}</span><span>${esc(b.fl)}</span><span class="${b.late>0?"c-wrong":"c-best"}">${b.late===0?"on target":Math.abs(b.late)+" wk "+(b.late>0?"late":"early")}</span><span class="${b.c>0?"c-wrong":"c-best"}">${b.c>=0?"+":"−"}$${Math.abs(b.c).toFixed(1)}M</span><span>${sgn(b.s)}</span><span>${b.sound}%</span><span><b>${esc(b.rank)}</b></span></div>`).join("")}</div></div>`}
+
 // ---------- Site news: things that happen between turns ----------
 const NEWS=[
  {id:"cold",t:"A polar vortex parks over the lake for nine days. Everything outdoors slows down.",e:{d:.8}},
@@ -984,7 +996,7 @@ function renderEnd(){
   const fl=addWeeks(TARGET,st.final), late=Math.round(st.final);
   const g=st.grades, total=g.best+g.good+g.weak+g.wrong||1, sound=Math.round(100*(g.best+g.good)/total);
   const score=sound/10+st.s+repAvg()-Math.max(0,late)/8-Math.max(0,st.c)/15;
-  if(!st.medalled){st.medalled=1;medGive("finish");if(st.mode==="hard")medGive("hardfin");if(late<0)medGive("early");if(st.c<0)medGive("under");if(medCount("builds")>=3)medGive("builds3");if(score>=14)medGive("top");save()}
+  if(!st.medalled){st.medalled=1;medGive("finish");if(st.mode==="hard")medGive("hardfin");if(late<0)medGive("early");if(st.c<0)medGive("under");if(medCount("builds")>=3)medGive("builds3");if(score>=14)medGive("top");st.bid=Date.now();buildsAdd({id:st.bid,when:new Date().toLocaleDateString("en-CA",{month:"short",day:"numeric"}),mode:st.mode,fl:fmtMonth(fl),late,c:+st.c.toFixed(1),s:st.s,sound,rank:score>=14?"Builder's builder":score>=9?"Steady hand":score>=4?"Survivor":score>=0?"Lessons learned":"Cautionary tale",score:+score.toFixed(2)});save()}
   const rank=score>=14?"Builder's builder":score>=9?"Steady hand":score>=4?"Survivor":score>=0?"Lessons learned":"Cautionary tale";
   const seg=k=>`<span class="" style="width:${100*g[k]/total}%;background:var(--${k==="best"?"ok":k==="good"?"info":k==="weak"?"warn":"bad"})" title="${GNAME[k]} ${g[k]}"></span>`;
   app.innerHTML=`<div class="stripe" aria-hidden="true"></div>
@@ -999,6 +1011,7 @@ function renderEnd(){
       <div><span class="lbl">Reputation</span><div class="reps">${Object.keys(REP).map(k=>`<span class="chip ${st.rep[k]>0?"pos":st.rep[k]<0?"neg":""}">${REP[k]} <b>${sgn(st.rep[k])}</b></span>`).join("")}</div></div>
       <div><span class="lbl">How the fog cleared</span>${spark(st.hist)}</div>
     </div>
+    ${buildsHTML(st.bid)}
     ${medalsHTML()}
     <div class="modes"><button class="btn" id="again">Play again</button><button class="btn ghost" id="againhard">Try hard mode</button></div>
   </section>`;
@@ -1025,6 +1038,7 @@ function renderTitle(){
       <button class="mode hard" id="hard"><span class="lbl">New game</span><h3>Hard</h3><p class="note">A troubled job already 14 weeks late. Worse odds, a wider window, and a boss who doesn't trust you yet.</p></button>
     </div>
     <p class="note">${S.length} situations across four roles. Progress saves in this browser.</p>
+    ${buildsHTML()}
     ${medalsHTML()}
   </section>`;
   const c=document.getElementById("cont"); if(c) c.onclick=()=>{st=saved;modal=null;prevStrip=null;if(st.ended)closeModal();else render()};
