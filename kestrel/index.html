@@ -179,6 +179,12 @@ svg.spark{width:100%;height:56px;display:block;margin-top:6px}
 .bhead,.brow{display:grid;grid-template-columns:90px 70px 90px 110px 90px 60px 90px minmax(140px,1fr);gap:8px;padding:7px 10px;font-size:13px;align-items:center;min-width:760px}
 .bhead{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);background:var(--sunk)}
 .brow{border-top:1px solid var(--line);font-variant-numeric:tabular-nums}.brow.best{background:color-mix(in srgb,var(--hivis) 12%,var(--panel))}.brow.now{box-shadow:inset 4px 0 0 var(--ink)}
+.review{display:grid;gap:10px}.rvtabs{display:flex;gap:6px;flex-wrap:wrap}.rvtabs .chip{cursor:pointer}.rvtabs .chip.on{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+.review details{border-top:3px solid var(--ink);padding-top:8px}.review summary{display:flex;align-items:baseline;gap:12px;cursor:pointer;list-style:none}.review summary::-webkit-details-marker{display:none}.review summary h3::before{content:"▸ ";color:var(--muted)}.review details[open] summary h3::before{content:"▾ "}
+.rvlist{list-style:none;margin:10px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:10px}
+.rv{border:1px solid var(--line);border-left:4px solid var(--info);background:var(--sunk);padding:10px 12px;border-radius:3px;display:grid;gap:5px;font-size:14px}
+.rv.g-best{border-left-color:var(--ok)}.rv.g-weak{border-left-color:var(--warn)}.rv.g-wrong{border-left-color:var(--bad)}.rv.idle{border-left-color:var(--muted);border-left-style:dashed}
+.rvbest{border-top:1px dashed var(--line);padding-top:5px}.rvbest .lbl{display:block;color:var(--ok)}.rvL{font-family:var(--display);font-size:17px;font-weight:600}
 .perkpick{display:grid;gap:8px}
 .medpop{position:fixed;right:20px;bottom:20px;z-index:80;background:var(--panel);border:1px solid var(--line);border-left:6px solid var(--hivis);padding:12px 16px;display:grid;gap:2px;box-shadow:var(--shadow);border-radius:4px;max-width:320px;animation:rise .3s both}
 .medpop b{font-family:var(--display);font-size:22px;text-transform:uppercase}
@@ -696,6 +702,17 @@ function perkTake(k){if(!st.offer||!st.offer.includes(k))return;(st.perks=st.per
   if(k==="liaison")st.rep.r=Math.min(10,st.rep.r+2);if(k==="steward")st.rep.f=Math.min(10,st.rep.f+2);if(k==="comms")st.rep.cm=Math.min(10,st.rep.cm+2);if(k==="safetypro")st.s=Math.min(10,st.s+2);
   st.log.push(`T${st.turn} · New on your team: ${PERKS[k].n.toLowerCase()}.`);Snd.play("best");save();closeModal()}
 
+// ---------- The review: every call, and the better one when you missed it ----------
+let revFilter="all";
+function reviewHTML(){const D=st.dec||[];if(!D.length)return "";
+  const keep=d=>revFilter==="all"||(revFilter==="miss"&&d.g!=="best"&&d.g!=="idle")||(revFilter==="idle"&&d.g==="idle")||(revFilter==="best"&&d.g==="best");
+  const cnt=f=>D.filter(d=>f==="all"||(f==="miss"&&d.g!=="best"&&d.g!=="idle")||(f==="idle"&&d.g==="idle")||(f==="best"&&d.g==="best")).length;
+  const item=d=>{const sc=byId(d.id);if(!sc)return "";const best=sc.o.find(o=>o.g==="best");
+    if(d.g==="idle")return `<li class="rv idle"><span class="lbl">Turn ${d.t} · ${esc(sc.a)} · left alone</span><b>${esc(sc.t)}</b><p class="note">${esc(sc.idle.x)}</p>${best?`<p class="rvbest"><span class="lbl">Best call</span>${esc(best.t)}</p>`:""}<p class="rvL">${esc(sc.L)}</p></li>`;
+    const o=sc.o[d.i];return `<li class="rv g-${d.g}"><span class="lbl">Turn ${d.t} · ${esc(sc.a)} · <span class="c-${d.g}">${GNAME[d.g]}</span>${d.win===false?" · went badly":""}</span><b>${esc(sc.t)}</b><p>${esc(o.t)}</p>${d.g!=="best"&&best?`<p class="rvbest"><span class="lbl">Best call</span>${esc(best.t)}<span class="note"> ${esc(best.n)}</span></p>`:""}<p class="rvL">${esc(sc.L)}</p></li>`};
+  return `<div class="review"><div class="grow"><span class="lbl">Review your calls</span><div class="rvtabs" role="tablist">${[["all","All"],["miss","Could do better"],["idle","Left alone"],["best","Best calls"]].map(([k,l])=>`<button class="chip ${revFilter===k?"on":""}" data-rv="${k}" role="tab" aria-selected="${revFilter===k}">${l} <b>${cnt(k)}</b></button>`).join("")}</div></div>
+  ${ROLES.map((R,ri)=>{const L=D.filter(d=>d.role===ri&&keep(d));return L.length?`<details ${ri===0||revFilter!=="all"?"open":""}><summary><h3>${esc(R)}</h3><span class="lbl">${L.length} call${L.length===1?"":"s"}</span></summary><ol class="rvlist">${L.map(item).join("")}</ol></details>`:""}).join("")}</div>`}
+
 // ---------- Past builds ----------
 const HIST_KEY="kestrel-builds";
 function buildsGet(){try{return JSON.parse(localStorage.getItem(HIST_KEY))||[]}catch(e){return []}}
@@ -967,7 +984,7 @@ function choose(i){
   if(!win&&o.no&&(o.g==="best"||o.g==="good")){luck="Good call, bad luck.";st.luck.bad++}
   else if(win&&o.no&&(o.g==="wrong"||o.g==="weak")&&c<.6){luck="You got away with it this time.";st.luck.good++}
   apply(r.e); st.xp[sc.a]=(st.xp[sc.a]||0)+(o.g==="best"?2:1); st.grades[o.g]++;
-  w.status="done"; w.res={choice:o.t,out:r.x,e:r.e,g:o.g,n:o.n,L:sc.L,luck}; st.att--;
+  w.status="done"; w.res={choice:o.t,out:r.x,e:r.e,g:o.g,n:o.n,L:sc.L,luck};(st.dec=st.dec||[]).push({t:st.turn,id:sc.id,i,g:o.g,win:win||!o.no,role:st.role}); st.att--;
   st.log.push(`T${st.turn} · ${sc.t}: ${GNAME[o.g].toLowerCase()}.`);
   Snd.play("stamp");Snd.play(o.g);justChose=cur;save(); render();justChose=null;medCheck();
 }
@@ -975,7 +992,7 @@ function choose(i){
 function endTurn(){
   if(modal||st.ended) return;
   const missed=[];
-  for(const w of st.week){ if(w.status!=="done"){const sc=byId(w.id);apply(sc.idle.e,1);w.status="missed";missed.push(sc);st.log.push(`T${st.turn} · ${sc.t}: left alone.`)} }
+  for(const w of st.week){ if(w.status!=="done"){const sc=byId(w.id);apply(sc.idle.e,1);w.status="missed";missed.push(sc);(st.dec=st.dec||[]).push({t:st.turn,id:sc.id,i:-1,g:"idle",role:st.role});st.log.push(`T${st.turn} · ${sc.t}: left alone.`)} }
   st.w=Math.max(2,+(st.w-(hasPerk("scheduler")?2.5:1.5)).toFixed(1));
   const news=rollNews();if(news)medCount("news")>=10&&medGive("news10");
   const sn=st.snap||{d:st.d,w:st.w,c:st.c,s:st.s};
@@ -1048,11 +1065,13 @@ function renderEnd(){
       <div><span class="lbl">Reputation</span><div class="reps">${Object.keys(REP).map(k=>`<span class="chip ${st.rep[k]>0?"pos":st.rep[k]<0?"neg":""}">${REP[k]} <b>${sgn(st.rep[k])}</b></span>`).join("")}</div></div>
       <div><span class="lbl">How the fog cleared</span>${spark(st.hist)}</div>
     </div>
+    ${reviewHTML()}
     ${buildsHTML(st.bid)}
     ${medalsHTML()}
     <div class="modes">${st.mode==="daily"?`<button class="btn" id="share">Copy result</button>`:""}<button class="btn ${st.mode==="daily"?"ghost":""}" id="again">Play again</button><button class="btn ghost" id="againhard">Try hard mode</button></div>
   </section>`;
   document.getElementById("again").onclick=()=>{clearSaved();start(st.mode==="daily"?"normal":st.mode)};
+  app.querySelectorAll("[data-rv]").forEach(b=>b.onclick=()=>{revFilter=b.dataset.rv;const y=window.scrollY;renderEnd();window.scrollTo(0,y)});
   const sh=document.getElementById("share");if(sh)sh.onclick=()=>{const t=shareText();(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>{sh.textContent="Copied"},()=>{window.prompt("Copy your result",t)})};
   document.getElementById("againhard").onclick=()=>{clearSaved();start("hard")};
 }
