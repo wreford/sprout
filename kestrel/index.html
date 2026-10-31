@@ -25,7 +25,7 @@
   --shadow:0 1px 0 rgba(0,0,0,.3),0 10px 28px -14px rgba(0,0,0,.7); color-scheme:dark}
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
-body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.5;
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:var(--fs,15px);line-height:1.5;
   padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:max(12px,env(safe-area-inset-top,0px)) max(48px,env(safe-area-inset-bottom,0px));margin:0}
 .wrap{max-width:1320px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
 h1,h2,h3{font-family:var(--display);font-weight:700;letter-spacing:.01em;text-wrap:balance;margin:0;line-height:1.05}
@@ -65,6 +65,7 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-b
 .mode:active{transform:translateY(1px)}
 .mode h3{font-size:26px}
 .mode.daily{border-color:var(--hivis)}
+.mode.nm{border-color:color-mix(in srgb,var(--bad) 50%,var(--line))}.mode.nm h3::after{content:" ▲▲"}
 .mode.hard h3::after{content:" ▲";color:var(--bad);font-size:16px;vertical-align:middle}
 
 /* Header + status */
@@ -213,6 +214,8 @@ svg.spark{width:100%;height:56px;display:block;margin-top:6px}
 .gbar span{height:100%}
 .rank{font-family:var(--display);font-size:clamp(28px,5vw,44px);font-weight:700;text-transform:uppercase;line-height:1}
 
+html.rm *,html.rm *::before,html.rm *::after{animation:none!important;transition:none!important}
+.setrow{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:10px}.seg{display:flex;gap:6px;flex-wrap:wrap}.seg .chip{cursor:pointer}.seg .chip.on{background:var(--ink);color:var(--panel);border-color:var(--ink)}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -704,6 +707,7 @@ const MEDALS=[
  {id:"dir",n:"Corner Office",d:"Reach construction director."},
  {id:"finish",n:"Fuel Load",d:"Finish a build."},
  {id:"hardfin",n:"Troubled Job",d:"Finish a build on hard."},
+ {id:"nightfin",n:"Survived the Nightmare",d:"Finish a build on Nightmare."},
  {id:"early",n:"Ahead of the Curve",d:"Load fuel before the target date."},
  {id:"under",n:"Under Budget",d:"Finish under the cost baseline."},
  {id:"safe8",n:"Safety Culture",d:"Reach a safety culture of +8."},
@@ -773,7 +777,7 @@ function buildsGet(){try{return JSON.parse(localStorage.getItem(HIST_KEY))||[]}c
 function buildsAdd(b){const L=buildsGet();L.unshift(b);try{localStorage.setItem(HIST_KEY,JSON.stringify(L.slice(0,25)))}catch(e){}}
 function buildsHTML(hiId){const L=buildsGet();if(!L.length)return "";const best=L.reduce((a,b)=>b.score>a.score?b:a,L[0]);
   return `<div class="builds"><span class="lbl">Your builds · best rating: ${esc(best.rank)}</span><div class="btable" role="table"><div class="bhead" role="row"><span>Date</span><span>Mode</span><span>Fuel load</span><span>Schedule</span><span>Cost</span><span>Safety</span><span>Sound calls</span><span>Rating</span></div>
-  ${L.slice(0,10).map(b=>`<div class="brow ${b.id===best.id?"best":""} ${b.id===hiId?"now":""}" role="row"><span>${esc(b.when)}</span><span>${b.mode==="hard"?"Hard":b.mode==="daily"?"Daily":"Normal"}</span><span>${esc(b.fl)}</span><span class="${b.late>0?"c-wrong":"c-best"}">${b.late===0?"on target":Math.abs(b.late)+" wk "+(b.late>0?"late":"early")}</span><span class="${b.c>0?"c-wrong":"c-best"}">${b.c>=0?"+":"−"}$${Math.abs(b.c).toFixed(1)}M</span><span>${sgn(b.s)}</span><span>${b.sound}%</span><span><b>${esc(b.rank)}</b></span></div>`).join("")}</div></div>`}
+  ${L.slice(0,10).map(b=>`<div class="brow ${b.id===best.id?"best":""} ${b.id===hiId?"now":""}" role="row"><span>${esc(b.when)}</span><span>${{hard:"Hard",daily:"Daily",nightmare:"Nightmare"}[b.mode]||"Normal"}</span><span>${esc(b.fl)}</span><span class="${b.late>0?"c-wrong":"c-best"}">${b.late===0?"on target":Math.abs(b.late)+" wk "+(b.late>0?"late":"early")}</span><span class="${b.c>0?"c-wrong":"c-best"}">${b.c>=0?"+":"−"}$${Math.abs(b.c).toFixed(1)}M</span><span>${sgn(b.s)}</span><span>${b.sound}%</span><span><b>${esc(b.rank)}</b></span></div>`).join("")}</div></div>`}
 
 // ---------- Site news: things that happen between turns ----------
 const NEWS=[
@@ -834,8 +838,8 @@ function repAvg(){return Object.values(st.rep).reduce((a,b)=>a+b,0)/5}
 
 function drawWeek(){
   const q=(st.queue||[]).filter(id=>byId(id)&&!st.used.includes(id)).slice(0,2);st.queue=(st.queue||[]).filter(id=>!q.includes(id));
-  let p=q.map(byId).concat(shuffle(pool(st.role)).slice(0,4-q.length));
-  if(p.length<4){const back=shuffle(S.filter(s=>s.r<st.role&&!st.used.includes(s.id)));p=p.concat(back.slice(0,4-p.length))}
+  let p=q.map(byId).concat(shuffle(pool(st.role)).slice(0,PER_TURN()-q.length));
+  if(p.length<PER_TURN()){const back=shuffle(S.filter(s=>s.r<st.role&&!st.used.includes(s.id)));p=p.concat(back.slice(0,PER_TURN()-p.length))}
   st.week=p.map(s=>({id:s.id,status:"open"}));
   st.used.push(...p.map(s=>s.id));
   st.att=3+(hasPerk("bench")&&st.turn%3===0?1:0); cur=null; dealAnim=true; st.snap={d:st.d,w:st.w,c:st.c,s:st.s};
@@ -843,9 +847,11 @@ function drawWeek(){
 function chance(sc,o){
   if(o.p>=1)return 1; if(o.p<=0)return 0;
   const xp=st.xp[sc.a]||0;
-  return Math.max(.05,Math.min(.97,o.p+Math.min(.1,xp*.025)-(st.mode==="hard"?.15:0)+(hasPerk("mentor")?.05:0)));
+  return Math.max(.05,Math.min(.97,o.p+Math.min(.1,xp*.025)-(st.mode==="hard"?.15:st.mode==="nightmare"?.2:0)+(hasPerk("mentor")?.05:0)));
 }
-const ODDS_AT=()=>st.mode==="hard"?4:2;
+const ODDS_AT=()=>st.mode==="nightmare"?5:st.mode==="hard"?4:2;
+const PER_TURN=()=>st&&st.mode==="nightmare"?5:4;
+const MODE_N={normal:"Normal mode",hard:"Hard mode",daily:"Daily build",nightmare:"Nightmare"};
 function showOdds(sc){return (st.xp[sc.a]||0)>=ODDS_AT()}
 
 function apply(e,idle){
@@ -964,6 +970,28 @@ function tutPaint(){document.querySelectorAll(".tut-hi").forEach(e=>e.classList.
     Object.assign(card.style,{left:x+"px",top:y+"px",bottom:"auto"})}
   const ok=document.getElementById("tutOk");if(ok)ok.onclick=()=>tutAdvance(n);document.getElementById("tutSkip").onclick=()=>{tutSet(99);tutPaint()}}
 
+// ---------- Settings ----------
+const SET_KEY="kestrel-settings";
+let SET={size:0,motion:false};try{Object.assign(SET,JSON.parse(localStorage.getItem(SET_KEY))||{})}catch(e){}
+function setApply(){const r=document.documentElement;r.style.setProperty("--fs",[15,17,19][SET.size]+"px");r.classList.toggle("rm",!!SET.motion)}
+function setSave(){try{localStorage.setItem(SET_KEY,JSON.stringify(SET))}catch(e){}setApply()}
+setApply();
+let setOpen=false;
+function setHTML(){return `<div class="scrim" id="setScrim" role="dialog" aria-modal="true" aria-labelledby="sett"><div class="modal"><span class="lbl">Settings</span><h2 id="sett">Settings</h2>
+  <div class="setrow"><span>Text size</span><div class="seg">${["Normal","Large","Larger"].map((l,i)=>`<button class="chip ${SET.size===i?"on":""}" data-size="${i}">${l}</button>`).join("")}</div></div>
+  <div class="setrow"><span>Motion</span><div class="seg"><button class="chip ${!SET.motion?"on":""}" data-motion="0">Animations on</button><button class="chip ${SET.motion?"on":""}" data-motion="1">Reduce motion</button></div></div>
+  <div class="setrow"><span>Sound</span><div class="seg"><button class="chip ${Snd.on?"on":""}" data-snd="1">On</button><button class="chip ${!Snd.on?"on":""}" data-snd="0">Off</button></div></div>
+  <div class="setrow"><span>Theme</span><div class="seg"><button class="chip" data-th="1">Switch light / dark</button></div></div>
+  <div class="setrow"><span>Data</span><div class="seg"><button class="chip" id="wipe">Erase medals and builds</button></div></div>
+  <div><button class="btn" id="setClose">Done</button></div></div></div>`}
+function toggleSet(v){setOpen=v===undefined?!setOpen:v;const old=document.getElementById("setScrim");if(old)old.remove();if(!setOpen)return;document.body.insertAdjacentHTML("beforeend",setHTML());const sc=document.getElementById("setScrim");
+  sc.onclick=e=>{if(e.target===sc)toggleSet(false)};document.getElementById("setClose").onclick=()=>toggleSet(false);document.getElementById("setClose").focus();
+  sc.querySelectorAll("[data-size]").forEach(b=>b.onclick=()=>{SET.size=+b.dataset.size;setSave();toggleSet(true)});
+  sc.querySelectorAll("[data-motion]").forEach(b=>b.onclick=()=>{SET.motion=b.dataset.motion==="1";setSave();toggleSet(true)});
+  sc.querySelectorAll("[data-snd]").forEach(b=>b.onclick=()=>{if((b.dataset.snd==="1")!==Snd.on)Snd.toggle();toggleSet(true)});
+  sc.querySelectorAll("[data-th]").forEach(b=>b.onclick=()=>{toggleTheme()});
+  const w=document.getElementById("wipe");let armed=false;w.onclick=()=>{if(!armed){armed=true;w.textContent="Tap again to erase";return}try{localStorage.removeItem(MED_KEY);localStorage.removeItem(HIST_KEY);localStorage.removeItem(DAILY_KEY)}catch(e){}w.textContent="Erased";render()}}
+
 // ---------- Help ----------
 let helpOpen=false;
 function helpHTML(){return `<div class="scrim" id="helpScrim" role="dialog" aria-modal="true" aria-labelledby="ht"><div class="modal" style="max-width:780px"><span class="lbl">Keyboard</span><h2 id="ht">Shortcuts</h2>
@@ -986,6 +1014,7 @@ function toggleHelp(v){helpOpen=v===undefined?!helpOpen:v;const old=document.get
 const I={
   sndOn:'<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path d="M16 9a4 4 0 0 1 0 6M19 6a8 8 0 0 1 0 12"/></svg>',
   sndOff:'<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path d="M17 9l5 6M22 9l-5 6"/></svg>',
+  gear:'<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>',
   theme:'<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg>',
   lock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><circle cx="12" cy="15.5" r="1.5" fill="currentColor"/></svg>',
   hat:'<svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true"><path d="M8 42h48v6H8z"/><path d="M14 42c0-12 8-20 18-20s18 8 18 20"/><path d="M28 22v-6h8v6"/><path d="M24 26v16M40 26v16"/></svg>'
@@ -1004,8 +1033,8 @@ function render(){
   const flash=k=>{if(!prevStrip||prevStrip[k]===strip[k])return"";const better=k==="c"?strip[k]<prevStrip[k]:strip[k]>prevStrip[k];return better?"flash-good":"flash-bad"};
   app.innerHTML=`
   <div class="stripe" aria-hidden="true"></div>
-  <header class="top"><div><span class="lbl">Kestrel Point Generating Station · Units 1 &amp; 2 · ${st.mode==="hard"?"Hard mode":st.mode==="daily"?"Daily build "+st.day:"Normal mode"}</span><h1>Kestrel Point</h1></div>
-    <div class="modes"><span class="note kbonly">Keys: <kbd>↑</kbd><kbd>↓</kbd> situations · <kbd>1</kbd>–<kbd>4</kbd> choose · <kbd>N</kbd> next · <kbd>E</kbd> end turn</span><button class="iconbtn kbonly" id="help" title="Shortcuts (?)" aria-label="Keyboard shortcuts">?</button><button class="iconbtn" id="snd" title="Sound (M)" aria-label="Sound ${Snd.on?"on":"off"}" aria-pressed="${Snd.on}">${Snd.on?I.sndOn:I.sndOff}</button><button class="iconbtn" id="theme" title="Light or dark (T)" aria-label="Toggle light or dark theme">${I.theme}</button><button class="btn ghost small" id="quit">New game</button></div></header>
+  <header class="top"><div><span class="lbl">Kestrel Point Generating Station · Units 1 &amp; 2 · ${st.mode==="daily"?"Daily build "+st.day:MODE_N[st.mode]}</span><h1>Kestrel Point</h1></div>
+    <div class="modes"><span class="note kbonly">Keys: <kbd>↑</kbd><kbd>↓</kbd> situations · <kbd>1</kbd>–<kbd>4</kbd> choose · <kbd>N</kbd> next · <kbd>E</kbd> end turn</span><button class="iconbtn" id="settings" title="Settings" aria-label="Settings">${I.gear}</button><button class="iconbtn kbonly" id="help" title="Shortcuts (?)" aria-label="Keyboard shortcuts">?</button><button class="iconbtn" id="snd" title="Sound (M)" aria-label="Sound ${Snd.on?"on":"off"}" aria-pressed="${Snd.on}">${Snd.on?I.sndOn:I.sndOff}</button><button class="iconbtn" id="theme" title="Light or dark (T)" aria-label="Toggle light or dark theme">${I.theme}</button><button class="btn ghost small" id="quit">New game</button></div></header>
   <section class="strip" aria-label="Status">
     <div><span class="lbl">Role</span><span class="v">${ROLES[st.role]}</span></div>
     <div><span class="lbl">Turn · date</span><span class="v num">${st.turn} · ${fmtMonth(gameDate())}</span></div>
@@ -1022,8 +1051,8 @@ function render(){
   <section class="board">
     <div class="tags ${dealAnim?"deal":""}">
       <div class="grow"><h2>Turn ${st.turn}</h2><span class="att" aria-label="${st.att} attention left">${[0,1,2,3].slice(0,Math.max(3,st.att)).map(i=>`<i class="${i<st.att?"on":""}"></i>`).join("")}</span></div>
-      <p class="note">Four things need you. You have attention for three. Anything you don't open plays out on its own.</p>
-      ${st.week.map((w,wi)=>{const sc=byId(w.id);return `<button class="tag ${w.status==="done"?"done":""}" data-id="${w.id}" aria-current="${cur===w.id}"><span class="kn kbonly">${"ASDF"[wi]}</span><span class="area"><span class="lbl">${sc.follow?`<b class="fu">Follow-up</b> · `:""}${esc(sc.a)}</span>${w.res?`<span class="lbl c-${w.res.g}">${GNAME[w.res.g]}</span>`:""}</span><span class="tt">${esc(sc.t)}</span></button>`}).join("")}
+      <p class="note">${st.week.length===5?"Five":"Four"} things need you. You have attention for ${st.att>3?"four this turn":"three"}. Anything you don't open plays out on its own.</p>
+      ${st.week.map((w,wi)=>{const sc=byId(w.id);return `<button class="tag ${w.status==="done"?"done":""}" data-id="${w.id}" aria-current="${cur===w.id}"><span class="kn kbonly">${"ASDFG"[wi]}</span><span class="area"><span class="lbl">${sc.follow?`<b class="fu">Follow-up</b> · `:""}${esc(sc.a)}</span>${w.res?`<span class="lbl c-${w.res.g}">${GNAME[w.res.g]}</span>`:""}</span><span class="tt">${esc(sc.t)}</span></button>`}).join("")}
       <button class="btn" id="endturn">${st.att>0&&st.week.some(w=>w.status==="open")?"End turn early":"End turn"}</button>
     </div>
     <div class="panel ${lastCur!==cur?"enter":""}" id="detail">${detailHTML()}</div>
@@ -1104,6 +1133,7 @@ function bind(){
   const q=document.getElementById("quit"); if(q) q.onclick=confirmNew;
   const th=document.getElementById("theme"); if(th) th.onclick=toggleTheme;
   const sn=document.getElementById("snd"); if(sn) sn.onclick=()=>Snd.toggle();
+  const sg=document.getElementById("settings"); if(sg) sg.onclick=()=>toggleSet(true);
   const hp=document.getElementById("help"); if(hp) hp.onclick=()=>toggleHelp(true);
   const e=document.getElementById("endturn"); if(e) e.onclick=endTurn;
   const n=document.getElementById("nextturn"); if(n){n.onclick=closeModal;n.focus()}
@@ -1174,6 +1204,7 @@ function closeModal(){
 }
 window.addEventListener("resize",()=>{if(document.getElementById("tut"))tutPaint()});
 document.addEventListener("keydown",e=>{
+  if(setOpen){if(e.key==="Escape"){e.preventDefault();toggleSet(false)}return}
   if(helpOpen){if(e.key==="Escape"||e.key==="?"||e.key==="Enter"){e.preventDefault();toggleHelp(false)}return}
   if(e.key==="?"&&!e.metaKey&&!e.ctrlKey){e.preventDefault();toggleHelp(true);return}
   if(!st||st.over||e.metaKey||e.ctrlKey||e.altKey)return;
@@ -1182,7 +1213,7 @@ document.addEventListener("keydown",e=>{
   const k=e.key.toLowerCase(),ids=st.week.map(w=>w.id),i=ids.indexOf(cur);
   if(/^[1-4]$/.test(e.key)&&cur){choose(+e.key-1)}
   else if(k==="e"){endTurn()}
-  else if("asdf".includes(k)&&k.length===1&&ids["asdf".indexOf(k)]){openTag(ids["asdf".indexOf(k)],1)}
+  else if("asdfg".includes(k)&&k.length===1&&ids["asdfg".indexOf(k)]){openTag(ids["asdfg".indexOf(k)],1)}
   else if(e.key==="ArrowDown"||e.key==="ArrowUp"){e.preventDefault();const n=i<0?0:(i+(e.key==="ArrowDown"?1:ids.length-1))%ids.length;openTag(ids[n],1)}
   else if(k==="n"){const nx=st.week.find(w=>w.status==="open"&&w.id!==cur);if(nx)openTag(nx.id,1)}
   else if(k==="t"){toggleTheme()}
@@ -1194,12 +1225,12 @@ function renderEnd(){
   const fl=addWeeks(TARGET,st.final), late=Math.round(st.final);
   const g=st.grades, total=g.best+g.good+g.weak+g.wrong||1, sound=Math.round(100*(g.best+g.good)/total);
   const score=sound/10+st.s+repAvg()-Math.max(0,late)/8-Math.max(0,st.c)/15;
-  if(!st.medalled){st.medalled=1;medGive("finish");if(st.mode==="hard")medGive("hardfin");if(late<0)medGive("early");if(st.c<0)medGive("under");if(medCount("builds")>=3)medGive("builds3");if(score>=18)medGive("top");st.bid=Date.now();buildsAdd({id:st.bid,when:new Date().toLocaleDateString("en-CA",{month:"short",day:"numeric"}),mode:st.mode,fl:fmtMonth(fl),late,c:+st.c.toFixed(1),s:st.s,sound,rank:rankOf(score),score:+score.toFixed(2)});save()}
+  if(!st.medalled){st.medalled=1;medGive("finish");if(st.mode==="hard")medGive("hardfin");if(st.mode==="nightmare")medGive("nightfin");if(late<0)medGive("early");if(st.c<0)medGive("under");if(medCount("builds")>=3)medGive("builds3");if(score>=18)medGive("top");st.bid=Date.now();buildsAdd({id:st.bid,when:new Date().toLocaleDateString("en-CA",{month:"short",day:"numeric"}),mode:st.mode,fl:fmtMonth(fl),late,c:+st.c.toFixed(1),s:st.s,sound,rank:rankOf(score),score:+score.toFixed(2)});save()}
   const rank=rankOf(score);st.rankTxt=rank;if(st.mode==="daily")dailySet(st.day,{rank,score:+score.toFixed(2)});
   const seg=k=>`<span class="" style="width:${100*g[k]/total}%;background:var(--${k==="best"?"ok":k==="good"?"info":k==="weak"?"warn":"bad"})" title="${GNAME[k]} ${g[k]}"></span>`;
   app.innerHTML=`<div class="stripe" aria-hidden="true"></div>
   <section class="title">
-    <div class="kicker"><span class="pill">${st.mode==="hard"?"Hard mode":st.mode==="daily"?"Daily build · "+st.day:"Normal mode"}</span><span class="pill">${st.turn} turns</span></div>
+    <div class="kicker"><span class="pill">${st.mode==="daily"?"Daily build · "+st.day:MODE_N[st.mode]}</span><span class="pill">${st.turn} turns</span></div>
     <span class="lbl">Unit 1 fuel load</span><h1>${fmtMonth(fl)}</h1>
     <p class="lede">${late===0?"Right on the target.":Math.abs(late)+" weeks "+(late>0?"after":"ahead of")+" the "+fmtMonth(TARGET)+" target."} The build finished ${st.c>=0?"$"+st.c.toFixed(1)+"M over":"$"+Math.abs(st.c).toFixed(1)+"M under"} its baseline, with a safety culture of ${sgn(st.s)}.</p>
     <div><span class="lbl">Your rating</span><p class="rank">${rank}</p></div>
@@ -1224,7 +1255,7 @@ function renderTitle(){
   const saved=loadSaved(), canCont=saved&&!saved.over&&Array.isArray(saved.week);
   app.innerHTML=`<div class="stripe" aria-hidden="true"></div>
   <section class="title">
-    <div class="kicker"><span class="pill">Twin-unit nuclear build</span><span class="pill">Canadian lakeshore</span><span class="pill">Year 3 of 15</span></div>
+    <div class="grow"><div class="kicker"><span class="pill">Twin-unit nuclear build</span><span class="pill">Canadian lakeshore</span><span class="pill">Year 3 of 15</span></div><button class="iconbtn" id="settings" title="Settings" aria-label="Settings">${I.gear}</button></div>
     <h1>Kestrel Point</h1>
     <p class="lede">You start as a field coordinator on a nuclear megaproject and work your way up to construction director. Every turn, four things need you and you only have attention for three. Outcomes carry real odds, so a good call can still go badly. Judge yourself by the call.</p>
     <div class="rules">
@@ -1237,6 +1268,7 @@ function renderTitle(){
     <div class="modecards">
       <button class="mode daily" id="daily"><span class="lbl">Daily build · ${todayKey()}</span><h3>Daily</h3><p class="note">Everyone gets the same situations and the same dice today. Normal difficulty.${dailyGet()[todayKey()]?` You scored <b>${esc(dailyGet()[todayKey()].rank)}</b> today.`:""}</p></button>
       <button class="mode" id="normal"><span class="lbl">New game</span><h3>Normal</h3><p class="note">A healthy job, fair odds, odds visible after 2 experience.</p></button>
+      <button class="mode hard nm" id="nightmare"><span class="lbl">New game</span><h3>Nightmare</h3><p class="note">Twenty weeks late on day one. Five things need you every turn and you still only get three. Odds at 5 experience.</p></button>
       <button class="mode hard" id="hard"><span class="lbl">New game</span><h3>Hard</h3><p class="note">A troubled job already 14 weeks late. Worse odds, a wider window, and a boss who doesn't trust you yet.</p></button>
     </div>
     <p class="note">${S.length} situations across four roles. Progress saves in this browser.</p>
@@ -1245,10 +1277,12 @@ function renderTitle(){
   </section>`;
   const c=document.getElementById("cont"); if(c) c.onclick=()=>{st=saved;modal=null;prevStrip=null;if(st.ended)closeModal();else render()};
   document.getElementById("normal").onclick=()=>start("normal");
+  document.getElementById("settings").onclick=()=>toggleSet(true);
   document.getElementById("hard").onclick=()=>start("hard");
   document.getElementById("daily").onclick=()=>start("daily");
+  document.getElementById("nightmare").onclick=()=>start("nightmare");
 }
-function start(mode){st=fresh(mode);if(mode==="hard")st.fan=[{d:14,w:56}];if(mode==="daily"){st.day=todayKey();st.rs=seedOf("kestrel"+st.day)}if(mode==="hard"){st.d=14;st.w=56;st.hist=[56];st.rep.b=-1}modal=null;prevStrip=null;drawWeek();save();render();window.scrollTo({top:0})}
+function start(mode){st=fresh(mode);if(mode==="hard")st.fan=[{d:14,w:56}];if(mode==="nightmare"){st.d=20;st.w=62;st.hist=[62];st.fan=[{d:20,w:62}];st.rep.b=-2;st.rep.f=-1}if(mode==="daily"){st.day=todayKey();st.rs=seedOf("kestrel"+st.day)}if(mode==="hard"){st.d=14;st.w=56;st.hist=[56];st.rep.b=-1}modal=null;prevStrip=null;drawWeek();save();render();window.scrollTo({top:0})}
 
 render();
 </script>
