@@ -267,10 +267,13 @@ const DEF={loyal:{flat:.4,forest:.5,hills:.5,swamp:.2,cave:.4,sand:.3},rebel:{fl
 const COPIES={1:15,2:13,3:11,4:9,5:7},SHOPN=[0,3,4,4,5,6],KEEPCOST=[0,0,5,7,8,10],SLOTS=7,FRONT=4,CAMP=5;
 
 // ================================================================ units
+const TRAITS={strong:{n:"Strong",d:"+1 melee damage"},dextrous:{n:"Dextrous",d:"+1 ranged damage"},resilient:{n:"Resilient",d:"+4 HP"},quick:{n:"Quick",d:"dodges 8% more, 2 fewer HP"},intelligent:{n:"Intelligent",d:"sells for 1 more gold"},healthy:{n:"Healthy",d:"+2 HP, can't be poisoned"},fearless:{n:"Fearless",d:"never weakened by the time of day"}};
+function traitPool(id){const d=UD[id];if(d.f==="undead"&&d.voice!=="human")return ["fearless","resilient","strong"];const base=["strong","quick","resilient","intelligent"];if(d.voice==="elf"||d.voice==="femme")base.push("dextrous","dextrous");if(d.voice==="dwarf")base.push("healthy","healthy");if(d.k==="r")return base.filter(t=>t!=="strong").concat(["dextrous"]);return base.filter(t=>t!=="dextrous")}
 let UID=1;
-function mkUnit(id,promo){const d=UD[id];const u={uid:UID++,id,promo:!!promo,dmg:d.d,str:d.s,hp:d.hp,bd:0,bh:0,give:[],dep:0};if(promo){u.dmg=d.d+Math.ceil(d.d*.4);u.hp=Math.round(d.hp*1.5)}return u}
+function mkUnit(id,promo,noTrait){const d=UD[id];const u={uid:UID++,id,promo:!!promo,dmg:d.d,str:d.s,hp:d.hp,bd:0,bh:0,give:[],dep:0,tr:noTrait?[]:[pick(traitPool(id))]};if(promo){u.dmg=d.d+Math.ceil(d.d*.4);u.hp=Math.round(d.hp*1.5)}return u}
 const uName=u=>u.promo?UD[u.id].pn:UD[u.id].n,uImg=u=>u.promo?UD[u.id].pimg:UD[u.id].img,uPt=u=>u.promo?UD[u.id].ppt:UD[u.id].pt;
-const uDmg=u=>u.dmg+u.bd,uHp=u=>u.hp+u.bh,uTier=u=>UD[u.id].t+(u.promo?1:0);
+const hasT=(u,t)=>(u.tr||[]).includes(t);
+const uDmg=u=>u.dmg+u.bd+((hasT(u,"strong")&&UD[u.id].k==="m")||(hasT(u,"dextrous")&&UD[u.id].k==="r")?1:0),uHp=u=>u.hp+u.bh+(hasT(u,"resilient")?4:0)+(hasT(u,"healthy")?2:0)-(hasT(u,"quick")?2:0),uTier=u=>UD[u.id].t+(u.promo?1:0);
 const abl=u=>UD[u.id].ab.concat(u.give||[]),has=(u,a)=>abl(u).includes(a),reps=u=>u.promo?2:1;
 const align=u=>UD[u.id].race==="saurian"?"C":FAC[UD[u.id].f].al;
 
@@ -309,13 +312,13 @@ function deploy(p,u){if(u.dep)return;u.dep=1;for(let k=0;k<reps(u);k++){
 function buy(p,id){
  if(p.gold<3)return false;const merge=countOwned(p,id)===2;const bs=freeBoard(p,id),cs=freeCamp(p);if(bs===undefined&&cs<0&&!merge)return false;
  p.gold-=3;
- if(merge){let where=null,bd=0,bh=0,give=[];for(const arr of [p.board,p.camp||[]])arr.forEach((u,i)=>{if(u&&u.id===id&&!u.promo){bd=Math.max(bd,u.bd);bh=Math.max(bh,u.bh);(u.give||[]).forEach(gv=>give=addOnce(give,gv));if(!where)where=[arr,i];arr[i]=null}});
-  const u=mkUnit(id,1);u.bd=bd;u.bh=bh;u.give=give;
+ if(merge){let where=null,bd=0,bh=0,give=[],tr=[];for(const arr of [p.board,p.camp||[]])arr.forEach((u,i)=>{if(u&&u.id===id&&!u.promo){if(!where)tr=u.tr||[];bd=Math.max(bd,u.bd);bh=Math.max(bh,u.bh);(u.give||[]).forEach(gv=>give=addOnce(give,gv));if(!where)where=[arr,i];arr[i]=null}});
+  const u=mkUnit(id,1);u.bd=bd;u.bh=bh;u.give=give;u.tr=tr;
   if(!where)where=bs!==undefined?[p.board,bs]:[p.camp,cs];where[0][where[1]]=u;if(where[0]===p.board)deploy(p,u);p.gold+=2;
   if(p.me){S.flash={uid:u.uid,t:70};sfx("chest");setTimeout(()=>sfx("fanfare"),250);toast(`${UD[id].n} promoted to ${UD[id].pn}!`,"+2 gold, and a veteran's pick");S.picks++}
   else aiPick(p);return true}
  const u=mkUnit(id);if(bs!==undefined){p.board[bs]=u;deploy(p,u)}else p.camp[cs]=u;return true}
-function sellValue(p,u){return 1+(has(u,"cheap")?1:0)+(has(u,"fence")?reps(u):0)+(p.leader==="highway"?1:0)}
+function sellValue(p,u){return 1+(hasT(u,"intelligent")?1:0)+(has(u,"cheap")?1:0)+(has(u,"fence")?reps(u):0)+(p.leader==="highway"?1:0)}
 function sellAt(p,arr,i){const u=arr[i];if(!u)return;arr[i]=null;S.pool[u.id]+=u.promo?3:1;p.gold+=sellValue(p,u)}
 function endShopTurn(p){const b=p.board.filter(Boolean);
  b.forEach(u=>{for(let k=0;k<reps(u);k++){
@@ -357,10 +360,10 @@ function battle(pa,pb,tod,terr,rec){
  const syn=[synCounts(pa.board),synCounts(pb.board)];
  sides.forEach((b,s)=>b.forEach(u=>{if(!u)return;const lv=synLevel(syn[s][u.d.f]||0);if(u.d.f==="loyal"&&lv){u.max+=lv*3;u.cur=u.max}}));
  const alive=s=>sides[s].filter(u=>u&&u.cur>0);
- const dodge=u=>{let d=H(u,"elusive")?.6:DEF[u.d.race][terr];if(u.d.f==="rebel")d+=.1*synLevel(syn[u.side].rebel||0);return clamp(d,0,.8)};
- const mult=u=>{let m=1;const al=align(u),l=TODS[tod].l;if(al==="L")m*=l>0?1.25:l<0?.75:1;if(al==="C")m*=l>0?.75:l<0?1.25:1;const b=sides[u.side];if(neighbours(u.slot).some(j=>b[j]&&b[j].cur>0&&H(b[j],"lead")))m*=1.25;return m};
+ const dodge=u=>{let d=(H(u,"elusive")?.6:DEF[u.d.race][terr])+(hasT(u,"quick")?.08:0);if(u.d.f==="rebel")d+=.1*synLevel(syn[u.side].rebel||0);return clamp(d,0,.8)};
+ const mult=u=>{let m=1;const al=align(u),l=TODS[tod].l,fl=hasT(u,"fearless");if(al==="L")m*=l>0?1.25:l<0?(fl?1:.75):1;if(al==="C")m*=l>0?(fl?1:.75):l<0?1.25:1;const b=sides[u.side];if(neighbours(u.slot).some(j=>b[j]&&b[j].cur>0&&H(b[j],"lead")))m*=1.25;return m};
  const flat=u=>(u.d.f==="north"?synLevel(syn[u.side].north||0):0)+u.tmp;
- const mkCorpse=(side,slot)=>({...mkUnit("corpse"),side,slot,cur:9,max:9,pois:0,slowd:0,amb:0,tmp:0,ward:0,rb:0,ab:UD.corpse.ab,d:UD.corpse});
+ const mkCorpse=(side,slot)=>({...mkUnit("corpse",0,1),side,slot,cur:9,max:9,pois:0,slowd:0,amb:0,tmp:0,ward:0,rb:0,ab:UD.corpse.ab,d:UD.corpse});
  const emptySlot=(s,pref)=>{const b=sides[s];if(pref!==undefined&&(!b[pref]||b[pref].cur<=0))return pref;return [...Array(SLOTS).keys()].find(j=>!b[j]||b[j].cur<=0)};
  function hurt(t,n,src){if(t.cur<=0)return;if(t.ward){t.ward=0;push({t:"warded",u:t.uid});return}t.cur-=n;push({t:"scorch",a:src?src.uid:null,d:t.uid,n,hp:Math.max(0,t.cur)});if(t.cur<=0)kill(t,null)}
  function spawn(s,i,txt){const z=mkCorpse(s,i);sides[s][i]=z;push({t:"spawn",side:s,slot:i,u:z.uid,img:z.d.img,hp:9,dmg:z.dmg,str:z.str,id:"corpse",txt})}
@@ -384,7 +387,7 @@ function battle(pa,pb,tod,terr,rec){
   else if(ok){dm=uDmg(a)*mult(a)+flat(a);if(ex.charge)dm*=2;if(a.slowd)dm*=.5;if(isAtt&&a.amb&&H(a,"ambush"))dm*=2;dm=Math.round(dm);
    if(isAtt&&H(dfd,"steady"))dm-=1;if(H(dfd,"tough")&&ex.melee)dm-=1;dm=Math.max(1,dm);
    dfd.cur-=dm;if(H(a,"drain")&&a.cur>0)a.cur=Math.min(a.max,a.cur+Math.floor(dm/2));
-   if(H(a,"poison")&&dfd.cur>0&&!H(dfd,"regen")&&dfd.d.f!=="undead")dfd.pois=1;if(H(a,"slow")&&dfd.cur>0)dfd.slowd=1}
+   if(H(a,"poison")&&dfd.cur>0&&!H(dfd,"regen")&&dfd.d.f!=="undead"&&!hasT(dfd,"healthy"))dfd.pois=1;if(H(a,"slow")&&dfd.cur>0)dfd.slowd=1}
   push({t:"strike",a:a.uid,d:dfd.uid,hit:ok&&!warded,warded,n:dm,hp:Math.max(0,dfd.cur),ahp:a.cur});
   if(dfd.cur<=0)kill(dfd,a)}
  let turn=alive(0).length>alive(1).length?0:alive(1).length>alive(0).length?1:ri(2);const ptr=[0,0];let acts=0,winner=-1;
@@ -451,7 +454,7 @@ function gameOver(place){S.phase="over";ls.del("mk.save2");const st=ls.get("mk.s
 
 // ================================================================ save
 function save(){if(!S||S.phase!=="shop")return;ls.set("mk.save2",{S,UID})}
-function load(){const o=ls.get("mk.save2",null);if(!o||!o.S||!o.S.players)return false;S=o.S;UID=o.UID;S.phase="shop";S.fightView=null;return true}
+function load(){const o=ls.get("mk.save2",null);if(!o||!o.S||!o.S.players)return false;S=o.S;S.players.forEach(p=>allUnits(p).forEach(u=>{if(!u.tr)u.tr=[]}));UID=o.UID;S.phase="shop";S.fightView=null;return true}
 
 // ================================================================ images and team colours
 const CACHE={};
@@ -644,14 +647,14 @@ function tapCamp(i){audioInit();const P=me();if(S.phase!=="shop")return;
 function showInfoUnit(u,arr,i,shop,rival){const d=UD[u.id];const mine=!!arr;const ab=abl(u);
  $("info").innerHTML=`<div class="row"><img class="pt" src="${IMG(uPt(u))}" alt="" decoding="async"><div style="flex:1;min-width:0"><h3>${uName(u)}${u.promo?" ★":""}</h3><div class="meta">${FAC[d.f].n} · ${"★".repeat(uTier(u))} · ${align(u)==="L"?"Lawful":align(u)==="C"?"Chaotic":"Neutral"}${mine&&arr===me().board?` · ${i<FRONT?"front line":"back line"}`:mine?" · in camp":""}${rival?" · rival":""}</div>
  <div class="stats"><span><img src="${IMG(d.wp)}" alt=""> ${uDmg(u)}×${u.str} ${d.k==="r"?"ranged":"melee"}</span><span style="color:var(--red)">♥ ${uHp(u)}</span>${u.bd||u.bh?`<span style="color:#3a8a44;font-size:11px">+${u.bd} / +${u.bh}</span>`:""}</div>
- ${ab.map(a=>`<div class="abl">${ABIL[a]}</div>`).join("")}<div class="abl" style="color:var(--mute)">${d.k==="r"?"Only ranged units shoot back at it.":"Only melee units hit back at it."}${!u.promo&&!rival?` ${shop?"Three":"Recruit "+(3-countOwned(me(),u.id))+" more"} to promote it to ${d.pn}.`:""}</div></div></div>
+ ${shop?`<div class="abl" style="color:#5b6b7e">Rolls a random trait when recruited.</div>`:(u.tr||[]).map(t=>`<div class="abl"><b style="color:#7a5a08">${TRAITS[t].n}:</b> ${TRAITS[t].d}.</div>`).join("")}${ab.map(a=>`<div class="abl">${ABIL[a]}</div>`).join("")}<div class="abl" style="color:var(--mute)">${d.k==="r"?"Only ranged units shoot back at it.":"Only melee units hit back at it."}${!u.promo&&!rival?` ${shop?"Three":"Recruit "+(3-countOwned(me(),u.id))+" more"} to promote it to ${d.pn}.`:""}</div></div></div>
  ${mine?`<div class="btns"><button class="ib" id="sellB">Sell for ${sellValue(me(),u)} gold</button><button class="ib" id="closeB">Done</button></div><div style="font-size:11px;color:var(--mute);margin-top:4px">Tap a hex or a camp spot to move it there.</div>`:`<div class="btns"><button class="ib" id="closeB">Close</button></div>`}`;
  $("info").style.display="block";
  if($("sellB"))$("sellB").onclick=()=>{sellAt(me(),arr,i);sel=null;closeInfo();sfx("gold",.6);save();render()};$("closeB").onclick=()=>{sel=null;closeInfo();render()}}
 function closeInfo(){$("info").style.display="none"}
 function tcURLs(path,side){const k=path+"#"+side;if(TCURL[k])return TCURL[k];const c=tc(path,side);if(!c)return IMG(path);try{TCURL[k]=c.toDataURL()}catch(e){TCURL[k]=IMG(path)}return TCURL[k]}
 function scout(i){if(!S)return;audioInit();const p=S.players[i],L=LEADERS.find(l=>l.id===p.leader);const side=p.me?0:1;const sc=synCounts(p.board);
- const units=p.board.map((u,s)=>u?`<div class="sc-u" style="border-color:${FAC[UD[u.id].f].c}"><img src="${tcURLs(uImg(u),side)}" alt=""><b>${uName(u)}${u.promo?" ★":""}</b><span>${uDmg(u)}×${u.str} · ${uHp(u)} HP · ${s<FRONT?"front":"back"}</span></div>`:"").join("");
+ const units=p.board.map((u,s)=>u?`<div class="sc-u" style="border-color:${FAC[UD[u.id].f].c}"><img src="${tcURLs(uImg(u),side)}" alt=""><b>${uName(u)}${u.promo?" ★":""}</b><span>${uDmg(u)}×${u.str} · ${uHp(u)} HP · ${s<FRONT?"front":"back"}</span><span style="color:#7a5a08">${(u.tr||[]).map(t=>TRAITS[t].n).join(", ")}</span></div>`:"").join("");
  const recent=(S.lastOpp||[]).filter(x=>x===i).length;
  modal(`<div class="sc-head"><img src="${IMG(L.pt)}" alt=""><div><h2>${p.me?"Your warband":p.name}</h2><div class="sc-meta">${p.alive?`♥ ${p.hp}${p.armor?` · armour ${p.armor}`:""} · keep ${p.keep}`:`Out, placed #${p.place}`}${i===S.nextOpp?" · <b style='color:var(--red)'>you fight them next</b>":""}${!p.me&&recent?` · fought ${recent}×`:""}</div><div class="sc-meta">${L.p}: ${L.d}</div></div></div>
  <div class="sc-syn">${Object.keys(sc).map(f=>`<span class="syn ${synLevel(sc[f])?"on":""}" style="background:${FAC[f].c}">${FAC[f].n} ${sc[f]}</span>`).join("")}</div>
