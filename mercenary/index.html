@@ -148,6 +148,7 @@ canvas{display:block;border-radius:12px;border:3px solid #6b5228;box-shadow:0 0 
 .sc-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-bottom:8px}.sc-u{display:flex;flex-direction:column;align-items:center;background:#fff;border:2px solid #ccc;border-radius:10px;padding:2px 4px 5px;text-align:center}
 .sc-u img{width:64px;height:64px}.sc-u b{font-size:12px}.sc-u span{font-size:11px;color:var(--mute)}
 .opp{cursor:pointer}
+.achs{display:grid;grid-template-columns:1fr 1fr;gap:6px}.ach{display:flex;gap:7px;align-items:flex-start;background:#fff;border:1px solid var(--line);border-radius:9px;padding:6px 8px;opacity:.55}.ach.got{opacity:1;border-color:var(--gold);background:#fff8e2}.ach .st{font-size:18px;color:var(--gold);line-height:1}.ach b{display:block;font-size:12.5px}.ach small{color:var(--mute);font-size:11px;line-height:1.3}
 .toggles{display:flex;gap:6px;margin-top:6px}.toggles .big{margin-top:0}
 @media (max-width:700px){.card.item .ab{display:none}.card.item .nm{font-size:10px}}
 @media (min-width:820px){#main{flex-direction:row}#fieldwrap{flex:1.35}#panel{flex:1;justify-content:flex-end}#shop{grid-template-columns:repeat(4,1fr)}.card{height:128px}.card .nm{font-size:12px}.card .st{font-size:13px}.card .ab{font-size:10px}}
@@ -285,6 +286,14 @@ const uDmg=u=>u.dmg+u.bd+(u.lv||0)+((hasT(u,"strong")&&UD[u.id].k==="m")||(hasT(
 const abl=u=>UD[u.id].ab.concat(u.give||[]),has=(u,a)=>abl(u).includes(a),reps=u=>u.promo?2:1;
 const align=u=>UD[u.id].race==="saurian"?"C":FAC[UD[u.id].f].al;
 
+// ================================================================ achievements
+const ACH=[["blood","First Blood","Win a fight."],["crown","Lord of the Keep","Finish a game in first place."],["money","In the Money","Finish in the top four."],["vet","Veteran","Promote a unit."],["corps","Officer Corps","Have three promoted units at once."],["castle","Castle Builder","Upgrade your keep to level 5."],
+ ["banner","Full Banner","Fight with five units of one faction."],["grizzled","Grizzled","Get a unit to level 3."],["daily","Daily Duty","Finish a daily challenge."],["flawless","Untouched","Win a fight without losing a single unit."],["brink","Back from the Brink","Win a game with 5 health or less."],["hoard","Hoard","Have 20 gold at once."],
+ ["plague","Contagion","Raise three Walking Corpses with plague in one fight."],["quarter","Quartermaster","Buy five supplies in one game."],["alliance","Grand Alliance","Field all six factions at once."],["lichdom","Lichdom","Promote a Lich into an Ancient Lich."],["blitz","Blitz","Win a game by round 12."],["streak","Perfect Season","Win five fights in a row."],
+ ["giant","Giant Slayer","Beat a rival whose warband had twice your total tiers."],["hundred","Centurion","Deal 100 damage in a single fight."]];
+let ACHS=ls.get("mk.ach",{});
+function unlock(id){if(ACHS[id]||INSTANT)return;const a=ACH.find(x=>x[0]===id);if(!a)return;ACHS[id]=Date.now();ls.set("mk.ach",ACHS);setTimeout(()=>{toast("Achievement: "+a[1],a[2],2400);sfx("fanfare",.5)},700)}
+
 // ================================================================ state
 let S=null,INSTANT=false;
 function newGame(leader,daily){
@@ -323,7 +332,7 @@ function buy(p,id){
  if(merge){let where=null,bd=0,bh=0,give=[],tr=[];for(const arr of [p.board,p.camp||[]])arr.forEach((u,i)=>{if(u&&u.id===id&&!u.promo){if(!where)tr=u.tr||[];bd=Math.max(bd,u.bd);bh=Math.max(bh,u.bh);(u.give||[]).forEach(gv=>give=addOnce(give,gv));if(!where)where=[arr,i];arr[i]=null}});
   const u=mkUnit(id,1);u.bd=bd;u.bh=bh;u.give=give;u.tr=tr;
   if(!where)where=bs!==undefined?[p.board,bs]:[p.camp,cs];where[0][where[1]]=u;if(where[0]===p.board)deploy(p,u);p.gold+=2;
-  if(p.me){S.flash={uid:u.uid,t:70};sfx("chest");setTimeout(()=>sfx("fanfare"),250);toast(`${UD[id].n} promoted to ${UD[id].pn}!`,"+2 gold, and a veteran's pick");S.picks++}
+  if(p.me){unlock("vet");if(id==="lich")unlock("lichdom");if(allUnits(p).filter(x=>x.promo).length>=3)unlock("corps");S.flash={uid:u.uid,t:70};sfx("chest");setTimeout(()=>sfx("fanfare"),250);toast(`${UD[id].n} promoted to ${UD[id].pn}!`,"+2 gold, and a veteran's pick");S.picks++}
   else aiPick(p);return true}
  const u=mkUnit(id);if(bs!==undefined){p.board[bs]=u;deploy(p,u)}else p.camp[cs]=u;return true}
 function sellValue(p,u){return 1+(hasT(u,"intelligent")?1:0)+(has(u,"cheap")?1:0)+(has(u,"fence")?reps(u):0)+(p.leader==="highway"?1:0)}
@@ -447,7 +456,12 @@ function showResult(msg,sub,cls,res,P,O,done){const st=fightStats(res);const min
  r.classList.add("on");let t;const fin=()=>{clearTimeout(t);r.classList.remove("on");r.onclick=null;done()};r.onclick=fin;t=setTimeout(fin,speed>=4?1400:4200)}
 function afterFight(){
  const P=me(),fv=S.fightView,O=S.players[fv.opp],res=fv.res;let msg,sub;
- S.bonusGold+=res.loot[0];const ups=gainXP(P,res);gainXP(O,res);
+ {const sc=synCounts(P.board);if(Object.values(sc).some(n=>n>=5))unlock("banner");if(Object.keys(sc).length>=6)unlock("alliance");
+  if(res.winner===0){unlock("blood");S.streak=(S.streak||0)+1;if(S.streak>=5)unlock("streak");if(!res.ev.some(e=>e.t==="die"&&P.board.some(u=>u&&u.uid===e.u)))unlock("flawless");
+   const tiers=p=>p.board.reduce((a,u)=>a+(u?uTier(u):0),0);if(tiers(O)>=2*tiers(P)&&tiers(P)>0)unlock("giant")}else S.streak=0;
+  if(res.ev.filter(e=>e.t==="spawn"&&e.side===0&&e.txt==="Plague!").length>=3)unlock("plague");
+  const st=fightStats(res);if(P.board.reduce((a,u)=>a+(u?(st.dmg[u.uid]||0):0),0)>=100)unlock("hundred")}
+ S.bonusGold+=res.loot[0];const ups=gainXP(P,res);gainXP(O,res);if(P.board.some(u=>u&&(u.lv||0)>=3))unlock("grizzled");
  if(res.winner===0){const d=takeDamage(O,damageFor(P,res));msg="Victory!";sub=`${O.name} takes ${d}`;const kl=synLevel(synCounts(P.board).knalgan||0);S.bonusGold+=kl;if(kl)sub+=` · Knalgans loot ${kl}`;stinger("victory")}
  else if(res.winner===1){const d=takeDamage(P,damageFor(O,res));msg="Defeat";sub=`You take ${d}`;stinger("defeat")}
  else{msg="A draw";sub="Nobody takes damage"}
@@ -459,7 +473,7 @@ function afterFight(){
  const go=()=>{document.body.classList.remove("fighting");S.fightView=null;anim=null;
   if(!P.alive)return gameOver(P.place);if(S.players.filter(p=>p.alive).length===1)return gameOver(1);
   S.round++;startRound()};if(INSTANT)go();else showResult(msg,sub,res.winner===0?"win":res.winner===1?"loss":"",res,P,O,go)}
-function gameOver(place){if(S.daily){const dd=ls.get("mk.daily",{});dd[S.daily]=Math.min(dd[S.daily]||9,place);ls.set("mk.daily",dd)}S.players.forEach(p=>{if(p.alive)p.lastBoard=p.board.filter(Boolean).map(u=>u.id)});S.phase="over";ls.del("mk.save2");const st=ls.get("mk.stats",{});st.games=(st.games||0)+1;st.best=Math.min(st.best||9,place);if(place===1)st.wins=(st.wins||0)+1;st.tops=(st.tops||0)+(place<=4?1:0);ls.set("mk.stats",st);
+function gameOver(place){if(place<=4)unlock("money");if(place===1){unlock("crown");if(me().hp<=5)unlock("brink");if(S.round<=12)unlock("blitz")}if(S.daily)unlock("daily");if(S.daily){const dd=ls.get("mk.daily",{});dd[S.daily]=Math.min(dd[S.daily]||9,place);ls.set("mk.daily",dd)}S.players.forEach(p=>{if(p.alive)p.lastBoard=p.board.filter(Boolean).map(u=>u.id)});S.phase="over";ls.del("mk.save2");const st=ls.get("mk.stats",{});st.games=(st.games||0)+1;st.best=Math.min(st.best||9,place);if(place===1)st.wins=(st.wins||0)+1;st.tops=(st.tops||0)+(place<=4?1:0);ls.set("mk.stats",st);
  playMusic("title");if(place===1)setTimeout(()=>sfx("fanfare"),300);
  const words=["","First place. The keep is yours, and so is everyone else's.","Second. So close you can smell the victory feast.","Third. A very respectable pile of gold.","Fourth. Top half. The bards will mention you, briefly.","Fifth. You'll be back.","Sixth. The mercenaries want a word about their pay.","Seventh. At least the walking corpses had fun.","Eighth. The keep has been turned into a very nice stable."];
  modal(`<h1>${place===1?"Victory":"The war is over"}</h1><p class="sub">${words[place]}</p><p style="text-align:center">You lasted ${S.round} rounds.${S.daily?` Daily challenge best today: #${ls.get("mk.daily",{})[S.daily]}.`:""}</p><small style="text-align:center">Games ${st.games} · Wins ${st.wins||0} · Top four ${st.tops||0} · Best place ${st.best}</small><button class="big" id="again">Play again</button>`,"title");const wasDaily=!!S.daily;$("again").onclick=()=>chooseLeader(wasDaily)}
@@ -615,7 +629,7 @@ const COIN=`<img src="img/icons/coins_copper.png" alt="">`;
 function cardHTML(id,i,cls){const d=UD[id];const pair=countOwned(me(),id);const ab=d.ab.map(a=>ABS[a]).join(" · ");
  return `<button class="card ${cls||""}" data-i="${i}" style="border-color:${FAC[d.f].c}"><img class="pt" src="${IMG(d.pt)}" alt="" loading="lazy"><img class="wp" src="${IMG(d.wp)}" alt=""><span class="tier">${"★".repeat(d.t)}</span>${pair?`<span class="pair">${pair}/3</span>`:""}<span class="tx"><span class="nm">${d.n}</span><span class="st"><b>${d.d}×${d.s}</b><i>${d.hp}</i></span><span class="ab">${ab||FAC[d.f].n}</span></span></button>`}
 function render(){if(!S)return;const P=me(),L=LEADERS.find(l=>l.id===P.leader);
- $("meImg").src=IMG(L.pt);$("hpB").textContent=P.hp;$("arN").textContent=P.armor;$("arB").style.display=P.armor>0?"flex":"none";$("goldN").textContent=P.gold;$("roundC").textContent=(S.daily?"Daily ":"")+"R"+S.round;$("todImg").src=IMG(TODS[S.tod].img);$("todN").textContent=TODS[S.tod].n;
+ if(P.gold>=20)unlock("hoard");$("meImg").src=IMG(L.pt);$("hpB").textContent=P.hp;$("arN").textContent=P.armor;$("arB").style.display=P.armor>0?"flex":"none";$("goldN").textContent=P.gold;$("roundC").textContent=(S.daily?"Daily ":"")+"R"+S.round;$("todImg").src=IMG(TODS[S.tod].img);$("todN").textContent=TODS[S.tod].n;
  $("opps").innerHTML=S.players.map((p,i)=>`<div data-p="${i}" class="opp ${p.me?"me":""} ${i===S.nextOpp?"next":""} ${p.alive?"":"dead"}" title="${p.name}"><img src="${IMG(LEADERS.find(l=>l.id===p.leader).pt)}" alt=""><span>${p.alive?p.hp+(p.armor?"+"+p.armor:""):"#"+p.place}</span></div>`).join("");
  $("opps").querySelectorAll(".opp").forEach(o=>o.onclick=()=>scout(+o.dataset.p));
  const kc=keepCost(P);$("keepB").innerHTML=P.keep>=5?`Keep 5`:`Keep ${P.keep+1} <span class="cost">${COIN}${kc}</span>`;
@@ -641,14 +655,14 @@ function vetPick(){const P=me();const o=pickOptions(P);if(!o.length){S.picks=0;r
  $("mcard").querySelectorAll(".card").forEach(b=>b.onclick=()=>{const id=o[+b.dataset.i];o.forEach(x=>{if(x!==id)S.pool[x]++});const u=mkUnit(id);const bs=freeBoard(P,id),cs=freeCamp(P);if(bs!==undefined){P.board[bs]=u;deploy(P,u)}else if(cs>=0)P.camp[cs]=u;else{S.pool[id]++;P.gold+=3;toast("No room","You get 3 gold instead")}
   S.picks--;closeModal();sfx("gold");save();render();if(S.picks>0)vetPick()})}
 function buyItem(){audioInit();const P=me();const it=ITEMS.find(x=>x.id===S.item);if(!it||S.phase!=="shop")return;if(P.gold<it.cost){toast("Not enough gold");return}
- if(it.all){P.gold-=it.cost;S.item=null;allUnits(P).forEach(u=>{u.bh+=2;pop(u,"+2")});sfx("potion");save();render();return}
+ if(it.all){P.gold-=it.cost;S.itemsBought=(S.itemsBought||0)+1;if(S.itemsBought>=5)unlock("quarter");S.item=null;allUnits(P).forEach(u=>{u.bh+=2;pop(u,"+2")});sfx("potion");save();render();return}
  if(!allUnits(P).length){toast("No one to give it to");return}
  setMode({item:it,hint:`Tap a unit to give the ${it.n}`});closeInfo()}
-function applyTo(u){const P=me();if(mode.item){const it=mode.item;P.gold-=it.cost;it.apply(u);S.item=null;sfx("potion");pop(u,it.fx)}
+function applyTo(u){const P=me();if(mode.item){const it=mode.item;P.gold-=it.cost;S.itemsBought=(S.itemsBought||0)+1;if(S.itemsBought>=5)unlock("quarter");it.apply(u);S.item=null;sfx("potion");pop(u,it.fx)}
  else if(mode.power){const L=mode.power;P.gold-=L.cost;if(L.id==="lieut"){u.bd++;pop(u,"+1")}if(L.id==="warlord"){u.bd++;u.bh+=4;pop(u,"+1/+4")}if(L.id==="flame"){u.bh+=5;pop(u,"+5")}sfx("heal",.5)}
  setMode(null);save();render()}
 function reroll(){audioInit();const P=me();if(S.phase!=="shop")return;if(!S.freeRoll){if(P.gold<1){toast("Not enough gold");return}P.gold--}S.freeRoll=false;S.held=false;rollShop();rollItem();sfx("gold",.4);save();render()}
-function upgradeKeep(){audioInit();const P=me();if(P.keep>=5||S.phase!=="shop")return;const c=keepCost(P);if(P.gold<c){toast("Not enough gold");return}P.gold-=c;P.keep++;P.keepCd=0;sfx("fanfare");toast(`Keep level ${P.keep}`,`Recruits up to ${"★".repeat(P.keep)} can now appear`);returnShop();S.shop=shopFor(P);S.shop.forEach(id=>S.pool[id]--);save();render()}
+function upgradeKeep(){audioInit();const P=me();if(P.keep>=5||S.phase!=="shop")return;const c=keepCost(P);if(P.gold<c){toast("Not enough gold");return}P.gold-=c;P.keep++;P.keepCd=0;if(P.keep>=5)unlock("castle");sfx("fanfare");toast(`Keep level ${P.keep}`,`Recruits up to ${"★".repeat(P.keep)} can now appear`);returnShop();S.shop=shopFor(P);S.shop.forEach(id=>S.pool[id]--);save();render()}
 function usePower(){audioInit();const P=me(),L=LEADERS.find(l=>l.id===P.leader);if(L.passive||S.phase!=="shop")return;if(P.gold<L.cost){toast("Not enough gold");return}if(!allUnits(P).length){toast("Recruit someone first");return}setMode({power:L,hint:`Tap a unit for ${L.p}`});closeInfo()}
 function fieldPos(e){const r=cv.getBoundingClientRect();return [(e.clientX-r.left)/r.width*FW,(e.clientY-r.top)/r.height*FH]}
 function slotAt(side,x,y){for(let s=0;s<SLOTS;s++){const [hx,hy]=hexXY(side,s);if(Math.hypot(x-(hx+36),y-(hy+36))<32)return s}return null}
@@ -702,10 +716,11 @@ $("menuB").onclick=()=>{audioInit();const st=ls.get("mk.stats",{});modal(`<h2>Me
  <p><b>Experience</b>: every fight gives a unit 1 XP, plus 3 for each kill. A full purple bar levels it up for good (+1 damage, +4 HP).</p><p><b>Three of a unit</b> promote it, with gold and a free <b>veteran's pick</b>. Three of a faction give a bonus, five a bigger one. Your <b>camp</b> holds five units off the field. <b>Supplies</b> buff a unit for good. Upgrade your <b>keep</b> to see stronger recruits. Hold a card to read it. Drag units between hexes, into the camp, or onto the market to sell them.</p><p style="font-size:12.5px;color:var(--mute)">On a keyboard: 1 to 6 buy, 7 buys supplies, R new recruits, H hold, U upgrade keep, P leader power, F or space to fight, Esc to cancel.</p>
  <small>Games ${st.games||0} · Wins ${st.wins||0} · Top four ${st.tops||0}${st.best?` · Best place ${st.best}`:""}</small>
  <div class="toggles"><button class="big alt" id="mB">Music ${mOn?"on":"off"}</button><button class="big alt" id="sB">Sounds ${sOn?"on":"off"}</button></div>
- <button class="big alt" id="credB">Credits and licence</button><button class="big alt" id="newB">Start a new game</button><button class="big" id="closeM">Back to the keep</button>`);
- $("closeM").onclick=closeModal;$("newB").onclick=()=>{ls.del("mk.save2");chooseLeader()};$("credB").onclick=credits;
+ <button class="big alt" id="achB">Achievements ${Object.keys(ACHS).length}/${ACH.length}</button><button class="big alt" id="credB">Credits and licence</button><button class="big alt" id="newB">Start a new game</button><button class="big" id="closeM">Back to the keep</button>`);
+ $("closeM").onclick=closeModal;$("newB").onclick=()=>{ls.del("mk.save2");chooseLeader()};$("credB").onclick=credits;$("achB").onclick=achList;
  $("mB").onclick=()=>{mOn=!mOn;ls.set("mk.music",mOn);if(!mOn){for(const n in MEL)MEL[n].pause();curM=null}else playMusic(S&&S.phase==="fight"?"fight":"shop");$("mB").textContent="Music "+(mOn?"on":"off")};
  $("sB").onclick=()=>{sOn=!sOn;ls.set("mk.sfx",sOn);$("sB").textContent="Sounds "+(sOn?"on":"off")}};
+function achList(){modal(`<h2>Achievements</h2><p style="color:var(--mute)">${Object.keys(ACHS).length} of ${ACH.length} earned.</p><div class="achs">${ACH.map(a=>`<div class="ach ${ACHS[a[0]]?"got":""}"><span class="st">${ACHS[a[0]]?"★":"☆"}</span><div><b>${a[1]}</b><small>${a[2]}</small></div></div>`).join("")}</div><button class="big" id="closeM">Back</button>`);$("closeM").onclick=closeModal}
 function credits(){modal(`<h2>Credits</h2><p>All the art, music and sound effects come from <b>Battle for Wesnoth</b>, made by the Wesnoth artists, composers and contributors, and are used under the GNU General Public License, version 2 or later. Music by Aleksi Aubry-Carlson (Main Menu, Battle), Mattias Westlund (Traveling Minstrels), Timothy Pinkham (Knolls, Wanderer, Victory, Defeat), Joseph G. Toscano (Loyalists), Doug Kaufman (Elvish Theme, Heroes Rite, Battle Epic), Gianmarco Leone (The Dangerous Symphony), Stephen Rozanc (Frantic), Jeremy Nicoll (Vengeful) and Tyler Johnson (Casualties of War).</p>
  <p>Wesnoth is free and open source: <a href="https://www.wesnoth.org" target="_blank" rel="noopener">wesnoth.org</a> and <a href="https://github.com/wesnoth/wesnoth" target="_blank" rel="noopener">github.com/wesnoth/wesnoth</a>.</p>
  <p>This game is free software under the GPL v2 or later too. See <a href="COPYING" target="_blank">COPYING</a> and <a href="CREDITS.txt" target="_blank">CREDITS.txt</a> for every file and what was changed.</p><button class="big" id="closeM">Back</button>`);$("closeM").onclick=closeModal}
