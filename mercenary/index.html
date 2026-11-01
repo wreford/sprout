@@ -337,7 +337,7 @@ function startRound(){
  S.players.forEach((p,i)=>{if(i&&p.alive)aiTurn(p)});
  const alive=S.players.map((p,i)=>i).filter(i=>i&&S.players[i].alive);let opts=alive.filter(i=>!S.lastOpp.slice(-Math.min(3,alive.length-1)).includes(i));if(!opts.length)opts=alive;S.nextOpp=pick(opts);
  S.phase="shop";
- if(S.round===3||S.round===7){if(!S.contract||S.contract.done)setTimeout(offerContracts,INSTANT?0:600);if(INSTANT)offerContracts()}
+ if((S.round===3||S.round===7)&&(!S.contract||S.contract.done)){if(INSTANT)offerContracts();else setTimeout(offerContracts,600)}
  if(S.round===5||S.round===9)S.players.forEach((p,i)=>{if(i&&p.alive){const us=allUnits(p);if(RNG()<.5)us.forEach(u=>u.bh+=3);else shuffle(us).slice(0,3).forEach(u=>u.bd++)}});
  if(S.freeItem){S.freeItem=0;S.freeSupply=1}
  save();render();playMusic("shop");
@@ -575,7 +575,7 @@ function draw(){
  const seed=(S.round*131+S.terrain.length*17)>>>0;let k=seed;const rnd=()=>{k=(k*1103515245+12345)&0x7fffffff;return k/0x7fffffff};
  if(T.emb)for(let c=-1;c<=8;c++)for(let r=-1;r<=4;r++){const x=c*54,y=r*72+((c%2+2)%2?36:0)+2;const onSlot=[0,1].some(sd=>[...Array(SLOTS).keys()].some(s=>{const [hx,hy]=hexXY(sd,s);return Math.abs(hx-x)<4&&Math.abs(hy-y)<4}));if(rnd()<(onSlot?.25:.6)){const e=img(T.emb[Math.floor(rnd()*T.emb.length)]);if(ready(e)){g.save();if(onSlot){g.globalAlpha=.85}g.drawImage(e,x,y,72,72);g.restore()}}}
  for(const side of [0,1])for(let s=FRONT;s<SLOTS;s++){const [x,y]=hexXY(side,s);const t=s===5&&side===0&&ready(keep)?keep:cas;if(ready(t))g.drawImage(t,x,y,72,72)}
- const l=TODS[S.tod].l;if(l<0){g.fillStyle="rgba(16,26,80,.34)";g.fillRect(0,0,FW,FH)}else if(S.tod===0||S.tod===3){g.fillStyle="rgba(140,60,30,.13)";g.fillRect(0,0,FW,FH)}
+ const l=TODS[S.tod].l;if(l<0){g.fillStyle="rgba(16,26,80,.34)";g.fillRect(0,0,FW,FH)}else if(S.tod===0||S.tod===3){const gr=g.createLinearGradient(S.tod===0?0:FW,0,S.tod===0?FW:0,FH);gr.addColorStop(0,"rgba(255,170,90,.22)");gr.addColorStop(1,"rgba(120,50,40,.10)");g.fillStyle=gr;g.fillRect(0,0,FW,FH)}
  const P=me(),fv=S.fightView;
  for(const side of [1,0])for(let s=0;s<SLOTS;s++){const [x,y]=hexXY(side,s);hexPath(x,y);g.lineWidth=1.3;g.strokeStyle=side===0?"rgba(255,240,200,.55)":"rgba(255,170,150,.32)";g.stroke();
   if(side===0&&S.phase==="shop"){const isSel=sel&&sel.w==="b"&&sel.i===s;if(isSel||(sel&&sel.w==="c")||(mode&&P.board[s])){g.fillStyle=isSel?"rgba(255,215,90,.32)":"rgba(255,235,160,.16)";g.fill()}}}
@@ -585,6 +585,7 @@ function draw(){
  const O=S.players[S.nextOpp];if(O)O.board.forEach((u,s)=>{if(u)drawUnit(u,1,s,{ghost:1})});
  P.board.forEach((u,s)=>{if(u)drawUnit(u,0,s,{sel:sel&&sel.w==="b"&&sel.i===s,alpha:drag&&drag.moved&&drag.s===s?.3:undefined})});
  if(drag&&drag.moved&&drag.u){const t=slotAt(0,drag.px,drag.py);if(t!==null){const [hx,hy]=hexXY(0,t);hexPath(hx,hy);g.lineWidth=3;g.strokeStyle="#ffd34a";g.stroke()}drawUnit(drag.u,0,0,{xy:[drag.px-36,drag.py-44]})}
+ ambDraw();
  if(S.flash&&S.flash.t>0){S.flash.t--;requestAnimationFrame(draw)}
  if(FX.length)drawFx()}
 function drawUnit(u,side,slot,o){o=o||{};const [x,y]=o.xy||hexXY(side,slot);const src=o.img||uImg(u);const im=tc(src,side)||img(src);const fc=FAC[UD[u.id].f].c;
@@ -601,6 +602,30 @@ function drawUnit(u,side,slot,o){o=o||{};const [x,y]=o.xy||hexXY(side,slot);cons
  if(has(u,"guard")){g.fillStyle="#d8d8e0";g.strokeStyle="#333";g.lineWidth=.8;g.beginPath();g.moveTo(x+52,y+48);g.lineTo(x+60,y+48);g.lineTo(x+60,y+54);g.lineTo(x+56,y+58);g.lineTo(x+52,y+54);g.closePath();g.fill();g.stroke()}
  if(o.sel){hexPath(x,y);g.lineWidth=2.5;g.strokeStyle="#ffd34a";g.stroke()}
  if(S.flash&&S.flash.uid===u.uid&&S.flash.t>0){g.strokeStyle=`rgba(255,215,80,${S.flash.t/70})`;g.lineWidth=4;hexPath(x,y);g.stroke()}}
+// ambient weather: leaves, sand, rain, motes, pollen and fireflies (drawn in code)
+const AMB=[];let ambOn=ls.get("mk.amb",true);
+function ambSpawn(kind){const r=Math.random;
+ if(kind==="leaf")return {k:kind,x:r()*FW,y:-6,vx:.25+r()*.3,vy:.35+r()*.35,a:r()*6,va:(r()-.5)*.08,c:["#c8862a","#a85a1e","#d8a838","#7a8a2a"][Math.floor(r()*4)]};
+ if(kind==="sand")return {k:kind,x:-4,y:r()*FH,vx:1.2+r()*1.4,vy:(r()-.5)*.2};
+ if(kind==="rain")return {k:kind,x:r()*FW+40,y:-8,vx:-.9,vy:5+r()*2};
+ if(kind==="mote")return {k:kind,x:r()*FW,y:r()*FH,vx:(r()-.5)*.12,vy:-.05-r()*.08,a:r()*6};
+ if(kind==="pollen")return {k:kind,x:r()*FW,y:FH+4,vx:(r()-.5)*.3,vy:-.25-r()*.3,a:r()*6};
+ return {k:"fly",x:r()*FW,y:40+r()*(FH-50),vx:0,vy:0,a:r()*6}}
+function ambKinds(){const t=S.terrain,l=TODS[S.tod].l;const ks=[];if(t==="forest")ks.push("leaf");if(t==="sand")ks.push("sand");if(t==="swamp")ks.push("rain");if(t==="cave")ks.push("mote");if((t==="flat"||t==="hills")&&l>=0)ks.push("pollen");if(l<0&&t!=="cave")ks.push("fly");return ks}
+function ambStep(){if(!S||!ambOn)return;const ks=ambKinds();const cap={leaf:18,sand:26,rain:60,mote:22,pollen:16,fly:16};
+ ks.forEach(kd=>{const n=AMB.filter(a=>a.k===kd).length;if(n<cap[kd]&&Math.random()<(kd==="rain"?.9:kd==="sand"?.35:.12))AMB.push(ambSpawn(kd))});
+ for(let i=AMB.length-1;i>=0;i--){const a=AMB[i];a.x+=a.vx;a.y+=a.vy;if(a.va)a.a+=a.va;
+  if(a.k==="fly"){a.a+=.05;a.x+=Math.cos(a.a*1.3)*.4;a.y+=Math.sin(a.a)*.3}if(a.k==="leaf")a.x+=Math.sin(a.a)*.4;if(a.k==="mote"||a.k==="pollen")a.x+=Math.sin((a.a+=.03))*.2;
+  if(a.x<-10||a.x>FW+12||a.y<-12||a.y>FH+12||!ks.includes(a.k))AMB.splice(i,1)}}
+function ambDraw(){if(!ambOn)return;g.save();for(const a of AMB){
+ if(a.k==="leaf"){g.save();g.translate(a.x,a.y);g.rotate(a.a);g.fillStyle=a.c;g.beginPath();g.ellipse(0,0,3,1.6,0,0,7);g.fill();g.restore()}
+ else if(a.k==="sand"){g.fillStyle="rgba(230,200,140,.45)";g.fillRect(a.x,a.y,3,1)}
+ else if(a.k==="rain"){g.strokeStyle="rgba(190,210,230,.45)";g.lineWidth=1;g.beginPath();g.moveTo(a.x,a.y);g.lineTo(a.x+a.vx*2,a.y+a.vy*2);g.stroke()}
+ else if(a.k==="mote"){g.fillStyle=`rgba(255,240,200,${.25+.2*Math.sin(a.a*3)})`;g.fillRect(a.x,a.y,1.5,1.5)}
+ else if(a.k==="pollen"){g.fillStyle="rgba(255,250,200,.7)";g.beginPath();g.arc(a.x,a.y,1.1,0,7);g.fill()}
+ else{const b=.5+.5*Math.sin(a.a*2.2);g.fillStyle=`rgba(220,255,120,${.25+.6*b})`;g.beginPath();g.arc(a.x,a.y,1.5,0,7);g.fill();g.fillStyle=`rgba(220,255,120,${.12*b})`;g.beginPath();g.arc(a.x,a.y,5,0,7);g.fill()}}
+ g.restore()}
+setInterval(()=>{if(!S||document.hidden||!ambOn)return;ambStep();if(!anim&&S.phase==="shop"&&!(drag&&drag.moved))draw()},50);
 const FX=[];
 function pop(u,txt,toastMsg){if(!S)return;const P=me();const s=P.board.indexOf(u);if(s>=0)FX.push({s,txt,t:0});if(toastMsg)toast(toastMsg);kickFx()}
 function kickFx(){if(dirty)return;dirty=1;const step=()=>{FX.forEach(f=>f.t+=16);for(let i=FX.length-1;i>=0;i--)if(FX[i].t>900)FX.splice(i,1);draw();if(FX.length)requestAnimationFrame(step);else dirty=0};requestAnimationFrame(step)}
@@ -648,6 +673,7 @@ function drawAnim(){const A=anim;const order=Object.values(A.units).filter(u=>!u
  for(const h of A.halos){const u=A.units[h.uid];if(!u)continue;const [x,y]=hexXY(u.side,u.slot);const fr=Math.min(3,Math.floor(h.t/130));let p;
   if(h.kind==="heal")p=`halo/elven/druid-healing${1+fr*2}.png`;else if(h.kind==="holy")p=`halo/holy/halo${1+Math.min(2,fr)*2}.png`;else if(h.kind==="fire")p=`projectiles/fire-burst-small-${1+fr*2}.png`;else p=`projectiles/whitemissile-impact-${1+fr*2}.png`;
   const im=img(p);if(ready(im)){const w=im.naturalWidth,hh=im.naturalHeight;g.globalAlpha=Math.max(0,1-h.t/600);g.drawImage(im,x+36-w/2,y+38-hh/2);g.globalAlpha=1}}
+ ambDraw();
  g.textAlign="center";g.font="bold 14px system-ui";
  for(const p of A.pops){const u=A.units[p.uid];if(!u)continue;const [x,y]=hexXY(u.side,u.slot);const yy=y+16-p.t/30;g.globalAlpha=Math.max(0,1-p.t/900);g.fillStyle="rgba(0,0,0,.7)";g.fillText(p.txt,x+37,yy+1);g.fillStyle=p.c;g.fillText(p.txt,x+36,yy);g.globalAlpha=1}}
 
@@ -748,9 +774,9 @@ $("menuB").onclick=()=>{audioInit();const st=ls.get("mk.stats",{});modal(`<h2>Me
  <p><b>Time of day</b>: Lawful units hit harder in daylight, Chaotic ones at night. <b>Terrain</b> changes how often each race dodges.</p>
  <p><b>Experience</b>: every fight gives a unit 1 XP, plus 3 for each kill. A full purple bar levels it up for good (+1 damage, +4 HP).</p><p><b>Three of a unit</b> promote it, with gold and a free <b>veteran's pick</b>. Three of a faction give a bonus, five a bigger one. Your <b>camp</b> holds five units off the field. <b>Supplies</b> buff a unit for good. Upgrade your <b>keep</b> to see stronger recruits. Hold a card to read it. Drag units between hexes, into the camp, or onto the market to sell them.</p><p style="font-size:12.5px;color:var(--mute)">On a keyboard: 1 to 6 buy, 7 buys supplies, R new recruits, H hold, U upgrade keep, P leader power, F or space to fight, Esc to cancel.</p>
  <small>Games ${st.games||0} · Wins ${st.wins||0} · Top four ${st.tops||0}${st.best?` · Best place ${st.best}`:""}</small>
- <div class="toggles"><button class="big alt" id="mB">Music ${mOn?"on":"off"}</button><button class="big alt" id="sB">Sounds ${sOn?"on":"off"}</button></div>
+ <div class="toggles"><button class="big alt" id="wB">Weather ${ambOn?"on":"off"}</button><button class="big alt" id="mB">Music ${mOn?"on":"off"}</button><button class="big alt" id="sB">Sounds ${sOn?"on":"off"}</button></div>
  <button class="big alt" id="tipB">Show the tips again</button><button class="big alt" id="achB">Achievements ${Object.keys(ACHS).length}/${ACH.length}</button><button class="big alt" id="credB">Credits and licence</button><button class="big alt" id="newB">Start a new game</button><button class="big" id="closeM">Back to the keep</button>`);
- $("closeM").onclick=closeModal;$("newB").onclick=()=>{ls.del("mk.save2");chooseLeader()};$("credB").onclick=credits;$("achB").onclick=achList;$("tipB").onclick=()=>{TIPS={};ls.set("mk.tips",TIPS);closeModal();toast("Tips are back on")};
+ $("closeM").onclick=closeModal;$("newB").onclick=()=>{ls.del("mk.save2");chooseLeader()};$("credB").onclick=credits;$("achB").onclick=achList;$("wB").onclick=()=>{ambOn=!ambOn;ls.set("mk.amb",ambOn);AMB.length=0;$("wB").textContent="Weather "+(ambOn?"on":"off");draw()};$("tipB").onclick=()=>{TIPS={};ls.set("mk.tips",TIPS);closeModal();toast("Tips are back on")};
  $("mB").onclick=()=>{mOn=!mOn;ls.set("mk.music",mOn);if(!mOn){for(const n in MEL)MEL[n].pause();curM=null}else playMusic(S&&S.phase==="fight"?"fight":"shop");$("mB").textContent="Music "+(mOn?"on":"off")};
  $("sB").onclick=()=>{sOn=!sOn;ls.set("mk.sfx",sOn);$("sB").textContent="Sounds "+(sOn?"on":"off")}};
 function achList(){modal(`<h2>Achievements</h2><p style="color:var(--mute)">${Object.keys(ACHS).length} of ${ACH.length} earned.</p><div class="achs">${ACH.map(a=>`<div class="ach ${ACHS[a[0]]?"got":""}"><span class="st">${ACHS[a[0]]?"★":"☆"}</span><div><b>${a[1]}</b><small>${a[2]}</small></div></div>`).join("")}</div><button class="big" id="closeM">Back</button>`);$("closeM").onclick=closeModal}
