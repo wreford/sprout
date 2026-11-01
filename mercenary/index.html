@@ -378,6 +378,7 @@ function startRound(){
  S.players.forEach((p,i)=>{if(i&&p.alive)aiTurn(p)});
  const alive=S.players.map((p,i)=>i).filter(i=>i&&S.players[i].alive);let opts=alive.filter(i=>!S.lastOpp.slice(-Math.min(3,alive.length-1)).includes(i));if(!opts.length)opts=alive;S.nextOpp=pick(opts);
  S.phase="shop";
+ if(!INSTANT&&S.lvUp){const ids=S.lvUp;S.lvUp=null;setTimeout(()=>me().board.forEach((u,i)=>{if(u&&ids.includes(u.uid))burst(i,"holy")}),900)}
  if((S.round===3||S.round===7)&&(!S.contract||S.contract.done)){if(INSTANT)offerContracts();else setTimeout(offerContracts,600)}
  if(S.round===5||S.round===9)S.players.forEach((p,i)=>{if(i&&p.alive){const us=allUnits(p);if(RNG()<.5)us.forEach(u=>u.bh+=3);else shuffle(us).slice(0,3).forEach(u=>u.bd++)}});
  if(S.freeItem){S.freeItem=0;S.freeSupply=1}
@@ -391,7 +392,7 @@ const allUnits=p=>p.board.concat(p.camp||[]).filter(Boolean);
 function countOwned(p,id){return allUnits(p).filter(u=>u.id===id&&!u.promo).length}
 function freeBoard(p,id){const r=UD[id].k==="r";return (r?[4,5,6,0,1,2,3]:[0,1,2,3,4,5,6]).find(i=>!p.board[i])}
 function freeCamp(p){return p.camp?p.camp.findIndex(x=>!x):-1}
-function deploy(p,u){if(u.dep)return;u.dep=1;for(let k=0;k<reps(u);k++){
+function deploy(p,u){if(p.me&&!INSTANT&&!REDUCE)u.dropT=performance.now();if(u.dep)return;u.dep=1;for(let k=0;k<reps(u);k++){
  if(has(u,"rally")){const al=p.board.filter(x=>x&&x!==u);if(al.length){const a=pick(al);a.bd++;if(p.me)pop(a,"+1",`${uName(a)} rallies: +1 damage`)}}
  if(has(u,"recnorth"))p.board.forEach(x=>{if(x&&x!==u&&UD[x.id].f==="north"){x.bh+=2;if(p.me)pop(x,"+2")}});
  if(has(u,"recrebel"))p.board.forEach(x=>{if(x&&x!==u&&UD[x.id].f==="rebel"){x.bd+=1;if(p.me)pop(x,"+1")}});
@@ -402,7 +403,7 @@ function buy(p,id){
  if(merge){let where=null,bd=0,bh=0,give=[],tr=[];for(const arr of [p.board,p.camp||[]])arr.forEach((u,i)=>{if(u&&u.id===id&&!u.promo){if(!where)tr=u.tr||[];bd=Math.max(bd,u.bd);bh=Math.max(bh,u.bh);(u.give||[]).forEach(gv=>give=addOnce(give,gv));if(!where)where=[arr,i];arr[i]=null}});
   const u=mkUnit(id,1);u.bd=bd;u.bh=bh;u.give=give;u.tr=tr;
   if(!where)where=bs!==undefined?[p.board,bs]:[p.camp,cs];where[0][where[1]]=u;if(where[0]===p.board)deploy(p,u);p.gold+=2;
-  if(p.me){buzz([20,40,30]);unlock("vet");cProgress("promo");if(id==="lich")unlock("lichdom");if(allUnits(p).filter(x=>x.promo).length>=3)unlock("corps");S.flash={uid:u.uid,t:70};sfx("chest");setTimeout(()=>sfx("fanfare"),250);toast(`${UD[id].n} promoted to ${UD[id].pn}!`,"+2 gold, and a veteran's pick");S.picks++}
+  if(p.me){buzz([20,40,30]);{const si=p.board.indexOf(u);if(si>=0&&!INSTANT)setTimeout(()=>burst(si,"holy"),350)}unlock("vet");cProgress("promo");if(id==="lich")unlock("lichdom");if(allUnits(p).filter(x=>x.promo).length>=3)unlock("corps");S.flash={uid:u.uid,t:70};sfx("chest");setTimeout(()=>sfx("fanfare"),250);toast(`${UD[id].n} promoted to ${UD[id].pn}!`,"+2 gold, and a veteran's pick");S.picks++}
   else aiPick(p);return true}
  const u=mkUnit(id);if(bs!==undefined){p.board[bs]=u;deploy(p,u)}else p.camp[cs]=u;return true}
 function sellValue(p,u){return 1+(hasT(u,"intelligent")?1:0)+(has(u,"cheap")?1:0)+(has(u,"fence")?reps(u):0)+(p.leader==="highway"?1:0)}
@@ -539,7 +540,7 @@ function afterFight(){
    const tiers=p=>p.board.reduce((a,u)=>a+(u?uTier(u):0),0);if(tiers(O)>=2*tiers(P)&&tiers(P)>0)unlock("giant")}else S.streak=0;
   if(res.ev.filter(e=>e.t==="spawn"&&e.side===0&&e.txt==="Plague!").length>=3)unlock("plague");
   const st=fightStats(res);if(P.board.reduce((a,u)=>a+(u?(st.dmg[u.uid]||0):0),0)>=100)unlock("hundred")}
- S.bonusGold+=res.loot[0];const ups=gainXP(P,res);gainXP(O,res);if(P.board.some(u=>u&&(u.lv||0)>=3))unlock("grizzled");
+ S.bonusGold+=res.loot[0];const ups=gainXP(P,res);S.lvUp=ups.map(u=>u.uid);gainXP(O,res);if(P.board.some(u=>u&&(u.lv||0)>=3))unlock("grizzled");
  S.lastLost=res.winner===1;
  {const myKills=P.board.reduce((a,u)=>a+(u?(res.kills[u.uid]||0):0),0);cProgress("bounty",myKills);
   if(res.winner===0){cProgress("garrison");const l=TODS[S.tod].l;if(l<0)cProgress("night");if(l>0)cProgress("sun");const lost=res.ev.filter(e=>e.t==="die"&&P.board.some(u=>u&&u.uid===e.u)).length;if(lost<=1)cProgress("survivor")}}
@@ -634,9 +635,9 @@ function draw(){
  g.fillText((S.phase==="fight"&&fv?S.players[fv.opp].name:"Next: "+((S.players[S.nextOpp]||{}).name||"")),5,13);g.textAlign="right";g.fillText(T.n+" · "+TODS[S.tod].n,FW-5,13);g.shadowBlur=0;
  if(anim){drawAnim();return}
  const O=S.players[S.nextOpp];if(O)O.board.forEach((u,s)=>{if(u)drawUnit(u,1,s,{ghost:1})});
- P.board.forEach((u,s)=>{if(u)drawUnit(u,0,s,{sel:sel&&sel.w==="b"&&sel.i===s,alpha:drag&&drag.moved&&drag.s===s?.3:undefined})});
+ P.board.forEach((u,s)=>{if(!u)return;let xy;if(u.dropT){const f=Math.min(1,(performance.now()-u.dropT)/320);const [hx,hy]=hexXY(0,s);xy=[hx,hy-60*(1-f)*(1-f)];if(f>=1){delete u.dropT;if(!REDUCE)burst(s,"dust")}else requestAnimationFrame(draw)}drawUnit(u,0,s,{xy,sel:sel&&sel.w==="b"&&sel.i===s,alpha:drag&&drag.moved&&drag.s===s?.3:undefined})});
  if(drag&&drag.moved&&drag.u){const t=slotAt(0,drag.px,drag.py);if(t!==null){const [hx,hy]=hexXY(0,t);hexPath(hx,hy);g.lineWidth=3;g.strokeStyle="#ffd34a";g.stroke()}drawUnit(drag.u,0,0,{xy:[drag.px-36,drag.py-44]})}
- ambDraw();
+ drawBursts();ambDraw();
  if(S.flash&&S.flash.t>0){S.flash.t--;requestAnimationFrame(draw)}
  if(FX.length)drawFx()}
 function drawUnit(u,side,slot,o){o=o||{};const [x,y]=o.xy||hexXY(side,slot);const src=o.img||uImg(u);const im=tc(src,side)||img(src);const fc=FAC[UD[u.id].f].c;
@@ -679,9 +680,15 @@ function ambDraw(){if(!ambOn)return;g.save();for(const a of AMB){
  else{const b=.5+.5*Math.sin(a.a*2.2);g.fillStyle=`rgba(220,255,120,${.25+.6*b})`;g.beginPath();g.arc(a.x,a.y,1.5,0,7);g.fill();g.fillStyle=`rgba(220,255,120,${.12*b})`;g.beginPath();g.arc(a.x,a.y,5,0,7);g.fill()}}
  g.restore()}
 setInterval(()=>{if(!S||document.hidden||!ambOn)return;ambStep();if(!anim&&S.phase==="shop"&&!(drag&&drag.moved))draw()},50);
+const BURSTS=[];
+function burst(slot,kind){BURSTS.push({s:slot,k:kind,t:0,parts:Array.from({length:kind==="dust"?10:16},(_,i)=>({a:i/(kind==="dust"?10:16)*6.283+Math.random()*.4,v:kind==="dust"?.6+Math.random()*.5:1+Math.random()*1.2}))});kickFx()}
+function drawBursts(){for(let i=BURSTS.length-1;i>=0;i--){const b=BURSTS[i];const [x,y]=hexXY(0,b.s);const f=b.t/(b.k==="dust"?500:900);if(f>=1){BURSTS.splice(i,1);continue}
+ if(b.k==="dust"){b.parts.forEach(p=>{const r=6+p.v*30*f;g.fillStyle=`rgba(200,180,140,${.55*(1-f)})`;g.beginPath();g.arc(x+36+Math.cos(p.a)*r,y+60+Math.sin(p.a)*r*.35,3.5*(1-f)+1,0,7);g.fill()})}
+ else{const h=img(`halo/holy/halo${1+2*Math.min(2,Math.floor(f*3))}.png`);if(ready(h)){g.globalAlpha=1-f;g.drawImage(h,x+36-h.naturalWidth/2,y+38-h.naturalHeight/2);g.globalAlpha=1}
+  b.parts.forEach(p=>{const r=8+p.v*34*f;g.fillStyle=`rgba(255,${200+Math.floor(55*(1-f))},90,${1-f})`;const sx=x+36+Math.cos(p.a)*r,sy=y+36+Math.sin(p.a)*r-10*f;g.beginPath();g.moveTo(sx,sy-3);g.lineTo(sx+1,sy);g.lineTo(sx,sy+3);g.lineTo(sx-1,sy);g.fill()})}}}
 const FX=[];
 function pop(u,txt,toastMsg){if(!S)return;const P=me();const s=P.board.indexOf(u);if(s>=0)FX.push({s,txt,t:0});if(toastMsg)toast(toastMsg);kickFx()}
-function kickFx(){if(dirty)return;dirty=1;const step=()=>{FX.forEach(f=>f.t+=16);for(let i=FX.length-1;i>=0;i--)if(FX[i].t>900)FX.splice(i,1);draw();if(FX.length)requestAnimationFrame(step);else dirty=0};requestAnimationFrame(step)}
+function kickFx(){if(dirty)return;dirty=1;const step=()=>{FX.forEach(f=>f.t+=16);BURSTS.forEach(b=>b.t+=16);for(let i=FX.length-1;i>=0;i--)if(FX[i].t>900)FX.splice(i,1);draw();if(FX.length||BURSTS.length)requestAnimationFrame(step);else dirty=0};requestAnimationFrame(step)}
 function drawFx(){g.textAlign="center";g.font="bold 13px system-ui";FX.forEach(f=>{const [x,y]=hexXY(0,f.s);const h=img(`halo/holy/halo${1+2*Math.min(2,Math.floor(f.t/250))}.png`);if(ready(h)){g.globalAlpha=.55*(1-f.t/900);g.drawImage(h,x+36-h.naturalWidth/2,y+38-h.naturalHeight/2)}g.globalAlpha=1-f.t/900;g.fillStyle="#000";g.fillText(f.txt,x+37,y+15-f.t/40);g.fillStyle="#7fff7f";g.fillText(f.txt,x+36,y+14-f.t/40);g.globalAlpha=1})}
 
 // ================================================================ battle animation
