@@ -68,6 +68,7 @@ canvas{display:block;border-radius:12px;border:3px solid #6b5228;box-shadow:0 0 
 #ctrl .ib{flex:1;min-height:40px;display:flex;align-items:center;justify-content:center;gap:4px;line-height:1.05;padding:3px 5px;font-size:12.5px}
 .cost{display:inline-flex;align-items:center;gap:1px;color:#7a5a08;font-weight:900}
 .cost img{width:14px;height:14px}
+#shop.sellzone{outline:3px dashed var(--red);outline-offset:3px;border-radius:10px}
 #holdB.on{background:linear-gradient(#e2f0ff,#c6dcf6);border-color:#6f93c4;box-shadow:0 2px 0 #6f93c4}
 #shop{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
 .card{position:relative;border-radius:9px;overflow:hidden;border:2px solid #888;background:#2a2116;padding:0;height:104px;font:inherit;color:#fff;text-align:center;box-shadow:0 2px 0 rgba(0,0,0,.25)}
@@ -529,7 +530,8 @@ function draw(){
  g.fillText((S.phase==="fight"&&fv?S.players[fv.opp].name:"Next: "+((S.players[S.nextOpp]||{}).name||"")),5,13);g.textAlign="right";g.fillText(T.n+" · "+TODS[S.tod].n,FW-5,13);g.shadowBlur=0;
  if(anim){drawAnim();return}
  const O=S.players[S.nextOpp];if(O)O.board.forEach((u,s)=>{if(u)drawUnit(u,1,s,{ghost:1})});
- P.board.forEach((u,s)=>{if(u)drawUnit(u,0,s,{sel:sel&&sel.w==="b"&&sel.i===s})});
+ P.board.forEach((u,s)=>{if(u)drawUnit(u,0,s,{sel:sel&&sel.w==="b"&&sel.i===s,alpha:drag&&drag.moved&&drag.s===s?.3:undefined})});
+ if(drag&&drag.moved&&drag.u){const t=slotAt(0,drag.px,drag.py);if(t!==null){const [hx,hy]=hexXY(0,t);hexPath(hx,hy);g.lineWidth=3;g.strokeStyle="#ffd34a";g.stroke()}drawUnit(drag.u,0,0,{xy:[drag.px-36,drag.py-44]})}
  if(S.flash&&S.flash.t>0){S.flash.t--;requestAnimationFrame(draw)}
  if(FX.length)drawFx()}
 function drawUnit(u,side,slot,o){o=o||{};const [x,y]=o.xy||hexXY(side,slot);const src=o.img||uImg(u);const im=tc(src,side)||img(src);const fc=FAC[UD[u.id].f].c;
@@ -641,13 +643,26 @@ function upgradeKeep(){audioInit();const P=me();if(P.keep>=5||S.phase!=="shop")r
 function usePower(){audioInit();const P=me(),L=LEADERS.find(l=>l.id===P.leader);if(L.passive||S.phase!=="shop")return;if(P.gold<L.cost){toast("Not enough gold");return}if(!allUnits(P).length){toast("Recruit someone first");return}setMode({power:L,hint:`Tap a unit for ${L.p}`});closeInfo()}
 function fieldPos(e){const r=cv.getBoundingClientRect();return [(e.clientX-r.left)/r.width*FW,(e.clientY-r.top)/r.height*FH]}
 function slotAt(side,x,y){for(let s=0;s<SLOTS;s++){const [hx,hy]=hexXY(side,s);if(Math.hypot(x-(hx+36),y-(hy+36))<32)return s}return null}
-cv.addEventListener("pointerdown",e=>{audioInit();if(!S||S.phase!=="shop")return;const [x,y]=fieldPos(e);const s=slotAt(0,x,y);const P=me();
+// press, drag and drop on the field; a press without movement is a tap
+let drag=null;
+cv.addEventListener("pointerdown",e=>{if(!S||S.phase!=="shop")return;const [x,y]=fieldPos(e);const s=slotAt(0,x,y);const P=me();drag={e,s,x0:e.clientX,y0:e.clientY,moved:false,u:s!==null&&!mode?P.board[s]:null};if(drag.u)try{cv.setPointerCapture(e.pointerId)}catch(err){}});
+addEventListener("pointermove",e=>{if(!drag||!drag.u)return;if(Math.hypot(e.clientX-drag.x0,e.clientY-drag.y0)>9)drag.moved=true;if(drag.moved){const [x,y]=fieldPos(e);drag.px=x;drag.py=y;drag.cx=e.clientX;drag.cy=e.clientY;closeInfo();draw();
+ document.querySelectorAll(".camp").forEach(c=>{const r=c.getBoundingClientRect();c.classList.toggle("sel",e.clientX>r.left&&e.clientX<r.right&&e.clientY>r.top&&e.clientY<r.bottom)});const sr=$("shop").getBoundingClientRect();$("shop").classList.toggle("sellzone",e.clientY>sr.top&&e.clientY<sr.bottom)}});
+addEventListener("pointerup",e=>{const d=drag;drag=null;if(!d)return;$("shop").classList.remove("sellzone");if(!d.moved){fieldTap(d.e);return}
+ const P=me();const [x,y]=fieldPos(e);const t=slotAt(0,x,y);
+ if(t!==null&&t!==d.s){const a=P.board[d.s];P.board[d.s]=P.board[t];P.board[t]=a;sfx("gold",.25)}
+ else{const camp=[...document.querySelectorAll(".camp")].findIndex(c=>{const r=c.getBoundingClientRect();return e.clientX>r.left&&e.clientX<r.right&&e.clientY>r.top&&e.clientY<r.bottom});
+  const sr=$("shop").getBoundingClientRect();
+  if(camp>=0){const u=P.board[d.s];P.board[d.s]=P.camp[camp];P.camp[camp]=u;if(P.board[d.s])deploy(P,P.board[d.s]);sfx("gold",.25)}
+  else if(e.clientY>sr.top&&e.clientY<sr.bottom){const v=sellValue(P,P.board[d.s]);sellAt(P,P.board,d.s);sfx("gold",.6);toast("Sold",`+${v} gold`,900)}}
+ sel=null;save();render()});
+function fieldTap(e){audioInit();if(!S||S.phase!=="shop")return;const [x,y]=fieldPos(e);const s=slotAt(0,x,y);const P=me();
  if(s===null){const es=slotAt(1,x,y);const O=S.players[S.nextOpp];if(es!==null&&O&&O.board[es]){showInfoUnit(O.board[es],null,null,false,true);sel=null;draw();return}sel=null;closeInfo();if(mode)setMode(null);render();return}
  if(mode){if(P.board[s])applyTo(P.board[s]);return}
  if(sel){if(sel.w==="b"&&sel.i!==s){const a=P.board[sel.i];P.board[sel.i]=P.board[s];P.board[s]=a;sel=null}
   else if(sel.w==="c"){const u=P.camp[sel.i];const there=P.board[s];P.board[s]=u;P.camp[sel.i]=there;if(u)deploy(P,u);sel=null;sfx("gold",.3)}
   else sel=null;closeInfo();save();render();return}
- if(P.board[s]){sel={w:"b",i:s};showInfoUnit(P.board[s],P.board,s)}else closeInfo();render()});
+ if(P.board[s]){sel={w:"b",i:s};showInfoUnit(P.board[s],P.board,s)}else closeInfo();render()}
 function tapCamp(i){audioInit();const P=me();if(S.phase!=="shop")return;
  if(mode){if(P.camp[i])applyTo(P.camp[i]);return}
  if(sel){if(sel.w==="b"){const u=P.board[sel.i];P.board[sel.i]=P.camp[i];P.camp[i]=u;if(P.board[sel.i])deploy(P,P.board[sel.i]);sel=null}
@@ -675,7 +690,7 @@ $("menuB").onclick=()=>{audioInit();const st=ls.get("mk.stats",{});modal(`<h2>Me
  <p>Recruit Wesnoth units for 3 gold, place them on your hexes, and send them against one of seven rival leaders each round. Last leader standing wins.</p>
  <p><b>Front line</b> hexes take the first blows. The <b>back line</b> is safe until the front falls, unless the enemy has skirmishers. A <b>shield wall</b> must be attacked first. Melee is only answered by melee, ranged by ranged.</p>
  <p><b>Time of day</b>: Lawful units hit harder in daylight, Chaotic ones at night. <b>Terrain</b> changes how often each race dodges.</p>
- <p><b>Three of a unit</b> promote it, with gold and a free <b>veteran's pick</b>. Three of a faction give a bonus, five a bigger one. Your <b>camp</b> holds five units off the field. <b>Supplies</b> buff a unit for good. Upgrade your <b>keep</b> to see stronger recruits. Hold a card to read it.</p>
+ <p><b>Three of a unit</b> promote it, with gold and a free <b>veteran's pick</b>. Three of a faction give a bonus, five a bigger one. Your <b>camp</b> holds five units off the field. <b>Supplies</b> buff a unit for good. Upgrade your <b>keep</b> to see stronger recruits. Hold a card to read it. Drag units between hexes, into the camp, or onto the market to sell them.</p><p style="font-size:12.5px;color:var(--mute)">On a keyboard: 1 to 6 buy, 7 buys supplies, R new recruits, H hold, U upgrade keep, P leader power, F or space to fight, Esc to cancel.</p>
  <small>Games ${st.games||0} · Wins ${st.wins||0} · Top four ${st.tops||0}${st.best?` · Best place ${st.best}`:""}</small>
  <div class="toggles"><button class="big alt" id="mB">Music ${mOn?"on":"off"}</button><button class="big alt" id="sB">Sounds ${sOn?"on":"off"}</button></div>
  <button class="big alt" id="credB">Credits and licence</button><button class="big alt" id="newB">Start a new game</button><button class="big" id="closeM">Back to the keep</button>`);
@@ -690,6 +705,8 @@ function chooseLeader(daily){daily=daily===true;S=null;closeInfo();if(daily)RNG=
  $("mcard").querySelectorAll(".leader").forEach(b=>b.onclick=()=>{audioInit();closeModal();newGame(opts[+b.dataset.i],daily);toast(daily?"Daily challenge":"Round 1","Recruit, then fight",1600)});
  playMusic("title")}
 addEventListener("pointerdown",()=>audioInit(),{once:true,capture:true});
+addEventListener("keydown",e=>{if(!S||e.metaKey||e.ctrlKey||e.altKey)return;if($("modal").classList.contains("on")){if(e.key==="Escape"&&S.phase==="shop")closeModal();return}if(S.phase!=="shop")return;audioInit();const k=e.key.toLowerCase();
+ if(k>="1"&&k<="6"){buyShop(+k-1)}else if(k==="7"){buyItem()}else if(k==="r")reroll();else if(k==="h"){S.held=!S.held;save();render()}else if(k==="u")upgradeKeep();else if(k==="p")usePower();else if(k==="f"||k===" "){e.preventDefault();fight()}else if(k==="escape"){sel=null;setMode(null);closeInfo();render()}else return;});
 preload();size();
 if(load()){render();toast("Welcome back","Round "+S.round);playMusic("shop")}else chooseLeader();
 window.__mk={setInstant(v){INSTANT=v},get S(){return S},battle,buy,fight,me,UD,UL,LEADERS,ITEMS,get anim(){return anim},setSpeed(v){speed=v},newGame,aiTurn,render,deploy,endShopTurn,applyTo,setMode,get mode(){return mode},vetPick,tapCamp,tc};
