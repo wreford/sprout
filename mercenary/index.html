@@ -180,6 +180,7 @@ canvas{display:block;border-radius:12px;border:3px solid #6b5228;box-shadow:0 0 
 #loading .lc{position:relative;text-align:center;width:min(80%,320px)}#loading h1{font:900 32px Georgia,serif;color:#5e2a10;margin:0 0 14px}
 #loading .bar{height:10px;border-radius:6px;background:rgba(60,44,20,.15);overflow:hidden;border:1px solid var(--gold)}#loading .bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--gold),var(--gold2));transition:width .2s}
 #loading small{display:block;margin-top:8px;color:var(--mute);font-size:12.5px}
+.syn.om{background:#3a2a5a!important;opacity:1;box-shadow:0 0 0 1px #c9a3ff inset;cursor:pointer}
 .syn.ct{background:#7a5a08!important;opacity:1}
 .toggles{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}.toggles .big{margin-top:0;flex:1;min-width:30%;font-size:13.5px}
 @media (max-width:700px){.card.item .ab{display:none}.card.item .nm{font-size:10px}}
@@ -345,6 +346,12 @@ function tip(id){if(TIPS[id]||INSTANT||tipQ.includes(id))return;tipQ.push(id);if
 function showTip(){const id=tipQ[0];if(!id)return;const c=$("coach");c.innerHTML=`<div style="flex:1">${TIPTXT[id]}</div><button class="ib">Got it</button>`;c.classList.add("on");c.querySelector("button").onclick=()=>{TIPS[id]=1;ls.set("mk.tips",TIPS);tipQ.shift();c.classList.remove("on");setTimeout(showTip,300)}}
 function unlock(id){if(ACHS[id]||INSTANT)return;const a=ACH.find(x=>x[0]===id);if(!a)return;ACHS[id]=Date.now();ls.set("mk.ach",ACHS);setTimeout(()=>{toast("Achievement: "+a[1],a[2],2400);sfx("fanfare",.5)},700)}
 
+// ================================================================ omens
+const OMENS=[{id:"blood",n:"Blood Moon",d:"Chaotic units deal 25% more this round."},{id:"sky",n:"Clear Skies",d:"Lawful units deal 25% more this round."},{id:"fog",n:"Thick Fog",d:"Everyone dodges 10% more this round."},
+ {id:"storm",n:"Storm",d:"Ranged attacks deal 1 less damage this round."},{id:"market",n:"Market Day",d:"New recruits are free this round."},{id:"feast",n:"Feast",d:"Every unit in every keep gets +2 HP for good."},
+ {id:"rush",n:"Gold Rush",d:"Everyone gets 2 extra gold this round."},{id:"bounty",n:"Bounty Hunters",d:"The loser of each fight takes 3 extra damage."}];
+const omen=()=>S&&S.omen?OMENS.find(o=>o.id===S.omen):null;
+
 // ================================================================ armory
 const ARMORY=[{id:"forge",n:"Forge",cost:5,icon:"attacks/sword-human.png",d:"Every melee unit deals +1 damage in fights."},{id:"fletcher",n:"Fletcher",cost:5,icon:"attacks/bow.png",d:"Every ranged unit deals +1 damage in fights."},
  {id:"infirmary",n:"Infirmary",cost:4,icon:"icons/potion_red_medium.png",d:"Every unit starts fights with +3 HP."},{id:"chest",n:"War Chest",cost:6,icon:"icons/coins_copper.png",d:"+1 gold at the start of every round."},{id:"barracks",n:"Barracks",cost:6,icon:"terrain/castle/keep-tile.png",d:"One more recruit in the market."}];
@@ -378,9 +385,9 @@ const me=()=>S.players[0];
 const goldFor=r=>Math.min(10,2+r);const shopSize=p=>SHOPN[p.keep]+(p.arm&&p.arm.barracks?1:0);
 function keepCost(p){if(p.keep>=5)return 0;let c=KEEPCOST[p.keep+1]-p.keepCd;if(p.leader==="dlord")c--;return Math.max(0,c)}
 function startRound(){
- S.tod=(S.round-1)%6;S.terrain=pick(Object.keys(TERR));
- for(const p of S.players){if(!p.alive)continue;p.gold=goldFor(S.round)+(p.me?S.bonusGold:0)+(p.arm&&p.arm.chest?1:0)+(!p.me&&S.diff===2?1:0)-(!p.me&&S.diff===0&&S.round>2?1:0);if(S.round>1&&p.keep<5)p.keepCd++}
- S.bonusGold=0;S.freeRoll=false;
+ S.tod=(S.round-1)%6;S.terrain=pick(Object.keys(TERR));S.omen=S.round>=2&&RNG()<.5?pick(OMENS).id:null;
+ for(const p of S.players){if(!p.alive)continue;if(S.omen==="feast")allUnits(p).forEach(u=>u.bh+=2);p.gold=(S.omen==="rush"?2:0)+goldFor(S.round)+(p.me?S.bonusGold:0)+(p.arm&&p.arm.chest?1:0)+(!p.me&&S.diff===2?1:0)-(!p.me&&S.diff===0&&S.round>2?1:0);if(S.round>1&&p.keep<5)p.keepCd++}
+ S.bonusGold=0;S.freeRoll=false;S.marketDay=S.omen==="market";
  if(!S.held){rollShop();rollItem()}S.held=false;
  S.players.forEach((p,i)=>{if(i&&p.alive)aiTurn(p)});
  const alive=S.players.map((p,i)=>i).filter(i=>i&&S.players[i].alive);let opts=alive.filter(i=>!S.lastOpp.slice(-Math.min(3,alive.length-1)).includes(i));if(!opts.length)opts=alive;S.nextOpp=pick(opts);
@@ -390,7 +397,7 @@ function startRound(){
  if(S.round===5||S.round===9)S.players.forEach((p,i)=>{if(i&&p.alive){const us=allUnits(p);if(RNG()<.5)us.forEach(u=>u.bh+=3);else shuffle(us).slice(0,3).forEach(u=>u.bd++)}});
  if(S.freeItem){S.freeItem=0;S.freeSupply=1}
  save();render();playMusic("shop");
- const P=me();if(S.round===1)tip("hire");if(S.round>=2&&P.keep<2)tip("keep");if(S.item&&S.round>=2)tip("supplies");if(S.streak===0&&S.round>1&&S.lastLost)tip("scout")}
+ const P=me();{const o=omen();if(o&&!INSTANT)setTimeout(()=>toast("Omen: "+o.n,o.d,2600),S.round===3||S.round===7?1600:500)}if(S.round===1)tip("hire");if(S.round>=2&&P.keep<2)tip("keep");if(S.item&&S.round>=2)tip("supplies");if(S.streak===0&&S.round>1&&S.lastLost)tip("scout")}
 function shopFor(p){const n=Math.min(7,shopSize(p));const bag=[];for(const id in S.pool){if(UD[id].t<=p.keep)for(let i=0;i<S.pool[id];i++)bag.push(id)}const out=[];for(let i=0;i<n&&bag.length;i++){const j=ri(bag.length);out.push(bag[j]);bag.splice(j,1)}return out}
 function rollShop(){S.shop.forEach(id=>{if(id)S.pool[id]++});S.shop=shopFor(me());S.shop.forEach(id=>S.pool[id]--)}
 function rollItem(){S.item=RNG()<.85?pick(ITEMS).id:null}
@@ -460,8 +467,8 @@ function battle(pa,pb,tod,terr,rec){
  const syn=[synCounts(pa.board),synCounts(pb.board)];
  sides.forEach((b,s)=>b.forEach(u=>{if(!u)return;const lv=synLevel(syn[s][u.d.f]||0);const add=lv?(u.d.f==="loyal"?[0,2,3][lv]:({north:2,knalgan:3}[u.d.f]||0)*lv):0;if(add){u.max+=add;u.cur=u.max}}));
  const alive=s=>sides[s].filter(u=>u&&u.cur>0);
- const dodge=u=>{let d=(H(u,"elusive")?.6:DEF[u.d.race][terr])+(hasT(u,"quick")?.08:0)+(u.d.f==="beast"?[0,.06,.12][synLevel(syn[u.side].beast||0)]:0);if(u.d.f==="rebel")d+=[0,.12,.22][synLevel(syn[u.side].rebel||0)];return clamp(d,0,.8)};
- const mult=u=>{let m=1;const al=align(u),l=TODS[tod].l,fl=hasT(u,"fearless");if(al==="L")m*=l>0?1.25:l<0?(fl?1:.75):1;if(al==="C")m*=l>0?(fl?1:.75):l<0?1.25:1;const b=sides[u.side];if(neighbours(u.slot).some(j=>b[j]&&b[j].cur>0&&H(b[j],"lead")))m*=1.25;return m};
+ const dodge=u=>{let d=(om==="fog"?.1:0)+(H(u,"elusive")?.6:DEF[u.d.race][terr])+(hasT(u,"quick")?.08:0)+(u.d.f==="beast"?[0,.06,.12][synLevel(syn[u.side].beast||0)]:0);if(u.d.f==="rebel")d+=[0,.12,.22][synLevel(syn[u.side].rebel||0)];return clamp(d,0,.8)};
+ const om=S&&S.omen;const mult=u=>{let m=1;const al=align(u),l=TODS[tod].l,fl=hasT(u,"fearless");if(om==="blood"&&al==="C")m*=1.25;if(om==="sky"&&al==="L")m*=1.25;if(al==="L")m*=l>0?1.25:l<0?(fl?1:.75):1;if(al==="C")m*=l>0?(fl?1:.75):l<0?1.25:1;const b=sides[u.side];if(neighbours(u.slot).some(j=>b[j]&&b[j].cur>0&&H(b[j],"lead")))m*=1.25;return m};
  const packN=[(syn[0].beast||0),(syn[1].beast||0)];
  const flat=u=>(u.d.f==="north"||u.d.f==="beast"?synLevel(syn[u.side][u.d.f]||0):0)+(H(u,"pack")?Math.min(2,Math.max(0,packN[u.side]-1)):0)+(H(u,"phalanx")&&u.slot<FRONT?neighbours(u.slot).filter(j=>sides[u.side][j]&&sides[u.side][j].cur>0).length:0)+(H(u,"volley")&&u.slot>=FRONT?2:0)+u.tmp;
  const mkCorpse=(side,slot)=>({...mkUnit("corpse",0,1),side,slot,cur:9,max:9,pois:0,slowd:0,amb:0,tmp:0,ward:0,rb:0,ab:UD.corpse.ab,d:UD.corpse});
@@ -489,7 +496,7 @@ function battle(pa,pb,tod,terr,rec){
   const ok=RNG()<hit;let dm=0,warded=false;
   if(ok&&dfd.ward){dfd.ward=0;warded=true}
   else if(ok){dm=uDmg(a)*mult(a)+flat(a);if(ex.charge)dm*=2;if(a.slowd)dm*=.5;if(isAtt&&a.amb&&H(a,"ambush"))dm*=2;dm=Math.round(dm);
-   if(isAtt&&H(dfd,"steady"))dm-=1;if(H(dfd,"tough")&&ex.melee)dm-=1;dm=Math.max(1,dm);
+   if(om==="storm"&&a.d.k==="r")dm-=1;if(isAtt&&H(dfd,"steady"))dm-=1;if(H(dfd,"tough")&&ex.melee)dm-=1;dm=Math.max(1,dm);
    dfd.cur-=dm;if(H(a,"drain")&&a.cur>0)a.cur=Math.min(a.max,a.cur+Math.floor(dm/2));
    if(H(a,"poison")&&dfd.cur>0&&!H(dfd,"regen")&&dfd.d.f!=="undead"&&!hasT(dfd,"healthy"))dfd.pois=1;if(H(a,"slow")&&dfd.cur>0)dfd.slowd=1}
   push({t:"strike",a:a.uid,d:dfd.uid,hit:ok&&!warded,warded,n:dm,hp:Math.max(0,dfd.cur),ahp:a.cur});
@@ -515,7 +522,7 @@ function battle(pa,pb,tod,terr,rec){
  const surv=winner<0?[]:alive(winner);
  return {winner,surv,ev,loot,kills,survTier:surv.reduce((s,u)=>s+UD[u.id].t+(u.promo?1:0),0)}}
 function gainXP(p,res){const ups=[];p.board.forEach(u=>{if(!u)return;u.kt=(u.kt||0)+(res.kills[u.uid]||0);u.xp=(u.xp||0)+1+3*(res.kills[u.uid]||0);while(u.xp>=xpMax(u)){u.xp-=xpMax(u);u.lv=(u.lv||0)+1;ups.push(u)}});return ups}
-function damageFor(p,res){const d=p.keep+res.survTier;const cap=S.round<4?5:S.round<8?10:99;return Math.min(cap,d)}
+function damageFor(p,res){const d=p.keep+res.survTier+(S.omen==="bounty"?3:0);const cap=S.round<4?5:S.round<8?10:99;return Math.min(cap,d)}
 function takeDamage(p,d){const a=Math.min(p.armor,d);p.armor-=a;p.hp-=d-a;return d}
 
 // ================================================================ round flow
@@ -531,7 +538,7 @@ function fight(){
  if(others.length){const a=others.pop();const g2=S.players.filter((p,i)=>i&&i!==a&&p.alive);const b=S.players.indexOf(pick(g2.length?g2:[O]));results.push([a,b,battle(S.players[a],S.players[b],S.tod,S.terrain,false),1])}
  S.pending=results;if(INSTANT){afterFight();return}document.body.classList.add("fighting");render();
  playMusic("fight");if(autoSkip){setTimeout(afterFight,250);return}versus(P,O,()=>initAnim(P,O,res))}
-function versus(P,O,done){const L=id=>LEADERS.find(l=>l.id===id);$("vsA").src=IMG(L(P.leader).pt);$("vsB").src=IMG(L(O.leader).pt);$("vsAn").textContent="You";$("vsBn").textContent=O.name;$("vsI").textContent=`Round ${S.round} · ${TERR[S.terrain].n} · ${TODS[S.tod].n}`;
+function versus(P,O,done){const L=id=>LEADERS.find(l=>l.id===id);$("vsA").src=IMG(L(P.leader).pt);$("vsB").src=IMG(L(O.leader).pt);$("vsAn").textContent="You";$("vsBn").textContent=O.name;$("vsI").textContent=`Round ${S.round} · ${TERR[S.terrain].n} · ${TODS[S.tod].n}${omen()?" · "+omen().n:""}`;
  const v=$("vs");v.classList.remove("on");void v.offsetWidth;v.classList.add("on");sfx("horn");setTimeout(()=>{v.classList.remove("on");done()},speed>=4?400:1500)}
 function fightStats(res){const dmg={},kills={},last={};res.ev.forEach(e=>{if(e.t==="strike"&&e.hit){dmg[e.a]=(dmg[e.a]||0)+e.n;last[e.d]=e.a}if(e.t==="scorch"&&e.a){dmg[e.a]=(dmg[e.a]||0)+e.n;last[e.d]=e.a}if(e.t==="die"&&last[e.u])kills[last[e.u]]=(kills[last[e.u]]||0)+1});return {dmg,kills}}
 function showResult(msg,sub,cls,res,P,O,done){const st=fightStats(res);const mine=P.board.filter(Boolean),theirs=O.board.filter(Boolean);
@@ -763,16 +770,18 @@ function render(){if(!S)return;const P=me(),L=LEADERS.find(l=>l.id===P.leader);
  $("opps").innerHTML=S.players.map((p,i)=>`<div data-p="${i}" class="opp ${p.me?"me":""} ${i===S.nextOpp?"next":""} ${p.alive?"":"dead"}" title="${p.name}"><img src="${IMG(LEADERS.find(l=>l.id===p.leader).pt)}" alt=""><span>${p.alive?p.hp+(p.armor?"+"+p.armor:""):"#"+p.place}</span></div>`).join("");
  $("opps").querySelectorAll(".opp").forEach(o=>o.onclick=()=>scout(+o.dataset.p));
  const kc=keepCost(P);$("keepB").innerHTML=P.keep>=5?`Keep 5`:`Keep ${P.keep+1} <span class="cost">${COIN}${kc}</span>`;
- $("rollB").innerHTML=`Recruits <span class="cost">${S.freeRoll?"free":COIN+"1"}</span>`;$("holdB").classList.toggle("on",!!S.held);$("holdB").textContent=S.held?"Held":"Hold";
+ $("rollB").innerHTML=`Recruits <span class="cost">${S.freeRoll||S.marketDay?"free":COIN+"1"}</span>`;$("holdB").classList.toggle("on",!!S.held);$("holdB").textContent=S.held?"Held":"Hold";
  $("powB").innerHTML=L.passive?`<span style="font-size:11px">${L.p}</span>`:`${L.p} <span class="cost">${COIN}${L.cost}</span>`;$("powB").disabled=!!L.passive;
+ const om0=omen();const omHTML=om0?`<span class="syn om" title="${om0.d}">Omen: ${om0.n}</span>`:"";
  const ct=S.contract&&!S.contract.done?CONTRACTS.find(c=>c.id===S.contract.id):null;const ctHTML=ct?`<span class="syn ct" title="${ct.d}">Contract: ${ct.n} ${S.contract.p}/${S.contract.goal}</span>`:"";
  $("replayB").classList.toggle("on",!!S.replay&&S.phase==="shop");$("armB").style.borderColor=Object.keys(P.arm||{}).length?"var(--gold)":"";
- const sc=synCounts(P.board);$("syn").innerHTML=ctHTML+Object.keys(FAC).filter(f=>sc[f]).map(f=>{const lv=synLevel(sc[f]);return `<span class="syn ${lv?"on":""}" data-f="${f}" style="background:${FAC[f].c}">${FAC[f].n} ${sc[f]}${lv?": "+SYN[f][lv-1]:"/3"}</span>`}).join("")||`<span style="font-size:11.5px;color:var(--mute)">Three of a faction give a bonus. Three of a unit promote it. Hold a card to read it.</span>`;
+ const sc=synCounts(P.board);$("syn").innerHTML=omHTML+ctHTML+Object.keys(FAC).filter(f=>sc[f]).map(f=>{const lv=synLevel(sc[f]);return `<span class="syn ${lv?"on":""}" data-f="${f}" style="background:${FAC[f].c}">${FAC[f].n} ${sc[f]}${lv?": "+SYN[f][lv-1]:"/3"}</span>`}).join("")||`<span style="font-size:11.5px;color:var(--mute)">Three of a faction give a bonus. Three of a unit promote it. Hold a card to read it.</span>`;
  const cr=$("campRow");cr.innerHTML=`<span class="lbl">CAMP</span>`+P.camp.map((u,i)=>`<button class="camp ${sel&&sel.w==="c"&&sel.i===i?"sel":""}" data-c="${i}">${u?`<img src="${tcURL(uImg(u))}" alt=""><small>${uDmg(u)}×${u.str} ${uHp(u)}${u.promo?" ★":""}</small>`:""}</button>`).join("");
  cr.querySelectorAll(".camp").forEach(b=>b.onclick=()=>tapCamp(+b.dataset.c));
  const n=shopSize(P);let h="";for(let i=0;i<Math.max(6,n);i++){const id=S.shop[i];if(id)h+=cardHTML(id,i,(S.held?"held ":"")+(P.gold<3?"poor":""));else if(i<n)h+=`<div class="card empty">Hired</div>`;else h+=`<div class="card empty" style="opacity:.4">Keep ${i<4?3:i<5?4:5}</div>`}
  if(S.item){const it=ITEMS.find(x=>x.id===S.item);h+=`<button class="card item ${P.gold<it.cost&&!S.freeSupply?"poor":""}" id="itemC" style="border-color:#c99a2e"><img class="ic" src="${IMG(it.icon)}" alt=""><span class="tier" style="color:#fff">${S.freeSupply?"free":it.cost+" gold"}</span><span class="tx"><span class="nm">${it.n}</span><span class="ab" style="white-space:normal;color:#f0e0b0">${it.d}</span></span></button>`}
  else h+=`<div class="card empty">Supplies</div>`;
+ $("syn").querySelectorAll(".om").forEach(e=>e.onclick=()=>{const o=omen();if(o)toast("Omen: "+o.n,o.d,2600)});
  $("syn").querySelectorAll("[data-f]").forEach(e=>e.onclick=()=>{const f=e.dataset.f;toast(FAC[f].n,`3: ${SYN[f][0]} · 5: ${SYN[f][1]}`,2600)});
  $("shop").innerHTML=h;$("shop").querySelectorAll(".card[data-i]").forEach(b=>bindCard(b,+b.dataset.i));if($("itemC"))$("itemC").onclick=buyItem;
  draw()}
@@ -794,7 +803,7 @@ function buyItem(){audioInit();const P=me();const it=ITEMS.find(x=>x.id===S.item
 function applyTo(u){const P=me();if(mode.item){const it=mode.item;P.gold-=mode.free?0:it.cost;S.itemsBought=(S.itemsBought||0)+1;if(S.itemsBought>=5)unlock("quarter");cProgress("supply");it.apply(u);if(mode.free)S.freeSupply=0;S.item=null;sfx("potion");pop(u,it.fx)}
  else if(mode.power){const L=mode.power;P.gold-=L.cost;if(L.id==="lieut"){u.bd++;pop(u,"+1")}if(L.id==="warlord"){u.bd++;u.bh+=5;pop(u,"+1/+5")}if(L.id==="flame"){u.bh+=5;pop(u,"+5")}if(L.id==="general"){u.give=addOnce(u.give,"lead");u.bd++;pop(u,"Lead +1")}if(L.id==="seer"){u.give=addOnce(u.give,"ward");pop(u,"Ward")}sfx("heal",.5)}
  setMode(null);save();render()}
-function reroll(){audioInit();const P=me();if(S.phase!=="shop")return;if(!S.freeRoll){if(P.gold<1){toast("Not enough gold");return}P.gold--}S.freeRoll=false;S.held=false;rollShop();rollItem();sfx("gold",.4);save();render()}
+function reroll(){audioInit();const P=me();if(S.phase!=="shop")return;if(!S.freeRoll&&!S.marketDay){if(P.gold<1){toast("Not enough gold");return}P.gold--}S.freeRoll=false;S.held=false;rollShop();rollItem();sfx("gold",.4);save();render()}
 function upgradeKeep(){audioInit();const P=me();if(P.keep>=5||S.phase!=="shop")return;const c=keepCost(P);if(P.gold<c){toast("Not enough gold");return}P.gold-=c;P.keep++;P.keepCd=0;if(P.keep>=5)unlock("castle");sfx("fanfare");toast(`Keep level ${P.keep}`,`Recruits up to ${"★".repeat(P.keep)} can now appear`);returnShop();S.shop=shopFor(P);S.shop.forEach(id=>S.pool[id]--);save();render()}
 function usePower(){audioInit();const P=me(),L=LEADERS.find(l=>l.id===P.leader);if(L.passive||S.phase!=="shop")return;if(P.gold<L.cost){toast("Not enough gold");return}if(!allUnits(P).length){toast("Recruit someone first");return}setMode({power:L,hint:`Tap a unit for ${L.p}`});closeInfo()}
 function startReplay(){const R=S.replay;if(!R||S.phase!=="shop")return;audioInit();closeInfo();sel=null;setMode(null);
@@ -851,7 +860,7 @@ $("menuB").onclick=()=>{audioInit();const st=ls.get("mk.stats",{});modal(`<h2>Me
  <p>Recruit Wesnoth units for 3 gold, place them on your hexes, and send them against one of seven rival leaders each round. Last leader standing wins.</p>
  <p><b>Front line</b> hexes take the first blows. The <b>back line</b> is safe until the front falls, unless the enemy has skirmishers. A <b>shield wall</b> must be attacked first. Melee is only answered by melee, ranged by ranged.</p>
  <p><b>Seven factions</b>: Loyalists, Rebels, Northerners, Undead, Knalgans, Drakes and the wild Beasts.</p><p><b>Time of day</b>: Lawful units hit harder in daylight, Chaotic ones at night. <b>Terrain</b> changes how often each race dodges.</p>
- <p><b>Armory</b> (the hammer button): one-off upgrades such as a forge, a fletcher, an infirmary, a war chest and barracks.</p><p><b>Placement</b>: Phalanx units hit harder beside other front-liners; Volley units hit harder from the back line.</p><p><b>Experience</b>: every fight gives a unit 1 XP, plus 3 for each kill. A full purple bar levels it up for good (+1 damage, +4 HP).</p><p><b>Three of a unit</b> promote it, with gold and a free <b>veteran's pick</b>. Three of a faction give a bonus, five a bigger one. Your <b>camp</b> holds five units off the field. <b>Supplies</b> buff a unit for good. Upgrade your <b>keep</b> to see stronger recruits. Hold a card to read it. Drag units between hexes, into the camp, or onto the market to sell them.</p><p style="font-size:12.5px;color:var(--mute)">On a keyboard: S skips a fight, 1 to 6 buy, 7 buys supplies, R new recruits, H hold, U upgrade keep, P leader power, F or space to fight, Esc to cancel.</p>
+ <p><b>Armory</b> (the hammer button): one-off upgrades such as a forge, a fletcher, an infirmary, a war chest and barracks.</p><p><b>Omens</b>: about half the rounds bring an omen, such as a Blood Moon, Thick Fog or a Gold Rush, that changes things for everyone that round.</p><p><b>Placement</b>: Phalanx units hit harder beside other front-liners; Volley units hit harder from the back line.</p><p><b>Experience</b>: every fight gives a unit 1 XP, plus 3 for each kill. A full purple bar levels it up for good (+1 damage, +4 HP).</p><p><b>Three of a unit</b> promote it, with gold and a free <b>veteran's pick</b>. Three of a faction give a bonus, five a bigger one. Your <b>camp</b> holds five units off the field. <b>Supplies</b> buff a unit for good. Upgrade your <b>keep</b> to see stronger recruits. Hold a card to read it. Drag units between hexes, into the camp, or onto the market to sell them.</p><p style="font-size:12.5px;color:var(--mute)">On a keyboard: S skips a fight, 1 to 6 buy, 7 buys supplies, R new recruits, H hold, U upgrade keep, P leader power, F or space to fight, Esc to cancel.</p>
  <small>Games ${st.games||0} · Wins ${st.wins||0} · Top four ${st.tops||0}${st.best?` · Best place ${st.best}`:""}</small>
  <div class="toggles"><button class="big alt" id="rmB">Motion: ${REDUCE?"reduced":"full"}</button><button class="big alt" id="fB">Fights: ${autoSkip?"skip":"watch"}</button><button class="big alt" id="wB">Weather ${ambOn?"on":"off"}</button><button class="big alt" id="mB">Music ${mOn?"on":"off"}</button><button class="big alt" id="sB">Sounds ${sOn?"on":"off"}</button></div>
  <button class="big alt" id="tipB">Show the tips again</button><button class="big alt" id="histB">Records</button><button class="big alt" id="achB">Achievements ${Object.keys(ACHS).length}/${ACH.length}</button><button class="big alt" id="credB">Credits and licence</button><button class="big alt" id="newB">Start a new game</button><button class="big" id="closeM">Back to the keep</button>`);
