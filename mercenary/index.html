@@ -53,6 +53,8 @@ body:before{content:"";position:fixed;inset:0;background:linear-gradient(180deg,
 canvas{display:block;border-radius:12px;border:3px solid #6b5228;box-shadow:0 0 0 1px var(--gold2),0 8px 22px rgba(0,0,0,.28);touch-action:none;background:#2a2116}
 #speed{position:absolute;top:8px;right:8px;display:none;z-index:3}
 .fighting #speed{display:block}
+#replayB{position:absolute;bottom:8px;left:8px;z-index:3;font-size:12px;padding:4px 8px;display:none}
+#replayB.on{display:block}.fighting #replayB{display:none}
 #panel{display:flex;flex-direction:column;gap:4px}
 .fighting #panel{opacity:.45;pointer-events:none}
 #campRow{display:flex;gap:4px;align-items:stretch}
@@ -168,7 +170,7 @@ canvas{display:block;border-radius:12px;border:3px solid #6b5228;box-shadow:0 0 
   <span class="sp"></span><div id="iconBtns"><button class="ib" id="sndB" aria-label="Sound">&#9835;</button><button class="ib" id="menuB" aria-label="Menu">&#9776;</button></div></div>
  <div id="opps"></div>
  <div id="main">
-  <div id="fieldwrap"><canvas id="cv"></canvas><button class="ib" id="speed">x1</button><div id="hint"></div><div id="banner"></div><div id="result"></div><div id="coach"></div><div id="info" class="frame"></div></div>
+  <div id="fieldwrap"><canvas id="cv"></canvas><button class="ib" id="speed">x1</button><button class="ib" id="replayB" title="Rewatch your last fight">&#8634; Replay</button><div id="hint"></div><div id="banner"></div><div id="result"></div><div id="coach"></div><div id="info" class="frame"></div></div>
   <div id="panel">
    <div id="campRow"><span class="lbl">CAMP</span></div>
    <div id="syn"></div>
@@ -468,7 +470,9 @@ function fight(){
  if(S.phase!=="shop")return;closeInfo();setMode(null);sel=null;
  const P=me();endShopTurn(P);if(!S.held)returnShop();
  S.phase="fight";S.lastOpp.push(S.nextOpp);const O=S.players[S.nextOpp];
+ const snap=JSON.parse(JSON.stringify({a:{board:P.board,leader:P.leader},b:{board:O.board,leader:O.leader}}));
  const res=battle(P,O,S.tod,S.terrain,true);S.fightView={opp:S.nextOpp,res};
+ S.replay={a:snap.a,b:snap.b,ev:res.ev,tod:S.tod,terrain:S.terrain,opp:S.nextOpp,win:res.winner};
  const others=S.players.map((p,i)=>i).filter(i=>i&&i!==S.nextOpp&&S.players[i].alive);shuffle(others);
  const results=[];while(others.length>=2){const a=others.pop(),b=others.pop();results.push([a,b,battle(S.players[a],S.players[b],S.tod,S.terrain,false)])}
  if(others.length){const a=others.pop();const g2=S.players.filter((p,i)=>i&&i!==a&&p.alive);const b=S.players.indexOf(pick(g2.length?g2:[O]));results.push([a,b,battle(S.players[a],S.players[b],S.tod,S.terrain,false),1])}
@@ -511,7 +515,7 @@ function gameOver(place){if(place<=4)unlock("money");if(place===1){unlock("crown
  modal(`<h1>${place===1?"Victory":"The war is over"}</h1><p class="sub">${words[place]}</p><p style="text-align:center">You lasted ${S.round} rounds.${S.daily?` Daily challenge best today: #${ls.get("mk.daily",{})[S.daily]}.`:""}</p><small style="text-align:center">Games ${st.games} · Wins ${st.wins||0} · Top four ${st.tops||0} · Best place ${st.best}</small><button class="big" id="again">Play again</button>`,"title");const wasDaily=!!S.daily;$("again").onclick=()=>chooseLeader(wasDaily)}
 
 // ================================================================ save
-function save(){if(!S||S.phase!=="shop")return;ls.set("mk.save2",{S,UID})}
+function save(){if(!S||S.phase!=="shop")return;const {replay,...rest}=S;ls.set("mk.save2",{S:rest,UID})}
 function load(){const o=ls.get("mk.save2",null);if(!o||!o.S||!o.S.players)return false;S=o.S;S.players.forEach(p=>allUnits(p).forEach(u=>{if(!u.tr)u.tr=[]}));UID=o.UID;S.phase="shop";S.fightView=null;RNG=S.daily?seeded(daySeed("mk-daily-"+S.daily)+S.round*104729):Math.random;return true}
 
 // ================================================================ images and team colours
@@ -660,7 +664,7 @@ function tick(now){if(!anim)return;const dt=Math.min(60,now-(lastT||now))*speed;
  for(const k in A.units){const u=A.units[k];if(u.flash>0)u.flash=Math.max(0,u.flash-dt/240);if(u.spawn&&u.alpha<1)u.alpha=Math.min(1,u.alpha+dt/300)}
  const c=A.cur;if(c&&c.t==="die"&&A.units[c.u]){const u=A.units[c.u];const nx=A.ev[A.i];if(!(nx&&nx.t==="rise"&&nx.u===c.u)){u.alpha=Math.max(0,1-A.t/A.dur);if(A.t+dt>=A.dur)u.gone=1}}
  draw();
- if(A.done&&now-A.endT>450&&!A.finished){A.finished=1;afterFight();return}
+ if(A.done&&now-A.endT>450&&!A.finished){A.finished=1;if(A.replay){endReplay();return}afterFight();return}
  requestAnimationFrame(tick)}
 const PROJ=k=>k.startsWith("bow")?"projectiles/missile-n.png":k==="dark-missile"?"projectiles/darkmissile-n.png":k.startsWith("dagger-thrown")?"projectiles/dagger-n.png":k==="thunderstick"?"projectiles/bullet.png":k.startsWith("fire")?"projectiles/missile-fire-n.png":"projectiles/whitemissile-n.png";
 function drawAnim(){const A=anim;const order=Object.values(A.units).filter(u=>!u.gone).sort((a,b)=>hexXY(a.side,a.slot)[1]-hexXY(b.side,b.slot)[1]);
@@ -694,6 +698,7 @@ function render(){if(!S)return;const P=me(),L=LEADERS.find(l=>l.id===P.leader);
  $("rollB").innerHTML=`Recruits <span class="cost">${S.freeRoll?"free":COIN+"1"}</span>`;$("holdB").classList.toggle("on",!!S.held);$("holdB").textContent=S.held?"Held":"Hold";
  $("powB").innerHTML=L.passive?`<span style="font-size:11px">${L.p}</span>`:`${L.p} <span class="cost">${COIN}${L.cost}</span>`;$("powB").disabled=!!L.passive;
  const ct=S.contract&&!S.contract.done?CONTRACTS.find(c=>c.id===S.contract.id):null;const ctHTML=ct?`<span class="syn ct" title="${ct.d}">Contract: ${ct.n} ${S.contract.p}/${S.contract.goal}</span>`:"";
+ $("replayB").classList.toggle("on",!!S.replay&&S.phase==="shop");
  const sc=synCounts(P.board);$("syn").innerHTML=ctHTML+Object.keys(FAC).filter(f=>sc[f]).map(f=>{const lv=synLevel(sc[f]);return `<span class="syn ${lv?"on":""}" style="background:${FAC[f].c}">${FAC[f].n} ${sc[f]}${lv?": "+SYN[f][lv-1]:"/3"}</span>`}).join("")||`<span style="font-size:11.5px;color:var(--mute)">Three of a faction give a bonus. Three of a unit promote it. Hold a card to read it.</span>`;
  const cr=$("campRow");cr.innerHTML=`<span class="lbl">CAMP</span>`+P.camp.map((u,i)=>`<button class="camp ${sel&&sel.w==="c"&&sel.i===i?"sel":""}" data-c="${i}">${u?`<img src="${tcURL(uImg(u))}" alt=""><small>${uDmg(u)}×${u.str} ${uHp(u)}${u.promo?" ★":""}</small>`:""}</button>`).join("");
  cr.querySelectorAll(".camp").forEach(b=>b.onclick=()=>tapCamp(+b.dataset.c));
@@ -723,6 +728,10 @@ function applyTo(u){const P=me();if(mode.item){const it=mode.item;P.gold-=mode.f
 function reroll(){audioInit();const P=me();if(S.phase!=="shop")return;if(!S.freeRoll){if(P.gold<1){toast("Not enough gold");return}P.gold--}S.freeRoll=false;S.held=false;rollShop();rollItem();sfx("gold",.4);save();render()}
 function upgradeKeep(){audioInit();const P=me();if(P.keep>=5||S.phase!=="shop")return;const c=keepCost(P);if(P.gold<c){toast("Not enough gold");return}P.gold-=c;P.keep++;P.keepCd=0;if(P.keep>=5)unlock("castle");sfx("fanfare");toast(`Keep level ${P.keep}`,`Recruits up to ${"★".repeat(P.keep)} can now appear`);returnShop();S.shop=shopFor(P);S.shop.forEach(id=>S.pool[id]--);save();render()}
 function usePower(){audioInit();const P=me(),L=LEADERS.find(l=>l.id===P.leader);if(L.passive||S.phase!=="shop")return;if(P.gold<L.cost){toast("Not enough gold");return}if(!allUnits(P).length){toast("Recruit someone first");return}setMode({power:L,hint:`Tap a unit for ${L.p}`});closeInfo()}
+function startReplay(){const R=S.replay;if(!R||S.phase!=="shop")return;audioInit();closeInfo();sel=null;setMode(null);
+ S.replaySaved={tod:S.tod,terrain:S.terrain};S.tod=R.tod;S.terrain=R.terrain;S.phase="replay";S.fightView={opp:R.opp,res:{ev:R.ev}};document.body.classList.add("fighting");
+ playMusic("fight");toast("Replay",`${S.players[R.opp].name} · ${TERR[R.terrain].n} · ${TODS[R.tod].n}`,1400);setTimeout(()=>{initAnim(R.a,R.b,{ev:R.ev});anim.replay=1},500)}
+function endReplay(){const sv=S.replaySaved;S.tod=sv.tod;S.terrain=sv.terrain;S.phase="shop";S.fightView=null;anim=null;document.body.classList.remove("fighting");playMusic("shop");render()}
 function fieldPos(e){const r=cv.getBoundingClientRect();return [(e.clientX-r.left)/r.width*FW,(e.clientY-r.top)/r.height*FH]}
 function slotAt(side,x,y){for(let s=0;s<SLOTS;s++){const [hx,hy]=hexXY(side,s);if(Math.hypot(x-(hx+36),y-(hy+36))<32)return s}return null}
 // press, drag and drop on the field; a press without movement is a tap
@@ -765,7 +774,7 @@ function scout(i){if(!S)return;audioInit();const p=S.players[i],L=LEADERS.find(l
  modal(`<div class="sc-head"><img src="${IMG(L.pt)}" alt=""><div><h2>${p.me?"Your warband":p.name}</h2><div class="sc-meta">${p.alive?`♥ ${p.hp}${p.armor?` · armour ${p.armor}`:""} · keep ${p.keep}`:`Out, placed #${p.place}`}${i===S.nextOpp?" · <b style='color:var(--red)'>you fight them next</b>":""}${!p.me&&recent?` · fought ${recent}×`:""}</div><div class="sc-meta">${L.p}: ${L.d}</div></div></div>
  <div class="sc-syn">${Object.keys(sc).map(f=>`<span class="syn ${synLevel(sc[f])?"on":""}" style="background:${FAC[f].c}">${FAC[f].n} ${sc[f]}</span>`).join("")}</div>
  <div class="sc-grid">${units||"<p>No units yet.</p>"}</div><small>${p.me?"":"This is their warband after their last shopping turn."}</small><button class="big alt" id="closeM">Close</button>`);$("closeM").onclick=closeModal}
-$("rollB").onclick=reroll;$("keepB").onclick=upgradeKeep;$("holdB").onclick=()=>{if(S.phase!=="shop")return;S.held=!S.held;save();render()};$("powB").onclick=usePower;$("fight").onclick=()=>{audioInit();fight()};
+$("replayB").onclick=startReplay;$("rollB").onclick=reroll;$("keepB").onclick=upgradeKeep;$("holdB").onclick=()=>{if(S.phase!=="shop")return;S.held=!S.held;save();render()};$("powB").onclick=usePower;$("fight").onclick=()=>{audioInit();fight()};
 $("speed").onclick=()=>{speed=speed===1?2:speed===2?4:1;ls.set("mk.speed",speed);$("speed").textContent="x"+speed};$("speed").textContent="x"+speed;
 $("sndB").onclick=()=>{audioInit();const on=mOn||sOn;mOn=sOn=!on;ls.set("mk.music",mOn);ls.set("mk.sfx",sOn);$("sndB").style.opacity=mOn?1:.45;if(!mOn){for(const n in MEL)MEL[n].pause();curM=null}else playMusic(S&&S.phase==="fight"?"fight":S?"shop":"title")};$("sndB").style.opacity=mOn||sOn?1:.45;
 $("menuB").onclick=()=>{audioInit();const st=ls.get("mk.stats",{});modal(`<h2>Mercenary Keep</h2>
