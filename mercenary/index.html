@@ -105,6 +105,8 @@ canvas{display:block;border-radius:12px;border:3px solid #6b5228;box-shadow:0 0 
 #banner{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%) scale(.96);background:linear-gradient(rgba(42,30,14,.94),rgba(24,16,6,.94));border:1px solid var(--gold2);color:#fff;padding:10px 20px;border-radius:12px;font:900 18px Georgia,serif;text-align:center;pointer-events:none;opacity:0;transition:opacity .25s,transform .25s;white-space:nowrap;z-index:5}
 #banner small{display:block;font:700 12px system-ui;opacity:.88;margin-top:3px}
 #banner.on{opacity:1;transform:translate(-50%,-50%) scale(1)}
+#coach{position:absolute;left:8px;right:8px;bottom:8px;z-index:5;background:#fffaf0;border:2px solid var(--gold);border-radius:12px;padding:8px 10px 8px 12px;font:600 13px/1.35 system-ui;box-shadow:0 6px 18px rgba(0,0,0,.3);display:none;align-items:center;gap:10px}
+#coach.on{display:flex}#coach b{color:#7a5a08}#coach button{flex:0 0 auto}
 #result{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(.9);width:min(92%,340px);background:linear-gradient(rgba(42,30,14,.96),rgba(20,13,5,.96));border:2px solid var(--gold2);border-radius:14px;color:#fff;padding:12px 14px;z-index:6;opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;text-align:center}
 #result.on{opacity:1;transform:translate(-50%,-50%) scale(1);pointer-events:auto}
 #result h3{margin:0;font:900 24px Georgia,serif;letter-spacing:.03em}#result h3.win{color:#ffd76a}#result h3.loss{color:#ff8a70}
@@ -164,7 +166,7 @@ canvas{display:block;border-radius:12px;border:3px solid #6b5228;box-shadow:0 0 
   <span class="sp"></span><div id="iconBtns"><button class="ib" id="sndB" aria-label="Sound">&#9835;</button><button class="ib" id="menuB" aria-label="Menu">&#9776;</button></div></div>
  <div id="opps"></div>
  <div id="main">
-  <div id="fieldwrap"><canvas id="cv"></canvas><button class="ib" id="speed">x1</button><div id="hint"></div><div id="banner"></div><div id="result"></div><div id="info" class="frame"></div></div>
+  <div id="fieldwrap"><canvas id="cv"></canvas><button class="ib" id="speed">x1</button><div id="hint"></div><div id="banner"></div><div id="result"></div><div id="coach"></div><div id="info" class="frame"></div></div>
   <div id="panel">
    <div id="campRow"><span class="lbl">CAMP</span></div>
    <div id="syn"></div>
@@ -292,6 +294,11 @@ const ACH=[["blood","First Blood","Win a fight."],["crown","Lord of the Keep","F
  ["plague","Contagion","Raise three Walking Corpses with plague in one fight."],["quarter","Quartermaster","Buy five supplies in one game."],["alliance","Grand Alliance","Field all six factions at once."],["lichdom","Lichdom","Promote a Lich into an Ancient Lich."],["blitz","Blitz","Win a game by round 12."],["streak","Perfect Season","Win five fights in a row."],
  ["giant","Giant Slayer","Beat a rival whose warband had twice your total tiers."],["hundred","Centurion","Deal 100 damage in a single fight."]];
 let ACHS=ls.get("mk.ach",{});
+let TIPS=ls.get("mk.tips",{}),tipQ=[];
+const TIPTXT={hire:"<b>Hire a recruit</b> by tapping its card, 3 gold each. Hold a card to read it first.",lines:"<b>Front line</b> hexes are hit first; the back line is safer. Drag units to rearrange them.",pair:"<b>Two of a kind!</b> Hire a third and they promote into a veteran, with gold and a free pick.",
+ supplies:"<b>Supplies</b> (the last card) buff one unit for good. Tap it, then tap the unit.",keep:"<b>Upgrade your keep</b> to see stronger recruits. It gets cheaper every round you wait.",scout:"<b>Lost one?</b> Tap any leader at the top to scout their warband before your next fight.",camp:"<b>Board full?</b> Your camp holds five more. Drag a unit down to bench it."};
+function tip(id){if(TIPS[id]||INSTANT||tipQ.includes(id))return;tipQ.push(id);if(tipQ.length===1)showTip()}
+function showTip(){const id=tipQ[0];if(!id)return;const c=$("coach");c.innerHTML=`<div style="flex:1">${TIPTXT[id]}</div><button class="ib">Got it</button>`;c.classList.add("on");c.querySelector("button").onclick=()=>{TIPS[id]=1;ls.set("mk.tips",TIPS);tipQ.shift();c.classList.remove("on");setTimeout(showTip,300)}}
 function unlock(id){if(ACHS[id]||INSTANT)return;const a=ACH.find(x=>x[0]===id);if(!a)return;ACHS[id]=Date.now();ls.set("mk.ach",ACHS);setTimeout(()=>{toast("Achievement: "+a[1],a[2],2400);sfx("fanfare",.5)},700)}
 
 // ================================================================ state
@@ -312,7 +319,8 @@ function startRound(){
  if(!S.held){rollShop();rollItem()}S.held=false;
  S.players.forEach((p,i)=>{if(i&&p.alive)aiTurn(p)});
  const alive=S.players.map((p,i)=>i).filter(i=>i&&S.players[i].alive);let opts=alive.filter(i=>!S.lastOpp.slice(-Math.min(3,alive.length-1)).includes(i));if(!opts.length)opts=alive;S.nextOpp=pick(opts);
- S.phase="shop";save();render();playMusic("shop")}
+ S.phase="shop";save();render();playMusic("shop");
+ const P=me();if(S.round===1)tip("hire");if(S.round>=2&&P.keep<2)tip("keep");if(S.item&&S.round>=2)tip("supplies");if(S.streak===0&&S.round>1&&S.lastLost)tip("scout")}
 function shopFor(p){const n=SHOPN[p.keep];const bag=[];for(const id in S.pool){if(UD[id].t<=p.keep)for(let i=0;i<S.pool[id];i++)bag.push(id)}const out=[];for(let i=0;i<n&&bag.length;i++){const j=ri(bag.length);out.push(bag[j]);bag.splice(j,1)}return out}
 function rollShop(){S.shop.forEach(id=>{if(id)S.pool[id]++});S.shop=shopFor(me());S.shop.forEach(id=>S.pool[id]--)}
 function rollItem(){S.item=RNG()<.85?pick(ITEMS).id:null}
@@ -462,6 +470,7 @@ function afterFight(){
   if(res.ev.filter(e=>e.t==="spawn"&&e.side===0&&e.txt==="Plague!").length>=3)unlock("plague");
   const st=fightStats(res);if(P.board.reduce((a,u)=>a+(u?(st.dmg[u.uid]||0):0),0)>=100)unlock("hundred")}
  S.bonusGold+=res.loot[0];const ups=gainXP(P,res);gainXP(O,res);if(P.board.some(u=>u&&(u.lv||0)>=3))unlock("grizzled");
+ S.lastLost=res.winner===1;
  if(res.winner===0){const d=takeDamage(O,damageFor(P,res));msg="Victory!";sub=`${O.name} takes ${d}`;const kl=synLevel(synCounts(P.board).knalgan||0);S.bonusGold+=kl;if(kl)sub+=` · Knalgans loot ${kl}`;stinger("victory")}
  else if(res.winner===1){const d=takeDamage(P,damageFor(O,res));msg="Defeat";sub=`You take ${d}`;stinger("defeat")}
  else{msg="A draw";sub="Nobody takes damage"}
@@ -648,7 +657,7 @@ function showShopInfo(i){const id=S.shop[i];if(!id)return;const u=mkUnit(id);UID
 function buyShop(i){audioInit();const P=me(),id=S.shop[i];if(!id||S.phase!=="shop")return;
  if(P.gold<3){toast("Not enough gold");return}
  if(freeBoard(P,id)===undefined&&freeCamp(P)<0&&countOwned(P,id)<2){toast("No room","Sell a unit or clear a camp spot");return}
- S.shop[i]=null;if(!buy(P,id))S.shop[i]=id;else sfx("gold",.6);
+ S.shop[i]=null;if(!buy(P,id))S.shop[i]=id;else{sfx("gold",.6);tip("lines");if(countOwned(P,id)===2)tip("pair");if(P.board.every(Boolean))tip("camp")}
  save();render();if(S.picks)vetPick()}
 function vetPick(){const P=me();const o=pickOptions(P);if(!o.length){S.picks=0;return}o.forEach(id=>S.pool[id]--);
  modal(`<h2>A veteran's pick</h2><p>Your promotion caught the eye of the mercenary guild. Choose one recruit, free.</p><div class="picks">${o.map((id,i)=>cardHTML(id,i)).join("")}</div>`);
@@ -716,8 +725,8 @@ $("menuB").onclick=()=>{audioInit();const st=ls.get("mk.stats",{});modal(`<h2>Me
  <p><b>Experience</b>: every fight gives a unit 1 XP, plus 3 for each kill. A full purple bar levels it up for good (+1 damage, +4 HP).</p><p><b>Three of a unit</b> promote it, with gold and a free <b>veteran's pick</b>. Three of a faction give a bonus, five a bigger one. Your <b>camp</b> holds five units off the field. <b>Supplies</b> buff a unit for good. Upgrade your <b>keep</b> to see stronger recruits. Hold a card to read it. Drag units between hexes, into the camp, or onto the market to sell them.</p><p style="font-size:12.5px;color:var(--mute)">On a keyboard: 1 to 6 buy, 7 buys supplies, R new recruits, H hold, U upgrade keep, P leader power, F or space to fight, Esc to cancel.</p>
  <small>Games ${st.games||0} · Wins ${st.wins||0} · Top four ${st.tops||0}${st.best?` · Best place ${st.best}`:""}</small>
  <div class="toggles"><button class="big alt" id="mB">Music ${mOn?"on":"off"}</button><button class="big alt" id="sB">Sounds ${sOn?"on":"off"}</button></div>
- <button class="big alt" id="achB">Achievements ${Object.keys(ACHS).length}/${ACH.length}</button><button class="big alt" id="credB">Credits and licence</button><button class="big alt" id="newB">Start a new game</button><button class="big" id="closeM">Back to the keep</button>`);
- $("closeM").onclick=closeModal;$("newB").onclick=()=>{ls.del("mk.save2");chooseLeader()};$("credB").onclick=credits;$("achB").onclick=achList;
+ <button class="big alt" id="tipB">Show the tips again</button><button class="big alt" id="achB">Achievements ${Object.keys(ACHS).length}/${ACH.length}</button><button class="big alt" id="credB">Credits and licence</button><button class="big alt" id="newB">Start a new game</button><button class="big" id="closeM">Back to the keep</button>`);
+ $("closeM").onclick=closeModal;$("newB").onclick=()=>{ls.del("mk.save2");chooseLeader()};$("credB").onclick=credits;$("achB").onclick=achList;$("tipB").onclick=()=>{TIPS={};ls.set("mk.tips",TIPS);closeModal();toast("Tips are back on")};
  $("mB").onclick=()=>{mOn=!mOn;ls.set("mk.music",mOn);if(!mOn){for(const n in MEL)MEL[n].pause();curM=null}else playMusic(S&&S.phase==="fight"?"fight":"shop");$("mB").textContent="Music "+(mOn?"on":"off")};
  $("sB").onclick=()=>{sOn=!sOn;ls.set("mk.sfx",sOn);$("sB").textContent="Sounds "+(sOn?"on":"off")}};
 function achList(){modal(`<h2>Achievements</h2><p style="color:var(--mute)">${Object.keys(ACHS).length} of ${ACH.length} earned.</p><div class="achs">${ACH.map(a=>`<div class="ach ${ACHS[a[0]]?"got":""}"><span class="st">${ACHS[a[0]]?"★":"☆"}</span><div><b>${a[1]}</b><small>${a[2]}</small></div></div>`).join("")}</div><button class="big" id="closeM">Back</button>`);$("closeM").onclick=closeModal}
