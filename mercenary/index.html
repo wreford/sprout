@@ -279,7 +279,8 @@ let UID=1;
 function mkUnit(id,promo,noTrait){const d=UD[id];const u={uid:UID++,id,promo:!!promo,dmg:d.d,str:d.s,hp:d.hp,bd:0,bh:0,give:[],dep:0,tr:noTrait?[]:[pick(traitPool(id))]};if(promo){u.dmg=d.d+Math.ceil(d.d*.4);u.hp=Math.round(d.hp*1.5)}return u}
 const uName=u=>u.promo?UD[u.id].pn:UD[u.id].n,uImg=u=>u.promo?UD[u.id].pimg:UD[u.id].img,uPt=u=>u.promo?UD[u.id].ppt:UD[u.id].pt;
 const hasT=(u,t)=>(u.tr||[]).includes(t);
-const uDmg=u=>u.dmg+u.bd+((hasT(u,"strong")&&UD[u.id].k==="m")||(hasT(u,"dextrous")&&UD[u.id].k==="r")?1:0),uHp=u=>u.hp+u.bh+(hasT(u,"resilient")?4:0)+(hasT(u,"healthy")?2:0)-(hasT(u,"quick")?2:0),uTier=u=>UD[u.id].t+(u.promo?1:0);
+const xpMax=u=>6+2*uTier(u);
+const uDmg=u=>u.dmg+u.bd+(u.lv||0)+((hasT(u,"strong")&&UD[u.id].k==="m")||(hasT(u,"dextrous")&&UD[u.id].k==="r")?1:0),uHp=u=>u.hp+u.bh+4*(u.lv||0)+(hasT(u,"resilient")?4:0)+(hasT(u,"healthy")?2:0)-(hasT(u,"quick")?2:0),uTier=u=>UD[u.id].t+(u.promo?1:0);
 const abl=u=>UD[u.id].ab.concat(u.give||[]),has=(u,a)=>abl(u).includes(a),reps=u=>u.promo?2:1;
 const align=u=>UD[u.id].race==="saurian"?"C":FAC[UD[u.id].f].al;
 
@@ -363,7 +364,7 @@ function cloneSide(p,side){return p.board.map((u,i)=>u?{...u,side,slot:i,cur:uHp
 function synCounts(board){const c={};board.forEach(u=>{if(u){const f=UD[u.id].f;c[f]=(c[f]||0)+1}});return c}
 const synLevel=n=>n>=5?2:n>=3?1:0;
 function battle(pa,pb,tod,terr,rec){
- const A=cloneSide(pa,0),B=cloneSide(pb,1),sides=[A,B],lead=[pa.leader,pb.leader],raised=[0,0],ev=[],loot=[0,0];
+ const A=cloneSide(pa,0),B=cloneSide(pb,1),sides=[A,B],lead=[pa.leader,pb.leader],raised=[0,0],ev=[],loot=[0,0],kills={};
  const push=e=>{if(rec)ev.push(e)};const H=(u,k)=>u.ab.includes(k);
  const syn=[synCounts(pa.board),synCounts(pb.board)];
  sides.forEach((b,s)=>b.forEach(u=>{if(!u)return;const lv=synLevel(syn[s][u.d.f]||0);if(u.d.f==="loyal"&&lv){u.max+=lv*3;u.cur=u.max}}));
@@ -378,6 +379,7 @@ function battle(pa,pb,tod,terr,rec){
  function kill(u,by){u.cur=0;push({t:"die",u:u.uid});const s=u.side;
   sides[s].forEach(x=>{if(x&&x.cur>0&&H(x,"vengeance")){const n=x.promo?2:1;x.tmp+=n;push({t:"buff",u:x.uid,txt:"+"+n})}});
   sides.forEach((b,ss)=>{const lv=synLevel(syn[ss].undead||0);if(lv)b.forEach(x=>{if(x&&x.cur>0&&x.d.f==="undead"&&x.cur<x.max){const n=lv===2?5:3;x.cur=Math.min(x.max,x.cur+n);push({t:"heal",u:x.uid,n,hp:x.cur})}})});
+  if(by)kills[by.uid]=(kills[by.uid]||0)+1;
   if(by&&by.cur>0&&H(by,"pillage"))loot[by.side]+=by.promo?2:1;
   if(by&&by.cur>0&&H(by,"plague")){const i=emptySlot(by.side);if(i!==undefined)spawn(by.side,i,"Plague!")}
   if(u.rb){u.rb=0;u.cur=1;push({t:"rise",u:u.uid,hp:1});return}
@@ -417,7 +419,8 @@ function battle(pa,pb,tod,terr,rec){
   a.amb=0;a.slowd=0;push({t:"end",a:a.uid});turn=1-turn;acts++}
  const la=alive(0),lb=alive(1);if(la.length&&!lb.length)winner=0;else if(lb.length&&!la.length)winner=1;
  const surv=winner<0?[]:alive(winner);
- return {winner,surv,ev,loot,survTier:surv.reduce((s,u)=>s+UD[u.id].t+(u.promo?1:0),0)}}
+ return {winner,surv,ev,loot,kills,survTier:surv.reduce((s,u)=>s+UD[u.id].t+(u.promo?1:0),0)}}
+function gainXP(p,res){const ups=[];p.board.forEach(u=>{if(!u)return;u.xp=(u.xp||0)+1+3*(res.kills[u.uid]||0);while(u.xp>=xpMax(u)){u.xp-=xpMax(u);u.lv=(u.lv||0)+1;ups.push(u)}});return ups}
 function damageFor(p,res){const d=p.keep+res.survTier;const cap=S.round<4?5:S.round<8?10:99;return Math.min(cap,d)}
 function takeDamage(p,d){const a=Math.min(p.armor,d);p.armor-=a;p.hp-=d-a;return d}
 
@@ -443,12 +446,12 @@ function showResult(msg,sub,cls,res,P,O,done){const st=fightStats(res);const min
  r.classList.add("on");let t;const fin=()=>{clearTimeout(t);r.classList.remove("on");r.onclick=null;done()};r.onclick=fin;t=setTimeout(fin,speed>=4?1400:4200)}
 function afterFight(){
  const P=me(),fv=S.fightView,O=S.players[fv.opp],res=fv.res;let msg,sub;
- S.bonusGold+=res.loot[0];
+ S.bonusGold+=res.loot[0];const ups=gainXP(P,res);gainXP(O,res);
  if(res.winner===0){const d=takeDamage(O,damageFor(P,res));msg="Victory!";sub=`${O.name} takes ${d}`;const kl=synLevel(synCounts(P.board).knalgan||0);S.bonusGold+=kl;if(kl)sub+=` · Knalgans loot ${kl}`;stinger("victory")}
  else if(res.winner===1){const d=takeDamage(P,damageFor(O,res));msg="Defeat";sub=`You take ${d}`;stinger("defeat")}
  else{msg="A draw";sub="Nobody takes damage"}
- if(res.loot[0])sub+=` · Pillage +${res.loot[0]}`;
- for(const [a,b,r,ghost] of S.pending){const pa=S.players[a],pb=S.players[b];if(r.winner===0&&!ghost)takeDamage(pb,damageFor(pa,r));if(r.winner===1)takeDamage(pa,damageFor(pb,r))}
+ if(res.loot[0])sub+=` · Pillage +${res.loot[0]}`;if(ups.length)sub+=` · ${ups.map(u=>uName(u)).join(", ")} level${ups.length>1?"":"s"} up!`;
+ for(const [a,b,r,ghost] of S.pending){const pa=S.players[a],pb=S.players[b];gainXP(pa,r);if(!ghost)gainXP(pb,r);if(r.winner===0&&!ghost)takeDamage(pb,damageFor(pa,r));if(r.winner===1)takeDamage(pa,damageFor(pb,r))}
  const order=S.players.map((p,i)=>i).filter(i=>S.players[i].alive&&S.players[i].hp<=0).sort((a,b)=>S.players[a].hp-S.players[b].hp);
  let aliveN=S.players.filter(p=>p.alive).length;
  for(const i of order){const p=S.players[i];p.lastBoard=p.board.filter(Boolean).map(u=>u.id);p.alive=0;p.place=aliveN--;allUnits(p).forEach(u=>S.pool[u.id]+=u.promo?3:1);p.board=p.board.map(()=>null);p.camp=p.camp.map(()=>null);if(!p.me)sub+=` · ${p.name} is out`}
@@ -540,6 +543,8 @@ function drawUnit(u,side,slot,o){o=o||{};const [x,y]=o.xy||hexXY(side,slot);cons
  g.restore();
  if(o.flashC){g.save();g.globalAlpha=o.flashA;g.fillStyle=o.flashC;g.beginPath();g.arc(x+36,y+36,24,0,7);g.fill();g.restore()}
  const max=o.max||uHp(u),cur=o.cur!==undefined?o.cur:max,f=clamp(cur/max,0,1),bh=34;g.fillStyle="rgba(0,0,0,.65)";g.fillRect(x+12,y+17,5,bh+2);g.fillStyle=f>.66?"#3cc63c":f>.33?"#e0c030":"#e04030";g.fillRect(x+13,y+18+bh*(1-f),3,bh*f);
+ if(!o.noXp){const xf=clamp((u.xp||0)/xpMax(u),0,1);g.fillStyle="rgba(0,0,0,.65)";g.fillRect(x+18,y+17,4,bh+2);g.fillStyle="#b48cff";g.fillRect(x+19,y+18+bh*(1-xf),2,bh*xf)}
+ for(let i=0;i<Math.min(3,u.lv||0);i++){const cy=y+56-i*4;g.strokeStyle="#ffd34a";g.lineWidth=1.6;g.beginPath();g.moveTo(x+10,cy);g.lineTo(x+14,cy-3);g.lineTo(x+18,cy);g.stroke()}
  g.font="bold 9px system-ui";g.textAlign="center";const txt=`${uDmg(u)+(o.tmp||0)}×${u.str}  ${Math.max(0,Math.ceil(cur))}`;const tw=g.measureText(txt).width+8;g.fillStyle="rgba(24,16,6,.82)";g.fillRect(x+36-tw/2,y+59,tw,12);g.fillStyle="#fff";g.fillText(txt,x+36,y+68.5);
  if(u.promo){g.fillStyle="#ffd34a";g.strokeStyle="#6b4a10";g.lineWidth=.8;g.beginPath();for(let i=0;i<5;i++){const a=i*1.2566-1.5708,b=a+.628;g.lineTo(x+58+Math.cos(a)*6,y+20+Math.sin(a)*6);g.lineTo(x+58+Math.cos(b)*2.5,y+20+Math.sin(b)*2.5)}g.closePath();g.fill();g.stroke()}
  const ward=o.ward!==undefined?o.ward:has(u,"ward");if(ward){g.strokeStyle="rgba(255,240,170,.9)";g.lineWidth=1.5;g.beginPath();g.arc(x+36,y+38,25,0,7);g.stroke()}
@@ -670,7 +675,7 @@ function tapCamp(i){audioInit();const P=me();if(S.phase!=="shop")return;
  if(P.camp[i]){sel={w:"c",i};showInfoUnit(P.camp[i],P.camp,i)}render()}
 function showInfoUnit(u,arr,i,shop,rival){const d=UD[u.id];const mine=!!arr;const ab=abl(u);
  $("info").innerHTML=`<div class="row"><img class="pt" src="${IMG(uPt(u))}" alt="" decoding="async"><div style="flex:1;min-width:0"><h3>${uName(u)}${u.promo?" ★":""}</h3><div class="meta">${FAC[d.f].n} · ${"★".repeat(uTier(u))} · ${align(u)==="L"?"Lawful":align(u)==="C"?"Chaotic":"Neutral"}${mine&&arr===me().board?` · ${i<FRONT?"front line":"back line"}`:mine?" · in camp":""}${rival?" · rival":""}</div>
- <div class="stats"><span><img src="${IMG(d.wp)}" alt=""> ${uDmg(u)}×${u.str} ${d.k==="r"?"ranged":"melee"}</span><span style="color:var(--red)">♥ ${uHp(u)}</span>${u.bd||u.bh?`<span style="color:#3a8a44;font-size:11px">+${u.bd} / +${u.bh}</span>`:""}</div>
+ <div class="stats"><span><img src="${IMG(d.wp)}" alt=""> ${uDmg(u)}×${u.str} ${d.k==="r"?"ranged":"melee"}</span><span style="color:var(--red)">♥ ${uHp(u)}</span><span style="color:#7a4fc0;font-size:12px">XP ${u.xp||0}/${xpMax(u)}${u.lv?` · level ${u.lv}`:""}</span>${u.bd||u.bh?`<span style="color:#3a8a44;font-size:11px">+${u.bd} / +${u.bh}</span>`:""}</div>
  ${shop?`<div class="abl" style="color:#5b6b7e">Rolls a random trait when recruited.</div>`:(u.tr||[]).map(t=>`<div class="abl"><b style="color:#7a5a08">${TRAITS[t].n}:</b> ${TRAITS[t].d}.</div>`).join("")}${ab.map(a=>`<div class="abl">${ABIL[a]}</div>`).join("")}<div class="abl" style="color:var(--mute)">${d.k==="r"?"Only ranged units shoot back at it.":"Only melee units hit back at it."}${!u.promo&&!rival?` ${shop?"Three":"Recruit "+(3-countOwned(me(),u.id))+" more"} to promote it to ${d.pn}.`:""}</div></div></div>
  ${mine?`<div class="btns"><button class="ib" id="sellB">Sell for ${sellValue(me(),u)} gold</button><button class="ib" id="closeB">Done</button></div><div style="font-size:11px;color:var(--mute);margin-top:4px">Tap a hex or a camp spot to move it there.</div>`:`<div class="btns"><button class="ib" id="closeB">Close</button></div>`}`;
  $("info").style.display="block";
@@ -690,7 +695,7 @@ $("menuB").onclick=()=>{audioInit();const st=ls.get("mk.stats",{});modal(`<h2>Me
  <p>Recruit Wesnoth units for 3 gold, place them on your hexes, and send them against one of seven rival leaders each round. Last leader standing wins.</p>
  <p><b>Front line</b> hexes take the first blows. The <b>back line</b> is safe until the front falls, unless the enemy has skirmishers. A <b>shield wall</b> must be attacked first. Melee is only answered by melee, ranged by ranged.</p>
  <p><b>Time of day</b>: Lawful units hit harder in daylight, Chaotic ones at night. <b>Terrain</b> changes how often each race dodges.</p>
- <p><b>Three of a unit</b> promote it, with gold and a free <b>veteran's pick</b>. Three of a faction give a bonus, five a bigger one. Your <b>camp</b> holds five units off the field. <b>Supplies</b> buff a unit for good. Upgrade your <b>keep</b> to see stronger recruits. Hold a card to read it. Drag units between hexes, into the camp, or onto the market to sell them.</p><p style="font-size:12.5px;color:var(--mute)">On a keyboard: 1 to 6 buy, 7 buys supplies, R new recruits, H hold, U upgrade keep, P leader power, F or space to fight, Esc to cancel.</p>
+ <p><b>Experience</b>: every fight gives a unit 1 XP, plus 3 for each kill. A full purple bar levels it up for good (+1 damage, +4 HP).</p><p><b>Three of a unit</b> promote it, with gold and a free <b>veteran's pick</b>. Three of a faction give a bonus, five a bigger one. Your <b>camp</b> holds five units off the field. <b>Supplies</b> buff a unit for good. Upgrade your <b>keep</b> to see stronger recruits. Hold a card to read it. Drag units between hexes, into the camp, or onto the market to sell them.</p><p style="font-size:12.5px;color:var(--mute)">On a keyboard: 1 to 6 buy, 7 buys supplies, R new recruits, H hold, U upgrade keep, P leader power, F or space to fight, Esc to cancel.</p>
  <small>Games ${st.games||0} · Wins ${st.wins||0} · Top four ${st.tops||0}${st.best?` · Best place ${st.best}`:""}</small>
  <div class="toggles"><button class="big alt" id="mB">Music ${mOn?"on":"off"}</button><button class="big alt" id="sB">Sounds ${sOn?"on":"off"}</button></div>
  <button class="big alt" id="credB">Credits and licence</button><button class="big alt" id="newB">Start a new game</button><button class="big" id="closeM">Back to the keep</button>`);
