@@ -173,6 +173,7 @@ canvas{display:block;border-radius:12px;border:3px solid #6b5228;box-shadow:0 0 
 .achs{display:grid;grid-template-columns:1fr 1fr;gap:6px}.ach{display:flex;gap:7px;align-items:flex-start;background:#fff;border:1px solid var(--line);border-radius:9px;padding:6px 8px;opacity:.55}.ach.got{opacity:1;border-color:var(--gold);background:#fff8e2}.ach .st{font-size:18px;color:var(--gold);line-height:1}.ach b{display:block;font-size:12.5px}.ach small{color:var(--mute);font-size:11px;line-height:1.3}
 .contracts{display:flex;flex-direction:column;gap:7px;margin-top:6px}.contract{text-align:left;font:inherit;color:inherit;background:#fff;border:2px solid var(--line);border-radius:11px;padding:9px 11px}.contract b{font:800 15px Georgia,serif;display:block}.contract span{display:block;font-size:13px;margin-top:2px}.contract em{display:block;font-style:normal;font-size:12.5px;color:#7a5a08;margin-top:3px;font-weight:700}
 .contract.arm{display:flex;gap:10px;align-items:center}.contract.arm img{width:44px;height:44px;border-radius:8px;background:#2a2116;object-fit:contain}.contract.owned{opacity:.55;border-color:var(--gold)}
+.diffs{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:4px 0 2px}.diff{font:inherit;color:inherit;background:#fff;border:2px solid var(--line);border-radius:10px;padding:6px;text-align:center}.diff b{display:block;font:800 13px Georgia,serif}.diff span{display:block;font-size:10.5px;color:var(--mute);line-height:1.25;margin-top:2px}.diff.on{border-color:var(--red);background:#fff4ec}
 .syn.ct{background:#7a5a08!important;opacity:1}
 .toggles{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}.toggles .big{margin-top:0;flex:1;min-width:30%;font-size:13.5px}
 @media (max-width:700px){.card.item .ab{display:none}.card.item .nm{font-size:10px}}
@@ -357,19 +358,20 @@ function offerContracts(){const o=shuffle([...CONTRACTS]).slice(0,3);if(INSTANT)
  $("mcard").querySelectorAll(".contract").forEach(b=>b.onclick=()=>{const C=o[+b.dataset.i];S.contract={id:C.id,goal:C.goal,p:0};closeModal();sfx("gold");save();render()})}
 
 // ================================================================ state
-let S=null,INSTANT=false;
+let S=null,INSTANT=false,DIFF=ls.get("mk.diff",1);
+const DIFFS=[{n:"Squire",d:"Rivals have less gold and shop clumsily."},{n:"Knight",d:"The standard game."},{n:"Warlord",d:"Rivals get an extra gold every round, upgrade their keeps sooner and roll harder for pairs."}];
 function newGame(leader,daily){
  RNG=daily?seeded(daySeed("mk-daily-"+TODAY)+leader.id.length*7919):Math.random;UID=1;const pool={};UL.forEach(a=>pool[a[0]]=COPIES[a[2]]);
  const others=shuffle(LEADERS.filter(l=>l.id!==leader.id)).concat(shuffle([...LEADERS])).slice(0,7);const facs=shuffle(Object.keys(FAC));
  const NF=Object.keys(FAC).length;const mk=(l,isMe,i)=>({me:isMe,name:isMe?"You":l.n,leader:l.id,hp:30,armor:l.armor,board:new Array(SLOTS).fill(null),camp:new Array(CAMP).fill(null),keep:1,keepCd:0,gold:0,alive:1,place:0,fav:facs[i%NF]});
- S={daily:daily?TODAY:null,round:1,pool,players:[mk(leader,1,0)].concat(others.map((l,i)=>mk(l,0,i))),shop:[],item:null,held:false,freeRoll:false,lastOpp:[],nextOpp:-1,bonusGold:0,tod:0,terrain:"flat",picks:0};
+ S={diff:daily?1:DIFF,daily:daily?TODAY:null,round:1,pool,players:[mk(leader,1,0)].concat(others.map((l,i)=>mk(l,0,i))),shop:[],item:null,held:false,freeRoll:false,lastOpp:[],nextOpp:-1,bonusGold:0,tod:0,terrain:"flat",picks:0};
  startRound()}
 const me=()=>S.players[0];
 const goldFor=r=>Math.min(10,2+r);const shopSize=p=>SHOPN[p.keep]+(p.arm&&p.arm.barracks?1:0);
 function keepCost(p){if(p.keep>=5)return 0;let c=KEEPCOST[p.keep+1]-p.keepCd;if(p.leader==="dlord")c--;return Math.max(0,c)}
 function startRound(){
  S.tod=(S.round-1)%6;S.terrain=pick(Object.keys(TERR));
- for(const p of S.players){if(!p.alive)continue;p.gold=goldFor(S.round)+(p.me?S.bonusGold:0)+(p.arm&&p.arm.chest?1:0);if(S.round>1&&p.keep<5)p.keepCd++}
+ for(const p of S.players){if(!p.alive)continue;p.gold=goldFor(S.round)+(p.me?S.bonusGold:0)+(p.arm&&p.arm.chest?1:0)+(!p.me&&S.diff===2?1:0)-(!p.me&&S.diff===0&&S.round>2?1:0);if(S.round>1&&p.keep<5)p.keepCd++}
  S.bonusGold=0;S.freeRoll=false;
  if(!S.held){rollShop();rollItem()}S.held=false;
  S.players.forEach((p,i)=>{if(i&&p.alive)aiTurn(p)});
@@ -419,8 +421,8 @@ function aiPick(p){const o=pickOptions(p);if(!o.length)return;const id=o.sort((a
 
 // ================================================================ the rivals
 function aiTurn(p){
- const r=S.round;const kc=keepCost(p);if(p.keep<5&&p.gold>=kc&&r>=p.keep*2-1&&(kc<=p.gold-3||r>=p.keep*2+1)){p.gold-=kc;p.keep++;p.keepCd=0}
- const score=id=>UD[id].t*10+(UD[id].f===p.fav?7:0)+(countOwned(p,id)===2?14:countOwned(p,id)===1?5:0)+RNG()*4;
+ const r=S.round,dv=p.me?1:(S.diff===undefined?1:S.diff);const kc=keepCost(p);if(p.keep<5&&p.gold>=kc&&r>=p.keep*2-1-(dv===2?1:0)+(dv===0?1:0)&&(kc<=p.gold-3||r>=p.keep*2+1)){p.gold-=kc;p.keep++;p.keepCd=0}
+ const score=id=>UD[id].t*10+(UD[id].f===p.fav?7:0)+(countOwned(p,id)===2?14:countOwned(p,id)===1?5:0)+RNG()*(dv===0?16:4);
  const uscore=u=>uTier(u)*10+(UD[u.id].f===p.fav?7:0)+(uDmg(u)*u.str+uHp(u))/6;
  let rolls=0;
  for(let guard=0;guard<20&&p.gold>=3;guard++){
@@ -429,7 +431,7 @@ function aiTurn(p){
    if(full){const w=p.board.map((u,i)=>[u,i]).sort((a,b)=>uscore(a[0])-uscore(b[0]))[0];if(score(id)>uscore(w[0])+6)sellAt(p,p.board,w[1]);else continue}
    const camp=p.camp;p.camp=[];const ok=buy(p,id);p.camp=camp;if(ok){left.splice(left.indexOf(id),1);bought=true}}
   left.forEach(id=>S.pool[id]++);
-  if(!bought){if(p.gold>=4&&rolls<2){p.gold--;rolls++;continue}break}}
+  if(!bought){if(p.gold>=4&&rolls<(dv===2?4:dv===0?0:2)){p.gold--;rolls++;continue}break}}
  if(r>=4){p.arm=p.arm||{};const opts=ARMORY.filter(a=>!p.arm[a.id]&&p.gold>=a.cost);if(opts.length&&RNG()<.45){const a=pick(opts);p.arm[a.id]=1;p.gold-=a.cost}}
  const L=LEADERS.find(l=>l.id===p.leader);if(L&&L.target){for(let k=0;k<3&&p.gold>=L.cost;k++){const us=p.board.filter(Boolean).sort((a,b)=>uTier(b)-uTier(a));if(!us.length)break;const u=us[0];p.gold-=L.cost;if(L.id==="lieut")u.bd++;if(L.id==="warlord"){u.bd++;u.bh+=5}if(L.id==="flame")u.bh+=5;if(L.id==="general"){const v=us.find(x=>!has(x,"lead"));if(v){v.give=addOnce(v.give,"lead");v.bd++}else{p.gold+=L.cost;break}}if(L.id==="seer"){const v=us.find(x=>!has(x,"ward"));if(v){v.give=addOnce(v.give,"ward")}else{p.gold+=L.cost;break}}}}
  while(p.gold>=2){const us=p.board.filter(Boolean);if(!us.length)break;const u=pick(us);if(RNG()<.5)u.bd++;else u.bh+=5;p.gold-=2}
@@ -551,12 +553,12 @@ function afterFight(){
  const go=()=>{document.body.classList.remove("fighting");S.fightView=null;anim=null;
   if(!P.alive)return gameOver(P.place);if(S.players.filter(p=>p.alive).length===1)return gameOver(1);
   S.round++;startRound()};if(INSTANT)go();else showResult(msg,sub,res.winner===0?"win":res.winner===1?"loss":"",res,P,O,go)}
-function gameOver(place){if(place<=4)unlock("money");if(place===1){unlock("crown");if(me().hp<=5)unlock("brink");if(S.round<=12)unlock("blitz")}if(S.daily)unlock("daily");if(S.daily){const dd=ls.get("mk.daily",{});dd[S.daily]=Math.min(dd[S.daily]||9,place);ls.set("mk.daily",dd)}S.players.forEach(p=>{if(p.alive)p.lastBoard=p.board.filter(Boolean).map(u=>u.id)});S.phase="over";ls.del("mk.save2");const st=ls.get("mk.stats",{});st.games=(st.games||0)+1;st.best=Math.min(st.best||9,place);if(place===1)st.wins=(st.wins||0)+1;st.tops=(st.tops||0)+(place<=4?1:0);ls.set("mk.stats",st);
+function gameOver(place){{const bd=ls.get("mk.bestd",{});const k=S.daily?"daily":String(S.diff??1);bd[k]=Math.min(bd[k]||9,place);ls.set("mk.bestd",bd)}if(place<=4)unlock("money");if(place===1){unlock("crown");if(me().hp<=5)unlock("brink");if(S.round<=12)unlock("blitz")}if(S.daily)unlock("daily");if(S.daily){const dd=ls.get("mk.daily",{});dd[S.daily]=Math.min(dd[S.daily]||9,place);ls.set("mk.daily",dd)}S.players.forEach(p=>{if(p.alive)p.lastBoard=p.board.filter(Boolean).map(u=>u.id)});S.phase="over";ls.del("mk.save2");const st=ls.get("mk.stats",{});st.games=(st.games||0)+1;st.best=Math.min(st.best||9,place);if(place===1)st.wins=(st.wins||0)+1;st.tops=(st.tops||0)+(place<=4?1:0);ls.set("mk.stats",st);
  playMusic("title");if(place===1)setTimeout(()=>sfx("fanfare"),300);
  const words=["","First place. The keep is yours, and so is everyone else's.","Second. So close you can smell the victory feast.","Third. A very respectable pile of gold.","Fourth. Top half. The bards will mention you, briefly.","Fifth. You'll be back.","Sixth. The mercenaries want a word about their pay.","Seventh. At least the walking corpses had fun.","Eighth. The keep has been turned into a very nice stable."];
  const P0=me(),band=P0.finalBand||allUnits(P0),mvp=band.slice().sort((a,b)=>(b.kt||0)-(a.kt||0)||uTier(b)-uTier(a))[0];
  const hall=`<div class="hall">${band.slice(0,8).map(u=>`<div class="hu"><img src="${tcURLs(uImg(u),0)}" alt=""><span>${uName(u)}${u.promo?" ★":""}</span></div>`).join("")}</div>${mvp?`<div class="gmvp"><img class="${UD[mvp.id].spr?"spr":""}" src="${IMG(uPt(mvp))}" alt=""><div><div class="tag">MVP OF THE CAMPAIGN</div><b>${uName(mvp)}</b><span>${mvp.kt||0} kills${mvp.lv?` · level ${mvp.lv}`:""}${(mvp.tr||[]).length?` · ${TRAITS[mvp.tr[0]].n}`:""}</span></div></div>`:""}`;
- modal(`<h1>${place===1?"Victory":"The war is over"}</h1><p class="sub">${words[place]}</p>${hall}<p style="text-align:center">You lasted ${S.round} rounds.${S.daily?` Daily challenge best today: #${ls.get("mk.daily",{})[S.daily]}.`:""}</p><small style="text-align:center">Games ${st.games} · Wins ${st.wins||0} · Top four ${st.tops||0} · Best place ${st.best}</small><button class="big" id="again">Play again</button>`,"title end");const wasDaily=!!S.daily;$("again").onclick=()=>chooseLeader(wasDaily)}
+ modal(`<h1>${place===1?"Victory":"The war is over"}</h1><p class="sub">${words[place]}</p>${hall}<p style="text-align:center">You lasted ${S.round} rounds.${S.daily?` Daily challenge best today: #${ls.get("mk.daily",{})[S.daily]}.`:""}</p><small style="text-align:center">${S.daily?"Daily":DIFFS[S.diff??1].n} · Games ${st.games} · Wins ${st.wins||0} · Top four ${st.tops||0} · Best place ${st.best}</small><button class="big" id="again">Play again</button>`,"title end");const wasDaily=!!S.daily;$("again").onclick=()=>chooseLeader(wasDaily)}
 
 // ================================================================ save
 function save(){if(!S||S.phase!=="shop")return;const {replay,...rest}=S;ls.set("mk.save2",{S:rest,UID})}
@@ -739,7 +741,7 @@ function cardHTML(id,i,cls){const d=UD[id];const pair=countOwned(me(),id);const 
  return `<button class="card t${d.t} ${cls||""}" data-i="${i}" style="--fc:${FAC[d.f].c}"><img class="pt ${d.spr?"spr":""}" src="${IMG(d.pt)}" alt="" loading="lazy"><span class="fbar"></span><img class="wp" src="${IMG(d.wp)}" alt=""><span class="tier">${"★".repeat(d.t)}</span>${pair?`<span class="pair">${pair}/3</span>`:""}<span class="tx"><span class="nm">${d.n}</span><span class="st"><b>${d.d}×${d.s}</b><i>${d.hp}</i></span><span class="ab">${ab||FAC[d.f].n}</span></span></button>`}
 function render(){if(!S)return;const P=me(),L=LEADERS.find(l=>l.id===P.leader);
  if(render.lastGold!==undefined&&render.lastGold!==P.gold&&S.phase==="shop"){const d=P.gold-render.lastGold;const e=document.createElement("span");e.className="gd "+(d>0?"up":"dn");e.textContent=(d>0?"+":"")+d;$("goldC").appendChild(e);setTimeout(()=>e.remove(),1100)}render.lastGold=P.gold;
- if(P.gold>=20)unlock("hoard");$("meImg").src=IMG(L.pt);$("meImg").style.borderColor=["#ff9a50","#ffd34a","#ffd34a","#e0603a","#5a7ad8","#3a52b0"][S.tod];$("meImg").style.boxShadow=`0 0 0 2px rgba(255,255,255,.6),0 0 12px ${["#ff9a50","#ffd34a","#ffd34a","#e0603a","#5a7ad8","#3a52b0"][S.tod]}`;$("hpB").textContent=P.hp;$("arN").textContent=P.armor;$("arB").style.display=P.armor>0?"flex":"none";$("goldN").textContent=P.gold;$("roundC").textContent=(S.daily?"Daily ":"")+"R"+S.round;$("todImg").src=IMG(TODS[S.tod].img);$("todN").textContent=TODS[S.tod].n;
+ if(P.gold>=20)unlock("hoard");$("meImg").src=IMG(L.pt);$("meImg").style.borderColor=["#ff9a50","#ffd34a","#ffd34a","#e0603a","#5a7ad8","#3a52b0"][S.tod];$("meImg").style.boxShadow=`0 0 0 2px rgba(255,255,255,.6),0 0 12px ${["#ff9a50","#ffd34a","#ffd34a","#e0603a","#5a7ad8","#3a52b0"][S.tod]}`;$("hpB").textContent=P.hp;$("arN").textContent=P.armor;$("arB").style.display=P.armor>0?"flex":"none";$("goldN").textContent=P.gold;$("roundC").textContent=(S.daily?"Daily ":S.diff===0?"Squire ":S.diff===2?"Warlord ":"")+"R"+S.round;$("todImg").src=IMG(TODS[S.tod].img);$("todN").textContent=TODS[S.tod].n;
  $("opps").innerHTML=S.players.map((p,i)=>`<div data-p="${i}" class="opp ${p.me?"me":""} ${i===S.nextOpp?"next":""} ${p.alive?"":"dead"}" title="${p.name}"><img src="${IMG(LEADERS.find(l=>l.id===p.leader).pt)}" alt=""><span>${p.alive?p.hp+(p.armor?"+"+p.armor:""):"#"+p.place}</span></div>`).join("");
  $("opps").querySelectorAll(".opp").forEach(o=>o.onclick=()=>scout(+o.dataset.p));
  const kc=keepCost(P);$("keepB").innerHTML=P.keep>=5?`Keep 5`:`Keep ${P.keep+1} <span class="cost">${COIN}${kc}</span>`;
@@ -847,7 +849,7 @@ function credits(){modal(`<h2>Credits</h2><p>All the art, music and sound effect
  <p>Wesnoth is free and open source: <a href="https://www.wesnoth.org" target="_blank" rel="noopener">wesnoth.org</a> and <a href="https://github.com/wesnoth/wesnoth" target="_blank" rel="noopener">github.com/wesnoth/wesnoth</a>.</p>
  <p>This game is free software under the GPL v2 or later too. See <a href="COPYING" target="_blank">COPYING</a> and <a href="CREDITS.txt" target="_blank">CREDITS.txt</a> for every file and what was changed.</p><button class="big" id="closeM">Back</button>`);$("closeM").onclick=closeModal}
 function chooseLeader(daily){daily=daily===true;S=null;closeInfo();if(daily)RNG=seeded(daySeed("mk-leaders-"+TODAY));const opts=shuffle([...LEADERS]).slice(0,3);RNG=Math.random;const dbest=ls.get("mk.daily",{})[TODAY];
- modal(`<h1>Mercenary Keep</h1><p class="sub">${daily?`Daily challenge for ${TODAY}: the same leaders, recruits, rivals and dice for everyone today.${dbest?` Your best today: #${dbest}.`:""}`:"Seven rival leaders. One market of mercenaries. Pick who leads yours."}</p><div class="leaders">${opts.map((l,i)=>`<button class="leader" data-i="${i}"><img src="${IMG(l.pt)}" alt=""><b>${l.n}</b><span><b style="display:inline;font:inherit;font-weight:800">${l.p}.</b> ${l.d}</span><em>Armour ${l.armor}</em></button>`).join("")}</div><button class="big alt" id="modeB">${daily?"Back to a normal game":"Play today's daily challenge"}</button><small style="text-align:center;margin-top:6px">Art, music and sounds from Battle for Wesnoth, under the GPL. Menu, Credits for more.</small>`,"title");$("modeB").onclick=()=>chooseLeader(!daily);
+ modal(`<h1>Mercenary Keep</h1><p class="sub">${daily?`Daily challenge for ${TODAY}: the same leaders, recruits, rivals and dice for everyone today.${dbest?` Your best today: #${dbest}.`:""}`:"Seven rival leaders. One market of mercenaries. Pick who leads yours."}</p><div class="leaders">${opts.map((l,i)=>`<button class="leader" data-i="${i}"><img src="${IMG(l.pt)}" alt=""><b>${l.n}</b><span><b style="display:inline;font:inherit;font-weight:800">${l.p}.</b> ${l.d}</span><em>Armour ${l.armor}</em></button>`).join("")}</div>${daily?"":`<div class="diffs">${DIFFS.map((d,i)=>`<button class="diff ${i===DIFF?"on":""}" data-d="${i}"><b>${d.n}</b><span>${d.d}</span></button>`).join("")}</div>`}<button class="big alt" id="modeB">${daily?"Back to a normal game":"Play today's daily challenge"}</button><small style="text-align:center;margin-top:6px">Art, music and sounds from Battle for Wesnoth, under the GPL. Menu, Credits for more.</small>`,"title");$("modeB").onclick=()=>chooseLeader(!daily);$("mcard").querySelectorAll(".diff").forEach(b=>b.onclick=()=>{DIFF=+b.dataset.d;ls.set("mk.diff",DIFF);$("mcard").querySelectorAll(".diff").forEach(x=>x.classList.toggle("on",x===b))});
  $("mcard").querySelectorAll(".leader").forEach(b=>b.onclick=()=>{audioInit();closeModal();newGame(opts[+b.dataset.i],daily);toast(daily?"Daily challenge":"Round 1","Recruit, then fight",1600)});
  playMusic("title")}
 addEventListener("pointerdown",()=>audioInit(),{once:true,capture:true});
