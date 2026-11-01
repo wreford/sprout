@@ -132,6 +132,11 @@ canvas{display:block;border-radius:12px;border:3px solid #6b5228;box-shadow:0 0 
 .big{width:100%;min-height:46px;font:800 15px system-ui;border:none;border-radius:11px;background:linear-gradient(#c8462c,#8e2414);color:#fff;margin-top:6px;box-shadow:0 3px 0 #5e170c}
 .alt{background:linear-gradient(#fffaf0,#efe2c4);color:var(--ink);border:1px solid #b9a37a;box-shadow:0 2px 0 #b9a37a}
 #mcard small{color:var(--mute);font-size:12px;line-height:1.4;display:block}
+.sc-head{display:flex;gap:10px;align-items:center}.sc-head img{width:76px;height:76px;border-radius:12px;object-fit:cover;object-position:50% 20%;border:2px solid var(--gold)}.sc-head h2{margin:0}
+.sc-meta{font-size:12.5px;color:var(--mute);margin-top:2px}.sc-syn{display:flex;gap:4px;flex-wrap:wrap;margin:8px 0}
+.sc-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-bottom:8px}.sc-u{display:flex;flex-direction:column;align-items:center;background:#fff;border:2px solid #ccc;border-radius:10px;padding:2px 4px 5px;text-align:center}
+.sc-u img{width:64px;height:64px}.sc-u b{font-size:12px}.sc-u span{font-size:11px;color:var(--mute)}
+.opp{cursor:pointer}
 .toggles{display:flex;gap:6px;margin-top:6px}.toggles .big{margin-top:0}
 @media (min-width:820px){#main{flex-direction:row}#fieldwrap{flex:1.35}#panel{flex:1;justify-content:flex-end}#shop{grid-template-columns:repeat(4,1fr)}.card{height:128px}.card .nm{font-size:12px}.card .st{font-size:13px}.card .ab{font-size:10px}}
 @media (orientation:landscape) and (max-height:520px){#main{flex-direction:row}#panel{width:50%}.card{height:84px}#opps{display:none}}
@@ -259,7 +264,7 @@ const abl=u=>UD[u.id].ab.concat(u.give||[]),has=(u,a)=>abl(u).includes(a),reps=u
 const align=u=>UD[u.id].race==="saurian"?"C":FAC[UD[u.id].f].al;
 
 // ================================================================ state
-let S=null;
+let S=null,INSTANT=false;
 function newGame(leader){
  RNG=Math.random;UID=1;const pool={};UL.forEach(a=>pool[a[0]]=COPIES[a[2]]);
  const others=shuffle(LEADERS.filter(l=>l.id!==leader.id)).concat(shuffle([...LEADERS])).slice(0,7);const facs=shuffle(Object.keys(FAC));
@@ -403,7 +408,7 @@ function fight(){
  const others=S.players.map((p,i)=>i).filter(i=>i&&i!==S.nextOpp&&S.players[i].alive);shuffle(others);
  const results=[];while(others.length>=2){const a=others.pop(),b=others.pop();results.push([a,b,battle(S.players[a],S.players[b],S.tod,S.terrain,false)])}
  if(others.length){const a=others.pop();const g2=S.players.filter((p,i)=>i&&i!==a&&p.alive);const b=S.players.indexOf(pick(g2.length?g2:[O]));results.push([a,b,battle(S.players[a],S.players[b],S.tod,S.terrain,false),1])}
- S.pending=results;document.body.classList.add("fighting");render();
+ S.pending=results;if(INSTANT){afterFight();return}document.body.classList.add("fighting");render();
  playMusic("fight");versus(P,O,()=>initAnim(P,O,res))}
 function versus(P,O,done){const L=id=>LEADERS.find(l=>l.id===id);$("vsA").src=IMG(L(P.leader).pt);$("vsB").src=IMG(L(O.leader).pt);$("vsAn").textContent="You";$("vsBn").textContent=O.name;$("vsI").textContent=`Round ${S.round} · ${TERR[S.terrain].n} · ${TODS[S.tod].n}`;
  const v=$("vs");v.classList.remove("on");void v.offsetWidth;v.classList.add("on");sfx("horn");setTimeout(()=>{v.classList.remove("on");done()},speed>=4?400:1500)}
@@ -419,9 +424,9 @@ function afterFight(){
  let aliveN=S.players.filter(p=>p.alive).length;
  for(const i of order){const p=S.players[i];p.alive=0;p.place=aliveN--;allUnits(p).forEach(u=>S.pool[u.id]+=u.promo?3:1);p.board=p.board.map(()=>null);p.camp=p.camp.map(()=>null);if(!p.me)sub+=` · ${p.name} is out`}
  toast(msg,sub,2200);
- setTimeout(()=>{document.body.classList.remove("fighting");S.fightView=null;anim=null;
+ const go=()=>{document.body.classList.remove("fighting");S.fightView=null;anim=null;
   if(!P.alive)return gameOver(P.place);if(S.players.filter(p=>p.alive).length===1)return gameOver(1);
-  S.round++;startRound()},speed>=4?900:2300)}
+  S.round++;startRound()};if(INSTANT)go();else setTimeout(go,speed>=4?900:2300)}
 function gameOver(place){S.phase="over";ls.del("mk.save2");const st=ls.get("mk.stats",{});st.games=(st.games||0)+1;st.best=Math.min(st.best||9,place);if(place===1)st.wins=(st.wins||0)+1;st.tops=(st.tops||0)+(place<=4?1:0);ls.set("mk.stats",st);
  playMusic("title");if(place===1)setTimeout(()=>sfx("fanfare"),300);
  const words=["","First place. The keep is yours, and so is everyone else's.","Second. So close you can smell the victory feast.","Third. A very respectable pile of gold.","Fourth. Top half. The bards will mention you, briefly.","Fifth. You'll be back.","Sixth. The mercenaries want a word about their pay.","Seventh. At least the walking corpses had fun.","Eighth. The keep has been turned into a very nice stable."];
@@ -571,7 +576,8 @@ function cardHTML(id,i,cls){const d=UD[id];const pair=countOwned(me(),id);const 
  return `<button class="card ${cls||""}" data-i="${i}" style="border-color:${FAC[d.f].c}"><img class="pt" src="${IMG(d.pt)}" alt="" loading="lazy"><img class="wp" src="${IMG(d.wp)}" alt=""><span class="tier">${"★".repeat(d.t)}</span>${pair?`<span class="pair">${pair}/3</span>`:""}<span class="tx"><span class="nm">${d.n}</span><span class="st"><b>${d.d}×${d.s}</b><i>${d.hp}</i></span><span class="ab">${ab||FAC[d.f].n}</span></span></button>`}
 function render(){if(!S)return;const P=me(),L=LEADERS.find(l=>l.id===P.leader);
  $("meImg").src=IMG(L.pt);$("hpB").textContent=P.hp;$("arN").textContent=P.armor;$("arB").style.display=P.armor>0?"flex":"none";$("goldN").textContent=P.gold;$("roundC").textContent="R"+S.round;$("todImg").src=IMG(TODS[S.tod].img);$("todN").textContent=TODS[S.tod].n;
- $("opps").innerHTML=S.players.map((p,i)=>`<div class="opp ${p.me?"me":""} ${i===S.nextOpp?"next":""} ${p.alive?"":"dead"}" title="${p.name}"><img src="${IMG(LEADERS.find(l=>l.id===p.leader).pt)}" alt=""><span>${p.alive?p.hp+(p.armor?"+"+p.armor:""):"#"+p.place}</span></div>`).join("");
+ $("opps").innerHTML=S.players.map((p,i)=>`<div data-p="${i}" class="opp ${p.me?"me":""} ${i===S.nextOpp?"next":""} ${p.alive?"":"dead"}" title="${p.name}"><img src="${IMG(LEADERS.find(l=>l.id===p.leader).pt)}" alt=""><span>${p.alive?p.hp+(p.armor?"+"+p.armor:""):"#"+p.place}</span></div>`).join("");
+ $("opps").querySelectorAll(".opp").forEach(o=>o.onclick=()=>scout(+o.dataset.p));
  const kc=keepCost(P);$("keepB").innerHTML=P.keep>=5?`Keep 5`:`Keep ${P.keep+1} <span class="cost">${COIN}${kc}</span>`;
  $("rollB").innerHTML=`Recruits <span class="cost">${S.freeRoll?"free":COIN+"1"}</span>`;$("holdB").classList.toggle("on",!!S.held);$("holdB").textContent=S.held?"Held":"Hold";
  $("powB").innerHTML=L.passive?`<span style="font-size:11px">${L.p}</span>`:`${L.p} <span class="cost">${COIN}${L.cost}</span>`;$("powB").disabled=!!L.passive;
@@ -626,6 +632,13 @@ function showInfoUnit(u,arr,i,shop,rival){const d=UD[u.id];const mine=!!arr;cons
  $("info").style.display="block";
  if($("sellB"))$("sellB").onclick=()=>{sellAt(me(),arr,i);sel=null;closeInfo();sfx("gold",.6);save();render()};$("closeB").onclick=()=>{sel=null;closeInfo();render()}}
 function closeInfo(){$("info").style.display="none"}
+function tcURLs(path,side){const k=path+"#"+side;if(TCURL[k])return TCURL[k];const c=tc(path,side);if(!c)return IMG(path);try{TCURL[k]=c.toDataURL()}catch(e){TCURL[k]=IMG(path)}return TCURL[k]}
+function scout(i){if(!S)return;audioInit();const p=S.players[i],L=LEADERS.find(l=>l.id===p.leader);const side=p.me?0:1;const sc=synCounts(p.board);
+ const units=p.board.map((u,s)=>u?`<div class="sc-u" style="border-color:${FAC[UD[u.id].f].c}"><img src="${tcURLs(uImg(u),side)}" alt=""><b>${uName(u)}${u.promo?" ★":""}</b><span>${uDmg(u)}×${u.str} · ${uHp(u)} HP · ${s<FRONT?"front":"back"}</span></div>`:"").join("");
+ const recent=(S.lastOpp||[]).filter(x=>x===i).length;
+ modal(`<div class="sc-head"><img src="${IMG(L.pt)}" alt=""><div><h2>${p.me?"Your warband":p.name}</h2><div class="sc-meta">${p.alive?`♥ ${p.hp}${p.armor?` · armour ${p.armor}`:""} · keep ${p.keep}`:`Out, placed #${p.place}`}${i===S.nextOpp?" · <b style='color:var(--red)'>you fight them next</b>":""}${!p.me&&recent?` · fought ${recent}×`:""}</div><div class="sc-meta">${L.p}: ${L.d}</div></div></div>
+ <div class="sc-syn">${Object.keys(sc).map(f=>`<span class="syn ${synLevel(sc[f])?"on":""}" style="background:${FAC[f].c}">${FAC[f].n} ${sc[f]}</span>`).join("")}</div>
+ <div class="sc-grid">${units||"<p>No units yet.</p>"}</div><small>${p.me?"":"This is their warband after their last shopping turn."}</small><button class="big alt" id="closeM">Close</button>`);$("closeM").onclick=closeModal}
 $("rollB").onclick=reroll;$("keepB").onclick=upgradeKeep;$("holdB").onclick=()=>{if(S.phase!=="shop")return;S.held=!S.held;save();render()};$("powB").onclick=usePower;$("fight").onclick=()=>{audioInit();fight()};
 $("speed").onclick=()=>{speed=speed===1?2:speed===2?4:1;ls.set("mk.speed",speed);$("speed").textContent="x"+speed};$("speed").textContent="x"+speed;
 $("sndB").onclick=()=>{audioInit();const on=mOn||sOn;mOn=sOn=!on;ls.set("mk.music",mOn);ls.set("mk.sfx",sOn);$("sndB").style.opacity=mOn?1:.45;if(!mOn){for(const n in MEL)MEL[n].pause();curM=null}else playMusic(S&&S.phase==="fight"?"fight":S?"shop":"title")};$("sndB").style.opacity=mOn||sOn?1:.45;
@@ -650,7 +663,7 @@ function chooseLeader(){S=null;closeInfo();const opts=shuffle([...LEADERS]).slic
 addEventListener("pointerdown",()=>audioInit(),{once:true,capture:true});
 preload();size();
 if(load()){render();toast("Welcome back","Round "+S.round);playMusic("shop")}else chooseLeader();
-window.__mk={get S(){return S},battle,buy,fight,me,UD,UL,LEADERS,ITEMS,get anim(){return anim},setSpeed(v){speed=v},newGame,aiTurn,render,deploy,endShopTurn,applyTo,setMode,get mode(){return mode},vetPick,tapCamp,tc};
+window.__mk={setInstant(v){INSTANT=v},get S(){return S},battle,buy,fight,me,UD,UL,LEADERS,ITEMS,get anim(){return anim},setSpeed(v){speed=v},newGame,aiTurn,render,deploy,endShopTurn,applyTo,setMode,get mode(){return mode},vetPick,tapCamp,tc};
 </script>
 </body>
 </html>
