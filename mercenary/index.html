@@ -178,6 +178,9 @@ canvas{display:block;border-radius:12px;border:3px solid #6b5228;box-shadow:0 0 
 "use strict";
 const $=id=>document.getElementById(id);
 const IMG=p=>"img/"+p;
+function seeded(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return ((t^t>>>14)>>>0)/4294967296}}
+const TODAY=(()=>{const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")})();
+const daySeed=s=>{let h=2166136261;for(const c of s)h=Math.imul(h^c.charCodeAt(0),16777619);return h>>>0};
 let RNG=Math.random;const ri=n=>Math.floor(RNG()*n),pick=a=>a[ri(a.length)],clamp=(v,a,b)=>Math.max(a,Math.min(b,v)),shuffle=a=>{for(let i=a.length-1;i>0;i--){const j=ri(i+1);[a[i],a[j]]=[a[j],a[i]]}return a};
 const ls={get(k,d){try{const v=JSON.parse(localStorage.getItem(k));return v===null?d:v}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}},del(k){try{localStorage.removeItem(k)}catch(e){}}};
 
@@ -281,11 +284,11 @@ const align=u=>UD[u.id].race==="saurian"?"C":FAC[UD[u.id].f].al;
 
 // ================================================================ state
 let S=null,INSTANT=false;
-function newGame(leader){
- RNG=Math.random;UID=1;const pool={};UL.forEach(a=>pool[a[0]]=COPIES[a[2]]);
+function newGame(leader,daily){
+ RNG=daily?seeded(daySeed("mk-daily-"+TODAY)+leader.id.length*7919):Math.random;UID=1;const pool={};UL.forEach(a=>pool[a[0]]=COPIES[a[2]]);
  const others=shuffle(LEADERS.filter(l=>l.id!==leader.id)).concat(shuffle([...LEADERS])).slice(0,7);const facs=shuffle(Object.keys(FAC));
  const mk=(l,isMe,i)=>({me:isMe,name:isMe?"You":l.n,leader:l.id,hp:30,armor:l.armor,board:new Array(SLOTS).fill(null),camp:new Array(CAMP).fill(null),keep:1,keepCd:0,gold:0,alive:1,place:0,fav:facs[i%6]});
- S={round:1,pool,players:[mk(leader,1,0)].concat(others.map((l,i)=>mk(l,0,i))),shop:[],item:null,held:false,freeRoll:false,lastOpp:[],nextOpp:-1,bonusGold:0,tod:0,terrain:"flat",picks:0};
+ S={daily:daily?TODAY:null,round:1,pool,players:[mk(leader,1,0)].concat(others.map((l,i)=>mk(l,0,i))),shop:[],item:null,held:false,freeRoll:false,lastOpp:[],nextOpp:-1,bonusGold:0,tod:0,terrain:"flat",picks:0};
  startRound()}
 const me=()=>S.players[0];
 const goldFor=r=>Math.min(10,2+r);
@@ -451,14 +454,14 @@ function afterFight(){
  const go=()=>{document.body.classList.remove("fighting");S.fightView=null;anim=null;
   if(!P.alive)return gameOver(P.place);if(S.players.filter(p=>p.alive).length===1)return gameOver(1);
   S.round++;startRound()};if(INSTANT)go();else showResult(msg,sub,res.winner===0?"win":res.winner===1?"loss":"",res,P,O,go)}
-function gameOver(place){S.players.forEach(p=>{if(p.alive)p.lastBoard=p.board.filter(Boolean).map(u=>u.id)});S.phase="over";ls.del("mk.save2");const st=ls.get("mk.stats",{});st.games=(st.games||0)+1;st.best=Math.min(st.best||9,place);if(place===1)st.wins=(st.wins||0)+1;st.tops=(st.tops||0)+(place<=4?1:0);ls.set("mk.stats",st);
+function gameOver(place){if(S.daily){const dd=ls.get("mk.daily",{});dd[S.daily]=Math.min(dd[S.daily]||9,place);ls.set("mk.daily",dd)}S.players.forEach(p=>{if(p.alive)p.lastBoard=p.board.filter(Boolean).map(u=>u.id)});S.phase="over";ls.del("mk.save2");const st=ls.get("mk.stats",{});st.games=(st.games||0)+1;st.best=Math.min(st.best||9,place);if(place===1)st.wins=(st.wins||0)+1;st.tops=(st.tops||0)+(place<=4?1:0);ls.set("mk.stats",st);
  playMusic("title");if(place===1)setTimeout(()=>sfx("fanfare"),300);
  const words=["","First place. The keep is yours, and so is everyone else's.","Second. So close you can smell the victory feast.","Third. A very respectable pile of gold.","Fourth. Top half. The bards will mention you, briefly.","Fifth. You'll be back.","Sixth. The mercenaries want a word about their pay.","Seventh. At least the walking corpses had fun.","Eighth. The keep has been turned into a very nice stable."];
- modal(`<h1>${place===1?"Victory":"The war is over"}</h1><p class="sub">${words[place]}</p><p style="text-align:center">You lasted ${S.round} rounds.</p><small style="text-align:center">Games ${st.games} · Wins ${st.wins||0} · Top four ${st.tops||0} · Best place ${st.best}</small><button class="big" id="again">Play again</button>`,"title");$("again").onclick=()=>chooseLeader()}
+ modal(`<h1>${place===1?"Victory":"The war is over"}</h1><p class="sub">${words[place]}</p><p style="text-align:center">You lasted ${S.round} rounds.${S.daily?` Daily challenge best today: #${ls.get("mk.daily",{})[S.daily]}.`:""}</p><small style="text-align:center">Games ${st.games} · Wins ${st.wins||0} · Top four ${st.tops||0} · Best place ${st.best}</small><button class="big" id="again">Play again</button>`,"title");const wasDaily=!!S.daily;$("again").onclick=()=>chooseLeader(wasDaily)}
 
 // ================================================================ save
 function save(){if(!S||S.phase!=="shop")return;ls.set("mk.save2",{S,UID})}
-function load(){const o=ls.get("mk.save2",null);if(!o||!o.S||!o.S.players)return false;S=o.S;S.players.forEach(p=>allUnits(p).forEach(u=>{if(!u.tr)u.tr=[]}));UID=o.UID;S.phase="shop";S.fightView=null;return true}
+function load(){const o=ls.get("mk.save2",null);if(!o||!o.S||!o.S.players)return false;S=o.S;S.players.forEach(p=>allUnits(p).forEach(u=>{if(!u.tr)u.tr=[]}));UID=o.UID;S.phase="shop";S.fightView=null;RNG=S.daily?seeded(daySeed("mk-daily-"+S.daily)+S.round*104729):Math.random;return true}
 
 // ================================================================ images and team colours
 const CACHE={};
@@ -601,7 +604,7 @@ const COIN=`<img src="img/icons/coins_copper.png" alt="">`;
 function cardHTML(id,i,cls){const d=UD[id];const pair=countOwned(me(),id);const ab=d.ab.map(a=>ABS[a]).join(" · ");
  return `<button class="card ${cls||""}" data-i="${i}" style="border-color:${FAC[d.f].c}"><img class="pt" src="${IMG(d.pt)}" alt="" loading="lazy"><img class="wp" src="${IMG(d.wp)}" alt=""><span class="tier">${"★".repeat(d.t)}</span>${pair?`<span class="pair">${pair}/3</span>`:""}<span class="tx"><span class="nm">${d.n}</span><span class="st"><b>${d.d}×${d.s}</b><i>${d.hp}</i></span><span class="ab">${ab||FAC[d.f].n}</span></span></button>`}
 function render(){if(!S)return;const P=me(),L=LEADERS.find(l=>l.id===P.leader);
- $("meImg").src=IMG(L.pt);$("hpB").textContent=P.hp;$("arN").textContent=P.armor;$("arB").style.display=P.armor>0?"flex":"none";$("goldN").textContent=P.gold;$("roundC").textContent="R"+S.round;$("todImg").src=IMG(TODS[S.tod].img);$("todN").textContent=TODS[S.tod].n;
+ $("meImg").src=IMG(L.pt);$("hpB").textContent=P.hp;$("arN").textContent=P.armor;$("arB").style.display=P.armor>0?"flex":"none";$("goldN").textContent=P.gold;$("roundC").textContent=(S.daily?"Daily ":"")+"R"+S.round;$("todImg").src=IMG(TODS[S.tod].img);$("todN").textContent=TODS[S.tod].n;
  $("opps").innerHTML=S.players.map((p,i)=>`<div data-p="${i}" class="opp ${p.me?"me":""} ${i===S.nextOpp?"next":""} ${p.alive?"":"dead"}" title="${p.name}"><img src="${IMG(LEADERS.find(l=>l.id===p.leader).pt)}" alt=""><span>${p.alive?p.hp+(p.armor?"+"+p.armor:""):"#"+p.place}</span></div>`).join("");
  $("opps").querySelectorAll(".opp").forEach(o=>o.onclick=()=>scout(+o.dataset.p));
  const kc=keepCost(P);$("keepB").innerHTML=P.keep>=5?`Keep 5`:`Keep ${P.keep+1} <span class="cost">${COIN}${kc}</span>`;
@@ -682,9 +685,9 @@ $("menuB").onclick=()=>{audioInit();const st=ls.get("mk.stats",{});modal(`<h2>Me
 function credits(){modal(`<h2>Credits</h2><p>All the art, music and sound effects come from <b>Battle for Wesnoth</b>, made by the Wesnoth artists, composers and contributors, and are used under the GNU General Public License, version 2 or later. Music by Aleksi Aubry-Carlson (Main Menu, Battle), Mattias Westlund (Traveling Minstrels), Timothy Pinkham (Knolls, Wanderer, Victory, Defeat), Joseph G. Toscano (Loyalists), Doug Kaufman (Elvish Theme, Heroes Rite, Battle Epic), Gianmarco Leone (The Dangerous Symphony), Stephen Rozanc (Frantic), Jeremy Nicoll (Vengeful) and Tyler Johnson (Casualties of War).</p>
  <p>Wesnoth is free and open source: <a href="https://www.wesnoth.org" target="_blank" rel="noopener">wesnoth.org</a> and <a href="https://github.com/wesnoth/wesnoth" target="_blank" rel="noopener">github.com/wesnoth/wesnoth</a>.</p>
  <p>This game is free software under the GPL v2 or later too. See <a href="COPYING" target="_blank">COPYING</a> and <a href="CREDITS.txt" target="_blank">CREDITS.txt</a> for every file and what was changed.</p><button class="big" id="closeM">Back</button>`);$("closeM").onclick=closeModal}
-function chooseLeader(){S=null;closeInfo();const opts=shuffle([...LEADERS]).slice(0,3);
- modal(`<h1>Mercenary Keep</h1><p class="sub">Seven rival leaders. One market of mercenaries. Pick who leads yours.</p><div class="leaders">${opts.map((l,i)=>`<button class="leader" data-i="${i}"><img src="${IMG(l.pt)}" alt=""><b>${l.n}</b><span><b style="display:inline;font:inherit;font-weight:800">${l.p}.</b> ${l.d}</span><em>Armour ${l.armor}</em></button>`).join("")}</div><small style="text-align:center">Art, music and sounds from Battle for Wesnoth, under the GPL. Menu, Credits for more.</small>`,"title");
- $("mcard").querySelectorAll(".leader").forEach(b=>b.onclick=()=>{audioInit();closeModal();newGame(opts[+b.dataset.i]);toast("Round 1","Recruit, then fight",1600)});
+function chooseLeader(daily){daily=daily===true;S=null;closeInfo();if(daily)RNG=seeded(daySeed("mk-leaders-"+TODAY));const opts=shuffle([...LEADERS]).slice(0,3);RNG=Math.random;const dbest=ls.get("mk.daily",{})[TODAY];
+ modal(`<h1>Mercenary Keep</h1><p class="sub">${daily?`Daily challenge for ${TODAY}: the same leaders, recruits, rivals and dice for everyone today.${dbest?` Your best today: #${dbest}.`:""}`:"Seven rival leaders. One market of mercenaries. Pick who leads yours."}</p><div class="leaders">${opts.map((l,i)=>`<button class="leader" data-i="${i}"><img src="${IMG(l.pt)}" alt=""><b>${l.n}</b><span><b style="display:inline;font:inherit;font-weight:800">${l.p}.</b> ${l.d}</span><em>Armour ${l.armor}</em></button>`).join("")}</div><button class="big alt" id="modeB">${daily?"Back to a normal game":"Play today's daily challenge"}</button><small style="text-align:center;margin-top:6px">Art, music and sounds from Battle for Wesnoth, under the GPL. Menu, Credits for more.</small>`,"title");$("modeB").onclick=()=>chooseLeader(!daily);
+ $("mcard").querySelectorAll(".leader").forEach(b=>b.onclick=()=>{audioInit();closeModal();newGame(opts[+b.dataset.i],daily);toast(daily?"Daily challenge":"Round 1","Recruit, then fight",1600)});
  playMusic("title")}
 addEventListener("pointerdown",()=>audioInit(),{once:true,capture:true});
 preload();size();
