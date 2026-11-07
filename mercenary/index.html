@@ -563,17 +563,23 @@ const PERKS=[{id:"lcoin",n:"War Chest",d:"+1 gold at the start of every round",l
  {id:"ward",n:"Ward",ab:"ward"},{id:"regen",n:"Regenerates",ab:"regen"},{id:"first",n:"First strike",ab:"first"},{id:"marks",n:"Marksman",ab:"marks"},{id:"drain",n:"Drains",ab:"drain"},{id:"steady",n:"Steadfast",ab:"steady"},{id:"lead",n:"Leadership",ab:"lead"},{id:"slow",n:"Slows",ab:"slow"},
  {id:"colossus",n:"Colossus",d:"+18 HP",f:u=>{u.bh+=18}},{id:"brute",n:"Brute",d:"+3 damage",f:u=>{u.bd+=3}},{id:"glass",n:"Glass Edge",d:"+5 damage, 6 less HP",f:u=>{u.bd+=5;u.bh-=6}},
  {id:"juggernaut",n:"Juggernaut",d:"+28 HP, 1 less damage",f:u=>{u.bh+=28;u.bd-=1}},{id:"twin",n:"Twin Strike",d:"+1 strike, 1 less damage",f:u=>{u.str++;u.bd-=1}},{id:"grit",n:"Veteran's Grit",d:"+2 damage and +6 HP",f:u=>{u.bd+=2;u.bh+=6}},
- {id:"cut",n:"Mercenary's Cut",d:"+1 gold at the start of every round",f:u=>{}},{id:"giant",n:"Giant Blood",d:"+12 HP and +1 damage",f:u=>{u.bd++;u.bh+=12}},{id:"duelist",n:"Duelist",d:"+4 damage",f:u=>{u.bd+=4}},
- {id:"scholar",n:"Quick Study",d:"Gains experience twice as fast",f:u=>{}},{id:"armory",n:"Armsmaster",d:"+2 damage, and a free Magic weapon",f:u=>{u.bd+=2;setTimeout(()=>giveWeapon(rollWeapon(1),"The armsmaster's gift:"),0)}},
- {id:"lucky",n:"Treasure Sense",d:"+15% chance of loot after every win",f:u=>{}}].concat(["riposte","trample","splash","poison","berserk","execute","revive","snare","guard","rally","feast","reach","nightstalk","dive","hex"].filter(a=>typeof ABIL!=="undefined"&&ABIL[a]).map(a=>({id:a,n:a[0].toUpperCase()+a.slice(1),ab:a})));
+ {id:"cut",once:1,n:"Mercenary's Cut",d:"+1 gold at the start of every round",f:u=>{}},{id:"giant",n:"Giant Blood",d:"+12 HP and +1 damage",f:u=>{u.bd++;u.bh+=12}},{id:"duelist",n:"Duelist",d:"+4 damage",f:u=>{u.bd+=4}},
+ {id:"scholar",once:1,n:"Quick Study",d:"Gains experience twice as fast",f:u=>{}},{id:"armory",once:1,n:"Armsmaster",d:"+2 damage, and a free Magic weapon",f:u=>{u.bd+=2;setTimeout(()=>giveWeapon(rollWeapon(1),"The armsmaster's gift:"),0)}},
+ {id:"lucky",once:1,n:"Treasure Sense",d:"+15% chance of loot after every win",f:u=>{}}].concat(["riposte","trample","splash","poison","berserk","execute","revive","snare","guard","rally","feast","reach","nightstalk","dive","hex"].filter(a=>typeof ABIL!=="undefined"&&ABIL[a]).map(a=>({id:a,n:a[0].toUpperCase()+a.slice(1),ab:a})));
 const perkD=k=>k.ab?ABIL[k.ab]:k.d+".";
-function perkOpts(u){return shuffle(PERKS.filter(k=>(!k.ldr||u.ldr)&&!(k.once&&(u.pk||[]).includes(k.id))&&(!k.ab||!has(u,k.ab))&&!((u.pk||[]).includes(k.id)&&!k.f))).slice(0,3)}
+const PREQ=(()=>{const M=u=>UD[u.id].k==="m",R=u=>UD[u.id].k==="r",F=(...fs)=>u=>fs.includes(UD[u.id].f),T=n=>u=>uTier(u)>=n||u.ldr,A=(...g)=>u=>g.every(x=>x(u));
+ return {first:M,riposte:M,trample:M,berserk:A(M,F("north","beast","knalgan")),steady:M,guard:A(M,F("loyal","knalgan","rebel")),juggernaut:M,colossus:M,
+  marks:R,reach:R,snare:A(R,F("rebel","knalgan","loyal")),splash:A(R,F("drake","north","knalgan","loyal")),dive:F("drake","beast","knalgan"),
+  regen:F("north","beast"),drain:F("undead","beast"),feast:F("undead","beast"),revive:A(F("loyal","rebel","undead"),T(3)),poison:F("north","drake","knalgan","beast"),
+  nightstalk:F("north","undead","knalgan"),hex:F("undead","rebel"),slow:F("rebel","undead","drake"),execute:F("knalgan","north","drake"),
+  lead:A(F("loyal","north","rebel","drake"),T(3)),rally:F("loyal","north","drake"),ward:F("loyal","rebel","drake"),twin:M,brute:M,giant:F("north","knalgan","beast","undead"),duelist:A(M,F("loyal","knalgan","rebel")),glass:T(2)}})();
+function perkOpts(u){return shuffle(PERKS.filter(k=>(!k.ldr||u.ldr)&&(!PREQ[k.id]||PREQ[k.id](u))&&!(k.once&&(u.pk||[]).includes(k.id))&&(!k.ab||!has(u,k.ab))&&!((u.pk||[]).includes(k.id)&&!k.f))).slice(0,3)}
 function givePerk(u,k){if(k.ab)u.give=addOnce(u.give,k.ab);else k.f(u);u.pk=(u.pk||[]).concat(k.id)}
 const advOf=u=>u.adv!==undefined&&ADV[u.id]?ADV[u.id][u.adv]:null;
 const formName=u=>{const a=advOf(u);return a?a[0]:UD[u.id].n};
 const uName=u=>(rk(u)?RANKS[Math.min(3,rk(u))]+" ":"")+formName(u),uImg=u=>{const a=advOf(u);return a?a[1]:UD[u.id].img},uPt=u=>{const a=advOf(u);if(!a)return UD[u.id].pt;return a[3][0]==="!"?a[3].slice(1):"portraits/"+a[3]+".webp"};
 const hasT=(u,t)=>(u.tr||[]).includes(t);
-const xpMax=u=>6+2*uTier(u)+(advOf(u)?4:0);
+const xpMax=u=>8+3*uTier(u)+(advOf(u)?4:0)+4*(u.lv||0);
 const advD=u=>{const a=advOf(u);return a?ADVB.d+(a[2].d||0):0},advH=u=>{const a=advOf(u);return a?ADVB.h+(a[2].h||0):0};
 const uDmg=u=>u.dmg+u.bd+(u.lv||0)+advD(u)+((hasT(u,"strong")&&UD[u.id].k==="m")||(hasT(u,"dextrous")&&UD[u.id].k==="r")?1:0),uHp=u=>u.hp+u.bh+4*(u.lv||0)+advH(u)+(hasT(u,"resilient")?4:0)+(hasT(u,"healthy")?2:0)-(hasT(u,"quick")?2:0),uTier=u=>UD[u.id].t+(u.promo?1:0);
 const abl=u=>{const a=advOf(u);return UD[u.id].ab.concat(a&&a[2].ab||[],u.give||[])},has=(u,a)=>abl(u).includes(a),reps=u=>u.promo?2:1;
@@ -673,13 +679,13 @@ function relicBonus(p,u){if(!p||!p.me||!S||!S.relics||!S.relics.length)return {d
  if(R("sigil")){const sc={};p.board.forEach(x=>{if(x)sc[UD[x.id].f]=(sc[UD[x.id].f]||0)+1});const top=Object.keys(sc).sort((a,b)=>sc[b]-sc[a])[0];if(ud.f===top){d++;h+=4}}
  if(R("glass")){d+=3;h-=5}if(R("pact"))d+=2;if(R("axe"))d+=Math.floor((u.kt||0)/3);if(R("medal")&&(u.promo||(u.rk||0)>0)){d+=2;h+=5}if(R("ranger")&&idx>=FRONT)d+=2;if(R("anvil"))h+=S.round;if(R("pocket")&&t===2){d++;h+=4}if(R("moon")&&S.tod>=3)d+=2;if(R("idol"))d+=4;if(R("sceptre"))d+=2;if(R("rune")&&ud.f==="knalgan"){d+=2;h+=6}if(R("blackeye")&&ud.f==="north"){d+=2;h+=4}if(R("grimoire")&&ud.f==="undead"){d+=2;h+=5}if(R("lantern")&&al==="L"){d+=2;h+=3}if(R("bow")&&ud.k==="r")d+=3;if(R("trident"))d+=S.lairsWon||0;if(R("sun")&&TODS[S.tod]&&TODS[S.tod].l>0)d+=3;if(R("hammer")&&t>=3)d+=3;
  if(R("twins")){const sc={};p.board.forEach(x=>{if(x)sc[UD[x.id].f]=(sc[UD[x.id].f]||0)+1});const top=Object.keys(sc).sort((a,b)=>sc[b]-sc[a]).slice(0,2);if(top.includes(ud.f))d++}if(R("goose"))d--;if(R("plate")&&ud.k!=="r")h+=4;if(R("kantele"))h+=2*S.relics.length;return {d,h}}
-const relicRound=r=>(hasM("storm")&&r%2===0)||[2,6,10,14,18].includes(r)||(r>18&&(r-18)%6===0);
+const relicRound=r=>(hasM("storm")&&r%3===0)||[3,9,15].includes(r)||(r>15&&(r-15)%8===0);
 function leaderChoice(L){const P=me();let o=[],head,sub;
  if(L.relP){head=`${nmOf(L)} finds relics`;sub="Your leader may carry one. It lasts the whole war.";o=shuffle(relicPool().filter(x=>!(S.relics||[]).includes(x.id))).slice(0,perkOn(40)?5:perkOn(10)?4:3).map(c=>({img:c.i,n:c.n,d:c.d,go:()=>{takeRelic(c.id);delete L.relP}}));if(!o.length){delete L.relP;return nextPrompt()}}
  else{head=`${nmOf(L)} grows stronger`;sub=`Level ${L.lv||0}. Choose how your leader grows${L.pkP>1?` (${L.pkP} choices waiting)`:""}. Your other units learn on their own.`;
   const done=()=>{if(--L.pkP<=0)delete L.pkP};o=perkOpts(L).slice(0,3).map(k=>({img:null,n:k.n,d:perkD(k),go:()=>{givePerk(L,k);done()}}));
   const best=(S.stash||[]).slice().sort((a,b)=>wVal(b)-wVal(a))[0];if(best&&wVal(best)>wVal(L.wpn)){o[2]={img:best.i,n:"Wield "+best.n,d:RAR[best.r].n+": "+wDesc(best),c:RAR[best.r].c,go:()=>{equip(L,best);done()}}}
-  if(RNG()<.5){const r=shuffle(relicPool().filter(x=>!(S.relics||[]).includes(x.id)))[0];if(r)o[1]={img:r.i,n:"Relic: "+r.n,d:r.d,go:()=>{takeRelic(r.id);done()}}}}
+  if(RNG()<.25){const r=shuffle(relicPool().filter(x=>!(S.relics||[]).includes(x.id)))[0];if(r)o[1]={img:r.i,n:"Relic: "+r.n,d:r.d,go:()=>{takeRelic(r.id);done()}}}}
  modal(`<div class="ev"><img src="${IMG(UD[L.id].pt)}" alt=""><div><div class="tag">YOUR LEADER</div><h2>${head}</h2><p>${sub}</p></div></div><div class="contracts relics">${o.map((c,i)=>`<button class="contract relic" data-i="${i}" ${c.c?`style="border-color:${c.c}"`:""}>${c.img?`<img src="${IMG(c.img)}" alt="">`:""}<b>${c.n}</b><span>${c.d}</span></button>`).join("")}</div>`);
  $("mcard").querySelectorAll(".relic").forEach(b=>b.onclick=()=>{o[+b.dataset.i].go();closeModal();sfx("fanfare",.6);save();render()})}
 function offerRelics(){if(!S||S.phase!=="shop"||S.relicTaken===S.round)return;if(!INSTANT&&$("modal").classList.contains("on")&&!$("mcard").querySelector(".relic")){setTimeout(offerRelics,900);return}const own=S.relics||[];const o=shuffle(relicPool().filter(x=>!own.includes(x.id))).slice(0,perkOn(40)?5:perkOn(10)?4:3);if(!o.length)return;if(INSTANT){takeRelic(o[0].id);return}{const L=ldrOf(me());if(L){L.relP=1;S.relicTaken=S.round;nextPrompt();return}}
@@ -1019,9 +1025,9 @@ function battle(pa,pb,tod,terr,rec){
  const la=alive(0),lb=alive(1);if(la.length&&!lb.length)winner=0;else if(lb.length&&!la.length)winner=1;
  const surv=winner<0?[]:alive(winner);
  return {winner,surv,ev,loot,kills,atk,survTier:surv.reduce((s,u)=>s+UD[u.id].t+Math.min(3,rk(u)),0)}}
-function gainXP(p,res){const ups=[];p.cast=[];{const L=ldrOf(p);if(L&&p.board.includes(L))L.xp=(L.xp||0)+2}
+function gainXP(p,res){const ups=[];p.cast=[];{const L=ldrOf(p);if(L&&p.board.includes(L))L.xp=(L.xp||0)+1}
  p.board.forEach(u=>{if(!u)return;const k=res.kills[u.uid]||0;if(k&&has(u,"hunger")){u.bd+=k;u.bh+=2*k;if(p.me&&!INSTANT)setTimeout(()=>pop(u,"+"+k+"/+"+2*k,nmOf(u)+" grows on the kill: +"+k+" damage, +"+2*k+" HP"),1200)}
-  if(has(u,"weave")){const n=Math.min(2,(res.atk||{})[u.uid]||0)*reps(u);if(n)p.sp=(p.sp||0)+n}});p.board.forEach(u=>{if(!u)return;u.kt=(u.kt||0)+(res.kills[u.uid]||0);if(u.advP)return;u.xp=(u.xp||0)+(1+3*(res.kills[u.uid]||0))*(!p.me&&bn(8)?2:1)*((u.pk||[]).includes("scholar")?2:1);
+  if(has(u,"weave")){const n=Math.min(2,(res.atk||{})[u.uid]||0)*reps(u);if(n)p.sp=(p.sp||0)+n}});p.board.forEach(u=>{if(!u)return;u.kt=(u.kt||0)+(res.kills[u.uid]||0);if(u.advP)return;u.xp=(u.xp||0)+(1+2*(res.kills[u.uid]||0))*(!p.me&&bn(8)?2:1)*((u.pk||[]).includes("scholar")?2:1);
  while(!u.advP&&u.xp>=xpMax(u)){u.xp-=xpMax(u);if(ADV[u.id]&&u.adv===undefined){if(p.me&&!INSTANT&&ADV[u.id].length>1)u.advP=1;else{u.adv=p.me?0:ri(ADV[u.id].length);if(p.me&&u.id==="lich")unlock("lichdom")}}else{u.lv=(u.lv||0)+1;if(p.me&&!INSTANT)u.pkP=(u.pkP||0)+1;else givePerk(u,pick(perkOpts(u)))}ups.push(u)}});return ups}
 function nextPrompt(){if(!S||S.phase!=="shop")return;const P=me();let any=0;
  const L=ldrOf(P);if(L&&(L.pkP||L.relP)&&!INSTANT){if(!$("modal").classList.contains("on"))leaderChoice(L);}
