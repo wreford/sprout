@@ -7,9 +7,9 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Elastowormia">
+<meta name="apple-mobile-web-app-title" content="Squirmers">
 <meta name="theme-color" content="#0c0c0c">
-<title>Elastowormia</title>
+<title>Squirmers</title>
 <style>
 :root{--ink:#f4f0e0;--pink:#ff8fb1;--gold:#ffe14a;--dark:#0c0c0c;--tex:none}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -53,14 +53,14 @@ p{font:600 15px/1.45 Arial,system-ui;color:#f4f0e0;margin:6px 0}
 </head>
 <body>
 <div id="app">
- <div id="top"><b>Elastowormia</b><span class="pill" id="lvN"></span><span class="sp"></span><span class="pill" id="out">Out 0</span><span class="pill" id="home">Saved 0%</span><span class="pill" id="time">5:00</span></div>
+ <div id="top"><b>Squirmers</b><span class="pill" id="lvN"></span><span class="sp"></span><span class="pill" id="apl">🍎 0/0</span><span class="pill" id="out">Out 0</span><span class="pill" id="home">Saved 0%</span><span class="pill" id="time">5:00</span></div>
  <div id="stage"><svg id="bg" preserveAspectRatio="xMidYMax slice" viewBox="0 0 960 540"></svg><div id="world"><canvas id="terr" width="960" height="540"></canvas><svg id="svg" viewBox="0 0 960 540"></svg></div><div id="msg"></div></div>
  <div id="bar"></div>
 </div>
 <div id="modal" hidden></div>
 <script>
 "use strict";
-// ================================================================ Elastowormia: guide the springy worms to the flower. Original game; all art is SVG drawn in code.
+// ================================================================ Squirmers: guide the springy worms to the flower. Original game; all art is SVG drawn in code.
 const W=960,H=540,TICK=1000/30;
 const $=id=>document.getElementById(id),NS="http://www.w3.org/2000/svg";
 const el=(t,a,p)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);if(p)p.appendChild(e);return e};
@@ -97,6 +97,8 @@ const LEVELS=[
  {n:"The Big Dig",tip:"Down through the soil, through the clay, across the water, home.",n_:15,need:10,rate:40,time:400,in:[150,120],out:[880,230],w:520,
   s:[[[60,240],[250,234],[400,240],[400,290],[60,290]],[[0,322],[300,318],[640,322],[640,540],[0,540]],[[520,322],[522,232],[546,222],[570,234],[572,322]],[[680,302],[800,296],[960,302],[960,540],[680,540]]],r:[[[30,100],[60,100],[60,290],[30,290]],[[400,170],[420,170],[420,290],[400,290]]],k:{dig:2,bash:2,build:2,block:2,bomb:2,float:2}}];
 LEVELS.forEach(L=>L.N=L.n_);
+// apples to munch on the way (x, and a height to drop from onto the ground below)
+[[[300,300],[520,300],[700,300]],[[200,250],[480,350],[800,350]],[[300,280],[600,280],[880,260]],[[250,350],[380,350],[700,350]],[[200,120],[400,420],[650,420]],[[300,350],[700,100],[900,100]],[[250,300],[700,300],[600,390]],[[200,280],[450,270],[850,250]],[[250,200],[300,300],[800,260]]].forEach((a,i)=>LEVELS[i].ap=a);
 // ---------------------------------------------------------------- terrain: a mask for physics, a canvas for looks
 let mask=new Uint8Array(W*H);// 0 air, 1 soil, 2 rock, 3 noodle
 const tc=$("terr"),tg=tc.getContext("2d");let TR=1;
@@ -135,7 +137,9 @@ let G=null,sel="dig",speed=1,paused=false,lastT=0,acc=0,camX=0,SC=1;
 function startLevel(i){const L=LEVELS[i];buildMask(L);lowImg=null;sizeWorld();paintTerrain(0,0,W,H);
  const ex=L.out[0];let ey=L.out[1]||0;while(ey<H-1&&!solid(ex,ey+1))ey++;
  let gy=L.in[1];while(gy<H-1&&!solid(L.in[0],gy))gy++;const ent=[L.in[0],Math.max(L.in[1],gy-60)];
- G={i,L,worms:[],spawned:0,saved:0,dead:0,t:0,rate:L.rate,minRate:L.rate,k:{...L.k},nextSpawn:20,over:false,nuke:false,exit:[ex,ey],ent,fx:[],timeLeft:L.time*30};
+ const apples=(L.ap||[]).map(([x,y])=>{while(y<H-1&&!solid(x,y))y++;return {x,y:y-10,got:0}});
+ const killers=(L.kill||[]).map(([x,y,orb,sp])=>({cx:x,cy:y,x,y,orb:orb||0,sp:sp||0,a:0}));
+ G={apples,killers,ate:0,i,L,worms:[],spawned:0,saved:0,dead:0,t:0,rate:L.rate,minRate:L.rate,k:{...L.k},nextSpawn:20,over:false,nuke:false,exit:[ex,ey],ent,fx:[],timeLeft:L.time*30};
  sel=SKILLS.find(s=>G.k[s.id])?.id||null;buildScene();buildBar();hud();$("modal").hidden=true;camX=clamp(L.in[0]-viewW()/2/SC,0,Math.max(0,W-viewW()/SC));placeWorld();paused=false;
  msg(L.tip,4000);beep(660,.08,"triangle");setTimeout(()=>beep(880,.1,"triangle"),120)}
 // ---------------------------------------------------------------- worms
@@ -208,6 +212,10 @@ function buildScene(){const s=$("svg");s.innerHTML="";const defs=el("defs",{},s)
  const [hx,hy]=G.exit;const hm=el("g",{transform:`translate(${hx} ${hy})`},s);const fl=el("g",{},hm);fl.id="flag";
  el("path",{d:"M0 0 C-3 -12 3 -22 0 -34",stroke:"#2a8a2a","stroke-width":3,fill:"none","stroke-linecap":"round"},fl);el("path",{d:"M0 -14 C6 -20 12 -18 14 -16 C8 -12 4 -12 0 -14Z",fill:"#3aa83a",stroke:"#1a5a1a","stroke-width":1},fl);
  const head=el("g",{transform:"translate(0 -38)"},fl);for(let i=0;i<6;i++)el("ellipse",{cx:0,cy:-8,rx:4.6,ry:8,fill:"#fff",stroke:"#888","stroke-width":1,transform:`rotate(${i*60})`},head);el("circle",{r:5,fill:"#ffd020",stroke:"#a07000","stroke-width":1.2},head);
+ // apples (shiny red, with a leaf) and killers (black spiky balls)
+ G.apples.forEach((a,i)=>{const g=el("g",{transform:`translate(${a.x} ${a.y})`,class:"apple"},s);g.dataset.i=i;el("path",{d:"M-7 0 C-8 -7 -3 -8 0 -6 C3 -8 8 -7 7 0 C6 6 2 8 0 7 C-2 8 -6 6 -7 0Z",fill:"url(#apple)",stroke:"#5a0a10","stroke-width":1.2},g);el("path",{d:"M0 -6 L1 -10",stroke:"#5a3a1a","stroke-width":1.4},g);el("path",{d:"M1 -9 C4 -12 7 -11 8 -10 C5 -8 3 -8 1 -9Z",fill:"#3aa83a"},g);el("ellipse",{cx:-3,cy:-2,rx:1.6,ry:1,fill:"#fff","fill-opacity":.6},g);a.el=g});
+ G.killers.forEach(k=>{const g=el("g",{class:"killer"},s);let d="";for(let i=0;i<12;i++){const a=i/12*6.283,b=a+.26;d+=`M${(Math.cos(a-.26)*8).toFixed(1)} ${(Math.sin(a-.26)*8).toFixed(1)} L${(Math.cos(a)*14).toFixed(1)} ${(Math.sin(a)*14).toFixed(1)} L${(Math.cos(b)*8).toFixed(1)} ${(Math.sin(b)*8).toFixed(1)}Z`}
+  el("path",{d,fill:"#c81828",stroke:"#300","stroke-width":1},g);el("circle",{r:9,fill:"#151515",stroke:"#000","stroke-width":1},g);el("circle",{cx:-3,cy:-3,r:2.4,fill:"#fff","fill-opacity":.35},g);k.el=g});
  // water
  if(G.L.w){const wv=el("path",{d:"",fill:"url(#water)"},s);wv.id="waterP"}
  fxLayer=el("g",{},s);wormLayer=el("g",{},s);cursorEl=el("circle",{r:13,fill:"none",stroke:"#ffd34a","stroke-width":2.5,"stroke-dasharray":"4 3",opacity:0},s);
@@ -252,6 +260,10 @@ function tick(){if(!G||G.over)return;G.t++;G.timeLeft--;
  if(!G.nuke&&G.spawned<G.L.N){G.nextSpawn--;if(G.nextSpawn<=0){spawn();G.nextSpawn=Math.round(10+(99-G.rate)*.9)}}
  for(const w of G.worms)if(!w.done)stepWorm(w);
  for(const w of G.worms)if(!w.done)softStep(w);
+ for(const k of G.killers){k.a+=k.sp;k.x=k.cx+Math.cos(k.a)*k.orb;k.y=k.cy+Math.sin(k.a)*k.orb}
+ for(const w of G.worms){if(w.done||w.st==="exit")continue;const cx=w.x,cy=w.y-5;
+  for(const a of G.apples)if(!a.got&&Math.hypot(a.x-cx,a.y-cy)<12){a.got=1;G.ate++;fxBurst(a.x,a.y,"#ff3a30",10);fxRing(a.x,a.y,"#fff");sfx("crunch");shove(a.x,a.y,20,1.5)}
+  for(const k of G.killers)if(Math.hypot(k.x-cx,k.y-cy)<14){fxBurst(cx,cy,"#ff2050",16);sfx("spike");kill(w,"spikes");break}}
  for(const w of G.worms)if(w.done&&w.svg){w.svg.remove();w.svg=null}
  G.worms=G.worms.filter(w=>!w.done||w.keep);
  for(const f of G.fx){f.t++;if(!f.ring){f.x+=f.vx;f.y+=f.vy;f.vy+=.2}}G.fx=G.fx.filter(f=>f.t<f.life);
@@ -261,6 +273,8 @@ function render(now){if(!G)return;for(const w of G.worms)if(!w.done)wormSVG(w);
  plantLayer.querySelectorAll(".plant").forEach(p=>{const h=+p.dataset.h,a=Math.sin(now/700+ +p.dataset.ph)*3;const pa=p.firstChild;pa.setAttribute("d",`M0 0 C${a*.3} ${-h*.4} ${a} ${-h*.7} ${a*1.2} ${-h}`);const c=p.querySelector("circle");if(c){c.setAttribute("cx",a*1.2)}});
  const f=$("flag");if(f)f.setAttribute("transform",`rotate(${Math.sin(now/600)*6})`);
  const sp=$("skyP");if(sp)sp.setAttribute("patternTransform",`translate(${(-camX*.35)%320} 0)`);
+ for(const a of G.apples)if(a.el){if(a.got){a.el.remove();a.el=null}else a.el.setAttribute("transform",`translate(${a.x} ${(a.y+Math.sin(now/300+a.x)*1.5).toFixed(1)}) rotate(${Math.sin(now/500+a.x)*8})`)}
+ for(const k of G.killers)if(k.el)k.el.setAttribute("transform",`translate(${k.x.toFixed(1)} ${k.y.toFixed(1)}) rotate(${(now/8)%360})`);
  const wp=$("waterP");if(wp){const y=G.L.w;let d=`M0 ${y}`;for(let x=0;x<=W;x+=40)d+=` Q${x+20} ${y+Math.sin(now/400+x/60)*4} ${x+40} ${y}`;wp.setAttribute("d",d+` L${W} ${H} L0 ${H}Z`)}
  fxLayer.innerHTML=G.fx.map(f=>f.ring?`<circle cx="${f.x}" cy="${f.y}" r="${6+f.t*1.4}" fill="none" stroke="${f.c}" stroke-width="${3*(1-f.t/f.life)}" opacity="${1-f.t/f.life}"/>`:`<circle cx="${f.x.toFixed(1)}" cy="${f.y.toFixed(1)}" r="${f.r}" fill="${f.c}" opacity="${1-f.t/f.life}"/>`).join("");
  if(dirtyRect){const [a,b,c,d]=dirtyRect;dirtyRect=null;paintTerrain(a,b,c,d)}
@@ -268,9 +282,9 @@ function render(now){if(!G)return;for(const w of G.worms)if(!w.done)wormSVG(w);
  const h=hoverWorm();if(h){cursorEl.setAttribute("cx",h.x);cursorEl.setAttribute("cy",h.y-8);cursorEl.setAttribute("opacity",1)}else cursorEl.setAttribute("opacity",0)}
 function loop(now){const dt=Math.min(100,now-(lastT||now));lastT=now;if(G&&!paused&&!G.over){acc+=dt*speed;let n=0;while(acc>=TICK&&n<20){tick();acc-=TICK;n++}hudThrottle()}render(now);requestAnimationFrame(loop)}
 let hudT=0;function hudThrottle(){if(++hudT%6===0)hud()}
-function hud(){if(!G)return;$("lvN").textContent=`${G.i+1}. ${G.L.n}`;const out=G.worms.filter(w=>!w.done).length;$("out").textContent=`Out ${out}`;const pct=Math.round(G.saved/G.L.N*100),need=Math.round(G.L.need/G.L.N*100);const h=$("home");h.textContent=`Saved ${pct}% / ${need}%`;h.className="pill "+(G.saved>=G.L.need?"good":"warn");const s=Math.max(0,Math.ceil(G.timeLeft/30));$("time").textContent=`${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`}
-function finish(timeout){G.over=true;const win=G.saved>=G.L.need;const best=JSON.parse(localStorage.getItem("squirm.best")||"{}");if(win){best[G.i]=Math.max(best[G.i]||0,G.saved);localStorage.setItem("squirm.best",JSON.stringify(best))}
- sfx(win?"win":"lose");const m=$("modal");m.hidden=false;m.innerHTML=`<div class="card"><h2>${win?"Flower reached!":timeout?"Out of time":"Not enough"}</h2><p>You saved <b>${G.saved}</b> of ${G.L.N} worms. You needed ${G.L.need}.</p><p>${win?pick(["Boing! Every worm bounced home.","The flower is full of happy noodles.","Stretchy, squishy, saved."]):pick(["Wiggle on and try again.","So close. The worms believe in you.","Even worms get a second go."])}</p>
+function hud(){if(!G)return;$("apl").textContent=`🍎 ${G.ate}/${G.apples.length}`;$("lvN").textContent=`${G.i+1}. ${G.L.n}`;const out=G.worms.filter(w=>!w.done).length;$("out").textContent=`Out ${out}`;const pct=Math.round(G.saved/G.L.N*100),need=Math.round(G.L.need/G.L.N*100);const h=$("home");h.textContent=`Saved ${pct}% / ${need}%`;h.className="pill "+(G.saved>=G.L.need?"good":"warn");const s=Math.max(0,Math.ceil(G.timeLeft/30));$("time").textContent=`${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`}
+function finish(timeout){G.over=true;const win=G.saved>=G.L.need;const best=JSON.parse(localStorage.getItem("squirm.best")||"{}");if(win){best[G.i]=Math.max(best[G.i]||0,G.saved);localStorage.setItem("squirm.best",JSON.stringify(best));const ab=JSON.parse(localStorage.getItem("squirm.apples")||"{}");ab[G.i]=Math.max(ab[G.i]||0,G.ate);localStorage.setItem("squirm.apples",JSON.stringify(ab))}
+ sfx(win?"win":"lose");const m=$("modal");m.hidden=false;m.innerHTML=`<div class="card"><h2>${win?"Flower reached!":timeout?"Out of time":"Not enough"}</h2><p>You saved <b>${G.saved}</b> of ${G.L.N} worms. You needed ${G.L.need}.</p><p>Apples munched: <b>${G.ate}</b> of ${G.apples.length}${G.ate===G.apples.length&&G.apples.length?" 🍎 All of them!":""}</p><p>${win?pick(["Boing! Every worm bounced home.","The flower is full of happy noodles.","Stretchy, squishy, saved."]):pick(["Wiggle on and try again.","So close. The worms believe in you.","Even worms get a second go."])}</p>
  <button class="btn" id="mA">${win&&G.i<LEVELS.length-1?"Next level":"Try again"}</button><button class="btn alt" id="mB">Levels</button></div>`;
  $("mA").onclick=()=>startLevel(win&&G.i<LEVELS.length-1?G.i+1:G.i);$("mB").onclick=menu}
 const pick=a=>a[Math.floor(rnd()*a.length)];
@@ -311,16 +325,16 @@ function beep(f,d,type,v){if(!AC)return;const o=AC.createOscillator(),g=AC.creat
 function slide(f1,f2,d,type,v){if(!AC)return;const o=AC.createOscillator(),g=AC.createGain();o.type=type||"sine";o.frequency.setValueAtTime(f1,AC.currentTime);o.frequency.exponentialRampToValueAtTime(f2,AC.currentTime+d);g.gain.value=v||.08;g.gain.exponentialRampToValueAtTime(.0001,AC.currentTime+d);o.connect(g);g.connect(AC.destination);o.start();o.stop(AC.currentTime+d)}
 function noise(d,v){if(!AC)return;const b=AC.createBuffer(1,AC.sampleRate*d,AC.sampleRate),a=b.getChannelData(0);for(let i=0;i<a.length;i++)a[i]=(rnd()*2-1)*(1-i/a.length);const s=AC.createBufferSource(),g=AC.createGain();s.buffer=b;g.gain.value=v||.1;s.connect(g);g.connect(AC.destination);s.start()}
 function sfx(k){if(speed>1&&(k==="dig"||k==="brick"))return;({assign:()=>slide(500,900,.12,"triangle",.07),dig:()=>noise(.06,.04),brick:()=>beep(700+rnd()*200,.05,"square",.03),tick:()=>beep(1200,.03,"square",.03),shrug:()=>slide(400,250,.2,"triangle",.06),clank:()=>beep(180,.12,"square",.07),
- pop:()=>{noise(.25,.2);slide(300,60,.3,"sawtooth",.08)},splat:()=>{noise(.15,.1);slide(300,80,.15,"sine",.1)},land:()=>slide(200,120,.06,"sine",.05),boing:()=>{slide(120,520,.12,"sine",.08);setTimeout(()=>slide(500,180,.14,"sine",.05),90)},splash:()=>noise(.3,.08),yay:()=>{slide(600,1200,.15,"triangle",.07)},
+ pop:()=>{noise(.25,.2);slide(300,60,.3,"sawtooth",.08)},splat:()=>{noise(.15,.1);slide(300,80,.15,"sine",.1)},land:()=>slide(200,120,.06,"sine",.05),crunch:()=>{noise(.07,.09);beep(900,.05,"square",.04)},spike:()=>{slide(900,120,.18,"sawtooth",.08);noise(.1,.08)},boing:()=>{slide(120,520,.12,"sine",.08);setTimeout(()=>slide(500,180,.14,"sine",.05),90)},splash:()=>noise(.3,.08),yay:()=>{slide(600,1200,.15,"triangle",.07)},
  win:()=>[523,659,784,1046].forEach((f,i)=>setTimeout(()=>beep(f,.18,"triangle",.09),i*120)),lose:()=>[392,330,262].forEach((f,i)=>setTimeout(()=>beep(f,.25,"triangle",.08),i*180))})[k]?.()}
 // ---------------------------------------------------------------- menu
-const TITLE="ELASTOWORMIA";
+const TITLE="SQUIRMERS";
 function logo(){return `<h1 class="logo"><svg viewBox="0 0 420 110" width="100%" style="max-width:460px"><defs><linearGradient id="lg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff59a"/><stop offset="1" stop-color="#ffb81a"/></linearGradient><linearGradient id="lw" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffb6cb"/><stop offset="1" stop-color="#ff6f98"/></linearGradient></defs>
  ${(()=>{const wd=[...TITLE].map(c=>c==="I"?16:c==="M"||c==="W"?44:c==="O"?36:31);let x=(420-wd.reduce((a,b)=>a+b))/2;return wd.map(w=>{x+=w;return x-w/2})})().map((cx,i)=>[cx,TITLE[i]]).map(([cx,c],i)=>`<text x="${cx}" y="74" font-size="50" font-weight="900" font-style="italic" font-family="Georgia,serif" text-anchor="middle" fill="url(#lg)" stroke="#000" stroke-width="5" paint-order="stroke" style="transform-box:fill-box;transform-origin:center;animation:wob ${1.2+i*.07}s ease-in-out ${i*.1}s infinite">${c}</text>`).join("")}
  <path d="M30 96 C80 82 130 108 180 94 C230 80 280 106 330 92 C360 84 380 92 392 96" stroke="url(#lw)" stroke-width="10" fill="none" stroke-linecap="round"/><circle cx="388" cy="93" r="3.4" fill="#fff"/><circle cx="389" cy="93" r="1.6" fill="#2a1020"/></svg></h1>`}
-function menu(){if(G)G.over=true;const best=JSON.parse(localStorage.getItem("squirm.best")||"{}");const m=$("modal");m.hidden=false;let open=0;LEVELS.forEach((L,i)=>{if(i===0||best[i-1]!==undefined)open=i});
+function menu(){if(G)G.over=true;const best=JSON.parse(localStorage.getItem("squirm.best")||"{}"),apb=JSON.parse(localStorage.getItem("squirm.apples")||"{}");const m=$("modal");m.hidden=false;let open=0;LEVELS.forEach((L,i)=>{if(i===0||best[i-1]!==undefined)open=i});
  m.innerHTML=`<div>${logo()}<div class="card"><p>The springy worms are lost! Guide them to the flower. Tap a skill, then tap a worm. Drag to look around.</p><div class="skillrow">${SKILLS.map(s=>`<span>${s.n}: ${s.d}</span>`).join("")}</div>
- <div class="levels">${LEVELS.map((L,i)=>`<button class="lv ${best[i]!==undefined?"done":""} ${i>open?"lock":""}" data-i="${i}" ${i>open?"disabled":""}><span class="num">${i+1}</span> ${L.n}<small>${best[i]!==undefined?`Best: ${best[i]} of ${L.N} home`:`Save ${L.need} of ${L.N}`}</small></button>`).join("")}</div></div></div>`;
+ <div class="levels">${LEVELS.map((L,i)=>`<button class="lv ${best[i]!==undefined?"done":""} ${i>open?"lock":""}" data-i="${i}" ${i>open?"disabled":""}><span class="num">${i+1}</span> ${L.n}<small>${best[i]!==undefined?`Best: ${best[i]} of ${L.N} · 🍎 ${(apb[i]||0)}/${(L.ap||[]).length}`:`Save ${L.need} of ${L.N}`}</small></button>`).join("")}</div></div></div>`;
  m.querySelectorAll(".lv[data-i]").forEach(b=>b.onclick=()=>{audioInit();startLevel(+b.dataset.i)})}
 requestAnimationFrame(loop);menu();
 window.__sq={get G(){return G},startLevel,tick,assign,LEVELS,get worms(){return G.worms},solid,setSpeed:v=>speed=v};
