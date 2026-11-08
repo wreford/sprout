@@ -179,6 +179,7 @@ const BLD={
  silo:{n:"Grain Silo",cost:1800,up:12,work:5,img:P.barrel,d:"Stores 1,500 more grain."},
  shed:{n:"Machine Shed",cost:2500,up:20,work:6,img:P.tent,d:"Garages 4 machines. Machines need a shed."},
  mill:{n:"Windmill",cost:3000,up:25,work:7,img:P.mill(0),d:"Grinds 15 wheat a day into flour, worth almost twice as much."},
+ hedge:{n:"Hedgerow",cost:250,up:0,work:3,img:P.box,d:"A windbreak of shrubs and trees: fields within two tiles lose 12% less water to wind and sun, and birds nesting in it help with pests."},
  compost:{n:"Compost Heap",cost:300,up:0,work:2,img:P.box,d:"Turns farm scraps into compost: each month it feeds the two hungriest fields +20 nitrogen, free."},
  scare:{n:"Scarecrow",cost:120,up:0,work:1,img:P.box,d:"Slows pests on fields within two tiles and spooks deer from the fields next to it."},
  pivot:{n:"Center Pivot",cost:3200,up:18,work:5,img:P.box,d:"A wheeled irrigation arm: waters every field within three tiles.",town:1},
@@ -384,9 +385,10 @@ function kc(t){if(!t.crop)return t.t==="field"?.3:t.t==="forest"?.9:t.t==="grass
 function waterStress(t){const sm=t.sm??.6;let ws=clamp((sm-.06)/.3,0,1);if((t.wl||0)>3&&!(t.crop&&CROPS[t.crop.id].wet))ws*=.7;return ws}
 function nitF(t){return clamp(.42+t.nit/55,.42,1)}
 function yieldNow(t,ripeOnly){const k=t.crop;if(!k||k.dead)return 0;const C=CROPS[k.id];const sf=k.n?Math.pow(k.sw/k.n,.6):1;return Math.round(((t.ph??6.5)<5.4?.78:(t.ph??6.5)<5.8?.88:1)*(G.map.some(u=>u.b==="hives"&&!u.build&&hexDist(u.c,u.r,t.c,t.r)<=2)?1.1:1)*C.yield*t.fert*sf*k.hp*(1-t.weeds*.45)*(1-t.pests*.55)*((ripeOnly||k.ripe)?1:.3)*(G.upg&&G.upg.seed?1.12:1))}
+const hedgeNear=t=>G.map.some(u=>u.b==="hedge"&&!u.build&&hexDist(u.c,u.r,t.c,t.r)<=2);
 function simDay(){weatherDay();const W=G.today,seas=seasonOf(G.month);const et0=clamp(.0052*(W.t-35),0,.27);let pump=0,frost=0,frostLost=0;
  for(const t of G.map){if(t.t==="water"||t.t==="town"||t.t==="road")continue;
-  t.sm=t.sm??.6;t.sm+=W.rain/AWC;if(t.sm>1){t.wl=(t.wl||0)+(W.rain>.4?1:0);t.sm=1}else t.wl=Math.max(0,(t.wl||0)-1);if(t.drain){t.wl=0;if(t.sm>.88)t.sm=.88}t.sm=Math.max(0,t.sm-et0*kc(t)/AWC);
+  t.sm=t.sm??.6;t.sm+=W.rain/AWC;if(t.sm>1){t.wl=(t.wl||0)+(W.rain>.4?1:0);t.sm=1}else t.wl=Math.max(0,(t.wl||0)-1);if(t.drain){t.wl=0;if(t.sm>.88)t.sm=.88}t.sm=Math.max(0,t.sm-et0*kc(t)*(t.own&&t.t==="field"&&hedgeNear(t)?.88:1)/AWC);
   if(!t.own||t.t!=="field")continue;
   const k=t.crop;
   if(!k){t.weeds=Math.max(0,t.weeds-.003);if(W.t>40)t.nit=Math.min(80,t.nit+.05);continue}
@@ -402,7 +404,7 @@ function simDay(){weatherDay();const W=G.today,seas=seasonOf(G.month);const et0=
    if(ws<.25&&k.id!=="sunflower")k.hp=Math.max(0,k.hp-.012*(.25-ws)/.25);
    if(gdd>0)t.nit=clamp(t.nit-C.nit*.014*Math.min(1.4,gdd/gd),0,120);
    if(W.t>45)t.weeds=Math.min(1,t.weeds+(k.id==="clover"?.0012:.0038)*(seas==="summer"?1.6:1)*Math.min(1.5,gdd/gd));
-   if(seas==="summer"&&rnd()<.005*(k.id==="tomatoes"||k.id==="cotton"?2.5:1)*(W.t>80?1.5:1))t.pests=Math.min(1,t.pests+.25);if(t.pests>0)t.pests=Math.min(1,t.pests+(G.map.some(u=>u.b==="scare"&&!u.build&&hexDist(u.c,u.r,t.c,t.r)<=2)?.0025:.006));
+   if(seas==="summer"&&rnd()<.005*(k.id==="tomatoes"||k.id==="cotton"?2.5:1)*(W.t>80?1.5:1))t.pests=Math.min(1,t.pests+.25);if(t.pests>0)t.pests=Math.min(1,t.pests+(G.map.some(u=>u.b==="scare"&&!u.build&&hexDist(u.c,u.r,t.c,t.r)<=2)?.0025:.006)*(hedgeNear(t)?.85:1));
    if(k.d>=C.grow){k.ripe=1;k.rd=0;if(G.auto[key(t.c,t.r)]&&!t.job)addJob(t,jobKind(t))}}
   else{k.rd=(k.rd||0)+1;if(k.rd>30)k.hp=Math.max(0,k.hp-.03);if(k.hp<=0){k.dead=1;k.why="rot"}}}
  if(pump>0)spend(pump);
@@ -846,6 +848,7 @@ function bldC(b,sea,fr){const snow=sea==="winter";return cached("b"+b+sea+(fr||0
  else if(b==="pond"){for(let y=-9;y<=9;y++)for(let x=-14;x<=14;x++){const d=x*x/196+y*y/81;if(d>1)continue;R(q,16+x,32+y,1,1,d>.78?"#e0bc80":d>.6?"#1a3f96":"#2a62cc")}R(q,10,29,5,1,"#8cc0f8");R(q,18,34,4,1,"#4c90e8")}
  else if(b==="orchard"||b==="vineyard"||b==="cherries"||b==="peaches"){for(const [x,y] of [[9,30],[23,30],[9,44],[23,44]]){R(q,x,y-3,1,3,"#664624");R(q,x-1,y-5,3,2,"#6cae36")}}
  else if(b==="hall"){box(q,3,26,26,21,"#d0ccc0","#9a968a");for(const x of [6,11,20,25])R(q,x,28,2,19,"#ffffff");R(q,13,37,6,10,"#664624");gable(q,1,18,30,8,["#1a3f96","#4c90e8","#0e2458","#2a62cc"],snow);box(q,12,6,8,12,"#d0ccc0","#9a968a");R(q,14,8,4,4,"#ffffff");R(q,15,9,1,2,"#2a2620");R(q,16,10,1,1,"#2a2620");R(q,16,0,1,6,"#4a463e");R(q,17,0,5,3,"#d03020")}
+ else if(b==="hedge"){for(let i=0;i<7;i++){const x=3+i*4+(i%2),y=40+(i%3);crown(q,x,y-4,3+(i%2),CROWN[sea==="winter"?"summer":sea]||CROWN.summer)}if(sea!=="winter")for(let i=0;i<5;i++)R(q,4+i*6,34,1,1,"#f4f2ec")}
  else if(b==="compost"){for(let y=0;y<10;y++){const hw=12-Math.floor(y*1.1);for(let x=-hw;x<=hw;x++)R(q,16+x,46-y,1,1,hh(x,y,81)<.2?"#46301a":hh(x,y,82)<.15?"#52902a":hh(x,y,83)<.1?"#c89a58":"#664624")}for(const x of [3,28])R(q,x,34,2,13,"#a87a40");R(q,3,34,27,1,"#a87a40")}
  else if(b==="scare"){R(q,15,24,2,22,"#664624");R(q,9,29,14,2,"#664624");R(q,12,27,8,9,"#8a5428");R(q,13,28,6,7,"#a87a40");for(let x=0;x<3;x++)R(q,10+x*5,30,2,4,"#c8aa58");R(q,13,19,6,6,"#e0bc80");R(q,14,21,1,1,"#2a2620");R(q,17,21,1,1,"#2a2620");R(q,11,17,10,2,"#6a5a3a");R(q,13,15,6,2,"#6a5a3a");R(q,16,46,1,1,"#2a2620")}
  else if(b==="pivot"){for(let y=0;y<9;y++)for(let x=-9;x<=9;x++)if(Math.abs(Math.hypot(x,y*2.2)-8)<.6)R(q,16+x,38+y-4,1,1,"#4a6e94");box(q,14,26,4,14,"#9a968a","#6e6a60");for(let x=0;x<14;x++){R(q,17+x,29+(x%4===0?1:0),1,1,"#c4c0b4");if(x%5===2){R(q,17+x,30,1,8,"#9a968a");R(q,16+x,38,3,2,"#2a2620")}}R(q,15,24,2,2,"#d03020")}
