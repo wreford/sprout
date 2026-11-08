@@ -154,7 +154,13 @@ function stepWorm(w){w.t++;w.ph+=.18;
   w.x=nx;if(!solid(w.x,w.y+1)){let d=1;while(d<=4&&!solid(w.x,w.y+d))d++;if(d<=4)w.y+=d-1;else{w.st="fall";w.fall=0}}
   break}
  case "fall":{const v=w.floater&&w.fall>18?1.3:Math.min(4,1+w.fall*.08);let landed=false;for(let s=0;s<v;s++){if(solid(w.x,w.y+1)){landed=true;break}w.y+=1;w.fall+=1}
-  if(landed||solid(w.x,w.y+1)){if(w.fall>95&&!w.floater){w.st="splat";w.t=0;sfx("splat");return}w.st="walk";if(w.fall>20)sfx("land")}break}
+  if(landed||solid(w.x,w.y+1)){if(w.fall>95&&!w.floater){w.st="splat";w.t=0;sfx("splat");return}
+   // springy: a real drop bounces once, the classic elastic boing
+   if(w.fall>26&&!w.floater&&!w.hopped){w.hopped=1;w.st="hop";w.vy=-Math.min(3,w.fall*.035);w.vx=w.dir*.55;w.apex=w.y;w.squash=Math.min(1,w.fall/70);sfx("boing");return}
+   w.st="walk";w.hopped=0;if(w.fall>8)w.squash=Math.min(.5,w.fall/40);if(w.fall>20)sfx("land")}break}
+ case "hop":{w.vy+=.22;const nx=w.x+w.vx;if(solid(nx,w.y-4))w.vx=0;else w.x=nx;if(w.vy<0&&solid(w.x,w.y-14))w.vy=0;
+  for(let s=0;s<Math.ceil(Math.abs(w.vy));s++){const d=Math.sign(w.vy);if(d>0&&solid(w.x,w.y+1)){w.y=Math.round(w.y);while(solid(w.x,w.y))w.y--;while(w.y<H&&!solid(w.x,w.y+1))w.y++;if(w.y-w.apex>95){w.st="splat";w.t=0;sfx("splat");return}w.st="walk";w.hopped=0;w.squash=.4;return}w.y+=d*Math.min(1,Math.abs(w.vy)-s);if(w.y<w.apex)w.apex=w.y}
+  break}
  case "climb":{if(solid(w.x,w.y-14)||w.y<16){w.dir*=-1;w.st="fall";w.fall=0;w.x+=w.dir*2;return}w.y-=.7;if(!solid(w.x+w.dir*2,w.y-2)&&!solid(w.x+w.dir*2,w.y-6)){w.x+=w.dir*3;w.y-=3;w.st="walk"}break}
  case "dig":{if(w.t%5===0){if(!solid(w.x,w.y+1)&&!solid(w.x,w.y+3)){w.st="fall";w.fall=0;return}const r=carveRect(w.x-5,w.y-3,w.x+5,w.y+1);if(r.rock&&!r.any){w.st="walk";sfx("clank");return}w.y+=1;if(w.t%10===0)sfx("dig")}break}
  case "bash":{if(w.t%3===0){const ahead=[...Array(14).keys()].some(i=>solid(w.x+w.dir*(i+2),w.y-5));if(!ahead){w.st="walk";return}const r=carveRect(w.x+w.dir*1,w.y-11,w.x+w.dir*8,w.y-1);if(r.rock&&kind(w.x+w.dir*5,w.y-5)===2){w.st="walk";w.dir*=-1;sfx("clank");return}w.x+=w.dir*.9;if(!solid(w.x,w.y+1)&&!solid(w.x,w.y+2)){w.st="fall";w.fall=0}if(w.t%9===0)sfx("dig")}break}
@@ -164,8 +170,18 @@ function stepWorm(w){w.t++;w.ph+=.18;
  case "exit":if(w.t>24){w.done=1;G.saved++;fxBurst(w.x,w.y-8,"#ffd34a",10)}break;
  case "splat":if(w.t>30)kill(w,"splat");break;
  case "drown":w.y+=.4;if(w.t>40)kill(w,"drown");break;}}
+const SOFT={k:.2,damp:.84,grav:.22};
+function softStep(w){const pts=wormShape(w),n=pts.length;const tight=w.st==="exit"||w.st==="splat"||w.st==="drown"||w.st==="dig"||w.st==="climb";
+ if(!w.b){w.b=pts.map(([x,y])=>{const X=w.x+x*w.dir,Y=w.y+y;return {x:X,y:Y,px:X,py:Y}})}
+ for(let i=0;i<n;i++){const q=w.b[i],tx=w.x+pts[i][0]*w.dir,ty=w.y+pts[i][1];let vx=(q.x-q.px)*SOFT.damp,vy=(q.y-q.py)*SOFT.damp+SOFT.grav;q.px=q.x;q.py=q.y;q.x+=vx;q.y+=vy;
+  const k=tight?.6:(i===n-1?.42:SOFT.k);q.x+=(tx-q.x)*k;q.y+=(ty-q.y)*k;
+  if(w.squash>0&&!tight){q.y+=w.squash*2.2*Math.sin(i/(n-1)*Math.PI);q.x+=(i-(n-1)/2)*w.squash*.7*w.dir}}
+ for(let it=0;it<2;it++)for(let i=0;i<n-1;i++){const a=w.b[i],b=w.b[i+1];const rx=pts[i+1][0]-pts[i][0],ry=pts[i+1][1]-pts[i][1],rest=Math.hypot(rx,ry)||1;const dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy)||1;const f=(d-rest)/d*.25;a.x+=dx*f;a.y+=dy*f;b.x-=dx*f;b.y-=dy*f}
+ if(!tight)for(const q of w.b){let k=0;while(k<4&&solid(q.x,q.y+1.5)){q.y-=1;k++}if(k)q.py=q.y+(q.py-q.y)*-.3}
+ if(w.squash>0)w.squash=Math.max(0,w.squash-.08)}
+function shove(x,y,r,pow){for(const w of G.worms){if(w.done||!w.b)continue;for(const q of w.b){const dx=q.x-x,dy=q.y-y,d=Math.hypot(dx,dy);if(d<r&&d>0){const f=pow*(1-d/r);q.px-=dx/d*f;q.py-=dy/d*f+f*.5}}}}
 function kill(w,why){w.done=1;G.dead++;G.why=G.why||{};G.why[why]=(G.why[why]||0)+1;if(why!=="lost")fxBurst(w.x,w.y-4,"#ff8fb1",8)}
-function explode(w){carve(w.x,w.y-6,16,(x,y)=>Math.hypot(x-w.x,y-(w.y-6))<=16);fxBurst(w.x,w.y-6,"#ffb347",22);fxRing(w.x,w.y-6);sfx("pop");w.done=1;G.dead++}
+function explode(w){shove(w.x,w.y-6,60,5);carve(w.x,w.y-6,16,(x,y)=>Math.hypot(x-w.x,y-(w.y-6))<=16);fxBurst(w.x,w.y-6,"#ffb347",22);fxRing(w.x,w.y-6);sfx("pop");w.done=1;G.dead++}
 function assign(w,s){if(!s||!G.k[s]||w.st==="exit"||w.st==="splat"||w.st==="drown"||w.done)return false;
  if(s==="climb"){if(w.climber)return false;w.climber=true}
  else if(s==="float"){if(w.floater)return false;w.floater=true}
@@ -219,7 +235,7 @@ function wormShape(w){const L=16,n=7,pts=[];const st=w.st,ph=w.ph;
 function wormSVG(w){let g=w.svg;if(!g){g=el("g",{},wormLayer);w.svg=g;g._body=el("path",{fill:"none",stroke:"#b03a60","stroke-width":7.5,"stroke-linecap":"round","stroke-linejoin":"round"},g);g._fill=el("path",{fill:"none",stroke:"url(#wbody)","stroke-width":5.5,"stroke-linecap":"round","stroke-linejoin":"round"},g);
   g._band=el("circle",{r:3.1,fill:"#ff5a88",stroke:"#b03a60","stroke-width":.8},g);g._eyes=el("g",{},g);el("circle",{cx:-1.6,cy:0,r:2.1,fill:"#fff",stroke:"#5a1a30","stroke-width":.5},g._eyes);el("circle",{cx:1.8,cy:0,r:2.1,fill:"#fff",stroke:"#5a1a30","stroke-width":.5},g._eyes);g._p1=el("circle",{cx:-1.2,cy:.3,r:1,fill:"#2a1020"},g._eyes);g._p2=el("circle",{cx:2.2,cy:.3,r:1,fill:"#2a1020"},g._eyes);
   g._prop=el("g",{},g);g._num=el("text",{"text-anchor":"middle","font-size":9,"font-weight":900,fill:"#fff",stroke:"#2a0a1a","stroke-width":2.2,"paint-order":"stroke"},g)}
- const pts=wormShape(w);const d=svgPath(pts,false);g._body.setAttribute("d",d);g._fill.setAttribute("d",d);
+ const pts=w.b?w.b.map(q=>[(q.x-w.x)*w.dir,q.y-w.y]):wormShape(w);const d=svgPath(pts,false);g._body.setAttribute("d",d);g._fill.setAttribute("d",d);
  const head=w.st==="dig"?pts[0]:pts[pts.length-1],mid=pts[Math.floor(pts.length*.35)];g._band.setAttribute("cx",mid[0]);g._band.setAttribute("cy",mid[1]);
  g._eyes.setAttribute("transform",`translate(${head[0]+(w.st==="climb"?0:1)} ${head[1]-2.5})`);const look=w.st==="block"?0:.5;g._p1.setAttribute("cx",-1.6+look);g._p2.setAttribute("cx",1.8+look);
  g.setAttribute("transform",`translate(${w.x.toFixed(1)} ${w.y.toFixed(1)}) scale(${w.dir} 1)`);g.setAttribute("opacity",w.st==="drown"?Math.max(0,1-w.t/40):1);
@@ -235,6 +251,7 @@ function wormSVG(w){let g=w.svg;if(!g){g=el("g",{},wormLayer);w.svg=g;g._body=el
 function tick(){if(!G||G.over)return;G.t++;G.timeLeft--;
  if(!G.nuke&&G.spawned<G.L.N){G.nextSpawn--;if(G.nextSpawn<=0){spawn();G.nextSpawn=Math.round(10+(99-G.rate)*.9)}}
  for(const w of G.worms)if(!w.done)stepWorm(w);
+ for(const w of G.worms)if(!w.done)softStep(w);
  for(const w of G.worms)if(w.done&&w.svg){w.svg.remove();w.svg=null}
  G.worms=G.worms.filter(w=>!w.done||w.keep);
  for(const f of G.fx){f.t++;if(!f.ring){f.x+=f.vx;f.y+=f.vy;f.vy+=.2}}G.fx=G.fx.filter(f=>f.t<f.life);
@@ -277,8 +294,8 @@ function buildBar(){const b=$("bar");b.innerHTML=`<button class="sk ctl" id="rm"
 let ptr=null,hoverPt=null;
 function viewW(){return $("stage").clientWidth}
 function sizeWorld(){const st=$("stage");SC=Math.max(.4,st.clientHeight/H);if(W*SC<st.clientWidth)SC=st.clientWidth/W;const k=Math.min(3,SC*(devicePixelRatio||1));TR=k;tc.width=Math.round(W*k);tc.height=Math.round(H*k);const w=$("world");w.style.width=W+"px";w.style.height=H+"px";placeWorld()}
-function placeWorld(){camX=clamp(camX,0,Math.max(0,W-viewW()/SC));const st=$("stage");const oy=st.clientHeight-H*SC;$("world").style.transform=`translate(${-camX*SC}px,${Math.max(0,oy)}px) scale(${SC})`}
-function toWorld(cx,cy){const r=$("stage").getBoundingClientRect();const oy=Math.max(0,r.height-H*SC);return [(cx-r.left)/SC+camX,(cy-r.top-oy)/SC]}
+function placeWorld(){camX=clamp(camX,0,Math.max(0,W-viewW()/SC));const st=$("stage");const oy=st.clientHeight-H*SC;$("world").style.transform=`translate(${-camX*SC}px,${oy}px) scale(${SC})`}
+function toWorld(cx,cy){const r=$("stage").getBoundingClientRect();const oy=r.height-H*SC;return [(cx-r.left)/SC+camX,(cy-r.top-oy)/SC]}
 function hoverWorm(){if(!hoverPt||!G)return null;const [x,y]=hoverPt;let best=null,bd=1e9;for(const w of G.worms){if(w.done)continue;const d=Math.hypot(w.x-x,(w.y-8)-y);if(d<bd){bd=d;best=w}}return bd<22/Math.min(1.2,SC)?best:null}
 const st=$("stage");
 st.addEventListener("pointerdown",e=>{audioInit();ptr={x:e.clientX,y:e.clientY,cx:camX,moved:false,id:e.pointerId};st.setPointerCapture(e.pointerId);hoverPt=toWorld(e.clientX,e.clientY)});
@@ -294,7 +311,7 @@ function beep(f,d,type,v){if(!AC)return;const o=AC.createOscillator(),g=AC.creat
 function slide(f1,f2,d,type,v){if(!AC)return;const o=AC.createOscillator(),g=AC.createGain();o.type=type||"sine";o.frequency.setValueAtTime(f1,AC.currentTime);o.frequency.exponentialRampToValueAtTime(f2,AC.currentTime+d);g.gain.value=v||.08;g.gain.exponentialRampToValueAtTime(.0001,AC.currentTime+d);o.connect(g);g.connect(AC.destination);o.start();o.stop(AC.currentTime+d)}
 function noise(d,v){if(!AC)return;const b=AC.createBuffer(1,AC.sampleRate*d,AC.sampleRate),a=b.getChannelData(0);for(let i=0;i<a.length;i++)a[i]=(rnd()*2-1)*(1-i/a.length);const s=AC.createBufferSource(),g=AC.createGain();s.buffer=b;g.gain.value=v||.1;s.connect(g);g.connect(AC.destination);s.start()}
 function sfx(k){if(speed>1&&(k==="dig"||k==="brick"))return;({assign:()=>slide(500,900,.12,"triangle",.07),dig:()=>noise(.06,.04),brick:()=>beep(700+rnd()*200,.05,"square",.03),tick:()=>beep(1200,.03,"square",.03),shrug:()=>slide(400,250,.2,"triangle",.06),clank:()=>beep(180,.12,"square",.07),
- pop:()=>{noise(.25,.2);slide(300,60,.3,"sawtooth",.08)},splat:()=>{noise(.15,.1);slide(300,80,.15,"sine",.1)},land:()=>slide(200,120,.06,"sine",.05),splash:()=>noise(.3,.08),yay:()=>{slide(600,1200,.15,"triangle",.07)},
+ pop:()=>{noise(.25,.2);slide(300,60,.3,"sawtooth",.08)},splat:()=>{noise(.15,.1);slide(300,80,.15,"sine",.1)},land:()=>slide(200,120,.06,"sine",.05),boing:()=>{slide(120,520,.12,"sine",.08);setTimeout(()=>slide(500,180,.14,"sine",.05),90)},splash:()=>noise(.3,.08),yay:()=>{slide(600,1200,.15,"triangle",.07)},
  win:()=>[523,659,784,1046].forEach((f,i)=>setTimeout(()=>beep(f,.18,"triangle",.09),i*120)),lose:()=>[392,330,262].forEach((f,i)=>setTimeout(()=>beep(f,.25,"triangle",.08),i*180))})[k]?.()}
 // ---------------------------------------------------------------- menu
 const TITLE="ELASTOWORMIA";
