@@ -395,6 +395,20 @@ function setTool(id){const T0=TOOLS.find(x=>x.id===id);if(T0&&T0.panel)return PA
 function subHint(){if(tool==="plant"){const C=CROPS[subSel.plant];return `${C.n}: $${C.seed} seed. Sow in ${C.plant.map(m=>MON[m]).join(", ")}. ${C.d}`}if(tool==="build"){const B=BLD[subSel.build];return `${B.n}: ${fmt(B.cost)}. ${B.d}`}if(tool==="care"){const C=CARE[subSel.care];return `${C.n}: $${C.cost} a hex. ${C.d}.`}
  if(tool==="plan")return subSel.plan==="none"?"Tap planned hexes to clear their plan.":`Plan ${CROPS[subSel.plan].n}: your hands plow, sow in season, harvest and replant on their own.`;return ""}
 function hint(t){$("hint").textContent=t||""}
+function toolHint(){const T0=TOOLS.find(x=>x.id===tool);return T0?(T0.sub?subHint():T0.h):""}
+// the status bar reads out whatever the mouse is over, like an old sim's info line
+function hoverInfo(){const t=hov;if(!t||!G)return hint(toolHint());const bits=[tileName(t)];
+ bits.push(t.t==="town"?"Town":t.own?"Yours":"For sale "+fmt(landValue(t)));
+ if(t.crop){const C=CROPS[t.crop.id];bits.push(t.crop.dead?C.n+": dead":t.crop.ripe?C.n+": ripe":`${C.n}: ${Math.round(Math.min(1,t.crop.d/C.grow)*100)}% grown`)}
+ if(t.t==="field"||t.t==="grass")bits.push(`Nitrogen ${Math.round(t.nit)}`);if(t.t==="field"&&(t.weeds>.2||t.pests>.2))bits.push(t.pests>t.weeds?"Pests!":"Weeds!");
+ if(t.own&&t.t!=="water"&&irrigated(t))bits.push("Irrigated");if(t.job)bits.push("Work under way");
+ const v=canApply(t);if(v!==null)bits.push(v?"✓ "+(TOOLS.find(x=>x.id===tool)||{}).n:"✗ can't "+((TOOLS.find(x=>x.id===tool)||{}).n||"").toLowerCase()+" here");
+ hint(bits.join(" · "))}
+// can the current tool act on this hex? (null when the tool doesn't place anything)
+function canApply(t){if(!t)return null;if(tool==="buy")return !t.own&&t.t!=="town"&&nbs(t.c,t.r).some(([a,b])=>T(a,b).own);if(!["plow","plant","build","fence","clear","plan"].includes(tool))return null;if(!t.own||t.job)return false;
+ if(tool==="plow"||tool==="fence")return t.t==="grass";if(tool==="clear")return t.t==="forest"||t.t==="rocks";if(tool==="plan")return t.t==="grass"||t.t==="field";
+ if(tool==="plant"){const C=CROPS[subSel.plant];return t.t==="field"&&!t.crop&&C.plant.includes(G.month)&&(!C.wet||irrigated(t))}
+ if(tool==="build"){const B=BLD[subSel.build];return t.t==="grass"&&G.cash>=B.cost&&!(B.town&&G.town.lv<B.town)}return null}
 function buildBar(){const b=$("bar");b.innerHTML=TOOLS.map(t=>`<button class="tb ${tool===t.id?"on":""} ${t.sep?"sep":""}" data-t="${t.id}"><img src="${t.i}" alt="">${t.n}</button>`).join("");b.querySelectorAll(".tb").forEach(x=>x.onclick=()=>{sfx("gold",.15);setTool(x.dataset.t)})}
 function buildSub(){const s=$("sub");
  if(tool==="plant"||tool==="plan"){const list=Object.entries(CROPS).map(([id,C])=>{const can=C.plant.includes(G.month);return `<button class="sb ${subSel[tool]===id?"on":""} ${tool==="plant"&&!can?"off":""}" data-k="${id}"><img src="${C.icon}" alt=""><b>${C.n}</b><small>$${C.seed} · ${can?"sow now":C.plant.map(m=>MON[m]).join(" ")}</small></button>`});if(tool==="plan")list.unshift(`<button class="sb ${subSel.plan==="none"?"on":""}" data-k="none"><img src="${P.dirt}" alt=""><b>No plan</b><small>clear it</small></button>`);s.innerHTML=list.join("")}
@@ -561,6 +575,7 @@ function draw(now){g=lg;const sx=LW/VW,sy=LH/VH;g.setTransform(1,0,0,1,0,0);g.fi
  g.strokeStyle="rgba(255,226,140,.55)";g.lineWidth=2;for(let r=r0;r<=r1;r++)for(let c=c0;c<=c1;c++){const t=T(c,r);if(!t.own)continue;const x=c*54,y=r*72+(c%2?36:0);const ne=c%2?[c+1,r]:[c+1,r-1],se=c%2?[c+1,r+1]:[c+1,r],nw=c%2?[c-1,r]:[c-1,r-1],sw=c%2?[c-1,r+1]:[c-1,r];
   for(const [a,b,d,e,[nc,nr]] of [[x+18,y,x+54,y,[c,r-1]],[x+54,y+72,x+18,y+72,[c,r+1]],[x+54,y,x+72,y+36,ne],[x+72,y+36,x+54,y+72,se],[x+18,y,x,y+36,nw],[x,y+36,x+18,y+72,sw]]){const n=nc>=0&&nc<COLS&&nr>=0&&nr<ROWS?T(nc,nr):null;if(!n||!n.own){g.beginPath();g.moveTo(a,b);g.lineTo(d,e);g.stroke()}}}
  later.sort((a,b)=>a[2]-b[2]);for(const [t,x,y] of later)t.t==="town"?drawTown(t,x,y,win):drawBld(t,x,y,now,win);
+ if(hov&&(tool==="build"||tool==="plant")&&canApply(hov)){const x=hov.c*54,y=hov.r*72+(hov.c%2?36:0);g.save();g.globalAlpha=.8+Math.sin(now/200)*.15;if(tool==="build")drawBld({b:subSel.build,c:hov.c,r:hov.r},x,y,now,win);else{const im=img(CROPS[subSel.plant].icon);if(ok(im))g.drawImage(im,x+20,y+18,32,32)}g.restore()}
  for(const t of G.map)if(t.burn){const x=t.c*54,y=t.r*72+(t.c%2?36:0);const im=img(P.fire(Math.floor(now/90+t.c)%8));if(ok(im))g.drawImage(im,x,y,72,72)}
  for(const j of G.jobs){const [x,y]=cen(j.c,j.r);const ic={clearF:P.axe,clearR:P.axe,plow:P.plow,plant:CROPS[j.crop]?CROPS[j.crop].icon:P.sheaf,harvestG:P.sheaf,harvestH:P.bale,harvestP:P.box,pick:P.bale,build:P.hammer,fert:P.herbs,herb:P.potion,pest:P.potion,fence:P.box}[j.k];const im=img(ic);g.globalAlpha=.9;if(ok(im))g.drawImage(im,x-11,y-30,22,22);g.globalAlpha=1;if(j.done>0){g.fillStyle="rgba(0,0,0,.6)";g.fillRect(x-16,y+24,32,5);g.fillStyle="#7ad05a";g.fillRect(x-15,y+25,30*Math.min(1,j.done/j.work),3)}}
  drawHerd(now);if(G.staff){const ks=Object.keys(G.staff).filter(k=>G.staff[k]);const [hx,hy]=cen(...G.home);ks.forEach((k,i)=>{const im=img(P.OG(STAFF[k].img));if(ok(im)){const a=-1.2+i*.5,px=hx+Math.cos(a)*44,py=hy+30+Math.sin(a)*10;g.fillStyle="rgba(0,0,0,.3)";g.beginPath();g.ellipse(px,py+8,7,2.5,0,0,7);g.fill();g.drawImage(im,px-10,py-12+Math.abs(Math.sin(now/400+i))*1.5,20,20)}})}
@@ -574,7 +589,7 @@ function draw(now){g=lg;const sx=LW/VW,sy=LH/VH;g.setTransform(1,0,0,1,0,0);g.fi
  quantize(lg,LW,LH,Math.round(cam.x*cam.z*sx),Math.round(cam.y*cam.z*sy),true);g=cvg;g.setTransform(1,0,0,1,0,0);g.imageSmoothingEnabled=false;g.drawImage(lo,0,0,cv.width,cv.height);g.setTransform(DPR*cam.z,0,0,DPR*cam.z,-cam.x*cam.z*DPR,-cam.y*cam.z*DPR);
  for(const f of FLOATS){g.globalAlpha=Math.max(0,1-f.life/1800);g.font="700 14px Tahoma,system-ui";g.textAlign="center";g.lineWidth=3;g.strokeStyle="#000";g.strokeText(f.t,f.x,f.y-f.life/40);g.fillStyle=f.col;g.fillText(f.t,f.x,f.y-f.life/40);g.globalAlpha=1}
  for(const tp of TAPS){g.strokeStyle=`rgba(255,240,180,${1-tp.life/400})`;g.lineWidth=3;g.beginPath();g.arc(tp.x,tp.y,10+tp.life/12,0,7);g.stroke()}
- if(hov){const x=hov.c*54,y=hov.r*72+(hov.c%2?36:0);g.strokeStyle="rgba(255,211,74,.95)";g.lineWidth=2.5;hexPath(x,y);g.stroke()}
+ if(hov){const x=hov.c*54,y=hov.r*72+(hov.c%2?36:0),v=canApply(hov);g.strokeStyle=v===null?"rgba(255,211,74,.95)":v?"rgba(120,255,110,.95)":"rgba(255,80,60,.95)";g.lineWidth=2.5;hexPath(x,y);g.stroke();if(v!==null){g.fillStyle=v?"rgba(120,255,110,.16)":"rgba(255,80,60,.16)";g.fill()}}
 }
 function drawField(t,x,y,now){draw1(P.plow,x,y);const k=t.crop;if(!k){if(t.weeds>.3){g.fillStyle=`rgba(110,140,50,${t.weeds*.6})`;for(let i=0;i<12;i++)g.fillRect(x+10+(i*29)%52,y+12+(i*17)%48,3,3)}return}g.save();hexPath(x,y);g.clip();const C=CROPS[k.id],f=Math.min(1,k.d/C.grow);
  if(k.dead){g.strokeStyle="#6a5232";g.lineWidth=2;for(let i=0;i<6;i++){g.beginPath();g.moveTo(x+8+i*11,y+60);g.lineTo(x+14+i*11,y+50);g.stroke()}g.restore();return}
@@ -643,9 +658,9 @@ cv.addEventListener("pointermove",e=>{if(ptr.has(e.pointerId))ptr.set(e.pointerI
  if(drag){const dx=e.clientX-drag.x,dy=e.clientY-drag.y;if(Math.hypot(dx,dy)>(drag.touch?14:6))drag.moved=true;
   if(paint&&tool!=="look"){const t=tileAt(...worldAt(e.clientX,e.clientY));if(t&&!drag.painted.has(t)){drag.painted.add(t);applyTool(t,true)}hov=t;dirty=1}
   else if(drag.moved){cam.x=drag.cx-dx/cam.z;cam.y=drag.cy-dy/cam.z;clampCam();dirty=1}}
- else if(e.pointerType==="mouse"){hov=tileAt(...worldAt(e.clientX,e.clientY));dirty=1}});
+ else if(e.pointerType==="mouse"){const h=tileAt(...worldAt(e.clientX,e.clientY));if(h!==hov){hov=h;hoverInfo()}dirty=1}});
 const up=e=>{ptr.delete(e.pointerId);if(ptr.size<2)pinch=null;if(drag&&!drag.moved&&!(paint&&tool!=="look")){const t=tileAt(...worldAt(drag.x,drag.y));if(t){hov=t;tapFx(t);applyTool(t,false)}}if(ptr.size===0)drag=null;dirty=1};
-cv.addEventListener("pointerup",up);cv.addEventListener("pointercancel",up);
+cv.addEventListener("pointerup",up);cv.addEventListener("pointerleave",e=>{if(e.pointerType==="mouse"){hov=null;hoverInfo();dirty=1}});cv.addEventListener("pointercancel",up);
 cv.addEventListener("wheel",e=>{e.preventDefault();zoomAt(e.clientX,e.clientY,clamp(cam.z*(e.deltaY<0?1.12:.89),.35,2.5))},{passive:false});
 function zoomAt(cx,cy,z){const [wx,wy]=worldAt(cx,cy);cam.z=z;const r=cv.getBoundingClientRect();cam.x=wx-(cx-r.left)/z;cam.y=wy-(cy-r.top)/z;clampCam();dirty=1}
 $("zin").onclick=()=>{const r=cv.getBoundingClientRect();zoomAt(r.left+VW/2,r.top+VH/2,clamp(cam.z*1.25,.35,2.5))};$("zout").onclick=()=>{const r=cv.getBoundingClientRect();zoomAt(r.left+VW/2,r.top+VH/2,clamp(cam.z/1.25,.35,2.5))};
