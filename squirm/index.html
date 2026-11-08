@@ -50,6 +50,7 @@ p{font:600 15px/1.45 Arial,system-ui;color:#f4f0e0;margin:6px 0}
 @keyframes wob{0%,100%{transform:rotate(-3deg) scale(1)}50%{transform:rotate(3deg) scale(1.04)}}
 .logo .l{display:inline-block;animation:wob 1.6s ease-in-out infinite}
 #bar{justify-content:safe center}
+#zb{position:absolute;right:8px;bottom:8px;z-index:3;display:flex;flex-direction:column;gap:4px}#zb button{width:38px;height:38px;border:2px solid #000;outline:1px solid #6a5a30;background:#141414;color:var(--gold);font:900 22px Arial;cursor:pointer;border-radius:3px}
 #osd{position:absolute;left:10px;top:6px;z-index:3;pointer-events:none;display:flex;flex-direction:column;gap:0;font:italic 900 34px/1 Georgia,"Times New Roman",serif;color:#fff;text-shadow:2px 0 #000,-2px 0 #000,0 2px #000,0 -2px #000,2px 2px #000,3px 3px 0 #000}
 #osd span{font-size:22px;color:#ff5040}#osd span::before{content:"";display:inline-block;width:16px;height:16px;margin-right:6px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#ff9a8a,#c81828 70%);box-shadow:0 0 0 2px #000;vertical-align:-1px}
 #osd.low b{color:#ff5040}
@@ -64,7 +65,7 @@ p{font:600 15px/1.45 Arial,system-ui;color:#f4f0e0;margin:6px 0}
 <body>
 <div id="app">
  <div id="top"><b>Squirmers</b><span class="pill" id="lvN"></span><span class="sp"></span><span class="pill" id="out">Out 0</span><span class="pill" id="home">Saved 0%</span></div>
- <div id="stage"><svg id="bg" preserveAspectRatio="xMidYMax slice" viewBox="0 0 960 540"></svg><div id="world"><canvas id="terr" width="960" height="540"></canvas><svg id="svg" viewBox="0 0 960 540"></svg></div><div id="msg"></div><div id="osd"><b id="time">5:00</b><span id="apl">0/0</span></div><canvas id="mini" width="192" height="108"></canvas></div>
+ <div id="stage"><svg id="bg" preserveAspectRatio="xMidYMax slice" viewBox="0 0 960 540"></svg><div id="world"><canvas id="terr" width="960" height="540"></canvas><svg id="svg" viewBox="0 0 960 540"></svg></div><div id="msg"></div><div id="zb"><button id="zIn" aria-label="Zoom in">+</button><button id="zOut" aria-label="Zoom out">−</button></div><div id="osd"><b id="time">5:00</b><span id="apl">0/0</span></div><canvas id="mini" width="192" height="108"></canvas></div>
  <div id="bar"></div>
 </div>
 <div id="modal" hidden></div>
@@ -155,7 +156,7 @@ function startLevel(i){const L=LEVELS[i];buildMask(L);lowImg=null;sizeWorld();pa
  const springs=(L.spr||[]).map(([x,vx,vy])=>{let y=0;while(y<H-1&&!solid(x,y))y++;return {x,y,vx,vy,t:0}});
  const killers=(L.kill||[]).map(([x,y,orb,sp])=>({cx:x,cy:y,x,y,orb:orb||0,sp:sp||0,a:0}));
  G={apples,killers,springs,ate:0,i,L,worms:[],spawned:0,saved:0,dead:0,t:0,rate:L.rate,minRate:L.rate,k:{...L.k},nextSpawn:20,over:false,nuke:false,exit:[ex,ey],ent,fx:[],timeLeft:L.time*30};
- sel=SKILLS.find(s=>G.k[s.id])?.id||null;buildScene();buildBar();hud();$("modal").hidden=true;camX=clamp(L.in[0]-viewW()/2/SC,0,Math.max(0,W-viewW()/SC));placeWorld();paused=false;
+ sel=SKILLS.find(s=>G.k[s.id])?.id||null;buildScene();buildBar();hud();$("modal").hidden=true;camY=H;camX=clamp(L.in[0]-viewW()/2/SC,0,Math.max(0,W-viewW()/SC));placeWorld();paused=false;
  msg(L.tip,4000);beep(660,.08,"triangle");setTimeout(()=>beep(880,.1,"triangle"),120)}
 // ---------------------------------------------------------------- worms
 let UID=1;
@@ -326,24 +327,33 @@ function buildBar(){const b=$("bar");b.innerHTML=SKILLS.map(s=>`<button class="s
 // ---------------------------------------------------------------- input: tap a worm to give it the chosen skill, drag to look around
 let ptr=null,hoverPt=null;
 function viewW(){return $("stage").clientWidth}
-function sizeWorld(){const st=$("stage");setTimeout(miniSize,0);SC=Math.max(.4,st.clientHeight/H);if(W*SC<st.clientWidth)SC=st.clientWidth/W;const k=Math.min(3,SC*(devicePixelRatio||1));TR=k;tc.width=Math.round(W*k);tc.height=Math.round(H*k);const w=$("world");w.style.width=W+"px";w.style.height=H+"px";placeWorld()}
-function placeWorld(){camX=clamp(camX,0,Math.max(0,W-viewW()/SC));const st=$("stage");const oy=st.clientHeight-H*SC;$("world").style.transform=`translate(${-camX*SC}px,${oy}px) scale(${SC})`}
-function toWorld(cx,cy){const r=$("stage").getBoundingClientRect();const oy=r.height-H*SC;return [(cx-r.left)/SC+camX,(cy-r.top-oy)/SC]}
+let ZM=1,camY=H,baseSC=1;
+function sizeWorld(){const st=$("stage");setTimeout(miniSize,0);baseSC=Math.max(.3,st.clientHeight/H);if(W*baseSC<st.clientWidth)baseSC=st.clientWidth/W;const fitSC=Math.min(st.clientWidth/W,st.clientHeight/H);ZM=clamp(ZM,Math.min(1,fitSC/baseSC),2.4);SC=baseSC*ZM;
+ const k=Math.min(3,SC*(devicePixelRatio||1));if(Math.abs(k-TR)>.01||!tc.width){TR=k;tc.width=Math.round(W*k);tc.height=Math.round(H*k);redrawTerr()}const w=$("world");w.style.width=W+"px";w.style.height=H+"px";placeWorld()}
+function redrawTerr(){if(!lowImg)return;tg.setTransform(TR,0,0,TR,0,0);tg.clearRect(0,0,W,H);tg.imageSmoothingEnabled=true;tg.drawImage(low,0,0);tg.setTransform(1,0,0,1,0,0)}
+function placeWorld(){const st=$("stage"),vw=st.clientWidth/SC,vh=st.clientHeight/SC;camX=W>vw?clamp(camX,0,W-vw):-(vw-W)/2;camY=H>vh?clamp(camY,0,H-vh):-(vh-H);$("world").style.transform=`translate(${-camX*SC}px,${-camY*SC}px) scale(${SC})`}
+function zoomAt(cx,cy,z){const [wx,wy]=toWorld(cx,cy);ZM=z;sizeWorld();const r=$("stage").getBoundingClientRect();camX=wx-(cx-r.left)/SC;camY=wy-(cy-r.top)/SC;placeWorld();drawMini(true)}
+function toWorld(cx,cy){const r=$("stage").getBoundingClientRect();return [(cx-r.left)/SC+camX,(cy-r.top)/SC+camY]}
 function hoverWorm(){if(!hoverPt||!G)return null;const [x,y]=hoverPt;let best=null,bd=1e9;for(const w of G.worms){if(w.done)continue;const d=Math.hypot(w.x-x,(w.y-8)-y);if(d<bd){bd=d;best=w}}return bd<22/Math.min(1.2,SC)?best:null}
 const st=$("stage");
-st.addEventListener("pointerdown",e=>{audioInit();ptr={x:e.clientX,y:e.clientY,cx:camX,moved:false,id:e.pointerId};st.setPointerCapture(e.pointerId);hoverPt=toWorld(e.clientX,e.clientY)});
-st.addEventListener("pointermove",e=>{hoverPt=toWorld(e.clientX,e.clientY);if(ptr&&ptr.id===e.pointerId){const dx=e.clientX-ptr.x;if(Math.abs(dx)>12)ptr.moved=true;if(ptr.moved){camX=ptr.cx-dx/SC;placeWorld()}}});
-st.addEventListener("pointerup",e=>{if(ptr&&!ptr.moved&&G&&!G.over){hoverPt=toWorld(ptr.x,ptr.y);const w=hoverWorm();if(w){if(!sel||!G.k[sel])msg("Pick a skill with some left first.",1400);else if(!assign(w,sel))beep(160,.08,"sawtooth")}}if(e.pointerType!=="mouse")hoverPt=null;ptr=null});
-st.addEventListener("wheel",e=>{camX+=(e.deltaX||e.deltaY)/SC;placeWorld();e.preventDefault()},{passive:false});
-addEventListener("resize",()=>{if(!G)return;sizeWorld();lowImg=null;paintTerrain(0,0,W,H)});
-addEventListener("keydown",e=>{if(!G)return;const k=e.key;const i="1234567".indexOf(k);if(i>=0){sel=SKILLS[i].id;buildBar()}if(k===" "){paused=!paused;buildBar();e.preventDefault()}if(k==="f")speed=speed>1?1:3;if(k==="r"&&!e.metaKey&&!e.ctrlKey)startLevel(G.i);if(k==="ArrowLeft"){camX-=40;placeWorld()}if(k==="ArrowRight"){camX+=40;placeWorld()}});
+const pts=new Map();let pinch=null;
+st.addEventListener("pointerdown",e=>{audioInit();pts.set(e.pointerId,{x:e.clientX,y:e.clientY});st.setPointerCapture(e.pointerId);if(pts.size===2){const [p1,p2]=[...pts.values()];pinch={d:Math.hypot(p1.x-p2.x,p1.y-p2.y)||1,z:ZM};ptr=null;return}ptr={x:e.clientX,y:e.clientY,cx:camX,cy:camY,moved:false,id:e.pointerId};hoverPt=toWorld(e.clientX,e.clientY)});
+st.addEventListener("pointermove",e=>{if(pts.has(e.pointerId))pts.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pinch&&pts.size===2){const [p1,p2]=[...pts.values()];zoomAt((p1.x+p2.x)/2,(p1.y+p2.y)/2,pinch.z*Math.hypot(p1.x-p2.x,p1.y-p2.y)/pinch.d);return}
+ hoverPt=toWorld(e.clientX,e.clientY);if(ptr&&ptr.id===e.pointerId){const dx=e.clientX-ptr.x,dy=e.clientY-ptr.y;if(Math.hypot(dx,dy)>12)ptr.moved=true;if(ptr.moved){camX=ptr.cx-dx/SC;camY=ptr.cy-dy/SC;placeWorld()}}});
+const pUp=e=>{pts.delete(e.pointerId);if(pts.size<2)pinch=null;if(ptr&&ptr.id===e.pointerId&&!ptr.moved&&G&&!G.over&&e.type==="pointerup"){hoverPt=toWorld(ptr.x,ptr.y);const w=hoverWorm();if(w){if(!sel||!G.k[sel])msg("Pick a skill with some left first.",1400);else if(!assign(w,sel))beep(160,.08,"sawtooth")}}if(e.pointerType!=="mouse")hoverPt=null;if(ptr&&ptr.id===e.pointerId)ptr=null};
+st.addEventListener("pointerup",pUp);st.addEventListener("pointercancel",pUp);
+st.addEventListener("wheel",e=>{e.preventDefault();if(e.ctrlKey){zoomAt(e.clientX,e.clientY,ZM*Math.exp(-e.deltaY*.01));return}camX+=(e.deltaX||(e.shiftKey?0:e.deltaY))/SC;if(e.shiftKey)camY+=e.deltaY/SC;placeWorld()},{passive:false});
+const zStep=f=>{const r=$("stage").getBoundingClientRect();zoomAt(r.left+r.width/2,r.top+r.height/2,ZM*f)};
+addEventListener("resize",()=>{if(!G)return;sizeWorld()});
+addEventListener("keydown",e=>{if(!G)return;const k=e.key;const i="1234567".indexOf(k);if(i>=0){sel=SKILLS[i].id;buildBar()}if(k===" "){paused=!paused;buildBar();e.preventDefault()}if(k==="f")speed=speed>1?1:3;if(k==="r"&&!e.metaKey&&!e.ctrlKey)startLevel(G.i);if(k==="ArrowLeft"){camX-=40;placeWorld()}if(k==="ArrowRight"){camX+=40;placeWorld()}if(k==="ArrowUp"){camY-=40;placeWorld();e.preventDefault()}if(k==="ArrowDown"){camY+=40;placeWorld();e.preventDefault()}if(k==="+"||k==="=")zStep(1.25);if(k==="-")zStep(.8);});
+$("zIn").onclick=e=>{e.stopPropagation();zStep(1.25)};$("zOut").onclick=e=>{e.stopPropagation();zStep(.8)};["pointerdown","pointerup"].forEach(ev=>$("zb").addEventListener(ev,e=>e.stopPropagation()));
 const mini=$("mini"),mq=mini.getContext("2d");let miniImg=null,miniT=0;
 function drawMini(force){if(!G)return;if(!force&&++miniT%4)return;const w=mini.width,h=mini.height,sx=w/W,sy=h/H;
  if(!miniImg||force==="terr"){const im=mq.createImageData(w,h);for(let y=0;y<h;y++)for(let x=0;x<w;x++){const k=mask[Math.floor(y/sy)*W+Math.floor(x/sx)],o=(y*w+x)*4;const c=k===1?[150,118,62]:k===2?[140,140,152]:k===3?[250,214,110]:G.L.w&&y/sy>=G.L.w?[40,90,200]:[90,140,215];im.data[o]=c[0];im.data[o+1]=c[1];im.data[o+2]=c[2];im.data[o+3]=255}miniImg=im}
  mq.putImageData(miniImg,0,0);mq.fillStyle="#fff";mq.fillRect(G.exit[0]*sx-1,G.exit[1]*sy-4,3,4);mq.fillStyle="#ff3a30";for(const a of G.apples)if(!a.got)mq.fillRect(a.x*sx-1,a.y*sy-1,2,2);mq.fillStyle="#ff8fb1";for(const v of G.worms)if(!v.done)mq.fillRect(v.x*sx-1,v.y*sy-2,2,2);
- mq.strokeStyle="#ffe14a";mq.lineWidth=1;const vw=Math.min(W,viewW()/SC),vh=Math.min(H,$("stage").clientHeight/SC);mq.strokeRect(camX*sx+.5,(H-vh)*sy+.5,vw*sx-1,vh*sy-1)}
-function miniSize(){const st=$("stage"),w=Math.round(clamp(st.clientWidth*.22,110,240));mini.width=w;mini.height=Math.round(w*H/W);mini.style.display=W*SC>st.clientWidth+4?"block":"none";miniImg=null}
-mini.addEventListener("pointerdown",e=>{e.stopPropagation();mini.setPointerCapture(e.pointerId);const go=ev=>{const r=mini.getBoundingClientRect();camX=(ev.clientX-r.left)/r.width*W-viewW()/SC/2;placeWorld();drawMini(true)};go(e);mini.onpointermove=go;mini.onpointerup=()=>{mini.onpointermove=null}});
+ mq.strokeStyle="#ffe14a";mq.lineWidth=1;const vw=Math.min(W,viewW()/SC),vh=Math.min(H,$("stage").clientHeight/SC);mq.strokeRect(Math.max(0,camX)*sx+.5,Math.max(0,camY)*sy+.5,vw*sx-1,vh*sy-1)}
+function miniSize(){const st=$("stage"),w=Math.round(clamp(st.clientWidth*.22,110,240));mini.width=w;mini.height=Math.round(w*H/W);mini.style.display=W*SC>st.clientWidth+4||H*SC>st.clientHeight+4?"block":"none";miniImg=null}
+mini.addEventListener("pointerdown",e=>{e.stopPropagation();mini.setPointerCapture(e.pointerId);const go=ev=>{const r=mini.getBoundingClientRect();camX=(ev.clientX-r.left)/r.width*W-viewW()/SC/2;camY=(ev.clientY-r.top)/r.height*H-$("stage").clientHeight/SC/2;placeWorld();drawMini(true)};go(e);mini.onpointermove=go;mini.onpointerup=()=>{mini.onpointermove=null}});
 function msg(t,ms){const m=$("msg");m.textContent=t;m.classList.add("on");clearTimeout(msg.h);msg.h=setTimeout(()=>m.classList.remove("on"),ms||1800)}
 // ---------------------------------------------------------------- sound: little synth blips
 let AC=null;function audioInit(){if(AC)return;try{AC=new (window.AudioContext||window.webkitAudioContext)()}catch(e){}}
