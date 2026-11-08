@@ -414,6 +414,7 @@ function simDay(){weatherDay();const W=G.today,seas=seasonOf(G.month);const et0=
    if(k.d>=C.grow){k.ripe=1;k.rd=0;if(G.auto[key(t.c,t.r)]&&!t.job)addJob(t,jobKind(t))}}
   else{k.rd=(k.rd||0)+1;if(k.rd>30)k.hp=Math.max(0,k.hp-.03);if(k.hp<=0){k.dead=1;k.why="rot"}}}
  {let bl=0;if(W.rain>.4&&W.t>58)for(const t of G.map)if(t.own&&t.crop&&!t.crop.dead&&!t.crop.ripe&&(t.crop.id==="potatoes"||t.crop.id==="tomatoes")&&rnd()<.04){t.crop.hp*=.85;bl++}if(bl&&G.day-(G.blightDay??-99)>8){G.blightDay=G.day;news(`<b>Blight</b> is spreading in warm, wet weather: ${bl} potato or tomato field${bl>1?"s":""} hit. A spell of dry weather stops it.`,"bad")}}
+ if(W.rain>=1)for(const t of G.map)if(t.hill&&t.t==="field"&&!(t.crop&&(t.crop.id==="clover"||t.crop.id==="hay"))){t.fert=Math.max(.5,t.fert-.02);t.nit=Math.max(0,t.nit-2)}
  if(pump>0)spend(pump);
  if(frost){news(`<b>Frost</b> (low of ${tF(W.lo)}) killed ${frost} field${frost>1?"s":""}.`,"bad");insure(frostLost)}
  if(W.rain>=2.4&&(G.day-(G.lastHR||-99)>10||G.lastHR>G.day)){G.lastHR=G.day;news(`Heavy rain: ${W.rain.toFixed(1)} in. Low fields may waterlog.`)}
@@ -530,7 +531,7 @@ const TOOLS=[
  {id:"look",n:"Look",i:P.scroll,h:"Tap any tile to see what's there, with a soil test for fields."},
  {id:"buy",n:"Land",i:P.coins,sub:1},
  {id:"clear",n:"Clear",i:P.axe,h:"Clear woods ($30, gives lumber) or stones ($45)."},
- {id:"plow",n:"Plow",i:P.OG("hoe"),h:"Plow grass into a field: $15."},
+ {id:"plow",n:"Plow",i:P.OG("hoe"),h:"Plow grass into a field: $15. Hillsides cost $45 and wash away in heavy rain unless kept under clover or hay."},
  {id:"plant",n:"Plant",i:P.OG("seed_wheat"),sub:1},
  {id:"plan",n:"Plan",i:P.tablet,sub:1},
  {id:"care",n:"Care",i:P.OG("can"),sub:1},
@@ -569,7 +570,7 @@ function hoverInfo(){const t=hov;if(!t||!G)return hint(toolHint());const bits=[t
  hint(bits.join(" · "))}
 // can the current tool act on this tile? (null when the tool doesn't place anything)
 function canApply(t){if(!t)return null;if(tool==="buy")return !t.own&&t.t!=="town"&&nbs(t.c,t.r).some(([a,b])=>T(a,b).own);if(!["plow","plant","build","fence","clear","plan"].includes(tool))return null;if(!t.own||t.job)return false;
- if(tool==="plow"||tool==="fence")return t.t==="grass";if(tool==="clear")return t.t==="forest"||t.t==="rocks";if(tool==="plan")return t.t==="grass"||t.t==="field";
+ if(tool==="plow")return t.t==="grass"||t.t==="hills";if(tool==="fence")return t.t==="grass";if(tool==="clear")return t.t==="forest"||t.t==="rocks";if(tool==="plan")return t.t==="grass"||t.t==="field";
  if(tool==="plant"){const C=CROPS[subSel.plant];return t.t==="field"&&!t.crop&&C.plant.includes(G.month)&&(!C.wet||irrigated(t))}
  if(tool==="build"){const B=BLD[subSel.build];return t.t==="grass"&&G.cash>=B.cost&&!(B.town&&G.town.lv<B.town)}return null}
 // toolbar icons: 16x16 pixel art drawn in code, the same palette and outline as the map
@@ -619,7 +620,7 @@ function applyTool0(t,quiet){if(!t)return;const own=t.own;
  if(tool==="plan"){const k=key(t.c,t.r);if(subSel.plan==="none"){delete G.auto[k];return after()}if(!(t.t==="grass"||t.t==="field"))return quiet||news("Plan fields on meadow or plowed land.");if(CROPS[subSel.plan].wet&&!irrigated(t))return quiet||news("Rice needs an irrigated field.","bad");G.auto[k]=subSel.plan;autoPlant(t);return after()}
  if(t.job)return quiet||news("Someone is already on it.");
  if(tool==="clear"){if(t.t==="forest"){if(!canAfford(30))return;spend(30);addJob(t,"clearF")}else if(t.t==="rocks"){if(!canAfford(45))return;spend(45);addJob(t,"clearR")}else return quiet||news("Nothing to clear there.");return after()}
- if(tool==="plow"){if(t.t!=="grass")return quiet||news(t.t==="field"?"Already plowed.":"Clear it first, then plow.");if(!canAfford(15))return;spend(15);acct(t,15);addJob(t,"plow");return after()}
+ if(tool==="plow"){if(t.t!=="grass"&&t.t!=="hills")return quiet||news(t.t==="field"?"Already plowed.":"Clear it first, then plow.");const pc=t.t==="hills"?45:15;if(!canAfford(pc))return;spend(pc);acct(t,pc);if(t.t==="hills")t.hill=1;addJob(t,"plow");return after()}
  if(tool==="plant"){const C=CROPS[subSel.plant];if(t.t!=="field"||t.crop)return quiet||news(t.crop?"Something is already growing there.":"Plow it first.");if(!C.plant.includes(G.month))return quiet||news(`${C.n} can't be sown in ${MON[G.month]}. Sow in ${C.plant.map(m=>MON[m]).join(", ")}.`,"bad");if(C.wet&&!irrigated(t))return quiet||news("Rice needs an irrigated field: by water or a water tower.","bad");if(!canAfford(C.seed))return;spend(C.seed);acct(t,C.seed);addJob(t,"plant",{crop:subSel.plant});return after()}
  if(tool==="care"){const C=CARE[subSel.care];if(t.t!=="field")return quiet||news("Use it on fields.");if(subSel.care==="herb"&&t.weeds<.05||subSel.care==="pest"&&t.pests<.05)return quiet||news("Nothing to spray there.");if(!canAfford(C.cost))return;spend(C.cost);acct(t,C.cost);addJob(t,subSel.care);return after()}
  if(tool==="harvest"){if(t.crop){addJob(t,jobKind(t));return after()}if((t.t==="orch"||t.t==="vine")&&t.fruit){addJob(t,"pick");return after()}return quiet||news("Nothing ready to harvest there.")}
