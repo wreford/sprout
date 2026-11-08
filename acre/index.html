@@ -378,7 +378,8 @@ const TOOLS=[
  {id:"harvest",n:"Harvest",i:P.OG("sickle"),h:"Tap ripe fields, orchards and vineyards. Gold fields are ready."},
  {id:"build",n:"Build",i:P.hammer,sub:1},
  {id:"fence",n:"Pasture",i:P.box,h:"Fence grass into pasture for cows and sheep: $60."},
- {id:"animals",n:"Animals",i:P.OG("cow"),panel:1,sep:1},
+ {id:"map",n:"Map",i:P.vil[0],panel:1,sep:1},
+ {id:"animals",n:"Animals",i:P.OG("cow"),panel:1},
  {id:"hire",n:"Staff",i:P.OG("farmer_a"),panel:1},
  {id:"machines",n:"Machines",i:P.anvil,panel:1},
  {id:"market",n:"Market",i:P.bag,panel:1},
@@ -389,7 +390,7 @@ const TOOLS=[
  {id:"raze",n:"Remove",i:P.dirt,h:"Tap a building, orchard, pasture or crop to remove it."}];
 const CARE={fert:{n:"Fertilize",cost:25,d:"+45 nitrogen",i:P.OG("crate")},herb:{n:"Herbicide",cost:20,d:"Kills weeds",i:P.OG("can")},pest:{n:"Pesticide",cost:25,d:"Kills pests",i:P.potion}};
 let subSel={plant:"wheat",build:"barn",care:"fert",plan:"wheat"};
-const PANELS=()=>({animals:panelAnimals,hire:panelHire,machines:panelMachines,market:panelMarket,town:panelTown,almanac:panelAlmanac,reports:panelReports,books:panelBooks});
+const PANELS=()=>({map:panelMap,animals:panelAnimals,hire:panelHire,machines:panelMachines,market:panelMarket,town:panelTown,almanac:panelAlmanac,reports:panelReports,books:panelBooks});
 function setTool(id){const T0=TOOLS.find(x=>x.id===id);if(T0&&T0.panel)return PANELS()[id]();tool=id;closePanel();buildBar();hint(T0.sub?subHint():T0.h);buildSub();dirty=1}
 function subHint(){if(tool==="plant"){const C=CROPS[subSel.plant];return `${C.n}: $${C.seed} seed. Sow in ${C.plant.map(m=>MON[m]).join(", ")}. ${C.d}`}if(tool==="build"){const B=BLD[subSel.build];return `${B.n}: ${fmt(B.cost)}. ${B.d}`}if(tool==="care"){const C=CARE[subSel.care];return `${C.n}: $${C.cost} a hex. ${C.d}.`}
  if(tool==="plan")return subSel.plan==="none"?"Tap planned hexes to clear their plan.":`Plan ${CROPS[subSel.plan].n}: your hands plow, sow in season, harvest and replant on their own.`;return ""}
@@ -440,6 +441,28 @@ function panelTile(t){const own=t.t==="town"?"Part of the town":t.own?"Yours":"F
  if(t.t==="town")h+=`<p>${TOWNLV[G.town.lv][1]} of ${G.town.pop.toLocaleString()} people. Your trade makes it grow.</p>`;
  if(t.burn)h+=`<p class="bad"><b>On fire!</b></p>`;if(t.job)h+=`<p>Work under way: ${Math.round(t.job.done/t.job.work*100)}%.</p>`;panel(h)}
 function tileName(t){if(t.b)return t.b==="house"?"Farmhouse":BLD[t.b].n;if(t.pond)return "Farm Pond";return {grass:"Meadow",forest:t.pine?"Pine Woods":"Woods",hills:"Hills",water:"River",rocks:"Stony Ground",field:"Plowed Field",orch:"Apple Orchard",vine:"Vineyard",past:"Pasture",town:"Town",road:"Road"}[t.t]||"Land"}
+// the Map window: the whole valley at a glance, with SimFarm-style overlays. Tap it to jump there.
+let mapMode="over";
+const MAPMODES={over:"Overhead",crops:"Crops",soil:"Nitrogen",water:"Water",pests:"Weeds & Pests",value:"Land Value"};
+function mapColor(t,mode){const own=t.own||t.t==="town";
+ if(mode==="over"||mode==="crops"){let c={grass:"#4fa02c",forest:"#1f5a18",hills:"#8a8a4a",rocks:"#8a8478",water:"#2a62cc",road:"#9a968a",town:"#c4c0b4",bld:"#d03020",past:"#8ec84a",orch:"#3d7020",vine:"#6a2a7a",field:"#885e30"}[t.t]||"#4fa02c";
+  if(t.pond)c="#2a62cc";if(t.t==="field"&&t.crop)c=t.crop.dead?"#4a463e":t.crop.ripe?"#f0d448":CROPS[t.crop.id].col;if(mode==="crops"&&!(t.t==="field"))c=own?"#c4c0b4":"#9a968a";if(mode==="crops"&&t.t==="field"&&!t.crop)c="#885e30";return c}
+ if(!own)return "#6e6a60";
+ if(mode==="soil"){if(t.t!=="field")return "#c4c0b4";const v=clamp(t.nit/100,0,1);return v>.6?"#3d7020":v>.35?"#d0b030":"#d03020"}
+ if(mode==="water")return t.t==="water"||t.pond?"#1a3f96":irrigated(t)?"#4c90e8":"#e0bc80";
+ if(mode==="pests"){if(t.t!=="field")return "#c4c0b4";const v=Math.max(t.weeds||0,t.pests||0);return v>.5?"#d03020":v>.2?"#f08028":"#8ec84a"}
+ if(mode==="value"){const v=clamp(landValue(t)/1200,0,1);return `rgb(${Math.round(240-v*170)},${Math.round(230-v*60)},${Math.round(160-v*120)})`}
+ return "#000"}
+function drawMap(){const c=$("mapC");if(!c)return;const q=c.getContext("2d"),S=c.width/WW;q.fillStyle="#1d3a10";q.fillRect(0,0,c.width,c.height);
+ for(const t of G.map){const x=t.c*54,y=t.r*72+(t.c%2?36:0);q.fillStyle=mapColor(t,mapMode);q.beginPath();q.moveTo((x+18)*S,y*S);q.lineTo((x+54)*S,y*S);q.lineTo((x+72)*S,(y+36)*S);q.lineTo((x+54)*S,(y+72)*S);q.lineTo((x+18)*S,(y+72)*S);q.lineTo(x*S,(y+36)*S);q.closePath();q.fill();
+  if(t.own&&mapMode==="over"){q.strokeStyle="rgba(255,240,160,.5)";q.lineWidth=1;q.stroke()}if(t.b==="house"){q.fillStyle="#fff";q.fillRect((x+30)*S,(y+28)*S,12*S,12*S)}}
+ q.strokeStyle="#fff";q.lineWidth=2;q.setLineDash([4,3]);q.strokeRect(cam.x*S,cam.y*S,VW/cam.z*S,VH/cam.z*S);q.setLineDash([])}
+function panelMap(){const k=Object.entries(MAPMODES);
+ panel(`<h2>Map</h2><div class="row" style="margin-top:0">${k.map(([id,n])=>`<button class="ib ${mapMode===id?"on":""}" data-mm="${id}">${n}</button>`).join("")}</div>
+ <div style="margin-top:6px;padding:2px;background:#000;box-shadow:var(--sk)"><canvas id="mapC" width="${WW/2}" height="${WH/2}" style="width:100%;display:block;image-rendering:pixelated;cursor:pointer"></canvas></div>
+ <p id="mapK" style="font-size:11.5px;color:var(--mute)">${{over:"Your land is outlined. The white square is the farmhouse.",crops:"Fields only, in each crop's color. Gold is ripe, gray is dead.",soil:"Green: rich soil. Yellow: getting thin. Red: needs fertilizer, soybeans or hay.",water:"Light blue fields are irrigated. Tan ones depend on rain.",pests:"Red fields have bad weeds or pests. Use Care.",value:"Darker is pricier land."}[mapMode]} Tap the map to look there.</p>`);
+ document.querySelectorAll("[data-mm]").forEach(b=>b.onclick=()=>{mapMode=b.dataset.mm;panelMap()});
+ const c=$("mapC");c.onclick=e=>{const r=c.getBoundingClientRect();const wx=(e.clientX-r.left)/r.width*WW,wy=(e.clientY-r.top)/r.height*WH;cam.x=wx-VW/2/cam.z;cam.y=wy-VH/2/cam.z;clampCam();dirty=1;drawMap()};drawMap()}
 function panelHire(){const c=k=>G.workers.filter(w=>w.kind===k).length;
  panel(`<h2>Farmhands</h2><p>Hands walk the farm doing the work you order. With machines in the shed they work much faster. ${G.jobs.length} jobs waiting.</p>
  <table><tr><th></th><th>Hand</th><th>Wage</th><th class="n">Hired</th><th></th></tr>${[["farmer","Farmhand","Does any job",110,200],["wood","Woodsman","Clears woods twice as fast",130,250],["herd","Herdsman","Any job; animals hold out longer without feed",120,220]].map(([k,n,d,w,h])=>`<tr><td><img class="mini" src="${P[k]}"></td><td>${n}<br><small>${d}</small></td><td>$${w}/mo</td><td class="n">${c(k)}</td><td class="n"><button class="ib" data-h="${k}" data-c="${h}">Hire · $${h}</button></td></tr>`).join("")}</table>
@@ -665,7 +688,7 @@ function intro(newFarm,force){const el=$("intro");el.hidden=false;speed=0;update
  $("go").onclick=()=>{el.hidden=true;audioInit();if(newFarm){$("news").innerHTML="";newGame(pickR,pickD);fit();save()}tool="look";buildBar();buildSub();hint(TOOLS[0].h);updateHud();speed=1;updateSpd()}}
 let last=0,acc=0;function loop(now){const dt=Math.min(100,now-(last||now));last=now;if(G&&!G.over&&speed>0&&$("intro").hidden){acc+=dt*speed/1000;let steps=0;while(acc>=.05&&steps<200){tick(.05);if(G.tornado)tornadoStep(.05);acc-=.05;steps++;G.frac+=.05;if(G.frac>=1){G.frac-=1;newDay();if(G.over)break;updateHud()}}dirty=1}
  for(const f of FLOATS)f.life+=dt;while(FLOATS.length&&FLOATS[0].life>1800)FLOATS.shift();for(const tp of TAPS)tp.life+=dt;while(TAPS.length&&TAPS[0].life>400)TAPS.shift();if(TAPS.length)dirty=1;
- if(G&&(dirty||speed>0||FLOATS.length)){draw(now);dirty=0}requestAnimationFrame(loop)}
+ if(G&&(dirty||speed>0||FLOATS.length)){draw(now);dirty=0;if($("mapC")&&(now-(loop.mt||0))>500){loop.mt=now;drawMap()}}requestAnimationFrame(loop)}
 addEventListener("resize",()=>{if(!G)return;resize();clampCam();updateHud()});
 if(window.ResizeObserver)new ResizeObserver(()=>{if(!G)return;const ox=cam.x+VW/2/cam.z,oy=cam.y+VH/2/cam.z;resize();cam.x=ox-VW/2/cam.z;cam.y=oy-VH/2/cam.z;clampCam();draw(performance.now())}).observe($("view"));
 const had=load();if(had){resize();fit();buildBar();updateHud();updateSpd();hint(TOOLS[0].h);news(`Welcome back to the farm. ${MON[G.month]}, Year ${G.year}.`,"good")}else{newGame("river","normal");resize();fit();buildBar();updateHud();intro(true)}
