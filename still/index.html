@@ -113,6 +113,8 @@ body.touch #bCam,body.touch #bSci,body.touch #bFs{display:none}
 #joy{width:120px;height:120px;border-radius:50%;border:1.5px solid rgba(255,255,255,.35);background:rgba(255,255,255,.06);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);transition:none}
 #joyK{position:absolute;left:35px;top:35px;width:50px;height:50px;border-radius:50%;background:rgba(255,255,255,.4);box-shadow:0 0 18px rgba(255,255,255,.3)}
 #jumpB{z-index:3;touch-action:none;-webkit-user-select:none;user-select:none;pointer-events:auto;right:max(22px,env(safe-area-inset-right));bottom:max(26px,calc(env(safe-area-inset-bottom) + 18px));width:76px;height:76px;border-radius:50%;border:1.5px solid rgba(255,255,255,.4);background:rgba(255,255,255,.1);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);display:grid;place-items:center;padding:0;touch-action:none}
+#resetB{z-index:3;pointer-events:auto;touch-action:manipulation;right:max(34px,calc(env(safe-area-inset-right) + 12px));bottom:calc(max(26px,calc(env(safe-area-inset-bottom) + 18px)) + 92px);width:48px;height:48px;border-radius:50%;border:1.5px solid rgba(255,255,255,.35);background:rgba(255,255,255,.08);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);display:grid;place-items:center;padding:0}
+#resetB svg{width:22px;height:22px;stroke:#fff;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 #jumpB svg{width:34px;height:34px;stroke:#fff;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
 #lockI{left:50%;top:50%;width:8px;height:8px;margin:-4px 0 0 -4px;border-radius:50%;background:#fff;box-shadow:0 0 0 2px rgba(0,0,0,.35)}
 /* end */
@@ -188,6 +190,7 @@ body.touch #bCam,body.touch #bSci,body.touch #bFs{display:none}
 
 <div id="stats" class="ui" hidden></div>
 <div id="joy" class="ui" hidden><div id="joyK"></div></div>
+<button id="resetB" class="ui" aria-label="Back to checkpoint" hidden><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.4-5.7M4 4v4.5h4.5"/></svg></button>
 <button id="jumpB" class="ui" aria-label="Jump" hidden><svg viewBox="0 0 24 24"><path d="M6 14l6-6 6 6"/></svg></button>
 <div id="lockI" class="ui" hidden></div>
 <canvas id="pv" class="ui" width="160" height="120" hidden></canvas>
@@ -741,6 +744,8 @@ let noteT=0;function note(t){const e=$("msg");e.textContent=t;noteT=performance.
 function physics(dt,mats){
  let ix=(KEY.w||KEY.arrowup?1:0)-(KEY.s||KEY.arrowdown?1:0),iy=(KEY.d?1:0)-(KEY.a?1:0);
  if(joy.on){ix=-joy.y;iy=joy.x}
+ if(joy.on&&!look.on&&(joy.x||joy.y)){const mv=Math.atan2(Math.sin(CV.yaw)*-joy.y+(-Math.cos(CV.yaw))*joy.x,Math.cos(CV.yaw)*-joy.y+Math.sin(CV.yaw)*joy.x);let dd=mv-CV.yaw;dd=Math.atan2(Math.sin(dd),Math.cos(dd));
+  if(Math.abs(dd)<2.2)CV.yaw+=dd*Math.min(1,dt*1.6)*Math.min(1,Math.hypot(joy.x,joy.y))}
  if(KEY.arrowleft)CV.yaw+=dt*2.4;if(KEY.arrowright)CV.yaw-=dt*2.4;
  const fw=[Math.sin(CV.yaw),Math.cos(CV.yaw)],rt=[-fw[1],fw[0]];
  let mx=fw[0]*ix+rt[0]*iy,mz=fw[1]*ix+rt[1]*iy;const ml=Math.hypot(mx,mz);if(ml>1){mx/=ml;mz/=ml}
@@ -993,6 +998,7 @@ cv.addEventListener("touchmove",e=>{e.preventDefault();const ts=e.touches;
  for(let i=0;i<e.changedTouches.length;i++){const t=e.changedTouches[i];if(look.on&&t.identifier===look.id){CV.yaw-=(t.clientX-look.x)*.007;CV.pitch=clamp(CV.pitch+(t.clientY-look.y)*.0055,-1.2,1.35);look.x=t.clientX;look.y=t.clientY}}},{passive:false});
 const tEnd=e=>{for(let i=0;i<e.changedTouches.length;i++)if(look.on&&e.changedTouches[i].identifier===look.id){look.on=false;look.id=null}if(e.touches.length<2)pinch=0};
 cv.addEventListener("touchend",tEnd);cv.addEventListener("touchcancel",tEnd);
+$("resetB").addEventListener("click",e=>{e.preventDefault();softReturn()});
 $("jumpB").addEventListener("touchstart",e=>{e.preventDefault();jumpQ=true;jumpHeld=true},{passive:false});["touchend","touchcancel"].forEach(ev=>$("jumpB").addEventListener(ev,e=>{e.preventDefault();jumpHeld=false},{passive:false}));
 $("jumpB").addEventListener("pointerdown",e=>{if(e.pointerType==="touch"&&TOUCH_EV)return;e.preventDefault();jumpQ=true;jumpHeld=true});["pointerup","pointercancel","pointerleave"].forEach(ev=>$("jumpB").addEventListener(ev,()=>jumpHeld=false));
 document.addEventListener("pointerlockchange",()=>{CV.lock=document.pointerLockElement===cv;$("lockI").hidden=!CV.lock});
@@ -1103,15 +1109,15 @@ let wakeLock=null;async function lockScreen(){try{if(navigator.wakeLock)wakeLock
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&running)lockScreen()});
 function begin(){if(running)return;try{audioInit();if(AC&&AC.state==="suspended")AC.resume();if(AC)AU.setChord(MOODS[moodTo].chord,true)}catch(e){console.warn("audio",e)}
  running=true;ended=false;sessT=0;B.count=0;B.ph=0;B.pt=0;$("title").classList.add("off");setTimeout(()=>$("title").hidden=true,1700);$("end").hidden=true;
- $("bar").classList.remove("off");chromeHidden=false;spawn();$("jumpB").hidden=!(coarse||TOUCH);if(coarse||TOUCH){joyRest();mz.hidden=false}idleT=performance.now();const pn=$("panel");pn.classList.add("hide");document.body.appendChild(pn);$("adv").open=false;if(PAT[S.pattern].ph)phaseStart(0);buildSegs();lockScreen();toast(moodTo);
+ $("bar").classList.remove("off");chromeHidden=false;spawn();$("jumpB").hidden=!(coarse||TOUCH);if(coarse||TOUCH){joyRest();mz.hidden=false;$("resetB").hidden=false}idleT=performance.now();const pn=$("panel");pn.classList.add("hide");document.body.appendChild(pn);$("adv").open=false;if(PAT[S.pattern].ph)phaseStart(0);buildSegs();lockScreen();toast(moodTo);
 }
 $("begin").addEventListener("click",e=>{e.preventDefault();begin()});
-function endSession(){ended=true;running=false;$("joy").hidden=true;$("mz").hidden=true;$("jumpB").hidden=true;const m=Math.round(sessT/60);let tot=0;try{tot=+(localStorage.getItem("still.total")||0)+sessT;localStorage.setItem("still.total",tot)}catch(e){}
+function endSession(){ended=true;running=false;$("joy").hidden=true;$("mz").hidden=true;$("resetB").hidden=true;$("jumpB").hidden=true;const m=Math.round(sessT/60);let tot=0;try{tot=+(localStorage.getItem("still.total")||0)+sessT;localStorage.setItem("still.total",tot)}catch(e){}
  $("endA").textContent=`${m} minute${m===1?"":"s"} · ${B.count} breath${B.count===1?"":"s"}`;
  $("endB").textContent=tot>sessT+30?`${Math.round(tot/60)} minutes here in all`:"Notice how you feel.";
  const e=$("end");e.hidden=false;e.classList.add("off");requestAnimationFrame(()=>e.classList.remove("off"));
  if(AC){[0,4,8].forEach(d=>setTimeout(()=>AU.bowl(.5),d*1000))}try{wakeLock&&wakeLock.release()}catch(e){}}
-$("eAgain").onclick=()=>begin();$("eStay").onclick=()=>{$("end").hidden=true;running=true;ended=false;if(coarse||TOUCH){joyRest();$("jumpB").hidden=false;$("mz").hidden=false}S.minutes=0;save();syncPanel()};
+$("eAgain").onclick=()=>begin();$("eStay").onclick=()=>{$("end").hidden=true;running=true;ended=false;if(coarse||TOUCH){joyRest();$("jumpB").hidden=false;$("mz").hidden=false;$("resetB").hidden=false}S.minutes=0;save();syncPanel()};
 
 // ---------------------------------------------------------------- frame
 let fpsA=60,msA=16.7,refresh=16.7,winMs=[],gpuMs=0,tq=null,tqBusy=false;
@@ -1136,7 +1142,7 @@ function frame(nowMs){requestAnimationFrame(frame);
  const head=[PL.p[0]+(CV.lock?Math.cos(CV.yaw)*-.65:0),PL.p[1]+1.5,PL.p[2]+(CV.lock?Math.sin(CV.yaw)*.65:0)];
  const yaw=Math.PI/2-CV.yaw,pitch=-CV.pitch;
  const cfx=Math.sin(CV.yaw)*Math.cos(CV.pitch),cfy=-Math.sin(CV.pitch),cfz=Math.cos(CV.yaw)*Math.cos(CV.pitch);
- let zc=CV.zoom;if(zc>1.4){INV.length=0;for(let d=.8;d<CV.zoom;d+=.45)if(solidAt(head[0]-cfx*d,head[1]-cfy*d,head[2]-cfz*d,.25,CLM)){zc=Math.max(.6,d-.45);break}}CV.zc=zc=Math.min(zc,mix(CV.zc||zc,zc,.25)+ (zc>(CV.zc||0)?.25:0));PL.hide=zc<1.4;
+ let zc=CV.zoom;if(zc>1.4){INV.length=0;for(let d=1.3;d<CV.zoom;d+=.35)if(solidAt(head[0]-cfx*d,head[1]-cfy*d,head[2]-cfz*d,.14,CLM)){zc=Math.max(1.5,d-.35);break}}CV.zc=zc=Math.min(zc,mix(CV.zc||zc,zc,.25)+ (zc>(CV.zc||0)?.25:0));PL.hide=zc<1.4;
  const eye=[head[0]-cfx*zc,head[1]-cfy*zc,head[2]-cfz*zc];eye[1]=Math.max(eye[1],Math.max(terr(eye[0],eye[2]),0)+.4);
  const dir=[cfx,cfy,cfz];
  const view=lookAt(eye,[eye[0]+dir[0],eye[1]+dir[1],eye[2]+dir[2]]);
