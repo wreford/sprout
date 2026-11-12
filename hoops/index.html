@@ -784,6 +784,7 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
 .pwr .mv{font-size:13px;width:28px;color:var(--mut)}.pwr .mv.up{color:var(--green)}.pwr .mv.dn{color:var(--red)}.pwr .nm{flex:1;min-width:0;color:#fff}.pwr .nm small{display:block;color:var(--mut);font-size:13px}.pwr.me .nm{color:var(--gold)}
 .race{position:relative;padding:3px 0 5px;font-size:16px;border-bottom:1px dashed var(--line)}.race span{position:relative;z-index:1}.race small{color:var(--mut);font-size:13px;margin-left:8px}.race b{font-weight:400;color:#fff}.race b.me{color:var(--gold)}
 .race i{position:absolute;left:0;bottom:1px;height:2px;background:linear-gradient(90deg,var(--gold),var(--orange))}
+.event.press{border-color:var(--blue)}.event.press .evbtns button{text-align:left;white-space:normal;font-family:VT323,monospace;font-size:16px;line-height:1.15}.event.press .evbtns button small{display:block;font-size:11px;color:var(--gold);text-transform:uppercase}
 </style>
 </head>
 <body>
@@ -4171,7 +4172,7 @@ function afterMyGame(win,sL,sR){
   jjCheck();
   if(win&&hasPerk('boosters')){DYN.bw=(DYN.bw||0)+1;if(DYN.bw%4===0)DYN.cash++}if(win&&hasPerk('twoaday')&&(DYN.phase==='season'||DYN.phase==='playoffs'))gainPrac(1);
   cityGame(win);rollLife();storyRoll();achCheckDyn();
-  if(DYN.phase==='season')finishDay(sL,sR);else poGame(win);
+  DYN.presser=null;if(DYN.phase==='season'){pressCheck(sL,sR);finishDay(sL,sR)}else poGame(win);
   saveDyn();
 }
 function finishDay(sL,sR){
@@ -5557,6 +5558,7 @@ function rosterBlock(mode){
 function wire(L){
   L.querySelectorAll('[data-st]').forEach(b=>b.onclick=()=>toggleStarter(b.dataset.st));
   L.querySelectorAll('[data-cut]').forEach(b=>b.onclick=()=>cut(b.dataset.cut));
+  L.querySelectorAll('[data-press]').forEach(b=>b.onclick=()=>pressSay(b.dataset.press));
   L.querySelectorAll('[data-cutx]').forEach(b=>b.onclick=()=>{const [i,h]=b.dataset.cutx.split('|');cutDo(i,h)});
   L.querySelectorAll('[data-dump]').forEach(b=>b.onclick=()=>dump(b.dataset.dump));
   L.querySelectorAll('[data-mle]').forEach(b=>b.onclick=()=>signMLE(b.dataset.mle));
@@ -5733,6 +5735,24 @@ function awardsRaceHtml(){if(DYN.phase!=='season'||DYN.day<10)return '';const st
   const nm=i=>`<b class="${mine.has(i)?'me':''}">${BY[i].name}</b>`;
   return `<div class="offers"><div class="h mk">AWARDS RACE</div><div class="hint">MVP ladder</div>${mvp.map((i,k)=>{const sc=val(i)*(.6+wp(i));return `<div class="race"><span>${k+1}. ${nm(i)}<small>${per(i,'pts').toFixed(1)} / ${per(i,'reb').toFixed(1)} / ${per(i,'ast').toFixed(1)} · ${(()=>{const T=DYN.teams[teamOf(i)];return T?T.w+'–'+T.l:''})()}</small></span><i style="width:${Math.round(sc/top*100)}%"></i></div>`}).join('')}
     ${rook?`<div class="hint">Rookie of the Year favorite: ${nm(rook)} · ${per(rook,'pts').toFixed(1)} ppg</div>`:''}${dp?`<div class="hint">Defensive Player favorite: ${nm(dp)} · ${(per(dp,'stl')+per(dp,'blk')).toFixed(1)} stocks</div>`:''}</div>`}
+// press conferences: after the big ones, the microphones come out. What you say has consequences.
+const PRESS={
+  blowW:{t:'You won by {m}. A reporter asks if this team is a contender.',q:[['confident','"Contender? We are the problem. Write that down."'],['humble','"One game. We will be back in the gym tomorrow."'],['spicy','"Ask the {o}. They looked like they wanted to go home early."']]},
+  blowL:{t:'You lost by {m}. The room is quiet. Someone coughs.',q:[['confident','"Flush it. We are still the better team and everyone knows it."'],['humble','"That one is on me. I did not have them ready."'],['spicy','"I counted the free throws. You can count them too."']]},
+  close:{t:'{r} by {m} in a game that came down to the last possession.',q:[['confident','"Clutch is a habit. We have the habit."'],['humble','"Could have gone either way. Credit to the {o}."'],['spicy','"That last call? I have questions. Many questions."']]},
+  streak:{t:'{n} straight {r2}. Cameras everywhere.',q:[['confident','"Get used to it."'],['humble','"We keep it simple. Next game, next game."'],['spicy','"Everyone counted us out. I have a list of names."']]}};
+function pressCheck(sL,sR){if(DYN.phase!=='season')return;const m=Math.abs(sL-sR),win=sL>sR,sk=DYN.teams[0].sk||0;let k=null;
+  if(Math.abs(sk)>=5&&Math.abs(sk)%5===0)k='streak';else if(m>=20)k=win?'blowW':'blowL';else if(m<=2)k='close';
+  if(!k||(DYN.pressLast!=null&&DYN.day-DYN.pressLast<4&&k!=='streak'))return;DYN.pressLast=DYN.day;
+  DYN.presser={k,m,win,n:Math.abs(sk),o:DYN.teams[DYN.cur?DYN.cur.opp:1].name.split(' ').slice(-1)[0],opp:DYN.cur?DYN.cur.opp:1}}
+function pressHtml(){const P=DYN.presser;if(!P||DYN.phase!=='season')return '';const D=PRESS[P.k],fill=x=>x.replace('{m}',P.m).replace('{o}',P.o).replace('{n}',P.n).replace('{r}',P.win?'Won':'Lost').replace('{r2}',P.win?'wins':'losses');
+  return `<div class="event press"><div class="h mk">POSTGAME PRESSER</div><div class="hint">${fill(D.t)}</div><div class="evbtns">${D.q.map(([k,q])=>`<button data-press="${k}">${fill(q)}<small>${k}</small></button>`).join('')}<button data-press="skip">NO COMMENT<small>walk out</small></button></div></div>`}
+function pressSay(k){const P=DYN.presser;if(!P)return;DYN.presser=null;const C=DYN.city,mine=DYN.teams[0].roster;let msg='';
+  if(k==='confident'){C.fans=Math.min(100,C.fans+(P.win?3:1));msg=P.win?'The quote goes viral. Fans love it. Your players walk a little taller.':'Bold. The fans are split. The players heard it, though.';mine.slice(0,3).forEach(i=>{if(P.win)DYN.mood[i]=1})}
+  else if(k==='humble'){ownMood(3);mine.forEach(i=>{if(DYN.mood[i]<0)DYN.mood[i]=0});msg='The owner nods at his TV. The locker room settles. Nobody tweets about it, which is the point.'}
+  else if(k==='spicy'){C.fans=Math.min(100,C.fans+4);DYN.cash-=1;DYN.rivals=DYN.rivals||{};const best=bestOf(DYN.teams[P.opp].roster,i=>BY[i].power);if(best)DYN.rivals[best]={why:`You roasted them at the podium in ${DYN.year}.`};msg=`League office fines you $1. Fans +4. The ${P.o} have printed the quote and taped it in their locker room.`}
+  else msg='You leave the podium. A reporter shouts a question at the closing door.';
+  DYN.toast=`<b>PRESSER.</b> ${msg}`;Snd.sfx('tap');saveDyn();showDyn()}
 function confTable(c,full){
   const R=confRank(c),mine=R.indexOf(0),Ld=DYN.teams[R[0]],left=T=>Math.max(0,SEASON_DAYS-T.w-T.l),maxW=T=>T.w+left(T);
   const gb=T=>{const g=((Ld.w-T.w)+(T.l-Ld.l))/2;return g<=0?'—':g%1?g.toFixed(1):String(g)};
@@ -5771,7 +5791,7 @@ function seasonView(ph){
   const [tb,t]=tabsHtml('season',[['roster','ROSTER'],['train','TRAIN'+(DYN.prac?' '+DYN.prac:'')],['table',ph==='playoffs'?'BRACKET':'TABLE'],['stats','STATS'],['league','LEAGUE'],['city','CITY'],['bets','BETS']],'roster');
   const body=t==='stats'?teamStatsHtml()+leadersHtml():t==='bets'?betsHtml():t==='city'?cityHtml():t==='train'?trainHtml():t==='roster'?rosterBlock('season')+tenDayHtml():t==='table'?(ph==='playoffs'?bracketHtml():tables+`<div class="minor"><button class="lnk" data-go="west">${DYN.showW?'hide':'show'} ${confName(otherConf())}</button></div>`)
     :powerHtml()+awardsRaceHtml()+(feedH||'<div class="offers"><div class="hint">Quiet around the league. Suspiciously quiet. Somebody is definitely up to something in Charlotte.</div></div>')+hofHtml()+`<div class="minor"><button class="lnk" data-go="hist">History, banners and awards</button></div>`;
-  return headHtml()+prog+tenRepHtml()+ownerBox()+ownerLine()+eventHtml()+simPickHtml()+next+offers+tb+body+`
+  return headHtml()+prog+tenRepHtml()+ownerBox()+ownerLine()+eventHtml()+pressHtml()+simPickHtml()+next+offers+tb+body+`
     <div class="btns"><button class="pri" data-go="${DYN.pending||DYN.offers?'toTop':'play'}" ${ready||DYN.pending||DYN.offers?'':'disabled'}>${label}</button>${ph==='season'&&DYN.day<=DEADLINE_DAY?`<button data-go="desk">TRADE${DYN.trades.length?` ${DYN.trades.length}`:''}</button>`:''}<button data-go="menu">☰</button></div>`;
 }
 function hofHtml(){const H=(DYN.hof||[]).slice().sort((a,b)=>b.rings-a.rings||b.yrs-a.yrs||b.ovr-a.ovr);const R=DYN.rafters||[],RV=DYN.rivals||{};let h='';
