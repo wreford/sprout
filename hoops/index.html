@@ -782,6 +782,8 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
 .progx{font-size:15px;color:var(--mut);margin:-4px 0 8px;line-height:1.2}.progx .form{color:var(--mut)}
 .pwr{display:flex;align-items:center;gap:8px;padding:2px 0;border-bottom:1px dashed var(--line);font-size:16px}.pwr>b{font-family:"Press Start 2P",monospace;font-size:9px;width:22px;color:var(--gold);font-weight:400}
 .pwr .mv{font-size:13px;width:28px;color:var(--mut)}.pwr .mv.up{color:var(--green)}.pwr .mv.dn{color:var(--red)}.pwr .nm{flex:1;min-width:0;color:#fff}.pwr .nm small{display:block;color:var(--mut);font-size:13px}.pwr.me .nm{color:var(--gold)}
+.race{position:relative;padding:3px 0 5px;font-size:16px;border-bottom:1px dashed var(--line)}.race span{position:relative;z-index:1}.race small{color:var(--mut);font-size:13px;margin-left:8px}.race b{font-weight:400;color:#fff}.race b.me{color:var(--gold)}
+.race i{position:absolute;left:0;bottom:1px;height:2px;background:linear-gradient(90deg,var(--gold),var(--orange))}
 </style>
 </head>
 <body>
@@ -5722,6 +5724,15 @@ function powerTick(){if(DYN.day%7===0){DYN.prPrev=DYN.prNow||null;DYN.prNow=powe
 function powerHtml(){if(DYN.phase!=='season'||DYN.day<5)return '';const R=powerRanks(),P=DYN.prPrev||DYN.prNow||R;
   return `<div class="offers"><div class="h mk">POWER RANKINGS · WEEK ${Math.floor(DYN.day/7)+1}</div>${R.slice(0,10).concat(R.indexOf(0)>=10?[0]:[]).map(i=>{const k=R.indexOf(i),was=P.indexOf(i),mv=was<0?0:was-k,T=DYN.teams[i],q=PR_QUIP[k<4?'top':k<20?'mid':'low'];
     return `<div class="pwr${i===0?' me':''}"><b>${k+1}</b><span class="mv ${mv>0?'up':mv<0?'dn':''}">${mv>0?'▲'+mv:mv<0?'▼'+(-mv):'–'}</span><span class="nm">${T.name}<small>${T.w}–${T.l} · ${q[(i+Math.floor(DYN.day/7))%q.length]}</small></span></div>`}).join('')}</div>`}
+// the awards race, live: same formulas as the end-of-season votes
+function awardsRaceHtml(){if(DYN.phase!=='season'||DYN.day<10)return '';const st=DYN.st,ids=Object.keys(st).filter(i=>BY[i]&&st[i].g>=Math.max(3,DYN.day*.4));if(!ids.length)return '';
+  const teamOf=id=>DYN.teams.findIndex(T=>T.roster.includes(id)),per=(id,k)=>st[id][k]/st[id].g,val=id=>per(id,'pts')+.7*per(id,'reb')+.8*per(id,'ast')+1.3*(per(id,'stl')+per(id,'blk'));
+  const wp=id=>{const t=teamOf(id);if(t<0)return .3;const T=DYN.teams[t];return T.w/Math.max(1,T.w+T.l)},mine=new Set(DYN.teams[0].roster);
+  const mvp=ids.slice().sort((a,b)=>val(b)*(.6+wp(b))-val(a)*(.6+wp(a))).slice(0,5),top=mvp[0]?val(mvp[0])*(.6+wp(mvp[0])):1;
+  const rook=ids.filter(i=>yrIn(i)===1).sort((a,b)=>val(b)-val(a))[0],dp=ids.slice().sort((a,b)=>(per(b,'stl')+per(b,'blk')+BY[b].def/25)-(per(a,'stl')+per(a,'blk')+BY[a].def/25))[0];
+  const nm=i=>`<b class="${mine.has(i)?'me':''}">${BY[i].name}</b>`;
+  return `<div class="offers"><div class="h mk">AWARDS RACE</div><div class="hint">MVP ladder</div>${mvp.map((i,k)=>{const sc=val(i)*(.6+wp(i));return `<div class="race"><span>${k+1}. ${nm(i)}<small>${per(i,'pts').toFixed(1)} / ${per(i,'reb').toFixed(1)} / ${per(i,'ast').toFixed(1)} · ${(()=>{const T=DYN.teams[teamOf(i)];return T?T.w+'–'+T.l:''})()}</small></span><i style="width:${Math.round(sc/top*100)}%"></i></div>`}).join('')}
+    ${rook?`<div class="hint">Rookie of the Year favorite: ${nm(rook)} · ${per(rook,'pts').toFixed(1)} ppg</div>`:''}${dp?`<div class="hint">Defensive Player favorite: ${nm(dp)} · ${(per(dp,'stl')+per(dp,'blk')).toFixed(1)} stocks</div>`:''}</div>`}
 function confTable(c,full){
   const R=confRank(c),mine=R.indexOf(0),Ld=DYN.teams[R[0]],left=T=>Math.max(0,SEASON_DAYS-T.w-T.l),maxW=T=>T.w+left(T);
   const gb=T=>{const g=((Ld.w-T.w)+(T.l-Ld.l))/2;return g<=0?'—':g%1?g.toFixed(1):String(g)};
@@ -5759,7 +5770,7 @@ function seasonView(ph){
   const label=DYN.pending?'DECIDE FIRST':DYN.offers?'PICK UPGRADE':DYN.starters.length!==5?'SET STARTERS':GMODES[gameMode()].b;
   const [tb,t]=tabsHtml('season',[['roster','ROSTER'],['train','TRAIN'+(DYN.prac?' '+DYN.prac:'')],['table',ph==='playoffs'?'BRACKET':'TABLE'],['stats','STATS'],['league','LEAGUE'],['city','CITY'],['bets','BETS']],'roster');
   const body=t==='stats'?teamStatsHtml()+leadersHtml():t==='bets'?betsHtml():t==='city'?cityHtml():t==='train'?trainHtml():t==='roster'?rosterBlock('season')+tenDayHtml():t==='table'?(ph==='playoffs'?bracketHtml():tables+`<div class="minor"><button class="lnk" data-go="west">${DYN.showW?'hide':'show'} ${confName(otherConf())}</button></div>`)
-    :powerHtml()+(feedH||'<div class="offers"><div class="hint">Quiet around the league. Suspiciously quiet. Somebody is definitely up to something in Charlotte.</div></div>')+hofHtml()+`<div class="minor"><button class="lnk" data-go="hist">History, banners and awards</button></div>`;
+    :powerHtml()+awardsRaceHtml()+(feedH||'<div class="offers"><div class="hint">Quiet around the league. Suspiciously quiet. Somebody is definitely up to something in Charlotte.</div></div>')+hofHtml()+`<div class="minor"><button class="lnk" data-go="hist">History, banners and awards</button></div>`;
   return headHtml()+prog+tenRepHtml()+ownerBox()+ownerLine()+eventHtml()+simPickHtml()+next+offers+tb+body+`
     <div class="btns"><button class="pri" data-go="${DYN.pending||DYN.offers?'toTop':'play'}" ${ready||DYN.pending||DYN.offers?'':'disabled'}>${label}</button>${ph==='season'&&DYN.day<=DEADLINE_DAY?`<button data-go="desk">TRADE${DYN.trades.length?` ${DYN.trades.length}`:''}</button>`:''}<button data-go="menu">☰</button></div>`;
 }
