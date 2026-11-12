@@ -1778,6 +1778,9 @@ function sigLine(u,type){const s=SIGLINE[u.r.sig];return s&&s[type]&&Math.random
 function missLine(u,type){const s=SIGMISS[u.r.sig];return s&&s[type]&&Math.random()<.6?s[type]:pick(type==='three'?C3X:type==='mid'?CMX:CRX)}
 function assistLine(p){const a={nolook:` ${B(p)} with the no-look dime.`,joker:` ${B(p)} with a pass nobody else saw.`,pistol:` ${B(p)} with the behind-the-back feed.`,seven:` ${B(p)} pushes it up in four seconds.`,pointgod:` ${B(p)} runs it like a calculator.`,noshoot:` ${B(p)} would rather pass than breathe.`};return a[p.r.sig]||pick([` ${B(p)} with the dime.`,` ${B(p)} with the assist.`,` Nice feed from ${B(p)}.`])}
 
+// league-sim calibration to real NBA rates: three-point volume follows the era, gaps between teams stay realistic
+const ERA3=[[1979,0],[1980,.13],[1990,.32],[2000,.62],[2010,.8],[2015,1.1],[2020,1.9],[2026,2.3]];
+function era3(y){if(y<1980)return 0;for(let i=1;i<ERA3.length;i++){const [a,va]=ERA3[i-1],[b,vb]=ERA3[i];if(y<=b)return va+(vb-va)*(y-a)/(b-a)}return ERA3[ERA3.length-1][1]}
 function simPossession(){
   const off=G.poss, dS=off==='L'?'R':'L', O=onFloor(off), D=onFloor(dS), mo=G.mod[off], md=G.mod[dS];
   const beats=[], clutch=clutchNow();
@@ -1862,7 +1865,7 @@ function simPossession(){
   }
   // turnover
   const defAvg=D.reduce((s,u)=>s+rt(u,'def'),0)/D.length;
-  let pTo=0.04+(82-handler.r.pas)*0.002+(defAvg-72)*0.0015+mo.to+(75-handler.r.power)*0.002;
+  let pTo=0.04+(82-handler.r.pas)*0.002+(defAvg-72)*0.0015+mo.to+(75-handler.r.power)*0.002;if(G.quick)pTo+=.045;
   pTo*=xf(handler,'to')||1; if(has(handler,'pointgod'))pTo*=.4; if(has(handler,'pistol'))pTo+=.05; if(fast)pTo*=.4;
   if(G.plan[dS]==='press')pTo+=.06;
   if(off==='R'&&G.erupt>0)pTo+=.05;
@@ -1906,6 +1909,7 @@ function simPossession(){
   let w3=r.thr<25?0:Math.pow(Math.max(1,T),2)*.85*(has(shooter,'whynot')?1.6:1), wm=Math.pow(Math.max(1,M),2)*.55, wr=Math.pow(Math.max(1,I),2)*(1+(rt(shooter,'spd')-70)/120);
   if(has(shooter,'swat')&&Math.random()<.1)w3=1e9;
   {const x=XO(shooter.r);if(x){w3*=x.fx.w3||1;wm*=x.fx.wm||1;wr*=x.fx.wr||1}}
+  if(G.quick&&DYN)w3*=era3(DYN.year);
   if(G.plan[off]==='three')w3*=2.2; if(G.plan[off]==='inside')wr*=2; if(G.plan[dS]==='zone')w3*=1.5; if(G.perk.analytics&&off==='L')w3*=1.5;
   if(force&&force.three){w3=1e9}
   if(force&&force.type){w3=force.type==='three'?1e9:0;wm=force.type==='mid'?1e9:0;wr=force.type==='rim'?1e9:0}
@@ -1914,11 +1918,12 @@ function simPossession(){
   let defender=type==='rim'?wpick(D,u=>rt(u,'def')*(u.r.cm-170)):wpick(D,u=>rt(u,'def')+rt(u,'spd')*.4);
   let rating=type==='three'?T:type==='mid'?M:I;
   if(has(shooter,'swat')&&type==='three')rating=72;
-  let p=(type==='three'?.37:type==='mid'?.44:.58)+(rating-75)*0.012-(rt(defender,'def')-75)*0.008+(r.power-75)*0.007-(defender.r.power-75)*0.004;
+  const qk=G.quick?.4:1;let p=(type==='three'?(G.quick?.335:.37):type==='mid'?.44:.58)+((rating-75)*0.012-(rt(defender,'def')-75)*0.008+(r.power-75)*0.007-(defender.r.power-75)*0.004)*qk;
   if(type==='rim')p-=(defender.r.cm-200)*0.003;
+  if(G.quick&&G.q>=3){const lead=G[SIDE(off)]-G[SIDE(dS)];if(lead>=15)p-=.07+(lead-15)*.007;else if(lead<=-15)p+=.03}// garbage time: benches in, the lead shrinks
   if(G.plan[dS]==='zone')p+=type==='three'?.04:-.06;
   if(G.plan[dS]==='press')p+=.03;
-  if(fast)p+=.2+(G.perk.run&&off==='L'?.08:0); if(gift)p+=.15; if(rushed)p-=.12; if(shooter.streak>=2)p+=.04;
+  if(fast)p+=(G.quick?.1:.2)+(G.perk.run&&off==='L'?.08:0); if(gift)p+=.15; if(rushed)p-=.12; if(shooter.streak>=2&&!G.quick)p+=.04;
   if(clutch)p+=(cl(shooter)-75)*0.005;
   const stp=G.stop&&G.stop[shooter.id];if(stp&&D.includes(stp)){defender=stp;p-=.04+(rt(stp,'def')-75)*.004}
   if(dcall==='switch')p-=.07;
@@ -1974,7 +1979,7 @@ function simPossession(){
   }
   let pf=(type==='rim'?.13:type==='mid'?.05:.025)*(G.plan[off]==='inside'?1.5:1)*(G.perk.whisper?(off==='L'?1.6:.7):1);
   if(['merchant','process','freethrow','freak'].includes(r.sig))pf*=2.2;
-  pf*=xf(shooter,'foul')||1;
+  pf*=xf(shooter,'foul')||1;if(G.quick)pf*=2.1;
   if(force&&force.foul)pf=Math.max(pf,force.foul);
   const fouled=Math.random()<pf;
   if(Math.random()<p){
