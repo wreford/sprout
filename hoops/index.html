@@ -4296,7 +4296,9 @@ const DIFF={rookie:{n:'ROOKIE',d:'The old sim. Opponents play it straight, road 
   legend:{n:'LEGEND',d:'Opponents +4, hostile road, AI super-teams, injuries bite, and the owner forgives nothing.',opp:4,road:3,ai:2,inj:1.25}};
 const diff=()=>DIFF[(DYN&&DYN.diff)||'pro']||DIFF.pro;
 function oppBoost(){const D=diff(),me=DYN.teams[0],gp=me.w+me.l;let b=D.opp;if(!cityHome())b+=Math.max(0,D.road-(DYN.fac.jet||0)-(hasPerk('charter')?1:0));if(D.ai&&DYN.rings.includes(DYN.year-1))b+=1;if(D.ai&&gp>=10&&me.w/gp>.68)b+=1;if(DYN.cur&&DYN.cur.po)b+=D.ai;if(D.ai){if(!DYN._lg||DYN._lg.d!==DYN.day||DYN._lg.y!==DYN.year){const lg=DYN.teams.slice(1).map((T,i)=>teamOvr(lineupOf(i+1))).sort((a,c)=>c-a);DYN._lg={d:DYN.day,y:DYN.year,top:lg[2],me:teamOvr(lineupOf(0))}}b+=Math.min(2+D.ai,Math.max(0,Math.floor((DYN._lg.me-DYN._lg.top)/2))*D.ai)}return b}
-function facMods(){const F=DYN.fac,o={};const a=(k,v)=>{if(v)o[k]=(o[k]||0)+v};a('thr',F.shoot||0);a('mid',F.shoot||0);a('ins',F.weights||0);a('def',F.video||0);a('spd',F.kitchen||0);a('clu',3*(F.sleep||0));a('ast',.02*(F.play||0));return o}
+// assistant coaches: one hire at a time, paid every game
+const ASST_C={off:['Offensive Coordinator','+2 shooting everywhere',.15],def:['Defensive Coordinator','+3 defense',.15],dev:['Player Development Coach','young players improve faster',.1],mot:['Motivational Speaker','+3 clutch, a happier locker room',.08]};
+function facMods(){const F=DYN.fac,o={};const a=(k,v)=>{if(v)o[k]=(o[k]||0)+v};{const H=DYN.asst;if(H==='off'){a('thr',2);a('mid',2);a('ins',2)}if(H==='def')a('def',3);if(H==='mot')a('clu',3)}a('thr',F.shoot||0);a('mid',F.shoot||0);a('ins',F.weights||0);a('def',F.video||0);a('spd',F.kitchen||0);a('clu',3*(F.sleep||0));a('ast',.02*(F.play||0));return o}
 function homeCrowd(){return cityHome()?(DYN.murray===1?1:0)+(DYN.duck?1:0)+Math.round(weirdCrowd()/25)+(DYN.fac.arena||0)+cityCrowd()+(hasPerk('dance')?1:0)+(hasPerk('drum')?(DYN.phase==='playoffs'?2:1):0):0}
 function ctxNow(){return {mood:DYN.mood,arena:homeCrowd()+(DYN.tmpArena||0)+(DYN.curse>0?3:0),fm:facMods(),perks:DYN.perks,boost:DYN.boost,opp:{twist:DYN.cur.twist,m:{all:oppBoost()-weirdScare()}},label:DYN.cur.label,po:DYN.cur.po}}
 function startDynGame(){
@@ -4836,7 +4838,7 @@ function cityGame(win){
   const stx=C.stx||0;let fan=win?.5:-.35*(stx?.75:1),net=0;const pw=cityPower(),hap=cityHappy();
   const po=DYN.phase==='playoffs',mq=home&&!po&&isMarquee();let att=cityAtt();if(mq)att=Math.min(100,att+8);const pn=promoNight();if(pn){att=Math.min(100,att+10);fan+=.25}if(stx)att=Math.max(att,Math.round(stx*100));
   if(home){C.att=att;C.attSum=(C.attSum||0)+att;C.attN=(C.attN||0)+1;add('tickets',Math.max(0,att-stx*100)/100*P[2]*(po?2:1)*(mq?1.25:1)*(hasPerk('scalper')?1.25:1));if(stx&&po)add('season tickets',stx*P[2]);fan+=P[4];if(att>=90)fan+=.05;if(mq&&att>=100)achCount('marquee');if(att<35)achCount('ghost')}
-  add('TV',TV_RATE*(po?2:1)*(hasPerk('tvdeal')?1.6:1));fan+=weirdCrowd()/600;if(hasPerk('fanclub'))fan+=.08;if(hasPerk('scalper')&&home)fan-=.05;fan+=.04*(DYN.fac.pr||0);add('salaries',-payNow()*SAL_RATE);{const over=payNow()-DYN.cap;if(over>0)add('lux tax',-over*taxRate())}
+  add('TV',TV_RATE*(po?2:1)*(hasPerk('tvdeal')?1.6:1));fan+=weirdCrowd()/600;if(hasPerk('fanclub'))fan+=.08;if(hasPerk('scalper')&&home)fan-=.05;fan+=.04*(DYN.fac.pr||0);add('salaries',-payNow()*SAL_RATE);if(DYN.asst&&ASST_C[DYN.asst])add('assistant',-ASST_C[DYN.asst][2]);if(DYN.asst==='mot'&&Math.random()<.1){const bad=DYN.teams[0].roster.filter(i=>DYN.mood[i]<0);if(bad.length)DYN.mood[bad[0]]=0}{const over=payNow()-DYN.cap;if(over>0)add('lux tax',-over*taxRate())}
   if(C.sponsor)add('naming rights',C.sponsor.pay);
   if(C.loans)add('interest',-C.loans*LOAN_RATE);
   C.g.forEach((t,i)=>{if(!t||t.k==='arena')return;if(!C.closed[i])add('upkeep',-BLD[t.k].up*t.lv);const y=bldYield(i,{home,att,r:pw.r,win});if(y.cash)add(BLD[t.k].n,y.cash);fan+=y.fans});
@@ -5200,6 +5202,7 @@ function devRolls(news){
     if(mine.has(id)&&DYN.fac.train)d+=Math.random()<.35*DYN.fac.train?1:0;
     if(mine.has(id)&&cityHas('practice'))d+=Math.random()<.25*cityHas('practice')?1:0;
     if(mine.has(id)&&hasPerk('mentor')&&st<=4)d+=Math.random()<.5?1:0;
+    if(mine.has(id)&&DYN.asst==='dev'&&st<=5)d+=Math.random()<.5?1:0;
     if(mine.has(id)&&hasPerk('vetcare')&&st>=10&&d<0)d+=Math.random()<.5?1:0;
     {const tr=TRAIT[b.trait];if(tr&&tr.dev&&mine.has(id))d+=tr.dev}
     DYN.dev[id]=Math.max(-8,Math.min(8,old+d));d=DYN.dev[id]-old;DYN.devLast[id]=d;
@@ -5240,9 +5243,10 @@ function seasonMoods(result){
   });
 }
 function upgrade(k){const lv=DYN.fac[k]||0;if(lv>=3||DYN.cash<facCost(k,lv))return;DYN.cash-=facCost(k,lv);Snd.sfx('cash');DYN.fac[k]=lv+1;achCount('facUps');DYN.toast=`${FAC[k][0]} upgraded to level ${DYN.fac[k]}. The brochure now has a second page.`;Snd.sfx('crowd');saveDyn();showDyn()}
+function asstHtml(){const H=DYN.asst;return `<div class="offers fo"><div class="h mk">ASSISTANT COACH</div><div class="hint">One hire at a time. Salary comes out of every game's books.</div>${Object.entries(ASST_C).map(([k,[n,d,c]])=>`<div class="fac"><span class="n"><b>${n}</b><small>${d} · $${c} a game</small></span><button class="rel ${H===k?'':'acc'}" data-asst="${k}">${H===k?'FIRE':'HIRE'}</button></div>`).join('')}</div>`}
 function frontOffice(){
   const dk=DYN.diff||'pro';
-  return `<div class="offers fo"><div class="h mk">DIFFICULTY · ${DIFF[dk].n}</div><div class="dpick">${Object.keys(DIFF).map(k=>`<button class="${k===dk?'on':''}" data-diff="${k}">${DIFF[k].n}</button>`).join('')}</div><div class="hint">${DIFF[dk].d}</div></div><div class="offers fo"><div class="h mk">FRONT OFFICE · $${DYN.cash}</div><div class="hint">Wins, playoff runs and awards bring in cash. Spend it wisely, or spend it on a fancier whiteboard. <button class="lnk" data-go="look">team look</button></div>${Object.keys(FAC).map(k=>{const lv=DYN.fac[k]||0,c=facCost(k,lv);return `<div class="fac"><span class="n"><b>${FAC[k][0]}</b> <span class="pips">${'■'.repeat(lv)}${'□'.repeat(3-lv)}</span><small>${FAC[k][1]}</small></span><button class="rel acc" data-up="${k}" ${lv>=3||DYN.cash<c?'disabled':''}>${lv>=3?'MAX':'$'+c}</button></div>`}).join('')}</div>`;
+  return asstHtml()+`<div class="offers fo"><div class="h mk">DIFFICULTY · ${DIFF[dk].n}</div><div class="dpick">${Object.keys(DIFF).map(k=>`<button class="${k===dk?'on':''}" data-diff="${k}">${DIFF[k].n}</button>`).join('')}</div><div class="hint">${DIFF[dk].d}</div></div><div class="offers fo"><div class="h mk">FRONT OFFICE · $${DYN.cash}</div><div class="hint">Wins, playoff runs and awards bring in cash. Spend it wisely, or spend it on a fancier whiteboard. <button class="lnk" data-go="look">team look</button></div>${Object.keys(FAC).map(k=>{const lv=DYN.fac[k]||0,c=facCost(k,lv);return `<div class="fac"><span class="n"><b>${FAC[k][0]}</b> <span class="pips">${'■'.repeat(lv)}${'□'.repeat(3-lv)}</span><small>${FAC[k][1]}</small></span><button class="rel acc" data-up="${k}" ${lv>=3||DYN.cash<c?'disabled':''}>${lv>=3?'MAX':'$'+c}</button></div>`}).join('')}</div>`;
 }
 function statLine(id){const s=DYN.st[id];if(!(s&&s.g))return '';const ppg=s.pts/s.g,l=s.l5||[],a=l.length>=4?l.reduce((x,y)=>x+y,0)/l.length:null;
   const tag=a==null?'':a>=Math.max(14,ppg*1.2)?` <b class="hotT" title="${a.toFixed(1)} over his last ${l.length}">HOT ${a.toFixed(0)}</b>`:a<=ppg*.75&&ppg>=8?` <b class="coldT" title="${a.toFixed(1)} over his last ${l.length}">COLD ${a.toFixed(0)}</b>`:'';return `${ppg.toFixed(1)} ppg${tag}`}
@@ -5792,6 +5796,7 @@ function wire(L){
   L.querySelectorAll('[data-st]').forEach(b=>b.onclick=()=>toggleStarter(b.dataset.st));
   L.querySelectorAll('[data-cut]').forEach(b=>b.onclick=()=>cut(b.dataset.cut));
   {const pf=L.querySelector('#pfind');if(pf)pf.oninput=()=>{DYN._pq=pf.value;const R=L.querySelector('#pfres');R.innerHTML=findRes(pf.value);R.querySelectorAll('[data-card]').forEach(b=>b.onclick=()=>openCard(b.dataset.card))}}
+  L.querySelectorAll('[data-asst]').forEach(b=>b.onclick=()=>{const k=b.dataset.asst;DYN.asst=DYN.asst===k?null:k;if(DYN.asst){achCount('asstHire');DYN.toast=`You hire a ${ASST_C[k][0]}. He brought his own whistle.`}else DYN.toast='The assistant is let go. He takes the good clipboard.';saveDyn();showDyn()});
   L.querySelectorAll('[data-wt]').forEach(b=>b.onclick=()=>{const [sd,a]=b.dataset.wt.split('|');placeWT(sd,+a)});
   L.querySelectorAll('[data-rest]').forEach(b=>b.onclick=()=>{const R=DYN.rest=DYN.rest||{},id=b.dataset.rest;if(R[id])delete R[id];else if(Object.keys(R).length<2)R[id]=1;saveDyn();showDyn()});
   L.querySelectorAll('[data-capt]').forEach(b=>b.onclick=()=>{DYN.captain=DYN.captain===b.dataset.capt?null:b.dataset.capt;if(DYN.captain)achCount('captain');if(DYN.captain)DYN.mood[DYN.captain]=1;saveDyn();showDyn()});
