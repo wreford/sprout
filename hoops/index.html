@@ -882,6 +882,7 @@ canvas.fwk{width:min(640px,92vw);height:auto;image-rendering:pixelated;margin:-1
 .fostack{display:flex;flex-direction:column;gap:12px}@media (min-width:1000px){#locker .lkOne .lkBody>.fostack{grid-column:1;grid-row:1/span 2}#locker .lkOne .lkBody>.offers.fo:has(.dpick){grid-column:2;grid-row:1}#locker .lkOne .lkBody>.offers.fo:has(.fac):not(:has(.dpick)){grid-column:2;grid-row:2}}
 .offers,.event,.myTeam,.stand{transition:box-shadow .15s,border-color .15s}@media (hover:hover){.offers:hover,.myTeam:hover{box-shadow:4px 4px 0 var(--ink),0 0 0 1px #feae3433}}
 .bakL{margin-top:8px;max-height:50vh;overflow:auto;text-align:left}.bakR{display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:1px dashed var(--line)}.bakR span{flex:1;min-width:0;display:flex;flex-direction:column}.bakR b{color:#fff;font-weight:400}.bakR small{color:var(--mut)}.bakR button{font:7px 'Press Start 2P',monospace;background:var(--panel2);color:#fff;border:2px solid var(--line);padding:6px}
+.mny{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:8px 0 4px;text-align:left}.mny .h{font-size:7px;color:var(--gold);margin-bottom:4px}.mny1{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:14px;text-align:left}.mny1 b{font-weight:400}.mlog{max-height:28vh;overflow:auto;text-align:left}#xS .lead{font-size:15px}#xS .good{color:var(--green)}#xS .bad{color:var(--red)}#xport .lead small{color:var(--mut)}
 </style>
 </head>
 <body>
@@ -4187,7 +4188,29 @@ function savesScreen(){const L=bakList(),cur=loadJ(DYN_LS,null),ago=t=>{const m=
    {l:'CLOSE',f:xClose}]);
   $('xTxt').style.display='none';
   $('xS').querySelectorAll('[data-bak]').forEach(b=>b.onclick=async()=>{const B=L[+b.dataset.bak];if(!confirm(`Restore "${B.label}"? Your current save is backed up first.`))return;try{const raw=await bakRead(B);JSON.parse(raw);await bakMake('before a restore');localStorage.setItem(DYN_LS,raw);xClose();loadDyn()}catch(e){alert('That backup could not be read.')}})}
-function saveDyn(){
+// ---------- money ledger: every change to your cash is recorded with where it came from ----------
+const MWHY={placeBet:'Bets placed',placeWT:'Bets placed',placeOB:'Bets placed',placeMVP:'Bets placed',placeSeries:'Bets placed',placeFut:'Bets placed',
+  settleBet:'Bet winnings',settleWT:'Bet winnings',settleMVP:'Bet winnings',settleSeries:'Bet winnings',settleFut:'Bet winnings',rec:'Bet winnings',slots:'Casino',heave:'Casino',hl:'Casino',
+  cityGame:'Arena & city',ownerGrade:'Owner bonus',ownTick:'Owner',ownMood:'Owner',endSeason:'Season-end payout',seasonAwards:'Award bonuses',potm:'Player awards',potw:'Player awards',
+  takeOffer:'Upgrades',cityLoan:'Loans',tenSign:'Ten-day contracts',curseTick:'The curse',dump:'Salary dumps',cutDo:'Buyouts',doTrain:'Training',buyPerk:'Perks',
+  cityBuild:'City construction',cityUp:'City construction',cityDemo:'City construction',cityBuyLand:'Land',upgrade:'Facilities',xApply:'Events',resolveEvent:'Events',lifeEffects:'Life events',
+  pressSay:'Press fines',tradeAway:'Trades',finishDay:'Win bonus',afterMyGame:'Game bonuses',startDynasty:'Starting cash',signMLE:'Signings',sign:'Signings'};
+const MSKIP=new Set(['set','f','need','t','cashSet','Error','eval','onclick','b','a','h']);
+function moneyWhy(){const st=(new Error().stack||'').split('\n').slice(2);for(const l of st){const m=l.match(/at (?:Object\.|HTMLButtonElement\.)?([A-Za-z0-9_$]+)\s*\(/);if(!m)continue;const n=m[1];if(MSKIP.has(n))continue;if(MWHY[n])return MWHY[n];if(/^(placeBet|settle)/.test(n))return 'Bets';}
+  return 'Other'}
+function cashHook(D){if(!D)return;const pd=Object.getOwnPropertyDescriptor(D,'cash');if(pd&&pd.get)return;let v=+D.cash||0;
+  Object.defineProperty(D,'cash',{enumerable:true,configurable:true,get(){return v},set(n){const d=n-v;v=n;if(Math.abs(d)<.005||D!==DYN)return;const why=moneyWhy(),L=D.mlog=D.mlog||[];const top=L[0];
+    if(top&&top.why===why&&top.y===D.year&&top.d===D.day&&top.ph===D.phase)top.amt=+(top.amt+d).toFixed(2);else{L.unshift({y:D.year,d:D.day,ph:D.phase,amt:+d.toFixed(2),why});if(L.length>120)L.length=120}
+    const T=(D.mtot=D.mtot||{})[D.year]=(D.mtot[D.year]||{});T[why]=+((T[why]||0)+d).toFixed(2)}})}
+function moneyScreen(){if(!DYN)return;cashHook(DYN);const T=(DYN.mtot||{})[DYN.year]||{},ks=Object.keys(T).filter(k=>Math.abs(T[k])>=.01),inc=ks.filter(k=>T[k]>0).sort((a,b)=>T[b]-T[a]),exp=ks.filter(k=>T[k]<0).sort((a,b)=>T[a]-T[b]);
+  const sum=a=>a.reduce((x,k)=>x+T[k],0),row=k=>`<div class="lead"><span>${k}</span><span class="${T[k]<0?'bad':'good'}">${T[k]>0?'+':'−'}$${Math.abs(T[k]).toFixed(1)}</span></div>`,C=DYN.city,G=C&&C.lastGameItems;
+  const when=e=>e.ph==='season'?`game ${e.d+1}`:e.ph==='playoffs'?'playoffs':e.ph;
+  xOpen('MONEY IN AND OUT',`<b>Cash now: ${money(DYN.cash)}</b>${C?` · city running balance <b>${f2(C.bank)}</b> <small>(arena and city income is paid into cash a whole dollar at a time)</small>`:''}
+    <div class="mny"><div><div class="h mk">${seasonLbl(DYN.year)} · IN +$${sum(inc).toFixed(1)}</div>${inc.map(row).join('')||'<div class="hint">Nothing yet.</div>'}</div><div><div class="h mk">OUT −$${Math.abs(sum(exp)).toFixed(1)}</div>${exp.map(row).join('')||'<div class="hint">Nothing yet.</div>'}</div></div>
+    <div class="lead"><span><b>Net this season</b></span><span class="${sum(ks)>=0?'good':'bad'}"><b>${sum(ks)>=0?'+':'−'}$${Math.abs(sum(ks)).toFixed(1)}</b></span></div>
+    ${G?`<div class="h mk" style="margin-top:8px">LAST GAME NIGHT · ARENA AND CITY</div><div class="mny1">${Object.entries(G).filter(([k,v])=>Math.abs(v)>=.005).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<span>${k} <b class="${v<0?'bad':'good'}">${f2(v)}</b></span>`).join('')}</div><div class="hint">Salaries and luxury tax are paid a little every game, along with tickets and TV.${cityHome()?'':' Away games earn no ticket money.'}</div>`:''}${C&&C.led?`<div class="h mk" style="margin-top:8px">ARENA AND CITY · THIS SEASON</div><div class="mny1">${Object.entries(C.led).filter(([k,v])=>Math.abs(v)>=.05).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<span>${k} <b class="${v<0?'bad':'good'}">${f2(v)}</b></span>`).join('')}</div>`:''}
+    <div class="h mk" style="margin-top:8px">RECENT TRANSACTIONS</div><div class="mlog">${(DYN.mlog||[]).slice(0,30).map(e=>`<div class="lead"><span>${e.why} <small>· ${seasonLbl(e.y)} ${when(e)}</small></span><span class="${e.amt<0?'bad':'good'}">${e.amt>0?'+':'−'}$${Math.abs(e.amt).toFixed(1)}</span></div>`).join('')||'<div class="hint">No transactions recorded yet. Every change from now on shows up here.</div>'}</div>`,'',[{l:'CLOSE',pri:1,f:xClose}]);$('xTxt').style.display='none'}
+function saveDyn(){cashHook(DYN);
   if(!DYN)return;
   DYN.savedAt=Date.now();let ok=false;const txt=JSON.stringify(DYN);
   for(let k=0;k<4&&!ok;k++){try{localStorage.setItem(DYN_LS,txt);ok=localStorage.getItem(DYN_LS).length===txt.length}catch(e){if(!bakDropOldest())break}}
@@ -4898,7 +4921,7 @@ function bldYield(i,o){
 const PROMO=['BOBBLEHEAD NIGHT','FREE T-SHIRT NIGHT','RETRO JERSEY NIGHT','DOLLAR HOT DOG NIGHT','FIREWORKS NIGHT','DOG DAY AT THE ARENA'];
 function promoNight(){if(!cityHome()||DYN.phase!=='season')return null;return (DYN.day%9===4)?PROMO[Math.floor(DYN.day/9)%PROMO.length]:null}
 function cityGame(win){
-  const C=DYN.city,home=cityHome(),P=PRICES.find(p=>p[0]===C.price),add=(k,v)=>{C.led[k]=(C.led[k]||0)+v;C.bank+=v;net+=v};
+  const C=DYN.city,home=cityHome(),P=PRICES.find(p=>p[0]===C.price),GI=C.lastGameItems={},add=(k,v)=>{C.led[k]=(C.led[k]||0)+v;C.bank+=v;net+=v;GI[k]=(GI[k]||0)+v};
   const stx=C.stx||0;let fan=win?.5:-.35*(stx?.75:1),net=0;const pw=cityPower(),hap=cityHappy();
   const po=DYN.phase==='playoffs',mq=home&&!po&&isMarquee();let att=cityAtt();if(mq)att=Math.min(100,att+8);const pn=promoNight();if(pn){att=Math.min(100,att+10);fan+=.25}if(stx)att=Math.max(att,Math.round(stx*100));
   if(home){C.att=att;C.attSum=(C.attSum||0)+att;C.attN=(C.attN||0)+1;add('tickets',Math.max(0,att-stx*100)/100*P[2]*(po?2:1)*(mq?1.25:1)*(hasPerk('scalper')?1.25:1));if(stx&&po)add('season tickets',stx*P[2]);fan+=P[4];if(att>=90)fan+=.05;if(mq&&att>=100)achCount('marquee');if(att<35)achCount('ghost')}
@@ -5835,7 +5858,7 @@ addEventListener('keydown',e=>{if(e.key==='?'&&DYN&&!$('locker').classList.conta
 {let wasDesk=null;addEventListener('resize',()=>{const d=DESK();if(wasDesk!==null&&d!==wasDesk&&DYN&&!$('locker').classList.contains('hidden'))renderDyn();wasDesk=d});}
 // lite effects: one switch turns off the heavier visual flourishes
 const LITE=()=>{try{return localStorage.getItem('hoopLite')==='1'}catch(e){return false}};document.documentElement.classList.toggle('lite',LITE());
-function headHtml(){setTimeout(()=>{const t=document.getElementById('saveTag');if(t&&!t.onclick){t.style.cursor='pointer';t.title='Saves and backups';t.onclick=savesScreen}},0);const cd=DYN._lastCash==null?0:DYN.cash-DYN._lastCash;DYN._lastCash=DYN.cash;return `<div id="saveTag" class="saveTag">${saveLabel()}</div><div class="lkTop"><span class="mk">${seasonLbl(DYN.year)}${DYN.year>PRESENT?' ✦':''}</span><span class="hearts" title="Owner patience">${hearts()}</span><span>RINGS ${DYN.rings.length}</span><button class="lnk tvBtn" data-tv>TV</button><button class="lnk" data-go="lite" title="Turn heavy effects on or off">${LITE()?'FX OFF':'FX ON'}</button><span class="${DYN.cash<0?'bad':''} ${cd>0?'cashUp':cd<0?'cashDn':''}">${money(DYN.cash)}${cd?`<sup>${cd>0?'+':''}${Math.round(cd*10)/10}</sup>`:''}</span><span>cap <b class="${payNow()>DYN.cap?'over':''}">${payNow()}</b>/${DYN.cap}${payNow()>DYN.cap?' TAX':''}</span></div>${DYN.toast?`<div class="toast ${/INJUR|hamstring|ankle/i.test(DYN.toast)?'t-inj':/RECORD|PLAYER OF THE WEEK|AWARD|MVP/i.test(DYN.toast)?'t-gold':/\$|cash|buyout|fine/i.test(DYN.toast)?'t-cash':''}">${DYN.toast}</div>`:''}${DYN.news2.length?`<div class="toast news">${DYN.news2.join('<br>')}</div>`:''}`}
+function headHtml(){setTimeout(()=>{const t=document.getElementById('saveTag');if(t&&!t.onclick){t.style.cursor='pointer';t.title='Saves and backups';t.onclick=savesScreen}},0);const cd=DYN._lastCash==null?0:DYN.cash-DYN._lastCash;DYN._lastCash=DYN.cash;return `<div id="saveTag" class="saveTag">${saveLabel()}</div><div class="lkTop"><span class="mk">${seasonLbl(DYN.year)}${DYN.year>PRESENT?' ✦':''}</span><span class="hearts" title="Owner patience">${hearts()}</span><span>RINGS ${DYN.rings.length}</span><button class="lnk tvBtn" data-tv>TV</button><button class="lnk" data-go="lite" title="Turn heavy effects on or off">${LITE()?'FX OFF':'FX ON'}</button><span data-go="money" title="Money in and out" style="cursor:pointer;text-decoration:underline dotted" class="${DYN.cash<0?'bad':''} ${cd>0?'cashUp':cd<0?'cashDn':''}">${money(DYN.cash)}${cd?`<sup>${cd>0?'+':''}${Math.round(cd*10)/10}</sup>`:''}</span><span>cap <b class="${payNow()>DYN.cap?'over':''}">${payNow()}</b>/${DYN.cap}${payNow()>DYN.cap?' TAX':''}</span></div>${DYN.toast?`<div class="toast ${/INJUR|hamstring|ankle/i.test(DYN.toast)?'t-inj':/RECORD|PLAYER OF THE WEEK|AWARD|MVP/i.test(DYN.toast)?'t-gold':/\$|cash|buyout|fine/i.test(DYN.toast)?'t-cash':''}">${DYN.toast}</div>`:''}${DYN.news2.length?`<div class="toast news">${DYN.news2.join('<br>')}</div>`:''}`}
 function prow(id,btns,extra){
   const r=BY[id],b=DYN.boost[id],bt=b?Object.keys(b).filter(k=>b[k]).map(k=>b[k]>0?`+${b[k]} ${STAT_LBL[k]||k}${b[k]>=BOOST_MAX?' (max)':''}`:`<i class="bad">${b[k]} ${STAT_LBL[k]||k}</i>`).join(' '):'';
   const st=DYN.starters.includes(id);
@@ -6006,6 +6029,7 @@ const DYNGO={
   closeDesk:()=>{DYN.view=null;DYN.ask=null;DYN.sel=[];saveDyn();showDyn()},
   menu:()=>showMenu(),
   card:()=>shareCardGo(),
+    money:()=>moneyScreen(),
     lite:()=>{try{localStorage.setItem('hoopLite',LITE()?'0':'1')}catch(e){}document.documentElement.classList.toggle('lite',LITE());showDyn()},
     copySum:()=>{const h=DYN.hist[DYN.hist.length-1],A=DYN.awards[h.year]||{};const t=`${DYN.teams[0].name} ${seasonLbl(h.year)}: ${h.w}-${h.l}, ${RES_TXT[h.result]}.${h.top?` Top scorer ${h.top} ppg.`:''}${A.mvp?` League MVP: ${A.mvp.name}.`:''} Champion: ${h.champ}. #BasketballLegend`;try{navigator.clipboard.writeText(t);DYN.toast='Season summary copied. Paste it anywhere.'}catch(e){DYN.toast=t}showDyn()},
   newdyn:()=>showYearPicker(),
@@ -6320,7 +6344,7 @@ function showMenu(){
   if(live){const T=saved.teams&&saved.teams[0],rec=T&&(T.w||T.l)?` · ${T.w}-${T.l}`:'',nm=T?T.name.split(' ').slice(-1)[0]:'';$('mContinue').innerHTML=`CONTINUE DYNASTY<small>${nm?nm+' · ':''}${seasonLbl(saved.year)}${rec} · ${saved.rings.length} ring${saved.rings.length===1?'':'s'} · ${'♥'.repeat(Math.max(0,saved.patience))}${saved.savedAt?` · saved ${new Date(saved.savedAt).toLocaleDateString(undefined,{month:'short',day:'numeric'})}`:''}</small>`}
   $('mStats').textContent=m.runs?`${m.runs} dynast${m.runs===1?'y':'ies'} · ${m.rings} ring${m.rings===1?'':'s'} · ${m.seasons} season${m.seasons===1?'':'s'}`:'No rings yet. Somebody has to be first.';
 }
-function loadDyn(){DYN=loadJ(DYN_LS,null);if(!DYN||DYN.v!==3){DYN=null;return}initDepth(DYN);dedupeLeague();if(!DYN.econ){DYN.econ=1;DYN.cap+=4;DYN.offers=null}for(const id in DYN.boost||{})for(const k in DYN.boost[id])DYN.boost[id][k]=Math.min(BOOST_MAX,DYN.boost[id][k]);DYN.trades=(DYN.trades||[]).map(o=>({ti:o.ti,get:[].concat(o.get),give:[].concat(o.give),why:o.why}));DYN.sel=[];DYN.ask=null;DYN.view=null;MODE='dyn';applyYear();showDyn()}
+function loadDyn(){DYN=loadJ(DYN_LS,null);if(!DYN||DYN.v!==3){DYN=null;return}cashHook(DYN);initDepth(DYN);dedupeLeague();if(!DYN.econ){DYN.econ=1;DYN.cap+=4;DYN.offers=null}for(const id in DYN.boost||{})for(const k in DYN.boost[id])DYN.boost[id][k]=Math.min(BOOST_MAX,DYN.boost[id][k]);DYN.trades=(DYN.trades||[]).map(o=>({ti:o.ti,get:[].concat(o.get),give:[].concat(o.give),why:o.why}));DYN.sel=[];DYN.ask=null;DYN.view=null;MODE='dyn';applyYear();showDyn()}
 Object.assign(SCORE,SCORE_NEW);
 SCORE.menu=(()=>{const pad='f3+a3+c4:16 bb2+d3+f3:16 g3+bb3+d4:16 c3+e3+g3:16 ',pad2='d3+f3+a3:16 bb2+d3+f3:16 f3+a3+c4:16 c3+e3+g3:16 ';
   const hook='c5:4 f5:4 a5:6 g5:2 | f5:4 d5:4 c5:8 | a4:4 bb4:4 d5:6 c5:2 | g4:4 a4:4 c5:8 ',hook2='f5:4 a5:4 c6:6 bb5:2 | a5:4 f5:4 d5:8 | bb4:4 d5:4 f5:6 e5:2 | c5:4 d5:4 e5:4 g5:4 ';
