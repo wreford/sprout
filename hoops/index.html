@@ -881,6 +881,7 @@ canvas.fwk{width:min(640px,92vw);height:auto;image-rendering:pixelated;margin:-1
 .brow button.on{background:var(--gold);color:var(--ink)}
 .fostack{display:flex;flex-direction:column;gap:12px}@media (min-width:1000px){#locker .lkOne .lkBody>.fostack{grid-column:1;grid-row:1/span 2}#locker .lkOne .lkBody>.offers.fo:has(.dpick){grid-column:2;grid-row:1}#locker .lkOne .lkBody>.offers.fo:has(.fac):not(:has(.dpick)){grid-column:2;grid-row:2}}
 .offers,.event,.myTeam,.stand{transition:box-shadow .15s,border-color .15s}@media (hover:hover){.offers:hover,.myTeam:hover{box-shadow:4px 4px 0 var(--ink),0 0 0 1px #feae3433}}
+.bakL{margin-top:8px;max-height:50vh;overflow:auto;text-align:left}.bakR{display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:1px dashed var(--line)}.bakR span{flex:1;min-width:0;display:flex;flex-direction:column}.bakR b{color:#fff;font-weight:400}.bakR small{color:var(--mut)}.bakR button{font:7px 'Press Start 2P',monospace;background:var(--panel2);color:#fff;border:2px solid var(--line);padding:6px}
 </style>
 </head>
 <body>
@@ -891,7 +892,7 @@ canvas.fwk{width:min(640px,92vw);height:auto;image-rendering:pixelated;margin:-1
   <button id="mNew" class="mbtn pri">NEW DYNASTY<small>Start anywhere from 1960 to today. Draft, trade, build a city, and play every game 5-on-5 yourself.</small></button>
   <div class="mstats" id="mStats"></div>
   <div class="mhow">Run a real franchise from 1960 to forever. 82 games you play live, a play-in and four playoff rounds. Build your own player, your district and your dynasty. Miss the playoffs and the owner loses patience.</div>
-  <div class="mxp"><button class="lnk" id="mExport">export progress</button> · <button class="lnk" id="mImport">import progress</button> · <button class="lnk tvBtn" id="mTv">watch TV</button> · <button class="lnk" id="mAch">achievements</button></div>
+  <div class="mxp"><button class="lnk" id="mExport">export progress</button> · <button class="lnk" id="mImport">import progress</button> · <button class="lnk" id="mSaves">saves &amp; backups</button> · <button class="lnk tvBtn" id="mTv">watch TV</button> · <button class="lnk" id="mAch">achievements</button></div>
   <div class="foot"><button class="lnk" id="sndBtn3">♪ sound on</button> · <button class="lnk hidden" id="mTheme">theme</button> · <button class="lnk hidden" id="mMore">more</button></div>
   <div id="mLegacy" class="hidden">
     <div class="msec mk">ARCHIVE</div>
@@ -4165,10 +4166,34 @@ const loadJ=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))||d}catch(e){r
 const saveJ=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}};
 // autosave: every change saves, the tab saves when you leave it, and a timer catches anything in between
 let SAVE_FAIL=false;
+// ---------- backups: compressed copies, newest first, kept separately from the live save ----------
+const BAK_LS='wwwnba.bak',BAK_N=5;
+function bakList(){return loadJ(BAK_LS,[])}
+function bakDropOldest(){const L=bakList();if(!L.length)return false;L.pop();try{localStorage.setItem(BAK_LS,JSON.stringify(L))}catch(e){try{localStorage.removeItem(BAK_LS)}catch(_){}}return true}
+function bakLabel(D){const T=D&&D.teams&&D.teams[0];return T?`${T.name} · ${seasonLbl(D.year)} · ${D.phase==='season'?`game ${(D.day||0)+1}, ${T.w}-${T.l}`:D.phase} · ${(D.rings||[]).length} ring${(D.rings||[]).length===1?'':'s'}`:'dynasty'}
+async function bakMake(why,raw){raw=raw||localStorage.getItem(DYN_LS);if(!raw)return;try{let code;const json=raw;
+    if(window.CompressionStream){const st=new Blob([json]).stream().pipeThrough(new CompressionStream('gzip'));code='Z'+b64u(new Uint8Array(await new Response(st).arrayBuffer()))}else code='J'+json;
+    const D=JSON.parse(raw),L=bakList().filter(b=>b.label!==bakLabel(D)||b.why!==why);L.unshift({at:Date.now(),why,label:bakLabel(D),code});L.length=Math.min(L.length,BAK_N);
+    for(let k=0;k<BAK_N;k++){try{localStorage.setItem(BAK_LS,JSON.stringify(L));break}catch(e){L.pop();if(!L.length)break}}}catch(e){}}
+async function bakRead(b){if(b.code[0]==='J')return b.code.slice(1);const bin=atob(b.code.slice(1)),bytes=Uint8Array.from(bin,ch=>ch.charCodeAt(0));const st=new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));return await new Response(st).text()}
+let BAK_LAST='';
+function bakTick(){if(!DYN||AUTO.on)return;const k=DYN.year+':'+DYN.phase+':'+Math.floor((DYN.day||0)/10);if(k===BAK_LAST)return;if(BAK_LAST)bakMake(DYN.phase==='season'&&DYN.day>0?'every 10 games':'new phase');BAK_LAST=k}
+// save when the tab is hidden or closed, so nothing is lost to a swipe-away
+addEventListener('pagehide',()=>{if(DYN)saveDyn()});document.addEventListener('visibilitychange',()=>{if(document.hidden&&DYN)saveDyn()});
+function savesScreen(){const L=bakList(),cur=loadJ(DYN_LS,null),ago=t=>{const m=Math.round((Date.now()-t)/60000);return m<1?'just now':m<60?m+' min ago':m<1440?Math.round(m/60)+' h ago':Math.round(m/1440)+' days ago'};
+  xOpen('SAVES & BACKUPS',`${cur?`<b>Current save:</b> ${bakLabel(cur)} · ${cur.savedAt?ago(cur.savedAt):''}`:'No dynasty saved yet.'}<br>Backups are made automatically every 10 games, each new season, and before anything replaces your dynasty.<div class="bakL">${L.length?L.map((b,i)=>`<div class="bakR"><span><b>${b.label}</b><small>${b.why} · ${ago(b.at)}</small></span><button data-bak="${i}">RESTORE</button></div>`).join(''):'<div class="hint">No backups yet.</div>'}</div>`,'',[
+   {l:'DOWNLOAD SAVE FILE',pri:1,f:async()=>{if(DYN)saveDyn();const code=await packSave();if(!code)return;const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([code],{type:'text/plain'}));a.download=`basketball-legend-${cur?cur.year:'save'}.bbs`;a.click()}},
+   {l:'LOAD SAVE FILE',f:()=>{const i=document.createElement('input');i.type='file';i.accept='.bbs,.txt';i.onchange=async()=>{try{const o=await unpackSave(await i.files[0].text());if(!o||!o.d||o.d.v!==3)throw 0;await bakMake('before loading a file');localStorage.setItem(DYN_LS,JSON.stringify(o.d));if(o.m)saveJ(META_LS,o.m);xClose();loadDyn()}catch(e){$('xS').innerHTML='<b class="bad">That file is not a Basketball Legend save.</b>'}};i.click()}},
+   {l:'CLOSE',f:xClose}]);
+  $('xTxt').style.display='none';
+  $('xS').querySelectorAll('[data-bak]').forEach(b=>b.onclick=async()=>{const B=L[+b.dataset.bak];if(!confirm(`Restore "${B.label}"? Your current save is backed up first.`))return;try{const raw=await bakRead(B);JSON.parse(raw);await bakMake('before a restore');localStorage.setItem(DYN_LS,raw);xClose();loadDyn()}catch(e){alert('That backup could not be read.')}})}
 function saveDyn(){
   if(!DYN)return;
-  try{DYN.savedAt=Date.now();localStorage.setItem(DYN_LS,JSON.stringify(DYN));SAVE_FAIL=false}
-  catch(e){if(!SAVE_FAIL){SAVE_FAIL=true;DYN.toast=(DYN.toast?DYN.toast+'<br>':'')+'Warning: couldn’t save to this device (storage full or blocked). Your progress is only in this tab.'}}
+  DYN.savedAt=Date.now();let ok=false;const txt=JSON.stringify(DYN);
+  for(let k=0;k<4&&!ok;k++){try{localStorage.setItem(DYN_LS,txt);ok=localStorage.getItem(DYN_LS).length===txt.length}catch(e){if(!bakDropOldest())break}}
+  if(ok){SAVE_FAIL=false;bakTick()}
+  else{try{DYN.feed=(DYN.feed||[]).slice(0,10);DYN.glogPrev=[];localStorage.setItem(DYN_LS,JSON.stringify(DYN));ok=true;SAVE_FAIL=false}catch(e){}}
+  if(!ok){if(!SAVE_FAIL){SAVE_FAIL=true;DYN.toast=(DYN.toast?DYN.toast+'<br>':'')+'Warning: couldn’t save to this device (storage full or blocked). Your progress is only in this tab.'}}
   const el=document.getElementById('saveTag');if(el)el.textContent=saveLabel();
 }
 function saveLabel(){
@@ -4261,7 +4286,7 @@ function dynChemOpts(){return DYN?{noFlaw:DYN.perks.includes('bench'),dbl:DYN.pe
 function runChemOpts(){return MODE==='dyn'?dynChemOpts():{}}
 
 // ---- franchise setup ----
-function startDynasty(y,key,cp){
+function startDynasty(y,key,cp){{const old=localStorage.getItem(DYN_LS);if(old)bakMake('before starting a new dynasty',old)}
   if(!NBA_BY[key])key='bulls';
   MODE='dyn';
   DYN={iso:!!window.NEXT_ISO,v:3,startYear:y,year:y,gid:1,players:{},teams:[key].concat(NBA.map(t=>t[0]).filter(k=>k!==key)).map(k=>({key:k,name:nbaName(k,y),conf:NBA_BY[k][2],roster:[],w:0,l:0,pd:0})),starters:[],boost:{},perks:[],cap:22,econ:1,patience:3,rings:[],hist:[],rookie:{},fa:[],phase:'board',round:0,offers:null,news:[],props:3,draft:null,trades:[]};
@@ -4310,7 +4335,7 @@ function newSeason(){
   DYN.clinchY=0;DYN.stPrev=DYN.st;DYN.st={};DYN.pst={};DYN.bigG=[];DYN.glogPrev=DYN.glog||[];DYN.glog=[];DYN.inj={};DYN.feed=[];DYN.pending=null;DYN.evSeen={};
   DYN.sched=makeSchedule();DYN.day=0;DYN.phase='season';DYN.offers=null;DYN.po=null;DYN.props=6;DYN.view=null;
   {const C=DYN.city;C.stx=0;C.attSum=0;C.attN=0;DYN.goal=ownerGoal();DYN.pending={type:'pre'}}
-  makeTradeOffers(3);setNext();{const sl=summerLeague();if(sl.length)DYN.toast=(DYN.toast?DYN.toast+'<br>':'')+sl.join('<br>')}
+  setTimeout(()=>bakMake('start of '+seasonLbl(DYN.year)),0);makeTradeOffers(3);setNext();{const sl=summerLeague();if(sl.length)DYN.toast=(DYN.toast?DYN.toast+'<br>':'')+sl.join('<br>')}
 }
 function setNext(){
   const pair=DYN.sched[DYN.day].find(p=>p.includes(0)),opp=pair[0]===0?pair[1]:pair[0];
@@ -5810,7 +5835,7 @@ addEventListener('keydown',e=>{if(e.key==='?'&&DYN&&!$('locker').classList.conta
 {let wasDesk=null;addEventListener('resize',()=>{const d=DESK();if(wasDesk!==null&&d!==wasDesk&&DYN&&!$('locker').classList.contains('hidden'))renderDyn();wasDesk=d});}
 // lite effects: one switch turns off the heavier visual flourishes
 const LITE=()=>{try{return localStorage.getItem('hoopLite')==='1'}catch(e){return false}};document.documentElement.classList.toggle('lite',LITE());
-function headHtml(){const cd=DYN._lastCash==null?0:DYN.cash-DYN._lastCash;DYN._lastCash=DYN.cash;return `<div id="saveTag" class="saveTag">${saveLabel()}</div><div class="lkTop"><span class="mk">${seasonLbl(DYN.year)}${DYN.year>PRESENT?' ✦':''}</span><span class="hearts" title="Owner patience">${hearts()}</span><span>RINGS ${DYN.rings.length}</span><button class="lnk tvBtn" data-tv>TV</button><button class="lnk" data-go="lite" title="Turn heavy effects on or off">${LITE()?'FX OFF':'FX ON'}</button><span class="${DYN.cash<0?'bad':''} ${cd>0?'cashUp':cd<0?'cashDn':''}">${money(DYN.cash)}${cd?`<sup>${cd>0?'+':''}${Math.round(cd*10)/10}</sup>`:''}</span><span>cap <b class="${payNow()>DYN.cap?'over':''}">${payNow()}</b>/${DYN.cap}${payNow()>DYN.cap?' TAX':''}</span></div>${DYN.toast?`<div class="toast ${/INJUR|hamstring|ankle/i.test(DYN.toast)?'t-inj':/RECORD|PLAYER OF THE WEEK|AWARD|MVP/i.test(DYN.toast)?'t-gold':/\$|cash|buyout|fine/i.test(DYN.toast)?'t-cash':''}">${DYN.toast}</div>`:''}${DYN.news2.length?`<div class="toast news">${DYN.news2.join('<br>')}</div>`:''}`}
+function headHtml(){setTimeout(()=>{const t=document.getElementById('saveTag');if(t&&!t.onclick){t.style.cursor='pointer';t.title='Saves and backups';t.onclick=savesScreen}},0);const cd=DYN._lastCash==null?0:DYN.cash-DYN._lastCash;DYN._lastCash=DYN.cash;return `<div id="saveTag" class="saveTag">${saveLabel()}</div><div class="lkTop"><span class="mk">${seasonLbl(DYN.year)}${DYN.year>PRESENT?' ✦':''}</span><span class="hearts" title="Owner patience">${hearts()}</span><span>RINGS ${DYN.rings.length}</span><button class="lnk tvBtn" data-tv>TV</button><button class="lnk" data-go="lite" title="Turn heavy effects on or off">${LITE()?'FX OFF':'FX ON'}</button><span class="${DYN.cash<0?'bad':''} ${cd>0?'cashUp':cd<0?'cashDn':''}">${money(DYN.cash)}${cd?`<sup>${cd>0?'+':''}${Math.round(cd*10)/10}</sup>`:''}</span><span>cap <b class="${payNow()>DYN.cap?'over':''}">${payNow()}</b>/${DYN.cap}${payNow()>DYN.cap?' TAX':''}</span></div>${DYN.toast?`<div class="toast ${/INJUR|hamstring|ankle/i.test(DYN.toast)?'t-inj':/RECORD|PLAYER OF THE WEEK|AWARD|MVP/i.test(DYN.toast)?'t-gold':/\$|cash|buyout|fine/i.test(DYN.toast)?'t-cash':''}">${DYN.toast}</div>`:''}${DYN.news2.length?`<div class="toast news">${DYN.news2.join('<br>')}</div>`:''}`}
 function prow(id,btns,extra){
   const r=BY[id],b=DYN.boost[id],bt=b?Object.keys(b).filter(k=>b[k]).map(k=>b[k]>0?`+${b[k]} ${STAT_LBL[k]||k}${b[k]>=BOOST_MAX?' (max)':''}`:`<i class="bad">${b[k]} ${STAT_LBL[k]||k}</i>`).join(' '):'';
   const st=DYN.starters.includes(id);
@@ -7916,12 +7941,12 @@ async function exportProgress(){
 function importProgress(){achCount('imports');
   xOpen('IMPORT PROGRESS','Paste the whole message from TW, code and all. It replaces the dynasty on this device.','',[{l:'LOAD',pri:1,f:async()=>{
     try{const o=await unpackSave($('xTxt').value);if(!o||!o.d||o.d.v!==3)throw new Error('bad');
-      const cur=loadJ(DYN_LS,null);if(cur&&!confirm('Replace the dynasty on this device?'))return;
+      const cur=loadJ(DYN_LS,null);if(cur&&!confirm('Replace the dynasty on this device? It will be backed up first.'))return;if(cur)await bakMake('before an import');
       localStorage.setItem(DYN_LS,JSON.stringify(o.d));if(o.m)saveJ(META_LS,o.m);xClose();loadDyn()}
     catch(e){$('xS').innerHTML='<b class="bad">That code did not work.</b> Make sure you pasted all of it, from BBS2K to the end.'}}},{l:'CANCEL',f:xClose}]);
   $('xTxt').focus();
 }
-$('mExport').onclick=()=>exportProgress();
+$('mExport').onclick=()=>exportProgress();$('mSaves').onclick=()=>savesScreen();
 $('mAch').onclick=()=>{show('locker');$('locker').innerHTML=achHtml();$('achBack').onclick=()=>showMenu()};
 $('mTv').onclick=()=>toggleYt();$('tvBtn2').onclick=()=>toggleYt();
 $('mImport').onclick=()=>importProgress();
