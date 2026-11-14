@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Hollow Woods · Mercenary Keep</title><link rel="stylesheet" href="mk.css">
+<style>
+#app{max-width:980px;margin:0 auto;padding:10px}
+#hud{display:flex;gap:14px;align-items:center;padding:6px 12px;margin-bottom:8px}
+#hearts{display:flex;gap:2px}#hearts .ht{font-style:normal;font-size:24px;line-height:1;text-shadow:0 1px 0 #000}#hearts .ht.f{color:#e2402e}#hearts .ht.h{background:linear-gradient(90deg,#e2402e 50%,#3a2020 50%);-webkit-background-clip:text;background-clip:text;color:transparent}#hearts .ht.e{color:#3a2020}
+#hud .it{font-weight:800;display:flex;align-items:center;gap:4px}#hud .it img{width:24px;height:24px;object-fit:contain}
+#wrap{position:relative}#cv{display:block;width:100%;height:auto;border-radius:8px;border:1px solid var(--line);image-rendering:pixelated;background:#1d3a1a}
+#pad{display:none;position:fixed;left:0;right:0;bottom:0;padding:14px;justify-content:space-between;align-items:end;pointer-events:none;z-index:10}
+#pad .dp{display:grid;grid-template-columns:repeat(3,56px);grid-template-rows:repeat(3,56px);gap:4px;pointer-events:auto}
+#pad button{background:rgba(20,26,40,.7);border:1px solid var(--line);border-radius:12px;color:var(--gold2);font:900 20px system-ui;touch-action:none}
+#pad .ab{width:84px;height:84px;border-radius:50%;pointer-events:auto;font-size:18px}
+@media (hover:none) and (pointer:coarse){#pad{display:flex}#app{padding-bottom:220px}}
+.help{font-size:13px;color:var(--mute);text-align:center;margin-top:8px}
+#msg{position:absolute;left:8%;right:8%;bottom:6%;padding:12px 16px;font-size:16px;line-height:1.4;display:none}#msg.on{display:block}
+</style></head><body>
+<div id="app"><div id="hud" class="frame"><span id="hearts"></span><span class="it"><img src="../img/icons/coins_copper.png" alt="">×<b id="coins">0</b></span><span class="it" id="keyI"></span><span style="flex:1"></span><span class="it" id="room"></span></div>
+<div id="wrap"><canvas id="cv"></canvas><div id="msg" class="frame"></div></div>
+<div class="help">Move: WASD or arrows · Sword: J or Space · Talk / open: walk into it. Find the key, open the gate, defeat what sleeps beyond it.</div></div>
+<div id="pad"><div class="dp"><span></span><button data-k="up">▲</button><span></span><button data-k="left">◀</button><span></span><button data-k="right">▶</button><span></span><button data-k="down">▼</button><span></span></div><button class="ab" data-k="atk">⚔</button></div>
+<script src="roster.js"></script><script src="mk.js"></script>
+<script>
+"use strict";
+const {$,ri,pick,unit,IMG,sfx,ls,toast,modal,closeModal}=MK;
+MK.topbar("quest");
+const TW=15,TH=10,TS=48,cv=$("cv"),g=cv.getContext("2d");cv.width=TW*TS;cv.height=TH*TS;g.imageSmoothingEnabled=false;
+// ---- world: 3x3 screens. Exits: which edges are open
+const EX={"1,2":"nwe","0,2":"ne","2,2":"nw","0,1":"nes","1,1":"neswL","2,1":"nws","0,0":"s","1,0":"sB","2,0":"s"};
+const NAMES={"1,2":"The Clearing","0,2":"Mossy Hollow","2,2":"Old Pond","0,1":"Bramble Path","1,1":"The Stone Gate","2,1":"Goblin Camp","0,0":"Spider Glen","1,0":"The Ogre's Den","2,0":"Hidden Grove"};
+function seedR(s){let x=s*9301+49297;return()=>{x=(x*9301+49297)%233280;return x/233280}}
+function buildRoom(rx,ry){const k=rx+","+ry,ex=EX[k],R=seedR(rx*7+ry*13+3),m=[];for(let y=0;y<TH;y++){m.push([]);for(let x=0;x<TW;x++){let t=".";if(x===0||y===0||x===TW-1||y===TH-1)t="T";m[y].push(t)}}
+ const open=(side)=>{if(side==="n")for(let x=6;x<=8;x++)m[0][x]=ex.includes("L")?(x===7?"D":"R"):".";if(side==="s")for(let x=6;x<=8;x++)m[TH-1][x]=".";if(side==="w")for(let y=4;y<=5;y++)m[y][0]=".";if(side==="e")for(let y=4;y<=5;y++)m[y][TW-1]="."};
+ [..."nswe"].forEach(s=>{if(ex.includes(s))open(s)});
+ const clear=(x,y)=>Math.abs(x-7)<=1||Math.abs(y-4.5)<=1;
+ for(let i=0;i<14;i++){const x=1+Math.floor(R()*(TW-2)),y=1+Math.floor(R()*(TH-2));if(clear(x,y))continue;m[y][x]=R()<.55?"T":R()<.6?"R":"f"}
+ if(k==="2,2"){for(let y=2;y<=4;y++)for(let x=9;x<=12;x++)m[y][x]="W";}
+ if(k==="0,2"){for(let y=6;y<=8;y++)for(let x=2;x<=4;x++)if(R()<.7)m[y][x]="W"}
+ if(k==="0,0")m[2][3]="C";if(k==="2,0")m[3][11]="H";if(k==="1,0"){for(let y=1;y<TH-1;y++)for(let x=1;x<TW-1;x++)if(m[y][x]!==".")m[y][x]=(x===1||x===TW-2)&&y%3===0?"R":"."}
+ if(k==="1,2")m[2][4]="N";
+ return m}
+const ROOMS={};for(const k in EX){const [x,y]=k.split(",").map(Number);ROOMS[k]=buildRoom(x,y)}
+const SPAWN={"1,2":[],"0,2":[["wolf2",3,3],["wolf2",11,7]],"2,2":[["spider",4,7],["rat",6,2],["rat",12,7]],"0,1":[["skel",4,3],["skel",10,6],["wolf2",12,2]],"1,1":[["skel",3,7],["skel",11,7],["oarch",7,3]],"2,1":[["oarch",4,2],["oarch",11,7],["gob",8,5],["gob",5,7]],"0,0":[["spider",6,5],["spider",10,3],["spider",9,7]],"2,0":[["wolf2",5,4],["wolf2",9,6]],"1,0":[["m_ogre",7,3]]};
+const EST={wolf2:{hp:3,sp:2.6,dmg:1,ai:"chase",sight:6},rat:{hp:1,sp:2.2,dmg:1,ai:"wander"},spider:{hp:2,sp:2.2,dmg:1,ai:"hop"},skel:{hp:4,sp:1.4,dmg:1,ai:"chase",sight:9},oarch:{hp:2,sp:1.6,dmg:1,ai:"shoot"},gob:{hp:2,sp:2,dmg:1,ai:"chase",sight:7},m_ogre:{hp:24,sp:1.5,dmg:2,ai:"boss",big:1}};
+// ---- state
+let P,E=[],SH=[],DROPS=[],cur="1,2",keys={},trans=null,cleared={},msg=null,over=false,lastT=0;
+function reset(){P={x:7*TS+TS/2,y:6*TS+TS/2,dir:[0,1],face:1,hp:6,max:6,coins:0,key:false,atkT:0,inv:0,kb:null,heart2:false,gate:false,boss:false};cur="1,2";cleared={};over=false;enterRoom(cur,true);MK.playMusic("elvish-theme");hud()}
+const tileAt=(x,y)=>{const m=ROOMS[cur],tx=Math.floor(x/TS),ty=Math.floor(y/TS);if(tx<0||ty<0||tx>=TW||ty>=TH)return ".";return m[ty][tx]};
+const solid=t=>t==="T"||t==="R"||t==="W"||t==="C"||t==="D"||t==="N"||t==="c";
+function blocked(x,y,r){for(const [dx,dy] of [[-r,-r],[r,-r],[-r,r],[r,r]])if(solid(tileAt(x+dx,y+dy)))return true;return false}
+function enterRoom(k,first){cur=k;E=[];SH=[];DROPS=[];if(!cleared[k])(SPAWN[k]||[]).forEach(([id,x,y])=>{const s=EST[id];E.push({id,u:unit(id),x:x*TS+TS/2,y:y*TS+TS/2,hp:s.hp+(id==="m_ogre"?0:0),max:s.hp,...s,t:0,dir:[1,0],cd:ri(60,140)/60,inv:0,kb:null})});
+ if(k==="1,0"&&!cleared[k]){MK.playMusic("the_dangerous_symphony");say("A shape stirs among the bones. The Ogre of the Hollow wakes.")}else if(!first)MK.playMusic(k==="1,0"?"silvan_sanctuary":"elvish-theme");
+ $("room").textContent=NAMES[k];render()}
+function say(t){msg={t,until:performance.now()+3200};$("msg").innerHTML=t;$("msg").classList.add("on")}
+function hud(){let h="";for(let i=0;i<P.max;i+=2){const v=Math.max(0,Math.min(2,P.hp-i));h+=`<i class="ht ${v===2?"f":v===1?"h":"e"}">♥</i>`}
+ $("hearts").innerHTML=h;$("coins").textContent=P.coins;$("keyI").innerHTML=P.key?`<img src="${IMG("items/stone-tablet.png")}" alt="">Gate key`:""}
+// ---- input
+const KM={arrowup:"up",w:"up",arrowdown:"down",s:"down",arrowleft:"left",a:"left",arrowright:"right",d:"right"," ":"atk",j:"atk"};
+addEventListener("keydown",e=>{const k=KM[e.key.toLowerCase()];if(k){keys[k]=true;e.preventDefault();if(k==="atk")attack()}});addEventListener("keyup",e=>{const k=KM[e.key.toLowerCase()];if(k)keys[k]=false});
+document.querySelectorAll("#pad [data-k]").forEach(b=>{const k=b.dataset.k;b.addEventListener("pointerdown",e=>{e.preventDefault();keys[k]=true;if(k==="atk")attack()});["pointerup","pointerleave","pointercancel"].forEach(ev=>b.addEventListener(ev,()=>keys[k]=false))});
+function attack(){if(over||P.atkT>0||trans)return;P.atkT=.28;sfx("sword-1",.35);
+ const ax=P.x+P.dir[0]*30,ay=P.y+P.dir[1]*30;E.forEach(e=>{const r=e.big?40:26;if(Math.hypot(e.x-ax,e.y-ay)<r+18&&e.inv<=0&&e.hp>0){e.hp--;e.inv=.35;e.kb=[P.dir[0]*260,P.dir[1]*260,.15];sfx(MK.hitSnd(e.u),.4);if(e.hp<=0)kill(e)}})}
+function kill(e){sfx(MK.dieSnd(e.u),.5);if(Math.random()<.45)DROPS.push({x:e.x,y:e.y,t:Math.random()<.4?"heart":"coin",life:8});
+ if(!E.some(o=>o.hp>0&&o!==e)){cleared[cur]=1;if(cur==="1,0"){P.boss=true;setTimeout(win,900)}}}
+function hurt(n,fx,fy){if(P.inv>0||over)return;P.hp-=n;P.inv=1.1;const d=Math.hypot(P.x-fx,P.y-fy)||1;P.kb=[(P.x-fx)/d*300,(P.y-fy)/d*300,.18];sfx("elf-hit-1",.5);hud();if(P.hp<=0)die()}
+function die(){over=true;MK.playMusic("defeat");sfx("human-die-1",.6);setTimeout(()=>{modal(`<h2>The woods win this time</h2><p>You fell in ${NAMES[cur]} with ${P.coins} coins in your pocket.</p><button class="btn" id="re">Try again</button>`);$("re").onclick=()=>{closeModal();reset()}},700)}
+function win(){over=true;MK.playMusic("victory");const n=ls.get("mk.questWins",0)+1;ls.set("mk.questWins",n);modal(`<h2>The Hollow is quiet</h2><p>The ogre is down. ${P.coins} coins, ${P.max/2} hearts${P.heart2?" (you found the hidden one)":""}. Clears: ${n}.</p><button class="btn" id="re">Play again</button>`);$("re").onclick=()=>{closeModal();reset()}}
+// ---- update
+function update(dt){if(over)return;if(trans){trans.t+=dt*2.2;if(trans.t>=1){P.x=trans.px;P.y=trans.py;enterRoom(trans.to);trans=null}return}
+ if(msg&&performance.now()>msg.until){$("msg").classList.remove("on");msg=null}
+ let mx=(keys.right?1:0)-(keys.left?1:0),my=(keys.down?1:0)-(keys.up?1:0);if(mx||my){const l=Math.hypot(mx,my);mx/=l;my/=l;if(P.atkT<=0){P.dir=Math.abs(mx)>Math.abs(my)?[Math.sign(mx),0]:[0,Math.sign(my)];if(mx)P.face=Math.sign(mx)}}
+ const sp=P.atkT>0?60:170;let vx=mx*sp,vy=my*sp;if(P.kb){vx=P.kb[0];vy=P.kb[1];P.kb[2]-=dt;if(P.kb[2]<=0)P.kb=null}
+ const nx=P.x+vx*dt,ny=P.y+vy*dt;if(!blocked(nx,P.y,14))P.x=nx;if(!blocked(P.x,ny,14))P.y=ny;
+ // touching things
+ const ft=[[P.dir[0]*24,P.dir[1]*24]];for(const [dx,dy] of ft){const tx=Math.floor((P.x+dx)/TS),ty=Math.floor((P.y+dy)/TS),t=tileAt(P.x+dx,P.y+dy);
+  if(t==="C"&&mx+my!==0){ROOMS[cur][ty][tx]="c";P.key=true;sfx("open-chest");say("Inside the chest: a heavy iron key with a troll's face on it.");hud()}
+  if(t==="D"&&mx+my!==0){if(P.key){ROOMS[cur][ty][tx]=".";P.gate=true;sfx("open-chest");say("The gate grinds open.")}else if(!msg)say("A locked gate. The keyhole is shaped like a troll's grin.")}
+  if(t==="N"&&mx+my!==0&&!msg)say(pick(["Old Rennick: \"The ogre sleeps past the stone gate, north. The key? Spiders took it. West, then north.\"","Old Rennick: \"Swing, then step back. Ogres hit slow, but they hit hard.\"","Old Rennick: \"There is a grove to the north-east nobody visits. Something glitters there.\""]))}
+ const ht=tileAt(P.x,P.y);if(ht==="H"){ROOMS[cur][Math.floor(P.y/TS)][Math.floor(P.x/TS)]=".";P.max+=2;P.hp=P.max;P.heart2=true;sfx("heal",.7);say("A heart container! Your maximum health grows.");hud()}
+ // exits
+ const [rx,ry]=cur.split(",").map(Number);let to=null,px=P.x,py=P.y;if(P.x<4){to=(rx-1)+","+ry;px=TW*TS-20}else if(P.x>TW*TS-4){to=(rx+1)+","+ry;px=20}else if(P.y<4){to=rx+","+(ry-1);py=TH*TS-20}else if(P.y>TH*TS-4){to=rx+","+(ry+1);py=20}
+ if(to&&ROOMS[to]){trans={to,t:0,dx:Math.sign(px-P.x),dy:Math.sign(py-P.y),px,py,from:cur};return}
+ P.atkT=Math.max(0,P.atkT-dt);P.inv=Math.max(0,P.inv-dt);
+ // enemies
+ E.forEach(e=>{if(e.hp<=0)return;e.inv=Math.max(0,e.inv-dt);e.t+=dt;let vx=0,vy=0;const dx=P.x-e.x,dy=P.y-e.y,d=Math.hypot(dx,dy)||1;
+  if(e.kb){vx=e.kb[0];vy=e.kb[1];e.kb[2]-=dt;if(e.kb[2]<=0)e.kb=null}
+  else if(e.ai==="chase"&&d<e.sight*TS){vx=dx/d*e.sp*TS*.6;vy=dy/d*e.sp*TS*.6}
+  else if(e.ai==="shoot"){e.cd-=dt;const want=d<4*TS?-1:d>6*TS?1:0;vx=dx/d*e.sp*TS*.5*want;vy=dy/d*e.sp*TS*.5*want;if(e.cd<=0){e.cd=2.2;SH.push({x:e.x,y:e.y,vx:dx/d*230,vy:dy/d*230,life:3});sfx("bow",.3)}}
+  else if(e.ai==="hop"){if(e.t>.9){e.t=0;const a=Math.random()*6.28;e.dir=d<5*TS&&Math.random()<.6?[dx/d,dy/d]:[Math.cos(a),Math.sin(a)]}vx=e.dir[0]*e.sp*TS*(e.t<.35?1.6:0);vy=e.dir[1]*e.sp*TS*(e.t<.35?1.6:0)}
+  else if(e.ai==="boss"){e.cd-=dt;if(e.charge){e.charge-=dt;vx=e.dir[0]*360;vy=e.dir[1]*360;if(e.charge<=0){e.charge=0;e.cd=2.4;for(let k=0;k<8;k++){const a=k/8*6.28;SH.push({x:e.x,y:e.y,vx:Math.cos(a)*170,vy:Math.sin(a)*170,life:1.6,rock:1})}sfx("club",.6)}}
+   else if(e.cd<=0&&e.cd>-0.6){vx=0;vy=0}else if(e.cd<=-0.6){e.charge=.7;e.dir=[dx/d,dy/d];sfx("orc-hit-1",.6)}else{vx=dx/d*e.sp*TS*.5;vy=dy/d*e.sp*TS*.5}}
+  else{if(e.t>1.4){e.t=0;const a=Math.random()*6.28;e.dir=[Math.cos(a),Math.sin(a)]}vx=e.dir[0]*e.sp*TS*.5;vy=e.dir[1]*e.sp*TS*.5}
+  const r=e.big?22:14,nx=e.x+vx*dt,ny=e.y+vy*dt;if(!blocked(nx,e.y,r))e.x=nx;else if(e.charge)e.charge=.01;if(!blocked(e.x,ny,r))e.y=ny;else if(e.charge)e.charge=.01;
+  if(Math.hypot(P.x-e.x,P.y-e.y)<(e.big?40:26))hurt(e.dmg,e.x,e.y)});
+ SH.forEach(s=>{s.x+=s.vx*dt;s.y+=s.vy*dt;s.life-=dt;if(solid(tileAt(s.x,s.y))&&!s.rock)s.life=0;if(Math.hypot(P.x-s.x,P.y-s.y)<16){hurt(1,s.x,s.y);s.life=0}});SH=SH.filter(s=>s.life>0);
+ DROPS.forEach(o=>{o.life-=dt;if(Math.hypot(P.x-o.x,P.y-o.y)<22){o.life=0;if(o.t==="heart"){P.hp=Math.min(P.max,P.hp+2);sfx("heal",.4)}else{P.coins+=ri(1,5);sfx("gold",.4)}hud()}});DROPS=DROPS.filter(o=>o.life>0);
+ E=E.filter(e=>e.hp>0)}
+// ---- render
+const CACHE={};
+function roomCanvas(k){if(CACHE[k]&&CACHE[k].v===JSON.stringify(ROOMS[k]))return CACHE[k].c;const c=document.createElement("canvas");c.width=TW*TS;c.height=TH*TS;const q=c.getContext("2d");q.imageSmoothingEnabled=false;const m=ROOMS[k];
+ const base=MK.img(k==="1,0"?"terrain/cave/floor.png":k==="0,0"?"terrain/grass/dry.png":"terrain/grass/green.png"),tree=MK.img("terrain/forest/pine.png");const rk=[MK.img("terrain/embellishments/rocks.png"),MK.img("terrain/embellishments/rocks2.png")],fl=MK.img("terrain/embellishments/flowers-mixed.png"),chest=MK.img("items/chest-plain-closed.png"),chestO=MK.img("items/chest-plain-open.png"),man=MK.img("units/human-magi/white-mage.png");
+ for(let y=0;y<TH;y++)for(let x=0;x<TW;x++){if(MK.ok(base)){const s=base.naturalWidth*.55,o=(base.naturalWidth-s)/2;q.drawImage(base,o,o,s,s,x*TS,y*TS,TS,TS)}else{q.fillStyle="#3e6a2e";q.fillRect(x*TS,y*TS,TS,TS)}}
+ for(let y=0;y<TH;y++)for(let x=0;x<TW;x++){const t=m[y][x],px=x*TS,py=y*TS;
+  if(t==="W"){q.fillStyle="#2b5c86";q.fillRect(px,py,TS,TS);q.strokeStyle="rgba(170,210,240,.35)";for(let i=0;i<3;i++){q.beginPath();q.moveTo(px+6,py+10+i*14);q.quadraticCurveTo(px+TS/2,py+6+i*14,px+TS-6,py+10+i*14);q.stroke()}}
+  if(t==="T"&&MK.ok(tree))q.drawImage(tree,px-TS*.35,py-TS*.5,TS*1.7,TS*1.7);
+  if(t==="R"){const r=rk[(x+y)%2];if(MK.ok(r))q.drawImage(r,px-TS*.25,py-TS*.25,TS*1.5,TS*1.5)}
+  if(t==="f"&&MK.ok(fl))q.drawImage(fl,px-TS*.25,py-TS*.25,TS*1.5,TS*1.5);
+  if((t==="C"||t==="c")&&MK.ok(chest))q.drawImage(t==="C"?chest:chestO,px-TS*.2,py-TS*.3,TS*1.4,TS*1.4);
+  if(t==="D"){q.fillStyle="#4a3a2a";q.fillRect(px,py,TS,TS);q.fillStyle="#7a6a5a";for(let i=0;i<4;i++)q.fillRect(px+4+i*11,py+2,5,TS-4);q.fillStyle="#c9a24a";q.fillRect(px+TS/2-4,py+TS/2-4,8,8)}
+  if(t==="H"){q.save();q.translate(px+TS/2,py+TS/2);q.fillStyle="#e2402e";q.beginPath();q.moveTo(0,12);q.lineTo(-12,0);q.arc(-6,-4,7,Math.PI,0);q.arc(6,-4,7,Math.PI,0);q.closePath();q.fill();q.restore()}
+  if(t==="N"&&MK.ok(man))q.drawImage(man,px-TS*.3,py-TS*.5,TS*1.6,TS*1.6)}
+ CACHE[k]={c,v:JSON.stringify(m)};return c}
+function drawSpr(u,side,x,y,sc,flip,flash){const c=MK.tc(u.spr,side);if(!c)return;const s=TS*sc;g.save();g.translate(x,y);if(flip)g.scale(-1,1);if(flash)g.globalAlpha=.4;g.drawImage(c,-s/2,-s*.72,s,s);g.restore()}
+function render(){g.clearRect(0,0,cv.width,cv.height);if(trans){const o=trans.t*(trans.dx?TW*TS:TH*TS);g.save();g.translate(-trans.dx*o,-trans.dy*o);g.drawImage(roomCanvas(trans.from),0,0);g.drawImage(roomCanvas(trans.to),trans.dx*TW*TS,trans.dy*TH*TS);g.restore();return}
+ g.drawImage(roomCanvas(cur),0,0);
+ DROPS.forEach(o=>{if(o.life<2&&Math.floor(o.life*8)%2)return;if(o.t==="heart"){g.fillStyle="#e2402e";g.beginPath();g.arc(o.x-4,o.y-2,5,0,7);g.arc(o.x+4,o.y-2,5,0,7);g.moveTo(o.x-9,o.y);g.lineTo(o.x,o.y+9);g.lineTo(o.x+9,o.y);g.fill()}else{const c=MK.img("icons/coins_copper.png");if(MK.ok(c))g.drawImage(c,o.x-12,o.y-12,24,24)}});
+ const ents=E.map(e=>({y:e.y,f:()=>{drawSpr(e.u,1,e.x,e.y,e.big?2.4:1.5,e.x>P.x,e.inv>0&&Math.floor(e.inv*20)%2);if(e.big){g.fillStyle="#000";g.fillRect(e.x-40,e.y-90,80,6);g.fillStyle="#e2584a";g.fillRect(e.x-39,e.y-89,78*e.hp/e.max,4)}}}));
+ ents.push({y:P.y,f:()=>{if(P.inv>0&&Math.floor(P.inv*16)%2)return;drawSpr(unit("efight"),0,P.x,P.y,1.5,P.face<0,false);if(P.atkT>0){const k=1-P.atkT/.28,a0=Math.atan2(P.dir[1],P.dir[0]),a=a0-1.1+k*2.2;g.strokeStyle="rgba(255,255,230,.85)";g.lineWidth=4;g.beginPath();g.arc(P.x,P.y-6,34,a0-1.1,a);g.stroke();g.lineWidth=1;const sw=MK.img("attacks/sword-elven.png");if(MK.ok(sw)){g.save();g.translate(P.x+Math.cos(a)*30,P.y-6+Math.sin(a)*30);g.rotate(a+.8);g.drawImage(sw,-14,-14,28,28);g.restore()}}}});
+ ents.sort((a,b)=>a.y-b.y).forEach(e=>e.f());
+ SH.forEach(s=>{if(s.rock){g.fillStyle="#8a7a6a";g.beginPath();g.arc(s.x,s.y,6,0,7);g.fill()}else{g.strokeStyle="#e8d7b0";g.lineWidth=2;g.beginPath();g.moveTo(s.x,s.y);g.lineTo(s.x-s.vx*.05,s.y-s.vy*.05);g.stroke();g.lineWidth=1}})}
+function loop(t){const dt=Math.min(.05,(t-lastT)/1000||0);lastT=t;update(dt);render();requestAnimationFrame(loop)}
+MK.preload(["terrain/grass/green.png","terrain/grass/dry.png","terrain/cave/floor.png","terrain/forest/pine.png","terrain/embellishments/rocks.png","terrain/embellishments/rocks2.png","terrain/embellishments/flowers-mixed.png","items/chest-plain-closed.png","items/chest-plain-open.png","units/human-magi/white-mage.png",unit("efight").spr,...Object.keys(EST).map(k=>unit(k).spr)],()=>{for(const k in CACHE)delete CACHE[k]});
+reset();requestAnimationFrame(loop);
+</script></body></html>
