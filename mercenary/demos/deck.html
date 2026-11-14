@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>The Gauntlet · Mercenary Keep</title><link rel="stylesheet" href="mk.css">
+<style>
+#app{max-width:1100px;margin:0 auto;padding:12px}
+.hud{display:flex;gap:14px;align-items:center;flex-wrap:wrap;padding:8px 12px;margin-bottom:10px}
+.hud .st{font-weight:800}.hud .gold{color:var(--gold2)}.hud .relics{display:flex;gap:6px}.hud .relics img{width:28px;height:28px;object-fit:contain}
+#arena{position:relative;min-height:330px;display:grid;grid-template-columns:1fr 2fr;align-items:end;padding:14px;background:linear-gradient(transparent 55%,rgba(60,48,20,.35)),url(../img/terrain/grass/green.png) bottom/72px repeat-x;border-radius:10px}
+.fighter{position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:default}
+.fighter .spr{width:144px;height:144px;margin:-24px 0 -16px;object-fit:contain;filter:drop-shadow(0 4px 2px rgba(0,0,0,.6))}
+.fighter.big .spr{width:220px;height:220px;margin:-40px 0 -24px}
+.fighter .nm{font-weight:800;font-size:13px}.fighter .hpb{width:110px}.fighter .hpt{font-size:12px;color:var(--mute)}
+.stat{display:flex;gap:4px;flex-wrap:wrap;justify-content:center;min-height:20px}.stat span{font:800 11px system-ui;padding:1px 6px;border-radius:8px;background:#222b40;border:1px solid var(--line)}
+.stat .b{color:#8fb8ff}.stat .s{color:#ffb15e}.stat .v{color:#ff7d6a}.stat .w{color:#b6a6ff}.stat .p{color:#7ed957}
+.intent{font:900 14px system-ui;padding:2px 8px;border-radius:10px;background:#2b1a1a;border:1px solid #6b2a20;color:#ffb3a3;min-height:22px}
+.intent.def{background:#1a2440;border-color:#2c4a8a;color:#a9c4ff}.intent.buf{background:#2a2410;border-color:#8a6a2c;color:#ffd47a}
+.enemies{display:flex;justify-content:space-evenly;align-items:end;gap:10px}
+.enemy.targetable{cursor:crosshair}.enemy.targetable .spr{filter:drop-shadow(0 0 8px #ff6a4a)}
+.dead{opacity:.15;pointer-events:none}
+#hand{display:flex;justify-content:center;gap:8px;margin-top:12px;min-height:190px;flex-wrap:wrap}
+.card{width:128px;height:182px;border-radius:10px;padding:8px;display:flex;flex-direction:column;gap:4px;background:linear-gradient(#26314c,#151b2a);border:2px solid #4a5a80;color:var(--ink);text-align:center;transition:transform .12s;position:relative}
+.card:hover:not(.no){transform:translateY(-10px)}.card.sel{transform:translateY(-16px);border-color:var(--gold2);box-shadow:0 0 14px var(--gold)}
+.card.atk{border-color:#a24a3a}.card.skl{border-color:#3a6aa2}.card.pow{border-color:#a2853a}
+.card .cost{position:absolute;left:-6px;top:-6px;width:28px;height:28px;border-radius:50%;background:radial-gradient(#ffd27a,#b8862c);color:#2a1a00;font:900 16px system-ui;display:flex;align-items:center;justify-content:center;border:2px solid #000}
+.card .ct{font:800 14px Georgia,serif;color:var(--gold2)}.card img{width:48px;height:48px;object-fit:contain;margin:2px auto}.card .cd{font-size:12px;line-height:1.25}.card .ty{font-size:10px;color:var(--mute);margin-top:auto;text-transform:uppercase;letter-spacing:.1em}
+.card.no{opacity:.45}.card.up .ct::after{content:"+";color:#7ed957}
+.bar{display:flex;gap:10px;align-items:center;justify-content:center;margin-top:8px}
+.energy{width:52px;height:52px;border-radius:50%;background:radial-gradient(#ffcf6a,#9a6a12);color:#2a1a00;font:900 20px system-ui;display:flex;align-items:center;justify-content:center;border:3px solid #000;box-shadow:0 0 12px #c9a24a88}
+.pile{font-size:13px;color:var(--mute)}
+#map{display:flex;flex-direction:column-reverse;gap:10px;align-items:center;padding:16px}
+.floor{display:flex;gap:16px;align-items:center}.floor .lbl{width:60px;color:var(--mute);font-size:12px;text-align:right}
+.node{width:78px;height:78px;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font:800 12px system-ui;background:var(--card);border:2px solid var(--line);color:var(--ink)}
+.node img{width:60px;height:60px;object-fit:contain;margin:-8px 0 -6px}.node.av{border-color:var(--gold2);box-shadow:0 0 12px var(--gold);cursor:pointer;animation:pul 1.4s infinite}.node.done{opacity:.35}.node.lock{opacity:.6}
+@keyframes pul{50%{box-shadow:0 0 22px var(--gold2)}}
+.choices{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin:12px 0}
+.log{font-size:12px;color:var(--mute);text-align:center;min-height:16px;margin-top:6px}
+@media (max-width:640px){.card{width:104px;height:160px}.fighter .spr{width:96px;height:96px;margin:-14px 0 -10px}.fighter.big .spr{width:140px;height:140px}#arena{grid-template-columns:1fr 1.6fr}}
+</style></head><body>
+<div id="app"></div>
+<script src="roster.js"></script><script src="mk.js"></script>
+<script>
+"use strict";
+const {$,ri,pick,shuffle,unit,sprImg,IMG,sfx,ls,toast,modal,closeModal,floatText}=MK;
+MK.topbar("deck");
+// ---------------- cards (original set; costs, effects, upgrades)
+const CARDS={
+ strike:{n:"Strike",c:1,ty:"atk",i:"attacks/sword-human.png",d:u=>`Deal ${6+3*u} damage.`,f:(u,t)=>hit(t,6+3*u)},
+ guard:{n:"Guard",c:1,ty:"skl",i:"icons/shield_steel.png",d:u=>`Gain ${5+3*u} block.`,f:u=>block(5+3*u)},
+ lunge:{n:"Lunge",c:2,ty:"atk",i:"attacks/spear.png",d:u=>`Deal ${10+4*u} damage. Apply 2 Vulnerable.`,f:(u,t)=>{hit(t,10+4*u);status(t,"vul",2)}},
+ volley:{n:"Volley",c:1,ty:"atk",i:"attacks/bow.png",aoe:1,d:u=>`Deal ${3+u} damage to ALL enemies twice.`,f:u=>{for(let k=0;k<2;k++)alive().forEach(e=>hit(e,3+u))}},
+ phalanx:{n:"Phalanx",c:1,ty:"skl",i:"icons/shield_tower.png",d:u=>`Gain ${8+3*u} block. Next turn, gain 4 more.`,f:u=>{block(8+3*u);B.p.nextBlk+=4}},
+ rally:{n:"Rally",c:0,ty:"skl",i:"icons/instrument_kantele.png",d:u=>`Draw ${2+u} cards.`,f:u=>draw(2+u)},
+ firebolt:{n:"Firebolt",c:2,ty:"atk",i:"attacks/fireball.png",d:u=>`Deal ${15+5*u} damage.`,f:(u,t)=>hit(t,15+5*u)},
+ holy:{n:"Holy Light",c:1,ty:"skl",i:"attacks/lightbeam.png",ex:1,d:u=>`Heal ${5+3*u} HP. Exhaust.`,f:u=>heal(5+3*u)},
+ bash:{n:"Shield Bash",c:1,ty:"atk",i:"attacks/fist.png",d:u=>`Deal damage equal to your block${u?" +4":""}.`,f:(u,t)=>hit(t,B.p.blk+4*u)},
+ cry:{n:"Battle Cry",c:1,ty:"pow",i:"icons/crossed_sword_and_hammer.png",ex:1,d:u=>`Gain ${2+u} Strength. Exhaust.`,f:u=>{B.p.str+=2+u}},
+ wind:{n:"Second Wind",c:1,ty:"skl",i:"icons/boots_elven.png",d:u=>`Gain ${6+3*u} block. Draw 1.`,f:u=>{block(6+3*u);draw(1)}},
+ blood:{n:"Bloodlust",c:1,ty:"atk",i:"attacks/axe.png",d:u=>`Lose 2 HP. Deal ${10+4*u} damage.`,f:(u,t)=>{B.p.hp=Math.max(1,B.p.hp-2);hit(t,10+4*u)}},
+ venom:{n:"Venom Blade",c:1,ty:"skl",i:"attacks/dagger-thrown-poison-orcish.png",d:u=>`Apply ${4+2*u} Poison.`,f:(u,t)=>status(t,"poi",4+2*u)},
+ charge:{n:"Charge",c:2,ty:"atk",i:"attacks/lance.png",d:u=>`Deal ${12+4*u} damage. Double if it is the first card this turn.`,f:(u,t)=>hit(t,(12+4*u)*(B.played===1?2:1))},
+ hex:{n:"Hex",c:1,ty:"skl",i:"attacks/curse.png",d:u=>`Apply 2 Weak${u?" and 1 Vulnerable":""} to ALL enemies.`,aoe:1,f:u=>alive().forEach(e=>{status(e,"weak",2);if(u)status(e,"vul",1)})},
+ cleave:{n:"Cleave",c:1,ty:"atk",i:"attacks/battleaxe.png",aoe:1,d:u=>`Deal ${8+3*u} damage to ALL enemies.`,f:u=>alive().forEach(e=>hit(e,8+3*u))},
+ iron:{n:"Iron Skin",c:2,ty:"pow",i:"icons/breastplate.png",ex:1,d:u=>`At the start of each turn, gain ${3+u} block. Exhaust.`,f:u=>{B.p.plate+=3+u}},
+ frenzy:{n:"Frenzy",c:0,ty:"atk",i:"attacks/claws.png",d:u=>`Deal ${3+u} damage 3 times.`,f:(u,t)=>{for(let k=0;k<3;k++)hit(t,3+u)}},
+};
+const POOL=Object.keys(CARDS).filter(k=>k!=="strike"&&k!=="guard");
+const needsTarget=k=>CARDS[k].ty==="atk"&&!CARDS[k].aoe||k==="venom";
+// ---------------- relics (Wesnoth items as icons)
+const RELICS={whet:{n:"Whetstone",i:"items/flame-sword.png",d:"Start every fight with 1 Strength."},ring:{n:"Iron Ring",i:"icons/ring_gold.png",d:"Gain 3 block at the start of every turn."},herb:{n:"Herb Pouch",i:"icons/herb-bag.png",d:"Heal 6 HP after every fight."},coin:{n:"Lucky Coin",i:"icons/coins_copper.png",d:"+50% gold from fights."},ankh:{n:"Ankh",i:"icons/ankh_necklace.png",d:"+1 energy every turn. Start each fight with 1 Weak."},tome:{n:"Old Tome",i:"icons/book2.png",d:"Draw 1 extra card every turn."}};
+// ---------------- enemies: intent patterns
+const FOES={
+ gob:{u:"gob",hp:22,p:[["a",6],["a",6],["d",5]]},rat:{u:"rat",hp:16,p:[["a",4],["m",2,3]]},wolf2:{u:"wolf2",hp:24,p:[["m",3,3],["a",8]]},
+ skel:{u:"skel",hp:30,p:[["d",8],["a",9],["a",7]]},spider:{u:"spider",hp:28,p:[["p",4],["a",7],["a",6]]},adept:{u:"adept",hp:24,p:[["b",2],["a",10],["w",2]]},
+ grunt:{u:"grunt",hp:36,p:[["a",10],["d",6],["a",12]]},m_ant:{u:"m_ant",hp:18,p:[["m",2,4],["d",4]]},
+ twar:{u:"twar",hp:70,elite:1,p:[["b",3],["a",14],["m",5,3],["d",12]]},bear:{u:"bear",hp:78,elite:1,p:[["a",16],["m",6,2],["w",2]]},m_ogre:{u:"m_ogre",hp:90,elite:1,p:[["d",10],["a",22],["a",14]]},
+ boss:{u:"m_fdragon",hp:210,boss:1,p:[["b",3],["m",5,4],["a",26],["d",20],["aoeP",3]]}};
+const FIGHTS=[["gob","gob"],["rat","wolf2"],["skel"],["spider","rat"],["adept","gob"],["grunt"],["m_ant","m_ant","m_ant"],["skel","adept"],["wolf2","wolf2"]];
+const ELITES=[["twar"],["bear"],["m_ogre"]];
+// ---------------- run state
+let R=null,B=null,sel=null;
+function newRun(){R={hp:72,max:72,gold:99,deck:["strike","strike","strike","strike","strike","guard","guard","guard","guard","lunge"],up:{},relics:[],floor:0,map:makeMap(),path:[]};R.deck=R.deck.map((k,i)=>({k,u:0,id:i}));R.nid=R.deck.length;showMap()}
+function makeMap(){const F=[];for(let f=0;f<9;f++){const n=f===0?2:f===8?1:ri(2,3),row=[];for(let i=0;i<n;i++){let t;if(f===8)t="boss";else if(f===0)t="fight";else if(f===4)t=i===0?"treasure":pick(["fight","elite","rest"]);else if(f===7)t="rest";else t=pick(["fight","fight","fight","elite","rest","shop","event"]);if(f<3&&t==="elite")t="fight";row.push(t)}F.push(row)}return F}
+const NODE={fight:["Fight","units/goblins/spearman.png"],elite:["Elite","units/trolls/warrior.png"],rest:["Campfire","items/brazier.png"],shop:["Merchant","items/gold-coins-large.png"],treasure:["Treasure","items/chest-plain-closed.png"],event:["Shrine","items/altar.png"],boss:["Dragon","units/monsters/fire-dragon.png"]};
+function hud(){return `<div class="hud frame"><span class="st">❤ ${R.hp}/${R.max}</span><span class="st gold">● ${R.gold} gold</span><span class="st">Floor ${R.floor}/9</span><span class="st" style="cursor:pointer;text-decoration:underline dotted" id="deckB">Deck ${R.deck.length}</span><span class="relics">${R.relics.map(r=>`<img src="${IMG(RELICS[r].i)}" title="${RELICS[r].n}: ${RELICS[r].d}">`).join("")}</span><span style="flex:1"></span><button class="mini" id="giveUp">Abandon run</button></div>`}
+function wireHud(){$("deckB").onclick=showDeck;$("giveUp").onclick=()=>{if(confirm("Abandon this run?"))title()}}
+function showMap(){const app=$("app");MK.playMusic("wanderer");
+ app.innerHTML=hud()+`<div id="map" class="frame">${R.map.map((row,f)=>`<div class="floor"><span class="lbl">${f===8?"BOSS":"Floor "+(f+1)}</span>${row.map((t,i)=>{const done=R.path[f]===i,av=f===R.floor&&R.path.length===f,lock=!av&&!done;return `<button class="node ${done?"done":""} ${av?"av":""} ${lock&&f<R.floor?"done":""}" data-f="${f}" data-i="${i}" ${av?"":"disabled"}><img class="spr" src="${IMG(NODE[t][1])}" alt="">${NODE[t][0]}</button>`}).join("")}</div>`).join("")}</div><div class="log">Pick a node on the glowing floor. Elites drop relics. The dragon waits at the top.</div>`;
+ wireHud();app.querySelectorAll(".node.av").forEach(b=>b.onclick=()=>{R.path.push(+b.dataset.i);enter(R.map[+b.dataset.f][+b.dataset.i])});const av=app.querySelector(".node.av");if(av)av.scrollIntoView({block:"center"})}
+function enter(t){sfx("gold",.3);if(t==="fight")fight(pick(FIGHTS));else if(t==="elite")fight(pick(ELITES),"elite");else if(t==="boss")fight(["boss"],"boss");else if(t==="rest")rest();else if(t==="shop")shop();else if(t==="treasure")treasure();else shrine()}
+function next(){R.floor++;if(R.floor>=9){win();return}showMap()}
+// ---------------- combat
+function fight(list,kind){const draw=shuffle(R.deck.map(c=>({...c})));B={kind:kind||"fight",p:{hp:R.hp,blk:0,str:R.relics.includes("whet")?1:0,vul:0,weak:R.relics.includes("ankh")?1:0,poi:0,plate:0,nextBlk:0},e:list.map((k,i)=>{const F=FOES[k];return {k,i,u:unit(F.u),hp:F.hp,max:F.hp,blk:0,str:0,vul:0,weak:0,poi:0,step:0,p:F.p,elite:F.elite,boss:F.boss}}),draw,disc:[],hand:[],exh:[],en:3,turn:0,played:0};
+ MK.playMusic(B.kind==="boss"?"the_dangerous_symphony":B.kind==="elite"?"frantic":"battle");startTurn()}
+const alive=()=>B.e.filter(e=>e.hp>0);
+function draw(n){for(let k=0;k<n;k++){if(!B.draw.length){if(!B.disc.length)break;B.draw=shuffle(B.disc);B.disc=[]}if(B.hand.length>=10)break;B.hand.push(B.draw.pop())}}
+function startTurn(){B.turn++;B.played=0;B.p.blk=B.p.nextBlk+B.p.plate+(R.relics.includes("ring")?3:0);B.p.nextBlk=0;B.en=3+(R.relics.includes("ankh")?1:0);
+ if(B.p.poi>0){B.p.hp-=B.p.poi;B.p.poi--;if(B.p.hp<=0)return lose()}
+ draw(5+(R.relics.includes("tome")?1:0));render()}
+function dmgOut(src,n){let d=n+(src.str||0);if(src.weak>0)d=Math.floor(d*.75);return Math.max(0,d)}
+function hit(t,n){if(!t||t.hp<=0)return;let d=dmgOut(B.p,n);if(t.vul>0)d=Math.floor(d*1.5);const ab=Math.min(t.blk,d);t.blk-=ab;d-=ab;t.hp=Math.max(0,t.hp-d);sfx(d>0?"sword-1":"miss-1",.5);fx(t,d?"-"+d:"blocked",d?"dmg":"blk");if(t.hp<=0){sfx(MK.dieSnd(t.u),.5)}}
+function block(n){B.p.blk+=n;fx(null,"+"+n+" block","blk")}
+function heal(n){B.p.hp=Math.min(R.max,B.p.hp+n);fx(null,"+"+n,"heal");sfx("heal",.5)}
+function status(t,k,n){t[k]=(t[k]||0)+n}
+let FXQ=[];function fx(t,txt,cls){FXQ.push([t?t.i:-1,txt,cls])}
+function play(hi,ti){const c=B.hand[hi],C=CARDS[c.k];if(C.c>B.en)return;let t=null;if(needsTarget(c.k)){const a=alive();t=ti!=null?B.e[ti]:a.length===1?a[0]:null;if(!t){sel=hi;render();return}}
+ B.en-=C.c;B.played++;B.hand.splice(hi,1);sel=null;C.f(c.u,t);(C.ex?B.exh:B.disc).push(c);
+ if(!alive().length)return endFight();render()}
+function endTurn(){B.disc.push(...B.hand);B.hand=[];sel=null;enemyTurn()}
+function intentOf(e){return e.p[e.step%e.p.length]}
+function intentTxt(e){const [t,a,b]=intentOf(e);const s=x=>dmgOut(e,x)*(B.p.vul>0?1.5:1)|0;return t==="a"?["⚔ "+s(a),""]:t==="m"?["⚔ "+s(a)+"×"+b,""]:t==="d"?["🛡 "+a,"def"]:t==="b"?["▲ +"+a+" str","buf"]:t==="w"?["☠ Weak "+a,"buf"]:t==="p"?["☣ Poison "+a,"buf"]:t==="aoeP"?["🔥 Burn "+a+" + ⚔ 8","buf"]:["?",""]}
+function enemyTurn(){const L=alive();let k=0;const go=()=>{if(k>=L.length){endRound();return}const e=L[k++];if(e.hp<=0){go();return}e.blk=0;
+  if(e.poi>0){e.hp-=e.poi;e.poi--;fx(e,"-"+(e.poi+1)+" poison","dmg");if(e.hp<=0){render();setTimeout(go,250);return}}
+  const [t,a,b]=intentOf(e);e.step++;const pl=n=>{let d=dmgOut(e,n);if(B.p.vul>0)d=Math.floor(d*1.5);const ab=Math.min(B.p.blk,d);B.p.blk-=ab;d-=ab;B.p.hp-=d;fx(null,d?"-"+d:"blocked",d?"dmg":"blk");sfx(d?MK.atkSnd(e.u):"miss-1",.5)};
+  if(t==="a")pl(a);else if(t==="m")for(let j=0;j<b;j++)pl(a);else if(t==="d"){e.blk+=a}else if(t==="b")e.str+=a;else if(t==="w")B.p.weak+=a;else if(t==="p")B.p.poi+=a;else if(t==="aoeP"){B.p.poi+=a;pl(8)}
+  render(e.i);if(B.p.hp<=0){setTimeout(lose,500);return}setTimeout(go,420)};go()}
+function endRound(){[B.p,...B.e].forEach(x=>{if(x.vul>0)x.vul--;if(x.weak>0)x.weak--});startTurn()}
+function endFight(){render();const g=(B.kind==="boss"?0:B.kind==="elite"?ri(35,50):ri(14,24))*(R.relics.includes("coin")?1.5:1)|0;R.hp=Math.min(R.max,B.p.hp+(R.relics.includes("herb")?6:0));R.gold+=g;sfx("gold",.6);
+ if(B.kind==="boss")return setTimeout(win,600);
+ const offer=shuffle(POOL).slice(0,3);const rel=B.kind==="elite"?pick(Object.keys(RELICS).filter(r=>!R.relics.includes(r))):null;if(rel)R.relics.push(rel);
+ setTimeout(()=>{modal(`<h2>Victory</h2><p>+${g} gold${rel?` · relic: <b>${RELICS[rel].n}</b> (${RELICS[rel].d})`:""}</p><p>Add a card to your deck:</p><div class="choices">${offer.map(k=>cardHTML({k,u:0},"pick",k)).join("")}</div><button class="btn alt" id="skip">Skip</button>`);
+  document.querySelectorAll("[data-pick]").forEach(b=>b.onclick=()=>{R.deck.push({k:b.dataset.pick,u:0,id:R.nid++});closeModal();next()});$("skip").onclick=()=>{closeModal();next()}},500)}
+function lose(){MK.playMusic(null);sfx("human-die-1",.6);const best=Math.max(ls.get("mk.deckBest",0),R.floor);ls.set("mk.deckBest",best);modal(`<h2>Fallen on floor ${R.floor+1}</h2><p>The Gauntlet claims another sellsword. Best: floor ${best+1}.</p><button class="btn" id="again">Try again</button>`);$("again").onclick=()=>{closeModal();newRun()}}
+function win(){MK.playMusic("victory");ls.set("mk.deckWins",ls.get("mk.deckWins",0)+1);modal(`<h2>The dragon falls</h2><p>You walk out of the Gauntlet with ${R.gold} gold, ${R.deck.length} cards and a story nobody will believe. Wins: ${ls.get("mk.deckWins",0)}.</p><button class="btn" id="again">New run</button>`);$("again").onclick=()=>{closeModal();newRun()}}
+// ---------------- render
+function cardHTML(c,attr,val,extra){const C=CARDS[c.k];return `<button class="card ${C.ty} ${c.u?"up":""} ${extra||""}" data-${attr}="${val}"><span class="cost">${C.c}</span><span class="ct">${C.n}</span><img src="${IMG(C.i)}" alt=""><span class="cd">${C.d(c.u)}</span><span class="ty">${C.ty==="atk"?"Attack":C.ty==="skl"?"Skill":"Power"}${C.ex?" · exhaust":""}</span></button>`}
+function statHTML(x){return `<div class="stat">${x.blk?`<span class="b">🛡 ${x.blk}</span>`:""}${x.str?`<span class="s">▲ ${x.str}</span>`:""}${x.vul?`<span class="v">Vuln ${x.vul}</span>`:""}${x.weak?`<span class="w">Weak ${x.weak}</span>`:""}${x.poi?`<span class="p">☣ ${x.poi}</span>`:""}${x.plate?`<span class="b">Iron ${x.plate}</span>`:""}</div>`}
+function render(hitI){const app=$("app");R.hp=B.p.hp;const tgt=sel!=null;
+ app.innerHTML=hud()+`<div id="arena" class="frame"><div class="fighter" id="pf">${statHTML(B.p)}${sprImg("units/human-loyalists/spearman.png",0)}<span class="nm">You</span><div class="hpb ally"><i style="width:${B.p.hp/R.max*100}%"></i></div><span class="hpt">${B.p.hp}/${R.max}</span></div>
+  <div class="enemies">${B.e.map((e,i)=>{const [it,ic]=intentTxt(e);return `<div class="fighter enemy ${e.boss?"big":""} ${e.hp<=0?"dead":""} ${tgt&&e.hp>0?"targetable":""}" data-e="${i}" id="e${i}"><span class="intent ${ic}">${e.hp>0?it:""}</span>${statHTML(e)}${sprImg(e.u.spr,1)}<span class="nm">${e.u.n}${e.elite?" ★":""}</span><div class="hpb"><i style="width:${e.hp/e.max*100}%"></i></div><span class="hpt">${e.hp}/${e.max}</span></div>`}).join("")}</div></div>
+  <div id="hand">${B.hand.map((c,i)=>cardHTML(c,"h",i,(CARDS[c.k].c>B.en?"no":"")+(sel===i?" sel":""))).join("")}</div>
+  <div class="bar"><span class="pile">Draw ${B.draw.length}</span><span class="energy">${B.en}</span><button class="btn" id="endT">End turn</button><span class="pile">Discard ${B.disc.length} · Exhaust ${B.exh.length}</span></div><div class="log">${tgt?"Pick a target.":"Click a card to play it. Enemy intents show what they will do next."}</div>`;
+ wireHud();app.querySelectorAll("[data-h]").forEach(b=>b.onclick=()=>{const i=+b.dataset.h;if(sel===i){sel=null;render();return}play(i)});
+ app.querySelectorAll(".enemy.targetable").forEach(b=>b.onclick=()=>play(sel,+b.dataset.e));$("endT").onclick=endTurn;
+ FXQ.forEach(([i,t,c])=>{const el=i<0?$("pf"):$("e"+i);if(el){floatText(el,t,c);if(c==="dmg")el.classList.add("shake")}});FXQ=[];if(hitI!=null){const el=$("e"+hitI);if(el)el.classList.add("lunge")}}
+// ---------------- other nodes
+function rest(){MK.playMusic("silvan_sanctuary");const h=Math.round(R.max*.3);const ups=R.deck.filter(c=>!c.u);
+ $("app").innerHTML=hud()+`<div class="frame" style="padding:20px;text-align:center"><img src="${IMG("items/brazier.png")}" style="width:90px"><h2>Campfire</h2><div class="choices"><button class="btn" id="rh">Rest: heal ${h} HP</button><button class="btn alt" id="ru">Sharpen: upgrade a card</button></div></div>`;wireHud();
+ $("rh").onclick=()=>{R.hp=Math.min(R.max,R.hp+h);sfx("heal");next()};$("ru").onclick=()=>{modal(`<h2>Upgrade which card?</h2><div class="choices">${ups.map(c=>cardHTML({...c,u:1},"up",c.id)).join("")}</div>`);document.querySelectorAll("[data-up]").forEach(b=>b.onclick=()=>{R.deck.find(c=>c.id==b.dataset.up).u=1;closeModal();sfx("mace");next()})}}
+function shop(){MK.playMusic("traveling_minstrels");const items=shuffle(POOL).slice(0,4).map(k=>({k,p:ri(45,80)}));let removed=false;
+ const draw_=()=>{$("app").innerHTML=hud()+`<div class="frame" style="padding:16px;text-align:center"><h2>The Merchant</h2><div class="choices">${items.map((it,i)=>`<div>${cardHTML({k:it.k,u:0},"buy",i,it.sold||R.gold<it.p?"no":"")}<div style="color:var(--gold2);font-weight:800">${it.sold?"SOLD":it.p+" g"}</div></div>`).join("")}</div>
+  <button class="btn alt" id="rm" ${removed||R.gold<75?"disabled":""}>Remove a card · 75 g</button> <button class="btn" id="lv">Leave</button></div>`;wireHud();
+  document.querySelectorAll("[data-buy]").forEach(b=>b.onclick=()=>{const it=items[+b.dataset.buy];if(it.sold||R.gold<it.p)return;R.gold-=it.p;it.sold=1;R.deck.push({k:it.k,u:0,id:R.nid++});sfx("gold");draw_()});
+  $("rm").onclick=()=>{modal(`<h2>Remove which card?</h2><div class="choices">${R.deck.map(c=>cardHTML(c,"rm",c.id)).join("")}</div>`);document.querySelectorAll("[data-rm]").forEach(b=>b.onclick=()=>{R.deck=R.deck.filter(c=>c.id!=b.dataset.rm);R.gold-=75;removed=true;closeModal();draw_()})};$("lv").onclick=next};draw_()}
+function treasure(){const rel=pick(Object.keys(RELICS).filter(r=>!R.relics.includes(r)));const g=ri(40,70);R.gold+=g;if(rel)R.relics.push(rel);sfx("open-chest");
+ modal(`<img src="${IMG("items/chest-open.png")}" style="width:90px"><h2>Treasure</h2><p>+${g} gold${rel?` and <b>${RELICS[rel].n}</b>: ${RELICS[rel].d}`:""}</p><button class="btn" id="ok">Onward</button>`);$("ok").onclick=()=>{closeModal();next()}}
+function shrine(){const o=pick([["An old altar hums. Offer 8 HP for a rare card?",()=>{R.hp=Math.max(1,R.hp-8);R.deck.push({k:pick(["firebolt","iron","cleave","charge"]),u:1,id:R.nid++})}],["A wandering priest offers to bless you. Max HP +6.",()=>{R.max+=6;R.hp+=6}],["A gambler bets 30 gold on a coin toss.",()=>{if(R.gold>=30){if(Math.random()<.5){R.gold+=30;toast("You win 30 gold")}else{R.gold-=30;toast("You lose 30 gold")}}}]]);
+ modal(`<img src="${IMG("items/altar.png")}" style="width:80px"><h2>A Shrine</h2><p>${o[0]}</p><div class="choices"><button class="btn" id="y">Accept</button><button class="btn alt" id="n">Walk on</button></div>`);$("y").onclick=()=>{o[1]();closeModal();next()};$("n").onclick=()=>{closeModal();next()}}
+function showDeck(){modal(`<h2>Your deck · ${R.deck.length}</h2><div class="choices">${R.deck.map(c=>cardHTML(c,"x",c.id)).join("")}</div><button class="btn" onclick="MK.closeModal()">Close</button>`)}
+function title(){MK.playMusic("main_menu");$("app").innerHTML=`<div class="frame" style="padding:28px;text-align:center;max-width:640px;margin:30px auto"><h1>The Gauntlet</h1><p>A sellsword, a deck of tricks, and nine floors of monsters between you and a dragon's hoard. Build your deck as you climb: every fight offers a new card, elites drop relics, campfires let you rest or sharpen a card.</p><p style="color:var(--mute)">Best floor: ${ls.get("mk.deckBest",0)+1} · Dragons slain: ${ls.get("mk.deckWins",0)}</p><button class="btn" id="go">Enter the Gauntlet</button></div>`;$("go").onclick=newRun}
+MK.preload(["units/human-loyalists/spearman.png",...Object.values(FOES).map(f=>unit(f.u).spr)]);
+title();
+</script></body></html>
