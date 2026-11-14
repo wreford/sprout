@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>The Undercroft · Mercenary Keep</title><link rel="stylesheet" href="mk.css">
+<style>
+#app{max-width:1100px;margin:0 auto;padding:10px}
+.cw{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:12px;align-items:start}
+#cv{width:100%;display:block;border-radius:8px;border:1px solid var(--line);background:#07060a;touch-action:manipulation;cursor:pointer}
+.panel{padding:10px 12px;margin-bottom:10px}.panel h3{margin:0 0 6px;font-size:16px}
+.st{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;font-size:13px}.st b{color:var(--gold2)}
+.inv{display:flex;gap:6px;flex-wrap:wrap}.inv button{display:flex;align-items:center;gap:4px;padding:5px 8px}.inv img{width:24px;height:24px;image-rendering:pixelated}
+#log{font-size:13px;line-height:1.45;color:var(--mute);min-height:96px}#log div:last-child{color:var(--ink)}
+.keys{font-size:12px;color:var(--mute);line-height:1.5}
+.cls{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin:12px 0}
+.cls button{width:180px;padding:12px;border-radius:10px;background:var(--card);border:1px solid var(--line);color:var(--ink);display:flex;flex-direction:column;align-items:center;gap:4px;font-size:12px}
+.cls button:hover{border-color:var(--gold2)}.cls img{width:72px;height:72px;object-fit:contain}.cls b{font-size:15px;color:var(--gold2)}
+.shop{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin:10px 0}
+.shop button{width:150px;padding:10px;border-radius:10px;background:var(--card);border:1px solid var(--line);color:var(--ink);font-size:12px;display:flex;flex-direction:column;align-items:center;gap:3px}.shop button:disabled{opacity:.4}.shop img{width:40px;height:40px;image-rendering:pixelated}.shop b{color:var(--gold2)}
+.mkpad.inline .ab{width:64px;height:64px;font-size:13px;font-weight:800}
+@media (max-width:820px){.cw{grid-template-columns:1fr}.keys{display:none}#log{min-height:0;max-height:80px;overflow:hidden}}
+</style></head><body>
+<div id="app"></div>
+<script src="roster.js"></script><script src="mk.js"></script><script src="engine.js"></script>
+<script>
+"use strict";
+// The Undercroft: a turn-based dungeon crawl. Every step you take, everything else takes one too.
+const {$,IMG,unit,sfx,ls,toast,modal,closeModal,sprImg,grid}=MK;
+MK.topbar("crawl");
+const MW=44,MH=30,T=48,DEPTH=6,SMALL=innerWidth<600,VW=SMALL?9:13,VH=SMALL?9:11;
+const cv=document.createElement("canvas"),g=MK.canvas(cv,VW*T,VH*T);
+const CLASSES={fencer:{n:"Sellsword",d:"Quick blade. 25% dodge, strikes twice when at full health.",hp:30,atk:6,def:0,dodge:25},
+ dfight:{n:"Dwarven Guard",d:"Tough as stone. Lots of HP and armour.",hp:42,atk:6,def:2,dodge:5},
+ earch:{n:"Elven Ranger",d:"Shoots arrows (F) at anything in sight. Weaker up close.",hp:28,atk:4,def:0,dodge:15,bow:7}};
+// monsters unlock by depth
+const MON=[["rat","corpse","gob","wolf2"],["rat","skel","gob","spider","m_scorpling","m_mud"],["skel","ghoul","adept","oarch","ghost","spider"],["ghoul","shade","whelp","assn","oarch","wolf"],["shade","blade","whelp","choco","adept","m_gmud"],["blade","twar","choco","shade","adept"]];
+const ALLIES=["spear","bow","hvy","thief","efight","dfight"];
+let P=null,D=null,busy=false,travel=null;
+// ---- dungeon generation: rooms joined by corridors, then a few extra loops
+function gen(depth){const R=MK.rng((Math.random()*1e9)|0),m=Array.from({length:MH},()=>Array(MW).fill("#")),rooms=[];
+ for(let t=0;t<300&&rooms.length<11;t++){const w=R.int(4,9),h=R.int(4,7),x=R.int(1,MW-w-2),y=R.int(1,MH-h-2);
+  if(rooms.some(r=>x<r.x+r.w+1&&x+w+1>r.x&&y<r.y+r.h+1&&y+h+1>r.y))continue;rooms.push({x,y,w,h,cx:x+(w>>1),cy:y+(h>>1)});for(let yy=y;yy<y+h;yy++)for(let xx=x;xx<x+w;xx++)m[yy][xx]="."}
+ rooms.sort((a,b)=>a.cx-b.cx);
+ const dig=(a,b)=>{let x=a.cx,y=a.cy;const hf=R()<.5;const step=(tx,ty)=>{while(x!==tx){x+=Math.sign(tx-x);m[y][x]="."}while(y!==ty){y+=Math.sign(ty-y);m[y][x]="."}};if(hf){step(b.cx,y);step(x,b.cy)}else{step(x,b.cy);step(b.cx,y)}};
+ for(let i=1;i<rooms.length;i++)dig(rooms[i-1],rooms[i]);for(let i=0;i<3;i++)dig(R.pick(rooms),R.pick(rooms));
+ const start=rooms[0];const flow=grid.flow([[start.cx,start.cy]],(x,y)=>m[y][x]==="#"?Infinity:1,MW,MH);
+ let far=rooms[1];rooms.forEach(r=>{if(flow[r.cy*MW+r.cx]>flow[far.cy*MW+far.cx]&&flow[r.cy*MW+r.cx]<Infinity)far=r});
+ const free=(r)=>{for(let t=0;t<40;t++){const x=R.int(r.x,r.x+r.w-1),y=R.int(r.y,r.y+r.h-1);if(m[y][x]==="."&&!D_items.some(i=>i.x===x&&i.y===y)&&!mons.some(o=>o.x===x&&o.y===y)&&!(x===start.cx&&y===start.cy))return [x,y]}return null};
+ const D_items=[],mons=[],deco=[];
+ const st=[far.cx,far.cy];if(depth<DEPTH)D_items.push({t:"stairs",x:st[0],y:st[1]});
+ const others=rooms.filter(r=>r!==start);
+ for(let i=0;i<3+R.int(0,2);i++){const p=free(R.pick(others));if(p)D_items.push({t:R()<.35?"chest":R.pick(["potion","gold","gold","arrows","scroll"]),x:p[0],y:p[1]})}
+ if(depth===2||depth===4||(depth>2&&R()<.4)){const p=free(R.pick(others));if(p)D_items.push({t:"cage",x:p[0],y:p[1],who:R.pick(ALLIES)})}
+ const pool=MON[depth-1],N=5+depth*2;for(let i=0;i<N;i++){const p=free(R.pick(others));if(p)mons.push(mkMon(R.pick(pool),depth,p[0],p[1]))}
+ if(depth===DEPTH){const p=[far.cx,far.cy];mons.push(Object.assign(mkMon("lich",depth+2,p[0],p[1]),{boss:true,n:"The Hollow King"}));const B=mons[mons.length-1];B.max=B.hp=150;B.atk+=4;B.ranged=true}
+ rooms.forEach(r=>{if(R()<.7){const p=free(r);if(p)deco.push({x:p[0],y:p[1],i:R.pick(["terrain/embellishments/mushroom.png","terrain/embellishments/mushroom3.png","terrain/embellishments/rocks.png","terrain/embellishments/stones-small.png","items/bones.png","items/brazier.png"])})}});
+ return{m,rooms,items:D_items,mons,deco,start:[start.cx,start.cy],seen:new Uint8Array(MW*MH),vis:new Set(),depth,fx:[]}}
+function mkMon(id,depth,x,y){const r=unit(id);return{id,n:r.n,x,y,hp:Math.round(7+r.hp*.75+depth*3.5),max:0,atk:Math.round(r.dmg+r.str+depth*1.4),def:Math.floor((r.tier+depth)/3),ranged:r.t==="r",xp:4+r.tier*3+depth,awake:false,side:1,ox:0,oy:0,slow:id==="corpse"||id==="m_mud"}}
+const fix=m=>{if(!m.max)m.max=m.hp;return m};
+// ---- world queries
+const wall=(x,y)=>!grid.inb(MW,MH,x,y)||D.m[y][x]==="#";
+const monAt=(x,y)=>D.mons.find(o=>o.hp>0&&o.x===x&&o.y===y);
+const allyAt=(x,y)=>P.allies.find(a=>a.hp>0&&a.x===x&&a.y===y);
+const itemAt=(x,y)=>D.items.find(i=>i.x===x&&i.y===y);
+const blocked=(x,y)=>wall(x,y)||monAt(x,y)||allyAt(x,y)||(P.x===x&&P.y===y)||(itemAt(x,y)&&itemAt(x,y).t==="cage");
+const sees=(a,b)=>grid.line(a.x,a.y,b.x,b.y).every(([x,y],i,l)=>i===0||i===l.length-1||!wall(x,y));
+function look(){D.vis=grid.fov(P.x,P.y,7,wall);for(const k of D.vis){const [x,y]=grid.unkey(k);if(grid.inb(MW,MH,x,y))D.seen[y*MW+x]=1}}
+const visible=o=>D.vis.has(grid.key(o.x,o.y));
+// ---- log
+const LOG=[];function log(t){LOG.push(t);if(LOG.length>6)LOG.shift();const el=$("log");if(el)el.innerHTML=LOG.map(l=>`<div>${l}</div>`).join("")}
+function float(x,y,t,c){D.fx.push({x,y,t,c,l:1})}
+// ---- start
+function title(){const b=ls.get("mk.crawlBest",{depth:0,wins:0});MK.playMusic("into_the_shadows",.3);
+ $("app").innerHTML=`<div class="frame" style="padding:20px;text-align:center"><h1>The Undercroft</h1><p style="color:var(--mute)">Six floors under the old keep, the Hollow King waits. Pick a mercenary and go down.</p>
+ <div class="cls">${Object.entries(CLASSES).map(([id,c])=>`<button data-c="${id}">${sprImg(unit(id).spr,0)}<b>${c.n}</b>${c.d}<small style="color:var(--mute)">${c.hp} HP · ${c.atk} atk · ${c.def} armour</small></button>`).join("")}</div>
+ <p class="keys" style="display:block">Move with arrows/WASD (diagonals: Q E Z C) or tap a tile. Walk into a foe to fight. <b>G</b> potion, <b>R</b> fire scroll, <b>F</b> shoot, <b>.</b> wait. Free caged mercenaries to fight beside you.</p>
+ <p style="color:var(--mute);font-size:13px">Deepest floor ${b.depth} · Hollow King slain ${b.wins} time${b.wins===1?"":"s"}</p></div>`;
+ document.querySelectorAll("[data-c]").forEach(b=>b.onclick=()=>start(b.dataset.c))}
+function start(cls){const c=CLASSES[cls];P={cls,id:cls,x:0,y:0,hp:c.hp,max:c.hp,atk:c.atk,def:c.def,dodge:c.dodge,bow:c.bow||0,lv:1,xp:0,gold:0,potions:3,fire:1,arrows:cls==="earch"?24:0,allies:[],kills:0,turns:0,ox:0,oy:0,side:0};
+ LOG.length=0;layout();const sb=pad.querySelector('[data-k="shoot"]');if(sb)sb.style.display=P.bow?"":"none";descend(1)}
+function layout(){$("app").innerHTML=`<div class="cw"><div><div id="cvw"></div><div id="padw"></div></div><div><div class="panel frame" id="stats"></div><div class="panel frame"><div class="inv" id="inv"></div></div><div class="panel frame"><div id="log"></div></div><div class="panel frame keys">Arrows/WASD move · Q E Z C diagonals · walk into foes to attack · <b>G</b> potion · <b>R</b> fire scroll · <b>F</b> shoot · <b>.</b> wait · <b>&gt;</b> take stairs. Tap any tile to walk there.</div></div></div>`;
+ $("cvw").appendChild(cv);cv.id="cv";$("padw").appendChild(pad);log("You light a torch and step into the dark.")}
+function descend(d){D=gen(d);D.mons.forEach(fix);[P.x,P.y]=D.start;P.allies.forEach((a,i)=>{const s=[[1,0],[-1,0],[0,1],[0,-1],[1,1]][i]||[1,1];a.x=P.x+s[0];a.y=P.y+s[1];if(wall(a.x,a.y)){a.x=P.x;a.y=P.y}});
+ look();MK.playMusic(d===DEPTH?"the_deep_path":d>3?"underground":"into_the_shadows",.3);log(d===DEPTH?"The air goes cold. Something old is down here.":`Floor ${d}.`);hud();scrollTo(0,0)}
+// ---- turns
+function act(fn){if(busy||!P||P.hp<=0||($("mkModal")&&$("mkModal").classList.contains("on")))return;if(fn()===false)return;endTurn()}
+function step(dx,dy){act(()=>{const nx=P.x+dx,ny=P.y+dy,m=monAt(nx,ny);if(m){strike(P,m);return}
+ if(wall(nx,ny)){travel=null;return false}const a=allyAt(nx,ny);if(a){a.x=P.x;a.y=P.y}const it=itemAt(nx,ny);if(it&&it.t==="cage"){if(P.allies.filter(a=>a.hp>0).length>=2){log("You already lead two. Leave this one for the next mercenary.");travel=null;return false}free(it);return}
+ P.x=nx;P.y=ny;if(it)pickup(it);if(it&&it.t==="stairs")log("Stairs down. Press &gt; or tap them again to descend.")})}
+function strike(a,d){const atk=a===P?P.atk+Math.floor(P.lv/2):a.atk,dodge=d===P?P.dodge:d.dodge||0,hitP=MK.combat.hit(88,dodge);a.ox=Math.sign(d.x-a.x)*.25;a.oy=Math.sign(d.y-a.y)*.25;setTimeout(()=>{a.ox=a.oy=0},110);
+ const r=a===P?{wp:P.cls==="earch"?"dagger-human":unit(P.cls).wp}:unit(a.id);sfx(MK.atkSnd(r),.4);
+ if(!MK.combat.roll(hitP)){float(d.x,d.y,"miss","#cfd8e8");if(a===P||d===P)log(`${a===P?"You miss":a.n+" misses"}${d===P?" you":" the "+d.n}.`);return}
+ const dm=MK.combat.dmg(atk,(d===P?P.def:d.def));d.hp-=dm;float(d.x,d.y,dm,d===P||d.ally?"#ff8a6a":"#ffd47a");sfx(MK.hitSnd(d===P?unit(P.cls):unit(d.id)),.35);
+ if(a===P)log(`You hit the ${d.n} for ${dm}.`);else if(d===P)log(`The ${a.n} hits you for ${dm}.`);
+ if(d.hp<=0)kill(d,a);else if(a===P&&P.cls==="fencer"&&P.hp===P.max&&d.hp>0&&MK.combat.roll(hitP)){const d2=MK.combat.dmg(atk,d.def);d.hp-=d2;float(d.x,d.y+.3,d2,"#ffd47a");if(d.hp<=0)kill(d,a)}}
+function kill(d,by){if(d===P){P.hp=0;return}if(d.ally){log(`${d.n} falls.`);sfx(MK.dieSnd(unit(d.id)),.5);return}
+ sfx(MK.dieSnd(unit(d.id)),.5);log(`The ${d.n} dies.`);P.kills++;
+ const xp=d.xp;P.xp+=xp;while(P.xp>=P.lv*15){P.xp-=P.lv*15;P.lv++;P.max+=4;P.hp=Math.min(P.max,P.hp+8);P.atk+=1;if(P.lv%3===0)P.def++;sfx("fanfare-short",.4);log(`<b style="color:var(--gold2)">Level ${P.lv}!</b> Stronger, tougher.`);float(P.x,P.y,"LEVEL UP","#b6a6ff")}
+ if(Math.random()<.22&&!itemAt(d.x,d.y))D.items.push({t:Math.random()<.5?"gold":"potion",x:d.x,y:d.y});
+ if(d.boss)setTimeout(win,600)}
+function pickup(it){const i=D.items.indexOf(it);const take=()=>D.items.splice(i,1);
+ if(it.t==="gold"){const n=5+D.depth*4+MK.ri(0,8);P.gold+=n;log(`${n} gold.`);sfx("gold",.4);take()}
+ else if(it.t==="potion"){P.potions++;log("A healing potion.");sfx("potion",.3);take()}
+ else if(it.t==="scroll"){P.fire++;log("A scroll of fire.");sfx("open-chest",.3);take()}
+ else if(it.t==="arrows"){P.arrows+=10;log("A bundle of arrows.");take()}
+ else if(it.t==="chest"){sfx("open-chest",.5);const r=MK.pick(["atk","def","hp","potions","gold"]);if(r==="atk"){P.atk+=2;log("Inside: a better blade. <b>+2 attack</b>.")}else if(r==="def"){P.def+=1;log("Inside: a sturdier shield. <b>+1 armour</b>.")}else if(r==="hp"){P.max+=6;P.hp+=6;log("Inside: an amulet of vigour. <b>+6 max HP</b>.")}else if(r==="potions"){P.potions+=2;log("Inside: two potions.")}else{const n=25+D.depth*8;P.gold+=n;log(`Inside: ${n} gold.`)}take()}}
+function free(it){if(P.allies.filter(a=>a.hp>0).length>=2){log("You can't lead more than two. The prisoner wishes you luck.");return}const r=unit(it.who);
+ const a={id:it.who,n:r.n,x:it.x,y:it.y,hp:Math.round(14+r.hp*.8+D.depth*3),max:0,atk:Math.round(r.dmg+r.str+D.depth),def:Math.floor(r.tier/2),dodge:10,ally:true,side:0,ox:0,oy:0};a.max=a.hp;
+ P.allies=P.allies.filter(x=>x.hp>0);P.allies.push(a);D.items.splice(D.items.indexOf(it),1);sfx("open-chest",.5);log(`You break the cage. <b>${a.n}</b> joins you.`);float(a.x,a.y,"joined!","#8be08b")}
+function potion(){act(()=>{if(!P.potions){log("No potions left.");return false}P.potions--;const h=Math.round(P.max*.45);P.hp=Math.min(P.max,P.hp+h);sfx("potion",.5);float(P.x,P.y,"+"+h,"#8be08b");log(`You drink. +${h} HP.`)})}
+function fire(){act(()=>{if(!P.fire){log("No fire scrolls.");return false}const ts=D.mons.filter(m=>m.hp>0&&visible(m));if(!ts.length){log("Nothing in sight to burn.");return false}P.fire--;sfx("flame-big",.6);log("Fire roars through the room!");
+ ts.forEach(m=>{const dm=12+D.depth*3;m.hp-=dm;m.awake=true;float(m.x,m.y,dm,"#ff9a3a");if(m.hp<=0)kill(m,P)})})}
+function shoot(){act(()=>{if(!P.bow){log("You have no bow.");return false}if(!P.arrows){log("Out of arrows.");return false}
+ const ts=D.mons.filter(m=>m.hp>0&&visible(m)&&sees(P,m)).sort((a,b)=>grid.cheb(a,P)-grid.cheb(b,P));if(!ts.length){log("No clear shot.");return false}
+ const m=ts[0];P.arrows--;m.awake=true;sfx("bow",.5);if(!MK.combat.roll(MK.combat.hit(85,0))){float(m.x,m.y,"miss","#cfd8e8");log("Your arrow misses.");sfx("bow-miss",.3);return}
+ const dm=MK.combat.dmg(P.bow+P.lv,m.def);m.hp-=dm;float(m.x,m.y,dm,"#ffd47a");log(`Arrow hits the ${m.n} for ${dm}.`);if(m.hp<=0)kill(m,P)})}
+function wait(){act(()=>{if(P.hp<P.max&&!D.mons.some(m=>m.hp>0&&visible(m)))P.hp=Math.min(P.max,P.hp+1)})}
+function stairs(){const it=itemAt(P.x,P.y);if(!it||it.t!=="stairs"){log("No stairs here.");return}travel=null;camp()}
+// ---- everyone else moves
+function endTurn(){P.turns++;if(P.turns%4===0&&P.hp<P.max)P.hp++;
+ // allies: fight what's next to them, else move toward the nearest visible foe, else keep close
+ P.allies.filter(a=>a.hp>0).forEach(a=>{if(!a.max)a.max=a.hp;const foes=D.mons.filter(m=>m.hp>0&&visible(m));const adj=foes.find(m=>grid.cheb(m,a)===1);if(adj){strike(a,adj);return}
+  const tgt=foes.sort((x,y)=>grid.cheb(x,a)-grid.cheb(y,a))[0];const goal=tgt&&grid.cheb(tgt,a)<=6?tgt:(grid.cheb(a,P)>2?P:null);if(!goal)return;
+  const p=grid.path(a.x,a.y,goal.x,goal.y,(x,y)=>(x===goal.x&&y===goal.y)?1:blocked(x,y)?Infinity:1,grid.D8,30);if(p.length>1||(p.length===1&&!blocked(...p[0]))){const [nx,ny]=p[0];if(!blocked(nx,ny)){a.x=nx;a.y=ny}}});
+ for(const m of D.mons){if(m.hp<=0||P.hp<=0)continue;if(!m.awake){if(visible(m)&&Math.random()<.85)m.awake=true;else continue}
+  if(m.slow&&P.turns%2)continue;
+  const tgts=[P,...P.allies.filter(a=>a.hp>0)];const adj=tgts.find(t=>grid.cheb(t,m)===1);if(adj&&(adj===P||Math.random()<.6)){strike(m,adj);continue}
+  if(m.ranged&&visible(m)&&grid.cheb(m,P)<=5&&sees(m,P)&&Math.random()<.7){sfx(MK.atkSnd(unit(m.id)),.35);if(MK.combat.roll(MK.combat.hit(78,P.dodge))){const dm=MK.combat.dmg(m.atk-1,P.def);P.hp-=dm;float(P.x,P.y,dm,"#ff8a6a");log(`The ${m.n} shoots you for ${dm}.`)}else float(P.x,P.y,"miss","#cfd8e8");continue}
+  if(adj){strike(m,adj);continue}
+  const p=grid.path(m.x,m.y,P.x,P.y,(x,y)=>(x===P.x&&y===P.y)?1:wall(x,y)?Infinity:(monAt(x,y)||allyAt(x,y))?6:1,grid.D8,40);
+  if(p.length){const [nx,ny]=p[0];if(!blocked(nx,ny)){m.x=nx;m.y=ny}}}
+ D.mons=D.mons.filter(m=>m.hp>0);P.allies=P.allies.filter(a=>a.hp>0);
+ look();hud();if(P.hp<=0){P.hp=0;hud();setTimeout(die,400)}}
+// ---- between floors: a quiet camp on the stairs
+function camp(){if(D.depth>=DEPTH)return;MK.playMusic("silvan_sanctuary",.3);const nd=D.depth+1;let bought={};
+ const draw=()=>{modal(`<h2>The stairs camp</h2><p>A pedlar has set up on the landing. You have <b style="color:var(--gold2)">${P.gold}</b> gold.</p><div class="shop">
+  ${[["heal","icons/potion_red_medium.png","Rest and bind wounds","Full HP",15],["potion","icons/potion_red_medium.png","Potion","+1 potion",20],["atk","icons/crossed_sword_and_hammer.png","Whetstone","+2 attack",45],["def","icons/shield_steel.png","Shield work","+1 armour",45],["fire","icons/scroll_red.png","Fire scroll","+1 scroll",30],...(P.bow?[["arrows","icons/bag.png","Arrows","+12 arrows",15]]:[])].map(([k,i,n,d,c])=>`<button data-b="${k}" data-c="${c}" ${P.gold<c||(k==="heal"&&(bought.heal||P.hp===P.max))?"disabled":""}><img src="${IMG(i)}" alt=""><b>${n}</b>${d}<br>${c} gold</button>`).join("")}</div><button class="btn" id="go">Down to floor ${nd}</button>`);
+  document.querySelectorAll("[data-b]").forEach(b=>b.onclick=()=>{const k=b.dataset.b;P.gold-=+b.dataset.c;sfx("gold",.4);if(k==="heal"){P.hp=P.max;P.allies.forEach(a=>a.hp=a.max);bought.heal=1}else if(k==="potion")P.potions++;else if(k==="atk")P.atk+=2;else if(k==="def")P.def++;else if(k==="fire")P.fire++;else P.arrows+=12;hud();draw()});
+  $("go").onclick=()=>{closeModal();const b=ls.get("mk.crawlBest",{depth:0,wins:0});b.depth=Math.max(b.depth,nd);ls.set("mk.crawlBest",b);descend(nd)}};draw()}
+function die(){const b=ls.get("mk.crawlBest",{depth:0,wins:0});b.depth=Math.max(b.depth,D.depth);ls.set("mk.crawlBest",b);
+ MK.ending({title:"You die in the dark",text:`Floor ${D.depth}, level ${P.lv}, ${P.kills} kills, ${P.gold} gold unspent. Deepest ever: floor ${b.depth}.`,music:"defeat",sfx:MK.dieSnd(unit(P.cls)),buttons:[["Try again",()=>start(P.cls)],["Pick another",title]]})}
+function win(){const b=ls.get("mk.crawlBest",{depth:0,wins:0});b.wins++;b.depth=DEPTH;ls.set("mk.crawlBest",b);
+ MK.ending({img:IMG(unit("lich").spr),title:"The Hollow King is dust",text:`You climb out of the Undercroft at level ${P.lv} with ${P.kills} kills${P.allies.length?` and ${P.allies.map(a=>a.n).join(" and ")} at your side`:""}. Wins: ${b.wins}.`,music:"victory",buttons:[["Go again",title]]})}
+// ---- panels
+function hud(){if(!$("stats"))return;$("stats").innerHTML=`<div style="display:flex;gap:8px;align-items:center">${sprImg(unit(P.cls).spr,0)}<div><h3>${CLASSES[P.cls].n}</h3><small style="color:var(--mute)">Level ${P.lv} · floor ${D.depth}/${DEPTH}</small></div></div>
+ <div class="hpb ally" style="margin:6px 0"><i style="width:${100*P.hp/P.max}%"></i></div><div class="st"><span>HP</span><b>${P.hp}/${P.max}</b><span>Attack</span><b>${P.atk+Math.floor(P.lv/2)}</b><span>Armour</span><b>${P.def}</b><span>XP</span><b>${P.xp}/${P.lv*15}</b><span>Gold</span><b>${P.gold}</b>${P.allies.length?`<span>Company</span><b>${P.allies.map(a=>`${a.n} ${a.hp}/${a.max}`).join(", ")}</b>`:""}</div>`;
+ $("inv").innerHTML=`<button class="mini" id="iP" ${P.potions?"":"disabled"}><img src="${IMG("icons/potion_red_medium.png")}" alt="">Potion ×${P.potions}</button><button class="mini" id="iF" ${P.fire?"":"disabled"}><img src="${IMG("icons/scroll_red.png")}" alt="">Fire ×${P.fire}</button>${P.bow?`<button class="mini" id="iS" ${P.arrows?"":"disabled"}><img src="${IMG("icons/bag.png")}" alt="">Shoot (${P.arrows})</button>`:""}<button class="mini" id="iW">Wait</button>${itemAt(P.x,P.y)&&itemAt(P.x,P.y).t==="stairs"?`<button class="btn" id="iD">Descend</button>`:""}`;
+ $("iP").onclick=potion;$("iF").onclick=fire;if($("iS"))$("iS").onclick=shoot;$("iW").onclick=wait;if($("iD"))$("iD").onclick=stairs}
+// ---- input: keys (held keys repeat), the touch pad, and tap-to-walk
+const KEYS={up:["arrowup","w","k","8"],down:["arrowdown","s","j","2"],left:["arrowleft","a","h","4"],right:["arrowright","d","l","6"],ul:["q","y","7"],ur:["e","u","9"],dl:["z","b","1"],dr:["c","n","3"],wait:[".","5"],drink:["g"],burn:["r"],shoot:["f"],down2:[">"]};
+const DIR={up:[0,-1],down:[0,1],left:[-1,0],right:[1,0],ul:[-1,-1],ur:[1,-1],dl:[-1,1],dr:[1,1]};
+let lastKey=0;const throttled=f=>()=>{const t=performance.now();if(t-lastKey<95)return;lastKey=t;travel=null;f()};
+const press={repeat:true,wait:throttled(wait),drink:throttled(potion),burn:throttled(fire),shoot:throttled(shoot),down2:throttled(stairs)};for(const k in DIR)press[k]=throttled(()=>step(...DIR[k]));
+const IN=MK.input(KEYS,press);
+const pad=IN.pad([["drink","Potion"],["burn","Fire"],["shoot","Shoot"]],{repeat:Object.keys(DIR),rate:160,diag:true,center:["wait","⏳"],into:document.createElement("div")});
+cv.addEventListener("click",e=>{if(!P||!D||busy)return;const r=cv.getBoundingClientRect(),cam=camera(),x=cam[0]+Math.floor((e.clientX-r.left)/r.width*VW),y=cam[1]+Math.floor((e.clientY-r.top)/r.height*VH);
+ if(x===P.x&&y===P.y){const it=itemAt(x,y);if(it&&it.t==="stairs")stairs();else wait();return}
+ if(grid.cheb({x,y},P)===1){step(x-P.x,y-P.y);return}if(!D.seen[y*MW+x]||wall(x,y))return;
+ const p=grid.path(P.x,P.y,x,y,(px,py)=>wall(px,py)||!D.seen[py*MW+px]?Infinity:1,grid.D8,200);if(!p.length)return;travel={p,seen:D.mons.filter(m=>visible(m)).length};walk()});
+function walk(){if(!travel||!P||P.hp<=0)return;const n=travel.p.shift();if(!n){travel=null;return}const hp=P.hp,before=D.mons.filter(m=>visible(m)).length;step(n[0]-P.x,n[1]-P.y);
+ if(!travel)return;if(P.hp<hp||D.mons.filter(m=>visible(m)).length>before||!travel.p.length){travel=null;return}setTimeout(walk,85)}
+// ---- drawing
+function camera(){return[Math.max(0,Math.min(MW-VW,P.x-(VW>>1))),Math.max(0,Math.min(MH-VH,P.y-(VH>>1)))]}
+function floorTile(px,py,x,y){const im=MK.img("terrain/cave/floor.png");if(MK.ok(im)){const s=im.naturalWidth*.46,o=(im.naturalWidth-s)/2,v=((x*7+y*13)%3)*2-2;g.drawImage(im,o+v,o+v,s,s,px,py,T,T)}else{g.fillStyle="#3b3328";g.fillRect(px,py,T,T)}}
+function wallTile(px,py,x,y){g.fillStyle="#17130f";g.fillRect(px,py,T,T);if(!wall(x,y+1)){g.fillStyle="#3d3226";g.fillRect(px,py+T*.55,T,T*.45);g.fillStyle="#4e4031";g.fillRect(px,py+T*.55,T,4);
+  g.strokeStyle="rgba(0,0,0,.35)";g.beginPath();for(let i=0;i<3;i++){g.moveTo(px+((x*17+i*19)%T),py+T*.6);g.lineTo(px+((x*17+i*19)%T),py+T)}g.moveTo(px,py+T*.78);g.lineTo(px+T,py+T*.78);g.stroke()}
+ else{g.fillStyle="#211b15";g.fillRect(px+2,py+2,T-4,T-4)}}
+function stairsTile(px,py){g.fillStyle="#0a0806";g.fillRect(px+4,py+4,T-8,T-8);for(let i=0;i<4;i++){g.fillStyle=`rgb(${110-i*22},${95-i*20},${75-i*17})`;g.fillRect(px+6+i*3,py+6+i*9,T-12-i*6,7)}}
+function draw(){if(!P||!D||!cv.isConnected)return;const [cx,cy]=camera();g.fillStyle="#07060a";g.fillRect(0,0,cv.width,cv.height);
+ for(let vy=0;vy<VH;vy++)for(let vx=0;vx<VW;vx++){const x=cx+vx,y=cy+vy;if(!grid.inb(MW,MH,x,y)||!D.seen[y*MW+x])continue;const px=vx*T,py=vy*T,vis=D.vis.has(grid.key(x,y));
+  if(wall(x,y))wallTile(px,py,x,y);else{floorTile(px,py,x,y);const it=itemAt(x,y);if(it&&it.t==="stairs")stairsTile(px,py)}
+  if(!vis){g.fillStyle="rgba(5,4,8,.62)";g.fillRect(px,py,T,T)}else{const d=Math.hypot(x-P.x,y-P.y);if(d>3){g.fillStyle=`rgba(5,4,8,${Math.min(.45,(d-3)*.09)})`;g.fillRect(px,py,T,T)}}}
+ const on=(o)=>o.x>=cx&&o.y>=cy&&o.x<cx+VW&&o.y<cy+VH;
+ D.deco.forEach(o=>{if(on(o)&&D.seen[o.y*MW+o.x]&&!itemAt(o.x,o.y))MK.tile(g,o.i,(o.x-cx)*T,(o.y-cy)*T,T)});
+ const ICON={chest:"items/chest-plain-closed.png",potion:"icons/potion_red_medium.png",gold:"icons/coins_copper.png",scroll:"icons/scroll_red.png",arrows:"icons/bag.png",cage:"items/cage.png"};
+ D.items.forEach(it=>{if(!on(it)||!D.seen[it.y*MW+it.x]||it.t==="stairs")return;const px=(it.x-cx)*T,py=(it.y-cy)*T;if(it.t==="cage"&&visible(it)){MK.sprite(g,unit(it.who).spr,0,px+T/2,py+T*.86,.75)}
+  if(it.t==="cage")MK.tile(g,ICON.cage,px-4,py-6,T+8);else{const s=it.t==="chest"?T:T*.62;MK.tile(g,ICON[it.t],px+(T-s)/2,py+(T-s)/2,s)}});
+ const ents=[...D.mons.filter(m=>m.hp>0&&visible(m)),...P.allies.filter(a=>a.hp>0),P].filter(on).sort((a,b)=>a.y-b.y);
+ ents.forEach(o=>{const px=(o.x-cx+.5+(o.ox||0))*T,py=(o.y-cy+(o.oy||0))*T;const isP=o===P;
+  g.fillStyle="rgba(0,0,0,.35)";g.beginPath();g.ellipse(px,py+T*.86,T*.3,T*.09,0,0,7);g.fill();
+  if(o.boss){g.fillStyle="rgba(180,60,255,.25)";g.beginPath();g.arc(px,py+T*.5,T*.62,0,7);g.fill()}
+  MK.sprite(g,isP?unit(P.cls).spr:unit(o.id).spr,o.side,px,py+T*(o.boss?1:.9),o.boss?1.15:.92,!isP&&!o.ally&&o.x>P.x);
+  if(!isP)MK.bar(g,px-T*.36,py+T-6,T*.72,o.hp/(o.max||o.hp),o.ally)});
+ // the torch: warm light that flickers around you
+ const lx=(P.x-cx+.5)*T,ly=(P.y-cy+.5)*T,f=1+Math.sin(performance.now()/90)*.03+Math.sin(performance.now()/37)*.02,gr=g.createRadialGradient(lx,ly,T*.5,lx,ly,T*4.6*f);
+ gr.addColorStop(0,"rgba(255,170,80,.16)");gr.addColorStop(1,"rgba(255,140,60,0)");g.fillStyle=gr;g.fillRect(0,0,cv.width,cv.height);
+ if(travel&&travel.p.length){g.fillStyle="rgba(236,198,110,.5)";travel.p.forEach(([x,y])=>{g.beginPath();g.arc((x-cx+.5)*T,(y-cy+.5)*T,3,0,7);g.fill()})}
+ D.fx=D.fx.filter(f=>f.l>0);D.fx.forEach(f=>{f.l-=.022;const px=(f.x-cx+.5)*T,py=(f.y-cy)*T+8-(1-f.l)*26;g.font="900 17px system-ui";g.textAlign="center";g.fillStyle="#000";g.fillText(f.t,px+1,py+1);g.fillStyle=f.c;g.fillText(f.t,px,py)});
+ // a heads-up line so the phone view never needs the side panel mid-fight
+ g.fillStyle="rgba(7,6,10,.72)";g.fillRect(6,6,206,30);MK.bar(g,12,12,96,P.hp/P.max,true);g.font="800 13px system-ui";g.textAlign="left";g.fillStyle="#ece2c8";g.fillText(`${P.hp}/${P.max}  F${D.depth}  Lv${P.lv}  🧪${P.potions}`,114,26);
+ if(P.hp>0&&P.hp<P.max*.3){g.fillStyle=`rgba(160,0,0,${.12+Math.sin(performance.now()/200)*.06})`;g.fillRect(0,0,cv.width,cv.height)}}
+MK.loop(null,draw);
+MK.preload(["terrain/cave/floor.png","items/chest-plain-closed.png","items/cage.png","icons/potion_red_medium.png","icons/coins_copper.png",...Object.keys(CLASSES).map(k=>unit(k).spr)]);
+title();
+</script></body></html>

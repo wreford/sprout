@@ -53,13 +53,15 @@ function loop(update,render,o){o=o||{};const L={speed:1,running:true,t:0,stop(){
 // MK.input({up:["arrowup","w"],...},{atk:fn}) -> {keys, held(name)}
 const DEFKEYS={up:["arrowup","w"],down:["arrowdown","s"],left:["arrowleft","a"],right:["arrowright","d"],atk:[" ","j","enter"],wait:[".","z"]};
 function input(map,press){map=map||DEFKEYS;press=press||{};const K={},rev={};for(const n in map)map[n].forEach(k=>rev[k]=n);
- addEventListener("keydown",e=>{if(e.target.tagName==="INPUT"||e.target.tagName==="TEXTAREA")return;const n=rev[e.key.toLowerCase()];if(!n)return;e.preventDefault();if(!K[n]&&press[n])press[n](e);if(!e.repeat||!press[n])K[n]=true;if(press.any)press.any(n,e)});
+ addEventListener("keydown",e=>{if(e.target.tagName==="INPUT"||e.target.tagName==="TEXTAREA")return;const n=rev[e.key.toLowerCase()];if(!n)return;e.preventDefault();if(press[n]&&(!K[n]||press.repeat))press[n](e);if(!e.repeat||!press[n])K[n]=true;if(press.any)press.any(n,e)});
  addEventListener("keyup",e=>{const n=rev[e.key.toLowerCase()];if(n)K[n]=false});addEventListener("blur",()=>{for(const n in K)K[n]=false});
  return{keys:K,held:n=>!!K[n],
   // touch pad: a d-pad on the left and action buttons on the right; shown only on touch screens
-  pad(actions,o){o=o||{};const P=document.createElement("div");P.className="mkpad"+(o.always?" on":"");
-   P.innerHTML=`<div class="dp">${["","up","","left","","right","","down",""].map(d=>d?`<button data-k="${d}">${{up:"▲",down:"▼",left:"◀",right:"▶"}[d]}</button>`:"<span></span>").join("")}</div><div class="ac">${(actions||[]).map(([n,t])=>`<button class="ab" data-k="${n}">${t}</button>`).join("")}</div>`;
-   document.body.appendChild(P);P.querySelectorAll("[data-k]").forEach(b=>{const n=b.dataset.k;
+  // o.diag adds the four diagonals, o.center fills the middle cell, o.into puts the pad inline in a container instead of floating
+  pad(actions,o){o=o||{};const P=document.createElement("div");P.className="mkpad"+(o.always?" on":"")+(o.into?" inline":"");
+   const AR={up:"▲",down:"▼",left:"◀",right:"▶",ul:"◤",ur:"◥",dl:"◣",dr:"◢"},cells=o.diag?["ul","up","ur","left","C","right","dl","down","dr"]:["","up","","left","C","right","","down",""];
+   P.innerHTML=`<div class="dp">${cells.map(d=>d==="C"?(o.center?`<button data-k="${o.center[0]}">${o.center[1]}</button>`:"<span></span>"):d?`<button data-k="${d}">${AR[d]}</button>`:"<span></span>").join("")}</div><div class="ac">${(actions||[]).map(([n,t])=>`<button class="ab" data-k="${n}">${t}</button>`).join("")}</div>`;
+   (o.into||document.body).appendChild(P);P.querySelectorAll("[data-k]").forEach(b=>{const n=b.dataset.k;
     b.addEventListener("pointerdown",e=>{e.preventDefault();if(press[n])press[n](e);K[n]=true;if(press.any)press.any(n,e);if(o.repeat&&o.repeat.includes(n)){clearInterval(b._r);b._r=setInterval(()=>{if(K[n]&&press[n])press[n](e)},o.rate||180)}});
     ["pointerup","pointerleave","pointercancel"].forEach(ev=>b.addEventListener(ev,()=>{K[n]=false;clearInterval(b._r)}))});return P}}}
 
