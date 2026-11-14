@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Ford of Ashes · Mercenary Keep</title><link rel="stylesheet" href="mk.css">
+<style>
+#app{max-width:1180px;margin:0 auto;padding:10px;display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:12px;align-items:start}
+#bwrap{position:relative}#cv{display:block;width:100%;height:auto;border-radius:8px;border:1px solid var(--line);image-rendering:pixelated;cursor:pointer}
+#side{display:flex;flex-direction:column;gap:10px}
+.panel{padding:10px 12px}.panel h3{margin:0 0 6px;font-size:16px}
+.ui{display:flex;gap:10px;align-items:center}.ui img{width:64px;height:64px;object-fit:contain;image-rendering:pixelated;background:#0d1220;border-radius:6px;border:1px solid var(--line)}
+.ui .st{font-size:13px;line-height:1.5}.ui b{color:var(--gold2)}
+.acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.fc{display:grid;grid-template-columns:1fr auto 1fr;gap:4px 8px;font-size:13px;text-align:center;align-items:center}.fc .h{font-weight:800}.fc .mid{color:var(--mute);font-size:11px}
+.phase{position:absolute;left:0;right:0;top:40%;text-align:center;font:900 34px Georgia,serif;color:var(--gold2);text-shadow:0 3px 6px #000;pointer-events:none;opacity:0;transition:opacity .3s}.phase.on{opacity:1}.phase.en{color:#ff8a6a}
+.tip{font-size:12px;color:var(--mute);line-height:1.4}
+@media (max-width:900px){#app{grid-template-columns:1fr}}
+</style></head><body>
+<div id="app"><div id="bwrap"><canvas id="cv"></canvas><div class="phase" id="ph"></div></div>
+<div id="side"><div class="panel frame" id="info"></div><div class="panel frame" id="act"></div><div class="panel frame"><h3>Turn <span id="tn">1</span></h3><div class="tip">Click a blue unit, then a blue tile to move. Attack, heal or wait. Forests and hills protect, villages heal and bank you gold, and the river can only be crossed at the fords. Defeat the warlord to win. If your Lieutenant falls, the battle is lost.</div><div class="acts"><button class="btn" id="endB">End turn</button><button class="btn alt" id="rsB">Restart</button></div></div></div></div>
+<script src="roster.js"></script><script src="mk.js"></script>
+<script>
+"use strict";
+const {$,ri,pick,unit,IMG,sfx,ls,toast,modal,closeModal}=MK;
+MK.topbar("tactics");
+const W=14,H=10,T=56;
+// terrain: g grass, f forest, h hills, w water, s shallow ford, v village, c castle, m mountain-ish rocks
+const MAP=[
+"ggfgghhgwwgfgg",
+"gvgfggggwwgfhv",
+"ggggfggswsggfg",
+"ccgggfgwwgghgg",
+"ckcgggfwwgfgcc",
+"ccgghggsgggfck",
+"ggfgggfwwgggcc",
+"gvgggggwwghgfg",
+"gggfhggswggfgv",
+"ggggggfwwggggg"];
+const TER={g:{n:"Grass",i:"terrain/grass/green.png",mv:1,av:0},f:{n:"Forest",i:"terrain/grass/green.png",o:"terrain/forest/pine.png",mv:2,av:20},h:{n:"Hills",i:"terrain/hills/regular.png",mv:2,av:15,df:1},w:{n:"River",i:"terrain/water/coast-tile.png",mv:99,av:0},s:{n:"Ford",i:"terrain/swamp/water.png",mv:2,av:-10},v:{n:"Village",i:"terrain/grass/green.png",o:"terrain/village/human.png",mv:1,av:10,heal:1},c:{n:"Castle",i:"terrain/castle/castle-tile.png",mv:1,av:20,df:2},k:{n:"Keep",i:"terrain/castle/keep-tile.png",mv:1,av:25,df:3,heal:1}};
+const ter=(x,y)=>TER[MAP[y][x]];
+// unit classes: hp, atk, def, res, spd, mov, rng, magic, heal
+const CL={lieut:{hp:30,atk:9,def:6,res:2,spd:8,mov:5,rng:[1,1]},spear:{hp:26,atk:8,def:6,res:1,spd:6,mov:5,rng:[1,1],antiCav:1},bow:{hp:22,atk:7,def:3,res:2,spd:8,mov:5,rng:[2,2]},mage:{hp:18,atk:10,def:1,res:6,spd:6,mov:5,rng:[1,2],magic:1},white:{hp:20,atk:5,def:2,res:7,spd:5,mov:5,rng:[1,1],magic:1,heal:10},horse:{hp:26,atk:9,def:5,res:1,spd:7,mov:8,rng:[1,1],cav:1},
+ grunt:{hp:26,atk:9,def:4,res:0,spd:5,mov:5,rng:[1,1]},oarch:{hp:20,atk:7,def:2,res:1,spd:6,mov:5,rng:[2,2]},assn:{hp:18,atk:7,def:2,res:2,spd:10,mov:6,rng:[1,1]},twar:{hp:36,atk:11,def:6,res:0,spd:3,mov:4,rng:[1,1],regen:4},wolf:{hp:22,atk:8,def:3,res:0,spd:9,mov:7,rng:[1,1],cav:1},warlord:{hp:44,atk:13,def:7,res:2,spd:7,mov:0,rng:[1,1],boss:1}};
+let G=null;
+function mk(id,side,x,y,cls){const c=CL[cls||id],u=unit(id);return {id,side,x,y,cls:cls||id,u,name:u.n,...JSON.parse(JSON.stringify(c)),max:c.hp,moved:false,acted:false,lord:id==="lieut"}}
+function newGame(){G={turn:1,phase:"player",units:[mk("lieut",0,1,4),mk("spear",0,2,3),mk("spear",0,2,5),mk("bow",0,0,3),mk("mage",0,0,5),mk("white",0,1,6),mk("horse",0,1,2),
+  mk("grunt",1,10,2),mk("grunt",1,10,7),mk("oarch",1,11,5),mk("oarch",1,9,8),mk("assn",1,10,4),mk("twar",1,11,6),mk("wolf",1,9,1),mk("wolf",1,12,8),mk("grunt",1,12,3),mk("warlord",1,13,5)],
+  sel:null,mode:null,reach:null,gold:0,vill:{},fx:[],anim:null};
+ G.units.forEach(u=>{if(u.side===1)u.ai=u.cls==="warlord"?"hold":Math.random()<.3?"wait":"go"});
+ $("tn").textContent=1;MK.playMusic("knolls");banner("PLAYER PHASE");draw();info();acts()}
+// ---- geometry
+const at=(x,y)=>G.units.find(u=>u.hp>0&&u.x===x&&u.y===y);
+const inb=(x,y)=>x>=0&&y>=0&&x<W&&y<H;
+const md=(a,b)=>Math.abs(a.x-b.x)+Math.abs(a.y-b.y);
+function moveCost(u,x,y){const t=ter(x,y);if(u.cls==="wolf"&&MAP[y][x]==="f")return 1;return t.mv}
+function reachable(u){const R=new Map([[u.x+","+u.y,0]]),Q=[[u.x,u.y,0]];while(Q.length){const [x,y,c]=Q.shift();for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){const nx=x+dx,ny=y+dy;if(!inb(nx,ny))continue;const o=at(nx,ny);if(o&&o.side!==u.side)continue;const nc=c+moveCost(u,nx,ny);if(nc>u.mov)continue;const k=nx+","+ny;if(!R.has(k)||R.get(k)>nc){R.set(k,nc);Q.push([nx,ny,nc])}}}
+ for(const k of [...R.keys()]){const [x,y]=k.split(",").map(Number);const o=at(x,y);if(o&&o!==u)R.delete(k)}return R}
+const inRange=(a,from,b)=>{const d=Math.abs(from.x-b.x)+Math.abs(from.y-b.y);return d>=a.rng[0]&&d<=a.rng[1]};
+// ---- combat (forecast numbers are exactly what happens, apart from the hit roll)
+function dmg(a,b){let d=a.atk-(a.magic?b.res:b.def+(ter(b.x,b.y).df||0));if(a.antiCav&&b.cav)d+=4;return Math.max(1,d)}
+function hitP(a,b){return Math.max(10,Math.min(99,90+(a.spd-b.spd)*2-ter(b.x,b.y).av-(a.magic?0:0)))}
+const doubles=(a,b)=>a.spd>=b.spd+4;
+function forecast(a,b){const ctr=inRange(b,b,a)&&b.hp>0;return {ad:dmg(a,b),ah:hitP(a,b),ax:doubles(a,b)?2:1,bd:ctr?dmg(b,a):0,bh:ctr?hitP(b,a):0,bx:ctr?(doubles(b,a)?2:1):0,ctr}}
+async function fight(a,b){const f=forecast(a,b);const seq=[["a",0]];if(f.ctr)seq.push(["b",0]);if(f.ax>1)seq.push(["a",1]);if(f.bx>1)seq.push(["b",1]);
+ for(const [w] of seq){const s=w==="a"?a:b,t=w==="a"?b:a;if(s.hp<=0||t.hp<=0)break;const hit=Math.random()*100<(w==="a"?f.ah:f.bh);await lunge(s,t);
+  if(hit){const d=w==="a"?f.ad:f.bd;t.hp=Math.max(0,t.hp-d);G.fx.push({x:t.x,y:t.y,t:"-"+d,c:"#ff8a6a",l:1});sfx(MK.atkSnd(s.u),.55);sfx(MK.hitSnd(t.u),.35)}else{G.fx.push({x:t.x,y:t.y,t:"miss",c:"#cfd6e6",l:1});sfx("miss-1",.4)}
+  draw();await wait(380);if(t.hp<=0){sfx(MK.dieSnd(t.u),.5);G.fx.push({x:t.x,y:t.y,t:"defeated",c:"#ffd47a",l:1.4});draw();await wait(300)}}
+ checkEnd()}
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+async function lunge(s,t){const dx=Math.sign(t.x-s.x)*.25,dy=Math.sign(t.y-s.y)*.25;s.ox=dx;s.oy=dy;draw();await wait(130);s.ox=0;s.oy=0;draw()}
+async function slide(u,path){for(const [x,y] of path){u.x=x;u.y=y;draw();await wait(70)}}
+function pathTo(u,tx,ty){const prev=new Map(),Q=[[u.x,u.y]],cost=new Map([[u.x+","+u.y,0]]);while(Q.length){Q.sort((a,b)=>cost.get(a+"")-cost.get(b+""));const [x,y]=Q.shift();if(x===tx&&y===ty)break;for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){const nx=x+dx,ny=y+dy;if(!inb(nx,ny))continue;const o=at(nx,ny);if(o&&o.side!==u.side)continue;const c=cost.get(x+","+y)+moveCost(u,nx,ny);if(c>u.mov)continue;const k=nx+","+ny;if(!cost.has(k)||cost.get(k)>c){cost.set(k,c);prev.set(k,[x,y]);Q.push([nx,ny])}}}
+ const p=[];let k=tx+","+ty;while(prev.has(k)){p.unshift(k.split(",").map(Number));const q=prev.get(k);k=q[0]+","+q[1]}return p}
+// ---- player input
+const cv=$("cv"),g=cv.getContext("2d");cv.width=W*T;cv.height=H*T;g.imageSmoothingEnabled=false;
+cv.onclick=e=>{if(G.phase!=="player"||G.busy)return;const r=cv.getBoundingClientRect(),x=Math.floor((e.clientX-r.left)/r.width*W),y=Math.floor((e.clientY-r.top)/r.height*H);click(x,y)};
+cv.onmousemove=e=>{const r=cv.getBoundingClientRect();G.hover=[Math.floor((e.clientX-r.left)/r.width*W),Math.floor((e.clientY-r.top)/r.height*H)];info();draw()};
+async function click(x,y){const u=at(x,y),S=G.sel;
+ if(G.mode==="target"){if(u&&u.side!==S.side&&inRange(S,S,u)){G.mode=null;G.busy=1;S.acted=S.moved=true;await fight(S,u);G.busy=0;G.sel=null;afterAct();return}if(u&&u.side===S.side&&S.heal&&md(S,u)===1&&u.hp<u.max&&u!==S){u.hp=Math.min(u.max,u.hp+S.heal);sfx("heal",.5);G.fx.push({x:u.x,y:u.y,t:"+"+S.heal,c:"#8be08b",l:1});S.acted=S.moved=true;G.mode=null;G.sel=null;afterAct();return}return}
+ if(u&&u.side===0&&!u.acted){G.sel=u;G.reach=reachable(u);G.from=[u.x,u.y];G.mode="move";draw();acts();info(u);return}
+ if(S&&G.mode==="move"&&G.reach.has(x+","+y)){G.busy=1;await slide(S,pathTo(S,x,y));G.busy=0;S.moved=true;G.mode="act";G.reach=null;draw();acts();return}
+ if(u){info(u);return}G.sel=null;G.mode=null;G.reach=null;draw();acts()}
+function afterAct(){const S=G.sel;if(S)S.acted=S.moved=true;G.sel=null;G.mode=null;G.reach=null;draw();acts();if(!G.over&&G.units.filter(u=>u.side===0&&u.hp>0).every(u=>u.acted))setTimeout(endTurn,400)}
+function acts(){const A=$("act"),S=G.sel;if(!S||S.side!==0){A.innerHTML=`<h3>Orders</h3><div class="tip">Select one of your units (blue).</div>`;return}
+ const foes=G.units.filter(u=>u.hp>0&&u.side!==S.side&&inRange(S,S,u)),hurt=S.heal?G.units.filter(u=>u.hp>0&&u.side===S.side&&u!==S&&md(S,u)===1&&u.hp<u.max):[];
+ const vill=MAP[S.y][S.x]==="v"&&G.vill[S.x+","+S.y]!==0;
+ A.innerHTML=`<h3>${S.name}</h3><div class="acts">${G.mode==="move"?`<span class="tip">Pick a blue tile, or act from here:</span>`:""}${foes.length?`<button class="btn" id="aAtk">Attack</button>`:""}${hurt.length?`<button class="btn" id="aHeal">Heal</button>`:""}${vill?`<button class="btn" id="aVil">Seize village</button>`:""}<button class="btn alt" id="aWait">Wait</button>${G.mode==="act"?`<button class="btn alt" id="aUndo">Undo move</button>`:""}</div>${G.mode==="target"?`<div class="tip" style="margin-top:6px">Hover a target for the forecast, click to commit.</div>`:""}`;
+ if($("aAtk"))$("aAtk").onclick=()=>{G.mode="target";G.reach=null;draw();acts()};if($("aHeal"))$("aHeal").onclick=()=>{G.mode="target";draw();acts()};
+ if($("aVil"))$("aVil").onclick=()=>{G.vill[S.x+","+S.y]=0;sfx("gold",.5);toast("Village seized: +1 gold a turn, and it heals you");afterAct()};
+ $("aWait").onclick=()=>afterAct();if($("aUndo"))$("aUndo").onclick=()=>{S.x=G.from[0];S.y=G.from[1];S.moved=false;G.reach=reachable(S);G.mode="move";draw();acts()}}
+function info(u){if(!u&&G.hover){u=at(G.hover[0],G.hover[1])}const I=$("info");const hv=G.hover&&inb(G.hover[0],G.hover[1])?ter(G.hover[0],G.hover[1]):null;
+ if(G.mode==="target"&&G.sel&&u&&u.side!==G.sel.side&&inRange(G.sel,G.sel,u)){const f=forecast(G.sel,u);I.innerHTML=`<h3>Forecast</h3><div class="fc"><span class="h" style="color:#8fb8ff">${G.sel.name}</span><span></span><span class="h" style="color:#ff9a8a">${u.name}</span><span>${G.sel.hp} HP</span><span class="mid">HP</span><span>${u.hp} HP</span><span>${f.ad}${f.ax>1?" ×2":""}</span><span class="mid">DMG</span><span>${f.ctr?f.bd+(f.bx>1?" ×2":""):"—"}</span><span>${f.ah}%</span><span class="mid">HIT</span><span>${f.ctr?f.bh+"%":"—"}</span></div>`;return}
+ if(!u){I.innerHTML=`<h3>${hv?hv.n:"Battlefield"}</h3><div class="tip">${hv?`Move cost ${hv.mv>9?"impassable":hv.mv} · avoid ${hv.av}%${hv.df?` · +${hv.df} defence`:""}${hv.heal?" · heals 5 HP a turn":""}`:"Hover a tile or unit."}</div><div class="tip">Gold banked from villages: ${G.gold}</div>`;return}
+ I.innerHTML=`<div class="ui"><img src="${MK.portrait(u.u)}" alt=""><div class="st"><b>${u.name}</b>${u.lord?" (your lord)":u.boss?" (boss)":""}<br>HP ${u.hp}/${u.max} · Atk ${u.atk} · Def ${u.def} · Res ${u.res}<br>Spd ${u.spd} · Mov ${u.mov} · Range ${u.rng[0]===u.rng[1]?u.rng[0]:u.rng.join("-")}${u.magic?" · magic":""}${u.heal?" · heals":""}${u.antiCav?" · anti-cavalry":""}${u.regen?" · regenerates":""}</div></div>`}
+// ---- turns
+function banner(t,en){const p=$("ph");p.textContent=t;p.className="phase on"+(en?" en":"");setTimeout(()=>p.className="phase",1100)}
+async function endTurn(){if(G.over||G.busy)return;G.sel=null;G.mode=null;G.reach=null;G.phase="enemy";banner("ENEMY PHASE",1);MK.playMusic("the_dangerous_symphony");draw();await wait(900);
+ for(const e of G.units.filter(u=>u.side===1&&u.hp>0)){if(G.over)break;await enemyAct(e)}
+ if(G.over)return;G.turn++;$("tn").textContent=G.turn;
+ G.units.forEach(u=>{if(u.hp<=0)return;const t=ter(u.x,u.y);if(t.heal&&(u.side===1||MAP[u.y][u.x]!=="v"||G.vill[u.x+","+u.y]===0))u.hp=Math.min(u.max,u.hp+5);if(u.regen)u.hp=Math.min(u.max,u.hp+u.regen);u.acted=u.moved=false});
+ G.gold+=Object.values(G.vill).filter(v=>v===0).length;
+ G.phase="player";banner("PLAYER PHASE");MK.playMusic("knolls");draw();info()}
+async function enemyAct(e){const P=G.units.filter(u=>u.side===0&&u.hp>0);const R=reachable(e);let best=null;
+ for(const [k] of R){const [x,y]=k.split(",").map(Number);for(const p of P){const d=Math.abs(x-p.x)+Math.abs(y-p.y);if(d<e.rng[0]||d>e.rng[1])continue;const ox=e.x,oy=e.y;e.x=x;e.y=y;const f=forecast(e,p);e.x=ox;e.y=oy;
+   const kill=f.ad*f.ax>=p.hp,sc=f.ad*f.ax*f.ah/100+(kill?40:0)+(p.lord?12:0)-f.bd*f.bx*f.bh/200+ter(x,y).av/10;if(!best||sc>best.sc)best={x,y,p,sc}}}
+ if(e.ai==="wait"&&!best){const near=P.some(p=>md(e,p)<=e.mov+3);if(near)e.ai="go";else return}
+ if(e.ai==="hold"&&!(best&&best.x===e.x&&best.y===e.y))return;
+ if(best){if(best.x!==e.x||best.y!==e.y)await slide(e,pathTo(e,best.x,best.y));await fight(e,best.p);return}
+ // no attack: advance toward the lieutenant (or nearest), stopping on good terrain
+ const goal=P.find(p=>p.lord)||P[0];let tgt=null,td=1e9;for(const [k] of R){const [x,y]=k.split(",").map(Number);const d=Math.abs(x-goal.x)+Math.abs(y-goal.y)-ter(x,y).av/30;if(d<td){td=d;tgt=[x,y]}}
+ if(tgt&&(tgt[0]!==e.x||tgt[1]!==e.y))await slide(e,pathTo(e,tgt[0],tgt[1]))}
+function checkEnd(){const lord=G.units.find(u=>u.lord);const boss=G.units.find(u=>u.boss);const foes=G.units.filter(u=>u.side===1&&u.hp>0);
+ if(lord.hp<=0){G.over=1;MK.playMusic("defeat");setTimeout(()=>{modal(`<h2>The Lieutenant has fallen</h2><p>Without a commander the company scatters back across the ford. Turn ${G.turn}.</p><button class="btn" id="re">Try again</button>`);$("re").onclick=()=>{closeModal();newGame()}},600)}
+ else if(boss.hp<=0||!foes.length){G.over=1;const lost=G.units.filter(u=>u.side===0&&u.hp<=0).length;const best=ls.get("mk.tacBest",0);const t=G.turn;if(!best||t<best)ls.set("mk.tacBest",t);MK.playMusic("victory");
+  setTimeout(()=>{modal(`<h2>Victory at the ford</h2><p>The warlord is down in ${t} turn${t>1?"s":""}. ${lost?`${lost} of your company fell.`:"Nobody fell. Flawless."} ${G.gold} gold banked from villages.</p><p style="color:var(--mute)">Best: ${ls.get("mk.tacBest",t)} turns</p><button class="btn" id="re">Play again</button>`);$("re").onclick=()=>{closeModal();newGame()}},700)}}
+// ---- drawing
+function drawTile(x,y){const ch=MAP[y][x];if(ch==="w"||ch==="s"){const px=x*T,py=y*T,gr=g.createLinearGradient(px,py,px,py+T);gr.addColorStop(0,ch==="w"?"#2b5c86":"#4f8aa6");gr.addColorStop(1,ch==="w"?"#1f4668":"#3f7590");g.fillStyle=gr;g.fillRect(px,py,T,T);
+  g.strokeStyle=ch==="w"?"rgba(170,210,240,.35)":"rgba(220,235,240,.45)";g.lineWidth=1.5;const ph=(performance.now()/900+x*.7+y*1.3)%1;for(let k=0;k<3;k++){const yy=py+((k+ph)/3)*T;g.beginPath();g.moveTo(px+6+k*5,yy);g.quadraticCurveTo(px+T/2,yy-4,px+T-8,yy);g.stroke()}g.lineWidth=1;
+  if(ch==="s"){g.fillStyle="#8a8070";[[.25,.3],[.65,.55],[.4,.78],[.78,.2]].forEach(([a,b])=>{g.beginPath();g.ellipse(px+a*T,py+b*T,5,3,0,0,7);g.fill()})}return}
+ const t=TER[ch],im=MK.img(t.i);if(MK.ok(im)){const s=Math.min(im.naturalWidth,im.naturalHeight)*.62,ox=(im.naturalWidth-s)/2,oy=(im.naturalHeight-s)/2;g.drawImage(im,ox,oy,s,s,x*T,y*T,T,T)}else{g.fillStyle="#3e6a2e";g.fillRect(x*T,y*T,T,T)}
+ if(t.o){const o=MK.img(t.o);if(MK.ok(o))g.drawImage(o,x*T-T*.15,y*T-T*.2,T*1.3,T*1.3)}
+ if(MAP[y][x]==="v"&&G.vill[x+","+y]===0){g.fillStyle="rgba(79,134,224,.85)";g.fillRect(x*T+T-14,y*T+4,10,8)}}
+function draw(){g.clearRect(0,0,cv.width,cv.height);for(let y=0;y<H;y++)for(let x=0;x<W;x++)drawTile(x,y);
+ g.strokeStyle="rgba(0,0,0,.18)";for(let x=0;x<=W;x++){g.beginPath();g.moveTo(x*T,0);g.lineTo(x*T,H*T);g.stroke()}for(let y=0;y<=H;y++){g.beginPath();g.moveTo(0,y*T);g.lineTo(W*T,y*T);g.stroke()}
+ const S=G.sel;if(S&&G.reach){for(const [k] of G.reach){const [x,y]=k.split(",").map(Number);g.fillStyle="rgba(79,134,224,.38)";g.fillRect(x*T+1,y*T+1,T-2,T-2)}
+  const red=new Set();for(const [k] of G.reach){const [x,y]=k.split(",").map(Number);for(let dx=-S.rng[1];dx<=S.rng[1];dx++)for(let dy=-S.rng[1];dy<=S.rng[1];dy++){const d=Math.abs(dx)+Math.abs(dy);if(d<S.rng[0]||d>S.rng[1])continue;const nx=x+dx,ny=y+dy;if(inb(nx,ny)&&!G.reach.has(nx+","+ny))red.add(nx+","+ny)}}
+  for(const k of red){const [x,y]=k.split(",").map(Number);g.fillStyle="rgba(210,74,51,.28)";g.fillRect(x*T+1,y*T+1,T-2,T-2)}}
+ if(S&&G.mode==="target"){G.units.forEach(u=>{if(u.hp>0&&u.side!==S.side&&inRange(S,S,u)){g.strokeStyle="#ff6a4a";g.lineWidth=3;g.strokeRect(u.x*T+2,u.y*T+2,T-4,T-4)}if(S.heal&&u.hp>0&&u.side===S.side&&md(S,u)===1&&u.hp<u.max){g.strokeStyle="#7ed957";g.lineWidth=3;g.strokeRect(u.x*T+2,u.y*T+2,T-4,T-4)}});g.lineWidth=1}
+ if(G.hover&&inb(...G.hover)){g.strokeStyle="rgba(236,198,110,.8)";g.lineWidth=2;g.strokeRect(G.hover[0]*T+1,G.hover[1]*T+1,T-2,T-2);g.lineWidth=1}
+ G.units.filter(u=>u.hp>0).sort((a,b)=>a.y-b.y).forEach(u=>{const c=MK.tc(u.u.spr,u.side),px=(u.x+(u.ox||0))*T,py=(u.y+(u.oy||0))*T;
+  if(u.side===0){g.fillStyle=u.acted?"rgba(40,40,40,.35)":"rgba(79,134,224,.22)";g.beginPath();g.ellipse(px+T/2,py+T*.82,T*.34,T*.12,0,0,7);g.fill()}
+  if(c){g.save();if(u.side===0&&u.acted)g.filter="grayscale(1) brightness(.7)";const sz=T*1.35;g.drawImage(c,px+T/2-sz/2,py+T-sz*.92,sz,sz);g.restore()}
+  if(u===S){g.strokeStyle="#ecc66e";g.lineWidth=2;g.strokeRect(px+1,py+1,T-2,T-2);g.lineWidth=1}
+  g.fillStyle="#000";g.fillRect(px+6,py+T-7,T-12,5);g.fillStyle=u.side===0?"#6fcf5a":"#e2584a";g.fillRect(px+7,py+T-6,(T-14)*u.hp/u.max,3);
+  if(u.lord||u.boss){g.font="bold 12px system-ui";g.fillStyle="#ffd47a";g.fillText("★",px+3,py+13)}});
+ G.fx=G.fx.filter(f=>f.l>0);G.fx.forEach(f=>{g.font="bold 16px system-ui";g.fillStyle=f.c;g.strokeStyle="#000";g.lineWidth=3;const y=f.y*T+10-(1-f.l)*24;g.strokeText(f.t,f.x*T+T/2-g.measureText(f.t).width/2,y);g.fillText(f.t,f.x*T+T/2-g.measureText(f.t).width/2,y);g.lineWidth=1})}
+(function tick(){if(G){if(G.fx.length)G.fx.forEach(f=>f.l-=.04);if(!G.busy||G.fx.length)draw()}requestAnimationFrame(tick)})();
+$("endB").onclick=()=>{if(G.phase==="player")endTurn()};$("rsB").onclick=()=>{if(confirm("Restart the battle?"))newGame()};
+addEventListener("keydown",e=>{if(e.key==="Escape"&&G&&G.phase==="player"){if(G.mode==="act"&&G.sel){afterAct();return}G.sel=null;G.mode=null;G.reach=null;draw();acts()}if(e.key==="e")$("endB").click()});
+MK.preload([...new Set(Object.values(TER).flatMap(t=>[t.i,t.o].filter(Boolean)))].concat(["units/human-loyalists/lieutenant.png"]),()=>draw());
+newGame();ROSTER.filter(r=>["lieut","spear","bow","mage","white","horse","grunt","oarch","assn","twar","wolf","warlord"].includes(r.id)).forEach(r=>MK.img(r.spr,()=>draw()));
+</script></body></html>
