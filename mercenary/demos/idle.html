@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>The Ledger · Mercenary Keep</title><link rel="stylesheet" href="mk.css">
+<style>
+#app{max-width:1180px;margin:0 auto;padding:10px;display:grid;grid-template-columns:1.1fr 1fr;gap:12px;align-items:start}
+.top{grid-column:1/-1;display:flex;gap:18px;align-items:center;padding:10px 14px;flex-wrap:wrap}
+.top .g{font:900 28px Georgia,serif;color:var(--gold2)}.top .ps{color:var(--mute)}.top .rn{color:#b6a6ff;font-weight:800}
+#field{position:relative;height:300px;overflow:hidden;border-radius:10px;border:1px solid var(--line);cursor:pointer;background:linear-gradient(#26324a,#3e4a36 60%,#2e3a22)}
+#field .gr{position:absolute;left:0;right:0;bottom:0;height:42%;background:url(../img/terrain/grass/green.png) 0 0/72px;opacity:.9}
+#foe{position:absolute;left:62%;bottom:20%;display:flex;flex-direction:column;align-items:center;transform:translateX(-50%)}
+#foe .spr{width:150px;height:150px;object-fit:contain;filter:drop-shadow(0 6px 3px #0008)}#foe .nm{font-weight:800;background:#0008;padding:1px 8px;border-radius:8px}#foe .hpb{width:160px;margin-top:4px}
+#army{position:absolute;left:3%;bottom:8%;display:flex;gap:0;flex-wrap:wrap-reverse;width:46%;align-items:end}
+#army img{width:56px;height:56px;object-fit:contain;transform:scaleX(-1);filter:drop-shadow(0 4px 2px #0008)}#army img.hop{animation:hop .3s}
+@keyframes hop{50%{transform:scaleX(-1) translateY(-8px)}}
+.coin{position:absolute;font:900 16px system-ui;color:var(--gold2);text-shadow:0 1px 2px #000;pointer-events:none;animation:flt .9s ease-out forwards}
+.tabs{display:flex;gap:6px;margin-bottom:8px}.tabs button{flex:1}
+.list{display:flex;flex-direction:column;gap:6px;max-height:560px;overflow:auto;padding-right:4px}
+.row{display:grid;grid-template-columns:52px 1fr auto;gap:10px;align-items:center;padding:6px 8px;border-radius:8px;background:var(--card);border:1px solid var(--line)}
+.row img{width:52px;height:52px;object-fit:contain}.row b{color:var(--gold2)}.row small{color:var(--mute);display:block}.row .own{font:900 18px system-ui;color:#fff;margin-left:6px}
+.row button{min-width:110px}.row.lock{opacity:.35}
+.stage{display:flex;justify-content:space-between;align-items:center;margin:8px 0;font-weight:800}
+.prog{height:8px;background:#141a28;border-radius:4px;overflow:hidden}.prog i{display:block;height:100%;background:linear-gradient(90deg,var(--gold),var(--gold2))}
+.amt{display:flex;gap:4px}.amt button{padding:4px 8px}
+@media (max-width:860px){#app{grid-template-columns:1fr}}
+</style></head><body>
+<div id="app"></div>
+<script src="roster.js"></script><script src="mk.js"></script>
+<script>
+"use strict";
+const {$,ri,pick,unit,IMG,sfx,ls,toast,modal,closeModal}=MK;
+MK.topbar("idle");
+// ---- mercenaries you hire: each adds damage per second
+const HIRES=[["spear",10,1],["bow",60,5],["efight",350,22],["horse",1800,90],["mage",9e3,380],["dfight",5e4,1600],["gryph",2.8e5,7000],["sorc",1.6e6,3.1e4],["dlord",9e6,1.4e5],["inferno",5e7,6.4e5]];
+const UPG=[["Sharpened steel","Spearmen hit twice as hard",500,"spear",2],["Elven fletching","Bowmen hit twice as hard",3000,"bow",2],["Captain's drills","Everyone hits 50% harder",2e4,"*",1.5],["Barded horses","Horsemen hit three times as hard",8e4,"horse",3],["Arcane tomes","Mages hit three times as hard",4e5,"mage",3],["Runesmithing","Dwarves hit three times as hard",2e6,"dfight",3],["War banners","Everyone hits twice as hard",8e6,"*",2],["Dragon's blood","Clicks deal 5% of your DPS",5e5,"click",.05]];
+const FOES=["rat","gob","wolf2","skel","spider","grunt","ghoul","assn","twar","m_ogre","gryphon2","m_queen","bear","lich","m_croc","yeti","m_wyvern","m_sdragon","m_fdragon"];
+let Sv,last=performance.now();
+const fresh=()=>({gold:0,total:0,own:{},up:{},stage:1,kills:0,renown:0,best:1,t:Date.now(),buyN:1});
+function load(){Sv=Object.assign(fresh(),ls.get("mk.idle",{}));const off=Math.min(8*3600,(Date.now()-(Sv.t||Date.now()))/1000);if(off>60){const g=dps()*off*.5;Sv.gold+=g;Sv.total+=g;setTimeout(()=>modal(`<h2>While you were away</h2><p>Your company kept fighting for ${fmtT(off)} and earned <b style="color:var(--gold2)">${fmt(g)} gold</b> (half rate while you are gone).</p><button class="btn" onclick="MK.closeModal()">Collect</button>`),300)}}
+function save(){Sv.t=Date.now();ls.set("mk.idle",Sv)}
+const fmt=n=>{if(n<1000)return Math.floor(n)+"";const u=["K","M","B","T","Qa","Qi"];let i=-1;while(n>=1000&&i<u.length-1){n/=1000;i++}return n.toFixed(n<10?2:n<100?1:0)+u[i]};
+const fmtT=s=>s>=3600?Math.floor(s/3600)+"h "+Math.floor(s%3600/60)+"m":Math.floor(s/60)+"m";
+const renownMul=()=>1+Sv.renown*.1;
+function mulFor(id){let m=renownMul();UPG.forEach((u,i)=>{if(Sv.up[i]&&(u[3]===id||u[3]==="*"))m*=u[4]});return m}
+function dpsOf(id){const h=HIRES.find(x=>x[0]===id);return h[2]*(Sv.own[id]||0)*mulFor(id)}
+function dps(){return HIRES.reduce((a,h)=>a+dpsOf(h[0]),0)}
+const clickDmg=()=>1+Sv.stage*.5+(Sv.up[7]?dps()*.05:0);
+const cost=(id,n)=>{const h=HIRES.find(x=>x[0]===id),o=Sv.own[id]||0;let c=0;for(let k=0;k<n;k++)c+=h[1]*Math.pow(1.15,o+k);return c};
+// ---- the foe in front of you
+let F=null;
+function spawn(){const boss=Sv.stage%10===0,id=boss?FOES[Math.min(FOES.length-1,Math.floor(Sv.stage/10)+8)]:FOES[Math.min(FOES.length-1,Math.floor((Sv.stage-1)/3))];const hp=Math.round(10*Math.pow(1.38,Sv.stage-1)*(boss?8:1));F={id,u:unit(id),hp,max:hp,boss,timer:boss?30:0,gold:Math.round(hp*.16*(boss?3:1))+1};drawField()}
+function hit(n,click){if(!F)return;F.hp-=n;if(F.hp<=0){Sv.gold+=F.gold;Sv.total+=F.gold;Sv.kills++;coin("+"+fmt(F.gold));sfx(MK.dieSnd(F.u),.35);sfx("gold",.25);if(Sv.kills%10===0||F.boss){Sv.stage++;Sv.best=Math.max(Sv.best,Sv.stage);if(F.boss)toast("Boss defeated! Stage "+Sv.stage)}spawn();save()}else if(click){sfx(MK.hitSnd(F.u),.2);coin("-"+fmt(n),1)}}
+function coin(t,red){const fl=$("field");if(!fl)return;const d=document.createElement("div");d.className="coin";d.textContent=t;d.style.left=(55+Math.random()*20)+"%";d.style.top=(30+Math.random()*20)+"%";if(red)d.style.color="#ffb3a3";fl.appendChild(d);setTimeout(()=>d.remove(),900)}
+// ---- prestige: retire the company for renown (+10% everything, forever)
+const renownGain=()=>Math.floor(Math.sqrt(Sv.total/1e5));
+function retire(){const g=renownGain();if(g<1)return;if(!confirm(`Retire the company for ${g} renown? Gold, mercenaries, upgrades and stage reset. Renown gives +10% damage each, forever.`))return;const r=Sv.renown+g,best=Sv.best;Sv=fresh();Sv.renown=r;Sv.best=best;sfx("magic-holy-1");save();spawn();render()}
+// ---- UI
+let tab="hire";
+function render(){const D=dps();
+ $("app").innerHTML=`<div class="top frame"><span class="g">● ${fmt(Sv.gold)}</span><span class="ps">${fmt(D)} damage / sec · click ${fmt(clickDmg())}</span><span class="rn">Renown ${Sv.renown} (+${Sv.renown*10}%)</span><span style="flex:1"></span><span class="ps">Stage ${Sv.stage} · best ${Sv.best} · ${Sv.kills} felled</span></div>
+ <div><div id="field" title="Click to strike"><div class="gr"></div><div id="army"></div><div id="foe"></div></div>
+  <div class="stage"><span>${F&&F.boss?`BOSS · ${Math.ceil(F.timer)}s left`:`Stage ${Sv.stage} · ${Sv.kills%10}/10 to advance`}</span><span class="ps">Every 10th stage is a boss on a timer.</span></div><div class="prog"><i id="stP" style="width:${F&&F.boss?F.timer/30*100:(Sv.kills%10)*10}%"></i></div>
+  <div class="frame" style="padding:10px;margin-top:10px"><b style="color:#b6a6ff">Retire the company</b><p class="ps" style="margin:4px 0 8px">Start over with renown, a permanent bonus. You would gain <b>${renownGain()}</b> renown now (based on all gold ever earned: ${fmt(Sv.total)}).</p><button class="btn alt" id="ret" ${renownGain()<1?"disabled":""}>Retire for ${renownGain()} renown</button></div></div>
+ <div class="frame" style="padding:10px"><div class="tabs"><button class="btn ${tab==="hire"?"":"alt"}" data-t="hire">Hire</button><button class="btn ${tab==="up"?"":"alt"}" data-t="up">Upgrades</button></div>
+  ${tab==="hire"?`<div class="amt">${[1,10,100].map(n=>`<button class="btn ${Sv.buyN===n?"":"alt"}" data-n="${n}">×${n}</button>`).join("")}</div><div class="list" style="margin-top:6px">${HIRES.map((h,i)=>{const u=unit(h[0]),c=cost(h[0],Sv.buyN),lock=i>0&&!(Sv.own[HIRES[i-1][0]]>0)&&!(Sv.own[h[0]]>0);return `<div class="row ${lock?"lock":""}">${MK.sprImg(u.spr,0)}<div><b>${u.n}</b><span class="own">${Sv.own[h[0]]||0}</span><small>${fmt(h[2]*mulFor(h[0]))} dps each · ${fmt(dpsOf(h[0]))} total</small></div><button class="btn" data-h="${h[0]}" ${lock||Sv.gold<c?"disabled":""}>${fmt(c)} g</button></div>`}).join("")}</div>`
+  :`<div class="list">${UPG.map((u,i)=>Sv.up[i]?`<div class="row"><img src="${IMG("icons/scroll_red.png")}"><div><b>${u[0]}</b><small>${u[1]}</small></div><span class="ps">owned</span></div>`:`<div class="row"><img src="${IMG("icons/book2.png")}"><div><b>${u[0]}</b><small>${u[1]}</small></div><button class="btn" data-u="${i}" ${Sv.gold<u[2]?"disabled":""}>${fmt(u[2])} g</button></div>`).join("")}</div>`}</div>`;
+ document.querySelectorAll("[data-t]").forEach(b=>b.onclick=()=>{tab=b.dataset.t;render()});document.querySelectorAll("[data-n]").forEach(b=>b.onclick=()=>{Sv.buyN=+b.dataset.n;render()});
+ document.querySelectorAll("[data-h]").forEach(b=>b.onclick=()=>{const id=b.dataset.h,c=cost(id,Sv.buyN);if(Sv.gold<c)return;Sv.gold-=c;Sv.own[id]=(Sv.own[id]||0)+Sv.buyN;sfx("gold",.4);save();render()});
+ document.querySelectorAll("[data-u]").forEach(b=>b.onclick=()=>{const i=+b.dataset.u;if(Sv.gold<UPG[i][2])return;Sv.gold-=UPG[i][2];Sv.up[i]=1;sfx("magic-holy-1",.4);save();render()});
+ $("field").onclick=()=>{hit(clickDmg(),1);const a=[...$("army").children];if(a.length){const e=pick(a);e.classList.remove("hop");void e.offsetWidth;e.classList.add("hop")}};$("ret").onclick=retire;drawField()}
+function drawField(){const f=$("foe");if(!f||!F)return;f.innerHTML=`${MK.sprImg(F.u.spr,1)}<span class="nm">${F.boss?"★ ":""}${F.u.n}</span><div class="hpb"><i id="fhp" style="width:${Math.max(0,F.hp/F.max*100)}%"></i></div>`;
+ const A=$("army"),want=[];HIRES.forEach(h=>{const n=Math.min(4,Sv.own[h[0]]||0);for(let k=0;k<n;k++)want.push(h[0])});A.innerHTML=want.slice(-16).map(id=>MK.sprImg(unit(id).spr,0)).join("")}
+let acc=0,uiT=0;
+function tick(t){const dt=Math.min(1,(t-last)/1000);last=t;if(F){const d=dps()*dt;if(d>0)hit(d);if(F.boss){F.timer-=dt;if(F.timer<=0){toast("The boss held out. Back a stage.");Sv.stage=Math.max(1,Sv.stage-1);Sv.kills=Math.floor(Sv.kills/10)*10;spawn()}}const h=$("fhp");if(h)h.style.width=Math.max(0,F.hp/F.max*100)+"%";const sp=$("stP");if(sp&&F.boss)sp.style.width=F.timer/30*100+"%"}
+ uiT+=dt;if(uiT>.5){uiT=0;const top=document.querySelector(".top .g");if(top){top.textContent="● "+fmt(Sv.gold);document.querySelectorAll("[data-h]").forEach(b=>{b.disabled=Sv.gold<cost(b.dataset.h,Sv.buyN)||b.closest(".row").classList.contains("lock")});document.querySelectorAll("[data-u]").forEach(b=>b.disabled=Sv.gold<UPG[+b.dataset.u][2])}}
+ acc+=dt;if(acc>5){acc=0;save()}requestAnimationFrame(tick)}
+MK.playMusic("traveling_minstrels",.25);load();spawn();render();requestAnimationFrame(tick);
+addEventListener("visibilitychange",()=>{if(document.hidden)save()});
+</script></body></html>

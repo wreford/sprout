@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Ballad of the Keep · Mercenary Keep</title><link rel="stylesheet" href="mk.css">
+<style>
+#app{max-width:1080px;margin:0 auto;padding:10px}
+#stage{position:relative;height:420px;border-radius:10px;overflow:hidden;border:1px solid var(--line);background:linear-gradient(#1c2a44 0%,#3a4a5a 45%,#4a5a3a 46%,#2e3a22 100%)}
+#stage .bg{position:absolute;inset:0;background:url(../img/story/landscape-castle.webp) center 30%/cover;opacity:.55}
+#stage .ground{position:absolute;left:0;right:0;bottom:0;height:46%;background:url(../img/terrain/grass/green.png) 0 0/96px;opacity:.85;-webkit-mask:linear-gradient(transparent,#000 30%);mask:linear-gradient(transparent,#000 30%)}
+.bat{position:absolute;display:flex;flex-direction:column;align-items:center;transition:transform .2s}
+.bat .spr{width:120px;height:120px;object-fit:contain;filter:drop-shadow(0 6px 3px rgba(0,0,0,.6))}.bat.big .spr{width:200px;height:200px}
+.bat .tag{font:800 12px system-ui;background:rgba(0,0,0,.55);padding:1px 8px;border-radius:8px;margin-top:-10px}
+.bat .hpb{width:90px;margin-top:3px}
+.bat.act .spr{filter:drop-shadow(0 0 10px #ecc66e) drop-shadow(0 6px 3px rgba(0,0,0,.6))}
+.bat.tg{cursor:crosshair}.bat.tg .spr{filter:drop-shadow(0 0 10px #ff6a4a)}
+.bat.ko{opacity:.25;filter:grayscale(1)}
+#bottom{display:grid;grid-template-columns:1fr 1.4fr;gap:10px;margin-top:10px}
+#cmd,#party{padding:10px}
+#cmd .menu{display:flex;flex-direction:column;gap:5px}
+#cmd .menu button{text-align:left;background:var(--card);border:1px solid var(--line);color:var(--ink);padding:8px 12px;border-radius:6px;font:700 15px system-ui}
+#cmd .menu button:hover:not(:disabled),#cmd .menu button:focus{background:var(--card2);border-color:var(--gold2);outline:none}
+#cmd .menu button:disabled{opacity:.4}#cmd .menu small{color:var(--mute);float:right}
+.pr{display:grid;grid-template-columns:44px 1fr 120px 90px;gap:8px;align-items:center;padding:5px 6px;border-radius:6px}
+.pr.act{background:rgba(201,162,74,.15);outline:1px solid var(--gold)}.pr img{width:44px;height:44px;object-fit:cover;border-radius:50%;border:2px solid var(--gold)}
+.pr .nm{font-weight:800}.pr .lv{color:var(--mute);font-size:12px}.pr .bars{font-size:12px}.mpb{height:5px;background:#141a30;border-radius:3px;overflow:hidden;margin-top:2px}.mpb i{display:block;height:100%;background:linear-gradient(#6ab0ff,#3060b0)}
+#order{display:flex;gap:4px;align-items:center;padding:6px 10px;margin-top:10px;font-size:12px;color:var(--mute)}#order img{width:34px;height:34px;object-fit:contain;border-radius:6px;background:#0d1220;border:1px solid var(--line)}#order img.en{border-color:#a24a3a}
+#log{min-height:22px;text-align:center;font:700 15px Georgia,serif;color:var(--gold2);margin-top:6px}
+.dmgn{position:absolute;font:900 26px system-ui;color:#fff;text-shadow:0 2px 3px #000;animation:flt .9s ease-out forwards;pointer-events:none;z-index:5;transform:translateX(-50%)}
+.dmgn.h{color:#8be08b}.dmgn.c{color:#ffd47a;font-size:32px}
+#world{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;padding:12px}
+.loc{padding:10px;border-radius:8px;background:var(--card);border:1px solid var(--line);color:var(--ink);text-align:center;font-weight:800}
+.loc img{width:64px;height:64px;object-fit:contain;display:block;margin:0 auto 4px}.loc.lock{opacity:.35}.loc.done{border-color:var(--green)}.loc.next{border-color:var(--gold2);box-shadow:0 0 12px var(--gold)}
+@media (max-width:760px){#bottom{grid-template-columns:1fr}.bat .spr{width:84px;height:84px}.bat.big .spr{width:130px;height:130px}#stage{height:320px}.pr{grid-template-columns:36px 1fr 90px}.pr .mpw{display:none}#world{grid-template-columns:repeat(3,1fr)}}
+</style></head><body>
+<div id="app"></div>
+<script src="roster.js"></script><script src="mk.js"></script>
+<script>
+"use strict";
+const {$,ri,rnd,pick,shuffle,unit,IMG,sfx,ls,toast,modal,closeModal}=MK;
+MK.topbar("jrpg");
+// ---- party
+const HEROES=[
+ {id:"lieut",n:"Aldric",cls:"Knight",hp:110,mp:20,atk:16,mag:4,def:12,spd:9,sk:["guard","cleave"]},
+ {id:"earch",n:"Liriel",cls:"Ranger",hp:80,mp:30,atk:14,mag:8,def:7,spd:15,sk:["aimed","volley"]},
+ {id:"mage",n:"Corvin",cls:"Mage",hp:62,mp:60,atk:6,mag:18,def:5,spd:11,sk:["fire","bolt","frost"]},
+ {id:"white",n:"Maera",cls:"Healer",hp:70,mp:56,atk:6,mag:14,def:7,spd:10,sk:["heal","mend","holy"]}];
+const SK={guard:{n:"Shield Wall",mp:4,t:"self",d:"Halve damage to the party until your next turn."},cleave:{n:"Cleave",mp:6,t:"allE",pow:1.0,d:"Hit every enemy."},aimed:{n:"Aimed Shot",mp:5,t:"enemy",pow:2.0,d:"A heavy shot. Never misses."},volley:{n:"Volley",mp:8,t:"allE",pow:.8,d:"Arrows on every enemy."},
+ fire:{n:"Fire",mp:6,t:"enemy",mag:1.6,el:"fire",d:"Fire damage. Beasts and the undead hate it."},bolt:{n:"Thunder",mp:10,t:"allE",mag:1.1,el:"bolt",d:"Lightning on every enemy."},frost:{n:"Frost",mp:8,t:"enemy",mag:1.5,el:"ice",slow:1,d:"Ice damage, and the target is slowed."},
+ heal:{n:"Heal",mp:5,t:"ally",heal:2.2,d:"Restore one ally's HP."},mend:{n:"Mend All",mp:14,t:"allA",heal:1.2,d:"Restore the whole party."},holy:{n:"Holy",mp:12,t:"enemy",mag:2.2,el:"holy",d:"Holy damage. Devastating to the undead."}};
+const ITEMS={potion:{n:"Potion",d:"Restore 60 HP.",t:"ally",f:u=>heal(u,60)},ether:{n:"Ether",d:"Restore 25 MP.",t:"ally",f:u=>{u.mp=Math.min(u.mmp,u.mp+25);pop(u,"+25 MP","h")}},phoenix:{n:"Phoenix Down",d:"Revive a fallen ally at 40% HP.",t:"ko",f:u=>{u.hp=Math.round(u.max*.4);u.ko=false;pop(u,"Revived","h");sfx("magic-holy-1")}}};
+// ---- areas and encounters
+const AREAS=[{n:"Greenwood",i:"terrain/forest/pine.png",mus:"knolls",pack:[["wolf2","wolf2"],["gob","gob","wolf2"],["rat","rat","spider"]]},{n:"Old Barrow",i:"items/bones.png",mus:"into_the_shadows",pack:[["skel","skel"],["ghoul","adept"],["skel","ghost","skel"]]},{n:"Goblin Pass",i:"terrain/hills/regular.png",mus:"northerners",pack:[["grunt","oarch","gob"],["assn","grunt"],["twar"]]},{n:"Ember Caves",i:"terrain/cave/floor.png",mus:"the_deep_path",pack:[["burner","saur"],["m_fant","m_fant","m_bomb"],["clash","augur"]]},{n:"Dragon's Roost",i:"units/monsters/fire-dragon.png",mus:"battle-epic",boss:"m_fdragon"}];
+const WEAK={wolf2:"fire",rat:"fire",spider:"fire",gob:"bolt",skel:"holy",ghoul:"holy",adept:"bolt",ghost:"holy",grunt:"ice",oarch:"fire",assn:"bolt",twar:"fire",burner:"ice",saur:"ice",m_fant:"ice",m_bomb:"ice",clash:"bolt",augur:"bolt",m_fdragon:"ice"};
+function foeStats(id,tier){const u=unit(id),b=id==="m_fdragon";return {u,id,n:u.n,hp:b?900:Math.round((u.hp*3.4+20)*(1+tier*.35)),atk:b?30:Math.round((u.dmg*2.2+6)*(1+tier*.3)),def:4+tier*2,spd:b?12:5+u.str+ri(0,4),boss:b,xp:b?0:12+tier*8,gold:ri(8,16)*(tier+1)}}
+// ---- state
+let SV=null,BT=null,busy=false;
+function freshSave(){return {party:HEROES.map(h=>({...h,u:unit(h.id),lv:1,xp:0,max:h.hp,mmp:h.mp})).map(p=>({...p,hp:p.max,mp:p.mmp})),items:{potion:4,ether:2,phoenix:1},gold:50,area:0,wins:0}}
+function save(){ls.set("mk.jrpg",SV)}
+function load(){const s=ls.get("mk.jrpg",null);if(!s)return null;s.party.forEach(p=>p.u=unit(p.id));return s}
+// ---- world screen
+function world(){MK.playMusic("silvan_sanctuary");BT=null;const P=SV.party;
+ $("app").innerHTML=`<div class="frame" style="padding:12px"><h2 style="margin-top:0">Ballad of the Keep</h2><p style="margin:0;color:var(--mute)">A knight, a ranger, a mage and a healer ride for the dragon's roost. Win three battles in an area to unlock the next. The inn restores everyone.</p></div>
+ <div id="world" class="frame" style="margin-top:10px">${AREAS.map((a,i)=>{const st=i<SV.area?"done":i===SV.area?"next":"lock";return `<button class="loc ${st}" data-a="${i}" ${i>SV.area?"disabled":""}><img class="spr" src="${IMG(a.i)}" alt="">${a.n}<br><small style="color:var(--mute);font-weight:400">${i<SV.area?"cleared":i===SV.area?(a.boss?"the dragon":`${(SV.prog||0)}/3 battles`):"locked"}</small></button>`}).join("")}</div>
+ <div class="frame" style="padding:10px;margin-top:10px">${partyHTML(-1)}<div style="display:flex;gap:8px;justify-content:center;margin-top:8px;flex-wrap:wrap"><button class="btn" id="inn">Inn · 20 g (have ${SV.gold})</button><button class="btn alt" id="shop">Shop</button><button class="btn alt" id="newg">New game</button></div></div>`;
+ document.querySelectorAll("[data-a]").forEach(b=>b.onclick=()=>battle(+b.dataset.a));
+ $("inn").onclick=()=>{if(SV.gold<20){toast("Not enough gold");return}SV.gold-=20;SV.party.forEach(p=>{p.ko=false;p.hp=p.max;p.mp=p.mmp});sfx("heal");save();toast("A warm bed and a hot meal. Everyone is restored.");world()};
+ $("shop").onclick=shop;$("newg").onclick=()=>{if(confirm("Start over?")){SV=freshSave();save();world()}}}
+function shop(){const P={potion:15,ether:30,phoenix:60};modal(`<h2>The Peddler</h2><p>You have ${SV.gold} gold.</p>${Object.keys(P).map(k=>`<div style="display:flex;justify-content:space-between;align-items:center;margin:6px 0"><span><b>${ITEMS[k].n}</b> · ${ITEMS[k].d} <small>(own ${SV.items[k]||0})</small></span><button class="btn" data-buy="${k}" ${SV.gold<P[k]?"disabled":""}>${P[k]} g</button></div>`).join("")}<button class="btn alt" onclick="MK.closeModal();world()">Leave</button>`);
+ document.querySelectorAll("[data-buy]").forEach(b=>b.onclick=()=>{const k=b.dataset.buy;SV.gold-=P[k];SV.items[k]=(SV.items[k]||0)+1;sfx("gold");save();shop()})}
+function partyHTML(act){return SV.party.map((p,i)=>`<div class="pr ${i===act?"act":""}"><img src="${MK.portrait(p.u)}" alt=""><div><span class="nm">${p.n}</span> <span class="lv">${p.cls} · Lv ${p.lv}</span></div><div class="bars">HP ${Math.max(0,p.hp)}/${p.max}<div class="hpb ally"><i style="width:${Math.max(0,p.hp)/p.max*100}%"></i></div></div><div class="bars mpw">MP ${p.mp}/${p.mmp}<div class="mpb"><i style="width:${p.mp/p.mmp*100}%"></i></div></div></div>`).join("")}
+// ---- battle
+function battle(ai){const A=AREAS[ai],tier=ai;const list=A.boss?[A.boss]:pick(A.pack);
+ BT={ai,foes:list.map(id=>({...foeStats(id,tier),side:1})),turn:null,guard:0,q:[],msg:""};BT.foes.forEach(f=>{f.max=f.hp;f.slow=0});
+ SV.party.forEach(p=>{p.side=0;p.slow=0;p.cd=rnd(0,.3)});BT.foes.forEach(f=>f.cd=rnd(.1,.5));
+ MK.playMusic(A.boss?"the_dangerous_symphony":A.mus);render();setTimeout(nextTurn,500)}
+const all=()=>SV.party.concat(BT.foes);
+const liveP=()=>SV.party.filter(p=>!p.ko),liveF=()=>BT.foes.filter(f=>f.hp>0);
+function nextTurn(){if(checkEnd())return;// simple ATB: whoever reaches 1 first acts
+ const L=all().filter(x=>x.side===0?!x.ko:x.hp>0);let best=null,bt=1e9;L.forEach(x=>{const sp=x.spd*(x.slow>0?.6:1),t=(1-x.cd)/sp;if(t<bt){bt=t;best=x}});L.forEach(x=>x.cd+=bt*x.spd*(x.slow>0?.6:1));best.cd=0;if(best.slow>0)best.slow--;
+ BT.turn=best;BT.sub=null;if(best.side===0){if(best===SV.party[0]&&BT.guard)BT.guard=0;render();}else{render();setTimeout(()=>enemyAct(best),550)}}
+function order(){const L=all().filter(x=>x.side===0?!x.ko:x.hp>0).map(x=>({x,cd:x.cd}));const out=[];for(let k=0;k<8;k++){let best=null,bt=1e9;L.forEach(o=>{const sp=o.x.spd*(o.x.slow>0?.6:1),t=(1-o.cd)/sp;if(t<bt){bt=t;best=o}});L.forEach(o=>o.cd+=bt*o.x.spd*(o.x.slow>0?.6:1));best.cd=0;out.push(best.x)}return out}
+function pos(x){const st=$("stage").getBoundingClientRect();if(x.side===0){const i=SV.party.indexOf(x);return [st.width*.72+i*st.width*.055,st.height*.32+i*st.height*.13]}const i=BT.foes.indexOf(x),n=BT.foes.length;if(x.boss)return [st.width*.22,st.height*.52];return [st.width*(.12+(i%2)*.13),st.height*(.3+i*(.5/Math.max(1,n)))]}
+function render(){if(!BT)return;const T=BT.turn,me=T&&T.side===0&&!busy?T:null,tgtMode=BT.sub&&BT.sub.pick;
+ $("app").innerHTML=`<div id="stage"><div class="bg"></div><div class="ground"></div></div><div id="order" class="frame">NEXT: ${order().map(x=>`<img class="spr ${x.side?"en":""}" src="${MK.spriteURL(x.u.spr,x.side)}" title="${x.n}">`).join("")}</div><div id="log">${BT.msg||""}</div>
+ <div id="bottom"><div id="cmd" class="frame">${me?cmdHTML(me):`<div style="color:var(--mute);padding:8px">${T&&T.side===1?T.n+" is acting...":"..."}</div>`}</div><div id="party" class="frame">${partyHTML(SV.party.indexOf(T))}</div></div>`;
+ const st=$("stage");all().forEach(x=>{const [px,py]=pos(x);const ko=x.side===0?x.ko:x.hp<=0;const d=document.createElement("div");d.className=`bat ${x.boss?"big":""} ${x===T?"act":""} ${ko?"ko":""}`;
+  const canT=tgtMode&&((BT.sub.pick==="enemy"&&x.side===1&&!ko)||(BT.sub.pick==="ally"&&x.side===0&&!ko)||(BT.sub.pick==="ko"&&x.side===0&&ko));if(canT)d.classList.add("tg");
+  d.style.left=(px-(x.boss?100:60))+"px";d.style.top=(py-(x.boss?120:70))+"px";d.innerHTML=`${MK.sprImg(x.u.spr,x.side)}<span class="tag">${x.side===0?x.n:x.n}${x.slow>0?" ❄":""}</span>${x.side===1?`<div class="hpb"><i style="width:${Math.max(0,x.hp)/x.max*100}%"></i></div>`:""}`;
+  if(x.side===0)d.querySelector(".spr").style.transform="scaleX(-1)";d.id="b"+(x.side===0?"p"+SV.party.indexOf(x):"f"+BT.foes.indexOf(x));if(canT)d.onclick=()=>commit(x);st.appendChild(d)});
+ wireCmd(me)}
+function cmdHTML(u){const S=BT.sub;if(S&&S.pick)return `<div style="padding:6px"><b>${S.label}</b>: pick a target.<div class="menu" style="margin-top:8px"><button id="cBack">Back</button></div></div>`;
+ if(S&&S.menu==="skill")return `<div class="menu">${u.sk.map(k=>`<button data-sk="${k}" ${u.mp<SK[k].mp?"disabled":""} title="${SK[k].d}">${SK[k].n}<small>${SK[k].mp} MP</small></button>`).join("")}<button id="cBack">Back</button></div>`;
+ if(S&&S.menu==="item")return `<div class="menu">${Object.keys(ITEMS).map(k=>`<button data-it="${k}" ${!(SV.items[k]>0)?"disabled":""} title="${ITEMS[k].d}">${ITEMS[k].n}<small>×${SV.items[k]||0}</small></button>`).join("")}<button id="cBack">Back</button></div>`;
+ return `<div style="font-weight:800;color:var(--gold2);margin-bottom:6px">${u.n}'s turn</div><div class="menu"><button id="cAtk">Attack</button><button id="cSk">${u.cls==="Mage"||u.cls==="Healer"?"Magic":"Skills"}</button><button id="cIt">Items</button><button id="cDef">Defend</button><button id="cRun" ${BT.foes.some(f=>f.boss)?"disabled":""}>Flee</button></div>`}
+function wireCmd(u){if(!u)return;const S=BT.sub;const set=v=>{BT.sub=v;render()};
+ if($("cBack"))$("cBack").onclick=()=>set(S&&S.pick&&S.from?{menu:S.from}:null);
+ if($("cAtk"))$("cAtk").onclick=()=>set({pick:"enemy",act:"atk",label:"Attack"});if($("cSk"))$("cSk").onclick=()=>set({menu:"skill"});if($("cIt"))$("cIt").onclick=()=>set({menu:"item"});
+ if($("cDef"))$("cDef").onclick=()=>{u.defend=1;BT.msg=`${u.n} braces.`;nextTurn()};if($("cRun"))$("cRun").onclick=()=>{if(Math.random()<.6){BT.msg="Got away!";MK.toast("Escaped");setTimeout(world,500)}else{BT.msg="Couldn't escape!";nextTurn()}};
+ document.querySelectorAll("[data-sk]").forEach(b=>b.onclick=()=>{const k=b.dataset.sk,s=SK[k];if(s.t==="enemy"||s.t==="ally")set({pick:s.t,act:"sk",k,label:s.n,from:"skill"});else{doSkill(u,k,null)}});
+ document.querySelectorAll("[data-it]").forEach(b=>b.onclick=()=>{const k=b.dataset.it;set({pick:ITEMS[k].t,act:"it",k,label:ITEMS[k].n,from:"item"})})}
+function commit(t){const u=BT.turn,S=BT.sub;BT.sub=null;if(S.act==="atk")doAttack(u,t);else if(S.act==="sk")doSkill(u,S.k,t);else{SV.items[S.k]--;ITEMS[S.k].f(t);BT.msg=`${u.n} uses ${ITEMS[S.k].n}.`;sfx("potion",.5);after()}}
+function pop(x,t,c){const el=$("b"+(x.side===0?"p"+SV.party.indexOf(x):"f"+BT.foes.indexOf(x)));const st=$("stage");if(!el||!st)return;const r=el.getBoundingClientRect(),s=st.getBoundingClientRect();const d=document.createElement("div");d.className="dmgn "+(c||"");d.textContent=t;d.style.left=(r.left-s.left+r.width/2)+"px";d.style.top=(r.top-s.top+20)+"px";st.appendChild(d);setTimeout(()=>d.remove(),900)}
+function shake(x){const el=$("b"+(x.side===0?"p"+SV.party.indexOf(x):"f"+BT.foes.indexOf(x)));if(el){el.classList.remove("shake");void el.offsetWidth;el.classList.add("shake")}}
+function lunge(x){const el=$("b"+(x.side===0?"p"+SV.party.indexOf(x):"f"+BT.foes.indexOf(x)));if(el){el.style.transform=`translateX(${x.side===0?-40:40}px)`;setTimeout(()=>el.style.transform="",220)}}
+function harm(t,d,c){if(t.side===0&&t.defend)d=Math.round(d*.5);if(t.side===0&&BT.guard)d=Math.round(d*.5);t.hp-=d;pop(t,d,c);shake(t);sfx(MK.hitSnd(t.u),.35);if(t.side===0&&t.hp<=0){t.hp=0;t.ko=true;sfx(MK.dieSnd(t.u),.5)}if(t.side===1&&t.hp<=0)sfx(MK.dieSnd(t.u),.5)}
+function heal(t,n){t.hp=Math.min(t.max,t.hp+n);pop(t,"+"+n,"h");sfx("heal",.45)}
+function doAttack(u,t){render();lunge(u);sfx(MK.atkSnd(u.u),.5);const crit=Math.random()<.12;let d=Math.max(1,Math.round((u.atk*2.1-t.def)*rnd(.9,1.1)*(crit?1.8:1)));setTimeout(()=>{harm(t,d,crit?"c":"");BT.msg=crit?`Critical! ${u.n} hits ${t.n} for ${d}.`:`${u.n} attacks.`;after()},220)}
+function doSkill(u,k,t){const s=SK[k];u.mp-=s.mp;render();lunge(u);BT.msg=`${u.n} casts ${s.n}!`;
+ setTimeout(()=>{if(k==="guard"){BT.guard=1;sfx("mace");pop(u,"Shield Wall","h")}
+  else if(s.heal){const L=s.t==="allA"?liveP():[t];L.forEach(a=>heal(a,Math.round(u.mag*s.heal*rnd(.9,1.1))))}
+  else{const L=s.t==="allE"?liveF():[t];sfx(s.el==="fire"?"flame-big":s.el==="bolt"?"lightning":s.el==="holy"?"magic-holy-1":s.el==="ice"?"magic-faeriefire":MK.atkSnd(u.u),.5);
+   L.forEach(f=>{const base=s.mag?u.mag*s.mag*2:u.atk*s.pow*2.1;let d=Math.max(1,Math.round((base-(s.mag?f.def*.5:f.def))*rnd(.9,1.1)));const wk=s.el&&WEAK[f.id]===s.el;if(wk)d=Math.round(d*1.6);harm(f,d,wk?"c":"");if(wk)setTimeout(()=>pop(f,"WEAK!","c"),300);if(s.slow)f.slow=3})}
+  after()},260)}
+function enemyAct(f){if(f.hp<=0){nextTurn();return}const P=liveP();if(!P.length)return checkEnd();busy=true;
+ const t=P.slice().sort((a,b)=>a.hp/a.max-b.hp/b.max)[Math.random()<.5?0:ri(0,P.length-1)];lunge(f);sfx(MK.atkSnd(f.u),.5);
+ if(f.boss&&Math.random()<.35){BT.msg="The dragon breathes fire across the party!";sfx("flame-big",.7);setTimeout(()=>{P.forEach(p=>harm(p,Math.round((f.atk*1.3-p.def*.6)*rnd(.85,1.1))));busy=false;after()},300);return}
+ setTimeout(()=>{const d=Math.max(1,Math.round((f.atk*1.6-t.def)*rnd(.85,1.15)));harm(t,d);BT.msg=`${f.n} attacks ${t.n}.`;busy=false;after()},260)}
+function after(){SV.party.forEach(p=>{if(BT.turn===p)return});if(BT.turn&&BT.turn.side===0)BT.turn.defend=BT.turn.defend&&BT.turn===BT.turn?BT.turn.defend:0;render();setTimeout(nextTurn,650)}
+function checkEnd(){if(!BT)return true;if(!liveP().length){BT=null;MK.playMusic("defeat");modal(`<h2>The party has fallen</h2><p>They wake at the inn, a little poorer. Half your gold is gone.</p><button class="btn" id="ok">Back to the map</button>`);SV.gold=Math.floor(SV.gold/2);SV.party.forEach(p=>{p.ko=false;p.hp=p.max;p.mp=p.mmp});save();$("ok").onclick=()=>{closeModal();world()};return true}
+ if(!liveF().length){const xp=BT.foes.reduce((a,f)=>a+f.xp,0),gold=BT.foes.reduce((a,f)=>a+f.gold,0),boss=BT.foes.some(f=>f.boss),ai=BT.ai;BT=null;SV.gold+=gold;const ups=[];
+  SV.party.forEach(p=>{p.defend=0;if(p.ko)return;p.xp+=xp;while(p.xp>=p.lv*40){p.xp-=p.lv*40;p.lv++;const g=k=>Math.round(p[k]*.12)+1;p.max+=g("max");p.mmp+=Math.round(p.mmp*.1)+1;p.atk+=g("atk");p.mag+=g("mag");p.def+=g("def");p.spd+=1;p.hp=p.max;ups.push(`${p.n} reached level ${p.lv}!`)}});
+  if(boss){MK.playMusic("victory");SV.wins++;ls.set("mk.jrpgWins",ls.get("mk.jrpgWins",0)+1);save();modal(`<h2>The dragon is slain</h2><p>The roost is quiet. Somewhere a bard is already getting the details wrong.</p><button class="btn" id="ok">New Game+</button>`);$("ok").onclick=()=>{closeModal();SV.area=0;SV.prog=0;save();world()};return true}
+  if(ai===SV.area){SV.prog=(SV.prog||0)+1;if(SV.prog>=3){SV.area++;SV.prog=0;ups.push(`${AREAS[SV.area].n} is now open.`)}}save();MK.playMusic("heroes_rite");
+  modal(`<h2>Victory!</h2><p>+${xp} XP · +${gold} gold</p>${ups.map(u=>`<p style="color:var(--gold2)">${u}</p>`).join("")}<button class="btn" id="ok">Continue</button>`);$("ok").onclick=()=>{closeModal();world()};return true}
+ return false}
+// ---- boot
+MK.preload(HEROES.map(h=>unit(h.id).spr));
+SV=load()||freshSave();save();
+modal(`<h1>Ballad of the Keep</h1><p>A turn-based adventure. Four heroes, five regions, one dragon. Turn order depends on speed: watch the NEXT bar. Exploit weaknesses (fire, ice, thunder, holy) for big damage.</p><button class="btn" id="go">${SV.wins||SV.area||SV.party[0].lv>1?"Continue":"Begin"}</button>`);$("go").onclick=()=>{closeModal();world()};
+</script></body></html>
