@@ -32,7 +32,7 @@
 @media (max-width:760px){#bottom{grid-template-columns:1fr}.bat .spr{width:84px;height:84px}.bat.big .spr{width:130px;height:130px}#stage{height:320px}.pr{grid-template-columns:36px 1fr 90px}.pr .mpw{display:none}#world{grid-template-columns:repeat(3,1fr)}}
 </style></head><body>
 <div id="app"></div>
-<script src="roster.js"></script><script src="mk.js"></script>
+<script src="roster.js"></script><script src="mk.js"></script><script src="engine.js"></script>
 <script>
 "use strict";
 const {$,ri,rnd,pick,shuffle,unit,IMG,sfx,ls,toast,modal,closeModal}=MK;
@@ -98,9 +98,10 @@ function wireCmd(u){if(!u)return;const S=BT.sub;const set=v=>{BT.sub=v;render()}
  document.querySelectorAll("[data-sk]").forEach(b=>b.onclick=()=>{const k=b.dataset.sk,s=SK[k];if(s.t==="enemy"||s.t==="ally")set({pick:s.t,act:"sk",k,label:s.n,from:"skill"});else{doSkill(u,k,null)}});
  document.querySelectorAll("[data-it]").forEach(b=>b.onclick=()=>{const k=b.dataset.it;set({pick:ITEMS[k].t,act:"it",k,label:ITEMS[k].n,from:"item"})})}
 function commit(t){const u=BT.turn,S=BT.sub;BT.sub=null;if(S.act==="atk")doAttack(u,t);else if(S.act==="sk")doSkill(u,S.k,t);else{SV.items[S.k]--;ITEMS[S.k].f(t);BT.msg=`${u.n} uses ${ITEMS[S.k].n}.`;sfx("potion",.5);after()}}
-function pop(x,t,c){if(!BT)return;const el=$("b"+(x.side===0?"p"+SV.party.indexOf(x):"f"+BT.foes.indexOf(x)));const st=$("stage");if(!el||!st)return;const r=el.getBoundingClientRect(),s=st.getBoundingClientRect();const d=document.createElement("div");d.className="dmgn "+(c||"");d.textContent=t;d.style.left=(r.left-s.left+r.width/2)+"px";d.style.top=(r.top-s.top+20)+"px";st.appendChild(d);setTimeout(()=>d.remove(),900)}
-function shake(x){if(!BT)return;const el=$("b"+(x.side===0?"p"+SV.party.indexOf(x):"f"+BT.foes.indexOf(x)));if(el){el.classList.remove("shake");void el.offsetWidth;el.classList.add("shake")}}
-function lunge(x){if(!BT)return;const el=$("b"+(x.side===0?"p"+SV.party.indexOf(x):"f"+BT.foes.indexOf(x)));if(el){el.style.transform=`translateX(${x.side===0?-40:40}px)`;setTimeout(()=>el.style.transform="",220)}}
+const bel=x=>BT&&$("b"+(x.side===0?"p"+SV.party.indexOf(x):"f"+BT.foes.indexOf(x)));
+function pop(x,t,c){const el=bel(x);if(el)MK.fx.pop(el,t,"dmgn "+(c||""),$("stage"))}
+function shake(x){MK.fx.shake(bel(x))}
+function lunge(x){MK.fx.lunge(bel(x),x.side===0?-40:40)}
 function harm(t,d,c){if(!BT)return;if(t.side===0&&t.defend)d=Math.round(d*.5);if(t.side===0&&BT.guard)d=Math.round(d*.5);t.hp-=d;pop(t,d,c);shake(t);sfx(MK.hitSnd(t.u),.35);if(t.side===0&&t.hp<=0){t.hp=0;t.ko=true;sfx(MK.dieSnd(t.u),.5)}if(t.side===1&&t.hp<=0)sfx(MK.dieSnd(t.u),.5)}
 function heal(t,n){t.hp=Math.min(t.max,t.hp+n);pop(t,"+"+n,"h");sfx("heal",.45)}
 function doAttack(u,t){render();lunge(u);sfx(MK.atkSnd(u.u),.5);const crit=Math.random()<.12;let d=Math.max(1,Math.round((u.atk*2.1-t.def)*rnd(.9,1.1)*(crit?1.8:1)));setTimeout(()=>{if(!BT)return;harm(t,d,crit?"c":"");BT.msg=crit?`Critical! ${u.n} hits ${t.n} for ${d}.`:`${u.n} attacks.`;after()},220)}
@@ -113,7 +114,7 @@ function doSkill(u,k,t){const s=SK[k];u.mp-=s.mp;render();lunge(u);BT.msg=`${u.n
 function enemyAct(f){if(!BT)return;if(f.hp<=0){nextTurn();return}const P=liveP();if(!P.length)return checkEnd();busy=true;
  const t=P.slice().sort((a,b)=>a.hp/a.max-b.hp/b.max)[Math.random()<.5?0:ri(0,P.length-1)];lunge(f);sfx(MK.atkSnd(f.u),.5);
  if(f.boss&&Math.random()<.35){BT.msg="The dragon breathes fire across the party!";sfx("flame-big",.7);setTimeout(()=>{P.forEach(p=>harm(p,Math.round((f.atk*1.3-p.def*.6)*rnd(.85,1.1))));busy=false;after()},300);return}
- setTimeout(()=>{const d=Math.max(1,Math.round((f.atk*1.6-t.def)*rnd(.85,1.15)));harm(t,d);BT.msg=`${f.n} attacks ${t.n}.`;busy=false;after()},260)}
+ setTimeout(()=>{if(!BT){busy=false;return}const d=Math.max(1,Math.round((f.atk*1.6-t.def)*rnd(.85,1.15)));harm(t,d);BT.msg=`${f.n} attacks ${t.n}.`;busy=false;after()},260)}
 function after(){if(!BT)return;SV.party.forEach(p=>{if(BT.turn===p)return});if(BT.turn&&BT.turn.side===0)BT.turn.defend=BT.turn.defend&&BT.turn===BT.turn?BT.turn.defend:0;render();setTimeout(nextTurn,650)}
 function checkEnd(){if(!BT)return true;if(!liveP().length){BT=null;MK.playMusic("defeat");modal(`<h2>The party has fallen</h2><p>They wake at the inn, a little poorer. Half your gold is gone.</p><button class="btn" id="ok">Back to the map</button>`);SV.gold=Math.floor(SV.gold/2);SV.party.forEach(p=>{p.ko=false;p.hp=p.max;p.mp=p.mmp});save();$("ok").onclick=()=>{closeModal();world()};return true}
  if(!liveF().length){const xp=BT.foes.reduce((a,f)=>a+f.xp,0),gold=BT.foes.reduce((a,f)=>a+f.gold,0),boss=BT.foes.some(f=>f.boss),ai=BT.ai;BT=null;SV.gold+=gold;const ups=[];

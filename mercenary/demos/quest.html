@@ -7,19 +7,14 @@
 #hearts{display:flex;gap:2px}#hearts .ht{font-style:normal;font-size:24px;line-height:1;text-shadow:0 1px 0 #000}#hearts .ht.f{color:#e2402e}#hearts .ht.h{background:linear-gradient(90deg,#e2402e 50%,#3a2020 50%);-webkit-background-clip:text;background-clip:text;color:transparent}#hearts .ht.e{color:#3a2020}
 #hud .it{font-weight:800;display:flex;align-items:center;gap:4px}#hud .it img{width:24px;height:24px;object-fit:contain}
 #wrap{position:relative}#cv{display:block;width:100%;height:auto;border-radius:8px;border:1px solid var(--line);image-rendering:pixelated;background:#1d3a1a}
-#pad{display:none;position:fixed;left:0;right:0;bottom:0;padding:14px;justify-content:space-between;align-items:end;pointer-events:none;z-index:10}
-#pad .dp{display:grid;grid-template-columns:repeat(3,56px);grid-template-rows:repeat(3,56px);gap:4px;pointer-events:auto}
-#pad button{background:rgba(20,26,40,.7);border:1px solid var(--line);border-radius:12px;color:var(--gold2);font:900 20px system-ui;touch-action:none}
-#pad .ab{width:84px;height:84px;border-radius:50%;pointer-events:auto;font-size:18px}
-@media (hover:none) and (pointer:coarse){#pad{display:flex}#app{padding-bottom:220px}}
 .help{font-size:13px;color:var(--mute);text-align:center;margin-top:8px}
 #msg{position:absolute;left:8%;right:8%;bottom:6%;padding:12px 16px;font-size:16px;line-height:1.4;display:none}#msg.on{display:block}
 </style></head><body>
 <div id="app"><div id="hud" class="frame"><span id="hearts"></span><span class="it"><img src="../img/icons/coins_copper.png" alt="">×<b id="coins">0</b></span><span class="it" id="keyI"></span><span style="flex:1"></span><span class="it" id="room"></span></div>
 <div id="wrap"><canvas id="cv"></canvas><div id="msg" class="frame"></div></div>
 <div class="help">Move: WASD or arrows · Sword: J or Space · Talk / open: walk into it. Find the key, open the gate, defeat what sleeps beyond it.</div></div>
-<div id="pad"><div class="dp"><span></span><button data-k="up">▲</button><span></span><button data-k="left">◀</button><span></span><button data-k="right">▶</button><span></span><button data-k="down">▼</button><span></span></div><button class="ab" data-k="atk">⚔</button></div>
-<script src="roster.js"></script><script src="mk.js"></script>
+
+<script src="roster.js"></script><script src="mk.js"></script><script src="engine.js"></script>
 <script>
 "use strict";
 const {$,ri,pick,unit,IMG,sfx,ls,toast,modal,closeModal}=MK;
@@ -28,7 +23,7 @@ const TW=15,TH=10,TS=48,cv=$("cv"),g=cv.getContext("2d");cv.width=TW*TS;cv.heigh
 // ---- world: 3x3 screens. Exits: which edges are open
 const EX={"1,2":"nwe","0,2":"ne","2,2":"nw","0,1":"nes","1,1":"neswL","2,1":"nws","0,0":"s","1,0":"sB","2,0":"s"};
 const NAMES={"1,2":"The Clearing","0,2":"Mossy Hollow","2,2":"Old Pond","0,1":"Bramble Path","1,1":"The Stone Gate","2,1":"Goblin Camp","0,0":"Spider Glen","1,0":"The Ogre's Den","2,0":"Hidden Grove"};
-function seedR(s){let x=s*9301+49297;return()=>{x=(x*9301+49297)%233280;return x/233280}}
+const seedR=MK.rng;
 function buildRoom(rx,ry){const k=rx+","+ry,ex=EX[k],R=seedR(rx*7+ry*13+3),m=[];for(let y=0;y<TH;y++){m.push([]);for(let x=0;x<TW;x++){let t=".";if(x===0||y===0||x===TW-1||y===TH-1)t="T";m[y].push(t)}}
  const open=(side)=>{if(side==="n")for(let x=6;x<=8;x++)m[0][x]=ex.includes("L")?(x===7?"D":"R"):".";if(side==="s")for(let x=6;x<=8;x++)m[TH-1][x]=".";if(side==="w")for(let y=4;y<=5;y++)m[y][0]=".";if(side==="e")for(let y=4;y<=5;y++)m[y][TW-1]="."};
  [..."nswe"].forEach(s=>{if(ex.includes(s))open(s)});
@@ -43,7 +38,7 @@ const ROOMS={};for(const k in EX){const [x,y]=k.split(",").map(Number);ROOMS[k]=
 const SPAWN={"1,2":[],"0,2":[["wolf2",3,3],["wolf2",11,7]],"2,2":[["spider",4,7],["rat",6,2],["rat",12,7]],"0,1":[["skel",4,3],["skel",10,6],["wolf2",12,2]],"1,1":[["skel",3,7],["skel",11,7],["oarch",7,3]],"2,1":[["oarch",4,2],["oarch",11,7],["gob",8,5],["gob",5,7]],"0,0":[["spider",6,5],["spider",10,3],["spider",9,7]],"2,0":[["wolf2",5,4],["wolf2",9,6]],"1,0":[["m_ogre",7,3]]};
 const EST={wolf2:{hp:3,sp:2.6,dmg:1,ai:"chase",sight:6},rat:{hp:1,sp:2.2,dmg:1,ai:"wander"},spider:{hp:2,sp:2.2,dmg:1,ai:"hop"},skel:{hp:4,sp:1.4,dmg:1,ai:"chase",sight:9},oarch:{hp:2,sp:1.6,dmg:1,ai:"shoot"},gob:{hp:2,sp:2,dmg:1,ai:"chase",sight:7},m_ogre:{hp:24,sp:1.5,dmg:2,ai:"boss",big:1}};
 // ---- state
-let P,E=[],SH=[],DROPS=[],cur="1,2",keys={},trans=null,cleared={},msg=null,over=false,lastT=0;
+let P,E=[],SH=[],DROPS=[],cur="1,2",trans=null,cleared={},msg=null,over=false,lastT=0;
 function reset(){P={x:7*TS+TS/2,y:6*TS+TS/2,dir:[0,1],face:1,hp:6,max:6,coins:0,key:false,atkT:0,inv:0,kb:null,heart2:false,gate:false,boss:false};cur="1,2";cleared={};over=false;enterRoom(cur,true);MK.playMusic("elvish-theme");hud()}
 const tileAt=(x,y)=>{const m=ROOMS[cur],tx=Math.floor(x/TS),ty=Math.floor(y/TS);if(tx<0||ty<0||tx>=TW||ty>=TH)return ".";return m[ty][tx]};
 const solid=t=>t==="T"||t==="R"||t==="W"||t==="C"||t==="D"||t==="N"||t==="c";
@@ -55,9 +50,7 @@ function say(t){msg={t,until:performance.now()+3200};$("msg").innerHTML=t;$("msg
 function hud(){let h="";for(let i=0;i<P.max;i+=2){const v=Math.max(0,Math.min(2,P.hp-i));h+=`<i class="ht ${v===2?"f":v===1?"h":"e"}">♥</i>`}
  $("hearts").innerHTML=h;$("coins").textContent=P.coins;$("keyI").innerHTML=P.key?`<img src="${IMG("items/stone-tablet.png")}" alt="">Gate key`:""}
 // ---- input
-const KM={arrowup:"up",w:"up",arrowdown:"down",s:"down",arrowleft:"left",a:"left",arrowright:"right",d:"right"," ":"atk",j:"atk"};
-addEventListener("keydown",e=>{const k=KM[e.key.toLowerCase()];if(k){keys[k]=true;e.preventDefault();if(k==="atk")attack()}});addEventListener("keyup",e=>{const k=KM[e.key.toLowerCase()];if(k)keys[k]=false});
-document.querySelectorAll("#pad [data-k]").forEach(b=>{const k=b.dataset.k;b.addEventListener("pointerdown",e=>{e.preventDefault();keys[k]=true;if(k==="atk")attack()});["pointerup","pointerleave","pointercancel"].forEach(ev=>b.addEventListener(ev,()=>keys[k]=false))});
+const IN=MK.input(null,{atk:()=>attack()}),keys=IN.keys;IN.pad([["atk","⚔"]]);document.body.classList.add("haspad");
 function attack(){if(over||P.atkT>0||trans)return;P.atkT=.28;sfx("sword-1",.35);
  const ax=P.x+P.dir[0]*30,ay=P.y+P.dir[1]*30;E.forEach(e=>{const r=e.big?40:26;if(Math.hypot(e.x-ax,e.y-ay)<r+18&&e.inv<=0&&e.hp>0){e.hp--;e.inv=.35;e.kb=[P.dir[0]*260,P.dir[1]*260,.15];sfx(MK.hitSnd(e.u),.4);if(e.hp<=0)kill(e)}})}
 function kill(e){sfx(MK.dieSnd(e.u),.5);if(Math.random()<.45)DROPS.push({x:e.x,y:e.y,t:Math.random()<.4?"heart":"coin",life:8});
@@ -118,7 +111,6 @@ function render(){g.clearRect(0,0,cv.width,cv.height);if(trans){const o=trans.t*
  ents.push({y:P.y,f:()=>{if(P.inv>0&&Math.floor(P.inv*16)%2)return;drawSpr(unit("efight"),0,P.x,P.y,1.5,P.face<0,false);if(P.atkT>0){const k=1-P.atkT/.28,a0=Math.atan2(P.dir[1],P.dir[0]),a=a0-1.1+k*2.2;g.strokeStyle="rgba(255,255,230,.85)";g.lineWidth=4;g.beginPath();g.arc(P.x,P.y-6,34,a0-1.1,a);g.stroke();g.lineWidth=1;const sw=MK.img("attacks/sword-elven.png");if(MK.ok(sw)){g.save();g.translate(P.x+Math.cos(a)*30,P.y-6+Math.sin(a)*30);g.rotate(a+.8);g.drawImage(sw,-14,-14,28,28);g.restore()}}}});
  ents.sort((a,b)=>a.y-b.y).forEach(e=>e.f());
  SH.forEach(s=>{if(s.rock){g.fillStyle="#8a7a6a";g.beginPath();g.arc(s.x,s.y,6,0,7);g.fill()}else{g.strokeStyle="#e8d7b0";g.lineWidth=2;g.beginPath();g.moveTo(s.x,s.y);g.lineTo(s.x-s.vx*.05,s.y-s.vy*.05);g.stroke();g.lineWidth=1}})}
-function loop(t){const dt=Math.min(.05,(t-lastT)/1000||0);lastT=t;update(dt);render();requestAnimationFrame(loop)}
 MK.preload(["terrain/grass/green.png","terrain/grass/dry.png","terrain/cave/floor.png","terrain/forest/pine.png","terrain/embellishments/rocks.png","terrain/embellishments/rocks2.png","terrain/embellishments/flowers-mixed.png","items/chest-plain-closed.png","items/chest-plain-open.png","units/human-magi/white-mage.png",unit("efight").spr,...Object.keys(EST).map(k=>unit(k).spr)],()=>{for(const k in CACHE)delete CACHE[k]});
-reset();requestAnimationFrame(loop);
+reset();MK.loop(update,render);
 </script></body></html>

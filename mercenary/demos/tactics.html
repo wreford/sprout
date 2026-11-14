@@ -16,7 +16,7 @@
 </style></head><body>
 <div id="app"><div id="bwrap"><canvas id="cv"></canvas><div class="phase" id="ph"></div></div>
 <div id="side"><div class="panel frame" id="info"></div><div class="panel frame" id="act"></div><div class="panel frame"><h3>Turn <span id="tn">1</span></h3><div class="tip">Click a blue unit, then a blue tile to move. Attack, heal or wait. Forests and hills protect, villages heal and bank you gold, and the river can only be crossed at the fords. Defeat the warlord to win. If your Lieutenant falls, the battle is lost.</div><div class="acts"><button class="btn" id="endB">End turn</button><button class="btn alt" id="rsB">Restart</button></div></div></div></div>
-<script src="roster.js"></script><script src="mk.js"></script>
+<script src="roster.js"></script><script src="mk.js"></script><script src="engine.js"></script>
 <script>
 "use strict";
 const {$,ri,pick,unit,IMG,sfx,ls,toast,modal,closeModal}=MK;
@@ -48,11 +48,12 @@ function newGame(){G={turn:1,phase:"player",units:[mk("lieut",0,1,4),mk("spear",
  $("tn").textContent=1;MK.playMusic("knolls");banner("PLAYER PHASE");draw();info();acts()}
 // ---- geometry
 const at=(x,y)=>G.units.find(u=>u.hp>0&&u.x===x&&u.y===y);
-const inb=(x,y)=>x>=0&&y>=0&&x<W&&y<H;
-const md=(a,b)=>Math.abs(a.x-b.x)+Math.abs(a.y-b.y);
+const inb=(x,y)=>MK.grid.inb(W,H,x,y);
+const md=MK.grid.md;
 function moveCost(u,x,y){const t=ter(x,y);if(u.cls==="wolf"&&MAP[y][x]==="f")return 1;return t.mv}
-function reachable(u){const R=new Map([[u.x+","+u.y,0]]),Q=[[u.x,u.y,0]];while(Q.length){const [x,y,c]=Q.shift();for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){const nx=x+dx,ny=y+dy;if(!inb(nx,ny))continue;const o=at(nx,ny);if(o&&o.side!==u.side)continue;const nc=c+moveCost(u,nx,ny);if(nc>u.mov)continue;const k=nx+","+ny;if(!R.has(k)||R.get(k)>nc){R.set(k,nc);Q.push([nx,ny,nc])}}}
- for(const k of [...R.keys()]){const [x,y]=k.split(",").map(Number);const o=at(x,y);if(o&&o!==u)R.delete(k)}return R}
+// movement cost for unit u stepping onto (x,y): off-map and enemy-held tiles are walls
+const stepCost=u=>(x,y)=>{if(!inb(x,y))return Infinity;const o=at(x,y);if(o&&o.side!==u.side)return Infinity;return moveCost(u,x,y)};
+function reachable(u){const R=MK.grid.reach(u.x,u.y,u.mov,stepCost(u));for(const k of [...R.keys()]){const [x,y]=MK.grid.unkey(k);const o=at(x,y);if(o&&o!==u)R.delete(k)}return R}
 const inRange=(a,from,b)=>{const d=Math.abs(from.x-b.x)+Math.abs(from.y-b.y);return d>=a.rng[0]&&d<=a.rng[1]};
 // ---- combat (forecast numbers are exactly what happens, apart from the hit roll)
 function dmg(a,b){let d=a.atk-(a.magic?b.res:b.def+(ter(b.x,b.y).df||0));if(a.antiCav&&b.cav)d+=4;return Math.max(1,d)}
@@ -64,11 +65,10 @@ async function fight(a,b){const f=forecast(a,b);const seq=[["a",0]];if(f.ctr)seq
   if(hit){const d=w==="a"?f.ad:f.bd;t.hp=Math.max(0,t.hp-d);G.fx.push({x:t.x,y:t.y,t:"-"+d,c:"#ff8a6a",l:1});sfx(MK.atkSnd(s.u),.55);sfx(MK.hitSnd(t.u),.35)}else{G.fx.push({x:t.x,y:t.y,t:"miss",c:"#cfd6e6",l:1});sfx("miss-1",.4)}
   draw();await wait(380);if(t.hp<=0){sfx(MK.dieSnd(t.u),.5);G.fx.push({x:t.x,y:t.y,t:"defeated",c:"#ffd47a",l:1.4});draw();await wait(300)}}
  checkEnd()}
-const wait=ms=>new Promise(r=>setTimeout(r,ms));
+const wait=MK.wait;
 async function lunge(s,t){const dx=Math.sign(t.x-s.x)*.25,dy=Math.sign(t.y-s.y)*.25;s.ox=dx;s.oy=dy;draw();await wait(130);s.ox=0;s.oy=0;draw()}
 async function slide(u,path){for(const [x,y] of path){u.x=x;u.y=y;draw();await wait(70)}}
-function pathTo(u,tx,ty){const prev=new Map(),Q=[[u.x,u.y]],cost=new Map([[u.x+","+u.y,0]]);while(Q.length){Q.sort((a,b)=>cost.get(a+"")-cost.get(b+""));const [x,y]=Q.shift();if(x===tx&&y===ty)break;for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){const nx=x+dx,ny=y+dy;if(!inb(nx,ny))continue;const o=at(nx,ny);if(o&&o.side!==u.side)continue;const c=cost.get(x+","+y)+moveCost(u,nx,ny);if(c>u.mov)continue;const k=nx+","+ny;if(!cost.has(k)||cost.get(k)>c){cost.set(k,c);prev.set(k,[x,y]);Q.push([nx,ny])}}}
- const p=[];let k=tx+","+ty;while(prev.has(k)){p.unshift(k.split(",").map(Number));const q=prev.get(k);k=q[0]+","+q[1]}return p}
+function pathTo(u,tx,ty){return MK.grid.path(u.x,u.y,tx,ty,stepCost(u),null,u.mov)}
 // ---- player input
 const cv=$("cv"),g=cv.getContext("2d");cv.width=W*T;cv.height=H*T;g.imageSmoothingEnabled=false;
 cv.onclick=e=>{if(G.phase!=="player"||G.busy)return;const r=cv.getBoundingClientRect(),x=Math.floor((e.clientX-r.left)/r.width*W),y=Math.floor((e.clientY-r.top)/r.height*H);click(x,y)};
@@ -132,7 +132,7 @@ function draw(){g.clearRect(0,0,cv.width,cv.height);for(let y=0;y<H;y++)for(let 
   g.fillStyle="#000";g.fillRect(px+6,py+T-7,T-12,5);g.fillStyle=u.side===0?"#6fcf5a":"#e2584a";g.fillRect(px+7,py+T-6,(T-14)*u.hp/u.max,3);
   if(u.lord||u.boss){g.font="bold 12px system-ui";g.fillStyle="#ffd47a";g.fillText("★",px+3,py+13)}});
  G.fx=G.fx.filter(f=>f.l>0);G.fx.forEach(f=>{g.font="bold 16px system-ui";g.fillStyle=f.c;g.strokeStyle="#000";g.lineWidth=3;const y=f.y*T+10-(1-f.l)*24;g.strokeText(f.t,f.x*T+T/2-g.measureText(f.t).width/2,y);g.fillText(f.t,f.x*T+T/2-g.measureText(f.t).width/2,y);g.lineWidth=1})}
-(function tick(){if(G){if(G.fx.length)G.fx.forEach(f=>f.l-=.04);if(!G.busy||G.fx.length)draw()}requestAnimationFrame(tick)})();
+MK.loop(null,()=>{if(G){if(G.fx.length)G.fx.forEach(f=>f.l-=.04);if(!G.busy||G.fx.length)draw()}});
 $("endB").onclick=()=>{if(G.phase==="player")endTurn()};$("rsB").onclick=()=>{if(confirm("Restart the battle?"))newGame()};
 addEventListener("keydown",e=>{if(e.key==="Escape"&&G&&G.phase==="player"){if(G.mode==="act"&&G.sel){afterAct();return}G.sel=null;G.mode=null;G.reach=null;draw();acts()}if(e.key==="e")$("endB").click()});
 MK.preload([...new Set(Object.values(TER).flatMap(t=>[t.i,t.o].filter(Boolean)))].concat(["units/human-loyalists/lieutenant.png"]),()=>draw());
