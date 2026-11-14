@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>War Drums · Mercenary Keep</title><link rel="stylesheet" href="mk.css">
+<style>
+#app{max-width:520px;margin:0 auto;padding:10px}
+#cv{width:100%;display:block;border-radius:10px;border:1px solid var(--line);touch-action:none;background:#0b0d14}
+.songs{display:flex;flex-direction:column;gap:8px;margin:12px 0}
+.song{display:grid;grid-template-columns:56px 1fr auto;gap:12px;align-items:center;padding:10px 12px;border-radius:10px;background:var(--card);border:1px solid var(--line);color:var(--ink);text-align:left}
+.song:hover{border-color:var(--gold2)}.song img{width:56px;height:56px;object-fit:contain}.song b{font:800 16px Georgia,serif;color:var(--gold2)}.song small{color:var(--mute)}.song .gr{font:900 26px Georgia,serif;color:var(--gold2)}
+.ttl{text-align:center;padding:16px}.keys{font-size:13px;color:var(--mute);line-height:1.6}
+</style></head><body>
+<div id="app"></div>
+<script src="roster.js"></script><script src="mk.js"></script><script src="engine.js"></script>
+<script>
+"use strict";
+// War Drums: you are the company drummer. Every beat you land pushes the line forward; every one you drop lets the orcs through.
+const {$,IMG,unit,ls}=MK;
+MK.topbar("drums");
+const W=360,H=600,LANES=4,HITY=520,SPEED=330;
+const cv=document.createElement("canvas");cv.id="cv";const g=MK.canvas(cv,W,H);g.imageSmoothingEnabled=false;
+const SONGS=[{id:"march",n:"The Long March",bpm:96,len:56,dens:.45,foe:"gob",d:"Steady. Find the beat."},{id:"charge",n:"Charge at Dawn",bpm:124,len:62,dens:.6,foe:"grunt",d:"Faster, and the eighth notes start."},
+ {id:"rout",n:"Rout of the Warlord",bpm:148,len:66,dens:.72,foe:"twar",d:"For drummers with forearms."}];
+const LANE_KEYS=[["d","arrowleft"],["f","arrowdown"],["j","arrowup"],["k","arrowright"]],LCOL=["#d24a33","#e0a030","#4f86e0","#5fae4a"],LNAME=["BOOM","TOM","CRACK","CLASH"];
+// ---- synthesized war drums (so the chart and the sound always line up)
+let AC=null,master=null,noiseBuf=null;
+function audio(){if(AC)return;AC=new (window.AudioContext||window.webkitAudioContext)();master=AC.createGain();master.gain.value=.8;master.connect(AC.destination);
+ noiseBuf=AC.createBuffer(1,AC.sampleRate*.5,AC.sampleRate);const d=noiseBuf.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1}
+function drum(kind,t,vol){if(!AC)return;t=t||AC.currentTime;vol=vol||1;const o=AC.createOscillator(),gn=AC.createGain();
+ const tone=(f0,f1,dur,type)=>{o.type=type||"sine";o.frequency.setValueAtTime(f0,t);o.frequency.exponentialRampToValueAtTime(f1,t+dur);gn.gain.setValueAtTime(vol,t);gn.gain.exponentialRampToValueAtTime(.001,t+dur);o.connect(gn);gn.connect(master);o.start(t);o.stop(t+dur+.02)};
+ const noise=(hp,dur,v)=>{const s=AC.createBufferSource(),f=AC.createBiquadFilter(),ng=AC.createGain();s.buffer=noiseBuf;f.type="highpass";f.frequency.value=hp;ng.gain.setValueAtTime(v*vol,t);ng.gain.exponentialRampToValueAtTime(.001,t+dur);s.connect(f);f.connect(ng);ng.connect(master);s.start(t);s.stop(t+dur+.02)};
+ if(kind===0)tone(140,38,.45);else if(kind===1)tone(190,90,.3);else if(kind===2){tone(240,140,.12,"triangle");noise(1600,.18,.7)}else if(kind===3){tone(320,180,.18);noise(5000,.35,.45)}
+ else if(kind==="hat")noise(7000,.05,.12);else if(kind==="low")tone(70,45,.35)}
+// ---- charts: built from bar patterns, denser as the song goes on
+function chart(S){const R=MK.rng(S.bpm*31+S.len),beat=60/S.bpm,notes=[],bars=Math.floor(S.len/(beat*4));
+ const P=[[[0,0],[2,2]],[[0,0],[1,1],[2,2],[3,3]],[[0,0],[2,1],[2,2],[1,3]],[[0,0],[1,1.5],[2,2],[0,3]],[[0,0],[0,.5],[2,1],[1,2],[1,2.5],[2,3]],[[3,0],[2,1],[1,2],[0,3],[0,3.5]],[[0,0],[2,.5],[0,1],[2,1.5],[1,2],[3,3]],[[0,0],[1,.5],[2,1],[3,1.5],[2,2],[1,2.5],[0,3]]];
+ for(let b=2;b<bars-1;b++){const prog=b/bars,max=Math.min(P.length-1,Math.floor(1+prog*S.dens*9));let p=P[R.int(0,max)];if(R()<.15&&b%4===3)p=[[0,0],[0,1],[0,2],[0,3]];
+  const mir=R()<.5;p.forEach(([l,o])=>{if(o%1&&R()>S.dens+.15)return;notes.push({l:mir?3-l:l,t:(b*4+o)*beat,hit:0})});
+  if(b%8===7&&S.dens>.5)notes.push({l:mir?0:3,t:(b*4+3)*beat,hit:0,dup:1},{l:mir?3:0,t:(b*4+3)*beat,hit:0})}
+ return notes.sort((a,b)=>a.t-b.t)}
+// ---- state
+let G=null;
+function start(S){audio();if(AC.state==="suspended")AC.resume();MK.playMusic(null);
+ G={S,notes:chart(S),t0:AC.currentTime+2.2,line:.5,combo:0,best:0,score:0,perf:0,good:0,miss:0,flash:[0,0,0,0],judge:null,over:false,lastSched:-1,shake:0,army:[]};
+ G.total=G.notes.length;$("app").innerHTML="";$("app").appendChild(cv);$("app").insertAdjacentHTML("beforeend",`<p class="keys" style="text-align:center">Keys <b>D F J K</b> (or the arrows), or tap the lanes.</p>`);MK.preload([unit("spear").spr,unit(S.foe).spr,unit("lieut").spr])}
+const now=()=>AC?AC.currentTime-G.t0:0;
+function schedule(){const beat=60/G.S.bpm,ahead=now()+.25;let i=G.lastSched+1;while(i*beat/2<ahead&&i*beat/2<=G.S.len){if(i>=0){const t=G.t0+i*beat/2;if(i%2===0)drum(i%8===0?"low":"hat",t,i%8===0?.5:.6);else drum("hat",t,.25)}G.lastSched=i;i++}}
+function hit(l){if(!G||G.over)return;G.flash[l]=1;drum(l,0,.9);const t=now();let best=null;for(const n of G.notes){if(n.hit||n.l!==l)continue;const d=Math.abs(n.t-t);if(d<.14&&(!best||d<Math.abs(best.t-t)))best=n;if(n.t>t+.2)break}
+ if(!best)return;const d=Math.abs(best.t-t);if(d<.055){best.hit=2;G.perf++;G.score+=300+G.combo*4;G.line=Math.min(1,G.line+.012);G.judge=["PERFECT","#ffd47a",1]}else{best.hit=1;G.good++;G.score+=120+G.combo*2;G.line=Math.min(1,G.line+.006);G.judge=["GOOD","#8be08b",1]}
+ G.combo++;G.best=Math.max(G.best,G.combo);best.x=l}
+function update(dt){if(!G||G.over)return;schedule();const t=now();
+ for(const n of G.notes){if(n.t>t)break;if(!n.hit&&t-n.t>.14){n.hit=-1;G.miss++;G.combo=0;G.line=Math.max(0,G.line-.025);G.judge=["MISS","#ff6a4a",1];G.shake=.25}}
+ G.flash=G.flash.map(f=>Math.max(0,f-dt*5));if(G.judge)G.judge[2]-=dt*1.6;G.shake=Math.max(0,G.shake-dt);
+ if(G.line<=0)finish(false);else if(t>G.S.len+1.2)finish(G.line>=.5)}
+function finish(win){G.over=true;const acc=Math.round(100*(G.perf+G.good*.6)/Math.max(1,G.total)),grade=acc>=95?"S":acc>=85?"A":acc>=70?"B":acc>=55?"C":"D";
+ const B=ls.get("mk.drums",{});const prev=B[G.S.id];if(win&&(!prev||prev.score<G.score))B[G.S.id]={score:G.score,grade};ls.set("mk.drums",B);
+ MK.ending({title:win?(G.line>=.95?"The line breaks through!":"The field is yours"):"The line breaks",img:IMG(unit(win?"lieut":G.S.foe).spr),music:win?"victory":"defeat",
+  text:`Grade <b style="color:var(--gold2);font-size:22px">${win?grade:"—"}</b> · ${G.score} pts · best combo ${G.best}<br>Perfect ${G.perf} · Good ${G.good} · Miss ${G.miss}`,buttons:[["Again",()=>start(G.S)],["Songs",title]]})}
+// ---- drawing
+function draw(){if(!G||!cv.isConnected)return;const t=now(),lw=W/LANES,sh=G.shake?Math.sin(performance.now()/20)*G.shake*14:0;g.save();g.translate(sh,0);
+ g.fillStyle="#0b0d14";g.fillRect(-20,0,W+40,H);
+ // the battle strip
+ const bg=g.createLinearGradient(0,0,0,150);bg.addColorStop(0,"#2a3a5a");bg.addColorStop(1,"#3e5a34");g.fillStyle=bg;g.fillRect(0,0,W,150);g.fillStyle="#2c4026";g.fillRect(0,110,W,40);
+ const fx=W*G.line,beatPh=(t*G.S.bpm/60)%1,step=Math.max(0,1-beatPh*4)*4;
+ for(let i=0;i<6;i++){const x=fx-26-i*24-(i%2)*6,y=126+(i%2)*10;MK.sprite(g,unit(i===5?"lieut":"spear").spr,0,x,y-step,.62,false)}
+ for(let i=0;i<6;i++){const x=fx+26+i*24+(i%2)*6,y=126+(i%2)*10;MK.sprite(g,unit(G.S.foe).spr,1,x,y-(i%2?step:0),.62,true)}
+ g.fillStyle="rgba(255,255,255,.5)";g.fillRect(fx-1,96,2,46);
+ g.fillStyle="#000";g.fillRect(10,8,W-20,10);g.fillStyle="#4f86e0";g.fillRect(11,9,(W-22)*G.line,8);g.fillStyle="#d24a33";g.fillRect(11+(W-22)*G.line,9,(W-22)*(1-G.line),8);g.fillStyle="#fff";g.fillRect(10+(W-20)*.5,6,1,14);
+ g.font="800 12px system-ui";g.textAlign="left";g.fillStyle="#fff";g.fillText(G.score,12,34);g.textAlign="right";g.fillText(`×${G.combo}`,W-12,34);
+ // lanes
+ for(let l=0;l<LANES;l++){const x=l*lw;g.fillStyle=l%2?"#11141e":"#141826";g.fillRect(x,150,lw,H-150);if(G.flash[l]){g.fillStyle=LCOL[l]+Math.floor(G.flash[l]*80).toString(16).padStart(2,"0");g.fillRect(x,150,lw,H-150)}}
+ // beat lines
+ const beat=60/G.S.bpm;for(let k=Math.floor(t/beat);k<t/beat+5;k++){const y=HITY-(k*beat-t)*SPEED;if(y<150||y>H)continue;g.fillStyle=k%4===0?"rgba(255,255,255,.18)":"rgba(255,255,255,.06)";g.fillRect(0,y,W,k%4===0?2:1)}
+ // drums on the hit line
+ for(let l=0;l<LANES;l++){const cx=l*lw+lw/2,f=G.flash[l];g.fillStyle="#3a2414";g.beginPath();g.ellipse(cx,HITY+8,lw*.4,14,0,0,7);g.fill();g.fillStyle=f?"#f2e2c0":"#cdb68c";g.beginPath();g.ellipse(cx,HITY,lw*.4+f*3,12+f*2,0,0,7);g.fill();
+  g.strokeStyle=LCOL[l];g.lineWidth=3;g.stroke();g.lineWidth=1;g.fillStyle="rgba(0,0,0,.55)";g.font="800 10px system-ui";g.textAlign="center";g.fillText(LNAME[l],cx,HITY+4);g.fillStyle="rgba(255,255,255,.4)";g.fillText(LANE_KEYS[l][0].toUpperCase(),cx,H-14)}
+ // notes
+ for(const n of G.notes){if(n.hit>0)continue;const y=HITY-(n.t-t)*SPEED;if(y<140)break;if(y>H+20)continue;const cx=n.l*lw+lw/2;g.globalAlpha=n.hit<0?.3:1;
+  g.fillStyle="#000";g.beginPath();g.ellipse(cx,y+3,lw*.34,10,0,0,7);g.fill();g.fillStyle=LCOL[n.l];g.beginPath();g.ellipse(cx,y,lw*.34,10,0,0,7);g.fill();g.fillStyle="rgba(255,255,255,.55)";g.beginPath();g.ellipse(cx,y-3,lw*.22,4,0,0,7);g.fill();g.globalAlpha=1}
+ if(G.judge&&G.judge[2]>0){g.globalAlpha=Math.min(1,G.judge[2]);g.font="900 26px Georgia";g.textAlign="center";g.fillStyle="#000";g.fillText(G.judge[0],W/2+2,HITY-92);g.fillStyle=G.judge[1];g.fillText(G.judge[0],W/2,HITY-94);g.globalAlpha=1}
+ if(t<0){g.font="900 52px Georgia";g.textAlign="center";g.fillStyle="#ffd47a";g.fillText(Math.ceil(-t),W/2,360)}
+ const prog=Math.max(0,Math.min(1,t/G.S.len));g.fillStyle="rgba(255,255,255,.25)";g.fillRect(0,148,W*prog,2);g.restore()}
+MK.loop(update,draw);
+// ---- input
+const KEYS={l0:LANE_KEYS[0],l1:LANE_KEYS[1],l2:LANE_KEYS[2],l3:LANE_KEYS[3]};MK.input(KEYS,{l0:()=>hit(0),l1:()=>hit(1),l2:()=>hit(2),l3:()=>hit(3)});
+cv.addEventListener("pointerdown",e=>{e.preventDefault();const r=cv.getBoundingClientRect();if((e.clientY-r.top)/r.height*H<150)return;hit(Math.min(3,Math.floor((e.clientX-r.left)/r.width*LANES)))});
+function title(){G=null;const B=ls.get("mk.drums",{});MK.playMusic("legends_of_the_north",.3);
+ $("app").innerHTML=`<div class="frame ttl"><h1>War Drums</h1><p style="color:var(--mute)">You're the company drummer. Land the beats and the line pushes forward. Drop them and the orcs come through.</p>
+ <div class="songs">${SONGS.map((s,i)=>`<button class="song" data-s="${i}"><img src="${IMG(unit(s.foe).spr)}" alt=""><span><b>${s.n}</b><br><small>${s.bpm} bpm · ${s.d}</small></span><span class="gr">${B[s.id]?B[s.id].grade:""}</span></button>`).join("")}</div>
+ <p class="keys">Four drums: <b>D F J K</b> or the arrow keys. On a phone, tap the lanes. Notes land on the drumheads.</p></div>`;
+ document.querySelectorAll("[data-s]").forEach(b=>b.onclick=()=>start(SONGS[+b.dataset.s]))}
+title();
+</script></body></html>
