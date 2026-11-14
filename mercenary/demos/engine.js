@@ -26,7 +26,7 @@ const grid={D4,D8,key,unkey,
  // cheapest path from start to goal (A*), excluding the start tile; [] if none. max caps the cost searched
  path(sx,sy,tx,ty,cost,dirs,max){dirs=dirs||D4;const h=dirs===D8?(x,y)=>Math.max(Math.abs(x-tx),Math.abs(y-ty)):(x,y)=>Math.abs(x-tx)+Math.abs(y-ty);
   const G=new Map([[key(sx,sy),0]]),prev=new Map(),Q=heap();Q.push([sx,sy],h(sx,sy));let n=0;
-  while(Q.size&&n++<4000){const [x,y]=Q.pop();if(x===tx&&y===ty)break;const c0=G.get(key(x,y));for(const [dx,dy] of dirs){const nx=x+dx,ny=y+dy,c=c0+cost(nx,ny,x,y);if(!(c<=(max??Infinity)))continue;const k=key(nx,ny);if(!G.has(k)||G.get(k)>c){G.set(k,c);prev.set(k,[x,y]);Q.push([nx,ny],c+h(nx,ny))}}}
+  while(Q.size&&n++<4000){const [x,y]=Q.pop();if(x===tx&&y===ty)break;const c0=G.get(key(x,y));for(const [dx,dy] of dirs){const nx=x+dx,ny=y+dy,c=c0+cost(nx,ny,x,y);if(!(c<Infinity)||c>(max??Infinity))continue;const k=key(nx,ny);if(!G.has(k)||G.get(k)>c){G.set(k,c);prev.set(k,[x,y]);Q.push([nx,ny],c+h(nx,ny))}}}
   const p=[];let k=key(tx,ty);while(prev.has(k)){p.unshift(unkey(k));const q=prev.get(k);k=key(q[0],q[1])}return p},
  // flood distances from many sources (for monsters that chase the player); walls give Infinity
  flow(srcs,cost,W,H){const D=new Float32Array(W*H).fill(Infinity),Q=heap();srcs.forEach(([x,y])=>{D[y*W+x]=0;Q.push([x,y],0)});

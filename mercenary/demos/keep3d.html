@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Siege of Gravenhold · Mercenary Keep</title><link rel="stylesheet" href="mk.css">
+<style>
+#app{max-width:980px;margin:0 auto;padding:10px}
+#wrap{position:relative;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#000}
+#cv{width:100%;display:block;image-rendering:pixelated;touch-action:none;cursor:crosshair}
+#bar{display:grid;grid-template-columns:repeat(4,1fr) 64px repeat(3,1fr);gap:4px;align-items:center;background:linear-gradient(#1c2a4a,#101a30);border-top:2px solid #3a5288;padding:6px 8px;text-align:center}
+#bar div{font:900 20px Georgia,serif;color:#f2e6c4;text-shadow:0 2px 0 #000;line-height:1}#bar small{display:block;font:800 9px system-ui;letter-spacing:.12em;color:#9fb2d8;margin-bottom:3px}
+#face{width:56px;height:56px;border-radius:6px;border:2px solid #3a5288;overflow:hidden;background:#000;justify-self:center}#face img{width:100%;height:100%;object-fit:cover;transition:filter .2s}
+#keys img{width:18px;height:18px;image-rendering:pixelated;vertical-align:middle}
+.ttl{text-align:center;padding:24px 16px}.ttl .big{font:900 clamp(30px,7vw,54px) Georgia,serif;color:var(--gold2);text-shadow:0 3px 0 #000,0 0 18px rgba(255,120,40,.4);margin:6px 0}
+.ttl p{color:var(--mute)}.ttl .keys{font-size:13px;color:var(--mute);line-height:1.7;margin:12px 0}
+.tally{font:700 18px Georgia,serif;line-height:1.9}.tally b{color:var(--gold2);display:inline-block;min-width:80px;text-align:right}
+@media (max-width:560px){#bar{grid-template-columns:repeat(3,1fr) 50px repeat(3,1fr)}#bar .hide{display:none}#face{width:46px;height:46px}#bar div{font-size:16px}}
+@media (hover:none) and (pointer:coarse){.mkpad .dp{grid-template-columns:repeat(3,58px);grid-template-rows:repeat(3,58px)}.mkpad .ab{width:54px;height:54px;font-size:11px;font-weight:800}.mkpad .ac{gap:4px}p.keys{display:none}}
+</style></head><body>
+<div id="app"></div>
+<script src="roster.js"></script><script src="mk.js"></script><script src="engine.js"></script>
+<script>
+"use strict";
+// Siege of Gravenhold: a first-person raycaster. You are a sellsword clearing a warlord's keep, floor by floor.
+const {$,IMG,unit,sfx,ls,toast,grid}=MK;
+MK.topbar("keep3d");
+const RW=320,RH=180,TEX=64;
+const cv=document.createElement("canvas");cv.id="cv";const g=MK.canvas(cv,RW,RH);
+// ---------- textures, drawn once in code (no wall art in the asset pack, so we make our own)
+function tex(draw){const c=document.createElement("canvas");c.width=c.height=TEX;const q=c.getContext("2d");draw(q,MK.rng(draw.length*977+TEX));return c}
+const noise=(q,R,a,cols)=>{for(let i=0;i<900;i++){q.fillStyle=R.pick(cols);q.globalAlpha=a*R();q.fillRect(R.int(0,63),R.int(0,63),R.int(1,3),R.int(1,2))}q.globalAlpha=1};
+function bricks(q,R,base,mort,shades){q.fillStyle=mort;q.fillRect(0,0,64,64);for(let row=0;row<4;row++){const off=row%2?16:0;for(let c=-1;c<3;c++){const x=c*32+off,y=row*16;q.fillStyle=R.pick(shades);q.fillRect(x+1,y+1,30,14);
+ q.fillStyle="rgba(255,255,255,.08)";q.fillRect(x+1,y+1,30,2);q.fillStyle="rgba(0,0,0,.25)";q.fillRect(x+1,y+13,30,2)}}noise(q,R,.5,["#000","#fff",base])}
+const TX={};
+function buildTextures(){
+ TX["#"]=tex((q,R)=>bricks(q,R,"#777","#2a2a2e",["#6d6d72","#76767c","#62626a","#7c7a80"]));
+ TX.M=tex((q,R)=>{bricks(q,R,"#566","#1e2420",["#56605a","#5f6a62","#4d5650"]);for(let i=0;i<26;i++){q.fillStyle=R.pick(["#3d6b2e","#4f8a3a","#2f5524"]);q.globalAlpha=.75;q.beginPath();q.arc(R.int(0,63),R.int(0,63)*(R()<.6?.4:1),R.int(2,6),0,7);q.fill()}q.globalAlpha=1});
+ TX.W=tex((q,R)=>{for(let x=0;x<64;x+=8){q.fillStyle=R.pick(["#6b4626","#7a5230","#5f3d20","#73502c"]);q.fillRect(x,0,8,64);q.fillStyle="rgba(0,0,0,.4)";q.fillRect(x,0,1,64);for(let k=0;k<5;k++){q.fillStyle="rgba(40,20,5,.35)";q.fillRect(x+R.int(2,5),R.int(0,60),1,R.int(6,18))}}
+  q.fillStyle="#3b2a1a";q.fillRect(0,10,64,4);q.fillRect(0,50,64,4);noise(q,R,.3,["#000","#a07040"])});
+ TX.B=tex((q,R)=>{bricks(q,R,"#777","#2a2a2e",["#6d6d72","#76767c","#62626a"]);q.fillStyle="#3a1010";q.fillRect(16,4,32,52);q.fillStyle="#9c1f1f";q.fillRect(18,4,28,46);q.beginPath();q.moveTo(18,50);q.lineTo(32,58);q.lineTo(46,50);q.fill();
+  q.fillStyle="#d8b04a";q.fillRect(18,4,28,3);q.beginPath();q.arc(32,26,8,0,7);q.fill();q.fillStyle="#9c1f1f";q.beginPath();q.arc(32,26,5,0,7);q.fill();q.fillStyle="#d8b04a";q.fillRect(31,18,2,16);q.fillRect(26,25,12,2)});
+ TX.D=tex((q,R)=>{q.fillStyle="#4a3320";q.fillRect(0,0,64,64);for(let x=0;x<64;x+=10){q.fillStyle=R.pick(["#6b4626","#5f3d20","#73502c"]);q.fillRect(x+1,0,9,64)}
+  q.fillStyle="#3c3c44";q.fillRect(0,12,64,6);q.fillRect(0,46,64,6);q.fillStyle="#8a8a96";for(let x=4;x<64;x+=12){q.fillRect(x,14,2,2);q.fillRect(x,48,2,2)}q.fillStyle="#b8a060";q.fillRect(52,30,6,4)});
+ TX.L=tex((q,R)=>{q.fillStyle="#5a4a20";q.fillRect(0,0,64,64);for(let x=0;x<64;x+=10){q.fillStyle=R.pick(["#8a6d2a","#7a6024","#94782e"]);q.fillRect(x+1,0,9,64)}q.fillStyle="#d8b04a";q.fillRect(0,12,64,5);q.fillRect(0,47,64,5);
+  q.fillStyle="#2a2010";q.beginPath();q.arc(32,30,6,0,7);q.fill();q.fillRect(30,30,4,12)});
+ TX.X=tex((q,R)=>{bricks(q,R,"#556","#16161c",["#3c3c4a","#44445a","#383848"]);const gr=q.createRadialGradient(32,32,2,32,32,26);gr.addColorStop(0,"rgba(140,220,255,.95)");gr.addColorStop(.5,"rgba(60,140,255,.5)");gr.addColorStop(1,"rgba(0,0,0,0)");q.fillStyle=gr;q.fillRect(0,0,64,64);
+  q.strokeStyle="#bfefff";q.lineWidth=2;q.beginPath();q.arc(32,32,14,0,7);q.stroke();q.beginPath();q.moveTo(32,18);q.lineTo(32,46);q.moveTo(20,26);q.lineTo(44,38);q.moveTo(44,26);q.lineTo(20,38);q.stroke()});
+ TX.P=TX["#"];}
+buildTextures();
+// ---------- enemies and things
+const FOES={g:{id:"gob",hp:25,dmg:[3,7],spd:1.7,pts:100},o:{id:"grunt",hp:45,dmg:[6,11],spd:1.45,pts:200},s:{id:"skel",hp:55,dmg:[6,10],spd:1.25,pts:250},w:{id:"wolf2",hp:30,dmg:[5,9],spd:2.7,pts:150},
+ a:{id:"oarch",hp:35,dmg:[4,8],ranged:true,spd:1.3,pts:300},m:{id:"adept",hp:30,dmg:[7,13],ranged:true,spd:1.2,pts:400},t:{id:"twar",hp:150,dmg:[11,18],spd:1.1,pts:1200},
+ Z:{id:"warlord",hp:520,dmg:[12,22],spd:1.35,pts:5000,boss:true,ranged:true}};
+const ITEMS={h:{i:"icons/potion_red_medium.png",s:.42},c:{i:"icons/coins_copper.png",s:.4},T:{i:"items/chest-plain-closed.png",s:.6},b:{i:"icons/bag.png",s:.42},k:{i:"items/stone-tablet.png",s:.42},
+ F:{i:"attacks/fireball.png",s:.5},n:{i:"icons/jewelry_ring_prismatic.png",s:.36},r:{i:"items/brazier.png",s:.8,block:true},x:{i:"items/bones.png",s:.55},u:{i:"items/dragonstatue.png",s:1.05,block:true}};
+const WEAPONS=[{n:"Sword",i:"attacks/sword-human.png",cd:.42,melee:true,dmg:[22,36],snd:"sword-1"},{n:"Crossbow",i:"attacks/crossbow-human.png",cd:.55,ammo:"bolts",dmg:[18,30],snd:"bow"},{n:"Fire staff",i:"attacks/fireball.png",cd:.7,ammo:"mana",dmg:[40,60],splash:1.6,snd:"flame-big"}];
+// ---------- levels: the first is hand-built, the rest are laid out fresh each run
+const L1=["#####################","#S..#.......#.....c.#","#...D...g...D...o...#","#.h.#.......#.......#","##D###B###B####D#####","#.....#.....#.......#","#..g..D..r..D...s...#","#.....#.....#.......#",
+ "#c....###D###...h...#","#######.....######L##","#.....#..o..#k..#...#","#.bT..P.....D...#.c.#","#..c..#..g..#...#...#","##################X##"];
+const NAMES=["The Gatehouse","The Old Crypts","The Barracks","The Warlord's Hall"];
+function genLevel(n,R){const C=4,Rr=3,MW=C*7+1,MH=Rr*6+1,m=Array.from({length:MH},()=>Array(MW).fill("#")),obj=[];
+ const theme=n===1?"M":n===2?"W":"#";for(let y=0;y<MH;y++)for(let x=0;x<MW;x++)m[y][x]=theme==="W"&&R()<.5?"#":theme;
+ const rooms=[];for(let j=0;j<Rr;j++)for(let i=0;i<C;i++){rooms.push({i,j,adj:[]});for(let y=j*6+1;y<=j*6+5;y++)for(let x=i*7+1;x<=i*7+6;x++)m[y][x]="."}
+ const R_=(i,j)=>rooms.find(r=>r.i===i&&r.j===j);const doorPos=(a,b)=>a.i!==b.i?[Math.max(a.i,b.i)*7,a.j*6+3]:[a.i*7+4,Math.max(a.j,b.j)*6];
+ // random depth-first tree of rooms
+ const seen=new Set(),stack=[rooms[0]],edges=[];seen.add(rooms[0]);while(stack.length){const r=stack[stack.length-1];const nb=R.shuffle([[1,0],[-1,0],[0,1],[0,-1]]).map(([a,b])=>R_(r.i+a,r.j+b)).filter(o=>o&&!seen.has(o));
+  if(!nb.length){stack.pop();continue}const o=nb[0];seen.add(o);edges.push([r,o]);r.adj.push(o);o.adj.push(r);o.parent=r;o.depth=(r.depth||0)+1;stack.push(o)}
+ const start=rooms[0];start.depth=0;const leaves=rooms.filter(r=>r!==start&&r.adj.length===1).sort((a,b)=>b.depth-a.depth);const exit=leaves[0];
+ edges.forEach(([a,b])=>{const [x,y]=doorPos(a,b);const lock=(a===exit||b===exit);if(!lock&&R()<.3){if(a.i!==b.i)for(let d=-1;d<=1;d++)m[y+d][x]=".";else for(let d=-1;d<=1;d++)m[y][x+d]="."}else m[y][x]=lock?"L":"D"});
+ // a couple of extra doors make loops, away from the exit
+ for(let k=0;k<3;k++){const a=R.pick(rooms),h=R()<.5,b=R_(a.i+(h?1:0),a.j+(h?0:1));if(!b||a===b||a===exit||b===exit||a.adj.includes(b))continue;const [x,y]=doorPos(a,b);m[y][x]="D";a.adj.push(b);b.adj.push(a)}
+ // exit rune on the exit room's far wall
+ const ed=doorPos(exit,exit.parent),cand=[[exit.i*7+1,exit.j*6+3],[exit.i*7+6,exit.j*6+3],[exit.i*7+3,exit.j*6+1],[exit.i*7+3,exit.j*6+5]].sort((a,b)=>Math.hypot(b[0]-ed[0],b[1]-ed[1])-Math.hypot(a[0]-ed[0],a[1]-ed[1]));m[cand[0][1]][cand[0][0]]="X";
+ // a secret closet behind a push-wall in a right-edge room
+ const sr=rooms.find(r=>r.i===C-1&&r!==exit&&r!==start&&!r.adj.some(o=>o.j===r.j&&o.i>r.i));let secrets=0;
+ if(sr){const cx=sr.i*7+5;for(let y=sr.j*6+1;y<=sr.j*6+5;y++){m[y][cx]=theme;if(y===sr.j*6+1||y===sr.j*6+5)m[y][cx+1]=theme}m[sr.j*6+3][cx]="P";secrets=1;obj.push(["T",cx+1,sr.j*6+3],["c",cx+1,sr.j*6+2],["n",cx+1,sr.j*6+4])}
+ // banners on some walls
+ for(let y=1;y<MH-1;y++)for(let x=1;x<MW-1;x++){const ch=m[y][x];if((ch==="#"||ch==="M"||ch==="W")&&R()<.07&&[[1,0],[-1,0],[0,1],[0,-1]].some(([a,b])=>m[y+b][x+a]==="."))m[y][x]="B"}
+ const cell=(r,avoid,inner)=>{const e=inner?1:0;for(let t=0;t<60;t++){const x=R.int(r.i*7+1+e,r.i*7+(r===sr?4:6)-e),y=R.int(r.j*6+1+e,r.j*6+5-e);if(m[y][x]==="."&&!obj.some(o=>o[1]===x&&o[2]===y)&&!(avoid&&Math.abs(x-avoid[0])+Math.abs(y-avoid[1])<3))return [x,y]}return null};
+ const sp=[start.i*7+2,start.j*6+3];obj.push(["S",...sp]);
+ const pool=[["g","w","o","a"],["s","s","m","g","o","w"],["o","a","m","s","t","w"]][n-1];
+ rooms.forEach(r=>{if(r===start)return;const k=1+R.int(0,1)+(n>=2?R.int(0,1):0);for(let i=0;i<k;i++){const p=cell(r,sp);if(p)obj.push([R.pick(pool),...p])}
+  if(R()<.55){const p=cell(r);if(p)obj.push([R.pick(["h","c","b","b","c",n>=2?"b":"h"]),...p])}if(R()<.35){const p=cell(r,null,true);if(p)obj.push(["r",...p])}if(R()<.3){const p=cell(r);if(p)obj.push(["x",...p])}});
+ const kr=rooms.filter(r=>r!==exit&&r!==start).sort((a,b)=>b.depth-a.depth)[0];
+ if(n===3){const p=[exit.parent.i*7+3,exit.parent.j*6+3];obj.push(["Z",...p]);obj.push(["u",p[0]-2,p[1]-2],["u",p[0]+2,p[1]-2])}else{const p=cell(kr)||[kr.i*7+3,kr.j*6+3];obj.push(["k",...p])}
+ if(n===1){const p=cell(kr)||cell(start);if(p)obj.push(["F",...p])}
+ return {m,obj,secrets}}
+function parse(rows){const m=rows.map(r=>[...r]),obj=[];m.forEach((row,y)=>row.forEach((ch,x)=>{if(/[A-Za-z]/.test(ch)&&!"#MWBDLXP".includes(ch)){obj.push([ch,x,y]);row[x]="."}}));return {m,obj,secrets:rows.join("").split("P").length-1}}
+// ---------- run state
+let G=null,run=null;
+function newRun(){run={lvl:0,score:0,lives:3,hp:100,bolts:12,mana:0,staff:false,w:1};startLevel()}
+function startLevel(){const n=run.lvl,L=n===0?parse(L1):genLevel(n,MK.rng((Math.random()*1e9)|0));
+ G={m:L.m,W:L.m[0].length,H:L.m.length,doors:{},push:{},things:[],foes:[],x:0,y:0,a:0,key:false,secrets:L.secrets,found:0,kills:0,foesTotal:0,treasure:0,treasureTotal:0,t:0,cd:0,swing:0,hurt:0,flash:0,bob:0,map:false,over:false,msgT:0};
+ L.obj.forEach(([ch,x,y])=>{if(ch==="S"){G.x=x+.5;G.y=y+.5;return}
+  if(FOES[ch]){const f=FOES[ch];G.foes.push({k:ch,id:f.id,x:x+.5,y:y+.5,hp:f.hp*(1+n*.12),max:f.hp*(1+n*.12),st:"idle",cd:0,hurt:0,path:null,pt:0,lunge:0,boss:f.boss});G.foesTotal++;return}
+  if(ITEMS[ch]){G.things.push({k:ch,x:x+.5,y:y+.5});if(ch==="T"||ch==="c"||ch==="n")G.treasureTotal++}});
+ // face the most open direction
+ let best=0,bd=0;for(let i=0;i<4;i++){const a=i*Math.PI/2;let d=0;while(d<12&&!solid(G.x+Math.cos(a)*d,G.y+Math.sin(a)*d))d+=.5;if(d>bd){bd=d;best=a}}G.a=best;
+ layout();MK.playMusic(n===3?"the_dangerous_symphony":n===1?"underground":"frantic",.32);msg(`Floor ${n+1}: ${NAMES[n]}`)}
+// ---------- map queries
+const cellAt=(x,y)=>{x=Math.floor(x);y=Math.floor(y);return x<0||y<0||x>=G.W||y>=G.H?"#":G.m[y][x]};
+const isDoor=c=>c==="D"||c==="L";
+function solid(x,y){const c=cellAt(x,y);if(c===".")return false;if(isDoor(c))return (G.doors[Math.floor(x)+","+Math.floor(y)]||0)<.92;return true}
+function blockedThing(x,y,self){for(const t of G.things)if(ITEMS[t.k].block&&Math.abs(t.x-x)<.45&&Math.abs(t.y-y)<.45)return true;for(const f of G.foes)if(f!==self&&f.st!=="dead"&&Math.hypot(f.x-x,f.y-y)<.5)return true;return false}
+function tryMove(o,dx,dy,r,self){const nx=o.x+dx,ny=o.y+dy;if(!solid(nx+Math.sign(dx)*r,o.y)&&!solid(nx+Math.sign(dx)*r,o.y+r*.7)&&!solid(nx+Math.sign(dx)*r,o.y-r*.7)&&!blockedThing(nx,o.y,self))o.x=nx;
+ if(!solid(o.x,ny+Math.sign(dy)*r)&&!solid(o.x+r*.7,ny+Math.sign(dy)*r)&&!solid(o.x-r*.7,ny+Math.sign(dy)*r)&&!blockedThing(o.x,ny,self))o.y=ny}
+function los(ax,ay,bx,by){const d=Math.hypot(bx-ax,by-ay),n=Math.ceil(d*4);for(let i=1;i<n;i++){const x=ax+(bx-ax)*i/n,y=ay+(by-ay)*i/n;if(solid(x,y))return false}return true}
+// ---------- the ray caster
+const zbuf=new Float32Array(RW);
+function castColumn(sx){const cam=2*sx/RW-1,dx=Math.cos(G.a),dy=Math.sin(G.a),px=-dy*.66,py=dx*.66,rx=dx+px*cam,ry=dy+py*cam;
+ let mx=Math.floor(G.x),my=Math.floor(G.y);const ddx=Math.abs(1/rx),ddy=Math.abs(1/ry),stx=rx<0?-1:1,sty=ry<0?-1:1;let sdx=rx<0?(G.x-mx)*ddx:(mx+1-G.x)*ddx,sdy=ry<0?(G.y-my)*ddy:(my+1-G.y)*ddy,side=0;
+ for(let i=0;i<64;i++){if(sdx<sdy){sdx+=ddx;mx+=stx;side=0}else{sdy+=ddy;my+=sty;side=1}const c=cellAt(mx,my);if(c===".")continue;
+  if(isDoor(c)){const open=G.doors[mx+","+my]||0;let d,wx;if(side===0){d=(mx+.5-G.x)/rx;const hy=G.y+d*ry;if(Math.floor(hy)!==my)continue;wx=hy-my}else{d=(my+.5-G.y)/ry;const hx=G.x+d*rx;if(Math.floor(hx)!==mx)continue;wx=hx-mx}
+   if(wx<open)continue;return {d,tx:Math.floor((wx-open)*TEX)&63,c,side}}
+  let d=side===0?(mx-G.x+(1-stx)/2)/rx:(my-G.y+(1-sty)/2)/ry;const pk=G.push[mx+","+my];if(pk){d+=pk*(side===0?Math.abs(ddx):Math.abs(ddy))}
+  let wx=side===0?G.y+d*ry:G.x+d*rx;wx-=Math.floor(wx);let tx=Math.floor(wx*TEX);if((side===0&&rx>0)||(side===1&&ry<0))tx=63-tx;
+  // door frames: walls beside a door read as a wooden jamb
+  const nb=side===0?cellAt(mx-stx,my):cellAt(mx,my-sty);return {d,tx,c:isDoor(nb)?"W":c,side}}
+ return {d:30,tx:0,c:"#",side:0}}
+function render(){const hz=RH/2;const cg=g.createLinearGradient(0,0,0,hz);cg.addColorStop(0,"#1a1a22");cg.addColorStop(1,"#3a3a44");g.fillStyle=cg;g.fillRect(0,0,RW,hz);
+ const fg=g.createLinearGradient(0,hz,0,RH);fg.addColorStop(0,"#2a2420");fg.addColorStop(1,"#5a4c3c");g.fillStyle=fg;g.fillRect(0,hz,RW,hz);
+ for(let x=0;x<RW;x++){const h=castColumn(x);zbuf[x]=h.d;const lh=RH/Math.max(.05,h.d),y0=hz-lh/2;g.drawImage(TX[h.c]||TX["#"],h.tx,0,1,TEX,x,y0,1,lh);
+  const shade=(h.side?.28:0)+Math.min(.7,h.d/14);if(shade>0.02){g.fillStyle=`rgba(0,0,0,${shade})`;g.fillRect(x,y0,1,lh)}}
+ // sprites, far to near
+ const dx=Math.cos(G.a),dy=Math.sin(G.a),plx=-dy*.66,ply=dx*.66,inv=1/(plx*dy-dx*ply);
+ const list=[...G.things.map(t=>({o:t,img:MK.img(ITEMS[t.k].i),s:ITEMS[t.k].s,item:true})),...G.foes.map(f=>({o:f,img:f.st==="dead"?MK.img("items/bones.png"):(f.hurt>0?redTint(f.id):MK.tc(unit(f.id).spr,1)),s:f.st==="dead"?.5:(f.boss?1.35:1)*(1+f.lunge*.12),foe:f.st!=="dead"}))];
+ list.forEach(e=>{e.rx=e.o.x-G.x;e.ry=e.o.y-G.y;e.d=e.rx*e.rx+e.ry*e.ry});list.sort((a,b)=>b.d-a.d);
+ for(const e of list){const im=e.img;if(!im||(im.naturalWidth===0))continue;const ty=inv*(-ply*e.rx+plx*e.ry);if(ty<=.15)continue;const tx=inv*(dy*e.rx-dx*e.ry);const sx=RW/2*(1+tx/ty);
+  const lh=RH/ty,size=lh*e.s,floor=hz+lh/2,top=floor-size*(e.item?1:.97),left=sx-size/2,iw=im.naturalWidth||im.width,ih=im.naturalHeight||im.height;
+  const x0=Math.max(0,Math.floor(left)),x1=Math.min(RW-1,Math.floor(left+size));if(x1<0||x0>=RW)continue;const fog=Math.min(.7,Math.sqrt(e.d)/14);
+  for(let x=x0;x<=x1;x++){if(ty>=zbuf[x])continue;const c=Math.floor((x-left)/size*iw);if(c<0||c>=iw)continue;g.globalAlpha=1-fog*.6;g.drawImage(im,c,0,1,ih,x,top,1,size);g.globalAlpha=1}
+  e.sx=sx;e.ty=ty;if(e.foe)e.o.scr={x:sx,w:size*.42,ty}}
+ drawWeapon();
+ if(G.flash>0){g.fillStyle=`rgba(255,200,120,${G.flash*.35})`;g.fillRect(0,0,RW,RH)}
+ if(G.hurt>0){g.fillStyle=`rgba(200,0,0,${G.hurt*.45})`;g.fillRect(0,0,RW,RH)}
+ if(G.pickup>0){g.fillStyle=`rgba(255,220,120,${G.pickup*.25})`;g.fillRect(0,0,RW,RH)}
+ g.fillStyle="rgba(255,240,200,.55)";g.fillRect(RW/2-3,hz,2,1);g.fillRect(RW/2+2,hz,2,1);g.fillRect(RW/2,hz-3,1,2);g.fillRect(RW/2,hz+2,1,2);
+ if(G.msgT>0){g.font="bold 11px Georgia";g.textAlign="center";g.fillStyle="rgba(0,0,0,.6)";const w=g.measureText(G.msg).width+16;g.fillRect(RW/2-w/2,14,w,18);g.fillStyle="#f2e6c4";g.fillText(G.msg,RW/2,27)}
+ const boss=G.foes.find(f=>f.boss&&f.st!=="dead"&&f.st!=="idle");if(boss){g.fillStyle="#000";g.fillRect(60,5,200,7);g.fillStyle="#c8302a";g.fillRect(61,6,198*boss.hp/boss.max,5);g.font="bold 8px system-ui";g.fillStyle="#fff";g.textAlign="center";g.fillText("THE WARLORD",RW/2,20)}
+ if(G.map)drawMap()}
+const RED={};function redTint(id){if(RED[id])return RED[id];const s=MK.tc(unit(id).spr,1);if(!s)return null;const c=document.createElement("canvas");c.width=s.width;c.height=s.height;const q=c.getContext("2d");q.drawImage(s,0,0);q.globalCompositeOperation="source-atop";q.fillStyle="rgba(255,60,40,.55)";q.fillRect(0,0,c.width,c.height);return RED[id]=c}
+// first-person weapons, drawn with shapes (the pack's attack icons are framed tiles, not held weapons)
+function drawWeapon(){const sw=G.swing,bob=Math.sin(G.bob*7)*3,sway=Math.cos(G.bob*3.5)*3;g.save();
+ if(run.w===0){// sword: swings from the right shoulder across the view
+  g.translate(RW*.72+sway-Math.sin(sw*Math.PI)*70,RH+8+bob-Math.sin(sw*Math.PI)*16);g.rotate(-.55-Math.sin(sw*Math.PI)*1.1);
+  const bl=g.createLinearGradient(-5,0,5,0);bl.addColorStop(0,"#8d96a6");bl.addColorStop(.5,"#f4f7fb");bl.addColorStop(1,"#6c7484");
+  g.fillStyle=bl;g.beginPath();g.moveTo(-6,-26);g.lineTo(-5,-104);g.lineTo(0,-116);g.lineTo(5,-104);g.lineTo(6,-26);g.fill();g.fillStyle="rgba(80,90,110,.6)";g.fillRect(-1,-104,2,78);
+  g.fillStyle="#c9a24a";g.fillRect(-20,-30,40,7);g.fillStyle="#8a6a2a";g.fillRect(-20,-24,40,2);g.fillStyle="#5a3a1e";g.fillRect(-4,-23,8,24);g.fillStyle="#c9a24a";g.beginPath();g.arc(0,4,5,0,7);g.fill();
+  g.fillStyle="#56607a";g.fillRect(-12,-16,24,14);g.fillStyle="#7a85a2";g.fillRect(-12,-16,24,3);g.fillStyle="#3c445a";g.fillRect(-14,-2,28,30)}
+ else if(run.w===1){// crossbow: held low and centred, kicks down when it fires
+  const k=sw*10;g.translate(RW/2+sway,RH-4+bob+k);
+  g.fillStyle="#5a3a1e";g.beginPath();g.moveTo(-10,0);g.lineTo(-6,-62);g.lineTo(6,-62);g.lineTo(10,0);g.fill();g.fillStyle="#7a5230";g.fillRect(-5,-62,3,62);
+  g.strokeStyle="#2c2c34";g.lineWidth=5;g.beginPath();g.moveTo(-56,-44);g.quadraticCurveTo(0,-74,56,-44);g.stroke();g.strokeStyle="#5c5c6a";g.lineWidth=2;g.beginPath();g.moveTo(-56,-46);g.quadraticCurveTo(0,-76,56,-46);g.stroke();
+  g.strokeStyle="#e8e0c8";g.lineWidth=1;g.beginPath();g.moveTo(-55,-43);g.lineTo(0,sw>.4?-60:-36);g.lineTo(55,-43);g.stroke();
+  if(sw<.4&&run.bolts>0){g.fillStyle="#8a6a3a";g.fillRect(-1.5,-82,3,46);g.fillStyle="#d8dde6";g.beginPath();g.moveTo(-4,-82);g.lineTo(0,-92);g.lineTo(4,-82);g.fill();g.fillStyle="#c03030";g.fillRect(-4,-40,8,4)}
+  g.fillStyle="#3c445a";g.fillRect(-14,-14,28,18);g.fillStyle="#56607a";g.fillRect(-14,-14,28,3);
+  if(sw>.6){g.fillStyle="rgba(255,250,220,.55)";g.beginPath();g.arc(0,-96,7,0,7);g.fill()}}
+ else{// fire staff: an orb that flickers, and flares when cast
+  const t=performance.now()/120;g.translate(RW*.7+sway,RH+bob+sw*6);g.rotate(-.18);
+  g.fillStyle="#5a3a1e";g.fillRect(-4,-100,8,110);g.fillStyle="#7a5230";g.fillRect(-4,-100,2,110);g.fillStyle="#c9a24a";g.fillRect(-6,-100,12,5);g.fillRect(-5,-60,10,3);
+  const r=11+Math.sin(t)*1.2+sw*9,gr=g.createRadialGradient(0,-112,1,0,-112,r*2.2);gr.addColorStop(0,"#fff6c0");gr.addColorStop(.3,"#ffb040");gr.addColorStop(.7,"rgba(255,80,20,.55)");gr.addColorStop(1,"rgba(255,60,0,0)");
+  g.fillStyle=gr;g.beginPath();g.arc(0,-112,r*2.2,0,7);g.fill();g.fillStyle="#3c445a";g.fillRect(-12,-34,24,18);g.fillStyle="#56607a";g.fillRect(-12,-34,24,3)}
+ g.restore()}
+function drawMap(){const s=Math.min(5,Math.floor(150/G.H)),ox=6,oy=6;g.globalAlpha=.82;g.fillStyle="#000";g.fillRect(ox-2,oy-2,G.W*s+4,G.H*s+4);
+ for(let y=0;y<G.H;y++)for(let x=0;x<G.W;x++){const c=G.m[y][x];if(c===".")continue;g.fillStyle=isDoor(c)?(c==="L"?"#d8b04a":"#8a5a30"):c==="X"?"#6cf":"#556";if(c==="P")g.fillStyle="#556";g.fillRect(ox+x*s,oy+y*s,s,s)}
+ g.fillStyle="#ff5a4a";G.foes.forEach(f=>{if(f.st!=="idle"&&f.st!=="dead")g.fillRect(ox+f.x*s-1,oy+f.y*s-1,2,2)});
+ g.fillStyle="#7f7";g.fillRect(ox+G.x*s-1.5,oy+G.y*s-1.5,3,3);g.strokeStyle="#7f7";g.beginPath();g.moveTo(ox+G.x*s,oy+G.y*s);g.lineTo(ox+(G.x+Math.cos(G.a)*1.5)*s,oy+(G.y+Math.sin(G.a)*1.5)*s);g.stroke();g.globalAlpha=1}
+// ---------- the simulation
+function msg(t){G.msg=t;G.msgT=2.6}
+function update(dt){if(!G||G.over)return;G.t+=dt;G.cd-=dt;G.swing=Math.max(0,G.swing-dt*2.6);G.flash=Math.max(0,G.flash-dt*5);G.hurt=Math.max(0,G.hurt-dt*1.8);G.pickup=Math.max(0,(G.pickup||0)-dt*3);G.msgT-=dt;
+ for(const k in G.doors){if(G.doors[k]<1&&G.opening&&G.opening[k])G.doors[k]=Math.min(1,G.doors[k]+dt*2)}
+ for(const k in G.push){G.push[k]+=dt*.9;if(G.push[k]>=1){const [x,y]=k.split(",").map(Number);G.m[y][x]=".";delete G.push[k]}}
+ // move
+ const K=IN.keys,sp=(K.run?4.2:3)*dt,dx=Math.cos(G.a),dy=Math.sin(G.a);let mvx=0,mvy=0;
+ if(K.up){mvx+=dx;mvy+=dy}if(K.down){mvx-=dx;mvy-=dy}if(K.sl){mvx+=dy;mvy-=dx}if(K.sr){mvx-=dy;mvy+=dx}
+ if(K.left)G.a-=2.4*dt;if(K.right)G.a+=2.4*dt;G.a+=turnV;turnV=0;
+ if(mvx||mvy){const l=Math.hypot(mvx,mvy);tryMove(G,mvx/l*sp,mvy/l*sp,.22,null);G.bob+=dt;
+  // walking into a door opens it
+  const fx=G.x+dx*.6,fy=G.y+dy*.6,c=cellAt(fx,fy);if(isDoor(c))openDoor(Math.floor(fx),Math.floor(fy),true)}
+ if(K.fire)fire();
+ // pick things up
+ for(const t of [...G.things]){if(ITEMS[t.k].block||t.k==="x"||t.k==="r")continue;if(Math.hypot(t.x-G.x,t.y-G.y)<.55)take(t)}
+ // foes
+ for(const f of G.foes){if(f.st==="dead")continue;f.cd-=dt;f.hurt=Math.max(0,f.hurt-dt);f.lunge=Math.max(0,f.lunge-dt*4);const F=FOES[f.k],dist=Math.hypot(G.x-f.x,G.y-f.y);
+  if(f.st==="idle"){if(dist<11&&los(f.x,f.y,G.x,G.y)){const ang=Math.atan2(f.y-G.y,f.x-G.x);f.st="chase";f.cd=.6+Math.random()*.5;sfx(MK.hitSnd(unit(f.id)),.25)}else continue}
+  const see=los(f.x,f.y,G.x,G.y);
+  if(see&&f.cd<=0&&((F.ranged&&dist<10)||dist<1.25)){f.cd=(F.ranged?1.5:1.0)+Math.random()*.6;f.lunge=1;sfx(MK.atkSnd(unit(f.id)),.4);
+   const p=dist<1.25?.85:Math.max(.25,.8-dist*.05);if(Math.random()<p){const d=Math.round(MK.ri(F.dmg[0],F.dmg[1])*(1+run.lvl*.08));hurtMe(d)}continue}
+  if(F.ranged&&see&&dist<5&&dist>2.5)continue;
+  if(dist>(F.ranged?1.6:.9)){f.pt-=dt;if(f.pt<=0||!f.path){f.pt=.45;const p=grid.path(Math.floor(f.x),Math.floor(f.y),Math.floor(G.x),Math.floor(G.y),(x,y)=>{const c=cellAt(x,y);return c==="."||c==="D"?1:Infinity},null,60);f.path=p}
+   let tx=G.x,ty=G.y;if(f.path&&f.path.length&&!(see&&dist<3)){const [nx,ny]=f.path[0];tx=nx+.5;ty=ny+.5;if(Math.hypot(tx-f.x,ty-f.y)<.15)f.path.shift();if(cellAt(nx,ny)==="D")openDoor(nx,ny)}
+   const l=Math.hypot(tx-f.x,ty-f.y)||1,s=F.spd*dt;tryMove(f,(tx-f.x)/l*s,(ty-f.y)/l*s,.25,f)}}
+ if(run.hp<=0)die();hud()}
+let turnV=0;
+function openDoor(x,y,quiet){const k=x+","+y,c=G.m[y][x];if((G.doors[k]||0)>0)return;if(c==="L"&&!G.key){if(!quiet||!G.lockMsg||G.t-G.lockMsg>2){msg("Locked. Find the gold seal.");G.lockMsg=G.t}return}
+ G.doors[k]=.01;(G.opening=G.opening||{})[k]=1;sfx(c==="L"?"open-chest":"mace",.3)}
+function use(){const dx=Math.cos(G.a),dy=Math.sin(G.a);for(const r of [.7,1.2]){const x=Math.floor(G.x+dx*r),y=Math.floor(G.y+dy*r),c=cellAt(x,y);
+ if(isDoor(c)){openDoor(x,y);return}if(c==="X"){levelDone();return}if(c==="P"&&!G.push[x+","+y]){G.push[x+","+y]=0;G.found++;run.score+=1000;sfx("open-chest",.5);msg("A secret passage!");
+  // the wall slides one tile back
+  return}if(c!=="."){if(r>1)sfx("club-miss",.2);return}}}
+function take(t){const k=t.k;let ok=true;
+ if(k==="h"){if(run.hp>=100)ok=false;else{run.hp=Math.min(100,run.hp+25);sfx("potion",.5);msg("+25 health")}}
+ else if(k==="c"){run.score+=100;G.treasure++;sfx("gold",.4)}else if(k==="n"){run.score+=500;G.treasure++;sfx("gold",.5);msg("A jewelled ring! +500")}
+ else if(k==="T"){run.score+=1000;G.treasure++;sfx("open-chest",.5);msg("Treasure chest! +1000")}
+ else if(k==="b"){run.bolts+=8;if(run.staff)run.mana+=6;sfx("throwing-knife",.3);msg(run.staff?"+8 bolts, +6 mana":"+8 bolts")}
+ else if(k==="k"){G.key=true;sfx("fanfare-short",.4);msg("The gold seal. Gold doors will open now.")}
+ else if(k==="F"){run.staff=true;run.mana+=25;run.w=2;sfx("magic-holy-1",.5);msg("The Fire Staff! Press 3 to wield it.")}
+ if(ok){G.things.splice(G.things.indexOf(t),1);G.pickup=1}}
+function hurtMe(d){run.hp-=d;G.hurt=Math.min(1,G.hurt+.6);sfx(MK.hitSnd(unit("fencer")),.45)}
+function fire(){if(G.cd>0||G.over)return;const W=WEAPONS[run.w];if(W.ammo){if(run[W.ammo]<=0){msg(W.ammo==="bolts"?"Out of bolts. Sword out (1).":"Out of mana.");run.w=0;G.cd=.3;return}run[W.ammo]--}
+ G.cd=W.cd;G.swing=1;if(!W.melee)G.flash=run.w===2?1:.5;sfx(W.snd,.5);
+ // the nearest foe under the crosshair (or within reach of the blade)
+ let tgt=null;for(const f of G.foes){if(f.st==="dead"||!f.scr)continue;const d=Math.hypot(f.x-G.x,f.y-G.y);if(W.melee&&d>1.7)continue;if(Math.abs(f.scr.x-RW/2)>f.scr.w/2+(W.melee?24:4))continue;if(!los(G.x,G.y,f.x,f.y))continue;if(!tgt||d<tgt.d)tgt={f,d}}
+ // noise wakes the floor
+ if(!W.melee)G.foes.forEach(f=>{if(f.st==="idle"&&Math.hypot(f.x-G.x,f.y-G.y)<8)f.st="chase"});
+ if(!tgt){if(W.melee)sfx("miss-1",.2);return}const hit=(f,dm)=>{f.hp-=dm;f.hurt=.18;f.st=f.st==="idle"?"chase":f.st;if(f.hp<=0){f.st="dead";G.kills++;run.score+=FOES[f.k].pts;sfx(MK.dieSnd(unit(f.id)),.5);
+  if(f.boss){G.key=true;msg("The Warlord falls! The gold seal is yours.");run.score+=5000}else if(Math.random()<.3)G.things.push({k:Math.random()<.5?"b":"h",x:f.x+.2,y:f.y+.2})}else sfx(MK.hitSnd(unit(f.id)),.35)};
+ const dm=MK.ri(W.dmg[0],W.dmg[1])*(tgt.d<2&&!W.melee?1.15:1);hit(tgt.f,Math.round(dm));
+ if(W.splash)G.foes.forEach(f=>{if(f!==tgt.f&&f.st!=="dead"&&Math.hypot(f.x-tgt.f.x,f.y-tgt.f.y)<W.splash)hit(f,Math.round(dm*.5))})}
+function die(){if(G.over)return;G.over=true;run.lives--;MK.playMusic("defeat");sfx(MK.dieSnd(unit("fencer")),.6);
+ if(run.lives<=0){const b=ls.get("mk.k3dBest",{score:0,wins:0});b.score=Math.max(b.score,run.score);ls.set("mk.k3dBest",b);
+  MK.ending({title:"Game over",text:`You fell on floor ${run.lvl+1} with ${run.score} points. Best: ${b.score}.`,buttons:[["Try again",newRun],["Title",title]]});return}
+ MK.ending({title:"You are struck down",text:`${run.lives} li${run.lives===1?"fe":"ves"} left. The floor resets; your score stays.`,buttons:[["Get up",()=>{run.hp=100;run.bolts=Math.max(run.bolts,8);run.w=1;startLevel()}]]})}
+function levelDone(){if(G.over)return;G.over=true;sfx("fanfare-short",.6);MK.playMusic("victory");
+ const pct=(a,b)=>b?Math.round(100*a/b):100,kp=pct(G.kills,G.foesTotal),sp=pct(G.found,G.secrets),tp=pct(G.treasure,G.treasureTotal),secs=Math.round(G.t);
+ const bonus=(kp===100?2000:0)+(sp===100&&G.secrets?2000:0)+(tp===100?2000:0)+Math.max(0,(180-secs)*10);run.score+=bonus;const last=run.lvl>=3;
+ if(last){const b=ls.get("mk.k3dBest",{score:0,wins:0});b.score=Math.max(b.score,run.score);b.wins++;ls.set("mk.k3dBest",b)}
+ MK.modal(`<h2>${last?"Gravenhold has fallen":"Floor "+(run.lvl+1)+" cleared"}</h2><div class="tally">Kills <b>${kp}%</b><br>Secrets <b>${sp}%</b><br>Treasure <b>${tp}%</b><br>Time <b>${Math.floor(secs/60)}:${String(secs%60).padStart(2,"0")}</b><br>Bonus <b>${bonus}</b><br>Score <b>${run.score}</b></div>
+  ${last?`<p>The Warlord is dead and his keep is yours. Not bad for a sellsword.</p>`:""}<button class="btn" id="nx">${last?"Play again":"Next floor"}</button>`);
+ $("nx").onclick=()=>{MK.closeModal();if(last){title();return}run.lvl++;run.hp=Math.min(100,run.hp+15);startLevel()}}
+// ---------- screens
+function hud(){const b=$("bar");if(!b||!run)return;const W=WEAPONS[run.w];
+ const set=(id,v)=>{const e=$(id);if(e&&e.textContent!==String(v))e.textContent=v};set("hF",run.lvl+1);set("hS",run.score);set("hL",run.lives);set("hH",Math.max(0,run.hp)+"%");set("hA",W.ammo?run[W.ammo]:"∞");set("hW",W.n);
+ const f=$("faceI");if(f){const hp=run.hp;f.style.filter=`saturate(${.4+hp/170}) ${G.hurt>.2?"sepia(1) hue-rotate(-40deg) saturate(4)":""} brightness(${hp<30?.75:1})`;f.style.transform=`translateX(${G.hurt>.3?(Math.random()*4-2):0}px)`}
+ const kh=G.key?"1":"0";if($("keys").dataset.k!==kh){$("keys").dataset.k=kh;$("keys").innerHTML=G.key?`<img src="${IMG("items/stone-tablet.png")}" alt="" title="Gold seal">`:"—"}}
+function layout(){$("app").innerHTML=`<div id="wrap"></div><div id="bar"><div class="hide"><small>FLOOR</small><span id="hF"></span></div><div><small>SCORE</small><span id="hS"></span></div><div class="hide"><small>LIVES</small><span id="hL"></span></div><div><small>HEALTH</small><span id="hH"></span></div>
+ <div id="face"><img id="faceI" src="${IMG("portraits/humans/fencer.webp")}" alt=""></div><div><small>AMMO</small><span id="hA"></span></div><div><small>WEAPON</small><span id="hW" style="font-size:13px"></span></div><div><small>SEAL</small><span id="keys"></span></div></div>
+ <p class="keys" style="font-size:12px;color:var(--mute);text-align:center;margin:8px 0">WASD move · arrows or mouse turn (click the view to lock the mouse) · Space or click to attack · E to open doors, push walls and touch the blue rune to leave · 1 2 3 weapons · M map · Shift run</p>`;
+ $("wrap").appendChild(cv);hud()}
+function title(){G=null;const b=ls.get("mk.k3dBest",{score:0,wins:0});MK.playMusic("weight_of_revenge",.3);
+ $("app").innerHTML=`<div class="frame ttl"><img src="${IMG(unit("warlord").spr)}" alt="" style="height:110px;image-rendering:pixelated"><div class="big">Siege of Gravenhold</div><p>Four floors of the Warlord's keep. Kill what moves, find the gold seal, touch the blue rune.</p>
+ <div class="keys">Sword, crossbow and, if you find it, a fire staff.<br>Doors open when you walk into them. Some walls hide secrets: try E on suspicious stone.<br>Finish a floor with every kill, secret and treasure for big bonuses.</div>
+ <button class="btn" id="go">Storm the keep</button><p style="font-size:13px;margin-top:12px">High score ${b.score} · keeps taken ${b.wins}</p></div>`;$("go").onclick=newRun}
+// ---------- input
+const KEYS={up:["w","arrowup"],down:["s","arrowdown"],sl:["a"],sr:["d"],left:["arrowleft","q"],right:["arrowright"],fire:[" ","control","f"],use:["e","enter"],w1:["1"],w2:["2"],w3:["3"],map:["m","tab"],run:["shift"]};
+const sel=i=>{if(!run)return;if(i===2&&!run.staff){if(G)msg("You haven't found a staff yet.");return}run.w=i;sfx("sword-1",.1);hud()};
+const IN=MK.input(KEYS,{use:()=>G&&!G.over&&use(),w1:()=>sel(0),w2:()=>sel(1),w3:()=>sel(2),map:()=>{if(G)G.map=!G.map},swap:()=>{if(!run)return;let n=(run.w+1)%3;if(n===2&&!run.staff)n=0;sel(n)}});
+IN.pad([["fire","Attack"],["use","Use"],["swap","Swap"]]);document.body.classList.add("haspad");
+cv.addEventListener("click",()=>{if(!G||G.over)return;if(matchMedia("(pointer:fine)").matches&&document.pointerLockElement!==cv)cv.requestPointerLock&&cv.requestPointerLock();else fire()});
+addEventListener("mousemove",e=>{if(document.pointerLockElement===cv)turnV+=e.movementX*.0035});
+addEventListener("mousedown",e=>{if(document.pointerLockElement===cv&&e.button===0)fire()});
+// drag on the view to turn on touch screens
+let tx0=null;cv.addEventListener("pointerdown",e=>{if(e.pointerType!=="mouse")tx0=e.clientX});cv.addEventListener("pointermove",e=>{if(tx0!=null){turnV+=(e.clientX-tx0)*.012;tx0=e.clientX}});["pointerup","pointercancel"].forEach(v=>cv.addEventListener(v,()=>tx0=null));
+MK.loop(update,()=>{if(G&&cv.isConnected)render()},{maxDt:.05});
+MK.preload(["attacks/sword-human.png","attacks/crossbow-human.png","attacks/fireball.png","items/bones.png","items/brazier.png","icons/potion_red_medium.png","icons/coins_copper.png","icons/bag.png","items/stone-tablet.png","items/chest-plain-closed.png","items/dragonstatue.png","icons/jewelry_ring_prismatic.png",...Object.values(FOES).map(f=>unit(f.id).spr)]);
+title();
+</script></body></html>
