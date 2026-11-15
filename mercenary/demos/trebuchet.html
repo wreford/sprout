@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Trebuchet · Mercenary Keep</title><link rel="stylesheet" href="mk.css">
+<style>
+#app{max-width:980px;margin:0 auto;padding:10px}
+#cv{width:100%;display:block;border-radius:10px 10px 0 0;border:1px solid var(--line);border-bottom:0;touch-action:none;cursor:crosshair}
+.ctl{display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:8px;background:#10151f;border:1px solid var(--line);border-radius:0 0 10px 10px}
+.am{display:flex;align-items:center;gap:6px;padding:6px 10px;border-radius:8px;background:var(--card);border:1px solid var(--line);color:var(--ink);font:700 13px system-ui}
+.am.on{border-color:var(--gold2);box-shadow:0 0 8px rgba(236,198,110,.5)}.am:disabled{opacity:.35}.am i{font-style:normal;font-size:16px}
+.ctl .sp{flex:1}.ctl .info{font-size:13px;color:var(--mute)}.ctl .info b{color:var(--gold2)}
+.lv{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin:12px 0}
+.lv button{padding:12px 6px;border-radius:10px;background:var(--card);border:1px solid var(--line);color:var(--ink);font:800 15px Georgia,serif}.lv button:disabled{opacity:.35}.lv small{display:block;color:var(--gold2);font:16px system-ui;letter-spacing:2px}
+.ttl{text-align:center;padding:18px}.ttl p{color:var(--mute)}
+</style></head><body>
+<div id="app"></div>
+<script src="roster.js"></script><script src="mk.js"></script><script src="engine.js"></script>
+<script>
+"use strict";
+// Trebuchet: drag back to aim, let go to fling. Knock the orc forts down around their ears.
+const {$,IMG,unit,sfx,ls}=MK;
+MK.topbar("trebuchet");
+const W=820,H=460,GROUND=420,C=20,X0=400,COLS=20,ROWS=16,PIV={x:118,y:330},GRAV=420;
+const cv=document.createElement("canvas");cv.id="cv";const g=MK.canvas(cv,W,H);
+const AMMO={stone:{n:"Stone",i:"🪨",pow:1,d:"Plain and honest."},boulder:{n:"Boulder",i:"⚫",pow:2.2,d:"Heavy. Smashes stone."},fire:{n:"Fire pot",i:"🔥",pow:.6,d:"Sets wood ablaze."},scatter:{n:"Scatter",i:"✳",pow:.7,d:"Splits in four at the top of its arc."}};
+const LEVELS=[{n:"Palisade",ammo:{stone:4},wind:0},{n:"Twin Towers",ammo:{stone:3,boulder:1},wind:0},{n:"Wood Keep",ammo:{stone:2,fire:2},wind:-20},{n:"Stone Hall",ammo:{stone:2,boulder:2,fire:1},wind:15},
+ {n:"Watch Hill",ammo:{stone:2,scatter:2,fire:1},wind:-30},{n:"The Big Fort",ammo:{stone:3,boulder:2,fire:2,scatter:1},wind:25}];
+let G=null;
+// ---- fort building: a grid of blocks; empty "", wood "w", stone "s"
+function fort(n){const R=MK.rng(n*7919+11),grid=Array.from({length:ROWS},()=>Array(COLS).fill("")),orcs=[];
+ const put=(c,r,t)=>{if(c>=0&&c<COLS&&r>=0&&r<ROWS)grid[r][c]=t};const top=c=>{for(let r=ROWS-1;r>=0;r--)if(grid[r][c])return r;return ROWS};
+ const tower=(c,w,h,mat)=>{for(let x=c;x<c+w;x++)for(let y=0;y<h;y++)put(x,ROWS-1-y,(x===c||x===c+w-1||y===h-1||y%3===2)?(typeof mat==="function"?mat(x,y):mat):"")};
+ const plat=(c1,c2,y,mat)=>{for(let x=c1;x<=c2;x++)put(x,ROWS-1-y,mat)};
+ if(n===0){for(let x=4;x<14;x+=3)tower(x,2,3,"w");plat(4,15,3,"w")}
+ else if(n===1){tower(3,3,7,"w");tower(11,3,7,"w");plat(3,13,7,"w")}
+ else if(n===2){tower(2,6,6,"w");tower(10,5,8,"w");plat(7,10,3,"w")}
+ else if(n===3){tower(2,4,5,"s");tower(8,4,8,(x,y)=>y%2?"s":"w");tower(14,4,5,"s")}
+ else if(n===4){for(let x=0;x<COLS;x++){const h=Math.max(0,Math.round(4-Math.abs(x-10)*.45));for(let y=0;y<h;y++)put(x,ROWS-1-y,"s")}tower(7,6,6,"w");for(let y=0;y<4;y++)for(let x=7;x<13;x++)if(grid[ROWS-1-y][x]==="")grid[ROWS-1-y][x]="";}
+ else{tower(1,4,6,"s");tower(6,5,9,"w");tower(12,3,7,"s");tower(16,3,11,(x,y)=>y>6?"w":"s");plat(1,9,6,"w")}
+ // orcs stand on every high open floor, and in the rooms
+ const want=3+Math.min(4,n);let tries=0;while(orcs.length<want&&tries++<400){const c=R.int(0,COLS-1);let r=ROWS-1;while(r>=0&&grid[r][c])r--;
+  // a room inside a tower: look for an empty cell with a block under it
+  const spots=[];for(let rr=ROWS-1;rr>=1;rr--)if(!grid[rr][c]&&(rr===ROWS-1||grid[rr+1][c]))spots.push(rr);if(!spots.length)continue;const rr=R.pick(spots);
+  if(rr<1||orcs.some(o=>o.c===c&&o.r===rr))continue;orcs.push({c,r:rr,id:R.pick(n<2?["gob","grunt"]:["grunt","gob","oarch","twar"]),alive:true,fall:0,ox:0})}
+ return {grid,orcs}}
+function start(n){const L=LEVELS[n],F=fort(n);G={n,grid:F.grid,orcs:F.orcs,ammo:Object.assign({},L.ammo),sel:Object.keys(L.ammo)[0],wind:L.wind,shots:[],aim:null,arm:0,fx:[],burn:{},debris:[],tick:0,over:false,shotsFired:0,quiet:0,settle:0};
+ G.total=G.orcs.length;layout();MK.playMusic("siege_of_laurelmor",.3)}
+function layout(){$("app").innerHTML="";$("app").appendChild(cv);$("app").insertAdjacentHTML("beforeend",`<div class="ctl" id="ctl"></div>`);ctl()}
+function ctl(){const el=$("ctl");if(!el||!G)return;el.innerHTML=Object.keys(G.ammo).map(k=>`<button class="am ${G.sel===k?"on":""}" data-a="${k}" ${G.ammo[k]?"":"disabled"} title="${AMMO[k].d}"><i>${AMMO[k].i}</i>${AMMO[k].n} ×${G.ammo[k]}</button>`).join("")+
+ `<span class="sp"></span><span class="info">${LEVELS[G.n].n} · orcs left <b>${G.orcs.filter(o=>o.alive).length}</b> · wind <b>${G.wind?(G.wind>0?"→ ":"← ")+Math.abs(G.wind):"calm"}</b></span>`;
+ el.querySelectorAll("[data-a]").forEach(b=>b.onclick=()=>{G.sel=b.dataset.a;ctl()})}
+// ---- aiming: drag anywhere, pull back like a sling
+const pt=e=>{const r=cv.getBoundingClientRect();return {x:(e.clientX-r.left)/r.width*W,y:(e.clientY-r.top)/r.height*H}};
+cv.addEventListener("pointerdown",e=>{if(!G||G.over||G.shots.length||!G.ammo[G.sel])return;cv.setPointerCapture(e.pointerId);G.aim={s:pt(e),c:pt(e)}});
+cv.addEventListener("pointermove",e=>{if(G&&G.aim)G.aim.c=pt(e)});
+cv.addEventListener("pointerup",()=>{if(!G||!G.aim)return;const v=aimVel();G.aim=null;if(v)launch(v)});
+function aimVel(){const a=G.aim;if(!a)return null;const dx=a.s.x-a.c.x,dy=a.s.y-a.c.y,l=Math.hypot(dx,dy);if(l<12)return null;const p=Math.min(1,l/220),sp=260+p*520;return {vx:dx/l*sp,vy:dy/l*sp,p}}
+function launch(v){G.ammo[G.sel]--;G.shotsFired++;G.arm=1;sfx("club",.5);setTimeout(()=>sfx("bow",.4),120);
+ G.shots.push({x:PIV.x+30,y:PIV.y-90,vx:v.vx,vy:v.vy,k:G.sel,r:G.sel==="boulder"?11:G.sel==="scatter"?7:8,live:true,split:false,rest:0});
+ if(!G.ammo[G.sel]){const nx=Object.keys(G.ammo).find(k=>G.ammo[k]);if(nx)G.sel=nx}ctl()}
+// ---- world helpers
+const cellAt=(x,y)=>{const c=Math.floor((x-X0)/C),r=Math.floor((y-(GROUND-ROWS*C))/C);return c>=0&&c<COLS&&r>=0&&r<ROWS?[c,r]:null};
+const orcAt=(c,r)=>G.orcs.find(o=>o.alive&&o.c===c&&o.r===r);
+function killOrc(o,why){if(!o.alive)return;o.alive=false;sfx(MK.dieSnd(unit(o.id)),.5);const x=X0+o.c*C+C/2,y=GROUND-(ROWS-o.r)*C+C/2;G.fx.push({t:why||"+500",x,y:y-20,l:1.2,c:"#ffd47a"});for(let i=0;i<10;i++)G.debris.push({x,y,vx:(Math.random()-.5)*160,vy:-Math.random()*160,l:.8,c:"#7a8a5a",s:3});ctl()}
+function breakCell(c,r){const t=G.grid[r][c];if(!t)return;G.grid[r][c]="";delete G.burn[c+","+r];const x=X0+c*C+C/2,y=GROUND-(ROWS-r)*C+C/2;for(let i=0;i<6;i++)G.debris.push({x,y,vx:(Math.random()-.5)*200,vy:-Math.random()*200,l:1,c:t==="s"?"#8a8a90":"#8a5a30",s:4});sfx(t==="s"?"mace":"club",.35)}
+const hpOf=t=>t==="s"?3.2:1;
+function boom(x,y,rad,pow){for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){const cx=X0+c*C+C/2,cy=GROUND-(ROWS-r)*C+C/2;if(Math.hypot(cx-x,cy-y)<rad){const t=G.grid[r][c];if(t&&(t==="w"||pow>=2.2||Math.random()<pow*.35))breakCell(c,r);const o=orcAt(c,r);if(o)killOrc(o)}}}
+// ---- the simulation
+function update(dt){if(!G||G.over)return;G.arm=Math.max(0,G.arm-dt*2.5);G.tick+=dt;
+ for(const s of G.shots){if(!s.live)continue;const n=4;for(let i=0;i<n;i++){const h=dt/n;s.vy+=GRAV*h;s.vx+=G.wind*h*.6;s.x+=s.vx*h;s.y+=s.vy*h;
+  if(s.k==="scatter"&&!s.split&&s.vy>0){s.split=true;s.live=false;sfx("throwing-knife",.4);for(let k=-1.5;k<=1.5;k++)G.shots.push({x:s.x,y:s.y,vx:s.vx*.9+k*40,vy:s.vy+k*50,k:"stone",r:6,live:true,split:true,mini:true,rest:0});break}
+  const sp=Math.hypot(s.vx,s.vy),cl=cellAt(s.x,s.y);
+  if(cl){const [c,r]=cl,o=orcAt(c,r);if(o&&sp>60)killOrc(o);const t=G.grid[r][c];
+   if(t){const p=AMMO[s.k].pow*(s.mini?.6:1),e=sp/200*p;if(s.k==="fire"){if(t==="w"){G.burn[c+","+r]=0}s.live=false;G.fx.push({x:s.x,y:s.y,t:"",l:.6,ring:1});sfx("flame-big",.6);for(let dc=-1;dc<=1;dc++)for(let dr=-1;dr<=1;dr++){const k=(c+dc)+","+(r+dr);if(G.grid[r+dr]&&G.grid[r+dr][c+dc]==="w")G.burn[k]=0;const oo=orcAt(c+dc,r+dr);if(oo)killOrc(oo,"burned")}break}
+    if(e>=hpOf(t)){breakCell(c,r);const loss=hpOf(t)/e;s.vx*=Math.max(.2,1-loss*.7);s.vy*=Math.max(.2,1-loss*.7)}else{if(e>hpOf(t)*.5&&t==="w")breakCell(c,r);s.vx*=-.25;s.vy*=-.2;s.x+=s.vx*h*2;if(sp<90)s.live=false}
+    if(s.k==="boulder"&&e>1.5)boom(s.x,s.y,22,2.2)}}
+  if(s.y>GROUND-s.r){s.y=GROUND-s.r;if(s.k==="fire"){s.live=false;sfx("flame-big",.5);G.fx.push({x:s.x,y:s.y,t:"",l:.6,ring:1});boom(s.x,s.y,26,.3);break}s.vy*=-.3;s.vx*=.6;if(Math.abs(s.vy)<40){s.vy=0}if(Math.abs(s.vx)<20&&!s.vy)s.live=false;sfx("club-miss",.15)}
+  if(s.x>W+40||s.x<-40)s.live=false}}
+ const flying=G.shots.some(s=>s.live);if(!flying)G.shots=[];
+ // fire spreads through wood
+ for(const k in G.burn){G.burn[k]+=dt;const [c,r]=k.split(",").map(Number);if(G.burn[k]>.5&&Math.random()<dt*1.6)for(const [dc,dr] of [[1,0],[-1,0],[0,1],[0,-1]]){const nk=(c+dc)+","+(r+dr);if(G.grid[r+dr]&&G.grid[r+dr][c+dc]==="w"&&G.burn[nk]===undefined)G.burn[nk]=0}
+  const o=orcAt(c,r-1);if(o&&G.burn[k]>.8)killOrc(o,"burned");if(G.burn[k]>1.8)breakCell(c,r)}
+ // gravity, a cell at a time
+ G.settle+=dt;let moved=false;if(G.settle>.07){G.settle=0;for(let r=ROWS-2;r>=0;r--)for(let c=0;c<COLS;c++){const t=G.grid[r][c];if(!t||G.grid[r+1][c])continue;
+  // blocks hang on if a neighbour on both sides holds them (a little friction keeps beams up)
+  const L=c>0&&G.grid[r][c-1]&&(r===ROWS-1||G.grid[r+1][c-1]),Rt=c<COLS-1&&G.grid[r][c+1]&&(G.grid[r+1][c+1]);if(L&&Rt)continue;if((L||Rt)&&t==="w"&&Math.random()<.6)continue;
+  const o=orcAt(c,r+1);if(o)killOrc(o,"crushed");G.grid[r+1][c]=t;G.grid[r][c]="";if(G.burn[c+","+r]!==undefined){G.burn[c+","+(r+1)]=G.burn[c+","+r];delete G.burn[c+","+r]}moved=true}
+  for(const o of G.orcs){if(!o.alive)continue;if(o.r<ROWS-1&&!G.grid[o.r+1][o.c]&&!orcAt(o.c,o.r+1)){o.r++;o.fall++;moved=true}else{if(o.fall>=3)killOrc(o,"splat");o.fall=0}
+   if(G.grid[o.r][o.c])killOrc(o,"crushed")}}
+ G.debris.forEach(d=>{d.vy+=GRAV*dt;d.x+=d.vx*dt;d.y+=d.vy*dt;d.l-=dt;if(d.y>GROUND){d.y=GROUND;d.vy*=-.3}});G.debris=G.debris.filter(d=>d.l>0);G.fx.forEach(f=>f.l-=dt);G.fx=G.fx.filter(f=>f.l>0);
+ const calm=!flying&&!moved&&!Object.keys(G.burn).length;G.quiet=calm?G.quiet+dt:0;
+ const left=G.orcs.filter(o=>o.alive).length;if(left===0&&G.quiet>.6)win();else if(G.quiet>1.2&&!Object.values(G.ammo).some(v=>v))lose()}
+function win(){G.over=true;const spare=Object.values(G.ammo).reduce((a,b)=>a+b,0),stars=spare>=2?3:spare>=1?2:1;const B=ls.get("mk.treb",{});B[G.n]=Math.max(B[G.n]||0,stars);ls.set("mk.treb",B);
+ MK.ending({title:"The fort is rubble",img:IMG(unit("lieut").spr),music:"victory",text:`<span style="font-size:28px;color:var(--gold2);letter-spacing:4px">${"★".repeat(stars)}${"☆".repeat(3-stars)}</span><br>${spare} shot${spare===1?"":"s"} to spare.`,
+  buttons:G.n<LEVELS.length-1?[["Next fort",()=>start(G.n+1)],["Retry",()=>start(G.n)],["Forts",title]]:[["Forts",title],["Retry",()=>start(G.n)]]})}
+function lose(){G.over=true;MK.ending({title:"Out of ammunition",img:IMG(unit("grunt").spr),music:"defeat",text:`${G.orcs.filter(o=>o.alive).length} orcs are still jeering from the walls.`,buttons:[["Retry",()=>start(G.n)],["Forts",title]]})}
+// ---- drawing
+function draw(){if(!G||!cv.isConnected)return;const sky=g.createLinearGradient(0,0,0,H);sky.addColorStop(0,"#5a7ab0");sky.addColorStop(.7,"#c8b48a");g.fillStyle=sky;g.fillRect(0,0,W,H);
+ g.fillStyle="rgba(60,80,70,.5)";g.beginPath();g.moveTo(0,300);for(let x=0;x<=W;x+=40)g.lineTo(x,290-Math.sin(x/90)*30-Math.sin(x/37)*8);g.lineTo(W,H);g.lineTo(0,H);g.fill();
+ g.fillStyle="#4a6a34";g.fillRect(0,GROUND,W,H-GROUND);g.fillStyle="#5c7e40";g.fillRect(0,GROUND,W,4);
+ // clouds drift with the wind
+ const wt=performance.now()/1000;g.fillStyle="rgba(255,255,255,.55)";for(let i=0;i<4;i++){const x=((i*230+wt*(8+G.wind*.6))%(W+200)+W+200)%(W+200)-100,y=50+i*22;g.beginPath();g.ellipse(x,y,50,12,0,0,7);g.ellipse(x+30,y-8,30,12,0,0,7);g.fill()}
+ // trebuchet
+ const ang=-.9+(1-G.arm)*0+(G.arm>0?(1-G.arm)*2.4:0)+(G.aim?.15:0);g.fillStyle="#5a3a1e";g.beginPath();g.moveTo(PIV.x-40,GROUND);g.lineTo(PIV.x-6,PIV.y);g.lineTo(PIV.x+6,PIV.y);g.lineTo(PIV.x+40,GROUND);g.lineTo(PIV.x+30,GROUND);g.lineTo(PIV.x,PIV.y+20);g.lineTo(PIV.x-30,GROUND);g.fill();
+ g.fillRect(PIV.x-50,GROUND-10,100,10);g.fillStyle="#3a2a18";[PIV.x-38,PIV.x+38].forEach(x=>{g.beginPath();g.arc(x,GROUND-4,9,0,7);g.fill()});
+ g.save();g.translate(PIV.x,PIV.y);g.rotate(G.arm>0?-.9+(1-G.arm)*2.6:-.9);g.fillStyle="#7a5230";g.fillRect(-26,-4,120,8);g.fillStyle="#4a4a52";g.fillRect(-40,-14,22,28);g.strokeStyle="#ccc";g.beginPath();g.moveTo(94,0);g.lineTo(94,26);g.stroke();
+ if(!G.shots.length&&G.ammo[G.sel]){g.fillStyle=G.sel==="fire"?"#e06a20":"#8a8a90";g.beginPath();g.arc(94,30,G.sel==="boulder"?11:8,0,7);g.fill()}g.restore();
+ MK.sprite(g,unit("lieut").spr,0,PIV.x-70,GROUND,.9,false);
+ // aim preview
+ if(G.aim){const v=aimVel();if(v){let x=PIV.x+30,y=PIV.y-90,vx=v.vx,vy=v.vy;g.fillStyle="rgba(255,255,255,.75)";for(let i=0;i<26;i++){for(let k=0;k<3;k++){vy+=GRAV*.012;vx+=G.wind*.012*.6;x+=vx*.012;y+=vy*.012}if(i%2===0){g.beginPath();g.arc(x,y,2.5,0,7);g.fill()}}
+  g.fillStyle="#000";g.fillRect(PIV.x-40,PIV.y-150,80,8);g.fillStyle=v.p>.85?"#e2584a":"#ffd47a";g.fillRect(PIV.x-39,PIV.y-149,78*v.p,6)}}
+ // fort
+ const top=GROUND-ROWS*C;for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){const t=G.grid[r][c];if(!t)continue;const x=X0+c*C,y=top+r*C;
+  if(t==="s"){g.fillStyle="#8a8a90";g.fillRect(x,y,C,C);g.fillStyle="#9c9ca4";g.fillRect(x+1,y+1,C-2,4);g.fillStyle="#6c6c74";g.fillRect(x,y+C-2,C,2);g.fillRect(x+C-2,y,2,C)}
+  else{g.fillStyle="#8a5a30";g.fillRect(x,y,C,C);g.fillStyle="#a06c3c";g.fillRect(x+1,y+2,C-2,3);g.fillRect(x+1,y+11,C-2,2);g.fillStyle="#5a3a1e";g.fillRect(x,y+C-1,C,1);g.fillRect(x+C-1,y,1,C)}
+  const b=G.burn[c+","+r];if(b!==undefined){const f=Math.sin(performance.now()/60+c*3)*3;g.fillStyle=`rgba(255,${120+Math.random()*80|0},20,.85)`;g.beginPath();g.moveTo(x,y+C);g.quadraticCurveTo(x+C/2,y-10-f-b*6,x+C,y+C);g.fill();g.fillStyle=`rgba(0,0,0,${Math.min(.5,b*.3)})`;g.fillRect(x,y,C,C)}}
+ for(const o of G.orcs){if(!o.alive)continue;MK.sprite(g,unit(o.id).spr,1,X0+o.c*C+C/2,top+(o.r+1)*C+2,.62,true)}
+ for(const s of G.shots){if(!s.live)continue;g.fillStyle=s.k==="fire"?"#e06a20":s.k==="boulder"?"#4a4a52":"#8a8a90";g.beginPath();g.arc(s.x,s.y,s.r,0,7);g.fill();if(s.k==="fire"){g.fillStyle="rgba(255,200,60,.6)";g.beginPath();g.arc(s.x-s.vx*.02,s.y-s.vy*.02,s.r*.8,0,7);g.fill()}}
+ G.debris.forEach(d=>{g.fillStyle=d.c;g.fillRect(d.x,d.y,d.s,d.s)});
+ G.fx.forEach(f=>{if(f.ring){g.strokeStyle=`rgba(255,160,40,${f.l})`;g.lineWidth=4;g.beginPath();g.arc(f.x,f.y,40*(1-f.l)+10,0,7);g.stroke();g.lineWidth=1;return}g.globalAlpha=Math.min(1,f.l);g.font="900 15px Georgia";g.textAlign="center";g.fillStyle="#000";g.fillText(f.t,f.x+1,f.y+1-(1.2-f.l)*20);g.fillStyle=f.c;g.fillText(f.t,f.x,f.y-(1.2-f.l)*20);g.globalAlpha=1});
+ if(G.shotsFired===0&&!G.aim){g.font="800 16px system-ui";g.textAlign="center";g.fillStyle="rgba(0,0,0,.6)";g.fillRect(W/2-190,30,380,28);g.fillStyle="#fff";g.fillText("Drag back from anywhere, then let go to fling",W/2,50)}}
+MK.loop(update,draw);
+function title(){G=null;const B=ls.get("mk.treb",{});MK.playMusic("siege_of_laurelmor",.3);
+ $("app").innerHTML=`<div class="frame ttl"><h1>Trebuchet</h1><p>The orcs built their forts out of whatever was lying around. Show them why that was a mistake.</p>
+ <div class="lv">${LEVELS.map((l,i)=>`<button data-l="${i}" ${i===0||B[i-1]?"":"disabled"}>${i+1}. ${l.n}<small>${B[i]?"★".repeat(B[i])+"☆".repeat(3-B[i]):"☆☆☆"}</small></button>`).join("")}</div>
+ <p style="font-size:13px">Drag back to aim and set power, let go to fire. Stones break wood, boulders break anything, fire pots burn wood, scatter shot splits. Orcs die if hit, crushed, burned or dropped from a height.</p></div>`;
+ document.querySelectorAll("[data-l]").forEach(b=>b.onclick=()=>start(+b.dataset.l))}
+MK.preload(["grunt","gob","oarch","twar","lieut"].map(id=>unit(id).spr));
+title();
+</script></body></html>
