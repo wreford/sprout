@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Quill &amp; Blade · Mercenary Keep</title><link rel="stylesheet" href="mk.css">
+<style>
+#app{max-width:900px;margin:0 auto;padding:10px}
+#cv{width:100%;display:block;border-radius:10px 10px 0 0;border:1px solid var(--line);border-bottom:0;background:#203018}
+.typ{display:flex;gap:8px;align-items:center;padding:8px;background:#10151f;border:1px solid var(--line);border-radius:0 0 10px 10px}
+#tin{flex:1;min-width:0;font:700 22px ui-monospace,Menlo,Consolas,monospace;padding:10px 12px;background:#f3ead2;color:#2a1c0c;border:2px solid #8a6a3a;border-radius:6px;outline:none;letter-spacing:.04em;user-select:text;-webkit-user-select:text}
+#tin.bad{background:#f5c8bc;animation:shk .25s}
+.st{font-size:13px;color:var(--mute);white-space:nowrap}.st b{color:var(--gold2)}
+.ttl{text-align:center;padding:20px 16px}.ttl p{color:var(--mute)}
+</style></head><body>
+<div id="app"></div>
+<script src="roster.js"></script><script src="mk.js"></script><script src="engine.js"></script>
+<script>
+"use strict";
+// Quill & Blade: the keep's archers loose only at words you write. Spell fast or the wall falls.
+const {$,IMG,unit,sfx,ls,pick}=MK;
+MK.topbar("quill");
+const W=innerWidth<600?440:720,H=330,WALL=86;
+const cv=document.createElement("canvas");cv.id="cv";const g=MK.canvas(cv,W,H);
+const WORDS={s:"axe arm ale bow cap cog den dirt dusk dye elm fang fern flag foe fort gate gold helm hill hoof horn inn iron keep king knot lance lute mace mail mead moat oath oak pike quill raid rook rope rune rust sack salt scar seal shaft shield siege sling spur stag steel stone sword tent thane toll torch tower troll vale wall ward wolf yew".split(" "),
+ m:"anvil archer arrows banner barrel battle brigand candle castle cavalry chapel citadel cloak crossbow dagger dragon dungeon falcon fletch garrison gauntlet goblet granary halberd harvest herald hound journey kettle knight lantern ledger mantle market militia minstrel mercenary outpost palisade parley pillage plunder quiver rampart ransom saddle scabbard sentry sergeant skirmish spear squire stable stirrup swordsman tavern tithe trebuchet vanguard village warband watchman".split(" "),
+ l:"ambuscade apothecary battlement blacksmith breastplate catapult chamberlain chronicle commander drawbridge embrasure encampment flagbearer fortification gatehouse grindstone highwayman ironmonger longbowman marketplace portcullis quartermaster reinforcements sharpshooter siegeworks stronghold treacherous warmonger".split(" ")};
+const BOSS=["the warlord demands your gold","no wall stands forever","burn the granary first","your archers are asleep","open the gate little lord"];
+const FOES=[["gob",1,46],["wolf2",1,70],["grunt",2,40],["oarch",1,44],["assn",2,58],["twar",3,30],["skel",2,42]];
+let G=null;
+function title(){G=null;const b=ls.get("mk.quill",{wave:0,wpm:0});MK.playMusic("knolls",.3);
+ $("app").innerHTML=`<div class="frame ttl"><h1>Quill &amp; Blade</h1><p>The archers on your wall are brave, but they only shoot at what you write down. Type the word over an attacker to loose an arrow at it.</p>
+ <p>Fill the volley meter with clean typing, then type <b style="color:var(--gold2)">volley</b> to hit everything at once. Bosses carry whole sentences.</p><button class="btn" id="go">Man the wall</button>
+ <p style="font-size:13px;margin-top:12px">Best wave ${b.wave} · best speed ${b.wpm} wpm</p></div>`;$("go").onclick=start}
+function start(){G={wave:0,foes:[],arrows:[],fx:[],hp:10,over:false,meter:0,typed:0,errors:0,chars:0,t:0,spawnT:0,left:0,kills:0,combo:0,startT:performance.now()};
+ $("app").innerHTML="";$("app").appendChild(cv);$("app").insertAdjacentHTML("beforeend",`<div class="typ"><input id="tin" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="type here"><span class="st" id="st"></span></div>`);
+ const tin=$("tin");tin.addEventListener("input",onType);tin.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key==="Escape"){tin.value="";onType()}});tin.focus();cv.onclick=()=>tin.focus();
+ MK.playMusic("frantic",.25);nextWave()}
+function nextWave(){G.wave++;const n=6+G.wave*2;G.left=n;G.spawnT=1.5;G.banner=2.4;if(G.wave%4===0)G.boss=true;else G.boss=false;sfx("horn-signals-horn-2",.4)}
+function wordFor(){const w=G.wave,r=Math.random();const pool=w<3?(r<.75?"s":"m"):w<6?(r<.4?"s":r<.85?"m":"l"):(r<.25?"s":r<.7?"m":"l");let x;
+ for(let i=0;i<20;i++){x=pick(WORDS[pool]);if(!G.foes.some(f=>f.word[0]===x[0]))break}return x}
+function spawn(boss){const lanes=[110,160,210,260],y=pick(lanes)+Math.random()*16;let f;
+ if(boss){const ph=pick(BOSS);f={id:pick(["warlord","twar","lich"]),word:ph,x:W+30,y:190,spd:13+G.wave,dmg:5,boss:true}}
+ else{const [id,dmg,spd]=pick(FOES.slice(0,Math.min(FOES.length,2+G.wave)));f={id,word:wordFor(),x:W+20,y,spd:spd*(1+G.wave*.11),dmg}}
+ f.done=0;f.bob=Math.random()*6;G.foes.push(f)}
+function target(){return G.foes.find(f=>f.lock)}
+function onType(){if(!G||G.over)return;const tin=$("tin");let v=tin.value.toLowerCase().replace(/^\s+/,"");
+ if(v==="volley"&&G.meter>=1){G.meter=0;tin.value="";G.foes.forEach(f=>{f.lock=false;fire(f,true)});sfx("bow",.7);G.fx.push({t:"VOLLEY!",x:W/2,y:90,l:1.4,c:"#ffd47a"});return}
+ let t=target();if(t&&!t.word.startsWith(v)){t.lock=false;t=null}
+ if(!t&&v){const c=G.foes.filter(f=>!f.dying&&f.word.startsWith(v)).sort((a,b)=>a.x-b.x);t=c[0];if(t)t.lock=true}
+ const prevLen=G._last||0;if(v.length>prevLen){G.chars++;
+  if(!t&&!"volley".startsWith(v)){G.errors++;G.combo=0;tin.classList.remove("bad");void tin.offsetWidth;tin.classList.add("bad");sfx("miss-1",.25);tin.value=v.slice(0,-1);v=tin.value}
+  else{G.combo++;G.meter=Math.min(1,G.meter+.007+Math.min(.01,G.combo*.0004))}}
+ G._last=v.length;G.foes.forEach(f=>f.done=f.lock?v.length:0);
+ if(t&&v===t.word){fire(t);tin.value="";G._last=0;t.lock=false}}
+function fire(f,volley){f.dying=true;G.arrows.push({x:WALL-8,y:120+Math.random()*120,tx:f.x,ty:f.y-24,f,t:0,volley});if(!volley)sfx("bow",.4);G.typed+=f.word.length+1}
+function update(dt){if(!G||G.over)return;G.t+=dt;G.banner=Math.max(0,(G.banner||0)-dt);
+ if(G.left>0){G.spawnT-=dt;if(G.spawnT<=0){if(G.boss&&G.left===1)spawn(true);else spawn(false);G.left--;G.spawnT=Math.max(.65,2.8-G.wave*.24)*(.7+Math.random()*.6)}}
+ else if(!G.foes.length){if(G.wave>=10){end(true);return}G.hp=Math.min(10,G.hp+1);nextWave()}
+ G.foes.forEach(f=>{if(!f.dying)f.x-=f.spd*dt;f.bob+=dt*8;if(f.x<WALL+18&&!f.dying&&!f.hit){f.hit=true;f.dying=true;f.gone=true;G.hp-=f.dmg;G.shake=.3;sfx("club",.6);G.fx.push({t:"-"+f.dmg,x:WALL+10,y:f.y-40,l:1,c:"#ff6a4a"})}});
+ G.arrows.forEach(a=>{a.t+=dt*2.6;if(a.t>=1&&!a.done){a.done=true;a.f.dead=true;G.kills++;sfx(MK.dieSnd(unit(a.f.id)),.35);G.fx.push({t:a.f.boss?"BOSS DOWN":"+"+a.f.word.length*10,x:a.f.x,y:a.f.y-50,l:1,c:"#ffd47a"});if(Math.random()<.5&&!a.volley)sfx(MK.hitSnd(unit(a.f.id)),.25)}});
+ G.arrows=G.arrows.filter(a=>!a.done);G.foes=G.foes.filter(f=>!f.dead&&!f.gone);G.fx.forEach(f=>f.l-=dt);G.fx=G.fx.filter(f=>f.l>0);G.shake=Math.max(0,(G.shake||0)-dt);
+ if(G.hp<=0)end(false);
+ const mins=(performance.now()-G.startT)/60000,wpm=Math.round(G.typed/5/Math.max(.1,mins)),acc=Math.round(100*(G.chars-G.errors)/Math.max(1,G.chars));G.wpm=wpm;G.acc=acc;
+ const st=$("st");if(st)st.innerHTML=`Wave <b>${G.wave}</b>/10 · <b>${wpm}</b> wpm · <b>${acc}%</b>`}
+function end(win){G.over=true;const b=ls.get("mk.quill",{wave:0,wpm:0});b.wave=Math.max(b.wave,win?10:G.wave);b.wpm=Math.max(b.wpm,G.wpm||0);ls.set("mk.quill",b);$("tin").blur();
+ MK.ending({title:win?"The wall holds":"The wall is breached",img:IMG(unit(win?"bow":"warlord").spr),music:win?"victory":"defeat",text:`Wave ${G.wave} · ${G.kills} attackers felled · ${G.wpm} words a minute at ${G.acc}% accuracy.`,buttons:[["Again",start],["Title",title]]})}
+function draw(){if(!G||!cv.isConnected)return;const sh=G.shake?Math.sin(performance.now()/25)*G.shake*12:0;g.save();g.translate(sh,0);
+ const sky=g.createLinearGradient(0,0,0,H);sky.addColorStop(0,"#3a5070");sky.addColorStop(.3,"#5a7a52");sky.addColorStop(1,"#2e4626");g.fillStyle=sky;g.fillRect(-20,0,W+40,H);
+ for(let i=0;i<9;i++){const x=(i*97+40)%W+60,y=100+(i*53)%170;if(x<WALL+30)continue;MK.tile(g,"terrain/embellishments/"+(i%2?"flowers-mixed.png":"stones-small.png"),x-20,y-20,40)}
+ // the wall
+ g.fillStyle="#5c5650";g.fillRect(0,40,WALL,H);for(let y=40;y<H;y+=18)for(let x=(y/18)%2?-12:0;x<WALL;x+=24){g.fillStyle=((x+y)/6)%3<1?"#6a645c":"#615b54";g.fillRect(x+1,y+1,22,16)}
+ for(let x=0;x<WALL;x+=22){g.fillStyle="#6a645c";g.fillRect(x,22,14,20)}g.fillStyle="rgba(0,0,0,.25)";g.fillRect(WALL-6,40,6,H);
+ for(let i=0;i<3;i++)MK.sprite(g,unit("bow").spr,0,26+i*22,46+i*2,.7,false);
+ // wall hp
+ for(let i=0;i<10;i++){g.fillStyle=i<G.hp?"#e2584a":"#3a2020";g.fillRect(8+i*7,H-14,5,8)}
+ // foes
+ const tgt=target();G.foes.slice().sort((a,b)=>a.y-b.y).forEach(f=>{const by=Math.abs(Math.sin(f.bob))*3;MK.sprite(g,unit(f.id).spr,1,f.x,f.y-by,f.boss?1.2:.85,true,f.dying?.5:1);
+  g.font=`800 ${f.boss?15:16}px ui-monospace,Menlo,Consolas,monospace`;const w=g.measureText(f.word).width,bx=Math.min(W-w-10,Math.max(WALL+4,f.x-w/2-6)),by2=f.y-(f.boss?92:70);
+  g.fillStyle=f===tgt?"rgba(40,26,8,.92)":"rgba(10,12,18,.78)";g.fillRect(bx,by2-16,w+12,22);if(f===tgt){g.strokeStyle="#ffd47a";g.lineWidth=2;g.strokeRect(bx,by2-16,w+12,22);g.lineWidth=1}
+  g.textAlign="left";const done=f.done||0;g.fillStyle="#ffd47a";g.fillText(f.word.slice(0,done),bx+6,by2);g.fillStyle="#f2ead6";g.fillText(f.word.slice(done),bx+6+g.measureText(f.word.slice(0,done)).width,by2)});
+ // arrows
+ G.arrows.forEach(a=>{const k=Math.min(1,a.t),x=a.x+(a.f.x-a.x)*k,y=a.y+(a.f.y-30-a.y)*k-Math.sin(k*Math.PI)*60,dx=(a.f.x-a.x),dy=(a.f.y-30-a.y)-Math.cos(k*Math.PI)*60*Math.PI;const ang=Math.atan2(dy,dx);
+  g.save();g.translate(x,y);g.rotate(ang);g.fillStyle="#8a6a3a";g.fillRect(-14,-1,22,2);g.fillStyle="#ddd";g.beginPath();g.moveTo(8,-3);g.lineTo(13,0);g.lineTo(8,3);g.fill();g.fillStyle="#c03030";g.fillRect(-14,-3,4,6);g.restore()});
+ G.fx.forEach(f=>{g.globalAlpha=Math.min(1,f.l);g.font="900 18px Georgia";g.textAlign="center";g.fillStyle="#000";g.fillText(f.t,f.x+1,f.y+1-(1-f.l)*20);g.fillStyle=f.c;g.fillText(f.t,f.x,f.y-(1-f.l)*20);g.globalAlpha=1});
+ // volley meter
+ g.fillStyle="#000";g.fillRect(W-170,10,160,12);g.fillStyle=G.meter>=1?"#ffd47a":"#8c7ae6";g.fillRect(W-169,11,158*G.meter,10);g.font="800 10px system-ui";g.textAlign="right";g.fillStyle="#fff";g.fillText(G.meter>=1?"TYPE  volley":"VOLLEY",W-14,36);
+ if(G.banner>0){g.globalAlpha=Math.min(1,G.banner);g.font="900 34px Georgia";g.textAlign="center";g.fillStyle="#000";g.fillText(G.boss?`Wave ${G.wave}: a warlord comes`:`Wave ${G.wave}`,W/2+2,H/2+2);g.fillStyle="#ffd47a";g.fillText(G.boss?`Wave ${G.wave}: a warlord comes`:`Wave ${G.wave}`,W/2,H/2);g.globalAlpha=1}
+ g.restore()}
+MK.loop(update,draw);
+MK.preload(FOES.map(f=>unit(f[0]).spr).concat([unit("bow").spr,unit("warlord").spr,unit("lich").spr]));
+title();
+</script></body></html>
