@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1">
+<title>Banners of Ashvale · Mercenary Keep</title><link rel="stylesheet" href="mk.css">
+<style>
+html,body{overscroll-behavior:none}
+#app{max-width:1000px;margin:0 auto}
+#game{display:flex;flex-direction:column;height:calc(100dvh - 50px)}
+#hud{display:flex;gap:10px;align-items:center;padding:6px 10px;font:700 13px system-ui;color:var(--mute);background:rgba(10,13,20,.92);border-bottom:1px solid var(--line);white-space:nowrap;overflow-x:auto}
+#hud b{color:var(--gold2)}#hud .sp{flex:1}#hud .tod{display:flex;align-items:center;gap:4px}
+#mapw{position:relative;flex:1;min-height:0;background:#0b0e14;overflow:hidden}
+#cv{position:absolute;inset:0;width:100%;height:100%;touch-action:none;display:block}
+#banner{position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);font:900 26px Georgia,serif;color:var(--gold2);text-shadow:0 2px 6px #000;pointer-events:none;opacity:0;transition:opacity .3s;text-align:center;white-space:nowrap}
+#banner.on{opacity:1}
+#zoom{position:absolute;right:8px;top:8px;display:flex;flex-direction:column;gap:4px}#zoom button{width:36px;height:36px;padding:0;font-size:18px}
+#sheet{background:linear-gradient(#182033,#10151f);border-top:1px solid var(--line);padding:8px 10px calc(8px + env(safe-area-inset-bottom));min-height:132px}
+.uc{display:grid;grid-template-columns:58px 1fr auto;gap:8px;align-items:center}
+.uc .pic{width:58px;height:58px;object-fit:contain;background:#0b0f18;border-radius:8px;border:1px solid var(--line)}
+.uc b{font:800 15px Georgia,serif;color:var(--gold2)}.uc small{color:var(--mute);font-size:11px}
+.bars{display:grid;grid-template-columns:auto 1fr;gap:2px 6px;align-items:center;font-size:11px;color:var(--mute);margin-top:3px}
+.bar{height:6px;background:#1a1a24;border-radius:3px;overflow:hidden}.bar i{display:block;height:100%}
+.atk{font-size:12px;color:var(--ink);line-height:1.45;text-align:right}.atk span{color:var(--mute)}
+.btns{display:flex;gap:6px;margin-top:8px}.btns .btn{flex:1;padding:10px 6px;font-size:14px}.btns .btn.alt{font-weight:700}
+.fc{display:grid;grid-template-columns:1fr auto 1fr;gap:3px 8px;align-items:center;text-align:center;font-size:13px}
+.fc .hd{font:800 14px Georgia,serif;color:var(--gold2)}.fc .lb{font-size:10px;color:var(--mute);text-transform:uppercase;letter-spacing:.06em}
+.wpn{display:flex;gap:6px;justify-content:center;margin:6px 0}.wpn button{padding:6px 10px}.wpn button.on{border-color:var(--gold2);color:var(--gold2)}
+.rec{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:6px;text-align:left}
+.rec button{display:grid;grid-template-columns:44px 1fr;gap:6px;align-items:center;padding:6px;border-radius:8px;background:var(--card);border:1px solid var(--line);color:var(--ink);font-size:11px}
+.rec button:disabled{opacity:.4}.rec img{width:44px;height:44px;object-fit:contain}.rec b{font-size:13px;color:var(--gold2)}
+.camp{text-align:center;padding:18px 14px}.camp p{color:var(--mute)}.camp .sc{display:flex;flex-direction:column;gap:8px;max-width:420px;margin:12px auto}
+.camp .sc button{display:flex;gap:10px;align-items:center;text-align:left;padding:10px;border-radius:10px;background:var(--card);border:1px solid var(--line);color:var(--ink)}.camp .sc button:disabled{opacity:.4}.camp .sc b{color:var(--gold2)}
+.mkbar{position:relative}
+</style></head><body>
+<div id="app"></div>
+<script src="roster.js"></script><script src="mk.js"></script><script src="engine.js"></script>
+<script>
+"use strict";
+// Banners of Ashvale: a hex strategy campaign made for one thumb. Recruit at your keep, take villages for gold,
+// mind the time of day, and keep your veterans alive from battle to battle.
+const {$,IMG,unit,pick,ri,shuffle,sfx,ls,toast,hex}=MK;
+MK.topbar("ashvale");
+const S=32,SQ3=Math.sqrt(3);
+// ---------- terrain: [move cost, defence %] per movement type
+const TER={g:"Grassland",f:"Forest",h:"Hills",m:"Mountains",w:"Deep water",s:"Ford",v:"Village",c:"Castle",k:"Keep",r:"Road",S:"Swamp"};
+const MOVE={foot:{g:[1,40],f:[2,50],h:[2,50],m:[3,60],w:[99,0],s:[3,20],v:[1,60],c:[1,60],k:[1,60],r:[1,40],S:[3,20]},
+ mounted:{g:[1,40],f:[3,30],h:[2,40],m:[99,0],w:[99,0],s:[4,20],v:[1,40],c:[1,40],k:[1,40],r:[1,40],S:[4,20]},
+ elf:{g:[1,40],f:[1,70],h:[2,50],m:[3,60],w:[99,0],s:[3,20],v:[1,60],c:[1,60],k:[1,60],r:[1,40],S:[2,30]},
+ dwarf:{g:[1,30],f:[1,30],h:[1,60],m:[1,70],w:[99,0],s:[3,20],v:[1,50],c:[1,60],k:[1,60],r:[1,30],S:[3,20]},
+ fly:{g:[1,50],f:[1,50],h:[1,50],m:[1,50],w:[1,50],s:[1,50],v:[1,50],c:[1,50],k:[1,50],r:[1,50],S:[1,50]},
+ undead:{g:[1,40],f:[2,50],h:[2,50],m:[3,60],w:[3,10],s:[2,20],v:[1,60],c:[1,60],k:[1,60],r:[1,40],S:[2,30]},
+ drake:{g:[1,30],f:[1,40],h:[1,40],m:[1,40],w:[1,20],s:[1,20],v:[1,40],c:[1,40],k:[1,40],r:[1,30],S:[1,30]}};
+const MT=id=>{const r=unit(id);if(["horse","cav","wolf","wolf2","boar","m_gwolf","m_dwolf"].includes(id))return "mounted";if(["gryph","gryphon2","glider","sky","ghost","m_falcon","m_efalcon","m_roc","m_wisp"].includes(id))return "fly";
+ if(r.fac==="drake")return "drake";if(r.fac==="undead")return "undead";if(r.fac==="rebel")return "elf";if(["dfight","thunder","guard","ulf","rune","dlord"].includes(id))return "dwarf";return "foot"};
+const ALIGN={loyal:"lawful",drake:"lawful",north:"chaotic",undead:"chaotic",rebel:"neutral",knalgan:"neutral",beast:"neutral"};
+const TOD=[["Dawn","🌄",0],["Morning","☀️",25],["Afternoon","🌤️",25],["Dusk","🌅",0],["First watch","🌙",-25],["Second watch","🌑",-25]];
+const SIDES=[{n:"Your company",c:"#4f86e0"},{n:"The enemy",c:"#d24a33"},{n:"Allies of the enemy",c:"#5fae4a"}];
+const TRAITS={strong:{n:"strong",d:"+1 melee damage, +1 HP"},quick:{n:"quick",d:"+1 move, −5% HP"},resilient:{n:"resilient",d:"+4 HP"},intelligent:{n:"intelligent",d:"−20% XP to level"},dextrous:{n:"dextrous",d:"+1 ranged damage"}};
+// ---------- units, built from the shared roster
+let UID=1;
+function mkUnit(id,side,o){o=o||{};const r=unit(id),mt=MT(id),tier=r.tier,magic=r.ab.includes("magic");const lv=o.lv||(tier>=4?3:tier>=3?2:1);
+ const u={uid:UID++,id,side,lv,promo:lv>=2&&tier<3,mt,align:id==="thief"?"chaotic":ALIGN[r.fac]||"neutral",traits:[],heals:r.ab.includes("heals"),leader:!!o.leader,xp:0,moved:0,attacked:false,c:0,r:0,resting:true,
+  max:Math.round(r.hp*1.5+6+(tier>=3?6:0)),mv:mt==="mounted"?8:mt==="dwarf"?4:mt==="fly"?6:id==="corpse"?4:5,atk:[]};
+ const plus=tier>=3?2:0;
+ if(r.t==="m")u.atk.push({n:"melee",rng:"melee",dmg:r.dmg+3+plus,str:r.str,first:r.ab.includes("first"),charge:r.ab.includes("charge"),snd:r.wp});
+ else{u.atk.push({n:"melee",rng:"melee",dmg:magic?4:Math.min(r.dmg+1,Math.round(r.dmg*.5)+3),str:magic?1:2,snd:"sword-human"});u.atk.push({n:"ranged",rng:"ranged",dmg:r.dmg+3+plus,str:r.str,magic,snd:r.wp})}
+ if(side!==0||o.traits!==false){const pool=Object.keys(TRAITS).filter(t=>t!=="dextrous"||r.t==="r");if(r.fac!=="undead")u.traits=shuffle(pool).slice(0,2)}
+ u.traits.forEach(t=>{if(t==="strong"){u.max+=1;u.atk.forEach(a=>{if(a.rng==="melee")a.dmg++})}if(t==="quick"){u.mv++;u.max=Math.round(u.max*.95)}if(t==="resilient")u.max+=4;if(t==="dextrous")u.atk.forEach(a=>{if(a.rng==="ranged")a.dmg++})});
+ if(lv>=2&&tier<3){u.max=Math.round(u.max*1.3);u.atk.forEach(a=>a.dmg=Math.round(a.dmg*1.3))}if(lv>=3){u.max=Math.round(u.max*1.2);u.atk.forEach(a=>a.dmg+=2)}
+ if(o.leader){u.max+=8}u.hp=u.max;u.maxxp=Math.round(34*lv*(u.traits.includes("intelligent")?.8:1));u.cost=10+tier*5+(mt==="mounted"?3:0);return u}
+const uname=u=>u.promo&&unit(u.id).n2?unit(u.id).n2:unit(u.id).n;
+const uspr=u=>u.promo&&unit(u.id).spr2?unit(u.id).spr2:unit(u.id).spr;
+function levelUp(u){u.xp-=u.maxxp;if(u.lv===1&&unit(u.id).n2){u.lv=2;u.promo=true;u.max=Math.round(u.max*1.3);u.atk.forEach(a=>a.dmg=Math.round(a.dmg*1.3));u.maxxp=Math.round(u.maxxp*1.6)}else{u.max+=3;u.lv=Math.max(u.lv,2)}u.hp=u.max;sfx("fanfare-short",.45);floatAt(u.c,u.r,"LEVEL UP","#b6a6ff")}
+// ---------- the campaign
+const RECRUITS=[["spear","bow","horse","mage","hvy","fencer","thunder","efight"],["spear","bow","horse","mage","hvy","fencer","thunder","efight","earch","dfight","white","gryph"]];
+const SCEN=[{n:"Border Village",d:"Orc raiders have taken the border villages. Kill their chieftain.",enemy:"north",pool:["gob","grunt","wolf","oarch","grunt","whelp"],leader:"grunt",ll:2,gold:[100,70],inc:[0,0],turns:18,map:"m1",tod:0,music:"northerners"},
+ {n:"The Drowned Fen",d:"Something walks in the fen at night. Find the necromancer and end it.",enemy:"undead",pool:["skel","corpse","ghoul","adept","skel","ghost"],leader:"adept",ll:2,gold:[0,80],inc:[0,1],turns:20,map:"fen",tod:3,music:"underground"},
+ {n:"Ashpeak Pass",d:"Drakes hold the only pass through the Ashpeaks. Break their flight-leader.",enemy:"drake",pool:["saur","augur","burner","clash","glider"],leader:"flare",ll:2,gold:[0,95],inc:[0,2],turns:20,map:"pass",tod:1,music:"breaking_the_chains"},
+ {n:"Hold the Bridge",d:"The warlord's army is coming over the river. Hold until the 12th turn, or kill their captain.",enemy:"north",pool:["grunt","oarch","wolf","assn","twar","gob","grunt"],leader:"slayer",ll:2,gold:[0,120],inc:[0,4],turns:12,survive:true,map:"bridge",tod:4,music:"frantic"},
+ {n:"Ashvale Keep",d:"The warlord himself, and a lich he pays in souls. Bring down the warlord.",enemy:"north",pool:["grunt","twar","oarch","assn","wolf"],leader:"warlord",ll:3,gold:[0,110],inc:[0,3],turns:24,map:"keep",tod:0,ally:{fac:"undead",pool:["skel","ghoul","adept","blade"],leader:"lich",gold:50},music:"the_dangerous_symphony"}];
+let CAMP=null,B=null;
+// ---------- maps: one hand-built, the rest grown from a seed (same seed, same map)
+const M1=["fhgggcggfmm","ffggckcggfm","fgvgcgcgvgh","ggggrrrgggf","hgfgrgffghh","gvgfrggvgfh","ggggrgsswww","fffgrrsswwg","gvhgggrgvgg","ggggfgrgggf","hfggvfrgfgh","gggfggrggvg","fgvgccrcggf","ffgcgkcgfgh","mfgggcggghm"];
+function genMap(style,seed){const R=MK.rng(seed),W=11,H=15;for(let t=0;t<60;t++){const m=Array.from({length:H},()=>Array(W).fill("g"));
+ const blob=(ch,n,cMin,cMax,rMin,rMax)=>{let c=R.int(cMin,cMax),r=R.int(rMin,rMax);for(let i=0;i<n;i++){if(m[r]&&m[r][c]!==undefined)m[r][c]=ch;const nb=hex.nb(c,r).filter(([a,b])=>a>=0&&b>=0&&a<W&&b<H);[c,r]=R.pick(nb)}};
+ const A={fen:{S:6,w:3,f:3,h:1,m:0},pass:{m:6,h:6,f:2,S:0,w:0},bridge:{f:4,h:3,m:1,S:1,w:0},keep:{f:3,h:4,m:2,S:1,w:0}}[style];
+ for(let i=0;i<A.f;i++)blob("f",R.int(3,6),0,10,2,12);for(let i=0;i<A.h;i++)blob("h",R.int(3,5),0,10,2,12);for(let i=0;i<A.m;i++)blob("m",R.int(2,4),0,10,3,11);for(let i=0;i<A.S;i++)blob("S",R.int(3,6),0,10,3,11);for(let i=0;i<A.w;i++)blob("w",R.int(2,4),0,10,4,10);
+ if(style==="bridge"){for(let c=0;c<W;c++){m[7][c]="w";m[6][c]=R()<.5?"w":m[6][c]}m[7][2]="s";m[7][8]="s";m[6][5]="r";m[7][5]="r";m[8][5]="r";m[6][2]="s";m[6][8]="s"}
+ if(style==="pass"){for(let r=4;r<11;r++){const c=R.int(3,7);m[r][c]=R()<.5?"h":"g";m[r][c+1]="g"}}
+ // keeps and castles at both ends (and a side keep for allies)
+ const stamp=(kc,kr)=>{m[kr][kc]="k";hex.nb(kc,kr).slice(0,4).forEach(([c,r])=>{if(m[r]&&m[r][c]!==undefined)m[r][c]="c"})};stamp(5,13);stamp(5,1);if(style==="keep")stamp(9,4);
+ // villages, spread out
+ let v=0;for(let k=0;k<200&&v<10;k++){const c=R.int(0,W-1),r=R.int(1,H-2);if("gfhS".includes(m[r][c])&&!hasNear(m,c,r,"v",2)&&!hasNear(m,c,r,"k",1)){m[r][c]="v";v++}}
+ // roads from keep to keep
+ if(style!=="fen"){let c=5,r=12;while(r>2){r--;if(m[r][c]!=="w"&&m[r][c]!=="v"&&m[r][c]!=="c"&&m[r][c]!=="k")m[r][c]=style==="bridge"&&r===7?"r":"r";if(R()<.3)c=Math.max(2,Math.min(8,c+R.pick([-1,1])))}}
+ const ok=hex.reach(5,13,99,(c,r)=>c<0||r<0||c>=W||r>=H?Infinity:MOVE.foot[m[r][c]][0]>=99?Infinity:MOVE.foot[m[r][c]][0]).cost.has("5,1");if(ok)return m.map(r=>r.join(""))}
+ return M1}
+function hasNear(m,c,r,ch,d){for(let rr=r-d;rr<=r+d;rr++)for(let cc=c-d;cc<=c+d;cc++)if(m[rr]&&m[rr][cc]===ch&&hex.dist([c,r],[cc,rr])<=d)return true;return false}
+// ---------- battle setup
+function startScenario(i){CAMP._snap=JSON.stringify({...CAMP,_snap:undefined});const sc=SCEN[i];const rows=sc.map==="m1"?M1:genMap(sc.map,1000+i*77);const map=rows.map(r=>[...r]),H=map.length,W=map[0].length;
+ B={sci:i,sc,map,W,H,units:[],vill:{},gold:[CAMP.gold+sc.gold[0],sc.gold[1],sc.ally?sc.ally.gold:0],turn:1,side:0,sel:null,reach:null,undo:null,fx:[],over:false,sides:sc.ally?3:2,ai:[1,2],fast:ls.get("mk.ashFast",false)};
+ const keeps=[];map.forEach((row,r)=>row.forEach((ch,c)=>{if(ch==="k")keeps.push([c,r])}));
+ const pk=keeps.find(([c,r])=>r>H/2),ek=keeps.find(([c,r])=>r<3),ak=keeps.find(([c,r])=>r>=3&&r<=H/2);
+ let lead=CAMP.roster.find(u=>u.leader&&u.hp>0);if(!lead){lead=mkUnit("lieut",0,{leader:true});CAMP.roster=CAMP.roster.filter(u=>!u.leader);CAMP.roster.unshift(lead)}lead.hp=lead.max;place(lead,...pk);
+ const el=mkUnit(sc.leader,1,{leader:true,lv:sc.ll});place(el,...ek);
+ if(sc.ally&&ak){const al=mkUnit(sc.ally.leader,2,{leader:true,lv:3});place(al,...ak)}
+ // the enemy starts with a few units already out
+ for(let k=0;k<1+Math.floor(i/2);k++){const u=mkUnit(pick(sc.pool),1);const spot=freeNear(ek,3);if(spot)place(u,...spot)}
+ B.units.forEach(u=>{u.moved=0;u.attacked=false});
+ layout();cam.fit();centerOn(lead.c,lead.r);MK.playMusic(sc.music,.3);buildTerrain();newTurnFX();
+ MK.modal(`<h2>${sc.n}</h2><p>${sc.d}</p><p style="color:var(--mute);font-size:13px">${sc.survive?"Survive":"Turn limit"}: ${sc.turns} turns · starting gold ${B.gold[0]}</p><button class="btn" id="ok">To arms</button>`);$("ok").onclick=()=>{MK.closeModal();save()}}
+function place(u,c,r){u.c=c;u.r=r;if(!B.units.includes(u))B.units.push(u)}
+function freeNear(p,d){const opts=[];for(let r=0;r<B.H;r++)for(let c=0;c<B.W;c++){if(hex.dist(p,[c,r])<=d&&!unitAt(c,r)&&cost("foot",c,r)<99)opts.push([c,r])}return opts.length?pick(opts):null}
+const inb=(c,r)=>c>=0&&r>=0&&c<B.W&&r<B.H;
+const ter=(c,r)=>B.map[r][c];
+const unitAt=(c,r)=>B.units.find(u=>u.hp>0&&u.c===c&&u.r===r);
+const cost=(mt,c,r)=>inb(c,r)?MOVE[mt][ter(c,r)][0]:99;
+const defOf=(u,c,r)=>MOVE[u.mt][ter(c??u.c,r??u.r)][1];
+const enemies=(a,b)=>(a.side===0)!==(b.side===0);
+const tod=()=>TOD[(B.turn-1+B.sc.tod)%6];
+function todMult(u){const t=tod()[2];return u.align==="lawful"?1+t/100:u.align==="chaotic"?1-t/100:1}
+// zones of control: a hex next to an enemy (level 1+) ends your move
+const zoc=(u,c,r)=>u.mt!=="fly"&&hex.nb(c,r).some(([a,b])=>{const o=unitAt(a,b);return o&&enemies(o,u)&&o.lv>0});
+function reachOf(u){const budget=u.mv-u.moved;return hex.reach(u.c,u.r,budget,(c,r)=>{if(!inb(c,r))return Infinity;const o=unitAt(c,r);if(o&&enemies(o,u))return Infinity;const k=cost(u.mt,c,r);return k>=99?Infinity:k},(c,r)=>zoc(u,c,r))}
+// ---------- combat maths (exact odds for the forecast)
+function hitP(w,t,c,r){return w.magic?70:Math.max(10,100-defOf(t,c,r))}
+function dmgOf(a,w,t,isAtk,charging){let d=w.dmg*todMult(a);if(charging)d*=2;return Math.max(1,Math.round(d))}
+function counterWpn(d,aw){const ws=d.atk.filter(w=>w.rng===aw.rng);return ws.sort((x,y)=>y.dmg*y.str-x.dmg*x.str)[0]||null}
+function strikeOrder(aw,dw){const seq=[];let na=aw.str,nd=dw?dw.str:0;const df=dw&&dw.first&&!aw.first;while(na||nd){if(df){if(nd){seq.push(1);nd--}if(na){seq.push(0);na--}}else{if(na){seq.push(0);na--}if(nd){seq.push(1);nd--}}}return seq}
+function forecast(a,aw,d,from){const dw=counterWpn(d,aw),ch=aw.charge,pa=hitP(aw,d,d.c,d.r),pd=dw?hitP(dw,a,from[0],from[1]):0,da=dmgOf(a,aw,d,true,ch),dd=dw?dmgOf(d,dw,a,false,ch):0;
+ let dist=new Map([[a.hp*1000+d.hp,1]]);const add=(m,k,p)=>m.set(k,(m.get(k)||0)+p);
+ for(const s of strikeOrder(aw,dw)){const nx=new Map();for(const [k,p] of dist){const ha=Math.floor(k/1000),hd=k%1000;if(ha<=0||hd<=0){add(nx,k,p);continue}
+  if(s===0){add(nx,ha*1000+Math.max(0,hd-da),p*pa/100);add(nx,k,p*(1-pa/100))}else{add(nx,Math.max(0,ha-dd)*1000+hd,p*pd/100);add(nx,k,p*(1-pd/100))}}dist=nx}
+ let kill=0,die=0,ea=0,ed=0;for(const [k,p] of dist){const ha=Math.floor(k/1000),hd=k%1000;if(hd<=0)kill+=p;if(ha<=0)die+=p;ea+=ha*p;ed+=hd*p}
+ return {dw,pa,pd,da,dd,kill,die,ea,ed}}
+// ---------- turn flow
+function newTurnFX(){banner(`Turn ${B.turn} · ${tod()[1]} ${tod()[0]}`);hudDraw()}
+function startSideTurn(side){B.side=side;B.units.filter(u=>u.side===side&&u.hp>0).forEach(u=>{let h=0;const t=ter(u.c,u.r);if(t==="v")h=8;
+  const healer=B.units.find(o=>o.hp>0&&o.heals&&!enemies(o,u)&&o!==u&&hex.dist([o.c,o.r],[u.c,u.r])===1);if(healer)h=Math.max(h,healer.lv>=2?8:4);if(u.resting)h+=2;
+  if(h&&u.hp<u.max){const v=Math.min(h,u.max-u.hp);u.hp+=v;floatAt(u.c,u.r,"+"+v,"#8be08b")}u.moved=0;u.attacked=false;u.resting=true});
+ B.gold[side]+=income(side)}
+function income(side){const v=Object.values(B.vill).filter(s=>s===side).length,upkeep=B.units.filter(u=>u.side===side&&u.hp>0&&!u.leader).reduce((a,u)=>a+u.lv,0);return 2+v*2-Math.max(0,upkeep-v)+(side>0?B.sc.inc[1]:0)}
+async function endTurn(){if(B.side!==0||B.busy||B.over)return;B.sel=null;B.reach=null;B.undo=null;sheet();B.busy=true;
+ for(let s=1;s<B.sides;s++){if(B.over)return;startSideTurn(s);banner(SIDES[s].n+"'s turn");await aiTurn(s);if(B.over)return}
+ B.turn++;if(B.turn>B.sc.turns){B.busy=false;if(B.sc.survive)winBattle();else loseBattle("Time ran out.");return}
+ startSideTurn(0);B.busy=false;newTurnFX();sheet();save()}
+// ---------- player input
+function tap(c,r){if(!B||B.busy||B.over||B.side!==0)return;if(!inb(c,r)){B.sel=null;B.reach=null;sheet();return}const u=unitAt(c,r),S_=B.sel;
+ if(B.place){if(B.place.cells.some(([a,b])=>a===c&&b===r)&&!u){doRecruit(B.place.u,c,r)}else{B.place=null;sheet()}return}
+ if(B.fc){if(u&&u===B.fc.d){doAttack();return}B.fc=null;sheet();if(!u)return}
+ if(u&&u.side===0){if(S_===u){B.sel=null;B.reach=null}else{B.sel=u;B.reach=u.attacked?null:reachOf(u)}sfx("sword-1",.06);sheet();return}
+ if(u&&enemies(u,{side:0})&&S_&&!S_.attacked){const opts=hex.nb(c,r).filter(([a,b])=>inb(a,b)&&(a===S_.c&&b===S_.r||(B.reach&&B.reach.cost.has(a+","+b)&&!unitAt(a,b))));
+  if(opts.length){opts.sort((x,y)=>(x[0]===S_.c&&x[1]===S_.r?-1000:0)-(y[0]===S_.c&&y[1]===S_.r?-1000:0)||defOf(S_,y[0],y[1])-defOf(S_,x[0],x[1]));const from=opts[0];
+   const ws=S_.atk.filter(w=>true).map(w=>({w,f:forecast(S_,w,u,from)}));ws.sort((x,y)=>(y.f.kill*3+(u.hp-y.f.ed)/u.hp-y.f.die*2)-(x.f.kill*3+(u.hp-x.f.ed)/u.hp-x.f.die*2));
+   B.fc={a:S_,d:u,from,wi:S_.atk.indexOf(ws[0].w)};sheet();return}}
+ if(u){B.info=u;B.sel=null;B.reach=null;sheet();return}
+ if(S_&&B.reach&&B.reach.cost.has(c+","+r)&&!(c===S_.c&&r===S_.r)){moveUnit(S_,c,r,true);return}
+ B.sel=null;B.reach=null;B.info=null;B.tile=[c,r];sheet()}
+async function moveUnit(u,c,r,player){const R=player?B.reach:reachOf(u);const path=R.path(c,r);if(!path.length)return;const from=[u.c,u.r],moved0=u.moved;B.busy=true;
+ for(const [pc,pr] of path){u.c=pc;u.r=pr;if(!B.fast||player)await MK.wait(player?70:55)}u.moved+=R.cost.get(c+","+r);u.resting=false;
+ if(ter(c,r)==="v"&&B.vill[c+","+r]!==u.side){B.vill[c+","+r]=u.side;u.moved=u.mv;sfx("gold",.35);floatAt(c,r,"captured","#ffd47a");if(player)B.undo=null}else if(player)B.undo={u,from,moved:moved0};
+ if(zoc(u,c,r))u.moved=u.mv;B.busy=false;if(player){B.reach=u.moved<u.mv?reachOf(u):null;sheet();hudDraw()}}
+function undoMove(){const U=B.undo;if(!U)return;U.u.c=U.from[0];U.u.r=U.from[1];U.u.moved=U.moved;B.undo=null;B.sel=U.u;B.reach=reachOf(U.u);sheet()}
+async function doAttack(){const F=B.fc;if(!F)return;const {a,d,from}=F,w=a.atk[F.wi];B.fc=null;if(a.c!==from[0]||a.r!==from[1]){B.reach=reachOf(a);await moveUnit(a,from[0],from[1],true)}if(a.hp<=0||B.over)return;await fight(a,w,d);B.undo=null;a.attacked=true;a.moved=a.mv;B.sel=a.hp>0?a:null;B.reach=null;sheet();hudDraw();check()}
+async function fight(a,aw,d){B.busy=true;const dw=counterWpn(d,aw),ch=aw.charge;a.resting=false;d.resting=false;
+ for(const s of strikeOrder(aw,dw)){const [x,y,w]=s===0?[a,d,aw]:[d,a,dw];if(x.hp<=0||y.hp<=0)break;const p=hitP(w,y,y.c,y.r),dm=dmgOf(x,w,y,s===0,ch);
+  x.lunge={to:[y.c,y.r],t:1};sfx(MK.atkSnd({wp:w.snd}),.4);await MK.wait(B.fast&&a.side!==0?60:170);
+  if(MK.combat.roll(p)){y.hp=Math.max(0,y.hp-dm);floatAt(y.c,y.r,"-"+dm,"#ff8a6a");y.flash=1;sfx(MK.hitSnd(unit(y.id)),.35)}else{floatAt(y.c,y.r,"miss","#cfd8e8");sfx("miss-1",.2)}
+  await MK.wait(B.fast&&a.side!==0?80:260)}
+ const killer=d.hp<=0?a:a.hp<=0?d:null,dead=killer?(killer===a?d:a):null;
+ [a,d].forEach(u=>{if(u.hp>0){const o=u===a?d:a;u.xp+=o===dead?(o.lv?8*o.lv:4):o.lv;while(u.xp>=u.maxxp)levelUp(u)}});
+ if(dead){sfx(MK.dieSnd(unit(dead.id)),.5);floatAt(dead.c,dead.r,"defeated","#ffd47a");dead.dying=1;await MK.wait(350);B.units=B.units.filter(u=>u!==dead);if(dead.side===0&&!dead.leader)CAMP.fallen.push(uname(dead))}
+ B.busy=false;check()}
+function check(){if(B.over)return;const me=B.units.find(u=>u.side===0&&u.leader);if(!me){loseBattle("Your captain has fallen.");return}
+ if(!B.units.some(u=>u.side!==0&&u.leader&&(u.side===1||!B.sc.ally)))winBattle()}
+// ---------- recruiting
+function castleCells(lead){if(ter(lead.c,lead.r)!=="k")return [];const out=[],seen=new Set([lead.c+","+lead.r]),Q=[[lead.c,lead.r]];while(Q.length){const [c,r]=Q.shift();for(const [a,b] of hex.nb(c,r)){const k=a+","+b;if(!inb(a,b)||seen.has(k))continue;seen.add(k);if("ck".includes(ter(a,b))){Q.push([a,b]);if(!unitAt(a,b))out.push([a,b])}}}return out}
+function recruitMenu(){const lead=B.units.find(u=>u.side===0&&u.leader);const cells=castleCells(lead);if(!cells.length){toast(ter(lead.c,lead.r)==="k"?"The castle is full":"Move your captain onto the keep to recruit");return}
+ const list=RECRUITS[B.sci<2?0:1],recall=CAMP.roster.filter(u=>!u.leader&&!B.units.includes(u));
+ MK.modal(`<h2>Recruit</h2><p style="color:var(--mute)">Gold <b style="color:var(--gold2)">${B.gold[0]}</b></p><div class="rec">${list.map(id=>{const u=mkUnit(id,0,{traits:false});return `<button data-n="${id}" ${B.gold[0]<u.cost?"disabled":""}>${MK.sprImg(unit(id).spr,0,"")}<span><b>${unit(id).n}</b><br>${u.cost}g · ${u.max} HP · ${u.mv} mv<br>${u.atk.map(a=>`${a.dmg}×${a.str} ${a.rng}${a.magic?" ✦":""}`).join(", ")}</span></button>`}).join("")}</div>
+ ${recall.length?`<h3 style="margin-top:12px">Recall a veteran · 20g</h3><div class="rec">${recall.map((u,i)=>`<button data-rc="${i}" ${B.gold[0]<20?"disabled":""}>${MK.sprImg(uspr(u),0,"")}<span><b>${uname(u)}</b><br>Lv ${u.lv} · ${u.xp}/${u.maxxp} XP<br>${u.traits.join(", ")}</span></button>`).join("")}</div>`:""}<br><button class="btn alt" id="cx">Close</button>`);
+ document.querySelectorAll("[data-n]").forEach(b=>b.onclick=()=>{MK.closeModal();const u=mkUnit(b.dataset.n,0);startPlace(u,u.cost,cells)});
+ document.querySelectorAll("[data-rc]").forEach(b=>b.onclick=()=>{MK.closeModal();const u=recall[+b.dataset.rc];startPlace(u,20,cells)});$("cx").onclick=MK.closeModal}
+function startPlace(u,price,cells){if(cells.length===1){B.place={u,price,cells};doRecruit(u,...cells[0]);return}B.place={u,price,cells};B.sel=null;B.reach=null;sheet()}
+function doRecruit(u,c,r){const P=B.place;B.gold[0]-=P.price;u.hp=u.hp||u.max;u.moved=u.mv;u.attacked=true;place(u,c,r);if(!CAMP.roster.includes(u))CAMP.roster.push(u);B.place=null;sfx("gold",.4);floatAt(c,r,"recruited","#8be08b");sheet();hudDraw()}
+// ---------- the enemy
+async function aiTurn(side){const sc=B.sc;const pool=side===2?sc.ally.pool:sc.pool;
+ const lead=B.units.find(u=>u.side===side&&u.leader);
+ // recruit if the leader stands on a keep
+ const recruit=()=>{if(!lead||ter(lead.c,lead.r)!=="k")return;let cells=castleCells(lead);const cap=3+B.sci;while(cells.length&&B.units.filter(x=>x.side===side&&!x.leader).length<cap){const u=mkUnit(pick(pool),side);if(B.gold[side]<u.cost)break;B.gold[side]-=u.cost;const [c,r]=cells.shift();place(u,c,r);u.moved=u.mv;u.attacked=true}};
+ recruit();
+ const mine=()=>B.units.filter(u=>u.side===side&&u.hp>0&&!u.leader);
+ for(const u of [...mine(),lead].filter(Boolean)){if(B.over)return;if(u.hp<=0||u.attacked)continue;await aiUnit(u,side);if(B.fast)await MK.wait(10);else await MK.wait(60)}
+ if(lead&&lead.hp>0&&ter(lead.c,lead.r)==="k")recruit()}
+async function aiUnit(u,side){const R=reachOf(u),foes=B.units.filter(o=>o.hp>0&&enemies(o,u));let best=null;
+ const keep=u.leader?B.map.flatMap((row,r)=>row.map((ch,c)=>ch==="k"?[c,r]:null)).filter(Boolean).sort((a,b)=>hex.dist(a,[u.c,u.r])-hex.dist(b,[u.c,u.r]))[0]:null;
+ for(const [k] of R.cost){const [c,r]=k.split(",").map(Number);if(unitAt(c,r)&&unitAt(c,r)!==u)continue;if(u.leader&&keep&&hex.dist([c,r],keep)>2)continue;
+  for(const t of foes){if(hex.dist([c,r],[t.c,t.r])!==1)continue;for(const w of u.atk){const oc=u.c,or=u.r;u.c=c;u.r=r;const f=forecast(u,w,t,[c,r]);u.c=oc;u.r=or;
+   const v=(t.hp-f.ed)*(t.leader?2:1)+f.kill*(t.cost||20)*(t.leader?4:1.4)-(u.hp-f.ea)*.6-f.die*(u.leader?120:u.cost*1.1)+defOf(u,c,r)/12;if(!best||v>best.v)best={v,c,r,t,w}}}}
+ if(best&&best.v>(u.leader?6:0)){if(best.c!==u.c||best.r!==u.r)await moveUnit(u,best.c,best.r);if(u.hp>0&&best.t.hp>0){await fight(u,best.w,best.t);u.attacked=true}return}
+ // otherwise: leaders go home, others take villages or close in
+ let goals;if(u.leader&&keep)goals=[keep];else{const vs=[];B.map.forEach((row,r)=>row.forEach((ch,c)=>{if(ch==="v"&&B.vill[c+","+r]!==side&&(B.vill[c+","+r]===undefined||!enemies({side:B.vill[c+","+r]},{side})?true:true)&&!(B.vill[c+","+r]===side))vs.push([c,r])}));
+  const near=vs.filter(v=>hex.dist(v,[u.c,u.r])<=u.mv+1);goals=near.length&&Math.random()<.7?near:foes.map(f=>[f.c,f.r]).concat(vs.slice(0,3))}
+ if(u.hp<u.max*.35&&!u.leader){const myV=[];B.map.forEach((row,r)=>row.forEach((ch,c)=>{if(ch==="v"&&!unitAt(c,r))myV.push([c,r])}));if(myV.length)goals=myV}
+ if(!goals.length)return;const D=hex.flow(goals,(c,r)=>{const k=cost(u.mt,c,r);return k>=99?Infinity:k},B.W,B.H);let dest=null,bd=D[u.r*B.W+u.c];
+ for(const [k] of R.cost){const [c,r]=k.split(",").map(Number);if(unitAt(c,r)&&unitAt(c,r)!==u)continue;const v=D[r*B.W+c]-defOf(u,c,r)/100;if(v<bd){bd=v;dest=[c,r]}}
+ if(dest)await moveUnit(u,dest[0],dest[1])}
+// ---------- winning and losing
+function winBattle(){B.over=true;const left=Math.max(0,B.sc.turns-B.turn),carry=Math.round(B.gold[0]*.4)+left*5;CAMP.gold=Math.max(40,carry);
+ // the dead stay dead; everyone else is patched up for the next battle
+ CAMP.roster=CAMP.roster.filter(u=>u.hp>0);CAMP.roster.forEach(u=>{u.hp=u.max;u.moved=0;u.attacked=false});CAMP.done=Math.max(CAMP.done,B.sci+1);
+ const last=B.sci>=SCEN.length-1;ls.set("mk.ashvale",{camp:CAMP,battle:null});MK.playMusic("victory");
+ MK.modal(`<h2>${last?"Ashvale is free":"Victory"}</h2><p>${last?"The warlord is dead and the banners over Ashvale are yours.":B.sc.survive&&B.turn>B.sc.turns?"The bridge held.":"Their leader is down."}</p>
+  <p style="color:var(--mute)">${left} turns early · ${carry} gold carries over${CAMP.fallen.length?` · fallen so far: ${CAMP.fallen.join(", ")}`:""}</p><button class="btn" id="ok">${last?"Title":"March on"}</button>`);
+ $("ok").onclick=()=>{MK.closeModal();if(last){const b=ls.get("mk.ashBest",0);ls.set("mk.ashBest",b+1);ls.set("mk.ashvale",null);title()}else campaignMap()}}
+function loseBattle(why){B.over=true;MK.playMusic("defeat");ls.set("mk.ashvale",{camp:CAMP,battle:null});
+ MK.ending({title:"Defeat",text:`${why} You can try this battle again with the company you had at its start.`,buttons:[["Retry battle",()=>{CAMP=JSON.parse(CAMP._snap);startScenario(B.sci)}],["Title",title]]})}
+// ---------- saving: every player turn, so closing the tab never costs more than a turn
+function save(){if(!B||B.over)return;const snap={...B,units:B.units.map(u=>({...u,lunge:null,flash:0})),fx:[],sel:null,reach:null,fc:null,place:null,undo:null,busy:false,info:null};delete snap.sc;ls.set("mk.ashvale",{camp:CAMP,battle:snap})}
+function resume(sv){CAMP=sv.camp;const bt=sv.battle;B={...bt,sc:SCEN[bt.sci],fx:[],busy:false};const byUid={};CAMP.roster=CAMP.roster.map(u=>{const live=B.units.find(x=>x.uid===u.uid);return live||u});UID=Math.max(...B.units.map(u=>u.uid),...CAMP.roster.map(u=>u.uid))+1;
+ layout();cam.fit();const L=B.units.find(u=>u.side===0&&u.leader);if(L)centerOn(L.c,L.r);buildTerrain();MK.playMusic(B.sc.music,.3);hudDraw();sheet()}
+// ---------- screens
+function title(){B=null;const sv=ls.get("mk.ashvale",null),wins=ls.get("mk.ashBest",0);MK.playMusic("heroes_rite",.3);
+ $("app").innerHTML=`<div class="frame camp" style="margin:10px"><img src="${IMG(unit("lieut").spr)}" alt="" style="height:96px;image-rendering:pixelated"><h1>Banners of Ashvale</h1>
+ <p>A hex strategy campaign in five battles. Recruit at your keep, hold villages for gold, fight by daylight or under the moon, and bring your veterans home.</p>
+ ${sv?`<button class="btn" id="cont">Continue${sv.battle?" battle":" campaign"}</button><br><br>`:""}<button class="btn ${sv?"alt":""}" id="new">New campaign</button>
+ <p style="font-size:13px;margin-top:14px">Tap a unit, then a blue hex to move or a red enemy to see the odds. Pinch or use + and − to zoom; drag to look around.<br>Campaigns won: ${wins}</p></div>`;
+ $("new").onclick=()=>{const lead=mkUnit("lieut",0,{leader:true});CAMP={gold:0,roster:[lead],done:0,fallen:[]};campaignMap()};if($("cont"))$("cont").onclick=()=>{sv.battle?resume(sv):(CAMP=sv.camp,campaignMap())}}
+function campaignMap(){B=null;MK.playMusic("wanderer",.3);ls.set("mk.ashvale",{camp:CAMP,battle:null});
+ $("app").innerHTML=`<div class="frame camp" style="margin:10px"><h2>The road to Ashvale</h2><p>Gold carried: <b style="color:var(--gold2)">${CAMP.gold}</b> · veterans: ${CAMP.roster.filter(u=>!u.leader).length}</p>
+ <div class="sc">${SCEN.map((s,i)=>`<button data-s="${i}" ${i!==CAMP.done?"disabled":""}>${MK.sprImg(unit(s.leader).spr,1,"")}<span><b>${i+1}. ${s.n}</b>${i<CAMP.done?" ✓":""}<br><small>${s.d}</small></span></button>`).join("")}</div>
+ ${CAMP.roster.length>1?`<p style="font-size:13px">Your veterans: ${CAMP.roster.filter(u=>!u.leader).map(u=>`${uname(u)} (Lv ${u.lv})`).join(", ")}</p>`:""}</div>`;
+ document.querySelectorAll("[data-s]").forEach(b=>b.onclick=()=>startScenario(+b.dataset.s))}
+function layout(){$("app").innerHTML=`<div id="game"><div id="hud"></div><div id="mapw"><div id="zoom"><button class="mini" id="zi">+</button><button class="mini" id="zo">−</button></div><div id="banner"></div></div><div id="sheet"></div></div>`;
+ $("mapw").prepend(cv);$("zi").onclick=()=>zoomBy(1.25);$("zo").onclick=()=>zoomBy(.8);resize();hudDraw();sheet()}
+function hudDraw(){const h=$("hud");if(!h||!B)return;const t=tod(),vs=Object.values(B.vill).filter(s=>s===0).length;
+ h.innerHTML=`<span>Turn <b>${B.turn}</b>/${B.sc.turns}</span><span class="tod" title="${t[0]}: lawful ${t[2]>0?"+":""}${t[2]}%, chaotic ${-t[2]>0?"+":""}${-t[2]}%">${t[1]} <b>${t[0]}</b></span><span>💰 <b>${B.gold[0]}</b> <small>(+${income(0)})</small></span><span>🏠 <b>${vs}</b></span><span class="sp"></span><button class="mini" id="fastB">${B.fast?"⏩ fast":"▶ normal"}</button><button class="mini" id="menuB">☰</button>`;
+ $("fastB").onclick=()=>{B.fast=!B.fast;ls.set("mk.ashFast",B.fast);hudDraw()};$("menuB").onclick=()=>{MK.modal(`<h2>${B.sc.n}</h2><p>${B.sc.d}</p><p style="color:var(--mute);font-size:13px">Lawful units hit 25% harder by day and weaker at night; chaotic the reverse. Villages heal 8 and pay 2 gold. A hex next to an enemy stops your move.</p><button class="btn" id="m1">Resume</button> <button class="btn alt" id="m2">Save & quit</button>`);$("m1").onclick=MK.closeModal;$("m2").onclick=()=>{save();MK.closeModal();title()}}}
+const card=u=>{const t=ter(u.c,u.r);return `<div class="uc">${MK.sprImg(uspr(u),u.side?1:0,"pic")}<div><b>${uname(u)}</b> <small>Lv ${u.lv}${u.leader?" · leader":""} · ${u.align}</small>
+ <div class="bars"><span>HP</span><div class="bar"><i style="width:${100*u.hp/u.max}%;background:${u.hp/u.max>.5?"#5fbf4a":u.hp/u.max>.25?"#e0b030":"#e2584a"}"></i></div><span>XP</span><div class="bar"><i style="width:${100*u.xp/u.maxxp}%;background:#8c7ae6"></i></div></div>
+ <small>${u.hp}/${u.max} HP · ${u.mv-u.moved}/${u.mv} mv · ${TER[t]} ${defOf(u)}%${u.traits.length?" · "+u.traits.join(", "):""}${u.heals?" · heals":""}</small></div><div class="atk">${u.atk.map(a=>`${a.dmg}×${a.str} <span>${a.rng}${a.magic?" ✦":""}${a.charge?" charge":""}${a.first?" first":""}</span>`).join("<br>")}</div></div>`};
+function sheet(){const el=$("sheet");if(!el||!B)return;const lead=B.units.find(u=>u.side===0&&u.leader);
+ if(B.fc){const {a,d,from}=B.fc,w=a.atk[B.fc.wi];const oc=a.c,or=a.r;a.c=from[0];a.r=from[1];const f=forecast(a,w,d,from);a.c=oc;a.r=or;const pct=x=>Math.round(x*100)+"%";
+  el.innerHTML=`${a.atk.length>1?`<div class="wpn">${a.atk.map((x,i)=>`<button class="mini ${i===B.fc.wi?"on":""}" data-w="${i}">${x.rng} ${x.dmg}×${x.str}</button>`).join("")}</div>`:""}
+  <div class="fc"><span class="hd">${uname(a)}</span><span></span><span class="hd">${uname(d)}</span><span>${f.da}×${w.str}</span><span class="lb">damage</span><span>${f.dw?f.dd+"×"+f.dw.str:"no reply"}</span>
+  <span>${f.pa}%</span><span class="lb">to hit</span><span>${f.dw?f.pd+"%":"—"}</span><span>${a.hp} → ${f.ea.toFixed(0)}</span><span class="lb">HP (avg)</span><span>${d.hp} → ${f.ed.toFixed(0)}</span>
+  <span style="color:#ff8a6a">${pct(f.die)}</span><span class="lb">dies</span><span style="color:#ffd47a">${pct(f.kill)}</span></div>
+  <div class="btns"><button class="btn" id="goA">⚔ Attack</button><button class="btn alt" id="cxA">Cancel</button></div>`;
+  el.querySelectorAll("[data-w]").forEach(b=>b.onclick=()=>{B.fc.wi=+b.dataset.w;sheet()});$("goA").onclick=doAttack;$("cxA").onclick=()=>{B.fc=null;sheet()};return}
+ if(B.place){el.innerHTML=`<div style="text-align:center;padding:10px;color:var(--mute)">Tap a gold castle hex to place your <b style="color:var(--gold2)">${uname(B.place.u)}</b>.</div><div class="btns"><button class="btn alt" id="cxP">Cancel</button></div>`;$("cxP").onclick=()=>{B.place=null;sheet()};return}
+ const u=B.sel||B.info;let top="";if(u)top=card(u);else if(B.tile){const t=ter(...B.tile);top=`<div style="padding:6px 2px"><b style="color:var(--gold2)">${TER[t]}</b><br><small style="color:var(--mute)">Foot: ${MOVE.foot[t][0]>=99?"impassable":MOVE.foot[t][0]+" mv, "+MOVE.foot[t][1]+"% defence"} · Mounted: ${MOVE.mounted[t][0]>=99?"impassable":MOVE.mounted[t][0]+" mv"} · Elves: ${MOVE.elf[t][1]}% · Dwarves: ${MOVE.dwarf[t][1]}%${t==="v"?" · heals 8, pays 2 gold":""}</small></div>`}
+ else{const ready=B.units.filter(x=>x.side===0&&!x.attacked&&x.moved<x.mv).length;top=`<div style="padding:6px 2px;color:var(--mute);font-size:13px">${B.side===0?`${ready} unit${ready===1?"":"s"} can still act. Tap one to command it.`:"The enemy is moving…"}</div>`}
+ const onKeep=lead&&ter(lead.c,lead.r)==="k";
+ el.innerHTML=top+`<div class="btns"><button class="btn alt" id="rcB" ${B.side===0&&!B.busy?"":"disabled"}>${onKeep?"Recruit":"Recruit…"}</button><button class="btn alt" id="unB" ${B.undo?"":"disabled"}>Undo</button><button class="btn alt" id="nxB">Next</button><button class="btn" id="etB" ${B.side===0&&!B.busy?"":"disabled"}>End turn</button></div>`;
+ $("rcB").onclick=recruitMenu;$("unB").onclick=undoMove;$("etB").onclick=()=>{const ready=B.units.filter(x=>x.side===0&&!x.attacked&&x.moved===0).length;if(ready>=3&&!confirm(`${ready} units haven't moved. End the turn anyway?`))return;endTurn()};
+ $("nxB").onclick=()=>{const list=B.units.filter(x=>x.side===0&&!x.attacked&&x.moved<x.mv);if(!list.length){toast("Everyone has acted");return}const i=(list.indexOf(B.sel)+1)%list.length;B.sel=list[i];B.reach=reachOf(B.sel);centerOn(B.sel.c,B.sel.r);sheet()}}
+function banner(t){const b=$("banner");if(!b)return;b.textContent=t;b.classList.add("on");clearTimeout(b._t);b._t=setTimeout(()=>b.classList.remove("on"),1300)}
+function floatAt(c,r,t,col){if(B)B.fx.push({c,r,t,col,l:1.2})}
+// ---------- camera and gestures (drag to pan, pinch to zoom, tap to act)
+const cv=document.createElement("canvas");cv.id="cv";const g=cv.getContext("2d");let DPR=1;
+const cam={x:0,y:0,z:1,fit(){const w=cv.clientWidth||360;cam.z=Math.max(.6,Math.min(1.5,w/(S*SQ3*8.2)))}};
+function resize(){DPR=Math.min(2,devicePixelRatio||1);const r=cv.getBoundingClientRect();cv.width=Math.max(1,r.width*DPR);cv.height=Math.max(1,r.height*DPR)}
+addEventListener("resize",()=>{if(B)resize()});
+function centerOn(c,r){const [x,y]=hex.center(c,r,S);cam.x=x-cv.clientWidth/2/cam.z;cam.y=y-cv.clientHeight/2/cam.z;clampCam()}
+function clampCam(){if(!B)return;const ww=S*SQ3*(B.W+.5),wh=S*1.5*B.H+S/2,vw=cv.clientWidth/cam.z,vh=cv.clientHeight/cam.z;const m=30/cam.z;cam.x=ww<=vw?(ww-vw)/2:Math.max(-m,Math.min(ww-vw+m,cam.x));cam.y=wh<=vh?(wh-vh)/2:Math.max(-m,Math.min(wh-vh+m,cam.y))}
+function zoomBy(f,px,py){const w=cv.clientWidth,h=cv.clientHeight;px=px??w/2;py=py??h/2;const wx=cam.x+px/cam.z,wy=cam.y+py/cam.z;cam.z=Math.max(.5,Math.min(2.4,cam.z*f));cam.x=wx-px/cam.z;cam.y=wy-py/cam.z;clampCam()}
+const P=new Map();let drag=null,pinch=null;
+cv.addEventListener("pointerdown",e=>{cv.setPointerCapture(e.pointerId);P.set(e.pointerId,{x:e.clientX,y:e.clientY});if(P.size===1)drag={x:e.clientX,y:e.clientY,cx:cam.x,cy:cam.y,moved:false};
+ if(P.size===2){const [a,b]=[...P.values()];pinch={d:Math.hypot(a.x-b.x,a.y-b.y),z:cam.z};drag=null}});
+cv.addEventListener("pointermove",e=>{if(!P.has(e.pointerId))return;P.set(e.pointerId,{x:e.clientX,y:e.clientY});
+ if(pinch&&P.size===2){const [a,b]=[...P.values()],r=cv.getBoundingClientRect();const d=Math.hypot(a.x-b.x,a.y-b.y);zoomBy((pinch.z*d/pinch.d)/cam.z,(a.x+b.x)/2-r.left,(a.y+b.y)/2-r.top);return}
+ if(drag){const dx=e.clientX-drag.x,dy=e.clientY-drag.y;if(Math.hypot(dx,dy)>8)drag.moved=true;if(drag.moved){cam.x=drag.cx-dx/cam.z;cam.y=drag.cy-dy/cam.z;clampCam()}}
+ else if(e.pointerType==="mouse"&&B){const r=cv.getBoundingClientRect();B.hover=hex.at(cam.x+(e.clientX-r.left)/cam.z,cam.y+(e.clientY-r.top)/cam.z,S)}});
+const up=e=>{if(!P.has(e.pointerId))return;P.delete(e.pointerId);if(pinch){if(P.size<2)pinch=null;drag=null;return}
+ if(drag&&!drag.moved){const r=cv.getBoundingClientRect();const [c,rr]=hex.at(cam.x+(e.clientX-r.left)/cam.z,cam.y+(e.clientY-r.top)/cam.z,S);tap(c,rr)}drag=null};
+cv.addEventListener("pointerup",up);cv.addEventListener("pointercancel",e=>{P.delete(e.pointerId);drag=null;pinch=null});
+cv.addEventListener("wheel",e=>{e.preventDefault();const r=cv.getBoundingClientRect();zoomBy(e.deltaY<0?1.12:.89,e.clientX-r.left,e.clientY-r.top)},{passive:false});
+// ---------- terrain art, drawn once per battle into an offscreen canvas (our own look, all in code)
+let TERC=null;
+const BASE={g:["#6a9a3e","#5f8f38"],f:["#4f7a30","#466e2a"],h:["#8a8a4a","#7c7c40"],m:["#7a7468","#6c665c"],w:["#2a5a8a","#244e7a"],s:["#5a8aa6","#4e7e9a"],v:["#6a9a3e","#5f8f38"],c:["#8a8478","#7c766a"],k:["#8a8478","#7c766a"],r:["#b09a6a","#a08a5c"],S:["#4e6a40","#455e38"]};
+function buildTerrain(){const ww=Math.ceil(S*SQ3*(B.W+.5))+2,wh=Math.ceil(S*1.5*B.H+S/2)+2;TERC=document.createElement("canvas");TERC.width=ww*2;TERC.height=wh*2;const q=TERC.getContext("2d");q.scale(2,2);const R=MK.rng(B.sci*99+7);
+ for(let r=0;r<B.H;r++)for(let c=0;c<B.W;c++){const t=ter(c,r),[x,y]=hex.center(c,r,S),pts=hex.corners(x,y,S+.6);q.save();q.beginPath();pts.forEach(([a,b],i)=>i?q.lineTo(a,b):q.moveTo(a,b));q.closePath();
+  const gr=q.createLinearGradient(x,y-S,x,y+S);gr.addColorStop(0,BASE[t][0]);gr.addColorStop(1,BASE[t][1]);q.fillStyle=gr;q.fill();q.clip();
+  for(let i=0;i<22;i++){q.fillStyle=R()<.5?"rgba(255,255,255,.06)":"rgba(0,0,0,.08)";q.fillRect(x-S+R()*S*2,y-S+R()*S*2,R()*4+1,R()*3+1)}
+  if(t==="f")for(let i=0;i<4;i++){const tx=x+(i%2?10:-10)+(R()-.5)*6,ty=y+(i<2?-6:10)+(R()-.5)*4;q.fillStyle="#3a2a18";q.fillRect(tx-1.5,ty+2,3,6);q.fillStyle=R()<.5?"#2e5a26":"#356a2c";q.beginPath();q.moveTo(tx,ty-16);q.lineTo(tx-9,ty+4);q.lineTo(tx+9,ty+4);q.fill();q.fillStyle="rgba(255,255,255,.12)";q.beginPath();q.moveTo(tx,ty-16);q.lineTo(tx-3,ty-4);q.lineTo(tx+2,ty-6);q.fill()}
+  if(t==="h")for(let i=0;i<2;i++){const hx=x+(i?10:-9),hy=y+(i?8:-2);q.fillStyle="#9a9a5a";q.beginPath();q.ellipse(hx,hy,16,10,0,Math.PI,0);q.fill();q.fillStyle="rgba(0,0,0,.18)";q.beginPath();q.ellipse(hx+4,hy,12,8,0,Math.PI*1.5,0);q.fill()}
+  if(t==="m"){q.fillStyle="#5c564c";q.beginPath();q.moveTo(x-22,y+14);q.lineTo(x-4,y-20);q.lineTo(x+14,y+14);q.fill();q.fillStyle="#6e685c";q.beginPath();q.moveTo(x-2,y+16);q.lineTo(x+12,y-10);q.lineTo(x+24,y+16);q.fill();q.fillStyle="#eef";q.beginPath();q.moveTo(x-4,y-20);q.lineTo(x-10,y-8);q.lineTo(x+1,y-10);q.fill()}
+  if(t==="w"||t==="s"){q.strokeStyle="rgba(200,230,255,.35)";for(let i=0;i<4;i++){const wy=y-12+i*8;q.beginPath();q.moveTo(x-14+(i%2)*6,wy);q.quadraticCurveTo(x-4,wy-4,x+6+(i%2)*4,wy);q.stroke()}if(t==="s"){q.fillStyle="#8a8070";for(let i=0;i<5;i++){q.beginPath();q.ellipse(x+(R()-.5)*30,y+(R()-.5)*24,4,2.5,0,0,7);q.fill()}}}
+  if(t==="S"){q.strokeStyle="#7a8a4a";for(let i=0;i<8;i++){const sx=x+(R()-.5)*34,sy=y+(R()-.5)*26;q.beginPath();q.moveTo(sx,sy);q.lineTo(sx+(R()-.5)*4,sy-9);q.stroke()}q.fillStyle="rgba(40,70,60,.4)";q.beginPath();q.ellipse(x,y+6,14,6,0,0,7);q.fill()}
+  if(t==="r"){q.fillStyle="rgba(120,100,60,.35)";for(let i=0;i<8;i++){q.beginPath();q.arc(x+(R()-.5)*30,y+(R()-.5)*26,1.5,0,7);q.fill()}}
+  if(t==="c"||t==="k"){q.strokeStyle="rgba(0,0,0,.25)";for(let yy=y-S;yy<y+S;yy+=8){q.beginPath();q.moveTo(x-S,yy);q.lineTo(x+S,yy);q.stroke();for(let xx=x-S+((yy/8)%2?6:0);xx<x+S;xx+=12){q.beginPath();q.moveTo(xx,yy);q.lineTo(xx,yy+8);q.stroke()}}
+   if(t==="k"){q.fillStyle="#6a645a";q.beginPath();q.arc(x,y+2,15,0,7);q.fill();q.fillStyle="#7c766a";q.beginPath();q.arc(x,y,13,0,7);q.fill();for(let i=0;i<8;i++){const a=i/8*Math.PI*2;q.fillStyle="#8e887a";q.fillRect(x+Math.cos(a)*13-2.5,y+Math.sin(a)*13-2.5,5,5)}}}
+  if(t==="v"){for(let i=0;i<2;i++){const hx=x+(i?9:-8),hy=y+(i?7:-4);q.fillStyle="#d8c8a0";q.fillRect(hx-7,hy-4,14,10);q.fillStyle="#8a4a2a";q.beginPath();q.moveTo(hx-9,hy-4);q.lineTo(hx,hy-12);q.lineTo(hx+9,hy-4);q.fill();q.fillStyle="#3a2a18";q.fillRect(hx-2,hy+1,4,5)}}
+  q.restore();q.strokeStyle="rgba(0,0,0,.18)";q.beginPath();hex.corners(x,y,S).forEach(([a,b],i)=>i?q.lineTo(a,b):q.moveTo(a,b));q.closePath();q.stroke()}}
+function hexPath(c,r,inset){const [x,y]=hex.center(c,r,S);g.beginPath();hex.corners(x,y,S-(inset||0)).forEach(([a,b],i)=>i?g.lineTo(a,b):g.moveTo(a,b));g.closePath()}
+function draw(){if(!B||!cv.isConnected||!TERC)return;if(cv.width!==Math.round(cv.getBoundingClientRect().width*DPR))resize();
+ g.setTransform(1,0,0,1,0,0);g.fillStyle="#0b0e14";g.fillRect(0,0,cv.width,cv.height);g.setTransform(DPR*cam.z,0,0,DPR*cam.z,-cam.x*DPR*cam.z,-cam.y*DPR*cam.z);g.imageSmoothingEnabled=true;
+ g.drawImage(TERC,0,0,TERC.width/2,TERC.height/2);
+ // night tint
+ const tl=tod()[2];if(tl<0){g.fillStyle="rgba(20,30,80,.28)";g.fillRect(0,0,TERC.width/2,TERC.height/2)}else if(tod()[0]==="Dusk"||tod()[0]==="Dawn"){g.fillStyle="rgba(120,60,20,.12)";g.fillRect(0,0,TERC.width/2,TERC.height/2)}
+ // village flags
+ for(const k in B.vill){const [c,r]=k.split(",").map(Number),[x,y]=hex.center(c,r,S);g.fillStyle="#3a2a18";g.fillRect(x+13,y-22,2,16);g.fillStyle=SIDES[B.vill[k]].c;g.fillRect(x+15,y-22,10,7)}
+ // move range, attack targets, castle spots
+ if(B.reach&&B.sel){for(const [k] of B.reach.cost){const [c,r]=k.split(",").map(Number);if(c===B.sel.c&&r===B.sel.r)continue;hexPath(c,r,2);g.fillStyle="rgba(90,150,255,.28)";g.fill()}}
+ if(B.sel&&!B.sel.attacked){B.units.forEach(o=>{if(o.side===0)return;const can=hex.dist([o.c,o.r],[B.sel.c,B.sel.r])===1||hex.nb(o.c,o.r).some(([a,b])=>B.reach&&B.reach.cost.has(a+","+b)&&!unitAt(a,b));if(can){hexPath(o.c,o.r,3);g.strokeStyle="#ff5a3a";g.lineWidth=3;g.stroke();g.lineWidth=1}})}
+ if(B.place){B.place.cells.forEach(([c,r])=>{hexPath(c,r,3);g.fillStyle="rgba(236,198,110,.35)";g.fill();g.strokeStyle="#ecc66e";g.lineWidth=2;g.stroke();g.lineWidth=1})}
+ if(B.fc){hexPath(B.fc.from[0],B.fc.from[1],3);g.strokeStyle="#ecc66e";g.lineWidth=3;g.stroke();hexPath(B.fc.d.c,B.fc.d.r,3);g.strokeStyle="#ff5a3a";g.stroke();g.lineWidth=1}
+ if(B.sel){hexPath(B.sel.c,B.sel.r,2);g.strokeStyle="#fff";g.lineWidth=2.5;g.stroke();g.lineWidth=1}
+ if(B.hover&&inb(...B.hover)){hexPath(B.hover[0],B.hover[1],1);g.strokeStyle="rgba(255,255,255,.4)";g.stroke()}
+ // units
+ B.units.slice().sort((a,b)=>a.r-b.r).forEach(u=>{let [x,y]=hex.center(u.c,u.r,S);if(u.lunge){const [tx,ty]=hex.center(u.lunge.to[0],u.lunge.to[1],S);const k=Math.sin(u.lunge.t*Math.PI)*.3;x+=(tx-x)*k;y+=(ty-y)*k;u.lunge.t-=.08;if(u.lunge.t<=0)u.lunge=null}
+  const side=u.side,col=SIDES[side].c;g.fillStyle="rgba(0,0,0,.3)";g.beginPath();g.ellipse(x,y+14,16,5,0,0,7);g.fill();
+  const can=side===0&&B.side===0&&!u.attacked&&u.moved<u.mv;g.strokeStyle=can?(u.moved?"#e0c040":"#6fdf5a"):col;g.lineWidth=2.5;g.beginPath();g.ellipse(x,y+14,15,5,0,0,7);g.stroke();g.lineWidth=1;
+  MK.sprite(g,uspr(u),side===2?2:side,x,y+19,u.lv>=3?.82:.74,side!==0,u.dying?.5:1);
+  if(u.flash){g.globalAlpha=u.flash*.5;g.fillStyle="#fff";g.beginPath();g.arc(x,y,14,0,7);g.fill();g.globalAlpha=1;u.flash=Math.max(0,u.flash-.08)}
+  const bw=26,hf=u.hp/u.max;g.fillStyle="#000";g.fillRect(x-bw/2-1,y+19,bw+2,5);g.fillStyle=hf>.5?"#5fbf4a":hf>.25?"#e0b030":"#e2584a";g.fillRect(x-bw/2,y+20,bw*hf,3);
+  g.fillStyle="#8c7ae6";g.fillRect(x-bw/2,y+23,bw*Math.min(1,u.xp/u.maxxp),1.5);
+  if(u.leader){g.fillStyle="#ecc66e";g.beginPath();g.moveTo(x-7,y-26);g.lineTo(x-7,y-20);g.lineTo(x+7,y-20);g.lineTo(x+7,y-26);g.lineTo(x+3.5,y-22);g.lineTo(x,y-27);g.lineTo(x-3.5,y-22);g.closePath();g.fill()}
+  if(u.lv>=2&&!u.leader){g.fillStyle="#ecc66e";g.font="900 9px system-ui";g.textAlign="left";g.fillText("★".repeat(u.lv-1),x+9,y-16)}});
+ B.fx=B.fx.filter(f=>f.l>0);B.fx.forEach(f=>{f.l-=.018;const [x,y]=hex.center(f.c,f.r,S);g.font="900 14px system-ui";g.textAlign="center";g.fillStyle="#000";g.fillText(f.t,x+1,y-20-(1.2-f.l)*22+1);g.fillStyle=f.col;g.fillText(f.t,x,y-20-(1.2-f.l)*22)})}
+MK.loop(null,draw);
+MK.preload(["lieut","spear","bow","horse","mage","hvy","fencer","thunder","efight","grunt","gob","wolf","oarch","skel","adept"].map(id=>unit(id).spr));
+title();
+</script></body></html>

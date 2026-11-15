@@ -99,5 +99,25 @@ function ending(o){MK.modal(`${o.img?`<img src="${o.img}" alt="" style="max-heig
 // ---- small state machine for screens (map -> battle -> reward ...)
 function scenes(defs){const S={cur:null,data:null,go(n,d){if(S.cur&&defs[S.cur].exit)defs[S.cur].exit();S.cur=n;S.data=d;defs[n].enter&&defs[n].enter(d)}};return S}
 
-Object.assign(MK,{wait,rng,grid,graph,loop,input,canvas,sprite,tile,bar,fx,combat,ending,scenes,heap});
+// ---- hex grids: pointy-top, "odd-r" offset (odd rows shift right). Hexes are [c,r]; size s is centre-to-corner
+const SQ3=Math.sqrt(3);
+const hex={
+ key:(c,r)=>c+","+r,
+ nb(c,r){const d=r&1?[[1,0],[-1,0],[1,-1],[0,-1],[1,1],[0,1]]:[[1,0],[-1,0],[0,-1],[-1,-1],[0,1],[-1,1]];return d.map(([a,b])=>[c+a,r+b])},
+ cube(c,r){const x=c-(r-(r&1))/2;return [x,-x-r,r]},
+ dist(a,b){const A=hex.cube(a[0],a[1]),B=hex.cube(b[0],b[1]);return Math.max(Math.abs(A[0]-B[0]),Math.abs(A[1]-B[1]),Math.abs(A[2]-B[2]))},
+ center(c,r,s){return [s*SQ3*(c+.5*(r&1))+s*SQ3/2,s*1.5*r+s]},
+ // world point to the hex under it (cube rounding)
+ at(x,y,s){x-=s*SQ3/2;y-=s;const q=(SQ3/3*x-y/3)/s,rr=(2/3*y)/s;let cx=q,cz=rr,cy=-cx-cz,rx=Math.round(cx),ry=Math.round(cy),rz=Math.round(cz);const dx=Math.abs(rx-cx),dy=Math.abs(ry-cy),dz=Math.abs(rz-cz);
+  if(dx>dy&&dx>dz)rx=-ry-rz;else if(dy>dz)ry=-rx-rz;else rz=-rx-ry;return [rx+(rz-(rz&1))/2,rz]},
+ corners(cx,cy,s){const p=[];for(let i=0;i<6;i++){const a=Math.PI/180*(60*i-30);p.push([cx+s*Math.cos(a),cy+s*Math.sin(a)])}return p},
+ // cheapest moves from a start within budget; cost(c,r) gives entry cost or Infinity; stop(c,r) true ends movement there (zones of control)
+ reach(c0,r0,budget,cost,stop){const R=new Map([[c0+","+r0,0]]),prev=new Map(),Q=heap();Q.push([c0,r0],0);
+  while(Q.size){const [c,r]=Q.pop(),k=c+","+r,c1=R.get(k);if(stop&&!(c===c0&&r===r0)&&stop(c,r))continue;for(const [nc,nr] of hex.nb(c,r)){const v=c1+cost(nc,nr);if(!(v<=budget))continue;const nk=nc+","+nr;if(!R.has(nk)||R.get(nk)>v){R.set(nk,v);prev.set(nk,k);Q.push([nc,nr],v)}}}
+  return {cost:R,prev,path(c,r){const out=[];let k=c+","+r;while(prev.has(k)){out.unshift(k.split(",").map(Number));k=prev.get(k)}return out}}},
+ // distance field from goal hexes (for AI marching)
+ flow(goals,cost,W,H){const D=new Float32Array(W*H).fill(Infinity),Q=heap();goals.forEach(([c,r])=>{D[r*W+c]=0;Q.push([c,r],0)});
+  while(Q.size){const [c,r]=Q.pop(),d0=D[r*W+c];for(const [nc,nr] of hex.nb(c,r)){if(nc<0||nr<0||nc>=W||nr>=H)continue;const v=d0+cost(nc,nr);if(v<D[nr*W+nc]){D[nr*W+nc]=v;Q.push([nc,nr],v)}}}return D}};
+
+Object.assign(MK,{wait,rng,grid,graph,loop,input,canvas,sprite,tile,bar,fx,combat,ending,scenes,heap,hex});
 })();
