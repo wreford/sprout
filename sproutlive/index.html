@@ -59,6 +59,11 @@ body.kb #stage{flex-basis:30%}
 #errl{background:rgba(255,80,80,.22)}
 #flash{background:rgba(255,120,80,.35)}
 #cur{background:rgba(111,211,111,.10)}
+#live{background:rgba(111,211,111,.28);transition:opacity .7s}#live.fade{opacity:0}
+.gh{color:#5f8f73}
+#swap{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);background:rgba(111,211,111,.92);color:#0b1a10;font:800 12px system-ui;letter-spacing:.06em;padding:4px 10px;border-radius:999px;opacity:0;pointer-events:none}
+#swap.on{animation:swap .9s ease-out}
+@keyframes swap{0%{opacity:1;transform:translateX(-50%) scale(1.15)}60%{opacity:1;transform:translateX(-50%) scale(1)}100%{opacity:0}}
 i{font-style:normal}
 .c{color:#6f8f7c}.s{color:#ffcf7a}.n{color:#ff9e7a}.k{color:#7cc7ff}.a{color:#8ef08e}.v{color:var(--sun)}.o{color:#c9a7ff}
 .caret{display:inline-block;width:0;height:var(--LH);vertical-align:top;box-shadow:0 0 0 1px var(--sun);animation:blink 1s steps(1) infinite}
@@ -99,6 +104,7 @@ body.t-code #keys{display:flex}
 <div id="main">
 <div id="stage"><canvas id="cv" width="360" height="480"></canvas>
  <div id="log"></div>
+ <div id="swap">LIVE</div>
  <div id="sbtn"><button id="bPause" title="Pause">⏸</button><button id="bRestart" title="Restart the game">↺</button><button id="bSnd" title="Sound">🔊</button></div>
  <div id="err"></div>
  <div id="hello"><button class="big" id="bHello">▶ Watch a game grow</button><p>A game gets written in Sprout line by line, and runs while it's being written. Then it's yours to change.</p></div>
@@ -109,7 +115,7 @@ body.t-code #keys{display:flex}
  <div id="cap"><div class="row"><span id="capn">Demo</span><b id="capt">Sprout, from nothing</b></div><p id="capx"></p><div id="dots"></div>
   <div class="ctl"><button id="dBack" aria-label="Previous step">⏮</button><button id="dPlay">▶ Play</button><button id="dSkip" aria-label="Next step">⏭</button><button id="dSpd">1×</button></div></div>
  <div id="twhint">Drag any <b style="color:#ff9e7a">orange number</b> left or right. Tap a <b style="color:#ffcf7a">colour</b> to change it. The game updates as you go.</div>
- <div id="ed"><div class="mark" id="errl"></div><div class="mark" id="flash"></div><div class="mark" id="cur"></div><div id="gut"></div><pre id="hl"></pre><textarea id="ta" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" readonly></textarea></div>
+ <div id="ed"><div class="mark" id="live"></div><div class="mark" id="errl"></div><div class="mark" id="flash"></div><div class="mark" id="cur"></div><div id="gut"></div><pre id="hl"></pre><textarea id="ta" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" readonly></textarea></div>
  <pre id="tw"></pre>
  <div id="keys"></div>
 </div></div></div></div>
@@ -126,34 +132,34 @@ A Sprout game has two blocks. update runs every frame to move things, and draw p
 update : [dt |
 ]
 
-draw : [|
+draw : [
   clear "#9fd8ff"
 ]
 ### Sun and soil
-Words like circle and rect take their values one after another: circle x y size colour. Things are painted in order, back to front. W and H are the width and height of the screen.
+Words like circle and rect take their values one after another: circle x y size colour. Each new line is a new step, painted back to front. W and H are the screen's width and height.
 ---
 -- Sprout: catch the rain, dodge the bugs
 
 update : [dt |
 ]
 
-draw : [|
+draw : [
   clear "#9fd8ff"
   circle 300 70 34 "#ffe066"
   rect 0 (H - 40) W 40 "#7a4b2a"
 ]
 ### Plant a sprout
-name : value makes a field. x is where the sprout stands and height is how tall it is. Sprout reads maths left to right with no precedence, so H - 40 - height is worked out in order, and ( ) groups things.
+name : value makes a field, and it keeps its value even while you change the code around it. Watch the grey notes in the code: they show each field's value right now.
 ---
 -- Sprout: catch the rain, dodge the bugs
 
-x : W / 2        -- where the sprout stands
-height : 40      -- how tall it is
+x : W / 2         -- where the sprout stands
+height : 40       -- how tall it is
 
 update : [dt |
 ]
 
-draw : [|
+draw : [
   clear "#9fd8ff"
   circle 300 70 34 "#ffe066"
   rect 0 (H - 40) W 40 "#7a4b2a"
@@ -168,8 +174,8 @@ draw : [|
 ---
 -- Sprout: catch the rain, dodge the bugs
 
-x : W / 2        -- where the sprout stands
-height : 40      -- how tall it is
+x : W / 2         -- where the sprout stands
+height : 40       -- how tall it is
 
 update : [dt |
   touching [x := x + ((touch-x - x) * 0.2), 0]
@@ -178,7 +184,7 @@ update : [dt |
   x := clamp x 20 (W - 20)
 ]
 
-draw : [|
+draw : [
   clear "#9fd8ff"
   circle 300 70 34 "#ffe066"
   rect 0 (H - 40) W 40 "#7a4b2a"
@@ -189,14 +195,13 @@ draw : [|
   circle (x + 9) top 9 "#5cc85c"
 ]
 ### Make it rain
-drops is a list, and each drop is a little list [x, y], so _ 2 is a drop's y. Every frame each drop falls, and keep holds on to only the drops still above the ground.
+every 0.6 [ ... ] runs a block on a beat. Each drop is a record, {x : 140, y : -10}, so d.y is how far down it is. Every frame each drop falls, and keep holds on to the ones still in the sky.
 ---
 -- Sprout: catch the rain, dodge the bugs
 
-x : W / 2        -- where the sprout stands
-height : 40      -- how tall it is
-drops : []       -- falling rain, each one [x, y]
-timer : 0
+x : W / 2         -- where the sprout stands
+height : 40       -- how tall it is
+drops : []        -- falling rain
 
 update : [dt |
   touching [x := x + ((touch-x - x) * 0.2), 0]
@@ -204,18 +209,16 @@ update : [dt |
   key "right" [x := x + 5, 0]
   x := clamp x 20 (W - 20)
 
-  timer := timer - dt
-  timer < 0 [(
-    timer := 0.6
-    drops := drops append [rand 20 (W - 20), -10]
-  ), 0]
+  every 0.6 [
+    drops := drops append {x : rand 20 (W - 20), y : -10}
+  ]
 
   speed : 160 * dt
-  drops each [_ 2 := (_ 2) + speed]
-  drops := keep drops [(_ 2) < H]
+  drops each [d | d.y := d.y + speed]
+  drops := keep drops [_.y < H]
 ]
 
-draw : [|
+draw : [
   clear "#9fd8ff"
   circle 300 70 34 "#ffe066"
   rect 0 (H - 40) W 40 "#7a4b2a"
@@ -225,17 +228,16 @@ draw : [|
   circle (x - 9) top 9 "#5cc85c"
   circle (x + 9) top 9 "#5cc85c"
 
-  drops each [circle (_ 1) (_ 2) 6 "#2f7fe0"]
+  drops each [circle _.x _.y 6 "#2f7fe0"]
 ]
 ### Catch to grow
 dist measures how far a drop is from the tip of the sprout. Close enough and it's caught: the sprout grows, the score goes up and it beeps. Try catching a few!
 ---
 -- Sprout: catch the rain, dodge the bugs
 
-x : W / 2        -- where the sprout stands
-height : 40      -- how tall it is
-drops : []       -- falling rain, each one [x, y]
-timer : 0
+x : W / 2         -- where the sprout stands
+height : 40       -- how tall it is
+drops : []        -- falling rain
 score : 0
 
 update : [dt |
@@ -244,27 +246,25 @@ update : [dt |
   key "right" [x := x + 5, 0]
   x := clamp x 20 (W - 20)
 
-  timer := timer - dt
-  timer < 0 [(
-    timer := 0.6
-    drops := drops append [rand 20 (W - 20), -10]
-  ), 0]
+  every 0.6 [
+    drops := drops append {x : rand 20 (W - 20), y : -10}
+  ]
 
   speed : 160 * dt
   top : H - 40 - height
-  drops each [
-    _ 2 := (_ 2) + speed
-    (dist (_ 1) (_ 2) x top) < 24 [(
-      _ 2 := H + 99
+  drops each [d |
+    d.y := d.y + speed
+    (dist d.x d.y x top) < 24 [(
+      d.y := H + 99
       height := clamp (height + 8) 0 (H - 140)
       score := score + 1
       beep 880 0.06
     ), 0]
   ]
-  drops := keep drops [(_ 2) < H]
+  drops := keep drops [_.y < H]
 ]
 
-draw : [|
+draw : [
   clear "#9fd8ff"
   circle 300 70 34 "#ffe066"
   rect 0 (H - 40) W 40 "#7a4b2a"
@@ -274,7 +274,7 @@ draw : [|
   circle (x - 9) top 9 "#5cc85c"
   circle (x + 9) top 9 "#5cc85c"
 
-  drops each [circle (_ 1) (_ 2) 6 "#2f7fe0"]
+  drops each [circle _.x _.y 6 "#2f7fe0"]
   text ((score str) ++ " drops") (W / 2) 30 22 "#1b3a5c"
 ]
 ### Watch out for bugs
@@ -282,11 +282,10 @@ Ladybirds fall too. If one is near the stem and below the tip, the sprout gets s
 ---
 -- Sprout: catch the rain, dodge the bugs
 
-x : W / 2        -- where the sprout stands
-height : 40      -- how tall it is
-drops : []       -- falling rain, each one [x, y]
-bugs : []        -- falling ladybirds, [x, y]
-timer : 0
+x : W / 2         -- where the sprout stands
+height : 40       -- how tall it is
+drops : []        -- falling rain
+bugs : []         -- falling ladybirds
 score : 0
 
 update : [dt |
@@ -295,39 +294,37 @@ update : [dt |
   key "right" [x := x + 5, 0]
   x := clamp x 20 (W - 20)
 
-  timer := timer - dt
-  timer < 0 [(
-    timer := 0.6
-    drops := drops append [rand 20 (W - 20), -10]
-    random < 0.3 [bugs := bugs append [rand 20 (W - 20), -10], 0]
-  ), 0]
+  every 0.6 [
+    drops := drops append {x : rand 20 (W - 20), y : -10}
+    random < 0.3 [bugs := bugs append {x : rand 20 (W - 20), y : -10}, 0]
+  ]
 
   speed : 160 * dt
   top : H - 40 - height
-  drops each [
-    _ 2 := (_ 2) + speed
-    (dist (_ 1) (_ 2) x top) < 24 [(
-      _ 2 := H + 99
+  drops each [d |
+    d.y := d.y + speed
+    (dist d.x d.y x top) < 24 [(
+      d.y := H + 99
       height := clamp (height + 8) 0 (H - 140)
       score := score + 1
       beep 880 0.06
     ), 0]
   ]
-  drops := keep drops [(_ 2) < H]
+  drops := keep drops [_.y < H]
 
-  bugs each [
-    _ 2 := (_ 2) + (speed * 0.8)
-    near : ((_ 1) - x) abs < 14
-    near [(_ 2) > top [(
-      _ 2 := H + 99
+  bugs each [b |
+    b.y := b.y + (speed * 0.8)
+    near : (b.x - x) abs < 14
+    near [b.y > top [(
+      b.y := H + 99
       height := height - 30
       beep 110 0.25
     ), 0], 0]
   ]
-  bugs := keep bugs [(_ 2) < H]
+  bugs := keep bugs [_.y < H]
 ]
 
-draw : [|
+draw : [
   clear "#9fd8ff"
   circle 300 70 34 "#ffe066"
   rect 0 (H - 40) W 40 "#7a4b2a"
@@ -337,10 +334,10 @@ draw : [|
   circle (x - 9) top 9 "#5cc85c"
   circle (x + 9) top 9 "#5cc85c"
 
-  drops each [circle (_ 1) (_ 2) 6 "#2f7fe0"]
-  bugs each [
-    circle (_ 1) (_ 2) 10 "#d62828"
-    circle (_ 1) ((_ 2) - 8) 5 "#222222"
+  drops each [circle _.x _.y 6 "#2f7fe0"]
+  bugs each [b |
+    circle b.x b.y 10 "#d62828"
+    circle b.x (b.y - 8) 5 "#222222"
   ]
   text ((score str) ++ " drops") (W / 2) 30 22 "#1b3a5c"
 ]
@@ -349,11 +346,10 @@ When the sprout gets too short it wilts. pace turns to 0 so everything stops fal
 ---
 -- Sprout: catch the rain, dodge the bugs
 
-x : W / 2        -- where the sprout stands
-height : 40      -- how tall it is
-drops : []       -- falling rain, each one [x, y]
-bugs : []        -- falling ladybirds, [x, y]
-timer : 0
+x : W / 2         -- where the sprout stands
+height : 40       -- how tall it is
+drops : []        -- falling rain
+bugs : []         -- falling ladybirds
 score : 0
 over : false
 
@@ -366,40 +362,38 @@ update : [dt |
   key "right" [x := x + 5, 0]
   x := clamp x 20 (W - 20)
 
-  timer := timer - dt
-  timer < 0 [(
-    timer := 0.6
-    drops := drops append [rand 20 (W - 20), -10]
-    random < 0.3 [bugs := bugs append [rand 20 (W - 20), -10], 0]
-  ), 0]
+  every 0.6 [
+    drops := drops append {x : rand 20 (W - 20), y : -10}
+    random < 0.3 [bugs := bugs append {x : rand 20 (W - 20), y : -10}, 0]
+  ]
 
   speed : 160 * dt * pace
   top : H - 40 - height
-  drops each [
-    _ 2 := (_ 2) + speed
-    (dist (_ 1) (_ 2) x top) < 24 [(
-      _ 2 := H + 99
+  drops each [d |
+    d.y := d.y + speed
+    (dist d.x d.y x top) < 24 [(
+      d.y := H + 99
       height := clamp (height + 8) 0 (H - 140)
       score := score + 1
       beep 880 0.06
     ), 0]
   ]
-  drops := keep drops [(_ 2) < H]
+  drops := keep drops [_.y < H]
 
-  bugs each [
-    _ 2 := (_ 2) + (speed * 0.8)
-    near : ((_ 1) - x) abs < 14
-    near [(_ 2) > top [(
-      _ 2 := H + 99
+  bugs each [b |
+    b.y := b.y + (speed * 0.8)
+    near : (b.x - x) abs < 14
+    near [b.y > top [(
+      b.y := H + 99
       height := height - 30
       beep 110 0.25
     ), 0], 0]
   ]
-  bugs := keep bugs [(_ 2) < H]
+  bugs := keep bugs [_.y < H]
   over := height < 20
 ]
 
-draw : [|
+draw : [
   clear "#9fd8ff"
   circle 300 70 34 "#ffe066"
   rect 0 (H - 40) W 40 "#7a4b2a"
@@ -409,10 +403,10 @@ draw : [|
   circle (x - 9) top 9 "#5cc85c"
   circle (x + 9) top 9 "#5cc85c"
 
-  drops each [circle (_ 1) (_ 2) 6 "#2f7fe0"]
-  bugs each [
-    circle (_ 1) (_ 2) 10 "#d62828"
-    circle (_ 1) ((_ 2) - 8) 5 "#222222"
+  drops each [circle _.x _.y 6 "#2f7fe0"]
+  bugs each [b |
+    circle b.x b.y 10 "#d62828"
+    circle b.x (b.y - 8) 5 "#222222"
   ]
   text ((score str) ++ " drops") (W / 2) 30 22 "#1b3a5c"
 
@@ -423,16 +417,15 @@ draw : [|
   ), 0]
 ]
 ### Make it feel alive
-Last touches: the rain speeds up as your score climbs, caught drops burst into sparkles, and a while loop grows leaves up the stem. Now it's your turn: open Tweak and drag the numbers.
+The rain speeds up as your score climbs, caught drops burst into sparkles, a while loop grows leaves up the stem, and clouds drift by on the clock.
 ---
 -- Sprout: catch the rain, dodge the bugs
 
-x : W / 2        -- where the sprout stands
-height : 40      -- how tall it is
-drops : []       -- falling rain, each one [x, y]
-bugs : []        -- falling ladybirds, [x, y]
-sparks : []      -- [x, y, speed-x, speed-y, life]
-timer : 0
+x : W / 2         -- where the sprout stands
+height : 40       -- how tall it is
+drops : []        -- falling rain
+bugs : []         -- falling ladybirds
+sparks : []
 score : 0
 over : false
 
@@ -445,52 +438,52 @@ update : [dt |
   key "right" [x := x + 5, 0]
   x := clamp x 20 (W - 20)
 
-  timer := timer - dt
-  timer < 0 [(
-    timer := 0.6
-    drops := drops append [rand 20 (W - 20), -10]
-    random < 0.3 [bugs := bugs append [rand 20 (W - 20), -10], 0]
-  ), 0]
+  every 0.6 [
+    drops := drops append {x : rand 20 (W - 20), y : -10}
+    random < 0.3 [bugs := bugs append {x : rand 20 (W - 20), y : -10}, 0]
+  ]
 
   speed : 160 + (score * 4) * dt * pace
   top : H - 40 - height
-  drops each [
-    _ 2 := (_ 2) + speed
-    (dist (_ 1) (_ 2) x top) < 24 [(
-      px : _ 1
-      py : _ 2
-      3 times [sparks := sparks append [px, py, rand -80 80, rand -120 0, 0.5]]
-      _ 2 := H + 99
+  drops each [d |
+    d.y := d.y + speed
+    (dist d.x d.y x top) < 24 [(
+      3 times [sparks := sparks append {x : d.x, y : d.y, vx : rand -80 80, vy : rand -120 0, life : 0.5}]
+      d.y := H + 99
       height := clamp (height + 8) 0 (H - 140)
       score := score + 1
       beep 880 0.06
     ), 0]
   ]
-  drops := keep drops [(_ 2) < H]
+  drops := keep drops [_.y < H]
 
-  bugs each [
-    _ 2 := (_ 2) + (speed * 0.8)
-    near : ((_ 1) - x) abs < 14
-    near [(_ 2) > top [(
-      _ 2 := H + 99
+  bugs each [b |
+    b.y := b.y + (speed * 0.8)
+    near : (b.x - x) abs < 14
+    near [b.y > top [(
+      b.y := H + 99
       height := height - 30
       beep 110 0.25
     ), 0], 0]
   ]
-  bugs := keep bugs [(_ 2) < H]
+  bugs := keep bugs [_.y < H]
   over := height < 20
 
-  sparks each [
-    _ 1 := (_ 1) + ((_ 3) * dt)
-    _ 2 := (_ 2) + ((_ 4) * dt)
-    _ 5 := (_ 5) - dt
+  sparks each [s |
+    s.x := s.x + (s.vx * dt)
+    s.y := s.y + (s.vy * dt)
+    s.life := s.life - dt
   ]
-  sparks := keep sparks [(_ 5) > 0]
+  sparks := keep sparks [_.life > 0]
 ]
 
-draw : [|
+draw : [
   clear "#9fd8ff"
   circle 300 70 34 "#ffe066"
+  cloud : clock * 12 % (W + 120) - 60
+  circle cloud 120 20 "#ffffff"
+  circle (cloud + 24) 112 26 "#ffffff"
+  circle (cloud + 50) 120 18 "#ffffff"
   rect 0 (H - 40) W 40 "#7a4b2a"
 
   top : H - 40 - height
@@ -505,13 +498,109 @@ draw : [|
   circle (x - 9) top 9 "#5cc85c"
   circle (x + 9) top 9 "#5cc85c"
 
-  drops each [circle (_ 1) (_ 2) 6 "#2f7fe0"]
-  bugs each [
-    circle (_ 1) (_ 2) 10 "#d62828"
-    circle (_ 1) ((_ 2) - 8) 5 "#222222"
+  drops each [circle _.x _.y 6 "#2f7fe0"]
+  bugs each [b |
+    circle b.x b.y 10 "#d62828"
+    circle b.x (b.y - 8) 5 "#222222"
   ]
-  sparks each [circle (_ 1) (_ 2) 3 "#e8f7ff"]
+  sparks each [circle _.x _.y 3 "#e8f7ff"]
   text ((score str) ++ " drops") (W / 2) 30 22 "#1b3a5c"
+
+  over [(
+    rect 0 0 W H "rgba(0,0,0,0.5)"
+    text "Your sprout wilted" (W / 2) (H / 2 - 20) 28 "#ffffff"
+    text "Tap to grow again" (W / 2) (H / 2 + 20) 18 "#ffe066"
+  ), 0]
+]
+### Change it while it runs
+This is live coding: the sky turns to sunset and the rain comes twice as fast, but the sprout, the score and every falling drop stay right where they were. Now it's your turn. Open Tweak and drag the numbers.
+---
+-- Sprout: catch the rain, dodge the bugs
+
+x : W / 2         -- where the sprout stands
+height : 40       -- how tall it is
+drops : []        -- falling rain
+bugs : []         -- falling ladybirds
+sparks : []
+score : 0
+over : false
+
+update : [dt |
+  restart (over [tapped, false])
+  pace : over [0, 1]
+
+  touching [x := x + ((touch-x - x) * 0.2), 0]
+  key "left" [x := x - 5, 0]
+  key "right" [x := x + 5, 0]
+  x := clamp x 20 (W - 20)
+
+  every 0.3 [
+    drops := drops append {x : rand 20 (W - 20), y : -10}
+    random < 0.3 [bugs := bugs append {x : rand 20 (W - 20), y : -10}, 0]
+  ]
+
+  speed : 160 + (score * 4) * dt * pace
+  top : H - 40 - height
+  drops each [d |
+    d.y := d.y + speed
+    (dist d.x d.y x top) < 24 [(
+      3 times [sparks := sparks append {x : d.x, y : d.y, vx : rand -80 80, vy : rand -120 0, life : 0.5}]
+      d.y := H + 99
+      height := clamp (height + 8) 0 (H - 140)
+      score := score + 1
+      beep 880 0.06
+    ), 0]
+  ]
+  drops := keep drops [_.y < H]
+
+  bugs each [b |
+    b.y := b.y + (speed * 0.8)
+    near : (b.x - x) abs < 14
+    near [b.y > top [(
+      b.y := H + 99
+      height := height - 30
+      beep 110 0.25
+    ), 0], 0]
+  ]
+  bugs := keep bugs [_.y < H]
+  over := height < 20
+
+  sparks each [s |
+    s.x := s.x + (s.vx * dt)
+    s.y := s.y + (s.vy * dt)
+    s.life := s.life - dt
+  ]
+  sparks := keep sparks [_.life > 0]
+]
+
+draw : [
+  clear "#ffb38a"
+  circle 300 70 34 "#ff6b4a"
+  cloud : clock * 12 % (W + 120) - 60
+  circle cloud 120 20 "#ffffff"
+  circle (cloud + 24) 112 26 "#ffffff"
+  circle (cloud + 50) 120 18 "#ffffff"
+  rect 0 (H - 40) W 40 "#7a4b2a"
+
+  top : H - 40 - height
+  rect (x - 3) top 6 height "#3c9d3c"
+  leaf : H - 60
+  side : 1
+  while [leaf > (top + 20)] [
+    circle (x + (side * 8)) leaf 6 "#4fb04f"
+    side := 0 - side
+    leaf := leaf - 28
+  ]
+  circle (x - 9) top 9 "#5cc85c"
+  circle (x + 9) top 9 "#5cc85c"
+
+  drops each [circle _.x _.y 6 "#2f7fe0"]
+  bugs each [b |
+    circle b.x b.y 10 "#d62828"
+    circle b.x (b.y - 8) 5 "#222222"
+  ]
+  sparks each [circle _.x _.y 3 "#e8f7ff"]
+  text ((score str) ++ " drops") (W / 2) 30 22 "#5a2a1a"
 
   over [(
     rect 0 0 W H "rgba(0,0,0,0.5)"
@@ -527,50 +616,44 @@ Keep the ball in the air with a paddle.
 ---
 -- Bounce: keep the ball up
 
-px : W / 2       -- paddle position
-bx : W / 2       -- ball position
-by : 100
-vx : 150         -- ball speed
-vy : 220
+paddle : W / 2
+ball : {x : W / 2, y : 100, vx : 150, vy : 220}
 score : 0
 best : 0
 
 update : [dt |
-  touching [px := touch-x, 0]
-  key "left" [px := px - (400 * dt), 0]
-  key "right" [px := px + (400 * dt), 0]
-  px := clamp px 50 (W - 50)
+  touching [paddle := touch-x, 0]
+  key "left" [paddle := paddle - (400 * dt), 0]
+  key "right" [paddle := paddle + (400 * dt), 0]
+  paddle := clamp paddle 50 (W - 50)
 
-  bx := bx + (vx * dt)
-  by := by + (vy * dt)
-  bx < 10 [vx := vx abs, 0]
-  bx > (W - 10) [vx := 0 - (vx abs), 0]
-  by < 10 [vy := vy abs, 0]
+  ball.x := ball.x + (ball.vx * dt)
+  ball.y := ball.y + (ball.vy * dt)
+  ball.x < 10 [ball.vx := ball.vx abs, 0]
+  ball.x > (W - 10) [ball.vx := 0 - (ball.vx abs), 0]
+  ball.y < 10 [ball.vy := ball.vy abs, 0]
 
-  near : ((bx - px) abs) < 50
-  low : by > (H - 50)
-  vy > 0 [near [low [(
-    vy := 0 - (vy * 1.05)
-    vx := vx + ((bx - px) * 3)
+  near : (ball.x - paddle) abs < 50
+  low : ball.y > (H - 50)
+  ball.vy > 0 [near [low [(
+    ball.vy := 0 - (ball.vy * 1.05)
+    ball.vx := ball.vx + ((ball.x - paddle) * 3)
     score := score + 1
     beep 660 0.05
   ), 0], 0], 0]
 
-  by > (H + 20) [(
+  ball.y > (H + 20) [(
     best := score > best [score, best]
     beep 140 0.3
-    bx := W / 2
-    by := 100
-    vx := 150
-    vy := 220
+    ball := {x : W / 2, y : 100, vx : 150, vy : 220}
     score := 0
   ), 0]
 ]
 
-draw : [|
+draw : [
   clear "#1d1b3a"
-  rect (px - 50) (H - 40) 100 12 "#ffcc33"
-  circle bx by 10 "#ff5d8f"
+  rect (paddle - 50) (H - 40) 100 12 "#ffcc33"
+  circle ball.x ball.y 10 "#ff5d8f"
   text score (W / 2) 60 48 "#ffffff"
   text ("best " ++ (best str)) (W / 2) 95 16 "#9a94c8"
 ]
@@ -579,25 +662,24 @@ A dot you can drag. Start your own game from here.
 ---
 -- Your game! Change anything and watch it update.
 
-x : W / 2
-y : H / 2
+dot : {x : W / 2, y : H / 2}
 
 update : [dt |
   touching [(
-    x := touch-x
-    y := touch-y
+    dot.x := touch-x
+    dot.y := touch-y
   ), 0]
 ]
 
-draw : [|
+draw : [
   clear "#223344"
-  circle x y 30 "#ffaa00"
+  circle dot.x dot.y 30 "#ffaa00"
   text "Drag me!" (W / 2) 40 24 "#ffffff"
 ]
 </script>
 
-<script src="sprout2.js?v=202611182220"></script>
-<script src="live.js?v=202611182220"></script>
+<script src="sprout2.js?v=202611182249"></script>
+<script src="live.js?v=202611182249"></script>
 <script>
 "use strict";
 const $=id=>document.getElementById(id);
@@ -655,7 +737,7 @@ function lex(src){const out=[];let i=0;const n=src.length;
   const w=src.slice(i,j);out.push({t:NUMRX.test(w)?"num":"word",s:w,i});i=j}
  return out}
 const LANG=new Set("true false none while times each collect fold append memoize str length first second last abs floor round ceil sqrt sin cos tan log pi random print range list map".split(" "));
-const GAME=new Set(["update","draw","dt","_",...Object.keys(host),"touch-x","touch-y","touching","tapped"]);
+const GAME=new Set(["update","draw","dt","_",...Object.keys(host),"touch-x","touch-y","touching","tapped","every","clock"]);
 function tokHTML(t){const e=esc(t.s);switch(t.t){case"com":return'<i class="c">'+e+"</i>";case"str":return'<i class="s">'+e+"</i>";case"num":return'<i class="n">'+e+"</i>";
  case"p":return t.s===":"||t.s===":="||t.s==="|"?'<i class="o">'+e+"</i>":e;
  case"word":return LANG.has(t.s)?'<i class="k">'+e+"</i>":GAME.has(t.s)?'<i class="a">'+e+"</i>":e;default:return e}}
@@ -668,7 +750,12 @@ $("err").onclick=()=>{if(err&&err.line){tab("code");goLine(err.line)}};
 function compile(src,silent,fresh){
  try{SL.SproutToJS.compile(src)}catch(e){if(!silent)setErr({line:SL.typoLine(src),msg:"Typo: "+SL.friendly(e.message)});return false}
  let p;try{p=SL.build(src,host,fresh||!cur?null:cur.snapshot())}catch(e){if(!silent)setErr({line:SL.lineOf(e,src),msg:SL.friendly(e.message)});return false}
- p.src=src;cur=p;if(!silent)setErr(null);return true}
+ p.src=src;cur=p;pulse();if(!silent){setErr(null);flashLive(src)}else liveSrc=src;return true}
+let liveSrc="",liveT=0;
+function pulse(){const b=$("swap");b.classList.remove("on");void b.offsetWidth;b.classList.add("on")}
+function flashLive(src){const a=liveSrc.split("\n"),b=src.split("\n");let s=0;while(s<a.length&&s<b.length&&a[s]===b[s])s++;
+ let e1=a.length-1,e2=b.length-1;while(e1>=s&&e2>=s&&a[e1]===b[e2]){e1--;e2--}liveSrc=src;
+ if(e2<s||TAB!=="code")return;const el=$("live");el.classList.remove("fade");markAt(el,s+1,e2-s+1);clearTimeout(liveT);liveT=setTimeout(()=>{el.classList.add("fade");setTimeout(()=>markAt(el,0),700)},350)}
 function restartGame(){if(!cur)return;const src=cur.src;cur=null;compile(src,true,true)||compile(src,false,true)}
 let last=0;
 function frame(now){requestAnimationFrame(frame);const dt=Math.min(.05,(now-last)/1000||0);last=now;beeps=0;
@@ -704,15 +791,32 @@ $("bSnd").onclick=()=>{muted=!muted;LS.set("sproutlive.mute",muted);sndIcon()};
 // ---------- the editor: a transparent textarea over a highlighted copy
 let code="",caretAt=-1,saveT=0,compT=0;
 const LH=()=>parseFloat(getComputedStyle(ta).lineHeight)||20,PAD=10;
-function render(){const src=code;let h;
+// live values: each top-level field shows what it holds right now, in grey at the end of its line
+let ghosts={},ghostSig="";
+function ghostText(v){if(typeof v==="number")return String(Math.round(v*10)/10);if(v===R.TRUE)return"true";if(v===R.FALSE)return"false";
+ if(typeof v==="string")return JSON.stringify(v.length>14?v.slice(0,14)+"…":v);
+ if(Array.isArray(v)||ArrayBuffer.isView(v)){const n=v.length-1;return n===1?"1 thing":n+" things"}
+ if(v instanceof Map)return"{"+Array.from(v).slice(0,4).map(([k,x])=>k+" "+(typeof x==="number"?Math.round(x):"…")).join(", ")+"}";return null}
+function readGhosts(){const o={};if(!cur)return o;let v;try{v=cur.get()}catch(e){return o}for(const k in v){const t=ghostText(v[k]);if(t!==null)o[k]=t}return o}
+const FIELD=/^([A-Za-z_][\w-]*)\s*:(?!=)/;
+const ghostLabel=(k,lit)=>{const t=ghosts[k];return t===undefined||t===lit?"":"   → "+t};
+function withGhosts(html,src){const hs=html.split("\n"),ls=src.split("\n");
+ for(let i=0;i<ls.length&&i<hs.length;i++){const m=ls[i].match(FIELD);if(!m)continue;const k=SL.mangle(m[1]),lit=ls[i].replace(/--.*$/,"").slice(m[0].length).trim();
+  hs[i]+='<i class="gh" data-g="'+k+'" data-lit="'+esc(lit).replace(/"/g,"&quot;")+'">'+esc(ghostLabel(k,lit))+"</i>"}
+ return hs.join("\n")}
+// refresh the values in place, so nothing under your finger gets rebuilt
+setInterval(()=>{const gh=readGhosts(),sg=JSON.stringify(gh);if(sg===ghostSig)return;ghosts=gh;ghostSig=sg;
+ document.querySelectorAll(".gh[data-g]").forEach(el=>{const t=ghostLabel(el.dataset.g,el.dataset.lit);if(el.textContent!==t)el.textContent=t})},200);
+function render(){renderHL();if(TAB==="tweak")renderTweak()}
+function renderHL(){const src=code;let h;
  if(caretAt>=0&&caretAt<=src.length)h=hlHTML(src.slice(0,caretAt))+'<span class="caret"></span>'+hlHTML(src.slice(caretAt));else h=hlHTML(src);
- hl.innerHTML=h+"\n ";const n=src.split("\n").length;let gs="";for(let i=1;i<=n;i++)gs+=i+"\n";gut.textContent=gs;sync();if(TAB==="tweak")renderTweak()}
+ hl.innerHTML=withGhosts(h,src)+"\n ";const n=src.split("\n").length;let gs="";for(let i=1;i<=n;i++)gs+=i+"\n";gut.textContent=gs;sync()}
 function sync(){hl.scrollTop=ta.scrollTop;hl.scrollLeft=ta.scrollLeft;gut.style.transform="translateY("+(-ta.scrollTop)+"px)";marks()}
 ta.addEventListener("scroll",sync);
 function markAt(el,line,count){if(!line){el.classList.remove("on");return}el.classList.add("on");el.style.top=(PAD+(line-1)*LH()-ta.scrollTop)+"px";el.style.height=(count||1)*LH()+"px"}
 function marks(){markAt($("errl"),err&&!quiet&&TAB!=="watch"?err.line:0)}
-function setCode(s,opt={}){code=s;caretAt=opt.caret==null?-1:opt.caret;if(ta.value!==s)ta.value=s;render();if(!opt.nosave)queueSave()}
-function queueSave(){clearTimeout(saveT);saveT=setTimeout(()=>LS.set("sproutlive.sp1",{code,step:D.step,dirty:D.dirty}),400)}
+function setCode(s,opt={}){if(s!==code)ghostSig="";code=s;caretAt=opt.caret==null?-1:opt.caret;if(ta.value!==s)ta.value=s;render();if(!opt.nosave)queueSave()}
+function queueSave(){clearTimeout(saveT);saveT=setTimeout(()=>LS.set("sproutlive.sp2",{code,step:D.step,dirty:D.dirty}),400)}
 function goLine(n){const lines=code.split("\n");let p=0;for(let i=0;i<n-1&&i<lines.length;i++)p+=lines[i].length+1;ta.focus();ta.setSelectionRange(p,p);scrollToLine(n,true)}
 function scrollToLine(n,center){const y=PAD+(n-1)*LH(),h=ta.clientHeight;if(center||y<ta.scrollTop+LH()||y>ta.scrollTop+h-3*LH())ta.scrollTop=Math.max(0,y-h*.45);sync()}
 ta.addEventListener("input",()=>{code=ta.value;caretAt=-1;D.dirty=true;render();queueSave();clearTimeout(compT);compT=setTimeout(()=>compile(code),300)});
@@ -730,7 +834,7 @@ function tweakHTML(src){return lex(src).map(t=>{
  if(t.t==="num")return'<i class="n tn" data-i="'+t.i+'" data-v="'+t.s+'">'+t.s+"</i>";
  if(t.t==="str"&&/^"#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?"$/.test(t.s)){const c=t.s.slice(1,-1);return'<i class="s tc" data-i="'+t.i+'" data-v="'+esc(t.s)+'" style="--c:'+c+'"><u></u>'+esc(t.s)+"</i>"}
  return tokHTML(t)}).join("")}
-function renderTweak(){if(drag)return;const st=tw.scrollTop;tw.innerHTML=tweakHTML(code)+"\n";tw.scrollTop=st}
+function renderTweak(){if(drag)return;const st=tw.scrollTop;tw.innerHTML=withGhosts(tweakHTML(code),code)+"\n";tw.scrollTop=st}
 let drag=null;
 tw.addEventListener("pointerdown",e=>{const el=e.target.closest(".tn");if(!el)return;e.preventDefault();audio();
  const txt=el.dataset.v,dec=(txt.split(".")[1]||"").length;drag={el,i:+el.dataset.i,len:txt.length,v0:parseFloat(txt),dec,x0:e.clientX,moved:false,id:e.pointerId};
@@ -809,11 +913,12 @@ $("bGames").onclick=()=>{const bk=LS.get("sproutlive.backup",null);
   else if(k==="sprout")loadGame(STEPS[STEPS.length-1].code,"Sprout is yours to change");
   else if(k==="backup")loadGame(bk,"Your code is back");
   else loadGame(TEMPL[+k].code,TEMPL[+k].title+" loaded")})};
-const REF_LANG=[["x : 10","makes a field called x."],["x := x + 1","changes x."],["2 + 3 * 4","is 20. Sprout reads maths left to right, with no precedence. Use ( ) to group."],
- ["a > b [yes, no]","true picks the first, false picks the second. Wrap several lines in ( ) to run them together."],["[a, b | a + b]","a block with inputs a and b."],["[| ... ]","a block with no inputs."],
- ["xs : [1, 2, 3]","a list. xs 2 is its second item, and xs 2 := 9 changes it."],["xs append [4, 5]","a new list with one more item, here the pair [4, 5]."],["xs each [ ... ]","runs for every item. _ is the item."],
- ["5 times [ ... ]","runs 5 times. _ counts 1 to 5."],["while [test] [ ... ]","keeps going while the test is true."],["\"Hi \" ++ (n str)","joins words. str turns a number into words."],["-- a note","is for people, Sprout skips it."]];
-const REF_GAME=[["update : [dt | ... ]","runs every frame. dt is the seconds since the last one."],["draw : [| ... ]","paints the screen every frame."],["W, H","the screen's width (360) and height (480)."],
+const REF_LANG=[["x : 10","makes a field called x. It keeps its value while you edit the rest of the code; change the 10 itself and the new value takes over."],["x := x + 1","changes x."],["2 + 3 * 4","is 20. Sprout reads maths left to right, with no precedence. Use ( ) to group."],
+ ["a > b [yes, no]","true picks the first, false picks the second. Wrap several lines in ( ) to run them together."],["[a, b | a + b]","a block with inputs a and b."],["[ ... ]","a block. Each new line is a new step."],["[1, 2, 3]","a list. Commas separate list items."],
+ ["p : {x : 1, y : 2}","a record. p.x reads a field and p.x := 5 changes it. In each, _.x is the item's x."],
+ ["xs 2","the second item of a list. xs 2 := 9 changes it."],["xs append {x : 4}","a new list with one more item on the end."],["xs each [ ... ]","runs for every item. _ is the item."],
+ ["5 times [ ... ]","runs 5 times. _ counts 1 to 5."],["xs each [d | ... ]","you can also name the item."],["while [test] [ ... ]","keeps going while the test is true."],["\"Hi \" ++ (n str)","joins words. str turns a number into words."],["-- a note","is for people, Sprout skips it."]];
+const REF_GAME=[["update : [dt | ... ]","runs every frame. dt is the seconds since the last one."],["draw : [| ... ]","paints the screen every frame."],["W, H","the screen's width (360) and height (480)."],["every 0.5 [ ... ]","runs the block every half second."],["clock","seconds since the game started."],
  ["clear colour","fills the screen."],["rect x y w h colour","a box from its top-left corner."],["circle x y r colour","a circle around x, y."],["line x1 y1 x2 y2 colour","a line."],["text words x y size colour","words centred on x, y."],
  ["touch-x, touch-y","where your finger or mouse is."],["touching, tapped","true while pressed, and on the frame you tap."],["key \"left\"","true while held. Also \"right\", \"up\", \"down\", \"space\" or a letter."],
  ["rand 1 10, random","a random number between 1 and 10, or between 0 and 1."],["dist x1 y1 x2 y2","how far apart two points are."],["clamp v lo hi","keeps v between lo and hi."],["keep xs [test]","only the items that pass the test."],
@@ -830,7 +935,7 @@ $("bShare").onclick=async()=>{if(!code.trim()){toast("Nothing to share yet");ret
 (function boot(){let loaded=false;
  const m=location.hash.match(/^#sp=([\w-]+)/);
  if(m){try{const src=b64d(m[1]);history.replaceState(null,"",location.pathname);setCode(src);compile(src);D.step=-2;tab("code");toast("Someone shared this game with you");loaded=true}catch(e){}}
- if(!loaded){const sv=LS.get("sproutlive.sp1",null);
+ if(!loaded){const sv=LS.get("sproutlive.sp2",null);
   if(sv&&sv.code&&sv.code.trim()){D.step=typeof sv.step==="number"?sv.step:-2;D.dirty=!!sv.dirty;setCode(sv.code,{nosave:true});compile(sv.code);if(D.step<0||D.dirty)tab("tweak")}
   else setCode("",{nosave:true})}
  $("capx").textContent=INTRO;capUI();fit()})();

@@ -4,6 +4,11 @@
 //  2. [| ... ] is always a zero-argument block, as the v2 docs describe, even when every line is a call.
 //  3. inside each/collect bodies, := updates the outer field and  list 2 := v  stores into the list.
 //  4. each/collect run a tail call left pending at the end of their block (a final  beep 880 0.1  was skipped).
+//  5. a named item, as in  xs each [d | ...], is bound in every loop (it was only bound inside other blocks).
+// Sprout Live additions, each marked "Sprout Live addition X":
+//  A. a new line is a new step and a comma is a new item, so [ ... ] over several lines is a block, and [1, 2] is a list.
+//  B. records: {x : 1, y : 2}
+//  C. dots read and change fields: d.x, d.x := 5, _.y
 var SproutToJS=(function(){"use strict";
 
 function tokenize(src){
@@ -12,7 +17,7 @@ function tokenize(src){
   while(i<n){
     const c=src[i];
     if(c===" "||c==="\t"||c==="\r"){i++;continue}
-    if(c==="\n"){toks.push(",");i++;continue}
+    if(c==="\n"){toks.push("\n");i++;continue}/* Sprout Live addition A */
     // -- comments (Sprout 2.0)
     if(c==="-"&&i+1<n&&src[i+1]==="-"){i+=2;while(i<n&&src[i]!=="\n")i++;continue}
     // Legacy ' comments (backward compat)
@@ -45,7 +50,7 @@ class Parser{
     while(true){
       const t=this.pk();
       if(t===null||t===end)break;
-      if(t===","){this.nx();continue}
+      if(t===","||t==="\n"){if(t===",")this._comma=true;this.nx();continue}
       items.push(this.exprOrSet());
     }
     return items;
@@ -60,7 +65,7 @@ class Parser{
     let node=this.primary();
     while(true){
       const t=this.pk();
-      if(t===null||t===","||t===":"||t===":="||t==="|"||t==="]"||t===")"||t==="}")break;
+      if(t===null||t===","||t==="\n"||t===":"||t===":="||t==="|"||t==="]"||t===")"||t==="}")break;
       node=Send(node,this.primary());
     }
     return node;
@@ -69,12 +74,31 @@ class Parser{
     const t=this.nx();
     if(t==="[")return this.block("]");
     if(t==="("){const b=this.block(")");b.group=true;return b}
+    if(t==="{")return this.record();/* Sprout Live addition B */
     if(isStr(t))return Lit(t.v);
     if(isWord(t)){
       if(NUM.test(t.v))return Lit(parseFloat(t.v));
+      if(/^[A-Za-z_@][\w-]*(\.[A-Za-z_][\w-]*)+$/.test(t.v)){/* Sprout Live addition C: d.x reads field x of d */
+        const parts=t.v.split(".");let node=Name(parts[0]);
+        for(const p of parts.slice(1))node=Send(node,Lit(p));
+        return node;
+      }
       return Name(t.v);
     }
     throw new Error("unexpected: "+JSON.stringify(t));
+  }
+  record(){/* Sprout Live addition B: {x : 1, y : 2} is a record */
+    const r={t:"Rec",fields:[]};
+    while(true){
+      const x=this.pk();
+      if(x===null)break;
+      if(x===","||x==="\n"){this.nx();continue}
+      if(x==="}"){this.nx();break}
+      if(!isWord(x)||this.t[this.i+1]!==":")throw new Error("records look like {x : 1, y : 2}");
+      this.nx();this.nx();
+      r.fields.push(SetN(Name(x.v),this.chain(),false));
+    }
+    return r;
   }
   block(close){
     const b=Block();
@@ -92,12 +116,12 @@ class Parser{
       while(true){
         const x=this.pk();
         if(x==="|"){this.nx();break}
-        if(x===","){this.nx();continue}
+        if(x===","||x==="\n"){this.nx();continue}
         if(isWord(x)){b.params.push(x.v);this.nx()}
         else this.nx();
       }
     }
-    b.body=this.seq(close);
+    const sc=this._comma;this._comma=false;b.body=this.seq(close);b.commas=this._comma;this._comma=sc;
     if(this.pk()===close)this.nx();
     return b;
   }
@@ -226,7 +250,7 @@ class Gen{
         this._declared.add("_");this._declared.add("@");
         const body=this.genBlockInlineStmts(node.m);
         this._declared=saved;
-        return`for(let __i=0;__i<(${this.genExpr(inner.tgt)});__i++){let IT=__i+1;${body}}`;
+        return`for(let __i=0;__i<(${this.genExpr(inner.tgt)});__i++){let IT=__i+1;${node.m.params&&node.m.params.length?`let ${mangle(node.m.params[0])}=IT;`:""}/* Sprout Live fix 5 */${body}}`;
       }
       if(inner.t==="Send"&&inner.m.t==="Name"&&inner.m.n==="each"){
         const xs=this.genExpr(inner.tgt);
@@ -234,7 +258,7 @@ class Gen{
         this._declared.add("_");this._declared.add("@");
         const body=this.genBlockInlineStmts(node.m);
         this._declared=saved;
-        return`{const __l=${xs};for(let __k=1;__k<__l.length;__k++){let IT=__l[__k];${body}}}`;
+        return`{const __l=${xs};for(let __k=1;__k<__l.length;__k++){let IT=__l[__k];${node.m.params&&node.m.params.length?`let ${mangle(node.m.params[0])}=IT;`:""}/* Sprout Live fix 5 */${body}}}`;
       }
     }
     return null;
@@ -254,6 +278,7 @@ class Gen{
 
   isListLiteral(node){
     if(node.t!=="Block"||node.group||node.params.length||node.bar/* Sprout Live fix 2 */)return false;
+    if(node.body.length>=2&&!node.commas)return false;/* Sprout Live addition A: lines without commas are steps, not list items */
     if(this.usesImplicit(node.body))return false;
     if(node.body.some(e=>e.t==="Set"))return false;
     return node.body.length===0||node.body.length>=2;
@@ -265,6 +290,7 @@ class Gen{
   }
 
   genExpr(node,tail=false){
+    if(node.t==="Rec")return`(new Map([${node.fields.map(f=>`[${strlit(f.key.n)},${this.genExpr(f.val)}]`).join(",")}]))`;/* Sprout Live addition B */
     if(node.t==="Lit")return typeof node.v==="number"?String(node.v):strlit(node.v);
     if(node.t==="Name"){
       const n=node.n;
@@ -306,6 +332,7 @@ class Gen{
       if(n.t==="Send")return chk(n.tgt)||chk(n.m);
       if(n.t==="Set")return chk(n.val);
       if(n.t==="Block"&&n.group)return n.body.some(chk);
+      if(n.t==="Rec")return n.fields.some(chk);
       return false;
     };
     return body.some(chk);
@@ -416,7 +443,7 @@ class Gen{
         this._declared.add("_");this._declared.add("@");
         const body=this.genBlockInlineStmts(node.m);
         this._declared=saved;
-        return`(()=>{for(let __i=0;__i<(${this.genExpr(inner.tgt)});__i++){let IT=__i+1;${body}}return NONE;})()`;
+        return`(()=>{for(let __i=0;__i<(${this.genExpr(inner.tgt)});__i++){let IT=__i+1;${node.m.params&&node.m.params.length?`let ${mangle(node.m.params[0])}=IT;`:""}/* Sprout Live fix 5 */${body}}return NONE;})()`;
       }
       if(inner.t==="Send"&&inner.m.t==="Name"&&inner.m.n==="each"){
         return`(()=>{const __l=${this.genExpr(inner.tgt)},__f=${this.genCallback(node.m)};for(let __k=1;__k<__l.length;__k++){RUN(__f(__l[__k]));/* Sprout Live fix 4 */}return NONE;})()`;
@@ -599,5 +626,5 @@ function compile(src){return new Gen().genProgram(new Parser(tokenize(src)).prog
 return{compile};
 })();
 
-var SproutRuntime=(function(){"use strict";const NONE=Symbol("none"),TRUE={sel:0},FALSE={sel:1};const eq=(a,b)=>(a===b)?TRUE:FALSE,REQ=(a,b)=>(a===b);function RANGE(n){const a=new Float64Array(n+1);for(let i=1;i<=n;i++)a[i]=i;return a}function ZEROS(n){return new Float64Array(n+1)}function newmap(){return new Map()}function LEN(x){if(typeof x==="string")return x.length;if(Array.isArray(x)||ArrayBuffer.isView(x))return x.length-1;return 0}function LAST(x){if(typeof x==="string")return x.length?x[x.length-1]:NONE;const n=LEN(x);return n>=1?CALL(x,n):NONE}function STORE(t,k,v){if(Array.isArray(t)&&typeof k==="number"){while(t.length<=k)t.push(NONE);t[k]=v;return v}if(t instanceof Map){t.set(k,v);return v}return v}function fmt(x){if(x===NONE)return"none";if(x===TRUE)return"true";if(x===FALSE)return"false";if(typeof x==="number")return String(x);if(typeof x==="string")return x;if(typeof x==="function")return"[block]";if(Array.isArray(x)||ArrayBuffer.isView(x))return"["+Array.from(x).slice(1).map(fmt).join(", ")+"]";return String(x)}function CALL(t,a){if(t===TRUE||t===FALSE){if(Array.isArray(a))return(a[t.sel]!==undefined)?a[t.sel]():NONE;return NONE}if(Array.isArray(t)||ArrayBuffer.isView(t))return typeof a==="number"&&a>=1&&a<t.length?t[a]:NONE;if(t instanceof Map)return t.has(a)?t.get(a):NONE;if(typeof t==="function")return t(a);return NONE}function SEND(t,arg){if(typeof t==="function")return RUN(t(arg));if(Array.isArray(t)||ArrayBuffer.isView(t)||t instanceof Map)return CALL(t,arg);return NONE}class Bounce{constructor(fn,args){this.fn=fn;this.args=args}}function RUN(v){while(v instanceof Bounce)v=v.fn(...v.args);return v}function AR(fn,n){fn.L=n;return fn}function invoke(fn,args){if(typeof fn!=="function")return args.length?CALL(fn,args[0]):fn;const L=fn.L||1;if(args.length===L)return fn(...args);if(args.length<L){const got=args.slice();const g=(...more)=>invoke(fn,got.concat(more));g.L=L-args.length;return g}return invoke(RUN(fn(...args.slice(0,L))),args.slice(L))}function APPLY(fn,args){if(typeof fn==="function"&&(fn.L||1)===args.length)return RUN(fn(...args));return RUN(invoke(fn,args))}function TCN(fn,args){if(typeof fn==="function"&&(fn.L||1)===args.length)return new Bounce(fn,args);return invoke(fn,args)}function TC(t,arg){if(typeof t==="function"&&(t.L||1)===1)return new Bounce(t,[arg]);return CALL(t,arg)}function SELT(boolv,thunks){if(boolv===TRUE||boolv===FALSE){const i=boolv.sel;return thunks[i]!==undefined?thunks[i]():NONE}return NONE}function MEMO(fn){const L=fn.L||1,cache=new Map();const w=(...args)=>{const key=args.map(keyOf).join("");if(cache.has(key))return cache.get(key);const val=RUN(fn(...args));cache.set(key,val);return val};w.L=L;return w}function keyOf(a){if(a===TRUE)return"T";if(a===FALSE)return"F";if(a===NONE)return"N";return(typeof a)+":"+String(a)}return{NONE,TRUE,FALSE,eq,REQ,RANGE,ZEROS,newmap,LEN,LAST,STORE,fmt,CALL,SEND,Bounce,RUN,AR,invoke,APPLY,TCN,TC,SELT,MEMO,keyOf}})();
+var SproutRuntime=(function(){"use strict";const NONE=Symbol("none"),TRUE={sel:0},FALSE={sel:1};const eq=(a,b)=>(a===b)?TRUE:FALSE,REQ=(a,b)=>(a===b);function RANGE(n){const a=new Float64Array(n+1);for(let i=1;i<=n;i++)a[i]=i;return a}function ZEROS(n){return new Float64Array(n+1)}function newmap(){return new Map()}function LEN(x){if(typeof x==="string")return x.length;if(Array.isArray(x)||ArrayBuffer.isView(x))return x.length-1;return 0}function LAST(x){if(typeof x==="string")return x.length?x[x.length-1]:NONE;const n=LEN(x);return n>=1?CALL(x,n):NONE}function STORE(t,k,v){if(Array.isArray(t)&&typeof k==="number"){while(t.length<=k)t.push(NONE);t[k]=v;return v}if(t instanceof Map){t.set(k,v);return v}return v}function fmt(x){if(x===NONE)return"none";if(x===TRUE)return"true";if(x===FALSE)return"false";if(typeof x==="number")return String(x);if(typeof x==="string")return x;if(typeof x==="function")return"[block]";if(x instanceof Map)return"{"+Array.from(x).map(([k,v])=>k+" : "+fmt(v)).join(", ")+"}";if(Array.isArray(x)||ArrayBuffer.isView(x))return"["+Array.from(x).slice(1).map(fmt).join(", ")+"]";return String(x)}function CALL(t,a){if(t===TRUE||t===FALSE){if(Array.isArray(a))return(a[t.sel]!==undefined)?a[t.sel]():NONE;return NONE}if(Array.isArray(t)||ArrayBuffer.isView(t))return typeof a==="number"&&a>=1&&a<t.length?t[a]:NONE;if(t instanceof Map)return t.has(a)?t.get(a):NONE;if(typeof t==="function")return t(a);return NONE}function SEND(t,arg){if(typeof t==="function")return RUN(t(arg));if(Array.isArray(t)||ArrayBuffer.isView(t)||t instanceof Map)return CALL(t,arg);return NONE}class Bounce{constructor(fn,args){this.fn=fn;this.args=args}}function RUN(v){while(v instanceof Bounce)v=v.fn(...v.args);return v}function AR(fn,n){fn.L=n;return fn}function invoke(fn,args){if(typeof fn!=="function")return args.length?CALL(fn,args[0]):fn;const L=fn.L||1;if(args.length===L)return fn(...args);if(args.length<L){const got=args.slice();const g=(...more)=>invoke(fn,got.concat(more));g.L=L-args.length;return g}return invoke(RUN(fn(...args.slice(0,L))),args.slice(L))}function APPLY(fn,args){if(typeof fn==="function"&&(fn.L||1)===args.length)return RUN(fn(...args));return RUN(invoke(fn,args))}function TCN(fn,args){if(typeof fn==="function"&&(fn.L||1)===args.length)return new Bounce(fn,args);return invoke(fn,args)}function TC(t,arg){if(typeof t==="function"&&(t.L||1)===1)return new Bounce(t,[arg]);return CALL(t,arg)}function SELT(boolv,thunks){if(boolv===TRUE||boolv===FALSE){const i=boolv.sel;return thunks[i]!==undefined?thunks[i]():NONE}return NONE}function MEMO(fn){const L=fn.L||1,cache=new Map();const w=(...args)=>{const key=args.map(keyOf).join("");if(cache.has(key))return cache.get(key);const val=RUN(fn(...args));cache.set(key,val);return val};w.L=L;return w}function keyOf(a){if(a===TRUE)return"T";if(a===FALSE)return"F";if(a===NONE)return"N";return(typeof a)+":"+String(a)}return{NONE,TRUE,FALSE,eq,REQ,RANGE,ZEROS,newmap,LEN,LAST,STORE,fmt,CALL,SEND,Bounce,RUN,AR,invoke,APPLY,TCN,TC,SELT,MEMO,keyOf}})();
 if(typeof module!=="undefined")module.exports={SproutToJS,SproutRuntime};

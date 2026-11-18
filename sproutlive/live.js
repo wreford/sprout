@@ -27,8 +27,8 @@ function statements(src) {
     if (c === '"') { i++; while (i < n && src[i] !== '"') { if (src[i] === "\\") i++; else if (src[i] === "\n") line++; i++; } i++; if (!has) { has = true; start = line; } continue; }
     if (c === "\n") { if (depth === 0) end(); line++; i++; continue; }
     if (c === "," && depth === 0) { end(); i++; continue; }
-    if (c === "[" || c === "(") depth++;
-    else if (c === "]" || c === ")") depth = Math.max(0, depth - 1);
+    if (c === "[" || c === "(" || c === "{") depth++;
+    else if (c === "]" || c === ")" || c === "}") depth = Math.max(0, depth - 1);
     if (!/\s/.test(c) && !has) { has = true; start = line; }
     i++;
   }
@@ -39,14 +39,14 @@ function statements(src) {
 // a bracket that closes the wrong thing, or one left open, usually marks the typo
 function bracketLine(src) {
   const stack = []; let line = 1;
-  const pair = { "]": "[", ")": "(" };
+  const pair = { "]": "[", ")": "(", "}": "{" };
   for (let i = 0; i < src.length; i++) {
     const c = src[i];
     if (c === "-" && src[i + 1] === "-") { while (i < src.length && src[i] !== "\n") i++; i--; continue; }
     if (c === '"') { i++; while (i < src.length && src[i] !== '"') { if (src[i] === "\n") line++; if (src[i] === "\\") i++; i++; } continue; }
     if (c === "\n") { line++; continue; }
-    if (c === "[" || c === "(") stack.push([c, line]);
-    else if (c === "]" || c === ")") { const top = stack.pop(); if (!top || top[0] !== pair[c]) return top ? top[1] : line; }
+    if (c === "[" || c === "(" || c === "{") stack.push([c, line]);
+    else if (c === "]" || c === ")" || c === "}") { const top = stack.pop(); if (!top || top[0] !== pair[c]) return top ? top[1] : line; }
   }
   return stack.length ? stack[stack.length - 1][1] : 0;
 }
@@ -67,8 +67,8 @@ function typoLine(src) {
     const c = src[i];
     if (c === "-" && src[i + 1] === "-") { while (i < src.length && src[i] !== "\n") i++; line++; continue; }
     if (c === "\n") line++;
-    if (c === "[" || c === "(") { if (!depth) at = line; depth++; }
-    if (c === "]" || c === ")") depth--;
+    if (c === "[" || c === "(" || c === "{") { if (!depth) at = line; depth++; }
+    if (c === "]" || c === ")" || c === "}") depth--;
   }
   return depth > 0 ? at : 0;
 }
@@ -93,21 +93,35 @@ const sig = v => {
   if (v === R.TRUE) return "T"; if (v === R.FALSE) return "F"; if (v === R.NONE) return "N";
   if (typeof v === "number" || typeof v === "string") return typeof v + ":" + v;
   if (Array.isArray(v) || ArrayBuffer.isView(v)) return "[" + Array.from(v).slice(1).map(sig).join(",") + "]";
+  if (v instanceof Map) return "{" + Array.from(v).map(([k, x]) => k + ":" + sig(x)).join(",") + "}";
   return null;
 };
 
-const INPUTS = ["touch-x", "touch-y", "touching", "tapped"];
+const INPUTS = ["touch-x", "touch-y", "touching", "tapped", "clock"];
 
 // host: { name: [arity, fn] } plus W and H; returns a program you can step
 function build(src, host, keep) {
+  host = host || {};
   let js = SproutToJS.compile(src);
   const names = [], lines = js.split("\n");
   const re = /^let (v_[A-Za-z0-9_]+) = (.*?);?$/;
   js = lines.map(l => { const m = l.match(re); if (!m) return l; names.push(m[1]); return "let " + m[1] + " = __keep(\"" + m[1] + "\", " + m[2] + ");"; }).join("\n");
   js = guard(js);
   const inV = INPUTS.map(mangle);
-  const head = "let " + inV.map(v => v + "=" + (v.includes("touch_2d") ? "0" : "FALSE")).join(",") + ";const __in=(a,b,c,d)=>{" + inV.map((v, i) => v + "=" + "abcd"[i]).join(";") + "};\n";
+  const head = "let " + inV.map(v => v + "=" + (/touch_2d|clock/.test(v) ? "0" : "FALSE")).join(",") + ";const __in=(a,b,c,d,e)=>{" + inV.map((v, i) => v + "=" + "abcde"[i]).join(";") + "};\n";
   const tail = "\n;return {__in,get:()=>({" + names.map(n => n + ":" + n).join(",") + "}),update:typeof v_update!=='undefined'?v_update:null,draw:typeof v_draw!=='undefined'?v_draw:null}\n//# sourceURL=game.js";
+  // every seconds [ ... ]: runs the block on a beat. Timers are keyed by the block's own code,
+  // so editing one block restarts only its beat, and the beats carry over when the code changes.
+  const timers = new Map(keep && keep.timers ? keep.timers : []);
+  let frameDt = 0, clock = keep && keep.clock || 0;
+  host = Object.assign({}, host, {
+    every: [2, (secs, block) => {
+      if (typeof block !== "function" || !(secs > 0)) return R.NONE;
+      const k = String(block); let t = (timers.get(k) || 0) + frameDt, n = 0;
+      while (t >= secs && n < 4) { t -= secs; n++; R.RUN(block()); }
+      timers.set(k, Math.min(t, secs)); return R.NONE;
+    }]
+  });
   const rnames = Object.keys(R), hk = Object.keys(host);
   const fresh = {}, init = {};
   let loops = 0, t0 = 0;
@@ -128,11 +142,12 @@ function build(src, host, keep) {
   const p = fn(...rnames.map(k => R[k]), host.print ? host.print[1] : (x => x), __keep, __G, ...args);
   p.init = init;
   p.step = (dt, inp) => {
-    p.__in(inp.x, inp.y, inp.down ? R.TRUE : R.FALSE, inp.tap ? R.TRUE : R.FALSE);
+    frameDt = dt; clock += dt;
+    p.__in(inp.x || 0, inp.y || 0, inp.down ? R.TRUE : R.FALSE, inp.tap ? R.TRUE : R.FALSE, clock);
     loops = 0; t0 = now(); if (p.update) R.RUN(p.update(dt));
   };
-  p.paint = () => { loops = 0; t0 = now(); if (p.draw) R.RUN(p.draw()); };
-  p.snapshot = () => ({ vals: p.get(), init: p.init });
+  p.paint = () => { loops = 0; t0 = now(); frameDt = 0; if (p.draw) R.RUN(p.draw()); };
+  p.snapshot = () => ({ vals: p.get(), init: p.init, timers: Array.from(timers), clock });
   return p;
 }
 
