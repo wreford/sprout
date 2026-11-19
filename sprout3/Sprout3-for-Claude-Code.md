@@ -10,13 +10,13 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 
 ```
 node test.js          # language tests (72)
-node game-tests.js    # game tests (34)
+node game-tests.js    # game tests (48)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 106 tests pass as of 19 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected.
+All 120 tests pass as of 19 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected.
 
 ## How to work on it
 
@@ -87,8 +87,12 @@ All 106 tests pass as of 19 November 2026. `test.js` uses `node:sqlite`, which p
 - `examples/orbit.sp`: Orbit: throw moons round a sun
 - `examples/hop.sp`: Hop: land gently on the pad
 - `examples/life.sp`: Life: a living grid you can draw on
+- `examples/ace-derive.sp`: ACE (the Atomic Constraint Engine): the five kinds of atom, with done derived to a fixed point (prints)
+- `examples/ace-schedule.sp`: ACE: critical path, then a Monte Carlo finish date with a shared risk (prints)
+- `examples/ace-board.sp`: ACE: an interactive atom graph; tap work to close it, and gates, the rollup and the critical path follow
+- `examples/ace-site.sp`: ACE: positions are expressions over named dimensions, and overlaps are clashes
 - `examples/recipes.sp`: Recipes: quicksort, primes, FizzBuzz, a vector with its own + (prints; not a game)
-- `index.html`: The web page at taskiap.com/sprout3/: play and live-edit the examples, rewind, state, output and the spec
+- `index.html`: The web page at taskiap.com/sprout3/: a terminal-style workspace to play and live-edit the examples, with rewind, state, output and the spec
 - `old-sprout2.js`: The old Sprout 2.0 compiler, kept only so bench.js can compare against it
 
 ---
@@ -2144,6 +2148,41 @@ const f = (g, k) => g.state.field(k);
   ok("recipes: every answer", JSON.stringify(lines) === JSON.stringify(want), lines);
 }
 
+// ---------------- ACE (the Atomic Constraint Engine) examples
+{
+  const printed = name => { const lines = []; S.setOut(x => lines.push(x)); S.load(fs.readFileSync(__dirname + "/examples/" + name + ".sp", "utf8")).run(S.BANG); S.setOut(() => {}); return lines; };
+  const d = printed("ace-derive");
+  ok("ace-derive: done is derived, 4 of 11 today", d.includes("done      4 of 11") && d.some(l => l.startsWith("[ ] gate      RFI: splice length") && l.endsWith("waits on eng-reply")));
+  ok("ace-derive: the gate closes itself once the reply is in", d.includes("workable  rebar-on-site, eng-reply") && d.includes("workable  place-rebar") && d.includes("done      7 of 11"), d.filter(l => l.startsWith("workable")));
+  const sc = printed("ace-schedule");
+  ok("ace-schedule: the critical path", sc.includes("finish on day 21, through rebar > place-rebar > inspect > pour > cure"), sc.find(l => l.startsWith("finish")));
+  const p = sc.find(l => l.startsWith("P10")), nums = (p || "").match(/\d+/g).map(Number);
+  ok("ace-schedule: monte carlo percentiles in order, and later than the likely plan", nums.length === 8 && nums[1] >= 21 && nums[1] <= nums[3] && nums[3] <= nums[5] && nums[5] <= nums[7] && nums[3] > 21, p);
+
+  const src = fs.readFileSync(__dirname + "/examples/ace-board.sp", "utf8"), AT = S.partsOf(S.load(src).field("atoms"));
+  const fx = [], b = L.makeGame(src, { onEffect: e => fx.push(e[0]) });
+  const tapOn = id => { const a = AT.find(r => r.field("id") === id); b.down(a.field("x") + 50, a.field("y") + 18); b.tick(1 / 60); b.up(); b.tick(1 / 60); return f(b, "msg"); };
+  const header = () => { const t = b.draw().filter(x => x[0] === "text"); return t[t.length - 3][1][0]; };
+  b.tick(1 / 60);
+  ok("ace-board: starts 3 of 11 done, 14 days of work", header() === "ACE  3/11 done  ·  14d of work left", header());
+  ok("ace-board: blocked work can't be closed", tapOn("place") === "place rebar waits on dig, rebar, rfi" && fx.includes("shake"));
+  ok("ace-board: a gate isn't tapped", tapOn("rfi") === "RFI: splice is a gate: it closes by itself");
+  for (const id of ["dig", "rebar", "reply", "place"]) tapOn(id);
+  ok("ace-board: verified needs the work and then a witness", tapOn("inspect") === "inspection done: now tap again to sign" && tapOn("inspect") === "inspection signed by the witness");
+  tapOn("forms"); tapOn("pour");
+  ok("ace-board: everything done, nothing left", header() === "ACE  11/11 done  ·  0d of work left", header());
+  tapOn("dig");
+  ok("ace-board: reopening upstream work reopens what depends on it", /^ACE  \d\/11 done/.test(header()) && !header().startsWith("ACE  11/11"), header());
+
+  const fx2 = [], st = L.makeGame(fs.readFileSync(__dirname + "/examples/ace-site.sp", "utf8"), { onEffect: e => fx2.push(e[0]) });
+  const size = x => { st.down(x, 200); st.tick(1 / 60); st.up(); st.tick(1 / 60); return [f(st, "rb-d"), f(st, "clashes")]; };
+  st.tick(1 / 60);
+  ok("ace-site: no clashes at 46 m", f(st, "clashes") === 0);
+  ok("ace-site: a bigger reactor pushes the service building into the fuel bay", JSON.stringify(size(250)) === "[58,1]" && fx2.includes("shake"), size(250));
+  ok("ace-site: and the turbine hall off the site", JSON.stringify(size(300)) === "[63,2]");
+  ok("ace-site: shrinking clears them", JSON.stringify(size(0)) === "[30,0]");
+}
+
 const errs = logs.filter(m => !/doesn't know input/.test(m));
 ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
 console.log(pass + " passed, " + fail + " failed");
@@ -2985,6 +3024,415 @@ draw : [g |
 ]
 ````
 
+## examples/ace-derive.sp
+
+ACE (the Atomic Constraint Engine): the five kinds of atom, with done derived to a fixed point (prints)
+
+````sprout
+-- ACE: the Atomic Constraint Engine, in Sprout. One primitive: the atom.
+-- An atom has an id, a name, a kind and two links: requires (what must finish first)
+-- and contains (its children). Done is never stored. It is derived from the graph.
+--
+-- Five kinds, by who says an atom is done:
+--   trivial   born done: a fact other atoms can rely on
+--   leaf      a person closes it
+--   verified  closed AND signed by a witness: two locks
+--   gate      done when everything it requires is done (RFIs, constraints)
+--   rollup    done when all its children are done (areas, work packages)
+
+atoms : [
+  [id : "basis", name : "Design basis issued", kind : "trivial", requires : [], contains : []]
+  [id : "permit", name : "Excavation permit", kind : "verified", closed : true, signed : true, requires : [], contains : []]
+  [id : "survey", name : "Survey and layout", kind : "leaf", closed : true, requires : [], contains : []]
+  [id : "dig", name : "Excavate pedestal", kind : "leaf", closed : true, requires : ["permit", "survey"], contains : []]
+  [id : "rebar-on-site", name : "Rebar delivered", kind : "leaf", closed : false, requires : [], contains : []]
+  [id : "eng-reply", name : "Engineer answers splice RFI", kind : "leaf", closed : false, requires : [], contains : []]
+  [id : "rfi-splice", name : "RFI: splice length", kind : "gate", requires : ["eng-reply"], contains : []]
+  [id : "place-rebar", name : "Place rebar", kind : "leaf", closed : false, requires : ["dig", "rebar-on-site", "rfi-splice"], contains : []]
+  [id : "inspect", name : "Pre-pour inspection", kind : "verified", closed : false, signed : false, requires : ["place-rebar"], contains : []]
+  [id : "pour", name : "Pour concrete", kind : "leaf", closed : false, requires : ["inspect"], contains : []]
+  [id : "pedestal", name : "Turbine pedestal", kind : "rollup", requires : ["basis"], contains : ["dig", "place-rebar", "pour"]]
+]
+
+-- the atom with this id
+find : [want atoms-in | atoms-in keep [a | a id = want] first]
+pad : [s n | s length < n [pad [s .. " ", n]] else [s]]
+has : [xs want | xs keep [x | x = want] length > 0]
+
+-- derive: start from nothing and close whatever the graph allows, until nothing changes (a fixed point)
+-- (written with and/or, not match: a case that gives false would fall through to the next one, decision 74)
+closes : [a ok |
+  k : a kind
+  manual : k = "leaf" or (k = "verified")
+  links-done : a requires .. (a contains) keep [x | has [ok, x] not] length = 0
+  k = "trivial" or (manual and (a closed) and (k = "leaf" or (a signed))) or (manual not and links-done)
+]
+settle : [atoms-in ok |
+  more : atoms-in keep [a | has [ok, a id] not and (closes [a, ok])] collect [a | a id]
+  more length = 0 [ok] else [settle [atoms-in, ok .. more]]
+]
+
+-- a short report: done, workable now, and what each blocked atom waits on
+report : [atoms-in title |
+  done : settle [atoms-in, []]
+  open : atoms-in keep [a | has [done, a id] not]
+  workable : open keep [a | a requires keep [x | has [done, x] not] length = 0 and (a kind = "leaf" or (a kind = "verified"))]
+  "== [title] ==" print
+  "done      [done length] of [atoms-in length]" print
+  atoms-in each [a |
+    mark : has [done, a id] ["\[x]"] else [has [workable collect [w | w id], a id] ["\[>]"] else ["\[ ]"]]
+    waits : a requires .. (a contains) keep [x | has [done, x] not]
+    note : waits length > 0 ["waits on " .. (waits fold ["", [s x | s = "" [x] else [s .. ", " .. x]]])] else [""]
+    "[mark] [pad [a kind, 9]] [pad [a name, 28]] [note]" print
+  ]
+  "workable  " .. (workable collect [a | a id] fold ["", [s x | s = "" [x] else [s .. ", " .. x]]]) print
+  "pedestal  " .. (has [done, "pedestal"] ["done"] else ["open"]) print
+]
+
+report [atoms, "today"]
+
+-- what if the rebar arrives and the engineer answers the RFI? Change two leaves, derive again.
+arrived : atoms collect [a | has [["rebar-on-site", "eng-reply"], a id] [a with [closed : true]] else [a]]
+report [arrived, "rebar in, RFI answered"]
+````
+
+## examples/ace-schedule.sp
+
+ACE: critical path, then a Monte Carlo finish date with a shared risk (prints)
+
+````sprout
+-- ACE schedule: the critical path is a walk over requires, and the plan is a distribution, not a date.
+-- Each piece of work has a duration triple in days: [fastest, likely, slowest].
+
+atoms : [
+  [id : "permit", requires : [], dur : [0, 0, 0]]
+  [id : "survey", requires : [], dur : [1, 2, 3]]
+  [id : "dig", requires : ["permit", "survey"], dur : [3, 4, 7]]
+  [id : "rebar", requires : [], dur : [5, 8, 15]]
+  [id : "rfi", requires : [], dur : [2, 5, 12]]
+  [id : "formwork", requires : ["dig"], dur : [2, 3, 5]]
+  [id : "place-rebar", requires : ["dig", "rebar", "rfi"], dur : [3, 4, 6]]
+  [id : "inspect", requires : ["place-rebar"], dur : [1, 1, 2]]
+  [id : "pour", requires : ["inspect", "formwork"], dur : [1, 1, 2]]
+  [id : "cure", requires : ["pour"], dur : [7, 7, 10]]
+]
+last-atom : "cure"
+runs : 400
+
+-- one shared risk, rolled once per run: wet weather delays the pour by 3 days, 3 times in 10
+risk : [chance : 0.3, delay : 3, hits : "pour"]
+
+find : [want ds | ds keep [a | a id = want] first]
+pad : [s n | s length < n [pad [s .. " ", n]] else [s]]
+bar : [n | range n fold ["", [s k | s .. "#"]]]
+
+-- earliest finish: the latest finish of everything required, plus this atom's own time
+finish : [want ds |
+  a : find [want, ds]
+  (a requires collect [r | finish [r, ds]] fold [0, [m x | m max x]]) + (a days)
+]
+-- the critical path: walk back from the end, always through the requirement that finishes last
+path : [want ds |
+  a : find [want, ds]
+  a requires length = 0 [[want]] else [
+    worst : a requires fold ["", [w r | w = "" or (finish [r, ds] > (finish [w, ds])) [r] else [w]]]
+    path [worst, ds] .. [want]
+  ]
+]
+
+-- the plan on likely durations
+likely : atoms collect [a | a with [days : a dur @ 2]]
+critical : path [last-atom, likely]
+"== critical path (likely durations) ==" print
+likely each [a |
+  on : critical keep [c | c = (a id)] length > 0 ["*"] else [" "]
+  start : finish [a id, likely] - (a days)
+  "[on] [pad [a id, 12]] day [pad [start str, 3]] to [pad [finish [a id, likely] str, 3]]" print
+]
+"finish on day [finish [last-atom, likely]], through " .. (critical fold ["", [s x | s = "" [x] else [s .. " > " .. x]]]) print
+
+-- a random time from a triangle: most often near likely, never outside fastest..slowest
+tri : [t |
+  lo : t @ 1, mode : t @ 2, hi : t @ 3
+  u : random
+  hi = lo [lo] else [
+    u < (mode - lo / (hi - lo)) [lo + (u * (hi - lo) * (mode - lo) sqrt)] else [hi - (1 - u * (hi - lo) * (hi - mode) sqrt)]
+  ]
+]
+-- one run: sample every duration, roll the shared risk once, walk the graph
+one-run : [n |
+  sampled : atoms collect [a | a with [days : tri (a dur)]]
+  wet : random < (risk chance)
+  ds : wet [sampled collect [a | a id = (risk hits) [a with [days : a days + (risk delay)]] else [a]]] else [sampled]
+  finish [last-atom, ds]
+]
+
+sort : [xs |
+  xs length < 2 [xs] else [
+    p : xs @ 1
+    rest : range (xs length - 1) collect [k | xs @ (k + 1)]
+    sort (rest keep [v | v < p]) .. [p] .. (sort (rest keep [v | v >= p]))
+  ]
+]
+finishes : sort (range runs collect one-run)
+pct : [p | finishes @ (p * runs ceil)]
+
+"" print
+"== monte carlo, [runs] runs ==" print
+"P10 day [pct 0.1 round]   P50 day [pct 0.5 round]   P80 day [pct 0.8 round]   P90 day [pct 0.9 round]" print
+first-day : finishes @ 1 floor
+last-day : finishes @ runs ceil
+range (last-day - first-day / 2 + 1 ceil) each [k |
+  from : k - 1 * 2 + first-day
+  n : finishes keep [f | f >= from and (f < (from + 2))] length
+  "day [pad [from str, 3]] [pad [n str, 4]] [bar (n / 4 ceil)]" print
+]
+"chance of finishing by day [finish [last-atom, likely]]: " .. (finishes keep [f | f <= (finish [last-atom, likely])] length * 100 / runs round) .. "%" print
+````
+
+## examples/ace-board.sp
+
+ACE: an interactive atom graph
+
+````sprout
+-- ACE board: tap work to close it, and watch the graph work out the rest.
+-- Leaves close with one tap. Verified atoms need two: the work, then the witness.
+-- Gates and the rollup are never tapped: they close themselves when what they wait on is done.
+-- Blocked work can't be closed. Red marks the critical path: the work that sets the finish.
+
+bw : 104
+bh : 36
+
+atoms : [
+  [id : "basis", name : "design basis", kind : "trivial", requires : [], days : 0, x : 10, y : 56]
+  [id : "permit", name : "permit", kind : "verified", requires : [], days : 1, x : 128, y : 56]
+  [id : "survey", name : "survey", kind : "leaf", requires : [], days : 2, x : 246, y : 56]
+  [id : "rebar", name : "rebar on site", kind : "leaf", requires : [], days : 8, x : 10, y : 126]
+  [id : "dig", name : "excavate", kind : "leaf", requires : ["permit", "survey"], days : 4, x : 128, y : 126]
+  [id : "reply", name : "engineer reply", kind : "leaf", requires : [], days : 5, x : 246, y : 126]
+  [id : "forms", name : "formwork", kind : "leaf", requires : ["dig"], days : 3, x : 10, y : 196]
+  [id : "place", name : "place rebar", kind : "leaf", requires : ["dig", "rebar", "rfi"], days : 4, x : 128, y : 196]
+  [id : "rfi", name : "RFI: splice", kind : "gate", requires : ["reply"], days : 0, x : 246, y : 196]
+  [id : "inspect", name : "inspection", kind : "verified", requires : ["place"], days : 1, x : 128, y : 266]
+  [id : "pour", name : "pour", kind : "leaf", requires : ["inspect", "forms"], days : 1, x : 128, y : 336]
+]
+rollup : [name : "turbine pedestal", contains : ["dig", "forms", "place", "pour"], requires : ["basis"]]
+finish-atom : "pour"
+
+start :
+  closed : ["permit", "survey"]
+  signed : ["permit"]
+  msg : "tap a box"
+
+-- lists of ids
+has : [xs want | xs keep [x | x = want] length > 0]
+without : [xs v | xs keep [x | x != v]]
+join : [xs | xs fold ["", [s x | s = "" [x] else [s .. ", " .. x]]]]
+find : [want | atoms keep [a | a id = want] first]
+
+-- derive: done is never stored. Close whatever the graph allows until nothing changes.
+closes : [a ok closed signed |
+  k : a kind
+  needs-met : a requires keep [r | has [ok, r] not] length = 0
+  k = "trivial" or (needs-met and (k = "gate" or (has [closed, a id] and (k = "leaf" or (has [signed, a id])))))
+]
+settle : [ok closed signed |
+  more : atoms keep [a | has [ok, a id] not and (closes [a, ok, closed, signed])] collect [a | a id]
+  more length = 0 [ok] else [settle [ok .. more, closed, signed]]
+]
+
+-- days of work left before an atom is finished, through everything it requires
+to-go : [want ok |
+  a : find want
+  own : has [ok, want] [0] else [a days]
+  own + (a requires collect [r | to-go [r, ok]] fold [0, [m x | m max x]])
+]
+-- the critical path: from the end, back through whichever requirement has the most work left
+critical : [want ok |
+  a : find want
+  todo : a requires keep [r | to-go [r, ok] > 0]
+  has [ok, want] [[]] else [
+    todo length = 0 [[want]] else [
+      worst : todo fold ["", [w r | w = "" or (to-go [r, ok] > (to-go [w, ok])) [r] else [w]]]
+      critical [worst, ok] .. [want]
+    ]
+  ]
+]
+
+inside : [a i | i touch-x > (a x) and (i touch-x < (a x + bw)) and (i touch-y > (a y)) and (i touch-y < (a y + bh))]
+waiting-on : [a ok | a requires keep [r | has [ok, r] not]]
+
+update : [g |
+  i : g input
+  ok : settle [[], g closed, g signed]
+  a : i tapped [atoms keep [b | inside [b, i]] first] else [false]
+  hit : a != false
+  manual : hit and (a kind = "leaf" or (a kind = "verified"))
+  is-closed : manual and (has [g closed, a id])
+  is-signed : manual and (has [g signed, a id])
+  blocked : manual and (is-closed not) and (waiting-on [a, ok] length > 0)
+  act : manual and (blocked not)
+
+  -- what a tap does: leaf open -> closed -> open; verified open -> closed -> signed -> open
+  step : act [a kind = "leaf" [is-closed ["reopen"] else ["close"]] else [is-closed not ["close"] else [is-signed not ["sign"] else ["reopen"]]]] else ["none"]
+  closed : step = "close" [g closed .. [a id]] else [step = "reopen" [without [g closed, a id]] else [g closed]]
+  signed : step = "sign" [g signed .. [a id]] else [step = "reopen" [without [g signed, a id]] else [g signed]]
+
+  blocked
+    shake 5
+    beep [120, 0.15]
+  act
+    beep [step = "reopen" [330] else [660], 0.06]
+
+  g with
+    closed : closed
+    signed : signed
+    msg : cond [
+      blocked, "[a name] waits on " .. (join (waiting-on [a, ok]))
+      step = "close", a kind = "verified" ["[a name] done: now tap again to sign"] else ["closed [a name]"]
+      step = "sign", "[a name] signed by the witness"
+      step = "reopen", "reopened [a name]"
+      hit, "[a name] is a [a kind]: it closes by itself"
+      any, g msg
+    ]
+]
+
+draw : [g |
+  ok : settle [[], g closed, g signed]
+  path : critical [finish-atom, ok]
+  bottom : [a | [x : a x + (bw / 2), y : a y + bh]]
+  top : [a | [x : a x + (bw / 2), y : a y]]
+  clear "#0b0f0d"
+
+  -- requires: a line from each requirement down to what needs it
+  atoms each [a |
+    a requires each [r |
+      b : find r
+      hot : has [path, r] and (has [path, a id])
+      line [bottom b x, bottom b y, top a x, top a y, hot ["#ff6b6b"] else [has [ok, r] ["#2f6b3a"] else ["#3a4a40"]]]
+    ]
+  ]
+
+  -- the atoms
+  atoms each [a |
+    done : has [ok, a id]
+    ready : done not and (waiting-on [a, ok] length = 0)
+    edge : done ["#8ef08e"] else [has [path, a id] ["#ff6b6b"] else [ready ["#ffd166"] else ["#3a4a40"]]]
+    half : a kind = "verified" and (has [g closed, a id]) and (has [g signed, a id] not)
+    rect [a x, a y, bw, bh, edge]
+    rect [a x + 2, a y + 2, bw - 4, bh - 4, done ["#14301c"] else [half ["#3a3214"] else ["#101814"]]]
+    text [a name, a x + (bw / 2), a y + 14, 12, done ["#c8f5c8"] else ["#d6e2d9"]]
+    text [half ["verified: needs a witness"] else [a kind .. " · " .. (a days) .. "d"], a x + (bw / 2), a y + 28, 9, "#7d968a"]
+  ]
+
+  -- the rollup: done when all its children are done
+  parts : rollup contains keep [c | has [ok, c]] length
+  all-in : parts = (rollup contains length) and (has [ok, "basis"])
+  rect [10, 400, W - 20, 22, "#22302a"]
+  rect [10, 400, W - 20 * parts / (rollup contains length), 22, all-in ["#8ef08e"] else ["#2f6b3a"]]
+  text ["[rollup name]  [parts]/[rollup contains length]", W / 2, 411, 12, all-in ["#0b0f0d"] else ["#d6e2d9"]]
+
+  text ["ACE  [ok length]/[atoms length] done  ·  [to-go [finish-atom, ok]]d of work left", W / 2, 22, 14, "#e8f3e9"]
+  text ["green done   amber workable   red critical   grey blocked", W / 2, 40, 9, "#7d968a"]
+  text [g msg, W / 2, 448, 13, "#ffd166"]
+]
+````
+
+## examples/ace-site.sp
+
+ACE: positions are expressions over named dimensions, and overlaps are clashes
+
+````sprout
+-- ACE site: positions are never stored. Each building's place is an expression over a few named dimensions.
+-- Drag left and right on the plan to change the reactor's diameter: everything that depends on it moves.
+-- Two things can't share ground. An overlap is a clash, a negative constraint, shown in red.
+-- Try changing gap, or a building's size, while it runs.
+
+gap : 15                  -- metres of road between buildings
+site-w : 140              -- the site, in metres
+site-h : 180
+scale : 2.4               -- pixels per metre
+ox : 12
+oy : 24
+
+start :
+  rb-d : 46               -- reactor building diameter, metres
+  clashes : 0
+
+-- the whole plan, worked out from the reactor diameter d
+plan : [d |
+  rb : [x : 50, y : 55, r : d / 2]
+  tb : [x : rb x + (rb r) + gap, y : 30, w : 46, h : 62]
+  sb : [x : rb x - 24, y : rb y + (rb r) + gap, w : 48, h : 26]
+  fb : [x : 60, y : 124, w : 34, h : 34]
+  [reactor : rb, turbine : tb, service : sb, fuel : fb]
+]
+
+-- the negative constraints
+overlap : [a b | a x < (b x + (b w)) and (b x < (a x + (a w))) and (a y < (b y + (b h))) and (b y < (a y + (a h)))]
+off-site : [a | a x < 0 or (a y < 0) or (a x + (a w) > site-w) or (a y + (a h) > site-h)]
+round-overlap : [c b |
+  nx : c x max (b x) min (b x + (b w))
+  ny : c y max (b y) min (b y + (b h))
+  dist [c x, c y, nx, ny] < (c r)
+]
+clash-list : [p |
+  [
+    ["turbine hall", "fuel bay", overlap [p turbine, p fuel]]
+    ["service building", "fuel bay", overlap [p service, p fuel]]
+    ["reactor", "fuel bay", round-overlap [p reactor, p fuel]]
+    ["turbine hall", "site edge", off-site (p turbine)]
+    ["service building", "site edge", off-site (p service)]
+  ] keep [c | c @ 3]
+]
+
+update : [g |
+  i : g input
+  d : i touching [i touch-x / W * 40 + 30 round] else [g rb-d]
+  n : clash-list (plan d) length
+  n > (g clashes)
+    beep [140, 0.2]
+    shake 4
+  g with [rb-d : d, clashes : n]
+]
+
+-- metres to pixels
+px : [m | m * scale + ox]
+py : [m | m * scale + oy]
+
+draw : [g |
+  p : plan (g rb-d)
+  hits : clash-list p
+  in-clash : [name | hits keep [c | c @ 1 = name or (c @ 2 = name)] length > 0]
+  fill : [name normal | in-clash name ["#5a1f24"] else [normal]]
+  box : [b name normal note |
+    rect [px (b x), py (b y), b w * scale, b h * scale, in-clash name ["#ff6b6b"] else ["#4a5a52"]]
+    rect [px (b x) + 1, py (b y) + 1, b w * scale - 2, b h * scale - 2, fill [name, normal]]
+    text [name, px (b x + (b w / 2)), py (b y + (b h / 2)) - 6, 11, "#e8f3e9"]
+    text [note, px (b x + (b w / 2)), py (b y + (b h / 2)) + 8, 9, "#7d968a"]
+  ]
+  rb : p reactor
+
+  clear "#0b0f0d"
+  rect [px 0, py 0, site-w * scale, site-h * scale, "#4a5a52"]
+  rect [px 0 + 1, py 0 + 1, site-w * scale - 2, site-h * scale - 2, "#101814"]
+
+  box [p fuel, "fuel bay", "#1d2a36", "existing, fixed"]
+  box [p turbine, "turbine hall", "#1c2a22", "x = reactor + gap"]
+  box [p service, "service building", "#1c2a22", "y = reactor + gap"]
+  circle [px (rb x), py (rb y), rb r * scale, in-clash "reactor" ["#ff6b6b"] else ["#6f9f80"]]
+  circle [px (rb x), py (rb y), rb r * scale - 2, fill ["reactor", "#18301f"]]
+  line [px (rb x - (rb r)), py (rb y), px (rb x + (rb r)), py (rb y), "#8ef08e"]
+  text ["reactor  Ø [g rb-d] m", px (rb x), py (rb y) - 10, 12, "#c8f5c8"]
+
+  text ["ACE site  ·  drag to resize the reactor", W / 2, 12, 13, "#e8f3e9"]
+  hits length = 0
+    text ["no clashes", W / 2, H - 10, 13, "#8ef08e"]
+  hits length > 0
+    text ["clash: " .. (hits collect [c | c @ 1 .. " / " .. (c @ 2)] fold ["", [s x | s = "" [x] else [s .. ", " .. x]]]), W / 2, H - 10, 11, "#ff6b6b"]
+]
+````
+
 ## examples/recipes.sp
 
 Recipes: quicksort, primes, FizzBuzz, a vector with its own + (prints; not a game)
@@ -3048,133 +3496,188 @@ The web page at taskiap.com/sprout3/
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#0f1a14">
+<meta name="theme-color" content="#0a0c0b">
 <title>Sprout 3</title>
 <style>
-:root{--bg:#0f1a14;--panel:#15241c;--card:#1b2e24;--line:#28473a;--ink:#e8f3e9;--mute:#8fb39b;--leaf:#6fd36f;--sun:#ffd166;--red:#ff6b6b;--LH:20px;--PAD:10px}
+:root{--bg:#0a0c0b;--pane:#0d1110;--line:#26302b;--line2:#3a4840;--fg:#c9d4cd;--dim:#6b7c73;--acc:#9bdc7a;--amb:#e5b454;--red:#e5707a;--cyan:#73c7d6;--sel:#18221d;--bar:#141b17;
+ --mono:"JetBrains Mono","SF Mono","Cascadia Mono",ui-monospace,Menlo,Consolas,"Liberation Mono",monospace;--LH:20px;--PAD:8px}
 *{box-sizing:border-box}
-html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:-apple-system,"Segoe UI",system-ui,sans-serif;overscroll-behavior:none;-webkit-tap-highlight-color:transparent}
-button{font:inherit;color:inherit;cursor:pointer}
-#app{position:fixed;left:0;right:0;top:0;height:100%;display:flex;flex-direction:column;max-width:1400px;margin:0 auto}
-header{display:flex;align-items:center;gap:6px;padding:8px 10px;padding-top:calc(8px + env(safe-area-inset-top));border-bottom:1px solid var(--line);background:var(--panel)}
-header h1{font-size:17px;margin:0;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-header h1 a{color:var(--mute);text-decoration:none;font-weight:600;margin-right:4px}
-header h1 small{font-size:12px;color:var(--mute);font-weight:600;margin-left:6px}
-.hb{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:6px 10px;font-size:14px;font-weight:600}
-.hb:active{transform:translateY(1px)}
-#main{flex:1;display:flex;flex-direction:column;min-height:0}
-#side{flex:1;display:flex;flex-direction:column;min-height:0}
-#stage{position:relative;flex:0 0 42%;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at 50% 40%,#1c3326,#0b130e);min-height:0}
-body.kb #stage{flex-basis:30%}
-#cv{display:block;border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.45);touch-action:none;background:#000}
-#noGame{position:absolute;inset:0;display:none;align-items:center;justify-content:center;text-align:center;padding:24px;color:var(--mute);font-size:14px;line-height:1.5}
-body.prog #noGame{display:flex}body.prog #cv,body.prog #sbtn{visibility:hidden}
-#err{position:absolute;left:8px;right:8px;bottom:8px;background:rgba(80,10,10,.92);border:1px solid var(--red);color:#ffe3e3;border-radius:10px;padding:7px 10px;font:13px/1.35 ui-monospace,Menlo,Consolas,monospace;display:none;cursor:pointer;z-index:5}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:13px/var(--LH) var(--mono);font-variant-ligatures:none;font-feature-settings:"liga" 0,"calt" 0;overscroll-behavior:none;-webkit-tap-highlight-color:transparent}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer;background:none;border:0;padding:0}
+a{color:inherit}
+#app{position:fixed;left:0;right:0;top:0;height:100%;display:flex;flex-direction:column}
+.grow{flex:1}
+
+/* top bar and status bar: one line each, like a terminal app */
+#top,#bar{display:flex;align-items:center;gap:2px;white-space:nowrap;overflow:hidden;flex:0 0 auto}
+#top{padding:4px 8px;padding-top:calc(4px + env(safe-area-inset-top));border-bottom:1px solid var(--line)}
+#bar{padding:2px 8px;padding-bottom:calc(2px + env(safe-area-inset-bottom));background:var(--bar);border-top:1px solid var(--line)}
+.brand{color:var(--acc);font-weight:700;text-decoration:none;margin-right:6px}
+.brand b{color:var(--fg)}
+.sep{color:var(--line2);margin:0 6px}
+#file{color:var(--fg)}#dirty{color:var(--amb);margin-left:4px}
+.cmd{display:inline-flex;align-items:center;gap:5px;padding:1px 7px;color:var(--fg);text-decoration:none;border-radius:0}
+.cmd b{font-weight:600;color:var(--bg);background:var(--dim);padding:0 4px;line-height:16px}
+.cmd:hover,.cmd:focus-visible{background:var(--sel);outline:none}.cmd:hover b{background:var(--acc)}
+.cmd:active{background:var(--line)}
+@media (hover:none){.cmd b{display:none}.cmd{padding:3px 8px;border:1px solid var(--line)}}
+.badge{padding:0 7px;font-weight:700;color:var(--bg);background:var(--acc);margin-right:8px;letter-spacing:.04em}
+.badge.pause{background:var(--amb)}.badge.err{background:var(--red)}.badge.prog{background:var(--cyan)}
+#bar .s{color:var(--dim);margin-right:12px}#bar .s i{font-style:normal;color:var(--fg)}
+#sSwap{color:var(--dim);margin-right:12px}#sSwap.on{color:var(--acc)}
+#sMsg{color:var(--amb);overflow:hidden;text-overflow:ellipsis;min-width:0}
+
+/* panes: a box with its title set into the top border */
+#main{flex:1;display:flex;flex-direction:column;min-height:0;padding:12px 8px 6px;gap:14px}
+.pane{position:relative;border:1px solid var(--line);background:var(--pane);min-height:0;display:flex;flex-direction:column}
+.pt{position:absolute;top:-11px;left:10px;display:flex;gap:2px;background:var(--bg);padding:0 4px;color:var(--dim);z-index:6;line-height:20px;white-space:nowrap}
+.pt .t{color:var(--fg)}
+#stage{flex:0 0 44%;align-items:center;justify-content:center;background:#050706}
+body.kb #stage{flex-basis:28%}
+#cv{display:block;border:1px solid var(--line2);touch-action:none;background:#000}
+#dims{color:var(--dim);margin-left:6px}
+#noGame{position:absolute;inset:0;display:none;align-items:center;justify-content:center;text-align:center;padding:24px;color:var(--dim)}
+#noGame b{color:var(--cyan);font-weight:400}
+body.prog #noGame{display:flex}body.prog #cv{visibility:hidden}body.prog #stage{display:none}
+#err{position:absolute;left:0;right:0;bottom:0;background:#2a1215;border-top:1px solid var(--red);color:#f3c4c8;padding:3px 10px;display:none;cursor:pointer;z-index:5;white-space:pre-wrap}
+#err b{color:var(--red)}
 #err.on{display:block}
-body.paused #err{bottom:56px}
-#sbtn{position:absolute;right:8px;top:8px;display:flex;flex-direction:column;gap:6px;z-index:4}
-#sbtn button{width:38px;height:38px;border-radius:10px;border:1px solid var(--line);background:rgba(15,26,20,.85);font-size:16px;padding:0}
-#tl{position:absolute;left:8px;right:54px;bottom:8px;display:none;align-items:center;gap:8px;background:rgba(10,20,14,.88);border:1px solid var(--line);border-radius:12px;padding:6px 10px;z-index:4}
+body.paused #err{bottom:31px}
+#tl{position:absolute;left:0;right:0;bottom:0;display:none;align-items:center;gap:10px;background:var(--bar);border-top:1px solid var(--line);padding:3px 10px;z-index:4}
 body.paused #tl{display:flex}
-#tl input{flex:1;accent-color:var(--sun);min-width:0;height:28px}
-#tlT{font:700 12px ui-monospace,Menlo,monospace;color:var(--sun);min-width:44px;text-align:right}
-#tl b{font-size:12px;color:var(--mute);white-space:nowrap}
-#swap{position:absolute;left:50%;top:10px;transform:translateX(-50%);background:rgba(111,211,111,.92);color:#0b1a10;font:800 12px system-ui;letter-spacing:.06em;padding:4px 10px;border-radius:999px;opacity:0;pointer-events:none}
-#swap.on{animation:swap .9s ease-out}
-@keyframes swap{0%{opacity:1;transform:translateX(-50%) scale(1.15)}60%{opacity:1;transform:translateX(-50%) scale(1)}100%{opacity:0}}
-#tabs{display:flex;gap:4px;padding:6px 8px;background:var(--panel);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
-#tabs button{flex:1;border:0;background:transparent;border-radius:9px;padding:8px 4px;font-weight:700;font-size:14px;color:var(--mute)}
-#tabs button.on{background:var(--card);color:var(--ink);box-shadow:inset 0 0 0 1px var(--line)}
-#tabs button i{font-style:normal;font-size:11px;background:var(--line);border-radius:999px;padding:1px 6px;margin-left:4px;color:var(--ink)}
-#panel{flex:1;display:flex;flex-direction:column;min-height:0;background:var(--bg)}
-#ed{position:relative;flex:1;min-height:0;overflow:hidden;background:#0c150f}
-#gut,#hl,#ta,#out,#st{font:13px/var(--LH) ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;tab-size:2}
-#gut{position:absolute;left:0;top:0;width:30px;padding:var(--PAD) 4px var(--PAD) 0;text-align:right;color:#4d6b58;white-space:pre;pointer-events:none;z-index:3;background:#0c150f;border-right:1px solid #1a2c21;min-height:100%}
-#hl,#ta{position:absolute;inset:0;margin:0;padding:var(--PAD) 12px var(--PAD) 40px;white-space:pre;overflow:auto;border:0;outline:none}
-#hl{z-index:1;color:var(--ink);pointer-events:none;overflow:hidden}
-#ta{z-index:2;background:transparent;color:transparent;caret-color:var(--sun);resize:none;-webkit-text-fill-color:transparent}
-#ta::selection{background:rgba(255,209,102,.3)}
+#tl input{flex:1;accent-color:var(--amb);min-width:0;height:22px}
+#tlT{color:var(--amb);min-width:56px;text-align:right}
+#tl span:first-child{color:var(--dim)}
+
+/* tabs in the right pane's border */
+.tab{padding:0 6px;color:var(--dim)}
+.tab.on{color:var(--bg);background:var(--fg)}
+.tab i{font-style:normal;color:var(--amb);margin-left:4px}.tab.on i{color:var(--bg)}
+#side{flex:1}
+#panel{flex:1;display:flex;flex-direction:column;min-height:0;padding-top:8px}
+#ed{position:relative;flex:1;min-height:0;overflow:hidden}
+#gut,#hl,#ta{font:13px/var(--LH) var(--mono);tab-size:2;font-variant-ligatures:none;font-feature-settings:"liga" 0,"calt" 0}
+#gut{position:absolute;left:0;top:0;width:38px;padding:var(--PAD) 8px var(--PAD) 0;text-align:right;color:#46544c;white-space:pre;pointer-events:none;z-index:3;background:var(--pane);border-right:1px solid var(--line);min-height:100%}
+#hl,#ta{position:absolute;inset:0;margin:0;padding:var(--PAD) 12px var(--PAD) 48px;white-space:pre;overflow:auto;border:0;outline:none}
+#hl{z-index:1;color:var(--fg);pointer-events:none;overflow:hidden}
+#ta{z-index:2;background:transparent;color:transparent;caret-color:var(--acc);resize:none;-webkit-text-fill-color:transparent}
+#ta::selection{background:rgba(155,220,122,.25)}
 .mark{position:absolute;left:0;right:0;height:var(--LH);z-index:0;pointer-events:none;display:none}
 .mark.on{display:block}
-#errl{background:rgba(255,80,80,.22)}
-#live{background:rgba(111,211,111,.28);transition:opacity .7s}#live.fade{opacity:0}
+#errl{background:rgba(229,112,122,.18);box-shadow:inset 2px 0 var(--red)}
+#live{background:rgba(155,220,122,.16);box-shadow:inset 2px 0 var(--acc);transition:opacity .7s}#live.fade{opacity:0}
 i{font-style:normal}
-.c{color:#6f8f7c}.s{color:#ffcf7a}.n{color:#ff9e7a}.k{color:#7cc7ff}.a{color:#8ef08e}.o{color:#c9a7ff}.tp{color:#ffe9b8;background:rgba(255,207,122,.12);border-radius:3px}
-#out,#st{flex:1;min-height:0;overflow:auto;margin:0;padding:10px 12px 40px;white-space:pre-wrap;word-break:break-word;background:#0c150f;display:none}
-#out div{border-bottom:1px solid #15241c;padding:1px 0}
-#out .log{color:#ffb38a}#out .print{color:var(--ink)}#out .sys{color:var(--mute)}
-#st b{color:var(--sun);font-weight:600}
-body.t-out #ed,body.t-st #ed,body.t-out #keys,body.t-st #keys{display:none}
+.c{color:#5d6f65}.s{color:#d8b979}.n{color:#e39a74}.k{color:var(--cyan)}.a{color:var(--acc)}.o{color:#b49ad8}.tp{color:#f0dcae;background:rgba(216,185,121,.12)}
+#st,#out{flex:1;min-height:0;overflow:auto;margin:0;padding:var(--PAD) 12px 40px;white-space:pre-wrap;word-break:break-word;display:none}
+#st .k2{color:var(--acc)}#st .v{color:var(--fg)}#st .d{color:var(--dim)}
+#out div{display:flex;gap:10px}#out div::before{flex:0 0 auto;color:var(--dim)}
+#out .print::before{content:"out"}#out .log::before{content:"log";color:var(--amb)}#out .log{color:#d9b98a}
+body.t-out #ed,body.t-st #ed{display:none}
 body.t-out #out{display:block}body.t-st #st{display:block}
-#keys{display:flex;gap:4px;padding:6px;overflow-x:auto;background:var(--panel);border-top:1px solid var(--line);padding-bottom:calc(6px + env(safe-area-inset-bottom))}
-#keys button{flex:0 0 auto;min-width:38px;height:36px;border-radius:8px;border:1px solid var(--line);background:var(--card);font:600 15px ui-monospace,Menlo,monospace}
-#sheet{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:flex-end;justify-content:center;z-index:20}
-#sheet.on{display:flex}
-#sheet .box{background:var(--panel);border:1px solid var(--line);border-radius:16px 16px 0 0;width:100%;max-width:760px;max-height:88%;overflow:auto;padding:16px 16px calc(16px + env(safe-area-inset-bottom))}
-#sheet h2{margin:0 0 10px;font-size:18px;color:var(--sun)}
-.gm{display:flex;gap:12px;align-items:center;width:100%;text-align:left;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:8px}
-.gm b{display:block;font-size:15px}.gm small{color:var(--mute);font-size:12.5px}.gm .e{font-size:26px}
-.md{font-size:14px;line-height:1.55}
-.md h1{font-size:20px;color:var(--sun)}.md h2{font-size:17px;color:var(--leaf);margin-top:22px}.md h3{font-size:15px;color:var(--leaf)}.md h4{font-size:14px}
-.md code{font:12.5px ui-monospace,Menlo,monospace;color:#8ef08e;background:#0c150f;padding:1px 5px;border-radius:5px}
-.md pre{background:#0c150f;border:1px solid var(--line);border-radius:8px;padding:10px;overflow:auto}.md pre code{padding:0;background:none;color:var(--ink)}
-.md table{border-collapse:collapse;font-size:13px;display:block;overflow:auto}.md td,.md th{border:1px solid var(--line);padding:4px 8px;text-align:left;vertical-align:top}
-.md hr{border:0;border-top:1px solid var(--line);margin:18px 0}
-.md li{margin:2px 0}
-@media (max-width:520px){header h1 small{display:none}}
-#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#24392d;border:1px solid var(--leaf);padding:9px 14px;border-radius:12px;font-size:14px;z-index:30;opacity:0;transition:opacity .25s;pointer-events:none;max-width:90%;text-align:center}
-#toast.on{opacity:1}
-@media (min-width:860px) and (min-aspect-ratio:1/1){
+body:not(.t-code) #keys{display:none}
+#keys{display:none;gap:4px;padding:4px 8px;overflow-x:auto;border-top:1px solid var(--line);flex:0 0 auto}
+@media (hover:none){#keys{display:flex}}
+#keys button{flex:0 0 auto;min-width:36px;height:32px;border:1px solid var(--line);background:var(--pane);color:var(--fg)}
+#keys button:active{background:var(--sel)}
+
+/* dialogs */
+#modal{position:fixed;inset:0;background:rgba(5,7,6,.72);display:none;align-items:center;justify-content:center;z-index:20;padding:16px}
+#modal.on{display:flex}
+#modal .box{position:relative;width:100%;max-width:760px;max-height:88%;display:flex;flex-direction:column;border:1px solid var(--line2);background:var(--pane)}
+#modal .box.wide{max-width:900px}
+#mBody{overflow:auto;padding:14px 0 4px}
+.mfoot{border-top:1px solid var(--line);padding:3px 12px;color:var(--dim);display:flex;gap:16px;white-space:nowrap;overflow:hidden}
+.mfoot b{color:var(--fg);font-weight:400}
+.grp{color:var(--dim);padding:6px 14px 2px}
+.row{display:grid;grid-template-columns:2ch 18ch 6ch 1fr;width:100%;text-align:left;padding:2px 12px;color:var(--fg)}
+.row .kd{color:var(--dim)}.row .ds{color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row.on{background:var(--sel)}.row.on .mk{color:var(--acc)}.row.on .ds{color:var(--fg)}
+@media (max-width:560px){.row{grid-template-columns:2ch 17ch 1fr}.row .kd{display:none}}
+.md{padding:0 16px;line-height:1.55}
+.md h1,.md h2,.md h3,.md h4{font-size:13px;margin:18px 0 6px}
+.md h1{color:var(--acc)}.md h2{color:var(--acc)}.md h2::before{content:"## ";color:var(--dim)}.md h3{color:var(--fg)}.md h3::before{content:"### ";color:var(--dim)}
+.md code{color:var(--acc)}
+.md pre{border:1px solid var(--line);padding:8px 10px;overflow:auto;background:var(--bg)}.md pre code{color:var(--fg)}
+.md table{border-collapse:collapse;display:block;overflow:auto}.md td,.md th{border:1px solid var(--line);padding:2px 8px;text-align:left;vertical-align:top}.md th{color:var(--dim);font-weight:400}
+.md hr,#mBody>hr{border:0;border-top:1px dashed var(--line);margin:16px 0}#mBody>hr{margin:12px 16px}
+.md a{color:var(--cyan)}.md .num{color:var(--dim)}
+.md ul{padding-left:18px}.md li::marker{color:var(--dim)}
+.md p b,.md li b{color:#e6efe9}
+
+@media (max-width:640px){#sFrames,#sMs,#sSwap{display:none}#bar{flex-wrap:wrap}#sMsg{order:10;flex-basis:100%;white-space:normal}#stage{flex-basis:46%}#main{padding:12px 6px 4px}}
+@media (min-width:900px) and (min-aspect-ratio:1/1){
  #main{flex-direction:row}
- #stage{flex:1 1 50%!important;min-width:0}
- #side{flex:1 1 50%;min-width:0;border-left:1px solid var(--line)}
- #tabs{border-top:0}
- #gut,#hl,#ta,#out,#st{font-size:14px}:root{--LH:21px}
+ #stage{flex:0 0 auto;width:min(46%,calc((100vh - 110px) * .75 + 24px))}
+ #side{flex:1;min-width:0}
 }
 </style></head><body class="t-code">
 <div id="app">
-<header><h1><a href="/" aria-label="All apps">‹</a>🌱 Sprout 3<small id="exName"></small></h1>
-<button class="hb" id="bEx">Examples</button><button class="hb" id="bSpec">Spec</button><button class="hb" id="bShare">Share</button></header>
-<div id="main">
-<div id="stage"><canvas id="cv" width="360" height="480"></canvas>
- <div id="noGame"><div>This file isn't a game: it has no <b>update</b>.<br>What it prints is in the Output tab.</div></div>
- <div id="swap">LIVE</div>
- <div id="sbtn"><button id="bPause" title="Pause and rewind">⏸</button><button id="bRestart" title="Start again">↺</button><button id="bSnd" title="Sound">🔊</button></div>
- <div id="tl"><b>⏪ Rewind</b><input type="range" id="tlR" min="0" max="0" value="0" aria-label="Rewind time"><span id="tlT">now</span></div>
- <div id="err"></div>
+<div id="top">
+ <a class="brand" href="/" title="All apps">sprout<b>3</b></a><span class="sep">│</span><span id="file">untitled.sp</span><span id="dirty" hidden>●</span>
+ <span class="grow"></span>
+ <button class="cmd" id="bEx"><b>F2</b>open</button><button class="cmd" id="bSpec"><b>F3</b>spec</button><button class="cmd" id="bShare"><b>F4</b>share</button>
 </div>
-<div id="side">
-<div id="tabs"><button data-t="code" class="on">Code</button><button data-t="st">State</button><button data-t="out">Output<i id="outN" hidden></i></button></div>
-<div id="panel">
- <div id="ed"><div class="mark" id="live"></div><div class="mark" id="errl"></div><div id="gut"></div><pre id="hl"></pre><textarea id="ta" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off"></textarea></div>
- <pre id="st"></pre>
- <div id="out"></div>
- <div id="keys"></div>
-</div></div></div></div>
-<div id="sheet"><div class="box" id="sbox"></div></div>
-<div id="toast"></div>
+<div id="main">
+ <section class="pane" id="stage">
+  <div class="pt"><span class="t">game</span><span id="dims">360×480</span></div>
+  <canvas id="cv" width="360" height="480"></canvas>
+  <div id="noGame"><div>This file isn't a game: it has no <b>update</b>.<br>What it prints is in the output tab.</div></div>
+  <div id="tl"><span>rewind</span><input type="range" id="tlR" min="0" max="0" value="0" aria-label="Rewind time"><span id="tlT">now</span></div>
+  <div id="err"></div>
+ </section>
+ <section class="pane" id="side">
+  <div class="pt" id="tabs"><button class="tab on" data-t="code">1 code</button><button class="tab" data-t="st">2 state</button><button class="tab" data-t="out">3 output<i id="outN" hidden></i></button></div>
+  <div id="panel">
+   <div id="ed"><div class="mark" id="live"></div><div class="mark" id="errl"></div><div id="gut"></div><pre id="hl"></pre><textarea id="ta" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" aria-label="Code"></textarea></div>
+   <pre id="st"></pre>
+   <div id="out"></div>
+  </div>
+ </section>
+</div>
+<div id="keys"></div>
+<div id="bar">
+ <span class="badge" id="mode">RUN</span><span class="s" id="sClock">t <i>0.0</i>s</span><span class="s" id="sFrames"><i>0</i> saved</span><span class="s" id="sMs"><i>0.00</i> ms/frame</span><span id="sSwap">swap –</span><span id="sMsg"></span>
+ <span class="grow"></span>
+ <button class="cmd" id="bPause"><b>F7</b><span id="pauseL">pause</span></button><button class="cmd" id="bRestart"><b>F8</b>restart</button><button class="cmd" id="bSnd"><b>F9</b><span id="sndL">sound</span></button>
+</div>
+</div>
+<div id="modal"><div class="box" id="mBox"><div class="pt"><span class="t" id="mTitle"></span></div><div id="mBody"></div><div class="mfoot" id="mFoot"></div></div></div>
 
-<script src="sprout3.js?v=20261119d"></script>
-<script src="live3.js?v=20261119d"></script>
+<script src="sprout3.js?v=20261119e"></script>
+<script src="live3.js?v=20261119e"></script>
 <script>
 "use strict";
-const V="20261119d";
+const V="20261119e";
 const $=id=>document.getElementById(id);
 const S=window.Sprout3,L=window.Sprout3Live;
 const GW=360,GH=480;
 const cv=$("cv"),g=cv.getContext("2d"),ta=$("ta"),hl=$("hl"),gut=$("gut");
 const LS={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
 const esc=s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-let toastT=0;function toast(m){const t=$("toast");t.textContent=m;t.classList.add("on");clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove("on"),2400)}
-const EX=[["sprout","🌧️","Sprout","Catch the rain, dodge the bugs."],["fireflies","🌟","Fireflies","400 lights on the night air. Hold a finger down and they gather to it."],
- ["orbit","🪐","Orbit","Drag and let go to throw moons round the sun."],["hop","🚀","Hop","Set the lander down gently on the pad."],["life","🧬","Life","A living grid. Draw on it with your finger."],
- ["bounce","🏓","Bounce","Keep the ball in the air."],["snake","🐍","Snake","Arrow keys, or swipe on the game."],["breakout","🧱","Breakout","Clear the bricks."],
- ["particles","✨","Particles","A fountain of 2,000 sparks, for speed."],["recipes","🍳","Recipes","Quicksort, primes, FizzBuzz, a vector with its own +. It prints; it isn't a game."],
- ["tour","📖","Tour","The language, one feature per line. It prints; it isn't a game."]];
+// messages go to the status bar
+let msgT=0;function toast(m){$("sMsg").textContent=m;clearTimeout(msgT);msgT=setTimeout(()=>$("sMsg").textContent="",4000)}
+const EX=[
+ ["ace-board","ace","An atom graph: tap work to close it. Gates, the rollup and the critical path follow."],
+ ["ace-site","ace","Positions are expressions. Grow the reactor and watch for clashes."],
+ ["ace-schedule","ace","Critical path, then a Monte Carlo finish date. Prints."],
+ ["ace-derive","ace","The five kinds of atom; done is derived to a fixed point. Prints."],
+ ["sprout","game","Catch the rain, dodge the bugs."],
+ ["fireflies","game","400 lights. Hold a finger down and they gather to it."],
+ ["orbit","game","Drag and let go to throw moons round the sun."],
+ ["hop","game","Set the lander down gently on the pad."],
+ ["life","game","A living grid. Draw on it."],
+ ["bounce","game","Keep the ball in the air."],
+ ["snake","game","Arrow keys, or swipe on the game."],
+ ["breakout","game","Clear the bricks."],
+ ["particles","game","A fountain of 2,000 sparks, for speed."],
+ ["recipes","prog","Quicksort, primes, FizzBuzz, a vector with its own +."],
+ ["tour","prog","The language, one feature per line."]];
+const GROUPS={ace:"ace · atomic constraint engine",game:"games",prog:"programs"};
 
 // ---------- output: what programs print, and Sprout's own notes
 let outN=0;
-function addOut(s,cls){const o=$("out"),d=document.createElement("div");d.className=cls;d.textContent=s;o.appendChild(d);while(o.childNodes.length>300)o.removeChild(o.firstChild);
+function addOut(s,cls){const o=$("out"),d=document.createElement("div");d.className=cls;const t=document.createElement("span");t.textContent=s;d.appendChild(t);o.appendChild(d);while(o.childNodes.length>400)o.removeChild(o.firstChild);
  if(TAB==="out")o.scrollTop=o.scrollHeight;else{outN++;$("outN").hidden=false;$("outN").textContent=outN}}
 function clearOut(){$("out").innerHTML="";outN=0;$("outN").hidden=true}
 S.setOut(s=>addOut(s,"print"));S.setLog(m=>addOut(m,"log"));
@@ -3182,14 +3685,15 @@ S.setOut(s=>addOut(s,"print"));S.setLog(m=>addOut(m,"log"));
 // ---------- sound and shake (effects, carried out after each tick)
 let AC=null,muted=LS.get("sprout3.mute",false),shakeAmt=0;
 function audio(){if(!AC){try{AC=new (window.AudioContext||window.webkitAudioContext)()}catch(e){}}if(AC&&AC.state==="suspended")AC.resume()}
-function beep(f,d){if(muted||!AC)return;try{const o=AC.createOscillator(),v=AC.createGain(),t=AC.currentTime;d=+d||.1;o.type="square";o.frequency.value=+f||440;v.gain.setValueAtTime(.12,t);v.gain.exponentialRampToValueAtTime(.001,t+d);o.connect(v).connect(AC.destination);o.start(t);o.stop(t+d+.02)}catch(e){}}
+function beep(f,d){if(muted||!AC)return;try{const o=AC.createOscillator(),v=AC.createGain(),t=AC.currentTime;d=+d||.1;o.type="square";o.frequency.value=+f||440;v.gain.setValueAtTime(.1,t);v.gain.exponentialRampToValueAtTime(.001,t+d);o.connect(v).connect(AC.destination);o.start(t);o.stop(t+d+.02)}catch(e){}}
 function onEffect([name,a]){if(name==="beep")beep(a[0],a[1]);else if(name==="shake")shakeAmt=Math.max(shakeAmt,+a[0]||0)}
 
 // ---------- the game
-let game=null,running="",goodSrc="",goodTicks=0,paused=false,hpos=-1,err=null;
-function setErr(e){err=e;const el=$("err");if(e){el.textContent=(e.line?"Line "+e.line+": ":"")+e.msg;el.classList.add("on")}else el.classList.remove("on");markErr()}
+let game=null,running="",goodSrc="",goodTicks=0,paused=false,hpos=-1,err=null,msAvg=0;
+function setErr(e){err=e;const el=$("err");if(e){el.innerHTML="<b>error</b> "+(e.line?"line "+e.line+": ":"")+esc(e.msg)+(e.line?"  <b>›</b> jump":"");el.classList.add("on")}else el.classList.remove("on");markErr();modeUI()}
 $("err").onclick=()=>{if(err&&err.line){tab("code");goLine(err.line)}};
 const msgOf=e=>String(e&&e.message||e);
+function modeUI(){const m=$("mode");const k=err?"err":document.body.classList.contains("prog")?"prog":paused?"pause":"";m.className="badge"+(k?" "+k:"");m.textContent=err?"ERR":k==="prog"?"PROG":paused?"PAUSE":"RUN"}
 // build: a game swaps in over the running one (live state kept), a plain program just runs
 function build(src,fresh){
  let cell;try{cell=S.load(src)}catch(e){setErr({line:e.line||0,msg:msgOf(e)});return false}
@@ -3201,7 +3705,8 @@ function build(src,fresh){
  try{if(game&&!fresh)game.swap(src);else{game=L.makeGame(src,{W:GW,H:GH,onEffect});setPaused(false)}}
  catch(e){setErr({line:e.line||0,msg:msgOf(e)});return false}
  running=src;goodTicks=0;setErr(null);pulse();return true}
-function pulse(){const b=$("swap");b.classList.remove("on");void b.offsetWidth;b.classList.add("on")}
+let swapT=0;
+function pulse(){const s=$("sSwap"),d=new Date();s.textContent="swap "+d.toTimeString().slice(0,8);s.classList.add("on");clearTimeout(swapT);swapT=setTimeout(()=>s.classList.remove("on"),900)}
 
 // ---------- input: touch and mouse are events; held keys go in with each tick
 const P={x:GW/2,y:GH/2,down:false};const KEYS=new Set();let swipe=null,swipeTicks=0,heldKey="",heldC=null;
@@ -3215,7 +3720,13 @@ cv.addEventListener("pointerup",pup);cv.addEventListener("pointercancel",pup);
 addEventListener("pointerdown",audio,{once:true});
 const KEYNAME={ArrowLeft:"left",ArrowRight:"right",ArrowUp:"up",ArrowDown:"down"," ":"space",Enter:"enter"};
 const editing=e=>e.target&&(e.target.tagName==="TEXTAREA"||e.target.tagName==="INPUT");
-addEventListener("keydown",e=>{if(editing(e))return;const k=KEYNAME[e.key]||e.key.toLowerCase();if(!KEYS.has(k)&&(k==="space"||k==="enter")&&game&&!paused)try{game.down(P.x,P.y)}catch(_){}
+// function keys work everywhere, even while typing
+const FKEYS={F2:()=>openExamples(),F3:()=>openSpec(),F4:()=>share(),F7:()=>togglePause(),F8:()=>restart(),F9:()=>toggleSound()};
+addEventListener("keydown",e=>{
+ if(FKEYS[e.key]){e.preventDefault();FKEYS[e.key]();return}
+ if(MODAL){modalKey(e);return}
+ if(e.altKey&&/^[123]$/.test(e.key)){e.preventDefault();tab(["code","st","out"][+e.key-1]);return}
+ if(editing(e))return;const k=KEYNAME[e.key]||e.key.toLowerCase();if(!KEYS.has(k)&&(k==="space"||k==="enter")&&game&&!paused)try{game.down(P.x,P.y)}catch(_){}
  KEYS.add(k);if(e.key.startsWith("Arrow")||e.key===" ")e.preventDefault()});
 addEventListener("keyup",e=>{const k=KEYNAME[e.key]||e.key.toLowerCase();KEYS.delete(k);if((k==="space"||k==="enter")&&game&&!paused)try{game.up()}catch(_){}});
 addEventListener("blur",()=>KEYS.clear());
@@ -3228,48 +3739,55 @@ function paint(list){
    case"clear":g.fillStyle=col(a[0]);g.fillRect(0,0,GW,GH);break;
    case"rect":g.fillStyle=col(a[4]);g.fillRect(a[0],a[1],a[2],a[3]);break;
    case"circle":if(a[2]>0){g.fillStyle=col(a[3]);g.beginPath();g.arc(a[0],a[1],a[2],0,Math.PI*2);g.fill()}break;
-   case"line":g.strokeStyle=col(a[4]);g.lineWidth=3;g.lineCap="round";g.beginPath();g.moveTo(a[0],a[1]);g.lineTo(a[2],a[3]);g.stroke();break;
-   case"text":g.fillStyle=col(a[4]);g.font="700 "+(+a[3]||16)+"px system-ui,-apple-system,sans-serif";g.textAlign="center";g.textBaseline="middle";g.fillText(S.fmt(a[0]),a[1],a[2]);break;
+   case"line":g.strokeStyle=col(a[4]);g.lineWidth=2;g.lineCap="round";g.beginPath();g.moveTo(a[0],a[1]);g.lineTo(a[2],a[3]);g.stroke();break;
+   case"text":g.fillStyle=col(a[4]);g.font=(+a[3]||16)+'px "JetBrains Mono","SF Mono",ui-monospace,Menlo,Consolas,monospace';g.textAlign="center";g.textBaseline="middle";g.fillText(S.fmt(a[0]),a[1],a[2]);break;
   }
  }
 }
-let last=0;
+let last=0,statT=0;
 function frame(now){requestAnimationFrame(frame);const dt=Math.min(.05,(now-last)/1000||0);last=now;
  const k=cv.width/GW;g.setTransform(k,0,0,k,0,0);
- if(!game){g.fillStyle="#0b130e";g.fillRect(0,0,GW,GH);return}
+ if(!game){g.fillStyle="#000";g.fillRect(0,0,GW,GH);if(now-statT>500){statT=now;statUI()}return}
  try{
+  const t0=performance.now();
   if(!paused){game.tick(dt,heldCell());if(swipeTicks>0)swipeTicks--;if(++goodTicks===30)goodSrc=running}
-  const list=game.draw();
+  const list=game.draw();msAvg=msAvg*.95+(performance.now()-t0)*.05;
   g.save();if(shakeAmt>.3&&!paused){g.translate((Math.random()-.5)*shakeAmt,(Math.random()-.5)*shakeAmt);shakeAmt*=Math.pow(.004,dt)}else if(!paused)shakeAmt=0;
   try{paint(list)}finally{g.restore()}
  }catch(e){
   const m={line:e.line||0,msg:msgOf(e)};
   if(goodSrc&&running!==goodSrc){try{game.swap(goodSrc);running=goodSrc;m.msg+=" (still running your last working version)"}catch(_){setPaused(true)}}else setPaused(true);
   setErr(m)}
+ if(now-statT>200){statT=now;statUI()}
 }
 requestAnimationFrame(frame);
+function statUI(){
+ if(!game){$("sClock").innerHTML="t <i>–</i>";$("sFrames").innerHTML="<i>–</i> saved";$("sMs").innerHTML="<i>–</i> ms/frame";return}
+ let c="0.0",f=0;if(game){const h=game.history;f=h.length;const at=paused&&hpos>=0&&h[hpos]?h[hpos]:h[h.length-1];c=at?at.clock.toFixed(1):"0.0"}
+ $("sClock").innerHTML="t <i>"+c+"</i>s";$("sFrames").innerHTML="<i>"+f+"</i> saved";$("sMs").innerHTML="<i>"+msAvg.toFixed(2)+"</i> ms/frame"}
 
 // ---------- pause and rewind: a saved frame is just the state it held, since cells never change
-function setPaused(on){if(on&&!game)return;paused=on;document.body.classList.toggle("paused",on);$("bPause").textContent=on?"▶":"⏸";
- if(on){hpos=game.history.length-1;tlUI()}else if(game&&hpos>=0){if(hpos<game.history.length-1)game.history.length=hpos+1;hpos=-1}}
+function setPaused(on){if(on&&!game)return;paused=on;document.body.classList.toggle("paused",on);$("pauseL").textContent=on?"play":"pause";
+ if(on){hpos=game.history.length-1;tlUI()}else if(game&&hpos>=0){if(hpos<game.history.length-1)game.history.length=hpos+1;hpos=-1}modeUI()}
 function tlUI(){const h=game?game.history:[],r=$("tlR");r.max=Math.max(0,h.length-1);r.value=hpos<0?r.max:hpos;r.disabled=h.length<2;
  const back=hpos<0||!h.length?0:h[h.length-1].clock-h[hpos].clock;$("tlT").textContent=back>.01?"−"+back.toFixed(1)+"s":"now"}
-$("tlR").addEventListener("input",e=>{if(!game||!game.history.length)return;hpos=+e.target.value;game.rewind(hpos);tlUI();renderState()});
-$("bPause").onclick=()=>{setPaused(!paused);toast(paused?"Paused. Drag the bar to go back in time, change the code, then play on from there.":"Running")};
-$("bRestart").onclick=()=>{if(build(code,true)){toast("Started again");renderState()}};
-const sndIcon=()=>$("bSnd").textContent=muted?"🔇":"🔊";sndIcon();
-$("bSnd").onclick=()=>{muted=!muted;LS.set("sprout3.mute",muted);sndIcon()};
+$("tlR").addEventListener("input",e=>{if(!game||!game.history.length)return;hpos=+e.target.value;game.rewind(hpos);tlUI();renderState();statUI()});
+function togglePause(){if(!game)return;setPaused(!paused);toast(paused?"paused: drag the rewind bar, edit, then play on from there":"running")}
+function restart(){if(build(code,true)){toast("started again");renderState()}}
+function toggleSound(){muted=!muted;LS.set("sprout3.mute",muted);sndUI();toast(muted?"sound off":"sound on")}
+const sndUI=()=>$("sndL").textContent=muted?"muted":"sound";sndUI();
+$("bPause").onclick=togglePause;$("bRestart").onclick=restart;$("bSnd").onclick=toggleSound;
 
 // ---------- canvas size
 const stage=$("stage");
-function fit(){const r=stage.getBoundingClientRect();const s=Math.max(.1,Math.min((r.width-16)/GW,(r.height-16)/GH));const w=Math.round(GW*s),h=Math.round(GH*s),dpr=Math.min(2,devicePixelRatio||1);
+function fit(){const r=stage.getBoundingClientRect();const s=Math.max(.1,Math.min((r.width-20)/GW,(r.height-20)/GH));const w=Math.round(GW*s),h=Math.round(GH*s),dpr=Math.min(2,devicePixelRatio||1);
  cv.style.width=w+"px";cv.style.height=h+"px";cv.width=Math.round(w*dpr);cv.height=Math.round(h*dpr)}
 if(window.ResizeObserver)new ResizeObserver(fit).observe(stage);addEventListener("resize",fit);
 function vv(){const v=window.visualViewport;const h=v?v.height:innerHeight;$("app").style.height=h+"px";$("app").style.top=(v?v.offsetTop:0)+"px";document.body.classList.toggle("kb",h<innerHeight*.75&&document.activeElement===ta)}
 if(window.visualViewport){visualViewport.addEventListener("resize",vv);visualViewport.addEventListener("scroll",vv)}vv();
 
 // ---------- the editor: a textarea over a highlighted copy (the same rules as Sprout 3's tokenizer)
-const WORDS=new Set("start update draw input dt clock touching tapped touch-x touch-y held W H clear rect circle line text beep shake print rand dist clamp toward range match cond take rgb rgba every wave frame any with else and or not collect keep each fold times length first last str min max abs floor round ceil sqrt sin cos tan log neg".split(" "));
+const WORDS=new Set("start update draw input dt clock touching tapped touch-x touch-y held W H clear rect circle line text beep shake print rand dist clamp toward range match cond take rgb rgba every wave frame any with else and or not collect keep each fold times length first last str min max abs floor round ceil sqrt sin cos tan log neg left right".split(" "));
 function lineHTML(s){let o="",i=0;const n=s.length;
  while(i<n){const c=s[i];
   if(c==="-"&&s[i+1]==="-"){o+='<i class="c">'+esc(s.slice(i))+"</i>";break}
@@ -3283,8 +3801,8 @@ function lineHTML(s){let o="",i=0;const n=s.length;
   let j=i;while(j<n&&!' \t[](),|:"'.includes(s[j])&&!(s[j]==="-"&&s[j+1]==="-"&&j>i))j++;
   const w=s.slice(i,j);o+=/^-?\d+(\.\d+)?$/.test(w)?'<i class="n">'+w+"</i>":WORDS.has(w)?'<i class="a">'+esc(w)+"</i>":(w==="true"||w==="false"||w==="!")?'<i class="k">'+esc(w)+"</i>":esc(w);i=j}
  return o}
-let code="",saveT=0,compT=0,liveSrc="",liveT=0;
-const LH=()=>parseFloat(getComputedStyle(ta).lineHeight)||20,PAD=10;
+let code="",saveT=0,compT=0,liveSrc="",liveT=0,dirty=false,curEx="";
+const LH=()=>parseFloat(getComputedStyle(ta).lineHeight)||20,PAD=8;
 function render(){hl.innerHTML=code.split("\n").map(lineHTML).join("\n")+"\n ";const n=code.split("\n").length;let gs="";for(let i=1;i<=n;i++)gs+=i+"\n";gut.textContent=gs;sync()}
 function sync(){hl.scrollTop=ta.scrollTop;hl.scrollLeft=ta.scrollLeft;gut.style.transform="translateY("+(-ta.scrollTop)+"px)";markErr()}
 ta.addEventListener("scroll",sync);
@@ -3293,11 +3811,11 @@ function markErr(){markAt($("errl"),err&&TAB==="code"?err.line:0)}
 function flashLive(src){const a=liveSrc.split("\n"),b=src.split("\n");let s=0;while(s<a.length&&s<b.length&&a[s]===b[s])s++;
  let e1=a.length-1,e2=b.length-1;while(e1>=s&&e2>=s&&a[e1]===b[e2]){e1--;e2--}liveSrc=src;if(e2<s||TAB!=="code")return;
  const el=$("live");el.classList.remove("fade");markAt(el,s+1,e2-s+1);clearTimeout(liveT);liveT=setTimeout(()=>{el.classList.add("fade");setTimeout(()=>markAt(el,0),700)},350)}
-function setCode(s){code=s;if(ta.value!==s)ta.value=s;liveSrc=s;render();queueSave()}
+function fileUI(){$("file").textContent=(curEx||"untitled")+".sp";$("dirty").hidden=!dirty}
+function setCode(s){code=s;if(ta.value!==s)ta.value=s;liveSrc=s;render();queueSave();fileUI()}
 function queueSave(){clearTimeout(saveT);saveT=setTimeout(()=>LS.set("sprout3.code",{code,ex:curEx,dirty}),400)}
 function goLine(n){const lines=code.split("\n");let p=0;for(let i=0;i<n-1&&i<lines.length;i++)p+=lines[i].length+1;ta.focus();ta.setSelectionRange(p,p);const y=PAD+(n-1)*LH();ta.scrollTop=Math.max(0,y-ta.clientHeight*.45);sync()}
-let dirty=false;
-ta.addEventListener("input",()=>{code=ta.value;dirty=true;render();queueSave();clearTimeout(compT);compT=setTimeout(()=>{if(build(code))flashLive(code);renderState()},350)});
+ta.addEventListener("input",()=>{code=ta.value;dirty=true;fileUI();render();queueSave();clearTimeout(compT);compT=setTimeout(()=>{if(build(code))flashLive(code);renderState()},350)});
 function insertText(t){ta.focus();if(!document.execCommand||!document.execCommand("insertText",false,t)){const s=ta.selectionStart,e=ta.selectionEnd;ta.setRangeText(t,s,e,"end");ta.dispatchEvent(new Event("input"))}}
 ta.addEventListener("keydown",e=>{
  if(e.key==="Tab"){e.preventDefault();insertText("  ")}
@@ -3308,37 +3826,53 @@ const KEYBAR=[":","[","]","(",")","|",'"',",","!","..","+","-","*","/","<",">","
 $("keys").innerHTML=KEYBAR.map(k=>'<button data-k="'+esc(k)+'">'+esc(k)+"</button>").join("");
 $("keys").addEventListener("pointerdown",e=>{const b=e.target.closest("button");if(!b)return;e.preventDefault();const k=b.dataset.k;insertText(k==="⇥"?"  ":k===":"?" : ":k==="|"?" | ":k)});
 
-// ---------- the State tab: every field of the game right now
-function brief(v){if(S.isCell(v)&&!(v instanceof S.Cell&&v.takesInput())){const n=v.count(),f=v.fieldNames().length;if(n>6)return"["+n+" parts]";const s=S.fmt(v);return s.length>120?s.slice(0,120)+"…]":s}const s=S.fmt(v);return s.length>120?s.slice(0,120)+"…":s}
+// ---------- the state tab: every field of the game right now, as a table
+function brief(v){if(S.isCell(v)&&!(v instanceof S.Cell&&v.takesInput())){const n=v.count();if(n>6)return"["+n+" parts]";const s=S.fmt(v);return s.length>110?s.slice(0,110)+"…]":s}const s=S.fmt(v);return s.length>110?s.slice(0,110)+"…":s}
 function renderState(){const el=$("st");
- if(!game){el.innerHTML='<span style="color:var(--mute)">No game is running.</span>';return}
- let h="";try{for(const [k,v] of S.fieldsOf(game.state))h+="<b>"+esc(k)+"</b> : "+esc(brief(v))+"\n"}catch(e){h=esc(msgOf(e))}
- el.innerHTML=h+'\n<span style="color:var(--mute)">'+(paused?"Paused":"Live")+", "+(game.history.length)+" frames saved for rewind.</span>"}
+ if(!game){el.innerHTML='<span class="d">no game is running</span>';return}
+ let rows=[];try{for(const [k,v] of S.fieldsOf(game.state))rows.push([k,brief(v)])}catch(e){el.textContent=msgOf(e);return}
+ const w=Math.max(4,...rows.map(r=>r[0].length));
+ el.innerHTML='<span class="d">'+"field".padEnd(w)+" │ value\n"+"─".repeat(w)+"─┼─"+"─".repeat(24)+"</span>\n"+rows.map(([k,v])=>'<span class="k2">'+esc(k.padEnd(w))+'</span><span class="d"> │ </span><span class="v">'+esc(v)+"</span>").join("\n")+
+  '\n\n<span class="d">'+(paused?"paused":"live")+" · "+game.history.length+" frames saved for rewind</span>"}
 setInterval(()=>{if(TAB==="st")renderState()},250);
 
 // ---------- tabs
 let TAB="code";
-function tab(t){TAB=t;document.body.className=document.body.className.replace(/\bt-\w+/,"t-"+t);document.querySelectorAll("#tabs button").forEach(b=>b.classList.toggle("on",b.dataset.t===t));
+function tab(t){TAB=t;document.body.className=document.body.className.replace(/\bt-\w+/,"t-"+t);document.querySelectorAll("#tabs .tab").forEach(b=>b.classList.toggle("on",b.dataset.t===t));
  if(t==="out"){outN=0;$("outN").hidden=true;$("out").scrollTop=$("out").scrollHeight}if(t==="st")renderState();if(t==="code")render();markErr()}
-document.querySelectorAll("#tabs button").forEach(b=>b.onclick=()=>tab(b.dataset.t));
+document.querySelectorAll("#tabs .tab").forEach(b=>b.onclick=()=>tab(b.dataset.t));
+
+// ---------- dialogs: one at a time, keyboard first
+let MODAL=null;
+function openModal(kind,title,html,foot,wide){MODAL={kind,sel:0};$("mTitle").textContent=title;$("mBody").innerHTML=html;$("mFoot").innerHTML=foot;$("mBox").classList.toggle("wide",!!wide);$("modal").classList.add("on");$("mBody").scrollTop=0}
+function closeModal(){MODAL=null;$("modal").classList.remove("on")}
+$("modal").addEventListener("click",e=>{if(e.target.id==="modal"||e.target.closest("[data-close]"))closeModal()});
+function modalKey(e){
+ if(e.key==="Escape"){e.preventDefault();closeModal();return}
+ if(MODAL.kind!=="ex")return;
+ const rows=[...document.querySelectorAll("#mBody .row")];
+ if(e.key==="ArrowDown"||e.key==="ArrowUp"){e.preventDefault();MODAL.sel=(MODAL.sel+(e.key==="ArrowDown"?1:-1)+rows.length)%rows.length;selRow(rows)}
+ else if(e.key==="Enter"){e.preventDefault();rows[MODAL.sel].click()}}
+function selRow(rows){rows.forEach((r,i)=>{r.classList.toggle("on",i===MODAL.sel);r.querySelector(".mk").textContent=i===MODAL.sel?"›":" "});rows[MODAL.sel].scrollIntoView({block:"nearest"})}
 
 // ---------- examples
-let curEx="";
 async function loadEx(name,quiet){
  if(dirty&&code.trim())LS.set("sprout3.backup",code);
- let src;try{const r=await fetch("examples/"+name+".sp?v="+V);if(!r.ok)throw 0;src=await r.text()}catch(e){toast("Couldn't load that example");return}
- curEx=name;dirty=false;$("exName").textContent=(EX.find(x=>x[0]===name)||[])[2]||"";setCode(src);clearOut();
- if(build(src,true)){if(name==="tour"||name==="recipes")tab("out");else if(TAB==="out")tab("code")}
- $("sheet").classList.remove("on");if(!quiet)toast((EX.find(x=>x[0]===name)||[])[2]+" loaded. Change the code and it updates as it runs.")}
-function sheet(html){$("sbox").innerHTML=html;$("sheet").classList.add("on");$("sbox").scrollTop=0}
-$("sheet").addEventListener("click",e=>{if(e.target.id==="sheet"||e.target.closest("[data-close]"))$("sheet").classList.remove("on")});
-$("bEx").onclick=()=>{const bk=LS.get("sprout3.backup",null);
- sheet("<h2>Examples</h2>"+EX.map(([id,ic,t,d])=>'<button class="gm" data-g="'+id+'"><span class="e">'+ic+"</span><span><b>"+t+"</b><small>"+esc(d)+"</small></span></button>").join("")+
-  (bk?'<button class="gm" data-g="backup"><span class="e">↩️</span><span><b>Bring back my last code</b><small>What you had before you last switched.</small></span></button>':"")+'<button class="hb" data-close style="width:100%">Close</button>');
- $("sbox").querySelectorAll("[data-g]").forEach(b=>b.onclick=()=>{const k=b.dataset.g;
-  if(k==="backup"){curEx="";dirty=true;$("exName").textContent="";setCode(bk);clearOut();build(bk,true);$("sheet").classList.remove("on");toast("Your code is back")}else loadEx(k)})};
+ let src;try{const r=await fetch("examples/"+name+".sp?v="+V);if(!r.ok)throw 0;src=await r.text()}catch(e){toast("couldn't load "+name+".sp");return}
+ curEx=name;dirty=false;setCode(src);clearOut();
+ if(build(src,true)){if(document.body.classList.contains("prog"))tab("out");else if(TAB==="out")tab("code")}
+ closeModal();if(!quiet)toast("opened "+name+".sp · edit it and the running program picks the change up")}
+function openExamples(){const bk=LS.get("sprout3.backup",null);let h="",prev="";
+ for(const [id,kind,d] of EX){if(kind!==prev){h+='<div class="grp">── '+GROUPS[kind]+"</div>";prev=kind}
+  h+='<button class="row" data-g="'+id+'"><span class="mk"> </span><span>'+id+'.sp</span><span class="kd">'+kind+'</span><span class="ds">'+esc(d)+"</span></button>"}
+ if(bk)h+='<div class="grp">── recovery</div><button class="row" data-g="backup"><span class="mk"> </span><span>last code</span><span class="kd">yours</span><span class="ds">What you had before you last opened something.</span></button>';
+ openModal("ex","open",h,"<span><b>↑↓</b> move</span><span><b>enter</b> open</span><span><b>esc</b> close</span>");
+ const rows=[...document.querySelectorAll("#mBody .row")];MODAL.sel=Math.max(0,rows.findIndex(r=>r.dataset.g===curEx));selRow(rows);
+ rows.forEach((b,i)=>{b.onmouseenter=()=>{MODAL.sel=i;selRow(rows)};b.onclick=()=>{const k=b.dataset.g;
+  if(k==="backup"){curEx="";dirty=true;setCode(bk);clearOut();build(bk,true);closeModal();toast("your code is back")}else loadEx(k)}})}
+$("bEx").onclick=openExamples;
 
-// ---------- the spec, shown in a sheet (spec.md, or the page GitHub Pages makes from it)
+// ---------- the spec (spec.md, or the page GitHub Pages makes from it)
 function mdInline(s){return esc(s).replace(/`([^`]+)`/g,"<code>$1</code>").replace(/\*\*([^*]+)\*\*/g,"<b>$1</b>")}
 function md(src){const L=src.replace(/\r/g,"").split("\n"),o=[];let i=0;
  while(i<L.length){const l=L[i];
@@ -3349,8 +3883,8 @@ function md(src){const L=src.replace(/\r/g,"").split("\n"),o=[];let i=0;
   if(/^\|/.test(l)){const rows=[];while(i<L.length&&/^\|/.test(L[i]))rows.push(L[i++]);const cells=r=>r.replace(/^\||\|$/g,"").split(/(?<!\\)\|/).map(c=>mdInline(c.trim().replace(/\\\|/g,"|")));
    o.push("<table>"+rows.filter(r=>!/^\|[\s:|-]+\|?$/.test(r)).map((r,k)=>"<tr>"+cells(r).map(c=>k?"<td>"+c+"</td>":"<th>"+c+"</th>").join("")+"</tr>").join("")+"</table>");continue}
   if(/^\s*([-*]|\d+\.) /.test(l)){const items=[];while(i<L.length&&(/^\s*([-*]|\d+\.) /.test(L[i])||(/^\s{2,}\S/.test(L[i])&&items.length&&!/^\s*```/.test(L[i]))))
-    {const x=L[i++];if(/^\s*([-*]|\d+\.) /.test(x))items.push({ind:x.match(/^\s*/)[0].length,t:x.replace(/^\s*([-*]|\d+\.) /,"")});else items[items.length-1].t+=" "+x.trim()}
-   o.push("<ul>"+items.map(x=>'<li style="margin-left:'+(x.ind*8)+'px">'+mdInline(x.t)+"</li>").join("")+"</ul>");continue}
+    {const x=L[i++];const nm=x.match(/^\s*(\d+)\. /);if(/^\s*([-*]|\d+\.) /.test(x))items.push({ind:x.match(/^\s*/)[0].length,num:nm?nm[1]:null,t:x.replace(/^\s*([-*]|\d+\.) /,"")});else items[items.length-1].t+=" "+x.trim()}
+   o.push("<ul>"+items.map(x=>'<li style="margin-left:'+(x.ind*8)+'px'+(x.num?';list-style:none;text-indent:-4ch;padding-left:4ch':'')+'">'+(x.num?'<span class="num">'+(x.num+".").padEnd(4,"\u00a0")+"</span>":"")+mdInline(x.t)+"</li>").join("")+"</ul>");continue}
   if(!l.trim()){i++;continue}
   const p=[];while(i<L.length&&L[i].trim()&&!/^(#{1,4} |\||---|\s*```|\s*([-*]|\d+\.) )/.test(L[i]))p.push(L[i++]);o.push("<p>"+mdInline(p.join(" "))+"</p>")}
  return o.join("\n")}
@@ -3359,24 +3893,28 @@ async function loadSpec(){
  for(const [f,kind] of [["spec.md","md"],["spec.html","html"]]){try{const r=await fetch(f+"?v="+V);if(!r.ok)continue;const t=await r.text();
    if(kind==="md"&&!/^\s*</.test(t))return md(t);const d=new DOMParser().parseFromString(t,"text/html");return d.body.innerHTML}catch(e){}}
  return"<p>The spec couldn't be loaded.</p>"}
-$("bSpec").onclick=async()=>{sheet('<h2>Sprout 3</h2><div class="md"><p>Loading the spec…</p></div>');if(!specHTML)specHTML=await loadSpec();
- sheet('<h2>Sprout 3</h2><div class="md"><p><b>Using this page.</b> Edit the code and the running game picks it up: live values are kept unless you change their starting value in <code>start</code>. Press ⏸ to pause, drag the bar to go back up to 10 seconds, change the code, and press ▶ to play on from there. The State tab shows the game\'s fields, and Output shows what it prints. The design decisions near the end of the spec define Sprout 3.</p></div><hr><div class="md">'+specHTML+'</div><button class="hb" data-close style="width:100%;margin-top:12px">Close</button>')};
+const SPEC_INTRO='<div class="md"><p><b>Using this page.</b> Edit the code and the running program picks the change up. Live values are kept unless you change their starting value in <code>start</code>. <b>F7</b> pauses; then drag the rewind bar to go back up to 10 seconds, edit, and play on from that moment. <b>F2</b> opens an example, <b>Alt+1/2/3</b> switch between code, state and output. The ace examples are the Atomic Constraint Engine written in Sprout. Sections 1 to 15 describe the older Sprout 2.0 baseline; the design decisions at the end define Sprout 3. <a href="#" id="toDecisions">Jump to the design decisions ›</a></p></div><hr>';
+async function openSpec(){openModal("spec","spec.md",'<div class="md"><p>loading…</p></div>',"<span><b>esc</b> close</span>",true);if(!specHTML)specHTML=await loadSpec();if(!MODAL||MODAL.kind!=="spec")return;$("mBody").innerHTML=SPEC_INTRO+'<div class="md">'+specHTML+"</div>";
+ const h=[...$("mBody").querySelectorAll("h2")].find(x=>/design decisions/i.test(x.textContent)),j=$("toDecisions");
+ if(h&&j)j.onclick=e=>{e.preventDefault();$("mBody").scrollTop=h.offsetTop-12};else if(j)j.remove()}
+$("bSpec").onclick=openSpec;
 
 // ---------- share
 const b64e=s=>btoa(unescape(encodeURIComponent(s))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
 const b64d=s=>decodeURIComponent(escape(atob(s.replace(/-/g,"+").replace(/_/g,"/"))));
-$("bShare").onclick=async()=>{if(!code.trim()){toast("Nothing to share yet");return}const url=location.origin+location.pathname+"#s3="+b64e(code);
+async function share(){if(!code.trim()){toast("nothing to share yet");return}const url=location.origin+location.pathname+"#s3="+b64e(code);
  if(navigator.share){try{await navigator.share({title:"Sprout 3",url});return}catch(e){if(e&&e.name==="AbortError")return}}
- try{await navigator.clipboard.writeText(url);toast("Link copied. Anyone who opens it gets your code.")}catch(e){prompt("Copy this link:",url)}};
+ try{await navigator.clipboard.writeText(url);toast("link copied · anyone who opens it gets this code")}catch(e){prompt("Copy this link:",url)}}
+$("bShare").onclick=share;
 
 // ---------- start
 (function boot(){
- fit();
+ fit();modeUI();
  const m=location.hash.match(/^#s3=([\w-]+)/);
- if(m){try{const src=b64d(m[1]);history.replaceState(null,"",location.pathname);curEx="";dirty=true;setCode(src);build(src,true);toast("Someone shared this with you");return}catch(e){}}
+ if(m){try{const src=b64d(m[1]);history.replaceState(null,"",location.pathname);curEx="";dirty=true;setCode(src);build(src,true);toast("someone shared this with you");return}catch(e){}}
  const sv=LS.get("sprout3.code",null);
- if(sv&&sv.code&&sv.code.trim()){curEx=sv.ex||"";dirty=!!sv.dirty;$("exName").textContent=(EX.find(x=>x[0]===curEx)||[])[2]||"";setCode(sv.code);build(sv.code,true)}
- else loadEx("sprout",true)})();
+ if(sv&&sv.code&&sv.code.trim()){curEx=sv.ex||"";dirty=!!sv.dirty;setCode(sv.code);build(sv.code,true);if(document.body.classList.contains("prog"))tab("out")}
+ else loadEx("ace-board",true)})();
 </script>
 </body></html>
 ````
