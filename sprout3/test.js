@@ -43,6 +43,9 @@ ok("84 match only works out the answer it picks", val('match [1, [1, "one", 2, n
   ok("typos: an unknown word suggests the nearest name", /"cuont" isn't a word Sprout knows yet \(did you mean "count"\?\)/.test(got), got);
   ok("typos: a missing field suggests the nearest field", /doesn't know sped \(did you mean speed\?\)/.test(got), got);
   ok("typos: nothing close, no suggestion", /"zzz-not-close" isn't a word Sprout knows yet( \(line \d+\))?( \||$)/.test(got), got); }
+{ const lineOf = src => { try { S.load(src); return 0; } catch (e) { return e.line; } };
+  ok("an unclosed [ is reported where it opened", lineOf("a : 1\nb : [2, 3\nc : 4\nd : [5]\ne : 6") === 2);
+  ok("an unclosed ( too", lineOf("a : 1\nb : (2 + 3\nc : 4") === 2); }
 ok("and/or run a call on their right before checking it", val("[k | k > 1 and ([d | d = 3] k)] 3") === "true" && val("[k | k > 9 or ([d | d = 3] k)] 3") === "true");
 ok("81 ( ) is plain text", val('"rgba(0,0,0,0.5)"') === "rgba(0,0,0,0.5)");
 ok("81 escaped bracket", val('"a\\[b]"') === "a[b]");

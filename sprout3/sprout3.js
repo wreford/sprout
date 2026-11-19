@@ -118,15 +118,16 @@ class Parser {
   }
   term() {
     const t = this.nx();
-    if (t === "[") return this.cell();
-    if (t === "(") { const items = this.items(")"); if (this.nx() !== ")") throw new SproutError("a ( needs a ) to close it", this.line()); return { k: "group", items }; }
+    // an unclosed bracket is reported where it opened, not where the file ran out
+    if (t === "[") return this.cell(this.line());
+    if (t === "(") { const at = this.line(); const items = this.items(")"); if (this.nx() !== ")") throw new SproutError("a ( needs a ) to close it", at); return { k: "group", items }; }
     if (t.t === "num") return { k: "num", v: t.v };
     if (t.t === "str") return { k: "str", v: t.v };
     if (t.t === "tmpl") return { k: "tmpl", parts: t.parts.map(p => typeof p === "string" ? p : { ast: parseInner(p.src, t.line) }) };
     if (t.t === "word") return { k: "word", v: t.v, line: t.line };
     throw new SproutError("this doesn't make sense here: " + t, this.line());
   }
-  cell() {
+  cell(openLine) {
     // input names before a | at this depth: [x y : 0 | ...]
     let depth = 0, bar = -1;
     for (let j = this.i; j < this.t.length; j++) {
@@ -148,7 +149,7 @@ class Parser {
       this.nx(); // |
     }
     const items = this.items("]");
-    if (this.nx() !== "]") throw new SproutError("a [ needs a ] to close it", this.line());
+    if (this.nx() !== "]") throw new SproutError("a [ needs a ] to close it", openLine || this.line());
     return { k: "cell", names, items }; // [[x]] is a cell holding a cell (decision 71: no collapse)
   }
 }
