@@ -224,7 +224,11 @@ class Gen {
     const r = this.lookup(n);
     if (r) return this.refJS(r);
     if (this.globals.has(n)) return this.globalRef(n);
-    return "UNKNOWN(" + JSON.stringify(n) + "," + (line || 0) + ")";
+    // suggest the nearest name in scope, or a built-in, for a likely typo
+    const seen = new Set(this.globals); for (const f of this.frames) for (const k of f.names.keys()) seen.add(k);
+    for (const list of this.hintNames || []) for (const k of list) seen.add(k);
+    const hint = nearest(n, seen);
+    return "UNKNOWN(" + JSON.stringify(n) + "," + (line || 0) + (hint ? "," + JSON.stringify(hint) : "") + ")";
   }
 
   genChain(ch, tail) {
@@ -351,8 +355,13 @@ class Gen {
   }
 
   genCell(c, ownerOfLeft) {
-    if (fieldsOnly(c) && c.items.every(x => simpleVal(x.val)))
-      return "VC(" + this.shapeRef(c.items.map(x => x.name)) + ",[" + c.items.map(x => this.genChain(x.val)).join(",") + "])";
+    if (fieldsOnly(c) && c.items.every(x => simpleVal(x.val))) {
+      // the fields can't use each other here, but they are still the likeliest names a typo meant
+      this.hintNames = (this.hintNames || []).concat([c.items.map(x => x.name)]);
+      const vals = c.items.map(x => this.genChain(x.val));
+      this.hintNames.pop();
+      return "VC(" + this.shapeRef(c.items.map(x => x.name)) + ",[" + vals.join(",") + "])";
+    }
     if (simpleParts(c) && c.items.length > 1)
       return "VP([" + c.items.map(x => this.genChain(x)).join(",") + "])";
     const k = this.shapes.length;
@@ -563,7 +572,33 @@ let LOG = (msg) => { if (typeof console !== "undefined") console.log("sprout: " 
 const warned = new Set();
 const seen = new Map();
 function LOG_MISS(msg, line) { const m = msg + (line ? " (line " + line + ")" : ""); const c = (seen.get(m) || 0) + 1; seen.set(m, c); if (c <= 3) LOG(m + (c === 3 ? " (and more; not shown again)" : "")); return false; }
-function UNKNOWN(n, line) { return LOG_MISS("\"" + n + "\" isn't a word Sprout knows yet", line); }
+function UNKNOWN(n, line, hint) { return LOG_MISS("\"" + n + "\" isn't a word Sprout knows yet" + (hint ? " (did you mean \"" + hint + "\"?)" : ""), line); }
+// the closest name to a likely typo: at most 1 edit for short names, 2 for longer ones; none if it's a tie between several
+function nearest(n, names) {
+  const limit = n.length <= 4 ? 1 : 2; let best = null, bestD = limit + 1, tie = false;
+  for (const m of names) {
+    if (m === n || Math.abs(m.length - n.length) > limit) continue;
+    const d = editDistance(n, m, limit);
+    if (d < bestD) { best = m; bestD = d; tie = false; } else if (d === bestD) tie = true;
+  }
+  return best && !tie ? best : null;
+}
+function editDistance(a, b, cap) {
+  // optimal string alignment: insert, delete, change, or swap two neighbouring letters, each one edit
+  const d = [];
+  for (let x = 0; x <= a.length; x++) { d.push(new Array(b.length + 1).fill(0)); d[x][0] = x; }
+  for (let y = 0; y <= b.length; y++) d[0][y] = y;
+  for (let x = 1; x <= a.length; x++) {
+    let low = Infinity;
+    for (let y = 1; y <= b.length; y++) {
+      let v = Math.min(d[x - 1][y] + 1, d[x][y - 1] + 1, d[x - 1][y - 1] + (a[x - 1] === b[y - 1] ? 0 : 1));
+      if (x > 1 && y > 1 && a[x - 1] === b[y - 2] && a[x - 2] === b[y - 1]) v = Math.min(v, d[x - 2][y - 2] + 1);
+      d[x][y] = v; if (v < low) low = v;
+    }
+    if (low > cap) return cap + 1;
+  }
+  return d[a.length][b.length];
+}
 
 // Act: one activation of a cell, holding its inputs and (for reads) its worked-out slots
 class Act {
@@ -746,7 +781,10 @@ function SW(r, w, lex, line, quiet) {
   const m = protoOf(r)[w];
   if (m !== undefined) return m.ar ? new Waiting(m.fn, r) : m.fn(r);
   if (lex) return SEND(r, lex());
-  return quiet ? false : MISSING(r, w, line);
+  if (quiet) return false;
+  // a field that isn't there: suggest the nearest field this cell does have
+  const hint = (r instanceof Cell || r instanceof VCell) ? nearest(w, r.fieldNames()) : null;
+  return LOG_MISS(describe(r) + " doesn't know " + w + (hint ? " (did you mean " + hint + "?)" : ""), line);
 }
 // SEND: send a value
 function SEND(r, a) {
