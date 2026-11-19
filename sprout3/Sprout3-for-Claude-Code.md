@@ -9,14 +9,14 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 **Run it (Node 22 or later):**
 
 ```
-node test.js          # language tests (63)
+node test.js          # language tests (71)
 node game-tests.js    # game tests (20)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 83 tests pass as of 19 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected.
+All 91 tests pass as of 19 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected.
 
 ## How to work on it
 
@@ -36,14 +36,15 @@ All 83 tests pass as of 19 November 2026. `test.js` uses `node:sqlite`, which pr
   - Simple records and argument lists are built eagerly as value cells.
   - Field reads and `with` use inline caches keyed on record shape.
   - Calls in tail position bounce, so recursion stays flat.
-- **Runtime values:** `Cell` (from a literal, lazy), `VCell` (a cell of values: shape plus value array), `RCell` (a lazy `range`), `Native` (a host word), `Waiting` (a prototype method waiting for its right side). `false` is the only falsy value.
+  - Lists of number records are stored as columns, and simple `collect`, `keep` and `each` bodies run as loops over the columns (decision 82).
+- **Runtime values:** `Cell` (from a literal, lazy), `VCell` (a cell of values: shape plus value array), `RCell` (a lazy `range`), `ColCell` (a list of number records stored as one number array per field), `Native` (a host word), `Waiting` (a prototype method waiting for its right side). `false` is the only falsy value.
 - **Prelude:** a short Sprout program inside `sprout3.js` defines `match`, `cond`, `take`, `rgb`, `rgba`, `every`, `wave` and `frame` in Sprout itself.
 - **`live3.js`, the game loop.** A game file binds `start`, `update` and `draw`. Events (`down`, `move`, `up`, `tick`) fold through `frame update`. Effects are queued during `update` and carried out after it. Random numbers are recorded per tick, so `replayFrom` is exact. Rewind is a list of states, since cells never change. Hot-swap keeps live values whose starting value didn't change.
 
 ## Open items and next steps
 
 1. **The speed roadmap (decision 79), in order:**
-   - columns (records of one shape stored as flat number arrays per field)
+   - columns: built (decision 82)
    - loop fusion for `collect`/`keep`/`fold` chains
    - spork sending pure numeric cells to WebAssembly with SIMD or to the GPU
    - seeded `noise [sample, id]` for big runs
@@ -59,8 +60,8 @@ All 83 tests pass as of 19 November 2026. `test.js` uses `node:sqlite`, which pr
    - A missing-field read still logs even inside `x else default`.
    - A cell can't have a field whose name is worked out at run time, so the host passes held keys in on each tick.
 4. **Current speed:**
-   - Games use 0.005 to 0.03 ms a frame, and 2,000 particles use about 1 ms.
-   - fib 25 takes about 2.2 ms, against 1.0 for plain JS; sum to 1,000,000 about 3 ms; 10,000 records times 20 updates about 11 ms. The last is faster than the old compiler.
+   - Games use 0.005 to 0.03 ms a frame. 2,000 particles went from about 1.45 to 0.28 ms a frame with columns (decision 82).
+   - fib 25 takes about 2.2 ms, against 1.0 for plain JS; sum to 1,000,000 about 3 ms; 10,000 records times 20 updates went from about 11 to 1.4 ms with columns, which is faster than the plain JS version of the same work.
    - Compiling `sprout.sp` takes about 4 ms.
 
 ## Contents
@@ -685,9 +686,10 @@ These are marked in `sprout2.js` with "Sprout Live fix N" or "Sprout Live additi
 76. **Colours are cells.** `rgb [255, 0, 0]` and `rgba [0, 0, 0, 0.5]` are library cells giving colour text, so games never write colour strings with brackets. Hex strings like `"#ff6b4a"` still work.
 77. **`cond` and `take` are library cells (Claude's call).** `cond [test, result, test, result, ..., any, fallback]` gives the result of the first true test, like `match` but with tests. `take [xs, n]` gives the first `n` parts.
 78. **SQLite is a host cell.** `db query "select ..."` or `db query [sql, [params]]` gives a cell of records straight away; `db run [sql, [params]]` is an effect, so inside `update` it is queued, carried out after, and dropped on replay. The language stays storage-neutral.
-79. **Speed roadmap (not built yet).** In order: (1) columns: records of one shape stored as flat number arrays per field; (2) loop fusion: `collect`, `keep`, `fold` chains run as one loop with no in-between lists; (3) spork sends pure numeric cells to WebAssembly with SIMD or to the GPU; (4) seeded randomness for big runs, `noise [sample, id]`, so replay needs nothing recorded. JavaScript stays the backend; a LuaJIT backend is parked.
+79. **Speed roadmap (step 1 built, see 82).** In order: (1) columns: records of one shape stored as flat number arrays per field; (2) loop fusion: `collect`, `keep`, `fold` chains run as one loop with no in-between lists; (3) spork sends pure numeric cells to WebAssembly with SIMD or to the GPU; (4) seeded randomness for big runs, `noise [sample, id]`, so replay needs nothing recorded. JavaScript stays the backend; a LuaJIT backend is parked.
 80. **Library-level choices are Claude's to make and record**, without asking first.
 81. **Only `[ ]` is a template inside a string.** `"[g score] drops"` puts a value in; `( )` is plain text, so SQL (`values (?, ?)`) and CSS (`rgba(0,0,0,0.5)`) need no escapes. Write `\[` for a plain bracket. Replaces the `( )` half of decisions 5 and 6.
+82. **Columns (built; Claude's call under decision 80).** A list of 32 or more records that share one shape and hold only numbers is stored as one number array per field. A cell with one named input gets a column version of its body when the body is one of three things: `s with [...]` where each new value is number maths on `s`'s fields; a test made of number maths and comparisons; or a host word given a cell of values, such as `circle [s x, s y, 2, "#fc6"]`. `collect`, `keep` and `each` use the column version on a list in columns, and `..` keeps two such lists in columns. Anything else falls back to the ordinary way, including a field that isn't there, a word in a record and an outside name that isn't a number. So a program can't tell the difference: parts, `@`, `length`, `=` and `str` all see ordinary records (decisions 22 and 39), and the tests run both ways. `random` and other recorded reads are never moved out of the loop, so replay stays exact. The particle fountain went from 1.45 to 0.28 ms a frame, and 10,000 records times 20 updates from 11 to 1.4 ms.
 ````
 
 ---
@@ -1099,8 +1101,110 @@ class Gen {
     }
     if (takes || !caps) { const rc = [...runFr.caps.values()].map(r => this.refJS(r)); caps = caps ? [...new Set(caps.concat(rc))] : rc; }
     const runJS = "(" + [act + "_L", act + "_it"].concat(nparams).join(",") + ")=>{" + runBody + "}";
-    return "MK(S[" + k + "]," + slotsJS + "," + runJS + ",[" + defs.join(",") + "],()=>[" + caps.join(",") + "])";
+    // column versions of this cell's body, used when it is given a list stored as columns (decision 82)
+    const kern = c.names.length === 1 && !c.names[0].def && !sh.usesIt && !sh.usesLeft && c.items.length === 1 && c.items[0].k === "chain" ? this.genKernels(c) : null;
+    return "MK(S[" + k + "]," + slotsJS + "," + runJS + ",[" + defs.join(",") + "],()=>[" + caps.join(",") + "]" + (kern ? "," + kern : "") + ")";
   }
+
+  // ---- column kernels (decision 82). A cell [s | ...] over records gets up to three:
+  //   m: [s | s with [a : ..., b : ...]] where every new value is number maths on s's fields  (used by collect)
+  //   t: [s | test] where the test is number maths and comparisons                           (used by keep)
+  //   e: [s | word [..., ...]] where word is a host word, like circle                         (used by each)
+  // Each is (self, rs, cols, n) => result, or null to fall back to the ordinary way, so they never change what a program does.
+  genKernels(c) {
+    const p = c.names[0].n, T = c.items[0].terms, out = [];
+    const fresh = () => ({ p, cols: new Map(), caps: new Map() });
+    // m: s with [fields]
+    if (T.length === 3 && T[0].k === "word" && T[0].v === p && T[1].k === "word" && (T[1].v === "with" || T[1].v === "..") && !this.lookup(T[1].v) && T[2].k === "cell" && fieldsOnly(T[2])) {
+      const K = fresh(), keys = T[2].items.map(x => x.name), vals = T[2].items.map(x => this.kChain(x.val, K));
+      if (vals.every(v => v && v.ty === "n")) {
+        const q = JSON.stringify;
+        out.push("m:(self,rs,cols,n)=>{" + kPro(K) + "if(rs.index(\"with\")>=0||rs.index(\"..\")>=0)return null;let out=rs;const oc=cols.slice();" +
+          keys.map((k, j) => "let $j" + j + "=out.index(" + q(k) + ");if($j" + j + "<0){out=out.add(" + q(k) + ");$j" + j + "=out.keys.length-1}const $o" + j + "=new Float64Array(n);").join("") +
+          "for(let $i=0;$i<n;$i++){" + vals.map((v, j) => "const $v" + j + "=" + v.js + ";").join("") + vals.map((v, j) => "$o" + j + "[$i]=$v" + j + ";").join("") + "}" +
+          keys.map((k, j) => "oc[$j" + j + "]=$o" + j + ";").join("") + "return COLC(out,oc,n)}");
+      }
+    }
+    // t: a test
+    { const K = fresh(), v = this.kChain(c.items[0], K);
+      if (v && v.ty === "b")
+        out.push("t:(self,rs,cols,n)=>{" + kPro(K) + "const $k=new Uint32Array(n);let $m=0;for(let $i=0;$i<n;$i++){if(" + v.js + ")$k[$m++]=$i}" +
+          "if($m===n)return self;const oc=new Array(cols.length);for(let $j=0;$j<cols.length;$j++){const $c=cols[$j],$o=new Float64Array($m);for(let $q=0;$q<$m;$q++)$o[$q]=$c[$k[$q]];oc[$j]=$o}return COLC(rs,oc,$m)}");
+    }
+    // e: word [args], a host word given a cell of values
+    if (T.length === 2 && T[0].k === "word" && T[0].v !== p && T[1].k === "cell" && simpleParts(T[1]) && T[1].items.length > 1) {
+      const K = fresh(), F = this.kCap(T[0].v, K, false);
+      const args = F && T[1].items.map(it => {
+        const t0 = it.terms[0];
+        if (it.terms.length === 1 && t0.k === "str") return JSON.stringify(t0.v);
+        if (it.terms.length === 1 && t0.k === "word" && t0.v !== p && !["_", "left", "right", "!", "true", "false"].includes(t0.v)) return this.kCap(t0.v, K, false);
+        const v = this.kChain(it, K); return v && v.js;
+      });
+      if (args && args.every(a => a))
+        out.push("e:(self,rs,cols,n)=>{" + kPro(K) + "if(!(" + F + " instanceof NATIVE))return null;const $f=" + F + ".fn;for(let $i=0;$i<n;$i++)$f(VP([" + args.join(",") + "]));return true}");
+    }
+    return out.length ? "{" + out.join(",") + "}" : null;
+  }
+  // a chain as number maths on the item's fields: {js, ty} with ty "n" (number) or "b" (true/false), or null if it can't be
+  kChain(ch, K) {
+    const T = ch.terms; if (!T.length) return null;
+    let v, i;
+    if (T[0].k === "word" && T[0].v === K.p) {
+      const f = T[1];
+      if (!f || f.k !== "word" || f.v === K.p || ["!", "true", "false", "_", "left", "right"].includes(f.v)) return null;
+      if ((FUSED.has(f.v) || LAZYOPS.has(f.v)) && T.length > 2 && !this.lookup(f.v)) return null;
+      v = { js: kCol(f.v, K), ty: "n" }; i = 2;
+    } else { v = this.kTerm(T[0], K); i = 1; }
+    for (; v && i < T.length; i++) {
+      const t = T[i]; if (t.k !== "word") return null;
+      const w = t.v;
+      if (FUSED.has(w) && i + 1 < T.length && !this.lookup(w)) {
+        const op = KOPS[w]; if (!op || v.ty !== "n") return null;
+        const b = this.kTerm(T[++i], K); if (!b || b.ty !== "n") return null;
+        v = w === "%" ? { js: "(((" + v.js + "%" + b.js + ")+" + b.js + ")%" + b.js + ")", ty: "n" } : { js: "(" + v.js + op[0] + b.js + ")", ty: op[1] };
+      } else if ((w === "and" || w === "or") && i + 1 < T.length && !this.lookup(w)) {
+        if (v.ty !== "b" || T[i + 1].k === "cell") return null;
+        const b = this.kTerm(T[++i], K); if (!b || b.ty !== "b") return null;
+        v = { js: "(" + v.js + (w === "and" ? "&&" : "||") + b.js + ")", ty: "b" };
+      } else if (v.ty === "n" && KPOST[w]) v = { js: KPOST[w] + "(" + v.js + ")", ty: "n" };
+      else if (v.ty === "n" && (w === "min" || w === "max") && i + 1 < T.length) {
+        const b = this.kTerm(T[++i], K); if (!b || b.ty !== "n") return null;
+        v = { js: "Math." + w + "(" + v.js + "," + b.js + ")", ty: "n" };
+      } else if (v.ty === "b" && w === "not") v = { js: "(!" + v.js + ")", ty: "b" };
+      else return null;
+    }
+    return v;
+  }
+  kTerm(t, K) {
+    if (t.k === "num") return { js: "(" + t.v + ")", ty: "n" };
+    if (t.k === "group") { if (t.items.length !== 1 || t.items[0].k !== "chain") return null; const v = this.kChain(t.items[0], K); return v && { js: "(" + v.js + ")", ty: v.ty }; }
+    if (t.k !== "word") return null;
+    if (t.v === "true" || t.v === "false") return { js: t.v, ty: "b" };
+    if (t.v === K.p || ["_", "left", "right", "!"].includes(t.v) || t.v in ALL) return null;
+    const r = this.kCap(t.v, K, true); return r && { js: r, ty: "n" };
+  }
+  // a name from outside the cell, read once before the loop. A number is checked for; random and other getters are never captured.
+  kCap(n, K, numeric) {
+    let ref;
+    const r = this.lookup(n);
+    if (r) ref = this.refJS(r);
+    else if (this.globals.has(n)) { const d = Object.getOwnPropertyDescriptor(G, n); if (!d || d.get) return null; ref = this.globalRef(n); }
+    else return null;
+    let e = K.caps.get(n);
+    if (!e) { e = { v: "$k" + K.caps.size, ref, num: false }; K.caps.set(n, e); }
+    if (numeric) e.num = true;
+    return e.v;
+  }
+}
+const KOPS = { "+": ["+", "n"], "-": ["-", "n"], "*": ["*", "n"], "/": ["/", "n"], "%": ["%", "n"], "<": ["<", "b"], ">": [">", "b"], "<=": ["<=", "b"], ">=": [">=", "b"], "=": ["===", "b"], "!=": ["!==", "b"] };
+const KPOST = { abs: "Math.abs", floor: "Math.floor", round: "Math.round", ceil: "Math.ceil", sqrt: "Math.sqrt", sin: "Math.sin", cos: "Math.cos", tan: "Math.tan", log: "Math.log", neg: "-" };
+function kCol(f, K) { let v = K.cols.get(f); if (!v) { v = "$c" + K.cols.size; K.cols.set(f, v); } return v + "[$i]"; }
+// the start of a kernel: find each field's column, and read each outside name once
+function kPro(K) {
+  let s = "";
+  for (const [f, v] of K.cols) s += "const " + v + "=cols[rs.index(" + JSON.stringify(f) + ")];if(" + v + "===undefined)return null;";
+  for (const e of K.caps.values()) s += "const " + e.v + "=" + e.ref + ";" + (e.num ? "if(typeof " + e.v + "!==\"number\")return null;" : "");
+  return s;
 }
 // does this expression use any of these names?
 function mentions(n, names) {
@@ -1177,7 +1281,7 @@ class Act {
 
 // Cell: from a literal. Fields and parts are read lazily; running is always fresh.
 class Cell {
-  constructor(sh, slots, run, defs, caps) { this.sh = sh; this.slots = slots; this.runF = run; this.defs = defs; this.caps = caps; this.left = undefined; this._a = null; }
+  constructor(sh, slots, run, defs, caps, kn) { this.sh = sh; this.slots = slots; this.runF = run; this.defs = defs; this.caps = caps; this.left = undefined; this._a = null; this.kn = kn || null; }
   act() { return this._a || (this._a = new Act(this, this.defaults(), false, this.left)); }
   defaults() { const d = this.defs; if (!d.length) return EMPTY; const o = new Array(d.length); for (let j = 0; j < d.length; j++) o[j] = d[j] ? d[j]() : false; return o; }
   field(name) { const i = this.sh.fidx[name]; return i === undefined ? UNSET : this.act().get(i); }
@@ -1213,7 +1317,7 @@ class Cell {
       default: return this.runF(L, false, ...ins);
     }
   }
-  bindLeft(r) { const b = new Cell(this.sh, this.slots, this.runF, this.defs, this.caps); b.left = r; return b; }
+  bindLeft(r) { const b = new Cell(this.sh, this.slots, this.runF, this.defs, this.caps, this.kn); b.left = r; return b; }
 }
 const EMPTY = [];
 function lint(msg) { if (!warned.has(msg)) { warned.add(msg); LOG("lint: " + msg); } }
@@ -1253,7 +1357,59 @@ class RCell extends VCell {
 }
 function VC(fs, vals) { return new VCell(EMPTY, fs, vals); }
 function VP(parts) { return new VCell(parts, ROOT, EMPTY); }
-function MK(sh, slots, run, defs, caps) { return new Cell(sh, slots, run, defs, caps); }
+function MK(sh, slots, run, defs, caps, kn) { return new Cell(sh, slots, run, defs, caps, kn); }
+
+// ColCell: a list of records that share one shape and hold only numbers, stored as one number array per field (decision 82).
+// To a program it is the same list: parts, @, length, = and str all see ordinary records, made when first asked for.
+class ColCell extends VCell {
+  constructor(rs, cols, n) { super(null, ROOT, EMPTY); this.rs = rs; this.cols = cols; this.n = n; this._p = null; }
+  get parts() { if (!this._p) { const o = new Array(this.n); for (let i = 0; i < this.n; i++) o[i] = this.row(i); this._p = o; } return this._p; }
+  set parts(v) {}
+  row(i) { const c = this.cols, k = c.length, fv = new Array(k); for (let j = 0; j < k; j++) fv[j] = c[j][i]; return new VCell(EMPTY, this.rs, fv); }
+  count() { return this.n; }
+  part(k) { if (!Number.isInteger(k) || k < 1 || k > this.n) return false; return this._p ? this._p[k - 1] : this.row(k - 1); }
+  run() { return this.n ? this.part(this.n) : false; }
+}
+function COLC(rs, cols, n) { return new ColCell(rs, cols, n); }
+let COLMIN = 32;
+const COLS = new WeakMap();
+// the columns for a list, if it is one: a list already in columns, or 32 or more records of one shape holding only numbers
+function toCols(xs) {
+  if (xs instanceof ColCell) return xs;
+  if (!(xs instanceof VCell) || xs instanceof RCell || xs.fs !== ROOT) return null;
+  const p = xs.parts; if (p.length < COLMIN) return null;
+  let c = COLS.get(xs); if (c !== undefined) return c;
+  c = rowsToCols(p, null); COLS.set(xs, c); return c;
+}
+function rowsToCols(p, rs) {
+  const n = p.length; if (!n) return null;
+  const r0 = p[0]; if (!(r0 instanceof VCell)) return null;
+  rs = rs || r0.fs; const k = rs.keys.length; if (!k) return null;
+  const cols = new Array(k); for (let j = 0; j < k; j++) cols[j] = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const r = p[i]; if (!(r instanceof VCell) || r.fs !== rs || r.parts.length) return null;
+    const fv = r.fv; for (let j = 0; j < k; j++) { const v = fv[j]; if (typeof v !== "number") return null; cols[j][i] = v; }
+  }
+  return new ColCell(rs, cols, n);
+}
+// a .. b where either side is in columns: the result stays in columns when both sides hold records of the same shape
+function colMerge(a, b) {
+  const side = (x, rs) => {
+    if (x instanceof ColCell) return x.rs === rs ? x : null;
+    if (!isCell(x) || x instanceof RCell || x.fieldNames().length) return null;
+    if (x.count() === 0) return EMPTYCOL;
+    return rowsToCols(partsOf(x), rs);
+  };
+  const rs = (a instanceof ColCell ? a : b).rs;
+  const ca = side(a, rs); if (!ca) return null;
+  const cb = side(b, rs); if (!cb) return null;
+  if (cb === EMPTYCOL) return ca === EMPTYCOL ? null : ca;
+  if (ca === EMPTYCOL) return cb;
+  const na = ca.n, nb = cb.n, k = ca.cols.length, cols = new Array(k);
+  for (let j = 0; j < k; j++) { const o = new Float64Array(na + nb); o.set(ca.cols[j], 0); o.set(cb.cols[j], na); cols[j] = o; }
+  return new ColCell(rs, cols, na + nb);
+}
+const EMPTYCOL = {};
 const isCell = v => v instanceof Cell || v instanceof VCell;
 function partsOf(c) { if (c instanceof VCell) return c.parts; const n = c.count(), o = new Array(n); for (let i = 0; i < n; i++) o[i] = c.part(i + 1); return o; }
 function fieldsOf(c) { if (c instanceof VCell) return c.fields || new Map(); const m = new Map(); for (const k of c.fieldNames()) m.set(k, c.field(k)); return m; }
@@ -1362,6 +1518,7 @@ function merge(a, b) {
   if (typeof a === "string" || typeof a === "number") return fmt(a) + fmt(b);
   if (!isCell(a)) return MISSING(a, "with");
   if (!isCell(b)) return MISSING(b, "with");
+  if (a instanceof ColCell || b instanceof ColCell) { const r = colMerge(a, b); if (r) return r; }
   const pa = partsOf(a), pb = partsOf(b);
   const parts = pb.length ? (pa.length ? pa.concat(pb) : pb) : pa;
   let fs, fv;
@@ -1418,12 +1575,14 @@ function CALL(f, x) {
   return SEND(f, x);
 }
 function each(xs, f) {
+  if (f instanceof Cell && f.kn && f.kn.e) { const c = toCols(xs); if (c && f.kn.e(c, c.rs, c.cols, c.n)) return false; }
   const one = f instanceof Cell && f.sh.names.length === 1, run = one ? f.runF : null, L = one ? f.left : undefined;
   if (xs instanceof RCell) { for (let i = 1; i <= xs.n; i++) one ? UNB(run(L, false, i)) : CALL(f, i); return false; }
   const p = partsOf(xs); for (let i = 0; i < p.length; i++) one ? UNB(run(L, false, p[i])) : CALL(f, p[i]);
   return false;
 }
 function collect(xs, f) {
+  if (f instanceof Cell && f.kn && f.kn.m) { const c = toCols(xs); if (c) { const r = f.kn.m(c, c.rs, c.cols, c.n); if (r) return r; } }
   const p = partsOf(xs);
   const n = p.length, out = new Array(n);
   if (f instanceof Cell && f.sh.names.length === 1) { const run = f.runF, L = f.left; for (let i = 0; i < n; i++) out[i] = UNB(run(L, false, p[i])); }
@@ -1431,6 +1590,7 @@ function collect(xs, f) {
   return new VCell(out, ROOT, EMPTY);
 }
 function keep(xs, f) {
+  if (f instanceof Cell && f.kn && f.kn.t) { const c = toCols(xs); if (c) { const r = f.kn.t(c, c.rs, c.cols, c.n); if (r) return r; } }
   const p = partsOf(xs), o = [];
   const one = f instanceof Cell && f.sh.names.length === 1, run = one ? f.runF : null, L = one ? f.left : undefined;
   for (let i = 0; i < p.length; i++) { const t = one ? UNB(run(L, false, p[i])) : CALL(f, p[i]); if (t === true) o.push(p[i]); else if (t !== false) MISSING(t, "keep"); }
@@ -1535,7 +1695,7 @@ frame : [update |
 
 // ===================================================================== build
 const RT = { BANG, ANY, G, S: null, MK, SW, SEND, RUNC, STR, UNKNOWN, LOG_MISS, WITHF,
-  ADD, SUB, MUL, DIV, MOD, LT, GT, LE, GE, EQ, NE, CAT, WITH, AT, VC, VP, ISBOOL, MISSING, TAIL, SWI, shapeFor };
+  ADD, SUB, MUL, DIV, MOD, LT, GT, LE, GE, EQ, NE, CAT, WITH, AT, VC, VP, ISBOOL, MISSING, TAIL, SWI, shapeFor, COLC, NATIVE: Native };
 let preludeCell = null;
 function globalNames(extra) { const s = new Set(Object.keys(G)); if (extra) for (const k of extra) s.add(k); return s; }
 
@@ -1556,6 +1716,7 @@ function load(src, opts) {
 }
 
 const api = { tokenize, parse, compile, load, fmt, eq, merge, isCell, Cell, VCell, Native, G, BANG, ANY, SproutError, PRELUDE,
+  ColCell, columns: on => { COLMIN = on ? 32 : Infinity; },
   setLog: f => { LOG = f; }, setOut: f => { OUT = f; }, setRandom: f => { RNG = f; }, defNative, partsOf, fieldsOf, UNSET, VFM, effect, queueEffects, runEffects, dropEffects };
 if (typeof module !== "undefined") module.exports = api; else root.Sprout3 = api;
 })(typeof window !== "undefined" ? window : globalThis);
@@ -1767,6 +1928,37 @@ ok("35 match with no match gives false", val('match [9, [1, "one"]]') === "false
   S.queueEffects(); c.field("w").run(S.BANG); S.dropEffects();
   ok("78 and dropped on replay", db.raw.prepare("select count(*) n from atoms").get().n === 4);
   delete S.G.db;
+}
+
+// 82: columns. Lists of number records are stored as columns, with exactly the same results as without them.
+{
+  const both = src => { const a = S.load(src).field("result"); S.columns(false); const b = S.load(src).field("result"); S.columns(true); return [a, b]; };
+  const [a, b] = both(`step : [rs | rs collect [r | r with [y : r y + 1, z : r x * 2]] keep [r | (r y % 3) != 0 or (r x > 50)]]
+go : [rs k | k = 0 [rs] else [go [step rs, k - 1]]]
+result : go [range 100 collect [n | [x : n, y : 0]], 5]`);
+  ok("82 columns are used", a instanceof S.ColCell && !(b instanceof S.ColCell));
+  ok("82 columns give the same list", S.fmt(a) === S.fmt(b) && S.eq(a, b) && S.eq(b, a) && a.count() === 50);
+  ok("82 a part of a column list is a record", S.fmt(a.part(2)) === "[x : 52, y : 5, z : 104]" && a.part(0) === false && a.part(51) === false);
+  const [c, d] = both(`xs : range 40 collect [n | [x : n, y : n * 2]]
+result : xs collect [r | r with [x : r x + 1]] .. [[x : 0, y : 0]] .. (range 3 collect [n | [x : n, y : n]])`);
+  ok("82 .. keeps columns", c instanceof S.ColCell && c.count() === 44 && S.fmt(c) === S.fmt(d));
+  const [e, f] = both(`xs : range 40 collect [n | [x : n, name : "a"]]
+result : xs collect [r | r with [x : r x + 1]]`);
+  ok("82 a record with words stays as records", !(e instanceof S.ColCell) && S.fmt(e) === S.fmt(f));
+  const [g2, h] = both(`xs : range 40 collect [n | [x : n]]
+result : xs collect [r | r with [x : r nope + 1]]`);
+  ok("82 a missing field falls back to the ordinary way", !(g2 instanceof S.ColCell) && S.fmt(g2) === S.fmt(h));
+  // the particle fountain plays the same with and without columns
+  const psrc = fs.readFileSync(__dirname + "/examples/particles.sp", "utf8");
+  const play = on => {
+    S.columns(on); const mr = Math.random; let seed = 7; Math.random = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const pg = L.makeGame(psrc); for (let t = 0; t < 150; t++) pg.tick(1 / 60);
+    const dr = JSON.stringify(pg.draw()); Math.random = mr; S.columns(true);
+    return [pg.state.field("sparks"), dr];
+  };
+  const [p1, d1] = play(true), [p2, d2] = play(false);
+  ok("82 particles use columns", p1 instanceof S.ColCell && p1.count() > 1000);
+  ok("82 particles play the same", S.fmt(p1) === S.fmt(p2) && d1 === d2);
 }
 
 // the game: events in, states out; effects queued; rewind, replay, hot-swap
