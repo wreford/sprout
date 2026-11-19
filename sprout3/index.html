@@ -127,7 +127,7 @@ body.t-out #out{display:block}body.t-st #st{display:block}
 .x{width:30px;height:30px;border-radius:50%;background:rgba(127,120,100,.14);display:grid;place-items:center;font-size:16px;color:var(--fg2)}
 #mBody{overflow:auto;padding:0 20px 22px}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:18px 14px}
-.tile{text-align:left;color:var(--fg)}
+.tile{text-align:left;color:var(--fg);display:flex;flex-direction:column;align-items:stretch;align-self:start}
 .tile .th{width:100%;aspect-ratio:3/4;border-radius:10px;display:block;box-shadow:0 0 0 1px var(--line),0 6px 18px rgba(0,0,0,.1);background:var(--card2);object-fit:cover;transition:transform .15s}
 .tile:hover .th{transform:translateY(-2px)}
 .tile b{display:block;font-size:13.5px;font-weight:600;margin-top:7px}.tile small{display:block;font-size:12px;color:var(--fg3)}
@@ -464,6 +464,39 @@ async function loadEx(name,quiet){
  curEx=name;dirty=false;setCode(src);clearOut();
  if(build(src,true)){if(document.body.classList.contains("prog"))tab("out");else if(TAB==="out")tab("code")}
  closeModal();fit();if(!quiet)toast(exOf(name)[2]+" · edit the code and it updates as it runs")}
+
+// ---------- artwork: each game is run off-screen for a moment, with a little scripted input, and its frame becomes the cover
+const ART_KEY="sprout3.art."+V;
+Object.assign(ART,LS.get(ART_KEY,{}));
+const SCRIPT={
+ "ace-board":g=>{for(const [x,y] of [[178,144],[60,144]]){g.down(x,y);g.tick(1/60);g.up();g.tick(1/60)}},
+ "ace-site":g=>{g.tick(1/60);g.down(250,240);g.tick(1/60);g.up();g.tick(1/60)},
+ fireflies:g=>{for(let t=0;t<120;t++)g.tick(1/60);g.down(180,250);for(let t=0;t<150;t++)g.tick(1/60)},
+ orbit:g=>{const fling=(x,y,x2,y2)=>{g.down(x,y);g.tick(1/60);for(let k=1;k<=8;k++){g.move(x+(x2-x)*k/8,y+(y2-y)*k/8);g.tick(1/60)}g.up();g.tick(1/60)};fling(180,120,132,120);for(let t=0;t<80;t++)g.tick(1/60);fling(180,330,230,330);for(let t=0;t<70;t++)g.tick(1/60)},
+ sprout:g=>{g.down(150,300);for(let t=0;t<150;t++){g.move(120+60*Math.sin(t/20),300);g.tick(1/60)}g.up()},
+ hop:g=>{for(let t=0;t<50;t++)g.tick(1/60);g.down(40,90);for(let t=0;t<12;t++)g.tick(1/60);g.up();g.tick(1/60)},
+ life:g=>{for(let t=0;t<200;t++)g.tick(1/60)},
+ particles:g=>{for(let t=0;t<150;t++)g.tick(1/60)}};
+const COVER={ace:["#d97757","#7a3a26"],prog:["#4b6584","#1f2b3c"]};
+function cover(id){const ex=exOf(id),c=document.createElement("canvas");c.width=240;c.height=320;const x=c.getContext("2d");
+ const [a,b]=COVER[ex[1]]||COVER.prog,gr=x.createLinearGradient(0,0,240,320);gr.addColorStop(0,a);gr.addColorStop(1,b);x.fillStyle=gr;x.fillRect(0,0,240,320);
+ const lines=(SRC[id]||"").split("\n").filter(l=>l.trim()&&!/^\s*--/.test(l)).slice(0,16);
+ x.font="10px ui-monospace,Menlo,monospace";x.fillStyle="rgba(255,255,255,.16)";lines.forEach((l,i)=>x.fillText(l.slice(0,44),14,22+i*13));
+ x.fillStyle="rgba(255,255,255,.75)";x.font="600 11px -apple-system,system-ui,sans-serif";x.fillText(ex[1]==="ace"?"ATOMIC CONSTRAINT ENGINE":"SPROUT 3 · PROGRAM",14,262);
+ x.fillStyle="#fff";x.font="600 30px ui-serif,'New York',Georgia,serif";x.fillText(ex[2],14,296);
+ return c.toDataURL("image/jpeg",.85)}
+const SRC={};
+function shot(id,src){const c=document.createElement("canvas");c.width=240;c.height=320;const x=c.getContext("2d");x.setTransform(240/GW,0,0,240/GW,0,0);
+ const t=L.makeGame(src,{W:GW,H:GH});(SCRIPT[id]||(g=>{for(let k=0;k<90;k++)g.tick(1/60)}))(t);paint(x,t.draw());return c.toDataURL("image/jpeg",.82)}
+function showArt(id){document.querySelectorAll('[data-art="'+id+'"]').forEach(im=>{if(ART[id])im.src=ART[id]})}
+async function makeArt(){
+ for(const [id,kind] of EX){if(ART[id]){showArt(id);continue}
+  try{const r=await fetch("examples/"+id+".sp?v="+V);SRC[id]=await r.text()}catch(e){continue}
+  await new Promise(r=>setTimeout(r,40));
+  quietLog=true;try{ART[id]=/^update\s*:/m.test(SRC[id])?shot(id,SRC[id]):cover(id)}catch(e){}finally{quietLog=false}
+  showArt(id)}
+ LS.set(ART_KEY,ART)}
+setTimeout(makeArt,600);
 
 // ---------- the spec (spec.md, or the page GitHub Pages makes from it)
 function mdInline(s){return esc(s).replace(/`([^`]+)`/g,"<code>$1</code>").replace(/\*\*([^*]+)\*\*/g,"<b>$1</b>")}
