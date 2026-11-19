@@ -1,7 +1,7 @@
 // ms per frame (update + draw) for each example game: node frame-bench.js
 const S = require("./sprout3.js"), L = require("./live3.js"), fs = require("fs");
 S.setLog(() => {});
-const games = ["sprout", "bounce", "snake", "breakout", "particles"];
+const games = ["sprout", "bounce", "snake", "breakout", "particles", "fireflies", "orbit", "life", "hop"];
 const rows = [];
 for (const name of games) {
   const g = L.makeGame(fs.readFileSync(__dirname + "/examples/" + name + ".sp", "utf8"));

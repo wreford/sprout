@@ -68,6 +68,85 @@ const f = (g, k) => g.state.field(k);
   ok("breakout: the ball comes back after a miss", typeof f(g2, "ball").field("x") === "number", S.fmt(f(g2, "ball")));
 }
 
+// ---------------- Fireflies
+{
+  const g = game("fireflies");
+  for (let t = 0; t < 300; t++) g.tick(1 / 60);
+  ok("fireflies: they hatch up to the count, stored as columns", f(g, "flies").count() === 400 && f(g, "flies") instanceof S.ColCell, f(g, "flies").count());
+  const spread = () => { const p = S.partsOf(f(g, "flies")); return p.reduce((a, r) => a + Math.hypot(r.field("x") - 80, r.field("y") - 120), 0) / p.length; };
+  const before = spread();
+  g.down(80, 120); for (let t = 0; t < 240; t++) g.tick(1 / 60);
+  ok("fireflies: holding a finger down gathers them", spread() < before * 0.6, [before, spread()]);
+  ok("fireflies: two circles each", g.draw().length === 2 + 800 + 1);
+}
+
+// ---------------- Orbit
+{
+  const fx = [], g = game("orbit", { onEffect: e => fx.push(e[0]) });
+  const fling = (x, y, x2, y2) => { g.down(x, y); g.tick(1 / 60); for (let k = 1; k <= 10; k++) { g.move(x + (x2 - x) * k / 10, y + (y2 - y) * k / 10); g.tick(1 / 60); } g.up(); g.tick(1 / 60); };
+  fling(180, 120, 132, 120);
+  for (let t = 0; t < 900; t++) g.tick(1 / 60);
+  ok("orbit: a sideways throw stays in orbit", f(g, "moons").count() === 1 && f(g, "lost") === 0, [f(g, "moons").count(), f(g, "lost")]);
+  fling(180, 60, 180, 30);
+  for (let t = 0; t < 300; t++) g.tick(1 / 60);
+  ok("orbit: a throw straight at the sun falls in", f(g, "moons").count() === 1 && f(g, "lost") === 1 && fx.includes("shake"), [f(g, "moons").count(), f(g, "lost")]);
+}
+
+// ---------------- Life
+{
+  const g = game("life");
+  const live = b => S.partsOf(b).filter(v => v === 1).length;
+  ok("life: starts with the glider and the R-pentomino", live(f(g, "board")) === 10);
+  const blink = L.makeGame(fs.readFileSync(__dirname + "/examples/life.sp", "utf8").replace(/seed : .*/, "seed : [[5, 5], [6, 5], [7, 5]]"));
+  const b0 = S.fmt(f(blink, "board"));
+  for (let t = 0; t < 7; t++) blink.tick(1 / 60);
+  const b1 = S.fmt(f(blink, "board"));
+  for (let t = 0; t < 6; t++) blink.tick(1 / 60);
+  ok("life: a blinker flips and flips back", f(blink, "generation") === 2 && b1 !== b0 && S.fmt(f(blink, "board")) === b0, f(blink, "generation"));
+  const n0 = live(f(g, "board"));
+  g.down(200, 300); g.tick(1 / 60); g.move(230, 300); g.tick(1 / 60);
+  ok("life: drawing brings squares to life and stops time", live(f(g, "board")) === n0 + 2 && f(g, "generation") === 0, live(f(g, "board")));
+}
+
+// ---------------- Hop
+{
+  const src = fs.readFileSync(__dirname + "/examples/hop.sp", "utf8");
+  const place = (x, y, vx, vy) => L.makeGame(src.replace("ship : [x : 70, y : 70, vx : 40, vy : 0]", "ship : [x : " + x + ", y : " + y + ", vx : " + vx + ", vy : " + vy + "]"));
+  const soft = place(220, 420, 0, 5); for (let t = 0; t < 60; t++) soft.tick(1 / 60);
+  ok("hop: a gentle landing on the pad scores", f(soft, "phase") === "landed" && f(soft, "score") === 150 && f(soft, "best") === 150, [f(soft, "phase"), f(soft, "score")]);
+  const hard = place(220, 300, 0, 120); for (let t = 0; t < 60; t++) hard.tick(1 / 60);
+  ok("hop: coming down too fast crashes", f(hard, "phase") === "crashed" && f(hard, "score") === 0);
+  const off = place(60, 420, 0, 5); for (let t = 0; t < 60; t++) off.tick(1 / 60);
+  ok("hop: missing the pad crashes", f(off, "phase") === "crashed");
+  const fire = place(220, 200, 0, 60); for (let t = 0; t < 40; t++) fire.tick(1 / 60, held(["up"]));
+  ok("hop: the engine slows the fall and uses fuel", f(fire, "ship").field("vy") < 10 && f(fire, "fuel") < 100 && f(fire, "burning") === true);
+  // a careful pilot: steer toward the pad, and brake late
+  const g = game("hop"); const rounds = [];
+  for (let r = 0; r < 3; r++) {
+    for (let t = 0; t < 5000 && f(g, "phase") === "flying"; t++) {
+      const s = f(g, "ship"), x = s.field("x"), y = s.field("y"), vx = s.field("vx"), vy = s.field("vy");
+      const want = Math.max(-22, Math.min(22, (f(g, "pad-x") - x) * 0.6));
+      const brake = vy > 0 && vy * vy > 2 * 85 * Math.max(1, 416 - y) * 0.6 || vy > 40, side = Math.abs(vx - want) > 3;
+      if (brake || side) g.down(x + (side ? (vx > want ? 60 : -60) : 0), y + 40); else g.up();
+      g.tick(1 / 60);
+    }
+    rounds.push(f(g, "phase"));
+    g.up(); g.tick(1 / 60); g.down(5, 5); g.tick(1 / 60); g.up(); g.tick(1 / 60);
+  }
+  ok("hop: a careful pilot lands round after round", rounds.join() === "landed,landed,landed" && f(g, "best") > 200, [rounds, f(g, "best")]);
+}
+
+// ---------------- Recipes (a program, not a game)
+{
+  const lines = []; S.setOut(s => lines.push(s));
+  S.load(fs.readFileSync(__dirname + "/examples/recipes.sp", "utf8")).run(S.BANG);
+  S.setOut(() => {});
+  const want = ["[1, 1, 3, 4, 5, 8, 9]", "[2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47]", "[1, 2, Fizz, 4, Buzz, Fizz, 7, 8, Fizz, Buzz, 11, Fizz, 13, 14, FizzBuzz]",
+    "tuorps", "true", "111", "[1]", "[1, 1]", "[1, 2, 1]", "[1, 3, 3, 1]", "[1, 4, 6, 4, 1]", "[1, 5, 10, 10, 5, 1]", "5", "12, 16", "[mon, tue, wed]",
+    "[work, work, work, work, work, rest, rest]"];
+  ok("recipes: every answer", JSON.stringify(lines) === JSON.stringify(want), lines);
+}
+
 const errs = logs.filter(m => !/doesn't know input/.test(m));
 ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
 console.log(pass + " passed, " + fail + " failed");
