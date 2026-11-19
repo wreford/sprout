@@ -72,9 +72,9 @@ draw : [g |
   rect [px 0, py 0, site-w * scale, site-h * scale, "#4a5a52"]
   rect [px 0 + 1, py 0 + 1, site-w * scale - 2, site-h * scale - 2, "#101814"]
 
-  box [p fuel, "fuel bay", "#1d2a36", "existing: can't move"]
-  box [p turbine, "turbine hall", "#1c2a22", "x = reactor edge + gap"]
-  box [p service, "service building", "#1c2a22", "y = reactor edge + gap"]
+  box [p fuel, "fuel bay", "#1d2a36", "existing, fixed"]
+  box [p turbine, "turbine hall", "#1c2a22", "x = reactor + gap"]
+  box [p service, "service building", "#1c2a22", "y = reactor + gap"]
   circle [px (rb x), py (rb y), rb r * scale, in-clash "reactor" ["#ff6b6b"] else ["#6f9f80"]]
   circle [px (rb x), py (rb y), rb r * scale - 2, fill ["reactor", "#18301f"]]
   line [px (rb x - (rb r)), py (rb y), px (rb x + (rb r)), py (rb y), "#8ef08e"]
