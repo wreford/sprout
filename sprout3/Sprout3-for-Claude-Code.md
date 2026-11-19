@@ -9,14 +9,14 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 **Run it (Node 22 or later):**
 
 ```
-node test.js          # language tests (71)
-node game-tests.js    # game tests (20)
+node test.js          # language tests (72)
+node game-tests.js    # game tests (34)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 91 tests pass as of 19 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected.
+All 106 tests pass as of 19 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected.
 
 ## How to work on it
 
@@ -83,6 +83,12 @@ All 91 tests pass as of 19 November 2026. `test.js` uses `node:sqlite`, which pr
 - `examples/snake.sp`: Snake
 - `examples/breakout.sp`: Breakout
 - `examples/particles.sp`: Particle fountain (speed test)
+- `examples/fireflies.sp`: Fireflies: 400 lights that gather to your finger (runs on columns)
+- `examples/orbit.sp`: Orbit: throw moons round a sun
+- `examples/hop.sp`: Hop: land gently on the pad
+- `examples/life.sp`: Life: a living grid you can draw on
+- `examples/recipes.sp`: Recipes: quicksort, primes, FizzBuzz, a vector with its own + (prints; not a game)
+- `index.html`: The web page at taskiap.com/sprout3/: play and live-edit the examples, rewind, state, output and the spec
 - `old-sprout2.js`: The old Sprout 2.0 compiler, kept only so bench.js can compare against it
 
 ---
@@ -950,7 +956,8 @@ class Gen {
           v = OPNAME[w] + "(" + v + "," + this.genTerm(nt, false) + ")"; continue;
         }
         if (LAZYOPS.has(w) && i + 1 < T.length && !this.lookup(w)) {
-          const B = this.genArg(T[++i], tail && i + 1 >= T.length), ta = this.tmp();
+          // only else gives its right side back as it is; and/or check theirs is true or false, so it can't be a tail call
+          const B = this.genArg(T[++i], w === "else" && tail && i + 1 >= T.length), ta = this.tmp();
           if (w === "else") v = "((" + ta + "=" + v + ")!==false?" + ta + ":" + B + ")";
           else if (w === "and") v = "((" + ta + "=" + v + ")===true?ISBOOL(" + B + ",'and'):" + ta + "===false?false:MISSING(" + ta + ",'and'))";
           else v = "((" + ta + "=" + v + ")===false?ISBOOL(" + B + ",'or'):" + ta + "===true?true:MISSING(" + ta + ",'or'))";
@@ -1870,6 +1877,7 @@ ok("60 [x | [..]] keeps the inner cell", val("([x | [a : x]] 5) a") === "5");
 ok("51 lazy once", S.fmt(S.load("r : [rand [0, 1000]]\nresult : (r @ 1) = (r @ 1)").field("result")) === "true");
 ok("51 run is fresh", val("([] .. [1]) @ 1") === "1");
 ok("81 template [ ]", val('"a[1 + 1]b"') === "a2b");
+ok("and/or run a call on their right before checking it", val("[k | k > 1 and ([d | d = 3] k)] 3") === "true" && val("[k | k > 9 or ([d | d = 3] k)] 3") === "true");
 ok("81 ( ) is plain text", val('"rgba(0,0,0,0.5)"') === "rgba(0,0,0,0.5)");
 ok("81 escaped bracket", val('"a\\[b]"') === "a[b]");
 ok("15 by position", val("[x y | x - y] [5, 2]") === "3");
@@ -2057,6 +2065,85 @@ const f = (g, k) => g.state.field(k);
   ok("breakout: the ball comes back after a miss", typeof f(g2, "ball").field("x") === "number", S.fmt(f(g2, "ball")));
 }
 
+// ---------------- Fireflies
+{
+  const g = game("fireflies");
+  for (let t = 0; t < 300; t++) g.tick(1 / 60);
+  ok("fireflies: they hatch up to the count, stored as columns", f(g, "flies").count() === 400 && f(g, "flies") instanceof S.ColCell, f(g, "flies").count());
+  const spread = () => { const p = S.partsOf(f(g, "flies")); return p.reduce((a, r) => a + Math.hypot(r.field("x") - 80, r.field("y") - 120), 0) / p.length; };
+  const before = spread();
+  g.down(80, 120); for (let t = 0; t < 240; t++) g.tick(1 / 60);
+  ok("fireflies: holding a finger down gathers them", spread() < before * 0.6, [before, spread()]);
+  ok("fireflies: two circles each", g.draw().length === 2 + 800 + 1);
+}
+
+// ---------------- Orbit
+{
+  const fx = [], g = game("orbit", { onEffect: e => fx.push(e[0]) });
+  const fling = (x, y, x2, y2) => { g.down(x, y); g.tick(1 / 60); for (let k = 1; k <= 10; k++) { g.move(x + (x2 - x) * k / 10, y + (y2 - y) * k / 10); g.tick(1 / 60); } g.up(); g.tick(1 / 60); };
+  fling(180, 120, 132, 120);
+  for (let t = 0; t < 900; t++) g.tick(1 / 60);
+  ok("orbit: a sideways throw stays in orbit", f(g, "moons").count() === 1 && f(g, "lost") === 0, [f(g, "moons").count(), f(g, "lost")]);
+  fling(180, 60, 180, 30);
+  for (let t = 0; t < 300; t++) g.tick(1 / 60);
+  ok("orbit: a throw straight at the sun falls in", f(g, "moons").count() === 1 && f(g, "lost") === 1 && fx.includes("shake"), [f(g, "moons").count(), f(g, "lost")]);
+}
+
+// ---------------- Life
+{
+  const g = game("life");
+  const live = b => S.partsOf(b).filter(v => v === 1).length;
+  ok("life: starts with the glider and the R-pentomino", live(f(g, "board")) === 10);
+  const blink = L.makeGame(fs.readFileSync(__dirname + "/examples/life.sp", "utf8").replace(/seed : .*/, "seed : [[5, 5], [6, 5], [7, 5]]"));
+  const b0 = S.fmt(f(blink, "board"));
+  for (let t = 0; t < 7; t++) blink.tick(1 / 60);
+  const b1 = S.fmt(f(blink, "board"));
+  for (let t = 0; t < 6; t++) blink.tick(1 / 60);
+  ok("life: a blinker flips and flips back", f(blink, "generation") === 2 && b1 !== b0 && S.fmt(f(blink, "board")) === b0, f(blink, "generation"));
+  const n0 = live(f(g, "board"));
+  g.down(200, 300); g.tick(1 / 60); g.move(230, 300); g.tick(1 / 60);
+  ok("life: drawing brings squares to life and stops time", live(f(g, "board")) === n0 + 2 && f(g, "generation") === 0, live(f(g, "board")));
+}
+
+// ---------------- Hop
+{
+  const src = fs.readFileSync(__dirname + "/examples/hop.sp", "utf8");
+  const place = (x, y, vx, vy) => L.makeGame(src.replace("ship : [x : 70, y : 70, vx : 40, vy : 0]", "ship : [x : " + x + ", y : " + y + ", vx : " + vx + ", vy : " + vy + "]"));
+  const soft = place(220, 420, 0, 5); for (let t = 0; t < 60; t++) soft.tick(1 / 60);
+  ok("hop: a gentle landing on the pad scores", f(soft, "phase") === "landed" && f(soft, "score") === 150 && f(soft, "best") === 150, [f(soft, "phase"), f(soft, "score")]);
+  const hard = place(220, 300, 0, 120); for (let t = 0; t < 60; t++) hard.tick(1 / 60);
+  ok("hop: coming down too fast crashes", f(hard, "phase") === "crashed" && f(hard, "score") === 0);
+  const off = place(60, 420, 0, 5); for (let t = 0; t < 60; t++) off.tick(1 / 60);
+  ok("hop: missing the pad crashes", f(off, "phase") === "crashed");
+  const fire = place(220, 200, 0, 60); for (let t = 0; t < 40; t++) fire.tick(1 / 60, held(["up"]));
+  ok("hop: the engine slows the fall and uses fuel", f(fire, "ship").field("vy") < 10 && f(fire, "fuel") < 100 && f(fire, "burning") === true);
+  // a careful pilot: steer toward the pad, and brake late
+  const g = game("hop"); const rounds = [];
+  for (let r = 0; r < 3; r++) {
+    for (let t = 0; t < 5000 && f(g, "phase") === "flying"; t++) {
+      const s = f(g, "ship"), x = s.field("x"), y = s.field("y"), vx = s.field("vx"), vy = s.field("vy");
+      const want = Math.max(-22, Math.min(22, (f(g, "pad-x") - x) * 0.6));
+      const brake = vy > 0 && vy * vy > 2 * 85 * Math.max(1, 416 - y) * 0.6 || vy > 40, side = Math.abs(vx - want) > 3;
+      if (brake || side) g.down(x + (side ? (vx > want ? 60 : -60) : 0), y + 40); else g.up();
+      g.tick(1 / 60);
+    }
+    rounds.push(f(g, "phase"));
+    g.up(); g.tick(1 / 60); g.down(5, 5); g.tick(1 / 60); g.up(); g.tick(1 / 60);
+  }
+  ok("hop: a careful pilot lands round after round", rounds.join() === "landed,landed,landed" && f(g, "best") > 200, [rounds, f(g, "best")]);
+}
+
+// ---------------- Recipes (a program, not a game)
+{
+  const lines = []; S.setOut(s => lines.push(s));
+  S.load(fs.readFileSync(__dirname + "/examples/recipes.sp", "utf8")).run(S.BANG);
+  S.setOut(() => {});
+  const want = ["[1, 1, 3, 4, 5, 8, 9]", "[2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47]", "[1, 2, Fizz, 4, Buzz, Fizz, 7, 8, Fizz, Buzz, 11, Fizz, 13, 14, FizzBuzz]",
+    "tuorps", "true", "111", "[1]", "[1, 1]", "[1, 2, 1]", "[1, 3, 3, 1]", "[1, 4, 6, 4, 1]", "[1, 5, 10, 10, 5, 1]", "5", "12, 16", "[mon, tue, wed]",
+    "[work, work, work, work, work, rest, rest]"];
+  ok("recipes: every answer", JSON.stringify(lines) === JSON.stringify(want), lines);
+}
+
 const errs = logs.filter(m => !/doesn't know input/.test(m));
 ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
 console.log(pass + " passed, " + fail + " failed");
@@ -2111,7 +2198,7 @@ Milliseconds per frame for each example game.
 // ms per frame (update + draw) for each example game: node frame-bench.js
 const S = require("./sprout3.js"), L = require("./live3.js"), fs = require("fs");
 S.setLog(() => {});
-const games = ["sprout", "bounce", "snake", "breakout", "particles"];
+const games = ["sprout", "bounce", "snake", "breakout", "particles", "fireflies", "orbit", "life", "hop"];
 const rows = [];
 for (const name of games) {
   const g = L.makeGame(fs.readFileSync(__dirname + "/examples/" + name + ".sp", "utf8"));
@@ -2587,6 +2674,711 @@ draw : [g |
   clear "#000000"
   g sparks each [s | circle [s x, s y, 2, "#ffcc66"]]
 ]
+````
+
+## examples/fireflies.sp
+
+Fireflies: 400 lights that gather to your finger (runs on columns)
+
+````sprout
+-- Fireflies: hundreds of lights drift on the night air. Hold a finger down and they gather to it.
+-- Try changing count, the pull, or the glow colour while it runs.
+
+count : 400
+
+-- a new firefly, rising from the grass
+hatch : [n | [x : rand [0, W], y : H + 8, vx : rand [-20, 20], vy : rand [-90, -40], ph : rand [0, 6.28]]]
+
+start :
+  flies : []
+
+update : [g |
+  i : g input
+  dt : g dt
+  t : g clock
+
+  -- where they gather: your finger, or a slow loop round the middle of the sky
+  gx : i touching [i touch-x] else [W / 2 + (t * 0.5 sin * 90)]
+  gy : i touching [i touch-y] else [H / 2 - 40 + (t * 0.7 cos * 110)]
+  pull : i touching [1.2] else [0.5]
+
+  -- a few more hatch each frame until there are enough
+  born : g flies length < count [range 5 collect hatch] else [[]]
+
+  -- each one is pulled toward the gathering point and wobbles on its own beat
+  flies : g flies .. born collect [f |
+    f with
+      vx : f vx * 0.96 + (gx - (f x) * pull * dt) + (f ph + t sin * 80 * dt)
+      vy : f vy * 0.96 + (gy - (f y) * pull * dt) + (f ph * 1.3 + t cos * 80 * dt)
+      x : f x + (f vx * dt) max -20 min (W + 20)
+      y : f y + (f vy * dt) max -20 min (H + 20)
+  ]
+
+  g with [flies : flies]
+]
+
+draw : [g |
+  t : g clock
+  halo : rgba [255, 225, 110, 0.13]
+  clear "#070b1a"
+  rect [0, H - 30, W, 30, "#0b1a12"]
+  g flies each [f | circle [f x, f y, f ph + (t * 3) sin * 3 + 5, halo]]
+  g flies each [f | circle [f x, f y, 1.8, "#fff4b0"]]
+  text ["hold to call them", W / 2, H - 14, 13, "#4f6a8f"]
+]
+````
+
+## examples/orbit.sp
+
+Orbit: throw moons round a sun
+
+````sprout
+-- Orbit: drag on the sky and let go to throw a moon. The sun pulls on everything.
+-- Throw sideways to make an orbit. Too slow and it falls in; too fast and it flies away.
+
+sun : [x : W / 2, y : H / 2 - 20, r : 24]
+pull : 1500000               -- how strongly the sun pulls
+colours : ["#9fd8ff", "#ffd166", "#ff9e7a", "#b8f28c"]
+
+-- a few fixed stars behind everything
+stars : range 70 collect [n | [x : n * 137 % W, y : n * 211 % H, r : n % 3 * 0.5 + 0.6]]
+
+-- a new moon at x, y moving at vx, vy
+moon : [px py vx0 vy0 | [x : px, y : py, vx : vx0, vy : vy0, c : rand [1, 5] floor]]
+
+start :
+  moons : []
+  lost : 0
+  aiming : false
+  ax : 0
+  ay : 0
+
+update : [g |
+  i : g input
+  dt : g dt
+
+  -- aiming: a drag starts where you touch, and a moon is thrown when you let go
+  holding : i touching
+  starting : holding and (g aiming not)
+  released : g aiming and (holding not)
+  from-x : starting [i touch-x] else [g ax]
+  from-y : starting [i touch-y] else [g ay]
+  thrown : [moon [from-x, from-y, from-x - (i touch-x) * 2.5, from-y - (i touch-y) * 2.5]] keep [released]
+
+  -- the sun pulls each moon toward it: harder the closer it gets
+  fall : [m |
+    dx : sun x - (m x)
+    dy : sun y - (m y)
+    d2 : dx * dx + (dy * dy) max 100
+    k : pull / d2 / (d2 sqrt) * dt
+    ux : m vx + (dx * k)
+    uy : m vy + (dy * k)
+    m with [vx : ux, vy : uy, x : m x + (ux * dt), y : m y + (uy * dt)]
+  ]
+  moved : g moons .. thrown collect fall
+
+  -- what fell into the sun, and what flew away
+  hit : [m | dist [m x, m y, sun x, sun y] < (sun r)]
+  gone : [m | dist [m x, m y, sun x, sun y] > 900]
+  crashed : moved keep hit length
+  escaped : moved keep gone length
+
+  released
+    beep [520, 0.05]
+  crashed > 0
+    shake 10
+    beep [90, 0.35]
+
+  g with
+    moons : moved keep [m | hit m not and (gone m not)]
+    lost : g lost + crashed + escaped
+    aiming : holding
+    ax : from-x
+    ay : from-y
+]
+
+draw : [g |
+  i : g input else [touch-x : 0, touch-y : 0]
+  glow : wave [4, g clock] * 4
+  clear "#060818"
+  stars each [s | circle [s x, s y, s r, "#3a4a7a"]]
+
+  circle [sun x, sun y, sun r + 14 + glow, rgba [255, 170, 60, 0.15]]
+  circle [sun x, sun y, sun r + 6 + glow, rgba [255, 190, 80, 0.3]]
+  circle [sun x, sun y, sun r, "#ffcf5a"]
+
+  g moons each [m |
+    line [m x, m y, m x - (m vx * 0.12), m y - (m vy * 0.12), rgba [255, 255, 255, 0.25]]
+    circle [m x, m y, 5, colours @ (m c)]
+  ]
+
+  g aiming
+    line [g ax, g ay, i touch-x, i touch-y, "#5a6aa0"]
+    circle [g ax, g ay, 6, "#ffffff"]
+
+  text ["[g moons length] in orbit", W / 2, 30, 20, "#e8ecff"]
+  text ["[g lost] lost", W / 2, 54, 14, "#7d88b8"]
+  g moons length = 0 and (g aiming not)
+    text ["drag and let go to throw a moon", W / 2, H - 30, 14, "#7d88b8"]
+]
+````
+
+## examples/hop.sp
+
+Hop: land gently on the pad
+
+````sprout
+-- Hop: set the lander down gently on the pad.
+-- Hold a finger down to fire the engine; it pushes away from your finger, so hold left of the lander to drift right.
+-- Keys: up or space to fire, left and right to lean. Land slower than 50 going down and 25 sideways.
+
+gravity : 55
+thrust : 140
+ground : H - 40
+
+start :
+  ship : [x : 70, y : 70, vx : 40, vy : 0]
+  fuel : 100
+  phase : "flying"            -- "flying", "landed" or "crashed"
+  burning : false
+  pad-x : 220
+  score : 0
+  best : 0
+
+-- one frame of flying
+fly : [g |
+  i : g input
+  dt : g dt
+  s : g ship
+
+  burn : i touching or (i held "up") or (i held "space") and (g fuel > 0)
+  lean : i touching [s x - (i touch-x) / 60 max -1 min 1] else [
+    i held "left" [-1] else [i held "right" [1] else [0]]]
+  push : burn [thrust] else [0]
+  speed-x : s vx + (lean * push * 0.5 * dt)
+  speed-y : s vy + (gravity - push * dt)
+  moved : s with [x : s x + (speed-x * dt) max 10 min (W - 10), y : s y + (speed-y * dt), vx : speed-x, vy : speed-y]
+
+  down : moved y > (ground - 12)
+  on-pad : moved x > (g pad-x - 30) and (moved x < (g pad-x + 30))
+  soft : speed-y < 50 and (speed-x abs < 25)
+  landed : down and on-pad and soft
+  crashed : down and (landed not)
+  points : landed [g fuel round + 50] else [0]
+
+  burn and (every [0.07, g clock, dt])
+    beep [70 + (rand [0, 30]), 0.05]
+  landed
+    beep [660, 0.1]
+    beep [880, 0.2]
+  crashed
+    shake 14
+    beep [80, 0.5]
+
+  g with
+    ship : moved with [y : down [ground - 12] else [moved y]]
+    fuel : burn [g fuel - (15 * dt) max 0] else [g fuel]
+    phase : landed ["landed"] else [crashed ["crashed"] else ["flying"]]
+    burning : burn
+    score : g score + points
+    best : g score + points max (g best)
+]
+
+-- after a landing or a crash, a tap sends the next lander; a crash starts the score again
+again : [g |
+  next : start with [pad-x : rand [50, W - 50], best : g best]
+  g input tapped [g phase = "landed" [next with [score : g score]] else [next]] else [g]
+]
+
+update : [g | g phase = "flying" [fly g] else [again g]]
+
+draw : [g |
+  s : g ship
+  sky : g phase = "crashed" ["#2a0f14"] else ["#0d1530"]
+  clear sky
+  circle [60, ground + 120, 160, "#1c2448"]
+  circle [300, ground + 140, 190, "#18203f"]
+  rect [0, ground, W, H - ground, "#2b2f45"]
+  rect [g pad-x - 30, ground - 4, 60, 6, "#ffd166"]
+
+  g burning
+    line [s x, s y + 10, s x - (s vx * 0.05), s y + 26 + (rand [0, 8]), "#ff9e4a"]
+  line [s x - 8, s y + 4, s x - 13, s y + 13, "#c8d0ea"]
+  line [s x + 8, s y + 4, s x + 13, s y + 13, "#c8d0ea"]
+  circle [s x, s y, 10, "#e8ecff"]
+  circle [s x, s y - 2, 4, "#5fa8ff"]
+
+  rect [12, 14, 100, 8, "#2b2f45"]
+  rect [12, 14, g fuel, 8, g fuel > 25 ["#8ef08e"] else ["#ff6b6b"]]
+  speed-ok : s vy < 50 and (s vx abs < 25)
+  text ["down [s vy round]  side [s vx round]", W / 2, 44, 13, speed-ok ["#8ef08e"] else ["#ffb38a"]]
+  text ["[g score]", W - 40, 20, 18, "#ffffff"]
+  text ["best [g best]", W - 40, 40, 11, "#8a93b8"]
+
+  g phase = "landed"
+    text ["Landed! +[g fuel round + 50]", W / 2, H / 2 - 40, 24, "#8ef08e"]
+    text ["tap for the next one", W / 2, H / 2 - 12, 14, "#c8d0ea"]
+  g phase = "crashed"
+    text ["Crashed", W / 2, H / 2 - 40, 26, "#ff6b6b"]
+    text ["tap to try again", W / 2, H / 2 - 12, 14, "#c8d0ea"]
+]
+````
+
+## examples/life.sp
+
+Life: a living grid you can draw on
+
+````sprout
+-- Life: squares live, die and are born on a 24 by 32 grid, and the edges wrap round.
+-- A square with 3 live neighbours comes alive; a live one with 2 or 3 stays alive.
+-- Draw with your finger to bring squares to life. Time stops while you draw.
+
+cols : 24
+rows : 32
+side : 15
+speed : 0.1                  -- seconds per generation
+
+-- a glider in the corner and an R-pentomino in the middle
+seed : [[1, 0], [2, 1], [0, 2], [1, 2], [2, 2], [12, 14], [13, 14], [11, 15], [12, 15], [12, 16]]
+column-of : [k | k - 1 % cols]
+row-of : [k | k - 1 / cols floor]
+
+start :
+  board : range (cols * rows) collect [k |
+    seed keep [p | p @ 1 = (column-of k) and (p @ 2 = (row-of k))] length > 0 [1] else [0]
+  ]
+  generation : 0
+
+-- 1 if the square at x, y is alive (wrapping round the edges), else 0
+at : [b x y | b @ (y % rows * cols + (x % cols) + 1)]
+
+-- the next generation of the whole board
+next : [b |
+  range (cols * rows) collect [k |
+    x : column-of k
+    y : row-of k
+    n : at [b, x - 1, y - 1] + (at [b, x, y - 1]) + (at [b, x + 1, y - 1]) + (at [b, x - 1, y]) + (at [b, x + 1, y]) + (at [b, x - 1, y + 1]) + (at [b, x, y + 1]) + (at [b, x + 1, y + 1])
+    n = 3 or (n = 2 and (b @ k = 1)) [1] else [0]
+  ]
+]
+
+-- bring the square under your finger to life
+draw-at : [b i |
+  spot : i touch-y / side floor * cols + (i touch-x / side floor) + 1
+  range (cols * rows) collect [k | k = spot [1] else [b @ k]]
+]
+
+update : [g |
+  i : g input
+  i touching [g with [board : draw-at [g board, i]]] else [
+    every [speed, g clock, g dt] [g with [board : next (g board), generation : g generation + 1]] else [g]
+  ]
+]
+
+draw : [g |
+  clear "#0d1410"
+  range (cols * rows) each [k |
+    g board @ k = 1
+      rect [column-of k * side + 1, row-of k * side + 1, side - 2, side - 2, "#8ef08e"]
+  ]
+  text ["generation [g generation]", W / 2, H - 14, 13, "#5f8f73"]
+]
+````
+
+## examples/recipes.sp
+
+Recipes: quicksort, primes, FizzBuzz, a vector with its own + (prints; not a game)
+
+````sprout
+-- Recipes: small programs in Sprout 3. Each one prints its answer.
+
+-- quicksort: keep splits the list, .. joins it back up
+sort : [xs |
+  xs length < 2 [xs] else [
+    p : xs @ 1
+    rest : range (xs length - 1) collect [k | xs @ (k + 1)]
+    sort (rest keep [v | v < p]) .. [p] .. (sort (rest keep [v | v >= p]))
+  ]
+]
+sort [5, 3, 9, 1, 4, 1, 8] print
+
+-- primes: numbers with no divisor between 2 and themselves
+divides : [k d | k % d = 0]
+prime : [k | k > 1 and (range (k - 1) keep [d | d > 1 and (divides [k, d])] length = 0)]
+range 50 keep prime print
+
+-- FizzBuzz with cond: the first true test gives its result
+range 15 collect [n | cond [n % 15 = 0, "FizzBuzz", n % 3 = 0, "Fizz", n % 5 = 0, "Buzz", any, n]] print
+
+-- a word backwards, built with fold
+backwards : [s | range (s length) fold ["", [done k | (s @ k) .. done]]]
+backwards "sprout" print
+backwards "level" = "level" print
+
+-- Collatz: how many steps down to 1
+steps : [n | n = 1 [0] else [1 + (steps (n % 2 = 0 [n / 2] else [n * 3 + 1]))]]
+steps 27 print
+
+-- Pascal's triangle: each row from the one above
+next-row : [r | [1] .. (range (r length - 1) collect [k | r @ k + (r @ (k + 1))]) .. [1]]
+range 6 fold [[1], [r k | r print, next-row r]]
+
+-- a vector that knows +, * and its own size
+vec : [
+  + : [right | left with [x : left x + (right x), y : left y + (right y)]]
+  * : [right | left with [x : left x * right, y : left y * right]]
+  size : [left x * (left x) + (left y * (left y)) sqrt]
+]
+v : vec with [x : 3, y : 4]
+v size print
+w : v + v * 2
+"[w x], [w y]" print
+
+-- match picks by value; take keeps the first few
+days : ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+take [days, 3] print
+days collect [d | match [d, ["sat", "rest", "sun", "rest", any, "work"]]] print
+````
+
+## index.html
+
+The web page at taskiap.com/sprout3/
+
+````html
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f1a14">
+<title>Sprout 3</title>
+<style>
+:root{--bg:#0f1a14;--panel:#15241c;--card:#1b2e24;--line:#28473a;--ink:#e8f3e9;--mute:#8fb39b;--leaf:#6fd36f;--sun:#ffd166;--red:#ff6b6b;--LH:20px;--PAD:10px}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:-apple-system,"Segoe UI",system-ui,sans-serif;overscroll-behavior:none;-webkit-tap-highlight-color:transparent}
+button{font:inherit;color:inherit;cursor:pointer}
+#app{position:fixed;left:0;right:0;top:0;height:100%;display:flex;flex-direction:column;max-width:1400px;margin:0 auto}
+header{display:flex;align-items:center;gap:6px;padding:8px 10px;padding-top:calc(8px + env(safe-area-inset-top));border-bottom:1px solid var(--line);background:var(--panel)}
+header h1{font-size:17px;margin:0;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+header h1 a{color:var(--mute);text-decoration:none;font-weight:600;margin-right:4px}
+header h1 small{font-size:12px;color:var(--mute);font-weight:600;margin-left:6px}
+.hb{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:6px 10px;font-size:14px;font-weight:600}
+.hb:active{transform:translateY(1px)}
+#main{flex:1;display:flex;flex-direction:column;min-height:0}
+#side{flex:1;display:flex;flex-direction:column;min-height:0}
+#stage{position:relative;flex:0 0 42%;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at 50% 40%,#1c3326,#0b130e);min-height:0}
+body.kb #stage{flex-basis:30%}
+#cv{display:block;border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.45);touch-action:none;background:#000}
+#noGame{position:absolute;inset:0;display:none;align-items:center;justify-content:center;text-align:center;padding:24px;color:var(--mute);font-size:14px;line-height:1.5}
+body.prog #noGame{display:flex}body.prog #cv,body.prog #sbtn{visibility:hidden}
+#err{position:absolute;left:8px;right:8px;bottom:8px;background:rgba(80,10,10,.92);border:1px solid var(--red);color:#ffe3e3;border-radius:10px;padding:7px 10px;font:13px/1.35 ui-monospace,Menlo,Consolas,monospace;display:none;cursor:pointer;z-index:5}
+#err.on{display:block}
+body.paused #err{bottom:56px}
+#sbtn{position:absolute;right:8px;top:8px;display:flex;flex-direction:column;gap:6px;z-index:4}
+#sbtn button{width:38px;height:38px;border-radius:10px;border:1px solid var(--line);background:rgba(15,26,20,.85);font-size:16px;padding:0}
+#tl{position:absolute;left:8px;right:54px;bottom:8px;display:none;align-items:center;gap:8px;background:rgba(10,20,14,.88);border:1px solid var(--line);border-radius:12px;padding:6px 10px;z-index:4}
+body.paused #tl{display:flex}
+#tl input{flex:1;accent-color:var(--sun);min-width:0;height:28px}
+#tlT{font:700 12px ui-monospace,Menlo,monospace;color:var(--sun);min-width:44px;text-align:right}
+#tl b{font-size:12px;color:var(--mute);white-space:nowrap}
+#swap{position:absolute;left:50%;top:10px;transform:translateX(-50%);background:rgba(111,211,111,.92);color:#0b1a10;font:800 12px system-ui;letter-spacing:.06em;padding:4px 10px;border-radius:999px;opacity:0;pointer-events:none}
+#swap.on{animation:swap .9s ease-out}
+@keyframes swap{0%{opacity:1;transform:translateX(-50%) scale(1.15)}60%{opacity:1;transform:translateX(-50%) scale(1)}100%{opacity:0}}
+#tabs{display:flex;gap:4px;padding:6px 8px;background:var(--panel);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+#tabs button{flex:1;border:0;background:transparent;border-radius:9px;padding:8px 4px;font-weight:700;font-size:14px;color:var(--mute)}
+#tabs button.on{background:var(--card);color:var(--ink);box-shadow:inset 0 0 0 1px var(--line)}
+#tabs button i{font-style:normal;font-size:11px;background:var(--line);border-radius:999px;padding:1px 6px;margin-left:4px;color:var(--ink)}
+#panel{flex:1;display:flex;flex-direction:column;min-height:0;background:var(--bg)}
+#ed{position:relative;flex:1;min-height:0;overflow:hidden;background:#0c150f}
+#gut,#hl,#ta,#out,#st{font:13px/var(--LH) ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;tab-size:2}
+#gut{position:absolute;left:0;top:0;width:30px;padding:var(--PAD) 4px var(--PAD) 0;text-align:right;color:#4d6b58;white-space:pre;pointer-events:none;z-index:3;background:#0c150f;border-right:1px solid #1a2c21;min-height:100%}
+#hl,#ta{position:absolute;inset:0;margin:0;padding:var(--PAD) 12px var(--PAD) 40px;white-space:pre;overflow:auto;border:0;outline:none}
+#hl{z-index:1;color:var(--ink);pointer-events:none;overflow:hidden}
+#ta{z-index:2;background:transparent;color:transparent;caret-color:var(--sun);resize:none;-webkit-text-fill-color:transparent}
+#ta::selection{background:rgba(255,209,102,.3)}
+.mark{position:absolute;left:0;right:0;height:var(--LH);z-index:0;pointer-events:none;display:none}
+.mark.on{display:block}
+#errl{background:rgba(255,80,80,.22)}
+#live{background:rgba(111,211,111,.28);transition:opacity .7s}#live.fade{opacity:0}
+i{font-style:normal}
+.c{color:#6f8f7c}.s{color:#ffcf7a}.n{color:#ff9e7a}.k{color:#7cc7ff}.a{color:#8ef08e}.o{color:#c9a7ff}.tp{color:#ffe9b8;background:rgba(255,207,122,.12);border-radius:3px}
+#out,#st{flex:1;min-height:0;overflow:auto;margin:0;padding:10px 12px 40px;white-space:pre-wrap;word-break:break-word;background:#0c150f;display:none}
+#out div{border-bottom:1px solid #15241c;padding:1px 0}
+#out .log{color:#ffb38a}#out .print{color:var(--ink)}#out .sys{color:var(--mute)}
+#st b{color:var(--sun);font-weight:600}
+body.t-out #ed,body.t-st #ed,body.t-out #keys,body.t-st #keys{display:none}
+body.t-out #out{display:block}body.t-st #st{display:block}
+#keys{display:flex;gap:4px;padding:6px;overflow-x:auto;background:var(--panel);border-top:1px solid var(--line);padding-bottom:calc(6px + env(safe-area-inset-bottom))}
+#keys button{flex:0 0 auto;min-width:38px;height:36px;border-radius:8px;border:1px solid var(--line);background:var(--card);font:600 15px ui-monospace,Menlo,monospace}
+#sheet{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:flex-end;justify-content:center;z-index:20}
+#sheet.on{display:flex}
+#sheet .box{background:var(--panel);border:1px solid var(--line);border-radius:16px 16px 0 0;width:100%;max-width:760px;max-height:88%;overflow:auto;padding:16px 16px calc(16px + env(safe-area-inset-bottom))}
+#sheet h2{margin:0 0 10px;font-size:18px;color:var(--sun)}
+.gm{display:flex;gap:12px;align-items:center;width:100%;text-align:left;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:8px}
+.gm b{display:block;font-size:15px}.gm small{color:var(--mute);font-size:12.5px}.gm .e{font-size:26px}
+.md{font-size:14px;line-height:1.55}
+.md h1{font-size:20px;color:var(--sun)}.md h2{font-size:17px;color:var(--leaf);margin-top:22px}.md h3{font-size:15px;color:var(--leaf)}.md h4{font-size:14px}
+.md code{font:12.5px ui-monospace,Menlo,monospace;color:#8ef08e;background:#0c150f;padding:1px 5px;border-radius:5px}
+.md pre{background:#0c150f;border:1px solid var(--line);border-radius:8px;padding:10px;overflow:auto}.md pre code{padding:0;background:none;color:var(--ink)}
+.md table{border-collapse:collapse;font-size:13px;display:block;overflow:auto}.md td,.md th{border:1px solid var(--line);padding:4px 8px;text-align:left;vertical-align:top}
+.md hr{border:0;border-top:1px solid var(--line);margin:18px 0}
+.md li{margin:2px 0}
+@media (max-width:520px){header h1 small{display:none}}
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#24392d;border:1px solid var(--leaf);padding:9px 14px;border-radius:12px;font-size:14px;z-index:30;opacity:0;transition:opacity .25s;pointer-events:none;max-width:90%;text-align:center}
+#toast.on{opacity:1}
+@media (min-width:860px) and (min-aspect-ratio:1/1){
+ #main{flex-direction:row}
+ #stage{flex:1 1 50%!important;min-width:0}
+ #side{flex:1 1 50%;min-width:0;border-left:1px solid var(--line)}
+ #tabs{border-top:0}
+ #gut,#hl,#ta,#out,#st{font-size:14px}:root{--LH:21px}
+}
+</style></head><body class="t-code">
+<div id="app">
+<header><h1><a href="/" aria-label="All apps">‹</a>🌱 Sprout 3<small id="exName"></small></h1>
+<button class="hb" id="bEx">Examples</button><button class="hb" id="bSpec">Spec</button><button class="hb" id="bShare">Share</button></header>
+<div id="main">
+<div id="stage"><canvas id="cv" width="360" height="480"></canvas>
+ <div id="noGame"><div>This file isn't a game: it has no <b>update</b>.<br>What it prints is in the Output tab.</div></div>
+ <div id="swap">LIVE</div>
+ <div id="sbtn"><button id="bPause" title="Pause and rewind">⏸</button><button id="bRestart" title="Start again">↺</button><button id="bSnd" title="Sound">🔊</button></div>
+ <div id="tl"><b>⏪ Rewind</b><input type="range" id="tlR" min="0" max="0" value="0" aria-label="Rewind time"><span id="tlT">now</span></div>
+ <div id="err"></div>
+</div>
+<div id="side">
+<div id="tabs"><button data-t="code" class="on">Code</button><button data-t="st">State</button><button data-t="out">Output<i id="outN" hidden></i></button></div>
+<div id="panel">
+ <div id="ed"><div class="mark" id="live"></div><div class="mark" id="errl"></div><div id="gut"></div><pre id="hl"></pre><textarea id="ta" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off"></textarea></div>
+ <pre id="st"></pre>
+ <div id="out"></div>
+ <div id="keys"></div>
+</div></div></div></div>
+<div id="sheet"><div class="box" id="sbox"></div></div>
+<div id="toast"></div>
+
+<script src="sprout3.js?v=20261119d"></script>
+<script src="live3.js?v=20261119d"></script>
+<script>
+"use strict";
+const V="20261119d";
+const $=id=>document.getElementById(id);
+const S=window.Sprout3,L=window.Sprout3Live;
+const GW=360,GH=480;
+const cv=$("cv"),g=cv.getContext("2d"),ta=$("ta"),hl=$("hl"),gut=$("gut");
+const LS={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
+const esc=s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+let toastT=0;function toast(m){const t=$("toast");t.textContent=m;t.classList.add("on");clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove("on"),2400)}
+const EX=[["sprout","🌧️","Sprout","Catch the rain, dodge the bugs."],["fireflies","🌟","Fireflies","400 lights on the night air. Hold a finger down and they gather to it."],
+ ["orbit","🪐","Orbit","Drag and let go to throw moons round the sun."],["hop","🚀","Hop","Set the lander down gently on the pad."],["life","🧬","Life","A living grid. Draw on it with your finger."],
+ ["bounce","🏓","Bounce","Keep the ball in the air."],["snake","🐍","Snake","Arrow keys, or swipe on the game."],["breakout","🧱","Breakout","Clear the bricks."],
+ ["particles","✨","Particles","A fountain of 2,000 sparks, for speed."],["recipes","🍳","Recipes","Quicksort, primes, FizzBuzz, a vector with its own +. It prints; it isn't a game."],
+ ["tour","📖","Tour","The language, one feature per line. It prints; it isn't a game."]];
+
+// ---------- output: what programs print, and Sprout's own notes
+let outN=0;
+function addOut(s,cls){const o=$("out"),d=document.createElement("div");d.className=cls;d.textContent=s;o.appendChild(d);while(o.childNodes.length>300)o.removeChild(o.firstChild);
+ if(TAB==="out")o.scrollTop=o.scrollHeight;else{outN++;$("outN").hidden=false;$("outN").textContent=outN}}
+function clearOut(){$("out").innerHTML="";outN=0;$("outN").hidden=true}
+S.setOut(s=>addOut(s,"print"));S.setLog(m=>addOut(m,"log"));
+
+// ---------- sound and shake (effects, carried out after each tick)
+let AC=null,muted=LS.get("sprout3.mute",false),shakeAmt=0;
+function audio(){if(!AC){try{AC=new (window.AudioContext||window.webkitAudioContext)()}catch(e){}}if(AC&&AC.state==="suspended")AC.resume()}
+function beep(f,d){if(muted||!AC)return;try{const o=AC.createOscillator(),v=AC.createGain(),t=AC.currentTime;d=+d||.1;o.type="square";o.frequency.value=+f||440;v.gain.setValueAtTime(.12,t);v.gain.exponentialRampToValueAtTime(.001,t+d);o.connect(v).connect(AC.destination);o.start(t);o.stop(t+d+.02)}catch(e){}}
+function onEffect([name,a]){if(name==="beep")beep(a[0],a[1]);else if(name==="shake")shakeAmt=Math.max(shakeAmt,+a[0]||0)}
+
+// ---------- the game
+let game=null,running="",goodSrc="",goodTicks=0,paused=false,hpos=-1,err=null;
+function setErr(e){err=e;const el=$("err");if(e){el.textContent=(e.line?"Line "+e.line+": ":"")+e.msg;el.classList.add("on")}else el.classList.remove("on");markErr()}
+$("err").onclick=()=>{if(err&&err.line){tab("code");goLine(err.line)}};
+const msgOf=e=>String(e&&e.message||e);
+// build: a game swaps in over the running one (live state kept), a plain program just runs
+function build(src,fresh){
+ let cell;try{cell=S.load(src)}catch(e){setErr({line:e.line||0,msg:msgOf(e)});return false}
+ if(cell.field("update")===S.UNSET){
+  game=null;document.body.classList.add("prog");clearOut();
+  try{cell.run(S.BANG)}catch(e){setErr({line:e.line||0,msg:msgOf(e)});return false}
+  running=src;goodSrc=src;setErr(null);pulse();renderState();return true}
+ document.body.classList.remove("prog");
+ try{if(game&&!fresh)game.swap(src);else{game=L.makeGame(src,{W:GW,H:GH,onEffect});setPaused(false)}}
+ catch(e){setErr({line:e.line||0,msg:msgOf(e)});return false}
+ running=src;goodTicks=0;setErr(null);pulse();return true}
+function pulse(){const b=$("swap");b.classList.remove("on");void b.offsetWidth;b.classList.add("on")}
+
+// ---------- input: touch and mouse are events; held keys go in with each tick
+const P={x:GW/2,y:GH/2,down:false};const KEYS=new Set();let swipe=null,swipeTicks=0,heldKey="",heldC=null;
+function heldCell(){const ks=[...KEYS];if(swipeTicks>0)ks.push(swipe);const k=ks.sort().join(",");if(k!==heldKey||!heldC){heldKey=k;heldC=S.VFM([],new Map(ks.map(x=>[x,true])))}return heldC}
+const toGame=e=>{const r=cv.getBoundingClientRect();P.x=(e.clientX-r.left)/r.width*GW;P.y=(e.clientY-r.top)/r.height*GH};
+let sx=0,sy=0;
+cv.addEventListener("pointerdown",e=>{audio();cv.setPointerCapture(e.pointerId);toGame(e);sx=P.x;sy=P.y;P.down=true;if(document.activeElement===ta)ta.blur();if(game&&!paused)try{game.down(P.x,P.y)}catch(_){}});
+cv.addEventListener("pointermove",e=>{toGame(e);if(game&&!paused)try{game.move(P.x,P.y)}catch(_){}});
+const pup=e=>{if(!P.down)return;P.down=false;const dx=P.x-sx,dy=P.y-sy;if(Math.max(Math.abs(dx),Math.abs(dy))>28){swipe=Math.abs(dx)>Math.abs(dy)?(dx>0?"right":"left"):(dy>0?"down":"up");swipeTicks=4}if(game&&!paused)try{game.up()}catch(_){}};
+cv.addEventListener("pointerup",pup);cv.addEventListener("pointercancel",pup);
+addEventListener("pointerdown",audio,{once:true});
+const KEYNAME={ArrowLeft:"left",ArrowRight:"right",ArrowUp:"up",ArrowDown:"down"," ":"space",Enter:"enter"};
+const editing=e=>e.target&&(e.target.tagName==="TEXTAREA"||e.target.tagName==="INPUT");
+addEventListener("keydown",e=>{if(editing(e))return;const k=KEYNAME[e.key]||e.key.toLowerCase();if(!KEYS.has(k)&&(k==="space"||k==="enter")&&game&&!paused)try{game.down(P.x,P.y)}catch(_){}
+ KEYS.add(k);if(e.key.startsWith("Arrow")||e.key===" ")e.preventDefault()});
+addEventListener("keyup",e=>{const k=KEYNAME[e.key]||e.key.toLowerCase();KEYS.delete(k);if((k==="space"||k==="enter")&&game&&!paused)try{game.up()}catch(_){}});
+addEventListener("blur",()=>KEYS.clear());
+
+// ---------- drawing what draw asked for
+const col=c=>typeof c==="string"?c:S.fmt(c);
+function paint(list){
+ for(const [name,a] of list){
+  switch(name){
+   case"clear":g.fillStyle=col(a[0]);g.fillRect(0,0,GW,GH);break;
+   case"rect":g.fillStyle=col(a[4]);g.fillRect(a[0],a[1],a[2],a[3]);break;
+   case"circle":if(a[2]>0){g.fillStyle=col(a[3]);g.beginPath();g.arc(a[0],a[1],a[2],0,Math.PI*2);g.fill()}break;
+   case"line":g.strokeStyle=col(a[4]);g.lineWidth=3;g.lineCap="round";g.beginPath();g.moveTo(a[0],a[1]);g.lineTo(a[2],a[3]);g.stroke();break;
+   case"text":g.fillStyle=col(a[4]);g.font="700 "+(+a[3]||16)+"px system-ui,-apple-system,sans-serif";g.textAlign="center";g.textBaseline="middle";g.fillText(S.fmt(a[0]),a[1],a[2]);break;
+  }
+ }
+}
+let last=0;
+function frame(now){requestAnimationFrame(frame);const dt=Math.min(.05,(now-last)/1000||0);last=now;
+ const k=cv.width/GW;g.setTransform(k,0,0,k,0,0);
+ if(!game){g.fillStyle="#0b130e";g.fillRect(0,0,GW,GH);return}
+ try{
+  if(!paused){game.tick(dt,heldCell());if(swipeTicks>0)swipeTicks--;if(++goodTicks===30)goodSrc=running}
+  const list=game.draw();
+  g.save();if(shakeAmt>.3&&!paused){g.translate((Math.random()-.5)*shakeAmt,(Math.random()-.5)*shakeAmt);shakeAmt*=Math.pow(.004,dt)}else if(!paused)shakeAmt=0;
+  try{paint(list)}finally{g.restore()}
+ }catch(e){
+  const m={line:e.line||0,msg:msgOf(e)};
+  if(goodSrc&&running!==goodSrc){try{game.swap(goodSrc);running=goodSrc;m.msg+=" (still running your last working version)"}catch(_){setPaused(true)}}else setPaused(true);
+  setErr(m)}
+}
+requestAnimationFrame(frame);
+
+// ---------- pause and rewind: a saved frame is just the state it held, since cells never change
+function setPaused(on){if(on&&!game)return;paused=on;document.body.classList.toggle("paused",on);$("bPause").textContent=on?"▶":"⏸";
+ if(on){hpos=game.history.length-1;tlUI()}else if(game&&hpos>=0){if(hpos<game.history.length-1)game.history.length=hpos+1;hpos=-1}}
+function tlUI(){const h=game?game.history:[],r=$("tlR");r.max=Math.max(0,h.length-1);r.value=hpos<0?r.max:hpos;r.disabled=h.length<2;
+ const back=hpos<0||!h.length?0:h[h.length-1].clock-h[hpos].clock;$("tlT").textContent=back>.01?"−"+back.toFixed(1)+"s":"now"}
+$("tlR").addEventListener("input",e=>{if(!game||!game.history.length)return;hpos=+e.target.value;game.rewind(hpos);tlUI();renderState()});
+$("bPause").onclick=()=>{setPaused(!paused);toast(paused?"Paused. Drag the bar to go back in time, change the code, then play on from there.":"Running")};
+$("bRestart").onclick=()=>{if(build(code,true)){toast("Started again");renderState()}};
+const sndIcon=()=>$("bSnd").textContent=muted?"🔇":"🔊";sndIcon();
+$("bSnd").onclick=()=>{muted=!muted;LS.set("sprout3.mute",muted);sndIcon()};
+
+// ---------- canvas size
+const stage=$("stage");
+function fit(){const r=stage.getBoundingClientRect();const s=Math.max(.1,Math.min((r.width-16)/GW,(r.height-16)/GH));const w=Math.round(GW*s),h=Math.round(GH*s),dpr=Math.min(2,devicePixelRatio||1);
+ cv.style.width=w+"px";cv.style.height=h+"px";cv.width=Math.round(w*dpr);cv.height=Math.round(h*dpr)}
+if(window.ResizeObserver)new ResizeObserver(fit).observe(stage);addEventListener("resize",fit);
+function vv(){const v=window.visualViewport;const h=v?v.height:innerHeight;$("app").style.height=h+"px";$("app").style.top=(v?v.offsetTop:0)+"px";document.body.classList.toggle("kb",h<innerHeight*.75&&document.activeElement===ta)}
+if(window.visualViewport){visualViewport.addEventListener("resize",vv);visualViewport.addEventListener("scroll",vv)}vv();
+
+// ---------- the editor: a textarea over a highlighted copy (the same rules as Sprout 3's tokenizer)
+const WORDS=new Set("start update draw input dt clock touching tapped touch-x touch-y held W H clear rect circle line text beep shake print rand dist clamp toward range match cond take rgb rgba every wave frame any with else and or not collect keep each fold times length first last str min max abs floor round ceil sqrt sin cos tan log neg".split(" "));
+function lineHTML(s){let o="",i=0;const n=s.length;
+ while(i<n){const c=s[i];
+  if(c==="-"&&s[i+1]==="-"){o+='<i class="c">'+esc(s.slice(i))+"</i>";break}
+  if(c==='"'){let j=i+1,buf='"',h="";while(j<n&&s[j]!=='"'){if(s[j]==="\\"){buf+=s.slice(j,j+2);j+=2;continue}
+    if(s[j]==="["){let d=1,k=j+1;while(k<n&&d&&s[k]!=='"'){if(s[k]==="[")d++;else if(s[k]==="]")d--;if(d)k++}h+='<i class="s">'+esc(buf)+'</i><i class="tp">['+lineHTML(s.slice(j+1,k))+(s[k]==="]"?"]":"")+"</i>";buf="";j=s[k]==="]"?k+1:k;continue}
+    buf+=s[j];j++}
+   if(j<n){buf+='"';j++}o+=h+'<i class="s">'+esc(buf)+"</i>";i=j;continue}
+  if("[](),".includes(c)){o+=c;i++;continue}
+  if(c===":"||c==="|"){o+='<i class="o">'+c+"</i>";i++;continue}
+  if(c===" "||c==="\t"){o+=c;i++;continue}
+  let j=i;while(j<n&&!' \t[](),|:"'.includes(s[j])&&!(s[j]==="-"&&s[j+1]==="-"&&j>i))j++;
+  const w=s.slice(i,j);o+=/^-?\d+(\.\d+)?$/.test(w)?'<i class="n">'+w+"</i>":WORDS.has(w)?'<i class="a">'+esc(w)+"</i>":(w==="true"||w==="false"||w==="!")?'<i class="k">'+esc(w)+"</i>":esc(w);i=j}
+ return o}
+let code="",saveT=0,compT=0,liveSrc="",liveT=0;
+const LH=()=>parseFloat(getComputedStyle(ta).lineHeight)||20,PAD=10;
+function render(){hl.innerHTML=code.split("\n").map(lineHTML).join("\n")+"\n ";const n=code.split("\n").length;let gs="";for(let i=1;i<=n;i++)gs+=i+"\n";gut.textContent=gs;sync()}
+function sync(){hl.scrollTop=ta.scrollTop;hl.scrollLeft=ta.scrollLeft;gut.style.transform="translateY("+(-ta.scrollTop)+"px)";markErr()}
+ta.addEventListener("scroll",sync);
+function markAt(el,line,count){if(!line){el.classList.remove("on");return}el.classList.add("on");el.style.top=(PAD+(line-1)*LH()-ta.scrollTop)+"px";el.style.height=(count||1)*LH()+"px"}
+function markErr(){markAt($("errl"),err&&TAB==="code"?err.line:0)}
+function flashLive(src){const a=liveSrc.split("\n"),b=src.split("\n");let s=0;while(s<a.length&&s<b.length&&a[s]===b[s])s++;
+ let e1=a.length-1,e2=b.length-1;while(e1>=s&&e2>=s&&a[e1]===b[e2]){e1--;e2--}liveSrc=src;if(e2<s||TAB!=="code")return;
+ const el=$("live");el.classList.remove("fade");markAt(el,s+1,e2-s+1);clearTimeout(liveT);liveT=setTimeout(()=>{el.classList.add("fade");setTimeout(()=>markAt(el,0),700)},350)}
+function setCode(s){code=s;if(ta.value!==s)ta.value=s;liveSrc=s;render();queueSave()}
+function queueSave(){clearTimeout(saveT);saveT=setTimeout(()=>LS.set("sprout3.code",{code,ex:curEx,dirty}),400)}
+function goLine(n){const lines=code.split("\n");let p=0;for(let i=0;i<n-1&&i<lines.length;i++)p+=lines[i].length+1;ta.focus();ta.setSelectionRange(p,p);const y=PAD+(n-1)*LH();ta.scrollTop=Math.max(0,y-ta.clientHeight*.45);sync()}
+let dirty=false;
+ta.addEventListener("input",()=>{code=ta.value;dirty=true;render();queueSave();clearTimeout(compT);compT=setTimeout(()=>{if(build(code))flashLive(code);renderState()},350)});
+function insertText(t){ta.focus();if(!document.execCommand||!document.execCommand("insertText",false,t)){const s=ta.selectionStart,e=ta.selectionEnd;ta.setRangeText(t,s,e,"end");ta.dispatchEvent(new Event("input"))}}
+ta.addEventListener("keydown",e=>{
+ if(e.key==="Tab"){e.preventDefault();insertText("  ")}
+ else if(e.key==="Enter"&&!e.isComposing){const s=ta.selectionStart,before=ta.value.slice(0,s),line=before.slice(before.lastIndexOf("\n")+1);let ind=line.match(/^\s*/)[0];
+  if(/[\[(|:]\s*$/.test(line.replace(/--.*$/,"")))ind+="  ";e.preventDefault();insertText("\n"+ind)}});
+ta.addEventListener("focus",()=>setTimeout(vv,300));ta.addEventListener("blur",()=>setTimeout(vv,300));
+const KEYBAR=[":","[","]","(",")","|",'"',",","!","..","+","-","*","/","<",">","=","--","⇥"];
+$("keys").innerHTML=KEYBAR.map(k=>'<button data-k="'+esc(k)+'">'+esc(k)+"</button>").join("");
+$("keys").addEventListener("pointerdown",e=>{const b=e.target.closest("button");if(!b)return;e.preventDefault();const k=b.dataset.k;insertText(k==="⇥"?"  ":k===":"?" : ":k==="|"?" | ":k)});
+
+// ---------- the State tab: every field of the game right now
+function brief(v){if(S.isCell(v)&&!(v instanceof S.Cell&&v.takesInput())){const n=v.count(),f=v.fieldNames().length;if(n>6)return"["+n+" parts]";const s=S.fmt(v);return s.length>120?s.slice(0,120)+"…]":s}const s=S.fmt(v);return s.length>120?s.slice(0,120)+"…":s}
+function renderState(){const el=$("st");
+ if(!game){el.innerHTML='<span style="color:var(--mute)">No game is running.</span>';return}
+ let h="";try{for(const [k,v] of S.fieldsOf(game.state))h+="<b>"+esc(k)+"</b> : "+esc(brief(v))+"\n"}catch(e){h=esc(msgOf(e))}
+ el.innerHTML=h+'\n<span style="color:var(--mute)">'+(paused?"Paused":"Live")+", "+(game.history.length)+" frames saved for rewind.</span>"}
+setInterval(()=>{if(TAB==="st")renderState()},250);
+
+// ---------- tabs
+let TAB="code";
+function tab(t){TAB=t;document.body.className=document.body.className.replace(/\bt-\w+/,"t-"+t);document.querySelectorAll("#tabs button").forEach(b=>b.classList.toggle("on",b.dataset.t===t));
+ if(t==="out"){outN=0;$("outN").hidden=true;$("out").scrollTop=$("out").scrollHeight}if(t==="st")renderState();if(t==="code")render();markErr()}
+document.querySelectorAll("#tabs button").forEach(b=>b.onclick=()=>tab(b.dataset.t));
+
+// ---------- examples
+let curEx="";
+async function loadEx(name,quiet){
+ if(dirty&&code.trim())LS.set("sprout3.backup",code);
+ let src;try{const r=await fetch("examples/"+name+".sp?v="+V);if(!r.ok)throw 0;src=await r.text()}catch(e){toast("Couldn't load that example");return}
+ curEx=name;dirty=false;$("exName").textContent=(EX.find(x=>x[0]===name)||[])[2]||"";setCode(src);clearOut();
+ if(build(src,true)){if(name==="tour"||name==="recipes")tab("out");else if(TAB==="out")tab("code")}
+ $("sheet").classList.remove("on");if(!quiet)toast((EX.find(x=>x[0]===name)||[])[2]+" loaded. Change the code and it updates as it runs.")}
+function sheet(html){$("sbox").innerHTML=html;$("sheet").classList.add("on");$("sbox").scrollTop=0}
+$("sheet").addEventListener("click",e=>{if(e.target.id==="sheet"||e.target.closest("[data-close]"))$("sheet").classList.remove("on")});
+$("bEx").onclick=()=>{const bk=LS.get("sprout3.backup",null);
+ sheet("<h2>Examples</h2>"+EX.map(([id,ic,t,d])=>'<button class="gm" data-g="'+id+'"><span class="e">'+ic+"</span><span><b>"+t+"</b><small>"+esc(d)+"</small></span></button>").join("")+
+  (bk?'<button class="gm" data-g="backup"><span class="e">↩️</span><span><b>Bring back my last code</b><small>What you had before you last switched.</small></span></button>':"")+'<button class="hb" data-close style="width:100%">Close</button>');
+ $("sbox").querySelectorAll("[data-g]").forEach(b=>b.onclick=()=>{const k=b.dataset.g;
+  if(k==="backup"){curEx="";dirty=true;$("exName").textContent="";setCode(bk);clearOut();build(bk,true);$("sheet").classList.remove("on");toast("Your code is back")}else loadEx(k)})};
+
+// ---------- the spec, shown in a sheet (spec.md, or the page GitHub Pages makes from it)
+function mdInline(s){return esc(s).replace(/`([^`]+)`/g,"<code>$1</code>").replace(/\*\*([^*]+)\*\*/g,"<b>$1</b>")}
+function md(src){const L=src.replace(/\r/g,"").split("\n"),o=[];let i=0;
+ while(i<L.length){const l=L[i];
+  if(/^\s*(```|````)/.test(l)){const f=l.trim().match(/^`+/)[0],ind=l.match(/^\s*/)[0].length;const b=[];i++;while(i<L.length&&L[i].trim()!==f)b.push(L[i++].slice(ind));i++;o.push("<pre><code>"+esc(b.join("\n"))+"</code></pre>");continue}
+  let m;
+  if((m=l.match(/^(#{1,4}) (.*)$/))){o.push("<h"+m[1].length+">"+mdInline(m[2])+"</h"+m[1].length+">");i++;continue}
+  if(/^---+\s*$/.test(l)){o.push("<hr>");i++;continue}
+  if(/^\|/.test(l)){const rows=[];while(i<L.length&&/^\|/.test(L[i]))rows.push(L[i++]);const cells=r=>r.replace(/^\||\|$/g,"").split(/(?<!\\)\|/).map(c=>mdInline(c.trim().replace(/\\\|/g,"|")));
+   o.push("<table>"+rows.filter(r=>!/^\|[\s:|-]+\|?$/.test(r)).map((r,k)=>"<tr>"+cells(r).map(c=>k?"<td>"+c+"</td>":"<th>"+c+"</th>").join("")+"</tr>").join("")+"</table>");continue}
+  if(/^\s*([-*]|\d+\.) /.test(l)){const items=[];while(i<L.length&&(/^\s*([-*]|\d+\.) /.test(L[i])||(/^\s{2,}\S/.test(L[i])&&items.length&&!/^\s*```/.test(L[i]))))
+    {const x=L[i++];if(/^\s*([-*]|\d+\.) /.test(x))items.push({ind:x.match(/^\s*/)[0].length,t:x.replace(/^\s*([-*]|\d+\.) /,"")});else items[items.length-1].t+=" "+x.trim()}
+   o.push("<ul>"+items.map(x=>'<li style="margin-left:'+(x.ind*8)+'px">'+mdInline(x.t)+"</li>").join("")+"</ul>");continue}
+  if(!l.trim()){i++;continue}
+  const p=[];while(i<L.length&&L[i].trim()&&!/^(#{1,4} |\||---|\s*```|\s*([-*]|\d+\.) )/.test(L[i]))p.push(L[i++]);o.push("<p>"+mdInline(p.join(" "))+"</p>")}
+ return o.join("\n")}
+let specHTML=null;
+async function loadSpec(){
+ for(const [f,kind] of [["spec.md","md"],["spec.html","html"]]){try{const r=await fetch(f+"?v="+V);if(!r.ok)continue;const t=await r.text();
+   if(kind==="md"&&!/^\s*</.test(t))return md(t);const d=new DOMParser().parseFromString(t,"text/html");return d.body.innerHTML}catch(e){}}
+ return"<p>The spec couldn't be loaded.</p>"}
+$("bSpec").onclick=async()=>{sheet('<h2>Sprout 3</h2><div class="md"><p>Loading the spec…</p></div>');if(!specHTML)specHTML=await loadSpec();
+ sheet('<h2>Sprout 3</h2><div class="md"><p><b>Using this page.</b> Edit the code and the running game picks it up: live values are kept unless you change their starting value in <code>start</code>. Press ⏸ to pause, drag the bar to go back up to 10 seconds, change the code, and press ▶ to play on from there. The State tab shows the game\'s fields, and Output shows what it prints. The design decisions near the end of the spec define Sprout 3.</p></div><hr><div class="md">'+specHTML+'</div><button class="hb" data-close style="width:100%;margin-top:12px">Close</button>')};
+
+// ---------- share
+const b64e=s=>btoa(unescape(encodeURIComponent(s))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+const b64d=s=>decodeURIComponent(escape(atob(s.replace(/-/g,"+").replace(/_/g,"/"))));
+$("bShare").onclick=async()=>{if(!code.trim()){toast("Nothing to share yet");return}const url=location.origin+location.pathname+"#s3="+b64e(code);
+ if(navigator.share){try{await navigator.share({title:"Sprout 3",url});return}catch(e){if(e&&e.name==="AbortError")return}}
+ try{await navigator.clipboard.writeText(url);toast("Link copied. Anyone who opens it gets your code.")}catch(e){prompt("Copy this link:",url)}};
+
+// ---------- start
+(function boot(){
+ fit();
+ const m=location.hash.match(/^#s3=([\w-]+)/);
+ if(m){try{const src=b64d(m[1]);history.replaceState(null,"",location.pathname);curEx="";dirty=true;setCode(src);build(src,true);toast("Someone shared this with you");return}catch(e){}}
+ const sv=LS.get("sprout3.code",null);
+ if(sv&&sv.code&&sv.code.trim()){curEx=sv.ex||"";dirty=!!sv.dirty;$("exName").textContent=(EX.find(x=>x[0]===curEx)||[])[2]||"";setCode(sv.code);build(sv.code,true)}
+ else loadEx("sprout",true)})();
+</script>
+</body></html>
 ````
 
 ## old-sprout2.js
