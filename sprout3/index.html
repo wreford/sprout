@@ -69,6 +69,14 @@ body.prog #noGame{display:flex}
 .seg button{padding:5px 14px;border-radius:7px;font-size:13px;font-weight:500;color:var(--fg2)}
 .seg button.on{background:var(--card);color:var(--fg);box-shadow:0 1px 3px rgba(0,0,0,.12)}
 .seg i{font-style:normal;font-size:11px;background:var(--acc);color:#fff;border-radius:999px;padding:0 6px;margin-left:5px}
+#segrow{display:flex;align-items:center;gap:10px;margin-bottom:10px}#segrow .seg{margin-bottom:0}
+.twk{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border-radius:999px;font-size:13px;font-weight:500;color:var(--fg2);background:rgba(127,120,100,.12)}
+.twk svg{width:14px;height:14px;fill:currentColor}.twk.on{background:var(--acc);color:#fff}
+body.t-st .twk,body.t-out .twk{visibility:hidden}
+body.tweak #hl .n{border-bottom:1.5px dotted currentColor;border-radius:0}body.tweak #ta{cursor:ew-resize;touch-action:pan-y}
+body.tweak #keys{display:none!important}
+body.scrubbing,body.scrubbing *{cursor:ew-resize!important;user-select:none!important}
+#scrubTip{position:fixed;z-index:40;pointer-events:none;background:var(--fg);color:var(--bg);font:600 12px var(--mono);padding:3px 8px;border-radius:6px;display:none;transform:translate(-50%,-140%)}
 #card{position:relative;flex:1;min-height:0;background:var(--card);border-radius:14px;box-shadow:var(--shadow);overflow:hidden;display:flex;flex-direction:column}
 #err{display:none;align-items:flex-start;gap:10px;margin:10px 10px 0;padding:9px 12px;border-radius:10px;background:var(--badbg);color:var(--bad);font-size:13px;cursor:pointer}
 #err.on{display:flex}#err b{font-weight:600}#err span{flex:1}#err u{text-decoration:none;font-weight:600;white-space:nowrap}
@@ -159,7 +167,7 @@ body.t-out #out{display:block}body.t-st #st{display:block}
  #detail{display:contents}
  #head{grid-row:1;display:flex;flex-direction:column}
  #artcol{grid-row:2}
- .seg{grid-row:3;margin:0;justify-self:start}
+ #segrow{grid-row:3;margin:0}
  #card{grid-row:4}
  #title{font-size:24px;margin:0}#desc{display:none}#meta{margin-top:0}
  .acts{margin:8px 0 0;gap:8px}.pill{height:30px;padding:0 12px;font-size:13px}
@@ -198,7 +206,8 @@ body.t-out #out{display:block}body.t-st #st{display:block}
     <button class="pill" id="bSpec">Spec</button>
    </div>
   </div>
-  <div class="seg" id="tabs"><button class="on" data-t="code">Code</button><button data-t="st">State</button><button data-t="out">Output<i id="outN" hidden></i></button></div>
+  <div id="segrow"><div class="seg" id="tabs"><button class="on" data-t="code">Code</button><button data-t="st">State</button><button data-t="out">Output<i id="outN" hidden></i></button></div>
+   <button class="twk" id="bTweak" title="Drag numbers to change them while it runs (or hold Alt and drag)"><svg viewBox="0 0 16 16"><path d="M1 8l3-3v2h8V5l3 3-3 3V9H4v2z"/></svg>Tweak</button></div>
   <div id="card">
    <div id="err"><span></span><u>Go to line</u></div>
    <div id="ed"><div class="mark" id="live"></div><div class="mark" id="errl"></div><div id="gut"></div><pre id="hl"></pre><textarea id="ta" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" aria-label="Code"></textarea></div>
@@ -223,13 +232,13 @@ body.t-out #out{display:block}body.t-st #st{display:block}
 </footer>
 </div>
 <div id="modal"><div id="mBox"><div class="mh"><h2 id="mTitle"></h2><button class="x" data-close aria-label="Close">✕</button></div><div id="mBody"></div></div></div>
-<div id="toast"></div>
+<div id="toast"></div><div id="scrubTip"></div>
 
-<script src="sprout3.js?v=20261119f"></script>
-<script src="live3.js?v=20261119f"></script>
+<script src="sprout3.js?v=20261119g"></script>
+<script src="live3.js?v=20261119g"></script>
 <script>
 "use strict";
-const V="20261119f";
+const V="20261119g";
 const $=id=>document.getElementById(id);
 const S=window.Sprout3,L=window.Sprout3Live;
 const GW=360,GH=480;
@@ -434,6 +443,31 @@ ta.addEventListener("focus",()=>setTimeout(vv,300));ta.addEventListener("blur",(
 const KEYBAR=[":","[","]","(",")","|",'"',",","!","..","+","-","*","/","<",">","=","--","⇥"];
 $("keys").innerHTML=KEYBAR.map(k=>'<button data-k="'+esc(k)+'">'+esc(k)+"</button>").join("");
 $("keys").addEventListener("pointerdown",e=>{const b=e.target.closest("button");if(!b)return;e.preventDefault();const k=b.dataset.k;insertText(k==="⇥"?"  ":k===":"?" : ":k==="|"?" | ":k)});
+
+// ---------- drag a number to change it: Alt-drag anywhere, or turn on Tweak (made for phones)
+let TWEAK=false,scrub=null,cwCache=0;
+function charW(){if(!cwCache){const c=document.createElement("canvas").getContext("2d");c.font=getComputedStyle(ta).font;cwCache=c.measureText("0000000000").width/10}return cwCache}
+// the number token under the pointer, if any: not in a comment, not in a string
+function numAt(e){const r=ta.getBoundingClientRect(),cs=getComputedStyle(ta);
+ const col=Math.floor((e.clientX-r.left-parseFloat(cs.paddingLeft)+ta.scrollLeft)/charW()),line=Math.floor((e.clientY-r.top-parseFloat(cs.paddingTop)+ta.scrollTop)/LH());
+ const lines=code.split("\n");if(line<0||line>=lines.length)return null;const s=lines[line];if(col<0||col>=s.length)return null;
+ const stop=' \t[](),|:"';if(stop.includes(s[col]))return null;
+ let a=col,b=col;while(a>0&&!stop.includes(s[a-1]))a--;while(b<s.length&&!stop.includes(s[b]))b++;
+ const w=s.slice(a,b);if(!/^-?\d+(\.\d+)?$/.test(w))return null;
+ const pre=s.slice(0,a);if((pre.match(/"/g)||[]).length%2)return null;if(/--/.test(pre.replace(/"[^"]*"/g,"")))return null;
+ let off=0;for(let i=0;i<line;i++)off+=lines[i].length+1;return {start:off+a,len:b-a,text:w}}
+function setTweak(on){TWEAK=on;document.body.classList.toggle("tweak",on);$("bTweak").classList.toggle("on",on);ta.readOnly=on;if(on){ta.blur();toast("Drag a number left or right to change it")}}
+$("bTweak").onclick=()=>setTweak(!TWEAK);
+ta.addEventListener("pointerdown",e=>{if(!(TWEAK||e.altKey))return;const n=numAt(e);if(!n)return;e.preventDefault();try{ta.setPointerCapture(e.pointerId)}catch(_){}
+ scrub={...n,x0:e.clientX,v0:parseFloat(n.text),dec:(n.text.split(".")[1]||"").length,id:e.pointerId,moved:false};document.body.classList.add("scrubbing");tipAt(e,n.text)});
+function tipAt(e,t){const tip=$("scrubTip");tip.textContent=t;tip.style.left=e.clientX+"px";tip.style.top=e.clientY+"px";tip.style.display="block"}
+ta.addEventListener("pointermove",e=>{if(!scrub||e.pointerId!==scrub.id)return;e.preventDefault();const dx=e.clientX-scrub.x0;if(Math.abs(dx)>3)scrub.moved=true;
+ const step=scrub.dec?Math.pow(10,-scrub.dec):(Math.abs(scrub.v0)>=100?2:1),v=scrub.v0+Math.round(dx/6)*step,t=scrub.dec?v.toFixed(scrub.dec):String(Math.round(v));
+ tipAt(e,t);if(t===code.substr(scrub.start,scrub.len))return;
+ const st=ta.scrollTop,sl=ta.scrollLeft;code=code.slice(0,scrub.start)+t+code.slice(scrub.start+scrub.len);scrub.len=t.length;ta.value=code;ta.scrollTop=st;ta.scrollLeft=sl;
+ if(!dirty){dirty=true;headUI()}render();if(build(code))renderState()});
+const endScrub=e=>{if(!scrub)return;const was=scrub;scrub=null;document.body.classList.remove("scrubbing");$("scrubTip").style.display="none";queueSave();if(was.moved)flashLive(code)};
+ta.addEventListener("pointerup",endScrub);ta.addEventListener("pointercancel",endScrub);
 
 // ---------- the state view: every field of the game right now
 function brief(v){if(S.isCell(v)&&!(v instanceof S.Cell&&v.takesInput())){const n=v.count();if(n>6)return n+" parts";const s=S.fmt(v);return s.length>140?s.slice(0,140)+"…]":s}const s=S.fmt(v);return s.length>140?s.slice(0,140)+"…":s}
