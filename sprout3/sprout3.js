@@ -247,7 +247,8 @@ class Gen {
           v = OPNAME[w] + "(" + v + "," + this.genTerm(nt, false) + ")"; continue;
         }
         if (LAZYOPS.has(w) && i + 1 < T.length && !this.lookup(w)) {
-          const B = this.genArg(T[++i], tail && i + 1 >= T.length), ta = this.tmp();
+          // only else gives its right side back as it is; and/or check theirs is true or false, so it can't be a tail call
+          const B = this.genArg(T[++i], w === "else" && tail && i + 1 >= T.length), ta = this.tmp();
           if (w === "else") v = "((" + ta + "=" + v + ")!==false?" + ta + ":" + B + ")";
           else if (w === "and") v = "((" + ta + "=" + v + ")===true?ISBOOL(" + B + ",'and'):" + ta + "===false?false:MISSING(" + ta + ",'and'))";
           else v = "((" + ta + "=" + v + ")===false?ISBOOL(" + B + ",'or'):" + ta + "===true?true:MISSING(" + ta + ",'or'))";
