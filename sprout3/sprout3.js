@@ -962,16 +962,14 @@ let RNG = Math.random, OUT = s => { if (typeof console !== "undefined") console.
 // ===================================================================== prelude, written in Sprout (decisions 30, 34, 35, 50)
 const PRELUDE = `
 match : [v cases |
-  try : [n |
-    n <= (cases length) [(cases @ n) = any or ((cases @ n) = v) [cases @ (n + 1)] else [try (n + 2)]] else [false]
-  ]
-  try 1
+  find : [n | n > (cases length) [0] else [(cases @ n) = any or ((cases @ n) = v) [n] else [find (n + 2)]]]
+  k : find 1
+  k > 0 [cases @ (k + 1)] else [false]
 ]
 cond : [cases |
-  try : [n |
-    n <= (cases length) [(cases @ n) = any or ((cases @ n) = true) [cases @ (n + 1)] else [try (n + 2)]] else [false]
-  ]
-  try 1
+  find : [n | n > (cases length) [0] else [(cases @ n) = any or ((cases @ n) = true) [n] else [find (n + 2)]]]
+  k : find 1
+  k > 0 [cases @ (k + 1)] else [false]
 ]
 take : [xs n | range (n min (xs length)) collect [k | xs @ k]]
 rgb : [r g b | "rgb(" .. r .. "," .. g .. "," .. b .. ")"]

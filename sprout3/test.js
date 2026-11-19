@@ -32,6 +32,9 @@ ok("81 template [ ]", val('"a[1 + 1]b"') === "a2b");
   ok("83 a read before else may miss quietly", val('[x : 1] name else "anon"') === "anon" && logs.length === before);
   val('[x : 1] name'); ok("83 a read without else still logs the miss", logs.length === before + 1 && /doesn't know name/.test(logs[logs.length - 1]));
   ok("83 a miss deeper inside the left side still logs", (val('[x : [y : 1]] x z w else 0'), logs.slice(before).some(m => /doesn't know z/.test(m)))); }
+ok("84 match gives a false answer instead of falling through", val('match ["leaf", ["leaf", false, any, true]]') === "false" && val('match [2, [1, "a", 2, "b", any, "c"]]') === "b" && val('match [9, [1, "a"]]') === "false");
+ok("84 cond too", val('cond [true, false, any, 5]') === "false" && val('cond [false, 1, 2 > 1, 2, any, 3]') === "2");
+ok("84 match only works out the answer it picks", val('match [1, [1, "one", 2, nope]]') === "one");
 ok("and/or run a call on their right before checking it", val("[k | k > 1 and ([d | d = 3] k)] 3") === "true" && val("[k | k > 9 or ([d | d = 3] k)] 3") === "true");
 ok("81 ( ) is plain text", val('"rgba(0,0,0,0.5)"') === "rgba(0,0,0,0.5)");
 ok("81 escaped bracket", val('"a\\[b]"') === "a[b]");
