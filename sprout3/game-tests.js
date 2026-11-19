@@ -182,7 +182,7 @@ const f = (g, k) => g.state.field(k);
   ok("ace-site: shrinking clears them", JSON.stringify(size(0)) === "[30,0]");
 }
 
-const errs = logs.filter(m => !/doesn't know input/.test(m));
+const errs = logs.slice();
 ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
 console.log(pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

@@ -256,7 +256,9 @@ class Gen {
         }
         const r = this.lookup(w);
         const lex = r ? "()=>" + this.refJS(r) : (this.globals.has(w) ? "()=>" + this.globalRef(w) : "null");
-        v = "SWI(" + v + "," + JSON.stringify(w) + "," + lex + "," + (t.line || 0) + "," + this.ic() + ")";
+        // a field read right before else is allowed to miss: else is the program saying so, so the miss isn't logged (decision 83)
+        const quiet = T[i + 1] && T[i + 1].k === "word" && T[i + 1].v === "else" && T[i + 2] && !this.lookup("else");
+        v = "SWI(" + v + "," + JSON.stringify(w) + "," + lex + "," + (t.line || 0) + "," + this.ic() + (quiet ? ",1" : "") + ")";
       } else if (t.k === "cell" && !t.names.length && i === 1 && this.notBool(T[0])) {
         v = (tail && isLast ? "TAIL(" : "SEND(") + v + "," + this.genCell(t) + ")";
       } else if (t.k === "cell" && !t.names.length) {
@@ -728,23 +730,23 @@ function readField(r, v) {
 }
 // SW: send a word. Fields first (with prototype methods), then a name in scope as the argument.
 // SWI: SW with an inline cache. A record read at this spot usually has the same shape every time.
-function SWI(r, w, lex, line, ic) {
+function SWI(r, w, lex, line, ic, quiet) {
   if (r instanceof VCell) {
     const fs = r.fs;
     if (fs === ic.s) { const v = r.fv[ic.i]; return v instanceof Cell && v.sh.usesLeft ? readField(r, v) : v; }
     const i = fs.index(w);
     if (i >= 0) { if (lex) clash(w, line); ic.s = fs; ic.i = i; const v = r.fv[i]; return v instanceof Cell && v.sh.usesLeft ? readField(r, v) : v; }
   }
-  return SW(r, w, lex, line);
+  return SW(r, w, lex, line, quiet);
 }
 // decision 73: a word that is both a field of the receiver and a name in scope reads the field, loudly
 function clash(w, line) { lint("\"" + w + "\" is both a field here and a name in scope; the field wins" + (line ? " (line " + line + ")" : "")); }
-function SW(r, w, lex, line) {
+function SW(r, w, lex, line, quiet) {
   if (r instanceof Cell || r instanceof VCell) { const v = r.field(w); if (v !== UNSET) { if (lex) clash(w, line); return readField(r, v); } }
   const m = protoOf(r)[w];
   if (m !== undefined) return m.ar ? new Waiting(m.fn, r) : m.fn(r);
   if (lex) return SEND(r, lex());
-  return MISSING(r, w, line);
+  return quiet ? false : MISSING(r, w, line);
 }
 // SEND: send a value
 function SEND(r, a) {
