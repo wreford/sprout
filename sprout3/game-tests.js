@@ -177,13 +177,18 @@ const f = (g, k) => g.state.field(k);
   tapOn("dig");
   ok("ace-board: reopening upstream work reopens what depends on it", /^ACE  \d\/11 done/.test(header()) && !header().startsWith("ACE  11/11"), header());
 
-  const fx2 = [], st = L.makeGame(fs.readFileSync(__dirname + "/examples/ace-site.sp", "utf8"), { onEffect: e => fx2.push(e[0]) });
-  const size = x => { st.down(x, 200); st.tick(1 / 60); st.up(); st.tick(1 / 60); return [f(st, "rb-d"), f(st, "clashes")]; };
+  const siteSrc = fs.readFileSync(__dirname + "/examples/ace-site.sp", "utf8");
+  const fx2 = [], st = L.makeGame(siteSrc, { onEffect: e => fx2.push(e[0]) });
+  const size = x => { st.down(x, 200); st.tick(1 / 60); st.up(); st.tick(1 / 60); return [f(st, "rb-d"), f(st, "failing")]; };
+  const failing = g => g.draw().filter(d => d[0] === "text").map(d => d[1][0]).filter(t => t.startsWith("FAIL "));
   st.tick(1 / 60);
-  ok("ace-site: no clashes at 46 m", f(st, "clashes") === 0);
-  ok("ace-site: a bigger reactor pushes the service building into the fuel bay", JSON.stringify(size(250)) === "[58,1]" && fx2.includes("shake"), size(250));
-  ok("ace-site: and the turbine hall off the site", JSON.stringify(size(300)) === "[63,2]");
-  ok("ace-site: shrinking clears them", JSON.stringify(size(0)) === "[30,0]");
+  ok("ace-site: every constraint holds at 46 m", f(st, "failing") === 0 && failing(st).length === 0);
+  ok("ace-site: a bigger reactor stretches the cable run first", JSON.stringify(size(270)) === "[55,1]" && failing(st)[0] === "FAIL must: cable run under 65 m", failing(st));
+  ok("ace-site: then the service building hits the fuel bay", JSON.stringify(size(300)) === "[58,2]" && fx2.includes("shake"));
+  ok("ace-site: and the turbine hall leaves the site", JSON.stringify(size(359)) === "[65,3]");
+  ok("ace-site: too small breaks the design basis", JSON.stringify(size(0)) === "[25,1]" && failing(st)[0] === "FAIL must: reactor at least 36 m across");
+  const narrow = L.makeGame(siteSrc.replace("gap : 15", "gap : 10")); narrow.tick(1 / 60);
+  ok("ace-site: a narrow road fails the fire rule", failing(narrow).join() === "FAIL must: fire road at least 12 m wide");
 }
 
 // ---------------- ACE crews: capacity constraints
