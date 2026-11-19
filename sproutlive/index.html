@@ -61,6 +61,13 @@ body.kb #stage{flex-basis:30%}
 #cur{background:rgba(111,211,111,.10)}
 #live{background:rgba(111,211,111,.28);transition:opacity .7s}#live.fade{opacity:0}
 .gh{color:#5f8f73}
+#tl{position:absolute;left:8px;right:54px;bottom:8px;display:none;align-items:center;gap:8px;background:rgba(10,20,14,.88);border:1px solid var(--line);border-radius:12px;padding:6px 10px;z-index:4}
+body.paused #tl{display:flex}
+body.paused #err{bottom:56px}
+#tl input{flex:1;accent-color:var(--sun);min-width:0;height:28px}
+#tlT{font:700 12px ui-monospace,Menlo,monospace;color:var(--sun);min-width:44px;text-align:right}
+#tl b{font-size:12px;color:var(--mute);white-space:nowrap}
+.tp{color:#ffe9b8;background:rgba(255,207,122,.12);border-radius:3px}
 #swap{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);background:rgba(111,211,111,.92);color:#0b1a10;font:800 12px system-ui;letter-spacing:.06em;padding:4px 10px;border-radius:999px;opacity:0;pointer-events:none}
 #swap.on{animation:swap .9s ease-out}
 @keyframes swap{0%{opacity:1;transform:translateX(-50%) scale(1.15)}60%{opacity:1;transform:translateX(-50%) scale(1)}100%{opacity:0}}
@@ -106,6 +113,7 @@ body.t-code #keys{display:flex}
  <div id="log"></div>
  <div id="swap">LIVE</div>
  <div id="sbtn"><button id="bPause" title="Pause">⏸</button><button id="bRestart" title="Restart the game">↺</button><button id="bSnd" title="Sound">🔊</button></div>
+ <div id="tl"><b>⏪ Rewind</b><input type="range" id="tlR" min="0" max="0" value="0" aria-label="Rewind time"><span id="tlT">now</span></div>
  <div id="err"></div>
  <div id="hello"><button class="big" id="bHello">▶ Watch a game grow</button><p>A game gets written in Sprout line by line, and runs while it's being written. Then it's yours to change.</p></div>
 </div>
@@ -170,7 +178,7 @@ draw : [
   circle (x + 9) top 9 "#5cc85c"
 ]
 ### Make it move
-:= changes a field. A true or false picks from a pair: touching [this, that] runs the first one while your finger is down. Drag on the game, or use the arrow keys.
+:= changes a field. touching [ ... ] runs its block only while your finger is down, and toward slides x part of the way to your finger each frame. Drag on the game, or use the arrow keys.
 ---
 -- Sprout: catch the rain, dodge the bugs
 
@@ -178,9 +186,9 @@ x : W / 2         -- where the sprout stands
 height : 40       -- how tall it is
 
 update : [dt |
-  touching [x := x + ((touch-x - x) * 0.2), 0]
-  key "left" [x := x - 5, 0]
-  key "right" [x := x + 5, 0]
+  touching [x := toward x touch-x 0.2]
+  key "left" [x := x - 5]
+  key "right" [x := x + 5]
   x := clamp x 20 (W - 20)
 ]
 
@@ -204,9 +212,9 @@ height : 40       -- how tall it is
 drops : []        -- falling rain
 
 update : [dt |
-  touching [x := x + ((touch-x - x) * 0.2), 0]
-  key "left" [x := x - 5, 0]
-  key "right" [x := x + 5, 0]
+  touching [x := toward x touch-x 0.2]
+  key "left" [x := x - 5]
+  key "right" [x := x + 5]
   x := clamp x 20 (W - 20)
 
   every 0.6 [
@@ -231,7 +239,7 @@ draw : [
   drops each [circle _.x _.y 6 "#2f7fe0"]
 ]
 ### Catch to grow
-dist measures how far a drop is from the tip of the sprout. Close enough and it's caught: the sprout grows, the score goes up and it beeps. Try catching a few!
+dist measures how far a drop is from the tip of the sprout. Close enough and it's caught: the sprout grows, the score goes up and it beeps. "{score} drops" puts the score into the words. Try catching a few!
 ---
 -- Sprout: catch the rain, dodge the bugs
 
@@ -241,9 +249,9 @@ drops : []        -- falling rain
 score : 0
 
 update : [dt |
-  touching [x := x + ((touch-x - x) * 0.2), 0]
-  key "left" [x := x - 5, 0]
-  key "right" [x := x + 5, 0]
+  touching [x := toward x touch-x 0.2]
+  key "left" [x := x - 5]
+  key "right" [x := x + 5]
   x := clamp x 20 (W - 20)
 
   every 0.6 [
@@ -259,7 +267,7 @@ update : [dt |
       height := clamp (height + 8) 0 (H - 140)
       score := score + 1
       beep 880 0.06
-    ), 0]
+    )]
   ]
   drops := keep drops [_.y < H]
 ]
@@ -275,10 +283,10 @@ draw : [
   circle (x + 9) top 9 "#5cc85c"
 
   drops each [circle _.x _.y 6 "#2f7fe0"]
-  text ((score str) ++ " drops") (W / 2) 30 22 "#1b3a5c"
+  text "{score} drops" (W / 2) 30 22 "#1b3a5c"
 ]
 ### Watch out for bugs
-Ladybirds fall too. If one is near the stem and below the tip, the sprout gets shorter. Growing tall is good, but a tall stem is easier to hit.
+Ladybirds fall too. and needs both sides true: a bug near the stem and below the tip makes the sprout shorter and shakes the screen. Growing tall is good, but a tall stem is easier to hit.
 ---
 -- Sprout: catch the rain, dodge the bugs
 
@@ -289,14 +297,14 @@ bugs : []         -- falling ladybirds
 score : 0
 
 update : [dt |
-  touching [x := x + ((touch-x - x) * 0.2), 0]
-  key "left" [x := x - 5, 0]
-  key "right" [x := x + 5, 0]
+  touching [x := toward x touch-x 0.2]
+  key "left" [x := x - 5]
+  key "right" [x := x + 5]
   x := clamp x 20 (W - 20)
 
   every 0.6 [
     drops := drops append {x : rand 20 (W - 20), y : -10}
-    random < 0.3 [bugs := bugs append {x : rand 20 (W - 20), y : -10}, 0]
+    random < 0.3 [bugs := bugs append {x : rand 20 (W - 20), y : -10}]
   ]
 
   speed : 160 * dt
@@ -308,18 +316,19 @@ update : [dt |
       height := clamp (height + 8) 0 (H - 140)
       score := score + 1
       beep 880 0.06
-    ), 0]
+    )]
   ]
   drops := keep drops [_.y < H]
 
   bugs each [b |
     b.y := b.y + (speed * 0.8)
     near : (b.x - x) abs < 14
-    near [b.y > top [(
+    near and (b.y > top) [(
       b.y := H + 99
       height := height - 30
+      shake 12
       beep 110 0.25
-    ), 0], 0]
+    )]
   ]
   bugs := keep bugs [_.y < H]
 ]
@@ -339,10 +348,10 @@ draw : [
     circle b.x b.y 10 "#d62828"
     circle b.x (b.y - 8) 5 "#222222"
   ]
-  text ((score str) ++ " drops") (W / 2) 30 22 "#1b3a5c"
+  text "{score} drops" (W / 2) 30 22 "#1b3a5c"
 ]
 ### Wilt and try again
-When the sprout gets too short it wilts. pace turns to 0 so everything stops falling, and restart starts the game again when you tap.
+When the sprout gets too short it wilts. pace turns to 0 so everything stops falling, and once it's over and you tap, restart starts again.
 ---
 -- Sprout: catch the rain, dodge the bugs
 
@@ -354,17 +363,17 @@ score : 0
 over : false
 
 update : [dt |
-  restart (over [tapped, false])
+  restart (over and tapped)
   pace : over [0, 1]
 
-  touching [x := x + ((touch-x - x) * 0.2), 0]
-  key "left" [x := x - 5, 0]
-  key "right" [x := x + 5, 0]
+  touching [x := toward x touch-x 0.2]
+  key "left" [x := x - 5]
+  key "right" [x := x + 5]
   x := clamp x 20 (W - 20)
 
   every 0.6 [
     drops := drops append {x : rand 20 (W - 20), y : -10}
-    random < 0.3 [bugs := bugs append {x : rand 20 (W - 20), y : -10}, 0]
+    random < 0.3 [bugs := bugs append {x : rand 20 (W - 20), y : -10}]
   ]
 
   speed : 160 * dt * pace
@@ -376,18 +385,19 @@ update : [dt |
       height := clamp (height + 8) 0 (H - 140)
       score := score + 1
       beep 880 0.06
-    ), 0]
+    )]
   ]
   drops := keep drops [_.y < H]
 
   bugs each [b |
     b.y := b.y + (speed * 0.8)
     near : (b.x - x) abs < 14
-    near [b.y > top [(
+    near and (b.y > top) [(
       b.y := H + 99
       height := height - 30
+      shake 12
       beep 110 0.25
-    ), 0], 0]
+    )]
   ]
   bugs := keep bugs [_.y < H]
   over := height < 20
@@ -408,16 +418,16 @@ draw : [
     circle b.x b.y 10 "#d62828"
     circle b.x (b.y - 8) 5 "#222222"
   ]
-  text ((score str) ++ " drops") (W / 2) 30 22 "#1b3a5c"
+  text "{score} drops" (W / 2) 30 22 "#1b3a5c"
 
   over [(
     rect 0 0 W H "rgba(0,0,0,0.5)"
     text "Your sprout wilted" (W / 2) (H / 2 - 20) 28 "#ffffff"
     text "Tap to grow again" (W / 2) (H / 2 + 20) 18 "#ffe066"
-  ), 0]
+  )]
 ]
 ### Make it feel alive
-The rain speeds up as your score climbs, caught drops burst into sparkles, a while loop grows leaves up the stem, and clouds drift by on the clock.
+The rain speeds up as your score climbs, caught drops burst into sparkles, a while loop grows leaves up the stem, clouds drift by on the clock, and wave makes the sun breathe.
 ---
 -- Sprout: catch the rain, dodge the bugs
 
@@ -430,17 +440,17 @@ score : 0
 over : false
 
 update : [dt |
-  restart (over [tapped, false])
+  restart (over and tapped)
   pace : over [0, 1]
 
-  touching [x := x + ((touch-x - x) * 0.2), 0]
-  key "left" [x := x - 5, 0]
-  key "right" [x := x + 5, 0]
+  touching [x := toward x touch-x 0.2]
+  key "left" [x := x - 5]
+  key "right" [x := x + 5]
   x := clamp x 20 (W - 20)
 
   every 0.6 [
     drops := drops append {x : rand 20 (W - 20), y : -10}
-    random < 0.3 [bugs := bugs append {x : rand 20 (W - 20), y : -10}, 0]
+    random < 0.3 [bugs := bugs append {x : rand 20 (W - 20), y : -10}]
   ]
 
   speed : 160 + (score * 4) * dt * pace
@@ -453,18 +463,19 @@ update : [dt |
       height := clamp (height + 8) 0 (H - 140)
       score := score + 1
       beep 880 0.06
-    ), 0]
+    )]
   ]
   drops := keep drops [_.y < H]
 
   bugs each [b |
     b.y := b.y + (speed * 0.8)
     near : (b.x - x) abs < 14
-    near [b.y > top [(
+    near and (b.y > top) [(
       b.y := H + 99
       height := height - 30
+      shake 12
       beep 110 0.25
-    ), 0], 0]
+    )]
   ]
   bugs := keep bugs [_.y < H]
   over := height < 20
@@ -479,7 +490,7 @@ update : [dt |
 
 draw : [
   clear "#9fd8ff"
-  circle 300 70 34 "#ffe066"
+  circle 300 70 (34 + (wave 3 * 3)) "#ffe066"
   cloud : clock * 12 % (W + 120) - 60
   circle cloud 120 20 "#ffffff"
   circle (cloud + 24) 112 26 "#ffffff"
@@ -504,16 +515,16 @@ draw : [
     circle b.x (b.y - 8) 5 "#222222"
   ]
   sparks each [circle _.x _.y 3 "#e8f7ff"]
-  text ((score str) ++ " drops") (W / 2) 30 22 "#1b3a5c"
+  text "{score} drops" (W / 2) 30 22 "#1b3a5c"
 
   over [(
     rect 0 0 W H "rgba(0,0,0,0.5)"
     text "Your sprout wilted" (W / 2) (H / 2 - 20) 28 "#ffffff"
     text "Tap to grow again" (W / 2) (H / 2 + 20) 18 "#ffe066"
-  ), 0]
+  )]
 ]
 ### Change it while it runs
-This is live coding: the sky turns to sunset and the rain comes twice as fast, but the sprout, the score and every falling drop stay right where they were. Now it's your turn. Open Tweak and drag the numbers.
+This is live coding: the sky turns to sunset and the rain comes twice as fast, but the sprout, the score and every falling drop stay right where they were. Now it's your turn: open Tweak and drag the numbers, or pause and drag back in time.
 ---
 -- Sprout: catch the rain, dodge the bugs
 
@@ -526,17 +537,17 @@ score : 0
 over : false
 
 update : [dt |
-  restart (over [tapped, false])
+  restart (over and tapped)
   pace : over [0, 1]
 
-  touching [x := x + ((touch-x - x) * 0.2), 0]
-  key "left" [x := x - 5, 0]
-  key "right" [x := x + 5, 0]
+  touching [x := toward x touch-x 0.2]
+  key "left" [x := x - 5]
+  key "right" [x := x + 5]
   x := clamp x 20 (W - 20)
 
   every 0.3 [
     drops := drops append {x : rand 20 (W - 20), y : -10}
-    random < 0.3 [bugs := bugs append {x : rand 20 (W - 20), y : -10}, 0]
+    random < 0.3 [bugs := bugs append {x : rand 20 (W - 20), y : -10}]
   ]
 
   speed : 160 + (score * 4) * dt * pace
@@ -549,18 +560,19 @@ update : [dt |
       height := clamp (height + 8) 0 (H - 140)
       score := score + 1
       beep 880 0.06
-    ), 0]
+    )]
   ]
   drops := keep drops [_.y < H]
 
   bugs each [b |
     b.y := b.y + (speed * 0.8)
     near : (b.x - x) abs < 14
-    near [b.y > top [(
+    near and (b.y > top) [(
       b.y := H + 99
       height := height - 30
+      shake 12
       beep 110 0.25
-    ), 0], 0]
+    )]
   ]
   bugs := keep bugs [_.y < H]
   over := height < 20
@@ -575,7 +587,7 @@ update : [dt |
 
 draw : [
   clear "#ffb38a"
-  circle 300 70 34 "#ff6b4a"
+  circle 300 70 (34 + (wave 3 * 3)) "#ff6b4a"
   cloud : clock * 12 % (W + 120) - 60
   circle cloud 120 20 "#ffffff"
   circle (cloud + 24) 112 26 "#ffffff"
@@ -600,13 +612,13 @@ draw : [
     circle b.x (b.y - 8) 5 "#222222"
   ]
   sparks each [circle _.x _.y 3 "#e8f7ff"]
-  text ((score str) ++ " drops") (W / 2) 30 22 "#5a2a1a"
+  text "{score} drops" (W / 2) 30 22 "#5a2a1a"
 
   over [(
     rect 0 0 W H "rgba(0,0,0,0.5)"
     text "Your sprout wilted" (W / 2) (H / 2 - 20) 28 "#ffffff"
     text "Tap to grow again" (W / 2) (H / 2 + 20) 18 "#ffe066"
-  ), 0]
+  )]
 ]
 </script>
 
@@ -622,32 +634,33 @@ score : 0
 best : 0
 
 update : [dt |
-  touching [paddle := touch-x, 0]
-  key "left" [paddle := paddle - (400 * dt), 0]
-  key "right" [paddle := paddle + (400 * dt), 0]
+  touching [paddle := toward paddle touch-x 0.4]
+  key "left" [paddle := paddle - (400 * dt)]
+  key "right" [paddle := paddle + (400 * dt)]
   paddle := clamp paddle 50 (W - 50)
 
   ball.x := ball.x + (ball.vx * dt)
   ball.y := ball.y + (ball.vy * dt)
-  ball.x < 10 [ball.vx := ball.vx abs, 0]
-  ball.x > (W - 10) [ball.vx := 0 - (ball.vx abs), 0]
-  ball.y < 10 [ball.vy := ball.vy abs, 0]
+  ball.x < 10 [ball.vx := ball.vx abs]
+  ball.x > (W - 10) [ball.vx := 0 - (ball.vx abs)]
+  ball.y < 10 [ball.vy := ball.vy abs]
 
   near : (ball.x - paddle) abs < 50
   low : ball.y > (H - 50)
-  ball.vy > 0 [near [low [(
+  (ball.vy > 0) and near and low [(
     ball.vy := 0 - (ball.vy * 1.05)
     ball.vx := ball.vx + ((ball.x - paddle) * 3)
     score := score + 1
     beep 660 0.05
-  ), 0], 0], 0]
+  )]
 
   ball.y > (H + 20) [(
     best := score > best [score, best]
     beep 140 0.3
     ball := {x : W / 2, y : 100, vx : 150, vy : 220}
     score := 0
-  ), 0]
+    shake 10
+  )]
 ]
 
 draw : [
@@ -655,7 +668,7 @@ draw : [
   rect (paddle - 50) (H - 40) 100 12 "#ffcc33"
   circle ball.x ball.y 10 "#ff5d8f"
   text score (W / 2) 60 48 "#ffffff"
-  text ("best " ++ (best str)) (W / 2) 95 16 "#9a94c8"
+  text "best {best}" (W / 2) 95 16 "#9a94c8"
 ]
 ### Blank canvas|✏️
 A dot you can drag. Start your own game from here.
@@ -668,7 +681,7 @@ update : [dt |
   touching [(
     dot.x := touch-x
     dot.y := touch-y
-  ), 0]
+  )]
 ]
 
 draw : [
@@ -678,8 +691,8 @@ draw : [
 ]
 </script>
 
-<script src="sprout2.js?v=202611182249"></script>
-<script src="live.js?v=202611182249"></script>
+<script src="sprout2.js?v=202611190111"></script>
+<script src="live.js?v=202611190111"></script>
 <script>
 "use strict";
 const $=id=>document.getElementById(id);
@@ -720,8 +733,14 @@ const host={
  keep:[2,(list,test)=>{const o=[0];if(!list||typeof list.length!=="number")return o;for(let i=1;i<list.length;i++){const r=R.RUN(test(list[i]));if(r===R.TRUE||r===true)o.push(list[i])}return o}],
  key:[1,k=>KEYS.has(String(typeof k==="string"?k:R.fmt(k)).toLowerCase())?R.TRUE:R.FALSE],
  restart:[1,yes=>{if(yes===R.TRUE||yes===true)wantRestart=true;return N}],
- print:[1,x=>{logOut(R.fmt(x));return x}]
+ print:[1,x=>{logOut(R.fmt(x));return x}],
+ toward:[3,(a,b,amt)=>a+(b-a)*amt],
+ mix:[3,(c1,c2,t)=>{const a=rgb(c1),b=rgb(c2);if(!a||!b)return c1;t=Math.max(0,Math.min(1,num(t)||0));return"rgb("+a.map((v,i)=>Math.round(v+(b[i]-v)*t)).join(",")+")"}],
+ shake:[1,amt=>{shakeAmt=Math.max(shakeAmt,num(amt)||0);return N}]
 };
+function rgb(c){c=col(c);let m=c.match(/^#([0-9a-f]{3})$/i);if(m)c="#"+m[1].replace(/./g,"$&$&");m=c.match(/^#([0-9a-f]{6})$/i);if(m)return[0,2,4].map(i=>parseInt(m[1].slice(i,i+2),16));
+ m=c.match(/^rgba?\(([^)]*)\)$/);if(m){const v=m[1].split(",").map(parseFloat);if(v.length>=3&&v.slice(0,3).every(isFinite))return v.slice(0,3)}return null}
+let shakeAmt=0;
 
 // ---------- tokens for highlighting and tweaking (same rules as the Sprout tokenizer)
 const NUMRX=/^-?\d+(\.\d+)?$/;
@@ -736,9 +755,16 @@ function lex(src){const out=[];let i=0;const n=src.length;
   let j=i;while(j<n&&!" \t\r\n".includes(src[j])&&!'[](){}",|:'.includes(src[j])&&!(src[j]==="'"&&j>i)&&!(src[j]==="-"&&src[j+1]==="-"))j++;if(j===i)j=i+1;
   const w=src.slice(i,j);out.push({t:NUMRX.test(w)?"num":"word",s:w,i});i=j}
  return out}
-const LANG=new Set("true false none while times each collect fold append memoize str length first second last abs floor round ceil sqrt sin cos tan log pi random print range list map".split(" "));
-const GAME=new Set(["update","draw","dt","_",...Object.keys(host),"touch-x","touch-y","touching","tapped","every","clock"]);
-function tokHTML(t){const e=esc(t.s);switch(t.t){case"com":return'<i class="c">'+e+"</i>";case"str":return'<i class="s">'+e+"</i>";case"num":return'<i class="n">'+e+"</i>";
+const LANG=new Set("and or not true false none while times each collect fold append memoize str length first second last abs floor round ceil sqrt sin cos tan log pi random print range list map".split(" "));
+const GAME=new Set(["update","draw","dt","_",...Object.keys(host),"touch-x","touch-y","touching","tapped","every","clock","wave"]);
+// "{score} drops": the part inside { } is code, so it is highlighted as code
+function strHTML(s){if(!s.includes("{"))return'<i class="s">'+esc(s)+"</i>";let o="",buf="",i=0;
+ while(i<s.length){const c=s[i];if(c==="\\"){buf+=s.slice(i,i+2);i+=2;continue}
+  if(c==="{"&&i>0){let d=1,k=i+1;while(k<s.length&&d){if(s[k]==="{")d++;else if(s[k]==="}")d--;if(d)k++}
+   o+='<i class="s">'+esc(buf)+'</i><i class="tp">{'+hlHTML(s.slice(i+1,k))+(k<s.length?"}":"")+"</i>";buf="";i=k+1;continue}
+  buf+=c;i++}
+ return o+'<i class="s">'+esc(buf)+"</i>"}
+function tokHTML(t){const e=esc(t.s);switch(t.t){case"com":return'<i class="c">'+e+"</i>";case"str":return strHTML(t.s);case"num":return'<i class="n">'+e+"</i>";
  case"p":return t.s===":"||t.s===":="||t.s==="|"?'<i class="o">'+e+"</i>":e;
  case"word":return LANG.has(t.s)?'<i class="k">'+e+"</i>":GAME.has(t.s)?'<i class="a">'+e+"</i>":e;default:return e}}
 const hlHTML=src=>lex(src).map(tokHTML).join("");
@@ -756,12 +782,22 @@ function pulse(){const b=$("swap");b.classList.remove("on");void b.offsetWidth;b
 function flashLive(src){const a=liveSrc.split("\n"),b=src.split("\n");let s=0;while(s<a.length&&s<b.length&&a[s]===b[s])s++;
  let e1=a.length-1,e2=b.length-1;while(e1>=s&&e2>=s&&a[e1]===b[e2]){e1--;e2--}liveSrc=src;
  if(e2<s||TAB!=="code")return;const el=$("live");el.classList.remove("fade");markAt(el,s+1,e2-s+1);clearTimeout(liveT);liveT=setTimeout(()=>{el.classList.add("fade");setTimeout(()=>markAt(el,0),700)},350)}
-function restartGame(){if(!cur)return;const src=cur.src;cur=null;compile(src,true,true)||compile(src,false,true)}
+function restartGame(){histClear();if(!cur)return;const src=cur.src;cur=null;compile(src,true,true)||compile(src,false,true)}
+// ---------- rewind: the last 10 seconds are saved frame by frame. Pause, drag back, change the code, play on from there.
+const HIST=[],HMAX=600;let hpos=-1;
+function histClear(){HIST.length=0;hpos=-1;tlUI()}
+function tlUI(){const r=$("tlR");r.max=Math.max(0,HIST.length-1);r.value=hpos<0?r.max:hpos;r.disabled=HIST.length<2;
+ const back=hpos<0||!HIST.length?0:HIST[HIST.length-1].clock-HIST[hpos].clock;$("tlT").textContent=back>0.01?"−"+back.toFixed(1)+"s":"now"}
+$("tlR").addEventListener("input",e=>{if(!cur||!HIST.length)return;hpos=+e.target.value;try{cur.load(HIST[hpos])}catch(_){}tlUI()});
+function setPaused(on){paused=on;document.body.classList.toggle("paused",on);$("bPause").textContent=on?"▶":"⏸";
+ if(on){hpos=HIST.length-1;tlUI()}else if(hpos>=0){HIST.length=hpos+1;hpos=-1}}
 let last=0;
 function frame(now){requestAnimationFrame(frame);const dt=Math.min(.05,(now-last)/1000||0);last=now;beeps=0;
  const k=cv.width/GW;g.setTransform(k,0,0,k,0,0);
  if(!cur||(!cur.update&&!cur.draw)){if(!cur){g.fillStyle="#0b130e";g.fillRect(0,0,GW,GH)}tapFlag=false;return}
- try{if(!paused)cur.step(dt,{x:P.x,y:P.y,down:P.down,tap:tapFlag});g.save();try{cur.paint()}finally{g.restore()}good=cur}
+ try{if(!paused){cur.step(dt,{x:P.x,y:P.y,down:P.down,tap:tapFlag});HIST.push(cur.save());if(HIST.length>HMAX)HIST.shift()}
+  g.save();if(shakeAmt>0.3&&!paused){g.translate((Math.random()-.5)*shakeAmt,(Math.random()-.5)*shakeAmt);shakeAmt*=Math.pow(.004,dt)}else if(!paused)shakeAmt=0;
+  try{cur.paint()}finally{g.restore()}good=cur}
  catch(e){const m={line:SL.lineOf(e,cur.src),msg:SL.friendly(e.message)};if(good&&cur!==good){cur=good;m.msg+=" (still running your last working version)"}if(!err||err.msg!==m.msg)setErr(m)}
  tapFlag=false;if(wantRestart){wantRestart=false;restartGame()}}
 requestAnimationFrame(frame);
@@ -783,7 +819,7 @@ const kname=e=>KEYNAME[e.key]||e.key.toLowerCase();
 addEventListener("keydown",e=>{if(editing(e))return;KEYS.add(kname(e));if(e.key===" "||e.key==="Enter")tapFlag=true;if(e.key.startsWith("Arrow")||e.key===" ")e.preventDefault()});
 addEventListener("keyup",e=>{KEYS.delete(kname(e))});
 addEventListener("blur",()=>KEYS.clear());
-$("bPause").onclick=()=>{paused=!paused;$("bPause").textContent=paused?"▶":"⏸";toast(paused?"Paused. Drawing still updates, so keep tweaking.":"Running")};
+$("bPause").onclick=()=>{setPaused(!paused);toast(paused?"Paused. Drag the bar to rewind time, change the code, then play on from there.":"Running")};
 $("bRestart").onclick=()=>{restartGame();toast("Game restarted")};
 const sndIcon=()=>$("bSnd").textContent=muted?"🔇":"🔊";sndIcon();
 $("bSnd").onclick=()=>{muted=!muted;LS.set("sproutlive.mute",muted);sndIcon()};
@@ -797,9 +833,18 @@ function ghostText(v){if(typeof v==="number")return String(Math.round(v*10)/10);
  if(typeof v==="string")return JSON.stringify(v.length>14?v.slice(0,14)+"…":v);
  if(Array.isArray(v)||ArrayBuffer.isView(v)){const n=v.length-1;return n===1?"1 thing":n+" things"}
  if(v instanceof Map)return"{"+Array.from(v).slice(0,4).map(([k,x])=>k+" "+(typeof x==="number"?Math.round(x):"…")).join(", ")+"}";return null}
-function readGhosts(){const o={};if(!cur)return o;let v;try{v=cur.get()}catch(e){return o}for(const k in v){const t=ghostText(v[k]);if(t!==null)o[k]=t}return o}
+// numbers and list sizes also get a little graph of the last few seconds
+const SER={},BARS="▁▂▃▄▅▆▇█";
+function spark(a){if(a.length<3)return"";let lo=Infinity,hi=-Infinity;for(const v of a){if(v<lo)lo=v;if(v>hi)hi=v}if(hi-lo<1e-6)return"";
+ return" "+a.map(v=>BARS[Math.round((v-lo)/(hi-lo)*7)]).join("")}
+function readGhosts(){const o={};if(!cur)return o;let v;try{v=cur.get()}catch(e){return o}
+ for(const k in v){const x=v[k],t=ghostText(x);if(t===null)continue;
+  const n=typeof x==="number"?x:(Array.isArray(x)||ArrayBuffer.isView(x))?x.length-1:null;
+  if(n!==null&&!paused){const a=SER[k]||(SER[k]=[]);a.push(n);if(a.length>24)a.shift()}
+  o[k]=[t,n!==null&&SER[k]?spark(SER[k]):""]}
+ return o}
 const FIELD=/^([A-Za-z_][\w-]*)\s*:(?!=)/;
-const ghostLabel=(k,lit)=>{const t=ghosts[k];return t===undefined||t===lit?"":"   → "+t};
+const ghostLabel=(k,lit)=>{const t=ghosts[k];return t===undefined||(t[0]===lit&&!t[1])?"":"   → "+t[0]+t[1]};
 function withGhosts(html,src){const hs=html.split("\n"),ls=src.split("\n");
  for(let i=0;i<ls.length&&i<hs.length;i++){const m=ls[i].match(FIELD);if(!m)continue;const k=SL.mangle(m[1]),lit=ls[i].replace(/--.*$/,"").slice(m[0].length).trim();
   hs[i]+='<i class="gh" data-g="'+k+'" data-lit="'+esc(lit).replace(/"/g,"&quot;")+'">'+esc(ghostLabel(k,lit))+"</i>"}
@@ -825,7 +870,7 @@ ta.addEventListener("keydown",e=>{
  if(e.key==="Tab"){e.preventDefault();insertText("  ")}
  else if(e.key==="Enter"&&!e.isComposing){const s=ta.selectionStart,before=ta.value.slice(0,s),line=before.slice(before.lastIndexOf("\n")+1);let ind=line.match(/^\s*/)[0];if(/[[(|]\s*$/.test(line.replace(/--.*$/,"")))ind+="  ";e.preventDefault();insertText("\n"+ind)}});
 ta.addEventListener("focus",()=>setTimeout(vv,300));ta.addEventListener("blur",()=>setTimeout(vv,300));
-const KEYBAR=[":=",":","[","]","(",")","_","|",'"',",","+","-","*","/","<",">","--","⇥"];
+const KEYBAR=[":=",":","[","]","(",")","{","}",".","_","|",'"',",","+","-","*","/","<",">","--","⇥"];
 $("keys").innerHTML=KEYBAR.map(k=>'<button data-k="'+esc(k)+'">'+esc(k)+"</button>").join("");
 $("keys").addEventListener("pointerdown",e=>{const b=e.target.closest("button");if(!b)return;e.preventDefault();const k=b.dataset.k;insertText(k==="⇥"?"  ":k===":="||k===":"?" "+k+" ":k)});
 
@@ -890,7 +935,7 @@ async function demoPlay(){
  while(D.step<STEPS.length-1){const next=D.step+1;capUI();const ok=await typeTo(STEPS[next].code,tok);if(!ok||tok!==D.token)return;
   D.step=next;compile(code,true);queueSave();capUI();if(D.step<STEPS.length-1){await sleep(1800/D.speed);if(tok!==D.token)return}}
  D.playing=false;quiet=false;caretAt=-1;render();compile(code);capUI();toast("Done! Try the Tweak tab next")}
-function demoReset(){D.token++;D.playing=false;D.step=-1;cur=null;good=null;setErr(null);setCode("");capUI()}
+function demoReset(){histClear();D.token++;D.playing=false;D.step=-1;cur=null;good=null;setErr(null);setCode("");capUI()}
 function demoJump(i){const was=D.playing;D.token++;D.playing=false;quiet=false;D.dirty=false;markAt($("cur"),0);markAt($("flash"),0);
  if(i<0){demoReset();return}D.step=i;setCode(STEPS[i].code);cur=null;compile(code);capUI();if(was)demoPlay()}
 $("dPlay").onclick=()=>{audio();D.playing?demoStop():demoPlay()};
@@ -902,7 +947,7 @@ $("bHello").onclick=()=>{audio();demoPlay()};
 // ---------- games, help, share
 function sheet(html){$("sbox").innerHTML=html;$("sheet").classList.add("on")}
 $("sheet").addEventListener("click",e=>{if(e.target.id==="sheet"||e.target.closest("[data-close]"))$("sheet").classList.remove("on")});
-function loadGame(src,msg){if(D.playing)demoStop();if(code.trim()&&D.dirty)LS.set("sproutlive.backup",code);D.step=-2;D.dirty=false;cur=null;good=null;setCode(src);compile(src);capUI();$("sheet").classList.remove("on");if(TAB==="watch")tab("tweak");toast(msg)}
+function loadGame(src,msg){histClear();if(D.playing)demoStop();if(code.trim()&&D.dirty)LS.set("sproutlive.backup",code);D.step=-2;D.dirty=false;cur=null;good=null;setCode(src);compile(src);capUI();$("sheet").classList.remove("on");if(TAB==="watch")tab("tweak");toast(msg)}
 $("bGames").onclick=()=>{const bk=LS.get("sproutlive.backup",null);
  sheet('<h2>Games to remix</h2><button class="gm" data-g="demo"><span class="e">🌱</span><span><b>Watch Sprout grow</b><small>The demo: a game written live in Sprout, step by step.</small></span></button>'+
  '<button class="gm" data-g="sprout"><span class="e">🌧️</span><span><b>Sprout, finished</b><small>The demo game, ready to change.</small></span></button>'+
@@ -914,17 +959,20 @@ $("bGames").onclick=()=>{const bk=LS.get("sproutlive.backup",null);
   else if(k==="backup")loadGame(bk,"Your code is back");
   else loadGame(TEMPL[+k].code,TEMPL[+k].title+" loaded")})};
 const REF_LANG=[["x : 10","makes a field called x. It keeps its value while you edit the rest of the code; change the 10 itself and the new value takes over."],["x := x + 1","changes x."],["2 + 3 * 4","is 20. Sprout reads maths left to right, with no precedence. Use ( ) to group."],
- ["a > b [yes, no]","true picks the first, false picks the second. Wrap several lines in ( ) to run them together."],["[a, b | a + b]","a block with inputs a and b."],["[ ... ]","a block. Each new line is a new step."],["[1, 2, 3]","a list. Commas separate list items."],
+ ["a > b [yes, no]","true picks the first, false picks the second. Wrap several lines in ( ) to run them together."],["touching [ ... ]","with just one block, it runs only when the test is true."],
+ ["(a > 1) and (b < 2)","both must be true. Also or, and x not flips true and false."],["[a, b | a + b]","a block with inputs a and b."],["[ ... ]","a block. Each new line is a new step."],["[1, 2, 3]","a list. Commas separate list items."],
  ["p : {x : 1, y : 2}","a record. p.x reads a field and p.x := 5 changes it. In each, _.x is the item's x."],
  ["xs 2","the second item of a list. xs 2 := 9 changes it."],["xs append {x : 4}","a new list with one more item on the end."],["xs each [ ... ]","runs for every item. _ is the item."],
- ["5 times [ ... ]","runs 5 times. _ counts 1 to 5."],["xs each [d | ... ]","you can also name the item."],["while [test] [ ... ]","keeps going while the test is true."],["\"Hi \" ++ (n str)","joins words. str turns a number into words."],["-- a note","is for people, Sprout skips it."]];
+ ["5 times [ ... ]","runs 5 times. _ counts 1 to 5."],["xs each [d | ... ]","you can also name the item."],["while [test] [ ... ]","keeps going while the test is true."],["\"{score} drops\"","puts a value into words. Any code can go inside { }."],["\"Hi \" ++ name","joins words. n str turns a number into words."],["-- a note","is for people, Sprout skips it."]];
 const REF_GAME=[["update : [dt | ... ]","runs every frame. dt is the seconds since the last one."],["draw : [| ... ]","paints the screen every frame."],["W, H","the screen's width (360) and height (480)."],["every 0.5 [ ... ]","runs the block every half second."],["clock","seconds since the game started."],
  ["clear colour","fills the screen."],["rect x y w h colour","a box from its top-left corner."],["circle x y r colour","a circle around x, y."],["line x1 y1 x2 y2 colour","a line."],["text words x y size colour","words centred on x, y."],
  ["touch-x, touch-y","where your finger or mouse is."],["touching, tapped","true while pressed, and on the frame you tap."],["key \"left\"","true while held. Also \"right\", \"up\", \"down\", \"space\" or a letter."],
  ["rand 1 10, random","a random number between 1 and 10, or between 0 and 1."],["dist x1 y1 x2 y2","how far apart two points are."],["clamp v lo hi","keeps v between lo and hi."],["keep xs [test]","only the items that pass the test."],
+ ["wave 2","glides from -1 to 1 and back every 2 seconds. Great for bobbing and pulsing."],["toward x goal 0.2","moves x a fifth of the way to goal. Use it every frame for smooth following."],
+ ["mix \"#ff0000\" \"#0000ff\" 0.5","a colour part way between two others."],["shake 8","shakes the screen. Bigger numbers shake harder."],
  ["beep pitch seconds","a short sound. 440 is a middle note."],["restart yes","starts the game over when yes is true."],["x print","shows x at the top of the game."]];
 const refList=l=>"<dl>"+l.map(([a,b])=>"<dt><code>"+esc(a)+"</code></dt><dd>"+esc(b)+"</dd>").join("")+"</dl>";
-$("bHelp").onclick=()=>sheet('<h2>Sprout, for games</h2><div class="ref"><p>This is Sprout 2.0. Your code runs while you write it: change something and the game updates right away, keeping the score and positions it already has.</p><h3>The language</h3>'+refList(REF_LANG)+'<h3>Game words</h3>'+refList(REF_GAME)+'<p>If something breaks, the last version that worked keeps running and the red bar shows the line to fix. Tap it to jump there.</p></div><button class="hb" data-close style="width:100%">Got it</button>');
+$("bHelp").onclick=()=>sheet('<h2>Sprout, for games</h2><div class="ref"><p>This is Sprout 2.0. Your code runs while you write it: change something and the game updates right away, keeping the score and positions it already has.</p><h3>The language</h3>'+refList(REF_LANG)+'<h3>Game words</h3>'+refList(REF_GAME)+'<p>Grey notes after a field show its value right now, with a little graph of the last few seconds.</p><p>Press ⏸ to pause, then drag the rewind bar to go back up to 10 seconds. Change the code while paused and press ▶: the game plays on from that moment with your new code.</p><p>If something breaks, the last version that worked keeps running and the red bar shows the line to fix. Tap it to jump there.</p></div><button class="hb" data-close style="width:100%">Got it</button>');
 const b64e=s=>btoa(unescape(encodeURIComponent(s))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
 const b64d=s=>decodeURIComponent(escape(atob(s.replace(/-/g,"+").replace(/_/g,"/"))));
 $("bShare").onclick=async()=>{if(!code.trim()){toast("Nothing to share yet");return}const url=location.origin+location.pathname+"#sp="+b64e(code);
