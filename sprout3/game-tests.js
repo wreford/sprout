@@ -184,6 +184,28 @@ const f = (g, k) => g.state.field(k);
   ok("ace-site: shrinking clears them", JSON.stringify(size(0)) === "[30,0]");
 }
 
+// ---------------- ACE crews: capacity constraints
+{
+  const src = fs.readFileSync(__dirname + "/examples/ace-crews.sp", "utf8");
+  const statusOf = g => S.partsOf(f(g, "packages")).map(p => p.field("status"));
+  const runOut = g => { for (let t = 0; t < 4000 && statusOf(g).some(x => x !== "done"); t++) g.tick(0.05); return f(g, "day"); };
+  const all = L.makeGame(src);
+  ok("ace-crews: with every crew, the slab is done on day 23", runOut(all) === 23, f(all, "day"));
+  const rows = S.partsOf(f(all, "packages"));
+  const rec = id => rows.find(p => p.field("id") === id);
+  ok("ace-crews: a package starts only after what it requires", rec("pour").field("begun") >= rec("embeds").field("ended") && rec("rebar").field("begun") >= rec("piles").field("ended"));
+  ok("ace-crews: each package is done by a crew of its trade", rows.every(p => p.field("crew").startsWith(p.field("trade"))));
+  const chip = n => [(n - 1) * 86 + 48, 440];
+  const g = L.makeGame(src); g.tick(0.05);
+  g.down(...chip(3)); g.tick(0.05); g.up(); g.tick(0.05);
+  ok("ace-crews: tapping a crew sends it home", f(g, "crews").part(3).field("on") === false);
+  for (let t = 0; t < 4000 && f(g, "day") < 10; t++) g.tick(0.05);
+  const notes = g.draw().filter(d => d[0] === "text").map(d => d[1][0]);
+  ok("ace-crews: work that needs a crew that isn't there says so", notes.includes("needs an iron crew") && rows.length === 10, notes.filter(x => /crew/.test(x)));
+  g.down(...chip(3)); g.tick(0.05); g.up(); g.tick(0.05);
+  ok("ace-crews: the slab slips while the iron crew is away", runOut(g) > 23, f(g, "day"));
+}
+
 const errs = logs.slice();
 ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
 console.log(pass + " passed, " + fail + " failed");
