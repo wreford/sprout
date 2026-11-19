@@ -97,6 +97,14 @@ const sig = v => {
   return null;
 };
 
+// a deep copy of lists and records; blocks, words and numbers are shared
+function copy(v) {
+  if (Array.isArray(v)) return v.map(copy);
+  if (ArrayBuffer.isView(v)) return v.slice();
+  if (v instanceof Map) { const m = new Map(); for (const [k, x] of v) m.set(k, copy(x)); return m; }
+  return v;
+}
+
 const INPUTS = ["touch-x", "touch-y", "touching", "tapped", "clock"];
 
 // host: { name: [arity, fn] } plus W and H; returns a program you can step
@@ -109,7 +117,7 @@ function build(src, host, keep) {
   js = guard(js);
   const inV = INPUTS.map(mangle);
   const head = "let " + inV.map(v => v + "=" + (/touch_2d|clock/.test(v) ? "0" : "FALSE")).join(",") + ";const __in=(a,b,c,d,e)=>{" + inV.map((v, i) => v + "=" + "abcde"[i]).join(";") + "};\n";
-  const tail = "\n;return {__in,get:()=>({" + names.map(n => n + ":" + n).join(",") + "}),update:typeof v_update!=='undefined'?v_update:null,draw:typeof v_draw!=='undefined'?v_draw:null}\n//# sourceURL=game.js";
+  const tail = "\n;return {__in,get:()=>({" + names.map(n => n + ":" + n).join(",") + "}),set:(o)=>{" + names.map(n => "if(\"" + n + "\" in o)" + n + "=o." + n + ";").join("") + "},update:typeof v_update!=='undefined'?v_update:null,draw:typeof v_draw!=='undefined'?v_draw:null}\n//# sourceURL=game.js";
   // every seconds [ ... ]: runs the block on a beat. Timers are keyed by the block's own code,
   // so editing one block restarts only its beat, and the beats carry over when the code changes.
   const timers = new Map(keep && keep.timers ? keep.timers : []);
@@ -120,7 +128,9 @@ function build(src, host, keep) {
       const k = String(block); let t = (timers.get(k) || 0) + frameDt, n = 0;
       while (t >= secs && n < 4) { t -= secs; n++; R.RUN(block()); }
       timers.set(k, Math.min(t, secs)); return R.NONE;
-    }]
+    }],
+    // wave seconds: glides from -1 to 1 and back, once every that many seconds
+    wave: [1, secs => secs > 0 ? Math.sin(clock / secs * Math.PI * 2) : 0]
   });
   const rnames = Object.keys(R), hk = Object.keys(host);
   const fresh = {}, init = {};
@@ -148,6 +158,10 @@ function build(src, host, keep) {
   };
   p.paint = () => { loops = 0; t0 = now(); frameDt = 0; if (p.draw) R.RUN(p.draw()); };
   p.snapshot = () => ({ vals: p.get(), init: p.init, timers: Array.from(timers), clock });
+  // save and load copy the whole game state, so time can be wound back to any saved frame
+  p.save = () => { const v = p.get(), o = {}; for (const k in v) if (typeof v[k] !== "function") o[k] = copy(v[k]); return { vals: o, timers: Array.from(timers), clock }; };
+  p.load = s => { const o = {}; for (const k in s.vals) o[k] = copy(s.vals[k]); p.set(o); timers.clear(); for (const [k, t] of s.timers) timers.set(k, t); clock = s.clock; };
+  p.clock = () => clock;
   return p;
 }
 
@@ -175,6 +189,6 @@ function friendly(msg) {
     .replace(/\bv_([A-Za-z0-9_]+)/g, (m, n) => un(n));
 }
 
-const api = { build, mangle, statements, typoLine, bracketLine, lineOf, friendly, R, SproutToJS };
+const api = { build, copy, mangle, statements, typoLine, bracketLine, lineOf, friendly, R, SproutToJS };
 if (typeof module !== "undefined") module.exports = api; else root.SproutLive = api;
 })(typeof window !== "undefined" ? window : globalThis);

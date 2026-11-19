@@ -9,6 +9,8 @@
 //  A. a new line is a new step and a comma is a new item, so [ ... ] over several lines is a block, and [1, 2] is a list.
 //  B. records: {x : 1, y : 2}
 //  C. dots read and change fields: d.x, d.x := 5, _.y
+//  D. string templates: "{score} drops" puts a value into a string. \{ is a plain brace.
+//  E. and, or, not: (a > 1) and (b < 2), over not
 var SproutToJS=(function(){"use strict";
 
 function tokenize(src){
@@ -22,7 +24,16 @@ function tokenize(src){
     if(c==="-"&&i+1<n&&src[i+1]==="-"){i+=2;while(i<n&&src[i]!=="\n")i++;continue}
     // Legacy ' comments (backward compat)
     if(c==="'"){i++;while(i<n&&src[i]!=="'")i++;i++;continue}
-    if(c==='"'){let j=i+1;const buf=[];while(j<n&&src[j]!=='"'){if(src[j]==="\\"&&j+1<n){const x=src[j+1];buf.push(ESC[x]!==undefined?ESC[x]:x);j+=2}else{buf.push(src[j]);j++}}toks.push({k:"str",v:buf.join("")});i=j+1;continue}
+    if(c==='"'){let j=i+1;const buf=[],parts=[];
+      while(j<n&&src[j]!=='"'){
+        if(src[j]==="\\"&&j+1<n){const x=src[j+1];buf.push(ESC[x]!==undefined?ESC[x]:x);j+=2}
+        else if(src[j]==="{"){/* Sprout Live addition D: "{expr}" inside a string */
+          let d=1,k=j+1;while(k<n&&d&&src[k]!=='"'){if(src[k]==="{")d++;else if(src[k]==="}")d--;if(d)k++}
+          if(d)throw new Error("a { in a string needs a } to close it");
+          parts.push(buf.join(""));buf.length=0;parts.push({src:src.slice(j+1,k)});j=k+1}
+        else{buf.push(src[j]);j++}}
+      if(parts.length){parts.push(buf.join(""));toks.push({k:"str",v:parts.map(p=>typeof p==="string"?p:"{"+p.src+"}").join(""),parts})}
+      else toks.push({k:"str",v:buf.join("")});i=j+1;continue}
     if("[](){}".includes(c)){toks.push(c);i++;continue}
     if(",|".includes(c)){toks.push(c);i++;continue}
     // := mutation token (Sprout 2.0)
@@ -75,6 +86,17 @@ class Parser{
     if(t==="[")return this.block("]");
     if(t==="("){const b=this.block(")");b.group=true;return b}
     if(t==="{")return this.record();/* Sprout Live addition B */
+    if(isStr(t)&&t.parts){/* Sprout Live addition D: "a {x} b" is ("a " ++ (x str)) ++ " b" */
+      let node=null;
+      for(const p of t.parts){
+        let part;
+        if(typeof p==="string"){if(!p)continue;part=Lit(p)}
+        else{const items=new Parser(tokenize(p.src)).program();if(items.length!==1)throw new Error("put one value inside { } in a string");
+          const g=Block();g.group=true;g.body=[Send(items[0],Name("str"))];part=g}
+        node=node?Send(Send(node,Name("++")),part):(typeof p==="string"?part:Send(Send(Lit(""),Name("++")),part));
+      }
+      return node||Lit("");
+    }
     if(isStr(t))return Lit(t.v);
     if(isWord(t)){
       if(NUM.test(t.v))return Lit(parseFloat(t.v));
@@ -150,8 +172,8 @@ function strlit(s){
 }
 
 const FLAGNAMES=new Set(["pure","memoize","immutable","shared","lazy"]),
-      BUILTIN=new Set(["print","length","first","second","append","each","collect","fold","times","while","sqrt","floor","str","last","round","ceil","abs","sin","cos","tan","log"]),
-      OPSET=new Set([...Object.keys(OPS),"=","++"]);
+      BUILTIN=new Set(["not","print","length","first","second","append","each","collect","fold","times","while","sqrt","floor","str","last","round","ceil","abs","sin","cos","tan","log"]),
+      OPSET=new Set([...Object.keys(OPS),"=","++","and","or"]);
 
 class Gen{
   constructor(){this._self=null;this._declared=new Set();this._lists=new Set();this._maps=new Set();this._fns=new Set();this._dense=new Set();this._arity=new Map();this._mayPromote=new Set()}
@@ -561,6 +583,10 @@ class Gen{
       const opn=inner.m.n,L=this.genExpr(inner.tgt),R=this.genExpr(node.m);
       return CMP.has(opn)?`((${L} ${OPS[opn]} ${R})?TRUE:FALSE)`:`(${L} ${OPS[opn]} ${R})`;
     }
+    if(inner.t==="Send"&&inner.m.t==="Name"&&(inner.m.n==="and"||inner.m.n==="or")){/* Sprout Live addition E */
+      const a=this.genExpr(inner.tgt),b=this.genExpr(node.m);
+      return inner.m.n==="and"?`((${a})===TRUE?(${b}):FALSE)`:`((${a})===TRUE?TRUE:(${b}))`;
+    }
     if(inner.t==="Send"&&inner.m.t==="Name"&&inner.m.n==="=")return`eq(${this.genExpr(inner.tgt)},${this.genExpr(node.m)})`;
     if(inner.t==="Send"&&inner.m.t==="Name"&&inner.m.n==="++")return`((${this.genExpr(inner.tgt)})+(${this.genExpr(node.m)}))`;
     if(inner.t==="Send"&&inner.m.t==="Name"&&inner.m.n==="append")return`(${this.genExpr(inner.tgt)}).concat([${this.genExpr(node.m)}])`;
@@ -570,6 +596,7 @@ class Gen{
       if(m==="css")return`v_css(${this.genExpr(node.tgt)})`;
       if(m==="prompt")return`v_prompt(${this.genExpr(node.tgt)})`;
       if(m==="print")return`prnt(${this.genExpr(node.tgt)})`;
+      if(m==="not")return`((${this.genExpr(node.tgt)})===TRUE?FALSE:TRUE)`;/* Sprout Live addition E */
       if(m==="length")return`LEN(${this.genExpr(node.tgt)})`;
       if(m==="sqrt")return`Math.sqrt(${this.genExpr(node.tgt)})`;
       if(m==="floor")return`Math.floor(${this.genExpr(node.tgt)})`;
