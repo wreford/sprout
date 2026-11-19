@@ -85,3 +85,78 @@ range (last-day - first-day / 2 + 1 ceil) each [k |
   "day [pad [from str, 3]] [pad [n str, 4]] [bar (n / 4 ceil)]" print
 ]
 "chance of finishing by day [finish [last-atom, likely]]: " .. (finishes keep [f | f <= (finish [last-atom, likely])] length * 100 / runs round) .. "%" print
+
+-- ---------------------------------------------------------------------------------------------
+-- Cost is a view, not a property: crews times rates times time, plus materials and equipment.
+
+rate : 950                 -- dollars per person per day
+indirect-share : 0.15      -- site overheads, as a share of labour
+costs : [
+  [id : "permit", crew : 0, materials : 0, equipment : 0]
+  [id : "survey", crew : 2, materials : 0, equipment : 0]
+  [id : "dig", crew : 3, materials : 0, equipment : 9000]
+  [id : "rebar", crew : 0, materials : 38000, equipment : 0]
+  [id : "rfi", crew : 0, materials : 0, equipment : 0]
+  [id : "formwork", crew : 4, materials : 6500, equipment : 0]
+  [id : "place-rebar", crew : 5, materials : 0, equipment : 2500]
+  [id : "inspect", crew : 1, materials : 0, equipment : 0]
+  [id : "pour", crew : 6, materials : 21000, equipment : 4000]
+  [id : "cure", crew : 1, materials : 800, equipment : 0]
+]
+
+-- where the work actually stands on the status day, and what has been spent
+status-day : 10
+progress : [["permit", 1], ["survey", 1], ["dig", 1], ["rebar", 1], ["rfi", 1], ["formwork", 0.5], ["place-rebar", 0.25]]
+actual-cost : 84000
+
+sum : [xs | xs fold [0, [t x | t + x]]]
+pad3 : [n | n < 10 ["00" .. n] else [n < 100 ["0" .. n] else [n str]]]
+commas : [n | n < 1000 [n str] else [commas (n / 1000 floor) .. "," .. (pad3 (n % 1000))]]
+money : [n | "$" .. (commas (n round))]
+two : [r | r * 100 round / 100]
+
+ids : atoms collect [a | a id]
+cost-of : [want | costs keep [c | c id = want] first]
+labour-of : [want | c : cost-of want, c crew * ((find [want, likely]) days) * rate]
+budget-of : [want | c : cost-of want, labour-of want * (1 + indirect-share) + (c materials) + (c equipment)]
+
+labour : sum (ids collect labour-of)
+budget : sum (ids collect budget-of)
+"" print
+"== cost, worked out from the plan ==" print
+"labour     [pad [money labour, 10]] crews x days x [money rate]" print
+"indirect   [pad [money (labour * indirect-share), 10]] [indirect-share * 100]% of labour" print
+"materials  " .. (money (sum (costs collect [c | c materials]))) print
+"equipment  " .. (money (sum (costs collect [c | c equipment]))) print
+"budget     " .. (money budget) print
+
+-- planned value: how much of each atom's budget the likely plan says is earned by day d
+planned-share : [want d |
+  ef : finish [want, likely]
+  es : ef - ((find [want, likely]) days)
+  ef = es [d >= ef [1] else [0]] else [d - es / (ef - es) max 0 min 1]
+]
+planned-by : [d | sum (ids collect [x | planned-share [x, d] * (budget-of x)])]
+pv : planned-by status-day
+ev : sum (progress collect [p | p @ 2 * (budget-of (p @ 1))])
+spi : ev / pv
+cpi : ev / actual-cost
+
+"" print
+"== earned value on day [status-day] ==" print
+"planned    [pad [money pv, 10]] what the likely plan has done by now" print
+"earned     [pad [money ev, 10]] the budget of the work that is actually done" print
+"actual     [pad [money actual-cost, 10]] what has been spent" print
+"SPI [two spi]  " .. (spi < 1 ["behind schedule"] else ["on or ahead of schedule"]) print
+"CPI [two cpi]  " .. (cpi < 1 ["over budget"] else ["on or under budget"]) print
+"forecast at completion  " .. (money (budget / cpi)) .. "  (budget / CPI)" print
+
+"" print
+"== planned value over time, and where we are ==" print
+range 12 each [k |
+  d : k - 1 * 2
+  share : planned-by d / budget
+  here : d = status-day ["  < earned " .. (ev / budget * 100 round) .. "%"] else [""]
+  pct : (share * 100 round) .. "%"
+  "day [pad [d str, 3]] [pad [pct, 5]] [bar (share * 30 round)][here]" print
+]
