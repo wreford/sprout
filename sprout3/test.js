@@ -88,6 +88,37 @@ ok("35 match with no match gives false", val('match [9, [1, "one"]]') === "false
   delete S.G.db;
 }
 
+// 82: columns. Lists of number records are stored as columns, with exactly the same results as without them.
+{
+  const both = src => { const a = S.load(src).field("result"); S.columns(false); const b = S.load(src).field("result"); S.columns(true); return [a, b]; };
+  const [a, b] = both(`step : [rs | rs collect [r | r with [y : r y + 1, z : r x * 2]] keep [r | (r y % 3) != 0 or (r x > 50)]]
+go : [rs k | k = 0 [rs] else [go [step rs, k - 1]]]
+result : go [range 100 collect [n | [x : n, y : 0]], 5]`);
+  ok("82 columns are used", a instanceof S.ColCell && !(b instanceof S.ColCell));
+  ok("82 columns give the same list", S.fmt(a) === S.fmt(b) && S.eq(a, b) && S.eq(b, a) && a.count() === 50);
+  ok("82 a part of a column list is a record", S.fmt(a.part(2)) === "[x : 52, y : 5, z : 104]" && a.part(0) === false && a.part(51) === false);
+  const [c, d] = both(`xs : range 40 collect [n | [x : n, y : n * 2]]
+result : xs collect [r | r with [x : r x + 1]] .. [[x : 0, y : 0]] .. (range 3 collect [n | [x : n, y : n]])`);
+  ok("82 .. keeps columns", c instanceof S.ColCell && c.count() === 44 && S.fmt(c) === S.fmt(d));
+  const [e, f] = both(`xs : range 40 collect [n | [x : n, name : "a"]]
+result : xs collect [r | r with [x : r x + 1]]`);
+  ok("82 a record with words stays as records", !(e instanceof S.ColCell) && S.fmt(e) === S.fmt(f));
+  const [g2, h] = both(`xs : range 40 collect [n | [x : n]]
+result : xs collect [r | r with [x : r nope + 1]]`);
+  ok("82 a missing field falls back to the ordinary way", !(g2 instanceof S.ColCell) && S.fmt(g2) === S.fmt(h));
+  // the particle fountain plays the same with and without columns
+  const psrc = fs.readFileSync(__dirname + "/examples/particles.sp", "utf8");
+  const play = on => {
+    S.columns(on); const mr = Math.random; let seed = 7; Math.random = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const pg = L.makeGame(psrc); for (let t = 0; t < 150; t++) pg.tick(1 / 60);
+    const dr = JSON.stringify(pg.draw()); Math.random = mr; S.columns(true);
+    return [pg.state.field("sparks"), dr];
+  };
+  const [p1, d1] = play(true), [p2, d2] = play(false);
+  ok("82 particles use columns", p1 instanceof S.ColCell && p1.count() > 1000);
+  ok("82 particles play the same", S.fmt(p1) === S.fmt(p2) && d1 === d2);
+}
+
 // the game: events in, states out; effects queued; rewind, replay, hot-swap
 S.setLog(() => {});
 const src = fs.readFileSync(__dirname + "/examples/sprout.sp", "utf8");
