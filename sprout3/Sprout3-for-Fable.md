@@ -13,36 +13,44 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 ## What to know first
 
 - **Sprout 3 is Troy's language.**
-  - The spec's design decisions 1 to 82 define it. Later decisions override earlier ones and say so.
+  - The spec's design decisions 1 to 85 define it. Later decisions override earlier ones and say so.
   - Sections 1 to 15 at the top of the spec describe the older Sprout 2.0 and are kept for history.
 - **Language changes go to Troy first.** Talk any change to syntax or semantics through with him before anyone builds it, one question at a time. Library and implementation choices are recorded in the spec as decisions (decision 80).
 - **ACE has one primitive: the atom.**
   - An atom has two links: `requires` (what must finish first) and `contains` (its children).
   - "Done" is derived from the graph, never stored.
   - There are five kinds: trivial, leaf, verified, gate and rollup.
-- **The ACE examples are four Sprout programs:**
-  - `ace-derive.sp`: derive to a fixed point.
-  - `ace-schedule.sp`: critical path and Monte Carlo.
+- **The ACE examples are five Sprout programs:**
+  - `ace-derive.sp`: derive to a fixed point, with narrative-required atoms.
+  - `ace-schedule.sp`: critical path, Monte Carlo, and cost with earned value.
   - `ace-board.sp`: an interactive atom graph.
-  - `ace-site.sp`: positions as expressions, and overlaps as clashes.
+  - `ace-site.sp`: positions as expressions, with every rule a constraint.
+  - `ace-crews.sp`: sequence and capacity constraints.
 - **Style:** kebab-case names, straight quotes, `--` for comments, no em dashes.
 
 ## Recent work (19 November 2026)
 
-- **Columns (decision 82):** lists of number records are stored as one array per field.
-  - Simple `collect`, `keep` and `each` bodies run straight over the arrays.
-  - Particles went from 1.45 to 0.28 ms a frame.
-  - 10,000 records times 20 updates went from 11 to 1.4 ms.
-- **A compiler fix:** `and` and `or` no longer treat the call on their right as a tail call. Before, they got an unfinished call instead of true or false.
-- **New examples:**
-  - Games and programs: Fireflies, Orbit, Hop, Life and Recipes.
-  - ACE: the four examples above.
-- **The web page:** a library of examples with artwork, the running game shown like album art, live editing, and a now-playing bar whose progress bar rewinds time.
-- **Tests:** all 120 pass, 72 for the language and 48 for the games.
+- **Sprout:**
+  - **Columns (decision 82):** lists of number records are stored as one array per field, and simple `collect`, `keep` and `each` bodies run straight over the arrays.
+  - **Quiet misses (decision 83):** a field read right before `else` may miss without a log.
+  - **`match` and `cond` (decision 84):** they give a `false` answer instead of falling through to later cases.
+  - **Typo suggestions (decision 85):** "did you mean" for unknown words and missing fields.
+  - **Bracket errors:** an unclosed bracket is reported where it opened.
+  - **A compiler fix:** `and` and `or` no longer treat the call on their right as a tail call.
+- **ACE:**
+  - **Narrative:** a `narrative-required` atom isn't done until it's written up.
+  - **Cost:** cost is a view (labour, indirect, materials, equipment), with earned value (SPI, CPI and a forecast).
+  - **Constraints:** a panel on the site plan shows every rule holding or failing.
+  - **Crews:** capacity constraints, where crews of a trade take ready work.
+- **The web page:**
+  - a library of examples with artwork, and the running game shown like album art
+  - a now-playing bar whose progress bar rewinds time
+  - number dragging in the code: Alt-drag on desktop, or Tweak on a phone
+- **Tests:** 143 pass, 83 for the language and 60 for the games.
 
 ## Open questions for Troy
 
-1. **`match` and the `else` catch (decision 74).** A case whose answer is `false` falls through to the later cases, so a rule whose answer can be `false` can't be written with `match`. `ace-derive.sp` uses `and`/`or` instead. Keep decision 74, or change how `match` handles a `false` answer?
+1. **The `else` catch (decision 74).** It still applies to user code: a then-branch that gives `false` also runs the `else`. `match` and `cond` no longer suffer from it (decision 84). Keep it, or let a branch give `false`?
 2. **What comes next on the speed roadmap?** Step 2 of decision 79 is loop fusion: `collect`, `keep` and `fold` chains run as one loop with no lists in between.
 3. **The rough edges** listed under "Known rough edges" below.
 
@@ -55,14 +63,14 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 **Run it (Node 22 or later):**
 
 ```
-node test.js          # language tests (72)
-node game-tests.js    # game tests (48)
+node test.js          # language tests (83)
+node game-tests.js    # game tests (60)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 120 tests pass as of 19 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected.
+All 143 tests pass as of 19 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected.
 
 ## How to work on it
 
@@ -101,9 +109,8 @@ All 120 tests pass as of 19 November 2026. `test.js` uses `node:sqlite`, which p
    - automatic purity detection (32)
    - the editor-side lint that flags slow paths
 3. **Known rough edges:**
-   - The `else` catch: a then-branch that gives `false` also runs the `else` (74).
+   - The `else` catch: a then-branch that gives `false` also runs the `else` (74). `match` and `cond` no longer fall through on a `false` answer (84).
    - Field/name clash lints fire on the common `update` pattern; rename the local (73).
-   - A missing-field read still logs even inside `x else default`.
    - A cell can't have a field whose name is worked out at run time, so the host passes held keys in on each tick.
 4. **Current speed:**
    - Games use 0.005 to 0.03 ms a frame. 2,000 particles went from about 1.45 to 0.28 ms a frame with columns (decision 82).
@@ -137,6 +144,7 @@ All 120 tests pass as of 19 November 2026. `test.js` uses `node:sqlite`, which p
 - `examples/ace-schedule.sp`: ACE: critical path, then a Monte Carlo finish date with a shared risk (prints)
 - `examples/ace-board.sp`: ACE: an interactive atom graph; tap work to close it, and gates, the rollup and the critical path follow
 - `examples/ace-site.sp`: ACE: positions are expressions over named dimensions, and overlaps are clashes
+- `examples/ace-crews.sp`: ACE: sequence and capacity constraints; work waits for what it requires and for a free crew of its trade
 - `examples/recipes.sp`: Recipes: quicksort, primes, FizzBuzz, a vector with its own + (prints; not a game)
 - `index.html`: The web page at taskiap.com/sprout3/: a library of examples with artwork, the running game shown like album art, live editing, a now-playing bar whose progress bar rewinds time, state, output and the spec; light and dark
 - `old-sprout2.js`: The old Sprout 2.0 compiler, kept only so bench.js can compare against it
@@ -746,6 +754,9 @@ These are marked in `sprout2.js` with "Sprout Live fix N" or "Sprout Live additi
 80. **Library-level choices are Claude's to make and record**, without asking first.
 81. **Only `[ ]` is a template inside a string.** `"[g score] drops"` puts a value in; `( )` is plain text, so SQL (`values (?, ?)`) and CSS (`rgba(0,0,0,0.5)`) need no escapes. Write `\[` for a plain bracket. Replaces the `( )` half of decisions 5 and 6.
 82. **Columns (built; Claude's call under decision 80).** A list of 32 or more records that share one shape and hold only numbers is stored as one number array per field. A cell with one named input gets a column version of its body when the body is one of three things: `s with [...]` where each new value is number maths on `s`'s fields; a test made of number maths and comparisons; or a host word given a cell of values, such as `circle [s x, s y, 2, "#fc6"]`. `collect`, `keep` and `each` use the column version on a list in columns, and `..` keeps two such lists in columns. Anything else falls back to the ordinary way, including a field that isn't there, a word in a record and an outside name that isn't a number. So a program can't tell the difference: parts, `@`, `length`, `=` and `str` all see ordinary records (decisions 22 and 39), and the tests run both ways. `random` and other recorded reads are never moved out of the loop, so replay stays exact. The particle fountain went from 1.45 to 0.28 ms a frame, and 10,000 records times 20 updates from 11 to 1.4 ms.
+83. **A read right before `else` may miss quietly (built; Claude's call, fixing a listed rough edge).** In `p name else "anon"`, `else` is the program saying the field may be missing, so a miss on that one read gives `false` without a log (decision 28). Misses anywhere else, including deeper inside the left side, still log. The prelude's `s input else fresh-input` no longer logs on a game's first event.
+84. **`match` and `cond` give a `false` answer instead of falling through (built; library, decision 80).** They were written with `[answer] else [try the next case]`, so an answer of `false` set off the `else` catch (decision 74) and the search carried on, against decision 35 ("gives the first matching result"). They now find the position of the first matching case (a number, never `false`) and then give that case's answer, whatever it is. Only the chosen answer is worked out, as before. Decision 74 itself is unchanged for user code.
+85. **Typos get a suggestion (built; Claude's call).** An unknown word's note names the nearest name in scope or built-in, as in `"cuont" isn't a word Sprout knows yet (did you mean "count"?)`. A missing field's note names the nearest field of that cell: `doesn't know sped (did you mean speed?)`. "Nearest" means at most 1 edit for names of 4 letters or fewer, and 2 for longer ones. A swap of two neighbouring letters counts as 1 edit. When two names are equally near, there is no suggestion.
 ````
 
 ---
@@ -877,15 +888,16 @@ class Parser {
   }
   term() {
     const t = this.nx();
-    if (t === "[") return this.cell();
-    if (t === "(") { const items = this.items(")"); if (this.nx() !== ")") throw new SproutError("a ( needs a ) to close it", this.line()); return { k: "group", items }; }
+    // an unclosed bracket is reported where it opened, not where the file ran out
+    if (t === "[") return this.cell(this.line());
+    if (t === "(") { const at = this.line(); const items = this.items(")"); if (this.nx() !== ")") throw new SproutError("a ( needs a ) to close it", at); return { k: "group", items }; }
     if (t.t === "num") return { k: "num", v: t.v };
     if (t.t === "str") return { k: "str", v: t.v };
     if (t.t === "tmpl") return { k: "tmpl", parts: t.parts.map(p => typeof p === "string" ? p : { ast: parseInner(p.src, t.line) }) };
     if (t.t === "word") return { k: "word", v: t.v, line: t.line };
     throw new SproutError("this doesn't make sense here: " + t, this.line());
   }
-  cell() {
+  cell(openLine) {
     // input names before a | at this depth: [x y : 0 | ...]
     let depth = 0, bar = -1;
     for (let j = this.i; j < this.t.length; j++) {
@@ -907,7 +919,7 @@ class Parser {
       this.nx(); // |
     }
     const items = this.items("]");
-    if (this.nx() !== "]") throw new SproutError("a [ needs a ] to close it", this.line());
+    if (this.nx() !== "]") throw new SproutError("a [ needs a ] to close it", openLine || this.line());
     return { k: "cell", names, items }; // [[x]] is a cell holding a cell (decision 71: no collapse)
   }
 }
@@ -983,7 +995,11 @@ class Gen {
     const r = this.lookup(n);
     if (r) return this.refJS(r);
     if (this.globals.has(n)) return this.globalRef(n);
-    return "UNKNOWN(" + JSON.stringify(n) + "," + (line || 0) + ")";
+    // suggest the nearest name in scope, or a built-in, for a likely typo
+    const seen = new Set(this.globals); for (const f of this.frames) for (const k of f.names.keys()) seen.add(k);
+    for (const list of this.hintNames || []) for (const k of list) seen.add(k);
+    const hint = nearest(n, seen);
+    return "UNKNOWN(" + JSON.stringify(n) + "," + (line || 0) + (hint ? "," + JSON.stringify(hint) : "") + ")";
   }
 
   genChain(ch, tail) {
@@ -1015,7 +1031,9 @@ class Gen {
         }
         const r = this.lookup(w);
         const lex = r ? "()=>" + this.refJS(r) : (this.globals.has(w) ? "()=>" + this.globalRef(w) : "null");
-        v = "SWI(" + v + "," + JSON.stringify(w) + "," + lex + "," + (t.line || 0) + "," + this.ic() + ")";
+        // a field read right before else is allowed to miss: else is the program saying so, so the miss isn't logged (decision 83)
+        const quiet = T[i + 1] && T[i + 1].k === "word" && T[i + 1].v === "else" && T[i + 2] && !this.lookup("else");
+        v = "SWI(" + v + "," + JSON.stringify(w) + "," + lex + "," + (t.line || 0) + "," + this.ic() + (quiet ? ",1" : "") + ")";
       } else if (t.k === "cell" && !t.names.length && i === 1 && this.notBool(T[0])) {
         v = (tail && isLast ? "TAIL(" : "SEND(") + v + "," + this.genCell(t) + ")";
       } else if (t.k === "cell" && !t.names.length) {
@@ -1108,8 +1126,13 @@ class Gen {
   }
 
   genCell(c, ownerOfLeft) {
-    if (fieldsOnly(c) && c.items.every(x => simpleVal(x.val)))
-      return "VC(" + this.shapeRef(c.items.map(x => x.name)) + ",[" + c.items.map(x => this.genChain(x.val)).join(",") + "])";
+    if (fieldsOnly(c) && c.items.every(x => simpleVal(x.val))) {
+      // the fields can't use each other here, but they are still the likeliest names a typo meant
+      this.hintNames = (this.hintNames || []).concat([c.items.map(x => x.name)]);
+      const vals = c.items.map(x => this.genChain(x.val));
+      this.hintNames.pop();
+      return "VC(" + this.shapeRef(c.items.map(x => x.name)) + ",[" + vals.join(",") + "])";
+    }
     if (simpleParts(c) && c.items.length > 1)
       return "VP([" + c.items.map(x => this.genChain(x)).join(",") + "])";
     const k = this.shapes.length;
@@ -1320,7 +1343,33 @@ let LOG = (msg) => { if (typeof console !== "undefined") console.log("sprout: " 
 const warned = new Set();
 const seen = new Map();
 function LOG_MISS(msg, line) { const m = msg + (line ? " (line " + line + ")" : ""); const c = (seen.get(m) || 0) + 1; seen.set(m, c); if (c <= 3) LOG(m + (c === 3 ? " (and more; not shown again)" : "")); return false; }
-function UNKNOWN(n, line) { return LOG_MISS("\"" + n + "\" isn't a word Sprout knows yet", line); }
+function UNKNOWN(n, line, hint) { return LOG_MISS("\"" + n + "\" isn't a word Sprout knows yet" + (hint ? " (did you mean \"" + hint + "\"?)" : ""), line); }
+// the closest name to a likely typo: at most 1 edit for short names, 2 for longer ones; none if it's a tie between several
+function nearest(n, names) {
+  const limit = n.length <= 4 ? 1 : 2; let best = null, bestD = limit + 1, tie = false;
+  for (const m of names) {
+    if (m === n || Math.abs(m.length - n.length) > limit) continue;
+    const d = editDistance(n, m, limit);
+    if (d < bestD) { best = m; bestD = d; tie = false; } else if (d === bestD) tie = true;
+  }
+  return best && !tie ? best : null;
+}
+function editDistance(a, b, cap) {
+  // optimal string alignment: insert, delete, change, or swap two neighbouring letters, each one edit
+  const d = [];
+  for (let x = 0; x <= a.length; x++) { d.push(new Array(b.length + 1).fill(0)); d[x][0] = x; }
+  for (let y = 0; y <= b.length; y++) d[0][y] = y;
+  for (let x = 1; x <= a.length; x++) {
+    let low = Infinity;
+    for (let y = 1; y <= b.length; y++) {
+      let v = Math.min(d[x - 1][y] + 1, d[x][y - 1] + 1, d[x - 1][y - 1] + (a[x - 1] === b[y - 1] ? 0 : 1));
+      if (x > 1 && y > 1 && a[x - 1] === b[y - 2] && a[x - 2] === b[y - 1]) v = Math.min(v, d[x - 2][y - 2] + 1);
+      d[x][y] = v; if (v < low) low = v;
+    }
+    if (low > cap) return cap + 1;
+  }
+  return d[a.length][b.length];
+}
 
 // Act: one activation of a cell, holding its inputs and (for reads) its worked-out slots
 class Act {
@@ -1487,23 +1536,26 @@ function readField(r, v) {
 }
 // SW: send a word. Fields first (with prototype methods), then a name in scope as the argument.
 // SWI: SW with an inline cache. A record read at this spot usually has the same shape every time.
-function SWI(r, w, lex, line, ic) {
+function SWI(r, w, lex, line, ic, quiet) {
   if (r instanceof VCell) {
     const fs = r.fs;
     if (fs === ic.s) { const v = r.fv[ic.i]; return v instanceof Cell && v.sh.usesLeft ? readField(r, v) : v; }
     const i = fs.index(w);
     if (i >= 0) { if (lex) clash(w, line); ic.s = fs; ic.i = i; const v = r.fv[i]; return v instanceof Cell && v.sh.usesLeft ? readField(r, v) : v; }
   }
-  return SW(r, w, lex, line);
+  return SW(r, w, lex, line, quiet);
 }
 // decision 73: a word that is both a field of the receiver and a name in scope reads the field, loudly
 function clash(w, line) { lint("\"" + w + "\" is both a field here and a name in scope; the field wins" + (line ? " (line " + line + ")" : "")); }
-function SW(r, w, lex, line) {
+function SW(r, w, lex, line, quiet) {
   if (r instanceof Cell || r instanceof VCell) { const v = r.field(w); if (v !== UNSET) { if (lex) clash(w, line); return readField(r, v); } }
   const m = protoOf(r)[w];
   if (m !== undefined) return m.ar ? new Waiting(m.fn, r) : m.fn(r);
   if (lex) return SEND(r, lex());
-  return MISSING(r, w, line);
+  if (quiet) return false;
+  // a field that isn't there: suggest the nearest field this cell does have
+  const hint = (r instanceof Cell || r instanceof VCell) ? nearest(w, r.fieldNames()) : null;
+  return LOG_MISS(describe(r) + " doesn't know " + w + (hint ? " (did you mean " + hint + "?)" : ""), line);
 }
 // SEND: send a value
 function SEND(r, a) {
@@ -1719,16 +1771,14 @@ let RNG = Math.random, OUT = s => { if (typeof console !== "undefined") console.
 // ===================================================================== prelude, written in Sprout (decisions 30, 34, 35, 50)
 const PRELUDE = `
 match : [v cases |
-  try : [n |
-    n <= (cases length) [(cases @ n) = any or ((cases @ n) = v) [cases @ (n + 1)] else [try (n + 2)]] else [false]
-  ]
-  try 1
+  find : [n | n > (cases length) [0] else [(cases @ n) = any or ((cases @ n) = v) [n] else [find (n + 2)]]]
+  k : find 1
+  k > 0 [cases @ (k + 1)] else [false]
 ]
 cond : [cases |
-  try : [n |
-    n <= (cases length) [(cases @ n) = any or ((cases @ n) = true) [cases @ (n + 1)] else [try (n + 2)]] else [false]
-  ]
-  try 1
+  find : [n | n > (cases length) [0] else [(cases @ n) = any or ((cases @ n) = true) [n] else [find (n + 2)]]]
+  k : find 1
+  k > 0 [cases @ (k + 1)] else [false]
 ]
 take : [xs n | range (n min (xs length)) collect [k | xs @ k]]
 rgb : [r g b | "rgb(" .. r .. "," .. g .. "," .. b .. ")"]
@@ -1927,6 +1977,24 @@ ok("60 [x | [..]] keeps the inner cell", val("([x | [a : x]] 5) a") === "5");
 ok("51 lazy once", S.fmt(S.load("r : [rand [0, 1000]]\nresult : (r @ 1) = (r @ 1)").field("result")) === "true");
 ok("51 run is fresh", val("([] .. [1]) @ 1") === "1");
 ok("81 template [ ]", val('"a[1 + 1]b"') === "a2b");
+{ const before = logs.length;
+  ok("83 a read before else may miss quietly", val('[x : 1] name else "anon"') === "anon" && logs.length === before);
+  val('[x : 1] name'); ok("83 a read without else still logs the miss", logs.length === before + 1 && /doesn't know name/.test(logs[logs.length - 1]));
+  ok("83 a miss deeper inside the left side still logs", (val('[x : [y : 1]] x z w else 0'), logs.slice(before).some(m => /doesn't know z/.test(m)))); }
+ok("84 match gives a false answer instead of falling through", val('match ["leaf", ["leaf", false, any, true]]') === "false" && val('match [2, [1, "a", 2, "b", any, "c"]]') === "b" && val('match [9, [1, "a"]]') === "false");
+ok("84 cond too", val('cond [true, false, any, 5]') === "false" && val('cond [false, 1, 2 > 1, 2, any, 3]') === "2");
+ok("84 match only works out the answer it picks", val('match [1, [1, "one", 2, nope]]') === "one");
+{ const before = logs.length;
+  S.load("count : 3\nresult : cuont + 1").field("result");
+  S.load("result : [speed : 3] sped").field("result");
+  S.load("result : zzz-not-close").field("result");
+  const got = logs.slice(before).join(" | ");
+  ok("typos: an unknown word suggests the nearest name", /"cuont" isn't a word Sprout knows yet \(did you mean "count"\?\)/.test(got), got);
+  ok("typos: a missing field suggests the nearest field", /doesn't know sped \(did you mean speed\?\)/.test(got), got);
+  ok("typos: nothing close, no suggestion", /"zzz-not-close" isn't a word Sprout knows yet( \(line \d+\))?( \||$)/.test(got), got); }
+{ const lineOf = src => { try { S.load(src); return 0; } catch (e) { return e.line; } };
+  ok("an unclosed [ is reported where it opened", lineOf("a : 1\nb : [2, 3\nc : 4\nd : [5]\ne : 6") === 2);
+  ok("an unclosed ( too", lineOf("a : 1\nb : (2 + 3\nc : 4") === 2); }
 ok("and/or run a call on their right before checking it", val("[k | k > 1 and ([d | d = 3] k)] 3") === "true" && val("[k | k > 9 or ([d | d = 3] k)] 3") === "true");
 ok("81 ( ) is plain text", val('"rgba(0,0,0,0.5)"') === "rgba(0,0,0,0.5)");
 ok("81 escaped bracket", val('"a\\[b]"') === "a[b]");
@@ -2200,11 +2268,15 @@ const f = (g, k) => g.state.field(k);
   const d = printed("ace-derive");
   ok("ace-derive: done is derived, 4 of 11 today", d.includes("done      4 of 11") && d.some(l => l.startsWith("[ ] gate      RFI: splice length") && l.endsWith("waits on eng-reply")));
   ok("ace-derive: the gate closes itself once the reply is in", d.includes("workable  rebar-on-site, eng-reply") && d.includes("workable  place-rebar") && d.includes("done      7 of 11"), d.filter(l => l.startsWith("workable")));
+  ok("ace-derive: a signed inspection isn't done until it has a narrative", d.some(l => l.startsWith("[!] verified  Pre-pour inspection") && l.endsWith("closed, but needs a narrative")) && d.includes("done      8 of 11"));
+  ok("ace-derive: writing it up closes it and frees the pour", d.includes("done      9 of 11") && d.includes("workable  pour"));
   const sc = printed("ace-schedule");
   ok("ace-schedule: the critical path", sc.includes("finish on day 21, through rebar > place-rebar > inspect > pour > cure"), sc.find(l => l.startsWith("finish")));
   const p = sc.find(l => l.startsWith("P10")), nums = (p || "").match(/\d+/g).map(Number);
   ok("ace-schedule: monte carlo percentiles in order, and later than the likely plan", nums.length === 8 && nums[1] >= 21 && nums[1] <= nums[3] && nums[3] <= nums[5] && nums[5] <= nums[7] && nums[3] > 21, p);
 
+  ok("ace-schedule: cost is a view of crews, rates, time, materials and equipment", sc.includes("labour     $58,900    crews x days x $950") && sc.includes("budget     $149,535"));
+  ok("ace-schedule: earned value on the status day", sc.includes("SPI 0.83  behind schedule") && sc.includes("CPI 0.96  over budget") && sc.includes("forecast at completion  $156,284  (budget / CPI)"), sc.filter(l => /SPI|CPI|forecast/.test(l)));
   const src = fs.readFileSync(__dirname + "/examples/ace-board.sp", "utf8"), AT = S.partsOf(S.load(src).field("atoms"));
   const fx = [], b = L.makeGame(src, { onEffect: e => fx.push(e[0]) });
   const tapOn = id => { const a = AT.find(r => r.field("id") === id); b.down(a.field("x") + 50, a.field("y") + 18); b.tick(1 / 60); b.up(); b.tick(1 / 60); return f(b, "msg"); };
@@ -2220,16 +2292,43 @@ const f = (g, k) => g.state.field(k);
   tapOn("dig");
   ok("ace-board: reopening upstream work reopens what depends on it", /^ACE  \d\/11 done/.test(header()) && !header().startsWith("ACE  11/11"), header());
 
-  const fx2 = [], st = L.makeGame(fs.readFileSync(__dirname + "/examples/ace-site.sp", "utf8"), { onEffect: e => fx2.push(e[0]) });
-  const size = x => { st.down(x, 200); st.tick(1 / 60); st.up(); st.tick(1 / 60); return [f(st, "rb-d"), f(st, "clashes")]; };
+  const siteSrc = fs.readFileSync(__dirname + "/examples/ace-site.sp", "utf8");
+  const fx2 = [], st = L.makeGame(siteSrc, { onEffect: e => fx2.push(e[0]) });
+  const size = x => { st.down(x, 200); st.tick(1 / 60); st.up(); st.tick(1 / 60); return [f(st, "rb-d"), f(st, "failing")]; };
+  const failing = g => g.draw().filter(d => d[0] === "text").map(d => d[1][0]).filter(t => t.startsWith("FAIL "));
   st.tick(1 / 60);
-  ok("ace-site: no clashes at 46 m", f(st, "clashes") === 0);
-  ok("ace-site: a bigger reactor pushes the service building into the fuel bay", JSON.stringify(size(250)) === "[58,1]" && fx2.includes("shake"), size(250));
-  ok("ace-site: and the turbine hall off the site", JSON.stringify(size(300)) === "[63,2]");
-  ok("ace-site: shrinking clears them", JSON.stringify(size(0)) === "[30,0]");
+  ok("ace-site: every constraint holds at 46 m", f(st, "failing") === 0 && failing(st).length === 0);
+  ok("ace-site: a bigger reactor stretches the cable run first", JSON.stringify(size(270)) === "[55,1]" && failing(st)[0] === "FAIL must: cable run under 65 m", failing(st));
+  ok("ace-site: then the service building hits the fuel bay", JSON.stringify(size(300)) === "[58,2]" && fx2.includes("shake"));
+  ok("ace-site: and the turbine hall leaves the site", JSON.stringify(size(359)) === "[65,3]");
+  ok("ace-site: too small breaks the design basis", JSON.stringify(size(0)) === "[25,1]" && failing(st)[0] === "FAIL must: reactor at least 36 m across");
+  const narrow = L.makeGame(siteSrc.replace("gap : 15", "gap : 10")); narrow.tick(1 / 60);
+  ok("ace-site: a narrow road fails the fire rule", failing(narrow).join() === "FAIL must: fire road at least 12 m wide");
 }
 
-const errs = logs.filter(m => !/doesn't know input/.test(m));
+// ---------------- ACE crews: capacity constraints
+{
+  const src = fs.readFileSync(__dirname + "/examples/ace-crews.sp", "utf8");
+  const statusOf = g => S.partsOf(f(g, "packages")).map(p => p.field("status"));
+  const runOut = g => { for (let t = 0; t < 4000 && statusOf(g).some(x => x !== "done"); t++) g.tick(0.05); return f(g, "day"); };
+  const all = L.makeGame(src);
+  ok("ace-crews: with every crew, the slab is done on day 23", runOut(all) === 23, f(all, "day"));
+  const rows = S.partsOf(f(all, "packages"));
+  const rec = id => rows.find(p => p.field("id") === id);
+  ok("ace-crews: a package starts only after what it requires", rec("pour").field("begun") >= rec("embeds").field("ended") && rec("rebar").field("begun") >= rec("piles").field("ended"));
+  ok("ace-crews: each package is done by a crew of its trade", rows.every(p => p.field("crew").startsWith(p.field("trade"))));
+  const chip = n => [(n - 1) * 86 + 48, 440];
+  const g = L.makeGame(src); g.tick(0.05);
+  g.down(...chip(3)); g.tick(0.05); g.up(); g.tick(0.05);
+  ok("ace-crews: tapping a crew sends it home", f(g, "crews").part(3).field("on") === false);
+  for (let t = 0; t < 4000 && f(g, "day") < 10; t++) g.tick(0.05);
+  const notes = g.draw().filter(d => d[0] === "text").map(d => d[1][0]);
+  ok("ace-crews: work that needs a crew that isn't there says so", notes.includes("needs an iron crew") && rows.length === 10, notes.filter(x => /crew/.test(x)));
+  g.down(...chip(3)); g.tick(0.05); g.up(); g.tick(0.05);
+  ok("ace-crews: the slab slips while the iron crew is away", runOut(g) > 23, f(g, "day"));
+}
+
+const errs = logs.slice();
 ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
 console.log(pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
@@ -3076,7 +3175,7 @@ ACE (the Atomic Constraint Engine): the five kinds of atom, with done derived to
 
 ````sprout
 -- ACE: the Atomic Constraint Engine, in Sprout. One primitive: the atom.
--- An atom has an id, a name, a kind and two links: requires (what must finish first)
+-- An atom has an id, a name, a kind, tags and two links: requires (what must finish first)
 -- and contains (its children). Done is never stored. It is derived from the graph.
 --
 -- Five kinds, by who says an atom is done:
@@ -3085,61 +3184,95 @@ ACE (the Atomic Constraint Engine): the five kinds of atom, with done derived to
 --   verified  closed AND signed by a witness: two locks
 --   gate      done when everything it requires is done (RFIs, constraints)
 --   rollup    done when all its children are done (areas, work packages)
+--
+-- A tag carries no maths, except one: narrative-required. An atom with it isn't done,
+-- however it was closed, until someone writes down what happened.
 
 atoms : [
-  [id : "basis", name : "Design basis issued", kind : "trivial", requires : [], contains : []]
-  [id : "permit", name : "Excavation permit", kind : "verified", closed : true, signed : true, requires : [], contains : []]
-  [id : "survey", name : "Survey and layout", kind : "leaf", closed : true, requires : [], contains : []]
-  [id : "dig", name : "Excavate pedestal", kind : "leaf", closed : true, requires : ["permit", "survey"], contains : []]
-  [id : "rebar-on-site", name : "Rebar delivered", kind : "leaf", closed : false, requires : [], contains : []]
-  [id : "eng-reply", name : "Engineer answers splice RFI", kind : "leaf", closed : false, requires : [], contains : []]
-  [id : "rfi-splice", name : "RFI: splice length", kind : "gate", requires : ["eng-reply"], contains : []]
-  [id : "place-rebar", name : "Place rebar", kind : "leaf", closed : false, requires : ["dig", "rebar-on-site", "rfi-splice"], contains : []]
-  [id : "inspect", name : "Pre-pour inspection", kind : "verified", closed : false, signed : false, requires : ["place-rebar"], contains : []]
-  [id : "pour", name : "Pour concrete", kind : "leaf", closed : false, requires : ["inspect"], contains : []]
-  [id : "pedestal", name : "Turbine pedestal", kind : "rollup", requires : ["basis"], contains : ["dig", "place-rebar", "pour"]]
+  [id : "basis", name : "Design basis issued", kind : "trivial", tags : [], requires : [], contains : []]
+  [id : "permit", name : "Excavation permit", kind : "verified", closed : true, signed : true, tags : ["regulatory"], requires : [], contains : []]
+  [id : "survey", name : "Survey and layout", kind : "leaf", closed : true, tags : [], requires : [], contains : []]
+  [id : "dig", name : "Excavate pedestal", kind : "leaf", closed : true, tags : [], requires : ["permit", "survey"], contains : []]
+  [id : "rebar-on-site", name : "Rebar delivered", kind : "leaf", closed : false, tags : ["material"], requires : [], contains : []]
+  [id : "eng-reply", name : "Engineer answers splice RFI", kind : "leaf", closed : false, tags : [], requires : [], contains : []]
+  [id : "rfi-splice", name : "RFI: splice length", kind : "gate", tags : ["rfi"], requires : ["eng-reply"], contains : []]
+  [id : "place-rebar", name : "Place rebar", kind : "leaf", closed : false, tags : [], requires : ["dig", "rebar-on-site", "rfi-splice"], contains : []]
+  [id : "inspect", name : "Pre-pour inspection", kind : "verified", closed : false, signed : false, tags : ["narrative-required"], requires : ["place-rebar"], contains : []]
+  [id : "pour", name : "Pour concrete", kind : "leaf", closed : false, tags : ["narrative-required"], requires : ["inspect"], contains : []]
+  [id : "pedestal", name : "Turbine pedestal", kind : "rollup", tags : [], requires : ["basis"], contains : ["dig", "place-rebar", "pour"]]
 ]
 
--- the atom with this id
+-- small helpers
 find : [want atoms-in | atoms-in keep [a | a id = want] first]
 pad : [s n | s length < n [pad [s .. " ", n]] else [s]]
 has : [xs want | xs keep [x | x = want] length > 0]
+join : [xs | xs fold ["", [s x | s = "" [x] else [s .. ", " .. x]]]]
 
--- derive: start from nothing and close whatever the graph allows, until nothing changes (a fixed point)
--- (written with and/or, not match: a case that gives false would fall through to the next one, decision 74)
+-- the narrative an atom still owes, if it has the tag and nothing written yet
+owes-story : [a | has [a tags, "narrative-required"] and ((a narrative else "") = "")]
+
+-- does this atom close, given the ids already done?
 closes : [a ok |
-  k : a kind
-  manual : k = "leaf" or (k = "verified")
   links-done : a requires .. (a contains) keep [x | has [ok, x] not] length = 0
-  k = "trivial" or (manual and (a closed) and (k = "leaf" or (a signed))) or (manual not and links-done)
+  match [a kind, [
+    "trivial", true
+    "leaf", a closed and (owes-story a not)
+    "verified", a closed and (a signed) and (owes-story a not)
+    any, links-done
+  ]]
 ]
+-- derive: start from nothing and close whatever the graph allows, until nothing changes (a fixed point)
 settle : [atoms-in ok |
   more : atoms-in keep [a | has [ok, a id] not and (closes [a, ok])] collect [a | a id]
   more length = 0 [ok] else [settle [atoms-in, ok .. more]]
 ]
 
--- a short report: done, workable now, and what each blocked atom waits on
+-- a short report: done, workable now, and what each open atom is waiting for
 report : [atoms-in title |
   done : settle [atoms-in, []]
   open : atoms-in keep [a | has [done, a id] not]
-  workable : open keep [a | a requires keep [x | has [done, x] not] length = 0 and (a kind = "leaf" or (a kind = "verified"))]
+  manual : [a | a kind = "leaf" or (a kind = "verified")]
+  workable : open keep [a | manual a and (a requires keep [x | has [done, x] not] length = 0) and (a closed not)]
   "== [title] ==" print
   "done      [done length] of [atoms-in length]" print
   atoms-in each [a |
-    mark : has [done, a id] ["\[x]"] else [has [workable collect [w | w id], a id] ["\[>]"] else ["\[ ]"]]
     waits : a requires .. (a contains) keep [x | has [done, x] not]
-    note : waits length > 0 ["waits on " .. (waits fold ["", [s x | s = "" [x] else [s .. ", " .. x]]])] else [""]
+    stuck : manual a and (a closed) and (has [done, a id] not)
+    mark : match [true, [
+      has [done, a id], "\[x]"
+      stuck, "\[!]"
+      has [workable collect [w | w id], a id], "\[>]"
+      any, "\[ ]"
+    ]]
+    note : cond [
+      stuck and (owes-story a), "closed, but needs a narrative"
+      stuck, "closed, but waiting for a witness to sign"
+      waits length > 0, "waits on " .. (join waits)
+      (a narrative else "") != "", "narrative: " .. (a narrative)
+      any, ""
+    ]
     "[mark] [pad [a kind, 9]] [pad [a name, 28]] [note]" print
   ]
-  "workable  " .. (workable collect [a | a id] fold ["", [s x | s = "" [x] else [s .. ", " .. x]]]) print
+  "workable  " .. (join (workable collect [a | a id])) print
   "pedestal  " .. (has [done, "pedestal"] ["done"] else ["open"]) print
+  "" print
 ]
+
+-- change some atoms by id, and derive again
+update-atoms : [atoms-in ids change | atoms-in collect [a | has [ids, a id] [a with change] else [a]]]
 
 report [atoms, "today"]
 
--- what if the rebar arrives and the engineer answers the RFI? Change two leaves, derive again.
-arrived : atoms collect [a | has [["rebar-on-site", "eng-reply"], a id] [a with [closed : true]] else [a]]
+arrived : update-atoms [atoms, ["rebar-on-site", "eng-reply"], [closed : true]]
 report [arrived, "rebar in, RFI answered"]
+
+-- the rebar is placed and the inspector signs, but nobody has written up the inspection yet
+signed : update-atoms [update-atoms [arrived, ["place-rebar"], [closed : true]], ["inspect"], [closed : true, signed : true]]
+report [signed, "inspected and signed, no write-up"]
+
+-- the write-up: a typed outcome first, then the detail
+written : update-atoms [signed, ["inspect"], [narrative : "nominal · splice lengths checked against the RFI answer"]]
+report [written, "inspection written up"]
 ````
 
 ## examples/ace-schedule.sp
@@ -3234,6 +3367,81 @@ range (last-day - first-day / 2 + 1 ceil) each [k |
   "day [pad [from str, 3]] [pad [n str, 4]] [bar (n / 4 ceil)]" print
 ]
 "chance of finishing by day [finish [last-atom, likely]]: " .. (finishes keep [f | f <= (finish [last-atom, likely])] length * 100 / runs round) .. "%" print
+
+-- ---------------------------------------------------------------------------------------------
+-- Cost is a view, not a property: crews times rates times time, plus materials and equipment.
+
+rate : 950                 -- dollars per person per day
+indirect-share : 0.15      -- site overheads, as a share of labour
+costs : [
+  [id : "permit", crew : 0, materials : 0, equipment : 0]
+  [id : "survey", crew : 2, materials : 0, equipment : 0]
+  [id : "dig", crew : 3, materials : 0, equipment : 9000]
+  [id : "rebar", crew : 0, materials : 38000, equipment : 0]
+  [id : "rfi", crew : 0, materials : 0, equipment : 0]
+  [id : "formwork", crew : 4, materials : 6500, equipment : 0]
+  [id : "place-rebar", crew : 5, materials : 0, equipment : 2500]
+  [id : "inspect", crew : 1, materials : 0, equipment : 0]
+  [id : "pour", crew : 6, materials : 21000, equipment : 4000]
+  [id : "cure", crew : 1, materials : 800, equipment : 0]
+]
+
+-- where the work actually stands on the status day, and what has been spent
+status-day : 10
+progress : [["permit", 1], ["survey", 1], ["dig", 1], ["rebar", 1], ["rfi", 1], ["formwork", 0.5], ["place-rebar", 0.25]]
+actual-cost : 84000
+
+sum : [xs | xs fold [0, [t x | t + x]]]
+pad3 : [n | n < 10 ["00" .. n] else [n < 100 ["0" .. n] else [n str]]]
+commas : [n | n < 1000 [n str] else [commas (n / 1000 floor) .. "," .. (pad3 (n % 1000))]]
+money : [n | "$" .. (commas (n round))]
+two : [r | r * 100 round / 100]
+
+ids : atoms collect [a | a id]
+cost-of : [want | costs keep [c | c id = want] first]
+labour-of : [want | c : cost-of want, c crew * ((find [want, likely]) days) * rate]
+budget-of : [want | c : cost-of want, labour-of want * (1 + indirect-share) + (c materials) + (c equipment)]
+
+labour : sum (ids collect labour-of)
+budget : sum (ids collect budget-of)
+"" print
+"== cost, worked out from the plan ==" print
+"labour     [pad [money labour, 10]] crews x days x [money rate]" print
+"indirect   [pad [money (labour * indirect-share), 10]] [indirect-share * 100]% of labour" print
+"materials  " .. (money (sum (costs collect [c | c materials]))) print
+"equipment  " .. (money (sum (costs collect [c | c equipment]))) print
+"budget     " .. (money budget) print
+
+-- planned value: how much of each atom's budget the likely plan says is earned by day d
+planned-share : [want d |
+  ef : finish [want, likely]
+  es : ef - ((find [want, likely]) days)
+  ef = es [d >= ef [1] else [0]] else [d - es / (ef - es) max 0 min 1]
+]
+planned-by : [d | sum (ids collect [x | planned-share [x, d] * (budget-of x)])]
+pv : planned-by status-day
+ev : sum (progress collect [p | p @ 2 * (budget-of (p @ 1))])
+spi : ev / pv
+cpi : ev / actual-cost
+
+"" print
+"== earned value on day [status-day] ==" print
+"planned    [pad [money pv, 10]] what the likely plan has done by now" print
+"earned     [pad [money ev, 10]] the budget of the work that is actually done" print
+"actual     [pad [money actual-cost, 10]] what has been spent" print
+"SPI [two spi]  " .. (spi < 1 ["behind schedule"] else ["on or ahead of schedule"]) print
+"CPI [two cpi]  " .. (cpi < 1 ["over budget"] else ["on or under budget"]) print
+"forecast at completion  " .. (money (budget / cpi)) .. "  (budget / CPI)" print
+
+"" print
+"== planned value over time, and where we are ==" print
+range 12 each [k |
+  d : k - 1 * 2
+  share : planned-by d / budget
+  here : d = status-day ["  < earned " .. (ev / budget * 100 round) .. "%"] else [""]
+  pct : (share * 100 round) .. "%"
+  "day [pad [d str, 3]] [pad [pct, 5]] [bar (share * 30 round)][here]" print
+]
 ````
 
 ## examples/ace-board.sp
@@ -3391,19 +3599,20 @@ ACE: positions are expressions over named dimensions, and overlaps are clashes
 ````sprout
 -- ACE site: positions are never stored. Each building's place is an expression over a few named dimensions.
 -- Drag left and right on the plan to change the reactor's diameter: everything that depends on it moves.
--- Two things can't share ground. An overlap is a clash, a negative constraint, shown in red.
--- Try changing gap, or a building's size, while it runs.
+-- Every rule is a constraint, and the panel shows each one passing or failing.
+-- "Must not" rules are clashes: two things can't share ground. "Must" rules are limits the design has to meet.
+-- Try Tweak on gap, or on a building's size, while it runs.
 
 gap : 15                  -- metres of road between buildings
 site-w : 140              -- the site, in metres
 site-h : 180
-scale : 2.4               -- pixels per metre
-ox : 12
-oy : 24
+scale : 2                 -- pixels per metre
+ox : 40
+oy : 26
 
 start :
   rb-d : 46               -- reactor building diameter, metres
-  clashes : 0
+  failing : 0
 
 -- the whole plan, worked out from the reactor diameter d
 plan : [d |
@@ -3414,32 +3623,38 @@ plan : [d |
   [reactor : rb, turbine : tb, service : sb, fuel : fb]
 ]
 
--- the negative constraints
+-- shapes
 overlap : [a b | a x < (b x + (b w)) and (b x < (a x + (a w))) and (a y < (b y + (b h))) and (b y < (a y + (a h)))]
-off-site : [a | a x < 0 or (a y < 0) or (a x + (a w) > site-w) or (a y + (a h) > site-h)]
+on-site : [a | a x >= 0 and (a y >= 0) and (a x + (a w) <= site-w) and (a y + (a h) <= site-h)]
 round-overlap : [c b |
   nx : c x max (b x) min (b x + (b w))
   ny : c y max (b y) min (b y + (b h))
   dist [c x, c y, nx, ny] < (c r)
 ]
-clash-list : [p |
+centre-gap : [c b | dist [c x, c y, b x + (b w / 2), b y + (b h / 2)]]
+
+-- every rule is a constraint: a name, the buildings it's about, and whether it holds
+constraints : [p |
   [
-    ["turbine hall", "fuel bay", overlap [p turbine, p fuel]]
-    ["service building", "fuel bay", overlap [p service, p fuel]]
-    ["reactor", "fuel bay", round-overlap [p reactor, p fuel]]
-    ["turbine hall", "site edge", off-site (p turbine)]
-    ["service building", "site edge", off-site (p service)]
-  ] keep [c | c @ 3]
+    [name : "reactor clear of the fuel bay", about : ["reactor", "fuel bay"], kind : "must not", holds : round-overlap [p reactor, p fuel] not]
+    [name : "turbine hall clear of the fuel bay", about : ["turbine hall", "fuel bay"], kind : "must not", holds : overlap [p turbine, p fuel] not]
+    [name : "service building clear of the fuel bay", about : ["service building", "fuel bay"], kind : "must not", holds : overlap [p service, p fuel] not]
+    [name : "turbine hall inside the site", about : ["turbine hall"], kind : "must not", holds : on-site (p turbine)]
+    [name : "cable run under 65 m", about : ["reactor", "turbine hall"], kind : "must", holds : centre-gap [p reactor, p turbine] < 65]
+    [name : "fire road at least 12 m wide", about : [], kind : "must", holds : gap >= 12]
+    [name : "reactor at least 36 m across", about : ["reactor"], kind : "must", holds : p reactor r * 2 >= 36]
+  ]
 ]
+fails : [p | constraints p keep [c | c holds not]]
 
 update : [g |
   i : g input
-  d : i touching [i touch-x / W * 40 + 30 round] else [g rb-d]
-  n : clash-list (plan d) length
-  n > (g clashes)
+  d : i touching [i touch-x / W * 40 + 25 round] else [g rb-d]
+  n : fails (plan d) length
+  n > (g failing)
     beep [140, 0.2]
     shake 4
-  g with [rb-d : d, clashes : n]
+  g with [rb-d : d, failing : n]
 ]
 
 -- metres to pixels
@@ -3448,34 +3663,173 @@ py : [m | m * scale + oy]
 
 draw : [g |
   p : plan (g rb-d)
-  hits : clash-list p
-  in-clash : [name | hits keep [c | c @ 1 = name or (c @ 2 = name)] length > 0]
-  fill : [name normal | in-clash name ["#5a1f24"] else [normal]]
+  all : constraints p
+  bad : fails p
+  in-trouble : [name | bad keep [c | c about keep [x | x = name] length > 0] length > 0]
+  fill : [name normal | in-trouble name ["#5a1f24"] else [normal]]
   box : [b name normal note |
-    rect [px (b x), py (b y), b w * scale, b h * scale, in-clash name ["#ff6b6b"] else ["#4a5a52"]]
+    rect [px (b x), py (b y), b w * scale, b h * scale, in-trouble name ["#ff6b6b"] else ["#4a5a52"]]
     rect [px (b x) + 1, py (b y) + 1, b w * scale - 2, b h * scale - 2, fill [name, normal]]
-    text [name, px (b x + (b w / 2)), py (b y + (b h / 2)) - 6, 11, "#e8f3e9"]
-    text [note, px (b x + (b w / 2)), py (b y + (b h / 2)) + 8, 9, "#7d968a"]
+    text [name, px (b x + (b w / 2)), py (b y + (b h / 2)) - 5, 10, "#e8f3e9"]
+    text [note, px (b x + (b w / 2)), py (b y + (b h / 2)) + 7, 8, "#7d968a"]
   ]
   rb : p reactor
+  tb : p turbine
 
   clear "#0b0f0d"
-  rect [px 0, py 0, site-w * scale, site-h * scale, "#4a5a52"]
+  text ["ACE site  ·  drag to resize the reactor", W / 2, 12, 12, "#e8f3e9"]
+  rect [px 0, py 0, site-w * scale, site-h * scale, in-trouble "turbine hall" and (on-site tb not) ["#ff6b6b"] else ["#4a5a52"]]
   rect [px 0 + 1, py 0 + 1, site-w * scale - 2, site-h * scale - 2, "#101814"]
 
+  -- the cable run: a line from the reactor's centre to the turbine hall's
+  line [px (rb x), py (rb y), px (tb x + (tb w / 2)), py (tb y + (tb h / 2)), in-trouble "turbine hall" ["#ff6b6b"] else ["#2f6b3a"]]
+
   box [p fuel, "fuel bay", "#1d2a36", "existing, fixed"]
-  box [p turbine, "turbine hall", "#1c2a22", "x = reactor + gap"]
+  box [tb, "turbine hall", "#1c2a22", "x = reactor + gap"]
   box [p service, "service building", "#1c2a22", "y = reactor + gap"]
-  circle [px (rb x), py (rb y), rb r * scale, in-clash "reactor" ["#ff6b6b"] else ["#6f9f80"]]
+  circle [px (rb x), py (rb y), rb r * scale, in-trouble "reactor" ["#ff6b6b"] else ["#6f9f80"]]
   circle [px (rb x), py (rb y), rb r * scale - 2, fill ["reactor", "#18301f"]]
   line [px (rb x - (rb r)), py (rb y), px (rb x + (rb r)), py (rb y), "#8ef08e"]
-  text ["reactor  Ø [g rb-d] m", px (rb x), py (rb y) - 10, 12, "#c8f5c8"]
+  text ["reactor Ø [g rb-d] m", px (rb x), py (rb y) - 9, 10, "#c8f5c8"]
 
-  text ["ACE site  ·  drag to resize the reactor", W / 2, 12, 13, "#e8f3e9"]
-  hits length = 0
-    text ["no clashes", W / 2, H - 10, 13, "#8ef08e"]
-  hits length > 0
-    text ["clash: " .. (hits collect [c | c @ 1 .. " / " .. (c @ 2)] fold ["", [s x | s = "" [x] else [s .. ", " .. x]]]), W / 2, H - 10, 11, "#ff6b6b"]
+  -- the constraint panel
+  text ["[all length - (bad length)] of [all length] constraints hold", W / 2, 398, 11, bad length = 0 ["#8ef08e"] else ["#ff9e7a"]]
+  range (all length) each [n |
+    c : all @ n
+    text [(c holds ["ok   "] else ["FAIL "]) .. (c kind) .. ": " .. (c name), W / 2, 404 + (n * 10), 9, c holds ["#6f9f80"] else ["#ff6b6b"]]
+  ]
+]
+````
+
+## examples/ace-crews.sp
+
+ACE: sequence and capacity constraints; work waits for what it requires and for a free crew of its trade
+
+````sprout
+-- ACE crews: two kinds of constraint, one link.
+-- A sequence constraint points at an atom: pour requires rebar.
+-- A capacity constraint points at a query: any idle crew of the right trade.
+-- Each day, every idle crew takes the first ready work of its trade. Tap a crew to send it home,
+-- or bring it back, and watch the work that needs it wait. Tap the top to start again.
+
+work : [
+  [id : "excavate", trade : "civil", days : 3, requires : []]
+  [id : "piles", trade : "civil", days : 4, requires : ["excavate"]]
+  [id : "conduit", trade : "elec", days : 3, requires : ["excavate"]]
+  [id : "grounding", trade : "elec", days : 2, requires : ["excavate"]]
+  [id : "formwork", trade : "civil", days : 3, requires : ["piles"]]
+  [id : "rebar", trade : "iron", days : 4, requires : ["piles"]]
+  [id : "embeds", trade : "elec", days : 2, requires : ["rebar"]]
+  [id : "pour", trade : "civil", days : 1, requires : ["formwork", "rebar", "embeds"]]
+  [id : "columns", trade : "iron", days : 5, requires : ["pour"]]
+  [id : "cable-tray", trade : "elec", days : 3, requires : ["columns"]]
+]
+crews-at-start : [
+  [id : "civil 1", trade : "civil", on : true]
+  [id : "civil 2", trade : "civil", on : true]
+  [id : "iron 1", trade : "iron", on : true]
+  [id : "elec 1", trade : "elec", on : true]
+]
+day-length : 0.45          -- seconds per day
+colours : [civil : "#c99a5b", iron : "#7aa2d6", elec : "#d9b84a"]
+
+start :
+  packages : work collect [w | w with [status : "waiting", crew : "", begun : 0, left : 0, ended : 0]]
+  crews : crews-at-start
+  day : 0
+
+has : [xs want | xs keep [x | x = want] length > 0]
+join : [xs | xs fold ["", [s x | s = "" [x] else [s .. ", " .. x]]]]
+an : [word | match [word @ 1, ["a", "an ", "e", "an ", "i", "an ", "o", "an ", "u", "an ", any, "a "]] .. word]
+
+-- one day on site
+step : [g |
+  today : g day + 1
+  -- work in hand moves on a day; anything with no days left is done
+  worked : g packages collect [p |
+    p status = "working" [p with [left : p left - 1]] else [p]
+  ]
+  finished : worked collect [p |
+    p status = "working" and (p left <= 0) [p with [status : "done", ended : today]] else [p]
+  ]
+  done-ids : finished keep [p | p status = "done"] collect [p | p id]
+  -- the capacity constraint: a crew is free when it's on site and holds no work
+  busy : finished keep [p | p status = "working"] collect [p | p crew]
+  free : g crews keep [c | c on and (has [busy, c id] not)]
+  -- each free crew takes the first waiting work of its trade whose requirements are done
+  ready : [p | p status = "waiting" and (p requires keep [r | has [done-ids, r] not] length = 0)]
+  assigned : free fold [finished, [ps c |
+    pick : ps keep [p | ready p and (p trade = (c trade))] first
+    pick = false [ps] else [
+      ps collect [p | p id = (pick id) [p with [status : "working", crew : c id, begun : today, left : p days]] else [p]]
+    ]
+  ]]
+  g with [packages : assigned, day : today]
+]
+
+-- tapping a crew sends it home, or brings it back
+chip-x : [n | n - 1 * 86 + 8]
+toggle : [g i |
+  hit : range (g crews length) keep [n | i touch-x > (chip-x n) and (i touch-x < (chip-x n + 80)) and (i touch-y > 420) and (i touch-y < 460)] first
+  hit = false [g] else [
+    g with [crews : range (g crews length) collect [n | n = hit [g crews @ n with [on : g crews @ n on not]] else [g crews @ n]]]
+  ]
+]
+
+update : [g |
+  i : g input
+  all-done : g packages keep [p | p status != "done"] length = 0
+  tapped-top : i tapped and (i touch-y < 50)
+  tapped-crew : i tapped and (i touch-y > 410)
+  tapped-crew
+    beep [520, 0.05]
+  cond [
+    tapped-top, start
+    tapped-crew, toggle [g, i]
+    all-done not and (every [day-length, g clock, g dt]), step g
+    any, g
+  ]
+]
+
+px : [d | d * 8 + 100]
+row-y : [n | n * 30 + 46]
+
+draw : [g |
+  ps : g packages
+  done-ids : ps keep [p | p status = "done"] collect [p | p id]
+  busy : ps keep [p | p status = "working"] collect [p | p crew]
+  trade-on : [t | g crews keep [c | c trade = t and (c on)] length > 0]
+  clear "#0e1311"
+  text ["ACE crews · day [g day] · [done-ids length] of [ps length] done", W / 2, 20, 13, "#e8f3e9"]
+
+  -- days along the top, and today
+  range 8 each [k | text ["[k - 1 * 4]", px (k - 1 * 4), 40, 9, "#5f7a6c"]]
+  line [px (g day), 44, px (g day), 360, rgba [255, 209, 102, 0.6]]
+
+  range (ps length) each [n |
+    p : ps @ n
+    y : row-y n
+    text [p id, 48, y + 10, 11, p status = "done" ["#8ef08e"] else ["#d6e2d9"]]
+    waiting : p requires keep [r | has [done-ids, r] not]
+    p status = "waiting"
+      text [waiting length > 0 ["waits on " .. (join waiting)] else [trade-on (p trade) ["waiting for a free " .. (p trade) .. " crew"] else ["needs " .. (an (p trade)) .. " crew"]], 230, y + 10, 9, waiting length > 0 ["#5f7a6c"] else ["#ff9e7a"]]
+    p status = "working"
+      rect [px (p begun - 1), y + 3, p days - (p left) * 8 + 2, 14, colours (p trade)]
+      rect [px (p begun - 1 + (p days - (p left))), y + 3, p left * 8, 14, rgba [255, 255, 255, 0.12]]
+    p status = "done"
+      rect [px (p begun - 1), y + 3, p days * 8, 14, colours (p trade)]
+  ]
+
+  -- the crews: tap one to send it home
+  range (g crews length) each [n |
+    c : g crews @ n
+    job : ps keep [p | p status = "working" and (p crew = (c id))] collect [p | p id]
+    rect [chip-x n, 420, 80, 40, c on [colours (c trade)] else ["#2a332e"]]
+    rect [chip-x n + 2, 422, 76, 36, "#141b17"]
+    text [c id, chip-x n + 40, 433, 11, c on ["#e8f3e9"] else ["#5f7a6c"]]
+    text [c on [job length > 0 [job @ 1] else ["idle"]] else ["sent home"], chip-x n + 40, 448, 9, c on ["#a8b8ae"] else ["#5f7a6c"]]
+  ]
+  text ["tap a crew to send it home · tap the top to start again", W / 2, 472, 9, "#5f7a6c"]
 ]
 ````
 
@@ -3610,6 +3964,14 @@ body.prog #noGame{display:flex}
 .seg button{padding:5px 14px;border-radius:7px;font-size:13px;font-weight:500;color:var(--fg2)}
 .seg button.on{background:var(--card);color:var(--fg);box-shadow:0 1px 3px rgba(0,0,0,.12)}
 .seg i{font-style:normal;font-size:11px;background:var(--acc);color:#fff;border-radius:999px;padding:0 6px;margin-left:5px}
+#segrow{display:flex;align-items:center;gap:10px;margin-bottom:10px}#segrow .seg{margin-bottom:0}
+.twk{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border-radius:999px;font-size:13px;font-weight:500;color:var(--fg2);background:rgba(127,120,100,.12)}
+.twk svg{width:14px;height:14px;fill:currentColor}.twk.on{background:var(--acc);color:#fff}
+body.t-st .twk,body.t-out .twk{visibility:hidden}
+body.tweak #hl .n{border-bottom:1.5px dotted currentColor;border-radius:0}body.tweak #ta{cursor:ew-resize;touch-action:pan-y}
+body.tweak #keys{display:none!important}
+body.scrubbing,body.scrubbing *{cursor:ew-resize!important;user-select:none!important}
+#scrubTip{position:fixed;z-index:40;pointer-events:none;background:var(--fg);color:var(--bg);font:600 12px var(--mono);padding:3px 8px;border-radius:6px;display:none;transform:translate(-50%,-140%)}
 #card{position:relative;flex:1;min-height:0;background:var(--card);border-radius:14px;box-shadow:var(--shadow);overflow:hidden;display:flex;flex-direction:column}
 #err{display:none;align-items:flex-start;gap:10px;margin:10px 10px 0;padding:9px 12px;border-radius:10px;background:var(--badbg);color:var(--bad);font-size:13px;cursor:pointer}
 #err.on{display:flex}#err b{font-weight:600}#err span{flex:1}#err u{text-decoration:none;font-weight:600;white-space:nowrap}
@@ -3700,7 +4062,7 @@ body.t-out #out{display:block}body.t-st #st{display:block}
  #detail{display:contents}
  #head{grid-row:1;display:flex;flex-direction:column}
  #artcol{grid-row:2}
- .seg{grid-row:3;margin:0;justify-self:start}
+ #segrow{grid-row:3;margin:0}
  #card{grid-row:4}
  #title{font-size:24px;margin:0}#desc{display:none}#meta{margin-top:0}
  .acts{margin:8px 0 0;gap:8px}.pill{height:30px;padding:0 12px;font-size:13px}
@@ -3739,7 +4101,8 @@ body.t-out #out{display:block}body.t-st #st{display:block}
     <button class="pill" id="bSpec">Spec</button>
    </div>
   </div>
-  <div class="seg" id="tabs"><button class="on" data-t="code">Code</button><button data-t="st">State</button><button data-t="out">Output<i id="outN" hidden></i></button></div>
+  <div id="segrow"><div class="seg" id="tabs"><button class="on" data-t="code">Code</button><button data-t="st">State</button><button data-t="out">Output<i id="outN" hidden></i></button></div>
+   <button class="twk" id="bTweak" title="Drag numbers to change them while it runs (or hold Alt and drag)"><svg viewBox="0 0 16 16"><path d="M1 8l3-3v2h8V5l3 3-3 3V9H4v2z"/></svg>Tweak</button></div>
   <div id="card">
    <div id="err"><span></span><u>Go to line</u></div>
    <div id="ed"><div class="mark" id="live"></div><div class="mark" id="errl"></div><div id="gut"></div><pre id="hl"></pre><textarea id="ta" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" aria-label="Code"></textarea></div>
@@ -3764,13 +4127,13 @@ body.t-out #out{display:block}body.t-st #st{display:block}
 </footer>
 </div>
 <div id="modal"><div id="mBox"><div class="mh"><h2 id="mTitle"></h2><button class="x" data-close aria-label="Close">✕</button></div><div id="mBody"></div></div></div>
-<div id="toast"></div>
+<div id="toast"></div><div id="scrubTip"></div>
 
-<script src="sprout3.js?v=20261119f"></script>
-<script src="live3.js?v=20261119f"></script>
+<script src="sprout3.js?v=20261119h"></script>
+<script src="live3.js?v=20261119h"></script>
 <script>
 "use strict";
-const V="20261119f";
+const V="20261119h";
 const $=id=>document.getElementById(id);
 const S=window.Sprout3,L=window.Sprout3Live;
 const GW=360,GH=480;
@@ -3782,6 +4145,7 @@ const EX=[
  ["ace-board","ace","ACE Board","Tap work to close it. Gates, the rollup and the critical path follow, because done is derived from the graph, never stored."],
  ["ace-site","ace","ACE Site","Positions are expressions over named dimensions. Grow the reactor and watch the buildings move, and clash."],
  ["ace-schedule","ace","ACE Schedule","The critical path on likely durations, then a Monte Carlo finish date. The plan is a distribution, not a date."],
+ ["ace-crews","ace","ACE Crews","Sequence and capacity: work waits for what it requires, and for a free crew of its trade. Send a crew home and watch the slab slip."],
  ["ace-derive","ace","ACE Derive","The five kinds of atom, and done worked out to a fixed point."],
  ["sprout","game","Sprout","Catch the rain, dodge the bugs. The demo game."],
  ["fireflies","game","Fireflies","Four hundred lights on the night air. Hold a finger down and they gather to it."],
@@ -3976,6 +4340,31 @@ const KEYBAR=[":","[","]","(",")","|",'"',",","!","..","+","-","*","/","<",">","
 $("keys").innerHTML=KEYBAR.map(k=>'<button data-k="'+esc(k)+'">'+esc(k)+"</button>").join("");
 $("keys").addEventListener("pointerdown",e=>{const b=e.target.closest("button");if(!b)return;e.preventDefault();const k=b.dataset.k;insertText(k==="⇥"?"  ":k===":"?" : ":k==="|"?" | ":k)});
 
+// ---------- drag a number to change it: Alt-drag anywhere, or turn on Tweak (made for phones)
+let TWEAK=false,scrub=null,cwCache=0;
+function charW(){if(!cwCache){const c=document.createElement("canvas").getContext("2d");c.font=getComputedStyle(ta).font;cwCache=c.measureText("0000000000").width/10}return cwCache}
+// the number token under the pointer, if any: not in a comment, not in a string
+function numAt(e){const r=ta.getBoundingClientRect(),cs=getComputedStyle(ta);
+ const col=Math.floor((e.clientX-r.left-parseFloat(cs.paddingLeft)+ta.scrollLeft)/charW()),line=Math.floor((e.clientY-r.top-parseFloat(cs.paddingTop)+ta.scrollTop)/LH());
+ const lines=code.split("\n");if(line<0||line>=lines.length)return null;const s=lines[line];if(col<0||col>=s.length)return null;
+ const stop=' \t[](),|:"';if(stop.includes(s[col]))return null;
+ let a=col,b=col;while(a>0&&!stop.includes(s[a-1]))a--;while(b<s.length&&!stop.includes(s[b]))b++;
+ const w=s.slice(a,b);if(!/^-?\d+(\.\d+)?$/.test(w))return null;
+ const pre=s.slice(0,a);if((pre.match(/"/g)||[]).length%2)return null;if(/--/.test(pre.replace(/"[^"]*"/g,"")))return null;
+ let off=0;for(let i=0;i<line;i++)off+=lines[i].length+1;return {start:off+a,len:b-a,text:w}}
+function setTweak(on){TWEAK=on;document.body.classList.toggle("tweak",on);$("bTweak").classList.toggle("on",on);ta.readOnly=on;if(on){ta.blur();toast("Drag a number left or right to change it")}}
+$("bTweak").onclick=()=>setTweak(!TWEAK);
+ta.addEventListener("pointerdown",e=>{if(!(TWEAK||e.altKey))return;const n=numAt(e);if(!n)return;e.preventDefault();try{ta.setPointerCapture(e.pointerId)}catch(_){}
+ scrub={...n,x0:e.clientX,v0:parseFloat(n.text),dec:(n.text.split(".")[1]||"").length,id:e.pointerId,moved:false};document.body.classList.add("scrubbing");tipAt(e,n.text)});
+function tipAt(e,t){const tip=$("scrubTip");tip.textContent=t;tip.style.left=e.clientX+"px";tip.style.top=e.clientY+"px";tip.style.display="block"}
+ta.addEventListener("pointermove",e=>{if(!scrub||e.pointerId!==scrub.id)return;e.preventDefault();const dx=e.clientX-scrub.x0;if(Math.abs(dx)>3)scrub.moved=true;
+ const step=scrub.dec?Math.pow(10,-scrub.dec):(Math.abs(scrub.v0)>=100?2:1),v=scrub.v0+Math.round(dx/6)*step,t=scrub.dec?v.toFixed(scrub.dec):String(Math.round(v));
+ tipAt(e,t);if(t===code.substr(scrub.start,scrub.len))return;
+ const st=ta.scrollTop,sl=ta.scrollLeft;code=code.slice(0,scrub.start)+t+code.slice(scrub.start+scrub.len);scrub.len=t.length;ta.value=code;ta.scrollTop=st;ta.scrollLeft=sl;
+ if(!dirty){dirty=true;headUI()}render();if(build(code))renderState()});
+const endScrub=e=>{if(!scrub)return;const was=scrub;scrub=null;document.body.classList.remove("scrubbing");$("scrubTip").style.display="none";queueSave();if(was.moved)flashLive(code)};
+ta.addEventListener("pointerup",endScrub);ta.addEventListener("pointercancel",endScrub);
+
 // ---------- the state view: every field of the game right now
 function brief(v){if(S.isCell(v)&&!(v instanceof S.Cell&&v.takesInput())){const n=v.count();if(n>6)return n+" parts";const s=S.fmt(v);return s.length>140?s.slice(0,140)+"…]":s}const s=S.fmt(v);return s.length>140?s.slice(0,140)+"…":s}
 function renderState(){const el=$("st");
@@ -4026,6 +4415,7 @@ Object.assign(ART,LS.get(ART_KEY,{}));
 const SCRIPT={
  "ace-board":g=>{for(const [x,y] of [[178,144],[60,144]]){g.down(x,y);g.tick(1/60);g.up();g.tick(1/60)}},
  "ace-site":g=>{g.tick(1/60);g.down(250,240);g.tick(1/60);g.up();g.tick(1/60)},
+ "ace-crews":g=>{for(let t=0;t<200;t++)g.tick(1/20)},
  fireflies:g=>{for(let t=0;t<120;t++)g.tick(1/60);g.down(180,250);for(let t=0;t<150;t++)g.tick(1/60)},
  orbit:g=>{const fling=(x,y,x2,y2)=>{g.down(x,y);g.tick(1/60);for(let k=1;k<=8;k++){g.move(x+(x2-x)*k/8,y+(y2-y)*k/8);g.tick(1/60)}g.up();g.tick(1/60)};fling(180,120,132,120);for(let t=0;t<80;t++)g.tick(1/60);fling(180,330,230,330);for(let t=0;t<70;t++)g.tick(1/60)},
  sprout:g=>{g.down(150,300);for(let t=0;t<150;t++){g.move(120+60*Math.sin(t/20),300);g.tick(1/60)}g.up()},
