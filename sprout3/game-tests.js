@@ -147,6 +147,41 @@ const f = (g, k) => g.state.field(k);
   ok("recipes: every answer", JSON.stringify(lines) === JSON.stringify(want), lines);
 }
 
+// ---------------- ACE (the Atomic Constraint Engine) examples
+{
+  const printed = name => { const lines = []; S.setOut(x => lines.push(x)); S.load(fs.readFileSync(__dirname + "/examples/" + name + ".sp", "utf8")).run(S.BANG); S.setOut(() => {}); return lines; };
+  const d = printed("ace-derive");
+  ok("ace-derive: done is derived, 4 of 11 today", d.includes("done      4 of 11") && d.some(l => l.startsWith("[ ] gate      RFI: splice length") && l.endsWith("waits on eng-reply")));
+  ok("ace-derive: the gate closes itself once the reply is in", d.includes("workable  rebar-on-site, eng-reply") && d.includes("workable  place-rebar") && d.includes("done      7 of 11"), d.filter(l => l.startsWith("workable")));
+  const sc = printed("ace-schedule");
+  ok("ace-schedule: the critical path", sc.includes("finish on day 21, through rebar > place-rebar > inspect > pour > cure"), sc.find(l => l.startsWith("finish")));
+  const p = sc.find(l => l.startsWith("P10")), nums = (p || "").match(/\d+/g).map(Number);
+  ok("ace-schedule: monte carlo percentiles in order, and later than the likely plan", nums.length === 8 && nums[1] >= 21 && nums[1] <= nums[3] && nums[3] <= nums[5] && nums[5] <= nums[7] && nums[3] > 21, p);
+
+  const src = fs.readFileSync(__dirname + "/examples/ace-board.sp", "utf8"), AT = S.partsOf(S.load(src).field("atoms"));
+  const fx = [], b = L.makeGame(src, { onEffect: e => fx.push(e[0]) });
+  const tapOn = id => { const a = AT.find(r => r.field("id") === id); b.down(a.field("x") + 50, a.field("y") + 18); b.tick(1 / 60); b.up(); b.tick(1 / 60); return f(b, "msg"); };
+  const header = () => { const t = b.draw().filter(x => x[0] === "text"); return t[t.length - 3][1][0]; };
+  b.tick(1 / 60);
+  ok("ace-board: starts 3 of 11 done, 14 days of work", header() === "ACE  3/11 done  ·  14d of work left", header());
+  ok("ace-board: blocked work can't be closed", tapOn("place") === "place rebar waits on dig, rebar, rfi" && fx.includes("shake"));
+  ok("ace-board: a gate isn't tapped", tapOn("rfi") === "RFI: splice is a gate: it closes by itself");
+  for (const id of ["dig", "rebar", "reply", "place"]) tapOn(id);
+  ok("ace-board: verified needs the work and then a witness", tapOn("inspect") === "inspection done: now tap again to sign" && tapOn("inspect") === "inspection signed by the witness");
+  tapOn("forms"); tapOn("pour");
+  ok("ace-board: everything done, nothing left", header() === "ACE  11/11 done  ·  0d of work left", header());
+  tapOn("dig");
+  ok("ace-board: reopening upstream work reopens what depends on it", /^ACE  \d\/11 done/.test(header()) && !header().startsWith("ACE  11/11"), header());
+
+  const fx2 = [], st = L.makeGame(fs.readFileSync(__dirname + "/examples/ace-site.sp", "utf8"), { onEffect: e => fx2.push(e[0]) });
+  const size = x => { st.down(x, 200); st.tick(1 / 60); st.up(); st.tick(1 / 60); return [f(st, "rb-d"), f(st, "clashes")]; };
+  st.tick(1 / 60);
+  ok("ace-site: no clashes at 46 m", f(st, "clashes") === 0);
+  ok("ace-site: a bigger reactor pushes the service building into the fuel bay", JSON.stringify(size(250)) === "[58,1]" && fx2.includes("shake"), size(250));
+  ok("ace-site: and the turbine hall off the site", JSON.stringify(size(300)) === "[63,2]");
+  ok("ace-site: shrinking clears them", JSON.stringify(size(0)) === "[30,0]");
+}
+
 const errs = logs.filter(m => !/doesn't know input/.test(m));
 ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
 console.log(pass + " passed, " + fail + " failed");
