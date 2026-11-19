@@ -1,0 +1,109 @@
+// Sprout 3 tests: node test.js
+const S = require("./sprout3.js"), L = require("./live3.js"), fs = require("fs");
+let pass = 0, fail = 0;
+const ok = (name, cond) => { if (cond) pass++; else { fail++; console.log("FAIL", name); } };
+const logs = []; S.setLog(m => logs.push(m));
+const out = []; S.setOut(s => out.push(s));
+const run = src => { out.length = 0; S.load(src).run(S.BANG); return out.slice(); };
+const val = src => S.fmt(S.load("result : " + src).field("result"));
+
+// the tour gives exactly these lines
+const want = ["1","1","480","20","true","7","7","3","42","long","anon","[x : 1, y : 5]","[3, 1, 4, 9]","n=4","p is at 1, 2",
+  "[30, 10, 40]","[3, 4]","8","hi","hi","hi","tapped","11","hello","true","true","false","6765"];
+const got = run(fs.readFileSync(__dirname + "/examples/tour.sp", "utf8"));
+ok("tour", JSON.stringify(got) === JSON.stringify(want));
+if (JSON.stringify(got) !== JSON.stringify(want)) console.log(got);
+
+// one decision per line
+ok("1 -- only comments", val("1 -- note") === "1");
+ok("' is a word character", val("[don't : 5] don't") === "5");
+ok("-2 is a number", val("3 + -2") === "1");
+ok("9 left to right", val("2 + 3 * 4") === "20");
+ok("8 ( ) groups", val("2 + (3 * 4)") === "14");
+ok("F @ reads a part", val("[3, 1, 4] @ 3") === "4");
+ok("F a number is input, not index", val("[3, 1, 4] 2") === "4");
+ok("71 [[x]] holds a cell", val("[[1, 2]] @ 1") === "[1, 2]");
+ok("71 a branch can give back a record", val("true [[x : 1]] else [7]") === "[x : 1]");
+ok("60 [x | [..]] keeps the inner cell", val("([x | [a : x]] 5) a") === "5");
+ok("51 lazy once", S.fmt(S.load("r : [rand [0, 1000]]\nresult : (r @ 1) = (r @ 1)").field("result")) === "true");
+ok("51 run is fresh", val("([] .. [1]) @ 1") === "1");
+ok("81 template [ ]", val('"a[1 + 1]b"') === "a2b");
+ok("81 ( ) is plain text", val('"rgba(0,0,0,0.5)"') === "rgba(0,0,0,0.5)");
+ok("81 escaped bracket", val('"a\\[b]"') === "a[b]");
+ok("15 by position", val("[x y | x - y] [5, 2]") === "3");
+ok("15 by name", val("[x y | x - y] [y : 2, x : 5]") === "3");
+ok("19 one name takes the cell", val("[xs | xs length] [1, 2, 3]") === "3");
+ok("20 missing is false", val("[x y | y] [1]") === "false");
+ok("21 defaults", val("[x y : 10 | x + y] [1]") === "11");
+ok("69 ! fills defaults", val("[x : 1, y : 2 | x + y] !") === "3");
+ok("22 equal contents", val("[1, [2, 3]] = [1, [2, 3]]") === "true");
+ok("72 records compare by value", val("[x : 1 + 1, y : 2] = [x : 2, y : 2]") === "true" && val("[random] = [random]") === "false");
+ok("23 cells that take input compare by code", val("[n | n + 1] = [n | n + 1]") === "true" && val("[n | n + 1] = [n | n + 2]") === "false");
+ok("24 names filled in", val("(([x | [y | x + y]] 1) = ([x | [y | x + y]] 2))") === "false");
+ok("26 booleans only", val("3 [\"yes\"]") === "false");
+ok("28 miss gives false", val("5 frobnicate") === "false");
+ok("36/37 operator on a cell", S.fmt(S.load("v : [+ : [right | left with [n : left n + (right n)]]]\na : v with [n : 2]\nb : v with [n : 5]\nresult : a + b n").field("result")) === "7");
+ok("38/52 method runs on read", S.fmt(S.load("r : [w : 3, h : 4, area : [left w * (left h)]]\nresult : r area").field("result")) === "12");
+ok("52 a value cell comes back", S.fmt(S.load("g : [ball : [x : 1]]\nresult : g ball x").field("result")) === "1");
+ok("41/42 .. joins", val('"a" .. "b" .. 3') === "ab3" && val("[1] .. [2, 3]") === "[1, 2, 3]");
+ok("45 with merges fields", val("[x : 1, y : 2] with [y : 9]") === "[x : 1, y : 9]");
+ok("46 else", val("false else 7") === "7" && val("4 else 7") === "4");
+ok("62 a boolean runs a cell", val("1 < 2 [\"a\"] else [\"b\"]") === "a" && val("1 > 2 [\"a\"] else [\"b\"]") === "b");
+ok("62 catch: then gives false", val("true [false] else [\"b\"]") === "b");
+ok("35 match", val('match [2, [1, "one", 2, "two", any, "many"]]') === "two" && val('match [9, [1, "one", any, "many"]]') === "many");
+ok("55 collect keep fold", val("range 5 collect [n | n * n] keep [n | n > 4] fold [0, [t n | t + n]]") === "50");
+ok("29 times", run("3 times [_ print]").join() === "1,2,3");
+ok("59 indent is a cell", S.fmt(S.load("box :\n  w : 3\n  h : 4\nresult : box h").field("result")) === "4");
+ok("61 named inputs with an indented body", S.fmt(S.load("f : [n |\n  m : n * 2\n  m + 1\n]\nresult : f 5").field("result")) === "11");
+ok("25 self-recursion and tail calls", S.fmt(S.load("count : [n acc | n = 0 [acc] else [count [n - 1, acc + n]]]\nresult : count [100000, 0]").field("result")) === "5000050000");
+ok("13 bound twice is an error", (() => { try { S.load("a : 1\na : 2"); return false; } catch (e) { return /bound twice/.test(e.message); } })());
+ok("50 every and wave", val("every [0.5, 1.0, 0.1]") === "true" && val("every [0.5, 0.9, 0.1]") === "false");
+
+// voice-call decisions (73-78)
+logs.length = 0; S.load("x : 1\np : [x : 5]\nresult : p x").field("result");
+ok("73 a field/name clash is loud", logs.some(m => /"x" is both a field here and a name in scope/.test(m)));
+ok("75 a cell that takes input still has readable fields", val("[n | doc : \"doubles\", n * 2] doc") === "doubles");
+ok("75 a binding that uses the input is a local", val("[n | m : n * 2, m + 1] m") === "false");
+ok("75 its body still runs", val("[n | doc : \"doubles\", n * 2] 21") === "42");
+logs.length = 0; S.load("a : 1\nb : 2\nresult : true [false] else [1]");
+ok("74 a false then-branch before else is flagged", logs.some(m => /gives false before else/.test(m)));
+ok("76 colour cells", val("rgba [0, 0, 0, 0.5]") === "rgba(0,0,0,0.5)" && val("rgb [255, 0, 0]") === "rgb(255,0,0)");
+ok("77 cond", val('cond [1 > 2, "a", 2 > 1, "b", any, "c"]') === "b" && val('cond [1 > 2, "a"]') === "false");
+ok("77 take", val("take [[5, 6, 7], 2]") === "[5, 6]" && val("take [[5], 9]") === "[5]");
+ok("35 match with no match gives false", val('match [9, [1, "one"]]') === "false");
+{
+  const { sqliteCell } = require("./sqlite-host.js");
+  process.removeAllListeners("warning");
+  const db = sqliteCell(":memory:");
+  db.raw.exec("create table atoms(id integer, zone integer, hours real); insert into atoms values (1, 3, 8), (2, 3, 4), (3, 5, 2);");
+  S.G.db = db;
+  ok("78 sqlite reads give cells", S.fmt(S.load('result : db query ["select hours from atoms where zone = ?", [3]] collect [r | r hours] fold [0, [t h | t + h]]').field("result")) === "12");
+  const c = S.load('w : [db run ["insert into atoms values (?, ?, ?)", [4, 9, 1]]]');
+  S.queueEffects(); c.field("w").run(S.BANG);
+  ok("78 writes are queued", db.raw.prepare("select count(*) n from atoms").get().n === 3);
+  S.runEffects();
+  ok("78 and carried out after", db.raw.prepare("select count(*) n from atoms").get().n === 4);
+  S.queueEffects(); c.field("w").run(S.BANG); S.dropEffects();
+  ok("78 and dropped on replay", db.raw.prepare("select count(*) n from atoms").get().n === 4);
+  delete S.G.db;
+}
+
+// the game: events in, states out; effects queued; rewind, replay, hot-swap
+S.setLog(() => {});
+const src = fs.readFileSync(__dirname + "/examples/sprout.sp", "utf8");
+const fx = [];
+const g = L.makeGame(src, { onEffect: e => fx.push(e[0]) });
+let maxScore = 0;
+for (let f = 0; f < 900; f++) { if (f % 30 === 0) g.down(60 + (f * 7) % 240, 300); if (f % 30 === 15) g.up(); g.tick(1 / 60); maxScore = Math.max(maxScore, g.state.field("score")); }
+ok("game scores", maxScore > 0);
+ok("game effects are queued and carried out", fx.includes("beep"));
+ok("game draws", g.draw().length > 5);
+ok("replay is exact", S.fmt(g.history[100].state) === S.fmt(g.history[100].state) && S.fmt(g.history[201].state) === S.fmt(g.replayFrom(200, 1 / 60)));
+const sc = g.state.field("score");
+g.swap(src.replace("beep [880, 0.06]", "beep [660, 0.06]"));
+ok("hot-swap keeps live state", g.state.field("score") === sc);
+g.swap(src.replace("height : 40", "height : 99"));
+ok("hot-swap takes a changed start value", g.state.field("height") === 99);
+
+console.log(pass + " passed, " + fail + " failed");
+process.exit(fail ? 1 : 0);
