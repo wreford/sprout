@@ -247,6 +247,20 @@ const f = (g, k) => g.state.field(k);
   S.G.db = saved;
 }
 
+// ace-risk: a million runs through spork (decision 91); with fewer runs, the whole program prints the same with collect
+{
+  const src = fs.readFileSync(__dirname + "/examples/ace-risk.sp", "utf8");
+  const run = text => { const lines = []; S.setOut(x => lines.push(x)); S.load(text).run(S.BANG); S.setOut(() => {}); return lines; };
+  const full = run(src), info = S.sporkInfo;
+  ok("ace-risk: a million runs, as one kernel", full[0] === "== 1000000 runs of the pedestal job ==" && info.n === 1000000 && info.how === "simd", info);
+  const p = (full[1].match(/[\d.]+/g) || []).map(Number);
+  ok("ace-risk: P10 to P90 in order", p.length === 8 && p[1] < p[3] && p[3] < p[5] && p[5] < p[7], full[1]);
+  const adds = full.filter(l => /\+[\d.]+ days$/.test(l));
+  ok("ace-risk: what each risk adds at P80, weather the most", adds.length === 4 && adds[0].startsWith("wet weather on the pour") && Math.max(...adds.map(l => +l.match(/\+([\d.]+)/)[1])) === +adds[0].match(/\+([\d.]+)/)[1], adds);
+  const small = src.replace("runs : 1000000", "runs : 3000");
+  ok("ace-risk: spork prints exactly what collect prints", JSON.stringify(run(small)) === JSON.stringify(run(small.replace("range runs spork one-run", "range runs collect one-run"))));
+}
+
 const errs = logs.slice();
 ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
 console.log(pass + " passed, " + fail + " failed");

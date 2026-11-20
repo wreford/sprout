@@ -38,6 +38,7 @@ img.th[src=""]{content:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2
 .li .th{width:34px;height:34px;border-radius:7px;flex:0 0 auto;background:var(--card2);box-shadow:0 0 0 1px var(--line);object-fit:cover}
 .li .nm{display:block;font-size:13.5px;line-height:1.2}.li .ds{display:block;font-size:12px;color:var(--fg3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px}
 .sidefoot{padding:10px 14px 14px;border-top:1px solid var(--line);display:flex;gap:8px}
+.sidefoot .pill{white-space:nowrap;text-decoration:none;padding:0 13px}
 
 /* main: artwork on the left, the details and the editor on the right */
 #main{grid-row:1;min-width:0;min-height:0;position:relative;overflow:hidden;display:grid;grid-template-columns:auto minmax(0,1fr);gap:28px;padding:28px 28px 20px;padding-top:calc(28px + env(safe-area-inset-top))}
@@ -240,13 +241,14 @@ body.t-out #out{display:block}body.t-st #st{display:block}
 <div id="modal"><div id="mBox"><div class="mh"><h2 id="mTitle"></h2><button class="x" data-close aria-label="Close">✕</button></div><div id="mBody"></div></div></div>
 <div id="toast"></div><div id="scrubTip"></div>
 
-<script src="sprout3.js?v=20261120f"></script>
-<script src="live3.js?v=20261120f"></script>
-<script src="sqlite-web.js?v=20261120f"></script>
-<script src="gpu-paint.js?v=20261120f"></script>
+<script src="sprout3.js?v=20261120g"></script>
+<script src="live3.js?v=20261120g"></script>
+<script src="sqlite-web.js?v=20261120g"></script>
+<script src="gpu-paint.js?v=20261120g"></script>
+<script src="gpu-spork.js?v=20261120g"></script>
 <script>
 "use strict";
-const V="20261120f";
+const V="20261120g";
 const $=id=>document.getElementById(id);
 const S=window.Sprout3,L=window.Sprout3Live;
 const GW=360,GH=480;
@@ -258,6 +260,7 @@ const EX=[
  ["ace-board","ace","ACE Board","Tap work to close it. Gates, the rollup and the critical path follow, because done is derived from the graph, never stored."],
  ["ace-site","ace","ACE Site","Positions are expressions over named dimensions. Grow the reactor and watch the buildings move, and clash."],
  ["ace-schedule","ace","ACE Schedule","The critical path on likely durations, then a Monte Carlo finish date. The plan is a distribution, not a date."],
+ ["ace-risk","ace","ACE Risk","A million runs of the job with a risk register, worked out ahead into one kernel by spork. The finish as a distribution, and what each risk adds at P80."],
  ["ace-crews","ace","ACE Crews","Sequence and capacity: work waits for what it requires, and for a free crew of its trade. Send a crew home and watch the slab slip."],
  ["ace-morning","ace","ACE Morning","The morning question: which constraints, killed today, release the most work? A ranking by hours released."],
  ["ace-ledger","ace","ACE Ledger","The atoms live in SQLite, kept in this browser. Each run is a day on site: one atom closes and the event log grows."],
@@ -307,12 +310,22 @@ function build(src,fresh){
  let cell;try{cell=S.load(src)}catch(e){setErr({line:e.line||0,msg:msgOf(e)});return false}
  if(cell.field("update")===S.UNSET){
   game=null;document.body.classList.add("prog");clearOut();
-  try{cell.run(S.BANG)}catch(e){setErr({line:e.line||0,msg:msgOf(e)});return false}
+  // a big spork may go to the GPU: the pass stops, the job runs, and the program runs again and finds the answer (decision 93)
+  if(gspSrc!==src){gspSrc=src;gspPasses=0}
+  if(GSP)GSP.mayWait(useGsp&&!needsDb(src)&&gspPasses<6);
+  S.sporkTally(true);
+  try{cell.run(S.BANG)}catch(e){
+   if(window.SproutGpuSpork&&e===SproutGpuSpork.WAIT){gspPasses++;dropPrints();$("pSub").textContent="Running spork on the GPU…";
+    GSP.pending().then(()=>{if(code===src&&build(src,fresh))afterBuild()},e2=>{gspWhy=msgOf(e2);useGsp=false;gspUI();if(code===src&&build(src,fresh))afterBuild()});return false}
+   setErr({line:e.line||0,msg:msgOf(e)});return false}
+  finally{if(GSP)GSP.mayWait(false)}
+  sporks=S.sporkTally().slice();
   speedNotes=cell.speed||[];running=src;goodSrc=src;setErr(null);swapped();renderState();speedMarks();return true}
  document.body.classList.remove("prog");
  try{if(game&&!fresh)game.swap(src);else{game=L.makeGame(src,{W:GW,H:GH,onEffect});setPaused(false)}}
  catch(e){setErr({line:e.line||0,msg:msgOf(e)});return false}
  speedNotes=game.speed||[];running=src;goodTicks=0;setErr(null);swapped();speedMarks();return true}
+function dropPrints(){document.querySelectorAll("#out .ln.print").forEach(x=>x.remove())}
 function swapped(){lastSwap=new Date();subUI();progUI()}
 // a program that only prints shows its cover as the artwork, and its main button runs it again
 function progUI(){const prog=document.body.classList.contains("prog"),ng=$("noGame");
@@ -374,6 +387,10 @@ function checkShown(){try{const c=document.createElement("canvas");c.width=c.hei
  for(let i=3;i<d.length;i+=4)if(d[i]>0)return;}catch(e){}
  GPU=null;gpuWhy="this browser didn't show the WebGPU frames";rendererUI()}
 if(window.SproutGpu)SproutGpu.makeGpuPainter($("gv")).then(p=>{GPU=p;rendererUI()},e=>{gpuWhy=msgOf(e)});
+// spork on the GPU (decision 93): big sporks in a program that prints, with 32-bit maths; games stay on SIMD
+let GSP=null,useGsp=LS.get("sprout3.gpuspork",true),gspWhy="",gspSrc=null,gspPasses=0,sporks=[];
+function gspUI(){S.sporkWays({gpu:GSP&&useGsp?GSP.hook:null})}
+if(window.SproutGpuSpork)SproutGpuSpork.makeGpuSpork().then(g=>{GSP=g;gspUI();if(TAB==="st")renderState()},e=>{gspWhy=msgOf(e)});
 let last=0,statT=0,artT=0;
 function frame(now){requestAnimationFrame(frame);const dt=Math.min(.05,(now-last)/1000||0);last=now;
  const k=cv.width/GW;g.setTransform(k,0,0,k,0,0);
@@ -510,19 +527,26 @@ ta.addEventListener("pointerup",endScrub);ta.addEventListener("pointercancel",en
 // ---------- the state view: every field of the game right now
 function brief(v){if(S.isCell(v)&&!(v instanceof S.Cell&&v.takesInput())){const n=v.count();if(n>6)return n+" parts";const s=S.fmt(v);return s.length>140?s.slice(0,140)+"…]":s}const s=S.fmt(v);return s.length>140?s.slice(0,140)+"…":s}
 function speedHTML(){if(!speedNotes.length)return"";const fast=speedNotes.filter(n=>n.fast).length;
- return'<div class="sh">Loops over lists</div><div class="foot" style="padding-top:0">'+fast+" of "+speedNotes.length+" can run over columns: a list of 32 or more records of numbers, stored one array per field. The others run item by item, which is fine for short lists.</div>"+
-  speedNotes.slice().sort((a,b)=>a.line-b.line).map(n=>'<div class="row sp'+(n.fast?" f":"")+'"><span class="k2">line '+n.line+" · "+n.word+'</span><span class="v">'+(n.fast?"runs over columns":"item by item: "+esc(n.why))+"</span></div>").join("")}
+ return'<div class="sh">Loops over lists</div><div class="foot" style="padding-top:0">'+fast+" of "+speedNotes.length+" run as tight loops: over columns (a list of 32 or more records of numbers, one array per field), over a list of numbers, or as a spork kernel. The others run item by item, which is fine for short lists.</div>"+
+  speedNotes.slice().sort((a,b)=>a.line-b.line).map(n=>'<div class="row sp'+(n.fast?" f":"")+'"><span class="k2">line '+n.line+" · "+n.word+'</span><span class="v">'+(n.fast?(n.word==="spork"?"worked out ahead into one kernel":"runs as a tight loop"):"item by item: "+esc(n.why))+"</span></div>").join("")}
+const WAYS={gpu:"on the GPU",simd:"on WebAssembly SIMD",js:"in JavaScript",collect:"the ordinary way, as collect"};
+function sporkHTML(){if(!sporks.length&&!/\bspork\b/.test(code))return"";
+ const rows=sporks.slice(0,8).map(r=>'<div class="row sp'+(r.how!=="collect"?" f":"")+'"><span class="k2">'+r.n.toLocaleString()+" run"+(r.n===1?"":"s")+'</span><span class="v">'+WAYS[r.how]+" in "+(r.ms<10?r.ms.toFixed(1):Math.round(r.ms))+" ms"+(r.steps?" · "+r.steps+" steps a run":"")+"</span></div>").join("");
+ const gpu=GSP?'Big sporks (100,000 runs or more) in a program that prints can run on the GPU ('+esc(GSP.adapter)+'): <a href="#" id="gspT" style="color:var(--acc2);font-weight:600">'+(useGsp?"on":"off")+"</a>. The GPU does 32-bit maths, so the last digits can differ from SIMD, which gives the same bits as JavaScript."
+  :"WebGPU isn't available here"+(gspWhy?" ("+esc(gspWhy)+")":"")+", so spork runs on WebAssembly SIMD.";
+ return'<div class="sh">Spork</div><div class="foot" style="padding-top:0">A cell given to spork is worked out ahead into one kernel of number maths, run for every input at once. '+gpu+"</div>"+rows}
 function dbHTML(){const db=S.G.db;if(!db||!needsDb(code))return"";let t=[];try{t=db.tables()}catch(e){}
  return'<div class="sh">SQLite</div><div class="foot" style="padding-top:0">Kept in this browser between visits. <a href="#" id="dbClear" style="color:var(--acc2);font-weight:600">Clear the database</a></div>'+
   (t.length?t.map(([n,c])=>'<div class="row"><span class="k2">'+esc(n)+'</span><span class="v">'+c+" row"+(c===1?"":"s")+"</span></div>").join(""):'<div class="foot">No tables yet.</div>')}
 function wireDb(){const a=$("dbClear");if(a)a.onclick=async e=>{e.preventDefault();if(!confirm("Clear the SQLite database kept in this browser?"))return;await S.G.db.clear();toast("Database cleared");if(build(code,true))afterBuild()}}
 // only replace what's shown when it changed, so a link isn't rebuilt under a click
-function renderState(){const el=$("st"),h=stateHTML();if(el._h!==h){el.innerHTML=h;el._h=h;wireDb()}}
+function renderState(){const el=$("st"),h=stateHTML();if(el._h!==h){el.innerHTML=h;el._h=h;wireDb();wireGsp()}}
+function wireGsp(){const a=$("gspT");if(a)a.onclick=e=>{e.preventDefault();useGsp=!useGsp;LS.set("sprout3.gpuspork",useGsp);gspUI();toast(useGsp?"Big sporks run on the GPU":"Sporks run on WebAssembly SIMD");if(build(code,true))afterBuild()}}
 function stateHTML(){
- if(!game)return'<div class="foot">No game is running.</div>'+dbHTML()+speedHTML();
+ if(!game)return'<div class="foot">No game is running.</div>'+sporkHTML()+dbHTML()+speedHTML();
  let rows=[];try{for(const [k,v] of S.fieldsOf(game.state))rows.push([k,brief(v)])}catch(e){return esc(msgOf(e))}
  return rows.map(([k,v])=>'<div class="row"><span class="k2">'+esc(k)+'</span><span class="v">'+esc(v)+"</span></div>").join("")+
-  '<div class="foot">'+(paused?"Paused":"Live")+" · "+game.history.length+" moments saved for rewind</div>"+dbHTML()+speedHTML()}
+  '<div class="foot">'+(paused?"Paused":"Live")+" · "+game.history.length+" moments saved for rewind</div>"+sporkHTML()+dbHTML()+speedHTML()}
 setInterval(()=>{if(TAB==="st")renderState()},250);
 
 // ---------- tabs

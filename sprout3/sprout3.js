@@ -157,6 +157,8 @@ function parseInner(src, line) {
   const p = new Parser(tokenize(src), src);
   const items = p.program();
   if (items.length !== 1 || items[0].k !== "chain") throw new SproutError("put one value inside a string's brackets", line);
+  // it counts its own lines from 1; what's inside a string is on the string's line
+  (function at(n) { if (!n || typeof n !== "object") return; if (typeof n.line === "number") n.line = line; for (const k in n) at(n[k]); })(items[0]);
   return items[0];
 }
 function parse(src) { return new Parser(tokenize(src), src).program(); }
@@ -435,7 +437,11 @@ class Gen {
       const sk = this.genSpork(c);
       c.kern.s = sk.js ? true : sk.why;
       if (c.bindName) this.sporkWhy.set(c.bindName, c.kern.s);
-      if (sk.js) all = kern ? kern.slice(0, -1) + "," + sk.js + "}" : "{" + sk.js + "}";
+      if (sk.js) {
+        all = kern ? kern.slice(0, -1) + "," + sk.js + "}" : "{" + sk.js + "}";
+        // the loops inside it were unrolled when it was worked out, so their speed notes don't apply
+        const span = lineSpan(c); this.speed = this.speed.filter(x => x.line < span[0] || x.line > span[1]);
+      }
     } else c.kern.s = "spork works a cell out ahead only when it is written after spork or bound to a name that spork is given";
     return "MK(S[" + k + "]," + slotsJS + "," + runJS + ",[" + defs.join(",") + "],()=>[" + caps.join(",") + "]" + (all ? "," + all : "") + ")";
   }
@@ -469,6 +475,12 @@ class Gen {
           "for(let $i=0;$i<n;$i++){" + vals.map((v, j) => "const $v" + j + "=" + v.js + ";").join("") + vals.map((v, j) => "$o" + j + "[$i]=$v" + j + ";").join("") + "}" +
           keys.map((k, j) => "oc[$j" + j + "]=$o" + j + ";").join("") + "return COLC(out,oc,n)}");
       }
+    }
+    // m: [r | r f], one field of each record: over columns, that column as a list of numbers
+    if (T.length === 2 && T[0].k === "word" && T[0].v === p && T[1].k === "word" && T[1].v !== p && !FUSED.has(T[1].v) && !LAZYOPS.has(T[1].v) &&
+        !["!", "true", "false", "_", "left", "right"].includes(T[1].v) && !(T[1].v in CELLP) && !this.lookup(T[1].v) && !this.globals.has(T[1].v)) {
+      kern.m = true;
+      out.push("m:(self,rs,cols,n)=>{const $j=rs.index(" + JSON.stringify(T[1].v) + ");return $j<0?null:NCOL(cols[$j],n)}");
     }
     // t: a test
     { const K = fresh(), v = this.kChain(c.items[0], K);
@@ -1012,6 +1024,12 @@ class Spk {
       (keys ? ",keys:" + JSON.stringify(keys) : "") + ",jsOnly:" + jsOnly + "}";
   }
 }
+// the first and last line a piece of the tree is on
+function lineSpan(n) {
+  let lo = Infinity, hi = -Infinity;
+  (function walk(x) { if (!x || typeof x !== "object") return; if (typeof x.line === "number" && x.line > 0) { lo = Math.min(lo, x.line); hi = Math.max(hi, x.line); } for (const k in x) if (!NOTE_KEYS.has(k) || k === "line") { const v = x[k]; if (v && typeof v === "object") walk(v); } })(n);
+  return [lo, hi];
+}
 // where a name sits among a frame's names, in the order they were bound
 function spkPos(names, n) { let i = 0; for (const k of names.keys()) { if (k === n) return i; i++; } return -1; }
 // does a cell (or anything in it) use _ or left?
@@ -1239,6 +1257,7 @@ class ColCell extends VCell {
   run() { return this.n ? this.part(this.n) : false; }
 }
 function COLC(rs, cols, n) { return new ColCell(rs, cols, n); }
+function NCOL(col, n) { return new NCell(col.slice(0, n)); }
 // NCell: a list of numbers kept in one Float64Array, made by spork and sort. To a program it is the same list.
 class NCell extends VCell {
   constructor(a) { super(null, ROOT, EMPTY); this.a = a; this._p = null; }
@@ -1503,10 +1522,13 @@ function times(n, f) { for (let i = 1; i <= n; i++) CALL(f, i); return false; }
 
 // ---- spork (decision 47): a parallel collect. A pure cell worked out ahead (decision 91) runs as one numeric kernel,
 // on the fastest way this machine has; anything else is collect.
-let SPORK = { info: null, wasm: undefined, gpu: null };
+let SPORK = { info: null, wasm: undefined, gpu: null, tally: [] };
+const sporkRan = info => { SPORK.info = info; if (SPORK.tally.length < 50) SPORK.tally.push(info); };
 function spork(xs, f) {
   if (COLMIN !== Infinity && f instanceof Cell && f.kn && f.kn.s) { const r = runSpork(f.kn.s, xs); if (r) return r; }
-  return collect(xs, f);
+  const t0 = nowMs(), r = collect(xs, f);
+  sporkRan({ n: isCell(xs) ? xs.count() : 0, how: "collect", ms: nowMs() - t0, steps: 0 });
+  return r;
 }
 const nowMs = () => typeof performance !== "undefined" ? performance.now() : Date.now();
 function runSpork(s, xs) {
@@ -1522,12 +1544,11 @@ function runSpork(s, xs) {
   if (n === 0) return VP([]);
   const t0 = nowMs(); let O = null, how = "";
   // the GPU (32-bit maths) only when the host allows it; else WebAssembly SIMD; else JavaScript. The last two give the same answer.
-  if (SPORK.gpu && !K.jsOnly) { O = SPORK.gpu(K, n, X, C); if (O === undefined) O = null; else how = "gpu"; }
+  if (SPORK.gpu && !K.jsOnly) { O = SPORK.gpu(K, n, X, C) || null; if (O) how = "gpu"; }
   if (SPORK.wasm === undefined) SPORK.wasm = wasmSpork();
-  if (!O && SPORK.wasm && !K.jsOnly && n >= 16) { O = SPORK.wasm(K, n, X, C); if (O) how = "simd"; }
-  if (!O && !how) { O = K.outs.map(() => new Float64Array(n)); if (!spkJS(K)(n, X, C, O)) O = null; how = "js"; }
-  if (!O) return null;
-  SPORK.info = { n, how, ms: nowMs() - t0, steps: K.nodes.length };
+  if (!O && SPORK.wasm && !K.jsOnly && n >= 16) { O = SPORK.wasm(K, n, X, C); how = "simd"; if (!O) return null; }
+  if (!O) { O = K.outs.map(() => new Float64Array(n)); how = "js"; if (!spkJS(K)(n, X, C, O)) return null; }
+  sporkRan({ n, how, ms: how === "gpu" && O.ms !== undefined ? O.ms : nowMs() - t0, steps: K.nodes.length });
   if (K.kind === "n") return new NCell(O[0]);
   if (K.kind === "b") { const o = new Array(n), a = O[0]; for (let i = 0; i < n; i++) o[i] = a[i] !== 0; return VP(o); }
   return new ColCell(shapeFor(K.keys), O, n);
@@ -1679,12 +1700,34 @@ function wasmSpork() {
     return K.outs.map((o, j) => new Float64Array(mem.buffer, op + j * stride, n).slice());
   };
 }
+// numbers in the same order as a typed array's own sort (-0 before 0, NaN last), by radix: four passes of 16 bits
+function sortF64(src) {
+  const n = src.length;
+  if (n < 512) return Float64Array.from(src).sort();
+  let m = 0, nan = 0; const a = new Float64Array(n);
+  for (let i = 0; i < n; i++) { const v = src[i]; if (v !== v) nan++; else a[m++] = v; }
+  let A = new Uint32Array(a.buffer, 0, m * 2), B = new Uint32Array(m * 2);
+  // the bits of a double, turned so that unsigned order is number order
+  for (let i = 0; i < m; i++) { const hi = A[2 * i + 1]; if (hi & 0x80000000) { A[2 * i + 1] = ~hi; A[2 * i] = ~A[2 * i]; } else A[2 * i + 1] = hi | 0x80000000; }
+  const count = new Uint32Array(65536);
+  for (let d = 0; d < 4; d++) {
+    const w = d >> 1, sh = (d & 1) * 16;
+    count.fill(0);
+    for (let i = 0; i < m; i++) count[(A[2 * i + w] >>> sh) & 0xffff]++;
+    let sum = 0; for (let k = 0; k < 65536; k++) { const c = count[k]; count[k] = sum; sum += c; }
+    for (let i = 0; i < m; i++) { const j = count[(A[2 * i + w] >>> sh) & 0xffff]++; B[2 * j] = A[2 * i]; B[2 * j + 1] = A[2 * i + 1]; }
+    const t = A; A = B; B = t;
+  }
+  for (let i = 0; i < m; i++) { const hi = A[2 * i + 1]; if (hi & 0x80000000) A[2 * i + 1] = hi & 0x7fffffff; else { A[2 * i + 1] = ~hi; A[2 * i] = ~A[2 * i]; } }
+  const out = new Float64Array(n); out.set(new Float64Array(A.buffer, A.byteOffset, m)); out.fill(NaN, m);
+  return out;
+}
 // sort: numbers from least to most, or words in order (a library choice, decision 80)
 function sortList(xs) {
-  if (xs instanceof NCell) return new NCell(Float64Array.from(xs.a).sort());
+  if (xs instanceof NCell) return new NCell(sortF64(xs.a));
   if (xs instanceof RCell) return xs;
   const p = partsOf(xs);
-  if (p.every(v => typeof v === "number")) return new NCell(Float64Array.from(p).sort());
+  if (p.every(v => typeof v === "number")) return new NCell(sortF64(Float64Array.from(p)));
   if (p.every(v => typeof v === "string")) return VP(p.slice().sort());
   return LOG_MISS("sort sorts a list of numbers or a list of words");
 }
@@ -1774,7 +1817,7 @@ frame : [update |
 
 // ===================================================================== build
 const RT = { BANG, ANY, G, S: null, MK, SW, SEND, RUNC, STR, UNKNOWN, LOG_MISS, WITHF,
-  ADD, SUB, MUL, DIV, MOD, LT, GT, LE, GE, EQ, NE, CAT, WITH, AT, VC, VP, ISBOOL, MISSING, TAIL, SWI, shapeFor, COLC, NATIVE: Native, NOISE };
+  ADD, SUB, MUL, DIV, MOD, LT, GT, LE, GE, EQ, NE, CAT, WITH, AT, VC, VP, ISBOOL, MISSING, TAIL, SWI, shapeFor, COLC, NCOL, NATIVE: Native, NOISE };
 let preludeCell = null;
 function globalNames(extra) { const s = new Set(Object.keys(G)); if (extra) for (const k of extra) s.add(k); return s; }
 
@@ -1797,7 +1840,7 @@ function load(src, opts) {
 const api = { tokenize, parse, compile, load, fmt, eq, merge, isCell, Cell, VCell, Native, G, BANG, ANY, SproutError, PRELUDE,
   ColCell, NCell, columns: on => { COLMIN = on ? 32 : Infinity; },
   // spork: how the last one ran, and the ways it can run (decision 91)
-  get sporkInfo() { return SPORK.info; }, sporkWays: w => { if (SPORK.wasm === undefined) SPORK.wasm = wasmSpork(); Object.assign(SPORK, w); return SPORK; },
+  get sporkInfo() { return SPORK.info; }, sporkTally: reset => { const t = SPORK.tally; if (reset) SPORK.tally = []; return t; }, sporkWays: w => { if (SPORK.wasm === undefined) SPORK.wasm = wasmSpork(); Object.assign(SPORK, w); return SPORK; },
   setLog: f => { LOG = f; }, setOut: f => { OUT = f; }, setRandom: f => { RNG = f; }, defNative, partsOf, fieldsOf, UNSET, VFM, effect, queueEffects, runEffects, dropEffects };
 if (typeof module !== "undefined") module.exports = api; else root.Sprout3 = api;
 })(typeof window !== "undefined" ? window : globalThis);

@@ -92,7 +92,8 @@ ok("84 match only works out the answer it picks", val('match [1, [1, "one", 2, n
   const r = three(ace, S.load("r : range 3000").field("r"), "one-run");
   ok("spork: ace-schedule's Monte Carlo run, same numbers as collect", r.same && r.how[0] === "simd", r.how);
   // a position outside the list, or anything spork can't work out ahead, runs the ordinary way
-  ok("spork: a position outside the list falls back", three("w : [3, 1, 4]\nf : [n | (w @ n) else [0]]").same && S.sporkInfo === null);
+  ok("spork: a position outside the list falls back", (() => { const r = three("w : [3, 1, 4]\nf : [n | (w @ n) else [0]]"); return r.same && r.how[0] === "collect" && r.how[1] === "collect"; })());
+  ok("collect [r | r f] over columns gives that column", (() => { const c = S.load("rs : range 100 collect [n | [a : n, b : n * 2]]\nA : rs collect [r | r b]\nB : rs collect [r | r b + 0]"); return S.fmt(c.field("A")) === S.fmt(c.field("B")) && c.field("A") instanceof S.NCell; })());
   const rnd = S.load("f : [n | random + n]\nA : range 5 spork f").speed.find(x => x.word === "spork");
   ok("spork: speed notes say why a cell can't be worked out ahead", rnd && !rnd.fast && /random/.test(rnd.why), rnd);
   ok("spork: a cell written in place", S.fmt(S.load("A : range 40 spork [n | n * n]").field("A")) === S.fmt(S.load("A : range 40 collect [n | n * n]").field("A")));

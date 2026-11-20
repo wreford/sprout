@@ -9,8 +9,8 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 **Run it (Node 22 or later):**
 
 ```
-node test.js          # language tests (96)
-node game-tests.js    # game tests (73)
+node test.js          # language tests (112)
+node game-tests.js    # game tests (77)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
@@ -18,11 +18,13 @@ node run3.js examples/tour.sp
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
-All 169 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected.
+The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
+
+All 189 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected.
 
 ## How to work on it
 
-- **The spec is the source of truth.** The section "Design decisions not yet built" (decisions 1 to 90) defines Sprout 3, despite its name: almost all of it is now built. Later decisions override earlier ones and say so. Sections 1 to 15 at the top of the spec describe the older Sprout 2.0 / Sprout Live baseline and are kept for history only.
+- **The spec is the source of truth.** The section "Design decisions not yet built" (decisions 1 to 93) defines Sprout 3, despite its name: almost all of it is now built. Later decisions override earlier ones and say so. Sections 1 to 15 at the top of the spec describe the older Sprout 2.0 / Sprout Live baseline and are kept for history only.
 - **Language changes go to Troy first.** Talk any change to syntax or semantics through with him before building it, and ask one question at a time. Library-level choices (cells in the prelude, host cells, internals) are yours to make; record them in the spec (decision 80).
 - **Don't rewrite example programs or files unless asked.**
 - **Keep it streamable.** The tokenizer and parser work in one pass with no look-ahead across the file. Warn if a change would break that.
@@ -41,6 +43,9 @@ All 169 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which p
   - Lists of number records are stored as columns, and simple `collect`, `keep` and `each` bodies run as loops over the columns (decision 82).
   - A `fold` block of number maths runs as one plain loop over `range` or a list of numbers (decision 88).
   - In a column `each`, host words take their values one by one, with no argument cell per shape (decision 89).
+  - A `fold` block of number maths runs as one plain loop over `range` or a list of numbers (decision 88).
+  - In a column `each`, host words take their values one by one, with no argument cell per shape (decision 89).
+  - `spork` works a pure cell out ahead into one kernel of number maths (`Spk` in `sprout3.js`): calls inlined, lists, records and words unrolled, tests that change from run to run made into per-run choices. The kernel runs on WebAssembly SIMD (`spkWasmBytes`, f64x2, the same bits as JavaScript), in JavaScript (`spkJS`), or on the GPU (`gpu-spork.js`, 32-bit) (decisions 91 to 93).
 - **Runtime values:** `Cell` (from a literal, lazy), `VCell` (a cell of values: shape plus value array), `RCell` (a lazy `range`), `ColCell` (a list of number records stored as one number array per field), `Native` (a host word), `Waiting` (a prototype method waiting for its right side). `false` is the only falsy value.
 - **Prelude:** a short Sprout program inside `sprout3.js` defines `match`, `cond`, `take`, `rgb`, `rgba`, `every`, `wave` and `frame` in Sprout itself.
 - **`live3.js`, the game loop.** A game file binds `start`, `update` and `draw`. Events (`down`, `move`, `up`, `tick`) fold through `frame update`. Effects are queued during `update` and carried out after it. Random numbers are recorded per tick, so `replayFrom` is exact. Rewind is a list of states, since cells never change. Hot-swap keeps live values whose starting value didn't change.
@@ -50,14 +55,15 @@ All 169 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which p
 1. **The speed roadmap (decision 79), in order:**
    - columns: built (decision 82)
    - loop fusion for `collect`/`keep`/`fold` chains
-   - spork sending pure numeric cells to WebAssembly with SIMD or to the GPU
+   - spork sending pure numeric cells to WebAssembly with SIMD or to the GPU: built (decisions 91 to 93)
    - seeded `noise [sample, id]` for big runs: built (decision 87)
 2. **Not built yet:**
    - files and folders as cells (decisions 63 to 66)
    - extending built-ins by shadowing (40)
-   - spork (47)
+   - spork over an effectful cell, reporting back as events (47)
    - (built since: SQLite and WebGPU on the page, decision 90)
    - automatic purity detection (32)
+   - (built since: the editor-side lint that flags slow paths, decision 86)
    - (built since: the editor-side lint that flags slow paths, decision 86)
    - (built since: the editor-side lint that flags slow paths, decision 86)
 3. **Known rough edges:**
@@ -69,6 +75,7 @@ All 169 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which p
    - In the browser: fib 25 takes about 1.8 ms, against 0.9 for plain JS; summing 1 to 1,000,000 with `fold` about 0.8 ms, level with plain JS (decision 88); 10,000 records times 20 updates about 3 ms, against 7 for plain JS.
    - 100,000 particles: about 5 ms to update and 5 to 7 ms to build the draw list. Canvas 2D takes 180 ms to draw them; WebGPU takes about 4 ms of CPU to build and submit the frame.
    - SQLite: 10,000 rows into Sprout records with `db query` in about 11 ms.
+   - Monte Carlo (`ace-risk.sp`'s run, five graph walks each): 100,000 runs take about 10 s the ordinary way, 28 ms as a JavaScript kernel and 21 ms on SIMD; a million take about 0.2 s on SIMD. In Node, ace-schedule's run on SIMD is about 3 times the JavaScript kernel.
    - Compiling `sprout.sp` takes about 4 ms.
 
 ## Contents
@@ -79,6 +86,7 @@ All 169 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which p
 - `sqlite-host.js`: SQLite host cell (Node built-in node:sqlite)
 - `sqlite-web.js`: SQLite host cell for the browser: sql.js (SQLite in WebAssembly), kept in IndexedDB; same query and run as sqlite-host.js
 - `gpu-paint.js`: WebGPU renderer for the page: every shape in a frame as one instanced draw, with a self-test before use
+- `gpu-spork.js`: Spork on the GPU: a kernel worked out ahead as a WebGPU compute shader (32-bit), with the page's run-again-when-the-answer-is-back passes
 - `test.js`: Language tests, one or more per decision
 - `game-tests.js`: Headless game tests
 - `bench.js`: Benchmarks against the old Sprout 2.0 compiler and plain JS
@@ -103,6 +111,7 @@ All 169 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which p
 - `examples/ace-crews.sp`: ACE: sequence and capacity constraints; work waits for what it requires and for a free crew of its trade
 - `examples/ace-morning.sp`: ACE: the morning question; open constraints ranked by the hours of work each would release (prints)
 - `examples/ace-ledger.sp`: ACE: the atoms live in SQLite; each run closes the first workable atom and logs it (prints; uses db)
+- `examples/ace-risk.sp`: ACE: a million runs of the job with a risk register, through spork; the finish as a distribution, and what each risk adds at P80 (prints)
 - `examples/recipes.sp`: Recipes: quicksort, primes, FizzBuzz, a vector with its own + (prints; not a game)
 - `index.html`: The web page at taskiap.com/sprout3/: a library of examples with artwork, the running game shown like album art, live editing, a now-playing bar whose progress bar rewinds time, state, output and the spec; light and dark
 - `bench.html`: Benchmarks in the browser: the language against plain JS, the games, particles up to 100,000 on Canvas 2D and WebGPU, and SQLite
@@ -709,7 +718,7 @@ These are marked in `sprout2.js` with "Sprout Live fix N" or "Sprout Live additi
 76. **Colours are cells.** `rgb [255, 0, 0]` and `rgba [0, 0, 0, 0.5]` are library cells giving colour text, so games never write colour strings with brackets. Hex strings like `"#ff6b4a"` still work.
 77. **`cond` and `take` are library cells (Claude's call).** `cond [test, result, test, result, ..., any, fallback]` gives the result of the first true test, like `match` but with tests. `take [xs, n]` gives the first `n` parts.
 78. **SQLite is a host cell.** `db query "select ..."` or `db query [sql, [params]]` gives a cell of records straight away; `db run [sql, [params]]` is an effect, so inside `update` it is queued, carried out after, and dropped on replay. The language stays storage-neutral.
-79. **Speed roadmap (step 1 built, see 82).** In order: (1) columns: records of one shape stored as flat number arrays per field; (2) loop fusion: `collect`, `keep`, `fold` chains run as one loop with no in-between lists; (3) spork sends pure numeric cells to WebAssembly with SIMD or to the GPU; (4) seeded randomness for big runs, `noise [sample, id]`, so replay needs nothing recorded. JavaScript stays the backend; a LuaJIT backend is parked.
+79. **Speed roadmap (steps 1, 3 and 4 built, see 82, 91 and 87).** In order: (1) columns: records of one shape stored as flat number arrays per field; (2) loop fusion: `collect`, `keep`, `fold` chains run as one loop with no in-between lists; (3) spork sends pure numeric cells to WebAssembly with SIMD or to the GPU; (4) seeded randomness for big runs, `noise [sample, id]`, so replay needs nothing recorded. JavaScript stays the backend; a LuaJIT backend is parked.
 80. **Library-level choices are Claude's to make and record**, without asking first.
 81. **Only `[ ]` is a template inside a string.** `"[g score] drops"` puts a value in; `( )` is plain text, so SQL (`values (?, ?)`) and CSS (`rgba(0,0,0,0.5)`) need no escapes. Write `\[` for a plain bracket. Replaces the `( )` half of decisions 5 and 6.
 82. **Columns (built; Claude's call under decision 80).** A list of 32 or more records that share one shape and hold only numbers is stored as one number array per field. A cell with one named input gets a column version of its body when the body is one of three things: `s with [...]` where each new value is number maths on `s`'s fields; a test made of number maths and comparisons; or a host word given a cell of values, such as `circle [s x, s y, 2, "#fc6"]`. `collect`, `keep` and `each` use the column version on a list in columns, and `..` keeps two such lists in columns. Anything else falls back to the ordinary way, including a field that isn't there, a word in a record and an outside name that isn't a number. So a program can't tell the difference: parts, `@`, `length`, `=` and `str` all see ordinary records (decisions 22 and 39), and the tests run both ways. `random` and other recorded reads are never moved out of the loop, so replay stays exact. The particle fountain went from 1.45 to 0.28 ms a frame, and 10,000 records times 20 updates from 11 to 1.4 ms.
@@ -721,6 +730,9 @@ These are marked in `sprout2.js` with "Sprout Live fix N" or "Sprout Live additi
 88. **`fold` can run as a tight loop (built; Claude's call, from the benchmarks).** A fold block with two named inputs whose body is number maths on them, as in `range n fold [0, [t x | t + (x * x)]]`, gets a loop version: one plain loop with no cell made per step. It is used when the list is `range n` or a list of numbers and the starting value is a number; anything else falls back to the ordinary way, so a program can't tell the difference, and the tests run both ways. Outside names that are numbers, `noise` (decision 87) and the maths words all work inside it; a branch (`... [a] else [b]`) or a call to another cell does not yet. Speed notes (decision 86) cover `fold` too. Summing 100,000 numbers went from 0.81 to 0.15 ms.
 89. **Host words can take their values one by one (built; library, decision 80).** A host word may offer a direct form that takes its values as separate arguments. When an `each` loop over columns (decision 82) calls `circle [s x, s y, 2, "#fc6"]`, it uses the direct form, so no argument cell is made per shape. The program is unchanged. Drawing 10,000 particles went from 0.63 to 0.36 ms a frame; at 100,000 the time is mostly the draw list itself, about 5 ms either way.
 90. **The page has SQLite and WebGPU (built; Claude's call).** In the browser, `db` (decision 78) is SQLite compiled to WebAssembly (sql.js, MIT, in `vendor/sqljs`), with the same `query` and `run` as Node's `node:sqlite`. The database is kept in the browser (IndexedDB) and saved shortly after each write. The State tab lists its tables and can clear it. It is loaded only when a program uses `db`. The game view can draw with WebGPU: every shape in a frame goes to the GPU as one instanced draw, with text on a 2D layer above it. It is used only when the browser offers WebGPU, a test scene reads back correctly, and the frames actually show; otherwise the page uses Canvas 2D, and a pill in the bar switches between them. `bench.html` times the language, the games, particles up to 100,000 on both renderers, and SQLite.
+91. **Spork works a pure cell out ahead, into one numeric kernel (built; implements decision 47 and step 3 of decision 79, Claude's call under decision 80).** `xs spork f` gives the same list as `xs collect f`. When `f` is written after `spork` or bound to a name that `spork` is given, the compiler works it out once, when the program loads, as far as it can without its input. Calls are inlined, including recursion that ends without the input. Lists, records, words and `range`, `collect`, `keep`, `fold`, `first` and `@` on them are unrolled. A test that changes from run to run becomes a choice made in each run, with both sides worked out. A position in a list that changes from run to run becomes a check: it must be a whole number inside the list, or the spork runs the ordinary way. What is left is number maths on the input, `noise` included. It runs as one loop over `range n` or a list of numbers, on WebAssembly SIMD (two runs per instruction, in 64-bit floats) or else in JavaScript. Both give the same bits, so a program can't tell which way it ran, and the tests check it. Each run may give a number, true or false, or a record of numbers (kept as columns, decision 82). Anything spork can't work out ahead means `collect`, and the speed notes (decision 86) say why: `random`, a host word, text made from a value that changes, `keep` with a test that changes from run to run, recursion that depends on the input. `%`, `sin`, `cos`, `tan` and `log` keep a kernel in JavaScript, since WebAssembly has no exact match for them. Spork over an effectful cell, which reports back as events (decision 47), is not built yet. `ace-schedule.sp`'s Monte Carlo run (string ids, a walk over `requires`, triangle draws and a shared risk) becomes 155 steps: 100,000 runs take about 9 ms instead of 1.9 s.
+92. **`sort` is a method (built; library, decision 80).** `xs sort` gives numbers from least to most (in the same order as JavaScript's own number sort, so -0 comes before 0 and NaN last), or words in order. Numbers are sorted by radix, about 50 ms for a million. A list of numbers from `spork` or `sort` is kept as one array of numbers, the way columns are (decision 82); to a program it is the same list. `rs collect [r | r f]` over columns gives that column straight away. A program that binds its own `sort` still uses its own, as `ace-schedule.sp` does.
+93. **Big sporks can run on the GPU (built; Claude's call, from the request to use WebGPU for Monte Carlo work).** The same kernel (decision 91) becomes a WebGPU compute shader, one run per GPU thread. The GPU does 32-bit maths, so its answers can differ from SIMD and JavaScript in the last digits. A risk roll that lands right at its chance can even come out the other way, about one run in a few million. So the GPU is a host choice, not the default everywhere. The page uses it for sporks of 100,000 runs or more in a program that prints, while WebGPU works, and the State tab can turn it off. Games always use SIMD. A GPU answer arrives later, but Sprout runs straight through, so the page runs a program in passes. A spork the GPU hasn't answered stops the pass and starts the job, and when it's done the program runs again from the start and finds the answer waiting. What the stopped pass printed is dropped. A program that uses `db` doesn't wait, since its writes would happen twice. Answers are kept for the same kernel, inputs and outside numbers, so editing the rest of a program doesn't run the million runs again. Node and pages without WebGPU use SIMD. Open question for Troy: should a program be able to ask for exact answers (no GPU) itself, since the same seed can give different last digits on different machines?
 ````
 
 ---
@@ -891,6 +903,8 @@ function parseInner(src, line) {
   const p = new Parser(tokenize(src), src);
   const items = p.program();
   if (items.length !== 1 || items[0].k !== "chain") throw new SproutError("put one value inside a string's brackets", line);
+  // it counts its own lines from 1; what's inside a string is on the string's line
+  (function at(n) { if (!n || typeof n !== "object") return; if (typeof n.line === "number") n.line = line; for (const k in n) at(n[k]); })(items[0]);
   return items[0];
 }
 function parse(src) { return new Parser(tokenize(src), src).program(); }
@@ -907,7 +921,7 @@ let uid = 0;
 function jsName(n) { let s = ""; for (const ch of n) s += /[A-Za-z0-9]/.test(ch) ? ch : "_" + ch.charCodeAt(0).toString(16); return "v_" + s + "_" + (uid++); }
 
 class Gen {
-  constructor(globals) { this.globals = globals; this.shapes = []; this.frames = []; this.temps = []; this.consts = []; this.speed = []; }
+  constructor(globals) { this.globals = globals; this.shapes = []; this.frames = []; this.temps = []; this.consts = []; this.speed = []; this.sporkNames = null; this.sporkWhy = new Map(); }
   // local temporaries, declared at the top of the JS function being generated (safe under recursion)
   // field shapes and inline caches are made once, when the program loads
   shapeRef(keys) { const k = "SH" + this.consts.length; this.consts.push("const " + k + "=shapeFor(" + JSON.stringify(keys) + ");"); return k; }
@@ -1022,6 +1036,10 @@ class Gen {
       const pw = T[i - 1];
       const inner = pw && pw.k === "word" && pw.v === "fold" && t.k === "cell" && t.items[1] && t.items[1].k === "chain" && t.items[1].terms.length === 1 && t.items[1].terms[0].k === "cell" ? t.items[1].terms[0] : null;
       const tgt = inner || t;
+      if (t.k === "word" && pw && pw.k === "word" && pw.v === "spork" && this.sporkWhy.has(t.v)) {
+        const r = this.sporkWhy.get(t.v);
+        this.speed.push({ line: pw.line || 0, word: "spork", fast: r === true, why: r === true ? "" : r });
+      }
       if (tgt.k === "cell" && tgt.names.length && pw && pw.k === "word" && SPEEDW[pw.v] && tgt.kern) {
         const r = tgt.kern[SPEEDW[pw.v]];
         this.speed.push({ line: pw.line || 0, word: pw.v, fast: r === true, why: r === true ? "" : r });
@@ -1055,7 +1073,7 @@ class Gen {
     this.temps.push([]);
     items.forEach((it, idx) => {
       const last = idx === items.length - 1;
-      if (it.k === "bind") { const js = jsName(it.name); const e = this.genChain(it.val); fr.names.set(it.name, { k: "js", js }); parts.push("const " + js + "=" + e + ";"); if (last) parts.push("return " + js + ";"); }
+      if (it.k === "bind") { const js = jsName(it.name); const e = this.genChain(it.val); fr.names.set(it.name, { k: "js", js, val: it.val }); parts.push("const " + js + "=" + e + ";"); if (last) parts.push("return " + js + ";"); }
       else parts.push((last ? "return " : "") + this.genChain(it) + ";");
     });
     fr.names = saved;
@@ -1069,9 +1087,10 @@ class Gen {
       const last = i === c.items.length - 1;
       if (it.k === "bind") {
         const js = jsName(it.name), isCell = it.val.terms.length === 1 && it.val.terms[0].k === "cell";
-        if (isCell) fr.names.set(it.name, { k: "js", js, cell: true }); // a cell can use its own name (decision 25)
+        const ast = isCell ? it.val.terms[0] : null;
+        if (isCell) fr.names.set(it.name, { k: "js", js, cell: true, ast, val: it.val }); // a cell can use its own name (decision 25)
         const e = isCell ? this.genCell(it.val.terms[0], true) : this.genChain(it.val);
-        fr.names.set(it.name, { k: "js", js, cell: isCell });
+        fr.names.set(it.name, { k: "js", js, cell: isCell, ast, val: it.val });
         out.push("const " + js + "=" + e + ";");
         if (last) out.push("return " + (lastPart || "false") + ";");
       } else {
@@ -1141,9 +1160,10 @@ class Gen {
         if (!readable[i]) { sparts.push("()=>false"); return; }
         if (it.k === "bind") {
           const isCell = it.val.terms.length === 1 && it.val.terms[0].k === "cell";
-          if (isCell) fr.names.set(it.name, { k: "slot", act, i, cell: true });
+          const ast = isCell ? it.val.terms[0] : null;
+          if (isCell) fr.names.set(it.name, { k: "slot", act, i, cell: true, ast, val: it.val });
           const e = this.arrow("", () => isCell ? this.genCell(it.val.terms[0], true) : this.genChain(it.val));
-          fr.names.set(it.name, { k: "slot", act, i, cell: isCell });
+          fr.names.set(it.name, { k: "slot", act, i, cell: isCell, ast, val: it.val });
           sparts.push(e);
         } else sparts.push(this.arrow("", () => this.genChain(it)));
       });
@@ -1157,7 +1177,28 @@ class Gen {
     const simpleBody = !sh.usesIt && !sh.usesLeft && c.items.length === 1 && c.items[0].k === "chain" && c.names.every(x => !x.def);
     const kern = simpleBody && c.names.length === 1 ? this.genKernels(c) : simpleBody && c.names.length === 2 ? this.genFoldKernel(c) : null;
     if (!c.kern) { const why = c.items.length !== 1 || c.items[0].k !== "chain" ? "the body has more than one step" : c.names.length !== 1 ? "it doesn't take exactly one named input" : "it uses _ or left"; c.kern = { m: why, t: why, e: why, f: c.names.length === 2 ? why : "fold runs as a tight loop only with two inputs, as in [total x | ...]" }; }
-    return "MK(S[" + k + "]," + slotsJS + "," + runJS + ",[" + defs.join(",") + "],()=>[" + caps.join(",") + "]" + (kern ? "," + kern : "") + ")";
+    // a cell that spork is given, by name or written in place: worked out now into one numeric kernel (decision 91)
+    let all = kern;
+    if (c.sporkArg || (c.bindName && this.sporkNames && this.sporkNames.has(c.bindName))) {
+      const sk = this.genSpork(c);
+      c.kern.s = sk.js ? true : sk.why;
+      if (c.bindName) this.sporkWhy.set(c.bindName, c.kern.s);
+      if (sk.js) {
+        all = kern ? kern.slice(0, -1) + "," + sk.js + "}" : "{" + sk.js + "}";
+        // the loops inside it were unrolled when it was worked out, so their speed notes don't apply
+        const span = lineSpan(c); this.speed = this.speed.filter(x => x.line < span[0] || x.line > span[1]);
+      }
+    } else c.kern.s = "spork works a cell out ahead only when it is written after spork or bound to a name that spork is given";
+    return "MK(S[" + k + "]," + slotsJS + "," + runJS + ",[" + defs.join(",") + "],()=>[" + caps.join(",") + "]" + (all ? "," + all : "") + ")";
+  }
+  genSpork(c) {
+    const P = new Spk(this);
+    let code = null;
+    try { code = P.build(c); } catch (e) { if (e !== SPKFAIL) throw e; }
+    if (!code) return { why: P.why || "it can't be worked out ahead" };
+    const name = "SK" + this.consts.length;
+    this.consts.push("const " + name + "=" + code + ";");
+    return { js: "s:{k:" + name + ",caps:()=>[" + P.caps.join(",") + "]}" };
   }
 
   // ---- column kernels (decision 82). A cell [s | ...] over records gets up to three:
@@ -1180,6 +1221,12 @@ class Gen {
           "for(let $i=0;$i<n;$i++){" + vals.map((v, j) => "const $v" + j + "=" + v.js + ";").join("") + vals.map((v, j) => "$o" + j + "[$i]=$v" + j + ";").join("") + "}" +
           keys.map((k, j) => "oc[$j" + j + "]=$o" + j + ";").join("") + "return COLC(out,oc,n)}");
       }
+    }
+    // m: [r | r f], one field of each record: over columns, that column as a list of numbers
+    if (T.length === 2 && T[0].k === "word" && T[0].v === p && T[1].k === "word" && T[1].v !== p && !FUSED.has(T[1].v) && !LAZYOPS.has(T[1].v) &&
+        !["!", "true", "false", "_", "left", "right"].includes(T[1].v) && !(T[1].v in CELLP) && !this.lookup(T[1].v) && !this.globals.has(T[1].v)) {
+      kern.m = true;
+      out.push("m:(self,rs,cols,n)=>{const $j=rs.index(" + JSON.stringify(T[1].v) + ");return $j<0?null:NCOL(cols[$j],n)}");
     }
     // t: a test
     { const K = fresh(), v = this.kChain(c.items[0], K);
@@ -1212,7 +1259,7 @@ class Gen {
     if (c.kern.f !== true) return null;
     return "{f:(acc,xs,rng)=>{" + kPro(K) + "if(typeof acc!==\"number\")return null;let $a=acc;" +
       "if(rng){const $n=xs.n;for(let $i=1;$i<=$n;$i++){const $x=$i;$a=" + v.js + "}return $a}" +
-      "const $p=xs.parts;for(let $i=0;$i<$p.length;$i++){const $x=$p[$i];if(typeof $x!==\"number\")return null;$a=" + v.js + "}return $a}}";
+      "const $p=xs.a||xs.parts;for(let $i=0;$i<$p.length;$i++){const $x=$p[$i];if(typeof $x!==\"number\")return null;$a=" + v.js + "}return $a}}";
   }
   // a chain as number maths on the item's fields: {js, ty} with ty "n" (number) or "b" (true/false), or null if it can't be
   kChain(ch, K) {
@@ -1272,7 +1319,468 @@ class Gen {
     return e.v;
   }
 }
-const SPEEDW = { collect: "m", keep: "t", each: "e", fold: "f" };
+const SPEEDW = { collect: "m", keep: "t", each: "e", fold: "f", spork: "s" };
+// ===================================================================== spork kernels (decision 47, step 3 of decision 79)
+// A cell given to spork is worked out once, when the program loads, as far as it can be without its input:
+// calls are inlined; lists, records, words and loops over them are unrolled; a test that changes from run to run
+// becomes a choice made in each run. What is left is number maths on the input, a flat list of steps (the IR),
+// which runs as one tight loop: in JavaScript, in WebAssembly SIMD, or on the GPU.
+// If anything can't be worked out this way (a host word, a random read, keep with a test that changes from run
+// to run), there is no kernel and spork is collect, so a program can't tell which way it ran.
+const SPKFAIL = { spork: "no" };
+const SPK_PENDING = {};
+const SPK_N2 = { add: (a, b) => a + b, sub: (a, b) => a - b, mul: (a, b) => a * b, div: (a, b) => a / b, mod: (a, b) => ((a % b) + b) % b,
+  min: (a, b) => Math.min(a, b), max: (a, b) => Math.max(a, b), noise: (a, b) => NOISE(a, b) };
+const SPK_N1 = { neg: a => -a, abs: Math.abs, floor: Math.floor, ceil: Math.ceil, round: Math.round, sqrt: Math.sqrt, sin: Math.sin, cos: Math.cos, tan: Math.tan, log: Math.log };
+const SPK_C2 = { lt: (a, b) => a < b, gt: (a, b) => a > b, le: (a, b) => a <= b, ge: (a, b) => a >= b, eq: (a, b) => a === b, ne: (a, b) => a !== b };
+const SPK_B2 = { and: (a, b) => a && b, or: (a, b) => a || b, beq: (a, b) => a === b };
+// these give the same answer in JavaScript and WebAssembly only if done by JavaScript itself
+const SPK_JSONLY = new Set(["mod", "sin", "cos", "tan", "log"]);
+const SPK_OPS = { "+": "add", "-": "sub", "*": "mul", "/": "div", "%": "mod", "<": "lt", ">": "gt", "<=": "le", ">=": "ge" };
+const SPK_NATIVES = new Set(["range", "noise", "clamp", "toward"]);
+const SPK_CELLM = { "@": 1, length: 0, first: 0, last: 0, collect: 1, keep: 1, each: 1, fold: 1, spork: 1 };
+const spkNum = v => Object.is(v, -0) ? "-0" : String(v);
+
+class Spk {
+  constructor(g) {
+    this.g = g; this.nodes = []; this.memo = new Map(); this.caps = []; this.capIdx = new Map();
+    this.outside = new Map(); this.steps = 0; this.depth = 0; this.why = null; this.guards = []; this.jsOnly = false;
+    this.pc = null; this.TRUE = this.cb(true); this.FALSE = this.cb(false); this.pc = this.TRUE;
+  }
+  no(why) { if (!this.why) this.why = why; throw SPKFAIL; }
+  tick() { if (++this.steps > 400000) this.no("it takes too many steps to work out"); }
+
+  // ---- IR nodes: [op, a, b, c, v]. Equal nodes are shared, and steps on constants are worked out now.
+  node(op, a, b, c, v) {
+    const N = this.nodes, isK = i => N[i][0] === "c" || N[i][0] === "cb", kv = i => N[i][4];
+    if (SPK_N2[op] && isK(a) && isK(b)) return this.node("c", -1, -1, -1, SPK_N2[op](kv(a), kv(b)));
+    if (SPK_N1[op] && isK(a)) return this.node("c", -1, -1, -1, SPK_N1[op](kv(a)));
+    if ((SPK_C2[op] || SPK_B2[op]) && isK(a) && isK(b)) return this.node("cb", -1, -1, -1, (SPK_C2[op] || SPK_B2[op])(kv(a), kv(b)));
+    if (op === "not" && isK(a)) return this.node("cb", -1, -1, -1, !kv(a));
+    if (op === "sel") { if (isK(a)) return kv(a) ? b : c; if (b === c) return b; }
+    if (op === "and") { if (isK(a)) return kv(a) ? b : a; if (isK(b)) return kv(b) ? a : b; if (a === b) return a; }
+    if (op === "or") { if (isK(a)) return kv(a) ? a : b; if (isK(b)) return kv(b) ? b : a; if (a === b) return a; }
+    const key = op + "," + a + "," + b + "," + c + "," + (v === undefined ? "" : typeof v === "number" ? spkNum(v) : v);
+    let id = this.memo.get(key);
+    if (id !== undefined) return id;
+    id = N.length; N.push([op, a, b, c, v]); this.memo.set(key, id);
+    if (SPK_JSONLY.has(op)) this.jsOnly = true;
+    if (N.length > 60000) this.no("it is too big to run as one kernel");
+    return id;
+  }
+  num(id) { return { k: "n", id }; }
+  boo(id) { return { k: "b", id }; }
+  cn(v) { return this.num(this.node("c", -1, -1, -1, v)); }
+  cb(v) { return this.boo(this.node("cb", -1, -1, -1, !!v)); }
+  isC(p) { return p.k === "n" && this.nodes[p.id][0] === "c"; }
+  isCB(p) { return p.k === "b" && this.nodes[p.id][0] === "cb"; }
+  val(p) { return this.nodes[p.id][4]; }
+  isFalse(p) { return this.isCB(p) && this.val(p) === false; }
+  cv(parts, keys, vals) { return { k: "cv", parts, keys: keys || [], vals: vals || [] }; }
+  not(p) { return this.boo(this.node("not", p.id)); }
+  and(a, b) { return this.boo(this.node("and", a.id, b.id)); }
+  or(a, b) { return this.boo(this.node("or", a.id, b.id)); }
+  // a check that must hold in every run, or the whole spork runs the ordinary way; it only counts where the program gets to it
+  guard(ok) { const g = this.or(this.not(this.pc), ok); if (!this.isCB(g) || !this.val(g)) this.guards.push(g.id); }
+  under(c, f) { const s = this.pc; this.pc = this.and(s, c); try { return f(); } finally { this.pc = s; } }
+
+  // ---- names: the kernel's own, then the frames the compiler knows, then the built-ins
+  isName(n, env) {
+    for (let e = env; e; e = e.parent) { if (e.vars) { if (e.vars.has(n)) return true; continue; } return !!this.frameRef(n, e.f, e.lim) || this.g.globals.has(n); }
+    return false;
+  }
+  look(n, env) {
+    for (let e = env; e; e = e.parent) { if (e.vars) { if (e.vars.has(n)) return e.vars.get(n); continue; } return this.fromFrames(n, e.f, e.lim); }
+    this.no("it uses " + n);
+  }
+  frameRef(n, fIdx, lim) {
+    for (let f = fIdx; f >= 0; f--) {
+      const names = this.g.frames[f].names, r = names.get(n);
+      if (!r) continue;
+      if (f === fIdx && lim !== Infinity && spkPos(names, n) >= lim) continue;
+      return { r, f };
+    }
+    return null;
+  }
+  fromFrames(n, fIdx, lim) {
+    const fr = this.frameRef(n, fIdx, lim);
+    if (fr) {
+      const key = fr.f + "\u0000" + n;
+      if (this.outside.has(key)) { const v = this.outside.get(key); if (v === SPK_PENDING) this.no("it uses " + n + " inside its own definition"); return v; }
+      const pos = spkPos(this.g.frames[fr.f].names, n), r = fr.r;
+      let v = null;
+      if (r.ast && r.ast.names.length) v = { k: "fn", ast: r.ast, env: { f: fr.f, lim: pos + 1 } };
+      else if (r.ast || r.val) {
+        // a name bound outside: worked out again here (it is pure, so the value is the same), or else read as a number when spork runs
+        this.outside.set(key, SPK_PENDING);
+        const why = this.why, pc = this.pc; this.pc = this.TRUE;
+        try { v = r.ast ? this.cellValue(r.ast, { f: fr.f, lim: pos + 1 }) : this.chain(r.val, { f: fr.f, lim: pos }); }
+        catch (e) { if (e !== SPKFAIL) throw e; this.why = why; v = null; }
+        this.pc = pc;
+      }
+      if (!v) v = this.capture(this.g.refJS(r));
+      this.outside.set(key, v);
+      return v;
+    }
+    if (this.g.globals.has(n)) {
+      const d = Object.getOwnPropertyDescriptor(G, n);
+      if (!d || d.get) this.no(n === "random" ? "it reads random, which changes from run to run" : "it uses " + n + ", a library cell spork can't work out yet");
+      if (d.value instanceof Native) { if (SPK_NATIVES.has(n)) return { k: "nat", n }; this.no("it uses the host word " + n); }
+      if (typeof d.value === "number") return this.capture(this.g.globalRef(n));
+      this.no("it uses " + n);
+    }
+    this.no("it uses " + n + ", which isn't a name it can see");
+  }
+  capture(ref) {
+    let i = this.capIdx.get(ref);
+    if (i === undefined) { i = this.caps.length; this.caps.push(ref); this.capIdx.set(ref, i); }
+    return this.num(this.node("k", -1, -1, -1, i));
+  }
+
+  // ---- terms, chains and bodies, mirroring Gen.genChain step for step
+  term(t, env) {
+    this.tick();
+    switch (t.k) {
+      case "num": return this.cn(t.v);
+      case "str": return { k: "s", v: t.v };
+      case "tmpl": { let s = ""; for (const p of t.parts) s += typeof p === "string" ? p : this.text(this.chain(p.ast, env)); return { k: "s", v: s }; }
+      case "word":
+        if (t.v === "true") return this.TRUE;
+        if (t.v === "false") return this.FALSE;
+        if (["!", "_", "left", "right"].includes(t.v)) this.no("it uses " + t.v);
+        return this.look(t.v, env);
+      case "group": return this.group(t.items, env);
+      case "cell": return this.cellValue(t, env);
+      case "chain": return this.chain(t, env);
+    }
+    this.no("it uses something spork can't work out");
+  }
+  // text made now: only from values that are the same in every run
+  text(p) {
+    if (p.k === "s") return p.v;
+    if (this.isC(p) || this.isCB(p)) return fmt(this.val(p));
+    this.no("it puts a value that changes from run to run into text");
+  }
+  group(items, env) {
+    if (items.length === 1 && items[0].k === "chain") return this.chain(items[0], env);
+    const sc = { vars: new Map(), parent: env }; let r = this.FALSE;
+    for (const it of items) { if (it.k === "bind") { r = this.chain(it.val, sc); sc.vars.set(it.name, r); } else r = this.chain(it, sc); }
+    return r;
+  }
+  cellValue(c, env) {
+    if (c.names.length) return { k: "fn", ast: c, env };
+    if (spkUses(c)) this.no("it uses _ or left");
+    const sc = { vars: new Map(), parent: env }, parts = [], keys = [], vals = [];
+    for (const it of c.items) {
+      if (it.k === "bind") { const v = this.bindVal(it, sc); sc.vars.set(it.name, v); keys.push(it.name); vals.push(v); }
+      else parts.push(this.chain(it, sc));
+    }
+    return this.cv(parts, keys, vals);
+  }
+  bindVal(it, sc) { const T = it.val.terms; return T.length === 1 && T[0].k === "cell" ? this.cellValue(T[0], sc) : this.chain(it.val, sc); }
+  // a cell's body run in order: the last part is what it gives (genRunBody)
+  runBody(items, env) {
+    let last = this.FALSE;
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      if (it.k === "bind") { env.vars.set(it.name, this.bindVal(it, env)); if (i === items.length - 1) return last; }
+      else { const v = this.chain(it, env); if (i === items.length - 1) return v; last = v; }
+    }
+    return this.FALSE;
+  }
+  block(c, env) { if (c.names.length || spkUses(c)) this.no("a branch takes input"); return this.runBody(c.items, { vars: new Map(), parent: env }); }
+  arg(t, env) { return t.k === "cell" && !t.names.length ? this.block(t, env) : this.term(t, env); }
+
+  chain(ch, env) {
+    const T = ch.terms; if (!T.length) return this.FALSE;
+    let v = this.term(T[0], env);
+    for (let i = 1; i < T.length; i++) {
+      this.tick();
+      const t = T[i];
+      if (t.k === "word" && (t.v === "!" || t.v === "true" || t.v === "false")) this.no("it sends " + t.v);
+      if (t.k === "word") {
+        const w = t.v;
+        if (FUSED.has(w) && i + 1 < T.length && !this.isName(w, env)) {
+          const nt = T[++i];
+          if ((w === "with" || w === "..") && nt.k === "cell" && fieldsOnly(nt)) { v = this.withf(v, nt, env); continue; }
+          v = this.op(w, v, this.term(nt, env)); continue;
+        }
+        if (LAZYOPS.has(w) && i + 1 < T.length && !this.isName(w, env)) { const bt = T[++i]; v = this.lazy(w, v, () => this.arg(bt, env)); continue; }
+        const quiet = T[i + 1] && T[i + 1].k === "word" && T[i + 1].v === "else" && T[i + 2] && !this.isName("else", env);
+        v = this.word(v, w, env, quiet); continue;
+      }
+      if (t.k === "cell" && !t.names.length) {
+        const elsePat = T[i + 1] && T[i + 1].k === "word" && T[i + 1].v === "else" && T[i + 2] && !this.isName("else", env);
+        if (v.k === "b") {
+          // a boolean runs the block (decision 62); else runs when the test is false or the block gives false
+          if (elsePat) { const bt = T[i + 2]; i += 2; v = this.branch(v, () => this.block(t, env), () => this.arg(bt, env)); }
+          else v = this.branch(v, () => this.block(t, env), null);
+          continue;
+        }
+        // any other value is sent the cell; with else, the else sees what it gave
+        const r = this.send(v, this.cellValue(t, env));
+        if (elsePat) { const bt = T[i + 2]; i += 2; v = this.lazy("else", r, () => this.arg(bt, env)); } else v = r;
+        continue;
+      }
+      v = this.send(v, this.term(t, env));
+    }
+    return v;
+  }
+
+  branch(c, runA, runB) {
+    if (this.isCB(c)) {
+      if (!this.val(c)) return runB ? runB() : this.FALSE;
+      const a = runA();
+      if (!runB || a.k !== "b") return a;
+      if (this.isCB(a)) return this.val(a) ? a : runB();
+      return this.sel(a, this.TRUE, this.under(this.not(a), runB));
+    }
+    // a test that changes from run to run: both sides are worked out, and each run picks one
+    const a = this.under(c, runA);
+    if (!runB) { if (a.k === "b") return this.and(c, a); this.no("a test without else gives false in some runs and a value in others"); }
+    const pick = a.k === "b" ? this.and(c, a) : c;
+    const b = this.under(this.not(pick), runB);
+    return this.sel(pick, a.k === "b" ? this.TRUE : a, b);
+  }
+  sel(c, x, y) {
+    if (this.isCB(c)) return this.val(c) ? x : y;
+    if (this.same(x, y)) return x;
+    if (x.k === "n" && y.k === "n") return this.num(this.node("sel", c.id, x.id, y.id));
+    if (x.k === "b" && y.k === "b") return this.boo(this.node("sel", c.id, x.id, y.id));
+    if (x.k === "cv" && y.k === "cv" && x.parts.length === y.parts.length && x.keys.join("\u0000") === y.keys.join("\u0000"))
+      return this.cv(x.parts.map((p, j) => this.sel(c, p, y.parts[j])), x.keys, x.vals.map((p, j) => this.sel(c, p, y.vals[j])));
+    this.no("a test picks between different kinds of value from run to run");
+  }
+  same(x, y) {
+    if (x === y) return true;
+    if (x.k !== y.k) return false;
+    if (x.k === "n" || x.k === "b") return x.id === y.id;
+    if (x.k === "s") return x.v === y.v;
+    if (x.k === "fn") return x.ast === y.ast && x.env === y.env;
+    if (x.k === "nat") return x.n === y.n;
+    if (x.k === "cv") return x.parts.length === y.parts.length && x.keys.join("\u0000") === y.keys.join("\u0000") &&
+      x.parts.every((p, j) => this.same(p, y.parts[j])) && x.vals.every((p, j) => this.same(p, y.vals[j]));
+    return false;
+  }
+  lazy(w, v, getB) {
+    if (w === "else") {
+      if (this.isFalse(v)) return getB();
+      if (v.k !== "b" || this.isCB(v)) return v;
+      return this.sel(v, this.TRUE, this.under(this.not(v), getB));
+    }
+    if (v.k !== "b") this.no("its " + w + " isn't after a test");
+    const goOn = w === "and" ? v : this.not(v);
+    if (this.isCB(goOn) && !this.val(goOn)) return v;
+    const b = this.under(goOn, getB);
+    if (b.k !== "b") this.no("its " + w + " isn't between two tests");
+    return this.isCB(v) ? b : this.boo(this.node(w, v.id, b.id));
+  }
+
+  op(w, a, b) {
+    if (SPK_OPS[w]) {
+      if (a.k === "n" && b.k === "n") { const o = SPK_OPS[w]; return SPK_C2[o] ? this.boo(this.node(o, a.id, b.id)) : this.num(this.node(o, a.id, b.id)); }
+      if (a.k === "s" && b.k === "s" && (w === "<" || w === ">")) return this.cb(w === "<" ? a.v < b.v : a.v > b.v);
+      this.no("it does " + w + " on something that isn't a number");
+    }
+    if (w === "=" || w === "!=") { const e = this.equal(a, b); return w === "=" ? e : this.not(e); }
+    if (w === "@") return this.at(a, b);
+    // .. and with
+    if (a.k === "s" && w === "..") return { k: "s", v: a.v + this.text(b) };
+    if (a.k === "cv" && b.k === "cv" && !a.keys.includes(w)) return this.merge(a, b);
+    if ((a.k === "s" || this.isC(a)) && w === "with") return { k: "s", v: this.text(a) + this.text(b) };
+    if (this.isC(a) && w === "..") return { k: "s", v: this.text(a) + this.text(b) };
+    this.no("it uses " + w + " on values spork can't join");
+  }
+  merge(a, b) {
+    const keys = a.keys.slice(), vals = a.vals.slice();
+    b.keys.forEach((k, j) => { const i = keys.indexOf(k); if (i < 0) { keys.push(k); vals.push(b.vals[j]); } else vals[i] = b.vals[j]; });
+    return this.cv(b.parts.length ? a.parts.concat(b.parts) : a.parts, keys, vals);
+  }
+  withf(v, nt, env) {
+    const vals = nt.items.map(x => this.chain(x.val, env));
+    if (v.k !== "cv" || v.keys.includes("with")) this.no("it uses with on something that isn't a record");
+    return this.merge(v, this.cv([], nt.items.map(x => x.name), vals));
+  }
+  equal(a, b) {
+    if (a.k === "n" && b.k === "n") return this.boo(this.node("eq", a.id, b.id));
+    if (a.k === "b" && b.k === "b") return this.boo(this.node("beq", a.id, b.id));
+    if (a.k === "s" && b.k === "s") return this.cb(a.v === b.v);
+    const plain = p => p.k === "n" || p.k === "b" || p.k === "s";
+    if (plain(a) && plain(b)) return this.FALSE;
+    if (a.k === "cv" && b.k === "cv") {
+      if (a.keys.includes("=")) this.no("it compares with a cell's own =");
+      if (a.parts.length !== b.parts.length || a.keys.length !== b.keys.length) return this.FALSE;
+      let r = this.TRUE;
+      a.parts.forEach((p, j) => { r = this.and(r, this.equal(p, b.parts[j])); });
+      for (let j = 0; j < a.keys.length; j++) { const i = b.keys.indexOf(a.keys[j]); if (i < 0) return this.FALSE; r = this.and(r, this.equal(a.vals[j], b.vals[i])); }
+      return r;
+    }
+    if ((plain(a) && b.k === "cv") || (a.k === "cv" && plain(b))) return this.FALSE;
+    this.no("it compares cells that take input");
+  }
+  at(a, k) {
+    if (a.k === "cv") {
+      const P = a.parts;
+      if (this.isC(k)) { const v = P[this.val(k) - 1]; return v === undefined ? this.FALSE : v; }
+      if (k.k !== "n" || !P.length || P.length > 256) this.no("it picks from a list with a position that isn't a number");
+      // a position that changes from run to run: it must be a whole number inside the list, or spork runs the ordinary way
+      const len = this.cn(P.length), one = this.cn(1);
+      this.guard(this.and(this.and(this.boo(this.node("ge", k.id, one.id)), this.boo(this.node("le", k.id, len.id))), this.boo(this.node("eq", this.node("floor", k.id), k.id))));
+      let r = P[P.length - 1];
+      for (let j = P.length - 2; j >= 0; j--) r = this.sel(this.boo(this.node("eq", k.id, this.cn(j + 1).id)), P[j], r);
+      return r;
+    }
+    if (a.k === "s" && this.isC(k)) { const n = this.val(k), s = a.v; return n >= 1 && n <= s.length ? { k: "s", v: s[n - 1] } : this.FALSE; }
+    this.no("it uses @ on something that isn't a list");
+  }
+
+  // a word after a value: a field, then a built-in method, then a name in scope sent as the argument (SW)
+  word(v, w, env, quiet) {
+    if (v.k === "cv") {
+      const j = v.keys.indexOf(w);
+      if (j >= 0) {
+        if (this.isName(w, env)) this.no("it reads " + w + ", which is both a field and a name in scope");
+        const f = v.vals[j]; if (f.k === "fn" && spkUses(f.ast)) this.no("a field uses left"); return f;
+      }
+      if (w in SPK_CELLM) {
+        if (SPK_CELLM[w]) return { k: "wait", m: w, left: v };
+        const P = v.parts;
+        if (w === "length") return this.cn(P.length);
+        if (w === "first") return P.length ? P[0] : this.FALSE;
+        return P.length ? P[P.length - 1] : this.FALSE;
+      }
+    } else if (v.k === "n") {
+      if (SPK_N1[w]) return this.num(this.node(w, v.id));
+      if (w === "min" || w === "max") return { k: "wait", m: w, left: v };
+      if (w === "times") this.no("it uses times");
+    } else if (v.k === "b") {
+      if (w === "not") return this.not(v);
+    } else if (v.k === "s") {
+      if (w === "length") return this.cn(v.v.length);
+      if (w === "upper") return { k: "s", v: v.v.toUpperCase() };
+      if (w === "lower") return { k: "s", v: v.v.toLowerCase() };
+    } else if (v.k === "fn" || v.k === "nat") {
+      if (v.k === "fn" && v.ast.items.some(x => x.k === "bind" && x.name === w)) this.no("it reads a field of a cell that takes input");
+      if (w in SPK_CELLM) this.no("it uses " + w + " on a cell that takes input");
+    }
+    if (w === "str") return { k: "s", v: this.text(v) };
+    if (w in ALL) this.no("it uses " + w + " there");
+    if (this.isName(w, env)) return this.send(v, this.look(w, env));
+    if (quiet) return this.FALSE;
+    this.no("it reads " + w + ", which isn't there");
+  }
+  send(v, a) {
+    if (v.k === "fn") {
+      if (a.k === "s" && v.ast.items.some(x => x.k === "bind" && x.name === a.v)) this.no("it reads a field by name");
+      return this.call(v, a);
+    }
+    if (v.k === "nat") return this.native(v.n, a);
+    if (v.k === "wait") return this.method(v.m, v.left, a);
+    this.no(v.k === "n" ? "it sends a value to a number" : "it sends a value to something that isn't a cell");
+  }
+  call(f, a) {
+    const c = f.ast, nn = c.names.length;
+    if (spkUses(c)) this.no("it calls a cell that uses _ or left");
+    if (++this.depth > 300) this.no("it calls itself too deeply to work out");
+    const vars = new Map();
+    if (nn === 1) vars.set(c.names[0].n, a);
+    else {
+      // several names: by position, then by name (decision 15); a missing one with no default would be false, with a lint
+      if (a.k !== "cv" || a.parts.length > nn) this.no("it gives a cell the wrong number of values");
+      c.names.forEach((x, j) => {
+        let v = j < a.parts.length ? a.parts[j] : undefined;
+        const fi = a.keys.indexOf(x.n); if (fi >= 0) v = a.vals[fi];
+        if (v === undefined) { if (!x.def) this.no("it leaves out " + x.n); v = this.term(x.def, f.env); }
+        vars.set(x.n, v);
+      });
+    }
+    const r = this.runBody(c.items, { vars, parent: f.env });
+    this.depth--;
+    return r;
+  }
+  apply(f, x) { if (f.k === "fn") { if (!f.ast.names.length) this.no("it collects with a cell that has no inputs"); return this.call(f, x); } return this.send(f, x); }
+  method(m, left, a) {
+    if (m === "min" || m === "max") { if (a.k !== "n") this.no("its " + m + " isn't given a number"); return this.num(this.node(m, left.id, a.id)); }
+    const P = left.parts;
+    if (m === "@") return this.at(left, a);
+    if (m === "collect" || m === "spork") return this.cv(P.map(p => this.apply(a, p)));
+    if (m === "keep") {
+      const o = [];
+      for (const p of P) {
+        const t = this.apply(a, p);
+        if (!this.isCB(t)) this.no(t.k === "b" ? "keep's test changes from run to run" : "keep's test doesn't give true or false");
+        if (this.val(t)) o.push(p);
+      }
+      return this.cv(o);
+    }
+    if (m === "fold") {
+      if (a.k !== "cv") this.no("fold isn't given [start, cell]");
+      let acc = a.parts[0] || this.FALSE; const g = a.parts[1] || this.FALSE;
+      for (const p of P) acc = g.k === "fn" && g.ast.names.length === 2 ? this.call(g, this.cv([acc, p])) : this.apply(g, this.cv([acc, p]));
+      return acc;
+    }
+    this.no("it uses " + m + " inside spork");
+  }
+  native(n, a) {
+    const A = k => a.k === "cv" ? (a.parts[k] || this.FALSE) : k === 0 ? a : this.FALSE;
+    const nums = k => { const o = []; for (let j = 0; j < k; j++) { const x = A(j); if (x.k !== "n") this.no(n + " isn't given numbers"); o.push(x); } return o; };
+    if (n === "range") {
+      if (!this.isC(a)) this.no("range is given a count that changes from run to run");
+      const m = Math.max(0, Math.floor(this.val(a)));
+      if (m > 100000) this.no("it unrolls a range that is too long");
+      const P = new Array(m); for (let j = 0; j < m; j++) P[j] = this.cn(j + 1);
+      return this.cv(P);
+    }
+    if (n === "noise") { const [x, y] = nums(2); return this.num(this.node("noise", x.id, y.id)); }
+    if (n === "clamp") {
+      const [x, lo, hi] = nums(3);
+      return this.sel(this.boo(this.node("lt", x.id, lo.id)), lo, this.sel(this.boo(this.node("gt", x.id, hi.id)), hi, x));
+    }
+    const [x, y, t] = nums(3);   // toward
+    return this.num(this.node("add", x.id, this.node("mul", this.node("sub", y.id, x.id), t.id)));
+  }
+
+  // ---- the whole cell: [x | ...] whose runs each give a number, true or false, or a record of numbers
+  build(c) {
+    if (c.names.length !== 1 || c.names[0].def) this.no("spork runs as a kernel only for a cell with one named input");
+    if (spkUses(c)) this.no("it uses _ or left");
+    const x = this.num(this.node("x", -1, -1, -1));
+    const r = this.runBody(c.items, { vars: new Map([[c.names[0].n, x]]), parent: { f: this.g.frames.length - 1, lim: Infinity } });
+    let kind, outs, keys = null;
+    if (r.k === "n") { kind = "n"; outs = [r.id]; }
+    else if (r.k === "b") { kind = "b"; outs = [r.id]; }
+    else if (r.k === "cv" && !r.parts.length && r.keys.length && r.vals.every(p => p.k === "n")) { kind = "rec"; keys = r.keys; outs = r.vals.map(p => p.id); }
+    else this.no("each run gives something other than a number, true or false, or a record of numbers");
+    return this.emit(kind, outs, keys);
+  }
+  // keep only the steps the answer needs, numbered afresh, as a JavaScript literal
+  emit(kind, outs, keys) {
+    const N = this.nodes, live = new Uint8Array(N.length);
+    for (const i of outs.concat(this.guards)) live[i] = 1;
+    for (let i = N.length - 1; i >= 0; i--) if (live[i]) { const [, a, b, c] = N[i]; if (a >= 0) live[a] = 1; if (b >= 0) live[b] = 1; if (c >= 0) live[c] = 1; }
+    const map = new Int32Array(N.length).fill(-1), out = []; let jsOnly = false;
+    for (let i = 0; i < N.length; i++) if (live[i]) {
+      const [op, a, b, c, v] = N[i]; map[i] = out.length;
+      if (SPK_JSONLY.has(op)) jsOnly = true;
+      const lit = v === undefined ? "" : "," + (typeof v === "number" ? spkNum(v) : String(v));
+      out.push("[\"" + op + "\"," + (a >= 0 ? map[a] : -1) + "," + (b >= 0 ? map[b] : -1) + "," + (c >= 0 ? map[c] : -1) + lit + "]");
+    }
+    const g = [...new Set(this.guards)].map(i => map[i]);
+    return "{nodes:[" + out.join(",") + "],outs:[" + outs.map(i => map[i]).join(",") + "],guards:[" + g.join(",") + "],kind:\"" + kind + "\"" +
+      (keys ? ",keys:" + JSON.stringify(keys) : "") + ",jsOnly:" + jsOnly + "}";
+  }
+}
+// the first and last line a piece of the tree is on
+function lineSpan(n) {
+  let lo = Infinity, hi = -Infinity;
+  (function walk(x) { if (!x || typeof x !== "object") return; if (typeof x.line === "number" && x.line > 0) { lo = Math.min(lo, x.line); hi = Math.max(hi, x.line); } for (const k in x) if (!NOTE_KEYS.has(k) || k === "line") { const v = x[k]; if (v && typeof v === "object") walk(v); } })(n);
+  return [lo, hi];
+}
+// where a name sits among a frame's names, in the order they were bound
+function spkPos(names, n) { let i = 0; for (const k of names.keys()) { if (k === n) return i; i++; } return -1; }
+// does a cell (or anything in it) use _ or left?
+const SPK_IT = new Set(["_", "left", "right"]);
+function spkUses(c) { if (c.spkUses === undefined) c.spkUses = mentions(c, SPK_IT); return c.spkUses; }
 const KOPS = { "+": ["+", "n"], "-": ["-", "n"], "*": ["*", "n"], "/": ["/", "n"], "%": ["%", "n"], "<": ["<", "b"], ">": [">", "b"], "<=": ["<=", "b"], ">=": [">=", "b"], "=": ["===", "b"], "!=": ["!==", "b"] };
 const KPOST = { abs: "Math.abs", floor: "Math.floor", round: "Math.round", ceil: "Math.ceil", sqrt: "Math.sqrt", sin: "Math.sin", cos: "Math.cos", tan: "Math.tan", log: "Math.log", neg: "-" };
 // a kernel can't be made: remember the first reason, for the speed notes (decision 86)
@@ -1323,11 +1831,28 @@ function simpleVal(ch) {
 }
 // [a, b, c] whose parts are all simple: built straight away as a cell of values
 function simpleParts(c) { return !c.names.length && c.items.length > 0 && c.items.every(x => x.k === "chain" && simpleVal(x)); }
-function srcOf(c) { return JSON.stringify(c, (k, v) => k === "line" ? undefined : v); }
+const NOTE_KEYS = new Set(["line", "kern", "bindName", "sporkArg", "spkUses"]);
+function srcOf(c) { return JSON.stringify(c, (k, v) => NOTE_KEYS.has(k) ? undefined : v); }
 
+// the cells spork is given: by name (spork one-run), or written in place (spork [n | ...]); and each cell bound to a name
+function sporkTargets(ast) {
+  const names = new Set();
+  (function walk(n) {
+    if (!n || typeof n !== "object") return;
+    if (Array.isArray(n)) { for (const x of n) walk(x); return; }
+    if (n.k === "chain") {
+      const T = n.terms;
+      for (let i = 0; i + 1 < T.length; i++) if (T[i].k === "word" && T[i].v === "spork") { const t = T[i + 1]; if (t.k === "word") names.add(t.v); else if (t.k === "cell") t.sporkArg = true; }
+    }
+    if (n.k === "bind" && n.val && n.val.terms && n.val.terms.length === 1 && n.val.terms[0].k === "cell") n.val.terms[0].bindName = n.name;
+    for (const key in n) if (!NOTE_KEYS.has(key)) walk(n[key]);
+  })(ast);
+  return names;
+}
 function compile(src, globals) {
   const ast = parse(src);
   const g = new Gen(globals);
+  g.sporkNames = sporkTargets(ast);
   g.temps.push([]);
   const js = g.genCell({ k: "cell", names: [], items: ast });
   const top = g.temps.pop();
@@ -1478,6 +2003,16 @@ class ColCell extends VCell {
   run() { return this.n ? this.part(this.n) : false; }
 }
 function COLC(rs, cols, n) { return new ColCell(rs, cols, n); }
+function NCOL(col, n) { return new NCell(col.slice(0, n)); }
+// NCell: a list of numbers kept in one Float64Array, made by spork and sort. To a program it is the same list.
+class NCell extends VCell {
+  constructor(a) { super(null, ROOT, EMPTY); this.a = a; this._p = null; }
+  get parts() { if (!this._p) this._p = Array.from(this.a); return this._p; }
+  set parts(v) {}
+  count() { return this.a.length; }
+  part(k) { return Number.isInteger(k) && k >= 1 && k <= this.a.length ? this.a[k - 1] : false; }
+  run() { return this.a.length ? this.a[this.a.length - 1] : false; }
+}
 let COLMIN = 32;
 const COLS = new WeakMap();
 // the columns for a list, if it is one: a list already in columns, or 32 or more records of one shape holding only numbers
@@ -1731,6 +2266,218 @@ function fold(xs, arg) {
 }
 function times(n, f) { for (let i = 1; i <= n; i++) CALL(f, i); return false; }
 
+// ---- spork (decision 47): a parallel collect. A pure cell worked out ahead (decision 91) runs as one numeric kernel,
+// on the fastest way this machine has; anything else is collect.
+let SPORK = { info: null, wasm: undefined, gpu: null, tally: [] };
+const sporkRan = info => { SPORK.info = info; if (SPORK.tally.length < 50) SPORK.tally.push(info); };
+function spork(xs, f) {
+  if (COLMIN !== Infinity && f instanceof Cell && f.kn && f.kn.s) { const r = runSpork(f.kn.s, xs); if (r) return r; }
+  const t0 = nowMs(), r = collect(xs, f);
+  sporkRan({ n: isCell(xs) ? xs.count() : 0, how: "collect", ms: nowMs() - t0, steps: 0 });
+  return r;
+}
+const nowMs = () => typeof performance !== "undefined" ? performance.now() : Date.now();
+function runSpork(s, xs) {
+  const K = s.k, C = s.caps();
+  for (let i = 0; i < C.length; i++) if (typeof C[i] !== "number") return null;
+  let n, X = null;
+  if (xs instanceof RCell) n = xs.n;
+  else if (xs instanceof NCell) { X = xs.a; n = X.length; }
+  else if (xs instanceof VCell && !(xs instanceof ColCell) && xs.fs === ROOT) {
+    const p = xs.parts; n = p.length; X = new Float64Array(n);
+    for (let i = 0; i < n; i++) { const v = p[i]; if (typeof v !== "number") return null; X[i] = v; }
+  } else return null;
+  if (n === 0) return VP([]);
+  const t0 = nowMs(); let O = null, how = "";
+  // the GPU (32-bit maths) only when the host allows it; else WebAssembly SIMD; else JavaScript. The last two give the same answer.
+  if (SPORK.gpu && !K.jsOnly) { O = SPORK.gpu(K, n, X, C) || null; if (O) how = "gpu"; }
+  if (SPORK.wasm === undefined) SPORK.wasm = wasmSpork();
+  if (!O && SPORK.wasm && !K.jsOnly && n >= 16) { O = SPORK.wasm(K, n, X, C); how = "simd"; if (!O) return null; }
+  if (!O) { O = K.outs.map(() => new Float64Array(n)); how = "js"; if (!spkJS(K)(n, X, C, O)) return null; }
+  sporkRan({ n, how, ms: how === "gpu" && O.ms !== undefined ? O.ms : nowMs() - t0, steps: K.nodes.length });
+  if (K.kind === "n") return new NCell(O[0]);
+  if (K.kind === "b") { const o = new Array(n), a = O[0]; for (let i = 0; i < n; i++) o[i] = a[i] !== 0; return VP(o); }
+  return new ColCell(shapeFor(K.keys), O, n);
+}
+// the kernel as JavaScript: one loop; steps that don't depend on the input are worked out before it
+function spkJS(K) {
+  if (K.jsF) return K.jsF;
+  const N = K.nodes, inv = new Uint8Array(N.length), r = i => "v" + i;
+  let pre = "", body = "";
+  for (let i = 0; i < N.length; i++) {
+    const [op, a, b, c, v] = N[i]; let e;
+    switch (op) {
+      case "c": e = spkNum(v); break; case "cb": e = String(v); break;
+      case "x": e = "x"; break; case "k": e = "C[" + v + "]"; break;
+      case "add": e = r(a) + "+" + r(b); break; case "sub": e = r(a) + "-" + r(b); break;
+      case "mul": e = r(a) + "*" + r(b); break; case "div": e = r(a) + "/" + r(b); break;
+      case "mod": e = "((" + r(a) + "%" + r(b) + ")+" + r(b) + ")%" + r(b); break;
+      case "min": case "max": e = "Math." + op + "(" + r(a) + "," + r(b) + ")"; break;
+      case "noise": e = "NOISE(" + r(a) + "," + r(b) + ")"; break;
+      case "neg": e = "-" + r(a); break;
+      case "abs": case "floor": case "ceil": case "round": case "sqrt": case "sin": case "cos": case "tan": case "log": e = "Math." + op + "(" + r(a) + ")"; break;
+      case "lt": e = r(a) + "<" + r(b); break; case "gt": e = r(a) + ">" + r(b); break;
+      case "le": e = r(a) + "<=" + r(b); break; case "ge": e = r(a) + ">=" + r(b); break;
+      case "eq": case "beq": e = r(a) + "===" + r(b); break; case "ne": e = r(a) + "!==" + r(b); break;
+      case "and": e = r(a) + "&&" + r(b); break; case "or": e = r(a) + "||" + r(b); break; case "not": e = "!" + r(a); break;
+      case "sel": e = r(a) + "?" + r(b) + ":" + r(c); break;
+      default: throw new Error("spork step " + op);
+    }
+    inv[i] = op !== "x" && (a < 0 || inv[a]) && (b < 0 || inv[b]) && (c < 0 || inv[c]) ? 1 : 0;
+    if (inv[i]) pre += "const v" + i + "=" + e + ";"; else body += "const v" + i + "=" + e + ";";
+  }
+  const g = K.guards.length ? "if(!(" + K.guards.map(r).join("&&") + "))return false;" : "";
+  const st = K.outs.map((o, j) => "O" + j + "[i]=" + (K.kind === "b" ? r(o) + "?1:0" : r(o)) + ";").join("");
+  const f = new Function("NOISE", "n", "X", "C", "O", "const " + K.outs.map((o, j) => "O" + j + "=O[" + j + "]").join(",") + ";" + pre +
+    "for(let i=0;i<n;i++){const x=X?X[i]:i+1;" + body + g + st + "}return true");
+  return (K.jsF = (n, X, C, O) => f(NOISE, n, X, C, O));
+}
+// ---- the kernel as WebAssembly SIMD: two runs per instruction, in f64x2, so every step is the same IEEE double step
+// JavaScript takes and the answers match bit for bit. noise is the same 32-bit hash, done in i32x4 lanes.
+// run(n, xp, cp, op, stride): inputs at xp (0 for range), outside numbers at cp, each output at op + j * stride.
+const WB = {
+  u: n => { const o = []; do { let b = n & 127; n >>>= 7; if (n) b |= 128; o.push(b); } while (n); return o; },
+  s: n => { const o = []; for (;;) { const b = n & 127; n >>= 7; if ((n === 0 && !(b & 64)) || (n === -1 && (b & 64))) { o.push(b); return o; } o.push(b | 128); } },
+  f64: v => Array.from(new Uint8Array(new Float64Array([v]).buffer)),
+  str: s => [...WB.u(s.length), ...Array.from(s, ch => ch.charCodeAt(0))],
+  sec: (id, body) => [id, ...WB.u(body.length), ...body],
+};
+const V = op => [0xfd, ...WB.u(op)];   // a SIMD instruction
+const VOP = { add: 0xf0, sub: 0xf1, mul: 0xf2, div: 0xf3, min: 0xf4, max: 0xf5, abs: 0xec, neg: 0xed, sqrt: 0xef, floor: 0x75, ceil: 0x74,
+  eq: 0x47, ne: 0x48, lt: 0x49, gt: 0x4a, le: 0x4b, ge: 0x4c, not: 0x4d, and: 0x4e, or: 0x50, xor: 0x51, sel: 0x52, any: 0x53,
+  ishru: 0xad, imul: 0xb5, splat: 0x14, isplat: 0x11, toU: 0xfd, fromU: 0xff, load: 0x00, store: 0x0b, konst: 0x0c };
+const vconst = bytes => [...V(VOP.konst), ...bytes];
+const f2 = (a, b) => vconst([...WB.f64(a), ...WB.f64(b === undefined ? a : b)]);
+const i4 = c => { const b = new Uint8Array(16), d = new DataView(b.buffer); for (let j = 0; j < 4; j++) d.setInt32(j * 4, c | 0, true); return vconst(Array.from(b)); };
+const SIGN = vconst([0, 0, 0, 0, 0, 0, 0, 0x80, 0, 0, 0, 0, 0, 0, 0, 0x80]);
+const ALL1 = vconst(new Array(16).fill(255));
+const ALL0 = vconst(new Array(16).fill(0));
+
+function spkWasmBytes(K) {
+  const N = K.nodes;
+  // locals: 0 n, 1 xp, 2 cp, 3 op, 4 stride (params); 5 i; then one per output base; then v128s
+  const P_N = 0, P_X = 1, P_C = 2, P_O = 3, P_S = 4, L_I = 5, L_OB = 6, nOut = K.outs.length;
+  let nv = L_OB + nOut; const v128 = () => nv++;
+  const IV = v128(), XV = v128(), BAD = v128(), NV = v128(), T0 = v128(), T1 = v128(), T2 = v128(), T3 = v128(), T4 = v128();
+  const loc = new Int32Array(N.length).fill(-1), inv = new Uint8Array(N.length);
+  const get = l => [0x20, ...WB.u(l)], set = l => [0x21, ...WB.u(l)], tee = l => [0x22, ...WB.u(l)];
+  const push = i => { const [op, , , , v] = N[i]; if (op === "c") return f2(v); if (op === "cb") return v ? ALL1 : ALL0; if (op === "x") return get(XV); return get(loc[i]); };
+  // floor(v) mod 2^32, as the bits of a 32-bit integer (JavaScript's ToInt32), in i32 lanes 0 and 1
+  const u32 = code => [...code, ...tee(T4), ...get(T4), ...f2(1 / 4294967296), ...V(VOP.mul), ...V(VOP.floor), ...f2(4294967296), ...V(VOP.mul), ...V(VOP.sub), ...V(VOP.toU)];
+  const xs16 = s => [...tee(T4), ...get(T4), 0x41, ...WB.s(s), ...V(VOP.ishru), ...V(VOP.xor)];   // h ^= h >>> s
+  const step = i => {
+    const [op, a, b, c, v] = N[i];
+    switch (op) {
+      case "c": case "cb": case "x": return [];
+      case "k": return [0x20, ...WB.u(P_C), 0x2b, 3, ...WB.u(v * 8), ...V(VOP.splat)];
+      case "add": case "sub": case "mul": case "div": case "min": case "max": case "lt": case "gt": case "le": case "ge": case "eq": case "ne": case "and": case "or":
+        return [...push(a), ...push(b), ...V(VOP[op])];
+      case "neg": case "abs": case "sqrt": case "floor": case "ceil": case "not": return [...push(a), ...V(VOP[op])];
+      case "beq": return [...push(a), ...push(b), ...V(VOP.xor), ...V(VOP.not)];
+      case "sel": return [...push(b), ...push(c), ...push(a), ...V(VOP.sel)];
+      case "round":
+        // Math.round: floor, plus one when the rest is at least a half; a zero keeps the sign of its input
+        return [...push(a), ...V(VOP.floor), ...set(T0),
+          ...get(T0), ...f2(1), ...V(VOP.add), ...get(T0), ...push(a), ...get(T0), ...V(VOP.sub), ...f2(0.5), ...V(VOP.ge), ...V(VOP.sel), ...set(T1),
+          ...push(a), ...SIGN, ...V(VOP.and), ...get(T1), ...get(T1), ...f2(0), ...V(VOP.eq), ...V(VOP.sel)];
+      case "noise":
+        return [...push(a), ...set(T0), ...push(b), ...set(T1), ...get(T0), ...V(VOP.floor), ...set(T2), ...get(T1), ...V(VOP.floor), ...set(T3),
+          ...u32(get(T2)), ...i4(0x9e3779b9), ...V(VOP.xor), ...i4(0x85ebca6b), ...V(VOP.imul),
+          ...u32([...get(T3), ...f2(0x632be5ab), ...V(VOP.add)]), ...i4(0xc2b2ae35), ...V(VOP.imul), ...V(VOP.xor),
+          // the fraction times 2^32 can round up to 2^32 itself (x = -1e-300), which JavaScript wraps to 0, so it is wrapped here too
+          ...u32([...get(T0), ...get(T2), ...V(VOP.sub), ...f2(4294967296), ...V(VOP.mul)]), ...i4(0x27d4eb2f), ...V(VOP.imul), ...V(VOP.xor),
+          ...u32([...get(T1), ...get(T3), ...V(VOP.sub), ...f2(4294967296), ...V(VOP.mul)]), ...i4(0x165667b1), ...V(VOP.imul), ...V(VOP.xor),
+          ...xs16(16), ...i4(0x7feb352d), ...V(VOP.imul), ...xs16(15), ...i4(0x846ca68b), ...V(VOP.imul), ...xs16(16),
+          ...V(VOP.fromU), ...f2(1 / 4294967296), ...V(VOP.mul)];
+    }
+    throw new Error("no SIMD step for " + op);
+  };
+  for (let i = 0; i < N.length; i++) {
+    const [op, a, b, c] = N[i];
+    inv[i] = op !== "x" && (a < 0 || inv[a]) && (b < 0 || inv[b]) && (c < 0 || inv[c]) ? 1 : 0;
+    if (op !== "c" && op !== "cb" && op !== "x") loc[i] = v128();
+  }
+  const code = [];
+  // before the loop: output bases, the lane numbers [0, 1], n in both lanes, and every step that doesn't depend on the input
+  K.outs.forEach((o, j) => code.push(...get(P_O), ...get(P_S), 0x41, ...WB.s(j), 0x6c, 0x6a, ...set(L_OB + j)));
+  code.push(...f2(0, 1), ...set(IV), ...get(P_N), 0xb7, ...V(VOP.splat), ...set(NV), ...ALL0, ...set(BAD));
+  for (let i = 0; i < N.length; i++) if (inv[i] && loc[i] >= 0) code.push(...step(i), ...set(loc[i]));
+  code.push(0x02, 0x40, 0x03, 0x40, ...get(L_I), ...get(P_N), 0x4e, 0x0d, 1);
+  // this pair's input: from memory, or the range's own numbers
+  code.push(...get(P_X), 0x04, 0x40, ...get(P_X), ...get(L_I), 0x41, 3, 0x74, 0x6a, ...V(VOP.load), 4, 0, ...set(XV),
+    0x05, ...get(IV), ...f2(1), ...V(VOP.add), ...set(XV), 0x0b);
+  for (let i = 0; i < N.length; i++) if (!inv[i] && loc[i] >= 0) code.push(...step(i), ...set(loc[i]));
+  // a check that fails in a real lane (not the spare one past n) means the ordinary way
+  for (const g of K.guards) code.push(...get(BAD), ...push(g), ...V(VOP.not), ...get(IV), ...get(NV), ...V(VOP.lt), ...V(VOP.and), ...V(VOP.or), ...set(BAD));
+  K.outs.forEach((o, j) => {
+    code.push(...get(L_OB + j), ...get(L_I), 0x41, 3, 0x74, 0x6a);
+    if (K.kind === "b") code.push(...f2(1), ...f2(0), ...push(o), ...V(VOP.sel)); else code.push(...push(o));
+    code.push(...V(VOP.store), 4, 0);
+  });
+  code.push(...get(IV), ...f2(2), ...V(VOP.add), ...set(IV), ...get(L_I), 0x41, 2, 0x6a, ...set(L_I), 0x0c, 0, 0x0b, 0x0b);
+  code.push(...get(BAD), ...V(VOP.any), 0x45, 0x0b);
+  const locals = [...WB.u(2), ...WB.u(1 + nOut), 0x7f, ...WB.u(nv - L_I - 1 - nOut), 0x7b];
+  const body = [...locals, ...code];
+  return new Uint8Array([0x00, 0x61, 0x73, 0x6d, 1, 0, 0, 0,
+    ...WB.sec(1, [1, 0x60, 5, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 1, 0x7f]),
+    ...WB.sec(2, [1, ...WB.str("m"), ...WB.str("mem"), 0x02, 0x00, 1]),
+    ...WB.sec(3, [1, 0]),
+    ...WB.sec(7, [1, ...WB.str("run"), 0x00, 0]),
+    ...WB.sec(10, [1, ...WB.u(body.length), ...body])]);
+}
+// the WebAssembly way, if this machine has SIMD: one memory, grown as needed; each kernel is made once
+function wasmSpork() {
+  if (typeof WebAssembly === "undefined") return null;
+  try { if (!WebAssembly.validate(spkWasmBytes({ nodes: [["x", -1, -1, -1], ["sqrt", 0, -1, -1]], outs: [1], guards: [], kind: "n" }))) return null; } catch (e) { return null; }
+  const mem = new WebAssembly.Memory({ initial: 1 }), made = new WeakMap();
+  return (K, n, X, C) => {
+    let inst = made.get(K);
+    if (inst === undefined) {
+      try { inst = new WebAssembly.Instance(new WebAssembly.Module(spkWasmBytes(K)), { m: { mem } }); } catch (e) { inst = null; }
+      made.set(K, inst);
+    }
+    if (!inst) return null;
+    const n2 = n + (n & 1), stride = n2 * 8, cp = 16, xp = cp + ((C.length * 8 + 15) & ~15), op = xp + (X ? stride + 16 : 0);
+    const need = op + K.outs.length * stride + 64, have = mem.buffer.byteLength;
+    if (need > have) mem.grow(Math.ceil((need - have) / 65536));
+    new Float64Array(mem.buffer, cp, C.length).set(C);
+    if (X) { const xv = new Float64Array(mem.buffer, xp, n2); xv.set(X); if (n2 > n) xv[n] = 0; }
+    if (!inst.exports.run(n, X ? xp : 0, cp, op, stride)) return null;
+    return K.outs.map((o, j) => new Float64Array(mem.buffer, op + j * stride, n).slice());
+  };
+}
+// numbers in the same order as a typed array's own sort (-0 before 0, NaN last), by radix: four passes of 16 bits
+function sortF64(src) {
+  const n = src.length;
+  if (n < 512) return Float64Array.from(src).sort();
+  let m = 0, nan = 0; const a = new Float64Array(n);
+  for (let i = 0; i < n; i++) { const v = src[i]; if (v !== v) nan++; else a[m++] = v; }
+  let A = new Uint32Array(a.buffer, 0, m * 2), B = new Uint32Array(m * 2);
+  // the bits of a double, turned so that unsigned order is number order
+  for (let i = 0; i < m; i++) { const hi = A[2 * i + 1]; if (hi & 0x80000000) { A[2 * i + 1] = ~hi; A[2 * i] = ~A[2 * i]; } else A[2 * i + 1] = hi | 0x80000000; }
+  const count = new Uint32Array(65536);
+  for (let d = 0; d < 4; d++) {
+    const w = d >> 1, sh = (d & 1) * 16;
+    count.fill(0);
+    for (let i = 0; i < m; i++) count[(A[2 * i + w] >>> sh) & 0xffff]++;
+    let sum = 0; for (let k = 0; k < 65536; k++) { const c = count[k]; count[k] = sum; sum += c; }
+    for (let i = 0; i < m; i++) { const j = count[(A[2 * i + w] >>> sh) & 0xffff]++; B[2 * j] = A[2 * i]; B[2 * j + 1] = A[2 * i + 1]; }
+    const t = A; A = B; B = t;
+  }
+  for (let i = 0; i < m; i++) { const hi = A[2 * i + 1]; if (hi & 0x80000000) A[2 * i + 1] = hi & 0x7fffffff; else { A[2 * i + 1] = ~hi; A[2 * i] = ~A[2 * i]; } }
+  const out = new Float64Array(n); out.set(new Float64Array(A.buffer, A.byteOffset, m)); out.fill(NaN, m);
+  return out;
+}
+// sort: numbers from least to most, or words in order (a library choice, decision 80)
+function sortList(xs) {
+  if (xs instanceof NCell) return new NCell(sortF64(xs.a));
+  if (xs instanceof RCell) return xs;
+  const p = partsOf(xs);
+  if (p.every(v => typeof v === "number")) return new NCell(sortF64(Float64Array.from(p)));
+  if (p.every(v => typeof v === "string")) return VP(p.slice().sort());
+  return LOG_MISS("sort sorts a list of numbers or a list of words");
+}
+
 // ---- prototypes: built-in fields of each kind of value. ar:1 waits for a right side.
 const m0 = fn => ({ ar: 0, fn }), m1 = fn => ({ ar: 1, fn });
 const ALL = {
@@ -1755,7 +2502,7 @@ const BOOL = Object.assign(Object.create(ALL), {
 });
 const CELLP = Object.assign(Object.create(ALL), {
   "@": m1(PART), length: m0(LEN), first: m0(a => a.part(1)), last: m0(a => a.part(a.count())),
-  collect: m1(collect), keep: m1(keep), each: m1(each), fold: m1(fold),
+  collect: m1(collect), keep: m1(keep), each: m1(each), fold: m1(fold), spork: m1(spork), sort: m0(sortList),
 });
 const NONE_P = ALL;
 function protoOf(r) {
@@ -1816,7 +2563,7 @@ frame : [update |
 
 // ===================================================================== build
 const RT = { BANG, ANY, G, S: null, MK, SW, SEND, RUNC, STR, UNKNOWN, LOG_MISS, WITHF,
-  ADD, SUB, MUL, DIV, MOD, LT, GT, LE, GE, EQ, NE, CAT, WITH, AT, VC, VP, ISBOOL, MISSING, TAIL, SWI, shapeFor, COLC, NATIVE: Native, NOISE };
+  ADD, SUB, MUL, DIV, MOD, LT, GT, LE, GE, EQ, NE, CAT, WITH, AT, VC, VP, ISBOOL, MISSING, TAIL, SWI, shapeFor, COLC, NCOL, NATIVE: Native, NOISE };
 let preludeCell = null;
 function globalNames(extra) { const s = new Set(Object.keys(G)); if (extra) for (const k of extra) s.add(k); return s; }
 
@@ -1837,7 +2584,9 @@ function load(src, opts) {
 }
 
 const api = { tokenize, parse, compile, load, fmt, eq, merge, isCell, Cell, VCell, Native, G, BANG, ANY, SproutError, PRELUDE,
-  ColCell, columns: on => { COLMIN = on ? 32 : Infinity; },
+  ColCell, NCell, columns: on => { COLMIN = on ? 32 : Infinity; },
+  // spork: how the last one ran, and the ways it can run (decision 91)
+  get sporkInfo() { return SPORK.info; }, sporkTally: reset => { const t = SPORK.tally; if (reset) SPORK.tally = []; return t; }, sporkWays: w => { if (SPORK.wasm === undefined) SPORK.wasm = wasmSpork(); Object.assign(SPORK, w); return SPORK; },
   setLog: f => { LOG = f; }, setOut: f => { OUT = f; }, setRandom: f => { RNG = f; }, defNative, partsOf, fieldsOf, UNSET, VFM, effect, queueEffects, runEffects, dropEffects };
 if (typeof module !== "undefined") module.exports = api; else root.Sprout3 = api;
 })(typeof window !== "undefined" ? window : globalThis);
@@ -2223,6 +2972,177 @@ root.SproutGpu = { makeGpuPainter };
 })(typeof window !== "undefined" ? window : globalThis);
 ````
 
+## gpu-spork.js
+
+Spork on the GPU: a kernel worked out ahead as a WebGPU compute shader (32-bit), with the page's run-again-when-the-answer-is-back passes
+
+````js
+// Spork on the GPU (decision 93): a kernel worked out ahead (decision 91) as a WebGPU compute shader.
+// The GPU does 32-bit maths, so its answers can differ from WebAssembly and JavaScript in the last digits;
+// the host chooses whether big sporks may use it.
+// A GPU answer comes back later, but Sprout runs straight through, so the page runs a program in passes:
+// a spork the GPU hasn't answered yet starts a job and stops the pass (SPORK_WAIT); when the jobs are done
+// the program runs again from the start and finds the answers waiting. Games never wait: they use SIMD.
+(function (root) {
+"use strict";
+const WAIT = { spork: "wait" };
+
+// a 32-bit float constant, written as its exact bits (WGSL has no literal for infinity or NaN)
+const f32bits = v => { const b = new Uint32Array(new Float32Array([v]).buffer)[0]; return "bitcast<f32>(0x" + b.toString(16) + "u)"; };
+
+function wgsl(K) {
+  const N = K.nodes, r = i => "v" + i, types = new Array(N.length);
+  let body = "";
+  for (let i = 0; i < N.length; i++) {
+    const [op, a, b, c, v] = N[i]; let e, ty = "f32";
+    switch (op) {
+      case "c": e = f32bits(v); break;
+      case "cb": e = String(v); ty = "bool"; break;
+      case "x": e = "x"; break;
+      case "k": e = "C[" + v + "]"; break;
+      case "add": e = r(a) + " + " + r(b); break; case "sub": e = r(a) + " - " + r(b); break;
+      case "mul": e = r(a) + " * " + r(b); break; case "div": e = r(a) + " / " + r(b); break;
+      case "min": case "max": e = op + "(" + r(a) + ", " + r(b) + ")"; break;
+      case "noise": e = "noise2(" + r(a) + ", " + r(b) + ")"; break;
+      case "neg": e = "-" + r(a); break;
+      case "abs": case "floor": case "ceil": case "sqrt": e = op + "(" + r(a) + ")"; break;
+      case "round": e = "floor(" + r(a) + " + 0.5)"; break;
+      case "lt": case "gt": case "le": case "ge": case "eq": case "ne": case "beq":
+        e = r(a) + ({ lt: " < ", gt: " > ", le: " <= ", ge: " >= ", eq: " == ", ne: " != ", beq: " == " })[op] + r(b); ty = "bool"; break;
+      case "and": e = r(a) + " && " + r(b); ty = "bool"; break;
+      case "or": e = r(a) + " || " + r(b); ty = "bool"; break;
+      case "not": e = "!" + r(a); ty = "bool"; break;
+      case "sel": e = "select(" + r(c) + ", " + r(b) + ", " + r(a) + ")"; ty = types[b]; break;
+      default: throw new Error("no GPU step for " + op);
+    }
+    types[i] = ty;
+    body += "  let v" + i + ": " + ty + " = " + e + ";\n";
+  }
+  const guards = K.guards.length ? "  if (!(" + K.guards.map(r).join(" && ") + ")) { atomicStore(&bad, 1u); }\n" : "";
+  const outs = K.outs.map((o, j) => "  O[" + (j ? j + "u * p.n + " : "") + "i] = " + (K.kind === "b" ? "select(0.0, 1.0, " + r(o) + ")" : r(o)) + ";\n").join("");
+  return `struct P { n: u32, hasX: u32, nx: u32, pad: u32 }
+@group(0) @binding(0) var<uniform> p: P;
+@group(0) @binding(1) var<storage, read> C: array<f32>;
+@group(0) @binding(2) var<storage, read> X: array<f32>;
+@group(0) @binding(3) var<storage, read_write> O: array<f32>;
+@group(0) @binding(4) var<storage, read_write> bad: atomic<u32>;
+// noise [x, y]: the same 32-bit hash as the CPU, on 32-bit inputs
+fn noise2(x: f32, y: f32) -> f32 {
+  let fx = floor(x); let fy = floor(y);
+  var h = ((bitcast<u32>(i32(fx)) ^ 0x9e3779b9u) * 0x85ebca6bu) ^ ((bitcast<u32>(i32(fy)) + 0x632be5abu) * 0xc2b2ae35u)
+    ^ (u32(floor((x - fx) * 4294967296.0)) * 0x27d4eb2fu) ^ (u32(floor((y - fy) * 4294967296.0)) * 0x165667b1u);
+  h = h ^ (h >> 16u); h = h * 0x7feb352du; h = h ^ (h >> 15u); h = h * 0x846ca68bu; h = h ^ (h >> 16u);
+  return f32(h) / 4294967296.0;
+}
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) g: vec3<u32>) {
+  let i = g.x + g.y * p.nx * 256u;
+  if (i >= p.n) { return; }
+  var x: f32 = f32(i + 1u);
+  if (p.hasX == 1u) { x = X[i]; }
+${body}${guards}${outs}}
+`;
+}
+const shader = wgsl;
+
+async function makeGpuSpork(opts) {
+  opts = opts || {};
+  if (typeof navigator === "undefined" || !navigator.gpu) throw new Error("this browser has no WebGPU");
+  const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
+  if (!adapter) throw new Error("no GPU adapter");
+  const device = await adapter.requestDevice();
+  const info = adapter.info || {};
+  const layout = device.createBindGroupLayout({ entries: [
+    { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform" } },
+    { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage" } },
+    { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage" } },
+    { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+    { binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } }] });
+  const plLayout = device.createPipelineLayout({ bindGroupLayouts: [layout] });
+  const pipes = new Map();
+  const pipeFor = K => {
+    const code = shader(K);
+    let p = pipes.get(code);
+    if (!p) { p = device.createComputePipelineAsync({ layout: plLayout, compute: { module: device.createShaderModule({ code }), entryPoint: "main" } }); pipes.set(code, p); }
+    return p;
+  };
+  const MAXN = 1 << 24;   // the input is a 32-bit float: whole numbers are exact up to 2^24
+  // run a kernel on n inputs: Float64Array outputs, or null if a check failed
+  async function run(K, n, X, C) {
+    const pipe = await pipeFor(K), nOut = K.outs.length;
+    const buf = (size, usage) => device.createBuffer({ size: Math.max(16, (size + 3) & ~3), usage });
+    const S = GPUBufferUsage;
+    const ub = buf(16, S.UNIFORM | S.COPY_DST), cb = buf(C.length * 4, S.STORAGE | S.COPY_DST), xb = buf(X ? n * 4 : 4, S.STORAGE | S.COPY_DST);
+    const ob = buf(nOut * n * 4, S.STORAGE | S.COPY_SRC), bb = buf(4, S.STORAGE | S.COPY_SRC | S.COPY_DST);
+    const rb = buf(nOut * n * 4 + 16, S.MAP_READ | S.COPY_DST);
+    const groups = Math.ceil(n / 256), nx = Math.min(groups, 65535), ny = Math.ceil(groups / nx);
+    device.queue.writeBuffer(ub, 0, new Uint32Array([n, X ? 1 : 0, nx, 0]));
+    if (C.length) device.queue.writeBuffer(cb, 0, new Float32Array(C));
+    if (X) device.queue.writeBuffer(xb, 0, new Float32Array(X));
+    device.queue.writeBuffer(bb, 0, new Uint32Array([0]));
+    const bg = device.createBindGroup({ layout, entries: [ub, cb, xb, ob, bb].map((b, i) => ({ binding: i, resource: { buffer: b } })) });
+    const enc = device.createCommandEncoder(), pass = enc.beginComputePass();
+    pass.setPipeline(pipe); pass.setBindGroup(0, bg); pass.dispatchWorkgroups(nx, ny); pass.end();
+    const outBytes = nOut * n * 4, off = (outBytes + 15) & ~15;
+    enc.copyBufferToBuffer(ob, 0, rb, 0, outBytes);
+    enc.copyBufferToBuffer(bb, 0, rb, off, 4);
+    device.queue.submit([enc.finish()]);
+    await rb.mapAsync(GPUMapMode.READ);
+    const m = rb.getMappedRange(), f = new Float32Array(m, 0, nOut * n), failed = new Uint32Array(m, off, 1)[0] !== 0;
+    const O = failed ? null : K.outs.map((o, j) => Float64Array.from(f.subarray(j * n, (j + 1) * n)));
+    rb.unmap(); [ub, cb, xb, ob, bb, rb].forEach(b => b.destroy());
+    return O;
+  }
+
+  // the hook spork calls: an answer already back, or (when a pass may wait) a new job and SPORK_WAIT
+  const ids = new WeakMap(); let nextId = 1;
+  const answers = new Map(), jobs = [];
+  let mayWait = false, min = opts.min || 100000, last = null;
+  const keyOf = (K, n, X, C) => {
+    let id = ids.get(K); if (!id) { id = shader(K); ids.set(K, id); }
+    let h = 2166136261;
+    if (X) { const u = new Uint32Array(X.buffer, X.byteOffset, X.length * 2); for (let i = 0; i < u.length; i++) h = Math.imul(h ^ u[i], 16777619); }
+    return id + "|" + n + "|" + (X ? "x" + (h >>> 0) : "r") + "|" + C.join(",");
+  };
+  function hook(K, n, X, C) {
+    if (n < min || n > MAXN) return undefined;
+    const key = keyOf(K, n, X, C);
+    if (answers.has(key)) { const a = answers.get(key); last = a.info; return a.O; }
+    if (!mayWait) return undefined;
+    const t0 = performance.now();
+    jobs.push(run(K, n, X, C).then(O => {
+      const info = { n, ms: performance.now() - t0 };
+      if (O) O.ms = info.ms;
+      answers.set(key, { O, info }); while (answers.size > 8) answers.delete(answers.keys().next().value);
+    }));
+    throw WAIT;
+  }
+  return {
+    hook, run, wgsl: shader, WAIT, device, adapter: [info.vendor, info.architecture || info.device].filter(Boolean).join(" ") || "available",
+    get last() { return last; },
+    // the page's own passes: let a spork start a job and stop the pass, then wait for the jobs
+    mayWait(on) { mayWait = !!on; if (on) jobs.length = 0; },
+    pending() { return Promise.all(jobs.splice(0)); },
+    set min(v) { min = v; },
+    // run a whole program (a function that runs it), waiting for the GPU as needed; at most a few passes
+    async passes(go, onWait) {
+      for (let k = 0; k < 6; k++) {
+        mayWait = true; jobs.length = 0;
+        try { const r = go(); mayWait = false; return r; }
+        catch (e) { mayWait = false; if (e !== WAIT) throw e; }
+        if (onWait) onWait();
+        await Promise.all(jobs.splice(0));
+      }
+      return go();
+    },
+    forget() { answers.clear(); },
+  };
+}
+
+root.SproutGpuSpork = { makeGpuSpork, wgsl: shader, WAIT };
+})(typeof window !== "undefined" ? window : globalThis);
+````
+
 ## test.js
 
 Language tests, one or more per decision.
@@ -2295,6 +3215,43 @@ ok("84 match only works out the answer it picks", val('match [1, [1, "one", 2, n
   ok("fold loop: anything else still works the ordinary way", val('["a", "b"] fold ["", [t n | t .. n]]') === "ab" && val("[1, 2] fold [[], [t n | t .. [n]]]") === "[1, 2]");
   const sp = S.load("a : range 9 fold [0, [t n | t + n]]\nb : range 9 fold [0, [t n | t .. n]]").speed;
   ok("fold loop: speed notes say which folds run as a tight loop", sp.find(n => n.line === 1).fast && !sp.find(n => n.line === 2).fast && sp.every(n => n.word === "fold"), sp); }
+// spork (decisions 47 and 91): the same answer as collect, whichever way it runs
+{ const W = S.sporkWays({}).wasm;
+  const three = (src, xs, f) => {
+    f = f || "f";
+    const c = S.load(src + "\nA : [k | k spork " + f + "]\nB : [k | k collect " + f + "]"), a = c.field("A"), b = c.field("B");
+    const L = xs || S.load("r : range 300").field("r");
+    S.sporkWays({ wasm: W }); const simd = a.run(L), how1 = S.sporkInfo && S.sporkInfo.how; S.sporkWays({ info: null });
+    S.sporkWays({ wasm: null }); const js = a.run(L), how2 = S.sporkInfo && S.sporkInfo.how; S.sporkWays({ wasm: W, info: null });
+    const plain = b.run(L), want = S.fmt(plain);
+    return { same: S.fmt(simd) === want && S.fmt(js) === want && S.eq(simd, plain), how: [how1, how2], speed: c.speed };
+  };
+  const kernels = {
+    "number maths and noise": "f : [n | noise [n, 7] * 10 floor + (n / 3 round) - (n sqrt)]",
+    "a test that changes from run to run": "f : [n | n > 150 [n * 2] else [0 - n]]",
+    "else catching a false branch": "f : [n | n > 5 [n < 80] else [n = 2]]",
+    "a record each run": "f : [n | [a : n * 2, b : noise [n, 1]]]",
+    "calls, lists and fold worked out ahead": "w : [3, 1, 4, 1, 5]\ng : [a b | a * 10 + b]\nf : [n | w fold [0, [t x | t + (g [x, n])]]]",
+    "a position that changes from run to run": "w : [3, 1, 4, 1, 5]\nf : [n | w @ (n % 5 + 1)]",
+    "text and records only used ahead": "rs : [[id : \"a\", v : 3], [id : \"b\", v : 5]]\nf : [n | rs keep [r | r id = \"b\"] first v * n]",
+    "clamp, toward, min and max": "f : [n | clamp [n, 50, 200] + (toward [0, 10, n / 300]) min 180 max 60]",
+  };
+  for (const k in kernels) { const r = three(kernels[k]); ok("spork: " + k, r.same && r.how[0] === (/%/.test(kernels[k]) ? "js" : "simd") && r.how[1] === "js", r.how); }
+  // the ACE schedule's own run (strings, a walk over requires, triangle draws, a shared risk) is worked out into one kernel
+  const ace = fs.readFileSync(__dirname + "/examples/ace-schedule.sp", "utf8").replace(/\nfinishes :[^\n]*/, "\nfinishes : [3]");
+  const r = three(ace, S.load("r : range 3000").field("r"), "one-run");
+  ok("spork: ace-schedule's Monte Carlo run, same numbers as collect", r.same && r.how[0] === "simd", r.how);
+  // a position outside the list, or anything spork can't work out ahead, runs the ordinary way
+  ok("spork: a position outside the list falls back", (() => { const r = three("w : [3, 1, 4]\nf : [n | (w @ n) else [0]]"); return r.same && r.how[0] === "collect" && r.how[1] === "collect"; })());
+  ok("collect [r | r f] over columns gives that column", (() => { const c = S.load("rs : range 100 collect [n | [a : n, b : n * 2]]\nA : rs collect [r | r b]\nB : rs collect [r | r b + 0]"); return S.fmt(c.field("A")) === S.fmt(c.field("B")) && c.field("A") instanceof S.NCell; })());
+  const rnd = S.load("f : [n | random + n]\nA : range 5 spork f").speed.find(x => x.word === "spork");
+  ok("spork: speed notes say why a cell can't be worked out ahead", rnd && !rnd.fast && /random/.test(rnd.why), rnd);
+  ok("spork: a cell written in place", S.fmt(S.load("A : range 40 spork [n | n * n]").field("A")) === S.fmt(S.load("A : range 40 collect [n | n * n]").field("A")));
+  ok("spork: a list of numbers in, and noise bit for bit", (() => { const L = S.load("r : range 64 collect [n | n * 1.37 - 40]").field("r"); return three("f : [n | noise [n, 0 - n]]", L).same; })());
+  const sorted = S.load("a : [3, 1, 2] sort\nb : [\"pear\", \"fig\"] sort\nc : range 2000 spork [n | noise [n, 1]] sort");
+  ok("sort: numbers and words", S.fmt(sorted.field("a")) === "[1, 2, 3]" && S.fmt(sorted.field("b")) === "[fig, pear]");
+  const c3 = sorted.field("c"); let up = true; for (let i = 2; i <= 2000; i++) if (c3.part(i) < c3.part(i - 1)) up = false;
+  ok("sort: a spork's numbers, least to most", up && c3.count() === 2000 && c3 instanceof S.NCell); }
 ok("and/or run a call on their right before checking it", val("[k | k > 1 and ([d | d = 3] k)] 3") === "true" && val("[k | k > 9 or ([d | d = 3] k)] 3") === "true");
 ok("81 ( ) is plain text", val('"rgba(0,0,0,0.5)"') === "rgba(0,0,0,0.5)");
 ok("81 escaped bracket", val('"a\\[b]"') === "a[b]");
@@ -2660,6 +3617,20 @@ const f = (g, k) => g.state.field(k);
   const end = day();
   ok("ace-ledger: it finishes, and the log keeps every day", end.includes("the pedestal is finished") && S.G.db.raw.prepare("select count(*) n from events").get().n === 6);
   S.G.db = saved;
+}
+
+// ace-risk: a million runs through spork (decision 91); with fewer runs, the whole program prints the same with collect
+{
+  const src = fs.readFileSync(__dirname + "/examples/ace-risk.sp", "utf8");
+  const run = text => { const lines = []; S.setOut(x => lines.push(x)); S.load(text).run(S.BANG); S.setOut(() => {}); return lines; };
+  const full = run(src), info = S.sporkInfo;
+  ok("ace-risk: a million runs, as one kernel", full[0] === "== 1000000 runs of the pedestal job ==" && info.n === 1000000 && info.how === "simd", info);
+  const p = (full[1].match(/[\d.]+/g) || []).map(Number);
+  ok("ace-risk: P10 to P90 in order", p.length === 8 && p[1] < p[3] && p[3] < p[5] && p[5] < p[7], full[1]);
+  const adds = full.filter(l => /\+[\d.]+ days$/.test(l));
+  ok("ace-risk: what each risk adds at P80, weather the most", adds.length === 4 && adds[0].startsWith("wet weather on the pour") && Math.max(...adds.map(l => +l.match(/\+([\d.]+)/)[1])) === +adds[0].match(/\+([\d.]+)/)[1], adds);
+  const small = src.replace("runs : 1000000", "runs : 3000");
+  ok("ace-risk: spork prints exactly what collect prints", JSON.stringify(run(small)) === JSON.stringify(run(small.replace("range runs spork one-run", "range runs collect one-run"))));
 }
 
 const errs = logs.slice();
@@ -4387,6 +5358,111 @@ next-up length = 0
   "the pedestal is finished" print
 ````
 
+## examples/ace-risk.sp
+
+ACE: a million runs of the job with a risk register, through spork; the finish as a distribution, and what each risk adds at P80 (prints)
+
+````sprout
+-- ACE risk: the same pedestal job as ace-schedule, run a million times with a risk register.
+-- Each run samples every duration and rolls every risk, then walks the graph five times:
+-- once with every risk, and once with each risk left out, so we can see what each one costs.
+-- spork works one-run out ahead into a single kernel (decision 91), so the million runs take
+-- milliseconds, on WebAssembly SIMD or on the GPU (decision 93). Swap spork for collect to compare.
+
+atoms : [
+  [id : "permit", requires : [], dur : [0, 0, 0]]
+  [id : "survey", requires : [], dur : [1, 2, 3]]
+  [id : "dig", requires : ["permit", "survey"], dur : [3, 4, 7]]
+  [id : "rebar", requires : [], dur : [5, 8, 15]]
+  [id : "rfi", requires : [], dur : [2, 5, 12]]
+  [id : "formwork", requires : ["dig"], dur : [2, 3, 5]]
+  [id : "place-rebar", requires : ["dig", "rebar", "rfi"], dur : [3, 4, 6]]
+  [id : "inspect", requires : ["place-rebar"], dur : [1, 1, 2]]
+  [id : "pour", requires : ["inspect", "formwork"], dur : [1, 1, 2]]
+  [id : "cure", requires : ["pour"], dur : [7, 7, 10]]
+]
+last-atom : "cure"
+runs : 1000000
+seed : 7                   -- the same seed always gives the same answer
+
+-- the risk register: what can go wrong, how often in a run, how many days it adds, and to what
+risks : [
+  [name : "wet weather on the pour", chance : 0.30, delay : 3, hits : "pour"]
+  [name : "rebar delivered late", chance : 0.15, delay : 5, hits : "rebar"]
+  [name : "slow answer to the RFI", chance : 0.20, delay : 4, hits : "rfi"]
+  [name : "inspection fails, rework", chance : 0.10, delay : 3, hits : "inspect"]
+]
+
+find : [want ds | ds keep [a | a id = want] first]
+-- earliest finish: the latest finish of everything required, plus this atom's own time
+finish : [want ds |
+  a : find [want, ds]
+  (a requires collect [r | finish [r, ds]] fold [0, [m x | m max x]]) + (a days)
+]
+-- a time from a triangle, given u from 0 up to 1
+tri : [t u |
+  lo : t @ 1, mode : t @ 2, hi : t @ 3
+  hi = lo [lo] else [
+    u < (mode - lo / (hi - lo)) [lo + (u * (hi - lo) * (mode - lo) sqrt)] else [hi - (1 - u * (hi - lo) * (hi - mode) sqrt)]
+  ]
+]
+
+-- one run: the draws come from noise [run, id], so they are the same whichever way the runs are done
+one-run : [n |
+  base : range (atoms length) collect [k | tri [atoms @ k dur, noise [n, k + (seed * 1000)]]]
+  hit : range (risks length) collect [j | noise [n, 900 + j + (seed * 1000)] < (risks @ j chance)]
+  -- the finish with every risk that happened, leaving out risk number off (0 leaves none out)
+  finish-without : [off |
+    ds : range (atoms length) collect [k |
+      a : atoms @ k
+      extra : range (risks length) fold [0, [t j | (j != off) and (hit @ j) and (risks @ j hits = (a id)) [t + (risks @ j delay)] else [t]]]
+      a with [days : base @ k + extra]
+    ]
+    finish [last-atom, ds]
+  ]
+  [all : finish-without 0, weather : finish-without 1, rebar : finish-without 2, rfi : finish-without 3, inspection : finish-without 4]
+]
+
+results : range runs spork one-run
+finishes : results collect [r | r all] sort
+pct : [xs p | xs @ (p * runs ceil)]
+-- how many runs finish before day d: a binary search in the sorted finishes
+below : [d |
+  go : [lo hi | lo >= hi [lo] else [
+    mid : lo + hi / 2 floor
+    finishes @ (mid + 1) < d [go [mid + 1, hi]] else [go [lo, mid]]
+  ]]
+  go [0, runs]
+]
+pad : [s n | s length < n [pad [s .. " ", n]] else [s]]
+bar : [n | range n fold ["", [s k | s .. "#"]]]
+day : [x | x * 10 round / 10]
+
+"== [runs] runs of the pedestal job ==" print
+"P10 day [day (pct [finishes, 0.1])]   P50 day [day (pct [finishes, 0.5])]   P80 day [day (pct [finishes, 0.8])]   P90 day [day (pct [finishes, 0.9])]" print
+"" print
+first-day : finishes @ 1 floor
+last-day : finishes @ runs ceil
+range (last-day - first-day / 2 + 1 ceil) each [k |
+  from : k - 1 * 2 + first-day
+  n : below (from + 2) - (below from)
+  share : (n * 100 / runs * 10 round / 10) str .. "%"
+  "day [pad [from str, 3]] [pad [share, 6]] [bar (n * 300 / runs ceil)]" print
+]
+"" print
+"chance of finishing by day 26: [below 26 * 100 / runs round]%" print
+
+-- what each risk adds at P80: the P80 with it, take away the P80 without it
+"" print
+"== what each risk adds to P80 ==" print
+p80 : pct [finishes, 0.8]
+adds : [xs | p80 - (pct [xs sort, 0.8]) * 10 round / 10]
+"[pad [risks @ 1 name, 26]] +[adds (results collect [r | r weather])] days" print
+"[pad [risks @ 2 name, 26]] +[adds (results collect [r | r rebar])] days" print
+"[pad [risks @ 3 name, 26]] +[adds (results collect [r | r rfi])] days" print
+"[pad [risks @ 4 name, 26]] +[adds (results collect [r | r inspection])] days" print
+````
+
 ## examples/recipes.sp
 
 Recipes: quicksort, primes, FizzBuzz, a vector with its own + (prints; not a game)
@@ -4487,6 +5563,7 @@ img.th[src=""]{content:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2
 .li .th{width:34px;height:34px;border-radius:7px;flex:0 0 auto;background:var(--card2);box-shadow:0 0 0 1px var(--line);object-fit:cover}
 .li .nm{display:block;font-size:13.5px;line-height:1.2}.li .ds{display:block;font-size:12px;color:var(--fg3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px}
 .sidefoot{padding:10px 14px 14px;border-top:1px solid var(--line);display:flex;gap:8px}
+.sidefoot .pill{white-space:nowrap;text-decoration:none;padding:0 13px}
 
 /* main: artwork on the left, the details and the editor on the right */
 #main{grid-row:1;min-width:0;min-height:0;position:relative;overflow:hidden;display:grid;grid-template-columns:auto minmax(0,1fr);gap:28px;padding:28px 28px 20px;padding-top:calc(28px + env(safe-area-inset-top))}
@@ -4689,13 +5766,14 @@ body.t-out #out{display:block}body.t-st #st{display:block}
 <div id="modal"><div id="mBox"><div class="mh"><h2 id="mTitle"></h2><button class="x" data-close aria-label="Close">✕</button></div><div id="mBody"></div></div></div>
 <div id="toast"></div><div id="scrubTip"></div>
 
-<script src="sprout3.js?v=20261120f"></script>
-<script src="live3.js?v=20261120f"></script>
-<script src="sqlite-web.js?v=20261120f"></script>
-<script src="gpu-paint.js?v=20261120f"></script>
+<script src="sprout3.js?v=20261120g"></script>
+<script src="live3.js?v=20261120g"></script>
+<script src="sqlite-web.js?v=20261120g"></script>
+<script src="gpu-paint.js?v=20261120g"></script>
+<script src="gpu-spork.js?v=20261120g"></script>
 <script>
 "use strict";
-const V="20261120f";
+const V="20261120g";
 const $=id=>document.getElementById(id);
 const S=window.Sprout3,L=window.Sprout3Live;
 const GW=360,GH=480;
@@ -4707,6 +5785,7 @@ const EX=[
  ["ace-board","ace","ACE Board","Tap work to close it. Gates, the rollup and the critical path follow, because done is derived from the graph, never stored."],
  ["ace-site","ace","ACE Site","Positions are expressions over named dimensions. Grow the reactor and watch the buildings move, and clash."],
  ["ace-schedule","ace","ACE Schedule","The critical path on likely durations, then a Monte Carlo finish date. The plan is a distribution, not a date."],
+ ["ace-risk","ace","ACE Risk","A million runs of the job with a risk register, worked out ahead into one kernel by spork. The finish as a distribution, and what each risk adds at P80."],
  ["ace-crews","ace","ACE Crews","Sequence and capacity: work waits for what it requires, and for a free crew of its trade. Send a crew home and watch the slab slip."],
  ["ace-morning","ace","ACE Morning","The morning question: which constraints, killed today, release the most work? A ranking by hours released."],
  ["ace-ledger","ace","ACE Ledger","The atoms live in SQLite, kept in this browser. Each run is a day on site: one atom closes and the event log grows."],
@@ -4756,12 +5835,22 @@ function build(src,fresh){
  let cell;try{cell=S.load(src)}catch(e){setErr({line:e.line||0,msg:msgOf(e)});return false}
  if(cell.field("update")===S.UNSET){
   game=null;document.body.classList.add("prog");clearOut();
-  try{cell.run(S.BANG)}catch(e){setErr({line:e.line||0,msg:msgOf(e)});return false}
+  // a big spork may go to the GPU: the pass stops, the job runs, and the program runs again and finds the answer (decision 93)
+  if(gspSrc!==src){gspSrc=src;gspPasses=0}
+  if(GSP)GSP.mayWait(useGsp&&!needsDb(src)&&gspPasses<6);
+  S.sporkTally(true);
+  try{cell.run(S.BANG)}catch(e){
+   if(window.SproutGpuSpork&&e===SproutGpuSpork.WAIT){gspPasses++;dropPrints();$("pSub").textContent="Running spork on the GPU…";
+    GSP.pending().then(()=>{if(code===src&&build(src,fresh))afterBuild()},e2=>{gspWhy=msgOf(e2);useGsp=false;gspUI();if(code===src&&build(src,fresh))afterBuild()});return false}
+   setErr({line:e.line||0,msg:msgOf(e)});return false}
+  finally{if(GSP)GSP.mayWait(false)}
+  sporks=S.sporkTally().slice();
   speedNotes=cell.speed||[];running=src;goodSrc=src;setErr(null);swapped();renderState();speedMarks();return true}
  document.body.classList.remove("prog");
  try{if(game&&!fresh)game.swap(src);else{game=L.makeGame(src,{W:GW,H:GH,onEffect});setPaused(false)}}
  catch(e){setErr({line:e.line||0,msg:msgOf(e)});return false}
  speedNotes=game.speed||[];running=src;goodTicks=0;setErr(null);swapped();speedMarks();return true}
+function dropPrints(){document.querySelectorAll("#out .ln.print").forEach(x=>x.remove())}
 function swapped(){lastSwap=new Date();subUI();progUI()}
 // a program that only prints shows its cover as the artwork, and its main button runs it again
 function progUI(){const prog=document.body.classList.contains("prog"),ng=$("noGame");
@@ -4823,6 +5912,10 @@ function checkShown(){try{const c=document.createElement("canvas");c.width=c.hei
  for(let i=3;i<d.length;i+=4)if(d[i]>0)return;}catch(e){}
  GPU=null;gpuWhy="this browser didn't show the WebGPU frames";rendererUI()}
 if(window.SproutGpu)SproutGpu.makeGpuPainter($("gv")).then(p=>{GPU=p;rendererUI()},e=>{gpuWhy=msgOf(e)});
+// spork on the GPU (decision 93): big sporks in a program that prints, with 32-bit maths; games stay on SIMD
+let GSP=null,useGsp=LS.get("sprout3.gpuspork",true),gspWhy="",gspSrc=null,gspPasses=0,sporks=[];
+function gspUI(){S.sporkWays({gpu:GSP&&useGsp?GSP.hook:null})}
+if(window.SproutGpuSpork)SproutGpuSpork.makeGpuSpork().then(g=>{GSP=g;gspUI();if(TAB==="st")renderState()},e=>{gspWhy=msgOf(e)});
 let last=0,statT=0,artT=0;
 function frame(now){requestAnimationFrame(frame);const dt=Math.min(.05,(now-last)/1000||0);last=now;
  const k=cv.width/GW;g.setTransform(k,0,0,k,0,0);
@@ -4959,19 +6052,26 @@ ta.addEventListener("pointerup",endScrub);ta.addEventListener("pointercancel",en
 // ---------- the state view: every field of the game right now
 function brief(v){if(S.isCell(v)&&!(v instanceof S.Cell&&v.takesInput())){const n=v.count();if(n>6)return n+" parts";const s=S.fmt(v);return s.length>140?s.slice(0,140)+"…]":s}const s=S.fmt(v);return s.length>140?s.slice(0,140)+"…":s}
 function speedHTML(){if(!speedNotes.length)return"";const fast=speedNotes.filter(n=>n.fast).length;
- return'<div class="sh">Loops over lists</div><div class="foot" style="padding-top:0">'+fast+" of "+speedNotes.length+" can run over columns: a list of 32 or more records of numbers, stored one array per field. The others run item by item, which is fine for short lists.</div>"+
-  speedNotes.slice().sort((a,b)=>a.line-b.line).map(n=>'<div class="row sp'+(n.fast?" f":"")+'"><span class="k2">line '+n.line+" · "+n.word+'</span><span class="v">'+(n.fast?"runs over columns":"item by item: "+esc(n.why))+"</span></div>").join("")}
+ return'<div class="sh">Loops over lists</div><div class="foot" style="padding-top:0">'+fast+" of "+speedNotes.length+" run as tight loops: over columns (a list of 32 or more records of numbers, one array per field), over a list of numbers, or as a spork kernel. The others run item by item, which is fine for short lists.</div>"+
+  speedNotes.slice().sort((a,b)=>a.line-b.line).map(n=>'<div class="row sp'+(n.fast?" f":"")+'"><span class="k2">line '+n.line+" · "+n.word+'</span><span class="v">'+(n.fast?(n.word==="spork"?"worked out ahead into one kernel":"runs as a tight loop"):"item by item: "+esc(n.why))+"</span></div>").join("")}
+const WAYS={gpu:"on the GPU",simd:"on WebAssembly SIMD",js:"in JavaScript",collect:"the ordinary way, as collect"};
+function sporkHTML(){if(!sporks.length&&!/\bspork\b/.test(code))return"";
+ const rows=sporks.slice(0,8).map(r=>'<div class="row sp'+(r.how!=="collect"?" f":"")+'"><span class="k2">'+r.n.toLocaleString()+" run"+(r.n===1?"":"s")+'</span><span class="v">'+WAYS[r.how]+" in "+(r.ms<10?r.ms.toFixed(1):Math.round(r.ms))+" ms"+(r.steps?" · "+r.steps+" steps a run":"")+"</span></div>").join("");
+ const gpu=GSP?'Big sporks (100,000 runs or more) in a program that prints can run on the GPU ('+esc(GSP.adapter)+'): <a href="#" id="gspT" style="color:var(--acc2);font-weight:600">'+(useGsp?"on":"off")+"</a>. The GPU does 32-bit maths, so the last digits can differ from SIMD, which gives the same bits as JavaScript."
+  :"WebGPU isn't available here"+(gspWhy?" ("+esc(gspWhy)+")":"")+", so spork runs on WebAssembly SIMD.";
+ return'<div class="sh">Spork</div><div class="foot" style="padding-top:0">A cell given to spork is worked out ahead into one kernel of number maths, run for every input at once. '+gpu+"</div>"+rows}
 function dbHTML(){const db=S.G.db;if(!db||!needsDb(code))return"";let t=[];try{t=db.tables()}catch(e){}
  return'<div class="sh">SQLite</div><div class="foot" style="padding-top:0">Kept in this browser between visits. <a href="#" id="dbClear" style="color:var(--acc2);font-weight:600">Clear the database</a></div>'+
   (t.length?t.map(([n,c])=>'<div class="row"><span class="k2">'+esc(n)+'</span><span class="v">'+c+" row"+(c===1?"":"s")+"</span></div>").join(""):'<div class="foot">No tables yet.</div>')}
 function wireDb(){const a=$("dbClear");if(a)a.onclick=async e=>{e.preventDefault();if(!confirm("Clear the SQLite database kept in this browser?"))return;await S.G.db.clear();toast("Database cleared");if(build(code,true))afterBuild()}}
 // only replace what's shown when it changed, so a link isn't rebuilt under a click
-function renderState(){const el=$("st"),h=stateHTML();if(el._h!==h){el.innerHTML=h;el._h=h;wireDb()}}
+function renderState(){const el=$("st"),h=stateHTML();if(el._h!==h){el.innerHTML=h;el._h=h;wireDb();wireGsp()}}
+function wireGsp(){const a=$("gspT");if(a)a.onclick=e=>{e.preventDefault();useGsp=!useGsp;LS.set("sprout3.gpuspork",useGsp);gspUI();toast(useGsp?"Big sporks run on the GPU":"Sporks run on WebAssembly SIMD");if(build(code,true))afterBuild()}}
 function stateHTML(){
- if(!game)return'<div class="foot">No game is running.</div>'+dbHTML()+speedHTML();
+ if(!game)return'<div class="foot">No game is running.</div>'+sporkHTML()+dbHTML()+speedHTML();
  let rows=[];try{for(const [k,v] of S.fieldsOf(game.state))rows.push([k,brief(v)])}catch(e){return esc(msgOf(e))}
  return rows.map(([k,v])=>'<div class="row"><span class="k2">'+esc(k)+'</span><span class="v">'+esc(v)+"</span></div>").join("")+
-  '<div class="foot">'+(paused?"Paused":"Live")+" · "+game.history.length+" moments saved for rewind</div>"+dbHTML()+speedHTML()}
+  '<div class="foot">'+(paused?"Paused":"Live")+" · "+game.history.length+" moments saved for rewind</div>"+sporkHTML()+dbHTML()+speedHTML()}
 setInterval(()=>{if(TAB==="st")renderState()},250);
 
 // ---------- tabs
@@ -5150,15 +6250,21 @@ tr:last-child td{border-bottom:0}
 <div class="card"><table id="t-parts"><tr><th>particles</th><th>update</th><th>draw list</th><th>Canvas 2D</th><th>WebGPU (CPU)</th><th>WebGPU (all)</th></tr></table>
 <div class="note" id="gpu-note"></div></div>
 
+<h2>Monte Carlo with spork</h2>
+<p>The run from <code>ace-risk.sp</code>: every duration sampled, every risk rolled, and the graph walked five times. spork works it out ahead into one kernel of number maths (decision 91). The ordinary way is <code>collect</code>, timed on 20,000 runs and scaled. SIMD is WebAssembly, two runs per instruction, with the same bits as JavaScript; the GPU does 32-bit maths, and its time includes sending the work and reading the answers back.</p>
+<div class="card"><table id="t-mc"><tr><th>runs</th><th>ordinary</th><th>JS kernel</th><th>SIMD</th><th>WebGPU</th><th>GPU vs SIMD</th></tr></table>
+<div class="note" id="mc-note"></div></div>
+
 <h2>SQLite</h2>
 <p>SQLite compiled to WebAssembly (sql.js), the same as the page uses for <code>db</code>. Rows come back as Sprout records.</p>
 <div class="card"><table id="t-sql"><tr><th>work</th><th>ms</th><th>rows</th></tr></table></div>
 </main>
 
-<script src="sprout3.js?v=20261120f"></script>
-<script src="live3.js?v=20261120f"></script>
-<script src="gpu-paint.js?v=20261120f"></script>
-<script src="sqlite-web.js?v=20261120f"></script>
+<script src="sprout3.js?v=20261120g"></script>
+<script src="live3.js?v=20261120g"></script>
+<script src="gpu-paint.js?v=20261120g"></script>
+<script src="sqlite-web.js?v=20261120g"></script>
+<script src="gpu-spork.js?v=20261120g"></script>
 <script>
 "use strict";
 const $=id=>document.getElementById(id),S=window.Sprout3,L=window.Sprout3Live;
@@ -5187,7 +6293,7 @@ async function benchLang(){
 const GAMES=["sprout","fireflies","orbit","hop","life","bounce","snake","breakout","particles","ace-board","ace-site","ace-crews"];
 async function benchGames(){
  for(const name of GAMES){status("games: "+name);await sleep(10);
-  const src=await (await fetch("examples/"+name+".sp?v=20261120f")).text();const g=L.makeGame(src,{W:GW,H:GH});
+  const src=await (await fetch("examples/"+name+".sp?v=20261120g")).text();const g=L.makeGame(src,{W:GW,H:GH});
   const play=n=>{for(let t=0;t<n;t++){if(t%50===0)g.down(100+(t%160),300);if(t%50===25)g.up();g.tick(1/60);g.draw()}};
   play(240);const [t]=best(()=>play(120),5);row("t-games",[name,ms(t/120),String(g.draw().length)])}}
 
@@ -5219,7 +6325,7 @@ async function benchParticles(){
 // ---------- SQLite
 async function benchSql(){
  status("SQLite: loading");
- await new Promise((ok,no)=>{const s=document.createElement("script");s.src="vendor/sqljs/sql-wasm.js?v=20261120f";s.onload=ok;s.onerror=no;document.head.appendChild(s)});
+ await new Promise((ok,no)=>{const s=document.createElement("script");s.src="vendor/sqljs/sql-wasm.js?v=20261120g";s.onload=ok;s.onerror=no;document.head.appendChild(s)});
  const db=await SproutSqlite.openSqlite({base:"vendor/sqljs/",name:"sprout3-bench",fresh:true});S.G.db=db;const raw=db.raw();
  const N=10000;
  const [ti]=best(()=>{raw.run("drop table if exists t");raw.run("create table t (id integer primary key, zone integer, hours real, name text)");raw.run("begin");
@@ -5236,10 +6342,32 @@ async function benchSql(){
  row("t-sql",["the same sum, done by SQLite",ms(tw),"total "+S.fmt(v2)]);
  await db.clear()}
 
+// ---------- Monte Carlo: the ace-risk run, five ways
+async function benchMonteCarlo(){
+ const src=(await (await fetch("examples/ace-risk.sp?v=20261120g")).text()).split("\nresults :")[0];
+ const c=S.load(src+"\nA : [k | range k spork one-run]\nB : [k | range k collect one-run]"),A=c.field("A"),B=c.field("B");
+ // the kernel itself, to hand straight to the GPU
+ let K=null;S.sporkWays({gpu:k=>{K=k;return undefined}});A.run(16);S.sporkWays({gpu:null});
+ let gs=null,why="";try{gs=await SproutGpuSpork.makeGpuSpork()}catch(e){why=e.message||String(e)}
+ $("mc-note").textContent=(K?"One run is "+K.nodes.length+" steps. ":"")+(gs?"WebGPU: "+gs.adapter+".":"WebGPU isn't available here"+(why?" ("+why+")":"")+", so the GPU isn't timed.");
+ status("monte carlo: ordinary");await sleep(10);
+ const [to]=best(()=>B.run(20000),1);
+ const W=S.sporkWays({}).wasm;
+ for(const n of [100000,1000000,4000000]){status("monte carlo: "+n.toLocaleString());await sleep(10);
+  S.sporkWays({wasm:null});const [tj]=best(()=>A.run(n),n>1e6?1:3);
+  S.sporkWays({wasm:W});const [ts,simd]=best(()=>A.run(n),n>1e6?2:5);
+  let tg=NaN,gap="";
+  if(gs&&K){try{await gs.run(K,n,null,[]);const [t,O]=await bestAsync(()=>gs.run(K,n,null,[]),3);tg=t;
+   // 32-bit maths: a risk roll right at its chance can come out the other way, so count the runs that differ, and compare P50 and P90
+   let off=0;const a=simd.cols[0],g=O[0];for(let i=0;i<n;i++)if(Math.abs(a[i]-g[i])>0.01)off++;
+   const sa=Float64Array.from(a).sort(),sg=Float64Array.from(g).sort(),q=p=>Math.abs(sa[Math.floor(p*n)]-sg[Math.floor(p*n)]);
+   gap=off+" run"+(off===1?"":"s")+" differ; P50 within "+q(0.5).toExponential(0)+", P90 within "+q(0.9).toExponential(0)+" days"}catch(e){gap=e.message||String(e)}}
+  row("t-mc",[n.toLocaleString(),ms(to*n/20000)+" (scaled)",ms(tj),ms(ts),isNaN(tg)?"—":ms(tg),gap])}}
+
 $("run").onclick=async()=>{$("run").disabled=true;RESULTS.length=0;
- for(const t of ["t-lang","t-games","t-parts","t-sql"])while($(t).rows.length>1)$(t).deleteRow(1);
+ for(const t of ["t-lang","t-games","t-parts","t-mc","t-sql"])while($(t).rows.length>1)$(t).deleteRow(1);
  $("env").textContent=navigator.userAgent;
- try{await benchLang();await benchGames();await benchParticles();await benchSql();status("done")}catch(e){status("stopped: "+(e.message||e))}
+ try{await benchLang();await benchGames();await benchParticles();await benchMonteCarlo();await benchSql();status("done")}catch(e){status("stopped: "+(e.message||e))}
  $("run").disabled=false;$("copy").disabled=false;window.BENCH_DONE=true};
 $("copy").onclick=async()=>{const t=["Sprout 3 benchmarks",navigator.userAgent,...RESULTS].join("\n");try{await navigator.clipboard.writeText(t);status("copied")}catch(e){prompt("Copy these:",t)}};
 </script>
