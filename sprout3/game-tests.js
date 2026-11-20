@@ -164,7 +164,7 @@ const f = (g, k) => g.state.field(k);
   ok("ace-schedule: earned value on the status day", sc.includes("SPI 0.83  behind schedule") && sc.includes("CPI 0.96  over budget") && sc.includes("forecast at completion  $156,284  (budget / CPI)"), sc.filter(l => /SPI|CPI|forecast/.test(l)));
   const mo = printed("ace-morning");
   ok("ace-morning: what changed since yesterday", mo.includes("cleared   Conduit delivered, Excavate north footings") && mo.includes("can start Form north footings") && mo.includes("ready     1 package, 220 hours"));
-  ok("ace-morning: constraints ranked by the hours they release", mo.includes("1. South access road              180 h   1 package   <- this one first") && mo.indexOf("2. Electrical drawings rev C") > 0 && mo.indexOf("4. RFI 118: grounding depth") > 0, mo.slice(4, 10));
+  ok("ace-morning: constraints ranked by the hours they release", mo.includes("1. South access road              180 h   1 package   <- this one first") && mo.some(l => l.startsWith("2. Electrical drawings rev C")) && mo.some(l => l.startsWith("4. RFI 118: grounding depth")), mo.slice(4, 10));
   ok("ace-morning: a pair that only releases work together", mo.includes("   RFI 112: splice length         with Rebar delivery, north: 260 h") && mo.includes("   Anchor bolts                   waits on other work first"));
   const src = fs.readFileSync(__dirname + "/examples/ace-board.sp", "utf8"), AT = S.partsOf(S.load(src).field("atoms"));
   const fx = [], b = L.makeGame(src, { onEffect: e => fx.push(e[0]) });
