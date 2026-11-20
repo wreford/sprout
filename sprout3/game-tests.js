@@ -232,6 +232,21 @@ const f = (g, k) => g.state.field(k);
   ok("ace-crews: the slab slips while the iron crew is away", runOut(g) > 23, f(g, "day"));
 }
 
+// ---------------- ACE ledger: SQLite (node:sqlite here, sql.js on the page)
+{
+  const { sqliteCell } = require("./sqlite-host.js");
+  const saved = S.G.db; S.G.db = sqliteCell(":memory:");
+  const src = fs.readFileSync(__dirname + "/examples/ace-ledger.sp", "utf8");
+  const day = () => { const lines = []; S.setOut(x => lines.push(x)); S.load(src).run(S.BANG); S.setOut(() => {}); return lines; };
+  const d1 = day(), d2 = day(), d3 = day();
+  ok("ace-ledger: each run is a day, and the database remembers", d1[0] === "== day 1 ==" && d3[0] === "== day 3 ==" && d3.includes("day 1  closed Survey and layout") && d3.includes("day 3  closed Rebar delivered"), d3);
+  ok("ace-ledger: what's workable is derived from the rows", d3.some(l => l.startsWith("[>] Place rebar")) && d3.some(l => l.startsWith("[ ] Pre-pour inspection")));
+  for (let k = 0; k < 4; k++) day();
+  const end = day();
+  ok("ace-ledger: it finishes, and the log keeps every day", end.includes("the pedestal is finished") && S.G.db.raw.prepare("select count(*) n from events").get().n === 6);
+  S.G.db = saved;
+}
+
 const errs = logs.slice();
 ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
 console.log(pass + " passed, " + fail + " failed");

@@ -238,11 +238,12 @@ body.t-out #out{display:block}body.t-st #st{display:block}
 <div id="modal"><div id="mBox"><div class="mh"><h2 id="mTitle"></h2><button class="x" data-close aria-label="Close">✕</button></div><div id="mBody"></div></div></div>
 <div id="toast"></div><div id="scrubTip"></div>
 
-<script src="sprout3.js?v=20261120b"></script>
-<script src="live3.js?v=20261120b"></script>
+<script src="sprout3.js?v=20261120c"></script>
+<script src="live3.js?v=20261120c"></script>
+<script src="sqlite-web.js?v=20261120c"></script>
 <script>
 "use strict";
-const V="20261120b";
+const V="20261120c";
 const $=id=>document.getElementById(id);
 const S=window.Sprout3,L=window.Sprout3Live;
 const GW=360,GH=480;
@@ -256,6 +257,7 @@ const EX=[
  ["ace-schedule","ace","ACE Schedule","The critical path on likely durations, then a Monte Carlo finish date. The plan is a distribution, not a date."],
  ["ace-crews","ace","ACE Crews","Sequence and capacity: work waits for what it requires, and for a free crew of its trade. Send a crew home and watch the slab slip."],
  ["ace-morning","ace","ACE Morning","The morning question: which constraints, killed today, release the most work? A ranking by hours released."],
+ ["ace-ledger","ace","ACE Ledger","The atoms live in SQLite, kept in this browser. Each run is a day on site: one atom closes and the event log grows."],
  ["ace-derive","ace","ACE Derive","The five kinds of atom, and done worked out to a fixed point."],
  ["sprout","game","Sprout","Catch the rain, dodge the bugs. The demo game."],
  ["fireflies","game","Fireflies","Four hundred lights on the night air. Hold a finger down and they gather to it."],
@@ -291,7 +293,14 @@ function setErr(e){err=e;const el=$("err");if(e){el.firstChild.innerHTML="<b>"+(
 $("err").onclick=()=>{if(err&&err.line){tab("code");goLine(err.line)}};
 const msgOf=e=>String(e&&e.message||e);
 // build: a game swaps in over the running one (live state kept), a plain program just runs
+// SQLite: loaded the first time a program uses db, then kept in this browser (decision 78)
+const needsDb=src=>/(^|[\s\[(])db\s+(query|run)\b/m.test(src);
+let dbP=null;
+function ensureDb(){return dbP||(dbP=new Promise((ok,no)=>{const sc=document.createElement("script");sc.src="vendor/sqljs/sql-wasm.js?v="+V;sc.onload=ok;sc.onerror=()=>no(new Error("SQLite couldn't be loaded"));document.head.appendChild(sc)})
+ .then(()=>window.SproutSqlite.openSqlite({base:"vendor/sqljs/",onWrite:()=>{if(TAB==="st")renderState()}})).then(cell=>{S.G.db=cell;return cell}))}
+function afterBuild(){if(document.body.classList.contains("prog")){tab("out");$("out").scrollTop=0}renderState()}
 function build(src,fresh){
+ if(needsDb(src)&&!S.G.db){$("pSub").textContent="Opening SQLite…";ensureDb().then(()=>{if(code===src&&build(src,fresh))afterBuild()},e=>setErr({line:0,msg:msgOf(e)}));return false}
  let cell;try{cell=S.load(src)}catch(e){setErr({line:e.line||0,msg:msgOf(e)});return false}
  if(cell.field("update")===S.UNSET){
   game=null;document.body.classList.add("prog");clearOut();
@@ -483,11 +492,17 @@ function brief(v){if(S.isCell(v)&&!(v instanceof S.Cell&&v.takesInput())){const 
 function speedHTML(){if(!speedNotes.length)return"";const fast=speedNotes.filter(n=>n.fast).length;
  return'<div class="sh">Loops over lists</div><div class="foot" style="padding-top:0">'+fast+" of "+speedNotes.length+" can run over columns: a list of 32 or more records of numbers, stored one array per field. The others run item by item, which is fine for short lists.</div>"+
   speedNotes.slice().sort((a,b)=>a.line-b.line).map(n=>'<div class="row sp'+(n.fast?" f":"")+'"><span class="k2">line '+n.line+" · "+n.word+'</span><span class="v">'+(n.fast?"runs over columns":"item by item: "+esc(n.why))+"</span></div>").join("")}
-function renderState(){const el=$("st");
- if(!game){el.innerHTML='<div class="foot">No game is running.</div>'+speedHTML();return}
- let rows=[];try{for(const [k,v] of S.fieldsOf(game.state))rows.push([k,brief(v)])}catch(e){el.textContent=msgOf(e);return}
- el.innerHTML=rows.map(([k,v])=>'<div class="row"><span class="k2">'+esc(k)+'</span><span class="v">'+esc(v)+"</span></div>").join("")+
-  '<div class="foot">'+(paused?"Paused":"Live")+" · "+game.history.length+" moments saved for rewind</div>"+speedHTML()}
+function dbHTML(){const db=S.G.db;if(!db||!needsDb(code))return"";let t=[];try{t=db.tables()}catch(e){}
+ return'<div class="sh">SQLite</div><div class="foot" style="padding-top:0">Kept in this browser between visits. <a href="#" id="dbClear" style="color:var(--acc2);font-weight:600">Clear the database</a></div>'+
+  (t.length?t.map(([n,c])=>'<div class="row"><span class="k2">'+esc(n)+'</span><span class="v">'+c+" row"+(c===1?"":"s")+"</span></div>").join(""):'<div class="foot">No tables yet.</div>')}
+function wireDb(){const a=$("dbClear");if(a)a.onclick=async e=>{e.preventDefault();if(!confirm("Clear the SQLite database kept in this browser?"))return;await S.G.db.clear();toast("Database cleared");if(build(code,true))afterBuild()}}
+// only replace what's shown when it changed, so a link isn't rebuilt under a click
+function renderState(){const el=$("st"),h=stateHTML();if(el._h!==h){el.innerHTML=h;el._h=h;wireDb()}}
+function stateHTML(){
+ if(!game)return'<div class="foot">No game is running.</div>'+dbHTML()+speedHTML();
+ let rows=[];try{for(const [k,v] of S.fieldsOf(game.state))rows.push([k,brief(v)])}catch(e){return esc(msgOf(e))}
+ return rows.map(([k,v])=>'<div class="row"><span class="k2">'+esc(k)+'</span><span class="v">'+esc(v)+"</span></div>").join("")+
+  '<div class="foot">'+(paused?"Paused":"Live")+" · "+game.history.length+" moments saved for rewind</div>"+dbHTML()+speedHTML()}
 setInterval(()=>{if(TAB==="st")renderState()},250);
 
 // ---------- tabs
