@@ -47,6 +47,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **Spork (decisions 91 to 93):** `xs spork f` is a parallel `collect`. A pure cell is worked out ahead into one kernel of number maths: calls inlined; lists, records and words unrolled; tests that change from run to run made into per-run choices. It runs on WebAssembly SIMD (the same bits as JavaScript) or, for big sporks on the page, on the GPU (32-bit). ace-schedule's whole Monte Carlo run becomes 155 steps, and 100,000 runs take about 9 ms instead of 1.9 s.
   - **`sort` (decision 92):** a method; numbers by radix, a million in about 50 ms.
   - **A smaller core (decisions 96 and 97):** `sprout3.js` runs every program on its own, at half its old size; speed is a library (`kernels.js`: the work-ahead pass, loop fusion, spork, SIMD, the radix sort) that can't change an answer. The old column loops are gone, since fusion does their work. `clamp`, `toward` and `dist` moved into the Sprout prelude, and prelude cells (`cond` and `match` too) inline into fused loops and spork kernels.
+  - **Galaxy (`examples/galaxy.sp`):** twenty thousand stars falling toward your finger, moved by one fused loop and drawn by WebGPU in one call: about 2 ms a frame for the Sprout side.
   - **Loop fusion (decision 95):** a run of `collect`, `keep`, `fold` and `length` is one loop with no lists in between, over numbers or records of numbers in columns, with the same answers bit for bit.
 - **ACE:**
   - **Narrative:** a `narrative-required` atom isn't done until it's written up. On the board, the write-up is structure: an inspection that finds rework or an NCR adds atoms that the pour then waits for.
@@ -63,7 +64,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
   - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
   - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
-- **Tests:** 212 pass, 134 for the language and 78 for the games.
+- **Tests:** 216 pass, 134 for the language and 82 for the games.
 
 ## Open questions for Troy
 
@@ -82,13 +83,13 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 
 ```
 node test.js          # language tests (134)
-node game-tests.js    # game tests (78)
+node game-tests.js    # game tests (82)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 212 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 216 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -150,6 +151,7 @@ The page and `bench.html` need a local web server, such as `python3 -m http.serv
 - `game-test.js`: Quick headless run of sprout.sp
 - `live-test.js`: Quick rewind, replay and hot-swap check
 - `examples/tour.sp`: The language, one feature per line
+- `examples/galaxy.sp`: Galaxy: twenty thousand stars falling toward your finger; one fused loop moves them all, and WebGPU draws them in one call
 - `examples/sprout.sp`: Demo game: catch the rain, dodge the bugs
 - `examples/bounce.sp`: Bounce
 - `examples/snake.sp`: Snake
@@ -3978,6 +3980,18 @@ const f = (g, k) => g.state.field(k);
   ok("ace-risk: spork prints exactly what collect prints", JSON.stringify(run(small)) === JSON.stringify(run(small.replace("range runs spork one-run", "range runs collect one-run"))));
 }
 
+// Galaxy: twenty thousand stars in columns, moved and drawn by fused loops
+{
+  const g = game("galaxy");
+  ok("galaxy: every loop is fused", g.speedNotes.length === 4 && g.speedNotes.every(n => n.fast), g.speedNotes.map(n => n.word + " " + n.why));
+  for (let t = 0; t < 120; t++) g.tick(1 / 60);
+  const stars = f(g, "stars"), draws = g.draw();
+  ok("galaxy: 20,000 stars, kept as columns", stars.count() === 20000 && stars instanceof S.ColumnCell, stars.count());
+  ok("galaxy: every star is drawn, blue or white, and the count", draws.filter(d => d[0] === "circle").length === 20000 && draws.some(d => d[0] === "text" && d[1][0] === "20000 stars"));
+  const inView = draws.filter(d => d[0] === "circle" && d[1][0] > 0 && d[1][0] < 360 && d[1][1] > 0 && d[1][1] < 480).length;
+  ok("galaxy: the stars stay in the sky", inView > 18000, inView);
+}
+
 // a fused each calls the host words of its own game, even after another game is made (each game has its own circle)
 {
   const first = game("particles"); for (let t = 0; t < 60; t++) first.tick(1 / 60);
@@ -4039,7 +4053,7 @@ Milliseconds per frame for each example game.
 // ms per frame (update + draw) for each example game: node frame-bench.js
 const S = require("./sprout3.js"), L = require("./live3.js"), fs = require("fs");
 S.setLog(() => {});
-const games = ["sprout", "bounce", "snake", "breakout", "particles", "fireflies", "orbit", "life", "hop"];
+const games = ["sprout", "bounce", "snake", "breakout", "particles", "fireflies", "orbit", "life", "hop", "galaxy"];
 const rows = [];
 for (const name of games) {
   const g = L.makeGame(fs.readFileSync(__dirname + "/examples/" + name + ".sp", "utf8"));
@@ -4181,6 +4195,59 @@ make : [x | [x + 1]]
 -- recursion
 fib : [n | n < 2 [n] else [fib (n - 1) + (fib (n - 2))]]
 fib 20 print
+````
+
+## examples/galaxy.sp
+
+Galaxy: twenty thousand stars falling toward your finger; one fused loop moves them all, and WebGPU draws them in one call
+
+````sprout
+-- Galaxy: twenty thousand stars, pulled toward your finger, or toward a point that drifts round the sky.
+-- Every star is a record of numbers, kept in columns (decision 82). Moving them all is one fused loop,
+-- drawing them is two more (decision 95), and the page draws every star with WebGPU in one call (decision 90).
+-- Try changing star-count, the pull, or the colours while it runs.
+
+star-count : 20000
+pull : 5000                  -- how hard the stars fall toward the point
+drag : 0.996                 -- how much speed each star keeps from frame to frame
+fast : 90                    -- stars faster than this burn white
+
+-- a new star: somewhere on a ring round the middle, already moving round it
+new-star : [n |
+  angle : noise [n, 1] * 6.283185307179586
+  radius : noise [n, 2] * 160 + 30
+  speed : noise [n, 3] * 30 + 50
+  [x : W / 2 + (angle cos * radius), y : H / 2 + (angle sin * radius), vx : angle sin * (0 - speed), vy : angle cos * speed]
+]
+
+start :
+  stars : range star-count collect new-star
+
+update : [game |
+  dt : game dt
+  input : game input
+  -- where they fall: your finger, or a point that loops slowly round the middle
+  target-x : input touching [input touch-x] else [W / 2 + (game clock * 0.3 sin * 70)]
+  target-y : input touching [input touch-y] else [H / 2 + (game clock * 0.4 cos * 90)]
+  strength : input touching [pull * 2] else [pull]
+  moved : game stars collect [star |
+    dx : target-x - (star x)
+    dy : target-y - (star y)
+    nearness : strength / (dx * dx + (dy * dy) + 900) * dt
+    new-vx : star vx + (dx * nearness) * drag
+    new-vy : star vy + (dy * nearness) * drag
+    star with [x : star x + (new-vx * dt), y : star y + (new-vy * dt), vx : new-vx, vy : new-vy]
+  ]
+  game with [stars : moved]
+]
+
+draw : [game |
+  clear "#04050d"
+  -- slow stars are blue, fast ones white: two loops, each keeping its own stars
+  game stars keep [star | star vx * (star vx) + (star vy * (star vy)) < (fast * fast)] each [star | circle [star x, star y, 1.1, "#7d8bff"]]
+  game stars keep [star | star vx * (star vx) + (star vy * (star vy)) >= (fast * fast)] each [star | circle [star x, star y, 1.5, "#f6f2ff"]]
+  text ["[star-count] stars", 52, 22, 13, "#8a90b8"]
+]
 ````
 
 ## examples/sprout.sp
@@ -6118,15 +6185,15 @@ body.t-out #out{display:block}body.t-st #st{display:block}
 <div id="modal"><div id="mBox"><div class="mh"><h2 id="mTitle"></h2><button class="x" data-close aria-label="Close">✕</button></div><div id="mBody"></div></div></div>
 <div id="toast"></div><div id="scrubTip"></div>
 
-<script src="sprout3.js?v=20261120k"></script>
-<script src="kernels.js?v=20261120k"></script>
-<script src="live3.js?v=20261120k"></script>
-<script src="sqlite-web.js?v=20261120k"></script>
-<script src="gpu-paint.js?v=20261120k"></script>
-<script src="gpu-spork.js?v=20261120k"></script>
+<script src="sprout3.js?v=20261120l"></script>
+<script src="kernels.js?v=20261120l"></script>
+<script src="live3.js?v=20261120l"></script>
+<script src="sqlite-web.js?v=20261120l"></script>
+<script src="gpu-paint.js?v=20261120l"></script>
+<script src="gpu-spork.js?v=20261120l"></script>
 <script>
 "use strict";
-const V="20261120k";
+const V="20261120l";
 const $=id=>document.getElementById(id);
 const S=window.Sprout3,L=window.Sprout3Live;
 const GW=360,GH=480;
@@ -6143,6 +6210,7 @@ const EX=[
  ["ace-morning","ace","ACE Morning","The morning question: which constraints, killed today, release the most work? A ranking by hours released."],
  ["ace-ledger","ace","ACE Ledger","The atoms live in SQLite, kept in this browser. Each run is a day on site: one atom closes and the event log grows."],
  ["ace-derive","ace","ACE Derive","The five kinds of atom, and done worked out to a fixed point."],
+ ["galaxy","game","Galaxy","Twenty thousand stars falling toward your finger. One fused loop moves them all, and WebGPU draws them in one call."],
  ["sprout","game","Sprout","Catch the rain, dodge the bugs. The demo game."],
  ["fireflies","game","Fireflies","Four hundred lights on the night air. Hold a finger down and they gather to it."],
  ["orbit","game","Orbit","Drag and let go to throw moons round the sun."],
@@ -6263,7 +6331,10 @@ $("bGpu").onclick=()=>{useGpu=!useGpu;LS.set("sprout3.gpu",useGpu);rendererUI();
 // WebGPU is used only once it has passed a self-test on this device; otherwise everything stays on Canvas 2D
 let gpuWhy="",gpuFrames=0,gpuMisses=0;
 // WebGPU stopped working on this device: Canvas 2D from now on, said once, and never shown as an error in the program
-function gpuFail(why){GPU=null;gpuWhy=why;rendererUI();toast("WebGPU stopped drawing here, so the page draws with Canvas 2D")}
+let gpuRetried=false;
+function gpuFail(why){const lost=GPU&&GPU.lost;GPU=null;gpuWhy=why;rendererUI();
+ if(lost&&!gpuRetried&&window.SproutGpu){gpuRetried=true;setTimeout(()=>SproutGpu.makeGpuPainter($("gv")).then(p=>{if(p){GPU=p;gpuMisses=0;gpuFrames=0;rendererUI();toast("WebGPU is back")}},()=>{}),800);return}
+ toast("WebGPU stopped drawing here, so the page draws with Canvas 2D")}
 // the second check: frames drawn by the GPU must actually show. Every game clears its screen, so a shown frame has no clear pixels.
 function checkShown(){try{const c=document.createElement("canvas");c.width=c.height=8;const x=c.getContext("2d");x.drawImage($("gv"),0,0,8,8);const d=x.getImageData(0,0,8,8).data;
  for(let i=3;i<d.length;i+=4)if(d[i]>0)return;}catch(e){}
@@ -6651,7 +6722,7 @@ async function benchLang(){
   row("t-lang",[name,ms(t),ms(tj),(t/tj).toFixed(1)+"×",S.format(r)+(S.format(r)===String(rj)?"":" ≠ "+rj)])}}
 
 // ---------- the games
-const GAMES=["sprout","fireflies","orbit","hop","life","bounce","snake","breakout","particles","ace-board","ace-site","ace-crews"];
+const GAMES=["galaxy","sprout","fireflies","orbit","hop","life","bounce","snake","breakout","particles","ace-board","ace-site","ace-crews"];
 async function benchGames(){
  for(const name of GAMES){status("games: "+name);await sleep(10);
   const src=await (await fetch("examples/"+name+".sp?v=20261120j")).text();const g=L.makeGame(src,{W:GW,H:GH});

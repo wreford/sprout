@@ -263,6 +263,18 @@ const f = (g, k) => g.state.field(k);
   ok("ace-risk: spork prints exactly what collect prints", JSON.stringify(run(small)) === JSON.stringify(run(small.replace("range runs spork one-run", "range runs collect one-run"))));
 }
 
+// Galaxy: twenty thousand stars in columns, moved and drawn by fused loops
+{
+  const g = game("galaxy");
+  ok("galaxy: every loop is fused", g.speedNotes.length === 4 && g.speedNotes.every(n => n.fast), g.speedNotes.map(n => n.word + " " + n.why));
+  for (let t = 0; t < 120; t++) g.tick(1 / 60);
+  const stars = f(g, "stars"), draws = g.draw();
+  ok("galaxy: 20,000 stars, kept as columns", stars.count() === 20000 && stars instanceof S.ColumnCell, stars.count());
+  ok("galaxy: every star is drawn, blue or white, and the count", draws.filter(d => d[0] === "circle").length === 20000 && draws.some(d => d[0] === "text" && d[1][0] === "20000 stars"));
+  const inView = draws.filter(d => d[0] === "circle" && d[1][0] > 0 && d[1][0] < 360 && d[1][1] > 0 && d[1][1] < 480).length;
+  ok("galaxy: the stars stay in the sky", inView > 18000, inView);
+}
+
 // a fused each calls the host words of its own game, even after another game is made (each game has its own circle)
 {
   const first = game("particles"); for (let t = 0; t < 60; t++) first.tick(1 / 60);
