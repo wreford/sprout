@@ -65,6 +65,12 @@ ok("84 match only works out the answer it picks", val('match [1, [1, "one", 2, n
   ok("fold loop: anything else still works the ordinary way", val('["a", "b"] fold ["", [t n | t .. n]]') === "ab" && val("[1, 2] fold [[], [t n | t .. [n]]]") === "[1, 2]");
   const sp = S.load("a : range 9 fold [0, [t n | t + n]]\nb : range 9 fold [0, [t n | t .. n]]").speed;
   ok("fold loop: speed notes say which folds run as a tight loop", sp.find(n => n.line === 1).fast && !sp.find(n => n.line === 2).fast && sp.every(n => n.word === "fold"), sp); }
+// decision 74, decided: else keeps its one rule; a branch whose answer is a test is named, and cond keeps a false answer
+{ logs.length = 0;
+  const c = S.load("x : 3\na : x > 0 [x < 2] else [x = 3]\nb : x > 0 [x < 2] else [false]\nc : cond [x > 0, x < 2, any, x = 3]");
+  ok("74: a branch that gives true or false before else is named", logs.length === 1 && /line 2: this branch gives true or false/.test(logs[0]) && /cond/.test(logs[0]), logs);
+  ok("74: else still runs when the branch gives false, and cond keeps the false", c.field("a") === true && c.field("b") === false && c.field("c") === false);
+  logs.length = 0; }
 // spork (decisions 47 and 91): the same answer as collect, whichever way it runs
 { const W = S.sporkWays({}).wasm;
   const three = (src, xs, f) => {

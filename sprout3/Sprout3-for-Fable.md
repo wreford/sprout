@@ -61,11 +61,11 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
   - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
   - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
-- **Tests:** 189 pass, 112 for the language and 77 for the games.
+- **Tests:** 191 pass, 114 for the language and 77 for the games.
 
 ## Open questions for Troy
 
-1. **The `else` catch (decision 74).** It still applies to user code: a then-branch that gives `false` also runs the `else`. `match` and `cond` no longer suffer from it (decision 84). Keep it, or let a branch give `false`?
+1. **Decided: the `else` catch (decision 74).** Troy left it to Claude, with every control structure staying in the library (decision 94). The catch is kept, since a library `else` sees one value. A lint names any branch whose answer is a test, and `cond` keeps a false answer.
 2. **What comes next on the speed roadmap?** Steps 1, 3 and 4 of decision 79 are built. Step 2, loop fusion (`collect`, `keep` and `fold` chains as one loop with no lists in between), is left.
 3. **GPU answers (decision 93).** The GPU does 32-bit maths, so the same seed can give different last digits on different machines. Should a program be able to ask for exact answers itself?
 4. **The rough edges** listed under "Known rough edges" below.
@@ -79,7 +79,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 **Run it (Node 22 or later):**
 
 ```
-node test.js          # language tests (112)
+node test.js          # language tests (114)
 node game-tests.js    # game tests (77)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
@@ -92,11 +92,13 @@ The page and `bench.html` need a local web server, such as `python3 -m http.serv
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
-All 189 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected.
+The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
+
+All 191 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected.
 
 ## How to work on it
 
-- **The spec is the source of truth.** The section "Design decisions not yet built" (decisions 1 to 93) defines Sprout 3, despite its name: almost all of it is now built. Later decisions override earlier ones and say so. Sections 1 to 15 at the top of the spec describe the older Sprout 2.0 / Sprout Live baseline and are kept for history only.
+- **The spec is the source of truth.** The section "Design decisions not yet built" (decisions 1 to 94) defines Sprout 3, despite its name: almost all of it is now built. Later decisions override earlier ones and say so. Sections 1 to 15 at the top of the spec describe the older Sprout 2.0 / Sprout Live baseline and are kept for history only.
 - **Language changes go to Troy first.** Talk any change to syntax or semantics through with him before building it, and ask one question at a time. Library-level choices (cells in the prelude, host cells, internals) are yours to make; record them in the spec (decision 80).
 - **Don't rewrite example programs or files unless asked.**
 - **Keep it streamable.** The tokenizer and parser work in one pass with no look-ahead across the file. Warn if a change would break that.
@@ -122,6 +124,11 @@ All 189 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which p
   - In a column `each`, host words take their values one by one, with no argument cell per shape (decision 89).
   - `spork` works a pure cell out ahead into one kernel of number maths (`Spk` in `sprout3.js`): calls inlined, lists, records and words unrolled, tests that change from run to run made into per-run choices. The kernel runs on WebAssembly SIMD (`spkWasmBytes`, f64x2, the same bits as JavaScript), in JavaScript (`spkJS`), or on the GPU (`gpu-spork.js`, 32-bit) (decisions 91 to 93).
   - `spork` works a pure cell out ahead into one kernel of number maths (`Spk` in `sprout3.js`): calls inlined, lists, records and words unrolled, tests that change from run to run made into per-run choices. The kernel runs on WebAssembly SIMD (`spkWasmBytes`, f64x2, the same bits as JavaScript), in JavaScript (`spkJS`), or on the GPU (`gpu-spork.js`, 32-bit) (decisions 91 to 93).
+  - A `fold` block of number maths runs as one plain loop over `range` or a list of numbers (decision 88).
+  - In a column `each`, host words take their values one by one, with no argument cell per shape (decision 89).
+  - `spork` works a pure cell out ahead into one kernel of number maths (`Spk` in `sprout3.js`): calls inlined, lists, records and words unrolled, tests that change from run to run made into per-run choices. The kernel runs on WebAssembly SIMD (`spkWasmBytes`, f64x2, the same bits as JavaScript), in JavaScript (`spkJS`), or on the GPU (`gpu-spork.js`, 32-bit) (decisions 91 to 93).
+  - `spork` works a pure cell out ahead into one kernel of number maths (`Spk` in `sprout3.js`): calls inlined, lists, records and words unrolled, tests that change from run to run made into per-run choices. The kernel runs on WebAssembly SIMD (`spkWasmBytes`, f64x2, the same bits as JavaScript), in JavaScript (`spkJS`), or on the GPU (`gpu-spork.js`, 32-bit) (decisions 91 to 93).
+  - `spork` works a pure cell out ahead into one kernel of number maths (`Spk` in `sprout3.js`): calls inlined, lists, records and words unrolled, tests that change from run to run made into per-run choices. The kernel runs on WebAssembly SIMD (`spkWasmBytes`, f64x2, the same bits as JavaScript), in JavaScript (`spkJS`), or on the GPU (`gpu-spork.js`, 32-bit) (decisions 91 to 93).
 - **Runtime values:** `Cell` (from a literal, lazy), `VCell` (a cell of values: shape plus value array), `RCell` (a lazy `range`), `ColCell` (a list of number records stored as one number array per field), `Native` (a host word), `Waiting` (a prototype method waiting for its right side). `false` is the only falsy value.
 - **Prelude:** a short Sprout program inside `sprout3.js` defines `match`, `cond`, `take`, `rgb`, `rgba`, `every`, `wave` and `frame` in Sprout itself.
 - **`live3.js`, the game loop.** A game file binds `start`, `update` and `draw`. Events (`down`, `move`, `up`, `tick`) fold through `frame update`. Effects are queued during `update` and carried out after it. Random numbers are recorded per tick, so `replayFrom` is exact. Rewind is a list of states, since cells never change. Hot-swap keeps live values whose starting value didn't change.
@@ -143,8 +150,9 @@ All 189 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which p
    - (built since: the editor-side lint that flags slow paths, decision 86)
    - (built since: the editor-side lint that flags slow paths, decision 86)
    - (built since: the editor-side lint that flags slow paths, decision 86)
+   - (built since: the editor-side lint that flags slow paths, decision 86)
 3. **Known rough edges:**
-   - The `else` catch: a then-branch that gives `false` also runs the `else` (74). `match` and `cond` no longer fall through on a `false` answer (84).
+   - The `else` catch is kept (74, decided 20 Nov): a then-branch that gives `false` also runs the `else`. A lint names any branch whose answer is a test, and `cond` keeps a false answer (84). Every control structure is a library cell (94).
    - Field/name clash lints fire on the common `update` pattern; rename the local (73).
    - A cell can't have a field whose name is worked out at run time, so the host passes held keys in on each tick.
 4. **Current speed:**
@@ -152,6 +160,7 @@ All 189 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which p
    - In the browser: fib 25 takes about 1.8 ms, against 0.9 for plain JS; summing 1 to 1,000,000 with `fold` about 0.8 ms, level with plain JS (decision 88); 10,000 records times 20 updates about 3 ms, against 7 for plain JS.
    - 100,000 particles: about 5 ms to update and 5 to 7 ms to build the draw list. Canvas 2D takes 180 ms to draw them; WebGPU takes about 4 ms of CPU to build and submit the frame.
    - SQLite: 10,000 rows into Sprout records with `db query` in about 11 ms.
+   - Monte Carlo (`ace-risk.sp`'s run, five graph walks each): 100,000 runs take about 10 s the ordinary way, 28 ms as a JavaScript kernel and 21 ms on SIMD; a million take about 0.2 s on SIMD. In Node, ace-schedule's run on SIMD is about 3 times the JavaScript kernel.
    - Monte Carlo (`ace-risk.sp`'s run, five graph walks each): 100,000 runs take about 10 s the ordinary way, 28 ms as a JavaScript kernel and 21 ms on SIMD; a million take about 0.2 s on SIMD. In Node, ace-schedule's run on SIMD is about 3 times the JavaScript kernel.
    - Monte Carlo (`ace-risk.sp`'s run, five graph walks each): 100,000 runs take about 10 s the ordinary way, 28 ms as a JavaScript kernel and 21 ms on SIMD; a million take about 0.2 s on SIMD. In Node, ace-schedule's run on SIMD is about 3 times the JavaScript kernel.
    - Compiling `sprout.sp` takes about 4 ms.
@@ -791,7 +800,7 @@ These are marked in `sprout2.js` with "Sprout Live fix N" or "Sprout Live additi
 ### Decisions from the voice call (19 Nov), built and tested
 
 73. **Field/name clashes are loud.** When a word after a value is both a field of that value and a name in scope, the field still wins (decision 2), and a lint names the word and line, once. Writing the games showed the common trigger: naming a local after the state field it replaces (`body : ...` then `g body`). Rename the local (decision 3).
-74. **`else` stays a plain library cell, catch included.** If a then-branch gives `false`, the `else` runs too. A branch written as `[false]` before `else` gets a lint. (`match` and `cond` are written so a missing case gives `false` rather than looping.)
+74. **`else` stays a plain library cell, catch included (decided by Claude, 20 Nov: Troy left the choice open, as long as every control structure stays in the library).** If a then-branch gives `false`, the `else` runs too. `else` is a cell that sees one value, so it can't tell "the test was false" from "the branch gave false". The only ways round that are a special form in the compiler, which decision 94 rules out, or a second kind of false that `else` could tell apart, which would leak into every comparison and print, against decision 21. So `else` keeps its one rule: if the left is false, the right. That is the same rule that gives `p name else "anon"` its default (decision 83). The catch is made loud instead. A branch written as `[false]` before `else` gets a lint, and so does any branch whose answer is a test (a comparison, `and`, `or`, `not`, `true`) unless the `else` gives false too, when it makes no difference. The lint names the way to keep a false answer: `cond [test, answer, any, other]`, which gives the chosen answer whatever it is (decision 84).
 75. **One rule for every cell.** A cell's fields can always be read and compare by value; its body runs on a send and compares by code. A record is a cell with no body, a function a cell with no fields, and a cell can be both: `[n | doc : "doubles", n * 2]` has a readable `doc` and runs on `21`. In a cell that takes input, a binding that uses the input is a local of that run, not a field: in `[n | m : n * 2, m + 1]`, `m` can't be read from outside.
 76. **Colours are cells.** `rgb [255, 0, 0]` and `rgba [0, 0, 0, 0.5]` are library cells giving colour text, so games never write colour strings with brackets. Hex strings like `"#ff6b4a"` still work.
 77. **`cond` and `take` are library cells (Claude's call).** `cond [test, result, test, result, ..., any, fallback]` gives the result of the first true test, like `match` but with tests. `take [xs, n]` gives the first `n` parts.
@@ -811,6 +820,7 @@ These are marked in `sprout2.js` with "Sprout Live fix N" or "Sprout Live additi
 91. **Spork works a pure cell out ahead, into one numeric kernel (built; implements decision 47 and step 3 of decision 79, Claude's call under decision 80).** `xs spork f` gives the same list as `xs collect f`. When `f` is written after `spork` or bound to a name that `spork` is given, the compiler works it out once, when the program loads, as far as it can without its input. Calls are inlined, including recursion that ends without the input. Lists, records, words and `range`, `collect`, `keep`, `fold`, `first` and `@` on them are unrolled. A test that changes from run to run becomes a choice made in each run, with both sides worked out. A position in a list that changes from run to run becomes a check: it must be a whole number inside the list, or the spork runs the ordinary way. What is left is number maths on the input, `noise` included. It runs as one loop over `range n` or a list of numbers, on WebAssembly SIMD (two runs per instruction, in 64-bit floats) or else in JavaScript. Both give the same bits, so a program can't tell which way it ran, and the tests check it. Each run may give a number, true or false, or a record of numbers (kept as columns, decision 82). Anything spork can't work out ahead means `collect`, and the speed notes (decision 86) say why: `random`, a host word, text made from a value that changes, `keep` with a test that changes from run to run, recursion that depends on the input. `%`, `sin`, `cos`, `tan` and `log` keep a kernel in JavaScript, since WebAssembly has no exact match for them. Spork over an effectful cell, which reports back as events (decision 47), is not built yet. `ace-schedule.sp`'s Monte Carlo run (string ids, a walk over `requires`, triangle draws and a shared risk) becomes 155 steps: 100,000 runs take about 9 ms instead of 1.9 s.
 92. **`sort` is a method (built; library, decision 80).** `xs sort` gives numbers from least to most (in the same order as JavaScript's own number sort, so -0 comes before 0 and NaN last), or words in order. Numbers are sorted by radix, about 50 ms for a million. A list of numbers from `spork` or `sort` is kept as one array of numbers, the way columns are (decision 82); to a program it is the same list. `rs collect [r | r f]` over columns gives that column straight away. A program that binds its own `sort` still uses its own, as `ace-schedule.sp` does.
 93. **Big sporks can run on the GPU (built; Claude's call, from the request to use WebGPU for Monte Carlo work).** The same kernel (decision 91) becomes a WebGPU compute shader, one run per GPU thread. The GPU does 32-bit maths, so its answers can differ from SIMD and JavaScript in the last digits. A risk roll that lands right at its chance can even come out the other way, about one run in a few million. So the GPU is a host choice, not the default everywhere. The page uses it for sporks of 100,000 runs or more in a program that prints, while WebGPU works, and the State tab can turn it off. Games always use SIMD. A GPU answer arrives later, but Sprout runs straight through, so the page runs a program in passes. A spork the GPU hasn't answered stops the pass and starts the job, and when it's done the program runs again from the start and finds the answer waiting. What the stopped pass printed is dropped. A program that uses `db` doesn't wait, since its writes would happen twice. Answers are kept for the same kernel, inputs and outside numbers, so editing the rest of a program doesn't run the million runs again. Node and pages without WebGPU use SIMD. Open question for Troy: should a program be able to ask for exact answers (no GPU) itself, since the same seed can give different last digits on different machines?
+94. **Every control structure is a library cell (Troy, 20 Nov).** Choosing, looping and gathering are cells and methods, not syntax. A boolean sent a cell runs it (decision 62), and `else`, `and` and `or` are prototype methods. `match`, `cond`, `take`, `every`, `wave` and `frame` are Sprout cells in the prelude. `collect`, `keep`, `fold`, `each`, `times`, `spork` and `sort` are methods, and `range` is a host cell. The compiler's inline branches, column loops and spork kernels are fast paths that give the same answers as those cells, and the tests check it. They are never a different meaning.
 ````
 
 ---
@@ -1103,9 +1113,13 @@ class Gen {
         if (nx && nx.k === "word" && nx.v === "else" && nx2 && !this.lookup("else")) {
           // test [a] else b: b runs when the test is false, or when a gives false (decision 62)
           i += 2;
+          // decision 74: else is a library cell, so it can't tell "the test was false" from "the branch gave false".
+          // A branch whose answer is true or false is named, unless the else gives false too, when it makes no difference.
           const lastIt = t.items[t.items.length - 1];
-          if (lastIt && lastIt.k === "chain" && lastIt.terms.length === 1 && lastIt.terms[0].k === "word" && lastIt.terms[0].v === "false")
-            lint("a branch that gives false before else: the else runs too (line " + (nx.line || 0) + ")");
+          const elseFalse = (nx2.k === "word" && nx2.v === "false") || (nx2.k === "cell" && nx2.items.length === 1 && givesBool(nx2.items[0]) === "false");
+          const branchTy = lastIt && lastIt.k === "chain" ? givesBool(lastIt) : null;
+          if (branchTy === "false") lint("a branch that gives false before else: the else runs too (line " + (nx.line || 0) + ")");
+          else if (branchTy && !elseFalse) lint("line " + (nx.line || 0) + ": this branch gives true or false, and when it gives false the else runs too (decision 74). To keep a false answer, use cond [test, answer, any, other]");
           const B = this.genArg(nx2, tail && i + 1 >= T.length);
           v = "(((" + ta + "=" + v + ")===true?(" + tb + "=" + A + "):" + ta + "===false?(" + tb + "=false):(" + tb + "=SEND(" + ta + "," + mk + ")))!==false?" + tb + ":" + B + ")";
         } else v = "((" + ta + "=" + v + ")===true?" + A + ":" + ta + "===false?false:" + SND + ta + "," + mk + "))";
@@ -1892,6 +1906,21 @@ function fieldsOnly(c) {
   };
   c.items.forEach(x => walk(x.val));
   return ok;
+}
+// is a chain's answer certainly true or false? "false" when it is the word false itself, "bool" for a test, else null.
+// Strictly left to right, so the last step decides: a comparison, and, or, not, or the words true and false.
+const TESTOPS = new Set(["<", ">", "<=", ">=", "=", "!="]);
+function givesBool(ch) {
+  const T = ch.terms; if (!T.length) return null;
+  if (T.length === 1 && T[0].k === "word" && T[0].v === "false") return "false";
+  let ty = T[0].k === "word" && T[0].v === "true" ? "bool" : T[0].k === "group" && T[0].items.length === 1 && T[0].items[0].k === "chain" && givesBool(T[0].items[0]) ? "bool" : null;
+  for (let i = 1; i < T.length; i++) {
+    const t = T[i];
+    if (t.k === "word" && (FUSED.has(t.v) || t.v === "and" || t.v === "or") && i + 1 < T.length) { ty = TESTOPS.has(t.v) || t.v === "and" || t.v === "or" ? "bool" : null; i++; }
+    else if (t.k === "word" && t.v === "not") ty = ty ? "bool" : null;
+    else ty = null;
+  }
+  return ty;
 }
 // a field value simple enough to work out when the cell is made: literals, names, field reads and arithmetic on them
 function simpleVal(ch) {
@@ -3293,6 +3322,12 @@ ok("84 match only works out the answer it picks", val('match [1, [1, "one", 2, n
   ok("fold loop: anything else still works the ordinary way", val('["a", "b"] fold ["", [t n | t .. n]]') === "ab" && val("[1, 2] fold [[], [t n | t .. [n]]]") === "[1, 2]");
   const sp = S.load("a : range 9 fold [0, [t n | t + n]]\nb : range 9 fold [0, [t n | t .. n]]").speed;
   ok("fold loop: speed notes say which folds run as a tight loop", sp.find(n => n.line === 1).fast && !sp.find(n => n.line === 2).fast && sp.every(n => n.word === "fold"), sp); }
+// decision 74, decided: else keeps its one rule; a branch whose answer is a test is named, and cond keeps a false answer
+{ logs.length = 0;
+  const c = S.load("x : 3\na : x > 0 [x < 2] else [x = 3]\nb : x > 0 [x < 2] else [false]\nc : cond [x > 0, x < 2, any, x = 3]");
+  ok("74: a branch that gives true or false before else is named", logs.length === 1 && /line 2: this branch gives true or false/.test(logs[0]) && /cond/.test(logs[0]), logs);
+  ok("74: else still runs when the branch gives false, and cond keeps the false", c.field("a") === true && c.field("b") === false && c.field("c") === false);
+  logs.length = 0; }
 // spork (decisions 47 and 91): the same answer as collect, whichever way it runs
 { const W = S.sporkWays({}).wasm;
   const three = (src, xs, f) => {

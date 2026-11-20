@@ -279,9 +279,13 @@ class Gen {
         if (nx && nx.k === "word" && nx.v === "else" && nx2 && !this.lookup("else")) {
           // test [a] else b: b runs when the test is false, or when a gives false (decision 62)
           i += 2;
+          // decision 74: else is a library cell, so it can't tell "the test was false" from "the branch gave false".
+          // A branch whose answer is true or false is named, unless the else gives false too, when it makes no difference.
           const lastIt = t.items[t.items.length - 1];
-          if (lastIt && lastIt.k === "chain" && lastIt.terms.length === 1 && lastIt.terms[0].k === "word" && lastIt.terms[0].v === "false")
-            lint("a branch that gives false before else: the else runs too (line " + (nx.line || 0) + ")");
+          const elseFalse = (nx2.k === "word" && nx2.v === "false") || (nx2.k === "cell" && nx2.items.length === 1 && givesBool(nx2.items[0]) === "false");
+          const branchTy = lastIt && lastIt.k === "chain" ? givesBool(lastIt) : null;
+          if (branchTy === "false") lint("a branch that gives false before else: the else runs too (line " + (nx.line || 0) + ")");
+          else if (branchTy && !elseFalse) lint("line " + (nx.line || 0) + ": this branch gives true or false, and when it gives false the else runs too (decision 74). To keep a false answer, use cond [test, answer, any, other]");
           const B = this.genArg(nx2, tail && i + 1 >= T.length);
           v = "(((" + ta + "=" + v + ")===true?(" + tb + "=" + A + "):" + ta + "===false?(" + tb + "=false):(" + tb + "=SEND(" + ta + "," + mk + ")))!==false?" + tb + ":" + B + ")";
         } else v = "((" + ta + "=" + v + ")===true?" + A + ":" + ta + "===false?false:" + SND + ta + "," + mk + "))";
@@ -1068,6 +1072,21 @@ function fieldsOnly(c) {
   };
   c.items.forEach(x => walk(x.val));
   return ok;
+}
+// is a chain's answer certainly true or false? "false" when it is the word false itself, "bool" for a test, else null.
+// Strictly left to right, so the last step decides: a comparison, and, or, not, or the words true and false.
+const TESTOPS = new Set(["<", ">", "<=", ">=", "=", "!="]);
+function givesBool(ch) {
+  const T = ch.terms; if (!T.length) return null;
+  if (T.length === 1 && T[0].k === "word" && T[0].v === "false") return "false";
+  let ty = T[0].k === "word" && T[0].v === "true" ? "bool" : T[0].k === "group" && T[0].items.length === 1 && T[0].items[0].k === "chain" && givesBool(T[0].items[0]) ? "bool" : null;
+  for (let i = 1; i < T.length; i++) {
+    const t = T[i];
+    if (t.k === "word" && (FUSED.has(t.v) || t.v === "and" || t.v === "or") && i + 1 < T.length) { ty = TESTOPS.has(t.v) || t.v === "and" || t.v === "or" ? "bool" : null; i++; }
+    else if (t.k === "word" && t.v === "not") ty = ty ? "bool" : null;
+    else ty = null;
+  }
+  return ty;
 }
 // a field value simple enough to work out when the cell is made: literals, names, field reads and arithmetic on them
 function simpleVal(ch) {
