@@ -9,126 +9,62 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 **Run it (Node 22 or later):**
 
 ```
-node test.js          # language tests (128)
+node test.js          # language tests (134)
 node game-tests.js    # game tests (77)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
+All 211 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
-
-The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
-
-The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
-
-The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
-
-The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
-
-All 205 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected.
 
 ## How to work on it
 
-- **The spec is the source of truth.** The section "Design decisions not yet built" (decisions 1 to 95) defines Sprout 3, despite its name: almost all of it is now built. Later decisions override earlier ones and say so. Sections 1 to 15 at the top of the spec describe the older Sprout 2.0 / Sprout Live baseline and are kept for history only.
+- **The spec is the source of truth.** The section "Design decisions not yet built" (decisions 1 to 97) defines Sprout 3, despite its name: almost all of it is now built. Later decisions override earlier ones and say so. Sections 1 to 15 at the top of the spec describe the older Sprout 2.0 / Sprout Live baseline and are kept for history only.
 - **Language changes go to Troy first.** Talk any change to syntax or semantics through with him before building it, and ask one question at a time. Library-level choices (cells in the prelude, host cells, internals) are yours to make; record them in the spec (decision 80).
+- **Every control structure is a library cell (decision 94), and speed is a library too (decision 96).** Keep the core small; a faster way goes in `kernels.js` and must give the same answers.
 - **Don't rewrite example programs or files unless asked.**
 - **Keep it streamable.** The tokenizer and parser work in one pass with no look-ahead across the file. Warn if a change would break that.
 - **Style:** kebab-case names; straight quotes; `--` for comments; no em dashes.
 
 ## How the implementation works
 
-- **`sprout3.js`, the compiler.** It tokenizes (an indent opens a cell unless the line above ends with `[`, `(` or `|`), parses into chains of sends, and generates JavaScript. Each cell literal compiles to a `run` function (straight-line code; inputs arrive as arguments) and, when it has readable fields, a `slots` function (one lazy thunk per field, worked out once).
-- **Fast paths:**
-  - Branches (`test [a] else [b]`) compile to inline conditionals.
-  - Operators get fused fast paths.
-  - `x with [f : ...]` compiles straight to a field update.
-  - Simple records and argument lists are built eagerly as value cells.
-  - Field reads and `with` use inline caches keyed on record shape.
-  - Calls in tail position bounce, so recursion stays flat.
-  - Lists of number records are stored as columns, and simple `collect`, `keep` and `each` bodies run as loops over the columns (decision 82).
-  - A `fold` block of number maths runs as one plain loop over `range` or a list of numbers (decision 88).
-  - In a column `each`, host words take their values one by one, with no argument cell per shape (decision 89).
-  - A `fold` block of number maths runs as one plain loop over `range` or a list of numbers (decision 88).
-  - A run of `collect`, `keep`, `fold` and `length` in a chain is tried first as one fused loop (`fuseSegment`, `Spk.buildPipe`, `FUSE`), with the steps as written as the way back (decision 95).
-  - In a column `each`, host words take their values one by one, with no argument cell per shape (decision 89).
-  - `spork` works a pure cell out ahead into one kernel of number maths (`Spk` in `sprout3.js`): calls inlined, lists, records and words unrolled, tests that change from run to run made into per-run choices. The kernel runs on WebAssembly SIMD (`spkWasmBytes`, f64x2, the same bits as JavaScript), in JavaScript (`spkJS`), or on the GPU (`gpu-spork.js`, 32-bit) (decisions 91 to 93).
-  - A `fold` block of number maths runs as one plain loop over `range` or a list of numbers (decision 88).
-  - A run of `collect`, `keep`, `fold` and `length` in a chain is tried first as one fused loop (`fuseSegment`, `Spk.buildPipe`, `FUSE`), with the steps as written as the way back (decision 95).
-  - A run of `collect`, `keep`, `fold` and `length` in a chain is tried first as one fused loop (`fuseSegment`, `Spk.buildPipe`, `FUSE`), with the steps as written as the way back (decision 95).
-  - In a column `each`, host words take their values one by one, with no argument cell per shape (decision 89).
-  - `spork` works a pure cell out ahead into one kernel of number maths (`Spk` in `sprout3.js`): calls inlined, lists, records and words unrolled, tests that change from run to run made into per-run choices. The kernel runs on WebAssembly SIMD (`spkWasmBytes`, f64x2, the same bits as JavaScript), in JavaScript (`spkJS`), or on the GPU (`gpu-spork.js`, 32-bit) (decisions 91 to 93).
-  - `spork` works a pure cell out ahead into one kernel of number maths (`Spk` in `sprout3.js`): calls inlined, lists, records and words unrolled, tests that change from run to run made into per-run choices. The kernel runs on WebAssembly SIMD (`spkWasmBytes`, f64x2, the same bits as JavaScript), in JavaScript (`spkJS`), or on the GPU (`gpu-spork.js`, 32-bit) (decisions 91 to 93).
-  - A `fold` block of number maths runs as one plain loop over `range` or a list of numbers (decision 88).
-  - A run of `collect`, `keep`, `fold` and `length` in a chain is tried first as one fused loop (`fuseSegment`, `Spk.buildPipe`, `FUSE`), with the steps as written as the way back (decision 95).
-  - A run of `collect`, `keep`, `fold` and `length` in a chain is tried first as one fused loop (`fuseSegment`, `Spk.buildPipe`, `FUSE`), with the steps as written as the way back (decision 95).
-  - In a column `each`, host words take their values one by one, with no argument cell per shape (decision 89).
-  - `spork` works a pure cell out ahead into one kernel of number maths (`Spk` in `sprout3.js`): calls inlined, lists, records and words unrolled, tests that change from run to run made into per-run choices. The kernel runs on WebAssembly SIMD (`spkWasmBytes`, f64x2, the same bits as JavaScript), in JavaScript (`spkJS`), or on the GPU (`gpu-spork.js`, 32-bit) (decisions 91 to 93).
-  - `spork` works a pure cell out ahead into one kernel of number maths (`Spk` in `sprout3.js`): calls inlined, lists, records and words unrolled, tests that change from run to run made into per-run choices. The kernel runs on WebAssembly SIMD (`spkWasmBytes`, f64x2, the same bits as JavaScript), in JavaScript (`spkJS`), or on the GPU (`gpu-spork.js`, 32-bit) (decisions 91 to 93).
-  - `spork` works a pure cell out ahead into one kernel of number maths (`Spk` in `sprout3.js`): calls inlined, lists, records and words unrolled, tests that change from run to run made into per-run choices. The kernel runs on WebAssembly SIMD (`spkWasmBytes`, f64x2, the same bits as JavaScript), in JavaScript (`spkJS`), or on the GPU (`gpu-spork.js`, 32-bit) (decisions 91 to 93).
-  - A `fold` block of number maths runs as one plain loop over `range` or a list of numbers (decision 88).
-  - A run of `collect`, `keep`, `fold` and `length` in a chain is tried first as one fused loop (`fuseSegment`, `Spk.buildPipe`, `FUSE`), with the steps as written as the way back (decision 95).
-  - A run of `collect`, `keep`, `fold` and `length` in a chain is tried first as one fused loop (`fuseSegment`, `Spk.buildPipe`, `FUSE`), with the steps as written as the way back (decision 95).
-  - In a column `each`, host words take their values one by one, with no argument cell per shape (decision 89).
-  - `spork` works a pure cell out ahead into one kernel of number maths (`Spk` in `sprout3.js`): calls inlined, lists, records and words unrolled, tests that change from run to run made into per-run choices. The kernel runs on WebAssembly SIMD (`spkWasmBytes`, f64x2, the same bits as JavaScript), in JavaScript (`spkJS`), or on the GPU (`gpu-spork.js`, 32-bit) (decisions 91 to 93).
-  - `spork` works a pure cell out ahead into one kernel of number maths (`Spk` in `sprout3.js`): calls inlined, lists, records and words unrolled, tests that change from run to run made into per-run choices. The kernel runs on WebAssembly SIMD (`spkWasmBytes`, f64x2, the same bits as JavaScript), in JavaScript (`spkJS`), or on the GPU (`gpu-spork.js`, 32-bit) (decisions 91 to 93).
-  - `spork` works a pure cell out ahead into one kernel of number maths (`Spk` in `sprout3.js`): calls inlined, lists, records and words unrolled, tests that change from run to run made into per-run choices. The kernel runs on WebAssembly SIMD (`spkWasmBytes`, f64x2, the same bits as JavaScript), in JavaScript (`spkJS`), or on the GPU (`gpu-spork.js`, 32-bit) (decisions 91 to 93).
-  - `spork` works a pure cell out ahead into one kernel of number maths (`Spk` in `sprout3.js`): calls inlined, lists, records and words unrolled, tests that change from run to run made into per-run choices. The kernel runs on WebAssembly SIMD (`spkWasmBytes`, f64x2, the same bits as JavaScript), in JavaScript (`spkJS`), or on the GPU (`gpu-spork.js`, 32-bit) (decisions 91 to 93).
-  - A `fold` block of number maths runs as one plain loop over `range` or a list of numbers (decision 88).
-  - A run of `collect`, `keep`, `fold` and `length` in a chain is tried first as one fused loop (`fuseSegment`, `Spk.buildPipe`, `FUSE`), with the steps as written as the way back (decision 95).
-  - A run of `collect`, `keep`, `fold` and `length` in a chain is tried first as one fused loop (`fuseSegment`, `Spk.buildPipe`, `FUSE`), with the steps as written as the way back (decision 95).
-  - In a column `each`, host words take their values one by one, with no argument cell per shape (decision 89).
-  - `spork` works a pure cell out ahead into one kernel of number maths (`Spk` in `sprout3.js`): calls inlined, lists, records and words unrolled, tests that change from run to run made into per-run choices. The kernel runs on WebAssembly SIMD (`spkWasmBytes`, f64x2, the same bits as JavaScript), in JavaScript (`spkJS`), or on the GPU (`gpu-spork.js`, 32-bit) (decisions 91 to 93).
-  - `spork` works a pure cell out ahead into one kernel of number maths (`Spk` in `sprout3.js`): calls inlined, lists, records and words unrolled, tests that change from run to run made into per-run choices. The kernel runs on WebAssembly SIMD (`spkWasmBytes`, f64x2, the same bits as JavaScript), in JavaScript (`spkJS`), or on the GPU (`gpu-spork.js`, 32-bit) (decisions 91 to 93).
-  - `spork` works a pure cell out ahead into one kernel of number maths (`Spk` in `sprout3.js`): calls inlined, lists, records and words unrolled, tests that change from run to run made into per-run choices. The kernel runs on WebAssembly SIMD (`spkWasmBytes`, f64x2, the same bits as JavaScript), in JavaScript (`spkJS`), or on the GPU (`gpu-spork.js`, 32-bit) (decisions 91 to 93).
-  - `spork` works a pure cell out ahead into one kernel of number maths (`Spk` in `sprout3.js`): calls inlined, lists, records and words unrolled, tests that change from run to run made into per-run choices. The kernel runs on WebAssembly SIMD (`spkWasmBytes`, f64x2, the same bits as JavaScript), in JavaScript (`spkJS`), or on the GPU (`gpu-spork.js`, 32-bit) (decisions 91 to 93).
-  - `spork` works a pure cell out ahead into one kernel of number maths (`Spk` in `sprout3.js`): calls inlined, lists, records and words unrolled, tests that change from run to run made into per-run choices. The kernel runs on WebAssembly SIMD (`spkWasmBytes`, f64x2, the same bits as JavaScript), in JavaScript (`spkJS`), or on the GPU (`gpu-spork.js`, 32-bit) (decisions 91 to 93).
-- **Runtime values:** `Cell` (from a literal, lazy), `VCell` (a cell of values: shape plus value array), `RCell` (a lazy `range`), `ColCell` (a list of number records stored as one number array per field), `Native` (a host word), `Waiting` (a prototype method waiting for its right side). `false` is the only falsy value.
-- **Prelude:** a short Sprout program inside `sprout3.js` defines `match`, `cond`, `take`, `rgb`, `rgba`, `every`, `wave` and `frame` in Sprout itself.
+- **`sprout3.js`, the core.** It tokenizes (an indent opens a cell unless the line above ends with `[`, `(` or `|`), parses into chains of sends, and generates JavaScript. Each cell literal compiles to a `run` function (straight-line code; inputs arrive as arguments) and, when it has readable fields, a `slots` function (one lazy thunk per field, worked out once). Its own fast paths: branches (`test [a] else [b]`) compile to inline conditionals; operators get fused fast paths; `x with [f : ...]` compiles straight to a field update; simple records and argument lists are built eagerly; field reads and `with` use inline caches keyed on record shape; calls in tail position bounce, so recursion stays flat.
+- **Runtime values:** `Cell` (from a literal, lazy), `VCell` (a cell of values: shape plus value array), `RCell` (a lazy `range`), `ColCell` (a list of number records stored as one number array per field, decision 82), `NCell` (a list of numbers in one array), `Native` (a host word), `Waiting` (a prototype method waiting for its right side). `false` is the only falsy value.
+- **The prelude**, a short Sprout program inside `sprout3.js`, defines `clamp`, `toward`, `dist`, `match`, `cond`, `take`, `rgb`, `rgba`, `every`, `wave` and `frame` (decisions 77, 94 and 97).
+- **`kernels.js`, the speed library (decision 96).** It plugs into four hooks in the core and can't change an answer.
+  - The work-ahead pass (`Spk`) works a cell out as far as it can without its input: calls inlined, prelude cells too; lists, records and words unrolled; tests that change from item to item made into per-item choices. What's left is number maths (the IR).
+  - Loop fusion (`fuseSegment`, `Spk.buildPipe`, `FUSE`, `fuseJS`): a run of `collect`, `keep`, `fold`, `each` and `length` in a chain is tried first as one loop over `range`, a list of numbers, or records of numbers in columns, with the steps as written as the way back (decisions 95 and 96).
+  - Spork kernels: `xs spork f` runs a worked-out cell on WebAssembly SIMD (`spkWasmBytes`, f64x2, the same bits as JavaScript) or in JavaScript (`spkJS`) (decision 91). The radix sort for numbers (decision 92).
+- **Other libraries:** `gpu-spork.js` (spork on the GPU, 32-bit, decision 93), `gpu-paint.js` (WebGPU drawing, decision 90), `sqlite-web.js` and `sqlite-host.js` (the `db` host cell, decisions 78 and 90).
 - **`live3.js`, the game loop.** A game file binds `start`, `update` and `draw`. Events (`down`, `move`, `up`, `tick`) fold through `frame update`. Effects are queued during `update` and carried out after it. Random numbers are recorded per tick, so `replayFrom` is exact. Rewind is a list of states, since cells never change. Hot-swap keeps live values whose starting value didn't change.
 
 ## Open items and next steps
 
-1. **The speed roadmap (decision 79), in order:**
-   - columns: built (decision 82)
-   - loop fusion for `collect`/`keep`/`fold` chains: built (decision 95)
-   - spork sending pure numeric cells to WebAssembly with SIMD or to the GPU: built (decisions 91 to 93)
-   - seeded `noise [sample, id]` for big runs: built (decision 87)
+1. **The speed roadmap (decision 79) is built:** columns (82), loop fusion (95), spork on SIMD and the GPU (91 to 93), and seeded `noise` (87).
 2. **Not built yet:**
    - files and folders as cells (decisions 63 to 66)
    - extending built-ins by shadowing (40)
    - spork over an effectful cell, reporting back as events (47)
-   - (built since: SQLite and WebGPU on the page, decision 90)
    - automatic purity detection (32)
-   - (built since: the editor-side lint that flags slow paths, decision 86)
-   - (built since: the editor-side lint that flags slow paths, decision 86)
-   - (built since: the editor-side lint that flags slow paths, decision 86)
-   - (built since: the editor-side lint that flags slow paths, decision 86)
-   - (built since: the editor-side lint that flags slow paths, decision 86)
-   - (built since: the editor-side lint that flags slow paths, decision 86)
-   - (built since: the editor-side lint that flags slow paths, decision 86)
 3. **Known rough edges:**
-   - The `else` catch is kept (74, decided 20 Nov): a then-branch that gives `false` also runs the `else`. A lint names any branch whose answer is a test, and `cond` keeps a false answer (84). Every control structure is a library cell (94).
+   - The `else` catch is kept (74): a then-branch that gives `false` also runs the `else`. A lint names a branch whose answer is a test, or that ends with a host word (which gives false); `cond` keeps a false answer (84).
    - Field/name clash lints fire on the common `update` pattern; rename the local (73).
    - A cell can't have a field whose name is worked out at run time, so the host passes held keys in on each tick.
-4. **Current speed:**
-   - Games use 0.007 to 0.27 ms a frame (headless Chromium; `bench.html`). 2,000 particles went from about 1.45 to 0.28 ms a frame with columns (decision 82).
-   - In the browser: fib 25 takes about 1.8 ms, against 0.9 for plain JS; summing 1 to 1,000,000 with `fold` about 0.8 ms, level with plain JS (decision 88); 10,000 records times 20 updates about 3 ms, against 7 for plain JS.
-   - 100,000 particles: about 5 ms to update and 5 to 7 ms to build the draw list. Canvas 2D takes 180 ms to draw them; WebGPU takes about 4 ms of CPU to build and submit the frame.
-   - SQLite: 10,000 rows into Sprout records with `db query` in about 11 ms.
-   - Monte Carlo (`ace-risk.sp`'s run, five graph walks each): 100,000 runs take about 10 s the ordinary way, 28 ms as a JavaScript kernel and 21 ms on SIMD; a million take about 0.2 s on SIMD. In Node, ace-schedule's run on SIMD is about 3 times the JavaScript kernel.
-   - Monte Carlo (`ace-risk.sp`'s run, five graph walks each): 100,000 runs take about 10 s the ordinary way, 28 ms as a JavaScript kernel and 21 ms on SIMD; a million take about 0.2 s on SIMD. In Node, ace-schedule's run on SIMD is about 3 times the JavaScript kernel.
-   - Monte Carlo (`ace-risk.sp`'s run, five graph walks each): 100,000 runs take about 10 s the ordinary way, 28 ms as a JavaScript kernel and 21 ms on SIMD; a million take about 0.2 s on SIMD. In Node, ace-schedule's run on SIMD is about 3 times the JavaScript kernel.
-   - Monte Carlo (`ace-risk.sp`'s run, five graph walks each): 100,000 runs take about 10 s the ordinary way, 28 ms as a JavaScript kernel and 21 ms on SIMD; a million take about 0.2 s on SIMD. In Node, ace-schedule's run on SIMD is about 3 times the JavaScript kernel.
-   - Monte Carlo (`ace-risk.sp`'s run, five graph walks each): 100,000 runs take about 10 s the ordinary way, 28 ms as a JavaScript kernel and 21 ms on SIMD; a million take about 0.2 s on SIMD. In Node, ace-schedule's run on SIMD is about 3 times the JavaScript kernel.
-   - Compiling `sprout.sp` takes about 4 ms.
+4. **Current speed (Node, on this machine):**
+   - Games use 0.01 to 0.22 ms a frame; 2,000 particles about 0.2 ms.
+   - fib 25 about 3 ms, against 1.3 for plain JS; summing 1 to 1,000,000 with `fold` 0.7 ms, level with plain JS; 10,000 records times 20 updates about 1.2 ms, against 3.7 for plain JS.
+   - Fused loops: counting a million numbers below a line with `keep ... length` 4.6 ms (10.5 step by step); keeping 100,000 records and laying two fields over them 2.4 ms (28 step by step).
+   - Monte Carlo (`ace-schedule.sp`'s run): 100,000 runs about 19 ms as a fused `collect` or a JavaScript kernel, 10 ms on SIMD; a million on SIMD about 0.1 s. In the browser, `ace-risk.sp`'s million runs (five graph walks each) take about 0.2 s on SIMD.
+   - Compiling every example takes about 200 ms in all.
 
 ## Contents
 
 - Spec: `spec.md`
-- `sprout3.js`: Compiler (Sprout to JavaScript) and runtime
+- `sprout3.js`: The core: compiler (Sprout to JavaScript), runtime and prelude; runs every program on its own (decision 96)
+- `kernels.js`: The speed library: the work-ahead pass, loop fusion, spork kernels on WebAssembly SIMD and in JavaScript, and the radix sort (decision 96). The core runs without it.
 - `live3.js`: Game layer: event loop, queued effects, recorded randomness, rewind, replay, hot-swap
 - `sqlite-host.js`: SQLite host cell (Node built-in node:sqlite)
 - `sqlite-web.js`: SQLite host cell for the browser: sql.js (SQLite in WebAssembly), kept in IndexedDB; same query and run as sqlite-host.js
@@ -782,6 +718,8 @@ These are marked in `sprout2.js` with "Sprout Live fix N" or "Sprout Live additi
 93. **Big sporks can run on the GPU (built; Claude's call, from the request to use WebGPU for Monte Carlo work).** The same kernel (decision 91) becomes a WebGPU compute shader, one run per GPU thread. The GPU does 32-bit maths, so its answers can differ from SIMD and JavaScript in the last digits. A risk roll that lands right at its chance can even come out the other way, about one run in a few million. So the GPU is a host choice, not the default everywhere. The page uses it for sporks of 100,000 runs or more in a program that prints, while WebGPU works, and the State tab can turn it off. Games always use SIMD. A GPU answer arrives later, but Sprout runs straight through, so the page runs a program in passes. A spork the GPU hasn't answered stops the pass and starts the job, and when it's done the program runs again from the start and finds the answer waiting. What the stopped pass printed is dropped. A program that uses `db` doesn't wait, since its writes would happen twice. Answers are kept for the same kernel, inputs and outside numbers, so editing the rest of a program doesn't run the million runs again. Node and pages without WebGPU use SIMD. A program doesn't ask for exact answers itself (Troy, 20 Nov): the host decides.
 94. **Every control structure is a library cell (Troy, 20 Nov).** Choosing, looping and gathering are cells and methods, not syntax. A boolean sent a cell runs it (decision 62), and `else`, `and` and `or` are prototype methods. `match`, `cond`, `take`, `every`, `wave` and `frame` are Sprout cells in the prelude. `collect`, `keep`, `fold`, `each`, `times`, `spork` and `sort` are methods, and `range` is a host cell. The compiler's inline branches, column loops and spork kernels are fast paths that give the same answers as those cells, and the tests check it. They are never a different meaning.
 95. **Loop fusion (built; step 2 of decision 79, Claude's call under decision 80).** A run of `collect`, `keep` and `fold` steps in one chain is also compiled as one loop with no lists in between. Each step is given a cell or a name bound to one, and the run may end in `length`. It is worked out ahead the way spork works a cell out (decision 91), so calls are inlined and tests that change from item to item become choices made per item. It runs over `range`, a list of numbers, or a list of records of numbers in columns (decision 82). A record's fields are read straight from the columns, and `with` lays new values over them. `keep ... length` counts without making a list, and `fold` carries its number from item to item. Every value is worked out in the same order, by the same steps, as the steps one by one, so the answers are the same bits, and the tests run every case both ways. A list shorter than 16, anything that isn't numbers, and anything the loop can't do (words, a position outside a list) run the steps as written. The speed notes show one note for the run. Counting a million numbers below a line with `keep ... length` takes 8 ms instead of 18. Keeping 100,000 records and laying two new fields over them takes 4.6 ms instead of 39.
+96. **The core and its libraries (built; Claude's call under decision 80, from Troy's ask on 20 Nov to simplify the core and move more to libraries).** `sprout3.js` is the core: tokens, parser, compiler, runtime, prototypes, the host cells `range`, `rand`, `noise` and `print`, and the prelude. It runs every program on its own. Faster ways live in libraries that plug into four hooks: a faster form of a cell, a run of steps in a chain, speed notes, and a look over the whole program first. A library can't change an answer. `kernels.js` holds the work-ahead pass, loop fusion, spork's kernels on WebAssembly SIMD and in JavaScript, and the radix sort; `gpu-spork.js` adds the GPU. The column loops of decisions 82, 88 and 89 are gone, because loop fusion does their work: a single `collect`, `keep`, `fold` or `each` is a run of one step. So there is one way of working a loop out ahead instead of two. A fused run can now end with `each` and host words, as in `each [s | circle [s x, s y, 2, "#fc6"]]`, and each host word is called for every item that passes, in order, under the tests that lead to it. Every example prints and plays the same with and without `kernels.js` (`SPROUT3_CORE_ONLY=1` leaves it out). The core went from 2,028 lines to about 1,050. Compiling every example takes about 200 ms instead of 420, and the test files run in 0.75 and 1.8 s instead of 1.0 and 3.0. Two fixes came with the move. A failed try at working out an outside name now leaves nothing behind (it could leave outside reads that stopped a fused loop from ever running, as in `fireflies.sp`). Outside names, and fused loops, now get small step budgets, so a program like `ace-schedule.sp` no longer takes 235 ms to compile.
+97. **Plain maths lives in the prelude (built; library, decision 80).** `clamp`, `toward` and `dist` are now Sprout cells in the prelude, not JavaScript. `dist` is `(dx * dx + (dy * dy)) sqrt`, which can differ from the old `Math.hypot` in the last digit. `rand` stays in the core, since it reads the recorded random source, like `random`. The work-ahead pass inlines prelude cells like any other, so `clamp`, `toward`, `dist`, `cond` and `match` run inside fused loops and spork kernels. Maths on a choice between constants is done on each constant, so `cond`'s chosen position, and the answer it picks, become a choice made per item. A host word gives what it gives when it runs: false, or `print`'s value. So a branch that ends with one before `else` runs the else too (decision 74), in a fused loop as well, and the decision 74 lint now names that case.
 ````
 
 ---
@@ -970,7 +908,7 @@ let uid = 0;
 function jsName(n) { let s = ""; for (const ch of n) s += /[A-Za-z0-9]/.test(ch) ? ch : "_" + ch.charCodeAt(0).toString(16); return "v_" + s + "_" + (uid++); }
 
 class Gen {
-  constructor(globals) { this.globals = globals; this.shapes = []; this.frames = []; this.temps = []; this.consts = []; this.speed = []; this.sporkNames = null; this.sporkWhy = new Map(); }
+  constructor(globals) { this.globals = globals; this.shapes = []; this.frames = []; this.temps = []; this.consts = []; this.speed = []; }
   // local temporaries, declared at the top of the JS function being generated (safe under recursion)
   // field shapes and inline caches are made once, when the program loads
   shapeRef(keys) { const k = "SH" + this.consts.length; this.consts.push("const " + k + "=shapeFor(" + JSON.stringify(keys) + ");"); return k; }
@@ -1035,9 +973,11 @@ class Gen {
     if (T.length === 1 && tail && T[0].k === "group" && T[0].items.length === 1 && T[0].items[0].k === "chain") return this.genChain(T[0].items[0], true);
     let v = this.genTerm(T[0], true), seg = null;
     for (let i = 1; i < T.length; i++) {
-      // loop fusion (decision 95): a run of collect, keep, fold and length is also made into one loop, tried first
-      if (seg && i === seg.end) { v = this.fuseWrap(seg, v); seg = null; }
-      if (!seg && (seg = fuseSegment(T, i))) { seg.src = v; seg.ta = this.tmp(); seg.notes = this.speed.length; v = seg.ta; }
+      // a library may make a run of steps (collect, keep, fold...) into one loop, tried first (loop fusion, decision 95):
+      // the steps are written as usual on a temporary, and the library wraps them when the run ends
+      if (seg && i === seg.end) { v = LIB.fuse.wrap(this, seg, v); seg = null; }
+      if (!seg && LIB.fuse && (seg = LIB.fuse.find(T, i))) { seg.src = v; seg.ta = this.tmp(); v = seg.ta; }
+      if (LIB.note) LIB.note(this, T, i);
       const t = T[i], isLast = i === T.length - 1;
       if (t.k === "word" && (t.v === "!" || t.v === "true" || t.v === "false")) { v = "SEND(" + v + "," + (t.v === "!" ? "BANG" : t.v) + ")"; continue; }
       if (t.k === "word") {
@@ -1082,42 +1022,18 @@ class Gen {
           const lastIt = t.items[t.items.length - 1];
           const elseFalse = (nx2.k === "word" && nx2.v === "false") || (nx2.k === "cell" && nx2.items.length === 1 && givesBool(nx2.items[0]) === "false");
           const branchTy = lastIt && lastIt.k === "chain" ? givesBool(lastIt) : null;
+          // a host word (circle, beep...) gives false too, so a branch that ends with one also runs the else
+          const hw = lastIt && lastIt.k === "chain" && lastIt.terms[0] && lastIt.terms[0].k === "word" && !this.lookup(lastIt.terms[0].v) ? G[lastIt.terms[0].v] : null;
+          if (hw instanceof Native && hw.effect && hw.name !== "print" && !elseFalse) lint("line " + (nx.line || 0) + ": this branch ends with " + hw.name + ", which gives false, so the else runs too (decision 74). To draw one or the other, use cond, or put the else first");
           if (branchTy === "false") lint("a branch that gives false before else: the else runs too (line " + (nx.line || 0) + ")");
           else if (branchTy && !elseFalse) lint("line " + (nx.line || 0) + ": this branch gives true or false, and when it gives false the else runs too (decision 74). To keep a false answer, use cond [test, answer, any, other]");
           const B = this.genArg(nx2, tail && i + 1 >= T.length);
           v = "(((" + ta + "=" + v + ")===true?(" + tb + "=" + A + "):" + ta + "===false?(" + tb + "=false):(" + tb + "=SEND(" + ta + "," + mk + ")))!==false?" + tb + ":" + B + ")";
         } else v = "((" + ta + "=" + v + ")===true?" + A + ":" + ta + "===false?false:" + SND + ta + "," + mk + "))";
       } else v = (tail && isLast ? "TAIL(" : "SEND(") + v + "," + this.genTerm(t, false) + ")";
-      // speed notes: can this collect, keep or each run over columns? (decision 86)
-      const pw = T[i - 1];
-      const inner = pw && pw.k === "word" && pw.v === "fold" && t.k === "cell" && t.items[1] && t.items[1].k === "chain" && t.items[1].terms.length === 1 && t.items[1].terms[0].k === "cell" ? t.items[1].terms[0] : null;
-      const tgt = inner || t;
-      if (t.k === "word" && pw && pw.k === "word" && pw.v === "spork" && this.sporkWhy.has(t.v)) {
-        const r = this.sporkWhy.get(t.v);
-        this.speed.push({ line: pw.line || 0, word: "spork", fast: r === true, why: r === true ? "" : r });
-      }
-      if (tgt.k === "cell" && tgt.names.length && pw && pw.k === "word" && SPEEDW[pw.v] && tgt.kern) {
-        const r = tgt.kern[SPEEDW[pw.v]];
-        this.speed.push({ line: pw.line || 0, word: pw.v, fast: r === true, why: r === true ? "" : r });
-      }
     }
-    if (seg) v = this.fuseWrap(seg, v);
+    if (seg) v = LIB.fuse.wrap(this, seg, v);
     return v;
-  }
-  // the fused loop, tried first; the steps as written are the way back when it can't run (NOFUSE)
-  fuseWrap(seg, ordinary) {
-    const P = new Spk(this), K = {};
-    for (const item of ["num", "row"]) {
-      try { K[item] = P.buildPipe(seg.stages, item); } catch (e) { if (e !== SPKFAIL) throw e; K[item] = null; }
-    }
-    if (!K.num && !K.row) return "(" + seg.ta + "=" + seg.src + "," + ordinary + ")";
-    const name = "FK" + this.consts.length, tf = this.tmp();
-    this.consts.push("const " + name + "={num:" + (K.num || "null") + ",row:" + (K.row || "null") + "};");
-    // one note for the run, in place of a note for each step
-    const words = seg.stages.map(st => st.w), lines = new Set(seg.stages.map(st => st.line || 0));
-    this.speed = this.speed.slice(0, seg.notes).concat(this.speed.slice(seg.notes).filter(x => !(lines.has(x.line) && words.includes(x.word))));
-    this.speed.push({ line: seg.stages[0].line || 0, word: words.join(" "), fast: true, why: "" });
-    return "((" + tf + "=FUSE((" + seg.ta + "=" + seg.src + ")," + name + "," + (P.caps.length ? "()=>[" + P.caps.join(",") + "]" : "null") + "))!==NOFUSE?" + tf + ":" + ordinary + ")";
   }
   // the right side of else/and/or: a cell literal there is run (inlined), anything else is its value
   genArg(t, tail) {
@@ -1245,687 +1161,10 @@ class Gen {
     }
     if (takes || !caps) { const rc = [...runFr.caps.values()].map(r => this.refJS(r)); caps = caps ? [...new Set(caps.concat(rc))] : rc; }
     const runJS = "(" + [act + "_L", act + "_it"].concat(nparams).join(",") + ")=>{" + runBody + "}";
-    // column versions of this cell's body, used when it is given a list stored as columns (decision 82)
-    const simpleBody = !sh.usesIt && !sh.usesLeft && c.items.length === 1 && c.items[0].k === "chain" && c.names.every(x => !x.def);
-    const kern = simpleBody && c.names.length === 1 ? this.genKernels(c) : simpleBody && c.names.length === 2 ? this.genFoldKernel(c) : null;
-    if (!c.kern) { const why = c.items.length !== 1 || c.items[0].k !== "chain" ? "the body has more than one step" : c.names.length !== 1 ? "it doesn't take exactly one named input" : "it uses _ or left"; c.kern = { m: why, t: why, e: why, f: c.names.length === 2 ? why : "fold runs as a tight loop only with two inputs, as in [total x | ...]" }; }
-    // a cell that spork is given, by name or written in place: worked out now into one numeric kernel (decision 91)
-    let all = kern;
-    if (c.sporkArg || (c.bindName && this.sporkNames && this.sporkNames.has(c.bindName))) {
-      const sk = this.genSpork(c);
-      c.kern.s = sk.js ? true : sk.why;
-      if (c.bindName) this.sporkWhy.set(c.bindName, c.kern.s);
-      if (sk.js) {
-        all = kern ? kern.slice(0, -1) + "," + sk.js + "}" : "{" + sk.js + "}";
-        // the loops inside it were unrolled when it was worked out, so their speed notes don't apply
-        const span = lineSpan(c); this.speed = this.speed.filter(x => x.line < span[0] || x.line > span[1]);
-      }
-    } else c.kern.s = "spork works a cell out ahead only when it is written after spork or bound to a name that spork is given";
-    return "MK(S[" + k + "]," + slotsJS + "," + runJS + ",[" + defs.join(",") + "],()=>[" + caps.join(",") + "]" + (all ? "," + all : "") + ")";
+    // a library may add a faster way to run this cell, worked out ahead (spork's kernel, decision 91)
+    const fast = LIB.cell ? LIB.cell(this, c) : null;
+    return "MK(S[" + k + "]," + slotsJS + "," + runJS + ",[" + defs.join(",") + "],()=>[" + caps.join(",") + "]" + (fast ? "," + fast : "") + ")";
   }
-  genSpork(c) {
-    const P = new Spk(this);
-    let code = null;
-    try { code = P.build(c); } catch (e) { if (e !== SPKFAIL) throw e; }
-    if (!code) return { why: P.why || "it can't be worked out ahead" };
-    const name = "SK" + this.consts.length;
-    this.consts.push("const " + name + "=" + code + ";");
-    return { js: "s:{k:" + name + ",caps:()=>[" + P.caps.join(",") + "]}" };
-  }
-
-  // ---- column kernels (decision 82). A cell [s | ...] over records gets up to three:
-  //   m: [s | s with [a : ..., b : ...]] where every new value is number maths on s's fields  (used by collect)
-  //   t: [s | test] where the test is number maths and comparisons                           (used by keep)
-  //   e: [s | word [..., ...]] where word is a host word, like circle                         (used by each)
-  // Each is (self, rs, cols, n) => result, or null to fall back to the ordinary way, so they never change what a program does.
-  genKernels(c) {
-    const p = c.names[0].n, T = c.items[0].terms, out = [];
-    const fresh = () => ({ p, cols: new Map(), caps: new Map(), why: null });
-    const kern = c.kern = { f: "fold runs as a tight loop only with two inputs, as in [total x | ...]", m: "collect runs over columns only as " + p + " with [new fields]", t: "the body doesn't give true or false", e: "the body isn't one host word given a list of values" };
-    // m: s with [fields]
-    if (T.length === 3 && T[0].k === "word" && T[0].v === p && T[1].k === "word" && (T[1].v === "with" || T[1].v === "..") && !this.lookup(T[1].v) && T[2].k === "cell" && fieldsOnly(T[2])) {
-      const K = fresh(), keys = T[2].items.map(x => x.name), vals = T[2].items.map(x => this.kChain(x.val, K));
-      kern.m = vals.every(v => v && v.ty === "n") ? true : K.why || "a new value isn't number maths";
-      if (kern.m === true) {
-        const q = JSON.stringify;
-        out.push("m:(self,rs,cols,n)=>{" + kPro(K) + "if(rs.index(\"with\")>=0||rs.index(\"..\")>=0)return null;let out=rs;const oc=cols.slice();" +
-          keys.map((k, j) => "let $j" + j + "=out.index(" + q(k) + ");if($j" + j + "<0){out=out.add(" + q(k) + ");$j" + j + "=out.keys.length-1}const $o" + j + "=new Float64Array(n);").join("") +
-          "for(let $i=0;$i<n;$i++){" + vals.map((v, j) => "const $v" + j + "=" + v.js + ";").join("") + vals.map((v, j) => "$o" + j + "[$i]=$v" + j + ";").join("") + "}" +
-          keys.map((k, j) => "oc[$j" + j + "]=$o" + j + ";").join("") + "return COLC(out,oc,n)}");
-      }
-    }
-    // m: [r | r f], one field of each record: over columns, that column as a list of numbers
-    if (T.length === 2 && T[0].k === "word" && T[0].v === p && T[1].k === "word" && T[1].v !== p && !FUSED.has(T[1].v) && !LAZYOPS.has(T[1].v) &&
-        !["!", "true", "false", "_", "left", "right"].includes(T[1].v) && !(T[1].v in CELLP) && !this.lookup(T[1].v) && !this.globals.has(T[1].v)) {
-      kern.m = true;
-      out.push("m:(self,rs,cols,n)=>{const $j=rs.index(" + JSON.stringify(T[1].v) + ");return $j<0?null:NCOL(cols[$j],n)}");
-    }
-    // t: a test
-    { const K = fresh(), v = this.kChain(c.items[0], K);
-      kern.t = v && v.ty === "b" ? true : v ? kern.t : K.why || kern.t;
-      if (v && v.ty === "b")
-        out.push("t:(self,rs,cols,n)=>{" + kPro(K) + "const $k=new Uint32Array(n);let $m=0;for(let $i=0;$i<n;$i++){if(" + v.js + ")$k[$m++]=$i}" +
-          "if($m===n)return self;const oc=new Array(cols.length);for(let $j=0;$j<cols.length;$j++){const $c=cols[$j],$o=new Float64Array($m);for(let $q=0;$q<$m;$q++)$o[$q]=$c[$k[$q]];oc[$j]=$o}return COLC(rs,oc,$m)}");
-    }
-    // e: word [args], a host word given a cell of values
-    if (T.length === 2 && T[0].k === "word" && T[0].v !== p && T[1].k === "cell" && simpleParts(T[1]) && T[1].items.length > 1) {
-      const K = fresh(), F = this.kCap(T[0].v, K, false);
-      const args = F && T[1].items.map(it => {
-        const t0 = it.terms[0];
-        if (it.terms.length === 1 && t0.k === "str") return JSON.stringify(t0.v);
-        if (it.terms.length === 1 && t0.k === "word" && t0.v !== p && !["_", "left", "right", "!", "true", "false"].includes(t0.v)) return this.kCap(t0.v, K, false);
-        const v = this.kChain(it, K); return v && v.js;
-      });
-      kern.e = args && args.every(a => a) ? true : K.why || "an argument isn't a number, a word in quotes or a name from outside";
-      if (args && args.every(a => a))
-        out.push("e:(self,rs,cols,n)=>{" + kPro(K) + "if(!(" + F + " instanceof NATIVE))return null;const $f=" + F + ".fn,$d=" + F + ".direct;" +
-          "if($d&&$d.length===" + args.length + "){for(let $i=0;$i<n;$i++)$d(" + args.join(",") + ")}else{for(let $i=0;$i<n;$i++)$f(VP([" + args.join(",") + "]))}return true}");
-    }
-    return out.length ? "{" + out.join(",") + "}" : null;
-  }
-  // f: [total x | number maths on total and x], used by fold over range or a list of numbers: one tight loop, no calls
-  genFoldKernel(c) {
-    const K = { p: null, cols: new Map(), caps: new Map(), why: null, vars: new Map([[c.names[0].n, "$a"], [c.names[1].n, "$x"]]) };
-    const v = this.kChain(c.items[0], K);
-    c.kern = { f: v && v.ty === "n" ? true : K.why || "the body isn't number maths", m: "it takes two inputs", t: "it takes two inputs", e: "it takes two inputs" };
-    if (c.kern.f !== true) return null;
-    return "{f:(acc,xs,rng)=>{" + kPro(K) + "if(typeof acc!==\"number\")return null;let $a=acc;" +
-      "if(rng){const $n=xs.n;for(let $i=1;$i<=$n;$i++){const $x=$i;$a=" + v.js + "}return $a}" +
-      "const $p=xs.a||xs.parts;for(let $i=0;$i<$p.length;$i++){const $x=$p[$i];if(typeof $x!==\"number\")return null;$a=" + v.js + "}return $a}}";
-  }
-  // a chain as number maths on the item's fields: {js, ty} with ty "n" (number) or "b" (true/false), or null if it can't be
-  kChain(ch, K) {
-    const T = ch.terms; if (!T.length) return null;
-    let v, i;
-    if (T[0].k === "word" && T[0].v === K.p) {
-      const f = T[1];
-      if (!f || f.k !== "word" || f.v === K.p || ["!", "true", "false", "_", "left", "right"].includes(f.v)) return kNo(K, "it uses " + K.p + " itself, not one of its fields");
-      if ((FUSED.has(f.v) || LAZYOPS.has(f.v)) && T.length > 2 && !this.lookup(f.v)) return kNo(K, "it uses " + K.p + " itself, not one of its fields");
-      v = { js: kCol(f.v, K), ty: "n" }; i = 2;
-    } else if (T[0].k === "word" && T[0].v === "noise" && !this.lookup("noise") && T[1] && T[1].k === "cell" && !T[1].names.length && T[1].items.length === 2 && T[1].items.every(x => x.k === "chain")) {
-      // noise [a, b] is pure, so it can run inside a column loop (decision 87)
-      const a = this.kChain(T[1].items[0], K), b = a && this.kChain(T[1].items[1], K);
-      v = a && b && a.ty === "n" && b.ty === "n" ? { js: "NOISE(" + a.js + "," + b.js + ")", ty: "n" } : kNo(K, "its noise isn't given two numbers"); i = 2;
-    } else { v = this.kTerm(T[0], K); i = 1; }
-    for (; v && i < T.length; i++) {
-      const t = T[i]; if (t.k !== "word") return kNo(K, t.k === "cell" ? "it calls something for each item" : "it sends a value to a value");
-      const w = t.v;
-      if (FUSED.has(w) && i + 1 < T.length && !this.lookup(w)) {
-        const op = KOPS[w]; if (!op) return kNo(K, "it uses " + w); if (v.ty !== "n") return kNo(K, "it does maths on true or false");
-        const b = this.kTerm(T[++i], K); if (!b) return null; if (b.ty !== "n") return kNo(K, "it does maths on true or false");
-        v = w === "%" ? { js: "(((" + v.js + "%" + b.js + ")+" + b.js + ")%" + b.js + ")", ty: "n" } : { js: "(" + v.js + op[0] + b.js + ")", ty: op[1] };
-      } else if ((w === "and" || w === "or") && i + 1 < T.length && !this.lookup(w)) {
-        if (v.ty !== "b" || T[i + 1].k === "cell") return kNo(K, "its " + w + " isn't between two tests");
-        const b = this.kTerm(T[++i], K); if (!b) return null; if (b.ty !== "b") return kNo(K, "its " + w + " isn't between two tests");
-        v = { js: "(" + v.js + (w === "and" ? "&&" : "||") + b.js + ")", ty: "b" };
-      } else if (v.ty === "n" && KPOST[w]) v = { js: KPOST[w] + "(" + v.js + ")", ty: "n" };
-      else if (v.ty === "n" && (w === "min" || w === "max") && i + 1 < T.length) {
-        const b = this.kTerm(T[++i], K); if (!b) return null; if (b.ty !== "n") return kNo(K, "it does maths on true or false");
-        v = { js: "Math." + w + "(" + v.js + "," + b.js + ")", ty: "n" };
-      } else if (v.ty === "b" && w === "not") v = { js: "(!" + v.js + ")", ty: "b" };
-      else return kNo(K, "it uses " + w);
-    }
-    return v;
-  }
-  kTerm(t, K) {
-    if (t.k === "num") return { js: "(" + t.v + ")", ty: "n" };
-    if (t.k === "word" && K.vars && K.vars.has(t.v)) return { js: K.vars.get(t.v), ty: "n" };
-    if (t.k === "group") { if (t.items.length !== 1 || t.items[0].k !== "chain") return kNo(K, "it has a group of several steps"); const v = this.kChain(t.items[0], K); return v && { js: "(" + v.js + ")", ty: v.ty }; }
-    if (t.k !== "word") return kNo(K, t.k === "str" || t.k === "tmpl" ? "it works with words, not numbers" : "it calls something for each item");
-    if (t.v === "true" || t.v === "false") return { js: t.v, ty: "b" };
-    if (t.v === K.p) return kNo(K, "it uses " + K.p + " itself, not one of its fields");
-    if (["_", "left", "right", "!"].includes(t.v) || t.v in ALL) return kNo(K, "it uses " + t.v);
-    const rc = this.lookup(t.v); if (rc && rc.cell) return kNo(K, "it calls " + t.v + " for each item");
-    const r = this.kCap(t.v, K, true); return r ? { js: r, ty: "n" } : kNo(K, "it uses " + t.v + ", which isn't a number from outside the loop");
-  }
-  // a name from outside the cell, read once before the loop. A number is checked for; random and other getters are never captured.
-  kCap(n, K, numeric) {
-    let ref;
-    const r = this.lookup(n);
-    if (r) ref = this.refJS(r);
-    else if (this.globals.has(n)) { const d = Object.getOwnPropertyDescriptor(G, n); if (!d || d.get) return kNo(K, "it reads " + n + ", which changes from item to item"); ref = this.globalRef(n); }
-    else return kNo(K, "it uses " + n + ", which isn't a name the loop can see");
-    let e = K.caps.get(n);
-    if (!e) { e = { v: "$k" + K.caps.size, ref, num: false }; K.caps.set(n, e); }
-    if (numeric) e.num = true;
-    return e.v;
-  }
-}
-const SPEEDW = { collect: "m", keep: "t", each: "e", fold: "f", spork: "s" };
-// ===================================================================== spork kernels (decision 47, step 3 of decision 79)
-// A cell given to spork is worked out once, when the program loads, as far as it can be without its input:
-// calls are inlined; lists, records, words and loops over them are unrolled; a test that changes from run to run
-// becomes a choice made in each run. What is left is number maths on the input, a flat list of steps (the IR),
-// which runs as one tight loop: in JavaScript, in WebAssembly SIMD, or on the GPU.
-// If anything can't be worked out this way (a host word, a random read, keep with a test that changes from run
-// to run), there is no kernel and spork is collect, so a program can't tell which way it ran.
-const SPKFAIL = { spork: "no" };
-const SPK_PENDING = {};
-const SPK_N2 = { add: (a, b) => a + b, sub: (a, b) => a - b, mul: (a, b) => a * b, div: (a, b) => a / b, mod: (a, b) => ((a % b) + b) % b,
-  min: (a, b) => Math.min(a, b), max: (a, b) => Math.max(a, b), noise: (a, b) => NOISE(a, b) };
-const SPK_N1 = { neg: a => -a, abs: Math.abs, floor: Math.floor, ceil: Math.ceil, round: Math.round, sqrt: Math.sqrt, sin: Math.sin, cos: Math.cos, tan: Math.tan, log: Math.log };
-const SPK_C2 = { lt: (a, b) => a < b, gt: (a, b) => a > b, le: (a, b) => a <= b, ge: (a, b) => a >= b, eq: (a, b) => a === b, ne: (a, b) => a !== b };
-const SPK_B2 = { and: (a, b) => a && b, or: (a, b) => a || b, beq: (a, b) => a === b };
-// these give the same answer in JavaScript and WebAssembly only if done by JavaScript itself
-const SPK_JSONLY = new Set(["mod", "sin", "cos", "tan", "log"]);
-const SPK_OPS = { "+": "add", "-": "sub", "*": "mul", "/": "div", "%": "mod", "<": "lt", ">": "gt", "<=": "le", ">=": "ge" };
-const SPK_NATIVES = new Set(["range", "noise", "clamp", "toward"]);
-const SPK_CELLM = { "@": 1, length: 0, first: 0, last: 0, collect: 1, keep: 1, each: 1, fold: 1, spork: 1 };
-const spkNum = v => Object.is(v, -0) ? "-0" : String(v);
-
-class Spk {
-  constructor(g) {
-    this.g = g; this.nodes = []; this.memo = new Map(); this.caps = []; this.capIdx = new Map();
-    this.outside = new Map(); this.steps = 0; this.depth = 0; this.why = null; this.guards = []; this.jsOnly = false;
-    this.pc = null; this.TRUE = this.cb(true); this.FALSE = this.cb(false); this.pc = this.TRUE;
-  }
-  no(why) { if (!this.why) this.why = why; throw SPKFAIL; }
-  tick() { if (++this.steps > 400000) this.no("it takes too many steps to work out"); }
-
-  // ---- IR nodes: [op, a, b, c, v]. Equal nodes are shared, and steps on constants are worked out now.
-  node(op, a, b, c, v) {
-    const N = this.nodes, isK = i => N[i][0] === "c" || N[i][0] === "cb", kv = i => N[i][4];
-    if (SPK_N2[op] && isK(a) && isK(b)) return this.node("c", -1, -1, -1, SPK_N2[op](kv(a), kv(b)));
-    if (SPK_N1[op] && isK(a)) return this.node("c", -1, -1, -1, SPK_N1[op](kv(a)));
-    if ((SPK_C2[op] || SPK_B2[op]) && isK(a) && isK(b)) return this.node("cb", -1, -1, -1, (SPK_C2[op] || SPK_B2[op])(kv(a), kv(b)));
-    if (op === "not" && isK(a)) return this.node("cb", -1, -1, -1, !kv(a));
-    if (op === "sel") { if (isK(a)) return kv(a) ? b : c; if (b === c) return b; }
-    if (op === "and") { if (isK(a)) return kv(a) ? b : a; if (isK(b)) return kv(b) ? a : b; if (a === b) return a; }
-    if (op === "or") { if (isK(a)) return kv(a) ? a : b; if (isK(b)) return kv(b) ? b : a; if (a === b) return a; }
-    const key = op + "," + a + "," + b + "," + c + "," + (v === undefined ? "" : typeof v === "number" ? spkNum(v) : v);
-    let id = this.memo.get(key);
-    if (id !== undefined) return id;
-    id = N.length; N.push([op, a, b, c, v]); this.memo.set(key, id);
-    if (SPK_JSONLY.has(op)) this.jsOnly = true;
-    if (N.length > 60000) this.no("it is too big to run as one kernel");
-    return id;
-  }
-  num(id) { return { k: "n", id }; }
-  boo(id) { return { k: "b", id }; }
-  cn(v) { return this.num(this.node("c", -1, -1, -1, v)); }
-  cb(v) { return this.boo(this.node("cb", -1, -1, -1, !!v)); }
-  isC(p) { return p.k === "n" && this.nodes[p.id][0] === "c"; }
-  isCB(p) { return p.k === "b" && this.nodes[p.id][0] === "cb"; }
-  val(p) { return this.nodes[p.id][4]; }
-  isFalse(p) { return this.isCB(p) && this.val(p) === false; }
-  cv(parts, keys, vals) { return { k: "cv", parts, keys: keys || [], vals: vals || [] }; }
-  not(p) { return this.boo(this.node("not", p.id)); }
-  and(a, b) { return this.boo(this.node("and", a.id, b.id)); }
-  or(a, b) { return this.boo(this.node("or", a.id, b.id)); }
-  // a check that must hold in every run, or the whole spork runs the ordinary way; it only counts where the program gets to it
-  guard(ok) { const g = this.or(this.not(this.pc), ok); if (!this.isCB(g) || !this.val(g)) this.guards.push(g.id); }
-  under(c, f) { const s = this.pc; this.pc = this.and(s, c); try { return f(); } finally { this.pc = s; } }
-
-  // ---- names: the kernel's own, then the frames the compiler knows, then the built-ins
-  isName(n, env) {
-    for (let e = env; e; e = e.parent) { if (e.vars) { if (e.vars.has(n)) return true; continue; } return !!this.frameRef(n, e.f, e.lim) || this.g.globals.has(n); }
-    return false;
-  }
-  look(n, env) {
-    for (let e = env; e; e = e.parent) { if (e.vars) { if (e.vars.has(n)) return e.vars.get(n); continue; } return this.fromFrames(n, e.f, e.lim); }
-    this.no("it uses " + n);
-  }
-  frameRef(n, fIdx, lim) {
-    for (let f = fIdx; f >= 0; f--) {
-      const names = this.g.frames[f].names, r = names.get(n);
-      if (!r) continue;
-      if (f === fIdx && lim !== Infinity && spkPos(names, n) >= lim) continue;
-      return { r, f };
-    }
-    return null;
-  }
-  fromFrames(n, fIdx, lim) {
-    const fr = this.frameRef(n, fIdx, lim);
-    if (fr) {
-      const key = fr.f + "\u0000" + n;
-      if (this.outside.has(key)) { const v = this.outside.get(key); if (v === SPK_PENDING) this.no("it uses " + n + " inside its own definition"); return v; }
-      const pos = spkPos(this.g.frames[fr.f].names, n), r = fr.r;
-      let v = null;
-      if (r.ast && r.ast.names.length) v = { k: "fn", ast: r.ast, env: { f: fr.f, lim: pos + 1 } };
-      else if (r.ast || r.val) {
-        // a name bound outside: worked out again here (it is pure, so the value is the same), or else read as a number when spork runs
-        this.outside.set(key, SPK_PENDING);
-        const why = this.why, pc = this.pc; this.pc = this.TRUE;
-        try { v = r.ast ? this.cellValue(r.ast, { f: fr.f, lim: pos + 1 }) : this.chain(r.val, { f: fr.f, lim: pos }); }
-        catch (e) { if (e !== SPKFAIL) throw e; this.why = why; v = null; }
-        this.pc = pc;
-      }
-      if (!v) v = this.capture(this.g.refJS(r));
-      this.outside.set(key, v);
-      return v;
-    }
-    if (this.g.globals.has(n)) {
-      const d = Object.getOwnPropertyDescriptor(G, n);
-      if (!d || d.get) this.no(n === "random" ? "it reads random, which changes from run to run" : "it uses " + n + ", a library cell spork can't work out yet");
-      if (d.value instanceof Native) { if (SPK_NATIVES.has(n)) return { k: "nat", n }; this.no("it uses the host word " + n); }
-      if (typeof d.value === "number") return this.capture(this.g.globalRef(n));
-      this.no("it uses " + n);
-    }
-    this.no("it uses " + n + ", which isn't a name it can see");
-  }
-  capture(ref) {
-    let i = this.capIdx.get(ref);
-    if (i === undefined) { i = this.caps.length; this.caps.push(ref); this.capIdx.set(ref, i); }
-    return this.num(this.node("k", -1, -1, -1, i));
-  }
-
-  // ---- terms, chains and bodies, mirroring Gen.genChain step for step
-  term(t, env) {
-    this.tick();
-    switch (t.k) {
-      case "num": return this.cn(t.v);
-      case "str": return { k: "s", v: t.v };
-      case "tmpl": { let s = ""; for (const p of t.parts) s += typeof p === "string" ? p : this.text(this.chain(p.ast, env)); return { k: "s", v: s }; }
-      case "word":
-        if (t.v === "true") return this.TRUE;
-        if (t.v === "false") return this.FALSE;
-        if (["!", "_", "left", "right"].includes(t.v)) this.no("it uses " + t.v);
-        return this.look(t.v, env);
-      case "group": return this.group(t.items, env);
-      case "cell": return this.cellValue(t, env);
-      case "chain": return this.chain(t, env);
-    }
-    this.no("it uses something spork can't work out");
-  }
-  // text made now: only from values that are the same in every run
-  text(p) {
-    if (p.k === "s") return p.v;
-    if (this.isC(p) || this.isCB(p)) return fmt(this.val(p));
-    this.no("it puts a value that changes from run to run into text");
-  }
-  group(items, env) {
-    if (items.length === 1 && items[0].k === "chain") return this.chain(items[0], env);
-    const sc = { vars: new Map(), parent: env }; let r = this.FALSE;
-    for (const it of items) { if (it.k === "bind") { r = this.chain(it.val, sc); sc.vars.set(it.name, r); } else r = this.chain(it, sc); }
-    return r;
-  }
-  cellValue(c, env) {
-    if (c.names.length) return { k: "fn", ast: c, env };
-    if (spkUses(c)) this.no("it uses _ or left");
-    const sc = { vars: new Map(), parent: env }, parts = [], keys = [], vals = [];
-    for (const it of c.items) {
-      if (it.k === "bind") { const v = this.bindVal(it, sc); sc.vars.set(it.name, v); keys.push(it.name); vals.push(v); }
-      else parts.push(this.chain(it, sc));
-    }
-    return this.cv(parts, keys, vals);
-  }
-  bindVal(it, sc) { const T = it.val.terms; return T.length === 1 && T[0].k === "cell" ? this.cellValue(T[0], sc) : this.chain(it.val, sc); }
-  // a cell's body run in order: the last part is what it gives (genRunBody)
-  runBody(items, env) {
-    let last = this.FALSE;
-    for (let i = 0; i < items.length; i++) {
-      const it = items[i];
-      if (it.k === "bind") { env.vars.set(it.name, this.bindVal(it, env)); if (i === items.length - 1) return last; }
-      else { const v = this.chain(it, env); if (i === items.length - 1) return v; last = v; }
-    }
-    return this.FALSE;
-  }
-  block(c, env) { if (c.names.length || spkUses(c)) this.no("a branch takes input"); return this.runBody(c.items, { vars: new Map(), parent: env }); }
-  arg(t, env) { return t.k === "cell" && !t.names.length ? this.block(t, env) : this.term(t, env); }
-
-  chain(ch, env) {
-    const T = ch.terms; if (!T.length) return this.FALSE;
-    let v = this.term(T[0], env);
-    for (let i = 1; i < T.length; i++) {
-      this.tick();
-      const t = T[i];
-      if (t.k === "word" && (t.v === "!" || t.v === "true" || t.v === "false")) this.no("it sends " + t.v);
-      if (t.k === "word") {
-        const w = t.v;
-        if (FUSED.has(w) && i + 1 < T.length && !this.isName(w, env)) {
-          const nt = T[++i];
-          if ((w === "with" || w === "..") && nt.k === "cell" && fieldsOnly(nt)) { v = this.withf(v, nt, env); continue; }
-          v = this.op(w, v, this.term(nt, env)); continue;
-        }
-        if (LAZYOPS.has(w) && i + 1 < T.length && !this.isName(w, env)) { const bt = T[++i]; v = this.lazy(w, v, () => this.arg(bt, env)); continue; }
-        const quiet = T[i + 1] && T[i + 1].k === "word" && T[i + 1].v === "else" && T[i + 2] && !this.isName("else", env);
-        v = this.word(v, w, env, quiet); continue;
-      }
-      if (t.k === "cell" && !t.names.length) {
-        const elsePat = T[i + 1] && T[i + 1].k === "word" && T[i + 1].v === "else" && T[i + 2] && !this.isName("else", env);
-        if (v.k === "b") {
-          // a boolean runs the block (decision 62); else runs when the test is false or the block gives false
-          if (elsePat) { const bt = T[i + 2]; i += 2; v = this.branch(v, () => this.block(t, env), () => this.arg(bt, env)); }
-          else v = this.branch(v, () => this.block(t, env), null);
-          continue;
-        }
-        // any other value is sent the cell; with else, the else sees what it gave
-        const r = this.send(v, this.cellValue(t, env));
-        if (elsePat) { const bt = T[i + 2]; i += 2; v = this.lazy("else", r, () => this.arg(bt, env)); } else v = r;
-        continue;
-      }
-      v = this.send(v, this.term(t, env));
-    }
-    return v;
-  }
-
-  branch(c, runA, runB) {
-    if (this.isCB(c)) {
-      if (!this.val(c)) return runB ? runB() : this.FALSE;
-      const a = runA();
-      if (!runB || a.k !== "b") return a;
-      if (this.isCB(a)) return this.val(a) ? a : runB();
-      return this.sel(a, this.TRUE, this.under(this.not(a), runB));
-    }
-    // a test that changes from run to run: both sides are worked out, and each run picks one
-    const a = this.under(c, runA);
-    if (!runB) { if (a.k === "b") return this.and(c, a); this.no("a test without else gives false in some runs and a value in others"); }
-    const pick = a.k === "b" ? this.and(c, a) : c;
-    const b = this.under(this.not(pick), runB);
-    return this.sel(pick, a.k === "b" ? this.TRUE : a, b);
-  }
-  sel(c, x, y) {
-    if (this.isCB(c)) return this.val(c) ? x : y;
-    if (this.same(x, y)) return x;
-    if (x.k === "n" && y.k === "n") return this.num(this.node("sel", c.id, x.id, y.id));
-    if (x.k === "b" && y.k === "b") return this.boo(this.node("sel", c.id, x.id, y.id));
-    if (x.k === "row" && y.k === "row" && [...x.over.keys()].join("\u0000") === [...y.over.keys()].join("\u0000"))
-      return { k: "row", over: new Map([...x.over].map(([k, p]) => [k, this.sel(c, p, y.over.get(k))])) };
-    if (x.k === "cv" && y.k === "cv" && x.parts.length === y.parts.length && x.keys.join("\u0000") === y.keys.join("\u0000"))
-      return this.cv(x.parts.map((p, j) => this.sel(c, p, y.parts[j])), x.keys, x.vals.map((p, j) => this.sel(c, p, y.vals[j])));
-    this.no("a test picks between different kinds of value from run to run");
-  }
-  same(x, y) {
-    if (x === y) return true;
-    if (x.k !== y.k) return false;
-    if (x.k === "n" || x.k === "b") return x.id === y.id;
-    if (x.k === "s") return x.v === y.v;
-    if (x.k === "fn") return x.ast === y.ast && x.env === y.env;
-    if (x.k === "nat") return x.n === y.n;
-    if (x.k === "row") return x.over.size === y.over.size && [...x.over].every(([k, p]) => y.over.has(k) && this.same(p, y.over.get(k)));
-    if (x.k === "cv") return x.parts.length === y.parts.length && x.keys.join("\u0000") === y.keys.join("\u0000") &&
-      x.parts.every((p, j) => this.same(p, y.parts[j])) && x.vals.every((p, j) => this.same(p, y.vals[j]));
-    return false;
-  }
-  lazy(w, v, getB) {
-    if (w === "else") {
-      if (this.isFalse(v)) return getB();
-      if (v.k !== "b" || this.isCB(v)) return v;
-      return this.sel(v, this.TRUE, this.under(this.not(v), getB));
-    }
-    if (v.k !== "b") this.no("its " + w + " isn't after a test");
-    const goOn = w === "and" ? v : this.not(v);
-    if (this.isCB(goOn) && !this.val(goOn)) return v;
-    const b = this.under(goOn, getB);
-    if (b.k !== "b") this.no("its " + w + " isn't between two tests");
-    return this.isCB(v) ? b : this.boo(this.node(w, v.id, b.id));
-  }
-
-  op(w, a, b) {
-    if (SPK_OPS[w]) {
-      if (a.k === "n" && b.k === "n") { const o = SPK_OPS[w]; return SPK_C2[o] ? this.boo(this.node(o, a.id, b.id)) : this.num(this.node(o, a.id, b.id)); }
-      if (a.k === "s" && b.k === "s" && (w === "<" || w === ">")) return this.cb(w === "<" ? a.v < b.v : a.v > b.v);
-      this.no("it does " + w + " on something that isn't a number");
-    }
-    if (w === "=" || w === "!=") { const e = this.equal(a, b); return w === "=" ? e : this.not(e); }
-    if (w === "@") return this.at(a, b);
-    // .. and with
-    if (a.k === "s" && w === "..") return { k: "s", v: a.v + this.text(b) };
-    if (a.k === "cv" && b.k === "cv" && !a.keys.includes(w)) return this.merge(a, b);
-    if ((a.k === "s" || this.isC(a)) && w === "with") return { k: "s", v: this.text(a) + this.text(b) };
-    if (this.isC(a) && w === "..") return { k: "s", v: this.text(a) + this.text(b) };
-    this.no("it uses " + w + " on values spork can't join");
-  }
-  merge(a, b) {
-    const keys = a.keys.slice(), vals = a.vals.slice();
-    b.keys.forEach((k, j) => { const i = keys.indexOf(k); if (i < 0) { keys.push(k); vals.push(b.vals[j]); } else vals[i] = b.vals[j]; });
-    return this.cv(b.parts.length ? a.parts.concat(b.parts) : a.parts, keys, vals);
-  }
-  withf(v, nt, env) {
-    const vals = nt.items.map(x => this.chain(x.val, env));
-    if (v.k === "row") { const over = new Map(v.over); nt.items.forEach((x, j) => over.set(x.name, vals[j])); return { k: "row", over }; }
-    if (v.k !== "cv" || v.keys.includes("with")) this.no("it uses with on something that isn't a record");
-    return this.merge(v, this.cv([], nt.items.map(x => x.name), vals));
-  }
-  equal(a, b) {
-    if (a.k === "n" && b.k === "n") return this.boo(this.node("eq", a.id, b.id));
-    if (a.k === "b" && b.k === "b") return this.boo(this.node("beq", a.id, b.id));
-    if (a.k === "s" && b.k === "s") return this.cb(a.v === b.v);
-    const plain = p => p.k === "n" || p.k === "b" || p.k === "s";
-    if (plain(a) && plain(b)) return this.FALSE;
-    if (a.k === "cv" && b.k === "cv") {
-      if (a.keys.includes("=")) this.no("it compares with a cell's own =");
-      if (a.parts.length !== b.parts.length || a.keys.length !== b.keys.length) return this.FALSE;
-      let r = this.TRUE;
-      a.parts.forEach((p, j) => { r = this.and(r, this.equal(p, b.parts[j])); });
-      for (let j = 0; j < a.keys.length; j++) { const i = b.keys.indexOf(a.keys[j]); if (i < 0) return this.FALSE; r = this.and(r, this.equal(a.vals[j], b.vals[i])); }
-      return r;
-    }
-    if ((plain(a) && b.k === "cv") || (a.k === "cv" && plain(b))) return this.FALSE;
-    this.no("it compares cells that take input");
-  }
-  at(a, k) {
-    if (a.k === "cv") {
-      const P = a.parts;
-      if (this.isC(k)) { const v = P[this.val(k) - 1]; return v === undefined ? this.FALSE : v; }
-      if (k.k !== "n" || !P.length || P.length > 256) this.no("it picks from a list with a position that isn't a number");
-      // a position that changes from run to run: it must be a whole number inside the list, or spork runs the ordinary way
-      const len = this.cn(P.length), one = this.cn(1);
-      this.guard(this.and(this.and(this.boo(this.node("ge", k.id, one.id)), this.boo(this.node("le", k.id, len.id))), this.boo(this.node("eq", this.node("floor", k.id), k.id))));
-      let r = P[P.length - 1];
-      for (let j = P.length - 2; j >= 0; j--) r = this.sel(this.boo(this.node("eq", k.id, this.cn(j + 1).id)), P[j], r);
-      return r;
-    }
-    if (a.k === "s" && this.isC(k)) { const n = this.val(k), s = a.v; return n >= 1 && n <= s.length ? { k: "s", v: s[n - 1] } : this.FALSE; }
-    this.no("it uses @ on something that isn't a list");
-  }
-
-  // a word after a value: a field, then a built-in method, then a name in scope sent as the argument (SW)
-  word(v, w, env, quiet) {
-    if (v.k === "row") {
-      // a field of an item from a list in columns: the column, unless with laid a new value over it
-      if (w in SPK_CELLM || w in ALL) this.no("it uses " + w + " on a record from the list");
-      if (this.isName(w, env)) this.no("it reads " + w + ", which is both a field and a name in scope");
-      return v.over.has(w) ? v.over.get(w) : this.num(this.node("col", -1, -1, -1, w));
-    }
-    if (v.k === "cv") {
-      const j = v.keys.indexOf(w);
-      if (j >= 0) {
-        if (this.isName(w, env)) this.no("it reads " + w + ", which is both a field and a name in scope");
-        const f = v.vals[j]; if (f.k === "fn" && spkUses(f.ast)) this.no("a field uses left"); return f;
-      }
-      if (w in SPK_CELLM) {
-        if (SPK_CELLM[w]) return { k: "wait", m: w, left: v };
-        const P = v.parts;
-        if (w === "length") return this.cn(P.length);
-        if (w === "first") return P.length ? P[0] : this.FALSE;
-        return P.length ? P[P.length - 1] : this.FALSE;
-      }
-    } else if (v.k === "n") {
-      if (SPK_N1[w]) return this.num(this.node(w, v.id));
-      if (w === "min" || w === "max") return { k: "wait", m: w, left: v };
-      if (w === "times") this.no("it uses times");
-    } else if (v.k === "b") {
-      if (w === "not") return this.not(v);
-    } else if (v.k === "s") {
-      if (w === "length") return this.cn(v.v.length);
-      if (w === "upper") return { k: "s", v: v.v.toUpperCase() };
-      if (w === "lower") return { k: "s", v: v.v.toLowerCase() };
-    } else if (v.k === "fn" || v.k === "nat") {
-      if (v.k === "fn" && v.ast.items.some(x => x.k === "bind" && x.name === w)) this.no("it reads a field of a cell that takes input");
-      if (w in SPK_CELLM) this.no("it uses " + w + " on a cell that takes input");
-    }
-    if (w === "str") return { k: "s", v: this.text(v) };
-    if (w in ALL) this.no("it uses " + w + " there");
-    if (this.isName(w, env)) return this.send(v, this.look(w, env));
-    if (quiet) return this.FALSE;
-    this.no("it reads " + w + ", which isn't there");
-  }
-  send(v, a) {
-    if (v.k === "fn") {
-      if (a.k === "s" && v.ast.items.some(x => x.k === "bind" && x.name === a.v)) this.no("it reads a field by name");
-      return this.call(v, a);
-    }
-    if (v.k === "nat") return this.native(v.n, a);
-    if (v.k === "wait") return this.method(v.m, v.left, a);
-    this.no(v.k === "n" ? "it sends a value to a number" : "it sends a value to something that isn't a cell");
-  }
-  call(f, a) {
-    const c = f.ast, nn = c.names.length;
-    if (spkUses(c)) this.no("it calls a cell that uses _ or left");
-    if (++this.depth > 300) this.no("it calls itself too deeply to work out");
-    const vars = new Map();
-    if (nn === 1) vars.set(c.names[0].n, a);
-    else {
-      // several names: by position, then by name (decision 15); a missing one with no default would be false, with a lint
-      if (a.k !== "cv" || a.parts.length > nn) this.no("it gives a cell the wrong number of values");
-      c.names.forEach((x, j) => {
-        let v = j < a.parts.length ? a.parts[j] : undefined;
-        const fi = a.keys.indexOf(x.n); if (fi >= 0) v = a.vals[fi];
-        if (v === undefined) { if (!x.def) this.no("it leaves out " + x.n); v = this.term(x.def, f.env); }
-        vars.set(x.n, v);
-      });
-    }
-    const r = this.runBody(c.items, { vars, parent: f.env });
-    this.depth--;
-    return r;
-  }
-  apply(f, x) { if (f.k === "fn") { if (!f.ast.names.length) this.no("it collects with a cell that has no inputs"); return this.call(f, x); } return this.send(f, x); }
-  method(m, left, a) {
-    if (m === "min" || m === "max") { if (a.k !== "n") this.no("its " + m + " isn't given a number"); return this.num(this.node(m, left.id, a.id)); }
-    const P = left.parts;
-    if (m === "@") return this.at(left, a);
-    if (m === "collect" || m === "spork") return this.cv(P.map(p => this.apply(a, p)));
-    if (m === "keep") {
-      const o = [];
-      for (const p of P) {
-        const t = this.apply(a, p);
-        if (!this.isCB(t)) this.no(t.k === "b" ? "keep's test changes from run to run" : "keep's test doesn't give true or false");
-        if (this.val(t)) o.push(p);
-      }
-      return this.cv(o);
-    }
-    if (m === "fold") {
-      if (a.k !== "cv") this.no("fold isn't given [start, cell]");
-      let acc = a.parts[0] || this.FALSE; const g = a.parts[1] || this.FALSE;
-      for (const p of P) acc = g.k === "fn" && g.ast.names.length === 2 ? this.call(g, this.cv([acc, p])) : this.apply(g, this.cv([acc, p]));
-      return acc;
-    }
-    this.no("it uses " + m + " inside spork");
-  }
-  native(n, a) {
-    const A = k => a.k === "cv" ? (a.parts[k] || this.FALSE) : k === 0 ? a : this.FALSE;
-    const nums = k => { const o = []; for (let j = 0; j < k; j++) { const x = A(j); if (x.k !== "n") this.no(n + " isn't given numbers"); o.push(x); } return o; };
-    if (n === "range") {
-      if (!this.isC(a)) this.no("range is given a count that changes from run to run");
-      const m = Math.max(0, Math.floor(this.val(a)));
-      if (m > 100000) this.no("it unrolls a range that is too long");
-      const P = new Array(m); for (let j = 0; j < m; j++) P[j] = this.cn(j + 1);
-      return this.cv(P);
-    }
-    if (n === "noise") { const [x, y] = nums(2); return this.num(this.node("noise", x.id, y.id)); }
-    if (n === "clamp") {
-      const [x, lo, hi] = nums(3);
-      return this.sel(this.boo(this.node("lt", x.id, lo.id)), lo, this.sel(this.boo(this.node("gt", x.id, hi.id)), hi, x));
-    }
-    const [x, y, t] = nums(3);   // toward
-    return this.num(this.node("add", x.id, this.node("mul", this.node("sub", y.id, x.id), t.id)));
-  }
-
-  // ---- the whole cell: [x | ...] whose runs each give a number, true or false, or a record of numbers
-  build(c) {
-    if (c.names.length !== 1 || c.names[0].def) this.no("spork runs as a kernel only for a cell with one named input");
-    if (spkUses(c)) this.no("it uses _ or left");
-    const x = this.num(this.node("x", -1, -1, -1));
-    const r = this.runBody(c.items, { vars: new Map([[c.names[0].n, x]]), parent: { f: this.g.frames.length - 1, lim: Infinity } });
-    let kind, outs, keys = null;
-    if (r.k === "n") { kind = "n"; outs = [r.id]; }
-    else if (r.k === "b") { kind = "b"; outs = [r.id]; }
-    else if (r.k === "cv" && !r.parts.length && r.keys.length && r.vals.every(p => p.k === "n")) { kind = "rec"; keys = r.keys; outs = r.vals.map(p => p.id); }
-    else this.no("each run gives something other than a number, true or false, or a record of numbers");
-    return this.emit(kind, outs, keys);
-  }
-  // ---- loop fusion (decision 95): xs collect f keep g ... fold [start, h] (or length), as one loop over the items.
-  // item is "num" (range, a list of numbers) or "row" (a list of records of numbers, in columns).
-  buildPipe(stages, item) {
-    this.why = null;
-    const env = { f: this.g.frames.length - 1, lim: Infinity };
-    let cur = item === "num" ? this.num(this.node("x", -1, -1, -1)) : { k: "row", over: new Map() }, pass = this.TRUE;
-    const fn = st => { const f = this.term(st.arg, env); if (f.k !== "fn" && f.k !== "nat") this.no(st.w + " isn't given a cell"); return f; };
-    for (const st of stages) {
-      if (st.w === "collect") { const f = fn(st); this.pc = pass; cur = this.apply(f, cur); }
-      else if (st.w === "keep") {
-        const f = fn(st); this.pc = pass;
-        const t = this.apply(f, cur); if (t.k !== "b") this.no("keep's test doesn't give true or false");
-        pass = this.and(pass, t);
-      } else {
-        // fold [start, h], or length: one number carried from item to item, through the items that pass
-        let start, next;
-        const acc = this.num(this.node("a", -1, -1, -1));
-        this.pc = pass;
-        if (st.w === "length") { start = this.cn(0); next = this.num(this.node("add", acc.id, this.cn(1).id)); }
-        else {
-          this.pc = this.TRUE; const arg = this.term(st.arg, env); this.pc = pass;
-          if (arg.k !== "cv" || arg.parts.length < 2) this.no("fold isn't given [start, cell]");
-          start = arg.parts[0]; const h = arg.parts[1];
-          if (start.k !== "n") this.no("fold starts from something that isn't a number");
-          next = h.k === "fn" && h.ast.names.length === 2 ? this.call(h, this.cv([acc, cur])) : this.apply(h, this.cv([acc, cur]));
-          if (next.k !== "n") this.no("fold's cell doesn't give a number");
-        }
-        this.pc = this.TRUE;
-        return this.emit("fold", [start.id, this.sel(pass, next, acc).id], null);
-      }
-    }
-    this.pc = this.TRUE;
-    if (cur.k === "n") return this.emit("n", [pass.id, cur.id], null);
-    if (cur.k === "b") return this.emit("b", [pass.id, cur.id], null);
-    if (cur.k === "cv" && !cur.parts.length && cur.keys.length && cur.vals.every(p => p.k === "n")) return this.emit("rec", [pass.id, ...cur.vals.map(p => p.id)], cur.keys);
-    if (cur.k === "row" && [...cur.over.values()].every(p => p.k === "n")) return this.emit("row", [pass.id, ...[...cur.over.values()].map(p => p.id)], [...cur.over.keys()]);
-    this.no("each item gives something other than a number, true or false, or a record of numbers");
-  }
-  // keep only the steps the answer needs, numbered afresh, as a JavaScript literal
-  emit(kind, outs, keys) {
-    const N = this.nodes, live = new Uint8Array(N.length);
-    for (const i of outs.concat(this.guards)) live[i] = 1;
-    for (let i = N.length - 1; i >= 0; i--) if (live[i]) { const [, a, b, c] = N[i]; if (a >= 0) live[a] = 1; if (b >= 0) live[b] = 1; if (c >= 0) live[c] = 1; }
-    const map = new Int32Array(N.length).fill(-1), out = []; let jsOnly = false;
-    for (let i = 0; i < N.length; i++) if (live[i]) {
-      const [op, a, b, c, v] = N[i]; map[i] = out.length;
-      if (SPK_JSONLY.has(op)) jsOnly = true;
-      const lit = v === undefined ? "" : "," + (typeof v === "number" ? spkNum(v) : typeof v === "string" ? JSON.stringify(v) : String(v));
-      out.push("[\"" + op + "\"," + (a >= 0 ? map[a] : -1) + "," + (b >= 0 ? map[b] : -1) + "," + (c >= 0 ? map[c] : -1) + lit + "]");
-    }
-    const g = [...new Set(this.guards)].map(i => map[i]);
-    return "{nodes:[" + out.join(",") + "],outs:[" + outs.map(i => map[i]).join(",") + "],guards:[" + g.join(",") + "],kind:\"" + kind + "\"" +
-      (keys ? ",keys:" + JSON.stringify(keys) : "") + ",jsOnly:" + jsOnly + "}";
-  }
-}
-// a run of collect, keep and fold steps (each given a cell, or a name), and length at the end, starting at T[i]
-const FUSE_STEPS = new Set(["collect", "keep", "fold"]);
-function fuseSegment(T, i) {
-  let j = i; const stages = [];
-  while (j + 1 < T.length && T[j].k === "word" && FUSE_STEPS.has(T[j].v) &&
-    (T[j + 1].k === "cell" || (T[j + 1].k === "word" && !FUSED.has(T[j + 1].v) && !LAZYOPS.has(T[j + 1].v) && !(T[j + 1].v in ALL) && !["!", "true", "false", "_", "left", "right"].includes(T[j + 1].v)))) {
-    stages.push({ w: T[j].v, arg: T[j + 1], line: T[j].line }); j += 2;
-    if (T[j - 2].v === "fold") break;
-  }
-  if (stages.length && stages[stages.length - 1].w !== "fold" && j < T.length && T[j].k === "word" && T[j].v === "length") { stages.push({ w: "length", line: T[j].line }); j++; }
-  // worth it for two steps or more, or one collect or keep (fold alone has its own loop, decision 88)
-  if (!stages.length || (stages.length === 1 && stages[0].w === "fold")) return null;
-  return { stages, start: i, end: j };
-}
-// the first and last line a piece of the tree is on
-function lineSpan(n) {
-  let lo = Infinity, hi = -Infinity;
-  (function walk(x) { if (!x || typeof x !== "object") return; if (typeof x.line === "number" && x.line > 0) { lo = Math.min(lo, x.line); hi = Math.max(hi, x.line); } for (const k in x) if (!NOTE_KEYS.has(k) || k === "line") { const v = x[k]; if (v && typeof v === "object") walk(v); } })(n);
-  return [lo, hi];
-}
-// where a name sits among a frame's names, in the order they were bound
-function spkPos(names, n) { let i = 0; for (const k of names.keys()) { if (k === n) return i; i++; } return -1; }
-// does a cell (or anything in it) use _ or left?
-const SPK_IT = new Set(["_", "left", "right"]);
-function spkUses(c) { if (c.spkUses === undefined) c.spkUses = mentions(c, SPK_IT); return c.spkUses; }
-const KOPS = { "+": ["+", "n"], "-": ["-", "n"], "*": ["*", "n"], "/": ["/", "n"], "%": ["%", "n"], "<": ["<", "b"], ">": [">", "b"], "<=": ["<=", "b"], ">=": [">=", "b"], "=": ["===", "b"], "!=": ["!==", "b"] };
-const KPOST = { abs: "Math.abs", floor: "Math.floor", round: "Math.round", ceil: "Math.ceil", sqrt: "Math.sqrt", sin: "Math.sin", cos: "Math.cos", tan: "Math.tan", log: "Math.log", neg: "-" };
-// a kernel can't be made: remember the first reason, for the speed notes (decision 86)
-function kNo(K, why) { if (!K.why) K.why = why; return null; }
-function kCol(f, K) { let v = K.cols.get(f); if (!v) { v = "$c" + K.cols.size; K.cols.set(f, v); } return v + "[$i]"; }
-// the start of a kernel: find each field's column, and read each outside name once
-function kPro(K) {
-  let s = "";
-  for (const [f, v] of K.cols) s += "const " + v + "=cols[rs.index(" + JSON.stringify(f) + ")];if(" + v + "===undefined)return null;";
-  for (const e of K.caps.values()) s += "const " + e.v + "=" + e.ref + ";" + (e.num ? "if(typeof " + e.v + "!==\"number\")return null;" : "");
-  return s;
 }
 // does this expression use any of these names?
 function mentions(n, names) {
@@ -1983,25 +1222,10 @@ function simpleParts(c) { return !c.names.length && c.items.length > 0 && c.item
 const NOTE_KEYS = new Set(["line", "kern", "bindName", "sporkArg", "spkUses"]);
 function srcOf(c) { return JSON.stringify(c, (k, v) => NOTE_KEYS.has(k) ? undefined : v); }
 
-// the cells spork is given: by name (spork one-run), or written in place (spork [n | ...]); and each cell bound to a name
-function sporkTargets(ast) {
-  const names = new Set();
-  (function walk(n) {
-    if (!n || typeof n !== "object") return;
-    if (Array.isArray(n)) { for (const x of n) walk(x); return; }
-    if (n.k === "chain") {
-      const T = n.terms;
-      for (let i = 0; i + 1 < T.length; i++) if (T[i].k === "word" && T[i].v === "spork") { const t = T[i + 1]; if (t.k === "word") names.add(t.v); else if (t.k === "cell") t.sporkArg = true; }
-    }
-    if (n.k === "bind" && n.val && n.val.terms && n.val.terms.length === 1 && n.val.terms[0].k === "cell") n.val.terms[0].bindName = n.name;
-    for (const key in n) if (!NOTE_KEYS.has(key)) walk(n[key]);
-  })(ast);
-  return names;
-}
 function compile(src, globals) {
   const ast = parse(src);
   const g = new Gen(globals);
-  g.sporkNames = sporkTargets(ast);
+  if (LIB.prescan) LIB.prescan(g, ast);
   g.temps.push([]);
   const js = g.genCell({ k: "cell", names: [], items: ast });
   const top = g.temps.pop();
@@ -2009,6 +1233,16 @@ function compile(src, globals) {
   const seenSpeed = new Set(), speed = g.speed.filter(x => { const k = x.line + " " + x.word + " " + x.fast; if (seenSpeed.has(k)) return false; seenSpeed.add(k); return true; });
   return { js, shapes: g.shapes, prologue: (top.length ? "let " + top.join(",") + ";\n" : "") + g.consts.join("\n"), speed };
 }
+
+// ===================================================================== libraries (decision 96)
+// The core runs every program on its own. A library can only make it faster or add built-ins, never change an answer:
+//   cell(gen, c)      more ways to run a cell literal, as JS for MK's last argument (spork's kernel)
+//   fuse.find/wrap    a run of steps in a chain made into one loop, tried before the steps as written
+//   note(gen, T, i)   speed notes; prescan(gen, ast) a look over the whole program first
+//   spork(xs, f)      run a spork faster, or null; sortNumbers(a) sort a Float64Array
+//   runtime           names the generated code may call
+const LIB = { cell: null, fuse: null, note: null, prescan: null, spork: null, sortNumbers: null };
+function install(lib) { for (const k in lib) { if (k === "runtime") Object.assign(RT, lib.runtime); else if (k in LIB) LIB[k] = lib[k]; } }
 
 // ===================================================================== runtime
 const BANG = { toString: () => "!" };   // "no input" (decisions 58, 69)
@@ -2151,8 +1385,6 @@ class ColCell extends VCell {
   part(k) { if (!Number.isInteger(k) || k < 1 || k > this.n) return false; return this._p ? this._p[k - 1] : this.row(k - 1); }
   run() { return this.n ? this.part(this.n) : false; }
 }
-function COLC(rs, cols, n) { return new ColCell(rs, cols, n); }
-function NCOL(col, n) { return new NCell(col.slice(0, n)); }
 // NCell: a list of numbers kept in one Float64Array, made by spork and sort. To a program it is the same list.
 class NCell extends VCell {
   constructor(a) { super(null, ROOT, EMPTY); this.a = a; this._p = null; }
@@ -2162,7 +1394,7 @@ class NCell extends VCell {
   part(k) { return Number.isInteger(k) && k >= 1 && k <= this.a.length ? this.a[k - 1] : false; }
   run() { return this.a.length ? this.a[this.a.length - 1] : false; }
 }
-let COLMIN = 32;
+let COLMIN = 32, FAST = true;
 const COLS = new WeakMap();
 // the columns for a list, if it is one: a list already in columns, or 32 or more records of one shape holding only numbers
 function toCols(xs) {
@@ -2377,14 +1609,12 @@ function CALL(f, x) {
   return SEND(f, x);
 }
 function each(xs, f) {
-  if (f instanceof Cell && f.kn && f.kn.e) { const c = toCols(xs); if (c && f.kn.e(c, c.rs, c.cols, c.n)) return false; }
   const one = f instanceof Cell && f.sh.names.length === 1, run = one ? f.runF : null, L = one ? f.left : undefined;
   if (xs instanceof RCell) { for (let i = 1; i <= xs.n; i++) one ? UNB(run(L, false, i)) : CALL(f, i); return false; }
   const p = partsOf(xs); for (let i = 0; i < p.length; i++) one ? UNB(run(L, false, p[i])) : CALL(f, p[i]);
   return false;
 }
 function collect(xs, f) {
-  if (f instanceof Cell && f.kn && f.kn.m) { const c = toCols(xs); if (c) { const r = f.kn.m(c, c.rs, c.cols, c.n); if (r) return r; } }
   const p = partsOf(xs);
   const n = p.length, out = new Array(n);
   if (f instanceof Cell && f.sh.names.length === 1) { const run = f.runF, L = f.left; for (let i = 0; i < n; i++) out[i] = UNB(run(L, false, p[i])); }
@@ -2392,7 +1622,6 @@ function collect(xs, f) {
   return new VCell(out, ROOT, EMPTY);
 }
 function keep(xs, f) {
-  if (f instanceof Cell && f.kn && f.kn.t) { const c = toCols(xs); if (c) { const r = f.kn.t(c, c.rs, c.cols, c.n); if (r) return r; } }
   const p = partsOf(xs), o = [];
   const one = f instanceof Cell && f.sh.names.length === 1, run = one ? f.runF : null, L = one ? f.left : undefined;
   for (let i = 0; i < p.length; i++) { const t = one ? UNB(run(L, false, p[i])) : CALL(f, p[i]); if (t === true) o.push(p[i]); else if (t !== false) MISSING(t, "keep"); }
@@ -2401,9 +1630,6 @@ function keep(xs, f) {
 function fold(xs, arg) {
   if (!isCell(arg)) return MISSING(arg, "fold");
   let acc = arg.part(1); const f = arg.part(2);
-  if (COLMIN !== Infinity && f instanceof Cell && f.kn && f.kn.f && (xs instanceof RCell || (xs instanceof VCell && !(xs instanceof ColCell) && xs.fs === ROOT))) {
-    const r = f.kn.f(acc, xs, xs instanceof RCell); if (r !== null) return r;
-  }
   if (f instanceof Cell && f.sh.names.length === 2) {
     const run = f.runF, L = f.left;
     if (xs instanceof RCell) { for (let i = 1; i <= xs.n; i++) acc = UNB(run(L, false, acc, i)); return acc; }
@@ -2414,14 +1640,792 @@ function fold(xs, arg) {
   return acc;
 }
 function times(n, f) { for (let i = 1; i <= n; i++) CALL(f, i); return false; }
+// spork (decision 47) is a parallel collect: the same list. A library runs it faster when it can (decision 91).
+function spork(xs, f) { const r = LIB.spork && FAST ? LIB.spork(xs, f) : null; return r || collect(xs, f); }
+
+// sort: numbers from least to most, or words in order (a library choice, decision 80)
+const sortNumbers = a => (LIB.sortNumbers || (x => Float64Array.from(x).sort()))(a);
+function sortList(xs) {
+  if (xs instanceof NCell) return new NCell(sortNumbers(xs.a));
+  if (xs instanceof RCell) return xs;
+  const p = partsOf(xs);
+  if (p.every(v => typeof v === "number")) return new NCell(sortNumbers(Float64Array.from(p)));
+  if (p.every(v => typeof v === "string")) return VP(p.slice().sort());
+  return LOG_MISS("sort sorts a list of numbers or a list of words");
+}
+
+// ---- prototypes: built-in fields of each kind of value. ar:1 waits for a right side.
+const m0 = fn => ({ ar: 0, fn }), m1 = fn => ({ ar: 1, fn });
+const ALL = {
+  "=": m1(eq), "!=": m1((a, b) => !eq(a, b)), else: m1((a, b) => a === false ? (isCell(b) ? b.run(BANG) : b) : a),
+  print: m0(a => { G.print.fn(a); return a; }), str: m0(a => fmt(a)), with: m1(merge), "..": m1(merge),
+};
+const NUM = Object.assign(Object.create(ALL), {
+  "+": m1((a, b) => a + num(b)), "-": m1((a, b) => a - num(b)), "*": m1((a, b) => a * num(b)), "/": m1((a, b) => a / num(b)),
+  "%": m1((a, b) => ((a % b) + b) % b), "<": m1((a, b) => a < num(b)), ">": m1((a, b) => a > num(b)),
+  "<=": m1((a, b) => a <= num(b)), ">=": m1((a, b) => a >= num(b)),
+  abs: m0(Math.abs), floor: m0(Math.floor), round: m0(Math.round), ceil: m0(Math.ceil), sqrt: m0(Math.sqrt),
+  sin: m0(Math.sin), cos: m0(Math.cos), tan: m0(Math.tan), log: m0(Math.log), neg: m0(a => -a),
+  times: m1(times), min: m1((a, b) => Math.min(a, b)), max: m1((a, b) => Math.max(a, b)),
+});
+function num(b) { if (typeof b !== "number") { LOG_MISS(describe(b) + " isn't a number"); return NaN; } return b; }
+const STRP = Object.assign(Object.create(ALL), {
+  length: m0(LEN), "@": m1(PART), "<": m1((a, b) => a < b), ">": m1((a, b) => a > b),
+  upper: m0(a => a.toUpperCase()), lower: m0(a => a.toLowerCase()),
+});
+const BOOL = Object.assign(Object.create(ALL), {
+  not: m0(a => !a), and: m1((a, b) => a && b === true), or: m1((a, b) => a || b === true),
+});
+const CELLP = Object.assign(Object.create(ALL), {
+  "@": m1(PART), length: m0(LEN), first: m0(a => a.part(1)), last: m0(a => a.part(a.count())),
+  collect: m1(collect), keep: m1(keep), each: m1(each), fold: m1(fold), spork: m1(spork), sort: m0(sortList),
+});
+const NONE_P = ALL;
+function protoOf(r) {
+  switch (typeof r) {
+    case "number": return NUM; case "string": return STRP; case "boolean": return BOOL;
+  }
+  if (r instanceof Cell || r instanceof VCell) return CELLP;
+  return NONE_P;
+}
+
+// ---- globals: names every file can use. Host words are added by the host.
+function args(a, n) { if (isCell(a)) { const o = new Array(n); for (let i = 0; i < n; i++) o[i] = a.part(i + 1); return o; } return [a]; }
+const G = Object.create(null);
+function defNative(name, fn, effect) { G[name] = new Native(name, fn, effect); }
+G.any = ANY;
+defNative("range", n => new RCell(Math.max(0, Math.floor(num(n)))));
+// rand reads the recorded random source, like random, so it stays here; plain maths lives in the prelude (decision 97)
+defNative("rand", a => { const [lo, hi] = args(a, 2); return lo + RNG() * (hi - lo); });
+defNative("print", a => { effect(() => OUT(fmt(a))); return a; }, true);
+// noise [sample, id]: a number from 0 up to 1 that is always the same for the same two inputs (decision 87)
+defNative("noise", a => { const [x, y] = args(a, 2); return NOISE(num(x), num(y)); });
+Object.defineProperty(G, "random", { get: () => RNG(), enumerable: true });
+let RNG = Math.random, OUT = s => { if (typeof console !== "undefined") console.log(s); };
+
+// ===================================================================== prelude, written in Sprout (decisions 30, 34, 35, 50)
+const PRELUDE = `
+-- maths that used to be written in JavaScript (decision 97)
+clamp : [v lo hi | v < lo [lo] else [v > hi [hi] else [v]]]
+toward : [x y t | y - x * t + x]
+dist : [x1 y1 x2 y2 |
+  dx : x2 - x1, dy : y2 - y1
+  (dx * dx + (dy * dy)) sqrt
+]
+match : [v cases |
+  find : [n | n > (cases length) [0] else [(cases @ n) = any or ((cases @ n) = v) [n] else [find (n + 2)]]]
+  k : find 1
+  k > 0 [cases @ (k + 1)] else [false]
+]
+cond : [cases |
+  find : [n | n > (cases length) [0] else [(cases @ n) = any or ((cases @ n) = true) [n] else [find (n + 2)]]]
+  k : find 1
+  k > 0 [cases @ (k + 1)] else [false]
+]
+take : [xs n | range (n min (xs length)) collect [k | xs @ k]]
+rgb : [r g b | "rgb(" .. r .. "," .. g .. "," .. b .. ")"]
+rgba : [r g b a | "rgba(" .. r .. "," .. g .. "," .. b .. "," .. a .. ")"]
+every : [secs now dt | now / secs floor > (now - dt / secs floor)]
+wave : [secs now | now / secs * 6.283185307179586 sin]
+fresh-input : [touching : false, tapped : false, touch-x : 0, touch-y : 0, held : []]
+frame : [update |
+  [s e |
+    i : s input else fresh-input
+    match [e kind, [
+      "down", s with [input : i with [touching : true, tapped : true, touch-x : e x, touch-y : e y]]
+      "move", s with [input : i with [touch-x : e x, touch-y : e y]]
+      "up", s with [input : i with [touching : false]]
+      "tick", update (s with [dt : e dt, clock : e clock, input : i with [held : e held]]) with [input : i with [tapped : false, held : e held]]
+      any, s
+    ]]
+  ]
+]
+`;
+
+// ===================================================================== build
+const RT = { BANG, ANY, G, S: null, MK, SW, SEND, RUNC, STR, UNKNOWN, LOG_MISS, WITHF,
+  ADD, SUB, MUL, DIV, MOD, LT, GT, LE, GE, EQ, NE, CAT, WITH, AT, VC, VP, ISBOOL, MISSING, TAIL, SWI, shapeFor };
+let preludeCell = null;
+function globalNames(extra) { const s = new Set(Object.keys(G)); if (extra) for (const k of extra) s.add(k); return s; }
+
+function load(src, opts) {
+  opts = opts || {};
+  const host = opts.host || {};
+  for (const k in host) G[k] = host[k];
+  if (!preludeCell && !opts.noPrelude) {
+    preludeCell = load(PRELUDE, { noPrelude: true });
+    for (const k of preludeCell.fieldNames()) { const kk = k; Object.defineProperty(G, kk, { get: () => preludeCell.field(kk), enumerable: true, configurable: true }); }
+  }
+  const { js, shapes, prologue, speed } = compile(src, globalNames());
+  const names = Object.keys(RT).filter(k => k !== "S");
+  const f = new Function(...names, "S", prologue + "\nreturn " + js + "\n//# sourceURL=sprout.js");
+  const cell = f(...names.map(k => RT[k]), shapes);
+  cell.js = js; cell.speed = speed;
+  return cell;
+}
+
+const api = { tokenize, parse, compile, load, fmt, eq, merge, isCell, Cell, VCell, Native, G, BANG, ANY, SproutError, PRELUDE,
+  ColCell, NCell, columns: on => { COLMIN = on ? 32 : Infinity; FAST = !!on; },
+  // libraries: what they can see of the core, and how they plug in (decision 96)
+  install, internals: null,
+  setLog: f => { LOG = f; }, setOut: f => { OUT = f; }, setRandom: f => { RNG = f; }, defNative, partsOf, fieldsOf, UNSET, VFM, effect, queueEffects, runEffects, dropEffects };
+// what a library sees of the core: the pieces a faster way needs, nothing it could change answers with
+api.internals = { FUSED, LAZYOPS, ALL, G, Native, NOISE, fmt, fieldsOnly, mentions, NOTE_KEYS, RCell, NCell, ColCell, VCell, VP, ROOT, shapeFor, toCols, Cell, EMPTY, collect, isCell,
+  fast: () => FAST };
+if (typeof module !== "undefined") {
+  module.exports = api;
+  // in Node the kernels library comes along; a page loads kernels.js after this file
+  // (SPROUT3_CORE_ONLY=1 runs without it, to check the core alone gives the same answers)
+  if (!process.env.SPROUT3_CORE_ONLY) try { require("./kernels.js"); } catch (e) { if (e.code !== "MODULE_NOT_FOUND") throw e; }
+} else root.Sprout3 = api;
+})(typeof window !== "undefined" ? window : globalThis);
+````
+
+## kernels.js
+
+The speed library: the work-ahead pass, loop fusion, spork kernels on WebAssembly SIMD and in JavaScript, and the radix sort (decision 96). The core runs without it.
+
+````js
+// Sprout 3 kernels: the library that makes Sprout fast (decision 96). The core (sprout3.js) runs every program
+// on its own; this only finds faster ways to get the same answers.
+//   - the work-ahead pass (Spk): a cell worked out as far as it can be without its input, down to number maths
+//   - loop fusion: a run of collect, keep, fold, each and length in a chain, as one loop (decision 95)
+//   - spork kernels: a pure cell run for every input at once, on WebAssembly SIMD or in JavaScript (decision 91)
+//   - a radix sort for numbers (decision 92)
+(function (root) {
+"use strict";
+const S = typeof module !== "undefined" ? require("./sprout3.js") : root.Sprout3;
+const I = S.internals;
+const { FUSED, LAZYOPS, ALL, G, Native, NOISE, fmt, fieldsOnly, mentions, NOTE_KEYS, RCell, NCell, ColCell, VCell, VP, ROOT, shapeFor, toCols, Cell, EMPTY, isCell } = I;
+
+// ===================================================================== spork kernels (decision 47, step 3 of decision 79)
+// A cell given to spork is worked out once, when the program loads, as far as it can be without its input:
+// calls are inlined; lists, records, words and loops over them are unrolled; a test that changes from run to run
+// becomes a choice made in each run. What is left is number maths on the input, a flat list of steps (the IR),
+// which runs as one tight loop: in JavaScript, in WebAssembly SIMD, or on the GPU.
+// If anything can't be worked out this way (a host word, a random read, keep with a test that changes from run
+// to run), there is no kernel and spork is collect, so a program can't tell which way it ran.
+const SPKFAIL = { spork: "no" };
+const SPK_PENDING = {};
+const SPK_N2 = { add: (a, b) => a + b, sub: (a, b) => a - b, mul: (a, b) => a * b, div: (a, b) => a / b, mod: (a, b) => ((a % b) + b) % b,
+  min: (a, b) => Math.min(a, b), max: (a, b) => Math.max(a, b), noise: (a, b) => NOISE(a, b) };
+const SPK_N1 = { neg: a => -a, abs: Math.abs, floor: Math.floor, ceil: Math.ceil, round: Math.round, sqrt: Math.sqrt, sin: Math.sin, cos: Math.cos, tan: Math.tan, log: Math.log };
+const SPK_C2 = { lt: (a, b) => a < b, gt: (a, b) => a > b, le: (a, b) => a <= b, ge: (a, b) => a >= b, eq: (a, b) => a === b, ne: (a, b) => a !== b };
+const SPK_B2 = { and: (a, b) => a && b, or: (a, b) => a || b, beq: (a, b) => a === b };
+// these give the same answer in JavaScript and WebAssembly only if done by JavaScript itself
+const SPK_JSONLY = new Set(["mod", "sin", "cos", "tan", "log"]);
+const SPK_OPS = { "+": "add", "-": "sub", "*": "mul", "/": "div", "%": "mod", "<": "lt", ">": "gt", "<=": "le", ">=": "ge" };
+const SPK_NATIVES = new Set(["range", "noise"]);
+const SPK_CELLM = { "@": 1, length: 0, first: 0, last: 0, collect: 1, keep: 1, each: 1, fold: 1, spork: 1 };
+const spkNum = v => Object.is(v, -0) ? "-0" : String(v);
+// the prelude's bindings by name, so its cells (clamp, cond, match...) can be inlined like any other
+let PRE = null;
+const prelude = () => PRE || (PRE = new Map(S.parse(S.PRELUDE).filter(it => it.k === "bind").map(it => [it.name, it])));
+
+class Spk {
+  constructor(g) {
+    this.g = g; this.nodes = []; this.memo = new Map(); this.caps = []; this.capIdx = new Map();
+    this.effects = null;
+    // names from outside are worked out on a budget: the ones worth it are small tables, a few hundred steps each
+    this.outside = new Map(); this.steps = 0; this.stepCap = 400000; this.depth = 0; this.outsideLeft = 10000; this.why = null; this.guards = []; this.jsOnly = false;
+    this.pc = null; this.TRUE = this.cb(true); this.FALSE = this.cb(false); this.pc = this.TRUE;
+  }
+  no(why) { if (!this.why) this.why = why; throw SPKFAIL; }
+  tick() { if (++this.steps > this.stepCap) this.no("it takes too many steps to work out"); }
+
+  // ---- IR nodes: [op, a, b, c, v]. Equal nodes are shared, and steps on constants are worked out now.
+  node(op, a, b, c, v) {
+    const N = this.nodes, isK = i => N[i][0] === "c" || N[i][0] === "cb", kv = i => N[i][4];
+    if (SPK_N2[op] && isK(a) && isK(b)) return this.node("c", -1, -1, -1, SPK_N2[op](kv(a), kv(b)));
+    if (SPK_N1[op] && isK(a)) return this.node("c", -1, -1, -1, SPK_N1[op](kv(a)));
+    if ((SPK_C2[op] || SPK_B2[op]) && isK(a) && isK(b)) return this.node("cb", -1, -1, -1, (SPK_C2[op] || SPK_B2[op])(kv(a), kv(b)));
+    if (op === "not" && isK(a)) return this.node("cb", -1, -1, -1, !kv(a));
+    if (op === "beq" && isK(b)) return kv(b) ? a : this.node("not", a);
+    if (op === "beq" && isK(a)) return kv(a) ? b : this.node("not", b);
+    if ((SPK_N2[op] || SPK_C2[op] || SPK_N1[op]) && op !== "noise") {
+      const ta = this.ktree(a), tb = SPK_N1[op] ? 0 : this.ktree(b);
+      if (ta && (SPK_N1[op] || tb) && (N[a][0] === "sel" || (!SPK_N1[op] && N[b][0] === "sel")) && ta * (tb || 1) <= 16) {
+        const [x, y] = N[a][0] === "sel" ? [a, b] : [b, a], [, cc, l, r] = N[x];
+        const on = (u) => SPK_N1[op] ? this.node(op, u) : x === a ? this.node(op, u, y) : this.node(op, y, u);
+        return this.node("sel", cc, on(l), on(r));
+      }
+    }
+    if (op === "sel") { if (isK(a)) return kv(a) ? b : c; if (b === c) return b; }
+    if (op === "and") { if (isK(a)) return kv(a) ? b : a; if (isK(b)) return kv(b) ? a : b; if (a === b) return a; }
+    if (op === "or") { if (isK(a)) return kv(a) ? a : b; if (isK(b)) return kv(b) ? b : a; if (a === b) return a; }
+    const key = op + "," + a + "," + b + "," + c + "," + (v === undefined ? "" : typeof v === "number" ? spkNum(v) : v);
+    let id = this.memo.get(key);
+    if (id !== undefined) return id;
+    id = N.length; N.push([op, a, b, c, v]); this.memo.set(key, id);
+    if (SPK_JSONLY.has(op)) this.jsOnly = true;
+    if (N.length > 60000) this.no("it is too big to run as one kernel");
+    return id;
+  }
+  // how many constants a step is a choice between (a constant is 1), or 0 if it isn't a choice between constants
+  ktree(i) {
+    const n = this.nodes[i];
+    if (n[0] === "c" || n[0] === "cb") return 1;
+    if (n[0] !== "sel") return 0;
+    const l = this.ktree(n[2]), r = l && this.ktree(n[3]);
+    return l && r ? l + r : 0;
+  }
+  num(id) { return { k: "n", id }; }
+  boo(id) { return { k: "b", id }; }
+  cn(v) { return this.num(this.node("c", -1, -1, -1, v)); }
+  cb(v) { return this.boo(this.node("cb", -1, -1, -1, !!v)); }
+  isC(p) { return p.k === "n" && this.nodes[p.id][0] === "c"; }
+  isCB(p) { return p.k === "b" && this.nodes[p.id][0] === "cb"; }
+  val(p) { return this.nodes[p.id][4]; }
+  isFalse(p) { return this.isCB(p) && this.val(p) === false; }
+  cv(parts, keys, vals) { return { k: "cv", parts, keys: keys || [], vals: vals || [] }; }
+  not(p) { return this.boo(this.node("not", p.id)); }
+  and(a, b) { return this.boo(this.node("and", a.id, b.id)); }
+  or(a, b) { return this.boo(this.node("or", a.id, b.id)); }
+  // a check that must hold in every run, or the whole spork runs the ordinary way; it only counts where the program gets to it
+  guard(ok) { const g = this.or(this.not(this.pc), ok); if (!this.isCB(g) || !this.val(g)) this.guards.push(g.id); }
+  under(c, f) { const s = this.pc; this.pc = this.and(s, c); try { return f(); } finally { this.pc = s; } }
+
+  // ---- names: the kernel's own, then the frames the compiler knows, then the built-ins
+  isName(n, env) {
+    for (let e = env; e; e = e.parent) {
+      if (e.vars) { if (e.vars.has(n)) return true; continue; }
+      if (e.prelude) return prelude().has(n) || this.g.globals.has(n);
+      return !!this.frameRef(n, e.f, e.lim) || this.g.globals.has(n);
+    }
+    return false;
+  }
+  look(n, env) {
+    for (let e = env; e; e = e.parent) {
+      if (e.vars) { if (e.vars.has(n)) return e.vars.get(n); continue; }
+      return e.prelude ? this.fromFrames(n, -1, Infinity) : this.fromFrames(n, e.f, e.lim);
+    }
+    this.no("it uses " + n);
+  }
+  // a prelude cell: a cell that takes input is inlined where it is called; anything else is worked out now
+  fromPrelude(n) {
+    const key = "\u0001" + n;
+    if (this.outside.has(key)) { const v = this.outside.get(key); if (v === SPK_PENDING) this.no("it uses " + n + " inside its own definition"); return v; }
+    const it = prelude().get(n), T = it.val.terms, env = { prelude: true };
+    this.outside.set(key, SPK_PENDING);
+    const v = T.length === 1 && T[0].k === "cell" ? this.cellValue(T[0], env) : this.chain(it.val, env);
+    this.outside.set(key, v);
+    return v;
+  }
+  frameRef(n, fIdx, lim) {
+    for (let f = fIdx; f >= 0; f--) {
+      const names = this.g.frames[f].names, r = names.get(n);
+      if (!r) continue;
+      if (f === fIdx && lim !== Infinity && spkPos(names, n) >= lim) continue;
+      return { r, f };
+    }
+    return null;
+  }
+  fromFrames(n, fIdx, lim) {
+    const fr = this.frameRef(n, fIdx, lim);
+    if (fr) {
+      const key = fr.f + "\u0000" + n;
+      if (this.outside.has(key)) { const v = this.outside.get(key); if (v === SPK_PENDING) this.no("it uses " + n + " inside its own definition"); return v; }
+      const pos = spkPos(this.g.frames[fr.f].names, n), r = fr.r;
+      let v = null;
+      if (r.ast && r.ast.names.length) v = { k: "fn", ast: r.ast, env: { f: fr.f, lim: pos + 1 } };
+      else if ((r.ast || r.val) && !spkTooBig(this.g, fr.f, n) && this.outsideLeft > 0) {
+        // a name bound outside: worked out again here (it is pure, so the value is the same), or else read as a number when spork runs
+        this.outside.set(key, SPK_PENDING);
+        const why = this.why, pc = this.pc, caps = this.caps.length, seen = new Set(this.outside.keys()), cap0 = this.stepCap;
+        this.pc = this.TRUE;
+        // a name from outside gets a small budget of its own: past it, it is read as a number when the loop runs
+        const s0 = this.steps;
+        this.stepCap = Math.min(cap0, this.steps + Math.min(2500, this.outsideLeft));
+        try { v = r.ast ? this.cellValue(r.ast, { f: fr.f, lim: pos + 1 }) : this.chain(r.val, { f: fr.f, lim: pos }); }
+        catch (e) {
+          if (e !== SPKFAIL) throw e;
+          // a failed try leaves nothing behind: no outside reads it made, no names it worked out
+          this.why = why; v = null; spkTooBig(this.g, fr.f, n, true);
+          for (const c of this.caps.splice(caps)) this.capIdx.delete(c);
+          for (const k of [...this.outside.keys()]) if (!seen.has(k)) this.outside.delete(k);
+          this.outside.set(key, SPK_PENDING);
+        }
+        this.stepCap = cap0; this.pc = pc; this.outsideLeft -= this.steps - s0;
+      }
+      if (!v) v = this.capture(this.g.refJS(r));
+      this.outside.set(key, v);
+      return v;
+    }
+    if (prelude().has(n) && (!this.g.globals.has(n) || (Object.getOwnPropertyDescriptor(G, n) || {}).get)) return this.fromPrelude(n);
+    if (n === "any") return { k: "any" };
+    if (this.g.globals.has(n)) {
+      const d = Object.getOwnPropertyDescriptor(G, n);
+      if (!d || d.get) this.no(n === "random" ? "it reads random, which changes from run to run" : "it uses " + n + ", a library cell spork can't work out yet");
+      if (d.value instanceof Native) return SPK_NATIVES.has(n) ? { k: "nat", n } : d.value.effect ? { k: "host", n } : this.no(n === "rand" ? "it uses rand, which reads random, which changes from run to run" : "it uses " + n);
+      if (typeof d.value === "number") return this.capture(this.g.globalRef(n));
+      this.no("it uses " + n);
+    }
+    this.no("it uses " + n + ", which isn't a name it can see");
+  }
+  capture(ref) {
+    let i = this.capIdx.get(ref);
+    if (i === undefined) { i = this.caps.length; this.caps.push(ref); this.capIdx.set(ref, i); }
+    return this.num(this.node("k", -1, -1, -1, i));
+  }
+
+  // ---- terms, chains and bodies, mirroring Gen.genChain step for step
+  term(t, env) {
+    this.tick();
+    switch (t.k) {
+      case "num": return this.cn(t.v);
+      case "str": return { k: "s", v: t.v };
+      case "tmpl": { let s = ""; for (const p of t.parts) s += typeof p === "string" ? p : this.text(this.chain(p.ast, env)); return { k: "s", v: s }; }
+      case "word":
+        if (t.v === "true") return this.TRUE;
+        if (t.v === "false") return this.FALSE;
+        if (["!", "_", "left", "right"].includes(t.v)) this.no("it uses " + t.v);
+        return this.look(t.v, env);
+      case "group": return this.group(t.items, env);
+      case "cell": return this.cellValue(t, env);
+      case "chain": return this.chain(t, env);
+    }
+    this.no("it uses something spork can't work out");
+  }
+  // text made now: only from values that are the same in every run
+  text(p) {
+    if (p.k === "s") return p.v;
+    if (this.isC(p) || this.isCB(p)) return fmt(this.val(p));
+    this.no("it puts a value that changes from run to run into text");
+  }
+  group(items, env) {
+    if (items.length === 1 && items[0].k === "chain") return this.chain(items[0], env);
+    const sc = { vars: new Map(), parent: env }; let r = this.FALSE;
+    for (const it of items) { if (it.k === "bind") { r = this.chain(it.val, sc); sc.vars.set(it.name, r); } else r = this.chain(it, sc); }
+    return r;
+  }
+  cellValue(c, env) {
+    if (c.names.length) return { k: "fn", ast: c, env };
+    if (spkUses(c)) this.no("it uses _ or left");
+    const sc = { vars: new Map(), parent: env }, parts = [], keys = [], vals = [];
+    for (const it of c.items) {
+      if (it.k === "bind") { const v = this.bindVal(it, sc); sc.vars.set(it.name, v); keys.push(it.name); vals.push(v); }
+      else parts.push(this.chain(it, sc));
+    }
+    return this.cv(parts, keys, vals);
+  }
+  bindVal(it, sc) { const T = it.val.terms; return T.length === 1 && T[0].k === "cell" ? this.cellValue(T[0], sc) : this.chain(it.val, sc); }
+  // a cell's body run in order: the last part is what it gives (genRunBody)
+  runBody(items, env) {
+    let last = this.FALSE;
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      if (it.k === "bind") { env.vars.set(it.name, this.bindVal(it, env)); if (i === items.length - 1) return last; }
+      else { const v = this.chain(it, env); if (i === items.length - 1) return v; last = v; }
+    }
+    return this.FALSE;
+  }
+  block(c, env) { if (c.names.length || spkUses(c)) this.no("a branch takes input"); return this.runBody(c.items, { vars: new Map(), parent: env }); }
+  arg(t, env) { return t.k === "cell" && !t.names.length ? this.block(t, env) : this.term(t, env); }
+
+  chain(ch, env) {
+    const T = ch.terms; if (!T.length) return this.FALSE;
+    let v = this.term(T[0], env);
+    for (let i = 1; i < T.length; i++) {
+      this.tick();
+      const t = T[i];
+      if (t.k === "word" && (t.v === "!" || t.v === "true" || t.v === "false")) this.no("it sends " + t.v);
+      if (t.k === "word") {
+        const w = t.v;
+        if (FUSED.has(w) && i + 1 < T.length && !this.isName(w, env)) {
+          const nt = T[++i];
+          if ((w === "with" || w === "..") && nt.k === "cell" && fieldsOnly(nt)) { v = this.withf(v, nt, env); continue; }
+          v = this.op(w, v, this.term(nt, env)); continue;
+        }
+        if (LAZYOPS.has(w) && i + 1 < T.length && !this.isName(w, env)) { const bt = T[++i]; v = this.lazy(w, v, () => this.arg(bt, env)); continue; }
+        const quiet = T[i + 1] && T[i + 1].k === "word" && T[i + 1].v === "else" && T[i + 2] && !this.isName("else", env);
+        v = this.word(v, w, env, quiet); continue;
+      }
+      if (t.k === "cell" && !t.names.length) {
+        const elsePat = T[i + 1] && T[i + 1].k === "word" && T[i + 1].v === "else" && T[i + 2] && !this.isName("else", env);
+        if (v.k === "b") {
+          // a boolean runs the block (decision 62); else runs when the test is false or the block gives false
+          if (elsePat) { const bt = T[i + 2]; i += 2; v = this.branch(v, () => this.block(t, env), () => this.arg(bt, env)); }
+          else v = this.branch(v, () => this.block(t, env), null);
+          continue;
+        }
+        // any other value is sent the cell; with else, the else sees what it gave
+        const r = this.send(v, this.cellValue(t, env));
+        if (elsePat) { const bt = T[i + 2]; i += 2; v = this.lazy("else", r, () => this.arg(bt, env)); } else v = r;
+        continue;
+      }
+      v = this.send(v, this.term(t, env));
+    }
+    return v;
+  }
+
+  branch(c, runA, runB) {
+    if (this.isCB(c)) {
+      if (!this.val(c)) return runB ? runB() : this.FALSE;
+      const a = runA();
+      if (!runB || a.k !== "b") return a;
+      if (this.isCB(a)) return this.val(a) ? a : runB();
+      return this.sel(a, this.TRUE, this.under(this.not(a), runB));
+    }
+    // a test that changes from run to run: both sides are worked out, and each run picks one
+    const a = this.under(c, runA);
+    if (!runB) { if (a.k === "b") return this.and(c, a); this.no("a test without else gives false in some runs and a value in others"); }
+    const pick = a.k === "b" ? this.and(c, a) : c;
+    const b = this.under(this.not(pick), runB);
+    return this.sel(pick, a.k === "b" ? this.TRUE : a, b);
+  }
+  sel(c, x, y) {
+    if (this.isCB(c)) return this.val(c) ? x : y;
+    if (this.same(x, y)) return x;
+    if (x.k === "n" && y.k === "n") return this.num(this.node("sel", c.id, x.id, y.id));
+    if (x.k === "b" && y.k === "b") return this.boo(this.node("sel", c.id, x.id, y.id));
+    if (x.k === "row" && y.k === "row" && [...x.over.keys()].join("\u0000") === [...y.over.keys()].join("\u0000"))
+      return { k: "row", over: new Map([...x.over].map(([k, p]) => [k, this.sel(c, p, y.over.get(k))])) };
+    if (x.k === "cv" && y.k === "cv" && x.parts.length === y.parts.length && x.keys.join("\u0000") === y.keys.join("\u0000"))
+      return this.cv(x.parts.map((p, j) => this.sel(c, p, y.parts[j])), x.keys, x.vals.map((p, j) => this.sel(c, p, y.vals[j])));
+    this.no("a test picks between different kinds of value from run to run");
+  }
+  same(x, y) {
+    if (x === y) return true;
+    if (x.k !== y.k) return false;
+    if (x.k === "n" || x.k === "b") return x.id === y.id;
+    if (x.k === "s") return x.v === y.v;
+    if (x.k === "fn") return x.ast === y.ast && x.env === y.env;
+    if (x.k === "nat") return x.n === y.n;
+    if (x.k === "any") return true;
+    if (x.k === "row") return x.over.size === y.over.size && [...x.over].every(([k, p]) => y.over.has(k) && this.same(p, y.over.get(k)));
+    if (x.k === "cv") return x.parts.length === y.parts.length && x.keys.join("\u0000") === y.keys.join("\u0000") &&
+      x.parts.every((p, j) => this.same(p, y.parts[j])) && x.vals.every((p, j) => this.same(p, y.vals[j]));
+    return false;
+  }
+  lazy(w, v, getB) {
+    if (w === "else") {
+      if (this.isFalse(v)) return getB();
+      if (v.k !== "b" || this.isCB(v)) return v;
+      return this.sel(v, this.TRUE, this.under(this.not(v), getB));
+    }
+    if (v.k !== "b") this.no("its " + w + " isn't after a test");
+    const goOn = w === "and" ? v : this.not(v);
+    if (this.isCB(goOn) && !this.val(goOn)) return v;
+    const b = this.under(goOn, getB);
+    if (b.k !== "b") this.no("its " + w + " isn't between two tests");
+    return this.isCB(v) ? b : this.boo(this.node(w, v.id, b.id));
+  }
+
+  op(w, a, b) {
+    if (SPK_OPS[w]) {
+      if (a.k === "n" && b.k === "n") { const o = SPK_OPS[w]; return SPK_C2[o] ? this.boo(this.node(o, a.id, b.id)) : this.num(this.node(o, a.id, b.id)); }
+      if (a.k === "s" && b.k === "s" && (w === "<" || w === ">")) return this.cb(w === "<" ? a.v < b.v : a.v > b.v);
+      this.no("it does " + w + " on something that isn't a number");
+    }
+    if (w === "=" || w === "!=") { const e = this.equal(a, b); return w === "=" ? e : this.not(e); }
+    if (w === "@") return this.at(a, b);
+    // .. and with
+    if (a.k === "s" && w === "..") return { k: "s", v: a.v + this.text(b) };
+    if (a.k === "cv" && b.k === "cv" && !a.keys.includes(w)) return this.merge(a, b);
+    if ((a.k === "s" || this.isC(a)) && w === "with") return { k: "s", v: this.text(a) + this.text(b) };
+    if (this.isC(a) && w === "..") return { k: "s", v: this.text(a) + this.text(b) };
+    this.no("it uses " + w + " on values spork can't join");
+  }
+  merge(a, b) {
+    const keys = a.keys.slice(), vals = a.vals.slice();
+    b.keys.forEach((k, j) => { const i = keys.indexOf(k); if (i < 0) { keys.push(k); vals.push(b.vals[j]); } else vals[i] = b.vals[j]; });
+    return this.cv(b.parts.length ? a.parts.concat(b.parts) : a.parts, keys, vals);
+  }
+  withf(v, nt, env) {
+    const vals = nt.items.map(x => this.chain(x.val, env));
+    if (v.k === "row") { const over = new Map(v.over); nt.items.forEach((x, j) => over.set(x.name, vals[j])); return { k: "row", over }; }
+    if (v.k !== "cv" || v.keys.includes("with")) this.no("it uses with on something that isn't a record");
+    return this.merge(v, this.cv([], nt.items.map(x => x.name), vals));
+  }
+  equal(a, b) {
+    // any is equal only to itself (it is how match and cond write their last case)
+    if (a.k === "any" || b.k === "any") return this.cb(a.k === b.k);
+    if (a.k === "n" && b.k === "n") return this.boo(this.node("eq", a.id, b.id));
+    if (a.k === "b" && b.k === "b") return this.boo(this.node("beq", a.id, b.id));
+    if (a.k === "s" && b.k === "s") return this.cb(a.v === b.v);
+    const plain = p => p.k === "n" || p.k === "b" || p.k === "s";
+    if (plain(a) && plain(b)) return this.FALSE;
+    if (a.k === "cv" && b.k === "cv") {
+      if (a.keys.includes("=")) this.no("it compares with a cell's own =");
+      if (a.parts.length !== b.parts.length || a.keys.length !== b.keys.length) return this.FALSE;
+      let r = this.TRUE;
+      a.parts.forEach((p, j) => { r = this.and(r, this.equal(p, b.parts[j])); });
+      for (let j = 0; j < a.keys.length; j++) { const i = b.keys.indexOf(a.keys[j]); if (i < 0) return this.FALSE; r = this.and(r, this.equal(a.vals[j], b.vals[i])); }
+      return r;
+    }
+    if ((plain(a) && b.k === "cv") || (a.k === "cv" && plain(b))) return this.FALSE;
+    this.no("it compares cells that take input");
+  }
+  at(a, k) {
+    if (a.k === "cv") {
+      const P = a.parts;
+      if (this.isC(k)) { const v = P[this.val(k) - 1]; return v === undefined ? this.FALSE : v; }
+      // a choice between constant positions: a choice between those parts
+      if (k.k === "n" && this.nodes[k.id][0] === "sel" && this.ktree(k.id)) { const [, c, l, r] = this.nodes[k.id]; return this.sel(this.boo(c), this.at(a, this.num(l)), this.at(a, this.num(r))); }
+      if (k.k !== "n" || !P.length || P.length > 256) this.no("it picks from a list with a position that isn't a number");
+      // a position that changes from run to run: it must be a whole number inside the list, or spork runs the ordinary way
+      const len = this.cn(P.length), one = this.cn(1);
+      this.guard(this.and(this.and(this.boo(this.node("ge", k.id, one.id)), this.boo(this.node("le", k.id, len.id))), this.boo(this.node("eq", this.node("floor", k.id), k.id))));
+      let r = P[P.length - 1];
+      for (let j = P.length - 2; j >= 0; j--) r = this.sel(this.boo(this.node("eq", k.id, this.cn(j + 1).id)), P[j], r);
+      return r;
+    }
+    if (a.k === "s" && this.isC(k)) { const n = this.val(k), s = a.v; return n >= 1 && n <= s.length ? { k: "s", v: s[n - 1] } : this.FALSE; }
+    this.no("it uses @ on something that isn't a list");
+  }
+
+  // a word after a value: a field, then a built-in method, then a name in scope sent as the argument (SW)
+  word(v, w, env, quiet) {
+    if (v.k === "row") {
+      // a field of an item from a list in columns: the column, unless with laid a new value over it
+      if (w in SPK_CELLM || w in ALL) this.no("it uses " + w + " on a record from the list");
+      if (this.isName(w, env)) this.no("it reads " + w + ", which is both a field and a name in scope");
+      return v.over.has(w) ? v.over.get(w) : this.num(this.node("col", -1, -1, -1, w));
+    }
+    if (v.k === "cv") {
+      const j = v.keys.indexOf(w);
+      if (j >= 0) {
+        if (this.isName(w, env)) this.no("it reads " + w + ", which is both a field and a name in scope");
+        const f = v.vals[j]; if (f.k === "fn" && spkUses(f.ast)) this.no("a field uses left"); return f;
+      }
+      if (w in SPK_CELLM) {
+        if (SPK_CELLM[w]) return { k: "wait", m: w, left: v };
+        const P = v.parts;
+        if (w === "length") return this.cn(P.length);
+        if (w === "first") return P.length ? P[0] : this.FALSE;
+        return P.length ? P[P.length - 1] : this.FALSE;
+      }
+    } else if (v.k === "n") {
+      if (SPK_N1[w]) return this.num(this.node(w, v.id));
+      if (w === "min" || w === "max") return { k: "wait", m: w, left: v };
+      if (w === "times") this.no("it uses times");
+    } else if (v.k === "b") {
+      if (w === "not") return this.not(v);
+    } else if (v.k === "s") {
+      if (w === "length") return this.cn(v.v.length);
+      if (w === "upper") return { k: "s", v: v.v.toUpperCase() };
+      if (w === "lower") return { k: "s", v: v.v.toLowerCase() };
+    } else if (v.k === "fn" || v.k === "nat") {
+      if (v.k === "fn" && v.ast.items.some(x => x.k === "bind" && x.name === w)) this.no("it reads a field of a cell that takes input");
+      if (w in SPK_CELLM) this.no("it uses " + w + " on a cell that takes input");
+    }
+    if (w === "str") return { k: "s", v: this.text(v) };
+    if (w in ALL) this.no("it uses " + w + " there");
+    if (this.isName(w, env)) return this.send(v, this.look(w, env));
+    if (quiet) return this.FALSE;
+    this.no("it reads " + w + ", which isn't there");
+  }
+  // a host word (circle, beep...) inside a fused each: done in each item's turn, when the tests leading to it hold
+  hostCall(n, a) {
+    const args = a.k === "cv" && !a.keys.length ? a.parts : [a];
+    for (const x of args) if (x.k !== "n" && x.k !== "b" && x.k !== "s") this.no("the host word " + n + " is given something that isn't a number or a word");
+    this.effects.push({ host: n, single: a.k !== "cv", args, cond: this.pc });
+    // what the host word gives back, as when it runs: print gives its value, the others false (so an else after one runs too, decision 74)
+    return n === "print" ? a : this.FALSE;
+  }
+  send(v, a) {
+    if (v.k === "fn") {
+      if (a.k === "s" && v.ast.items.some(x => x.k === "bind" && x.name === a.v)) this.no("it reads a field by name");
+      return this.call(v, a);
+    }
+    if (v.k === "nat") return this.native(v.n, a);
+    if (v.k === "host") { if (!this.effects) this.no("it uses the host word " + v.n); return this.hostCall(v.n, a); }
+    if (v.k === "wait") return this.method(v.m, v.left, a);
+    this.no(v.k === "n" ? "it sends a value to a number" : "it sends a value to something that isn't a cell");
+  }
+  call(f, a) {
+    const c = f.ast, nn = c.names.length;
+    if (spkUses(c)) this.no("it calls a cell that uses _ or left");
+    if (++this.depth > 300) this.no("it calls itself too deeply to work out");
+    const vars = new Map();
+    if (nn === 1) vars.set(c.names[0].n, a);
+    else {
+      // several names: by position, then by name (decision 15); a missing one with no default would be false, with a lint
+      if (a.k !== "cv" || a.parts.length > nn) this.no("it gives a cell the wrong number of values");
+      c.names.forEach((x, j) => {
+        let v = j < a.parts.length ? a.parts[j] : undefined;
+        const fi = a.keys.indexOf(x.n); if (fi >= 0) v = a.vals[fi];
+        if (v === undefined) { if (!x.def) this.no("it leaves out " + x.n); v = this.term(x.def, f.env); }
+        vars.set(x.n, v);
+      });
+    }
+    const r = this.runBody(c.items, { vars, parent: f.env });
+    this.depth--;
+    return r;
+  }
+  apply(f, x) { if (f.k === "fn") { if (!f.ast.names.length) this.no("it collects with a cell that has no inputs"); return this.call(f, x); } return this.send(f, x); }
+  method(m, left, a) {
+    if (m === "min" || m === "max") { if (a.k !== "n") this.no("its " + m + " isn't given a number"); return this.num(this.node(m, left.id, a.id)); }
+    const P = left.parts;
+    if (m === "@") return this.at(left, a);
+    if (m === "collect" || m === "spork") return this.cv(P.map(p => this.apply(a, p)));
+    if (m === "keep") {
+      const o = [];
+      for (const p of P) {
+        const t = this.apply(a, p);
+        if (!this.isCB(t)) this.no(t.k === "b" ? "keep's test changes from run to run" : "keep's test doesn't give true or false");
+        if (this.val(t)) o.push(p);
+      }
+      return this.cv(o);
+    }
+    if (m === "fold") {
+      if (a.k !== "cv") this.no("fold isn't given [start, cell]");
+      let acc = a.parts[0] || this.FALSE; const g = a.parts[1] || this.FALSE;
+      for (const p of P) acc = g.k === "fn" && g.ast.names.length === 2 ? this.call(g, this.cv([acc, p])) : this.apply(g, this.cv([acc, p]));
+      return acc;
+    }
+    this.no("it uses " + m + " inside spork");
+  }
+  native(n, a) {
+    const A = k => a.k === "cv" ? (a.parts[k] || this.FALSE) : k === 0 ? a : this.FALSE;
+    const nums = k => { const o = []; for (let j = 0; j < k; j++) { const x = A(j); if (x.k !== "n") this.no(n + " isn't given numbers"); o.push(x); } return o; };
+    if (n === "range") {
+      if (!this.isC(a)) this.no("range is given a count that changes from run to run");
+      const m = Math.max(0, Math.floor(this.val(a)));
+      if (m > 100000) this.no("it unrolls a range that is too long");
+      const P = new Array(m); for (let j = 0; j < m; j++) P[j] = this.cn(j + 1);
+      return this.cv(P);
+    }
+    const [x, y] = nums(2);   // noise
+    return this.num(this.node("noise", x.id, y.id));
+  }
+
+  // ---- the whole cell: [x | ...] whose runs each give a number, true or false, or a record of numbers
+  build(c) {
+    if (c.names.length !== 1 || c.names[0].def) this.no("spork runs as a kernel only for a cell with one named input");
+    if (spkUses(c)) this.no("it uses _ or left");
+    const x = this.num(this.node("x", -1, -1, -1));
+    const r = this.runBody(c.items, { vars: new Map([[c.names[0].n, x]]), parent: { f: this.g.frames.length - 1, lim: Infinity } });
+    let kind, outs, keys = null;
+    if (r.k === "n") { kind = "n"; outs = [r.id]; }
+    else if (r.k === "b") { kind = "b"; outs = [r.id]; }
+    else if (r.k === "cv" && !r.parts.length && r.keys.length && r.vals.every(p => p.k === "n")) { kind = "rec"; keys = r.keys; outs = r.vals.map(p => p.id); }
+    else this.no("each run gives something other than a number, true or false, or a record of numbers");
+    return this.emit(kind, outs, keys);
+  }
+  // ---- loop fusion (decision 95): xs collect f keep g ... fold [start, h] (or length), as one loop over the items.
+  // item is "num" (range, a list of numbers) or "row" (a list of records of numbers, in columns).
+  buildPipe(stages, item) {
+    // one item's work: a body that takes more than this to work out isn't worth a fused loop (spork's cells get more)
+    this.why = null; this.steps = 0; this.depth = 0; this.stepCap = 20000;
+    const env = { f: this.g.frames.length - 1, lim: Infinity };
+    let cur = item === "num" ? this.num(this.node("x", -1, -1, -1)) : { k: "row", over: new Map() }, pass = this.TRUE;
+    const fn = st => { const f = this.term(st.arg, env); if (f.k !== "fn" && f.k !== "nat") this.no(st.w + " isn't given a cell"); return f; };
+    for (const st of stages) {
+      if (st.w === "collect") { const f = fn(st); this.pc = pass; cur = this.apply(f, cur); }
+      else if (st.w === "each") {
+        // host words called for each item that passed, in order, each under the tests that lead to it
+        const f = fn(st); this.pc = pass; this.effects = [];
+        try { this.apply(f, cur); } finally { this.pc = this.TRUE; }
+        const fx = this.effects; this.effects = null;
+        if (!fx.length) this.no("each does nothing here a host word doesn't do");
+        return this.emit("each", [pass.id], null, fx);
+      }
+      else if (st.w === "keep") {
+        const f = fn(st); this.pc = pass;
+        const t = this.apply(f, cur); if (t.k !== "b") this.no("keep's test doesn't give true or false");
+        pass = this.and(pass, t);
+      } else {
+        // fold [start, h], or length: one number carried from item to item, through the items that pass
+        let start, next;
+        const acc = this.num(this.node("a", -1, -1, -1));
+        this.pc = pass;
+        if (st.w === "length") { start = this.cn(0); next = this.num(this.node("add", acc.id, this.cn(1).id)); }
+        else {
+          this.pc = this.TRUE; const arg = this.term(st.arg, env); this.pc = pass;
+          if (arg.k !== "cv" || arg.parts.length < 2) this.no("fold isn't given [start, cell]");
+          start = arg.parts[0]; const h = arg.parts[1];
+          if (start.k !== "n") this.no("fold starts from something that isn't a number");
+          next = h.k === "fn" && h.ast.names.length === 2 ? this.call(h, this.cv([acc, cur])) : this.apply(h, this.cv([acc, cur]));
+          if (next.k !== "n") this.no("fold's cell doesn't give a number");
+        }
+        this.pc = this.TRUE;
+        return this.emit("fold", [start.id, this.sel(pass, next, acc).id], null);
+      }
+    }
+    this.pc = this.TRUE;
+    if (cur.k === "n") return this.emit("n", [pass.id, cur.id], null);
+    if (cur.k === "b") return this.emit("b", [pass.id, cur.id], null);
+    if (cur.k === "cv" && !cur.parts.length && cur.keys.length && cur.vals.every(p => p.k === "n")) return this.emit("rec", [pass.id, ...cur.vals.map(p => p.id)], cur.keys);
+    if (cur.k === "row" && [...cur.over.values()].every(p => p.k === "n")) return this.emit("row", [pass.id, ...[...cur.over.values()].map(p => p.id)], [...cur.over.keys()]);
+    this.no("each item gives something other than a number, true or false, or a record of numbers");
+  }
+  // keep only the steps the answer needs, numbered afresh, as a JavaScript literal
+  emit(kind, outs, keys, fx) {
+    const N = this.nodes, live = new Uint8Array(N.length);
+    for (const i of outs.concat(this.guards)) live[i] = 1;
+    if (fx) for (const e of fx) { live[e.cond.id] = 1; for (const a of e.args) if (a.k !== "s") live[a.id] = 1; }
+    for (let i = N.length - 1; i >= 0; i--) if (live[i]) { const [, a, b, c] = N[i]; if (a >= 0) live[a] = 1; if (b >= 0) live[b] = 1; if (c >= 0) live[c] = 1; }
+    const map = new Int32Array(N.length).fill(-1), out = []; let jsOnly = false;
+    for (let i = 0; i < N.length; i++) if (live[i]) {
+      const [op, a, b, c, v] = N[i]; map[i] = out.length;
+      if (SPK_JSONLY.has(op)) jsOnly = true;
+      const lit = v === undefined ? "" : "," + (typeof v === "number" ? spkNum(v) : typeof v === "string" ? JSON.stringify(v) : String(v));
+      out.push("[\"" + op + "\"," + (a >= 0 ? map[a] : -1) + "," + (b >= 0 ? map[b] : -1) + "," + (c >= 0 ? map[c] : -1) + lit + "]");
+    }
+    const g = [...new Set(this.guards)].map(i => map[i]);
+    const fxs = fx ? ",fx:[" + fx.map(e => "{host:" + JSON.stringify(e.host) + ",single:" + e.single + ",cond:" + map[e.cond.id] + ",args:[" +
+      e.args.map(a => a.k === "s" ? JSON.stringify(a.v) : String(map[a.id])).join(",") + "]}").join(",") + "]" : "";
+    return "{nodes:[" + out.join(",") + "],outs:[" + outs.map(i => map[i]).join(",") + "],guards:[" + g.join(",") + "],kind:\"" + kind + "\"" +
+      (keys ? ",keys:" + JSON.stringify(keys) : "") + fxs + ",jsOnly:" + jsOnly + "}";
+  }
+}
+// a run of collect, keep and fold steps (each given a cell, or a name), and length at the end, starting at T[i]
+const FUSE_STEPS = new Set(["collect", "keep", "fold", "each"]);
+function fuseSegment(T, i) {
+  let j = i; const stages = [];
+  while (j + 1 < T.length && T[j].k === "word" && FUSE_STEPS.has(T[j].v) &&
+    (T[j + 1].k === "cell" || (T[j + 1].k === "word" && !FUSED.has(T[j + 1].v) && !LAZYOPS.has(T[j + 1].v) && !(T[j + 1].v in ALL) && !["!", "true", "false", "_", "left", "right"].includes(T[j + 1].v)))) {
+    stages.push({ w: T[j].v, arg: T[j + 1], line: T[j].line }); j += 2;
+    if (T[j - 2].v === "fold" || T[j - 2].v === "each") break;
+  }
+  if (stages.length && stages[stages.length - 1].w !== "fold" && stages[stages.length - 1].w !== "each" && j < T.length && T[j].k === "word" && T[j].v === "length") { stages.push({ w: "length", line: T[j].line }); j++; }
+  if (!stages.length) return null;
+  return { stages, start: i, end: j };
+}
+// the first and last line a piece of the tree is on
+function lineSpan(n) {
+  let lo = Infinity, hi = -Infinity;
+  (function walk(x) { if (!x || typeof x !== "object") return; if (typeof x.line === "number" && x.line > 0) { lo = Math.min(lo, x.line); hi = Math.max(hi, x.line); } for (const k in x) if (!NOTE_KEYS.has(k) || k === "line") { const v = x[k]; if (v && typeof v === "object") walk(v); } })(n);
+  return [lo, hi];
+}
+// names from outside that couldn't be worked out ahead, remembered for the rest of the compile (each frame is one object)
+function spkTooBig(gen, f, n, mark) {
+  const fr = gen.frames[f], m = (gen.spkNo || (gen.spkNo = new WeakMap())).get(fr) || new Set();
+  if (mark) { m.add(n); gen.spkNo.set(fr, m); }
+  return m.has(n);
+}
+// where a name sits among a frame's names, in the order they were bound
+function spkPos(names, n) { let i = 0; for (const k of names.keys()) { if (k === n) return i; i++; } return -1; }
+// does a cell (or anything in it) use _ or left?
+const SPK_IT = new Set(["_", "left", "right"]);
+function spkUses(c) { if (c.spkUses === undefined) c.spkUses = mentions(c, SPK_IT); return c.spkUses; }
+
+
+// the cells spork is given: by name (spork one-run), or written in place (spork [n | ...]); and each cell bound to a name
+function sporkTargets(ast) {
+  const names = new Set();
+  (function walk(n) {
+    if (!n || typeof n !== "object") return;
+    if (Array.isArray(n)) { for (const x of n) walk(x); return; }
+    if (n.k === "chain") {
+      const T = n.terms;
+      for (let i = 0; i + 1 < T.length; i++) if (T[i].k === "word" && T[i].v === "spork") { const t = T[i + 1]; if (t.k === "word") names.add(t.v); else if (t.k === "cell") t.sporkArg = true; }
+    }
+    if (n.k === "bind" && n.val && n.val.terms && n.val.terms.length === 1 && n.val.terms[0].k === "cell") n.val.terms[0].bindName = n.name;
+    for (const key in n) if (!NOTE_KEYS.has(key)) walk(n[key]);
+  })(ast);
+  return names;
+}
+
 
 // ---- spork (decision 47): a parallel collect. A pure cell worked out ahead (decision 91) runs as one numeric kernel,
 // on the fastest way this machine has; anything else is collect.
 let SPORK = { info: null, wasm: undefined, gpu: null, tally: [] };
 const sporkRan = info => { SPORK.info = info; if (SPORK.tally.length < 50) SPORK.tally.push(info); };
 function spork(xs, f) {
-  if (COLMIN !== Infinity && f instanceof Cell && f.kn && f.kn.s) { const r = runSpork(f.kn.s, xs); if (r) return r; }
-  const t0 = nowMs(), r = collect(xs, f);
+  if (f instanceof Cell && f.kn && f.kn.s) { const r = runSpork(f.kn.s, xs); if (r) return r; }
+  const t0 = nowMs(), r = I.collect(xs, f);
   sporkRan({ n: isCell(xs) ? xs.count() : 0, how: "collect", ms: nowMs() - t0, steps: 0 });
   return r;
 }
@@ -2453,7 +2457,7 @@ function runSpork(s, xs) {
 // records of numbers, as one loop with no lists in between. NOFUSE means the steps run as written.
 const NOFUSE = { fuse: "no" };
 function FUSE(xs, F, caps) {
-  if (COLMIN === Infinity) return NOFUSE;
+  if (!I.fast()) return NOFUSE;
   let K, n, X = null, cols = null, rs = null;
   if (xs instanceof RCell) { K = F.num; n = xs.n; }
   else if (xs instanceof NCell) { K = F.num; X = xs.a; n = X.length; }
@@ -2471,6 +2475,15 @@ function FUSE(xs, F, caps) {
   for (let i = 0; i < C.length; i++) if (typeof C[i] !== "number") return NOFUSE;
   const f = fuseJS(K);
   if (K.kind === "fold") return f(n, X, cols, rs, C, null, null);
+  if (K.kind === "each") {
+    const H = [];
+    for (const e of K.fx) {
+      const h = G[e.host], k = e.args.length;
+      if (!(h instanceof Native)) return NOFUSE;
+      H.push(e.single ? h.fn : h.direct && h.direct.length === k ? h.direct : (...xs) => h.fn(VP(xs)));
+    }
+    return f(n, X, cols, rs, C, H, null) === NOFUSE ? NOFUSE : false;
+  }
   const O = K.outs.slice(1).map(() => new Float64Array(n)), kept = K.kind === "row" ? new Uint32Array(n) : null;
   const m = f(n, X, cols, rs, C, O, kept);
   if (m === NOFUSE) return NOFUSE;
@@ -2503,12 +2516,17 @@ function fuseJS(K) {
   }
   const g = K.guards.length ? "if(!(" + K.guards.map(r).join("&&") + "))return NOFUSE;" : "";
   let src;
-  if (K.kind === "fold") src = pre + "let acc=" + r(K.outs[0]) + ";for(let i=0;i<n;i++){const x=X?X[i]:i+1;" + body + g + "acc=" + r(K.outs[1]) + "}return acc";
-  else src = pre + "let m=0;for(let i=0;i<n;i++){const x=X?X[i]:i+1;" + body + g + "if(" + r(K.outs[0]) + "){" +
-    K.outs.slice(1).map((o, j) => "O[" + j + "][m]=" + (K.kind === "b" ? r(o) + "?1:0" : r(o)) + ";").join("") + (K.kind === "row" ? "kept[m]=i;" : "") + "m++}}return m";
+  if (K.kind === "fold") src = pre + "let acc=" + r(K.outs[0]) + ";" + spkLoop(body + g + "acc=" + r(K.outs[1]) + ";") + "return acc";
+  else if (K.kind === "each") src = pre + "const " + K.fx.map((e, j) => "h" + j + "=O[" + j + "]").join(",") + ";" + spkLoop(body + g +
+    "if(" + r(K.outs[0]) + "){" + K.fx.map((e, j) => "if(" + r(e.cond) + ")h" + j + "(" + e.args.map(a => typeof a === "string" ? JSON.stringify(a) : r(a)).join(",") + ");").join("") + "}") + "return false";
+  else src = pre + "let m=0;" + (K.outs.length > 1 ? "const " + K.outs.slice(1).map((o, j) => "O" + j + "=O[" + j + "]").join(",") + ";" : "") + spkLoop(body + g + "if(" + r(K.outs[0]) + "){" +
+    K.outs.slice(1).map((o, j) => "O" + j + "[m]=" + (K.kind === "b" ? r(o) + "?1:0" : r(o)) + ";").join("") + (K.kind === "row" ? "kept[m]=i;" : "") + "m++}") + "return m";
   const f = new Function("NOISE", "NOFUSE", "n", "X", "cols", "rs", "C", "O", "kept", src);
   return (K.jsF = (n, X, cols, rs, C, O, kept) => f(NOISE, NOFUSE, n, X, cols, rs, C, O, kept));
 }
+// the loop over the items, written twice: over a list of numbers (X), or over range's own numbers.
+// (One loop asking X ? X[i] : i + 1 each time runs about ten times slower when X is null.)
+const spkLoop = body => "if(X){for(let i=0;i<n;i++){const x=X[i];" + body + "}}else{for(let i=0;i<n;i++){const x=i+1;" + body + "}}";
 // one step of a kernel as a JavaScript expression
 function spkExpr(node, r) {
   const [op, a, b, c, v] = node;
@@ -2560,7 +2578,7 @@ function spkJS(K) {
   const g = K.guards.length ? "if(!(" + K.guards.map(r).join("&&") + "))return false;" : "";
   const st = K.outs.map((o, j) => "O" + j + "[i]=" + (K.kind === "b" ? r(o) + "?1:0" : r(o)) + ";").join("");
   const f = new Function("NOISE", "n", "X", "C", "O", "const " + K.outs.map((o, j) => "O" + j + "=O[" + j + "]").join(",") + ";" + pre +
-    "for(let i=0;i<n;i++){const x=X?X[i]:i+1;" + body + g + st + "}return true");
+    spkLoop(body + g + st) + "return true");
   return (K.jsF = (n, X, C, O) => f(NOISE, n, X, C, O));
 }
 // ---- the kernel as WebAssembly SIMD: two runs per instruction, in f64x2, so every step is the same IEEE double step
@@ -2699,127 +2717,60 @@ function sortF64(src) {
   const out = new Float64Array(n); out.set(new Float64Array(A.buffer, A.byteOffset, m)); out.fill(NaN, m);
   return out;
 }
-// sort: numbers from least to most, or words in order (a library choice, decision 80)
-function sortList(xs) {
-  if (xs instanceof NCell) return new NCell(sortF64(xs.a));
-  if (xs instanceof RCell) return xs;
-  const p = partsOf(xs);
-  if (p.every(v => typeof v === "number")) return new NCell(sortF64(Float64Array.from(p)));
-  if (p.every(v => typeof v === "string")) return VP(p.slice().sort());
-  return LOG_MISS("sort sorts a list of numbers or a list of words");
-}
 
-// ---- prototypes: built-in fields of each kind of value. ar:1 waits for a right side.
-const m0 = fn => ({ ar: 0, fn }), m1 = fn => ({ ar: 1, fn });
-const ALL = {
-  "=": m1(eq), "!=": m1((a, b) => !eq(a, b)), else: m1((a, b) => a === false ? (isCell(b) ? b.run(BANG) : b) : a),
-  print: m0(a => { G.print.fn(a); return a; }), str: m0(a => fmt(a)), with: m1(merge), "..": m1(merge),
-};
-const NUM = Object.assign(Object.create(ALL), {
-  "+": m1((a, b) => a + num(b)), "-": m1((a, b) => a - num(b)), "*": m1((a, b) => a * num(b)), "/": m1((a, b) => a / num(b)),
-  "%": m1((a, b) => ((a % b) + b) % b), "<": m1((a, b) => a < num(b)), ">": m1((a, b) => a > num(b)),
-  "<=": m1((a, b) => a <= num(b)), ">=": m1((a, b) => a >= num(b)),
-  abs: m0(Math.abs), floor: m0(Math.floor), round: m0(Math.round), ceil: m0(Math.ceil), sqrt: m0(Math.sqrt),
-  sin: m0(Math.sin), cos: m0(Math.cos), tan: m0(Math.tan), log: m0(Math.log), neg: m0(a => -a),
-  times: m1(times), min: m1((a, b) => Math.min(a, b)), max: m1((a, b) => Math.max(a, b)),
-});
-function num(b) { if (typeof b !== "number") { LOG_MISS(describe(b) + " isn't a number"); return NaN; } return b; }
-const STRP = Object.assign(Object.create(ALL), {
-  length: m0(LEN), "@": m1(PART), "<": m1((a, b) => a < b), ">": m1((a, b) => a > b),
-  upper: m0(a => a.toUpperCase()), lower: m0(a => a.toLowerCase()),
-});
-const BOOL = Object.assign(Object.create(ALL), {
-  not: m0(a => !a), and: m1((a, b) => a && b === true), or: m1((a, b) => a || b === true),
-});
-const CELLP = Object.assign(Object.create(ALL), {
-  "@": m1(PART), length: m0(LEN), first: m0(a => a.part(1)), last: m0(a => a.part(a.count())),
-  collect: m1(collect), keep: m1(keep), each: m1(each), fold: m1(fold), spork: m1(spork), sort: m0(sortList),
-});
-const NONE_P = ALL;
-function protoOf(r) {
-  switch (typeof r) {
-    case "number": return NUM; case "string": return STRP; case "boolean": return BOOL;
+
+// ===================================================================== plugging into the compiler
+// a cell that spork is given, by name or written in place: worked out now into one kernel (decision 91)
+function sporkCell(gen, c) {
+  if (!(c.sporkArg || (c.bindName && gen.sporkNames && gen.sporkNames.has(c.bindName)))) return null;
+  const P = new Spk(gen);
+  let code = null;
+  try { code = P.build(c); } catch (e) { if (e !== SPKFAIL) throw e; }
+  const ok = code ? true : P.why || "it can't be worked out ahead";
+  c.sporkWhy = ok;
+  if (c.bindName) (gen.sporkWhy || (gen.sporkWhy = new Map())).set(c.bindName, ok);
+  if (!code) return null;
+  // the loops inside it were unrolled when it was worked out, so their speed notes don't apply
+  const span = lineSpan(c); gen.speed = gen.speed.filter(x => x.line < span[0] || x.line > span[1]);
+  const name = "SK" + gen.consts.length;
+  gen.consts.push("const " + name + "=" + code + ";");
+  return "{s:{k:" + name + ",caps:()=>[" + P.caps.join(",") + "]}}";
+}
+// spork's speed note: given a name or a cell written in place
+function sporkNote(gen, T, i) {
+  const pw = T[i - 1], t = T[i];
+  if (!pw || pw.k !== "word" || pw.v !== "spork") return;
+  const r = t.k === "word" && gen.sporkWhy ? gen.sporkWhy.get(t.v) : t.k === "cell" ? t.sporkWhy : undefined;
+  if (r !== undefined) gen.speed.push({ line: pw.line || 0, word: "spork", fast: r === true, why: r === true ? "" : r });
+}
+function prescan(gen, ast) { gen.sporkNames = sporkTargets(ast); }
+// the fused loop, tried first; the steps as written are the way back when it can't run (NOFUSE)
+function fuseWrap(gen, seg, ordinary) {
+  const P = new Spk(gen), K = {}, why = {};
+  for (const item of ["num", "row"]) {
+    try { K[item] = P.buildPipe(seg.stages, item); } catch (e) { if (e !== SPKFAIL) throw e; K[item] = null; why[item] = P.why; }
   }
-  if (r instanceof Cell || r instanceof VCell) return CELLP;
-  return NONE_P;
-}
-
-// ---- globals: names every file can use. Host words are added by the host.
-function args(a, n) { if (isCell(a)) { const o = new Array(n); for (let i = 0; i < n; i++) o[i] = a.part(i + 1); return o; } return [a]; }
-const G = Object.create(null);
-function defNative(name, fn, effect) { G[name] = new Native(name, fn, effect); }
-G.any = ANY;
-defNative("range", n => new RCell(Math.max(0, Math.floor(num(n)))));
-defNative("rand", a => { const [lo, hi] = args(a, 2); return lo + RNG() * (hi - lo); });
-defNative("dist", a => { const [x1, y1, x2, y2] = args(a, 4); return Math.hypot(x2 - x1, y2 - y1); });
-defNative("clamp", a => { const [v, lo, hi] = args(a, 3); return v < lo ? lo : v > hi ? hi : v; });
-defNative("toward", a => { const [x, y, t] = args(a, 3); return x + (y - x) * t; });
-defNative("print", a => { effect(() => OUT(fmt(a))); return a; }, true);
-// noise [sample, id]: a number from 0 up to 1 that is always the same for the same two inputs (decision 87)
-defNative("noise", a => { const [x, y] = args(a, 2); return NOISE(num(x), num(y)); });
-Object.defineProperty(G, "random", { get: () => RNG(), enumerable: true });
-let RNG = Math.random, OUT = s => { if (typeof console !== "undefined") console.log(s); };
-
-// ===================================================================== prelude, written in Sprout (decisions 30, 34, 35, 50)
-const PRELUDE = `
-match : [v cases |
-  find : [n | n > (cases length) [0] else [(cases @ n) = any or ((cases @ n) = v) [n] else [find (n + 2)]]]
-  k : find 1
-  k > 0 [cases @ (k + 1)] else [false]
-]
-cond : [cases |
-  find : [n | n > (cases length) [0] else [(cases @ n) = any or ((cases @ n) = true) [n] else [find (n + 2)]]]
-  k : find 1
-  k > 0 [cases @ (k + 1)] else [false]
-]
-take : [xs n | range (n min (xs length)) collect [k | xs @ k]]
-rgb : [r g b | "rgb(" .. r .. "," .. g .. "," .. b .. ")"]
-rgba : [r g b a | "rgba(" .. r .. "," .. g .. "," .. b .. "," .. a .. ")"]
-every : [secs now dt | now / secs floor > (now - dt / secs floor)]
-wave : [secs now | now / secs * 6.283185307179586 sin]
-fresh-input : [touching : false, tapped : false, touch-x : 0, touch-y : 0, held : []]
-frame : [update |
-  [s e |
-    i : s input else fresh-input
-    match [e kind, [
-      "down", s with [input : i with [touching : true, tapped : true, touch-x : e x, touch-y : e y]]
-      "move", s with [input : i with [touch-x : e x, touch-y : e y]]
-      "up", s with [input : i with [touching : false]]
-      "tick", update (s with [dt : e dt, clock : e clock, input : i with [held : e held]]) with [input : i with [tapped : false, held : e held]]
-      any, s
-    ]]
-  ]
-]
-`;
-
-// ===================================================================== build
-const RT = { BANG, ANY, G, S: null, MK, SW, SEND, RUNC, STR, UNKNOWN, LOG_MISS, WITHF,
-  ADD, SUB, MUL, DIV, MOD, LT, GT, LE, GE, EQ, NE, CAT, WITH, AT, VC, VP, ISBOOL, MISSING, TAIL, SWI, shapeFor, COLC, NCOL, NATIVE: Native, NOISE, FUSE, NOFUSE };
-let preludeCell = null;
-function globalNames(extra) { const s = new Set(Object.keys(G)); if (extra) for (const k of extra) s.add(k); return s; }
-
-function load(src, opts) {
-  opts = opts || {};
-  const host = opts.host || {};
-  for (const k in host) G[k] = host[k];
-  if (!preludeCell && !opts.noPrelude) {
-    preludeCell = load(PRELUDE, { noPrelude: true });
-    for (const k of preludeCell.fieldNames()) { const kk = k; Object.defineProperty(G, kk, { get: () => preludeCell.field(kk), enumerable: true, configurable: true }); }
+  const words = seg.stages.map(st => st.w), line = seg.stages[0].line || 0;
+  if (!K.num && !K.row) {
+    gen.speed.push({ line, word: words.join(" "), fast: false, why: why.row || why.num || "it can't be worked out ahead" });
+    return "(" + seg.ta + "=" + seg.src + "," + ordinary + ")";
   }
-  const { js, shapes, prologue, speed } = compile(src, globalNames());
-  const names = Object.keys(RT).filter(k => k !== "S");
-  const f = new Function(...names, "S", prologue + "\nreturn " + js + "\n//# sourceURL=sprout.js");
-  const cell = f(...names.map(k => RT[k]), shapes);
-  cell.js = js; cell.speed = speed;
-  return cell;
+  const name = "FK" + gen.consts.length, tf = gen.tmp();
+  gen.consts.push("const " + name + "={num:" + (K.num || "null") + ",row:" + (K.row || "null") + "};");
+  gen.speed.push({ line, word: words.join(" "), fast: true, why: "" });
+  return "((" + tf + "=FUSE((" + seg.ta + "=" + seg.src + ")," + name + "," + (P.caps.length ? "()=>[" + P.caps.join(",") + "]" : "null") + "))!==NOFUSE?" + tf + ":" + ordinary + ")";
 }
 
-const api = { tokenize, parse, compile, load, fmt, eq, merge, isCell, Cell, VCell, Native, G, BANG, ANY, SproutError, PRELUDE,
-  ColCell, NCell, columns: on => { COLMIN = on ? 32 : Infinity; },
-  // spork: how the last one ran, and the ways it can run (decision 91)
-  get sporkInfo() { return SPORK.info; }, sporkTally: reset => { const t = SPORK.tally; if (reset) SPORK.tally = []; return t; }, sporkWays: w => { if (SPORK.wasm === undefined) SPORK.wasm = wasmSpork(); Object.assign(SPORK, w); return SPORK; },
-  setLog: f => { LOG = f; }, setOut: f => { OUT = f; }, setRandom: f => { RNG = f; }, defNative, partsOf, fieldsOf, UNSET, VFM, effect, queueEffects, runEffects, dropEffects };
-if (typeof module !== "undefined") module.exports = api; else root.Sprout3 = api;
+S.install({
+  cell: sporkCell, note: sporkNote, prescan, fuse: { find: fuseSegment, wrap: fuseWrap },
+  spork, sortNumbers: sortF64, runtime: { FUSE, NOFUSE },
+});
+// spork's API: how the last one ran, and the ways it can run (decision 91); the GPU plugs in here (decision 93)
+Object.defineProperty(S, "sporkInfo", { get: () => SPORK.info, configurable: true });
+S.sporkTally = reset => { const t = SPORK.tally; if (reset) SPORK.tally = []; return t; };
+S.sporkWays = w => { if (SPORK.wasm === undefined) SPORK.wasm = wasmSpork(); Object.assign(SPORK, w); return SPORK; };
+S.kernels = { Spk, spkJS, spkWasmBytes, fuseJS };
+if (typeof module !== "undefined") module.exports = S.kernels;
 })(typeof window !== "undefined" ? window : globalThis);
 ````
 
@@ -3430,7 +3381,7 @@ ok("84 match only works out the answer it picks", val('match [1, [1, "one", 2, n
 { const sp = S.load("xs : []\nf : [p | p x > 1]\na : xs collect [p | p with [x : p x + 1]]\nb : xs keep [p | p x > 1]\nc : xs keep [p | f p]\nd : xs collect [p | p with [x : rand [0, 1]]]\ne : xs keep [p | p name = \"a\"]").speed;
   const at = l => sp.find(n => n.line === l);
   ok("86 speed notes: a with of number maths runs over columns", at(3).fast && at(3).word === "collect" && at(4).fast && at(4).word === "keep");
-  ok("86 speed notes: say why a body runs item by item", at(5).fast && /calls something/.test(at(6).why) && !at(6).fast, sp.map(n => n.line + " " + n.why)); }
+  ok("86 speed notes: say why a body runs item by item", at(5).fast && /random/.test(at(6).why) && !at(6).fast, sp.map(n => n.line + " " + n.why)); }
 // loop fusion (decision 95): a run of collect, keep, fold and length is one loop, with the same answer as the steps one by one
 { const both = src => { const a = S.fmt(S.load(src).field("result")); S.columns(false); const b = S.fmt(S.load(src).field("result")); S.columns(true); return [a, b]; };
   const fused = {
@@ -3449,6 +3400,24 @@ ok("84 match only works out the answer it picks", val('match [1, [1, "one", 2, n
   // anything the loop can't do runs as written: words in the list, a position outside a list
   for (const src of ['result : ["a", "b", "c"] collect [w | w .. "!"] keep [w | w != "b!"]', "w : [3, 1, 4]\nresult : range 9 collect [n | (w @ n) else [0]] keep [n | n > 0]", "result : [] collect [n | n + 1] fold [5, [t n | t + n]]"]) {
     const [a, b] = both(src); ok("95 fusion: falls back the same: " + src.slice(0, 40), a === b, [a, b]); }
+  // library cells (decision 97) inline: clamp, toward and dist are prelude cells now, and cond picks its answer per item
+  for (const src of ["result : range 200 collect [n | clamp [n * 3, 50, 400] + (toward [0, 10, n / 200]) + (dist [0, 0, n, 7])]",
+      "result : range 120 collect [n | cond [n < 30, n * 2, n < 60, 0 - n, any, n / 4]] fold [0, [t x | t + x]]",
+      "result : range 90 collect [n | match [n % 3, [0, 10, 1, 20, any, 30]]] keep [x | x > 15] length"]) {
+    const [a, b] = both(src); ok("97 fusion: library cells inline: " + src.slice(9, 40), a === b && a !== "false" && S.load(src).speed.every(x => x.fast), [a.slice(0, 50), b.slice(0, 50)]); }
+  // each with a host word ends a fused run: the same calls, in the same order
+  { const calls = [], host = { dot: new S.Native("dot", a => { calls.push(S.fmt(a)); return false; }, true) };
+    host.dot.direct = (x, y, c) => { calls.push("[" + S.fmt(x) + ", " + S.fmt(y) + ", " + c + "]"); return false; };
+    const src = "rs : range 50 collect [n | [x : n, y : n * 2]]\nresult : rs keep [r | r x % 3 = 0] each [r | r x > 20 [dot [r x, r y, \"red\"]] else [dot [r y, r x, \"blue\"]]]";
+    const run = () => { calls.length = 0; S.load(src, { host }).field("result"); return calls.slice(); };
+    logs.length = 0;
+    const a = run(), notes = S.load(src, { host }).speed; S.columns(false); const b = run(); S.columns(true);
+    // dot gives false, so past x 20 the else draws too (decision 74), fused or not; and the lint says so
+    ok("95 fusion: each with host words, the same calls in the same order", a.length === 26 && JSON.stringify(a) === JSON.stringify(b) && notes.some(x => x.word === "keep each" && x.fast), [a.slice(0, 3), b.slice(0, 3), notes]);
+    ok("74: a branch that ends with a host word before else is named", logs.some(l => /ends with dot, which gives false/.test(l)), logs); logs.length = 0; }
+  ok("97 the moved built-ins: rand, clamp, toward and dist give what they gave", (() => {
+    const c = S.load("a : clamp [5, 0, 3]\nb : clamp [-1, 0, 3]\nc : toward [10, 20, 0.25]\nd : dist [0, 0, 3, 4]\ne : rand [10, 20]");
+    const e = c.field("e"); return c.field("a") === 3 && c.field("b") === 0 && c.field("c") === 12.5 && c.field("d") === 5 && e >= 10 && e < 20; })());
   const notes = S.load("result : range 9 collect [n | n * 2] keep [n | n > 4] fold [0, [t n | t + n]]").speed;
   ok("95 fusion: one speed note for the run", notes.length === 1 && notes[0].word === "collect keep fold" && notes[0].fast, notes); }
 { const n1 = +val("noise [3, 7]"), n2 = +val("noise [3, 7]"), n3 = +val("noise [3, 8]");
@@ -6023,14 +5992,15 @@ body.t-out #out{display:block}body.t-st #st{display:block}
 <div id="modal"><div id="mBox"><div class="mh"><h2 id="mTitle"></h2><button class="x" data-close aria-label="Close">✕</button></div><div id="mBody"></div></div></div>
 <div id="toast"></div><div id="scrubTip"></div>
 
-<script src="sprout3.js?v=20261120h"></script>
-<script src="live3.js?v=20261120h"></script>
-<script src="sqlite-web.js?v=20261120h"></script>
-<script src="gpu-paint.js?v=20261120h"></script>
-<script src="gpu-spork.js?v=20261120h"></script>
+<script src="sprout3.js?v=20261120i"></script>
+<script src="kernels.js?v=20261120i"></script>
+<script src="live3.js?v=20261120i"></script>
+<script src="sqlite-web.js?v=20261120i"></script>
+<script src="gpu-paint.js?v=20261120i"></script>
+<script src="gpu-spork.js?v=20261120i"></script>
 <script>
 "use strict";
-const V="20261120h";
+const V="20261120i";
 const $=id=>document.getElementById(id);
 const S=window.Sprout3,L=window.Sprout3Live;
 const GW=360,GH=480;
@@ -6508,7 +6478,7 @@ tr:last-child td{border-bottom:0}
 <div class="note" id="gpu-note"></div></div>
 
 <h2>Monte Carlo with spork</h2>
-<p>The run from <code>ace-risk.sp</code>: every duration sampled, every risk rolled, and the graph walked five times. spork works it out ahead into one kernel of number maths (decision 91). The ordinary way is <code>collect</code>, timed on 20,000 runs and scaled. SIMD is WebAssembly, two runs per instruction, with the same bits as JavaScript; the GPU does 32-bit maths, and its time includes sending the work and reading the answers back.</p>
+<p>The run from <code>ace-risk.sp</code>: every duration sampled, every risk rolled, and the graph walked five times. spork works it out ahead into one kernel of number maths (decision 91). The ordinary way is <code>collect</code> with every fast path off (a fused <code>collect</code> is as fast as the JS kernel), timed on 2,000 runs and scaled. SIMD is WebAssembly, two runs per instruction, with the same bits as JavaScript; the GPU does 32-bit maths, and its time includes sending the work and reading the answers back.</p>
 <div class="card"><table id="t-mc"><tr><th>runs</th><th>ordinary</th><th>JS kernel</th><th>SIMD</th><th>WebGPU</th><th>GPU vs SIMD</th></tr></table>
 <div class="note" id="mc-note"></div></div>
 
@@ -6517,11 +6487,12 @@ tr:last-child td{border-bottom:0}
 <div class="card"><table id="t-sql"><tr><th>work</th><th>ms</th><th>rows</th></tr></table></div>
 </main>
 
-<script src="sprout3.js?v=20261120h"></script>
-<script src="live3.js?v=20261120h"></script>
-<script src="gpu-paint.js?v=20261120h"></script>
-<script src="sqlite-web.js?v=20261120h"></script>
-<script src="gpu-spork.js?v=20261120h"></script>
+<script src="sprout3.js?v=20261120i"></script>
+<script src="kernels.js?v=20261120i"></script>
+<script src="live3.js?v=20261120i"></script>
+<script src="gpu-paint.js?v=20261120i"></script>
+<script src="sqlite-web.js?v=20261120i"></script>
+<script src="gpu-spork.js?v=20261120i"></script>
 <script>
 "use strict";
 const $=id=>document.getElementById(id),S=window.Sprout3,L=window.Sprout3Live;
@@ -6550,7 +6521,7 @@ async function benchLang(){
 const GAMES=["sprout","fireflies","orbit","hop","life","bounce","snake","breakout","particles","ace-board","ace-site","ace-crews"];
 async function benchGames(){
  for(const name of GAMES){status("games: "+name);await sleep(10);
-  const src=await (await fetch("examples/"+name+".sp?v=20261120h")).text();const g=L.makeGame(src,{W:GW,H:GH});
+  const src=await (await fetch("examples/"+name+".sp?v=20261120i")).text();const g=L.makeGame(src,{W:GW,H:GH});
   const play=n=>{for(let t=0;t<n;t++){if(t%50===0)g.down(100+(t%160),300);if(t%50===25)g.up();g.tick(1/60);g.draw()}};
   play(240);const [t]=best(()=>play(120),5);row("t-games",[name,ms(t/120),String(g.draw().length)])}}
 
@@ -6582,7 +6553,7 @@ async function benchParticles(){
 // ---------- SQLite
 async function benchSql(){
  status("SQLite: loading");
- await new Promise((ok,no)=>{const s=document.createElement("script");s.src="vendor/sqljs/sql-wasm.js?v=20261120h";s.onload=ok;s.onerror=no;document.head.appendChild(s)});
+ await new Promise((ok,no)=>{const s=document.createElement("script");s.src="vendor/sqljs/sql-wasm.js?v=20261120i";s.onload=ok;s.onerror=no;document.head.appendChild(s)});
  const db=await SproutSqlite.openSqlite({base:"vendor/sqljs/",name:"sprout3-bench",fresh:true});S.G.db=db;const raw=db.raw();
  const N=10000;
  const [ti]=best(()=>{raw.run("drop table if exists t");raw.run("create table t (id integer primary key, zone integer, hours real, name text)");raw.run("begin");
@@ -6601,14 +6572,14 @@ async function benchSql(){
 
 // ---------- Monte Carlo: the ace-risk run, five ways
 async function benchMonteCarlo(){
- const src=(await (await fetch("examples/ace-risk.sp?v=20261120h")).text()).split("\nresults :")[0];
+ const src=(await (await fetch("examples/ace-risk.sp?v=20261120i")).text()).split("\nresults :")[0];
  const c=S.load(src+"\nA : [k | range k spork one-run]\nB : [k | range k collect one-run]"),A=c.field("A"),B=c.field("B");
  // the kernel itself, to hand straight to the GPU
  let K=null;S.sporkWays({gpu:k=>{K=k;return undefined}});A.run(16);S.sporkWays({gpu:null});
  let gs=null,why="";try{gs=await SproutGpuSpork.makeGpuSpork()}catch(e){why=e.message||String(e)}
  $("mc-note").textContent=(K?"One run is "+K.nodes.length+" steps. ":"")+(gs?"WebGPU: "+gs.adapter+".":"WebGPU isn't available here"+(why?" ("+why+")":"")+", so the GPU isn't timed.");
  status("monte carlo: ordinary");await sleep(10);
- const [to]=best(()=>B.run(20000),1);
+ S.columns(false);const [to]=best(()=>B.run(2000),1);S.columns(true);
  const W=S.sporkWays({}).wasm;
  for(const n of [100000,1000000,4000000]){status("monte carlo: "+n.toLocaleString());await sleep(10);
   S.sporkWays({wasm:null});const [tj]=best(()=>A.run(n),n>1e6?1:3);
@@ -6619,7 +6590,7 @@ async function benchMonteCarlo(){
    let off=0;const a=simd.cols[0],g=O[0];for(let i=0;i<n;i++)if(Math.abs(a[i]-g[i])>0.01)off++;
    const sa=Float64Array.from(a).sort(),sg=Float64Array.from(g).sort(),q=p=>Math.abs(sa[Math.floor(p*n)]-sg[Math.floor(p*n)]);
    gap=off+(off===1?" run differs":" runs differ")+"; P50 within "+q(0.5).toExponential(0)+", P90 within "+q(0.9).toExponential(0)+" days"}catch(e){gap=e.message||String(e)}}
-  row("t-mc",[n.toLocaleString(),ms(to*n/20000)+" (scaled)",ms(tj),ms(ts),isNaN(tg)?"—":ms(tg),gap])}}
+  row("t-mc",[n.toLocaleString(),ms(to*n/2000)+" (scaled)",ms(tj),ms(ts),isNaN(tg)?"—":ms(tg),gap])}}
 
 $("run").onclick=async()=>{$("run").disabled=true;RESULTS.length=0;
  for(const t of ["t-lang","t-games","t-parts","t-mc","t-sql"])while($(t).rows.length>1)$(t).deleteRow(1);

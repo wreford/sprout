@@ -53,7 +53,7 @@ tr:last-child td{border-bottom:0}
 <div class="note" id="gpu-note"></div></div>
 
 <h2>Monte Carlo with spork</h2>
-<p>The run from <code>ace-risk.sp</code>: every duration sampled, every risk rolled, and the graph walked five times. spork works it out ahead into one kernel of number maths (decision 91). The ordinary way is <code>collect</code>, timed on 20,000 runs and scaled. SIMD is WebAssembly, two runs per instruction, with the same bits as JavaScript; the GPU does 32-bit maths, and its time includes sending the work and reading the answers back.</p>
+<p>The run from <code>ace-risk.sp</code>: every duration sampled, every risk rolled, and the graph walked five times. spork works it out ahead into one kernel of number maths (decision 91). The ordinary way is <code>collect</code> with every fast path off (a fused <code>collect</code> is as fast as the JS kernel), timed on 2,000 runs and scaled. SIMD is WebAssembly, two runs per instruction, with the same bits as JavaScript; the GPU does 32-bit maths, and its time includes sending the work and reading the answers back.</p>
 <div class="card"><table id="t-mc"><tr><th>runs</th><th>ordinary</th><th>JS kernel</th><th>SIMD</th><th>WebGPU</th><th>GPU vs SIMD</th></tr></table>
 <div class="note" id="mc-note"></div></div>
 
@@ -62,11 +62,12 @@ tr:last-child td{border-bottom:0}
 <div class="card"><table id="t-sql"><tr><th>work</th><th>ms</th><th>rows</th></tr></table></div>
 </main>
 
-<script src="sprout3.js?v=20261120h"></script>
-<script src="live3.js?v=20261120h"></script>
-<script src="gpu-paint.js?v=20261120h"></script>
-<script src="sqlite-web.js?v=20261120h"></script>
-<script src="gpu-spork.js?v=20261120h"></script>
+<script src="sprout3.js?v=20261120i"></script>
+<script src="kernels.js?v=20261120i"></script>
+<script src="live3.js?v=20261120i"></script>
+<script src="gpu-paint.js?v=20261120i"></script>
+<script src="sqlite-web.js?v=20261120i"></script>
+<script src="gpu-spork.js?v=20261120i"></script>
 <script>
 "use strict";
 const $=id=>document.getElementById(id),S=window.Sprout3,L=window.Sprout3Live;
@@ -95,7 +96,7 @@ async function benchLang(){
 const GAMES=["sprout","fireflies","orbit","hop","life","bounce","snake","breakout","particles","ace-board","ace-site","ace-crews"];
 async function benchGames(){
  for(const name of GAMES){status("games: "+name);await sleep(10);
-  const src=await (await fetch("examples/"+name+".sp?v=20261120h")).text();const g=L.makeGame(src,{W:GW,H:GH});
+  const src=await (await fetch("examples/"+name+".sp?v=20261120i")).text();const g=L.makeGame(src,{W:GW,H:GH});
   const play=n=>{for(let t=0;t<n;t++){if(t%50===0)g.down(100+(t%160),300);if(t%50===25)g.up();g.tick(1/60);g.draw()}};
   play(240);const [t]=best(()=>play(120),5);row("t-games",[name,ms(t/120),String(g.draw().length)])}}
 
@@ -127,7 +128,7 @@ async function benchParticles(){
 // ---------- SQLite
 async function benchSql(){
  status("SQLite: loading");
- await new Promise((ok,no)=>{const s=document.createElement("script");s.src="vendor/sqljs/sql-wasm.js?v=20261120h";s.onload=ok;s.onerror=no;document.head.appendChild(s)});
+ await new Promise((ok,no)=>{const s=document.createElement("script");s.src="vendor/sqljs/sql-wasm.js?v=20261120i";s.onload=ok;s.onerror=no;document.head.appendChild(s)});
  const db=await SproutSqlite.openSqlite({base:"vendor/sqljs/",name:"sprout3-bench",fresh:true});S.G.db=db;const raw=db.raw();
  const N=10000;
  const [ti]=best(()=>{raw.run("drop table if exists t");raw.run("create table t (id integer primary key, zone integer, hours real, name text)");raw.run("begin");
@@ -146,14 +147,14 @@ async function benchSql(){
 
 // ---------- Monte Carlo: the ace-risk run, five ways
 async function benchMonteCarlo(){
- const src=(await (await fetch("examples/ace-risk.sp?v=20261120h")).text()).split("\nresults :")[0];
+ const src=(await (await fetch("examples/ace-risk.sp?v=20261120i")).text()).split("\nresults :")[0];
  const c=S.load(src+"\nA : [k | range k spork one-run]\nB : [k | range k collect one-run]"),A=c.field("A"),B=c.field("B");
  // the kernel itself, to hand straight to the GPU
  let K=null;S.sporkWays({gpu:k=>{K=k;return undefined}});A.run(16);S.sporkWays({gpu:null});
  let gs=null,why="";try{gs=await SproutGpuSpork.makeGpuSpork()}catch(e){why=e.message||String(e)}
  $("mc-note").textContent=(K?"One run is "+K.nodes.length+" steps. ":"")+(gs?"WebGPU: "+gs.adapter+".":"WebGPU isn't available here"+(why?" ("+why+")":"")+", so the GPU isn't timed.");
  status("monte carlo: ordinary");await sleep(10);
- const [to]=best(()=>B.run(20000),1);
+ S.columns(false);const [to]=best(()=>B.run(2000),1);S.columns(true);
  const W=S.sporkWays({}).wasm;
  for(const n of [100000,1000000,4000000]){status("monte carlo: "+n.toLocaleString());await sleep(10);
   S.sporkWays({wasm:null});const [tj]=best(()=>A.run(n),n>1e6?1:3);
@@ -164,7 +165,7 @@ async function benchMonteCarlo(){
    let off=0;const a=simd.cols[0],g=O[0];for(let i=0;i<n;i++)if(Math.abs(a[i]-g[i])>0.01)off++;
    const sa=Float64Array.from(a).sort(),sg=Float64Array.from(g).sort(),q=p=>Math.abs(sa[Math.floor(p*n)]-sg[Math.floor(p*n)]);
    gap=off+(off===1?" run differs":" runs differ")+"; P50 within "+q(0.5).toExponential(0)+", P90 within "+q(0.9).toExponential(0)+" days"}catch(e){gap=e.message||String(e)}}
-  row("t-mc",[n.toLocaleString(),ms(to*n/20000)+" (scaled)",ms(tj),ms(ts),isNaN(tg)?"—":ms(tg),gap])}}
+  row("t-mc",[n.toLocaleString(),ms(to*n/2000)+" (scaled)",ms(tj),ms(ts),isNaN(tg)?"—":ms(tg),gap])}}
 
 $("run").onclick=async()=>{$("run").disabled=true;RESULTS.length=0;
  for(const t of ["t-lang","t-games","t-parts","t-mc","t-sql"])while($(t).rows.length>1)$(t).deleteRow(1);

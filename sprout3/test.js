@@ -49,7 +49,7 @@ ok("84 match only works out the answer it picks", val('match [1, [1, "one", 2, n
 { const sp = S.load("xs : []\nf : [p | p x > 1]\na : xs collect [p | p with [x : p x + 1]]\nb : xs keep [p | p x > 1]\nc : xs keep [p | f p]\nd : xs collect [p | p with [x : rand [0, 1]]]\ne : xs keep [p | p name = \"a\"]").speed;
   const at = l => sp.find(n => n.line === l);
   ok("86 speed notes: a with of number maths runs over columns", at(3).fast && at(3).word === "collect" && at(4).fast && at(4).word === "keep");
-  ok("86 speed notes: say why a body runs item by item", at(5).fast && /calls something/.test(at(6).why) && !at(6).fast, sp.map(n => n.line + " " + n.why)); }
+  ok("86 speed notes: say why a body runs item by item", at(5).fast && /random/.test(at(6).why) && !at(6).fast, sp.map(n => n.line + " " + n.why)); }
 // loop fusion (decision 95): a run of collect, keep, fold and length is one loop, with the same answer as the steps one by one
 { const both = src => { const a = S.fmt(S.load(src).field("result")); S.columns(false); const b = S.fmt(S.load(src).field("result")); S.columns(true); return [a, b]; };
   const fused = {
@@ -68,6 +68,24 @@ ok("84 match only works out the answer it picks", val('match [1, [1, "one", 2, n
   // anything the loop can't do runs as written: words in the list, a position outside a list
   for (const src of ['result : ["a", "b", "c"] collect [w | w .. "!"] keep [w | w != "b!"]', "w : [3, 1, 4]\nresult : range 9 collect [n | (w @ n) else [0]] keep [n | n > 0]", "result : [] collect [n | n + 1] fold [5, [t n | t + n]]"]) {
     const [a, b] = both(src); ok("95 fusion: falls back the same: " + src.slice(0, 40), a === b, [a, b]); }
+  // library cells (decision 97) inline: clamp, toward and dist are prelude cells now, and cond picks its answer per item
+  for (const src of ["result : range 200 collect [n | clamp [n * 3, 50, 400] + (toward [0, 10, n / 200]) + (dist [0, 0, n, 7])]",
+      "result : range 120 collect [n | cond [n < 30, n * 2, n < 60, 0 - n, any, n / 4]] fold [0, [t x | t + x]]",
+      "result : range 90 collect [n | match [n % 3, [0, 10, 1, 20, any, 30]]] keep [x | x > 15] length"]) {
+    const [a, b] = both(src); ok("97 fusion: library cells inline: " + src.slice(9, 40), a === b && a !== "false" && S.load(src).speed.every(x => x.fast), [a.slice(0, 50), b.slice(0, 50)]); }
+  // each with a host word ends a fused run: the same calls, in the same order
+  { const calls = [], host = { dot: new S.Native("dot", a => { calls.push(S.fmt(a)); return false; }, true) };
+    host.dot.direct = (x, y, c) => { calls.push("[" + S.fmt(x) + ", " + S.fmt(y) + ", " + c + "]"); return false; };
+    const src = "rs : range 50 collect [n | [x : n, y : n * 2]]\nresult : rs keep [r | r x % 3 = 0] each [r | r x > 20 [dot [r x, r y, \"red\"]] else [dot [r y, r x, \"blue\"]]]";
+    const run = () => { calls.length = 0; S.load(src, { host }).field("result"); return calls.slice(); };
+    logs.length = 0;
+    const a = run(), notes = S.load(src, { host }).speed; S.columns(false); const b = run(); S.columns(true);
+    // dot gives false, so past x 20 the else draws too (decision 74), fused or not; and the lint says so
+    ok("95 fusion: each with host words, the same calls in the same order", a.length === 26 && JSON.stringify(a) === JSON.stringify(b) && notes.some(x => x.word === "keep each" && x.fast), [a.slice(0, 3), b.slice(0, 3), notes]);
+    ok("74: a branch that ends with a host word before else is named", logs.some(l => /ends with dot, which gives false/.test(l)), logs); logs.length = 0; }
+  ok("97 the moved built-ins: rand, clamp, toward and dist give what they gave", (() => {
+    const c = S.load("a : clamp [5, 0, 3]\nb : clamp [-1, 0, 3]\nc : toward [10, 20, 0.25]\nd : dist [0, 0, 3, 4]\ne : rand [10, 20]");
+    const e = c.field("e"); return c.field("a") === 3 && c.field("b") === 0 && c.field("c") === 12.5 && c.field("d") === 5 && e >= 10 && e < 20; })());
   const notes = S.load("result : range 9 collect [n | n * 2] keep [n | n > 4] fold [0, [t n | t + n]]").speed;
   ok("95 fusion: one speed note for the run", notes.length === 1 && notes[0].word === "collect keep fold" && notes[0].fast, notes); }
 { const n1 = +val("noise [3, 7]"), n2 = +val("noise [3, 7]"), n3 = +val("noise [3, 8]");
