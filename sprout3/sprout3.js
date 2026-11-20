@@ -279,6 +279,8 @@ class CodeGen {
       names.set(leaf.name, { type: "js", js });
     });
   }
+  // quoted code is made once, when the program loads, from its syntax tree
+  quotedConstant(term) { const k = "QUOTED_" + this.constants.length; this.constants.push("const " + k + "=quoted(" + JSON.stringify(JSON.stringify(term, (key, value) => COMPILER_NOTE_KEYS.has(key) ? undefined : value)) + ");"); return k; }
   newTemp() { const scope = this.tempScopes[this.tempScopes.length - 1]; const name = "t" + (uniqueNumber++); scope.push(name); return name; }
   withTemps(generate) { this.tempScopes.push([]); const body = generate(); const temps = this.tempScopes.pop(); return { body, decl: temps.length ? "let " + temps.join(",") + ";" : "" }; }
   arrowCode(params, generateBody) { const made = this.withTemps(generateBody); return "(" + params + ")=>" + (made.decl ? "{" + made.decl + "return " + made.body + "}" : made.body); }
@@ -320,14 +322,18 @@ class CodeGen {
     const terms = chain.terms;
     if (!terms.length) return "false";
     if (terms.length === 1 && tail && terms[0].type === "group" && terms[0].items.length === 1 && terms[0].items[0].type === "chain") return this.genChain(terms[0].items[0], true);
-    let code = this.genTerm(terms[0], true), run = null;
-    for (let i = 1; i < terms.length; i++) {
+    // quote [code]: the code itself as a value (decision 102), unless a program names something quote
+    const quoting = terms[0].type === "word" && terms[0].value === "quote" && terms.length > 1 && !this.lookup("quote");
+    let code = quoting ? this.quotedConstant(terms[1]) : this.genTerm(terms[0], true), run = null;
+    for (let i = quoting ? 2 : 1; i < terms.length; i++) {
       // a library may make a run of steps (collect, keep, fold...) into one loop, tried first (loop fusion, decision 95):
       // the steps are written as usual on a temporary, and the library wraps them when the run ends
       if (run && i === run.end) { code = LIBRARIES.fuse.wrap(this, run, code); run = null; }
       if (!run && LIBRARIES.fuse && (run = LIBRARIES.fuse.find(terms, i))) { run.source = code; run.temp = this.newTemp(); code = run.temp; }
       if (LIBRARIES.note) LIBRARIES.note(this, terms, i);
       const term = terms[i], isLast = i === terms.length - 1;
+      // ... quote [code] sends the code as a value, as in eval quote [1 + 2]
+      if (term.type === "word" && term.value === "quote" && i + 1 < terms.length && !this.lookup("quote")) { code = (tail && i + 1 === terms.length - 1 ? "tailSend(" : "send(") + code + "," + this.quotedConstant(terms[++i]) + ")"; continue; }
       if (term.type === "word" && (term.value === "!" || term.value === "true" || term.value === "false")) { code = "send(" + code + "," + (term.value === "!" ? "BANG" : term.value) + ")"; continue; }
       if (term.type === "word") {
         const word = term.value;
@@ -338,7 +344,8 @@ class CodeGen {
             code = "withFields(" + code + ",[" + nextTerm.items.map(x => JSON.stringify(x.name)).join(",") + "],[" + nextTerm.items.map(x => this.genChain(x.value)).join(",") + "]," + this.inlineCache() + ")";
             continue;
           }
-          code = OPERATOR_FUNCTION[word] + "(" + code + "," + this.genTerm(nextTerm, false) + ")"; continue;
+          const quotesRight = nextTerm.type === "word" && nextTerm.value === "quote" && i + 1 < terms.length && !this.lookup("quote");
+          code = OPERATOR_FUNCTION[word] + "(" + code + "," + (quotesRight ? this.quotedConstant(terms[++i]) : this.genTerm(nextTerm, false)) + ")"; continue;
         }
         if (LAZY_OPERATORS.has(word) && i + 1 < terms.length && !this.lookup(word)) {
           // only else gives its right side back as it is; and/or check theirs is true or false, so it can't be a tail call
@@ -1154,7 +1161,8 @@ function unpackOr(value, makeDefault) { return value === false ? makeDefault() :
 function unpackRest(value, position) { return isCell(value) ? makeList(partsOf(value).slice(position - 1)) : makeList([]); }
 // literal(form, text): a literal's value; words.js gives the real one
 const literal = (form, text, line) => logMiss("a " + form + " needs the standard words (words.js)", line);
-const RUNTIME = { unpack, unpackOr, unpackRest, literal, BANG, ANY, GLOBALS, makeCell, sendWord, send, runCell, joinText, unknownWord, logMiss, withFields,
+const quoted = () => logMiss("quote needs the standard words (words.js)");
+const RUNTIME = { quoted, unpack, unpackOr, unpackRest, literal, BANG, ANY, GLOBALS, makeCell, sendWord, send, runCell, joinText, unknownWord, logMiss, withFields,
   ADD, SUB, MUL, DIV, MOD, LT, GT, LE, GE, EQ, NE, concat, withCell, partAt, makeRecord, makeList, requireBool, notUnderstood, tailSend, sendWordCached, shapeFor };
 let preludeCell = null;
 function globalNames(extra) { const names = new Set(Object.keys(GLOBALS)); if (extra) for (const name of extra) names.add(name); return names; }

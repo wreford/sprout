@@ -314,6 +314,93 @@ for (const [kindClass, kind, methods] of [[SproutDate, "date", DATE_METHODS], [S
 S.install({ runtime: { literal } });
 for (const name in makers) S.defNative(name, makers[name]);
 
+// ===================================================================== code as data (decision 102)
+// quote [move 10, turn 90] is the list [move 10, turn 90]: its items are words, numbers, phrases (a chain of terms),
+// bindings, groups and lists. It prints as the code it came from, and eval runs it. Every cell can give its own code.
+class CodeList extends ValueCell {
+  sameAs(b) { return b instanceof CodeList && b.kind === this.kind && sameParts(this, b) && valuesEqual(this.extra, b.extra); }
+  toJSON() { return this.sproutText(); }
+}
+const sameParts = (a, b) => { const pa = partsOf(a), pb = partsOf(b); return pa.length === pb.length && pa.every((v, k) => valuesEqual(v, pb[k])); };
+class Phrase extends CodeList { constructor(parts) { super(parts, NO_FIELDS, EMPTY); this.extra = false; } sproutText() { return this.parts.map(sourceOf).join(" "); } }
+class Group extends CodeList { constructor(parts) { super(parts, NO_FIELDS, EMPTY); this.extra = false; } sproutText() { return "(" + this.parts.map(sourceOf).join(", ") + ")"; } }
+// a block is quoted [ ]: its items, and the names of its inputs (false when it takes none)
+class Block extends CodeList { constructor(parts, inputs) { super(parts, NO_FIELDS, EMPTY); this.extra = inputs; } sproutText() { return "[" + (this.extra ? partsOf(this.extra).map(sourceOf).join(" ") + " | " : "") + this.parts.map(sourceOf).join(", ") + "]"; } }
+class Template extends CodeList { constructor(parts) { super(parts, NO_FIELDS, EMPTY); this.extra = false; } sproutText() { return '"' + this.parts.map(p => typeof p === "string" ? escapeText(p) : "[" + sourceOf(p) + "]").join("") + '"'; } }
+class Binding extends CodeList {
+  constructor(name, value) { super([name, value], NO_FIELDS, EMPTY); this.extra = false; }
+  sproutText() { return sourceOf(this.parts[0]) + " : " + sourceOf(this.parts[1]); }
+}
+const codeMethods = (kind, extra) => Object.assign(Object.create(I.PROTOTYPES.cell), { kind: none(() => kind) }, extra);
+Object.assign(Phrase.prototype, { kind: "phrase", methods: codeMethods("phrase") });
+Object.assign(Group.prototype, { kind: "group", methods: codeMethods("group") });
+Object.assign(Block.prototype, { kind: "block", methods: codeMethods("block", { inputs: none(b => b.extra) }) });
+Object.assign(Template.prototype, { kind: "template", methods: codeMethods("template") });
+Object.assign(Binding.prototype, { kind: "binding", methods: codeMethods("binding", { name: none(b => b.parts[0]), value: none(b => b.parts[1]) }) });
+
+// from the syntax tree to values
+const fromItem = item => item.type === "bind" ? new Binding(item.pattern ? list(item.pattern.map(fromInput)) : wordOf(item.name), fromChain(item.value)) : fromChain(item);
+const fromChain = chain => chain.terms.length === 1 ? fromTerm(chain.terms[0]) : new Phrase(chain.terms.map(fromTerm));
+const fromInput = input => input.pattern ? list(input.pattern.map(fromInput)) : input.rest ? wordOf(".." + input.name) : input.defaultValue ? new Binding(wordOf(input.name), fromTerm(input.defaultValue)) : wordOf(input.name);
+function fromTerm(term) {
+  switch (term.type) {
+    case "num": return term.value;
+    case "str": return term.value;
+    case "word": return term.value === "true" ? true : term.value === "false" ? false : wordOf(term.value);
+    case "literal": return literal(term.form, term.text, term.line);
+    case "group": return new Group(term.items.map(fromItem));
+    case "cell": return new Block(term.items.map(fromItem), term.names.length ? list(term.names.map(fromInput)) : false);
+    case "chain": return fromChain(term);
+    case "tmpl": return new Template(term.parts.map(p => typeof p === "string" ? p : fromChain(p.ast)));
+  }
+  return logMiss("quote can't hold a " + term.type);
+}
+const quoted = json => fromTerm(JSON.parse(json));
+
+// from values back to code
+const escapeText = t => t.replace(/[\\"\[]/g, c => "\\" + c).replace(/\n/g, "\\n").replace(/\t/g, "\\t");
+function sourceOf(v) {
+  if (v === true || v === false) return String(v);
+  if (typeof v === "number") return Number.isFinite(v) ? formatValue(v) : "(0 / 0)";
+  if (typeof v === "string") return '"' + escapeText(v) + '"';
+  if (v instanceof Money) return (v.cents < 0 ? "-" : "") + "$" + Math.floor(Math.abs(v.cents) / 100) + "." + pad2(Math.abs(v.cents) % 100);
+  if (v instanceof Kind || v instanceof CodeList) return v.sproutText();
+  if (v instanceof Endless) return logMiss("an endless list has no code") || "false";
+  if (v instanceof I.Native) return v.name;
+  if (v instanceof I.Cell && v.takesInput()) return sourceOf(codeOf(v));
+  if (isCell(v)) { const pieces = v.fieldNames().map(k => k + " : " + sourceOf(v.field(k))).concat(partsOf(v).map(sourceOf)); return "[" + pieces.join(", ") + "]"; }
+  return formatValue(v);
+}
+// a cell's own code, as quote would give it
+const codeOf = cell => cell instanceof I.Cell && cell.shape && cell.shape.src ? fromTerm(JSON.parse(cell.shape.src)) : cell;
+// eval: a list of items runs as a program and gives its last value; anything else is one item
+const compiled = new Map();
+// (a block that takes no input, or a plain list, is a program; a block with inputs gives back a cell)
+const programSource = v => typeof v === "string" ? v : (v instanceof Block && !v.extra) || (isCell(v) && !(v instanceof CodeList) && !v.fieldNames().length) ? partsOf(v).map(sourceOf).join("\n") : sourceOf(v);
+const short = src => src.length > 60 ? src.slice(0, 60) + "..." : src;
+function evaluate(v) {
+  const src = programSource(v);
+  let program = compiled.get(src);
+  if (!program) { try { program = S.load(src); } catch (e) { return logMiss("eval: " + e.message + " in " + short(src)); } compiled.set(src, program); if (compiled.size > 200) compiled.delete(compiled.keys().next().value); }
+  return program.run(BANG);
+}
+// eval-with [names, code]: the fields of names can be used in the code, as if they were written above it
+function evaluateWith(argument) {
+  const [names, v] = argumentsOf(argument, 2), src = programSource(v), globals = S.globals, saved = new Map();
+  if (!isCell(names)) return notUnderstood(names, "eval-with");
+  // the names are there while the code loads: it reads them then, as it reads any host word
+  for (const key of names.fieldNames()) { saved.set(key, Object.getOwnPropertyDescriptor(globals, key)); Object.defineProperty(globals, key, { value: names.field(key), enumerable: true, configurable: true, writable: true }); }
+  let program;
+  try { program = S.load(src); } catch (e) { program = null; logMiss("eval-with: " + e.message + " in " + short(src)); }
+  finally { for (const [key, descriptor] of saved) { if (descriptor) Object.defineProperty(globals, key, descriptor); else delete globals[key]; } }
+  return program ? program.run(BANG) : false;
+}
+S.install({ runtime: { quoted }, methods: { cell: { code: none(codeOf) }, every: { source: none(sourceOf) } } });
+S.defNative("eval", evaluate);
+S.defNative("eval-with", evaluateWith);
+// phrase [items]: a chain of terms, to build code with
+S.defNative("phrase", xs => new Phrase(isCell(xs) ? partsOf(xs) : [xs]));
+
 // ===================================================================== globals
 const define = (name, fn) => S.defNative(name, fn);
 // iterate [start, step]: start, then step of it, then step of that, without end
@@ -324,5 +411,5 @@ define("cycle", xs => { const parts = isCell(xs) ? partsOf(xs) : [xs]; let k = 0
 define("char", n => typeof n === "number" ? String.fromCodePoint(n) : notUnderstood(n, "char"));
 S.globals.pi = Math.PI;
 
-S.words = { Endless, endlessFrom, kindOf, literal, wordOf, Word, SproutDate, SproutTime, Money, Pair, Url, Email, Colour, argumentsOf, list, record, truthy };
+S.words = { Phrase, Group, Block, Template, Binding, sourceOf, codeOf, evaluate, Endless, endlessFrom, kindOf, literal, wordOf, Word, SproutDate, SproutTime, Money, Pair, Url, Email, Colour, argumentsOf, list, record, truthy };
 })(typeof window !== "undefined" ? window : globalThis);

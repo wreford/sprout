@@ -310,5 +310,20 @@ ok("hot-swap takes a changed start value", g.state.field("height") === 99);
   for (const [src, want] of W) { const got = val(src); ok("101 " + src + " gives " + want, got === want); if (got !== want) console.log("   got", got); }
 }
 
+// ---------------- code as data (decision 102)
+{
+  const W = [
+    ["quote [move 10, turn 90]", "[move 10, turn 90]"], ["quote [move 10, turn 90] length", "2"], ["quote [move 10] @ 1 kind", "phrase"],
+    ["quote [move 10] @ 1 @ 1 = 'move", "true"], ["[n | n * 2] code", "[n | n * 2]"], ["[n | n * 2] code inputs", "[n]"],
+    ["eval quote [1 + 2, 3 * 4]", "12"], ["eval quote [x : 5, x * x]", "25"], ["(eval quote [n | n * n]) 7", "49"],
+    ["eval-with [[double : [n | n * 2]], phrase ['double, 21]]", "42"], ["quote [a, b] = quote [a, b]", "true"], ["quote [a, b] = quote [a, c]", "false"],
+    ["quote [x : \"hi [name]\", 2026-11-20 + 1, $1234.50, (1 + 2)]", "[x : \"hi [name]\", 2026-11-20 + 1, $1234.50, (1 + 2)]"],
+    ["quote [move 10, turn 90, move 5] fold [[x : 0, h : 0], [s [c, n] | match [c, ['move, s with [x : s x + n], 'turn, s with [h : s h + n], any, s]]]]", "[x : 15, h : 90]"],
+    ["[a : 1, b : \"two\"] source", "[a : 1, b : \"two\"]"], ["eval ([a : 1, b : \"two\"] source)", "[a : 1, b : two]"],
+  ];
+  for (const [src, want] of W) { const got = val(src); ok("102 " + src + " gives " + want, got === want); if (got !== want) console.log("   got", got); }
+  ok("102 a program can still name something quote", val("([quote : [x | x + 1]], 1) @ 1") !== "" && S.format(S.load("quote : [x | x + 1]\nresult : quote 4").field("result")) === "5");
+}
+
 console.log(pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

@@ -9,14 +9,14 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 **Run it (Node 22 or later):**
 
 ```
-node test.js          # language tests (213)
+node test.js          # language tests (230)
 node game-tests.js    # game tests (82)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 295 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 312 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -729,6 +729,7 @@ These are marked in `sprout2.js` with "Sprout Live fix N" or "Sprout Live additi
 99. **The standard words (built; library, decision 80, from Troy's ask on 20 Nov to make Sprout better than Clojure at Clojure and Lua at Lua).** `words.js` adds methods to the core's prototypes through a new `methods` hook, and is always loaded after `sprout3.js`. Lists get Clojure's sequence words: `reverse`, `distinct`, `sum`, `product`, `mean`, `largest`, `smallest`, `flatten`, `second`, `rest`, `all-but-last`, `take`, `drop`, `take-while`, `drop-while`, `find`, `index-of`, `has`, `any`, `all`, `count`, `sort-by`, `largest-by`, `smallest-by`, `group-by`, `frequencies`, `partition`, `chunks`, `windows`, `zip`, `numbered`, `interpose`, `collect-flat`, `scan` and `join`. Records get `keys`, `values`, `pairs`, `select`, `without`, `update`, `get-in`, `set-in` and `update-in`, each giving a new record. Text gets Lua's string words: `split`, `lines`, `words`, `chars`, `trim`, `starts-with`, `ends-with`, `has`, `index-of`, `slice` (positions from 1, negative ones from the end, as in Lua's `sub`), `repeat`, `reverse`, `number`, `code`, `pad-left`, `pad-right` and `capitalize`. Numbers get `pow`, `exp`, `atan`, `sign`, `even`, `odd`, `between` and `to` (`1 to 5` is `[1, 2, 3, 4, 5]`). Every value answers `kind`. **Endless lists** are Clojure's lazy sequences: `iterate [start, step]`, `cycle xs` and `forever v` make lists whose items are worked out only when read, and kept. `collect`, `keep`, `drop`, `zip` and `partition` on one give another endless list, `take`, `take-while`, `find` and `@` read only as far as they need, and `length`, `fold`, `each` and `sort` log that they would never finish. A fused loop leaves an endless list to these methods. A field still wins over a method of the same name, so records that have a `count` or `keys` field read their own. Every example prints and plays the same as before (checked over 300 frames of each).
 100. **Rebol's literals (Troy, 20 Nov).** Values that are more than numbers and text are written as they are, with no quotes and no constructor: a date `2026-11-20`, a time `9:30` or `9:30:15`, money `$19.99`, a pair `640x480`, a url `https://taskiap.com/sprout3/`, an email `ada@example.com`, a colour `#ff8800` (or `#f80`, or `#ff880080` with alpha), a percent `15%` (the number 0.15) and a word `'move`. The lexer tries them where a word could start, and each must end where a word would, so `2026 - 11` is still a subtraction and `don't` is still a name. Each kind does the maths that makes sense for it. A date plus a number is that many days later, and two dates take away to the days between. Dates answer `year`, `month`, `day`, `weekday`, `add-months`, `add-workdays` and `is-weekend`, and are kept as days in UTC, so they never shift with a time zone. Times add and compare, and answer `hour`, `minute` and `in-hours`. Money is whole cents, so `$0.10 + $0.20 = $0.30` is true; `*` and `/` by a number round to the cent, halves to even, and `split 3` shares out every cent. Pairs do maths part by part and answer `x`, `y`, `length` and `area`. A url answers `host`, `path` and `query`, and `/` adds a step to its path. A colour answers `red`, `green`, `blue`, `mix`, `lighter`, `darker` and `fade`, and draws as its text. A word is equal only to the same word, which is what dialects and code as data are made of. The kinds live in `words.js`. A literal is made once, when the program loads. `date [2026, 11, 20]`, `money 12.5`, `pair [3, 4]`, `colour [255, 136, 0]` and `word "move"` make the same values from parts, and a date that isn't real (`2026-02-30`) is logged.
 101. **Destructuring (Troy, 20 Nov).** A pattern in square brackets unpacks a value, wherever a name could take one. As an input, `[[x, y] | x + y]` takes one value and names its parts, and a cell can take several, as in `[[x1, y1] [x2, y2] | ...]` or `fold [0, [total [x, y] | ...]]`. As a binding, `[x, y] : point` names the parts of a value in a cell or a group. Each name reads the field of that name if the value has one, else the part at its position, so `[name, age]` unpacks `[name : "Ada", age : 36]` and `["Ada", 36]` alike. A kind from decision 100 unpacks the same way: by its fields (`x`, `y`, `year`), else by its parts in order, so `[w, h] : 640x480` and `[y, m, d] : 2026-11-20` work. A name can have a default, `[name, age : 0]`, used when the part is false or missing. A pattern can hold a pattern, `[a, [b, c]]`, and `..rest` takes the parts left over as a list, `[first, ..others]`. Unpacked names are local names, not fields: `[[x, y] : [10, 20], sum : x + y]` has the one field `sum`. A cell that unpacks is never worked out ahead into a kernel; it runs as written.
+102. **Code as data (Troy, 20 Nov).** `quote [move 10, turn 90]` gives the code in the brackets as a value instead of running it, so a program can read, build and change code, as in Rebol and Clojure. The value is a block: a list of its items. An item of one term is that term's value (a number, text, a literal, or a word such as `'move`), an item of several terms is a phrase (a list of its terms), `x : 5` is a binding (`name` and `value`), `( )` is a group, and a block with inputs answers `inputs`. Each has a `kind`, every list word works on them, and they print as the code they came from: `quote [move 10, turn 90]` prints `[move 10, turn 90]`. `quote` works anywhere a value can go (`eval quote [1 + 2]`, `a = quote [x]`), unless a program names something `quote` itself. Every cell gives its own code: `[n | n * 2] code` is the block `[n | n * 2]`. `eval` runs code: a block that takes no input runs as a program and gives its last value, a block with inputs gives back a cell, text runs as the code it holds, and any value turns into code with `source` (the text that makes it). `eval` runs at the top level, so it sees host words and the prelude but not a program's own names. `eval-with [names, code]` hands it some, as fields of a record. `phrase [items]` builds a phrase, as in `eval-with [[double : double], phrase ['double, 21]]`. A compiled program is kept for the next eval of the same code. A dialect is a cell that walks a block: `program fold [start, [state [command, amount] | match [command, ['move, ..., 'turn, ...]]]]` runs a turtle program written as data.
 ````
 
 ---
@@ -1021,6 +1022,8 @@ class CodeGen {
       names.set(leaf.name, { type: "js", js });
     });
   }
+  // quoted code is made once, when the program loads, from its syntax tree
+  quotedConstant(term) { const k = "QUOTED_" + this.constants.length; this.constants.push("const " + k + "=quoted(" + JSON.stringify(JSON.stringify(term, (key, value) => COMPILER_NOTE_KEYS.has(key) ? undefined : value)) + ");"); return k; }
   newTemp() { const scope = this.tempScopes[this.tempScopes.length - 1]; const name = "t" + (uniqueNumber++); scope.push(name); return name; }
   withTemps(generate) { this.tempScopes.push([]); const body = generate(); const temps = this.tempScopes.pop(); return { body, decl: temps.length ? "let " + temps.join(",") + ";" : "" }; }
   arrowCode(params, generateBody) { const made = this.withTemps(generateBody); return "(" + params + ")=>" + (made.decl ? "{" + made.decl + "return " + made.body + "}" : made.body); }
@@ -1062,14 +1065,18 @@ class CodeGen {
     const terms = chain.terms;
     if (!terms.length) return "false";
     if (terms.length === 1 && tail && terms[0].type === "group" && terms[0].items.length === 1 && terms[0].items[0].type === "chain") return this.genChain(terms[0].items[0], true);
-    let code = this.genTerm(terms[0], true), run = null;
-    for (let i = 1; i < terms.length; i++) {
+    // quote [code]: the code itself as a value (decision 102), unless a program names something quote
+    const quoting = terms[0].type === "word" && terms[0].value === "quote" && terms.length > 1 && !this.lookup("quote");
+    let code = quoting ? this.quotedConstant(terms[1]) : this.genTerm(terms[0], true), run = null;
+    for (let i = quoting ? 2 : 1; i < terms.length; i++) {
       // a library may make a run of steps (collect, keep, fold...) into one loop, tried first (loop fusion, decision 95):
       // the steps are written as usual on a temporary, and the library wraps them when the run ends
       if (run && i === run.end) { code = LIBRARIES.fuse.wrap(this, run, code); run = null; }
       if (!run && LIBRARIES.fuse && (run = LIBRARIES.fuse.find(terms, i))) { run.source = code; run.temp = this.newTemp(); code = run.temp; }
       if (LIBRARIES.note) LIBRARIES.note(this, terms, i);
       const term = terms[i], isLast = i === terms.length - 1;
+      // ... quote [code] sends the code as a value, as in eval quote [1 + 2]
+      if (term.type === "word" && term.value === "quote" && i + 1 < terms.length && !this.lookup("quote")) { code = (tail && i + 1 === terms.length - 1 ? "tailSend(" : "send(") + code + "," + this.quotedConstant(terms[++i]) + ")"; continue; }
       if (term.type === "word" && (term.value === "!" || term.value === "true" || term.value === "false")) { code = "send(" + code + "," + (term.value === "!" ? "BANG" : term.value) + ")"; continue; }
       if (term.type === "word") {
         const word = term.value;
@@ -1080,7 +1087,8 @@ class CodeGen {
             code = "withFields(" + code + ",[" + nextTerm.items.map(x => JSON.stringify(x.name)).join(",") + "],[" + nextTerm.items.map(x => this.genChain(x.value)).join(",") + "]," + this.inlineCache() + ")";
             continue;
           }
-          code = OPERATOR_FUNCTION[word] + "(" + code + "," + this.genTerm(nextTerm, false) + ")"; continue;
+          const quotesRight = nextTerm.type === "word" && nextTerm.value === "quote" && i + 1 < terms.length && !this.lookup("quote");
+          code = OPERATOR_FUNCTION[word] + "(" + code + "," + (quotesRight ? this.quotedConstant(terms[++i]) : this.genTerm(nextTerm, false)) + ")"; continue;
         }
         if (LAZY_OPERATORS.has(word) && i + 1 < terms.length && !this.lookup(word)) {
           // only else gives its right side back as it is; and/or check theirs is true or false, so it can't be a tail call
@@ -1896,7 +1904,8 @@ function unpackOr(value, makeDefault) { return value === false ? makeDefault() :
 function unpackRest(value, position) { return isCell(value) ? makeList(partsOf(value).slice(position - 1)) : makeList([]); }
 // literal(form, text): a literal's value; words.js gives the real one
 const literal = (form, text, line) => logMiss("a " + form + " needs the standard words (words.js)", line);
-const RUNTIME = { unpack, unpackOr, unpackRest, literal, BANG, ANY, GLOBALS, makeCell, sendWord, send, runCell, joinText, unknownWord, logMiss, withFields,
+const quoted = () => logMiss("quote needs the standard words (words.js)");
+const RUNTIME = { quoted, unpack, unpackOr, unpackRest, literal, BANG, ANY, GLOBALS, makeCell, sendWord, send, runCell, joinText, unknownWord, logMiss, withFields,
   ADD, SUB, MUL, DIV, MOD, LT, GT, LE, GE, EQ, NE, concat, withCell, partAt, makeRecord, makeList, requireBool, notUnderstood, tailSend, sendWordCached, shapeFor };
 let preludeCell = null;
 function globalNames(extra) { const names = new Set(Object.keys(GLOBALS)); if (extra) for (const name of extra) names.add(name); return names; }
@@ -3816,6 +3825,21 @@ ok("hot-swap takes a changed start value", g.state.field("height") === 99);
     ["[[x, y] | x] = [[x, y] | x]", "true"],
   ];
   for (const [src, want] of W) { const got = val(src); ok("101 " + src + " gives " + want, got === want); if (got !== want) console.log("   got", got); }
+}
+
+// ---------------- code as data (decision 102)
+{
+  const W = [
+    ["quote [move 10, turn 90]", "[move 10, turn 90]"], ["quote [move 10, turn 90] length", "2"], ["quote [move 10] @ 1 kind", "phrase"],
+    ["quote [move 10] @ 1 @ 1 = 'move", "true"], ["[n | n * 2] code", "[n | n * 2]"], ["[n | n * 2] code inputs", "[n]"],
+    ["eval quote [1 + 2, 3 * 4]", "12"], ["eval quote [x : 5, x * x]", "25"], ["(eval quote [n | n * n]) 7", "49"],
+    ["eval-with [[double : [n | n * 2]], phrase ['double, 21]]", "42"], ["quote [a, b] = quote [a, b]", "true"], ["quote [a, b] = quote [a, c]", "false"],
+    ["quote [x : \"hi [name]\", 2026-11-20 + 1, $1234.50, (1 + 2)]", "[x : \"hi [name]\", 2026-11-20 + 1, $1234.50, (1 + 2)]"],
+    ["quote [move 10, turn 90, move 5] fold [[x : 0, h : 0], [s [c, n] | match [c, ['move, s with [x : s x + n], 'turn, s with [h : s h + n], any, s]]]]", "[x : 15, h : 90]"],
+    ["[a : 1, b : \"two\"] source", "[a : 1, b : \"two\"]"], ["eval ([a : 1, b : \"two\"] source)", "[a : 1, b : two]"],
+  ];
+  for (const [src, want] of W) { const got = val(src); ok("102 " + src + " gives " + want, got === want); if (got !== want) console.log("   got", got); }
+  ok("102 a program can still name something quote", val("([quote : [x | x + 1]], 1) @ 1") !== "" && S.format(S.load("quote : [x | x + 1]\nresult : quote 4").field("result")) === "5");
 }
 
 console.log(pass + " passed, " + fail + " failed");
@@ -6744,6 +6768,93 @@ for (const [kindClass, kind, methods] of [[SproutDate, "date", DATE_METHODS], [S
 S.install({ runtime: { literal } });
 for (const name in makers) S.defNative(name, makers[name]);
 
+// ===================================================================== code as data (decision 102)
+// quote [move 10, turn 90] is the list [move 10, turn 90]: its items are words, numbers, phrases (a chain of terms),
+// bindings, groups and lists. It prints as the code it came from, and eval runs it. Every cell can give its own code.
+class CodeList extends ValueCell {
+  sameAs(b) { return b instanceof CodeList && b.kind === this.kind && sameParts(this, b) && valuesEqual(this.extra, b.extra); }
+  toJSON() { return this.sproutText(); }
+}
+const sameParts = (a, b) => { const pa = partsOf(a), pb = partsOf(b); return pa.length === pb.length && pa.every((v, k) => valuesEqual(v, pb[k])); };
+class Phrase extends CodeList { constructor(parts) { super(parts, NO_FIELDS, EMPTY); this.extra = false; } sproutText() { return this.parts.map(sourceOf).join(" "); } }
+class Group extends CodeList { constructor(parts) { super(parts, NO_FIELDS, EMPTY); this.extra = false; } sproutText() { return "(" + this.parts.map(sourceOf).join(", ") + ")"; } }
+// a block is quoted [ ]: its items, and the names of its inputs (false when it takes none)
+class Block extends CodeList { constructor(parts, inputs) { super(parts, NO_FIELDS, EMPTY); this.extra = inputs; } sproutText() { return "[" + (this.extra ? partsOf(this.extra).map(sourceOf).join(" ") + " | " : "") + this.parts.map(sourceOf).join(", ") + "]"; } }
+class Template extends CodeList { constructor(parts) { super(parts, NO_FIELDS, EMPTY); this.extra = false; } sproutText() { return '"' + this.parts.map(p => typeof p === "string" ? escapeText(p) : "[" + sourceOf(p) + "]").join("") + '"'; } }
+class Binding extends CodeList {
+  constructor(name, value) { super([name, value], NO_FIELDS, EMPTY); this.extra = false; }
+  sproutText() { return sourceOf(this.parts[0]) + " : " + sourceOf(this.parts[1]); }
+}
+const codeMethods = (kind, extra) => Object.assign(Object.create(I.PROTOTYPES.cell), { kind: none(() => kind) }, extra);
+Object.assign(Phrase.prototype, { kind: "phrase", methods: codeMethods("phrase") });
+Object.assign(Group.prototype, { kind: "group", methods: codeMethods("group") });
+Object.assign(Block.prototype, { kind: "block", methods: codeMethods("block", { inputs: none(b => b.extra) }) });
+Object.assign(Template.prototype, { kind: "template", methods: codeMethods("template") });
+Object.assign(Binding.prototype, { kind: "binding", methods: codeMethods("binding", { name: none(b => b.parts[0]), value: none(b => b.parts[1]) }) });
+
+// from the syntax tree to values
+const fromItem = item => item.type === "bind" ? new Binding(item.pattern ? list(item.pattern.map(fromInput)) : wordOf(item.name), fromChain(item.value)) : fromChain(item);
+const fromChain = chain => chain.terms.length === 1 ? fromTerm(chain.terms[0]) : new Phrase(chain.terms.map(fromTerm));
+const fromInput = input => input.pattern ? list(input.pattern.map(fromInput)) : input.rest ? wordOf(".." + input.name) : input.defaultValue ? new Binding(wordOf(input.name), fromTerm(input.defaultValue)) : wordOf(input.name);
+function fromTerm(term) {
+  switch (term.type) {
+    case "num": return term.value;
+    case "str": return term.value;
+    case "word": return term.value === "true" ? true : term.value === "false" ? false : wordOf(term.value);
+    case "literal": return literal(term.form, term.text, term.line);
+    case "group": return new Group(term.items.map(fromItem));
+    case "cell": return new Block(term.items.map(fromItem), term.names.length ? list(term.names.map(fromInput)) : false);
+    case "chain": return fromChain(term);
+    case "tmpl": return new Template(term.parts.map(p => typeof p === "string" ? p : fromChain(p.ast)));
+  }
+  return logMiss("quote can't hold a " + term.type);
+}
+const quoted = json => fromTerm(JSON.parse(json));
+
+// from values back to code
+const escapeText = t => t.replace(/[\\"\[]/g, c => "\\" + c).replace(/\n/g, "\\n").replace(/\t/g, "\\t");
+function sourceOf(v) {
+  if (v === true || v === false) return String(v);
+  if (typeof v === "number") return Number.isFinite(v) ? formatValue(v) : "(0 / 0)";
+  if (typeof v === "string") return '"' + escapeText(v) + '"';
+  if (v instanceof Money) return (v.cents < 0 ? "-" : "") + "$" + Math.floor(Math.abs(v.cents) / 100) + "." + pad2(Math.abs(v.cents) % 100);
+  if (v instanceof Kind || v instanceof CodeList) return v.sproutText();
+  if (v instanceof Endless) return logMiss("an endless list has no code") || "false";
+  if (v instanceof I.Native) return v.name;
+  if (v instanceof I.Cell && v.takesInput()) return sourceOf(codeOf(v));
+  if (isCell(v)) { const pieces = v.fieldNames().map(k => k + " : " + sourceOf(v.field(k))).concat(partsOf(v).map(sourceOf)); return "[" + pieces.join(", ") + "]"; }
+  return formatValue(v);
+}
+// a cell's own code, as quote would give it
+const codeOf = cell => cell instanceof I.Cell && cell.shape && cell.shape.src ? fromTerm(JSON.parse(cell.shape.src)) : cell;
+// eval: a list of items runs as a program and gives its last value; anything else is one item
+const compiled = new Map();
+// (a block that takes no input, or a plain list, is a program; a block with inputs gives back a cell)
+const programSource = v => typeof v === "string" ? v : (v instanceof Block && !v.extra) || (isCell(v) && !(v instanceof CodeList) && !v.fieldNames().length) ? partsOf(v).map(sourceOf).join("\n") : sourceOf(v);
+const short = src => src.length > 60 ? src.slice(0, 60) + "..." : src;
+function evaluate(v) {
+  const src = programSource(v);
+  let program = compiled.get(src);
+  if (!program) { try { program = S.load(src); } catch (e) { return logMiss("eval: " + e.message + " in " + short(src)); } compiled.set(src, program); if (compiled.size > 200) compiled.delete(compiled.keys().next().value); }
+  return program.run(BANG);
+}
+// eval-with [names, code]: the fields of names can be used in the code, as if they were written above it
+function evaluateWith(argument) {
+  const [names, v] = argumentsOf(argument, 2), src = programSource(v), globals = S.globals, saved = new Map();
+  if (!isCell(names)) return notUnderstood(names, "eval-with");
+  // the names are there while the code loads: it reads them then, as it reads any host word
+  for (const key of names.fieldNames()) { saved.set(key, Object.getOwnPropertyDescriptor(globals, key)); Object.defineProperty(globals, key, { value: names.field(key), enumerable: true, configurable: true, writable: true }); }
+  let program;
+  try { program = S.load(src); } catch (e) { program = null; logMiss("eval-with: " + e.message + " in " + short(src)); }
+  finally { for (const [key, descriptor] of saved) { if (descriptor) Object.defineProperty(globals, key, descriptor); else delete globals[key]; } }
+  return program ? program.run(BANG) : false;
+}
+S.install({ runtime: { quoted }, methods: { cell: { code: none(codeOf) }, every: { source: none(sourceOf) } } });
+S.defNative("eval", evaluate);
+S.defNative("eval-with", evaluateWith);
+// phrase [items]: a chain of terms, to build code with
+S.defNative("phrase", xs => new Phrase(isCell(xs) ? partsOf(xs) : [xs]));
+
 // ===================================================================== globals
 const define = (name, fn) => S.defNative(name, fn);
 // iterate [start, step]: start, then step of it, then step of that, without end
@@ -6754,7 +6865,7 @@ define("cycle", xs => { const parts = isCell(xs) ? partsOf(xs) : [xs]; let k = 0
 define("char", n => typeof n === "number" ? String.fromCodePoint(n) : notUnderstood(n, "char"));
 S.globals.pi = Math.PI;
 
-S.words = { Endless, endlessFrom, kindOf, literal, wordOf, Word, SproutDate, SproutTime, Money, Pair, Url, Email, Colour, argumentsOf, list, record, truthy };
+S.words = { Phrase, Group, Block, Template, Binding, sourceOf, codeOf, evaluate, Endless, endlessFrom, kindOf, literal, wordOf, Word, SproutDate, SproutTime, Money, Pair, Url, Email, Colour, argumentsOf, list, record, truthy };
 })(typeof window !== "undefined" ? window : globalThis);
 ````
 
