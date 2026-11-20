@@ -284,5 +284,17 @@ const f = (g, k) => g.state.field(k);
 
 const errs = logs.slice();
 ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
+// ---------------- Gears: a parametric tool, changed while it runs
+{
+  const src = fs.readFileSync(__dirname + "/examples/gears.sp", "utf8"), g = L.makeGame(src, {});
+  for (let t = 0; t < 30; t++) g.tick(1 / 60);
+  const lines = g.draw().filter(d => d[0] === "line").length, texts = g.draw().filter(d => d[0] === "text").map(d => d[1][0]);
+  ok("gears: one edge per tooth side, 4 per tooth", lines === (16 + 28) * 4, lines);
+  ok("gears: the readouts", texts[0] === "16 : 28 teeth    ratio 1.75 : 1" && texts[3] === "20 rpm in, 11.43 rpm out", texts);
+  const turn = f(g, "turn");
+  g.swap(src.replace("teeth-a : 16", "teeth-a : 12")); g.tick(1 / 60);
+  ok("gears: a changed number takes at once, and the turning goes on", g.draw().filter(d => d[0] === "line").length === (12 + 28) * 4 && f(g, "turn") > turn);
+}
+
 console.log(pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

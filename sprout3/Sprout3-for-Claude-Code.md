@@ -9,14 +9,14 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 **Run it (Node 22 or later):**
 
 ```
-node test.js          # language tests (259)
-node game-tests.js    # game tests (82)
+node test.js          # language tests (262)
+node game-tests.js    # game tests (85)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 341 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 347 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -105,6 +105,7 @@ The page and `bench.html` need a local web server, such as `python3 -m http.serv
 - `sprout-vs-clojure.html`: Sprout and Clojure: sequences, laziness, destructuring and code as data, each pair run in both
 - `sprout-vs-lua.html`: Sprout and Lua: tables, strings, patterns, coroutines, metatables and speed, each pair run in both
 - `compare.html`: Sprout compared: one page beside Python, Rebol, Clojure and Lua, with a switch between them and a speed table; every Sprout, Python, Clojure and Lua side run, the Rebol side from the documentation (the old sprout-vs-*.html pages forward to it)
+- `examples/gears.sp`: Gears: a parametric tool; two meshing gears worked out from a few numbers, changed live (Tools group)
 - `examples/recipes.sp`: Recipes: quicksort, primes, FizzBuzz, a vector with its own + (prints; not a game)
 - `play.html`: The editor at taskiap.com/sprout3/play.html (opens #ex=name, #spec, #history): a library of examples with artwork, the running game shown like album art, live editing, a now-playing bar whose progress bar rewinds time, state, output and the spec; light and dark
 - `bench.html`: Benchmarks in the browser: the language against plain JS, the games, particles up to 100,000 on Canvas 2D and WebGPU, and SQLite
@@ -3912,6 +3913,15 @@ ok("hot-swap takes a changed start value", g.state.field("height") === 99);
   ok("104 [| ...] is code, run later", !logs.some(m => /yield/.test(m)));
 }
 
+// ---------------- fixes after decision 104
+{
+  S.setLog(m => logs.push(m)); logs.length = 0;
+  ok("money divided by 0 is logged, not $Infinity.NaN", val("$1.00 / 0") === "false" && logs.some(m => /shared by 0/.test(m)));
+  logs.length = 0;
+  ok("a date compared with money says so", val("2026-11-20 < $5.00") === "false" && logs.some(m => /a date can't be compared with \$5\.00/.test(m)));
+  ok("the editor's literal matcher is the lexer's", S.lexLiteral("9:30 x", 0).length === 4 && S.lexLiteral("don't", 0) === null);
+}
+
 console.log(pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
 ````
@@ -4207,6 +4217,18 @@ const f = (g, k) => g.state.field(k);
 
 const errs = logs.slice();
 ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
+// ---------------- Gears: a parametric tool, changed while it runs
+{
+  const src = fs.readFileSync(__dirname + "/examples/gears.sp", "utf8"), g = L.makeGame(src, {});
+  for (let t = 0; t < 30; t++) g.tick(1 / 60);
+  const lines = g.draw().filter(d => d[0] === "line").length, texts = g.draw().filter(d => d[0] === "text").map(d => d[1][0]);
+  ok("gears: one edge per tooth side, 4 per tooth", lines === (16 + 28) * 4, lines);
+  ok("gears: the readouts", texts[0] === "16 : 28 teeth    ratio 1.75 : 1" && texts[3] === "20 rpm in, 11.43 rpm out", texts);
+  const turn = f(g, "turn");
+  g.swap(src.replace("teeth-a : 16", "teeth-a : 12")); g.tick(1 / 60);
+  ok("gears: a changed number takes at once, and the turning goes on", g.draw().filter(d => d[0] === "line").length === (12 + 28) * 4 && f(g, "turn") > turn);
+}
+
 console.log(pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
 ````
@@ -7774,6 +7796,71 @@ print(hits * 4 / 1000000)</code></pre><div class="out"><span>prints</span><pre>3
 </body></html>
 ````
 
+## examples/gears.sp
+
+Gears: a parametric tool; two meshing gears worked out from a few numbers, changed live (Tools group)
+
+````sprout
+-- Gears: a parametric tool. Two gears that mesh, worked out from the numbers below.
+-- Change any number while it runs (or press the tweak button and drag one): the teeth, the mesh
+-- and the readouts follow at once, and the gears keep turning through every change.
+
+teeth-a : 16              -- teeth on the driving gear
+teeth-b : 28              -- teeth on the driven gear
+module : 5                -- tooth size in mm: a gear's pitch diameter is its teeth times this
+rpm : 20                  -- how fast the driving gear turns
+colour-a : #e8a33d
+colour-b : #5fa8d3
+
+pitch-radius : [teeth | teeth * module / 2]
+centre-distance : pitch-radius teeth-a + (pitch-radius teeth-b)
+ratio : teeth-b / teeth-a
+-- millimetres to pixels, so both gears fit across the display
+scale : 330 / (centre-distance + (pitch-radius teeth-a) + (pitch-radius teeth-b) + (module * 2))
+
+-- a gear's outline, as [angle, radius] points: each tooth is a trapezoid standing on the root circle
+outline : [teeth turn |
+  pitch : pitch-radius teeth
+  root : pitch - (module * 1.25)
+  tip : pitch + module
+  step : 6.283185307179586 / teeth
+  half : step / 4
+  range teeth collect-flat [k |
+    a : k * step + turn
+    [[a - (half * 1.3), root], [a - (half * 0.6), tip], [a + (half * 0.6), tip], [a + (half * 1.3), root]]
+  ]
+]
+
+-- a gear drawn round its centre: each pair of neighbouring points is one edge
+draw-gear : [teeth turn cx cy colour |
+  points : outline [teeth, turn] collect [[a, r] | [a cos * r * scale + cx, a sin * r * scale + cy]]
+  points .. [points first] windows 2 each [[[x1, y1], [x2, y2]] | line [x1, y1, x2, y2, colour]]
+  circle [cx, cy, pitch-radius teeth * scale * 0.18, colour]
+  circle [cx, cy, 3, "#14161a"]
+]
+
+round2 : [n | n * 100 round / 100]
+
+start :
+  turn : 0
+
+update : [game | game with [turn : game turn + (rpm / 60 * 6.283185307179586 * (game dt))]]
+
+draw : [game |
+  clear "#14161a"
+  cx-a : 15 + (pitch-radius teeth-a + module * scale)
+  cx-b : cx-a + (centre-distance * scale)
+  -- the driven gear turns the other way, slower by the ratio, with a gap where the driver's tooth meets it
+  turn-b : 3.141592653589793 - (3.141592653589793 / teeth-b) - (game turn / ratio)
+  draw-gear [teeth-a, game turn, cx-a, 190, colour-a]
+  draw-gear [teeth-b, turn-b, cx-b, 190, colour-b]
+  text ["[teeth-a] : [teeth-b] teeth    ratio [round2 ratio] : 1", W / 2, 360, 14, "#e9e6dc"]
+  text ["pitch [teeth-a * module] mm and [teeth-b * module] mm", W / 2, 384, 12, "#9a978d"]
+  text ["centres [centre-distance] mm apart    module [module]", W / 2, 404, 12, "#9a978d"]
+  text ["[rpm] rpm in, [round2 (rpm / ratio)] rpm out", W / 2, 424, 12, "#9a978d"]
+]
+````
+
 ## examples/recipes.sp
 
 Recipes: quicksort, primes, FizzBuzz, a vector with its own + (prints; not a game)
@@ -8104,6 +8191,7 @@ const EX=[
  ["ace-morning","ace","ACE Morning","The morning question: which constraints, killed today, release the most work? A ranking by hours released."],
  ["ace-ledger","ace","ACE Ledger","The atoms live in SQLite, kept in this browser. Each run is a day on site: one atom closes and the event log grows."],
  ["ace-derive","ace","ACE Derive","The five kinds of atom, and done worked out to a fixed point."],
+ ["gears","tool","Gears","A parametric tool: two gears worked out from a few numbers. Change the teeth, the module or the speed while they turn, or press tweak and drag a number."],
  ["galaxy","game","Galaxy","Twenty thousand stars falling toward your finger. One fused loop moves them all, and WebGPU draws them in one call."],
  ["sprout","game","Sprout","Catch the rain, dodge the bugs. The demo game."],
  ["fireflies","game","Fireflies","Four hundred lights on the night air. Hold a finger down and they gather to it."],
@@ -8116,7 +8204,7 @@ const EX=[
  ["particles","game","Particles","A fountain of two thousand sparks, for speed."],
  ["recipes","prog","Recipes","Quicksort, primes, FizzBuzz, and a vector with its own plus."],
  ["tour","prog","Tour","The language, one feature per line."]];
-const GROUPS={ace:"Atomic Constraint Engine",game:"Games",prog:"Programs"};
+const GROUPS={ace:"Atomic Constraint Engine",tool:"Tools",game:"Games",prog:"Programs"};
 const exOf=id=>EX.find(x=>x[0]===id);
 
 // ---------- output: what programs print, and Sprout's own notes
@@ -8556,7 +8644,7 @@ button{font:600 14px var(--sans);height:36px;padding:0 18px;border-radius:999px;
 button.sec{background:var(--card);color:var(--fg);box-shadow:0 0 0 1px var(--line)}
 button:disabled{opacity:.5;cursor:default}
 #status{color:var(--fg3);font-size:13.5px}
-.card{background:var(--card);border-radius:14px;box-shadow:0 1px 2px rgba(0,0,0,.05),0 8px 28px rgba(0,0,0,.06);overflow:hidden;margin-top:10px}
+.card{background:var(--card);border-radius:14px;box-shadow:0 1px 2px rgba(0,0,0,.05),0 8px 28px rgba(0,0,0,.06);overflow-x:auto;-webkit-overflow-scrolling:touch;margin-top:10px}
 table{width:100%;border-collapse:collapse;font-size:13.5px}
 th,td{text-align:right;padding:8px 14px;border-bottom:1px solid var(--line);white-space:nowrap}
 th:first-child,td:first-child{text-align:left}
@@ -8597,14 +8685,14 @@ tr:last-child td{border-bottom:0}
 <div class="card"><table id="t-sql"><tr><th>work</th><th>ms</th><th>rows</th></tr></table></div>
 </main>
 
-<script src="sprout3.js?v=20261120r"></script>
-<script src="words.js?v=20261120r"></script>
-<script src="parse.js?v=20261120r"></script>
-<script src="kernels.js?v=20261120r"></script>
-<script src="live3.js?v=20261120r"></script>
-<script src="gpu-paint.js?v=20261120r"></script>
-<script src="sqlite-web.js?v=20261120r"></script>
-<script src="gpu-spork.js?v=20261120r"></script>
+<script src="sprout3.js?v=20261120s"></script>
+<script src="words.js?v=20261120s"></script>
+<script src="parse.js?v=20261120s"></script>
+<script src="kernels.js?v=20261120s"></script>
+<script src="live3.js?v=20261120s"></script>
+<script src="gpu-paint.js?v=20261120s"></script>
+<script src="sqlite-web.js?v=20261120s"></script>
+<script src="gpu-spork.js?v=20261120s"></script>
 <script>
 "use strict";
 const $=id=>document.getElementById(id),S=window.Sprout3,L=window.Sprout3Live;
@@ -8612,9 +8700,15 @@ S.setLog(()=>{});S.setOut(()=>{});
 const GW=360,GH=480,RESULTS=[];
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const status=t=>$("status").textContent=t;
-function best(f,n){let b=1e9,r;for(let i=0;i<n;i++){const t=performance.now();r=f();b=Math.min(b,performance.now()-t)}return [b,r]}
-async function bestAsync(f,n){let b=1e9,r;for(let i=0;i<n;i++){const t=performance.now();r=await f();b=Math.min(b,performance.now()-t)}return [b,r]}
-const ms=x=>x<0.1?x.toFixed(3):x<10?x.toFixed(2):x.toFixed(1);
+// Some browsers (Safari) give the time only to the whole millisecond. So a quick piece of work is timed as a batch of runs
+// long enough to measure, and the batch's time is shared out: the batch doubles until it takes 25 ms.
+const BATCH_MS=25;
+function best(f,n){let r=f(),k=1;for(;;){const t=performance.now();for(let i=0;i<k;i++)r=f();if(performance.now()-t>=BATCH_MS||k>=1<<20)break;k*=2}
+ let b=1e9;for(let s=0;s<n;s++){const t=performance.now();for(let i=0;i<k;i++)r=f();b=Math.min(b,(performance.now()-t)/k)}return [b,r]}
+async function bestAsync(f,n){let r=await f(),k=1;for(;;){const t=performance.now();for(let i=0;i<k;i++)r=await f();if(performance.now()-t>=BATCH_MS||k>=1<<12)break;k*=2}
+ let b=1e9;for(let s=0;s<n;s++){const t=performance.now();for(let i=0;i<k;i++)r=await f();b=Math.min(b,(performance.now()-t)/k)}return [b,r]}
+const ratio=(a,b)=>!(b>0)?"–":a/b<0.1?(a/b).toFixed(2)+"×":(a/b).toFixed(1)+"×";
+const ms=x=>!isFinite(x)?"–":x<0.01?(x*1000).toFixed(1)+" µs":x<0.1?x.toFixed(3):x<10?x.toFixed(2):x.toFixed(1);
 function row(id,cells,cls){const tr=document.createElement("tr");tr.innerHTML=cells.map((c,i)=>"<td"+(cls&&cls[i]?' class="'+cls[i]+'"':"")+">"+c+"</td>").join("");$(id).appendChild(tr);RESULTS.push(id.slice(2)+": "+cells.join(" | "))}
 
 // ---------- the language
@@ -8627,13 +8721,13 @@ async function benchLang(){
  for(const [name,b] of Object.entries(LANG)){status("language: "+name);await sleep(10);
   // the last line runs inside a cell that takes an input, so it is worked out again on every run
   const c=S.load(b.src.replace(/^result : (.*)$/m,"f : [k | $1]")).field("f");const [t,r]=best(()=>c.run(1),7);const [tj,rj]=best(b.js,7);
-  row("t-lang",[name,ms(t),ms(tj),(t/tj).toFixed(1)+"×",S.format(r)+(S.format(r)===String(rj)?"":" ≠ "+rj)])}}
+  row("t-lang",[name,ms(t),ms(tj),ratio(t,tj),S.format(r)+(S.format(r)===String(rj)?"":" ≠ "+rj)])}}
 
 // ---------- the games
 const GAMES=["galaxy","sprout","fireflies","orbit","hop","life","bounce","snake","breakout","particles","ace-board","ace-site","ace-crews"];
 async function benchGames(){
  for(const name of GAMES){status("games: "+name);await sleep(10);
-  const src=await (await fetch("examples/"+name+".sp?v=20261120r")).text();const g=L.makeGame(src,{W:GW,H:GH});
+  const src=await (await fetch("examples/"+name+".sp?v=20261120s")).text();const g=L.makeGame(src,{W:GW,H:GH});
   const play=n=>{for(let t=0;t<n;t++){if(t%50===0)g.down(100+(t%160),300);if(t%50===25)g.up();g.tick(1/60);g.draw()}};
   play(240);const [t]=best(()=>play(120),5);row("t-games",[name,ms(t/120),String(g.draw().length)])}}
 
@@ -8665,7 +8759,7 @@ async function benchParticles(){
 // ---------- SQLite
 async function benchSql(){
  status("SQLite: loading");
- await new Promise((ok,no)=>{const s=document.createElement("script");s.src="vendor/sqljs/sql-wasm.js?v=20261120r";s.onload=ok;s.onerror=no;document.head.appendChild(s)});
+ await new Promise((ok,no)=>{const s=document.createElement("script");s.src="vendor/sqljs/sql-wasm.js?v=20261120s";s.onload=ok;s.onerror=no;document.head.appendChild(s)});
  const db=await SproutSqlite.openSqlite({base:"vendor/sqljs/",name:"sprout3-bench",fresh:true});S.globals.db=db;const raw=db.raw();
  const N=10000;
  const [ti]=best(()=>{raw.run("drop table if exists t");raw.run("create table t (id integer primary key, zone integer, hours real, name text)");raw.run("begin");
@@ -8684,7 +8778,7 @@ async function benchSql(){
 
 // ---------- Monte Carlo: the ace-risk run, five ways
 async function benchMonteCarlo(){
- const src=(await (await fetch("examples/ace-risk.sp?v=20261120r")).text()).split("\nresults :")[0];
+ const src=(await (await fetch("examples/ace-risk.sp?v=20261120s")).text()).split("\nresults :")[0];
  const c=S.load(src+"\nA : [k | range k spork one-run]\nB : [k | range k collect one-run]"),A=c.field("A"),B=c.field("B");
  // the kernel itself, to hand straight to the GPU
  let K=null;S.sporkWays({gpu:k=>{K=k;return undefined}});A.run(16);S.sporkWays({gpu:null});

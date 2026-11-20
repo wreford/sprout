@@ -21,7 +21,7 @@ button{font:600 14px var(--sans);height:36px;padding:0 18px;border-radius:999px;
 button.sec{background:var(--card);color:var(--fg);box-shadow:0 0 0 1px var(--line)}
 button:disabled{opacity:.5;cursor:default}
 #status{color:var(--fg3);font-size:13.5px}
-.card{background:var(--card);border-radius:14px;box-shadow:0 1px 2px rgba(0,0,0,.05),0 8px 28px rgba(0,0,0,.06);overflow:hidden;margin-top:10px}
+.card{background:var(--card);border-radius:14px;box-shadow:0 1px 2px rgba(0,0,0,.05),0 8px 28px rgba(0,0,0,.06);overflow-x:auto;-webkit-overflow-scrolling:touch;margin-top:10px}
 table{width:100%;border-collapse:collapse;font-size:13.5px}
 th,td{text-align:right;padding:8px 14px;border-bottom:1px solid var(--line);white-space:nowrap}
 th:first-child,td:first-child{text-align:left}
@@ -62,14 +62,14 @@ tr:last-child td{border-bottom:0}
 <div class="card"><table id="t-sql"><tr><th>work</th><th>ms</th><th>rows</th></tr></table></div>
 </main>
 
-<script src="sprout3.js?v=20261120r"></script>
-<script src="words.js?v=20261120r"></script>
-<script src="parse.js?v=20261120r"></script>
-<script src="kernels.js?v=20261120r"></script>
-<script src="live3.js?v=20261120r"></script>
-<script src="gpu-paint.js?v=20261120r"></script>
-<script src="sqlite-web.js?v=20261120r"></script>
-<script src="gpu-spork.js?v=20261120r"></script>
+<script src="sprout3.js?v=20261120s"></script>
+<script src="words.js?v=20261120s"></script>
+<script src="parse.js?v=20261120s"></script>
+<script src="kernels.js?v=20261120s"></script>
+<script src="live3.js?v=20261120s"></script>
+<script src="gpu-paint.js?v=20261120s"></script>
+<script src="sqlite-web.js?v=20261120s"></script>
+<script src="gpu-spork.js?v=20261120s"></script>
 <script>
 "use strict";
 const $=id=>document.getElementById(id),S=window.Sprout3,L=window.Sprout3Live;
@@ -77,9 +77,15 @@ S.setLog(()=>{});S.setOut(()=>{});
 const GW=360,GH=480,RESULTS=[];
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const status=t=>$("status").textContent=t;
-function best(f,n){let b=1e9,r;for(let i=0;i<n;i++){const t=performance.now();r=f();b=Math.min(b,performance.now()-t)}return [b,r]}
-async function bestAsync(f,n){let b=1e9,r;for(let i=0;i<n;i++){const t=performance.now();r=await f();b=Math.min(b,performance.now()-t)}return [b,r]}
-const ms=x=>x<0.1?x.toFixed(3):x<10?x.toFixed(2):x.toFixed(1);
+// Some browsers (Safari) give the time only to the whole millisecond. So a quick piece of work is timed as a batch of runs
+// long enough to measure, and the batch's time is shared out: the batch doubles until it takes 25 ms.
+const BATCH_MS=25;
+function best(f,n){let r=f(),k=1;for(;;){const t=performance.now();for(let i=0;i<k;i++)r=f();if(performance.now()-t>=BATCH_MS||k>=1<<20)break;k*=2}
+ let b=1e9;for(let s=0;s<n;s++){const t=performance.now();for(let i=0;i<k;i++)r=f();b=Math.min(b,(performance.now()-t)/k)}return [b,r]}
+async function bestAsync(f,n){let r=await f(),k=1;for(;;){const t=performance.now();for(let i=0;i<k;i++)r=await f();if(performance.now()-t>=BATCH_MS||k>=1<<12)break;k*=2}
+ let b=1e9;for(let s=0;s<n;s++){const t=performance.now();for(let i=0;i<k;i++)r=await f();b=Math.min(b,(performance.now()-t)/k)}return [b,r]}
+const ratio=(a,b)=>!(b>0)?"–":a/b<0.1?(a/b).toFixed(2)+"×":(a/b).toFixed(1)+"×";
+const ms=x=>!isFinite(x)?"–":x<0.01?(x*1000).toFixed(1)+" µs":x<0.1?x.toFixed(3):x<10?x.toFixed(2):x.toFixed(1);
 function row(id,cells,cls){const tr=document.createElement("tr");tr.innerHTML=cells.map((c,i)=>"<td"+(cls&&cls[i]?' class="'+cls[i]+'"':"")+">"+c+"</td>").join("");$(id).appendChild(tr);RESULTS.push(id.slice(2)+": "+cells.join(" | "))}
 
 // ---------- the language
@@ -92,13 +98,13 @@ async function benchLang(){
  for(const [name,b] of Object.entries(LANG)){status("language: "+name);await sleep(10);
   // the last line runs inside a cell that takes an input, so it is worked out again on every run
   const c=S.load(b.src.replace(/^result : (.*)$/m,"f : [k | $1]")).field("f");const [t,r]=best(()=>c.run(1),7);const [tj,rj]=best(b.js,7);
-  row("t-lang",[name,ms(t),ms(tj),(t/tj).toFixed(1)+"×",S.format(r)+(S.format(r)===String(rj)?"":" ≠ "+rj)])}}
+  row("t-lang",[name,ms(t),ms(tj),ratio(t,tj),S.format(r)+(S.format(r)===String(rj)?"":" ≠ "+rj)])}}
 
 // ---------- the games
 const GAMES=["galaxy","sprout","fireflies","orbit","hop","life","bounce","snake","breakout","particles","ace-board","ace-site","ace-crews"];
 async function benchGames(){
  for(const name of GAMES){status("games: "+name);await sleep(10);
-  const src=await (await fetch("examples/"+name+".sp?v=20261120r")).text();const g=L.makeGame(src,{W:GW,H:GH});
+  const src=await (await fetch("examples/"+name+".sp?v=20261120s")).text();const g=L.makeGame(src,{W:GW,H:GH});
   const play=n=>{for(let t=0;t<n;t++){if(t%50===0)g.down(100+(t%160),300);if(t%50===25)g.up();g.tick(1/60);g.draw()}};
   play(240);const [t]=best(()=>play(120),5);row("t-games",[name,ms(t/120),String(g.draw().length)])}}
 
@@ -130,7 +136,7 @@ async function benchParticles(){
 // ---------- SQLite
 async function benchSql(){
  status("SQLite: loading");
- await new Promise((ok,no)=>{const s=document.createElement("script");s.src="vendor/sqljs/sql-wasm.js?v=20261120r";s.onload=ok;s.onerror=no;document.head.appendChild(s)});
+ await new Promise((ok,no)=>{const s=document.createElement("script");s.src="vendor/sqljs/sql-wasm.js?v=20261120s";s.onload=ok;s.onerror=no;document.head.appendChild(s)});
  const db=await SproutSqlite.openSqlite({base:"vendor/sqljs/",name:"sprout3-bench",fresh:true});S.globals.db=db;const raw=db.raw();
  const N=10000;
  const [ti]=best(()=>{raw.run("drop table if exists t");raw.run("create table t (id integer primary key, zone integer, hours real, name text)");raw.run("begin");
@@ -149,7 +155,7 @@ async function benchSql(){
 
 // ---------- Monte Carlo: the ace-risk run, five ways
 async function benchMonteCarlo(){
- const src=(await (await fetch("examples/ace-risk.sp?v=20261120r")).text()).split("\nresults :")[0];
+ const src=(await (await fetch("examples/ace-risk.sp?v=20261120s")).text()).split("\nresults :")[0];
  const c=S.load(src+"\nA : [k | range k spork one-run]\nB : [k | range k collect one-run]"),A=c.field("A"),B=c.field("B");
  // the kernel itself, to hand straight to the GPU
  let K=null;S.sporkWays({gpu:k=>{K=k;return undefined}});A.run(16);S.sporkWays({gpu:null});
