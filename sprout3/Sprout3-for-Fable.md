@@ -13,22 +13,23 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 ## What to know first
 
 - **Sprout 3 is Troy's language.**
-  - The spec's design decisions 1 to 85 define it. Later decisions override earlier ones and say so.
+  - The spec's design decisions 1 to 87 define it. Later decisions override earlier ones and say so.
   - Sections 1 to 15 at the top of the spec describe the older Sprout 2.0 and are kept for history.
 - **Language changes go to Troy first.** Talk any change to syntax or semantics through with him before anyone builds it, one question at a time. Library and implementation choices are recorded in the spec as decisions (decision 80).
 - **ACE has one primitive: the atom.**
   - An atom has two links: `requires` (what must finish first) and `contains` (its children).
   - "Done" is derived from the graph, never stored.
   - There are five kinds: trivial, leaf, verified, gate and rollup.
-- **The ACE examples are five Sprout programs:**
+- **The ACE examples are six Sprout programs:**
   - `ace-derive.sp`: derive to a fixed point, with narrative-required atoms.
-  - `ace-schedule.sp`: critical path, Monte Carlo, and cost with earned value.
-  - `ace-board.sp`: an interactive atom graph.
+  - `ace-schedule.sp`: critical path, seeded Monte Carlo, and cost with earned value.
+  - `ace-board.sp`: an interactive atom graph, where an inspection's write-up can add rework to the graph.
+  - `ace-morning.sp`: the morning question: which constraints, killed today, release the most work?
   - `ace-site.sp`: positions as expressions, with every rule a constraint.
   - `ace-crews.sp`: sequence and capacity constraints.
 - **Style:** kebab-case names, straight quotes, `--` for comments, no em dashes.
 
-## Recent work (19 November 2026)
+## Recent work (19 and 20 November 2026)
 
 - **Sprout:**
   - **Columns (decision 82):** lists of number records are stored as one array per field, and simple `collect`, `keep` and `each` bodies run straight over the arrays.
@@ -36,9 +37,13 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **`match` and `cond` (decision 84):** they give a `false` answer instead of falling through to later cases.
   - **Typo suggestions (decision 85):** "did you mean" for unknown words and missing fields.
   - **Bracket errors:** an unclosed bracket is reported where it opened.
+  - **Speed notes (decision 86):** the editor-side lint for slow paths. Each `collect`, `keep` and `each` is marked as running over columns or item by item, with the reason.
+  - **`noise [sample, id]` (decision 87):** step 4 of the speed roadmap. It is pure, so it needs nothing recorded for replay and runs inside column loops.
   - **A compiler fix:** `and` and `or` no longer treat the call on their right as a tail call.
 - **ACE:**
-  - **Narrative:** a `narrative-required` atom isn't done until it's written up.
+  - **Narrative:** a `narrative-required` atom isn't done until it's written up. On the board, the write-up is structure: an inspection that finds rework or an NCR adds atoms that the pour then waits for.
+  - **The morning question:** open constraints ranked by the hours of work each would release, plus the pairs that only release work together.
+  - **Seeded Monte Carlo:** the same graph and seed always give the same histogram (theory 7.3).
   - **Cost:** cost is a view (labour, indirect, materials, equipment), with earned value (SPI, CPI and a forecast).
   - **Constraints:** a panel on the site plan shows every rule holding or failing.
   - **Crews:** capacity constraints, where crews of a trade take ready work.
@@ -46,7 +51,8 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - a library of examples with artwork, and the running game shown like album art
   - a now-playing bar whose progress bar rewinds time
   - number dragging in the code: Alt-drag on desktop, or Tweak on a phone
-- **Tests:** 143 pass, 83 for the language and 60 for the games.
+  - speed bars in the gutter, and a list of loops in the State tab
+- **Tests:** 158 pass, 88 for the language and 70 for the games.
 
 ## Open questions for Troy
 
@@ -63,14 +69,14 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 **Run it (Node 22 or later):**
 
 ```
-node test.js          # language tests (83)
-node game-tests.js    # game tests (60)
+node test.js          # language tests (88)
+node game-tests.js    # game tests (70)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 143 tests pass as of 19 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected.
+All 158 tests pass as of 19 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected.
 
 ## How to work on it
 
@@ -101,13 +107,13 @@ All 143 tests pass as of 19 November 2026. `test.js` uses `node:sqlite`, which p
    - columns: built (decision 82)
    - loop fusion for `collect`/`keep`/`fold` chains
    - spork sending pure numeric cells to WebAssembly with SIMD or to the GPU
-   - seeded `noise [sample, id]` for big runs
+   - seeded `noise [sample, id]` for big runs: built (decision 87)
 2. **Not built yet:**
    - files and folders as cells (decisions 63 to 66)
    - extending built-ins by shadowing (40)
    - spork (47)
    - automatic purity detection (32)
-   - the editor-side lint that flags slow paths
+   - (built since: the editor-side lint that flags slow paths, decision 86)
 3. **Known rough edges:**
    - The `else` catch: a then-branch that gives `false` also runs the `else` (74). `match` and `cond` no longer fall through on a `false` answer (84).
    - Field/name clash lints fire on the common `update` pattern; rename the local (73).
@@ -145,6 +151,7 @@ All 143 tests pass as of 19 November 2026. `test.js` uses `node:sqlite`, which p
 - `examples/ace-board.sp`: ACE: an interactive atom graph; tap work to close it, and gates, the rollup and the critical path follow
 - `examples/ace-site.sp`: ACE: positions are expressions over named dimensions, and overlaps are clashes
 - `examples/ace-crews.sp`: ACE: sequence and capacity constraints; work waits for what it requires and for a free crew of its trade
+- `examples/ace-morning.sp`: ACE: the morning question; open constraints ranked by the hours of work each would release (prints)
 - `examples/recipes.sp`: Recipes: quicksort, primes, FizzBuzz, a vector with its own + (prints; not a game)
 - `index.html`: The web page at taskiap.com/sprout3/: a library of examples with artwork, the running game shown like album art, live editing, a now-playing bar whose progress bar rewinds time, state, output and the spec; light and dark
 - `old-sprout2.js`: The old Sprout 2.0 compiler, kept only so bench.js can compare against it
@@ -757,6 +764,8 @@ These are marked in `sprout2.js` with "Sprout Live fix N" or "Sprout Live additi
 83. **A read right before `else` may miss quietly (built; Claude's call, fixing a listed rough edge).** In `p name else "anon"`, `else` is the program saying the field may be missing, so a miss on that one read gives `false` without a log (decision 28). Misses anywhere else, including deeper inside the left side, still log. The prelude's `s input else fresh-input` no longer logs on a game's first event.
 84. **`match` and `cond` give a `false` answer instead of falling through (built; library, decision 80).** They were written with `[answer] else [try the next case]`, so an answer of `false` set off the `else` catch (decision 74) and the search carried on, against decision 35 ("gives the first matching result"). They now find the position of the first matching case (a number, never `false`) and then give that case's answer, whatever it is. Only the chosen answer is worked out, as before. Decision 74 itself is unchanged for user code.
 85. **Typos get a suggestion (built; Claude's call).** An unknown word's note names the nearest name in scope or built-in, as in `"cuont" isn't a word Sprout knows yet (did you mean "count"?)`. A missing field's note names the nearest field of that cell: `doesn't know sped (did you mean speed?)`. "Nearest" means at most 1 edit for names of 4 letters or fewer, and 2 for longer ones. A swap of two neighbouring letters counts as 1 edit. When two names are equally near, there is no suggestion.
+86. **Speed notes (built; Claude's call, the editor-side lint for slow paths).** The compiler notes, for every `collect`, `keep` and `each` given a cell literal, whether its body can run over columns (decision 82), and if not, why: for example "it calls near for each item", "it works with words, not numbers" or "the body has more than one step". `load` puts the notes on the file cell as `speed`, and a game exposes them as `game speed`. The page shows a thin bar in the code's gutter, green when a loop can run over columns and amber when it runs item by item, and lists every loop with its reason in the State tab. Running item by item is fine for short lists, so the notes are information, not warnings.
+87. **`noise [sample, id]` (built; step 4 of decision 79).** It gives a number from 0 up to 1, always the same for the same two inputs: a 32-bit hash of both, whole and fractional parts. It is pure, so it isn't recorded for replay (decision 54) and can run inside a column loop (decision 82). `ace-schedule.sp` uses `noise [run, atom]` instead of `random`, so a graph and a seed always give the same Monte Carlo histogram, as ACE's theory asks (7.3).
 ````
 
 ---
@@ -943,7 +952,7 @@ let uid = 0;
 function jsName(n) { let s = ""; for (const ch of n) s += /[A-Za-z0-9]/.test(ch) ? ch : "_" + ch.charCodeAt(0).toString(16); return "v_" + s + "_" + (uid++); }
 
 class Gen {
-  constructor(globals) { this.globals = globals; this.shapes = []; this.frames = []; this.temps = []; this.consts = []; }
+  constructor(globals) { this.globals = globals; this.shapes = []; this.frames = []; this.temps = []; this.consts = []; this.speed = []; }
   // local temporaries, declared at the top of the JS function being generated (safe under recursion)
   // field shapes and inline caches are made once, when the program loads
   shapeRef(keys) { const k = "SH" + this.consts.length; this.consts.push("const " + k + "=shapeFor(" + JSON.stringify(keys) + ");"); return k; }
@@ -1054,6 +1063,12 @@ class Gen {
           v = "(((" + ta + "=" + v + ")===true?(" + tb + "=" + A + "):" + ta + "===false?(" + tb + "=false):(" + tb + "=SEND(" + ta + "," + mk + ")))!==false?" + tb + ":" + B + ")";
         } else v = "((" + ta + "=" + v + ")===true?" + A + ":" + ta + "===false?false:" + SND + ta + "," + mk + "))";
       } else v = (tail && isLast ? "TAIL(" : "SEND(") + v + "," + this.genTerm(t, false) + ")";
+      // speed notes: can this collect, keep or each run over columns? (decision 86)
+      const pw = T[i - 1];
+      if (t.k === "cell" && t.names.length && pw && pw.k === "word" && SPEEDW[pw.v] && t.kern) {
+        const r = t.kern[SPEEDW[pw.v]];
+        this.speed.push({ line: pw.line || 0, word: pw.v, fast: r === true, why: r === true ? "" : r });
+      }
     }
     return v;
   }
@@ -1183,6 +1198,7 @@ class Gen {
     const runJS = "(" + [act + "_L", act + "_it"].concat(nparams).join(",") + ")=>{" + runBody + "}";
     // column versions of this cell's body, used when it is given a list stored as columns (decision 82)
     const kern = c.names.length === 1 && !c.names[0].def && !sh.usesIt && !sh.usesLeft && c.items.length === 1 && c.items[0].k === "chain" ? this.genKernels(c) : null;
+    if (!c.kern) { const why = c.items.length !== 1 || c.items[0].k !== "chain" ? "the body has more than one step" : c.names.length !== 1 ? "it doesn't take exactly one named input" : "it uses _ or left"; c.kern = { m: why, t: why, e: why }; }
     return "MK(S[" + k + "]," + slotsJS + "," + runJS + ",[" + defs.join(",") + "],()=>[" + caps.join(",") + "]" + (kern ? "," + kern : "") + ")";
   }
 
@@ -1193,11 +1209,13 @@ class Gen {
   // Each is (self, rs, cols, n) => result, or null to fall back to the ordinary way, so they never change what a program does.
   genKernels(c) {
     const p = c.names[0].n, T = c.items[0].terms, out = [];
-    const fresh = () => ({ p, cols: new Map(), caps: new Map() });
+    const fresh = () => ({ p, cols: new Map(), caps: new Map(), why: null });
+    const kern = c.kern = { m: "collect runs over columns only as " + p + " with [new fields]", t: "the body doesn't give true or false", e: "the body isn't one host word given a list of values" };
     // m: s with [fields]
     if (T.length === 3 && T[0].k === "word" && T[0].v === p && T[1].k === "word" && (T[1].v === "with" || T[1].v === "..") && !this.lookup(T[1].v) && T[2].k === "cell" && fieldsOnly(T[2])) {
       const K = fresh(), keys = T[2].items.map(x => x.name), vals = T[2].items.map(x => this.kChain(x.val, K));
-      if (vals.every(v => v && v.ty === "n")) {
+      kern.m = vals.every(v => v && v.ty === "n") ? true : K.why || "a new value isn't number maths";
+      if (kern.m === true) {
         const q = JSON.stringify;
         out.push("m:(self,rs,cols,n)=>{" + kPro(K) + "if(rs.index(\"with\")>=0||rs.index(\"..\")>=0)return null;let out=rs;const oc=cols.slice();" +
           keys.map((k, j) => "let $j" + j + "=out.index(" + q(k) + ");if($j" + j + "<0){out=out.add(" + q(k) + ");$j" + j + "=out.keys.length-1}const $o" + j + "=new Float64Array(n);").join("") +
@@ -1207,6 +1225,7 @@ class Gen {
     }
     // t: a test
     { const K = fresh(), v = this.kChain(c.items[0], K);
+      kern.t = v && v.ty === "b" ? true : v ? kern.t : K.why || kern.t;
       if (v && v.ty === "b")
         out.push("t:(self,rs,cols,n)=>{" + kPro(K) + "const $k=new Uint32Array(n);let $m=0;for(let $i=0;$i<n;$i++){if(" + v.js + ")$k[$m++]=$i}" +
           "if($m===n)return self;const oc=new Array(cols.length);for(let $j=0;$j<cols.length;$j++){const $c=cols[$j],$o=new Float64Array($m);for(let $q=0;$q<$m;$q++)$o[$q]=$c[$k[$q]];oc[$j]=$o}return COLC(rs,oc,$m)}");
@@ -1220,6 +1239,7 @@ class Gen {
         if (it.terms.length === 1 && t0.k === "word" && t0.v !== p && !["_", "left", "right", "!", "true", "false"].includes(t0.v)) return this.kCap(t0.v, K, false);
         const v = this.kChain(it, K); return v && v.js;
       });
+      kern.e = args && args.every(a => a) ? true : K.why || "an argument isn't a number, a word in quotes or a name from outside";
       if (args && args.every(a => a))
         out.push("e:(self,rs,cols,n)=>{" + kPro(K) + "if(!(" + F + " instanceof NATIVE))return null;const $f=" + F + ".fn;for(let $i=0;$i<n;$i++)$f(VP([" + args.join(",") + "]));return true}");
     }
@@ -1231,53 +1251,62 @@ class Gen {
     let v, i;
     if (T[0].k === "word" && T[0].v === K.p) {
       const f = T[1];
-      if (!f || f.k !== "word" || f.v === K.p || ["!", "true", "false", "_", "left", "right"].includes(f.v)) return null;
-      if ((FUSED.has(f.v) || LAZYOPS.has(f.v)) && T.length > 2 && !this.lookup(f.v)) return null;
+      if (!f || f.k !== "word" || f.v === K.p || ["!", "true", "false", "_", "left", "right"].includes(f.v)) return kNo(K, "it uses " + K.p + " itself, not one of its fields");
+      if ((FUSED.has(f.v) || LAZYOPS.has(f.v)) && T.length > 2 && !this.lookup(f.v)) return kNo(K, "it uses " + K.p + " itself, not one of its fields");
       v = { js: kCol(f.v, K), ty: "n" }; i = 2;
+    } else if (T[0].k === "word" && T[0].v === "noise" && !this.lookup("noise") && T[1] && T[1].k === "cell" && !T[1].names.length && T[1].items.length === 2 && T[1].items.every(x => x.k === "chain")) {
+      // noise [a, b] is pure, so it can run inside a column loop (decision 87)
+      const a = this.kChain(T[1].items[0], K), b = a && this.kChain(T[1].items[1], K);
+      v = a && b && a.ty === "n" && b.ty === "n" ? { js: "NOISE(" + a.js + "," + b.js + ")", ty: "n" } : kNo(K, "its noise isn't given two numbers"); i = 2;
     } else { v = this.kTerm(T[0], K); i = 1; }
     for (; v && i < T.length; i++) {
-      const t = T[i]; if (t.k !== "word") return null;
+      const t = T[i]; if (t.k !== "word") return kNo(K, t.k === "cell" ? "it calls something for each item" : "it sends a value to a value");
       const w = t.v;
       if (FUSED.has(w) && i + 1 < T.length && !this.lookup(w)) {
-        const op = KOPS[w]; if (!op || v.ty !== "n") return null;
-        const b = this.kTerm(T[++i], K); if (!b || b.ty !== "n") return null;
+        const op = KOPS[w]; if (!op) return kNo(K, "it uses " + w); if (v.ty !== "n") return kNo(K, "it does maths on true or false");
+        const b = this.kTerm(T[++i], K); if (!b) return null; if (b.ty !== "n") return kNo(K, "it does maths on true or false");
         v = w === "%" ? { js: "(((" + v.js + "%" + b.js + ")+" + b.js + ")%" + b.js + ")", ty: "n" } : { js: "(" + v.js + op[0] + b.js + ")", ty: op[1] };
       } else if ((w === "and" || w === "or") && i + 1 < T.length && !this.lookup(w)) {
-        if (v.ty !== "b" || T[i + 1].k === "cell") return null;
-        const b = this.kTerm(T[++i], K); if (!b || b.ty !== "b") return null;
+        if (v.ty !== "b" || T[i + 1].k === "cell") return kNo(K, "its " + w + " isn't between two tests");
+        const b = this.kTerm(T[++i], K); if (!b) return null; if (b.ty !== "b") return kNo(K, "its " + w + " isn't between two tests");
         v = { js: "(" + v.js + (w === "and" ? "&&" : "||") + b.js + ")", ty: "b" };
       } else if (v.ty === "n" && KPOST[w]) v = { js: KPOST[w] + "(" + v.js + ")", ty: "n" };
       else if (v.ty === "n" && (w === "min" || w === "max") && i + 1 < T.length) {
-        const b = this.kTerm(T[++i], K); if (!b || b.ty !== "n") return null;
+        const b = this.kTerm(T[++i], K); if (!b) return null; if (b.ty !== "n") return kNo(K, "it does maths on true or false");
         v = { js: "Math." + w + "(" + v.js + "," + b.js + ")", ty: "n" };
       } else if (v.ty === "b" && w === "not") v = { js: "(!" + v.js + ")", ty: "b" };
-      else return null;
+      else return kNo(K, "it uses " + w);
     }
     return v;
   }
   kTerm(t, K) {
     if (t.k === "num") return { js: "(" + t.v + ")", ty: "n" };
-    if (t.k === "group") { if (t.items.length !== 1 || t.items[0].k !== "chain") return null; const v = this.kChain(t.items[0], K); return v && { js: "(" + v.js + ")", ty: v.ty }; }
-    if (t.k !== "word") return null;
+    if (t.k === "group") { if (t.items.length !== 1 || t.items[0].k !== "chain") return kNo(K, "it has a group of several steps"); const v = this.kChain(t.items[0], K); return v && { js: "(" + v.js + ")", ty: v.ty }; }
+    if (t.k !== "word") return kNo(K, t.k === "str" || t.k === "tmpl" ? "it works with words, not numbers" : "it calls something for each item");
     if (t.v === "true" || t.v === "false") return { js: t.v, ty: "b" };
-    if (t.v === K.p || ["_", "left", "right", "!"].includes(t.v) || t.v in ALL) return null;
-    const r = this.kCap(t.v, K, true); return r && { js: r, ty: "n" };
+    if (t.v === K.p) return kNo(K, "it uses " + K.p + " itself, not one of its fields");
+    if (["_", "left", "right", "!"].includes(t.v) || t.v in ALL) return kNo(K, "it uses " + t.v);
+    const rc = this.lookup(t.v); if (rc && rc.cell) return kNo(K, "it calls " + t.v + " for each item");
+    const r = this.kCap(t.v, K, true); return r ? { js: r, ty: "n" } : kNo(K, "it uses " + t.v + ", which isn't a number from outside the loop");
   }
   // a name from outside the cell, read once before the loop. A number is checked for; random and other getters are never captured.
   kCap(n, K, numeric) {
     let ref;
     const r = this.lookup(n);
     if (r) ref = this.refJS(r);
-    else if (this.globals.has(n)) { const d = Object.getOwnPropertyDescriptor(G, n); if (!d || d.get) return null; ref = this.globalRef(n); }
-    else return null;
+    else if (this.globals.has(n)) { const d = Object.getOwnPropertyDescriptor(G, n); if (!d || d.get) return kNo(K, "it reads " + n + ", which changes from item to item"); ref = this.globalRef(n); }
+    else return kNo(K, "it uses " + n + ", which isn't a name the loop can see");
     let e = K.caps.get(n);
     if (!e) { e = { v: "$k" + K.caps.size, ref, num: false }; K.caps.set(n, e); }
     if (numeric) e.num = true;
     return e.v;
   }
 }
+const SPEEDW = { collect: "m", keep: "t", each: "e" };
 const KOPS = { "+": ["+", "n"], "-": ["-", "n"], "*": ["*", "n"], "/": ["/", "n"], "%": ["%", "n"], "<": ["<", "b"], ">": [">", "b"], "<=": ["<=", "b"], ">=": [">=", "b"], "=": ["===", "b"], "!=": ["!==", "b"] };
 const KPOST = { abs: "Math.abs", floor: "Math.floor", round: "Math.round", ceil: "Math.ceil", sqrt: "Math.sqrt", sin: "Math.sin", cos: "Math.cos", tan: "Math.tan", log: "Math.log", neg: "-" };
+// a kernel can't be made: remember the first reason, for the speed notes (decision 86)
+function kNo(K, why) { if (!K.why) K.why = why; return null; }
 function kCol(f, K) { let v = K.cols.get(f); if (!v) { v = "$c" + K.cols.size; K.cols.set(f, v); } return v + "[$i]"; }
 // the start of a kernel: find each field's column, and read each outside name once
 function kPro(K) {
@@ -1332,7 +1361,9 @@ function compile(src, globals) {
   g.temps.push([]);
   const js = g.genCell({ k: "cell", names: [], items: ast });
   const top = g.temps.pop();
-  return { js, shapes: g.shapes, prologue: (top.length ? "let " + top.join(",") + ";\n" : "") + g.consts.join("\n") };
+  // each body is compiled more than once (to run, and to read fields), so its speed note is kept once
+  const seenSpeed = new Set(), speed = g.speed.filter(x => { const k = x.line + " " + x.word + " " + x.fast; if (seenSpeed.has(k)) return false; seenSpeed.add(k); return true; });
+  return { js, shapes: g.shapes, prologue: (top.length ? "let " + top.join(",") + ";\n" : "") + g.consts.join("\n"), speed };
 }
 
 // ===================================================================== runtime
@@ -1583,6 +1614,14 @@ function queueEffects() { EFFQ = []; }
 function runEffects() { const q = EFFQ || []; EFFQ = null; for (const f of q) f(); return q.length; }
 function dropEffects() { const n = EFFQ ? EFFQ.length : 0; EFFQ = null; return n; }
 
+// noise: a 32-bit integer hash of both inputs (whole and fractional parts), mapped to [0, 1)
+function NOISE(x, y) {
+  const fx = Math.floor(x), fy = Math.floor(y);
+  let h = Math.imul(fx ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul((fy + 0x632be5ab) | 0, 0xc2b2ae35) ^ Math.imul(Math.floor((x - fx) * 4294967296) | 0, 0x27d4eb2f) ^ Math.imul(Math.floor((y - fy) * 4294967296) | 0, 0x165667b1);
+  h ^= h >>> 16; h = Math.imul(h, 0x7feb352d); h ^= h >>> 15; h = Math.imul(h, 0x846ca68b); h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+
 // ---- text
 function fmt(x) {
   if (x === true) return "true"; if (x === false) return "false"; if (x === BANG) return "!"; if (x === ANY) return "any";
@@ -1765,6 +1804,8 @@ defNative("dist", a => { const [x1, y1, x2, y2] = args(a, 4); return Math.hypot(
 defNative("clamp", a => { const [v, lo, hi] = args(a, 3); return v < lo ? lo : v > hi ? hi : v; });
 defNative("toward", a => { const [x, y, t] = args(a, 3); return x + (y - x) * t; });
 defNative("print", a => { effect(() => OUT(fmt(a))); return a; }, true);
+// noise [sample, id]: a number from 0 up to 1 that is always the same for the same two inputs (decision 87)
+defNative("noise", a => { const [x, y] = args(a, 2); return NOISE(num(x), num(y)); });
 Object.defineProperty(G, "random", { get: () => RNG(), enumerable: true });
 let RNG = Math.random, OUT = s => { if (typeof console !== "undefined") console.log(s); };
 
@@ -1802,7 +1843,7 @@ frame : [update |
 
 // ===================================================================== build
 const RT = { BANG, ANY, G, S: null, MK, SW, SEND, RUNC, STR, UNKNOWN, LOG_MISS, WITHF,
-  ADD, SUB, MUL, DIV, MOD, LT, GT, LE, GE, EQ, NE, CAT, WITH, AT, VC, VP, ISBOOL, MISSING, TAIL, SWI, shapeFor, COLC, NATIVE: Native };
+  ADD, SUB, MUL, DIV, MOD, LT, GT, LE, GE, EQ, NE, CAT, WITH, AT, VC, VP, ISBOOL, MISSING, TAIL, SWI, shapeFor, COLC, NATIVE: Native, NOISE };
 let preludeCell = null;
 function globalNames(extra) { const s = new Set(Object.keys(G)); if (extra) for (const k of extra) s.add(k); return s; }
 
@@ -1814,11 +1855,11 @@ function load(src, opts) {
     preludeCell = load(PRELUDE, { noPrelude: true });
     for (const k of preludeCell.fieldNames()) { const kk = k; Object.defineProperty(G, kk, { get: () => preludeCell.field(kk), enumerable: true, configurable: true }); }
   }
-  const { js, shapes, prologue } = compile(src, globalNames());
+  const { js, shapes, prologue, speed } = compile(src, globalNames());
   const names = Object.keys(RT).filter(k => k !== "S");
   const f = new Function(...names, "S", prologue + "\nreturn " + js + "\n//# sourceURL=sprout.js");
   const cell = f(...names.map(k => RT[k]), shapes);
-  cell.js = js;
+  cell.js = js; cell.speed = speed;
   return cell;
 }
 
@@ -1885,6 +1926,8 @@ function makeGame(src, opts) {
 
   const api = {
     get state() { return state; }, history,
+    // which collect, keep and each bodies can run over columns, from the compiler (decision 86)
+    get speed() { return file.speed || []; },
     down(x, y) { send(ev({ kind: "down", x, y })); },
     move(x, y) { send(ev({ kind: "move", x, y })); },
     up() { send(ev({ kind: "up" })); },
@@ -1995,6 +2038,17 @@ ok("84 match only works out the answer it picks", val('match [1, [1, "one", 2, n
 { const lineOf = src => { try { S.load(src); return 0; } catch (e) { return e.line; } };
   ok("an unclosed [ is reported where it opened", lineOf("a : 1\nb : [2, 3\nc : 4\nd : [5]\ne : 6") === 2);
   ok("an unclosed ( too", lineOf("a : 1\nb : (2 + 3\nc : 4") === 2); }
+{ const sp = S.load("xs : []\nf : [p | p x > 1]\na : xs collect [p | p with [x : p x + 1]]\nb : xs keep [p | p x > 1]\nc : xs keep [p | f p]\nd : xs collect [p | p with [x : rand [0, 1]]]\ne : xs keep [p | p name = \"a\"]").speed;
+  const at = l => sp.find(n => n.line === l);
+  ok("86 speed notes: a with of number maths runs over columns", at(3).fast && at(3).word === "collect" && at(4).fast && at(4).word === "keep");
+  ok("86 speed notes: say why a body runs item by item", at(5).why === "it calls f for each item" && /calls something/.test(at(6).why) && at(7).why === "it works with words, not numbers", sp.map(n => n.line + " " + n.why)); }
+{ const n1 = +val("noise [3, 7]"), n2 = +val("noise [3, 7]"), n3 = +val("noise [3, 8]");
+  ok("87 noise: the same inputs give the same number, from 0 up to 1", n1 === n2 && n1 !== n3 && n1 >= 0 && n1 < 1);
+  const xs = Array.from({ length: 2000 }, (_, k) => +val("noise [" + k + ", 1]")), mean = xs.reduce((a, b) => a + b) / xs.length;
+  ok("87 noise: spread evenly", mean > 0.47 && mean < 0.53 && Math.min(...xs) < 0.01 && Math.max(...xs) > 0.99, mean);
+  const prog = "ps : range 50 collect [n | [x : n, y : 0]]\nresult : ps collect [p | p with [y : noise [p x, 9]]]";
+  const a = S.load(prog).field("result"); S.columns(false); const b = S.load(prog).field("result"); S.columns(true);
+  ok("87 noise runs inside a column loop, with the same results", a instanceof S.ColCell && S.fmt(a) === S.fmt(b) && S.load(prog).speed.find(n => n.line === 2).fast); }
 ok("and/or run a call on their right before checking it", val("[k | k > 1 and ([d | d = 3] k)] 3") === "true" && val("[k | k > 9 or ([d | d = 3] k)] 3") === "true");
 ok("81 ( ) is plain text", val('"rgba(0,0,0,0.5)"') === "rgba(0,0,0,0.5)");
 ok("81 escaped bracket", val('"a\\[b]"') === "a[b]");
@@ -2275,8 +2329,13 @@ const f = (g, k) => g.state.field(k);
   const p = sc.find(l => l.startsWith("P10")), nums = (p || "").match(/\d+/g).map(Number);
   ok("ace-schedule: monte carlo percentiles in order, and later than the likely plan", nums.length === 8 && nums[1] >= 21 && nums[1] <= nums[3] && nums[3] <= nums[5] && nums[5] <= nums[7] && nums[3] > 21, p);
 
+  ok("ace-schedule: seeded, so the same graph and seed give the same histogram", JSON.stringify(sc) === JSON.stringify(printed("ace-schedule")) && sc.includes("P10 day 22   P50 day 25   P80 day 28   P90 day 29"), sc.find(l => l.startsWith("P10")));
   ok("ace-schedule: cost is a view of crews, rates, time, materials and equipment", sc.includes("labour     $58,900    crews x days x $950") && sc.includes("budget     $149,535"));
   ok("ace-schedule: earned value on the status day", sc.includes("SPI 0.83  behind schedule") && sc.includes("CPI 0.96  over budget") && sc.includes("forecast at completion  $156,284  (budget / CPI)"), sc.filter(l => /SPI|CPI|forecast/.test(l)));
+  const mo = printed("ace-morning");
+  ok("ace-morning: what changed since yesterday", mo.includes("cleared   Conduit delivered, Excavate north footings") && mo.includes("can start Form north footings") && mo.includes("ready     1 package, 220 hours"));
+  ok("ace-morning: constraints ranked by the hours they release", mo.includes("1. South access road              180 h   1 package   <- this one first") && mo.some(l => l.startsWith("2. Electrical drawings rev C")) && mo.some(l => l.startsWith("4. RFI 118: grounding depth")), mo.slice(4, 10));
+  ok("ace-morning: a pair that only releases work together", mo.includes("   RFI 112: splice length         with Rebar delivery, north: 260 h") && mo.includes("   Anchor bolts                   waits on other work first"));
   const src = fs.readFileSync(__dirname + "/examples/ace-board.sp", "utf8"), AT = S.partsOf(S.load(src).field("atoms"));
   const fx = [], b = L.makeGame(src, { onEffect: e => fx.push(e[0]) });
   const tapOn = id => { const a = AT.find(r => r.field("id") === id); b.down(a.field("x") + 50, a.field("y") + 18); b.tick(1 / 60); b.up(); b.tick(1 / 60); return f(b, "msg"); };
@@ -2286,9 +2345,23 @@ const f = (g, k) => g.state.field(k);
   ok("ace-board: blocked work can't be closed", tapOn("place") === "place rebar waits on dig, rebar, rfi" && fx.includes("shake"));
   ok("ace-board: a gate isn't tapped", tapOn("rfi") === "RFI: splice is a gate: it closes by itself");
   for (const id of ["dig", "rebar", "reply", "place"]) tapOn(id);
-  ok("ace-board: verified needs the work and then a witness", tapOn("inspect") === "inspection done: now tap again to sign" && tapOn("inspect") === "inspection signed by the witness");
+  ok("ace-board: verified needs the work and then a witness", tapOn("inspect") === "inspection done: now tap again to sign" && tapOn("inspect") === "inspection signed: now write it up");
+  ok("ace-board: a signed inspection still needs its write-up", tapOn("inspect") === "write up the inspection first: choose below" && !header().startsWith("ACE  9/"));
+  const tapAt = (x, y) => { b.down(x, y); b.tick(1 / 60); b.up(); b.tick(1 / 60); return f(b, "msg"); };
+  ok("ace-board: written up as nominal, it closes", tapAt(60, 445) === "inspection written up: nominal" && header().startsWith("ACE  9/11 done"), header());
   tapOn("forms"); tapOn("pour");
   ok("ace-board: everything done, nothing left", header() === "ACE  11/11 done  ·  0d of work left", header());
+  // narrative is structure: an inspection that finds rework adds an atom the pour has to wait for
+  const r = L.makeGame(src); r.tick(1 / 60);
+  const rtap = id => { const a = AT.find(x => x.field("id") === id); r.down(a.field("x") + 50, a.field("y") + 18); r.tick(1 / 60); r.up(); r.tick(1 / 60); return f(r, "msg"); };
+  const rhead = () => { const t = r.draw().filter(x => x[0] === "text").map(x => x[1][0]); return t.find(x => x.startsWith("ACE")); };
+  for (const id of ["dig", "rebar", "reply", "place", "inspect", "inspect", "forms"]) rtap(id);
+  r.down(175, 445); r.tick(1 / 60); r.up(); r.tick(1 / 60);
+  ok("ace-board: finding rework adds an atom to the graph", f(r, "msg") === "inspection found rework: new work joins the graph" && rhead().startsWith("ACE  10/12 done"), rhead());
+  ok("ace-board: and the pour waits for it", rtap("pour") === "pour waits on rework");
+  r.down(296, 284); r.tick(1 / 60); r.up(); r.tick(1 / 60);
+  ok("ace-board: once the rework is done, the pour can go", rtap("pour") === "closed pour" && rhead() === "ACE  12/12 done  ·  0d of work left", rhead());
+  ok("ace-board: reopening the inspection takes the added atom away", rtap("inspect") === "reopened inspection" && / \d+\/11 done/.test(rhead()) && f(r, "story") === "", rhead());
   tapOn("dig");
   ok("ace-board: reopening upstream work reopens what depends on it", /^ACE  \d\/11 done/.test(header()) && !header().startsWith("ACE  11/11"), header());
 
@@ -3297,6 +3370,7 @@ atoms : [
 ]
 last-atom : "cure"
 runs : 400
+seed : 1                   -- change it for a different set of runs; the same seed always gives the same answer
 
 -- one shared risk, rolled once per run: wet weather delays the pour by 3 days, 3 times in 10
 risk : [chance : 0.3, delay : 3, hits : "pour"]
@@ -3330,18 +3404,18 @@ likely each [a |
 ]
 "finish on day [finish [last-atom, likely]], through " .. (critical fold ["", [s x | s = "" [x] else [s .. " > " .. x]]]) print
 
--- a random time from a triangle: most often near likely, never outside fastest..slowest
-tri : [t |
+-- a time from a triangle, given u from 0 up to 1: most often near likely, never outside fastest..slowest
+tri : [t u |
   lo : t @ 1, mode : t @ 2, hi : t @ 3
-  u : random
   hi = lo [lo] else [
     u < (mode - lo / (hi - lo)) [lo + (u * (hi - lo) * (mode - lo) sqrt)] else [hi - (1 - u * (hi - lo) * (hi - mode) sqrt)]
   ]
 ]
 -- one run: sample every duration, roll the shared risk once, walk the graph
+-- the draws come from noise [run, atom], not random, so the same seed gives the same histogram every time
 one-run : [n |
-  sampled : atoms collect [a | a with [days : tri (a dur)]]
-  wet : random < (risk chance)
+  sampled : range (atoms length) collect [k | atoms @ k with [days : tri [atoms @ k dur, noise [n, k + (seed * 1000)]]]]
+  wet : noise [n, seed * 1000 + 999] < (risk chance)
   ds : wet [sampled collect [a | a id = (risk hits) [a with [days : a days + (risk delay)]] else [a]]] else [sampled]
   finish [last-atom, ds]
 ]
@@ -3453,6 +3527,8 @@ ACE: an interactive atom graph
 -- Leaves close with one tap. Verified atoms need two: the work, then the witness.
 -- Gates and the rollup are never tapped: they close themselves when what they wait on is done.
 -- Blocked work can't be closed. Red marks the critical path: the work that sets the finish.
+-- The inspection needs a narrative too, and the narrative is structure: if it finds a problem,
+-- new atoms join the graph and the pour waits for them.
 
 bw : 104
 bh : 36
@@ -3467,128 +3543,176 @@ atoms : [
   [id : "forms", name : "formwork", kind : "leaf", requires : ["dig"], days : 3, x : 10, y : 196]
   [id : "place", name : "place rebar", kind : "leaf", requires : ["dig", "rebar", "rfi"], days : 4, x : 128, y : 196]
   [id : "rfi", name : "RFI: splice", kind : "gate", requires : ["reply"], days : 0, x : 246, y : 196]
-  [id : "inspect", name : "inspection", kind : "verified", requires : ["place"], days : 1, x : 128, y : 266]
+  [id : "inspect", name : "inspection", kind : "verified", story : true, requires : ["place"], days : 1, x : 128, y : 266]
   [id : "pour", name : "pour", kind : "leaf", requires : ["inspect", "forms"], days : 1, x : 128, y : 336]
 ]
 rollup : [name : "turbine pedestal", contains : ["dig", "forms", "place", "pour"], requires : ["basis"]]
 finish-atom : "pour"
 
+-- what the inspection can find, as typed outcomes, and the atoms each one adds
+outcomes : ["nominal", "rework", "NCR"]
+found : [story |
+  match [story, [
+    "rework", [[id : "rework", name : "rework splices", kind : "leaf", requires : ["inspect"], days : 2, x : 246, y : 266]]
+    "NCR", [[id : "dispo", name : "engineer disposition", kind : "leaf", requires : ["inspect"], days : 3, x : 10, y : 266], [id : "ncr", name : "NCR closed", kind : "gate", requires : ["dispo"], days : 0, x : 10, y : 336]]
+    any, []
+  ]]
+]
+-- the graph for a given story: the pour also waits for whatever the inspection added
+grown : [story |
+  extra : found story
+  adds : extra keep [e | e id = "rework" or (e id = "ncr")] collect [e | e id]
+  atoms collect [a | a id = "pour" [a with [requires : a requires .. adds]] else [a]] .. extra
+]
+
 start :
   closed : ["permit", "survey"]
   signed : ["permit"]
+  story : ""
   msg : "tap a box"
 
 -- lists of ids
 has : [xs want | xs keep [x | x = want] length > 0]
 without : [xs v | xs keep [x | x != v]]
 join : [xs | xs fold ["", [s x | s = "" [x] else [s .. ", " .. x]]]]
-find : [want | atoms keep [a | a id = want] first]
+find : [want graph | graph keep [a | a id = want] first]
 
 -- derive: done is never stored. Close whatever the graph allows until nothing changes.
-closes : [a ok closed signed |
+closes : [a ok g |
   k : a kind
   needs-met : a requires keep [r | has [ok, r] not] length = 0
-  k = "trivial" or (needs-met and (k = "gate" or (has [closed, a id] and (k = "leaf" or (has [signed, a id])))))
+  told : (a story else false) not or (g story != "")
+  k = "trivial" or (needs-met and (k = "gate" or (has [g closed, a id] and told and (k = "leaf" or (has [g signed, a id])))))
 ]
-settle : [ok closed signed |
-  more : atoms keep [a | has [ok, a id] not and (closes [a, ok, closed, signed])] collect [a | a id]
-  more length = 0 [ok] else [settle [ok .. more, closed, signed]]
+settle : [graph ok g |
+  more : graph keep [a | has [ok, a id] not and (closes [a, ok, g])] collect [a | a id]
+  more length = 0 [ok] else [settle [graph, ok .. more, g]]
 ]
 
 -- days of work left before an atom is finished, through everything it requires
-to-go : [want ok |
-  a : find want
+to-go : [want ok graph |
+  a : find [want, graph]
   own : has [ok, want] [0] else [a days]
-  own + (a requires collect [r | to-go [r, ok]] fold [0, [m x | m max x]])
+  own + (a requires collect [r | to-go [r, ok, graph]] fold [0, [m x | m max x]])
 ]
 -- the critical path: from the end, back through whichever requirement has the most work left
-critical : [want ok |
-  a : find want
-  todo : a requires keep [r | to-go [r, ok] > 0]
+critical : [want ok graph |
+  a : find [want, graph]
+  todo : a requires keep [r | to-go [r, ok, graph] > 0]
   has [ok, want] [[]] else [
     todo length = 0 [[want]] else [
-      worst : todo fold ["", [w r | w = "" or (to-go [r, ok] > (to-go [w, ok])) [r] else [w]]]
-      critical [worst, ok] .. [want]
+      worst : todo fold ["", [w r | w = "" or (to-go [r, ok, graph] > (to-go [w, ok, graph])) [r] else [w]]]
+      critical [worst, ok, graph] .. [want]
     ]
   ]
 ]
 
 inside : [a i | i touch-x > (a x) and (i touch-x < (a x + bw)) and (i touch-y > (a y)) and (i touch-y < (a y + bh))]
 waiting-on : [a ok | a requires keep [r | has [ok, r] not]]
+-- the outcome buttons, shown while the signed inspection waits for its write-up
+button-x : [n | n - 1 * 115 + 10]
+awaiting : [g | has [g closed, "inspect"] and (has [g signed, "inspect"]) and (g story = "")]
 
 update : [g |
   i : g input
-  ok : settle [[], g closed, g signed]
-  a : i tapped [atoms keep [b | inside [b, i]] first] else [false]
+  graph : grown (g story)
+  ok : settle [graph, [], g]
+  choosing : awaiting g
+  pick : choosing and (i tapped) and (i touch-y > 430) [range 3 keep [n | i touch-x > (button-x n) and (i touch-x < (button-x n + 105))] first] else [false]
+  told : pick != false
+  a : i tapped and (told not) [graph keep [b | inside [b, i]] first] else [false]
   hit : a != false
   manual : hit and (a kind = "leaf" or (a kind = "verified"))
   is-closed : manual and (has [g closed, a id])
   is-signed : manual and (has [g signed, a id])
   blocked : manual and (is-closed not) and (waiting-on [a, ok] length > 0)
-  act : manual and (blocked not)
+  needs-story : manual and is-signed and ((a story else false) and (g story = ""))
+  act : manual and (blocked not) and (needs-story not)
 
-  -- what a tap does: leaf open -> closed -> open; verified open -> closed -> signed -> open
+  -- what a tap does: leaf open -> closed -> open; verified open -> closed -> signed -> (written up) -> open
   step : act [a kind = "leaf" [is-closed ["reopen"] else ["close"]] else [is-closed not ["close"] else [is-signed not ["sign"] else ["reopen"]]]] else ["none"]
   closed : step = "close" [g closed .. [a id]] else [step = "reopen" [without [g closed, a id]] else [g closed]]
   signed : step = "sign" [g signed .. [a id]] else [step = "reopen" [without [g signed, a id]] else [g signed]]
+  outcome : told [outcomes @ pick] else [step = "reopen" and (a story else false) [""] else [g story]]
 
   blocked
     shake 5
     beep [120, 0.15]
-  act
+  act or told
     beep [step = "reopen" [330] else [660], 0.06]
 
   g with
     closed : closed
     signed : signed
     msg : cond [
+      told and (outcome = "nominal"), "inspection written up: nominal"
+      told, "inspection found " .. outcome .. ": new work joins the graph"
       blocked, "[a name] waits on " .. (join (waiting-on [a, ok]))
+      needs-story, "write up the inspection first: choose below"
       step = "close", a kind = "verified" ["[a name] done: now tap again to sign"] else ["closed [a name]"]
-      step = "sign", "[a name] signed by the witness"
+      step = "sign", (a story else false) ["[a name] signed: now write it up"] else ["[a name] signed by the witness"]
       step = "reopen", "reopened [a name]"
       hit, "[a name] is a [a kind]: it closes by itself"
       any, g msg
     ]
+    story : outcome
 ]
 
 draw : [g |
-  ok : settle [[], g closed, g signed]
-  path : critical [finish-atom, ok]
+  graph : grown (g story)
+  ok : settle [graph, [], g]
+  path : critical [finish-atom, ok, graph]
   bottom : [a | [x : a x + (bw / 2), y : a y + bh]]
   top : [a | [x : a x + (bw / 2), y : a y]]
   clear "#0b0f0d"
 
-  -- requires: a line from each requirement down to what needs it
-  atoms each [a |
+  -- requires: a line from each requirement to what needs it
+  graph each [a |
     a requires each [r |
-      b : find r
+      b : find [r, graph]
       hot : has [path, r] and (has [path, a id])
       line [bottom b x, bottom b y, top a x, top a y, hot ["#ff6b6b"] else [has [ok, r] ["#2f6b3a"] else ["#3a4a40"]]]
     ]
   ]
 
   -- the atoms
-  atoms each [a |
+  graph each [a |
     done : has [ok, a id]
     ready : done not and (waiting-on [a, ok] length = 0)
     edge : done ["#8ef08e"] else [has [path, a id] ["#ff6b6b"] else [ready ["#ffd166"] else ["#3a4a40"]]]
-    half : a kind = "verified" and (has [g closed, a id]) and (has [g signed, a id] not)
+    half : a kind = "verified" and (has [g closed, a id]) and (done not)
+    note : cond [
+      half and (has [g signed, a id] not), "verified: needs a witness"
+      half, "needs a write-up"
+      (a story else false) and (g story != ""), "written up: " .. (g story)
+      any, a kind .. " · " .. (a days) .. "d"
+    ]
     rect [a x, a y, bw, bh, edge]
     rect [a x + 2, a y + 2, bw - 4, bh - 4, done ["#14301c"] else [half ["#3a3214"] else ["#101814"]]]
-    text [a name, a x + (bw / 2), a y + 14, 12, done ["#c8f5c8"] else ["#d6e2d9"]]
-    text [half ["verified: needs a witness"] else [a kind .. " · " .. (a days) .. "d"], a x + (bw / 2), a y + 28, 9, "#7d968a"]
+    text [a name, a x + (bw / 2), a y + 14, 11, done ["#c8f5c8"] else ["#d6e2d9"]]
+    text [note, a x + (bw / 2), a y + 28, 9, "#7d968a"]
   ]
 
   -- the rollup: done when all its children are done
   parts : rollup contains keep [c | has [ok, c]] length
   all-in : parts = (rollup contains length) and (has [ok, "basis"])
-  rect [10, 400, W - 20, 22, "#22302a"]
-  rect [10, 400, W - 20 * parts / (rollup contains length), 22, all-in ["#8ef08e"] else ["#2f6b3a"]]
-  text ["[rollup name]  [parts]/[rollup contains length]", W / 2, 411, 12, all-in ["#0b0f0d"] else ["#d6e2d9"]]
+  rect [10, 396, W - 20, 22, "#22302a"]
+  rect [10, 396, W - 20 * parts / (rollup contains length), 22, all-in ["#8ef08e"] else ["#2f6b3a"]]
+  text ["[rollup name]  [parts]/[rollup contains length]", W / 2, 407, 12, all-in ["#0b0f0d"] else ["#d6e2d9"]]
 
-  text ["ACE  [ok length]/[atoms length] done  ·  [to-go [finish-atom, ok]]d of work left", W / 2, 22, 14, "#e8f3e9"]
+  text ["ACE  [ok length]/[graph length] done  ·  [to-go [finish-atom, ok, graph]]d of work left", W / 2, 22, 14, "#e8f3e9"]
   text ["green done   amber workable   red critical   grey blocked", W / 2, 40, 9, "#7d968a"]
-  text [g msg, W / 2, 448, 13, "#ffd166"]
+
+  -- while the inspection waits for its write-up, the typed outcomes are buttons
+  awaiting g
+    range 3 each [n |
+      rect [button-x n, 432, 105, 28, "#ffd166"]
+      rect [button-x n + 2, 434, 101, 24, "#2a2410"]
+      text [outcomes @ n, button-x n + 52, 446, 12, "#ffd166"]
+    ]
+    text ["what did the inspection find?", W / 2, 470, 11, "#c8b98a"]
+  awaiting g not
+    text [g msg, W / 2, 448, 13, "#ffd166"]
 ]
 ````
 
@@ -3833,6 +3957,121 @@ draw : [g |
 ]
 ````
 
+## examples/ace-morning.sp
+
+ACE: the morning question; open constraints ranked by the hours of work each would release (prints)
+
+````sprout
+-- ACE morning: the morning question.
+-- Status meetings ask what happened. The job moves on a different question:
+-- which constraints, killed today, release the most work?
+-- That's a ranking, worked out here from the graph: for each open constraint, the hours of work
+-- that would become workable if it were cleared this morning.
+
+-- the constraints: material, drawings, RFIs, permits, access, crews, inspections
+constraints : [
+  [id : "permit-dig", name : "Excavation permit", open : false]
+  [id : "mat-forms", name : "Formwork on site", open : false]
+  [id : "mat-conduit", name : "Conduit delivered", open : false]
+  [id : "rfi-112", name : "RFI 112: splice length", open : true]
+  [id : "mat-rebar-n", name : "Rebar delivery, north", open : true]
+  [id : "mat-rebar-s", name : "Rebar delivery, south", open : true]
+  [id : "dwg-elec-c", name : "Electrical drawings rev C", open : true]
+  [id : "rfi-118", name : "RFI 118: grounding depth", open : true]
+  [id : "mat-bolts", name : "Anchor bolts", open : true]
+  [id : "access-south", name : "South access road", open : true]
+  [id : "insp-footings", name : "Footing inspection", open : true]
+  [id : "permit-crane", name : "Crane lift permit", open : true]
+  [id : "mat-steel", name : "Structural steel", open : true]
+  [id : "crew-scaffold", name : "Scaffold crew booked", open : true]
+  [id : "dwg-arch-b", name : "Architectural drawings rev B", open : true]
+]
+
+-- the work packages: hours, and everything each one requires (constraints and other work)
+work : [
+  [id : "iwp-01", name : "Excavate north footings", hours : 180, done : true, requires : ["permit-dig"]]
+  [id : "iwp-02", name : "Form north footings", hours : 220, done : false, requires : ["iwp-01", "mat-forms"]]
+  [id : "iwp-03", name : "Rebar north footings", hours : 260, done : false, requires : ["iwp-01", "mat-rebar-n", "rfi-112"]]
+  [id : "iwp-04", name : "Pour north footings", hours : 120, done : false, requires : ["iwp-02", "iwp-03", "insp-footings"]]
+  [id : "iwp-05", name : "Underground conduit", hours : 160, done : false, requires : ["iwp-01", "mat-conduit", "dwg-elec-c"]]
+  [id : "iwp-06", name : "Grounding grid", hours : 140, done : false, requires : ["iwp-01", "rfi-118"]]
+  [id : "iwp-07", name : "Set anchor bolts", hours : 90, done : false, requires : ["iwp-03", "mat-bolts"]]
+  [id : "iwp-08", name : "Excavate south footings", hours : 180, done : false, requires : ["permit-dig", "access-south"]]
+  [id : "iwp-09", name : "Form south footings", hours : 220, done : false, requires : ["iwp-08", "mat-forms"]]
+  [id : "iwp-10", name : "Rebar south footings", hours : 260, done : false, requires : ["iwp-08", "mat-rebar-s", "rfi-112"]]
+  [id : "iwp-11", name : "Lift steel columns", hours : 300, done : false, requires : ["iwp-04", "permit-crane", "mat-steel"]]
+  [id : "iwp-12", name : "Scaffold the east wall", hours : 150, done : false, requires : ["crew-scaffold"]]
+  [id : "iwp-13", name : "East wall forms", hours : 240, done : false, requires : ["iwp-12", "mat-forms", "dwg-arch-b"]]
+  [id : "iwp-14", name : "Site drainage", hours : 130, done : false, requires : ["access-south", "dwg-elec-c"]]
+]
+
+-- yesterday, two things were still open that are closed today
+yesterday-open : ["mat-conduit", "iwp-01"]
+
+has : [xs want | xs keep [x | x = want] length > 0]
+join : [xs | xs fold ["", [s x | s = "" [x] else [s .. ", " .. x]]]]
+pad : [s n | s length < n [pad [s .. " ", n]] else [s]]
+sum : [xs | xs fold [0, [t x | t + x]]]
+name-of : [want | (constraints .. work) keep [a | a id = want] first name]
+
+-- what's done, given a list of extra ids to count as cleared
+done-with : [extra | (constraints keep [c | c open not] collect [c | c id]) .. (work keep [w | w done] collect [w | w id]) .. extra]
+-- work that can start: not done, and everything it requires is done
+workable : [cleared | work keep [w | w done not and (w requires keep [r | has [cleared, r] not] length = 0)]]
+-- the work an extra clearance would release: workable then, but not now
+released : [extra | now : workable (done-with []) collect [w | w id], workable (done-with extra) keep [w | has [now, w id] not]]
+
+open-ones : constraints keep [c | c open]
+ranking : open-ones collect [c |
+  r : released [c id]
+  [id : c id, name : c name, packages : r, hours : sum (r collect [w | w hours])]
+]
+sort-by-hours : [xs |
+  xs length < 2 [xs] else [
+    p : xs @ 1
+    rest : range (xs length - 1) collect [k | xs @ (k + 1)]
+    sort-by-hours (rest keep [x | x hours > (p hours)]) .. [p] .. (sort-by-hours (rest keep [x | x hours <= (p hours)]))
+  ]
+]
+ranked : sort-by-hours ranking
+
+-- since yesterday
+today-done : done-with []
+yesterday-done : today-done keep [x | has [yesterday-open, x] not]
+new-work : workable today-done keep [w | has [workable yesterday-done collect [x | x id], w id] not]
+"== since yesterday ==" print
+"cleared   " .. (join (yesterday-open collect name-of)) print
+"can start " .. (join (new-work collect [w | w name])) print
+ready-now : workable today-done
+packages-word : ready-now length = 1 ["package"] else ["packages"]
+"ready     [ready-now length] [packages-word], [sum (ready-now collect [w | w hours])] hours" print
+
+"" print
+"== which constraints, killed today, release the most work? ==" print
+range (ranked length) each [n |
+  c : ranked @ n
+  c hours > 0
+    first : n = 1 ["   <- this one first"] else [""]
+    count : c packages length
+    plural : count = 1 ["package"] else ["packages"]
+    hrs : c hours .. " h"
+    "[n]. [pad [c name, 30]] [pad [hrs, 7]] [count] [plural][first]" print
+]
+
+-- constraints that release nothing alone: the work behind them needs another constraint too
+"" print
+"== release nothing on their own ==" print
+ranked keep [c | c hours = 0] each [c |
+  -- only the work that needs both: what the pair releases, less what the partner releases alone
+  both : [o | alone : released [o id] collect [w | w id], released [c id, o id] keep [w | has [alone, w id] not]]
+  best : open-ones keep [o | o id != (c id)] collect [o | [name : o name, hours : sum (both o collect [w | w hours])]] fold [[name : "", hours : 0], [b x | x hours > (b hours) [x] else [b]]]
+  best hours > 0
+    "   [pad [c name, 30]] with [best name]: [best hours] h" print
+  best hours = 0
+    "   [pad [c name, 30]] waits on other work first" print
+]
+````
+
 ## examples/recipes.sp
 
 Recipes: quicksort, primes, FizzBuzz, a vector with its own + (prints; not a game)
@@ -3985,6 +4224,10 @@ body.scrubbing,body.scrubbing *{cursor:ew-resize!important;user-select:none!impo
 .mark{position:absolute;left:0;right:0;height:var(--LH);z-index:0;pointer-events:none;display:none}
 .mark.on{display:block}
 #errl{background:var(--badbg)}
+#smarks{position:absolute;left:0;top:0;width:4px;height:100%;z-index:4;pointer-events:none;overflow:hidden}
+#smarks i{position:absolute;left:1px;width:3px;border-radius:2px;height:calc(var(--LH) - 4px)}
+#smarks .f{background:var(--ok)}#smarks .s{background:var(--warn);opacity:.55}
+.sh{font:600 15px var(--serif);padding:16px 18px 4px}.sp .k2::before{content:"";display:inline-block;width:3px;height:12px;border-radius:2px;margin-right:8px;vertical-align:-1px;background:var(--warn);opacity:.6}.sp.f .k2::before{background:var(--ok);opacity:1}
 #live{background:var(--accbg);transition:opacity .7s}#live.fade{opacity:0}
 i{font-style:normal}
 .c{color:var(--c);font-style:italic}.s{color:var(--s)}.n{color:var(--n)}.k{color:var(--k)}.a{color:var(--a)}.o{color:var(--o)}.tp{background:var(--tp);border-radius:3px}
@@ -4105,7 +4348,7 @@ body.t-out #out{display:block}body.t-st #st{display:block}
    <button class="twk" id="bTweak" title="Drag numbers to change them while it runs (or hold Alt and drag)"><svg viewBox="0 0 16 16"><path d="M1 8l3-3v2h8V5l3 3-3 3V9H4v2z"/></svg>Tweak</button></div>
   <div id="card">
    <div id="err"><span></span><u>Go to line</u></div>
-   <div id="ed"><div class="mark" id="live"></div><div class="mark" id="errl"></div><div id="gut"></div><pre id="hl"></pre><textarea id="ta" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" aria-label="Code"></textarea></div>
+   <div id="ed"><div id="smarks"></div><div class="mark" id="live"></div><div class="mark" id="errl"></div><div id="gut"></div><pre id="hl"></pre><textarea id="ta" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" aria-label="Code"></textarea></div>
    <div id="st"></div>
    <div id="out"></div>
    <div id="keys"></div>
@@ -4129,11 +4372,11 @@ body.t-out #out{display:block}body.t-st #st{display:block}
 <div id="modal"><div id="mBox"><div class="mh"><h2 id="mTitle"></h2><button class="x" data-close aria-label="Close">✕</button></div><div id="mBody"></div></div></div>
 <div id="toast"></div><div id="scrubTip"></div>
 
-<script src="sprout3.js?v=20261119h"></script>
-<script src="live3.js?v=20261119h"></script>
+<script src="sprout3.js?v=20261120b"></script>
+<script src="live3.js?v=20261120b"></script>
 <script>
 "use strict";
-const V="20261119h";
+const V="20261120b";
 const $=id=>document.getElementById(id);
 const S=window.Sprout3,L=window.Sprout3Live;
 const GW=360,GH=480;
@@ -4146,6 +4389,7 @@ const EX=[
  ["ace-site","ace","ACE Site","Positions are expressions over named dimensions. Grow the reactor and watch the buildings move, and clash."],
  ["ace-schedule","ace","ACE Schedule","The critical path on likely durations, then a Monte Carlo finish date. The plan is a distribution, not a date."],
  ["ace-crews","ace","ACE Crews","Sequence and capacity: work waits for what it requires, and for a free crew of its trade. Send a crew home and watch the slab slip."],
+ ["ace-morning","ace","ACE Morning","The morning question: which constraints, killed today, release the most work? A ranking by hours released."],
  ["ace-derive","ace","ACE Derive","The five kinds of atom, and done worked out to a fixed point."],
  ["sprout","game","Sprout","Catch the rain, dodge the bugs. The demo game."],
  ["fireflies","game","Fireflies","Four hundred lights on the night air. Hold a finger down and they gather to it."],
@@ -4176,7 +4420,7 @@ function beep(f,d){if(muted||!AC)return;try{const o=AC.createOscillator(),v=AC.c
 function onEffect([name,a]){if(name==="beep")beep(a[0],a[1]);else if(name==="shake")shakeAmt=Math.max(shakeAmt,+a[0]||0)}
 
 // ---------- the game
-let game=null,running="",goodSrc="",goodTicks=0,paused=false,hpos=-1,err=null,msAvg=0,lastSwap=null;
+let game=null,running="",goodSrc="",goodTicks=0,paused=false,hpos=-1,err=null,msAvg=0,lastSwap=null,speedNotes=[];
 function setErr(e){err=e;const el=$("err");if(e){el.firstChild.innerHTML="<b>"+(e.line?"Line "+e.line:"Error")+"</b> · "+esc(e.msg);el.lastChild.style.display=e.line?"":"none";el.classList.add("on")}else el.classList.remove("on");markErr();subUI()}
 $("err").onclick=()=>{if(err&&err.line){tab("code");goLine(err.line)}};
 const msgOf=e=>String(e&&e.message||e);
@@ -4186,11 +4430,11 @@ function build(src,fresh){
  if(cell.field("update")===S.UNSET){
   game=null;document.body.classList.add("prog");clearOut();
   try{cell.run(S.BANG)}catch(e){setErr({line:e.line||0,msg:msgOf(e)});return false}
-  running=src;goodSrc=src;setErr(null);swapped();renderState();return true}
+  speedNotes=cell.speed||[];running=src;goodSrc=src;setErr(null);swapped();renderState();speedMarks();return true}
  document.body.classList.remove("prog");
  try{if(game&&!fresh)game.swap(src);else{game=L.makeGame(src,{W:GW,H:GH,onEffect});setPaused(false)}}
  catch(e){setErr({line:e.line||0,msg:msgOf(e)});return false}
- running=src;goodTicks=0;setErr(null);swapped();return true}
+ speedNotes=game.speed||[];running=src;goodTicks=0;setErr(null);swapped();speedMarks();return true}
 function swapped(){lastSwap=new Date();subUI();progUI()}
 // a program that only prints shows its cover as the artwork, and its main button runs it again
 function progUI(){const prog=document.body.classList.contains("prog"),ng=$("noGame");
@@ -4297,7 +4541,7 @@ function vv(){const v=window.visualViewport;const h=v?v.height:innerHeight;$("ap
 if(window.visualViewport){visualViewport.addEventListener("resize",vv);visualViewport.addEventListener("scroll",vv)}vv();
 
 // ---------- the editor: a textarea over a highlighted copy (the same rules as Sprout 3's tokenizer)
-const WORDS=new Set("start update draw input dt clock touching tapped touch-x touch-y held W H clear rect circle line text beep shake print rand dist clamp toward range match cond take rgb rgba every wave frame any with else and or not collect keep each fold times length first last str min max abs floor round ceil sqrt sin cos tan log neg left right".split(" "));
+const WORDS=new Set("start update draw input dt clock touching tapped touch-x touch-y held W H clear rect circle line text beep shake print rand noise dist clamp toward range match cond take rgb rgba every wave frame any with else and or not collect keep each fold times length first last str min max abs floor round ceil sqrt sin cos tan log neg left right".split(" "));
 function lineHTML(s){let o="",i=0;const n=s.length;
  while(i<n){const c=s[i];
   if(c==="-"&&s[i+1]==="-"){o+='<i class="c">'+esc(s.slice(i))+"</i>";break}
@@ -4313,8 +4557,11 @@ function lineHTML(s){let o="",i=0;const n=s.length;
  return o}
 let code="",saveT=0,compT=0,liveSrc="",liveT=0,dirty=false,curEx="";
 const LH=()=>parseFloat(getComputedStyle(ta).lineHeight)||21,PAD=12;
-function render(){hl.innerHTML=code.split("\n").map(lineHTML).join("\n")+"\n ";const n=code.split("\n").length;let gs="";for(let i=1;i<=n;i++)gs+=i+"\n";gut.textContent=gs;sync()}
-function sync(){hl.scrollTop=ta.scrollTop;hl.scrollLeft=ta.scrollLeft;gut.style.transform="translateY("+(-ta.scrollTop)+"px)";markErr()}
+function render(){speedMarks();hl.innerHTML=code.split("\n").map(lineHTML).join("\n")+"\n ";const n=code.split("\n").length;let gs="";for(let i=1;i<=n;i++)gs+=i+"\n";gut.textContent=gs;sync()}
+function sync(){hl.scrollTop=ta.scrollTop;hl.scrollLeft=ta.scrollLeft;gut.style.transform="translateY("+(-ta.scrollTop)+"px)";$("smarks").style.transform="translateY("+(-ta.scrollTop)+"px)";markErr()}
+// a thin bar beside each collect, keep and each: green when it can run over columns, amber when it runs item by item
+function speedMarks(){const byLine=new Map();for(const n of speedNotes){const was=byLine.get(n.line);byLine.set(n.line,was===undefined?n.fast:was&&n.fast)}
+ let h="";for(const [line,fast] of byLine)if(line)h+='<i class="'+(fast?"f":"s")+'" style="top:'+(PAD+(line-1)*LH()+2)+'px"></i>';$("smarks").innerHTML=h;$("smarks").style.height=(PAD*2+code.split("\n").length*LH())+"px"}
 ta.addEventListener("scroll",sync);
 function markAt(el,line,count){if(!line){el.classList.remove("on");return}el.classList.add("on");el.style.top=(PAD+(line-1)*LH()-ta.scrollTop)+"px";el.style.height=(count||1)*LH()+"px"}
 function markErr(){markAt($("errl"),err&&TAB==="code"?err.line:0)}
@@ -4367,11 +4614,14 @@ ta.addEventListener("pointerup",endScrub);ta.addEventListener("pointercancel",en
 
 // ---------- the state view: every field of the game right now
 function brief(v){if(S.isCell(v)&&!(v instanceof S.Cell&&v.takesInput())){const n=v.count();if(n>6)return n+" parts";const s=S.fmt(v);return s.length>140?s.slice(0,140)+"…]":s}const s=S.fmt(v);return s.length>140?s.slice(0,140)+"…":s}
+function speedHTML(){if(!speedNotes.length)return"";const fast=speedNotes.filter(n=>n.fast).length;
+ return'<div class="sh">Loops over lists</div><div class="foot" style="padding-top:0">'+fast+" of "+speedNotes.length+" can run over columns: a list of 32 or more records of numbers, stored one array per field. The others run item by item, which is fine for short lists.</div>"+
+  speedNotes.slice().sort((a,b)=>a.line-b.line).map(n=>'<div class="row sp'+(n.fast?" f":"")+'"><span class="k2">line '+n.line+" · "+n.word+'</span><span class="v">'+(n.fast?"runs over columns":"item by item: "+esc(n.why))+"</span></div>").join("")}
 function renderState(){const el=$("st");
- if(!game){el.innerHTML='<div class="foot">No game is running.</div>';return}
+ if(!game){el.innerHTML='<div class="foot">No game is running.</div>'+speedHTML();return}
  let rows=[];try{for(const [k,v] of S.fieldsOf(game.state))rows.push([k,brief(v)])}catch(e){el.textContent=msgOf(e);return}
  el.innerHTML=rows.map(([k,v])=>'<div class="row"><span class="k2">'+esc(k)+'</span><span class="v">'+esc(v)+"</span></div>").join("")+
-  '<div class="foot">'+(paused?"Paused":"Live")+" · "+game.history.length+" moments saved for rewind</div>"}
+  '<div class="foot">'+(paused?"Paused":"Live")+" · "+game.history.length+" moments saved for rewind</div>"+speedHTML()}
 setInterval(()=>{if(TAB==="st")renderState()},250);
 
 // ---------- tabs
