@@ -196,9 +196,11 @@ class Parser {
       }
       this.next(); // |
     }
+    // [| ...] is code even with no inputs: it runs when it is run, never when it is made (decision 104)
+    const codeOnly = bar >= 0 && !names.length;
     const items = this.items("]");
     if (this.next() !== "]") throw new SproutError("a [ needs a ] to close it", openLine || this.line());
-    return { type: "cell", names, items }; // [[x]] is a cell holding a cell (decision 71: no collapse)
+    return codeOnly ? { type: "cell", names, items, selfReferencing: true } : { type: "cell", names, items }; // [[x]] is a cell holding a cell (decision 71: no collapse)
   }
 }
 // destructuring (decision 101): a hidden name holds the whole value; each name in the pattern reads a part of it
@@ -479,6 +481,7 @@ class CodeGen {
     this.shapes.push(shape);
     const seenNames = new Set();
     cell.items.forEach((item, i) => { if (item.type === "bind") { if (seenNames.has(item.name)) throw new SproutError("\"" + item.name + "\" is bound twice in one cell (decision 13)", item.line); seenNames.add(item.name); if (!item.pattern) shape.fieldIndex[item.name] = i; } else shape.partIndex.push(i); });
+    for (const input of cell.names) if (input.name === "left") lint("an input named left can't be read by that name, since left means the receiver of a method (decision 52); choose another name");
     const defaultMakers = cell.names.map(input => input.defaultValue ? this.arrowCode("", () => this.genTerm(input.defaultValue, false)) : "null");
     const activation = "a" + shapeNumber;
     // run: inputs arrive as plain arguments (left, it, then each name)
@@ -578,10 +581,10 @@ function isSimpleValue(chain) {
   const terms = chain.terms;
   const isSimpleTerm = term => term.type === "num" || term.type === "str" || term.type === "literal" || (term.type === "word" && !["_", "left", "right", "!"].includes(term.value)) ||
     (term.type === "group" && term.items.length === 1 && isSimpleValue(term.items[0])) || (term.type === "cell" && isSimpleList(term));
-  if (!isSimpleTerm(terms[0])) return false;
+  if (!isSimpleTerm(terms[0]) || (terms[0].type === "word" && terms[0].value === "yield")) return false;
   for (let i = 1; i < terms.length; i++) {
     const term = terms[i];
-    if (term.type === "word" && ["print", "each", "times", "else", "and", "or"].includes(term.value)) return false;
+    if (term.type === "word" && ["print", "each", "times", "else", "and", "or", "yield"].includes(term.value)) return false;
     if (!isSimpleTerm(term)) return false;
   }
   return true;
@@ -883,8 +886,9 @@ function runCell(cell) { return cell.run(BANG); }
 function requireBool(value, operator) { return typeof value === "boolean" ? value : notUnderstood(value, operator); }
 
 // ---- effects: queued while the loop is running update, carried out after (decision 33)
-let effectQueue = null;
-function effect(work) { if (effectQueue) effectQueue.push(work); else work(); return false; }
+let effectQueue = null, effectsMuted = 0;
+// while a script is run again up to where it stopped (decision 104), the effects it already had are not had again
+function effect(work) { if (effectsMuted) return false; if (effectQueue) effectQueue.push(work); else work(); return false; }
 function queueEffects() { effectQueue = []; }
 function runEffects() { const queued = effectQueue || []; effectQueue = null; for (const work of queued) work(); return queued.length; }
 function dropEffects() { const dropped = effectQueue ? effectQueue.length : 0; effectQueue = null; return dropped; }
@@ -1205,7 +1209,8 @@ api.internals = { FUSED_OPERATORS, LAZY_OPERATORS, EVERY_VALUE_METHODS, GLOBALS,
   fast: () => fastPathsOn,
   // for the standard words (words.js): the pieces its methods are made of
   PROTOTYPES, methodTakingNothing, methodTakingOne, partsOf, fieldsOf, merge, callCell, finishTailCalls, makeRecord, valuesEqual, logMiss, notUnderstood, lint, UNSET, BANG, ANY,
-  sendWord, send, sortList, keep, fold, each, describe, requireNumber };
+  sendWord, send, sortList, keep, fold, each, describe, requireNumber,
+  muteEffects: on => { effectsMuted += on ? 1 : -1; }, randomSource: () => randomSource };
 if (typeof module !== "undefined") {
   module.exports = api;
   // in Node the kernels library comes along; a page loads kernels.js after this file

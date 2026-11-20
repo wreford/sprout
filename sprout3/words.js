@@ -401,6 +401,64 @@ S.defNative("eval-with", evaluateWith);
 // phrase [items]: a chain of terms, to build code with
 S.defNative("phrase", xs => new Phrase(isCell(xs) ? partsOf(xs) : [xs]));
 
+// ===================================================================== scripts: coroutines that stay values (decision 104)
+// script [| ... yield 1 ... x : yield 2 ...] is a script. s resume v runs it on to its next yield and gives a NEW script
+// holding what was yielded; s itself is unchanged, so a game can keep, save, compare and rewind it like any value.
+// A resume runs the cell again from the start with every value sent so far, so each yield hands back what was sent to it.
+// The earlier steps' effects are not had again, and random gives them the same numbers, so the run is the same run.
+class Suspend { constructor(context, value) { this.context = context; this.value = value; } }
+const scriptRuns = [];
+class Script {
+  constructor(cell, sent, draws, value, done) { this.cell = cell; this.sent = sent; this.draws = draws; this.value = value; this.done = done; }
+  sproutText() { return "[script, " + this.sent.length + (this.sent.length === 1 ? " step" : " steps") + (this.done ? ", done" : "") + ", value : " + formatValue(this.value) + "]"; }
+  sameAs(b) { return b instanceof Script && b.cell === this.cell && this.sent.length === b.sent.length && this.sent.every((v, k) => valuesEqual(v, b.sent[k])); }
+  toJSON() { return this.sproutText(); }
+}
+function resumeScript(script, sending) {
+  if (script.done) return script;
+  const sent = script.sent.concat([sending]), context = { count: 0, target: sent.length, sent, draws: script.draws.slice(), drawn: 0, muted: sent.length > 1 };
+  const previousRandom = I.randomSource();
+  S.setRandom(() => { if (context.drawn < context.draws.length) return context.draws[context.drawn++]; const v = previousRandom(); context.draws.push(v); context.drawn++; return v; });
+  if (context.muted) I.muteEffects(true);
+  scriptRuns.push(context);
+  let value, done;
+  try { value = script.cell.takesInput() ? script.cell.run(sent[0]) : script.cell.run(BANG); done = true; }
+  catch (e) { if (!(e instanceof Suspend) || e.context !== context) throw e; value = e.value; done = false; }
+  finally { scriptRuns.pop(); S.setRandom(previousRandom); if (context.muted) I.muteEffects(false); }
+  return new Script(script.cell, sent, context.draws, value, done);
+}
+// yield v: inside a script, stop here and hand v out; the next resume's value is what yield gives back
+S.defNative("yield", v => {
+  const context = scriptRuns[scriptRuns.length - 1];
+  if (!context) return logMiss("yield is only used inside a script");
+  context.count++;
+  if (context.count < context.target) {
+    // past the last step taken before: from here on the effects are new
+    if (context.count === context.target - 1 && context.muted) { I.muteEffects(false); context.muted = false; }
+    return context.sent[context.count];
+  }
+  throw new Suspend(context, v);
+});
+S.defNative("script", cell => cell instanceof I.Cell ? new Script(cell, [], [], false, false) : notUnderstood(cell, "script"));
+const yieldsOf = (script, most) => { const out = []; let s = script; while (out.length < most) { s = resumeScript(s, false); if (s.done) break; out.push(s.value); } return out; };
+const SCRIPT_METHODS = Object.assign(Object.create(I.PROTOTYPES.every), {
+  resume: one(resumeScript), next: none(s => resumeScript(s, false)),
+  value: none(s => s.value), done: none(s => s.done), steps: none(s => s.sent.length),
+  // the values it yields, from where it is: the first n, or all of them up to when it finishes
+  take: one((s, n) => list(yieldsOf(s, wholeNumber(n, "take")))),
+  yields: none(s => { const out = yieldsOf(s, 100000); if (out.length === 100000) logMiss("a script yielded 100000 values and was stopped; use take"); return list(out); }),
+});
+Object.assign(Script.prototype, { kind: "script", methods: SCRIPT_METHODS });
+
+// scripts for games, written in Sprout: wait for some seconds, given each frame's dt by resume
+const SCRIPT_WORDS = S.load(`
+wait : [seconds |
+  go : [remaining | remaining > 0 [go (remaining - (yield "waiting"))] else [true]]
+  go seconds
+]
+`);
+for (const name of SCRIPT_WORDS.fieldNames()) S.globals[name] = SCRIPT_WORDS.field(name);
+
 // ===================================================================== globals
 const define = (name, fn) => S.defNative(name, fn);
 // iterate [start, step]: start, then step of it, then step of that, without end
@@ -411,5 +469,5 @@ define("cycle", xs => { const parts = isCell(xs) ? partsOf(xs) : [xs]; let k = 0
 define("char", n => typeof n === "number" ? String.fromCodePoint(n) : notUnderstood(n, "char"));
 S.globals.pi = Math.PI;
 
-S.words = { Phrase, Group, Block, Template, Binding, sourceOf, codeOf, evaluate, Endless, endlessFrom, kindOf, literal, wordOf, Word, SproutDate, SproutTime, Money, Pair, Url, Email, Colour, argumentsOf, list, record, truthy };
+S.words = { Script, resumeScript, Phrase, Group, Block, Template, Binding, sourceOf, codeOf, evaluate, Endless, endlessFrom, kindOf, literal, wordOf, Word, SproutDate, SproutTime, Money, Pair, Url, Email, Colour, argumentsOf, list, record, truthy };
 })(typeof window !== "undefined" ? window : globalThis);

@@ -348,5 +348,28 @@ ok("hot-swap takes a changed start value", g.state.field("height") === 99);
   ok("103 a list that names itself is lazy", val("([digits : [digit, maybe digits]], \"123\" parse digits) @ 1") !== "" && S.format(S.load("digits : [digit, maybe digits]\nresult : \"123\" parse digits").field("result")) === "true");
 }
 
+// ---------------- scripts (decision 104)
+{
+  const prog = (src, field) => S.format(S.load(src + "\nresult : " + field).field("result"));
+  const counter = "counter : script [|\n  yield 1\n  got : yield 2\n  \"sent [got]\"\n]\na : counter next\nb : a next\nc : b resume \"hi\"";
+  ok("104 a script yields in turn", prog(counter, "[a value, b value, c value, c done]") === "[1, 2, sent hi, true]");
+  ok("104 resuming gives a new script; the old one is unchanged", prog(counter, "[a value, a steps, b steps]") === "[1, 1, 2]");
+  ok("104 a generator from an endless loop", val("script [| go : [n | yield (n * n), go (n + 1)], go 1] take 5") === "[1, 4, 9, 16, 25]");
+  ok("104 a script's input is the first value sent", prog("total : script [start | go : [sum | go (sum + (yield sum))], go start]", "total resume 5 resume 10 resume 7 value") === "22");
+  ok("104 the same script resumed the same way gives the same answer", prog("t : script [n | yield (n * 2), yield (n * 3)] resume 4", "(t next value) = (t next value)") === "true");
+  ok("104 yields lists them all", val("script [| yield 1, yield 2, \"end\"] yields") === "[1, 2]");
+  out.length = 0; S.load("s : script [| \"one\" print, yield 1, \"two\" print, yield 2]\nr : s next next next").run(S.BANG);
+  ok("104 a step's effects happen once, however often it is run again", JSON.stringify(out) === '["one","two"]');
+  out.length = 0; S.load("d : script [| a : yield (rand [0, 1]), yield (rand [0, 1])]\nx : d next\ny : x next\n(x value) = (y next value) print\n(y value) = (y value) print").run(S.BANG);
+  ok("104 random gives a step the same numbers when it is run again", out[1] === "true");
+  const L3 = require("./live3.js");
+  const g = L3.makeGame("scene : script [|\n  yield \"hello\"\n  wait 1\n  yield \"after\"\n  \"after\"\n]\nstart :\n  story : scene next\nupdate : [game | game with [story : game story resume (game dt)]]\ndraw : [game | text [game story value str, 1, 1, 9, \"#fff\"]]", {});
+  const seen = []; for (let i = 0; i < 90; i++) { g.tick(1 / 60); const v = S.format(g.state.field("story").value); if (seen[seen.length - 1] !== v) seen.push(v); }
+  ok("104 wait in a game script waits about a second", JSON.stringify(seen) === '["waiting","after"]' && S.format(g.history[30].state.field("story").value) === "waiting");
+  ok("104 a game with a script replays exactly", S.format(g.history[70].state) === S.format(g.replayFrom(69, 1 / 60)));
+  S.setLog(m => logs.push(m)); logs.length = 0; S.load("x : [| yield 1, yield 2]");
+  ok("104 [| ...] is code, run later", !logs.some(m => /yield/.test(m)));
+}
+
 console.log(pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

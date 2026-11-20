@@ -9,14 +9,14 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 **Run it (Node 22 or later):**
 
 ```
-node test.js          # language tests (248)
+node test.js          # language tests (259)
 node game-tests.js    # game tests (82)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 330 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 341 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -732,6 +732,7 @@ These are marked in `sprout2.js` with "Sprout Live fix N" or "Sprout Live additi
 101. **Destructuring (Troy, 20 Nov).** A pattern in square brackets unpacks a value, wherever a name could take one. As an input, `[[x, y] | x + y]` takes one value and names its parts, and a cell can take several, as in `[[x1, y1] [x2, y2] | ...]` or `fold [0, [total [x, y] | ...]]`. As a binding, `[x, y] : point` names the parts of a value in a cell or a group. Each name reads the field of that name if the value has one, else the part at its position, so `[name, age]` unpacks `[name : "Ada", age : 36]` and `["Ada", 36]` alike. A kind from decision 100 unpacks the same way: by its fields (`x`, `y`, `year`), else by its parts in order, so `[w, h] : 640x480` and `[y, m, d] : 2026-11-20` work. A name can have a default, `[name, age : 0]`, used when the part is false or missing. A pattern can hold a pattern, `[a, [b, c]]`, and `..rest` takes the parts left over as a list, `[first, ..others]`. Unpacked names are local names, not fields: `[[x, y] : [10, 20], sum : x + y]` has the one field `sum`. A cell that unpacks is never worked out ahead into a kernel; it runs as written.
 102. **Code as data (Troy, 20 Nov).** `quote [move 10, turn 90]` gives the code in the brackets as a value instead of running it, so a program can read, build and change code, as in Rebol and Clojure. The value is a block: a list of its items. An item of one term is that term's value (a number, text, a literal, or a word such as `'move`), an item of several terms is a phrase (a list of its terms), `x : 5` is a binding (`name` and `value`), `( )` is a group, and a block with inputs answers `inputs`. Each has a `kind`, every list word works on them, and they print as the code they came from: `quote [move 10, turn 90]` prints `[move 10, turn 90]`. `quote` works anywhere a value can go (`eval quote [1 + 2]`, `a = quote [x]`), unless a program names something `quote` itself. Every cell gives its own code: `[n | n * 2] code` is the block `[n | n * 2]`. `eval` runs code: a block that takes no input runs as a program and gives its last value, a block with inputs gives back a cell, text runs as the code it holds, and any value turns into code with `source` (the text that makes it). `eval` runs at the top level, so it sees host words and the prelude but not a program's own names. `eval-with [names, code]` hands it some, as fields of a record. `phrase [items]` builds a phrase, as in `eval-with [[double : double], phrase ['double, 21]]`. A compiled program is kept for the next eval of the same code. A dialect is a cell that walks a block: `program fold [start, [state [command, amount] | match [command, ['move, ..., 'turn, ...]]]]` runs a turtle program written as data.
 103. **parse (built; library, decision 80, from Troy's ask on 20 Nov to make Sprout better than Rebol at Rebol).** `parse.js` brings Rebol's parse dialect, and its rules are ordinary Sprout values, not a language inside strings. Text is a rule that matches itself, a list of rules matches each in turn, a cell with one input tests one character or item, and any other value (a word like `'move`, a number, a date) matches an item equal to it. The rule words are `some`, `maybe`, `maybe-some`, `repeat [n, rule]` and `repeat [least, most, rule]`, `one-of [rules]` (tried in order) and `one-of "abc"`, `none-of`, `to`, `thru`, `ahead`, `not-ahead`, `into` (one item that is a list, parsed all through) and `of-kind`, with `digit`, `letter`, `upper-letter`, `lower-letter`, `letter-or-digit`, `space`, `any-char`, `end`, `a-number`, `a-text` and `a-word`. Matching is PEG: a choice takes the first rule that matches, a repeat takes all it can, and nothing is tried again, so a rule's meaning is what it says. `rule as "name"` keeps what it matched, `rule as ["name", [t | t number]]` keeps what a cell makes of it, and `rule all-as "name"` keeps every match in a list. `text parse rule` gives true, or a record of what was kept, when the rule matches all of the text, and false when it doesn't. `find-all` gives every match, and `replace-all [rule, new]` replaces each, with text or with what a cell makes of the match. Lists parse the same way, item by item, so a block of quoted code (decision 102) is parsed like text, and a dialect is checked by a rule: `quote [move 10, turn 90] parse some one-of [into ['move, a-number], into ['turn, a-number]]`. Rule words given a rule word wait for the rule, so `some one-of [...]` reads as Rebol would read it. Names are still bound before use (decision 25), so a grammar that refers back to itself is one cell that names itself, with the rules it needs as its fields: `expr : [factor : one-of [some digit, ["(", expr, ")"]], ..., term, maybe-some [one-of "+-", term]]`. To make that work, a cell that mentions its own name is always lazy, even when it is a short list of values (`digits : [digit, maybe digits]`).
+104. **Scripts: coroutines that stay values (Troy, 20 Nov).** `script [| ... yield 1 ... x : yield 2 ...]` is a script, Lua's coroutine done Sprout's way. `s resume v` runs it on to its next `yield` and gives a new script whose `value` is what was yielded (or, once it finishes, what it gave back) and whose `done` says whether it has finished. `yield` gives back the value sent by the next resume, a script's input is the first value sent, and `s next` resumes with false. Unlike a Lua coroutine, a script never changes: `s` is the same after `s resume v`, so a game keeps its script in its state and rewinds, replays, saves and compares it like any other value. A resume works by running the cell again from the start with every value sent so far, so the code must be pure, as all Sprout code is. The steps already taken don't have their effects again (a `print` or a `beep` happens once), and `random` and `rand` give them the numbers they had the first time, so the run is the same run. A new step's random numbers are new, as anywhere. Running again costs time that grows with the steps taken; a game script of a few hundred steps resumes in microseconds. `take n` and `yields` give the values a script yields (a generator), and `wait seconds`, written in Sprout in `words.js`, waits inside a game script that is resumed with each frame's `dt`. A cell written with a bar and no inputs, `[| ...]`, is code: it runs when it is run, never when it is made, even when its parts look like simple values. An input named `left` is now linted, since `left` means a method's receiver.
 ````
 
 ---
@@ -941,9 +942,11 @@ class Parser {
       }
       this.next(); // |
     }
+    // [| ...] is code even with no inputs: it runs when it is run, never when it is made (decision 104)
+    const codeOnly = bar >= 0 && !names.length;
     const items = this.items("]");
     if (this.next() !== "]") throw new SproutError("a [ needs a ] to close it", openLine || this.line());
-    return { type: "cell", names, items }; // [[x]] is a cell holding a cell (decision 71: no collapse)
+    return codeOnly ? { type: "cell", names, items, selfReferencing: true } : { type: "cell", names, items }; // [[x]] is a cell holding a cell (decision 71: no collapse)
   }
 }
 // destructuring (decision 101): a hidden name holds the whole value; each name in the pattern reads a part of it
@@ -1224,6 +1227,7 @@ class CodeGen {
     this.shapes.push(shape);
     const seenNames = new Set();
     cell.items.forEach((item, i) => { if (item.type === "bind") { if (seenNames.has(item.name)) throw new SproutError("\"" + item.name + "\" is bound twice in one cell (decision 13)", item.line); seenNames.add(item.name); if (!item.pattern) shape.fieldIndex[item.name] = i; } else shape.partIndex.push(i); });
+    for (const input of cell.names) if (input.name === "left") lint("an input named left can't be read by that name, since left means the receiver of a method (decision 52); choose another name");
     const defaultMakers = cell.names.map(input => input.defaultValue ? this.arrowCode("", () => this.genTerm(input.defaultValue, false)) : "null");
     const activation = "a" + shapeNumber;
     // run: inputs arrive as plain arguments (left, it, then each name)
@@ -1323,10 +1327,10 @@ function isSimpleValue(chain) {
   const terms = chain.terms;
   const isSimpleTerm = term => term.type === "num" || term.type === "str" || term.type === "literal" || (term.type === "word" && !["_", "left", "right", "!"].includes(term.value)) ||
     (term.type === "group" && term.items.length === 1 && isSimpleValue(term.items[0])) || (term.type === "cell" && isSimpleList(term));
-  if (!isSimpleTerm(terms[0])) return false;
+  if (!isSimpleTerm(terms[0]) || (terms[0].type === "word" && terms[0].value === "yield")) return false;
   for (let i = 1; i < terms.length; i++) {
     const term = terms[i];
-    if (term.type === "word" && ["print", "each", "times", "else", "and", "or"].includes(term.value)) return false;
+    if (term.type === "word" && ["print", "each", "times", "else", "and", "or", "yield"].includes(term.value)) return false;
     if (!isSimpleTerm(term)) return false;
   }
   return true;
@@ -1628,8 +1632,9 @@ function runCell(cell) { return cell.run(BANG); }
 function requireBool(value, operator) { return typeof value === "boolean" ? value : notUnderstood(value, operator); }
 
 // ---- effects: queued while the loop is running update, carried out after (decision 33)
-let effectQueue = null;
-function effect(work) { if (effectQueue) effectQueue.push(work); else work(); return false; }
+let effectQueue = null, effectsMuted = 0;
+// while a script is run again up to where it stopped (decision 104), the effects it already had are not had again
+function effect(work) { if (effectsMuted) return false; if (effectQueue) effectQueue.push(work); else work(); return false; }
 function queueEffects() { effectQueue = []; }
 function runEffects() { const queued = effectQueue || []; effectQueue = null; for (const work of queued) work(); return queued.length; }
 function dropEffects() { const dropped = effectQueue ? effectQueue.length : 0; effectQueue = null; return dropped; }
@@ -1950,7 +1955,8 @@ api.internals = { FUSED_OPERATORS, LAZY_OPERATORS, EVERY_VALUE_METHODS, GLOBALS,
   fast: () => fastPathsOn,
   // for the standard words (words.js): the pieces its methods are made of
   PROTOTYPES, methodTakingNothing, methodTakingOne, partsOf, fieldsOf, merge, callCell, finishTailCalls, makeRecord, valuesEqual, logMiss, notUnderstood, lint, UNSET, BANG, ANY,
-  sendWord, send, sortList, keep, fold, each, describe, requireNumber };
+  sendWord, send, sortList, keep, fold, each, describe, requireNumber,
+  muteEffects: on => { effectsMuted += on ? 1 : -1; }, randomSource: () => randomSource };
 if (typeof module !== "undefined") {
   module.exports = api;
   // in Node the kernels library comes along; a page loads kernels.js after this file
@@ -3877,6 +3883,29 @@ ok("hot-swap takes a changed start value", g.state.field("height") === 99);
   const grammar = "expr : [\n  factor : one-of [some digit, [\"(\", expr, \")\"]]\n  term : [factor, maybe-some [one-of \"*/\", factor]]\n  term, maybe-some [one-of \"+-\", term]\n]\nresult : [\"2*(3+4)\", \"2*(3+4\", \"1+2*3-4/5\"] collect [t | t parse expr]";
   ok("103 a rule can hold itself: a grammar for arithmetic", S.format(S.load(grammar).field("result")) === "[true, false, true]");
   ok("103 a list that names itself is lazy", val("([digits : [digit, maybe digits]], \"123\" parse digits) @ 1") !== "" && S.format(S.load("digits : [digit, maybe digits]\nresult : \"123\" parse digits").field("result")) === "true");
+}
+
+// ---------------- scripts (decision 104)
+{
+  const prog = (src, field) => S.format(S.load(src + "\nresult : " + field).field("result"));
+  const counter = "counter : script [|\n  yield 1\n  got : yield 2\n  \"sent [got]\"\n]\na : counter next\nb : a next\nc : b resume \"hi\"";
+  ok("104 a script yields in turn", prog(counter, "[a value, b value, c value, c done]") === "[1, 2, sent hi, true]");
+  ok("104 resuming gives a new script; the old one is unchanged", prog(counter, "[a value, a steps, b steps]") === "[1, 1, 2]");
+  ok("104 a generator from an endless loop", val("script [| go : [n | yield (n * n), go (n + 1)], go 1] take 5") === "[1, 4, 9, 16, 25]");
+  ok("104 a script's input is the first value sent", prog("total : script [start | go : [sum | go (sum + (yield sum))], go start]", "total resume 5 resume 10 resume 7 value") === "22");
+  ok("104 the same script resumed the same way gives the same answer", prog("t : script [n | yield (n * 2), yield (n * 3)] resume 4", "(t next value) = (t next value)") === "true");
+  ok("104 yields lists them all", val("script [| yield 1, yield 2, \"end\"] yields") === "[1, 2]");
+  out.length = 0; S.load("s : script [| \"one\" print, yield 1, \"two\" print, yield 2]\nr : s next next next").run(S.BANG);
+  ok("104 a step's effects happen once, however often it is run again", JSON.stringify(out) === '["one","two"]');
+  out.length = 0; S.load("d : script [| a : yield (rand [0, 1]), yield (rand [0, 1])]\nx : d next\ny : x next\n(x value) = (y next value) print\n(y value) = (y value) print").run(S.BANG);
+  ok("104 random gives a step the same numbers when it is run again", out[1] === "true");
+  const L3 = require("./live3.js");
+  const g = L3.makeGame("scene : script [|\n  yield \"hello\"\n  wait 1\n  yield \"after\"\n  \"after\"\n]\nstart :\n  story : scene next\nupdate : [game | game with [story : game story resume (game dt)]]\ndraw : [game | text [game story value str, 1, 1, 9, \"#fff\"]]", {});
+  const seen = []; for (let i = 0; i < 90; i++) { g.tick(1 / 60); const v = S.format(g.state.field("story").value); if (seen[seen.length - 1] !== v) seen.push(v); }
+  ok("104 wait in a game script waits about a second", JSON.stringify(seen) === '["waiting","after"]' && S.format(g.history[30].state.field("story").value) === "waiting");
+  ok("104 a game with a script replays exactly", S.format(g.history[70].state) === S.format(g.replayFrom(69, 1 / 60)));
+  S.setLog(m => logs.push(m)); logs.length = 0; S.load("x : [| yield 1, yield 2]");
+  ok("104 [| ...] is code, run later", !logs.some(m => /yield/.test(m)));
 }
 
 console.log(pass + " passed, " + fail + " failed");
@@ -6892,6 +6921,64 @@ S.defNative("eval-with", evaluateWith);
 // phrase [items]: a chain of terms, to build code with
 S.defNative("phrase", xs => new Phrase(isCell(xs) ? partsOf(xs) : [xs]));
 
+// ===================================================================== scripts: coroutines that stay values (decision 104)
+// script [| ... yield 1 ... x : yield 2 ...] is a script. s resume v runs it on to its next yield and gives a NEW script
+// holding what was yielded; s itself is unchanged, so a game can keep, save, compare and rewind it like any value.
+// A resume runs the cell again from the start with every value sent so far, so each yield hands back what was sent to it.
+// The earlier steps' effects are not had again, and random gives them the same numbers, so the run is the same run.
+class Suspend { constructor(context, value) { this.context = context; this.value = value; } }
+const scriptRuns = [];
+class Script {
+  constructor(cell, sent, draws, value, done) { this.cell = cell; this.sent = sent; this.draws = draws; this.value = value; this.done = done; }
+  sproutText() { return "[script, " + this.sent.length + (this.sent.length === 1 ? " step" : " steps") + (this.done ? ", done" : "") + ", value : " + formatValue(this.value) + "]"; }
+  sameAs(b) { return b instanceof Script && b.cell === this.cell && this.sent.length === b.sent.length && this.sent.every((v, k) => valuesEqual(v, b.sent[k])); }
+  toJSON() { return this.sproutText(); }
+}
+function resumeScript(script, sending) {
+  if (script.done) return script;
+  const sent = script.sent.concat([sending]), context = { count: 0, target: sent.length, sent, draws: script.draws.slice(), drawn: 0, muted: sent.length > 1 };
+  const previousRandom = I.randomSource();
+  S.setRandom(() => { if (context.drawn < context.draws.length) return context.draws[context.drawn++]; const v = previousRandom(); context.draws.push(v); context.drawn++; return v; });
+  if (context.muted) I.muteEffects(true);
+  scriptRuns.push(context);
+  let value, done;
+  try { value = script.cell.takesInput() ? script.cell.run(sent[0]) : script.cell.run(BANG); done = true; }
+  catch (e) { if (!(e instanceof Suspend) || e.context !== context) throw e; value = e.value; done = false; }
+  finally { scriptRuns.pop(); S.setRandom(previousRandom); if (context.muted) I.muteEffects(false); }
+  return new Script(script.cell, sent, context.draws, value, done);
+}
+// yield v: inside a script, stop here and hand v out; the next resume's value is what yield gives back
+S.defNative("yield", v => {
+  const context = scriptRuns[scriptRuns.length - 1];
+  if (!context) return logMiss("yield is only used inside a script");
+  context.count++;
+  if (context.count < context.target) {
+    // past the last step taken before: from here on the effects are new
+    if (context.count === context.target - 1 && context.muted) { I.muteEffects(false); context.muted = false; }
+    return context.sent[context.count];
+  }
+  throw new Suspend(context, v);
+});
+S.defNative("script", cell => cell instanceof I.Cell ? new Script(cell, [], [], false, false) : notUnderstood(cell, "script"));
+const yieldsOf = (script, most) => { const out = []; let s = script; while (out.length < most) { s = resumeScript(s, false); if (s.done) break; out.push(s.value); } return out; };
+const SCRIPT_METHODS = Object.assign(Object.create(I.PROTOTYPES.every), {
+  resume: one(resumeScript), next: none(s => resumeScript(s, false)),
+  value: none(s => s.value), done: none(s => s.done), steps: none(s => s.sent.length),
+  // the values it yields, from where it is: the first n, or all of them up to when it finishes
+  take: one((s, n) => list(yieldsOf(s, wholeNumber(n, "take")))),
+  yields: none(s => { const out = yieldsOf(s, 100000); if (out.length === 100000) logMiss("a script yielded 100000 values and was stopped; use take"); return list(out); }),
+});
+Object.assign(Script.prototype, { kind: "script", methods: SCRIPT_METHODS });
+
+// scripts for games, written in Sprout: wait for some seconds, given each frame's dt by resume
+const SCRIPT_WORDS = S.load(`
+wait : [seconds |
+  go : [remaining | remaining > 0 [go (remaining - (yield "waiting"))] else [true]]
+  go seconds
+]
+`);
+for (const name of SCRIPT_WORDS.fieldNames()) S.globals[name] = SCRIPT_WORDS.field(name);
+
 // ===================================================================== globals
 const define = (name, fn) => S.defNative(name, fn);
 // iterate [start, step]: start, then step of it, then step of that, without end
@@ -6902,7 +6989,7 @@ define("cycle", xs => { const parts = isCell(xs) ? partsOf(xs) : [xs]; let k = 0
 define("char", n => typeof n === "number" ? String.fromCodePoint(n) : notUnderstood(n, "char"));
 S.globals.pi = Math.PI;
 
-S.words = { Phrase, Group, Block, Template, Binding, sourceOf, codeOf, evaluate, Endless, endlessFrom, kindOf, literal, wordOf, Word, SproutDate, SproutTime, Money, Pair, Url, Email, Colour, argumentsOf, list, record, truthy };
+S.words = { Script, resumeScript, Phrase, Group, Block, Template, Binding, sourceOf, codeOf, evaluate, Endless, endlessFrom, kindOf, literal, wordOf, Word, SproutDate, SproutTime, Money, Pair, Url, Email, Colour, argumentsOf, list, record, truthy };
 })(typeof window !== "undefined" ? window : globalThis);
 ````
 
@@ -7373,14 +7460,14 @@ body.t-out #out{display:block}body.t-st #st{display:block}
 <div id="modal"><div id="mBox"><div class="mh"><h2 id="mTitle"></h2><button class="x" data-close aria-label="Close">✕</button></div><div id="mBody"></div></div></div>
 <div id="toast"></div><div id="scrubTip"></div>
 
-<script src="sprout3.js?v=20261120q"></script>
-<script src="words.js?v=20261120q"></script>
-<script src="parse.js?v=20261120q"></script>
-<script src="kernels.js?v=20261120q"></script>
-<script src="live3.js?v=20261120q"></script>
-<script src="sqlite-web.js?v=20261120q"></script>
-<script src="gpu-paint.js?v=20261120q"></script>
-<script src="gpu-spork.js?v=20261120q"></script>
+<script src="sprout3.js?v=20261120r"></script>
+<script src="words.js?v=20261120r"></script>
+<script src="parse.js?v=20261120r"></script>
+<script src="kernels.js?v=20261120r"></script>
+<script src="live3.js?v=20261120r"></script>
+<script src="sqlite-web.js?v=20261120r"></script>
+<script src="gpu-paint.js?v=20261120r"></script>
+<script src="gpu-spork.js?v=20261120r"></script>
 <script>
 "use strict";
 const V="20261120m";
@@ -7892,14 +7979,14 @@ tr:last-child td{border-bottom:0}
 <div class="card"><table id="t-sql"><tr><th>work</th><th>ms</th><th>rows</th></tr></table></div>
 </main>
 
-<script src="sprout3.js?v=20261120q"></script>
-<script src="words.js?v=20261120q"></script>
-<script src="parse.js?v=20261120q"></script>
-<script src="kernels.js?v=20261120q"></script>
-<script src="live3.js?v=20261120q"></script>
-<script src="gpu-paint.js?v=20261120q"></script>
-<script src="sqlite-web.js?v=20261120q"></script>
-<script src="gpu-spork.js?v=20261120q"></script>
+<script src="sprout3.js?v=20261120r"></script>
+<script src="words.js?v=20261120r"></script>
+<script src="parse.js?v=20261120r"></script>
+<script src="kernels.js?v=20261120r"></script>
+<script src="live3.js?v=20261120r"></script>
+<script src="gpu-paint.js?v=20261120r"></script>
+<script src="sqlite-web.js?v=20261120r"></script>
+<script src="gpu-spork.js?v=20261120r"></script>
 <script>
 "use strict";
 const $=id=>document.getElementById(id),S=window.Sprout3,L=window.Sprout3Live;
@@ -7928,7 +8015,7 @@ async function benchLang(){
 const GAMES=["galaxy","sprout","fireflies","orbit","hop","life","bounce","snake","breakout","particles","ace-board","ace-site","ace-crews"];
 async function benchGames(){
  for(const name of GAMES){status("games: "+name);await sleep(10);
-  const src=await (await fetch("examples/"+name+".sp?v=20261120q")).text();const g=L.makeGame(src,{W:GW,H:GH});
+  const src=await (await fetch("examples/"+name+".sp?v=20261120r")).text();const g=L.makeGame(src,{W:GW,H:GH});
   const play=n=>{for(let t=0;t<n;t++){if(t%50===0)g.down(100+(t%160),300);if(t%50===25)g.up();g.tick(1/60);g.draw()}};
   play(240);const [t]=best(()=>play(120),5);row("t-games",[name,ms(t/120),String(g.draw().length)])}}
 
@@ -7960,7 +8047,7 @@ async function benchParticles(){
 // ---------- SQLite
 async function benchSql(){
  status("SQLite: loading");
- await new Promise((ok,no)=>{const s=document.createElement("script");s.src="vendor/sqljs/sql-wasm.js?v=20261120q";s.onload=ok;s.onerror=no;document.head.appendChild(s)});
+ await new Promise((ok,no)=>{const s=document.createElement("script");s.src="vendor/sqljs/sql-wasm.js?v=20261120r";s.onload=ok;s.onerror=no;document.head.appendChild(s)});
  const db=await SproutSqlite.openSqlite({base:"vendor/sqljs/",name:"sprout3-bench",fresh:true});S.globals.db=db;const raw=db.raw();
  const N=10000;
  const [ti]=best(()=>{raw.run("drop table if exists t");raw.run("create table t (id integer primary key, zone integer, hours real, name text)");raw.run("begin");
@@ -7979,7 +8066,7 @@ async function benchSql(){
 
 // ---------- Monte Carlo: the ace-risk run, five ways
 async function benchMonteCarlo(){
- const src=(await (await fetch("examples/ace-risk.sp?v=20261120q")).text()).split("\nresults :")[0];
+ const src=(await (await fetch("examples/ace-risk.sp?v=20261120r")).text()).split("\nresults :")[0];
  const c=S.load(src+"\nA : [k | range k spork one-run]\nB : [k | range k collect one-run]"),A=c.field("A"),B=c.field("B");
  // the kernel itself, to hand straight to the GPU
  let K=null;S.sporkWays({gpu:k=>{K=k;return undefined}});A.run(16);S.sporkWays({gpu:null});
