@@ -65,6 +65,42 @@ ok("84 match only works out the answer it picks", val('match [1, [1, "one", 2, n
   ok("fold loop: anything else still works the ordinary way", val('["a", "b"] fold ["", [t n | t .. n]]') === "ab" && val("[1, 2] fold [[], [t n | t .. [n]]]") === "[1, 2]");
   const sp = S.load("a : range 9 fold [0, [t n | t + n]]\nb : range 9 fold [0, [t n | t .. n]]").speed;
   ok("fold loop: speed notes say which folds run as a tight loop", sp.find(n => n.line === 1).fast && !sp.find(n => n.line === 2).fast && sp.every(n => n.word === "fold"), sp); }
+// spork (decisions 47 and 91): the same answer as collect, whichever way it runs
+{ const W = S.sporkWays({}).wasm;
+  const three = (src, xs, f) => {
+    f = f || "f";
+    const c = S.load(src + "\nA : [k | k spork " + f + "]\nB : [k | k collect " + f + "]"), a = c.field("A"), b = c.field("B");
+    const L = xs || S.load("r : range 300").field("r");
+    S.sporkWays({ wasm: W }); const simd = a.run(L), how1 = S.sporkInfo && S.sporkInfo.how; S.sporkWays({ info: null });
+    S.sporkWays({ wasm: null }); const js = a.run(L), how2 = S.sporkInfo && S.sporkInfo.how; S.sporkWays({ wasm: W, info: null });
+    const plain = b.run(L), want = S.fmt(plain);
+    return { same: S.fmt(simd) === want && S.fmt(js) === want && S.eq(simd, plain), how: [how1, how2], speed: c.speed };
+  };
+  const kernels = {
+    "number maths and noise": "f : [n | noise [n, 7] * 10 floor + (n / 3 round) - (n sqrt)]",
+    "a test that changes from run to run": "f : [n | n > 150 [n * 2] else [0 - n]]",
+    "else catching a false branch": "f : [n | n > 5 [n < 80] else [n = 2]]",
+    "a record each run": "f : [n | [a : n * 2, b : noise [n, 1]]]",
+    "calls, lists and fold worked out ahead": "w : [3, 1, 4, 1, 5]\ng : [a b | a * 10 + b]\nf : [n | w fold [0, [t x | t + (g [x, n])]]]",
+    "a position that changes from run to run": "w : [3, 1, 4, 1, 5]\nf : [n | w @ (n % 5 + 1)]",
+    "text and records only used ahead": "rs : [[id : \"a\", v : 3], [id : \"b\", v : 5]]\nf : [n | rs keep [r | r id = \"b\"] first v * n]",
+    "clamp, toward, min and max": "f : [n | clamp [n, 50, 200] + (toward [0, 10, n / 300]) min 180 max 60]",
+  };
+  for (const k in kernels) { const r = three(kernels[k]); ok("spork: " + k, r.same && r.how[0] === (/%/.test(kernels[k]) ? "js" : "simd") && r.how[1] === "js", r.how); }
+  // the ACE schedule's own run (strings, a walk over requires, triangle draws, a shared risk) is worked out into one kernel
+  const ace = fs.readFileSync(__dirname + "/examples/ace-schedule.sp", "utf8").replace(/\nfinishes :[^\n]*/, "\nfinishes : [3]");
+  const r = three(ace, S.load("r : range 3000").field("r"), "one-run");
+  ok("spork: ace-schedule's Monte Carlo run, same numbers as collect", r.same && r.how[0] === "simd", r.how);
+  // a position outside the list, or anything spork can't work out ahead, runs the ordinary way
+  ok("spork: a position outside the list falls back", three("w : [3, 1, 4]\nf : [n | (w @ n) else [0]]").same && S.sporkInfo === null);
+  const rnd = S.load("f : [n | random + n]\nA : range 5 spork f").speed.find(x => x.word === "spork");
+  ok("spork: speed notes say why a cell can't be worked out ahead", rnd && !rnd.fast && /random/.test(rnd.why), rnd);
+  ok("spork: a cell written in place", S.fmt(S.load("A : range 40 spork [n | n * n]").field("A")) === S.fmt(S.load("A : range 40 collect [n | n * n]").field("A")));
+  ok("spork: a list of numbers in, and noise bit for bit", (() => { const L = S.load("r : range 64 collect [n | n * 1.37 - 40]").field("r"); return three("f : [n | noise [n, 0 - n]]", L).same; })());
+  const sorted = S.load("a : [3, 1, 2] sort\nb : [\"pear\", \"fig\"] sort\nc : range 2000 spork [n | noise [n, 1]] sort");
+  ok("sort: numbers and words", S.fmt(sorted.field("a")) === "[1, 2, 3]" && S.fmt(sorted.field("b")) === "[fig, pear]");
+  const c3 = sorted.field("c"); let up = true; for (let i = 2; i <= 2000; i++) if (c3.part(i) < c3.part(i - 1)) up = false;
+  ok("sort: a spork's numbers, least to most", up && c3.count() === 2000 && c3 instanceof S.NCell); }
 ok("and/or run a call on their right before checking it", val("[k | k > 1 and ([d | d = 3] k)] 3") === "true" && val("[k | k > 9 or ([d | d = 3] k)] 3") === "true");
 ok("81 ( ) is plain text", val('"rgba(0,0,0,0.5)"') === "rgba(0,0,0,0.5)");
 ok("81 escaped bracket", val('"a\\[b]"') === "a[b]");
