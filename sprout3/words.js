@@ -158,9 +158,10 @@ S.install({ methods: { cell: LIST_WORDS, text: TEXT_WORDS, number: NUMBER_WORDS,
 // Each kind is a small value with its own methods: maths that makes sense for it, and fields to read.
 const pad2 = n => String(n).padStart(2, "0");
 const sameKind = (a, b) => b !== null && typeof b === "object" && b.kind === a.kind;
+const cantCompare = (a, b, op) => logMiss("a " + a.kind + " can't be compared with " + I.describe(b) + " (" + op + ")");
 const compareBy = key => ({
-  "<": one((a, b) => sameKind(a, b) ? key(a) < key(b) : notUnderstood(b, "<")), ">": one((a, b) => sameKind(a, b) ? key(a) > key(b) : notUnderstood(b, ">")),
-  "<=": one((a, b) => sameKind(a, b) ? key(a) <= key(b) : notUnderstood(b, "<=")), ">=": one((a, b) => sameKind(a, b) ? key(a) >= key(b) : notUnderstood(b, ">=")),
+  "<": one((a, b) => sameKind(a, b) ? key(a) < key(b) : cantCompare(a, b, "<")), ">": one((a, b) => sameKind(a, b) ? key(a) > key(b) : cantCompare(a, b, ">")),
+  "<=": one((a, b) => sameKind(a, b) ? key(a) <= key(b) : cantCompare(a, b, "<=")), ">=": one((a, b) => sameKind(a, b) ? key(a) >= key(b) : cantCompare(a, b, ">=")),
 });
 const kindMethods = (key, extra) => Object.assign(Object.create(I.PROTOTYPES.every), compareBy(key), extra);
 class Kind {
@@ -217,8 +218,8 @@ class Money extends Kind {
 const MONEY_METHODS = kindMethods(m => m.cents, {
   "+": one((a, b) => b instanceof Money ? new Money(a.cents + b.cents) : notUnderstood(b, "+ (add money to money)")),
   "-": one((a, b) => b instanceof Money ? new Money(a.cents - b.cents) : notUnderstood(b, "- (take money from money)")),
-  "*": one((a, n) => typeof n === "number" ? new Money(roundHalfEven(a.cents * n)) : notUnderstood(n, "*")),
-  "/": one((a, b) => b instanceof Money ? a.cents / b.cents : typeof b === "number" ? new Money(roundHalfEven(a.cents / b)) : notUnderstood(b, "/")),
+  "*": one((a, n) => typeof n === "number" && Number.isFinite(n) ? new Money(roundHalfEven(a.cents * n)) : notUnderstood(n, "*")),
+  "/": one((a, b) => (b instanceof Money ? b.cents : b) === 0 ? logMiss("money can't be shared by 0") : b instanceof Money ? a.cents / b.cents : typeof b === "number" ? new Money(roundHalfEven(a.cents / b)) : notUnderstood(b, "/")),
   // split into n shares that add up to the whole, the odd cents going to the first shares
   split: one((a, n) => { const k = wholeNumber(n, "split") || 1, base = Math.trunc(a.cents / k), extra = a.cents - base * k; return list(Array.from({ length: k }, (_, j) => new Money(base + (j < Math.abs(extra) ? Math.sign(extra) : 0)))); }),
   cents: none(a => a.cents), amount: none(a => a.cents / 100),

@@ -1198,7 +1198,7 @@ function load(src, options) {
   return cell;
 }
 
-const api = { tokenize, parse, compile, load, format: formatValue, equal: valuesEqual, merge, isCell, Cell, ValueCell, Native, globals: GLOBALS, BANG, ANY, SproutError, PRELUDE,
+const api = { lexLiteral, tokenize, parse, compile, load, format: formatValue, equal: valuesEqual, merge, isCell, Cell, ValueCell, Native, globals: GLOBALS, BANG, ANY, SproutError, PRELUDE,
   // fast paths on or off: columns (decision 82) and whatever libraries add; the answers are the same either way
   ColumnCell, NumberList, fastPaths: on => { COLUMN_MIN_LENGTH = on ? 32 : Infinity; fastPathsOn = !!on; },
   // libraries: what they can see of the core, and how they plug in (decision 96)

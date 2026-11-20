@@ -177,6 +177,7 @@ The page and `bench.html` need a local web server, such as `python3 -m http.serv
 - `sprout-vs-rebol.html`: Sprout and Rebol: literals, parse, dialects and code as data side by side; the Rebol side is written from the documentation and not run
 - `sprout-vs-clojure.html`: Sprout and Clojure: sequences, laziness, destructuring and code as data, each pair run in both
 - `sprout-vs-lua.html`: Sprout and Lua: tables, strings, patterns, coroutines, metatables and speed, each pair run in both
+- `compare.html`: Sprout compared: one page beside Python, Rebol, Clojure and Lua, with a switch between them and a speed table; every Sprout, Python, Clojure and Lua side run, the Rebol side from the documentation (the old sprout-vs-*.html pages forward to it)
 - `examples/recipes.sp`: Recipes: quicksort, primes, FizzBuzz, a vector with its own + (prints; not a game)
 - `play.html`: The editor at taskiap.com/sprout3/play.html (opens #ex=name, #spec, #history): a library of examples with artwork, the running game shown like album art, live editing, a now-playing bar whose progress bar rewinds time, state, output and the spec; light and dark
 - `bench.html`: Benchmarks in the browser: the language against plain JS, the games, particles up to 100,000 on Canvas 2D and WebGPU, and SQLite
@@ -2020,7 +2021,7 @@ function load(src, options) {
   return cell;
 }
 
-const api = { tokenize, parse, compile, load, format: formatValue, equal: valuesEqual, merge, isCell, Cell, ValueCell, Native, globals: GLOBALS, BANG, ANY, SproutError, PRELUDE,
+const api = { lexLiteral, tokenize, parse, compile, load, format: formatValue, equal: valuesEqual, merge, isCell, Cell, ValueCell, Native, globals: GLOBALS, BANG, ANY, SproutError, PRELUDE,
   // fast paths on or off: columns (decision 82) and whatever libraries add; the answers are the same either way
   ColumnCell, NumberList, fastPaths: on => { COLUMN_MIN_LENGTH = on ? 32 : Infinity; fastPathsOn = !!on; },
   // libraries: what they can see of the core, and how they plug in (decision 96)
@@ -6223,281 +6224,11 @@ Sprout and Python: fifteen small programs side by side, each run in both languag
 
 ````html
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#f5f4ee" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#262624" media="(prefers-color-scheme: dark)">
-<title>Sprout and Python</title>
-<style>
-:root{--bg:#f5f4ee;--card:#fffefb;--line:#e4e1d6;--fg:#1f1e1d;--fg2:#5f5d55;--fg3:#8d8a80;--acc:#d97757;--acc2:#c4613f;--py:#3d6e9e;--code:#f3f1ea;
- --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",system-ui,Roboto,sans-serif;--serif:ui-serif,"New York",Charter,Georgia,serif;--mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
-@media (prefers-color-scheme:dark){:root{--bg:#262624;--card:#30302e;--line:#3d3c38;--fg:#ecebe4;--fg2:#b5b3aa;--fg3:#87857c;--acc:#e08a6b;--acc2:#e08a6b;--py:#8fb8e0;--code:#2a2a28}}
-*{box-sizing:border-box}
-html{scroll-behavior:smooth}
-body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.55 var(--sans);-webkit-font-smoothing:antialiased}
-main{max-width:980px;margin:0 auto;padding:32px 16px 72px}
-a{color:var(--acc2)}
-h1{font:600 34px/1.15 var(--serif);margin:8px 0 8px;letter-spacing:-.01em}
-h2{font:600 21px var(--serif);margin:0 0 4px}
-.kicker{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--acc2)}
-p{color:var(--fg2);margin:6px 0;max-width:68ch}
-code{font-family:var(--mono);font-size:.92em}
-p code{background:var(--code);padding:1px 5px;border-radius:5px;color:var(--fg)}
-.toc{display:flex;flex-wrap:wrap;gap:8px;margin:22px 0 8px}
-.toc a{font-size:13px;text-decoration:none;color:var(--fg);background:var(--card);box-shadow:0 0 0 1px var(--line);padding:5px 12px;border-radius:999px}
-.toc a:hover{box-shadow:0 0 0 1px var(--acc)}
-.glance{margin:26px 0 10px}
-.card{background:var(--card);border-radius:14px;box-shadow:0 1px 2px rgba(0,0,0,.05),0 8px 28px rgba(0,0,0,.06);overflow:hidden}
-.scroll{overflow-x:auto}
-table{width:100%;border-collapse:collapse;font-size:13.5px}
-th,td{text-align:left;padding:9px 14px;border-bottom:1px solid var(--line);vertical-align:top}
-th{color:var(--fg3);font-weight:600;font-size:12px}
-tr:last-child td{border-bottom:0}
-td code{white-space:nowrap}
-section{margin-top:38px;scroll-margin-top:16px}
-.pair{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
-@media (max-width:720px){.pair{grid-template-columns:1fr}}
-.side{background:var(--card);border-radius:14px;box-shadow:0 1px 2px rgba(0,0,0,.05),0 8px 28px rgba(0,0,0,.06);overflow:hidden;min-width:0;display:flex;flex-direction:column}
-.label{font-size:12px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;padding:10px 14px 0}
-.label.sp{color:var(--acc2)}.label.py{color:var(--py)}
-.side>pre{margin:0;padding:8px 14px 14px;overflow-x:auto;font:13px/1.55 var(--mono);flex:1}
-.cm{color:var(--fg3)}
-.out{border-top:1px solid var(--line);padding:8px 14px 10px;background:var(--code)}
-.out span{font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--fg3)}
-.out pre{margin:2px 0 0;font:12.5px/1.5 var(--mono);white-space:pre-wrap;word-break:break-word;color:var(--fg)}
-.foot{margin-top:46px;font-size:13px;color:var(--fg3)}
-</style></head><body>
-<main>
-<div class="kicker">Sprout 3</div>
-<h1>Sprout and Python</h1>
-<p>Python is the language most people learn first, so it's a good yardstick. Here is the same small program in each, side by side. Every pair on this page was run in both languages, Sprout 3 and Python 3.13, and the output under each one is what it actually printed. <a href="./">Back to Sprout 3</a></p>
-
-<div class="glance card scroll"><table>
-<tr><th></th><th>Sprout</th><th>Python</th></tr>
-<tr><td>Calling</td><td>value, then message: <code>xs sort</code></td><td>function, then arguments: <code>sorted(xs)</code></td></tr>
-<tr><td>Maths</td><td>left to right, no precedence</td><td>usual precedence rules</td></tr>
-<tr><td>Functions</td><td>cells: <code>[n | n * 2]</code></td><td><code>def</code> and <code>lambda</code></td></tr>
-<tr><td>if, loops, match</td><td>library cells, not syntax</td><td>keywords</td></tr>
-<tr><td>Changing data</td><td>never in place: <code>with</code> makes a copy</td><td>lists and dicts change in place</td></tr>
-<tr><td>A missing field</td><td>a quiet miss, caught by <code>else</code></td><td><code>KeyError</code>, unless you use <code>.get</code></td></tr>
-<tr><td>Lists count from</td><td>1</td><td>0</td></tr>
-<tr><td>Random numbers</td><td>seeded hash: <code>noise [run, k]</code></td><td>a generator with hidden state</td></tr>
-<tr><td>Speed on number loops</td><td>compiled ahead: SIMD, WebGPU</td><td>interpreted, unless you reach for NumPy</td></tr>
-</table></div>
-
-<nav class="toc"><a href="#hello">Printing</a><a href="#names">Names for values</a><a href="#order">Left to right, always</a><a href="#functions">Functions are cells</a><a href="#inputs">Several inputs, and defaults</a><a href="#choose">Choosing</a><a href="#lists">Lists</a><a href="#records">Records, never changed in place</a><a href="#text">Text with values in it</a><a href="#missing">A field that may not be there</a><a href="#match">Matching</a><a href="#chain">Chains of steps</a><a href="#fizzbuzz">FizzBuzz</a><a href="#recursion">Recursion</a><a href="#montecarlo">A million random trials</a></nav>
-
-<section id="hello">
-<h2>Printing</h2>
-<p>In Sprout the message comes after the value: <code>"hello, world" print</code> sends <code>print</code> to the text. Every line reads the same way, from the thing to what happens to it.</p>
-<div class="pair">
-<div class="side"><div class="label sp">Sprout</div><pre><code>"hello, world" print</code></pre><div class="out"><span>prints</span><pre>hello, world</pre></div></div>
-<div class="side"><div class="label py">Python</div><pre><code>print("hello, world")</code></pre><div class="out"><span>prints</span><pre>hello, world</pre></div></div>
-</div>
-</section>
-<section id="names">
-<h2>Names for values</h2>
-<p>A colon gives a value a name. Names can have hyphens in them, like <code>star-count</code>, because minus always has spaces round it.</p>
-<div class="pair">
-<div class="side"><div class="label sp">Sprout</div><pre><code>price : 12
-count : 3
-price * count print</code></pre><div class="out"><span>prints</span><pre>36</pre></div></div>
-<div class="side"><div class="label py">Python</div><pre><code>price = 12
-count = 3
-print(price * count)</code></pre><div class="out"><span>prints</span><pre>36</pre></div></div>
-</div>
-</section>
-<section id="order">
-<h2>Left to right, always</h2>
-<p>Sprout has no precedence table. Maths runs strictly left to right, so <code>2 + 3 * 4</code> is 20. Use brackets when you want something done first. There is nothing to remember.</p>
-<div class="pair">
-<div class="side"><div class="label sp">Sprout</div><pre><code>2 + 3 * 4 print
-2 + (3 * 4) print</code></pre><div class="out"><span>prints</span><pre>20
-14</pre></div></div>
-<div class="side"><div class="label py">Python</div><pre><code>print((2 + 3) * 4)
-print(2 + 3 * 4)</code></pre><div class="out"><span>prints</span><pre>20
-14</pre></div></div>
-</div>
-</section>
-<section id="functions">
-<h2>Functions are cells</h2>
-<p>A function is a cell: inputs, a bar, then the body. The last value in the body is the answer, so there is no <code>return</code>. To call it, write the value after its name.</p>
-<div class="pair">
-<div class="side"><div class="label sp">Sprout</div><pre><code>double : [n | n * 2]
-double 21 print</code></pre><div class="out"><span>prints</span><pre>42</pre></div></div>
-<div class="side"><div class="label py">Python</div><pre><code>def double(n):
-    return n * 2
-
-print(double(21))</code></pre><div class="out"><span>prints</span><pre>42</pre></div></div>
-</div>
-</section>
-<section id="inputs">
-<h2>Several inputs, and defaults</h2>
-<p>Every call takes one value. Several inputs go in as a list, in order, or as a record, by name. A default comes after a colon, the same way a name gets a value.</p>
-<div class="pair">
-<div class="side"><div class="label sp">Sprout</div><pre><code>area : [w h : 1 | w * h]
-area [3, 4] print
-area [5] print
-area [h : 2, w : 6] print</code></pre><div class="out"><span>prints</span><pre>12
-5
-12</pre></div></div>
-<div class="side"><div class="label py">Python</div><pre><code>def area(w, h=1):
-    return w * h
-
-print(area(3, 4))
-print(area(5))
-print(area(h=2, w=6))</code></pre><div class="out"><span>prints</span><pre>12
-5
-12</pre></div></div>
-</div>
-</section>
-<section id="choose">
-<h2>Choosing</h2>
-<p>There is no <code>if</code> keyword. A true or false value takes a cell to run when true, and <code>else</code> (an ordinary library cell) takes the other one. The whole thing is a value, like Python's conditional expression.</p>
-<div class="pair">
-<div class="side"><div class="label sp">Sprout</div><pre><code>size : [n | n &gt; 100 ["big"] else ["small"]]
-size 250 print
-size 7 print</code></pre><div class="out"><span>prints</span><pre>big
-small</pre></div></div>
-<div class="side"><div class="label py">Python</div><pre><code>def size(n):
-    return "big" if n &gt; 100 else "small"
-
-print(size(250))
-print(size(7))</code></pre><div class="out"><span>prints</span><pre>big
-small</pre></div></div>
-</div>
-</section>
-<section id="lists">
-<h2>Lists</h2>
-<p><code>collect</code>, <code>keep</code> and <code>fold</code> are methods on the list, so a chain of them reads left to right. Python spreads the same work over comprehensions and built-in functions.</p>
-<div class="pair">
-<div class="side"><div class="label sp">Sprout</div><pre><code>xs : [3, 1, 4, 1, 5, 9]
-xs collect [n | n * 2] print
-xs keep [n | n &gt; 2] print
-xs fold [0, [total n | total + n]] print
-xs sort print</code></pre><div class="out"><span>prints</span><pre>[6, 2, 8, 2, 10, 18]
-[3, 4, 5, 9]
-23
-[1, 1, 3, 4, 5, 9]</pre></div></div>
-<div class="side"><div class="label py">Python</div><pre><code>xs = [3, 1, 4, 1, 5, 9]
-print([n * 2 for n in xs])
-print([n for n in xs if n &gt; 2])
-print(sum(xs))
-print(sorted(xs))</code></pre><div class="out"><span>prints</span><pre>[6, 2, 8, 2, 10, 18]
-[3, 4, 5, 9]
-23
-[1, 1, 3, 4, 5, 9]</pre></div></div>
-</div>
-</section>
-<section id="records">
-<h2>Records, never changed in place</h2>
-<p>A record is a list of named fields. <code>with</code> makes a new record with some fields changed; the old one is never touched. Nothing in Sprout changes in place, which is why a game's state can be saved, rewound or compared at any time.</p>
-<div class="pair">
-<div class="side"><div class="label sp">Sprout</div><pre><code>point : [x : 1, y : 2]
-point x print
-moved : point with [x : 5]
-moved print
-point print</code></pre><div class="out"><span>prints</span><pre>1
-[x : 5, y : 2]
-[x : 1, y : 2]</pre></div></div>
-<div class="side"><div class="label py">Python</div><pre><code>point = {"x": 1, "y": 2}
-print(point["x"])
-moved = {**point, "x": 5}
-print(moved)
-print(point)</code></pre><div class="out"><span>prints</span><pre>1
-{'x': 5, 'y': 2}
-{'x': 1, 'y': 2}</pre></div></div>
-</div>
-</section>
-<section id="text">
-<h2>Text with values in it</h2>
-<p>Square brackets inside text hold a value, the same as Python's f-strings with braces. Any expression works inside them.</p>
-<div class="pair">
-<div class="side"><div class="label sp">Sprout</div><pre><code>name : "Ada"
-"hello, [name]! you have [3 * 4] messages" print</code></pre><div class="out"><span>prints</span><pre>hello, Ada! you have 12 messages</pre></div></div>
-<div class="side"><div class="label py">Python</div><pre><code>name = "Ada"
-print(f"hello, {name}! you have {3 * 4} messages")</code></pre><div class="out"><span>prints</span><pre>hello, Ada! you have 12 messages</pre></div></div>
-</div>
-</section>
-<section id="missing">
-<h2>A field that may not be there</h2>
-<p>Asking for a field that isn't there is a quiet miss, not a crash, and <code>else</code> catches it. Python needs <code>.get</code> or a <code>try</code> for the same thing.</p>
-<div class="pair">
-<div class="side"><div class="label sp">Sprout</div><pre><code>user : [name : "Ada"]
-user nickname else "none" print</code></pre><div class="out"><span>prints</span><pre>none</pre></div></div>
-<div class="side"><div class="label py">Python</div><pre><code>user = {"name": "Ada"}
-print(user.get("nickname", "none"))</code></pre><div class="out"><span>prints</span><pre>none</pre></div></div>
-</div>
-</section>
-<section id="match">
-<h2>Matching</h2>
-<p><code>match</code> is a library cell, not syntax: a value and a flat list of pattern and answer pairs. <code>any</code> matches anything.</p>
-<div class="pair">
-<div class="side"><div class="label sp">Sprout</div><pre><code>answer : [key | match [key, ["tap", "tapped", "drag", "dragged", any, "other"]]]
-answer "tap" print
-answer "swipe" print</code></pre><div class="out"><span>prints</span><pre>tapped
-other</pre></div></div>
-<div class="side"><div class="label py">Python</div><pre><code>def answer(key):
-    match key:
-        case "tap": return "tapped"
-        case "drag": return "dragged"
-        case _: return "other"
-
-print(answer("tap"))
-print(answer("swipe"))</code></pre><div class="out"><span>prints</span><pre>tapped
-other</pre></div></div>
-</div>
-</section>
-<section id="chain">
-<h2>Chains of steps</h2>
-<p>Because methods go after the value, a pipeline reads in the order it runs. Python's comprehension puts the result first and the source in the middle.</p>
-<div class="pair">
-<div class="side"><div class="label sp">Sprout</div><pre><code>people : [[name : "Ada", age : 36], [name : "Alan", age : 41], [name : "Grace", age : 85]]
-people keep [p | p age &gt; 40] collect [p | p name] print</code></pre><div class="out"><span>prints</span><pre>[Alan, Grace]</pre></div></div>
-<div class="side"><div class="label py">Python</div><pre><code>people = [{"name": "Ada", "age": 36}, {"name": "Alan", "age": 41}, {"name": "Grace", "age": 85}]
-print([p["name"] for p in people if p["age"] &gt; 40])</code></pre><div class="out"><span>prints</span><pre>['Alan', 'Grace']</pre></div></div>
-</div>
-</section>
-<section id="fizzbuzz">
-<h2>FizzBuzz</h2>
-<p><code>cond</code> takes pairs of test and answer and gives the first answer whose test is true. Lists in Sprout count from 1, so <code>range 15</code> is 1 to 15.</p>
-<div class="pair">
-<div class="side"><div class="label sp">Sprout</div><pre><code>range 15 collect [n | cond [n % 15 = 0, "FizzBuzz", n % 3 = 0, "Fizz", n % 5 = 0, "Buzz", any, n]] print</code></pre><div class="out"><span>prints</span><pre>[1, 2, Fizz, 4, Buzz, Fizz, 7, 8, Fizz, Buzz, 11, Fizz, 13, 14, FizzBuzz]</pre></div></div>
-<div class="side"><div class="label py">Python</div><pre><code>print(["FizzBuzz" if n % 15 == 0 else "Fizz" if n % 3 == 0 else "Buzz" if n % 5 == 0 else n
-       for n in range(1, 16)])</code></pre><div class="out"><span>prints</span><pre>[1, 2, 'Fizz', 4, 'Buzz', 'Fizz', 7, 8, 'Fizz', 'Buzz', 11, 'Fizz', 13, 14, 'FizzBuzz']</pre></div></div>
-</div>
-</section>
-<section id="recursion">
-<h2>Recursion</h2>
-<p>A cell can call itself by name. The brackets round <code>n - 1</code> matter: without them, left to right would read <code>fib n - 1</code> as <code>(fib n) - 1</code>.</p>
-<div class="pair">
-<div class="side"><div class="label sp">Sprout</div><pre><code>fib : [n | n &lt; 2 [n] else [fib (n - 1) + (fib (n - 2))]]
-fib 20 print</code></pre><div class="out"><span>prints</span><pre>6765</pre></div></div>
-<div class="side"><div class="label py">Python</div><pre><code>def fib(n):
-    return n if n &lt; 2 else fib(n - 1) + fib(n - 2)
-
-print(fib(20))</code></pre><div class="out"><span>prints</span><pre>6765</pre></div></div>
-</div>
-</section>
-<section id="montecarlo">
-<h2>A million random trials</h2>
-<p>This is where the two part ways. <code>noise [n, 1]</code> is a seeded hash, not a random number generator, so run <code>n</code> always draws the same numbers and the answer is the same every time. Because <code>hit</code> is one pure cell, <code>spork</code> compiles it ahead into a kernel of number maths and runs it on WebAssembly SIMD or the GPU. In this test, Sprout took <b>28 ms</b> in Node against <b>213 ms</b> for the plain CPython loop. NumPy would close most of that gap, at the cost of rewriting the loop as array operations.</p>
-<div class="pair">
-<div class="side"><div class="label sp">Sprout</div><pre><code><span class="cm">-- estimate pi: the share of random points in the square that land inside the circle</span>
-hit : [n | x : noise [n, 1], y : noise [n, 2], x * x + (y * y) &lt; 1 [1] else [0]]
-range 1000000 spork hit fold [0, [total h | total + h]] * 4 / 1000000 print</code></pre><div class="out"><span>prints</span><pre>3.141792</pre></div></div>
-<div class="side"><div class="label py">Python</div><pre><code>import random
-
-hits = sum(1 for _ in range(1_000_000)
-           if random.random() ** 2 + random.random() ** 2 &lt; 1)
-print(hits * 4 / 1_000_000)</code></pre><div class="out"><span>prints</span><pre>3.137976</pre></div></div>
-</div>
-</section>
-
-<p class="foot">Timings were taken on one machine: Sprout in Node, Python 3.13 with no extra libraries, best of several runs. Run the <a href="bench.html">benchmarks</a> to see Sprout's numbers on your own device.</p>
-<p class="foot">Also: <a href="sprout-vs-rebol.html">Sprout and Rebol</a> · <a href="sprout-vs-clojure.html">Sprout and Clojure</a> · <a href="sprout-vs-lua.html">Sprout and Lua</a></p>
-</main>
-</body></html>
+<html lang="en"><head><meta charset="utf-8"><title>Sprout compared</title>
+<meta http-equiv="refresh" content="0; url=compare.html#python">
+<script>location.replace("compare.html#python")</script>
+<style>body{font:15px system-ui,sans-serif;margin:40px 16px;background:#f5f4ee;color:#1f1e1d}@media (prefers-color-scheme:dark){body{background:#262624;color:#ecebe4}}a{color:#c4613f}</style>
+</head><body><p>This page is now part of <a href="compare.html#python">Sprout compared</a>.</p></body></html>
 ````
 
 ## index.html
@@ -6583,10 +6314,7 @@ p with [x : 5] print
 
 <h2>Read</h2>
 <ul class="list">
-<li><a href="sprout-vs-python.html">Sprout and Python</a><span>Fifteen small programs side by side.</span></li>
-<li><a href="sprout-vs-rebol.html">Sprout and Rebol</a><span>Literals, parse and dialects.</span></li>
-<li><a href="sprout-vs-clojure.html">Sprout and Clojure</a><span>Sequences, laziness and code as data.</span></li>
-<li><a href="sprout-vs-lua.html">Sprout and Lua</a><span>Tables, strings and coroutines.</span></li>
+<li><a href="compare.html">Sprout compared</a><span>Next to Python, Rebol, Clojure and Lua, each pair run.</span></li>
 <li><a href="play.html#spec">The spec</a><span>The language and every decision behind it.</span></li>
 <li><a href="bench.html">Benchmarks</a><span>Measured in your browser, on your device.</span></li>
 <li><a href="play.html#history">Monte Carlo</a><span>A short history, from Buffon's needle to today.</span></li>
@@ -6762,9 +6490,10 @@ S.install({ methods: { cell: LIST_WORDS, text: TEXT_WORDS, number: NUMBER_WORDS,
 // Each kind is a small value with its own methods: maths that makes sense for it, and fields to read.
 const pad2 = n => String(n).padStart(2, "0");
 const sameKind = (a, b) => b !== null && typeof b === "object" && b.kind === a.kind;
+const cantCompare = (a, b, op) => logMiss("a " + a.kind + " can't be compared with " + I.describe(b) + " (" + op + ")");
 const compareBy = key => ({
-  "<": one((a, b) => sameKind(a, b) ? key(a) < key(b) : notUnderstood(b, "<")), ">": one((a, b) => sameKind(a, b) ? key(a) > key(b) : notUnderstood(b, ">")),
-  "<=": one((a, b) => sameKind(a, b) ? key(a) <= key(b) : notUnderstood(b, "<=")), ">=": one((a, b) => sameKind(a, b) ? key(a) >= key(b) : notUnderstood(b, ">=")),
+  "<": one((a, b) => sameKind(a, b) ? key(a) < key(b) : cantCompare(a, b, "<")), ">": one((a, b) => sameKind(a, b) ? key(a) > key(b) : cantCompare(a, b, ">")),
+  "<=": one((a, b) => sameKind(a, b) ? key(a) <= key(b) : cantCompare(a, b, "<=")), ">=": one((a, b) => sameKind(a, b) ? key(a) >= key(b) : cantCompare(a, b, ">=")),
 });
 const kindMethods = (key, extra) => Object.assign(Object.create(I.PROTOTYPES.every), compareBy(key), extra);
 class Kind {
@@ -6821,8 +6550,8 @@ class Money extends Kind {
 const MONEY_METHODS = kindMethods(m => m.cents, {
   "+": one((a, b) => b instanceof Money ? new Money(a.cents + b.cents) : notUnderstood(b, "+ (add money to money)")),
   "-": one((a, b) => b instanceof Money ? new Money(a.cents - b.cents) : notUnderstood(b, "- (take money from money)")),
-  "*": one((a, n) => typeof n === "number" ? new Money(roundHalfEven(a.cents * n)) : notUnderstood(n, "*")),
-  "/": one((a, b) => b instanceof Money ? a.cents / b.cents : typeof b === "number" ? new Money(roundHalfEven(a.cents / b)) : notUnderstood(b, "/")),
+  "*": one((a, n) => typeof n === "number" && Number.isFinite(n) ? new Money(roundHalfEven(a.cents * n)) : notUnderstood(n, "*")),
+  "/": one((a, b) => (b instanceof Money ? b.cents : b) === 0 ? logMiss("money can't be shared by 0") : b instanceof Money ? a.cents / b.cents : typeof b === "number" ? new Money(roundHalfEven(a.cents / b)) : notUnderstood(b, "/")),
   // split into n shares that add up to the whole, the odd cents going to the first shares
   split: one((a, n) => { const k = wholeNumber(n, "split") || 1, base = Math.trunc(a.cents / k), extra = a.cents - base * k; return list(Array.from({ length: k }, (_, j) => new Money(base + (j < Math.abs(extra) ? Math.sign(extra) : 0)))); }),
   cents: none(a => a.cents), amount: none(a => a.cents / 100),
@@ -7247,11 +6976,51 @@ Sprout and Rebol: literals, parse, dialects and code as data side by side; the R
 
 ````html
 <!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Sprout compared</title>
+<meta http-equiv="refresh" content="0; url=compare.html#rebol">
+<script>location.replace("compare.html#rebol")</script>
+<style>body{font:15px system-ui,sans-serif;margin:40px 16px;background:#f5f4ee;color:#1f1e1d}@media (prefers-color-scheme:dark){body{background:#262624;color:#ecebe4}}a{color:#c4613f}</style>
+</head><body><p>This page is now part of <a href="compare.html#rebol">Sprout compared</a>.</p></body></html>
+````
+
+## sprout-vs-clojure.html
+
+Sprout and Clojure: sequences, laziness, destructuring and code as data, each pair run in both
+
+````html
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Sprout compared</title>
+<meta http-equiv="refresh" content="0; url=compare.html#clojure">
+<script>location.replace("compare.html#clojure")</script>
+<style>body{font:15px system-ui,sans-serif;margin:40px 16px;background:#f5f4ee;color:#1f1e1d}@media (prefers-color-scheme:dark){body{background:#262624;color:#ecebe4}}a{color:#c4613f}</style>
+</head><body><p>This page is now part of <a href="compare.html#clojure">Sprout compared</a>.</p></body></html>
+````
+
+## sprout-vs-lua.html
+
+Sprout and Lua: tables, strings, patterns, coroutines, metatables and speed, each pair run in both
+
+````html
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Sprout compared</title>
+<meta http-equiv="refresh" content="0; url=compare.html#lua">
+<script>location.replace("compare.html#lua")</script>
+<style>body{font:15px system-ui,sans-serif;margin:40px 16px;background:#f5f4ee;color:#1f1e1d}@media (prefers-color-scheme:dark){body{background:#262624;color:#ecebe4}}a{color:#c4613f}</style>
+</head><body><p>This page is now part of <a href="compare.html#lua">Sprout compared</a>.</p></body></html>
+````
+
+## compare.html
+
+Sprout compared: one page beside Python, Rebol, Clojure and Lua, with a switch between them and a speed table; every Sprout, Python, Clojure and Lua side run, the Rebol side from the documentation (the old sprout-vs-*.html pages forward to it)
+
+````html
+<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#f5f4ee" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#262624" media="(prefers-color-scheme: dark)">
-<title>Sprout and Rebol</title>
+<title>Sprout compared</title>
+<script>document.documentElement.classList.add("js")</script>
 <style>
 :root{--bg:#f5f4ee;--card:#fffefb;--line:#e4e1d6;--fg:#1f1e1d;--fg2:#5f5d55;--fg3:#8d8a80;--acc:#d97757;--acc2:#c4613f;--other:#3d6e9e;--code:#f3f1ea;
  --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",system-ui,Roboto,sans-serif;--serif:ui-serif,"New York",Charter,Georgia,serif;--mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
@@ -7296,18 +7065,237 @@ section{margin-top:38px;scroll-margin-top:16px}
 .verdict td:first-child{white-space:nowrap}
 .others{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
 .others a{font-size:13px}
+
+.switch{position:sticky;top:0;z-index:5;background:var(--bg);padding:10px 0;margin:28px 0 0;display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid var(--line)}
+.switch a{font:600 14px var(--sans);text-decoration:none;color:var(--fg);padding:7px 16px;border-radius:999px;background:var(--card);box-shadow:0 0 0 1px var(--line)}
+.switch a.on{background:var(--acc);color:#fff;box-shadow:none}
+.lang{scroll-margin-top:70px}
+.lang>h2.langname{font:600 26px var(--serif);margin:26px 0 4px}
+.js .lang{display:none}.js .lang.on{display:block}
+.speed td:not(:first-child),.speed th:not(:first-child){text-align:right;font-family:var(--mono);font-size:12.5px}
+.glance td,.glance th{min-width:120px}
 </style></head><body>
 </head><body>
 <main>
 <div class="kicker">Sprout 3</div>
-<h1>Sprout and Rebol</h1>
-<p>Rebol showed that a language could be tiny, read left to right, write dates and money as they are, and parse anything with a dialect. Sprout takes all of that. Every Sprout side here was run, and its output is real. Rebol isn't installed on this machine, so the Rebol side is written from Rebol 3's documentation and wasn't run. <a href="./">Back to Sprout 3</a></p>
-<div class="glance card scroll"><table>
-<tr><th></th><th>Sprout</th><th>Rebol</th></tr>
-<tr><td>Order</td><td>left to right, no precedence</td><td>left to right, no precedence</td></tr><tr><td>Literals</td><td>dates, times, money, pairs, urls, emails, colours, <code>'words</code></td><td>the same, and many more</td></tr><tr><td>Parsing</td><td><code>parse</code> with rules as values; a grammar is one cell</td><td><code>parse</code>, the original</td></tr><tr><td>Code as data</td><td><code>quote</code>, <code>eval</code>, <code>code</code></td><td>blocks are data until you <code>do</code> them</td></tr><tr><td>Changing data</td><td>never in place</td><td>objects and series change in place</td></tr><tr><td>Beyond Rebol</td><td>coroutines, endless lists, destructuring, SIMD and WebGPU kernels, live games</td><td></td></tr><tr><td>Where Rebol still leads</td><td></td><td>blocks are data with no <code>quote</code>, words bind late, and parse actions run code as they match</td></tr>
-</table></div>
-<nav class="toc"><a href="#literals">Values written as they are</a><a href="#order">Left to right, like Rebol</a><a href="#functions">Functions</a><a href="#parse-text">Parsing text</a><a href="#find">Finding every match</a><a href="#grammar">A grammar</a><a href="#dialect">A dialect</a><a href="#run-dialect">Running a dialect</a><a href="#code">Code is data</a><a href="#records">Records that don't change underneath you</a><a href="#scripts">Coroutines</a><a href="#unpack">Unpacking</a></nav>
-<section id="literals">
+<h1>Sprout compared</h1>
+<p>Sprout next to four languages, each at what it is known for: Python for being first, Rebol for literals and parsing, Clojure for data and sequences, Lua for tables, strings and coroutines. Every Sprout program here was run, and so was every Python, Clojure and Lua program, with the output each one actually printed. Rebol isn't installed here, so its side is written from its documentation and marked. <a href="./">Back to Sprout 3</a></p>
+<div class="glance card scroll"><table><tr><th></th><th>Sprout</th><th>Python</th><th>Rebol</th><th>Clojure</th><th>Lua</th></tr><tr><td>Maths order</td><td>left to right, no precedence</td><td>precedence rules</td><td>left to right</td><td>prefix: <code>(+ 1 2)</code></td><td>precedence rules</td></tr><tr><td>Functions</td><td>cells: <code>[n | n * 2]</code></td><td><code>def</code>, <code>lambda</code></td><td><code>func</code></td><td><code>fn</code>, <code>defn</code></td><td><code>function</code></td></tr><tr><td>Control</td><td>library cells, not syntax</td><td>keywords</td><td>functions</td><td>special forms and macros</td><td>keywords</td></tr><tr><td>Changing data</td><td>never in place</td><td>in place</td><td>in place</td><td>never in place</td><td>in place</td></tr><tr><td>Literals</td><td>dates, times, money, pairs, urls, emails, colours</td><td>numbers and text</td><td>dates, money, pairs, urls and more</td><td>keywords, sets, regexes</td><td>numbers and text</td></tr><tr><td>Parsing</td><td><code>parse</code> with rules as values</td><td><code>re</code></td><td><code>parse</code></td><td>regexes</td><td>patterns</td></tr><tr><td>Code as data</td><td><code>quote</code>, <code>eval</code>, <code>code</code></td><td><code>ast</code> module</td><td>blocks</td><td>lists and macros</td><td>strings and <code>load</code></td></tr><tr><td>Coroutines</td><td><code>script</code>, a value you can rewind</td><td>generators</td><td>none</td><td>none built in</td><td>coroutines</td></tr><tr><td>Speed on number loops</td><td>fused loops, SIMD and WebGPU kernels</td><td>interpreted; NumPy for arrays</td><td>interpreted</td><td>the JVM, after start-up</td><td>a fast interpreter; LuaJIT</td></tr><tr><td>Where it still leads</td><td>games and simulations in a browser, live editing, rewind</td><td>libraries for everything</td><td>blocks need no quote; late binding</td><td>macros, the JVM, threads</td><td>a tiny embeddable C core</td></tr></table></div>
+<h2>Speed</h2>
+<p>The same work on one machine, best of several runs. Sprout ran in Node; Clojure's time is after the JVM has warmed up, which takes about a second and a half. A dot means it wasn't measured.</p>
+<div class="card scroll speed"><table><tr><th>work</th><th>Sprout</th><th>Python 3.13</th><th>Clojure 1.12</th><th>Lua 5.4</th></tr><tr><td>A million Monte Carlo trials (pi)</td><td>19 ms</td><td>200 ms</td><td>·</td><td>72 ms</td></tr><tr><td>Counting a million numbers</td><td>4.3 ms</td><td>36 ms</td><td>14 ms</td><td>13 ms</td></tr></table></div>
+<nav class="switch" aria-label="Language"><a href="#python" data-lang="python">Python</a><a href="#rebol" data-lang="rebol">Rebol</a><a href="#clojure" data-lang="clojure">Clojure</a><a href="#lua" data-lang="lua">Lua</a></nav>
+<div class="lang" id="python"><h2 class="langname">Sprout and Python</h2><p>Python is the language most people learn first. Every pair was run in Sprout 3 and Python 3.13, and the output under each one is what it actually printed.</p>
+<nav class="toc"><a href="#python-hello">Printing</a><a href="#python-names">Names for values</a><a href="#python-order">Left to right, always</a><a href="#python-functions">Functions are cells</a><a href="#python-inputs">Several inputs, and defaults</a><a href="#python-choose">Choosing</a><a href="#python-lists">Lists</a><a href="#python-records">Records, never changed in place</a><a href="#python-text">Text with values in it</a><a href="#python-missing">A field that may not be there</a><a href="#python-match">Matching</a><a href="#python-chain">Chains of steps</a><a href="#python-fizzbuzz">FizzBuzz</a><a href="#python-recursion">Recursion</a><a href="#python-montecarlo">A million random trials</a></nav>
+<section id="python-hello">
+<h2>Printing</h2>
+<p>In Sprout the message comes after the value: <code>"hello, world" print</code> sends <code>print</code> to the text. Every line reads the same way, from the thing to what happens to it.</p>
+<div class="pair">
+<div class="side"><div class="label sp">Sprout</div><pre><code>"hello, world" print</code></pre><div class="out"><span>prints</span><pre>hello, world</pre></div></div>
+<div class="side"><div class="label other">Python</div><pre><code>print("hello, world")</code></pre><div class="out"><span>prints</span><pre>hello, world</pre></div></div>
+</div>
+</section>
+<section id="python-names">
+<h2>Names for values</h2>
+<p>A colon gives a value a name. Names can have hyphens in them, like <code>star-count</code>, because minus always has spaces round it.</p>
+<div class="pair">
+<div class="side"><div class="label sp">Sprout</div><pre><code>price : 12
+count : 3
+price * count print</code></pre><div class="out"><span>prints</span><pre>36</pre></div></div>
+<div class="side"><div class="label other">Python</div><pre><code>price = 12
+count = 3
+print(price * count)</code></pre><div class="out"><span>prints</span><pre>36</pre></div></div>
+</div>
+</section>
+<section id="python-order">
+<h2>Left to right, always</h2>
+<p>Sprout has no precedence table. Maths runs strictly left to right, so <code>2 + 3 * 4</code> is 20. Use brackets when you want something done first. There is nothing to remember.</p>
+<div class="pair">
+<div class="side"><div class="label sp">Sprout</div><pre><code>2 + 3 * 4 print
+2 + (3 * 4) print</code></pre><div class="out"><span>prints</span><pre>20
+14</pre></div></div>
+<div class="side"><div class="label other">Python</div><pre><code>print((2 + 3) * 4)
+print(2 + 3 * 4)</code></pre><div class="out"><span>prints</span><pre>20
+14</pre></div></div>
+</div>
+</section>
+<section id="python-functions">
+<h2>Functions are cells</h2>
+<p>A function is a cell: inputs, a bar, then the body. The last value in the body is the answer, so there is no <code>return</code>. To call it, write the value after its name.</p>
+<div class="pair">
+<div class="side"><div class="label sp">Sprout</div><pre><code>double : [n | n * 2]
+double 21 print</code></pre><div class="out"><span>prints</span><pre>42</pre></div></div>
+<div class="side"><div class="label other">Python</div><pre><code>def double(n):
+    return n * 2
+
+print(double(21))</code></pre><div class="out"><span>prints</span><pre>42</pre></div></div>
+</div>
+</section>
+<section id="python-inputs">
+<h2>Several inputs, and defaults</h2>
+<p>Every call takes one value. Several inputs go in as a list, in order, or as a record, by name. A default comes after a colon, the same way a name gets a value.</p>
+<div class="pair">
+<div class="side"><div class="label sp">Sprout</div><pre><code>area : [w h : 1 | w * h]
+area [3, 4] print
+area [5] print
+area [h : 2, w : 6] print</code></pre><div class="out"><span>prints</span><pre>12
+5
+12</pre></div></div>
+<div class="side"><div class="label other">Python</div><pre><code>def area(w, h=1):
+    return w * h
+
+print(area(3, 4))
+print(area(5))
+print(area(h=2, w=6))</code></pre><div class="out"><span>prints</span><pre>12
+5
+12</pre></div></div>
+</div>
+</section>
+<section id="python-choose">
+<h2>Choosing</h2>
+<p>There is no <code>if</code> keyword. A true or false value takes a cell to run when true, and <code>else</code> (an ordinary library cell) takes the other one. The whole thing is a value, like Python's conditional expression.</p>
+<div class="pair">
+<div class="side"><div class="label sp">Sprout</div><pre><code>size : [n | n &gt; 100 ["big"] else ["small"]]
+size 250 print
+size 7 print</code></pre><div class="out"><span>prints</span><pre>big
+small</pre></div></div>
+<div class="side"><div class="label other">Python</div><pre><code>def size(n):
+    return "big" if n &gt; 100 else "small"
+
+print(size(250))
+print(size(7))</code></pre><div class="out"><span>prints</span><pre>big
+small</pre></div></div>
+</div>
+</section>
+<section id="python-lists">
+<h2>Lists</h2>
+<p><code>collect</code>, <code>keep</code> and <code>fold</code> are methods on the list, so a chain of them reads left to right. Python spreads the same work over comprehensions and built-in functions.</p>
+<div class="pair">
+<div class="side"><div class="label sp">Sprout</div><pre><code>xs : [3, 1, 4, 1, 5, 9]
+xs collect [n | n * 2] print
+xs keep [n | n &gt; 2] print
+xs fold [0, [total n | total + n]] print
+xs sort print</code></pre><div class="out"><span>prints</span><pre>[6, 2, 8, 2, 10, 18]
+[3, 4, 5, 9]
+23
+[1, 1, 3, 4, 5, 9]</pre></div></div>
+<div class="side"><div class="label other">Python</div><pre><code>xs = [3, 1, 4, 1, 5, 9]
+print([n * 2 for n in xs])
+print([n for n in xs if n &gt; 2])
+print(sum(xs))
+print(sorted(xs))</code></pre><div class="out"><span>prints</span><pre>[6, 2, 8, 2, 10, 18]
+[3, 4, 5, 9]
+23
+[1, 1, 3, 4, 5, 9]</pre></div></div>
+</div>
+</section>
+<section id="python-records">
+<h2>Records, never changed in place</h2>
+<p>A record is a list of named fields. <code>with</code> makes a new record with some fields changed; the old one is never touched. Nothing in Sprout changes in place, which is why a game's state can be saved, rewound or compared at any time.</p>
+<div class="pair">
+<div class="side"><div class="label sp">Sprout</div><pre><code>point : [x : 1, y : 2]
+point x print
+moved : point with [x : 5]
+moved print
+point print</code></pre><div class="out"><span>prints</span><pre>1
+[x : 5, y : 2]
+[x : 1, y : 2]</pre></div></div>
+<div class="side"><div class="label other">Python</div><pre><code>point = {"x": 1, "y": 2}
+print(point["x"])
+moved = {**point, "x": 5}
+print(moved)
+print(point)</code></pre><div class="out"><span>prints</span><pre>1
+{'x': 5, 'y': 2}
+{'x': 1, 'y': 2}</pre></div></div>
+</div>
+</section>
+<section id="python-text">
+<h2>Text with values in it</h2>
+<p>Square brackets inside text hold a value, the same as Python's f-strings with braces. Any expression works inside them.</p>
+<div class="pair">
+<div class="side"><div class="label sp">Sprout</div><pre><code>name : "Ada"
+"hello, [name]! you have [3 * 4] messages" print</code></pre><div class="out"><span>prints</span><pre>hello, Ada! you have 12 messages</pre></div></div>
+<div class="side"><div class="label other">Python</div><pre><code>name = "Ada"
+print(f"hello, {name}! you have {3 * 4} messages")</code></pre><div class="out"><span>prints</span><pre>hello, Ada! you have 12 messages</pre></div></div>
+</div>
+</section>
+<section id="python-missing">
+<h2>A field that may not be there</h2>
+<p>Asking for a field that isn't there is a quiet miss, not a crash, and <code>else</code> catches it. Python needs <code>.get</code> or a <code>try</code> for the same thing.</p>
+<div class="pair">
+<div class="side"><div class="label sp">Sprout</div><pre><code>user : [name : "Ada"]
+user nickname else "none" print</code></pre><div class="out"><span>prints</span><pre>none</pre></div></div>
+<div class="side"><div class="label other">Python</div><pre><code>user = {"name": "Ada"}
+print(user.get("nickname", "none"))</code></pre><div class="out"><span>prints</span><pre>none</pre></div></div>
+</div>
+</section>
+<section id="python-match">
+<h2>Matching</h2>
+<p><code>match</code> is a library cell, not syntax: a value and a flat list of pattern and answer pairs. <code>any</code> matches anything.</p>
+<div class="pair">
+<div class="side"><div class="label sp">Sprout</div><pre><code>answer : [key | match [key, ["tap", "tapped", "drag", "dragged", any, "other"]]]
+answer "tap" print
+answer "swipe" print</code></pre><div class="out"><span>prints</span><pre>tapped
+other</pre></div></div>
+<div class="side"><div class="label other">Python</div><pre><code>def answer(key):
+    match key:
+        case "tap": return "tapped"
+        case "drag": return "dragged"
+        case _: return "other"
+
+print(answer("tap"))
+print(answer("swipe"))</code></pre><div class="out"><span>prints</span><pre>tapped
+other</pre></div></div>
+</div>
+</section>
+<section id="python-chain">
+<h2>Chains of steps</h2>
+<p>Because methods go after the value, a pipeline reads in the order it runs. Python's comprehension puts the result first and the source in the middle.</p>
+<div class="pair">
+<div class="side"><div class="label sp">Sprout</div><pre><code>people : [[name : "Ada", age : 36], [name : "Alan", age : 41], [name : "Grace", age : 85]]
+people keep [p | p age &gt; 40] collect [p | p name] print</code></pre><div class="out"><span>prints</span><pre>[Alan, Grace]</pre></div></div>
+<div class="side"><div class="label other">Python</div><pre><code>people = [{"name": "Ada", "age": 36}, {"name": "Alan", "age": 41}, {"name": "Grace", "age": 85}]
+print([p["name"] for p in people if p["age"] &gt; 40])</code></pre><div class="out"><span>prints</span><pre>['Alan', 'Grace']</pre></div></div>
+</div>
+</section>
+<section id="python-fizzbuzz">
+<h2>FizzBuzz</h2>
+<p><code>cond</code> takes pairs of test and answer and gives the first answer whose test is true. Lists in Sprout count from 1, so <code>range 15</code> is 1 to 15.</p>
+<div class="pair">
+<div class="side"><div class="label sp">Sprout</div><pre><code>range 15 collect [n | cond [n % 15 = 0, "FizzBuzz", n % 3 = 0, "Fizz", n % 5 = 0, "Buzz", any, n]] print</code></pre><div class="out"><span>prints</span><pre>[1, 2, Fizz, 4, Buzz, Fizz, 7, 8, Fizz, Buzz, 11, Fizz, 13, 14, FizzBuzz]</pre></div></div>
+<div class="side"><div class="label other">Python</div><pre><code>print(["FizzBuzz" if n % 15 == 0 else "Fizz" if n % 3 == 0 else "Buzz" if n % 5 == 0 else n
+       for n in range(1, 16)])</code></pre><div class="out"><span>prints</span><pre>[1, 2, 'Fizz', 4, 'Buzz', 'Fizz', 7, 8, 'Fizz', 'Buzz', 11, 'Fizz', 13, 14, 'FizzBuzz']</pre></div></div>
+</div>
+</section>
+<section id="python-recursion">
+<h2>Recursion</h2>
+<p>A cell can call itself by name. The brackets round <code>n - 1</code> matter: without them, left to right would read <code>fib n - 1</code> as <code>(fib n) - 1</code>.</p>
+<div class="pair">
+<div class="side"><div class="label sp">Sprout</div><pre><code>fib : [n | n &lt; 2 [n] else [fib (n - 1) + (fib (n - 2))]]
+fib 20 print</code></pre><div class="out"><span>prints</span><pre>6765</pre></div></div>
+<div class="side"><div class="label other">Python</div><pre><code>def fib(n):
+    return n if n &lt; 2 else fib(n - 1) + fib(n - 2)
+
+print(fib(20))</code></pre><div class="out"><span>prints</span><pre>6765</pre></div></div>
+</div>
+</section>
+<section id="python-montecarlo">
+<h2>A million random trials</h2>
+<p>This is where the two part ways. <code>noise [n, 1]</code> is a seeded hash, not a random number generator, so run <code>n</code> always draws the same numbers and the answer is the same every time. Because <code>hit</code> is one pure cell, <code>spork</code> compiles it ahead into a kernel of number maths and runs it on WebAssembly SIMD or the GPU. In this test, Sprout took <b>19 ms</b> in Node against <b>200 ms</b> for the plain CPython loop. NumPy would close most of that gap, at the cost of rewriting the loop as array operations.</p>
+<div class="pair">
+<div class="side"><div class="label sp">Sprout</div><pre><code><span class="cm">-- estimate pi: the share of random points in the square that land inside the circle</span>
+hit : [n | x : noise [n, 1], y : noise [n, 2], x * x + (y * y) &lt; 1 [1] else [0]]
+range 1000000 spork hit fold [0, [total h | total + h]] * 4 / 1000000 print</code></pre><div class="out"><span>prints</span><pre>3.141792</pre></div></div>
+<div class="side"><div class="label other">Python</div><pre><code>import random
+
+hits = sum(1 for _ in range(1_000_000)
+           if random.random() ** 2 + random.random() ** 2 &lt; 1)
+print(hits * 4 / 1_000_000)</code></pre><div class="out"><span>prints</span><pre>3.137976</pre></div></div>
+</div>
+</section></div>
+<div class="lang" id="rebol"><h2 class="langname">Sprout and Rebol</h2><p>Rebol showed that a language could be tiny, read left to right, write dates and money as they are, and parse anything with a dialect. Sprout takes all of that. Every Sprout side here was run, and its output is real. Rebol isn't installed on this machine, so the Rebol side is written from Rebol 3's documentation and wasn't run.</p>
+<nav class="toc"><a href="#rebol-literals">Values written as they are</a><a href="#rebol-order">Left to right, like Rebol</a><a href="#rebol-functions">Functions</a><a href="#rebol-parse-text">Parsing text</a><a href="#rebol-find">Finding every match</a><a href="#rebol-grammar">A grammar</a><a href="#rebol-dialect">A dialect</a><a href="#rebol-run-dialect">Running a dialect</a><a href="#rebol-code">Code is data</a><a href="#rebol-records">Records that don't change underneath you</a><a href="#rebol-scripts">Coroutines</a><a href="#rebol-unpack">Unpacking</a></nav>
+<section id="rebol-literals">
 <h2>Values written as they are</h2>
 <p>Rebol's best idea: a date, an amount of money or a size is written as it is, and knows its own maths. Sprout writes dates the ISO way, <code>2026-11-20</code>, and keeps money in whole cents.</p>
 <div class="pair">
@@ -7324,7 +7312,7 @@ print 640x480 / 2
 print 9:30 + 0:45</code></pre><div class="out none"><span class="unrun">Rebol isn't installed here, so this side wasn't run.</span></div></div>
 </div>
 </section>
-<section id="order">
+<section id="rebol-order">
 <h2>Left to right, like Rebol</h2>
 <p>Rebol and Sprout agree: maths runs strictly left to right, so this is 20 in both.</p>
 <div class="pair">
@@ -7332,7 +7320,7 @@ print 9:30 + 0:45</code></pre><div class="out none"><span class="unrun">Rebol is
 <div class="side"><div class="label other">Rebol</div><pre><code>print 2 + 3 * 4</code></pre><div class="out none"><span class="unrun">Rebol isn't installed here, so this side wasn't run.</span></div></div>
 </div>
 </section>
-<section id="functions">
+<section id="rebol-functions">
 <h2>Functions</h2>
 <p>Rebol's <code>func</code> takes a block of inputs and a block of code. A Sprout cell is both in one pair of brackets.</p>
 <div class="pair">
@@ -7342,7 +7330,7 @@ twice 21 print</code></pre><div class="out"><span>prints</span><pre>42</pre></di
 print twice 21</code></pre><div class="out none"><span class="unrun">Rebol isn't installed here, so this side wasn't run.</span></div></div>
 </div>
 </section>
-<section id="parse-text">
+<section id="rebol-parse-text">
 <h2>Parsing text</h2>
 <p>Rebol copies each piece into a variable. Sprout keeps them with <code>as</code> and gives back a record, so nothing outside the rule changes.</p>
 <div class="pair">
@@ -7352,7 +7340,7 @@ parse "2026-11-20" [copy year 4 digit "-" copy month 2 digit "-" copy day 2 digi
 print [year month day]</code></pre><div class="out none"><span class="unrun">Rebol isn't installed here, so this side wasn't run.</span></div></div>
 </div>
 </section>
-<section id="find">
+<section id="rebol-find">
 <h2>Finding every match</h2>
 <p>Rebol collects matches with an action in parens. Sprout has <code>find-all</code>.</p>
 <div class="pair">
@@ -7365,7 +7353,7 @@ parse "call 555-1234 or 555-9876 today" [
 probe found</code></pre><div class="out none"><span class="unrun">Rebol isn't installed here, so this side wasn't run.</span></div></div>
 </div>
 </section>
-<section id="grammar">
+<section id="rebol-grammar">
 <h2>A grammar</h2>
 <p>Rebol words are looked up when the rule runs, so rules can refer to each other in any order. Sprout names are bound before use (decision 25), so the grammar is one cell that names itself, with its pieces as fields.</p>
 <div class="pair">
@@ -7382,7 +7370,7 @@ factor: [some digit | "(" expr ")"]
 probe collect [foreach t ["2*(3+4)" "2*(3+4" "1+2*3-4/5"] [keep parse t expr]]</code></pre><div class="out none"><span class="unrun">Rebol isn't installed here, so this side wasn't run.</span></div></div>
 </div>
 </section>
-<section id="dialect">
+<section id="rebol-dialect">
 <h2>A dialect</h2>
 <p>Rebol's is shorter: a block is already flat data. Sprout's quoted code keeps its phrases, so each command is checked as a whole with <code>into</code>.</p>
 <div class="pair">
@@ -7392,7 +7380,7 @@ quote [move 10, turn 90, move 5] parse turtle print</code></pre><div class="out"
 print parse [move 10 turn 90 move 5] turtle</code></pre><div class="out none"><span class="unrun">Rebol isn't installed here, so this side wasn't run.</span></div></div>
 </div>
 </section>
-<section id="run-dialect">
+<section id="rebol-run-dialect">
 <h2>Running a dialect</h2>
 <p>Rebol runs code in parens as the rule matches, and changes variables as it goes. Sprout folds over the program and gives back the new state, so nothing changes underneath.</p>
 <div class="pair">
@@ -7407,7 +7395,7 @@ parse [move 10 turn 90 move 5] [
 print [x heading]</code></pre><div class="out none"><span class="unrun">Rebol isn't installed here, so this side wasn't run.</span></div></div>
 </div>
 </section>
-<section id="code">
+<section id="rebol-code">
 <h2>Code is data</h2>
 <p>Both treat code as data. Rebol blocks are data until you <code>do</code> them; Sprout needs <code>quote</code>, because its brackets are cells. Both can get a function's body back.</p>
 <div class="pair">
@@ -7425,7 +7413,7 @@ twice: func [n] [n * 2]
 probe body-of :twice</code></pre><div class="out none"><span class="unrun">Rebol isn't installed here, so this side wasn't run.</span></div></div>
 </div>
 </section>
-<section id="records">
+<section id="rebol-records">
 <h2>Records that don't change underneath you</h2>
 <p>Rebol makes a new object from an old one too, but any object can also be changed in place, for everyone who holds it. A Sprout record never changes, so a game can rewind.</p>
 <div class="pair">
@@ -7441,7 +7429,7 @@ point/x: 5    <span class="cm">; and an object can also be changed in place, for
 probe point</code></pre><div class="out none"><span class="unrun">Rebol isn't installed here, so this side wasn't run.</span></div></div>
 </div>
 </section>
-<section id="scripts">
+<section id="rebol-scripts">
 <h2>Coroutines</h2>
 <p>Rebol has no coroutines. Sprout's <code>script</code> yields values and stays a value (decision 104).</p>
 <div class="pair">
@@ -7453,7 +7441,7 @@ next-square: does [n: n + 1 n * n]
 probe collect [loop 5 [keep next-square]]</code></pre><div class="out none"><span class="unrun">Rebol isn't installed here, so this side wasn't run.</span></div></div>
 </div>
 </section>
-<section id="unpack">
+<section id="rebol-unpack">
 <h2>Unpacking</h2>
 <p>Rebol reads parts by path, <code>size/x</code>. Sprout can also unpack a pair or a date into names at once (decision 101).</p>
 <div class="pair">
@@ -7467,80 +7455,10 @@ print size/x * size/y
 day: 20-Nov-2026
 print rejoin [day/day "/" day/month "/" day/year]</code></pre><div class="out none"><span class="unrun">Rebol isn't installed here, so this side wasn't run.</span></div></div>
 </div>
-</section>
-<p class="foot">Sprout ran in Node. Rebol 3 wasn't available on this machine, so its side was written from the documentation and not run.</p>
-<div class="others"><a href="sprout-vs-python.html">Sprout and Python</a> · <a href="sprout-vs-clojure.html">Sprout and Clojure</a> · <a href="sprout-vs-lua.html">Sprout and Lua</a></div>
-</main>
-</body></html>
-````
-
-## sprout-vs-clojure.html
-
-Sprout and Clojure: sequences, laziness, destructuring and code as data, each pair run in both
-
-````html
-<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#f5f4ee" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#262624" media="(prefers-color-scheme: dark)">
-<title>Sprout and Clojure</title>
-<style>
-:root{--bg:#f5f4ee;--card:#fffefb;--line:#e4e1d6;--fg:#1f1e1d;--fg2:#5f5d55;--fg3:#8d8a80;--acc:#d97757;--acc2:#c4613f;--other:#3d6e9e;--code:#f3f1ea;
- --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",system-ui,Roboto,sans-serif;--serif:ui-serif,"New York",Charter,Georgia,serif;--mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
-@media (prefers-color-scheme:dark){:root{--bg:#262624;--card:#30302e;--line:#3d3c38;--fg:#ecebe4;--fg2:#b5b3aa;--fg3:#87857c;--acc:#e08a6b;--acc2:#e08a6b;--other:#8fb8e0;--code:#2a2a28}}
-*{box-sizing:border-box}
-html{scroll-behavior:smooth}
-body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.55 var(--sans);-webkit-font-smoothing:antialiased}
-main{max-width:980px;margin:0 auto;padding:32px 16px 72px}
-a{color:var(--acc2)}
-h1{font:600 34px/1.15 var(--serif);margin:8px 0 8px;letter-spacing:-.01em}
-h2{font:600 21px var(--serif);margin:0 0 4px}
-.kicker{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--acc2)}
-p{color:var(--fg2);margin:6px 0;max-width:68ch}
-code{font-family:var(--mono);font-size:.92em}
-p code{background:var(--code);padding:1px 5px;border-radius:5px;color:var(--fg)}
-.toc{display:flex;flex-wrap:wrap;gap:8px;margin:22px 0 8px}
-.toc a{font-size:13px;text-decoration:none;color:var(--fg);background:var(--card);box-shadow:0 0 0 1px var(--line);padding:5px 12px;border-radius:999px}
-.toc a:hover{box-shadow:0 0 0 1px var(--acc)}
-.glance{margin:26px 0 10px}
-.card{background:var(--card);border-radius:14px;box-shadow:0 1px 2px rgba(0,0,0,.05),0 8px 28px rgba(0,0,0,.06);overflow:hidden}
-.scroll{overflow-x:auto}
-table{width:100%;border-collapse:collapse;font-size:13.5px}
-th,td{text-align:left;padding:9px 14px;border-bottom:1px solid var(--line);vertical-align:top}
-th{color:var(--fg3);font-weight:600;font-size:12px}
-tr:last-child td{border-bottom:0}
-td code{white-space:nowrap}
-section{margin-top:38px;scroll-margin-top:16px}
-.pair{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
-@media (max-width:720px){.pair{grid-template-columns:1fr}}
-.side{background:var(--card);border-radius:14px;box-shadow:0 1px 2px rgba(0,0,0,.05),0 8px 28px rgba(0,0,0,.06);overflow:hidden;min-width:0;display:flex;flex-direction:column}
-.label{font-size:12px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;padding:10px 14px 0}
-.label.sp{color:var(--acc2)}.label.other{color:var(--other)}
-.side>pre{margin:0;padding:8px 14px 14px;overflow-x:auto;font:13px/1.55 var(--mono);flex:1}
-.cm{color:var(--fg3)}
-.out{border-top:1px solid var(--line);padding:8px 14px 10px;background:var(--code)}
-.out span{font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--fg3)}
-.out pre{margin:2px 0 0;font:12.5px/1.5 var(--mono);white-space:pre-wrap;word-break:break-word;color:var(--fg)}
-.foot{margin-top:46px;font-size:13px;color:var(--fg3)}
-.unrun{font-size:12px;color:var(--fg3);font-style:italic}
-.pair .out.none{display:flex;align-items:center}
-.verdict{margin-top:6px}
-.verdict td:first-child{white-space:nowrap}
-.others{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
-.others a{font-size:13px}
-</style></head><body>
-</head><body>
-<main>
-<div class="kicker">Sprout 3</div>
-<h1>Sprout and Clojure</h1>
-<p>Clojure made immutable data and a rich sequence library feel normal. Here is what it is known for, next to the same work in Sprout. Every pair was run in Sprout 3 and in Clojure 1.12, and the output under each one is what it actually printed. The two print collections differently; the values are the same. <a href="./">Back to Sprout 3</a></p>
-<div class="glance card scroll"><table>
-<tr><th></th><th>Sprout</th><th>Clojure</th></tr>
-<tr><td>Data</td><td>never changed in place: <code>with</code>, <code>update-in</code></td><td>persistent maps and vectors: <code>assoc</code>, <code>update-in</code></td></tr><tr><td>Pipelines</td><td>methods read left to right with no macro</td><td><code>-&gt;</code> and <code>-&gt;&gt;</code> macros</td></tr><tr><td>Laziness</td><td>endless lists: <code>iterate</code>, <code>cycle</code></td><td>lazy sequences</td></tr><tr><td>Code as data</td><td><code>quote</code>, <code>eval</code>, and every cell keeps its code</td><td>quoted lists, <code>eval</code>, macros</td></tr><tr><td>Literals</td><td>dates, money, pairs, urls, colours</td><td>keywords, sets, regexes; dates come from Java</td></tr><tr><td>Speed</td><td>no start-up; fused loops and SIMD kernels</td><td>the JVM: slow to start, fast once warm</td></tr><tr><td>Where Clojure still leads</td><td></td><td>macros that run at compile time, keywords, sets, the JVM's libraries, and real threads</td></tr>
-</table></div>
-<nav class="toc"><a href="#pipeline">A pipeline of steps</a><a href="#frequencies">Counting</a><a href="#group">Grouping</a><a href="#update-in">Changing something deep inside</a><a href="#destructuring">Unpacking</a><a href="#lazy">Endless lists</a><a href="#partition">Slicing a list up</a><a href="#code">Code is data</a><a href="#dialect">A little language</a><a href="#dates">Dates</a><a href="#speed">Counting a million</a></nav>
-<section id="pipeline">
+</section></div>
+<div class="lang" id="clojure"><h2 class="langname">Sprout and Clojure</h2><p>Clojure made immutable data and a rich sequence library feel normal. Here is what it is known for, next to the same work in Sprout. Every pair was run in Sprout 3 and in Clojure 1.12, and the output under each one is what it actually printed. The two print collections differently; the values are the same.</p>
+<nav class="toc"><a href="#clojure-pipeline">A pipeline of steps</a><a href="#clojure-frequencies">Counting</a><a href="#clojure-group">Grouping</a><a href="#clojure-update-in">Changing something deep inside</a><a href="#clojure-destructuring">Unpacking</a><a href="#clojure-lazy">Endless lists</a><a href="#clojure-partition">Slicing a list up</a><a href="#clojure-code">Code is data</a><a href="#clojure-dialect">A little language</a><a href="#clojure-dates">Dates</a><a href="#clojure-speed">Counting a million</a></nav>
+<section id="clojure-pipeline">
 <h2>A pipeline of steps</h2>
 <p>Clojure needs the <code>-&gt;&gt;</code> macro to write steps in the order they run. In Sprout every method already reads left to right, so a pipeline is just a line.</p>
 <div class="pair">
@@ -7548,7 +7466,7 @@ section{margin-top:38px;scroll-margin-top:16px}
 <div class="side"><div class="label other">Clojure</div><pre><code>(println (-&gt;&gt; (range 1 11) (filter even?) (map #(* % %)) (reduce +)))</code></pre><div class="out"><span>prints</span><pre>220</pre></div></div>
 </div>
 </section>
-<section id="frequencies">
+<section id="clojure-frequencies">
 <h2>Counting</h2>
 <p>The same words, the same counts. Sprout prints a record, Clojure a map.</p>
 <div class="pair">
@@ -7556,7 +7474,7 @@ section{margin-top:38px;scroll-margin-top:16px}
 <div class="side"><div class="label other">Clojure</div><pre><code>(println (frequencies "mississippi"))</code></pre><div class="out"><span>prints</span><pre>{m 1, i 4, s 4, p 2}</pre></div></div>
 </div>
 </section>
-<section id="group">
+<section id="clojure-group">
 <h2>Grouping</h2>
 <p><code>group-by</code> in both. Sprout's keys are the text of each value, since a record's field names are words.</p>
 <div class="pair">
@@ -7566,7 +7484,7 @@ people group-by [p | p age &gt; 40] print</code></pre><div class="out"><span>pri
 (println (group-by #(&gt; (:age %) 40) people))</code></pre><div class="out"><span>prints</span><pre>{false [{:name Ada, :age 36}], true [{:name Alan, :age 41} {:name Grace, :age 85}]}</pre></div></div>
 </div>
 </section>
-<section id="update-in">
+<section id="clojure-update-in">
 <h2>Changing something deep inside</h2>
 <p>Both give a new game and leave the old one as it was. Clojure's keywords make the path shorter; Sprout's path is plain text.</p>
 <div class="pair">
@@ -7580,7 +7498,7 @@ game print</code></pre><div class="out"><span>prints</span><pre>[player : [name 
 {:player {:name Ada, :score 10}}</pre></div></div>
 </div>
 </section>
-<section id="destructuring">
+<section id="clojure-destructuring">
 <h2>Unpacking</h2>
 <p>Clojure's destructuring, in Sprout's square brackets (decision 101). One pattern unpacks a record by name or a list by position, and <code>..rest</code> is Clojure's <code>&amp;</code>.</p>
 <div class="pair">
@@ -7595,7 +7513,7 @@ rest print</code></pre><div class="out"><span>prints</span><pre>Ada is 36
 (2 3 4)</pre></div></div>
 </div>
 </section>
-<section id="lazy">
+<section id="clojure-lazy">
 <h2>Endless lists</h2>
 <p>Endless lists in both, worked out only as far as they are read. The Fibonacci line unpacks each pair as it goes.</p>
 <div class="pair">
@@ -7607,7 +7525,7 @@ iterate [[0, 1], [[a, b] | [b, a + b]]] collect [[a, b] | a] take 10 print</code
 (0 1 1 2 3 5 8 13 21 34)</pre></div></div>
 </div>
 </section>
-<section id="partition">
+<section id="clojure-partition">
 <h2>Slicing a list up</h2>
 <p>Clojure's sequence words have Sprout names: <code>partition</code>, <code>scan</code> for <code>reductions</code>, <code>zip</code> for <code>map vector</code>.</p>
 <div class="pair">
@@ -7623,7 +7541,7 @@ iterate [[0, 1], [[a, b] | [b, a + b]]] collect [[a, b] | a] take 10 print</code
 ([1 a] [2 b] [3 c])</pre></div></div>
 </div>
 </section>
-<section id="code">
+<section id="clojure-code">
 <h2>Code is data</h2>
 <p>Both can hold code as data and run it. A Sprout cell also keeps its own code, so <code>twice code</code> gives it back; a compiled Clojure function is an object, and its source lives only in the file.</p>
 <div class="pair">
@@ -7644,7 +7562,7 @@ twice code print</code></pre><div class="out"><span>prints</span><pre>[1 + 2, 3 
 #object[user$twice 0x22ee2d0 user$twice@22ee2d0]</pre></div></div>
 </div>
 </section>
-<section id="dialect">
+<section id="clojure-dialect">
 <h2>A little language</h2>
 <p>The same little turtle language, as quoted data walked by a fold. Sprout's <code>'move</code> and Clojure's <code>'move</code> are both symbols you can compare.</p>
 <div class="pair">
@@ -7660,7 +7578,7 @@ quote [move 10, turn 90, move 5] fold [[x : 0, heading : 0], turtle] print</code
 (println (reduce turtle {:x 0 :heading 0} '[[move 10] [turn 90] [move 5]]))</code></pre><div class="out"><span>prints</span><pre>{:x 15, :heading 90}</pre></div></div>
 </div>
 </section>
-<section id="dates">
+<section id="clojure-dates">
 <h2>Dates</h2>
 <p>Clojure borrows Java's dates. Sprout writes a date as it is and does its maths directly (decision 100).</p>
 <div class="pair">
@@ -7673,88 +7591,18 @@ Friday</pre></div></div>
 FRIDAY</pre></div></div>
 </div>
 </section>
-<section id="speed">
+<section id="clojure-speed">
 <h2>Counting a million</h2>
-<p>Counting the multiples of three below a million. Sprout took <b>4.3 ms</b> on this machine. Clojure took <b>16.5 ms</b> once the JVM had warmed up, after about a second and a half to start. A transducer or a loop with primitive maths would make Clojure faster.</p>
+<p>Counting the multiples of three below a million. Sprout took <b>4.3 ms</b> on this machine. Clojure took <b>14 ms</b> once the JVM had warmed up, after about a second and a half to start. A transducer or a loop with primitive maths would make Clojure faster.</p>
 <div class="pair">
 <div class="side"><div class="label sp">Sprout</div><pre><code>range 1000000 keep [n | n % 3 = 0] length print</code></pre><div class="out"><span>prints</span><pre>333333</pre></div></div>
 <div class="side"><div class="label other">Clojure</div><pre><code>(defn run [] (count (filter #(zero? (mod % 3)) (range 1 1000001))))
 (println (run))</code></pre><div class="out"><span>prints</span><pre>333333</pre></div></div>
 </div>
-</section>
-<p class="foot">Clojure 1.12 ran on Java, and Sprout in Node. Times are the best of several runs on one machine, with the JVM warmed up first. Run the <a href="bench.html">benchmarks</a> to see Sprout's numbers on your own device.</p>
-<div class="others"><a href="sprout-vs-python.html">Sprout and Python</a> · <a href="sprout-vs-rebol.html">Sprout and Rebol</a> · <a href="sprout-vs-lua.html">Sprout and Lua</a></div>
-</main>
-</body></html>
-````
-
-## sprout-vs-lua.html
-
-Sprout and Lua: tables, strings, patterns, coroutines, metatables and speed, each pair run in both
-
-````html
-<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#f5f4ee" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#262624" media="(prefers-color-scheme: dark)">
-<title>Sprout and Lua</title>
-<style>
-:root{--bg:#f5f4ee;--card:#fffefb;--line:#e4e1d6;--fg:#1f1e1d;--fg2:#5f5d55;--fg3:#8d8a80;--acc:#d97757;--acc2:#c4613f;--other:#3d6e9e;--code:#f3f1ea;
- --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",system-ui,Roboto,sans-serif;--serif:ui-serif,"New York",Charter,Georgia,serif;--mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
-@media (prefers-color-scheme:dark){:root{--bg:#262624;--card:#30302e;--line:#3d3c38;--fg:#ecebe4;--fg2:#b5b3aa;--fg3:#87857c;--acc:#e08a6b;--acc2:#e08a6b;--other:#8fb8e0;--code:#2a2a28}}
-*{box-sizing:border-box}
-html{scroll-behavior:smooth}
-body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.55 var(--sans);-webkit-font-smoothing:antialiased}
-main{max-width:980px;margin:0 auto;padding:32px 16px 72px}
-a{color:var(--acc2)}
-h1{font:600 34px/1.15 var(--serif);margin:8px 0 8px;letter-spacing:-.01em}
-h2{font:600 21px var(--serif);margin:0 0 4px}
-.kicker{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--acc2)}
-p{color:var(--fg2);margin:6px 0;max-width:68ch}
-code{font-family:var(--mono);font-size:.92em}
-p code{background:var(--code);padding:1px 5px;border-radius:5px;color:var(--fg)}
-.toc{display:flex;flex-wrap:wrap;gap:8px;margin:22px 0 8px}
-.toc a{font-size:13px;text-decoration:none;color:var(--fg);background:var(--card);box-shadow:0 0 0 1px var(--line);padding:5px 12px;border-radius:999px}
-.toc a:hover{box-shadow:0 0 0 1px var(--acc)}
-.glance{margin:26px 0 10px}
-.card{background:var(--card);border-radius:14px;box-shadow:0 1px 2px rgba(0,0,0,.05),0 8px 28px rgba(0,0,0,.06);overflow:hidden}
-.scroll{overflow-x:auto}
-table{width:100%;border-collapse:collapse;font-size:13.5px}
-th,td{text-align:left;padding:9px 14px;border-bottom:1px solid var(--line);vertical-align:top}
-th{color:var(--fg3);font-weight:600;font-size:12px}
-tr:last-child td{border-bottom:0}
-td code{white-space:nowrap}
-section{margin-top:38px;scroll-margin-top:16px}
-.pair{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
-@media (max-width:720px){.pair{grid-template-columns:1fr}}
-.side{background:var(--card);border-radius:14px;box-shadow:0 1px 2px rgba(0,0,0,.05),0 8px 28px rgba(0,0,0,.06);overflow:hidden;min-width:0;display:flex;flex-direction:column}
-.label{font-size:12px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;padding:10px 14px 0}
-.label.sp{color:var(--acc2)}.label.other{color:var(--other)}
-.side>pre{margin:0;padding:8px 14px 14px;overflow-x:auto;font:13px/1.55 var(--mono);flex:1}
-.cm{color:var(--fg3)}
-.out{border-top:1px solid var(--line);padding:8px 14px 10px;background:var(--code)}
-.out span{font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--fg3)}
-.out pre{margin:2px 0 0;font:12.5px/1.5 var(--mono);white-space:pre-wrap;word-break:break-word;color:var(--fg)}
-.foot{margin-top:46px;font-size:13px;color:var(--fg3)}
-.unrun{font-size:12px;color:var(--fg3);font-style:italic}
-.pair .out.none{display:flex;align-items:center}
-.verdict{margin-top:6px}
-.verdict td:first-child{white-space:nowrap}
-.others{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
-.others a{font-size:13px}
-</style></head><body>
-</head><body>
-<main>
-<div class="kicker">Sprout 3</div>
-<h1>Sprout and Lua</h1>
-<p>Lua is small, fast and everywhere games are scripted. Here is what it is known for, next to the same work in Sprout. Every pair was run in Sprout 3 and in Lua 5.4, and the output under each one is what it actually printed. Where they differ, the difference is the point. <a href="./">Back to Sprout 3</a></p>
-<div class="glance card scroll"><table>
-<tr><th></th><th>Sprout</th><th>Lua</th></tr>
-<tr><td>One structure</td><td>cells: records and lists in one</td><td>tables: records and lists in one</td></tr><tr><td>Text</td><td><code>split</code>, <code>trim</code>, <code>slice</code>, and <code>parse</code> rules that nest</td><td>the string library, and patterns without alternation or nesting</td></tr><tr><td>Coroutines</td><td><code>script</code>: a value you can keep, compare and rewind</td><td><code>coroutine</code>: one live object that moves on</td></tr><tr><td>Operators</td><td>a field named <code>+</code></td><td>metatables</td></tr><tr><td>Money and dates</td><td><code>$19.99</code> exact in cents, <code>2026-11-20 + 30</code></td><td>floats and <code>os.time</code></td></tr><tr><td>Speed on loops</td><td>fused loops and <code>spork</code> kernels (SIMD, WebGPU)</td><td>a fast interpreter, and LuaJIT where it runs</td></tr><tr><td>Where Lua still leads</td><td></td><td>a tiny C core you can embed anywhere, and mutable tables when you want them</td></tr>
-</table></div>
-<nav class="toc"><a href="#tables">One structure for records and lists</a><a href="#strings">The string library</a><a href="#patterns">Finding things in text</a><a href="#gsub">Replacing with a function</a><a href="#grammar">A grammar, not just a pattern</a><a href="#coroutines">Coroutines</a><a href="#rewind">A coroutine you can go back to</a><a href="#metatables">Your own operators</a><a href="#dates">Dates</a><a href="#money">Money</a><a href="#destructure">Unpacking</a><a href="#speed">A million random trials</a></nav>
-<section id="tables">
+</section></div>
+<div class="lang" id="lua"><h2 class="langname">Sprout and Lua</h2><p>Lua is small, fast and everywhere games are scripted. Here is what it is known for, next to the same work in Sprout. Every pair was run in Sprout 3 and in Lua 5.4, and the output under each one is what it actually printed. Where they differ, the difference is the point.</p>
+<nav class="toc"><a href="#lua-tables">One structure for records and lists</a><a href="#lua-strings">The string library</a><a href="#lua-patterns">Finding things in text</a><a href="#lua-gsub">Replacing with a function</a><a href="#lua-grammar">A grammar, not just a pattern</a><a href="#lua-coroutines">Coroutines</a><a href="#lua-rewind">A coroutine you can go back to</a><a href="#lua-metatables">Your own operators</a><a href="#lua-dates">Dates</a><a href="#lua-money">Money</a><a href="#lua-destructure">Unpacking</a><a href="#lua-speed">A million random trials</a></nav>
+<section id="lua-tables">
 <h2>One structure for records and lists</h2>
 <p>Both languages have one structure for everything. A Sprout cell holds named fields and numbered parts, as a Lua table does, and lists count from 1 in both.</p>
 <div class="pair">
@@ -7772,7 +7620,7 @@ lamp
 3</pre></div></div>
 </div>
 </section>
-<section id="strings">
+<section id="lua-strings">
 <h2>The string library</h2>
 <p>Lua's string library is short and sharp. Sprout's words are named for what they do, so trimming and splitting don't need a pattern. Both count positions from 1, and negative ones from the end.</p>
 <div class="pair">
@@ -7801,7 +7649,7 @@ ell
 HELLO</pre></div></div>
 </div>
 </section>
-<section id="patterns">
+<section id="lua-patterns">
 <h2>Finding things in text</h2>
 <p>Lua patterns are a tiny language inside strings: <code>%d</code> for a digit, <code>%-</code> for a dash. Sprout's rules are ordinary values (decision 103), so they can be named, put in lists and built by other code.</p>
 <div class="pair">
@@ -7813,7 +7661,7 @@ for number in text:gmatch("%d%d%d%-%d%d%d%d") do found[#found + 1] = number end
 print(table.concat(found, ", "))</code></pre><div class="out"><span>prints</span><pre>555-1234, 555-9876</pre></div></div>
 </div>
 </section>
-<section id="gsub">
+<section id="lua-gsub">
 <h2>Replacing with a function</h2>
 <p>Both replace each match with what a function makes of it. Lua's <code>gsub</code> also gives back a count, which is why its call needs the extra brackets.</p>
 <div class="pair">
@@ -7821,7 +7669,7 @@ print(table.concat(found, ", "))</code></pre><div class="out"><span>prints</span
 <div class="side"><div class="label other">Lua</div><pre><code>print((("3 apples and 12 pears"):gsub("%d+", function(n) return tonumber(n) * 2 end)))</code></pre><div class="out"><span>prints</span><pre>6 apples and 24 pears</pre></div></div>
 </div>
 </section>
-<section id="grammar">
+<section id="lua-grammar">
 <h2>A grammar, not just a pattern</h2>
 <p>Lua patterns can't say "this or that", and can't nest. So nested brackets mean writing a parser by hand. A Sprout rule can hold itself, so the grammar is four lines and reads like a grammar.</p>
 <div class="pair">
@@ -7864,7 +7712,7 @@ for _, t in ipairs({"2*(3+4)", "2*(3+4", "1+2*3-4/5"}) do results[#results + 1] 
 print("[" .. table.concat(results, ", ") .. "]")</code></pre><div class="out"><span>prints</span><pre>[true, false, true]</pre></div></div>
 </div>
 </section>
-<section id="coroutines">
+<section id="lua-coroutines">
 <h2>Coroutines</h2>
 <p>A generator in both. Sprout's <code>script</code> yields the same way a Lua coroutine does (decision 104).</p>
 <div class="pair">
@@ -7879,7 +7727,7 @@ for i = 1, 5 do out[i] = squares() end
 print(table.concat(out, ", "))</code></pre><div class="out"><span>prints</span><pre>1, 4, 9, 16, 25</pre></div></div>
 </div>
 </section>
-<section id="rewind">
+<section id="lua-rewind">
 <h2>A coroutine you can go back to</h2>
 <p>This is where they part. A Lua coroutine is one live object: resuming it moves it on for everyone. A Sprout script is a value: resuming gives a new one and leaves the old one as it was. That is why a game can keep a script in its state and still rewind time.</p>
 <div class="pair">
@@ -7902,7 +7750,7 @@ print(again)</code></pre><div class="out"><span>prints</span><pre>2
 3</pre></div></div>
 </div>
 </section>
-<section id="metatables">
+<section id="lua-metatables">
 <h2>Your own operators</h2>
 <p>A Lua metatable gives a table its own <code>+</code>. In Sprout a record has a field named <code>+</code>, and <code>left</code> is the record it was sent to.</p>
 <div class="pair">
@@ -7919,7 +7767,7 @@ local sum = Vector.new(1, 2) + Vector.new(3, 4)
 print(sum.x .. ", " .. sum.y)</code></pre><div class="out"><span>prints</span><pre>4, 6</pre></div></div>
 </div>
 </section>
-<section id="dates">
+<section id="lua-dates">
 <h2>Dates</h2>
 <p>Lua has no dates, only seconds since 1970 and <code>os.date</code>. In Sprout a date is a value with its own maths (decision 100).</p>
 <div class="pair">
@@ -7932,7 +7780,7 @@ print(os.date("!%A", os.time({year = 2026, month = 11, day = 20, hour = 12})))</
 Friday</pre></div></div>
 </div>
 </section>
-<section id="money">
+<section id="lua-money">
 <h2>Money</h2>
 <p>Lua's numbers are floats, so 0.10 + 0.20 isn't 0.30, and $100 shared three ways loses a cent. Sprout's money is whole cents, and <code>split</code> hands out every one.</p>
 <div class="pair">
@@ -7949,7 +7797,7 @@ $59.97
 $33.33, $33.33, $33.33</pre></div></div>
 </div>
 </section>
-<section id="destructure">
+<section id="lua-destructure">
 <h2>Unpacking</h2>
 <p>Lua's multiple assignment unpacks values one by one. Sprout's patterns unpack lists, records and pairs, with <code>..rest</code> for what's left (decision 101).</p>
 <div class="pair">
@@ -7966,9 +7814,9 @@ print("[" .. table.concat(rest, ", ") .. "]")</code></pre><div class="out"><span
 [2, 3, 4]</pre></div></div>
 </div>
 </section>
-<section id="speed">
+<section id="lua-speed">
 <h2>A million random trials</h2>
-<p>Both estimate pi from a million random points. On this machine Sprout took <b>18 ms</b> (Node, WebAssembly SIMD) and Lua 5.4 took <b>67 ms</b>. Counting a million numbers took Sprout <b>4.3 ms</b> and Lua <b>9.5 ms</b>. LuaJIT, where it runs, would be faster than Lua 5.4; it wasn't measured here. Sprout's draws come from a seeded hash, so its answer is the same on every run.</p>
+<p>Both estimate pi from a million random points. On this machine Sprout took <b>19 ms</b> (Node, WebAssembly SIMD) and Lua 5.4 took <b>72 ms</b>. Counting a million numbers took Sprout <b>4.3 ms</b> and Lua <b>13 ms</b>. LuaJIT, where it runs, would be faster than Lua 5.4; it wasn't measured here. Sprout's draws come from a seeded hash, so its answer is the same on every run.</p>
 <div class="pair">
 <div class="side"><div class="label sp">Sprout</div><pre><code>hit : [n | x : noise [n, 1], y : noise [n, 2], x * x + (y * y) &lt; 1 [1] else [0]]
 range 1000000 spork hit fold [0, [total h | total + h]] * 4 / 1000000 print</code></pre><div class="out"><span>prints</span><pre>3.141792</pre></div></div>
@@ -7979,10 +7827,23 @@ for i = 1, 1000000 do
 end
 print(hits * 4 / 1000000)</code></pre><div class="out"><span>prints</span><pre>3.14156</pre></div></div>
 </div>
-</section>
-<p class="foot">Lua was run as Lua 5.4 through lupa, and Sprout in Node. Times are the best of several runs on one machine. Run the <a href="bench.html">benchmarks</a> to see Sprout's numbers on your own device.</p>
-<div class="others"><a href="sprout-vs-python.html">Sprout and Python</a> · <a href="sprout-vs-rebol.html">Sprout and Rebol</a> · <a href="sprout-vs-clojure.html">Sprout and Clojure</a></div>
+</section></div>
+
+<p class="foot">Python 3.13, Clojure 1.12 on Java, and Lua 5.4 through lupa, all on one machine. Run the <a href="bench.html">benchmarks</a> to see Sprout's numbers on your own device.</p>
 </main>
+<script>
+(function(){
+  const langs=[...document.querySelectorAll(".lang")],tabs=[...document.querySelectorAll(".switch a")];
+  function show(hash){
+    const id=(hash||"").slice(1),section=id&&document.getElementById(id);
+    const lang=section?(section.classList.contains("lang")?section:section.closest(".lang")):null,pick=lang?lang.id:(langs[0]&&langs[0].id);
+    langs.forEach(l=>l.classList.toggle("on",l.id===pick));tabs.forEach(t=>t.classList.toggle("on",t.dataset.lang===pick));
+    if(section&&!section.classList.contains("lang"))requestAnimationFrame(()=>section.scrollIntoView());
+  }
+  tabs.forEach(t=>t.addEventListener("click",e=>{e.preventDefault();history.replaceState(null,"","#"+t.dataset.lang);show("#"+t.dataset.lang);document.querySelector(".switch").scrollIntoView({block:"start"})}));
+  addEventListener("hashchange",()=>show(location.hash));show(location.hash);
+})();
+</script>
 </body></html>
 ````
 
@@ -8147,7 +8008,7 @@ body.scrubbing,body.scrubbing *{cursor:ew-resize!important;user-select:none!impo
 .sh{font:600 15px var(--serif);padding:16px 18px 4px}.sp .k2::before{content:"";display:inline-block;width:3px;height:12px;border-radius:2px;margin-right:8px;vertical-align:-1px;background:var(--warn);opacity:.6}.sp.f .k2::before{background:var(--ok);opacity:1}
 #live{background:var(--accbg);transition:opacity .7s}#live.fade{opacity:0}
 i{font-style:normal}
-.c{color:var(--c);font-style:italic}.s{color:var(--s)}.n{color:var(--n)}.k{color:var(--k)}.a{color:var(--a)}.o{color:var(--o)}.tp{background:var(--tp);border-radius:3px}
+.c{color:var(--c);font-style:italic}.s{color:var(--s)}.n{color:var(--n)}.l{color:var(--n);font-weight:500}.k{color:var(--k)}.a{color:var(--a)}.o{color:var(--o)}.tp{background:var(--tp);border-radius:3px}
 #st,#out{flex:1;min-height:0;overflow:auto;margin:0;padding:10px 0 40px;display:none}
 .row{display:grid;grid-template-columns:minmax(90px,max-content) 1fr;gap:18px;padding:7px 18px;border-bottom:1px solid var(--line);font-size:13px}
 .row:hover{background:var(--card2)}.row .k2{color:var(--fg2)}.row .v{font-family:var(--mono);font-size:12.5px;word-break:break-word}
@@ -8242,7 +8103,7 @@ body.t-out #out{display:block}body.t-st #st{display:block}
 <aside id="side">
  <a class="brand" href="/" title="All apps"><span class="logo">S</span><b>Sprout 3</b><small>library</small></a>
  <div id="lib"></div>
- <div class="sidefoot"><a class="pill" href="./">About Sprout</a> <button class="pill" id="bSpec2">Read the spec</button> <a class="pill" href="bench.html" target="_blank" rel="noopener">Benchmarks</a> <a class="pill" href="sprout-vs-python.html" target="_blank" rel="noopener">Sprout and Python</a> <a class="pill" href="sprout-vs-rebol.html" target="_blank" rel="noopener">Rebol</a> <a class="pill" href="sprout-vs-clojure.html" target="_blank" rel="noopener">Clojure</a> <a class="pill" href="sprout-vs-lua.html" target="_blank" rel="noopener">Lua</a></div>
+ <div class="sidefoot"><a class="pill" href="./">About Sprout</a> <button class="pill" id="bSpec2">Read the spec</button> <a class="pill" href="bench.html" target="_blank" rel="noopener">Benchmarks</a> <a class="pill" href="compare.html" target="_blank" rel="noopener">Sprout compared</a></div>
 </aside>
 <main id="main">
  <canvas id="glow" width="36" height="48"></canvas>
@@ -8289,14 +8150,14 @@ body.t-out #out{display:block}body.t-st #st{display:block}
 <div id="modal"><div id="mBox"><div class="mh"><h2 id="mTitle"></h2><button class="x" data-close aria-label="Close">✕</button></div><div id="mBody"></div></div></div>
 <div id="toast"></div><div id="scrubTip"></div>
 
-<script src="sprout3.js?v=20261120r"></script>
-<script src="words.js?v=20261120r"></script>
-<script src="parse.js?v=20261120r"></script>
-<script src="kernels.js?v=20261120r"></script>
-<script src="live3.js?v=20261120r"></script>
-<script src="sqlite-web.js?v=20261120r"></script>
-<script src="gpu-paint.js?v=20261120r"></script>
-<script src="gpu-spork.js?v=20261120r"></script>
+<script src="sprout3.js?v=20261120s"></script>
+<script src="words.js?v=20261120s"></script>
+<script src="parse.js?v=20261120s"></script>
+<script src="kernels.js?v=20261120s"></script>
+<script src="live3.js?v=20261120s"></script>
+<script src="sqlite-web.js?v=20261120s"></script>
+<script src="gpu-paint.js?v=20261120s"></script>
+<script src="gpu-spork.js?v=20261120s"></script>
 <script>
 "use strict";
 const V="20261120m";
@@ -8514,7 +8375,7 @@ function vv(){const v=window.visualViewport;const h=v?v.height:innerHeight;$("ap
 if(window.visualViewport){visualViewport.addEventListener("resize",vv);visualViewport.addEventListener("scroll",vv)}vv();
 
 // ---------- the editor: a textarea over a highlighted copy (the same rules as Sprout 3's tokenizer)
-const WORDS=new Set("start update draw input dt clock touching tapped touch-x touch-y held W H clear rect circle line text beep shake print rand noise dist clamp toward range match cond take rgb rgba every wave frame any with else and or not collect keep each fold times length first last str min max abs floor round ceil sqrt sin cos tan log neg left right".split(" "));
+const WORDS=new Set("start update draw input dt clock touching tapped touch-x touch-y held W H clear rect circle line text beep shake print rand noise dist clamp toward range match cond take rgb rgba every wave frame any with else and or not collect keep each fold times length first last str min max abs floor round ceil sqrt sin cos tan log neg left right quote eval script yield wait parse find-all replace-all some maybe maybe-some one-of iterate sum group-by frequencies".split(" "));
 function lineHTML(s){let o="",i=0;const n=s.length;
  while(i<n){const c=s[i];
   if(c==="-"&&s[i+1]==="-"){o+='<i class="c">'+esc(s.slice(i))+"</i>";break}
@@ -8525,6 +8386,7 @@ function lineHTML(s){let o="",i=0;const n=s.length;
   if("[](),".includes(c)){o+=c;i++;continue}
   if(c===":"||c==="|"){o+='<i class="o">'+c+"</i>";i++;continue}
   if(c===" "||c==="\t"){o+=c;i++;continue}
+  const lit=S.lexLiteral(s,i);if(lit){o+='<i class="l">'+esc(s.slice(i,i+lit.length))+"</i>";i+=lit.length;continue}
   let j=i;while(j<n&&!' \t[](),|:"'.includes(s[j])&&!(s[j]==="-"&&s[j+1]==="-"&&j>i))j++;
   const w=s.slice(i,j);o+=/^-?\d+(\.\d+)?$/.test(w)?'<i class="n">'+w+"</i>":WORDS.has(w)?'<i class="a">'+esc(w)+"</i>":(w==="true"||w==="false"||w==="!")?'<i class="k">'+esc(w)+"</i>":esc(w);i=j}
  return o}
@@ -8639,7 +8501,7 @@ function openLibrary(){const bk=LS.get("sprout3.backup",null);let h="";let prev=
  openModal("lib","Library",h);wireLib($("mBody"));const sp=document.createElement("button");sp.className="pill";sp.textContent="Read the spec";sp.onclick=openSpec;$("mTitle").after(sp);
  const bl=document.createElement("a");bl.className="pill";bl.href="bench.html";bl.textContent="Benchmarks";bl.style.textDecoration="none";sp.after(bl);
  const hb=document.createElement("button");hb.className="pill";hb.textContent="Monte Carlo history";hb.onclick=openHistory;bl.after(hb);
- const pl=document.createElement("a");pl.className="pill";pl.href="sprout-vs-python.html";pl.textContent="Sprout and Python";pl.style.textDecoration="none";hb.after(pl)}
+ const pl=document.createElement("a");pl.className="pill";pl.href="compare.html";pl.textContent="Sprout compared";pl.style.textDecoration="none";hb.after(pl)}
 $("libBtn").onclick=openLibrary;
 async function loadEx(name,quiet){
  if(dirty&&code.trim())LS.set("sprout3.backup",code);
