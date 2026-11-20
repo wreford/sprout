@@ -475,6 +475,10 @@ class Gen {
       if (!f || f.k !== "word" || f.v === K.p || ["!", "true", "false", "_", "left", "right"].includes(f.v)) return kNo(K, "it uses " + K.p + " itself, not one of its fields");
       if ((FUSED.has(f.v) || LAZYOPS.has(f.v)) && T.length > 2 && !this.lookup(f.v)) return kNo(K, "it uses " + K.p + " itself, not one of its fields");
       v = { js: kCol(f.v, K), ty: "n" }; i = 2;
+    } else if (T[0].k === "word" && T[0].v === "noise" && !this.lookup("noise") && T[1] && T[1].k === "cell" && !T[1].names.length && T[1].items.length === 2 && T[1].items.every(x => x.k === "chain")) {
+      // noise [a, b] is pure, so it can run inside a column loop (decision 87)
+      const a = this.kChain(T[1].items[0], K), b = a && this.kChain(T[1].items[1], K);
+      v = a && b && a.ty === "n" && b.ty === "n" ? { js: "NOISE(" + a.js + "," + b.js + ")", ty: "n" } : kNo(K, "its noise isn't given two numbers"); i = 2;
     } else { v = this.kTerm(T[0], K); i = 1; }
     for (; v && i < T.length; i++) {
       const t = T[i]; if (t.k !== "word") return kNo(K, t.k === "cell" ? "it calls something for each item" : "it sends a value to a value");
@@ -831,6 +835,14 @@ function queueEffects() { EFFQ = []; }
 function runEffects() { const q = EFFQ || []; EFFQ = null; for (const f of q) f(); return q.length; }
 function dropEffects() { const n = EFFQ ? EFFQ.length : 0; EFFQ = null; return n; }
 
+// noise: a 32-bit integer hash of both inputs (whole and fractional parts), mapped to [0, 1)
+function NOISE(x, y) {
+  const fx = Math.floor(x), fy = Math.floor(y);
+  let h = Math.imul(fx ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul((fy + 0x632be5ab) | 0, 0xc2b2ae35) ^ Math.imul(Math.floor((x - fx) * 4294967296) | 0, 0x27d4eb2f) ^ Math.imul(Math.floor((y - fy) * 4294967296) | 0, 0x165667b1);
+  h ^= h >>> 16; h = Math.imul(h, 0x7feb352d); h ^= h >>> 15; h = Math.imul(h, 0x846ca68b); h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+
 // ---- text
 function fmt(x) {
   if (x === true) return "true"; if (x === false) return "false"; if (x === BANG) return "!"; if (x === ANY) return "any";
@@ -1013,6 +1025,8 @@ defNative("dist", a => { const [x1, y1, x2, y2] = args(a, 4); return Math.hypot(
 defNative("clamp", a => { const [v, lo, hi] = args(a, 3); return v < lo ? lo : v > hi ? hi : v; });
 defNative("toward", a => { const [x, y, t] = args(a, 3); return x + (y - x) * t; });
 defNative("print", a => { effect(() => OUT(fmt(a))); return a; }, true);
+// noise [sample, id]: a number from 0 up to 1 that is always the same for the same two inputs (decision 87)
+defNative("noise", a => { const [x, y] = args(a, 2); return NOISE(num(x), num(y)); });
 Object.defineProperty(G, "random", { get: () => RNG(), enumerable: true });
 let RNG = Math.random, OUT = s => { if (typeof console !== "undefined") console.log(s); };
 
@@ -1050,7 +1064,7 @@ frame : [update |
 
 // ===================================================================== build
 const RT = { BANG, ANY, G, S: null, MK, SW, SEND, RUNC, STR, UNKNOWN, LOG_MISS, WITHF,
-  ADD, SUB, MUL, DIV, MOD, LT, GT, LE, GE, EQ, NE, CAT, WITH, AT, VC, VP, ISBOOL, MISSING, TAIL, SWI, shapeFor, COLC, NATIVE: Native };
+  ADD, SUB, MUL, DIV, MOD, LT, GT, LE, GE, EQ, NE, CAT, WITH, AT, VC, VP, ISBOOL, MISSING, TAIL, SWI, shapeFor, COLC, NATIVE: Native, NOISE };
 let preludeCell = null;
 function globalNames(extra) { const s = new Set(Object.keys(G)); if (extra) for (const k of extra) s.add(k); return s; }
 

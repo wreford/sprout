@@ -15,6 +15,7 @@ atoms : [
 ]
 last-atom : "cure"
 runs : 400
+seed : 1                   -- change it for a different set of runs; the same seed always gives the same answer
 
 -- one shared risk, rolled once per run: wet weather delays the pour by 3 days, 3 times in 10
 risk : [chance : 0.3, delay : 3, hits : "pour"]
@@ -48,18 +49,18 @@ likely each [a |
 ]
 "finish on day [finish [last-atom, likely]], through " .. (critical fold ["", [s x | s = "" [x] else [s .. " > " .. x]]]) print
 
--- a random time from a triangle: most often near likely, never outside fastest..slowest
-tri : [t |
+-- a time from a triangle, given u from 0 up to 1: most often near likely, never outside fastest..slowest
+tri : [t u |
   lo : t @ 1, mode : t @ 2, hi : t @ 3
-  u : random
   hi = lo [lo] else [
     u < (mode - lo / (hi - lo)) [lo + (u * (hi - lo) * (mode - lo) sqrt)] else [hi - (1 - u * (hi - lo) * (hi - mode) sqrt)]
   ]
 ]
 -- one run: sample every duration, roll the shared risk once, walk the graph
+-- the draws come from noise [run, atom], not random, so the same seed gives the same histogram every time
 one-run : [n |
-  sampled : atoms collect [a | a with [days : tri (a dur)]]
-  wet : random < (risk chance)
+  sampled : range (atoms length) collect [k | atoms @ k with [days : tri [atoms @ k dur, noise [n, k + (seed * 1000)]]]]
+  wet : noise [n, seed * 1000 + 999] < (risk chance)
   ds : wet [sampled collect [a | a id = (risk hits) [a with [days : a days + (risk delay)]] else [a]]] else [sampled]
   finish [last-atom, ds]
 ]

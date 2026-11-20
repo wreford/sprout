@@ -160,6 +160,7 @@ const f = (g, k) => g.state.field(k);
   const p = sc.find(l => l.startsWith("P10")), nums = (p || "").match(/\d+/g).map(Number);
   ok("ace-schedule: monte carlo percentiles in order, and later than the likely plan", nums.length === 8 && nums[1] >= 21 && nums[1] <= nums[3] && nums[3] <= nums[5] && nums[5] <= nums[7] && nums[3] > 21, p);
 
+  ok("ace-schedule: seeded, so the same graph and seed give the same histogram", JSON.stringify(sc) === JSON.stringify(printed("ace-schedule")) && sc.includes("P10 day 22   P50 day 25   P80 day 28   P90 day 29"), sc.find(l => l.startsWith("P10")));
   ok("ace-schedule: cost is a view of crews, rates, time, materials and equipment", sc.includes("labour     $58,900    crews x days x $950") && sc.includes("budget     $149,535"));
   ok("ace-schedule: earned value on the status day", sc.includes("SPI 0.83  behind schedule") && sc.includes("CPI 0.96  over budget") && sc.includes("forecast at completion  $156,284  (budget / CPI)"), sc.filter(l => /SPI|CPI|forecast/.test(l)));
   const mo = printed("ace-morning");
