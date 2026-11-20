@@ -97,6 +97,7 @@ The page and `bench.html` need a local web server, such as `python3 -m http.serv
 - `examples/ace-ledger.sp`: ACE: the atoms live in SQLite; each run closes the first workable atom and logs it (prints; uses db)
 - `examples/ace-risk.sp`: ACE: a million runs of the job with a risk register, through spork; the finish as a distribution, and what each risk adds at P80 (prints)
 - `notes/monte-carlo-history.md`: A short history of Monte Carlo simulation, from Buffon's needle and Ulam's solitaire question to ACE's risk runs (also in the library sheet)
+- `sprout-vs-python.html`: Sprout and Python: fifteen small programs side by side, each run in both languages with its real output (linked from the library sheet)
 - `examples/recipes.sp`: Recipes: quicksort, primes, FizzBuzz, a vector with its own + (prints; not a game)
 - `index.html`: The web page at taskiap.com/sprout3/: a library of examples with artwork, the running game shown like album art, live editing, a now-playing bar whose progress bar rewinds time, state, output and the spec; light and dark
 - `bench.html`: Benchmarks in the browser: the language against plain JS, the games, particles up to 100,000 on Canvas 2D and WebGPU, and SQLite
@@ -5867,6 +5868,288 @@ ACE's schedule and risk examples use this lineage directly. `examples/ace-schedu
 - Malcolm, D. G. et al. (1959). "Application of a technique for research and development program evaluation." Operations Research 7(5).
 ````
 
+## sprout-vs-python.html
+
+Sprout and Python: fifteen small programs side by side, each run in both languages with its real output (linked from the library sheet)
+
+````html
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#f5f4ee" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#262624" media="(prefers-color-scheme: dark)">
+<title>Sprout and Python</title>
+<style>
+:root{--bg:#f5f4ee;--card:#fffefb;--line:#e4e1d6;--fg:#1f1e1d;--fg2:#5f5d55;--fg3:#8d8a80;--acc:#d97757;--acc2:#c4613f;--py:#3d6e9e;--code:#f3f1ea;
+ --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",system-ui,Roboto,sans-serif;--serif:ui-serif,"New York",Charter,Georgia,serif;--mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+@media (prefers-color-scheme:dark){:root{--bg:#262624;--card:#30302e;--line:#3d3c38;--fg:#ecebe4;--fg2:#b5b3aa;--fg3:#87857c;--acc:#e08a6b;--acc2:#e08a6b;--py:#8fb8e0;--code:#2a2a28}}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.55 var(--sans);-webkit-font-smoothing:antialiased}
+main{max-width:980px;margin:0 auto;padding:32px 16px 72px}
+a{color:var(--acc2)}
+h1{font:600 34px/1.15 var(--serif);margin:8px 0 8px;letter-spacing:-.01em}
+h2{font:600 21px var(--serif);margin:0 0 4px}
+.kicker{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--acc2)}
+p{color:var(--fg2);margin:6px 0;max-width:68ch}
+code{font-family:var(--mono);font-size:.92em}
+p code{background:var(--code);padding:1px 5px;border-radius:5px;color:var(--fg)}
+.toc{display:flex;flex-wrap:wrap;gap:8px;margin:22px 0 8px}
+.toc a{font-size:13px;text-decoration:none;color:var(--fg);background:var(--card);box-shadow:0 0 0 1px var(--line);padding:5px 12px;border-radius:999px}
+.toc a:hover{box-shadow:0 0 0 1px var(--acc)}
+.glance{margin:26px 0 10px}
+.card{background:var(--card);border-radius:14px;box-shadow:0 1px 2px rgba(0,0,0,.05),0 8px 28px rgba(0,0,0,.06);overflow:hidden}
+.scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th,td{text-align:left;padding:9px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--fg3);font-weight:600;font-size:12px}
+tr:last-child td{border-bottom:0}
+td code{white-space:nowrap}
+section{margin-top:38px;scroll-margin-top:16px}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+@media (max-width:720px){.pair{grid-template-columns:1fr}}
+.side{background:var(--card);border-radius:14px;box-shadow:0 1px 2px rgba(0,0,0,.05),0 8px 28px rgba(0,0,0,.06);overflow:hidden;min-width:0;display:flex;flex-direction:column}
+.label{font-size:12px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;padding:10px 14px 0}
+.label.sp{color:var(--acc2)}.label.py{color:var(--py)}
+.side>pre{margin:0;padding:8px 14px 14px;overflow-x:auto;font:13px/1.55 var(--mono);flex:1}
+.cm{color:var(--fg3)}
+.out{border-top:1px solid var(--line);padding:8px 14px 10px;background:var(--code)}
+.out span{font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--fg3)}
+.out pre{margin:2px 0 0;font:12.5px/1.5 var(--mono);white-space:pre-wrap;word-break:break-word;color:var(--fg)}
+.foot{margin-top:46px;font-size:13px;color:var(--fg3)}
+</style></head><body>
+<main>
+<div class="kicker">Sprout 3</div>
+<h1>Sprout and Python</h1>
+<p>Python is the language most people learn first, so it's a good yardstick. Here is the same small program in each, side by side. Every pair on this page was run in both languages, Sprout 3 and Python 3.13, and the output under each one is what it actually printed. <a href="./">Back to Sprout 3</a></p>
+
+<div class="glance card scroll"><table>
+<tr><th></th><th>Sprout</th><th>Python</th></tr>
+<tr><td>Calling</td><td>value, then message: <code>xs sort</code></td><td>function, then arguments: <code>sorted(xs)</code></td></tr>
+<tr><td>Maths</td><td>left to right, no precedence</td><td>usual precedence rules</td></tr>
+<tr><td>Functions</td><td>cells: <code>[n | n * 2]</code></td><td><code>def</code> and <code>lambda</code></td></tr>
+<tr><td>if, loops, match</td><td>library cells, not syntax</td><td>keywords</td></tr>
+<tr><td>Changing data</td><td>never in place: <code>with</code> makes a copy</td><td>lists and dicts change in place</td></tr>
+<tr><td>A missing field</td><td>a quiet miss, caught by <code>else</code></td><td><code>KeyError</code>, unless you use <code>.get</code></td></tr>
+<tr><td>Lists count from</td><td>1</td><td>0</td></tr>
+<tr><td>Random numbers</td><td>seeded hash: <code>noise [run, k]</code></td><td>a generator with hidden state</td></tr>
+<tr><td>Speed on number loops</td><td>compiled ahead: SIMD, WebGPU</td><td>interpreted, unless you reach for NumPy</td></tr>
+</table></div>
+
+<nav class="toc"><a href="#hello">Printing</a><a href="#names">Names for values</a><a href="#order">Left to right, always</a><a href="#functions">Functions are cells</a><a href="#inputs">Several inputs, and defaults</a><a href="#choose">Choosing</a><a href="#lists">Lists</a><a href="#records">Records, never changed in place</a><a href="#text">Text with values in it</a><a href="#missing">A field that may not be there</a><a href="#match">Matching</a><a href="#chain">Chains of steps</a><a href="#fizzbuzz">FizzBuzz</a><a href="#recursion">Recursion</a><a href="#montecarlo">A million random trials</a></nav>
+
+<section id="hello">
+<h2>Printing</h2>
+<p>In Sprout the message comes after the value: <code>"hello, world" print</code> sends <code>print</code> to the text. Every line reads the same way, from the thing to what happens to it.</p>
+<div class="pair">
+<div class="side"><div class="label sp">Sprout</div><pre><code>"hello, world" print</code></pre><div class="out"><span>prints</span><pre>hello, world</pre></div></div>
+<div class="side"><div class="label py">Python</div><pre><code>print("hello, world")</code></pre><div class="out"><span>prints</span><pre>hello, world</pre></div></div>
+</div>
+</section>
+<section id="names">
+<h2>Names for values</h2>
+<p>A colon gives a value a name. Names can have hyphens in them, like <code>star-count</code>, because minus always has spaces round it.</p>
+<div class="pair">
+<div class="side"><div class="label sp">Sprout</div><pre><code>price : 12
+count : 3
+price * count print</code></pre><div class="out"><span>prints</span><pre>36</pre></div></div>
+<div class="side"><div class="label py">Python</div><pre><code>price = 12
+count = 3
+print(price * count)</code></pre><div class="out"><span>prints</span><pre>36</pre></div></div>
+</div>
+</section>
+<section id="order">
+<h2>Left to right, always</h2>
+<p>Sprout has no precedence table. Maths runs strictly left to right, so <code>2 + 3 * 4</code> is 20. Use brackets when you want something done first. There is nothing to remember.</p>
+<div class="pair">
+<div class="side"><div class="label sp">Sprout</div><pre><code>2 + 3 * 4 print
+2 + (3 * 4) print</code></pre><div class="out"><span>prints</span><pre>20
+14</pre></div></div>
+<div class="side"><div class="label py">Python</div><pre><code>print((2 + 3) * 4)
+print(2 + 3 * 4)</code></pre><div class="out"><span>prints</span><pre>20
+14</pre></div></div>
+</div>
+</section>
+<section id="functions">
+<h2>Functions are cells</h2>
+<p>A function is a cell: inputs, a bar, then the body. The last value in the body is the answer, so there is no <code>return</code>. To call it, write the value after its name.</p>
+<div class="pair">
+<div class="side"><div class="label sp">Sprout</div><pre><code>double : [n | n * 2]
+double 21 print</code></pre><div class="out"><span>prints</span><pre>42</pre></div></div>
+<div class="side"><div class="label py">Python</div><pre><code>def double(n):
+    return n * 2
+
+print(double(21))</code></pre><div class="out"><span>prints</span><pre>42</pre></div></div>
+</div>
+</section>
+<section id="inputs">
+<h2>Several inputs, and defaults</h2>
+<p>Every call takes one value. Several inputs go in as a list, in order, or as a record, by name. A default comes after a colon, the same way a name gets a value.</p>
+<div class="pair">
+<div class="side"><div class="label sp">Sprout</div><pre><code>area : [w h : 1 | w * h]
+area [3, 4] print
+area [5] print
+area [h : 2, w : 6] print</code></pre><div class="out"><span>prints</span><pre>12
+5
+12</pre></div></div>
+<div class="side"><div class="label py">Python</div><pre><code>def area(w, h=1):
+    return w * h
+
+print(area(3, 4))
+print(area(5))
+print(area(h=2, w=6))</code></pre><div class="out"><span>prints</span><pre>12
+5
+12</pre></div></div>
+</div>
+</section>
+<section id="choose">
+<h2>Choosing</h2>
+<p>There is no <code>if</code> keyword. A true or false value takes a cell to run when true, and <code>else</code> (an ordinary library cell) takes the other one. The whole thing is a value, like Python's conditional expression.</p>
+<div class="pair">
+<div class="side"><div class="label sp">Sprout</div><pre><code>size : [n | n &gt; 100 ["big"] else ["small"]]
+size 250 print
+size 7 print</code></pre><div class="out"><span>prints</span><pre>big
+small</pre></div></div>
+<div class="side"><div class="label py">Python</div><pre><code>def size(n):
+    return "big" if n &gt; 100 else "small"
+
+print(size(250))
+print(size(7))</code></pre><div class="out"><span>prints</span><pre>big
+small</pre></div></div>
+</div>
+</section>
+<section id="lists">
+<h2>Lists</h2>
+<p><code>collect</code>, <code>keep</code> and <code>fold</code> are methods on the list, so a chain of them reads left to right. Python spreads the same work over comprehensions and built-in functions.</p>
+<div class="pair">
+<div class="side"><div class="label sp">Sprout</div><pre><code>xs : [3, 1, 4, 1, 5, 9]
+xs collect [n | n * 2] print
+xs keep [n | n &gt; 2] print
+xs fold [0, [total n | total + n]] print
+xs sort print</code></pre><div class="out"><span>prints</span><pre>[6, 2, 8, 2, 10, 18]
+[3, 4, 5, 9]
+23
+[1, 1, 3, 4, 5, 9]</pre></div></div>
+<div class="side"><div class="label py">Python</div><pre><code>xs = [3, 1, 4, 1, 5, 9]
+print([n * 2 for n in xs])
+print([n for n in xs if n &gt; 2])
+print(sum(xs))
+print(sorted(xs))</code></pre><div class="out"><span>prints</span><pre>[6, 2, 8, 2, 10, 18]
+[3, 4, 5, 9]
+23
+[1, 1, 3, 4, 5, 9]</pre></div></div>
+</div>
+</section>
+<section id="records">
+<h2>Records, never changed in place</h2>
+<p>A record is a list of named fields. <code>with</code> makes a new record with some fields changed; the old one is never touched. Nothing in Sprout changes in place, which is why a game's state can be saved, rewound or compared at any time.</p>
+<div class="pair">
+<div class="side"><div class="label sp">Sprout</div><pre><code>point : [x : 1, y : 2]
+point x print
+moved : point with [x : 5]
+moved print
+point print</code></pre><div class="out"><span>prints</span><pre>1
+[x : 5, y : 2]
+[x : 1, y : 2]</pre></div></div>
+<div class="side"><div class="label py">Python</div><pre><code>point = {"x": 1, "y": 2}
+print(point["x"])
+moved = {**point, "x": 5}
+print(moved)
+print(point)</code></pre><div class="out"><span>prints</span><pre>1
+{'x': 5, 'y': 2}
+{'x': 1, 'y': 2}</pre></div></div>
+</div>
+</section>
+<section id="text">
+<h2>Text with values in it</h2>
+<p>Square brackets inside text hold a value, the same as Python's f-strings with braces. Any expression works inside them.</p>
+<div class="pair">
+<div class="side"><div class="label sp">Sprout</div><pre><code>name : "Ada"
+"hello, [name]! you have [3 * 4] messages" print</code></pre><div class="out"><span>prints</span><pre>hello, Ada! you have 12 messages</pre></div></div>
+<div class="side"><div class="label py">Python</div><pre><code>name = "Ada"
+print(f"hello, {name}! you have {3 * 4} messages")</code></pre><div class="out"><span>prints</span><pre>hello, Ada! you have 12 messages</pre></div></div>
+</div>
+</section>
+<section id="missing">
+<h2>A field that may not be there</h2>
+<p>Asking for a field that isn't there is a quiet miss, not a crash, and <code>else</code> catches it. Python needs <code>.get</code> or a <code>try</code> for the same thing.</p>
+<div class="pair">
+<div class="side"><div class="label sp">Sprout</div><pre><code>user : [name : "Ada"]
+user nickname else "none" print</code></pre><div class="out"><span>prints</span><pre>none</pre></div></div>
+<div class="side"><div class="label py">Python</div><pre><code>user = {"name": "Ada"}
+print(user.get("nickname", "none"))</code></pre><div class="out"><span>prints</span><pre>none</pre></div></div>
+</div>
+</section>
+<section id="match">
+<h2>Matching</h2>
+<p><code>match</code> is a library cell, not syntax: a value and a flat list of pattern and answer pairs. <code>any</code> matches anything.</p>
+<div class="pair">
+<div class="side"><div class="label sp">Sprout</div><pre><code>answer : [key | match [key, ["tap", "tapped", "drag", "dragged", any, "other"]]]
+answer "tap" print
+answer "swipe" print</code></pre><div class="out"><span>prints</span><pre>tapped
+other</pre></div></div>
+<div class="side"><div class="label py">Python</div><pre><code>def answer(key):
+    match key:
+        case "tap": return "tapped"
+        case "drag": return "dragged"
+        case _: return "other"
+
+print(answer("tap"))
+print(answer("swipe"))</code></pre><div class="out"><span>prints</span><pre>tapped
+other</pre></div></div>
+</div>
+</section>
+<section id="chain">
+<h2>Chains of steps</h2>
+<p>Because methods go after the value, a pipeline reads in the order it runs. Python's comprehension puts the result first and the source in the middle.</p>
+<div class="pair">
+<div class="side"><div class="label sp">Sprout</div><pre><code>people : [[name : "Ada", age : 36], [name : "Alan", age : 41], [name : "Grace", age : 85]]
+people keep [p | p age &gt; 40] collect [p | p name] print</code></pre><div class="out"><span>prints</span><pre>[Alan, Grace]</pre></div></div>
+<div class="side"><div class="label py">Python</div><pre><code>people = [{"name": "Ada", "age": 36}, {"name": "Alan", "age": 41}, {"name": "Grace", "age": 85}]
+print([p["name"] for p in people if p["age"] &gt; 40])</code></pre><div class="out"><span>prints</span><pre>['Alan', 'Grace']</pre></div></div>
+</div>
+</section>
+<section id="fizzbuzz">
+<h2>FizzBuzz</h2>
+<p><code>cond</code> takes pairs of test and answer and gives the first answer whose test is true. Lists in Sprout count from 1, so <code>range 15</code> is 1 to 15.</p>
+<div class="pair">
+<div class="side"><div class="label sp">Sprout</div><pre><code>range 15 collect [n | cond [n % 15 = 0, "FizzBuzz", n % 3 = 0, "Fizz", n % 5 = 0, "Buzz", any, n]] print</code></pre><div class="out"><span>prints</span><pre>[1, 2, Fizz, 4, Buzz, Fizz, 7, 8, Fizz, Buzz, 11, Fizz, 13, 14, FizzBuzz]</pre></div></div>
+<div class="side"><div class="label py">Python</div><pre><code>print(["FizzBuzz" if n % 15 == 0 else "Fizz" if n % 3 == 0 else "Buzz" if n % 5 == 0 else n
+       for n in range(1, 16)])</code></pre><div class="out"><span>prints</span><pre>[1, 2, 'Fizz', 4, 'Buzz', 'Fizz', 7, 8, 'Fizz', 'Buzz', 11, 'Fizz', 13, 14, 'FizzBuzz']</pre></div></div>
+</div>
+</section>
+<section id="recursion">
+<h2>Recursion</h2>
+<p>A cell can call itself by name. The brackets round <code>n - 1</code> matter: without them, left to right would read <code>fib n - 1</code> as <code>(fib n) - 1</code>.</p>
+<div class="pair">
+<div class="side"><div class="label sp">Sprout</div><pre><code>fib : [n | n &lt; 2 [n] else [fib (n - 1) + (fib (n - 2))]]
+fib 20 print</code></pre><div class="out"><span>prints</span><pre>6765</pre></div></div>
+<div class="side"><div class="label py">Python</div><pre><code>def fib(n):
+    return n if n &lt; 2 else fib(n - 1) + fib(n - 2)
+
+print(fib(20))</code></pre><div class="out"><span>prints</span><pre>6765</pre></div></div>
+</div>
+</section>
+<section id="montecarlo">
+<h2>A million random trials</h2>
+<p>This is where the two part ways. <code>noise [n, 1]</code> is a seeded hash, not a random number generator, so run <code>n</code> always draws the same numbers and the answer is the same every time. Because <code>hit</code> is one pure cell, <code>spork</code> compiles it ahead into a kernel of number maths and runs it on WebAssembly SIMD or the GPU. In this test, Sprout took <b>28 ms</b> in Node against <b>213 ms</b> for the plain CPython loop. NumPy would close most of that gap, at the cost of rewriting the loop as array operations.</p>
+<div class="pair">
+<div class="side"><div class="label sp">Sprout</div><pre><code><span class="cm">-- estimate pi: the share of random points in the square that land inside the circle</span>
+hit : [n | x : noise [n, 1], y : noise [n, 2], x * x + (y * y) &lt; 1 [1] else [0]]
+range 1000000 spork hit fold [0, [total h | total + h]] * 4 / 1000000 print</code></pre><div class="out"><span>prints</span><pre>3.141792</pre></div></div>
+<div class="side"><div class="label py">Python</div><pre><code>import random
+
+hits = sum(1 for _ in range(1_000_000)
+           if random.random() ** 2 + random.random() ** 2 &lt; 1)
+print(hits * 4 / 1_000_000)</code></pre><div class="out"><span>prints</span><pre>3.137976</pre></div></div>
+</div>
+</section>
+
+<p class="foot">Timings were taken on one machine: Sprout in Node, Python 3.13 with no extra libraries, best of several runs. Run the <a href="bench.html">benchmarks</a> to see Sprout's numbers on your own device.</p>
+</main>
+</body></html>
+````
+
 ## examples/recipes.sp
 
 Recipes: quicksort, primes, FizzBuzz, a vector with its own + (prints; not a game)
@@ -6123,7 +6406,7 @@ body.t-out #out{display:block}body.t-st #st{display:block}
 <aside id="side">
  <a class="brand" href="/" title="All apps"><span class="logo">S</span><b>Sprout 3</b><small>library</small></a>
  <div id="lib"></div>
- <div class="sidefoot"><button class="pill" id="bSpec2">Read the spec</button> <a class="pill" href="bench.html" target="_blank" rel="noopener">Benchmarks</a></div>
+ <div class="sidefoot"><button class="pill" id="bSpec2">Read the spec</button> <a class="pill" href="bench.html" target="_blank" rel="noopener">Benchmarks</a> <a class="pill" href="sprout-vs-python.html" target="_blank" rel="noopener">Sprout and Python</a></div>
 </aside>
 <main id="main">
  <canvas id="glow" width="36" height="48"></canvas>
@@ -6170,12 +6453,12 @@ body.t-out #out{display:block}body.t-st #st{display:block}
 <div id="modal"><div id="mBox"><div class="mh"><h2 id="mTitle"></h2><button class="x" data-close aria-label="Close">✕</button></div><div id="mBody"></div></div></div>
 <div id="toast"></div><div id="scrubTip"></div>
 
-<script src="sprout3.js?v=20261120m"></script>
-<script src="kernels.js?v=20261120m"></script>
-<script src="live3.js?v=20261120m"></script>
-<script src="sqlite-web.js?v=20261120m"></script>
-<script src="gpu-paint.js?v=20261120m"></script>
-<script src="gpu-spork.js?v=20261120m"></script>
+<script src="sprout3.js?v=20261120n"></script>
+<script src="kernels.js?v=20261120n"></script>
+<script src="live3.js?v=20261120n"></script>
+<script src="sqlite-web.js?v=20261120n"></script>
+<script src="gpu-paint.js?v=20261120n"></script>
+<script src="gpu-spork.js?v=20261120n"></script>
 <script>
 "use strict";
 const V="20261120m";
@@ -6517,7 +6800,8 @@ function openLibrary(){const bk=LS.get("sprout3.backup",null);let h="";let prev=
  h+="</div>";if(bk)h+='<div class="gh">Yours</div><div class="grid"><button class="tile" data-g="backup"><span class="th" style="display:grid;place-items:center;font:600 30px var(--serif);color:var(--acc2)">↩</span><b>Last code</b><small>Before you last switched</small></button></div>';
  openModal("lib","Library",h);wireLib($("mBody"));const sp=document.createElement("button");sp.className="pill";sp.textContent="Read the spec";sp.onclick=openSpec;$("mTitle").after(sp);
  const bl=document.createElement("a");bl.className="pill";bl.href="bench.html";bl.textContent="Benchmarks";bl.style.textDecoration="none";sp.after(bl);
- const hb=document.createElement("button");hb.className="pill";hb.textContent="Monte Carlo history";hb.onclick=openHistory;bl.after(hb)}
+ const hb=document.createElement("button");hb.className="pill";hb.textContent="Monte Carlo history";hb.onclick=openHistory;bl.after(hb);
+ const pl=document.createElement("a");pl.className="pill";pl.href="sprout-vs-python.html";pl.textContent="Sprout and Python";pl.style.textDecoration="none";hb.after(pl)}
 $("libBtn").onclick=openLibrary;
 async function loadEx(name,quiet){
  if(dirty&&code.trim())LS.set("sprout3.backup",code);
