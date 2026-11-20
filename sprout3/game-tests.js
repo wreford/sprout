@@ -175,9 +175,23 @@ const f = (g, k) => g.state.field(k);
   ok("ace-board: blocked work can't be closed", tapOn("place") === "place rebar waits on dig, rebar, rfi" && fx.includes("shake"));
   ok("ace-board: a gate isn't tapped", tapOn("rfi") === "RFI: splice is a gate: it closes by itself");
   for (const id of ["dig", "rebar", "reply", "place"]) tapOn(id);
-  ok("ace-board: verified needs the work and then a witness", tapOn("inspect") === "inspection done: now tap again to sign" && tapOn("inspect") === "inspection signed by the witness");
+  ok("ace-board: verified needs the work and then a witness", tapOn("inspect") === "inspection done: now tap again to sign" && tapOn("inspect") === "inspection signed: now write it up");
+  ok("ace-board: a signed inspection still needs its write-up", tapOn("inspect") === "write up the inspection first: choose below" && !header().startsWith("ACE  9/"));
+  const tapAt = (x, y) => { b.down(x, y); b.tick(1 / 60); b.up(); b.tick(1 / 60); return f(b, "msg"); };
+  ok("ace-board: written up as nominal, it closes", tapAt(60, 445) === "inspection written up: nominal" && header().startsWith("ACE  9/11 done"), header());
   tapOn("forms"); tapOn("pour");
   ok("ace-board: everything done, nothing left", header() === "ACE  11/11 done  ·  0d of work left", header());
+  // narrative is structure: an inspection that finds rework adds an atom the pour has to wait for
+  const r = L.makeGame(src); r.tick(1 / 60);
+  const rtap = id => { const a = AT.find(x => x.field("id") === id); r.down(a.field("x") + 50, a.field("y") + 18); r.tick(1 / 60); r.up(); r.tick(1 / 60); return f(r, "msg"); };
+  const rhead = () => { const t = r.draw().filter(x => x[0] === "text").map(x => x[1][0]); return t.find(x => x.startsWith("ACE")); };
+  for (const id of ["dig", "rebar", "reply", "place", "inspect", "inspect", "forms"]) rtap(id);
+  r.down(175, 445); r.tick(1 / 60); r.up(); r.tick(1 / 60);
+  ok("ace-board: finding rework adds an atom to the graph", f(r, "msg") === "inspection found rework: new work joins the graph" && rhead().startsWith("ACE  10/12 done"), rhead());
+  ok("ace-board: and the pour waits for it", rtap("pour") === "pour waits on rework");
+  r.down(296, 284); r.tick(1 / 60); r.up(); r.tick(1 / 60);
+  ok("ace-board: once the rework is done, the pour can go", rtap("pour") === "closed pour" && rhead() === "ACE  12/12 done  ·  0d of work left", rhead());
+  ok("ace-board: reopening the inspection takes the added atom away", rtap("inspect") === "reopened inspection" && / \d+\/11 done/.test(rhead()) && f(r, "story") === "", rhead());
   tapOn("dig");
   ok("ace-board: reopening upstream work reopens what depends on it", /^ACE  \d\/11 done/.test(header()) && !header().startsWith("ACE  11/11"), header());
 
