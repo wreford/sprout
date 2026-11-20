@@ -371,5 +371,14 @@ ok("hot-swap takes a changed start value", g.state.field("height") === 99);
   ok("104 [| ...] is code, run later", !logs.some(m => /yield/.test(m)));
 }
 
+// ---------------- fixes after decision 104
+{
+  S.setLog(m => logs.push(m)); logs.length = 0;
+  ok("money divided by 0 is logged, not $Infinity.NaN", val("$1.00 / 0") === "false" && logs.some(m => /shared by 0/.test(m)));
+  logs.length = 0;
+  ok("a date compared with money says so", val("2026-11-20 < $5.00") === "false" && logs.some(m => /a date can't be compared with \$5\.00/.test(m)));
+  ok("the editor's literal matcher is the lexer's", S.lexLiteral("9:30 x", 0).length === 4 && S.lexLiteral("don't", 0) === null);
+}
+
 console.log(pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
