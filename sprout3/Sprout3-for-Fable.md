@@ -171,8 +171,9 @@ The page and `bench.html` need a local web server, such as `python3 -m http.serv
 - `examples/ace-risk.sp`: ACE: a million runs of the job with a risk register, through spork; the finish as a distribution, and what each risk adds at P80 (prints)
 - `notes/monte-carlo-history.md`: A short history of Monte Carlo simulation, from Buffon's needle and Ulam's solitaire question to ACE's risk runs (also in the library sheet)
 - `sprout-vs-python.html`: Sprout and Python: fifteen small programs side by side, each run in both languages with its real output (linked from the library sheet)
+- `index.html`: The home page at taskiap.com/sprout3/: what Sprout is, a taste of code, the ideas, and links to examples, the editor and the reading; plain and quiet in the spirit of Steve Dekorte's sites
 - `examples/recipes.sp`: Recipes: quicksort, primes, FizzBuzz, a vector with its own + (prints; not a game)
-- `index.html`: The web page at taskiap.com/sprout3/: a library of examples with artwork, the running game shown like album art, live editing, a now-playing bar whose progress bar rewinds time, state, output and the spec; light and dark
+- `play.html`: The editor at taskiap.com/sprout3/play.html (opens #ex=name, #spec, #history): a library of examples with artwork, the running game shown like album art, live editing, a now-playing bar whose progress bar rewinds time, state, output and the spec; light and dark
 - `bench.html`: Benchmarks in the browser: the language against plain JS, the games, particles up to 100,000 on Canvas 2D and WebGPU, and SQLite
 - `old-sprout2.js`: The old Sprout 2.0 compiler, kept only so bench.js can compare against it
 
@@ -6223,6 +6224,96 @@ print(hits * 4 / 1_000_000)</code></pre><div class="out"><span>prints</span><pre
 </body></html>
 ````
 
+## index.html
+
+The home page at taskiap.com/sprout3/: what Sprout is, a taste of code, the ideas, and links to examples, the editor and the reading; plain and quiet in the spirit of Steve Dekorte's sites
+
+````html
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Sprout is a small language for games and simulations that runs in the browser.">
+<title>Sprout</title>
+<script>if(/^#s3=/.test(location.hash))location.replace("play.html"+location.hash)</script>
+<style>
+:root{--bg:#fff;--fg:#222;--fg2:#666;--fg3:#999;--link:#222;--rule:#e6e6e6;--code:#f6f6f4}
+@media (prefers-color-scheme:dark){:root{--bg:#161616;--fg:#ddd;--fg2:#999;--fg3:#666;--link:#ddd;--rule:#2a2a2a;--code:#1e1e1e}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.65 "Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+main{max-width:600px;margin:0 auto;padding:72px 16px 96px}
+h1{font-size:15px;font-weight:600;margin:0 0 40px;letter-spacing:.02em}
+h2{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.1em;color:var(--fg3);margin:48px 0 12px}
+p{margin:0 0 14px}
+.lede{font-size:19px;line-height:1.5;color:var(--fg);margin-bottom:22px}
+a{color:var(--link);text-decoration:none;border-bottom:1px solid var(--rule)}
+a:hover{border-color:var(--fg)}
+pre{background:var(--code);margin:0 0 14px;padding:14px 16px;overflow-x:auto;font:13px/1.6 ui-monospace,"SF Mono",Menlo,Consolas,monospace;border-radius:3px}
+.cm{color:var(--fg3)}
+code{font:13px ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+ul{list-style:none;margin:0;padding:0}
+li{margin:0 0 8px;padding-left:0}
+.list li{display:flex;gap:16px}
+.list li a{flex:none;min-width:110px;border:0;text-decoration:underline;text-decoration-color:var(--rule);text-underline-offset:3px}
+.list li a:hover{text-decoration-color:var(--fg)}
+.list li span{color:var(--fg2)}
+@media (max-width:480px){.list li{flex-direction:column;gap:0;margin-bottom:12px}}
+.go{display:inline-block;margin-top:6px;font-weight:600}
+footer{margin-top:64px;color:var(--fg3);font-size:13px}
+</style></head><body>
+<main>
+<h1>Sprout</h1>
+
+<p class="lede">Sprout is a small language for games and simulations. It runs in your browser, and you can change a program while it runs.</p>
+<p><a class="go" href="play.html">Open the editor &rarr;</a></p>
+
+<h2>A taste</h2>
+<pre><span class="cm">-- a cell: inputs | body</span>
+double : [n | n * 2]
+[3, 1, 4] collect double print
+<span class="cm">-- prints [6, 2, 8]</span>
+
+<span class="cm">-- maths reads left to right</span>
+2 + 3 * 4 print
+<span class="cm">-- prints 20</span>
+
+<span class="cm">-- with makes a new record</span>
+p : [x : 1, y : 2]
+p with [x : 5] print
+<span class="cm">-- prints [x : 5, y : 2]</span></pre>
+
+<h2>Ideas</h2>
+<ul>
+<li>Everything is a cell. A function, a block, a list and a record are all written with square brackets.</li>
+<li>One rule for order: left to right. There is no precedence table to learn.</li>
+<li>No keywords for control. <code>else</code>, <code>times</code>, <code>match</code> and <code>cond</code> are ordinary cells in the library.</li>
+<li>Values never change in place, so a running game can be rewound, saved or compared at any moment.</li>
+<li>A game is three cells: <code>start</code>, <code>update</code> and <code>draw</code>.</li>
+<li>Pure loops are compiled ahead. <code>spork</code> runs a million Monte Carlo trials on WebAssembly SIMD or the GPU.</li>
+<li>The core is about a thousand lines of JavaScript. Speed lives in a separate library.</li>
+</ul>
+
+<h2>Try</h2>
+<ul class="list">
+<li><a href="play.html#ex=galaxy">Galaxy</a><span>Twenty thousand stars falling toward your finger.</span></li>
+<li><a href="play.html#ex=fireflies">Fireflies</a><span>Four hundred lights that gather where you touch.</span></li>
+<li><a href="play.html#ex=orbit">Orbit</a><span>Throw moons round the sun.</span></li>
+<li><a href="play.html#ex=ace-risk">ACE Risk</a><span>A construction job run a million times with a risk register.</span></li>
+<li><a href="play.html#ex=tour">Tour</a><span>The language, one feature per line.</span></li>
+</ul>
+
+<h2>Read</h2>
+<ul class="list">
+<li><a href="sprout-vs-python.html">Sprout and Python</a><span>Fifteen small programs side by side.</span></li>
+<li><a href="play.html#spec">The spec</a><span>The language and every decision behind it.</span></li>
+<li><a href="bench.html">Benchmarks</a><span>Measured in your browser, on your device.</span></li>
+<li><a href="play.html#history">Monte Carlo</a><span>A short history, from Buffon's needle to today.</span></li>
+</ul>
+
+<footer>Sprout 3 &middot; 2026</footer>
+</main>
+</body></html>
+````
+
 ## examples/recipes.sp
 
 Recipes: quicksort, primes, FizzBuzz, a vector with its own + (prints; not a game)
@@ -6278,7 +6369,7 @@ take [days, 3] print
 days collect [d | match [d, ["sat", "rest", "sun", "rest", any, "work"]]] print
 ````
 
-## index.html
+## play.html
 
 The web page at taskiap.com/sprout3/
 
@@ -6479,7 +6570,7 @@ body.t-out #out{display:block}body.t-st #st{display:block}
 <aside id="side">
  <a class="brand" href="/" title="All apps"><span class="logo">S</span><b>Sprout 3</b><small>library</small></a>
  <div id="lib"></div>
- <div class="sidefoot"><button class="pill" id="bSpec2">Read the spec</button> <a class="pill" href="bench.html" target="_blank" rel="noopener">Benchmarks</a> <a class="pill" href="sprout-vs-python.html" target="_blank" rel="noopener">Sprout and Python</a></div>
+ <div class="sidefoot"><a class="pill" href="./">About Sprout</a> <button class="pill" id="bSpec2">Read the spec</button> <a class="pill" href="bench.html" target="_blank" rel="noopener">Benchmarks</a> <a class="pill" href="sprout-vs-python.html" target="_blank" rel="noopener">Sprout and Python</a></div>
 </aside>
 <main id="main">
  <canvas id="glow" width="36" height="48"></canvas>
@@ -6961,11 +7052,15 @@ $("bShare").onclick=share;
 // ---------- start
 (function boot(){
  fit();subUI();
+ const named=location.hash.match(/^#(ex=([\w-]+)|spec|history)$/);
+ if(named){history.replaceState(null,"",location.pathname);
+  if(named[2]&&exOf(named[2])){loadEx(named[2],true);return}}
+ const thenOpen=named&&named[1]==="spec"?openSpec:named&&named[1]==="history"?openHistory:()=>{};
  const m=location.hash.match(/^#s3=([\w-]+)/);
  if(m){try{const src=b64d(m[1]);history.replaceState(null,"",location.pathname);curEx="";dirty=true;setCode(src);build(src,true);toast("Someone shared this with you");return}catch(e){}}
  const sv=LS.get("sprout3.code",null);
- if(sv&&sv.code&&sv.code.trim()){curEx=sv.ex||"";dirty=!!sv.dirty;setCode(sv.code);build(sv.code,true);if(document.body.classList.contains("prog"))tab("out")}
- else loadEx("ace-board",true)})();
+ if(sv&&sv.code&&sv.code.trim()){curEx=sv.ex||"";dirty=!!sv.dirty;setCode(sv.code);build(sv.code,true);if(document.body.classList.contains("prog"))tab("out");thenOpen()}
+ else loadEx("ace-board",true).then(thenOpen)})();
 </script>
 </body></html>
 ````
