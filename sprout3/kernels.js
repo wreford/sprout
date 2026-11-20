@@ -37,7 +37,7 @@ const prelude = () => preludeBindings || (preludeBindings = new Map(core.parse(c
 class WorkAhead {
   constructor(g) {
     this.gen = g; this.nodes = []; this.nodeIndex = new Map(); this.outsideReads = []; this.outsideReadIndex = new Map();
-    this.hostCalls = null;
+    this.hostCalls = null; this.hostWordsUsed = new Set();
     // names from outside are worked out on a budget: the ones worth it are small tables, a few hundred steps each
     this.outsideValues = new Map(); this.stepsTaken = 0; this.stepLimit = 400000; this.callDepth = 0; this.outsideBudget = 10000; this.reason = null; this.checks = []; this.javascriptOnly = false;
     this.pathCondition = null; this.TRUE = this.constantBool(true); this.FALSE = this.constantBool(false); this.pathCondition = this.TRUE;
@@ -432,6 +432,7 @@ class WorkAhead {
     const args = argument.kind === "cell" && !argument.keys.length ? argument.parts : [argument];
     for (const value of args) if (value.kind !== "number" && value.kind !== "bool" && value.kind !== "text") this.giveUp("the host word " + name + " is given something that isn't a number or a word");
     this.hostCalls.push({ host: name, single: argument.kind !== "cell", args, cond: this.pathCondition });
+    this.hostWordsUsed.add(name);
     // what the host word gives back, as when it runs: print gives its value, the others false (so an else after one runs too, decision 74)
     return name === "print" ? argument : this.FALSE;
   }
@@ -668,7 +669,9 @@ function runSpork(s, xs) {
 // ---- loop fusion (decision 95): a run of collect, keep, fold and length laidOver range, a list of numbers or a list of
 // records of numbers, as one loop with no lists in between. NOT_FUSED means the steps run as written.
 const NOT_FUSED = { fuse: "no" };
-function runFusedLoop(xs, fusedKernels, caps) {
+// hostWords: the host words the loop calls, read when the program loaded, as the steps as written read them
+// (each game has its own circle, so looking it up by name now could find another game's)
+function runFusedLoop(xs, fusedKernels, caps, hostWords) {
   if (!internals.fast()) return NOT_FUSED;
   let kernel, n, inputs = null, columns = null, recordShape = null;
   if (xs instanceof RangeCell) { kernel = fusedKernels.numbers; n = xs.size; }
@@ -690,7 +693,7 @@ function runFusedLoop(xs, fusedKernels, caps) {
   if (kernel.kind === "each") {
     const hostCallers = [];
     for (const e of kernel.hostCalls) {
-      const h = GLOBALS[e.host], k = e.args.length;
+      const h = hostWords && hostWords[e.host], k = e.args.length;
       if (!(h instanceof Native)) return NOT_FUSED;
       hostCallers.push(e.single ? h.fn : h.direct && h.direct.length === k ? h.direct : (...xs) => h.fn(makeList(xs)));
     }
@@ -970,7 +973,8 @@ function wrapFusedLoop(gen, run, ordinary) {
   const name = "FK" + gen.constants.length, resultTemp = gen.newTemp();
   gen.constants.push("const " + name + "={numbers:" + (kernel.numbers || "null") + ",rows:" + (kernel.rows || "null") + "};");
   gen.speedNotes.push({ line, word: words.join(" "), fast: true, why: "" });
-  return "((" + resultTemp + "=runFusedLoop((" + run.temp + "=" + run.source + ")," + name + "," + (workAhead.outsideReads.length ? "()=>[" + workAhead.outsideReads.join(",") + "]" : "null") + "))!==NOT_FUSED?" + resultTemp + ":" + ordinary + ")";
+  const hostWords = workAhead.hostWordsUsed.size ? "{" + [...workAhead.hostWordsUsed].map(word => JSON.stringify(word) + ":" + gen.globalCode(word)).join(",") + "}" : "null";
+  return "((" + resultTemp + "=runFusedLoop((" + run.temp + "=" + run.source + ")," + name + "," + (workAhead.outsideReads.length ? "()=>[" + workAhead.outsideReads.join(",") + "]" : "null") + "," + hostWords + "))!==NOT_FUSED?" + resultTemp + ":" + ordinary + ")";
 }
 
 core.install({

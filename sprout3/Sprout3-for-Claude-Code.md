@@ -10,13 +10,13 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 
 ```
 node test.js          # language tests (134)
-node game-tests.js    # game tests (77)
+node game-tests.js    # game tests (78)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 211 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 212 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -712,7 +712,7 @@ These are marked in `sprout2.js` with "Sprout Live fix N" or "Sprout Live additi
 87. **`noise [sample, id]` (built; step 4 of decision 79).** It gives a number from 0 up to 1, always the same for the same two inputs: a 32-bit hash of both, whole and fractional parts. It is pure, so it isn't recorded for replay (decision 54) and can run inside a column loop (decision 82). `ace-schedule.sp` uses `noise [run, atom]` instead of `random`, so a graph and a seed always give the same Monte Carlo histogram, as ACE's theory asks (7.3).
 88. **`fold` can run as a tight loop (built; Claude's call, from the benchmarks).** A fold block with two named inputs whose body is number maths on them, as in `range n fold [0, [t x | t + (x * x)]]`, gets a loop version: one plain loop with no cell made per step. It is used when the list is `range n` or a list of numbers and the starting value is a number; anything else falls back to the ordinary way, so a program can't tell the difference, and the tests run both ways. Outside names that are numbers, `noise` (decision 87) and the maths words all work inside it; a branch (`... [a] else [b]`) or a call to another cell does not yet. Speed notes (decision 86) cover `fold` too. Summing 100,000 numbers went from 0.81 to 0.15 ms.
 89. **Host words can take their values one by one (built; library, decision 80).** A host word may offer a direct form that takes its values as separate arguments. When an `each` loop over columns (decision 82) calls `circle [s x, s y, 2, "#fc6"]`, it uses the direct form, so no argument cell is made per shape. The program is unchanged. Drawing 10,000 particles went from 0.63 to 0.36 ms a frame; at 100,000 the time is mostly the draw list itself, about 5 ms either way.
-90. **The page has SQLite and WebGPU (built; Claude's call).** In the browser, `db` (decision 78) is SQLite compiled to WebAssembly (sql.js, MIT, in `vendor/sqljs`), with the same `query` and `run` as Node's `node:sqlite`. The database is kept in the browser (IndexedDB) and saved shortly after each write. The State tab lists its tables and can clear it. It is loaded only when a program uses `db`. The game view can draw with WebGPU: every shape in a frame goes to the GPU as one instanced draw, with text on a 2D layer above it. It is used only when the browser offers WebGPU, a test scene reads back correctly, and the frames actually show; otherwise the page uses Canvas 2D, and a pill in the bar switches between them. `bench.html` times the language, the games, particles up to 100,000 on both renderers, and SQLite.
+90. **The page has SQLite and WebGPU (built; Claude's call).** In the browser, `db` (decision 78) is SQLite compiled to WebAssembly (sql.js, MIT, in `vendor/sqljs`), with the same `query` and `run` as Node's `node:sqlite`. The database is kept in the browser (IndexedDB) and saved shortly after each write. The State tab lists its tables and can clear it. It is loaded only when a program uses `db`. The game view can draw with WebGPU: every shape in a frame goes to the GPU as one instanced draw, with text on a 2D layer above it. It is used only when the browser offers WebGPU, a test scene reads back correctly, and the frames actually show; otherwise the page uses Canvas 2D, and a pill in the bar switches between them. A frame WebGPU can't give a texture for (Safari, after the canvas is resized or while the page is hidden) is drawn with Canvas 2D; if WebGPU keeps failing, or the GPU is lost, the page uses Canvas 2D from then on and says so once. A JavaScript error is never shown as a line of the program: only Sprout's own errors point at a line. `bench.html` times the language, the games, particles up to 100,000 on both renderers, and SQLite.
 91. **Spork works a pure cell out ahead, into one numeric kernel (built; implements decision 47 and step 3 of decision 79, Claude's call under decision 80).** `xs spork f` gives the same list as `xs collect f`. When `f` is written after `spork` or bound to a name that `spork` is given, the compiler works it out once, when the program loads, as far as it can without its input. Calls are inlined, including recursion that ends without the input. Lists, records, words and `range`, `collect`, `keep`, `fold`, `first` and `@` on them are unrolled. A test that changes from run to run becomes a choice made in each run, with both sides worked out. A position in a list that changes from run to run becomes a check: it must be a whole number inside the list, or the spork runs the ordinary way. What is left is number maths on the input, `noise` included. It runs as one loop over `range n` or a list of numbers, on WebAssembly SIMD (two runs per instruction, in 64-bit floats) or else in JavaScript. Both give the same bits, so a program can't tell which way it ran, and the tests check it. Each run may give a number, true or false, or a record of numbers (kept as columns, decision 82). Anything spork can't work out ahead means `collect`, and the speed notes (decision 86) say why: `random`, a host word, text made from a value that changes, `keep` with a test that changes from run to run, recursion that depends on the input. `%`, `sin`, `cos`, `tan` and `log` keep a kernel in JavaScript, since WebAssembly has no exact match for them. Spork over an effectful cell, which reports back as events (decision 47), is not built yet. `ace-schedule.sp`'s Monte Carlo run (string ids, a walk over `requires`, triangle draws and a shared risk) becomes 155 steps: 100,000 runs take about 9 ms instead of 1.9 s.
 92. **`sort` is a method (built; library, decision 80).** `xs sort` gives numbers from least to most (in the same order as JavaScript's own number sort, so -0 comes before 0 and NaN last), or words in order. Numbers are sorted by radix, about 50 ms for a million. A list of numbers from `spork` or `sort` is kept as one array of numbers, the way columns are (decision 82); to a program it is the same list. `rs collect [r | r f]` over columns gives that column straight away. A program that binds its own `sort` still uses its own, as `ace-schedule.sp` does.
 93. **Big sporks can run on the GPU (built; Claude's call, from the request to use WebGPU for Monte Carlo work).** The same kernel (decision 91) becomes a WebGPU compute shader, one run per GPU thread. The GPU does 32-bit maths, so its answers can differ from SIMD and JavaScript in the last digits. A risk roll that lands right at its chance can even come out the other way, about one run in a few million. So the GPU is a host choice, not the default everywhere. The page uses it for sporks of 100,000 runs or more in a program that prints, while WebGPU works, and the State tab can turn it off. Games always use SIMD. A GPU answer arrives later, but Sprout runs straight through, so the page runs a program in passes. A spork the GPU hasn't answered stops the pass and starts the job, and when it's done the program runs again from the start and finds the answer waiting. What the stopped pass printed is dropped. A program that uses `db` doesn't wait, since its writes would happen twice. Answers are kept for the same kernel, inputs and outside numbers, so editing the rest of a program doesn't run the million runs again. Node and pages without WebGPU use SIMD. A program doesn't ask for exact answers itself (Troy, 20 Nov): the host decides.
@@ -1856,7 +1856,7 @@ const prelude = () => preludeBindings || (preludeBindings = new Map(core.parse(c
 class WorkAhead {
   constructor(g) {
     this.gen = g; this.nodes = []; this.nodeIndex = new Map(); this.outsideReads = []; this.outsideReadIndex = new Map();
-    this.hostCalls = null;
+    this.hostCalls = null; this.hostWordsUsed = new Set();
     // names from outside are worked out on a budget: the ones worth it are small tables, a few hundred steps each
     this.outsideValues = new Map(); this.stepsTaken = 0; this.stepLimit = 400000; this.callDepth = 0; this.outsideBudget = 10000; this.reason = null; this.checks = []; this.javascriptOnly = false;
     this.pathCondition = null; this.TRUE = this.constantBool(true); this.FALSE = this.constantBool(false); this.pathCondition = this.TRUE;
@@ -2251,6 +2251,7 @@ class WorkAhead {
     const args = argument.kind === "cell" && !argument.keys.length ? argument.parts : [argument];
     for (const value of args) if (value.kind !== "number" && value.kind !== "bool" && value.kind !== "text") this.giveUp("the host word " + name + " is given something that isn't a number or a word");
     this.hostCalls.push({ host: name, single: argument.kind !== "cell", args, cond: this.pathCondition });
+    this.hostWordsUsed.add(name);
     // what the host word gives back, as when it runs: print gives its value, the others false (so an else after one runs too, decision 74)
     return name === "print" ? argument : this.FALSE;
   }
@@ -2487,7 +2488,9 @@ function runSpork(s, xs) {
 // ---- loop fusion (decision 95): a run of collect, keep, fold and length laidOver range, a list of numbers or a list of
 // records of numbers, as one loop with no lists in between. NOT_FUSED means the steps run as written.
 const NOT_FUSED = { fuse: "no" };
-function runFusedLoop(xs, fusedKernels, caps) {
+// hostWords: the host words the loop calls, read when the program loaded, as the steps as written read them
+// (each game has its own circle, so looking it up by name now could find another game's)
+function runFusedLoop(xs, fusedKernels, caps, hostWords) {
   if (!internals.fast()) return NOT_FUSED;
   let kernel, n, inputs = null, columns = null, recordShape = null;
   if (xs instanceof RangeCell) { kernel = fusedKernels.numbers; n = xs.size; }
@@ -2509,7 +2512,7 @@ function runFusedLoop(xs, fusedKernels, caps) {
   if (kernel.kind === "each") {
     const hostCallers = [];
     for (const e of kernel.hostCalls) {
-      const h = GLOBALS[e.host], k = e.args.length;
+      const h = hostWords && hostWords[e.host], k = e.args.length;
       if (!(h instanceof Native)) return NOT_FUSED;
       hostCallers.push(e.single ? h.fn : h.direct && h.direct.length === k ? h.direct : (...xs) => h.fn(makeList(xs)));
     }
@@ -2789,7 +2792,8 @@ function wrapFusedLoop(gen, run, ordinary) {
   const name = "FK" + gen.constants.length, resultTemp = gen.newTemp();
   gen.constants.push("const " + name + "={numbers:" + (kernel.numbers || "null") + ",rows:" + (kernel.rows || "null") + "};");
   gen.speedNotes.push({ line, word: words.join(" "), fast: true, why: "" });
-  return "((" + resultTemp + "=runFusedLoop((" + run.temp + "=" + run.source + ")," + name + "," + (workAhead.outsideReads.length ? "()=>[" + workAhead.outsideReads.join(",") + "]" : "null") + "))!==NOT_FUSED?" + resultTemp + ":" + ordinary + ")";
+  const hostWords = workAhead.hostWordsUsed.size ? "{" + [...workAhead.hostWordsUsed].map(word => JSON.stringify(word) + ":" + gen.globalCode(word)).join(",") + "}" : "null";
+  return "((" + resultTemp + "=runFusedLoop((" + run.temp + "=" + run.source + ")," + name + "," + (workAhead.outsideReads.length ? "()=>[" + workAhead.outsideReads.join(",") + "]" : "null") + "," + hostWords + "))!==NOT_FUSED?" + resultTemp + ":" + ordinary + ")";
 }
 
 core.install({
@@ -3087,6 +3091,9 @@ async function makeGpuPainter(canvas) {
   const adapter = await navigator.gpu.requestAdapter(); if (!adapter) return null;
   const device = await adapter.requestDevice();
   const ctx = canvas.getContext("webgpu"); if (!ctx) return null;
+  // the GPU can be lost (the phone sleeps, the driver resets): from then on paint gives null, and the page uses Canvas 2D
+  let lost = false;
+  device.lost.then(() => { lost = true; });
   const format = navigator.gpu.getPreferredCanvasFormat();
   ctx.configure({ device, format, alphaMode: "premultiplied" });
   const module = device.createShaderModule({ code: WGSL });
@@ -3130,10 +3137,17 @@ async function makeGpuPainter(canvas) {
     pass.end();
     return { enc, texts };
   }
+  // draw one frame. Safari can give no texture for a frame (after the canvas is resized, or while the page is hidden):
+  // the canvas is configured again and asked once more, and if there's still nothing, paint gives null and the page
+  // draws that frame with Canvas 2D.
   function paint(list, gw, gh, sx, sy) {
-    const r = encode(list, ctx.getCurrentTexture().createView(), canvas.width, canvas.height, gw, gh, sx, sy);
-    device.queue.submit([r.enc.finish()]);
-    return r.texts;
+    if (lost) return null;
+    let texture = ctx.getCurrentTexture();
+    if (!texture) { try { ctx.configure({ device, format, alphaMode: "premultiplied" }); texture = ctx.getCurrentTexture(); } catch (e) { texture = null; } }
+    if (!texture) return null;
+    const frame = encode(list, texture.createView(), canvas.width, canvas.height, gw, gh, sx, sy);
+    device.queue.submit([frame.enc.finish()]);
+    return frame.texts;
   }
 
   // a self-test before trusting the GPU: draw a known scene off screen and read three pixels back.
@@ -3176,7 +3190,7 @@ async function makeGpuPainter(canvas) {
     return { cpu: cpu / k, total: total / k };
   }
   const info = adapter.info || {};
-  const painter = { paint, snapshot, timeFrames, device, name: "WebGPU", adapter: [info.vendor, info.architecture].filter(Boolean).join(" "), done: () => device.queue.onSubmittedWorkDone() };
+  const painter = { paint, snapshot, timeFrames, device, name: "WebGPU", get lost() { return lost; }, adapter: [info.vendor, info.architecture].filter(Boolean).join(" "), done: () => device.queue.onSubmittedWorkDone() };
   await selfTest();
   return painter;
 }
@@ -3890,6 +3904,13 @@ const f = (g, k) => g.state.field(k);
   ok("ace-risk: what each risk adds at P80, weather the most", adds.length === 4 && adds[0].startsWith("wet weather on the pour") && Math.max(...adds.map(l => +l.match(/\+([\d.]+)/)[1])) === +adds[0].match(/\+([\d.]+)/)[1], adds);
   const small = src.replace("runs : 1000000", "runs : 3000");
   ok("ace-risk: spork prints exactly what collect prints", JSON.stringify(run(small)) === JSON.stringify(run(small.replace("range runs spork one-run", "range runs collect one-run"))));
+}
+
+// a fused each calls the host words of its own game, even after another game is made (each game has its own circle)
+{
+  const first = game("particles"); for (let t = 0; t < 60; t++) first.tick(1 / 60);
+  const second = game("fireflies"); for (let t = 0; t < 5; t++) second.tick(1 / 60);
+  ok("two games: the first still draws its own circles", first.draw().length === f(first, "sparks").count() + 1, [first.draw().length, f(first, "sparks").count()]);
 }
 
 const errs = logs.slice();
@@ -6025,15 +6046,15 @@ body.t-out #out{display:block}body.t-st #st{display:block}
 <div id="modal"><div id="mBox"><div class="mh"><h2 id="mTitle"></h2><button class="x" data-close aria-label="Close">✕</button></div><div id="mBody"></div></div></div>
 <div id="toast"></div><div id="scrubTip"></div>
 
-<script src="sprout3.js?v=20261120j"></script>
-<script src="kernels.js?v=20261120j"></script>
-<script src="live3.js?v=20261120j"></script>
-<script src="sqlite-web.js?v=20261120j"></script>
-<script src="gpu-paint.js?v=20261120j"></script>
-<script src="gpu-spork.js?v=20261120j"></script>
+<script src="sprout3.js?v=20261120k"></script>
+<script src="kernels.js?v=20261120k"></script>
+<script src="live3.js?v=20261120k"></script>
+<script src="sqlite-web.js?v=20261120k"></script>
+<script src="gpu-paint.js?v=20261120k"></script>
+<script src="gpu-spork.js?v=20261120k"></script>
 <script>
 "use strict";
-const V="20261120j";
+const V="20261120k";
 const $=id=>document.getElementById(id);
 const S=window.Sprout3,L=window.Sprout3Live;
 const GW=360,GH=480;
@@ -6083,6 +6104,8 @@ let game=null,running="",goodSrc="",goodTicks=0,paused=false,hpos=-1,err=null,ms
 function setErr(e){err=e;const el=$("err");if(e){el.firstChild.innerHTML="<b>"+(e.line?"Line "+e.line:"Error")+"</b> · "+esc(e.msg);el.lastChild.style.display=e.line?"":"none";el.classList.add("on")}else el.classList.remove("on");markErr();subUI()}
 $("err").onclick=()=>{if(err&&err.line){tab("code");goLine(err.line)}};
 const msgOf=e=>String(e&&e.message||e);
+// the program's line for an error: only Sprout's own errors have one (Safari puts a .line on every JavaScript error)
+const lineOf=e=>e instanceof S.SproutError?e.line||0:0;
 // build: a game swaps in over the running one (live state kept), a plain program just runs
 // SQLite: loaded the first time a program uses db, then kept in this browser (decision 78)
 const needsDb=src=>/(^|[\s\[(])db\s+(query|run)\b/m.test(src);
@@ -6092,7 +6115,7 @@ function ensureDb(){return dbP||(dbP=new Promise((ok,no)=>{const sc=document.cre
 function afterBuild(){if(document.body.classList.contains("prog")){tab("out");$("out").scrollTop=0}renderState()}
 function build(src,fresh){
  if(needsDb(src)&&!S.globals.db){$("pSub").textContent="Opening SQLite…";ensureDb().then(()=>{if(code===src&&build(src,fresh))afterBuild()},e=>setErr({line:0,msg:msgOf(e)}));return false}
- let cell;try{cell=S.load(src)}catch(e){setErr({line:e.line||0,msg:msgOf(e)});return false}
+ let cell;try{cell=S.load(src)}catch(e){setErr({line:lineOf(e),msg:msgOf(e)});return false}
  if(cell.field("update")===S.UNSET){
   game=null;document.body.classList.add("prog");clearOut();
   // a big spork may go to the GPU: the pass stops, the job runs, and the program runs again and finds the answer (decision 93)
@@ -6102,13 +6125,13 @@ function build(src,fresh){
   try{cell.run(S.BANG)}catch(e){
    if(window.SproutGpuSpork&&e===SproutGpuSpork.WAIT){gspPasses++;dropPrints();$("pSub").textContent="Running spork on the GPU…";
     GSP.pending().then(()=>{if(code===src&&build(src,fresh))afterBuild()},e2=>{gspWhy=msgOf(e2);useGsp=false;gspUI();if(code===src&&build(src,fresh))afterBuild()});return false}
-   setErr({line:e.line||0,msg:msgOf(e)});return false}
+   setErr({line:lineOf(e),msg:msgOf(e)});return false}
   finally{if(GSP)GSP.mayWait(false)}
   sporks=S.sporkTally().slice();
   speedNotes=cell.speedNotes||[];running=src;goodSrc=src;setErr(null);swapped();renderState();speedMarks();return true}
  document.body.classList.remove("prog");
  try{if(game&&!fresh)game.swap(src);else{game=L.makeGame(src,{W:GW,H:GH,onEffect});setPaused(false)}}
- catch(e){setErr({line:e.line||0,msg:msgOf(e)});return false}
+ catch(e){setErr({line:lineOf(e),msg:msgOf(e)});return false}
  speedNotes=game.speedNotes||[];running=src;goodTicks=0;setErr(null);swapped();speedMarks();return true}
 function dropPrints(){document.querySelectorAll("#out .ln.print").forEach(x=>x.remove())}
 function swapped(){lastSwap=new Date();subUI();progUI()}
@@ -6166,7 +6189,9 @@ let GPU=null,useGpu=LS.get("sprout3.gpu",true);
 function rendererUI(){const on=!!(GPU&&useGpu),b=$("bGpu");document.body.classList.toggle("gpu",on);b.hidden=!GPU;b.textContent=on?"WebGPU":"Canvas";b.classList.toggle("on",on)}
 $("bGpu").onclick=()=>{useGpu=!useGpu;LS.set("sprout3.gpu",useGpu);rendererUI();msAvg=0;toast(useGpu?"Drawing with WebGPU":"Drawing with Canvas 2D")};
 // WebGPU is used only once it has passed a self-test on this device; otherwise everything stays on Canvas 2D
-let gpuWhy="",gpuFrames=0;
+let gpuWhy="",gpuFrames=0,gpuMisses=0;
+// WebGPU stopped working on this device: Canvas 2D from now on, said once, and never shown as an error in the program
+function gpuFail(why){GPU=null;gpuWhy=why;rendererUI();toast("WebGPU stopped drawing here, so the page draws with Canvas 2D")}
 // the second check: frames drawn by the GPU must actually show. Every game clears its screen, so a shown frame has no clear pixels.
 function checkShown(){try{const c=document.createElement("canvas");c.width=c.height=8;const x=c.getContext("2d");x.drawImage($("gv"),0,0,8,8);const d=x.getImageData(0,0,8,8).data;
  for(let i=3;i<d.length;i+=4)if(d[i]>0)return;}catch(e){}
@@ -6186,11 +6211,13 @@ function frame(now){requestAnimationFrame(frame);const dt=Math.min(.05,(now-last
   const list=game.draw();
   let sx=0,sy=0;if(shakeAmt>.3&&!paused){sx=(Math.random()-.5)*shakeAmt;sy=(Math.random()-.5)*shakeAmt;shakeAmt*=Math.pow(.004,dt)}else if(!paused)shakeAmt=0;
   if(GPU&&useGpu&&++gpuFrames===10)checkShown();
-  if(GPU&&useGpu){const texts=GPU.paint(list,GW,GH,sx,sy);g.clearRect(0,0,GW,GH);g.save();g.translate(sx,sy);for(const a of texts)drawText(g,a);g.restore()}
+  let texts=null;
+  if(GPU&&useGpu){try{texts=GPU.paint(list,GW,GH,sx,sy);if(texts)gpuMisses=0;else if(++gpuMisses>90||GPU.lost)gpuFail(GPU.lost?"the GPU was lost":"WebGPU had nothing to draw into")}catch(e){gpuFail(msgOf(e))}}
+  if(texts){g.clearRect(0,0,GW,GH);g.save();g.translate(sx,sy);for(const a of texts)drawText(g,a);g.restore()}
   else{g.save();g.translate(sx,sy);try{paint(g,list)}finally{g.restore()}}
   msAvg=msAvg*.95+(performance.now()-t0)*.05;
  }catch(e){
-  const m={line:e.line||0,msg:msgOf(e)};
+  const m={line:lineOf(e),msg:msgOf(e)};
   if(goodSrc&&running!==goodSrc){try{game.swap(goodSrc);running=goodSrc;m.msg+=" (still running your last working version)"}catch(_){setPaused(true)}}else setPaused(true);
   setErr(m)}
  if(now-statT>200){statT=now;statUI()}
@@ -6232,7 +6259,7 @@ function fit(){const m=$("main").getBoundingClientRect(),phone=innerWidth<=720;
  else{h=Math.round(Math.max(200,Math.min(m.height-48,(m.width-56)*.5/.75)));w=Math.round(h*.75)}
  const st=$("stage");st.style.width=w+"px";st.style.height=h+"px";const dpr=Math.min(2,devicePixelRatio||1);
  cv.style.width=w+"px";cv.style.height=h+"px";cv.width=Math.round(w*dpr);cv.height=Math.round(h*dpr);
- const gv=$("gv");gv.style.width=w+"px";gv.style.height=h+"px";gv.width=cv.width;gv.height=cv.height}
+ const gv=$("gv");gv.style.width=w+"px";gv.style.height=h+"px";if(gv.width!==cv.width)gv.width=cv.width;if(gv.height!==cv.height)gv.height=cv.height}
 if(window.ResizeObserver)new ResizeObserver(fit).observe($("main"));addEventListener("resize",fit);
 function vv(){const v=window.visualViewport;const h=v?v.height:innerHeight;$("app").style.height=h+"px";$("app").style.top=(v?v.offsetTop:0)+"px";document.body.classList.toggle("kb",h<innerHeight*.75&&document.activeElement===ta)}
 if(window.visualViewport){visualViewport.addEventListener("resize",vv);visualViewport.addEventListener("scroll",vv)}vv();

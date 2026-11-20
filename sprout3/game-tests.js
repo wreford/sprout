@@ -263,6 +263,13 @@ const f = (g, k) => g.state.field(k);
   ok("ace-risk: spork prints exactly what collect prints", JSON.stringify(run(small)) === JSON.stringify(run(small.replace("range runs spork one-run", "range runs collect one-run"))));
 }
 
+// a fused each calls the host words of its own game, even after another game is made (each game has its own circle)
+{
+  const first = game("particles"); for (let t = 0; t < 60; t++) first.tick(1 / 60);
+  const second = game("fireflies"); for (let t = 0; t < 5; t++) second.tick(1 / 60);
+  ok("two games: the first still draws its own circles", first.draw().length === f(first, "sparks").count() + 1, [first.draw().length, f(first, "sparks").count()]);
+}
+
 const errs = logs.slice();
 ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
 console.log(pass + " passed, " + fail + " failed");

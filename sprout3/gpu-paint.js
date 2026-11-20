@@ -66,6 +66,9 @@ async function makeGpuPainter(canvas) {
   const adapter = await navigator.gpu.requestAdapter(); if (!adapter) return null;
   const device = await adapter.requestDevice();
   const ctx = canvas.getContext("webgpu"); if (!ctx) return null;
+  // the GPU can be lost (the phone sleeps, the driver resets): from then on paint gives null, and the page uses Canvas 2D
+  let lost = false;
+  device.lost.then(() => { lost = true; });
   const format = navigator.gpu.getPreferredCanvasFormat();
   ctx.configure({ device, format, alphaMode: "premultiplied" });
   const module = device.createShaderModule({ code: WGSL });
@@ -109,10 +112,17 @@ async function makeGpuPainter(canvas) {
     pass.end();
     return { enc, texts };
   }
+  // draw one frame. Safari can give no texture for a frame (after the canvas is resized, or while the page is hidden):
+  // the canvas is configured again and asked once more, and if there's still nothing, paint gives null and the page
+  // draws that frame with Canvas 2D.
   function paint(list, gw, gh, sx, sy) {
-    const r = encode(list, ctx.getCurrentTexture().createView(), canvas.width, canvas.height, gw, gh, sx, sy);
-    device.queue.submit([r.enc.finish()]);
-    return r.texts;
+    if (lost) return null;
+    let texture = ctx.getCurrentTexture();
+    if (!texture) { try { ctx.configure({ device, format, alphaMode: "premultiplied" }); texture = ctx.getCurrentTexture(); } catch (e) { texture = null; } }
+    if (!texture) return null;
+    const frame = encode(list, texture.createView(), canvas.width, canvas.height, gw, gh, sx, sy);
+    device.queue.submit([frame.enc.finish()]);
+    return frame.texts;
   }
 
   // a self-test before trusting the GPU: draw a known scene off screen and read three pixels back.
@@ -155,7 +165,7 @@ async function makeGpuPainter(canvas) {
     return { cpu: cpu / k, total: total / k };
   }
   const info = adapter.info || {};
-  const painter = { paint, snapshot, timeFrames, device, name: "WebGPU", adapter: [info.vendor, info.architecture].filter(Boolean).join(" "), done: () => device.queue.onSubmittedWorkDone() };
+  const painter = { paint, snapshot, timeFrames, device, name: "WebGPU", get lost() { return lost; }, adapter: [info.vendor, info.architecture].filter(Boolean).join(" "), done: () => device.queue.onSubmittedWorkDone() };
   await selfTest();
   return painter;
 }
