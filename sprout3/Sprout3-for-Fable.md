@@ -46,6 +46,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **Direct host calls (decision 89):** a column `each` gives a host word its values one by one, with no argument cell per shape.
   - **Spork (decisions 91 to 93):** `xs spork f` is a parallel `collect`. A pure cell is worked out ahead into one kernel of number maths: calls inlined; lists, records and words unrolled; tests that change from run to run made into per-run choices. It runs on WebAssembly SIMD (the same bits as JavaScript) or, for big sporks on the page, on the GPU (32-bit). ace-schedule's whole Monte Carlo run becomes 155 steps, and 100,000 runs take about 9 ms instead of 1.9 s.
   - **`sort` (decision 92):** a method; numbers by radix, a million in about 50 ms.
+  - **Loop fusion (decision 95):** a run of `collect`, `keep`, `fold` and `length` is one loop with no lists in between, over numbers or records of numbers in columns, with the same answers bit for bit.
 - **ACE:**
   - **Narrative:** a `narrative-required` atom isn't done until it's written up. On the board, the write-up is structure: an inspection that finds rework or an NCR adds atoms that the pour then waits for.
   - **The morning question:** open constraints ranked by the hours of work each would release, plus the pairs that only release work together.
@@ -61,13 +62,13 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
   - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
   - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
-- **Tests:** 191 pass, 114 for the language and 77 for the games.
+- **Tests:** 205 pass, 128 for the language and 77 for the games.
 
 ## Open questions for Troy
 
 1. **Decided: the `else` catch (decision 74).** Troy left it to Claude, with every control structure staying in the library (decision 94). The catch is kept, since a library `else` sees one value. A lint names any branch whose answer is a test, and `cond` keeps a false answer.
-2. **What comes next on the speed roadmap?** Steps 1, 3 and 4 of decision 79 are built. Step 2, loop fusion (`collect`, `keep` and `fold` chains as one loop with no lists in between), is left.
-3. **GPU answers (decision 93).** The GPU does 32-bit maths, so the same seed can give different last digits on different machines. Should a program be able to ask for exact answers itself?
+2. **Decided: loop fusion is built (decision 95).** All four steps of the speed roadmap (decision 79) are done.
+3. **Decided: a program doesn't ask for exact answers (decision 93).** Whether big sporks use the GPU is the host's choice.
 4. **The rough edges** listed under "Known rough edges" below.
 
 ---
@@ -79,7 +80,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 **Run it (Node 22 or later):**
 
 ```
-node test.js          # language tests (114)
+node test.js          # language tests (128)
 node game-tests.js    # game tests (77)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
@@ -94,11 +95,15 @@ The page and `bench.html` need a local web server, such as `python3 -m http.serv
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
-All 191 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected.
+The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
+
+The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
+
+All 205 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected.
 
 ## How to work on it
 
-- **The spec is the source of truth.** The section "Design decisions not yet built" (decisions 1 to 94) defines Sprout 3, despite its name: almost all of it is now built. Later decisions override earlier ones and say so. Sections 1 to 15 at the top of the spec describe the older Sprout 2.0 / Sprout Live baseline and are kept for history only.
+- **The spec is the source of truth.** The section "Design decisions not yet built" (decisions 1 to 95) defines Sprout 3, despite its name: almost all of it is now built. Later decisions override earlier ones and say so. Sections 1 to 15 at the top of the spec describe the older Sprout 2.0 / Sprout Live baseline and are kept for history only.
 - **Language changes go to Troy first.** Talk any change to syntax or semantics through with him before building it, and ask one question at a time. Library-level choices (cells in the prelude, host cells, internals) are yours to make; record them in the spec (decision 80).
 - **Don't rewrite example programs or files unless asked.**
 - **Keep it streamable.** The tokenizer and parser work in one pass with no look-ahead across the file. Warn if a change would break that.
@@ -118,14 +123,36 @@ All 191 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which p
   - A `fold` block of number maths runs as one plain loop over `range` or a list of numbers (decision 88).
   - In a column `each`, host words take their values one by one, with no argument cell per shape (decision 89).
   - A `fold` block of number maths runs as one plain loop over `range` or a list of numbers (decision 88).
+  - A run of `collect`, `keep`, `fold` and `length` in a chain is tried first as one fused loop (`fuseSegment`, `Spk.buildPipe`, `FUSE`), with the steps as written as the way back (decision 95).
   - In a column `each`, host words take their values one by one, with no argument cell per shape (decision 89).
   - `spork` works a pure cell out ahead into one kernel of number maths (`Spk` in `sprout3.js`): calls inlined, lists, records and words unrolled, tests that change from run to run made into per-run choices. The kernel runs on WebAssembly SIMD (`spkWasmBytes`, f64x2, the same bits as JavaScript), in JavaScript (`spkJS`), or on the GPU (`gpu-spork.js`, 32-bit) (decisions 91 to 93).
   - A `fold` block of number maths runs as one plain loop over `range` or a list of numbers (decision 88).
+  - A run of `collect`, `keep`, `fold` and `length` in a chain is tried first as one fused loop (`fuseSegment`, `Spk.buildPipe`, `FUSE`), with the steps as written as the way back (decision 95).
+  - A run of `collect`, `keep`, `fold` and `length` in a chain is tried first as one fused loop (`fuseSegment`, `Spk.buildPipe`, `FUSE`), with the steps as written as the way back (decision 95).
   - In a column `each`, host words take their values one by one, with no argument cell per shape (decision 89).
   - `spork` works a pure cell out ahead into one kernel of number maths (`Spk` in `sprout3.js`): calls inlined, lists, records and words unrolled, tests that change from run to run made into per-run choices. The kernel runs on WebAssembly SIMD (`spkWasmBytes`, f64x2, the same bits as JavaScript), in JavaScript (`spkJS`), or on the GPU (`gpu-spork.js`, 32-bit) (decisions 91 to 93).
   - `spork` works a pure cell out ahead into one kernel of number maths (`Spk` in `sprout3.js`): calls inlined, lists, records and words unrolled, tests that change from run to run made into per-run choices. The kernel runs on WebAssembly SIMD (`spkWasmBytes`, f64x2, the same bits as JavaScript), in JavaScript (`spkJS`), or on the GPU (`gpu-spork.js`, 32-bit) (decisions 91 to 93).
   - A `fold` block of number maths runs as one plain loop over `range` or a list of numbers (decision 88).
+  - A run of `collect`, `keep`, `fold` and `length` in a chain is tried first as one fused loop (`fuseSegment`, `Spk.buildPipe`, `FUSE`), with the steps as written as the way back (decision 95).
+  - A run of `collect`, `keep`, `fold` and `length` in a chain is tried first as one fused loop (`fuseSegment`, `Spk.buildPipe`, `FUSE`), with the steps as written as the way back (decision 95).
   - In a column `each`, host words take their values one by one, with no argument cell per shape (decision 89).
+  - `spork` works a pure cell out ahead into one kernel of number maths (`Spk` in `sprout3.js`): calls inlined, lists, records and words unrolled, tests that change from run to run made into per-run choices. The kernel runs on WebAssembly SIMD (`spkWasmBytes`, f64x2, the same bits as JavaScript), in JavaScript (`spkJS`), or on the GPU (`gpu-spork.js`, 32-bit) (decisions 91 to 93).
+  - `spork` works a pure cell out ahead into one kernel of number maths (`Spk` in `sprout3.js`): calls inlined, lists, records and words unrolled, tests that change from run to run made into per-run choices. The kernel runs on WebAssembly SIMD (`spkWasmBytes`, f64x2, the same bits as JavaScript), in JavaScript (`spkJS`), or on the GPU (`gpu-spork.js`, 32-bit) (decisions 91 to 93).
+  - `spork` works a pure cell out ahead into one kernel of number maths (`Spk` in `sprout3.js`): calls inlined, lists, records and words unrolled, tests that change from run to run made into per-run choices. The kernel runs on WebAssembly SIMD (`spkWasmBytes`, f64x2, the same bits as JavaScript), in JavaScript (`spkJS`), or on the GPU (`gpu-spork.js`, 32-bit) (decisions 91 to 93).
+  - A `fold` block of number maths runs as one plain loop over `range` or a list of numbers (decision 88).
+  - A run of `collect`, `keep`, `fold` and `length` in a chain is tried first as one fused loop (`fuseSegment`, `Spk.buildPipe`, `FUSE`), with the steps as written as the way back (decision 95).
+  - A run of `collect`, `keep`, `fold` and `length` in a chain is tried first as one fused loop (`fuseSegment`, `Spk.buildPipe`, `FUSE`), with the steps as written as the way back (decision 95).
+  - In a column `each`, host words take their values one by one, with no argument cell per shape (decision 89).
+  - `spork` works a pure cell out ahead into one kernel of number maths (`Spk` in `sprout3.js`): calls inlined, lists, records and words unrolled, tests that change from run to run made into per-run choices. The kernel runs on WebAssembly SIMD (`spkWasmBytes`, f64x2, the same bits as JavaScript), in JavaScript (`spkJS`), or on the GPU (`gpu-spork.js`, 32-bit) (decisions 91 to 93).
+  - `spork` works a pure cell out ahead into one kernel of number maths (`Spk` in `sprout3.js`): calls inlined, lists, records and words unrolled, tests that change from run to run made into per-run choices. The kernel runs on WebAssembly SIMD (`spkWasmBytes`, f64x2, the same bits as JavaScript), in JavaScript (`spkJS`), or on the GPU (`gpu-spork.js`, 32-bit) (decisions 91 to 93).
+  - `spork` works a pure cell out ahead into one kernel of number maths (`Spk` in `sprout3.js`): calls inlined, lists, records and words unrolled, tests that change from run to run made into per-run choices. The kernel runs on WebAssembly SIMD (`spkWasmBytes`, f64x2, the same bits as JavaScript), in JavaScript (`spkJS`), or on the GPU (`gpu-spork.js`, 32-bit) (decisions 91 to 93).
+  - `spork` works a pure cell out ahead into one kernel of number maths (`Spk` in `sprout3.js`): calls inlined, lists, records and words unrolled, tests that change from run to run made into per-run choices. The kernel runs on WebAssembly SIMD (`spkWasmBytes`, f64x2, the same bits as JavaScript), in JavaScript (`spkJS`), or on the GPU (`gpu-spork.js`, 32-bit) (decisions 91 to 93).
+  - A `fold` block of number maths runs as one plain loop over `range` or a list of numbers (decision 88).
+  - A run of `collect`, `keep`, `fold` and `length` in a chain is tried first as one fused loop (`fuseSegment`, `Spk.buildPipe`, `FUSE`), with the steps as written as the way back (decision 95).
+  - A run of `collect`, `keep`, `fold` and `length` in a chain is tried first as one fused loop (`fuseSegment`, `Spk.buildPipe`, `FUSE`), with the steps as written as the way back (decision 95).
+  - In a column `each`, host words take their values one by one, with no argument cell per shape (decision 89).
+  - `spork` works a pure cell out ahead into one kernel of number maths (`Spk` in `sprout3.js`): calls inlined, lists, records and words unrolled, tests that change from run to run made into per-run choices. The kernel runs on WebAssembly SIMD (`spkWasmBytes`, f64x2, the same bits as JavaScript), in JavaScript (`spkJS`), or on the GPU (`gpu-spork.js`, 32-bit) (decisions 91 to 93).
+  - `spork` works a pure cell out ahead into one kernel of number maths (`Spk` in `sprout3.js`): calls inlined, lists, records and words unrolled, tests that change from run to run made into per-run choices. The kernel runs on WebAssembly SIMD (`spkWasmBytes`, f64x2, the same bits as JavaScript), in JavaScript (`spkJS`), or on the GPU (`gpu-spork.js`, 32-bit) (decisions 91 to 93).
   - `spork` works a pure cell out ahead into one kernel of number maths (`Spk` in `sprout3.js`): calls inlined, lists, records and words unrolled, tests that change from run to run made into per-run choices. The kernel runs on WebAssembly SIMD (`spkWasmBytes`, f64x2, the same bits as JavaScript), in JavaScript (`spkJS`), or on the GPU (`gpu-spork.js`, 32-bit) (decisions 91 to 93).
   - `spork` works a pure cell out ahead into one kernel of number maths (`Spk` in `sprout3.js`): calls inlined, lists, records and words unrolled, tests that change from run to run made into per-run choices. The kernel runs on WebAssembly SIMD (`spkWasmBytes`, f64x2, the same bits as JavaScript), in JavaScript (`spkJS`), or on the GPU (`gpu-spork.js`, 32-bit) (decisions 91 to 93).
   - `spork` works a pure cell out ahead into one kernel of number maths (`Spk` in `sprout3.js`): calls inlined, lists, records and words unrolled, tests that change from run to run made into per-run choices. The kernel runs on WebAssembly SIMD (`spkWasmBytes`, f64x2, the same bits as JavaScript), in JavaScript (`spkJS`), or on the GPU (`gpu-spork.js`, 32-bit) (decisions 91 to 93).
@@ -137,7 +164,7 @@ All 191 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which p
 
 1. **The speed roadmap (decision 79), in order:**
    - columns: built (decision 82)
-   - loop fusion for `collect`/`keep`/`fold` chains
+   - loop fusion for `collect`/`keep`/`fold` chains: built (decision 95)
    - spork sending pure numeric cells to WebAssembly with SIMD or to the GPU: built (decisions 91 to 93)
    - seeded `noise [sample, id]` for big runs: built (decision 87)
 2. **Not built yet:**
@@ -146,6 +173,8 @@ All 191 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which p
    - spork over an effectful cell, reporting back as events (47)
    - (built since: SQLite and WebGPU on the page, decision 90)
    - automatic purity detection (32)
+   - (built since: the editor-side lint that flags slow paths, decision 86)
+   - (built since: the editor-side lint that flags slow paths, decision 86)
    - (built since: the editor-side lint that flags slow paths, decision 86)
    - (built since: the editor-side lint that flags slow paths, decision 86)
    - (built since: the editor-side lint that flags slow paths, decision 86)
@@ -160,6 +189,8 @@ All 191 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which p
    - In the browser: fib 25 takes about 1.8 ms, against 0.9 for plain JS; summing 1 to 1,000,000 with `fold` about 0.8 ms, level with plain JS (decision 88); 10,000 records times 20 updates about 3 ms, against 7 for plain JS.
    - 100,000 particles: about 5 ms to update and 5 to 7 ms to build the draw list. Canvas 2D takes 180 ms to draw them; WebGPU takes about 4 ms of CPU to build and submit the frame.
    - SQLite: 10,000 rows into Sprout records with `db query` in about 11 ms.
+   - Monte Carlo (`ace-risk.sp`'s run, five graph walks each): 100,000 runs take about 10 s the ordinary way, 28 ms as a JavaScript kernel and 21 ms on SIMD; a million take about 0.2 s on SIMD. In Node, ace-schedule's run on SIMD is about 3 times the JavaScript kernel.
+   - Monte Carlo (`ace-risk.sp`'s run, five graph walks each): 100,000 runs take about 10 s the ordinary way, 28 ms as a JavaScript kernel and 21 ms on SIMD; a million take about 0.2 s on SIMD. In Node, ace-schedule's run on SIMD is about 3 times the JavaScript kernel.
    - Monte Carlo (`ace-risk.sp`'s run, five graph walks each): 100,000 runs take about 10 s the ordinary way, 28 ms as a JavaScript kernel and 21 ms on SIMD; a million take about 0.2 s on SIMD. In Node, ace-schedule's run on SIMD is about 3 times the JavaScript kernel.
    - Monte Carlo (`ace-risk.sp`'s run, five graph walks each): 100,000 runs take about 10 s the ordinary way, 28 ms as a JavaScript kernel and 21 ms on SIMD; a million take about 0.2 s on SIMD. In Node, ace-schedule's run on SIMD is about 3 times the JavaScript kernel.
    - Monte Carlo (`ace-risk.sp`'s run, five graph walks each): 100,000 runs take about 10 s the ordinary way, 28 ms as a JavaScript kernel and 21 ms on SIMD; a million take about 0.2 s on SIMD. In Node, ace-schedule's run on SIMD is about 3 times the JavaScript kernel.
@@ -805,7 +836,7 @@ These are marked in `sprout2.js` with "Sprout Live fix N" or "Sprout Live additi
 76. **Colours are cells.** `rgb [255, 0, 0]` and `rgba [0, 0, 0, 0.5]` are library cells giving colour text, so games never write colour strings with brackets. Hex strings like `"#ff6b4a"` still work.
 77. **`cond` and `take` are library cells (Claude's call).** `cond [test, result, test, result, ..., any, fallback]` gives the result of the first true test, like `match` but with tests. `take [xs, n]` gives the first `n` parts.
 78. **SQLite is a host cell.** `db query "select ..."` or `db query [sql, [params]]` gives a cell of records straight away; `db run [sql, [params]]` is an effect, so inside `update` it is queued, carried out after, and dropped on replay. The language stays storage-neutral.
-79. **Speed roadmap (steps 1, 3 and 4 built, see 82, 91 and 87).** In order: (1) columns: records of one shape stored as flat number arrays per field; (2) loop fusion: `collect`, `keep`, `fold` chains run as one loop with no in-between lists; (3) spork sends pure numeric cells to WebAssembly with SIMD or to the GPU; (4) seeded randomness for big runs, `noise [sample, id]`, so replay needs nothing recorded. JavaScript stays the backend; a LuaJIT backend is parked.
+79. **Speed roadmap (all four steps built: see 82, 95, 91 and 87).** In order: (1) columns: records of one shape stored as flat number arrays per field; (2) loop fusion: `collect`, `keep`, `fold` chains run as one loop with no in-between lists; (3) spork sends pure numeric cells to WebAssembly with SIMD or to the GPU; (4) seeded randomness for big runs, `noise [sample, id]`, so replay needs nothing recorded. JavaScript stays the backend; a LuaJIT backend is parked.
 80. **Library-level choices are Claude's to make and record**, without asking first.
 81. **Only `[ ]` is a template inside a string.** `"[g score] drops"` puts a value in; `( )` is plain text, so SQL (`values (?, ?)`) and CSS (`rgba(0,0,0,0.5)`) need no escapes. Write `\[` for a plain bracket. Replaces the `( )` half of decisions 5 and 6.
 82. **Columns (built; Claude's call under decision 80).** A list of 32 or more records that share one shape and hold only numbers is stored as one number array per field. A cell with one named input gets a column version of its body when the body is one of three things: `s with [...]` where each new value is number maths on `s`'s fields; a test made of number maths and comparisons; or a host word given a cell of values, such as `circle [s x, s y, 2, "#fc6"]`. `collect`, `keep` and `each` use the column version on a list in columns, and `..` keeps two such lists in columns. Anything else falls back to the ordinary way, including a field that isn't there, a word in a record and an outside name that isn't a number. So a program can't tell the difference: parts, `@`, `length`, `=` and `str` all see ordinary records (decisions 22 and 39), and the tests run both ways. `random` and other recorded reads are never moved out of the loop, so replay stays exact. The particle fountain went from 1.45 to 0.28 ms a frame, and 10,000 records times 20 updates from 11 to 1.4 ms.
@@ -819,8 +850,9 @@ These are marked in `sprout2.js` with "Sprout Live fix N" or "Sprout Live additi
 90. **The page has SQLite and WebGPU (built; Claude's call).** In the browser, `db` (decision 78) is SQLite compiled to WebAssembly (sql.js, MIT, in `vendor/sqljs`), with the same `query` and `run` as Node's `node:sqlite`. The database is kept in the browser (IndexedDB) and saved shortly after each write. The State tab lists its tables and can clear it. It is loaded only when a program uses `db`. The game view can draw with WebGPU: every shape in a frame goes to the GPU as one instanced draw, with text on a 2D layer above it. It is used only when the browser offers WebGPU, a test scene reads back correctly, and the frames actually show; otherwise the page uses Canvas 2D, and a pill in the bar switches between them. `bench.html` times the language, the games, particles up to 100,000 on both renderers, and SQLite.
 91. **Spork works a pure cell out ahead, into one numeric kernel (built; implements decision 47 and step 3 of decision 79, Claude's call under decision 80).** `xs spork f` gives the same list as `xs collect f`. When `f` is written after `spork` or bound to a name that `spork` is given, the compiler works it out once, when the program loads, as far as it can without its input. Calls are inlined, including recursion that ends without the input. Lists, records, words and `range`, `collect`, `keep`, `fold`, `first` and `@` on them are unrolled. A test that changes from run to run becomes a choice made in each run, with both sides worked out. A position in a list that changes from run to run becomes a check: it must be a whole number inside the list, or the spork runs the ordinary way. What is left is number maths on the input, `noise` included. It runs as one loop over `range n` or a list of numbers, on WebAssembly SIMD (two runs per instruction, in 64-bit floats) or else in JavaScript. Both give the same bits, so a program can't tell which way it ran, and the tests check it. Each run may give a number, true or false, or a record of numbers (kept as columns, decision 82). Anything spork can't work out ahead means `collect`, and the speed notes (decision 86) say why: `random`, a host word, text made from a value that changes, `keep` with a test that changes from run to run, recursion that depends on the input. `%`, `sin`, `cos`, `tan` and `log` keep a kernel in JavaScript, since WebAssembly has no exact match for them. Spork over an effectful cell, which reports back as events (decision 47), is not built yet. `ace-schedule.sp`'s Monte Carlo run (string ids, a walk over `requires`, triangle draws and a shared risk) becomes 155 steps: 100,000 runs take about 9 ms instead of 1.9 s.
 92. **`sort` is a method (built; library, decision 80).** `xs sort` gives numbers from least to most (in the same order as JavaScript's own number sort, so -0 comes before 0 and NaN last), or words in order. Numbers are sorted by radix, about 50 ms for a million. A list of numbers from `spork` or `sort` is kept as one array of numbers, the way columns are (decision 82); to a program it is the same list. `rs collect [r | r f]` over columns gives that column straight away. A program that binds its own `sort` still uses its own, as `ace-schedule.sp` does.
-93. **Big sporks can run on the GPU (built; Claude's call, from the request to use WebGPU for Monte Carlo work).** The same kernel (decision 91) becomes a WebGPU compute shader, one run per GPU thread. The GPU does 32-bit maths, so its answers can differ from SIMD and JavaScript in the last digits. A risk roll that lands right at its chance can even come out the other way, about one run in a few million. So the GPU is a host choice, not the default everywhere. The page uses it for sporks of 100,000 runs or more in a program that prints, while WebGPU works, and the State tab can turn it off. Games always use SIMD. A GPU answer arrives later, but Sprout runs straight through, so the page runs a program in passes. A spork the GPU hasn't answered stops the pass and starts the job, and when it's done the program runs again from the start and finds the answer waiting. What the stopped pass printed is dropped. A program that uses `db` doesn't wait, since its writes would happen twice. Answers are kept for the same kernel, inputs and outside numbers, so editing the rest of a program doesn't run the million runs again. Node and pages without WebGPU use SIMD. Open question for Troy: should a program be able to ask for exact answers (no GPU) itself, since the same seed can give different last digits on different machines?
+93. **Big sporks can run on the GPU (built; Claude's call, from the request to use WebGPU for Monte Carlo work).** The same kernel (decision 91) becomes a WebGPU compute shader, one run per GPU thread. The GPU does 32-bit maths, so its answers can differ from SIMD and JavaScript in the last digits. A risk roll that lands right at its chance can even come out the other way, about one run in a few million. So the GPU is a host choice, not the default everywhere. The page uses it for sporks of 100,000 runs or more in a program that prints, while WebGPU works, and the State tab can turn it off. Games always use SIMD. A GPU answer arrives later, but Sprout runs straight through, so the page runs a program in passes. A spork the GPU hasn't answered stops the pass and starts the job, and when it's done the program runs again from the start and finds the answer waiting. What the stopped pass printed is dropped. A program that uses `db` doesn't wait, since its writes would happen twice. Answers are kept for the same kernel, inputs and outside numbers, so editing the rest of a program doesn't run the million runs again. Node and pages without WebGPU use SIMD. A program doesn't ask for exact answers itself (Troy, 20 Nov): the host decides.
 94. **Every control structure is a library cell (Troy, 20 Nov).** Choosing, looping and gathering are cells and methods, not syntax. A boolean sent a cell runs it (decision 62), and `else`, `and` and `or` are prototype methods. `match`, `cond`, `take`, `every`, `wave` and `frame` are Sprout cells in the prelude. `collect`, `keep`, `fold`, `each`, `times`, `spork` and `sort` are methods, and `range` is a host cell. The compiler's inline branches, column loops and spork kernels are fast paths that give the same answers as those cells, and the tests check it. They are never a different meaning.
+95. **Loop fusion (built; step 2 of decision 79, Claude's call under decision 80).** A run of `collect`, `keep` and `fold` steps in one chain is also compiled as one loop with no lists in between. Each step is given a cell or a name bound to one, and the run may end in `length`. It is worked out ahead the way spork works a cell out (decision 91), so calls are inlined and tests that change from item to item become choices made per item. It runs over `range`, a list of numbers, or a list of records of numbers in columns (decision 82). A record's fields are read straight from the columns, and `with` lays new values over them. `keep ... length` counts without making a list, and `fold` carries its number from item to item. Every value is worked out in the same order, by the same steps, as the steps one by one, so the answers are the same bits, and the tests run every case both ways. A list shorter than 16, anything that isn't numbers, and anything the loop can't do (words, a position outside a list) run the steps as written. The speed notes show one note for the run. Counting a million numbers below a line with `keep ... length` takes 8 ms instead of 18. Keeping 100,000 records and laying two new fields over them takes 4.6 ms instead of 39.
 ````
 
 ---
@@ -1072,8 +1104,11 @@ class Gen {
     const T = ch.terms;
     if (!T.length) return "false";
     if (T.length === 1 && tail && T[0].k === "group" && T[0].items.length === 1 && T[0].items[0].k === "chain") return this.genChain(T[0].items[0], true);
-    let v = this.genTerm(T[0], true);
+    let v = this.genTerm(T[0], true), seg = null;
     for (let i = 1; i < T.length; i++) {
+      // loop fusion (decision 95): a run of collect, keep, fold and length is also made into one loop, tried first
+      if (seg && i === seg.end) { v = this.fuseWrap(seg, v); seg = null; }
+      if (!seg && (seg = fuseSegment(T, i))) { seg.src = v; seg.ta = this.tmp(); seg.notes = this.speed.length; v = seg.ta; }
       const t = T[i], isLast = i === T.length - 1;
       if (t.k === "word" && (t.v === "!" || t.v === "true" || t.v === "false")) { v = "SEND(" + v + "," + (t.v === "!" ? "BANG" : t.v) + ")"; continue; }
       if (t.k === "word") {
@@ -1137,7 +1172,23 @@ class Gen {
         this.speed.push({ line: pw.line || 0, word: pw.v, fast: r === true, why: r === true ? "" : r });
       }
     }
+    if (seg) v = this.fuseWrap(seg, v);
     return v;
+  }
+  // the fused loop, tried first; the steps as written are the way back when it can't run (NOFUSE)
+  fuseWrap(seg, ordinary) {
+    const P = new Spk(this), K = {};
+    for (const item of ["num", "row"]) {
+      try { K[item] = P.buildPipe(seg.stages, item); } catch (e) { if (e !== SPKFAIL) throw e; K[item] = null; }
+    }
+    if (!K.num && !K.row) return "(" + seg.ta + "=" + seg.src + "," + ordinary + ")";
+    const name = "FK" + this.consts.length, tf = this.tmp();
+    this.consts.push("const " + name + "={num:" + (K.num || "null") + ",row:" + (K.row || "null") + "};");
+    // one note for the run, in place of a note for each step
+    const words = seg.stages.map(st => st.w), lines = new Set(seg.stages.map(st => st.line || 0));
+    this.speed = this.speed.slice(0, seg.notes).concat(this.speed.slice(seg.notes).filter(x => !(lines.has(x.line) && words.includes(x.word))));
+    this.speed.push({ line: seg.stages[0].line || 0, word: words.join(" "), fast: true, why: "" });
+    return "((" + tf + "=FUSE((" + seg.ta + "=" + seg.src + ")," + name + "," + (P.caps.length ? "()=>[" + P.caps.join(",") + "]" : "null") + "))!==NOFUSE?" + tf + ":" + ordinary + ")";
   }
   // the right side of else/and/or: a cell literal there is run (inlined), anything else is its value
   genArg(t, tail) {
@@ -1639,6 +1690,8 @@ class Spk {
     if (this.same(x, y)) return x;
     if (x.k === "n" && y.k === "n") return this.num(this.node("sel", c.id, x.id, y.id));
     if (x.k === "b" && y.k === "b") return this.boo(this.node("sel", c.id, x.id, y.id));
+    if (x.k === "row" && y.k === "row" && [...x.over.keys()].join("\u0000") === [...y.over.keys()].join("\u0000"))
+      return { k: "row", over: new Map([...x.over].map(([k, p]) => [k, this.sel(c, p, y.over.get(k))])) };
     if (x.k === "cv" && y.k === "cv" && x.parts.length === y.parts.length && x.keys.join("\u0000") === y.keys.join("\u0000"))
       return this.cv(x.parts.map((p, j) => this.sel(c, p, y.parts[j])), x.keys, x.vals.map((p, j) => this.sel(c, p, y.vals[j])));
     this.no("a test picks between different kinds of value from run to run");
@@ -1650,6 +1703,7 @@ class Spk {
     if (x.k === "s") return x.v === y.v;
     if (x.k === "fn") return x.ast === y.ast && x.env === y.env;
     if (x.k === "nat") return x.n === y.n;
+    if (x.k === "row") return x.over.size === y.over.size && [...x.over].every(([k, p]) => y.over.has(k) && this.same(p, y.over.get(k)));
     if (x.k === "cv") return x.parts.length === y.parts.length && x.keys.join("\u0000") === y.keys.join("\u0000") &&
       x.parts.every((p, j) => this.same(p, y.parts[j])) && x.vals.every((p, j) => this.same(p, y.vals[j]));
     return false;
@@ -1690,6 +1744,7 @@ class Spk {
   }
   withf(v, nt, env) {
     const vals = nt.items.map(x => this.chain(x.val, env));
+    if (v.k === "row") { const over = new Map(v.over); nt.items.forEach((x, j) => over.set(x.name, vals[j])); return { k: "row", over }; }
     if (v.k !== "cv" || v.keys.includes("with")) this.no("it uses with on something that isn't a record");
     return this.merge(v, this.cv([], nt.items.map(x => x.name), vals));
   }
@@ -1728,6 +1783,12 @@ class Spk {
 
   // a word after a value: a field, then a built-in method, then a name in scope sent as the argument (SW)
   word(v, w, env, quiet) {
+    if (v.k === "row") {
+      // a field of an item from a list in columns: the column, unless with laid a new value over it
+      if (w in SPK_CELLM || w in ALL) this.no("it uses " + w + " on a record from the list");
+      if (this.isName(w, env)) this.no("it reads " + w + ", which is both a field and a name in scope");
+      return v.over.has(w) ? v.over.get(w) : this.num(this.node("col", -1, -1, -1, w));
+    }
     if (v.k === "cv") {
       const j = v.keys.indexOf(w);
       if (j >= 0) {
@@ -1845,6 +1906,44 @@ class Spk {
     else this.no("each run gives something other than a number, true or false, or a record of numbers");
     return this.emit(kind, outs, keys);
   }
+  // ---- loop fusion (decision 95): xs collect f keep g ... fold [start, h] (or length), as one loop over the items.
+  // item is "num" (range, a list of numbers) or "row" (a list of records of numbers, in columns).
+  buildPipe(stages, item) {
+    this.why = null;
+    const env = { f: this.g.frames.length - 1, lim: Infinity };
+    let cur = item === "num" ? this.num(this.node("x", -1, -1, -1)) : { k: "row", over: new Map() }, pass = this.TRUE;
+    const fn = st => { const f = this.term(st.arg, env); if (f.k !== "fn" && f.k !== "nat") this.no(st.w + " isn't given a cell"); return f; };
+    for (const st of stages) {
+      if (st.w === "collect") { const f = fn(st); this.pc = pass; cur = this.apply(f, cur); }
+      else if (st.w === "keep") {
+        const f = fn(st); this.pc = pass;
+        const t = this.apply(f, cur); if (t.k !== "b") this.no("keep's test doesn't give true or false");
+        pass = this.and(pass, t);
+      } else {
+        // fold [start, h], or length: one number carried from item to item, through the items that pass
+        let start, next;
+        const acc = this.num(this.node("a", -1, -1, -1));
+        this.pc = pass;
+        if (st.w === "length") { start = this.cn(0); next = this.num(this.node("add", acc.id, this.cn(1).id)); }
+        else {
+          this.pc = this.TRUE; const arg = this.term(st.arg, env); this.pc = pass;
+          if (arg.k !== "cv" || arg.parts.length < 2) this.no("fold isn't given [start, cell]");
+          start = arg.parts[0]; const h = arg.parts[1];
+          if (start.k !== "n") this.no("fold starts from something that isn't a number");
+          next = h.k === "fn" && h.ast.names.length === 2 ? this.call(h, this.cv([acc, cur])) : this.apply(h, this.cv([acc, cur]));
+          if (next.k !== "n") this.no("fold's cell doesn't give a number");
+        }
+        this.pc = this.TRUE;
+        return this.emit("fold", [start.id, this.sel(pass, next, acc).id], null);
+      }
+    }
+    this.pc = this.TRUE;
+    if (cur.k === "n") return this.emit("n", [pass.id, cur.id], null);
+    if (cur.k === "b") return this.emit("b", [pass.id, cur.id], null);
+    if (cur.k === "cv" && !cur.parts.length && cur.keys.length && cur.vals.every(p => p.k === "n")) return this.emit("rec", [pass.id, ...cur.vals.map(p => p.id)], cur.keys);
+    if (cur.k === "row" && [...cur.over.values()].every(p => p.k === "n")) return this.emit("row", [pass.id, ...[...cur.over.values()].map(p => p.id)], [...cur.over.keys()]);
+    this.no("each item gives something other than a number, true or false, or a record of numbers");
+  }
   // keep only the steps the answer needs, numbered afresh, as a JavaScript literal
   emit(kind, outs, keys) {
     const N = this.nodes, live = new Uint8Array(N.length);
@@ -1854,13 +1953,27 @@ class Spk {
     for (let i = 0; i < N.length; i++) if (live[i]) {
       const [op, a, b, c, v] = N[i]; map[i] = out.length;
       if (SPK_JSONLY.has(op)) jsOnly = true;
-      const lit = v === undefined ? "" : "," + (typeof v === "number" ? spkNum(v) : String(v));
+      const lit = v === undefined ? "" : "," + (typeof v === "number" ? spkNum(v) : typeof v === "string" ? JSON.stringify(v) : String(v));
       out.push("[\"" + op + "\"," + (a >= 0 ? map[a] : -1) + "," + (b >= 0 ? map[b] : -1) + "," + (c >= 0 ? map[c] : -1) + lit + "]");
     }
     const g = [...new Set(this.guards)].map(i => map[i]);
     return "{nodes:[" + out.join(",") + "],outs:[" + outs.map(i => map[i]).join(",") + "],guards:[" + g.join(",") + "],kind:\"" + kind + "\"" +
       (keys ? ",keys:" + JSON.stringify(keys) : "") + ",jsOnly:" + jsOnly + "}";
   }
+}
+// a run of collect, keep and fold steps (each given a cell, or a name), and length at the end, starting at T[i]
+const FUSE_STEPS = new Set(["collect", "keep", "fold"]);
+function fuseSegment(T, i) {
+  let j = i; const stages = [];
+  while (j + 1 < T.length && T[j].k === "word" && FUSE_STEPS.has(T[j].v) &&
+    (T[j + 1].k === "cell" || (T[j + 1].k === "word" && !FUSED.has(T[j + 1].v) && !LAZYOPS.has(T[j + 1].v) && !(T[j + 1].v in ALL) && !["!", "true", "false", "_", "left", "right"].includes(T[j + 1].v)))) {
+    stages.push({ w: T[j].v, arg: T[j + 1], line: T[j].line }); j += 2;
+    if (T[j - 2].v === "fold") break;
+  }
+  if (stages.length && stages[stages.length - 1].w !== "fold" && j < T.length && T[j].k === "word" && T[j].v === "length") { stages.push({ w: "length", line: T[j].line }); j++; }
+  // worth it for two steps or more, or one collect or keep (fold alone has its own loop, decision 88)
+  if (!stages.length || (stages.length === 1 && stages[0].w === "fold")) return null;
+  return { stages, start: i, end: j };
 }
 // the first and last line a piece of the tree is on
 function lineSpan(n) {
@@ -2385,8 +2498,7 @@ function spork(xs, f) {
 }
 const nowMs = () => typeof performance !== "undefined" ? performance.now() : Date.now();
 function runSpork(s, xs) {
-  const K = s.k, C = s.caps();
-  for (let i = 0; i < C.length; i++) if (typeof C[i] !== "number") return null;
+  const K = s.k;
   let n, X = null;
   if (xs instanceof RCell) n = xs.n;
   else if (xs instanceof NCell) { X = xs.a; n = X.length; }
@@ -2395,6 +2507,8 @@ function runSpork(s, xs) {
     for (let i = 0; i < n; i++) { const v = p[i]; if (typeof v !== "number") return null; X[i] = v; }
   } else return null;
   if (n === 0) return VP([]);
+  const C = s.caps();
+  for (let i = 0; i < C.length; i++) if (typeof C[i] !== "number") return null;
   const t0 = nowMs(); let O = null, how = "";
   // the GPU (32-bit maths) only when the host allows it; else WebAssembly SIMD; else JavaScript. The last two give the same answer.
   if (SPORK.gpu && !K.jsOnly) { O = SPORK.gpu(K, n, X, C) || null; if (O) how = "gpu"; }
@@ -2405,6 +2519,87 @@ function runSpork(s, xs) {
   if (K.kind === "n") return new NCell(O[0]);
   if (K.kind === "b") { const o = new Array(n), a = O[0]; for (let i = 0; i < n; i++) o[i] = a[i] !== 0; return VP(o); }
   return new ColCell(shapeFor(K.keys), O, n);
+}
+// ---- loop fusion (decision 95): a run of collect, keep, fold and length over range, a list of numbers or a list of
+// records of numbers, as one loop with no lists in between. NOFUSE means the steps run as written.
+const NOFUSE = { fuse: "no" };
+function FUSE(xs, F, caps) {
+  if (COLMIN === Infinity) return NOFUSE;
+  let K, n, X = null, cols = null, rs = null;
+  if (xs instanceof RCell) { K = F.num; n = xs.n; }
+  else if (xs instanceof NCell) { K = F.num; X = xs.a; n = X.length; }
+  else if (xs instanceof ColCell) { K = F.row; cols = xs.cols; rs = xs.rs; n = xs.n; }
+  else if (xs instanceof VCell && xs.fs === ROOT) {
+    const p = xs.parts; n = p.length;
+    if (!n) return NOFUSE;
+    if (typeof p[0] === "number") { K = F.num; X = new Float64Array(n); for (let i = 0; i < n; i++) { const v = p[i]; if (typeof v !== "number") return NOFUSE; X[i] = v; } }
+    else { const c = toCols(xs); if (!c) return NOFUSE; K = F.row; cols = c.cols; rs = c.rs; n = c.n; }
+  } else return NOFUSE;
+  // a short list is quicker as written
+  if (!K || n < 16) return NOFUSE;
+  if (rs && K.keys && K.keys.length && rs.index("with") >= 0) return NOFUSE;
+  const C = caps ? caps() : EMPTY;
+  for (let i = 0; i < C.length; i++) if (typeof C[i] !== "number") return NOFUSE;
+  const f = fuseJS(K);
+  if (K.kind === "fold") return f(n, X, cols, rs, C, null, null);
+  const O = K.outs.slice(1).map(() => new Float64Array(n)), kept = K.kind === "row" ? new Uint32Array(n) : null;
+  const m = f(n, X, cols, rs, C, O, kept);
+  if (m === NOFUSE) return NOFUSE;
+  // when every item passed, the arrays are already the right length, and unchanged columns can be shared (columns never change)
+  const cut = o => m === n ? o : o.slice(0, m);
+  if (K.kind === "n") return new NCell(cut(O[0]));
+  if (K.kind === "b") { const o = new Array(m); for (let i = 0; i < m; i++) o[i] = O[0][i] !== 0; return VP(o); }
+  if (K.kind === "rec") return new ColCell(shapeFor(K.keys), O.map(cut), m);
+  // records from the list, with any fields laid over by with: unchanged columns are gathered for the items that passed
+  let out = rs; for (const k of K.keys) if (out.index(k) < 0) out = out.add(k);
+  const oc = out.keys.map((k, j) => {
+    const o = K.keys.indexOf(k); if (o >= 0) return cut(O[o]);
+    const src = cols[j]; if (m === n) return src;
+    const g = new Float64Array(m); for (let q = 0; q < m; q++) g[q] = src[kept[q]]; return g;
+  });
+  return new ColCell(out, oc, m);
+}
+function fuseJS(K) {
+  if (K.jsF) return K.jsF;
+  const N = K.nodes, inv = new Uint8Array(N.length), r = i => "v" + i;
+  let pre = "", body = "";
+  for (let i = 0; i < N.length; i++) {
+    const [op, a, b, c, v] = N[i];
+    let e;
+    if (op === "a") e = "acc";
+    else if (op === "col") { pre += "const c" + i + "=cols[rs.index(" + JSON.stringify(v) + ")];if(c" + i + "===undefined)return NOFUSE;"; e = "c" + i + "[i]"; }
+    else e = spkExpr(N[i], r);
+    inv[i] = op !== "x" && op !== "a" && op !== "col" && (a < 0 || inv[a]) && (b < 0 || inv[b]) && (c < 0 || inv[c]) ? 1 : 0;
+    if (inv[i]) pre += "const v" + i + "=" + e + ";"; else body += "const v" + i + "=" + e + ";";
+  }
+  const g = K.guards.length ? "if(!(" + K.guards.map(r).join("&&") + "))return NOFUSE;" : "";
+  let src;
+  if (K.kind === "fold") src = pre + "let acc=" + r(K.outs[0]) + ";for(let i=0;i<n;i++){const x=X?X[i]:i+1;" + body + g + "acc=" + r(K.outs[1]) + "}return acc";
+  else src = pre + "let m=0;for(let i=0;i<n;i++){const x=X?X[i]:i+1;" + body + g + "if(" + r(K.outs[0]) + "){" +
+    K.outs.slice(1).map((o, j) => "O[" + j + "][m]=" + (K.kind === "b" ? r(o) + "?1:0" : r(o)) + ";").join("") + (K.kind === "row" ? "kept[m]=i;" : "") + "m++}}return m";
+  const f = new Function("NOISE", "NOFUSE", "n", "X", "cols", "rs", "C", "O", "kept", src);
+  return (K.jsF = (n, X, cols, rs, C, O, kept) => f(NOISE, NOFUSE, n, X, cols, rs, C, O, kept));
+}
+// one step of a kernel as a JavaScript expression
+function spkExpr(node, r) {
+  const [op, a, b, c, v] = node;
+  switch (op) {
+    case "c": return spkNum(v); case "cb": return String(v);
+    case "x": return "x"; case "k": return "C[" + v + "]";
+    case "add": return r(a) + "+" + r(b); case "sub": return r(a) + "-" + r(b);
+    case "mul": return r(a) + "*" + r(b); case "div": return r(a) + "/" + r(b);
+    case "mod": return "((" + r(a) + "%" + r(b) + ")+" + r(b) + ")%" + r(b);
+    case "min": case "max": return "Math." + op + "(" + r(a) + "," + r(b) + ")";
+    case "noise": return "NOISE(" + r(a) + "," + r(b) + ")";
+    case "neg": return "-" + r(a);
+    case "abs": case "floor": case "ceil": case "round": case "sqrt": case "sin": case "cos": case "tan": case "log": return "Math." + op + "(" + r(a) + ")";
+    case "lt": return r(a) + "<" + r(b); case "gt": return r(a) + ">" + r(b);
+    case "le": return r(a) + "<=" + r(b); case "ge": return r(a) + ">=" + r(b);
+    case "eq": case "beq": return r(a) + "===" + r(b); case "ne": return r(a) + "!==" + r(b);
+    case "and": return r(a) + "&&" + r(b); case "or": return r(a) + "||" + r(b); case "not": return "!" + r(a);
+    case "sel": return r(a) + "?" + r(b) + ":" + r(c);
+  }
+  throw new Error("kernel step " + op);
 }
 // the kernel as JavaScript: one loop; steps that don't depend on the input are worked out before it
 function spkJS(K) {
@@ -2670,7 +2865,7 @@ frame : [update |
 
 // ===================================================================== build
 const RT = { BANG, ANY, G, S: null, MK, SW, SEND, RUNC, STR, UNKNOWN, LOG_MISS, WITHF,
-  ADD, SUB, MUL, DIV, MOD, LT, GT, LE, GE, EQ, NE, CAT, WITH, AT, VC, VP, ISBOOL, MISSING, TAIL, SWI, shapeFor, COLC, NCOL, NATIVE: Native, NOISE };
+  ADD, SUB, MUL, DIV, MOD, LT, GT, LE, GE, EQ, NE, CAT, WITH, AT, VC, VP, ISBOOL, MISSING, TAIL, SWI, shapeFor, COLC, NCOL, NATIVE: Native, NOISE, FUSE, NOFUSE };
 let preludeCell = null;
 function globalNames(extra) { const s = new Set(Object.keys(G)); if (extra) for (const k of extra) s.add(k); return s; }
 
@@ -3306,7 +3501,27 @@ ok("84 match only works out the answer it picks", val('match [1, [1, "one", 2, n
 { const sp = S.load("xs : []\nf : [p | p x > 1]\na : xs collect [p | p with [x : p x + 1]]\nb : xs keep [p | p x > 1]\nc : xs keep [p | f p]\nd : xs collect [p | p with [x : rand [0, 1]]]\ne : xs keep [p | p name = \"a\"]").speed;
   const at = l => sp.find(n => n.line === l);
   ok("86 speed notes: a with of number maths runs over columns", at(3).fast && at(3).word === "collect" && at(4).fast && at(4).word === "keep");
-  ok("86 speed notes: say why a body runs item by item", at(5).why === "it calls f for each item" && /calls something/.test(at(6).why) && at(7).why === "it works with words, not numbers", sp.map(n => n.line + " " + n.why)); }
+  ok("86 speed notes: say why a body runs item by item", at(5).fast && /calls something/.test(at(6).why) && !at(6).fast, sp.map(n => n.line + " " + n.why)); }
+// loop fusion (decision 95): a run of collect, keep, fold and length is one loop, with the same answer as the steps one by one
+{ const both = src => { const a = S.fmt(S.load(src).field("result")); S.columns(false); const b = S.fmt(S.load(src).field("result")); S.columns(true); return [a, b]; };
+  const fused = {
+    "collect, keep and fold over range": "result : range 1000 collect [n | n * n] keep [n | n % 3 = 0] fold [0, [t n | t + (n / 7)]]",
+    "keep then length counts without a list": "xs : range 500 collect [n | noise [n, 1]]\nresult : xs keep [u | u < 0.25] length",
+    "a list of numbers in, a list out": "result : [3, 1, 4, 1, 5, 9, 2, 6] collect [n | n * 2 - 1] keep [n | n > 4]",
+    "records in columns: keep, collect, fold": "rs : range 200 collect [n | [zone : n % 4, hours : n / 3]]\nresult : rs keep [r | r zone = 3] collect [r | r hours] fold [0, [t h | t + h]]",
+    "records with fields laid over": "rs : range 100 collect [n | [x : n, y : n * 2]]\nresult : rs keep [r | r x > 50] collect [r | r with [y : r y + 1, z : r x * (r y)]]",
+    "a record made each step": "result : range 60 collect [n | [a : n, b : n sqrt]] keep [r | r b > 3]",
+    "a cell from outside, inlined": "big : [n | n > 10]\nsq : [n | n * n]\nresult : range 40 keep big collect sq",
+    "an outside number read once": "k : 7\nresult : range 300 keep [n | n % k = 0] collect [n | n / k] fold [0, [t n | t max n]]",
+    "true or false out": "result : range 50 collect [n | n % 2 = 0] keep [b | b or true]",
+    "a test that changes per item": "result : range 80 collect [n | n > 40 [n * 2] else [0 - n]] keep [n | n != 0]",
+  };
+  for (const k in fused) { const [a, b] = both(fused[k]); ok("95 fusion: " + k, a === b && a !== "false", [a.slice(0, 60), b.slice(0, 60)]); }
+  // anything the loop can't do runs as written: words in the list, a position outside a list
+  for (const src of ['result : ["a", "b", "c"] collect [w | w .. "!"] keep [w | w != "b!"]', "w : [3, 1, 4]\nresult : range 9 collect [n | (w @ n) else [0]] keep [n | n > 0]", "result : [] collect [n | n + 1] fold [5, [t n | t + n]]"]) {
+    const [a, b] = both(src); ok("95 fusion: falls back the same: " + src.slice(0, 40), a === b, [a, b]); }
+  const notes = S.load("result : range 9 collect [n | n * 2] keep [n | n > 4] fold [0, [t n | t + n]]").speed;
+  ok("95 fusion: one speed note for the run", notes.length === 1 && notes[0].word === "collect keep fold" && notes[0].fast, notes); }
 { const n1 = +val("noise [3, 7]"), n2 = +val("noise [3, 7]"), n3 = +val("noise [3, 8]");
   ok("87 noise: the same inputs give the same number, from 0 up to 1", n1 === n2 && n1 !== n3 && n1 >= 0 && n1 < 1);
   const xs = Array.from({ length: 2000 }, (_, k) => +val("noise [" + k + ", 1]")), mean = xs.reduce((a, b) => a + b) / xs.length;
@@ -5879,14 +6094,14 @@ body.t-out #out{display:block}body.t-st #st{display:block}
 <div id="modal"><div id="mBox"><div class="mh"><h2 id="mTitle"></h2><button class="x" data-close aria-label="Close">✕</button></div><div id="mBody"></div></div></div>
 <div id="toast"></div><div id="scrubTip"></div>
 
-<script src="sprout3.js?v=20261120g"></script>
-<script src="live3.js?v=20261120g"></script>
-<script src="sqlite-web.js?v=20261120g"></script>
-<script src="gpu-paint.js?v=20261120g"></script>
-<script src="gpu-spork.js?v=20261120g"></script>
+<script src="sprout3.js?v=20261120h"></script>
+<script src="live3.js?v=20261120h"></script>
+<script src="sqlite-web.js?v=20261120h"></script>
+<script src="gpu-paint.js?v=20261120h"></script>
+<script src="gpu-spork.js?v=20261120h"></script>
 <script>
 "use strict";
-const V="20261120g";
+const V="20261120h";
 const $=id=>document.getElementById(id);
 const S=window.Sprout3,L=window.Sprout3Live;
 const GW=360,GH=480;
@@ -6165,8 +6380,8 @@ ta.addEventListener("pointerup",endScrub);ta.addEventListener("pointercancel",en
 // ---------- the state view: every field of the game right now
 function brief(v){if(S.isCell(v)&&!(v instanceof S.Cell&&v.takesInput())){const n=v.count();if(n>6)return n+" parts";const s=S.fmt(v);return s.length>140?s.slice(0,140)+"…]":s}const s=S.fmt(v);return s.length>140?s.slice(0,140)+"…":s}
 function speedHTML(){if(!speedNotes.length)return"";const fast=speedNotes.filter(n=>n.fast).length;
- return'<div class="sh">Loops over lists</div><div class="foot" style="padding-top:0">'+fast+" of "+speedNotes.length+" run as tight loops: over columns (a list of 32 or more records of numbers, one array per field), over a list of numbers, or as a spork kernel. The others run item by item, which is fine for short lists.</div>"+
-  speedNotes.slice().sort((a,b)=>a.line-b.line).map(n=>'<div class="row sp'+(n.fast?" f":"")+'"><span class="k2">line '+n.line+" · "+n.word+'</span><span class="v">'+(n.fast?(n.word==="spork"?"worked out ahead into one kernel":"runs as a tight loop"):"item by item: "+esc(n.why))+"</span></div>").join("")}
+ return'<div class="sh">Loops over lists</div><div class="foot" style="padding-top:0">'+fast+" of "+speedNotes.length+" run as tight loops: over columns (a list of 32 or more records of numbers, one array per field), over a list of numbers, fused with the steps after them, or as a spork kernel. The others run item by item, which is fine for short lists.</div>"+
+  speedNotes.slice().sort((a,b)=>a.line-b.line).map(n=>'<div class="row sp'+(n.fast?" f":"")+'"><span class="k2">line '+n.line+" · "+n.word+'</span><span class="v">'+(n.fast?(n.word==="spork"?"worked out ahead into one kernel":/ /.test(n.word)?"fused into one loop, no lists in between":"runs as a tight loop"):"item by item: "+esc(n.why))+"</span></div>").join("")}
 const WAYS={gpu:"on the GPU",simd:"on WebAssembly SIMD",js:"in JavaScript",collect:"the ordinary way, as collect"};
 function sporkHTML(){if(!sporks.length&&!/\bspork\b/.test(code))return"";
  const rows=sporks.slice(0,8).map(r=>'<div class="row sp'+(r.how!=="collect"?" f":"")+'"><span class="k2">'+r.n.toLocaleString()+" run"+(r.n===1?"":"s")+'</span><span class="v">'+WAYS[r.how]+" in "+(r.ms<10?r.ms.toFixed(1):Math.round(r.ms))+" ms"+(r.steps?" · "+r.steps+" steps a run":"")+"</span></div>").join("");
@@ -6373,11 +6588,11 @@ tr:last-child td{border-bottom:0}
 <div class="card"><table id="t-sql"><tr><th>work</th><th>ms</th><th>rows</th></tr></table></div>
 </main>
 
-<script src="sprout3.js?v=20261120g"></script>
-<script src="live3.js?v=20261120g"></script>
-<script src="gpu-paint.js?v=20261120g"></script>
-<script src="sqlite-web.js?v=20261120g"></script>
-<script src="gpu-spork.js?v=20261120g"></script>
+<script src="sprout3.js?v=20261120h"></script>
+<script src="live3.js?v=20261120h"></script>
+<script src="gpu-paint.js?v=20261120h"></script>
+<script src="sqlite-web.js?v=20261120h"></script>
+<script src="gpu-spork.js?v=20261120h"></script>
 <script>
 "use strict";
 const $=id=>document.getElementById(id),S=window.Sprout3,L=window.Sprout3Live;
@@ -6406,7 +6621,7 @@ async function benchLang(){
 const GAMES=["sprout","fireflies","orbit","hop","life","bounce","snake","breakout","particles","ace-board","ace-site","ace-crews"];
 async function benchGames(){
  for(const name of GAMES){status("games: "+name);await sleep(10);
-  const src=await (await fetch("examples/"+name+".sp?v=20261120g")).text();const g=L.makeGame(src,{W:GW,H:GH});
+  const src=await (await fetch("examples/"+name+".sp?v=20261120h")).text();const g=L.makeGame(src,{W:GW,H:GH});
   const play=n=>{for(let t=0;t<n;t++){if(t%50===0)g.down(100+(t%160),300);if(t%50===25)g.up();g.tick(1/60);g.draw()}};
   play(240);const [t]=best(()=>play(120),5);row("t-games",[name,ms(t/120),String(g.draw().length)])}}
 
@@ -6438,7 +6653,7 @@ async function benchParticles(){
 // ---------- SQLite
 async function benchSql(){
  status("SQLite: loading");
- await new Promise((ok,no)=>{const s=document.createElement("script");s.src="vendor/sqljs/sql-wasm.js?v=20261120g";s.onload=ok;s.onerror=no;document.head.appendChild(s)});
+ await new Promise((ok,no)=>{const s=document.createElement("script");s.src="vendor/sqljs/sql-wasm.js?v=20261120h";s.onload=ok;s.onerror=no;document.head.appendChild(s)});
  const db=await SproutSqlite.openSqlite({base:"vendor/sqljs/",name:"sprout3-bench",fresh:true});S.G.db=db;const raw=db.raw();
  const N=10000;
  const [ti]=best(()=>{raw.run("drop table if exists t");raw.run("create table t (id integer primary key, zone integer, hours real, name text)");raw.run("begin");
@@ -6457,7 +6672,7 @@ async function benchSql(){
 
 // ---------- Monte Carlo: the ace-risk run, five ways
 async function benchMonteCarlo(){
- const src=(await (await fetch("examples/ace-risk.sp?v=20261120g")).text()).split("\nresults :")[0];
+ const src=(await (await fetch("examples/ace-risk.sp?v=20261120h")).text()).split("\nresults :")[0];
  const c=S.load(src+"\nA : [k | range k spork one-run]\nB : [k | range k collect one-run]"),A=c.field("A"),B=c.field("B");
  // the kernel itself, to hand straight to the GPU
  let K=null;S.sporkWays({gpu:k=>{K=k;return undefined}});A.run(16);S.sporkWays({gpu:null});

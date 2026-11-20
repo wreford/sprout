@@ -238,8 +238,11 @@ class Gen {
     const T = ch.terms;
     if (!T.length) return "false";
     if (T.length === 1 && tail && T[0].k === "group" && T[0].items.length === 1 && T[0].items[0].k === "chain") return this.genChain(T[0].items[0], true);
-    let v = this.genTerm(T[0], true);
+    let v = this.genTerm(T[0], true), seg = null;
     for (let i = 1; i < T.length; i++) {
+      // loop fusion (decision 95): a run of collect, keep, fold and length is also made into one loop, tried first
+      if (seg && i === seg.end) { v = this.fuseWrap(seg, v); seg = null; }
+      if (!seg && (seg = fuseSegment(T, i))) { seg.src = v; seg.ta = this.tmp(); seg.notes = this.speed.length; v = seg.ta; }
       const t = T[i], isLast = i === T.length - 1;
       if (t.k === "word" && (t.v === "!" || t.v === "true" || t.v === "false")) { v = "SEND(" + v + "," + (t.v === "!" ? "BANG" : t.v) + ")"; continue; }
       if (t.k === "word") {
@@ -303,7 +306,23 @@ class Gen {
         this.speed.push({ line: pw.line || 0, word: pw.v, fast: r === true, why: r === true ? "" : r });
       }
     }
+    if (seg) v = this.fuseWrap(seg, v);
     return v;
+  }
+  // the fused loop, tried first; the steps as written are the way back when it can't run (NOFUSE)
+  fuseWrap(seg, ordinary) {
+    const P = new Spk(this), K = {};
+    for (const item of ["num", "row"]) {
+      try { K[item] = P.buildPipe(seg.stages, item); } catch (e) { if (e !== SPKFAIL) throw e; K[item] = null; }
+    }
+    if (!K.num && !K.row) return "(" + seg.ta + "=" + seg.src + "," + ordinary + ")";
+    const name = "FK" + this.consts.length, tf = this.tmp();
+    this.consts.push("const " + name + "={num:" + (K.num || "null") + ",row:" + (K.row || "null") + "};");
+    // one note for the run, in place of a note for each step
+    const words = seg.stages.map(st => st.w), lines = new Set(seg.stages.map(st => st.line || 0));
+    this.speed = this.speed.slice(0, seg.notes).concat(this.speed.slice(seg.notes).filter(x => !(lines.has(x.line) && words.includes(x.word))));
+    this.speed.push({ line: seg.stages[0].line || 0, word: words.join(" "), fast: true, why: "" });
+    return "((" + tf + "=FUSE((" + seg.ta + "=" + seg.src + ")," + name + "," + (P.caps.length ? "()=>[" + P.caps.join(",") + "]" : "null") + "))!==NOFUSE?" + tf + ":" + ordinary + ")";
   }
   // the right side of else/and/or: a cell literal there is run (inlined), anything else is its value
   genArg(t, tail) {
@@ -805,6 +824,8 @@ class Spk {
     if (this.same(x, y)) return x;
     if (x.k === "n" && y.k === "n") return this.num(this.node("sel", c.id, x.id, y.id));
     if (x.k === "b" && y.k === "b") return this.boo(this.node("sel", c.id, x.id, y.id));
+    if (x.k === "row" && y.k === "row" && [...x.over.keys()].join("\u0000") === [...y.over.keys()].join("\u0000"))
+      return { k: "row", over: new Map([...x.over].map(([k, p]) => [k, this.sel(c, p, y.over.get(k))])) };
     if (x.k === "cv" && y.k === "cv" && x.parts.length === y.parts.length && x.keys.join("\u0000") === y.keys.join("\u0000"))
       return this.cv(x.parts.map((p, j) => this.sel(c, p, y.parts[j])), x.keys, x.vals.map((p, j) => this.sel(c, p, y.vals[j])));
     this.no("a test picks between different kinds of value from run to run");
@@ -816,6 +837,7 @@ class Spk {
     if (x.k === "s") return x.v === y.v;
     if (x.k === "fn") return x.ast === y.ast && x.env === y.env;
     if (x.k === "nat") return x.n === y.n;
+    if (x.k === "row") return x.over.size === y.over.size && [...x.over].every(([k, p]) => y.over.has(k) && this.same(p, y.over.get(k)));
     if (x.k === "cv") return x.parts.length === y.parts.length && x.keys.join("\u0000") === y.keys.join("\u0000") &&
       x.parts.every((p, j) => this.same(p, y.parts[j])) && x.vals.every((p, j) => this.same(p, y.vals[j]));
     return false;
@@ -856,6 +878,7 @@ class Spk {
   }
   withf(v, nt, env) {
     const vals = nt.items.map(x => this.chain(x.val, env));
+    if (v.k === "row") { const over = new Map(v.over); nt.items.forEach((x, j) => over.set(x.name, vals[j])); return { k: "row", over }; }
     if (v.k !== "cv" || v.keys.includes("with")) this.no("it uses with on something that isn't a record");
     return this.merge(v, this.cv([], nt.items.map(x => x.name), vals));
   }
@@ -894,6 +917,12 @@ class Spk {
 
   // a word after a value: a field, then a built-in method, then a name in scope sent as the argument (SW)
   word(v, w, env, quiet) {
+    if (v.k === "row") {
+      // a field of an item from a list in columns: the column, unless with laid a new value over it
+      if (w in SPK_CELLM || w in ALL) this.no("it uses " + w + " on a record from the list");
+      if (this.isName(w, env)) this.no("it reads " + w + ", which is both a field and a name in scope");
+      return v.over.has(w) ? v.over.get(w) : this.num(this.node("col", -1, -1, -1, w));
+    }
     if (v.k === "cv") {
       const j = v.keys.indexOf(w);
       if (j >= 0) {
@@ -1011,6 +1040,44 @@ class Spk {
     else this.no("each run gives something other than a number, true or false, or a record of numbers");
     return this.emit(kind, outs, keys);
   }
+  // ---- loop fusion (decision 95): xs collect f keep g ... fold [start, h] (or length), as one loop over the items.
+  // item is "num" (range, a list of numbers) or "row" (a list of records of numbers, in columns).
+  buildPipe(stages, item) {
+    this.why = null;
+    const env = { f: this.g.frames.length - 1, lim: Infinity };
+    let cur = item === "num" ? this.num(this.node("x", -1, -1, -1)) : { k: "row", over: new Map() }, pass = this.TRUE;
+    const fn = st => { const f = this.term(st.arg, env); if (f.k !== "fn" && f.k !== "nat") this.no(st.w + " isn't given a cell"); return f; };
+    for (const st of stages) {
+      if (st.w === "collect") { const f = fn(st); this.pc = pass; cur = this.apply(f, cur); }
+      else if (st.w === "keep") {
+        const f = fn(st); this.pc = pass;
+        const t = this.apply(f, cur); if (t.k !== "b") this.no("keep's test doesn't give true or false");
+        pass = this.and(pass, t);
+      } else {
+        // fold [start, h], or length: one number carried from item to item, through the items that pass
+        let start, next;
+        const acc = this.num(this.node("a", -1, -1, -1));
+        this.pc = pass;
+        if (st.w === "length") { start = this.cn(0); next = this.num(this.node("add", acc.id, this.cn(1).id)); }
+        else {
+          this.pc = this.TRUE; const arg = this.term(st.arg, env); this.pc = pass;
+          if (arg.k !== "cv" || arg.parts.length < 2) this.no("fold isn't given [start, cell]");
+          start = arg.parts[0]; const h = arg.parts[1];
+          if (start.k !== "n") this.no("fold starts from something that isn't a number");
+          next = h.k === "fn" && h.ast.names.length === 2 ? this.call(h, this.cv([acc, cur])) : this.apply(h, this.cv([acc, cur]));
+          if (next.k !== "n") this.no("fold's cell doesn't give a number");
+        }
+        this.pc = this.TRUE;
+        return this.emit("fold", [start.id, this.sel(pass, next, acc).id], null);
+      }
+    }
+    this.pc = this.TRUE;
+    if (cur.k === "n") return this.emit("n", [pass.id, cur.id], null);
+    if (cur.k === "b") return this.emit("b", [pass.id, cur.id], null);
+    if (cur.k === "cv" && !cur.parts.length && cur.keys.length && cur.vals.every(p => p.k === "n")) return this.emit("rec", [pass.id, ...cur.vals.map(p => p.id)], cur.keys);
+    if (cur.k === "row" && [...cur.over.values()].every(p => p.k === "n")) return this.emit("row", [pass.id, ...[...cur.over.values()].map(p => p.id)], [...cur.over.keys()]);
+    this.no("each item gives something other than a number, true or false, or a record of numbers");
+  }
   // keep only the steps the answer needs, numbered afresh, as a JavaScript literal
   emit(kind, outs, keys) {
     const N = this.nodes, live = new Uint8Array(N.length);
@@ -1020,13 +1087,27 @@ class Spk {
     for (let i = 0; i < N.length; i++) if (live[i]) {
       const [op, a, b, c, v] = N[i]; map[i] = out.length;
       if (SPK_JSONLY.has(op)) jsOnly = true;
-      const lit = v === undefined ? "" : "," + (typeof v === "number" ? spkNum(v) : String(v));
+      const lit = v === undefined ? "" : "," + (typeof v === "number" ? spkNum(v) : typeof v === "string" ? JSON.stringify(v) : String(v));
       out.push("[\"" + op + "\"," + (a >= 0 ? map[a] : -1) + "," + (b >= 0 ? map[b] : -1) + "," + (c >= 0 ? map[c] : -1) + lit + "]");
     }
     const g = [...new Set(this.guards)].map(i => map[i]);
     return "{nodes:[" + out.join(",") + "],outs:[" + outs.map(i => map[i]).join(",") + "],guards:[" + g.join(",") + "],kind:\"" + kind + "\"" +
       (keys ? ",keys:" + JSON.stringify(keys) : "") + ",jsOnly:" + jsOnly + "}";
   }
+}
+// a run of collect, keep and fold steps (each given a cell, or a name), and length at the end, starting at T[i]
+const FUSE_STEPS = new Set(["collect", "keep", "fold"]);
+function fuseSegment(T, i) {
+  let j = i; const stages = [];
+  while (j + 1 < T.length && T[j].k === "word" && FUSE_STEPS.has(T[j].v) &&
+    (T[j + 1].k === "cell" || (T[j + 1].k === "word" && !FUSED.has(T[j + 1].v) && !LAZYOPS.has(T[j + 1].v) && !(T[j + 1].v in ALL) && !["!", "true", "false", "_", "left", "right"].includes(T[j + 1].v)))) {
+    stages.push({ w: T[j].v, arg: T[j + 1], line: T[j].line }); j += 2;
+    if (T[j - 2].v === "fold") break;
+  }
+  if (stages.length && stages[stages.length - 1].w !== "fold" && j < T.length && T[j].k === "word" && T[j].v === "length") { stages.push({ w: "length", line: T[j].line }); j++; }
+  // worth it for two steps or more, or one collect or keep (fold alone has its own loop, decision 88)
+  if (!stages.length || (stages.length === 1 && stages[0].w === "fold")) return null;
+  return { stages, start: i, end: j };
 }
 // the first and last line a piece of the tree is on
 function lineSpan(n) {
@@ -1551,8 +1632,7 @@ function spork(xs, f) {
 }
 const nowMs = () => typeof performance !== "undefined" ? performance.now() : Date.now();
 function runSpork(s, xs) {
-  const K = s.k, C = s.caps();
-  for (let i = 0; i < C.length; i++) if (typeof C[i] !== "number") return null;
+  const K = s.k;
   let n, X = null;
   if (xs instanceof RCell) n = xs.n;
   else if (xs instanceof NCell) { X = xs.a; n = X.length; }
@@ -1561,6 +1641,8 @@ function runSpork(s, xs) {
     for (let i = 0; i < n; i++) { const v = p[i]; if (typeof v !== "number") return null; X[i] = v; }
   } else return null;
   if (n === 0) return VP([]);
+  const C = s.caps();
+  for (let i = 0; i < C.length; i++) if (typeof C[i] !== "number") return null;
   const t0 = nowMs(); let O = null, how = "";
   // the GPU (32-bit maths) only when the host allows it; else WebAssembly SIMD; else JavaScript. The last two give the same answer.
   if (SPORK.gpu && !K.jsOnly) { O = SPORK.gpu(K, n, X, C) || null; if (O) how = "gpu"; }
@@ -1571,6 +1653,87 @@ function runSpork(s, xs) {
   if (K.kind === "n") return new NCell(O[0]);
   if (K.kind === "b") { const o = new Array(n), a = O[0]; for (let i = 0; i < n; i++) o[i] = a[i] !== 0; return VP(o); }
   return new ColCell(shapeFor(K.keys), O, n);
+}
+// ---- loop fusion (decision 95): a run of collect, keep, fold and length over range, a list of numbers or a list of
+// records of numbers, as one loop with no lists in between. NOFUSE means the steps run as written.
+const NOFUSE = { fuse: "no" };
+function FUSE(xs, F, caps) {
+  if (COLMIN === Infinity) return NOFUSE;
+  let K, n, X = null, cols = null, rs = null;
+  if (xs instanceof RCell) { K = F.num; n = xs.n; }
+  else if (xs instanceof NCell) { K = F.num; X = xs.a; n = X.length; }
+  else if (xs instanceof ColCell) { K = F.row; cols = xs.cols; rs = xs.rs; n = xs.n; }
+  else if (xs instanceof VCell && xs.fs === ROOT) {
+    const p = xs.parts; n = p.length;
+    if (!n) return NOFUSE;
+    if (typeof p[0] === "number") { K = F.num; X = new Float64Array(n); for (let i = 0; i < n; i++) { const v = p[i]; if (typeof v !== "number") return NOFUSE; X[i] = v; } }
+    else { const c = toCols(xs); if (!c) return NOFUSE; K = F.row; cols = c.cols; rs = c.rs; n = c.n; }
+  } else return NOFUSE;
+  // a short list is quicker as written
+  if (!K || n < 16) return NOFUSE;
+  if (rs && K.keys && K.keys.length && rs.index("with") >= 0) return NOFUSE;
+  const C = caps ? caps() : EMPTY;
+  for (let i = 0; i < C.length; i++) if (typeof C[i] !== "number") return NOFUSE;
+  const f = fuseJS(K);
+  if (K.kind === "fold") return f(n, X, cols, rs, C, null, null);
+  const O = K.outs.slice(1).map(() => new Float64Array(n)), kept = K.kind === "row" ? new Uint32Array(n) : null;
+  const m = f(n, X, cols, rs, C, O, kept);
+  if (m === NOFUSE) return NOFUSE;
+  // when every item passed, the arrays are already the right length, and unchanged columns can be shared (columns never change)
+  const cut = o => m === n ? o : o.slice(0, m);
+  if (K.kind === "n") return new NCell(cut(O[0]));
+  if (K.kind === "b") { const o = new Array(m); for (let i = 0; i < m; i++) o[i] = O[0][i] !== 0; return VP(o); }
+  if (K.kind === "rec") return new ColCell(shapeFor(K.keys), O.map(cut), m);
+  // records from the list, with any fields laid over by with: unchanged columns are gathered for the items that passed
+  let out = rs; for (const k of K.keys) if (out.index(k) < 0) out = out.add(k);
+  const oc = out.keys.map((k, j) => {
+    const o = K.keys.indexOf(k); if (o >= 0) return cut(O[o]);
+    const src = cols[j]; if (m === n) return src;
+    const g = new Float64Array(m); for (let q = 0; q < m; q++) g[q] = src[kept[q]]; return g;
+  });
+  return new ColCell(out, oc, m);
+}
+function fuseJS(K) {
+  if (K.jsF) return K.jsF;
+  const N = K.nodes, inv = new Uint8Array(N.length), r = i => "v" + i;
+  let pre = "", body = "";
+  for (let i = 0; i < N.length; i++) {
+    const [op, a, b, c, v] = N[i];
+    let e;
+    if (op === "a") e = "acc";
+    else if (op === "col") { pre += "const c" + i + "=cols[rs.index(" + JSON.stringify(v) + ")];if(c" + i + "===undefined)return NOFUSE;"; e = "c" + i + "[i]"; }
+    else e = spkExpr(N[i], r);
+    inv[i] = op !== "x" && op !== "a" && op !== "col" && (a < 0 || inv[a]) && (b < 0 || inv[b]) && (c < 0 || inv[c]) ? 1 : 0;
+    if (inv[i]) pre += "const v" + i + "=" + e + ";"; else body += "const v" + i + "=" + e + ";";
+  }
+  const g = K.guards.length ? "if(!(" + K.guards.map(r).join("&&") + "))return NOFUSE;" : "";
+  let src;
+  if (K.kind === "fold") src = pre + "let acc=" + r(K.outs[0]) + ";for(let i=0;i<n;i++){const x=X?X[i]:i+1;" + body + g + "acc=" + r(K.outs[1]) + "}return acc";
+  else src = pre + "let m=0;for(let i=0;i<n;i++){const x=X?X[i]:i+1;" + body + g + "if(" + r(K.outs[0]) + "){" +
+    K.outs.slice(1).map((o, j) => "O[" + j + "][m]=" + (K.kind === "b" ? r(o) + "?1:0" : r(o)) + ";").join("") + (K.kind === "row" ? "kept[m]=i;" : "") + "m++}}return m";
+  const f = new Function("NOISE", "NOFUSE", "n", "X", "cols", "rs", "C", "O", "kept", src);
+  return (K.jsF = (n, X, cols, rs, C, O, kept) => f(NOISE, NOFUSE, n, X, cols, rs, C, O, kept));
+}
+// one step of a kernel as a JavaScript expression
+function spkExpr(node, r) {
+  const [op, a, b, c, v] = node;
+  switch (op) {
+    case "c": return spkNum(v); case "cb": return String(v);
+    case "x": return "x"; case "k": return "C[" + v + "]";
+    case "add": return r(a) + "+" + r(b); case "sub": return r(a) + "-" + r(b);
+    case "mul": return r(a) + "*" + r(b); case "div": return r(a) + "/" + r(b);
+    case "mod": return "((" + r(a) + "%" + r(b) + ")+" + r(b) + ")%" + r(b);
+    case "min": case "max": return "Math." + op + "(" + r(a) + "," + r(b) + ")";
+    case "noise": return "NOISE(" + r(a) + "," + r(b) + ")";
+    case "neg": return "-" + r(a);
+    case "abs": case "floor": case "ceil": case "round": case "sqrt": case "sin": case "cos": case "tan": case "log": return "Math." + op + "(" + r(a) + ")";
+    case "lt": return r(a) + "<" + r(b); case "gt": return r(a) + ">" + r(b);
+    case "le": return r(a) + "<=" + r(b); case "ge": return r(a) + ">=" + r(b);
+    case "eq": case "beq": return r(a) + "===" + r(b); case "ne": return r(a) + "!==" + r(b);
+    case "and": return r(a) + "&&" + r(b); case "or": return r(a) + "||" + r(b); case "not": return "!" + r(a);
+    case "sel": return r(a) + "?" + r(b) + ":" + r(c);
+  }
+  throw new Error("kernel step " + op);
 }
 // the kernel as JavaScript: one loop; steps that don't depend on the input are worked out before it
 function spkJS(K) {
@@ -1836,7 +1999,7 @@ frame : [update |
 
 // ===================================================================== build
 const RT = { BANG, ANY, G, S: null, MK, SW, SEND, RUNC, STR, UNKNOWN, LOG_MISS, WITHF,
-  ADD, SUB, MUL, DIV, MOD, LT, GT, LE, GE, EQ, NE, CAT, WITH, AT, VC, VP, ISBOOL, MISSING, TAIL, SWI, shapeFor, COLC, NCOL, NATIVE: Native, NOISE };
+  ADD, SUB, MUL, DIV, MOD, LT, GT, LE, GE, EQ, NE, CAT, WITH, AT, VC, VP, ISBOOL, MISSING, TAIL, SWI, shapeFor, COLC, NCOL, NATIVE: Native, NOISE, FUSE, NOFUSE };
 let preludeCell = null;
 function globalNames(extra) { const s = new Set(Object.keys(G)); if (extra) for (const k of extra) s.add(k); return s; }
 

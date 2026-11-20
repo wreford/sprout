@@ -49,7 +49,27 @@ ok("84 match only works out the answer it picks", val('match [1, [1, "one", 2, n
 { const sp = S.load("xs : []\nf : [p | p x > 1]\na : xs collect [p | p with [x : p x + 1]]\nb : xs keep [p | p x > 1]\nc : xs keep [p | f p]\nd : xs collect [p | p with [x : rand [0, 1]]]\ne : xs keep [p | p name = \"a\"]").speed;
   const at = l => sp.find(n => n.line === l);
   ok("86 speed notes: a with of number maths runs over columns", at(3).fast && at(3).word === "collect" && at(4).fast && at(4).word === "keep");
-  ok("86 speed notes: say why a body runs item by item", at(5).why === "it calls f for each item" && /calls something/.test(at(6).why) && at(7).why === "it works with words, not numbers", sp.map(n => n.line + " " + n.why)); }
+  ok("86 speed notes: say why a body runs item by item", at(5).fast && /calls something/.test(at(6).why) && !at(6).fast, sp.map(n => n.line + " " + n.why)); }
+// loop fusion (decision 95): a run of collect, keep, fold and length is one loop, with the same answer as the steps one by one
+{ const both = src => { const a = S.fmt(S.load(src).field("result")); S.columns(false); const b = S.fmt(S.load(src).field("result")); S.columns(true); return [a, b]; };
+  const fused = {
+    "collect, keep and fold over range": "result : range 1000 collect [n | n * n] keep [n | n % 3 = 0] fold [0, [t n | t + (n / 7)]]",
+    "keep then length counts without a list": "xs : range 500 collect [n | noise [n, 1]]\nresult : xs keep [u | u < 0.25] length",
+    "a list of numbers in, a list out": "result : [3, 1, 4, 1, 5, 9, 2, 6] collect [n | n * 2 - 1] keep [n | n > 4]",
+    "records in columns: keep, collect, fold": "rs : range 200 collect [n | [zone : n % 4, hours : n / 3]]\nresult : rs keep [r | r zone = 3] collect [r | r hours] fold [0, [t h | t + h]]",
+    "records with fields laid over": "rs : range 100 collect [n | [x : n, y : n * 2]]\nresult : rs keep [r | r x > 50] collect [r | r with [y : r y + 1, z : r x * (r y)]]",
+    "a record made each step": "result : range 60 collect [n | [a : n, b : n sqrt]] keep [r | r b > 3]",
+    "a cell from outside, inlined": "big : [n | n > 10]\nsq : [n | n * n]\nresult : range 40 keep big collect sq",
+    "an outside number read once": "k : 7\nresult : range 300 keep [n | n % k = 0] collect [n | n / k] fold [0, [t n | t max n]]",
+    "true or false out": "result : range 50 collect [n | n % 2 = 0] keep [b | b or true]",
+    "a test that changes per item": "result : range 80 collect [n | n > 40 [n * 2] else [0 - n]] keep [n | n != 0]",
+  };
+  for (const k in fused) { const [a, b] = both(fused[k]); ok("95 fusion: " + k, a === b && a !== "false", [a.slice(0, 60), b.slice(0, 60)]); }
+  // anything the loop can't do runs as written: words in the list, a position outside a list
+  for (const src of ['result : ["a", "b", "c"] collect [w | w .. "!"] keep [w | w != "b!"]', "w : [3, 1, 4]\nresult : range 9 collect [n | (w @ n) else [0]] keep [n | n > 0]", "result : [] collect [n | n + 1] fold [5, [t n | t + n]]"]) {
+    const [a, b] = both(src); ok("95 fusion: falls back the same: " + src.slice(0, 40), a === b, [a, b]); }
+  const notes = S.load("result : range 9 collect [n | n * 2] keep [n | n > 4] fold [0, [t n | t + n]]").speed;
+  ok("95 fusion: one speed note for the run", notes.length === 1 && notes[0].word === "collect keep fold" && notes[0].fast, notes); }
 { const n1 = +val("noise [3, 7]"), n2 = +val("noise [3, 7]"), n3 = +val("noise [3, 8]");
   ok("87 noise: the same inputs give the same number, from 0 up to 1", n1 === n2 && n1 !== n3 && n1 >= 0 && n1 < 1);
   const xs = Array.from({ length: 2000 }, (_, k) => +val("noise [" + k + ", 1]")), mean = xs.reduce((a, b) => a + b) / xs.length;
