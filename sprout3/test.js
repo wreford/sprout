@@ -325,5 +325,28 @@ ok("hot-swap takes a changed start value", g.state.field("height") === 99);
   ok("102 a program can still name something quote", val("([quote : [x | x + 1]], 1) @ 1") !== "" && S.format(S.load("quote : [x | x + 1]\nresult : quote 4").field("result")) === "5");
 }
 
+// ---------------- parse (decision 103)
+{
+  const W = [
+    ["\"2026-11-20\" parse [repeat [4, digit], \"-\", repeat [2, digit], \"-\", repeat [2, digit]]", "true"],
+    ["\"2026-11-20\" parse [repeat [4, digit] as \"year\", \"-\", repeat [2, digit] as \"month\", \"-\", repeat [2, digit] as \"day\"]", "[year : 2026, month : 11, day : 20]"],
+    ["\"2026-11-2x\" parse [repeat [4, digit], \"-\", repeat [2, digit], \"-\", repeat [2, digit]]", "false"],
+    ["\"call 555-1234 or 555-9876\" find-all [repeat [3, digit], \"-\", repeat [4, digit]]", "[555-1234, 555-9876]"],
+    ["\"hello   big  world\" replace-all [some space, \" \"]", "hello big world"],
+    ["\"a1b22\" find-all (some digit as [\"n\", [t | t number]])", "[[n : 1], [n : 22]]"],
+    ["\"cat, dog\" parse [some [some letter all-as \"pet\", maybe \", \"]]", "[pet : [cat, dog]]"],
+    ["\"ab12cd\" parse [maybe-some one-of \"abcd\", some digit as \"n\", some letter]", "[n : 12]"],
+    ["quote [move 10, turn 90, stop] parse some one-of [into ['move, a-number], into ['turn, a-number], 'stop]", "true"],
+    ["quote [move 10, jump 3] parse some one-of [into ['move, a-number], into ['turn, a-number], 'stop]", "false"],
+    ["\"<b>x</b>\" replace-all [[\"<\", maybe \"/\", some letter, \">\"], \"\"]", "x"],
+    ["\"x9\" parse [letter, [c | c = \"9\"]]", "true"], ["[1, 2, 3] parse [some a-number]", "true"], ["\"abc\" parse [to \"c\", \"c\"]", "true"],
+    ["\"a-b\" parse [thru \"-\" as \"head\", \"b\"]", "[head : a-]"], ["\"ab\" parse [not-ahead \"b\", \"ab\"]", "true"],
+  ];
+  for (const [src, want] of W) { const got = val(src); ok("103 " + src + " gives " + want, got === want); if (got !== want) console.log("   got", got); }
+  const grammar = "expr : [\n  factor : one-of [some digit, [\"(\", expr, \")\"]]\n  term : [factor, maybe-some [one-of \"*/\", factor]]\n  term, maybe-some [one-of \"+-\", term]\n]\nresult : [\"2*(3+4)\", \"2*(3+4\", \"1+2*3-4/5\"] collect [t | t parse expr]";
+  ok("103 a rule can hold itself: a grammar for arithmetic", S.format(S.load(grammar).field("result")) === "[true, false, true]");
+  ok("103 a list that names itself is lazy", val("([digits : [digit, maybe digits]], \"123\" parse digits) @ 1") !== "" && S.format(S.load("digits : [digit, maybe digits]\nresult : \"123\" parse digits").field("result")) === "true");
+}
+
 console.log(pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

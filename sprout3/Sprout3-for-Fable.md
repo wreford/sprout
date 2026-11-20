@@ -64,7 +64,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
   - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
   - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
-- **Tests:** 312 pass, 230 for the language and 82 for the games.
+- **Tests:** 330 pass, 248 for the language and 82 for the games.
 
 ## Open questions for Troy
 
@@ -82,14 +82,14 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 **Run it (Node 22 or later):**
 
 ```
-node test.js          # language tests (230)
+node test.js          # language tests (248)
 node game-tests.js    # game tests (82)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 312 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 330 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -173,6 +173,7 @@ The page and `bench.html` need a local web server, such as `python3 -m http.serv
 - `sprout-vs-python.html`: Sprout and Python: fifteen small programs side by side, each run in both languages with its real output (linked from the library sheet)
 - `index.html`: The home page at taskiap.com/sprout3/: what Sprout is, a taste of code, the ideas, and links to examples, the editor and the reading; plain and quiet in the spirit of Steve Dekorte's sites
 - `words.js`: The standard words (decision 99): Clojure's sequence words, endless lists, Lua's string words, number words; always loaded after sprout3.js
+- `parse.js`: parse (decision 103): Rebol's parse dialect with rules as Sprout values; parse, find-all and replace-all on text and lists
 - `examples/recipes.sp`: Recipes: quicksort, primes, FizzBuzz, a vector with its own + (prints; not a game)
 - `play.html`: The editor at taskiap.com/sprout3/play.html (opens #ex=name, #spec, #history): a library of examples with artwork, the running game shown like album art, live editing, a now-playing bar whose progress bar rewinds time, state, output and the spec; light and dark
 - `bench.html`: Benchmarks in the browser: the language against plain JS, the games, particles up to 100,000 on Canvas 2D and WebGPU, and SQLite
@@ -803,6 +804,7 @@ These are marked in `sprout2.js` with "Sprout Live fix N" or "Sprout Live additi
 100. **Rebol's literals (Troy, 20 Nov).** Values that are more than numbers and text are written as they are, with no quotes and no constructor: a date `2026-11-20`, a time `9:30` or `9:30:15`, money `$19.99`, a pair `640x480`, a url `https://taskiap.com/sprout3/`, an email `ada@example.com`, a colour `#ff8800` (or `#f80`, or `#ff880080` with alpha), a percent `15%` (the number 0.15) and a word `'move`. The lexer tries them where a word could start, and each must end where a word would, so `2026 - 11` is still a subtraction and `don't` is still a name. Each kind does the maths that makes sense for it. A date plus a number is that many days later, and two dates take away to the days between. Dates answer `year`, `month`, `day`, `weekday`, `add-months`, `add-workdays` and `is-weekend`, and are kept as days in UTC, so they never shift with a time zone. Times add and compare, and answer `hour`, `minute` and `in-hours`. Money is whole cents, so `$0.10 + $0.20 = $0.30` is true; `*` and `/` by a number round to the cent, halves to even, and `split 3` shares out every cent. Pairs do maths part by part and answer `x`, `y`, `length` and `area`. A url answers `host`, `path` and `query`, and `/` adds a step to its path. A colour answers `red`, `green`, `blue`, `mix`, `lighter`, `darker` and `fade`, and draws as its text. A word is equal only to the same word, which is what dialects and code as data are made of. The kinds live in `words.js`. A literal is made once, when the program loads. `date [2026, 11, 20]`, `money 12.5`, `pair [3, 4]`, `colour [255, 136, 0]` and `word "move"` make the same values from parts, and a date that isn't real (`2026-02-30`) is logged.
 101. **Destructuring (Troy, 20 Nov).** A pattern in square brackets unpacks a value, wherever a name could take one. As an input, `[[x, y] | x + y]` takes one value and names its parts, and a cell can take several, as in `[[x1, y1] [x2, y2] | ...]` or `fold [0, [total [x, y] | ...]]`. As a binding, `[x, y] : point` names the parts of a value in a cell or a group. Each name reads the field of that name if the value has one, else the part at its position, so `[name, age]` unpacks `[name : "Ada", age : 36]` and `["Ada", 36]` alike. A kind from decision 100 unpacks the same way: by its fields (`x`, `y`, `year`), else by its parts in order, so `[w, h] : 640x480` and `[y, m, d] : 2026-11-20` work. A name can have a default, `[name, age : 0]`, used when the part is false or missing. A pattern can hold a pattern, `[a, [b, c]]`, and `..rest` takes the parts left over as a list, `[first, ..others]`. Unpacked names are local names, not fields: `[[x, y] : [10, 20], sum : x + y]` has the one field `sum`. A cell that unpacks is never worked out ahead into a kernel; it runs as written.
 102. **Code as data (Troy, 20 Nov).** `quote [move 10, turn 90]` gives the code in the brackets as a value instead of running it, so a program can read, build and change code, as in Rebol and Clojure. The value is a block: a list of its items. An item of one term is that term's value (a number, text, a literal, or a word such as `'move`), an item of several terms is a phrase (a list of its terms), `x : 5` is a binding (`name` and `value`), `( )` is a group, and a block with inputs answers `inputs`. Each has a `kind`, every list word works on them, and they print as the code they came from: `quote [move 10, turn 90]` prints `[move 10, turn 90]`. `quote` works anywhere a value can go (`eval quote [1 + 2]`, `a = quote [x]`), unless a program names something `quote` itself. Every cell gives its own code: `[n | n * 2] code` is the block `[n | n * 2]`. `eval` runs code: a block that takes no input runs as a program and gives its last value, a block with inputs gives back a cell, text runs as the code it holds, and any value turns into code with `source` (the text that makes it). `eval` runs at the top level, so it sees host words and the prelude but not a program's own names. `eval-with [names, code]` hands it some, as fields of a record. `phrase [items]` builds a phrase, as in `eval-with [[double : double], phrase ['double, 21]]`. A compiled program is kept for the next eval of the same code. A dialect is a cell that walks a block: `program fold [start, [state [command, amount] | match [command, ['move, ..., 'turn, ...]]]]` runs a turtle program written as data.
+103. **parse (built; library, decision 80, from Troy's ask on 20 Nov to make Sprout better than Rebol at Rebol).** `parse.js` brings Rebol's parse dialect, and its rules are ordinary Sprout values, not a language inside strings. Text is a rule that matches itself, a list of rules matches each in turn, a cell with one input tests one character or item, and any other value (a word like `'move`, a number, a date) matches an item equal to it. The rule words are `some`, `maybe`, `maybe-some`, `repeat [n, rule]` and `repeat [least, most, rule]`, `one-of [rules]` (tried in order) and `one-of "abc"`, `none-of`, `to`, `thru`, `ahead`, `not-ahead`, `into` (one item that is a list, parsed all through) and `of-kind`, with `digit`, `letter`, `upper-letter`, `lower-letter`, `letter-or-digit`, `space`, `any-char`, `end`, `a-number`, `a-text` and `a-word`. Matching is PEG: a choice takes the first rule that matches, a repeat takes all it can, and nothing is tried again, so a rule's meaning is what it says. `rule as "name"` keeps what it matched, `rule as ["name", [t | t number]]` keeps what a cell makes of it, and `rule all-as "name"` keeps every match in a list. `text parse rule` gives true, or a record of what was kept, when the rule matches all of the text, and false when it doesn't. `find-all` gives every match, and `replace-all [rule, new]` replaces each, with text or with what a cell makes of the match. Lists parse the same way, item by item, so a block of quoted code (decision 102) is parsed like text, and a dialect is checked by a rule: `quote [move 10, turn 90] parse some one-of [into ['move, a-number], into ['turn, a-number]]`. Rule words given a rule word wait for the rule, so `some one-of [...]` reads as Rebol would read it. Names are still bound before use (decision 25), so a grammar that refers back to itself is one cell that names itself, with the rules it needs as its fields: `expr : [factor : one-of [some digit, ["(", expr, ")"]], ..., term, maybe-some [one-of "+-", term]]`. To make that work, a cell that mentions its own name is always lazy, even when it is a short list of values (`digits : [digit, maybe digits]`).
 ````
 
 ---
@@ -1249,6 +1251,7 @@ class CodeGen {
       if (item.type === "bind") {
         const js = jsName(item.name), isCell = item.value.terms.length === 1 && item.value.terms[0].type === "cell";
         const ast = isCell ? item.value.terms[0] : null;
+        if (isCell && mentions(ast, new Set([item.name]))) ast.selfReferencing = true;
         if (isCell) frame.names.set(item.name, { type: "js", js, cell: true, ast, value: item.value }); // a cell can use its own name (decision 25)
         const valueCode = isCell ? this.genCell(item.value.terms[0], true) : this.genChain(item.value);
         frame.names.set(item.name, { type: "js", js, cell: isCell, ast, value: item.value });
@@ -1279,14 +1282,15 @@ class CodeGen {
   }
 
   genCell(cell, ownerOfLeft) {
-    if (isFieldsOnly(cell) && cell.items.every(input => isSimpleValue(input.value))) {
+    // a cell that names itself is always lazy, so it can hold itself (a grammar rule like digits : [digit, maybe digits])
+    if (!cell.selfReferencing && isFieldsOnly(cell) && cell.items.every(input => isSimpleValue(input.value))) {
       // the fields can't use each other here, but they are still the likeliest names a typo meant
       this.hintNames = (this.hintNames || []).concat([cell.items.map(input => input.name)]);
       const vals = cell.items.map(input => this.genChain(input.value));
       this.hintNames.pop();
       return "makeRecord(" + this.shapeConstant(cell.items.map(input => input.name)) + ",[" + vals.join(",") + "])";
     }
-    if (isSimpleList(cell) && cell.items.length > 1)
+    if (!cell.selfReferencing && isSimpleList(cell) && cell.items.length > 1)
       return "makeList([" + cell.items.map(input => this.genChain(input)).join(",") + "])";
     const shapeNumber = this.shapes.length;
     const shape = { id: shapeNumber, names: cell.names.map(input => input.name), fieldIndex: Object.create(null), partIndex: [], usesIt: false, usesLeft: false, itemCount: cell.items.length, src: sourceKey(cell) };
@@ -1323,6 +1327,7 @@ class CodeGen {
         if (item.type === "bind") {
           const isCell = item.value.terms.length === 1 && item.value.terms[0].type === "cell";
           const ast = isCell ? item.value.terms[0] : null;
+          if (isCell && mentions(ast, new Set([item.name]))) ast.selfReferencing = true;
           if (isCell) frame.names.set(item.name, { type: "slot", activation, i, cell: true, ast, value: item.value });
           const slotCode = this.arrowCode("", () => isCell ? this.genCell(item.value.terms[0], true) : this.genChain(item.value));
           frame.names.set(item.name, { type: "slot", activation, i, cell: isCell, ast, value: item.value });
@@ -1356,7 +1361,14 @@ function isFieldsOnly(cell) {
   const bad = w => names.has(w) || w === "_" || w === "left" || w === "right";
   const walk = n => {
     if (!ok || !n || typeof n !== "object") return;
-    if (n.type === "chain") { n.terms.forEach((t, i) => { if (t.type === "word") { if (i === 0 && bad(t.value)) ok = false; else if (i > 0 && (t.value === "_" || t.value === "left" || t.value === "right")) ok = false; } else walk(t); }); return; }
+    if (n.type === "chain") {
+      n.terms.forEach((t, i) => {
+        // a word is a value (not a message) first in a chain and right after an operator, so there it may name a sibling
+        const isValue = i === 0 || (n.terms[i - 1].type === "word" && (FUSED_OPERATORS.has(n.terms[i - 1].value) || LAZY_OPERATORS.has(n.terms[i - 1].value)));
+        if (t.type === "word") { if (isValue && bad(t.value)) ok = false; else if (i > 0 && (t.value === "_" || t.value === "left" || t.value === "right")) ok = false; } else walk(t);
+      });
+      return;
+    }
     if (n.type === "word") { if (bad(n.value)) ok = false; return; }
     for (const key in n) { const v = n[key]; if (Array.isArray(v)) v.forEach(walk); else if (v && typeof v === "object") walk(v); }
   };
@@ -1394,7 +1406,7 @@ function isSimpleValue(chain) {
 }
 // [a, b, c] whose parts are all simple: built straight away as a cell of values
 function isSimpleList(cell) { return !cell.names.length && cell.items.length > 0 && cell.items.every(item => item.type === "chain" && isSimpleValue(item)); }
-const COMPILER_NOTE_KEYS = new Set(["line", "kern", "bindName", "sporkArg", "spkUses"]);
+const COMPILER_NOTE_KEYS = new Set(["line", "kern", "bindName", "sporkArg", "spkUses", "selfReferencing"]);
 // a hidden name's number is left out, so the same code always has the same key
 function sourceKey(cell) { return JSON.stringify(cell, (key, value) => COMPILER_NOTE_KEYS.has(key) ? undefined : typeof value === "string" && /^\[unpacked \d+\]$/.test(value) ? "[unpacked]" : value); }
 
@@ -1403,7 +1415,8 @@ function compile(src, globals) {
   const gen = new CodeGen(globals);
   if (LIBRARIES.prescan) LIBRARIES.prescan(gen, ast);
   gen.tempScopes.push([]);
-  const code = gen.genCell({ type: "cell", names: [], items: ast });
+  // a program runs its lines in order, each seeing the names above it, so it never takes the shortcut a record of values does
+  const code = gen.genCell({ type: "cell", names: [], items: ast, selfReferencing: true });
   const topTemps = gen.tempScopes.pop();
   // each body is compiled more than once (to run, and to read fields), so its speedNotes note is kept once
   const seenNotes = new Set(), speedNotes = gen.speedNotes.filter(note => { const key = note.line + " " + note.word + " " + note.fast; if (seenNotes.has(key)) return false; seenNotes.add(key); return true; });
@@ -2017,6 +2030,7 @@ if (typeof module !== "undefined") {
   // (SPROUT3_CORE_ONLY=1 runs without it, to check the core alone gives the same answers)
   // the standard words always come along (decision 99)
   require("./words.js");
+  require("./parse.js");
   if (!process.env.SPROUT3_CORE_ONLY) try { require("./kernels.js"); } catch (e) { if (e.code !== "MODULE_NOT_FOUND") throw e; }
 } else root.Sprout3 = api;
 })(typeof window !== "undefined" ? window : globalThis);
@@ -3913,6 +3927,29 @@ ok("hot-swap takes a changed start value", g.state.field("height") === 99);
   ];
   for (const [src, want] of W) { const got = val(src); ok("102 " + src + " gives " + want, got === want); if (got !== want) console.log("   got", got); }
   ok("102 a program can still name something quote", val("([quote : [x | x + 1]], 1) @ 1") !== "" && S.format(S.load("quote : [x | x + 1]\nresult : quote 4").field("result")) === "5");
+}
+
+// ---------------- parse (decision 103)
+{
+  const W = [
+    ["\"2026-11-20\" parse [repeat [4, digit], \"-\", repeat [2, digit], \"-\", repeat [2, digit]]", "true"],
+    ["\"2026-11-20\" parse [repeat [4, digit] as \"year\", \"-\", repeat [2, digit] as \"month\", \"-\", repeat [2, digit] as \"day\"]", "[year : 2026, month : 11, day : 20]"],
+    ["\"2026-11-2x\" parse [repeat [4, digit], \"-\", repeat [2, digit], \"-\", repeat [2, digit]]", "false"],
+    ["\"call 555-1234 or 555-9876\" find-all [repeat [3, digit], \"-\", repeat [4, digit]]", "[555-1234, 555-9876]"],
+    ["\"hello   big  world\" replace-all [some space, \" \"]", "hello big world"],
+    ["\"a1b22\" find-all (some digit as [\"n\", [t | t number]])", "[[n : 1], [n : 22]]"],
+    ["\"cat, dog\" parse [some [some letter all-as \"pet\", maybe \", \"]]", "[pet : [cat, dog]]"],
+    ["\"ab12cd\" parse [maybe-some one-of \"abcd\", some digit as \"n\", some letter]", "[n : 12]"],
+    ["quote [move 10, turn 90, stop] parse some one-of [into ['move, a-number], into ['turn, a-number], 'stop]", "true"],
+    ["quote [move 10, jump 3] parse some one-of [into ['move, a-number], into ['turn, a-number], 'stop]", "false"],
+    ["\"<b>x</b>\" replace-all [[\"<\", maybe \"/\", some letter, \">\"], \"\"]", "x"],
+    ["\"x9\" parse [letter, [c | c = \"9\"]]", "true"], ["[1, 2, 3] parse [some a-number]", "true"], ["\"abc\" parse [to \"c\", \"c\"]", "true"],
+    ["\"a-b\" parse [thru \"-\" as \"head\", \"b\"]", "[head : a-]"], ["\"ab\" parse [not-ahead \"b\", \"ab\"]", "true"],
+  ];
+  for (const [src, want] of W) { const got = val(src); ok("103 " + src + " gives " + want, got === want); if (got !== want) console.log("   got", got); }
+  const grammar = "expr : [\n  factor : one-of [some digit, [\"(\", expr, \")\"]]\n  term : [factor, maybe-some [one-of \"*/\", factor]]\n  term, maybe-some [one-of \"+-\", term]\n]\nresult : [\"2*(3+4)\", \"2*(3+4\", \"1+2*3-4/5\"] collect [t | t parse expr]";
+  ok("103 a rule can hold itself: a grammar for arithmetic", S.format(S.load(grammar).field("result")) === "[true, false, true]");
+  ok("103 a list that names itself is lazy", val("([digits : [digit, maybe digits]], \"123\" parse digits) @ 1") !== "" && S.format(S.load("digits : [digit, maybe digits]\nresult : \"123\" parse digits").field("result")) === "true");
 }
 
 console.log(pass + " passed, " + fail + " failed");
@@ -6942,6 +6979,170 @@ S.words = { Phrase, Group, Block, Template, Binding, sourceOf, codeOf, evaluate,
 })(typeof window !== "undefined" ? window : globalThis);
 ````
 
+## parse.js
+
+parse (decision 103): Rebol's parse dialect with rules as Sprout values; parse, find-all and replace-all on text and lists
+
+````js
+// parse (decision 103): Rebol's parse dialect, with rules that are ordinary Sprout values.
+// A rule is text (matched as it is), a list of rules (one after another), a cell with one input (a test for one
+// character or item), a word or any other value (an item equal to it), or one of the rules below.
+// Matching is PEG: choices are tried in order, repeats take all they can, and nothing is tried again.
+// It works on text, one character at a time, and on lists, one item at a time, so a block of code is parsed like text.
+(function (root) {
+"use strict";
+const S = root.Sprout3 || (typeof module !== "undefined" ? require("./sprout3.js") : null);
+const I = S.internals, W = S.words;
+const { methodTakingNothing: none, methodTakingOne: one, partsOf, callCell, valuesEqual, logMiss, notUnderstood, isCell, Cell, UNSET } = I;
+const { list, record, argumentsOf } = W;
+const FAIL = -1;
+
+// the input being parsed: text, or the items of a list
+class Input {
+  constructor(value) { this.isText = typeof value === "string"; this.text = this.isText ? value : null; this.items = this.isText ? null : partsOf(value); this.length = this.isText ? value.length : this.items.length; this.captures = []; }
+  at(k) { return this.isText ? this.text[k] : this.items[k]; }
+  piece(from, to) { return this.isText ? this.text.slice(from, to) : to - from === 1 ? this.items[from] : list(this.items.slice(from, to)); }
+}
+
+class Rule {
+  constructor(name, match) { this.name = name; this.match = match; }
+  sproutText() { return "[rule " + this.name + "]"; }
+  sameAs(b) { return this === b; }
+}
+Rule.prototype.kind = "rule";
+
+// any value as a rule; a cell's parts are read when it is first matched, so a rule can hold itself
+const converted = new WeakMap();
+function toRule(v) {
+  if (v instanceof Rule) return v;
+  if (typeof v === "string") return textRule(v);
+  if (v instanceof Cell && v.takesInput()) return new Rule("test", (input, k) => k < input.length && W.truthy(callCell(v, input.at(k)), "parse") ? k + 1 : FAIL);
+  if (isCell(v) && !(v.methods && v.kind && v.kind !== "block")) {
+    let rule = converted.get(v);
+    if (!rule) { let steps = null; rule = new Rule("sequence", (input, k) => sequence(steps || (steps = partsOf(v).map(toRule)), input, k)); converted.set(v, rule); }
+    return rule;
+  }
+  if (v === false) return new Rule("nothing", () => FAIL);
+  // a word, number, date or any other value: one item equal to it
+  return new Rule("item", (input, k) => !input.isText && k < input.length && valuesEqual(input.at(k), v) ? k + 1 : FAIL);
+}
+function textRule(t) {
+  return new Rule(JSON.stringify(t), (input, k) => input.isText ? (input.text.startsWith(t, k) ? k + t.length : FAIL) : (k < input.length && input.at(k) === t ? k + 1 : FAIL));
+}
+function sequence(steps, input, k) { for (const step of steps) { k = step.match(input, k); if (k === FAIL) return FAIL; } return k; }
+// try a rule; if it fails, leave no captures behind
+function attempt(rule, input, k) { const mark = input.captures.length, end = rule.match(input, k); if (end === FAIL) input.captures.length = mark; return end; }
+function repeat(rule, input, k, min, max) {
+  let count = 0;
+  while (count < max) { const end = attempt(rule, input, k); if (end === FAIL || end === k) break; k = end; count++; }
+  return count >= min ? k : FAIL;
+}
+
+// ---- rules
+const charRule = (name, test) => new Rule(name, (input, k) => k < input.length && (input.isText ? test(input.text[k]) : typeof input.at(k) === "string" && input.at(k).length === 1 && test(input.at(k))) ? k + 1 : FAIL);
+const RULES = {
+  digit: charRule("digit", c => c >= "0" && c <= "9"),
+  letter: charRule("letter", c => /\p{L}/u.test(c)),
+  "upper-letter": charRule("upper-letter", c => /\p{Lu}/u.test(c)),
+  "lower-letter": charRule("lower-letter", c => /\p{Ll}/u.test(c)),
+  "letter-or-digit": charRule("letter-or-digit", c => /[\p{L}\p{N}]/u.test(c)),
+  space: charRule("space", c => /\s/.test(c)),
+  "any-char": new Rule("any-char", (input, k) => k < input.length ? k + 1 : FAIL),
+  end: new Rule("end", (input, k) => k === input.length ? k : FAIL),
+  "a-number": new Rule("a-number", (input, k) => !input.isText && typeof input.at(k) === "number" ? k + 1 : FAIL),
+  "a-text": new Rule("a-text", (input, k) => !input.isText && typeof input.at(k) === "string" ? k + 1 : FAIL),
+  "a-word": new Rule("a-word", (input, k) => !input.isText && input.at(k) instanceof W.Word ? k + 1 : FAIL),
+};
+const MAKERS = {
+  some: r => { const rule = toRule(r); return new Rule("some", (input, k) => repeat(rule, input, k, 1, Infinity)); },
+  maybe: r => { const rule = toRule(r); return new Rule("maybe", (input, k) => { const end = attempt(rule, input, k); return end === FAIL ? k : end; }); },
+  "maybe-some": r => { const rule = toRule(r); return new Rule("maybe-some", (input, k) => repeat(rule, input, k, 0, Infinity)); },
+  // repeat [n, rule] or repeat [least, most, rule]
+  repeat: a => { const parts = isCell(a) ? partsOf(a) : []; if (parts.length < 2) return notUnderstood(a, "repeat"); const rule = toRule(parts[parts.length - 1]), min = parts[0], max = parts.length > 2 ? parts[1] : parts[0]; return new Rule("repeat", (input, k) => repeat(rule, input, k, min, max)); },
+  // one-of [rule, rule, ...] tries each in order; one-of "abc" is any one of those characters
+  "one-of": a => {
+    if (typeof a === "string") return charRule("one-of", c => a.includes(c));
+    const choices = isCell(a) ? partsOf(a).map(toRule) : [toRule(a)];
+    return new Rule("one-of", (input, k) => { for (const c of choices) { const end = attempt(c, input, k); if (end !== FAIL) return end; } return FAIL; });
+  },
+  "none-of": a => typeof a === "string" ? charRule("none-of", c => !a.includes(c)) : (parts => new Rule("none-of", (input, k) => k < input.length && !parts.some(p => valuesEqual(p, input.at(k))) ? k + 1 : FAIL))(isCell(a) ? partsOf(a) : [a]),
+  // to rule: up to where it matches; thru rule: just past it
+  to: r => { const rule = toRule(r); return new Rule("to", (input, k) => { for (let at = k; at <= input.length; at++) if (attempt(rule, input, at) !== FAIL) { return at; } return FAIL; }); },
+  thru: r => { const rule = toRule(r); return new Rule("thru", (input, k) => { for (let at = k; at <= input.length; at++) { const end = attempt(rule, input, at); if (end !== FAIL) return end; } return FAIL; }); },
+  ahead: r => { const rule = toRule(r); return new Rule("ahead", (input, k) => { const mark = input.captures.length, end = rule.match(input, k); input.captures.length = mark; return end === FAIL ? FAIL : k; }); },
+  "not-ahead": r => { const rule = toRule(r); return new Rule("not-ahead", (input, k) => { const mark = input.captures.length, end = rule.match(input, k); input.captures.length = mark; return end === FAIL ? k : FAIL; }); },
+  // into rule: one item that is a list (or a phrase of code), parsed all through by the rule
+  into: r => { const rule = toRule(r); return new Rule("into", (input, k) => { if (input.isText || k >= input.length || !isCell(input.at(k))) return FAIL; const inner = new Input(input.at(k)), end = rule.match(inner, 0); if (end !== inner.length) return FAIL; input.captures.push(...inner.captures); return k + 1; }); },
+  "of-kind": kind => new Rule("of-kind", (input, k) => !input.isText && k < input.length && W.kindOf(input.at(k)) === kind ? k + 1 : FAIL),
+  rule: toRule,
+};
+// rule as "name" keeps what it matched, under that name; rule as ["name", cell] keeps what the cell makes of it;
+// rule all-as "name" keeps every match, in a list
+function capture(all) {
+  return (r, nameAndCell) => {
+    const rule = toRule(r), [name, f] = typeof nameAndCell === "string" ? [nameAndCell, null] : argumentsOf(nameAndCell, 2);
+    if (typeof name !== "string") return notUnderstood(nameAndCell, all ? "all-as" : "as");
+    return new Rule("as", (input, k) => { const end = rule.match(input, k); if (end === FAIL) return FAIL; const piece = input.piece(k, end); input.captures.push([name, f ? callCell(f, piece) : piece, all]); return end; });
+  };
+}
+const RULE_METHODS = Object.assign(Object.create(I.PROTOTYPES.every), { as: one(capture(false)), "all-as": one(capture(true)) });
+Rule.prototype.methods = RULE_METHODS;
+
+// ---- what the captures give: a record, with a list for each all-as name
+function captureRecord(captures) {
+  const keys = [], values = new Map();
+  for (const [name, value, all] of captures) {
+    if (!values.has(name)) keys.push(name);
+    if (all) values.set(name, (values.get(name) || []).concat([value])); else values.set(name, value);
+  }
+  return record(keys, keys.map(k => Array.isArray(values.get(k)) ? list(values.get(k)) : values.get(k)));
+}
+// text parse rule: true, or a record of what was kept, when the rule matches all of it; false when it doesn't
+function parse(value, r) {
+  const input = new Input(value), end = toRule(r).match(input, 0);
+  if (end !== input.length) return false;
+  return input.captures.length ? captureRecord(input.captures) : true;
+}
+// every match, left to right: what it matched, or a record when it keeps things
+function findAll(value, r) {
+  const input = new Input(value), rule = toRule(r), out = [];
+  for (let k = 0; k < input.length;) { input.captures = []; const end = rule.match(input, k); if (end === FAIL || end === k) { k++; continue; } out.push(input.captures.length ? captureRecord(input.captures) : input.piece(k, end)); k = end; }
+  return list(out);
+}
+// text replace-all [rule, new]: new is text, or a cell given what was matched (or the record it kept)
+function replaceAll(value, ruleAndNew) {
+  if (typeof value !== "string") return notUnderstood(value, "replace-all");
+  const [r, replacement] = argumentsOf(ruleAndNew, 2), input = new Input(value), rule = toRule(r);
+  let out = "", k = 0;
+  while (k <= value.length) {
+    input.captures = []; const end = k < value.length || value.length === 0 ? rule.match(input, k) : FAIL;
+    if (end === FAIL || end === k) { if (k < value.length) out += value[k]; k++; continue; }
+    const matched = input.captures.length ? captureRecord(input.captures) : value.slice(k, end);
+    out += typeof replacement === "string" ? replacement : S.format(callCell(replacement, matched));
+    k = end;
+  }
+  return out;
+}
+// some one-of [...] reads left to right as (some one-of) [...]: a maker given a maker waits for the rule, then gives both.
+// So does text parse some [...]: parse given a maker waits for the rule too.
+const makerNatives = new Set();
+const waitingForRule = (finish, maker) => { const waiting = new I.Native(maker.name, x => x instanceof I.Native && makerNatives.has(x) ? waitingForRule(finish, maker.fn(x)) : finish(maker.fn(x))); return waiting; };
+const takingRule = finish => one((value, r) => r instanceof I.Native && makerNatives.has(r) ? waitingForRule(rule => finish(value, rule), r) : finish(value, r));
+const PARSE_WORDS = { parse: takingRule(parse), "find-all": takingRule(findAll), "replace-all": one(replaceAll) };
+S.install({ methods: { text: PARSE_WORDS, cell: PARSE_WORDS } });
+for (const name in RULES) S.globals[name] = RULES[name];
+function defineMaker(name, make) {
+  S.defNative(name, a => {
+    if (a instanceof I.Native && makerNatives.has(a)) { const inner = a; const composed = new I.Native(name + " " + inner.name, x => make(inner.fn(x))); makerNatives.add(composed); return composed; }
+    return make(a);
+  });
+  makerNatives.add(S.globals[name]);
+}
+for (const name in MAKERS) defineMaker(name, MAKERS[name]);
+S.rules = { Rule, toRule, parse, findAll, replaceAll };
+})(typeof window !== "undefined" ? window : globalThis);
+````
+
 ## examples/recipes.sp
 
 Recipes: quicksort, primes, FizzBuzz, a vector with its own + (prints; not a game)
@@ -7245,13 +7446,14 @@ body.t-out #out{display:block}body.t-st #st{display:block}
 <div id="modal"><div id="mBox"><div class="mh"><h2 id="mTitle"></h2><button class="x" data-close aria-label="Close">✕</button></div><div id="mBody"></div></div></div>
 <div id="toast"></div><div id="scrubTip"></div>
 
-<script src="sprout3.js?v=20261120p"></script>
-<script src="words.js?v=20261120p"></script>
-<script src="kernels.js?v=20261120p"></script>
-<script src="live3.js?v=20261120p"></script>
-<script src="sqlite-web.js?v=20261120p"></script>
-<script src="gpu-paint.js?v=20261120p"></script>
-<script src="gpu-spork.js?v=20261120p"></script>
+<script src="sprout3.js?v=20261120q"></script>
+<script src="words.js?v=20261120q"></script>
+<script src="parse.js?v=20261120q"></script>
+<script src="kernels.js?v=20261120q"></script>
+<script src="live3.js?v=20261120q"></script>
+<script src="sqlite-web.js?v=20261120q"></script>
+<script src="gpu-paint.js?v=20261120q"></script>
+<script src="gpu-spork.js?v=20261120q"></script>
 <script>
 "use strict";
 const V="20261120m";
@@ -7763,13 +7965,14 @@ tr:last-child td{border-bottom:0}
 <div class="card"><table id="t-sql"><tr><th>work</th><th>ms</th><th>rows</th></tr></table></div>
 </main>
 
-<script src="sprout3.js?v=20261120p"></script>
-<script src="words.js?v=20261120p"></script>
-<script src="kernels.js?v=20261120p"></script>
-<script src="live3.js?v=20261120p"></script>
-<script src="gpu-paint.js?v=20261120p"></script>
-<script src="sqlite-web.js?v=20261120p"></script>
-<script src="gpu-spork.js?v=20261120p"></script>
+<script src="sprout3.js?v=20261120q"></script>
+<script src="words.js?v=20261120q"></script>
+<script src="parse.js?v=20261120q"></script>
+<script src="kernels.js?v=20261120q"></script>
+<script src="live3.js?v=20261120q"></script>
+<script src="gpu-paint.js?v=20261120q"></script>
+<script src="sqlite-web.js?v=20261120q"></script>
+<script src="gpu-spork.js?v=20261120q"></script>
 <script>
 "use strict";
 const $=id=>document.getElementById(id),S=window.Sprout3,L=window.Sprout3Live;
@@ -7798,7 +8001,7 @@ async function benchLang(){
 const GAMES=["galaxy","sprout","fireflies","orbit","hop","life","bounce","snake","breakout","particles","ace-board","ace-site","ace-crews"];
 async function benchGames(){
  for(const name of GAMES){status("games: "+name);await sleep(10);
-  const src=await (await fetch("examples/"+name+".sp?v=20261120p")).text();const g=L.makeGame(src,{W:GW,H:GH});
+  const src=await (await fetch("examples/"+name+".sp?v=20261120q")).text();const g=L.makeGame(src,{W:GW,H:GH});
   const play=n=>{for(let t=0;t<n;t++){if(t%50===0)g.down(100+(t%160),300);if(t%50===25)g.up();g.tick(1/60);g.draw()}};
   play(240);const [t]=best(()=>play(120),5);row("t-games",[name,ms(t/120),String(g.draw().length)])}}
 
@@ -7830,7 +8033,7 @@ async function benchParticles(){
 // ---------- SQLite
 async function benchSql(){
  status("SQLite: loading");
- await new Promise((ok,no)=>{const s=document.createElement("script");s.src="vendor/sqljs/sql-wasm.js?v=20261120p";s.onload=ok;s.onerror=no;document.head.appendChild(s)});
+ await new Promise((ok,no)=>{const s=document.createElement("script");s.src="vendor/sqljs/sql-wasm.js?v=20261120q";s.onload=ok;s.onerror=no;document.head.appendChild(s)});
  const db=await SproutSqlite.openSqlite({base:"vendor/sqljs/",name:"sprout3-bench",fresh:true});S.globals.db=db;const raw=db.raw();
  const N=10000;
  const [ti]=best(()=>{raw.run("drop table if exists t");raw.run("create table t (id integer primary key, zone integer, hours real, name text)");raw.run("begin");
@@ -7849,7 +8052,7 @@ async function benchSql(){
 
 // ---------- Monte Carlo: the ace-risk run, five ways
 async function benchMonteCarlo(){
- const src=(await (await fetch("examples/ace-risk.sp?v=20261120p")).text()).split("\nresults :")[0];
+ const src=(await (await fetch("examples/ace-risk.sp?v=20261120q")).text()).split("\nresults :")[0];
  const c=S.load(src+"\nA : [k | range k spork one-run]\nB : [k | range k collect one-run]"),A=c.field("A"),B=c.field("B");
  // the kernel itself, to hand straight to the GPU
  let K=null;S.sporkWays({gpu:k=>{K=k;return undefined}});A.run(16);S.sporkWays({gpu:null});

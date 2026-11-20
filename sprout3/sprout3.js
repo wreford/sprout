@@ -433,6 +433,7 @@ class CodeGen {
       if (item.type === "bind") {
         const js = jsName(item.name), isCell = item.value.terms.length === 1 && item.value.terms[0].type === "cell";
         const ast = isCell ? item.value.terms[0] : null;
+        if (isCell && mentions(ast, new Set([item.name]))) ast.selfReferencing = true;
         if (isCell) frame.names.set(item.name, { type: "js", js, cell: true, ast, value: item.value }); // a cell can use its own name (decision 25)
         const valueCode = isCell ? this.genCell(item.value.terms[0], true) : this.genChain(item.value);
         frame.names.set(item.name, { type: "js", js, cell: isCell, ast, value: item.value });
@@ -463,14 +464,15 @@ class CodeGen {
   }
 
   genCell(cell, ownerOfLeft) {
-    if (isFieldsOnly(cell) && cell.items.every(input => isSimpleValue(input.value))) {
+    // a cell that names itself is always lazy, so it can hold itself (a grammar rule like digits : [digit, maybe digits])
+    if (!cell.selfReferencing && isFieldsOnly(cell) && cell.items.every(input => isSimpleValue(input.value))) {
       // the fields can't use each other here, but they are still the likeliest names a typo meant
       this.hintNames = (this.hintNames || []).concat([cell.items.map(input => input.name)]);
       const vals = cell.items.map(input => this.genChain(input.value));
       this.hintNames.pop();
       return "makeRecord(" + this.shapeConstant(cell.items.map(input => input.name)) + ",[" + vals.join(",") + "])";
     }
-    if (isSimpleList(cell) && cell.items.length > 1)
+    if (!cell.selfReferencing && isSimpleList(cell) && cell.items.length > 1)
       return "makeList([" + cell.items.map(input => this.genChain(input)).join(",") + "])";
     const shapeNumber = this.shapes.length;
     const shape = { id: shapeNumber, names: cell.names.map(input => input.name), fieldIndex: Object.create(null), partIndex: [], usesIt: false, usesLeft: false, itemCount: cell.items.length, src: sourceKey(cell) };
@@ -507,6 +509,7 @@ class CodeGen {
         if (item.type === "bind") {
           const isCell = item.value.terms.length === 1 && item.value.terms[0].type === "cell";
           const ast = isCell ? item.value.terms[0] : null;
+          if (isCell && mentions(ast, new Set([item.name]))) ast.selfReferencing = true;
           if (isCell) frame.names.set(item.name, { type: "slot", activation, i, cell: true, ast, value: item.value });
           const slotCode = this.arrowCode("", () => isCell ? this.genCell(item.value.terms[0], true) : this.genChain(item.value));
           frame.names.set(item.name, { type: "slot", activation, i, cell: isCell, ast, value: item.value });
@@ -540,7 +543,14 @@ function isFieldsOnly(cell) {
   const bad = w => names.has(w) || w === "_" || w === "left" || w === "right";
   const walk = n => {
     if (!ok || !n || typeof n !== "object") return;
-    if (n.type === "chain") { n.terms.forEach((t, i) => { if (t.type === "word") { if (i === 0 && bad(t.value)) ok = false; else if (i > 0 && (t.value === "_" || t.value === "left" || t.value === "right")) ok = false; } else walk(t); }); return; }
+    if (n.type === "chain") {
+      n.terms.forEach((t, i) => {
+        // a word is a value (not a message) first in a chain and right after an operator, so there it may name a sibling
+        const isValue = i === 0 || (n.terms[i - 1].type === "word" && (FUSED_OPERATORS.has(n.terms[i - 1].value) || LAZY_OPERATORS.has(n.terms[i - 1].value)));
+        if (t.type === "word") { if (isValue && bad(t.value)) ok = false; else if (i > 0 && (t.value === "_" || t.value === "left" || t.value === "right")) ok = false; } else walk(t);
+      });
+      return;
+    }
     if (n.type === "word") { if (bad(n.value)) ok = false; return; }
     for (const key in n) { const v = n[key]; if (Array.isArray(v)) v.forEach(walk); else if (v && typeof v === "object") walk(v); }
   };
@@ -578,7 +588,7 @@ function isSimpleValue(chain) {
 }
 // [a, b, c] whose parts are all simple: built straight away as a cell of values
 function isSimpleList(cell) { return !cell.names.length && cell.items.length > 0 && cell.items.every(item => item.type === "chain" && isSimpleValue(item)); }
-const COMPILER_NOTE_KEYS = new Set(["line", "kern", "bindName", "sporkArg", "spkUses"]);
+const COMPILER_NOTE_KEYS = new Set(["line", "kern", "bindName", "sporkArg", "spkUses", "selfReferencing"]);
 // a hidden name's number is left out, so the same code always has the same key
 function sourceKey(cell) { return JSON.stringify(cell, (key, value) => COMPILER_NOTE_KEYS.has(key) ? undefined : typeof value === "string" && /^\[unpacked \d+\]$/.test(value) ? "[unpacked]" : value); }
 
@@ -587,7 +597,8 @@ function compile(src, globals) {
   const gen = new CodeGen(globals);
   if (LIBRARIES.prescan) LIBRARIES.prescan(gen, ast);
   gen.tempScopes.push([]);
-  const code = gen.genCell({ type: "cell", names: [], items: ast });
+  // a program runs its lines in order, each seeing the names above it, so it never takes the shortcut a record of values does
+  const code = gen.genCell({ type: "cell", names: [], items: ast, selfReferencing: true });
   const topTemps = gen.tempScopes.pop();
   // each body is compiled more than once (to run, and to read fields), so its speedNotes note is kept once
   const seenNotes = new Set(), speedNotes = gen.speedNotes.filter(note => { const key = note.line + " " + note.word + " " + note.fast; if (seenNotes.has(key)) return false; seenNotes.add(key); return true; });
@@ -1201,6 +1212,7 @@ if (typeof module !== "undefined") {
   // (SPROUT3_CORE_ONLY=1 runs without it, to check the core alone gives the same answers)
   // the standard words always come along (decision 99)
   require("./words.js");
+  require("./parse.js");
   if (!process.env.SPROUT3_CORE_ONLY) try { require("./kernels.js"); } catch (e) { if (e.code !== "MODULE_NOT_FOUND") throw e; }
 } else root.Sprout3 = api;
 })(typeof window !== "undefined" ? window : globalThis);
