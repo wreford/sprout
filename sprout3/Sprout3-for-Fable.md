@@ -20,13 +20,14 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - An atom has two links: `requires` (what must finish first) and `contains` (its children).
   - "Done" is derived from the graph, never stored.
   - There are five kinds: trivial, leaf, verified, gate and rollup.
-- **The ACE examples are six Sprout programs:**
+- **The ACE examples are seven Sprout programs:**
   - `ace-derive.sp`: derive to a fixed point, with narrative-required atoms.
   - `ace-schedule.sp`: critical path, seeded Monte Carlo, and cost with earned value.
   - `ace-board.sp`: an interactive atom graph, where an inspection's write-up can add rework to the graph.
   - `ace-morning.sp`: the morning question: which constraints, killed today, release the most work?
   - `ace-site.sp`: positions as expressions, with every rule a constraint.
   - `ace-crews.sp`: sequence and capacity constraints.
+  - `ace-ledger.sp`: the atoms live in SQLite; each run closes the first workable atom and writes it to an event log.
 - **Style:** kebab-case names, straight quotes, `--` for comments, no em dashes.
 
 ## Recent work (19 and 20 November 2026)
@@ -40,6 +41,8 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **Speed notes (decision 86):** the editor-side lint for slow paths. Each `collect`, `keep` and `each` is marked as running over columns or item by item, with the reason.
   - **`noise [sample, id]` (decision 87):** step 4 of the speed roadmap. It is pure, so it needs nothing recorded for replay and runs inside column loops.
   - **A compiler fix:** `and` and `or` no longer treat the call on their right as a tail call.
+  - **Fold loops (decision 88):** a `fold` block of number maths runs as one plain loop over `range` or a list of numbers. Summing to 1,000,000 is now level with plain JS.
+  - **Direct host calls (decision 89):** a column `each` gives a host word its values one by one, with no argument cell per shape.
 - **ACE:**
   - **Narrative:** a `narrative-required` atom isn't done until it's written up. On the board, the write-up is structure: an inspection that finds rework or an NCR adds atoms that the pour then waits for.
   - **The morning question:** open constraints ranked by the hours of work each would release, plus the pairs that only release work together.
@@ -52,7 +55,10 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - a now-playing bar whose progress bar rewinds time
   - number dragging in the code: Alt-drag on desktop, or Tweak on a phone
   - speed bars in the gutter, and a list of loops in the State tab
-- **Tests:** 158 pass, 88 for the language and 70 for the games.
+  - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
+  - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
+  - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
+- **Tests:** 169 pass, 96 for the language and 73 for the games.
 
 ## Open questions for Troy
 
@@ -69,18 +75,20 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 **Run it (Node 22 or later):**
 
 ```
-node test.js          # language tests (88)
-node game-tests.js    # game tests (70)
+node test.js          # language tests (96)
+node game-tests.js    # game tests (73)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 158 tests pass as of 19 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected.
+The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
+
+All 169 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected.
 
 ## How to work on it
 
-- **The spec is the source of truth.** The section "Design decisions not yet built" (decisions 1 to 81) defines Sprout 3, despite its name: almost all of it is now built. Later decisions override earlier ones and say so. Sections 1 to 15 at the top of the spec describe the older Sprout 2.0 / Sprout Live baseline and are kept for history only.
+- **The spec is the source of truth.** The section "Design decisions not yet built" (decisions 1 to 90) defines Sprout 3, despite its name: almost all of it is now built. Later decisions override earlier ones and say so. Sections 1 to 15 at the top of the spec describe the older Sprout 2.0 / Sprout Live baseline and are kept for history only.
 - **Language changes go to Troy first.** Talk any change to syntax or semantics through with him before building it, and ask one question at a time. Library-level choices (cells in the prelude, host cells, internals) are yours to make; record them in the spec (decision 80).
 - **Don't rewrite example programs or files unless asked.**
 - **Keep it streamable.** The tokenizer and parser work in one pass with no look-ahead across the file. Warn if a change would break that.
@@ -97,6 +105,8 @@ All 158 tests pass as of 19 November 2026. `test.js` uses `node:sqlite`, which p
   - Field reads and `with` use inline caches keyed on record shape.
   - Calls in tail position bounce, so recursion stays flat.
   - Lists of number records are stored as columns, and simple `collect`, `keep` and `each` bodies run as loops over the columns (decision 82).
+  - A `fold` block of number maths runs as one plain loop over `range` or a list of numbers (decision 88).
+  - In a column `each`, host words take their values one by one, with no argument cell per shape (decision 89).
 - **Runtime values:** `Cell` (from a literal, lazy), `VCell` (a cell of values: shape plus value array), `RCell` (a lazy `range`), `ColCell` (a list of number records stored as one number array per field), `Native` (a host word), `Waiting` (a prototype method waiting for its right side). `false` is the only falsy value.
 - **Prelude:** a short Sprout program inside `sprout3.js` defines `match`, `cond`, `take`, `rgb`, `rgba`, `every`, `wave` and `frame` in Sprout itself.
 - **`live3.js`, the game loop.** A game file binds `start`, `update` and `draw`. Events (`down`, `move`, `up`, `tick`) fold through `frame update`. Effects are queued during `update` and carried out after it. Random numbers are recorded per tick, so `replayFrom` is exact. Rewind is a list of states, since cells never change. Hot-swap keeps live values whose starting value didn't change.
@@ -112,15 +122,19 @@ All 158 tests pass as of 19 November 2026. `test.js` uses `node:sqlite`, which p
    - files and folders as cells (decisions 63 to 66)
    - extending built-ins by shadowing (40)
    - spork (47)
+   - (built since: SQLite and WebGPU on the page, decision 90)
    - automatic purity detection (32)
+   - (built since: the editor-side lint that flags slow paths, decision 86)
    - (built since: the editor-side lint that flags slow paths, decision 86)
 3. **Known rough edges:**
    - The `else` catch: a then-branch that gives `false` also runs the `else` (74). `match` and `cond` no longer fall through on a `false` answer (84).
    - Field/name clash lints fire on the common `update` pattern; rename the local (73).
    - A cell can't have a field whose name is worked out at run time, so the host passes held keys in on each tick.
 4. **Current speed:**
-   - Games use 0.005 to 0.03 ms a frame. 2,000 particles went from about 1.45 to 0.28 ms a frame with columns (decision 82).
-   - fib 25 takes about 2.2 ms, against 1.0 for plain JS; sum to 1,000,000 about 3 ms; 10,000 records times 20 updates went from about 11 to 1.4 ms with columns, which is faster than the plain JS version of the same work.
+   - Games use 0.007 to 0.27 ms a frame (headless Chromium; `bench.html`). 2,000 particles went from about 1.45 to 0.28 ms a frame with columns (decision 82).
+   - In the browser: fib 25 takes about 1.8 ms, against 0.9 for plain JS; summing 1 to 1,000,000 with `fold` about 0.8 ms, level with plain JS (decision 88); 10,000 records times 20 updates about 3 ms, against 7 for plain JS.
+   - 100,000 particles: about 5 ms to update and 5 to 7 ms to build the draw list. Canvas 2D takes 180 ms to draw them; WebGPU takes about 4 ms of CPU to build and submit the frame.
+   - SQLite: 10,000 rows into Sprout records with `db query` in about 11 ms.
    - Compiling `sprout.sp` takes about 4 ms.
 
 ## Contents
@@ -129,6 +143,8 @@ All 158 tests pass as of 19 November 2026. `test.js` uses `node:sqlite`, which p
 - `sprout3.js`: Compiler (Sprout to JavaScript) and runtime
 - `live3.js`: Game layer: event loop, queued effects, recorded randomness, rewind, replay, hot-swap
 - `sqlite-host.js`: SQLite host cell (Node built-in node:sqlite)
+- `sqlite-web.js`: SQLite host cell for the browser: sql.js (SQLite in WebAssembly), kept in IndexedDB; same query and run as sqlite-host.js
+- `gpu-paint.js`: WebGPU renderer for the page: every shape in a frame as one instanced draw, with a self-test before use
 - `test.js`: Language tests, one or more per decision
 - `game-tests.js`: Headless game tests
 - `bench.js`: Benchmarks against the old Sprout 2.0 compiler and plain JS
@@ -152,8 +168,10 @@ All 158 tests pass as of 19 November 2026. `test.js` uses `node:sqlite`, which p
 - `examples/ace-site.sp`: ACE: positions are expressions over named dimensions, and overlaps are clashes
 - `examples/ace-crews.sp`: ACE: sequence and capacity constraints; work waits for what it requires and for a free crew of its trade
 - `examples/ace-morning.sp`: ACE: the morning question; open constraints ranked by the hours of work each would release (prints)
+- `examples/ace-ledger.sp`: ACE: the atoms live in SQLite; each run closes the first workable atom and logs it (prints; uses db)
 - `examples/recipes.sp`: Recipes: quicksort, primes, FizzBuzz, a vector with its own + (prints; not a game)
 - `index.html`: The web page at taskiap.com/sprout3/: a library of examples with artwork, the running game shown like album art, live editing, a now-playing bar whose progress bar rewinds time, state, output and the spec; light and dark
+- `bench.html`: Benchmarks in the browser: the language against plain JS, the games, particles up to 100,000 on Canvas 2D and WebGPU, and SQLite
 - `old-sprout2.js`: The old Sprout 2.0 compiler, kept only so bench.js can compare against it
 
 ---
@@ -766,6 +784,9 @@ These are marked in `sprout2.js` with "Sprout Live fix N" or "Sprout Live additi
 85. **Typos get a suggestion (built; Claude's call).** An unknown word's note names the nearest name in scope or built-in, as in `"cuont" isn't a word Sprout knows yet (did you mean "count"?)`. A missing field's note names the nearest field of that cell: `doesn't know sped (did you mean speed?)`. "Nearest" means at most 1 edit for names of 4 letters or fewer, and 2 for longer ones. A swap of two neighbouring letters counts as 1 edit. When two names are equally near, there is no suggestion.
 86. **Speed notes (built; Claude's call, the editor-side lint for slow paths).** The compiler notes, for every `collect`, `keep` and `each` given a cell literal, whether its body can run over columns (decision 82), and if not, why: for example "it calls near for each item", "it works with words, not numbers" or "the body has more than one step". `load` puts the notes on the file cell as `speed`, and a game exposes them as `game speed`. The page shows a thin bar in the code's gutter, green when a loop can run over columns and amber when it runs item by item, and lists every loop with its reason in the State tab. Running item by item is fine for short lists, so the notes are information, not warnings.
 87. **`noise [sample, id]` (built; step 4 of decision 79).** It gives a number from 0 up to 1, always the same for the same two inputs: a 32-bit hash of both, whole and fractional parts. It is pure, so it isn't recorded for replay (decision 54) and can run inside a column loop (decision 82). `ace-schedule.sp` uses `noise [run, atom]` instead of `random`, so a graph and a seed always give the same Monte Carlo histogram, as ACE's theory asks (7.3).
+88. **`fold` can run as a tight loop (built; Claude's call, from the benchmarks).** A fold block with two named inputs whose body is number maths on them, as in `range n fold [0, [t x | t + (x * x)]]`, gets a loop version: one plain loop with no cell made per step. It is used when the list is `range n` or a list of numbers and the starting value is a number; anything else falls back to the ordinary way, so a program can't tell the difference, and the tests run both ways. Outside names that are numbers, `noise` (decision 87) and the maths words all work inside it; a branch (`... [a] else [b]`) or a call to another cell does not yet. Speed notes (decision 86) cover `fold` too. Summing 100,000 numbers went from 0.81 to 0.15 ms.
+89. **Host words can take their values one by one (built; library, decision 80).** A host word may offer a direct form that takes its values as separate arguments. When an `each` loop over columns (decision 82) calls `circle [s x, s y, 2, "#fc6"]`, it uses the direct form, so no argument cell is made per shape. The program is unchanged. Drawing 10,000 particles went from 0.63 to 0.36 ms a frame; at 100,000 the time is mostly the draw list itself, about 5 ms either way.
+90. **The page has SQLite and WebGPU (built; Claude's call).** In the browser, `db` (decision 78) is SQLite compiled to WebAssembly (sql.js, MIT, in `vendor/sqljs`), with the same `query` and `run` as Node's `node:sqlite`. The database is kept in the browser (IndexedDB) and saved shortly after each write. The State tab lists its tables and can clear it. It is loaded only when a program uses `db`. The game view can draw with WebGPU: every shape in a frame goes to the GPU as one instanced draw, with text on a 2D layer above it. It is used only when the browser offers WebGPU, a test scene reads back correctly, and the frames actually show; otherwise the page uses Canvas 2D, and a pill in the bar switches between them. `bench.html` times the language, the games, particles up to 100,000 on both renderers, and SQLite.
 ````
 
 ---
@@ -1065,8 +1086,10 @@ class Gen {
       } else v = (tail && isLast ? "TAIL(" : "SEND(") + v + "," + this.genTerm(t, false) + ")";
       // speed notes: can this collect, keep or each run over columns? (decision 86)
       const pw = T[i - 1];
-      if (t.k === "cell" && t.names.length && pw && pw.k === "word" && SPEEDW[pw.v] && t.kern) {
-        const r = t.kern[SPEEDW[pw.v]];
+      const inner = pw && pw.k === "word" && pw.v === "fold" && t.k === "cell" && t.items[1] && t.items[1].k === "chain" && t.items[1].terms.length === 1 && t.items[1].terms[0].k === "cell" ? t.items[1].terms[0] : null;
+      const tgt = inner || t;
+      if (tgt.k === "cell" && tgt.names.length && pw && pw.k === "word" && SPEEDW[pw.v] && tgt.kern) {
+        const r = tgt.kern[SPEEDW[pw.v]];
         this.speed.push({ line: pw.line || 0, word: pw.v, fast: r === true, why: r === true ? "" : r });
       }
     }
@@ -1197,8 +1220,9 @@ class Gen {
     if (takes || !caps) { const rc = [...runFr.caps.values()].map(r => this.refJS(r)); caps = caps ? [...new Set(caps.concat(rc))] : rc; }
     const runJS = "(" + [act + "_L", act + "_it"].concat(nparams).join(",") + ")=>{" + runBody + "}";
     // column versions of this cell's body, used when it is given a list stored as columns (decision 82)
-    const kern = c.names.length === 1 && !c.names[0].def && !sh.usesIt && !sh.usesLeft && c.items.length === 1 && c.items[0].k === "chain" ? this.genKernels(c) : null;
-    if (!c.kern) { const why = c.items.length !== 1 || c.items[0].k !== "chain" ? "the body has more than one step" : c.names.length !== 1 ? "it doesn't take exactly one named input" : "it uses _ or left"; c.kern = { m: why, t: why, e: why }; }
+    const simpleBody = !sh.usesIt && !sh.usesLeft && c.items.length === 1 && c.items[0].k === "chain" && c.names.every(x => !x.def);
+    const kern = simpleBody && c.names.length === 1 ? this.genKernels(c) : simpleBody && c.names.length === 2 ? this.genFoldKernel(c) : null;
+    if (!c.kern) { const why = c.items.length !== 1 || c.items[0].k !== "chain" ? "the body has more than one step" : c.names.length !== 1 ? "it doesn't take exactly one named input" : "it uses _ or left"; c.kern = { m: why, t: why, e: why, f: c.names.length === 2 ? why : "fold runs as a tight loop only with two inputs, as in [total x | ...]" }; }
     return "MK(S[" + k + "]," + slotsJS + "," + runJS + ",[" + defs.join(",") + "],()=>[" + caps.join(",") + "]" + (kern ? "," + kern : "") + ")";
   }
 
@@ -1210,7 +1234,7 @@ class Gen {
   genKernels(c) {
     const p = c.names[0].n, T = c.items[0].terms, out = [];
     const fresh = () => ({ p, cols: new Map(), caps: new Map(), why: null });
-    const kern = c.kern = { m: "collect runs over columns only as " + p + " with [new fields]", t: "the body doesn't give true or false", e: "the body isn't one host word given a list of values" };
+    const kern = c.kern = { f: "fold runs as a tight loop only with two inputs, as in [total x | ...]", m: "collect runs over columns only as " + p + " with [new fields]", t: "the body doesn't give true or false", e: "the body isn't one host word given a list of values" };
     // m: s with [fields]
     if (T.length === 3 && T[0].k === "word" && T[0].v === p && T[1].k === "word" && (T[1].v === "with" || T[1].v === "..") && !this.lookup(T[1].v) && T[2].k === "cell" && fieldsOnly(T[2])) {
       const K = fresh(), keys = T[2].items.map(x => x.name), vals = T[2].items.map(x => this.kChain(x.val, K));
@@ -1241,9 +1265,20 @@ class Gen {
       });
       kern.e = args && args.every(a => a) ? true : K.why || "an argument isn't a number, a word in quotes or a name from outside";
       if (args && args.every(a => a))
-        out.push("e:(self,rs,cols,n)=>{" + kPro(K) + "if(!(" + F + " instanceof NATIVE))return null;const $f=" + F + ".fn;for(let $i=0;$i<n;$i++)$f(VP([" + args.join(",") + "]));return true}");
+        out.push("e:(self,rs,cols,n)=>{" + kPro(K) + "if(!(" + F + " instanceof NATIVE))return null;const $f=" + F + ".fn,$d=" + F + ".direct;" +
+          "if($d&&$d.length===" + args.length + "){for(let $i=0;$i<n;$i++)$d(" + args.join(",") + ")}else{for(let $i=0;$i<n;$i++)$f(VP([" + args.join(",") + "]))}return true}");
     }
     return out.length ? "{" + out.join(",") + "}" : null;
+  }
+  // f: [total x | number maths on total and x], used by fold over range or a list of numbers: one tight loop, no calls
+  genFoldKernel(c) {
+    const K = { p: null, cols: new Map(), caps: new Map(), why: null, vars: new Map([[c.names[0].n, "$a"], [c.names[1].n, "$x"]]) };
+    const v = this.kChain(c.items[0], K);
+    c.kern = { f: v && v.ty === "n" ? true : K.why || "the body isn't number maths", m: "it takes two inputs", t: "it takes two inputs", e: "it takes two inputs" };
+    if (c.kern.f !== true) return null;
+    return "{f:(acc,xs,rng)=>{" + kPro(K) + "if(typeof acc!==\"number\")return null;let $a=acc;" +
+      "if(rng){const $n=xs.n;for(let $i=1;$i<=$n;$i++){const $x=$i;$a=" + v.js + "}return $a}" +
+      "const $p=xs.parts;for(let $i=0;$i<$p.length;$i++){const $x=$p[$i];if(typeof $x!==\"number\")return null;$a=" + v.js + "}return $a}}";
   }
   // a chain as number maths on the item's fields: {js, ty} with ty "n" (number) or "b" (true/false), or null if it can't be
   kChain(ch, K) {
@@ -1281,6 +1316,7 @@ class Gen {
   }
   kTerm(t, K) {
     if (t.k === "num") return { js: "(" + t.v + ")", ty: "n" };
+    if (t.k === "word" && K.vars && K.vars.has(t.v)) return { js: K.vars.get(t.v), ty: "n" };
     if (t.k === "group") { if (t.items.length !== 1 || t.items[0].k !== "chain") return kNo(K, "it has a group of several steps"); const v = this.kChain(t.items[0], K); return v && { js: "(" + v.js + ")", ty: v.ty }; }
     if (t.k !== "word") return kNo(K, t.k === "str" || t.k === "tmpl" ? "it works with words, not numbers" : "it calls something for each item");
     if (t.v === "true" || t.v === "false") return { js: t.v, ty: "b" };
@@ -1302,7 +1338,7 @@ class Gen {
     return e.v;
   }
 }
-const SPEEDW = { collect: "m", keep: "t", each: "e" };
+const SPEEDW = { collect: "m", keep: "t", each: "e", fold: "f" };
 const KOPS = { "+": ["+", "n"], "-": ["-", "n"], "*": ["*", "n"], "/": ["/", "n"], "%": ["%", "n"], "<": ["<", "b"], ">": [">", "b"], "<=": ["<=", "b"], ">=": [">=", "b"], "=": ["===", "b"], "!=": ["!==", "b"] };
 const KPOST = { abs: "Math.abs", floor: "Math.floor", round: "Math.round", ceil: "Math.ceil", sqrt: "Math.sqrt", sin: "Math.sin", cos: "Math.cos", tan: "Math.tan", log: "Math.log", neg: "-" };
 // a kernel can't be made: remember the first reason, for the speed notes (decision 86)
@@ -1747,6 +1783,9 @@ function keep(xs, f) {
 function fold(xs, arg) {
   if (!isCell(arg)) return MISSING(arg, "fold");
   let acc = arg.part(1); const f = arg.part(2);
+  if (COLMIN !== Infinity && f instanceof Cell && f.kn && f.kn.f && (xs instanceof RCell || (xs instanceof VCell && !(xs instanceof ColCell) && xs.fs === ROOT))) {
+    const r = f.kn.f(acc, xs, xs instanceof RCell); if (r !== null) return r;
+  }
   if (f instanceof Cell && f.sh.names.length === 2) {
     const run = f.runF, L = f.left;
     if (xs instanceof RCell) { for (let i = 1; i <= xs.n; i++) acc = UNB(run(L, false, acc, i)); return acc; }
@@ -1893,7 +1932,13 @@ function makeGame(src, opts) {
   const argsOf = (a, n) => n === 1 ? [a] : (isCell(a) ? S.partsOf(a) : [a]);
   // host words: drawing happens in draw; sound and shake are effects, queued during update
   const host = { W: opts.W || 360, H: opts.H || 480 };
-  for (const name in DRAW) host[name] = new Native(name, a => { draws.push([name, argsOf(a, DRAW[name])]); return false; }, true);
+  for (const name in DRAW) {
+    host[name] = new Native(name, a => { draws.push([name, argsOf(a, DRAW[name])]); return false; }, true);
+    // the same word with its values given one by one, for column loops: no argument cell per shape
+    const n = DRAW[name];
+    host[name].direct = n === 1 ? (a) => { draws.push([name, [a]]); return false; } : n === 4 ? (a, b, c, d) => { draws.push([name, [a, b, c, d]]); return false; }
+      : (a, b, c, d, e) => { draws.push([name, [a, b, c, d, e]]); return false; };
+  }
   for (const name in SOUND) host[name] = new Native(name, a => S.effect(() => opts.onEffect && opts.onEffect([name, argsOf(a, SOUND[name])])), true);
   Object.assign(host, opts.host || {});
   if (opts.onPrint) S.setOut(opts.onPrint);
@@ -1985,6 +2030,265 @@ function sqliteCell(path) {
 module.exports = { sqliteCell };
 ````
 
+## sqlite-web.js
+
+SQLite host cell for the browser: sql.js (SQLite in WebAssembly), kept in IndexedDB; same query and run as sqlite-host.js
+
+````js
+// SQLite in the browser as a host cell (decision 78), using sql.js (SQLite compiled to WebAssembly, in vendor/sqljs).
+// It is the same cell sqlite-host.js gives Node: reads come back straight away as a cell of records;
+// writes are effects, so inside update they are queued, carried out after it, and dropped on replay (decision 33).
+//   db query "select * from atoms"
+//   db query ["select * from atoms where zone = ?", [3]]
+//   db run ["insert into log values (?, ?)", [t, msg]]
+// The database is kept in this browser (IndexedDB), saved shortly after each write.
+(function (root) {
+"use strict";
+const S = root.Sprout3;
+const IDB = "sprout3-sqlite", STORE = "files";
+
+function idb() {
+  return new Promise((ok, no) => {
+    const r = indexedDB.open(IDB, 1);
+    r.onupgradeneeded = () => r.result.createObjectStore(STORE);
+    r.onsuccess = () => ok(r.result); r.onerror = () => no(r.error);
+  });
+}
+async function loadBytes(name) {
+  try { const d = await idb(); return await new Promise(ok => { const t = d.transaction(STORE).objectStore(STORE).get(name); t.onsuccess = () => ok(t.result || null); t.onerror = () => ok(null); }); }
+  catch (e) { return null; }
+}
+async function saveBytes(name, bytes) {
+  try { const d = await idb(); await new Promise(ok => { const t = d.transaction(STORE, "readwrite"); if (bytes) t.objectStore(STORE).put(bytes, name); else t.objectStore(STORE).delete(name); t.oncomplete = ok; t.onerror = ok; }); }
+  catch (e) {}
+}
+
+// SQL values into Sprout values: there is no null in Sprout, so null is false (decision 21)
+const fromSql = v => v === null || v === undefined ? false : v instanceof Uint8Array ? "[" + v.length + " bytes]" : v;
+// Sprout values into SQL values: true and false are 1 and 0, anything else that isn't a number or text is its printed form
+const toSql = v => v === true ? 1 : v === false ? 0 : typeof v === "number" || typeof v === "string" ? v : S.fmt(v);
+// the argument of query and run: "sql", or ["sql", [params]]
+function split(a) {
+  if (typeof a === "string") return [a, []];
+  if (!S.isCell(a)) return [String(a), []];
+  const ps = a.part(2);
+  return [String(a.part(1)), S.isCell(ps) ? S.partsOf(ps).map(toSql) : []];
+}
+
+let SQLP = null;
+function sqljs(base) { return SQLP || (SQLP = root.initSqlJs({ locateFile: f => base + f })); }
+
+async function openSqlite(opts) {
+  opts = opts || {};
+  const SQL = await sqljs(opts.base || "vendor/sqljs/");
+  const name = opts.name || "sprout3";
+  const bytes = opts.fresh ? null : await loadBytes(name);
+  let db = bytes ? new SQL.Database(bytes) : new SQL.Database();
+  let saveT = 0, writes = 0;
+  const save = () => { clearTimeout(saveT); saveT = setTimeout(() => saveBytes(name, db.export()), 300); };
+
+  // every row of one query shares one field shape, so the records are cheap to make and to read
+  const query = new S.Native("query", a => {
+    const [sql, ps] = split(a), st = db.prepare(sql), out = [];
+    try {
+      st.bind(ps); let keys = null;
+      while (st.step()) { if (!keys) keys = st.getColumnNames(); const vals = st.get(); out.push(S.VFM([], new Map(keys.map((k, i) => [k, fromSql(vals[i])])))); }
+    } finally { st.free(); }
+    return new S.VCell(out);
+  });
+  const run = new S.Native("run", a => {
+    const [sql, ps] = split(a);
+    return S.effect(() => { db.run(sql, ps); writes++; save(); if (opts.onWrite) opts.onWrite(sql); });
+  }, true);
+
+  const cell = S.VFM([], new Map([["query", query], ["run", run]]));
+  cell.raw = () => db;
+  cell.writes = () => writes;
+  // what's in it: each table and how many rows it has
+  cell.tables = () => {
+    const t = db.exec("select name from sqlite_master where type = 'table' and name not like 'sqlite_%' order by name");
+    return t.length ? t[0].values.map(([n]) => [n, db.exec("select count(*) from \"" + String(n).replace(/"/g, '""') + "\"")[0].values[0][0]]) : [];
+  };
+  // start again with an empty database
+  cell.clear = async () => { clearTimeout(saveT); db.close(); db = new SQL.Database(); await saveBytes(name, null); };
+  return cell;
+}
+
+root.SproutSqlite = { openSqlite, fromSql, toSql };
+})(typeof window !== "undefined" ? window : globalThis);
+````
+
+## gpu-paint.js
+
+WebGPU renderer for the page: every shape in a frame as one instanced draw, with a self-test before use
+
+````js
+// A WebGPU painter for Sprout games. Every circle, rect and line of a frame goes into one instance buffer
+// and is drawn in a single call, in the order the game drew them (later shapes on top).
+// Shapes are smoothed in the fragment shader, so circles and lines have soft edges like Canvas 2D.
+// Text is handed back to the caller, to draw on a 2D canvas laid over the top.
+(function (root) {
+"use strict";
+
+const WGSL = `
+struct U { size : vec2f, scale : f32, pad : f32, shift : vec2f, pad2 : vec2f };
+@group(0) @binding(0) var<uniform> u : U;
+struct VIn { @builtin(vertex_index) vi : u32, @location(0) a : vec4f, @location(1) b : vec4f, @location(2) col : vec4f };
+struct VOut {
+  @builtin(position) pos : vec4f, @location(0) p : vec2f,
+  @location(1) @interpolate(flat) a : vec4f, @location(2) @interpolate(flat) b : vec4f, @location(3) @interpolate(flat) col : vec4f
+};
+// kind 0: rect (a = x1 y1 x2 y2)   kind 1: circle (a = x y r)   kind 2: line (a = x1 y1 x2 y2, b.y = width)
+@vertex fn vs(v : VIn) -> VOut {
+  let c = vec2f(f32(v.vi & 1u), f32(v.vi >> 1u));
+  let edge = 1.0 / u.scale;
+  var p : vec2f;
+  if (v.b.x < 0.5) {
+    p = mix(v.a.xy, v.a.zw, c);
+  } else if (v.b.x < 1.5) {
+    p = v.a.xy + (c * 2.0 - 1.0) * (v.a.z + edge);
+  } else {
+    let d = v.a.zw - v.a.xy; let len = length(d);
+    var dir = vec2f(1.0, 0.0); if (len > 1e-5) { dir = d / len; }
+    let nrm = vec2f(-dir.y, dir.x); let hw = v.b.y * 0.5 + edge;
+    p = v.a.xy - dir * hw + dir * (len + 2.0 * hw) * c.x + nrm * (c.y * 2.0 - 1.0) * hw;
+  }
+  let q = (p + u.shift) * u.scale;
+  var o : VOut;
+  o.pos = vec4f(q.x / u.size.x * 2.0 - 1.0, 1.0 - q.y / u.size.y * 2.0, 0.0, 1.0);
+  o.p = p; o.a = v.a; o.b = v.b; o.col = v.col;
+  return o;
+}
+@fragment fn fs(i : VOut) -> @location(0) vec4f {
+  var cover = 1.0;
+  if (i.b.x > 0.5 && i.b.x < 1.5) {
+    cover = clamp(0.5 - (distance(i.p, i.a.xy) - i.a.z) * u.scale, 0.0, 1.0);
+  } else if (i.b.x > 1.5) {
+    let pa = i.p - i.a.xy; let ba = i.a.zw - i.a.xy;
+    let h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-6), 0.0, 1.0);
+    cover = clamp(0.5 - (length(pa - ba * h) - i.b.y * 0.5) * u.scale, 0.0, 1.0);
+  }
+  let a = i.col.a * cover;
+  if (a <= 0.0) { discard; }
+  return vec4f(i.col.rgb * a, a);
+}`;
+
+// CSS colours to [r, g, b, a] from 0 to 1, worked out once per colour by a 2D canvas
+function colourParser() {
+  const c = document.createElement("canvas").getContext("2d"), cache = new Map();
+  return s => {
+    let v = cache.get(s); if (v) return v;
+    c.fillStyle = "#000"; c.fillStyle = s; const f = c.fillStyle;
+    if (f[0] === "#") v = [parseInt(f.slice(1, 3), 16) / 255, parseInt(f.slice(3, 5), 16) / 255, parseInt(f.slice(5, 7), 16) / 255, 1];
+    else { const m = f.match(/[\d.]+/g) || [0, 0, 0, 1]; v = [m[0] / 255, m[1] / 255, m[2] / 255, m[3] === undefined ? 1 : +m[3]]; }
+    if (cache.size > 4096) cache.clear();
+    cache.set(s, v); return v;
+  };
+}
+
+async function makeGpuPainter(canvas) {
+  if (!root.navigator || !navigator.gpu) return null;
+  const adapter = await navigator.gpu.requestAdapter(); if (!adapter) return null;
+  const device = await adapter.requestDevice();
+  const ctx = canvas.getContext("webgpu"); if (!ctx) return null;
+  const format = navigator.gpu.getPreferredCanvasFormat();
+  ctx.configure({ device, format, alphaMode: "premultiplied" });
+  const module = device.createShaderModule({ code: WGSL });
+  const blend = { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" };
+  const pipeline = device.createRenderPipeline({
+    layout: "auto",
+    vertex: { module, entryPoint: "vs", buffers: [{ arrayStride: 48, stepMode: "instance", attributes: [
+      { shaderLocation: 0, offset: 0, format: "float32x4" }, { shaderLocation: 1, offset: 16, format: "float32x4" }, { shaderLocation: 2, offset: 32, format: "float32x4" }] }] },
+    fragment: { module, entryPoint: "fs", targets: [{ format, blend: { color: blend, alpha: blend } }] },
+    primitive: { topology: "triangle-strip" }
+  });
+  const ubuf = device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+  const bind = device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: ubuf } }] });
+  const colour = colourParser(), uni = new Float32Array(8);
+  let cap = 0, vbuf = null, data = null;
+  const grow = n => { if (n <= cap) return; cap = 1024; while (cap < n) cap *= 2; if (vbuf) vbuf.destroy(); vbuf = device.createBuffer({ size: cap * 48, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST }); data = new Float32Array(cap * 12); };
+  const str = c => typeof c === "string" ? c : String(c);
+  const put = (n, a0, a1, a2, a3, kind, w, col) => { const o = n * 12, k = colour(str(col)); data[o] = a0; data[o + 1] = a1; data[o + 2] = a2; data[o + 3] = a3; data[o + 4] = kind; data[o + 5] = w; data[o + 8] = k[0]; data[o + 9] = k[1]; data[o + 10] = k[2]; data[o + 11] = k[3]; };
+
+  // draw one frame's draw list into a texture of tw by th pixels; gives back the texts, for a 2D canvas on top
+  function encode(list, view, tw, th, gw, gh, sx, sy) {
+    grow(list.length + 1);
+    let n = 0, clear = [0, 0, 0, 1]; const texts = [];
+    for (let i = 0; i < list.length; i++) {
+      const name = list[i][0], a = list[i][1];
+      switch (name) {
+        case "clear": if (n === 0) clear = colour(str(a[0])); else put(n++, 0, 0, gw, gh, 0, 0, a[0]); break;
+        case "rect": put(n++, a[0], a[1], a[0] + a[2], a[1] + a[3], 0, 0, a[4]); break;
+        case "circle": if (a[2] > 0) put(n++, a[0], a[1], a[2], 0, 1, 0, a[3]); break;
+        case "line": put(n++, a[0], a[1], a[2], a[3], 2, 2, a[4]); break;
+        case "text": texts.push(a); break;
+      }
+    }
+    uni[0] = tw; uni[1] = th; uni[2] = tw / gw; uni[4] = sx || 0; uni[5] = sy || 0;
+    device.queue.writeBuffer(ubuf, 0, uni);
+    if (n) device.queue.writeBuffer(vbuf, 0, data, 0, n * 12);
+    const enc = device.createCommandEncoder();
+    const pass = enc.beginRenderPass({ colorAttachments: [{ view, loadOp: "clear", storeOp: "store",
+      clearValue: { r: clear[0] * clear[3], g: clear[1] * clear[3], b: clear[2] * clear[3], a: clear[3] } }] });
+    if (n) { pass.setPipeline(pipeline); pass.setBindGroup(0, bind); pass.setVertexBuffer(0, vbuf); pass.draw(4, n); }
+    pass.end();
+    return { enc, texts };
+  }
+  function paint(list, gw, gh, sx, sy) {
+    const r = encode(list, ctx.getCurrentTexture().createView(), canvas.width, canvas.height, gw, gh, sx, sy);
+    device.queue.submit([r.enc.finish()]);
+    return r.texts;
+  }
+
+  // a self-test before trusting the GPU: draw a known scene off screen and read three pixels back.
+  // Red square on the left, green circle on the right, blue behind. Any error or a wrong pixel, and the page keeps Canvas 2D.
+  async function selfTest() {
+    const W = 32, tex = device.createTexture({ size: [W, W], format, usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC });
+    const r = encode([["clear", ["#0000ff"]], ["rect", [0, 0, 16, 32, "#ff0000"]], ["circle", [24, 16, 6, "#00ff00"]]], tex.createView(), W, W, W, W, 0, 0);
+    const buf = device.createBuffer({ size: 256 * W, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+    r.enc.copyTextureToBuffer({ texture: tex }, { buffer: buf, bytesPerRow: 256 }, [W, W]);
+    device.queue.submit([r.enc.finish()]);
+    const timeout = new Promise((_, no) => setTimeout(() => no(new Error("the GPU didn't answer")), 2000));
+    await Promise.race([buf.mapAsync(GPUMapMode.READ), timeout]);
+    const px = new Uint8Array(buf.getMappedRange()).slice(), bgra = format.startsWith("bgra");
+    buf.unmap(); buf.destroy(); tex.destroy();
+    const at = (x, y) => { const o = y * 256 + x * 4; return bgra ? [px[o + 2], px[o + 1], px[o]] : [px[o], px[o + 1], px[o + 2]]; };
+    const near = (c, want) => c.every((v, i) => Math.abs(v - want[i]) < 40);
+    if (!(near(at(8, 16), [255, 0, 0]) && near(at(24, 16), [0, 255, 0]) && near(at(24, 2), [0, 0, 255]))) throw new Error("the GPU drew the test scene wrong");
+    return true;
+  }
+  // draw a list off screen and read the pixels back as RGBA rows: for tests and benchmarks
+  async function snapshot(list, gw, gh, w, h) {
+    const row = Math.ceil(w * 4 / 256) * 256, tex = device.createTexture({ size: [w, h], format, usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC });
+    const r = encode(list, tex.createView(), w, h, gw, gh, 0, 0), buf = device.createBuffer({ size: row * h, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+    r.enc.copyTextureToBuffer({ texture: tex }, { buffer: buf, bytesPerRow: row }, [w, h]); device.queue.submit([r.enc.finish()]);
+    await buf.mapAsync(GPUMapMode.READ);
+    const raw = new Uint8Array(buf.getMappedRange()), out = new Uint8Array(w * h * 4), bgra = format.startsWith("bgra");
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const i = y * row + x * 4, o = (y * w + x) * 4; out[o] = raw[i + (bgra ? 2 : 0)]; out[o + 1] = raw[i + 1]; out[o + 2] = raw[i + (bgra ? 0 : 2)]; out[o + 3] = raw[i + 3]; }
+    buf.unmap(); buf.destroy(); tex.destroy();
+    return out;
+  }
+  // time k frames drawn off screen: the CPU cost of building and submitting each one, and the total until the GPU has finished them
+  async function timeFrames(list, gw, gh, w, h, k) {
+    const tex = device.createTexture({ size: [w, h], format, usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC }), view = tex.createView();
+    const sync = device.createBuffer({ size: 256, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+    const t0 = performance.now(); let cpu = 0;
+    for (let i = 0; i < k; i++) { const c0 = performance.now(); const r = encode(list, view, w, h, gw, gh, 0, 0); device.queue.submit([r.enc.finish()]); cpu += performance.now() - c0; }
+    const e = device.createCommandEncoder(); e.copyTextureToBuffer({ texture: tex }, { buffer: sync, bytesPerRow: 256 }, [1, 1]); device.queue.submit([e.finish()]);
+    await sync.mapAsync(GPUMapMode.READ); const total = performance.now() - t0;
+    sync.unmap(); sync.destroy(); tex.destroy();
+    return { cpu: cpu / k, total: total / k };
+  }
+  const info = adapter.info || {};
+  const painter = { paint, snapshot, timeFrames, device, name: "WebGPU", adapter: [info.vendor, info.architecture].filter(Boolean).join(" "), done: () => device.queue.onSubmittedWorkDone() };
+  await selfTest();
+  return painter;
+}
+
+root.SproutGpu = { makeGpuPainter };
+})(typeof window !== "undefined" ? window : globalThis);
+````
+
 ## test.js
 
 Language tests, one or more per decision.
@@ -2049,6 +2353,14 @@ ok("84 match only works out the answer it picks", val('match [1, [1, "one", 2, n
   const prog = "ps : range 50 collect [n | [x : n, y : 0]]\nresult : ps collect [p | p with [y : noise [p x, 9]]]";
   const a = S.load(prog).field("result"); S.columns(false); const b = S.load(prog).field("result"); S.columns(true);
   ok("87 noise runs inside a column loop, with the same results", a instanceof S.ColCell && S.fmt(a) === S.fmt(b) && S.load(prog).speed.find(n => n.line === 2).fast); }
+{ const both = src => { const a = S.fmt(S.load(src).field("result")); S.columns(false); const b = S.fmt(S.load(src).field("result")); S.columns(true); return [a, b]; };
+  ok("fold loop: a sum over range", val("range 1000 fold [0, [t n | t + n]]") === "500500");
+  ok("fold loop: over a list of numbers, with an outside name", S.fmt(S.load("k : 3\nresult : [1, 2, 3, 4] fold [0, [t n | t + (n * k)]]").field("result")) === "30");
+  for (const src of ["result : range 500 fold [0, [t n | t + (n * n) - (t / 7)]]", "result : [1.5, 2, -3, 4] fold [1, [t n | t * n + 1]]", "result : range 40 fold [0, [t n | n > 20 [t + n] else [t - 1]]]", "result : range 64 fold [0, [t n | t + (noise [n, 2])]]"]) {
+    const [a, b] = both(src); ok("fold loop: same answer with and without it: " + src, a === b && a !== "false"); }
+  ok("fold loop: anything else still works the ordinary way", val('["a", "b"] fold ["", [t n | t .. n]]') === "ab" && val("[1, 2] fold [[], [t n | t .. [n]]]") === "[1, 2]");
+  const sp = S.load("a : range 9 fold [0, [t n | t + n]]\nb : range 9 fold [0, [t n | t .. n]]").speed;
+  ok("fold loop: speed notes say which folds run as a tight loop", sp.find(n => n.line === 1).fast && !sp.find(n => n.line === 2).fast && sp.every(n => n.word === "fold"), sp); }
 ok("and/or run a call on their right before checking it", val("[k | k > 1 and ([d | d = 3] k)] 3") === "true" && val("[k | k > 9 or ([d | d = 3] k)] 3") === "true");
 ok("81 ( ) is plain text", val('"rgba(0,0,0,0.5)"') === "rgba(0,0,0,0.5)");
 ok("81 escaped bracket", val('"a\\[b]"') === "a[b]");
@@ -2399,6 +2711,21 @@ const f = (g, k) => g.state.field(k);
   ok("ace-crews: work that needs a crew that isn't there says so", notes.includes("needs an iron crew") && rows.length === 10, notes.filter(x => /crew/.test(x)));
   g.down(...chip(3)); g.tick(0.05); g.up(); g.tick(0.05);
   ok("ace-crews: the slab slips while the iron crew is away", runOut(g) > 23, f(g, "day"));
+}
+
+// ---------------- ACE ledger: SQLite (node:sqlite here, sql.js on the page)
+{
+  const { sqliteCell } = require("./sqlite-host.js");
+  const saved = S.G.db; S.G.db = sqliteCell(":memory:");
+  const src = fs.readFileSync(__dirname + "/examples/ace-ledger.sp", "utf8");
+  const day = () => { const lines = []; S.setOut(x => lines.push(x)); S.load(src).run(S.BANG); S.setOut(() => {}); return lines; };
+  const d1 = day(), d2 = day(), d3 = day();
+  ok("ace-ledger: each run is a day, and the database remembers", d1[0] === "== day 1 ==" && d3[0] === "== day 3 ==" && d3.includes("day 1  closed Survey and layout") && d3.includes("day 3  closed Rebar delivered"), d3);
+  ok("ace-ledger: what's workable is derived from the rows", d3.some(l => l.startsWith("[>] Place rebar")) && d3.some(l => l.startsWith("[ ] Pre-pour inspection")));
+  for (let k = 0; k < 4; k++) day();
+  const end = day();
+  ok("ace-ledger: it finishes, and the log keeps every day", end.includes("the pedestal is finished") && S.G.db.raw.prepare("select count(*) n from events").get().n === 6);
+  S.G.db = saved;
 }
 
 const errs = logs.slice();
@@ -4072,6 +4399,60 @@ ranked keep [c | c hours = 0] each [c |
 ]
 ````
 
+## examples/ace-ledger.sp
+
+ACE: the atoms live in SQLite; each run closes the first workable atom and logs it (prints; uses db)
+
+````sprout
+-- ACE ledger: the atoms live in SQLite, done is derived in Sprout, and every step is written to an event log.
+-- Each run is one day on site: the first workable atom is closed, and the closure is logged.
+-- The database is kept in this browser, so run it again and the project moves on a day.
+-- (To start over, clear the database in the State tab.)
+
+-- the tables, made once
+db run "create table if not exists atoms (id text primary key, name text, closed integer)"
+db run "create table if not exists links (atom text, needs text)"
+db run "create table if not exists events (n integer primary key autoincrement, day integer, atom text, note text)"
+
+-- the first time, fill them in: atoms, and what each one requires
+empty : db query "select count(*) as n from atoms" first n = 0
+empty
+  db run "insert into atoms values ('permit', 'Excavation permit', 1), ('survey', 'Survey and layout', 0), ('dig', 'Excavate pedestal', 0), ('rebar', 'Rebar delivered', 0), ('place', 'Place rebar', 0), ('inspect', 'Pre-pour inspection', 0), ('pour', 'Pour concrete', 0)"
+  db run "insert into links values ('dig', 'permit'), ('dig', 'survey'), ('place', 'dig'), ('place', 'rebar'), ('inspect', 'place'), ('pour', 'inspect')"
+
+has : [xs want | xs keep [x | x = want] length > 0]
+pad : [s n | s length < n [pad [s .. " ", n]] else [s]]
+needs-of : [want | db query ["select needs from links where atom = ?", [want]] collect [l | l needs]]
+
+-- derive what can be worked from the rows: done is never a column we trust on its own
+workable-in : [rows |
+  done : rows keep [a | a closed = 1] collect [a | a id]
+  rows keep [a | a closed = 0 and (needs-of (a id) keep [x | has [done, x] not] length = 0)]
+]
+
+-- today: close the first workable atom, and write it down
+this-day : db query "select count(*) as n from events" first n + 1
+today : workable-in (db query "select id, name, closed from atoms order by rowid") first
+today != false
+  db run ["update atoms set closed = 1 where id = ?", [today id]]
+  db run ["insert into events (day, atom, note) values (?, ?, ?)", [this-day, today id, "closed " .. (today name)]]
+
+-- the state of the job, read back from the database
+after : db query "select id, name, closed from atoms order by rowid"
+next-up : workable-in after collect [a | a id]
+"== day [this-day] ==" print
+after each [a |
+  mark : a closed = 1 ["\[x]"] else [has [next-up, a id] ["\[>]"] else ["\[ ]"]]
+  "[mark] [pad [a name, 22]] needs " .. (needs-of (a id) fold ["nothing", [s x | s = "nothing" [x] else [s .. ", " .. x]]]) print
+]
+"" print
+"== the event log, newest first ==" print
+db query "select day, note from events order by n desc limit 5" each [e | "day [e day]  [e note]" print]
+next-up length = 0
+  "" print
+  "the pedestal is finished" print
+````
+
 ## examples/recipes.sp
 
 Recipes: quicksort, primes, FizzBuzz, a vector with its own + (prints; not a game)
@@ -4180,7 +4561,9 @@ img.th[src=""]{content:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2
 #artcol,#detail{position:relative;z-index:1;min-height:0}
 #artcol{display:flex;flex-direction:column;align-items:center;justify-content:flex-start}
 #stage{position:relative;border-radius:16px;overflow:hidden;box-shadow:var(--art);background:#000}
-#cv{display:block;touch-action:none}
+#cv{display:block;touch-action:none;position:relative;z-index:1}
+#gv{display:none;position:absolute;left:0;top:0;z-index:0}body.gpu #gv{display:block}
+.rend{height:24px;padding:0 9px;border-radius:999px;font-size:11.5px;font-weight:600;color:var(--fg2);background:rgba(127,120,100,.12);margin-right:4px}.rend.on{color:#fff;background:var(--acc)}
 #noGame{display:none;width:100%;height:100%;position:absolute;inset:0;align-items:center;justify-content:center;text-align:center;padding:28px;background:var(--card);color:var(--fg2);font:17px/1.5 var(--serif)}
 #noGame b{color:var(--acc2);font-weight:600}
 #noGame{background-size:cover;background-position:center}#noGame.has-art{color:#fff;align-items:flex-end;justify-content:flex-start;text-align:left;font:500 14px/1.4 var(--sans)}#noGame.has-art b{color:#fff}
@@ -4325,11 +4708,11 @@ body.t-out #out{display:block}body.t-st #st{display:block}
 <aside id="side">
  <a class="brand" href="/" title="All apps"><span class="logo">S</span><b>Sprout 3</b><small>library</small></a>
  <div id="lib"></div>
- <div class="sidefoot"><button class="pill" id="bSpec2">Read the spec</button></div>
+ <div class="sidefoot"><button class="pill" id="bSpec2">Read the spec</button> <a class="pill" href="bench.html" target="_blank" rel="noopener">Benchmarks</a></div>
 </aside>
 <main id="main">
  <canvas id="glow" width="36" height="48"></canvas>
- <div id="artcol"><div id="stage"><canvas id="cv" width="360" height="480"></canvas><div id="noGame"><div id="noGameT">This one isn't a game: it has no <b>update</b>.<br>What it prints is under Output.</div></div></div></div>
+ <div id="artcol"><div id="stage"><canvas id="gv" width="360" height="480"></canvas><canvas id="cv" width="360" height="480"></canvas><div id="noGame"><div id="noGameT">This one isn't a game: it has no <b>update</b>.<br>What it prints is under Output.</div></div></div></div>
  <section id="detail">
   <div id="head">
    <div class="kicker" id="kicker">Atomic Constraint Engine</div>
@@ -4366,17 +4749,19 @@ body.t-out #out{display:block}body.t-st #st{display:block}
   </div>
   <div class="scrub"><span id="tlA">0:00</span><input type="range" id="tlR" min="0" max="0" value="0" aria-label="Rewind time"><span id="tlB" class="live">LIVE</span></div>
  </div>
- <div class="rt"><span id="sMs"></span><button class="tb" id="bSnd" title="Sound (F9)"><svg viewBox="0 0 20 20"><path id="sndIcon" d="M3 7h3l5-4v14l-5-4H3z"/></svg></button></div>
+ <div class="rt"><span id="sMs"></span><button class="rend" id="bGpu" hidden title="Which renderer draws the game: WebGPU (one draw call per frame) or Canvas 2D. Click to switch and compare."></button><button class="tb" id="bSnd" title="Sound (F9)"><svg viewBox="0 0 20 20"><path id="sndIcon" d="M3 7h3l5-4v14l-5-4H3z"/></svg></button></div>
 </footer>
 </div>
 <div id="modal"><div id="mBox"><div class="mh"><h2 id="mTitle"></h2><button class="x" data-close aria-label="Close">✕</button></div><div id="mBody"></div></div></div>
 <div id="toast"></div><div id="scrubTip"></div>
 
-<script src="sprout3.js?v=20261120b"></script>
-<script src="live3.js?v=20261120b"></script>
+<script src="sprout3.js?v=20261120f"></script>
+<script src="live3.js?v=20261120f"></script>
+<script src="sqlite-web.js?v=20261120f"></script>
+<script src="gpu-paint.js?v=20261120f"></script>
 <script>
 "use strict";
-const V="20261120b";
+const V="20261120f";
 const $=id=>document.getElementById(id);
 const S=window.Sprout3,L=window.Sprout3Live;
 const GW=360,GH=480;
@@ -4390,6 +4775,7 @@ const EX=[
  ["ace-schedule","ace","ACE Schedule","The critical path on likely durations, then a Monte Carlo finish date. The plan is a distribution, not a date."],
  ["ace-crews","ace","ACE Crews","Sequence and capacity: work waits for what it requires, and for a free crew of its trade. Send a crew home and watch the slab slip."],
  ["ace-morning","ace","ACE Morning","The morning question: which constraints, killed today, release the most work? A ranking by hours released."],
+ ["ace-ledger","ace","ACE Ledger","The atoms live in SQLite, kept in this browser. Each run is a day on site: one atom closes and the event log grows."],
  ["ace-derive","ace","ACE Derive","The five kinds of atom, and done worked out to a fixed point."],
  ["sprout","game","Sprout","Catch the rain, dodge the bugs. The demo game."],
  ["fireflies","game","Fireflies","Four hundred lights on the night air. Hold a finger down and they gather to it."],
@@ -4425,7 +4811,14 @@ function setErr(e){err=e;const el=$("err");if(e){el.firstChild.innerHTML="<b>"+(
 $("err").onclick=()=>{if(err&&err.line){tab("code");goLine(err.line)}};
 const msgOf=e=>String(e&&e.message||e);
 // build: a game swaps in over the running one (live state kept), a plain program just runs
+// SQLite: loaded the first time a program uses db, then kept in this browser (decision 78)
+const needsDb=src=>/(^|[\s\[(])db\s+(query|run)\b/m.test(src);
+let dbP=null;
+function ensureDb(){return dbP||(dbP=new Promise((ok,no)=>{const sc=document.createElement("script");sc.src="vendor/sqljs/sql-wasm.js?v="+V;sc.onload=ok;sc.onerror=()=>no(new Error("SQLite couldn't be loaded"));document.head.appendChild(sc)})
+ .then(()=>window.SproutSqlite.openSqlite({base:"vendor/sqljs/",onWrite:()=>{if(TAB==="st")renderState()}})).then(cell=>{S.G.db=cell;return cell}))}
+function afterBuild(){if(document.body.classList.contains("prog")){tab("out");$("out").scrollTop=0}renderState()}
 function build(src,fresh){
+ if(needsDb(src)&&!S.G.db){$("pSub").textContent="Opening SQLite…";ensureDb().then(()=>{if(code===src&&build(src,fresh))afterBuild()},e=>setErr({line:0,msg:msgOf(e)}));return false}
  let cell;try{cell=S.load(src)}catch(e){setErr({line:e.line||0,msg:msgOf(e)});return false}
  if(cell.field("update")===S.UNSET){
   game=null;document.body.classList.add("prog");clearOut();
@@ -4480,10 +4873,22 @@ function paint(ctx,list){
    case"rect":ctx.fillStyle=col(a[4]);ctx.fillRect(a[0],a[1],a[2],a[3]);break;
    case"circle":if(a[2]>0){ctx.fillStyle=col(a[3]);ctx.beginPath();ctx.arc(a[0],a[1],a[2],0,Math.PI*2);ctx.fill()}break;
    case"line":ctx.strokeStyle=col(a[4]);ctx.lineWidth=2;ctx.lineCap="round";ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(a[2],a[3]);ctx.stroke();break;
-   case"text":ctx.fillStyle=col(a[4]);ctx.font="600 "+(+a[3]||16)+'px -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,"Segoe UI",sans-serif';ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(S.fmt(a[0]),a[1],a[2]);break;
+   case"text":drawText(ctx,a);break;
   }
  }
 }
+function drawText(ctx,a){ctx.fillStyle=col(a[4]);ctx.font="600 "+(+a[3]||16)+'px -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,"Segoe UI",sans-serif';ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(S.fmt(a[0]),a[1],a[2])}
+// WebGPU: shapes on the GPU canvas underneath in one draw call, text on the 2D canvas on top
+let GPU=null,useGpu=LS.get("sprout3.gpu",true);
+function rendererUI(){const on=!!(GPU&&useGpu),b=$("bGpu");document.body.classList.toggle("gpu",on);b.hidden=!GPU;b.textContent=on?"WebGPU":"Canvas";b.classList.toggle("on",on)}
+$("bGpu").onclick=()=>{useGpu=!useGpu;LS.set("sprout3.gpu",useGpu);rendererUI();msAvg=0;toast(useGpu?"Drawing with WebGPU":"Drawing with Canvas 2D")};
+// WebGPU is used only once it has passed a self-test on this device; otherwise everything stays on Canvas 2D
+let gpuWhy="",gpuFrames=0;
+// the second check: frames drawn by the GPU must actually show. Every game clears its screen, so a shown frame has no clear pixels.
+function checkShown(){try{const c=document.createElement("canvas");c.width=c.height=8;const x=c.getContext("2d");x.drawImage($("gv"),0,0,8,8);const d=x.getImageData(0,0,8,8).data;
+ for(let i=3;i<d.length;i+=4)if(d[i]>0)return;}catch(e){}
+ GPU=null;gpuWhy="this browser didn't show the WebGPU frames";rendererUI()}
+if(window.SproutGpu)SproutGpu.makeGpuPainter($("gv")).then(p=>{GPU=p;rendererUI()},e=>{gpuWhy=msgOf(e)});
 let last=0,statT=0,artT=0;
 function frame(now){requestAnimationFrame(frame);const dt=Math.min(.05,(now-last)/1000||0);last=now;
  const k=cv.width/GW;g.setTransform(k,0,0,k,0,0);
@@ -4491,9 +4896,12 @@ function frame(now){requestAnimationFrame(frame);const dt=Math.min(.05,(now-last
  try{
   const t0=performance.now();
   if(!paused){game.tick(dt,heldCell());if(swipeTicks>0)swipeTicks--;if(++goodTicks===30)goodSrc=running}
-  const list=game.draw();msAvg=msAvg*.95+(performance.now()-t0)*.05;
-  g.save();if(shakeAmt>.3&&!paused){g.translate((Math.random()-.5)*shakeAmt,(Math.random()-.5)*shakeAmt);shakeAmt*=Math.pow(.004,dt)}else if(!paused)shakeAmt=0;
-  try{paint(g,list)}finally{g.restore()}
+  const list=game.draw();
+  let sx=0,sy=0;if(shakeAmt>.3&&!paused){sx=(Math.random()-.5)*shakeAmt;sy=(Math.random()-.5)*shakeAmt;shakeAmt*=Math.pow(.004,dt)}else if(!paused)shakeAmt=0;
+  if(GPU&&useGpu&&++gpuFrames===10)checkShown();
+  if(GPU&&useGpu){const texts=GPU.paint(list,GW,GH,sx,sy);g.clearRect(0,0,GW,GH);g.save();g.translate(sx,sy);for(const a of texts)drawText(g,a);g.restore()}
+  else{g.save();g.translate(sx,sy);try{paint(g,list)}finally{g.restore()}}
+  msAvg=msAvg*.95+(performance.now()-t0)*.05;
  }catch(e){
   const m={line:e.line||0,msg:msgOf(e)};
   if(goodSrc&&running!==goodSrc){try{game.swap(goodSrc);running=goodSrc;m.msg+=" (still running your last working version)"}catch(_){setPaused(true)}}else setPaused(true);
@@ -4503,7 +4911,8 @@ function frame(now){requestAnimationFrame(frame);const dt=Math.min(.05,(now-last
 }
 requestAnimationFrame(frame);
 // the little artwork in the player and the glow behind the page both come from the game itself
-function artUI(){try{const p=$("pArt").getContext("2d");p.drawImage(cv,0,cv.height*.125,cv.width,cv.width,0,0,96,96);$("glow").getContext("2d").drawImage(cv,0,0,36,48)}catch(e){}}
+function artUI(){try{const p=$("pArt").getContext("2d"),gl=$("glow").getContext("2d"),layers=GPU&&useGpu?[$("gv"),cv]:[cv];
+ for(const c of layers){p.drawImage(c,0,c.height*.125,c.width,c.width,0,0,96,96);gl.drawImage(c,0,0,36,48)}}catch(e){}}
 const fmtT=s=>{s=Math.max(0,s);return Math.floor(s/60)+":"+String(Math.floor(s%60)).padStart(2,"0")};
 function statUI(){
  const r=$("tlR"),h=game?game.history:[];
@@ -4535,7 +4944,8 @@ function fit(){const m=$("main").getBoundingClientRect(),phone=innerWidth<=720;
  if(phone){const head=$("head").getBoundingClientRect().height;h=Math.round(Math.max(150,Math.min((m.height-head-24)*.5,(m.width-24)/.75)));w=Math.round(h*.75)}
  else{h=Math.round(Math.max(200,Math.min(m.height-48,(m.width-56)*.5/.75)));w=Math.round(h*.75)}
  const st=$("stage");st.style.width=w+"px";st.style.height=h+"px";const dpr=Math.min(2,devicePixelRatio||1);
- cv.style.width=w+"px";cv.style.height=h+"px";cv.width=Math.round(w*dpr);cv.height=Math.round(h*dpr)}
+ cv.style.width=w+"px";cv.style.height=h+"px";cv.width=Math.round(w*dpr);cv.height=Math.round(h*dpr);
+ const gv=$("gv");gv.style.width=w+"px";gv.style.height=h+"px";gv.width=cv.width;gv.height=cv.height}
 if(window.ResizeObserver)new ResizeObserver(fit).observe($("main"));addEventListener("resize",fit);
 function vv(){const v=window.visualViewport;const h=v?v.height:innerHeight;$("app").style.height=h+"px";$("app").style.top=(v?v.offsetTop:0)+"px";document.body.classList.toggle("kb",h<innerHeight*.75&&document.activeElement===ta)}
 if(window.visualViewport){visualViewport.addEventListener("resize",vv);visualViewport.addEventListener("scroll",vv)}vv();
@@ -4617,11 +5027,17 @@ function brief(v){if(S.isCell(v)&&!(v instanceof S.Cell&&v.takesInput())){const 
 function speedHTML(){if(!speedNotes.length)return"";const fast=speedNotes.filter(n=>n.fast).length;
  return'<div class="sh">Loops over lists</div><div class="foot" style="padding-top:0">'+fast+" of "+speedNotes.length+" can run over columns: a list of 32 or more records of numbers, stored one array per field. The others run item by item, which is fine for short lists.</div>"+
   speedNotes.slice().sort((a,b)=>a.line-b.line).map(n=>'<div class="row sp'+(n.fast?" f":"")+'"><span class="k2">line '+n.line+" · "+n.word+'</span><span class="v">'+(n.fast?"runs over columns":"item by item: "+esc(n.why))+"</span></div>").join("")}
-function renderState(){const el=$("st");
- if(!game){el.innerHTML='<div class="foot">No game is running.</div>'+speedHTML();return}
- let rows=[];try{for(const [k,v] of S.fieldsOf(game.state))rows.push([k,brief(v)])}catch(e){el.textContent=msgOf(e);return}
- el.innerHTML=rows.map(([k,v])=>'<div class="row"><span class="k2">'+esc(k)+'</span><span class="v">'+esc(v)+"</span></div>").join("")+
-  '<div class="foot">'+(paused?"Paused":"Live")+" · "+game.history.length+" moments saved for rewind</div>"+speedHTML()}
+function dbHTML(){const db=S.G.db;if(!db||!needsDb(code))return"";let t=[];try{t=db.tables()}catch(e){}
+ return'<div class="sh">SQLite</div><div class="foot" style="padding-top:0">Kept in this browser between visits. <a href="#" id="dbClear" style="color:var(--acc2);font-weight:600">Clear the database</a></div>'+
+  (t.length?t.map(([n,c])=>'<div class="row"><span class="k2">'+esc(n)+'</span><span class="v">'+c+" row"+(c===1?"":"s")+"</span></div>").join(""):'<div class="foot">No tables yet.</div>')}
+function wireDb(){const a=$("dbClear");if(a)a.onclick=async e=>{e.preventDefault();if(!confirm("Clear the SQLite database kept in this browser?"))return;await S.G.db.clear();toast("Database cleared");if(build(code,true))afterBuild()}}
+// only replace what's shown when it changed, so a link isn't rebuilt under a click
+function renderState(){const el=$("st"),h=stateHTML();if(el._h!==h){el.innerHTML=h;el._h=h;wireDb()}}
+function stateHTML(){
+ if(!game)return'<div class="foot">No game is running.</div>'+dbHTML()+speedHTML();
+ let rows=[];try{for(const [k,v] of S.fieldsOf(game.state))rows.push([k,brief(v)])}catch(e){return esc(msgOf(e))}
+ return rows.map(([k,v])=>'<div class="row"><span class="k2">'+esc(k)+'</span><span class="v">'+esc(v)+"</span></div>").join("")+
+  '<div class="foot">'+(paused?"Paused":"Live")+" · "+game.history.length+" moments saved for rewind</div>"+dbHTML()+speedHTML()}
 setInterval(()=>{if(TAB==="st")renderState()},250);
 
 // ---------- tabs
@@ -4737,6 +5153,161 @@ $("bShare").onclick=share;
  const sv=LS.get("sprout3.code",null);
  if(sv&&sv.code&&sv.code.trim()){curEx=sv.ex||"";dirty=!!sv.dirty;setCode(sv.code);build(sv.code,true);if(document.body.classList.contains("prog"))tab("out")}
  else loadEx("ace-board",true)})();
+</script>
+</body></html>
+````
+
+## bench.html
+
+Benchmarks in the browser: the language against plain JS, the games, particles up to 100,000 on Canvas 2D and WebGPU, and SQLite
+
+````html
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#f5f4ee" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#262624" media="(prefers-color-scheme: dark)">
+<title>Sprout 3 benchmarks</title>
+<style>
+:root{--bg:#f5f4ee;--card:#fffefb;--line:#e4e1d6;--fg:#1f1e1d;--fg2:#5f5d55;--fg3:#8d8a80;--acc:#d97757;--acc2:#c4613f;--ok:#3f8f5a;--bad:#c4453b;
+ --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",system-ui,Roboto,sans-serif;--serif:ui-serif,"New York",Charter,Georgia,serif;--mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+@media (prefers-color-scheme:dark){:root{--bg:#262624;--card:#30302e;--line:#3d3c38;--fg:#ecebe4;--fg2:#b5b3aa;--fg3:#87857c;--acc:#e08a6b;--acc2:#d97757;--ok:#7fc495;--bad:#ec8b80}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 var(--sans);-webkit-font-smoothing:antialiased}
+main{max-width:860px;margin:0 auto;padding:32px 20px 60px}
+a{color:var(--acc2)}
+h1{font:600 32px/1.15 var(--serif);margin:8px 0 6px;letter-spacing:-.01em}
+h2{font:600 20px var(--serif);margin:30px 0 4px}
+.kicker{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--acc2)}
+p{color:var(--fg2);margin:6px 0}
+.bar{display:flex;gap:10px;align-items:center;margin:18px 0;flex-wrap:wrap}
+button{font:600 14px var(--sans);height:36px;padding:0 18px;border-radius:999px;border:0;cursor:pointer;background:var(--acc);color:#fff}
+button.sec{background:var(--card);color:var(--fg);box-shadow:0 0 0 1px var(--line)}
+button:disabled{opacity:.5;cursor:default}
+#status{color:var(--fg3);font-size:13.5px}
+.card{background:var(--card);border-radius:14px;box-shadow:0 1px 2px rgba(0,0,0,.05),0 8px 28px rgba(0,0,0,.06);overflow:hidden;margin-top:10px}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th,td{text-align:right;padding:8px 14px;border-bottom:1px solid var(--line);white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--fg3);font-weight:600;font-size:12px}
+td{font-family:var(--mono);font-size:12.5px}td:first-child{font-family:var(--sans);font-size:13.5px}
+tr:last-child td{border-bottom:0}
+.note{font-size:13px;color:var(--fg3);padding:10px 14px}
+.good{color:var(--ok)}.bad{color:var(--bad)}
+.env{font-family:var(--mono);font-size:12.5px;color:var(--fg2)}
+</style></head><body>
+<main>
+<div class="kicker">Sprout 3</div>
+<h1>Benchmarks</h1>
+<p>Everything here runs in this browser, on this device. Times are the best of several runs, in milliseconds. <a href="./">Back to Sprout 3</a></p>
+<div class="bar"><button id="run">Run the benchmarks</button><button class="sec" id="copy" disabled>Copy the results</button><span id="status"></span></div>
+<p class="env" id="env"></p>
+
+<h2>The language</h2>
+<p>Three small programs, against the same work written in plain JavaScript.</p>
+<div class="card"><table id="t-lang"><tr><th>program</th><th>Sprout 3</th><th>plain JS</th><th>ratio</th><th>answer</th></tr></table></div>
+
+<h2>The games</h2>
+<p>One frame of each example: update and building the draw list, not painting.</p>
+<div class="card"><table id="t-games"><tr><th>game</th><th>ms per frame</th><th>shapes drawn</th></tr></table></div>
+
+<h2>Many particles</h2>
+<p>A fountain of N particles, stored as columns (decision 82). Update and the draw list are Sprout; painting is Canvas 2D or WebGPU (one draw call). A frame has 16.7 ms at 60 frames a second.</p>
+<div class="card"><table id="t-parts"><tr><th>particles</th><th>update</th><th>draw list</th><th>Canvas 2D</th><th>WebGPU (CPU)</th><th>WebGPU (all)</th></tr></table>
+<div class="note" id="gpu-note"></div></div>
+
+<h2>SQLite</h2>
+<p>SQLite compiled to WebAssembly (sql.js), the same as the page uses for <code>db</code>. Rows come back as Sprout records.</p>
+<div class="card"><table id="t-sql"><tr><th>work</th><th>ms</th><th>rows</th></tr></table></div>
+</main>
+
+<script src="sprout3.js?v=20261120f"></script>
+<script src="live3.js?v=20261120f"></script>
+<script src="gpu-paint.js?v=20261120f"></script>
+<script src="sqlite-web.js?v=20261120f"></script>
+<script>
+"use strict";
+const $=id=>document.getElementById(id),S=window.Sprout3,L=window.Sprout3Live;
+S.setLog(()=>{});S.setOut(()=>{});
+const GW=360,GH=480,RESULTS=[];
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const status=t=>$("status").textContent=t;
+function best(f,n){let b=1e9,r;for(let i=0;i<n;i++){const t=performance.now();r=f();b=Math.min(b,performance.now()-t)}return [b,r]}
+async function bestAsync(f,n){let b=1e9,r;for(let i=0;i<n;i++){const t=performance.now();r=await f();b=Math.min(b,performance.now()-t)}return [b,r]}
+const ms=x=>x<0.1?x.toFixed(3):x<10?x.toFixed(2):x.toFixed(1);
+function row(id,cells,cls){const tr=document.createElement("tr");tr.innerHTML=cells.map((c,i)=>"<td"+(cls&&cls[i]?' class="'+cls[i]+'"':"")+">"+c+"</td>").join("");$(id).appendChild(tr);RESULTS.push(id.slice(2)+": "+cells.join(" | "))}
+
+// ---------- the language
+const LANG={
+ fib:{src:"fib : [n | n < 2 [n] else [fib (n - 1) + (fib (n - 2))]]\nresult : fib 25",js:()=>{const f=n=>n<2?n:f(n-1)+f(n-2);return f(25)}},
+ fold:{src:"result : range 1000000 fold [0, [t n | t + n]]",js:()=>{let t=0;for(let i=1;i<=1e6;i++)t+=i;return t}},
+ records:{src:"step : [rs | rs collect [r | r with [y : r y + 1]] keep [r | r y > 0]]\ngo : [rs k | k = 0 [rs] else [go [step rs, k - 1]]]\nresult : go [range 10000 collect [n | [x : n, y : 0]], 20] length",
+  js:()=>{let rs=[];for(let i=1;i<=1e4;i++)rs.push({x:i,y:0});for(let k=0;k<20;k++)rs=rs.map(r=>({...r,y:r.y+1})).filter(r=>r.y>0);return rs.length}}};
+async function benchLang(){
+ for(const [name,b] of Object.entries(LANG)){status("language: "+name);await sleep(10);
+  // the last line runs inside a cell that takes an input, so it is worked out again on every run
+  const c=S.load(b.src.replace(/^result : (.*)$/m,"f : [k | $1]")).field("f");const [t,r]=best(()=>c.run(1),7);const [tj,rj]=best(b.js,7);
+  row("t-lang",[name,ms(t),ms(tj),(t/tj).toFixed(1)+"×",S.fmt(r)+(S.fmt(r)===String(rj)?"":" ≠ "+rj)])}}
+
+// ---------- the games
+const GAMES=["sprout","fireflies","orbit","hop","life","bounce","snake","breakout","particles","ace-board","ace-site","ace-crews"];
+async function benchGames(){
+ for(const name of GAMES){status("games: "+name);await sleep(10);
+  const src=await (await fetch("examples/"+name+".sp?v=20261120f")).text();const g=L.makeGame(src,{W:GW,H:GH});
+  const play=n=>{for(let t=0;t<n;t++){if(t%50===0)g.down(100+(t%160),300);if(t%50===25)g.up();g.tick(1/60);g.draw()}};
+  play(240);const [t]=best(()=>play(120),5);row("t-games",[name,ms(t/120),String(g.draw().length)])}}
+
+// ---------- many particles
+const FOUNTAIN=n=>`spawn : [k | [x : noise [k, 1] * W, y : noise [k, 2] * H, vx : noise [k, 3] * 120 - 60, vy : noise [k, 4] * 120 - 60]]
+start :
+  ps : range ${n} collect spawn
+update : [g |
+  dt : g dt
+  g with [ps : g ps collect [p | p with [x : p x + (p vx * dt) % W, y : p y + (p vy * dt) % H]]]
+]
+draw : [g |
+  clear "#101418"
+  g ps each [p | circle [p x, p y, 2, "#ffcc66"]]
+]`;
+let GPU=null,gpuWhy="";
+async function benchParticles(){
+ try{GPU=await SproutGpu.makeGpuPainter(document.createElement("canvas"))}catch(e){gpuWhy=e.message||String(e)}
+ $("gpu-note").textContent=GPU?"WebGPU: "+(GPU.adapter||"available")+". CPU is the time to build and submit a frame; all is until the GPU has finished it.":"WebGPU isn't available here"+(gpuWhy?" ("+gpuWhy+")":"")+", so only Canvas 2D is timed.";
+ const W2=720,H2=960,cv=document.createElement("canvas");cv.width=W2;cv.height=H2;const ctx=cv.getContext("2d");
+ for(const n of [2000,10000,50000,100000]){status("particles: "+n);await sleep(10);
+  const g=L.makeGame(FOUNTAIN(n),{W:GW,H:GH});for(let t=0;t<3;t++)g.tick(1/60);
+  const [tu]=best(()=>g.tick(1/60),5);const [td,list]=best(()=>g.draw().map(d=>[d[0],d[1].slice()]),5);
+  const [tc]=best(()=>{ctx.setTransform(W2/GW,0,0,H2/GH,0,0);for(const [k,a] of list){if(k==="clear"){ctx.fillStyle=a[0];ctx.fillRect(0,0,GW,GH)}else if(k==="circle"){ctx.fillStyle=a[3];ctx.beginPath();ctx.arc(a[0],a[1],a[2],0,Math.PI*2);ctx.fill()}}},3);
+  let gc="–",ga="–";
+  if(GPU){try{let bc=1e9,ba=1e9;for(let r=0;r<3;r++){const t=await GPU.timeFrames(list,GW,GH,W2,H2,5);bc=Math.min(bc,t.cpu);ba=Math.min(ba,t.total)}gc=ms(bc);ga=ms(ba)}catch(e){gc=ga="failed";gpuWhy=e.message;$("gpu-note").textContent="WebGPU stopped answering here ("+gpuWhy+"), so its times are missing."}}
+  row("t-parts",[n.toLocaleString(),ms(tu),ms(td),ms(tc),gc,ga],[0,tu+td<16.7?"good":"bad",0,tc<16.7?"good":"bad",0,0])}}
+
+// ---------- SQLite
+async function benchSql(){
+ status("SQLite: loading");
+ await new Promise((ok,no)=>{const s=document.createElement("script");s.src="vendor/sqljs/sql-wasm.js?v=20261120f";s.onload=ok;s.onerror=no;document.head.appendChild(s)});
+ const db=await SproutSqlite.openSqlite({base:"vendor/sqljs/",name:"sprout3-bench",fresh:true});S.G.db=db;const raw=db.raw();
+ const N=10000;
+ const [ti]=best(()=>{raw.run("drop table if exists t");raw.run("create table t (id integer primary key, zone integer, hours real, name text)");raw.run("begin");
+  const st=raw.prepare("insert into t values (?, ?, ?, ?)");for(let i=1;i<=N;i++)st.run([i,i%20,(i*7)%40+1,"atom "+i]);st.free();raw.run("commit")},3);
+ row("t-sql",["insert 10,000 rows (one transaction)",ms(ti),N.toLocaleString()]);
+ const [tq,c]=best(()=>{const st=raw.prepare("select * from t");let n=0;while(st.step()){st.get();n++}st.free();return n},5);
+ row("t-sql",["read 10,000 rows in JavaScript",ms(tq),c.toLocaleString()]);
+ // each is inside a cell that takes an input, so it is worked out again on every run (a plain field is worked out once)
+ const q=S.load('f : [k | db query "select * from t"]').field("f");const [ts,r]=best(()=>q.run(1),5);
+ row("t-sql",["db query: 10,000 rows into Sprout records",ms(ts),r.count().toLocaleString()]);
+ const a=S.load('f : [k | db query "select * from t" keep [r | r zone = 3] collect [r | r hours] fold [0, [t h | t + h]]]').field("f");const [ta,v]=best(()=>a.run(1),5);
+ row("t-sql",["the same, then keep, collect and fold in Sprout",ms(ta),"total "+S.fmt(v)]);
+ const w=S.load('f : [k | db query ["select sum(hours) as h from t where zone = ?", [3]] first h]').field("f");const [tw,v2]=best(()=>w.run(1),5);
+ row("t-sql",["the same sum, done by SQLite",ms(tw),"total "+S.fmt(v2)]);
+ await db.clear()}
+
+$("run").onclick=async()=>{$("run").disabled=true;RESULTS.length=0;
+ for(const t of ["t-lang","t-games","t-parts","t-sql"])while($(t).rows.length>1)$(t).deleteRow(1);
+ $("env").textContent=navigator.userAgent;
+ try{await benchLang();await benchGames();await benchParticles();await benchSql();status("done")}catch(e){status("stopped: "+(e.message||e))}
+ $("run").disabled=false;$("copy").disabled=false;window.BENCH_DONE=true};
+$("copy").onclick=async()=>{const t=["Sprout 3 benchmarks",navigator.userAgent,...RESULTS].join("\n");try{await navigator.clipboard.writeText(t);status("copied")}catch(e){prompt("Copy these:",t)}};
 </script>
 </body></html>
 ````
