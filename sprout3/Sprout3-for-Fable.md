@@ -6432,7 +6432,8 @@ function openLibrary(){const bk=LS.get("sprout3.backup",null);let h="";let prev=
  for(const [id,kind,t,d] of EX){if(kind!==prev){if(prev)h+="</div>";h+='<div class="gh">'+GROUPS[kind]+'</div><div class="grid">';prev=kind}
   h+='<button class="tile" data-g="'+id+'"><img class="th" alt="" data-art="'+id+'" src="'+artFor(id)+'"><b>'+t+"</b><small>"+esc(d.split(".")[0])+"</small></button>"}
  h+="</div>";if(bk)h+='<div class="gh">Yours</div><div class="grid"><button class="tile" data-g="backup"><span class="th" style="display:grid;place-items:center;font:600 30px var(--serif);color:var(--acc2)">↩</span><b>Last code</b><small>Before you last switched</small></button></div>';
- openModal("lib","Library",h);wireLib($("mBody"));const sp=document.createElement("button");sp.className="pill";sp.textContent="Read the spec";sp.onclick=openSpec;$("mTitle").after(sp)}
+ openModal("lib","Library",h);wireLib($("mBody"));const sp=document.createElement("button");sp.className="pill";sp.textContent="Read the spec";sp.onclick=openSpec;$("mTitle").after(sp);
+ const bl=document.createElement("a");bl.className="pill";bl.href="bench.html";bl.textContent="Benchmarks";bl.style.textDecoration="none";sp.after(bl)}
 $("libBtn").onclick=openLibrary;
 async function loadEx(name,quiet){
  if(dirty&&code.trim())LS.set("sprout3.backup",code);
