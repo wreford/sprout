@@ -286,8 +286,10 @@ class Gen {
       } else v = (tail && isLast ? "TAIL(" : "SEND(") + v + "," + this.genTerm(t, false) + ")";
       // speed notes: can this collect, keep or each run over columns? (decision 86)
       const pw = T[i - 1];
-      if (t.k === "cell" && t.names.length && pw && pw.k === "word" && SPEEDW[pw.v] && t.kern) {
-        const r = t.kern[SPEEDW[pw.v]];
+      const inner = pw && pw.k === "word" && pw.v === "fold" && t.k === "cell" && t.items[1] && t.items[1].k === "chain" && t.items[1].terms.length === 1 && t.items[1].terms[0].k === "cell" ? t.items[1].terms[0] : null;
+      const tgt = inner || t;
+      if (tgt.k === "cell" && tgt.names.length && pw && pw.k === "word" && SPEEDW[pw.v] && tgt.kern) {
+        const r = tgt.kern[SPEEDW[pw.v]];
         this.speed.push({ line: pw.line || 0, word: pw.v, fast: r === true, why: r === true ? "" : r });
       }
     }
@@ -418,8 +420,9 @@ class Gen {
     if (takes || !caps) { const rc = [...runFr.caps.values()].map(r => this.refJS(r)); caps = caps ? [...new Set(caps.concat(rc))] : rc; }
     const runJS = "(" + [act + "_L", act + "_it"].concat(nparams).join(",") + ")=>{" + runBody + "}";
     // column versions of this cell's body, used when it is given a list stored as columns (decision 82)
-    const kern = c.names.length === 1 && !c.names[0].def && !sh.usesIt && !sh.usesLeft && c.items.length === 1 && c.items[0].k === "chain" ? this.genKernels(c) : null;
-    if (!c.kern) { const why = c.items.length !== 1 || c.items[0].k !== "chain" ? "the body has more than one step" : c.names.length !== 1 ? "it doesn't take exactly one named input" : "it uses _ or left"; c.kern = { m: why, t: why, e: why }; }
+    const simpleBody = !sh.usesIt && !sh.usesLeft && c.items.length === 1 && c.items[0].k === "chain" && c.names.every(x => !x.def);
+    const kern = simpleBody && c.names.length === 1 ? this.genKernels(c) : simpleBody && c.names.length === 2 ? this.genFoldKernel(c) : null;
+    if (!c.kern) { const why = c.items.length !== 1 || c.items[0].k !== "chain" ? "the body has more than one step" : c.names.length !== 1 ? "it doesn't take exactly one named input" : "it uses _ or left"; c.kern = { m: why, t: why, e: why, f: c.names.length === 2 ? why : "fold runs as a tight loop only with two inputs, as in [total x | ...]" }; }
     return "MK(S[" + k + "]," + slotsJS + "," + runJS + ",[" + defs.join(",") + "],()=>[" + caps.join(",") + "]" + (kern ? "," + kern : "") + ")";
   }
 
@@ -431,7 +434,7 @@ class Gen {
   genKernels(c) {
     const p = c.names[0].n, T = c.items[0].terms, out = [];
     const fresh = () => ({ p, cols: new Map(), caps: new Map(), why: null });
-    const kern = c.kern = { m: "collect runs over columns only as " + p + " with [new fields]", t: "the body doesn't give true or false", e: "the body isn't one host word given a list of values" };
+    const kern = c.kern = { f: "fold runs as a tight loop only with two inputs, as in [total x | ...]", m: "collect runs over columns only as " + p + " with [new fields]", t: "the body doesn't give true or false", e: "the body isn't one host word given a list of values" };
     // m: s with [fields]
     if (T.length === 3 && T[0].k === "word" && T[0].v === p && T[1].k === "word" && (T[1].v === "with" || T[1].v === "..") && !this.lookup(T[1].v) && T[2].k === "cell" && fieldsOnly(T[2])) {
       const K = fresh(), keys = T[2].items.map(x => x.name), vals = T[2].items.map(x => this.kChain(x.val, K));
@@ -462,9 +465,20 @@ class Gen {
       });
       kern.e = args && args.every(a => a) ? true : K.why || "an argument isn't a number, a word in quotes or a name from outside";
       if (args && args.every(a => a))
-        out.push("e:(self,rs,cols,n)=>{" + kPro(K) + "if(!(" + F + " instanceof NATIVE))return null;const $f=" + F + ".fn;for(let $i=0;$i<n;$i++)$f(VP([" + args.join(",") + "]));return true}");
+        out.push("e:(self,rs,cols,n)=>{" + kPro(K) + "if(!(" + F + " instanceof NATIVE))return null;const $f=" + F + ".fn,$d=" + F + ".direct;" +
+          "if($d&&$d.length===" + args.length + "){for(let $i=0;$i<n;$i++)$d(" + args.join(",") + ")}else{for(let $i=0;$i<n;$i++)$f(VP([" + args.join(",") + "]))}return true}");
     }
     return out.length ? "{" + out.join(",") + "}" : null;
+  }
+  // f: [total x | number maths on total and x], used by fold over range or a list of numbers: one tight loop, no calls
+  genFoldKernel(c) {
+    const K = { p: null, cols: new Map(), caps: new Map(), why: null, vars: new Map([[c.names[0].n, "$a"], [c.names[1].n, "$x"]]) };
+    const v = this.kChain(c.items[0], K);
+    c.kern = { f: v && v.ty === "n" ? true : K.why || "the body isn't number maths", m: "it takes two inputs", t: "it takes two inputs", e: "it takes two inputs" };
+    if (c.kern.f !== true) return null;
+    return "{f:(acc,xs,rng)=>{" + kPro(K) + "if(typeof acc!==\"number\")return null;let $a=acc;" +
+      "if(rng){const $n=xs.n;for(let $i=1;$i<=$n;$i++){const $x=$i;$a=" + v.js + "}return $a}" +
+      "const $p=xs.parts;for(let $i=0;$i<$p.length;$i++){const $x=$p[$i];if(typeof $x!==\"number\")return null;$a=" + v.js + "}return $a}}";
   }
   // a chain as number maths on the item's fields: {js, ty} with ty "n" (number) or "b" (true/false), or null if it can't be
   kChain(ch, K) {
@@ -502,6 +516,7 @@ class Gen {
   }
   kTerm(t, K) {
     if (t.k === "num") return { js: "(" + t.v + ")", ty: "n" };
+    if (t.k === "word" && K.vars && K.vars.has(t.v)) return { js: K.vars.get(t.v), ty: "n" };
     if (t.k === "group") { if (t.items.length !== 1 || t.items[0].k !== "chain") return kNo(K, "it has a group of several steps"); const v = this.kChain(t.items[0], K); return v && { js: "(" + v.js + ")", ty: v.ty }; }
     if (t.k !== "word") return kNo(K, t.k === "str" || t.k === "tmpl" ? "it works with words, not numbers" : "it calls something for each item");
     if (t.v === "true" || t.v === "false") return { js: t.v, ty: "b" };
@@ -523,7 +538,7 @@ class Gen {
     return e.v;
   }
 }
-const SPEEDW = { collect: "m", keep: "t", each: "e" };
+const SPEEDW = { collect: "m", keep: "t", each: "e", fold: "f" };
 const KOPS = { "+": ["+", "n"], "-": ["-", "n"], "*": ["*", "n"], "/": ["/", "n"], "%": ["%", "n"], "<": ["<", "b"], ">": [">", "b"], "<=": ["<=", "b"], ">=": [">=", "b"], "=": ["===", "b"], "!=": ["!==", "b"] };
 const KPOST = { abs: "Math.abs", floor: "Math.floor", round: "Math.round", ceil: "Math.ceil", sqrt: "Math.sqrt", sin: "Math.sin", cos: "Math.cos", tan: "Math.tan", log: "Math.log", neg: "-" };
 // a kernel can't be made: remember the first reason, for the speed notes (decision 86)
@@ -968,6 +983,9 @@ function keep(xs, f) {
 function fold(xs, arg) {
   if (!isCell(arg)) return MISSING(arg, "fold");
   let acc = arg.part(1); const f = arg.part(2);
+  if (COLMIN !== Infinity && f instanceof Cell && f.kn && f.kn.f && (xs instanceof RCell || (xs instanceof VCell && !(xs instanceof ColCell) && xs.fs === ROOT))) {
+    const r = f.kn.f(acc, xs, xs instanceof RCell); if (r !== null) return r;
+  }
   if (f instanceof Cell && f.sh.names.length === 2) {
     const run = f.runF, L = f.left;
     if (xs instanceof RCell) { for (let i = 1; i <= xs.n; i++) acc = UNB(run(L, false, acc, i)); return acc; }

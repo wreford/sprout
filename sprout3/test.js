@@ -57,6 +57,14 @@ ok("84 match only works out the answer it picks", val('match [1, [1, "one", 2, n
   const prog = "ps : range 50 collect [n | [x : n, y : 0]]\nresult : ps collect [p | p with [y : noise [p x, 9]]]";
   const a = S.load(prog).field("result"); S.columns(false); const b = S.load(prog).field("result"); S.columns(true);
   ok("87 noise runs inside a column loop, with the same results", a instanceof S.ColCell && S.fmt(a) === S.fmt(b) && S.load(prog).speed.find(n => n.line === 2).fast); }
+{ const both = src => { const a = S.fmt(S.load(src).field("result")); S.columns(false); const b = S.fmt(S.load(src).field("result")); S.columns(true); return [a, b]; };
+  ok("fold loop: a sum over range", val("range 1000 fold [0, [t n | t + n]]") === "500500");
+  ok("fold loop: over a list of numbers, with an outside name", S.fmt(S.load("k : 3\nresult : [1, 2, 3, 4] fold [0, [t n | t + (n * k)]]").field("result")) === "30");
+  for (const src of ["result : range 500 fold [0, [t n | t + (n * n) - (t / 7)]]", "result : [1.5, 2, -3, 4] fold [1, [t n | t * n + 1]]", "result : range 40 fold [0, [t n | n > 20 [t + n] else [t - 1]]]", "result : range 64 fold [0, [t n | t + (noise [n, 2])]]"]) {
+    const [a, b] = both(src); ok("fold loop: same answer with and without it: " + src, a === b && a !== "false"); }
+  ok("fold loop: anything else still works the ordinary way", val('["a", "b"] fold ["", [t n | t .. n]]') === "ab" && val("[1, 2] fold [[], [t n | t .. [n]]]") === "[1, 2]");
+  const sp = S.load("a : range 9 fold [0, [t n | t + n]]\nb : range 9 fold [0, [t n | t .. n]]").speed;
+  ok("fold loop: speed notes say which folds run as a tight loop", sp.find(n => n.line === 1).fast && !sp.find(n => n.line === 2).fast && sp.every(n => n.word === "fold"), sp); }
 ok("and/or run a call on their right before checking it", val("[k | k > 1 and ([d | d = 3] k)] 3") === "true" && val("[k | k > 9 or ([d | d = 3] k)] 3") === "true");
 ok("81 ( ) is plain text", val('"rgba(0,0,0,0.5)"') === "rgba(0,0,0,0.5)");
 ok("81 escaped bracket", val('"a\\[b]"') === "a[b]");

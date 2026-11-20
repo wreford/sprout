@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#f5f4ee" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#262624" media="(prefers-color-scheme: dark)">
+<title>Sprout 3 benchmarks</title>
+<style>
+:root{--bg:#f5f4ee;--card:#fffefb;--line:#e4e1d6;--fg:#1f1e1d;--fg2:#5f5d55;--fg3:#8d8a80;--acc:#d97757;--acc2:#c4613f;--ok:#3f8f5a;--bad:#c4453b;
+ --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",system-ui,Roboto,sans-serif;--serif:ui-serif,"New York",Charter,Georgia,serif;--mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+@media (prefers-color-scheme:dark){:root{--bg:#262624;--card:#30302e;--line:#3d3c38;--fg:#ecebe4;--fg2:#b5b3aa;--fg3:#87857c;--acc:#e08a6b;--acc2:#d97757;--ok:#7fc495;--bad:#ec8b80}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 var(--sans);-webkit-font-smoothing:antialiased}
+main{max-width:860px;margin:0 auto;padding:32px 20px 60px}
+a{color:var(--acc2)}
+h1{font:600 32px/1.15 var(--serif);margin:8px 0 6px;letter-spacing:-.01em}
+h2{font:600 20px var(--serif);margin:30px 0 4px}
+.kicker{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--acc2)}
+p{color:var(--fg2);margin:6px 0}
+.bar{display:flex;gap:10px;align-items:center;margin:18px 0;flex-wrap:wrap}
+button{font:600 14px var(--sans);height:36px;padding:0 18px;border-radius:999px;border:0;cursor:pointer;background:var(--acc);color:#fff}
+button.sec{background:var(--card);color:var(--fg);box-shadow:0 0 0 1px var(--line)}
+button:disabled{opacity:.5;cursor:default}
+#status{color:var(--fg3);font-size:13.5px}
+.card{background:var(--card);border-radius:14px;box-shadow:0 1px 2px rgba(0,0,0,.05),0 8px 28px rgba(0,0,0,.06);overflow:hidden;margin-top:10px}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th,td{text-align:right;padding:8px 14px;border-bottom:1px solid var(--line);white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--fg3);font-weight:600;font-size:12px}
+td{font-family:var(--mono);font-size:12.5px}td:first-child{font-family:var(--sans);font-size:13.5px}
+tr:last-child td{border-bottom:0}
+.note{font-size:13px;color:var(--fg3);padding:10px 14px}
+.good{color:var(--ok)}.bad{color:var(--bad)}
+.env{font-family:var(--mono);font-size:12.5px;color:var(--fg2)}
+</style></head><body>
+<main>
+<div class="kicker">Sprout 3</div>
+<h1>Benchmarks</h1>
+<p>Everything here runs in this browser, on this device. Times are the best of several runs, in milliseconds. <a href="./">Back to Sprout 3</a></p>
+<div class="bar"><button id="run">Run the benchmarks</button><button class="sec" id="copy" disabled>Copy the results</button><span id="status"></span></div>
+<p class="env" id="env"></p>
+
+<h2>The language</h2>
+<p>Three small programs, against the same work written in plain JavaScript.</p>
+<div class="card"><table id="t-lang"><tr><th>program</th><th>Sprout 3</th><th>plain JS</th><th>ratio</th><th>answer</th></tr></table></div>
+
+<h2>The games</h2>
+<p>One frame of each example: update and building the draw list, not painting.</p>
+<div class="card"><table id="t-games"><tr><th>game</th><th>ms per frame</th><th>shapes drawn</th></tr></table></div>
+
+<h2>Many particles</h2>
+<p>A fountain of N particles, stored as columns (decision 82). Update and the draw list are Sprout; painting is Canvas 2D or WebGPU (one draw call). A frame has 16.7 ms at 60 frames a second.</p>
+<div class="card"><table id="t-parts"><tr><th>particles</th><th>update</th><th>draw list</th><th>Canvas 2D</th><th>WebGPU (CPU)</th><th>WebGPU (all)</th></tr></table>
+<div class="note" id="gpu-note"></div></div>
+
+<h2>SQLite</h2>
+<p>SQLite compiled to WebAssembly (sql.js), the same as the page uses for <code>db</code>. Rows come back as Sprout records.</p>
+<div class="card"><table id="t-sql"><tr><th>work</th><th>ms</th><th>rows</th></tr></table></div>
+</main>
+
+<script src="sprout3.js?v=20261120f"></script>
+<script src="live3.js?v=20261120f"></script>
+<script src="gpu-paint.js?v=20261120f"></script>
+<script src="sqlite-web.js?v=20261120f"></script>
+<script>
+"use strict";
+const $=id=>document.getElementById(id),S=window.Sprout3,L=window.Sprout3Live;
+S.setLog(()=>{});S.setOut(()=>{});
+const GW=360,GH=480,RESULTS=[];
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const status=t=>$("status").textContent=t;
+function best(f,n){let b=1e9,r;for(let i=0;i<n;i++){const t=performance.now();r=f();b=Math.min(b,performance.now()-t)}return [b,r]}
+async function bestAsync(f,n){let b=1e9,r;for(let i=0;i<n;i++){const t=performance.now();r=await f();b=Math.min(b,performance.now()-t)}return [b,r]}
+const ms=x=>x<0.1?x.toFixed(3):x<10?x.toFixed(2):x.toFixed(1);
+function row(id,cells,cls){const tr=document.createElement("tr");tr.innerHTML=cells.map((c,i)=>"<td"+(cls&&cls[i]?' class="'+cls[i]+'"':"")+">"+c+"</td>").join("");$(id).appendChild(tr);RESULTS.push(id.slice(2)+": "+cells.join(" | "))}
+
+// ---------- the language
+const LANG={
+ fib:{src:"fib : [n | n < 2 [n] else [fib (n - 1) + (fib (n - 2))]]\nresult : fib 25",js:()=>{const f=n=>n<2?n:f(n-1)+f(n-2);return f(25)}},
+ fold:{src:"result : range 1000000 fold [0, [t n | t + n]]",js:()=>{let t=0;for(let i=1;i<=1e6;i++)t+=i;return t}},
+ records:{src:"step : [rs | rs collect [r | r with [y : r y + 1]] keep [r | r y > 0]]\ngo : [rs k | k = 0 [rs] else [go [step rs, k - 1]]]\nresult : go [range 10000 collect [n | [x : n, y : 0]], 20] length",
+  js:()=>{let rs=[];for(let i=1;i<=1e4;i++)rs.push({x:i,y:0});for(let k=0;k<20;k++)rs=rs.map(r=>({...r,y:r.y+1})).filter(r=>r.y>0);return rs.length}}};
+async function benchLang(){
+ for(const [name,b] of Object.entries(LANG)){status("language: "+name);await sleep(10);
+  // the last line runs inside a cell that takes an input, so it is worked out again on every run
+  const c=S.load(b.src.replace(/^result : (.*)$/m,"f : [k | $1]")).field("f");const [t,r]=best(()=>c.run(1),7);const [tj,rj]=best(b.js,7);
+  row("t-lang",[name,ms(t),ms(tj),(t/tj).toFixed(1)+"×",S.fmt(r)+(S.fmt(r)===String(rj)?"":" ≠ "+rj)])}}
+
+// ---------- the games
+const GAMES=["sprout","fireflies","orbit","hop","life","bounce","snake","breakout","particles","ace-board","ace-site","ace-crews"];
+async function benchGames(){
+ for(const name of GAMES){status("games: "+name);await sleep(10);
+  const src=await (await fetch("examples/"+name+".sp?v=20261120f")).text();const g=L.makeGame(src,{W:GW,H:GH});
+  const play=n=>{for(let t=0;t<n;t++){if(t%50===0)g.down(100+(t%160),300);if(t%50===25)g.up();g.tick(1/60);g.draw()}};
+  play(240);const [t]=best(()=>play(120),5);row("t-games",[name,ms(t/120),String(g.draw().length)])}}
+
+// ---------- many particles
+const FOUNTAIN=n=>`spawn : [k | [x : noise [k, 1] * W, y : noise [k, 2] * H, vx : noise [k, 3] * 120 - 60, vy : noise [k, 4] * 120 - 60]]
+start :
+  ps : range ${n} collect spawn
+update : [g |
+  dt : g dt
+  g with [ps : g ps collect [p | p with [x : p x + (p vx * dt) % W, y : p y + (p vy * dt) % H]]]
+]
+draw : [g |
+  clear "#101418"
+  g ps each [p | circle [p x, p y, 2, "#ffcc66"]]
+]`;
+let GPU=null,gpuWhy="";
+async function benchParticles(){
+ try{GPU=await SproutGpu.makeGpuPainter(document.createElement("canvas"))}catch(e){gpuWhy=e.message||String(e)}
+ $("gpu-note").textContent=GPU?"WebGPU: "+(GPU.adapter||"available")+". CPU is the time to build and submit a frame; all is until the GPU has finished it.":"WebGPU isn't available here"+(gpuWhy?" ("+gpuWhy+")":"")+", so only Canvas 2D is timed.";
+ const W2=720,H2=960,cv=document.createElement("canvas");cv.width=W2;cv.height=H2;const ctx=cv.getContext("2d");
+ for(const n of [2000,10000,50000,100000]){status("particles: "+n);await sleep(10);
+  const g=L.makeGame(FOUNTAIN(n),{W:GW,H:GH});for(let t=0;t<3;t++)g.tick(1/60);
+  const [tu]=best(()=>g.tick(1/60),5);const [td,list]=best(()=>g.draw().map(d=>[d[0],d[1].slice()]),5);
+  const [tc]=best(()=>{ctx.setTransform(W2/GW,0,0,H2/GH,0,0);for(const [k,a] of list){if(k==="clear"){ctx.fillStyle=a[0];ctx.fillRect(0,0,GW,GH)}else if(k==="circle"){ctx.fillStyle=a[3];ctx.beginPath();ctx.arc(a[0],a[1],a[2],0,Math.PI*2);ctx.fill()}}},3);
+  let gc="–",ga="–";
+  if(GPU){try{let bc=1e9,ba=1e9;for(let r=0;r<3;r++){const t=await GPU.timeFrames(list,GW,GH,W2,H2,5);bc=Math.min(bc,t.cpu);ba=Math.min(ba,t.total)}gc=ms(bc);ga=ms(ba)}catch(e){gc=ga="failed";gpuWhy=e.message;$("gpu-note").textContent="WebGPU stopped answering here ("+gpuWhy+"), so its times are missing."}}
+  row("t-parts",[n.toLocaleString(),ms(tu),ms(td),ms(tc),gc,ga],[0,tu+td<16.7?"good":"bad",0,tc<16.7?"good":"bad",0,0])}}
+
+// ---------- SQLite
+async function benchSql(){
+ status("SQLite: loading");
+ await new Promise((ok,no)=>{const s=document.createElement("script");s.src="vendor/sqljs/sql-wasm.js?v=20261120f";s.onload=ok;s.onerror=no;document.head.appendChild(s)});
+ const db=await SproutSqlite.openSqlite({base:"vendor/sqljs/",name:"sprout3-bench",fresh:true});S.G.db=db;const raw=db.raw();
+ const N=10000;
+ const [ti]=best(()=>{raw.run("drop table if exists t");raw.run("create table t (id integer primary key, zone integer, hours real, name text)");raw.run("begin");
+  const st=raw.prepare("insert into t values (?, ?, ?, ?)");for(let i=1;i<=N;i++)st.run([i,i%20,(i*7)%40+1,"atom "+i]);st.free();raw.run("commit")},3);
+ row("t-sql",["insert 10,000 rows (one transaction)",ms(ti),N.toLocaleString()]);
+ const [tq,c]=best(()=>{const st=raw.prepare("select * from t");let n=0;while(st.step()){st.get();n++}st.free();return n},5);
+ row("t-sql",["read 10,000 rows in JavaScript",ms(tq),c.toLocaleString()]);
+ // each is inside a cell that takes an input, so it is worked out again on every run (a plain field is worked out once)
+ const q=S.load('f : [k | db query "select * from t"]').field("f");const [ts,r]=best(()=>q.run(1),5);
+ row("t-sql",["db query: 10,000 rows into Sprout records",ms(ts),r.count().toLocaleString()]);
+ const a=S.load('f : [k | db query "select * from t" keep [r | r zone = 3] collect [r | r hours] fold [0, [t h | t + h]]]').field("f");const [ta,v]=best(()=>a.run(1),5);
+ row("t-sql",["the same, then keep, collect and fold in Sprout",ms(ta),"total "+S.fmt(v)]);
+ const w=S.load('f : [k | db query ["select sum(hours) as h from t where zone = ?", [3]] first h]').field("f");const [tw,v2]=best(()=>w.run(1),5);
+ row("t-sql",["the same sum, done by SQLite",ms(tw),"total "+S.fmt(v2)]);
+ await db.clear()}
+
+$("run").onclick=async()=>{$("run").disabled=true;RESULTS.length=0;
+ for(const t of ["t-lang","t-games","t-parts","t-sql"])while($(t).rows.length>1)$(t).deleteRow(1);
+ $("env").textContent=navigator.userAgent;
+ try{await benchLang();await benchGames();await benchParticles();await benchSql();status("done")}catch(e){status("stopped: "+(e.message||e))}
+ $("run").disabled=false;$("copy").disabled=false;window.BENCH_DONE=true};
+$("copy").onclick=async()=>{const t=["Sprout 3 benchmarks",navigator.userAgent,...RESULTS].join("\n");try{await navigator.clipboard.writeText(t);status("copied")}catch(e){prompt("Copy these:",t)}};
+</script>
+</body></html>

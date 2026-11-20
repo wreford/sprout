@@ -16,7 +16,13 @@ function makeGame(src, opts) {
   const argsOf = (a, n) => n === 1 ? [a] : (isCell(a) ? S.partsOf(a) : [a]);
   // host words: drawing happens in draw; sound and shake are effects, queued during update
   const host = { W: opts.W || 360, H: opts.H || 480 };
-  for (const name in DRAW) host[name] = new Native(name, a => { draws.push([name, argsOf(a, DRAW[name])]); return false; }, true);
+  for (const name in DRAW) {
+    host[name] = new Native(name, a => { draws.push([name, argsOf(a, DRAW[name])]); return false; }, true);
+    // the same word with its values given one by one, for column loops: no argument cell per shape
+    const n = DRAW[name];
+    host[name].direct = n === 1 ? (a) => { draws.push([name, [a]]); return false; } : n === 4 ? (a, b, c, d) => { draws.push([name, [a, b, c, d]]); return false; }
+      : (a, b, c, d, e) => { draws.push([name, [a, b, c, d, e]]); return false; };
+  }
   for (const name in SOUND) host[name] = new Native(name, a => S.effect(() => opts.onEffect && opts.onEffect([name, argsOf(a, SOUND[name])])), true);
   Object.assign(host, opts.host || {});
   if (opts.onPrint) S.setOut(opts.onPrint);

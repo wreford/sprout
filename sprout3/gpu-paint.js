@@ -143,8 +143,19 @@ async function makeGpuPainter(canvas) {
     buf.unmap(); buf.destroy(); tex.destroy();
     return out;
   }
+  // time k frames drawn off screen: the CPU cost of building and submitting each one, and the total until the GPU has finished them
+  async function timeFrames(list, gw, gh, w, h, k) {
+    const tex = device.createTexture({ size: [w, h], format, usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC }), view = tex.createView();
+    const sync = device.createBuffer({ size: 256, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+    const t0 = performance.now(); let cpu = 0;
+    for (let i = 0; i < k; i++) { const c0 = performance.now(); const r = encode(list, view, w, h, gw, gh, 0, 0); device.queue.submit([r.enc.finish()]); cpu += performance.now() - c0; }
+    const e = device.createCommandEncoder(); e.copyTextureToBuffer({ texture: tex }, { buffer: sync, bytesPerRow: 256 }, [1, 1]); device.queue.submit([e.finish()]);
+    await sync.mapAsync(GPUMapMode.READ); const total = performance.now() - t0;
+    sync.unmap(); sync.destroy(); tex.destroy();
+    return { cpu: cpu / k, total: total / k };
+  }
   const info = adapter.info || {};
-  const painter = { paint, snapshot, device, name: "WebGPU", adapter: [info.vendor, info.architecture].filter(Boolean).join(" "), done: () => device.queue.onSubmittedWorkDone() };
+  const painter = { paint, snapshot, timeFrames, device, name: "WebGPU", adapter: [info.vendor, info.architecture].filter(Boolean).join(" "), done: () => device.queue.onSubmittedWorkDone() };
   await selfTest();
   return painter;
 }
