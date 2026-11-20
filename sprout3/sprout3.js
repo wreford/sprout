@@ -173,7 +173,7 @@ let uid = 0;
 function jsName(n) { let s = ""; for (const ch of n) s += /[A-Za-z0-9]/.test(ch) ? ch : "_" + ch.charCodeAt(0).toString(16); return "v_" + s + "_" + (uid++); }
 
 class Gen {
-  constructor(globals) { this.globals = globals; this.shapes = []; this.frames = []; this.temps = []; this.consts = []; }
+  constructor(globals) { this.globals = globals; this.shapes = []; this.frames = []; this.temps = []; this.consts = []; this.speed = []; }
   // local temporaries, declared at the top of the JS function being generated (safe under recursion)
   // field shapes and inline caches are made once, when the program loads
   shapeRef(keys) { const k = "SH" + this.consts.length; this.consts.push("const " + k + "=shapeFor(" + JSON.stringify(keys) + ");"); return k; }
@@ -284,6 +284,12 @@ class Gen {
           v = "(((" + ta + "=" + v + ")===true?(" + tb + "=" + A + "):" + ta + "===false?(" + tb + "=false):(" + tb + "=SEND(" + ta + "," + mk + ")))!==false?" + tb + ":" + B + ")";
         } else v = "((" + ta + "=" + v + ")===true?" + A + ":" + ta + "===false?false:" + SND + ta + "," + mk + "))";
       } else v = (tail && isLast ? "TAIL(" : "SEND(") + v + "," + this.genTerm(t, false) + ")";
+      // speed notes: can this collect, keep or each run over columns? (decision 86)
+      const pw = T[i - 1];
+      if (t.k === "cell" && t.names.length && pw && pw.k === "word" && SPEEDW[pw.v] && t.kern) {
+        const r = t.kern[SPEEDW[pw.v]];
+        this.speed.push({ line: pw.line || 0, word: pw.v, fast: r === true, why: r === true ? "" : r });
+      }
     }
     return v;
   }
@@ -413,6 +419,7 @@ class Gen {
     const runJS = "(" + [act + "_L", act + "_it"].concat(nparams).join(",") + ")=>{" + runBody + "}";
     // column versions of this cell's body, used when it is given a list stored as columns (decision 82)
     const kern = c.names.length === 1 && !c.names[0].def && !sh.usesIt && !sh.usesLeft && c.items.length === 1 && c.items[0].k === "chain" ? this.genKernels(c) : null;
+    if (!c.kern) { const why = c.items.length !== 1 || c.items[0].k !== "chain" ? "the body has more than one step" : c.names.length !== 1 ? "it doesn't take exactly one named input" : "it uses _ or left"; c.kern = { m: why, t: why, e: why }; }
     return "MK(S[" + k + "]," + slotsJS + "," + runJS + ",[" + defs.join(",") + "],()=>[" + caps.join(",") + "]" + (kern ? "," + kern : "") + ")";
   }
 
@@ -423,11 +430,13 @@ class Gen {
   // Each is (self, rs, cols, n) => result, or null to fall back to the ordinary way, so they never change what a program does.
   genKernels(c) {
     const p = c.names[0].n, T = c.items[0].terms, out = [];
-    const fresh = () => ({ p, cols: new Map(), caps: new Map() });
+    const fresh = () => ({ p, cols: new Map(), caps: new Map(), why: null });
+    const kern = c.kern = { m: "collect runs over columns only as " + p + " with [new fields]", t: "the body doesn't give true or false", e: "the body isn't one host word given a list of values" };
     // m: s with [fields]
     if (T.length === 3 && T[0].k === "word" && T[0].v === p && T[1].k === "word" && (T[1].v === "with" || T[1].v === "..") && !this.lookup(T[1].v) && T[2].k === "cell" && fieldsOnly(T[2])) {
       const K = fresh(), keys = T[2].items.map(x => x.name), vals = T[2].items.map(x => this.kChain(x.val, K));
-      if (vals.every(v => v && v.ty === "n")) {
+      kern.m = vals.every(v => v && v.ty === "n") ? true : K.why || "a new value isn't number maths";
+      if (kern.m === true) {
         const q = JSON.stringify;
         out.push("m:(self,rs,cols,n)=>{" + kPro(K) + "if(rs.index(\"with\")>=0||rs.index(\"..\")>=0)return null;let out=rs;const oc=cols.slice();" +
           keys.map((k, j) => "let $j" + j + "=out.index(" + q(k) + ");if($j" + j + "<0){out=out.add(" + q(k) + ");$j" + j + "=out.keys.length-1}const $o" + j + "=new Float64Array(n);").join("") +
@@ -437,6 +446,7 @@ class Gen {
     }
     // t: a test
     { const K = fresh(), v = this.kChain(c.items[0], K);
+      kern.t = v && v.ty === "b" ? true : v ? kern.t : K.why || kern.t;
       if (v && v.ty === "b")
         out.push("t:(self,rs,cols,n)=>{" + kPro(K) + "const $k=new Uint32Array(n);let $m=0;for(let $i=0;$i<n;$i++){if(" + v.js + ")$k[$m++]=$i}" +
           "if($m===n)return self;const oc=new Array(cols.length);for(let $j=0;$j<cols.length;$j++){const $c=cols[$j],$o=new Float64Array($m);for(let $q=0;$q<$m;$q++)$o[$q]=$c[$k[$q]];oc[$j]=$o}return COLC(rs,oc,$m)}");
@@ -450,6 +460,7 @@ class Gen {
         if (it.terms.length === 1 && t0.k === "word" && t0.v !== p && !["_", "left", "right", "!", "true", "false"].includes(t0.v)) return this.kCap(t0.v, K, false);
         const v = this.kChain(it, K); return v && v.js;
       });
+      kern.e = args && args.every(a => a) ? true : K.why || "an argument isn't a number, a word in quotes or a name from outside";
       if (args && args.every(a => a))
         out.push("e:(self,rs,cols,n)=>{" + kPro(K) + "if(!(" + F + " instanceof NATIVE))return null;const $f=" + F + ".fn;for(let $i=0;$i<n;$i++)$f(VP([" + args.join(",") + "]));return true}");
     }
@@ -461,53 +472,58 @@ class Gen {
     let v, i;
     if (T[0].k === "word" && T[0].v === K.p) {
       const f = T[1];
-      if (!f || f.k !== "word" || f.v === K.p || ["!", "true", "false", "_", "left", "right"].includes(f.v)) return null;
-      if ((FUSED.has(f.v) || LAZYOPS.has(f.v)) && T.length > 2 && !this.lookup(f.v)) return null;
+      if (!f || f.k !== "word" || f.v === K.p || ["!", "true", "false", "_", "left", "right"].includes(f.v)) return kNo(K, "it uses " + K.p + " itself, not one of its fields");
+      if ((FUSED.has(f.v) || LAZYOPS.has(f.v)) && T.length > 2 && !this.lookup(f.v)) return kNo(K, "it uses " + K.p + " itself, not one of its fields");
       v = { js: kCol(f.v, K), ty: "n" }; i = 2;
     } else { v = this.kTerm(T[0], K); i = 1; }
     for (; v && i < T.length; i++) {
-      const t = T[i]; if (t.k !== "word") return null;
+      const t = T[i]; if (t.k !== "word") return kNo(K, t.k === "cell" ? "it calls something for each item" : "it sends a value to a value");
       const w = t.v;
       if (FUSED.has(w) && i + 1 < T.length && !this.lookup(w)) {
-        const op = KOPS[w]; if (!op || v.ty !== "n") return null;
-        const b = this.kTerm(T[++i], K); if (!b || b.ty !== "n") return null;
+        const op = KOPS[w]; if (!op) return kNo(K, "it uses " + w); if (v.ty !== "n") return kNo(K, "it does maths on true or false");
+        const b = this.kTerm(T[++i], K); if (!b) return null; if (b.ty !== "n") return kNo(K, "it does maths on true or false");
         v = w === "%" ? { js: "(((" + v.js + "%" + b.js + ")+" + b.js + ")%" + b.js + ")", ty: "n" } : { js: "(" + v.js + op[0] + b.js + ")", ty: op[1] };
       } else if ((w === "and" || w === "or") && i + 1 < T.length && !this.lookup(w)) {
-        if (v.ty !== "b" || T[i + 1].k === "cell") return null;
-        const b = this.kTerm(T[++i], K); if (!b || b.ty !== "b") return null;
+        if (v.ty !== "b" || T[i + 1].k === "cell") return kNo(K, "its " + w + " isn't between two tests");
+        const b = this.kTerm(T[++i], K); if (!b) return null; if (b.ty !== "b") return kNo(K, "its " + w + " isn't between two tests");
         v = { js: "(" + v.js + (w === "and" ? "&&" : "||") + b.js + ")", ty: "b" };
       } else if (v.ty === "n" && KPOST[w]) v = { js: KPOST[w] + "(" + v.js + ")", ty: "n" };
       else if (v.ty === "n" && (w === "min" || w === "max") && i + 1 < T.length) {
-        const b = this.kTerm(T[++i], K); if (!b || b.ty !== "n") return null;
+        const b = this.kTerm(T[++i], K); if (!b) return null; if (b.ty !== "n") return kNo(K, "it does maths on true or false");
         v = { js: "Math." + w + "(" + v.js + "," + b.js + ")", ty: "n" };
       } else if (v.ty === "b" && w === "not") v = { js: "(!" + v.js + ")", ty: "b" };
-      else return null;
+      else return kNo(K, "it uses " + w);
     }
     return v;
   }
   kTerm(t, K) {
     if (t.k === "num") return { js: "(" + t.v + ")", ty: "n" };
-    if (t.k === "group") { if (t.items.length !== 1 || t.items[0].k !== "chain") return null; const v = this.kChain(t.items[0], K); return v && { js: "(" + v.js + ")", ty: v.ty }; }
-    if (t.k !== "word") return null;
+    if (t.k === "group") { if (t.items.length !== 1 || t.items[0].k !== "chain") return kNo(K, "it has a group of several steps"); const v = this.kChain(t.items[0], K); return v && { js: "(" + v.js + ")", ty: v.ty }; }
+    if (t.k !== "word") return kNo(K, t.k === "str" || t.k === "tmpl" ? "it works with words, not numbers" : "it calls something for each item");
     if (t.v === "true" || t.v === "false") return { js: t.v, ty: "b" };
-    if (t.v === K.p || ["_", "left", "right", "!"].includes(t.v) || t.v in ALL) return null;
-    const r = this.kCap(t.v, K, true); return r && { js: r, ty: "n" };
+    if (t.v === K.p) return kNo(K, "it uses " + K.p + " itself, not one of its fields");
+    if (["_", "left", "right", "!"].includes(t.v) || t.v in ALL) return kNo(K, "it uses " + t.v);
+    const rc = this.lookup(t.v); if (rc && rc.cell) return kNo(K, "it calls " + t.v + " for each item");
+    const r = this.kCap(t.v, K, true); return r ? { js: r, ty: "n" } : kNo(K, "it uses " + t.v + ", which isn't a number from outside the loop");
   }
   // a name from outside the cell, read once before the loop. A number is checked for; random and other getters are never captured.
   kCap(n, K, numeric) {
     let ref;
     const r = this.lookup(n);
     if (r) ref = this.refJS(r);
-    else if (this.globals.has(n)) { const d = Object.getOwnPropertyDescriptor(G, n); if (!d || d.get) return null; ref = this.globalRef(n); }
-    else return null;
+    else if (this.globals.has(n)) { const d = Object.getOwnPropertyDescriptor(G, n); if (!d || d.get) return kNo(K, "it reads " + n + ", which changes from item to item"); ref = this.globalRef(n); }
+    else return kNo(K, "it uses " + n + ", which isn't a name the loop can see");
     let e = K.caps.get(n);
     if (!e) { e = { v: "$k" + K.caps.size, ref, num: false }; K.caps.set(n, e); }
     if (numeric) e.num = true;
     return e.v;
   }
 }
+const SPEEDW = { collect: "m", keep: "t", each: "e" };
 const KOPS = { "+": ["+", "n"], "-": ["-", "n"], "*": ["*", "n"], "/": ["/", "n"], "%": ["%", "n"], "<": ["<", "b"], ">": [">", "b"], "<=": ["<=", "b"], ">=": [">=", "b"], "=": ["===", "b"], "!=": ["!==", "b"] };
 const KPOST = { abs: "Math.abs", floor: "Math.floor", round: "Math.round", ceil: "Math.ceil", sqrt: "Math.sqrt", sin: "Math.sin", cos: "Math.cos", tan: "Math.tan", log: "Math.log", neg: "-" };
+// a kernel can't be made: remember the first reason, for the speed notes (decision 86)
+function kNo(K, why) { if (!K.why) K.why = why; return null; }
 function kCol(f, K) { let v = K.cols.get(f); if (!v) { v = "$c" + K.cols.size; K.cols.set(f, v); } return v + "[$i]"; }
 // the start of a kernel: find each field's column, and read each outside name once
 function kPro(K) {
@@ -562,7 +578,9 @@ function compile(src, globals) {
   g.temps.push([]);
   const js = g.genCell({ k: "cell", names: [], items: ast });
   const top = g.temps.pop();
-  return { js, shapes: g.shapes, prologue: (top.length ? "let " + top.join(",") + ";\n" : "") + g.consts.join("\n") };
+  // each body is compiled more than once (to run, and to read fields), so its speed note is kept once
+  const seenSpeed = new Set(), speed = g.speed.filter(x => { const k = x.line + " " + x.word + " " + x.fast; if (seenSpeed.has(k)) return false; seenSpeed.add(k); return true; });
+  return { js, shapes: g.shapes, prologue: (top.length ? "let " + top.join(",") + ";\n" : "") + g.consts.join("\n"), speed };
 }
 
 // ===================================================================== runtime
@@ -1044,11 +1062,11 @@ function load(src, opts) {
     preludeCell = load(PRELUDE, { noPrelude: true });
     for (const k of preludeCell.fieldNames()) { const kk = k; Object.defineProperty(G, kk, { get: () => preludeCell.field(kk), enumerable: true, configurable: true }); }
   }
-  const { js, shapes, prologue } = compile(src, globalNames());
+  const { js, shapes, prologue, speed } = compile(src, globalNames());
   const names = Object.keys(RT).filter(k => k !== "S");
   const f = new Function(...names, "S", prologue + "\nreturn " + js + "\n//# sourceURL=sprout.js");
   const cell = f(...names.map(k => RT[k]), shapes);
-  cell.js = js;
+  cell.js = js; cell.speed = speed;
   return cell;
 }
 

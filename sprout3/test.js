@@ -46,6 +46,10 @@ ok("84 match only works out the answer it picks", val('match [1, [1, "one", 2, n
 { const lineOf = src => { try { S.load(src); return 0; } catch (e) { return e.line; } };
   ok("an unclosed [ is reported where it opened", lineOf("a : 1\nb : [2, 3\nc : 4\nd : [5]\ne : 6") === 2);
   ok("an unclosed ( too", lineOf("a : 1\nb : (2 + 3\nc : 4") === 2); }
+{ const sp = S.load("xs : []\nf : [p | p x > 1]\na : xs collect [p | p with [x : p x + 1]]\nb : xs keep [p | p x > 1]\nc : xs keep [p | f p]\nd : xs collect [p | p with [x : rand [0, 1]]]\ne : xs keep [p | p name = \"a\"]").speed;
+  const at = l => sp.find(n => n.line === l);
+  ok("86 speed notes: a with of number maths runs over columns", at(3).fast && at(3).word === "collect" && at(4).fast && at(4).word === "keep");
+  ok("86 speed notes: say why a body runs item by item", at(5).why === "it calls f for each item" && /calls something/.test(at(6).why) && at(7).why === "it works with words, not numbers", sp.map(n => n.line + " " + n.why)); }
 ok("and/or run a call on their right before checking it", val("[k | k > 1 and ([d | d = 3] k)] 3") === "true" && val("[k | k > 9 or ([d | d = 3] k)] 3") === "true");
 ok("81 ( ) is plain text", val('"rgba(0,0,0,0.5)"') === "rgba(0,0,0,0.5)");
 ok("81 escaped bracket", val('"a\\[b]"') === "a[b]");

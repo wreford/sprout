@@ -90,6 +90,10 @@ body.scrubbing,body.scrubbing *{cursor:ew-resize!important;user-select:none!impo
 .mark{position:absolute;left:0;right:0;height:var(--LH);z-index:0;pointer-events:none;display:none}
 .mark.on{display:block}
 #errl{background:var(--badbg)}
+#smarks{position:absolute;left:0;top:0;width:4px;height:100%;z-index:4;pointer-events:none;overflow:hidden}
+#smarks i{position:absolute;left:1px;width:3px;border-radius:2px;height:calc(var(--LH) - 4px)}
+#smarks .f{background:var(--ok)}#smarks .s{background:var(--warn);opacity:.55}
+.sh{font:600 15px var(--serif);padding:16px 18px 4px}.sp .k2::before{content:"";display:inline-block;width:3px;height:12px;border-radius:2px;margin-right:8px;vertical-align:-1px;background:var(--warn);opacity:.6}.sp.f .k2::before{background:var(--ok);opacity:1}
 #live{background:var(--accbg);transition:opacity .7s}#live.fade{opacity:0}
 i{font-style:normal}
 .c{color:var(--c);font-style:italic}.s{color:var(--s)}.n{color:var(--n)}.k{color:var(--k)}.a{color:var(--a)}.o{color:var(--o)}.tp{background:var(--tp);border-radius:3px}
@@ -210,7 +214,7 @@ body.t-out #out{display:block}body.t-st #st{display:block}
    <button class="twk" id="bTweak" title="Drag numbers to change them while it runs (or hold Alt and drag)"><svg viewBox="0 0 16 16"><path d="M1 8l3-3v2h8V5l3 3-3 3V9H4v2z"/></svg>Tweak</button></div>
   <div id="card">
    <div id="err"><span></span><u>Go to line</u></div>
-   <div id="ed"><div class="mark" id="live"></div><div class="mark" id="errl"></div><div id="gut"></div><pre id="hl"></pre><textarea id="ta" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" aria-label="Code"></textarea></div>
+   <div id="ed"><div id="smarks"></div><div class="mark" id="live"></div><div class="mark" id="errl"></div><div id="gut"></div><pre id="hl"></pre><textarea id="ta" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" aria-label="Code"></textarea></div>
    <div id="st"></div>
    <div id="out"></div>
    <div id="keys"></div>
@@ -234,11 +238,11 @@ body.t-out #out{display:block}body.t-st #st{display:block}
 <div id="modal"><div id="mBox"><div class="mh"><h2 id="mTitle"></h2><button class="x" data-close aria-label="Close">✕</button></div><div id="mBody"></div></div></div>
 <div id="toast"></div><div id="scrubTip"></div>
 
-<script src="sprout3.js?v=20261119h"></script>
-<script src="live3.js?v=20261119h"></script>
+<script src="sprout3.js?v=20261120a"></script>
+<script src="live3.js?v=20261120a"></script>
 <script>
 "use strict";
-const V="20261119h";
+const V="20261120a";
 const $=id=>document.getElementById(id);
 const S=window.Sprout3,L=window.Sprout3Live;
 const GW=360,GH=480;
@@ -282,7 +286,7 @@ function beep(f,d){if(muted||!AC)return;try{const o=AC.createOscillator(),v=AC.c
 function onEffect([name,a]){if(name==="beep")beep(a[0],a[1]);else if(name==="shake")shakeAmt=Math.max(shakeAmt,+a[0]||0)}
 
 // ---------- the game
-let game=null,running="",goodSrc="",goodTicks=0,paused=false,hpos=-1,err=null,msAvg=0,lastSwap=null;
+let game=null,running="",goodSrc="",goodTicks=0,paused=false,hpos=-1,err=null,msAvg=0,lastSwap=null,speedNotes=[];
 function setErr(e){err=e;const el=$("err");if(e){el.firstChild.innerHTML="<b>"+(e.line?"Line "+e.line:"Error")+"</b> · "+esc(e.msg);el.lastChild.style.display=e.line?"":"none";el.classList.add("on")}else el.classList.remove("on");markErr();subUI()}
 $("err").onclick=()=>{if(err&&err.line){tab("code");goLine(err.line)}};
 const msgOf=e=>String(e&&e.message||e);
@@ -292,11 +296,11 @@ function build(src,fresh){
  if(cell.field("update")===S.UNSET){
   game=null;document.body.classList.add("prog");clearOut();
   try{cell.run(S.BANG)}catch(e){setErr({line:e.line||0,msg:msgOf(e)});return false}
-  running=src;goodSrc=src;setErr(null);swapped();renderState();return true}
+  speedNotes=cell.speed||[];running=src;goodSrc=src;setErr(null);swapped();renderState();speedMarks();return true}
  document.body.classList.remove("prog");
  try{if(game&&!fresh)game.swap(src);else{game=L.makeGame(src,{W:GW,H:GH,onEffect});setPaused(false)}}
  catch(e){setErr({line:e.line||0,msg:msgOf(e)});return false}
- running=src;goodTicks=0;setErr(null);swapped();return true}
+ speedNotes=game.speed||[];running=src;goodTicks=0;setErr(null);swapped();speedMarks();return true}
 function swapped(){lastSwap=new Date();subUI();progUI()}
 // a program that only prints shows its cover as the artwork, and its main button runs it again
 function progUI(){const prog=document.body.classList.contains("prog"),ng=$("noGame");
@@ -419,8 +423,11 @@ function lineHTML(s){let o="",i=0;const n=s.length;
  return o}
 let code="",saveT=0,compT=0,liveSrc="",liveT=0,dirty=false,curEx="";
 const LH=()=>parseFloat(getComputedStyle(ta).lineHeight)||21,PAD=12;
-function render(){hl.innerHTML=code.split("\n").map(lineHTML).join("\n")+"\n ";const n=code.split("\n").length;let gs="";for(let i=1;i<=n;i++)gs+=i+"\n";gut.textContent=gs;sync()}
-function sync(){hl.scrollTop=ta.scrollTop;hl.scrollLeft=ta.scrollLeft;gut.style.transform="translateY("+(-ta.scrollTop)+"px)";markErr()}
+function render(){speedMarks();hl.innerHTML=code.split("\n").map(lineHTML).join("\n")+"\n ";const n=code.split("\n").length;let gs="";for(let i=1;i<=n;i++)gs+=i+"\n";gut.textContent=gs;sync()}
+function sync(){hl.scrollTop=ta.scrollTop;hl.scrollLeft=ta.scrollLeft;gut.style.transform="translateY("+(-ta.scrollTop)+"px)";$("smarks").style.transform="translateY("+(-ta.scrollTop)+"px)";markErr()}
+// a thin bar beside each collect, keep and each: green when it can run over columns, amber when it runs item by item
+function speedMarks(){const byLine=new Map();for(const n of speedNotes){const was=byLine.get(n.line);byLine.set(n.line,was===undefined?n.fast:was&&n.fast)}
+ let h="";for(const [line,fast] of byLine)if(line)h+='<i class="'+(fast?"f":"s")+'" style="top:'+(PAD+(line-1)*LH()+2)+'px"></i>';$("smarks").innerHTML=h;$("smarks").style.height=(PAD*2+code.split("\n").length*LH())+"px"}
 ta.addEventListener("scroll",sync);
 function markAt(el,line,count){if(!line){el.classList.remove("on");return}el.classList.add("on");el.style.top=(PAD+(line-1)*LH()-ta.scrollTop)+"px";el.style.height=(count||1)*LH()+"px"}
 function markErr(){markAt($("errl"),err&&TAB==="code"?err.line:0)}
@@ -473,11 +480,14 @@ ta.addEventListener("pointerup",endScrub);ta.addEventListener("pointercancel",en
 
 // ---------- the state view: every field of the game right now
 function brief(v){if(S.isCell(v)&&!(v instanceof S.Cell&&v.takesInput())){const n=v.count();if(n>6)return n+" parts";const s=S.fmt(v);return s.length>140?s.slice(0,140)+"…]":s}const s=S.fmt(v);return s.length>140?s.slice(0,140)+"…":s}
+function speedHTML(){if(!speedNotes.length)return"";const fast=speedNotes.filter(n=>n.fast).length;
+ return'<div class="sh">Loops over lists</div><div class="foot" style="padding-top:0">'+fast+" of "+speedNotes.length+" can run over columns: a list of 32 or more records of numbers, stored one array per field. The others run item by item, which is fine for short lists.</div>"+
+  speedNotes.slice().sort((a,b)=>a.line-b.line).map(n=>'<div class="row sp'+(n.fast?" f":"")+'"><span class="k2">line '+n.line+" · "+n.word+'</span><span class="v">'+(n.fast?"runs over columns":"item by item: "+esc(n.why))+"</span></div>").join("")}
 function renderState(){const el=$("st");
- if(!game){el.innerHTML='<div class="foot">No game is running.</div>';return}
+ if(!game){el.innerHTML='<div class="foot">No game is running.</div>'+speedHTML();return}
  let rows=[];try{for(const [k,v] of S.fieldsOf(game.state))rows.push([k,brief(v)])}catch(e){el.textContent=msgOf(e);return}
  el.innerHTML=rows.map(([k,v])=>'<div class="row"><span class="k2">'+esc(k)+'</span><span class="v">'+esc(v)+"</span></div>").join("")+
-  '<div class="foot">'+(paused?"Paused":"Live")+" · "+game.history.length+" moments saved for rewind</div>"}
+  '<div class="foot">'+(paused?"Paused":"Live")+" · "+game.history.length+" moments saved for rewind</div>"+speedHTML()}
 setInterval(()=>{if(TAB==="st")renderState()},250);
 
 // ---------- tabs

@@ -49,6 +49,8 @@ function makeGame(src, opts) {
 
   const api = {
     get state() { return state; }, history,
+    // which collect, keep and each bodies can run over columns, from the compiler (decision 86)
+    get speed() { return file.speed || []; },
     down(x, y) { send(ev({ kind: "down", x, y })); },
     move(x, y) { send(ev({ kind: "move", x, y })); },
     up() { send(ev({ kind: "up" })); },
