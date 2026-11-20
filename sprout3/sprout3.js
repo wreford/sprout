@@ -7,46 +7,46 @@
 // Tokens: {t:"num",v} {t:"str",v} {t:"tmpl",parts:[string|{eager,src}]} {t:"word",v}
 // and the punctuation strings "[" "]" "(" ")" "," "|" ":" "\n".
 // A new line plus a deeper indent opens "[" (decision 59); a shallower one closes it.
-const WORDSTOP = " \t[](),|:\"";
+const WORD_STOP_CHARS = " \t[](),|:\"";
 
-function lexLine(s, lineNo, out) {
-  let i = 0; const n = s.length;
-  while (i < n) {
-    const c = s[i];
-    if (c === " " || c === "\t") { i++; continue; }
-    if (c === "-" && s[i + 1] === "-") break; // comment to the end of the line
-    if ("[](),|".includes(c)) { out.push(c); i++; continue; }
-    if (c === ":") { out.push(":"); i++; continue; }
-    if (c === '"') { i = lexString(s, i, lineNo, out); continue; }
+function lexLine(line, lineNo, out) {
+  let i = 0; const length = line.length;
+  while (i < length) {
+    const char = line[i];
+    if (char === " " || char === "\t") { i++; continue; }
+    if (char === "-" && line[i + 1] === "-") break; // comment to the end of the line
+    if ("[](),|".includes(char)) { out.push(char); i++; continue; }
+    if (char === ":") { out.push(":"); i++; continue; }
+    if (char === '"') { i = lexString(line, i, lineNo, out); continue; }
     let j = i;
-    while (j < n && !WORDSTOP.includes(s[j]) && !(s[j] === "-" && s[j + 1] === "-" && j > i)) j++;
-    let w = s.slice(i, j); i = j;
-    if (/^-?\d+(\.\d+)?$/.test(w)) { out.push({ t: "num", v: parseFloat(w), line: lineNo }); continue; }
+    while (j < length && !WORD_STOP_CHARS.includes(line[j]) && !(line[j] === "-" && line[j + 1] === "-" && j > i)) j++;
+    let word = line.slice(i, j); i = j;
+    if (/^-?\d+(\.\d+)?$/.test(word)) { out.push({ kind: "num", value: parseFloat(word), line: lineNo }); continue; }
     // a trailing ! is its own word: hello! is hello ! (decision 67)
-    if (w.length > 1 && w.endsWith("!")) { out.push({ t: "word", v: w.slice(0, -1), line: lineNo }); w = "!"; }
-    out.push({ t: "word", v: w, line: lineNo });
+    if (word.length > 1 && word.endsWith("!")) { out.push({ kind: "word", value: word.slice(0, -1), line: lineNo }); word = "!"; }
+    out.push({ kind: "word", value: word, line: lineNo });
   }
 }
 
 // "a [x] b": [ ] puts a value into a string (decision 81). ( ) is plain text, so SQL and CSS need no escapes. \[ is a plain bracket.
-function lexString(s, i, lineNo, out) {
+function lexString(line, start, lineNo, out) {
   const ESC = { n: "\n", t: "\t", "\\": "\\", '"': '"', "[": "[" };
-  let j = i + 1, buf = ""; const parts = [];
-  while (j < s.length && s[j] !== '"') {
-    const c = s[j];
-    if (c === "\\" && j + 1 < s.length) { const x = s[j + 1]; buf += ESC[x] !== undefined ? ESC[x] : x; j += 2; continue; }
-    if (c === "[") {
-      let d = 1, k = j + 1;
-      while (k < s.length && d) { if (s[k] === '"') break; if (s[k] === "[") d++; else if (s[k] === "]") d--; if (d) k++; }
-      if (d) throw new SproutError("a [ in a string needs a ] to close it", lineNo);
-      parts.push(buf); buf = ""; parts.push({ src: s.slice(j + 1, k) }); j = k + 1; continue;
+  let at = start + 1, text = ""; const parts = [];
+  while (at < line.length && line[at] !== '"') {
+    const char = line[at];
+    if (char === "\\" && at + 1 < line.length) { const escaped = line[at + 1]; text += ESC[escaped] !== undefined ? ESC[escaped] : escaped; at += 2; continue; }
+    if (char === "[") {
+      let depth = 1, end = at + 1;
+      while (end < line.length && depth) { if (line[end] === '"') break; if (line[end] === "[") depth++; else if (line[end] === "]") depth--; if (depth) end++; }
+      if (depth) throw new SproutError("a [ in a string needs a ] to close it", lineNo);
+      parts.push(text); text = ""; parts.push({ src: line.slice(at + 1, end) }); at = end + 1; continue;
     }
-    buf += c; j++;
+    text += char; at++;
   }
-  if (j >= s.length) throw new SproutError("a string needs a closing \"", lineNo);
-  if (parts.length) { parts.push(buf); out.push({ t: "tmpl", parts, line: lineNo }); }
-  else out.push({ t: "str", v: buf, line: lineNo });
-  return j + 1;
+  if (at >= line.length) throw new SproutError("a string needs a closing \"", lineNo);
+  if (parts.length) { parts.push(text); out.push({ kind: "tmpl", parts, line: lineNo }); }
+  else out.push({ kind: "str", value: text, line: lineNo });
+  return at + 1;
 }
 
 function tokenize(src) {
@@ -74,22 +74,22 @@ function tokenize(src) {
 }
 
 // ===================================================================== parser
-// AST: {k:"num",v} {k:"str",v} {k:"tmpl",parts} {k:"word",v,line} {k:"group",items}
-//      {k:"cell",names:[{n,def}],items,src} {k:"chain",terms} {k:"bind",name,val,line}
+// the tree: {type:"num",value} {type:"str",value} {type:"tmpl",parts} {type:"word",value,line} {type:"group",items}
+//      {type:"cell",names:[{name,defaultValue}],items} {type:"chain",terms} {type:"bind",name,value,line}
 class SproutError extends Error { constructor(msg, line) { super(msg); this.line = line || 0; } }
 
 class Parser {
-  constructor(toks, src) { this.t = toks; this.i = 0; this.src = src; }
-  pk() { return this.i < this.t.length ? this.t[this.i] : null; }
-  nx() { return this.t[this.i++]; }
-  line() { for (let j = Math.min(this.i, this.t.length - 1); j >= 0; j--) if (this.t[j] && this.t[j].line) return this.t[j].line; return 0; }
-  program() { const items = this.items(null); if (this.pk() !== null) throw new SproutError("this " + this.pk() + " doesn't close anything", this.line()); return items; }
+  constructor(tokens, src) { this.tokens = tokens; this.i = 0; this.src = src; }
+  peek() { return this.i < this.tokens.length ? this.tokens[this.i] : null; }
+  next() { return this.tokens[this.i++]; }
+  line() { for (let j = Math.min(this.i, this.tokens.length - 1); j >= 0; j--) if (this.tokens[j] && this.tokens[j].line) return this.tokens[j].line; return 0; }
+  program() { const items = this.items(null); if (this.peek() !== null) throw new SproutError("this " + this.peek() + " doesn't close anything", this.line()); return items; }
   items(end) {
     const out = [];
     for (;;) {
-      const t = this.pk();
+      const t = this.peek();
       if (t === null || t === end) break;
-      if (t === "," || t === "\n") { this.nx(); continue; }
+      if (t === "," || t === "\n") { this.next(); continue; }
       if (t === "]" || t === ")") throw new SproutError("this " + t + " doesn't match", this.line());
       out.push(this.item());
     }
@@ -98,40 +98,40 @@ class Parser {
   item() {
     const line = this.line();
     const c = this.chain();
-    if (this.pk() === ":") {
-      this.nx();
-      if (c.terms.length !== 1 || c.terms[0].k !== "word") throw new SproutError("only a name can go before :", line);
+    if (this.peek() === ":") {
+      this.next();
+      if (c.terms.length !== 1 || c.terms[0].type !== "word") throw new SproutError("only a name can go before :", line);
       const val = this.chain();
       if (!val.terms.length) throw new SproutError("a value has to follow :", line);
-      return { k: "bind", name: c.terms[0].v, val, line };
+      return { type: "bind", name: c.terms[0].value, value: val, line };
     }
     return c;
   }
   chain() {
     const terms = [];
     for (;;) {
-      const t = this.pk();
+      const t = this.peek();
       if (t === null || t === "," || t === "\n" || t === ":" || t === "|" || t === "]" || t === ")") break;
       terms.push(this.term());
     }
-    return { k: "chain", terms };
+    return { type: "chain", terms };
   }
   term() {
-    const t = this.nx();
+    const t = this.next();
     // an unclosed bracket is reported where it opened, not where the file ran out
     if (t === "[") return this.cell(this.line());
-    if (t === "(") { const at = this.line(); const items = this.items(")"); if (this.nx() !== ")") throw new SproutError("a ( needs a ) to close it", at); return { k: "group", items }; }
-    if (t.t === "num") return { k: "num", v: t.v };
-    if (t.t === "str") return { k: "str", v: t.v };
-    if (t.t === "tmpl") return { k: "tmpl", parts: t.parts.map(p => typeof p === "string" ? p : { ast: parseInner(p.src, t.line) }) };
-    if (t.t === "word") return { k: "word", v: t.v, line: t.line };
+    if (t === "(") { const at = this.line(); const items = this.items(")"); if (this.next() !== ")") throw new SproutError("a ( needs a ) to close it", at); return { type: "group", items }; }
+    if (t.kind === "num") return { type: "num", value: t.value };
+    if (t.kind === "str") return { type: "str", value: t.value };
+    if (t.kind === "tmpl") return { type: "tmpl", parts: t.parts.map(p => typeof p === "string" ? p : { ast: parseInner(p.src, t.line) }) };
+    if (t.kind === "word") return { type: "word", value: t.value, line: t.line };
     throw new SproutError("this doesn't make sense here: " + t, this.line());
   }
   cell(openLine) {
     // input names before a | at this depth: [x y : 0 | ...]
     let depth = 0, bar = -1;
-    for (let j = this.i; j < this.t.length; j++) {
-      const x = this.t[j];
+    for (let j = this.i; j < this.tokens.length; j++) {
+      const x = this.tokens[j];
       if (x === "[" || x === "(") depth++;
       else if (x === "]" || x === ")") { if (depth === 0) break; depth--; }
       else if (x === "|" && depth === 0) { bar = j; break; }
@@ -139,24 +139,24 @@ class Parser {
     const names = [];
     if (bar >= 0) {
       while (this.i < bar) {
-        const x = this.nx();
+        const x = this.next();
         if (x === "," || x === "\n") continue;
-        if (!x || x.t !== "word") throw new SproutError("only names go before |", this.line());
-        const nm = { n: x.v, def: null };
-        if (this.pk() === ":") { this.nx(); nm.def = this.term(); }
+        if (!x || x.kind !== "word") throw new SproutError("only names go before |", this.line());
+        const nm = { name: x.value, defaultValue: null };
+        if (this.peek() === ":") { this.next(); nm.defaultValue = this.term(); }
         names.push(nm);
       }
-      this.nx(); // |
+      this.next(); // |
     }
     const items = this.items("]");
-    if (this.nx() !== "]") throw new SproutError("a [ needs a ] to close it", openLine || this.line());
-    return { k: "cell", names, items }; // [[x]] is a cell holding a cell (decision 71: no collapse)
+    if (this.next() !== "]") throw new SproutError("a [ needs a ] to close it", openLine || this.line());
+    return { type: "cell", names, items }; // [[x]] is a cell holding a cell (decision 71: no collapse)
   }
 }
 function parseInner(src, line) {
   const p = new Parser(tokenize(src), src);
   const items = p.program();
-  if (items.length !== 1 || items[0].k !== "chain") throw new SproutError("put one value inside a string's brackets", line);
+  if (items.length !== 1 || items[0].type !== "chain") throw new SproutError("put one value inside a string's brackets", line);
   // it counts its own lines from 1; what's inside a string is on the string's line
   (function at(n) { if (!n || typeof n !== "object") return; if (typeof n.line === "number") n.line = line; for (const k in n) at(n[k]); })(items[0]);
   return items[0];
@@ -167,878 +167,908 @@ function parse(src) { return new Parser(tokenize(src), src).program(); }
 // Each cell literal compiles to two JS functions:
 //   run(a)   : straight-line code that works out every item in order (used when the cell is run)
 //   slots(a) : one thunk per item, worked out on first read and kept (used when fields or parts are read; decision 51)
-// Names are JS consts captured by closures; since nothing is rebound, that is the same as filling names in (decision 24).
-const FUSED = new Set(["+", "-", "*", "/", "%", "<", ">", "<=", ">=", "=", "!=", "..", "with", "@"]);
-const LAZYOPS = new Set(["and", "or", "else"]);
+// Names are JS constants captured by closures; since nothing is rebound, that is the same as filling names in (decision 24).
+const FUSED_OPERATORS = new Set(["+", "-", "*", "/", "%", "<", ">", "<=", ">=", "=", "!=", "..", "with", "@"]);
+const LAZY_OPERATORS = new Set(["and", "or", "else"]);
 
-let uid = 0;
-function jsName(n) { let s = ""; for (const ch of n) s += /[A-Za-z0-9]/.test(ch) ? ch : "_" + ch.charCodeAt(0).toString(16); return "v_" + s + "_" + (uid++); }
+let uniqueNumber = 0;
+function jsName(n) { let s = ""; for (const ch of n) s += /[A-Za-z0-9]/.test(ch) ? ch : "_" + ch.charCodeAt(0).toString(16); return "v_" + s + "_" + (uniqueNumber++); }
 
-class Gen {
-  constructor(globals) { this.globals = globals; this.shapes = []; this.frames = []; this.temps = []; this.consts = []; this.speed = []; }
+class CodeGen {
+  constructor(globals) { this.globals = globals; this.shapes = []; this.frames = []; this.tempScopes = []; this.constants = []; this.speedNotes = []; }
   // local temporaries, declared at the top of the JS function being generated (safe under recursion)
   // field shapes and inline caches are made once, when the program loads
-  shapeRef(keys) { const k = "SH" + this.consts.length; this.consts.push("const " + k + "=shapeFor(" + JSON.stringify(keys) + ");"); return k; }
-  ic() { const k = "IC" + this.consts.length; this.consts.push("const " + k + "={s:null,i:-1,o:null,x:null};"); return k; }
+  shapeConstant(keys) { const k = "SH" + this.constants.length; this.constants.push("const " + k + "=shapeFor(" + JSON.stringify(keys) + ");"); return k; }
+  inlineCache() { const k = "IC" + this.constants.length; this.constants.push("const " + k + "={shape:null,index:-1,outShape:null,positions:null};"); return k; }
   // a head term that is certainly not true or false: a host value, or a name bound to a cell literal
-  notBool(t) {
-    if (t.k === "cell" || t.k === "num" || t.k === "str" || t.k === "tmpl") return true;
-    if (t.k !== "word") return false;
-    const r = this.lookup(t.v);
-    if (r) return !!r.cell;
-    const d = Object.getOwnPropertyDescriptor(G, t.v);
-    return !!d && !d.get && typeof d.value !== "boolean";
+  certainlyNotBool(term) {
+    if (term.type === "cell" || term.type === "num" || term.type === "str" || term.type === "tmpl") return true;
+    if (term.type !== "word") return false;
+    const entry = this.lookup(term.value);
+    if (entry) return !!entry.cell;
+    const descriptor = Object.getOwnPropertyDescriptor(GLOBALS, term.value);
+    return !!descriptor && !descriptor.get && typeof descriptor.value !== "boolean";
   }
   // a global that is a plain value (host words, W, H, range) is read once at load; getters (random, prelude) each time
-  globalRef(n) {
-    const d = Object.getOwnPropertyDescriptor(G, n);
-    if (!d || d.get) return "G[" + JSON.stringify(n) + "]";
-    if (!this.gconst) this.gconst = new Map();
-    let k = this.gconst.get(n); if (!k) { k = "G" + this.consts.length; this.gconst.set(n, k); this.consts.push("const " + k + "=G[" + JSON.stringify(n) + "];"); }
-    return k;
+  globalCode(name) {
+    const descriptor = Object.getOwnPropertyDescriptor(GLOBALS, name);
+    if (!descriptor || descriptor.get) return "GLOBALS[" + JSON.stringify(name) + "]";
+    if (!this.globalConstants) this.globalConstants = new Map();
+    let constant = this.globalConstants.get(name); if (!constant) { constant = "GLOBAL_" + this.constants.length; this.globalConstants.set(name, constant); this.constants.push("const " + constant + "=GLOBALS[" + JSON.stringify(name) + "];"); }
+    return constant;
   }
-  tmp() { const sc = this.temps[this.temps.length - 1]; const n = "t" + (uid++); sc.push(n); return n; }
-  withFn(gen) { this.temps.push([]); const body = gen(); const t = this.temps.pop(); return { body, decl: t.length ? "let " + t.join(",") + ";" : "" }; }
-  arrow(params, genExpr) { const r = this.withFn(genExpr); return "(" + params + ")=>" + (r.decl ? "{" + r.decl + "return " + r.body + "}" : r.body); }
+  newTemp() { const scope = this.tempScopes[this.tempScopes.length - 1]; const name = "t" + (uniqueNumber++); scope.push(name); return name; }
+  withTemps(generate) { this.tempScopes.push([]); const body = generate(); const temps = this.tempScopes.pop(); return { body, decl: temps.length ? "let " + temps.join(",") + ";" : "" }; }
+  arrowCode(params, generateBody) { const made = this.withTemps(generateBody); return "(" + params + ")=>" + (made.decl ? "{" + made.decl + "return " + made.body + "}" : made.body); }
   // look a name up through the frames, innermost first
-  lookup(n) {
-    for (let f = this.frames.length - 1; f >= 0; f--) {
-      const r = this.frames[f].names.get(n);
-      if (r) { if (f < this.frames.length - 1) this.noteCapture(f, n, r); return r; }
+  lookup(name) {
+    for (let frameIndex = this.frames.length - 1; frameIndex >= 0; frameIndex--) {
+      const entry = this.frames[frameIndex].names.get(name);
+      if (entry) { if (frameIndex < this.frames.length - 1) this.noteCapture(frameIndex, name, entry); return entry; }
     }
     return null;
   }
-  noteCapture(fIdx, n, r) { for (let f = fIdx + 1; f < this.frames.length; f++) { const fr = this.frames[f]; if (!fr.caps.has(n)) fr.caps.set(n, r); } }
-  refJS(r) { return r.k === "js" ? r.js : r.act + ".get(" + r.i + ")"; }
+  noteCapture(frameIndex, name, entry) { for (let inner = frameIndex + 1; inner < this.frames.length; inner++) { const frame = this.frames[inner]; if (!frame.captured.has(name)) frame.captured.set(name, entry); } }
+  referenceCode(entry) { return entry.type === "js" ? entry.js : entry.activation + ".get(" + entry.i + ")"; }
 
-  nameRef(n, line) {
-    if (n === "right") { const r = this.lookup("right"); if (r) return this.refJS(r); n = "_"; }
-    if (n === "_") {
+  nameCode(name, line) {
+    if (name === "right") { const entry = this.lookup("right"); if (entry) return this.referenceCode(entry); name = "_"; }
+    if (name === "_") {
       // _ belongs to the nearest cell around it (decision 56)
-      const fr = this.frames[this.frames.length - 1];
-      fr.shape.usesIt = true;
-      if (fr.shape.names.length) { lint("_ is used in a cell that names its inputs; it is false there"); return "false"; }
-      return fr.itJS;
+      const frame = this.frames[this.frames.length - 1];
+      frame.shape.usesIt = true;
+      if (frame.shape.names.length) { lint("_ is used in a cell that names its inputs; it is false there"); return "false"; }
+      return frame.itJS;
     }
-    if (n === "left") {
-      for (let f = this.frames.length - 1; f >= 0; f--) if (this.frames[f].owner) { this.frames[f].shape.usesLeft = true; return this.frames[f].leftJS; }
-      return "LOG_MISS('left is only used inside a field of a cell', " + (line || 0) + ")";
+    if (name === "left") {
+      for (let frameIndex = this.frames.length - 1; frameIndex >= 0; frameIndex--) if (this.frames[frameIndex].owner) { this.frames[frameIndex].shape.usesLeft = true; return this.frames[frameIndex].leftJS; }
+      return "logMiss('left is only used inside a field of a cell', " + (line || 0) + ")";
     }
-    const r = this.lookup(n);
-    if (r) return this.refJS(r);
-    if (this.globals.has(n)) return this.globalRef(n);
+    const entry = this.lookup(name);
+    if (entry) return this.referenceCode(entry);
+    if (this.globals.has(name)) return this.globalCode(name);
     // suggest the nearest name in scope, or a built-in, for a likely typo
-    const seen = new Set(this.globals); for (const f of this.frames) for (const k of f.names.keys()) seen.add(k);
+    const seen = new Set(this.globals); for (const frameIndex of this.frames) for (const k of frameIndex.names.keys()) seen.add(k);
     for (const list of this.hintNames || []) for (const k of list) seen.add(k);
-    const hint = nearest(n, seen);
-    return "UNKNOWN(" + JSON.stringify(n) + "," + (line || 0) + (hint ? "," + JSON.stringify(hint) : "") + ")";
+    const hint = nearest(name, seen);
+    return "unknownWord(" + JSON.stringify(name) + "," + (line || 0) + (hint ? "," + JSON.stringify(hint) : "") + ")";
   }
 
-  genChain(ch, tail) {
-    const T = ch.terms;
-    if (!T.length) return "false";
-    if (T.length === 1 && tail && T[0].k === "group" && T[0].items.length === 1 && T[0].items[0].k === "chain") return this.genChain(T[0].items[0], true);
-    let v = this.genTerm(T[0], true), seg = null;
-    for (let i = 1; i < T.length; i++) {
+  genChain(chain, tail) {
+    const terms = chain.terms;
+    if (!terms.length) return "false";
+    if (terms.length === 1 && tail && terms[0].type === "group" && terms[0].items.length === 1 && terms[0].items[0].type === "chain") return this.genChain(terms[0].items[0], true);
+    let code = this.genTerm(terms[0], true), run = null;
+    for (let i = 1; i < terms.length; i++) {
       // a library may make a run of steps (collect, keep, fold...) into one loop, tried first (loop fusion, decision 95):
       // the steps are written as usual on a temporary, and the library wraps them when the run ends
-      if (seg && i === seg.end) { v = LIB.fuse.wrap(this, seg, v); seg = null; }
-      if (!seg && LIB.fuse && (seg = LIB.fuse.find(T, i))) { seg.src = v; seg.ta = this.tmp(); v = seg.ta; }
-      if (LIB.note) LIB.note(this, T, i);
-      const t = T[i], isLast = i === T.length - 1;
-      if (t.k === "word" && (t.v === "!" || t.v === "true" || t.v === "false")) { v = "SEND(" + v + "," + (t.v === "!" ? "BANG" : t.v) + ")"; continue; }
-      if (t.k === "word") {
-        const w = t.v;
-        if (FUSED.has(w) && i + 1 < T.length && !this.lookup(w)) {
-          const nt = T[++i];
+      if (run && i === run.end) { code = LIBRARIES.fuse.wrap(this, run, code); run = null; }
+      if (!run && LIBRARIES.fuse && (run = LIBRARIES.fuse.find(terms, i))) { run.source = code; run.temp = this.newTemp(); code = run.temp; }
+      if (LIBRARIES.note) LIBRARIES.note(this, terms, i);
+      const term = terms[i], isLast = i === terms.length - 1;
+      if (term.type === "word" && (term.value === "!" || term.value === "true" || term.value === "false")) { code = "send(" + code + "," + (term.value === "!" ? "BANG" : term.value) + ")"; continue; }
+      if (term.type === "word") {
+        const word = term.value;
+        if (FUSED_OPERATORS.has(word) && i + 1 < terms.length && !this.lookup(word)) {
+          const nextTerm = terms[++i];
           // x with [a : ..., b : ...]: fields worked out now and laid over x, with no cell built (merge forces them anyway)
-          if ((w === "with" || w === "..") && nt.k === "cell" && fieldsOnly(nt)) {
-            v = "WITHF(" + v + ",[" + nt.items.map(x => JSON.stringify(x.name)).join(",") + "],[" + nt.items.map(x => this.genChain(x.val)).join(",") + "]," + this.ic() + ")";
+          if ((word === "with" || word === "..") && nextTerm.type === "cell" && isFieldsOnly(nextTerm)) {
+            code = "withFields(" + code + ",[" + nextTerm.items.map(x => JSON.stringify(x.name)).join(",") + "],[" + nextTerm.items.map(x => this.genChain(x.value)).join(",") + "]," + this.inlineCache() + ")";
             continue;
           }
-          v = OPNAME[w] + "(" + v + "," + this.genTerm(nt, false) + ")"; continue;
+          code = OPERATOR_FUNCTION[word] + "(" + code + "," + this.genTerm(nextTerm, false) + ")"; continue;
         }
-        if (LAZYOPS.has(w) && i + 1 < T.length && !this.lookup(w)) {
+        if (LAZY_OPERATORS.has(word) && i + 1 < terms.length && !this.lookup(word)) {
           // only else gives its right side back as it is; and/or check theirs is true or false, so it can't be a tail call
-          const B = this.genArg(T[++i], w === "else" && tail && i + 1 >= T.length), ta = this.tmp();
-          if (w === "else") v = "((" + ta + "=" + v + ")!==false?" + ta + ":" + B + ")";
-          else if (w === "and") v = "((" + ta + "=" + v + ")===true?ISBOOL(" + B + ",'and'):" + ta + "===false?false:MISSING(" + ta + ",'and'))";
-          else v = "((" + ta + "=" + v + ")===false?ISBOOL(" + B + ",'or'):" + ta + "===true?true:MISSING(" + ta + ",'or'))";
+          const rightCode = this.genArg(terms[++i], word === "else" && tail && i + 1 >= terms.length), leftTemp = this.newTemp();
+          if (word === "else") code = "((" + leftTemp + "=" + code + ")!==false?" + leftTemp + ":" + rightCode + ")";
+          else if (word === "and") code = "((" + leftTemp + "=" + code + ")===true?requireBool(" + rightCode + ",'and'):" + leftTemp + "===false?false:notUnderstood(" + leftTemp + ",'and'))";
+          else code = "((" + leftTemp + "=" + code + ")===false?requireBool(" + rightCode + ",'or'):" + leftTemp + "===true?true:notUnderstood(" + leftTemp + ",'or'))";
           continue;
         }
-        const r = this.lookup(w);
-        const lex = r ? "()=>" + this.refJS(r) : (this.globals.has(w) ? "()=>" + this.globalRef(w) : "null");
+        const found = this.lookup(word);
+        const lexical = found ? "()=>" + this.referenceCode(found) : (this.globals.has(word) ? "()=>" + this.globalCode(word) : "null");
         // a field read right before else is allowed to miss: else is the program saying so, so the miss isn't logged (decision 83)
-        const quiet = T[i + 1] && T[i + 1].k === "word" && T[i + 1].v === "else" && T[i + 2] && !this.lookup("else");
-        v = "SWI(" + v + "," + JSON.stringify(w) + "," + lex + "," + (t.line || 0) + "," + this.ic() + (quiet ? ",1" : "") + ")";
-      } else if (t.k === "cell" && !t.names.length && i === 1 && this.notBool(T[0])) {
-        v = (tail && isLast ? "TAIL(" : "SEND(") + v + "," + this.genCell(t) + ")";
-      } else if (t.k === "cell" && !t.names.length) {
+        const quiet = terms[i + 1] && terms[i + 1].type === "word" && terms[i + 1].value === "else" && terms[i + 2] && !this.lookup("else");
+        code = "sendWordCached(" + code + "," + JSON.stringify(word) + "," + lexical + "," + (term.line || 0) + "," + this.inlineCache() + (quiet ? ",1" : "") + ")";
+      } else if (term.type === "cell" && !term.names.length && i === 1 && this.certainlyNotBool(terms[0])) {
+        code = (tail && isLast ? "tailSend(" : "send(") + code + "," + this.genCell(term) + ")";
+      } else if (term.type === "cell" && !term.names.length) {
         // a boolean given a cell runs it (decision 62): the body is inlined; any other value is sent the cell
-        const elsePat = T[i + 1] && T[i + 1].k === "word" && T[i + 1].v === "else" && T[i + 2] && !this.lookup("else");
-        const A = this.genInlineExpr(t, tail && isLast && !elsePat);
-        const SND = tail && isLast && !elsePat ? "TAIL(" : "SEND(";
-        if (!A) { v = SND + v + "," + this.genCell(t) + ")"; continue; }
-        const ta = this.tmp(), tb = this.tmp(), mk = this.genCell(t);
-        const nx = T[i + 1], nx2 = T[i + 2];
-        if (nx && nx.k === "word" && nx.v === "else" && nx2 && !this.lookup("else")) {
+        const elseFollows = terms[i + 1] && terms[i + 1].type === "word" && terms[i + 1].value === "else" && terms[i + 2] && !this.lookup("else");
+        const thenCode = this.genInlineExpr(term, tail && isLast && !elseFollows);
+        const sendCall = tail && isLast && !elseFollows ? "tailSend(" : "send(";
+        if (!thenCode) { code = sendCall + code + "," + this.genCell(term) + ")"; continue; }
+        const leftTemp = this.newTemp(), resultTemp = this.newTemp(), cellCode = this.genCell(term);
+        const following = terms[i + 1], afterElse = terms[i + 2];
+        if (following && following.type === "word" && following.value === "else" && afterElse && !this.lookup("else")) {
           // test [a] else b: b runs when the test is false, or when a gives false (decision 62)
           i += 2;
           // decision 74: else is a library cell, so it can't tell "the test was false" from "the branch gave false".
           // A branch whose answer is true or false is named, unless the else gives false too, when it makes no difference.
-          const lastIt = t.items[t.items.length - 1];
-          const elseFalse = (nx2.k === "word" && nx2.v === "false") || (nx2.k === "cell" && nx2.items.length === 1 && givesBool(nx2.items[0]) === "false");
-          const branchTy = lastIt && lastIt.k === "chain" ? givesBool(lastIt) : null;
+          const lastItem = term.items[term.items.length - 1];
+          const elseFalse = (afterElse.type === "word" && afterElse.value === "false") || (afterElse.type === "cell" && afterElse.items.length === 1 && givesBool(afterElse.items[0]) === "false");
+          const branchGives = lastItem && lastItem.type === "chain" ? givesBool(lastItem) : null;
           // a host word (circle, beep...) gives false too, so a branch that ends with one also runs the else
-          const hw = lastIt && lastIt.k === "chain" && lastIt.terms[0] && lastIt.terms[0].k === "word" && !this.lookup(lastIt.terms[0].v) ? G[lastIt.terms[0].v] : null;
-          if (hw instanceof Native && hw.effect && hw.name !== "print" && !elseFalse) lint("line " + (nx.line || 0) + ": this branch ends with " + hw.name + ", which gives false, so the else runs too (decision 74). To draw one or the other, use cond, or put the else first");
-          if (branchTy === "false") lint("a branch that gives false before else: the else runs too (line " + (nx.line || 0) + ")");
-          else if (branchTy && !elseFalse) lint("line " + (nx.line || 0) + ": this branch gives true or false, and when it gives false the else runs too (decision 74). To keep a false answer, use cond [test, answer, any, other]");
-          const B = this.genArg(nx2, tail && i + 1 >= T.length);
-          v = "(((" + ta + "=" + v + ")===true?(" + tb + "=" + A + "):" + ta + "===false?(" + tb + "=false):(" + tb + "=SEND(" + ta + "," + mk + ")))!==false?" + tb + ":" + B + ")";
-        } else v = "((" + ta + "=" + v + ")===true?" + A + ":" + ta + "===false?false:" + SND + ta + "," + mk + "))";
-      } else v = (tail && isLast ? "TAIL(" : "SEND(") + v + "," + this.genTerm(t, false) + ")";
+          const hostWord = lastItem && lastItem.type === "chain" && lastItem.terms[0] && lastItem.terms[0].type === "word" && !this.lookup(lastItem.terms[0].value) ? GLOBALS[lastItem.terms[0].value] : null;
+          if (hostWord instanceof Native && hostWord.effect && hostWord.name !== "print" && !elseFalse) lint("line " + (following.line || 0) + ": this branch ends with " + hostWord.name + ", which gives false, so the else runs too (decision 74). To draw one or the other, use cond, or put the else first");
+          if (branchGives === "false") lint("a branch that gives false before else: the else runs too (line " + (following.line || 0) + ")");
+          else if (branchGives && !elseFalse) lint("line " + (following.line || 0) + ": this branch gives true or false, and when it gives false the else runs too (decision 74). To keep a false answer, use cond [test, answer, any, other]");
+          const rightCode = this.genArg(afterElse, tail && i + 1 >= terms.length);
+          code = "(((" + leftTemp + "=" + code + ")===true?(" + resultTemp + "=" + thenCode + "):" + leftTemp + "===false?(" + resultTemp + "=false):(" + resultTemp + "=send(" + leftTemp + "," + cellCode + ")))!==false?" + resultTemp + ":" + rightCode + ")";
+        } else code = "((" + leftTemp + "=" + code + ")===true?" + thenCode + ":" + leftTemp + "===false?false:" + sendCall + leftTemp + "," + cellCode + "))";
+      } else code = (tail && isLast ? "tailSend(" : "send(") + code + "," + this.genTerm(term, false) + ")";
     }
-    if (seg) v = LIB.fuse.wrap(this, seg, v);
-    return v;
+    if (run) code = LIBRARIES.fuse.wrap(this, run, code);
+    return code;
   }
   // the right side of else/and/or: a cell literal there is run (inlined), anything else is its value
-  genArg(t, tail) {
-    if (t.k === "cell" && !t.names.length) { const A = this.genInlineExpr(t, tail); return A || "RUNC(" + this.genCell(t) + ")"; }
-    if (tail && t.k === "group" && t.items.length === 1 && t.items[0].k === "chain") return this.genChain(t.items[0], true);
-    return this.genTerm(t, false);
+  genArg(term, tail) {
+    if (term.type === "cell" && !term.names.length) { const inlined = this.genInlineExpr(term, tail); return inlined || "runCell(" + this.genCell(term) + ")"; }
+    if (tail && term.type === "group" && term.items.length === 1 && term.items[0].type === "chain") return this.genChain(term.items[0], true);
+    return this.genTerm(term, false);
   }
-  genTerm(t) {
-    switch (t.k) {
-      case "num": return String(t.v);
-      case "str": return JSON.stringify(t.v);
-      case "tmpl": return "STR(" + t.parts.map(p => typeof p === "string" ? JSON.stringify(p) : this.genChain(p.ast)).join(",") + ")";
-      case "word": return t.v === "!" ? "BANG" : t.v === "true" ? "true" : t.v === "false" ? "false" : this.nameRef(t.v, t.line);
-      case "group": return this.genGroup(t.items);
-      case "cell": return this.genCell(t);
-      case "chain": return this.genChain(t);
+  genTerm(term) {
+    switch (term.type) {
+      case "num": return String(term.value);
+      case "str": return JSON.stringify(term.value);
+      case "tmpl": return "joinText(" + term.parts.map(part => typeof part === "string" ? JSON.stringify(part) : this.genChain(part.ast)).join(",") + ")";
+      case "word": return term.value === "!" ? "BANG" : term.value === "true" ? "true" : term.value === "false" ? "false" : this.nameCode(term.value, term.line);
+      case "group": return this.genGroup(term.items);
+      case "cell": return this.genCell(term);
+      case "chain": return this.genChain(term);
     }
-    throw new Error("term " + t.k);
+    throw new Error("term " + term.type);
   }
   genGroup(items) {
-    if (items.length === 1 && items[0].k === "chain") return "(" + this.genChain(items[0]) + ")";
+    if (items.length === 1 && items[0].type === "chain") return "(" + this.genChain(items[0]) + ")";
     // a group of several steps: worked out now, in order; its names are local to it (decision 8)
-    const fr = this.frames[this.frames.length - 1];
-    const saved = new Map(fr.names), parts = [];
-    this.temps.push([]);
-    items.forEach((it, idx) => {
-      const last = idx === items.length - 1;
-      if (it.k === "bind") { const js = jsName(it.name); const e = this.genChain(it.val); fr.names.set(it.name, { k: "js", js, val: it.val }); parts.push("const " + js + "=" + e + ";"); if (last) parts.push("return " + js + ";"); }
-      else parts.push((last ? "return " : "") + this.genChain(it) + ";");
+    const frame = this.frames[this.frames.length - 1];
+    const saved = new Map(frame.names), parts = [];
+    this.tempScopes.push([]);
+    items.forEach((item, index) => {
+      const last = index === items.length - 1;
+      if (item.type === "bind") { const js = jsName(item.name); const valueCode = this.genChain(item.value); frame.names.set(item.name, { type: "js", js, value: item.value }); parts.push("const " + js + "=" + valueCode + ";"); if (last) parts.push("return " + js + ";"); }
+      else parts.push((last ? "return " : "") + this.genChain(item) + ";");
     });
-    fr.names = saved;
-    const tt = this.temps.pop(); if (tt.length) parts.unshift("let " + tt.join(",") + ";");
+    frame.names = saved;
+    const temps = this.tempScopes.pop(); if (temps.length) parts.unshift("let " + temps.join(",") + ";");
     return "(()=>{" + parts.join("") + "})()";
   }
   // straight-line code for running a cell: every item in order, giving the last part (or false)
-  genRunBody(c, fr, k, tail) {
-    const out = []; let lastPart = null;
-    c.items.forEach((it, i) => {
-      const last = i === c.items.length - 1;
-      if (it.k === "bind") {
-        const js = jsName(it.name), isCell = it.val.terms.length === 1 && it.val.terms[0].k === "cell";
-        const ast = isCell ? it.val.terms[0] : null;
-        if (isCell) fr.names.set(it.name, { k: "js", js, cell: true, ast, val: it.val }); // a cell can use its own name (decision 25)
-        const e = isCell ? this.genCell(it.val.terms[0], true) : this.genChain(it.val);
-        fr.names.set(it.name, { k: "js", js, cell: isCell, ast, val: it.val });
-        out.push("const " + js + "=" + e + ";");
-        if (last) out.push("return " + (lastPart || "false") + ";");
+  genRunBody(cell, frame, shapeNumber, tail) {
+    const out = []; let lastPartCode = null;
+    cell.items.forEach((item, i) => {
+      const last = i === cell.items.length - 1;
+      if (item.type === "bind") {
+        const js = jsName(item.name), isCell = item.value.terms.length === 1 && item.value.terms[0].type === "cell";
+        const ast = isCell ? item.value.terms[0] : null;
+        if (isCell) frame.names.set(item.name, { type: "js", js, cell: true, ast, value: item.value }); // a cell can use its own name (decision 25)
+        const valueCode = isCell ? this.genCell(item.value.terms[0], true) : this.genChain(item.value);
+        frame.names.set(item.name, { type: "js", js, cell: isCell, ast, value: item.value });
+        out.push("const " + js + "=" + valueCode + ";");
+        if (last) out.push("return " + (lastPartCode || "false") + ";");
       } else {
-        const e = this.genChain(it, last && tail);
-        if (last) out.push("return " + e + ";");
-        else { const js = "p" + k + "_" + i; out.push("const " + js + "=" + e + ";"); lastPart = js; }
+        const valueCode = this.genChain(item, last && tail);
+        if (last) out.push("return " + valueCode + ";");
+        else { const js = "p" + shapeNumber + "_" + i; out.push("const " + js + "=" + valueCode + ";"); lastPartCode = js; }
       }
     });
-    if (!c.items.length) out.push("return false;");
+    if (!cell.items.length) out.push("return false;");
     return out.join("");
   }
   // a branch body inlined where it is run, as an expression: possible when it takes no input
-  genInlineExpr(c, tail) {
-    const k = "i" + (uid++);
-    const sh = { names: [], usesIt: false, usesLeft: false };
-    const fr = { names: new Map(), act: k, itJS: "false", leftJS: "undefined", shape: sh, owner: false, caps: new Map() };
-    this.frames.push(fr);
-    const r = this.withFn(() => this.genRunBody(c, fr, k, tail));
+  genInlineExpr(cell, tail) {
+    const activationName = "i" + (uniqueNumber++);
+    const shape = { names: [], usesIt: false, usesLeft: false };
+    const frame = { names: new Map(), activation: activationName, itJS: "false", leftJS: "undefined", shape: shape, owner: false, captured: new Map() };
+    this.frames.push(frame);
+    const made = this.withTemps(() => this.genRunBody(cell, frame, activationName, tail));
     this.frames.pop();
-    if (sh.usesIt) return null;
-    const m = /^return ([^;]*);$/.exec(r.body);
-    if (m && !r.decl && !/[{}]/.test(m[1])) return "(" + m[1] + ")";
-    return "(()=>{" + r.decl + r.body + "})()";
+    if (shape.usesIt) return null;
+    const single = /^return ([^;]*);$/.exec(made.body);
+    if (single && !made.decl && !/[{}]/.test(single[1])) return "(" + single[1] + ")";
+    return "(()=>{" + made.decl + made.body + "})()";
   }
 
-  genCell(c, ownerOfLeft) {
-    if (fieldsOnly(c) && c.items.every(x => simpleVal(x.val))) {
+  genCell(cell, ownerOfLeft) {
+    if (isFieldsOnly(cell) && cell.items.every(input => isSimpleValue(input.value))) {
       // the fields can't use each other here, but they are still the likeliest names a typo meant
-      this.hintNames = (this.hintNames || []).concat([c.items.map(x => x.name)]);
-      const vals = c.items.map(x => this.genChain(x.val));
+      this.hintNames = (this.hintNames || []).concat([cell.items.map(input => input.name)]);
+      const vals = cell.items.map(input => this.genChain(input.value));
       this.hintNames.pop();
-      return "VC(" + this.shapeRef(c.items.map(x => x.name)) + ",[" + vals.join(",") + "])";
+      return "makeRecord(" + this.shapeConstant(cell.items.map(input => input.name)) + ",[" + vals.join(",") + "])";
     }
-    if (simpleParts(c) && c.items.length > 1)
-      return "VP([" + c.items.map(x => this.genChain(x)).join(",") + "])";
-    const k = this.shapes.length;
-    const sh = { id: k, names: c.names.map(x => x.n), fidx: Object.create(null), pidx: [], usesIt: false, usesLeft: false, n: c.items.length, src: srcOf(c) };
-    this.shapes.push(sh);
+    if (isSimpleList(cell) && cell.items.length > 1)
+      return "makeList([" + cell.items.map(input => this.genChain(input)).join(",") + "])";
+    const shapeNumber = this.shapes.length;
+    const shape = { id: shapeNumber, names: cell.names.map(input => input.name), fieldIndex: Object.create(null), partIndex: [], usesIt: false, usesLeft: false, itemCount: cell.items.length, src: sourceKey(cell) };
+    this.shapes.push(shape);
     const seenNames = new Set();
-    c.items.forEach((it, i) => { if (it.k === "bind") { if (seenNames.has(it.name)) throw new SproutError("\"" + it.name + "\" is bound twice in one cell (decision 13)", it.line); seenNames.add(it.name); sh.fidx[it.name] = i; } else sh.pidx.push(i); });
-    const defs = c.names.map(x => x.def ? this.arrow("", () => this.genTerm(x.def, false)) : "null");
-    const act = "a" + k;
+    cell.items.forEach((item, i) => { if (item.type === "bind") { if (seenNames.has(item.name)) throw new SproutError("\"" + item.name + "\" is bound twice in one cell (decision 13)", item.line); seenNames.add(item.name); shape.fieldIndex[item.name] = i; } else shape.partIndex.push(i); });
+    const defaultMakers = cell.names.map(input => input.defaultValue ? this.arrowCode("", () => this.genTerm(input.defaultValue, false)) : "null");
+    const activation = "a" + shapeNumber;
     // run: inputs arrive as plain arguments (left, it, then each name)
-    const nparams = c.names.map((x, j) => act + "_" + j);
-    const runFr = { names: new Map(), act, itJS: act + "_it", leftJS: act + "_L", shape: sh, owner: !!ownerOfLeft, caps: new Map() };
-    c.names.forEach((x, j) => runFr.names.set(x.n, { k: "js", js: nparams[j] }));
-    this.frames.push(runFr);
-    const rb = this.withFn(() => this.genRunBody(c, runFr, k, true)), runBody = rb.decl + rb.body;
+    const paramNames = cell.names.map((input, position) => activation + "_" + position);
+    const runFrame = { names: new Map(), activation, itJS: activation + "_it", leftJS: activation + "_L", shape: shape, owner: !!ownerOfLeft, captured: new Map() };
+    cell.names.forEach((input, position) => runFrame.names.set(input.name, { type: "js", js: paramNames[position] }));
+    this.frames.push(runFrame);
+    const runBodyCode = this.withTemps(() => this.genRunBody(cell, runFrame, shapeNumber, true)), runBody = runBodyCode.decl + runBodyCode.body;
     this.frames.pop();
     // slots: one lazy thunk per readable item. Every cell follows one rule (decision 75): its fields can be read.
     // In a cell that takes input, the body (its parts) runs on a send, and a binding that uses the input is a local of that run.
-    let slotsJS = "null", caps;
-    const takes = sh.names.length > 0 || sh.usesIt;
-    let readable = c.items.map(() => true);
+    let slotsJS = "null", captured;
+    const takes = shape.names.length > 0 || shape.usesIt;
+    let readable = cell.items.map(() => true);
     if (takes) {
-      const dep = new Set(c.names.map(x => x.n).concat(["_", "right"]));
-      readable = c.items.map(it => { if (it.k !== "bind") return false; if (mentions(it.val, dep)) { dep.add(it.name); return false; } return true; });
-      sh.pidx = [];
-      for (const n in sh.fidx) if (!readable[sh.fidx[n]]) delete sh.fidx[n];
+      const dependsOnInput = new Set(cell.names.map(input => input.name).concat(["_", "right"]));
+      readable = cell.items.map(item => { if (item.type !== "bind") return false; if (mentions(item.value, dependsOnInput)) { dependsOnInput.add(item.name); return false; } return true; });
+      shape.partIndex = [];
+      for (const n in shape.fieldIndex) if (!readable[shape.fieldIndex[n]]) delete shape.fieldIndex[n];
     }
-    if (readable.some(x => x)) {
-      const fr = { names: new Map(), act, itJS: act + ".it", leftJS: act + ".left", shape: sh, owner: !!ownerOfLeft, caps: new Map() };
-      c.names.forEach((x, j) => fr.names.set(x.n, { k: "js", js: act + ".ins[" + j + "]" }));
-      this.frames.push(fr);
-      const sparts = [];
-      c.items.forEach((it, i) => {
-        if (!readable[i]) { sparts.push("()=>false"); return; }
-        if (it.k === "bind") {
-          const isCell = it.val.terms.length === 1 && it.val.terms[0].k === "cell";
-          const ast = isCell ? it.val.terms[0] : null;
-          if (isCell) fr.names.set(it.name, { k: "slot", act, i, cell: true, ast, val: it.val });
-          const e = this.arrow("", () => isCell ? this.genCell(it.val.terms[0], true) : this.genChain(it.val));
-          fr.names.set(it.name, { k: "slot", act, i, cell: isCell, ast, val: it.val });
-          sparts.push(e);
-        } else sparts.push(this.arrow("", () => this.genChain(it)));
+    if (readable.some(input => input)) {
+      const frame = { names: new Map(), activation, itJS: activation + ".it", leftJS: activation + ".left", shape: shape, owner: !!ownerOfLeft, captured: new Map() };
+      cell.names.forEach((input, position) => frame.names.set(input.name, { type: "js", js: activation + ".inputs[" + position + "]" }));
+      this.frames.push(frame);
+      const slotCodes = [];
+      cell.items.forEach((item, i) => {
+        if (!readable[i]) { slotCodes.push("()=>false"); return; }
+        if (item.type === "bind") {
+          const isCell = item.value.terms.length === 1 && item.value.terms[0].type === "cell";
+          const ast = isCell ? item.value.terms[0] : null;
+          if (isCell) frame.names.set(item.name, { type: "slot", activation, i, cell: true, ast, value: item.value });
+          const slotCode = this.arrowCode("", () => isCell ? this.genCell(item.value.terms[0], true) : this.genChain(item.value));
+          frame.names.set(item.name, { type: "slot", activation, i, cell: isCell, ast, value: item.value });
+          slotCodes.push(slotCode);
+        } else slotCodes.push(this.arrowCode("", () => this.genChain(item)));
       });
-      caps = [...fr.caps.values()].map(r => this.refJS(r));
+      captured = [...frame.captured.values()].map(r => this.referenceCode(r));
       this.frames.pop();
-      slotsJS = "(" + act + ")=>[" + sparts.join(",") + "]";
+      slotsJS = "(" + activation + ")=>[" + slotCodes.join(",") + "]";
     }
-    if (takes || !caps) { const rc = [...runFr.caps.values()].map(r => this.refJS(r)); caps = caps ? [...new Set(caps.concat(rc))] : rc; }
-    const runJS = "(" + [act + "_L", act + "_it"].concat(nparams).join(",") + ")=>{" + runBody + "}";
+    if (takes || !captured) { const runCaptures = [...runFrame.captured.values()].map(r => this.referenceCode(r)); captured = captured ? [...new Set(captured.concat(runCaptures))] : runCaptures; }
+    const runJS = "(" + [activation + "_L", activation + "_it"].concat(paramNames).join(",") + ")=>{" + runBody + "}";
     // a library may add a faster way to run this cell, worked out ahead (spork's kernel, decision 91)
-    const fast = LIB.cell ? LIB.cell(this, c) : null;
-    return "MK(S[" + k + "]," + slotsJS + "," + runJS + ",[" + defs.join(",") + "],()=>[" + caps.join(",") + "]" + (fast ? "," + fast : "") + ")";
+    const fasterForm = LIBRARIES.cell ? LIBRARIES.cell(this, cell) : null;
+    return "makeCell(SHAPES[" + shapeNumber + "]," + slotsJS + "," + runJS + ",[" + defaultMakers.join(",") + "],()=>[" + captured.join(",") + "]" + (fasterForm ? "," + fasterForm : "") + ")";
   }
 }
 // does this expression use any of these names?
-function mentions(n, names) {
-  if (!n || typeof n !== "object") return false;
-  if (n.k === "word") return names.has(n.v);
-  for (const key in n) { const v = n[key]; if (Array.isArray(v) ? v.some(x => mentions(x, names)) : (v && typeof v === "object" && mentions(v, names))) return true; }
+function mentions(node, names) {
+  if (!node || typeof node !== "object") return false;
+  if (node.type === "word") return names.has(node.value);
+  for (const key in node) { const value = node[key]; if (Array.isArray(value) ? value.some(x => mentions(x, names)) : (value && typeof value === "object" && mentions(value, names))) return true; }
   return false;
 }
-const OPNAME = { "+": "ADD", "-": "SUB", "*": "MUL", "/": "DIV", "%": "MOD", "<": "LT", ">": "GT", "<=": "LE", ">=": "GE", "=": "EQ", "!=": "NE", "..": "CAT", "with": "WITH", "@": "AT" };
+const OPERATOR_FUNCTION = { "+": "ADD", "-": "SUB", "*": "MUL", "/": "DIV", "%": "MOD", "<": "LT", ">": "GT", "<=": "LE", ">=": "GE", "=": "EQ", "!=": "NE", "..": "concat", "with": "withCell", "@": "partAt" };
 // a cell literal of fields only, none using a sibling field, _, left or right
-function fieldsOnly(c) {
-  if (c.names.length || !c.items.length || !c.items.every(x => x.k === "bind")) return false;
-  const names = new Set(c.items.map(x => x.name)); let ok = names.size === c.items.length;
+function isFieldsOnly(cell) {
+  if (cell.names.length || !cell.items.length || !cell.items.every(x => x.type === "bind")) return false;
+  const names = new Set(cell.items.map(x => x.name)); let ok = names.size === cell.items.length;
   const bad = w => names.has(w) || w === "_" || w === "left" || w === "right";
   const walk = n => {
     if (!ok || !n || typeof n !== "object") return;
-    if (n.k === "chain") { n.terms.forEach((t, i) => { if (t.k === "word") { if (i === 0 && bad(t.v)) ok = false; else if (i > 0 && (t.v === "_" || t.v === "left" || t.v === "right")) ok = false; } else walk(t); }); return; }
-    if (n.k === "word") { if (bad(n.v)) ok = false; return; }
+    if (n.type === "chain") { n.terms.forEach((t, i) => { if (t.type === "word") { if (i === 0 && bad(t.value)) ok = false; else if (i > 0 && (t.value === "_" || t.value === "left" || t.value === "right")) ok = false; } else walk(t); }); return; }
+    if (n.type === "word") { if (bad(n.value)) ok = false; return; }
     for (const key in n) { const v = n[key]; if (Array.isArray(v)) v.forEach(walk); else if (v && typeof v === "object") walk(v); }
   };
-  c.items.forEach(x => walk(x.val));
+  cell.items.forEach(x => walk(x.value));
   return ok;
 }
 // is a chain's answer certainly true or false? "false" when it is the word false itself, "bool" for a test, else null.
 // Strictly left to right, so the last step decides: a comparison, and, or, not, or the words true and false.
-const TESTOPS = new Set(["<", ">", "<=", ">=", "=", "!="]);
-function givesBool(ch) {
-  const T = ch.terms; if (!T.length) return null;
-  if (T.length === 1 && T[0].k === "word" && T[0].v === "false") return "false";
-  let ty = T[0].k === "word" && T[0].v === "true" ? "bool" : T[0].k === "group" && T[0].items.length === 1 && T[0].items[0].k === "chain" && givesBool(T[0].items[0]) ? "bool" : null;
-  for (let i = 1; i < T.length; i++) {
-    const t = T[i];
-    if (t.k === "word" && (FUSED.has(t.v) || t.v === "and" || t.v === "or") && i + 1 < T.length) { ty = TESTOPS.has(t.v) || t.v === "and" || t.v === "or" ? "bool" : null; i++; }
-    else if (t.k === "word" && t.v === "not") ty = ty ? "bool" : null;
-    else ty = null;
+const TEST_OPERATORS = new Set(["<", ">", "<=", ">=", "=", "!="]);
+function givesBool(chain) {
+  const terms = chain.terms; if (!terms.length) return null;
+  if (terms.length === 1 && terms[0].type === "word" && terms[0].value === "false") return "false";
+  let gives = terms[0].type === "word" && terms[0].value === "true" ? "bool" : terms[0].type === "group" && terms[0].items.length === 1 && terms[0].items[0].type === "chain" && givesBool(terms[0].items[0]) ? "bool" : null;
+  for (let i = 1; i < terms.length; i++) {
+    const term = terms[i];
+    if (term.type === "word" && (FUSED_OPERATORS.has(term.value) || term.value === "and" || term.value === "or") && i + 1 < terms.length) { gives = TEST_OPERATORS.has(term.value) || term.value === "and" || term.value === "or" ? "bool" : null; i++; }
+    else if (term.type === "word" && term.value === "not") gives = gives ? "bool" : null;
+    else gives = null;
   }
-  return ty;
+  return gives;
 }
 // a field value simple enough to work out when the cell is made: literals, names, field reads and arithmetic on them
-function simpleVal(ch) {
-  if (ch.k !== "chain" || !ch.terms.length) return false;
-  const T = ch.terms;
-  const term = t => t.k === "num" || t.k === "str" || (t.k === "word" && !["_", "left", "right", "!"].includes(t.v)) ||
-    (t.k === "group" && t.items.length === 1 && simpleVal(t.items[0])) || (t.k === "cell" && simpleParts(t));
-  if (!term(T[0])) return false;
-  for (let i = 1; i < T.length; i++) {
-    const t = T[i];
-    if (t.k === "word" && ["print", "each", "times", "else", "and", "or"].includes(t.v)) return false;
-    if (!term(t)) return false;
+function isSimpleValue(chain) {
+  if (chain.type !== "chain" || !chain.terms.length) return false;
+  const terms = chain.terms;
+  const isSimpleTerm = term => term.type === "num" || term.type === "str" || (term.type === "word" && !["_", "left", "right", "!"].includes(term.value)) ||
+    (term.type === "group" && term.items.length === 1 && isSimpleValue(term.items[0])) || (term.type === "cell" && isSimpleList(term));
+  if (!isSimpleTerm(terms[0])) return false;
+  for (let i = 1; i < terms.length; i++) {
+    const term = terms[i];
+    if (term.type === "word" && ["print", "each", "times", "else", "and", "or"].includes(term.value)) return false;
+    if (!isSimpleTerm(term)) return false;
   }
   return true;
 }
 // [a, b, c] whose parts are all simple: built straight away as a cell of values
-function simpleParts(c) { return !c.names.length && c.items.length > 0 && c.items.every(x => x.k === "chain" && simpleVal(x)); }
-const NOTE_KEYS = new Set(["line", "kern", "bindName", "sporkArg", "spkUses"]);
-function srcOf(c) { return JSON.stringify(c, (k, v) => NOTE_KEYS.has(k) ? undefined : v); }
+function isSimpleList(cell) { return !cell.names.length && cell.items.length > 0 && cell.items.every(item => item.type === "chain" && isSimpleValue(item)); }
+const COMPILER_NOTE_KEYS = new Set(["line", "kern", "bindName", "sporkArg", "spkUses"]);
+function sourceKey(cell) { return JSON.stringify(cell, (key, value) => COMPILER_NOTE_KEYS.has(key) ? undefined : value); }
 
 function compile(src, globals) {
   const ast = parse(src);
-  const g = new Gen(globals);
-  if (LIB.prescan) LIB.prescan(g, ast);
-  g.temps.push([]);
-  const js = g.genCell({ k: "cell", names: [], items: ast });
-  const top = g.temps.pop();
-  // each body is compiled more than once (to run, and to read fields), so its speed note is kept once
-  const seenSpeed = new Set(), speed = g.speed.filter(x => { const k = x.line + " " + x.word + " " + x.fast; if (seenSpeed.has(k)) return false; seenSpeed.add(k); return true; });
-  return { js, shapes: g.shapes, prologue: (top.length ? "let " + top.join(",") + ";\n" : "") + g.consts.join("\n"), speed };
+  const gen = new CodeGen(globals);
+  if (LIBRARIES.prescan) LIBRARIES.prescan(gen, ast);
+  gen.tempScopes.push([]);
+  const code = gen.genCell({ type: "cell", names: [], items: ast });
+  const topTemps = gen.tempScopes.pop();
+  // each body is compiled more than once (to run, and to read fields), so its speedNotes note is kept once
+  const seenNotes = new Set(), speedNotes = gen.speedNotes.filter(note => { const key = note.line + " " + note.word + " " + note.fast; if (seenNotes.has(key)) return false; seenNotes.add(key); return true; });
+  return { code, shapes: gen.shapes, prologue: (topTemps.length ? "let " + topTemps.join(",") + ";\n" : "") + gen.constants.join("\n"), speedNotes };
 }
 
 // ===================================================================== libraries (decision 96)
-// The core runs every program on its own. A library can only make it faster or add built-ins, never change an answer:
-//   cell(gen, c)      more ways to run a cell literal, as JS for MK's last argument (spork's kernel)
+// The core runs every program on its own. A library can only make it faster or add built-inputs, never change an answer:
+//   cell(gen, c)      more ways to run a cell literal, as JS for makeCell's last argument (spork's kernel)
 //   fuse.find/wrap    a run of steps in a chain made into one loop, tried before the steps as written
-//   note(gen, T, i)   speed notes; prescan(gen, ast) a look over the whole program first
+//   note(gen, T, i)   speedNotes notes; prescan(gen, ast) a look over the whole program first
 //   spork(xs, f)      run a spork faster, or null; sortNumbers(a) sort a Float64Array
 //   runtime           names the generated code may call
-const LIB = { cell: null, fuse: null, note: null, prescan: null, spork: null, sortNumbers: null };
-function install(lib) { for (const k in lib) { if (k === "runtime") Object.assign(RT, lib.runtime); else if (k in LIB) LIB[k] = lib[k]; } }
+const LIBRARIES = { cell: null, fuse: null, note: null, prescan: null, spork: null, sortNumbers: null };
+function install(library) { for (const key in library) { if (key === "runtime") Object.assign(RUNTIME, library.runtime); else if (key in LIBRARIES) LIBRARIES[key] = library[key]; } }
 
 // ===================================================================== runtime
 const BANG = { toString: () => "!" };   // "no input" (decisions 58, 69)
 const ANY = { toString: () => "any" };
 const UNSET = {};
-let LOG = (msg) => { if (typeof console !== "undefined") console.log("sprout: " + msg); };
-const warned = new Set();
-const seen = new Map();
-function LOG_MISS(msg, line) { const m = msg + (line ? " (line " + line + ")" : ""); const c = (seen.get(m) || 0) + 1; seen.set(m, c); if (c <= 3) LOG(m + (c === 3 ? " (and more; not shown again)" : "")); return false; }
-function UNKNOWN(n, line, hint) { return LOG_MISS("\"" + n + "\" isn't a word Sprout knows yet" + (hint ? " (did you mean \"" + hint + "\"?)" : ""), line); }
+let logMessage = (msg) => { if (typeof console !== "undefined") console.log("sprout: " + msg); };
+const lintsShown = new Set();
+const missCounts = new Map();
+function logMiss(message, line) { const full = message + (line ? " (line " + line + ")" : ""); const times = (missCounts.get(full) || 0) + 1; missCounts.set(full, times); if (times <= 3) logMessage(full + (times === 3 ? " (and more; not shown again)" : "")); return false; }
+function unknownWord(name, line, hint) { return logMiss("\"" + name + "\" isn't a word Sprout knows yet" + (hint ? " (did you mean \"" + hint + "\"?)" : ""), line); }
 // the closest name to a likely typo: at most 1 edit for short names, 2 for longer ones; none if it's a tie between several
-function nearest(n, names) {
-  const limit = n.length <= 4 ? 1 : 2; let best = null, bestD = limit + 1, tie = false;
-  for (const m of names) {
-    if (m === n || Math.abs(m.length - n.length) > limit) continue;
-    const d = editDistance(n, m, limit);
-    if (d < bestD) { best = m; bestD = d; tie = false; } else if (d === bestD) tie = true;
+function nearest(name, names) {
+  const limit = name.length <= 4 ? 1 : 2; let best = null, bestD = limit + 1, tie = false;
+  for (const candidate of names) {
+    if (candidate === name || Math.abs(candidate.length - name.length) > limit) continue;
+    const distance = editDistance(name, candidate, limit);
+    if (distance < bestD) { best = candidate; bestD = distance; tie = false; } else if (distance === bestD) tie = true;
   }
   return best && !tie ? best : null;
 }
 function editDistance(a, b, cap) {
   // optimal string alignment: insert, delete, change, or swap two neighbouring letters, each one edit
-  const d = [];
-  for (let x = 0; x <= a.length; x++) { d.push(new Array(b.length + 1).fill(0)); d[x][0] = x; }
-  for (let y = 0; y <= b.length; y++) d[0][y] = y;
+  const table = [];
+  for (let x = 0; x <= a.length; x++) { table.push(new Array(b.length + 1).fill(0)); table[x][0] = x; }
+  for (let y = 0; y <= b.length; y++) table[0][y] = y;
   for (let x = 1; x <= a.length; x++) {
     let low = Infinity;
     for (let y = 1; y <= b.length; y++) {
-      let v = Math.min(d[x - 1][y] + 1, d[x][y - 1] + 1, d[x - 1][y - 1] + (a[x - 1] === b[y - 1] ? 0 : 1));
-      if (x > 1 && y > 1 && a[x - 1] === b[y - 2] && a[x - 2] === b[y - 1]) v = Math.min(v, d[x - 2][y - 2] + 1);
-      d[x][y] = v; if (v < low) low = v;
+      let cost = Math.min(table[x - 1][y] + 1, table[x][y - 1] + 1, table[x - 1][y - 1] + (a[x - 1] === b[y - 1] ? 0 : 1));
+      if (x > 1 && y > 1 && a[x - 1] === b[y - 2] && a[x - 2] === b[y - 1]) cost = Math.min(cost, table[x - 2][y - 2] + 1);
+      table[x][y] = cost; if (cost < low) low = cost;
     }
     if (low > cap) return cap + 1;
   }
-  return d[a.length][b.length];
+  return table[a.length][b.length];
 }
 
-// Act: one activation of a cell, holding its inputs and (for reads) its worked-out slots
-class Act {
-  constructor(c, ins, it, left) { this.c = c; this.ins = ins; this.it = it; this.left = left; this.cache = null; this.fns = null; }
+// Activation: one activation of a cell, holding its inputs and (for reads) its worked-out slots
+class Activation {
+  constructor(cell, inputs, it, left) { this.cell = cell; this.inputs = inputs; this.it = it; this.left = left; this.cache = null; this.slotMakers = null; }
   get(i) {
     if (this.cache === null) {
-      if (!this.c.slots) return false;
-      this.cache = new Array(this.c.sh.n).fill(UNSET); this.fns = this.c.slots(this);
+      if (!this.cell.slots) return false;
+      this.cache = new Array(this.cell.shape.itemCount).fill(UNSET); this.slotMakers = this.cell.slots(this);
     }
-    let v = this.cache[i];
-    if (v === UNSET) { v = this.fns[i](); this.cache[i] = v; }
-    return v;
+    let value = this.cache[i];
+    if (value === UNSET) { value = this.slotMakers[i](); this.cache[i] = value; }
+    return value;
   }
 }
 
 // Cell: from a literal. Fields and parts are read lazily; running is always fresh.
 class Cell {
-  constructor(sh, slots, run, defs, caps, kn) { this.sh = sh; this.slots = slots; this.runF = run; this.defs = defs; this.caps = caps; this.left = undefined; this._a = null; this.kn = kn || null; }
-  act() { return this._a || (this._a = new Act(this, this.defaults(), false, this.left)); }
-  defaults() { const d = this.defs; if (!d.length) return EMPTY; const o = new Array(d.length); for (let j = 0; j < d.length; j++) o[j] = d[j] ? d[j]() : false; return o; }
-  field(name) { const i = this.sh.fidx[name]; return i === undefined ? UNSET : this.act().get(i); }
-  fieldNames() { return Object.keys(this.sh.fidx); }
-  count() { return this.sh.pidx.length; }
-  part(n) { const i = this.sh.pidx[n - 1]; return i === undefined ? false : this.act().get(i); }
-  takesInput() { return this.sh.names.length > 0 || this.sh.usesIt; }
-  run(arg) { let r = this.run1(arg); while (r instanceof Bounce) r = r.c.run1(r.a); return r; }
-  // run1: one step; a call in tail position comes back as a Bounce for the loop above (stack stays flat)
-  run1(arg) {
-    const sh = this.sh, nn = sh.names.length, L = this.left;
-    if (arg === BANG || arg === undefined) return nn ? this.call(this.defaults()) : this.runF(L, false);
-    if (nn === 0) return this.runF(L, arg);
-    if (nn === 1) return this.runF(L, false, arg); // one name takes the whole value (decision 19)
+  constructor(shape, slots, run, defaultMakers, captured, fastForms) { this.shape = shape; this.slots = slots; this.runCode = run; this.defaultMakers = defaultMakers; this.captured = captured; this.left = undefined; this._activation = null; this.fastForms = fastForms || null; }
+  activation() { return this._activation || (this._activation = new Activation(this, this.defaults(), false, this.left)); }
+  defaults() { const makers = this.defaultMakers; if (!makers.length) return EMPTY; const values = new Array(makers.length); for (let j = 0; j < makers.length; j++) values[j] = makers[j] ? makers[j]() : false; return values; }
+  field(name) { const i = this.shape.fieldIndex[name]; return i === undefined ? UNSET : this.activation().get(i); }
+  fieldNames() { return Object.keys(this.shape.fieldIndex); }
+  count() { return this.shape.partIndex.length; }
+  part(n) { const i = this.shape.partIndex[n - 1]; return i === undefined ? false : this.activation().get(i); }
+  takesInput() { return this.shape.names.length > 0 || this.shape.usesIt; }
+  run(arg) { let r = this.runOneStep(arg); while (r instanceof TailCall) r = r.cell.runOneStep(r.argument); return r; }
+  // runOneStep: one step; a call in tail position comes back as a TailCall for the loop above (stack stays flat)
+  runOneStep(arg) {
+    const shape = this.shape, nameCount = shape.names.length, left = this.left;
+    if (arg === BANG || arg === undefined) return nameCount ? this.call(this.defaults()) : this.runCode(left, false);
+    if (nameCount === 0) return this.runCode(left, arg);
+    if (nameCount === 1) return this.runCode(left, false, arg); // one name takes the whole value (decision 19)
     // several names: unpack the argument cell by position, then by name (decision 15)
-    const ins = this.defaults();
+    const inputs = this.defaults();
     if (isCell(arg)) {
-      const pc = arg.count();
-      if (pc > nn) lint("more values than names: " + pc + " given, " + nn + " taken");
-      for (let j = 0; j < nn && j < pc; j++) ins[j] = arg.part(j + 1);
-      if (arg.fieldNames().length) for (let j = 0; j < nn; j++) { const v = arg.field(sh.names[j]); if (v !== UNSET) ins[j] = v; }
-      for (let j = pc; j < nn; j++) if (!this.defs[j] && arg.field(sh.names[j]) === UNSET) lint("\"" + sh.names[j] + "\" was not given, so it is false");
-    } else ins[0] = arg;
-    return this.call(ins);
+      const partCount = arg.count();
+      if (partCount > nameCount) lint("more values than names: " + partCount + " given, " + nameCount + " taken");
+      for (let j = 0; j < nameCount && j < partCount; j++) inputs[j] = arg.part(j + 1);
+      if (arg.fieldNames().length) for (let j = 0; j < nameCount; j++) { const value = arg.field(shape.names[j]); if (value !== UNSET) inputs[j] = value; }
+      for (let j = partCount; j < nameCount; j++) if (!this.defaultMakers[j] && arg.field(shape.names[j]) === UNSET) lint("\"" + shape.names[j] + "\" was not given, so it is false");
+    } else inputs[0] = arg;
+    return this.call(inputs);
   }
-  call(ins) {
-    const L = this.left;
-    switch (ins.length) {
-      case 1: return this.runF(L, false, ins[0]);
-      case 2: return this.runF(L, false, ins[0], ins[1]);
-      case 3: return this.runF(L, false, ins[0], ins[1], ins[2]);
-      case 4: return this.runF(L, false, ins[0], ins[1], ins[2], ins[3]);
-      default: return this.runF(L, false, ...ins);
+  call(inputs) {
+    const left = this.left;
+    switch (inputs.length) {
+      case 1: return this.runCode(left, false, inputs[0]);
+      case 2: return this.runCode(left, false, inputs[0], inputs[1]);
+      case 3: return this.runCode(left, false, inputs[0], inputs[1], inputs[2]);
+      case 4: return this.runCode(left, false, inputs[0], inputs[1], inputs[2], inputs[3]);
+      default: return this.runCode(left, false, ...inputs);
     }
   }
-  bindLeft(r) { const b = new Cell(this.sh, this.slots, this.runF, this.defs, this.caps, this.kn); b.left = r; return b; }
+  bindLeft(receiver) { const bound = new Cell(this.shape, this.slots, this.runCode, this.defaultMakers, this.captured, this.fastForms); bound.left = receiver; return bound; }
 }
 const EMPTY = [];
-function lint(msg) { if (!warned.has(msg)) { warned.add(msg); LOG("lint: " + msg); } }
+function lint(msg) { if (!lintsShown.has(msg)) { lintsShown.add(msg); logMessage("lint: " + msg); } }
 
-// FShape: the field names of a kind of record, shared by every record with the same names (like a JS hidden class)
-class FShape {
-  constructor(keys) { this.keys = keys; this.next = new Map(); }
-  index(k) { const ks = this.keys; for (let i = 0; i < ks.length; i++) if (ks[i] === k) return i; return -1; }
-  add(k) { let s = this.next.get(k); if (!s) { s = new FShape(this.keys.concat([k])); this.next.set(k, s); } return s; }
+// FieldShape: the field names of a kind of record, shared by every record with the same names (like a JS hidden class)
+class FieldShape {
+  constructor(keys) { this.keys = keys; this.extensions = new Map(); }
+  index(key) { const keys = this.keys; for (let i = 0; i < keys.length; i++) if (keys[i] === key) return i; return -1; }
+  add(key) { let extended = this.extensions.get(key); if (!extended) { extended = new FieldShape(this.keys.concat([key])); this.extensions.set(key, extended); } return extended; }
 }
-const ROOT = new FShape([]);
+const NO_FIELDS = new FieldShape([]);
 const shapeCache = new Map();
-function shapeFor(keys) { const id = keys.join("\u0000"); let s = shapeCache.get(id); if (!s) { s = ROOT; for (const k of keys) s = s.index(k) >= 0 ? s : s.add(k); shapeCache.set(id, s); } return s; }
+function shapeFor(keys) { const cacheKey = keys.join("\u0000"); let shape = shapeCache.get(cacheKey); if (!shape) { shape = NO_FIELDS; for (const key of keys) shape = shape.index(key) >= 0 ? shape : shape.add(key); shapeCache.set(cacheKey, shape); } return shape; }
 
-// VCell: a cell of worked-out values, made by with, .., collect, keep and range
-class VCell {
-  // parts: JS array (0-based); fs: field shape; fv: field values in shape order
-  constructor(parts, fs, fv) { this.parts = parts; this.fs = fs || ROOT; this.fv = fv || EMPTY; }
-  field(name) { const i = this.fs.index(name); return i < 0 ? UNSET : this.fv[i]; }
-  fieldNames() { return this.fs.keys; }
-  get fields() { if (!this.fs.keys.length) return null; const m = new Map(); this.fs.keys.forEach((k, i) => m.set(k, this.fv[i])); return m; }
+// ValueCell: a cell of worked-out values, made by with, .., collect, keep and range
+class ValueCell {
+  // parts: JS array (0-based); fieldShape: field shape; fieldValues: field values in shape order
+  constructor(parts, fieldShape, fieldValues) { this.parts = parts; this.fieldShape = fieldShape || NO_FIELDS; this.fieldValues = fieldValues || EMPTY; }
+  field(name) { const i = this.fieldShape.index(name); return i < 0 ? UNSET : this.fieldValues[i]; }
+  fieldNames() { return this.fieldShape.keys; }
+  get fields() { if (!this.fieldShape.keys.length) return null; const m = new Map(); this.fieldShape.keys.forEach((k, i) => m.set(k, this.fieldValues[i])); return m; }
   count() { return this.parts.length; }
   part(n) { const v = this.parts[n - 1]; return v === undefined ? false : v; }
   takesInput() { return false; }
   run() { return this.parts.length ? this.parts[this.parts.length - 1] : false; }
 }
 // a cell of values from a JS array of parts and a Map of fields
-function VFM(parts, fields) { return fields && fields.size ? new VCell(parts, shapeFor([...fields.keys()]), [...fields.values()]) : new VCell(parts, ROOT, EMPTY); }
-// RCell: range n, the cell [1, 2, ..., n]. Part i is i, so loops never need to build the list.
-class RCell extends VCell {
-  constructor(n) { super(null, ROOT, EMPTY); this.n = n; this._p = null; }
-  get parts() { if (!this._p) { const o = new Array(this.n); for (let i = 0; i < this.n; i++) o[i] = i + 1; this._p = o; } return this._p; }
+function valueCellOf(parts, fields) { return fields && fields.size ? new ValueCell(parts, shapeFor([...fields.keys()]), [...fields.values()]) : new ValueCell(parts, NO_FIELDS, EMPTY); }
+// RangeCell: range n, the cell [1, 2, ..., n]. Part i is i, so loops never need to build the list.
+class RangeCell extends ValueCell {
+  constructor(size) { super(null, NO_FIELDS, EMPTY); this.size = size; this._parts = null; }
+  get parts() { if (!this._parts) { const o = new Array(this.size); for (let i = 0; i < this.size; i++) o[i] = i + 1; this._parts = o; } return this._parts; }
   set parts(v) {}
-  count() { return this.n; }
-  part(i) { return i >= 1 && i <= this.n ? i : false; }
-  run() { return this.n ? this.n : false; }
+  count() { return this.size; }
+  part(i) { return i >= 1 && i <= this.size ? i : false; }
+  run() { return this.size ? this.size : false; }
 }
-function VC(fs, vals) { return new VCell(EMPTY, fs, vals); }
-function VP(parts) { return new VCell(parts, ROOT, EMPTY); }
-function MK(sh, slots, run, defs, caps, kn) { return new Cell(sh, slots, run, defs, caps, kn); }
+function makeRecord(fieldShape, vals) { return new ValueCell(EMPTY, fieldShape, vals); }
+function makeList(parts) { return new ValueCell(parts, NO_FIELDS, EMPTY); }
+function makeCell(shape, slots, run, defaultMakers, captured, fastForms) { return new Cell(shape, slots, run, defaultMakers, captured, fastForms); }
 
-// ColCell: a list of records that share one shape and hold only numbers, stored as one number array per field (decision 82).
+// ColumnCell: a list of records that share one shape and hold only numbers, stored as one number array per field (decision 82).
 // To a program it is the same list: parts, @, length, = and str all see ordinary records, made when first asked for.
-class ColCell extends VCell {
-  constructor(rs, cols, n) { super(null, ROOT, EMPTY); this.rs = rs; this.cols = cols; this.n = n; this._p = null; }
-  get parts() { if (!this._p) { const o = new Array(this.n); for (let i = 0; i < this.n; i++) o[i] = this.row(i); this._p = o; } return this._p; }
+class ColumnCell extends ValueCell {
+  constructor(recordShape, columns, size) { super(null, NO_FIELDS, EMPTY); this.recordShape = recordShape; this.columns = columns; this.size = size; this._parts = null; }
+  get parts() { if (!this._parts) { const o = new Array(this.size); for (let i = 0; i < this.size; i++) o[i] = this.row(i); this._parts = o; } return this._parts; }
   set parts(v) {}
-  row(i) { const c = this.cols, k = c.length, fv = new Array(k); for (let j = 0; j < k; j++) fv[j] = c[j][i]; return new VCell(EMPTY, this.rs, fv); }
-  count() { return this.n; }
-  part(k) { if (!Number.isInteger(k) || k < 1 || k > this.n) return false; return this._p ? this._p[k - 1] : this.row(k - 1); }
-  run() { return this.n ? this.part(this.n) : false; }
+  row(i) { const columns = this.columns, fieldCount = columns.length, fieldValues = new Array(fieldCount); for (let j = 0; j < fieldCount; j++) fieldValues[j] = columns[j][i]; return new ValueCell(EMPTY, this.recordShape, fieldValues); }
+  count() { return this.size; }
+  part(k) { if (!Number.isInteger(k) || k < 1 || k > this.size) return false; return this._parts ? this._parts[k - 1] : this.row(k - 1); }
+  run() { return this.size ? this.part(this.size) : false; }
 }
-// NCell: a list of numbers kept in one Float64Array, made by spork and sort. To a program it is the same list.
-class NCell extends VCell {
-  constructor(a) { super(null, ROOT, EMPTY); this.a = a; this._p = null; }
-  get parts() { if (!this._p) this._p = Array.from(this.a); return this._p; }
+// NumberList: a list of numbers kept in one Float64Array, made by spork and sort. To a program it is the same list.
+class NumberList extends ValueCell {
+  constructor(numbers) { super(null, NO_FIELDS, EMPTY); this.numbers = numbers; this._parts = null; }
+  get parts() { if (!this._parts) this._parts = Array.from(this.numbers); return this._parts; }
   set parts(v) {}
-  count() { return this.a.length; }
-  part(k) { return Number.isInteger(k) && k >= 1 && k <= this.a.length ? this.a[k - 1] : false; }
-  run() { return this.a.length ? this.a[this.a.length - 1] : false; }
+  count() { return this.numbers.length; }
+  part(k) { return Number.isInteger(k) && k >= 1 && k <= this.numbers.length ? this.numbers[k - 1] : false; }
+  run() { return this.numbers.length ? this.numbers[this.numbers.length - 1] : false; }
 }
-let COLMIN = 32, FAST = true;
-const COLS = new WeakMap();
+let COLUMN_MIN_LENGTH = 32, fastPathsOn = true;
+const COLUMNS_CACHE = new WeakMap();
 // the columns for a list, if it is one: a list already in columns, or 32 or more records of one shape holding only numbers
-function toCols(xs) {
-  if (xs instanceof ColCell) return xs;
-  if (!(xs instanceof VCell) || xs instanceof RCell || xs.fs !== ROOT) return null;
-  const p = xs.parts; if (p.length < COLMIN) return null;
-  let c = COLS.get(xs); if (c !== undefined) return c;
-  c = rowsToCols(p, null); COLS.set(xs, c); return c;
+function asColumns(list) {
+  if (list instanceof ColumnCell) return list;
+  if (!(list instanceof ValueCell) || list instanceof RangeCell || list.fieldShape !== NO_FIELDS) return null;
+  const items = list.parts; if (items.length < COLUMN_MIN_LENGTH) return null;
+  let columns = COLUMNS_CACHE.get(list); if (columns !== undefined) return columns;
+  columns = rowsToColumns(items, null); COLUMNS_CACHE.set(list, columns); return columns;
 }
-function rowsToCols(p, rs) {
-  const n = p.length; if (!n) return null;
-  const r0 = p[0]; if (!(r0 instanceof VCell)) return null;
-  rs = rs || r0.fs; const k = rs.keys.length; if (!k) return null;
-  const cols = new Array(k); for (let j = 0; j < k; j++) cols[j] = new Float64Array(n);
-  for (let i = 0; i < n; i++) {
-    const r = p[i]; if (!(r instanceof VCell) || r.fs !== rs || r.parts.length) return null;
-    const fv = r.fv; for (let j = 0; j < k; j++) { const v = fv[j]; if (typeof v !== "number") return null; cols[j][i] = v; }
+function rowsToColumns(rows, recordShape) {
+  const count = rows.length; if (!count) return null;
+  const firstRow = rows[0]; if (!(firstRow instanceof ValueCell)) return null;
+  recordShape = recordShape || firstRow.fieldShape; const fieldCount = recordShape.keys.length; if (!fieldCount) return null;
+  const columns = new Array(fieldCount); for (let j = 0; j < fieldCount; j++) columns[j] = new Float64Array(count);
+  for (let i = 0; i < count; i++) {
+    const row = rows[i]; if (!(row instanceof ValueCell) || row.fieldShape !== recordShape || row.parts.length) return null;
+    const fieldValues = row.fieldValues; for (let j = 0; j < fieldCount; j++) { const value = fieldValues[j]; if (typeof value !== "number") return null; columns[j][i] = value; }
   }
-  return new ColCell(rs, cols, n);
+  return new ColumnCell(recordShape, columns, count);
 }
 // a .. b where either side is in columns: the result stays in columns when both sides hold records of the same shape
-function colMerge(a, b) {
-  const side = (x, rs) => {
-    if (x instanceof ColCell) return x.rs === rs ? x : null;
-    if (!isCell(x) || x instanceof RCell || x.fieldNames().length) return null;
-    if (x.count() === 0) return EMPTYCOL;
-    return rowsToCols(partsOf(x), rs);
+function mergeColumns(left, right) {
+  const asColumnsOf = (list, recordShape) => {
+    if (list instanceof ColumnCell) return list.recordShape === recordShape ? list : null;
+    if (!isCell(list) || list instanceof RangeCell || list.fieldNames().length) return null;
+    if (list.count() === 0) return NO_COLUMNS;
+    return rowsToColumns(partsOf(list), recordShape);
   };
-  const rs = (a instanceof ColCell ? a : b).rs;
-  const ca = side(a, rs); if (!ca) return null;
-  const cb = side(b, rs); if (!cb) return null;
-  if (cb === EMPTYCOL) return ca === EMPTYCOL ? null : ca;
-  if (ca === EMPTYCOL) return cb;
-  const na = ca.n, nb = cb.n, k = ca.cols.length, cols = new Array(k);
-  for (let j = 0; j < k; j++) { const o = new Float64Array(na + nb); o.set(ca.cols[j], 0); o.set(cb.cols[j], na); cols[j] = o; }
-  return new ColCell(rs, cols, na + nb);
+  const recordShape = (left instanceof ColumnCell ? left : right).recordShape;
+  const leftColumns = asColumnsOf(left, recordShape); if (!leftColumns) return null;
+  const rightColumns = asColumnsOf(right, recordShape); if (!rightColumns) return null;
+  if (rightColumns === NO_COLUMNS) return leftColumns === NO_COLUMNS ? null : leftColumns;
+  if (leftColumns === NO_COLUMNS) return rightColumns;
+  const leftCount = leftColumns.size, rightCount = rightColumns.size, fieldCount = leftColumns.columns.length, columns = new Array(fieldCount);
+  for (let j = 0; j < fieldCount; j++) { const merged = new Float64Array(leftCount + rightCount); merged.set(leftColumns.columns[j], 0); merged.set(rightColumns.columns[j], leftCount); columns[j] = merged; }
+  return new ColumnCell(recordShape, columns, leftCount + rightCount);
 }
-const EMPTYCOL = {};
-const isCell = v => v instanceof Cell || v instanceof VCell;
-function partsOf(c) { if (c instanceof VCell) return c.parts; const n = c.count(), o = new Array(n); for (let i = 0; i < n; i++) o[i] = c.part(i + 1); return o; }
-function fieldsOf(c) { if (c instanceof VCell) return c.fields || new Map(); const m = new Map(); for (const k of c.fieldNames()) m.set(k, c.field(k)); return m; }
+const NO_COLUMNS = {};
+const isCell = v => v instanceof Cell || v instanceof ValueCell;
+function partsOf(cell) { if (cell instanceof ValueCell) return cell.parts; const count = cell.count(), parts = new Array(count); for (let i = 0; i < count; i++) parts[i] = cell.part(i + 1); return parts; }
+function fieldsOf(cell) { if (cell instanceof ValueCell) return cell.fields || new Map(); const fields = new Map(); for (const key of cell.fieldNames()) fields.set(key, cell.field(key)); return fields; }
 
 // Native: a cell written in JavaScript (host words, range, rand...). fn takes the one argument.
 class Native { constructor(name, fn, effect) { this.name = name; this.fn = fn; this.effect = !!effect; } }
-// Waiting: a prototype method that has its left side and waits for its right side
-class Waiting { constructor(fn, left) { this.fn = fn; this.left = left; } }
-class Bounce { constructor(c, a) { this.c = c; this.a = a; } }
-function UNB(r) { while (r instanceof Bounce) r = r.c.run1(r.a); return r; }
-// TAIL: a send in tail position. A cell is not called here; its caller's loop calls it.
-function TAIL(r, a) { if (r instanceof Cell && !(typeof a === "string" && r.sh.fidx[a] !== undefined)) return new Bounce(r, a); return SEND(r, a); }
+// WaitingMethod: a prototype method that has its left side and waits for its right side
+class WaitingMethod { constructor(fn, left) { this.fn = fn; this.left = left; } }
+class TailCall { constructor(cell, argument) { this.cell = cell; this.argument = argument; } }
+function finishTailCalls(result) { while (result instanceof TailCall) result = result.cell.runOneStep(result.argument); return result; }
+// tailSend: a send in tail position. A cell is not called here; its caller's loop calls it.
+function tailSend(receiver, argument) { if (receiver instanceof Cell && !(typeof argument === "string" && receiver.shape.fieldIndex[argument] !== undefined)) return new TailCall(receiver, argument); return send(receiver, argument); }
 
 // ---- reading a field (decisions 2, 38, 52)
-function readField(r, v) {
-  if (v instanceof Cell && v.sh.usesLeft) { const b = v.bindLeft(r); return b.takesInput() ? b : b.run(BANG); }
-  return v;
+function readField(receiver, value) {
+  if (value instanceof Cell && value.shape.usesLeft) { const bound = value.bindLeft(receiver); return bound.takesInput() ? bound : bound.run(BANG); }
+  return value;
 }
-// SW: send a word. Fields first (with prototype methods), then a name in scope as the argument.
-// SWI: SW with an inline cache. A record read at this spot usually has the same shape every time.
-function SWI(r, w, lex, line, ic, quiet) {
-  if (r instanceof VCell) {
-    const fs = r.fs;
-    if (fs === ic.s) { const v = r.fv[ic.i]; return v instanceof Cell && v.sh.usesLeft ? readField(r, v) : v; }
-    const i = fs.index(w);
-    if (i >= 0) { if (lex) clash(w, line); ic.s = fs; ic.i = i; const v = r.fv[i]; return v instanceof Cell && v.sh.usesLeft ? readField(r, v) : v; }
+// sendWord: send a word. Fields first (with prototype methods), then a name in scope as the argument.
+// sendWordCached: sendWord with an inline cache. A record read at this spot usually has the same shape every time.
+function sendWordCached(receiver, word, lexical, line, cache, quiet) {
+  if (receiver instanceof ValueCell) {
+    const fieldShape = receiver.fieldShape;
+    if (fieldShape === cache.shape) { const value = receiver.fieldValues[cache.index]; return value instanceof Cell && value.shape.usesLeft ? readField(receiver, value) : value; }
+    const index = fieldShape.index(word);
+    if (index >= 0) {
+      if (lexical) lintFieldNameClash(word, line);
+      cache.shape = fieldShape; cache.index = index;
+      const value = receiver.fieldValues[index]; return value instanceof Cell && value.shape.usesLeft ? readField(receiver, value) : value;
+    }
   }
-  return SW(r, w, lex, line, quiet);
+  return sendWord(receiver, word, lexical, line, quiet);
 }
 // decision 73: a word that is both a field of the receiver and a name in scope reads the field, loudly
-function clash(w, line) { lint("\"" + w + "\" is both a field here and a name in scope; the field wins" + (line ? " (line " + line + ")" : "")); }
-function SW(r, w, lex, line, quiet) {
-  if (r instanceof Cell || r instanceof VCell) { const v = r.field(w); if (v !== UNSET) { if (lex) clash(w, line); return readField(r, v); } }
-  const m = protoOf(r)[w];
-  if (m !== undefined) return m.ar ? new Waiting(m.fn, r) : m.fn(r);
-  if (lex) return SEND(r, lex());
+function lintFieldNameClash(word, line) { lint("\"" + word + "\" is both a field here and a name in scope; the field wins" + (line ? " (line " + line + ")" : "")); }
+function sendWord(receiver, word, lexical, line, quiet) {
+  if (receiver instanceof Cell || receiver instanceof ValueCell) {
+    const value = receiver.field(word);
+    if (value !== UNSET) { if (lexical) lintFieldNameClash(word, line); return readField(receiver, value); }
+  }
+  const method = methodsOf(receiver)[word];
+  if (method !== undefined) return method.takesArgument ? new WaitingMethod(method.run, receiver) : method.run(receiver);
+  if (lexical) return send(receiver, lexical());
   if (quiet) return false;
   // a field that isn't there: suggest the nearest field this cell does have
-  const hint = (r instanceof Cell || r instanceof VCell) ? nearest(w, r.fieldNames()) : null;
-  return LOG_MISS(describe(r) + " doesn't know " + w + (hint ? " (did you mean " + hint + "?)" : ""), line);
+  const hint = (receiver instanceof Cell || receiver instanceof ValueCell) ? nearest(word, receiver.fieldNames()) : null;
+  return logMiss(describe(receiver) + " doesn't know " + word + (hint ? " (did you mean " + hint + "?)" : ""), line);
 }
-// SEND: send a value
-function SEND(r, a) {
-  if (r instanceof Cell) {
-    if (typeof a !== "string" && a !== BANG && r.sh.names.length === 1) { let v = r.runF(r.left, false, a); while (v instanceof Bounce) v = v.c.run1(v.a); return v; }
-    if (typeof a === "string") { const v = r.field(a); if (v !== UNSET) return readField(r, v); }
-    return r.run(a);
+// send: send a value
+function send(receiver, argument) {
+  if (receiver instanceof Cell) {
+    if (typeof argument !== "string" && argument !== BANG && receiver.shape.names.length === 1) {
+      let result = receiver.runCode(receiver.left, false, argument);
+      while (result instanceof TailCall) result = result.cell.runOneStep(result.argument);
+      return result;
+    }
+    if (typeof argument === "string") { const value = receiver.field(argument); if (value !== UNSET) return readField(receiver, value); }
+    return receiver.run(argument);
   }
-  if (r instanceof Waiting) return r.fn(r.left, a);
-  if (r instanceof Native) return r.fn(a === BANG ? false : a);
-  if (r instanceof VCell) { if (typeof a === "string") { const v = r.field(a); if (v !== UNSET) return readField(r, v); } return r.run(a); }
-  if (r === true || r === false) { if (isCell(a)) return r ? a.run(BANG) : false; return MISSING(r, a); }
-  return MISSING(r, a);
+  if (receiver instanceof WaitingMethod) return receiver.fn(receiver.left, argument);
+  if (receiver instanceof Native) return receiver.fn(argument === BANG ? false : argument);
+  if (receiver instanceof ValueCell) { if (typeof argument === "string") { const value = receiver.field(argument); if (value !== UNSET) return readField(receiver, value); } return receiver.run(argument); }
+  if (receiver === true || receiver === false) { if (isCell(argument)) return receiver ? argument.run(BANG) : false; return notUnderstood(receiver, argument); }
+  return notUnderstood(receiver, argument);
 }
 // decision 28: an unhandled send logs and gives false
-function MISSING(r, m, line) { return LOG_MISS(describe(r) + " doesn't know " + describe(m), line); }
-function describe(v) { const s = fmt(v); return s.length > 30 ? s.slice(0, 30) + "..." : s; }
-function RUNC(c) { return c.run(BANG); }
-function ISBOOL(v, op) { return typeof v === "boolean" ? v : MISSING(v, op); }
+function notUnderstood(receiver, message, line) { return logMiss(describe(receiver) + " doesn't know " + describe(message), line); }
+function describe(value) { const text = formatValue(value); return text.length > 30 ? text.slice(0, 30) + "..." : text; }
+function runCell(cell) { return cell.run(BANG); }
+function requireBool(value, operator) { return typeof value === "boolean" ? value : notUnderstood(value, operator); }
 
 // ---- effects: queued while the loop is running update, carried out after (decision 33)
-let EFFQ = null;
-function effect(f) { if (EFFQ) EFFQ.push(f); else f(); return false; }
-function queueEffects() { EFFQ = []; }
-function runEffects() { const q = EFFQ || []; EFFQ = null; for (const f of q) f(); return q.length; }
-function dropEffects() { const n = EFFQ ? EFFQ.length : 0; EFFQ = null; return n; }
+let effectQueue = null;
+function effect(work) { if (effectQueue) effectQueue.push(work); else work(); return false; }
+function queueEffects() { effectQueue = []; }
+function runEffects() { const queued = effectQueue || []; effectQueue = null; for (const work of queued) work(); return queued.length; }
+function dropEffects() { const dropped = effectQueue ? effectQueue.length : 0; effectQueue = null; return dropped; }
 
 // noise: a 32-bit integer hash of both inputs (whole and fractional parts), mapped to [0, 1)
-function NOISE(x, y) {
-  const fx = Math.floor(x), fy = Math.floor(y);
-  let h = Math.imul(fx ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul((fy + 0x632be5ab) | 0, 0xc2b2ae35) ^ Math.imul(Math.floor((x - fx) * 4294967296) | 0, 0x27d4eb2f) ^ Math.imul(Math.floor((y - fy) * 4294967296) | 0, 0x165667b1);
-  h ^= h >>> 16; h = Math.imul(h, 0x7feb352d); h ^= h >>> 15; h = Math.imul(h, 0x846ca68b); h ^= h >>> 16;
-  return (h >>> 0) / 4294967296;
+function noiseHash(x, y) {
+  const wholeX = Math.floor(x), wholeY = Math.floor(y);
+  let hash = Math.imul(wholeX ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul((wholeY + 0x632be5ab) | 0, 0xc2b2ae35) ^ Math.imul(Math.floor((x - wholeX) * 4294967296) | 0, 0x27d4eb2f) ^ Math.imul(Math.floor((y - wholeY) * 4294967296) | 0, 0x165667b1);
+  hash ^= hash >>> 16; hash = Math.imul(hash, 0x7feb352d); hash ^= hash >>> 15; hash = Math.imul(hash, 0x846ca68b); hash ^= hash >>> 16;
+  return (hash >>> 0) / 4294967296;
 }
 
 // ---- text
-function fmt(x) {
-  if (x === true) return "true"; if (x === false) return "false"; if (x === BANG) return "!"; if (x === ANY) return "any";
-  if (typeof x === "number") return String(+x.toFixed(10));
-  if (typeof x === "string") return x;
-  if (x instanceof Native) return "[" + x.name + "]";
-  if (x instanceof Waiting) return "[waiting]";
-  if (x instanceof Cell && x.takesInput()) return "[cell]";
-  if (isCell(x)) {
-    const out = [];
-    for (const k of x.fieldNames()) { const v = x.field(k); out.push(k + " : " + (v instanceof Cell && (v.takesInput() || v.sh.usesLeft) ? "[cell]" : fmt(v))); }
-    for (const p of partsOf(x)) out.push(p instanceof Cell && p.takesInput() ? "[cell]" : fmt(p));
-    return "[" + out.join(", ") + "]";
+function formatValue(value) {
+  if (value === true) return "true"; if (value === false) return "false"; if (value === BANG) return "!"; if (value === ANY) return "any";
+  if (typeof value === "number") return String(+value.toFixed(10));
+  if (typeof value === "string") return value;
+  if (value instanceof Native) return "[" + value.name + "]";
+  if (value instanceof WaitingMethod) return "[waiting]";
+  if (value instanceof Cell && value.takesInput()) return "[cell]";
+  if (isCell(value)) {
+    const pieces = [];
+    for (const key of value.fieldNames()) { const fieldValue = value.field(key); pieces.push(key + " : " + (fieldValue instanceof Cell && (fieldValue.takesInput() || fieldValue.shape.usesLeft) ? "[cell]" : formatValue(fieldValue))); }
+    for (const part of partsOf(value)) pieces.push(part instanceof Cell && part.takesInput() ? "[cell]" : formatValue(part));
+    return "[" + pieces.join(", ") + "]";
   }
-  return String(x);
+  return String(value);
 }
-function STR() { let s = ""; for (let i = 0; i < arguments.length; i++) s += fmt(arguments[i]); return s; }
+function joinText() { let text = ""; for (let i = 0; i < arguments.length; i++) text += formatValue(arguments[i]); return text; }
 
 // ---- equality: same contents, never runs anything (decisions 22, 23)
-function eq(a, b) {
+function valuesEqual(a, b) {
   if (a === b) return true;
   if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
   if (!isCell(a) || !isCell(b)) return false;
   // a cell that takes input compares by its code and the values it captured (decision 23)
-  const ia = a instanceof Cell && a.takesInput(), ib = b instanceof Cell && b.takesInput();
-  if (ia || ib) {
-    if (!(ia && ib) || a.sh.src !== b.sh.src) return false;
-    const ca = a.caps(), cb = b.caps();
-    for (let i = 0; i < ca.length; i++) if (!eq(ca[i], cb[i])) return false;
+  const aTakesInput = a instanceof Cell && a.takesInput(), bTakesInput = b instanceof Cell && b.takesInput();
+  if (aTakesInput || bTakesInput) {
+    if (!(aTakesInput && bTakesInput) || a.shape.src !== b.shape.src) return false;
+    const aCaptured = a.captured(), bCaptured = b.captured();
+    for (let i = 0; i < aCaptured.length; i++) if (!valuesEqual(aCaptured[i], bCaptured[i])) return false;
     return true;
   }
   // any other cell compares by its worked-out parts and fields (decision 72)
-  const n = a.count(); if (n !== b.count()) return false;
-  for (let i = 1; i <= n; i++) if (!eq(a.part(i), b.part(i))) return false;
-  const fa = a.fieldNames(), fb = b.fieldNames(); if (fa.length !== fb.length) return false;
-  for (const k of fa) { const v = b.field(k); if (v === UNSET || !eq(a.field(k), v)) return false; }
+  const count = a.count(); if (count !== b.count()) return false;
+  for (let i = 1; i <= count; i++) if (!valuesEqual(a.part(i), b.part(i))) return false;
+  const aFields = a.fieldNames(), bFields = b.fieldNames(); if (aFields.length !== bFields.length) return false;
+  for (const key of aFields) { const value = b.field(key); if (value === UNSET || !valuesEqual(a.field(key), value)) return false; }
   return true;
 }
 
 // ---- with and .. : one operation (decision 45)
-function merge(a, b) {
-  if (typeof a === "string" || typeof a === "number") return fmt(a) + fmt(b);
-  if (!isCell(a)) return MISSING(a, "with");
-  if (!isCell(b)) return MISSING(b, "with");
-  if (a instanceof ColCell || b instanceof ColCell) { const r = colMerge(a, b); if (r) return r; }
-  const pa = partsOf(a), pb = partsOf(b);
-  const parts = pb.length ? (pa.length ? pa.concat(pb) : pb) : pa;
-  let fs, fv;
-  if (a instanceof VCell) { fs = a.fs; fv = a.fv; } else { const ks = a.fieldNames(); fs = shapeFor(ks); fv = ks.map(k => a.field(k)); }
-  const kb = b.fieldNames();
-  if (kb.length) {
-    fv = fv.slice();
-    for (const k of kb) { const v = b.field(k); const i = fs.index(k); if (i < 0) { fs = fs.add(k); fv.push(v); } else fv[i] = v; }
+function merge(left, right) {
+  if (typeof left === "string" || typeof left === "number") return formatValue(left) + formatValue(right);
+  if (!isCell(left)) return notUnderstood(left, "with");
+  if (!isCell(right)) return notUnderstood(right, "with");
+  if (left instanceof ColumnCell || right instanceof ColumnCell) { const r = mergeColumns(left, right); if (r) return r; }
+  const leftParts = partsOf(left), rightParts = partsOf(right);
+  const parts = rightParts.length ? (leftParts.length ? leftParts.concat(rightParts) : rightParts) : leftParts;
+  let fieldShape, fieldValues;
+  if (left instanceof ValueCell) { fieldShape = left.fieldShape; fieldValues = left.fieldValues; } else { const keys = left.fieldNames(); fieldShape = shapeFor(keys); fieldValues = keys.map(key => left.field(key)); }
+  const rightKeys = right.fieldNames();
+  if (rightKeys.length) {
+    fieldValues = fieldValues.slice();
+    for (const key of rightKeys) { const value = right.field(key); const position = fieldShape.index(key); if (position < 0) { fieldShape = fieldShape.add(key); fieldValues.push(value); } else fieldValues[position] = value; }
   }
-  return new VCell(parts, fs, fv);
+  return new ValueCell(parts, fieldShape, fieldValues);
 }
 
 // ---- operators: fused fast paths, falling back to prototype fields (decisions 36, 37)
-function opSlow(name, a, b) { return SEND(SW(a, name, null, 0), b); }
-function ADD(a, b) { return typeof a === "number" && typeof b === "number" ? a + b : opSlow("+", a, b); }
-function SUB(a, b) { return typeof a === "number" && typeof b === "number" ? a - b : opSlow("-", a, b); }
-function MUL(a, b) { return typeof a === "number" && typeof b === "number" ? a * b : opSlow("*", a, b); }
-function DIV(a, b) { return typeof a === "number" && typeof b === "number" ? a / b : opSlow("/", a, b); }
-function MOD(a, b) { return typeof a === "number" && typeof b === "number" ? ((a % b) + b) % b : opSlow("%", a, b); }
-function LT(a, b) { return typeof a === "number" && typeof b === "number" ? a < b : opSlow("<", a, b); }
-function GT(a, b) { return typeof a === "number" && typeof b === "number" ? a > b : opSlow(">", a, b); }
-function LE(a, b) { return typeof a === "number" && typeof b === "number" ? a <= b : opSlow("<=", a, b); }
-function GE(a, b) { return typeof a === "number" && typeof b === "number" ? a >= b : opSlow(">=", a, b); }
-function userOp(a, w) { return (a instanceof Cell || a instanceof VCell) && a.field(w) !== UNSET; }
-function EQ(a, b) { if (a === b) return true; if (typeof a !== "object") return false; return userOp(a, "=") ? opSlow("=", a, b) : eq(a, b); }
+function operatorBySending(name, left, right) { return send(sendWord(left, name, null, 0), right); }
+function ADD(a, b) { return typeof a === "number" && typeof b === "number" ? a + b : operatorBySending("+", a, b); }
+function SUB(a, b) { return typeof a === "number" && typeof b === "number" ? a - b : operatorBySending("-", a, b); }
+function MUL(a, b) { return typeof a === "number" && typeof b === "number" ? a * b : operatorBySending("*", a, b); }
+function DIV(a, b) { return typeof a === "number" && typeof b === "number" ? a / b : operatorBySending("/", a, b); }
+function MOD(a, b) { return typeof a === "number" && typeof b === "number" ? ((a % b) + b) % b : operatorBySending("%", a, b); }
+function LT(a, b) { return typeof a === "number" && typeof b === "number" ? a < b : operatorBySending("<", a, b); }
+function GT(a, b) { return typeof a === "number" && typeof b === "number" ? a > b : operatorBySending(">", a, b); }
+function LE(a, b) { return typeof a === "number" && typeof b === "number" ? a <= b : operatorBySending("<=", a, b); }
+function GE(a, b) { return typeof a === "number" && typeof b === "number" ? a >= b : operatorBySending(">=", a, b); }
+function hasOwnOperator(value, word) { return (value instanceof Cell || value instanceof ValueCell) && value.field(word) !== UNSET; }
+function EQ(a, b) { if (a === b) return true; if (typeof a !== "object") return false; return hasOwnOperator(a, "=") ? operatorBySending("=", a, b) : valuesEqual(a, b); }
 function NE(a, b) { return !EQ(a, b); }
-function CAT(a, b) { if (typeof a === "string") return a + (typeof b === "string" ? b : fmt(b)); return userOp(a, "..") ? opSlow("..", a, b) : merge(a, b); }
-function WITH(a, b) { return userOp(a, "with") ? opSlow("with", a, b) : merge(a, b); }
-function AT(a, n) { return PART(a, n); }
+function concat(left, right) { if (typeof left === "string") return left + (typeof right === "string" ? right : formatValue(right)); return hasOwnOperator(left, "..") ? operatorBySending("..", left, right) : merge(left, right); }
+function withCell(left, right) { return hasOwnOperator(left, "with") ? operatorBySending("with", left, right) : merge(left, right); }
+function partAt(list, position) { return partOf(list, position); }
 // x with [a : ..., b : ...] compiled straight to a field update
-function WITHF(a, keys, vals, ic) {
-  if (a instanceof VCell) {
-    const fs = a.fs;
-    if (fs === ic.s) { const fv = a.fv.slice(), x = ic.x; for (let i = 0; i < x.length; i++) fv[x[i]] = vals[i]; return new VCell(a.parts, ic.o, fv); }
-    if (fs.index("with") < 0) {
-      let out = fs; const fv = a.fv.slice(), x = new Array(keys.length);
-      for (let i = 0; i < keys.length; i++) { let j = out.index(keys[i]); if (j < 0) { out = out.add(keys[i]); j = out.keys.length - 1; } fv[j] = vals[i]; x[i] = j; }
-      ic.s = fs; ic.o = out; ic.x = x;
-      return new VCell(a.parts, out, fv);
+// record with [a : ..., b : ...]: the new fields laid straight over the record (the cache remembers where they go for its shape)
+function withFields(record, keys, values, cache) {
+  if (record instanceof ValueCell) {
+    const fieldShape = record.fieldShape;
+    if (fieldShape === cache.shape) {
+      const fieldValues = record.fieldValues.slice(), positions = cache.positions;
+      for (let i = 0; i < positions.length; i++) fieldValues[positions[i]] = values[i];
+      return new ValueCell(record.parts, cache.outShape, fieldValues);
+    }
+    if (fieldShape.index("with") < 0) {
+      let outShape = fieldShape; const fieldValues = record.fieldValues.slice(), positions = new Array(keys.length);
+      for (let i = 0; i < keys.length; i++) {
+        let at = outShape.index(keys[i]);
+        if (at < 0) { outShape = outShape.add(keys[i]); at = outShape.keys.length - 1; }
+        fieldValues[at] = values[i]; positions[i] = at;
+      }
+      cache.shape = fieldShape; cache.outShape = outShape; cache.positions = positions;
+      return new ValueCell(record.parts, outShape, fieldValues);
     }
   }
-  return WITH(a, new VCell(EMPTY, shapeFor(keys), vals));
+  return withCell(record, new ValueCell(EMPTY, shapeFor(keys), values));
 }
-function PART(a, n) {
-  if (isCell(a)) return a.part(n);
-  if (typeof a === "string") return n >= 1 && n <= a.length ? a[n - 1] : false;
-  return MISSING(a, "@");
+function partOf(list, position) {
+  if (isCell(list)) return list.part(position);
+  if (typeof list === "string") return position >= 1 && position <= list.length ? list[position - 1] : false;
+  return notUnderstood(list, "@");
 }
-function LEN(a) { if (isCell(a)) return a.count(); if (typeof a === "string") return a.length; return MISSING(a, "length"); }
+function lengthOf(value) { if (isCell(value)) return value.count(); if (typeof value === "string") return value.length; return notUnderstood(value, "length"); }
 
 // ---- calling a cell with each item (collections are methods, decision 55)
-function CALL(f, x) {
-  if (f instanceof Cell) return f.run(x);
-  return SEND(f, x);
+function callCell(cell, item) {
+  if (cell instanceof Cell) return cell.run(item);
+  return send(cell, item);
 }
-function each(xs, f) {
-  const one = f instanceof Cell && f.sh.names.length === 1, run = one ? f.runF : null, L = one ? f.left : undefined;
-  if (xs instanceof RCell) { for (let i = 1; i <= xs.n; i++) one ? UNB(run(L, false, i)) : CALL(f, i); return false; }
-  const p = partsOf(xs); for (let i = 0; i < p.length; i++) one ? UNB(run(L, false, p[i])) : CALL(f, p[i]);
+// a cell with one named input is run straight through its code (the commonest case, and the quickest)
+const runsDirectly = cell => cell instanceof Cell && cell.shape.names.length === 1;
+function each(list, cell) {
+  const direct = runsDirectly(cell), code = direct ? cell.runCode : null, left = direct ? cell.left : undefined;
+  if (list instanceof RangeCell) { for (let i = 1; i <= list.size; i++) direct ? finishTailCalls(code(left, false, i)) : callCell(cell, i); return false; }
+  const items = partsOf(list);
+  for (let i = 0; i < items.length; i++) direct ? finishTailCalls(code(left, false, items[i])) : callCell(cell, items[i]);
   return false;
 }
-function collect(xs, f) {
-  const p = partsOf(xs);
-  const n = p.length, out = new Array(n);
-  if (f instanceof Cell && f.sh.names.length === 1) { const run = f.runF, L = f.left; for (let i = 0; i < n; i++) out[i] = UNB(run(L, false, p[i])); }
-  else for (let i = 0; i < n; i++) out[i] = CALL(f, p[i]);
-  return new VCell(out, ROOT, EMPTY);
+function collect(list, cell) {
+  const items = partsOf(list), count = items.length, results = new Array(count);
+  if (runsDirectly(cell)) { const code = cell.runCode, left = cell.left; for (let i = 0; i < count; i++) results[i] = finishTailCalls(code(left, false, items[i])); }
+  else for (let i = 0; i < count; i++) results[i] = callCell(cell, items[i]);
+  return new ValueCell(results, NO_FIELDS, EMPTY);
 }
-function keep(xs, f) {
-  const p = partsOf(xs), o = [];
-  const one = f instanceof Cell && f.sh.names.length === 1, run = one ? f.runF : null, L = one ? f.left : undefined;
-  for (let i = 0; i < p.length; i++) { const t = one ? UNB(run(L, false, p[i])) : CALL(f, p[i]); if (t === true) o.push(p[i]); else if (t !== false) MISSING(t, "keep"); }
-  return new VCell(o, ROOT, EMPTY);
-}
-function fold(xs, arg) {
-  if (!isCell(arg)) return MISSING(arg, "fold");
-  let acc = arg.part(1); const f = arg.part(2);
-  if (f instanceof Cell && f.sh.names.length === 2) {
-    const run = f.runF, L = f.left;
-    if (xs instanceof RCell) { for (let i = 1; i <= xs.n; i++) acc = UNB(run(L, false, acc, i)); return acc; }
-    const p = partsOf(xs); for (let i = 0; i < p.length; i++) acc = UNB(run(L, false, acc, p[i])); return acc;
+function keep(list, test) {
+  const items = partsOf(list), kept = [];
+  const direct = runsDirectly(test), code = direct ? test.runCode : null, left = direct ? test.left : undefined;
+  for (let i = 0; i < items.length; i++) {
+    const answer = direct ? finishTailCalls(code(left, false, items[i])) : callCell(test, items[i]);
+    if (answer === true) kept.push(items[i]); else if (answer !== false) notUnderstood(answer, "keep");
   }
-  const p = partsOf(xs);
-  for (let i = 0; i < p.length; i++) acc = CALL(f, new VCell([acc, p[i]], ROOT, EMPTY));
-  return acc;
+  return new ValueCell(kept, NO_FIELDS, EMPTY);
 }
-function times(n, f) { for (let i = 1; i <= n; i++) CALL(f, i); return false; }
+// list fold [start, [total item | ...]]
+function fold(list, startAndCell) {
+  if (!isCell(startAndCell)) return notUnderstood(startAndCell, "fold");
+  let total = startAndCell.part(1); const cell = startAndCell.part(2);
+  if (cell instanceof Cell && cell.shape.names.length === 2) {
+    const code = cell.runCode, left = cell.left;
+    if (list instanceof RangeCell) { for (let i = 1; i <= list.size; i++) total = finishTailCalls(code(left, false, total, i)); return total; }
+    const items = partsOf(list); for (let i = 0; i < items.length; i++) total = finishTailCalls(code(left, false, total, items[i])); return total;
+  }
+  const items = partsOf(list);
+  for (let i = 0; i < items.length; i++) total = callCell(cell, new ValueCell([total, items[i]], NO_FIELDS, EMPTY));
+  return total;
+}
+function times(count, cell) { for (let i = 1; i <= count; i++) callCell(cell, i); return false; }
 // spork (decision 47) is a parallel collect: the same list. A library runs it faster when it can (decision 91).
-function spork(xs, f) { const r = LIB.spork && FAST ? LIB.spork(xs, f) : null; return r || collect(xs, f); }
+function spork(list, cell) { const result = LIBRARIES.spork && fastPathsOn ? LIBRARIES.spork(list, cell) : null; return result || collect(list, cell); }
 
 // sort: numbers from least to most, or words in order (a library choice, decision 80)
-const sortNumbers = a => (LIB.sortNumbers || (x => Float64Array.from(x).sort()))(a);
-function sortList(xs) {
-  if (xs instanceof NCell) return new NCell(sortNumbers(xs.a));
-  if (xs instanceof RCell) return xs;
-  const p = partsOf(xs);
-  if (p.every(v => typeof v === "number")) return new NCell(sortNumbers(Float64Array.from(p)));
-  if (p.every(v => typeof v === "string")) return VP(p.slice().sort());
-  return LOG_MISS("sort sorts a list of numbers or a list of words");
+const sortNumbers = a => (LIBRARIES.sortNumbers || (x => Float64Array.from(x).sort()))(a);
+function sortList(list) {
+  if (list instanceof NumberList) return new NumberList(sortNumbers(list.numbers));
+  if (list instanceof RangeCell) return list;
+  const items = partsOf(list);
+  if (items.every(value => typeof value === "number")) return new NumberList(sortNumbers(Float64Array.from(items)));
+  if (items.every(value => typeof value === "string")) return makeList(items.slice().sort());
+  return logMiss("sort sorts a list of numbers or a list of words");
 }
 
 // ---- prototypes: built-in fields of each kind of value. ar:1 waits for a right side.
-const m0 = fn => ({ ar: 0, fn }), m1 = fn => ({ ar: 1, fn });
-const ALL = {
-  "=": m1(eq), "!=": m1((a, b) => !eq(a, b)), else: m1((a, b) => a === false ? (isCell(b) ? b.run(BANG) : b) : a),
-  print: m0(a => { G.print.fn(a); return a; }), str: m0(a => fmt(a)), with: m1(merge), "..": m1(merge),
+const methodTakingNothing = run => ({ takesArgument: false, run }), methodTakingOne = run => ({ takesArgument: true, run });
+const EVERY_VALUE_METHODS = {
+  "=": methodTakingOne(valuesEqual), "!=": methodTakingOne((a, b) => !valuesEqual(a, b)), else: methodTakingOne((a, b) => a === false ? (isCell(b) ? b.run(BANG) : b) : a),
+  print: methodTakingNothing(a => { GLOBALS.print.fn(a); return a; }), str: methodTakingNothing(a => formatValue(a)), with: methodTakingOne(merge), "..": methodTakingOne(merge),
 };
-const NUM = Object.assign(Object.create(ALL), {
-  "+": m1((a, b) => a + num(b)), "-": m1((a, b) => a - num(b)), "*": m1((a, b) => a * num(b)), "/": m1((a, b) => a / num(b)),
-  "%": m1((a, b) => ((a % b) + b) % b), "<": m1((a, b) => a < num(b)), ">": m1((a, b) => a > num(b)),
-  "<=": m1((a, b) => a <= num(b)), ">=": m1((a, b) => a >= num(b)),
-  abs: m0(Math.abs), floor: m0(Math.floor), round: m0(Math.round), ceil: m0(Math.ceil), sqrt: m0(Math.sqrt),
-  sin: m0(Math.sin), cos: m0(Math.cos), tan: m0(Math.tan), log: m0(Math.log), neg: m0(a => -a),
-  times: m1(times), min: m1((a, b) => Math.min(a, b)), max: m1((a, b) => Math.max(a, b)),
+const NUMBER_METHODS = Object.assign(Object.create(EVERY_VALUE_METHODS), {
+  "+": methodTakingOne((a, b) => a + requireNumber(b)), "-": methodTakingOne((a, b) => a - requireNumber(b)), "*": methodTakingOne((a, b) => a * requireNumber(b)), "/": methodTakingOne((a, b) => a / requireNumber(b)),
+  "%": methodTakingOne((a, b) => ((a % b) + b) % b), "<": methodTakingOne((a, b) => a < requireNumber(b)), ">": methodTakingOne((a, b) => a > requireNumber(b)),
+  "<=": methodTakingOne((a, b) => a <= requireNumber(b)), ">=": methodTakingOne((a, b) => a >= requireNumber(b)),
+  abs: methodTakingNothing(Math.abs), floor: methodTakingNothing(Math.floor), round: methodTakingNothing(Math.round), ceil: methodTakingNothing(Math.ceil), sqrt: methodTakingNothing(Math.sqrt),
+  sin: methodTakingNothing(Math.sin), cos: methodTakingNothing(Math.cos), tan: methodTakingNothing(Math.tan), log: methodTakingNothing(Math.log), neg: methodTakingNothing(a => -a),
+  times: methodTakingOne(times), min: methodTakingOne((a, b) => Math.min(a, b)), max: methodTakingOne((a, b) => Math.max(a, b)),
 });
-function num(b) { if (typeof b !== "number") { LOG_MISS(describe(b) + " isn't a number"); return NaN; } return b; }
-const STRP = Object.assign(Object.create(ALL), {
-  length: m0(LEN), "@": m1(PART), "<": m1((a, b) => a < b), ">": m1((a, b) => a > b),
-  upper: m0(a => a.toUpperCase()), lower: m0(a => a.toLowerCase()),
+function requireNumber(value) { if (typeof value !== "number") { logMiss(describe(value) + " isn't a number"); return NaN; } return value; }
+const TEXT_METHODS = Object.assign(Object.create(EVERY_VALUE_METHODS), {
+  length: methodTakingNothing(lengthOf), "@": methodTakingOne(partOf), "<": methodTakingOne((a, b) => a < b), ">": methodTakingOne((a, b) => a > b),
+  upper: methodTakingNothing(a => a.toUpperCase()), lower: methodTakingNothing(a => a.toLowerCase()),
 });
-const BOOL = Object.assign(Object.create(ALL), {
-  not: m0(a => !a), and: m1((a, b) => a && b === true), or: m1((a, b) => a || b === true),
+const BOOL_METHODS = Object.assign(Object.create(EVERY_VALUE_METHODS), {
+  not: methodTakingNothing(a => !a), and: methodTakingOne((a, b) => a && b === true), or: methodTakingOne((a, b) => a || b === true),
 });
-const CELLP = Object.assign(Object.create(ALL), {
-  "@": m1(PART), length: m0(LEN), first: m0(a => a.part(1)), last: m0(a => a.part(a.count())),
-  collect: m1(collect), keep: m1(keep), each: m1(each), fold: m1(fold), spork: m1(spork), sort: m0(sortList),
+const CELL_METHODS = Object.assign(Object.create(EVERY_VALUE_METHODS), {
+  "@": methodTakingOne(partOf), length: methodTakingNothing(lengthOf), first: methodTakingNothing(a => a.part(1)), last: methodTakingNothing(a => a.part(a.count())),
+  collect: methodTakingOne(collect), keep: methodTakingOne(keep), each: methodTakingOne(each), fold: methodTakingOne(fold), spork: methodTakingOne(spork), sort: methodTakingNothing(sortList),
 });
-const NONE_P = ALL;
-function protoOf(r) {
-  switch (typeof r) {
-    case "number": return NUM; case "string": return STRP; case "boolean": return BOOL;
+const OTHER_METHODS = EVERY_VALUE_METHODS;
+function methodsOf(value) {
+  switch (typeof value) {
+    case "number": return NUMBER_METHODS; case "string": return TEXT_METHODS; case "boolean": return BOOL_METHODS;
   }
-  if (r instanceof Cell || r instanceof VCell) return CELLP;
-  return NONE_P;
+  if (value instanceof Cell || value instanceof ValueCell) return CELL_METHODS;
+  return OTHER_METHODS;
 }
 
 // ---- globals: names every file can use. Host words are added by the host.
-function args(a, n) { if (isCell(a)) { const o = new Array(n); for (let i = 0; i < n; i++) o[i] = a.part(i + 1); return o; } return [a]; }
-const G = Object.create(null);
-function defNative(name, fn, effect) { G[name] = new Native(name, fn, effect); }
-G.any = ANY;
-defNative("range", n => new RCell(Math.max(0, Math.floor(num(n)))));
+function argumentsOf(argument, count) { if (isCell(argument)) { const values = new Array(count); for (let i = 0; i < count; i++) values[i] = argument.part(i + 1); return values; } return [argument]; }
+const GLOBALS = Object.create(null);
+function defNative(name, fn, effect) { GLOBALS[name] = new Native(name, fn, effect); }
+GLOBALS.any = ANY;
+defNative("range", n => new RangeCell(Math.max(0, Math.floor(requireNumber(n)))));
 // rand reads the recorded random source, like random, so it stays here; plain maths lives in the prelude (decision 97)
-defNative("rand", a => { const [lo, hi] = args(a, 2); return lo + RNG() * (hi - lo); });
-defNative("print", a => { effect(() => OUT(fmt(a))); return a; }, true);
+defNative("rand", a => { const [lo, hi] = argumentsOf(a, 2); return lo + randomSource() * (hi - lo); });
+defNative("print", a => { effect(() => printOutput(formatValue(a))); return a; }, true);
 // noise [sample, id]: a number from 0 up to 1 that is always the same for the same two inputs (decision 87)
-defNative("noise", a => { const [x, y] = args(a, 2); return NOISE(num(x), num(y)); });
-Object.defineProperty(G, "random", { get: () => RNG(), enumerable: true });
-let RNG = Math.random, OUT = s => { if (typeof console !== "undefined") console.log(s); };
+defNative("noise", a => { const [x, y] = argumentsOf(a, 2); return noiseHash(requireNumber(x), requireNumber(y)); });
+Object.defineProperty(GLOBALS, "random", { get: () => randomSource(), enumerable: true });
+let randomSource = Math.random, printOutput = s => { if (typeof console !== "undefined") console.log(s); };
 
 // ===================================================================== prelude, written in Sprout (decisions 30, 34, 35, 50)
 const PRELUDE = `
 -- maths that used to be written in JavaScript (decision 97)
-clamp : [v lo hi | v < lo [lo] else [v > hi [hi] else [v]]]
-toward : [x y t | y - x * t + x]
+clamp : [value low high | value < low [low] else [value > high [high] else [value]]]
+toward : [from to amount | to - from * amount + from]
 dist : [x1 y1 x2 y2 |
-  dx : x2 - x1, dy : y2 - y1
-  (dx * dx + (dy * dy)) sqrt
+  across : x2 - x1, down : y2 - y1
+  (across * across + (down * down)) sqrt
 ]
-match : [v cases |
-  find : [n | n > (cases length) [0] else [(cases @ n) = any or ((cases @ n) = v) [n] else [find (n + 2)]]]
-  k : find 1
-  k > 0 [cases @ (k + 1)] else [false]
+-- match [value, [case, answer, case, answer, ..., any, answer]]: the answer of the first case equal to value
+match : [value cases |
+  find : [position | position > (cases length) [0] else [(cases @ position) = any or ((cases @ position) = value) [position] else [find (position + 2)]]]
+  found : find 1
+  found > 0 [cases @ (found + 1)] else [false]
 ]
+-- cond [test, answer, test, answer, ..., any, answer]: the answer of the first test that is true
 cond : [cases |
-  find : [n | n > (cases length) [0] else [(cases @ n) = any or ((cases @ n) = true) [n] else [find (n + 2)]]]
-  k : find 1
-  k > 0 [cases @ (k + 1)] else [false]
+  find : [position | position > (cases length) [0] else [(cases @ position) = any or ((cases @ position) = true) [position] else [find (position + 2)]]]
+  found : find 1
+  found > 0 [cases @ (found + 1)] else [false]
 ]
-take : [xs n | range (n min (xs length)) collect [k | xs @ k]]
-rgb : [r g b | "rgb(" .. r .. "," .. g .. "," .. b .. ")"]
-rgba : [r g b a | "rgba(" .. r .. "," .. g .. "," .. b .. "," .. a .. ")"]
-every : [secs now dt | now / secs floor > (now - dt / secs floor)]
-wave : [secs now | now / secs * 6.283185307179586 sin]
+take : [items count | range (count min (items length)) collect [position | items @ position]]
+rgb : [red green blue | "rgb(" .. red .. "," .. green .. "," .. blue .. ")"]
+rgba : [red green blue alpha | "rgba(" .. red .. "," .. green .. "," .. blue .. "," .. alpha .. ")"]
+every : [seconds now step | now / seconds floor > (now - step / seconds floor)]
+wave : [seconds now | now / seconds * 6.283185307179586 sin]
 fresh-input : [touching : false, tapped : false, touch-x : 0, touch-y : 0, held : []]
+-- frame update: events in, one update per tick (decision 34)
 frame : [update |
-  [s e |
-    i : s input else fresh-input
-    match [e kind, [
-      "down", s with [input : i with [touching : true, tapped : true, touch-x : e x, touch-y : e y]]
-      "move", s with [input : i with [touch-x : e x, touch-y : e y]]
-      "up", s with [input : i with [touching : false]]
-      "tick", update (s with [dt : e dt, clock : e clock, input : i with [held : e held]]) with [input : i with [tapped : false, held : e held]]
-      any, s
+  [state event |
+    current-input : state input else fresh-input
+    match [event kind, [
+      "down", state with [input : current-input with [touching : true, tapped : true, touch-x : event x, touch-y : event y]]
+      "move", state with [input : current-input with [touch-x : event x, touch-y : event y]]
+      "up", state with [input : current-input with [touching : false]]
+      "tick", update (state with [dt : event dt, clock : event clock, input : current-input with [held : event held]]) with [input : current-input with [tapped : false, held : event held]]
+      any, state
     ]]
   ]
 ]
 `;
 
 // ===================================================================== build
-const RT = { BANG, ANY, G, S: null, MK, SW, SEND, RUNC, STR, UNKNOWN, LOG_MISS, WITHF,
-  ADD, SUB, MUL, DIV, MOD, LT, GT, LE, GE, EQ, NE, CAT, WITH, AT, VC, VP, ISBOOL, MISSING, TAIL, SWI, shapeFor };
+const RUNTIME = { BANG, ANY, GLOBALS, makeCell, sendWord, send, runCell, joinText, unknownWord, logMiss, withFields,
+  ADD, SUB, MUL, DIV, MOD, LT, GT, LE, GE, EQ, NE, concat, withCell, partAt, makeRecord, makeList, requireBool, notUnderstood, tailSend, sendWordCached, shapeFor };
 let preludeCell = null;
-function globalNames(extra) { const s = new Set(Object.keys(G)); if (extra) for (const k of extra) s.add(k); return s; }
+function globalNames(extra) { const names = new Set(Object.keys(GLOBALS)); if (extra) for (const name of extra) names.add(name); return names; }
 
-function load(src, opts) {
-  opts = opts || {};
-  const host = opts.host || {};
-  for (const k in host) G[k] = host[k];
-  if (!preludeCell && !opts.noPrelude) {
+function load(src, options) {
+  options = options || {};
+  const host = options.host || {};
+  for (const name in host) GLOBALS[name] = host[name];
+  if (!preludeCell && !options.noPrelude) {
     preludeCell = load(PRELUDE, { noPrelude: true });
-    for (const k of preludeCell.fieldNames()) { const kk = k; Object.defineProperty(G, kk, { get: () => preludeCell.field(kk), enumerable: true, configurable: true }); }
+    for (const name of preludeCell.fieldNames()) { const fieldName = name; Object.defineProperty(GLOBALS, fieldName, { get: () => preludeCell.field(fieldName), enumerable: true, configurable: true }); }
   }
-  const { js, shapes, prologue, speed } = compile(src, globalNames());
-  const names = Object.keys(RT).filter(k => k !== "S");
-  const f = new Function(...names, "S", prologue + "\nreturn " + js + "\n//# sourceURL=sprout.js");
-  const cell = f(...names.map(k => RT[k]), shapes);
-  cell.js = js; cell.speed = speed;
+  const { code, shapes, prologue, speedNotes } = compile(src, globalNames());
+  const names = Object.keys(RUNTIME);
+  const build = new Function(...names, "SHAPES", prologue + "\nreturn " + code + "\n//# sourceURL=sprout.js");
+  const cell = build(...names.map(name => RUNTIME[name]), shapes);
+  cell.js = code; cell.speedNotes = speedNotes;
   return cell;
 }
 
-const api = { tokenize, parse, compile, load, fmt, eq, merge, isCell, Cell, VCell, Native, G, BANG, ANY, SproutError, PRELUDE,
-  ColCell, NCell, columns: on => { COLMIN = on ? 32 : Infinity; FAST = !!on; },
+const api = { tokenize, parse, compile, load, format: formatValue, equal: valuesEqual, merge, isCell, Cell, ValueCell, Native, globals: GLOBALS, BANG, ANY, SproutError, PRELUDE,
+  // fast paths on or off: columns (decision 82) and whatever libraries add; the answers are the same either way
+  ColumnCell, NumberList, fastPaths: on => { COLUMN_MIN_LENGTH = on ? 32 : Infinity; fastPathsOn = !!on; },
   // libraries: what they can see of the core, and how they plug in (decision 96)
   install, internals: null,
-  setLog: f => { LOG = f; }, setOut: f => { OUT = f; }, setRandom: f => { RNG = f; }, defNative, partsOf, fieldsOf, UNSET, VFM, effect, queueEffects, runEffects, dropEffects };
+  setLog: f => { logMessage = f; }, setOut: f => { printOutput = f; }, setRandom: f => { randomSource = f; }, defNative, partsOf, fieldsOf, UNSET, valueCellOf, effect, queueEffects, runEffects, dropEffects };
 // what a library sees of the core: the pieces a faster way needs, nothing it could change answers with
-api.internals = { FUSED, LAZYOPS, ALL, G, Native, NOISE, fmt, fieldsOnly, mentions, NOTE_KEYS, RCell, NCell, ColCell, VCell, VP, ROOT, shapeFor, toCols, Cell, EMPTY, collect, isCell,
-  fast: () => FAST };
+api.internals = { FUSED_OPERATORS, LAZY_OPERATORS, EVERY_VALUE_METHODS, GLOBALS, Native, noiseHash, formatValue, isFieldsOnly, mentions, COMPILER_NOTE_KEYS, RangeCell, NumberList, ColumnCell, ValueCell, makeList, NO_FIELDS, shapeFor, asColumns, Cell, EMPTY, collect, isCell,
+  fast: () => fastPathsOn };
 if (typeof module !== "undefined") {
   module.exports = api;
   // in Node the kernels library comes along; a page loads kernels.js after this file

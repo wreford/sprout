@@ -1,10 +1,12 @@
 // Headless tests for the example games: node game-tests.js
 const S = require("./sprout3.js"), L = require("./live3.js"), fs = require("fs");
+// the games read random through the game layer, which reads Math.random: seeded here, so every run is the same
+{ let seed = 12345; Math.random = () => (seed = (seed * 16807) % 2147483647) / 2147483647; }
 let pass = 0, fail = 0;
 const ok = (name, cond, extra) => { if (cond) pass++; else { fail++; console.log("FAIL", name, extra === undefined ? "" : extra); } };
 const logs = []; S.setLog(m => logs.push(m));
 const game = (name, opts) => L.makeGame(fs.readFileSync(__dirname + "/examples/" + name + ".sp", "utf8"), opts);
-const held = keys => S.VFM([], new Map(keys.map(k => [k, true])));
+const held = keys => S.valueCellOf([], new Map(keys.map(k => [k, true])));
 const f = (g, k) => g.state.field(k);
 
 // ---------------- Bounce
@@ -29,7 +31,7 @@ const f = (g, k) => g.state.field(k);
   const fx = [], g = game("snake", { onEffect: e => fx.push(e[0]) });
   // food sits 4 squares ahead: going straight eats it
   for (let t = 0; t < 40; t++) g.tick(1 / 60);
-  ok("snake: moves on the beat", f(g, "body").part(1).field("x") > 5, S.fmt(f(g, "body").part(1)));
+  ok("snake: moves on the beat", f(g, "body").part(1).field("x") > 5, S.format(f(g, "body").part(1)));
   for (let t = 0; t < 40; t++) g.tick(1 / 60);
   ok("snake: eats and grows", f(g, "score") === 1 && f(g, "body").count() === 4, [f(g, "score"), f(g, "body").count()]);
   ok("snake: eating beeps", fx.includes("beep"));
@@ -43,7 +45,7 @@ const f = (g, k) => g.state.field(k);
     "body : [[x : 8, y : 10], [x : 7, y : 10], [x : 6, y : 10], [x : 5, y : 10], [x : 4, y : 10], [x : 3, y : 10]]").replace("food : [x : 9, y : 10]", "food : [x : 0, y : 0]"));
   const steer = (keys, n) => { for (let t = 0; t < n; t++) g2.tick(1 / 60, held(keys)); };
   steer(["down"], 8); steer(["left"], 8); steer(["up"], 8);
-  ok("snake: biting yourself ends the game", f(g2, "over") === true, S.fmt(f(g2, "body")));
+  ok("snake: biting yourself ends the game", f(g2, "over") === true, S.format(f(g2, "body")));
   g2.down(10, 10); g2.tick(1 / 60);
   ok("snake: a tap starts again", f(g2, "over") === false && f(g2, "score") === 0);
   ok("snake: can't reverse", (() => { const g3 = game("snake"); g3.tick(1 / 60, held(["left"])); return f(g3, "dx") === 1; })());
@@ -54,7 +56,7 @@ const f = (g, k) => g.state.field(k);
   const g = game("breakout");
   ok("breakout: 40 bricks", f(g, "bricks").count() === 40);
   const b1 = f(g, "bricks").part(1), b40 = f(g, "bricks").part(40);
-  ok("breakout: wall layout", b1.field("x") === 4 && b1.field("y") === 60 && b40.field("x") === 312 && b40.field("y") === 140, [S.fmt(b1), S.fmt(b40)]);
+  ok("breakout: wall layout", b1.field("x") === 4 && b1.field("y") === 60 && b40.field("x") === 312 && b40.field("y") === 140, [S.format(b1), S.format(b40)]);
   for (let t = 0; t < 3000; t++) { g.down(f(g, "ball").field("x"), 400); g.tick(1 / 60); }
   ok("breakout: bricks break and score", f(g, "bricks").count() < 40 && f(g, "score") === 40 - f(g, "bricks").count(), [f(g, "bricks").count(), f(g, "score")]);
   ok("breakout: following the ball keeps lives", f(g, "lives") === 3, f(g, "lives"));
@@ -65,14 +67,14 @@ const f = (g, k) => g.state.field(k);
   for (let t = 0; t < 400 && !lost; t++) { g3.down(0, 400); g3.tick(1 / 60); if (f(g3, "lives") < prev) { lost++; prev = f(g3, "lives"); } }
   for (let t = 0; t < 20; t++) { g3.down(0, 400); g3.tick(1 / 60); if (f(g3, "lives") < prev) { lost++; prev = f(g3, "lives"); } }
   ok("breakout: one miss costs one life", lost === 1 && f(g3, "lives") === 2, [lost, f(g3, "lives")]);
-  ok("breakout: the ball comes back after a miss", typeof f(g2, "ball").field("x") === "number", S.fmt(f(g2, "ball")));
+  ok("breakout: the ball comes back after a miss", typeof f(g2, "ball").field("x") === "number", S.format(f(g2, "ball")));
 }
 
 // ---------------- Fireflies
 {
   const g = game("fireflies");
   for (let t = 0; t < 300; t++) g.tick(1 / 60);
-  ok("fireflies: they hatch up to the count, stored as columns", f(g, "flies").count() === 400 && f(g, "flies") instanceof S.ColCell, f(g, "flies").count());
+  ok("fireflies: they hatch up to the count, stored as columns", f(g, "flies").count() === 400 && f(g, "flies") instanceof S.ColumnCell, f(g, "flies").count());
   const spread = () => { const p = S.partsOf(f(g, "flies")); return p.reduce((a, r) => a + Math.hypot(r.field("x") - 80, r.field("y") - 120), 0) / p.length; };
   const before = spread();
   g.down(80, 120); for (let t = 0; t < 240; t++) g.tick(1 / 60);
@@ -98,11 +100,11 @@ const f = (g, k) => g.state.field(k);
   const live = b => S.partsOf(b).filter(v => v === 1).length;
   ok("life: starts with the glider and the R-pentomino", live(f(g, "board")) === 10);
   const blink = L.makeGame(fs.readFileSync(__dirname + "/examples/life.sp", "utf8").replace(/seed : .*/, "seed : [[5, 5], [6, 5], [7, 5]]"));
-  const b0 = S.fmt(f(blink, "board"));
+  const b0 = S.format(f(blink, "board"));
   for (let t = 0; t < 7; t++) blink.tick(1 / 60);
-  const b1 = S.fmt(f(blink, "board"));
+  const b1 = S.format(f(blink, "board"));
   for (let t = 0; t < 6; t++) blink.tick(1 / 60);
-  ok("life: a blinker flips and flips back", f(blink, "generation") === 2 && b1 !== b0 && S.fmt(f(blink, "board")) === b0, f(blink, "generation"));
+  ok("life: a blinker flips and flips back", f(blink, "generation") === 2 && b1 !== b0 && S.format(f(blink, "board")) === b0, f(blink, "generation"));
   const n0 = live(f(g, "board"));
   g.down(200, 300); g.tick(1 / 60); g.move(230, 300); g.tick(1 / 60);
   ok("life: drawing brings squares to life and stops time", live(f(g, "board")) === n0 + 2 && f(g, "generation") === 0, live(f(g, "board")));
@@ -235,7 +237,7 @@ const f = (g, k) => g.state.field(k);
 // ---------------- ACE ledger: SQLite (node:sqlite here, sql.js on the page)
 {
   const { sqliteCell } = require("./sqlite-host.js");
-  const saved = S.G.db; S.G.db = sqliteCell(":memory:");
+  const saved = S.globals.db; S.globals.db = sqliteCell(":memory:");
   const src = fs.readFileSync(__dirname + "/examples/ace-ledger.sp", "utf8");
   const day = () => { const lines = []; S.setOut(x => lines.push(x)); S.load(src).run(S.BANG); S.setOut(() => {}); return lines; };
   const d1 = day(), d2 = day(), d3 = day();
@@ -243,8 +245,8 @@ const f = (g, k) => g.state.field(k);
   ok("ace-ledger: what's workable is derived from the rows", d3.some(l => l.startsWith("[>] Place rebar")) && d3.some(l => l.startsWith("[ ] Pre-pour inspection")));
   for (let k = 0; k < 4; k++) day();
   const end = day();
-  ok("ace-ledger: it finishes, and the log keeps every day", end.includes("the pedestal is finished") && S.G.db.raw.prepare("select count(*) n from events").get().n === 6);
-  S.G.db = saved;
+  ok("ace-ledger: it finishes, and the log keeps every day", end.includes("the pedestal is finished") && S.globals.db.raw.prepare("select count(*) n from events").get().n === 6);
+  S.globals.db = saved;
 }
 
 // ace-risk: a million runs through spork (decision 91); with fewer runs, the whole program prints the same with collect

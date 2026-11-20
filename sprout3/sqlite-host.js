@@ -15,10 +15,10 @@ function sqliteCell(path) {
     const ps = a.part(2);
     return [a.part(1), S.isCell(ps) ? S.partsOf(ps).map(v => v === true ? 1 : v === false ? 0 : v) : []];
   };
-  const row = r => S.VFM([], new Map(Object.entries(r)));
-  const query = new S.Native("query", a => { const [sql, ps] = split(a); return new S.VCell(db.prepare(sql).all(...ps).map(row)); });
+  const row = r => S.valueCellOf([], new Map(Object.entries(r)));
+  const query = new S.Native("query", a => { const [sql, ps] = split(a); return new S.ValueCell(db.prepare(sql).all(...ps).map(row)); });
   const run = new S.Native("run", a => { const [sql, ps] = split(a); return S.effect(() => db.prepare(sql).run(...ps)); }, true);
-  const cell = S.VFM([], new Map([["query", query], ["run", run]]));
+  const cell = S.valueCellOf([], new Map([["query", query], ["run", run]]));
   cell.raw = db;
   return cell;
 }

@@ -6,6 +6,6 @@ for(let f=0;f<1200;f++){
   if(f%40===0){x=40+Math.random()*280;g.down(x,300)} if(f%40===20)g.up();
   g.tick(1/60); if(f%300===0){const d=g.draw();console.log('frame',f,'draw calls',d.length)}
 }
-const s=g.state;const show=k=>S.fmt(s.field(k));
+const s=g.state;const show=k=>S.format(s.field(k));
 console.log('score',show('score'),'height',show('height'),'drops',s.field('drops').count(),'bugs',s.field('bugs').count(),'sparks',s.field('sparks').count(),'over',show('over'));
 console.log('effects',JSON.stringify(eff));

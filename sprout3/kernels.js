@@ -1,617 +1,617 @@
 // Sprout 3 kernels: the library that makes Sprout fast (decision 96). The core (sprout3.js) runs every program
 // on its own; this only finds faster ways to get the same answers.
-//   - the work-ahead pass (Spk): a cell worked out as far as it can be without its input, down to number maths
+//   - the work-ahead pass (WorkAhead): a cell worked out as far as it can be without its input, down to number maths
 //   - loop fusion: a run of collect, keep, fold, each and length in a chain, as one loop (decision 95)
 //   - spork kernels: a pure cell run for every input at once, on WebAssembly SIMD or in JavaScript (decision 91)
 //   - a radix sort for numbers (decision 92)
 (function (root) {
 "use strict";
-const S = typeof module !== "undefined" ? require("./sprout3.js") : root.Sprout3;
-const I = S.internals;
-const { FUSED, LAZYOPS, ALL, G, Native, NOISE, fmt, fieldsOnly, mentions, NOTE_KEYS, RCell, NCell, ColCell, VCell, VP, ROOT, shapeFor, toCols, Cell, EMPTY, isCell } = I;
+const core = typeof module !== "undefined" ? require("./sprout3.js") : root.Sprout3;
+const internals = core.internals;
+const { FUSED_OPERATORS, LAZY_OPERATORS, EVERY_VALUE_METHODS, GLOBALS, Native, noiseHash, formatValue, isFieldsOnly, mentions, COMPILER_NOTE_KEYS, RangeCell, NumberList, ColumnCell, ValueCell, makeList, NO_FIELDS, shapeFor, asColumns, Cell, EMPTY, isCell } = internals;
 
 // ===================================================================== spork kernels (decision 47, step 3 of decision 79)
 // A cell given to spork is worked out once, when the program loads, as far as it can be without its input:
-// calls are inlined; lists, records, words and loops over them are unrolled; a test that changes from run to run
+// calls are inlined; lists, records, words and loops laidOver them are unrolled; a test that changes from run to run
 // becomes a choice made in each run. What is left is number maths on the input, a flat list of steps (the IR),
 // which runs as one tight loop: in JavaScript, in WebAssembly SIMD, or on the GPU.
 // If anything can't be worked out this way (a host word, a random read, keep with a test that changes from run
 // to run), there is no kernel and spork is collect, so a program can't tell which way it ran.
-const SPKFAIL = { spork: "no" };
-const SPK_PENDING = {};
-const SPK_N2 = { add: (a, b) => a + b, sub: (a, b) => a - b, mul: (a, b) => a * b, div: (a, b) => a / b, mod: (a, b) => ((a % b) + b) % b,
-  min: (a, b) => Math.min(a, b), max: (a, b) => Math.max(a, b), noise: (a, b) => NOISE(a, b) };
-const SPK_N1 = { neg: a => -a, abs: Math.abs, floor: Math.floor, ceil: Math.ceil, round: Math.round, sqrt: Math.sqrt, sin: Math.sin, cos: Math.cos, tan: Math.tan, log: Math.log };
-const SPK_C2 = { lt: (a, b) => a < b, gt: (a, b) => a > b, le: (a, b) => a <= b, ge: (a, b) => a >= b, eq: (a, b) => a === b, ne: (a, b) => a !== b };
-const SPK_B2 = { and: (a, b) => a && b, or: (a, b) => a || b, beq: (a, b) => a === b };
+const GIVE_UP = { spork: "no" };
+const STILL_WORKING_OUT = {};
+const NUMBER_STEPS_OF_TWO = { add: (a, b) => a + b, sub: (a, b) => a - b, mul: (a, b) => a * b, div: (a, b) => a / b, mod: (a, b) => ((a % b) + b) % b,
+  min: (a, b) => Math.min(a, b), max: (a, b) => Math.max(a, b), noise: (a, b) => noiseHash(a, b) };
+const NUMBER_STEPS_OF_ONE = { neg: a => -a, abs: Math.abs, floor: Math.floor, ceil: Math.ceil, round: Math.round, sqrt: Math.sqrt, sin: Math.sin, cos: Math.cos, tan: Math.tan, log: Math.log };
+const COMPARISON_STEPS = { lt: (a, b) => a < b, gt: (a, b) => a > b, le: (a, b) => a <= b, ge: (a, b) => a >= b, eq: (a, b) => a === b, ne: (a, b) => a !== b };
+const TRUTH_STEPS = { and: (a, b) => a && b, or: (a, b) => a || b, boolEquals: (a, b) => a === b };
 // these give the same answer in JavaScript and WebAssembly only if done by JavaScript itself
-const SPK_JSONLY = new Set(["mod", "sin", "cos", "tan", "log"]);
-const SPK_OPS = { "+": "add", "-": "sub", "*": "mul", "/": "div", "%": "mod", "<": "lt", ">": "gt", "<=": "le", ">=": "ge" };
-const SPK_NATIVES = new Set(["range", "noise"]);
-const SPK_CELLM = { "@": 1, length: 0, first: 0, last: 0, collect: 1, keep: 1, each: 1, fold: 1, spork: 1 };
-const spkNum = v => Object.is(v, -0) ? "-0" : String(v);
+const JAVASCRIPT_ONLY_STEPS = new Set(["mod", "sin", "cos", "tan", "log"]);
+const OPERATOR_STEPS = { "+": "add", "-": "sub", "*": "mul", "/": "div", "%": "mod", "<": "lt", ">": "gt", "<=": "le", ">=": "ge" };
+const INLINED_BUILTINS = new Set(["range", "noise"]);
+const LIST_METHOD_TAKES_ARGUMENT = { "@": 1, length: 0, first: 0, last: 0, collect: 1, keep: 1, each: 1, fold: 1, spork: 1 };
+const numberLiteral = v => Object.is(v, -0) ? "-0" : String(v);
 // the prelude's bindings by name, so its cells (clamp, cond, match...) can be inlined like any other
-let PRE = null;
-const prelude = () => PRE || (PRE = new Map(S.parse(S.PRELUDE).filter(it => it.k === "bind").map(it => [it.name, it])));
+let preludeBindings = null;
+const prelude = () => preludeBindings || (preludeBindings = new Map(core.parse(core.PRELUDE).filter(it => it.type === "bind").map(it => [it.name, it])));
 
-class Spk {
+class WorkAhead {
   constructor(g) {
-    this.g = g; this.nodes = []; this.memo = new Map(); this.caps = []; this.capIdx = new Map();
-    this.effects = null;
+    this.gen = g; this.nodes = []; this.nodeIndex = new Map(); this.outsideReads = []; this.outsideReadIndex = new Map();
+    this.hostCalls = null;
     // names from outside are worked out on a budget: the ones worth it are small tables, a few hundred steps each
-    this.outside = new Map(); this.steps = 0; this.stepCap = 400000; this.depth = 0; this.outsideLeft = 10000; this.why = null; this.guards = []; this.jsOnly = false;
-    this.pc = null; this.TRUE = this.cb(true); this.FALSE = this.cb(false); this.pc = this.TRUE;
+    this.outsideValues = new Map(); this.stepsTaken = 0; this.stepLimit = 400000; this.callDepth = 0; this.outsideBudget = 10000; this.reason = null; this.checks = []; this.javascriptOnly = false;
+    this.pathCondition = null; this.TRUE = this.constantBool(true); this.FALSE = this.constantBool(false); this.pathCondition = this.TRUE;
   }
-  no(why) { if (!this.why) this.why = why; throw SPKFAIL; }
-  tick() { if (++this.steps > this.stepCap) this.no("it takes too many steps to work out"); }
+  giveUp(why) { if (!this.reason) this.reason = why; throw GIVE_UP; }
+  countStep() { if (++this.stepsTaken > this.stepLimit) this.giveUp("it takes too many steps to work out"); }
 
-  // ---- IR nodes: [op, a, b, c, v]. Equal nodes are shared, and steps on constants are worked out now.
-  node(op, a, b, c, v) {
-    const N = this.nodes, isK = i => N[i][0] === "c" || N[i][0] === "cb", kv = i => N[i][4];
-    if (SPK_N2[op] && isK(a) && isK(b)) return this.node("c", -1, -1, -1, SPK_N2[op](kv(a), kv(b)));
-    if (SPK_N1[op] && isK(a)) return this.node("c", -1, -1, -1, SPK_N1[op](kv(a)));
-    if ((SPK_C2[op] || SPK_B2[op]) && isK(a) && isK(b)) return this.node("cb", -1, -1, -1, (SPK_C2[op] || SPK_B2[op])(kv(a), kv(b)));
-    if (op === "not" && isK(a)) return this.node("cb", -1, -1, -1, !kv(a));
-    if (op === "beq" && isK(b)) return kv(b) ? a : this.node("not", a);
-    if (op === "beq" && isK(a)) return kv(a) ? b : this.node("not", b);
-    if ((SPK_N2[op] || SPK_C2[op] || SPK_N1[op]) && op !== "noise") {
-      const ta = this.ktree(a), tb = SPK_N1[op] ? 0 : this.ktree(b);
-      if (ta && (SPK_N1[op] || tb) && (N[a][0] === "sel" || (!SPK_N1[op] && N[b][0] === "sel")) && ta * (tb || 1) <= 16) {
-        const [x, y] = N[a][0] === "sel" ? [a, b] : [b, a], [, cc, l, r] = N[x];
-        const on = (u) => SPK_N1[op] ? this.node(op, u) : x === a ? this.node(op, u, y) : this.node(op, y, u);
-        return this.node("sel", cc, on(l), on(r));
+  // ---- IR nodes: [op, first, second, third, literal], the inputs being earlier nodes (or -1). Equal nodes are shared, and steps on constants are worked out now.
+  addNode(op, first, second, third, literal) {
+    const nodes = this.nodes, isConstant = i => nodes[i][0] === "constant" || nodes[i][0] === "constantBool", constantAt = i => nodes[i][4];
+    if (NUMBER_STEPS_OF_TWO[op] && isConstant(first) && isConstant(second)) return this.addNode("constant", -1, -1, -1, NUMBER_STEPS_OF_TWO[op](constantAt(first), constantAt(second)));
+    if (NUMBER_STEPS_OF_ONE[op] && isConstant(first)) return this.addNode("constant", -1, -1, -1, NUMBER_STEPS_OF_ONE[op](constantAt(first)));
+    if ((COMPARISON_STEPS[op] || TRUTH_STEPS[op]) && isConstant(first) && isConstant(second)) return this.addNode("constantBool", -1, -1, -1, (COMPARISON_STEPS[op] || TRUTH_STEPS[op])(constantAt(first), constantAt(second)));
+    if (op === "not" && isConstant(first)) return this.addNode("constantBool", -1, -1, -1, !constantAt(first));
+    if (op === "boolEquals" && isConstant(second)) return constantAt(second) ? first : this.addNode("not", first);
+    if (op === "boolEquals" && isConstant(first)) return constantAt(first) ? second : this.addNode("not", second);
+    if ((NUMBER_STEPS_OF_TWO[op] || COMPARISON_STEPS[op] || NUMBER_STEPS_OF_ONE[op]) && op !== "noise") {
+      const firstChoices = this.constantChoiceSize(first), secondChoices = NUMBER_STEPS_OF_ONE[op] ? 0 : this.constantChoiceSize(second);
+      if (firstChoices && (NUMBER_STEPS_OF_ONE[op] || secondChoices) && (nodes[first][0] === "choose" || (!NUMBER_STEPS_OF_ONE[op] && nodes[second][0] === "choose")) && firstChoices * (secondChoices || 1) <= 16) {
+        const [choice, other] = nodes[first][0] === "choose" ? [first, second] : [second, first], [, test, ifTrue, ifFalse] = nodes[choice];
+        const on = (each) => NUMBER_STEPS_OF_ONE[op] ? this.addNode(op, each) : choice === first ? this.addNode(op, each, other) : this.addNode(op, other, each);
+        return this.addNode("choose", test, on(ifTrue), on(ifFalse));
       }
     }
-    if (op === "sel") { if (isK(a)) return kv(a) ? b : c; if (b === c) return b; }
-    if (op === "and") { if (isK(a)) return kv(a) ? b : a; if (isK(b)) return kv(b) ? a : b; if (a === b) return a; }
-    if (op === "or") { if (isK(a)) return kv(a) ? a : b; if (isK(b)) return kv(b) ? b : a; if (a === b) return a; }
-    const key = op + "," + a + "," + b + "," + c + "," + (v === undefined ? "" : typeof v === "number" ? spkNum(v) : v);
-    let id = this.memo.get(key);
+    if (op === "choose") { if (isConstant(first)) return constantAt(first) ? second : third; if (second === third) return second; }
+    if (op === "and") { if (isConstant(first)) return constantAt(first) ? second : first; if (isConstant(second)) return constantAt(second) ? first : second; if (first === second) return first; }
+    if (op === "or") { if (isConstant(first)) return constantAt(first) ? first : second; if (isConstant(second)) return constantAt(second) ? second : first; if (first === second) return first; }
+    const key = op + "," + first + "," + second + "," + third + "," + (literal === undefined ? "" : typeof literal === "number" ? numberLiteral(literal) : literal);
+    let id = this.nodeIndex.get(key);
     if (id !== undefined) return id;
-    id = N.length; N.push([op, a, b, c, v]); this.memo.set(key, id);
-    if (SPK_JSONLY.has(op)) this.jsOnly = true;
-    if (N.length > 60000) this.no("it is too big to run as one kernel");
+    id = nodes.length; nodes.push([op, first, second, third, literal]); this.nodeIndex.set(key, id);
+    if (JAVASCRIPT_ONLY_STEPS.has(op)) this.javascriptOnly = true;
+    if (nodes.length > 60000) this.giveUp("it is too big to run as one kernel");
     return id;
   }
   // how many constants a step is a choice between (a constant is 1), or 0 if it isn't a choice between constants
-  ktree(i) {
+  constantChoiceSize(i) {
     const n = this.nodes[i];
-    if (n[0] === "c" || n[0] === "cb") return 1;
-    if (n[0] !== "sel") return 0;
-    const l = this.ktree(n[2]), r = l && this.ktree(n[3]);
+    if (n[0] === "constant" || n[0] === "constantBool") return 1;
+    if (n[0] !== "choose") return 0;
+    const l = this.constantChoiceSize(n[2]), r = l && this.constantChoiceSize(n[3]);
     return l && r ? l + r : 0;
   }
-  num(id) { return { k: "n", id }; }
-  boo(id) { return { k: "b", id }; }
-  cn(v) { return this.num(this.node("c", -1, -1, -1, v)); }
-  cb(v) { return this.boo(this.node("cb", -1, -1, -1, !!v)); }
-  isC(p) { return p.k === "n" && this.nodes[p.id][0] === "c"; }
-  isCB(p) { return p.k === "b" && this.nodes[p.id][0] === "cb"; }
-  val(p) { return this.nodes[p.id][4]; }
-  isFalse(p) { return this.isCB(p) && this.val(p) === false; }
-  cv(parts, keys, vals) { return { k: "cv", parts, keys: keys || [], vals: vals || [] }; }
-  not(p) { return this.boo(this.node("not", p.id)); }
-  and(a, b) { return this.boo(this.node("and", a.id, b.id)); }
-  or(a, b) { return this.boo(this.node("or", a.id, b.id)); }
+  numberValue(id) { return { kind: "number", id }; }
+  boolValue(id) { return { kind: "bool", id }; }
+  constantNumber(v) { return this.numberValue(this.addNode("constant", -1, -1, -1, v)); }
+  constantBool(v) { return this.boolValue(this.addNode("constantBool", -1, -1, -1, !!v)); }
+  isConstantNumber(p) { return p.kind === "number" && this.nodes[p.id][0] === "constant"; }
+  isConstantBool(p) { return p.kind === "bool" && this.nodes[p.id][0] === "constantBool"; }
+  constantOf(p) { return this.nodes[p.id][4]; }
+  isFalse(p) { return this.isConstantBool(p) && this.constantOf(p) === false; }
+  cellOfValues(parts, keys, values) { return { kind: "cell", parts, keys: keys || [], values: values || [] }; }
+  not(p) { return this.boolValue(this.addNode("not", p.id)); }
+  and(a, b) { return this.boolValue(this.addNode("and", a.id, b.id)); }
+  or(a, b) { return this.boolValue(this.addNode("or", a.id, b.id)); }
   // a check that must hold in every run, or the whole spork runs the ordinary way; it only counts where the program gets to it
-  guard(ok) { const g = this.or(this.not(this.pc), ok); if (!this.isCB(g) || !this.val(g)) this.guards.push(g.id); }
-  under(c, f) { const s = this.pc; this.pc = this.and(s, c); try { return f(); } finally { this.pc = s; } }
+  addCheck(holds) { const check = this.or(this.not(this.pathCondition), holds); if (!this.isConstantBool(check) || !this.constantOf(check)) this.checks.push(check.id); }
+  underCondition(test, work) { const outer = this.pathCondition; this.pathCondition = this.and(outer, test); try { return work(); } finally { this.pathCondition = outer; } }
 
   // ---- names: the kernel's own, then the frames the compiler knows, then the built-ins
-  isName(n, env) {
-    for (let e = env; e; e = e.parent) {
-      if (e.vars) { if (e.vars.has(n)) return true; continue; }
-      if (e.prelude) return prelude().has(n) || this.g.globals.has(n);
-      return !!this.frameRef(n, e.f, e.lim) || this.g.globals.has(n);
+  isName(name, scope) {
+    for (let level = scope; level; level = level.parent) {
+      if (level.locals) { if (level.locals.has(name)) return true; continue; }
+      if (level.prelude) return prelude().has(name) || this.gen.globals.has(name);
+      return !!this.findInFrames(name, level.frameIndex, level.positionLimit) || this.gen.globals.has(name);
     }
     return false;
   }
-  look(n, env) {
-    for (let e = env; e; e = e.parent) {
-      if (e.vars) { if (e.vars.has(n)) return e.vars.get(n); continue; }
-      return e.prelude ? this.fromFrames(n, -1, Infinity) : this.fromFrames(n, e.f, e.lim);
+  lookUp(name, scope) {
+    for (let level = scope; level; level = level.parent) {
+      if (level.locals) { if (level.locals.has(name)) return level.locals.get(name); continue; }
+      return level.prelude ? this.fromOutside(name, -1, Infinity) : this.fromOutside(name, level.frameIndex, level.positionLimit);
     }
-    this.no("it uses " + n);
+    this.giveUp("it uses " + name);
   }
   // a prelude cell: a cell that takes input is inlined where it is called; anything else is worked out now
-  fromPrelude(n) {
-    const key = "\u0001" + n;
-    if (this.outside.has(key)) { const v = this.outside.get(key); if (v === SPK_PENDING) this.no("it uses " + n + " inside its own definition"); return v; }
-    const it = prelude().get(n), T = it.val.terms, env = { prelude: true };
-    this.outside.set(key, SPK_PENDING);
-    const v = T.length === 1 && T[0].k === "cell" ? this.cellValue(T[0], env) : this.chain(it.val, env);
-    this.outside.set(key, v);
+  fromPrelude(name) {
+    const key = "\u0001" + name;
+    if (this.outsideValues.has(key)) { const v = this.outsideValues.get(key); if (v === STILL_WORKING_OUT) this.giveUp("it uses " + name + " inside its own definition"); return v; }
+    const binding = prelude().get(name), terms = binding.value.terms, scope = { prelude: true };
+    this.outsideValues.set(key, STILL_WORKING_OUT);
+    const v = terms.length === 1 && terms[0].type === "cell" ? this.cellValue(terms[0], scope) : this.chain(binding.value, scope);
+    this.outsideValues.set(key, v);
     return v;
   }
-  frameRef(n, fIdx, lim) {
-    for (let f = fIdx; f >= 0; f--) {
-      const names = this.g.frames[f].names, r = names.get(n);
-      if (!r) continue;
-      if (f === fIdx && lim !== Infinity && spkPos(names, n) >= lim) continue;
-      return { r, f };
+  findInFrames(name, frameIndex, positionLimit) {
+    for (let frame = frameIndex; frame >= 0; frame--) {
+      const names = this.gen.frames[frame].names, entry = names.get(name);
+      if (!entry) continue;
+      if (frame === frameIndex && positionLimit !== Infinity && positionAmongNames(names, name) >= positionLimit) continue;
+      return { entry: entry, frameIndex: frame };
     }
     return null;
   }
-  fromFrames(n, fIdx, lim) {
-    const fr = this.frameRef(n, fIdx, lim);
-    if (fr) {
-      const key = fr.f + "\u0000" + n;
-      if (this.outside.has(key)) { const v = this.outside.get(key); if (v === SPK_PENDING) this.no("it uses " + n + " inside its own definition"); return v; }
-      const pos = spkPos(this.g.frames[fr.f].names, n), r = fr.r;
-      let v = null;
-      if (r.ast && r.ast.names.length) v = { k: "fn", ast: r.ast, env: { f: fr.f, lim: pos + 1 } };
-      else if ((r.ast || r.val) && !spkTooBig(this.g, fr.f, n) && this.outsideLeft > 0) {
+  fromOutside(name, frameIndex, positionLimit) {
+    const found = this.findInFrames(name, frameIndex, positionLimit);
+    if (found) {
+      const key = found.frameIndex + "\u0000" + name;
+      if (this.outsideValues.has(key)) { const value = this.outsideValues.get(key); if (value === STILL_WORKING_OUT) this.giveUp("it uses " + name + " inside its own definition"); return value; }
+      const position = positionAmongNames(this.gen.frames[found.frameIndex].names, name), entry = found.entry;
+      let value = null;
+      if (entry.ast && entry.ast.names.length) value = { kind: "function", ast: entry.ast, scope: { frameIndex: found.frameIndex, positionLimit: position + 1 } };
+      else if ((entry.ast || entry.value) && !couldNotWorkOut(this.gen, found.frameIndex, name) && this.outsideBudget > 0) {
         // a name bound outside: worked out again here (it is pure, so the value is the same), or else read as a number when spork runs
-        this.outside.set(key, SPK_PENDING);
-        const why = this.why, pc = this.pc, caps = this.caps.length, seen = new Set(this.outside.keys()), cap0 = this.stepCap;
-        this.pc = this.TRUE;
+        this.outsideValues.set(key, STILL_WORKING_OUT);
+        const why = this.reason, pc = this.pathCondition, caps = this.outsideReads.length, seen = new Set(this.outsideValues.keys()), cap0 = this.stepLimit;
+        this.pathCondition = this.TRUE;
         // a name from outside gets a small budget of its own: past it, it is read as a number when the loop runs
-        const s0 = this.steps;
-        this.stepCap = Math.min(cap0, this.steps + Math.min(2500, this.outsideLeft));
-        try { v = r.ast ? this.cellValue(r.ast, { f: fr.f, lim: pos + 1 }) : this.chain(r.val, { f: fr.f, lim: pos }); }
+        const s0 = this.stepsTaken;
+        this.stepLimit = Math.min(cap0, this.stepsTaken + Math.min(2500, this.outsideBudget));
+        try { value = entry.ast ? this.cellValue(entry.ast, { frameIndex: found.frameIndex, positionLimit: position + 1 }) : this.chain(entry.value, { frameIndex: found.frameIndex, positionLimit: position }); }
         catch (e) {
-          if (e !== SPKFAIL) throw e;
+          if (e !== GIVE_UP) throw e;
           // a failed try leaves nothing behind: no outside reads it made, no names it worked out
-          this.why = why; v = null; spkTooBig(this.g, fr.f, n, true);
-          for (const c of this.caps.splice(caps)) this.capIdx.delete(c);
-          for (const k of [...this.outside.keys()]) if (!seen.has(k)) this.outside.delete(k);
-          this.outside.set(key, SPK_PENDING);
+          this.reason = why; value = null; couldNotWorkOut(this.gen, found.frameIndex, name, true);
+          for (const c of this.outsideReads.splice(caps)) this.outsideReadIndex.delete(c);
+          for (const k of [...this.outsideValues.keys()]) if (!seen.has(k)) this.outsideValues.delete(k);
+          this.outsideValues.set(key, STILL_WORKING_OUT);
         }
-        this.stepCap = cap0; this.pc = pc; this.outsideLeft -= this.steps - s0;
+        this.stepLimit = cap0; this.pathCondition = pc; this.outsideBudget -= this.stepsTaken - s0;
       }
-      if (!v) v = this.capture(this.g.refJS(r));
-      this.outside.set(key, v);
-      return v;
+      if (!value) value = this.readAtRunTime(this.gen.referenceCode(entry));
+      this.outsideValues.set(key, value);
+      return value;
     }
-    if (prelude().has(n) && (!this.g.globals.has(n) || (Object.getOwnPropertyDescriptor(G, n) || {}).get)) return this.fromPrelude(n);
-    if (n === "any") return { k: "any" };
-    if (this.g.globals.has(n)) {
-      const d = Object.getOwnPropertyDescriptor(G, n);
-      if (!d || d.get) this.no(n === "random" ? "it reads random, which changes from run to run" : "it uses " + n + ", a library cell spork can't work out yet");
-      if (d.value instanceof Native) return SPK_NATIVES.has(n) ? { k: "nat", n } : d.value.effect ? { k: "host", n } : this.no(n === "rand" ? "it uses rand, which reads random, which changes from run to run" : "it uses " + n);
-      if (typeof d.value === "number") return this.capture(this.g.globalRef(n));
-      this.no("it uses " + n);
+    if (prelude().has(name) && (!this.gen.globals.has(name) || (Object.getOwnPropertyDescriptor(GLOBALS, name) || {}).get)) return this.fromPrelude(name);
+    if (name === "any") return { kind: "any" };
+    if (this.gen.globals.has(name)) {
+      const descriptor = Object.getOwnPropertyDescriptor(GLOBALS, name);
+      if (!descriptor || descriptor.get) this.giveUp(name === "random" ? "it reads random, which changes from run to run" : "it uses " + name + ", a library cell spork can't work out yet");
+      if (descriptor.value instanceof Native) return INLINED_BUILTINS.has(name) ? { kind: "builtin", name: name } : descriptor.value.effect ? { kind: "hostWord", name: name } : this.giveUp(name === "rand" ? "it uses rand, which reads random, which changes from run to run" : "it uses " + name);
+      if (typeof descriptor.value === "number") return this.readAtRunTime(this.gen.globalCode(name));
+      this.giveUp("it uses " + name);
     }
-    this.no("it uses " + n + ", which isn't a name it can see");
+    this.giveUp("it uses " + name + ", which isn't a name it can see");
   }
-  capture(ref) {
-    let i = this.capIdx.get(ref);
-    if (i === undefined) { i = this.caps.length; this.caps.push(ref); this.capIdx.set(ref, i); }
-    return this.num(this.node("k", -1, -1, -1, i));
+  readAtRunTime(code) {
+    let index = this.outsideReadIndex.get(code);
+    if (index === undefined) { index = this.outsideReads.length; this.outsideReads.push(code); this.outsideReadIndex.set(code, index); }
+    return this.numberValue(this.addNode("outside", -1, -1, -1, index));
   }
 
   // ---- terms, chains and bodies, mirroring Gen.genChain step for step
-  term(t, env) {
-    this.tick();
-    switch (t.k) {
-      case "num": return this.cn(t.v);
-      case "str": return { k: "s", v: t.v };
-      case "tmpl": { let s = ""; for (const p of t.parts) s += typeof p === "string" ? p : this.text(this.chain(p.ast, env)); return { k: "s", v: s }; }
+  term(term, scope) {
+    this.countStep();
+    switch (term.type) {
+      case "num": return this.constantNumber(term.value);
+      case "str": return { kind: "text", value: term.value };
+      case "tmpl": { let text = ""; for (const part of term.parts) text += typeof part === "string" ? part : this.textNow(this.chain(part.ast, scope)); return { kind: "text", value: text }; }
       case "word":
-        if (t.v === "true") return this.TRUE;
-        if (t.v === "false") return this.FALSE;
-        if (["!", "_", "left", "right"].includes(t.v)) this.no("it uses " + t.v);
-        return this.look(t.v, env);
-      case "group": return this.group(t.items, env);
-      case "cell": return this.cellValue(t, env);
-      case "chain": return this.chain(t, env);
+        if (term.value === "true") return this.TRUE;
+        if (term.value === "false") return this.FALSE;
+        if (["!", "_", "left", "right"].includes(term.value)) this.giveUp("it uses " + term.value);
+        return this.lookUp(term.value, scope);
+      case "group": return this.group(term.items, scope);
+      case "cell": return this.cellValue(term, scope);
+      case "chain": return this.chain(term, scope);
     }
-    this.no("it uses something spork can't work out");
+    this.giveUp("it uses something spork can't work out");
   }
   // text made now: only from values that are the same in every run
-  text(p) {
-    if (p.k === "s") return p.v;
-    if (this.isC(p) || this.isCB(p)) return fmt(this.val(p));
-    this.no("it puts a value that changes from run to run into text");
+  textNow(value) {
+    if (value.kind === "text") return value.value;
+    if (this.isConstantNumber(value) || this.isConstantBool(value)) return formatValue(this.constantOf(value));
+    this.giveUp("it puts a value that changes from run to run into text");
   }
-  group(items, env) {
-    if (items.length === 1 && items[0].k === "chain") return this.chain(items[0], env);
-    const sc = { vars: new Map(), parent: env }; let r = this.FALSE;
-    for (const it of items) { if (it.k === "bind") { r = this.chain(it.val, sc); sc.vars.set(it.name, r); } else r = this.chain(it, sc); }
-    return r;
+  group(items, scope) {
+    if (items.length === 1 && items[0].type === "chain") return this.chain(items[0], scope);
+    const inner = { locals: new Map(), parent: scope }; let result = this.FALSE;
+    for (const item of items) { if (item.type === "bind") { result = this.chain(item.value, inner); inner.locals.set(item.name, result); } else result = this.chain(item, inner); }
+    return result;
   }
-  cellValue(c, env) {
-    if (c.names.length) return { k: "fn", ast: c, env };
-    if (spkUses(c)) this.no("it uses _ or left");
-    const sc = { vars: new Map(), parent: env }, parts = [], keys = [], vals = [];
-    for (const it of c.items) {
-      if (it.k === "bind") { const v = this.bindVal(it, sc); sc.vars.set(it.name, v); keys.push(it.name); vals.push(v); }
-      else parts.push(this.chain(it, sc));
+  cellValue(cell, scope) {
+    if (cell.names.length) return { kind: "function", ast: cell, scope };
+    if (usesInputWords(cell)) this.giveUp("it uses _ or left");
+    const inner = { locals: new Map(), parent: scope }, parts = [], keys = [], values = [];
+    for (const item of cell.items) {
+      if (item.type === "bind") { const value = this.bindingValue(item, inner); inner.locals.set(item.name, value); keys.push(item.name); values.push(value); }
+      else parts.push(this.chain(item, inner));
     }
-    return this.cv(parts, keys, vals);
+    return this.cellOfValues(parts, keys, values);
   }
-  bindVal(it, sc) { const T = it.val.terms; return T.length === 1 && T[0].k === "cell" ? this.cellValue(T[0], sc) : this.chain(it.val, sc); }
+  bindingValue(binding, scope) { const terms = binding.value.terms; return terms.length === 1 && terms[0].type === "cell" ? this.cellValue(terms[0], scope) : this.chain(binding.value, scope); }
   // a cell's body run in order: the last part is what it gives (genRunBody)
-  runBody(items, env) {
-    let last = this.FALSE;
+  runBody(items, scope) {
+    let lastPart = this.FALSE;
     for (let i = 0; i < items.length; i++) {
-      const it = items[i];
-      if (it.k === "bind") { env.vars.set(it.name, this.bindVal(it, env)); if (i === items.length - 1) return last; }
-      else { const v = this.chain(it, env); if (i === items.length - 1) return v; last = v; }
+      const item = items[i];
+      if (item.type === "bind") { scope.locals.set(item.name, this.bindingValue(item, scope)); if (i === items.length - 1) return lastPart; }
+      else { const value = this.chain(item, scope); if (i === items.length - 1) return value; lastPart = value; }
     }
     return this.FALSE;
   }
-  block(c, env) { if (c.names.length || spkUses(c)) this.no("a branch takes input"); return this.runBody(c.items, { vars: new Map(), parent: env }); }
-  arg(t, env) { return t.k === "cell" && !t.names.length ? this.block(t, env) : this.term(t, env); }
+  runBlock(cell, scope) { if (cell.names.length || usesInputWords(cell)) this.giveUp("a branch takes input"); return this.runBody(cell.items, { locals: new Map(), parent: scope }); }
+  rightSide(term, scope) { return term.type === "cell" && !term.names.length ? this.runBlock(term, scope) : this.term(term, scope); }
 
-  chain(ch, env) {
-    const T = ch.terms; if (!T.length) return this.FALSE;
-    let v = this.term(T[0], env);
-    for (let i = 1; i < T.length; i++) {
-      this.tick();
-      const t = T[i];
-      if (t.k === "word" && (t.v === "!" || t.v === "true" || t.v === "false")) this.no("it sends " + t.v);
-      if (t.k === "word") {
-        const w = t.v;
-        if (FUSED.has(w) && i + 1 < T.length && !this.isName(w, env)) {
-          const nt = T[++i];
-          if ((w === "with" || w === "..") && nt.k === "cell" && fieldsOnly(nt)) { v = this.withf(v, nt, env); continue; }
-          v = this.op(w, v, this.term(nt, env)); continue;
+  chain(chain, scope) {
+    const terms = chain.terms; if (!terms.length) return this.FALSE;
+    let value = this.term(terms[0], scope);
+    for (let i = 1; i < terms.length; i++) {
+      this.countStep();
+      const term = terms[i];
+      if (term.type === "word" && (term.value === "!" || term.value === "true" || term.value === "false")) this.giveUp("it sends " + term.value);
+      if (term.type === "word") {
+        const word = term.value;
+        if (FUSED_OPERATORS.has(word) && i + 1 < terms.length && !this.isName(word, scope)) {
+          const nextTerm = terms[++i];
+          if ((word === "with" || word === "..") && nextTerm.type === "cell" && isFieldsOnly(nextTerm)) { value = this.withFields(value, nextTerm, scope); continue; }
+          value = this.operator(word, value, this.term(nextTerm, scope)); continue;
         }
-        if (LAZYOPS.has(w) && i + 1 < T.length && !this.isName(w, env)) { const bt = T[++i]; v = this.lazy(w, v, () => this.arg(bt, env)); continue; }
-        const quiet = T[i + 1] && T[i + 1].k === "word" && T[i + 1].v === "else" && T[i + 2] && !this.isName("else", env);
-        v = this.word(v, w, env, quiet); continue;
+        if (LAZY_OPERATORS.has(word) && i + 1 < terms.length && !this.isName(word, scope)) { const elseTerm = terms[++i]; value = this.lazyOperator(word, value, () => this.rightSide(elseTerm, scope)); continue; }
+        const quiet = terms[i + 1] && terms[i + 1].type === "word" && terms[i + 1].value === "else" && terms[i + 2] && !this.isName("else", scope);
+        value = this.wordAfter(value, word, scope, quiet); continue;
       }
-      if (t.k === "cell" && !t.names.length) {
-        const elsePat = T[i + 1] && T[i + 1].k === "word" && T[i + 1].v === "else" && T[i + 2] && !this.isName("else", env);
-        if (v.k === "b") {
+      if (term.type === "cell" && !term.names.length) {
+        const elsePat = terms[i + 1] && terms[i + 1].type === "word" && terms[i + 1].value === "else" && terms[i + 2] && !this.isName("else", scope);
+        if (value.kind === "bool") {
           // a boolean runs the block (decision 62); else runs when the test is false or the block gives false
-          if (elsePat) { const bt = T[i + 2]; i += 2; v = this.branch(v, () => this.block(t, env), () => this.arg(bt, env)); }
-          else v = this.branch(v, () => this.block(t, env), null);
+          if (elsePat) { const elseTerm = terms[i + 2]; i += 2; value = this.branch(value, () => this.runBlock(term, scope), () => this.rightSide(elseTerm, scope)); }
+          else value = this.branch(value, () => this.runBlock(term, scope), null);
           continue;
         }
         // any other value is sent the cell; with else, the else sees what it gave
-        const r = this.send(v, this.cellValue(t, env));
-        if (elsePat) { const bt = T[i + 2]; i += 2; v = this.lazy("else", r, () => this.arg(bt, env)); } else v = r;
+        const result = this.send(value, this.cellValue(term, scope));
+        if (elsePat) { const elseTerm = terms[i + 2]; i += 2; value = this.lazyOperator("else", result, () => this.rightSide(elseTerm, scope)); } else value = result;
         continue;
       }
-      v = this.send(v, this.term(t, env));
+      value = this.send(value, this.term(term, scope));
     }
-    return v;
+    return value;
   }
 
-  branch(c, runA, runB) {
-    if (this.isCB(c)) {
-      if (!this.val(c)) return runB ? runB() : this.FALSE;
-      const a = runA();
-      if (!runB || a.k !== "b") return a;
-      if (this.isCB(a)) return this.val(a) ? a : runB();
-      return this.sel(a, this.TRUE, this.under(this.not(a), runB));
+  branch(test, runThen, runElse) {
+    if (this.isConstantBool(test)) {
+      if (!this.constantOf(test)) return runElse ? runElse() : this.FALSE;
+      const thenValue = runThen();
+      if (!runElse || thenValue.kind !== "bool") return thenValue;
+      if (this.isConstantBool(thenValue)) return this.constantOf(thenValue) ? thenValue : runElse();
+      return this.choose(thenValue, this.TRUE, this.underCondition(this.not(thenValue), runElse));
     }
     // a test that changes from run to run: both sides are worked out, and each run picks one
-    const a = this.under(c, runA);
-    if (!runB) { if (a.k === "b") return this.and(c, a); this.no("a test without else gives false in some runs and a value in others"); }
-    const pick = a.k === "b" ? this.and(c, a) : c;
-    const b = this.under(this.not(pick), runB);
-    return this.sel(pick, a.k === "b" ? this.TRUE : a, b);
+    const thenValue = this.underCondition(test, runThen);
+    if (!runElse) { if (thenValue.kind === "bool") return this.and(test, thenValue); this.giveUp("a test without else gives false in some runs and a value in others"); }
+    const pick = thenValue.kind === "bool" ? this.and(test, thenValue) : test;
+    const elseValue = this.underCondition(this.not(pick), runElse);
+    return this.choose(pick, thenValue.kind === "bool" ? this.TRUE : thenValue, elseValue);
   }
-  sel(c, x, y) {
-    if (this.isCB(c)) return this.val(c) ? x : y;
-    if (this.same(x, y)) return x;
-    if (x.k === "n" && y.k === "n") return this.num(this.node("sel", c.id, x.id, y.id));
-    if (x.k === "b" && y.k === "b") return this.boo(this.node("sel", c.id, x.id, y.id));
-    if (x.k === "row" && y.k === "row" && [...x.over.keys()].join("\u0000") === [...y.over.keys()].join("\u0000"))
-      return { k: "row", over: new Map([...x.over].map(([k, p]) => [k, this.sel(c, p, y.over.get(k))])) };
-    if (x.k === "cv" && y.k === "cv" && x.parts.length === y.parts.length && x.keys.join("\u0000") === y.keys.join("\u0000"))
-      return this.cv(x.parts.map((p, j) => this.sel(c, p, y.parts[j])), x.keys, x.vals.map((p, j) => this.sel(c, p, y.vals[j])));
-    this.no("a test picks between different kinds of value from run to run");
+  choose(test, ifTrue, ifFalse) {
+    if (this.isConstantBool(test)) return this.constantOf(test) ? ifTrue : ifFalse;
+    if (this.sameValue(ifTrue, ifFalse)) return ifTrue;
+    if (ifTrue.kind === "number" && ifFalse.kind === "number") return this.numberValue(this.addNode("choose", test.id, ifTrue.id, ifFalse.id));
+    if (ifTrue.kind === "bool" && ifFalse.kind === "bool") return this.boolValue(this.addNode("choose", test.id, ifTrue.id, ifFalse.id));
+    if (ifTrue.kind === "row" && ifFalse.kind === "row" && [...ifTrue.laidOver.keys()].join("\u0000") === [...ifFalse.laidOver.keys()].join("\u0000"))
+      return { kind: "row", laidOver: new Map([...ifTrue.laidOver].map(([k, part]) => [k, this.choose(test, part, ifFalse.laidOver.get(k))])) };
+    if (ifTrue.kind === "cell" && ifFalse.kind === "cell" && ifTrue.parts.length === ifFalse.parts.length && ifTrue.keys.join("\u0000") === ifFalse.keys.join("\u0000"))
+      return this.cellOfValues(ifTrue.parts.map((part, j) => this.choose(test, part, ifFalse.parts[j])), ifTrue.keys, ifTrue.values.map((part, j) => this.choose(test, part, ifFalse.values[j])));
+    this.giveUp("a test picks between different kinds of value from run to run");
   }
-  same(x, y) {
+  sameValue(x, y) {
     if (x === y) return true;
-    if (x.k !== y.k) return false;
-    if (x.k === "n" || x.k === "b") return x.id === y.id;
-    if (x.k === "s") return x.v === y.v;
-    if (x.k === "fn") return x.ast === y.ast && x.env === y.env;
-    if (x.k === "nat") return x.n === y.n;
-    if (x.k === "any") return true;
-    if (x.k === "row") return x.over.size === y.over.size && [...x.over].every(([k, p]) => y.over.has(k) && this.same(p, y.over.get(k)));
-    if (x.k === "cv") return x.parts.length === y.parts.length && x.keys.join("\u0000") === y.keys.join("\u0000") &&
-      x.parts.every((p, j) => this.same(p, y.parts[j])) && x.vals.every((p, j) => this.same(p, y.vals[j]));
+    if (x.kind !== y.kind) return false;
+    if (x.kind === "number" || x.kind === "bool") return x.id === y.id;
+    if (x.kind === "text") return x.value === y.value;
+    if (x.kind === "function") return x.ast === y.ast && x.scope === y.scope;
+    if (x.kind === "builtin") return x.name === y.name;
+    if (x.kind === "any") return true;
+    if (x.kind === "row") return x.laidOver.size === y.laidOver.size && [...x.laidOver].every(([k, p]) => y.laidOver.has(k) && this.sameValue(p, y.laidOver.get(k)));
+    if (x.kind === "cell") return x.parts.length === y.parts.length && x.keys.join("\u0000") === y.keys.join("\u0000") &&
+      x.parts.every((p, j) => this.sameValue(p, y.parts[j])) && x.values.every((p, j) => this.sameValue(p, y.values[j]));
     return false;
   }
-  lazy(w, v, getB) {
-    if (w === "else") {
-      if (this.isFalse(v)) return getB();
-      if (v.k !== "b" || this.isCB(v)) return v;
-      return this.sel(v, this.TRUE, this.under(this.not(v), getB));
+  lazyOperator(word, left, getRight) {
+    if (word === "else") {
+      if (this.isFalse(left)) return getRight();
+      if (left.kind !== "bool" || this.isConstantBool(left)) return left;
+      return this.choose(left, this.TRUE, this.underCondition(this.not(left), getRight));
     }
-    if (v.k !== "b") this.no("its " + w + " isn't after a test");
-    const goOn = w === "and" ? v : this.not(v);
-    if (this.isCB(goOn) && !this.val(goOn)) return v;
-    const b = this.under(goOn, getB);
-    if (b.k !== "b") this.no("its " + w + " isn't between two tests");
-    return this.isCB(v) ? b : this.boo(this.node(w, v.id, b.id));
+    if (left.kind !== "bool") this.giveUp("its " + word + " isn't after a test");
+    const rightRuns = word === "and" ? left : this.not(left);
+    if (this.isConstantBool(rightRuns) && !this.constantOf(rightRuns)) return left;
+    const right = this.underCondition(rightRuns, getRight);
+    if (right.kind !== "bool") this.giveUp("its " + word + " isn't between two tests");
+    return this.isConstantBool(left) ? right : this.boolValue(this.addNode(word, left.id, right.id));
   }
 
-  op(w, a, b) {
-    if (SPK_OPS[w]) {
-      if (a.k === "n" && b.k === "n") { const o = SPK_OPS[w]; return SPK_C2[o] ? this.boo(this.node(o, a.id, b.id)) : this.num(this.node(o, a.id, b.id)); }
-      if (a.k === "s" && b.k === "s" && (w === "<" || w === ">")) return this.cb(w === "<" ? a.v < b.v : a.v > b.v);
-      this.no("it does " + w + " on something that isn't a number");
+  operator(word, left, right) {
+    if (OPERATOR_STEPS[word]) {
+      if (left.kind === "number" && right.kind === "number") { const step = OPERATOR_STEPS[word]; return COMPARISON_STEPS[step] ? this.boolValue(this.addNode(step, left.id, right.id)) : this.numberValue(this.addNode(step, left.id, right.id)); }
+      if (left.kind === "text" && right.kind === "text" && (word === "<" || word === ">")) return this.constantBool(word === "<" ? left.value < right.value : left.value > right.value);
+      this.giveUp("it does " + word + " on something that isn't a number");
     }
-    if (w === "=" || w === "!=") { const e = this.equal(a, b); return w === "=" ? e : this.not(e); }
-    if (w === "@") return this.at(a, b);
+    if (word === "=" || word === "!=") { const e = this.equal(left, right); return word === "=" ? e : this.not(e); }
+    if (word === "@") return this.partAt(left, right);
     // .. and with
-    if (a.k === "s" && w === "..") return { k: "s", v: a.v + this.text(b) };
-    if (a.k === "cv" && b.k === "cv" && !a.keys.includes(w)) return this.merge(a, b);
-    if ((a.k === "s" || this.isC(a)) && w === "with") return { k: "s", v: this.text(a) + this.text(b) };
-    if (this.isC(a) && w === "..") return { k: "s", v: this.text(a) + this.text(b) };
-    this.no("it uses " + w + " on values spork can't join");
+    if (left.kind === "text" && word === "..") return { kind: "text", value: left.value + this.textNow(right) };
+    if (left.kind === "cell" && right.kind === "cell" && !left.keys.includes(word)) return this.merge(left, right);
+    if ((left.kind === "text" || this.isConstantNumber(left)) && word === "with") return { kind: "text", value: this.textNow(left) + this.textNow(right) };
+    if (this.isConstantNumber(left) && word === "..") return { kind: "text", value: this.textNow(left) + this.textNow(right) };
+    this.giveUp("it uses " + word + " on values spork can't join");
   }
   merge(a, b) {
-    const keys = a.keys.slice(), vals = a.vals.slice();
-    b.keys.forEach((k, j) => { const i = keys.indexOf(k); if (i < 0) { keys.push(k); vals.push(b.vals[j]); } else vals[i] = b.vals[j]; });
-    return this.cv(b.parts.length ? a.parts.concat(b.parts) : a.parts, keys, vals);
+    const keys = a.keys.slice(), values = a.values.slice();
+    b.keys.forEach((k, j) => { const i = keys.indexOf(k); if (i < 0) { keys.push(k); values.push(b.values[j]); } else values[i] = b.values[j]; });
+    return this.cellOfValues(b.parts.length ? a.parts.concat(b.parts) : a.parts, keys, values);
   }
-  withf(v, nt, env) {
-    const vals = nt.items.map(x => this.chain(x.val, env));
-    if (v.k === "row") { const over = new Map(v.over); nt.items.forEach((x, j) => over.set(x.name, vals[j])); return { k: "row", over }; }
-    if (v.k !== "cv" || v.keys.includes("with")) this.no("it uses with on something that isn't a record");
-    return this.merge(v, this.cv([], nt.items.map(x => x.name), vals));
+  withFields(record, fieldsCell, scope) {
+    const values = fieldsCell.items.map(field => this.chain(field.value, scope));
+    if (record.kind === "row") { const laidOver = new Map(record.laidOver); fieldsCell.items.forEach((field, j) => laidOver.set(field.name, values[j])); return { kind: "row", laidOver }; }
+    if (record.kind !== "cell" || record.keys.includes("with")) this.giveUp("it uses with on something that isn't a record");
+    return this.merge(record, this.cellOfValues([], fieldsCell.items.map(field => field.name), values));
   }
   equal(a, b) {
     // any is equal only to itself (it is how match and cond write their last case)
-    if (a.k === "any" || b.k === "any") return this.cb(a.k === b.k);
-    if (a.k === "n" && b.k === "n") return this.boo(this.node("eq", a.id, b.id));
-    if (a.k === "b" && b.k === "b") return this.boo(this.node("beq", a.id, b.id));
-    if (a.k === "s" && b.k === "s") return this.cb(a.v === b.v);
-    const plain = p => p.k === "n" || p.k === "b" || p.k === "s";
+    if (a.kind === "any" || b.kind === "any") return this.constantBool(a.kind === b.kind);
+    if (a.kind === "number" && b.kind === "number") return this.boolValue(this.addNode("eq", a.id, b.id));
+    if (a.kind === "bool" && b.kind === "bool") return this.boolValue(this.addNode("boolEquals", a.id, b.id));
+    if (a.kind === "text" && b.kind === "text") return this.constantBool(a.value === b.value);
+    const plain = p => p.kind === "number" || p.kind === "bool" || p.kind === "text";
     if (plain(a) && plain(b)) return this.FALSE;
-    if (a.k === "cv" && b.k === "cv") {
-      if (a.keys.includes("=")) this.no("it compares with a cell's own =");
+    if (a.kind === "cell" && b.kind === "cell") {
+      if (a.keys.includes("=")) this.giveUp("it compares with a cell's own =");
       if (a.parts.length !== b.parts.length || a.keys.length !== b.keys.length) return this.FALSE;
       let r = this.TRUE;
       a.parts.forEach((p, j) => { r = this.and(r, this.equal(p, b.parts[j])); });
-      for (let j = 0; j < a.keys.length; j++) { const i = b.keys.indexOf(a.keys[j]); if (i < 0) return this.FALSE; r = this.and(r, this.equal(a.vals[j], b.vals[i])); }
+      for (let j = 0; j < a.keys.length; j++) { const i = b.keys.indexOf(a.keys[j]); if (i < 0) return this.FALSE; r = this.and(r, this.equal(a.values[j], b.values[i])); }
       return r;
     }
-    if ((plain(a) && b.k === "cv") || (a.k === "cv" && plain(b))) return this.FALSE;
-    this.no("it compares cells that take input");
+    if ((plain(a) && b.kind === "cell") || (a.kind === "cell" && plain(b))) return this.FALSE;
+    this.giveUp("it compares cells that take input");
   }
-  at(a, k) {
-    if (a.k === "cv") {
-      const P = a.parts;
-      if (this.isC(k)) { const v = P[this.val(k) - 1]; return v === undefined ? this.FALSE : v; }
+  partAt(list, position) {
+    if (list.kind === "cell") {
+      const workAhead = list.parts;
+      if (this.isConstantNumber(position)) { const part = workAhead[this.constantOf(position) - 1]; return part === undefined ? this.FALSE : part; }
       // a choice between constant positions: a choice between those parts
-      if (k.k === "n" && this.nodes[k.id][0] === "sel" && this.ktree(k.id)) { const [, c, l, r] = this.nodes[k.id]; return this.sel(this.boo(c), this.at(a, this.num(l)), this.at(a, this.num(r))); }
-      if (k.k !== "n" || !P.length || P.length > 256) this.no("it picks from a list with a position that isn't a number");
+      if (position.kind === "number" && this.nodes[position.id][0] === "choose" && this.constantChoiceSize(position.id)) { const [, c, l, picked] = this.nodes[position.id]; return this.choose(this.boolValue(c), this.partAt(list, this.numberValue(l)), this.partAt(list, this.numberValue(picked))); }
+      if (position.kind !== "number" || !workAhead.length || workAhead.length > 256) this.giveUp("it picks from a list with a position that isn't a number");
       // a position that changes from run to run: it must be a whole number inside the list, or spork runs the ordinary way
-      const len = this.cn(P.length), one = this.cn(1);
-      this.guard(this.and(this.and(this.boo(this.node("ge", k.id, one.id)), this.boo(this.node("le", k.id, len.id))), this.boo(this.node("eq", this.node("floor", k.id), k.id))));
-      let r = P[P.length - 1];
-      for (let j = P.length - 2; j >= 0; j--) r = this.sel(this.boo(this.node("eq", k.id, this.cn(j + 1).id)), P[j], r);
-      return r;
+      const length = this.constantNumber(workAhead.length), one = this.constantNumber(1);
+      this.addCheck(this.and(this.and(this.boolValue(this.addNode("ge", position.id, one.id)), this.boolValue(this.addNode("le", position.id, length.id))), this.boolValue(this.addNode("eq", this.addNode("floor", position.id), position.id))));
+      let picked = workAhead[workAhead.length - 1];
+      for (let j = workAhead.length - 2; j >= 0; j--) picked = this.choose(this.boolValue(this.addNode("eq", position.id, this.constantNumber(j + 1).id)), workAhead[j], picked);
+      return picked;
     }
-    if (a.k === "s" && this.isC(k)) { const n = this.val(k), s = a.v; return n >= 1 && n <= s.length ? { k: "s", v: s[n - 1] } : this.FALSE; }
-    this.no("it uses @ on something that isn't a list");
+    if (list.kind === "text" && this.isConstantNumber(position)) { const n = this.constantOf(position), s = list.value; return n >= 1 && n <= s.length ? { kind: "text", value: s[n - 1] } : this.FALSE; }
+    this.giveUp("it uses @ on something that isn't a list");
   }
 
   // a word after a value: a field, then a built-in method, then a name in scope sent as the argument (SW)
-  word(v, w, env, quiet) {
-    if (v.k === "row") {
-      // a field of an item from a list in columns: the column, unless with laid a new value over it
-      if (w in SPK_CELLM || w in ALL) this.no("it uses " + w + " on a record from the list");
-      if (this.isName(w, env)) this.no("it reads " + w + ", which is both a field and a name in scope");
-      return v.over.has(w) ? v.over.get(w) : this.num(this.node("col", -1, -1, -1, w));
+  wordAfter(receiver, word, scope, quiet) {
+    if (receiver.kind === "row") {
+      // a field of an item from a list in columns: the column, unless with laid a new value laidOver it
+      if (word in LIST_METHOD_TAKES_ARGUMENT || word in EVERY_VALUE_METHODS) this.giveUp("it uses " + word + " on a record from the list");
+      if (this.isName(word, scope)) this.giveUp("it reads " + word + ", which is both a field and a name in scope");
+      return receiver.laidOver.has(word) ? receiver.laidOver.get(word) : this.numberValue(this.addNode("column", -1, -1, -1, word));
     }
-    if (v.k === "cv") {
-      const j = v.keys.indexOf(w);
-      if (j >= 0) {
-        if (this.isName(w, env)) this.no("it reads " + w + ", which is both a field and a name in scope");
-        const f = v.vals[j]; if (f.k === "fn" && spkUses(f.ast)) this.no("a field uses left"); return f;
+    if (receiver.kind === "cell") {
+      const index = receiver.keys.indexOf(word);
+      if (index >= 0) {
+        if (this.isName(word, scope)) this.giveUp("it reads " + word + ", which is both a field and a name in scope");
+        const field = receiver.values[index]; if (field.kind === "function" && usesInputWords(field.ast)) this.giveUp("a field uses left"); return field;
       }
-      if (w in SPK_CELLM) {
-        if (SPK_CELLM[w]) return { k: "wait", m: w, left: v };
-        const P = v.parts;
-        if (w === "length") return this.cn(P.length);
-        if (w === "first") return P.length ? P[0] : this.FALSE;
-        return P.length ? P[P.length - 1] : this.FALSE;
+      if (word in LIST_METHOD_TAKES_ARGUMENT) {
+        if (LIST_METHOD_TAKES_ARGUMENT[word]) return { kind: "waiting", method: word, left: receiver };
+        const workAhead = receiver.parts;
+        if (word === "length") return this.constantNumber(workAhead.length);
+        if (word === "first") return workAhead.length ? workAhead[0] : this.FALSE;
+        return workAhead.length ? workAhead[workAhead.length - 1] : this.FALSE;
       }
-    } else if (v.k === "n") {
-      if (SPK_N1[w]) return this.num(this.node(w, v.id));
-      if (w === "min" || w === "max") return { k: "wait", m: w, left: v };
-      if (w === "times") this.no("it uses times");
-    } else if (v.k === "b") {
-      if (w === "not") return this.not(v);
-    } else if (v.k === "s") {
-      if (w === "length") return this.cn(v.v.length);
-      if (w === "upper") return { k: "s", v: v.v.toUpperCase() };
-      if (w === "lower") return { k: "s", v: v.v.toLowerCase() };
-    } else if (v.k === "fn" || v.k === "nat") {
-      if (v.k === "fn" && v.ast.items.some(x => x.k === "bind" && x.name === w)) this.no("it reads a field of a cell that takes input");
-      if (w in SPK_CELLM) this.no("it uses " + w + " on a cell that takes input");
+    } else if (receiver.kind === "number") {
+      if (NUMBER_STEPS_OF_ONE[word]) return this.numberValue(this.addNode(word, receiver.id));
+      if (word === "min" || word === "max") return { kind: "waiting", method: word, left: receiver };
+      if (word === "times") this.giveUp("it uses times");
+    } else if (receiver.kind === "bool") {
+      if (word === "not") return this.not(receiver);
+    } else if (receiver.kind === "text") {
+      if (word === "length") return this.constantNumber(receiver.value.length);
+      if (word === "upper") return { kind: "text", value: receiver.value.toUpperCase() };
+      if (word === "lower") return { kind: "text", value: receiver.value.toLowerCase() };
+    } else if (receiver.kind === "function" || receiver.kind === "builtin") {
+      if (receiver.kind === "function" && receiver.ast.items.some(x => x.type === "bind" && x.name === word)) this.giveUp("it reads a field of a cell that takes input");
+      if (word in LIST_METHOD_TAKES_ARGUMENT) this.giveUp("it uses " + word + " on a cell that takes input");
     }
-    if (w === "str") return { k: "s", v: this.text(v) };
-    if (w in ALL) this.no("it uses " + w + " there");
-    if (this.isName(w, env)) return this.send(v, this.look(w, env));
+    if (word === "str") return { kind: "text", value: this.textNow(receiver) };
+    if (word in EVERY_VALUE_METHODS) this.giveUp("it uses " + word + " there");
+    if (this.isName(word, scope)) return this.send(receiver, this.lookUp(word, scope));
     if (quiet) return this.FALSE;
-    this.no("it reads " + w + ", which isn't there");
+    this.giveUp("it reads " + word + ", which isn't there");
   }
   // a host word (circle, beep...) inside a fused each: done in each item's turn, when the tests leading to it hold
-  hostCall(n, a) {
-    const args = a.k === "cv" && !a.keys.length ? a.parts : [a];
-    for (const x of args) if (x.k !== "n" && x.k !== "b" && x.k !== "s") this.no("the host word " + n + " is given something that isn't a number or a word");
-    this.effects.push({ host: n, single: a.k !== "cv", args, cond: this.pc });
+  hostCall(name, argument) {
+    const args = argument.kind === "cell" && !argument.keys.length ? argument.parts : [argument];
+    for (const value of args) if (value.kind !== "number" && value.kind !== "bool" && value.kind !== "text") this.giveUp("the host word " + name + " is given something that isn't a number or a word");
+    this.hostCalls.push({ host: name, single: argument.kind !== "cell", args, cond: this.pathCondition });
     // what the host word gives back, as when it runs: print gives its value, the others false (so an else after one runs too, decision 74)
-    return n === "print" ? a : this.FALSE;
+    return name === "print" ? argument : this.FALSE;
   }
-  send(v, a) {
-    if (v.k === "fn") {
-      if (a.k === "s" && v.ast.items.some(x => x.k === "bind" && x.name === a.v)) this.no("it reads a field by name");
-      return this.call(v, a);
+  send(receiver, argument) {
+    if (receiver.kind === "function") {
+      if (argument.kind === "text" && receiver.ast.items.some(x => x.type === "bind" && x.name === argument.value)) this.giveUp("it reads a field by name");
+      return this.call(receiver, argument);
     }
-    if (v.k === "nat") return this.native(v.n, a);
-    if (v.k === "host") { if (!this.effects) this.no("it uses the host word " + v.n); return this.hostCall(v.n, a); }
-    if (v.k === "wait") return this.method(v.m, v.left, a);
-    this.no(v.k === "n" ? "it sends a value to a number" : "it sends a value to something that isn't a cell");
+    if (receiver.kind === "builtin") return this.builtin(receiver.name, argument);
+    if (receiver.kind === "hostWord") { if (!this.hostCalls) this.giveUp("it uses the host word " + receiver.name); return this.hostCall(receiver.name, argument); }
+    if (receiver.kind === "waiting") return this.listMethod(receiver.method, receiver.left, argument);
+    this.giveUp(receiver.kind === "number" ? "it sends a value to a number" : "it sends a value to something that isn't a cell");
   }
-  call(f, a) {
-    const c = f.ast, nn = c.names.length;
-    if (spkUses(c)) this.no("it calls a cell that uses _ or left");
-    if (++this.depth > 300) this.no("it calls itself too deeply to work out");
+  call(cell, argument) {
+    const literal = cell.ast, nameCount = literal.names.length;
+    if (usesInputWords(literal)) this.giveUp("it calls a cell that uses _ or left");
+    if (++this.callDepth > 300) this.giveUp("it calls itself too deeply to work out");
     const vars = new Map();
-    if (nn === 1) vars.set(c.names[0].n, a);
+    if (nameCount === 1) vars.set(literal.names[0].name, argument);
     else {
       // several names: by position, then by name (decision 15); a missing one with no default would be false, with a lint
-      if (a.k !== "cv" || a.parts.length > nn) this.no("it gives a cell the wrong number of values");
-      c.names.forEach((x, j) => {
-        let v = j < a.parts.length ? a.parts[j] : undefined;
-        const fi = a.keys.indexOf(x.n); if (fi >= 0) v = a.vals[fi];
-        if (v === undefined) { if (!x.def) this.no("it leaves out " + x.n); v = this.term(x.def, f.env); }
-        vars.set(x.n, v);
+      if (argument.kind !== "cell" || argument.parts.length > nameCount) this.giveUp("it gives a cell the wrong number of values");
+      literal.names.forEach((input, j) => {
+        let value = j < argument.parts.length ? argument.parts[j] : undefined;
+        const fieldPosition = argument.keys.indexOf(input.name); if (fieldPosition >= 0) value = argument.values[fieldPosition];
+        if (value === undefined) { if (!input.defaultValue) this.giveUp("it leaves out " + input.name); value = this.term(input.defaultValue, cell.scope); }
+        vars.set(input.name, value);
       });
     }
-    const r = this.runBody(c.items, { vars, parent: f.env });
-    this.depth--;
-    return r;
+    const result = this.runBody(literal.items, { locals: vars, parent: cell.scope });
+    this.callDepth--;
+    return result;
   }
-  apply(f, x) { if (f.k === "fn") { if (!f.ast.names.length) this.no("it collects with a cell that has no inputs"); return this.call(f, x); } return this.send(f, x); }
-  method(m, left, a) {
-    if (m === "min" || m === "max") { if (a.k !== "n") this.no("its " + m + " isn't given a number"); return this.num(this.node(m, left.id, a.id)); }
-    const P = left.parts;
-    if (m === "@") return this.at(left, a);
-    if (m === "collect" || m === "spork") return this.cv(P.map(p => this.apply(a, p)));
-    if (m === "keep") {
-      const o = [];
-      for (const p of P) {
-        const t = this.apply(a, p);
-        if (!this.isCB(t)) this.no(t.k === "b" ? "keep's test changes from run to run" : "keep's test doesn't give true or false");
-        if (this.val(t)) o.push(p);
+  applyToItem(cell, item) { if (cell.kind === "function") { if (!cell.ast.names.length) this.giveUp("it collects with a cell that has no inputs"); return this.call(cell, item); } return this.send(cell, item); }
+  listMethod(method, left, argument) {
+    if (method === "min" || method === "max") { if (argument.kind !== "number") this.giveUp("its " + method + " isn't given a number"); return this.numberValue(this.addNode(method, left.id, argument.id)); }
+    const workAhead = left.parts;
+    if (method === "@") return this.partAt(left, argument);
+    if (method === "collect" || method === "spork") return this.cellOfValues(workAhead.map(part => this.applyToItem(argument, part)));
+    if (method === "keep") {
+      const kept = [];
+      for (const part of workAhead) {
+        const answer = this.applyToItem(argument, part);
+        if (!this.isConstantBool(answer)) this.giveUp(answer.kind === "bool" ? "keep's test changes from run to run" : "keep's test doesn't give true or false");
+        if (this.constantOf(answer)) kept.push(part);
       }
-      return this.cv(o);
+      return this.cellOfValues(kept);
     }
-    if (m === "fold") {
-      if (a.k !== "cv") this.no("fold isn't given [start, cell]");
-      let acc = a.parts[0] || this.FALSE; const g = a.parts[1] || this.FALSE;
-      for (const p of P) acc = g.k === "fn" && g.ast.names.length === 2 ? this.call(g, this.cv([acc, p])) : this.apply(g, this.cv([acc, p]));
-      return acc;
+    if (method === "fold") {
+      if (argument.kind !== "cell") this.giveUp("fold isn't given [start, cell]");
+      let total = argument.parts[0] || this.FALSE; const cell = argument.parts[1] || this.FALSE;
+      for (const part of workAhead) total = cell.kind === "function" && cell.ast.names.length === 2 ? this.call(cell, this.cellOfValues([total, part])) : this.applyToItem(cell, this.cellOfValues([total, part]));
+      return total;
     }
-    this.no("it uses " + m + " inside spork");
+    this.giveUp("it uses " + method + " inside spork");
   }
-  native(n, a) {
-    const A = k => a.k === "cv" ? (a.parts[k] || this.FALSE) : k === 0 ? a : this.FALSE;
-    const nums = k => { const o = []; for (let j = 0; j < k; j++) { const x = A(j); if (x.k !== "n") this.no(n + " isn't given numbers"); o.push(x); } return o; };
-    if (n === "range") {
-      if (!this.isC(a)) this.no("range is given a count that changes from run to run");
-      const m = Math.max(0, Math.floor(this.val(a)));
-      if (m > 100000) this.no("it unrolls a range that is too long");
-      const P = new Array(m); for (let j = 0; j < m; j++) P[j] = this.cn(j + 1);
-      return this.cv(P);
+  builtin(name, argument) {
+    const part = k => argument.kind === "cell" ? (argument.parts[k] || this.FALSE) : k === 0 ? argument : this.FALSE;
+    const nums = k => { const o = []; for (let j = 0; j < k; j++) { const first = part(j); if (first.kind !== "number") this.giveUp(name + " isn't given numbers"); o.push(first); } return o; };
+    if (name === "range") {
+      if (!this.isConstantNumber(argument)) this.giveUp("range is given a count that changes from run to run");
+      const count = Math.max(0, Math.floor(this.constantOf(argument)));
+      if (count > 100000) this.giveUp("it unrolls a range that is too long");
+      const workAhead = new Array(count); for (let j = 0; j < count; j++) workAhead[j] = this.constantNumber(j + 1);
+      return this.cellOfValues(workAhead);
     }
-    const [x, y] = nums(2);   // noise
-    return this.num(this.node("noise", x.id, y.id));
+    const [first, second] = nums(2);   // noise
+    return this.numberValue(this.addNode("noise", first.id, second.id));
   }
 
   // ---- the whole cell: [x | ...] whose runs each give a number, true or false, or a record of numbers
-  build(c) {
-    if (c.names.length !== 1 || c.names[0].def) this.no("spork runs as a kernel only for a cell with one named input");
-    if (spkUses(c)) this.no("it uses _ or left");
-    const x = this.num(this.node("x", -1, -1, -1));
-    const r = this.runBody(c.items, { vars: new Map([[c.names[0].n, x]]), parent: { f: this.g.frames.length - 1, lim: Infinity } });
+  buildSporkKernel(cell) {
+    if (cell.names.length !== 1 || cell.names[0].defaultValue) this.giveUp("spork runs as a kernel only for a cell with one named input");
+    if (usesInputWords(cell)) this.giveUp("it uses _ or left");
+    const input = this.numberValue(this.addNode("input", -1, -1, -1));
+    const result = this.runBody(cell.items, { locals: new Map([[cell.names[0].name, input]]), parent: { frameIndex: this.gen.frames.length - 1, positionLimit: Infinity } });
     let kind, outs, keys = null;
-    if (r.k === "n") { kind = "n"; outs = [r.id]; }
-    else if (r.k === "b") { kind = "b"; outs = [r.id]; }
-    else if (r.k === "cv" && !r.parts.length && r.keys.length && r.vals.every(p => p.k === "n")) { kind = "rec"; keys = r.keys; outs = r.vals.map(p => p.id); }
-    else this.no("each run gives something other than a number, true or false, or a record of numbers");
-    return this.emit(kind, outs, keys);
+    if (result.kind === "number") { kind = "numbers"; outs = [result.id]; }
+    else if (result.kind === "bool") { kind = "bools"; outs = [result.id]; }
+    else if (result.kind === "cell" && !result.parts.length && result.keys.length && result.values.every(p => p.kind === "number")) { kind = "records"; keys = result.keys; outs = result.values.map(p => p.id); }
+    else this.giveUp("each run gives something other than a number, true or false, or a record of numbers");
+    return this.emitKernel(kind, outs, keys);
   }
-  // ---- loop fusion (decision 95): xs collect f keep g ... fold [start, h] (or length), as one loop over the items.
-  // item is "num" (range, a list of numbers) or "row" (a list of records of numbers, in columns).
-  buildPipe(stages, item) {
+  // ---- loop fusion (decision 95): xs collect f keep g ... fold [start, h] (or length), as one loop laidOver the items.
+  // item is "numbers" (range, a list of numbers) or "rows" (a list of records of numbers, in columns).
+  buildFusedLoop(stages, item) {
     // one item's work: a body that takes more than this to work out isn't worth a fused loop (spork's cells get more)
-    this.why = null; this.steps = 0; this.depth = 0; this.stepCap = 20000;
-    const env = { f: this.g.frames.length - 1, lim: Infinity };
-    let cur = item === "num" ? this.num(this.node("x", -1, -1, -1)) : { k: "row", over: new Map() }, pass = this.TRUE;
-    const fn = st => { const f = this.term(st.arg, env); if (f.k !== "fn" && f.k !== "nat") this.no(st.w + " isn't given a cell"); return f; };
-    for (const st of stages) {
-      if (st.w === "collect") { const f = fn(st); this.pc = pass; cur = this.apply(f, cur); }
-      else if (st.w === "each") {
+    this.reason = null; this.stepsTaken = 0; this.callDepth = 0; this.stepLimit = 20000;
+    const scope = { frameIndex: this.gen.frames.length - 1, positionLimit: Infinity };
+    let current = item === "numbers" ? this.numberValue(this.addNode("input", -1, -1, -1)) : { kind: "row", laidOver: new Map() }, passes = this.TRUE;
+    const fn = stage => { const cell = this.term(stage.argument, scope); if (cell.kind !== "function" && cell.kind !== "builtin") this.giveUp(stage.word + " isn't given a cell"); return cell; };
+    for (const stage of stages) {
+      if (stage.word === "collect") { const cell = fn(stage); this.pathCondition = passes; current = this.applyToItem(cell, current); }
+      else if (stage.word === "each") {
         // host words called for each item that passed, in order, each under the tests that lead to it
-        const f = fn(st); this.pc = pass; this.effects = [];
-        try { this.apply(f, cur); } finally { this.pc = this.TRUE; }
-        const fx = this.effects; this.effects = null;
-        if (!fx.length) this.no("each does nothing here a host word doesn't do");
-        return this.emit("each", [pass.id], null, fx);
+        const cell = fn(stage); this.pathCondition = passes; this.hostCalls = [];
+        try { this.applyToItem(cell, current); } finally { this.pathCondition = this.TRUE; }
+        const calls = this.hostCalls; this.hostCalls = null;
+        if (!calls.length) this.giveUp("each does nothing here a host word doesn't do");
+        return this.emitKernel("each", [passes.id], null, calls);
       }
-      else if (st.w === "keep") {
-        const f = fn(st); this.pc = pass;
-        const t = this.apply(f, cur); if (t.k !== "b") this.no("keep's test doesn't give true or false");
-        pass = this.and(pass, t);
+      else if (stage.word === "keep") {
+        const cell = fn(stage); this.pathCondition = passes;
+        const test = this.applyToItem(cell, current); if (test.kind !== "bool") this.giveUp("keep's test doesn't give true or false");
+        passes = this.and(passes, test);
       } else {
         // fold [start, h], or length: one number carried from item to item, through the items that pass
         let start, next;
-        const acc = this.num(this.node("a", -1, -1, -1));
-        this.pc = pass;
-        if (st.w === "length") { start = this.cn(0); next = this.num(this.node("add", acc.id, this.cn(1).id)); }
+        const carried = this.numberValue(this.addNode("carried", -1, -1, -1));
+        this.pathCondition = passes;
+        if (stage.word === "length") { start = this.constantNumber(0); next = this.numberValue(this.addNode("add", carried.id, this.constantNumber(1).id)); }
         else {
-          this.pc = this.TRUE; const arg = this.term(st.arg, env); this.pc = pass;
-          if (arg.k !== "cv" || arg.parts.length < 2) this.no("fold isn't given [start, cell]");
-          start = arg.parts[0]; const h = arg.parts[1];
-          if (start.k !== "n") this.no("fold starts from something that isn't a number");
-          next = h.k === "fn" && h.ast.names.length === 2 ? this.call(h, this.cv([acc, cur])) : this.apply(h, this.cv([acc, cur]));
-          if (next.k !== "n") this.no("fold's cell doesn't give a number");
+          this.pathCondition = this.TRUE; const startAndCell = this.term(stage.argument, scope); this.pathCondition = passes;
+          if (startAndCell.kind !== "cell" || startAndCell.parts.length < 2) this.giveUp("fold isn't given [start, cell]");
+          start = startAndCell.parts[0]; const cell = startAndCell.parts[1];
+          if (start.kind !== "number") this.giveUp("fold starts from something that isn't a number");
+          next = cell.kind === "function" && cell.ast.names.length === 2 ? this.call(cell, this.cellOfValues([carried, current])) : this.applyToItem(cell, this.cellOfValues([carried, current]));
+          if (next.kind !== "number") this.giveUp("fold's cell doesn't give a number");
         }
-        this.pc = this.TRUE;
-        return this.emit("fold", [start.id, this.sel(pass, next, acc).id], null);
+        this.pathCondition = this.TRUE;
+        return this.emitKernel("fold", [start.id, this.choose(passes, next, carried).id], null);
       }
     }
-    this.pc = this.TRUE;
-    if (cur.k === "n") return this.emit("n", [pass.id, cur.id], null);
-    if (cur.k === "b") return this.emit("b", [pass.id, cur.id], null);
-    if (cur.k === "cv" && !cur.parts.length && cur.keys.length && cur.vals.every(p => p.k === "n")) return this.emit("rec", [pass.id, ...cur.vals.map(p => p.id)], cur.keys);
-    if (cur.k === "row" && [...cur.over.values()].every(p => p.k === "n")) return this.emit("row", [pass.id, ...[...cur.over.values()].map(p => p.id)], [...cur.over.keys()]);
-    this.no("each item gives something other than a number, true or false, or a record of numbers");
+    this.pathCondition = this.TRUE;
+    if (current.kind === "number") return this.emitKernel("numbers", [passes.id, current.id], null);
+    if (current.kind === "bool") return this.emitKernel("bools", [passes.id, current.id], null);
+    if (current.kind === "cell" && !current.parts.length && current.keys.length && current.values.every(p => p.kind === "number")) return this.emitKernel("records", [passes.id, ...current.values.map(p => p.id)], current.keys);
+    if (current.kind === "row" && [...current.laidOver.values()].every(p => p.kind === "number")) return this.emitKernel("rows", [passes.id, ...[...current.laidOver.values()].map(p => p.id)], [...current.laidOver.keys()]);
+    this.giveUp("each item gives something other than a number, true or false, or a record of numbers");
   }
   // keep only the steps the answer needs, numbered afresh, as a JavaScript literal
-  emit(kind, outs, keys, fx) {
-    const N = this.nodes, live = new Uint8Array(N.length);
-    for (const i of outs.concat(this.guards)) live[i] = 1;
-    if (fx) for (const e of fx) { live[e.cond.id] = 1; for (const a of e.args) if (a.k !== "s") live[a.id] = 1; }
-    for (let i = N.length - 1; i >= 0; i--) if (live[i]) { const [, a, b, c] = N[i]; if (a >= 0) live[a] = 1; if (b >= 0) live[b] = 1; if (c >= 0) live[c] = 1; }
-    const map = new Int32Array(N.length).fill(-1), out = []; let jsOnly = false;
-    for (let i = 0; i < N.length; i++) if (live[i]) {
-      const [op, a, b, c, v] = N[i]; map[i] = out.length;
-      if (SPK_JSONLY.has(op)) jsOnly = true;
-      const lit = v === undefined ? "" : "," + (typeof v === "number" ? spkNum(v) : typeof v === "string" ? JSON.stringify(v) : String(v));
-      out.push("[\"" + op + "\"," + (a >= 0 ? map[a] : -1) + "," + (b >= 0 ? map[b] : -1) + "," + (c >= 0 ? map[c] : -1) + lit + "]");
+  emitKernel(kind, outputIds, keys, calls) {
+    const nodes = this.nodes, needed = new Uint8Array(nodes.length);
+    for (const i of outputIds.concat(this.checks)) needed[i] = 1;
+    if (calls) for (const call of calls) { needed[call.cond.id] = 1; for (const a of call.args) if (a.kind !== "text") needed[a.id] = 1; }
+    for (let i = nodes.length - 1; i >= 0; i--) if (needed[i]) { const [, a, b, c] = nodes[i]; if (a >= 0) needed[a] = 1; if (b >= 0) needed[b] = 1; if (c >= 0) needed[c] = 1; }
+    const newIndex = new Int32Array(nodes.length).fill(-1), lines = []; let jsOnly = false;
+    for (let i = 0; i < nodes.length; i++) if (needed[i]) {
+      const [op, a, b, c, v] = nodes[i]; newIndex[i] = lines.length;
+      if (JAVASCRIPT_ONLY_STEPS.has(op)) jsOnly = true;
+      const literalCode = v === undefined ? "" : "," + (typeof v === "number" ? numberLiteral(v) : typeof v === "string" ? JSON.stringify(v) : String(v));
+      lines.push("[\"" + op + "\"," + (a >= 0 ? newIndex[a] : -1) + "," + (b >= 0 ? newIndex[b] : -1) + "," + (c >= 0 ? newIndex[c] : -1) + literalCode + "]");
     }
-    const g = [...new Set(this.guards)].map(i => map[i]);
-    const fxs = fx ? ",fx:[" + fx.map(e => "{host:" + JSON.stringify(e.host) + ",single:" + e.single + ",cond:" + map[e.cond.id] + ",args:[" +
-      e.args.map(a => a.k === "s" ? JSON.stringify(a.v) : String(map[a.id])).join(",") + "]}").join(",") + "]" : "";
-    return "{nodes:[" + out.join(",") + "],outs:[" + outs.map(i => map[i]).join(",") + "],guards:[" + g.join(",") + "],kind:\"" + kind + "\"" +
-      (keys ? ",keys:" + JSON.stringify(keys) : "") + fxs + ",jsOnly:" + jsOnly + "}";
+    const checkIds = [...new Set(this.checks)].map(i => newIndex[i]);
+    const callsCode = calls ? ",hostCalls:[" + calls.map(call => "{host:" + JSON.stringify(call.host) + ",single:" + call.single + ",cond:" + newIndex[call.cond.id] + ",args:[" +
+      call.args.map(a => a.kind === "text" ? JSON.stringify(a.value) : String(newIndex[a.id])).join(",") + "]}").join(",") + "]" : "";
+    return "{nodes:[" + lines.join(",") + "],outputs:[" + outputIds.map(i => newIndex[i]).join(",") + "],checks:[" + checkIds.join(",") + "],kind:\"" + kind + "\"" +
+      (keys ? ",keys:" + JSON.stringify(keys) : "") + callsCode + ",javascriptOnly:" + jsOnly + "}";
   }
 }
 // a run of collect, keep and fold steps (each given a cell, or a name), and length at the end, starting at T[i]
-const FUSE_STEPS = new Set(["collect", "keep", "fold", "each"]);
-function fuseSegment(T, i) {
-  let j = i; const stages = [];
-  while (j + 1 < T.length && T[j].k === "word" && FUSE_STEPS.has(T[j].v) &&
-    (T[j + 1].k === "cell" || (T[j + 1].k === "word" && !FUSED.has(T[j + 1].v) && !LAZYOPS.has(T[j + 1].v) && !(T[j + 1].v in ALL) && !["!", "true", "false", "_", "left", "right"].includes(T[j + 1].v)))) {
-    stages.push({ w: T[j].v, arg: T[j + 1], line: T[j].line }); j += 2;
-    if (T[j - 2].v === "fold" || T[j - 2].v === "each") break;
+const LOOP_STEP_WORDS = new Set(["collect", "keep", "fold", "each"]);
+function findLoopRun(terms, start) {
+  let at = start; const stages = [];
+  while (at + 1 < terms.length && terms[at].type === "word" && LOOP_STEP_WORDS.has(terms[at].value) &&
+    (terms[at + 1].type === "cell" || (terms[at + 1].type === "word" && !FUSED_OPERATORS.has(terms[at + 1].value) && !LAZY_OPERATORS.has(terms[at + 1].value) && !(terms[at + 1].value in EVERY_VALUE_METHODS) && !["!", "true", "false", "_", "left", "right"].includes(terms[at + 1].value)))) {
+    stages.push({ word: terms[at].value, argument: terms[at + 1], line: terms[at].line }); at += 2;
+    if (terms[at - 2].value === "fold" || terms[at - 2].value === "each") break;
   }
-  if (stages.length && stages[stages.length - 1].w !== "fold" && stages[stages.length - 1].w !== "each" && j < T.length && T[j].k === "word" && T[j].v === "length") { stages.push({ w: "length", line: T[j].line }); j++; }
+  if (stages.length && stages[stages.length - 1].word !== "fold" && stages[stages.length - 1].word !== "each" && at < terms.length && terms[at].type === "word" && terms[at].value === "length") { stages.push({ word: "length", line: terms[at].line }); at++; }
   if (!stages.length) return null;
-  return { stages, start: i, end: j };
+  return { stages, start: start, end: at };
 }
 // the first and last line a piece of the tree is on
 function lineSpan(n) {
   let lo = Infinity, hi = -Infinity;
-  (function walk(x) { if (!x || typeof x !== "object") return; if (typeof x.line === "number" && x.line > 0) { lo = Math.min(lo, x.line); hi = Math.max(hi, x.line); } for (const k in x) if (!NOTE_KEYS.has(k) || k === "line") { const v = x[k]; if (v && typeof v === "object") walk(v); } })(n);
+  (function walk(x) { if (!x || typeof x !== "object") return; if (typeof x.line === "number" && x.line > 0) { lo = Math.min(lo, x.line); hi = Math.max(hi, x.line); } for (const k in x) if (!COMPILER_NOTE_KEYS.has(k) || k === "line") { const v = x[k]; if (v && typeof v === "object") walk(v); } })(n);
   return [lo, hi];
 }
 // names from outside that couldn't be worked out ahead, remembered for the rest of the compile (each frame is one object)
-function spkTooBig(gen, f, n, mark) {
-  const fr = gen.frames[f], m = (gen.spkNo || (gen.spkNo = new WeakMap())).get(fr) || new Set();
-  if (mark) { m.add(n); gen.spkNo.set(fr, m); }
-  return m.has(n);
+function couldNotWorkOut(gen, frameIndex, name, mark) {
+  const frame = gen.frames[frameIndex], names = (gen.namesNotWorkedOut || (gen.namesNotWorkedOut = new WeakMap())).get(frame) || new Set();
+  if (mark) { names.add(name); gen.namesNotWorkedOut.set(frame, names); }
+  return names.has(name);
 }
 // where a name sits among a frame's names, in the order they were bound
-function spkPos(names, n) { let i = 0; for (const k of names.keys()) { if (k === n) return i; i++; } return -1; }
+function positionAmongNames(names, n) { let i = 0; for (const k of names.keys()) { if (k === n) return i; i++; } return -1; }
 // does a cell (or anything in it) use _ or left?
-const SPK_IT = new Set(["_", "left", "right"]);
-function spkUses(c) { if (c.spkUses === undefined) c.spkUses = mentions(c, SPK_IT); return c.spkUses; }
+const INPUT_WORDS = new Set(["_", "left", "right"]);
+function usesInputWords(c) { if (c.usesInputWords === undefined) c.usesInputWords = mentions(c, INPUT_WORDS); return c.usesInputWords; }
 
 
 // the cells spork is given: by name (spork one-run), or written in place (spork [n | ...]); and each cell bound to a name
@@ -620,12 +620,12 @@ function sporkTargets(ast) {
   (function walk(n) {
     if (!n || typeof n !== "object") return;
     if (Array.isArray(n)) { for (const x of n) walk(x); return; }
-    if (n.k === "chain") {
+    if (n.type === "chain") {
       const T = n.terms;
-      for (let i = 0; i + 1 < T.length; i++) if (T[i].k === "word" && T[i].v === "spork") { const t = T[i + 1]; if (t.k === "word") names.add(t.v); else if (t.k === "cell") t.sporkArg = true; }
+      for (let i = 0; i + 1 < T.length; i++) if (T[i].type === "word" && T[i].value === "spork") { const t = T[i + 1]; if (t.type === "word") names.add(t.value); else if (t.type === "cell") t.sporkArg = true; }
     }
-    if (n.k === "bind" && n.val && n.val.terms && n.val.terms.length === 1 && n.val.terms[0].k === "cell") n.val.terms[0].bindName = n.name;
-    for (const key in n) if (!NOTE_KEYS.has(key)) walk(n[key]);
+    if (n.type === "bind" && n.value && n.value.terms && n.value.terms.length === 1 && n.value.terms[0].type === "cell") n.value.terms[0].bindName = n.name;
+    for (const key in n) if (!COMPILER_NOTE_KEYS.has(key)) walk(n[key]);
   })(ast);
   return names;
 }
@@ -633,354 +633,354 @@ function sporkTargets(ast) {
 
 // ---- spork (decision 47): a parallel collect. A pure cell worked out ahead (decision 91) runs as one numeric kernel,
 // on the fastest way this machine has; anything else is collect.
-let SPORK = { info: null, wasm: undefined, gpu: null, tally: [] };
-const sporkRan = info => { SPORK.info = info; if (SPORK.tally.length < 50) SPORK.tally.push(info); };
+let sporkState = { info: null, wasm: undefined, gpu: null, tally: [] };
+const recordSpork = info => { sporkState.info = info; if (sporkState.tally.length < 50) sporkState.tally.push(info); };
 function spork(xs, f) {
-  if (f instanceof Cell && f.kn && f.kn.s) { const r = runSpork(f.kn.s, xs); if (r) return r; }
-  const t0 = nowMs(), r = I.collect(xs, f);
-  sporkRan({ n: isCell(xs) ? xs.count() : 0, how: "collect", ms: nowMs() - t0, steps: 0 });
+  if (f instanceof Cell && f.fastForms && f.fastForms.spork) { const r = runSpork(f.fastForms.spork, xs); if (r) return r; }
+  const t0 = nowMs(), r = internals.collect(xs, f);
+  recordSpork({ n: isCell(xs) ? xs.count() : 0, how: "collect", ms: nowMs() - t0, steps: 0 });
   return r;
 }
 const nowMs = () => typeof performance !== "undefined" ? performance.now() : Date.now();
 function runSpork(s, xs) {
-  const K = s.k;
-  let n, X = null;
-  if (xs instanceof RCell) n = xs.n;
-  else if (xs instanceof NCell) { X = xs.a; n = X.length; }
-  else if (xs instanceof VCell && !(xs instanceof ColCell) && xs.fs === ROOT) {
-    const p = xs.parts; n = p.length; X = new Float64Array(n);
-    for (let i = 0; i < n; i++) { const v = p[i]; if (typeof v !== "number") return null; X[i] = v; }
+  const kernel = s.kernel;
+  let n, inputs = null;
+  if (xs instanceof RangeCell) n = xs.size;
+  else if (xs instanceof NumberList) { inputs = xs.numbers; n = inputs.length; }
+  else if (xs instanceof ValueCell && !(xs instanceof ColumnCell) && xs.fieldShape === NO_FIELDS) {
+    const p = xs.parts; n = p.length; inputs = new Float64Array(n);
+    for (let i = 0; i < n; i++) { const v = p[i]; if (typeof v !== "number") return null; inputs[i] = v; }
   } else return null;
-  if (n === 0) return VP([]);
-  const C = s.caps();
-  for (let i = 0; i < C.length; i++) if (typeof C[i] !== "number") return null;
-  const t0 = nowMs(); let O = null, how = "";
+  if (n === 0) return makeList([]);
+  const outsideValues = s.outsideReads();
+  for (let i = 0; i < outsideValues.length; i++) if (typeof outsideValues[i] !== "number") return null;
+  const t0 = nowMs(); let outputs = null, how = "";
   // the GPU (32-bit maths) only when the host allows it; else WebAssembly SIMD; else JavaScript. The last two give the same answer.
-  if (SPORK.gpu && !K.jsOnly) { O = SPORK.gpu(K, n, X, C) || null; if (O) how = "gpu"; }
-  if (SPORK.wasm === undefined) SPORK.wasm = wasmSpork();
-  if (!O && SPORK.wasm && !K.jsOnly && n >= 16) { O = SPORK.wasm(K, n, X, C); how = "simd"; if (!O) return null; }
-  if (!O) { O = K.outs.map(() => new Float64Array(n)); how = "js"; if (!spkJS(K)(n, X, C, O)) return null; }
-  sporkRan({ n, how, ms: how === "gpu" && O.ms !== undefined ? O.ms : nowMs() - t0, steps: K.nodes.length });
-  if (K.kind === "n") return new NCell(O[0]);
-  if (K.kind === "b") { const o = new Array(n), a = O[0]; for (let i = 0; i < n; i++) o[i] = a[i] !== 0; return VP(o); }
-  return new ColCell(shapeFor(K.keys), O, n);
+  if (sporkState.gpu && !kernel.javascriptOnly) { outputs = sporkState.gpu(kernel, n, inputs, outsideValues) || null; if (outputs) how = "gpu"; }
+  if (sporkState.wasm === undefined) sporkState.wasm = makeWasmRunner();
+  if (!outputs && sporkState.wasm && !kernel.javascriptOnly && n >= 16) { outputs = sporkState.wasm(kernel, n, inputs, outsideValues); how = "simd"; if (!outputs) return null; }
+  if (!outputs) { outputs = kernel.outputs.map(() => new Float64Array(n)); how = "js"; if (!sporkKernelFunction(kernel)(n, inputs, outsideValues, outputs)) return null; }
+  recordSpork({ n, how, ms: how === "gpu" && outputs.ms !== undefined ? outputs.ms : nowMs() - t0, steps: kernel.nodes.length });
+  if (kernel.kind === "numbers") return new NumberList(outputs[0]);
+  if (kernel.kind === "bools") { const o = new Array(n), a = outputs[0]; for (let i = 0; i < n; i++) o[i] = a[i] !== 0; return makeList(o); }
+  return new ColumnCell(shapeFor(kernel.keys), outputs, n);
 }
-// ---- loop fusion (decision 95): a run of collect, keep, fold and length over range, a list of numbers or a list of
-// records of numbers, as one loop with no lists in between. NOFUSE means the steps run as written.
-const NOFUSE = { fuse: "no" };
-function FUSE(xs, F, caps) {
-  if (!I.fast()) return NOFUSE;
-  let K, n, X = null, cols = null, rs = null;
-  if (xs instanceof RCell) { K = F.num; n = xs.n; }
-  else if (xs instanceof NCell) { K = F.num; X = xs.a; n = X.length; }
-  else if (xs instanceof ColCell) { K = F.row; cols = xs.cols; rs = xs.rs; n = xs.n; }
-  else if (xs instanceof VCell && xs.fs === ROOT) {
+// ---- loop fusion (decision 95): a run of collect, keep, fold and length laidOver range, a list of numbers or a list of
+// records of numbers, as one loop with no lists in between. NOT_FUSED means the steps run as written.
+const NOT_FUSED = { fuse: "no" };
+function runFusedLoop(xs, fusedKernels, caps) {
+  if (!internals.fast()) return NOT_FUSED;
+  let kernel, n, inputs = null, columns = null, recordShape = null;
+  if (xs instanceof RangeCell) { kernel = fusedKernels.numbers; n = xs.size; }
+  else if (xs instanceof NumberList) { kernel = fusedKernels.numbers; inputs = xs.numbers; n = inputs.length; }
+  else if (xs instanceof ColumnCell) { kernel = fusedKernels.rows; columns = xs.columns; recordShape = xs.recordShape; n = xs.size; }
+  else if (xs instanceof ValueCell && xs.fieldShape === NO_FIELDS) {
     const p = xs.parts; n = p.length;
-    if (!n) return NOFUSE;
-    if (typeof p[0] === "number") { K = F.num; X = new Float64Array(n); for (let i = 0; i < n; i++) { const v = p[i]; if (typeof v !== "number") return NOFUSE; X[i] = v; } }
-    else { const c = toCols(xs); if (!c) return NOFUSE; K = F.row; cols = c.cols; rs = c.rs; n = c.n; }
-  } else return NOFUSE;
+    if (!n) return NOT_FUSED;
+    if (typeof p[0] === "number") { kernel = fusedKernels.numbers; inputs = new Float64Array(n); for (let i = 0; i < n; i++) { const v = p[i]; if (typeof v !== "number") return NOT_FUSED; inputs[i] = v; } }
+    else { const c = asColumns(xs); if (!c) return NOT_FUSED; kernel = fusedKernels.rows; columns = c.columns; recordShape = c.recordShape; n = c.size; }
+  } else return NOT_FUSED;
   // a short list is quicker as written
-  if (!K || n < 16) return NOFUSE;
-  if (rs && K.keys && K.keys.length && rs.index("with") >= 0) return NOFUSE;
-  const C = caps ? caps() : EMPTY;
-  for (let i = 0; i < C.length; i++) if (typeof C[i] !== "number") return NOFUSE;
-  const f = fuseJS(K);
-  if (K.kind === "fold") return f(n, X, cols, rs, C, null, null);
-  if (K.kind === "each") {
-    const H = [];
-    for (const e of K.fx) {
-      const h = G[e.host], k = e.args.length;
-      if (!(h instanceof Native)) return NOFUSE;
-      H.push(e.single ? h.fn : h.direct && h.direct.length === k ? h.direct : (...xs) => h.fn(VP(xs)));
+  if (!kernel || n < 16) return NOT_FUSED;
+  if (recordShape && kernel.keys && kernel.keys.length && recordShape.index("with") >= 0) return NOT_FUSED;
+  const outsideValues = caps ? caps() : EMPTY;
+  for (let i = 0; i < outsideValues.length; i++) if (typeof outsideValues[i] !== "number") return NOT_FUSED;
+  const f = fusedLoopFunction(kernel);
+  if (kernel.kind === "fold") return f(n, inputs, columns, recordShape, outsideValues, null, null);
+  if (kernel.kind === "each") {
+    const hostCallers = [];
+    for (const e of kernel.hostCalls) {
+      const h = GLOBALS[e.host], k = e.args.length;
+      if (!(h instanceof Native)) return NOT_FUSED;
+      hostCallers.push(e.single ? h.fn : h.direct && h.direct.length === k ? h.direct : (...xs) => h.fn(makeList(xs)));
     }
-    return f(n, X, cols, rs, C, H, null) === NOFUSE ? NOFUSE : false;
+    return f(n, inputs, columns, recordShape, outsideValues, hostCallers, null) === NOT_FUSED ? NOT_FUSED : false;
   }
-  const O = K.outs.slice(1).map(() => new Float64Array(n)), kept = K.kind === "row" ? new Uint32Array(n) : null;
-  const m = f(n, X, cols, rs, C, O, kept);
-  if (m === NOFUSE) return NOFUSE;
+  const outputs = kernel.outputs.slice(1).map(() => new Float64Array(n)), keptRows = kernel.kind === "rows" ? new Uint32Array(n) : null;
+  const m = f(n, inputs, columns, recordShape, outsideValues, outputs, keptRows);
+  if (m === NOT_FUSED) return NOT_FUSED;
   // when every item passed, the arrays are already the right length, and unchanged columns can be shared (columns never change)
   const cut = o => m === n ? o : o.slice(0, m);
-  if (K.kind === "n") return new NCell(cut(O[0]));
-  if (K.kind === "b") { const o = new Array(m); for (let i = 0; i < m; i++) o[i] = O[0][i] !== 0; return VP(o); }
-  if (K.kind === "rec") return new ColCell(shapeFor(K.keys), O.map(cut), m);
-  // records from the list, with any fields laid over by with: unchanged columns are gathered for the items that passed
-  let out = rs; for (const k of K.keys) if (out.index(k) < 0) out = out.add(k);
+  if (kernel.kind === "numbers") return new NumberList(cut(outputs[0]));
+  if (kernel.kind === "bools") { const o = new Array(m); for (let i = 0; i < m; i++) o[i] = outputs[0][i] !== 0; return makeList(o); }
+  if (kernel.kind === "records") return new ColumnCell(shapeFor(kernel.keys), outputs.map(cut), m);
+  // records from the list, with any fields laid laidOver by with: unchanged columns are gathered for the items that passed
+  let out = recordShape; for (const k of kernel.keys) if (out.index(k) < 0) out = out.add(k);
   const oc = out.keys.map((k, j) => {
-    const o = K.keys.indexOf(k); if (o >= 0) return cut(O[o]);
-    const src = cols[j]; if (m === n) return src;
-    const g = new Float64Array(m); for (let q = 0; q < m; q++) g[q] = src[kept[q]]; return g;
+    const o = kernel.keys.indexOf(k); if (o >= 0) return cut(outputs[o]);
+    const src = columns[j]; if (m === n) return src;
+    const g = new Float64Array(m); for (let q = 0; q < m; q++) g[q] = src[keptRows[q]]; return g;
   });
-  return new ColCell(out, oc, m);
+  return new ColumnCell(out, oc, m);
 }
-function fuseJS(K) {
-  if (K.jsF) return K.jsF;
-  const N = K.nodes, inv = new Uint8Array(N.length), r = i => "v" + i;
-  let pre = "", body = "";
-  for (let i = 0; i < N.length; i++) {
-    const [op, a, b, c, v] = N[i];
-    let e;
-    if (op === "a") e = "acc";
-    else if (op === "col") { pre += "const c" + i + "=cols[rs.index(" + JSON.stringify(v) + ")];if(c" + i + "===undefined)return NOFUSE;"; e = "c" + i + "[i]"; }
-    else e = spkExpr(N[i], r);
-    inv[i] = op !== "x" && op !== "a" && op !== "col" && (a < 0 || inv[a]) && (b < 0 || inv[b]) && (c < 0 || inv[c]) ? 1 : 0;
-    if (inv[i]) pre += "const v" + i + "=" + e + ";"; else body += "const v" + i + "=" + e + ";";
+function fusedLoopFunction(kernel) {
+  if (kernel.compiledFunction) return kernel.compiledFunction;
+  const nodes = kernel.nodes, invariant = new Uint8Array(nodes.length), ref = i => "v" + i;
+  let beforeLoop = "", loopBody = "";
+  for (let i = 0; i < nodes.length; i++) {
+    const [op, a, b, c, v] = nodes[i];
+    let expression;
+    if (op === "carried") expression = "acc";
+    else if (op === "column") { beforeLoop += "const c" + i + "=columns[recordShape.index(" + JSON.stringify(v) + ")];if(c" + i + "===undefined)return NOT_FUSED;"; expression = "c" + i + "[i]"; }
+    else expression = stepExpression(nodes[i], ref);
+    invariant[i] = op !== "input" && op !== "carried" && op !== "column" && (a < 0 || invariant[a]) && (b < 0 || invariant[b]) && (c < 0 || invariant[c]) ? 1 : 0;
+    if (invariant[i]) beforeLoop += "const v" + i + "=" + expression + ";"; else loopBody += "const v" + i + "=" + expression + ";";
   }
-  const g = K.guards.length ? "if(!(" + K.guards.map(r).join("&&") + "))return NOFUSE;" : "";
-  let src;
-  if (K.kind === "fold") src = pre + "let acc=" + r(K.outs[0]) + ";" + spkLoop(body + g + "acc=" + r(K.outs[1]) + ";") + "return acc";
-  else if (K.kind === "each") src = pre + "const " + K.fx.map((e, j) => "h" + j + "=O[" + j + "]").join(",") + ";" + spkLoop(body + g +
-    "if(" + r(K.outs[0]) + "){" + K.fx.map((e, j) => "if(" + r(e.cond) + ")h" + j + "(" + e.args.map(a => typeof a === "string" ? JSON.stringify(a) : r(a)).join(",") + ");").join("") + "}") + "return false";
-  else src = pre + "let m=0;" + (K.outs.length > 1 ? "const " + K.outs.slice(1).map((o, j) => "O" + j + "=O[" + j + "]").join(",") + ";" : "") + spkLoop(body + g + "if(" + r(K.outs[0]) + "){" +
-    K.outs.slice(1).map((o, j) => "O" + j + "[m]=" + (K.kind === "b" ? r(o) + "?1:0" : r(o)) + ";").join("") + (K.kind === "row" ? "kept[m]=i;" : "") + "m++}") + "return m";
-  const f = new Function("NOISE", "NOFUSE", "n", "X", "cols", "rs", "C", "O", "kept", src);
-  return (K.jsF = (n, X, cols, rs, C, O, kept) => f(NOISE, NOFUSE, n, X, cols, rs, C, O, kept));
+  const checks = kernel.checks.length ? "if(!(" + kernel.checks.map(ref).join("&&") + "))return NOT_FUSED;" : "";
+  let source;
+  if (kernel.kind === "fold") source = beforeLoop + "let acc=" + ref(kernel.outputs[0]) + ";" + loopOverItems(loopBody + checks + "acc=" + ref(kernel.outputs[1]) + ";") + "return acc";
+  else if (kernel.kind === "each") source = beforeLoop + "const " + kernel.hostCalls.map((expression, j) => "h" + j + "=outputs[" + j + "]").join(",") + ";" + loopOverItems(loopBody + checks +
+    "if(" + ref(kernel.outputs[0]) + "){" + kernel.hostCalls.map((expression, j) => "if(" + ref(expression.cond) + ")h" + j + "(" + expression.args.map(a => typeof a === "string" ? JSON.stringify(a) : ref(a)).join(",") + ");").join("") + "}") + "return false";
+  else source = beforeLoop + "let m=0;" + (kernel.outputs.length > 1 ? "const " + kernel.outputs.slice(1).map((o, j) => "outputs" + j + "=outputs[" + j + "]").join(",") + ";" : "") + loopOverItems(loopBody + checks + "if(" + ref(kernel.outputs[0]) + "){" +
+    kernel.outputs.slice(1).map((o, j) => "outputs" + j + "[m]=" + (kernel.kind === "bools" ? ref(o) + "?1:0" : ref(o)) + ";").join("") + (kernel.kind === "rows" ? "keptRows[m]=i;" : "") + "m++}") + "return m";
+  const compiled = new Function("noiseHash", "NOT_FUSED", "n", "inputs", "columns", "recordShape", "outsideValues", "outputs", "keptRows", source);
+  return (kernel.compiledFunction = (n, inputs, columns, recordShape, outsideValues, outputs, keptRows) => compiled(noiseHash, NOT_FUSED, n, inputs, columns, recordShape, outsideValues, outputs, keptRows));
 }
-// the loop over the items, written twice: over a list of numbers (X), or over range's own numbers.
-// (One loop asking X ? X[i] : i + 1 each time runs about ten times slower when X is null.)
-const spkLoop = body => "if(X){for(let i=0;i<n;i++){const x=X[i];" + body + "}}else{for(let i=0;i<n;i++){const x=i+1;" + body + "}}";
+// the loop laidOver the items, written twice: laidOver a list of numbers (inputs), or laidOver range's own numbers.
+// (One loop asking inputs ? inputs[i] : i + 1 each time runs about ten times slower when inputs is null.)
+const loopOverItems = body => "if(inputs){for(let i=0;i<n;i++){const item=inputs[i];" + body + "}}else{for(let i=0;i<n;i++){const item=i+1;" + body + "}}";
 // one step of a kernel as a JavaScript expression
-function spkExpr(node, r) {
+function stepExpression(node, ref) {
   const [op, a, b, c, v] = node;
   switch (op) {
-    case "c": return spkNum(v); case "cb": return String(v);
-    case "x": return "x"; case "k": return "C[" + v + "]";
-    case "add": return r(a) + "+" + r(b); case "sub": return r(a) + "-" + r(b);
-    case "mul": return r(a) + "*" + r(b); case "div": return r(a) + "/" + r(b);
-    case "mod": return "((" + r(a) + "%" + r(b) + ")+" + r(b) + ")%" + r(b);
-    case "min": case "max": return "Math." + op + "(" + r(a) + "," + r(b) + ")";
-    case "noise": return "NOISE(" + r(a) + "," + r(b) + ")";
-    case "neg": return "-" + r(a);
-    case "abs": case "floor": case "ceil": case "round": case "sqrt": case "sin": case "cos": case "tan": case "log": return "Math." + op + "(" + r(a) + ")";
-    case "lt": return r(a) + "<" + r(b); case "gt": return r(a) + ">" + r(b);
-    case "le": return r(a) + "<=" + r(b); case "ge": return r(a) + ">=" + r(b);
-    case "eq": case "beq": return r(a) + "===" + r(b); case "ne": return r(a) + "!==" + r(b);
-    case "and": return r(a) + "&&" + r(b); case "or": return r(a) + "||" + r(b); case "not": return "!" + r(a);
-    case "sel": return r(a) + "?" + r(b) + ":" + r(c);
+    case "constant": return numberLiteral(v); case "constantBool": return String(v);
+    case "input": return "item"; case "outside": return "outsideValues[" + v + "]";
+    case "add": return ref(a) + "+" + ref(b); case "sub": return ref(a) + "-" + ref(b);
+    case "mul": return ref(a) + "*" + ref(b); case "div": return ref(a) + "/" + ref(b);
+    case "mod": return "((" + ref(a) + "%" + ref(b) + ")+" + ref(b) + ")%" + ref(b);
+    case "min": case "max": return "Math." + op + "(" + ref(a) + "," + ref(b) + ")";
+    case "noise": return "noiseHash(" + ref(a) + "," + ref(b) + ")";
+    case "neg": return "-" + ref(a);
+    case "abs": case "floor": case "ceil": case "round": case "sqrt": case "sin": case "cos": case "tan": case "log": return "Math." + op + "(" + ref(a) + ")";
+    case "lt": return ref(a) + "<" + ref(b); case "gt": return ref(a) + ">" + ref(b);
+    case "le": return ref(a) + "<=" + ref(b); case "ge": return ref(a) + ">=" + ref(b);
+    case "eq": case "boolEquals": return ref(a) + "===" + ref(b); case "ne": return ref(a) + "!==" + ref(b);
+    case "and": return ref(a) + "&&" + ref(b); case "or": return ref(a) + "||" + ref(b); case "not": return "!" + ref(a);
+    case "choose": return ref(a) + "?" + ref(b) + ":" + ref(c);
   }
   throw new Error("kernel step " + op);
 }
 // the kernel as JavaScript: one loop; steps that don't depend on the input are worked out before it
-function spkJS(K) {
-  if (K.jsF) return K.jsF;
-  const N = K.nodes, inv = new Uint8Array(N.length), r = i => "v" + i;
-  let pre = "", body = "";
-  for (let i = 0; i < N.length; i++) {
-    const [op, a, b, c, v] = N[i]; let e;
+function sporkKernelFunction(kernel) {
+  if (kernel.compiledFunction) return kernel.compiledFunction;
+  const nodes = kernel.nodes, invariant = new Uint8Array(nodes.length), ref = i => "v" + i;
+  let beforeLoop = "", loopBody = "";
+  for (let i = 0; i < nodes.length; i++) {
+    const [op, a, b, c, v] = nodes[i]; let expression;
     switch (op) {
-      case "c": e = spkNum(v); break; case "cb": e = String(v); break;
-      case "x": e = "x"; break; case "k": e = "C[" + v + "]"; break;
-      case "add": e = r(a) + "+" + r(b); break; case "sub": e = r(a) + "-" + r(b); break;
-      case "mul": e = r(a) + "*" + r(b); break; case "div": e = r(a) + "/" + r(b); break;
-      case "mod": e = "((" + r(a) + "%" + r(b) + ")+" + r(b) + ")%" + r(b); break;
-      case "min": case "max": e = "Math." + op + "(" + r(a) + "," + r(b) + ")"; break;
-      case "noise": e = "NOISE(" + r(a) + "," + r(b) + ")"; break;
-      case "neg": e = "-" + r(a); break;
-      case "abs": case "floor": case "ceil": case "round": case "sqrt": case "sin": case "cos": case "tan": case "log": e = "Math." + op + "(" + r(a) + ")"; break;
-      case "lt": e = r(a) + "<" + r(b); break; case "gt": e = r(a) + ">" + r(b); break;
-      case "le": e = r(a) + "<=" + r(b); break; case "ge": e = r(a) + ">=" + r(b); break;
-      case "eq": case "beq": e = r(a) + "===" + r(b); break; case "ne": e = r(a) + "!==" + r(b); break;
-      case "and": e = r(a) + "&&" + r(b); break; case "or": e = r(a) + "||" + r(b); break; case "not": e = "!" + r(a); break;
-      case "sel": e = r(a) + "?" + r(b) + ":" + r(c); break;
+      case "constant": expression = numberLiteral(v); break; case "constantBool": expression = String(v); break;
+      case "input": expression = "item"; break; case "outside": expression = "outsideValues[" + v + "]"; break;
+      case "add": expression = ref(a) + "+" + ref(b); break; case "sub": expression = ref(a) + "-" + ref(b); break;
+      case "mul": expression = ref(a) + "*" + ref(b); break; case "div": expression = ref(a) + "/" + ref(b); break;
+      case "mod": expression = "((" + ref(a) + "%" + ref(b) + ")+" + ref(b) + ")%" + ref(b); break;
+      case "min": case "max": expression = "Math." + op + "(" + ref(a) + "," + ref(b) + ")"; break;
+      case "noise": expression = "noiseHash(" + ref(a) + "," + ref(b) + ")"; break;
+      case "neg": expression = "-" + ref(a); break;
+      case "abs": case "floor": case "ceil": case "round": case "sqrt": case "sin": case "cos": case "tan": case "log": expression = "Math." + op + "(" + ref(a) + ")"; break;
+      case "lt": expression = ref(a) + "<" + ref(b); break; case "gt": expression = ref(a) + ">" + ref(b); break;
+      case "le": expression = ref(a) + "<=" + ref(b); break; case "ge": expression = ref(a) + ">=" + ref(b); break;
+      case "eq": case "boolEquals": expression = ref(a) + "===" + ref(b); break; case "ne": expression = ref(a) + "!==" + ref(b); break;
+      case "and": expression = ref(a) + "&&" + ref(b); break; case "or": expression = ref(a) + "||" + ref(b); break; case "not": expression = "!" + ref(a); break;
+      case "choose": expression = ref(a) + "?" + ref(b) + ":" + ref(c); break;
       default: throw new Error("spork step " + op);
     }
-    inv[i] = op !== "x" && (a < 0 || inv[a]) && (b < 0 || inv[b]) && (c < 0 || inv[c]) ? 1 : 0;
-    if (inv[i]) pre += "const v" + i + "=" + e + ";"; else body += "const v" + i + "=" + e + ";";
+    invariant[i] = op !== "input" && (a < 0 || invariant[a]) && (b < 0 || invariant[b]) && (c < 0 || invariant[c]) ? 1 : 0;
+    if (invariant[i]) beforeLoop += "const v" + i + "=" + expression + ";"; else loopBody += "const v" + i + "=" + expression + ";";
   }
-  const g = K.guards.length ? "if(!(" + K.guards.map(r).join("&&") + "))return false;" : "";
-  const st = K.outs.map((o, j) => "O" + j + "[i]=" + (K.kind === "b" ? r(o) + "?1:0" : r(o)) + ";").join("");
-  const f = new Function("NOISE", "n", "X", "C", "O", "const " + K.outs.map((o, j) => "O" + j + "=O[" + j + "]").join(",") + ";" + pre +
-    spkLoop(body + g + st) + "return true");
-  return (K.jsF = (n, X, C, O) => f(NOISE, n, X, C, O));
+  const checks = kernel.checks.length ? "if(!(" + kernel.checks.map(ref).join("&&") + "))return false;" : "";
+  const stores = kernel.outputs.map((o, j) => "outputs" + j + "[i]=" + (kernel.kind === "bools" ? ref(o) + "?1:0" : ref(o)) + ";").join("");
+  const compiled = new Function("noiseHash", "n", "inputs", "outsideValues", "outputs", "const " + kernel.outputs.map((o, j) => "outputs" + j + "=outputs[" + j + "]").join(",") + ";" + beforeLoop +
+    loopOverItems(loopBody + checks + stores) + "return true");
+  return (kernel.compiledFunction = (n, inputs, outsideValues, outputs) => compiled(noiseHash, n, inputs, outsideValues, outputs));
 }
 // ---- the kernel as WebAssembly SIMD: two runs per instruction, in f64x2, so every step is the same IEEE double step
 // JavaScript takes and the answers match bit for bit. noise is the same 32-bit hash, done in i32x4 lanes.
 // run(n, xp, cp, op, stride): inputs at xp (0 for range), outside numbers at cp, each output at op + j * stride.
-const WB = {
-  u: n => { const o = []; do { let b = n & 127; n >>>= 7; if (n) b |= 128; o.push(b); } while (n); return o; },
-  s: n => { const o = []; for (;;) { const b = n & 127; n >>= 7; if ((n === 0 && !(b & 64)) || (n === -1 && (b & 64))) { o.push(b); return o; } o.push(b | 128); } },
-  f64: v => Array.from(new Uint8Array(new Float64Array([v]).buffer)),
-  str: s => [...WB.u(s.length), ...Array.from(s, ch => ch.charCodeAt(0))],
-  sec: (id, body) => [id, ...WB.u(body.length), ...body],
+const wasmBinary = {
+  unsigned: n => { const o = []; do { let b = n & 127; n >>>= 7; if (n) b |= 128; o.push(b); } while (n); return o; },
+  signed: n => { const o = []; for (;;) { const b = n & 127; n >>= 7; if ((n === 0 && !(b & 64)) || (n === -1 && (b & 64))) { o.push(b); return o; } o.push(b | 128); } },
+  float64: v => Array.from(new Uint8Array(new Float64Array([v]).buffer)),
+  name: s => [...wasmBinary.unsigned(s.length), ...Array.from(s, ch => ch.charCodeAt(0))],
+  section: (id, body) => [id, ...wasmBinary.unsigned(body.length), ...body],
 };
-const V = op => [0xfd, ...WB.u(op)];   // a SIMD instruction
-const VOP = { add: 0xf0, sub: 0xf1, mul: 0xf2, div: 0xf3, min: 0xf4, max: 0xf5, abs: 0xec, neg: 0xed, sqrt: 0xef, floor: 0x75, ceil: 0x74,
-  eq: 0x47, ne: 0x48, lt: 0x49, gt: 0x4a, le: 0x4b, ge: 0x4c, not: 0x4d, and: 0x4e, or: 0x50, xor: 0x51, sel: 0x52, any: 0x53,
+const simd = op => [0xfd, ...wasmBinary.unsigned(op)];   // a SIMD instruction
+const SIMD_OPCODES = { add: 0xf0, sub: 0xf1, mul: 0xf2, div: 0xf3, min: 0xf4, max: 0xf5, abs: 0xec, neg: 0xed, sqrt: 0xef, floor: 0x75, ceil: 0x74,
+  eq: 0x47, ne: 0x48, lt: 0x49, gt: 0x4a, le: 0x4b, ge: 0x4c, not: 0x4d, and: 0x4e, or: 0x50, xor: 0x51, choose: 0x52, any: 0x53,
   ishru: 0xad, imul: 0xb5, splat: 0x14, isplat: 0x11, toU: 0xfd, fromU: 0xff, load: 0x00, store: 0x0b, konst: 0x0c };
-const vconst = bytes => [...V(VOP.konst), ...bytes];
-const f2 = (a, b) => vconst([...WB.f64(a), ...WB.f64(b === undefined ? a : b)]);
-const i4 = c => { const b = new Uint8Array(16), d = new DataView(b.buffer); for (let j = 0; j < 4; j++) d.setInt32(j * 4, c | 0, true); return vconst(Array.from(b)); };
-const SIGN = vconst([0, 0, 0, 0, 0, 0, 0, 0x80, 0, 0, 0, 0, 0, 0, 0, 0x80]);
-const ALL1 = vconst(new Array(16).fill(255));
-const ALL0 = vconst(new Array(16).fill(0));
+const v128Constant = bytes => [...simd(SIMD_OPCODES.konst), ...bytes];
+const f64x2Constant = (a, b) => v128Constant([...wasmBinary.float64(a), ...wasmBinary.float64(b === undefined ? a : b)]);
+const i32x4Constant = c => { const b = new Uint8Array(16), d = new DataView(b.buffer); for (let j = 0; j < 4; j++) d.setInt32(j * 4, c | 0, true); return v128Constant(Array.from(b)); };
+const SIGN_BITS = v128Constant([0, 0, 0, 0, 0, 0, 0, 0x80, 0, 0, 0, 0, 0, 0, 0, 0x80]);
+const ALL_ONES = v128Constant(new Array(16).fill(255));
+const ALL_ZEROS = v128Constant(new Array(16).fill(0));
 
-function spkWasmBytes(K) {
-  const N = K.nodes;
+function wasmKernelBytes(kernel) {
+  const nodes = kernel.nodes;
   // locals: 0 n, 1 xp, 2 cp, 3 op, 4 stride (params); 5 i; then one per output base; then v128s
-  const P_N = 0, P_X = 1, P_C = 2, P_O = 3, P_S = 4, L_I = 5, L_OB = 6, nOut = K.outs.length;
-  let nv = L_OB + nOut; const v128 = () => nv++;
-  const IV = v128(), XV = v128(), BAD = v128(), NV = v128(), T0 = v128(), T1 = v128(), T2 = v128(), T3 = v128(), T4 = v128();
-  const loc = new Int32Array(N.length).fill(-1), inv = new Uint8Array(N.length);
-  const get = l => [0x20, ...WB.u(l)], set = l => [0x21, ...WB.u(l)], tee = l => [0x22, ...WB.u(l)];
-  const push = i => { const [op, , , , v] = N[i]; if (op === "c") return f2(v); if (op === "cb") return v ? ALL1 : ALL0; if (op === "x") return get(XV); return get(loc[i]); };
+  const PARAM_COUNT = 0, PARAM_INPUTS = 1, PARAM_OUTSIDE = 2, PARAM_OUTPUTS = 3, PARAM_STRIDE = 4, LOCAL_INDEX = 5, LOCAL_OUTPUT_BASE = 6, outputCount = kernel.outputs.length;
+  let nextLocal = LOCAL_OUTPUT_BASE + outputCount; const newV128Local = () => nextLocal++;
+  const laneNumbers = newV128Local(), laneInputs = newV128Local(), failedLanes = newV128Local(), laneCount = newV128Local(), temp0 = newV128Local(), temp1 = newV128Local(), temp2 = newV128Local(), temp3 = newV128Local(), temp4 = newV128Local();
+  const localOf = new Int32Array(nodes.length).fill(-1), invariant = new Uint8Array(nodes.length);
+  const localGet = l => [0x20, ...wasmBinary.unsigned(l)], localSet = l => [0x21, ...wasmBinary.unsigned(l)], localTee = l => [0x22, ...wasmBinary.unsigned(l)];
+  const pushValue = i => { const [op, , , , v] = nodes[i]; if (op === "constant") return f64x2Constant(v); if (op === "constantBool") return v ? ALL_ONES : ALL_ZEROS; if (op === "input") return localGet(laneInputs); return localGet(localOf[i]); };
   // floor(v) mod 2^32, as the bits of a 32-bit integer (JavaScript's ToInt32), in i32 lanes 0 and 1
-  const u32 = code => [...code, ...tee(T4), ...get(T4), ...f2(1 / 4294967296), ...V(VOP.mul), ...V(VOP.floor), ...f2(4294967296), ...V(VOP.mul), ...V(VOP.sub), ...V(VOP.toU)];
-  const xs16 = s => [...tee(T4), ...get(T4), 0x41, ...WB.s(s), ...V(VOP.ishru), ...V(VOP.xor)];   // h ^= h >>> s
-  const step = i => {
-    const [op, a, b, c, v] = N[i];
+  const wrapToU32 = code => [...code, ...localTee(temp4), ...localGet(temp4), ...f64x2Constant(1 / 4294967296), ...simd(SIMD_OPCODES.mul), ...simd(SIMD_OPCODES.floor), ...f64x2Constant(4294967296), ...simd(SIMD_OPCODES.mul), ...simd(SIMD_OPCODES.sub), ...simd(SIMD_OPCODES.toU)];
+  const xorShiftRight = s => [...localTee(temp4), ...localGet(temp4), 0x41, ...wasmBinary.signed(s), ...simd(SIMD_OPCODES.ishru), ...simd(SIMD_OPCODES.xor)];   // h ^= h >>> s
+  const stepCode = i => {
+    const [op, a, b, c, v] = nodes[i];
     switch (op) {
-      case "c": case "cb": case "x": return [];
-      case "k": return [0x20, ...WB.u(P_C), 0x2b, 3, ...WB.u(v * 8), ...V(VOP.splat)];
+      case "constant": case "constantBool": case "input": return [];
+      case "outside": return [0x20, ...wasmBinary.unsigned(PARAM_OUTSIDE), 0x2b, 3, ...wasmBinary.unsigned(v * 8), ...simd(SIMD_OPCODES.splat)];
       case "add": case "sub": case "mul": case "div": case "min": case "max": case "lt": case "gt": case "le": case "ge": case "eq": case "ne": case "and": case "or":
-        return [...push(a), ...push(b), ...V(VOP[op])];
-      case "neg": case "abs": case "sqrt": case "floor": case "ceil": case "not": return [...push(a), ...V(VOP[op])];
-      case "beq": return [...push(a), ...push(b), ...V(VOP.xor), ...V(VOP.not)];
-      case "sel": return [...push(b), ...push(c), ...push(a), ...V(VOP.sel)];
+        return [...pushValue(a), ...pushValue(b), ...simd(SIMD_OPCODES[op])];
+      case "neg": case "abs": case "sqrt": case "floor": case "ceil": case "not": return [...pushValue(a), ...simd(SIMD_OPCODES[op])];
+      case "boolEquals": return [...pushValue(a), ...pushValue(b), ...simd(SIMD_OPCODES.xor), ...simd(SIMD_OPCODES.not)];
+      case "choose": return [...pushValue(b), ...pushValue(c), ...pushValue(a), ...simd(SIMD_OPCODES.choose)];
       case "round":
         // Math.round: floor, plus one when the rest is at least a half; a zero keeps the sign of its input
-        return [...push(a), ...V(VOP.floor), ...set(T0),
-          ...get(T0), ...f2(1), ...V(VOP.add), ...get(T0), ...push(a), ...get(T0), ...V(VOP.sub), ...f2(0.5), ...V(VOP.ge), ...V(VOP.sel), ...set(T1),
-          ...push(a), ...SIGN, ...V(VOP.and), ...get(T1), ...get(T1), ...f2(0), ...V(VOP.eq), ...V(VOP.sel)];
+        return [...pushValue(a), ...simd(SIMD_OPCODES.floor), ...localSet(temp0),
+          ...localGet(temp0), ...f64x2Constant(1), ...simd(SIMD_OPCODES.add), ...localGet(temp0), ...pushValue(a), ...localGet(temp0), ...simd(SIMD_OPCODES.sub), ...f64x2Constant(0.5), ...simd(SIMD_OPCODES.ge), ...simd(SIMD_OPCODES.choose), ...localSet(temp1),
+          ...pushValue(a), ...SIGN_BITS, ...simd(SIMD_OPCODES.and), ...localGet(temp1), ...localGet(temp1), ...f64x2Constant(0), ...simd(SIMD_OPCODES.eq), ...simd(SIMD_OPCODES.choose)];
       case "noise":
-        return [...push(a), ...set(T0), ...push(b), ...set(T1), ...get(T0), ...V(VOP.floor), ...set(T2), ...get(T1), ...V(VOP.floor), ...set(T3),
-          ...u32(get(T2)), ...i4(0x9e3779b9), ...V(VOP.xor), ...i4(0x85ebca6b), ...V(VOP.imul),
-          ...u32([...get(T3), ...f2(0x632be5ab), ...V(VOP.add)]), ...i4(0xc2b2ae35), ...V(VOP.imul), ...V(VOP.xor),
+        return [...pushValue(a), ...localSet(temp0), ...pushValue(b), ...localSet(temp1), ...localGet(temp0), ...simd(SIMD_OPCODES.floor), ...localSet(temp2), ...localGet(temp1), ...simd(SIMD_OPCODES.floor), ...localSet(temp3),
+          ...wrapToU32(localGet(temp2)), ...i32x4Constant(0x9e3779b9), ...simd(SIMD_OPCODES.xor), ...i32x4Constant(0x85ebca6b), ...simd(SIMD_OPCODES.imul),
+          ...wrapToU32([...localGet(temp3), ...f64x2Constant(0x632be5ab), ...simd(SIMD_OPCODES.add)]), ...i32x4Constant(0xc2b2ae35), ...simd(SIMD_OPCODES.imul), ...simd(SIMD_OPCODES.xor),
           // the fraction times 2^32 can round up to 2^32 itself (x = -1e-300), which JavaScript wraps to 0, so it is wrapped here too
-          ...u32([...get(T0), ...get(T2), ...V(VOP.sub), ...f2(4294967296), ...V(VOP.mul)]), ...i4(0x27d4eb2f), ...V(VOP.imul), ...V(VOP.xor),
-          ...u32([...get(T1), ...get(T3), ...V(VOP.sub), ...f2(4294967296), ...V(VOP.mul)]), ...i4(0x165667b1), ...V(VOP.imul), ...V(VOP.xor),
-          ...xs16(16), ...i4(0x7feb352d), ...V(VOP.imul), ...xs16(15), ...i4(0x846ca68b), ...V(VOP.imul), ...xs16(16),
-          ...V(VOP.fromU), ...f2(1 / 4294967296), ...V(VOP.mul)];
+          ...wrapToU32([...localGet(temp0), ...localGet(temp2), ...simd(SIMD_OPCODES.sub), ...f64x2Constant(4294967296), ...simd(SIMD_OPCODES.mul)]), ...i32x4Constant(0x27d4eb2f), ...simd(SIMD_OPCODES.imul), ...simd(SIMD_OPCODES.xor),
+          ...wrapToU32([...localGet(temp1), ...localGet(temp3), ...simd(SIMD_OPCODES.sub), ...f64x2Constant(4294967296), ...simd(SIMD_OPCODES.mul)]), ...i32x4Constant(0x165667b1), ...simd(SIMD_OPCODES.imul), ...simd(SIMD_OPCODES.xor),
+          ...xorShiftRight(16), ...i32x4Constant(0x7feb352d), ...simd(SIMD_OPCODES.imul), ...xorShiftRight(15), ...i32x4Constant(0x846ca68b), ...simd(SIMD_OPCODES.imul), ...xorShiftRight(16),
+          ...simd(SIMD_OPCODES.fromU), ...f64x2Constant(1 / 4294967296), ...simd(SIMD_OPCODES.mul)];
     }
     throw new Error("no SIMD step for " + op);
   };
-  for (let i = 0; i < N.length; i++) {
-    const [op, a, b, c] = N[i];
-    inv[i] = op !== "x" && (a < 0 || inv[a]) && (b < 0 || inv[b]) && (c < 0 || inv[c]) ? 1 : 0;
-    if (op !== "c" && op !== "cb" && op !== "x") loc[i] = v128();
+  for (let i = 0; i < nodes.length; i++) {
+    const [op, a, b, c] = nodes[i];
+    invariant[i] = op !== "input" && (a < 0 || invariant[a]) && (b < 0 || invariant[b]) && (c < 0 || invariant[c]) ? 1 : 0;
+    if (op !== "constant" && op !== "constantBool" && op !== "input") localOf[i] = newV128Local();
   }
   const code = [];
   // before the loop: output bases, the lane numbers [0, 1], n in both lanes, and every step that doesn't depend on the input
-  K.outs.forEach((o, j) => code.push(...get(P_O), ...get(P_S), 0x41, ...WB.s(j), 0x6c, 0x6a, ...set(L_OB + j)));
-  code.push(...f2(0, 1), ...set(IV), ...get(P_N), 0xb7, ...V(VOP.splat), ...set(NV), ...ALL0, ...set(BAD));
-  for (let i = 0; i < N.length; i++) if (inv[i] && loc[i] >= 0) code.push(...step(i), ...set(loc[i]));
-  code.push(0x02, 0x40, 0x03, 0x40, ...get(L_I), ...get(P_N), 0x4e, 0x0d, 1);
+  kernel.outputs.forEach((o, j) => code.push(...localGet(PARAM_OUTPUTS), ...localGet(PARAM_STRIDE), 0x41, ...wasmBinary.signed(j), 0x6c, 0x6a, ...localSet(LOCAL_OUTPUT_BASE + j)));
+  code.push(...f64x2Constant(0, 1), ...localSet(laneNumbers), ...localGet(PARAM_COUNT), 0xb7, ...simd(SIMD_OPCODES.splat), ...localSet(laneCount), ...ALL_ZEROS, ...localSet(failedLanes));
+  for (let i = 0; i < nodes.length; i++) if (invariant[i] && localOf[i] >= 0) code.push(...stepCode(i), ...localSet(localOf[i]));
+  code.push(0x02, 0x40, 0x03, 0x40, ...localGet(LOCAL_INDEX), ...localGet(PARAM_COUNT), 0x4e, 0x0d, 1);
   // this pair's input: from memory, or the range's own numbers
-  code.push(...get(P_X), 0x04, 0x40, ...get(P_X), ...get(L_I), 0x41, 3, 0x74, 0x6a, ...V(VOP.load), 4, 0, ...set(XV),
-    0x05, ...get(IV), ...f2(1), ...V(VOP.add), ...set(XV), 0x0b);
-  for (let i = 0; i < N.length; i++) if (!inv[i] && loc[i] >= 0) code.push(...step(i), ...set(loc[i]));
+  code.push(...localGet(PARAM_INPUTS), 0x04, 0x40, ...localGet(PARAM_INPUTS), ...localGet(LOCAL_INDEX), 0x41, 3, 0x74, 0x6a, ...simd(SIMD_OPCODES.load), 4, 0, ...localSet(laneInputs),
+    0x05, ...localGet(laneNumbers), ...f64x2Constant(1), ...simd(SIMD_OPCODES.add), ...localSet(laneInputs), 0x0b);
+  for (let i = 0; i < nodes.length; i++) if (!invariant[i] && localOf[i] >= 0) code.push(...stepCode(i), ...localSet(localOf[i]));
   // a check that fails in a real lane (not the spare one past n) means the ordinary way
-  for (const g of K.guards) code.push(...get(BAD), ...push(g), ...V(VOP.not), ...get(IV), ...get(NV), ...V(VOP.lt), ...V(VOP.and), ...V(VOP.or), ...set(BAD));
-  K.outs.forEach((o, j) => {
-    code.push(...get(L_OB + j), ...get(L_I), 0x41, 3, 0x74, 0x6a);
-    if (K.kind === "b") code.push(...f2(1), ...f2(0), ...push(o), ...V(VOP.sel)); else code.push(...push(o));
-    code.push(...V(VOP.store), 4, 0);
+  for (const g of kernel.checks) code.push(...localGet(failedLanes), ...pushValue(g), ...simd(SIMD_OPCODES.not), ...localGet(laneNumbers), ...localGet(laneCount), ...simd(SIMD_OPCODES.lt), ...simd(SIMD_OPCODES.and), ...simd(SIMD_OPCODES.or), ...localSet(failedLanes));
+  kernel.outputs.forEach((o, j) => {
+    code.push(...localGet(LOCAL_OUTPUT_BASE + j), ...localGet(LOCAL_INDEX), 0x41, 3, 0x74, 0x6a);
+    if (kernel.kind === "bools") code.push(...f64x2Constant(1), ...f64x2Constant(0), ...pushValue(o), ...simd(SIMD_OPCODES.choose)); else code.push(...pushValue(o));
+    code.push(...simd(SIMD_OPCODES.store), 4, 0);
   });
-  code.push(...get(IV), ...f2(2), ...V(VOP.add), ...set(IV), ...get(L_I), 0x41, 2, 0x6a, ...set(L_I), 0x0c, 0, 0x0b, 0x0b);
-  code.push(...get(BAD), ...V(VOP.any), 0x45, 0x0b);
-  const locals = [...WB.u(2), ...WB.u(1 + nOut), 0x7f, ...WB.u(nv - L_I - 1 - nOut), 0x7b];
+  code.push(...localGet(laneNumbers), ...f64x2Constant(2), ...simd(SIMD_OPCODES.add), ...localSet(laneNumbers), ...localGet(LOCAL_INDEX), 0x41, 2, 0x6a, ...localSet(LOCAL_INDEX), 0x0c, 0, 0x0b, 0x0b);
+  code.push(...localGet(failedLanes), ...simd(SIMD_OPCODES.any), 0x45, 0x0b);
+  const locals = [...wasmBinary.unsigned(2), ...wasmBinary.unsigned(1 + outputCount), 0x7f, ...wasmBinary.unsigned(nextLocal - LOCAL_INDEX - 1 - outputCount), 0x7b];
   const body = [...locals, ...code];
   return new Uint8Array([0x00, 0x61, 0x73, 0x6d, 1, 0, 0, 0,
-    ...WB.sec(1, [1, 0x60, 5, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 1, 0x7f]),
-    ...WB.sec(2, [1, ...WB.str("m"), ...WB.str("mem"), 0x02, 0x00, 1]),
-    ...WB.sec(3, [1, 0]),
-    ...WB.sec(7, [1, ...WB.str("run"), 0x00, 0]),
-    ...WB.sec(10, [1, ...WB.u(body.length), ...body])]);
+    ...wasmBinary.section(1, [1, 0x60, 5, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 1, 0x7f]),
+    ...wasmBinary.section(2, [1, ...wasmBinary.name("m"), ...wasmBinary.name("mem"), 0x02, 0x00, 1]),
+    ...wasmBinary.section(3, [1, 0]),
+    ...wasmBinary.section(7, [1, ...wasmBinary.name("run"), 0x00, 0]),
+    ...wasmBinary.section(10, [1, ...wasmBinary.unsigned(body.length), ...body])]);
 }
 // the WebAssembly way, if this machine has SIMD: one memory, grown as needed; each kernel is made once
-function wasmSpork() {
+function makeWasmRunner() {
   if (typeof WebAssembly === "undefined") return null;
-  try { if (!WebAssembly.validate(spkWasmBytes({ nodes: [["x", -1, -1, -1], ["sqrt", 0, -1, -1]], outs: [1], guards: [], kind: "n" }))) return null; } catch (e) { return null; }
-  const mem = new WebAssembly.Memory({ initial: 1 }), made = new WeakMap();
-  return (K, n, X, C) => {
-    let inst = made.get(K);
-    if (inst === undefined) {
-      try { inst = new WebAssembly.Instance(new WebAssembly.Module(spkWasmBytes(K)), { m: { mem } }); } catch (e) { inst = null; }
-      made.set(K, inst);
+  try { if (!WebAssembly.validate(wasmKernelBytes({ nodes: [["input", -1, -1, -1], ["sqrt", 0, -1, -1]], outputs: [1], checks: [], kind: "numbers" }))) return null; } catch (e) { return null; }
+  const memory = new WebAssembly.Memory({ initial: 1 }), instances = new WeakMap();
+  return (kernel, n, inputs, outsideValues) => {
+    let instance = instances.get(kernel);
+    if (instance === undefined) {
+      try { instance = new WebAssembly.Instance(new WebAssembly.Module(wasmKernelBytes(kernel)), { m: { mem: memory } }); } catch (e) { instance = null; }
+      instances.set(kernel, instance);
     }
-    if (!inst) return null;
-    const n2 = n + (n & 1), stride = n2 * 8, cp = 16, xp = cp + ((C.length * 8 + 15) & ~15), op = xp + (X ? stride + 16 : 0);
-    const need = op + K.outs.length * stride + 64, have = mem.buffer.byteLength;
-    if (need > have) mem.grow(Math.ceil((need - have) / 65536));
-    new Float64Array(mem.buffer, cp, C.length).set(C);
-    if (X) { const xv = new Float64Array(mem.buffer, xp, n2); xv.set(X); if (n2 > n) xv[n] = 0; }
-    if (!inst.exports.run(n, X ? xp : 0, cp, op, stride)) return null;
-    return K.outs.map((o, j) => new Float64Array(mem.buffer, op + j * stride, n).slice());
+    if (!instance) return null;
+    const evenCount = n + (n & 1), stride = evenCount * 8, outsideAt = 16, inputsAt = outsideAt + ((outsideValues.length * 8 + 15) & ~15), outputsAt = inputsAt + (inputs ? stride + 16 : 0);
+    const bytesNeeded = outputsAt + kernel.outputs.length * stride + 64, bytesThere = memory.buffer.byteLength;
+    if (bytesNeeded > bytesThere) memory.grow(Math.ceil((bytesNeeded - bytesThere) / 65536));
+    new Float64Array(memory.buffer, outsideAt, outsideValues.length).set(outsideValues);
+    if (inputs) { const inputView = new Float64Array(memory.buffer, inputsAt, evenCount); inputView.set(inputs); if (evenCount > n) inputView[n] = 0; }
+    if (!instance.exports.run(n, inputs ? inputsAt : 0, outsideAt, outputsAt, stride)) return null;
+    return kernel.outputs.map((o, j) => new Float64Array(memory.buffer, outputsAt + j * stride, n).slice());
   };
 }
 // numbers in the same order as a typed array's own sort (-0 before 0, NaN last), by radix: four passes of 16 bits
-function sortF64(src) {
-  const n = src.length;
-  if (n < 512) return Float64Array.from(src).sort();
-  let m = 0, nan = 0; const a = new Float64Array(n);
-  for (let i = 0; i < n; i++) { const v = src[i]; if (v !== v) nan++; else a[m++] = v; }
-  let A = new Uint32Array(a.buffer, 0, m * 2), B = new Uint32Array(m * 2);
+function radixSortNumbers(numbers) {
+  const length = numbers.length;
+  if (length < 512) return Float64Array.from(numbers).sort();
+  let kept = 0, notANumberCount = 0; const copy = new Float64Array(length);
+  for (let i = 0; i < length; i++) { const v = numbers[i]; if (v !== v) notANumberCount++; else copy[kept++] = v; }
+  let bits = new Uint32Array(copy.buffer, 0, kept * 2), spare = new Uint32Array(kept * 2);
   // the bits of a double, turned so that unsigned order is number order
-  for (let i = 0; i < m; i++) { const hi = A[2 * i + 1]; if (hi & 0x80000000) { A[2 * i + 1] = ~hi; A[2 * i] = ~A[2 * i]; } else A[2 * i + 1] = hi | 0x80000000; }
-  const count = new Uint32Array(65536);
-  for (let d = 0; d < 4; d++) {
-    const w = d >> 1, sh = (d & 1) * 16;
-    count.fill(0);
-    for (let i = 0; i < m; i++) count[(A[2 * i + w] >>> sh) & 0xffff]++;
-    let sum = 0; for (let k = 0; k < 65536; k++) { const c = count[k]; count[k] = sum; sum += c; }
-    for (let i = 0; i < m; i++) { const j = count[(A[2 * i + w] >>> sh) & 0xffff]++; B[2 * j] = A[2 * i]; B[2 * j + 1] = A[2 * i + 1]; }
-    const t = A; A = B; B = t;
+  for (let i = 0; i < kept; i++) { const high = bits[2 * i + 1]; if (high & 0x80000000) { bits[2 * i + 1] = ~high; bits[2 * i] = ~bits[2 * i]; } else bits[2 * i + 1] = high | 0x80000000; }
+  const buckets = new Uint32Array(65536);
+  for (let pass = 0; pass < 4; pass++) {
+    const word = pass >> 1, shift = (pass & 1) * 16;
+    buckets.fill(0);
+    for (let i = 0; i < kept; i++) buckets[(bits[2 * i + word] >>> shift) & 0xffff]++;
+    let sum = 0; for (let k = 0; k < 65536; k++) { const c = buckets[k]; buckets[k] = sum; sum += c; }
+    for (let i = 0; i < kept; i++) { const j = buckets[(bits[2 * i + word] >>> shift) & 0xffff]++; spare[2 * j] = bits[2 * i]; spare[2 * j + 1] = bits[2 * i + 1]; }
+    const swap = bits; bits = spare; spare = swap;
   }
-  for (let i = 0; i < m; i++) { const hi = A[2 * i + 1]; if (hi & 0x80000000) A[2 * i + 1] = hi & 0x7fffffff; else { A[2 * i + 1] = ~hi; A[2 * i] = ~A[2 * i]; } }
-  const out = new Float64Array(n); out.set(new Float64Array(A.buffer, A.byteOffset, m)); out.fill(NaN, m);
-  return out;
+  for (let i = 0; i < kept; i++) { const high = bits[2 * i + 1]; if (high & 0x80000000) bits[2 * i + 1] = high & 0x7fffffff; else { bits[2 * i + 1] = ~high; bits[2 * i] = ~bits[2 * i]; } }
+  const sorted = new Float64Array(length); sorted.set(new Float64Array(bits.buffer, bits.byteOffset, kept)); sorted.fill(NaN, kept);
+  return sorted;
 }
 
 
 // ===================================================================== plugging into the compiler
 // a cell that spork is given, by name or written in place: worked out now into one kernel (decision 91)
-function sporkCell(gen, c) {
-  if (!(c.sporkArg || (c.bindName && gen.sporkNames && gen.sporkNames.has(c.bindName)))) return null;
-  const P = new Spk(gen);
-  let code = null;
-  try { code = P.build(c); } catch (e) { if (e !== SPKFAIL) throw e; }
-  const ok = code ? true : P.why || "it can't be worked out ahead";
-  c.sporkWhy = ok;
-  if (c.bindName) (gen.sporkWhy || (gen.sporkWhy = new Map())).set(c.bindName, ok);
-  if (!code) return null;
+function sporkKernelForCell(gen, cell) {
+  if (!(cell.sporkArg || (cell.bindName && gen.sporkNames && gen.sporkNames.has(cell.bindName)))) return null;
+  const workAhead = new WorkAhead(gen);
+  let kernelCode = null;
+  try { kernelCode = workAhead.buildSporkKernel(cell); } catch (e) { if (e !== GIVE_UP) throw e; }
+  const outcome = kernelCode ? true : workAhead.reason || "it can't be worked out ahead";
+  cell.sporkWhy = outcome;
+  if (cell.bindName) (gen.sporkWhy || (gen.sporkWhy = new Map())).set(cell.bindName, outcome);
+  if (!kernelCode) return null;
   // the loops inside it were unrolled when it was worked out, so their speed notes don't apply
-  const span = lineSpan(c); gen.speed = gen.speed.filter(x => x.line < span[0] || x.line > span[1]);
-  const name = "SK" + gen.consts.length;
-  gen.consts.push("const " + name + "=" + code + ";");
-  return "{s:{k:" + name + ",caps:()=>[" + P.caps.join(",") + "]}}";
+  const lines = lineSpan(cell); gen.speedNotes = gen.speedNotes.filter(x => x.line < lines[0] || x.line > lines[1]);
+  const name = "SK" + gen.constants.length;
+  gen.constants.push("const " + name + "=" + kernelCode + ";");
+  return "{spork:{kernel:" + name + ",outsideReads:()=>[" + workAhead.outsideReads.join(",") + "]}}";
 }
 // spork's speed note: given a name or a cell written in place
-function sporkNote(gen, T, i) {
-  const pw = T[i - 1], t = T[i];
-  if (!pw || pw.k !== "word" || pw.v !== "spork") return;
-  const r = t.k === "word" && gen.sporkWhy ? gen.sporkWhy.get(t.v) : t.k === "cell" ? t.sporkWhy : undefined;
-  if (r !== undefined) gen.speed.push({ line: pw.line || 0, word: "spork", fast: r === true, why: r === true ? "" : r });
+function sporkNote(gen, terms, i) {
+  const previous = terms[i - 1], term = terms[i];
+  if (!previous || previous.type !== "word" || previous.value !== "spork") return;
+  const result = term.type === "word" && gen.sporkWhy ? gen.sporkWhy.get(term.value) : term.type === "cell" ? term.sporkWhy : undefined;
+  if (result !== undefined) gen.speedNotes.push({ line: previous.line || 0, word: "spork", fast: result === true, why: result === true ? "" : result });
 }
 function prescan(gen, ast) { gen.sporkNames = sporkTargets(ast); }
-// the fused loop, tried first; the steps as written are the way back when it can't run (NOFUSE)
-function fuseWrap(gen, seg, ordinary) {
-  const P = new Spk(gen), K = {}, why = {};
-  for (const item of ["num", "row"]) {
-    try { K[item] = P.buildPipe(seg.stages, item); } catch (e) { if (e !== SPKFAIL) throw e; K[item] = null; why[item] = P.why; }
+// the fused loop, tried first; the steps as written are the way back when it can't run (NOT_FUSED)
+function wrapFusedLoop(gen, run, ordinary) {
+  const workAhead = new WorkAhead(gen), kernel = {}, reasons = {};
+  for (const item of ["numbers", "rows"]) {
+    try { kernel[item] = workAhead.buildFusedLoop(run.stages, item); } catch (e) { if (e !== GIVE_UP) throw e; kernel[item] = null; reasons[item] = workAhead.reason; }
   }
-  const words = seg.stages.map(st => st.w), line = seg.stages[0].line || 0;
-  if (!K.num && !K.row) {
-    gen.speed.push({ line, word: words.join(" "), fast: false, why: why.row || why.num || "it can't be worked out ahead" });
-    return "(" + seg.ta + "=" + seg.src + "," + ordinary + ")";
+  const words = run.stages.map(stage => stage.word), line = run.stages[0].line || 0;
+  if (!kernel.numbers && !kernel.rows) {
+    gen.speedNotes.push({ line, word: words.join(" "), fast: false, why: reasons.rows || reasons.numbers || "it can't be worked out ahead" });
+    return "(" + run.temp + "=" + run.source + "," + ordinary + ")";
   }
-  const name = "FK" + gen.consts.length, tf = gen.tmp();
-  gen.consts.push("const " + name + "={num:" + (K.num || "null") + ",row:" + (K.row || "null") + "};");
-  gen.speed.push({ line, word: words.join(" "), fast: true, why: "" });
-  return "((" + tf + "=FUSE((" + seg.ta + "=" + seg.src + ")," + name + "," + (P.caps.length ? "()=>[" + P.caps.join(",") + "]" : "null") + "))!==NOFUSE?" + tf + ":" + ordinary + ")";
+  const name = "FK" + gen.constants.length, resultTemp = gen.newTemp();
+  gen.constants.push("const " + name + "={numbers:" + (kernel.numbers || "null") + ",rows:" + (kernel.rows || "null") + "};");
+  gen.speedNotes.push({ line, word: words.join(" "), fast: true, why: "" });
+  return "((" + resultTemp + "=runFusedLoop((" + run.temp + "=" + run.source + ")," + name + "," + (workAhead.outsideReads.length ? "()=>[" + workAhead.outsideReads.join(",") + "]" : "null") + "))!==NOT_FUSED?" + resultTemp + ":" + ordinary + ")";
 }
 
-S.install({
-  cell: sporkCell, note: sporkNote, prescan, fuse: { find: fuseSegment, wrap: fuseWrap },
-  spork, sortNumbers: sortF64, runtime: { FUSE, NOFUSE },
+core.install({
+  cell: sporkKernelForCell, note: sporkNote, prescan, fuse: { find: findLoopRun, wrap: wrapFusedLoop },
+  spork, sortNumbers: radixSortNumbers, runtime: { runFusedLoop, NOT_FUSED },
 });
 // spork's API: how the last one ran, and the ways it can run (decision 91); the GPU plugs in here (decision 93)
-Object.defineProperty(S, "sporkInfo", { get: () => SPORK.info, configurable: true });
-S.sporkTally = reset => { const t = SPORK.tally; if (reset) SPORK.tally = []; return t; };
-S.sporkWays = w => { if (SPORK.wasm === undefined) SPORK.wasm = wasmSpork(); Object.assign(SPORK, w); return SPORK; };
-S.kernels = { Spk, spkJS, spkWasmBytes, fuseJS };
-if (typeof module !== "undefined") module.exports = S.kernels;
+Object.defineProperty(core, "sporkInfo", { get: () => sporkState.info, configurable: true });
+core.sporkTally = reset => { const t = sporkState.tally; if (reset) sporkState.tally = []; return t; };
+core.sporkWays = w => { if (sporkState.wasm === undefined) sporkState.wasm = makeWasmRunner(); Object.assign(sporkState, w); return sporkState; };
+core.kernels = { WorkAhead, sporkKernelFunction, wasmKernelBytes, fusedLoopFunction };
+if (typeof module !== "undefined") module.exports = core.kernels;
 })(typeof window !== "undefined" ? window : globalThis);

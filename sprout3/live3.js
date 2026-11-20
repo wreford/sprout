@@ -3,10 +3,10 @@
 (function (root) {
 "use strict";
 const S = root.Sprout3 || require("./sprout3.js");
-const { VCell, Native, isCell, eq, UNSET } = S;
+const { ValueCell, Native, isCell, equal, UNSET } = S;
 
-const ev = fields => S.VFM([], new Map(Object.entries(fields)));
-const NOKEYS = new VCell([]);
+const ev = fields => S.valueCellOf([], new Map(Object.entries(fields)));
+const NOKEYS = new ValueCell([]);
 const DRAW = { clear: 1, rect: 5, circle: 4, line: 5, text: 5 };
 const SOUND = { beep: 2, shake: 1 };
 
@@ -35,12 +35,12 @@ function makeGame(src, opts) {
   const history = [];
   function wire(f) {
     const upd = f.field("update"); if (upd === UNSET) throw new Error("the game needs an update field");
-    handler = S.G.frame.run(upd); // frame update: events in, states out (decision 34)
+    handler = S.globals.frame.run(upd); // frame update: events in, states out (decision 34)
     file = f;
   }
   wire(S.load(src, { host }));
   state = file.field("start"); if (state === UNSET) throw new Error("the game needs a start field");
-  const send = e => { state = handler.run(new VCell([state, e])); };
+  const send = e => { state = handler.run(new ValueCell([state, e])); };
 
   // one tick: update runs with effects queued; they are carried out once it returns (unless replaying)
   function tick(dt, held, replayRnd) {
@@ -56,7 +56,7 @@ function makeGame(src, opts) {
   const api = {
     get state() { return state; }, history,
     // which collect, keep and each bodies can run over columns, from the compiler (decision 86)
-    get speed() { return file.speed || []; },
+    get speedNotes() { return file.speedNotes || []; },
     down(x, y) { send(ev({ kind: "down", x, y })); },
     move(x, y) { send(ev({ kind: "move", x, y })); },
     up() { send(ev({ kind: "up" })); },
@@ -70,8 +70,8 @@ function makeGame(src, opts) {
     swap(newSrc) {
       const nf = S.load(newSrc, { host }), oldStart = file.field("start"), newStart = nf.field("start");
       const out = S.fieldsOf(state);
-      for (const [k, v] of S.fieldsOf(newStart)) { const was = oldStart.field(k); if (was === UNSET || !eq(was, v)) out.set(k, v); }
-      wire(nf); state = S.VFM([], out);
+      for (const [k, v] of S.fieldsOf(newStart)) { const was = oldStart.field(k); if (was === UNSET || !equal(was, v)) out.set(k, v); }
+      wire(nf); state = S.valueCellOf([], out);
     },
   };
   return api;

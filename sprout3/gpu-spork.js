@@ -11,16 +11,16 @@ const WAIT = { spork: "wait" };
 // a 32-bit float constant, written as its exact bits (WGSL has no literal for infinity or NaN)
 const f32bits = v => { const b = new Uint32Array(new Float32Array([v]).buffer)[0]; return "bitcast<f32>(0x" + b.toString(16) + "u)"; };
 
-function wgsl(K) {
-  const N = K.nodes, r = i => "v" + i, types = new Array(N.length);
+function wgsl(kernel) {
+  const nodes = kernel.nodes, r = i => "v" + i, types = new Array(nodes.length);
   let body = "";
-  for (let i = 0; i < N.length; i++) {
-    const [op, a, b, c, v] = N[i]; let e, ty = "f32";
+  for (let i = 0; i < nodes.length; i++) {
+    const [op, a, b, c, v] = nodes[i]; let e, ty = "f32";
     switch (op) {
-      case "c": e = f32bits(v); break;
-      case "cb": e = String(v); ty = "bool"; break;
-      case "x": e = "x"; break;
-      case "k": e = "C[" + v + "]"; break;
+      case "constant": e = f32bits(v); break;
+      case "constantBool": e = String(v); ty = "bool"; break;
+      case "input": e = "item"; break;
+      case "outside": e = "outside[" + v + "]"; break;
       case "add": e = r(a) + " + " + r(b); break; case "sub": e = r(a) + " - " + r(b); break;
       case "mul": e = r(a) + " * " + r(b); break; case "div": e = r(a) + " / " + r(b); break;
       case "min": case "max": e = op + "(" + r(a) + ", " + r(b) + ")"; break;
@@ -28,25 +28,25 @@ function wgsl(K) {
       case "neg": e = "-" + r(a); break;
       case "abs": case "floor": case "ceil": case "sqrt": e = op + "(" + r(a) + ")"; break;
       case "round": e = "floor(" + r(a) + " + 0.5)"; break;
-      case "lt": case "gt": case "le": case "ge": case "eq": case "ne": case "beq":
-        e = r(a) + ({ lt: " < ", gt: " > ", le: " <= ", ge: " >= ", eq: " == ", ne: " != ", beq: " == " })[op] + r(b); ty = "bool"; break;
+      case "lt": case "gt": case "le": case "ge": case "eq": case "ne": case "boolEquals":
+        e = r(a) + ({ lt: " < ", gt: " > ", le: " <= ", ge: " >= ", eq: " == ", ne: " != ", boolEquals: " == " })[op] + r(b); ty = "bool"; break;
       case "and": e = r(a) + " && " + r(b); ty = "bool"; break;
       case "or": e = r(a) + " || " + r(b); ty = "bool"; break;
       case "not": e = "!" + r(a); ty = "bool"; break;
-      case "sel": e = "select(" + r(c) + ", " + r(b) + ", " + r(a) + ")"; ty = types[b]; break;
+      case "choose": e = "select(" + r(c) + ", " + r(b) + ", " + r(a) + ")"; ty = types[b]; break;
       default: throw new Error("no GPU step for " + op);
     }
     types[i] = ty;
     body += "  let v" + i + ": " + ty + " = " + e + ";\n";
   }
-  const guards = K.guards.length ? "  if (!(" + K.guards.map(r).join(" && ") + ")) { atomicStore(&bad, 1u); }\n" : "";
-  const outs = K.outs.map((o, j) => "  O[" + (j ? j + "u * p.n + " : "") + "i] = " + (K.kind === "b" ? "select(0.0, 1.0, " + r(o) + ")" : r(o)) + ";\n").join("");
-  return `struct P { n: u32, hasX: u32, nx: u32, pad: u32 }
-@group(0) @binding(0) var<uniform> p: P;
-@group(0) @binding(1) var<storage, read> C: array<f32>;
-@group(0) @binding(2) var<storage, read> X: array<f32>;
-@group(0) @binding(3) var<storage, read_write> O: array<f32>;
-@group(0) @binding(4) var<storage, read_write> bad: atomic<u32>;
+  const guards = kernel.checks.length ? "  if (!(" + kernel.checks.map(r).join(" && ") + ")) { atomicStore(&failed, 1u); }\n" : "";
+  const outs = kernel.outputs.map((o, j) => "  outputs[" + (j ? j + "u * params.count + " : "") + "i] = " + (kernel.kind === "bools" ? "select(0.0, 1.0, " + r(o) + ")" : r(o)) + ";\n").join("");
+  return `struct Params { count: u32, hasInputs: u32, groupsAcross: u32, pad: u32 }
+@group(0) @binding(0) var<uniform> params: Params;
+@group(0) @binding(1) var<storage, read> outside: array<f32>;
+@group(0) @binding(2) var<storage, read> inputs: array<f32>;
+@group(0) @binding(3) var<storage, read_write> outputs: array<f32>;
+@group(0) @binding(4) var<storage, read_write> failed: atomic<u32>;
 // noise [x, y]: the same 32-bit hash as the CPU, on 32-bit inputs
 fn noise2(x: f32, y: f32) -> f32 {
   let fx = floor(x); let fy = floor(y);
@@ -57,10 +57,10 @@ fn noise2(x: f32, y: f32) -> f32 {
 }
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) g: vec3<u32>) {
-  let i = g.x + g.y * p.nx * 256u;
-  if (i >= p.n) { return; }
-  var x: f32 = f32(i + 1u);
-  if (p.hasX == 1u) { x = X[i]; }
+  let i = g.x + g.y * params.groupsAcross * 256u;
+  if (i >= params.count) { return; }
+  var item: f32 = f32(i + 1u);
+  if (params.hasInputs == 1u) { item = inputs[i]; }
 ${body}${guards}${outs}}
 `;
 }
@@ -81,60 +81,60 @@ async function makeGpuSpork(opts) {
     { binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } }] });
   const plLayout = device.createPipelineLayout({ bindGroupLayouts: [layout] });
   const pipes = new Map();
-  const pipeFor = K => {
-    const code = shader(K);
+  const pipelineFor = kernel => {
+    const code = shader(kernel);
     let p = pipes.get(code);
     if (!p) { p = device.createComputePipelineAsync({ layout: plLayout, compute: { module: device.createShaderModule({ code }), entryPoint: "main" } }); pipes.set(code, p); }
     return p;
   };
   const MAXN = 1 << 24;   // the input is a 32-bit float: whole numbers are exact up to 2^24
   // run a kernel on n inputs: Float64Array outputs, or null if a check failed
-  async function run(K, n, X, C) {
-    const pipe = await pipeFor(K), nOut = K.outs.length;
-    const buf = (size, usage) => device.createBuffer({ size: Math.max(16, (size + 3) & ~3), usage });
-    const S = GPUBufferUsage;
-    const ub = buf(16, S.UNIFORM | S.COPY_DST), cb = buf(C.length * 4, S.STORAGE | S.COPY_DST), xb = buf(X ? n * 4 : 4, S.STORAGE | S.COPY_DST);
-    const ob = buf(nOut * n * 4, S.STORAGE | S.COPY_SRC), bb = buf(4, S.STORAGE | S.COPY_SRC | S.COPY_DST);
-    const rb = buf(nOut * n * 4 + 16, S.MAP_READ | S.COPY_DST);
-    const groups = Math.ceil(n / 256), nx = Math.min(groups, 65535), ny = Math.ceil(groups / nx);
-    device.queue.writeBuffer(ub, 0, new Uint32Array([n, X ? 1 : 0, nx, 0]));
-    if (C.length) device.queue.writeBuffer(cb, 0, new Float32Array(C));
-    if (X) device.queue.writeBuffer(xb, 0, new Float32Array(X));
-    device.queue.writeBuffer(bb, 0, new Uint32Array([0]));
-    const bg = device.createBindGroup({ layout, entries: [ub, cb, xb, ob, bb].map((b, i) => ({ binding: i, resource: { buffer: b } })) });
-    const enc = device.createCommandEncoder(), pass = enc.beginComputePass();
-    pass.setPipeline(pipe); pass.setBindGroup(0, bg); pass.dispatchWorkgroups(nx, ny); pass.end();
-    const outBytes = nOut * n * 4, off = (outBytes + 15) & ~15;
-    enc.copyBufferToBuffer(ob, 0, rb, 0, outBytes);
-    enc.copyBufferToBuffer(bb, 0, rb, off, 4);
-    device.queue.submit([enc.finish()]);
-    await rb.mapAsync(GPUMapMode.READ);
-    const m = rb.getMappedRange(), f = new Float32Array(m, 0, nOut * n), failed = new Uint32Array(m, off, 1)[0] !== 0;
-    const O = failed ? null : K.outs.map((o, j) => Float64Array.from(f.subarray(j * n, (j + 1) * n)));
-    rb.unmap(); [ub, cb, xb, ob, bb, rb].forEach(b => b.destroy());
-    return O;
+  async function run(kernel, n, inputs, outside) {
+    const pipe = await pipelineFor(kernel), outputCount = kernel.outputs.length;
+    const makeBuffer = (size, usage) => device.createBuffer({ size: Math.max(16, (size + 3) & ~3), usage });
+    const USAGE = GPUBufferUsage;
+    const paramsBuffer = makeBuffer(16, USAGE.UNIFORM | USAGE.COPY_DST), outsideBuffer = makeBuffer(outside.length * 4, USAGE.STORAGE | USAGE.COPY_DST), inputBuffer = makeBuffer(inputs ? n * 4 : 4, USAGE.STORAGE | USAGE.COPY_DST);
+    const outputBuffer = makeBuffer(outputCount * n * 4, USAGE.STORAGE | USAGE.COPY_SRC), failedBuffer = makeBuffer(4, USAGE.STORAGE | USAGE.COPY_SRC | USAGE.COPY_DST);
+    const readBuffer = makeBuffer(outputCount * n * 4 + 16, USAGE.MAP_READ | USAGE.COPY_DST);
+    const groups = Math.ceil(n / 256), groupsAcross = Math.min(groups, 65535), groupsDown = Math.ceil(groups / groupsAcross);
+    device.queue.writeBuffer(paramsBuffer, 0, new Uint32Array([n, inputs ? 1 : 0, groupsAcross, 0]));
+    if (outside.length) device.queue.writeBuffer(outsideBuffer, 0, new Float32Array(outside));
+    if (inputs) device.queue.writeBuffer(inputBuffer, 0, new Float32Array(inputs));
+    device.queue.writeBuffer(failedBuffer, 0, new Uint32Array([0]));
+    const bindGroup = device.createBindGroup({ layout, entries: [paramsBuffer, outsideBuffer, inputBuffer, outputBuffer, failedBuffer].map((b, i) => ({ binding: i, resource: { buffer: b } })) });
+    const encoder = device.createCommandEncoder(), pass = encoder.beginComputePass();
+    pass.setPipeline(pipe); pass.setBindGroup(0, bindGroup); pass.dispatchWorkgroups(groupsAcross, groupsDown); pass.end();
+    const outBytes = outputCount * n * 4, failedOffset = (outBytes + 15) & ~15;
+    encoder.copyBufferToBuffer(outputBuffer, 0, readBuffer, 0, outBytes);
+    encoder.copyBufferToBuffer(failedBuffer, 0, readBuffer, failedOffset, 4);
+    device.queue.submit([encoder.finish()]);
+    await readBuffer.mapAsync(GPUMapMode.READ);
+    const m = readBuffer.getMappedRange(), f = new Float32Array(m, 0, outputCount * n), anyFailed = new Uint32Array(m, failedOffset, 1)[0] !== 0;
+    const outputs = anyFailed ? null : kernel.outputs.map((o, j) => Float64Array.from(f.subarray(j * n, (j + 1) * n)));
+    readBuffer.unmap(); [paramsBuffer, outsideBuffer, inputBuffer, outputBuffer, failedBuffer, readBuffer].forEach(b => b.destroy());
+    return outputs;
   }
 
   // the hook spork calls: an answer already back, or (when a pass may wait) a new job and SPORK_WAIT
   const ids = new WeakMap(); let nextId = 1;
   const answers = new Map(), jobs = [];
   let mayWait = false, min = opts.min || 100000, last = null;
-  const keyOf = (K, n, X, C) => {
-    let id = ids.get(K); if (!id) { id = shader(K); ids.set(K, id); }
+  const keyOf = (kernel, n, inputs, outside) => {
+    let id = ids.get(kernel); if (!id) { id = shader(kernel); ids.set(kernel, id); }
     let h = 2166136261;
-    if (X) { const u = new Uint32Array(X.buffer, X.byteOffset, X.length * 2); for (let i = 0; i < u.length; i++) h = Math.imul(h ^ u[i], 16777619); }
-    return id + "|" + n + "|" + (X ? "x" + (h >>> 0) : "r") + "|" + C.join(",");
+    if (inputs) { const u = new Uint32Array(inputs.buffer, inputs.byteOffset, inputs.length * 2); for (let i = 0; i < u.length; i++) h = Math.imul(h ^ u[i], 16777619); }
+    return id + "|" + n + "|" + (inputs ? "x" + (h >>> 0) : "r") + "|" + outside.join(",");
   };
-  function hook(K, n, X, C) {
+  function hook(kernel, n, inputs, outside) {
     if (n < min || n > MAXN) return undefined;
-    const key = keyOf(K, n, X, C);
-    if (answers.has(key)) { const a = answers.get(key); last = a.info; return a.O; }
+    const key = keyOf(kernel, n, inputs, outside);
+    if (answers.has(key)) { const a = answers.get(key); last = a.info; return a.outputs; }
     if (!mayWait) return undefined;
     const t0 = performance.now();
-    jobs.push(run(K, n, X, C).then(O => {
+    jobs.push(run(kernel, n, inputs, outside).then(outputs => {
       const info = { n, ms: performance.now() - t0 };
-      if (O) O.ms = info.ms;
-      answers.set(key, { O, info }); while (answers.size > 8) answers.delete(answers.keys().next().value);
+      if (outputs) outputs.ms = info.ms;
+      answers.set(key, { outputs, info }); while (answers.size > 8) answers.delete(answers.keys().next().value);
     }));
     throw WAIT;
   }

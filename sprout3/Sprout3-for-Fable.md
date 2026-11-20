@@ -94,22 +94,22 @@ The page and `bench.html` need a local web server, such as `python3 -m http.serv
 
 ## How to work on it
 
-- **The spec is the source of truth.** The section "Design decisions not yet built" (decisions 1 to 97) defines Sprout 3, despite its name: almost all of it is now built. Later decisions override earlier ones and say so. Sections 1 to 15 at the top of the spec describe the older Sprout 2.0 / Sprout Live baseline and are kept for history only.
+- **The spec is the source of truth.** The section "Design decisions not yet built" (decisions 1 to 98) defines Sprout 3, despite its name: almost all of it is now built. Later decisions override earlier ones and say so. Sections 1 to 15 at the top of the spec describe the older Sprout 2.0 / Sprout Live baseline and are kept for history only.
 - **Language changes go to Troy first.** Talk any change to syntax or semantics through with him before building it, and ask one question at a time. Library-level choices (cells in the prelude, host cells, internals) are yours to make; record them in the spec (decision 80).
 - **Every control structure is a library cell (decision 94), and speed is a library too (decision 96).** Keep the core small; a faster way goes in `kernels.js` and must give the same answers.
 - **Don't rewrite example programs or files unless asked.**
 - **Keep it streamable.** The tokenizer and parser work in one pass with no look-ahead across the file. Warn if a change would break that.
-- **Style:** kebab-case names; straight quotes; `--` for comments; no em dashes.
+- **Style:** descriptive names everywhere, in Sprout and in the JavaScript (no abbreviations; decision 98); kebab-case names in Sprout; straight quotes; `--` for comments; no em dashes.
 
 ## How the implementation works
 
-- **`sprout3.js`, the core.** It tokenizes (an indent opens a cell unless the line above ends with `[`, `(` or `|`), parses into chains of sends, and generates JavaScript. Each cell literal compiles to a `run` function (straight-line code; inputs arrive as arguments) and, when it has readable fields, a `slots` function (one lazy thunk per field, worked out once). Its own fast paths: branches (`test [a] else [b]`) compile to inline conditionals; operators get fused fast paths; `x with [f : ...]` compiles straight to a field update; simple records and argument lists are built eagerly; field reads and `with` use inline caches keyed on record shape; calls in tail position bounce, so recursion stays flat.
-- **Runtime values:** `Cell` (from a literal, lazy), `VCell` (a cell of values: shape plus value array), `RCell` (a lazy `range`), `ColCell` (a list of number records stored as one number array per field, decision 82), `NCell` (a list of numbers in one array), `Native` (a host word), `Waiting` (a prototype method waiting for its right side). `false` is the only falsy value.
+- **`sprout3.js`, the core.** It tokenizes (an indent opens a cell unless the line above ends with `[`, `(` or `|`), parses into chains of sends, and generates JavaScript. Each cell literal compiles to a `run` function (straight-line code; inputs arrive as arguments) and, when it has readable fields, a `slots` function (one lazy thunk per field, worked out once). The compiler is `CodeGen`; the code it writes calls helpers such as `sendWord`, `sendWordCached`, `send`, `makeCell`, `makeRecord` and `withFields`. Its own fast paths: branches (`test [a] else [b]`) compile to inline conditionals; operators get fused fast paths; `x with [f : ...]` compiles straight to a field update; simple records and argument lists are built eagerly; field reads and `with` use inline caches keyed on record shape; calls in tail position bounce, so recursion stays flat.
+- **Runtime values:** `Cell` (from a literal, lazy), `ValueCell` (a cell of values: a field shape plus field values, and parts), `RangeCell` (a lazy `range`), `ColumnCell` (a list of number records stored as one number array per field, decision 82), `NumberList` (a list of numbers in one array), `Native` (a host word), `WaitingMethod` (a built-in method waiting for its right side), `TailCall` (a call in tail position, run by the loop above it). `false` is the only falsy value.
 - **The prelude**, a short Sprout program inside `sprout3.js`, defines `clamp`, `toward`, `dist`, `match`, `cond`, `take`, `rgb`, `rgba`, `every`, `wave` and `frame` (decisions 77, 94 and 97).
 - **`kernels.js`, the speed library (decision 96).** It plugs into four hooks in the core and can't change an answer.
-  - The work-ahead pass (`Spk`) works a cell out as far as it can without its input: calls inlined, prelude cells too; lists, records and words unrolled; tests that change from item to item made into per-item choices. What's left is number maths (the IR).
-  - Loop fusion (`fuseSegment`, `Spk.buildPipe`, `FUSE`, `fuseJS`): a run of `collect`, `keep`, `fold`, `each` and `length` in a chain is tried first as one loop over `range`, a list of numbers, or records of numbers in columns, with the steps as written as the way back (decisions 95 and 96).
-  - Spork kernels: `xs spork f` runs a worked-out cell on WebAssembly SIMD (`spkWasmBytes`, f64x2, the same bits as JavaScript) or in JavaScript (`spkJS`) (decision 91). The radix sort for numbers (decision 92).
+  - The work-ahead pass (`WorkAhead`) works a cell out as far as it can without its input: calls inlined, prelude cells too; lists, records and words unrolled; tests that change from item to item made into per-item choices. What's left is number maths (the IR).
+  - Loop fusion (`findLoopRun`, `WorkAhead.buildFusedLoop`, `runFusedLoop`, `fusedLoopFunction`): a run of `collect`, `keep`, `fold`, `each` and `length` in a chain is tried first as one loop over `range`, a list of numbers, or records of numbers in columns, with the steps as written as the way back (decisions 95 and 96).
+  - Spork kernels: `xs spork f` runs a worked-out cell on WebAssembly SIMD (`wasmKernelBytes`, f64x2, the same bits as JavaScript) or in JavaScript (`sporkKernelFunction`) (decision 91). The radix sort for numbers (decision 92).
 - **Other libraries:** `gpu-spork.js` (spork on the GPU, 32-bit, decision 93), `gpu-paint.js` (WebGPU drawing, decision 90), `sqlite-web.js` and `sqlite-host.js` (the `db` host cell, decisions 78 and 90).
 - **`live3.js`, the game loop.** A game file binds `start`, `update` and `draw`. Events (`down`, `move`, `up`, `tick`) fold through `frame update`. Effects are queued during `update` and carried out after it. Random numbers are recorded per tick, so `replayFrom` is exact. Rewind is a list of states, since cells never change. Hot-swap keeps live values whose starting value didn't change.
 
@@ -792,6 +792,7 @@ These are marked in `sprout2.js` with "Sprout Live fix N" or "Sprout Live additi
 95. **Loop fusion (built; step 2 of decision 79, Claude's call under decision 80).** A run of `collect`, `keep` and `fold` steps in one chain is also compiled as one loop with no lists in between. Each step is given a cell or a name bound to one, and the run may end in `length`. It is worked out ahead the way spork works a cell out (decision 91), so calls are inlined and tests that change from item to item become choices made per item. It runs over `range`, a list of numbers, or a list of records of numbers in columns (decision 82). A record's fields are read straight from the columns, and `with` lays new values over them. `keep ... length` counts without making a list, and `fold` carries its number from item to item. Every value is worked out in the same order, by the same steps, as the steps one by one, so the answers are the same bits, and the tests run every case both ways. A list shorter than 16, anything that isn't numbers, and anything the loop can't do (words, a position outside a list) run the steps as written. The speed notes show one note for the run. Counting a million numbers below a line with `keep ... length` takes 8 ms instead of 18. Keeping 100,000 records and laying two new fields over them takes 4.6 ms instead of 39.
 96. **The core and its libraries (built; Claude's call under decision 80, from Troy's ask on 20 Nov to simplify the core and move more to libraries).** `sprout3.js` is the core: tokens, parser, compiler, runtime, prototypes, the host cells `range`, `rand`, `noise` and `print`, and the prelude. It runs every program on its own. Faster ways live in libraries that plug into four hooks: a faster form of a cell, a run of steps in a chain, speed notes, and a look over the whole program first. A library can't change an answer. `kernels.js` holds the work-ahead pass, loop fusion, spork's kernels on WebAssembly SIMD and in JavaScript, and the radix sort; `gpu-spork.js` adds the GPU. The column loops of decisions 82, 88 and 89 are gone, because loop fusion does their work: a single `collect`, `keep`, `fold` or `each` is a run of one step. So there is one way of working a loop out ahead instead of two. A fused run can now end with `each` and host words, as in `each [s | circle [s x, s y, 2, "#fc6"]]`, and each host word is called for every item that passes, in order, under the tests that lead to it. Every example prints and plays the same with and without `kernels.js` (`SPROUT3_CORE_ONLY=1` leaves it out). The core went from 2,028 lines to about 1,050. Compiling every example takes about 200 ms instead of 420, and the test files run in 0.75 and 1.8 s instead of 1.0 and 3.0. Two fixes came with the move. A failed try at working out an outside name now leaves nothing behind (it could leave outside reads that stopped a fused loop from ever running, as in `fireflies.sp`). Outside names, and fused loops, now get small step budgets, so a program like `ace-schedule.sp` no longer takes 235 ms to compile.
 97. **Plain maths lives in the prelude (built; library, decision 80).** `clamp`, `toward` and `dist` are now Sprout cells in the prelude, not JavaScript. `dist` is `(dx * dx + (dy * dy)) sqrt`, which can differ from the old `Math.hypot` in the last digit. `rand` stays in the core, since it reads the recorded random source, like `random`. The work-ahead pass inlines prelude cells like any other, so `clamp`, `toward`, `dist`, `cond` and `match` run inside fused loops and spork kernels. Maths on a choice between constants is done on each constant, so `cond`'s chosen position, and the answer it picks, become a choice made per item. A host word gives what it gives when it runs: false, or `print`'s value. So a branch that ends with one before `else` runs the else too (decision 74), in a fused loop as well, and the decision 74 lint now names that case.
+98. **Descriptive names (Troy, 20 Nov).** The implementation uses whole words for names, as Sprout programs do. In `sprout3.js`, `kernels.js` and `gpu-spork.js` that means `ValueCell`, `RangeCell`, `ColumnCell`, `NumberList`, `sendWord`, `makeCell`, `CodeGen` and `WorkAhead`, not `VCell`, `RCell`, `SW`, `MK`, `Gen` or `Spk`. A kernel's steps are called `constant`, `input`, `outside`, `carried`, `column` and `choose`, and the syntax tree's fields are `type`, `value` and `name`. The prelude's inputs are named the same way, as in `clamp : [value low high | ...]` and `match : [value cases | ...]`. The public API has `format`, `equal`, `globals` and `fastPaths`, not `fmt`, `eq`, `G` and `columns`. Only loop counters (`i`, `j`), coordinates (`x`, `y`) and `n` for a count stay short. The renaming changed no behaviour: every test passes and every example gives the same output, with and without `kernels.js`.
 ````
 
 ---
@@ -812,46 +813,46 @@ Compiler (Sprout to JavaScript) and runtime.
 // Tokens: {t:"num",v} {t:"str",v} {t:"tmpl",parts:[string|{eager,src}]} {t:"word",v}
 // and the punctuation strings "[" "]" "(" ")" "," "|" ":" "\n".
 // A new line plus a deeper indent opens "[" (decision 59); a shallower one closes it.
-const WORDSTOP = " \t[](),|:\"";
+const WORD_STOP_CHARS = " \t[](),|:\"";
 
-function lexLine(s, lineNo, out) {
-  let i = 0; const n = s.length;
-  while (i < n) {
-    const c = s[i];
-    if (c === " " || c === "\t") { i++; continue; }
-    if (c === "-" && s[i + 1] === "-") break; // comment to the end of the line
-    if ("[](),|".includes(c)) { out.push(c); i++; continue; }
-    if (c === ":") { out.push(":"); i++; continue; }
-    if (c === '"') { i = lexString(s, i, lineNo, out); continue; }
+function lexLine(line, lineNo, out) {
+  let i = 0; const length = line.length;
+  while (i < length) {
+    const char = line[i];
+    if (char === " " || char === "\t") { i++; continue; }
+    if (char === "-" && line[i + 1] === "-") break; // comment to the end of the line
+    if ("[](),|".includes(char)) { out.push(char); i++; continue; }
+    if (char === ":") { out.push(":"); i++; continue; }
+    if (char === '"') { i = lexString(line, i, lineNo, out); continue; }
     let j = i;
-    while (j < n && !WORDSTOP.includes(s[j]) && !(s[j] === "-" && s[j + 1] === "-" && j > i)) j++;
-    let w = s.slice(i, j); i = j;
-    if (/^-?\d+(\.\d+)?$/.test(w)) { out.push({ t: "num", v: parseFloat(w), line: lineNo }); continue; }
+    while (j < length && !WORD_STOP_CHARS.includes(line[j]) && !(line[j] === "-" && line[j + 1] === "-" && j > i)) j++;
+    let word = line.slice(i, j); i = j;
+    if (/^-?\d+(\.\d+)?$/.test(word)) { out.push({ kind: "num", value: parseFloat(word), line: lineNo }); continue; }
     // a trailing ! is its own word: hello! is hello ! (decision 67)
-    if (w.length > 1 && w.endsWith("!")) { out.push({ t: "word", v: w.slice(0, -1), line: lineNo }); w = "!"; }
-    out.push({ t: "word", v: w, line: lineNo });
+    if (word.length > 1 && word.endsWith("!")) { out.push({ kind: "word", value: word.slice(0, -1), line: lineNo }); word = "!"; }
+    out.push({ kind: "word", value: word, line: lineNo });
   }
 }
 
 // "a [x] b": [ ] puts a value into a string (decision 81). ( ) is plain text, so SQL and CSS need no escapes. \[ is a plain bracket.
-function lexString(s, i, lineNo, out) {
+function lexString(line, start, lineNo, out) {
   const ESC = { n: "\n", t: "\t", "\\": "\\", '"': '"', "[": "[" };
-  let j = i + 1, buf = ""; const parts = [];
-  while (j < s.length && s[j] !== '"') {
-    const c = s[j];
-    if (c === "\\" && j + 1 < s.length) { const x = s[j + 1]; buf += ESC[x] !== undefined ? ESC[x] : x; j += 2; continue; }
-    if (c === "[") {
-      let d = 1, k = j + 1;
-      while (k < s.length && d) { if (s[k] === '"') break; if (s[k] === "[") d++; else if (s[k] === "]") d--; if (d) k++; }
-      if (d) throw new SproutError("a [ in a string needs a ] to close it", lineNo);
-      parts.push(buf); buf = ""; parts.push({ src: s.slice(j + 1, k) }); j = k + 1; continue;
+  let at = start + 1, text = ""; const parts = [];
+  while (at < line.length && line[at] !== '"') {
+    const char = line[at];
+    if (char === "\\" && at + 1 < line.length) { const escaped = line[at + 1]; text += ESC[escaped] !== undefined ? ESC[escaped] : escaped; at += 2; continue; }
+    if (char === "[") {
+      let depth = 1, end = at + 1;
+      while (end < line.length && depth) { if (line[end] === '"') break; if (line[end] === "[") depth++; else if (line[end] === "]") depth--; if (depth) end++; }
+      if (depth) throw new SproutError("a [ in a string needs a ] to close it", lineNo);
+      parts.push(text); text = ""; parts.push({ src: line.slice(at + 1, end) }); at = end + 1; continue;
     }
-    buf += c; j++;
+    text += char; at++;
   }
-  if (j >= s.length) throw new SproutError("a string needs a closing \"", lineNo);
-  if (parts.length) { parts.push(buf); out.push({ t: "tmpl", parts, line: lineNo }); }
-  else out.push({ t: "str", v: buf, line: lineNo });
-  return j + 1;
+  if (at >= line.length) throw new SproutError("a string needs a closing \"", lineNo);
+  if (parts.length) { parts.push(text); out.push({ kind: "tmpl", parts, line: lineNo }); }
+  else out.push({ kind: "str", value: text, line: lineNo });
+  return at + 1;
 }
 
 function tokenize(src) {
@@ -879,22 +880,22 @@ function tokenize(src) {
 }
 
 // ===================================================================== parser
-// AST: {k:"num",v} {k:"str",v} {k:"tmpl",parts} {k:"word",v,line} {k:"group",items}
-//      {k:"cell",names:[{n,def}],items,src} {k:"chain",terms} {k:"bind",name,val,line}
+// the tree: {type:"num",value} {type:"str",value} {type:"tmpl",parts} {type:"word",value,line} {type:"group",items}
+//      {type:"cell",names:[{name,defaultValue}],items} {type:"chain",terms} {type:"bind",name,value,line}
 class SproutError extends Error { constructor(msg, line) { super(msg); this.line = line || 0; } }
 
 class Parser {
-  constructor(toks, src) { this.t = toks; this.i = 0; this.src = src; }
-  pk() { return this.i < this.t.length ? this.t[this.i] : null; }
-  nx() { return this.t[this.i++]; }
-  line() { for (let j = Math.min(this.i, this.t.length - 1); j >= 0; j--) if (this.t[j] && this.t[j].line) return this.t[j].line; return 0; }
-  program() { const items = this.items(null); if (this.pk() !== null) throw new SproutError("this " + this.pk() + " doesn't close anything", this.line()); return items; }
+  constructor(tokens, src) { this.tokens = tokens; this.i = 0; this.src = src; }
+  peek() { return this.i < this.tokens.length ? this.tokens[this.i] : null; }
+  next() { return this.tokens[this.i++]; }
+  line() { for (let j = Math.min(this.i, this.tokens.length - 1); j >= 0; j--) if (this.tokens[j] && this.tokens[j].line) return this.tokens[j].line; return 0; }
+  program() { const items = this.items(null); if (this.peek() !== null) throw new SproutError("this " + this.peek() + " doesn't close anything", this.line()); return items; }
   items(end) {
     const out = [];
     for (;;) {
-      const t = this.pk();
+      const t = this.peek();
       if (t === null || t === end) break;
-      if (t === "," || t === "\n") { this.nx(); continue; }
+      if (t === "," || t === "\n") { this.next(); continue; }
       if (t === "]" || t === ")") throw new SproutError("this " + t + " doesn't match", this.line());
       out.push(this.item());
     }
@@ -903,40 +904,40 @@ class Parser {
   item() {
     const line = this.line();
     const c = this.chain();
-    if (this.pk() === ":") {
-      this.nx();
-      if (c.terms.length !== 1 || c.terms[0].k !== "word") throw new SproutError("only a name can go before :", line);
+    if (this.peek() === ":") {
+      this.next();
+      if (c.terms.length !== 1 || c.terms[0].type !== "word") throw new SproutError("only a name can go before :", line);
       const val = this.chain();
       if (!val.terms.length) throw new SproutError("a value has to follow :", line);
-      return { k: "bind", name: c.terms[0].v, val, line };
+      return { type: "bind", name: c.terms[0].value, value: val, line };
     }
     return c;
   }
   chain() {
     const terms = [];
     for (;;) {
-      const t = this.pk();
+      const t = this.peek();
       if (t === null || t === "," || t === "\n" || t === ":" || t === "|" || t === "]" || t === ")") break;
       terms.push(this.term());
     }
-    return { k: "chain", terms };
+    return { type: "chain", terms };
   }
   term() {
-    const t = this.nx();
+    const t = this.next();
     // an unclosed bracket is reported where it opened, not where the file ran out
     if (t === "[") return this.cell(this.line());
-    if (t === "(") { const at = this.line(); const items = this.items(")"); if (this.nx() !== ")") throw new SproutError("a ( needs a ) to close it", at); return { k: "group", items }; }
-    if (t.t === "num") return { k: "num", v: t.v };
-    if (t.t === "str") return { k: "str", v: t.v };
-    if (t.t === "tmpl") return { k: "tmpl", parts: t.parts.map(p => typeof p === "string" ? p : { ast: parseInner(p.src, t.line) }) };
-    if (t.t === "word") return { k: "word", v: t.v, line: t.line };
+    if (t === "(") { const at = this.line(); const items = this.items(")"); if (this.next() !== ")") throw new SproutError("a ( needs a ) to close it", at); return { type: "group", items }; }
+    if (t.kind === "num") return { type: "num", value: t.value };
+    if (t.kind === "str") return { type: "str", value: t.value };
+    if (t.kind === "tmpl") return { type: "tmpl", parts: t.parts.map(p => typeof p === "string" ? p : { ast: parseInner(p.src, t.line) }) };
+    if (t.kind === "word") return { type: "word", value: t.value, line: t.line };
     throw new SproutError("this doesn't make sense here: " + t, this.line());
   }
   cell(openLine) {
     // input names before a | at this depth: [x y : 0 | ...]
     let depth = 0, bar = -1;
-    for (let j = this.i; j < this.t.length; j++) {
-      const x = this.t[j];
+    for (let j = this.i; j < this.tokens.length; j++) {
+      const x = this.tokens[j];
       if (x === "[" || x === "(") depth++;
       else if (x === "]" || x === ")") { if (depth === 0) break; depth--; }
       else if (x === "|" && depth === 0) { bar = j; break; }
@@ -944,24 +945,24 @@ class Parser {
     const names = [];
     if (bar >= 0) {
       while (this.i < bar) {
-        const x = this.nx();
+        const x = this.next();
         if (x === "," || x === "\n") continue;
-        if (!x || x.t !== "word") throw new SproutError("only names go before |", this.line());
-        const nm = { n: x.v, def: null };
-        if (this.pk() === ":") { this.nx(); nm.def = this.term(); }
+        if (!x || x.kind !== "word") throw new SproutError("only names go before |", this.line());
+        const nm = { name: x.value, defaultValue: null };
+        if (this.peek() === ":") { this.next(); nm.defaultValue = this.term(); }
         names.push(nm);
       }
-      this.nx(); // |
+      this.next(); // |
     }
     const items = this.items("]");
-    if (this.nx() !== "]") throw new SproutError("a [ needs a ] to close it", openLine || this.line());
-    return { k: "cell", names, items }; // [[x]] is a cell holding a cell (decision 71: no collapse)
+    if (this.next() !== "]") throw new SproutError("a [ needs a ] to close it", openLine || this.line());
+    return { type: "cell", names, items }; // [[x]] is a cell holding a cell (decision 71: no collapse)
   }
 }
 function parseInner(src, line) {
   const p = new Parser(tokenize(src), src);
   const items = p.program();
-  if (items.length !== 1 || items[0].k !== "chain") throw new SproutError("put one value inside a string's brackets", line);
+  if (items.length !== 1 || items[0].type !== "chain") throw new SproutError("put one value inside a string's brackets", line);
   // it counts its own lines from 1; what's inside a string is on the string's line
   (function at(n) { if (!n || typeof n !== "object") return; if (typeof n.line === "number") n.line = line; for (const k in n) at(n[k]); })(items[0]);
   return items[0];
@@ -972,878 +973,908 @@ function parse(src) { return new Parser(tokenize(src), src).program(); }
 // Each cell literal compiles to two JS functions:
 //   run(a)   : straight-line code that works out every item in order (used when the cell is run)
 //   slots(a) : one thunk per item, worked out on first read and kept (used when fields or parts are read; decision 51)
-// Names are JS consts captured by closures; since nothing is rebound, that is the same as filling names in (decision 24).
-const FUSED = new Set(["+", "-", "*", "/", "%", "<", ">", "<=", ">=", "=", "!=", "..", "with", "@"]);
-const LAZYOPS = new Set(["and", "or", "else"]);
+// Names are JS constants captured by closures; since nothing is rebound, that is the same as filling names in (decision 24).
+const FUSED_OPERATORS = new Set(["+", "-", "*", "/", "%", "<", ">", "<=", ">=", "=", "!=", "..", "with", "@"]);
+const LAZY_OPERATORS = new Set(["and", "or", "else"]);
 
-let uid = 0;
-function jsName(n) { let s = ""; for (const ch of n) s += /[A-Za-z0-9]/.test(ch) ? ch : "_" + ch.charCodeAt(0).toString(16); return "v_" + s + "_" + (uid++); }
+let uniqueNumber = 0;
+function jsName(n) { let s = ""; for (const ch of n) s += /[A-Za-z0-9]/.test(ch) ? ch : "_" + ch.charCodeAt(0).toString(16); return "v_" + s + "_" + (uniqueNumber++); }
 
-class Gen {
-  constructor(globals) { this.globals = globals; this.shapes = []; this.frames = []; this.temps = []; this.consts = []; this.speed = []; }
+class CodeGen {
+  constructor(globals) { this.globals = globals; this.shapes = []; this.frames = []; this.tempScopes = []; this.constants = []; this.speedNotes = []; }
   // local temporaries, declared at the top of the JS function being generated (safe under recursion)
   // field shapes and inline caches are made once, when the program loads
-  shapeRef(keys) { const k = "SH" + this.consts.length; this.consts.push("const " + k + "=shapeFor(" + JSON.stringify(keys) + ");"); return k; }
-  ic() { const k = "IC" + this.consts.length; this.consts.push("const " + k + "={s:null,i:-1,o:null,x:null};"); return k; }
+  shapeConstant(keys) { const k = "SH" + this.constants.length; this.constants.push("const " + k + "=shapeFor(" + JSON.stringify(keys) + ");"); return k; }
+  inlineCache() { const k = "IC" + this.constants.length; this.constants.push("const " + k + "={shape:null,index:-1,outShape:null,positions:null};"); return k; }
   // a head term that is certainly not true or false: a host value, or a name bound to a cell literal
-  notBool(t) {
-    if (t.k === "cell" || t.k === "num" || t.k === "str" || t.k === "tmpl") return true;
-    if (t.k !== "word") return false;
-    const r = this.lookup(t.v);
-    if (r) return !!r.cell;
-    const d = Object.getOwnPropertyDescriptor(G, t.v);
-    return !!d && !d.get && typeof d.value !== "boolean";
+  certainlyNotBool(term) {
+    if (term.type === "cell" || term.type === "num" || term.type === "str" || term.type === "tmpl") return true;
+    if (term.type !== "word") return false;
+    const entry = this.lookup(term.value);
+    if (entry) return !!entry.cell;
+    const descriptor = Object.getOwnPropertyDescriptor(GLOBALS, term.value);
+    return !!descriptor && !descriptor.get && typeof descriptor.value !== "boolean";
   }
   // a global that is a plain value (host words, W, H, range) is read once at load; getters (random, prelude) each time
-  globalRef(n) {
-    const d = Object.getOwnPropertyDescriptor(G, n);
-    if (!d || d.get) return "G[" + JSON.stringify(n) + "]";
-    if (!this.gconst) this.gconst = new Map();
-    let k = this.gconst.get(n); if (!k) { k = "G" + this.consts.length; this.gconst.set(n, k); this.consts.push("const " + k + "=G[" + JSON.stringify(n) + "];"); }
-    return k;
+  globalCode(name) {
+    const descriptor = Object.getOwnPropertyDescriptor(GLOBALS, name);
+    if (!descriptor || descriptor.get) return "GLOBALS[" + JSON.stringify(name) + "]";
+    if (!this.globalConstants) this.globalConstants = new Map();
+    let constant = this.globalConstants.get(name); if (!constant) { constant = "GLOBAL_" + this.constants.length; this.globalConstants.set(name, constant); this.constants.push("const " + constant + "=GLOBALS[" + JSON.stringify(name) + "];"); }
+    return constant;
   }
-  tmp() { const sc = this.temps[this.temps.length - 1]; const n = "t" + (uid++); sc.push(n); return n; }
-  withFn(gen) { this.temps.push([]); const body = gen(); const t = this.temps.pop(); return { body, decl: t.length ? "let " + t.join(",") + ";" : "" }; }
-  arrow(params, genExpr) { const r = this.withFn(genExpr); return "(" + params + ")=>" + (r.decl ? "{" + r.decl + "return " + r.body + "}" : r.body); }
+  newTemp() { const scope = this.tempScopes[this.tempScopes.length - 1]; const name = "t" + (uniqueNumber++); scope.push(name); return name; }
+  withTemps(generate) { this.tempScopes.push([]); const body = generate(); const temps = this.tempScopes.pop(); return { body, decl: temps.length ? "let " + temps.join(",") + ";" : "" }; }
+  arrowCode(params, generateBody) { const made = this.withTemps(generateBody); return "(" + params + ")=>" + (made.decl ? "{" + made.decl + "return " + made.body + "}" : made.body); }
   // look a name up through the frames, innermost first
-  lookup(n) {
-    for (let f = this.frames.length - 1; f >= 0; f--) {
-      const r = this.frames[f].names.get(n);
-      if (r) { if (f < this.frames.length - 1) this.noteCapture(f, n, r); return r; }
+  lookup(name) {
+    for (let frameIndex = this.frames.length - 1; frameIndex >= 0; frameIndex--) {
+      const entry = this.frames[frameIndex].names.get(name);
+      if (entry) { if (frameIndex < this.frames.length - 1) this.noteCapture(frameIndex, name, entry); return entry; }
     }
     return null;
   }
-  noteCapture(fIdx, n, r) { for (let f = fIdx + 1; f < this.frames.length; f++) { const fr = this.frames[f]; if (!fr.caps.has(n)) fr.caps.set(n, r); } }
-  refJS(r) { return r.k === "js" ? r.js : r.act + ".get(" + r.i + ")"; }
+  noteCapture(frameIndex, name, entry) { for (let inner = frameIndex + 1; inner < this.frames.length; inner++) { const frame = this.frames[inner]; if (!frame.captured.has(name)) frame.captured.set(name, entry); } }
+  referenceCode(entry) { return entry.type === "js" ? entry.js : entry.activation + ".get(" + entry.i + ")"; }
 
-  nameRef(n, line) {
-    if (n === "right") { const r = this.lookup("right"); if (r) return this.refJS(r); n = "_"; }
-    if (n === "_") {
+  nameCode(name, line) {
+    if (name === "right") { const entry = this.lookup("right"); if (entry) return this.referenceCode(entry); name = "_"; }
+    if (name === "_") {
       // _ belongs to the nearest cell around it (decision 56)
-      const fr = this.frames[this.frames.length - 1];
-      fr.shape.usesIt = true;
-      if (fr.shape.names.length) { lint("_ is used in a cell that names its inputs; it is false there"); return "false"; }
-      return fr.itJS;
+      const frame = this.frames[this.frames.length - 1];
+      frame.shape.usesIt = true;
+      if (frame.shape.names.length) { lint("_ is used in a cell that names its inputs; it is false there"); return "false"; }
+      return frame.itJS;
     }
-    if (n === "left") {
-      for (let f = this.frames.length - 1; f >= 0; f--) if (this.frames[f].owner) { this.frames[f].shape.usesLeft = true; return this.frames[f].leftJS; }
-      return "LOG_MISS('left is only used inside a field of a cell', " + (line || 0) + ")";
+    if (name === "left") {
+      for (let frameIndex = this.frames.length - 1; frameIndex >= 0; frameIndex--) if (this.frames[frameIndex].owner) { this.frames[frameIndex].shape.usesLeft = true; return this.frames[frameIndex].leftJS; }
+      return "logMiss('left is only used inside a field of a cell', " + (line || 0) + ")";
     }
-    const r = this.lookup(n);
-    if (r) return this.refJS(r);
-    if (this.globals.has(n)) return this.globalRef(n);
+    const entry = this.lookup(name);
+    if (entry) return this.referenceCode(entry);
+    if (this.globals.has(name)) return this.globalCode(name);
     // suggest the nearest name in scope, or a built-in, for a likely typo
-    const seen = new Set(this.globals); for (const f of this.frames) for (const k of f.names.keys()) seen.add(k);
+    const seen = new Set(this.globals); for (const frameIndex of this.frames) for (const k of frameIndex.names.keys()) seen.add(k);
     for (const list of this.hintNames || []) for (const k of list) seen.add(k);
-    const hint = nearest(n, seen);
-    return "UNKNOWN(" + JSON.stringify(n) + "," + (line || 0) + (hint ? "," + JSON.stringify(hint) : "") + ")";
+    const hint = nearest(name, seen);
+    return "unknownWord(" + JSON.stringify(name) + "," + (line || 0) + (hint ? "," + JSON.stringify(hint) : "") + ")";
   }
 
-  genChain(ch, tail) {
-    const T = ch.terms;
-    if (!T.length) return "false";
-    if (T.length === 1 && tail && T[0].k === "group" && T[0].items.length === 1 && T[0].items[0].k === "chain") return this.genChain(T[0].items[0], true);
-    let v = this.genTerm(T[0], true), seg = null;
-    for (let i = 1; i < T.length; i++) {
+  genChain(chain, tail) {
+    const terms = chain.terms;
+    if (!terms.length) return "false";
+    if (terms.length === 1 && tail && terms[0].type === "group" && terms[0].items.length === 1 && terms[0].items[0].type === "chain") return this.genChain(terms[0].items[0], true);
+    let code = this.genTerm(terms[0], true), run = null;
+    for (let i = 1; i < terms.length; i++) {
       // a library may make a run of steps (collect, keep, fold...) into one loop, tried first (loop fusion, decision 95):
       // the steps are written as usual on a temporary, and the library wraps them when the run ends
-      if (seg && i === seg.end) { v = LIB.fuse.wrap(this, seg, v); seg = null; }
-      if (!seg && LIB.fuse && (seg = LIB.fuse.find(T, i))) { seg.src = v; seg.ta = this.tmp(); v = seg.ta; }
-      if (LIB.note) LIB.note(this, T, i);
-      const t = T[i], isLast = i === T.length - 1;
-      if (t.k === "word" && (t.v === "!" || t.v === "true" || t.v === "false")) { v = "SEND(" + v + "," + (t.v === "!" ? "BANG" : t.v) + ")"; continue; }
-      if (t.k === "word") {
-        const w = t.v;
-        if (FUSED.has(w) && i + 1 < T.length && !this.lookup(w)) {
-          const nt = T[++i];
+      if (run && i === run.end) { code = LIBRARIES.fuse.wrap(this, run, code); run = null; }
+      if (!run && LIBRARIES.fuse && (run = LIBRARIES.fuse.find(terms, i))) { run.source = code; run.temp = this.newTemp(); code = run.temp; }
+      if (LIBRARIES.note) LIBRARIES.note(this, terms, i);
+      const term = terms[i], isLast = i === terms.length - 1;
+      if (term.type === "word" && (term.value === "!" || term.value === "true" || term.value === "false")) { code = "send(" + code + "," + (term.value === "!" ? "BANG" : term.value) + ")"; continue; }
+      if (term.type === "word") {
+        const word = term.value;
+        if (FUSED_OPERATORS.has(word) && i + 1 < terms.length && !this.lookup(word)) {
+          const nextTerm = terms[++i];
           // x with [a : ..., b : ...]: fields worked out now and laid over x, with no cell built (merge forces them anyway)
-          if ((w === "with" || w === "..") && nt.k === "cell" && fieldsOnly(nt)) {
-            v = "WITHF(" + v + ",[" + nt.items.map(x => JSON.stringify(x.name)).join(",") + "],[" + nt.items.map(x => this.genChain(x.val)).join(",") + "]," + this.ic() + ")";
+          if ((word === "with" || word === "..") && nextTerm.type === "cell" && isFieldsOnly(nextTerm)) {
+            code = "withFields(" + code + ",[" + nextTerm.items.map(x => JSON.stringify(x.name)).join(",") + "],[" + nextTerm.items.map(x => this.genChain(x.value)).join(",") + "]," + this.inlineCache() + ")";
             continue;
           }
-          v = OPNAME[w] + "(" + v + "," + this.genTerm(nt, false) + ")"; continue;
+          code = OPERATOR_FUNCTION[word] + "(" + code + "," + this.genTerm(nextTerm, false) + ")"; continue;
         }
-        if (LAZYOPS.has(w) && i + 1 < T.length && !this.lookup(w)) {
+        if (LAZY_OPERATORS.has(word) && i + 1 < terms.length && !this.lookup(word)) {
           // only else gives its right side back as it is; and/or check theirs is true or false, so it can't be a tail call
-          const B = this.genArg(T[++i], w === "else" && tail && i + 1 >= T.length), ta = this.tmp();
-          if (w === "else") v = "((" + ta + "=" + v + ")!==false?" + ta + ":" + B + ")";
-          else if (w === "and") v = "((" + ta + "=" + v + ")===true?ISBOOL(" + B + ",'and'):" + ta + "===false?false:MISSING(" + ta + ",'and'))";
-          else v = "((" + ta + "=" + v + ")===false?ISBOOL(" + B + ",'or'):" + ta + "===true?true:MISSING(" + ta + ",'or'))";
+          const rightCode = this.genArg(terms[++i], word === "else" && tail && i + 1 >= terms.length), leftTemp = this.newTemp();
+          if (word === "else") code = "((" + leftTemp + "=" + code + ")!==false?" + leftTemp + ":" + rightCode + ")";
+          else if (word === "and") code = "((" + leftTemp + "=" + code + ")===true?requireBool(" + rightCode + ",'and'):" + leftTemp + "===false?false:notUnderstood(" + leftTemp + ",'and'))";
+          else code = "((" + leftTemp + "=" + code + ")===false?requireBool(" + rightCode + ",'or'):" + leftTemp + "===true?true:notUnderstood(" + leftTemp + ",'or'))";
           continue;
         }
-        const r = this.lookup(w);
-        const lex = r ? "()=>" + this.refJS(r) : (this.globals.has(w) ? "()=>" + this.globalRef(w) : "null");
+        const found = this.lookup(word);
+        const lexical = found ? "()=>" + this.referenceCode(found) : (this.globals.has(word) ? "()=>" + this.globalCode(word) : "null");
         // a field read right before else is allowed to miss: else is the program saying so, so the miss isn't logged (decision 83)
-        const quiet = T[i + 1] && T[i + 1].k === "word" && T[i + 1].v === "else" && T[i + 2] && !this.lookup("else");
-        v = "SWI(" + v + "," + JSON.stringify(w) + "," + lex + "," + (t.line || 0) + "," + this.ic() + (quiet ? ",1" : "") + ")";
-      } else if (t.k === "cell" && !t.names.length && i === 1 && this.notBool(T[0])) {
-        v = (tail && isLast ? "TAIL(" : "SEND(") + v + "," + this.genCell(t) + ")";
-      } else if (t.k === "cell" && !t.names.length) {
+        const quiet = terms[i + 1] && terms[i + 1].type === "word" && terms[i + 1].value === "else" && terms[i + 2] && !this.lookup("else");
+        code = "sendWordCached(" + code + "," + JSON.stringify(word) + "," + lexical + "," + (term.line || 0) + "," + this.inlineCache() + (quiet ? ",1" : "") + ")";
+      } else if (term.type === "cell" && !term.names.length && i === 1 && this.certainlyNotBool(terms[0])) {
+        code = (tail && isLast ? "tailSend(" : "send(") + code + "," + this.genCell(term) + ")";
+      } else if (term.type === "cell" && !term.names.length) {
         // a boolean given a cell runs it (decision 62): the body is inlined; any other value is sent the cell
-        const elsePat = T[i + 1] && T[i + 1].k === "word" && T[i + 1].v === "else" && T[i + 2] && !this.lookup("else");
-        const A = this.genInlineExpr(t, tail && isLast && !elsePat);
-        const SND = tail && isLast && !elsePat ? "TAIL(" : "SEND(";
-        if (!A) { v = SND + v + "," + this.genCell(t) + ")"; continue; }
-        const ta = this.tmp(), tb = this.tmp(), mk = this.genCell(t);
-        const nx = T[i + 1], nx2 = T[i + 2];
-        if (nx && nx.k === "word" && nx.v === "else" && nx2 && !this.lookup("else")) {
+        const elseFollows = terms[i + 1] && terms[i + 1].type === "word" && terms[i + 1].value === "else" && terms[i + 2] && !this.lookup("else");
+        const thenCode = this.genInlineExpr(term, tail && isLast && !elseFollows);
+        const sendCall = tail && isLast && !elseFollows ? "tailSend(" : "send(";
+        if (!thenCode) { code = sendCall + code + "," + this.genCell(term) + ")"; continue; }
+        const leftTemp = this.newTemp(), resultTemp = this.newTemp(), cellCode = this.genCell(term);
+        const following = terms[i + 1], afterElse = terms[i + 2];
+        if (following && following.type === "word" && following.value === "else" && afterElse && !this.lookup("else")) {
           // test [a] else b: b runs when the test is false, or when a gives false (decision 62)
           i += 2;
           // decision 74: else is a library cell, so it can't tell "the test was false" from "the branch gave false".
           // A branch whose answer is true or false is named, unless the else gives false too, when it makes no difference.
-          const lastIt = t.items[t.items.length - 1];
-          const elseFalse = (nx2.k === "word" && nx2.v === "false") || (nx2.k === "cell" && nx2.items.length === 1 && givesBool(nx2.items[0]) === "false");
-          const branchTy = lastIt && lastIt.k === "chain" ? givesBool(lastIt) : null;
+          const lastItem = term.items[term.items.length - 1];
+          const elseFalse = (afterElse.type === "word" && afterElse.value === "false") || (afterElse.type === "cell" && afterElse.items.length === 1 && givesBool(afterElse.items[0]) === "false");
+          const branchGives = lastItem && lastItem.type === "chain" ? givesBool(lastItem) : null;
           // a host word (circle, beep...) gives false too, so a branch that ends with one also runs the else
-          const hw = lastIt && lastIt.k === "chain" && lastIt.terms[0] && lastIt.terms[0].k === "word" && !this.lookup(lastIt.terms[0].v) ? G[lastIt.terms[0].v] : null;
-          if (hw instanceof Native && hw.effect && hw.name !== "print" && !elseFalse) lint("line " + (nx.line || 0) + ": this branch ends with " + hw.name + ", which gives false, so the else runs too (decision 74). To draw one or the other, use cond, or put the else first");
-          if (branchTy === "false") lint("a branch that gives false before else: the else runs too (line " + (nx.line || 0) + ")");
-          else if (branchTy && !elseFalse) lint("line " + (nx.line || 0) + ": this branch gives true or false, and when it gives false the else runs too (decision 74). To keep a false answer, use cond [test, answer, any, other]");
-          const B = this.genArg(nx2, tail && i + 1 >= T.length);
-          v = "(((" + ta + "=" + v + ")===true?(" + tb + "=" + A + "):" + ta + "===false?(" + tb + "=false):(" + tb + "=SEND(" + ta + "," + mk + ")))!==false?" + tb + ":" + B + ")";
-        } else v = "((" + ta + "=" + v + ")===true?" + A + ":" + ta + "===false?false:" + SND + ta + "," + mk + "))";
-      } else v = (tail && isLast ? "TAIL(" : "SEND(") + v + "," + this.genTerm(t, false) + ")";
+          const hostWord = lastItem && lastItem.type === "chain" && lastItem.terms[0] && lastItem.terms[0].type === "word" && !this.lookup(lastItem.terms[0].value) ? GLOBALS[lastItem.terms[0].value] : null;
+          if (hostWord instanceof Native && hostWord.effect && hostWord.name !== "print" && !elseFalse) lint("line " + (following.line || 0) + ": this branch ends with " + hostWord.name + ", which gives false, so the else runs too (decision 74). To draw one or the other, use cond, or put the else first");
+          if (branchGives === "false") lint("a branch that gives false before else: the else runs too (line " + (following.line || 0) + ")");
+          else if (branchGives && !elseFalse) lint("line " + (following.line || 0) + ": this branch gives true or false, and when it gives false the else runs too (decision 74). To keep a false answer, use cond [test, answer, any, other]");
+          const rightCode = this.genArg(afterElse, tail && i + 1 >= terms.length);
+          code = "(((" + leftTemp + "=" + code + ")===true?(" + resultTemp + "=" + thenCode + "):" + leftTemp + "===false?(" + resultTemp + "=false):(" + resultTemp + "=send(" + leftTemp + "," + cellCode + ")))!==false?" + resultTemp + ":" + rightCode + ")";
+        } else code = "((" + leftTemp + "=" + code + ")===true?" + thenCode + ":" + leftTemp + "===false?false:" + sendCall + leftTemp + "," + cellCode + "))";
+      } else code = (tail && isLast ? "tailSend(" : "send(") + code + "," + this.genTerm(term, false) + ")";
     }
-    if (seg) v = LIB.fuse.wrap(this, seg, v);
-    return v;
+    if (run) code = LIBRARIES.fuse.wrap(this, run, code);
+    return code;
   }
   // the right side of else/and/or: a cell literal there is run (inlined), anything else is its value
-  genArg(t, tail) {
-    if (t.k === "cell" && !t.names.length) { const A = this.genInlineExpr(t, tail); return A || "RUNC(" + this.genCell(t) + ")"; }
-    if (tail && t.k === "group" && t.items.length === 1 && t.items[0].k === "chain") return this.genChain(t.items[0], true);
-    return this.genTerm(t, false);
+  genArg(term, tail) {
+    if (term.type === "cell" && !term.names.length) { const inlined = this.genInlineExpr(term, tail); return inlined || "runCell(" + this.genCell(term) + ")"; }
+    if (tail && term.type === "group" && term.items.length === 1 && term.items[0].type === "chain") return this.genChain(term.items[0], true);
+    return this.genTerm(term, false);
   }
-  genTerm(t) {
-    switch (t.k) {
-      case "num": return String(t.v);
-      case "str": return JSON.stringify(t.v);
-      case "tmpl": return "STR(" + t.parts.map(p => typeof p === "string" ? JSON.stringify(p) : this.genChain(p.ast)).join(",") + ")";
-      case "word": return t.v === "!" ? "BANG" : t.v === "true" ? "true" : t.v === "false" ? "false" : this.nameRef(t.v, t.line);
-      case "group": return this.genGroup(t.items);
-      case "cell": return this.genCell(t);
-      case "chain": return this.genChain(t);
+  genTerm(term) {
+    switch (term.type) {
+      case "num": return String(term.value);
+      case "str": return JSON.stringify(term.value);
+      case "tmpl": return "joinText(" + term.parts.map(part => typeof part === "string" ? JSON.stringify(part) : this.genChain(part.ast)).join(",") + ")";
+      case "word": return term.value === "!" ? "BANG" : term.value === "true" ? "true" : term.value === "false" ? "false" : this.nameCode(term.value, term.line);
+      case "group": return this.genGroup(term.items);
+      case "cell": return this.genCell(term);
+      case "chain": return this.genChain(term);
     }
-    throw new Error("term " + t.k);
+    throw new Error("term " + term.type);
   }
   genGroup(items) {
-    if (items.length === 1 && items[0].k === "chain") return "(" + this.genChain(items[0]) + ")";
+    if (items.length === 1 && items[0].type === "chain") return "(" + this.genChain(items[0]) + ")";
     // a group of several steps: worked out now, in order; its names are local to it (decision 8)
-    const fr = this.frames[this.frames.length - 1];
-    const saved = new Map(fr.names), parts = [];
-    this.temps.push([]);
-    items.forEach((it, idx) => {
-      const last = idx === items.length - 1;
-      if (it.k === "bind") { const js = jsName(it.name); const e = this.genChain(it.val); fr.names.set(it.name, { k: "js", js, val: it.val }); parts.push("const " + js + "=" + e + ";"); if (last) parts.push("return " + js + ";"); }
-      else parts.push((last ? "return " : "") + this.genChain(it) + ";");
+    const frame = this.frames[this.frames.length - 1];
+    const saved = new Map(frame.names), parts = [];
+    this.tempScopes.push([]);
+    items.forEach((item, index) => {
+      const last = index === items.length - 1;
+      if (item.type === "bind") { const js = jsName(item.name); const valueCode = this.genChain(item.value); frame.names.set(item.name, { type: "js", js, value: item.value }); parts.push("const " + js + "=" + valueCode + ";"); if (last) parts.push("return " + js + ";"); }
+      else parts.push((last ? "return " : "") + this.genChain(item) + ";");
     });
-    fr.names = saved;
-    const tt = this.temps.pop(); if (tt.length) parts.unshift("let " + tt.join(",") + ";");
+    frame.names = saved;
+    const temps = this.tempScopes.pop(); if (temps.length) parts.unshift("let " + temps.join(",") + ";");
     return "(()=>{" + parts.join("") + "})()";
   }
   // straight-line code for running a cell: every item in order, giving the last part (or false)
-  genRunBody(c, fr, k, tail) {
-    const out = []; let lastPart = null;
-    c.items.forEach((it, i) => {
-      const last = i === c.items.length - 1;
-      if (it.k === "bind") {
-        const js = jsName(it.name), isCell = it.val.terms.length === 1 && it.val.terms[0].k === "cell";
-        const ast = isCell ? it.val.terms[0] : null;
-        if (isCell) fr.names.set(it.name, { k: "js", js, cell: true, ast, val: it.val }); // a cell can use its own name (decision 25)
-        const e = isCell ? this.genCell(it.val.terms[0], true) : this.genChain(it.val);
-        fr.names.set(it.name, { k: "js", js, cell: isCell, ast, val: it.val });
-        out.push("const " + js + "=" + e + ";");
-        if (last) out.push("return " + (lastPart || "false") + ";");
+  genRunBody(cell, frame, shapeNumber, tail) {
+    const out = []; let lastPartCode = null;
+    cell.items.forEach((item, i) => {
+      const last = i === cell.items.length - 1;
+      if (item.type === "bind") {
+        const js = jsName(item.name), isCell = item.value.terms.length === 1 && item.value.terms[0].type === "cell";
+        const ast = isCell ? item.value.terms[0] : null;
+        if (isCell) frame.names.set(item.name, { type: "js", js, cell: true, ast, value: item.value }); // a cell can use its own name (decision 25)
+        const valueCode = isCell ? this.genCell(item.value.terms[0], true) : this.genChain(item.value);
+        frame.names.set(item.name, { type: "js", js, cell: isCell, ast, value: item.value });
+        out.push("const " + js + "=" + valueCode + ";");
+        if (last) out.push("return " + (lastPartCode || "false") + ";");
       } else {
-        const e = this.genChain(it, last && tail);
-        if (last) out.push("return " + e + ";");
-        else { const js = "p" + k + "_" + i; out.push("const " + js + "=" + e + ";"); lastPart = js; }
+        const valueCode = this.genChain(item, last && tail);
+        if (last) out.push("return " + valueCode + ";");
+        else { const js = "p" + shapeNumber + "_" + i; out.push("const " + js + "=" + valueCode + ";"); lastPartCode = js; }
       }
     });
-    if (!c.items.length) out.push("return false;");
+    if (!cell.items.length) out.push("return false;");
     return out.join("");
   }
   // a branch body inlined where it is run, as an expression: possible when it takes no input
-  genInlineExpr(c, tail) {
-    const k = "i" + (uid++);
-    const sh = { names: [], usesIt: false, usesLeft: false };
-    const fr = { names: new Map(), act: k, itJS: "false", leftJS: "undefined", shape: sh, owner: false, caps: new Map() };
-    this.frames.push(fr);
-    const r = this.withFn(() => this.genRunBody(c, fr, k, tail));
+  genInlineExpr(cell, tail) {
+    const activationName = "i" + (uniqueNumber++);
+    const shape = { names: [], usesIt: false, usesLeft: false };
+    const frame = { names: new Map(), activation: activationName, itJS: "false", leftJS: "undefined", shape: shape, owner: false, captured: new Map() };
+    this.frames.push(frame);
+    const made = this.withTemps(() => this.genRunBody(cell, frame, activationName, tail));
     this.frames.pop();
-    if (sh.usesIt) return null;
-    const m = /^return ([^;]*);$/.exec(r.body);
-    if (m && !r.decl && !/[{}]/.test(m[1])) return "(" + m[1] + ")";
-    return "(()=>{" + r.decl + r.body + "})()";
+    if (shape.usesIt) return null;
+    const single = /^return ([^;]*);$/.exec(made.body);
+    if (single && !made.decl && !/[{}]/.test(single[1])) return "(" + single[1] + ")";
+    return "(()=>{" + made.decl + made.body + "})()";
   }
 
-  genCell(c, ownerOfLeft) {
-    if (fieldsOnly(c) && c.items.every(x => simpleVal(x.val))) {
+  genCell(cell, ownerOfLeft) {
+    if (isFieldsOnly(cell) && cell.items.every(input => isSimpleValue(input.value))) {
       // the fields can't use each other here, but they are still the likeliest names a typo meant
-      this.hintNames = (this.hintNames || []).concat([c.items.map(x => x.name)]);
-      const vals = c.items.map(x => this.genChain(x.val));
+      this.hintNames = (this.hintNames || []).concat([cell.items.map(input => input.name)]);
+      const vals = cell.items.map(input => this.genChain(input.value));
       this.hintNames.pop();
-      return "VC(" + this.shapeRef(c.items.map(x => x.name)) + ",[" + vals.join(",") + "])";
+      return "makeRecord(" + this.shapeConstant(cell.items.map(input => input.name)) + ",[" + vals.join(",") + "])";
     }
-    if (simpleParts(c) && c.items.length > 1)
-      return "VP([" + c.items.map(x => this.genChain(x)).join(",") + "])";
-    const k = this.shapes.length;
-    const sh = { id: k, names: c.names.map(x => x.n), fidx: Object.create(null), pidx: [], usesIt: false, usesLeft: false, n: c.items.length, src: srcOf(c) };
-    this.shapes.push(sh);
+    if (isSimpleList(cell) && cell.items.length > 1)
+      return "makeList([" + cell.items.map(input => this.genChain(input)).join(",") + "])";
+    const shapeNumber = this.shapes.length;
+    const shape = { id: shapeNumber, names: cell.names.map(input => input.name), fieldIndex: Object.create(null), partIndex: [], usesIt: false, usesLeft: false, itemCount: cell.items.length, src: sourceKey(cell) };
+    this.shapes.push(shape);
     const seenNames = new Set();
-    c.items.forEach((it, i) => { if (it.k === "bind") { if (seenNames.has(it.name)) throw new SproutError("\"" + it.name + "\" is bound twice in one cell (decision 13)", it.line); seenNames.add(it.name); sh.fidx[it.name] = i; } else sh.pidx.push(i); });
-    const defs = c.names.map(x => x.def ? this.arrow("", () => this.genTerm(x.def, false)) : "null");
-    const act = "a" + k;
+    cell.items.forEach((item, i) => { if (item.type === "bind") { if (seenNames.has(item.name)) throw new SproutError("\"" + item.name + "\" is bound twice in one cell (decision 13)", item.line); seenNames.add(item.name); shape.fieldIndex[item.name] = i; } else shape.partIndex.push(i); });
+    const defaultMakers = cell.names.map(input => input.defaultValue ? this.arrowCode("", () => this.genTerm(input.defaultValue, false)) : "null");
+    const activation = "a" + shapeNumber;
     // run: inputs arrive as plain arguments (left, it, then each name)
-    const nparams = c.names.map((x, j) => act + "_" + j);
-    const runFr = { names: new Map(), act, itJS: act + "_it", leftJS: act + "_L", shape: sh, owner: !!ownerOfLeft, caps: new Map() };
-    c.names.forEach((x, j) => runFr.names.set(x.n, { k: "js", js: nparams[j] }));
-    this.frames.push(runFr);
-    const rb = this.withFn(() => this.genRunBody(c, runFr, k, true)), runBody = rb.decl + rb.body;
+    const paramNames = cell.names.map((input, position) => activation + "_" + position);
+    const runFrame = { names: new Map(), activation, itJS: activation + "_it", leftJS: activation + "_L", shape: shape, owner: !!ownerOfLeft, captured: new Map() };
+    cell.names.forEach((input, position) => runFrame.names.set(input.name, { type: "js", js: paramNames[position] }));
+    this.frames.push(runFrame);
+    const runBodyCode = this.withTemps(() => this.genRunBody(cell, runFrame, shapeNumber, true)), runBody = runBodyCode.decl + runBodyCode.body;
     this.frames.pop();
     // slots: one lazy thunk per readable item. Every cell follows one rule (decision 75): its fields can be read.
     // In a cell that takes input, the body (its parts) runs on a send, and a binding that uses the input is a local of that run.
-    let slotsJS = "null", caps;
-    const takes = sh.names.length > 0 || sh.usesIt;
-    let readable = c.items.map(() => true);
+    let slotsJS = "null", captured;
+    const takes = shape.names.length > 0 || shape.usesIt;
+    let readable = cell.items.map(() => true);
     if (takes) {
-      const dep = new Set(c.names.map(x => x.n).concat(["_", "right"]));
-      readable = c.items.map(it => { if (it.k !== "bind") return false; if (mentions(it.val, dep)) { dep.add(it.name); return false; } return true; });
-      sh.pidx = [];
-      for (const n in sh.fidx) if (!readable[sh.fidx[n]]) delete sh.fidx[n];
+      const dependsOnInput = new Set(cell.names.map(input => input.name).concat(["_", "right"]));
+      readable = cell.items.map(item => { if (item.type !== "bind") return false; if (mentions(item.value, dependsOnInput)) { dependsOnInput.add(item.name); return false; } return true; });
+      shape.partIndex = [];
+      for (const n in shape.fieldIndex) if (!readable[shape.fieldIndex[n]]) delete shape.fieldIndex[n];
     }
-    if (readable.some(x => x)) {
-      const fr = { names: new Map(), act, itJS: act + ".it", leftJS: act + ".left", shape: sh, owner: !!ownerOfLeft, caps: new Map() };
-      c.names.forEach((x, j) => fr.names.set(x.n, { k: "js", js: act + ".ins[" + j + "]" }));
-      this.frames.push(fr);
-      const sparts = [];
-      c.items.forEach((it, i) => {
-        if (!readable[i]) { sparts.push("()=>false"); return; }
-        if (it.k === "bind") {
-          const isCell = it.val.terms.length === 1 && it.val.terms[0].k === "cell";
-          const ast = isCell ? it.val.terms[0] : null;
-          if (isCell) fr.names.set(it.name, { k: "slot", act, i, cell: true, ast, val: it.val });
-          const e = this.arrow("", () => isCell ? this.genCell(it.val.terms[0], true) : this.genChain(it.val));
-          fr.names.set(it.name, { k: "slot", act, i, cell: isCell, ast, val: it.val });
-          sparts.push(e);
-        } else sparts.push(this.arrow("", () => this.genChain(it)));
+    if (readable.some(input => input)) {
+      const frame = { names: new Map(), activation, itJS: activation + ".it", leftJS: activation + ".left", shape: shape, owner: !!ownerOfLeft, captured: new Map() };
+      cell.names.forEach((input, position) => frame.names.set(input.name, { type: "js", js: activation + ".inputs[" + position + "]" }));
+      this.frames.push(frame);
+      const slotCodes = [];
+      cell.items.forEach((item, i) => {
+        if (!readable[i]) { slotCodes.push("()=>false"); return; }
+        if (item.type === "bind") {
+          const isCell = item.value.terms.length === 1 && item.value.terms[0].type === "cell";
+          const ast = isCell ? item.value.terms[0] : null;
+          if (isCell) frame.names.set(item.name, { type: "slot", activation, i, cell: true, ast, value: item.value });
+          const slotCode = this.arrowCode("", () => isCell ? this.genCell(item.value.terms[0], true) : this.genChain(item.value));
+          frame.names.set(item.name, { type: "slot", activation, i, cell: isCell, ast, value: item.value });
+          slotCodes.push(slotCode);
+        } else slotCodes.push(this.arrowCode("", () => this.genChain(item)));
       });
-      caps = [...fr.caps.values()].map(r => this.refJS(r));
+      captured = [...frame.captured.values()].map(r => this.referenceCode(r));
       this.frames.pop();
-      slotsJS = "(" + act + ")=>[" + sparts.join(",") + "]";
+      slotsJS = "(" + activation + ")=>[" + slotCodes.join(",") + "]";
     }
-    if (takes || !caps) { const rc = [...runFr.caps.values()].map(r => this.refJS(r)); caps = caps ? [...new Set(caps.concat(rc))] : rc; }
-    const runJS = "(" + [act + "_L", act + "_it"].concat(nparams).join(",") + ")=>{" + runBody + "}";
+    if (takes || !captured) { const runCaptures = [...runFrame.captured.values()].map(r => this.referenceCode(r)); captured = captured ? [...new Set(captured.concat(runCaptures))] : runCaptures; }
+    const runJS = "(" + [activation + "_L", activation + "_it"].concat(paramNames).join(",") + ")=>{" + runBody + "}";
     // a library may add a faster way to run this cell, worked out ahead (spork's kernel, decision 91)
-    const fast = LIB.cell ? LIB.cell(this, c) : null;
-    return "MK(S[" + k + "]," + slotsJS + "," + runJS + ",[" + defs.join(",") + "],()=>[" + caps.join(",") + "]" + (fast ? "," + fast : "") + ")";
+    const fasterForm = LIBRARIES.cell ? LIBRARIES.cell(this, cell) : null;
+    return "makeCell(SHAPES[" + shapeNumber + "]," + slotsJS + "," + runJS + ",[" + defaultMakers.join(",") + "],()=>[" + captured.join(",") + "]" + (fasterForm ? "," + fasterForm : "") + ")";
   }
 }
 // does this expression use any of these names?
-function mentions(n, names) {
-  if (!n || typeof n !== "object") return false;
-  if (n.k === "word") return names.has(n.v);
-  for (const key in n) { const v = n[key]; if (Array.isArray(v) ? v.some(x => mentions(x, names)) : (v && typeof v === "object" && mentions(v, names))) return true; }
+function mentions(node, names) {
+  if (!node || typeof node !== "object") return false;
+  if (node.type === "word") return names.has(node.value);
+  for (const key in node) { const value = node[key]; if (Array.isArray(value) ? value.some(x => mentions(x, names)) : (value && typeof value === "object" && mentions(value, names))) return true; }
   return false;
 }
-const OPNAME = { "+": "ADD", "-": "SUB", "*": "MUL", "/": "DIV", "%": "MOD", "<": "LT", ">": "GT", "<=": "LE", ">=": "GE", "=": "EQ", "!=": "NE", "..": "CAT", "with": "WITH", "@": "AT" };
+const OPERATOR_FUNCTION = { "+": "ADD", "-": "SUB", "*": "MUL", "/": "DIV", "%": "MOD", "<": "LT", ">": "GT", "<=": "LE", ">=": "GE", "=": "EQ", "!=": "NE", "..": "concat", "with": "withCell", "@": "partAt" };
 // a cell literal of fields only, none using a sibling field, _, left or right
-function fieldsOnly(c) {
-  if (c.names.length || !c.items.length || !c.items.every(x => x.k === "bind")) return false;
-  const names = new Set(c.items.map(x => x.name)); let ok = names.size === c.items.length;
+function isFieldsOnly(cell) {
+  if (cell.names.length || !cell.items.length || !cell.items.every(x => x.type === "bind")) return false;
+  const names = new Set(cell.items.map(x => x.name)); let ok = names.size === cell.items.length;
   const bad = w => names.has(w) || w === "_" || w === "left" || w === "right";
   const walk = n => {
     if (!ok || !n || typeof n !== "object") return;
-    if (n.k === "chain") { n.terms.forEach((t, i) => { if (t.k === "word") { if (i === 0 && bad(t.v)) ok = false; else if (i > 0 && (t.v === "_" || t.v === "left" || t.v === "right")) ok = false; } else walk(t); }); return; }
-    if (n.k === "word") { if (bad(n.v)) ok = false; return; }
+    if (n.type === "chain") { n.terms.forEach((t, i) => { if (t.type === "word") { if (i === 0 && bad(t.value)) ok = false; else if (i > 0 && (t.value === "_" || t.value === "left" || t.value === "right")) ok = false; } else walk(t); }); return; }
+    if (n.type === "word") { if (bad(n.value)) ok = false; return; }
     for (const key in n) { const v = n[key]; if (Array.isArray(v)) v.forEach(walk); else if (v && typeof v === "object") walk(v); }
   };
-  c.items.forEach(x => walk(x.val));
+  cell.items.forEach(x => walk(x.value));
   return ok;
 }
 // is a chain's answer certainly true or false? "false" when it is the word false itself, "bool" for a test, else null.
 // Strictly left to right, so the last step decides: a comparison, and, or, not, or the words true and false.
-const TESTOPS = new Set(["<", ">", "<=", ">=", "=", "!="]);
-function givesBool(ch) {
-  const T = ch.terms; if (!T.length) return null;
-  if (T.length === 1 && T[0].k === "word" && T[0].v === "false") return "false";
-  let ty = T[0].k === "word" && T[0].v === "true" ? "bool" : T[0].k === "group" && T[0].items.length === 1 && T[0].items[0].k === "chain" && givesBool(T[0].items[0]) ? "bool" : null;
-  for (let i = 1; i < T.length; i++) {
-    const t = T[i];
-    if (t.k === "word" && (FUSED.has(t.v) || t.v === "and" || t.v === "or") && i + 1 < T.length) { ty = TESTOPS.has(t.v) || t.v === "and" || t.v === "or" ? "bool" : null; i++; }
-    else if (t.k === "word" && t.v === "not") ty = ty ? "bool" : null;
-    else ty = null;
+const TEST_OPERATORS = new Set(["<", ">", "<=", ">=", "=", "!="]);
+function givesBool(chain) {
+  const terms = chain.terms; if (!terms.length) return null;
+  if (terms.length === 1 && terms[0].type === "word" && terms[0].value === "false") return "false";
+  let gives = terms[0].type === "word" && terms[0].value === "true" ? "bool" : terms[0].type === "group" && terms[0].items.length === 1 && terms[0].items[0].type === "chain" && givesBool(terms[0].items[0]) ? "bool" : null;
+  for (let i = 1; i < terms.length; i++) {
+    const term = terms[i];
+    if (term.type === "word" && (FUSED_OPERATORS.has(term.value) || term.value === "and" || term.value === "or") && i + 1 < terms.length) { gives = TEST_OPERATORS.has(term.value) || term.value === "and" || term.value === "or" ? "bool" : null; i++; }
+    else if (term.type === "word" && term.value === "not") gives = gives ? "bool" : null;
+    else gives = null;
   }
-  return ty;
+  return gives;
 }
 // a field value simple enough to work out when the cell is made: literals, names, field reads and arithmetic on them
-function simpleVal(ch) {
-  if (ch.k !== "chain" || !ch.terms.length) return false;
-  const T = ch.terms;
-  const term = t => t.k === "num" || t.k === "str" || (t.k === "word" && !["_", "left", "right", "!"].includes(t.v)) ||
-    (t.k === "group" && t.items.length === 1 && simpleVal(t.items[0])) || (t.k === "cell" && simpleParts(t));
-  if (!term(T[0])) return false;
-  for (let i = 1; i < T.length; i++) {
-    const t = T[i];
-    if (t.k === "word" && ["print", "each", "times", "else", "and", "or"].includes(t.v)) return false;
-    if (!term(t)) return false;
+function isSimpleValue(chain) {
+  if (chain.type !== "chain" || !chain.terms.length) return false;
+  const terms = chain.terms;
+  const isSimpleTerm = term => term.type === "num" || term.type === "str" || (term.type === "word" && !["_", "left", "right", "!"].includes(term.value)) ||
+    (term.type === "group" && term.items.length === 1 && isSimpleValue(term.items[0])) || (term.type === "cell" && isSimpleList(term));
+  if (!isSimpleTerm(terms[0])) return false;
+  for (let i = 1; i < terms.length; i++) {
+    const term = terms[i];
+    if (term.type === "word" && ["print", "each", "times", "else", "and", "or"].includes(term.value)) return false;
+    if (!isSimpleTerm(term)) return false;
   }
   return true;
 }
 // [a, b, c] whose parts are all simple: built straight away as a cell of values
-function simpleParts(c) { return !c.names.length && c.items.length > 0 && c.items.every(x => x.k === "chain" && simpleVal(x)); }
-const NOTE_KEYS = new Set(["line", "kern", "bindName", "sporkArg", "spkUses"]);
-function srcOf(c) { return JSON.stringify(c, (k, v) => NOTE_KEYS.has(k) ? undefined : v); }
+function isSimpleList(cell) { return !cell.names.length && cell.items.length > 0 && cell.items.every(item => item.type === "chain" && isSimpleValue(item)); }
+const COMPILER_NOTE_KEYS = new Set(["line", "kern", "bindName", "sporkArg", "spkUses"]);
+function sourceKey(cell) { return JSON.stringify(cell, (key, value) => COMPILER_NOTE_KEYS.has(key) ? undefined : value); }
 
 function compile(src, globals) {
   const ast = parse(src);
-  const g = new Gen(globals);
-  if (LIB.prescan) LIB.prescan(g, ast);
-  g.temps.push([]);
-  const js = g.genCell({ k: "cell", names: [], items: ast });
-  const top = g.temps.pop();
-  // each body is compiled more than once (to run, and to read fields), so its speed note is kept once
-  const seenSpeed = new Set(), speed = g.speed.filter(x => { const k = x.line + " " + x.word + " " + x.fast; if (seenSpeed.has(k)) return false; seenSpeed.add(k); return true; });
-  return { js, shapes: g.shapes, prologue: (top.length ? "let " + top.join(",") + ";\n" : "") + g.consts.join("\n"), speed };
+  const gen = new CodeGen(globals);
+  if (LIBRARIES.prescan) LIBRARIES.prescan(gen, ast);
+  gen.tempScopes.push([]);
+  const code = gen.genCell({ type: "cell", names: [], items: ast });
+  const topTemps = gen.tempScopes.pop();
+  // each body is compiled more than once (to run, and to read fields), so its speedNotes note is kept once
+  const seenNotes = new Set(), speedNotes = gen.speedNotes.filter(note => { const key = note.line + " " + note.word + " " + note.fast; if (seenNotes.has(key)) return false; seenNotes.add(key); return true; });
+  return { code, shapes: gen.shapes, prologue: (topTemps.length ? "let " + topTemps.join(",") + ";\n" : "") + gen.constants.join("\n"), speedNotes };
 }
 
 // ===================================================================== libraries (decision 96)
-// The core runs every program on its own. A library can only make it faster or add built-ins, never change an answer:
-//   cell(gen, c)      more ways to run a cell literal, as JS for MK's last argument (spork's kernel)
+// The core runs every program on its own. A library can only make it faster or add built-inputs, never change an answer:
+//   cell(gen, c)      more ways to run a cell literal, as JS for makeCell's last argument (spork's kernel)
 //   fuse.find/wrap    a run of steps in a chain made into one loop, tried before the steps as written
-//   note(gen, T, i)   speed notes; prescan(gen, ast) a look over the whole program first
+//   note(gen, T, i)   speedNotes notes; prescan(gen, ast) a look over the whole program first
 //   spork(xs, f)      run a spork faster, or null; sortNumbers(a) sort a Float64Array
 //   runtime           names the generated code may call
-const LIB = { cell: null, fuse: null, note: null, prescan: null, spork: null, sortNumbers: null };
-function install(lib) { for (const k in lib) { if (k === "runtime") Object.assign(RT, lib.runtime); else if (k in LIB) LIB[k] = lib[k]; } }
+const LIBRARIES = { cell: null, fuse: null, note: null, prescan: null, spork: null, sortNumbers: null };
+function install(library) { for (const key in library) { if (key === "runtime") Object.assign(RUNTIME, library.runtime); else if (key in LIBRARIES) LIBRARIES[key] = library[key]; } }
 
 // ===================================================================== runtime
 const BANG = { toString: () => "!" };   // "no input" (decisions 58, 69)
 const ANY = { toString: () => "any" };
 const UNSET = {};
-let LOG = (msg) => { if (typeof console !== "undefined") console.log("sprout: " + msg); };
-const warned = new Set();
-const seen = new Map();
-function LOG_MISS(msg, line) { const m = msg + (line ? " (line " + line + ")" : ""); const c = (seen.get(m) || 0) + 1; seen.set(m, c); if (c <= 3) LOG(m + (c === 3 ? " (and more; not shown again)" : "")); return false; }
-function UNKNOWN(n, line, hint) { return LOG_MISS("\"" + n + "\" isn't a word Sprout knows yet" + (hint ? " (did you mean \"" + hint + "\"?)" : ""), line); }
+let logMessage = (msg) => { if (typeof console !== "undefined") console.log("sprout: " + msg); };
+const lintsShown = new Set();
+const missCounts = new Map();
+function logMiss(message, line) { const full = message + (line ? " (line " + line + ")" : ""); const times = (missCounts.get(full) || 0) + 1; missCounts.set(full, times); if (times <= 3) logMessage(full + (times === 3 ? " (and more; not shown again)" : "")); return false; }
+function unknownWord(name, line, hint) { return logMiss("\"" + name + "\" isn't a word Sprout knows yet" + (hint ? " (did you mean \"" + hint + "\"?)" : ""), line); }
 // the closest name to a likely typo: at most 1 edit for short names, 2 for longer ones; none if it's a tie between several
-function nearest(n, names) {
-  const limit = n.length <= 4 ? 1 : 2; let best = null, bestD = limit + 1, tie = false;
-  for (const m of names) {
-    if (m === n || Math.abs(m.length - n.length) > limit) continue;
-    const d = editDistance(n, m, limit);
-    if (d < bestD) { best = m; bestD = d; tie = false; } else if (d === bestD) tie = true;
+function nearest(name, names) {
+  const limit = name.length <= 4 ? 1 : 2; let best = null, bestD = limit + 1, tie = false;
+  for (const candidate of names) {
+    if (candidate === name || Math.abs(candidate.length - name.length) > limit) continue;
+    const distance = editDistance(name, candidate, limit);
+    if (distance < bestD) { best = candidate; bestD = distance; tie = false; } else if (distance === bestD) tie = true;
   }
   return best && !tie ? best : null;
 }
 function editDistance(a, b, cap) {
   // optimal string alignment: insert, delete, change, or swap two neighbouring letters, each one edit
-  const d = [];
-  for (let x = 0; x <= a.length; x++) { d.push(new Array(b.length + 1).fill(0)); d[x][0] = x; }
-  for (let y = 0; y <= b.length; y++) d[0][y] = y;
+  const table = [];
+  for (let x = 0; x <= a.length; x++) { table.push(new Array(b.length + 1).fill(0)); table[x][0] = x; }
+  for (let y = 0; y <= b.length; y++) table[0][y] = y;
   for (let x = 1; x <= a.length; x++) {
     let low = Infinity;
     for (let y = 1; y <= b.length; y++) {
-      let v = Math.min(d[x - 1][y] + 1, d[x][y - 1] + 1, d[x - 1][y - 1] + (a[x - 1] === b[y - 1] ? 0 : 1));
-      if (x > 1 && y > 1 && a[x - 1] === b[y - 2] && a[x - 2] === b[y - 1]) v = Math.min(v, d[x - 2][y - 2] + 1);
-      d[x][y] = v; if (v < low) low = v;
+      let cost = Math.min(table[x - 1][y] + 1, table[x][y - 1] + 1, table[x - 1][y - 1] + (a[x - 1] === b[y - 1] ? 0 : 1));
+      if (x > 1 && y > 1 && a[x - 1] === b[y - 2] && a[x - 2] === b[y - 1]) cost = Math.min(cost, table[x - 2][y - 2] + 1);
+      table[x][y] = cost; if (cost < low) low = cost;
     }
     if (low > cap) return cap + 1;
   }
-  return d[a.length][b.length];
+  return table[a.length][b.length];
 }
 
-// Act: one activation of a cell, holding its inputs and (for reads) its worked-out slots
-class Act {
-  constructor(c, ins, it, left) { this.c = c; this.ins = ins; this.it = it; this.left = left; this.cache = null; this.fns = null; }
+// Activation: one activation of a cell, holding its inputs and (for reads) its worked-out slots
+class Activation {
+  constructor(cell, inputs, it, left) { this.cell = cell; this.inputs = inputs; this.it = it; this.left = left; this.cache = null; this.slotMakers = null; }
   get(i) {
     if (this.cache === null) {
-      if (!this.c.slots) return false;
-      this.cache = new Array(this.c.sh.n).fill(UNSET); this.fns = this.c.slots(this);
+      if (!this.cell.slots) return false;
+      this.cache = new Array(this.cell.shape.itemCount).fill(UNSET); this.slotMakers = this.cell.slots(this);
     }
-    let v = this.cache[i];
-    if (v === UNSET) { v = this.fns[i](); this.cache[i] = v; }
-    return v;
+    let value = this.cache[i];
+    if (value === UNSET) { value = this.slotMakers[i](); this.cache[i] = value; }
+    return value;
   }
 }
 
 // Cell: from a literal. Fields and parts are read lazily; running is always fresh.
 class Cell {
-  constructor(sh, slots, run, defs, caps, kn) { this.sh = sh; this.slots = slots; this.runF = run; this.defs = defs; this.caps = caps; this.left = undefined; this._a = null; this.kn = kn || null; }
-  act() { return this._a || (this._a = new Act(this, this.defaults(), false, this.left)); }
-  defaults() { const d = this.defs; if (!d.length) return EMPTY; const o = new Array(d.length); for (let j = 0; j < d.length; j++) o[j] = d[j] ? d[j]() : false; return o; }
-  field(name) { const i = this.sh.fidx[name]; return i === undefined ? UNSET : this.act().get(i); }
-  fieldNames() { return Object.keys(this.sh.fidx); }
-  count() { return this.sh.pidx.length; }
-  part(n) { const i = this.sh.pidx[n - 1]; return i === undefined ? false : this.act().get(i); }
-  takesInput() { return this.sh.names.length > 0 || this.sh.usesIt; }
-  run(arg) { let r = this.run1(arg); while (r instanceof Bounce) r = r.c.run1(r.a); return r; }
-  // run1: one step; a call in tail position comes back as a Bounce for the loop above (stack stays flat)
-  run1(arg) {
-    const sh = this.sh, nn = sh.names.length, L = this.left;
-    if (arg === BANG || arg === undefined) return nn ? this.call(this.defaults()) : this.runF(L, false);
-    if (nn === 0) return this.runF(L, arg);
-    if (nn === 1) return this.runF(L, false, arg); // one name takes the whole value (decision 19)
+  constructor(shape, slots, run, defaultMakers, captured, fastForms) { this.shape = shape; this.slots = slots; this.runCode = run; this.defaultMakers = defaultMakers; this.captured = captured; this.left = undefined; this._activation = null; this.fastForms = fastForms || null; }
+  activation() { return this._activation || (this._activation = new Activation(this, this.defaults(), false, this.left)); }
+  defaults() { const makers = this.defaultMakers; if (!makers.length) return EMPTY; const values = new Array(makers.length); for (let j = 0; j < makers.length; j++) values[j] = makers[j] ? makers[j]() : false; return values; }
+  field(name) { const i = this.shape.fieldIndex[name]; return i === undefined ? UNSET : this.activation().get(i); }
+  fieldNames() { return Object.keys(this.shape.fieldIndex); }
+  count() { return this.shape.partIndex.length; }
+  part(n) { const i = this.shape.partIndex[n - 1]; return i === undefined ? false : this.activation().get(i); }
+  takesInput() { return this.shape.names.length > 0 || this.shape.usesIt; }
+  run(arg) { let r = this.runOneStep(arg); while (r instanceof TailCall) r = r.cell.runOneStep(r.argument); return r; }
+  // runOneStep: one step; a call in tail position comes back as a TailCall for the loop above (stack stays flat)
+  runOneStep(arg) {
+    const shape = this.shape, nameCount = shape.names.length, left = this.left;
+    if (arg === BANG || arg === undefined) return nameCount ? this.call(this.defaults()) : this.runCode(left, false);
+    if (nameCount === 0) return this.runCode(left, arg);
+    if (nameCount === 1) return this.runCode(left, false, arg); // one name takes the whole value (decision 19)
     // several names: unpack the argument cell by position, then by name (decision 15)
-    const ins = this.defaults();
+    const inputs = this.defaults();
     if (isCell(arg)) {
-      const pc = arg.count();
-      if (pc > nn) lint("more values than names: " + pc + " given, " + nn + " taken");
-      for (let j = 0; j < nn && j < pc; j++) ins[j] = arg.part(j + 1);
-      if (arg.fieldNames().length) for (let j = 0; j < nn; j++) { const v = arg.field(sh.names[j]); if (v !== UNSET) ins[j] = v; }
-      for (let j = pc; j < nn; j++) if (!this.defs[j] && arg.field(sh.names[j]) === UNSET) lint("\"" + sh.names[j] + "\" was not given, so it is false");
-    } else ins[0] = arg;
-    return this.call(ins);
+      const partCount = arg.count();
+      if (partCount > nameCount) lint("more values than names: " + partCount + " given, " + nameCount + " taken");
+      for (let j = 0; j < nameCount && j < partCount; j++) inputs[j] = arg.part(j + 1);
+      if (arg.fieldNames().length) for (let j = 0; j < nameCount; j++) { const value = arg.field(shape.names[j]); if (value !== UNSET) inputs[j] = value; }
+      for (let j = partCount; j < nameCount; j++) if (!this.defaultMakers[j] && arg.field(shape.names[j]) === UNSET) lint("\"" + shape.names[j] + "\" was not given, so it is false");
+    } else inputs[0] = arg;
+    return this.call(inputs);
   }
-  call(ins) {
-    const L = this.left;
-    switch (ins.length) {
-      case 1: return this.runF(L, false, ins[0]);
-      case 2: return this.runF(L, false, ins[0], ins[1]);
-      case 3: return this.runF(L, false, ins[0], ins[1], ins[2]);
-      case 4: return this.runF(L, false, ins[0], ins[1], ins[2], ins[3]);
-      default: return this.runF(L, false, ...ins);
+  call(inputs) {
+    const left = this.left;
+    switch (inputs.length) {
+      case 1: return this.runCode(left, false, inputs[0]);
+      case 2: return this.runCode(left, false, inputs[0], inputs[1]);
+      case 3: return this.runCode(left, false, inputs[0], inputs[1], inputs[2]);
+      case 4: return this.runCode(left, false, inputs[0], inputs[1], inputs[2], inputs[3]);
+      default: return this.runCode(left, false, ...inputs);
     }
   }
-  bindLeft(r) { const b = new Cell(this.sh, this.slots, this.runF, this.defs, this.caps, this.kn); b.left = r; return b; }
+  bindLeft(receiver) { const bound = new Cell(this.shape, this.slots, this.runCode, this.defaultMakers, this.captured, this.fastForms); bound.left = receiver; return bound; }
 }
 const EMPTY = [];
-function lint(msg) { if (!warned.has(msg)) { warned.add(msg); LOG("lint: " + msg); } }
+function lint(msg) { if (!lintsShown.has(msg)) { lintsShown.add(msg); logMessage("lint: " + msg); } }
 
-// FShape: the field names of a kind of record, shared by every record with the same names (like a JS hidden class)
-class FShape {
-  constructor(keys) { this.keys = keys; this.next = new Map(); }
-  index(k) { const ks = this.keys; for (let i = 0; i < ks.length; i++) if (ks[i] === k) return i; return -1; }
-  add(k) { let s = this.next.get(k); if (!s) { s = new FShape(this.keys.concat([k])); this.next.set(k, s); } return s; }
+// FieldShape: the field names of a kind of record, shared by every record with the same names (like a JS hidden class)
+class FieldShape {
+  constructor(keys) { this.keys = keys; this.extensions = new Map(); }
+  index(key) { const keys = this.keys; for (let i = 0; i < keys.length; i++) if (keys[i] === key) return i; return -1; }
+  add(key) { let extended = this.extensions.get(key); if (!extended) { extended = new FieldShape(this.keys.concat([key])); this.extensions.set(key, extended); } return extended; }
 }
-const ROOT = new FShape([]);
+const NO_FIELDS = new FieldShape([]);
 const shapeCache = new Map();
-function shapeFor(keys) { const id = keys.join("\u0000"); let s = shapeCache.get(id); if (!s) { s = ROOT; for (const k of keys) s = s.index(k) >= 0 ? s : s.add(k); shapeCache.set(id, s); } return s; }
+function shapeFor(keys) { const cacheKey = keys.join("\u0000"); let shape = shapeCache.get(cacheKey); if (!shape) { shape = NO_FIELDS; for (const key of keys) shape = shape.index(key) >= 0 ? shape : shape.add(key); shapeCache.set(cacheKey, shape); } return shape; }
 
-// VCell: a cell of worked-out values, made by with, .., collect, keep and range
-class VCell {
-  // parts: JS array (0-based); fs: field shape; fv: field values in shape order
-  constructor(parts, fs, fv) { this.parts = parts; this.fs = fs || ROOT; this.fv = fv || EMPTY; }
-  field(name) { const i = this.fs.index(name); return i < 0 ? UNSET : this.fv[i]; }
-  fieldNames() { return this.fs.keys; }
-  get fields() { if (!this.fs.keys.length) return null; const m = new Map(); this.fs.keys.forEach((k, i) => m.set(k, this.fv[i])); return m; }
+// ValueCell: a cell of worked-out values, made by with, .., collect, keep and range
+class ValueCell {
+  // parts: JS array (0-based); fieldShape: field shape; fieldValues: field values in shape order
+  constructor(parts, fieldShape, fieldValues) { this.parts = parts; this.fieldShape = fieldShape || NO_FIELDS; this.fieldValues = fieldValues || EMPTY; }
+  field(name) { const i = this.fieldShape.index(name); return i < 0 ? UNSET : this.fieldValues[i]; }
+  fieldNames() { return this.fieldShape.keys; }
+  get fields() { if (!this.fieldShape.keys.length) return null; const m = new Map(); this.fieldShape.keys.forEach((k, i) => m.set(k, this.fieldValues[i])); return m; }
   count() { return this.parts.length; }
   part(n) { const v = this.parts[n - 1]; return v === undefined ? false : v; }
   takesInput() { return false; }
   run() { return this.parts.length ? this.parts[this.parts.length - 1] : false; }
 }
 // a cell of values from a JS array of parts and a Map of fields
-function VFM(parts, fields) { return fields && fields.size ? new VCell(parts, shapeFor([...fields.keys()]), [...fields.values()]) : new VCell(parts, ROOT, EMPTY); }
-// RCell: range n, the cell [1, 2, ..., n]. Part i is i, so loops never need to build the list.
-class RCell extends VCell {
-  constructor(n) { super(null, ROOT, EMPTY); this.n = n; this._p = null; }
-  get parts() { if (!this._p) { const o = new Array(this.n); for (let i = 0; i < this.n; i++) o[i] = i + 1; this._p = o; } return this._p; }
+function valueCellOf(parts, fields) { return fields && fields.size ? new ValueCell(parts, shapeFor([...fields.keys()]), [...fields.values()]) : new ValueCell(parts, NO_FIELDS, EMPTY); }
+// RangeCell: range n, the cell [1, 2, ..., n]. Part i is i, so loops never need to build the list.
+class RangeCell extends ValueCell {
+  constructor(size) { super(null, NO_FIELDS, EMPTY); this.size = size; this._parts = null; }
+  get parts() { if (!this._parts) { const o = new Array(this.size); for (let i = 0; i < this.size; i++) o[i] = i + 1; this._parts = o; } return this._parts; }
   set parts(v) {}
-  count() { return this.n; }
-  part(i) { return i >= 1 && i <= this.n ? i : false; }
-  run() { return this.n ? this.n : false; }
+  count() { return this.size; }
+  part(i) { return i >= 1 && i <= this.size ? i : false; }
+  run() { return this.size ? this.size : false; }
 }
-function VC(fs, vals) { return new VCell(EMPTY, fs, vals); }
-function VP(parts) { return new VCell(parts, ROOT, EMPTY); }
-function MK(sh, slots, run, defs, caps, kn) { return new Cell(sh, slots, run, defs, caps, kn); }
+function makeRecord(fieldShape, vals) { return new ValueCell(EMPTY, fieldShape, vals); }
+function makeList(parts) { return new ValueCell(parts, NO_FIELDS, EMPTY); }
+function makeCell(shape, slots, run, defaultMakers, captured, fastForms) { return new Cell(shape, slots, run, defaultMakers, captured, fastForms); }
 
-// ColCell: a list of records that share one shape and hold only numbers, stored as one number array per field (decision 82).
+// ColumnCell: a list of records that share one shape and hold only numbers, stored as one number array per field (decision 82).
 // To a program it is the same list: parts, @, length, = and str all see ordinary records, made when first asked for.
-class ColCell extends VCell {
-  constructor(rs, cols, n) { super(null, ROOT, EMPTY); this.rs = rs; this.cols = cols; this.n = n; this._p = null; }
-  get parts() { if (!this._p) { const o = new Array(this.n); for (let i = 0; i < this.n; i++) o[i] = this.row(i); this._p = o; } return this._p; }
+class ColumnCell extends ValueCell {
+  constructor(recordShape, columns, size) { super(null, NO_FIELDS, EMPTY); this.recordShape = recordShape; this.columns = columns; this.size = size; this._parts = null; }
+  get parts() { if (!this._parts) { const o = new Array(this.size); for (let i = 0; i < this.size; i++) o[i] = this.row(i); this._parts = o; } return this._parts; }
   set parts(v) {}
-  row(i) { const c = this.cols, k = c.length, fv = new Array(k); for (let j = 0; j < k; j++) fv[j] = c[j][i]; return new VCell(EMPTY, this.rs, fv); }
-  count() { return this.n; }
-  part(k) { if (!Number.isInteger(k) || k < 1 || k > this.n) return false; return this._p ? this._p[k - 1] : this.row(k - 1); }
-  run() { return this.n ? this.part(this.n) : false; }
+  row(i) { const columns = this.columns, fieldCount = columns.length, fieldValues = new Array(fieldCount); for (let j = 0; j < fieldCount; j++) fieldValues[j] = columns[j][i]; return new ValueCell(EMPTY, this.recordShape, fieldValues); }
+  count() { return this.size; }
+  part(k) { if (!Number.isInteger(k) || k < 1 || k > this.size) return false; return this._parts ? this._parts[k - 1] : this.row(k - 1); }
+  run() { return this.size ? this.part(this.size) : false; }
 }
-// NCell: a list of numbers kept in one Float64Array, made by spork and sort. To a program it is the same list.
-class NCell extends VCell {
-  constructor(a) { super(null, ROOT, EMPTY); this.a = a; this._p = null; }
-  get parts() { if (!this._p) this._p = Array.from(this.a); return this._p; }
+// NumberList: a list of numbers kept in one Float64Array, made by spork and sort. To a program it is the same list.
+class NumberList extends ValueCell {
+  constructor(numbers) { super(null, NO_FIELDS, EMPTY); this.numbers = numbers; this._parts = null; }
+  get parts() { if (!this._parts) this._parts = Array.from(this.numbers); return this._parts; }
   set parts(v) {}
-  count() { return this.a.length; }
-  part(k) { return Number.isInteger(k) && k >= 1 && k <= this.a.length ? this.a[k - 1] : false; }
-  run() { return this.a.length ? this.a[this.a.length - 1] : false; }
+  count() { return this.numbers.length; }
+  part(k) { return Number.isInteger(k) && k >= 1 && k <= this.numbers.length ? this.numbers[k - 1] : false; }
+  run() { return this.numbers.length ? this.numbers[this.numbers.length - 1] : false; }
 }
-let COLMIN = 32, FAST = true;
-const COLS = new WeakMap();
+let COLUMN_MIN_LENGTH = 32, fastPathsOn = true;
+const COLUMNS_CACHE = new WeakMap();
 // the columns for a list, if it is one: a list already in columns, or 32 or more records of one shape holding only numbers
-function toCols(xs) {
-  if (xs instanceof ColCell) return xs;
-  if (!(xs instanceof VCell) || xs instanceof RCell || xs.fs !== ROOT) return null;
-  const p = xs.parts; if (p.length < COLMIN) return null;
-  let c = COLS.get(xs); if (c !== undefined) return c;
-  c = rowsToCols(p, null); COLS.set(xs, c); return c;
+function asColumns(list) {
+  if (list instanceof ColumnCell) return list;
+  if (!(list instanceof ValueCell) || list instanceof RangeCell || list.fieldShape !== NO_FIELDS) return null;
+  const items = list.parts; if (items.length < COLUMN_MIN_LENGTH) return null;
+  let columns = COLUMNS_CACHE.get(list); if (columns !== undefined) return columns;
+  columns = rowsToColumns(items, null); COLUMNS_CACHE.set(list, columns); return columns;
 }
-function rowsToCols(p, rs) {
-  const n = p.length; if (!n) return null;
-  const r0 = p[0]; if (!(r0 instanceof VCell)) return null;
-  rs = rs || r0.fs; const k = rs.keys.length; if (!k) return null;
-  const cols = new Array(k); for (let j = 0; j < k; j++) cols[j] = new Float64Array(n);
-  for (let i = 0; i < n; i++) {
-    const r = p[i]; if (!(r instanceof VCell) || r.fs !== rs || r.parts.length) return null;
-    const fv = r.fv; for (let j = 0; j < k; j++) { const v = fv[j]; if (typeof v !== "number") return null; cols[j][i] = v; }
+function rowsToColumns(rows, recordShape) {
+  const count = rows.length; if (!count) return null;
+  const firstRow = rows[0]; if (!(firstRow instanceof ValueCell)) return null;
+  recordShape = recordShape || firstRow.fieldShape; const fieldCount = recordShape.keys.length; if (!fieldCount) return null;
+  const columns = new Array(fieldCount); for (let j = 0; j < fieldCount; j++) columns[j] = new Float64Array(count);
+  for (let i = 0; i < count; i++) {
+    const row = rows[i]; if (!(row instanceof ValueCell) || row.fieldShape !== recordShape || row.parts.length) return null;
+    const fieldValues = row.fieldValues; for (let j = 0; j < fieldCount; j++) { const value = fieldValues[j]; if (typeof value !== "number") return null; columns[j][i] = value; }
   }
-  return new ColCell(rs, cols, n);
+  return new ColumnCell(recordShape, columns, count);
 }
 // a .. b where either side is in columns: the result stays in columns when both sides hold records of the same shape
-function colMerge(a, b) {
-  const side = (x, rs) => {
-    if (x instanceof ColCell) return x.rs === rs ? x : null;
-    if (!isCell(x) || x instanceof RCell || x.fieldNames().length) return null;
-    if (x.count() === 0) return EMPTYCOL;
-    return rowsToCols(partsOf(x), rs);
+function mergeColumns(left, right) {
+  const asColumnsOf = (list, recordShape) => {
+    if (list instanceof ColumnCell) return list.recordShape === recordShape ? list : null;
+    if (!isCell(list) || list instanceof RangeCell || list.fieldNames().length) return null;
+    if (list.count() === 0) return NO_COLUMNS;
+    return rowsToColumns(partsOf(list), recordShape);
   };
-  const rs = (a instanceof ColCell ? a : b).rs;
-  const ca = side(a, rs); if (!ca) return null;
-  const cb = side(b, rs); if (!cb) return null;
-  if (cb === EMPTYCOL) return ca === EMPTYCOL ? null : ca;
-  if (ca === EMPTYCOL) return cb;
-  const na = ca.n, nb = cb.n, k = ca.cols.length, cols = new Array(k);
-  for (let j = 0; j < k; j++) { const o = new Float64Array(na + nb); o.set(ca.cols[j], 0); o.set(cb.cols[j], na); cols[j] = o; }
-  return new ColCell(rs, cols, na + nb);
+  const recordShape = (left instanceof ColumnCell ? left : right).recordShape;
+  const leftColumns = asColumnsOf(left, recordShape); if (!leftColumns) return null;
+  const rightColumns = asColumnsOf(right, recordShape); if (!rightColumns) return null;
+  if (rightColumns === NO_COLUMNS) return leftColumns === NO_COLUMNS ? null : leftColumns;
+  if (leftColumns === NO_COLUMNS) return rightColumns;
+  const leftCount = leftColumns.size, rightCount = rightColumns.size, fieldCount = leftColumns.columns.length, columns = new Array(fieldCount);
+  for (let j = 0; j < fieldCount; j++) { const merged = new Float64Array(leftCount + rightCount); merged.set(leftColumns.columns[j], 0); merged.set(rightColumns.columns[j], leftCount); columns[j] = merged; }
+  return new ColumnCell(recordShape, columns, leftCount + rightCount);
 }
-const EMPTYCOL = {};
-const isCell = v => v instanceof Cell || v instanceof VCell;
-function partsOf(c) { if (c instanceof VCell) return c.parts; const n = c.count(), o = new Array(n); for (let i = 0; i < n; i++) o[i] = c.part(i + 1); return o; }
-function fieldsOf(c) { if (c instanceof VCell) return c.fields || new Map(); const m = new Map(); for (const k of c.fieldNames()) m.set(k, c.field(k)); return m; }
+const NO_COLUMNS = {};
+const isCell = v => v instanceof Cell || v instanceof ValueCell;
+function partsOf(cell) { if (cell instanceof ValueCell) return cell.parts; const count = cell.count(), parts = new Array(count); for (let i = 0; i < count; i++) parts[i] = cell.part(i + 1); return parts; }
+function fieldsOf(cell) { if (cell instanceof ValueCell) return cell.fields || new Map(); const fields = new Map(); for (const key of cell.fieldNames()) fields.set(key, cell.field(key)); return fields; }
 
 // Native: a cell written in JavaScript (host words, range, rand...). fn takes the one argument.
 class Native { constructor(name, fn, effect) { this.name = name; this.fn = fn; this.effect = !!effect; } }
-// Waiting: a prototype method that has its left side and waits for its right side
-class Waiting { constructor(fn, left) { this.fn = fn; this.left = left; } }
-class Bounce { constructor(c, a) { this.c = c; this.a = a; } }
-function UNB(r) { while (r instanceof Bounce) r = r.c.run1(r.a); return r; }
-// TAIL: a send in tail position. A cell is not called here; its caller's loop calls it.
-function TAIL(r, a) { if (r instanceof Cell && !(typeof a === "string" && r.sh.fidx[a] !== undefined)) return new Bounce(r, a); return SEND(r, a); }
+// WaitingMethod: a prototype method that has its left side and waits for its right side
+class WaitingMethod { constructor(fn, left) { this.fn = fn; this.left = left; } }
+class TailCall { constructor(cell, argument) { this.cell = cell; this.argument = argument; } }
+function finishTailCalls(result) { while (result instanceof TailCall) result = result.cell.runOneStep(result.argument); return result; }
+// tailSend: a send in tail position. A cell is not called here; its caller's loop calls it.
+function tailSend(receiver, argument) { if (receiver instanceof Cell && !(typeof argument === "string" && receiver.shape.fieldIndex[argument] !== undefined)) return new TailCall(receiver, argument); return send(receiver, argument); }
 
 // ---- reading a field (decisions 2, 38, 52)
-function readField(r, v) {
-  if (v instanceof Cell && v.sh.usesLeft) { const b = v.bindLeft(r); return b.takesInput() ? b : b.run(BANG); }
-  return v;
+function readField(receiver, value) {
+  if (value instanceof Cell && value.shape.usesLeft) { const bound = value.bindLeft(receiver); return bound.takesInput() ? bound : bound.run(BANG); }
+  return value;
 }
-// SW: send a word. Fields first (with prototype methods), then a name in scope as the argument.
-// SWI: SW with an inline cache. A record read at this spot usually has the same shape every time.
-function SWI(r, w, lex, line, ic, quiet) {
-  if (r instanceof VCell) {
-    const fs = r.fs;
-    if (fs === ic.s) { const v = r.fv[ic.i]; return v instanceof Cell && v.sh.usesLeft ? readField(r, v) : v; }
-    const i = fs.index(w);
-    if (i >= 0) { if (lex) clash(w, line); ic.s = fs; ic.i = i; const v = r.fv[i]; return v instanceof Cell && v.sh.usesLeft ? readField(r, v) : v; }
+// sendWord: send a word. Fields first (with prototype methods), then a name in scope as the argument.
+// sendWordCached: sendWord with an inline cache. A record read at this spot usually has the same shape every time.
+function sendWordCached(receiver, word, lexical, line, cache, quiet) {
+  if (receiver instanceof ValueCell) {
+    const fieldShape = receiver.fieldShape;
+    if (fieldShape === cache.shape) { const value = receiver.fieldValues[cache.index]; return value instanceof Cell && value.shape.usesLeft ? readField(receiver, value) : value; }
+    const index = fieldShape.index(word);
+    if (index >= 0) {
+      if (lexical) lintFieldNameClash(word, line);
+      cache.shape = fieldShape; cache.index = index;
+      const value = receiver.fieldValues[index]; return value instanceof Cell && value.shape.usesLeft ? readField(receiver, value) : value;
+    }
   }
-  return SW(r, w, lex, line, quiet);
+  return sendWord(receiver, word, lexical, line, quiet);
 }
 // decision 73: a word that is both a field of the receiver and a name in scope reads the field, loudly
-function clash(w, line) { lint("\"" + w + "\" is both a field here and a name in scope; the field wins" + (line ? " (line " + line + ")" : "")); }
-function SW(r, w, lex, line, quiet) {
-  if (r instanceof Cell || r instanceof VCell) { const v = r.field(w); if (v !== UNSET) { if (lex) clash(w, line); return readField(r, v); } }
-  const m = protoOf(r)[w];
-  if (m !== undefined) return m.ar ? new Waiting(m.fn, r) : m.fn(r);
-  if (lex) return SEND(r, lex());
+function lintFieldNameClash(word, line) { lint("\"" + word + "\" is both a field here and a name in scope; the field wins" + (line ? " (line " + line + ")" : "")); }
+function sendWord(receiver, word, lexical, line, quiet) {
+  if (receiver instanceof Cell || receiver instanceof ValueCell) {
+    const value = receiver.field(word);
+    if (value !== UNSET) { if (lexical) lintFieldNameClash(word, line); return readField(receiver, value); }
+  }
+  const method = methodsOf(receiver)[word];
+  if (method !== undefined) return method.takesArgument ? new WaitingMethod(method.run, receiver) : method.run(receiver);
+  if (lexical) return send(receiver, lexical());
   if (quiet) return false;
   // a field that isn't there: suggest the nearest field this cell does have
-  const hint = (r instanceof Cell || r instanceof VCell) ? nearest(w, r.fieldNames()) : null;
-  return LOG_MISS(describe(r) + " doesn't know " + w + (hint ? " (did you mean " + hint + "?)" : ""), line);
+  const hint = (receiver instanceof Cell || receiver instanceof ValueCell) ? nearest(word, receiver.fieldNames()) : null;
+  return logMiss(describe(receiver) + " doesn't know " + word + (hint ? " (did you mean " + hint + "?)" : ""), line);
 }
-// SEND: send a value
-function SEND(r, a) {
-  if (r instanceof Cell) {
-    if (typeof a !== "string" && a !== BANG && r.sh.names.length === 1) { let v = r.runF(r.left, false, a); while (v instanceof Bounce) v = v.c.run1(v.a); return v; }
-    if (typeof a === "string") { const v = r.field(a); if (v !== UNSET) return readField(r, v); }
-    return r.run(a);
+// send: send a value
+function send(receiver, argument) {
+  if (receiver instanceof Cell) {
+    if (typeof argument !== "string" && argument !== BANG && receiver.shape.names.length === 1) {
+      let result = receiver.runCode(receiver.left, false, argument);
+      while (result instanceof TailCall) result = result.cell.runOneStep(result.argument);
+      return result;
+    }
+    if (typeof argument === "string") { const value = receiver.field(argument); if (value !== UNSET) return readField(receiver, value); }
+    return receiver.run(argument);
   }
-  if (r instanceof Waiting) return r.fn(r.left, a);
-  if (r instanceof Native) return r.fn(a === BANG ? false : a);
-  if (r instanceof VCell) { if (typeof a === "string") { const v = r.field(a); if (v !== UNSET) return readField(r, v); } return r.run(a); }
-  if (r === true || r === false) { if (isCell(a)) return r ? a.run(BANG) : false; return MISSING(r, a); }
-  return MISSING(r, a);
+  if (receiver instanceof WaitingMethod) return receiver.fn(receiver.left, argument);
+  if (receiver instanceof Native) return receiver.fn(argument === BANG ? false : argument);
+  if (receiver instanceof ValueCell) { if (typeof argument === "string") { const value = receiver.field(argument); if (value !== UNSET) return readField(receiver, value); } return receiver.run(argument); }
+  if (receiver === true || receiver === false) { if (isCell(argument)) return receiver ? argument.run(BANG) : false; return notUnderstood(receiver, argument); }
+  return notUnderstood(receiver, argument);
 }
 // decision 28: an unhandled send logs and gives false
-function MISSING(r, m, line) { return LOG_MISS(describe(r) + " doesn't know " + describe(m), line); }
-function describe(v) { const s = fmt(v); return s.length > 30 ? s.slice(0, 30) + "..." : s; }
-function RUNC(c) { return c.run(BANG); }
-function ISBOOL(v, op) { return typeof v === "boolean" ? v : MISSING(v, op); }
+function notUnderstood(receiver, message, line) { return logMiss(describe(receiver) + " doesn't know " + describe(message), line); }
+function describe(value) { const text = formatValue(value); return text.length > 30 ? text.slice(0, 30) + "..." : text; }
+function runCell(cell) { return cell.run(BANG); }
+function requireBool(value, operator) { return typeof value === "boolean" ? value : notUnderstood(value, operator); }
 
 // ---- effects: queued while the loop is running update, carried out after (decision 33)
-let EFFQ = null;
-function effect(f) { if (EFFQ) EFFQ.push(f); else f(); return false; }
-function queueEffects() { EFFQ = []; }
-function runEffects() { const q = EFFQ || []; EFFQ = null; for (const f of q) f(); return q.length; }
-function dropEffects() { const n = EFFQ ? EFFQ.length : 0; EFFQ = null; return n; }
+let effectQueue = null;
+function effect(work) { if (effectQueue) effectQueue.push(work); else work(); return false; }
+function queueEffects() { effectQueue = []; }
+function runEffects() { const queued = effectQueue || []; effectQueue = null; for (const work of queued) work(); return queued.length; }
+function dropEffects() { const dropped = effectQueue ? effectQueue.length : 0; effectQueue = null; return dropped; }
 
 // noise: a 32-bit integer hash of both inputs (whole and fractional parts), mapped to [0, 1)
-function NOISE(x, y) {
-  const fx = Math.floor(x), fy = Math.floor(y);
-  let h = Math.imul(fx ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul((fy + 0x632be5ab) | 0, 0xc2b2ae35) ^ Math.imul(Math.floor((x - fx) * 4294967296) | 0, 0x27d4eb2f) ^ Math.imul(Math.floor((y - fy) * 4294967296) | 0, 0x165667b1);
-  h ^= h >>> 16; h = Math.imul(h, 0x7feb352d); h ^= h >>> 15; h = Math.imul(h, 0x846ca68b); h ^= h >>> 16;
-  return (h >>> 0) / 4294967296;
+function noiseHash(x, y) {
+  const wholeX = Math.floor(x), wholeY = Math.floor(y);
+  let hash = Math.imul(wholeX ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul((wholeY + 0x632be5ab) | 0, 0xc2b2ae35) ^ Math.imul(Math.floor((x - wholeX) * 4294967296) | 0, 0x27d4eb2f) ^ Math.imul(Math.floor((y - wholeY) * 4294967296) | 0, 0x165667b1);
+  hash ^= hash >>> 16; hash = Math.imul(hash, 0x7feb352d); hash ^= hash >>> 15; hash = Math.imul(hash, 0x846ca68b); hash ^= hash >>> 16;
+  return (hash >>> 0) / 4294967296;
 }
 
 // ---- text
-function fmt(x) {
-  if (x === true) return "true"; if (x === false) return "false"; if (x === BANG) return "!"; if (x === ANY) return "any";
-  if (typeof x === "number") return String(+x.toFixed(10));
-  if (typeof x === "string") return x;
-  if (x instanceof Native) return "[" + x.name + "]";
-  if (x instanceof Waiting) return "[waiting]";
-  if (x instanceof Cell && x.takesInput()) return "[cell]";
-  if (isCell(x)) {
-    const out = [];
-    for (const k of x.fieldNames()) { const v = x.field(k); out.push(k + " : " + (v instanceof Cell && (v.takesInput() || v.sh.usesLeft) ? "[cell]" : fmt(v))); }
-    for (const p of partsOf(x)) out.push(p instanceof Cell && p.takesInput() ? "[cell]" : fmt(p));
-    return "[" + out.join(", ") + "]";
+function formatValue(value) {
+  if (value === true) return "true"; if (value === false) return "false"; if (value === BANG) return "!"; if (value === ANY) return "any";
+  if (typeof value === "number") return String(+value.toFixed(10));
+  if (typeof value === "string") return value;
+  if (value instanceof Native) return "[" + value.name + "]";
+  if (value instanceof WaitingMethod) return "[waiting]";
+  if (value instanceof Cell && value.takesInput()) return "[cell]";
+  if (isCell(value)) {
+    const pieces = [];
+    for (const key of value.fieldNames()) { const fieldValue = value.field(key); pieces.push(key + " : " + (fieldValue instanceof Cell && (fieldValue.takesInput() || fieldValue.shape.usesLeft) ? "[cell]" : formatValue(fieldValue))); }
+    for (const part of partsOf(value)) pieces.push(part instanceof Cell && part.takesInput() ? "[cell]" : formatValue(part));
+    return "[" + pieces.join(", ") + "]";
   }
-  return String(x);
+  return String(value);
 }
-function STR() { let s = ""; for (let i = 0; i < arguments.length; i++) s += fmt(arguments[i]); return s; }
+function joinText() { let text = ""; for (let i = 0; i < arguments.length; i++) text += formatValue(arguments[i]); return text; }
 
 // ---- equality: same contents, never runs anything (decisions 22, 23)
-function eq(a, b) {
+function valuesEqual(a, b) {
   if (a === b) return true;
   if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
   if (!isCell(a) || !isCell(b)) return false;
   // a cell that takes input compares by its code and the values it captured (decision 23)
-  const ia = a instanceof Cell && a.takesInput(), ib = b instanceof Cell && b.takesInput();
-  if (ia || ib) {
-    if (!(ia && ib) || a.sh.src !== b.sh.src) return false;
-    const ca = a.caps(), cb = b.caps();
-    for (let i = 0; i < ca.length; i++) if (!eq(ca[i], cb[i])) return false;
+  const aTakesInput = a instanceof Cell && a.takesInput(), bTakesInput = b instanceof Cell && b.takesInput();
+  if (aTakesInput || bTakesInput) {
+    if (!(aTakesInput && bTakesInput) || a.shape.src !== b.shape.src) return false;
+    const aCaptured = a.captured(), bCaptured = b.captured();
+    for (let i = 0; i < aCaptured.length; i++) if (!valuesEqual(aCaptured[i], bCaptured[i])) return false;
     return true;
   }
   // any other cell compares by its worked-out parts and fields (decision 72)
-  const n = a.count(); if (n !== b.count()) return false;
-  for (let i = 1; i <= n; i++) if (!eq(a.part(i), b.part(i))) return false;
-  const fa = a.fieldNames(), fb = b.fieldNames(); if (fa.length !== fb.length) return false;
-  for (const k of fa) { const v = b.field(k); if (v === UNSET || !eq(a.field(k), v)) return false; }
+  const count = a.count(); if (count !== b.count()) return false;
+  for (let i = 1; i <= count; i++) if (!valuesEqual(a.part(i), b.part(i))) return false;
+  const aFields = a.fieldNames(), bFields = b.fieldNames(); if (aFields.length !== bFields.length) return false;
+  for (const key of aFields) { const value = b.field(key); if (value === UNSET || !valuesEqual(a.field(key), value)) return false; }
   return true;
 }
 
 // ---- with and .. : one operation (decision 45)
-function merge(a, b) {
-  if (typeof a === "string" || typeof a === "number") return fmt(a) + fmt(b);
-  if (!isCell(a)) return MISSING(a, "with");
-  if (!isCell(b)) return MISSING(b, "with");
-  if (a instanceof ColCell || b instanceof ColCell) { const r = colMerge(a, b); if (r) return r; }
-  const pa = partsOf(a), pb = partsOf(b);
-  const parts = pb.length ? (pa.length ? pa.concat(pb) : pb) : pa;
-  let fs, fv;
-  if (a instanceof VCell) { fs = a.fs; fv = a.fv; } else { const ks = a.fieldNames(); fs = shapeFor(ks); fv = ks.map(k => a.field(k)); }
-  const kb = b.fieldNames();
-  if (kb.length) {
-    fv = fv.slice();
-    for (const k of kb) { const v = b.field(k); const i = fs.index(k); if (i < 0) { fs = fs.add(k); fv.push(v); } else fv[i] = v; }
+function merge(left, right) {
+  if (typeof left === "string" || typeof left === "number") return formatValue(left) + formatValue(right);
+  if (!isCell(left)) return notUnderstood(left, "with");
+  if (!isCell(right)) return notUnderstood(right, "with");
+  if (left instanceof ColumnCell || right instanceof ColumnCell) { const r = mergeColumns(left, right); if (r) return r; }
+  const leftParts = partsOf(left), rightParts = partsOf(right);
+  const parts = rightParts.length ? (leftParts.length ? leftParts.concat(rightParts) : rightParts) : leftParts;
+  let fieldShape, fieldValues;
+  if (left instanceof ValueCell) { fieldShape = left.fieldShape; fieldValues = left.fieldValues; } else { const keys = left.fieldNames(); fieldShape = shapeFor(keys); fieldValues = keys.map(key => left.field(key)); }
+  const rightKeys = right.fieldNames();
+  if (rightKeys.length) {
+    fieldValues = fieldValues.slice();
+    for (const key of rightKeys) { const value = right.field(key); const position = fieldShape.index(key); if (position < 0) { fieldShape = fieldShape.add(key); fieldValues.push(value); } else fieldValues[position] = value; }
   }
-  return new VCell(parts, fs, fv);
+  return new ValueCell(parts, fieldShape, fieldValues);
 }
 
 // ---- operators: fused fast paths, falling back to prototype fields (decisions 36, 37)
-function opSlow(name, a, b) { return SEND(SW(a, name, null, 0), b); }
-function ADD(a, b) { return typeof a === "number" && typeof b === "number" ? a + b : opSlow("+", a, b); }
-function SUB(a, b) { return typeof a === "number" && typeof b === "number" ? a - b : opSlow("-", a, b); }
-function MUL(a, b) { return typeof a === "number" && typeof b === "number" ? a * b : opSlow("*", a, b); }
-function DIV(a, b) { return typeof a === "number" && typeof b === "number" ? a / b : opSlow("/", a, b); }
-function MOD(a, b) { return typeof a === "number" && typeof b === "number" ? ((a % b) + b) % b : opSlow("%", a, b); }
-function LT(a, b) { return typeof a === "number" && typeof b === "number" ? a < b : opSlow("<", a, b); }
-function GT(a, b) { return typeof a === "number" && typeof b === "number" ? a > b : opSlow(">", a, b); }
-function LE(a, b) { return typeof a === "number" && typeof b === "number" ? a <= b : opSlow("<=", a, b); }
-function GE(a, b) { return typeof a === "number" && typeof b === "number" ? a >= b : opSlow(">=", a, b); }
-function userOp(a, w) { return (a instanceof Cell || a instanceof VCell) && a.field(w) !== UNSET; }
-function EQ(a, b) { if (a === b) return true; if (typeof a !== "object") return false; return userOp(a, "=") ? opSlow("=", a, b) : eq(a, b); }
+function operatorBySending(name, left, right) { return send(sendWord(left, name, null, 0), right); }
+function ADD(a, b) { return typeof a === "number" && typeof b === "number" ? a + b : operatorBySending("+", a, b); }
+function SUB(a, b) { return typeof a === "number" && typeof b === "number" ? a - b : operatorBySending("-", a, b); }
+function MUL(a, b) { return typeof a === "number" && typeof b === "number" ? a * b : operatorBySending("*", a, b); }
+function DIV(a, b) { return typeof a === "number" && typeof b === "number" ? a / b : operatorBySending("/", a, b); }
+function MOD(a, b) { return typeof a === "number" && typeof b === "number" ? ((a % b) + b) % b : operatorBySending("%", a, b); }
+function LT(a, b) { return typeof a === "number" && typeof b === "number" ? a < b : operatorBySending("<", a, b); }
+function GT(a, b) { return typeof a === "number" && typeof b === "number" ? a > b : operatorBySending(">", a, b); }
+function LE(a, b) { return typeof a === "number" && typeof b === "number" ? a <= b : operatorBySending("<=", a, b); }
+function GE(a, b) { return typeof a === "number" && typeof b === "number" ? a >= b : operatorBySending(">=", a, b); }
+function hasOwnOperator(value, word) { return (value instanceof Cell || value instanceof ValueCell) && value.field(word) !== UNSET; }
+function EQ(a, b) { if (a === b) return true; if (typeof a !== "object") return false; return hasOwnOperator(a, "=") ? operatorBySending("=", a, b) : valuesEqual(a, b); }
 function NE(a, b) { return !EQ(a, b); }
-function CAT(a, b) { if (typeof a === "string") return a + (typeof b === "string" ? b : fmt(b)); return userOp(a, "..") ? opSlow("..", a, b) : merge(a, b); }
-function WITH(a, b) { return userOp(a, "with") ? opSlow("with", a, b) : merge(a, b); }
-function AT(a, n) { return PART(a, n); }
+function concat(left, right) { if (typeof left === "string") return left + (typeof right === "string" ? right : formatValue(right)); return hasOwnOperator(left, "..") ? operatorBySending("..", left, right) : merge(left, right); }
+function withCell(left, right) { return hasOwnOperator(left, "with") ? operatorBySending("with", left, right) : merge(left, right); }
+function partAt(list, position) { return partOf(list, position); }
 // x with [a : ..., b : ...] compiled straight to a field update
-function WITHF(a, keys, vals, ic) {
-  if (a instanceof VCell) {
-    const fs = a.fs;
-    if (fs === ic.s) { const fv = a.fv.slice(), x = ic.x; for (let i = 0; i < x.length; i++) fv[x[i]] = vals[i]; return new VCell(a.parts, ic.o, fv); }
-    if (fs.index("with") < 0) {
-      let out = fs; const fv = a.fv.slice(), x = new Array(keys.length);
-      for (let i = 0; i < keys.length; i++) { let j = out.index(keys[i]); if (j < 0) { out = out.add(keys[i]); j = out.keys.length - 1; } fv[j] = vals[i]; x[i] = j; }
-      ic.s = fs; ic.o = out; ic.x = x;
-      return new VCell(a.parts, out, fv);
+// record with [a : ..., b : ...]: the new fields laid straight over the record (the cache remembers where they go for its shape)
+function withFields(record, keys, values, cache) {
+  if (record instanceof ValueCell) {
+    const fieldShape = record.fieldShape;
+    if (fieldShape === cache.shape) {
+      const fieldValues = record.fieldValues.slice(), positions = cache.positions;
+      for (let i = 0; i < positions.length; i++) fieldValues[positions[i]] = values[i];
+      return new ValueCell(record.parts, cache.outShape, fieldValues);
+    }
+    if (fieldShape.index("with") < 0) {
+      let outShape = fieldShape; const fieldValues = record.fieldValues.slice(), positions = new Array(keys.length);
+      for (let i = 0; i < keys.length; i++) {
+        let at = outShape.index(keys[i]);
+        if (at < 0) { outShape = outShape.add(keys[i]); at = outShape.keys.length - 1; }
+        fieldValues[at] = values[i]; positions[i] = at;
+      }
+      cache.shape = fieldShape; cache.outShape = outShape; cache.positions = positions;
+      return new ValueCell(record.parts, outShape, fieldValues);
     }
   }
-  return WITH(a, new VCell(EMPTY, shapeFor(keys), vals));
+  return withCell(record, new ValueCell(EMPTY, shapeFor(keys), values));
 }
-function PART(a, n) {
-  if (isCell(a)) return a.part(n);
-  if (typeof a === "string") return n >= 1 && n <= a.length ? a[n - 1] : false;
-  return MISSING(a, "@");
+function partOf(list, position) {
+  if (isCell(list)) return list.part(position);
+  if (typeof list === "string") return position >= 1 && position <= list.length ? list[position - 1] : false;
+  return notUnderstood(list, "@");
 }
-function LEN(a) { if (isCell(a)) return a.count(); if (typeof a === "string") return a.length; return MISSING(a, "length"); }
+function lengthOf(value) { if (isCell(value)) return value.count(); if (typeof value === "string") return value.length; return notUnderstood(value, "length"); }
 
 // ---- calling a cell with each item (collections are methods, decision 55)
-function CALL(f, x) {
-  if (f instanceof Cell) return f.run(x);
-  return SEND(f, x);
+function callCell(cell, item) {
+  if (cell instanceof Cell) return cell.run(item);
+  return send(cell, item);
 }
-function each(xs, f) {
-  const one = f instanceof Cell && f.sh.names.length === 1, run = one ? f.runF : null, L = one ? f.left : undefined;
-  if (xs instanceof RCell) { for (let i = 1; i <= xs.n; i++) one ? UNB(run(L, false, i)) : CALL(f, i); return false; }
-  const p = partsOf(xs); for (let i = 0; i < p.length; i++) one ? UNB(run(L, false, p[i])) : CALL(f, p[i]);
+// a cell with one named input is run straight through its code (the commonest case, and the quickest)
+const runsDirectly = cell => cell instanceof Cell && cell.shape.names.length === 1;
+function each(list, cell) {
+  const direct = runsDirectly(cell), code = direct ? cell.runCode : null, left = direct ? cell.left : undefined;
+  if (list instanceof RangeCell) { for (let i = 1; i <= list.size; i++) direct ? finishTailCalls(code(left, false, i)) : callCell(cell, i); return false; }
+  const items = partsOf(list);
+  for (let i = 0; i < items.length; i++) direct ? finishTailCalls(code(left, false, items[i])) : callCell(cell, items[i]);
   return false;
 }
-function collect(xs, f) {
-  const p = partsOf(xs);
-  const n = p.length, out = new Array(n);
-  if (f instanceof Cell && f.sh.names.length === 1) { const run = f.runF, L = f.left; for (let i = 0; i < n; i++) out[i] = UNB(run(L, false, p[i])); }
-  else for (let i = 0; i < n; i++) out[i] = CALL(f, p[i]);
-  return new VCell(out, ROOT, EMPTY);
+function collect(list, cell) {
+  const items = partsOf(list), count = items.length, results = new Array(count);
+  if (runsDirectly(cell)) { const code = cell.runCode, left = cell.left; for (let i = 0; i < count; i++) results[i] = finishTailCalls(code(left, false, items[i])); }
+  else for (let i = 0; i < count; i++) results[i] = callCell(cell, items[i]);
+  return new ValueCell(results, NO_FIELDS, EMPTY);
 }
-function keep(xs, f) {
-  const p = partsOf(xs), o = [];
-  const one = f instanceof Cell && f.sh.names.length === 1, run = one ? f.runF : null, L = one ? f.left : undefined;
-  for (let i = 0; i < p.length; i++) { const t = one ? UNB(run(L, false, p[i])) : CALL(f, p[i]); if (t === true) o.push(p[i]); else if (t !== false) MISSING(t, "keep"); }
-  return new VCell(o, ROOT, EMPTY);
-}
-function fold(xs, arg) {
-  if (!isCell(arg)) return MISSING(arg, "fold");
-  let acc = arg.part(1); const f = arg.part(2);
-  if (f instanceof Cell && f.sh.names.length === 2) {
-    const run = f.runF, L = f.left;
-    if (xs instanceof RCell) { for (let i = 1; i <= xs.n; i++) acc = UNB(run(L, false, acc, i)); return acc; }
-    const p = partsOf(xs); for (let i = 0; i < p.length; i++) acc = UNB(run(L, false, acc, p[i])); return acc;
+function keep(list, test) {
+  const items = partsOf(list), kept = [];
+  const direct = runsDirectly(test), code = direct ? test.runCode : null, left = direct ? test.left : undefined;
+  for (let i = 0; i < items.length; i++) {
+    const answer = direct ? finishTailCalls(code(left, false, items[i])) : callCell(test, items[i]);
+    if (answer === true) kept.push(items[i]); else if (answer !== false) notUnderstood(answer, "keep");
   }
-  const p = partsOf(xs);
-  for (let i = 0; i < p.length; i++) acc = CALL(f, new VCell([acc, p[i]], ROOT, EMPTY));
-  return acc;
+  return new ValueCell(kept, NO_FIELDS, EMPTY);
 }
-function times(n, f) { for (let i = 1; i <= n; i++) CALL(f, i); return false; }
+// list fold [start, [total item | ...]]
+function fold(list, startAndCell) {
+  if (!isCell(startAndCell)) return notUnderstood(startAndCell, "fold");
+  let total = startAndCell.part(1); const cell = startAndCell.part(2);
+  if (cell instanceof Cell && cell.shape.names.length === 2) {
+    const code = cell.runCode, left = cell.left;
+    if (list instanceof RangeCell) { for (let i = 1; i <= list.size; i++) total = finishTailCalls(code(left, false, total, i)); return total; }
+    const items = partsOf(list); for (let i = 0; i < items.length; i++) total = finishTailCalls(code(left, false, total, items[i])); return total;
+  }
+  const items = partsOf(list);
+  for (let i = 0; i < items.length; i++) total = callCell(cell, new ValueCell([total, items[i]], NO_FIELDS, EMPTY));
+  return total;
+}
+function times(count, cell) { for (let i = 1; i <= count; i++) callCell(cell, i); return false; }
 // spork (decision 47) is a parallel collect: the same list. A library runs it faster when it can (decision 91).
-function spork(xs, f) { const r = LIB.spork && FAST ? LIB.spork(xs, f) : null; return r || collect(xs, f); }
+function spork(list, cell) { const result = LIBRARIES.spork && fastPathsOn ? LIBRARIES.spork(list, cell) : null; return result || collect(list, cell); }
 
 // sort: numbers from least to most, or words in order (a library choice, decision 80)
-const sortNumbers = a => (LIB.sortNumbers || (x => Float64Array.from(x).sort()))(a);
-function sortList(xs) {
-  if (xs instanceof NCell) return new NCell(sortNumbers(xs.a));
-  if (xs instanceof RCell) return xs;
-  const p = partsOf(xs);
-  if (p.every(v => typeof v === "number")) return new NCell(sortNumbers(Float64Array.from(p)));
-  if (p.every(v => typeof v === "string")) return VP(p.slice().sort());
-  return LOG_MISS("sort sorts a list of numbers or a list of words");
+const sortNumbers = a => (LIBRARIES.sortNumbers || (x => Float64Array.from(x).sort()))(a);
+function sortList(list) {
+  if (list instanceof NumberList) return new NumberList(sortNumbers(list.numbers));
+  if (list instanceof RangeCell) return list;
+  const items = partsOf(list);
+  if (items.every(value => typeof value === "number")) return new NumberList(sortNumbers(Float64Array.from(items)));
+  if (items.every(value => typeof value === "string")) return makeList(items.slice().sort());
+  return logMiss("sort sorts a list of numbers or a list of words");
 }
 
 // ---- prototypes: built-in fields of each kind of value. ar:1 waits for a right side.
-const m0 = fn => ({ ar: 0, fn }), m1 = fn => ({ ar: 1, fn });
-const ALL = {
-  "=": m1(eq), "!=": m1((a, b) => !eq(a, b)), else: m1((a, b) => a === false ? (isCell(b) ? b.run(BANG) : b) : a),
-  print: m0(a => { G.print.fn(a); return a; }), str: m0(a => fmt(a)), with: m1(merge), "..": m1(merge),
+const methodTakingNothing = run => ({ takesArgument: false, run }), methodTakingOne = run => ({ takesArgument: true, run });
+const EVERY_VALUE_METHODS = {
+  "=": methodTakingOne(valuesEqual), "!=": methodTakingOne((a, b) => !valuesEqual(a, b)), else: methodTakingOne((a, b) => a === false ? (isCell(b) ? b.run(BANG) : b) : a),
+  print: methodTakingNothing(a => { GLOBALS.print.fn(a); return a; }), str: methodTakingNothing(a => formatValue(a)), with: methodTakingOne(merge), "..": methodTakingOne(merge),
 };
-const NUM = Object.assign(Object.create(ALL), {
-  "+": m1((a, b) => a + num(b)), "-": m1((a, b) => a - num(b)), "*": m1((a, b) => a * num(b)), "/": m1((a, b) => a / num(b)),
-  "%": m1((a, b) => ((a % b) + b) % b), "<": m1((a, b) => a < num(b)), ">": m1((a, b) => a > num(b)),
-  "<=": m1((a, b) => a <= num(b)), ">=": m1((a, b) => a >= num(b)),
-  abs: m0(Math.abs), floor: m0(Math.floor), round: m0(Math.round), ceil: m0(Math.ceil), sqrt: m0(Math.sqrt),
-  sin: m0(Math.sin), cos: m0(Math.cos), tan: m0(Math.tan), log: m0(Math.log), neg: m0(a => -a),
-  times: m1(times), min: m1((a, b) => Math.min(a, b)), max: m1((a, b) => Math.max(a, b)),
+const NUMBER_METHODS = Object.assign(Object.create(EVERY_VALUE_METHODS), {
+  "+": methodTakingOne((a, b) => a + requireNumber(b)), "-": methodTakingOne((a, b) => a - requireNumber(b)), "*": methodTakingOne((a, b) => a * requireNumber(b)), "/": methodTakingOne((a, b) => a / requireNumber(b)),
+  "%": methodTakingOne((a, b) => ((a % b) + b) % b), "<": methodTakingOne((a, b) => a < requireNumber(b)), ">": methodTakingOne((a, b) => a > requireNumber(b)),
+  "<=": methodTakingOne((a, b) => a <= requireNumber(b)), ">=": methodTakingOne((a, b) => a >= requireNumber(b)),
+  abs: methodTakingNothing(Math.abs), floor: methodTakingNothing(Math.floor), round: methodTakingNothing(Math.round), ceil: methodTakingNothing(Math.ceil), sqrt: methodTakingNothing(Math.sqrt),
+  sin: methodTakingNothing(Math.sin), cos: methodTakingNothing(Math.cos), tan: methodTakingNothing(Math.tan), log: methodTakingNothing(Math.log), neg: methodTakingNothing(a => -a),
+  times: methodTakingOne(times), min: methodTakingOne((a, b) => Math.min(a, b)), max: methodTakingOne((a, b) => Math.max(a, b)),
 });
-function num(b) { if (typeof b !== "number") { LOG_MISS(describe(b) + " isn't a number"); return NaN; } return b; }
-const STRP = Object.assign(Object.create(ALL), {
-  length: m0(LEN), "@": m1(PART), "<": m1((a, b) => a < b), ">": m1((a, b) => a > b),
-  upper: m0(a => a.toUpperCase()), lower: m0(a => a.toLowerCase()),
+function requireNumber(value) { if (typeof value !== "number") { logMiss(describe(value) + " isn't a number"); return NaN; } return value; }
+const TEXT_METHODS = Object.assign(Object.create(EVERY_VALUE_METHODS), {
+  length: methodTakingNothing(lengthOf), "@": methodTakingOne(partOf), "<": methodTakingOne((a, b) => a < b), ">": methodTakingOne((a, b) => a > b),
+  upper: methodTakingNothing(a => a.toUpperCase()), lower: methodTakingNothing(a => a.toLowerCase()),
 });
-const BOOL = Object.assign(Object.create(ALL), {
-  not: m0(a => !a), and: m1((a, b) => a && b === true), or: m1((a, b) => a || b === true),
+const BOOL_METHODS = Object.assign(Object.create(EVERY_VALUE_METHODS), {
+  not: methodTakingNothing(a => !a), and: methodTakingOne((a, b) => a && b === true), or: methodTakingOne((a, b) => a || b === true),
 });
-const CELLP = Object.assign(Object.create(ALL), {
-  "@": m1(PART), length: m0(LEN), first: m0(a => a.part(1)), last: m0(a => a.part(a.count())),
-  collect: m1(collect), keep: m1(keep), each: m1(each), fold: m1(fold), spork: m1(spork), sort: m0(sortList),
+const CELL_METHODS = Object.assign(Object.create(EVERY_VALUE_METHODS), {
+  "@": methodTakingOne(partOf), length: methodTakingNothing(lengthOf), first: methodTakingNothing(a => a.part(1)), last: methodTakingNothing(a => a.part(a.count())),
+  collect: methodTakingOne(collect), keep: methodTakingOne(keep), each: methodTakingOne(each), fold: methodTakingOne(fold), spork: methodTakingOne(spork), sort: methodTakingNothing(sortList),
 });
-const NONE_P = ALL;
-function protoOf(r) {
-  switch (typeof r) {
-    case "number": return NUM; case "string": return STRP; case "boolean": return BOOL;
+const OTHER_METHODS = EVERY_VALUE_METHODS;
+function methodsOf(value) {
+  switch (typeof value) {
+    case "number": return NUMBER_METHODS; case "string": return TEXT_METHODS; case "boolean": return BOOL_METHODS;
   }
-  if (r instanceof Cell || r instanceof VCell) return CELLP;
-  return NONE_P;
+  if (value instanceof Cell || value instanceof ValueCell) return CELL_METHODS;
+  return OTHER_METHODS;
 }
 
 // ---- globals: names every file can use. Host words are added by the host.
-function args(a, n) { if (isCell(a)) { const o = new Array(n); for (let i = 0; i < n; i++) o[i] = a.part(i + 1); return o; } return [a]; }
-const G = Object.create(null);
-function defNative(name, fn, effect) { G[name] = new Native(name, fn, effect); }
-G.any = ANY;
-defNative("range", n => new RCell(Math.max(0, Math.floor(num(n)))));
+function argumentsOf(argument, count) { if (isCell(argument)) { const values = new Array(count); for (let i = 0; i < count; i++) values[i] = argument.part(i + 1); return values; } return [argument]; }
+const GLOBALS = Object.create(null);
+function defNative(name, fn, effect) { GLOBALS[name] = new Native(name, fn, effect); }
+GLOBALS.any = ANY;
+defNative("range", n => new RangeCell(Math.max(0, Math.floor(requireNumber(n)))));
 // rand reads the recorded random source, like random, so it stays here; plain maths lives in the prelude (decision 97)
-defNative("rand", a => { const [lo, hi] = args(a, 2); return lo + RNG() * (hi - lo); });
-defNative("print", a => { effect(() => OUT(fmt(a))); return a; }, true);
+defNative("rand", a => { const [lo, hi] = argumentsOf(a, 2); return lo + randomSource() * (hi - lo); });
+defNative("print", a => { effect(() => printOutput(formatValue(a))); return a; }, true);
 // noise [sample, id]: a number from 0 up to 1 that is always the same for the same two inputs (decision 87)
-defNative("noise", a => { const [x, y] = args(a, 2); return NOISE(num(x), num(y)); });
-Object.defineProperty(G, "random", { get: () => RNG(), enumerable: true });
-let RNG = Math.random, OUT = s => { if (typeof console !== "undefined") console.log(s); };
+defNative("noise", a => { const [x, y] = argumentsOf(a, 2); return noiseHash(requireNumber(x), requireNumber(y)); });
+Object.defineProperty(GLOBALS, "random", { get: () => randomSource(), enumerable: true });
+let randomSource = Math.random, printOutput = s => { if (typeof console !== "undefined") console.log(s); };
 
 // ===================================================================== prelude, written in Sprout (decisions 30, 34, 35, 50)
 const PRELUDE = `
 -- maths that used to be written in JavaScript (decision 97)
-clamp : [v lo hi | v < lo [lo] else [v > hi [hi] else [v]]]
-toward : [x y t | y - x * t + x]
+clamp : [value low high | value < low [low] else [value > high [high] else [value]]]
+toward : [from to amount | to - from * amount + from]
 dist : [x1 y1 x2 y2 |
-  dx : x2 - x1, dy : y2 - y1
-  (dx * dx + (dy * dy)) sqrt
+  across : x2 - x1, down : y2 - y1
+  (across * across + (down * down)) sqrt
 ]
-match : [v cases |
-  find : [n | n > (cases length) [0] else [(cases @ n) = any or ((cases @ n) = v) [n] else [find (n + 2)]]]
-  k : find 1
-  k > 0 [cases @ (k + 1)] else [false]
+-- match [value, [case, answer, case, answer, ..., any, answer]]: the answer of the first case equal to value
+match : [value cases |
+  find : [position | position > (cases length) [0] else [(cases @ position) = any or ((cases @ position) = value) [position] else [find (position + 2)]]]
+  found : find 1
+  found > 0 [cases @ (found + 1)] else [false]
 ]
+-- cond [test, answer, test, answer, ..., any, answer]: the answer of the first test that is true
 cond : [cases |
-  find : [n | n > (cases length) [0] else [(cases @ n) = any or ((cases @ n) = true) [n] else [find (n + 2)]]]
-  k : find 1
-  k > 0 [cases @ (k + 1)] else [false]
+  find : [position | position > (cases length) [0] else [(cases @ position) = any or ((cases @ position) = true) [position] else [find (position + 2)]]]
+  found : find 1
+  found > 0 [cases @ (found + 1)] else [false]
 ]
-take : [xs n | range (n min (xs length)) collect [k | xs @ k]]
-rgb : [r g b | "rgb(" .. r .. "," .. g .. "," .. b .. ")"]
-rgba : [r g b a | "rgba(" .. r .. "," .. g .. "," .. b .. "," .. a .. ")"]
-every : [secs now dt | now / secs floor > (now - dt / secs floor)]
-wave : [secs now | now / secs * 6.283185307179586 sin]
+take : [items count | range (count min (items length)) collect [position | items @ position]]
+rgb : [red green blue | "rgb(" .. red .. "," .. green .. "," .. blue .. ")"]
+rgba : [red green blue alpha | "rgba(" .. red .. "," .. green .. "," .. blue .. "," .. alpha .. ")"]
+every : [seconds now step | now / seconds floor > (now - step / seconds floor)]
+wave : [seconds now | now / seconds * 6.283185307179586 sin]
 fresh-input : [touching : false, tapped : false, touch-x : 0, touch-y : 0, held : []]
+-- frame update: events in, one update per tick (decision 34)
 frame : [update |
-  [s e |
-    i : s input else fresh-input
-    match [e kind, [
-      "down", s with [input : i with [touching : true, tapped : true, touch-x : e x, touch-y : e y]]
-      "move", s with [input : i with [touch-x : e x, touch-y : e y]]
-      "up", s with [input : i with [touching : false]]
-      "tick", update (s with [dt : e dt, clock : e clock, input : i with [held : e held]]) with [input : i with [tapped : false, held : e held]]
-      any, s
+  [state event |
+    current-input : state input else fresh-input
+    match [event kind, [
+      "down", state with [input : current-input with [touching : true, tapped : true, touch-x : event x, touch-y : event y]]
+      "move", state with [input : current-input with [touch-x : event x, touch-y : event y]]
+      "up", state with [input : current-input with [touching : false]]
+      "tick", update (state with [dt : event dt, clock : event clock, input : current-input with [held : event held]]) with [input : current-input with [tapped : false, held : event held]]
+      any, state
     ]]
   ]
 ]
 `;
 
 // ===================================================================== build
-const RT = { BANG, ANY, G, S: null, MK, SW, SEND, RUNC, STR, UNKNOWN, LOG_MISS, WITHF,
-  ADD, SUB, MUL, DIV, MOD, LT, GT, LE, GE, EQ, NE, CAT, WITH, AT, VC, VP, ISBOOL, MISSING, TAIL, SWI, shapeFor };
+const RUNTIME = { BANG, ANY, GLOBALS, makeCell, sendWord, send, runCell, joinText, unknownWord, logMiss, withFields,
+  ADD, SUB, MUL, DIV, MOD, LT, GT, LE, GE, EQ, NE, concat, withCell, partAt, makeRecord, makeList, requireBool, notUnderstood, tailSend, sendWordCached, shapeFor };
 let preludeCell = null;
-function globalNames(extra) { const s = new Set(Object.keys(G)); if (extra) for (const k of extra) s.add(k); return s; }
+function globalNames(extra) { const names = new Set(Object.keys(GLOBALS)); if (extra) for (const name of extra) names.add(name); return names; }
 
-function load(src, opts) {
-  opts = opts || {};
-  const host = opts.host || {};
-  for (const k in host) G[k] = host[k];
-  if (!preludeCell && !opts.noPrelude) {
+function load(src, options) {
+  options = options || {};
+  const host = options.host || {};
+  for (const name in host) GLOBALS[name] = host[name];
+  if (!preludeCell && !options.noPrelude) {
     preludeCell = load(PRELUDE, { noPrelude: true });
-    for (const k of preludeCell.fieldNames()) { const kk = k; Object.defineProperty(G, kk, { get: () => preludeCell.field(kk), enumerable: true, configurable: true }); }
+    for (const name of preludeCell.fieldNames()) { const fieldName = name; Object.defineProperty(GLOBALS, fieldName, { get: () => preludeCell.field(fieldName), enumerable: true, configurable: true }); }
   }
-  const { js, shapes, prologue, speed } = compile(src, globalNames());
-  const names = Object.keys(RT).filter(k => k !== "S");
-  const f = new Function(...names, "S", prologue + "\nreturn " + js + "\n//# sourceURL=sprout.js");
-  const cell = f(...names.map(k => RT[k]), shapes);
-  cell.js = js; cell.speed = speed;
+  const { code, shapes, prologue, speedNotes } = compile(src, globalNames());
+  const names = Object.keys(RUNTIME);
+  const build = new Function(...names, "SHAPES", prologue + "\nreturn " + code + "\n//# sourceURL=sprout.js");
+  const cell = build(...names.map(name => RUNTIME[name]), shapes);
+  cell.js = code; cell.speedNotes = speedNotes;
   return cell;
 }
 
-const api = { tokenize, parse, compile, load, fmt, eq, merge, isCell, Cell, VCell, Native, G, BANG, ANY, SproutError, PRELUDE,
-  ColCell, NCell, columns: on => { COLMIN = on ? 32 : Infinity; FAST = !!on; },
+const api = { tokenize, parse, compile, load, format: formatValue, equal: valuesEqual, merge, isCell, Cell, ValueCell, Native, globals: GLOBALS, BANG, ANY, SproutError, PRELUDE,
+  // fast paths on or off: columns (decision 82) and whatever libraries add; the answers are the same either way
+  ColumnCell, NumberList, fastPaths: on => { COLUMN_MIN_LENGTH = on ? 32 : Infinity; fastPathsOn = !!on; },
   // libraries: what they can see of the core, and how they plug in (decision 96)
   install, internals: null,
-  setLog: f => { LOG = f; }, setOut: f => { OUT = f; }, setRandom: f => { RNG = f; }, defNative, partsOf, fieldsOf, UNSET, VFM, effect, queueEffects, runEffects, dropEffects };
+  setLog: f => { logMessage = f; }, setOut: f => { printOutput = f; }, setRandom: f => { randomSource = f; }, defNative, partsOf, fieldsOf, UNSET, valueCellOf, effect, queueEffects, runEffects, dropEffects };
 // what a library sees of the core: the pieces a faster way needs, nothing it could change answers with
-api.internals = { FUSED, LAZYOPS, ALL, G, Native, NOISE, fmt, fieldsOnly, mentions, NOTE_KEYS, RCell, NCell, ColCell, VCell, VP, ROOT, shapeFor, toCols, Cell, EMPTY, collect, isCell,
-  fast: () => FAST };
+api.internals = { FUSED_OPERATORS, LAZY_OPERATORS, EVERY_VALUE_METHODS, GLOBALS, Native, noiseHash, formatValue, isFieldsOnly, mentions, COMPILER_NOTE_KEYS, RangeCell, NumberList, ColumnCell, ValueCell, makeList, NO_FIELDS, shapeFor, asColumns, Cell, EMPTY, collect, isCell,
+  fast: () => fastPathsOn };
 if (typeof module !== "undefined") {
   module.exports = api;
   // in Node the kernels library comes along; a page loads kernels.js after this file
@@ -1860,618 +1891,618 @@ The speed library: the work-ahead pass, loop fusion, spork kernels on WebAssembl
 ````js
 // Sprout 3 kernels: the library that makes Sprout fast (decision 96). The core (sprout3.js) runs every program
 // on its own; this only finds faster ways to get the same answers.
-//   - the work-ahead pass (Spk): a cell worked out as far as it can be without its input, down to number maths
+//   - the work-ahead pass (WorkAhead): a cell worked out as far as it can be without its input, down to number maths
 //   - loop fusion: a run of collect, keep, fold, each and length in a chain, as one loop (decision 95)
 //   - spork kernels: a pure cell run for every input at once, on WebAssembly SIMD or in JavaScript (decision 91)
 //   - a radix sort for numbers (decision 92)
 (function (root) {
 "use strict";
-const S = typeof module !== "undefined" ? require("./sprout3.js") : root.Sprout3;
-const I = S.internals;
-const { FUSED, LAZYOPS, ALL, G, Native, NOISE, fmt, fieldsOnly, mentions, NOTE_KEYS, RCell, NCell, ColCell, VCell, VP, ROOT, shapeFor, toCols, Cell, EMPTY, isCell } = I;
+const core = typeof module !== "undefined" ? require("./sprout3.js") : root.Sprout3;
+const internals = core.internals;
+const { FUSED_OPERATORS, LAZY_OPERATORS, EVERY_VALUE_METHODS, GLOBALS, Native, noiseHash, formatValue, isFieldsOnly, mentions, COMPILER_NOTE_KEYS, RangeCell, NumberList, ColumnCell, ValueCell, makeList, NO_FIELDS, shapeFor, asColumns, Cell, EMPTY, isCell } = internals;
 
 // ===================================================================== spork kernels (decision 47, step 3 of decision 79)
 // A cell given to spork is worked out once, when the program loads, as far as it can be without its input:
-// calls are inlined; lists, records, words and loops over them are unrolled; a test that changes from run to run
+// calls are inlined; lists, records, words and loops laidOver them are unrolled; a test that changes from run to run
 // becomes a choice made in each run. What is left is number maths on the input, a flat list of steps (the IR),
 // which runs as one tight loop: in JavaScript, in WebAssembly SIMD, or on the GPU.
 // If anything can't be worked out this way (a host word, a random read, keep with a test that changes from run
 // to run), there is no kernel and spork is collect, so a program can't tell which way it ran.
-const SPKFAIL = { spork: "no" };
-const SPK_PENDING = {};
-const SPK_N2 = { add: (a, b) => a + b, sub: (a, b) => a - b, mul: (a, b) => a * b, div: (a, b) => a / b, mod: (a, b) => ((a % b) + b) % b,
-  min: (a, b) => Math.min(a, b), max: (a, b) => Math.max(a, b), noise: (a, b) => NOISE(a, b) };
-const SPK_N1 = { neg: a => -a, abs: Math.abs, floor: Math.floor, ceil: Math.ceil, round: Math.round, sqrt: Math.sqrt, sin: Math.sin, cos: Math.cos, tan: Math.tan, log: Math.log };
-const SPK_C2 = { lt: (a, b) => a < b, gt: (a, b) => a > b, le: (a, b) => a <= b, ge: (a, b) => a >= b, eq: (a, b) => a === b, ne: (a, b) => a !== b };
-const SPK_B2 = { and: (a, b) => a && b, or: (a, b) => a || b, beq: (a, b) => a === b };
+const GIVE_UP = { spork: "no" };
+const STILL_WORKING_OUT = {};
+const NUMBER_STEPS_OF_TWO = { add: (a, b) => a + b, sub: (a, b) => a - b, mul: (a, b) => a * b, div: (a, b) => a / b, mod: (a, b) => ((a % b) + b) % b,
+  min: (a, b) => Math.min(a, b), max: (a, b) => Math.max(a, b), noise: (a, b) => noiseHash(a, b) };
+const NUMBER_STEPS_OF_ONE = { neg: a => -a, abs: Math.abs, floor: Math.floor, ceil: Math.ceil, round: Math.round, sqrt: Math.sqrt, sin: Math.sin, cos: Math.cos, tan: Math.tan, log: Math.log };
+const COMPARISON_STEPS = { lt: (a, b) => a < b, gt: (a, b) => a > b, le: (a, b) => a <= b, ge: (a, b) => a >= b, eq: (a, b) => a === b, ne: (a, b) => a !== b };
+const TRUTH_STEPS = { and: (a, b) => a && b, or: (a, b) => a || b, boolEquals: (a, b) => a === b };
 // these give the same answer in JavaScript and WebAssembly only if done by JavaScript itself
-const SPK_JSONLY = new Set(["mod", "sin", "cos", "tan", "log"]);
-const SPK_OPS = { "+": "add", "-": "sub", "*": "mul", "/": "div", "%": "mod", "<": "lt", ">": "gt", "<=": "le", ">=": "ge" };
-const SPK_NATIVES = new Set(["range", "noise"]);
-const SPK_CELLM = { "@": 1, length: 0, first: 0, last: 0, collect: 1, keep: 1, each: 1, fold: 1, spork: 1 };
-const spkNum = v => Object.is(v, -0) ? "-0" : String(v);
+const JAVASCRIPT_ONLY_STEPS = new Set(["mod", "sin", "cos", "tan", "log"]);
+const OPERATOR_STEPS = { "+": "add", "-": "sub", "*": "mul", "/": "div", "%": "mod", "<": "lt", ">": "gt", "<=": "le", ">=": "ge" };
+const INLINED_BUILTINS = new Set(["range", "noise"]);
+const LIST_METHOD_TAKES_ARGUMENT = { "@": 1, length: 0, first: 0, last: 0, collect: 1, keep: 1, each: 1, fold: 1, spork: 1 };
+const numberLiteral = v => Object.is(v, -0) ? "-0" : String(v);
 // the prelude's bindings by name, so its cells (clamp, cond, match...) can be inlined like any other
-let PRE = null;
-const prelude = () => PRE || (PRE = new Map(S.parse(S.PRELUDE).filter(it => it.k === "bind").map(it => [it.name, it])));
+let preludeBindings = null;
+const prelude = () => preludeBindings || (preludeBindings = new Map(core.parse(core.PRELUDE).filter(it => it.type === "bind").map(it => [it.name, it])));
 
-class Spk {
+class WorkAhead {
   constructor(g) {
-    this.g = g; this.nodes = []; this.memo = new Map(); this.caps = []; this.capIdx = new Map();
-    this.effects = null;
+    this.gen = g; this.nodes = []; this.nodeIndex = new Map(); this.outsideReads = []; this.outsideReadIndex = new Map();
+    this.hostCalls = null;
     // names from outside are worked out on a budget: the ones worth it are small tables, a few hundred steps each
-    this.outside = new Map(); this.steps = 0; this.stepCap = 400000; this.depth = 0; this.outsideLeft = 10000; this.why = null; this.guards = []; this.jsOnly = false;
-    this.pc = null; this.TRUE = this.cb(true); this.FALSE = this.cb(false); this.pc = this.TRUE;
+    this.outsideValues = new Map(); this.stepsTaken = 0; this.stepLimit = 400000; this.callDepth = 0; this.outsideBudget = 10000; this.reason = null; this.checks = []; this.javascriptOnly = false;
+    this.pathCondition = null; this.TRUE = this.constantBool(true); this.FALSE = this.constantBool(false); this.pathCondition = this.TRUE;
   }
-  no(why) { if (!this.why) this.why = why; throw SPKFAIL; }
-  tick() { if (++this.steps > this.stepCap) this.no("it takes too many steps to work out"); }
+  giveUp(why) { if (!this.reason) this.reason = why; throw GIVE_UP; }
+  countStep() { if (++this.stepsTaken > this.stepLimit) this.giveUp("it takes too many steps to work out"); }
 
-  // ---- IR nodes: [op, a, b, c, v]. Equal nodes are shared, and steps on constants are worked out now.
-  node(op, a, b, c, v) {
-    const N = this.nodes, isK = i => N[i][0] === "c" || N[i][0] === "cb", kv = i => N[i][4];
-    if (SPK_N2[op] && isK(a) && isK(b)) return this.node("c", -1, -1, -1, SPK_N2[op](kv(a), kv(b)));
-    if (SPK_N1[op] && isK(a)) return this.node("c", -1, -1, -1, SPK_N1[op](kv(a)));
-    if ((SPK_C2[op] || SPK_B2[op]) && isK(a) && isK(b)) return this.node("cb", -1, -1, -1, (SPK_C2[op] || SPK_B2[op])(kv(a), kv(b)));
-    if (op === "not" && isK(a)) return this.node("cb", -1, -1, -1, !kv(a));
-    if (op === "beq" && isK(b)) return kv(b) ? a : this.node("not", a);
-    if (op === "beq" && isK(a)) return kv(a) ? b : this.node("not", b);
-    if ((SPK_N2[op] || SPK_C2[op] || SPK_N1[op]) && op !== "noise") {
-      const ta = this.ktree(a), tb = SPK_N1[op] ? 0 : this.ktree(b);
-      if (ta && (SPK_N1[op] || tb) && (N[a][0] === "sel" || (!SPK_N1[op] && N[b][0] === "sel")) && ta * (tb || 1) <= 16) {
-        const [x, y] = N[a][0] === "sel" ? [a, b] : [b, a], [, cc, l, r] = N[x];
-        const on = (u) => SPK_N1[op] ? this.node(op, u) : x === a ? this.node(op, u, y) : this.node(op, y, u);
-        return this.node("sel", cc, on(l), on(r));
+  // ---- IR nodes: [op, first, second, third, literal], the inputs being earlier nodes (or -1). Equal nodes are shared, and steps on constants are worked out now.
+  addNode(op, first, second, third, literal) {
+    const nodes = this.nodes, isConstant = i => nodes[i][0] === "constant" || nodes[i][0] === "constantBool", constantAt = i => nodes[i][4];
+    if (NUMBER_STEPS_OF_TWO[op] && isConstant(first) && isConstant(second)) return this.addNode("constant", -1, -1, -1, NUMBER_STEPS_OF_TWO[op](constantAt(first), constantAt(second)));
+    if (NUMBER_STEPS_OF_ONE[op] && isConstant(first)) return this.addNode("constant", -1, -1, -1, NUMBER_STEPS_OF_ONE[op](constantAt(first)));
+    if ((COMPARISON_STEPS[op] || TRUTH_STEPS[op]) && isConstant(first) && isConstant(second)) return this.addNode("constantBool", -1, -1, -1, (COMPARISON_STEPS[op] || TRUTH_STEPS[op])(constantAt(first), constantAt(second)));
+    if (op === "not" && isConstant(first)) return this.addNode("constantBool", -1, -1, -1, !constantAt(first));
+    if (op === "boolEquals" && isConstant(second)) return constantAt(second) ? first : this.addNode("not", first);
+    if (op === "boolEquals" && isConstant(first)) return constantAt(first) ? second : this.addNode("not", second);
+    if ((NUMBER_STEPS_OF_TWO[op] || COMPARISON_STEPS[op] || NUMBER_STEPS_OF_ONE[op]) && op !== "noise") {
+      const firstChoices = this.constantChoiceSize(first), secondChoices = NUMBER_STEPS_OF_ONE[op] ? 0 : this.constantChoiceSize(second);
+      if (firstChoices && (NUMBER_STEPS_OF_ONE[op] || secondChoices) && (nodes[first][0] === "choose" || (!NUMBER_STEPS_OF_ONE[op] && nodes[second][0] === "choose")) && firstChoices * (secondChoices || 1) <= 16) {
+        const [choice, other] = nodes[first][0] === "choose" ? [first, second] : [second, first], [, test, ifTrue, ifFalse] = nodes[choice];
+        const on = (each) => NUMBER_STEPS_OF_ONE[op] ? this.addNode(op, each) : choice === first ? this.addNode(op, each, other) : this.addNode(op, other, each);
+        return this.addNode("choose", test, on(ifTrue), on(ifFalse));
       }
     }
-    if (op === "sel") { if (isK(a)) return kv(a) ? b : c; if (b === c) return b; }
-    if (op === "and") { if (isK(a)) return kv(a) ? b : a; if (isK(b)) return kv(b) ? a : b; if (a === b) return a; }
-    if (op === "or") { if (isK(a)) return kv(a) ? a : b; if (isK(b)) return kv(b) ? b : a; if (a === b) return a; }
-    const key = op + "," + a + "," + b + "," + c + "," + (v === undefined ? "" : typeof v === "number" ? spkNum(v) : v);
-    let id = this.memo.get(key);
+    if (op === "choose") { if (isConstant(first)) return constantAt(first) ? second : third; if (second === third) return second; }
+    if (op === "and") { if (isConstant(first)) return constantAt(first) ? second : first; if (isConstant(second)) return constantAt(second) ? first : second; if (first === second) return first; }
+    if (op === "or") { if (isConstant(first)) return constantAt(first) ? first : second; if (isConstant(second)) return constantAt(second) ? second : first; if (first === second) return first; }
+    const key = op + "," + first + "," + second + "," + third + "," + (literal === undefined ? "" : typeof literal === "number" ? numberLiteral(literal) : literal);
+    let id = this.nodeIndex.get(key);
     if (id !== undefined) return id;
-    id = N.length; N.push([op, a, b, c, v]); this.memo.set(key, id);
-    if (SPK_JSONLY.has(op)) this.jsOnly = true;
-    if (N.length > 60000) this.no("it is too big to run as one kernel");
+    id = nodes.length; nodes.push([op, first, second, third, literal]); this.nodeIndex.set(key, id);
+    if (JAVASCRIPT_ONLY_STEPS.has(op)) this.javascriptOnly = true;
+    if (nodes.length > 60000) this.giveUp("it is too big to run as one kernel");
     return id;
   }
   // how many constants a step is a choice between (a constant is 1), or 0 if it isn't a choice between constants
-  ktree(i) {
+  constantChoiceSize(i) {
     const n = this.nodes[i];
-    if (n[0] === "c" || n[0] === "cb") return 1;
-    if (n[0] !== "sel") return 0;
-    const l = this.ktree(n[2]), r = l && this.ktree(n[3]);
+    if (n[0] === "constant" || n[0] === "constantBool") return 1;
+    if (n[0] !== "choose") return 0;
+    const l = this.constantChoiceSize(n[2]), r = l && this.constantChoiceSize(n[3]);
     return l && r ? l + r : 0;
   }
-  num(id) { return { k: "n", id }; }
-  boo(id) { return { k: "b", id }; }
-  cn(v) { return this.num(this.node("c", -1, -1, -1, v)); }
-  cb(v) { return this.boo(this.node("cb", -1, -1, -1, !!v)); }
-  isC(p) { return p.k === "n" && this.nodes[p.id][0] === "c"; }
-  isCB(p) { return p.k === "b" && this.nodes[p.id][0] === "cb"; }
-  val(p) { return this.nodes[p.id][4]; }
-  isFalse(p) { return this.isCB(p) && this.val(p) === false; }
-  cv(parts, keys, vals) { return { k: "cv", parts, keys: keys || [], vals: vals || [] }; }
-  not(p) { return this.boo(this.node("not", p.id)); }
-  and(a, b) { return this.boo(this.node("and", a.id, b.id)); }
-  or(a, b) { return this.boo(this.node("or", a.id, b.id)); }
+  numberValue(id) { return { kind: "number", id }; }
+  boolValue(id) { return { kind: "bool", id }; }
+  constantNumber(v) { return this.numberValue(this.addNode("constant", -1, -1, -1, v)); }
+  constantBool(v) { return this.boolValue(this.addNode("constantBool", -1, -1, -1, !!v)); }
+  isConstantNumber(p) { return p.kind === "number" && this.nodes[p.id][0] === "constant"; }
+  isConstantBool(p) { return p.kind === "bool" && this.nodes[p.id][0] === "constantBool"; }
+  constantOf(p) { return this.nodes[p.id][4]; }
+  isFalse(p) { return this.isConstantBool(p) && this.constantOf(p) === false; }
+  cellOfValues(parts, keys, values) { return { kind: "cell", parts, keys: keys || [], values: values || [] }; }
+  not(p) { return this.boolValue(this.addNode("not", p.id)); }
+  and(a, b) { return this.boolValue(this.addNode("and", a.id, b.id)); }
+  or(a, b) { return this.boolValue(this.addNode("or", a.id, b.id)); }
   // a check that must hold in every run, or the whole spork runs the ordinary way; it only counts where the program gets to it
-  guard(ok) { const g = this.or(this.not(this.pc), ok); if (!this.isCB(g) || !this.val(g)) this.guards.push(g.id); }
-  under(c, f) { const s = this.pc; this.pc = this.and(s, c); try { return f(); } finally { this.pc = s; } }
+  addCheck(holds) { const check = this.or(this.not(this.pathCondition), holds); if (!this.isConstantBool(check) || !this.constantOf(check)) this.checks.push(check.id); }
+  underCondition(test, work) { const outer = this.pathCondition; this.pathCondition = this.and(outer, test); try { return work(); } finally { this.pathCondition = outer; } }
 
   // ---- names: the kernel's own, then the frames the compiler knows, then the built-ins
-  isName(n, env) {
-    for (let e = env; e; e = e.parent) {
-      if (e.vars) { if (e.vars.has(n)) return true; continue; }
-      if (e.prelude) return prelude().has(n) || this.g.globals.has(n);
-      return !!this.frameRef(n, e.f, e.lim) || this.g.globals.has(n);
+  isName(name, scope) {
+    for (let level = scope; level; level = level.parent) {
+      if (level.locals) { if (level.locals.has(name)) return true; continue; }
+      if (level.prelude) return prelude().has(name) || this.gen.globals.has(name);
+      return !!this.findInFrames(name, level.frameIndex, level.positionLimit) || this.gen.globals.has(name);
     }
     return false;
   }
-  look(n, env) {
-    for (let e = env; e; e = e.parent) {
-      if (e.vars) { if (e.vars.has(n)) return e.vars.get(n); continue; }
-      return e.prelude ? this.fromFrames(n, -1, Infinity) : this.fromFrames(n, e.f, e.lim);
+  lookUp(name, scope) {
+    for (let level = scope; level; level = level.parent) {
+      if (level.locals) { if (level.locals.has(name)) return level.locals.get(name); continue; }
+      return level.prelude ? this.fromOutside(name, -1, Infinity) : this.fromOutside(name, level.frameIndex, level.positionLimit);
     }
-    this.no("it uses " + n);
+    this.giveUp("it uses " + name);
   }
   // a prelude cell: a cell that takes input is inlined where it is called; anything else is worked out now
-  fromPrelude(n) {
-    const key = "\u0001" + n;
-    if (this.outside.has(key)) { const v = this.outside.get(key); if (v === SPK_PENDING) this.no("it uses " + n + " inside its own definition"); return v; }
-    const it = prelude().get(n), T = it.val.terms, env = { prelude: true };
-    this.outside.set(key, SPK_PENDING);
-    const v = T.length === 1 && T[0].k === "cell" ? this.cellValue(T[0], env) : this.chain(it.val, env);
-    this.outside.set(key, v);
+  fromPrelude(name) {
+    const key = "\u0001" + name;
+    if (this.outsideValues.has(key)) { const v = this.outsideValues.get(key); if (v === STILL_WORKING_OUT) this.giveUp("it uses " + name + " inside its own definition"); return v; }
+    const binding = prelude().get(name), terms = binding.value.terms, scope = { prelude: true };
+    this.outsideValues.set(key, STILL_WORKING_OUT);
+    const v = terms.length === 1 && terms[0].type === "cell" ? this.cellValue(terms[0], scope) : this.chain(binding.value, scope);
+    this.outsideValues.set(key, v);
     return v;
   }
-  frameRef(n, fIdx, lim) {
-    for (let f = fIdx; f >= 0; f--) {
-      const names = this.g.frames[f].names, r = names.get(n);
-      if (!r) continue;
-      if (f === fIdx && lim !== Infinity && spkPos(names, n) >= lim) continue;
-      return { r, f };
+  findInFrames(name, frameIndex, positionLimit) {
+    for (let frame = frameIndex; frame >= 0; frame--) {
+      const names = this.gen.frames[frame].names, entry = names.get(name);
+      if (!entry) continue;
+      if (frame === frameIndex && positionLimit !== Infinity && positionAmongNames(names, name) >= positionLimit) continue;
+      return { entry: entry, frameIndex: frame };
     }
     return null;
   }
-  fromFrames(n, fIdx, lim) {
-    const fr = this.frameRef(n, fIdx, lim);
-    if (fr) {
-      const key = fr.f + "\u0000" + n;
-      if (this.outside.has(key)) { const v = this.outside.get(key); if (v === SPK_PENDING) this.no("it uses " + n + " inside its own definition"); return v; }
-      const pos = spkPos(this.g.frames[fr.f].names, n), r = fr.r;
-      let v = null;
-      if (r.ast && r.ast.names.length) v = { k: "fn", ast: r.ast, env: { f: fr.f, lim: pos + 1 } };
-      else if ((r.ast || r.val) && !spkTooBig(this.g, fr.f, n) && this.outsideLeft > 0) {
+  fromOutside(name, frameIndex, positionLimit) {
+    const found = this.findInFrames(name, frameIndex, positionLimit);
+    if (found) {
+      const key = found.frameIndex + "\u0000" + name;
+      if (this.outsideValues.has(key)) { const value = this.outsideValues.get(key); if (value === STILL_WORKING_OUT) this.giveUp("it uses " + name + " inside its own definition"); return value; }
+      const position = positionAmongNames(this.gen.frames[found.frameIndex].names, name), entry = found.entry;
+      let value = null;
+      if (entry.ast && entry.ast.names.length) value = { kind: "function", ast: entry.ast, scope: { frameIndex: found.frameIndex, positionLimit: position + 1 } };
+      else if ((entry.ast || entry.value) && !couldNotWorkOut(this.gen, found.frameIndex, name) && this.outsideBudget > 0) {
         // a name bound outside: worked out again here (it is pure, so the value is the same), or else read as a number when spork runs
-        this.outside.set(key, SPK_PENDING);
-        const why = this.why, pc = this.pc, caps = this.caps.length, seen = new Set(this.outside.keys()), cap0 = this.stepCap;
-        this.pc = this.TRUE;
+        this.outsideValues.set(key, STILL_WORKING_OUT);
+        const why = this.reason, pc = this.pathCondition, caps = this.outsideReads.length, seen = new Set(this.outsideValues.keys()), cap0 = this.stepLimit;
+        this.pathCondition = this.TRUE;
         // a name from outside gets a small budget of its own: past it, it is read as a number when the loop runs
-        const s0 = this.steps;
-        this.stepCap = Math.min(cap0, this.steps + Math.min(2500, this.outsideLeft));
-        try { v = r.ast ? this.cellValue(r.ast, { f: fr.f, lim: pos + 1 }) : this.chain(r.val, { f: fr.f, lim: pos }); }
+        const s0 = this.stepsTaken;
+        this.stepLimit = Math.min(cap0, this.stepsTaken + Math.min(2500, this.outsideBudget));
+        try { value = entry.ast ? this.cellValue(entry.ast, { frameIndex: found.frameIndex, positionLimit: position + 1 }) : this.chain(entry.value, { frameIndex: found.frameIndex, positionLimit: position }); }
         catch (e) {
-          if (e !== SPKFAIL) throw e;
+          if (e !== GIVE_UP) throw e;
           // a failed try leaves nothing behind: no outside reads it made, no names it worked out
-          this.why = why; v = null; spkTooBig(this.g, fr.f, n, true);
-          for (const c of this.caps.splice(caps)) this.capIdx.delete(c);
-          for (const k of [...this.outside.keys()]) if (!seen.has(k)) this.outside.delete(k);
-          this.outside.set(key, SPK_PENDING);
+          this.reason = why; value = null; couldNotWorkOut(this.gen, found.frameIndex, name, true);
+          for (const c of this.outsideReads.splice(caps)) this.outsideReadIndex.delete(c);
+          for (const k of [...this.outsideValues.keys()]) if (!seen.has(k)) this.outsideValues.delete(k);
+          this.outsideValues.set(key, STILL_WORKING_OUT);
         }
-        this.stepCap = cap0; this.pc = pc; this.outsideLeft -= this.steps - s0;
+        this.stepLimit = cap0; this.pathCondition = pc; this.outsideBudget -= this.stepsTaken - s0;
       }
-      if (!v) v = this.capture(this.g.refJS(r));
-      this.outside.set(key, v);
-      return v;
+      if (!value) value = this.readAtRunTime(this.gen.referenceCode(entry));
+      this.outsideValues.set(key, value);
+      return value;
     }
-    if (prelude().has(n) && (!this.g.globals.has(n) || (Object.getOwnPropertyDescriptor(G, n) || {}).get)) return this.fromPrelude(n);
-    if (n === "any") return { k: "any" };
-    if (this.g.globals.has(n)) {
-      const d = Object.getOwnPropertyDescriptor(G, n);
-      if (!d || d.get) this.no(n === "random" ? "it reads random, which changes from run to run" : "it uses " + n + ", a library cell spork can't work out yet");
-      if (d.value instanceof Native) return SPK_NATIVES.has(n) ? { k: "nat", n } : d.value.effect ? { k: "host", n } : this.no(n === "rand" ? "it uses rand, which reads random, which changes from run to run" : "it uses " + n);
-      if (typeof d.value === "number") return this.capture(this.g.globalRef(n));
-      this.no("it uses " + n);
+    if (prelude().has(name) && (!this.gen.globals.has(name) || (Object.getOwnPropertyDescriptor(GLOBALS, name) || {}).get)) return this.fromPrelude(name);
+    if (name === "any") return { kind: "any" };
+    if (this.gen.globals.has(name)) {
+      const descriptor = Object.getOwnPropertyDescriptor(GLOBALS, name);
+      if (!descriptor || descriptor.get) this.giveUp(name === "random" ? "it reads random, which changes from run to run" : "it uses " + name + ", a library cell spork can't work out yet");
+      if (descriptor.value instanceof Native) return INLINED_BUILTINS.has(name) ? { kind: "builtin", name: name } : descriptor.value.effect ? { kind: "hostWord", name: name } : this.giveUp(name === "rand" ? "it uses rand, which reads random, which changes from run to run" : "it uses " + name);
+      if (typeof descriptor.value === "number") return this.readAtRunTime(this.gen.globalCode(name));
+      this.giveUp("it uses " + name);
     }
-    this.no("it uses " + n + ", which isn't a name it can see");
+    this.giveUp("it uses " + name + ", which isn't a name it can see");
   }
-  capture(ref) {
-    let i = this.capIdx.get(ref);
-    if (i === undefined) { i = this.caps.length; this.caps.push(ref); this.capIdx.set(ref, i); }
-    return this.num(this.node("k", -1, -1, -1, i));
+  readAtRunTime(code) {
+    let index = this.outsideReadIndex.get(code);
+    if (index === undefined) { index = this.outsideReads.length; this.outsideReads.push(code); this.outsideReadIndex.set(code, index); }
+    return this.numberValue(this.addNode("outside", -1, -1, -1, index));
   }
 
   // ---- terms, chains and bodies, mirroring Gen.genChain step for step
-  term(t, env) {
-    this.tick();
-    switch (t.k) {
-      case "num": return this.cn(t.v);
-      case "str": return { k: "s", v: t.v };
-      case "tmpl": { let s = ""; for (const p of t.parts) s += typeof p === "string" ? p : this.text(this.chain(p.ast, env)); return { k: "s", v: s }; }
+  term(term, scope) {
+    this.countStep();
+    switch (term.type) {
+      case "num": return this.constantNumber(term.value);
+      case "str": return { kind: "text", value: term.value };
+      case "tmpl": { let text = ""; for (const part of term.parts) text += typeof part === "string" ? part : this.textNow(this.chain(part.ast, scope)); return { kind: "text", value: text }; }
       case "word":
-        if (t.v === "true") return this.TRUE;
-        if (t.v === "false") return this.FALSE;
-        if (["!", "_", "left", "right"].includes(t.v)) this.no("it uses " + t.v);
-        return this.look(t.v, env);
-      case "group": return this.group(t.items, env);
-      case "cell": return this.cellValue(t, env);
-      case "chain": return this.chain(t, env);
+        if (term.value === "true") return this.TRUE;
+        if (term.value === "false") return this.FALSE;
+        if (["!", "_", "left", "right"].includes(term.value)) this.giveUp("it uses " + term.value);
+        return this.lookUp(term.value, scope);
+      case "group": return this.group(term.items, scope);
+      case "cell": return this.cellValue(term, scope);
+      case "chain": return this.chain(term, scope);
     }
-    this.no("it uses something spork can't work out");
+    this.giveUp("it uses something spork can't work out");
   }
   // text made now: only from values that are the same in every run
-  text(p) {
-    if (p.k === "s") return p.v;
-    if (this.isC(p) || this.isCB(p)) return fmt(this.val(p));
-    this.no("it puts a value that changes from run to run into text");
+  textNow(value) {
+    if (value.kind === "text") return value.value;
+    if (this.isConstantNumber(value) || this.isConstantBool(value)) return formatValue(this.constantOf(value));
+    this.giveUp("it puts a value that changes from run to run into text");
   }
-  group(items, env) {
-    if (items.length === 1 && items[0].k === "chain") return this.chain(items[0], env);
-    const sc = { vars: new Map(), parent: env }; let r = this.FALSE;
-    for (const it of items) { if (it.k === "bind") { r = this.chain(it.val, sc); sc.vars.set(it.name, r); } else r = this.chain(it, sc); }
-    return r;
+  group(items, scope) {
+    if (items.length === 1 && items[0].type === "chain") return this.chain(items[0], scope);
+    const inner = { locals: new Map(), parent: scope }; let result = this.FALSE;
+    for (const item of items) { if (item.type === "bind") { result = this.chain(item.value, inner); inner.locals.set(item.name, result); } else result = this.chain(item, inner); }
+    return result;
   }
-  cellValue(c, env) {
-    if (c.names.length) return { k: "fn", ast: c, env };
-    if (spkUses(c)) this.no("it uses _ or left");
-    const sc = { vars: new Map(), parent: env }, parts = [], keys = [], vals = [];
-    for (const it of c.items) {
-      if (it.k === "bind") { const v = this.bindVal(it, sc); sc.vars.set(it.name, v); keys.push(it.name); vals.push(v); }
-      else parts.push(this.chain(it, sc));
+  cellValue(cell, scope) {
+    if (cell.names.length) return { kind: "function", ast: cell, scope };
+    if (usesInputWords(cell)) this.giveUp("it uses _ or left");
+    const inner = { locals: new Map(), parent: scope }, parts = [], keys = [], values = [];
+    for (const item of cell.items) {
+      if (item.type === "bind") { const value = this.bindingValue(item, inner); inner.locals.set(item.name, value); keys.push(item.name); values.push(value); }
+      else parts.push(this.chain(item, inner));
     }
-    return this.cv(parts, keys, vals);
+    return this.cellOfValues(parts, keys, values);
   }
-  bindVal(it, sc) { const T = it.val.terms; return T.length === 1 && T[0].k === "cell" ? this.cellValue(T[0], sc) : this.chain(it.val, sc); }
+  bindingValue(binding, scope) { const terms = binding.value.terms; return terms.length === 1 && terms[0].type === "cell" ? this.cellValue(terms[0], scope) : this.chain(binding.value, scope); }
   // a cell's body run in order: the last part is what it gives (genRunBody)
-  runBody(items, env) {
-    let last = this.FALSE;
+  runBody(items, scope) {
+    let lastPart = this.FALSE;
     for (let i = 0; i < items.length; i++) {
-      const it = items[i];
-      if (it.k === "bind") { env.vars.set(it.name, this.bindVal(it, env)); if (i === items.length - 1) return last; }
-      else { const v = this.chain(it, env); if (i === items.length - 1) return v; last = v; }
+      const item = items[i];
+      if (item.type === "bind") { scope.locals.set(item.name, this.bindingValue(item, scope)); if (i === items.length - 1) return lastPart; }
+      else { const value = this.chain(item, scope); if (i === items.length - 1) return value; lastPart = value; }
     }
     return this.FALSE;
   }
-  block(c, env) { if (c.names.length || spkUses(c)) this.no("a branch takes input"); return this.runBody(c.items, { vars: new Map(), parent: env }); }
-  arg(t, env) { return t.k === "cell" && !t.names.length ? this.block(t, env) : this.term(t, env); }
+  runBlock(cell, scope) { if (cell.names.length || usesInputWords(cell)) this.giveUp("a branch takes input"); return this.runBody(cell.items, { locals: new Map(), parent: scope }); }
+  rightSide(term, scope) { return term.type === "cell" && !term.names.length ? this.runBlock(term, scope) : this.term(term, scope); }
 
-  chain(ch, env) {
-    const T = ch.terms; if (!T.length) return this.FALSE;
-    let v = this.term(T[0], env);
-    for (let i = 1; i < T.length; i++) {
-      this.tick();
-      const t = T[i];
-      if (t.k === "word" && (t.v === "!" || t.v === "true" || t.v === "false")) this.no("it sends " + t.v);
-      if (t.k === "word") {
-        const w = t.v;
-        if (FUSED.has(w) && i + 1 < T.length && !this.isName(w, env)) {
-          const nt = T[++i];
-          if ((w === "with" || w === "..") && nt.k === "cell" && fieldsOnly(nt)) { v = this.withf(v, nt, env); continue; }
-          v = this.op(w, v, this.term(nt, env)); continue;
+  chain(chain, scope) {
+    const terms = chain.terms; if (!terms.length) return this.FALSE;
+    let value = this.term(terms[0], scope);
+    for (let i = 1; i < terms.length; i++) {
+      this.countStep();
+      const term = terms[i];
+      if (term.type === "word" && (term.value === "!" || term.value === "true" || term.value === "false")) this.giveUp("it sends " + term.value);
+      if (term.type === "word") {
+        const word = term.value;
+        if (FUSED_OPERATORS.has(word) && i + 1 < terms.length && !this.isName(word, scope)) {
+          const nextTerm = terms[++i];
+          if ((word === "with" || word === "..") && nextTerm.type === "cell" && isFieldsOnly(nextTerm)) { value = this.withFields(value, nextTerm, scope); continue; }
+          value = this.operator(word, value, this.term(nextTerm, scope)); continue;
         }
-        if (LAZYOPS.has(w) && i + 1 < T.length && !this.isName(w, env)) { const bt = T[++i]; v = this.lazy(w, v, () => this.arg(bt, env)); continue; }
-        const quiet = T[i + 1] && T[i + 1].k === "word" && T[i + 1].v === "else" && T[i + 2] && !this.isName("else", env);
-        v = this.word(v, w, env, quiet); continue;
+        if (LAZY_OPERATORS.has(word) && i + 1 < terms.length && !this.isName(word, scope)) { const elseTerm = terms[++i]; value = this.lazyOperator(word, value, () => this.rightSide(elseTerm, scope)); continue; }
+        const quiet = terms[i + 1] && terms[i + 1].type === "word" && terms[i + 1].value === "else" && terms[i + 2] && !this.isName("else", scope);
+        value = this.wordAfter(value, word, scope, quiet); continue;
       }
-      if (t.k === "cell" && !t.names.length) {
-        const elsePat = T[i + 1] && T[i + 1].k === "word" && T[i + 1].v === "else" && T[i + 2] && !this.isName("else", env);
-        if (v.k === "b") {
+      if (term.type === "cell" && !term.names.length) {
+        const elsePat = terms[i + 1] && terms[i + 1].type === "word" && terms[i + 1].value === "else" && terms[i + 2] && !this.isName("else", scope);
+        if (value.kind === "bool") {
           // a boolean runs the block (decision 62); else runs when the test is false or the block gives false
-          if (elsePat) { const bt = T[i + 2]; i += 2; v = this.branch(v, () => this.block(t, env), () => this.arg(bt, env)); }
-          else v = this.branch(v, () => this.block(t, env), null);
+          if (elsePat) { const elseTerm = terms[i + 2]; i += 2; value = this.branch(value, () => this.runBlock(term, scope), () => this.rightSide(elseTerm, scope)); }
+          else value = this.branch(value, () => this.runBlock(term, scope), null);
           continue;
         }
         // any other value is sent the cell; with else, the else sees what it gave
-        const r = this.send(v, this.cellValue(t, env));
-        if (elsePat) { const bt = T[i + 2]; i += 2; v = this.lazy("else", r, () => this.arg(bt, env)); } else v = r;
+        const result = this.send(value, this.cellValue(term, scope));
+        if (elsePat) { const elseTerm = terms[i + 2]; i += 2; value = this.lazyOperator("else", result, () => this.rightSide(elseTerm, scope)); } else value = result;
         continue;
       }
-      v = this.send(v, this.term(t, env));
+      value = this.send(value, this.term(term, scope));
     }
-    return v;
+    return value;
   }
 
-  branch(c, runA, runB) {
-    if (this.isCB(c)) {
-      if (!this.val(c)) return runB ? runB() : this.FALSE;
-      const a = runA();
-      if (!runB || a.k !== "b") return a;
-      if (this.isCB(a)) return this.val(a) ? a : runB();
-      return this.sel(a, this.TRUE, this.under(this.not(a), runB));
+  branch(test, runThen, runElse) {
+    if (this.isConstantBool(test)) {
+      if (!this.constantOf(test)) return runElse ? runElse() : this.FALSE;
+      const thenValue = runThen();
+      if (!runElse || thenValue.kind !== "bool") return thenValue;
+      if (this.isConstantBool(thenValue)) return this.constantOf(thenValue) ? thenValue : runElse();
+      return this.choose(thenValue, this.TRUE, this.underCondition(this.not(thenValue), runElse));
     }
     // a test that changes from run to run: both sides are worked out, and each run picks one
-    const a = this.under(c, runA);
-    if (!runB) { if (a.k === "b") return this.and(c, a); this.no("a test without else gives false in some runs and a value in others"); }
-    const pick = a.k === "b" ? this.and(c, a) : c;
-    const b = this.under(this.not(pick), runB);
-    return this.sel(pick, a.k === "b" ? this.TRUE : a, b);
+    const thenValue = this.underCondition(test, runThen);
+    if (!runElse) { if (thenValue.kind === "bool") return this.and(test, thenValue); this.giveUp("a test without else gives false in some runs and a value in others"); }
+    const pick = thenValue.kind === "bool" ? this.and(test, thenValue) : test;
+    const elseValue = this.underCondition(this.not(pick), runElse);
+    return this.choose(pick, thenValue.kind === "bool" ? this.TRUE : thenValue, elseValue);
   }
-  sel(c, x, y) {
-    if (this.isCB(c)) return this.val(c) ? x : y;
-    if (this.same(x, y)) return x;
-    if (x.k === "n" && y.k === "n") return this.num(this.node("sel", c.id, x.id, y.id));
-    if (x.k === "b" && y.k === "b") return this.boo(this.node("sel", c.id, x.id, y.id));
-    if (x.k === "row" && y.k === "row" && [...x.over.keys()].join("\u0000") === [...y.over.keys()].join("\u0000"))
-      return { k: "row", over: new Map([...x.over].map(([k, p]) => [k, this.sel(c, p, y.over.get(k))])) };
-    if (x.k === "cv" && y.k === "cv" && x.parts.length === y.parts.length && x.keys.join("\u0000") === y.keys.join("\u0000"))
-      return this.cv(x.parts.map((p, j) => this.sel(c, p, y.parts[j])), x.keys, x.vals.map((p, j) => this.sel(c, p, y.vals[j])));
-    this.no("a test picks between different kinds of value from run to run");
+  choose(test, ifTrue, ifFalse) {
+    if (this.isConstantBool(test)) return this.constantOf(test) ? ifTrue : ifFalse;
+    if (this.sameValue(ifTrue, ifFalse)) return ifTrue;
+    if (ifTrue.kind === "number" && ifFalse.kind === "number") return this.numberValue(this.addNode("choose", test.id, ifTrue.id, ifFalse.id));
+    if (ifTrue.kind === "bool" && ifFalse.kind === "bool") return this.boolValue(this.addNode("choose", test.id, ifTrue.id, ifFalse.id));
+    if (ifTrue.kind === "row" && ifFalse.kind === "row" && [...ifTrue.laidOver.keys()].join("\u0000") === [...ifFalse.laidOver.keys()].join("\u0000"))
+      return { kind: "row", laidOver: new Map([...ifTrue.laidOver].map(([k, part]) => [k, this.choose(test, part, ifFalse.laidOver.get(k))])) };
+    if (ifTrue.kind === "cell" && ifFalse.kind === "cell" && ifTrue.parts.length === ifFalse.parts.length && ifTrue.keys.join("\u0000") === ifFalse.keys.join("\u0000"))
+      return this.cellOfValues(ifTrue.parts.map((part, j) => this.choose(test, part, ifFalse.parts[j])), ifTrue.keys, ifTrue.values.map((part, j) => this.choose(test, part, ifFalse.values[j])));
+    this.giveUp("a test picks between different kinds of value from run to run");
   }
-  same(x, y) {
+  sameValue(x, y) {
     if (x === y) return true;
-    if (x.k !== y.k) return false;
-    if (x.k === "n" || x.k === "b") return x.id === y.id;
-    if (x.k === "s") return x.v === y.v;
-    if (x.k === "fn") return x.ast === y.ast && x.env === y.env;
-    if (x.k === "nat") return x.n === y.n;
-    if (x.k === "any") return true;
-    if (x.k === "row") return x.over.size === y.over.size && [...x.over].every(([k, p]) => y.over.has(k) && this.same(p, y.over.get(k)));
-    if (x.k === "cv") return x.parts.length === y.parts.length && x.keys.join("\u0000") === y.keys.join("\u0000") &&
-      x.parts.every((p, j) => this.same(p, y.parts[j])) && x.vals.every((p, j) => this.same(p, y.vals[j]));
+    if (x.kind !== y.kind) return false;
+    if (x.kind === "number" || x.kind === "bool") return x.id === y.id;
+    if (x.kind === "text") return x.value === y.value;
+    if (x.kind === "function") return x.ast === y.ast && x.scope === y.scope;
+    if (x.kind === "builtin") return x.name === y.name;
+    if (x.kind === "any") return true;
+    if (x.kind === "row") return x.laidOver.size === y.laidOver.size && [...x.laidOver].every(([k, p]) => y.laidOver.has(k) && this.sameValue(p, y.laidOver.get(k)));
+    if (x.kind === "cell") return x.parts.length === y.parts.length && x.keys.join("\u0000") === y.keys.join("\u0000") &&
+      x.parts.every((p, j) => this.sameValue(p, y.parts[j])) && x.values.every((p, j) => this.sameValue(p, y.values[j]));
     return false;
   }
-  lazy(w, v, getB) {
-    if (w === "else") {
-      if (this.isFalse(v)) return getB();
-      if (v.k !== "b" || this.isCB(v)) return v;
-      return this.sel(v, this.TRUE, this.under(this.not(v), getB));
+  lazyOperator(word, left, getRight) {
+    if (word === "else") {
+      if (this.isFalse(left)) return getRight();
+      if (left.kind !== "bool" || this.isConstantBool(left)) return left;
+      return this.choose(left, this.TRUE, this.underCondition(this.not(left), getRight));
     }
-    if (v.k !== "b") this.no("its " + w + " isn't after a test");
-    const goOn = w === "and" ? v : this.not(v);
-    if (this.isCB(goOn) && !this.val(goOn)) return v;
-    const b = this.under(goOn, getB);
-    if (b.k !== "b") this.no("its " + w + " isn't between two tests");
-    return this.isCB(v) ? b : this.boo(this.node(w, v.id, b.id));
+    if (left.kind !== "bool") this.giveUp("its " + word + " isn't after a test");
+    const rightRuns = word === "and" ? left : this.not(left);
+    if (this.isConstantBool(rightRuns) && !this.constantOf(rightRuns)) return left;
+    const right = this.underCondition(rightRuns, getRight);
+    if (right.kind !== "bool") this.giveUp("its " + word + " isn't between two tests");
+    return this.isConstantBool(left) ? right : this.boolValue(this.addNode(word, left.id, right.id));
   }
 
-  op(w, a, b) {
-    if (SPK_OPS[w]) {
-      if (a.k === "n" && b.k === "n") { const o = SPK_OPS[w]; return SPK_C2[o] ? this.boo(this.node(o, a.id, b.id)) : this.num(this.node(o, a.id, b.id)); }
-      if (a.k === "s" && b.k === "s" && (w === "<" || w === ">")) return this.cb(w === "<" ? a.v < b.v : a.v > b.v);
-      this.no("it does " + w + " on something that isn't a number");
+  operator(word, left, right) {
+    if (OPERATOR_STEPS[word]) {
+      if (left.kind === "number" && right.kind === "number") { const step = OPERATOR_STEPS[word]; return COMPARISON_STEPS[step] ? this.boolValue(this.addNode(step, left.id, right.id)) : this.numberValue(this.addNode(step, left.id, right.id)); }
+      if (left.kind === "text" && right.kind === "text" && (word === "<" || word === ">")) return this.constantBool(word === "<" ? left.value < right.value : left.value > right.value);
+      this.giveUp("it does " + word + " on something that isn't a number");
     }
-    if (w === "=" || w === "!=") { const e = this.equal(a, b); return w === "=" ? e : this.not(e); }
-    if (w === "@") return this.at(a, b);
+    if (word === "=" || word === "!=") { const e = this.equal(left, right); return word === "=" ? e : this.not(e); }
+    if (word === "@") return this.partAt(left, right);
     // .. and with
-    if (a.k === "s" && w === "..") return { k: "s", v: a.v + this.text(b) };
-    if (a.k === "cv" && b.k === "cv" && !a.keys.includes(w)) return this.merge(a, b);
-    if ((a.k === "s" || this.isC(a)) && w === "with") return { k: "s", v: this.text(a) + this.text(b) };
-    if (this.isC(a) && w === "..") return { k: "s", v: this.text(a) + this.text(b) };
-    this.no("it uses " + w + " on values spork can't join");
+    if (left.kind === "text" && word === "..") return { kind: "text", value: left.value + this.textNow(right) };
+    if (left.kind === "cell" && right.kind === "cell" && !left.keys.includes(word)) return this.merge(left, right);
+    if ((left.kind === "text" || this.isConstantNumber(left)) && word === "with") return { kind: "text", value: this.textNow(left) + this.textNow(right) };
+    if (this.isConstantNumber(left) && word === "..") return { kind: "text", value: this.textNow(left) + this.textNow(right) };
+    this.giveUp("it uses " + word + " on values spork can't join");
   }
   merge(a, b) {
-    const keys = a.keys.slice(), vals = a.vals.slice();
-    b.keys.forEach((k, j) => { const i = keys.indexOf(k); if (i < 0) { keys.push(k); vals.push(b.vals[j]); } else vals[i] = b.vals[j]; });
-    return this.cv(b.parts.length ? a.parts.concat(b.parts) : a.parts, keys, vals);
+    const keys = a.keys.slice(), values = a.values.slice();
+    b.keys.forEach((k, j) => { const i = keys.indexOf(k); if (i < 0) { keys.push(k); values.push(b.values[j]); } else values[i] = b.values[j]; });
+    return this.cellOfValues(b.parts.length ? a.parts.concat(b.parts) : a.parts, keys, values);
   }
-  withf(v, nt, env) {
-    const vals = nt.items.map(x => this.chain(x.val, env));
-    if (v.k === "row") { const over = new Map(v.over); nt.items.forEach((x, j) => over.set(x.name, vals[j])); return { k: "row", over }; }
-    if (v.k !== "cv" || v.keys.includes("with")) this.no("it uses with on something that isn't a record");
-    return this.merge(v, this.cv([], nt.items.map(x => x.name), vals));
+  withFields(record, fieldsCell, scope) {
+    const values = fieldsCell.items.map(field => this.chain(field.value, scope));
+    if (record.kind === "row") { const laidOver = new Map(record.laidOver); fieldsCell.items.forEach((field, j) => laidOver.set(field.name, values[j])); return { kind: "row", laidOver }; }
+    if (record.kind !== "cell" || record.keys.includes("with")) this.giveUp("it uses with on something that isn't a record");
+    return this.merge(record, this.cellOfValues([], fieldsCell.items.map(field => field.name), values));
   }
   equal(a, b) {
     // any is equal only to itself (it is how match and cond write their last case)
-    if (a.k === "any" || b.k === "any") return this.cb(a.k === b.k);
-    if (a.k === "n" && b.k === "n") return this.boo(this.node("eq", a.id, b.id));
-    if (a.k === "b" && b.k === "b") return this.boo(this.node("beq", a.id, b.id));
-    if (a.k === "s" && b.k === "s") return this.cb(a.v === b.v);
-    const plain = p => p.k === "n" || p.k === "b" || p.k === "s";
+    if (a.kind === "any" || b.kind === "any") return this.constantBool(a.kind === b.kind);
+    if (a.kind === "number" && b.kind === "number") return this.boolValue(this.addNode("eq", a.id, b.id));
+    if (a.kind === "bool" && b.kind === "bool") return this.boolValue(this.addNode("boolEquals", a.id, b.id));
+    if (a.kind === "text" && b.kind === "text") return this.constantBool(a.value === b.value);
+    const plain = p => p.kind === "number" || p.kind === "bool" || p.kind === "text";
     if (plain(a) && plain(b)) return this.FALSE;
-    if (a.k === "cv" && b.k === "cv") {
-      if (a.keys.includes("=")) this.no("it compares with a cell's own =");
+    if (a.kind === "cell" && b.kind === "cell") {
+      if (a.keys.includes("=")) this.giveUp("it compares with a cell's own =");
       if (a.parts.length !== b.parts.length || a.keys.length !== b.keys.length) return this.FALSE;
       let r = this.TRUE;
       a.parts.forEach((p, j) => { r = this.and(r, this.equal(p, b.parts[j])); });
-      for (let j = 0; j < a.keys.length; j++) { const i = b.keys.indexOf(a.keys[j]); if (i < 0) return this.FALSE; r = this.and(r, this.equal(a.vals[j], b.vals[i])); }
+      for (let j = 0; j < a.keys.length; j++) { const i = b.keys.indexOf(a.keys[j]); if (i < 0) return this.FALSE; r = this.and(r, this.equal(a.values[j], b.values[i])); }
       return r;
     }
-    if ((plain(a) && b.k === "cv") || (a.k === "cv" && plain(b))) return this.FALSE;
-    this.no("it compares cells that take input");
+    if ((plain(a) && b.kind === "cell") || (a.kind === "cell" && plain(b))) return this.FALSE;
+    this.giveUp("it compares cells that take input");
   }
-  at(a, k) {
-    if (a.k === "cv") {
-      const P = a.parts;
-      if (this.isC(k)) { const v = P[this.val(k) - 1]; return v === undefined ? this.FALSE : v; }
+  partAt(list, position) {
+    if (list.kind === "cell") {
+      const workAhead = list.parts;
+      if (this.isConstantNumber(position)) { const part = workAhead[this.constantOf(position) - 1]; return part === undefined ? this.FALSE : part; }
       // a choice between constant positions: a choice between those parts
-      if (k.k === "n" && this.nodes[k.id][0] === "sel" && this.ktree(k.id)) { const [, c, l, r] = this.nodes[k.id]; return this.sel(this.boo(c), this.at(a, this.num(l)), this.at(a, this.num(r))); }
-      if (k.k !== "n" || !P.length || P.length > 256) this.no("it picks from a list with a position that isn't a number");
+      if (position.kind === "number" && this.nodes[position.id][0] === "choose" && this.constantChoiceSize(position.id)) { const [, c, l, picked] = this.nodes[position.id]; return this.choose(this.boolValue(c), this.partAt(list, this.numberValue(l)), this.partAt(list, this.numberValue(picked))); }
+      if (position.kind !== "number" || !workAhead.length || workAhead.length > 256) this.giveUp("it picks from a list with a position that isn't a number");
       // a position that changes from run to run: it must be a whole number inside the list, or spork runs the ordinary way
-      const len = this.cn(P.length), one = this.cn(1);
-      this.guard(this.and(this.and(this.boo(this.node("ge", k.id, one.id)), this.boo(this.node("le", k.id, len.id))), this.boo(this.node("eq", this.node("floor", k.id), k.id))));
-      let r = P[P.length - 1];
-      for (let j = P.length - 2; j >= 0; j--) r = this.sel(this.boo(this.node("eq", k.id, this.cn(j + 1).id)), P[j], r);
-      return r;
+      const length = this.constantNumber(workAhead.length), one = this.constantNumber(1);
+      this.addCheck(this.and(this.and(this.boolValue(this.addNode("ge", position.id, one.id)), this.boolValue(this.addNode("le", position.id, length.id))), this.boolValue(this.addNode("eq", this.addNode("floor", position.id), position.id))));
+      let picked = workAhead[workAhead.length - 1];
+      for (let j = workAhead.length - 2; j >= 0; j--) picked = this.choose(this.boolValue(this.addNode("eq", position.id, this.constantNumber(j + 1).id)), workAhead[j], picked);
+      return picked;
     }
-    if (a.k === "s" && this.isC(k)) { const n = this.val(k), s = a.v; return n >= 1 && n <= s.length ? { k: "s", v: s[n - 1] } : this.FALSE; }
-    this.no("it uses @ on something that isn't a list");
+    if (list.kind === "text" && this.isConstantNumber(position)) { const n = this.constantOf(position), s = list.value; return n >= 1 && n <= s.length ? { kind: "text", value: s[n - 1] } : this.FALSE; }
+    this.giveUp("it uses @ on something that isn't a list");
   }
 
   // a word after a value: a field, then a built-in method, then a name in scope sent as the argument (SW)
-  word(v, w, env, quiet) {
-    if (v.k === "row") {
-      // a field of an item from a list in columns: the column, unless with laid a new value over it
-      if (w in SPK_CELLM || w in ALL) this.no("it uses " + w + " on a record from the list");
-      if (this.isName(w, env)) this.no("it reads " + w + ", which is both a field and a name in scope");
-      return v.over.has(w) ? v.over.get(w) : this.num(this.node("col", -1, -1, -1, w));
+  wordAfter(receiver, word, scope, quiet) {
+    if (receiver.kind === "row") {
+      // a field of an item from a list in columns: the column, unless with laid a new value laidOver it
+      if (word in LIST_METHOD_TAKES_ARGUMENT || word in EVERY_VALUE_METHODS) this.giveUp("it uses " + word + " on a record from the list");
+      if (this.isName(word, scope)) this.giveUp("it reads " + word + ", which is both a field and a name in scope");
+      return receiver.laidOver.has(word) ? receiver.laidOver.get(word) : this.numberValue(this.addNode("column", -1, -1, -1, word));
     }
-    if (v.k === "cv") {
-      const j = v.keys.indexOf(w);
-      if (j >= 0) {
-        if (this.isName(w, env)) this.no("it reads " + w + ", which is both a field and a name in scope");
-        const f = v.vals[j]; if (f.k === "fn" && spkUses(f.ast)) this.no("a field uses left"); return f;
+    if (receiver.kind === "cell") {
+      const index = receiver.keys.indexOf(word);
+      if (index >= 0) {
+        if (this.isName(word, scope)) this.giveUp("it reads " + word + ", which is both a field and a name in scope");
+        const field = receiver.values[index]; if (field.kind === "function" && usesInputWords(field.ast)) this.giveUp("a field uses left"); return field;
       }
-      if (w in SPK_CELLM) {
-        if (SPK_CELLM[w]) return { k: "wait", m: w, left: v };
-        const P = v.parts;
-        if (w === "length") return this.cn(P.length);
-        if (w === "first") return P.length ? P[0] : this.FALSE;
-        return P.length ? P[P.length - 1] : this.FALSE;
+      if (word in LIST_METHOD_TAKES_ARGUMENT) {
+        if (LIST_METHOD_TAKES_ARGUMENT[word]) return { kind: "waiting", method: word, left: receiver };
+        const workAhead = receiver.parts;
+        if (word === "length") return this.constantNumber(workAhead.length);
+        if (word === "first") return workAhead.length ? workAhead[0] : this.FALSE;
+        return workAhead.length ? workAhead[workAhead.length - 1] : this.FALSE;
       }
-    } else if (v.k === "n") {
-      if (SPK_N1[w]) return this.num(this.node(w, v.id));
-      if (w === "min" || w === "max") return { k: "wait", m: w, left: v };
-      if (w === "times") this.no("it uses times");
-    } else if (v.k === "b") {
-      if (w === "not") return this.not(v);
-    } else if (v.k === "s") {
-      if (w === "length") return this.cn(v.v.length);
-      if (w === "upper") return { k: "s", v: v.v.toUpperCase() };
-      if (w === "lower") return { k: "s", v: v.v.toLowerCase() };
-    } else if (v.k === "fn" || v.k === "nat") {
-      if (v.k === "fn" && v.ast.items.some(x => x.k === "bind" && x.name === w)) this.no("it reads a field of a cell that takes input");
-      if (w in SPK_CELLM) this.no("it uses " + w + " on a cell that takes input");
+    } else if (receiver.kind === "number") {
+      if (NUMBER_STEPS_OF_ONE[word]) return this.numberValue(this.addNode(word, receiver.id));
+      if (word === "min" || word === "max") return { kind: "waiting", method: word, left: receiver };
+      if (word === "times") this.giveUp("it uses times");
+    } else if (receiver.kind === "bool") {
+      if (word === "not") return this.not(receiver);
+    } else if (receiver.kind === "text") {
+      if (word === "length") return this.constantNumber(receiver.value.length);
+      if (word === "upper") return { kind: "text", value: receiver.value.toUpperCase() };
+      if (word === "lower") return { kind: "text", value: receiver.value.toLowerCase() };
+    } else if (receiver.kind === "function" || receiver.kind === "builtin") {
+      if (receiver.kind === "function" && receiver.ast.items.some(x => x.type === "bind" && x.name === word)) this.giveUp("it reads a field of a cell that takes input");
+      if (word in LIST_METHOD_TAKES_ARGUMENT) this.giveUp("it uses " + word + " on a cell that takes input");
     }
-    if (w === "str") return { k: "s", v: this.text(v) };
-    if (w in ALL) this.no("it uses " + w + " there");
-    if (this.isName(w, env)) return this.send(v, this.look(w, env));
+    if (word === "str") return { kind: "text", value: this.textNow(receiver) };
+    if (word in EVERY_VALUE_METHODS) this.giveUp("it uses " + word + " there");
+    if (this.isName(word, scope)) return this.send(receiver, this.lookUp(word, scope));
     if (quiet) return this.FALSE;
-    this.no("it reads " + w + ", which isn't there");
+    this.giveUp("it reads " + word + ", which isn't there");
   }
   // a host word (circle, beep...) inside a fused each: done in each item's turn, when the tests leading to it hold
-  hostCall(n, a) {
-    const args = a.k === "cv" && !a.keys.length ? a.parts : [a];
-    for (const x of args) if (x.k !== "n" && x.k !== "b" && x.k !== "s") this.no("the host word " + n + " is given something that isn't a number or a word");
-    this.effects.push({ host: n, single: a.k !== "cv", args, cond: this.pc });
+  hostCall(name, argument) {
+    const args = argument.kind === "cell" && !argument.keys.length ? argument.parts : [argument];
+    for (const value of args) if (value.kind !== "number" && value.kind !== "bool" && value.kind !== "text") this.giveUp("the host word " + name + " is given something that isn't a number or a word");
+    this.hostCalls.push({ host: name, single: argument.kind !== "cell", args, cond: this.pathCondition });
     // what the host word gives back, as when it runs: print gives its value, the others false (so an else after one runs too, decision 74)
-    return n === "print" ? a : this.FALSE;
+    return name === "print" ? argument : this.FALSE;
   }
-  send(v, a) {
-    if (v.k === "fn") {
-      if (a.k === "s" && v.ast.items.some(x => x.k === "bind" && x.name === a.v)) this.no("it reads a field by name");
-      return this.call(v, a);
+  send(receiver, argument) {
+    if (receiver.kind === "function") {
+      if (argument.kind === "text" && receiver.ast.items.some(x => x.type === "bind" && x.name === argument.value)) this.giveUp("it reads a field by name");
+      return this.call(receiver, argument);
     }
-    if (v.k === "nat") return this.native(v.n, a);
-    if (v.k === "host") { if (!this.effects) this.no("it uses the host word " + v.n); return this.hostCall(v.n, a); }
-    if (v.k === "wait") return this.method(v.m, v.left, a);
-    this.no(v.k === "n" ? "it sends a value to a number" : "it sends a value to something that isn't a cell");
+    if (receiver.kind === "builtin") return this.builtin(receiver.name, argument);
+    if (receiver.kind === "hostWord") { if (!this.hostCalls) this.giveUp("it uses the host word " + receiver.name); return this.hostCall(receiver.name, argument); }
+    if (receiver.kind === "waiting") return this.listMethod(receiver.method, receiver.left, argument);
+    this.giveUp(receiver.kind === "number" ? "it sends a value to a number" : "it sends a value to something that isn't a cell");
   }
-  call(f, a) {
-    const c = f.ast, nn = c.names.length;
-    if (spkUses(c)) this.no("it calls a cell that uses _ or left");
-    if (++this.depth > 300) this.no("it calls itself too deeply to work out");
+  call(cell, argument) {
+    const literal = cell.ast, nameCount = literal.names.length;
+    if (usesInputWords(literal)) this.giveUp("it calls a cell that uses _ or left");
+    if (++this.callDepth > 300) this.giveUp("it calls itself too deeply to work out");
     const vars = new Map();
-    if (nn === 1) vars.set(c.names[0].n, a);
+    if (nameCount === 1) vars.set(literal.names[0].name, argument);
     else {
       // several names: by position, then by name (decision 15); a missing one with no default would be false, with a lint
-      if (a.k !== "cv" || a.parts.length > nn) this.no("it gives a cell the wrong number of values");
-      c.names.forEach((x, j) => {
-        let v = j < a.parts.length ? a.parts[j] : undefined;
-        const fi = a.keys.indexOf(x.n); if (fi >= 0) v = a.vals[fi];
-        if (v === undefined) { if (!x.def) this.no("it leaves out " + x.n); v = this.term(x.def, f.env); }
-        vars.set(x.n, v);
+      if (argument.kind !== "cell" || argument.parts.length > nameCount) this.giveUp("it gives a cell the wrong number of values");
+      literal.names.forEach((input, j) => {
+        let value = j < argument.parts.length ? argument.parts[j] : undefined;
+        const fieldPosition = argument.keys.indexOf(input.name); if (fieldPosition >= 0) value = argument.values[fieldPosition];
+        if (value === undefined) { if (!input.defaultValue) this.giveUp("it leaves out " + input.name); value = this.term(input.defaultValue, cell.scope); }
+        vars.set(input.name, value);
       });
     }
-    const r = this.runBody(c.items, { vars, parent: f.env });
-    this.depth--;
-    return r;
+    const result = this.runBody(literal.items, { locals: vars, parent: cell.scope });
+    this.callDepth--;
+    return result;
   }
-  apply(f, x) { if (f.k === "fn") { if (!f.ast.names.length) this.no("it collects with a cell that has no inputs"); return this.call(f, x); } return this.send(f, x); }
-  method(m, left, a) {
-    if (m === "min" || m === "max") { if (a.k !== "n") this.no("its " + m + " isn't given a number"); return this.num(this.node(m, left.id, a.id)); }
-    const P = left.parts;
-    if (m === "@") return this.at(left, a);
-    if (m === "collect" || m === "spork") return this.cv(P.map(p => this.apply(a, p)));
-    if (m === "keep") {
-      const o = [];
-      for (const p of P) {
-        const t = this.apply(a, p);
-        if (!this.isCB(t)) this.no(t.k === "b" ? "keep's test changes from run to run" : "keep's test doesn't give true or false");
-        if (this.val(t)) o.push(p);
+  applyToItem(cell, item) { if (cell.kind === "function") { if (!cell.ast.names.length) this.giveUp("it collects with a cell that has no inputs"); return this.call(cell, item); } return this.send(cell, item); }
+  listMethod(method, left, argument) {
+    if (method === "min" || method === "max") { if (argument.kind !== "number") this.giveUp("its " + method + " isn't given a number"); return this.numberValue(this.addNode(method, left.id, argument.id)); }
+    const workAhead = left.parts;
+    if (method === "@") return this.partAt(left, argument);
+    if (method === "collect" || method === "spork") return this.cellOfValues(workAhead.map(part => this.applyToItem(argument, part)));
+    if (method === "keep") {
+      const kept = [];
+      for (const part of workAhead) {
+        const answer = this.applyToItem(argument, part);
+        if (!this.isConstantBool(answer)) this.giveUp(answer.kind === "bool" ? "keep's test changes from run to run" : "keep's test doesn't give true or false");
+        if (this.constantOf(answer)) kept.push(part);
       }
-      return this.cv(o);
+      return this.cellOfValues(kept);
     }
-    if (m === "fold") {
-      if (a.k !== "cv") this.no("fold isn't given [start, cell]");
-      let acc = a.parts[0] || this.FALSE; const g = a.parts[1] || this.FALSE;
-      for (const p of P) acc = g.k === "fn" && g.ast.names.length === 2 ? this.call(g, this.cv([acc, p])) : this.apply(g, this.cv([acc, p]));
-      return acc;
+    if (method === "fold") {
+      if (argument.kind !== "cell") this.giveUp("fold isn't given [start, cell]");
+      let total = argument.parts[0] || this.FALSE; const cell = argument.parts[1] || this.FALSE;
+      for (const part of workAhead) total = cell.kind === "function" && cell.ast.names.length === 2 ? this.call(cell, this.cellOfValues([total, part])) : this.applyToItem(cell, this.cellOfValues([total, part]));
+      return total;
     }
-    this.no("it uses " + m + " inside spork");
+    this.giveUp("it uses " + method + " inside spork");
   }
-  native(n, a) {
-    const A = k => a.k === "cv" ? (a.parts[k] || this.FALSE) : k === 0 ? a : this.FALSE;
-    const nums = k => { const o = []; for (let j = 0; j < k; j++) { const x = A(j); if (x.k !== "n") this.no(n + " isn't given numbers"); o.push(x); } return o; };
-    if (n === "range") {
-      if (!this.isC(a)) this.no("range is given a count that changes from run to run");
-      const m = Math.max(0, Math.floor(this.val(a)));
-      if (m > 100000) this.no("it unrolls a range that is too long");
-      const P = new Array(m); for (let j = 0; j < m; j++) P[j] = this.cn(j + 1);
-      return this.cv(P);
+  builtin(name, argument) {
+    const part = k => argument.kind === "cell" ? (argument.parts[k] || this.FALSE) : k === 0 ? argument : this.FALSE;
+    const nums = k => { const o = []; for (let j = 0; j < k; j++) { const first = part(j); if (first.kind !== "number") this.giveUp(name + " isn't given numbers"); o.push(first); } return o; };
+    if (name === "range") {
+      if (!this.isConstantNumber(argument)) this.giveUp("range is given a count that changes from run to run");
+      const count = Math.max(0, Math.floor(this.constantOf(argument)));
+      if (count > 100000) this.giveUp("it unrolls a range that is too long");
+      const workAhead = new Array(count); for (let j = 0; j < count; j++) workAhead[j] = this.constantNumber(j + 1);
+      return this.cellOfValues(workAhead);
     }
-    const [x, y] = nums(2);   // noise
-    return this.num(this.node("noise", x.id, y.id));
+    const [first, second] = nums(2);   // noise
+    return this.numberValue(this.addNode("noise", first.id, second.id));
   }
 
   // ---- the whole cell: [x | ...] whose runs each give a number, true or false, or a record of numbers
-  build(c) {
-    if (c.names.length !== 1 || c.names[0].def) this.no("spork runs as a kernel only for a cell with one named input");
-    if (spkUses(c)) this.no("it uses _ or left");
-    const x = this.num(this.node("x", -1, -1, -1));
-    const r = this.runBody(c.items, { vars: new Map([[c.names[0].n, x]]), parent: { f: this.g.frames.length - 1, lim: Infinity } });
+  buildSporkKernel(cell) {
+    if (cell.names.length !== 1 || cell.names[0].defaultValue) this.giveUp("spork runs as a kernel only for a cell with one named input");
+    if (usesInputWords(cell)) this.giveUp("it uses _ or left");
+    const input = this.numberValue(this.addNode("input", -1, -1, -1));
+    const result = this.runBody(cell.items, { locals: new Map([[cell.names[0].name, input]]), parent: { frameIndex: this.gen.frames.length - 1, positionLimit: Infinity } });
     let kind, outs, keys = null;
-    if (r.k === "n") { kind = "n"; outs = [r.id]; }
-    else if (r.k === "b") { kind = "b"; outs = [r.id]; }
-    else if (r.k === "cv" && !r.parts.length && r.keys.length && r.vals.every(p => p.k === "n")) { kind = "rec"; keys = r.keys; outs = r.vals.map(p => p.id); }
-    else this.no("each run gives something other than a number, true or false, or a record of numbers");
-    return this.emit(kind, outs, keys);
+    if (result.kind === "number") { kind = "numbers"; outs = [result.id]; }
+    else if (result.kind === "bool") { kind = "bools"; outs = [result.id]; }
+    else if (result.kind === "cell" && !result.parts.length && result.keys.length && result.values.every(p => p.kind === "number")) { kind = "records"; keys = result.keys; outs = result.values.map(p => p.id); }
+    else this.giveUp("each run gives something other than a number, true or false, or a record of numbers");
+    return this.emitKernel(kind, outs, keys);
   }
-  // ---- loop fusion (decision 95): xs collect f keep g ... fold [start, h] (or length), as one loop over the items.
-  // item is "num" (range, a list of numbers) or "row" (a list of records of numbers, in columns).
-  buildPipe(stages, item) {
+  // ---- loop fusion (decision 95): xs collect f keep g ... fold [start, h] (or length), as one loop laidOver the items.
+  // item is "numbers" (range, a list of numbers) or "rows" (a list of records of numbers, in columns).
+  buildFusedLoop(stages, item) {
     // one item's work: a body that takes more than this to work out isn't worth a fused loop (spork's cells get more)
-    this.why = null; this.steps = 0; this.depth = 0; this.stepCap = 20000;
-    const env = { f: this.g.frames.length - 1, lim: Infinity };
-    let cur = item === "num" ? this.num(this.node("x", -1, -1, -1)) : { k: "row", over: new Map() }, pass = this.TRUE;
-    const fn = st => { const f = this.term(st.arg, env); if (f.k !== "fn" && f.k !== "nat") this.no(st.w + " isn't given a cell"); return f; };
-    for (const st of stages) {
-      if (st.w === "collect") { const f = fn(st); this.pc = pass; cur = this.apply(f, cur); }
-      else if (st.w === "each") {
+    this.reason = null; this.stepsTaken = 0; this.callDepth = 0; this.stepLimit = 20000;
+    const scope = { frameIndex: this.gen.frames.length - 1, positionLimit: Infinity };
+    let current = item === "numbers" ? this.numberValue(this.addNode("input", -1, -1, -1)) : { kind: "row", laidOver: new Map() }, passes = this.TRUE;
+    const fn = stage => { const cell = this.term(stage.argument, scope); if (cell.kind !== "function" && cell.kind !== "builtin") this.giveUp(stage.word + " isn't given a cell"); return cell; };
+    for (const stage of stages) {
+      if (stage.word === "collect") { const cell = fn(stage); this.pathCondition = passes; current = this.applyToItem(cell, current); }
+      else if (stage.word === "each") {
         // host words called for each item that passed, in order, each under the tests that lead to it
-        const f = fn(st); this.pc = pass; this.effects = [];
-        try { this.apply(f, cur); } finally { this.pc = this.TRUE; }
-        const fx = this.effects; this.effects = null;
-        if (!fx.length) this.no("each does nothing here a host word doesn't do");
-        return this.emit("each", [pass.id], null, fx);
+        const cell = fn(stage); this.pathCondition = passes; this.hostCalls = [];
+        try { this.applyToItem(cell, current); } finally { this.pathCondition = this.TRUE; }
+        const calls = this.hostCalls; this.hostCalls = null;
+        if (!calls.length) this.giveUp("each does nothing here a host word doesn't do");
+        return this.emitKernel("each", [passes.id], null, calls);
       }
-      else if (st.w === "keep") {
-        const f = fn(st); this.pc = pass;
-        const t = this.apply(f, cur); if (t.k !== "b") this.no("keep's test doesn't give true or false");
-        pass = this.and(pass, t);
+      else if (stage.word === "keep") {
+        const cell = fn(stage); this.pathCondition = passes;
+        const test = this.applyToItem(cell, current); if (test.kind !== "bool") this.giveUp("keep's test doesn't give true or false");
+        passes = this.and(passes, test);
       } else {
         // fold [start, h], or length: one number carried from item to item, through the items that pass
         let start, next;
-        const acc = this.num(this.node("a", -1, -1, -1));
-        this.pc = pass;
-        if (st.w === "length") { start = this.cn(0); next = this.num(this.node("add", acc.id, this.cn(1).id)); }
+        const carried = this.numberValue(this.addNode("carried", -1, -1, -1));
+        this.pathCondition = passes;
+        if (stage.word === "length") { start = this.constantNumber(0); next = this.numberValue(this.addNode("add", carried.id, this.constantNumber(1).id)); }
         else {
-          this.pc = this.TRUE; const arg = this.term(st.arg, env); this.pc = pass;
-          if (arg.k !== "cv" || arg.parts.length < 2) this.no("fold isn't given [start, cell]");
-          start = arg.parts[0]; const h = arg.parts[1];
-          if (start.k !== "n") this.no("fold starts from something that isn't a number");
-          next = h.k === "fn" && h.ast.names.length === 2 ? this.call(h, this.cv([acc, cur])) : this.apply(h, this.cv([acc, cur]));
-          if (next.k !== "n") this.no("fold's cell doesn't give a number");
+          this.pathCondition = this.TRUE; const startAndCell = this.term(stage.argument, scope); this.pathCondition = passes;
+          if (startAndCell.kind !== "cell" || startAndCell.parts.length < 2) this.giveUp("fold isn't given [start, cell]");
+          start = startAndCell.parts[0]; const cell = startAndCell.parts[1];
+          if (start.kind !== "number") this.giveUp("fold starts from something that isn't a number");
+          next = cell.kind === "function" && cell.ast.names.length === 2 ? this.call(cell, this.cellOfValues([carried, current])) : this.applyToItem(cell, this.cellOfValues([carried, current]));
+          if (next.kind !== "number") this.giveUp("fold's cell doesn't give a number");
         }
-        this.pc = this.TRUE;
-        return this.emit("fold", [start.id, this.sel(pass, next, acc).id], null);
+        this.pathCondition = this.TRUE;
+        return this.emitKernel("fold", [start.id, this.choose(passes, next, carried).id], null);
       }
     }
-    this.pc = this.TRUE;
-    if (cur.k === "n") return this.emit("n", [pass.id, cur.id], null);
-    if (cur.k === "b") return this.emit("b", [pass.id, cur.id], null);
-    if (cur.k === "cv" && !cur.parts.length && cur.keys.length && cur.vals.every(p => p.k === "n")) return this.emit("rec", [pass.id, ...cur.vals.map(p => p.id)], cur.keys);
-    if (cur.k === "row" && [...cur.over.values()].every(p => p.k === "n")) return this.emit("row", [pass.id, ...[...cur.over.values()].map(p => p.id)], [...cur.over.keys()]);
-    this.no("each item gives something other than a number, true or false, or a record of numbers");
+    this.pathCondition = this.TRUE;
+    if (current.kind === "number") return this.emitKernel("numbers", [passes.id, current.id], null);
+    if (current.kind === "bool") return this.emitKernel("bools", [passes.id, current.id], null);
+    if (current.kind === "cell" && !current.parts.length && current.keys.length && current.values.every(p => p.kind === "number")) return this.emitKernel("records", [passes.id, ...current.values.map(p => p.id)], current.keys);
+    if (current.kind === "row" && [...current.laidOver.values()].every(p => p.kind === "number")) return this.emitKernel("rows", [passes.id, ...[...current.laidOver.values()].map(p => p.id)], [...current.laidOver.keys()]);
+    this.giveUp("each item gives something other than a number, true or false, or a record of numbers");
   }
   // keep only the steps the answer needs, numbered afresh, as a JavaScript literal
-  emit(kind, outs, keys, fx) {
-    const N = this.nodes, live = new Uint8Array(N.length);
-    for (const i of outs.concat(this.guards)) live[i] = 1;
-    if (fx) for (const e of fx) { live[e.cond.id] = 1; for (const a of e.args) if (a.k !== "s") live[a.id] = 1; }
-    for (let i = N.length - 1; i >= 0; i--) if (live[i]) { const [, a, b, c] = N[i]; if (a >= 0) live[a] = 1; if (b >= 0) live[b] = 1; if (c >= 0) live[c] = 1; }
-    const map = new Int32Array(N.length).fill(-1), out = []; let jsOnly = false;
-    for (let i = 0; i < N.length; i++) if (live[i]) {
-      const [op, a, b, c, v] = N[i]; map[i] = out.length;
-      if (SPK_JSONLY.has(op)) jsOnly = true;
-      const lit = v === undefined ? "" : "," + (typeof v === "number" ? spkNum(v) : typeof v === "string" ? JSON.stringify(v) : String(v));
-      out.push("[\"" + op + "\"," + (a >= 0 ? map[a] : -1) + "," + (b >= 0 ? map[b] : -1) + "," + (c >= 0 ? map[c] : -1) + lit + "]");
+  emitKernel(kind, outputIds, keys, calls) {
+    const nodes = this.nodes, needed = new Uint8Array(nodes.length);
+    for (const i of outputIds.concat(this.checks)) needed[i] = 1;
+    if (calls) for (const call of calls) { needed[call.cond.id] = 1; for (const a of call.args) if (a.kind !== "text") needed[a.id] = 1; }
+    for (let i = nodes.length - 1; i >= 0; i--) if (needed[i]) { const [, a, b, c] = nodes[i]; if (a >= 0) needed[a] = 1; if (b >= 0) needed[b] = 1; if (c >= 0) needed[c] = 1; }
+    const newIndex = new Int32Array(nodes.length).fill(-1), lines = []; let jsOnly = false;
+    for (let i = 0; i < nodes.length; i++) if (needed[i]) {
+      const [op, a, b, c, v] = nodes[i]; newIndex[i] = lines.length;
+      if (JAVASCRIPT_ONLY_STEPS.has(op)) jsOnly = true;
+      const literalCode = v === undefined ? "" : "," + (typeof v === "number" ? numberLiteral(v) : typeof v === "string" ? JSON.stringify(v) : String(v));
+      lines.push("[\"" + op + "\"," + (a >= 0 ? newIndex[a] : -1) + "," + (b >= 0 ? newIndex[b] : -1) + "," + (c >= 0 ? newIndex[c] : -1) + literalCode + "]");
     }
-    const g = [...new Set(this.guards)].map(i => map[i]);
-    const fxs = fx ? ",fx:[" + fx.map(e => "{host:" + JSON.stringify(e.host) + ",single:" + e.single + ",cond:" + map[e.cond.id] + ",args:[" +
-      e.args.map(a => a.k === "s" ? JSON.stringify(a.v) : String(map[a.id])).join(",") + "]}").join(",") + "]" : "";
-    return "{nodes:[" + out.join(",") + "],outs:[" + outs.map(i => map[i]).join(",") + "],guards:[" + g.join(",") + "],kind:\"" + kind + "\"" +
-      (keys ? ",keys:" + JSON.stringify(keys) : "") + fxs + ",jsOnly:" + jsOnly + "}";
+    const checkIds = [...new Set(this.checks)].map(i => newIndex[i]);
+    const callsCode = calls ? ",hostCalls:[" + calls.map(call => "{host:" + JSON.stringify(call.host) + ",single:" + call.single + ",cond:" + newIndex[call.cond.id] + ",args:[" +
+      call.args.map(a => a.kind === "text" ? JSON.stringify(a.value) : String(newIndex[a.id])).join(",") + "]}").join(",") + "]" : "";
+    return "{nodes:[" + lines.join(",") + "],outputs:[" + outputIds.map(i => newIndex[i]).join(",") + "],checks:[" + checkIds.join(",") + "],kind:\"" + kind + "\"" +
+      (keys ? ",keys:" + JSON.stringify(keys) : "") + callsCode + ",javascriptOnly:" + jsOnly + "}";
   }
 }
 // a run of collect, keep and fold steps (each given a cell, or a name), and length at the end, starting at T[i]
-const FUSE_STEPS = new Set(["collect", "keep", "fold", "each"]);
-function fuseSegment(T, i) {
-  let j = i; const stages = [];
-  while (j + 1 < T.length && T[j].k === "word" && FUSE_STEPS.has(T[j].v) &&
-    (T[j + 1].k === "cell" || (T[j + 1].k === "word" && !FUSED.has(T[j + 1].v) && !LAZYOPS.has(T[j + 1].v) && !(T[j + 1].v in ALL) && !["!", "true", "false", "_", "left", "right"].includes(T[j + 1].v)))) {
-    stages.push({ w: T[j].v, arg: T[j + 1], line: T[j].line }); j += 2;
-    if (T[j - 2].v === "fold" || T[j - 2].v === "each") break;
+const LOOP_STEP_WORDS = new Set(["collect", "keep", "fold", "each"]);
+function findLoopRun(terms, start) {
+  let at = start; const stages = [];
+  while (at + 1 < terms.length && terms[at].type === "word" && LOOP_STEP_WORDS.has(terms[at].value) &&
+    (terms[at + 1].type === "cell" || (terms[at + 1].type === "word" && !FUSED_OPERATORS.has(terms[at + 1].value) && !LAZY_OPERATORS.has(terms[at + 1].value) && !(terms[at + 1].value in EVERY_VALUE_METHODS) && !["!", "true", "false", "_", "left", "right"].includes(terms[at + 1].value)))) {
+    stages.push({ word: terms[at].value, argument: terms[at + 1], line: terms[at].line }); at += 2;
+    if (terms[at - 2].value === "fold" || terms[at - 2].value === "each") break;
   }
-  if (stages.length && stages[stages.length - 1].w !== "fold" && stages[stages.length - 1].w !== "each" && j < T.length && T[j].k === "word" && T[j].v === "length") { stages.push({ w: "length", line: T[j].line }); j++; }
+  if (stages.length && stages[stages.length - 1].word !== "fold" && stages[stages.length - 1].word !== "each" && at < terms.length && terms[at].type === "word" && terms[at].value === "length") { stages.push({ word: "length", line: terms[at].line }); at++; }
   if (!stages.length) return null;
-  return { stages, start: i, end: j };
+  return { stages, start: start, end: at };
 }
 // the first and last line a piece of the tree is on
 function lineSpan(n) {
   let lo = Infinity, hi = -Infinity;
-  (function walk(x) { if (!x || typeof x !== "object") return; if (typeof x.line === "number" && x.line > 0) { lo = Math.min(lo, x.line); hi = Math.max(hi, x.line); } for (const k in x) if (!NOTE_KEYS.has(k) || k === "line") { const v = x[k]; if (v && typeof v === "object") walk(v); } })(n);
+  (function walk(x) { if (!x || typeof x !== "object") return; if (typeof x.line === "number" && x.line > 0) { lo = Math.min(lo, x.line); hi = Math.max(hi, x.line); } for (const k in x) if (!COMPILER_NOTE_KEYS.has(k) || k === "line") { const v = x[k]; if (v && typeof v === "object") walk(v); } })(n);
   return [lo, hi];
 }
 // names from outside that couldn't be worked out ahead, remembered for the rest of the compile (each frame is one object)
-function spkTooBig(gen, f, n, mark) {
-  const fr = gen.frames[f], m = (gen.spkNo || (gen.spkNo = new WeakMap())).get(fr) || new Set();
-  if (mark) { m.add(n); gen.spkNo.set(fr, m); }
-  return m.has(n);
+function couldNotWorkOut(gen, frameIndex, name, mark) {
+  const frame = gen.frames[frameIndex], names = (gen.namesNotWorkedOut || (gen.namesNotWorkedOut = new WeakMap())).get(frame) || new Set();
+  if (mark) { names.add(name); gen.namesNotWorkedOut.set(frame, names); }
+  return names.has(name);
 }
 // where a name sits among a frame's names, in the order they were bound
-function spkPos(names, n) { let i = 0; for (const k of names.keys()) { if (k === n) return i; i++; } return -1; }
+function positionAmongNames(names, n) { let i = 0; for (const k of names.keys()) { if (k === n) return i; i++; } return -1; }
 // does a cell (or anything in it) use _ or left?
-const SPK_IT = new Set(["_", "left", "right"]);
-function spkUses(c) { if (c.spkUses === undefined) c.spkUses = mentions(c, SPK_IT); return c.spkUses; }
+const INPUT_WORDS = new Set(["_", "left", "right"]);
+function usesInputWords(c) { if (c.usesInputWords === undefined) c.usesInputWords = mentions(c, INPUT_WORDS); return c.usesInputWords; }
 
 
 // the cells spork is given: by name (spork one-run), or written in place (spork [n | ...]); and each cell bound to a name
@@ -2480,12 +2511,12 @@ function sporkTargets(ast) {
   (function walk(n) {
     if (!n || typeof n !== "object") return;
     if (Array.isArray(n)) { for (const x of n) walk(x); return; }
-    if (n.k === "chain") {
+    if (n.type === "chain") {
       const T = n.terms;
-      for (let i = 0; i + 1 < T.length; i++) if (T[i].k === "word" && T[i].v === "spork") { const t = T[i + 1]; if (t.k === "word") names.add(t.v); else if (t.k === "cell") t.sporkArg = true; }
+      for (let i = 0; i + 1 < T.length; i++) if (T[i].type === "word" && T[i].value === "spork") { const t = T[i + 1]; if (t.type === "word") names.add(t.value); else if (t.type === "cell") t.sporkArg = true; }
     }
-    if (n.k === "bind" && n.val && n.val.terms && n.val.terms.length === 1 && n.val.terms[0].k === "cell") n.val.terms[0].bindName = n.name;
-    for (const key in n) if (!NOTE_KEYS.has(key)) walk(n[key]);
+    if (n.type === "bind" && n.value && n.value.terms && n.value.terms.length === 1 && n.value.terms[0].type === "cell") n.value.terms[0].bindName = n.name;
+    for (const key in n) if (!COMPILER_NOTE_KEYS.has(key)) walk(n[key]);
   })(ast);
   return names;
 }
@@ -2493,356 +2524,356 @@ function sporkTargets(ast) {
 
 // ---- spork (decision 47): a parallel collect. A pure cell worked out ahead (decision 91) runs as one numeric kernel,
 // on the fastest way this machine has; anything else is collect.
-let SPORK = { info: null, wasm: undefined, gpu: null, tally: [] };
-const sporkRan = info => { SPORK.info = info; if (SPORK.tally.length < 50) SPORK.tally.push(info); };
+let sporkState = { info: null, wasm: undefined, gpu: null, tally: [] };
+const recordSpork = info => { sporkState.info = info; if (sporkState.tally.length < 50) sporkState.tally.push(info); };
 function spork(xs, f) {
-  if (f instanceof Cell && f.kn && f.kn.s) { const r = runSpork(f.kn.s, xs); if (r) return r; }
-  const t0 = nowMs(), r = I.collect(xs, f);
-  sporkRan({ n: isCell(xs) ? xs.count() : 0, how: "collect", ms: nowMs() - t0, steps: 0 });
+  if (f instanceof Cell && f.fastForms && f.fastForms.spork) { const r = runSpork(f.fastForms.spork, xs); if (r) return r; }
+  const t0 = nowMs(), r = internals.collect(xs, f);
+  recordSpork({ n: isCell(xs) ? xs.count() : 0, how: "collect", ms: nowMs() - t0, steps: 0 });
   return r;
 }
 const nowMs = () => typeof performance !== "undefined" ? performance.now() : Date.now();
 function runSpork(s, xs) {
-  const K = s.k;
-  let n, X = null;
-  if (xs instanceof RCell) n = xs.n;
-  else if (xs instanceof NCell) { X = xs.a; n = X.length; }
-  else if (xs instanceof VCell && !(xs instanceof ColCell) && xs.fs === ROOT) {
-    const p = xs.parts; n = p.length; X = new Float64Array(n);
-    for (let i = 0; i < n; i++) { const v = p[i]; if (typeof v !== "number") return null; X[i] = v; }
+  const kernel = s.kernel;
+  let n, inputs = null;
+  if (xs instanceof RangeCell) n = xs.size;
+  else if (xs instanceof NumberList) { inputs = xs.numbers; n = inputs.length; }
+  else if (xs instanceof ValueCell && !(xs instanceof ColumnCell) && xs.fieldShape === NO_FIELDS) {
+    const p = xs.parts; n = p.length; inputs = new Float64Array(n);
+    for (let i = 0; i < n; i++) { const v = p[i]; if (typeof v !== "number") return null; inputs[i] = v; }
   } else return null;
-  if (n === 0) return VP([]);
-  const C = s.caps();
-  for (let i = 0; i < C.length; i++) if (typeof C[i] !== "number") return null;
-  const t0 = nowMs(); let O = null, how = "";
+  if (n === 0) return makeList([]);
+  const outsideValues = s.outsideReads();
+  for (let i = 0; i < outsideValues.length; i++) if (typeof outsideValues[i] !== "number") return null;
+  const t0 = nowMs(); let outputs = null, how = "";
   // the GPU (32-bit maths) only when the host allows it; else WebAssembly SIMD; else JavaScript. The last two give the same answer.
-  if (SPORK.gpu && !K.jsOnly) { O = SPORK.gpu(K, n, X, C) || null; if (O) how = "gpu"; }
-  if (SPORK.wasm === undefined) SPORK.wasm = wasmSpork();
-  if (!O && SPORK.wasm && !K.jsOnly && n >= 16) { O = SPORK.wasm(K, n, X, C); how = "simd"; if (!O) return null; }
-  if (!O) { O = K.outs.map(() => new Float64Array(n)); how = "js"; if (!spkJS(K)(n, X, C, O)) return null; }
-  sporkRan({ n, how, ms: how === "gpu" && O.ms !== undefined ? O.ms : nowMs() - t0, steps: K.nodes.length });
-  if (K.kind === "n") return new NCell(O[0]);
-  if (K.kind === "b") { const o = new Array(n), a = O[0]; for (let i = 0; i < n; i++) o[i] = a[i] !== 0; return VP(o); }
-  return new ColCell(shapeFor(K.keys), O, n);
+  if (sporkState.gpu && !kernel.javascriptOnly) { outputs = sporkState.gpu(kernel, n, inputs, outsideValues) || null; if (outputs) how = "gpu"; }
+  if (sporkState.wasm === undefined) sporkState.wasm = makeWasmRunner();
+  if (!outputs && sporkState.wasm && !kernel.javascriptOnly && n >= 16) { outputs = sporkState.wasm(kernel, n, inputs, outsideValues); how = "simd"; if (!outputs) return null; }
+  if (!outputs) { outputs = kernel.outputs.map(() => new Float64Array(n)); how = "js"; if (!sporkKernelFunction(kernel)(n, inputs, outsideValues, outputs)) return null; }
+  recordSpork({ n, how, ms: how === "gpu" && outputs.ms !== undefined ? outputs.ms : nowMs() - t0, steps: kernel.nodes.length });
+  if (kernel.kind === "numbers") return new NumberList(outputs[0]);
+  if (kernel.kind === "bools") { const o = new Array(n), a = outputs[0]; for (let i = 0; i < n; i++) o[i] = a[i] !== 0; return makeList(o); }
+  return new ColumnCell(shapeFor(kernel.keys), outputs, n);
 }
-// ---- loop fusion (decision 95): a run of collect, keep, fold and length over range, a list of numbers or a list of
-// records of numbers, as one loop with no lists in between. NOFUSE means the steps run as written.
-const NOFUSE = { fuse: "no" };
-function FUSE(xs, F, caps) {
-  if (!I.fast()) return NOFUSE;
-  let K, n, X = null, cols = null, rs = null;
-  if (xs instanceof RCell) { K = F.num; n = xs.n; }
-  else if (xs instanceof NCell) { K = F.num; X = xs.a; n = X.length; }
-  else if (xs instanceof ColCell) { K = F.row; cols = xs.cols; rs = xs.rs; n = xs.n; }
-  else if (xs instanceof VCell && xs.fs === ROOT) {
+// ---- loop fusion (decision 95): a run of collect, keep, fold and length laidOver range, a list of numbers or a list of
+// records of numbers, as one loop with no lists in between. NOT_FUSED means the steps run as written.
+const NOT_FUSED = { fuse: "no" };
+function runFusedLoop(xs, fusedKernels, caps) {
+  if (!internals.fast()) return NOT_FUSED;
+  let kernel, n, inputs = null, columns = null, recordShape = null;
+  if (xs instanceof RangeCell) { kernel = fusedKernels.numbers; n = xs.size; }
+  else if (xs instanceof NumberList) { kernel = fusedKernels.numbers; inputs = xs.numbers; n = inputs.length; }
+  else if (xs instanceof ColumnCell) { kernel = fusedKernels.rows; columns = xs.columns; recordShape = xs.recordShape; n = xs.size; }
+  else if (xs instanceof ValueCell && xs.fieldShape === NO_FIELDS) {
     const p = xs.parts; n = p.length;
-    if (!n) return NOFUSE;
-    if (typeof p[0] === "number") { K = F.num; X = new Float64Array(n); for (let i = 0; i < n; i++) { const v = p[i]; if (typeof v !== "number") return NOFUSE; X[i] = v; } }
-    else { const c = toCols(xs); if (!c) return NOFUSE; K = F.row; cols = c.cols; rs = c.rs; n = c.n; }
-  } else return NOFUSE;
+    if (!n) return NOT_FUSED;
+    if (typeof p[0] === "number") { kernel = fusedKernels.numbers; inputs = new Float64Array(n); for (let i = 0; i < n; i++) { const v = p[i]; if (typeof v !== "number") return NOT_FUSED; inputs[i] = v; } }
+    else { const c = asColumns(xs); if (!c) return NOT_FUSED; kernel = fusedKernels.rows; columns = c.columns; recordShape = c.recordShape; n = c.size; }
+  } else return NOT_FUSED;
   // a short list is quicker as written
-  if (!K || n < 16) return NOFUSE;
-  if (rs && K.keys && K.keys.length && rs.index("with") >= 0) return NOFUSE;
-  const C = caps ? caps() : EMPTY;
-  for (let i = 0; i < C.length; i++) if (typeof C[i] !== "number") return NOFUSE;
-  const f = fuseJS(K);
-  if (K.kind === "fold") return f(n, X, cols, rs, C, null, null);
-  if (K.kind === "each") {
-    const H = [];
-    for (const e of K.fx) {
-      const h = G[e.host], k = e.args.length;
-      if (!(h instanceof Native)) return NOFUSE;
-      H.push(e.single ? h.fn : h.direct && h.direct.length === k ? h.direct : (...xs) => h.fn(VP(xs)));
+  if (!kernel || n < 16) return NOT_FUSED;
+  if (recordShape && kernel.keys && kernel.keys.length && recordShape.index("with") >= 0) return NOT_FUSED;
+  const outsideValues = caps ? caps() : EMPTY;
+  for (let i = 0; i < outsideValues.length; i++) if (typeof outsideValues[i] !== "number") return NOT_FUSED;
+  const f = fusedLoopFunction(kernel);
+  if (kernel.kind === "fold") return f(n, inputs, columns, recordShape, outsideValues, null, null);
+  if (kernel.kind === "each") {
+    const hostCallers = [];
+    for (const e of kernel.hostCalls) {
+      const h = GLOBALS[e.host], k = e.args.length;
+      if (!(h instanceof Native)) return NOT_FUSED;
+      hostCallers.push(e.single ? h.fn : h.direct && h.direct.length === k ? h.direct : (...xs) => h.fn(makeList(xs)));
     }
-    return f(n, X, cols, rs, C, H, null) === NOFUSE ? NOFUSE : false;
+    return f(n, inputs, columns, recordShape, outsideValues, hostCallers, null) === NOT_FUSED ? NOT_FUSED : false;
   }
-  const O = K.outs.slice(1).map(() => new Float64Array(n)), kept = K.kind === "row" ? new Uint32Array(n) : null;
-  const m = f(n, X, cols, rs, C, O, kept);
-  if (m === NOFUSE) return NOFUSE;
+  const outputs = kernel.outputs.slice(1).map(() => new Float64Array(n)), keptRows = kernel.kind === "rows" ? new Uint32Array(n) : null;
+  const m = f(n, inputs, columns, recordShape, outsideValues, outputs, keptRows);
+  if (m === NOT_FUSED) return NOT_FUSED;
   // when every item passed, the arrays are already the right length, and unchanged columns can be shared (columns never change)
   const cut = o => m === n ? o : o.slice(0, m);
-  if (K.kind === "n") return new NCell(cut(O[0]));
-  if (K.kind === "b") { const o = new Array(m); for (let i = 0; i < m; i++) o[i] = O[0][i] !== 0; return VP(o); }
-  if (K.kind === "rec") return new ColCell(shapeFor(K.keys), O.map(cut), m);
-  // records from the list, with any fields laid over by with: unchanged columns are gathered for the items that passed
-  let out = rs; for (const k of K.keys) if (out.index(k) < 0) out = out.add(k);
+  if (kernel.kind === "numbers") return new NumberList(cut(outputs[0]));
+  if (kernel.kind === "bools") { const o = new Array(m); for (let i = 0; i < m; i++) o[i] = outputs[0][i] !== 0; return makeList(o); }
+  if (kernel.kind === "records") return new ColumnCell(shapeFor(kernel.keys), outputs.map(cut), m);
+  // records from the list, with any fields laid laidOver by with: unchanged columns are gathered for the items that passed
+  let out = recordShape; for (const k of kernel.keys) if (out.index(k) < 0) out = out.add(k);
   const oc = out.keys.map((k, j) => {
-    const o = K.keys.indexOf(k); if (o >= 0) return cut(O[o]);
-    const src = cols[j]; if (m === n) return src;
-    const g = new Float64Array(m); for (let q = 0; q < m; q++) g[q] = src[kept[q]]; return g;
+    const o = kernel.keys.indexOf(k); if (o >= 0) return cut(outputs[o]);
+    const src = columns[j]; if (m === n) return src;
+    const g = new Float64Array(m); for (let q = 0; q < m; q++) g[q] = src[keptRows[q]]; return g;
   });
-  return new ColCell(out, oc, m);
+  return new ColumnCell(out, oc, m);
 }
-function fuseJS(K) {
-  if (K.jsF) return K.jsF;
-  const N = K.nodes, inv = new Uint8Array(N.length), r = i => "v" + i;
-  let pre = "", body = "";
-  for (let i = 0; i < N.length; i++) {
-    const [op, a, b, c, v] = N[i];
-    let e;
-    if (op === "a") e = "acc";
-    else if (op === "col") { pre += "const c" + i + "=cols[rs.index(" + JSON.stringify(v) + ")];if(c" + i + "===undefined)return NOFUSE;"; e = "c" + i + "[i]"; }
-    else e = spkExpr(N[i], r);
-    inv[i] = op !== "x" && op !== "a" && op !== "col" && (a < 0 || inv[a]) && (b < 0 || inv[b]) && (c < 0 || inv[c]) ? 1 : 0;
-    if (inv[i]) pre += "const v" + i + "=" + e + ";"; else body += "const v" + i + "=" + e + ";";
+function fusedLoopFunction(kernel) {
+  if (kernel.compiledFunction) return kernel.compiledFunction;
+  const nodes = kernel.nodes, invariant = new Uint8Array(nodes.length), ref = i => "v" + i;
+  let beforeLoop = "", loopBody = "";
+  for (let i = 0; i < nodes.length; i++) {
+    const [op, a, b, c, v] = nodes[i];
+    let expression;
+    if (op === "carried") expression = "acc";
+    else if (op === "column") { beforeLoop += "const c" + i + "=columns[recordShape.index(" + JSON.stringify(v) + ")];if(c" + i + "===undefined)return NOT_FUSED;"; expression = "c" + i + "[i]"; }
+    else expression = stepExpression(nodes[i], ref);
+    invariant[i] = op !== "input" && op !== "carried" && op !== "column" && (a < 0 || invariant[a]) && (b < 0 || invariant[b]) && (c < 0 || invariant[c]) ? 1 : 0;
+    if (invariant[i]) beforeLoop += "const v" + i + "=" + expression + ";"; else loopBody += "const v" + i + "=" + expression + ";";
   }
-  const g = K.guards.length ? "if(!(" + K.guards.map(r).join("&&") + "))return NOFUSE;" : "";
-  let src;
-  if (K.kind === "fold") src = pre + "let acc=" + r(K.outs[0]) + ";" + spkLoop(body + g + "acc=" + r(K.outs[1]) + ";") + "return acc";
-  else if (K.kind === "each") src = pre + "const " + K.fx.map((e, j) => "h" + j + "=O[" + j + "]").join(",") + ";" + spkLoop(body + g +
-    "if(" + r(K.outs[0]) + "){" + K.fx.map((e, j) => "if(" + r(e.cond) + ")h" + j + "(" + e.args.map(a => typeof a === "string" ? JSON.stringify(a) : r(a)).join(",") + ");").join("") + "}") + "return false";
-  else src = pre + "let m=0;" + (K.outs.length > 1 ? "const " + K.outs.slice(1).map((o, j) => "O" + j + "=O[" + j + "]").join(",") + ";" : "") + spkLoop(body + g + "if(" + r(K.outs[0]) + "){" +
-    K.outs.slice(1).map((o, j) => "O" + j + "[m]=" + (K.kind === "b" ? r(o) + "?1:0" : r(o)) + ";").join("") + (K.kind === "row" ? "kept[m]=i;" : "") + "m++}") + "return m";
-  const f = new Function("NOISE", "NOFUSE", "n", "X", "cols", "rs", "C", "O", "kept", src);
-  return (K.jsF = (n, X, cols, rs, C, O, kept) => f(NOISE, NOFUSE, n, X, cols, rs, C, O, kept));
+  const checks = kernel.checks.length ? "if(!(" + kernel.checks.map(ref).join("&&") + "))return NOT_FUSED;" : "";
+  let source;
+  if (kernel.kind === "fold") source = beforeLoop + "let acc=" + ref(kernel.outputs[0]) + ";" + loopOverItems(loopBody + checks + "acc=" + ref(kernel.outputs[1]) + ";") + "return acc";
+  else if (kernel.kind === "each") source = beforeLoop + "const " + kernel.hostCalls.map((expression, j) => "h" + j + "=outputs[" + j + "]").join(",") + ";" + loopOverItems(loopBody + checks +
+    "if(" + ref(kernel.outputs[0]) + "){" + kernel.hostCalls.map((expression, j) => "if(" + ref(expression.cond) + ")h" + j + "(" + expression.args.map(a => typeof a === "string" ? JSON.stringify(a) : ref(a)).join(",") + ");").join("") + "}") + "return false";
+  else source = beforeLoop + "let m=0;" + (kernel.outputs.length > 1 ? "const " + kernel.outputs.slice(1).map((o, j) => "outputs" + j + "=outputs[" + j + "]").join(",") + ";" : "") + loopOverItems(loopBody + checks + "if(" + ref(kernel.outputs[0]) + "){" +
+    kernel.outputs.slice(1).map((o, j) => "outputs" + j + "[m]=" + (kernel.kind === "bools" ? ref(o) + "?1:0" : ref(o)) + ";").join("") + (kernel.kind === "rows" ? "keptRows[m]=i;" : "") + "m++}") + "return m";
+  const compiled = new Function("noiseHash", "NOT_FUSED", "n", "inputs", "columns", "recordShape", "outsideValues", "outputs", "keptRows", source);
+  return (kernel.compiledFunction = (n, inputs, columns, recordShape, outsideValues, outputs, keptRows) => compiled(noiseHash, NOT_FUSED, n, inputs, columns, recordShape, outsideValues, outputs, keptRows));
 }
-// the loop over the items, written twice: over a list of numbers (X), or over range's own numbers.
-// (One loop asking X ? X[i] : i + 1 each time runs about ten times slower when X is null.)
-const spkLoop = body => "if(X){for(let i=0;i<n;i++){const x=X[i];" + body + "}}else{for(let i=0;i<n;i++){const x=i+1;" + body + "}}";
+// the loop laidOver the items, written twice: laidOver a list of numbers (inputs), or laidOver range's own numbers.
+// (One loop asking inputs ? inputs[i] : i + 1 each time runs about ten times slower when inputs is null.)
+const loopOverItems = body => "if(inputs){for(let i=0;i<n;i++){const item=inputs[i];" + body + "}}else{for(let i=0;i<n;i++){const item=i+1;" + body + "}}";
 // one step of a kernel as a JavaScript expression
-function spkExpr(node, r) {
+function stepExpression(node, ref) {
   const [op, a, b, c, v] = node;
   switch (op) {
-    case "c": return spkNum(v); case "cb": return String(v);
-    case "x": return "x"; case "k": return "C[" + v + "]";
-    case "add": return r(a) + "+" + r(b); case "sub": return r(a) + "-" + r(b);
-    case "mul": return r(a) + "*" + r(b); case "div": return r(a) + "/" + r(b);
-    case "mod": return "((" + r(a) + "%" + r(b) + ")+" + r(b) + ")%" + r(b);
-    case "min": case "max": return "Math." + op + "(" + r(a) + "," + r(b) + ")";
-    case "noise": return "NOISE(" + r(a) + "," + r(b) + ")";
-    case "neg": return "-" + r(a);
-    case "abs": case "floor": case "ceil": case "round": case "sqrt": case "sin": case "cos": case "tan": case "log": return "Math." + op + "(" + r(a) + ")";
-    case "lt": return r(a) + "<" + r(b); case "gt": return r(a) + ">" + r(b);
-    case "le": return r(a) + "<=" + r(b); case "ge": return r(a) + ">=" + r(b);
-    case "eq": case "beq": return r(a) + "===" + r(b); case "ne": return r(a) + "!==" + r(b);
-    case "and": return r(a) + "&&" + r(b); case "or": return r(a) + "||" + r(b); case "not": return "!" + r(a);
-    case "sel": return r(a) + "?" + r(b) + ":" + r(c);
+    case "constant": return numberLiteral(v); case "constantBool": return String(v);
+    case "input": return "item"; case "outside": return "outsideValues[" + v + "]";
+    case "add": return ref(a) + "+" + ref(b); case "sub": return ref(a) + "-" + ref(b);
+    case "mul": return ref(a) + "*" + ref(b); case "div": return ref(a) + "/" + ref(b);
+    case "mod": return "((" + ref(a) + "%" + ref(b) + ")+" + ref(b) + ")%" + ref(b);
+    case "min": case "max": return "Math." + op + "(" + ref(a) + "," + ref(b) + ")";
+    case "noise": return "noiseHash(" + ref(a) + "," + ref(b) + ")";
+    case "neg": return "-" + ref(a);
+    case "abs": case "floor": case "ceil": case "round": case "sqrt": case "sin": case "cos": case "tan": case "log": return "Math." + op + "(" + ref(a) + ")";
+    case "lt": return ref(a) + "<" + ref(b); case "gt": return ref(a) + ">" + ref(b);
+    case "le": return ref(a) + "<=" + ref(b); case "ge": return ref(a) + ">=" + ref(b);
+    case "eq": case "boolEquals": return ref(a) + "===" + ref(b); case "ne": return ref(a) + "!==" + ref(b);
+    case "and": return ref(a) + "&&" + ref(b); case "or": return ref(a) + "||" + ref(b); case "not": return "!" + ref(a);
+    case "choose": return ref(a) + "?" + ref(b) + ":" + ref(c);
   }
   throw new Error("kernel step " + op);
 }
 // the kernel as JavaScript: one loop; steps that don't depend on the input are worked out before it
-function spkJS(K) {
-  if (K.jsF) return K.jsF;
-  const N = K.nodes, inv = new Uint8Array(N.length), r = i => "v" + i;
-  let pre = "", body = "";
-  for (let i = 0; i < N.length; i++) {
-    const [op, a, b, c, v] = N[i]; let e;
+function sporkKernelFunction(kernel) {
+  if (kernel.compiledFunction) return kernel.compiledFunction;
+  const nodes = kernel.nodes, invariant = new Uint8Array(nodes.length), ref = i => "v" + i;
+  let beforeLoop = "", loopBody = "";
+  for (let i = 0; i < nodes.length; i++) {
+    const [op, a, b, c, v] = nodes[i]; let expression;
     switch (op) {
-      case "c": e = spkNum(v); break; case "cb": e = String(v); break;
-      case "x": e = "x"; break; case "k": e = "C[" + v + "]"; break;
-      case "add": e = r(a) + "+" + r(b); break; case "sub": e = r(a) + "-" + r(b); break;
-      case "mul": e = r(a) + "*" + r(b); break; case "div": e = r(a) + "/" + r(b); break;
-      case "mod": e = "((" + r(a) + "%" + r(b) + ")+" + r(b) + ")%" + r(b); break;
-      case "min": case "max": e = "Math." + op + "(" + r(a) + "," + r(b) + ")"; break;
-      case "noise": e = "NOISE(" + r(a) + "," + r(b) + ")"; break;
-      case "neg": e = "-" + r(a); break;
-      case "abs": case "floor": case "ceil": case "round": case "sqrt": case "sin": case "cos": case "tan": case "log": e = "Math." + op + "(" + r(a) + ")"; break;
-      case "lt": e = r(a) + "<" + r(b); break; case "gt": e = r(a) + ">" + r(b); break;
-      case "le": e = r(a) + "<=" + r(b); break; case "ge": e = r(a) + ">=" + r(b); break;
-      case "eq": case "beq": e = r(a) + "===" + r(b); break; case "ne": e = r(a) + "!==" + r(b); break;
-      case "and": e = r(a) + "&&" + r(b); break; case "or": e = r(a) + "||" + r(b); break; case "not": e = "!" + r(a); break;
-      case "sel": e = r(a) + "?" + r(b) + ":" + r(c); break;
+      case "constant": expression = numberLiteral(v); break; case "constantBool": expression = String(v); break;
+      case "input": expression = "item"; break; case "outside": expression = "outsideValues[" + v + "]"; break;
+      case "add": expression = ref(a) + "+" + ref(b); break; case "sub": expression = ref(a) + "-" + ref(b); break;
+      case "mul": expression = ref(a) + "*" + ref(b); break; case "div": expression = ref(a) + "/" + ref(b); break;
+      case "mod": expression = "((" + ref(a) + "%" + ref(b) + ")+" + ref(b) + ")%" + ref(b); break;
+      case "min": case "max": expression = "Math." + op + "(" + ref(a) + "," + ref(b) + ")"; break;
+      case "noise": expression = "noiseHash(" + ref(a) + "," + ref(b) + ")"; break;
+      case "neg": expression = "-" + ref(a); break;
+      case "abs": case "floor": case "ceil": case "round": case "sqrt": case "sin": case "cos": case "tan": case "log": expression = "Math." + op + "(" + ref(a) + ")"; break;
+      case "lt": expression = ref(a) + "<" + ref(b); break; case "gt": expression = ref(a) + ">" + ref(b); break;
+      case "le": expression = ref(a) + "<=" + ref(b); break; case "ge": expression = ref(a) + ">=" + ref(b); break;
+      case "eq": case "boolEquals": expression = ref(a) + "===" + ref(b); break; case "ne": expression = ref(a) + "!==" + ref(b); break;
+      case "and": expression = ref(a) + "&&" + ref(b); break; case "or": expression = ref(a) + "||" + ref(b); break; case "not": expression = "!" + ref(a); break;
+      case "choose": expression = ref(a) + "?" + ref(b) + ":" + ref(c); break;
       default: throw new Error("spork step " + op);
     }
-    inv[i] = op !== "x" && (a < 0 || inv[a]) && (b < 0 || inv[b]) && (c < 0 || inv[c]) ? 1 : 0;
-    if (inv[i]) pre += "const v" + i + "=" + e + ";"; else body += "const v" + i + "=" + e + ";";
+    invariant[i] = op !== "input" && (a < 0 || invariant[a]) && (b < 0 || invariant[b]) && (c < 0 || invariant[c]) ? 1 : 0;
+    if (invariant[i]) beforeLoop += "const v" + i + "=" + expression + ";"; else loopBody += "const v" + i + "=" + expression + ";";
   }
-  const g = K.guards.length ? "if(!(" + K.guards.map(r).join("&&") + "))return false;" : "";
-  const st = K.outs.map((o, j) => "O" + j + "[i]=" + (K.kind === "b" ? r(o) + "?1:0" : r(o)) + ";").join("");
-  const f = new Function("NOISE", "n", "X", "C", "O", "const " + K.outs.map((o, j) => "O" + j + "=O[" + j + "]").join(",") + ";" + pre +
-    spkLoop(body + g + st) + "return true");
-  return (K.jsF = (n, X, C, O) => f(NOISE, n, X, C, O));
+  const checks = kernel.checks.length ? "if(!(" + kernel.checks.map(ref).join("&&") + "))return false;" : "";
+  const stores = kernel.outputs.map((o, j) => "outputs" + j + "[i]=" + (kernel.kind === "bools" ? ref(o) + "?1:0" : ref(o)) + ";").join("");
+  const compiled = new Function("noiseHash", "n", "inputs", "outsideValues", "outputs", "const " + kernel.outputs.map((o, j) => "outputs" + j + "=outputs[" + j + "]").join(",") + ";" + beforeLoop +
+    loopOverItems(loopBody + checks + stores) + "return true");
+  return (kernel.compiledFunction = (n, inputs, outsideValues, outputs) => compiled(noiseHash, n, inputs, outsideValues, outputs));
 }
 // ---- the kernel as WebAssembly SIMD: two runs per instruction, in f64x2, so every step is the same IEEE double step
 // JavaScript takes and the answers match bit for bit. noise is the same 32-bit hash, done in i32x4 lanes.
 // run(n, xp, cp, op, stride): inputs at xp (0 for range), outside numbers at cp, each output at op + j * stride.
-const WB = {
-  u: n => { const o = []; do { let b = n & 127; n >>>= 7; if (n) b |= 128; o.push(b); } while (n); return o; },
-  s: n => { const o = []; for (;;) { const b = n & 127; n >>= 7; if ((n === 0 && !(b & 64)) || (n === -1 && (b & 64))) { o.push(b); return o; } o.push(b | 128); } },
-  f64: v => Array.from(new Uint8Array(new Float64Array([v]).buffer)),
-  str: s => [...WB.u(s.length), ...Array.from(s, ch => ch.charCodeAt(0))],
-  sec: (id, body) => [id, ...WB.u(body.length), ...body],
+const wasmBinary = {
+  unsigned: n => { const o = []; do { let b = n & 127; n >>>= 7; if (n) b |= 128; o.push(b); } while (n); return o; },
+  signed: n => { const o = []; for (;;) { const b = n & 127; n >>= 7; if ((n === 0 && !(b & 64)) || (n === -1 && (b & 64))) { o.push(b); return o; } o.push(b | 128); } },
+  float64: v => Array.from(new Uint8Array(new Float64Array([v]).buffer)),
+  name: s => [...wasmBinary.unsigned(s.length), ...Array.from(s, ch => ch.charCodeAt(0))],
+  section: (id, body) => [id, ...wasmBinary.unsigned(body.length), ...body],
 };
-const V = op => [0xfd, ...WB.u(op)];   // a SIMD instruction
-const VOP = { add: 0xf0, sub: 0xf1, mul: 0xf2, div: 0xf3, min: 0xf4, max: 0xf5, abs: 0xec, neg: 0xed, sqrt: 0xef, floor: 0x75, ceil: 0x74,
-  eq: 0x47, ne: 0x48, lt: 0x49, gt: 0x4a, le: 0x4b, ge: 0x4c, not: 0x4d, and: 0x4e, or: 0x50, xor: 0x51, sel: 0x52, any: 0x53,
+const simd = op => [0xfd, ...wasmBinary.unsigned(op)];   // a SIMD instruction
+const SIMD_OPCODES = { add: 0xf0, sub: 0xf1, mul: 0xf2, div: 0xf3, min: 0xf4, max: 0xf5, abs: 0xec, neg: 0xed, sqrt: 0xef, floor: 0x75, ceil: 0x74,
+  eq: 0x47, ne: 0x48, lt: 0x49, gt: 0x4a, le: 0x4b, ge: 0x4c, not: 0x4d, and: 0x4e, or: 0x50, xor: 0x51, choose: 0x52, any: 0x53,
   ishru: 0xad, imul: 0xb5, splat: 0x14, isplat: 0x11, toU: 0xfd, fromU: 0xff, load: 0x00, store: 0x0b, konst: 0x0c };
-const vconst = bytes => [...V(VOP.konst), ...bytes];
-const f2 = (a, b) => vconst([...WB.f64(a), ...WB.f64(b === undefined ? a : b)]);
-const i4 = c => { const b = new Uint8Array(16), d = new DataView(b.buffer); for (let j = 0; j < 4; j++) d.setInt32(j * 4, c | 0, true); return vconst(Array.from(b)); };
-const SIGN = vconst([0, 0, 0, 0, 0, 0, 0, 0x80, 0, 0, 0, 0, 0, 0, 0, 0x80]);
-const ALL1 = vconst(new Array(16).fill(255));
-const ALL0 = vconst(new Array(16).fill(0));
+const v128Constant = bytes => [...simd(SIMD_OPCODES.konst), ...bytes];
+const f64x2Constant = (a, b) => v128Constant([...wasmBinary.float64(a), ...wasmBinary.float64(b === undefined ? a : b)]);
+const i32x4Constant = c => { const b = new Uint8Array(16), d = new DataView(b.buffer); for (let j = 0; j < 4; j++) d.setInt32(j * 4, c | 0, true); return v128Constant(Array.from(b)); };
+const SIGN_BITS = v128Constant([0, 0, 0, 0, 0, 0, 0, 0x80, 0, 0, 0, 0, 0, 0, 0, 0x80]);
+const ALL_ONES = v128Constant(new Array(16).fill(255));
+const ALL_ZEROS = v128Constant(new Array(16).fill(0));
 
-function spkWasmBytes(K) {
-  const N = K.nodes;
+function wasmKernelBytes(kernel) {
+  const nodes = kernel.nodes;
   // locals: 0 n, 1 xp, 2 cp, 3 op, 4 stride (params); 5 i; then one per output base; then v128s
-  const P_N = 0, P_X = 1, P_C = 2, P_O = 3, P_S = 4, L_I = 5, L_OB = 6, nOut = K.outs.length;
-  let nv = L_OB + nOut; const v128 = () => nv++;
-  const IV = v128(), XV = v128(), BAD = v128(), NV = v128(), T0 = v128(), T1 = v128(), T2 = v128(), T3 = v128(), T4 = v128();
-  const loc = new Int32Array(N.length).fill(-1), inv = new Uint8Array(N.length);
-  const get = l => [0x20, ...WB.u(l)], set = l => [0x21, ...WB.u(l)], tee = l => [0x22, ...WB.u(l)];
-  const push = i => { const [op, , , , v] = N[i]; if (op === "c") return f2(v); if (op === "cb") return v ? ALL1 : ALL0; if (op === "x") return get(XV); return get(loc[i]); };
+  const PARAM_COUNT = 0, PARAM_INPUTS = 1, PARAM_OUTSIDE = 2, PARAM_OUTPUTS = 3, PARAM_STRIDE = 4, LOCAL_INDEX = 5, LOCAL_OUTPUT_BASE = 6, outputCount = kernel.outputs.length;
+  let nextLocal = LOCAL_OUTPUT_BASE + outputCount; const newV128Local = () => nextLocal++;
+  const laneNumbers = newV128Local(), laneInputs = newV128Local(), failedLanes = newV128Local(), laneCount = newV128Local(), temp0 = newV128Local(), temp1 = newV128Local(), temp2 = newV128Local(), temp3 = newV128Local(), temp4 = newV128Local();
+  const localOf = new Int32Array(nodes.length).fill(-1), invariant = new Uint8Array(nodes.length);
+  const localGet = l => [0x20, ...wasmBinary.unsigned(l)], localSet = l => [0x21, ...wasmBinary.unsigned(l)], localTee = l => [0x22, ...wasmBinary.unsigned(l)];
+  const pushValue = i => { const [op, , , , v] = nodes[i]; if (op === "constant") return f64x2Constant(v); if (op === "constantBool") return v ? ALL_ONES : ALL_ZEROS; if (op === "input") return localGet(laneInputs); return localGet(localOf[i]); };
   // floor(v) mod 2^32, as the bits of a 32-bit integer (JavaScript's ToInt32), in i32 lanes 0 and 1
-  const u32 = code => [...code, ...tee(T4), ...get(T4), ...f2(1 / 4294967296), ...V(VOP.mul), ...V(VOP.floor), ...f2(4294967296), ...V(VOP.mul), ...V(VOP.sub), ...V(VOP.toU)];
-  const xs16 = s => [...tee(T4), ...get(T4), 0x41, ...WB.s(s), ...V(VOP.ishru), ...V(VOP.xor)];   // h ^= h >>> s
-  const step = i => {
-    const [op, a, b, c, v] = N[i];
+  const wrapToU32 = code => [...code, ...localTee(temp4), ...localGet(temp4), ...f64x2Constant(1 / 4294967296), ...simd(SIMD_OPCODES.mul), ...simd(SIMD_OPCODES.floor), ...f64x2Constant(4294967296), ...simd(SIMD_OPCODES.mul), ...simd(SIMD_OPCODES.sub), ...simd(SIMD_OPCODES.toU)];
+  const xorShiftRight = s => [...localTee(temp4), ...localGet(temp4), 0x41, ...wasmBinary.signed(s), ...simd(SIMD_OPCODES.ishru), ...simd(SIMD_OPCODES.xor)];   // h ^= h >>> s
+  const stepCode = i => {
+    const [op, a, b, c, v] = nodes[i];
     switch (op) {
-      case "c": case "cb": case "x": return [];
-      case "k": return [0x20, ...WB.u(P_C), 0x2b, 3, ...WB.u(v * 8), ...V(VOP.splat)];
+      case "constant": case "constantBool": case "input": return [];
+      case "outside": return [0x20, ...wasmBinary.unsigned(PARAM_OUTSIDE), 0x2b, 3, ...wasmBinary.unsigned(v * 8), ...simd(SIMD_OPCODES.splat)];
       case "add": case "sub": case "mul": case "div": case "min": case "max": case "lt": case "gt": case "le": case "ge": case "eq": case "ne": case "and": case "or":
-        return [...push(a), ...push(b), ...V(VOP[op])];
-      case "neg": case "abs": case "sqrt": case "floor": case "ceil": case "not": return [...push(a), ...V(VOP[op])];
-      case "beq": return [...push(a), ...push(b), ...V(VOP.xor), ...V(VOP.not)];
-      case "sel": return [...push(b), ...push(c), ...push(a), ...V(VOP.sel)];
+        return [...pushValue(a), ...pushValue(b), ...simd(SIMD_OPCODES[op])];
+      case "neg": case "abs": case "sqrt": case "floor": case "ceil": case "not": return [...pushValue(a), ...simd(SIMD_OPCODES[op])];
+      case "boolEquals": return [...pushValue(a), ...pushValue(b), ...simd(SIMD_OPCODES.xor), ...simd(SIMD_OPCODES.not)];
+      case "choose": return [...pushValue(b), ...pushValue(c), ...pushValue(a), ...simd(SIMD_OPCODES.choose)];
       case "round":
         // Math.round: floor, plus one when the rest is at least a half; a zero keeps the sign of its input
-        return [...push(a), ...V(VOP.floor), ...set(T0),
-          ...get(T0), ...f2(1), ...V(VOP.add), ...get(T0), ...push(a), ...get(T0), ...V(VOP.sub), ...f2(0.5), ...V(VOP.ge), ...V(VOP.sel), ...set(T1),
-          ...push(a), ...SIGN, ...V(VOP.and), ...get(T1), ...get(T1), ...f2(0), ...V(VOP.eq), ...V(VOP.sel)];
+        return [...pushValue(a), ...simd(SIMD_OPCODES.floor), ...localSet(temp0),
+          ...localGet(temp0), ...f64x2Constant(1), ...simd(SIMD_OPCODES.add), ...localGet(temp0), ...pushValue(a), ...localGet(temp0), ...simd(SIMD_OPCODES.sub), ...f64x2Constant(0.5), ...simd(SIMD_OPCODES.ge), ...simd(SIMD_OPCODES.choose), ...localSet(temp1),
+          ...pushValue(a), ...SIGN_BITS, ...simd(SIMD_OPCODES.and), ...localGet(temp1), ...localGet(temp1), ...f64x2Constant(0), ...simd(SIMD_OPCODES.eq), ...simd(SIMD_OPCODES.choose)];
       case "noise":
-        return [...push(a), ...set(T0), ...push(b), ...set(T1), ...get(T0), ...V(VOP.floor), ...set(T2), ...get(T1), ...V(VOP.floor), ...set(T3),
-          ...u32(get(T2)), ...i4(0x9e3779b9), ...V(VOP.xor), ...i4(0x85ebca6b), ...V(VOP.imul),
-          ...u32([...get(T3), ...f2(0x632be5ab), ...V(VOP.add)]), ...i4(0xc2b2ae35), ...V(VOP.imul), ...V(VOP.xor),
+        return [...pushValue(a), ...localSet(temp0), ...pushValue(b), ...localSet(temp1), ...localGet(temp0), ...simd(SIMD_OPCODES.floor), ...localSet(temp2), ...localGet(temp1), ...simd(SIMD_OPCODES.floor), ...localSet(temp3),
+          ...wrapToU32(localGet(temp2)), ...i32x4Constant(0x9e3779b9), ...simd(SIMD_OPCODES.xor), ...i32x4Constant(0x85ebca6b), ...simd(SIMD_OPCODES.imul),
+          ...wrapToU32([...localGet(temp3), ...f64x2Constant(0x632be5ab), ...simd(SIMD_OPCODES.add)]), ...i32x4Constant(0xc2b2ae35), ...simd(SIMD_OPCODES.imul), ...simd(SIMD_OPCODES.xor),
           // the fraction times 2^32 can round up to 2^32 itself (x = -1e-300), which JavaScript wraps to 0, so it is wrapped here too
-          ...u32([...get(T0), ...get(T2), ...V(VOP.sub), ...f2(4294967296), ...V(VOP.mul)]), ...i4(0x27d4eb2f), ...V(VOP.imul), ...V(VOP.xor),
-          ...u32([...get(T1), ...get(T3), ...V(VOP.sub), ...f2(4294967296), ...V(VOP.mul)]), ...i4(0x165667b1), ...V(VOP.imul), ...V(VOP.xor),
-          ...xs16(16), ...i4(0x7feb352d), ...V(VOP.imul), ...xs16(15), ...i4(0x846ca68b), ...V(VOP.imul), ...xs16(16),
-          ...V(VOP.fromU), ...f2(1 / 4294967296), ...V(VOP.mul)];
+          ...wrapToU32([...localGet(temp0), ...localGet(temp2), ...simd(SIMD_OPCODES.sub), ...f64x2Constant(4294967296), ...simd(SIMD_OPCODES.mul)]), ...i32x4Constant(0x27d4eb2f), ...simd(SIMD_OPCODES.imul), ...simd(SIMD_OPCODES.xor),
+          ...wrapToU32([...localGet(temp1), ...localGet(temp3), ...simd(SIMD_OPCODES.sub), ...f64x2Constant(4294967296), ...simd(SIMD_OPCODES.mul)]), ...i32x4Constant(0x165667b1), ...simd(SIMD_OPCODES.imul), ...simd(SIMD_OPCODES.xor),
+          ...xorShiftRight(16), ...i32x4Constant(0x7feb352d), ...simd(SIMD_OPCODES.imul), ...xorShiftRight(15), ...i32x4Constant(0x846ca68b), ...simd(SIMD_OPCODES.imul), ...xorShiftRight(16),
+          ...simd(SIMD_OPCODES.fromU), ...f64x2Constant(1 / 4294967296), ...simd(SIMD_OPCODES.mul)];
     }
     throw new Error("no SIMD step for " + op);
   };
-  for (let i = 0; i < N.length; i++) {
-    const [op, a, b, c] = N[i];
-    inv[i] = op !== "x" && (a < 0 || inv[a]) && (b < 0 || inv[b]) && (c < 0 || inv[c]) ? 1 : 0;
-    if (op !== "c" && op !== "cb" && op !== "x") loc[i] = v128();
+  for (let i = 0; i < nodes.length; i++) {
+    const [op, a, b, c] = nodes[i];
+    invariant[i] = op !== "input" && (a < 0 || invariant[a]) && (b < 0 || invariant[b]) && (c < 0 || invariant[c]) ? 1 : 0;
+    if (op !== "constant" && op !== "constantBool" && op !== "input") localOf[i] = newV128Local();
   }
   const code = [];
   // before the loop: output bases, the lane numbers [0, 1], n in both lanes, and every step that doesn't depend on the input
-  K.outs.forEach((o, j) => code.push(...get(P_O), ...get(P_S), 0x41, ...WB.s(j), 0x6c, 0x6a, ...set(L_OB + j)));
-  code.push(...f2(0, 1), ...set(IV), ...get(P_N), 0xb7, ...V(VOP.splat), ...set(NV), ...ALL0, ...set(BAD));
-  for (let i = 0; i < N.length; i++) if (inv[i] && loc[i] >= 0) code.push(...step(i), ...set(loc[i]));
-  code.push(0x02, 0x40, 0x03, 0x40, ...get(L_I), ...get(P_N), 0x4e, 0x0d, 1);
+  kernel.outputs.forEach((o, j) => code.push(...localGet(PARAM_OUTPUTS), ...localGet(PARAM_STRIDE), 0x41, ...wasmBinary.signed(j), 0x6c, 0x6a, ...localSet(LOCAL_OUTPUT_BASE + j)));
+  code.push(...f64x2Constant(0, 1), ...localSet(laneNumbers), ...localGet(PARAM_COUNT), 0xb7, ...simd(SIMD_OPCODES.splat), ...localSet(laneCount), ...ALL_ZEROS, ...localSet(failedLanes));
+  for (let i = 0; i < nodes.length; i++) if (invariant[i] && localOf[i] >= 0) code.push(...stepCode(i), ...localSet(localOf[i]));
+  code.push(0x02, 0x40, 0x03, 0x40, ...localGet(LOCAL_INDEX), ...localGet(PARAM_COUNT), 0x4e, 0x0d, 1);
   // this pair's input: from memory, or the range's own numbers
-  code.push(...get(P_X), 0x04, 0x40, ...get(P_X), ...get(L_I), 0x41, 3, 0x74, 0x6a, ...V(VOP.load), 4, 0, ...set(XV),
-    0x05, ...get(IV), ...f2(1), ...V(VOP.add), ...set(XV), 0x0b);
-  for (let i = 0; i < N.length; i++) if (!inv[i] && loc[i] >= 0) code.push(...step(i), ...set(loc[i]));
+  code.push(...localGet(PARAM_INPUTS), 0x04, 0x40, ...localGet(PARAM_INPUTS), ...localGet(LOCAL_INDEX), 0x41, 3, 0x74, 0x6a, ...simd(SIMD_OPCODES.load), 4, 0, ...localSet(laneInputs),
+    0x05, ...localGet(laneNumbers), ...f64x2Constant(1), ...simd(SIMD_OPCODES.add), ...localSet(laneInputs), 0x0b);
+  for (let i = 0; i < nodes.length; i++) if (!invariant[i] && localOf[i] >= 0) code.push(...stepCode(i), ...localSet(localOf[i]));
   // a check that fails in a real lane (not the spare one past n) means the ordinary way
-  for (const g of K.guards) code.push(...get(BAD), ...push(g), ...V(VOP.not), ...get(IV), ...get(NV), ...V(VOP.lt), ...V(VOP.and), ...V(VOP.or), ...set(BAD));
-  K.outs.forEach((o, j) => {
-    code.push(...get(L_OB + j), ...get(L_I), 0x41, 3, 0x74, 0x6a);
-    if (K.kind === "b") code.push(...f2(1), ...f2(0), ...push(o), ...V(VOP.sel)); else code.push(...push(o));
-    code.push(...V(VOP.store), 4, 0);
+  for (const g of kernel.checks) code.push(...localGet(failedLanes), ...pushValue(g), ...simd(SIMD_OPCODES.not), ...localGet(laneNumbers), ...localGet(laneCount), ...simd(SIMD_OPCODES.lt), ...simd(SIMD_OPCODES.and), ...simd(SIMD_OPCODES.or), ...localSet(failedLanes));
+  kernel.outputs.forEach((o, j) => {
+    code.push(...localGet(LOCAL_OUTPUT_BASE + j), ...localGet(LOCAL_INDEX), 0x41, 3, 0x74, 0x6a);
+    if (kernel.kind === "bools") code.push(...f64x2Constant(1), ...f64x2Constant(0), ...pushValue(o), ...simd(SIMD_OPCODES.choose)); else code.push(...pushValue(o));
+    code.push(...simd(SIMD_OPCODES.store), 4, 0);
   });
-  code.push(...get(IV), ...f2(2), ...V(VOP.add), ...set(IV), ...get(L_I), 0x41, 2, 0x6a, ...set(L_I), 0x0c, 0, 0x0b, 0x0b);
-  code.push(...get(BAD), ...V(VOP.any), 0x45, 0x0b);
-  const locals = [...WB.u(2), ...WB.u(1 + nOut), 0x7f, ...WB.u(nv - L_I - 1 - nOut), 0x7b];
+  code.push(...localGet(laneNumbers), ...f64x2Constant(2), ...simd(SIMD_OPCODES.add), ...localSet(laneNumbers), ...localGet(LOCAL_INDEX), 0x41, 2, 0x6a, ...localSet(LOCAL_INDEX), 0x0c, 0, 0x0b, 0x0b);
+  code.push(...localGet(failedLanes), ...simd(SIMD_OPCODES.any), 0x45, 0x0b);
+  const locals = [...wasmBinary.unsigned(2), ...wasmBinary.unsigned(1 + outputCount), 0x7f, ...wasmBinary.unsigned(nextLocal - LOCAL_INDEX - 1 - outputCount), 0x7b];
   const body = [...locals, ...code];
   return new Uint8Array([0x00, 0x61, 0x73, 0x6d, 1, 0, 0, 0,
-    ...WB.sec(1, [1, 0x60, 5, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 1, 0x7f]),
-    ...WB.sec(2, [1, ...WB.str("m"), ...WB.str("mem"), 0x02, 0x00, 1]),
-    ...WB.sec(3, [1, 0]),
-    ...WB.sec(7, [1, ...WB.str("run"), 0x00, 0]),
-    ...WB.sec(10, [1, ...WB.u(body.length), ...body])]);
+    ...wasmBinary.section(1, [1, 0x60, 5, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 1, 0x7f]),
+    ...wasmBinary.section(2, [1, ...wasmBinary.name("m"), ...wasmBinary.name("mem"), 0x02, 0x00, 1]),
+    ...wasmBinary.section(3, [1, 0]),
+    ...wasmBinary.section(7, [1, ...wasmBinary.name("run"), 0x00, 0]),
+    ...wasmBinary.section(10, [1, ...wasmBinary.unsigned(body.length), ...body])]);
 }
 // the WebAssembly way, if this machine has SIMD: one memory, grown as needed; each kernel is made once
-function wasmSpork() {
+function makeWasmRunner() {
   if (typeof WebAssembly === "undefined") return null;
-  try { if (!WebAssembly.validate(spkWasmBytes({ nodes: [["x", -1, -1, -1], ["sqrt", 0, -1, -1]], outs: [1], guards: [], kind: "n" }))) return null; } catch (e) { return null; }
-  const mem = new WebAssembly.Memory({ initial: 1 }), made = new WeakMap();
-  return (K, n, X, C) => {
-    let inst = made.get(K);
-    if (inst === undefined) {
-      try { inst = new WebAssembly.Instance(new WebAssembly.Module(spkWasmBytes(K)), { m: { mem } }); } catch (e) { inst = null; }
-      made.set(K, inst);
+  try { if (!WebAssembly.validate(wasmKernelBytes({ nodes: [["input", -1, -1, -1], ["sqrt", 0, -1, -1]], outputs: [1], checks: [], kind: "numbers" }))) return null; } catch (e) { return null; }
+  const memory = new WebAssembly.Memory({ initial: 1 }), instances = new WeakMap();
+  return (kernel, n, inputs, outsideValues) => {
+    let instance = instances.get(kernel);
+    if (instance === undefined) {
+      try { instance = new WebAssembly.Instance(new WebAssembly.Module(wasmKernelBytes(kernel)), { m: { mem: memory } }); } catch (e) { instance = null; }
+      instances.set(kernel, instance);
     }
-    if (!inst) return null;
-    const n2 = n + (n & 1), stride = n2 * 8, cp = 16, xp = cp + ((C.length * 8 + 15) & ~15), op = xp + (X ? stride + 16 : 0);
-    const need = op + K.outs.length * stride + 64, have = mem.buffer.byteLength;
-    if (need > have) mem.grow(Math.ceil((need - have) / 65536));
-    new Float64Array(mem.buffer, cp, C.length).set(C);
-    if (X) { const xv = new Float64Array(mem.buffer, xp, n2); xv.set(X); if (n2 > n) xv[n] = 0; }
-    if (!inst.exports.run(n, X ? xp : 0, cp, op, stride)) return null;
-    return K.outs.map((o, j) => new Float64Array(mem.buffer, op + j * stride, n).slice());
+    if (!instance) return null;
+    const evenCount = n + (n & 1), stride = evenCount * 8, outsideAt = 16, inputsAt = outsideAt + ((outsideValues.length * 8 + 15) & ~15), outputsAt = inputsAt + (inputs ? stride + 16 : 0);
+    const bytesNeeded = outputsAt + kernel.outputs.length * stride + 64, bytesThere = memory.buffer.byteLength;
+    if (bytesNeeded > bytesThere) memory.grow(Math.ceil((bytesNeeded - bytesThere) / 65536));
+    new Float64Array(memory.buffer, outsideAt, outsideValues.length).set(outsideValues);
+    if (inputs) { const inputView = new Float64Array(memory.buffer, inputsAt, evenCount); inputView.set(inputs); if (evenCount > n) inputView[n] = 0; }
+    if (!instance.exports.run(n, inputs ? inputsAt : 0, outsideAt, outputsAt, stride)) return null;
+    return kernel.outputs.map((o, j) => new Float64Array(memory.buffer, outputsAt + j * stride, n).slice());
   };
 }
 // numbers in the same order as a typed array's own sort (-0 before 0, NaN last), by radix: four passes of 16 bits
-function sortF64(src) {
-  const n = src.length;
-  if (n < 512) return Float64Array.from(src).sort();
-  let m = 0, nan = 0; const a = new Float64Array(n);
-  for (let i = 0; i < n; i++) { const v = src[i]; if (v !== v) nan++; else a[m++] = v; }
-  let A = new Uint32Array(a.buffer, 0, m * 2), B = new Uint32Array(m * 2);
+function radixSortNumbers(numbers) {
+  const length = numbers.length;
+  if (length < 512) return Float64Array.from(numbers).sort();
+  let kept = 0, notANumberCount = 0; const copy = new Float64Array(length);
+  for (let i = 0; i < length; i++) { const v = numbers[i]; if (v !== v) notANumberCount++; else copy[kept++] = v; }
+  let bits = new Uint32Array(copy.buffer, 0, kept * 2), spare = new Uint32Array(kept * 2);
   // the bits of a double, turned so that unsigned order is number order
-  for (let i = 0; i < m; i++) { const hi = A[2 * i + 1]; if (hi & 0x80000000) { A[2 * i + 1] = ~hi; A[2 * i] = ~A[2 * i]; } else A[2 * i + 1] = hi | 0x80000000; }
-  const count = new Uint32Array(65536);
-  for (let d = 0; d < 4; d++) {
-    const w = d >> 1, sh = (d & 1) * 16;
-    count.fill(0);
-    for (let i = 0; i < m; i++) count[(A[2 * i + w] >>> sh) & 0xffff]++;
-    let sum = 0; for (let k = 0; k < 65536; k++) { const c = count[k]; count[k] = sum; sum += c; }
-    for (let i = 0; i < m; i++) { const j = count[(A[2 * i + w] >>> sh) & 0xffff]++; B[2 * j] = A[2 * i]; B[2 * j + 1] = A[2 * i + 1]; }
-    const t = A; A = B; B = t;
+  for (let i = 0; i < kept; i++) { const high = bits[2 * i + 1]; if (high & 0x80000000) { bits[2 * i + 1] = ~high; bits[2 * i] = ~bits[2 * i]; } else bits[2 * i + 1] = high | 0x80000000; }
+  const buckets = new Uint32Array(65536);
+  for (let pass = 0; pass < 4; pass++) {
+    const word = pass >> 1, shift = (pass & 1) * 16;
+    buckets.fill(0);
+    for (let i = 0; i < kept; i++) buckets[(bits[2 * i + word] >>> shift) & 0xffff]++;
+    let sum = 0; for (let k = 0; k < 65536; k++) { const c = buckets[k]; buckets[k] = sum; sum += c; }
+    for (let i = 0; i < kept; i++) { const j = buckets[(bits[2 * i + word] >>> shift) & 0xffff]++; spare[2 * j] = bits[2 * i]; spare[2 * j + 1] = bits[2 * i + 1]; }
+    const swap = bits; bits = spare; spare = swap;
   }
-  for (let i = 0; i < m; i++) { const hi = A[2 * i + 1]; if (hi & 0x80000000) A[2 * i + 1] = hi & 0x7fffffff; else { A[2 * i + 1] = ~hi; A[2 * i] = ~A[2 * i]; } }
-  const out = new Float64Array(n); out.set(new Float64Array(A.buffer, A.byteOffset, m)); out.fill(NaN, m);
-  return out;
+  for (let i = 0; i < kept; i++) { const high = bits[2 * i + 1]; if (high & 0x80000000) bits[2 * i + 1] = high & 0x7fffffff; else { bits[2 * i + 1] = ~high; bits[2 * i] = ~bits[2 * i]; } }
+  const sorted = new Float64Array(length); sorted.set(new Float64Array(bits.buffer, bits.byteOffset, kept)); sorted.fill(NaN, kept);
+  return sorted;
 }
 
 
 // ===================================================================== plugging into the compiler
 // a cell that spork is given, by name or written in place: worked out now into one kernel (decision 91)
-function sporkCell(gen, c) {
-  if (!(c.sporkArg || (c.bindName && gen.sporkNames && gen.sporkNames.has(c.bindName)))) return null;
-  const P = new Spk(gen);
-  let code = null;
-  try { code = P.build(c); } catch (e) { if (e !== SPKFAIL) throw e; }
-  const ok = code ? true : P.why || "it can't be worked out ahead";
-  c.sporkWhy = ok;
-  if (c.bindName) (gen.sporkWhy || (gen.sporkWhy = new Map())).set(c.bindName, ok);
-  if (!code) return null;
+function sporkKernelForCell(gen, cell) {
+  if (!(cell.sporkArg || (cell.bindName && gen.sporkNames && gen.sporkNames.has(cell.bindName)))) return null;
+  const workAhead = new WorkAhead(gen);
+  let kernelCode = null;
+  try { kernelCode = workAhead.buildSporkKernel(cell); } catch (e) { if (e !== GIVE_UP) throw e; }
+  const outcome = kernelCode ? true : workAhead.reason || "it can't be worked out ahead";
+  cell.sporkWhy = outcome;
+  if (cell.bindName) (gen.sporkWhy || (gen.sporkWhy = new Map())).set(cell.bindName, outcome);
+  if (!kernelCode) return null;
   // the loops inside it were unrolled when it was worked out, so their speed notes don't apply
-  const span = lineSpan(c); gen.speed = gen.speed.filter(x => x.line < span[0] || x.line > span[1]);
-  const name = "SK" + gen.consts.length;
-  gen.consts.push("const " + name + "=" + code + ";");
-  return "{s:{k:" + name + ",caps:()=>[" + P.caps.join(",") + "]}}";
+  const lines = lineSpan(cell); gen.speedNotes = gen.speedNotes.filter(x => x.line < lines[0] || x.line > lines[1]);
+  const name = "SK" + gen.constants.length;
+  gen.constants.push("const " + name + "=" + kernelCode + ";");
+  return "{spork:{kernel:" + name + ",outsideReads:()=>[" + workAhead.outsideReads.join(",") + "]}}";
 }
 // spork's speed note: given a name or a cell written in place
-function sporkNote(gen, T, i) {
-  const pw = T[i - 1], t = T[i];
-  if (!pw || pw.k !== "word" || pw.v !== "spork") return;
-  const r = t.k === "word" && gen.sporkWhy ? gen.sporkWhy.get(t.v) : t.k === "cell" ? t.sporkWhy : undefined;
-  if (r !== undefined) gen.speed.push({ line: pw.line || 0, word: "spork", fast: r === true, why: r === true ? "" : r });
+function sporkNote(gen, terms, i) {
+  const previous = terms[i - 1], term = terms[i];
+  if (!previous || previous.type !== "word" || previous.value !== "spork") return;
+  const result = term.type === "word" && gen.sporkWhy ? gen.sporkWhy.get(term.value) : term.type === "cell" ? term.sporkWhy : undefined;
+  if (result !== undefined) gen.speedNotes.push({ line: previous.line || 0, word: "spork", fast: result === true, why: result === true ? "" : result });
 }
 function prescan(gen, ast) { gen.sporkNames = sporkTargets(ast); }
-// the fused loop, tried first; the steps as written are the way back when it can't run (NOFUSE)
-function fuseWrap(gen, seg, ordinary) {
-  const P = new Spk(gen), K = {}, why = {};
-  for (const item of ["num", "row"]) {
-    try { K[item] = P.buildPipe(seg.stages, item); } catch (e) { if (e !== SPKFAIL) throw e; K[item] = null; why[item] = P.why; }
+// the fused loop, tried first; the steps as written are the way back when it can't run (NOT_FUSED)
+function wrapFusedLoop(gen, run, ordinary) {
+  const workAhead = new WorkAhead(gen), kernel = {}, reasons = {};
+  for (const item of ["numbers", "rows"]) {
+    try { kernel[item] = workAhead.buildFusedLoop(run.stages, item); } catch (e) { if (e !== GIVE_UP) throw e; kernel[item] = null; reasons[item] = workAhead.reason; }
   }
-  const words = seg.stages.map(st => st.w), line = seg.stages[0].line || 0;
-  if (!K.num && !K.row) {
-    gen.speed.push({ line, word: words.join(" "), fast: false, why: why.row || why.num || "it can't be worked out ahead" });
-    return "(" + seg.ta + "=" + seg.src + "," + ordinary + ")";
+  const words = run.stages.map(stage => stage.word), line = run.stages[0].line || 0;
+  if (!kernel.numbers && !kernel.rows) {
+    gen.speedNotes.push({ line, word: words.join(" "), fast: false, why: reasons.rows || reasons.numbers || "it can't be worked out ahead" });
+    return "(" + run.temp + "=" + run.source + "," + ordinary + ")";
   }
-  const name = "FK" + gen.consts.length, tf = gen.tmp();
-  gen.consts.push("const " + name + "={num:" + (K.num || "null") + ",row:" + (K.row || "null") + "};");
-  gen.speed.push({ line, word: words.join(" "), fast: true, why: "" });
-  return "((" + tf + "=FUSE((" + seg.ta + "=" + seg.src + ")," + name + "," + (P.caps.length ? "()=>[" + P.caps.join(",") + "]" : "null") + "))!==NOFUSE?" + tf + ":" + ordinary + ")";
+  const name = "FK" + gen.constants.length, resultTemp = gen.newTemp();
+  gen.constants.push("const " + name + "={numbers:" + (kernel.numbers || "null") + ",rows:" + (kernel.rows || "null") + "};");
+  gen.speedNotes.push({ line, word: words.join(" "), fast: true, why: "" });
+  return "((" + resultTemp + "=runFusedLoop((" + run.temp + "=" + run.source + ")," + name + "," + (workAhead.outsideReads.length ? "()=>[" + workAhead.outsideReads.join(",") + "]" : "null") + "))!==NOT_FUSED?" + resultTemp + ":" + ordinary + ")";
 }
 
-S.install({
-  cell: sporkCell, note: sporkNote, prescan, fuse: { find: fuseSegment, wrap: fuseWrap },
-  spork, sortNumbers: sortF64, runtime: { FUSE, NOFUSE },
+core.install({
+  cell: sporkKernelForCell, note: sporkNote, prescan, fuse: { find: findLoopRun, wrap: wrapFusedLoop },
+  spork, sortNumbers: radixSortNumbers, runtime: { runFusedLoop, NOT_FUSED },
 });
 // spork's API: how the last one ran, and the ways it can run (decision 91); the GPU plugs in here (decision 93)
-Object.defineProperty(S, "sporkInfo", { get: () => SPORK.info, configurable: true });
-S.sporkTally = reset => { const t = SPORK.tally; if (reset) SPORK.tally = []; return t; };
-S.sporkWays = w => { if (SPORK.wasm === undefined) SPORK.wasm = wasmSpork(); Object.assign(SPORK, w); return SPORK; };
-S.kernels = { Spk, spkJS, spkWasmBytes, fuseJS };
-if (typeof module !== "undefined") module.exports = S.kernels;
+Object.defineProperty(core, "sporkInfo", { get: () => sporkState.info, configurable: true });
+core.sporkTally = reset => { const t = sporkState.tally; if (reset) sporkState.tally = []; return t; };
+core.sporkWays = w => { if (sporkState.wasm === undefined) sporkState.wasm = makeWasmRunner(); Object.assign(sporkState, w); return sporkState; };
+core.kernels = { WorkAhead, sporkKernelFunction, wasmKernelBytes, fusedLoopFunction };
+if (typeof module !== "undefined") module.exports = core.kernels;
 })(typeof window !== "undefined" ? window : globalThis);
 ````
 
@@ -2856,10 +2887,10 @@ Game layer: event loop, queued effects, recorded randomness, rewind, replay, hot
 (function (root) {
 "use strict";
 const S = root.Sprout3 || require("./sprout3.js");
-const { VCell, Native, isCell, eq, UNSET } = S;
+const { ValueCell, Native, isCell, equal, UNSET } = S;
 
-const ev = fields => S.VFM([], new Map(Object.entries(fields)));
-const NOKEYS = new VCell([]);
+const ev = fields => S.valueCellOf([], new Map(Object.entries(fields)));
+const NOKEYS = new ValueCell([]);
 const DRAW = { clear: 1, rect: 5, circle: 4, line: 5, text: 5 };
 const SOUND = { beep: 2, shake: 1 };
 
@@ -2888,12 +2919,12 @@ function makeGame(src, opts) {
   const history = [];
   function wire(f) {
     const upd = f.field("update"); if (upd === UNSET) throw new Error("the game needs an update field");
-    handler = S.G.frame.run(upd); // frame update: events in, states out (decision 34)
+    handler = S.globals.frame.run(upd); // frame update: events in, states out (decision 34)
     file = f;
   }
   wire(S.load(src, { host }));
   state = file.field("start"); if (state === UNSET) throw new Error("the game needs a start field");
-  const send = e => { state = handler.run(new VCell([state, e])); };
+  const send = e => { state = handler.run(new ValueCell([state, e])); };
 
   // one tick: update runs with effects queued; they are carried out once it returns (unless replaying)
   function tick(dt, held, replayRnd) {
@@ -2909,7 +2940,7 @@ function makeGame(src, opts) {
   const api = {
     get state() { return state; }, history,
     // which collect, keep and each bodies can run over columns, from the compiler (decision 86)
-    get speed() { return file.speed || []; },
+    get speedNotes() { return file.speedNotes || []; },
     down(x, y) { send(ev({ kind: "down", x, y })); },
     move(x, y) { send(ev({ kind: "move", x, y })); },
     up() { send(ev({ kind: "up" })); },
@@ -2923,8 +2954,8 @@ function makeGame(src, opts) {
     swap(newSrc) {
       const nf = S.load(newSrc, { host }), oldStart = file.field("start"), newStart = nf.field("start");
       const out = S.fieldsOf(state);
-      for (const [k, v] of S.fieldsOf(newStart)) { const was = oldStart.field(k); if (was === UNSET || !eq(was, v)) out.set(k, v); }
-      wire(nf); state = S.VFM([], out);
+      for (const [k, v] of S.fieldsOf(newStart)) { const was = oldStart.field(k); if (was === UNSET || !equal(was, v)) out.set(k, v); }
+      wire(nf); state = S.valueCellOf([], out);
     },
   };
   return api;
@@ -2957,10 +2988,10 @@ function sqliteCell(path) {
     const ps = a.part(2);
     return [a.part(1), S.isCell(ps) ? S.partsOf(ps).map(v => v === true ? 1 : v === false ? 0 : v) : []];
   };
-  const row = r => S.VFM([], new Map(Object.entries(r)));
-  const query = new S.Native("query", a => { const [sql, ps] = split(a); return new S.VCell(db.prepare(sql).all(...ps).map(row)); });
+  const row = r => S.valueCellOf([], new Map(Object.entries(r)));
+  const query = new S.Native("query", a => { const [sql, ps] = split(a); return new S.ValueCell(db.prepare(sql).all(...ps).map(row)); });
   const run = new S.Native("run", a => { const [sql, ps] = split(a); return S.effect(() => db.prepare(sql).run(...ps)); }, true);
-  const cell = S.VFM([], new Map([["query", query], ["run", run]]));
+  const cell = S.valueCellOf([], new Map([["query", query], ["run", run]]));
   cell.raw = db;
   return cell;
 }
@@ -3003,7 +3034,7 @@ async function saveBytes(name, bytes) {
 // SQL values into Sprout values: there is no null in Sprout, so null is false (decision 21)
 const fromSql = v => v === null || v === undefined ? false : v instanceof Uint8Array ? "[" + v.length + " bytes]" : v;
 // Sprout values into SQL values: true and false are 1 and 0, anything else that isn't a number or text is its printed form
-const toSql = v => v === true ? 1 : v === false ? 0 : typeof v === "number" || typeof v === "string" ? v : S.fmt(v);
+const toSql = v => v === true ? 1 : v === false ? 0 : typeof v === "number" || typeof v === "string" ? v : S.format(v);
 // the argument of query and run: "sql", or ["sql", [params]]
 function split(a) {
   if (typeof a === "string") return [a, []];
@@ -3029,16 +3060,16 @@ async function openSqlite(opts) {
     const [sql, ps] = split(a), st = db.prepare(sql), out = [];
     try {
       st.bind(ps); let keys = null;
-      while (st.step()) { if (!keys) keys = st.getColumnNames(); const vals = st.get(); out.push(S.VFM([], new Map(keys.map((k, i) => [k, fromSql(vals[i])])))); }
+      while (st.step()) { if (!keys) keys = st.getColumnNames(); const vals = st.get(); out.push(S.valueCellOf([], new Map(keys.map((k, i) => [k, fromSql(vals[i])])))); }
     } finally { st.free(); }
-    return new S.VCell(out);
+    return new S.ValueCell(out);
   });
   const run = new S.Native("run", a => {
     const [sql, ps] = split(a);
     return S.effect(() => { db.run(sql, ps); writes++; save(); if (opts.onWrite) opts.onWrite(sql); });
   }, true);
 
-  const cell = S.VFM([], new Map([["query", query], ["run", run]]));
+  const cell = S.valueCellOf([], new Map([["query", query], ["run", run]]));
   cell.raw = () => db;
   cell.writes = () => writes;
   // what's in it: each table and how many rows it has
@@ -3244,16 +3275,16 @@ const WAIT = { spork: "wait" };
 // a 32-bit float constant, written as its exact bits (WGSL has no literal for infinity or NaN)
 const f32bits = v => { const b = new Uint32Array(new Float32Array([v]).buffer)[0]; return "bitcast<f32>(0x" + b.toString(16) + "u)"; };
 
-function wgsl(K) {
-  const N = K.nodes, r = i => "v" + i, types = new Array(N.length);
+function wgsl(kernel) {
+  const nodes = kernel.nodes, r = i => "v" + i, types = new Array(nodes.length);
   let body = "";
-  for (let i = 0; i < N.length; i++) {
-    const [op, a, b, c, v] = N[i]; let e, ty = "f32";
+  for (let i = 0; i < nodes.length; i++) {
+    const [op, a, b, c, v] = nodes[i]; let e, ty = "f32";
     switch (op) {
-      case "c": e = f32bits(v); break;
-      case "cb": e = String(v); ty = "bool"; break;
-      case "x": e = "x"; break;
-      case "k": e = "C[" + v + "]"; break;
+      case "constant": e = f32bits(v); break;
+      case "constantBool": e = String(v); ty = "bool"; break;
+      case "input": e = "item"; break;
+      case "outside": e = "outside[" + v + "]"; break;
       case "add": e = r(a) + " + " + r(b); break; case "sub": e = r(a) + " - " + r(b); break;
       case "mul": e = r(a) + " * " + r(b); break; case "div": e = r(a) + " / " + r(b); break;
       case "min": case "max": e = op + "(" + r(a) + ", " + r(b) + ")"; break;
@@ -3261,25 +3292,25 @@ function wgsl(K) {
       case "neg": e = "-" + r(a); break;
       case "abs": case "floor": case "ceil": case "sqrt": e = op + "(" + r(a) + ")"; break;
       case "round": e = "floor(" + r(a) + " + 0.5)"; break;
-      case "lt": case "gt": case "le": case "ge": case "eq": case "ne": case "beq":
-        e = r(a) + ({ lt: " < ", gt: " > ", le: " <= ", ge: " >= ", eq: " == ", ne: " != ", beq: " == " })[op] + r(b); ty = "bool"; break;
+      case "lt": case "gt": case "le": case "ge": case "eq": case "ne": case "boolEquals":
+        e = r(a) + ({ lt: " < ", gt: " > ", le: " <= ", ge: " >= ", eq: " == ", ne: " != ", boolEquals: " == " })[op] + r(b); ty = "bool"; break;
       case "and": e = r(a) + " && " + r(b); ty = "bool"; break;
       case "or": e = r(a) + " || " + r(b); ty = "bool"; break;
       case "not": e = "!" + r(a); ty = "bool"; break;
-      case "sel": e = "select(" + r(c) + ", " + r(b) + ", " + r(a) + ")"; ty = types[b]; break;
+      case "choose": e = "select(" + r(c) + ", " + r(b) + ", " + r(a) + ")"; ty = types[b]; break;
       default: throw new Error("no GPU step for " + op);
     }
     types[i] = ty;
     body += "  let v" + i + ": " + ty + " = " + e + ";\n";
   }
-  const guards = K.guards.length ? "  if (!(" + K.guards.map(r).join(" && ") + ")) { atomicStore(&bad, 1u); }\n" : "";
-  const outs = K.outs.map((o, j) => "  O[" + (j ? j + "u * p.n + " : "") + "i] = " + (K.kind === "b" ? "select(0.0, 1.0, " + r(o) + ")" : r(o)) + ";\n").join("");
-  return `struct P { n: u32, hasX: u32, nx: u32, pad: u32 }
-@group(0) @binding(0) var<uniform> p: P;
-@group(0) @binding(1) var<storage, read> C: array<f32>;
-@group(0) @binding(2) var<storage, read> X: array<f32>;
-@group(0) @binding(3) var<storage, read_write> O: array<f32>;
-@group(0) @binding(4) var<storage, read_write> bad: atomic<u32>;
+  const guards = kernel.checks.length ? "  if (!(" + kernel.checks.map(r).join(" && ") + ")) { atomicStore(&failed, 1u); }\n" : "";
+  const outs = kernel.outputs.map((o, j) => "  outputs[" + (j ? j + "u * params.count + " : "") + "i] = " + (kernel.kind === "bools" ? "select(0.0, 1.0, " + r(o) + ")" : r(o)) + ";\n").join("");
+  return `struct Params { count: u32, hasInputs: u32, groupsAcross: u32, pad: u32 }
+@group(0) @binding(0) var<uniform> params: Params;
+@group(0) @binding(1) var<storage, read> outside: array<f32>;
+@group(0) @binding(2) var<storage, read> inputs: array<f32>;
+@group(0) @binding(3) var<storage, read_write> outputs: array<f32>;
+@group(0) @binding(4) var<storage, read_write> failed: atomic<u32>;
 // noise [x, y]: the same 32-bit hash as the CPU, on 32-bit inputs
 fn noise2(x: f32, y: f32) -> f32 {
   let fx = floor(x); let fy = floor(y);
@@ -3290,10 +3321,10 @@ fn noise2(x: f32, y: f32) -> f32 {
 }
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) g: vec3<u32>) {
-  let i = g.x + g.y * p.nx * 256u;
-  if (i >= p.n) { return; }
-  var x: f32 = f32(i + 1u);
-  if (p.hasX == 1u) { x = X[i]; }
+  let i = g.x + g.y * params.groupsAcross * 256u;
+  if (i >= params.count) { return; }
+  var item: f32 = f32(i + 1u);
+  if (params.hasInputs == 1u) { item = inputs[i]; }
 ${body}${guards}${outs}}
 `;
 }
@@ -3314,60 +3345,60 @@ async function makeGpuSpork(opts) {
     { binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } }] });
   const plLayout = device.createPipelineLayout({ bindGroupLayouts: [layout] });
   const pipes = new Map();
-  const pipeFor = K => {
-    const code = shader(K);
+  const pipelineFor = kernel => {
+    const code = shader(kernel);
     let p = pipes.get(code);
     if (!p) { p = device.createComputePipelineAsync({ layout: plLayout, compute: { module: device.createShaderModule({ code }), entryPoint: "main" } }); pipes.set(code, p); }
     return p;
   };
   const MAXN = 1 << 24;   // the input is a 32-bit float: whole numbers are exact up to 2^24
   // run a kernel on n inputs: Float64Array outputs, or null if a check failed
-  async function run(K, n, X, C) {
-    const pipe = await pipeFor(K), nOut = K.outs.length;
-    const buf = (size, usage) => device.createBuffer({ size: Math.max(16, (size + 3) & ~3), usage });
-    const S = GPUBufferUsage;
-    const ub = buf(16, S.UNIFORM | S.COPY_DST), cb = buf(C.length * 4, S.STORAGE | S.COPY_DST), xb = buf(X ? n * 4 : 4, S.STORAGE | S.COPY_DST);
-    const ob = buf(nOut * n * 4, S.STORAGE | S.COPY_SRC), bb = buf(4, S.STORAGE | S.COPY_SRC | S.COPY_DST);
-    const rb = buf(nOut * n * 4 + 16, S.MAP_READ | S.COPY_DST);
-    const groups = Math.ceil(n / 256), nx = Math.min(groups, 65535), ny = Math.ceil(groups / nx);
-    device.queue.writeBuffer(ub, 0, new Uint32Array([n, X ? 1 : 0, nx, 0]));
-    if (C.length) device.queue.writeBuffer(cb, 0, new Float32Array(C));
-    if (X) device.queue.writeBuffer(xb, 0, new Float32Array(X));
-    device.queue.writeBuffer(bb, 0, new Uint32Array([0]));
-    const bg = device.createBindGroup({ layout, entries: [ub, cb, xb, ob, bb].map((b, i) => ({ binding: i, resource: { buffer: b } })) });
-    const enc = device.createCommandEncoder(), pass = enc.beginComputePass();
-    pass.setPipeline(pipe); pass.setBindGroup(0, bg); pass.dispatchWorkgroups(nx, ny); pass.end();
-    const outBytes = nOut * n * 4, off = (outBytes + 15) & ~15;
-    enc.copyBufferToBuffer(ob, 0, rb, 0, outBytes);
-    enc.copyBufferToBuffer(bb, 0, rb, off, 4);
-    device.queue.submit([enc.finish()]);
-    await rb.mapAsync(GPUMapMode.READ);
-    const m = rb.getMappedRange(), f = new Float32Array(m, 0, nOut * n), failed = new Uint32Array(m, off, 1)[0] !== 0;
-    const O = failed ? null : K.outs.map((o, j) => Float64Array.from(f.subarray(j * n, (j + 1) * n)));
-    rb.unmap(); [ub, cb, xb, ob, bb, rb].forEach(b => b.destroy());
-    return O;
+  async function run(kernel, n, inputs, outside) {
+    const pipe = await pipelineFor(kernel), outputCount = kernel.outputs.length;
+    const makeBuffer = (size, usage) => device.createBuffer({ size: Math.max(16, (size + 3) & ~3), usage });
+    const USAGE = GPUBufferUsage;
+    const paramsBuffer = makeBuffer(16, USAGE.UNIFORM | USAGE.COPY_DST), outsideBuffer = makeBuffer(outside.length * 4, USAGE.STORAGE | USAGE.COPY_DST), inputBuffer = makeBuffer(inputs ? n * 4 : 4, USAGE.STORAGE | USAGE.COPY_DST);
+    const outputBuffer = makeBuffer(outputCount * n * 4, USAGE.STORAGE | USAGE.COPY_SRC), failedBuffer = makeBuffer(4, USAGE.STORAGE | USAGE.COPY_SRC | USAGE.COPY_DST);
+    const readBuffer = makeBuffer(outputCount * n * 4 + 16, USAGE.MAP_READ | USAGE.COPY_DST);
+    const groups = Math.ceil(n / 256), groupsAcross = Math.min(groups, 65535), groupsDown = Math.ceil(groups / groupsAcross);
+    device.queue.writeBuffer(paramsBuffer, 0, new Uint32Array([n, inputs ? 1 : 0, groupsAcross, 0]));
+    if (outside.length) device.queue.writeBuffer(outsideBuffer, 0, new Float32Array(outside));
+    if (inputs) device.queue.writeBuffer(inputBuffer, 0, new Float32Array(inputs));
+    device.queue.writeBuffer(failedBuffer, 0, new Uint32Array([0]));
+    const bindGroup = device.createBindGroup({ layout, entries: [paramsBuffer, outsideBuffer, inputBuffer, outputBuffer, failedBuffer].map((b, i) => ({ binding: i, resource: { buffer: b } })) });
+    const encoder = device.createCommandEncoder(), pass = encoder.beginComputePass();
+    pass.setPipeline(pipe); pass.setBindGroup(0, bindGroup); pass.dispatchWorkgroups(groupsAcross, groupsDown); pass.end();
+    const outBytes = outputCount * n * 4, failedOffset = (outBytes + 15) & ~15;
+    encoder.copyBufferToBuffer(outputBuffer, 0, readBuffer, 0, outBytes);
+    encoder.copyBufferToBuffer(failedBuffer, 0, readBuffer, failedOffset, 4);
+    device.queue.submit([encoder.finish()]);
+    await readBuffer.mapAsync(GPUMapMode.READ);
+    const m = readBuffer.getMappedRange(), f = new Float32Array(m, 0, outputCount * n), anyFailed = new Uint32Array(m, failedOffset, 1)[0] !== 0;
+    const outputs = anyFailed ? null : kernel.outputs.map((o, j) => Float64Array.from(f.subarray(j * n, (j + 1) * n)));
+    readBuffer.unmap(); [paramsBuffer, outsideBuffer, inputBuffer, outputBuffer, failedBuffer, readBuffer].forEach(b => b.destroy());
+    return outputs;
   }
 
   // the hook spork calls: an answer already back, or (when a pass may wait) a new job and SPORK_WAIT
   const ids = new WeakMap(); let nextId = 1;
   const answers = new Map(), jobs = [];
   let mayWait = false, min = opts.min || 100000, last = null;
-  const keyOf = (K, n, X, C) => {
-    let id = ids.get(K); if (!id) { id = shader(K); ids.set(K, id); }
+  const keyOf = (kernel, n, inputs, outside) => {
+    let id = ids.get(kernel); if (!id) { id = shader(kernel); ids.set(kernel, id); }
     let h = 2166136261;
-    if (X) { const u = new Uint32Array(X.buffer, X.byteOffset, X.length * 2); for (let i = 0; i < u.length; i++) h = Math.imul(h ^ u[i], 16777619); }
-    return id + "|" + n + "|" + (X ? "x" + (h >>> 0) : "r") + "|" + C.join(",");
+    if (inputs) { const u = new Uint32Array(inputs.buffer, inputs.byteOffset, inputs.length * 2); for (let i = 0; i < u.length; i++) h = Math.imul(h ^ u[i], 16777619); }
+    return id + "|" + n + "|" + (inputs ? "x" + (h >>> 0) : "r") + "|" + outside.join(",");
   };
-  function hook(K, n, X, C) {
+  function hook(kernel, n, inputs, outside) {
     if (n < min || n > MAXN) return undefined;
-    const key = keyOf(K, n, X, C);
-    if (answers.has(key)) { const a = answers.get(key); last = a.info; return a.O; }
+    const key = keyOf(kernel, n, inputs, outside);
+    if (answers.has(key)) { const a = answers.get(key); last = a.info; return a.outputs; }
     if (!mayWait) return undefined;
     const t0 = performance.now();
-    jobs.push(run(K, n, X, C).then(O => {
+    jobs.push(run(kernel, n, inputs, outside).then(outputs => {
       const info = { n, ms: performance.now() - t0 };
-      if (O) O.ms = info.ms;
-      answers.set(key, { O, info }); while (answers.size > 8) answers.delete(answers.keys().next().value);
+      if (outputs) outputs.ms = info.ms;
+      answers.set(key, { outputs, info }); while (answers.size > 8) answers.delete(answers.keys().next().value);
     }));
     throw WAIT;
   }
@@ -3409,7 +3440,7 @@ const ok = (name, cond) => { if (cond) pass++; else { fail++; console.log("FAIL"
 const logs = []; S.setLog(m => logs.push(m));
 const out = []; S.setOut(s => out.push(s));
 const run = src => { out.length = 0; S.load(src).run(S.BANG); return out.slice(); };
-const val = src => S.fmt(S.load("result : " + src).field("result"));
+const val = src => S.format(S.load("result : " + src).field("result"));
 
 // the tour gives exactly these lines
 const want = ["1","1","480","20","true","7","7","3","42","long","anon","[x : 1, y : 5]","[3, 1, 4, 9]","n=4","p is at 1, 2",
@@ -3429,7 +3460,7 @@ ok("F a number is input, not index", val("[3, 1, 4] 2") === "4");
 ok("71 [[x]] holds a cell", val("[[1, 2]] @ 1") === "[1, 2]");
 ok("71 a branch can give back a record", val("true [[x : 1]] else [7]") === "[x : 1]");
 ok("60 [x | [..]] keeps the inner cell", val("([x | [a : x]] 5) a") === "5");
-ok("51 lazy once", S.fmt(S.load("r : [rand [0, 1000]]\nresult : (r @ 1) = (r @ 1)").field("result")) === "true");
+ok("51 lazy once", S.format(S.load("r : [rand [0, 1000]]\nresult : (r @ 1) = (r @ 1)").field("result")) === "true");
 ok("51 run is fresh", val("([] .. [1]) @ 1") === "1");
 ok("81 template [ ]", val('"a[1 + 1]b"') === "a2b");
 { const before = logs.length;
@@ -3450,12 +3481,12 @@ ok("84 match only works out the answer it picks", val('match [1, [1, "one", 2, n
 { const lineOf = src => { try { S.load(src); return 0; } catch (e) { return e.line; } };
   ok("an unclosed [ is reported where it opened", lineOf("a : 1\nb : [2, 3\nc : 4\nd : [5]\ne : 6") === 2);
   ok("an unclosed ( too", lineOf("a : 1\nb : (2 + 3\nc : 4") === 2); }
-{ const sp = S.load("xs : []\nf : [p | p x > 1]\na : xs collect [p | p with [x : p x + 1]]\nb : xs keep [p | p x > 1]\nc : xs keep [p | f p]\nd : xs collect [p | p with [x : rand [0, 1]]]\ne : xs keep [p | p name = \"a\"]").speed;
+{ const sp = S.load("xs : []\nf : [p | p x > 1]\na : xs collect [p | p with [x : p x + 1]]\nb : xs keep [p | p x > 1]\nc : xs keep [p | f p]\nd : xs collect [p | p with [x : rand [0, 1]]]\ne : xs keep [p | p name = \"a\"]").speedNotes;
   const at = l => sp.find(n => n.line === l);
   ok("86 speed notes: a with of number maths runs over columns", at(3).fast && at(3).word === "collect" && at(4).fast && at(4).word === "keep");
   ok("86 speed notes: say why a body runs item by item", at(5).fast && /random/.test(at(6).why) && !at(6).fast, sp.map(n => n.line + " " + n.why)); }
 // loop fusion (decision 95): a run of collect, keep, fold and length is one loop, with the same answer as the steps one by one
-{ const both = src => { const a = S.fmt(S.load(src).field("result")); S.columns(false); const b = S.fmt(S.load(src).field("result")); S.columns(true); return [a, b]; };
+{ const both = src => { const a = S.format(S.load(src).field("result")); S.fastPaths(false); const b = S.format(S.load(src).field("result")); S.fastPaths(true); return [a, b]; };
   const fused = {
     "collect, keep and fold over range": "result : range 1000 collect [n | n * n] keep [n | n % 3 = 0] fold [0, [t n | t + (n / 7)]]",
     "keep then length counts without a list": "xs : range 500 collect [n | noise [n, 1]]\nresult : xs keep [u | u < 0.25] length",
@@ -3476,36 +3507,36 @@ ok("84 match only works out the answer it picks", val('match [1, [1, "one", 2, n
   for (const src of ["result : range 200 collect [n | clamp [n * 3, 50, 400] + (toward [0, 10, n / 200]) + (dist [0, 0, n, 7])]",
       "result : range 120 collect [n | cond [n < 30, n * 2, n < 60, 0 - n, any, n / 4]] fold [0, [t x | t + x]]",
       "result : range 90 collect [n | match [n % 3, [0, 10, 1, 20, any, 30]]] keep [x | x > 15] length"]) {
-    const [a, b] = both(src); ok("97 fusion: library cells inline: " + src.slice(9, 40), a === b && a !== "false" && S.load(src).speed.every(x => x.fast), [a.slice(0, 50), b.slice(0, 50)]); }
+    const [a, b] = both(src); ok("97 fusion: library cells inline: " + src.slice(9, 40), a === b && a !== "false" && S.load(src).speedNotes.every(x => x.fast), [a.slice(0, 50), b.slice(0, 50)]); }
   // each with a host word ends a fused run: the same calls, in the same order
-  { const calls = [], host = { dot: new S.Native("dot", a => { calls.push(S.fmt(a)); return false; }, true) };
-    host.dot.direct = (x, y, c) => { calls.push("[" + S.fmt(x) + ", " + S.fmt(y) + ", " + c + "]"); return false; };
+  { const calls = [], host = { dot: new S.Native("dot", a => { calls.push(S.format(a)); return false; }, true) };
+    host.dot.direct = (x, y, c) => { calls.push("[" + S.format(x) + ", " + S.format(y) + ", " + c + "]"); return false; };
     const src = "rs : range 50 collect [n | [x : n, y : n * 2]]\nresult : rs keep [r | r x % 3 = 0] each [r | r x > 20 [dot [r x, r y, \"red\"]] else [dot [r y, r x, \"blue\"]]]";
     const run = () => { calls.length = 0; S.load(src, { host }).field("result"); return calls.slice(); };
     logs.length = 0;
-    const a = run(), notes = S.load(src, { host }).speed; S.columns(false); const b = run(); S.columns(true);
+    const a = run(), notes = S.load(src, { host }).speedNotes; S.fastPaths(false); const b = run(); S.fastPaths(true);
     // dot gives false, so past x 20 the else draws too (decision 74), fused or not; and the lint says so
     ok("95 fusion: each with host words, the same calls in the same order", a.length === 26 && JSON.stringify(a) === JSON.stringify(b) && notes.some(x => x.word === "keep each" && x.fast), [a.slice(0, 3), b.slice(0, 3), notes]);
     ok("74: a branch that ends with a host word before else is named", logs.some(l => /ends with dot, which gives false/.test(l)), logs); logs.length = 0; }
   ok("97 the moved built-ins: rand, clamp, toward and dist give what they gave", (() => {
     const c = S.load("a : clamp [5, 0, 3]\nb : clamp [-1, 0, 3]\nc : toward [10, 20, 0.25]\nd : dist [0, 0, 3, 4]\ne : rand [10, 20]");
     const e = c.field("e"); return c.field("a") === 3 && c.field("b") === 0 && c.field("c") === 12.5 && c.field("d") === 5 && e >= 10 && e < 20; })());
-  const notes = S.load("result : range 9 collect [n | n * 2] keep [n | n > 4] fold [0, [t n | t + n]]").speed;
+  const notes = S.load("result : range 9 collect [n | n * 2] keep [n | n > 4] fold [0, [t n | t + n]]").speedNotes;
   ok("95 fusion: one speed note for the run", notes.length === 1 && notes[0].word === "collect keep fold" && notes[0].fast, notes); }
 { const n1 = +val("noise [3, 7]"), n2 = +val("noise [3, 7]"), n3 = +val("noise [3, 8]");
   ok("87 noise: the same inputs give the same number, from 0 up to 1", n1 === n2 && n1 !== n3 && n1 >= 0 && n1 < 1);
   const xs = Array.from({ length: 2000 }, (_, k) => +val("noise [" + k + ", 1]")), mean = xs.reduce((a, b) => a + b) / xs.length;
   ok("87 noise: spread evenly", mean > 0.47 && mean < 0.53 && Math.min(...xs) < 0.01 && Math.max(...xs) > 0.99, mean);
   const prog = "ps : range 50 collect [n | [x : n, y : 0]]\nresult : ps collect [p | p with [y : noise [p x, 9]]]";
-  const a = S.load(prog).field("result"); S.columns(false); const b = S.load(prog).field("result"); S.columns(true);
-  ok("87 noise runs inside a column loop, with the same results", a instanceof S.ColCell && S.fmt(a) === S.fmt(b) && S.load(prog).speed.find(n => n.line === 2).fast); }
-{ const both = src => { const a = S.fmt(S.load(src).field("result")); S.columns(false); const b = S.fmt(S.load(src).field("result")); S.columns(true); return [a, b]; };
+  const a = S.load(prog).field("result"); S.fastPaths(false); const b = S.load(prog).field("result"); S.fastPaths(true);
+  ok("87 noise runs inside a column loop, with the same results", a instanceof S.ColumnCell && S.format(a) === S.format(b) && S.load(prog).speedNotes.find(n => n.line === 2).fast); }
+{ const both = src => { const a = S.format(S.load(src).field("result")); S.fastPaths(false); const b = S.format(S.load(src).field("result")); S.fastPaths(true); return [a, b]; };
   ok("fold loop: a sum over range", val("range 1000 fold [0, [t n | t + n]]") === "500500");
-  ok("fold loop: over a list of numbers, with an outside name", S.fmt(S.load("k : 3\nresult : [1, 2, 3, 4] fold [0, [t n | t + (n * k)]]").field("result")) === "30");
+  ok("fold loop: over a list of numbers, with an outside name", S.format(S.load("k : 3\nresult : [1, 2, 3, 4] fold [0, [t n | t + (n * k)]]").field("result")) === "30");
   for (const src of ["result : range 500 fold [0, [t n | t + (n * n) - (t / 7)]]", "result : [1.5, 2, -3, 4] fold [1, [t n | t * n + 1]]", "result : range 40 fold [0, [t n | n > 20 [t + n] else [t - 1]]]", "result : range 64 fold [0, [t n | t + (noise [n, 2])]]"]) {
     const [a, b] = both(src); ok("fold loop: same answer with and without it: " + src, a === b && a !== "false"); }
   ok("fold loop: anything else still works the ordinary way", val('["a", "b"] fold ["", [t n | t .. n]]') === "ab" && val("[1, 2] fold [[], [t n | t .. [n]]]") === "[1, 2]");
-  const sp = S.load("a : range 9 fold [0, [t n | t + n]]\nb : range 9 fold [0, [t n | t .. n]]").speed;
+  const sp = S.load("a : range 9 fold [0, [t n | t + n]]\nb : range 9 fold [0, [t n | t .. n]]").speedNotes;
   ok("fold loop: speed notes say which folds run as a tight loop", sp.find(n => n.line === 1).fast && !sp.find(n => n.line === 2).fast && sp.every(n => n.word === "fold"), sp); }
 // decision 74, decided: else keeps its one rule; a branch whose answer is a test is named, and cond keeps a false answer
 { logs.length = 0;
@@ -3521,8 +3552,8 @@ ok("84 match only works out the answer it picks", val('match [1, [1, "one", 2, n
     const L = xs || S.load("r : range 300").field("r");
     S.sporkWays({ wasm: W }); const simd = a.run(L), how1 = S.sporkInfo && S.sporkInfo.how; S.sporkWays({ info: null });
     S.sporkWays({ wasm: null }); const js = a.run(L), how2 = S.sporkInfo && S.sporkInfo.how; S.sporkWays({ wasm: W, info: null });
-    const plain = b.run(L), want = S.fmt(plain);
-    return { same: S.fmt(simd) === want && S.fmt(js) === want && S.eq(simd, plain), how: [how1, how2], speed: c.speed };
+    const plain = b.run(L), want = S.format(plain);
+    return { same: S.format(simd) === want && S.format(js) === want && S.equal(simd, plain), how: [how1, how2], speed: c.speedNotes };
   };
   const kernels = {
     "number maths and noise": "f : [n | noise [n, 7] * 10 floor + (n / 3 round) - (n sqrt)]",
@@ -3541,15 +3572,15 @@ ok("84 match only works out the answer it picks", val('match [1, [1, "one", 2, n
   ok("spork: ace-schedule's Monte Carlo run, same numbers as collect", r.same && r.how[0] === "simd", r.how);
   // a position outside the list, or anything spork can't work out ahead, runs the ordinary way
   ok("spork: a position outside the list falls back", (() => { const r = three("w : [3, 1, 4]\nf : [n | (w @ n) else [0]]"); return r.same && r.how[0] === "collect" && r.how[1] === "collect"; })());
-  ok("collect [r | r f] over columns gives that column", (() => { const c = S.load("rs : range 100 collect [n | [a : n, b : n * 2]]\nA : rs collect [r | r b]\nB : rs collect [r | r b + 0]"); return S.fmt(c.field("A")) === S.fmt(c.field("B")) && c.field("A") instanceof S.NCell; })());
-  const rnd = S.load("f : [n | random + n]\nA : range 5 spork f").speed.find(x => x.word === "spork");
+  ok("collect [r | r f] over columns gives that column", (() => { const c = S.load("rs : range 100 collect [n | [a : n, b : n * 2]]\nA : rs collect [r | r b]\nB : rs collect [r | r b + 0]"); return S.format(c.field("A")) === S.format(c.field("B")) && c.field("A") instanceof S.NumberList; })());
+  const rnd = S.load("f : [n | random + n]\nA : range 5 spork f").speedNotes.find(x => x.word === "spork");
   ok("spork: speed notes say why a cell can't be worked out ahead", rnd && !rnd.fast && /random/.test(rnd.why), rnd);
-  ok("spork: a cell written in place", S.fmt(S.load("A : range 40 spork [n | n * n]").field("A")) === S.fmt(S.load("A : range 40 collect [n | n * n]").field("A")));
+  ok("spork: a cell written in place", S.format(S.load("A : range 40 spork [n | n * n]").field("A")) === S.format(S.load("A : range 40 collect [n | n * n]").field("A")));
   ok("spork: a list of numbers in, and noise bit for bit", (() => { const L = S.load("r : range 64 collect [n | n * 1.37 - 40]").field("r"); return three("f : [n | noise [n, 0 - n]]", L).same; })());
   const sorted = S.load("a : [3, 1, 2] sort\nb : [\"pear\", \"fig\"] sort\nc : range 2000 spork [n | noise [n, 1]] sort");
-  ok("sort: numbers and words", S.fmt(sorted.field("a")) === "[1, 2, 3]" && S.fmt(sorted.field("b")) === "[fig, pear]");
+  ok("sort: numbers and words", S.format(sorted.field("a")) === "[1, 2, 3]" && S.format(sorted.field("b")) === "[fig, pear]");
   const c3 = sorted.field("c"); let up = true; for (let i = 2; i <= 2000; i++) if (c3.part(i) < c3.part(i - 1)) up = false;
-  ok("sort: a spork's numbers, least to most", up && c3.count() === 2000 && c3 instanceof S.NCell); }
+  ok("sort: a spork's numbers, least to most", up && c3.count() === 2000 && c3 instanceof S.NumberList); }
 ok("and/or run a call on their right before checking it", val("[k | k > 1 and ([d | d = 3] k)] 3") === "true" && val("[k | k > 9 or ([d | d = 3] k)] 3") === "true");
 ok("81 ( ) is plain text", val('"rgba(0,0,0,0.5)"') === "rgba(0,0,0,0.5)");
 ok("81 escaped bracket", val('"a\\[b]"') === "a[b]");
@@ -3565,9 +3596,9 @@ ok("23 cells that take input compare by code", val("[n | n + 1] = [n | n + 1]") 
 ok("24 names filled in", val("(([x | [y | x + y]] 1) = ([x | [y | x + y]] 2))") === "false");
 ok("26 booleans only", val("3 [\"yes\"]") === "false");
 ok("28 miss gives false", val("5 frobnicate") === "false");
-ok("36/37 operator on a cell", S.fmt(S.load("v : [+ : [right | left with [n : left n + (right n)]]]\na : v with [n : 2]\nb : v with [n : 5]\nresult : a + b n").field("result")) === "7");
-ok("38/52 method runs on read", S.fmt(S.load("r : [w : 3, h : 4, area : [left w * (left h)]]\nresult : r area").field("result")) === "12");
-ok("52 a value cell comes back", S.fmt(S.load("g : [ball : [x : 1]]\nresult : g ball x").field("result")) === "1");
+ok("36/37 operator on a cell", S.format(S.load("v : [+ : [right | left with [n : left n + (right n)]]]\na : v with [n : 2]\nb : v with [n : 5]\nresult : a + b n").field("result")) === "7");
+ok("38/52 method runs on read", S.format(S.load("r : [w : 3, h : 4, area : [left w * (left h)]]\nresult : r area").field("result")) === "12");
+ok("52 a value cell comes back", S.format(S.load("g : [ball : [x : 1]]\nresult : g ball x").field("result")) === "1");
 ok("41/42 .. joins", val('"a" .. "b" .. 3') === "ab3" && val("[1] .. [2, 3]") === "[1, 2, 3]");
 ok("45 with merges fields", val("[x : 1, y : 2] with [y : 9]") === "[x : 1, y : 9]");
 ok("46 else", val("false else 7") === "7" && val("4 else 7") === "4");
@@ -3576,9 +3607,9 @@ ok("62 catch: then gives false", val("true [false] else [\"b\"]") === "b");
 ok("35 match", val('match [2, [1, "one", 2, "two", any, "many"]]') === "two" && val('match [9, [1, "one", any, "many"]]') === "many");
 ok("55 collect keep fold", val("range 5 collect [n | n * n] keep [n | n > 4] fold [0, [t n | t + n]]") === "50");
 ok("29 times", run("3 times [_ print]").join() === "1,2,3");
-ok("59 indent is a cell", S.fmt(S.load("box :\n  w : 3\n  h : 4\nresult : box h").field("result")) === "4");
-ok("61 named inputs with an indented body", S.fmt(S.load("f : [n |\n  m : n * 2\n  m + 1\n]\nresult : f 5").field("result")) === "11");
-ok("25 self-recursion and tail calls", S.fmt(S.load("count : [n acc | n = 0 [acc] else [count [n - 1, acc + n]]]\nresult : count [100000, 0]").field("result")) === "5000050000");
+ok("59 indent is a cell", S.format(S.load("box :\n  w : 3\n  h : 4\nresult : box h").field("result")) === "4");
+ok("61 named inputs with an indented body", S.format(S.load("f : [n |\n  m : n * 2\n  m + 1\n]\nresult : f 5").field("result")) === "11");
+ok("25 self-recursion and tail calls", S.format(S.load("count : [n acc | n = 0 [acc] else [count [n - 1, acc + n]]]\nresult : count [100000, 0]").field("result")) === "5000050000");
 ok("13 bound twice is an error", (() => { try { S.load("a : 1\na : 2"); return false; } catch (e) { return /bound twice/.test(e.message); } })());
 ok("50 every and wave", val("every [0.5, 1.0, 0.1]") === "true" && val("every [0.5, 0.9, 0.1]") === "false");
 
@@ -3599,8 +3630,8 @@ ok("35 match with no match gives false", val('match [9, [1, "one"]]') === "false
   process.removeAllListeners("warning");
   const db = sqliteCell(":memory:");
   db.raw.exec("create table atoms(id integer, zone integer, hours real); insert into atoms values (1, 3, 8), (2, 3, 4), (3, 5, 2);");
-  S.G.db = db;
-  ok("78 sqlite reads give cells", S.fmt(S.load('result : db query ["select hours from atoms where zone = ?", [3]] collect [r | r hours] fold [0, [t h | t + h]]').field("result")) === "12");
+  S.globals.db = db;
+  ok("78 sqlite reads give cells", S.format(S.load('result : db query ["select hours from atoms where zone = ?", [3]] collect [r | r hours] fold [0, [t h | t + h]]').field("result")) === "12");
   const c = S.load('w : [db run ["insert into atoms values (?, ?, ?)", [4, 9, 1]]]');
   S.queueEffects(); c.field("w").run(S.BANG);
   ok("78 writes are queued", db.raw.prepare("select count(*) n from atoms").get().n === 3);
@@ -3608,38 +3639,38 @@ ok("35 match with no match gives false", val('match [9, [1, "one"]]') === "false
   ok("78 and carried out after", db.raw.prepare("select count(*) n from atoms").get().n === 4);
   S.queueEffects(); c.field("w").run(S.BANG); S.dropEffects();
   ok("78 and dropped on replay", db.raw.prepare("select count(*) n from atoms").get().n === 4);
-  delete S.G.db;
+  delete S.globals.db;
 }
 
 // 82: columns. Lists of number records are stored as columns, with exactly the same results as without them.
 {
-  const both = src => { const a = S.load(src).field("result"); S.columns(false); const b = S.load(src).field("result"); S.columns(true); return [a, b]; };
+  const both = src => { const a = S.load(src).field("result"); S.fastPaths(false); const b = S.load(src).field("result"); S.fastPaths(true); return [a, b]; };
   const [a, b] = both(`step : [rs | rs collect [r | r with [y : r y + 1, z : r x * 2]] keep [r | (r y % 3) != 0 or (r x > 50)]]
 go : [rs k | k = 0 [rs] else [go [step rs, k - 1]]]
 result : go [range 100 collect [n | [x : n, y : 0]], 5]`);
-  ok("82 columns are used", a instanceof S.ColCell && !(b instanceof S.ColCell));
-  ok("82 columns give the same list", S.fmt(a) === S.fmt(b) && S.eq(a, b) && S.eq(b, a) && a.count() === 50);
-  ok("82 a part of a column list is a record", S.fmt(a.part(2)) === "[x : 52, y : 5, z : 104]" && a.part(0) === false && a.part(51) === false);
+  ok("82 columns are used", a instanceof S.ColumnCell && !(b instanceof S.ColumnCell));
+  ok("82 columns give the same list", S.format(a) === S.format(b) && S.equal(a, b) && S.equal(b, a) && a.count() === 50);
+  ok("82 a part of a column list is a record", S.format(a.part(2)) === "[x : 52, y : 5, z : 104]" && a.part(0) === false && a.part(51) === false);
   const [c, d] = both(`xs : range 40 collect [n | [x : n, y : n * 2]]
 result : xs collect [r | r with [x : r x + 1]] .. [[x : 0, y : 0]] .. (range 3 collect [n | [x : n, y : n]])`);
-  ok("82 .. keeps columns", c instanceof S.ColCell && c.count() === 44 && S.fmt(c) === S.fmt(d));
+  ok("82 .. keeps columns", c instanceof S.ColumnCell && c.count() === 44 && S.format(c) === S.format(d));
   const [e, f] = both(`xs : range 40 collect [n | [x : n, name : "a"]]
 result : xs collect [r | r with [x : r x + 1]]`);
-  ok("82 a record with words stays as records", !(e instanceof S.ColCell) && S.fmt(e) === S.fmt(f));
+  ok("82 a record with words stays as records", !(e instanceof S.ColumnCell) && S.format(e) === S.format(f));
   const [g2, h] = both(`xs : range 40 collect [n | [x : n]]
 result : xs collect [r | r with [x : r nope + 1]]`);
-  ok("82 a missing field falls back to the ordinary way", !(g2 instanceof S.ColCell) && S.fmt(g2) === S.fmt(h));
+  ok("82 a missing field falls back to the ordinary way", !(g2 instanceof S.ColumnCell) && S.format(g2) === S.format(h));
   // the particle fountain plays the same with and without columns
   const psrc = fs.readFileSync(__dirname + "/examples/particles.sp", "utf8");
   const play = on => {
-    S.columns(on); const mr = Math.random; let seed = 7; Math.random = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    S.fastPaths(on); const mr = Math.random; let seed = 7; Math.random = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
     const pg = L.makeGame(psrc); for (let t = 0; t < 150; t++) pg.tick(1 / 60);
-    const dr = JSON.stringify(pg.draw()); Math.random = mr; S.columns(true);
+    const dr = JSON.stringify(pg.draw()); Math.random = mr; S.fastPaths(true);
     return [pg.state.field("sparks"), dr];
   };
   const [p1, d1] = play(true), [p2, d2] = play(false);
-  ok("82 particles use columns", p1 instanceof S.ColCell && p1.count() > 1000);
-  ok("82 particles play the same", S.fmt(p1) === S.fmt(p2) && d1 === d2);
+  ok("82 particles use columns", p1 instanceof S.ColumnCell && p1.count() > 1000);
+  ok("82 particles play the same", S.format(p1) === S.format(p2) && d1 === d2);
 }
 
 // the game: events in, states out; effects queued; rewind, replay, hot-swap
@@ -3652,7 +3683,7 @@ for (let f = 0; f < 900; f++) { if (f % 30 === 0) g.down(60 + (f * 7) % 240, 300
 ok("game scores", maxScore > 0);
 ok("game effects are queued and carried out", fx.includes("beep"));
 ok("game draws", g.draw().length > 5);
-ok("replay is exact", S.fmt(g.history[100].state) === S.fmt(g.history[100].state) && S.fmt(g.history[201].state) === S.fmt(g.replayFrom(200, 1 / 60)));
+ok("replay is exact", S.format(g.history[100].state) === S.format(g.history[100].state) && S.format(g.history[201].state) === S.format(g.replayFrom(200, 1 / 60)));
 const sc = g.state.field("score");
 g.swap(src.replace("beep [880, 0.06]", "beep [660, 0.06]"));
 ok("hot-swap keeps live state", g.state.field("score") === sc);
@@ -3670,11 +3701,13 @@ Headless game tests.
 ````js
 // Headless tests for the example games: node game-tests.js
 const S = require("./sprout3.js"), L = require("./live3.js"), fs = require("fs");
+// the games read random through the game layer, which reads Math.random: seeded here, so every run is the same
+{ let seed = 12345; Math.random = () => (seed = (seed * 16807) % 2147483647) / 2147483647; }
 let pass = 0, fail = 0;
 const ok = (name, cond, extra) => { if (cond) pass++; else { fail++; console.log("FAIL", name, extra === undefined ? "" : extra); } };
 const logs = []; S.setLog(m => logs.push(m));
 const game = (name, opts) => L.makeGame(fs.readFileSync(__dirname + "/examples/" + name + ".sp", "utf8"), opts);
-const held = keys => S.VFM([], new Map(keys.map(k => [k, true])));
+const held = keys => S.valueCellOf([], new Map(keys.map(k => [k, true])));
 const f = (g, k) => g.state.field(k);
 
 // ---------------- Bounce
@@ -3699,7 +3732,7 @@ const f = (g, k) => g.state.field(k);
   const fx = [], g = game("snake", { onEffect: e => fx.push(e[0]) });
   // food sits 4 squares ahead: going straight eats it
   for (let t = 0; t < 40; t++) g.tick(1 / 60);
-  ok("snake: moves on the beat", f(g, "body").part(1).field("x") > 5, S.fmt(f(g, "body").part(1)));
+  ok("snake: moves on the beat", f(g, "body").part(1).field("x") > 5, S.format(f(g, "body").part(1)));
   for (let t = 0; t < 40; t++) g.tick(1 / 60);
   ok("snake: eats and grows", f(g, "score") === 1 && f(g, "body").count() === 4, [f(g, "score"), f(g, "body").count()]);
   ok("snake: eating beeps", fx.includes("beep"));
@@ -3713,7 +3746,7 @@ const f = (g, k) => g.state.field(k);
     "body : [[x : 8, y : 10], [x : 7, y : 10], [x : 6, y : 10], [x : 5, y : 10], [x : 4, y : 10], [x : 3, y : 10]]").replace("food : [x : 9, y : 10]", "food : [x : 0, y : 0]"));
   const steer = (keys, n) => { for (let t = 0; t < n; t++) g2.tick(1 / 60, held(keys)); };
   steer(["down"], 8); steer(["left"], 8); steer(["up"], 8);
-  ok("snake: biting yourself ends the game", f(g2, "over") === true, S.fmt(f(g2, "body")));
+  ok("snake: biting yourself ends the game", f(g2, "over") === true, S.format(f(g2, "body")));
   g2.down(10, 10); g2.tick(1 / 60);
   ok("snake: a tap starts again", f(g2, "over") === false && f(g2, "score") === 0);
   ok("snake: can't reverse", (() => { const g3 = game("snake"); g3.tick(1 / 60, held(["left"])); return f(g3, "dx") === 1; })());
@@ -3724,7 +3757,7 @@ const f = (g, k) => g.state.field(k);
   const g = game("breakout");
   ok("breakout: 40 bricks", f(g, "bricks").count() === 40);
   const b1 = f(g, "bricks").part(1), b40 = f(g, "bricks").part(40);
-  ok("breakout: wall layout", b1.field("x") === 4 && b1.field("y") === 60 && b40.field("x") === 312 && b40.field("y") === 140, [S.fmt(b1), S.fmt(b40)]);
+  ok("breakout: wall layout", b1.field("x") === 4 && b1.field("y") === 60 && b40.field("x") === 312 && b40.field("y") === 140, [S.format(b1), S.format(b40)]);
   for (let t = 0; t < 3000; t++) { g.down(f(g, "ball").field("x"), 400); g.tick(1 / 60); }
   ok("breakout: bricks break and score", f(g, "bricks").count() < 40 && f(g, "score") === 40 - f(g, "bricks").count(), [f(g, "bricks").count(), f(g, "score")]);
   ok("breakout: following the ball keeps lives", f(g, "lives") === 3, f(g, "lives"));
@@ -3735,14 +3768,14 @@ const f = (g, k) => g.state.field(k);
   for (let t = 0; t < 400 && !lost; t++) { g3.down(0, 400); g3.tick(1 / 60); if (f(g3, "lives") < prev) { lost++; prev = f(g3, "lives"); } }
   for (let t = 0; t < 20; t++) { g3.down(0, 400); g3.tick(1 / 60); if (f(g3, "lives") < prev) { lost++; prev = f(g3, "lives"); } }
   ok("breakout: one miss costs one life", lost === 1 && f(g3, "lives") === 2, [lost, f(g3, "lives")]);
-  ok("breakout: the ball comes back after a miss", typeof f(g2, "ball").field("x") === "number", S.fmt(f(g2, "ball")));
+  ok("breakout: the ball comes back after a miss", typeof f(g2, "ball").field("x") === "number", S.format(f(g2, "ball")));
 }
 
 // ---------------- Fireflies
 {
   const g = game("fireflies");
   for (let t = 0; t < 300; t++) g.tick(1 / 60);
-  ok("fireflies: they hatch up to the count, stored as columns", f(g, "flies").count() === 400 && f(g, "flies") instanceof S.ColCell, f(g, "flies").count());
+  ok("fireflies: they hatch up to the count, stored as columns", f(g, "flies").count() === 400 && f(g, "flies") instanceof S.ColumnCell, f(g, "flies").count());
   const spread = () => { const p = S.partsOf(f(g, "flies")); return p.reduce((a, r) => a + Math.hypot(r.field("x") - 80, r.field("y") - 120), 0) / p.length; };
   const before = spread();
   g.down(80, 120); for (let t = 0; t < 240; t++) g.tick(1 / 60);
@@ -3768,11 +3801,11 @@ const f = (g, k) => g.state.field(k);
   const live = b => S.partsOf(b).filter(v => v === 1).length;
   ok("life: starts with the glider and the R-pentomino", live(f(g, "board")) === 10);
   const blink = L.makeGame(fs.readFileSync(__dirname + "/examples/life.sp", "utf8").replace(/seed : .*/, "seed : [[5, 5], [6, 5], [7, 5]]"));
-  const b0 = S.fmt(f(blink, "board"));
+  const b0 = S.format(f(blink, "board"));
   for (let t = 0; t < 7; t++) blink.tick(1 / 60);
-  const b1 = S.fmt(f(blink, "board"));
+  const b1 = S.format(f(blink, "board"));
   for (let t = 0; t < 6; t++) blink.tick(1 / 60);
-  ok("life: a blinker flips and flips back", f(blink, "generation") === 2 && b1 !== b0 && S.fmt(f(blink, "board")) === b0, f(blink, "generation"));
+  ok("life: a blinker flips and flips back", f(blink, "generation") === 2 && b1 !== b0 && S.format(f(blink, "board")) === b0, f(blink, "generation"));
   const n0 = live(f(g, "board"));
   g.down(200, 300); g.tick(1 / 60); g.move(230, 300); g.tick(1 / 60);
   ok("life: drawing brings squares to life and stops time", live(f(g, "board")) === n0 + 2 && f(g, "generation") === 0, live(f(g, "board")));
@@ -3905,7 +3938,7 @@ const f = (g, k) => g.state.field(k);
 // ---------------- ACE ledger: SQLite (node:sqlite here, sql.js on the page)
 {
   const { sqliteCell } = require("./sqlite-host.js");
-  const saved = S.G.db; S.G.db = sqliteCell(":memory:");
+  const saved = S.globals.db; S.globals.db = sqliteCell(":memory:");
   const src = fs.readFileSync(__dirname + "/examples/ace-ledger.sp", "utf8");
   const day = () => { const lines = []; S.setOut(x => lines.push(x)); S.load(src).run(S.BANG); S.setOut(() => {}); return lines; };
   const d1 = day(), d2 = day(), d3 = day();
@@ -3913,8 +3946,8 @@ const f = (g, k) => g.state.field(k);
   ok("ace-ledger: what's workable is derived from the rows", d3.some(l => l.startsWith("[>] Place rebar")) && d3.some(l => l.startsWith("[ ] Pre-pour inspection")));
   for (let k = 0; k < 4; k++) day();
   const end = day();
-  ok("ace-ledger: it finishes, and the log keeps every day", end.includes("the pedestal is finished") && S.G.db.raw.prepare("select count(*) n from events").get().n === 6);
-  S.G.db = saved;
+  ok("ace-ledger: it finishes, and the log keeps every day", end.includes("the pedestal is finished") && S.globals.db.raw.prepare("select count(*) n from events").get().n === 6);
+  S.globals.db = saved;
 }
 
 // ace-risk: a million runs through spork (decision 91); with fewer runs, the whole program prints the same with collect
@@ -3966,7 +3999,7 @@ const rows=[];
 for(const [name,b] of Object.entries(B)){
   const c3=S3.load(b.s3);const r3=best(()=>{c3._a=null;return c3.field("result")},9);
   const fo=old(b.old);const ro=best(fo,9);const rj=best(b.js,9);
-  rows.push([name,r3[0].toFixed(1),ro[0].toFixed(1),rj[0].toFixed(2),S3.fmt(r3[1]),String(ro[1]),String(rj[1])]);
+  rows.push([name,r3[0].toFixed(1),ro[0].toFixed(1),rj[0].toFixed(2),S3.format(r3[1]),String(ro[1]),String(rj[1])]);
 }
 // game: ms per frame
 const src=fs.readFileSync('examples/sprout.sp','utf8');
@@ -4023,7 +4056,7 @@ for(let f=0;f<1200;f++){
   if(f%40===0){x=40+Math.random()*280;g.down(x,300)} if(f%40===20)g.up();
   g.tick(1/60); if(f%300===0){const d=g.draw();console.log('frame',f,'draw calls',d.length)}
 }
-const s=g.state;const show=k=>S.fmt(s.field(k));
+const s=g.state;const show=k=>S.format(s.field(k));
 console.log('score',show('score'),'height',show('height'),'drops',s.field('drops').count(),'bugs',s.field('bugs').count(),'sparks',s.field('sparks').count(),'over',show('over'));
 console.log('effects',JSON.stringify(eff));
 ````
@@ -4039,11 +4072,11 @@ const src=fs.readFileSync('examples/sprout.sp','utf8');
 const g=L.makeGame(src);
 g.down(100,300);for(let f=0;f<200;f++)g.tick(1/60);
 // replay: frame 150 re-run with its recorded random numbers gives the same next state
-const i=150,a=S.fmt(g.history[i+1].state),b=S.fmt(g.replayFrom(i,1/60));
+const i=150,a=S.format(g.history[i+1].state),b=S.format(g.replayFrom(i,1/60));
 console.log('replay identical:',a===b);
 // rewind is free: old states are untouched values
-const before=S.fmt(g.history[50].state);g.rewind(50);for(let f=0;f<30;f++)g.tick(1/60);
-console.log('history kept its old states:',S.fmt(g.history[50].state)===before);
+const before=S.format(g.history[50].state);g.rewind(50);for(let f=0;f<30;f++)g.tick(1/60);
+console.log('history kept its old states:',S.format(g.history[50].state)===before);
 // hot-swap: change update code only -> score and drops carry over
 const sc=g.state.field('score'),dn=g.state.field('drops').count();
 g.swap(src.replace('beep [880, 0.06]','beep [440, 0.06]'));
@@ -6064,15 +6097,15 @@ body.t-out #out{display:block}body.t-st #st{display:block}
 <div id="modal"><div id="mBox"><div class="mh"><h2 id="mTitle"></h2><button class="x" data-close aria-label="Close">✕</button></div><div id="mBody"></div></div></div>
 <div id="toast"></div><div id="scrubTip"></div>
 
-<script src="sprout3.js?v=20261120i"></script>
-<script src="kernels.js?v=20261120i"></script>
-<script src="live3.js?v=20261120i"></script>
-<script src="sqlite-web.js?v=20261120i"></script>
-<script src="gpu-paint.js?v=20261120i"></script>
-<script src="gpu-spork.js?v=20261120i"></script>
+<script src="sprout3.js?v=20261120j"></script>
+<script src="kernels.js?v=20261120j"></script>
+<script src="live3.js?v=20261120j"></script>
+<script src="sqlite-web.js?v=20261120j"></script>
+<script src="gpu-paint.js?v=20261120j"></script>
+<script src="gpu-spork.js?v=20261120j"></script>
 <script>
 "use strict";
-const V="20261120i";
+const V="20261120j";
 const $=id=>document.getElementById(id);
 const S=window.Sprout3,L=window.Sprout3Live;
 const GW=360,GH=480;
@@ -6127,10 +6160,10 @@ const msgOf=e=>String(e&&e.message||e);
 const needsDb=src=>/(^|[\s\[(])db\s+(query|run)\b/m.test(src);
 let dbP=null;
 function ensureDb(){return dbP||(dbP=new Promise((ok,no)=>{const sc=document.createElement("script");sc.src="vendor/sqljs/sql-wasm.js?v="+V;sc.onload=ok;sc.onerror=()=>no(new Error("SQLite couldn't be loaded"));document.head.appendChild(sc)})
- .then(()=>window.SproutSqlite.openSqlite({base:"vendor/sqljs/",onWrite:()=>{if(TAB==="st")renderState()}})).then(cell=>{S.G.db=cell;return cell}))}
+ .then(()=>window.SproutSqlite.openSqlite({base:"vendor/sqljs/",onWrite:()=>{if(TAB==="st")renderState()}})).then(cell=>{S.globals.db=cell;return cell}))}
 function afterBuild(){if(document.body.classList.contains("prog")){tab("out");$("out").scrollTop=0}renderState()}
 function build(src,fresh){
- if(needsDb(src)&&!S.G.db){$("pSub").textContent="Opening SQLite…";ensureDb().then(()=>{if(code===src&&build(src,fresh))afterBuild()},e=>setErr({line:0,msg:msgOf(e)}));return false}
+ if(needsDb(src)&&!S.globals.db){$("pSub").textContent="Opening SQLite…";ensureDb().then(()=>{if(code===src&&build(src,fresh))afterBuild()},e=>setErr({line:0,msg:msgOf(e)}));return false}
  let cell;try{cell=S.load(src)}catch(e){setErr({line:e.line||0,msg:msgOf(e)});return false}
  if(cell.field("update")===S.UNSET){
   game=null;document.body.classList.add("prog");clearOut();
@@ -6144,11 +6177,11 @@ function build(src,fresh){
    setErr({line:e.line||0,msg:msgOf(e)});return false}
   finally{if(GSP)GSP.mayWait(false)}
   sporks=S.sporkTally().slice();
-  speedNotes=cell.speed||[];running=src;goodSrc=src;setErr(null);swapped();renderState();speedMarks();return true}
+  speedNotes=cell.speedNotes||[];running=src;goodSrc=src;setErr(null);swapped();renderState();speedMarks();return true}
  document.body.classList.remove("prog");
  try{if(game&&!fresh)game.swap(src);else{game=L.makeGame(src,{W:GW,H:GH,onEffect});setPaused(false)}}
  catch(e){setErr({line:e.line||0,msg:msgOf(e)});return false}
- speedNotes=game.speed||[];running=src;goodTicks=0;setErr(null);swapped();speedMarks();return true}
+ speedNotes=game.speedNotes||[];running=src;goodTicks=0;setErr(null);swapped();speedMarks();return true}
 function dropPrints(){document.querySelectorAll("#out .ln.print").forEach(x=>x.remove())}
 function swapped(){lastSwap=new Date();subUI();progUI()}
 // a program that only prints shows its cover as the artwork, and its main button runs it again
@@ -6166,7 +6199,7 @@ function subUI(){const s=$("pSub");
 
 // ---------- input: touch and mouse are events; held keys go in with each tick
 const P={x:GW/2,y:GH/2,down:false};const KEYS=new Set();let swipe=null,swipeTicks=0,heldKey="",heldC=null;
-function heldCell(){const ks=[...KEYS];if(swipeTicks>0)ks.push(swipe);const k=ks.sort().join(",");if(k!==heldKey||!heldC){heldKey=k;heldC=S.VFM([],new Map(ks.map(x=>[x,true])))}return heldC}
+function heldCell(){const ks=[...KEYS];if(swipeTicks>0)ks.push(swipe);const k=ks.sort().join(",");if(k!==heldKey||!heldC){heldKey=k;heldC=S.valueCellOf([],new Map(ks.map(x=>[x,true])))}return heldC}
 const toGame=e=>{const r=cv.getBoundingClientRect();P.x=(e.clientX-r.left)/r.width*GW;P.y=(e.clientY-r.top)/r.height*GH};
 let sx=0,sy=0;
 cv.addEventListener("pointerdown",e=>{audio();cv.setPointerCapture(e.pointerId);toGame(e);sx=P.x;sy=P.y;P.down=true;if(document.activeElement===ta)ta.blur();if(game&&!paused)try{game.down(P.x,P.y)}catch(_){}});
@@ -6187,7 +6220,7 @@ addEventListener("keyup",e=>{const k=KEYNAME[e.key]||e.key.toLowerCase();KEYS.de
 addEventListener("blur",()=>KEYS.clear());
 
 // ---------- drawing what draw asked for
-const col=c=>typeof c==="string"?c:S.fmt(c);
+const col=c=>typeof c==="string"?c:S.format(c);
 function paint(ctx,list){
  for(const [name,a] of list){
   switch(name){
@@ -6199,7 +6232,7 @@ function paint(ctx,list){
   }
  }
 }
-function drawText(ctx,a){ctx.fillStyle=col(a[4]);ctx.font="600 "+(+a[3]||16)+'px -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,"Segoe UI",sans-serif';ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(S.fmt(a[0]),a[1],a[2])}
+function drawText(ctx,a){ctx.fillStyle=col(a[4]);ctx.font="600 "+(+a[3]||16)+'px -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,"Segoe UI",sans-serif';ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(S.format(a[0]),a[1],a[2])}
 // WebGPU: shapes on the GPU canvas underneath in one draw call, text on the 2D canvas on top
 let GPU=null,useGpu=LS.get("sprout3.gpu",true);
 function rendererUI(){const on=!!(GPU&&useGpu),b=$("bGpu");document.body.classList.toggle("gpu",on);b.hidden=!GPU;b.textContent=on?"WebGPU":"Canvas";b.classList.toggle("on",on)}
@@ -6349,7 +6382,7 @@ const endScrub=e=>{if(!scrub)return;const was=scrub;scrub=null;document.body.cla
 ta.addEventListener("pointerup",endScrub);ta.addEventListener("pointercancel",endScrub);
 
 // ---------- the state view: every field of the game right now
-function brief(v){if(S.isCell(v)&&!(v instanceof S.Cell&&v.takesInput())){const n=v.count();if(n>6)return n+" parts";const s=S.fmt(v);return s.length>140?s.slice(0,140)+"…]":s}const s=S.fmt(v);return s.length>140?s.slice(0,140)+"…":s}
+function brief(v){if(S.isCell(v)&&!(v instanceof S.Cell&&v.takesInput())){const n=v.count();if(n>6)return n+" parts";const s=S.format(v);return s.length>140?s.slice(0,140)+"…]":s}const s=S.format(v);return s.length>140?s.slice(0,140)+"…":s}
 function speedHTML(){if(!speedNotes.length)return"";const fast=speedNotes.filter(n=>n.fast).length;
  return'<div class="sh">Loops over lists</div><div class="foot" style="padding-top:0">'+fast+" of "+speedNotes.length+" run as tight loops: over columns (a list of 32 or more records of numbers, one array per field), over a list of numbers, fused with the steps after them, or as a spork kernel. The others run item by item, which is fine for short lists.</div>"+
   speedNotes.slice().sort((a,b)=>a.line-b.line).map(n=>'<div class="row sp'+(n.fast?" f":"")+'"><span class="k2">line '+n.line+" · "+n.word+'</span><span class="v">'+(n.fast?(n.word==="spork"?"worked out ahead into one kernel":/ /.test(n.word)?"fused into one loop, no lists in between":"runs as a tight loop"):"item by item: "+esc(n.why))+"</span></div>").join("")}
@@ -6359,10 +6392,10 @@ function sporkHTML(){if(!sporks.length&&!/\bspork\b/.test(code))return"";
  const gpu=GSP?'Big sporks (100,000 runs or more) in a program that prints can run on the GPU ('+esc(GSP.adapter)+'): <a href="#" id="gspT" style="color:var(--acc2);font-weight:600">'+(useGsp?"on":"off")+"</a>. The GPU does 32-bit maths, so the last digits can differ from SIMD, which gives the same bits as JavaScript."
   :"WebGPU isn't available here"+(gspWhy?" ("+esc(gspWhy)+")":"")+", so spork runs on WebAssembly SIMD.";
  return'<div class="sh">Spork</div><div class="foot" style="padding-top:0">A cell given to spork is worked out ahead into one kernel of number maths, run for every input at once. '+gpu+"</div>"+rows}
-function dbHTML(){const db=S.G.db;if(!db||!needsDb(code))return"";let t=[];try{t=db.tables()}catch(e){}
+function dbHTML(){const db=S.globals.db;if(!db||!needsDb(code))return"";let t=[];try{t=db.tables()}catch(e){}
  return'<div class="sh">SQLite</div><div class="foot" style="padding-top:0">Kept in this browser between visits. <a href="#" id="dbClear" style="color:var(--acc2);font-weight:600">Clear the database</a></div>'+
   (t.length?t.map(([n,c])=>'<div class="row"><span class="k2">'+esc(n)+'</span><span class="v">'+c+" row"+(c===1?"":"s")+"</span></div>").join(""):'<div class="foot">No tables yet.</div>')}
-function wireDb(){const a=$("dbClear");if(a)a.onclick=async e=>{e.preventDefault();if(!confirm("Clear the SQLite database kept in this browser?"))return;await S.G.db.clear();toast("Database cleared");if(build(code,true))afterBuild()}}
+function wireDb(){const a=$("dbClear");if(a)a.onclick=async e=>{e.preventDefault();if(!confirm("Clear the SQLite database kept in this browser?"))return;await S.globals.db.clear();toast("Database cleared");if(build(code,true))afterBuild()}}
 // only replace what's shown when it changed, so a link isn't rebuilt under a click
 function renderState(){const el=$("st"),h=stateHTML();if(el._h!==h){el.innerHTML=h;el._h=h;wireDb();wireGsp()}}
 function wireGsp(){const a=$("gspT");if(a)a.onclick=e=>{e.preventDefault();useGsp=!useGsp;LS.set("sprout3.gpuspork",useGsp);gspUI();toast(useGsp?"Big sporks run on the GPU":"Sporks run on WebAssembly SIMD");if(build(code,true))afterBuild()}}
@@ -6559,12 +6592,12 @@ tr:last-child td{border-bottom:0}
 <div class="card"><table id="t-sql"><tr><th>work</th><th>ms</th><th>rows</th></tr></table></div>
 </main>
 
-<script src="sprout3.js?v=20261120i"></script>
-<script src="kernels.js?v=20261120i"></script>
-<script src="live3.js?v=20261120i"></script>
-<script src="gpu-paint.js?v=20261120i"></script>
-<script src="sqlite-web.js?v=20261120i"></script>
-<script src="gpu-spork.js?v=20261120i"></script>
+<script src="sprout3.js?v=20261120j"></script>
+<script src="kernels.js?v=20261120j"></script>
+<script src="live3.js?v=20261120j"></script>
+<script src="gpu-paint.js?v=20261120j"></script>
+<script src="sqlite-web.js?v=20261120j"></script>
+<script src="gpu-spork.js?v=20261120j"></script>
 <script>
 "use strict";
 const $=id=>document.getElementById(id),S=window.Sprout3,L=window.Sprout3Live;
@@ -6587,13 +6620,13 @@ async function benchLang(){
  for(const [name,b] of Object.entries(LANG)){status("language: "+name);await sleep(10);
   // the last line runs inside a cell that takes an input, so it is worked out again on every run
   const c=S.load(b.src.replace(/^result : (.*)$/m,"f : [k | $1]")).field("f");const [t,r]=best(()=>c.run(1),7);const [tj,rj]=best(b.js,7);
-  row("t-lang",[name,ms(t),ms(tj),(t/tj).toFixed(1)+"×",S.fmt(r)+(S.fmt(r)===String(rj)?"":" ≠ "+rj)])}}
+  row("t-lang",[name,ms(t),ms(tj),(t/tj).toFixed(1)+"×",S.format(r)+(S.format(r)===String(rj)?"":" ≠ "+rj)])}}
 
 // ---------- the games
 const GAMES=["sprout","fireflies","orbit","hop","life","bounce","snake","breakout","particles","ace-board","ace-site","ace-crews"];
 async function benchGames(){
  for(const name of GAMES){status("games: "+name);await sleep(10);
-  const src=await (await fetch("examples/"+name+".sp?v=20261120i")).text();const g=L.makeGame(src,{W:GW,H:GH});
+  const src=await (await fetch("examples/"+name+".sp?v=20261120j")).text();const g=L.makeGame(src,{W:GW,H:GH});
   const play=n=>{for(let t=0;t<n;t++){if(t%50===0)g.down(100+(t%160),300);if(t%50===25)g.up();g.tick(1/60);g.draw()}};
   play(240);const [t]=best(()=>play(120),5);row("t-games",[name,ms(t/120),String(g.draw().length)])}}
 
@@ -6625,8 +6658,8 @@ async function benchParticles(){
 // ---------- SQLite
 async function benchSql(){
  status("SQLite: loading");
- await new Promise((ok,no)=>{const s=document.createElement("script");s.src="vendor/sqljs/sql-wasm.js?v=20261120i";s.onload=ok;s.onerror=no;document.head.appendChild(s)});
- const db=await SproutSqlite.openSqlite({base:"vendor/sqljs/",name:"sprout3-bench",fresh:true});S.G.db=db;const raw=db.raw();
+ await new Promise((ok,no)=>{const s=document.createElement("script");s.src="vendor/sqljs/sql-wasm.js?v=20261120j";s.onload=ok;s.onerror=no;document.head.appendChild(s)});
+ const db=await SproutSqlite.openSqlite({base:"vendor/sqljs/",name:"sprout3-bench",fresh:true});S.globals.db=db;const raw=db.raw();
  const N=10000;
  const [ti]=best(()=>{raw.run("drop table if exists t");raw.run("create table t (id integer primary key, zone integer, hours real, name text)");raw.run("begin");
   const st=raw.prepare("insert into t values (?, ?, ?, ?)");for(let i=1;i<=N;i++)st.run([i,i%20,(i*7)%40+1,"atom "+i]);st.free();raw.run("commit")},3);
@@ -6637,21 +6670,21 @@ async function benchSql(){
  const q=S.load('f : [k | db query "select * from t"]').field("f");const [ts,r]=best(()=>q.run(1),5);
  row("t-sql",["db query: 10,000 rows into Sprout records",ms(ts),r.count().toLocaleString()]);
  const a=S.load('f : [k | db query "select * from t" keep [r | r zone = 3] collect [r | r hours] fold [0, [t h | t + h]]]').field("f");const [ta,v]=best(()=>a.run(1),5);
- row("t-sql",["the same, then keep, collect and fold in Sprout",ms(ta),"total "+S.fmt(v)]);
+ row("t-sql",["the same, then keep, collect and fold in Sprout",ms(ta),"total "+S.format(v)]);
  const w=S.load('f : [k | db query ["select sum(hours) as h from t where zone = ?", [3]] first h]').field("f");const [tw,v2]=best(()=>w.run(1),5);
- row("t-sql",["the same sum, done by SQLite",ms(tw),"total "+S.fmt(v2)]);
+ row("t-sql",["the same sum, done by SQLite",ms(tw),"total "+S.format(v2)]);
  await db.clear()}
 
 // ---------- Monte Carlo: the ace-risk run, five ways
 async function benchMonteCarlo(){
- const src=(await (await fetch("examples/ace-risk.sp?v=20261120i")).text()).split("\nresults :")[0];
+ const src=(await (await fetch("examples/ace-risk.sp?v=20261120j")).text()).split("\nresults :")[0];
  const c=S.load(src+"\nA : [k | range k spork one-run]\nB : [k | range k collect one-run]"),A=c.field("A"),B=c.field("B");
  // the kernel itself, to hand straight to the GPU
  let K=null;S.sporkWays({gpu:k=>{K=k;return undefined}});A.run(16);S.sporkWays({gpu:null});
  let gs=null,why="";try{gs=await SproutGpuSpork.makeGpuSpork()}catch(e){why=e.message||String(e)}
  $("mc-note").textContent=(K?"One run is "+K.nodes.length+" steps. ":"")+(gs?"WebGPU: "+gs.adapter+".":"WebGPU isn't available here"+(why?" ("+why+")":"")+", so the GPU isn't timed.");
  status("monte carlo: ordinary");await sleep(10);
- S.columns(false);const [to]=best(()=>B.run(2000),1);S.columns(true);
+ S.fastPaths(false);const [to]=best(()=>B.run(2000),1);S.fastPaths(true);
  const W=S.sporkWays({}).wasm;
  for(const n of [100000,1000000,4000000]){status("monte carlo: "+n.toLocaleString());await sleep(10);
   S.sporkWays({wasm:null});const [tj]=best(()=>A.run(n),n>1e6?1:3);

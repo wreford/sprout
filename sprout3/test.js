@@ -5,7 +5,7 @@ const ok = (name, cond) => { if (cond) pass++; else { fail++; console.log("FAIL"
 const logs = []; S.setLog(m => logs.push(m));
 const out = []; S.setOut(s => out.push(s));
 const run = src => { out.length = 0; S.load(src).run(S.BANG); return out.slice(); };
-const val = src => S.fmt(S.load("result : " + src).field("result"));
+const val = src => S.format(S.load("result : " + src).field("result"));
 
 // the tour gives exactly these lines
 const want = ["1","1","480","20","true","7","7","3","42","long","anon","[x : 1, y : 5]","[3, 1, 4, 9]","n=4","p is at 1, 2",
@@ -25,7 +25,7 @@ ok("F a number is input, not index", val("[3, 1, 4] 2") === "4");
 ok("71 [[x]] holds a cell", val("[[1, 2]] @ 1") === "[1, 2]");
 ok("71 a branch can give back a record", val("true [[x : 1]] else [7]") === "[x : 1]");
 ok("60 [x | [..]] keeps the inner cell", val("([x | [a : x]] 5) a") === "5");
-ok("51 lazy once", S.fmt(S.load("r : [rand [0, 1000]]\nresult : (r @ 1) = (r @ 1)").field("result")) === "true");
+ok("51 lazy once", S.format(S.load("r : [rand [0, 1000]]\nresult : (r @ 1) = (r @ 1)").field("result")) === "true");
 ok("51 run is fresh", val("([] .. [1]) @ 1") === "1");
 ok("81 template [ ]", val('"a[1 + 1]b"') === "a2b");
 { const before = logs.length;
@@ -46,12 +46,12 @@ ok("84 match only works out the answer it picks", val('match [1, [1, "one", 2, n
 { const lineOf = src => { try { S.load(src); return 0; } catch (e) { return e.line; } };
   ok("an unclosed [ is reported where it opened", lineOf("a : 1\nb : [2, 3\nc : 4\nd : [5]\ne : 6") === 2);
   ok("an unclosed ( too", lineOf("a : 1\nb : (2 + 3\nc : 4") === 2); }
-{ const sp = S.load("xs : []\nf : [p | p x > 1]\na : xs collect [p | p with [x : p x + 1]]\nb : xs keep [p | p x > 1]\nc : xs keep [p | f p]\nd : xs collect [p | p with [x : rand [0, 1]]]\ne : xs keep [p | p name = \"a\"]").speed;
+{ const sp = S.load("xs : []\nf : [p | p x > 1]\na : xs collect [p | p with [x : p x + 1]]\nb : xs keep [p | p x > 1]\nc : xs keep [p | f p]\nd : xs collect [p | p with [x : rand [0, 1]]]\ne : xs keep [p | p name = \"a\"]").speedNotes;
   const at = l => sp.find(n => n.line === l);
   ok("86 speed notes: a with of number maths runs over columns", at(3).fast && at(3).word === "collect" && at(4).fast && at(4).word === "keep");
   ok("86 speed notes: say why a body runs item by item", at(5).fast && /random/.test(at(6).why) && !at(6).fast, sp.map(n => n.line + " " + n.why)); }
 // loop fusion (decision 95): a run of collect, keep, fold and length is one loop, with the same answer as the steps one by one
-{ const both = src => { const a = S.fmt(S.load(src).field("result")); S.columns(false); const b = S.fmt(S.load(src).field("result")); S.columns(true); return [a, b]; };
+{ const both = src => { const a = S.format(S.load(src).field("result")); S.fastPaths(false); const b = S.format(S.load(src).field("result")); S.fastPaths(true); return [a, b]; };
   const fused = {
     "collect, keep and fold over range": "result : range 1000 collect [n | n * n] keep [n | n % 3 = 0] fold [0, [t n | t + (n / 7)]]",
     "keep then length counts without a list": "xs : range 500 collect [n | noise [n, 1]]\nresult : xs keep [u | u < 0.25] length",
@@ -72,36 +72,36 @@ ok("84 match only works out the answer it picks", val('match [1, [1, "one", 2, n
   for (const src of ["result : range 200 collect [n | clamp [n * 3, 50, 400] + (toward [0, 10, n / 200]) + (dist [0, 0, n, 7])]",
       "result : range 120 collect [n | cond [n < 30, n * 2, n < 60, 0 - n, any, n / 4]] fold [0, [t x | t + x]]",
       "result : range 90 collect [n | match [n % 3, [0, 10, 1, 20, any, 30]]] keep [x | x > 15] length"]) {
-    const [a, b] = both(src); ok("97 fusion: library cells inline: " + src.slice(9, 40), a === b && a !== "false" && S.load(src).speed.every(x => x.fast), [a.slice(0, 50), b.slice(0, 50)]); }
+    const [a, b] = both(src); ok("97 fusion: library cells inline: " + src.slice(9, 40), a === b && a !== "false" && S.load(src).speedNotes.every(x => x.fast), [a.slice(0, 50), b.slice(0, 50)]); }
   // each with a host word ends a fused run: the same calls, in the same order
-  { const calls = [], host = { dot: new S.Native("dot", a => { calls.push(S.fmt(a)); return false; }, true) };
-    host.dot.direct = (x, y, c) => { calls.push("[" + S.fmt(x) + ", " + S.fmt(y) + ", " + c + "]"); return false; };
+  { const calls = [], host = { dot: new S.Native("dot", a => { calls.push(S.format(a)); return false; }, true) };
+    host.dot.direct = (x, y, c) => { calls.push("[" + S.format(x) + ", " + S.format(y) + ", " + c + "]"); return false; };
     const src = "rs : range 50 collect [n | [x : n, y : n * 2]]\nresult : rs keep [r | r x % 3 = 0] each [r | r x > 20 [dot [r x, r y, \"red\"]] else [dot [r y, r x, \"blue\"]]]";
     const run = () => { calls.length = 0; S.load(src, { host }).field("result"); return calls.slice(); };
     logs.length = 0;
-    const a = run(), notes = S.load(src, { host }).speed; S.columns(false); const b = run(); S.columns(true);
+    const a = run(), notes = S.load(src, { host }).speedNotes; S.fastPaths(false); const b = run(); S.fastPaths(true);
     // dot gives false, so past x 20 the else draws too (decision 74), fused or not; and the lint says so
     ok("95 fusion: each with host words, the same calls in the same order", a.length === 26 && JSON.stringify(a) === JSON.stringify(b) && notes.some(x => x.word === "keep each" && x.fast), [a.slice(0, 3), b.slice(0, 3), notes]);
     ok("74: a branch that ends with a host word before else is named", logs.some(l => /ends with dot, which gives false/.test(l)), logs); logs.length = 0; }
   ok("97 the moved built-ins: rand, clamp, toward and dist give what they gave", (() => {
     const c = S.load("a : clamp [5, 0, 3]\nb : clamp [-1, 0, 3]\nc : toward [10, 20, 0.25]\nd : dist [0, 0, 3, 4]\ne : rand [10, 20]");
     const e = c.field("e"); return c.field("a") === 3 && c.field("b") === 0 && c.field("c") === 12.5 && c.field("d") === 5 && e >= 10 && e < 20; })());
-  const notes = S.load("result : range 9 collect [n | n * 2] keep [n | n > 4] fold [0, [t n | t + n]]").speed;
+  const notes = S.load("result : range 9 collect [n | n * 2] keep [n | n > 4] fold [0, [t n | t + n]]").speedNotes;
   ok("95 fusion: one speed note for the run", notes.length === 1 && notes[0].word === "collect keep fold" && notes[0].fast, notes); }
 { const n1 = +val("noise [3, 7]"), n2 = +val("noise [3, 7]"), n3 = +val("noise [3, 8]");
   ok("87 noise: the same inputs give the same number, from 0 up to 1", n1 === n2 && n1 !== n3 && n1 >= 0 && n1 < 1);
   const xs = Array.from({ length: 2000 }, (_, k) => +val("noise [" + k + ", 1]")), mean = xs.reduce((a, b) => a + b) / xs.length;
   ok("87 noise: spread evenly", mean > 0.47 && mean < 0.53 && Math.min(...xs) < 0.01 && Math.max(...xs) > 0.99, mean);
   const prog = "ps : range 50 collect [n | [x : n, y : 0]]\nresult : ps collect [p | p with [y : noise [p x, 9]]]";
-  const a = S.load(prog).field("result"); S.columns(false); const b = S.load(prog).field("result"); S.columns(true);
-  ok("87 noise runs inside a column loop, with the same results", a instanceof S.ColCell && S.fmt(a) === S.fmt(b) && S.load(prog).speed.find(n => n.line === 2).fast); }
-{ const both = src => { const a = S.fmt(S.load(src).field("result")); S.columns(false); const b = S.fmt(S.load(src).field("result")); S.columns(true); return [a, b]; };
+  const a = S.load(prog).field("result"); S.fastPaths(false); const b = S.load(prog).field("result"); S.fastPaths(true);
+  ok("87 noise runs inside a column loop, with the same results", a instanceof S.ColumnCell && S.format(a) === S.format(b) && S.load(prog).speedNotes.find(n => n.line === 2).fast); }
+{ const both = src => { const a = S.format(S.load(src).field("result")); S.fastPaths(false); const b = S.format(S.load(src).field("result")); S.fastPaths(true); return [a, b]; };
   ok("fold loop: a sum over range", val("range 1000 fold [0, [t n | t + n]]") === "500500");
-  ok("fold loop: over a list of numbers, with an outside name", S.fmt(S.load("k : 3\nresult : [1, 2, 3, 4] fold [0, [t n | t + (n * k)]]").field("result")) === "30");
+  ok("fold loop: over a list of numbers, with an outside name", S.format(S.load("k : 3\nresult : [1, 2, 3, 4] fold [0, [t n | t + (n * k)]]").field("result")) === "30");
   for (const src of ["result : range 500 fold [0, [t n | t + (n * n) - (t / 7)]]", "result : [1.5, 2, -3, 4] fold [1, [t n | t * n + 1]]", "result : range 40 fold [0, [t n | n > 20 [t + n] else [t - 1]]]", "result : range 64 fold [0, [t n | t + (noise [n, 2])]]"]) {
     const [a, b] = both(src); ok("fold loop: same answer with and without it: " + src, a === b && a !== "false"); }
   ok("fold loop: anything else still works the ordinary way", val('["a", "b"] fold ["", [t n | t .. n]]') === "ab" && val("[1, 2] fold [[], [t n | t .. [n]]]") === "[1, 2]");
-  const sp = S.load("a : range 9 fold [0, [t n | t + n]]\nb : range 9 fold [0, [t n | t .. n]]").speed;
+  const sp = S.load("a : range 9 fold [0, [t n | t + n]]\nb : range 9 fold [0, [t n | t .. n]]").speedNotes;
   ok("fold loop: speed notes say which folds run as a tight loop", sp.find(n => n.line === 1).fast && !sp.find(n => n.line === 2).fast && sp.every(n => n.word === "fold"), sp); }
 // decision 74, decided: else keeps its one rule; a branch whose answer is a test is named, and cond keeps a false answer
 { logs.length = 0;
@@ -117,8 +117,8 @@ ok("84 match only works out the answer it picks", val('match [1, [1, "one", 2, n
     const L = xs || S.load("r : range 300").field("r");
     S.sporkWays({ wasm: W }); const simd = a.run(L), how1 = S.sporkInfo && S.sporkInfo.how; S.sporkWays({ info: null });
     S.sporkWays({ wasm: null }); const js = a.run(L), how2 = S.sporkInfo && S.sporkInfo.how; S.sporkWays({ wasm: W, info: null });
-    const plain = b.run(L), want = S.fmt(plain);
-    return { same: S.fmt(simd) === want && S.fmt(js) === want && S.eq(simd, plain), how: [how1, how2], speed: c.speed };
+    const plain = b.run(L), want = S.format(plain);
+    return { same: S.format(simd) === want && S.format(js) === want && S.equal(simd, plain), how: [how1, how2], speed: c.speedNotes };
   };
   const kernels = {
     "number maths and noise": "f : [n | noise [n, 7] * 10 floor + (n / 3 round) - (n sqrt)]",
@@ -137,15 +137,15 @@ ok("84 match only works out the answer it picks", val('match [1, [1, "one", 2, n
   ok("spork: ace-schedule's Monte Carlo run, same numbers as collect", r.same && r.how[0] === "simd", r.how);
   // a position outside the list, or anything spork can't work out ahead, runs the ordinary way
   ok("spork: a position outside the list falls back", (() => { const r = three("w : [3, 1, 4]\nf : [n | (w @ n) else [0]]"); return r.same && r.how[0] === "collect" && r.how[1] === "collect"; })());
-  ok("collect [r | r f] over columns gives that column", (() => { const c = S.load("rs : range 100 collect [n | [a : n, b : n * 2]]\nA : rs collect [r | r b]\nB : rs collect [r | r b + 0]"); return S.fmt(c.field("A")) === S.fmt(c.field("B")) && c.field("A") instanceof S.NCell; })());
-  const rnd = S.load("f : [n | random + n]\nA : range 5 spork f").speed.find(x => x.word === "spork");
+  ok("collect [r | r f] over columns gives that column", (() => { const c = S.load("rs : range 100 collect [n | [a : n, b : n * 2]]\nA : rs collect [r | r b]\nB : rs collect [r | r b + 0]"); return S.format(c.field("A")) === S.format(c.field("B")) && c.field("A") instanceof S.NumberList; })());
+  const rnd = S.load("f : [n | random + n]\nA : range 5 spork f").speedNotes.find(x => x.word === "spork");
   ok("spork: speed notes say why a cell can't be worked out ahead", rnd && !rnd.fast && /random/.test(rnd.why), rnd);
-  ok("spork: a cell written in place", S.fmt(S.load("A : range 40 spork [n | n * n]").field("A")) === S.fmt(S.load("A : range 40 collect [n | n * n]").field("A")));
+  ok("spork: a cell written in place", S.format(S.load("A : range 40 spork [n | n * n]").field("A")) === S.format(S.load("A : range 40 collect [n | n * n]").field("A")));
   ok("spork: a list of numbers in, and noise bit for bit", (() => { const L = S.load("r : range 64 collect [n | n * 1.37 - 40]").field("r"); return three("f : [n | noise [n, 0 - n]]", L).same; })());
   const sorted = S.load("a : [3, 1, 2] sort\nb : [\"pear\", \"fig\"] sort\nc : range 2000 spork [n | noise [n, 1]] sort");
-  ok("sort: numbers and words", S.fmt(sorted.field("a")) === "[1, 2, 3]" && S.fmt(sorted.field("b")) === "[fig, pear]");
+  ok("sort: numbers and words", S.format(sorted.field("a")) === "[1, 2, 3]" && S.format(sorted.field("b")) === "[fig, pear]");
   const c3 = sorted.field("c"); let up = true; for (let i = 2; i <= 2000; i++) if (c3.part(i) < c3.part(i - 1)) up = false;
-  ok("sort: a spork's numbers, least to most", up && c3.count() === 2000 && c3 instanceof S.NCell); }
+  ok("sort: a spork's numbers, least to most", up && c3.count() === 2000 && c3 instanceof S.NumberList); }
 ok("and/or run a call on their right before checking it", val("[k | k > 1 and ([d | d = 3] k)] 3") === "true" && val("[k | k > 9 or ([d | d = 3] k)] 3") === "true");
 ok("81 ( ) is plain text", val('"rgba(0,0,0,0.5)"') === "rgba(0,0,0,0.5)");
 ok("81 escaped bracket", val('"a\\[b]"') === "a[b]");
@@ -161,9 +161,9 @@ ok("23 cells that take input compare by code", val("[n | n + 1] = [n | n + 1]") 
 ok("24 names filled in", val("(([x | [y | x + y]] 1) = ([x | [y | x + y]] 2))") === "false");
 ok("26 booleans only", val("3 [\"yes\"]") === "false");
 ok("28 miss gives false", val("5 frobnicate") === "false");
-ok("36/37 operator on a cell", S.fmt(S.load("v : [+ : [right | left with [n : left n + (right n)]]]\na : v with [n : 2]\nb : v with [n : 5]\nresult : a + b n").field("result")) === "7");
-ok("38/52 method runs on read", S.fmt(S.load("r : [w : 3, h : 4, area : [left w * (left h)]]\nresult : r area").field("result")) === "12");
-ok("52 a value cell comes back", S.fmt(S.load("g : [ball : [x : 1]]\nresult : g ball x").field("result")) === "1");
+ok("36/37 operator on a cell", S.format(S.load("v : [+ : [right | left with [n : left n + (right n)]]]\na : v with [n : 2]\nb : v with [n : 5]\nresult : a + b n").field("result")) === "7");
+ok("38/52 method runs on read", S.format(S.load("r : [w : 3, h : 4, area : [left w * (left h)]]\nresult : r area").field("result")) === "12");
+ok("52 a value cell comes back", S.format(S.load("g : [ball : [x : 1]]\nresult : g ball x").field("result")) === "1");
 ok("41/42 .. joins", val('"a" .. "b" .. 3') === "ab3" && val("[1] .. [2, 3]") === "[1, 2, 3]");
 ok("45 with merges fields", val("[x : 1, y : 2] with [y : 9]") === "[x : 1, y : 9]");
 ok("46 else", val("false else 7") === "7" && val("4 else 7") === "4");
@@ -172,9 +172,9 @@ ok("62 catch: then gives false", val("true [false] else [\"b\"]") === "b");
 ok("35 match", val('match [2, [1, "one", 2, "two", any, "many"]]') === "two" && val('match [9, [1, "one", any, "many"]]') === "many");
 ok("55 collect keep fold", val("range 5 collect [n | n * n] keep [n | n > 4] fold [0, [t n | t + n]]") === "50");
 ok("29 times", run("3 times [_ print]").join() === "1,2,3");
-ok("59 indent is a cell", S.fmt(S.load("box :\n  w : 3\n  h : 4\nresult : box h").field("result")) === "4");
-ok("61 named inputs with an indented body", S.fmt(S.load("f : [n |\n  m : n * 2\n  m + 1\n]\nresult : f 5").field("result")) === "11");
-ok("25 self-recursion and tail calls", S.fmt(S.load("count : [n acc | n = 0 [acc] else [count [n - 1, acc + n]]]\nresult : count [100000, 0]").field("result")) === "5000050000");
+ok("59 indent is a cell", S.format(S.load("box :\n  w : 3\n  h : 4\nresult : box h").field("result")) === "4");
+ok("61 named inputs with an indented body", S.format(S.load("f : [n |\n  m : n * 2\n  m + 1\n]\nresult : f 5").field("result")) === "11");
+ok("25 self-recursion and tail calls", S.format(S.load("count : [n acc | n = 0 [acc] else [count [n - 1, acc + n]]]\nresult : count [100000, 0]").field("result")) === "5000050000");
 ok("13 bound twice is an error", (() => { try { S.load("a : 1\na : 2"); return false; } catch (e) { return /bound twice/.test(e.message); } })());
 ok("50 every and wave", val("every [0.5, 1.0, 0.1]") === "true" && val("every [0.5, 0.9, 0.1]") === "false");
 
@@ -195,8 +195,8 @@ ok("35 match with no match gives false", val('match [9, [1, "one"]]') === "false
   process.removeAllListeners("warning");
   const db = sqliteCell(":memory:");
   db.raw.exec("create table atoms(id integer, zone integer, hours real); insert into atoms values (1, 3, 8), (2, 3, 4), (3, 5, 2);");
-  S.G.db = db;
-  ok("78 sqlite reads give cells", S.fmt(S.load('result : db query ["select hours from atoms where zone = ?", [3]] collect [r | r hours] fold [0, [t h | t + h]]').field("result")) === "12");
+  S.globals.db = db;
+  ok("78 sqlite reads give cells", S.format(S.load('result : db query ["select hours from atoms where zone = ?", [3]] collect [r | r hours] fold [0, [t h | t + h]]').field("result")) === "12");
   const c = S.load('w : [db run ["insert into atoms values (?, ?, ?)", [4, 9, 1]]]');
   S.queueEffects(); c.field("w").run(S.BANG);
   ok("78 writes are queued", db.raw.prepare("select count(*) n from atoms").get().n === 3);
@@ -204,38 +204,38 @@ ok("35 match with no match gives false", val('match [9, [1, "one"]]') === "false
   ok("78 and carried out after", db.raw.prepare("select count(*) n from atoms").get().n === 4);
   S.queueEffects(); c.field("w").run(S.BANG); S.dropEffects();
   ok("78 and dropped on replay", db.raw.prepare("select count(*) n from atoms").get().n === 4);
-  delete S.G.db;
+  delete S.globals.db;
 }
 
 // 82: columns. Lists of number records are stored as columns, with exactly the same results as without them.
 {
-  const both = src => { const a = S.load(src).field("result"); S.columns(false); const b = S.load(src).field("result"); S.columns(true); return [a, b]; };
+  const both = src => { const a = S.load(src).field("result"); S.fastPaths(false); const b = S.load(src).field("result"); S.fastPaths(true); return [a, b]; };
   const [a, b] = both(`step : [rs | rs collect [r | r with [y : r y + 1, z : r x * 2]] keep [r | (r y % 3) != 0 or (r x > 50)]]
 go : [rs k | k = 0 [rs] else [go [step rs, k - 1]]]
 result : go [range 100 collect [n | [x : n, y : 0]], 5]`);
-  ok("82 columns are used", a instanceof S.ColCell && !(b instanceof S.ColCell));
-  ok("82 columns give the same list", S.fmt(a) === S.fmt(b) && S.eq(a, b) && S.eq(b, a) && a.count() === 50);
-  ok("82 a part of a column list is a record", S.fmt(a.part(2)) === "[x : 52, y : 5, z : 104]" && a.part(0) === false && a.part(51) === false);
+  ok("82 columns are used", a instanceof S.ColumnCell && !(b instanceof S.ColumnCell));
+  ok("82 columns give the same list", S.format(a) === S.format(b) && S.equal(a, b) && S.equal(b, a) && a.count() === 50);
+  ok("82 a part of a column list is a record", S.format(a.part(2)) === "[x : 52, y : 5, z : 104]" && a.part(0) === false && a.part(51) === false);
   const [c, d] = both(`xs : range 40 collect [n | [x : n, y : n * 2]]
 result : xs collect [r | r with [x : r x + 1]] .. [[x : 0, y : 0]] .. (range 3 collect [n | [x : n, y : n]])`);
-  ok("82 .. keeps columns", c instanceof S.ColCell && c.count() === 44 && S.fmt(c) === S.fmt(d));
+  ok("82 .. keeps columns", c instanceof S.ColumnCell && c.count() === 44 && S.format(c) === S.format(d));
   const [e, f] = both(`xs : range 40 collect [n | [x : n, name : "a"]]
 result : xs collect [r | r with [x : r x + 1]]`);
-  ok("82 a record with words stays as records", !(e instanceof S.ColCell) && S.fmt(e) === S.fmt(f));
+  ok("82 a record with words stays as records", !(e instanceof S.ColumnCell) && S.format(e) === S.format(f));
   const [g2, h] = both(`xs : range 40 collect [n | [x : n]]
 result : xs collect [r | r with [x : r nope + 1]]`);
-  ok("82 a missing field falls back to the ordinary way", !(g2 instanceof S.ColCell) && S.fmt(g2) === S.fmt(h));
+  ok("82 a missing field falls back to the ordinary way", !(g2 instanceof S.ColumnCell) && S.format(g2) === S.format(h));
   // the particle fountain plays the same with and without columns
   const psrc = fs.readFileSync(__dirname + "/examples/particles.sp", "utf8");
   const play = on => {
-    S.columns(on); const mr = Math.random; let seed = 7; Math.random = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    S.fastPaths(on); const mr = Math.random; let seed = 7; Math.random = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
     const pg = L.makeGame(psrc); for (let t = 0; t < 150; t++) pg.tick(1 / 60);
-    const dr = JSON.stringify(pg.draw()); Math.random = mr; S.columns(true);
+    const dr = JSON.stringify(pg.draw()); Math.random = mr; S.fastPaths(true);
     return [pg.state.field("sparks"), dr];
   };
   const [p1, d1] = play(true), [p2, d2] = play(false);
-  ok("82 particles use columns", p1 instanceof S.ColCell && p1.count() > 1000);
-  ok("82 particles play the same", S.fmt(p1) === S.fmt(p2) && d1 === d2);
+  ok("82 particles use columns", p1 instanceof S.ColumnCell && p1.count() > 1000);
+  ok("82 particles play the same", S.format(p1) === S.format(p2) && d1 === d2);
 }
 
 // the game: events in, states out; effects queued; rewind, replay, hot-swap
@@ -248,7 +248,7 @@ for (let f = 0; f < 900; f++) { if (f % 30 === 0) g.down(60 + (f * 7) % 240, 300
 ok("game scores", maxScore > 0);
 ok("game effects are queued and carried out", fx.includes("beep"));
 ok("game draws", g.draw().length > 5);
-ok("replay is exact", S.fmt(g.history[100].state) === S.fmt(g.history[100].state) && S.fmt(g.history[201].state) === S.fmt(g.replayFrom(200, 1 / 60)));
+ok("replay is exact", S.format(g.history[100].state) === S.format(g.history[100].state) && S.format(g.history[201].state) === S.format(g.replayFrom(200, 1 / 60)));
 const sc = g.state.field("score");
 g.swap(src.replace("beep [880, 0.06]", "beep [660, 0.06]"));
 ok("hot-swap keeps live state", g.state.field("score") === sc);

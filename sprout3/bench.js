@@ -22,7 +22,7 @@ const rows=[];
 for(const [name,b] of Object.entries(B)){
   const c3=S3.load(b.s3);const r3=best(()=>{c3._a=null;return c3.field("result")},9);
   const fo=old(b.old);const ro=best(fo,9);const rj=best(b.js,9);
-  rows.push([name,r3[0].toFixed(1),ro[0].toFixed(1),rj[0].toFixed(2),S3.fmt(r3[1]),String(ro[1]),String(rj[1])]);
+  rows.push([name,r3[0].toFixed(1),ro[0].toFixed(1),rj[0].toFixed(2),S3.format(r3[1]),String(ro[1]),String(rj[1])]);
 }
 // game: ms per frame
 const src=fs.readFileSync('examples/sprout.sp','utf8');

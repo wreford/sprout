@@ -29,7 +29,7 @@ async function saveBytes(name, bytes) {
 // SQL values into Sprout values: there is no null in Sprout, so null is false (decision 21)
 const fromSql = v => v === null || v === undefined ? false : v instanceof Uint8Array ? "[" + v.length + " bytes]" : v;
 // Sprout values into SQL values: true and false are 1 and 0, anything else that isn't a number or text is its printed form
-const toSql = v => v === true ? 1 : v === false ? 0 : typeof v === "number" || typeof v === "string" ? v : S.fmt(v);
+const toSql = v => v === true ? 1 : v === false ? 0 : typeof v === "number" || typeof v === "string" ? v : S.format(v);
 // the argument of query and run: "sql", or ["sql", [params]]
 function split(a) {
   if (typeof a === "string") return [a, []];
@@ -55,16 +55,16 @@ async function openSqlite(opts) {
     const [sql, ps] = split(a), st = db.prepare(sql), out = [];
     try {
       st.bind(ps); let keys = null;
-      while (st.step()) { if (!keys) keys = st.getColumnNames(); const vals = st.get(); out.push(S.VFM([], new Map(keys.map((k, i) => [k, fromSql(vals[i])])))); }
+      while (st.step()) { if (!keys) keys = st.getColumnNames(); const vals = st.get(); out.push(S.valueCellOf([], new Map(keys.map((k, i) => [k, fromSql(vals[i])])))); }
     } finally { st.free(); }
-    return new S.VCell(out);
+    return new S.ValueCell(out);
   });
   const run = new S.Native("run", a => {
     const [sql, ps] = split(a);
     return S.effect(() => { db.run(sql, ps); writes++; save(); if (opts.onWrite) opts.onWrite(sql); });
   }, true);
 
-  const cell = S.VFM([], new Map([["query", query], ["run", run]]));
+  const cell = S.valueCellOf([], new Map([["query", query], ["run", run]]));
   cell.raw = () => db;
   cell.writes = () => writes;
   // what's in it: each table and how many rows it has
