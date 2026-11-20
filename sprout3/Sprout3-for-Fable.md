@@ -90,6 +90,8 @@ The page and `bench.html` need a local web server, such as `python3 -m http.serv
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
+The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
+
 All 189 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected.
 
 ## How to work on it
@@ -116,6 +118,10 @@ All 189 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which p
   - A `fold` block of number maths runs as one plain loop over `range` or a list of numbers (decision 88).
   - In a column `each`, host words take their values one by one, with no argument cell per shape (decision 89).
   - `spork` works a pure cell out ahead into one kernel of number maths (`Spk` in `sprout3.js`): calls inlined, lists, records and words unrolled, tests that change from run to run made into per-run choices. The kernel runs on WebAssembly SIMD (`spkWasmBytes`, f64x2, the same bits as JavaScript), in JavaScript (`spkJS`), or on the GPU (`gpu-spork.js`, 32-bit) (decisions 91 to 93).
+  - A `fold` block of number maths runs as one plain loop over `range` or a list of numbers (decision 88).
+  - In a column `each`, host words take their values one by one, with no argument cell per shape (decision 89).
+  - `spork` works a pure cell out ahead into one kernel of number maths (`Spk` in `sprout3.js`): calls inlined, lists, records and words unrolled, tests that change from run to run made into per-run choices. The kernel runs on WebAssembly SIMD (`spkWasmBytes`, f64x2, the same bits as JavaScript), in JavaScript (`spkJS`), or on the GPU (`gpu-spork.js`, 32-bit) (decisions 91 to 93).
+  - `spork` works a pure cell out ahead into one kernel of number maths (`Spk` in `sprout3.js`): calls inlined, lists, records and words unrolled, tests that change from run to run made into per-run choices. The kernel runs on WebAssembly SIMD (`spkWasmBytes`, f64x2, the same bits as JavaScript), in JavaScript (`spkJS`), or on the GPU (`gpu-spork.js`, 32-bit) (decisions 91 to 93).
 - **Runtime values:** `Cell` (from a literal, lazy), `VCell` (a cell of values: shape plus value array), `RCell` (a lazy `range`), `ColCell` (a list of number records stored as one number array per field), `Native` (a host word), `Waiting` (a prototype method waiting for its right side). `false` is the only falsy value.
 - **Prelude:** a short Sprout program inside `sprout3.js` defines `match`, `cond`, `take`, `rgb`, `rgba`, `every`, `wave` and `frame` in Sprout itself.
 - **`live3.js`, the game loop.** A game file binds `start`, `update` and `draw`. Events (`down`, `move`, `up`, `tick`) fold through `frame update`. Effects are queued during `update` and carried out after it. Random numbers are recorded per tick, so `replayFrom` is exact. Rewind is a list of states, since cells never change. Hot-swap keeps live values whose starting value didn't change.
@@ -136,6 +142,7 @@ All 189 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which p
    - (built since: the editor-side lint that flags slow paths, decision 86)
    - (built since: the editor-side lint that flags slow paths, decision 86)
    - (built since: the editor-side lint that flags slow paths, decision 86)
+   - (built since: the editor-side lint that flags slow paths, decision 86)
 3. **Known rough edges:**
    - The `else` catch: a then-branch that gives `false` also runs the `else` (74). `match` and `cond` no longer fall through on a `false` answer (84).
    - Field/name clash lints fire on the common `update` pattern; rename the local (73).
@@ -145,6 +152,7 @@ All 189 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which p
    - In the browser: fib 25 takes about 1.8 ms, against 0.9 for plain JS; summing 1 to 1,000,000 with `fold` about 0.8 ms, level with plain JS (decision 88); 10,000 records times 20 updates about 3 ms, against 7 for plain JS.
    - 100,000 particles: about 5 ms to update and 5 to 7 ms to build the draw list. Canvas 2D takes 180 ms to draw them; WebGPU takes about 4 ms of CPU to build and submit the frame.
    - SQLite: 10,000 rows into Sprout records with `db query` in about 11 ms.
+   - Monte Carlo (`ace-risk.sp`'s run, five graph walks each): 100,000 runs take about 10 s the ordinary way, 28 ms as a JavaScript kernel and 21 ms on SIMD; a million take about 0.2 s on SIMD. In Node, ace-schedule's run on SIMD is about 3 times the JavaScript kernel.
    - Monte Carlo (`ace-risk.sp`'s run, five graph walks each): 100,000 runs take about 10 s the ordinary way, 28 ms as a JavaScript kernel and 21 ms on SIMD; a million take about 0.2 s on SIMD. In Node, ace-schedule's run on SIMD is about 3 times the JavaScript kernel.
    - Compiling `sprout.sp` takes about 4 ms.
 
@@ -6431,7 +6439,7 @@ async function benchMonteCarlo(){
    // 32-bit maths: a risk roll right at its chance can come out the other way, so count the runs that differ, and compare P50 and P90
    let off=0;const a=simd.cols[0],g=O[0];for(let i=0;i<n;i++)if(Math.abs(a[i]-g[i])>0.01)off++;
    const sa=Float64Array.from(a).sort(),sg=Float64Array.from(g).sort(),q=p=>Math.abs(sa[Math.floor(p*n)]-sg[Math.floor(p*n)]);
-   gap=off+" run"+(off===1?"":"s")+" differ; P50 within "+q(0.5).toExponential(0)+", P90 within "+q(0.9).toExponential(0)+" days"}catch(e){gap=e.message||String(e)}}
+   gap=off+(off===1?" run differs":" runs differ")+"; P50 within "+q(0.5).toExponential(0)+", P90 within "+q(0.9).toExponential(0)+" days"}catch(e){gap=e.message||String(e)}}
   row("t-mc",[n.toLocaleString(),ms(to*n/20000)+" (scaled)",ms(tj),ms(ts),isNaN(tg)?"—":ms(tg),gap])}}
 
 $("run").onclick=async()=>{$("run").disabled=true;RESULTS.length=0;
