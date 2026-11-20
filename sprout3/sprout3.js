@@ -508,8 +508,15 @@ function compile(src, globals) {
 //   note(gen, T, i)   speedNotes notes; prescan(gen, ast) a look over the whole program first
 //   spork(xs, f)      run a spork faster, or null; sortNumbers(a) sort a Float64Array
 //   runtime           names the generated code may call
+//   methods           more prototype methods, by kind: { every, number, text, bool, cell } (the standard words, words.js)
 const LIBRARIES = { cell: null, fuse: null, note: null, prescan: null, spork: null, sortNumbers: null };
-function install(library) { for (const key in library) { if (key === "runtime") Object.assign(RUNTIME, library.runtime); else if (key in LIBRARIES) LIBRARIES[key] = library[key]; } }
+function install(library) {
+  for (const key in library) {
+    if (key === "runtime") Object.assign(RUNTIME, library.runtime);
+    else if (key === "methods") for (const kind in library.methods) Object.assign(PROTOTYPES[kind], library.methods[kind]);
+    else if (key in LIBRARIES) LIBRARIES[key] = library[key];
+  }
+}
 
 // ===================================================================== runtime
 const BANG = { toString: () => "!" };   // "no input" (decisions 58, 69)
@@ -788,6 +795,7 @@ function noiseHash(x, y) {
 
 // ---- text
 function formatValue(value) {
+  if (value !== null && typeof value === "object" && typeof value.sproutText === "function") return value.sproutText();
   if (value === true) return "true"; if (value === false) return "false"; if (value === BANG) return "!"; if (value === ANY) return "any";
   if (typeof value === "number") return String(+value.toFixed(10));
   if (typeof value === "string") return value;
@@ -808,6 +816,9 @@ function joinText() { let text = ""; for (let i = 0; i < arguments.length; i++) 
 function valuesEqual(a, b) {
   if (a === b) return true;
   if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
+  // a value with its own kind of sameness (a date, a word, an endless list) says
+  if (typeof a.sameAs === "function") return a.sameAs(b);
+  if (typeof b.sameAs === "function") return b.sameAs(a);
   if (!isCell(a) || !isCell(b)) return false;
   // a cell that takes input compares by its code and the values it captured (decision 23)
   const aTakesInput = a instanceof Cell && a.takesInput(), bTakesInput = b instanceof Cell && b.takesInput();
@@ -974,7 +985,10 @@ const CELL_METHODS = Object.assign(Object.create(EVERY_VALUE_METHODS), {
   collect: methodTakingOne(collect), keep: methodTakingOne(keep), each: methodTakingOne(each), fold: methodTakingOne(fold), spork: methodTakingOne(spork), sort: methodTakingNothing(sortList),
 });
 const OTHER_METHODS = EVERY_VALUE_METHODS;
+const PROTOTYPES = { every: EVERY_VALUE_METHODS, number: NUMBER_METHODS, text: TEXT_METHODS, bool: BOOL_METHODS, cell: CELL_METHODS };
 function methodsOf(value) {
+  // a value of a kind a library made (a date, a rule, an endless list) carries its own methods
+  if (value !== null && typeof value === "object" && value.methods) return value.methods;
   switch (typeof value) {
     case "number": return NUMBER_METHODS; case "string": return TEXT_METHODS; case "boolean": return BOOL_METHODS;
   }
@@ -1068,11 +1082,16 @@ const api = { tokenize, parse, compile, load, format: formatValue, equal: values
   setLog: f => { logMessage = f; }, setOut: f => { printOutput = f; }, setRandom: f => { randomSource = f; }, defNative, partsOf, fieldsOf, UNSET, valueCellOf, effect, queueEffects, runEffects, dropEffects };
 // what a library sees of the core: the pieces a faster way needs, nothing it could change answers with
 api.internals = { FUSED_OPERATORS, LAZY_OPERATORS, EVERY_VALUE_METHODS, GLOBALS, Native, noiseHash, formatValue, isFieldsOnly, mentions, COMPILER_NOTE_KEYS, RangeCell, NumberList, ColumnCell, ValueCell, makeList, NO_FIELDS, shapeFor, asColumns, Cell, EMPTY, collect, isCell,
-  fast: () => fastPathsOn };
+  fast: () => fastPathsOn,
+  // for the standard words (words.js): the pieces its methods are made of
+  PROTOTYPES, methodTakingNothing, methodTakingOne, partsOf, fieldsOf, merge, callCell, finishTailCalls, makeRecord, valuesEqual, logMiss, notUnderstood, lint, UNSET, BANG, ANY,
+  sendWord, send, sortList, keep, fold, each, describe, requireNumber };
 if (typeof module !== "undefined") {
   module.exports = api;
   // in Node the kernels library comes along; a page loads kernels.js after this file
   // (SPROUT3_CORE_ONLY=1 runs without it, to check the core alone gives the same answers)
+  // the standard words always come along (decision 99)
+  require("./words.js");
   if (!process.env.SPROUT3_CORE_ONLY) try { require("./kernels.js"); } catch (e) { if (e.code !== "MODULE_NOT_FOUND") throw e; }
 } else root.Sprout3 = api;
 })(typeof window !== "undefined" ? window : globalThis);

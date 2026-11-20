@@ -677,7 +677,8 @@ function runFusedLoop(xs, fusedKernels, caps, hostWords) {
   if (xs instanceof RangeCell) { kernel = fusedKernels.numbers; n = xs.size; }
   else if (xs instanceof NumberList) { kernel = fusedKernels.numbers; inputs = xs.numbers; n = inputs.length; }
   else if (xs instanceof ColumnCell) { kernel = fusedKernels.rows; columns = xs.columns; recordShape = xs.recordShape; n = xs.size; }
-  else if (xs instanceof ValueCell && xs.fieldShape === NO_FIELDS) {
+  // a list of a kind a library made (an endless list) has its own methods: run the steps as written
+  else if (xs instanceof ValueCell && xs.fieldShape === NO_FIELDS && !xs.methods) {
     const p = xs.parts; n = p.length;
     if (!n) return NOT_FUSED;
     if (typeof p[0] === "number") { kernel = fusedKernels.numbers; inputs = new Float64Array(n); for (let i = 0; i < n; i++) { const v = p[i]; if (typeof v !== "number") return NOT_FUSED; inputs[i] = v; } }

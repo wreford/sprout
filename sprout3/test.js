@@ -255,5 +255,29 @@ ok("hot-swap keeps live state", g.state.field("score") === sc);
 g.swap(src.replace("height : 40", "height : 99"));
 ok("hot-swap takes a changed start value", g.state.field("height") === 99);
 
+// ---------------- the standard words (decision 99): Clojure's sequences, Lua's strings
+{
+  const W = [
+    ["[3, 1, 4, 1] reverse", "[1, 4, 1, 3]"], ["[3, 1, 4, 1] distinct", "[3, 1, 4]"], ["[3, 1, 4] sum", "8"], ["[3, 1, 4] largest", "4"],
+    ["[3, 1, 4, 1] frequencies", "[3 : 1, 1 : 2, 4 : 1]"], ["[1, 2, 3, 4] group-by [n | n even]", "[false : [1, 3], true : [2, 4]]"],
+    ["[1, 2, 3, 4, 5] partition 2", "[[1, 2], [3, 4]]"], ["[1, 2, 3, 4, 5] chunks 2", "[[1, 2], [3, 4], [5]]"],
+    ["[3, 1, 2] sort-by [n | 0 - n]", "[3, 2, 1]"], ["[1, 2] zip [\"a\", \"b\", \"c\"]", "[[1, a], [2, b]]"],
+    ["[1, 2, 3] scan [0, [t n | t + n]]", "[0, 1, 3, 6]"], ["[1, 5, 9] find [n | n > 4]", "5"], ["[1, 5, 9] count [n | n > 4]", "2"],
+    ["[[1, 2], [3, [4]]] flatten", "[1, 2, 3, 4]"], ["1 to 4", "[1, 2, 3, 4]"],
+    ["iterate [1, [n | n * 2]] take 5", "[1, 2, 4, 8, 16]"], ["iterate [1, [n | n + 1]] keep [n | n % 3 = 0] take 3", "[3, 6, 9]"],
+    ["cycle [\"a\", \"b\"] take 3", "[a, b, a]"], ["iterate [1, [n | n + 1]]", "[1, 2, 3, ...]"],
+    ["[a : [b : 1]] update-in [[\"a\", \"b\"], [n | n + 1]]", "[a : [b : 2]]"], ["[a : [b : 1]] get-in [\"a\", \"b\"]", "1"],
+    ["[a : 1, b : 2] without \"a\"", "[b : 2]"], ["[a : 1, b : 2] keys", "[a, b]"],
+    ["\"a,b\" split \",\"", "[a, b]"], ["\" x \" trim", "x"], ["\"hello\" slice [2, -2]", "ell"], ["\"ab\" repeat 2", "abab"],
+    ["\"42\" number + 1", "43"], ["\"x\" number", "false"], ["[1, 2] join \"-\"", "1-2"], ["\"7\" pad-left [3, \"0\"]", "007"],
+    ["3 kind", "number"], ["[a : 1] kind", "record"],
+  ];
+  for (const [src, want] of W) { const got = val(src); ok("99 " + src + " gives " + want, got === want); if (got !== want) console.log("   got", got); }
+  S.setLog(m => logs.push(m)); logs.length = 0; val("iterate [1, [n | n + 1]] keep [n | n % 7 = 0] collect [n | n * n] take 2");
+  ok("99 an endless list goes through a fusable chain quietly", logs.length === 0);
+  logs.length = 0; val("iterate [1, [n | n + 1]] length");
+  ok("99 an endless list says it has no length", logs.some(m => /endless/.test(m)));
+}
+
 console.log(pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
