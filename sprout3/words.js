@@ -172,6 +172,7 @@ class Kind {
 // a date: days since 1970-01-01 (UTC, so it never shifts with a time zone)
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 class SproutDate extends Kind {
+  unpackParts() { return this.parts().slice(0, 3); }
   constructor(days) { super(); this.days = days; }
   key() { return this.days; }
   parts() { const d = new Date(this.days * 86400000); return [d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate(), d.getUTCDay()]; }
@@ -192,6 +193,7 @@ const DATE_METHODS = kindMethods(d => d.days, {
 
 // a time of day, or a length of time: seconds
 class SproutTime extends Kind {
+  unpackParts() { return [Math.floor(this.seconds / 3600), Math.floor(this.seconds % 3600 / 60), this.seconds % 60]; }
   constructor(seconds) { super(); this.seconds = seconds; }
   key() { return this.seconds; }
   sproutText() { const neg = this.seconds < 0, t = Math.abs(this.seconds), h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), sec = +(t % 60).toFixed(6); return (neg ? "-" : "") + h + ":" + pad2(m) + (sec ? ":" + (sec < 10 ? "0" : "") + sec : ""); }
@@ -207,6 +209,7 @@ const TIME_METHODS = kindMethods(t => t.seconds, {
 // money: whole cents, so sums are exact; * and / round to the nearest cent, halves to even (banker's rounding)
 const roundHalfEven = x => { const r = Math.round(x); return Math.abs(x % 1) === 0.5 && r % 2 !== 0 ? r - 1 : r; };
 class Money extends Kind {
+  unpackParts() { return [Math.trunc(this.cents / 100), this.cents % 100]; }
   constructor(cents) { super(); this.cents = cents; }
   key() { return this.cents; }
   sproutText() { const neg = this.cents < 0, c = Math.abs(this.cents), whole = String(Math.floor(c / 100)).replace(/\B(?=(\d{3})+(?!\d))/g, ","); return (neg ? "-" : "") + "$" + whole + "." + pad2(c % 100); }
@@ -223,6 +226,7 @@ const MONEY_METHODS = kindMethods(m => m.cents, {
 
 // a pair: x and y, for positions and sizes
 class Pair extends Kind {
+  unpackParts() { return [this.x, this.y]; }
   constructor(x, y) { super(); this.x = x; this.y = y; }
   key() { return this.x + "x" + this.y; }
   sproutText() { return formatValue(this.x) + "x" + formatValue(this.y); }
@@ -257,6 +261,7 @@ const EMAIL_METHODS = Object.assign(Object.create(I.PROTOTYPES.every), { user: n
 
 // a colour: red, green, blue from 0 to 255 and alpha from 0 to 1; draws as #rrggbb
 class Colour extends Kind {
+  unpackParts() { return [this.r, this.g, this.b, this.a]; }
   constructor(r, g, b, a) { super(); this.r = r; this.g = g; this.b = b; this.a = a === undefined ? 1 : a; }
   key() { return this.sproutText(); }
   sproutText() { const h = v => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, "0"); return "#" + h(this.r) + h(this.g) + h(this.b) + (this.a < 1 ? h(this.a * 255) : ""); }

@@ -296,5 +296,19 @@ ok("hot-swap takes a changed start value", g.state.field("height") === 99);
   ok("100 a colour draws as its text", JSON.stringify(g.draw()) === '[["circle",[1,2,3,"#ff8800"]]]' && String(g.draw()[0][1][3]) === "#ff8800");
 }
 
+// ---------------- destructuring (decision 101)
+{
+  const W = [
+    ["[[x, y] | x + y] [3, 4]", "7"], ["[[x, y] | x + y] 3x4", "7"], ["[[name, age : 0] | \"[name] [age]\"] [name : \"Ada\", age : 36]", "Ada 36"],
+    ["[[name, age : 0] | \"[name] [age]\"] [\"Alan\"]", "Alan 0"], ["([first, ..others] : [1, 2, 3], others)", "[2, 3]"],
+    ["[[a, [b, c]] : [1, [2, 3]], a + b + c] @ 1", "6"], ["[[1, 2], [3, 4]] collect [[x, y] | x * y]", "[2, 12]"],
+    ["[[1, 2], [3, 4]] fold [0, [total [x, y] | total + x + y]]", "10"], ["[[x1, y1] [x2, y2] | x2 - x1 + (y2 - y1)] [[0, 0], [3, 4]]", "7"],
+    ["[[x, y] : [10, 20], sum : x + y]", "[sum : 30]"], ["range 40 collect [n | [n, n * 2]] collect [[a, b] | a + b] sum", "2460"],
+    ["([y, m, d] : 2026-11-20, d)", "20"], ["[[w, h] : 640x480, w * h] @ 1", "307200"],
+    ["[[x, y] | x] = [[x, y] | x]", "true"],
+  ];
+  for (const [src, want] of W) { const got = val(src); ok("101 " + src + " gives " + want, got === want); if (got !== want) console.log("   got", got); }
+}
+
 console.log(pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

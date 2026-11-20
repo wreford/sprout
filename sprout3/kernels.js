@@ -226,6 +226,7 @@ class WorkAhead {
     let lastPart = this.FALSE;
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
+      if (item.type === "bind" && item.pattern) this.giveUp("it unpacks a value");
       if (item.type === "bind") { scope.locals.set(item.name, this.bindingValue(item, scope)); if (i === items.length - 1) return lastPart; }
       else { const value = this.chain(item, scope); if (i === items.length - 1) return value; lastPart = value; }
     }
@@ -448,6 +449,7 @@ class WorkAhead {
   }
   call(cell, argument) {
     const literal = cell.ast, nameCount = literal.names.length;
+    if (literal.names.some(input => input.pattern)) this.giveUp("it unpacks its input");
     if (usesInputWords(literal)) this.giveUp("it calls a cell that uses _ or left");
     if (++this.callDepth > 300) this.giveUp("it calls itself too deeply to work out");
     const vars = new Map();
@@ -505,7 +507,7 @@ class WorkAhead {
 
   // ---- the whole cell: [x | ...] whose runs each give a number, true or false, or a record of numbers
   buildSporkKernel(cell) {
-    if (cell.names.length !== 1 || cell.names[0].defaultValue) this.giveUp("spork runs as a kernel only for a cell with one named input");
+    if (cell.names.length !== 1 || cell.names[0].defaultValue || cell.names[0].pattern) this.giveUp("spork runs as a kernel only for a cell with one named input");
     if (usesInputWords(cell)) this.giveUp("it uses _ or left");
     const input = this.numberValue(this.addNode("input", -1, -1, -1));
     const result = this.runBody(cell.items, { locals: new Map([[cell.names[0].name, input]]), parent: { frameIndex: this.gen.frames.length - 1, positionLimit: Infinity } });

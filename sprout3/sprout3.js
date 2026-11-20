@@ -127,6 +127,12 @@ class Parser {
     const c = this.chain();
     if (this.peek() === ":") {
       this.next();
+      // [a, b] : value unpacks it (decision 101)
+      if (c.terms.length === 1 && c.terms[0].type === "cell" && !c.terms[0].names.length) {
+        const value = this.chain();
+        if (!value.terms.length) throw new SproutError("a value has to follow :", line);
+        return { type: "bind", name: hiddenName(), value, line, pattern: patternFromCell(c.terms[0], line) };
+      }
       if (c.terms.length !== 1 || c.terms[0].type !== "word") throw new SproutError("only a name can go before :", line);
       const val = this.chain();
       if (!val.terms.length) throw new SproutError("a value has to follow :", line);
@@ -155,6 +161,18 @@ class Parser {
     if (t.kind === "literal") return { type: "literal", form: t.form, text: t.text, line: t.line };
     throw new SproutError("this doesn't make sense here: " + t, this.line());
   }
+  // a pattern after its [ : names, names with defaults, ..rest, and patterns inside it, up to the ]
+  pattern() {
+    const leaves = [];
+    for (;;) {
+      const x = this.next();
+      if (x === "]") return leaves;
+      if (x === "," || x === "\n") continue;
+      if (x === "[") { leaves.push({ name: hiddenName(), defaultValue: null, pattern: this.pattern() }); continue; }
+      if (!x || x.kind !== "word") throw new SproutError("only names go in a pattern", this.line());
+      leaves.push(patternLeaf(x.value, this.peek() === ":" ? (this.next(), this.term()) : null, this.line()));
+    }
+  }
   cell(openLine) {
     // input names before a | at this depth: [x y : 0 | ...]
     let depth = 0, bar = -1;
@@ -169,6 +187,8 @@ class Parser {
       while (this.i < bar) {
         const x = this.next();
         if (x === "," || x === "\n") continue;
+        // [[x, y] | ...]: an input that is unpacked (decision 101)
+        if (x === "[") { names.push({ name: hiddenName(), defaultValue: null, pattern: this.pattern() }); continue; }
         if (!x || x.kind !== "word") throw new SproutError("only names go before |", this.line());
         const nm = { name: x.value, defaultValue: null };
         if (this.peek() === ":") { this.next(); nm.defaultValue = this.term(); }
@@ -181,6 +201,24 @@ class Parser {
     return { type: "cell", names, items }; // [[x]] is a cell holding a cell (decision 71: no collapse)
   }
 }
+// destructuring (decision 101): a hidden name holds the whole value; each name in the pattern reads a part of it
+let hiddenCount = 0;
+const hiddenName = () => "[unpacked " + (++hiddenCount) + "]";
+const isHidden = name => name.charCodeAt(0) === 91;
+function patternLeaf(name, defaultValue, line) {
+  if (name.startsWith("..")) { if (name.length < 3 || defaultValue) throw new SproutError("..rest takes a name and no default", line); return { name: name.slice(2), rest: true }; }
+  return { name, defaultValue };
+}
+function patternFromCell(cell, line) {
+  return cell.items.map(item => {
+    if (item.type === "bind" && item.value.terms.length === 1 && !item.pattern) return patternLeaf(item.name, item.value.terms[0], line);
+    if (item.type === "chain" && item.terms.length === 1 && item.terms[0].type === "word") return patternLeaf(item.terms[0].value, null, line);
+    if (item.type === "chain" && item.terms.length === 1 && item.terms[0].type === "cell" && !item.terms[0].names.length) return { name: hiddenName(), defaultValue: null, pattern: patternFromCell(item.terms[0], line) };
+    throw new SproutError("only names go in a pattern, as in [x, y] : point", line);
+  });
+}
+function patternNames(pattern, out) { out = out || []; for (const leaf of pattern) { if (leaf.pattern) patternNames(leaf.pattern, out); else out.push(leaf.name); } return out; }
+
 function parseInner(src, line) {
   const p = new Parser(tokenize(src), src);
   const items = p.program();
@@ -231,6 +269,15 @@ class CodeGen {
     let k = this.literals.get(key);
     if (!k) { k = "LITERAL_" + this.constants.length; this.literals.set(key, k); this.constants.push("const " + k + "=literal(" + JSON.stringify(term.form) + "," + JSON.stringify(term.text) + "," + (term.line || 0) + ");"); }
     return k;
+  }
+  // each name in a pattern reads its part of the value the code gives (decision 101)
+  bindPattern(names, pattern, code) {
+    pattern.forEach((leaf, position) => {
+      const read = leaf.rest ? "unpackRest(" + code + "," + (position + 1) + ")" : "unpack(" + code + "," + (position + 1) + "," + JSON.stringify(leaf.pattern ? "" : leaf.name) + ")";
+      if (leaf.pattern) { this.bindPattern(names, leaf.pattern, read); return; }
+      const js = leaf.defaultValue ? "unpackOr(" + read + "," + this.arrowCode("", () => this.genTerm(leaf.defaultValue, false)) + ")" : read;
+      names.set(leaf.name, { type: "js", js });
+    });
   }
   newTemp() { const scope = this.tempScopes[this.tempScopes.length - 1]; const name = "t" + (uniqueNumber++); scope.push(name); return name; }
   withTemps(generate) { this.tempScopes.push([]); const body = generate(); const temps = this.tempScopes.pop(); return { body, decl: temps.length ? "let " + temps.join(",") + ";" : "" }; }
@@ -364,7 +411,7 @@ class CodeGen {
     this.tempScopes.push([]);
     items.forEach((item, index) => {
       const last = index === items.length - 1;
-      if (item.type === "bind") { const js = jsName(item.name); const valueCode = this.genChain(item.value); frame.names.set(item.name, { type: "js", js, value: item.value }); parts.push("const " + js + "=" + valueCode + ";"); if (last) parts.push("return " + js + ";"); }
+      if (item.type === "bind") { const js = jsName(item.name); const valueCode = this.genChain(item.value); frame.names.set(item.name, { type: "js", js, value: item.value }); if (item.pattern) this.bindPattern(frame.names, item.pattern, js); parts.push("const " + js + "=" + valueCode + ";"); if (last) parts.push("return " + js + ";"); }
       else parts.push((last ? "return " : "") + this.genChain(item) + ";");
     });
     frame.names = saved;
@@ -382,6 +429,7 @@ class CodeGen {
         if (isCell) frame.names.set(item.name, { type: "js", js, cell: true, ast, value: item.value }); // a cell can use its own name (decision 25)
         const valueCode = isCell ? this.genCell(item.value.terms[0], true) : this.genChain(item.value);
         frame.names.set(item.name, { type: "js", js, cell: isCell, ast, value: item.value });
+        if (item.pattern) this.bindPattern(frame.names, item.pattern, js);
         out.push("const " + js + "=" + valueCode + ";");
         if (last) out.push("return " + (lastPartCode || "false") + ";");
       } else {
@@ -421,13 +469,13 @@ class CodeGen {
     const shape = { id: shapeNumber, names: cell.names.map(input => input.name), fieldIndex: Object.create(null), partIndex: [], usesIt: false, usesLeft: false, itemCount: cell.items.length, src: sourceKey(cell) };
     this.shapes.push(shape);
     const seenNames = new Set();
-    cell.items.forEach((item, i) => { if (item.type === "bind") { if (seenNames.has(item.name)) throw new SproutError("\"" + item.name + "\" is bound twice in one cell (decision 13)", item.line); seenNames.add(item.name); shape.fieldIndex[item.name] = i; } else shape.partIndex.push(i); });
+    cell.items.forEach((item, i) => { if (item.type === "bind") { if (seenNames.has(item.name)) throw new SproutError("\"" + item.name + "\" is bound twice in one cell (decision 13)", item.line); seenNames.add(item.name); if (!item.pattern) shape.fieldIndex[item.name] = i; } else shape.partIndex.push(i); });
     const defaultMakers = cell.names.map(input => input.defaultValue ? this.arrowCode("", () => this.genTerm(input.defaultValue, false)) : "null");
     const activation = "a" + shapeNumber;
     // run: inputs arrive as plain arguments (left, it, then each name)
     const paramNames = cell.names.map((input, position) => activation + "_" + position);
     const runFrame = { names: new Map(), activation, itJS: activation + "_it", leftJS: activation + "_L", shape: shape, owner: !!ownerOfLeft, captured: new Map() };
-    cell.names.forEach((input, position) => runFrame.names.set(input.name, { type: "js", js: paramNames[position] }));
+    cell.names.forEach((input, position) => { runFrame.names.set(input.name, { type: "js", js: paramNames[position] }); if (input.pattern) this.bindPattern(runFrame.names, input.pattern, paramNames[position]); });
     this.frames.push(runFrame);
     const runBodyCode = this.withTemps(() => this.genRunBody(cell, runFrame, shapeNumber, true)), runBody = runBodyCode.decl + runBodyCode.body;
     this.frames.pop();
@@ -437,14 +485,14 @@ class CodeGen {
     const takes = shape.names.length > 0 || shape.usesIt;
     let readable = cell.items.map(() => true);
     if (takes) {
-      const dependsOnInput = new Set(cell.names.map(input => input.name).concat(["_", "right"]));
-      readable = cell.items.map(item => { if (item.type !== "bind") return false; if (mentions(item.value, dependsOnInput)) { dependsOnInput.add(item.name); return false; } return true; });
+      const dependsOnInput = new Set(cell.names.flatMap(input => input.pattern ? patternNames(input.pattern) : [input.name]).concat(["_", "right"]));
+      readable = cell.items.map(item => { if (item.type !== "bind") return false; if (mentions(item.value, dependsOnInput)) { dependsOnInput.add(item.name); if (item.pattern) patternNames(item.pattern).forEach(n => dependsOnInput.add(n)); return false; } return true; });
       shape.partIndex = [];
       for (const n in shape.fieldIndex) if (!readable[shape.fieldIndex[n]]) delete shape.fieldIndex[n];
     }
     if (readable.some(input => input)) {
       const frame = { names: new Map(), activation, itJS: activation + ".it", leftJS: activation + ".left", shape: shape, owner: !!ownerOfLeft, captured: new Map() };
-      cell.names.forEach((input, position) => frame.names.set(input.name, { type: "js", js: activation + ".inputs[" + position + "]" }));
+      cell.names.forEach((input, position) => { frame.names.set(input.name, { type: "js", js: activation + ".inputs[" + position + "]" }); if (input.pattern) this.bindPattern(frame.names, input.pattern, activation + ".inputs[" + position + "]"); });
       this.frames.push(frame);
       const slotCodes = [];
       cell.items.forEach((item, i) => {
@@ -455,6 +503,7 @@ class CodeGen {
           if (isCell) frame.names.set(item.name, { type: "slot", activation, i, cell: true, ast, value: item.value });
           const slotCode = this.arrowCode("", () => isCell ? this.genCell(item.value.terms[0], true) : this.genChain(item.value));
           frame.names.set(item.name, { type: "slot", activation, i, cell: isCell, ast, value: item.value });
+          if (item.pattern) this.bindPattern(frame.names, item.pattern, activation + ".get(" + i + ")");
           slotCodes.push(slotCode);
         } else slotCodes.push(this.arrowCode("", () => this.genChain(item)));
       });
@@ -479,7 +528,7 @@ function mentions(node, names) {
 const OPERATOR_FUNCTION = { "+": "ADD", "-": "SUB", "*": "MUL", "/": "DIV", "%": "MOD", "<": "LT", ">": "GT", "<=": "LE", ">=": "GE", "=": "EQ", "!=": "NE", "..": "concat", "with": "withCell", "@": "partAt" };
 // a cell literal of fields only, none using a sibling field, _, left or right
 function isFieldsOnly(cell) {
-  if (cell.names.length || !cell.items.length || !cell.items.every(x => x.type === "bind")) return false;
+  if (cell.names.length || !cell.items.length || !cell.items.every(x => x.type === "bind" && !x.pattern)) return false;
   const names = new Set(cell.items.map(x => x.name)); let ok = names.size === cell.items.length;
   const bad = w => names.has(w) || w === "_" || w === "left" || w === "right";
   const walk = n => {
@@ -523,7 +572,8 @@ function isSimpleValue(chain) {
 // [a, b, c] whose parts are all simple: built straight away as a cell of values
 function isSimpleList(cell) { return !cell.names.length && cell.items.length > 0 && cell.items.every(item => item.type === "chain" && isSimpleValue(item)); }
 const COMPILER_NOTE_KEYS = new Set(["line", "kern", "bindName", "sporkArg", "spkUses"]);
-function sourceKey(cell) { return JSON.stringify(cell, (key, value) => COMPILER_NOTE_KEYS.has(key) ? undefined : value); }
+// a hidden name's number is left out, so the same code always has the same key
+function sourceKey(cell) { return JSON.stringify(cell, (key, value) => COMPILER_NOTE_KEYS.has(key) ? undefined : typeof value === "string" && /^\[unpacked \d+\]$/.test(value) ? "[unpacked]" : value); }
 
 function compile(src, globals) {
   const ast = parse(src);
@@ -1089,9 +1139,22 @@ frame : [update |
 `;
 
 // ===================================================================== build
+// unpack(value, position, name): one name of a pattern (decision 101): the field of that name, else the part at that position
+function unpack(value, position, name) {
+  if (isCell(value)) { if (name) { const f = value.field(name); if (f !== UNSET) return readField(value, f); } return value.part(position); }
+  // a value of a library's kind (a pair, a date) gives what its method of that name gives
+  if (value !== null && typeof value === "object" && value.methods) {
+    if (name) { const method = value.methods[name]; if (method && !method.takesArgument) return method.run(value); }
+    // else its parts in order: a pair's x and y, a date's year, month and day
+    if (typeof value.unpackParts === "function") { const parts = value.unpackParts(); return position <= parts.length ? parts[position - 1] : false; }
+  }
+  return false;
+}
+function unpackOr(value, makeDefault) { return value === false ? makeDefault() : value; }
+function unpackRest(value, position) { return isCell(value) ? makeList(partsOf(value).slice(position - 1)) : makeList([]); }
 // literal(form, text): a literal's value; words.js gives the real one
 const literal = (form, text, line) => logMiss("a " + form + " needs the standard words (words.js)", line);
-const RUNTIME = { literal, BANG, ANY, GLOBALS, makeCell, sendWord, send, runCell, joinText, unknownWord, logMiss, withFields,
+const RUNTIME = { unpack, unpackOr, unpackRest, literal, BANG, ANY, GLOBALS, makeCell, sendWord, send, runCell, joinText, unknownWord, logMiss, withFields,
   ADD, SUB, MUL, DIV, MOD, LT, GT, LE, GE, EQ, NE, concat, withCell, partAt, makeRecord, makeList, requireBool, notUnderstood, tailSend, sendWordCached, shapeFor };
 let preludeCell = null;
 function globalNames(extra) { const names = new Set(Object.keys(GLOBALS)); if (extra) for (const name of extra) names.add(name); return names; }

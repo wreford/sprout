@@ -64,7 +64,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
   - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
   - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
-- **Tests:** 281 pass, 199 for the language and 82 for the games.
+- **Tests:** 295 pass, 213 for the language and 82 for the games.
 
 ## Open questions for Troy
 
@@ -82,14 +82,14 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 **Run it (Node 22 or later):**
 
 ```
-node test.js          # language tests (199)
+node test.js          # language tests (213)
 node game-tests.js    # game tests (82)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 281 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 295 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -801,6 +801,7 @@ These are marked in `sprout2.js` with "Sprout Live fix N" or "Sprout Live additi
 98. **Descriptive names (Troy, 20 Nov).** The implementation uses whole words for names, as Sprout programs do. In `sprout3.js`, `kernels.js` and `gpu-spork.js` that means `ValueCell`, `RangeCell`, `ColumnCell`, `NumberList`, `sendWord`, `makeCell`, `CodeGen` and `WorkAhead`, not `VCell`, `RCell`, `SW`, `MK`, `Gen` or `Spk`. A kernel's steps are called `constant`, `input`, `outside`, `carried`, `column` and `choose`, and the syntax tree's fields are `type`, `value` and `name`. The prelude's inputs are named the same way, as in `clamp : [value low high | ...]` and `match : [value cases | ...]`. The public API has `format`, `equal`, `globals` and `fastPaths`, not `fmt`, `eq`, `G` and `columns`. Only loop counters (`i`, `j`), coordinates (`x`, `y`) and `n` for a count stay short. The renaming changed no behaviour: every test passes and every example gives the same output, with and without `kernels.js`.
 99. **The standard words (built; library, decision 80, from Troy's ask on 20 Nov to make Sprout better than Clojure at Clojure and Lua at Lua).** `words.js` adds methods to the core's prototypes through a new `methods` hook, and is always loaded after `sprout3.js`. Lists get Clojure's sequence words: `reverse`, `distinct`, `sum`, `product`, `mean`, `largest`, `smallest`, `flatten`, `second`, `rest`, `all-but-last`, `take`, `drop`, `take-while`, `drop-while`, `find`, `index-of`, `has`, `any`, `all`, `count`, `sort-by`, `largest-by`, `smallest-by`, `group-by`, `frequencies`, `partition`, `chunks`, `windows`, `zip`, `numbered`, `interpose`, `collect-flat`, `scan` and `join`. Records get `keys`, `values`, `pairs`, `select`, `without`, `update`, `get-in`, `set-in` and `update-in`, each giving a new record. Text gets Lua's string words: `split`, `lines`, `words`, `chars`, `trim`, `starts-with`, `ends-with`, `has`, `index-of`, `slice` (positions from 1, negative ones from the end, as in Lua's `sub`), `repeat`, `reverse`, `number`, `code`, `pad-left`, `pad-right` and `capitalize`. Numbers get `pow`, `exp`, `atan`, `sign`, `even`, `odd`, `between` and `to` (`1 to 5` is `[1, 2, 3, 4, 5]`). Every value answers `kind`. **Endless lists** are Clojure's lazy sequences: `iterate [start, step]`, `cycle xs` and `forever v` make lists whose items are worked out only when read, and kept. `collect`, `keep`, `drop`, `zip` and `partition` on one give another endless list, `take`, `take-while`, `find` and `@` read only as far as they need, and `length`, `fold`, `each` and `sort` log that they would never finish. A fused loop leaves an endless list to these methods. A field still wins over a method of the same name, so records that have a `count` or `keys` field read their own. Every example prints and plays the same as before (checked over 300 frames of each).
 100. **Rebol's literals (Troy, 20 Nov).** Values that are more than numbers and text are written as they are, with no quotes and no constructor: a date `2026-11-20`, a time `9:30` or `9:30:15`, money `$19.99`, a pair `640x480`, a url `https://taskiap.com/sprout3/`, an email `ada@example.com`, a colour `#ff8800` (or `#f80`, or `#ff880080` with alpha), a percent `15%` (the number 0.15) and a word `'move`. The lexer tries them where a word could start, and each must end where a word would, so `2026 - 11` is still a subtraction and `don't` is still a name. Each kind does the maths that makes sense for it. A date plus a number is that many days later, and two dates take away to the days between. Dates answer `year`, `month`, `day`, `weekday`, `add-months`, `add-workdays` and `is-weekend`, and are kept as days in UTC, so they never shift with a time zone. Times add and compare, and answer `hour`, `minute` and `in-hours`. Money is whole cents, so `$0.10 + $0.20 = $0.30` is true; `*` and `/` by a number round to the cent, halves to even, and `split 3` shares out every cent. Pairs do maths part by part and answer `x`, `y`, `length` and `area`. A url answers `host`, `path` and `query`, and `/` adds a step to its path. A colour answers `red`, `green`, `blue`, `mix`, `lighter`, `darker` and `fade`, and draws as its text. A word is equal only to the same word, which is what dialects and code as data are made of. The kinds live in `words.js`. A literal is made once, when the program loads. `date [2026, 11, 20]`, `money 12.5`, `pair [3, 4]`, `colour [255, 136, 0]` and `word "move"` make the same values from parts, and a date that isn't real (`2026-02-30`) is logged.
+101. **Destructuring (Troy, 20 Nov).** A pattern in square brackets unpacks a value, wherever a name could take one. As an input, `[[x, y] | x + y]` takes one value and names its parts, and a cell can take several, as in `[[x1, y1] [x2, y2] | ...]` or `fold [0, [total [x, y] | ...]]`. As a binding, `[x, y] : point` names the parts of a value in a cell or a group. Each name reads the field of that name if the value has one, else the part at its position, so `[name, age]` unpacks `[name : "Ada", age : 36]` and `["Ada", 36]` alike. A kind from decision 100 unpacks the same way: by its fields (`x`, `y`, `year`), else by its parts in order, so `[w, h] : 640x480` and `[y, m, d] : 2026-11-20` work. A name can have a default, `[name, age : 0]`, used when the part is false or missing. A pattern can hold a pattern, `[a, [b, c]]`, and `..rest` takes the parts left over as a list, `[first, ..others]`. Unpacked names are local names, not fields: `[[x, y] : [10, 20], sum : x + y]` has the one field `sum`. A cell that unpacks is never worked out ahead into a kernel; it runs as written.
 ````
 
 ---
@@ -941,6 +942,12 @@ class Parser {
     const c = this.chain();
     if (this.peek() === ":") {
       this.next();
+      // [a, b] : value unpacks it (decision 101)
+      if (c.terms.length === 1 && c.terms[0].type === "cell" && !c.terms[0].names.length) {
+        const value = this.chain();
+        if (!value.terms.length) throw new SproutError("a value has to follow :", line);
+        return { type: "bind", name: hiddenName(), value, line, pattern: patternFromCell(c.terms[0], line) };
+      }
       if (c.terms.length !== 1 || c.terms[0].type !== "word") throw new SproutError("only a name can go before :", line);
       const val = this.chain();
       if (!val.terms.length) throw new SproutError("a value has to follow :", line);
@@ -969,6 +976,18 @@ class Parser {
     if (t.kind === "literal") return { type: "literal", form: t.form, text: t.text, line: t.line };
     throw new SproutError("this doesn't make sense here: " + t, this.line());
   }
+  // a pattern after its [ : names, names with defaults, ..rest, and patterns inside it, up to the ]
+  pattern() {
+    const leaves = [];
+    for (;;) {
+      const x = this.next();
+      if (x === "]") return leaves;
+      if (x === "," || x === "\n") continue;
+      if (x === "[") { leaves.push({ name: hiddenName(), defaultValue: null, pattern: this.pattern() }); continue; }
+      if (!x || x.kind !== "word") throw new SproutError("only names go in a pattern", this.line());
+      leaves.push(patternLeaf(x.value, this.peek() === ":" ? (this.next(), this.term()) : null, this.line()));
+    }
+  }
   cell(openLine) {
     // input names before a | at this depth: [x y : 0 | ...]
     let depth = 0, bar = -1;
@@ -983,6 +1002,8 @@ class Parser {
       while (this.i < bar) {
         const x = this.next();
         if (x === "," || x === "\n") continue;
+        // [[x, y] | ...]: an input that is unpacked (decision 101)
+        if (x === "[") { names.push({ name: hiddenName(), defaultValue: null, pattern: this.pattern() }); continue; }
         if (!x || x.kind !== "word") throw new SproutError("only names go before |", this.line());
         const nm = { name: x.value, defaultValue: null };
         if (this.peek() === ":") { this.next(); nm.defaultValue = this.term(); }
@@ -995,6 +1016,24 @@ class Parser {
     return { type: "cell", names, items }; // [[x]] is a cell holding a cell (decision 71: no collapse)
   }
 }
+// destructuring (decision 101): a hidden name holds the whole value; each name in the pattern reads a part of it
+let hiddenCount = 0;
+const hiddenName = () => "[unpacked " + (++hiddenCount) + "]";
+const isHidden = name => name.charCodeAt(0) === 91;
+function patternLeaf(name, defaultValue, line) {
+  if (name.startsWith("..")) { if (name.length < 3 || defaultValue) throw new SproutError("..rest takes a name and no default", line); return { name: name.slice(2), rest: true }; }
+  return { name, defaultValue };
+}
+function patternFromCell(cell, line) {
+  return cell.items.map(item => {
+    if (item.type === "bind" && item.value.terms.length === 1 && !item.pattern) return patternLeaf(item.name, item.value.terms[0], line);
+    if (item.type === "chain" && item.terms.length === 1 && item.terms[0].type === "word") return patternLeaf(item.terms[0].value, null, line);
+    if (item.type === "chain" && item.terms.length === 1 && item.terms[0].type === "cell" && !item.terms[0].names.length) return { name: hiddenName(), defaultValue: null, pattern: patternFromCell(item.terms[0], line) };
+    throw new SproutError("only names go in a pattern, as in [x, y] : point", line);
+  });
+}
+function patternNames(pattern, out) { out = out || []; for (const leaf of pattern) { if (leaf.pattern) patternNames(leaf.pattern, out); else out.push(leaf.name); } return out; }
+
 function parseInner(src, line) {
   const p = new Parser(tokenize(src), src);
   const items = p.program();
@@ -1045,6 +1084,15 @@ class CodeGen {
     let k = this.literals.get(key);
     if (!k) { k = "LITERAL_" + this.constants.length; this.literals.set(key, k); this.constants.push("const " + k + "=literal(" + JSON.stringify(term.form) + "," + JSON.stringify(term.text) + "," + (term.line || 0) + ");"); }
     return k;
+  }
+  // each name in a pattern reads its part of the value the code gives (decision 101)
+  bindPattern(names, pattern, code) {
+    pattern.forEach((leaf, position) => {
+      const read = leaf.rest ? "unpackRest(" + code + "," + (position + 1) + ")" : "unpack(" + code + "," + (position + 1) + "," + JSON.stringify(leaf.pattern ? "" : leaf.name) + ")";
+      if (leaf.pattern) { this.bindPattern(names, leaf.pattern, read); return; }
+      const js = leaf.defaultValue ? "unpackOr(" + read + "," + this.arrowCode("", () => this.genTerm(leaf.defaultValue, false)) + ")" : read;
+      names.set(leaf.name, { type: "js", js });
+    });
   }
   newTemp() { const scope = this.tempScopes[this.tempScopes.length - 1]; const name = "t" + (uniqueNumber++); scope.push(name); return name; }
   withTemps(generate) { this.tempScopes.push([]); const body = generate(); const temps = this.tempScopes.pop(); return { body, decl: temps.length ? "let " + temps.join(",") + ";" : "" }; }
@@ -1178,7 +1226,7 @@ class CodeGen {
     this.tempScopes.push([]);
     items.forEach((item, index) => {
       const last = index === items.length - 1;
-      if (item.type === "bind") { const js = jsName(item.name); const valueCode = this.genChain(item.value); frame.names.set(item.name, { type: "js", js, value: item.value }); parts.push("const " + js + "=" + valueCode + ";"); if (last) parts.push("return " + js + ";"); }
+      if (item.type === "bind") { const js = jsName(item.name); const valueCode = this.genChain(item.value); frame.names.set(item.name, { type: "js", js, value: item.value }); if (item.pattern) this.bindPattern(frame.names, item.pattern, js); parts.push("const " + js + "=" + valueCode + ";"); if (last) parts.push("return " + js + ";"); }
       else parts.push((last ? "return " : "") + this.genChain(item) + ";");
     });
     frame.names = saved;
@@ -1196,6 +1244,7 @@ class CodeGen {
         if (isCell) frame.names.set(item.name, { type: "js", js, cell: true, ast, value: item.value }); // a cell can use its own name (decision 25)
         const valueCode = isCell ? this.genCell(item.value.terms[0], true) : this.genChain(item.value);
         frame.names.set(item.name, { type: "js", js, cell: isCell, ast, value: item.value });
+        if (item.pattern) this.bindPattern(frame.names, item.pattern, js);
         out.push("const " + js + "=" + valueCode + ";");
         if (last) out.push("return " + (lastPartCode || "false") + ";");
       } else {
@@ -1235,13 +1284,13 @@ class CodeGen {
     const shape = { id: shapeNumber, names: cell.names.map(input => input.name), fieldIndex: Object.create(null), partIndex: [], usesIt: false, usesLeft: false, itemCount: cell.items.length, src: sourceKey(cell) };
     this.shapes.push(shape);
     const seenNames = new Set();
-    cell.items.forEach((item, i) => { if (item.type === "bind") { if (seenNames.has(item.name)) throw new SproutError("\"" + item.name + "\" is bound twice in one cell (decision 13)", item.line); seenNames.add(item.name); shape.fieldIndex[item.name] = i; } else shape.partIndex.push(i); });
+    cell.items.forEach((item, i) => { if (item.type === "bind") { if (seenNames.has(item.name)) throw new SproutError("\"" + item.name + "\" is bound twice in one cell (decision 13)", item.line); seenNames.add(item.name); if (!item.pattern) shape.fieldIndex[item.name] = i; } else shape.partIndex.push(i); });
     const defaultMakers = cell.names.map(input => input.defaultValue ? this.arrowCode("", () => this.genTerm(input.defaultValue, false)) : "null");
     const activation = "a" + shapeNumber;
     // run: inputs arrive as plain arguments (left, it, then each name)
     const paramNames = cell.names.map((input, position) => activation + "_" + position);
     const runFrame = { names: new Map(), activation, itJS: activation + "_it", leftJS: activation + "_L", shape: shape, owner: !!ownerOfLeft, captured: new Map() };
-    cell.names.forEach((input, position) => runFrame.names.set(input.name, { type: "js", js: paramNames[position] }));
+    cell.names.forEach((input, position) => { runFrame.names.set(input.name, { type: "js", js: paramNames[position] }); if (input.pattern) this.bindPattern(runFrame.names, input.pattern, paramNames[position]); });
     this.frames.push(runFrame);
     const runBodyCode = this.withTemps(() => this.genRunBody(cell, runFrame, shapeNumber, true)), runBody = runBodyCode.decl + runBodyCode.body;
     this.frames.pop();
@@ -1251,14 +1300,14 @@ class CodeGen {
     const takes = shape.names.length > 0 || shape.usesIt;
     let readable = cell.items.map(() => true);
     if (takes) {
-      const dependsOnInput = new Set(cell.names.map(input => input.name).concat(["_", "right"]));
-      readable = cell.items.map(item => { if (item.type !== "bind") return false; if (mentions(item.value, dependsOnInput)) { dependsOnInput.add(item.name); return false; } return true; });
+      const dependsOnInput = new Set(cell.names.flatMap(input => input.pattern ? patternNames(input.pattern) : [input.name]).concat(["_", "right"]));
+      readable = cell.items.map(item => { if (item.type !== "bind") return false; if (mentions(item.value, dependsOnInput)) { dependsOnInput.add(item.name); if (item.pattern) patternNames(item.pattern).forEach(n => dependsOnInput.add(n)); return false; } return true; });
       shape.partIndex = [];
       for (const n in shape.fieldIndex) if (!readable[shape.fieldIndex[n]]) delete shape.fieldIndex[n];
     }
     if (readable.some(input => input)) {
       const frame = { names: new Map(), activation, itJS: activation + ".it", leftJS: activation + ".left", shape: shape, owner: !!ownerOfLeft, captured: new Map() };
-      cell.names.forEach((input, position) => frame.names.set(input.name, { type: "js", js: activation + ".inputs[" + position + "]" }));
+      cell.names.forEach((input, position) => { frame.names.set(input.name, { type: "js", js: activation + ".inputs[" + position + "]" }); if (input.pattern) this.bindPattern(frame.names, input.pattern, activation + ".inputs[" + position + "]"); });
       this.frames.push(frame);
       const slotCodes = [];
       cell.items.forEach((item, i) => {
@@ -1269,6 +1318,7 @@ class CodeGen {
           if (isCell) frame.names.set(item.name, { type: "slot", activation, i, cell: true, ast, value: item.value });
           const slotCode = this.arrowCode("", () => isCell ? this.genCell(item.value.terms[0], true) : this.genChain(item.value));
           frame.names.set(item.name, { type: "slot", activation, i, cell: isCell, ast, value: item.value });
+          if (item.pattern) this.bindPattern(frame.names, item.pattern, activation + ".get(" + i + ")");
           slotCodes.push(slotCode);
         } else slotCodes.push(this.arrowCode("", () => this.genChain(item)));
       });
@@ -1293,7 +1343,7 @@ function mentions(node, names) {
 const OPERATOR_FUNCTION = { "+": "ADD", "-": "SUB", "*": "MUL", "/": "DIV", "%": "MOD", "<": "LT", ">": "GT", "<=": "LE", ">=": "GE", "=": "EQ", "!=": "NE", "..": "concat", "with": "withCell", "@": "partAt" };
 // a cell literal of fields only, none using a sibling field, _, left or right
 function isFieldsOnly(cell) {
-  if (cell.names.length || !cell.items.length || !cell.items.every(x => x.type === "bind")) return false;
+  if (cell.names.length || !cell.items.length || !cell.items.every(x => x.type === "bind" && !x.pattern)) return false;
   const names = new Set(cell.items.map(x => x.name)); let ok = names.size === cell.items.length;
   const bad = w => names.has(w) || w === "_" || w === "left" || w === "right";
   const walk = n => {
@@ -1337,7 +1387,8 @@ function isSimpleValue(chain) {
 // [a, b, c] whose parts are all simple: built straight away as a cell of values
 function isSimpleList(cell) { return !cell.names.length && cell.items.length > 0 && cell.items.every(item => item.type === "chain" && isSimpleValue(item)); }
 const COMPILER_NOTE_KEYS = new Set(["line", "kern", "bindName", "sporkArg", "spkUses"]);
-function sourceKey(cell) { return JSON.stringify(cell, (key, value) => COMPILER_NOTE_KEYS.has(key) ? undefined : value); }
+// a hidden name's number is left out, so the same code always has the same key
+function sourceKey(cell) { return JSON.stringify(cell, (key, value) => COMPILER_NOTE_KEYS.has(key) ? undefined : typeof value === "string" && /^\[unpacked \d+\]$/.test(value) ? "[unpacked]" : value); }
 
 function compile(src, globals) {
   const ast = parse(src);
@@ -1903,9 +1954,22 @@ frame : [update |
 `;
 
 // ===================================================================== build
+// unpack(value, position, name): one name of a pattern (decision 101): the field of that name, else the part at that position
+function unpack(value, position, name) {
+  if (isCell(value)) { if (name) { const f = value.field(name); if (f !== UNSET) return readField(value, f); } return value.part(position); }
+  // a value of a library's kind (a pair, a date) gives what its method of that name gives
+  if (value !== null && typeof value === "object" && value.methods) {
+    if (name) { const method = value.methods[name]; if (method && !method.takesArgument) return method.run(value); }
+    // else its parts in order: a pair's x and y, a date's year, month and day
+    if (typeof value.unpackParts === "function") { const parts = value.unpackParts(); return position <= parts.length ? parts[position - 1] : false; }
+  }
+  return false;
+}
+function unpackOr(value, makeDefault) { return value === false ? makeDefault() : value; }
+function unpackRest(value, position) { return isCell(value) ? makeList(partsOf(value).slice(position - 1)) : makeList([]); }
 // literal(form, text): a literal's value; words.js gives the real one
 const literal = (form, text, line) => logMiss("a " + form + " needs the standard words (words.js)", line);
-const RUNTIME = { literal, BANG, ANY, GLOBALS, makeCell, sendWord, send, runCell, joinText, unknownWord, logMiss, withFields,
+const RUNTIME = { unpack, unpackOr, unpackRest, literal, BANG, ANY, GLOBALS, makeCell, sendWord, send, runCell, joinText, unknownWord, logMiss, withFields,
   ADD, SUB, MUL, DIV, MOD, LT, GT, LE, GE, EQ, NE, concat, withCell, partAt, makeRecord, makeList, requireBool, notUnderstood, tailSend, sendWordCached, shapeFor };
 let preludeCell = null;
 function globalNames(extra) { const names = new Set(Object.keys(GLOBALS)); if (extra) for (const name of extra) names.add(name); return names; }
@@ -2182,6 +2246,7 @@ class WorkAhead {
     let lastPart = this.FALSE;
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
+      if (item.type === "bind" && item.pattern) this.giveUp("it unpacks a value");
       if (item.type === "bind") { scope.locals.set(item.name, this.bindingValue(item, scope)); if (i === items.length - 1) return lastPart; }
       else { const value = this.chain(item, scope); if (i === items.length - 1) return value; lastPart = value; }
     }
@@ -2404,6 +2469,7 @@ class WorkAhead {
   }
   call(cell, argument) {
     const literal = cell.ast, nameCount = literal.names.length;
+    if (literal.names.some(input => input.pattern)) this.giveUp("it unpacks its input");
     if (usesInputWords(literal)) this.giveUp("it calls a cell that uses _ or left");
     if (++this.callDepth > 300) this.giveUp("it calls itself too deeply to work out");
     const vars = new Map();
@@ -2461,7 +2527,7 @@ class WorkAhead {
 
   // ---- the whole cell: [x | ...] whose runs each give a number, true or false, or a record of numbers
   buildSporkKernel(cell) {
-    if (cell.names.length !== 1 || cell.names[0].defaultValue) this.giveUp("spork runs as a kernel only for a cell with one named input");
+    if (cell.names.length !== 1 || cell.names[0].defaultValue || cell.names[0].pattern) this.giveUp("spork runs as a kernel only for a cell with one named input");
     if (usesInputWords(cell)) this.giveUp("it uses _ or left");
     const input = this.numberValue(this.addNode("input", -1, -1, -1));
     const result = this.runBody(cell.items, { locals: new Map([[cell.names[0].name, input]]), parent: { frameIndex: this.gen.frames.length - 1, positionLimit: Infinity } });
@@ -3809,6 +3875,20 @@ ok("hot-swap takes a changed start value", g.state.field("height") === 99);
   for (const [src, want] of W) { const got = val(src); ok("100 " + src + " gives " + want, got === want); if (got !== want) console.log("   got", got); }
   const L3 = require("./live3.js"), g = L3.makeGame("start :\n  x : 1\nupdate : [game | game]\ndraw : [game | circle [1, 2, 3, #ff8800]]", {}); g.tick(1 / 60);
   ok("100 a colour draws as its text", JSON.stringify(g.draw()) === '[["circle",[1,2,3,"#ff8800"]]]' && String(g.draw()[0][1][3]) === "#ff8800");
+}
+
+// ---------------- destructuring (decision 101)
+{
+  const W = [
+    ["[[x, y] | x + y] [3, 4]", "7"], ["[[x, y] | x + y] 3x4", "7"], ["[[name, age : 0] | \"[name] [age]\"] [name : \"Ada\", age : 36]", "Ada 36"],
+    ["[[name, age : 0] | \"[name] [age]\"] [\"Alan\"]", "Alan 0"], ["([first, ..others] : [1, 2, 3], others)", "[2, 3]"],
+    ["[[a, [b, c]] : [1, [2, 3]], a + b + c] @ 1", "6"], ["[[1, 2], [3, 4]] collect [[x, y] | x * y]", "[2, 12]"],
+    ["[[1, 2], [3, 4]] fold [0, [total [x, y] | total + x + y]]", "10"], ["[[x1, y1] [x2, y2] | x2 - x1 + (y2 - y1)] [[0, 0], [3, 4]]", "7"],
+    ["[[x, y] : [10, 20], sum : x + y]", "[sum : 30]"], ["range 40 collect [n | [n, n * 2]] collect [[a, b] | a + b] sum", "2460"],
+    ["([y, m, d] : 2026-11-20, d)", "20"], ["[[w, h] : 640x480, w * h] @ 1", "307200"],
+    ["[[x, y] | x] = [[x, y] | x]", "true"],
+  ];
+  for (const [src, want] of W) { const got = val(src); ok("101 " + src + " gives " + want, got === want); if (got !== want) console.log("   got", got); }
 }
 
 console.log(pass + " passed, " + fail + " failed");
@@ -6595,6 +6675,7 @@ class Kind {
 // a date: days since 1970-01-01 (UTC, so it never shifts with a time zone)
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 class SproutDate extends Kind {
+  unpackParts() { return this.parts().slice(0, 3); }
   constructor(days) { super(); this.days = days; }
   key() { return this.days; }
   parts() { const d = new Date(this.days * 86400000); return [d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate(), d.getUTCDay()]; }
@@ -6615,6 +6696,7 @@ const DATE_METHODS = kindMethods(d => d.days, {
 
 // a time of day, or a length of time: seconds
 class SproutTime extends Kind {
+  unpackParts() { return [Math.floor(this.seconds / 3600), Math.floor(this.seconds % 3600 / 60), this.seconds % 60]; }
   constructor(seconds) { super(); this.seconds = seconds; }
   key() { return this.seconds; }
   sproutText() { const neg = this.seconds < 0, t = Math.abs(this.seconds), h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), sec = +(t % 60).toFixed(6); return (neg ? "-" : "") + h + ":" + pad2(m) + (sec ? ":" + (sec < 10 ? "0" : "") + sec : ""); }
@@ -6630,6 +6712,7 @@ const TIME_METHODS = kindMethods(t => t.seconds, {
 // money: whole cents, so sums are exact; * and / round to the nearest cent, halves to even (banker's rounding)
 const roundHalfEven = x => { const r = Math.round(x); return Math.abs(x % 1) === 0.5 && r % 2 !== 0 ? r - 1 : r; };
 class Money extends Kind {
+  unpackParts() { return [Math.trunc(this.cents / 100), this.cents % 100]; }
   constructor(cents) { super(); this.cents = cents; }
   key() { return this.cents; }
   sproutText() { const neg = this.cents < 0, c = Math.abs(this.cents), whole = String(Math.floor(c / 100)).replace(/\B(?=(\d{3})+(?!\d))/g, ","); return (neg ? "-" : "") + "$" + whole + "." + pad2(c % 100); }
@@ -6646,6 +6729,7 @@ const MONEY_METHODS = kindMethods(m => m.cents, {
 
 // a pair: x and y, for positions and sizes
 class Pair extends Kind {
+  unpackParts() { return [this.x, this.y]; }
   constructor(x, y) { super(); this.x = x; this.y = y; }
   key() { return this.x + "x" + this.y; }
   sproutText() { return formatValue(this.x) + "x" + formatValue(this.y); }
@@ -6680,6 +6764,7 @@ const EMAIL_METHODS = Object.assign(Object.create(I.PROTOTYPES.every), { user: n
 
 // a colour: red, green, blue from 0 to 255 and alpha from 0 to 1; draws as #rrggbb
 class Colour extends Kind {
+  unpackParts() { return [this.r, this.g, this.b, this.a]; }
   constructor(r, g, b, a) { super(); this.r = r; this.g = g; this.b = b; this.a = a === undefined ? 1 : a; }
   key() { return this.sproutText(); }
   sproutText() { const h = v => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, "0"); return "#" + h(this.r) + h(this.g) + h(this.b) + (this.a < 1 ? h(this.a * 255) : ""); }
