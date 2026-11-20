@@ -46,7 +46,9 @@ img.th[src=""]{content:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2
 #artcol,#detail{position:relative;z-index:1;min-height:0}
 #artcol{display:flex;flex-direction:column;align-items:center;justify-content:flex-start}
 #stage{position:relative;border-radius:16px;overflow:hidden;box-shadow:var(--art);background:#000}
-#cv{display:block;touch-action:none}
+#cv{display:block;touch-action:none;position:relative;z-index:1}
+#gv{display:none;position:absolute;left:0;top:0;z-index:0}body.gpu #gv{display:block}
+.rend{height:24px;padding:0 9px;border-radius:999px;font-size:11.5px;font-weight:600;color:var(--fg2);background:rgba(127,120,100,.12);margin-right:4px}.rend.on{color:#fff;background:var(--acc)}
 #noGame{display:none;width:100%;height:100%;position:absolute;inset:0;align-items:center;justify-content:center;text-align:center;padding:28px;background:var(--card);color:var(--fg2);font:17px/1.5 var(--serif)}
 #noGame b{color:var(--acc2);font-weight:600}
 #noGame{background-size:cover;background-position:center}#noGame.has-art{color:#fff;align-items:flex-end;justify-content:flex-start;text-align:left;font:500 14px/1.4 var(--sans)}#noGame.has-art b{color:#fff}
@@ -195,7 +197,7 @@ body.t-out #out{display:block}body.t-st #st{display:block}
 </aside>
 <main id="main">
  <canvas id="glow" width="36" height="48"></canvas>
- <div id="artcol"><div id="stage"><canvas id="cv" width="360" height="480"></canvas><div id="noGame"><div id="noGameT">This one isn't a game: it has no <b>update</b>.<br>What it prints is under Output.</div></div></div></div>
+ <div id="artcol"><div id="stage"><canvas id="gv" width="360" height="480"></canvas><canvas id="cv" width="360" height="480"></canvas><div id="noGame"><div id="noGameT">This one isn't a game: it has no <b>update</b>.<br>What it prints is under Output.</div></div></div></div>
  <section id="detail">
   <div id="head">
    <div class="kicker" id="kicker">Atomic Constraint Engine</div>
@@ -232,18 +234,19 @@ body.t-out #out{display:block}body.t-st #st{display:block}
   </div>
   <div class="scrub"><span id="tlA">0:00</span><input type="range" id="tlR" min="0" max="0" value="0" aria-label="Rewind time"><span id="tlB" class="live">LIVE</span></div>
  </div>
- <div class="rt"><span id="sMs"></span><button class="tb" id="bSnd" title="Sound (F9)"><svg viewBox="0 0 20 20"><path id="sndIcon" d="M3 7h3l5-4v14l-5-4H3z"/></svg></button></div>
+ <div class="rt"><span id="sMs"></span><button class="rend" id="bGpu" hidden title="Which renderer draws the game: WebGPU (one draw call per frame) or Canvas 2D. Click to switch and compare."></button><button class="tb" id="bSnd" title="Sound (F9)"><svg viewBox="0 0 20 20"><path id="sndIcon" d="M3 7h3l5-4v14l-5-4H3z"/></svg></button></div>
 </footer>
 </div>
 <div id="modal"><div id="mBox"><div class="mh"><h2 id="mTitle"></h2><button class="x" data-close aria-label="Close">✕</button></div><div id="mBody"></div></div></div>
 <div id="toast"></div><div id="scrubTip"></div>
 
-<script src="sprout3.js?v=20261120c"></script>
-<script src="live3.js?v=20261120c"></script>
-<script src="sqlite-web.js?v=20261120c"></script>
+<script src="sprout3.js?v=20261120d"></script>
+<script src="live3.js?v=20261120d"></script>
+<script src="sqlite-web.js?v=20261120d"></script>
+<script src="gpu-paint.js?v=20261120d"></script>
 <script>
 "use strict";
-const V="20261120c";
+const V="20261120d";
 const $=id=>document.getElementById(id);
 const S=window.Sprout3,L=window.Sprout3Live;
 const GW=360,GH=480;
@@ -355,10 +358,22 @@ function paint(ctx,list){
    case"rect":ctx.fillStyle=col(a[4]);ctx.fillRect(a[0],a[1],a[2],a[3]);break;
    case"circle":if(a[2]>0){ctx.fillStyle=col(a[3]);ctx.beginPath();ctx.arc(a[0],a[1],a[2],0,Math.PI*2);ctx.fill()}break;
    case"line":ctx.strokeStyle=col(a[4]);ctx.lineWidth=2;ctx.lineCap="round";ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(a[2],a[3]);ctx.stroke();break;
-   case"text":ctx.fillStyle=col(a[4]);ctx.font="600 "+(+a[3]||16)+'px -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,"Segoe UI",sans-serif';ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(S.fmt(a[0]),a[1],a[2]);break;
+   case"text":drawText(ctx,a);break;
   }
  }
 }
+function drawText(ctx,a){ctx.fillStyle=col(a[4]);ctx.font="600 "+(+a[3]||16)+'px -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,"Segoe UI",sans-serif';ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(S.fmt(a[0]),a[1],a[2])}
+// WebGPU: shapes on the GPU canvas underneath in one draw call, text on the 2D canvas on top
+let GPU=null,useGpu=LS.get("sprout3.gpu",true);
+function rendererUI(){const on=!!(GPU&&useGpu),b=$("bGpu");document.body.classList.toggle("gpu",on);b.hidden=!GPU;b.textContent=on?"WebGPU":"Canvas";b.classList.toggle("on",on)}
+$("bGpu").onclick=()=>{useGpu=!useGpu;LS.set("sprout3.gpu",useGpu);rendererUI();msAvg=0;toast(useGpu?"Drawing with WebGPU":"Drawing with Canvas 2D")};
+// WebGPU is used only once it has passed a self-test on this device; otherwise everything stays on Canvas 2D
+let gpuWhy="",gpuFrames=0;
+// the second check: frames drawn by the GPU must actually show. Every game clears its screen, so a shown frame has no clear pixels.
+function checkShown(){try{const c=document.createElement("canvas");c.width=c.height=8;const x=c.getContext("2d");x.drawImage($("gv"),0,0,8,8);const d=x.getImageData(0,0,8,8).data;
+ for(let i=3;i<d.length;i+=4)if(d[i]>0)return;}catch(e){}
+ GPU=null;gpuWhy="this browser didn't show the WebGPU frames";rendererUI()}
+if(window.SproutGpu)SproutGpu.makeGpuPainter($("gv")).then(p=>{GPU=p;rendererUI()},e=>{gpuWhy=msgOf(e)});
 let last=0,statT=0,artT=0;
 function frame(now){requestAnimationFrame(frame);const dt=Math.min(.05,(now-last)/1000||0);last=now;
  const k=cv.width/GW;g.setTransform(k,0,0,k,0,0);
@@ -366,9 +381,12 @@ function frame(now){requestAnimationFrame(frame);const dt=Math.min(.05,(now-last
  try{
   const t0=performance.now();
   if(!paused){game.tick(dt,heldCell());if(swipeTicks>0)swipeTicks--;if(++goodTicks===30)goodSrc=running}
-  const list=game.draw();msAvg=msAvg*.95+(performance.now()-t0)*.05;
-  g.save();if(shakeAmt>.3&&!paused){g.translate((Math.random()-.5)*shakeAmt,(Math.random()-.5)*shakeAmt);shakeAmt*=Math.pow(.004,dt)}else if(!paused)shakeAmt=0;
-  try{paint(g,list)}finally{g.restore()}
+  const list=game.draw();
+  let sx=0,sy=0;if(shakeAmt>.3&&!paused){sx=(Math.random()-.5)*shakeAmt;sy=(Math.random()-.5)*shakeAmt;shakeAmt*=Math.pow(.004,dt)}else if(!paused)shakeAmt=0;
+  if(GPU&&useGpu&&++gpuFrames===10)checkShown();
+  if(GPU&&useGpu){const texts=GPU.paint(list,GW,GH,sx,sy);g.clearRect(0,0,GW,GH);g.save();g.translate(sx,sy);for(const a of texts)drawText(g,a);g.restore()}
+  else{g.save();g.translate(sx,sy);try{paint(g,list)}finally{g.restore()}}
+  msAvg=msAvg*.95+(performance.now()-t0)*.05;
  }catch(e){
   const m={line:e.line||0,msg:msgOf(e)};
   if(goodSrc&&running!==goodSrc){try{game.swap(goodSrc);running=goodSrc;m.msg+=" (still running your last working version)"}catch(_){setPaused(true)}}else setPaused(true);
@@ -378,7 +396,8 @@ function frame(now){requestAnimationFrame(frame);const dt=Math.min(.05,(now-last
 }
 requestAnimationFrame(frame);
 // the little artwork in the player and the glow behind the page both come from the game itself
-function artUI(){try{const p=$("pArt").getContext("2d");p.drawImage(cv,0,cv.height*.125,cv.width,cv.width,0,0,96,96);$("glow").getContext("2d").drawImage(cv,0,0,36,48)}catch(e){}}
+function artUI(){try{const p=$("pArt").getContext("2d"),gl=$("glow").getContext("2d"),layers=GPU&&useGpu?[$("gv"),cv]:[cv];
+ for(const c of layers){p.drawImage(c,0,c.height*.125,c.width,c.width,0,0,96,96);gl.drawImage(c,0,0,36,48)}}catch(e){}}
 const fmtT=s=>{s=Math.max(0,s);return Math.floor(s/60)+":"+String(Math.floor(s%60)).padStart(2,"0")};
 function statUI(){
  const r=$("tlR"),h=game?game.history:[];
@@ -410,7 +429,8 @@ function fit(){const m=$("main").getBoundingClientRect(),phone=innerWidth<=720;
  if(phone){const head=$("head").getBoundingClientRect().height;h=Math.round(Math.max(150,Math.min((m.height-head-24)*.5,(m.width-24)/.75)));w=Math.round(h*.75)}
  else{h=Math.round(Math.max(200,Math.min(m.height-48,(m.width-56)*.5/.75)));w=Math.round(h*.75)}
  const st=$("stage");st.style.width=w+"px";st.style.height=h+"px";const dpr=Math.min(2,devicePixelRatio||1);
- cv.style.width=w+"px";cv.style.height=h+"px";cv.width=Math.round(w*dpr);cv.height=Math.round(h*dpr)}
+ cv.style.width=w+"px";cv.style.height=h+"px";cv.width=Math.round(w*dpr);cv.height=Math.round(h*dpr);
+ const gv=$("gv");gv.style.width=w+"px";gv.style.height=h+"px";gv.width=cv.width;gv.height=cv.height}
 if(window.ResizeObserver)new ResizeObserver(fit).observe($("main"));addEventListener("resize",fit);
 function vv(){const v=window.visualViewport;const h=v?v.height:innerHeight;$("app").style.height=h+"px";$("app").style.top=(v?v.offsetTop:0)+"px";document.body.classList.toggle("kb",h<innerHeight*.75&&document.activeElement===ta)}
 if(window.visualViewport){visualViewport.addEventListener("resize",vv);visualViewport.addEventListener("scroll",vv)}vv();
