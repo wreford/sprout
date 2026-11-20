@@ -18,6 +18,9 @@ function lexLine(line, lineNo, out) {
     if ("[](),|".includes(char)) { out.push(char); i++; continue; }
     if (char === ":") { out.push(":"); i++; continue; }
     if (char === '"') { i = lexString(line, i, lineNo, out); continue; }
+    // Rebol's literals (decision 100): a date, time, money, pair, url, email, colour, percent or 'word, written as it is
+    const literal = lexLiteral(line, i);
+    if (literal) { if (literal.form === "percent") out.push({ kind: "num", value: literal.value, line: lineNo }); else out.push({ kind: "literal", form: literal.form, text: literal.text, line: lineNo }); i += literal.length; continue; }
     let j = i;
     while (j < length && !WORD_STOP_CHARS.includes(line[j]) && !(line[j] === "-" && line[j + 1] === "-" && j > i)) j++;
     let word = line.slice(i, j); i = j;
@@ -26,6 +29,30 @@ function lexLine(line, lineNo, out) {
     if (word.length > 1 && word.endsWith("!")) { out.push({ kind: "word", value: word.slice(0, -1), line: lineNo }); word = "!"; }
     out.push({ kind: "word", value: word, line: lineNo });
   }
+}
+
+// each literal's form, tried in this order where a word could start; a literal ends where a word would
+const LITERAL_FORMS = [
+  ["url", /^[a-z][a-z0-9+.-]*:\/\/[^\s\[\](),"]+/i],
+  ["email", /^[a-z0-9][\w.+-]*@[a-z0-9-]+(\.[a-z0-9-]+)+/i],
+  ["date", /^\d{4}-\d{2}-\d{2}/],
+  ["time", /^\d{1,2}:\d{2}(:\d{2}(\.\d+)?)?/],
+  ["money", /^-?\$\d+(\.\d{1,2})?/],
+  ["pair", /^-?\d+(\.\d+)?x-?\d+(\.\d+)?/],
+  ["colour", /^#([0-9a-f]{8}|[0-9a-f]{6}|[0-9a-f]{3})/i],
+  ["percent", /^-?\d+(\.\d+)?%/],
+  ["word", /^'[a-z_][\w?!*+<>=\/-]*/i],
+];
+function lexLiteral(line, at) {
+  const rest = line.slice(at);
+  for (const [form, pattern] of LITERAL_FORMS) {
+    const m = pattern.exec(rest); if (!m) continue;
+    const next = rest[m[0].length];
+    if (next !== undefined && !WORD_STOP_CHARS.includes(next) && !(next === "-" && rest[m[0].length + 1] === "-")) continue;
+    if (form === "percent") return { form, value: parseFloat(m[0]) / 100, length: m[0].length };
+    return { form, text: form === "word" ? m[0].slice(1) : m[0], length: m[0].length };
+  }
+  return null;
 }
 
 // "a [x] b": [ ] puts a value into a string (decision 81). ( ) is plain text, so SQL and CSS need no escapes. \[ is a plain bracket.
@@ -125,6 +152,7 @@ class Parser {
     if (t.kind === "str") return { type: "str", value: t.value };
     if (t.kind === "tmpl") return { type: "tmpl", parts: t.parts.map(p => typeof p === "string" ? p : { ast: parseInner(p.src, t.line) }) };
     if (t.kind === "word") return { type: "word", value: t.value, line: t.line };
+    if (t.kind === "literal") return { type: "literal", form: t.form, text: t.text, line: t.line };
     throw new SproutError("this doesn't make sense here: " + t, this.line());
   }
   cell(openLine) {
@@ -182,7 +210,7 @@ class CodeGen {
   inlineCache() { const k = "IC" + this.constants.length; this.constants.push("const " + k + "={shape:null,index:-1,outShape:null,positions:null};"); return k; }
   // a head term that is certainly not true or false: a host value, or a name bound to a cell literal
   certainlyNotBool(term) {
-    if (term.type === "cell" || term.type === "num" || term.type === "str" || term.type === "tmpl") return true;
+    if (term.type === "cell" || term.type === "num" || term.type === "str" || term.type === "tmpl" || term.type === "literal") return true;
     if (term.type !== "word") return false;
     const entry = this.lookup(term.value);
     if (entry) return !!entry.cell;
@@ -196,6 +224,13 @@ class CodeGen {
     if (!this.globalConstants) this.globalConstants = new Map();
     let constant = this.globalConstants.get(name); if (!constant) { constant = "GLOBAL_" + this.constants.length; this.globalConstants.set(name, constant); this.constants.push("const " + constant + "=GLOBALS[" + JSON.stringify(name) + "];"); }
     return constant;
+  }
+  // a literal is made once, when the program loads (its kind comes from words.js)
+  literalConstant(term) {
+    const key = term.form + " " + term.text; this.literals = this.literals || new Map();
+    let k = this.literals.get(key);
+    if (!k) { k = "LITERAL_" + this.constants.length; this.literals.set(key, k); this.constants.push("const " + k + "=literal(" + JSON.stringify(term.form) + "," + JSON.stringify(term.text) + "," + (term.line || 0) + ");"); }
+    return k;
   }
   newTemp() { const scope = this.tempScopes[this.tempScopes.length - 1]; const name = "t" + (uniqueNumber++); scope.push(name); return name; }
   withTemps(generate) { this.tempScopes.push([]); const body = generate(); const temps = this.tempScopes.pop(); return { body, decl: temps.length ? "let " + temps.join(",") + ";" : "" }; }
@@ -317,6 +352,7 @@ class CodeGen {
       case "group": return this.genGroup(term.items);
       case "cell": return this.genCell(term);
       case "chain": return this.genChain(term);
+      case "literal": return this.literalConstant(term);
     }
     throw new Error("term " + term.type);
   }
@@ -474,7 +510,7 @@ function givesBool(chain) {
 function isSimpleValue(chain) {
   if (chain.type !== "chain" || !chain.terms.length) return false;
   const terms = chain.terms;
-  const isSimpleTerm = term => term.type === "num" || term.type === "str" || (term.type === "word" && !["_", "left", "right", "!"].includes(term.value)) ||
+  const isSimpleTerm = term => term.type === "num" || term.type === "str" || term.type === "literal" || (term.type === "word" && !["_", "left", "right", "!"].includes(term.value)) ||
     (term.type === "group" && term.items.length === 1 && isSimpleValue(term.items[0])) || (term.type === "cell" && isSimpleList(term));
   if (!isSimpleTerm(terms[0])) return false;
   for (let i = 1; i < terms.length; i++) {
@@ -1053,7 +1089,9 @@ frame : [update |
 `;
 
 // ===================================================================== build
-const RUNTIME = { BANG, ANY, GLOBALS, makeCell, sendWord, send, runCell, joinText, unknownWord, logMiss, withFields,
+// literal(form, text): a literal's value; words.js gives the real one
+const literal = (form, text, line) => logMiss("a " + form + " needs the standard words (words.js)", line);
+const RUNTIME = { literal, BANG, ANY, GLOBALS, makeCell, sendWord, send, runCell, joinText, unknownWord, logMiss, withFields,
   ADD, SUB, MUL, DIV, MOD, LT, GT, LE, GE, EQ, NE, concat, withCell, partAt, makeRecord, makeList, requireBool, notUnderstood, tailSend, sendWordCached, shapeFor };
 let preludeCell = null;
 function globalNames(extra) { const names = new Set(Object.keys(GLOBALS)); if (extra) for (const name of extra) names.add(name); return names; }

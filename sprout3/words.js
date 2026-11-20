@@ -154,6 +154,161 @@ const EVERY_WORDS = { kind: none(kindOf) };
 
 S.install({ methods: { cell: LIST_WORDS, text: TEXT_WORDS, number: NUMBER_WORDS, every: EVERY_WORDS } });
 
+// ===================================================================== Rebol's literals (decision 100)
+// Each kind is a small value with its own methods: maths that makes sense for it, and fields to read.
+const pad2 = n => String(n).padStart(2, "0");
+const sameKind = (a, b) => b !== null && typeof b === "object" && b.kind === a.kind;
+const compareBy = key => ({
+  "<": one((a, b) => sameKind(a, b) ? key(a) < key(b) : notUnderstood(b, "<")), ">": one((a, b) => sameKind(a, b) ? key(a) > key(b) : notUnderstood(b, ">")),
+  "<=": one((a, b) => sameKind(a, b) ? key(a) <= key(b) : notUnderstood(b, "<=")), ">=": one((a, b) => sameKind(a, b) ? key(a) >= key(b) : notUnderstood(b, ">=")),
+});
+const kindMethods = (key, extra) => Object.assign(Object.create(I.PROTOTYPES.every), compareBy(key), extra);
+class Kind {
+  sameAs(b) { return sameKind(this, b) && this.key() === b.key(); }
+  toString() { return this.sproutText(); }
+  toJSON() { return this.sproutText(); }
+}
+
+// a date: days since 1970-01-01 (UTC, so it never shifts with a time zone)
+const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+class SproutDate extends Kind {
+  constructor(days) { super(); this.days = days; }
+  key() { return this.days; }
+  parts() { const d = new Date(this.days * 86400000); return [d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate(), d.getUTCDay()]; }
+  sproutText() { const [y, m, d] = this.parts(); return String(y).padStart(4, "0") + "-" + pad2(m) + "-" + pad2(d); }
+}
+const dateOf = (y, m, d) => new SproutDate(Math.round(Date.UTC(y, m - 1, d) / 86400000));
+const DATE_METHODS = kindMethods(d => d.days, {
+  "+": one((a, n) => typeof n === "number" ? new SproutDate(a.days + Math.round(n)) : notUnderstood(n, "+")),
+  "-": one((a, b) => typeof b === "number" ? new SproutDate(a.days - Math.round(b)) : b instanceof SproutDate ? a.days - b.days : notUnderstood(b, "-")),
+  year: none(a => a.parts()[0]), month: none(a => a.parts()[1]), day: none(a => a.parts()[2]),
+  weekday: none(a => DAY_NAMES[a.parts()[3]]), "weekday-number": none(a => (a.parts()[3] + 6) % 7 + 1),
+  // months added keep the day, or the month's last day if it has fewer
+  "add-months": one((a, n) => { const [y, m, d] = a.parts(), total = y * 12 + (m - 1) + Math.round(n), ny = Math.floor(total / 12), nm = total % 12 + 1; const last = new Date(Date.UTC(ny, nm, 0)).getUTCDate(); return dateOf(ny, nm, Math.min(d, last)); }),
+  "is-weekend": none(a => a.parts()[3] === 0 || a.parts()[3] === 6),
+  // working days later, skipping Saturdays and Sundays
+  "add-workdays": one((a, n) => { let d = a.days, left = Math.round(n); const stepBy = left < 0 ? -1 : 1; while (left !== 0) { d += stepBy; const w = new Date(d * 86400000).getUTCDay(); if (w !== 0 && w !== 6) left -= stepBy; } return new SproutDate(d); }),
+});
+
+// a time of day, or a length of time: seconds
+class SproutTime extends Kind {
+  constructor(seconds) { super(); this.seconds = seconds; }
+  key() { return this.seconds; }
+  sproutText() { const neg = this.seconds < 0, t = Math.abs(this.seconds), h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), sec = +(t % 60).toFixed(6); return (neg ? "-" : "") + h + ":" + pad2(m) + (sec ? ":" + (sec < 10 ? "0" : "") + sec : ""); }
+}
+const secondsOf = (b, word) => b instanceof SproutTime ? b.seconds : typeof b === "number" ? b : (notUnderstood(b, word), 0);
+const TIME_METHODS = kindMethods(t => t.seconds, {
+  "+": one((a, b) => new SproutTime(a.seconds + secondsOf(b, "+"))), "-": one((a, b) => new SproutTime(a.seconds - secondsOf(b, "-"))),
+  "*": one((a, n) => new SproutTime(a.seconds * I.requireNumber(n))), "/": one((a, b) => b instanceof SproutTime ? a.seconds / b.seconds : new SproutTime(a.seconds / I.requireNumber(b))),
+  hour: none(a => Math.floor(a.seconds / 3600)), minute: none(a => Math.floor(a.seconds % 3600 / 60)), second: none(a => a.seconds % 60),
+  "in-seconds": none(a => a.seconds), "in-minutes": none(a => a.seconds / 60), "in-hours": none(a => a.seconds / 3600),
+});
+
+// money: whole cents, so sums are exact; * and / round to the nearest cent, halves to even (banker's rounding)
+const roundHalfEven = x => { const r = Math.round(x); return Math.abs(x % 1) === 0.5 && r % 2 !== 0 ? r - 1 : r; };
+class Money extends Kind {
+  constructor(cents) { super(); this.cents = cents; }
+  key() { return this.cents; }
+  sproutText() { const neg = this.cents < 0, c = Math.abs(this.cents), whole = String(Math.floor(c / 100)).replace(/\B(?=(\d{3})+(?!\d))/g, ","); return (neg ? "-" : "") + "$" + whole + "." + pad2(c % 100); }
+}
+const MONEY_METHODS = kindMethods(m => m.cents, {
+  "+": one((a, b) => b instanceof Money ? new Money(a.cents + b.cents) : notUnderstood(b, "+ (add money to money)")),
+  "-": one((a, b) => b instanceof Money ? new Money(a.cents - b.cents) : notUnderstood(b, "- (take money from money)")),
+  "*": one((a, n) => typeof n === "number" ? new Money(roundHalfEven(a.cents * n)) : notUnderstood(n, "*")),
+  "/": one((a, b) => b instanceof Money ? a.cents / b.cents : typeof b === "number" ? new Money(roundHalfEven(a.cents / b)) : notUnderstood(b, "/")),
+  // split into n shares that add up to the whole, the odd cents going to the first shares
+  split: one((a, n) => { const k = wholeNumber(n, "split") || 1, base = Math.trunc(a.cents / k), extra = a.cents - base * k; return list(Array.from({ length: k }, (_, j) => new Money(base + (j < Math.abs(extra) ? Math.sign(extra) : 0)))); }),
+  cents: none(a => a.cents), amount: none(a => a.cents / 100),
+});
+
+// a pair: x and y, for positions and sizes
+class Pair extends Kind {
+  constructor(x, y) { super(); this.x = x; this.y = y; }
+  key() { return this.x + "x" + this.y; }
+  sproutText() { return formatValue(this.x) + "x" + formatValue(this.y); }
+}
+const pairWise = (op, word) => one((a, b) => b instanceof Pair ? new Pair(op(a.x, b.x), op(a.y, b.y)) : typeof b === "number" ? new Pair(op(a.x, b), op(a.y, b)) : notUnderstood(b, word));
+const PAIR_METHODS = Object.assign(Object.create(I.PROTOTYPES.every), {
+  "+": pairWise((p, q) => p + q, "+"), "-": pairWise((p, q) => p - q, "-"), "*": pairWise((p, q) => p * q, "*"), "/": pairWise((p, q) => p / q, "/"),
+  x: none(a => a.x), y: none(a => a.y), length: none(a => Math.sqrt(a.x * a.x + a.y * a.y)), area: none(a => a.x * a.y),
+  "<": one((a, b) => b instanceof Pair ? a.x < b.x && a.y < b.y : notUnderstood(b, "<")), ">": one((a, b) => b instanceof Pair ? a.x > b.x && a.y > b.y : notUnderstood(b, ">")),
+  within: one((a, b) => b instanceof Pair ? a.x >= 0 && a.y >= 0 && a.x <= b.x && a.y <= b.y : notUnderstood(b, "within")),
+});
+
+// a url and an email: text with parts to read
+class Url extends Kind {
+  constructor(text) { super(); this.text = text; }
+  key() { return this.text; }
+  sproutText() { return this.text; }
+}
+const urlParts = u => { const m = /^([a-z][a-z0-9+.-]*):\/\/([^/?#]*)([^?#]*)(\?[^#]*)?(#.*)?$/i.exec(u.text) || []; return { scheme: m[1] || "", host: m[2] || "", path: m[3] || "", query: (m[4] || "").slice(1), fragment: (m[5] || "").slice(1) }; };
+const URL_METHODS = Object.assign(Object.create(I.PROTOTYPES.every), {
+  scheme: none(u => urlParts(u).scheme), host: none(u => urlParts(u).host), path: none(u => urlParts(u).path), query: none(u => urlParts(u).query),
+  // url / "page" adds a step to the path
+  "/": one((u, step) => new Url(u.text.replace(/\/+$/, "") + "/" + formatValue(step).replace(/^\/+/, ""))),
+  "..": one((u, more) => new Url(u.text + formatValue(more))),
+});
+class Email extends Kind {
+  constructor(text) { super(); this.text = text; }
+  key() { return this.text.toLowerCase(); }
+  sproutText() { return this.text; }
+}
+const EMAIL_METHODS = Object.assign(Object.create(I.PROTOTYPES.every), { user: none(e => e.text.split("@")[0]), host: none(e => e.text.split("@")[1]) });
+
+// a colour: red, green, blue from 0 to 255 and alpha from 0 to 1; draws as #rrggbb
+class Colour extends Kind {
+  constructor(r, g, b, a) { super(); this.r = r; this.g = g; this.b = b; this.a = a === undefined ? 1 : a; }
+  key() { return this.sproutText(); }
+  sproutText() { const h = v => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, "0"); return "#" + h(this.r) + h(this.g) + h(this.b) + (this.a < 1 ? h(this.a * 255) : ""); }
+}
+const colourOf = text => { let h = text.slice(1); if (h.length === 3) h = h.replace(/./g, c => c + c); const n = i => parseInt(h.slice(i, i + 2), 16); return new Colour(n(0), n(2), n(4), h.length === 8 ? n(6) / 255 : 1); };
+const mixColours = (a, b, t) => new Colour(a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t, a.a + (b.a - a.a) * t);
+const WHITE = { r: 255, g: 255, b: 255, a: 1 }, BLACK = { r: 0, g: 0, b: 0, a: 1 };
+const COLOUR_METHODS = Object.assign(Object.create(I.PROTOTYPES.every), {
+  red: none(c => c.r), green: none(c => c.g), blue: none(c => c.b), alpha: none(c => c.a),
+  mix: one((c, otherAndAmount) => { const [other, t] = argumentsOf(otherAndAmount, 2); return other instanceof Colour ? mixColours(c, other, typeof t === "number" ? t : 0.5) : notUnderstood(other, "mix"); }),
+  lighter: one((c, t) => mixColours(c, WHITE, I.requireNumber(t))), darker: one((c, t) => mixColours(c, BLACK, I.requireNumber(t))),
+  fade: one((c, alpha) => new Colour(c.r, c.g, c.b, I.requireNumber(alpha))),
+});
+
+// a word as a value ('move): what dialects and code as data are made of
+class Word extends Kind {
+  constructor(name) { super(); this.name = name; }
+  key() { return this.name; }
+  sproutText() { return this.name; }
+}
+const WORD_METHODS = Object.assign(Object.create(I.PROTOTYPES.every), { name: none(w => w.name) });
+const words = new Map();
+const wordOf = name => { let w = words.get(name); if (!w) { w = new Word(name); words.set(name, w); } return w; };
+
+function literal(form, text, line) {
+  switch (form) {
+    case "date": { const [y, m, d] = text.split("-").map(Number); const v = dateOf(y, m, d); if (v.sproutText() !== text) logMiss(text + " isn't a real date", line); return v; }
+    case "time": { const [h, m, sec] = text.split(":").map(Number); return new SproutTime(h * 3600 + m * 60 + (sec || 0)); }
+    case "money": { const neg = text[0] === "-", [whole, frac] = text.replace(/^-?\$/, "").split("."); const cents = Number(whole) * 100 + Number((frac || "0").padEnd(2, "0")); return new Money(neg ? -cents : cents); }
+    case "pair": { const m = /^(-?\d+(?:\.\d+)?)x(-?\d+(?:\.\d+)?)$/.exec(text); return new Pair(Number(m[1]), Number(m[2])); }
+    case "url": return new Url(text);
+    case "email": return new Email(text);
+    case "colour": return colourOf(text);
+    case "word": return wordOf(text);
+  }
+  return logMiss("no literal of the form " + form, line);
+}
+// the same values made from parts, for when they are worked out: date [2026, 11, 20], money 12.5, pair [3, 4], colour [255, 136, 0]
+const makers = {
+  date: a => { if (typeof a === "string") return /^\d{4}-\d{2}-\d{2}$/.test(a) ? literal("date", a) : notUnderstood(a, "date"); const [y, m, d] = argumentsOf(a, 3); const v = dateOf(y, m, d); if (v.parts()[2] !== d) logMiss(y + "-" + pad2(m) + "-" + pad2(d) + " isn't a real date"); return v; },
+  time: a => { if (typeof a === "number") return new SproutTime(a); const [h, m, sec] = argumentsOf(a, 3); return new SproutTime(h * 3600 + (m || 0) * 60 + (sec || 0)); },
+  money: a => typeof a === "number" ? new Money(roundHalfEven(a * 100)) : notUnderstood(a, "money"),
+  pair: a => { const [x, y] = argumentsOf(a, 2); return new Pair(x, y); },
+  url: a => new Url(formatValue(a)), email: a => new Email(formatValue(a)),
+  colour: a => typeof a === "string" ? colourOf(a) : (([r, g, b, al]) => new Colour(r, g, b, al === false ? 1 : al))(argumentsOf(a, 4)),
+  word: a => wordOf(formatValue(a)),
+};
+for (const [kindClass, kind, methods] of [[SproutDate, "date", DATE_METHODS], [SproutTime, "time", TIME_METHODS], [Money, "money", MONEY_METHODS], [Pair, "pair", PAIR_METHODS], [Url, "url", URL_METHODS], [Email, "email", EMAIL_METHODS], [Colour, "colour", COLOUR_METHODS], [Word, "word", WORD_METHODS]])
+  Object.assign(kindClass.prototype, { kind, methods });
+S.install({ runtime: { literal } });
+for (const name in makers) S.defNative(name, makers[name]);
+
 // ===================================================================== globals
 const define = (name, fn) => S.defNative(name, fn);
 // iterate [start, step]: start, then step of it, then step of that, without end
@@ -164,5 +319,5 @@ define("cycle", xs => { const parts = isCell(xs) ? partsOf(xs) : [xs]; let k = 0
 define("char", n => typeof n === "number" ? String.fromCodePoint(n) : notUnderstood(n, "char"));
 S.globals.pi = Math.PI;
 
-S.words = { Endless, endlessFrom, kindOf, argumentsOf, list, record, truthy };
+S.words = { Endless, endlessFrom, kindOf, literal, wordOf, Word, SproutDate, SproutTime, Money, Pair, Url, Email, Colour, argumentsOf, list, record, truthy };
 })(typeof window !== "undefined" ? window : globalThis);

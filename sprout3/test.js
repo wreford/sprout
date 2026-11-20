@@ -279,5 +279,22 @@ ok("hot-swap takes a changed start value", g.state.field("height") === 99);
   ok("99 an endless list says it has no length", logs.some(m => /endless/.test(m)));
 }
 
+// ---------------- Rebol's literals (decision 100)
+{
+  const W = [
+    ["2026-11-20 + 30", "2026-12-20"], ["2026-11-20 weekday", "Friday"], ["2026-12-25 - 2026-11-20", "35"], ["2026-01-31 add-months 1", "2026-02-28"],
+    ["2026-11-20 add-workdays 5", "2026-11-27"], ["2026-11-20 < 2026-12-01", "true"], ["2026-11-20 = 2026-11-20", "true"],
+    ["9:30 + 0:45", "10:15"], ["(17:00 - 9:30) in-hours", "7.5"], ["$19.99 * 3 + $5.00", "$64.97"], ["$100.00 split 3", "[$33.34, $33.33, $33.33]"],
+    ["$0.10 + $0.20 = $0.30", "true"], ["$1234567.5", "$1,234,567.50"], ["640x480 / 2", "320x240"], ["640x480 x", "640"],
+    ["https://taskiap.com/sprout3/ host", "taskiap.com"], ["https://taskiap.com/sprout3/ / \"play.html\"", "https://taskiap.com/sprout3/play.html"],
+    ["ada@example.com user", "ada"], ["#ff8800 mix [#0000ff, 0.5]", "#804480"], ["#f80", "#ff8800"], ["'move", "move"], ["'move = 'move", "true"],
+    ["'move = 'stop", "false"], ["'move kind", "word"], ["20% * 50", "10"], ["2026 - 11", "2015"], ["[don't : 1] don't", "1"],
+    ["match [2026-11-20, [2026-11-20, \"today\", any, \"other\"]]", "today"], ["date [2026, 11, 20] = 2026-11-20", "true"],
+  ];
+  for (const [src, want] of W) { const got = val(src); ok("100 " + src + " gives " + want, got === want); if (got !== want) console.log("   got", got); }
+  const L3 = require("./live3.js"), g = L3.makeGame("start :\n  x : 1\nupdate : [game | game]\ndraw : [game | circle [1, 2, 3, #ff8800]]", {}); g.tick(1 / 60);
+  ok("100 a colour draws as its text", JSON.stringify(g.draw()) === '[["circle",[1,2,3,"#ff8800"]]]' && String(g.draw()[0][1][3]) === "#ff8800");
+}
+
 console.log(pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
