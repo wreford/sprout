@@ -9,14 +9,14 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 **Run it (Node 22 or later):**
 
 ```
-node test.js          # language tests (303)
-node game-tests.js    # game tests (173)
+node test.js          # language tests (302)
+node game-tests.js    # game tests (177)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 476 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 479 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4596,6 +4596,16 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     S.setLog(m => logs.push(m));
     ok("silvereye: three missions, each with its guards and targets on open floor of its own map", counts.every(([st, g, m, bad, walls], i) => g === [6, 7, 8][i] && m === [2, 3, 2][i] && bad.length === 0 && walls), counts);
     ok("silvereye: every mission plays without a warning", said.length === 0, said.slice(0, 2)); }
+  // the campaign moves on: a won mission waits; swapping in the next stage starts it fresh, with its title card
+  { const camp = src.replace(/^campaign : false/m, "campaign : true"), cg = L.makeGame(camp, {}); cg.tick(1 / 60, pad({}));
+    ok("silvereye: a mission opens with its title card", cg.draw().some(x => x[0] === "text" && x[1][0] === "MISSION 1 · THE LAB"));
+    const m4 = new Map(S.fieldsOf(cg.state)); m4.set("over", "won"); m4.set("over-at", 10); cg.setState(S.valueCellOf([], m4), 20);
+    for (let t = 0; t < 120; t++) cg.tick(1 / 60, pad({ fire: true }));
+    ok("silvereye: in a campaign a won mission waits for the next", f(cg, "over") === "won" && cg.draw().some(x => x[0] === "text" && x[1][0] === "press A for the next mission"));
+    cg.swap(camp.replace(/^stage : 1/m, "stage : 2")); cg.tick(1 / 60, pad({}));
+    ok("silvereye: the next stage starts fresh, in its own map, with its card", f(cg, "over") === "" && f(cg, "guards").count() === 7 && cg.draw().some(x => x[0] === "text" && x[1][0] === "MISSION 2 · THE DEPOT"), [f(cg, "over"), f(cg, "guards").count()]);
+    const last = L.makeGame(camp.replace(/^stage : 1/m, "stage : 3"), {}); last.tick(1 / 60, pad({})); const m5 = new Map(S.fieldsOf(last.state)); m5.set("over", "won"); last.setState(S.valueCellOf([], m5));
+    ok("silvereye: the last mission ends the campaign", last.draw().some(x => x[0] === "text" && x[1][0] === "CAMPAIGN COMPLETE")); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });
@@ -10870,6 +10880,7 @@ start :
   machines : (mode != "mission") or (difficulty = 1) [[]] else [mission targets numbered collect [[k, spot] | [id : k, x : spot @ 1, y : spot @ 2, health : 100, model : spot @ 3, size : spot @ 4]]]
   intel : false
   match-start : 0
+  began : 0
   feed : []
   blasts : []
   over : ""
@@ -11154,6 +11165,10 @@ play : [game |
 
 -- two phones turn a game for one into a duel; once it's over, fire (or a tap) starts again after a moment
 update : [game |
+  -- a new mission (the page moved the campaign on): everything starts fresh from the new start, on the same frame
+  -- for both phones; on-stage isn't part of start, so it remembers which mission this state belongs to
+  fresh : (game on-stage else 0) != stage
+  game : fresh [game with start with [on-stage : stage, began : game clock]] else [game]
   two : game has-field "input2"
   -- two phones: a duel, or the mission together (the second player comes in beside the first)
   coop : two-phones = "coop"
@@ -11164,7 +11179,9 @@ update : [game |
   ]
   again : (wants (g input) restart) or (two [wants (g input2) restart] else [false])
   g over = "" [play g] else [
-    (again and (g clock - (g over-at) > 1.5)) [cond [two and (coop not), g with duel with [match-start : g clock], two, start with [agents : [agent [1, mission start @ 1, mission start @ 2, mission start @ 3], agent [2, mission start @ 1, mission start @ 2 + 1, mission start @ 3]], input : g input, input2 : g input2], any, start]] else [g]
+    -- in a campaign a won mission waits here for the next one (the page moves it on); the last one just ends
+    waits : campaign and (g over = "won") and (stage < (missions length))
+    (again and (waits not) and (g clock - (g over-at) > 1.5)) [cond [two and (coop not), g with duel with [match-start : g clock], two, start with [agents : [agent [1, mission start @ 1, mission start @ 2, mission start @ 3], agent [2, mission start @ 1, mission start @ 2 + 1, mission start @ 3]], input : g input, input2 : g input2], any, start]] else [g]
   ]
 ]
 
@@ -11302,6 +11319,13 @@ draw : [game |
   -- who took down whom, lately
   call : [n | cond [n = you-id, "YOU", n = 0, "THE LAB", is-sim n, "SIM [n]", any, "RIVAL"]]
   game versus [game feed numbered each [[k, e] | text [cond [(e by = (e who)) or (e by = 0), "[call (e who)] went down", any, "[call (e by)] took down [call (e who)]"], W / 2, k * 11 + 26, 8, cond [(e by = you-id) or (e who = you-id), gold, any, "#c9ccd4"]]]]
+  -- a mission opens with its title card and briefing, for a few seconds
+  card : now - (game began)
+  (mode = "mission") and (card < 4.5) and (game over = "") [
+    rect [0, H / 2 - 70, W, 112, "#000000b8"]
+    text ["MISSION [stage] · [mission name]", W / 2, H / 2 - 48, 15, gold]
+    mission brief numbered each [[k, line] | text [line, W / 2, k * 15 + (H / 2 - 30), 9, cream]]
+  ]
   -- the touch buttons, when there's no console around the screen
   game shell not [
     circle [W - 48, H - 48, 34, "#00000066"]
@@ -11320,7 +11344,7 @@ draw : [game |
   (game clock < (you safe-until)) [text ["PROTECTED", W / 2, H / 2 + 52, 9, cyan]]
   hint : cond [game shell, "stick to move · drag to look · hold A to fire", any, "drag to walk · tap the middle to fire"]
   (now < 5) and (game over = "") [text [hint, W / 2, H - 70, 10, "#f4f1eacc"]]
-  again : cond [game shell, "press A to go again", any, "tap to go again"]
+  again : cond [campaign and (game over = "won") and (stage < (missions length)), "press A for the next mission", game shell, "press A to go again", any, "tap to go again"]
   -- the end: what happened, and how you did (time, accuracy, takedowns)
   taken : game over-at
   accuracy : cond [you shots-fired = 0, 0, any, you shots-hit / (you shots-fired) * 100 round]
@@ -11338,7 +11362,8 @@ draw : [game |
     text [again, W / 2, H / 2 + 36, 11, cream]
     (game over = "won") [text [medals, W / 2, H / 2 + 22, 9, gold]]
   ]
-  game over = "won" [ending ["LAB CLEARED", "#7bd389"]]
+  last-one : stage >= (missions length)
+  game over = "won" [ending [cond [campaign and last-one, "CAMPAIGN COMPLETE", any, "MISSION COMPLETE"], "#7bd389"]]
   game over = "draw" [ending ["DRAW", gold]]
   game over = "lost" [ending ["YOU WERE CAUGHT", red]]
   game over = "p[you-id]" [ending ["YOU WIN", "#7bd389"]]

@@ -561,6 +561,16 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     S.setLog(m => logs.push(m));
     ok("silvereye: three missions, each with its guards and targets on open floor of its own map", counts.every(([st, g, m, bad, walls], i) => g === [6, 7, 8][i] && m === [2, 3, 2][i] && bad.length === 0 && walls), counts);
     ok("silvereye: every mission plays without a warning", said.length === 0, said.slice(0, 2)); }
+  // the campaign moves on: a won mission waits; swapping in the next stage starts it fresh, with its title card
+  { const camp = src.replace(/^campaign : false/m, "campaign : true"), cg = L.makeGame(camp, {}); cg.tick(1 / 60, pad({}));
+    ok("silvereye: a mission opens with its title card", cg.draw().some(x => x[0] === "text" && x[1][0] === "MISSION 1 · THE LAB"));
+    const m4 = new Map(S.fieldsOf(cg.state)); m4.set("over", "won"); m4.set("over-at", 10); cg.setState(S.valueCellOf([], m4), 20);
+    for (let t = 0; t < 120; t++) cg.tick(1 / 60, pad({ fire: true }));
+    ok("silvereye: in a campaign a won mission waits for the next", f(cg, "over") === "won" && cg.draw().some(x => x[0] === "text" && x[1][0] === "press A for the next mission"));
+    cg.swap(camp.replace(/^stage : 1/m, "stage : 2")); cg.tick(1 / 60, pad({}));
+    ok("silvereye: the next stage starts fresh, in its own map, with its card", f(cg, "over") === "" && f(cg, "guards").count() === 7 && cg.draw().some(x => x[0] === "text" && x[1][0] === "MISSION 2 · THE DEPOT"), [f(cg, "over"), f(cg, "guards").count()]);
+    const last = L.makeGame(camp.replace(/^stage : 1/m, "stage : 3"), {}); last.tick(1 / 60, pad({})); const m5 = new Map(S.fieldsOf(last.state)); m5.set("over", "won"); last.setState(S.valueCellOf([], m5));
+    ok("silvereye: the last mission ends the campaign", last.draw().some(x => x[0] === "text" && x[1][0] === "CAMPAIGN COMPLETE")); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });
