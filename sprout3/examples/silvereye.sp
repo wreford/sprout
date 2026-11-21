@@ -288,6 +288,17 @@ simulant-program : [s |
   ]
 ]
 styles : ["hunter", "flanker", "camper"]
+-- the character creator's looks, each with its own clips and a gun where its hand can hold one (all CC0, Quaternius)
+looks : [
+  [name : "OPERATIVE", body : "hooded_adventurer", run : "Run_Shoot", aim : "Idle_Gun_Pointing", shoot : "Gun_Shoot", death : "Death", size : 1.75, holds : "blaster_g"]
+  [name : "FIELD AGENT", body : "adventurer", run : "Run_Shoot", aim : "Idle_Gun_Pointing", shoot : "Gun_Shoot", death : "Death", size : 1.8, holds : "blaster_g"]
+  [name : "THE MONARCH", body : "monarch", run : "Run_Shoot", aim : "Idle_Gun_Pointing", shoot : "Gun_Shoot", death : "Death", size : 1.85, holds : "blaster_e"]
+  [name : "SPACEFARER", body : "astronaut", run : "Run_Gun", aim : "Idle_Gun", shoot : "Run_Gun_Shoot", death : "Death", size : 1.6, holds : false]
+  [name : "TROOPER", body : "soldier", run : "Run_Gun", aim : "Idle_Shoot", shoot : "Idle_Shoot", death : "Death", size : 1.8, holds : false]
+  [name : "SCIENTIST", body : "worker", run : "Man_Run", aim : "Man_Idle", shoot : "Man_Idle", death : "Man_Death", size : 1.75, holds : false]
+  [name : "GUNNER", body : "robot_gunner", run : "Run", aim : "Idle", shoot : "Shoot", death : "Death", size : 1.6, holds : false]
+]
+robot-look : looks @ 7
 -- simulants' codenames, by number (players are 1 and 2, so the first simulant is usually 2 or 3)
 sim-names : ["ASTER", "BRAM", "CINDER", "DUSK", "EMBER", "FLINT", "GALE", "HALE", "IVO"]
 sim-name : [n | sim-names @ (n - 2 max 0 % (sim-names length) + 1)]
@@ -356,7 +367,7 @@ wants : [inp |
     swap : (inp held "swap" else false) or (key "q")
     sentry : (inp held "sentry" else false) or (key "t") or (tap and (near-turret-button [inp touch-x, inp touch-y]))
     restart : (inp tapped) or (inp held "fire" else false) or (key "space")
-    zoom : (inp held "zoom" else false) or (key "z") or (key "shift"), fov : inp held "fov" else fov-across, hunt-x : false, hunt-y : false, assist : inp held "assist" else 1
+    zoom : (inp held "zoom" else false) or (key "z") or (key "shift"), fov : inp held "fov" else fov-across, hunt-x : false, hunt-y : false, assist : inp held "assist" else 1, skin : inp held "skin" else 1, tag : inp held "tag" else ""
   ]
 ]
 up : [a | a down-at = false]
@@ -380,7 +391,7 @@ play : [game |
     [
       walk : clamp [said walk else 0, -1, 1], strafe : clamp [said strafe else 0, -1, 1], look : false
       turn : clamp [said turn else 0, -1, 1] * (simulant-skill * 0.25 + 0.5)
-      fire : said fire else false, mine : false, sentry : false, reload : false, swap : false, assist : 1, restart : false, zoom : false, fov : fov-across
+      fire : said fire else false, mine : false, sentry : false, reload : false, swap : false, assist : 1, skin : 7, tag : "", restart : false, zoom : false, fov : fov-across
       hunt-x : sees [foe x] else [a goal-x], hunt-y : sees [foe y] else [a goal-y]
     ]
   ]
@@ -399,7 +410,7 @@ play : [game |
     fresh : (distance [went x, went y, a goal-x, a goal-y] < 0.7) or (stuck > 0.6)
     goal-x : cond [a bot not, a goal-x, w hunt-x != (a goal-x), w hunt-x, fresh, pick @ 1, any, a goal-x]
     goal-y : cond [a bot not, a goal-y, w hunt-y != (a goal-y), w hunt-y, fresh, pick @ 2, any, a goal-y]
-    a with [x : went x, y : went y, angle : heading, look : w look, moving : (up a) and ((w walk abs) + (w strafe abs) > 0.1), asks : w, zoomed : (up a) and (w zoom), fov : w fov, goal-x : goal-x, goal-y : goal-y, stuck : stuck]
+    a with [x : went x, y : went y, angle : heading, look : w look, moving : (up a) and ((w walk abs) + (w strafe abs) > 0.1), asks : w, skin : w skin, tag : w tag, zoomed : (up a) and (w zoom), fov : w fov, goal-x : goal-x, goal-y : goal-y, stuck : stuck]
   ]
   -- who could be shot: guards still standing, and players still up
   marks : game guards keep [g | g health > 0] collect [g | [who : "guard", id : g id, owner : 0, x : g x, y : g y]] .. (moved-agents keep up collect [a | [who : "agent", id : a id, owner : a id, x : a x, y : a y]]) .. (game machines keep [m | m health > 0] collect [m | [who : "machine", id : m id, owner : 0, x : m x, y : m y]]) .. (game turrets collect [t | [who : "turret", id : t id, owner : t owner, x : t x, y : t y]]) .. (game scientists keep [c | c health > 0] collect [c | [who : "scientist", id : c id, owner : 0, x : c x, y : c y]])
@@ -746,9 +757,11 @@ draw : [game |
   -- the other player
   rivals keep [r | gone (r down-at) not] each [r |
     -- simulants are machines, so they look like one: Quaternius's gunner robot
-    clip : cond [up r not, "Death", r bot and (r flash > 0), "Shoot", r bot and (r moving), "Run", r bot, "Idle", r flash > 0, "Idle_Shoot", r moving, "Run_Gun", any, "Idle_Shoot"]
+    -- a player looks as they chose in the character creator (their look, sent with their controls); simulants are robots
+    kit : cond [r bot, robot-look, any, looks @ ((r skin else 1) max 1 min (looks length))]
+    clip : cond [up r not, kit death, r flash > 0, kit shoot, r moving, kit run, any, kit aim]
     time : cond [up r not, now - (r down-at else now), any, now]
-    model [cond [r bot, "robot_gunner", any, "soldier"], r x, 0, r y, r angle, cond [r bot, 1.6, any, 1.8], clip, time]
+    model [kit body, r x, 0, r y, r angle, kit size, clip, time, kit holds]
     (r flash > 0) [flash [r angle cos * 0.6 + (r x), 1.3, r angle sin * 0.6 + (r y), 0.08, "#ffd76a"]]
   ]
   -- mines on the floor, blinking once they're live
@@ -845,7 +858,8 @@ draw : [game |
     down and (game over = "") [text ["DOWN · back in [respawn-after - (now - (you down-at else now)) max 0 ceil]", W / 2, H / 2 + 40, 12, cream]]
   ]
   -- who took down whom, lately
-  call : [n | cond [n = you-id, "YOU", n = 0, "THE LAB", is-sim n, sim-name n, any, "RIVAL"]]
+  tag-of : [n | game agents keep [a | a id = n] collect [a | a tag else ""] @ 1 else ""]
+  call : [n | cond [n = you-id, "YOU", n = 0, "THE LAB", is-sim n, sim-name n, tag-of n != "", tag-of n, any, "RIVAL"]]
   game versus [game feed numbered each [[k, e] | text [cond [(e by = (e who)) or (e by = 0), "[call (e who)] went down", any, "[call (e by)] took down [call (e who)]"], W / 2, k * 11 + 26, 8, cond [(e by = you-id) or (e who = you-id), gold, any, "#c9ccd4"]]]]
   -- your streak, for a moment
   (you streak >= 2) and (now - (you streak-at) < 1.6) [text [cond [you streak = 2, "DOUBLE TAKEDOWN", you streak = 3, "TRIPLE TAKEDOWN", any, "RAMPAGE"], W / 2, H / 2 - 82, 14, gold]]
