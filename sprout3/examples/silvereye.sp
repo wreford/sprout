@@ -31,6 +31,33 @@ depot : [
   "#......#.......#"
   "################"
 ]
+-- the compound: a walled yard out under the sky, an HQ, a guard hut and a garage (, is outdoor ground)
+compound : [
+  "########################"
+  "#,,,,,,,,,,,,,,,,,,,,,,#"
+  "#,,,,,,,,,,,,,,,,####,,#"
+  "#,,#######,,,,,,,#..#,,#"
+  "#,,#.....#,,,,,,,#..D,,#"
+  "#,,#.....#,,,,,,,####,,#"
+  "#,,#.....D,,,,,,,,,,,,,#"
+  "#,,###D###,,,,,,,,,,,,,#"
+  "#,,,,,,,,,,,,,,,,,,,,,,#"
+  "#,,,,,,,,,,,##,,,,,,,,,#"
+  "#,,,,,,,,,,,##,,,,,,,,,#"
+  "#,,,,##,,,,,,,,,,,,,,,,#"
+  "#,,,,##,,,,,,,,,,,##,,,#"
+  "#,,,,,,,,,,,,,,,,,##,,,#"
+  "#,,,,,,,,,,,,,#######,,#"
+  "#,,,,,,,,,,,,,#.....#,,#"
+  "#,,,,,,,,,,,,,#.....#,,#"
+  "#,,,,,,,,,,,,,#.....D,,#"
+  "#,,,,,,,,,,,,,#######,,#"
+  "#,,,,,,,,,,,,,,,,,,,,,,#"
+  "#,,,,,,##,,,,,,,,,,,,,,#"
+  "#,,,,,,##,,,,,,,,,,,,,,#"
+  "#,,,,,,,,,,,,,,,,,,,,,,#"
+  "########################"
+]
 relay : [
   "################"
   "#..............#"
@@ -114,6 +141,7 @@ campaign : false           -- true on the console: a won mission waits for the n
 lab-props : [["crate", 5.4, 1.6, 0.3, 0.8], ["barrels", 14.2, 1.7, 1.2, 0.9], ["crate", 1.7, 14.2, 1.9, 0.8], ["barrels", 14.3, 12.4, 0.4, 0.9], ["crate", 12.3, 8.3, 0.8, 0.8]]
 depot-props : [["barrels", 7.5, 7.5, 0.3, 0.9], ["crate", 1.6, 1.6, 0.4, 0.8], ["crate", 14.4, 14.4, 1.2, 0.8], ["barrels", 14.3, 1.6, 2.0, 0.9], ["crate", 8.0, 9.4, 0, 0.7], ["barrels", 1.7, 14.3, 0.7, 0.9], ["delivery_van", 12.4, 14.35, 0, 1.7]]
 relay-props : [["satellite_dish", 8.6, 5.4, 2.3, 1.5], ["column", 3.5, 3.5, 0, 2.5], ["column", 12.5, 3.5, 0, 2.5], ["column", 3.5, 12.5, 0, 2.5], ["column", 12.5, 12.5, 0, 2.5], ["barrels", 1.6, 1.6, 0.2, 0.9], ["crate", 14.4, 1.6, 0.9, 0.8], ["crate", 1.6, 14.4, 1.4, 0.8], ["barrels", 14.3, 14.3, 2.2, 0.9]]
+compound-props : [["tree_pine", 1.7, 1.7, 0, 3.4], ["tree_pine_tall", 22.3, 6.5, 0.6, 4.2], ["tree_oak", 1.8, 10.5, 0.3, 3], ["tree_oak", 22.2, 21.4, 1.1, 3], ["tree_pine", 15.6, 22.2, 0.2, 3.2], ["tree_pine", 10.5, 1.6, 0.9, 3.1], ["tree_oak", 9.0, 13.2, 2.1, 2.8], ["bush", 13.6, 11.2, 0, 0.9], ["bush", 4.2, 16.4, 0.7, 1], ["bush", 21.4, 15.3, 1.3, 0.9], ["rock_large", 18.2, 9.4, 0.5, 1.1], ["rock_large", 3.2, 19.6, 2.2, 0.9], ["delivery_van", 9.6, 22.3, 0, 1.7], ["crate", 16.4, 3.6, 0.4, 0.8], ["barrels", 22.3, 1.7, 0.2, 0.9], ["crate", 14.2, 19.4, 1.1, 0.8], ["barrels", 1.7, 22.3, 0.8, 0.9], ["generator", 10.5, 4.6, 1.6, 1.0]]
 missions : [
   [
     name : "THE LAB", map : lab, props : lab-props, walls : "concrete", air : #2a3140, floor : "plate", ceiling : "metal", haze : 22, light : [#eef4ff, #5a4a38, #fff0d8, 1.25]
@@ -142,6 +170,17 @@ missions : [
     scientists : [[1, 5.5, 14.5, 10.5, 14.5], [2, 5.5, 1.5, 10.5, 1.5]]
     warden : [9, 8.0, 8.0, 8.0, 7.0]
     brief : ["A relay station, held by the Warden himself.", "Silence both transmitters, take the codebook,", "and leave by the hatch you came in."]
+  ]
+  [
+    name : "THE COMPOUND", map : compound, props : compound-props, walls : "concrete", air : #bcd6ee, floor : "wood", ceiling : "plate", haze : 38
+    light : [#ffffff, #6e8a50, #fff2d8, 1.55], sky-top : #4f8fdc, ground : "grass"
+    spawn-at : [2.5, 21.5, -0.8], exit : [12.5, 22.5], exit-name : "OUT THROUGH THE GATE"
+    guards : [[1, 6.5, 9.5, 16.5, 9.5], [2, 12.5, 6.5, 12.5, 12.5], [3, 20.5, 8.5, 20.5, 13.5], [4, 9.5, 15.5, 9.5, 21.5], [5, 16.5, 20.5, 21.5, 20.5], [6, 3.5, 9.5, 3.5, 13.5], [7, 5.5, 4.5, 7.5, 5.5], [8, 18.5, 3.5, 18.5, 4.5], [9, 17.5, 16.5, 19.5, 16.5], [10, 15.5, 11.5, 10.5, 11.5]]
+    targets : [[12.5, 3.5, "satellite_dish", 1.7], [6.5, 18.5, "satellite_dish", 1.7]], target-name : "RADIO MASTS"
+    intel : [4.5, 4.5], intel-name : "FLIGHT PLANS"
+    scientists : [[1, 16.5, 15.5, 19.5, 15.5]]
+    spots : [["ammo", 8.5, 9.5], ["armour", 19.5, 10.5], ["ammo", 3.5, 13.5], ["ammo", 12.5, 20.5], ["armour", 17.5, 15.5], ["ammo", 18.5, 3.5]], heavy : [5.5, 5.5]
+    brief : ["A walled compound in the open: ten guards in the yard.", "Wreck both radio masts, take the flight plans", "from the HQ, and get out through the gate."]
   ]
 ]
 mission : missions @ (stage max 1 min (missions length))
@@ -410,7 +449,7 @@ play : [game |
   ]
   thought any [t | t fired] [sound "shoot"]
   struck : [k | shot-hits count [h | h key = k]]
-  power : [k normal heavy | shot-hits keep [h | h key = k] collect [h | cond [h heavy, heavy, any, normal]] sum]
+  power : [k normal hard | shot-hits keep [h | h key = k] collect [h | cond [h heavy, hard, any, normal]] sum]
   zapped : [k | thought count [t | t victim = k]]
   -- guards (only when you play alone): hit by shots and turrets, then each one patrols, or turns on you once it sees you
   hit-guards : game guards collect [g |
@@ -426,7 +465,8 @@ play : [game |
       facing : g y - (hero y) atan2 (g x - (hero x)) + pi
       looking : wrap (facing - (g angle)) abs < 0.9
       sees : (up hero) and (gd < 9) and ((g alert) or looking) and (clear-line [g x, g y, hero x, hero y])
-      alert : (g alert) or sees
+      was-alert : g alert
+      alert : was-alert or sees
       goal-x : cond [alert, hero x, any, g to-x]
       goal-y : cond [alert, hero y, any, g to-y]
       gap : distance [g x, g y, goal-x, goal-y]
@@ -443,7 +483,7 @@ play : [game |
       back-y : cond [arrived, g to-y, any, g home-y]
       g with [
         x : went x, y : went y, angle : cond [alert, facing, any, head], alert : alert
-        alert-at : cond [alert and (g alert not), now, any, g alert-at else -10]
+        alert-at : cond [alert and (was-alert not), now, any, g alert-at else -10]
         wait : cond [fires, 1.5 - (difficulty * 0.3), any, g wait - dt]
         stagger : (g stagger else 0) - dt
         to-x : next-x, to-y : next-y, home-x : back-x, home-y : back-y

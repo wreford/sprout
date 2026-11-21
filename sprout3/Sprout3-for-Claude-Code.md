@@ -4388,6 +4388,9 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   { const before = logs.length, first = L.makeGame(src, {}), padOn = S.valueCellOf([], new Map([["shell", true], ["walk", 1], ["fire", true]]));
     // a frame and a draw too: some lints only show when the code they're in first runs
     for (let t = 0; t < 30; t++) first.tick(1 / 60, padOn); first.draw();
+    // and a guard on alert, and a scientist hit: code that only runs then is checked too
+    { const m = new Map(S.fieldsOf(first.state)), ags = S.partsOf(m.get("agents")).slice(), a = new Map(S.fieldsOf(ags[0])); a.set("x", 9.5); a.set("y", 7.5); a.set("angle", 0); ags[0] = S.valueCellOf([], a); m.set("agents", S.valueCellOf(ags, new Map())); first.setState(S.valueCellOf([], m)); }
+    for (let t = 0; t < 90; t++) first.tick(1 / 60, padOn); first.draw();
     const lints = logs.slice(before).filter(m => /lint|isn't a word/.test(m));
     ok("silvereye: the program loads, runs and draws with no lints or unknown words", lints.length === 0, lints); }
   const pad = o => S.valueCellOf([], new Map(Object.entries(Object.assign({ shell: true }, o))));
@@ -4588,18 +4591,18 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     ok("silvereye: the eight example programs all run, and nothing warns", examples.length === 8 && said.length === 0, said.slice(0, 2)); }
   // the campaign: three missions, each with its own map, guards, targets and way out, all on open floor
   { const mapOf = name => { const m = src.match(new RegExp("^" + name + " : \\[\\n([\\s\\S]*?)\\n\\]", "m")); return m[1].split("\n").map(l => l.trim().replace(/"/g, "")); };
-    const maps = { lab: mapOf("lab"), depot: mapOf("depot"), relay: mapOf("relay") }, said = []; S.setLog(m => said.push(m));
+    const maps = { lab: mapOf("lab"), depot: mapOf("depot"), relay: mapOf("relay"), compound: mapOf("compound") }, said = []; S.setLog(m => said.push(m));
     const counts = [];
-    for (const [stage, map, guards, targets] of [[1, "lab", 6, 2], [2, "depot", 7, 3], [3, "relay", 9, 2]]) {
+    for (const [stage, map, guards, targets] of [[1, "lab", 6, 2], [2, "depot", 7, 3], [3, "relay", 9, 2], [4, "compound", 10, 2]]) {
       const ms = L.makeGame(src.replace(/^stage : 1/m, "stage : " + stage), {}); ms.tick(1 / 60, pad({}));
-      const M = maps[map], open = (x, y) => (M[Math.floor(y)] || "")[Math.floor(x)] === "." && !(M[Math.floor(y)] || "").includes("D") || (M[Math.floor(y)] || "")[Math.floor(x)] === ".";
+      const M = maps[map], open = (x, y) => ".,".includes((M[Math.floor(y)] || "")[Math.floor(x)] || "#");
       const pts = [...S.partsOf(f(ms, "guards")).flatMap(g => [[g.field("x"), g.field("y")], [g.field("to-x"), g.field("to-y")]]), ...S.partsOf(f(ms, "machines")).map(m => [m.field("x"), m.field("y")]), ...S.partsOf(f(ms, "pickups")).map(p => [p.field("x"), p.field("y")]), [agent(ms, 1).field("x"), agent(ms, 1).field("y")]];
       const walls = ms.draw().filter(x => x[0] === "block" && x[1][4] === 2.5 && x[1][6] !== "plate").length, wallCount = M.join("").split("#").length - 1;
       counts.push([stage, f(ms, "guards").count(), f(ms, "machines").count(), pts.filter(([x, y]) => !open(x, y)), walls === wallCount]);
       for (let t = 0; t < 300; t++) ms.tick(1 / 60, pad({ walk: 1, look: t * 0.02, fire: t % 30 < 8 }));
     }
     S.setLog(m => logs.push(m));
-    ok("silvereye: three missions, each with its guards and targets on open floor of its own map", counts.every(([st, g, m, bad, walls], i) => g === [6, 7, 9][i] && m === [2, 3, 2][i] && bad.length === 0 && walls), counts);
+    ok("silvereye: four missions, each with its guards and targets on open floor of its own map", counts.every(([st, g, m, bad, walls], i) => g === [6, 7, 9, 10][i] && m === [2, 3, 2, 2][i] && bad.length === 0 && walls), counts);
     ok("silvereye: every mission plays without a warning", said.length === 0, said.slice(0, 2)); }
   // the campaign moves on: a won mission waits; swapping in the next stage starts it fresh, with its title card
   { const camp = src.replace(/^campaign : false/m, "campaign : true"), cg = L.makeGame(camp, {}); cg.tick(1 / 60, pad({}));
@@ -4609,7 +4612,7 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     ok("silvereye: in a campaign a won mission waits for the next", f(cg, "over") === "won" && cg.draw().some(x => x[0] === "text" && x[1][0] === "press A for the next mission"));
     cg.swap(camp.replace(/^stage : 1/m, "stage : 2")); cg.tick(1 / 60, pad({}));
     ok("silvereye: the next stage starts fresh, in its own map, with its card", f(cg, "over") === "" && f(cg, "guards").count() === 7 && cg.draw().some(x => x[0] === "text" && x[1][0] === "MISSION 2 · THE DEPOT"), [f(cg, "over"), f(cg, "guards").count()]);
-    const last = L.makeGame(camp.replace(/^stage : 1/m, "stage : 3"), {}); last.tick(1 / 60, pad({})); const m5 = new Map(S.fieldsOf(last.state)); m5.set("over", "won"); last.setState(S.valueCellOf([], m5));
+    const last = L.makeGame(camp.replace(/^stage : 1/m, "stage : 4"), {}); last.tick(1 / 60, pad({})); const m5 = new Map(S.fieldsOf(last.state)); m5.set("over", "won"); last.setState(S.valueCellOf([], m5));
     ok("silvereye: the last mission ends the campaign", last.draw().some(x => x[0] === "text" && x[1][0] === "CAMPAIGN COMPLETE")); }
   { const fl = L.makeGame(src, {}); fl.tick(1 / 60, pad({})); const v0 = fl.draw().find(x => x[0] === "view")[1];
     for (let t = 0; t < 200; t++) fl.tick(1 / 60, pad({})); const v1 = fl.draw().find(x => x[0] === "view")[1];
@@ -10796,6 +10799,33 @@ depot : [
   "#......#.......#"
   "################"
 ]
+-- the compound: a walled yard out under the sky, an HQ, a guard hut and a garage (, is outdoor ground)
+compound : [
+  "########################"
+  "#,,,,,,,,,,,,,,,,,,,,,,#"
+  "#,,,,,,,,,,,,,,,,####,,#"
+  "#,,#######,,,,,,,#..#,,#"
+  "#,,#.....#,,,,,,,#..D,,#"
+  "#,,#.....#,,,,,,,####,,#"
+  "#,,#.....D,,,,,,,,,,,,,#"
+  "#,,###D###,,,,,,,,,,,,,#"
+  "#,,,,,,,,,,,,,,,,,,,,,,#"
+  "#,,,,,,,,,,,##,,,,,,,,,#"
+  "#,,,,,,,,,,,##,,,,,,,,,#"
+  "#,,,,##,,,,,,,,,,,,,,,,#"
+  "#,,,,##,,,,,,,,,,,##,,,#"
+  "#,,,,,,,,,,,,,,,,,##,,,#"
+  "#,,,,,,,,,,,,,#######,,#"
+  "#,,,,,,,,,,,,,#.....#,,#"
+  "#,,,,,,,,,,,,,#.....#,,#"
+  "#,,,,,,,,,,,,,#.....D,,#"
+  "#,,,,,,,,,,,,,#######,,#"
+  "#,,,,,,,,,,,,,,,,,,,,,,#"
+  "#,,,,,,##,,,,,,,,,,,,,,#"
+  "#,,,,,,##,,,,,,,,,,,,,,#"
+  "#,,,,,,,,,,,,,,,,,,,,,,#"
+  "########################"
+]
 relay : [
   "################"
   "#..............#"
@@ -10879,6 +10909,7 @@ campaign : false           -- true on the console: a won mission waits for the n
 lab-props : [["crate", 5.4, 1.6, 0.3, 0.8], ["barrels", 14.2, 1.7, 1.2, 0.9], ["crate", 1.7, 14.2, 1.9, 0.8], ["barrels", 14.3, 12.4, 0.4, 0.9], ["crate", 12.3, 8.3, 0.8, 0.8]]
 depot-props : [["barrels", 7.5, 7.5, 0.3, 0.9], ["crate", 1.6, 1.6, 0.4, 0.8], ["crate", 14.4, 14.4, 1.2, 0.8], ["barrels", 14.3, 1.6, 2.0, 0.9], ["crate", 8.0, 9.4, 0, 0.7], ["barrels", 1.7, 14.3, 0.7, 0.9], ["delivery_van", 12.4, 14.35, 0, 1.7]]
 relay-props : [["satellite_dish", 8.6, 5.4, 2.3, 1.5], ["column", 3.5, 3.5, 0, 2.5], ["column", 12.5, 3.5, 0, 2.5], ["column", 3.5, 12.5, 0, 2.5], ["column", 12.5, 12.5, 0, 2.5], ["barrels", 1.6, 1.6, 0.2, 0.9], ["crate", 14.4, 1.6, 0.9, 0.8], ["crate", 1.6, 14.4, 1.4, 0.8], ["barrels", 14.3, 14.3, 2.2, 0.9]]
+compound-props : [["tree_pine", 1.7, 1.7, 0, 3.4], ["tree_pine_tall", 22.3, 6.5, 0.6, 4.2], ["tree_oak", 1.8, 10.5, 0.3, 3], ["tree_oak", 22.2, 21.4, 1.1, 3], ["tree_pine", 15.6, 22.2, 0.2, 3.2], ["tree_pine", 10.5, 1.6, 0.9, 3.1], ["tree_oak", 9.0, 13.2, 2.1, 2.8], ["bush", 13.6, 11.2, 0, 0.9], ["bush", 4.2, 16.4, 0.7, 1], ["bush", 21.4, 15.3, 1.3, 0.9], ["rock_large", 18.2, 9.4, 0.5, 1.1], ["rock_large", 3.2, 19.6, 2.2, 0.9], ["delivery_van", 9.6, 22.3, 0, 1.7], ["crate", 16.4, 3.6, 0.4, 0.8], ["barrels", 22.3, 1.7, 0.2, 0.9], ["crate", 14.2, 19.4, 1.1, 0.8], ["barrels", 1.7, 22.3, 0.8, 0.9], ["generator", 10.5, 4.6, 1.6, 1.0]]
 missions : [
   [
     name : "THE LAB", map : lab, props : lab-props, walls : "concrete", air : #2a3140, floor : "plate", ceiling : "metal", haze : 22, light : [#eef4ff, #5a4a38, #fff0d8, 1.25]
@@ -10907,6 +10938,17 @@ missions : [
     scientists : [[1, 5.5, 14.5, 10.5, 14.5], [2, 5.5, 1.5, 10.5, 1.5]]
     warden : [9, 8.0, 8.0, 8.0, 7.0]
     brief : ["A relay station, held by the Warden himself.", "Silence both transmitters, take the codebook,", "and leave by the hatch you came in."]
+  ]
+  [
+    name : "THE COMPOUND", map : compound, props : compound-props, walls : "concrete", air : #bcd6ee, floor : "wood", ceiling : "plate", haze : 38
+    light : [#ffffff, #6e8a50, #fff2d8, 1.55], sky-top : #4f8fdc, ground : "grass"
+    spawn-at : [2.5, 21.5, -0.8], exit : [12.5, 22.5], exit-name : "OUT THROUGH THE GATE"
+    guards : [[1, 6.5, 9.5, 16.5, 9.5], [2, 12.5, 6.5, 12.5, 12.5], [3, 20.5, 8.5, 20.5, 13.5], [4, 9.5, 15.5, 9.5, 21.5], [5, 16.5, 20.5, 21.5, 20.5], [6, 3.5, 9.5, 3.5, 13.5], [7, 5.5, 4.5, 7.5, 5.5], [8, 18.5, 3.5, 18.5, 4.5], [9, 17.5, 16.5, 19.5, 16.5], [10, 15.5, 11.5, 10.5, 11.5]]
+    targets : [[12.5, 3.5, "satellite_dish", 1.7], [6.5, 18.5, "satellite_dish", 1.7]], target-name : "RADIO MASTS"
+    intel : [4.5, 4.5], intel-name : "FLIGHT PLANS"
+    scientists : [[1, 16.5, 15.5, 19.5, 15.5]]
+    spots : [["ammo", 8.5, 9.5], ["armour", 19.5, 10.5], ["ammo", 3.5, 13.5], ["ammo", 12.5, 20.5], ["armour", 17.5, 15.5], ["ammo", 18.5, 3.5]], heavy : [5.5, 5.5]
+    brief : ["A walled compound in the open: ten guards in the yard.", "Wreck both radio masts, take the flight plans", "from the HQ, and get out through the gate."]
   ]
 ]
 mission : missions @ (stage max 1 min (missions length))
@@ -11175,7 +11217,7 @@ play : [game |
   ]
   thought any [t | t fired] [sound "shoot"]
   struck : [k | shot-hits count [h | h key = k]]
-  power : [k normal heavy | shot-hits keep [h | h key = k] collect [h | cond [h heavy, heavy, any, normal]] sum]
+  power : [k normal hard | shot-hits keep [h | h key = k] collect [h | cond [h heavy, hard, any, normal]] sum]
   zapped : [k | thought count [t | t victim = k]]
   -- guards (only when you play alone): hit by shots and turrets, then each one patrols, or turns on you once it sees you
   hit-guards : game guards collect [g |
@@ -11191,7 +11233,8 @@ play : [game |
       facing : g y - (hero y) atan2 (g x - (hero x)) + pi
       looking : wrap (facing - (g angle)) abs < 0.9
       sees : (up hero) and (gd < 9) and ((g alert) or looking) and (clear-line [g x, g y, hero x, hero y])
-      alert : (g alert) or sees
+      was-alert : g alert
+      alert : was-alert or sees
       goal-x : cond [alert, hero x, any, g to-x]
       goal-y : cond [alert, hero y, any, g to-y]
       gap : distance [g x, g y, goal-x, goal-y]
@@ -11208,7 +11251,7 @@ play : [game |
       back-y : cond [arrived, g to-y, any, g home-y]
       g with [
         x : went x, y : went y, angle : cond [alert, facing, any, head], alert : alert
-        alert-at : cond [alert and (g alert not), now, any, g alert-at else -10]
+        alert-at : cond [alert and (was-alert not), now, any, g alert-at else -10]
         wait : cond [fires, 1.5 - (difficulty * 0.3), any, g wait - dt]
         stagger : (g stagger else 0) - dt
         to-x : next-x, to-y : next-y, home-x : back-x, home-y : back-y

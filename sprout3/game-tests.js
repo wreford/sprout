@@ -353,6 +353,9 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   { const before = logs.length, first = L.makeGame(src, {}), padOn = S.valueCellOf([], new Map([["shell", true], ["walk", 1], ["fire", true]]));
     // a frame and a draw too: some lints only show when the code they're in first runs
     for (let t = 0; t < 30; t++) first.tick(1 / 60, padOn); first.draw();
+    // and a guard on alert, and a scientist hit: code that only runs then is checked too
+    { const m = new Map(S.fieldsOf(first.state)), ags = S.partsOf(m.get("agents")).slice(), a = new Map(S.fieldsOf(ags[0])); a.set("x", 9.5); a.set("y", 7.5); a.set("angle", 0); ags[0] = S.valueCellOf([], a); m.set("agents", S.valueCellOf(ags, new Map())); first.setState(S.valueCellOf([], m)); }
+    for (let t = 0; t < 90; t++) first.tick(1 / 60, padOn); first.draw();
     const lints = logs.slice(before).filter(m => /lint|isn't a word/.test(m));
     ok("silvereye: the program loads, runs and draws with no lints or unknown words", lints.length === 0, lints); }
   const pad = o => S.valueCellOf([], new Map(Object.entries(Object.assign({ shell: true }, o))));
@@ -553,18 +556,18 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     ok("silvereye: the eight example programs all run, and nothing warns", examples.length === 8 && said.length === 0, said.slice(0, 2)); }
   // the campaign: three missions, each with its own map, guards, targets and way out, all on open floor
   { const mapOf = name => { const m = src.match(new RegExp("^" + name + " : \\[\\n([\\s\\S]*?)\\n\\]", "m")); return m[1].split("\n").map(l => l.trim().replace(/"/g, "")); };
-    const maps = { lab: mapOf("lab"), depot: mapOf("depot"), relay: mapOf("relay") }, said = []; S.setLog(m => said.push(m));
+    const maps = { lab: mapOf("lab"), depot: mapOf("depot"), relay: mapOf("relay"), compound: mapOf("compound") }, said = []; S.setLog(m => said.push(m));
     const counts = [];
-    for (const [stage, map, guards, targets] of [[1, "lab", 6, 2], [2, "depot", 7, 3], [3, "relay", 9, 2]]) {
+    for (const [stage, map, guards, targets] of [[1, "lab", 6, 2], [2, "depot", 7, 3], [3, "relay", 9, 2], [4, "compound", 10, 2]]) {
       const ms = L.makeGame(src.replace(/^stage : 1/m, "stage : " + stage), {}); ms.tick(1 / 60, pad({}));
-      const M = maps[map], open = (x, y) => (M[Math.floor(y)] || "")[Math.floor(x)] === "." && !(M[Math.floor(y)] || "").includes("D") || (M[Math.floor(y)] || "")[Math.floor(x)] === ".";
+      const M = maps[map], open = (x, y) => ".,".includes((M[Math.floor(y)] || "")[Math.floor(x)] || "#");
       const pts = [...S.partsOf(f(ms, "guards")).flatMap(g => [[g.field("x"), g.field("y")], [g.field("to-x"), g.field("to-y")]]), ...S.partsOf(f(ms, "machines")).map(m => [m.field("x"), m.field("y")]), ...S.partsOf(f(ms, "pickups")).map(p => [p.field("x"), p.field("y")]), [agent(ms, 1).field("x"), agent(ms, 1).field("y")]];
       const walls = ms.draw().filter(x => x[0] === "block" && x[1][4] === 2.5 && x[1][6] !== "plate").length, wallCount = M.join("").split("#").length - 1;
       counts.push([stage, f(ms, "guards").count(), f(ms, "machines").count(), pts.filter(([x, y]) => !open(x, y)), walls === wallCount]);
       for (let t = 0; t < 300; t++) ms.tick(1 / 60, pad({ walk: 1, look: t * 0.02, fire: t % 30 < 8 }));
     }
     S.setLog(m => logs.push(m));
-    ok("silvereye: three missions, each with its guards and targets on open floor of its own map", counts.every(([st, g, m, bad, walls], i) => g === [6, 7, 9][i] && m === [2, 3, 2][i] && bad.length === 0 && walls), counts);
+    ok("silvereye: four missions, each with its guards and targets on open floor of its own map", counts.every(([st, g, m, bad, walls], i) => g === [6, 7, 9, 10][i] && m === [2, 3, 2, 2][i] && bad.length === 0 && walls), counts);
     ok("silvereye: every mission plays without a warning", said.length === 0, said.slice(0, 2)); }
   // the campaign moves on: a won mission waits; swapping in the next stage starts it fresh, with its title card
   { const camp = src.replace(/^campaign : false/m, "campaign : true"), cg = L.makeGame(camp, {}); cg.tick(1 / 60, pad({}));
@@ -574,7 +577,7 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     ok("silvereye: in a campaign a won mission waits for the next", f(cg, "over") === "won" && cg.draw().some(x => x[0] === "text" && x[1][0] === "press A for the next mission"));
     cg.swap(camp.replace(/^stage : 1/m, "stage : 2")); cg.tick(1 / 60, pad({}));
     ok("silvereye: the next stage starts fresh, in its own map, with its card", f(cg, "over") === "" && f(cg, "guards").count() === 7 && cg.draw().some(x => x[0] === "text" && x[1][0] === "MISSION 2 · THE DEPOT"), [f(cg, "over"), f(cg, "guards").count()]);
-    const last = L.makeGame(camp.replace(/^stage : 1/m, "stage : 3"), {}); last.tick(1 / 60, pad({})); const m5 = new Map(S.fieldsOf(last.state)); m5.set("over", "won"); last.setState(S.valueCellOf([], m5));
+    const last = L.makeGame(camp.replace(/^stage : 1/m, "stage : 4"), {}); last.tick(1 / 60, pad({})); const m5 = new Map(S.fieldsOf(last.state)); m5.set("over", "won"); last.setState(S.valueCellOf([], m5));
     ok("silvereye: the last mission ends the campaign", last.draw().some(x => x[0] === "text" && x[1][0] === "CAMPAIGN COMPLETE")); }
   { const fl = L.makeGame(src, {}); fl.tick(1 / 60, pad({})); const v0 = fl.draw().find(x => x[0] === "view")[1];
     for (let t = 0; t < 200; t++) fl.tick(1 / 60, pad({})); const v1 = fl.draw().find(x => x[0] === "view")[1];
