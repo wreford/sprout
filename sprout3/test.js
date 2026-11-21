@@ -269,7 +269,7 @@ ok("hot-swap takes a changed start value", g.state.field("height") === 99);
     ["[a : [b : 1]] update-in [[\"a\", \"b\"], [n | n + 1]]", "[a : [b : 2]]"], ["[a : [b : 1]] get-in [\"a\", \"b\"]", "1"],
     ["[a : 1, b : 2] without \"a\"", "[b : 2]"], ["[a : 1, b : 2] keys", "[a, b]"],
     ["\"a,b\" split \",\"", "[a, b]"], ["\" x \" trim", "x"], ["\"hello\" slice [2, -2]", "ell"], ["\"ab\" repeat 2", "abab"],
-    ["\"42\" number + 1", "43"], ["\"x\" number", "false"], ["[1, 2] join \"-\"", "1-2"], ["\"7\" pad-left [3, \"0\"]", "007"],
+    ["\"42\" number + 1", "43"], ["\"x\" number", "false"], ["[1, 2] join \"-\"", "1-2"], ["\"7\" pad-left [3, \"0\"]", "007"], ["5 pad-left [2, \"0\"]", "05"], ["12 pad-right [4, \".\"]", "12.."], ["75.4 clock", "1:15"], ["3600 clock", "60:00"],
     ["3 kind", "number"], ["[a : 1] kind", "record"],
   ];
   for (const [src, want] of W) { const got = val(src); ok("99 " + src + " gives " + want, got === want); if (got !== want) console.log("   got", got); }

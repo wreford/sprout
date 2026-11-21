@@ -64,7 +64,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
   - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
   - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
-- **Tests:** 447 pass, 298 for the language and 149 for the games.
+- **Tests:** 451 pass, 302 for the language and 149 for the games.
 
 ## Open questions for Troy
 
@@ -82,14 +82,14 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 **Run it (Node 22 or later):**
 
 ```
-node test.js          # language tests (298)
+node test.js          # language tests (302)
 node game-tests.js    # game tests (149)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 447 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 451 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -3937,7 +3937,7 @@ ok("hot-swap takes a changed start value", g.state.field("height") === 99);
     ["[a : [b : 1]] update-in [[\"a\", \"b\"], [n | n + 1]]", "[a : [b : 2]]"], ["[a : [b : 1]] get-in [\"a\", \"b\"]", "1"],
     ["[a : 1, b : 2] without \"a\"", "[b : 2]"], ["[a : 1, b : 2] keys", "[a, b]"],
     ["\"a,b\" split \",\"", "[a, b]"], ["\" x \" trim", "x"], ["\"hello\" slice [2, -2]", "ell"], ["\"ab\" repeat 2", "abab"],
-    ["\"42\" number + 1", "43"], ["\"x\" number", "false"], ["[1, 2] join \"-\"", "1-2"], ["\"7\" pad-left [3, \"0\"]", "007"],
+    ["\"42\" number + 1", "43"], ["\"x\" number", "false"], ["[1, 2] join \"-\"", "1-2"], ["\"7\" pad-left [3, \"0\"]", "007"], ["5 pad-left [2, \"0\"]", "05"], ["12 pad-right [4, \".\"]", "12.."], ["75.4 clock", "1:15"], ["3600 clock", "60:00"],
     ["3 kind", "number"], ["[a : 1] kind", "record"],
   ];
   for (const [src, want] of W) { const got = val(src); ok("99 " + src + " gives " + want, got === want); if (got !== want) console.log("   got", got); }
@@ -6835,6 +6835,7 @@ const TEXT_WORDS = {
 };
 
 // ===================================================================== numbers
+const padNumber = (a, widthAndChar, how) => { const [width, char] = argumentsOf(widthAndChar, 2); return String(a)[how](wholeNumber(width, how === "padStart" ? "pad-left" : "pad-right"), typeof char === "string" ? char : " "); };
 const NUMBER_WORDS = {
   pow: one((a, b) => Math.pow(a, I.requireNumber(b))), exp: none(Math.exp), atan: none(Math.atan), sign: none(Math.sign),
   // y atan2 x: the angle of the point (x, y); n fixed 2: the number as text with 2 places
@@ -6842,6 +6843,10 @@ const NUMBER_WORDS = {
   even: none(a => a % 2 === 0), odd: none(a => Math.abs(a % 2) === 1),
   between: one((a, lowHigh) => { const [low, high] = argumentsOf(lowHigh, 2); return a >= low && a <= high; }),
   // 1 to 5 is [1, 2, 3, 4, 5]; 5 to 1 counts down
+  // 5 pad-left [2, "0"] is "05", as for text; 75 clock is "1:15" (minutes and seconds, for a game's timer)
+  "pad-left": one((a, widthAndChar) => padNumber(a, widthAndChar, "padStart")),
+  "pad-right": one((a, widthAndChar) => padNumber(a, widthAndChar, "padEnd")),
+  clock: none(a => { const t = Math.max(0, Math.floor(a)); return Math.floor(t / 60) + ":" + String(t % 60).padStart(2, "0"); }),
   to: one((a, b) => { if (typeof b !== "number") return notUnderstood(b, "to"); const out = [], stepBy = b >= a ? 1 : -1; for (let n = a; stepBy > 0 ? n <= b : n >= b; n += stepBy) out.push(n); return list(out); }),
 };
 
@@ -11141,15 +11146,12 @@ draw : [game |
   again : cond [game shell, "press A to go again", any, "tap to go again"]
   -- the end: what happened, and how you did (time, accuracy, takedowns)
   taken : game over-at
-  mins : taken / 60 floor
-  secs : taken % 60 floor
-  two-digits : cond [secs < 10, "0[secs]", any, "[secs]"]
   accuracy : cond [you shots-fired = 0, 0, any, you shots-hit / (you shots-fired) * 100 round]
   downs : cond [game versus, you kills, any, game guards count [g | g health <= 0]]
   ending : [title colour |
     rect [0, H / 2 - 54, W, 116, "#000000bb"]
     text [title, W / 2, H / 2 - 22, 22, colour]
-    text ["TIME [mins]:[two-digits]   ACCURACY [accuracy]%   TAKEDOWNS [downs]", W / 2, H / 2 + 8, 9, cream]
+    text ["TIME [taken clock]   ACCURACY [accuracy]%   TAKEDOWNS [downs]", W / 2, H / 2 + 8, 9, cream]
     text [again, W / 2, H / 2 + 36, 11, cream]
   ]
   game over = "won" [ending ["LAB CLEARED", "#7bd389"]]

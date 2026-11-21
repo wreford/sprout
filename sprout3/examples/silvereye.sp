@@ -554,15 +554,12 @@ draw : [game |
   again : cond [game shell, "press A to go again", any, "tap to go again"]
   -- the end: what happened, and how you did (time, accuracy, takedowns)
   taken : game over-at
-  mins : taken / 60 floor
-  secs : taken % 60 floor
-  two-digits : cond [secs < 10, "0[secs]", any, "[secs]"]
   accuracy : cond [you shots-fired = 0, 0, any, you shots-hit / (you shots-fired) * 100 round]
   downs : cond [game versus, you kills, any, game guards count [g | g health <= 0]]
   ending : [title colour |
     rect [0, H / 2 - 54, W, 116, "#000000bb"]
     text [title, W / 2, H / 2 - 22, 22, colour]
-    text ["TIME [mins]:[two-digits]   ACCURACY [accuracy]%   TAKEDOWNS [downs]", W / 2, H / 2 + 8, 9, cream]
+    text ["TIME [taken clock]   ACCURACY [accuracy]%   TAKEDOWNS [downs]", W / 2, H / 2 + 8, 9, cream]
     text [again, W / 2, H / 2 + 36, 11, cream]
   ]
   game over = "won" [ending ["LAB CLEARED", "#7bd389"]]

@@ -142,6 +142,7 @@ const TEXT_WORDS = {
 };
 
 // ===================================================================== numbers
+const padNumber = (a, widthAndChar, how) => { const [width, char] = argumentsOf(widthAndChar, 2); return String(a)[how](wholeNumber(width, how === "padStart" ? "pad-left" : "pad-right"), typeof char === "string" ? char : " "); };
 const NUMBER_WORDS = {
   pow: one((a, b) => Math.pow(a, I.requireNumber(b))), exp: none(Math.exp), atan: none(Math.atan), sign: none(Math.sign),
   // y atan2 x: the angle of the point (x, y); n fixed 2: the number as text with 2 places
@@ -149,6 +150,10 @@ const NUMBER_WORDS = {
   even: none(a => a % 2 === 0), odd: none(a => Math.abs(a % 2) === 1),
   between: one((a, lowHigh) => { const [low, high] = argumentsOf(lowHigh, 2); return a >= low && a <= high; }),
   // 1 to 5 is [1, 2, 3, 4, 5]; 5 to 1 counts down
+  // 5 pad-left [2, "0"] is "05", as for text; 75 clock is "1:15" (minutes and seconds, for a game's timer)
+  "pad-left": one((a, widthAndChar) => padNumber(a, widthAndChar, "padStart")),
+  "pad-right": one((a, widthAndChar) => padNumber(a, widthAndChar, "padEnd")),
+  clock: none(a => { const t = Math.max(0, Math.floor(a)); return Math.floor(t / 60) + ":" + String(t % 60).padStart(2, "0"); }),
   to: one((a, b) => { if (typeof b !== "number") return notUnderstood(b, "to"); const out = [], stepBy = b >= a ? 1 : -1; for (let n = a; stepBy > 0 ? n <= b : n >= b; n += stepBy) out.push(n); return list(out); }),
 };
 
