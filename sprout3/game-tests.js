@@ -653,6 +653,10 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     const off = Math.abs(((g3.field("angle") - toYou) % (2 * Math.PI) + 3 * Math.PI) % (2 * Math.PI) - Math.PI);
     ok("silvereye: an alert guard turns to face you, not away", g3.field("alert") === true && off < 0.2, [g3.field("angle"), toYou]); }
   ok("silvereye: guards are the adventurer, with a blaster in his hand", g.draw().filter(x => x[0] === "model" && x[1][0] === "adventurer" && x[1][8] === "blaster_g").length >= 5);
+  { const bodies = st => { const m = L.makeGame(src.replace(/^stage : 1/m, "stage : " + st), {}); m.tick(1 / 60, pad({})); return m.draw().filter(x => x[0] === "model" && ["adventurer", "soldier", "astronaut"].includes(x[1][0])).map(x => x[1][0] + ":" + x[1][6]); };
+    const depot = bodies(2), relay = bodies(3), yard = bodies(4);
+    ok("silvereye: each mission has its own guards: soldiers in the depot, sealed suits at the relay, a mix in the compound",
+      depot.length === 7 && depot.every(b => b === "soldier:Run") && relay.length === 8 && relay.every(b => b === "astronaut:Walk_Gun") && yard.filter(b => /^soldier/.test(b)).length === 5 && yard.filter(b => /^adventurer/.test(b)).length === 5, [depot, relay, yard]); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });

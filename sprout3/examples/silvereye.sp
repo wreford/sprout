@@ -152,6 +152,7 @@ missions : [
     spawn-at : [2.5, 2.5, 0.6], exit : [2.5, 2.5], exit-name : "BACK TO THE LIFT"
     guards : [[1, 12.5, 2.5, 12.5, 4.5], [2, 3.5, 7.5, 6.5, 7.5], [3, 13.5, 7.5, 9.5, 7.5], [4, 2.5, 11.5, 2.5, 13.5], [5, 9.5, 12.5, 9.5, 12.5], [6, 13.5, 13.5, 13.5, 10.5]]
     targets : [[9.0, 10.7, "generator_large", 1.4], [5.8, 7.7, "generator", 1.0]], target-name : "GENERATORS", target-one : "GENERATOR"
+    guard-kinds : [1]
     intel : [14.5, 12.5], intel-name : "INTEL CASE"
     scientists : [[1, 8.5, 1.5, 14.5, 1.5], [2, 1.5, 13.5, 10.5, 13.5]]
     brief : ["An underground lab. Six guards.", "Wreck both generators, take the intel case,", "then get back to the lift."]
@@ -161,6 +162,7 @@ missions : [
     spawn-at : [1.5, 1.5, 0.8], exit : [14.5, 14.5], exit-name : "TO THE LOADING BAY"
     guards : [[1, 7.5, 7.5, 12.5, 7.5], [2, 4.5, 1.5, 10.5, 1.5], [3, 14.5, 5.5, 14.5, 10.5], [4, 1.5, 9.5, 1.5, 13.5], [5, 8.5, 13.5, 12.5, 13.5], [6, 11.5, 10.5, 11.5, 8.5], [7, 5.5, 5.5, 5.5, 8.5]]
     targets : [[7.5, 9.5, "barrels", 1.1], [13.5, 7.5, "barrels", 1.1], [3.5, 13.5, "barrels", 1.1]], target-name : "FUEL STACKS", target-one : "FUEL STACK"
+    guard-kinds : [2]
     intel : [14.5, 1.5], intel-name : "SHIPPING MANIFEST"
     scientists : [[1, 2.5, 7.5, 13.5, 7.5]]
     brief : ["A supply depot, rows of shelving, seven guards.", "Blow the three fuel stacks, find the manifest,", "and get out through the loading bay."]
@@ -170,6 +172,7 @@ missions : [
     spawn-at : [14.5, 3.5, 3.1], exit : [14.5, 3.5], exit-name : "BACK TO THE HATCH"
     guards : [[1, 7.5, 7.5, 8.5, 8.5], [2, 1.5, 1.5, 14.5, 1.5], [3, 14.5, 14.5, 1.5, 14.5], [4, 3.5, 7.5, 3.5, 10.5], [5, 12.5, 7.5, 12.5, 10.5], [6, 7.5, 3.5, 10.5, 3.5], [7, 7.5, 12.5, 10.5, 12.5], [8, 1.5, 7.5, 1.5, 10.5]]
     targets : [[7.5, 5.5, "generator_large", 1.2], [8.5, 10.5, "generator_large", 1.2]], target-name : "TRANSMITTERS", target-one : "TRANSMITTER"
+    guard-kinds : [3]
     intel : [8.0, 7.5], intel-name : "CODEBOOK"
     scientists : [[1, 5.5, 14.5, 10.5, 14.5], [2, 5.5, 1.5, 10.5, 1.5]]
     warden : [9, 8.0, 8.0, 8.0, 7.0]
@@ -181,6 +184,7 @@ missions : [
     spawn-at : [2.5, 21.5, -0.8], exit : [12.5, 22.5], exit-name : "OUT THROUGH THE GATE"
     guards : [[1, 6.5, 9.5, 16.5, 9.5], [2, 12.5, 6.5, 12.5, 12.5], [3, 20.5, 8.5, 20.5, 13.5], [4, 9.5, 15.5, 9.5, 21.5], [5, 16.5, 20.5, 21.5, 20.5], [6, 3.5, 9.5, 3.5, 13.5], [7, 5.5, 4.5, 7.5, 5.5], [8, 18.5, 3.5, 18.5, 4.5], [9, 17.5, 16.5, 19.5, 16.5], [10, 15.5, 11.5, 10.5, 11.5]]
     targets : [[12.5, 3.5, "satellite_dish", 1.7], [6.5, 18.5, "satellite_dish", 1.7]], target-name : "RADIO MASTS", target-one : "RADIO MAST"
+    guard-kinds : [2, 1]
     intel : [4.5, 4.5], intel-name : "FLIGHT PLANS"
     scientists : [[1, 16.5, 15.5, 19.5, 15.5]]
     spots : compound-spots, heavy : compound-heavy
@@ -300,6 +304,13 @@ simulant-program : [it |
   ]
 ]
 styles : ["hunter", "flanker", "camper"]
+-- the guards' looks, by mission (guard-kinds): field agents with a blaster in hand, soldiers with rifles (they have no
+-- walk, so their run is played slowly for a patrol), and guards in sealed suits. All CC0, by Quaternius.
+guard-looks : [
+  [body : "adventurer", walk : "Walk", pace : 0.9, run : "Run_Shoot", aim : "Idle_Gun_Pointing", shoot : "Gun_Shoot", death : "Death", size : 1.8, holds : "blaster_g"]
+  [body : "soldier", walk : "Run", pace : 0.45, run : "Run_Gun", aim : "Idle_Shoot", shoot : "Idle_Shoot", death : "Death", size : 1.8, holds : false]
+  [body : "astronaut", walk : "Walk_Gun", pace : 0.9, run : "Run_Gun", aim : "Idle_Gun", shoot : "Run_Gun_Shoot", death : "Death", size : 1.7, holds : false]
+]
 -- the character creator's looks, each with its own clips and a gun where its hand can hold one (all CC0, Quaternius)
 looks : [
   [name : "OPERATIVE", body : "hooded_adventurer", run : "Run_Shoot", aim : "Idle_Gun_Pointing", shoot : "Gun_Shoot", death : "Death", size : 1.75, holds : "blaster_g"]
@@ -775,11 +786,13 @@ draw : [game |
   game guards keep [g | gone (g fell) not] each [g |
     near : distance [g x, g y, you x, you y] < 3
     big : g boss else false
-    -- guards: Quaternius's adventurer in field gear, a blaster in his hand; walking his rounds, running and firing once
-    -- he's seen you, taking aim when he's close. The Warden is the mech.
-    clip : cond [g health <= 0, "Death", big and (g alert) and near, "Shoot_Big", big and (g alert), "Run", big, "Walk", (g fired else false), "Gun_Shoot", g alert and near, "Idle_Gun_Pointing", g alert, "Run_Shoot", any, "Walk"]
-    time : cond [g health <= 0, now - (g fell else now), g alert, now, any, now * 0.9]
-    model [cond [big, "mech", any, "adventurer"], g x, 0, g y, g angle, cond [big, 2.5, any, 1.8] * (cond [tiny, 0.6, any, 1]), clip, time, cond [big, false, any, "blaster_g"]]
+    -- each mission has its own guards (see guard-looks): walking their rounds, running and firing once they've seen
+    -- you, taking aim when they're close. The Warden is the mech.
+    kinds : mission guard-kinds else [1]
+    kit : guard-looks @ (kinds @ (g id - 1 % (kinds length) + 1))
+    clip : cond [g health <= 0, cond [big, "Death", any, kit death], big and (g alert) and near, "Shoot_Big", big and (g alert), "Run", big, "Walk", (g fired else false), kit shoot, g alert and near, kit aim, g alert, kit run, any, kit walk]
+    time : cond [g health <= 0, now - (g fell else now), g alert, now, any, now * (cond [big, 0.9, any, kit pace])]
+    model [cond [big, "mech", any, kit body], g x, 0, g y, g angle, cond [big, 2.5, any, kit size] * (cond [tiny, 0.6, any, 1]), clip, time, cond [big, false, any, kit holds]]
   ]
   -- scientists, in their lab coats: walking their rounds, frozen when the alarm is up, falling if hit
   game scientists keep [c | gone (c fell) not] each [c |
