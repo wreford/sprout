@@ -185,6 +185,7 @@ body{background:radial-gradient(120% 80% at 50% 0%,#1d1d24 0%,var(--page) 70%)}
           <button data-do="skill">Skill <span class="val" id="vSkill"></span></button>
           <button data-do="assist">Aim help <span class="val" id="vAssist"></span></button>
           <button data-do="sight">Sight <span class="val" id="vSight"></span></button>
+          <button data-do="music">Music <span class="val" id="vMusic"></span></button>
           <button data-do="buzz">Vibration <span class="val" id="vBuzz"></span></button>
           <button data-do="shake">Screen shake <span class="val" id="vShake"></span></button>
           <button data-do="turbo" id="mTurbo" hidden>Turbo <span class="val" id="vTurbo"></span></button>
@@ -299,7 +300,7 @@ addEventListener("resize", layout); layout();
 
 // ---- sound
 let AC = null, muted = store.get("silvereye.mute", false);
-const audio = () => { if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} } if (AC && AC.state === "suspended") AC.resume(); };
+const audio = () => { if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} } if (AC && AC.state === "suspended") AC.resume(); if (AC && typeof MUSIC !== "undefined" && !MUSIC.on) MUSIC.start(); };
 function beep(f, d) { if (muted || !AC) return; try { const o = AC.createOscillator(), v = AC.createGain(), t = AC.currentTime; d = +d || .1; o.type = "square"; o.frequency.value = +f || 440; v.gain.setValueAtTime(.06, t); v.gain.exponentialRampToValueAtTime(.001, t + d); o.connect(v).connect(AC.destination); o.start(t); o.stop(t + d + .02); } catch (e) {} }
 const SOUNDS = new Map();
 function playSound(name) {
@@ -310,6 +311,49 @@ function playSound(name) {
   if (s.buf) play(s.buf); else if (s.failed) beep(440, .06);
 }
 let shakeAmt = 0;
+// ---- music: an original late-90s spy tune, made live with Web Audio (no files). D minor, 128 bpm, four bars:
+// a walking bass, a twangy lead (square through a filter, with a little slap-back echo), and brushed drums.
+const MUSIC = (() => {
+  const N = n => 440 * Math.pow(2, (n - 69) / 12);   // a MIDI note number to its frequency
+  // sixteen steps a bar; 0 is a rest. Bass and lead are MIDI notes, written for this game.
+  const bass = [38,0,38,0, 41,0,38,0, 43,0,41,0, 40,0,37,0,  38,0,38,0, 41,0,43,0, 45,0,44,0, 43,0,40,0,
+                34,0,34,0, 38,0,34,0, 36,0,38,0, 41,0,40,0,  33,0,33,0, 37,0,40,0, 45,0,43,0, 40,0,37,0];
+  const lead = [0,0,62,0, 65,0,69,0, 0,67,0,65, 64,0,0,0,  62,0,0,62, 65,0,67,0, 69,0,72,0, 70,0,69,0,
+                0,0,70,0, 69,0,65,0, 0,67,0,62, 64,0,0,0,  61,0,64,0, 69,0,0,67, 64,0,61,0, 62,0,0,0];
+  const kick = "x...x...x...x...", snare = "....x.......x...", hat = "x.x.x.x.x.x.x.xx";
+  let on = false, step = 0, next = 0, timer = 0, master = null, level = 0.5;
+  function voice(t, f, len, type, gain, cutoff, out) {
+    const o = AC.createOscillator(), g = AC.createGain(), flt = AC.createBiquadFilter();
+    o.type = type; o.frequency.value = f; flt.type = "lowpass"; flt.frequency.value = cutoff;
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(gain, t + 0.008); g.gain.exponentialRampToValueAtTime(0.0008, t + len);
+    o.connect(flt).connect(g).connect(out); o.start(t); o.stop(t + len + 0.05);
+  }
+  function noise(t, len, gain, hp, out) {
+    const b = AC.createBuffer(1, Math.ceil(AC.sampleRate * len), AC.sampleRate), d = b.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+    const s = AC.createBufferSource(), g = AC.createGain(), f = AC.createBiquadFilter(); f.type = "highpass"; f.frequency.value = hp;
+    s.buffer = b; g.gain.value = gain; s.connect(f).connect(g).connect(out); s.start(t);
+  }
+  function tick() {
+    if (!on || !AC) return;
+    const beat = 60 / 128 / 4;
+    while (next < AC.currentTime + 0.12) {
+      const k = step % 64, b = step % 16;
+      if (bass[k]) voice(next, N(bass[k]), beat * 1.8, "triangle", 0.32, 900, master);
+      if (lead[k]) { voice(next, N(lead[k]), beat * 2.6, "square", 0.07, 2200, master); voice(next + 0.11, N(lead[k]), beat * 2, "square", 0.025, 1600, master); }
+      if (kick[b] === "x") voice(next, 60, 0.18, "sine", 0.5, 400, master);
+      if (snare[b] === "x") noise(next, 0.12, 0.18, 1200, master);
+      if (hat[b] === "x") noise(next, 0.03, 0.05, 7000, master);
+      next += beat; step++;
+    }
+  }
+  return {
+    start() { if (on || !AC || muted || !settings.music) return; on = true; master = AC.createGain(); master.gain.value = level; master.connect(AC.destination); next = AC.currentTime + 0.05; timer = setInterval(tick, 40); },
+    stop() { on = false; clearInterval(timer); if (master) { const m = master; m.gain.setTargetAtTime(0, AC.currentTime, 0.1); setTimeout(() => m.disconnect(), 600); master = null; } },
+    level(v) { level = v; if (master) master.gain.setTargetAtTime(v, AC.currentTime, 0.3); },
+    get on() { return on; },
+  };
+})();
 const buzz = ms => { if (typeof settings !== "undefined" && !settings.buzz) return; try { navigator.vibrate && navigator.vibrate(ms); } catch (e) {} };
 function onEffect([name, a]) { if (name === "beep") beep(a[0], a[1]); else if (name === "shake") { shakeAmt = Math.max(shakeAmt, +a[0] || 0); buzz(40); } else if (name === "sound") playSound(S.format(a[0])); }
 const soundUI = () => { $("mSound").textContent = "Sound: " + (muted ? "off" : "on"); };
@@ -329,7 +373,7 @@ const cellSpan = (src, name) => { const b = src.search(new RegExp("^" + name + "
 const cellOf = (src, name) => { const sp = cellSpan(src, name); return sp ? src.slice(sp[0], sp[1]) : null; };
 const putCell = (src, name, text) => { const sp = cellSpan(src, name); return sp ? src.slice(0, sp[0]) + text.replace(/\s+$/, "") + src.slice(sp[1]) : src; };
 const original = {}, programs = store.get("silvereye.programs", {});
-const settings = Object.assign({ fov: 100, sims: 3, skill: 2, look: 1, buzz: true, shake: true, arena: "lab", two: "duel", turbo: false, sight: true, assist: "auto" }, store.get("silvereye.settings", {}));
+const settings = Object.assign({ fov: 100, sims: 3, skill: 2, look: 1, buzz: true, shake: true, arena: "lab", two: "duel", turbo: false, sight: true, assist: "auto", music: true }, store.get("silvereye.settings", {}));
 // the default view went from 90 to 100 degrees: anyone still on the old default moves up with it, once
 if (!store.get("silvereye.fov100", false)) { if (settings.fov === 90) settings.fov = 100; store.set("silvereye.fov100", true); store.set("silvereye.settings", settings); }
 let mode = "mission", tab = "turret", stageNum = 1, campaignOn = false;
@@ -495,8 +539,9 @@ function boardUI() {
   } catch (e) {}
 }
 const ASSISTS = ["auto", "strong", "light", "off"];
-function settingsUI() { $("vAssist").textContent = settings.assist; $("vSight").textContent = settings.sight ? "always" : "aiming"; $("mTurbo").hidden = !store.get("silvereye.turbo-unlocked", false); $("vTurbo").textContent = settings.turbo ? "on" : "off"; $("tDuel").textContent = settings.two === "coop" ? "Co-op · 2 phones" : "Duel · 2 phones"; $("vTwo").textContent = settings.two === "coop" ? "CO-OP" : "DUEL"; $("vArena").textContent = settings.arena === "depot" ? "DEPOT" : "LAB"; $("vBuzz").textContent = settings.buzz ? "on" : "off"; $("vShake").textContent = settings.shake ? "on" : "off"; $("vLook").textContent = settings.look + "×"; $("vFov").textContent = settings.fov + "°"; $("vSims").textContent = settings.sims; $("vSkill").textContent = SKILLS[settings.skill]; }
+function settingsUI() { $("vMusic").textContent = settings.music ? "on" : "off"; $("vAssist").textContent = settings.assist; $("vSight").textContent = settings.sight ? "always" : "aiming"; $("mTurbo").hidden = !store.get("silvereye.turbo-unlocked", false); $("vTurbo").textContent = settings.turbo ? "on" : "off"; $("tDuel").textContent = settings.two === "coop" ? "Co-op · 2 phones" : "Duel · 2 phones"; $("vTwo").textContent = settings.two === "coop" ? "CO-OP" : "DUEL"; $("vArena").textContent = settings.arena === "depot" ? "DEPOT" : "LAB"; $("vBuzz").textContent = settings.buzz ? "on" : "off"; $("vShake").textContent = settings.shake ? "on" : "off"; $("vLook").textContent = settings.look + "×"; $("vFov").textContent = settings.fov + "°"; $("vSims").textContent = settings.sims; $("vSkill").textContent = SKILLS[settings.skill]; }
 function showScreen(name) {
+  if (typeof MUSIC !== "undefined") MUSIC.level(name ? 0.5 : 0.18);
   screen = name; sel = 0;
   // the title remembers what you played last, so A starts it again
   if (name === "title") { const last = store.get("silvereye.last", "mission"), i = [...$("titleMenu").children].findIndex(b => b.dataset.do === last); if (i >= 0) sel = i; }
@@ -537,6 +582,7 @@ function choose(what) {
   else if (what === "fov") { settings.fov = FOVS[(FOVS.indexOf(settings.fov) + 1) % FOVS.length]; store.set("silvereye.settings", settings); settingsUI(); }
   else if (what === "assist") { settings.assist = ASSISTS[(ASSISTS.indexOf(settings.assist) + 1) % ASSISTS.length]; store.set("silvereye.settings", settings); settingsUI(); }
   else if (what === "sight") { settings.sight = !settings.sight; store.set("silvereye.settings", settings); settingsUI(); applyProgram(); }
+  else if (what === "music") { settings.music = !settings.music; store.set("silvereye.settings", settings); settingsUI(); if (settings.music) MUSIC.start(); else MUSIC.stop(); }
   else if (what === "buzz" || what === "shake") { settings[what] = !settings[what]; store.set("silvereye.settings", settings); settingsUI(); }
   else if (what === "turbo") { settings.turbo = !settings.turbo; store.set("silvereye.settings", settings); settingsUI(); toast("Takes effect at the next match"); }
   else if (what === "two") { settings.two = settings.two === "coop" ? "duel" : "coop"; store.set("silvereye.settings", settings); settingsUI(); }
@@ -545,7 +591,7 @@ function choose(what) {
   else if (what === "sims") { settings.sims = (settings.sims + 1) % 8; store.set("silvereye.settings", settings); settingsUI(); toast("Takes effect at the next match"); }
   else if (what === "skill") { settings.skill = settings.skill % 3 + 1; store.set("silvereye.settings", settings); settingsUI(); toast("Takes effect at the next match"); }
   else if (what === "resume") closeScreens();
-  else if (what === "sound") { muted = !muted; store.set("silvereye.mute", muted); soundUI(); }
+  else if (what === "sound") { muted = !muted; store.set("silvereye.mute", muted); soundUI(); if (muted) MUSIC.stop(); else MUSIC.start(); }
   else if (what === "code") location.href = "/sprout3/play.html#ex=silvereye";
   else if (what === "quit") { if (linked) { toast("You're linked: close the page to leave the duel."); return; } mode = "mission"; build(compose(), true); showScreen("title"); }
 }
