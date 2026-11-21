@@ -236,6 +236,7 @@ body.t-out #out{display:block}body.t-st #st{display:block}
     <button class="pill" id="libBtn">Library</button>
     <button class="pill" id="bRestart">Restart</button>
     <button class="pill" id="bShare">Share</button>
+    <button class="pill" id="bNet">Two players</button>
     <button class="pill" id="bSpec">Spec</button>
    </div>
   </div>
@@ -265,18 +266,18 @@ body.t-out #out{display:block}body.t-st #st{display:block}
 </footer>
 </div>
 <div id="modal"><div id="mBox"><div class="mh"><h2 id="mTitle"></h2><button class="x" data-close aria-label="Close">✕</button></div><div id="mBody"></div></div></div>
-<div id="moreMenu"><button data-m="lib">Library</button><button data-m="restart">Restart</button><button data-m="share">Share</button><button data-m="spec">Read the spec</button><a href="./">About Sprout</a></div><div id="toast"></div><div id="scrubTip"></div>
+<div id="moreMenu"><button data-m="net">Play with a friend</button><button data-m="lib">Library</button><button data-m="restart">Restart</button><button data-m="share">Share</button><button data-m="spec">Read the spec</button><a href="./">About Sprout</a></div><div id="toast"></div><div id="scrubTip"></div>
 
-<script src="sprout3.js?v=20261121k"></script>
-<script src="words.js?v=20261121k"></script>
-<script src="parse.js?v=20261121k"></script>
-<script src="stdlib.js?v=20261121k"></script>
-<script src="libs.js?v=20261121k"></script>
-<script src="kernels.js?v=20261121k"></script>
-<script src="live3.js?v=20261121k"></script>
-<script src="sqlite-web.js?v=20261121k"></script>
-<script src="gpu-paint.js?v=20261121k"></script>
-<script src="gpu-spork.js?v=20261121k"></script>
+<script src="sprout3.js?v=20261121l"></script>
+<script src="words.js?v=20261121l"></script>
+<script src="parse.js?v=20261121l"></script>
+<script src="stdlib.js?v=20261121l"></script>
+<script src="libs.js?v=20261121l"></script>
+<script src="kernels.js?v=20261121l"></script>
+<script src="live3.js?v=20261121l"></script>
+<script src="sqlite-web.js?v=20261121l"></script>
+<script src="gpu-paint.js?v=20261121l"></script>
+<script src="gpu-spork.js?v=20261121l"></script>
 <script>
 "use strict";
 const V="20261120m";
@@ -298,6 +299,7 @@ const EX=[
  ["ace-derive","ace","ACE Derive","The five kinds of atom, and done worked out to a fixed point."],
  ["terrain","tool","Terrain","A map made of smooth noise and coloured by scales, flying east: the simplex and chroma libraries, wrapped as Sprout modules. Change the sea level or the colours while it flies."],
  ["gears","tool","Gears","A parametric tool: two gears worked out from a few numbers. Change the teeth, the module or the speed while they turn, or press tweak and drag a number."],
+ ["volley","game","Volley","A game for two phones, no server: send an invite by text and each player drags their own paddle. Alone, the top paddle plays itself."],
  ["galaxy","game","Galaxy","Twenty thousand stars falling toward your finger. One fused loop moves them all, and WebGPU draws them in one call."],
  ["sprout","game","Sprout","Catch the rain, dodge the bugs. The demo game."],
  ["fireflies","game","Fireflies","Four hundred lights on the night air. Hold a finger down and they gather to it."],
@@ -374,7 +376,7 @@ function build(src,fresh){
   sporks=S.sporkTally().slice();
   lastProgram=cell;speedNotes=cell.speedNotes||[];running=src;goodSrc=src;setErr(null);swapped();renderState();speedMarks();return true}
  document.body.classList.remove("prog");
- try{if(game&&!fresh)game.swap(src);else{game=L.makeGame(src,{W:GW,H:GH,onEffect});setPaused(false)}}
+ try{if(game&&!fresh)game.swap(src);else{game=L.makeGame(src,Object.assign({W:GW,H:GH,onEffect},window.NET?NET.gameOptions():{}));setPaused(false)}}
  catch(e){setErr({line:lineOf(e),msg:msgOf(e)});return false}
  speedNotes=game.speedNotes||[];running=src;goodTicks=0;setErr(null);swapped();speedMarks();return true}
 function dropPrints(){document.querySelectorAll("#out .ln.print").forEach(x=>x.remove())}
@@ -395,12 +397,16 @@ function subLine(){const s=$("pSub");
 
 // ---------- input: touch and mouse are events; held keys go in with each tick
 const P={x:GW/2,y:GH/2,down:false};const KEYS=new Set();let swipe=null,swipeTicks=0,heldKey="",heldC=null;
+// a touch goes to the game, or, in a game for two, to both screens for the same frame (net.js, decision 107)
+const gameDown=(x,y)=>window.NET&&NET.active?NET.input({kind:"down",x,y}):game.down(x,y);
+const gameMove=(x,y)=>window.NET&&NET.active?NET.input({kind:"move",x,y}):game.move(x,y);
+const gameUp=()=>window.NET&&NET.active?NET.input({kind:"up"}):game.up();
 function heldCell(){const ks=[...KEYS];if(swipeTicks>0)ks.push(swipe);const k=ks.sort().join(",");if(k!==heldKey||!heldC){heldKey=k;heldC=S.valueCellOf([],new Map(ks.map(x=>[x,true])))}return heldC}
 const toGame=e=>{const r=cv.getBoundingClientRect();P.x=(e.clientX-r.left)/r.width*GW;P.y=(e.clientY-r.top)/r.height*GH};
 let sx=0,sy=0;
-cv.addEventListener("pointerdown",e=>{audio();cv.setPointerCapture(e.pointerId);toGame(e);sx=P.x;sy=P.y;P.down=true;if(document.activeElement===ta)ta.blur();if(game&&!paused)try{game.down(P.x,P.y)}catch(_){}});
-cv.addEventListener("pointermove",e=>{toGame(e);if(game&&!paused)try{game.move(P.x,P.y)}catch(_){}});
-const pup=e=>{if(!P.down)return;P.down=false;const dx=P.x-sx,dy=P.y-sy;if(Math.max(Math.abs(dx),Math.abs(dy))>28){swipe=Math.abs(dx)>Math.abs(dy)?(dx>0?"right":"left"):(dy>0?"down":"up");swipeTicks=4}if(game&&!paused)try{game.up()}catch(_){}};
+cv.addEventListener("pointerdown",e=>{audio();cv.setPointerCapture(e.pointerId);toGame(e);sx=P.x;sy=P.y;P.down=true;if(document.activeElement===ta)ta.blur();if(game&&!paused)try{gameDown(P.x,P.y)}catch(_){}});
+cv.addEventListener("pointermove",e=>{toGame(e);if(game&&!paused)try{gameMove(P.x,P.y)}catch(_){}});
+const pup=e=>{if(!P.down)return;P.down=false;const dx=P.x-sx,dy=P.y-sy;if(Math.max(Math.abs(dx),Math.abs(dy))>28){swipe=Math.abs(dx)>Math.abs(dy)?(dx>0?"right":"left"):(dy>0?"down":"up");swipeTicks=4}if(game&&!paused)try{gameUp()}catch(_){}};
 cv.addEventListener("pointerup",pup);cv.addEventListener("pointercancel",pup);
 addEventListener("pointerdown",audio,{once:true});
 const KEYNAME={ArrowLeft:"left",ArrowRight:"right",ArrowUp:"up",ArrowDown:"down"," ":"space",Enter:"enter"};
@@ -410,9 +416,9 @@ addEventListener("keydown",e=>{
  if(FKEYS[e.key]){e.preventDefault();FKEYS[e.key]();return}
  if(MODAL){if(e.key==="Escape"){e.preventDefault();closeModal()}return}
  if(e.altKey&&/^[123]$/.test(e.key)){e.preventDefault();tab(["code","st","out"][+e.key-1]);return}
- if(editing(e))return;const k=KEYNAME[e.key]||e.key.toLowerCase();if(!KEYS.has(k)&&(k==="space"||k==="enter")&&game&&!paused)try{game.down(P.x,P.y)}catch(_){}
+ if(editing(e))return;const k=KEYNAME[e.key]||e.key.toLowerCase();if(!KEYS.has(k)&&(k==="space"||k==="enter")&&game&&!paused)try{gameDown(P.x,P.y)}catch(_){}
  KEYS.add(k);if(e.key.startsWith("Arrow")||e.key===" ")e.preventDefault()});
-addEventListener("keyup",e=>{const k=KEYNAME[e.key]||e.key.toLowerCase();KEYS.delete(k);if((k==="space"||k==="enter")&&game&&!paused)try{game.up()}catch(_){}});
+addEventListener("keyup",e=>{const k=KEYNAME[e.key]||e.key.toLowerCase();KEYS.delete(k);if((k==="space"||k==="enter")&&game&&!paused)try{gameUp()}catch(_){}});
 addEventListener("blur",()=>KEYS.clear());
 
 // ---------- drawing what draw asked for
@@ -455,7 +461,8 @@ function frame(now){requestAnimationFrame(frame);const dt=Math.min(.05,(now-last
  if(!game){if(now-statT>400){statT=now;statUI()}return}
  try{
   const t0=performance.now();
-  if(!paused){game.tick(dt*SPEED,heldCell());if(swipeTicks>0)swipeTicks--;if(++goodTicks===30)goodSrc=running}
+  if(!paused&&window.NET&&NET.active)NET.advance(dt,heldCell());
+  else if(!paused){game.tick(dt*SPEED,heldCell());if(swipeTicks>0)swipeTicks--;if(++goodTicks===30)goodSrc=running}
   const list=game.draw();
   let sx=0,sy=0;if(shakeAmt>.3&&!paused){sx=(Math.random()-.5)*shakeAmt;sy=(Math.random()-.5)*shakeAmt;shakeAmt*=Math.pow(.004,dt)}else if(!paused)shakeAmt=0;
   if(GPU&&useGpu&&++gpuFrames===10)checkShown();
@@ -526,7 +533,7 @@ function fit(){const m=$("main").getBoundingClientRect(),phone=innerWidth<=720;
 {const mm=$("moreMenu");
  $("bMore").addEventListener("click",e=>{e.stopPropagation();if(mm.classList.toggle("on")){const r=$("bMore").getBoundingClientRect();mm.style.top=(r.bottom+6)+"px";mm.style.left=Math.max(8,Math.min(innerWidth-mm.offsetWidth-8,r.right-mm.offsetWidth))+"px"}});
  mm.addEventListener("click",e=>{const b=e.target.closest("[data-m]");if(!b)return;mm.classList.remove("on");
-  ({lib:()=>$("libBtn").click(),restart:()=>$("bRestart").click(),share:()=>$("bShare").click(),spec:()=>$("bSpec").click()})[b.dataset.m]()});
+  ({net:()=>window.NET&&NET.invite(),lib:()=>$("libBtn").click(),restart:()=>$("bRestart").click(),share:()=>$("bShare").click(),spec:()=>$("bSpec").click()})[b.dataset.m]()});
  document.addEventListener("pointerdown",e=>{if(mm.classList.contains("on")&&!mm.contains(e.target)&&!e.target.closest("#bMore"))mm.classList.remove("on")},true)}
 if(window.ResizeObserver)new ResizeObserver(fit).observe($("main"));addEventListener("resize",fit);
 function vv(){const v=window.visualViewport;const h=v?v.height:innerHeight;$("app").style.height=h+"px";$("app").style.top=(v?v.offsetTop:0)+"px";const kb=h<innerHeight*.75&&document.activeElement===ta;if(kb!==document.body.classList.contains("kb")){document.body.classList.toggle("kb",kb);requestAnimationFrame(fit)}}
@@ -740,7 +747,7 @@ const b64d=s=>decodeURIComponent(escape(atob(s.replace(/-/g,"+").replace(/_/g,"/
 async function share(){if(!code.trim()){toast("Nothing to share yet");return}const url=location.origin+location.pathname+"#s3="+b64e(code);
  if(navigator.share){try{await navigator.share({title:"Sprout 3",url});return}catch(e){if(e&&e.name==="AbortError")return}}
  try{await navigator.clipboard.writeText(url);toast("Link copied · anyone who opens it gets this code")}catch(e){prompt("Copy this link:",url)}}
-$("bShare").onclick=share;
+$("bShare").onclick=share;$("bNet").onclick=()=>window.NET&&NET.invite();
 
 // ---------- start
 (function boot(){
@@ -755,5 +762,6 @@ $("bShare").onclick=share;
  if(sv&&sv.code&&sv.code.trim()){curEx=sv.ex||"";dirty=!!sv.dirty;setCode(sv.code);build(sv.code,true);if(document.body.classList.contains("prog"))tab("out");thenOpen()}
  else loadEx("ace-board",true).then(thenOpen)})();
 </script>
-<script src="editor-tools.js?v=20261121k"></script>
+<script src="editor-tools.js?v=20261121l"></script>
+<script src="net.js?v=20261121l"></script>
 </body></html>

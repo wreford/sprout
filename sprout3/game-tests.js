@@ -306,5 +306,23 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   const first = JSON.stringify(g.draw()); g.tick(1); ok("terrain: it flies", JSON.stringify(g.draw()) !== first);
 }
 
+// ---------------- two players (decision 107)
+{
+  const src = fs.readFileSync(__dirname + "/examples/volley.sp", "utf8");
+  // two screens, the same seed and the same inputs: the same game, frame by frame
+  const seeded = seed => () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  const one = L.makeGame(src, { players: 2, me: 1, random: seeded(99) }), two = L.makeGame(src, { players: 2, me: 2, random: seeded(99) });
+  // another game made in between must not take the random numbers (the page makes cover art)
+  L.makeGame(fs.readFileSync(__dirname + "/examples/sprout.sp", "utf8"), {});
+  for (let t = 0; t < 400; t++) {
+    for (const g of [one, two]) { if (t % 50 === 5) g.down(120, 400); if (t % 50 === 20) g.up(); if (t % 60 === 10) g.down(250, 60, 2); g.tick(1 / 60, null, null); }
+  }
+  ok("two players: both screens keep the same game", S.format(one.state) === S.format(two.state));
+  ok("two players: player 2's touch moves player 2's paddle", f(one, "far") !== 180 && f(one, "input2").field("touch-x") === 250, f(one, "far"));
+  ok("two players: each screen draws its own player at the bottom", JSON.stringify(one.draw()) !== JSON.stringify(two.draw()));
+  const alone = L.makeGame(src, {}); for (let t = 0; t < 200; t++) alone.tick(1 / 60);
+  ok("volley alone: no input2, and the top paddle plays itself", alone.state.field("input2") === S.UNSET && f(alone, "far") !== 180);
+}
+
 console.log(pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

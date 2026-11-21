@@ -484,6 +484,7 @@ function sheetUI() {
     (n > 1 ? `<input type="range" id="lsH" min="0" max="${n - 1}" value="${at}"><div class="hist">${browsing >= 0 ? "Version " + (at + 1) + " of " + n + " · " + ago(v.at) + " · " + diffNote(versions[n - 1].code, v.code) + " from now" : n + " versions so far · drag back to play an older one"}</div>` +
       (browsing >= 0 ? `<div class="seg2" style="margin-top:8px"><button id="lsKeep">Keep this version</button><button id="lsNow" class="on">Back to now</button></div>` : "")
       : `<div class="hist">Each version that runs is kept here. Change something to start.</div>`) +
+    `<div class="lbl">Two players</div><div class="seg2"><button id="lsNet">${window.NET && NET.active ? "Connected · player " + NET.me : "Play with a friend"}</button></div>` +
     `<div class="lbl">Speed</div><div class="seg2">${[0.25, 0.5, 1, 2].map(k => `<button data-sp="${k}" class="${SPEED === k ? "on" : ""}">${k === 0.25 ? "¼" : k === 0.5 ? "½" : k}×</button>`).join("")}</div>` +
     `<div class="lbl">While you type</div>` +
     `<div class="sw"><span>Run as I type</span><button class="tg${autoRun ? " on" : ""}" id="lsAuto" aria-label="run as I type"></button></div>` +
@@ -491,7 +492,7 @@ function sheetUI() {
   const h = $("lsH");
   if (h) h.oninput = () => { const k = +h.value; if (k === versions.length - 1) { backToNow(); return; } browseTo(k); };
   const on = (id, f) => { const e = $(id); if (e) e.onclick = f; };
-  on("lsX", closeSheet); on("lsNow", backToNow);
+  on("lsX", closeSheet); on("lsNet", () => { if (window.NET && !NET.active) { closeSheet(); NET.invite(); } }); on("lsNow", backToNow);
   on("lsKeep", () => { const k = browsing; browsing = -1; versions.push({ code: versions[k].code, at: Date.now() }); LS.set(VKEY(), versions); toast("Kept version " + (k + 1)); sheetUI(); });
   sheet.querySelectorAll("[data-sp]").forEach(b => b.onclick = () => { SPEED = +b.dataset.sp; toast(SPEED === 1 ? "Normal speed" : SPEED < 1 ? "Slow motion " + b.textContent : "Fast " + b.textContent); sheetUI(); });
   on("lsAuto", () => { autoRun = !autoRun; LS.set("sprout3.autoRun", autoRun); if (autoRun) runCode(); sheetUI(); keysUI(); });

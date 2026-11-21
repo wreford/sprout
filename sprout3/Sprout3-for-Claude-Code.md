@@ -10,13 +10,13 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 
 ```
 node test.js          # language tests (298)
-node game-tests.js    # game tests (88)
+node game-tests.js    # game tests (92)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 386 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 390 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -119,6 +119,8 @@ The page and `bench.html` need a local web server, such as `python3 -m http.serv
 - `editor-tools.js`: The editor tools for play.html: key bar with suggestions, cursor keys, undo and snippets; live values; line actions; touch controls for literals; the Live sheet (history, speed, run as you type); the value of a selection
 - `libs.js`: Wrapped libraries (decision 106): chroma, simplex, mathjs, date-fns, fuse, nlp, tone and turf as Sprout modules, loaded from vendor/ when a program names them
 - `examples/terrain.sp`: Terrain: a map from simplex noise coloured by chroma scales, flying east (Tools group)
+- `net.js`: Two players, no server (decision 107): WebRTC with invite and reply links sent by text, lockstep with seeded random numbers, state fingerprints and resync, shared live coding
+- `examples/volley.sp`: Volley: the first game for two phones (Games group)
 - `examples/recipes.sp`: Recipes: quicksort, primes, FizzBuzz, a vector with its own + (prints; not a game)
 - `play.html`: The editor at taskiap.com/sprout3/play.html (opens #ex=name, #spec, #history): a library of examples with artwork, the running game shown like album art, live editing, a now-playing bar whose progress bar rewinds time, state, output and the spec; light and dark
 - `bench.html`: Benchmarks in the browser: the language against plain JS, the games, particles up to 100,000 on Canvas 2D and WebGPU, and SQLite
@@ -753,6 +755,7 @@ These are marked in `sprout2.js` with "Sprout Live fix N" or "Sprout Live additi
 104. **Scripts: coroutines that stay values (Troy, 20 Nov).** `script [| ... yield 1 ... x : yield 2 ...]` is a script, Lua's coroutine done Sprout's way. `s resume v` runs it on to its next `yield` and gives a new script whose `value` is what was yielded (or, once it finishes, what it gave back) and whose `done` says whether it has finished. `yield` gives back the value sent by the next resume, a script's input is the first value sent, and `s next` resumes with false. Unlike a Lua coroutine, a script never changes: `s` is the same after `s resume v`, so a game keeps its script in its state and rewinds, replays, saves and compares it like any other value. A resume works by running the cell again from the start with every value sent so far, so the code must be pure, as all Sprout code is. The steps already taken don't have their effects again (a `print` or a `beep` happens once), and `random` and `rand` give them the numbers they had the first time, so the run is the same run. A new step's random numbers are new, as anywhere. Running again costs time that grows with the steps taken; a game script of a few hundred steps resumes in microseconds. `take n` and `yields` give the values a script yields (a generator), and `wait seconds`, written in Sprout in `words.js`, waits inside a game script that is resumed with each frame's `dt`. A cell written with a bar and no inputs, `[| ...]`, is code: it runs when it is run, never when it is made, even when its parts look like simple values. An input named `left` is now linted, since `left` means a method's receiver.
 105. **The standard library (built; library, decision 80, from Troy's ask on 21 Nov).** Ten modules, each a global cell whose fields are its words, in every program: `ease` (easing curves, `progress`, `between`), `vec` (vectors as pairs: `size`, `unit`, `angle`, `rotate`, `dot`, `distance`, `mix`, `limit`, `reflect`), `stats` (`mean`, `median`, `mode`, `variance`, `spread`, `percentile`, `histogram`, `correlation`, `summary`), `grid` (lists of rows: `make`, `at`, `put`, `beside`, `around`, `count-around`, `cells`, `map`, `region`, `fill`, and `path`, the shortest way through), `seeded` (repeatable random choices from `noise`: `between`, `whole`, `chance`, `pick`, `shuffle`, `bell`, `in-circle`, `weighted`), `format` (`commas`, `places`, `percent`, `ordinal`, `plural`, `clock`, `wrap`, `centre`, `title`, `bar`), `shape` (points as pairs: `circle`, `polygon`, `star`, `box`, `edges`, `move`, `turn`, `grow`, `area`, `centre`, `bounds`, `holds`), `palette` (`hsl`, `along`, `wheel`, `grey`, and the sets `warm`, `cool`, `soft`), `csv` (`read`, `write`) and `json` (`read`, `write`, `pretty`). All but `json` are written in Sprout, one file each in `lib/`, so the library is also a set of worked examples; `json` is JavaScript in `words.js`. `node make-stdlib.js` turns `lib/*.sp` into `stdlib.js`, which Node and the pages load after `parse.js`, and writes `library.html`, the reference: each word's comment, its inputs, and its `-- e.g.` example run with the answer it gave. A module is compiled the first time a program uses it. Nothing in the library draws, since host words belong to each game; `shape edges` gives the sides for a program's own `each [[a, b] | line ...]`. A program's own names come first, so a program that binds `grid` or `format` keeps its own. Three words joined the built-in ones to make the modules short: `find-index`, `distinct-by` and `has-field` on lists and records, and `atan2` and `fixed` on numbers. The tests check that `stdlib.js` matches `lib/` and that every example runs without a message.
 106. **Wrapped libraries (built; library, decision 80, from Troy's ask on 21 Nov).** Eight popular JavaScript libraries are modules like the standard library's: `chroma` (chroma.js: colour scales, ColorBrewer palettes, contrast, Lab mixing, named colours, temperature), `simplex` (simplex-noise: smooth, seeded noise in 2D, 3D and fractal layers), `mathjs` (math.js: expressions with units, conversions, exact fractions, matrices, linear equations, derivatives, simplifying), `date-fns` (formatting with patterns, distances in words, parsing, weeks and months), `fuse` (Fuse.js: fuzzy search over text or records), `nlp` (compromise: nouns, verbs, people, places, sentences, plurals, tenses, numbers in words), `tone` (Tone.js: notes, chords and drums, as effects like `beep`; in the browser only) and `turf` (Turf: distances, bearings, areas and points along routes on the Earth). `libs.js` holds them all. Each library's file is kept in `vendor/` with its licence and served from the site, never from another server, and loaded only when a program names it: the page finds the names in the code and loads those first, showing "Loading chroma.js…", and Node runs the same files. Values cross over both ways: lists and arrays, records and objects, Sprout colours and hex text, Sprout dates and JavaScript dates. A library word that fails logs its message and gives false, like any other word. `library.html` lists every word with an example and the answer it gave. Decision 73 is refined: a field that has the same name as a global (a host word, a library module, `format` or `noise`) is read without a lint, since a module's words would clash with globals all the time; a field that has the same name as one the program binds still lints. `examples/terrain.sp` flies over a map made with `simplex fractal` and coloured with `chroma steps`.
+107. **Two players, no server (Troy, 21 Nov).** Two phones play one game, connected straight to each other with WebRTC; the details each needs to reach the other travel as links sent by text message. One player taps Two players and sends the invite (it carries the game's code); the friend opens it, taps Join and sends back the reply; tapping the reply in another tab hands it to the game's tab, or it can be pasted. A public STUN server helps the phones find each other across the internet; on the same Wi-Fi nothing else is needed, and networks that block direct connections can't be used. The game runs in lockstep: each phone sends only its touches and keys for the frame four ahead, both run the same frames with the same seeded random numbers, and a frame waits until both inputs are there. Every 120 frames they compare a fingerprint of the state, and if it differs (floating point can differ between browsers), the inviter's state is sent across exactly and both carry on from it. Code edits travel too, and both phones swap them in on the same frame, so two people can live-code one game. In the language: an event from player 2 carries `player : 2` and changes `input2`; the tick of a game for two carries player 2's held keys, so `game input2` is there only when two play (`game has-field "input2"`); and the host word `me` is which player this screen shows (1 alone), for draw to show each player at the bottom. Reading `me` in update would make the two games differ. Each game now sets its own random source at every tick, so a page making other games (cover art) can't take its random numbers. `examples/volley.sp` is the first game for two.
 ````
 
 ---
@@ -1915,14 +1918,23 @@ every : [seconds now step | now / seconds floor > (now - step / seconds floor)]
 wave : [seconds now | now / seconds * 6.283185307179586 sin]
 fresh-input : [touching : false, tapped : false, touch-x : 0, touch-y : 0, held : []]
 -- frame update: events in, one update per tick (decision 34)
+-- two players (decision 107): an event from player 2 has player : 2, and it changes input2; a tick for two carries held2
 frame : [update |
   [state event |
-    current-input : state input else fresh-input
+    second : event player else 1 = 2
+    current-input : second [state input2 else fresh-input] else [state input else fresh-input]
+    put : [changed | second [state with [input2 : changed]] else [state with [input : changed]]]
+    pair : event players else 1 = 2
+    first-input : state input else fresh-input
+    second-input : state input2 else fresh-input
     match [event kind, [
-      "down", state with [input : current-input with [touching : true, tapped : true, touch-x : event x, touch-y : event y]]
-      "move", state with [input : current-input with [touch-x : event x, touch-y : event y]]
-      "up", state with [input : current-input with [touching : false]]
-      "tick", update (state with [dt : event dt, clock : event clock, input : current-input with [held : event held]]) with [input : current-input with [tapped : false, held : event held]]
+      "down", put (current-input with [touching : true, tapped : true, touch-x : event x, touch-y : event y])
+      "move", put (current-input with [touch-x : event x, touch-y : event y])
+      "up", put (current-input with [touching : false])
+      "tick", pair [
+        before : state with [dt : event dt, clock : event clock, input : first-input with [held : event held], input2 : second-input with [held : event held2]]
+        update before with [input : first-input with [tapped : false, held : event held], input2 : second-input with [tapped : false, held : event held2]]
+      ] else [update (state with [dt : event dt, clock : event clock, input : first-input with [held : event held]]) with [input : first-input with [tapped : false, held : event held]]]
       any, state
     ]]
   ]
@@ -3016,7 +3028,8 @@ function makeGame(src, opts) {
   const draws = [];
   const argsOf = (a, n) => n === 1 ? [a] : (isCell(a) ? S.partsOf(a) : [a]);
   // host words: drawing happens in draw; sound and shake are effects, queued during update
-  const host = { W: opts.W || 360, H: opts.H || 480 };
+  // me: which player this screen shows (decision 107); 1 when playing alone. Only draw should read it.
+  const host = { W: opts.W || 360, H: opts.H || 480, me: opts.me || 1 };
   for (const name in DRAW) {
     host[name] = new Native(name, a => { draws.push([name, argsOf(a, DRAW[name])]); return false; }, true);
     // the same word with its values given one by one, for column loops: no argument cell per shape
@@ -3030,7 +3043,12 @@ function makeGame(src, opts) {
 
   // outside reads: the random numbers a tick used are recorded, and played back on replay (decision 54)
   let rec = null, replay = null;
-  S.setRandom(() => replay ? (replay.length ? replay.shift() : 0) : (r => (rec && rec.push(r), r))(Math.random()));
+  // the random numbers come from the page (two players share a seeded source), else Math.random
+  let randomSource = opts.random || Math.random;
+  // every game made sets this as the random source, so each tick sets it again: a page that makes other games
+  // (cover art, say) must not leave this one drawing from theirs
+  const drawRandom = () => replay ? (replay.length ? replay.shift() : 0) : (r => (rec && rec.push(r), r))(randomSource());
+  S.setRandom(drawRandom);
 
   let file, handler, state, clock = 0;
   const history = [];
@@ -3044,13 +3062,15 @@ function makeGame(src, opts) {
   const send = e => { state = handler.run(new ValueCell([state, e])); };
 
   // one tick: update runs with effects queued; they are carried out once it returns (unless replaying)
-  function tick(dt, held, replayRnd) {
+  function tick(dt, held, replayRnd, held2) {
     rec = replayRnd ? null : []; replay = replayRnd ? replayRnd.slice() : null;
+    S.setRandom(drawRandom);
     S.queueEffects();
-    send(ev({ kind: "tick", dt, clock: clock + dt, held: held || NOKEYS }));
+    // two players (decision 107): the tick carries player 2's held keys too, and the frame keeps input2
+    send(ev(opts.players === 2 ? { kind: "tick", dt, clock: clock + dt, held: held || NOKEYS, held2: held2 || NOKEYS, players: 2 } : { kind: "tick", dt, clock: clock + dt, held: held || NOKEYS }));
     if (replayRnd) S.dropEffects(); else S.runEffects();
     clock += dt;
-    if (!replayRnd) { history.push({ state, rnd: rec, clock, dt, held }); if (history.length > (opts.keep || 600)) history.shift(); }
+    if (!replayRnd) { history.push({ state, rnd: rec, clock, dt, held, held2 }); if (history.length > (opts.keep || 600)) history.shift(); }
     rec = replay = null;
   }
 
@@ -3060,15 +3080,20 @@ function makeGame(src, opts) {
     get file() { return file; },
     // which collect, keep and each bodies can run over columns, from the compiler (decision 86)
     get speedNotes() { return file.speedNotes || []; },
-    down(x, y) { send(ev({ kind: "down", x, y })); },
-    move(x, y) { send(ev({ kind: "move", x, y })); },
-    up() { send(ev({ kind: "up" })); },
-    tick(dt, held) { tick(dt, held); return api; },
+    // a touch from player 2 says so (decision 107); player 1's are as they always were
+    down(x, y, player) { send(ev(player === 2 ? { kind: "down", x, y, player } : { kind: "down", x, y })); },
+    move(x, y, player) { send(ev(player === 2 ? { kind: "move", x, y, player } : { kind: "move", x, y })); },
+    up(player) { send(ev(player === 2 ? { kind: "up", player } : { kind: "up" })); },
+    tick(dt, held, held2) { tick(dt, held, null, held2); return api; },
+    get clock() { return clock; },
+    // the state put in place, as when two screens agree to the first one's state again
+    setState(v, c) { state = v; if (typeof c === "number") clock = c; },
+    setRandom(f) { randomSource = f || Math.random; },
     draw() { draws.length = 0; const d = file.field("draw"); if (d !== UNSET) d.run(state); return draws; },
     // rewind: a saved frame is just the state it held, since cells never change
     rewind(i) { state = history[i].state; clock = history[i].clock; },
     // replay the tick after frame i with the random numbers it used: it comes out the same, with no effects
-    replayFrom(i) { const h = history[i], next = history[i + 1]; state = h.state; clock = h.clock; tick(next.dt, next.held, next.rnd); return state; },
+    replayFrom(i) { const h = history[i], next = history[i + 1]; state = h.state; clock = h.clock; tick(next.dt, next.held, next.rnd, next.held2); return state; },
     // hot-swap: build the new file; keep live values whose starting value didn't change
     swap(newSrc) {
       const nf = S.load(newSrc, { host }), oldStart = file.field("start"), newStart = nf.field("start");
@@ -4303,6 +4328,24 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   ok("terrain: a square for every cell", rects.length === 30 * 40, rects.length);
   ok("terrain: land and water in many shades", colours.size > 12, colours.size);
   const first = JSON.stringify(g.draw()); g.tick(1); ok("terrain: it flies", JSON.stringify(g.draw()) !== first);
+}
+
+// ---------------- two players (decision 107)
+{
+  const src = fs.readFileSync(__dirname + "/examples/volley.sp", "utf8");
+  // two screens, the same seed and the same inputs: the same game, frame by frame
+  const seeded = seed => () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  const one = L.makeGame(src, { players: 2, me: 1, random: seeded(99) }), two = L.makeGame(src, { players: 2, me: 2, random: seeded(99) });
+  // another game made in between must not take the random numbers (the page makes cover art)
+  L.makeGame(fs.readFileSync(__dirname + "/examples/sprout.sp", "utf8"), {});
+  for (let t = 0; t < 400; t++) {
+    for (const g of [one, two]) { if (t % 50 === 5) g.down(120, 400); if (t % 50 === 20) g.up(); if (t % 60 === 10) g.down(250, 60, 2); g.tick(1 / 60, null, null); }
+  }
+  ok("two players: both screens keep the same game", S.format(one.state) === S.format(two.state));
+  ok("two players: player 2's touch moves player 2's paddle", f(one, "far") !== 180 && f(one, "input2").field("touch-x") === 250, f(one, "far"));
+  ok("two players: each screen draws its own player at the bottom", JSON.stringify(one.draw()) !== JSON.stringify(two.draw()));
+  const alone = L.makeGame(src, {}); for (let t = 0; t < 200; t++) alone.tick(1 / 60);
+  ok("volley alone: no input2, and the top paddle plays itself", alone.state.field("input2") === S.UNSET && f(alone, "far") !== 180);
 }
 
 console.log(pass + " passed, " + fail + " failed");
@@ -9147,6 +9190,7 @@ function sheetUI() {
     (n > 1 ? `<input type="range" id="lsH" min="0" max="${n - 1}" value="${at}"><div class="hist">${browsing >= 0 ? "Version " + (at + 1) + " of " + n + " · " + ago(v.at) + " · " + diffNote(versions[n - 1].code, v.code) + " from now" : n + " versions so far · drag back to play an older one"}</div>` +
       (browsing >= 0 ? `<div class="seg2" style="margin-top:8px"><button id="lsKeep">Keep this version</button><button id="lsNow" class="on">Back to now</button></div>` : "")
       : `<div class="hist">Each version that runs is kept here. Change something to start.</div>`) +
+    `<div class="lbl">Two players</div><div class="seg2"><button id="lsNet">${window.NET && NET.active ? "Connected · player " + NET.me : "Play with a friend"}</button></div>` +
     `<div class="lbl">Speed</div><div class="seg2">${[0.25, 0.5, 1, 2].map(k => `<button data-sp="${k}" class="${SPEED === k ? "on" : ""}">${k === 0.25 ? "¼" : k === 0.5 ? "½" : k}×</button>`).join("")}</div>` +
     `<div class="lbl">While you type</div>` +
     `<div class="sw"><span>Run as I type</span><button class="tg${autoRun ? " on" : ""}" id="lsAuto" aria-label="run as I type"></button></div>` +
@@ -9154,7 +9198,7 @@ function sheetUI() {
   const h = $("lsH");
   if (h) h.oninput = () => { const k = +h.value; if (k === versions.length - 1) { backToNow(); return; } browseTo(k); };
   const on = (id, f) => { const e = $(id); if (e) e.onclick = f; };
-  on("lsX", closeSheet); on("lsNow", backToNow);
+  on("lsX", closeSheet); on("lsNet", () => { if (window.NET && !NET.active) { closeSheet(); NET.invite(); } }); on("lsNow", backToNow);
   on("lsKeep", () => { const k = browsing; browsing = -1; versions.push({ code: versions[k].code, at: Date.now() }); LS.set(VKEY(), versions); toast("Kept version " + (k + 1)); sheetUI(); });
   sheet.querySelectorAll("[data-sp]").forEach(b => b.onclick = () => { SPEED = +b.dataset.sp; toast(SPEED === 1 ? "Normal speed" : SPEED < 1 ? "Slow motion " + b.textContent : "Fast " + b.textContent); sheetUI(); });
   on("lsAuto", () => { autoRun = !autoRun; LS.set("sprout3.autoRun", autoRun); if (autoRun) runCode(); sheetUI(); keysUI(); });
@@ -9467,6 +9511,331 @@ draw : [game |
 ]
 ````
 
+## net.js
+
+Two players, no server (decision 107): WebRTC with invite and reply links sent by text, lockstep with seeded random numbers, state fingerprints and resync, shared live coding
+
+````js
+// Two players, no server (decision 107). Two browsers connect straight to each other with WebRTC. The details each needs
+// to find the other travel as links sent by text message: an invite one way, a reply the other.
+// Then the game runs in lockstep: each screen sends only its touches and keys, both run the same Sprout game frame by
+// frame (a few frames behind, to hide the trip), and a seeded random source keeps their luck the same. Now and then
+// they compare the state; if it ever differs, the inviter's state is sent across and both carry on from it.
+// Code edits travel too, and both screens swap them in on the same frame, so two people can live-code one game.
+(function () {
+"use strict";
+const $ = id => document.getElementById(id);
+const ICE = [{ urls: "stun:stun.l.google.com:19302" }];
+const STEP = 1 / 60, DELAY = 4, HASH_EVERY = 120;
+
+// ===================================================================== invite and reply links
+const b64 = bytes => { let s = ""; for (const b of bytes) s += String.fromCharCode(b); return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); };
+const unb64 = s => { const t = atob(s.replace(/-/g, "+").replace(/_/g, "/")); return Uint8Array.from(t, c => c.charCodeAt(0)); };
+async function pack(obj) {
+  const bytes = new TextEncoder().encode(JSON.stringify(obj));
+  if (window.CompressionStream) { const out = await new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream("deflate-raw"))).arrayBuffer(); return "z" + b64(new Uint8Array(out)); }
+  return "j" + b64(bytes);
+}
+async function unpack(s) {
+  let bytes = unb64(s.slice(1));
+  if (s[0] === "z") bytes = new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).arrayBuffer());
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+const pageUrl = () => location.origin + location.pathname;
+function iceDone(pc, ms) { return new Promise(ok => { if (pc.iceGatheringState === "complete") return ok(); const t = setTimeout(ok, ms || 3000); pc.addEventListener("icegatheringstatechange", () => { if (pc.iceGatheringState === "complete") { clearTimeout(t); ok(); } }); }); }
+
+// ===================================================================== values across the wire, exactly
+function toWire(v) {
+  if (v === null || typeof v !== "object") return typeof v === "number" && !Number.isFinite(v) ? { n: String(v) } : v;
+  if (v instanceof S.Cell && v.takesInput()) return { c: S.words.sourceOf(v) };
+  if (S.isCell(v)) { const f = {}; for (const k of v.fieldNames()) f[k] = toWire(v.field(k)); return { f, p: S.partsOf(v).map(toWire) }; }
+  if (v.kind && typeof v.sproutText === "function") return { k: v.kind, t: S.words.sourceOf(v) };
+  return String(v);
+}
+function fromWire(x) {
+  if (x === null || typeof x !== "object") return x;
+  if (x.n) return Number(x.n);
+  if (x.c) return S.globals.eval.fn(x.c);
+  if (x.k) return S.words.literal(x.k, x.t, 0);
+  return S.valueCellOf(x.p.map(fromWire), new Map(Object.entries(x.f).map(([k, v]) => [k, fromWire(v)])));
+}
+const fnv = t => { let h = 2166136261; for (let i = 0; i < t.length; i++) h = Math.imul(h ^ t.charCodeAt(i), 16777619); return h >>> 0; };
+const seeded = seed => () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+
+// ===================================================================== the connection
+const NET = window.NET = {
+  active: false, me: 1, seed: 0, frame: 0, pc: null, dc: null, id: "", acc: 0, waiting: false,
+  inputs: { 1: new Map(), 2: new Map() }, queue: [], codeAt: new Map(), hashes: new Map(), theirs: new Map(), applying: false,
+  gameOptions() { return this.active ? { players: 2, me: this.me, random: this.random } : {}; },
+};
+function send(msg) { if (NET.dc && NET.dc.readyState === "open") NET.dc.send(JSON.stringify(msg)); }
+function wire(dc) {
+  NET.dc = dc;
+  dc.onopen = () => { if (NET.me === 1) { const seed = (Math.random() * 2 ** 31) | 0; send({ t: "start", seed, src: code }); begin(seed, code); } };
+  dc.onmessage = e => receive(JSON.parse(e.data));
+  dc.onclose = () => { if (NET.active) { NET.active = false; toast("Your friend left. You're playing alone now."); netUI(); restartAlone(); } };
+}
+function newPeer() {
+  const pc = new RTCPeerConnection({ iceServers: ICE });
+  pc.onconnectionstatechange = () => { if (pc.connectionState === "failed") { boxStatus("The phones couldn't reach each other. On the same Wi-Fi it works best; some mobile networks block direct connections."); } };
+  return pc;
+}
+// the inviter: an offer, waiting for a reply
+async function invite() {
+  if (NET.pc) NET.pc.close();
+  NET.me = 1; NET.id = Math.random().toString(36).slice(2, 10);
+  const pc = NET.pc = newPeer(); wire(pc.createDataChannel("sprout", { ordered: true }));
+  await pc.setLocalDescription(await pc.createOffer()); await iceDone(pc);
+  return pageUrl() + "#join=" + await pack({ v: 1, id: NET.id, sdp: pc.localDescription.sdp, src: code, ex: curEx });
+}
+async function acceptReply(text) {
+  const m = /#?answer=([\w-]+)/.exec(text || ""); if (!m || !NET.pc) return false;
+  const a = await unpack(m[1]); if (a.id !== NET.id) { boxStatus("That reply is for a different invite."); return false; }
+  await NET.pc.setRemoteDescription({ type: "answer", sdp: a.sdp }); boxStatus("Connecting…"); return true;
+}
+// the friend: a reply to an invite
+async function reply(offer) {
+  if (NET.pc) NET.pc.close();
+  NET.me = 2; NET.id = offer.id;
+  const pc = NET.pc = newPeer(); pc.ondatachannel = e => wire(e.channel);
+  await pc.setRemoteDescription({ type: "offer", sdp: offer.sdp });
+  await pc.setLocalDescription(await pc.createAnswer()); await iceDone(pc);
+  return pageUrl() + "#answer=" + await pack({ v: 1, id: offer.id, sdp: pc.localDescription.sdp });
+}
+
+// ===================================================================== lockstep
+function begin(seed, src) {
+  NET.seed = seed; NET.random = seeded(seed); NET.active = true; NET.frame = 0; NET.acc = 0;
+  NET.inputs = { 1: new Map(), 2: new Map() }; NET.queue = []; NET.codeAt = new Map(); NET.hashes = new Map(); NET.theirs = new Map(); NET.checks = 0; NET.mismatches = 0;
+  for (let f = 0; f < DELAY; f++) { NET.inputs[1].set(f, { ev: [], held: [] }); NET.inputs[2].set(f, { ev: [], held: [] }); }
+  if (src !== code) setCode(src);
+  NET.applying = true; try { build(src, true); } finally { NET.applying = false; }
+  setPaused(false); closeBox(); netUI();
+  toast("Connected. You're player " + NET.me + (NET.me === 1 ? " (the first)" : " (the second)") + ".");
+}
+NET.input = ev => { NET.queue.push(ev); };
+const heldOf = keys => S.valueCellOf([], new Map(keys.map(k => [k, true])));
+NET.advance = function (dt, held) {
+  if (!game) return;
+  NET.acc = Math.min(NET.acc + dt, 0.25);
+  let steps = 0;
+  while (NET.acc >= STEP && steps < 4) {
+    // this screen's input for a few frames ahead goes to both
+    const ahead = NET.frame + DELAY, mine = NET.inputs[NET.me];
+    if (!mine.has(ahead)) { const msg = { ev: NET.queue.splice(0), held: held.fieldNames() }; mine.set(ahead, msg); send({ t: "in", f: ahead, ...msg }); }
+    const a = NET.inputs[1].get(NET.frame), b = NET.inputs[2].get(NET.frame);
+    if (!a || !b) { NET.waiting = true; break; }
+    NET.waiting = false;
+    const src = NET.codeAt.get(NET.frame);
+    if (src !== undefined) { NET.codeAt.delete(NET.frame); applyCode(src); }
+    for (const [who, input] of [[1, a], [2, b]]) for (const e of input.ev) {
+      const p = who === 2 ? 2 : undefined;
+      if (e.kind === "down") game.down(e.x, e.y, p); else if (e.kind === "move") game.move(e.x, e.y, p); else game.up(p);
+    }
+    game.tick(STEP, heldOf(a.held), heldOf(b.held));
+    NET.inputs[1].delete(NET.frame); NET.inputs[2].delete(NET.frame);
+    NET.frame++; NET.acc -= STEP; steps++;
+    if (NET.frame % HASH_EVERY === 0) { const h = fnv(S.format(game.state)); NET.hashes.set(NET.frame, h); send({ t: "hash", f: NET.frame, h }); compare(NET.frame); }
+  }
+  netUI();
+};
+// both fingerprints of a frame, compared when the second arrives; if the states differ (floating point can differ
+// between browsers), the inviter's state wins
+function compare(f) {
+  const mine = NET.hashes.get(f), theirs = NET.theirs.get(f);
+  if (mine === undefined || theirs === undefined) return;
+  NET.hashes.delete(f); NET.theirs.delete(f); NET.checks = (NET.checks || 0) + 1;
+  if (mine !== theirs) { NET.mismatches = (NET.mismatches || 0) + 1; if (NET.me === 1) send({ t: "state", f: NET.frame, clock: game.clock, state: toWire(game.state) }); }
+}
+function receive(m) {
+  if (m.t === "start") begin(m.seed, m.src);
+  else if (m.t === "in") NET.inputs[NET.me === 1 ? 2 : 1].set(m.f, { ev: m.ev, held: m.held });
+  else if (m.t === "code") { NET.codeAt.set(m.f, m.src); }
+  else if (m.t === "hash") { NET.theirs.set(m.f, m.h); compare(m.f); }
+  else if (m.t === "state" && NET.me === 2) {
+    game.setState(fromWire(m.state), m.clock);
+    for (const k of [...NET.inputs[1].keys()]) if (k < m.f) NET.inputs[1].delete(k);
+    for (const k of [...NET.inputs[2].keys()]) if (k < m.f) NET.inputs[2].delete(k);
+    NET.frame = m.f; NET.resyncs = (NET.resyncs || 0) + 1;
+  }
+}
+// an edit goes to both screens and is swapped in on the same frame
+function applyCode(src) {
+  NET.applying = true;
+  try { if (src !== code && document.activeElement !== ta) setCode(src); build(src, false); } finally { NET.applying = false; }
+}
+const baseBuild = window.build;
+window.build = function (src, fresh) {
+  if (!NET.active || NET.applying || !game || fresh) return baseBuild(src, fresh);
+  if (src === running) return true;
+  try { S.load(src); } catch (e) { setErr({ line: lineOf(e), msg: msgOf(e) }); return false; }
+  const f = NET.frame + DELAY; NET.codeAt.set(f, src); send({ t: "code", f, src }); setErr(null);
+  return true;
+};
+function restartAlone() { NET.applying = true; try { build(code, true); } finally { NET.applying = false; } }
+
+// ===================================================================== the box that walks through it
+const css = document.createElement("style");
+css.textContent = `
+#netBox{position:fixed;inset:0;z-index:60;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.35);padding:16px}
+#netBox.on{display:flex}
+#netBox .in{width:min(420px,100%);background:var(--card);border-radius:18px;padding:18px 18px 16px;box-shadow:0 20px 50px rgba(0,0,0,.3);font:500 15px/1.45 var(--sans);color:var(--fg)}
+#netBox h3{margin:0 0 6px;font:600 19px var(--serif, var(--sans))}
+#netBox p{margin:6px 0 10px;color:var(--fg2)}
+#netBox .st{font-size:13px;color:var(--fg3);min-height:18px}
+#netBox .row{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 4px}
+#netBox button{height:40px;padding:0 16px;border-radius:999px;font:600 14px var(--sans);background:var(--card2);box-shadow:0 0 0 1px var(--line);color:var(--fg)}
+#netBox button.pri{background:var(--acc);color:#fff;box-shadow:none}
+#netBox textarea{width:100%;height:64px;border-radius:10px;border:1px solid var(--line);background:var(--card2);color:var(--fg);font:12px var(--mono);padding:8px;resize:none}
+#netBadge{position:absolute;top:8px;left:8px;z-index:4;display:none;padding:3px 9px;border-radius:999px;background:rgba(0,0,0,.55);color:#fff;font:600 11px var(--sans);letter-spacing:.03em}
+body.net #netBadge{display:block}
+`;
+document.head.appendChild(css);
+const box = document.createElement("div"); box.id = "netBox"; box.innerHTML = '<div class="in"></div>'; document.body.appendChild(box);
+const badge = document.createElement("div"); badge.id = "netBadge"; $("stage").appendChild(badge);
+const inner = () => box.firstChild;
+function openBox(html) { inner().innerHTML = html; box.classList.add("on"); }
+function closeBox() { box.classList.remove("on"); }
+function boxStatus(t) { const s = box.querySelector(".st"); if (s) s.textContent = t; else toast(t); }
+box.addEventListener("pointerdown", e => { if (e.target === box) closeBox(); });
+async function shareLink(link, text) {
+  const message = text + " " + link;
+  if (navigator.share) { try { await navigator.share({ text: message }); return "shared"; } catch (e) { if (e && e.name === "AbortError") return "cancelled"; } }
+  try { await navigator.clipboard.writeText(message); toast("Copied. Paste it into a message."); return "copied"; } catch (e) { prompt("Copy this and send it:", message); return "shown"; }
+}
+function netUI() {
+  document.body.classList.toggle("net", NET.active);
+  badge.textContent = NET.active ? "Player " + NET.me + (NET.waiting ? " · waiting" : " · two players") : "";
+}
+
+// the inviter's box
+async function openInvite() {
+  openBox(`<h3>Play with a friend</h3><p>Send an invite by text. Your friend opens it and sends you a reply; tap the reply, and you're both in the same game. No server: the two phones talk straight to each other.</p>
+    <div class="st">Making your invite…</div><div class="row"><button class="pri" id="nSend" disabled>Send invite</button><button id="nCopy" disabled>Copy</button></div>
+    <p style="margin-top:14px">Got the reply? Tap its link, or paste it here:</p><textarea id="nPaste" placeholder="Paste the reply here"></textarea>
+    <div class="row"><button id="nUse">Use reply</button><button id="nClose">Close</button></div>`);
+  $("nClose").onclick = closeBox;
+  let link;
+  try { link = await invite(); } catch (e) { boxStatus("This browser can't make a direct connection (" + (e.message || e) + ")."); return; }
+  boxStatus("Your invite is ready. It holds this game's code.");
+  $("nSend").disabled = $("nCopy").disabled = false;
+  $("nSend").onclick = () => shareLink(link, "Play Sprout with me:");
+  $("nCopy").onclick = async () => { try { await navigator.clipboard.writeText(link); toast("Invite copied"); } catch (e) { prompt("Copy this:", link); } };
+  $("nUse").onclick = async () => { if (!await acceptReply($("nPaste").value)) boxStatus("That doesn't look like a reply link."); };
+  $("nPaste").oninput = async () => { if (/answer=/.test($("nPaste").value)) await acceptReply($("nPaste").value); };
+}
+// a reply opened in another tab is handed to the tab that made the invite
+const channel = window.BroadcastChannel ? new BroadcastChannel("sprout-net") : null;
+if (channel) channel.onmessage = async e => {
+  const m = e.data || {};
+  if (m.t === "answer" && NET.pc && m.id === NET.id && NET.me === 1) { await acceptReply("#answer=" + m.blob); channel.postMessage({ t: "taken", id: m.id }); }
+};
+async function handleHash() {
+  const join = /^#join=([\w-]+)/.exec(location.hash), answer = /^#answer=([\w-]+)/.exec(location.hash);
+  if (!join && !answer) return;
+  history.replaceState(null, "", location.pathname);
+  if (answer) {
+    // this tab made the invite itself: take it here
+    if (NET.pc && NET.me === 1) { await acceptReply("#answer=" + answer[1]); return; }
+    const a = await unpack(answer[1]).catch(() => null);
+    openBox(`<h3>Reply received</h3><p>Sending it to your game in the other tab…</p><div class="st"></div><div class="row"><button id="nClose">Close</button></div>`);
+    $("nClose").onclick = closeBox;
+    if (!channel || !a) { boxStatus("Open the game tab and paste this reply there."); return; }
+    let taken = false;
+    channel.onmessage = e => { if (e.data && e.data.t === "taken" && e.data.id === a.id) { taken = true; boxStatus("Done. Go back to the other tab: the game starts there."); } };
+    channel.postMessage({ t: "answer", id: a.id, blob: answer[1] });
+    setTimeout(() => { if (!taken) boxStatus("The game tab didn't answer. Go back to it and paste the reply into Play with a friend."); }, 2500);
+    return;
+  }
+  const offer = await unpack(join[1]).catch(() => null);
+  if (!offer) { toast("That invite link is broken"); return; }
+  curEx = offer.ex || ""; dirty = true; setCode(offer.src); build(offer.src, true);
+  openBox(`<h3>You're invited</h3><p>A friend wants to play this game with you. Join, then send them the reply. The game starts when they tap it.</p>
+    <div class="st"></div><div class="row"><button class="pri" id="nJoin">Join</button><button id="nClose">Not now</button></div>`);
+  $("nClose").onclick = closeBox;
+  $("nJoin").onclick = async () => {
+    boxStatus("Making your reply…"); $("nJoin").disabled = true;
+    let link; try { link = await reply(offer); } catch (e) { boxStatus("This browser can't make a direct connection (" + (e.message || e) + ")."); return; }
+    inner().querySelector(".row").innerHTML = '<button class="pri" id="nSend">Send reply</button><button id="nCopy">Copy</button><button id="nClose2">Close</button>';
+    boxStatus("Send this back to your friend. When they tap it, you're connected.");
+    $("nSend").onclick = () => shareLink(link, "Here's my reply, tap it to start:");
+    $("nCopy").onclick = async () => { try { await navigator.clipboard.writeText(link); toast("Reply copied"); } catch (e) { prompt("Copy this:", link); } };
+    $("nClose2").onclick = closeBox;
+  };
+}
+addEventListener("hashchange", handleHash);
+handleHash();
+
+NET.invite = openInvite; NET.toWire = toWire; NET.fromWire = fromWire; NET.pack = pack; NET.unpack = unpack; NET.begin = begin; NET.receive = receive;
+})();
+````
+
+## examples/volley.sp
+
+Volley: the first game for two phones (Games group)
+
+````sprout
+-- Volley: a game for two phones. Press Two players (or More, then Play with a friend) and send the invite by text.
+-- Each player drags their own paddle; each screen shows its player at the bottom. Alone, the top paddle plays itself.
+-- Change the ball speed, the paddle size or the colours while you play: the change reaches both phones.
+
+paddle-width : 80
+paddle-y : 40              -- how far each paddle is from its own end
+ball-speed : 260
+speed-up : 1.04            -- the ball gets this much faster at each hit
+mine : #e8a33d
+theirs : #5fa8d3
+
+start :
+  ball : [x : 180, y : 240, vx : 120, vy : 220]
+  near : 180               -- player 1's paddle, at the bottom of the court
+  far : 180                -- player 2's paddle, at the top
+  score : [near : 0, far : 0]
+
+-- player 2 sees the court turned round, so their finger's x is flipped
+update : [game |
+  dt : game dt
+  two-players : game has-field "input2"
+  near-x : (game input touching) [game input touch-x] else [game near]
+  far-x : cond [
+    two-players and (game input2 touching), W - (game input2 touch-x)
+    two-players, game far
+    any, toward [game far, game ball x, 0.08]
+  ]
+  b : game ball
+  moved : b with [x : b x + (b vx * dt), y : b y + (b vy * dt)]
+  walls : (moved x < 8) or (moved x > (W - 8)) [moved with [vx : 0 - (moved vx)]] else [moved]
+  hit-near : (walls vy > 0) and (walls y > (H - paddle-y - 8)) and ((walls x - near-x) abs < (paddle-width / 2))
+  hit-far : (walls vy < 0) and (walls y < (paddle-y + 8)) and ((walls x - far-x) abs < (paddle-width / 2))
+  bounced : cond [
+    hit-near, walls with [vy : 0 - (walls vy) * speed-up, vx : walls x - near-x * 4]
+    hit-far, walls with [vy : 0 - (walls vy) * speed-up, vx : walls x - far-x * 4]
+    any, walls
+  ]
+  served : [towards | [x : W / 2, y : H / 2, vx : rand [-120, 120], vy : ball-speed * towards]]
+  cond [
+    bounced y > (H + 20), game with [near : near-x, far : far-x, ball : served -1, score : game score with [far : game score far + 1]]
+    bounced y < -20, game with [near : near-x, far : far-x, ball : served 1, score : game score with [near : game score near + 1]]
+    any, game with [near : near-x, far : far-x, ball : bounced]
+  ]
+]
+
+-- each screen draws its own player at the bottom
+flip : [y | me = 2 [H - y] else [y]]
+flip-x : [x | me = 2 [W - x] else [x]]
+draw : [game |
+  clear "#101318"
+  line [0, H / 2, W, H / 2, "#2a2f38"]
+  rect [flip-x (game near) - (paddle-width / 2), flip (H - paddle-y) - 5, paddle-width, 10, me = 1 [mine] else [theirs]]
+  rect [flip-x (game far) - (paddle-width / 2), flip paddle-y - 5, paddle-width, 10, me = 1 [theirs] else [mine]]
+  circle [flip-x (game ball x), flip (game ball y), 8, "#f4f1ea"]
+  mine-score : me = 1 [game score near] else [game score far]
+  their-score : me = 1 [game score far] else [game score near]
+  text ["[their-score]", W / 2, H / 2 - 30, 28, "#5a6270"]
+  text ["[mine-score]", W / 2, H / 2 + 50, 28, "#f4f1ea"]
+]
+````
+
 ## examples/recipes.sp
 
 Recipes: quicksort, primes, FizzBuzz, a vector with its own + (prints; not a game)
@@ -9765,6 +10134,7 @@ body.t-out #out{display:block}body.t-st #st{display:block}
     <button class="pill" id="libBtn">Library</button>
     <button class="pill" id="bRestart">Restart</button>
     <button class="pill" id="bShare">Share</button>
+    <button class="pill" id="bNet">Two players</button>
     <button class="pill" id="bSpec">Spec</button>
    </div>
   </div>
@@ -9794,18 +10164,18 @@ body.t-out #out{display:block}body.t-st #st{display:block}
 </footer>
 </div>
 <div id="modal"><div id="mBox"><div class="mh"><h2 id="mTitle"></h2><button class="x" data-close aria-label="Close">✕</button></div><div id="mBody"></div></div></div>
-<div id="moreMenu"><button data-m="lib">Library</button><button data-m="restart">Restart</button><button data-m="share">Share</button><button data-m="spec">Read the spec</button><a href="./">About Sprout</a></div><div id="toast"></div><div id="scrubTip"></div>
+<div id="moreMenu"><button data-m="net">Play with a friend</button><button data-m="lib">Library</button><button data-m="restart">Restart</button><button data-m="share">Share</button><button data-m="spec">Read the spec</button><a href="./">About Sprout</a></div><div id="toast"></div><div id="scrubTip"></div>
 
-<script src="sprout3.js?v=20261121k"></script>
-<script src="words.js?v=20261121k"></script>
-<script src="parse.js?v=20261121k"></script>
-<script src="stdlib.js?v=20261121k"></script>
-<script src="libs.js?v=20261121k"></script>
-<script src="kernels.js?v=20261121k"></script>
-<script src="live3.js?v=20261121k"></script>
-<script src="sqlite-web.js?v=20261121k"></script>
-<script src="gpu-paint.js?v=20261121k"></script>
-<script src="gpu-spork.js?v=20261121k"></script>
+<script src="sprout3.js?v=20261121l"></script>
+<script src="words.js?v=20261121l"></script>
+<script src="parse.js?v=20261121l"></script>
+<script src="stdlib.js?v=20261121l"></script>
+<script src="libs.js?v=20261121l"></script>
+<script src="kernels.js?v=20261121l"></script>
+<script src="live3.js?v=20261121l"></script>
+<script src="sqlite-web.js?v=20261121l"></script>
+<script src="gpu-paint.js?v=20261121l"></script>
+<script src="gpu-spork.js?v=20261121l"></script>
 <script>
 "use strict";
 const V="20261120m";
@@ -9827,6 +10197,7 @@ const EX=[
  ["ace-derive","ace","ACE Derive","The five kinds of atom, and done worked out to a fixed point."],
  ["terrain","tool","Terrain","A map made of smooth noise and coloured by scales, flying east: the simplex and chroma libraries, wrapped as Sprout modules. Change the sea level or the colours while it flies."],
  ["gears","tool","Gears","A parametric tool: two gears worked out from a few numbers. Change the teeth, the module or the speed while they turn, or press tweak and drag a number."],
+ ["volley","game","Volley","A game for two phones, no server: send an invite by text and each player drags their own paddle. Alone, the top paddle plays itself."],
  ["galaxy","game","Galaxy","Twenty thousand stars falling toward your finger. One fused loop moves them all, and WebGPU draws them in one call."],
  ["sprout","game","Sprout","Catch the rain, dodge the bugs. The demo game."],
  ["fireflies","game","Fireflies","Four hundred lights on the night air. Hold a finger down and they gather to it."],
@@ -9903,7 +10274,7 @@ function build(src,fresh){
   sporks=S.sporkTally().slice();
   lastProgram=cell;speedNotes=cell.speedNotes||[];running=src;goodSrc=src;setErr(null);swapped();renderState();speedMarks();return true}
  document.body.classList.remove("prog");
- try{if(game&&!fresh)game.swap(src);else{game=L.makeGame(src,{W:GW,H:GH,onEffect});setPaused(false)}}
+ try{if(game&&!fresh)game.swap(src);else{game=L.makeGame(src,Object.assign({W:GW,H:GH,onEffect},window.NET?NET.gameOptions():{}));setPaused(false)}}
  catch(e){setErr({line:lineOf(e),msg:msgOf(e)});return false}
  speedNotes=game.speedNotes||[];running=src;goodTicks=0;setErr(null);swapped();speedMarks();return true}
 function dropPrints(){document.querySelectorAll("#out .ln.print").forEach(x=>x.remove())}
@@ -9924,12 +10295,16 @@ function subLine(){const s=$("pSub");
 
 // ---------- input: touch and mouse are events; held keys go in with each tick
 const P={x:GW/2,y:GH/2,down:false};const KEYS=new Set();let swipe=null,swipeTicks=0,heldKey="",heldC=null;
+// a touch goes to the game, or, in a game for two, to both screens for the same frame (net.js, decision 107)
+const gameDown=(x,y)=>window.NET&&NET.active?NET.input({kind:"down",x,y}):game.down(x,y);
+const gameMove=(x,y)=>window.NET&&NET.active?NET.input({kind:"move",x,y}):game.move(x,y);
+const gameUp=()=>window.NET&&NET.active?NET.input({kind:"up"}):game.up();
 function heldCell(){const ks=[...KEYS];if(swipeTicks>0)ks.push(swipe);const k=ks.sort().join(",");if(k!==heldKey||!heldC){heldKey=k;heldC=S.valueCellOf([],new Map(ks.map(x=>[x,true])))}return heldC}
 const toGame=e=>{const r=cv.getBoundingClientRect();P.x=(e.clientX-r.left)/r.width*GW;P.y=(e.clientY-r.top)/r.height*GH};
 let sx=0,sy=0;
-cv.addEventListener("pointerdown",e=>{audio();cv.setPointerCapture(e.pointerId);toGame(e);sx=P.x;sy=P.y;P.down=true;if(document.activeElement===ta)ta.blur();if(game&&!paused)try{game.down(P.x,P.y)}catch(_){}});
-cv.addEventListener("pointermove",e=>{toGame(e);if(game&&!paused)try{game.move(P.x,P.y)}catch(_){}});
-const pup=e=>{if(!P.down)return;P.down=false;const dx=P.x-sx,dy=P.y-sy;if(Math.max(Math.abs(dx),Math.abs(dy))>28){swipe=Math.abs(dx)>Math.abs(dy)?(dx>0?"right":"left"):(dy>0?"down":"up");swipeTicks=4}if(game&&!paused)try{game.up()}catch(_){}};
+cv.addEventListener("pointerdown",e=>{audio();cv.setPointerCapture(e.pointerId);toGame(e);sx=P.x;sy=P.y;P.down=true;if(document.activeElement===ta)ta.blur();if(game&&!paused)try{gameDown(P.x,P.y)}catch(_){}});
+cv.addEventListener("pointermove",e=>{toGame(e);if(game&&!paused)try{gameMove(P.x,P.y)}catch(_){}});
+const pup=e=>{if(!P.down)return;P.down=false;const dx=P.x-sx,dy=P.y-sy;if(Math.max(Math.abs(dx),Math.abs(dy))>28){swipe=Math.abs(dx)>Math.abs(dy)?(dx>0?"right":"left"):(dy>0?"down":"up");swipeTicks=4}if(game&&!paused)try{gameUp()}catch(_){}};
 cv.addEventListener("pointerup",pup);cv.addEventListener("pointercancel",pup);
 addEventListener("pointerdown",audio,{once:true});
 const KEYNAME={ArrowLeft:"left",ArrowRight:"right",ArrowUp:"up",ArrowDown:"down"," ":"space",Enter:"enter"};
@@ -9939,9 +10314,9 @@ addEventListener("keydown",e=>{
  if(FKEYS[e.key]){e.preventDefault();FKEYS[e.key]();return}
  if(MODAL){if(e.key==="Escape"){e.preventDefault();closeModal()}return}
  if(e.altKey&&/^[123]$/.test(e.key)){e.preventDefault();tab(["code","st","out"][+e.key-1]);return}
- if(editing(e))return;const k=KEYNAME[e.key]||e.key.toLowerCase();if(!KEYS.has(k)&&(k==="space"||k==="enter")&&game&&!paused)try{game.down(P.x,P.y)}catch(_){}
+ if(editing(e))return;const k=KEYNAME[e.key]||e.key.toLowerCase();if(!KEYS.has(k)&&(k==="space"||k==="enter")&&game&&!paused)try{gameDown(P.x,P.y)}catch(_){}
  KEYS.add(k);if(e.key.startsWith("Arrow")||e.key===" ")e.preventDefault()});
-addEventListener("keyup",e=>{const k=KEYNAME[e.key]||e.key.toLowerCase();KEYS.delete(k);if((k==="space"||k==="enter")&&game&&!paused)try{game.up()}catch(_){}});
+addEventListener("keyup",e=>{const k=KEYNAME[e.key]||e.key.toLowerCase();KEYS.delete(k);if((k==="space"||k==="enter")&&game&&!paused)try{gameUp()}catch(_){}});
 addEventListener("blur",()=>KEYS.clear());
 
 // ---------- drawing what draw asked for
@@ -9984,7 +10359,8 @@ function frame(now){requestAnimationFrame(frame);const dt=Math.min(.05,(now-last
  if(!game){if(now-statT>400){statT=now;statUI()}return}
  try{
   const t0=performance.now();
-  if(!paused){game.tick(dt*SPEED,heldCell());if(swipeTicks>0)swipeTicks--;if(++goodTicks===30)goodSrc=running}
+  if(!paused&&window.NET&&NET.active)NET.advance(dt,heldCell());
+  else if(!paused){game.tick(dt*SPEED,heldCell());if(swipeTicks>0)swipeTicks--;if(++goodTicks===30)goodSrc=running}
   const list=game.draw();
   let sx=0,sy=0;if(shakeAmt>.3&&!paused){sx=(Math.random()-.5)*shakeAmt;sy=(Math.random()-.5)*shakeAmt;shakeAmt*=Math.pow(.004,dt)}else if(!paused)shakeAmt=0;
   if(GPU&&useGpu&&++gpuFrames===10)checkShown();
@@ -10055,7 +10431,7 @@ function fit(){const m=$("main").getBoundingClientRect(),phone=innerWidth<=720;
 {const mm=$("moreMenu");
  $("bMore").addEventListener("click",e=>{e.stopPropagation();if(mm.classList.toggle("on")){const r=$("bMore").getBoundingClientRect();mm.style.top=(r.bottom+6)+"px";mm.style.left=Math.max(8,Math.min(innerWidth-mm.offsetWidth-8,r.right-mm.offsetWidth))+"px"}});
  mm.addEventListener("click",e=>{const b=e.target.closest("[data-m]");if(!b)return;mm.classList.remove("on");
-  ({lib:()=>$("libBtn").click(),restart:()=>$("bRestart").click(),share:()=>$("bShare").click(),spec:()=>$("bSpec").click()})[b.dataset.m]()});
+  ({net:()=>window.NET&&NET.invite(),lib:()=>$("libBtn").click(),restart:()=>$("bRestart").click(),share:()=>$("bShare").click(),spec:()=>$("bSpec").click()})[b.dataset.m]()});
  document.addEventListener("pointerdown",e=>{if(mm.classList.contains("on")&&!mm.contains(e.target)&&!e.target.closest("#bMore"))mm.classList.remove("on")},true)}
 if(window.ResizeObserver)new ResizeObserver(fit).observe($("main"));addEventListener("resize",fit);
 function vv(){const v=window.visualViewport;const h=v?v.height:innerHeight;$("app").style.height=h+"px";$("app").style.top=(v?v.offsetTop:0)+"px";const kb=h<innerHeight*.75&&document.activeElement===ta;if(kb!==document.body.classList.contains("kb")){document.body.classList.toggle("kb",kb);requestAnimationFrame(fit)}}
@@ -10269,7 +10645,7 @@ const b64d=s=>decodeURIComponent(escape(atob(s.replace(/-/g,"+").replace(/_/g,"/
 async function share(){if(!code.trim()){toast("Nothing to share yet");return}const url=location.origin+location.pathname+"#s3="+b64e(code);
  if(navigator.share){try{await navigator.share({title:"Sprout 3",url});return}catch(e){if(e&&e.name==="AbortError")return}}
  try{await navigator.clipboard.writeText(url);toast("Link copied · anyone who opens it gets this code")}catch(e){prompt("Copy this link:",url)}}
-$("bShare").onclick=share;
+$("bShare").onclick=share;$("bNet").onclick=()=>window.NET&&NET.invite();
 
 // ---------- start
 (function boot(){
@@ -10284,7 +10660,8 @@ $("bShare").onclick=share;
  if(sv&&sv.code&&sv.code.trim()){curEx=sv.ex||"";dirty=!!sv.dirty;setCode(sv.code);build(sv.code,true);if(document.body.classList.contains("prog"))tab("out");thenOpen()}
  else loadEx("ace-board",true).then(thenOpen)})();
 </script>
-<script src="editor-tools.js?v=20261121k"></script>
+<script src="editor-tools.js?v=20261121l"></script>
+<script src="net.js?v=20261121l"></script>
 </body></html>
 ````
 

@@ -15,7 +15,8 @@ function makeGame(src, opts) {
   const draws = [];
   const argsOf = (a, n) => n === 1 ? [a] : (isCell(a) ? S.partsOf(a) : [a]);
   // host words: drawing happens in draw; sound and shake are effects, queued during update
-  const host = { W: opts.W || 360, H: opts.H || 480 };
+  // me: which player this screen shows (decision 107); 1 when playing alone. Only draw should read it.
+  const host = { W: opts.W || 360, H: opts.H || 480, me: opts.me || 1 };
   for (const name in DRAW) {
     host[name] = new Native(name, a => { draws.push([name, argsOf(a, DRAW[name])]); return false; }, true);
     // the same word with its values given one by one, for column loops: no argument cell per shape
@@ -29,7 +30,12 @@ function makeGame(src, opts) {
 
   // outside reads: the random numbers a tick used are recorded, and played back on replay (decision 54)
   let rec = null, replay = null;
-  S.setRandom(() => replay ? (replay.length ? replay.shift() : 0) : (r => (rec && rec.push(r), r))(Math.random()));
+  // the random numbers come from the page (two players share a seeded source), else Math.random
+  let randomSource = opts.random || Math.random;
+  // every game made sets this as the random source, so each tick sets it again: a page that makes other games
+  // (cover art, say) must not leave this one drawing from theirs
+  const drawRandom = () => replay ? (replay.length ? replay.shift() : 0) : (r => (rec && rec.push(r), r))(randomSource());
+  S.setRandom(drawRandom);
 
   let file, handler, state, clock = 0;
   const history = [];
@@ -43,13 +49,15 @@ function makeGame(src, opts) {
   const send = e => { state = handler.run(new ValueCell([state, e])); };
 
   // one tick: update runs with effects queued; they are carried out once it returns (unless replaying)
-  function tick(dt, held, replayRnd) {
+  function tick(dt, held, replayRnd, held2) {
     rec = replayRnd ? null : []; replay = replayRnd ? replayRnd.slice() : null;
+    S.setRandom(drawRandom);
     S.queueEffects();
-    send(ev({ kind: "tick", dt, clock: clock + dt, held: held || NOKEYS }));
+    // two players (decision 107): the tick carries player 2's held keys too, and the frame keeps input2
+    send(ev(opts.players === 2 ? { kind: "tick", dt, clock: clock + dt, held: held || NOKEYS, held2: held2 || NOKEYS, players: 2 } : { kind: "tick", dt, clock: clock + dt, held: held || NOKEYS }));
     if (replayRnd) S.dropEffects(); else S.runEffects();
     clock += dt;
-    if (!replayRnd) { history.push({ state, rnd: rec, clock, dt, held }); if (history.length > (opts.keep || 600)) history.shift(); }
+    if (!replayRnd) { history.push({ state, rnd: rec, clock, dt, held, held2 }); if (history.length > (opts.keep || 600)) history.shift(); }
     rec = replay = null;
   }
 
@@ -59,15 +67,20 @@ function makeGame(src, opts) {
     get file() { return file; },
     // which collect, keep and each bodies can run over columns, from the compiler (decision 86)
     get speedNotes() { return file.speedNotes || []; },
-    down(x, y) { send(ev({ kind: "down", x, y })); },
-    move(x, y) { send(ev({ kind: "move", x, y })); },
-    up() { send(ev({ kind: "up" })); },
-    tick(dt, held) { tick(dt, held); return api; },
+    // a touch from player 2 says so (decision 107); player 1's are as they always were
+    down(x, y, player) { send(ev(player === 2 ? { kind: "down", x, y, player } : { kind: "down", x, y })); },
+    move(x, y, player) { send(ev(player === 2 ? { kind: "move", x, y, player } : { kind: "move", x, y })); },
+    up(player) { send(ev(player === 2 ? { kind: "up", player } : { kind: "up" })); },
+    tick(dt, held, held2) { tick(dt, held, null, held2); return api; },
+    get clock() { return clock; },
+    // the state put in place, as when two screens agree to the first one's state again
+    setState(v, c) { state = v; if (typeof c === "number") clock = c; },
+    setRandom(f) { randomSource = f || Math.random; },
     draw() { draws.length = 0; const d = file.field("draw"); if (d !== UNSET) d.run(state); return draws; },
     // rewind: a saved frame is just the state it held, since cells never change
     rewind(i) { state = history[i].state; clock = history[i].clock; },
     // replay the tick after frame i with the random numbers it used: it comes out the same, with no effects
-    replayFrom(i) { const h = history[i], next = history[i + 1]; state = h.state; clock = h.clock; tick(next.dt, next.held, next.rnd); return state; },
+    replayFrom(i) { const h = history[i], next = history[i + 1]; state = h.state; clock = h.clock; tick(next.dt, next.held, next.rnd, next.held2); return state; },
     // hot-swap: build the new file; keep live values whose starting value didn't change
     swap(newSrc) {
       const nf = S.load(newSrc, { host }), oldStart = file.field("start"), newStart = nf.field("start");

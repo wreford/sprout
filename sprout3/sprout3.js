@@ -1149,14 +1149,23 @@ every : [seconds now step | now / seconds floor > (now - step / seconds floor)]
 wave : [seconds now | now / seconds * 6.283185307179586 sin]
 fresh-input : [touching : false, tapped : false, touch-x : 0, touch-y : 0, held : []]
 -- frame update: events in, one update per tick (decision 34)
+-- two players (decision 107): an event from player 2 has player : 2, and it changes input2; a tick for two carries held2
 frame : [update |
   [state event |
-    current-input : state input else fresh-input
+    second : event player else 1 = 2
+    current-input : second [state input2 else fresh-input] else [state input else fresh-input]
+    put : [changed | second [state with [input2 : changed]] else [state with [input : changed]]]
+    pair : event players else 1 = 2
+    first-input : state input else fresh-input
+    second-input : state input2 else fresh-input
     match [event kind, [
-      "down", state with [input : current-input with [touching : true, tapped : true, touch-x : event x, touch-y : event y]]
-      "move", state with [input : current-input with [touch-x : event x, touch-y : event y]]
-      "up", state with [input : current-input with [touching : false]]
-      "tick", update (state with [dt : event dt, clock : event clock, input : current-input with [held : event held]]) with [input : current-input with [tapped : false, held : event held]]
+      "down", put (current-input with [touching : true, tapped : true, touch-x : event x, touch-y : event y])
+      "move", put (current-input with [touch-x : event x, touch-y : event y])
+      "up", put (current-input with [touching : false])
+      "tick", pair [
+        before : state with [dt : event dt, clock : event clock, input : first-input with [held : event held], input2 : second-input with [held : event held2]]
+        update before with [input : first-input with [tapped : false, held : event held], input2 : second-input with [tapped : false, held : event held2]]
+      ] else [update (state with [dt : event dt, clock : event clock, input : first-input with [held : event held]]) with [input : first-input with [tapped : false, held : event held]]]
       any, state
     ]]
   ]
