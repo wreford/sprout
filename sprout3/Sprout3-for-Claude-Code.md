@@ -10620,7 +10620,7 @@ export function makeView(canvas, base, opts) {
     }
     return a;
   }
-  const textures = new Map(), materials = new Map();
+  const textures = new Map(), materials = new Map(), skies = new Map();
   function material(spec, sx, sy, sz) {
     const name = fmt(spec), isColour = /^#|^rgb/.test(name), key = isColour ? name : name + " " + sx + " " + sy + " " + sz;
     let m = materials.get(key);
@@ -10690,7 +10690,7 @@ export function makeView(canvas, base, opts) {
     if (canvas.width !== Math.round(width * renderer.getPixelRatio()) || canvas.height !== Math.round(height * renderer.getPixelRatio())) renderer.setSize(width, height, false);
     camera.aspect = width / height;
     const seenBlocks = new Set(), counts = new Map(), holdCounts = new Map();
-    let flashCount = 0, fogSet = false, lightSet = false;
+    let flashCount = 0, fogSet = false, lightSet = false, skyTexture = null;
     for (const [word, a] of list) {
       if (!WORDS.has(word)) continue;
       if (word === "view") {
@@ -10726,6 +10726,11 @@ export function makeView(canvas, base, opts) {
         f.light.color.copy(c); f.light.intensity = 6 * r * r + 0.6; f.light.distance = r * 8 + 1; f.light.position.set(num(a[0], 0), num(a[1], 1), num(a[2], 0));
         f.ball.material.color.copy(c); f.ball.position.copy(f.light.position); f.ball.scale.setScalar(r); f.light.visible = f.ball.visible = true;
         flashCount++;
+      } else if (word === "sky") {
+        // sky [top colour, horizon colour]: a gradient behind everything, made once per pair of colours
+        const top = fmt(a[0]).slice(0, 7), low = fmt(a[1]).slice(0, 7), k = top + low;
+        if (!skies.has(k)) { const c = document.createElement("canvas"); c.width = 4; c.height = 128; const g = c.getContext("2d"), gr = g.createLinearGradient(0, 0, 0, 128); gr.addColorStop(0, top); gr.addColorStop(0.62, low); gr.addColorStop(1, low); g.fillStyle = gr; g.fillRect(0, 0, 4, 128); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; skies.set(k, t); }
+        skyTexture = skies.get(k);
       } else if (word === "light") {
         const k = num(a[3], 1); lightSet = true;
         hemi.color.set(fmt(a[0]).slice(0, 7)); hemi.groundColor.set(fmt(a[1]).slice(0, 7)); sun.color.set(fmt(a[2]).slice(0, 7));
@@ -10744,6 +10749,7 @@ export function makeView(canvas, base, opts) {
     }
     flashes.forEach((f, i) => { if (i >= flashCount) f.light.visible = f.ball.visible = false; });
     if (!fogSet) { scene.fog = null; scene.background = new THREE.Color(0x101215); }
+    if (skyTexture) scene.background = skyTexture;
     if (!lightSet) { hemi.color.setHex(LIGHT_DEFAULT[0]); hemi.groundColor.setHex(LIGHT_DEFAULT[1]); sun.color.setHex(LIGHT_DEFAULT[2]); hemi.intensity = 1.25; sun.intensity = 1.35; }
     renderer.render(scene, camera);
   }
