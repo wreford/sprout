@@ -6694,6 +6694,7 @@ p with [x : 5] print
 
 <h2>Read</h2>
 <ul class="list">
+<li><a href="silvereye-guide.html">How SilverEye is made</a><span>A 3D shooter in one Sprout program, explained part by part.</span></li>
 <li><a href="library.html">The library</a><span>Ten modules of our own, from ease to json, and eight wrapped libraries.</span></li>
 <li><a href="compare.html">Sprout compared</a><span>Next to Python, Rebol, Clojure and Lua, each pair run.</span></li>
 <li><a href="play.html#spec">The spec</a><span>The language and every decision behind it.</span></li>
