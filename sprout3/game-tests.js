@@ -417,6 +417,13 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   for (let t = 0; t < 20; t++) r.tick(1 / 60, pad({ fire: true }));
   for (let t = 0; t < 80; t++) r.tick(1 / 60, pad({ reload: t < 2 }));
   ok("silvereye: you can reload a half-empty clip", agent(r, 1).field("clip") === 8 && agent(r, 1).field("ammo") < 40);
+  // shooting a mine sets it off
+  const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
+  put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });
+  sm.tick(1 / 60, pad({ mine: true }), pad({}));
+  put(sm, 0, { x: 1.6, y: 7.5, angle: 0 }); put(sm, 1, { x: 6.2, y: 7.5 });
+  for (let t = 0; t < 3; t++) sm.tick(1 / 60, pad({ fire: true }), pad({}));
+  ok("silvereye: a shot sets off a mine, and the blast reaches whoever is near", f(sm, "mines").count() === 0 && agent(sm, 2).field("health") < 100, agent(sm, 2).field("health"));
   // pickups: ammo adds spare shots, armour takes hits before your health; in a match they come back later
   const pk = L.makeGame(duelSrc, { players: 2, me: 1 }); pk.tick(1 / 60, pad({}), pad({}));
   put(pk, 0, { x: 5.5, y: 1.5 }); pk.tick(1 / 60, pad({}), pad({}));

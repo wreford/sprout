@@ -297,7 +297,15 @@ play : [game |
   -- mines: an armed mine goes off when anyone comes near, whoever laid it
   armed : all-mines keep [m | now >= (m armed)]
   bodies : thinking keep [g | g health > 0] collect [g | [x : g x, y : g y]] .. (ready keep up collect [a | [x : a x, y : a y]])
-  goes-off : armed keep [m | bodies any [b | distance [m x, m y, b x, b y] < mine-reach]]
+  -- a shot that passes close to a mine sets it off, armed or not
+  shot-mines : shooters collect-flat [a |
+    wall : cast [a x, a y, a angle] far
+    all-mines keep [m |
+      gd : distance [a x, a y, m x, m y]
+      (wrap (m y - (a y) atan2 (m x - (a x)) - (a angle)) abs < (0.04 + (0.12 / gd))) and (gd < wall)
+    ]
+  ]
+  goes-off : all-mines keep [m | ((now >= (m armed)) and (bodies any [b | distance [m x, m y, b x, b y] < mine-reach])) or (shot-mines has m)]
   still : all-mines keep [m | (goes-off has m) not]
   (goes-off length > 0) [shake 10, sound "impact"]
   caught : [px py | goes-off collect [m | distance [m x, m y, px, py]] keep [d | d < blast]]

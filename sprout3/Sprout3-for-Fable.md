@@ -64,7 +64,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
   - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
   - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
-- **Tests:** 431 pass, 298 for the language and 133 for the games.
+- **Tests:** 432 pass, 298 for the language and 134 for the games.
 
 ## Open questions for Troy
 
@@ -83,13 +83,13 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 
 ```
 node test.js          # language tests (298)
-node game-tests.js    # game tests (133)
+node game-tests.js    # game tests (134)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 431 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 432 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4520,6 +4520,13 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   for (let t = 0; t < 20; t++) r.tick(1 / 60, pad({ fire: true }));
   for (let t = 0; t < 80; t++) r.tick(1 / 60, pad({ reload: t < 2 }));
   ok("silvereye: you can reload a half-empty clip", agent(r, 1).field("clip") === 8 && agent(r, 1).field("ammo") < 40);
+  // shooting a mine sets it off
+  const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
+  put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });
+  sm.tick(1 / 60, pad({ mine: true }), pad({}));
+  put(sm, 0, { x: 1.6, y: 7.5, angle: 0 }); put(sm, 1, { x: 6.2, y: 7.5 });
+  for (let t = 0; t < 3; t++) sm.tick(1 / 60, pad({ fire: true }), pad({}));
+  ok("silvereye: a shot sets off a mine, and the blast reaches whoever is near", f(sm, "mines").count() === 0 && agent(sm, 2).field("health") < 100, agent(sm, 2).field("health"));
   // pickups: ammo adds spare shots, armour takes hits before your health; in a match they come back later
   const pk = L.makeGame(duelSrc, { players: 2, me: 1 }); pk.tick(1 / 60, pad({}), pad({}));
   put(pk, 0, { x: 5.5, y: 1.5 }); pk.tick(1 / 60, pad({}), pad({}));
@@ -10831,7 +10838,15 @@ play : [game |
   -- mines: an armed mine goes off when anyone comes near, whoever laid it
   armed : all-mines keep [m | now >= (m armed)]
   bodies : thinking keep [g | g health > 0] collect [g | [x : g x, y : g y]] .. (ready keep up collect [a | [x : a x, y : a y]])
-  goes-off : armed keep [m | bodies any [b | distance [m x, m y, b x, b y] < mine-reach]]
+  -- a shot that passes close to a mine sets it off, armed or not
+  shot-mines : shooters collect-flat [a |
+    wall : cast [a x, a y, a angle] far
+    all-mines keep [m |
+      gd : distance [a x, a y, m x, m y]
+      (wrap (m y - (a y) atan2 (m x - (a x)) - (a angle)) abs < (0.04 + (0.12 / gd))) and (gd < wall)
+    ]
+  ]
+  goes-off : all-mines keep [m | ((now >= (m armed)) and (bodies any [b | distance [m x, m y, b x, b y] < mine-reach])) or (shot-mines has m)]
   still : all-mines keep [m | (goes-off has m) not]
   (goes-off length > 0) [shake 10, sound "impact"]
   caught : [px py | goes-off collect [m | distance [m x, m y, px, py]] keep [d | d < blast]]
