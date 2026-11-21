@@ -228,7 +228,7 @@ guard : [id gx gy tx ty | [id : id, x : gx, y : gy, angle : 0, health : guard-he
 spawns : [[2.5, 2.5, 0.6], [13.5, 13.5, -2.4], [13.5, 2.5, 2.4], [2.5, 13.5, -0.8], [7.5, 4.5, 1.6], [9.5, 10.5, -1.6], [6.5, 13.5, 0], [11.5, 5.5, 3.1], [14.5, 7.5, 3.1], [1.5, 12.5, 0], [8.5, 1.5, 1.6], [5.5, 4.5, 0], [12.5, 10.5, -1.6], [1.5, 7.5, 0], [14.5, 13.5, 3.1]]
 spawn-of : [id | spawns @ (id - 1 % (spawns length) + 1)]
 open-cells : level numbered collect-flat [[r, row] | row chars numbered keep [[c, ch] | ch = "."] collect [[c, ch] | [c - 0.5, r - 0.5]]]
-agent : [id sx sy sa | [id : id, x : sx, y : sy, angle : sa, health : 100, carried : mines-each, sentries-left : sentries, fire-wait : 0, mine-wait : 0, turret-wait : 0, flash : 0, hurt : 0, kills : 0, hit-at : -10, down-at : false, look : false, moving : false, aimed : false, asks : false, zoomed : false, fov : fov-across, last-by : 0, bot : false, goal-x : sx, goal-y : sy, stuck : 0, clip : clip-size, ammo : ammo-each, reloading : 0, armour : 0, shots-fired : 0, shots-hit : 0, has-heavy : false, weapon : "blaster", swap-wait : 0, safe-until : 0, damage-taken : 0, hurt-x : 0, hurt-y : 0]]
+agent : [id sx sy sa | [id : id, x : sx, y : sy, angle : sa, health : 100, carried : mines-each, sentries-left : sentries, fire-wait : 0, mine-wait : 0, turret-wait : 0, flash : 0, hurt : -10, kills : 0, hit-at : -10, down-at : false, look : false, moving : false, aimed : false, asks : false, zoomed : false, fov : fov-across, last-by : 0, bot : false, goal-x : sx, goal-y : sy, stuck : 0, clip : clip-size, ammo : ammo-each, reloading : 0, armour : 0, shots-fired : 0, shots-hit : 0, has-heavy : false, weapon : "blaster", swap-wait : 0, safe-until : 0, damage-taken : 0, hurt-x : 0, hurt-y : 0]]
 pickups-fresh : pickup-spots collect [[kind, px, py] | [kind : kind, x : px, y : py, back-at : 0]] .. [[kind : "heavy", x : heavy-spot @ 1, y : heavy-spot @ 2, back-at : 0]]
 simulant : [id | s : spawn-of id, agent [id, s @ 1, s @ 2, s @ 3] with [bot : true]]
 sims : [first | range simulants collect [k | simulant (first + k - 1)]]
@@ -623,9 +623,11 @@ draw : [game |
     guards-down : game guards count [g | g health <= 0]
     wrecked : game machines count [m | m health <= 0]
     tick : [ok | cond [ok, "■", any, "□"]]
-    text ["[tick (guards-down = (game guards length))] GUARDS [guards-down]/[game guards length]", 34, 64, 7, cream]
-    text ["[tick (wrecked = (game machines length))] [mission target-name] [wrecked]/[game machines length]", 38, 74, 7, cream]
-    text ["[tick (game intel)] [mission intel-name]", 38, 84, 7, cream]
+    -- text is drawn centred, so a line starts at the left edge when its middle is half its width in
+    from-left : [line y | text [line, line length * 2.05 + 7, y, 7, cream]]
+    from-left ["[tick (guards-down = (game guards length))] GUARDS [guards-down]/[game guards length]", 64]
+    from-left ["[tick (wrecked = (game machines length))] [mission target-name] [wrecked]/[game machines length]", 74]
+    from-left ["[tick (game intel)] [mission intel-name]", 84]
     all-done : (guards-down = (game guards length)) and (wrecked = (game machines length)) and (game intel)
     all-done [flash [mission exit @ 1, 0.2, mission exit @ 2, 0.15 + (now * 4 sin * 0.05), "#7bd389"], text [mission exit-name, W / 2, 50, 11, "#7bd389"]]
   ]
