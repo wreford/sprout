@@ -64,7 +64,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
   - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
   - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
-- **Tests:** 485 pass, 303 for the language and 182 for the games.
+- **Tests:** 486 pass, 303 for the language and 183 for the games.
 
 ## Open questions for Troy
 
@@ -83,13 +83,13 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 
 ```
 node test.js          # language tests (303)
-node game-tests.js    # game tests (182)
+node game-tests.js    # game tests (183)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 485 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 486 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4692,6 +4692,10 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     put(sc, 0, { x: 13.5, y: 1.5, angle: Math.PI }); const before = f(sc, "scientists").part(1).field("x");
     for (let t = 0; t < 30 && f(sc, "over") === ""; t++) sc.tick(1 / 60, pad({ fire: true }));
     ok("silvereye: shooting a scientist fails the mission", f(sc, "over") === "civilian" && sc.draw().some(x => x[0] === "text" && x[1][0] === "A SCIENTIST WAS HURT"), [f(sc, "over"), before]); }
+  { const ex = L.makeGame(src, {}); ex.tick(1 / 60, pad({})); put(ex, 0, { x: 9.5, y: 7.5, angle: 0 });
+    for (let t = 0; t < 90 && !f(ex, "guards").part(3).field("alert"); t++) ex.tick(1 / 60, pad({}));
+    const mark = ex.draw().find(x => x[0] === "text" && x[1][0] === "!");
+    ok("silvereye: a guard who spots you gets a ! over their head, in front of you", f(ex, "guards").part(3).field("alert") === true && mark && Math.abs(mark[1][1] - 180) < 40 && mark[1][2] < 240, mark && mark[1]); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });
@@ -10966,7 +10970,7 @@ styles : ["hunter", "flanker", "camper"]
 
 -- ---------------------------------------------------------------- the people
 guard-health : cond [difficulty = 1, 70, difficulty = 3, 140, any, 100]
-guard : [id gx gy tx ty | [id : id, x : gx, y : gy, angle : 0, health : guard-health, wait : 1, alert : false, home-x : gx, home-y : gy, to-x : tx, to-y : ty, fell : false, stagger : 0, target : 1]]
+guard : [id gx gy tx ty | [id : id, x : gx, y : gy, angle : 0, health : guard-health, wait : 1, alert : false, home-x : gx, home-y : gy, to-x : tx, to-y : ty, fell : false, stagger : 0, target : 1, alert-at : -10]]
 -- where players and simulants start and come back: open floor in both maps, far corners first
 -- a scientist: unarmed, walks between two points, freezes once the alarm is up; hurting one fails the mission
 scientist : [id sx sy tx ty | [id : id, x : sx, y : sy, angle : 0, health : 30, home-x : sx, home-y : sy, to-x : tx, to-y : ty, fell : false]]
@@ -11141,6 +11145,7 @@ play : [game |
       back-y : cond [arrived, g to-y, any, g home-y]
       g with [
         x : went x, y : went y, angle : cond [alert, facing - pi, any, head], alert : alert
+        alert-at : cond [alert and (g alert not), now, any, g alert-at else -10]
         wait : cond [fires, 1.5 - (difficulty * 0.3), any, g wait - dt]
         stagger : (g stagger else 0) - dt
         to-x : next-x, to-y : next-y, home-x : back-x, home-y : back-y
@@ -11150,7 +11155,7 @@ play : [game |
   ]
   -- a guard who has seen you calls the others nearby
   callers : thinking keep [g | (g alert) and (g health > 0)]
-  called : thinking collect [g | cond [(g alert not) and (g health > 0) and (callers any [o | distance [o x, o y, g x, g y] < 6]), g with [alert : true], any, g]]
+  called : thinking collect [g | cond [(g alert not) and (g health > 0) and (callers any [o | distance [o x, o y, g x, g y] < 6]), g with [alert : true, alert-at : now], any, g]]
   (called count [g | g alert] > (thinking count [g | g alert])) [beep [760, 0.12]]
   pain : [who | thinking count [g | (g hits else false) and (g target = who)] * 9]
   thinking any [g | g fired else false] [sound "hit"]
@@ -11469,6 +11474,16 @@ draw : [game |
     rect [0, H / 2 - 70, W, 112, "#000000b8"]
     text ["MISSION [stage] · [mission name]", W / 2, H / 2 - 48, 15, gold]
     mission brief numbered each [[k, line] | text [line, W / 2, k * 15 + (H / 2 - 30), 9, cream]]
+  ]
+  -- a guard who has just spotted you (or been called) gets a "!" over their head, for a moment
+  half-across : across / 2 * pi / 180
+  half-tall : tall / 2 * pi / 180
+  game guards keep [g | (g health > 0) and (now - (g alert-at else -10) < 1.2)] each [g |
+    gd : distance [you x, you y, g x, g y] max 0.5
+    rel : wrap (g y - (you y) atan2 (g x - (you x)) - (you angle))
+    (rel abs < half-across) and (clear-line [you x, you y, g x, g y]) [
+      text ["!", rel tan / (half-across tan) * (W / 2) + (W / 2), H / 2 - (2.15 - eye / gd / (half-tall tan) * (H / 2)), 16, gold]
+    ]
   ]
   -- the touch buttons, when there's no console around the screen
   game shell not [

@@ -226,7 +226,7 @@ styles : ["hunter", "flanker", "camper"]
 
 -- ---------------------------------------------------------------- the people
 guard-health : cond [difficulty = 1, 70, difficulty = 3, 140, any, 100]
-guard : [id gx gy tx ty | [id : id, x : gx, y : gy, angle : 0, health : guard-health, wait : 1, alert : false, home-x : gx, home-y : gy, to-x : tx, to-y : ty, fell : false, stagger : 0, target : 1]]
+guard : [id gx gy tx ty | [id : id, x : gx, y : gy, angle : 0, health : guard-health, wait : 1, alert : false, home-x : gx, home-y : gy, to-x : tx, to-y : ty, fell : false, stagger : 0, target : 1, alert-at : -10]]
 -- where players and simulants start and come back: open floor in both maps, far corners first
 -- a scientist: unarmed, walks between two points, freezes once the alarm is up; hurting one fails the mission
 scientist : [id sx sy tx ty | [id : id, x : sx, y : sy, angle : 0, health : 30, home-x : sx, home-y : sy, to-x : tx, to-y : ty, fell : false]]
@@ -401,6 +401,7 @@ play : [game |
       back-y : cond [arrived, g to-y, any, g home-y]
       g with [
         x : went x, y : went y, angle : cond [alert, facing - pi, any, head], alert : alert
+        alert-at : cond [alert and (g alert not), now, any, g alert-at else -10]
         wait : cond [fires, 1.5 - (difficulty * 0.3), any, g wait - dt]
         stagger : (g stagger else 0) - dt
         to-x : next-x, to-y : next-y, home-x : back-x, home-y : back-y
@@ -410,7 +411,7 @@ play : [game |
   ]
   -- a guard who has seen you calls the others nearby
   callers : thinking keep [g | (g alert) and (g health > 0)]
-  called : thinking collect [g | cond [(g alert not) and (g health > 0) and (callers any [o | distance [o x, o y, g x, g y] < 6]), g with [alert : true], any, g]]
+  called : thinking collect [g | cond [(g alert not) and (g health > 0) and (callers any [o | distance [o x, o y, g x, g y] < 6]), g with [alert : true, alert-at : now], any, g]]
   (called count [g | g alert] > (thinking count [g | g alert])) [beep [760, 0.12]]
   pain : [who | thinking count [g | (g hits else false) and (g target = who)] * 9]
   thinking any [g | g fired else false] [sound "hit"]
@@ -729,6 +730,16 @@ draw : [game |
     rect [0, H / 2 - 70, W, 112, "#000000b8"]
     text ["MISSION [stage] · [mission name]", W / 2, H / 2 - 48, 15, gold]
     mission brief numbered each [[k, line] | text [line, W / 2, k * 15 + (H / 2 - 30), 9, cream]]
+  ]
+  -- a guard who has just spotted you (or been called) gets a "!" over their head, for a moment
+  half-across : across / 2 * pi / 180
+  half-tall : tall / 2 * pi / 180
+  game guards keep [g | (g health > 0) and (now - (g alert-at else -10) < 1.2)] each [g |
+    gd : distance [you x, you y, g x, g y] max 0.5
+    rel : wrap (g y - (you y) atan2 (g x - (you x)) - (you angle))
+    (rel abs < half-across) and (clear-line [you x, you y, g x, g y]) [
+      text ["!", rel tan / (half-across tan) * (W / 2) + (W / 2), H / 2 - (2.15 - eye / gd / (half-tall tan) * (H / 2)), 16, gold]
+    ]
   ]
   -- the touch buttons, when there's no console around the screen
   game shell not [

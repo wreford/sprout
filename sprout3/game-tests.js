@@ -584,6 +584,10 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     put(sc, 0, { x: 13.5, y: 1.5, angle: Math.PI }); const before = f(sc, "scientists").part(1).field("x");
     for (let t = 0; t < 30 && f(sc, "over") === ""; t++) sc.tick(1 / 60, pad({ fire: true }));
     ok("silvereye: shooting a scientist fails the mission", f(sc, "over") === "civilian" && sc.draw().some(x => x[0] === "text" && x[1][0] === "A SCIENTIST WAS HURT"), [f(sc, "over"), before]); }
+  { const ex = L.makeGame(src, {}); ex.tick(1 / 60, pad({})); put(ex, 0, { x: 9.5, y: 7.5, angle: 0 });
+    for (let t = 0; t < 90 && !f(ex, "guards").part(3).field("alert"); t++) ex.tick(1 / 60, pad({}));
+    const mark = ex.draw().find(x => x[0] === "text" && x[1][0] === "!");
+    ok("silvereye: a guard who spots you gets a ! over their head, in front of you", f(ex, "guards").part(3).field("alert") === true && mark && Math.abs(mark[1][1] - 180) < 40 && mark[1][2] < 240, mark && mark[1]); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });
