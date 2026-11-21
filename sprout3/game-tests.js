@@ -296,5 +296,15 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   ok("gears: a changed number takes at once, and the turning goes on", g.draw().filter(d => d[0] === "line").length === (12 + 28) * 4 && f(g, "turn") > turn);
 }
 
+// ---------------- Terrain: two wrapped libraries in a game
+{
+  const g = L.makeGame(fs.readFileSync(__dirname + "/examples/terrain.sp", "utf8"), {});
+  for (let t = 0; t < 10; t++) g.tick(1 / 60);
+  const rects = g.draw().filter(d => d[0] === "rect"), colours = new Set(rects.map(d => String(d[1][4])));
+  ok("terrain: a square for every cell", rects.length === 30 * 40, rects.length);
+  ok("terrain: land and water in many shades", colours.size > 12, colours.size);
+  const first = JSON.stringify(g.draw()); g.tick(1); ok("terrain: it flies", JSON.stringify(g.draw()) !== first);
+}
+
 console.log(pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

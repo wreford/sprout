@@ -49,6 +49,12 @@ MODULES.push({ name: "json", intro: ["json: JSON text read into records and list
   { name: "pretty", inputs: "", about: ["the same, set out on several lines"], examples: ["json pretty [a : 1]"] },
 ] });
 MODULES.sort((a, b) => a.name < b.name ? -1 : 1);
+// the wrapped libraries (decision 106): their words, as libs.js describes them
+const LIBS = S.libraries.names.map(name => {
+  const L = S.libraries.LIBRARIES[name], words = L.words(new Proxy(function () {}, { get: () => () => {}, apply: () => ({}) }));
+  return { name, title: L.title, licence: L.licence, file: L.file, browserOnly: L.browserOnly, intro: [L.about],
+    words: Object.entries(words).map(([w, [about, example]]) => ({ name: w, inputs: "", about: [about], examples: example ? [example] : [] })) };
+});
 let failures = 0;
 const run = src => { logs.length = 0; let out; try { out = S.format(S.load("result : " + src).field("result")); } catch (e) { out = "error: " + e.message; } const bad = logs.filter(l => !l.startsWith("lint")); if (bad.length || out.startsWith("error")) { failures++; console.log("EXAMPLE FAILS:", src, "=>", out, bad.join(" | ")); } return out; };
 const section = mod => {
@@ -72,15 +78,19 @@ const page = `<!doctype html>
 ${style}</head><body>
 <main>
 <h1><a href="./">Sprout</a></h1>
-<p class="lede">The standard library: ${MODULES.length} modules, ${MODULES.reduce((n, m) => n + m.words.length, 0)} words, written in Sprout.</p>
+<p class="lede">The standard library: ${MODULES.length} modules, ${MODULES.reduce((n, m) => n + m.words.length, 0)} words, written in Sprout. And <a href="#libraries">${LIBS.length} wrapped libraries</a>.</p>
 <p>Each module is a cell whose fields are its words, there in every program: <code>ease out-cubic 0.5</code>, <code>stats median xs</code>, <code>grid path [g, start, goal, open]</code>. The source is in <code>lib/</code>, one file a module, and is worth reading: every word is a few lines. Every example below was run, and the comment under it is what it gave.</p>
 <p class="toc">${MODULES.map(m => `<a href="#${m.name}">${m.name}</a>`).join(" ")}</p>
 <p>Built into every value as well: the list, record, text and number words, endless lists, the literals, <code>parse</code>, <code>quote</code> and <code>script</code>. They are in <a href="play.html#spec">the spec</a> (decisions 99 to 104).</p>
 ${MODULES.map(section).join("\n")}
+<h2 id="libraries" style="margin-top:72px">Wrapped libraries</h2>
+<p>Popular JavaScript libraries, each a module like the ones above. A library is loaded only when a program names it, from this site, so nothing is fetched unless it is used.</p>
+<p class="toc">${LIBS.map(m => `<a href="#${m.name}">${m.name}</a>`).join(" ")}</p>
+${LIBS.map(m => section(m).replace(`<h2>${m.name}</h2>`, `<h2>${m.name} <span style="font-weight:400;color:var(--fg3)">· ${m.title}, ${m.licence} licence${m.browserOnly ? " · in the browser only" : ""}</span></h2>`)).join("\n")}
 <footer>Sprout 3 &middot; the standard library (decision 105) &middot; <a href="./">home</a></footer>
 </main>
 </body></html>
 `;
 fs.writeFileSync(path.join(__dirname, "library.html"), page);
-console.log("library.html:", MODULES.length, "modules,", MODULES.reduce((n, m) => n + m.words.length, 0), "words,", failures, "failing examples");
+console.log("library.html:", LIBS.length, "libraries,", MODULES.length, "modules,", MODULES.reduce((n, m) => n + m.words.length, 0), "words,", failures, "failing examples");
 if (failures) process.exitCode = 1;

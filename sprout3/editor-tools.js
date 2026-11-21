@@ -84,8 +84,10 @@ function allNames() {
   namesFor = code; namesCache = [...names];
   return namesCache;
 }
-const MODULES = () => (S.stdlib ? S.stdlib.names : []).concat(["json"]);
-function moduleWords(m) { try { const mod = S.globals[m]; return mod && mod.fieldNames ? mod.fieldNames() : []; } catch (e) { return []; } }
+const MODULES = () => (S.stdlib ? S.stdlib.names : []).concat(["json"], S.libraries ? S.libraries.names : []);
+// a library's words are known before it loads, so suggestions don't load it
+function libraryWords(m) { const L = S.libraries && S.libraries.LIBRARIES[m]; if (!L) return null; try { return Object.keys(L.words(new Proxy(function () {}, { get: () => () => {}, apply: () => ({}) }))); } catch (e) { return []; } }
+function moduleWords(m) { const lw = libraryWords(m); if (lw) return lw; try { const mod = S.globals[m]; return mod && mod.fieldNames ? mod.fieldNames() : []; } catch (e) { return []; } }
 // what is being typed: the word before the caret, and the word before that (a module name, perhaps)
 function context() {
   const p = ta.selectionStart; if (p !== ta.selectionEnd) return null;

@@ -64,7 +64,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
   - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
   - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
-- **Tests:** 368 pass, 283 for the language and 85 for the games.
+- **Tests:** 386 pass, 298 for the language and 88 for the games.
 
 ## Open questions for Troy
 
@@ -82,14 +82,14 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 **Run it (Node 22 or later):**
 
 ```
-node test.js          # language tests (283)
-node game-tests.js    # game tests (85)
+node test.js          # language tests (298)
+node game-tests.js    # game tests (88)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 368 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 386 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -190,6 +190,8 @@ The page and `bench.html` need a local web server, such as `python3 -m http.serv
 - `lib/stats.sp`: The standard library's stats module, in Sprout (decision 105)
 - `lib/vec.sp`: The standard library's vec module, in Sprout (decision 105)
 - `editor-tools.js`: The editor tools for play.html: key bar with suggestions, cursor keys, undo and snippets; live values; line actions; touch controls for literals; the Live sheet (history, speed, run as you type); the value of a selection
+- `libs.js`: Wrapped libraries (decision 106): chroma, simplex, mathjs, date-fns, fuse, nlp, tone and turf as Sprout modules, loaded from vendor/ when a program names them
+- `examples/terrain.sp`: Terrain: a map from simplex noise coloured by chroma scales, flying east (Tools group)
 - `examples/recipes.sp`: Recipes: quicksort, primes, FizzBuzz, a vector with its own + (prints; not a game)
 - `play.html`: The editor at taskiap.com/sprout3/play.html (opens #ex=name, #spec, #history): a library of examples with artwork, the running game shown like album art, live editing, a now-playing bar whose progress bar rewinds time, state, output and the spec; light and dark
 - `bench.html`: Benchmarks in the browser: the language against plain JS, the games, particles up to 100,000 on Canvas 2D and WebGPU, and SQLite
@@ -823,6 +825,7 @@ These are marked in `sprout2.js` with "Sprout Live fix N" or "Sprout Live additi
 103. **parse (built; library, decision 80, from Troy's ask on 20 Nov to make Sprout better than Rebol at Rebol).** `parse.js` brings Rebol's parse dialect, and its rules are ordinary Sprout values, not a language inside strings. Text is a rule that matches itself, a list of rules matches each in turn, a cell with one input tests one character or item, and any other value (a word like `'move`, a number, a date) matches an item equal to it. The rule words are `some`, `maybe`, `maybe-some`, `repeat [n, rule]` and `repeat [least, most, rule]`, `one-of [rules]` (tried in order) and `one-of "abc"`, `none-of`, `to`, `thru`, `ahead`, `not-ahead`, `into` (one item that is a list, parsed all through) and `of-kind`, with `digit`, `letter`, `upper-letter`, `lower-letter`, `letter-or-digit`, `space`, `any-char`, `end`, `a-number`, `a-text` and `a-word`. Matching is PEG: a choice takes the first rule that matches, a repeat takes all it can, and nothing is tried again, so a rule's meaning is what it says. `rule as "name"` keeps what it matched, `rule as ["name", [t | t number]]` keeps what a cell makes of it, and `rule all-as "name"` keeps every match in a list. `text parse rule` gives true, or a record of what was kept, when the rule matches all of the text, and false when it doesn't. `find-all` gives every match, and `replace-all [rule, new]` replaces each, with text or with what a cell makes of the match. Lists parse the same way, item by item, so a block of quoted code (decision 102) is parsed like text, and a dialect is checked by a rule: `quote [move 10, turn 90] parse some one-of [into ['move, a-number], into ['turn, a-number]]`. Rule words given a rule word wait for the rule, so `some one-of [...]` reads as Rebol would read it. Names are still bound before use (decision 25), so a grammar that refers back to itself is one cell that names itself, with the rules it needs as its fields: `expr : [factor : one-of [some digit, ["(", expr, ")"]], ..., term, maybe-some [one-of "+-", term]]`. To make that work, a cell that mentions its own name is always lazy, even when it is a short list of values (`digits : [digit, maybe digits]`).
 104. **Scripts: coroutines that stay values (Troy, 20 Nov).** `script [| ... yield 1 ... x : yield 2 ...]` is a script, Lua's coroutine done Sprout's way. `s resume v` runs it on to its next `yield` and gives a new script whose `value` is what was yielded (or, once it finishes, what it gave back) and whose `done` says whether it has finished. `yield` gives back the value sent by the next resume, a script's input is the first value sent, and `s next` resumes with false. Unlike a Lua coroutine, a script never changes: `s` is the same after `s resume v`, so a game keeps its script in its state and rewinds, replays, saves and compares it like any other value. A resume works by running the cell again from the start with every value sent so far, so the code must be pure, as all Sprout code is. The steps already taken don't have their effects again (a `print` or a `beep` happens once), and `random` and `rand` give them the numbers they had the first time, so the run is the same run. A new step's random numbers are new, as anywhere. Running again costs time that grows with the steps taken; a game script of a few hundred steps resumes in microseconds. `take n` and `yields` give the values a script yields (a generator), and `wait seconds`, written in Sprout in `words.js`, waits inside a game script that is resumed with each frame's `dt`. A cell written with a bar and no inputs, `[| ...]`, is code: it runs when it is run, never when it is made, even when its parts look like simple values. An input named `left` is now linted, since `left` means a method's receiver.
 105. **The standard library (built; library, decision 80, from Troy's ask on 21 Nov).** Ten modules, each a global cell whose fields are its words, in every program: `ease` (easing curves, `progress`, `between`), `vec` (vectors as pairs: `size`, `unit`, `angle`, `rotate`, `dot`, `distance`, `mix`, `limit`, `reflect`), `stats` (`mean`, `median`, `mode`, `variance`, `spread`, `percentile`, `histogram`, `correlation`, `summary`), `grid` (lists of rows: `make`, `at`, `put`, `beside`, `around`, `count-around`, `cells`, `map`, `region`, `fill`, and `path`, the shortest way through), `seeded` (repeatable random choices from `noise`: `between`, `whole`, `chance`, `pick`, `shuffle`, `bell`, `in-circle`, `weighted`), `format` (`commas`, `places`, `percent`, `ordinal`, `plural`, `clock`, `wrap`, `centre`, `title`, `bar`), `shape` (points as pairs: `circle`, `polygon`, `star`, `box`, `edges`, `move`, `turn`, `grow`, `area`, `centre`, `bounds`, `holds`), `palette` (`hsl`, `along`, `wheel`, `grey`, and the sets `warm`, `cool`, `soft`), `csv` (`read`, `write`) and `json` (`read`, `write`, `pretty`). All but `json` are written in Sprout, one file each in `lib/`, so the library is also a set of worked examples; `json` is JavaScript in `words.js`. `node make-stdlib.js` turns `lib/*.sp` into `stdlib.js`, which Node and the pages load after `parse.js`, and writes `library.html`, the reference: each word's comment, its inputs, and its `-- e.g.` example run with the answer it gave. A module is compiled the first time a program uses it. Nothing in the library draws, since host words belong to each game; `shape edges` gives the sides for a program's own `each [[a, b] | line ...]`. A program's own names come first, so a program that binds `grid` or `format` keeps its own. Three words joined the built-in ones to make the modules short: `find-index`, `distinct-by` and `has-field` on lists and records, and `atan2` and `fixed` on numbers. The tests check that `stdlib.js` matches `lib/` and that every example runs without a message.
+106. **Wrapped libraries (built; library, decision 80, from Troy's ask on 21 Nov).** Eight popular JavaScript libraries are modules like the standard library's: `chroma` (chroma.js: colour scales, ColorBrewer palettes, contrast, Lab mixing, named colours, temperature), `simplex` (simplex-noise: smooth, seeded noise in 2D, 3D and fractal layers), `mathjs` (math.js: expressions with units, conversions, exact fractions, matrices, linear equations, derivatives, simplifying), `date-fns` (formatting with patterns, distances in words, parsing, weeks and months), `fuse` (Fuse.js: fuzzy search over text or records), `nlp` (compromise: nouns, verbs, people, places, sentences, plurals, tenses, numbers in words), `tone` (Tone.js: notes, chords and drums, as effects like `beep`; in the browser only) and `turf` (Turf: distances, bearings, areas and points along routes on the Earth). `libs.js` holds them all. Each library's file is kept in `vendor/` with its licence and served from the site, never from another server, and loaded only when a program names it: the page finds the names in the code and loads those first, showing "Loading chroma.js…", and Node runs the same files. Values cross over both ways: lists and arrays, records and objects, Sprout colours and hex text, Sprout dates and JavaScript dates. A library word that fails logs its message and gives false, like any other word. `library.html` lists every word with an example and the answer it gave. Decision 73 is refined: a field that has the same name as a global (a host word, a library module, `format` or `noise`) is read without a lint, since a module's words would clash with globals all the time; a field that has the same name as one the program binds still lints. `examples/terrain.sp` flies over a map made with `simplex fractal` and coloured with `chroma steps`.
 ````
 
 ---
@@ -1197,7 +1200,10 @@ class CodeGen {
         const lexical = found ? "()=>" + this.referenceCode(found) : (this.globals.has(word) ? "()=>" + this.globalCode(word) : "null");
         // a field read right before else is allowed to miss: else is the program saying so, so the miss isn't logged (decision 83)
         const quiet = terms[i + 1] && terms[i + 1].type === "word" && terms[i + 1].value === "else" && terms[i + 2] && !this.lookup("else");
-        code = "sendWordCached(" + code + "," + JSON.stringify(word) + "," + lexical + "," + (term.line || 0) + "," + this.inlineCache() + (quiet ? ",1" : "") + ")";
+        // flags: 1, a miss is quiet (else follows); 2, the name in scope is a global, not one the program binds, so a field
+        // of the same name wins without a lint (library modules have words like format and noise; decision 73, refined by 106)
+        const flags = (quiet ? 1 : 0) | (!found && lexical !== "null" ? 2 : 0);
+        code = "sendWordCached(" + code + "," + JSON.stringify(word) + "," + lexical + "," + (term.line || 0) + "," + this.inlineCache() + (flags ? "," + flags : "") + ")";
       } else if (term.type === "cell" && !term.names.length && i === 1 && this.certainlyNotBool(terms[0])) {
         code = (tail && isLast ? "tailSend(" : "send(") + code + "," + this.genCell(term) + ")";
       } else if (term.type === "cell" && !term.names.length) {
@@ -1670,30 +1676,30 @@ function readField(receiver, value) {
 }
 // sendWord: send a word. Fields first (with prototype methods), then a name in scope as the argument.
 // sendWordCached: sendWord with an inline cache. A record read at this spot usually has the same shape every time.
-function sendWordCached(receiver, word, lexical, line, cache, quiet) {
+function sendWordCached(receiver, word, lexical, line, cache, flags) {
   if (receiver instanceof ValueCell) {
     const fieldShape = receiver.fieldShape;
     if (fieldShape === cache.shape) { const value = receiver.fieldValues[cache.index]; return value instanceof Cell && value.shape.usesLeft ? readField(receiver, value) : value; }
     const index = fieldShape.index(word);
     if (index >= 0) {
-      if (lexical) lintFieldNameClash(word, line);
+      if (lexical && !(flags & 2)) lintFieldNameClash(word, line);
       cache.shape = fieldShape; cache.index = index;
       const value = receiver.fieldValues[index]; return value instanceof Cell && value.shape.usesLeft ? readField(receiver, value) : value;
     }
   }
-  return sendWord(receiver, word, lexical, line, quiet);
+  return sendWord(receiver, word, lexical, line, flags);
 }
 // decision 73: a word that is both a field of the receiver and a name in scope reads the field, loudly
 function lintFieldNameClash(word, line) { lint("\"" + word + "\" is both a field here and a name in scope; the field wins" + (line ? " (line " + line + ")" : "")); }
-function sendWord(receiver, word, lexical, line, quiet) {
+function sendWord(receiver, word, lexical, line, flags) {
   if (receiver instanceof Cell || receiver instanceof ValueCell) {
     const value = receiver.field(word);
-    if (value !== UNSET) { if (lexical) lintFieldNameClash(word, line); return readField(receiver, value); }
+    if (value !== UNSET) { if (lexical && !(flags & 2)) lintFieldNameClash(word, line); return readField(receiver, value); }
   }
   const method = methodsOf(receiver)[word];
   if (method !== undefined) return method.takesArgument ? new WaitingMethod(method.run, receiver) : method.run(receiver);
   if (lexical) return send(receiver, lexical());
-  if (quiet) return false;
+  if (flags & 1) return false;
   // a field that isn't there: suggest the nearest field this cell does have
   const hint = (receiver instanceof Cell || receiver instanceof ValueCell) ? nearest(word, receiver.fieldNames()) : null;
   return logMiss(describe(receiver) + " doesn't know " + word + (hint ? " (did you mean " + hint + "?)" : ""), line);
@@ -2055,6 +2061,7 @@ if (typeof module !== "undefined") {
   require("./words.js");
   require("./parse.js");
   require("./stdlib.js");
+  require("./libs.js");
   if (!process.env.SPROUT3_CORE_ONLY) try { require("./kernels.js"); } catch (e) { if (e.code !== "MODULE_NOT_FOUND") throw e; }
 } else root.Sprout3 = api;
 })(typeof window !== "undefined" ? window : globalThis);
@@ -4030,6 +4037,30 @@ ok("hot-swap takes a changed start value", g.state.field("height") === 99);
   for (const [src, want] of W) { const got = val(src); ok("105 " + src + " gives " + want, got === want); if (got !== want) console.log("   got", got); }
 }
 
+// ---------------- wrapped libraries (decision 106)
+{
+  S.setLog(m => logs.push(m));
+  const fake = new Proxy(function () {}, { get: () => () => {}, apply: () => ({}) });
+  let examples = 0, quiet = true;
+  for (const name of S.libraries.names) {
+    const L = S.libraries.LIBRARIES[name]; if (L.browserOnly) continue;
+    for (const [w, [about, ex]] of Object.entries(L.words(fake))) { if (!ex) continue; logs.length = 0; S.load("result : " + ex).field("result"); examples++; if (logs.length) { quiet = false; console.log("   library example logs:", ex, logs); } }
+  }
+  ok("106 every library example runs without a message (" + examples + " of them)", quiet && examples >= 50);
+  const W = [
+    ["chroma brewer [\"Viridis\", 3]", "[#440154, #26838f, #fee825]"], ["chroma named \"tomato\"", "#ff6347"], ["chroma contrast [#000000, #ffffff]", "21"],
+    ["simplex noise [0.5, 1.25] = (simplex noise [0.5, 1.25])", "true"], ["mathjs fraction \"1/3 + 1/6\"", "1/2"], ["mathjs determinant [[4, 7], [2, 6]]", "10"],
+    ["date-fns format [2026-11-20, \"EEEE\"]", "Friday"], ["date-fns parse [\"20/11/2026\", \"dd/MM/yyyy\"] = 2026-11-20", "true"],
+    ["fuse best [[\"apple\", \"banana\"], \"bananna\"]", "banana"], ["nlp plural \"goose\"", "geese"], ["turf distance [[0, 0], [0, 1]] round", "111"],
+  ];
+  for (const [src, want] of W) { const got = val(src); ok("106 " + src + " gives " + want, got === want); if (got !== want) console.log("   got", got); }
+  ok("106 a program's libraries are found, and comments don't count", JSON.stringify(S.libraries.mentions("x : chroma named \"red\"\n-- mathjs\ny : date-fns week d")) === '["chroma","date-fns"]');
+  logs.length = 0; val("[format : 1] format");
+  ok("106 a field named like a global reads without a lint", !logs.some(m => /both a field/.test(m)));
+  logs.length = 0; S.load("format : 2\nresult : [format : 1] format").field("result");
+  ok("73 a field named like the program's own name still lints", logs.some(m => /both a field/.test(m)));
+}
+
 console.log(pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
 ````
@@ -4335,6 +4366,16 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   const turn = f(g, "turn");
   g.swap(src.replace("teeth-a : 16", "teeth-a : 12")); g.tick(1 / 60);
   ok("gears: a changed number takes at once, and the turning goes on", g.draw().filter(d => d[0] === "line").length === (12 + 28) * 4 && f(g, "turn") > turn);
+}
+
+// ---------------- Terrain: two wrapped libraries in a game
+{
+  const g = L.makeGame(fs.readFileSync(__dirname + "/examples/terrain.sp", "utf8"), {});
+  for (let t = 0; t < 10; t++) g.tick(1 / 60);
+  const rects = g.draw().filter(d => d[0] === "rect"), colours = new Set(rects.map(d => String(d[1][4])));
+  ok("terrain: a square for every cell", rects.length === 30 * 40, rects.length);
+  ok("terrain: land and water in many shades", colours.size > 12, colours.size);
+  const first = JSON.stringify(g.draw()); g.tick(1); ok("terrain: it flies", JSON.stringify(g.draw()) !== first);
 }
 
 console.log(pass + " passed, " + fail + " failed");
@@ -8056,6 +8097,12 @@ MODULES.push({ name: "json", intro: ["json: JSON text read into records and list
   { name: "pretty", inputs: "", about: ["the same, set out on several lines"], examples: ["json pretty [a : 1]"] },
 ] });
 MODULES.sort((a, b) => a.name < b.name ? -1 : 1);
+// the wrapped libraries (decision 106): their words, as libs.js describes them
+const LIBS = S.libraries.names.map(name => {
+  const L = S.libraries.LIBRARIES[name], words = L.words(new Proxy(function () {}, { get: () => () => {}, apply: () => ({}) }));
+  return { name, title: L.title, licence: L.licence, file: L.file, browserOnly: L.browserOnly, intro: [L.about],
+    words: Object.entries(words).map(([w, [about, example]]) => ({ name: w, inputs: "", about: [about], examples: example ? [example] : [] })) };
+});
 let failures = 0;
 const run = src => { logs.length = 0; let out; try { out = S.format(S.load("result : " + src).field("result")); } catch (e) { out = "error: " + e.message; } const bad = logs.filter(l => !l.startsWith("lint")); if (bad.length || out.startsWith("error")) { failures++; console.log("EXAMPLE FAILS:", src, "=>", out, bad.join(" | ")); } return out; };
 const section = mod => {
@@ -8079,17 +8126,21 @@ const page = `<!doctype html>
 ${style}</head><body>
 <main>
 <h1><a href="./">Sprout</a></h1>
-<p class="lede">The standard library: ${MODULES.length} modules, ${MODULES.reduce((n, m) => n + m.words.length, 0)} words, written in Sprout.</p>
+<p class="lede">The standard library: ${MODULES.length} modules, ${MODULES.reduce((n, m) => n + m.words.length, 0)} words, written in Sprout. And <a href="#libraries">${LIBS.length} wrapped libraries</a>.</p>
 <p>Each module is a cell whose fields are its words, there in every program: <code>ease out-cubic 0.5</code>, <code>stats median xs</code>, <code>grid path [g, start, goal, open]</code>. The source is in <code>lib/</code>, one file a module, and is worth reading: every word is a few lines. Every example below was run, and the comment under it is what it gave.</p>
 <p class="toc">${MODULES.map(m => `<a href="#${m.name}">${m.name}</a>`).join(" ")}</p>
 <p>Built into every value as well: the list, record, text and number words, endless lists, the literals, <code>parse</code>, <code>quote</code> and <code>script</code>. They are in <a href="play.html#spec">the spec</a> (decisions 99 to 104).</p>
 ${MODULES.map(section).join("\n")}
+<h2 id="libraries" style="margin-top:72px">Wrapped libraries</h2>
+<p>Popular JavaScript libraries, each a module like the ones above. A library is loaded only when a program names it, from this site, so nothing is fetched unless it is used.</p>
+<p class="toc">${LIBS.map(m => `<a href="#${m.name}">${m.name}</a>`).join(" ")}</p>
+${LIBS.map(m => section(m).replace(`<h2>${m.name}</h2>`, `<h2>${m.name} <span style="font-weight:400;color:var(--fg3)">· ${m.title}, ${m.licence} licence${m.browserOnly ? " · in the browser only" : ""}</span></h2>`)).join("\n")}
 <footer>Sprout 3 &middot; the standard library (decision 105) &middot; <a href="./">home</a></footer>
 </main>
 </body></html>
 `;
 fs.writeFileSync(path.join(__dirname, "library.html"), page);
-console.log("library.html:", MODULES.length, "modules,", MODULES.reduce((n, m) => n + m.words.length, 0), "words,", failures, "failing examples");
+console.log("library.html:", LIBS.length, "libraries,", MODULES.length, "modules,", MODULES.reduce((n, m) => n + m.words.length, 0), "words,", failures, "failing examples");
 if (failures) process.exitCode = 1;
 ````
 
@@ -8769,8 +8820,10 @@ function allNames() {
   namesFor = code; namesCache = [...names];
   return namesCache;
 }
-const MODULES = () => (S.stdlib ? S.stdlib.names : []).concat(["json"]);
-function moduleWords(m) { try { const mod = S.globals[m]; return mod && mod.fieldNames ? mod.fieldNames() : []; } catch (e) { return []; } }
+const MODULES = () => (S.stdlib ? S.stdlib.names : []).concat(["json"], S.libraries ? S.libraries.names : []);
+// a library's words are known before it loads, so suggestions don't load it
+function libraryWords(m) { const L = S.libraries && S.libraries.LIBRARIES[m]; if (!L) return null; try { return Object.keys(L.words(new Proxy(function () {}, { get: () => () => {}, apply: () => ({}) }))); } catch (e) { return []; } }
+function moduleWords(m) { const lw = libraryWords(m); if (lw) return lw; try { const mod = S.globals[m]; return mod && mod.fieldNames ? mod.fieldNames() : []; } catch (e) { return []; } }
 // what is being typed: the word before the caret, and the word before that (a module name, perhaps)
 function context() {
   const p = ta.selectionStart; if (p !== ta.selectionEnd) return null;
@@ -9220,6 +9273,273 @@ keysUI();
 })();
 ````
 
+## libs.js
+
+Wrapped libraries (decision 106): chroma, simplex, mathjs, date-fns, fuse, nlp, tone and turf as Sprout modules, loaded from vendor/ when a program names them
+
+````js
+// Popular JavaScript libraries, wrapped as Sprout modules (decision 106). Each module is a global cell of words, like the
+// standard library's, and its library is loaded only when a program names it: from vendor/ on the page (play.html waits
+// for it before running), and straight from the same files in Node. Values cross over both ways: lists and arrays,
+// records and objects, Sprout colours and hex text, Sprout dates and JavaScript dates.
+(function (root) {
+"use strict";
+const S = root.Sprout3 || (typeof module !== "undefined" ? require("./sprout3.js") : null);
+const I = S.internals, W = S.words;
+const { list, record, argumentsOf } = W;
+const inNode = typeof window === "undefined";
+
+// ===================================================================== values across the border
+function toJS(v) {
+  if (v === null || v === undefined) return null;
+  if (typeof v !== "object") return v;
+  if (W.Colour && v instanceof W.Colour) return v.sproutText();
+  if (W.SproutDate && v instanceof W.SproutDate) { const [y, m, d] = v.parts(); return new Date(y, m - 1, d, 12); }
+  if (W.Pair && v instanceof W.Pair) return [v.x, v.y];
+  if (W.Word && v instanceof W.Word) return v.name;
+  if (I.isCell(v)) {
+    const keys = v.fieldNames(), parts = I.partsOf(v);
+    if (keys.length && !parts.length) { const o = {}; for (const k of keys) o[k] = toJS(v.field(k)); return o; }
+    return parts.map(toJS);
+  }
+  return typeof v.sproutText === "function" ? v.sproutText() : String(v);
+}
+function fromJS(x) {
+  if (x === null || x === undefined) return false;
+  if (typeof x === "number" || typeof x === "string" || typeof x === "boolean") return x;
+  if (Array.isArray(x)) return list(x.map(fromJS));
+  if (x instanceof Date) return isNaN(x) ? false : S.globals.date.fn(list([x.getFullYear(), x.getMonth() + 1, x.getDate()]));
+  if (x && x.constructor === Object) { const keys = Object.keys(x); return record(keys, keys.map(k => fromJS(x[k]))); }
+  if (x && typeof x.toArray === "function") return fromJS(x.toArray());     // a math.js matrix
+  return String(x);
+}
+const colourOf = hex => S.globals.colour.fn(hex);
+const args = (a, n) => argumentsOf(a, n).map(toJS);
+const word = (name, fn, effect) => new I.Native(name, a => { try { return fn(a); } catch (e) { return I.logMiss(name + ": " + (e && e.message || e)); } }, effect);
+
+// ===================================================================== the libraries
+// for each: where its file is, the global it makes, and its words (each with what it does and an example)
+const LIBRARIES = {
+  chroma: {
+    title: "chroma.js", file: "vendor/chroma/chroma.min.js", global: "chroma", licence: "BSD",
+    about: "Colour scales, colour-blind-safe palettes, contrast for reading, and mixing that looks even to the eye.",
+    words: lib => ({
+      scale: ["a colour part of the way along a list of colours, mixed in Lab so the steps look even: [colours, t]", "chroma scale [[#fafa6e, #2a4858], 0.5]",
+        a => { const [cs, t] = args(a, 2); return colourOf(lib.scale(cs).mode("lab")(t).hex()); }],
+      steps: ["n colours evenly along a list of colours: [colours, n]", "chroma steps [[#fafa6e, #2a4858], 4]",
+        a => { const [cs, n] = args(a, 2); return list(lib.scale(cs).mode("lab").colors(n).map(colourOf)); }],
+      brewer: ["n colours from a ColorBrewer palette by name, such as Viridis, YlGnBu, Spectral or Set2: [name, n]", 'chroma brewer ["Viridis", 5]',
+        a => { const [name, n] = args(a, 2); return list(lib.scale(name).colors(n).map(colourOf)); }],
+      contrast: ["the WCAG contrast between two colours: 4.5 or more is easy to read", "chroma contrast [#ffffff, #5fa8d3]",
+        a => { const [x, y] = args(a, 2); return +lib.contrast(x, y).toFixed(2); }],
+      readable: ["black or white, whichever reads better on a colour", "chroma readable #5fa8d3",
+        a => colourOf(lib.contrast(toJS(a), "#000") >= lib.contrast(toJS(a), "#fff") ? "#000000" : "#ffffff")],
+      mix: ["two colours mixed in Lab: [a, b, t]", "chroma mix [#ff0000, #0000ff, 0.5]",
+        a => { const [x, y, t] = args(a, 3); return colourOf(lib.mix(x, y, t === null ? 0.5 : t, "lab").hex()); }],
+      named: ["a colour by its CSS name", 'chroma named "tomato"', a => colourOf(lib(toJS(a)).hex())],
+      temperature: ["the colour of light at a temperature in kelvin", "chroma temperature 3500", a => colourOf(lib.temperature(toJS(a)).hex())],
+      darken: ["a colour darker by an amount (1 is a lot)", "chroma darken [#5fa8d3, 1]", a => { const [c, k] = args(a, 2); return colourOf(lib(c).darken(k).hex()); }],
+      brighten: ["a colour brighter by an amount", "chroma brighten [#1f6f8b, 1]", a => { const [c, k] = args(a, 2); return colourOf(lib(c).brighten(k).hex()); }],
+      saturate: ["a colour more saturated by an amount", "chroma saturate [#9a978d, 2]", a => { const [c, k] = args(a, 2); return colourOf(lib(c).saturate(k).hex()); }],
+      luminance: ["how bright a colour is to the eye, from 0 to 1", "chroma luminance #5fa8d3", a => +lib(toJS(a)).luminance().toFixed(3)],
+    }),
+  },
+  simplex: {
+    title: "simplex-noise", file: "vendor/simplex/simplex-noise.js", global: "SimplexNoise", licence: "MIT",
+    about: "Smooth noise: values that drift gently from place to place, for terrain, clouds, wobble and wandering. The same input always gives the same value.",
+    words: lib => {
+      const Noise = lib.SimplexNoise || lib, cache = new Map();
+      const gen = seed => { let n = cache.get(seed); if (!n) { n = new Noise(String(seed)); cache.set(seed, n); } return n; };
+      const fractal = (n, x, y, octaves) => { let total = 0, amp = 1, freq = 1, norm = 0; for (let k = 0; k < octaves; k++) { total += n.noise2D(x * freq, y * freq) * amp; norm += amp; amp /= 2; freq *= 2; } return total / norm; };
+      return {
+        noise: ["smooth noise at x, y, from -1 to 1", "simplex noise [0.5, 1.25]", a => { const [x, y] = args(a, 2); return gen("sprout").noise2D(x, y || 0); }],
+        noise3: ["smooth noise at x, y, z (z is often time, for noise that moves)", "simplex noise3 [0.5, 1.25, 2]", a => { const [x, y, z] = args(a, 3); return gen("sprout").noise3D(x, y, z); }],
+        fractal: ["noise in several layers, big shapes with small detail on top: [x, y, layers]", "simplex fractal [0.5, 1.25, 4]", a => { const [x, y, o] = args(a, 3); return fractal(gen("sprout"), x, y, o || 4); }],
+        seeded: ["noise from its own seed, for a different world: [seed, x, y]", "simplex seeded [7, 0.5, 1.25]", a => { const [s, x, y] = args(a, 3); return gen(s).noise2D(x, y); }],
+      };
+    },
+  },
+  mathjs: {
+    title: "math.js", file: "vendor/mathjs/math.js", global: "math", licence: "Apache 2.0",
+    about: "Math written as text: expressions, units and conversions, exact fractions, matrices and equations, derivatives and simplifying.",
+    words: lib => {
+      const out = r => typeof r === "number" ? r : r && r.isMatrix ? fromJS(r.toArray()) : Array.isArray(r) ? fromJS(r) : r && r.isResultSet ? fromJS(r.entries.map(e => typeof e === "number" ? e : lib.format(e, { precision: 10 }))) : typeof r === "boolean" ? r : lib.format(r, { precision: 10 });
+      return {
+        evaluate: ["an expression written as text: units, functions and all", 'mathjs evaluate "sqrt(3^2 + 4^2) * 2 cm to inch"', a => out(lib.evaluate(toJS(a)))],
+        convert: ["an amount in another unit, as a number: [amount, unit]", 'mathjs convert ["60 mi/h", "km/h"]', a => { const [v, u] = args(a, 2); return +lib.unit(v).toNumber(u).toFixed(10); }],
+        fraction: ["exact fractions, as text", 'mathjs fraction "1/3 + 1/6"', a => { const tree = lib.parse(toJS(a)).transform(n => n.isConstantNode && typeof n.value === "number" ? new lib.ConstantNode(lib.fraction(n.value)) : n); return lib.format(tree.evaluate(), { fraction: "ratio" }); }],
+        solve: ["x for a set of linear equations A x = b: [A, b]", "mathjs solve [[[2, 1], [1, 3]], [3, 5]]", a => { const [A, b] = args(a, 2); return fromJS(lib.lusolve(A, b).map(r => +r[0].toFixed(10))); }],
+        multiply: ["two matrices (or a matrix and a vector) multiplied", "mathjs multiply [[[1, 2], [3, 4]], [5, 6]]", a => { const [x, y] = args(a, 2); return out(lib.multiply(x, y)); }],
+        inverse: ["the inverse of a square matrix", "mathjs inverse [[4, 7], [2, 6]]", a => fromJS(lib.inv(toJS(a)).map(r => r.map(v => +v.toFixed(10))))],
+        determinant: ["the determinant of a square matrix", "mathjs determinant [[4, 7], [2, 6]]", a => +lib.det(toJS(a)).toFixed(10)],
+        derivative: ["the derivative of an expression, as text: [expression, variable]", 'mathjs derivative ["x^3 + 2x", "x"]', a => { const [e, v] = args(a, 2); return lib.derivative(e, v).toString(); }],
+        simplify: ["an expression made simpler, as text", 'mathjs simplify "2x + 3x - x"', a => lib.simplify(toJS(a)).toString()],
+      };
+    },
+  },
+  "date-fns": {
+    title: "date-fns", file: "vendor/date-fns/date-fns.min.js", global: "dateFns", licence: "MIT",
+    about: "Dates written for people: formatting with a pattern, how long ago, parsing, weeks and months. Takes and gives Sprout dates like 2026-11-20.",
+    words: lib => ({
+      format: ["a date as text, by a pattern (EEEE is the day's name, d the day, MMMM the month, yyyy the year)", 'date-fns format [2026-11-20, "EEEE d MMMM yyyy"]', a => { const [d, p] = args(a, 2); return lib.format(d, p); }],
+      distance: ["how far apart two dates are, in words", "date-fns distance [2026-11-20, 2027-02-14]", a => { const [x, y] = args(a, 2); return lib.formatDistance(x, y); }],
+      parse: ["a date from text, by a pattern: [text, pattern]", 'date-fns parse ["20/11/2026", "dd/MM/yyyy"]', a => { const [t, p] = args(a, 2); return fromJS(lib.parse(t, p, new Date(2000, 0, 1, 12))); }],
+      week: ["the ISO week number of a date", "date-fns week 2026-11-20", a => lib.getISOWeek(toJS(a))],
+      "days-in-month": ["how many days the month of a date has", "date-fns days-in-month 2028-02-01", a => lib.getDaysInMonth(toJS(a))],
+      "start-of-month": ["the first day of the month of a date", "date-fns start-of-month 2026-11-20", a => fromJS(lib.startOfMonth(toJS(a)))],
+      "end-of-month": ["the last day of the month of a date", "date-fns end-of-month 2026-11-20", a => fromJS(lib.endOfMonth(toJS(a)))],
+      "is-leap-year": ["is the year of a date a leap year?", "date-fns is-leap-year 2028-01-01", a => lib.isLeapYear(toJS(a))],
+    }),
+  },
+  fuse: {
+    title: "Fuse.js", file: "vendor/fuse/fuse.min.js", global: "Fuse", licence: "Apache 2.0",
+    about: "Fuzzy search: find what was meant even when it is misspelt. Works on lists of text, or of records (searching every text field).",
+    words: lib => {
+      const fuse = items => { const xs = I.partsOf(items).map(toJS), options = { includeScore: true, threshold: 0.4 }; if (xs.length && xs[0] && typeof xs[0] === "object") options.keys = Object.keys(xs[0]).filter(k => typeof xs[0][k] === "string"); return new lib(xs, options); };
+      return {
+        search: ["the items that match, best first: [items, query]", 'fuse search [["apple", "banana", "pineapple", "grape"], "aple"]', a => { const [items, q] = argumentsOf(a, 2); return list(fuse(items).search(String(q)).map(r => fromJS(r.item))); }],
+        best: ["the one item that matches best, or false", 'fuse best [[[name : "Ada"], [name : "Alan"], [name : "Grace"]], "grase"]', a => { const [items, q] = argumentsOf(a, 2); const r = fuse(items).search(String(q))[0]; return r ? fromJS(r.item) : false; }],
+        scored: ["each match with how close it is, from 0 (exact) to 1", 'fuse scored [["sprout", "spout", "trout"], "sprot"]', a => { const [items, q] = argumentsOf(a, 2); return list(fuse(items).search(String(q)).map(r => record(["item", "score"], [fromJS(r.item), +r.score.toFixed(3)]))); }],
+      };
+    },
+  },
+  nlp: {
+    title: "compromise", file: "vendor/compromise/compromise.js", global: "nlp", licence: "MIT",
+    about: "English, understood a little: the nouns, verbs, people and places in text, plurals, tenses and numbers written as words.",
+    words: lib => {
+      const out = xs => list(xs.map(fromJS));
+      return {
+        nouns: ["the nouns in some text", 'nlp nouns "The quick fox jumps over the lazy dogs"', a => out(lib(toJS(a)).nouns().out("array"))],
+        verbs: ["the verbs in some text", 'nlp verbs "She sells shells and he sang"', a => out(lib(toJS(a)).verbs().out("array"))],
+        people: ["the people named in some text", 'nlp people "Ada Lovelace wrote to Charles Babbage"', a => out(lib(toJS(a)).people().out("array"))],
+        places: ["the places named in some text", 'nlp places "From Paris to New York by way of Iceland"', a => out(lib(toJS(a)).places().out("array"))],
+        sentences: ["text split into sentences", 'nlp sentences "It rained. Then it stopped! Did it?"', a => out(lib(toJS(a)).sentences().out("array"))],
+        plural: ["a noun made plural", 'nlp plural "goose"', a => lib(toJS(a)).nouns().toPlural().text() || toJS(a)],
+        singular: ["a noun made singular", 'nlp singular "mice"', a => lib(toJS(a)).nouns().toSingular().text() || toJS(a)],
+        past: ["text put in the past tense", 'nlp past "she walks to the shop"', a => { const d = lib(toJS(a)); d.verbs().toPastTense(); return d.text(); }],
+        future: ["text put in the future tense", 'nlp future "she walks to the shop"', a => { const d = lib(toJS(a)); d.verbs().toFutureTense(); return d.text(); }],
+        numbers: ["the numbers in some text, even written as words", 'nlp numbers "five apples and twenty-two pears"', a => out(lib(toJS(a)).numbers().get())],
+      };
+    },
+  },
+  tone: {
+    title: "Tone.js", file: "vendor/tone/Tone.js", global: "Tone", licence: "MIT", browserOnly: true,
+    about: "Music in the browser: notes, chords and drums. These are effects, like beep: in update they happen after the frame, and never again on rewind.",
+    words: lib => {
+      let synth = null, poly = null, kick = null, snare = null, hat = null;
+      const ready = () => { if (!synth) { synth = new lib.Synth().toDestination(); poly = new lib.PolySynth(lib.Synth).toDestination(); kick = new lib.MembraneSynth().toDestination(); snare = new lib.NoiseSynth({ envelope: { attack: 0.001, decay: 0.18, sustain: 0 } }).toDestination(); hat = new lib.MetalSynth({ envelope: { attack: 0.001, decay: 0.06, release: 0.01 }, volume: -18 }).toDestination(); } };
+      const effectWord = (name, f) => word(name, a => S.effect(() => { try { if (lib.context.state !== "running") lib.start(); ready(); f(a); } catch (e) { I.logMiss("tone " + name + ": " + e.message); } }), true);
+      return {
+        play: ["a note for a time, both as text: [note, length]. Lengths are like 8n (an eighth) or 0.5 (seconds)", null, effectWord("play", a => { const [n, d] = args(a, 2); synth.triggerAttackRelease(n, d || "8n"); })],
+        chord: ["several notes at once: [notes, length]", null, effectWord("chord", a => { const [ns, d] = args(a, 2); poly.triggerAttackRelease(ns, d || "4n"); })],
+        drum: ["a drum: kick, snare or hat", null, effectWord("drum", a => { const k = toJS(a); if (k === "kick") kick.triggerAttackRelease("C1", "8n"); else if (k === "snare") snare.triggerAttackRelease("16n"); else hat.triggerAttackRelease("C6", "32n"); })],
+        frequency: ["a note's frequency in hertz", null, word("frequency", a => +lib.Frequency(toJS(a)).toFrequency().toFixed(3))],
+      };
+    },
+  },
+  turf: {
+    title: "Turf", file: "vendor/turf/turf.min.js", global: "turf", licence: "MIT",
+    about: "Geography on a round Earth: distances, bearings, areas and points along a route. A point is [longitude, latitude]; a line or a polygon is a list of points.",
+    words: lib => {
+      const ring = pts => { const p = pts.slice(); const a = p[0], b = p[p.length - 1]; if (a[0] !== b[0] || a[1] !== b[1]) p.push(a); return p; };
+      return {
+        distance: ["the distance between two points, in km", "turf distance [[-0.1276, 51.5072], [2.3522, 48.8566]] round", a => { const [x, y] = args(a, 2); return lib.distance(lib.point(x), lib.point(y)); }],
+        bearing: ["the direction from one point to another, in degrees from north", "turf bearing [[-0.1276, 51.5072], [2.3522, 48.8566]] round", a => { const [x, y] = args(a, 2); return lib.bearing(lib.point(x), lib.point(y)); }],
+        destination: ["the point some km away in a direction: [point, km, bearing]", "turf destination [[0, 0], 111.195, 90]", a => { const [p, km, b] = args(a, 3); return fromJS(lib.destination(lib.point(p), km, b).geometry.coordinates.map(v => +v.toFixed(6))); }],
+        midpoint: ["the point halfway between two points", "turf midpoint [[0, 0], [10, 0]]", a => { const [x, y] = args(a, 2); return fromJS(lib.midpoint(lib.point(x), lib.point(y)).geometry.coordinates.map(v => +v.toFixed(6))); }],
+        length: ["the length of a line of points, in km", "turf length [[0, 0], [1, 0], [1, 1]] round", a => lib.length(lib.lineString(toJS(a)))],
+        area: ["the area inside a polygon of points, in square km", "turf area [[0, 0], [1, 0], [1, 1], [0, 1]] round", a => lib.area(lib.polygon([ring(toJS(a))])) / 1e6],
+        along: ["the point some km along a line: [points, km]", "turf along [[[0, 0], [0, 10]], 111.195]", a => { const [pts, km] = args(a, 2); return fromJS(lib.along(lib.lineString(pts), km).geometry.coordinates.map(v => +v.toFixed(6))); }],
+        inside: ["is a point inside a polygon? [point, polygon]", "turf inside [[0.5, 0.5], [[0, 0], [1, 0], [1, 1], [0, 1]]]", a => { const [p, poly] = args(a, 2); return lib.booleanPointInPolygon(lib.point(p), lib.polygon([ring(poly)])); }],
+      };
+    },
+  },
+};
+
+// ===================================================================== loading
+const loaded = {}, modules = {}, pending = {};
+let base = "";
+function libraryOf(name) {
+  if (loaded[name]) return loaded[name];
+  const L = LIBRARIES[name];
+  if (inNode) {
+    if (L.browserOnly) return null;
+    // the browser file, run with a module object of its own (and a window for those that only set one)
+    const fs = require("fs"), path = require("path");
+    const src = fs.readFileSync(path.join(__dirname, L.file), "utf8"), mod = { exports: {} }, win = {};
+    new Function("module", "exports", "window", "self", "define", src)(mod, mod.exports, win, win, undefined);
+    const got = Object.keys(mod.exports).length || typeof mod.exports === "function" ? mod.exports : win[L.global];
+    loaded[name] = got && got.default && !got[L.global] && name !== "chroma" ? got.default : got;
+    if (name === "simplex" && loaded[name].SimplexNoise) loaded[name] = loaded[name].SimplexNoise;
+    return loaded[name];
+  }
+  return root[L.global] ? (loaded[name] = root[L.global]) : null;
+}
+function moduleOf(name) {
+  if (modules[name]) return modules[name];
+  const lib = libraryOf(name);
+  if (!lib) { I.logMiss(LIBRARIES[name].browserOnly && inNode ? name + " works only in a browser" : name + " (" + LIBRARIES[name].title + ") is still loading"); return false; }
+  const words = LIBRARIES[name].words(lib), keys = Object.keys(words);
+  return (modules[name] = record(keys, keys.map(k => words[k][2] instanceof I.Native ? words[k][2] : word(name + " " + k, words[k][2]))));
+}
+for (const name in LIBRARIES) Object.defineProperty(S.globals, name, { get: () => moduleOf(name), enumerable: true, configurable: true });
+
+// the libraries a program names, so a page can load them before it runs
+const mentions = src => Object.keys(LIBRARIES).filter(name => new RegExp("(^|[\\s\\[(,|])" + name.replace("-", "\\-") + "(?=[\\s\\])]|$)", "m").test(src.replace(/--.*$/gm, "")));
+function missing(src) { return mentions(src).filter(name => !libraryOf(name)); }
+function load(names) {
+  return Promise.all(names.map(name => pending[name] || (pending[name] = new Promise((ok, no) => {
+    const s = document.createElement("script"); s.src = base + LIBRARIES[name].file; s.async = true;
+    s.onload = () => { if (name === "simplex" && root.SimplexNoise) loaded[name] = root.SimplexNoise; ok(); };
+    s.onerror = () => { delete pending[name]; no(new Error("couldn't load " + LIBRARIES[name].title)); };
+    document.head.appendChild(s);
+  }))));
+}
+// browsers start sound only after a tap or a key: Tone.js is started on the first one after it loads
+if (!inNode) ["pointerdown", "keydown"].forEach(t => document.addEventListener(t, () => { if (root.Tone && root.Tone.context && root.Tone.context.state !== "running") root.Tone.start(); }, true));
+S.libraries = { LIBRARIES, names: Object.keys(LIBRARIES), mentions, missing, load, moduleOf, toJS, fromJS, setBase: b => { base = b; } };
+})(typeof window !== "undefined" ? window : globalThis);
+````
+
+## examples/terrain.sp
+
+Terrain: a map from simplex noise coloured by chroma scales, flying east (Tools group)
+
+````sprout
+-- Terrain: a map made of smooth noise (the simplex module) and coloured by scales (the chroma module),
+-- flying slowly east. Change the sea level, the layers, the zoom or the colours while it flies.
+
+cell : 12                 -- the size of one square, in pixels
+zoom : 0.004              -- smaller is a wider view
+layers : 4                -- more layers, more small detail
+sea : 0.05                -- heights below this are water
+speed : 30                -- how fast it flies, in pixels a second
+land : chroma steps [[#2f6b2f, #8fbf5a, #d8c88a, #8a6d4b, #ffffff], 16]
+water : chroma steps [[#0b2545, #1f6f8b, #6fc3d9], 8]
+
+-- the colour for a height from -1 to 1
+shade : [h |
+  h < sea [water @ (clamp [h + 1 / (sea + 1) * 8 ceil, 1, 8])] else [land @ (clamp [h - sea / (1 - sea) * 16 ceil, 1, 16])]
+]
+
+start :
+  flown : 0
+
+update : [game | game with [flown : game flown + (speed * (game dt))]]
+
+draw : [game |
+  clear "#0b2545"
+  range (H / cell ceil) each [row |
+    range (W / cell ceil) each [column |
+      x : column - 1 * cell
+      y : row - 1 * cell
+      rect [x, y, cell, cell, shade (simplex fractal [x + (game flown) * zoom, y * zoom, layers])]
+    ]
+  ]
+  text ["simplex + chroma", W / 2, H - 14, 12, "#ffffffaa"]
+]
+````
+
 ## examples/recipes.sp
 
 Recipes: quicksort, primes, FizzBuzz, a vector with its own + (prints; not a game)
@@ -9533,15 +9853,16 @@ body.t-out #out{display:block}body.t-st #st{display:block}
 <div id="modal"><div id="mBox"><div class="mh"><h2 id="mTitle"></h2><button class="x" data-close aria-label="Close">✕</button></div><div id="mBody"></div></div></div>
 <div id="toast"></div><div id="scrubTip"></div>
 
-<script src="sprout3.js?v=20261121h"></script>
-<script src="words.js?v=20261121h"></script>
-<script src="parse.js?v=20261121h"></script>
-<script src="stdlib.js?v=20261121h"></script>
-<script src="kernels.js?v=20261121h"></script>
-<script src="live3.js?v=20261121h"></script>
-<script src="sqlite-web.js?v=20261121h"></script>
-<script src="gpu-paint.js?v=20261121h"></script>
-<script src="gpu-spork.js?v=20261121h"></script>
+<script src="sprout3.js?v=20261121i"></script>
+<script src="words.js?v=20261121i"></script>
+<script src="parse.js?v=20261121i"></script>
+<script src="stdlib.js?v=20261121i"></script>
+<script src="libs.js?v=20261121i"></script>
+<script src="kernels.js?v=20261121i"></script>
+<script src="live3.js?v=20261121i"></script>
+<script src="sqlite-web.js?v=20261121i"></script>
+<script src="gpu-paint.js?v=20261121i"></script>
+<script src="gpu-spork.js?v=20261121i"></script>
 <script>
 "use strict";
 const V="20261120m";
@@ -9561,6 +9882,7 @@ const EX=[
  ["ace-morning","ace","ACE Morning","The morning question: which constraints, killed today, release the most work? A ranking by hours released."],
  ["ace-ledger","ace","ACE Ledger","The atoms live in SQLite, kept in this browser. Each run is a day on site: one atom closes and the event log grows."],
  ["ace-derive","ace","ACE Derive","The five kinds of atom, and done worked out to a fixed point."],
+ ["terrain","tool","Terrain","A map made of smooth noise and coloured by scales, flying east: the simplex and chroma libraries, wrapped as Sprout modules. Change the sea level or the colours while it flies."],
  ["gears","tool","Gears","A parametric tool: two gears worked out from a few numbers. Change the teeth, the module or the speed while they turn, or press tweak and drag a number."],
  ["galaxy","game","Galaxy","Twenty thousand stars falling toward your finger. One fused loop moves them all, and WebGPU draws them in one call."],
  ["sprout","game","Sprout","Catch the rain, dodge the bugs. The demo game."],
@@ -9618,6 +9940,10 @@ function ensureDb(){return dbP||(dbP=new Promise((ok,no)=>{const sc=document.cre
 function afterBuild(){if(document.body.classList.contains("prog")){tab("out");$("out").scrollTop=0}renderState()}
 let lastProgram=null;
 function build(src,fresh){
+ // a program that names a wrapped library (chroma, mathjs, simplex ...) waits for it to load, once (decision 106)
+ const libsMissing=S.libraries?S.libraries.missing(src):[];
+ if(libsMissing.length){$("pSub").textContent="Loading "+libsMissing.map(n=>S.libraries.LIBRARIES[n].title).join(", ")+"…";
+  S.libraries.load(libsMissing).then(()=>{if(code===src&&build(src,fresh))afterBuild()},e=>setErr({line:0,msg:msgOf(e)}));return false}
  if(needsDb(src)&&!S.globals.db){$("pSub").textContent="Opening SQLite…";ensureDb().then(()=>{if(code===src&&build(src,fresh))afterBuild()},e=>setErr({line:0,msg:msgOf(e)}));return false}
  let cell;try{cell=S.load(src)}catch(e){setErr({line:lineOf(e),msg:msgOf(e)});return false}
  if(cell.field("update")===S.UNSET){
@@ -9998,7 +10324,7 @@ $("bShare").onclick=share;
  if(sv&&sv.code&&sv.code.trim()){curEx=sv.ex||"";dirty=!!sv.dirty;setCode(sv.code);build(sv.code,true);if(document.body.classList.contains("prog"))tab("out");thenOpen()}
  else loadEx("ace-board",true).then(thenOpen)})();
 </script>
-<script src="editor-tools.js?v=20261121h"></script>
+<script src="editor-tools.js?v=20261121i"></script>
 </body></html>
 ````
 

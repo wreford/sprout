@@ -400,5 +400,29 @@ ok("hot-swap takes a changed start value", g.state.field("height") === 99);
   for (const [src, want] of W) { const got = val(src); ok("105 " + src + " gives " + want, got === want); if (got !== want) console.log("   got", got); }
 }
 
+// ---------------- wrapped libraries (decision 106)
+{
+  S.setLog(m => logs.push(m));
+  const fake = new Proxy(function () {}, { get: () => () => {}, apply: () => ({}) });
+  let examples = 0, quiet = true;
+  for (const name of S.libraries.names) {
+    const L = S.libraries.LIBRARIES[name]; if (L.browserOnly) continue;
+    for (const [w, [about, ex]] of Object.entries(L.words(fake))) { if (!ex) continue; logs.length = 0; S.load("result : " + ex).field("result"); examples++; if (logs.length) { quiet = false; console.log("   library example logs:", ex, logs); } }
+  }
+  ok("106 every library example runs without a message (" + examples + " of them)", quiet && examples >= 50);
+  const W = [
+    ["chroma brewer [\"Viridis\", 3]", "[#440154, #26838f, #fee825]"], ["chroma named \"tomato\"", "#ff6347"], ["chroma contrast [#000000, #ffffff]", "21"],
+    ["simplex noise [0.5, 1.25] = (simplex noise [0.5, 1.25])", "true"], ["mathjs fraction \"1/3 + 1/6\"", "1/2"], ["mathjs determinant [[4, 7], [2, 6]]", "10"],
+    ["date-fns format [2026-11-20, \"EEEE\"]", "Friday"], ["date-fns parse [\"20/11/2026\", \"dd/MM/yyyy\"] = 2026-11-20", "true"],
+    ["fuse best [[\"apple\", \"banana\"], \"bananna\"]", "banana"], ["nlp plural \"goose\"", "geese"], ["turf distance [[0, 0], [0, 1]] round", "111"],
+  ];
+  for (const [src, want] of W) { const got = val(src); ok("106 " + src + " gives " + want, got === want); if (got !== want) console.log("   got", got); }
+  ok("106 a program's libraries are found, and comments don't count", JSON.stringify(S.libraries.mentions("x : chroma named \"red\"\n-- mathjs\ny : date-fns week d")) === '["chroma","date-fns"]');
+  logs.length = 0; val("[format : 1] format");
+  ok("106 a field named like a global reads without a lint", !logs.some(m => /both a field/.test(m)));
+  logs.length = 0; S.load("format : 2\nresult : [format : 1] format").field("result");
+  ok("73 a field named like the program's own name still lints", logs.some(m => /both a field/.test(m)));
+}
+
 console.log(pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

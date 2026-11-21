@@ -361,7 +361,10 @@ class CodeGen {
         const lexical = found ? "()=>" + this.referenceCode(found) : (this.globals.has(word) ? "()=>" + this.globalCode(word) : "null");
         // a field read right before else is allowed to miss: else is the program saying so, so the miss isn't logged (decision 83)
         const quiet = terms[i + 1] && terms[i + 1].type === "word" && terms[i + 1].value === "else" && terms[i + 2] && !this.lookup("else");
-        code = "sendWordCached(" + code + "," + JSON.stringify(word) + "," + lexical + "," + (term.line || 0) + "," + this.inlineCache() + (quiet ? ",1" : "") + ")";
+        // flags: 1, a miss is quiet (else follows); 2, the name in scope is a global, not one the program binds, so a field
+        // of the same name wins without a lint (library modules have words like format and noise; decision 73, refined by 106)
+        const flags = (quiet ? 1 : 0) | (!found && lexical !== "null" ? 2 : 0);
+        code = "sendWordCached(" + code + "," + JSON.stringify(word) + "," + lexical + "," + (term.line || 0) + "," + this.inlineCache() + (flags ? "," + flags : "") + ")";
       } else if (term.type === "cell" && !term.names.length && i === 1 && this.certainlyNotBool(terms[0])) {
         code = (tail && isLast ? "tailSend(" : "send(") + code + "," + this.genCell(term) + ")";
       } else if (term.type === "cell" && !term.names.length) {
@@ -834,30 +837,30 @@ function readField(receiver, value) {
 }
 // sendWord: send a word. Fields first (with prototype methods), then a name in scope as the argument.
 // sendWordCached: sendWord with an inline cache. A record read at this spot usually has the same shape every time.
-function sendWordCached(receiver, word, lexical, line, cache, quiet) {
+function sendWordCached(receiver, word, lexical, line, cache, flags) {
   if (receiver instanceof ValueCell) {
     const fieldShape = receiver.fieldShape;
     if (fieldShape === cache.shape) { const value = receiver.fieldValues[cache.index]; return value instanceof Cell && value.shape.usesLeft ? readField(receiver, value) : value; }
     const index = fieldShape.index(word);
     if (index >= 0) {
-      if (lexical) lintFieldNameClash(word, line);
+      if (lexical && !(flags & 2)) lintFieldNameClash(word, line);
       cache.shape = fieldShape; cache.index = index;
       const value = receiver.fieldValues[index]; return value instanceof Cell && value.shape.usesLeft ? readField(receiver, value) : value;
     }
   }
-  return sendWord(receiver, word, lexical, line, quiet);
+  return sendWord(receiver, word, lexical, line, flags);
 }
 // decision 73: a word that is both a field of the receiver and a name in scope reads the field, loudly
 function lintFieldNameClash(word, line) { lint("\"" + word + "\" is both a field here and a name in scope; the field wins" + (line ? " (line " + line + ")" : "")); }
-function sendWord(receiver, word, lexical, line, quiet) {
+function sendWord(receiver, word, lexical, line, flags) {
   if (receiver instanceof Cell || receiver instanceof ValueCell) {
     const value = receiver.field(word);
-    if (value !== UNSET) { if (lexical) lintFieldNameClash(word, line); return readField(receiver, value); }
+    if (value !== UNSET) { if (lexical && !(flags & 2)) lintFieldNameClash(word, line); return readField(receiver, value); }
   }
   const method = methodsOf(receiver)[word];
   if (method !== undefined) return method.takesArgument ? new WaitingMethod(method.run, receiver) : method.run(receiver);
   if (lexical) return send(receiver, lexical());
-  if (quiet) return false;
+  if (flags & 1) return false;
   // a field that isn't there: suggest the nearest field this cell does have
   const hint = (receiver instanceof Cell || receiver instanceof ValueCell) ? nearest(word, receiver.fieldNames()) : null;
   return logMiss(describe(receiver) + " doesn't know " + word + (hint ? " (did you mean " + hint + "?)" : ""), line);
@@ -1219,6 +1222,7 @@ if (typeof module !== "undefined") {
   require("./words.js");
   require("./parse.js");
   require("./stdlib.js");
+  require("./libs.js");
   if (!process.env.SPROUT3_CORE_ONLY) try { require("./kernels.js"); } catch (e) { if (e.code !== "MODULE_NOT_FOUND") throw e; }
 } else root.Sprout3 = api;
 })(typeof window !== "undefined" ? window : globalThis);
