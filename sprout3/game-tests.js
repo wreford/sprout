@@ -588,6 +588,8 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     for (let t = 0; t < 90 && !f(ex, "guards").part(3).field("alert"); t++) ex.tick(1 / 60, pad({}));
     const mark = ex.draw().find(x => x[0] === "text" && x[1][0] === "!");
     ok("silvereye: a guard who spots you gets a ! over their head, in front of you", f(ex, "guards").part(3).field("alert") === true && mark && Math.abs(mark[1][1] - 180) < 40 && mark[1][2] < 240, mark && mark[1]); }
+  { const ob = L.makeGame(src, {}); ob.tick(1 / 60, pad({})); put(ob, 0, { x: 14.5, y: 12.5 }); ob.tick(1 / 60, pad({}));
+    ok("silvereye: taking the intel flashes OBJECTIVE COMPLETE", f(ob, "intel") === true && ob.draw().some(x => x[0] === "text" && x[1][0] === "OBJECTIVE COMPLETE")); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });

@@ -10,13 +10,13 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 
 ```
 node test.js          # language tests (303)
-node game-tests.js    # game tests (183)
+node game-tests.js    # game tests (184)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 486 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 487 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4623,6 +4623,8 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     for (let t = 0; t < 90 && !f(ex, "guards").part(3).field("alert"); t++) ex.tick(1 / 60, pad({}));
     const mark = ex.draw().find(x => x[0] === "text" && x[1][0] === "!");
     ok("silvereye: a guard who spots you gets a ! over their head, in front of you", f(ex, "guards").part(3).field("alert") === true && mark && Math.abs(mark[1][1] - 180) < 40 && mark[1][2] < 240, mark && mark[1]); }
+  { const ob = L.makeGame(src, {}); ob.tick(1 / 60, pad({})); put(ob, 0, { x: 14.5, y: 12.5 }); ob.tick(1 / 60, pad({}));
+    ok("silvereye: taking the intel flashes OBJECTIVE COMPLETE", f(ob, "intel") === true && ob.draw().some(x => x[0] === "text" && x[1][0] === "OBJECTIVE COMPLETE")); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });
@@ -11203,6 +11205,10 @@ play : [game |
   -- the mission: every guard down, both generators wrecked, the intel taken, then back to the lift
   intel : (game intel) or (takes any [t | t kind = "intel"])
   done : (fallen all [g | g health <= 0]) and (machines all [m | m health <= 0]) and intel
+  -- each objective that completes gets a moment of its own: a chime, and OBJECTIVE COMPLETE
+  done-count : (cond [(game versus not) and (fallen all [g | g health <= 0]), 1, any, 0]) + (cond [(game versus not) and (machines length > 0) and (machines all [m | m health <= 0]), 1, any, 0]) + (cond [intel, 1, any, 0])
+  newly : done-count > (game ticked else 0)
+  newly [beep [784, 0.08], beep [1046, 0.14]]
   home : back any [a | (up a) and (distance [a x, a y, mission exit @ 1, mission exit @ 2] < 1)]
   over : cond [
     game versus, cond [winner > 0, "p[winner]", now - (game match-start) >= time-limit, time-up, any, ""]
@@ -11215,7 +11221,7 @@ play : [game |
     scientists : scientists, agents : back, guards : fallen, mines : still, turrets : standing, pickups : pickups, machines : machines, intel : intel
     feed : game feed .. (went-down collect [d | [by : d last-by, who : d id, at : now]]) keep [e | now - (e at) < 4]
     blasts : game blasts keep [b | now - (b at) < 0.6] .. (goes-off collect [m | [x : m x, y : m y, at : now]]) .. (gone-turrets collect [t | [x : t x, y : t y, at : now]])
-    over : over, over-at : now
+    over : over, over-at : now, ticked : done-count, ticked-at : cond [newly, now, any, game ticked-at else -10]
     shell : game input held "shell" else false
   ]
 ]
@@ -11395,6 +11401,7 @@ draw : [game |
   -- who took down whom, lately
   call : [n | cond [n = you-id, "YOU", n = 0, "THE LAB", is-sim n, "SIM [n]", any, "RIVAL"]]
   game versus [game feed numbered each [[k, e] | text [cond [(e by = (e who)) or (e by = 0), "[call (e who)] went down", any, "[call (e by)] took down [call (e who)]"], W / 2, k * 11 + 26, 8, cond [(e by = you-id) or (e who = you-id), gold, any, "#c9ccd4"]]]]
+  (game versus not) and (now - (game ticked-at else -10) < 2) and (game over = "") [text ["OBJECTIVE COMPLETE", W / 2, H / 2 - 64, 13, "#7bd389"]]
   -- a mission opens with its title card and briefing, for a few seconds
   card : now - (game began)
   (mode = "mission") and (card < 4.5) and (game over = "") [

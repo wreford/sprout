@@ -532,6 +532,10 @@ play : [game |
   -- the mission: every guard down, both generators wrecked, the intel taken, then back to the lift
   intel : (game intel) or (takes any [t | t kind = "intel"])
   done : (fallen all [g | g health <= 0]) and (machines all [m | m health <= 0]) and intel
+  -- each objective that completes gets a moment of its own: a chime, and OBJECTIVE COMPLETE
+  done-count : (cond [(game versus not) and (fallen all [g | g health <= 0]), 1, any, 0]) + (cond [(game versus not) and (machines length > 0) and (machines all [m | m health <= 0]), 1, any, 0]) + (cond [intel, 1, any, 0])
+  newly : done-count > (game ticked else 0)
+  newly [beep [784, 0.08], beep [1046, 0.14]]
   home : back any [a | (up a) and (distance [a x, a y, mission exit @ 1, mission exit @ 2] < 1)]
   over : cond [
     game versus, cond [winner > 0, "p[winner]", now - (game match-start) >= time-limit, time-up, any, ""]
@@ -544,7 +548,7 @@ play : [game |
     scientists : scientists, agents : back, guards : fallen, mines : still, turrets : standing, pickups : pickups, machines : machines, intel : intel
     feed : game feed .. (went-down collect [d | [by : d last-by, who : d id, at : now]]) keep [e | now - (e at) < 4]
     blasts : game blasts keep [b | now - (b at) < 0.6] .. (goes-off collect [m | [x : m x, y : m y, at : now]]) .. (gone-turrets collect [t | [x : t x, y : t y, at : now]])
-    over : over, over-at : now
+    over : over, over-at : now, ticked : done-count, ticked-at : cond [newly, now, any, game ticked-at else -10]
     shell : game input held "shell" else false
   ]
 ]
@@ -724,6 +728,7 @@ draw : [game |
   -- who took down whom, lately
   call : [n | cond [n = you-id, "YOU", n = 0, "THE LAB", is-sim n, "SIM [n]", any, "RIVAL"]]
   game versus [game feed numbered each [[k, e] | text [cond [(e by = (e who)) or (e by = 0), "[call (e who)] went down", any, "[call (e by)] took down [call (e who)]"], W / 2, k * 11 + 26, 8, cond [(e by = you-id) or (e who = you-id), gold, any, "#c9ccd4"]]]]
+  (game versus not) and (now - (game ticked-at else -10) < 2) and (game over = "") [text ["OBJECTIVE COMPLETE", W / 2, H / 2 - 64, 13, "#7bd389"]]
   -- a mission opens with its title card and briefing, for a few seconds
   card : now - (game began)
   (mode = "mission") and (card < 4.5) and (game over = "") [
