@@ -409,7 +409,8 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     pf(0, { x: 8.5, y: 7.5, angle: 0 }); pf(1, { x: 12.5, y: 7.5, angle: Math.PI });
     for (let t = 0; t < 60; t++) fe.tick(1 / 60, pad({ fire: true }), pad({}));
     const said = o => { const w = L.makeGame(duelSrc, { players: 2, me: o }); w.setState(fe.state, fe.clock); return w.draw().filter(x => x[0] === "text").map(x => x[1][0]); };
-    ok("silvereye: the feed says who took down whom, from each phone's side", said(1).includes("YOU took down RIVAL") && said(2).includes("RIVAL took down YOU"), said(1)); }
+    ok("silvereye: the feed says who took down whom, from each phone's side", said(1).includes("YOU took down RIVAL") && said(2).includes("RIVAL took down YOU"), said(1));
+    ok("silvereye: when you're down, your screen says who did it", said(2).includes("TAKEN DOWN BY THE RIVAL"), said(2)); }
   ok("silvereye: five takedowns win, and each phone says who won", f(v, "over") === "p1" && sees(1).includes("YOU WIN") && sees(2).includes("YOU LOSE"), f(v, "over"));
   ok("silvereye: each phone sees the duel from its own player", sees(1).includes("YOU 5 · 0 RIVAL") && sees(2).includes("YOU 0 · 5 RIVAL"));
   for (let t = 0; t < 120; t++) v.tick(1 / 60, pad({ fire: true }), pad({}));

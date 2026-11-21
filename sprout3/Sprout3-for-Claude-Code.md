@@ -10,13 +10,13 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 
 ```
 node test.js          # language tests (302)
-node game-tests.js    # game tests (156)
+node game-tests.js    # game tests (157)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 458 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 459 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4439,7 +4439,8 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     pf(0, { x: 8.5, y: 7.5, angle: 0 }); pf(1, { x: 12.5, y: 7.5, angle: Math.PI });
     for (let t = 0; t < 60; t++) fe.tick(1 / 60, pad({ fire: true }), pad({}));
     const said = o => { const w = L.makeGame(duelSrc, { players: 2, me: o }); w.setState(fe.state, fe.clock); return w.draw().filter(x => x[0] === "text").map(x => x[1][0]); };
-    ok("silvereye: the feed says who took down whom, from each phone's side", said(1).includes("YOU took down RIVAL") && said(2).includes("RIVAL took down YOU"), said(1)); }
+    ok("silvereye: the feed says who took down whom, from each phone's side", said(1).includes("YOU took down RIVAL") && said(2).includes("RIVAL took down YOU"), said(1));
+    ok("silvereye: when you're down, your screen says who did it", said(2).includes("TAKEN DOWN BY THE RIVAL"), said(2)); }
   ok("silvereye: five takedowns win, and each phone says who won", f(v, "over") === "p1" && sees(1).includes("YOU WIN") && sees(2).includes("YOU LOSE"), f(v, "over"));
   ok("silvereye: each phone sees the duel from its own player", sees(1).includes("YOU 5 · 0 RIVAL") && sees(2).includes("YOU 0 · 5 RIVAL"));
   for (let t = 0; t < 120; t++) v.tick(1 / 60, pad({ fire: true }), pad({}));
@@ -11114,6 +11115,8 @@ draw : [game |
     text ["YOU [you kills] · [best] [rest]", W / 2, H - 16, 12, cream]
     text [time-limit - (now - (game match-start)) max 0 clock, W / 2, 16, 10, "#c9ccd4"]
     rivals any [r | (up r not) and (r last-by = you-id) and (now - (r down-at else now) < 1.6)] [text ["TAKEDOWN", W / 2, H / 2 - 40, 18, gold]]
+    who-did : cond [(you last-by = you-id) or (you last-by = 0), "YOUR OWN TRAP", you last-by <= 2, "THE RIVAL", any, "SIM [you last-by]"]
+    down and (game over = "") [text ["TAKEN DOWN BY [who-did]", W / 2, H / 2 + 22, 11, red]]
     down and (game over = "") [text ["DOWN · back in [respawn-after - (now - (you down-at else now)) max 0 ceil]", W / 2, H / 2 + 40, 12, cream]]
   ]
   -- who took down whom, lately

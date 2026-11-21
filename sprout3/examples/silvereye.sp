@@ -560,6 +560,8 @@ draw : [game |
     text ["YOU [you kills] · [best] [rest]", W / 2, H - 16, 12, cream]
     text [time-limit - (now - (game match-start)) max 0 clock, W / 2, 16, 10, "#c9ccd4"]
     rivals any [r | (up r not) and (r last-by = you-id) and (now - (r down-at else now) < 1.6)] [text ["TAKEDOWN", W / 2, H / 2 - 40, 18, gold]]
+    who-did : cond [(you last-by = you-id) or (you last-by = 0), "YOUR OWN TRAP", you last-by <= 2, "THE RIVAL", any, "SIM [you last-by]"]
+    down and (game over = "") [text ["TAKEN DOWN BY [who-did]", W / 2, H / 2 + 22, 11, red]]
     down and (game over = "") [text ["DOWN · back in [respawn-after - (now - (you down-at else now)) max 0 ceil]", W / 2, H / 2 + 40, 12, cream]]
   ]
   -- who took down whom, lately
