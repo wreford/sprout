@@ -3103,7 +3103,7 @@ const { ValueCell, Native, isCell, equal, UNSET } = S;
 const ev = fields => S.valueCellOf([], new Map(Object.entries(fields)));
 const NOKEYS = new ValueCell([]);
 // the 3D words (decision 108) are drawing words too: a page that can show 3D draws them, the 2D ones on top
-const DRAW = { clear: 1, rect: 5, circle: 4, line: 5, text: 5, view: 6, block: 7, model: 8, hold: 7, flash: 5, fog: 3 };
+const DRAW = { clear: 1, rect: 5, circle: 4, line: 5, text: 5, view: 6, block: 7, model: 9, hold: 7, flash: 5, fog: 3, light: 4, sky: 2 };
 const SOUND = { beep: 2, shake: 1, sound: 1 };
 
 function makeGame(src, opts) {
@@ -10653,7 +10653,7 @@ import { GLTFLoader } from "./vendor/three/addons/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "./vendor/three/addons/libs/meshopt_decoder.module.js";
 import * as SkeletonUtils from "./vendor/three/addons/utils/SkeletonUtils.js";
 
-const WORDS = new Set(["view", "block", "model", "hold", "flash", "fog"]);
+const WORDS = new Set(["view", "block", "model", "hold", "flash", "fog", "light", "sky"]);
 const fmt = v => typeof v === "string" ? v : window.Sprout3 ? Sprout3.format(v) : String(v);
 const num = (v, d) => typeof v === "number" && isFinite(v) ? v : d;
 // Sprout's angles: 0 looks along +x, and they turn towards +z. three.js cameras look down -z, models face +z.
@@ -10666,12 +10666,14 @@ export function makeView(canvas, base, opts) {
   renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   // filmic tone mapping: brighter highlights roll off softly instead of clipping, and the darks keep their colour
-  renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.25;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.45;
   const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(70, 0.75, 0.05, 200);
   scene.add(camera);
   // a cool sky light from above and a warm bounce from the floor, with a key light from one side
-  scene.add(new THREE.HemisphereLight(0xdde6f5, 0x3a2e22, 1.25));
+  const hemi = new THREE.HemisphereLight(0xdde6f5, 0x3a2e22, 1.25); scene.add(hemi);
   const sun = new THREE.DirectionalLight(0xfff1dc, 1.35); sun.position.set(4, 10, 3); scene.add(sun);
+  // light [sky colour, floor colour, key colour, strength]: each frame's lighting; without it, these defaults
+  const LIGHT_DEFAULT = [0xdde6f5, 0x3a2e22, 0xfff1dc, 1];
   const holdGroup = new THREE.Group(); camera.add(holdGroup);
   const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
   const textureLoader = new THREE.TextureLoader();
@@ -10759,7 +10761,7 @@ export function makeView(canvas, base, opts) {
     if (canvas.width !== Math.round(width * renderer.getPixelRatio()) || canvas.height !== Math.round(height * renderer.getPixelRatio())) renderer.setSize(width, height, false);
     camera.aspect = width / height;
     const seenBlocks = new Set(), counts = new Map(), holdCounts = new Map();
-    let flashCount = 0, fogSet = false;
+    let flashCount = 0, fogSet = false, lightSet = false;
     for (const [word, a] of list) {
       if (!WORDS.has(word)) continue;
       if (word === "view") {
@@ -10795,6 +10797,10 @@ export function makeView(canvas, base, opts) {
         f.light.color.copy(c); f.light.intensity = 6 * r * r + 0.6; f.light.distance = r * 8 + 1; f.light.position.set(num(a[0], 0), num(a[1], 1), num(a[2], 0));
         f.ball.material.color.copy(c); f.ball.position.copy(f.light.position); f.ball.scale.setScalar(r); f.light.visible = f.ball.visible = true;
         flashCount++;
+      } else if (word === "light") {
+        const k = num(a[3], 1); lightSet = true;
+        hemi.color.set(fmt(a[0]).slice(0, 7)); hemi.groundColor.set(fmt(a[1]).slice(0, 7)); sun.color.set(fmt(a[2]).slice(0, 7));
+        hemi.intensity = 1.25 * k; sun.intensity = 1.35 * k;
       } else if (word === "fog") {
         const c = new THREE.Color(fmt(a[0]).slice(0, 7));
         if (!scene.fog) scene.fog = new THREE.Fog(c, 1, 20);
@@ -10809,6 +10815,7 @@ export function makeView(canvas, base, opts) {
     }
     flashes.forEach((f, i) => { if (i >= flashCount) f.light.visible = f.ball.visible = false; });
     if (!fogSet) { scene.fog = null; scene.background = new THREE.Color(0x101215); }
+    if (!lightSet) { hemi.color.setHex(LIGHT_DEFAULT[0]); hemi.groundColor.setHex(LIGHT_DEFAULT[1]); sun.color.setHex(LIGHT_DEFAULT[2]); hemi.intensity = 1.25; sun.intensity = 1.35; }
     renderer.render(scene, camera);
   }
   return { render, setLowRes: n => { opts.lowRes = n; }, has3d: list => list.some(d => WORDS.has(d[0])), loading: () => [...assets.values()].some(a => !a.ready && !a.failed) };
@@ -10939,7 +10946,7 @@ depot-props : [["barrels", 7.5, 7.5, 0.3, 0.9], ["crate", 1.6, 1.6, 0.4, 0.8], [
 relay-props : [["satellite_dish", 8.6, 5.4, 2.3, 1.5], ["column", 3.5, 3.5, 0, 2.5], ["column", 12.5, 3.5, 0, 2.5], ["column", 3.5, 12.5, 0, 2.5], ["column", 12.5, 12.5, 0, 2.5], ["barrels", 1.6, 1.6, 0.2, 0.9], ["crate", 14.4, 1.6, 0.9, 0.8], ["crate", 1.6, 14.4, 1.4, 0.8], ["barrels", 14.3, 14.3, 2.2, 0.9]]
 missions : [
   [
-    name : "THE LAB", map : lab, props : lab-props, walls : "concrete", air : #14161c, floor : "plate", ceiling : "metal", haze : 15
+    name : "THE LAB", map : lab, props : lab-props, walls : "concrete", air : #2a3140, floor : "plate", ceiling : "metal", haze : 22, light : [#eef4ff, #5a4a38, #fff0d8, 1.25]
     spawn-at : [2.5, 2.5, 0.6], exit : [2.5, 2.5], exit-name : "BACK TO THE LIFT"
     guards : [[1, 12.5, 2.5, 12.5, 4.5], [2, 3.5, 7.5, 6.5, 7.5], [3, 13.5, 7.5, 9.5, 7.5], [4, 2.5, 11.5, 2.5, 13.5], [5, 9.5, 12.5, 9.5, 12.5], [6, 13.5, 13.5, 13.5, 10.5]]
     targets : [[9.0, 10.7, "generator_large", 1.4], [5.8, 7.7, "generator", 1.0]], target-name : "GENERATORS"
@@ -10948,7 +10955,7 @@ missions : [
     brief : ["An underground lab. Six guards.", "Wreck both generators, take the intel case,", "then get back to the lift."]
   ]
   [
-    name : "THE DEPOT", map : depot, props : depot-props, walls : "metal", air : #161712, floor : "concrete", ceiling : "plate", haze : 19
+    name : "THE DEPOT", map : depot, props : depot-props, walls : "metal", air : #3a3528, floor : "concrete", ceiling : "plate", haze : 28, light : [#fff6e2, #5e4a2e, #ffd9a0, 1.3]
     spawn-at : [1.5, 1.5, 0.8], exit : [14.5, 14.5], exit-name : "TO THE LOADING BAY"
     guards : [[1, 7.5, 7.5, 12.5, 7.5], [2, 4.5, 1.5, 10.5, 1.5], [3, 14.5, 5.5, 14.5, 10.5], [4, 1.5, 9.5, 1.5, 13.5], [5, 8.5, 13.5, 12.5, 13.5], [6, 11.5, 10.5, 11.5, 8.5], [7, 5.5, 5.5, 5.5, 8.5]]
     targets : [[7.5, 9.5, "barrels", 1.1], [13.5, 7.5, "barrels", 1.1], [3.5, 13.5, "barrels", 1.1]], target-name : "FUEL STACKS"
@@ -10957,7 +10964,7 @@ missions : [
     brief : ["A supply depot, rows of shelving, seven guards.", "Blow the three fuel stacks, find the manifest,", "and get out through the loading bay."]
   ]
   [
-    name : "THE RELAY", map : relay, props : relay-props, walls : "wall", air : #10141c, floor : "metal", ceiling : "plate", haze : 11
+    name : "THE RELAY", map : relay, props : relay-props, walls : "wall", air : #1d2a3a, floor : "metal", ceiling : "plate", haze : 18, light : [#dff0ff, #2e3a4e, #c8e4ff, 1.2]
     spawn-at : [14.5, 3.5, 3.1], exit : [14.5, 3.5], exit-name : "BACK TO THE HATCH"
     guards : [[1, 7.5, 7.5, 8.5, 8.5], [2, 1.5, 1.5, 14.5, 1.5], [3, 14.5, 14.5, 1.5, 14.5], [4, 3.5, 7.5, 3.5, 10.5], [5, 12.5, 7.5, 12.5, 10.5], [6, 7.5, 3.5, 10.5, 3.5], [7, 7.5, 12.5, 10.5, 12.5], [8, 1.5, 7.5, 1.5, 10.5]]
     targets : [[7.5, 5.5, "generator_large", 1.2], [8.5, 10.5, "generator_large", 1.2]], target-name : "TRANSMITTERS"
@@ -11426,7 +11433,7 @@ update : [game |
 -- ---------------------------------------------------------------- drawing, in 3D
 eye : 1.55                -- how high your eyes are, in metres
 gun-turn : 0.1            -- which way the gun points, in radians
-fog-colour : #14161c
+fog-colour : #262c38
 red : "#ff5a4f"
 cream : "#f4f1ea"
 cyan : "#9be7ff"
@@ -11453,6 +11460,9 @@ draw : [game |
   room : cond [ease > 0, cast [you x, you y, you angle + pi] far - 0.3 min 4.5 max 0, any, 0]
   back-x : you angle cos * (0 - room) * ease + (you x)
   back-y : you angle sin * (0 - room) * ease + (you y)
+  -- the mission's light: sky, floor bounce and key light, and how strong
+  light-now : cond [mode = "mission", mission light, any, [#eef4ff, #4a4038, #fff0d8, 1.2]]
+  light [light-now @ 1, light-now @ 2, light-now @ 3, light-now @ 4]
   view [back-x, cond [down, 0.35, any, eye] + (ease * 2.4), back-y, you angle + (ease * 0.6), cond [down, 0.5, any, 0] - (ease * 0.45), tall]
   -- the lab: a floor, a ceiling, and a block for every wall cell of the map
   in-mission : mode = "mission"
@@ -12321,7 +12331,7 @@ function paint(ctx,list){
 function drawText(ctx,a){ctx.fillStyle=col(a[4]);ctx.font="600 "+(+a[3]||16)+'px -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,"Segoe UI",sans-serif';ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(S.format(a[0]),a[1],a[2])}
 // WebGPU: shapes on the GPU canvas underneath in one draw call, text on the 2D canvas on top
 let GPU=null,useGpu=LS.get("sprout3.gpu",true);
-const WORDS3D=new Set(["view","block","model","hold","flash","fog"]);let VIEW3D=null,view3dLoading=false;
+const WORDS3D=new Set(["view","block","model","hold","flash","fog","light","sky"]);let VIEW3D=null,view3dLoading=false;
 function rendererUI(){const on=!!(GPU&&useGpu),b=$("bGpu");document.body.classList.toggle("gpu",on);b.hidden=!GPU;b.textContent=on?"WebGPU":"Canvas";b.classList.toggle("on",on)}
 $("bGpu").onclick=()=>{useGpu=!useGpu;LS.set("sprout3.gpu",useGpu);rendererUI();msAvg=0;toast(useGpu?"Drawing with WebGPU":"Drawing with Canvas 2D")};
 // WebGPU is used only once it has passed a self-test on this device; otherwise everything stays on Canvas 2D
