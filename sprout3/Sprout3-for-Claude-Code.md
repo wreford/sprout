@@ -10,13 +10,13 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 
 ```
 node test.js          # language tests (303)
-node game-tests.js    # game tests (184)
+node game-tests.js    # game tests (185)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 487 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 488 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4587,7 +4587,7 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   { const mapOf = name => { const m = src.match(new RegExp("^" + name + " : \\[\\n([\\s\\S]*?)\\n\\]", "m")); return m[1].split("\n").map(l => l.trim().replace(/"/g, "")); };
     const maps = { lab: mapOf("lab"), depot: mapOf("depot"), relay: mapOf("relay") }, said = []; S.setLog(m => said.push(m));
     const counts = [];
-    for (const [stage, map, guards, targets] of [[1, "lab", 6, 2], [2, "depot", 7, 3], [3, "relay", 8, 2]]) {
+    for (const [stage, map, guards, targets] of [[1, "lab", 6, 2], [2, "depot", 7, 3], [3, "relay", 9, 2]]) {
       const ms = L.makeGame(src.replace(/^stage : 1/m, "stage : " + stage), {}); ms.tick(1 / 60, pad({}));
       const M = maps[map], open = (x, y) => (M[Math.floor(y)] || "")[Math.floor(x)] === ".";
       const pts = [...S.partsOf(f(ms, "guards")).flatMap(g => [[g.field("x"), g.field("y")], [g.field("to-x"), g.field("to-y")]]), ...S.partsOf(f(ms, "machines")).map(m => [m.field("x"), m.field("y")]), ...S.partsOf(f(ms, "pickups")).map(p => [p.field("x"), p.field("y")]), [agent(ms, 1).field("x"), agent(ms, 1).field("y")]];
@@ -4596,7 +4596,7 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
       for (let t = 0; t < 300; t++) ms.tick(1 / 60, pad({ walk: 1, look: t * 0.02, fire: t % 30 < 8 }));
     }
     S.setLog(m => logs.push(m));
-    ok("silvereye: three missions, each with its guards and targets on open floor of its own map", counts.every(([st, g, m, bad, walls], i) => g === [6, 7, 8][i] && m === [2, 3, 2][i] && bad.length === 0 && walls), counts);
+    ok("silvereye: three missions, each with its guards and targets on open floor of its own map", counts.every(([st, g, m, bad, walls], i) => g === [6, 7, 9][i] && m === [2, 3, 2][i] && bad.length === 0 && walls), counts);
     ok("silvereye: every mission plays without a warning", said.length === 0, said.slice(0, 2)); }
   // the campaign moves on: a won mission waits; swapping in the next stage starts it fresh, with its title card
   { const camp = src.replace(/^campaign : false/m, "campaign : true"), cg = L.makeGame(camp, {}); cg.tick(1 / 60, pad({}));
@@ -4625,6 +4625,9 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     ok("silvereye: a guard who spots you gets a ! over their head, in front of you", f(ex, "guards").part(3).field("alert") === true && mark && Math.abs(mark[1][1] - 180) < 40 && mark[1][2] < 240, mark && mark[1]); }
   { const ob = L.makeGame(src, {}); ob.tick(1 / 60, pad({})); put(ob, 0, { x: 14.5, y: 12.5 }); ob.tick(1 / 60, pad({}));
     ok("silvereye: taking the intel flashes OBJECTIVE COMPLETE", f(ob, "intel") === true && ob.draw().some(x => x[0] === "text" && x[1][0] === "OBJECTIVE COMPLETE")); }
+  { const wd = L.makeGame(src.replace(/^stage : 1/m, "stage : 3"), {}); wd.tick(1 / 60, pad({}));
+    const w = S.partsOf(f(wd, "guards")).find(g => g.field("boss") === true);
+    ok("silvereye: the relay has the Warden, a mech with four times a guard's health", w && w.field("health") === 400 && wd.draw().some(x => x[0] === "model" && x[1][0] === "mech")); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });
@@ -10812,7 +10815,8 @@ missions : [
     targets : [[7.5, 5.5, "generator_large", 1.2], [8.5, 10.5, "generator_large", 1.2]], target-name : "TRANSMITTERS"
     intel : [8.0, 7.5], intel-name : "CODEBOOK"
     scientists : [[1, 5.5, 14.5, 10.5, 14.5], [2, 5.5, 1.5, 10.5, 1.5]]
-    brief : ["A relay station: a ring round the transmitter hall.", "Silence both transmitters, take the codebook,", "and leave by the hatch you came in."]
+    warden : [9, 8.0, 8.0, 8.0, 7.0]
+    brief : ["A relay station, held by the Warden himself.", "Silence both transmitters, take the codebook,", "and leave by the hatch you came in."]
   ]
 ]
 mission : missions @ (stage max 1 min (missions length))
@@ -10899,7 +10903,7 @@ styles : ["hunter", "flanker", "camper"]
 
 -- ---------------------------------------------------------------- the people
 guard-health : cond [difficulty = 1, 70, difficulty = 3, 140, any, 100]
-guard : [id gx gy tx ty | [id : id, x : gx, y : gy, angle : 0, health : guard-health, wait : 1, alert : false, home-x : gx, home-y : gy, to-x : tx, to-y : ty, fell : false, stagger : 0, target : 1, alert-at : -10]]
+guard : [id gx gy tx ty | [id : id, x : gx, y : gy, angle : 0, health : guard-health, wait : 1, alert : false, home-x : gx, home-y : gy, to-x : tx, to-y : ty, fell : false, stagger : 0, target : 1, alert-at : -10, boss : false]]
 -- where players and simulants start and come back: open floor in both maps, far corners first
 -- a scientist: unarmed, walks between two points, freezes once the alarm is up; hurting one fails the mission
 scientist : [id sx sy tx ty | [id : id, x : sx, y : sy, angle : 0, health : 30, home-x : sx, home-y : sy, to-x : tx, to-y : ty, fell : false]]
@@ -10910,10 +10914,12 @@ agent : [id sx sy sa | [id : id, x : sx, y : sy, angle : sa, health : 100, carri
 pickups-fresh : pickup-spots collect [[kind, px, py] | [kind : kind, x : px, y : py, back-at : 0]] .. [[kind : "heavy", x : heavy-spot @ 1, y : heavy-spot @ 2, back-at : 0]]
 simulant : [id | s : spawn-of id, agent [id, s @ 1, s @ 2, s @ 3] with [bot : true]]
 sims : [first | range simulants collect [k | simulant (first + k - 1)]]
+-- the Warden: a mech in the relay's hall, with four times the health of a guard, who hits twice as hard
+wardens : cond [(mode = "mission") and (mission has-field "warden"), [mission warden] collect [[k, gx, gy, tx, ty] | guard [k, gx, gy, tx, ty] with [boss : true, health : guard-health * 4]], any, []]
 start :
   agents : cond [mode = "mission", [agent [1, mission start @ 1, mission start @ 2, mission start @ 3]], any, [agent [1, 2.5, 2.5, 0.6]]] .. (cond [mode = "sim", sims 2, any, []])
   -- anything but a mission is a match: no guards, no objectives (a duel waits here for the second phone)
-  guards : mode != "mission" [[]] else [mission guards collect [[k, gx, gy, tx, ty] | guard [k, gx, gy, tx, ty]]]
+  guards : mode != "mission" [[]] else [mission guards collect [[k, gx, gy, tx, ty] | guard [k, gx, gy, tx, ty]] .. wardens]
   mines : []
   turrets : []
   pickups : pickups-fresh .. (cond [mode != "mission", [], any, [[kind : "intel", x : mission intel @ 1, y : mission intel @ 2, back-at : 0]]])
@@ -11086,7 +11092,7 @@ play : [game |
   callers : thinking keep [g | (g alert) and (g health > 0)]
   called : thinking collect [g | cond [(g alert not) and (g health > 0) and (callers any [o | distance [o x, o y, g x, g y] < 6]), g with [alert : true, alert-at : now], any, g]]
   (called count [g | g alert] > (thinking count [g | g alert])) [beep [760, 0.12]]
-  pain : [who | thinking count [g | (g hits else false) and (g target = who)] * 9]
+  pain : [who | thinking keep [g | (g hits else false) and (g target = who)] collect [g | cond [g boss else false, 18, any, 9]] sum]
   thinking any [g | g fired else false] [sound "hit"]
   -- mines: an armed mine goes off when anyone comes near, whoever laid it
   armed : all-mines keep [m | now >= (m armed)]
@@ -11291,9 +11297,10 @@ draw : [game |
   -- the guards: running when they chase, aiming when they're close, falling when they're hit
   game guards each [g |
     near : distance [g x, g y, you x, you y] < 3
-    clip : cond [g health <= 0, "Death", g alert and near, "Idle_Shoot", g alert, "Run_Gun", any, "Run"]
+    big : g boss else false
+    clip : cond [g health <= 0, "Death", big and (g alert) and near, "Shoot_Big", big and (g alert), "Run", big, "Walk", g alert and near, "Idle_Shoot", g alert, "Run_Gun", any, "Run"]
     time : cond [g health <= 0, now - (g fell else now), g alert, now, any, now * 0.55]
-    model ["soldier", g x, 0, g y, g angle, 1.8, clip, time]
+    model [cond [big, "mech", any, "soldier"], g x, 0, g y, g angle, cond [big, 2.5, any, 1.8], clip, time]
   ]
   -- scientists, in their lab coats: walking their rounds, frozen when the alarm is up, falling if hit
   game scientists each [c |
@@ -11402,6 +11409,12 @@ draw : [game |
   call : [n | cond [n = you-id, "YOU", n = 0, "THE LAB", is-sim n, "SIM [n]", any, "RIVAL"]]
   game versus [game feed numbered each [[k, e] | text [cond [(e by = (e who)) or (e by = 0), "[call (e who)] went down", any, "[call (e by)] took down [call (e who)]"], W / 2, k * 11 + 26, 8, cond [(e by = you-id) or (e who = you-id), gold, any, "#c9ccd4"]]]]
   (game versus not) and (now - (game ticked-at else -10) < 2) and (game over = "") [text ["OBJECTIVE COMPLETE", W / 2, H / 2 - 64, 13, "#7bd389"]]
+  -- the Warden's health, across the top, once he's on alert
+  game guards keep [g | (g boss else false) and (g alert) and (g health > 0)] each [g |
+    text ["THE WARDEN", W / 2, 44, 9, red]
+    rect [W / 2 - 60, 50, 120, 4, "#00000099"]
+    rect [W / 2 - 60, 50, g health / (guard-health * 4) * 120, 4, red]
+  ]
   -- a mission opens with its title card and briefing, for a few seconds
   card : now - (game began)
   (mode = "mission") and (card < 4.5) and (game over = "") [

@@ -552,7 +552,7 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   { const mapOf = name => { const m = src.match(new RegExp("^" + name + " : \\[\\n([\\s\\S]*?)\\n\\]", "m")); return m[1].split("\n").map(l => l.trim().replace(/"/g, "")); };
     const maps = { lab: mapOf("lab"), depot: mapOf("depot"), relay: mapOf("relay") }, said = []; S.setLog(m => said.push(m));
     const counts = [];
-    for (const [stage, map, guards, targets] of [[1, "lab", 6, 2], [2, "depot", 7, 3], [3, "relay", 8, 2]]) {
+    for (const [stage, map, guards, targets] of [[1, "lab", 6, 2], [2, "depot", 7, 3], [3, "relay", 9, 2]]) {
       const ms = L.makeGame(src.replace(/^stage : 1/m, "stage : " + stage), {}); ms.tick(1 / 60, pad({}));
       const M = maps[map], open = (x, y) => (M[Math.floor(y)] || "")[Math.floor(x)] === ".";
       const pts = [...S.partsOf(f(ms, "guards")).flatMap(g => [[g.field("x"), g.field("y")], [g.field("to-x"), g.field("to-y")]]), ...S.partsOf(f(ms, "machines")).map(m => [m.field("x"), m.field("y")]), ...S.partsOf(f(ms, "pickups")).map(p => [p.field("x"), p.field("y")]), [agent(ms, 1).field("x"), agent(ms, 1).field("y")]];
@@ -561,7 +561,7 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
       for (let t = 0; t < 300; t++) ms.tick(1 / 60, pad({ walk: 1, look: t * 0.02, fire: t % 30 < 8 }));
     }
     S.setLog(m => logs.push(m));
-    ok("silvereye: three missions, each with its guards and targets on open floor of its own map", counts.every(([st, g, m, bad, walls], i) => g === [6, 7, 8][i] && m === [2, 3, 2][i] && bad.length === 0 && walls), counts);
+    ok("silvereye: three missions, each with its guards and targets on open floor of its own map", counts.every(([st, g, m, bad, walls], i) => g === [6, 7, 9][i] && m === [2, 3, 2][i] && bad.length === 0 && walls), counts);
     ok("silvereye: every mission plays without a warning", said.length === 0, said.slice(0, 2)); }
   // the campaign moves on: a won mission waits; swapping in the next stage starts it fresh, with its title card
   { const camp = src.replace(/^campaign : false/m, "campaign : true"), cg = L.makeGame(camp, {}); cg.tick(1 / 60, pad({}));
@@ -590,6 +590,9 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     ok("silvereye: a guard who spots you gets a ! over their head, in front of you", f(ex, "guards").part(3).field("alert") === true && mark && Math.abs(mark[1][1] - 180) < 40 && mark[1][2] < 240, mark && mark[1]); }
   { const ob = L.makeGame(src, {}); ob.tick(1 / 60, pad({})); put(ob, 0, { x: 14.5, y: 12.5 }); ob.tick(1 / 60, pad({}));
     ok("silvereye: taking the intel flashes OBJECTIVE COMPLETE", f(ob, "intel") === true && ob.draw().some(x => x[0] === "text" && x[1][0] === "OBJECTIVE COMPLETE")); }
+  { const wd = L.makeGame(src.replace(/^stage : 1/m, "stage : 3"), {}); wd.tick(1 / 60, pad({}));
+    const w = S.partsOf(f(wd, "guards")).find(g => g.field("boss") === true);
+    ok("silvereye: the relay has the Warden, a mech with four times a guard's health", w && w.field("health") === 400 && wd.draw().some(x => x[0] === "model" && x[1][0] === "mech")); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });
