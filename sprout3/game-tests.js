@@ -350,6 +350,8 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
 // ---------------- SilverEye: guards alone, a duel for two; a pocket console's stick and buttons arrive as held values
 {
   const src = fs.readFileSync(__dirname + "/examples/silvereye.sp", "utf8");
+  { const before = logs.length; L.makeGame(src, {}); const lints = logs.slice(before).filter(m => /lint|isn't a word/.test(m));
+    ok("silvereye: the program loads with no lints or unknown words", lints.length === 0, lints); }
   const pad = o => S.valueCellOf([], new Map(Object.entries(Object.assign({ shell: true }, o))));
   const keys = ks => S.valueCellOf([], new Map(ks.map(k => [k, true])));
   const put = (g, i, o) => { const m = new Map(S.fieldsOf(g.state)), ags = S.partsOf(m.get("agents")).slice(), a = new Map(S.fieldsOf(ags[i])); for (const k in o) a.set(k, o[k]); ags[i] = S.valueCellOf([], a); m.set("agents", S.valueCellOf(ags, new Map())); g.setState(S.valueCellOf([], m)); };

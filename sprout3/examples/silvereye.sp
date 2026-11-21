@@ -400,8 +400,8 @@ play : [game |
     -- just back in a match: nothing hurts for a moment
     total : cond [now < (a safe-until), 0, up a, shot-pain + (zapped k * sentry-damage) + (pain (a id)) + blasted, any, 0]
     -- who did it, for the score: the last to hurt you
-    by : by-shot length > 0 [by-shot @ 1 from] else [by-turret length > 0 [by-turret @ 1 owner] else [by-mine length > 0 [by-mine @ 1 owner] else [a last-by]]]
-    got : [kind | takes count [t | (t by = (a id)) and (t kind = kind)]]
+    culprit : by-shot length > 0 [by-shot @ 1 from] else [by-turret length > 0 [by-turret @ 1 owner] else [by-mine length > 0 [by-mine @ 1 owner] else [a last-by]]]
+    got : [wanted | takes count [t | (t by = (a id)) and (t kind = wanted)]]
     -- where the hurt came from, for the marker at the edge of your screen
     shooter : by-shot length > 0 [ready keep [o | o id = (by-shot @ 1 from)] @ 1] else [false]
     guard-at : thinking keep [g | (g hits else false) and (g target = (a id))] @ 1 else false
@@ -416,7 +416,7 @@ play : [game |
       armour : a armour - soak + (got "armour" * 50) min 100
       down-at : cond [(up a) and (life <= 0), now, any, a down-at]
       hurt : cond [total > 0, 0.25, any, a hurt - dt]
-      last-by : by
+      last-by : culprit
       fire-wait : cond [can-shoot a, cond [a weapon = "heavy", heavy-every, any, fire-every] * (cond [a bot, 2.6 - (simulant-skill * 0.5), any, 1]), any, a fire-wait - dt]
       -- the heavy blaster: picked up, it's in your hands; C-right (or Q) swaps between the two
       has-heavy : (a has-heavy) or (got "heavy" > 0)

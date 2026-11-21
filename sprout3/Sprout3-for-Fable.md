@@ -64,7 +64,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
   - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
   - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
-- **Tests:** 469 pass, 303 for the language and 166 for the games.
+- **Tests:** 470 pass, 303 for the language and 167 for the games.
 
 ## Open questions for Troy
 
@@ -83,13 +83,13 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 
 ```
 node test.js          # language tests (303)
-node game-tests.js    # game tests (166)
+node game-tests.js    # game tests (167)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 469 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 470 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4456,6 +4456,8 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
 // ---------------- SilverEye: guards alone, a duel for two; a pocket console's stick and buttons arrive as held values
 {
   const src = fs.readFileSync(__dirname + "/examples/silvereye.sp", "utf8");
+  { const before = logs.length; L.makeGame(src, {}); const lints = logs.slice(before).filter(m => /lint|isn't a word/.test(m));
+    ok("silvereye: the program loads with no lints or unknown words", lints.length === 0, lints); }
   const pad = o => S.valueCellOf([], new Map(Object.entries(Object.assign({ shell: true }, o))));
   const keys = ks => S.valueCellOf([], new Map(ks.map(k => [k, true])));
   const put = (g, i, o) => { const m = new Map(S.fieldsOf(g.state)), ags = S.partsOf(m.get("agents")).slice(), a = new Map(S.fieldsOf(ags[i])); for (const k in o) a.set(k, o[k]); ags[i] = S.valueCellOf([], a); m.set("agents", S.valueCellOf(ags, new Map())); g.setState(S.valueCellOf([], m)); };
@@ -11060,8 +11062,8 @@ play : [game |
     -- just back in a match: nothing hurts for a moment
     total : cond [now < (a safe-until), 0, up a, shot-pain + (zapped k * sentry-damage) + (pain (a id)) + blasted, any, 0]
     -- who did it, for the score: the last to hurt you
-    by : by-shot length > 0 [by-shot @ 1 from] else [by-turret length > 0 [by-turret @ 1 owner] else [by-mine length > 0 [by-mine @ 1 owner] else [a last-by]]]
-    got : [kind | takes count [t | (t by = (a id)) and (t kind = kind)]]
+    culprit : by-shot length > 0 [by-shot @ 1 from] else [by-turret length > 0 [by-turret @ 1 owner] else [by-mine length > 0 [by-mine @ 1 owner] else [a last-by]]]
+    got : [wanted | takes count [t | (t by = (a id)) and (t kind = wanted)]]
     -- where the hurt came from, for the marker at the edge of your screen
     shooter : by-shot length > 0 [ready keep [o | o id = (by-shot @ 1 from)] @ 1] else [false]
     guard-at : thinking keep [g | (g hits else false) and (g target = (a id))] @ 1 else false
@@ -11076,7 +11078,7 @@ play : [game |
       armour : a armour - soak + (got "armour" * 50) min 100
       down-at : cond [(up a) and (life <= 0), now, any, a down-at]
       hurt : cond [total > 0, 0.25, any, a hurt - dt]
-      last-by : by
+      last-by : culprit
       fire-wait : cond [can-shoot a, cond [a weapon = "heavy", heavy-every, any, fire-every] * (cond [a bot, 2.6 - (simulant-skill * 0.5), any, 1]), any, a fire-wait - dt]
       -- the heavy blaster: picked up, it's in your hands; C-right (or Q) swaps between the two
       has-heavy : (a has-heavy) or (got "heavy" > 0)
