@@ -347,34 +347,65 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   ok("silvereye 2d: your own mine goes off under you too", f(c, "hero").field("health") < 100 && f(c, "mines").count() === 0);
 }
 
-// ---------------- SilverEye: the same game, drawn with 3D words (decision 108)
+// ---------------- SilverEye: guards alone, a duel for two; a pocket console's stick and buttons arrive as held values
 {
-  const src = fs.readFileSync(__dirname + "/examples/silvereye.sp", "utf8"), held = ks => S.valueCellOf([], new Map(ks.map(k => [k, true])));
+  const src = fs.readFileSync(__dirname + "/examples/silvereye.sp", "utf8");
+  const pad = o => S.valueCellOf([], new Map(Object.entries(Object.assign({ shell: true }, o))));
+  const keys = ks => S.valueCellOf([], new Map(ks.map(k => [k, true])));
+  const put = (g, i, o) => { const m = new Map(S.fieldsOf(g.state)), ags = S.partsOf(m.get("agents")).slice(), a = new Map(S.fieldsOf(ags[i])); for (const k in o) a.set(k, o[k]); ags[i] = S.valueCellOf([], a); m.set("agents", S.valueCellOf(ags, new Map())); g.setState(S.valueCellOf([], m)); };
+  const agent = (g, n) => f(g, "agents").part(n);
   const fx = [], g = L.makeGame(src, { onEffect: e => fx.push(e[0] + ":" + e[1][0]) });
-  const place = hero => { const m = new Map(S.fieldsOf(g.state)); m.set("hero", S.valueCellOf([], new Map(Object.entries(hero)))); g.setState(S.valueCellOf([], m)); };
   g.tick(1 / 60);
   const d = g.draw(), count = w => d.filter(x => x[0] === w).length;
   ok("silvereye: a camera, the walls as blocks, the guards as models, the gun held", count("view") === 1 && count("block") > 100 && d.filter(x => x[0] === "model" && x[1][0] === "soldier").length === 6 && count("hold") === 1);
-  ok("silvereye: the overlay is still 2D words", count("text") > 0 && count("circle") > 0);
-  place({ x: 9.5, y: 7.5, angle: 0, health: 100 });
-  for (let t = 0; t < 240; t++) g.tick(1 / 60, held(t % 20 < 2 ? ["space"] : []));
+  ok("silvereye: the overlay is still 2D words, with touch buttons in the editor", count("text") > 0 && d.some(x => x[0] === "text" && x[1][0] === "MINE"));
+  // the stick walks and strafes, the look drag turns
+  const w = L.makeGame(src, {}); w.tick(1 / 60, pad({ look: 0 }));
+  for (let t = 0; t < 30; t++) w.tick(1 / 60, pad({ walk: 1, look: 0.5 }));
+  ok("silvereye: the stick walks and the look drag turns you by what it moved", agent(w, 1).field("x") > 2.7 && Math.abs(agent(w, 1).field("angle") - 1.1) < 1e-9, agent(w, 1).field("angle"));
+  ok("silvereye: on the console there are no touch buttons on the screen", !w.draw().some(x => x[0] === "text" && x[1][0] === "MINE"));
+  put(g, 0, { x: 9.5, y: 7.5, angle: 0 });
+  for (let t = 0; t < 240; t++) g.tick(1 / 60, keys(t % 20 < 2 ? ["space"] : []));
   const fallen = g.draw().filter(x => x[0] === "model" && x[1][0] === "soldier" && x[1][6] === "Death");
   ok("silvereye: a guard who is shot plays his fall, timed from when he fell", fallen.length >= 1 && fallen[0][1][7] >= 0 && fallen[0][1][7] < 4, fallen.map(x => x[1][7]));
   ok("silvereye: shots make a sound", fx.includes("sound:shoot"));
   // turrets: set one down and its program takes the guards on
-  const sentry = (code) => {
-    const t = L.makeGame(code, {}), m = new Map(S.fieldsOf(t.state));
-    m.set("hero", S.valueCellOf([], new Map(Object.entries({ x: 9.5, y: 7.5, angle: 0, health: 100 })))); t.setState(S.valueCellOf([], m));
-    for (let k = 0; k < 2; k++) t.tick(1 / 60, held(["t"]));
-    for (let k = 0; k < 300; k++) t.tick(1 / 60);
+  const sentry = code => {
+    const t = L.makeGame(code, {}); t.tick(1 / 60); put(t, 0, { x: 9.5, y: 7.5, angle: 0 });
+    for (let k = 0; k < 2; k++) t.tick(1 / 60, pad({ sentry: true }));
+    for (let k = 0; k < 300; k++) t.tick(1 / 60, pad({}));
     return t;
   };
   const s1 = sentry(src);
-  ok("silvereye: a turret is set down and one fewer is carried", f(s1, "turrets").count() === 1 && f(s1, "sentries-left") === 1);
+  ok("silvereye: a turret is set down and one fewer is carried", f(s1, "turrets").count() === 1 && agent(s1, 1).field("sentries-left") === 1);
   ok("silvereye: the turret's program shoots the guard it sees", f(s1, "turrets").part(1).field("shots") > 0 && f(s1, "guards").part(3).field("health") <= 0);
   ok("silvereye: the turret is drawn as a model", s1.draw().some(x => x[0] === "model" && x[1][0] === "turret"));
   const s2 = sentry(src.replace("fire : (t sees) and (t cool <= 0) and (off abs < 0.1)", "fire : false"));
   ok("silvereye: change turret-program and the turret changes", f(s2, "turrets").part(1).field("shots") === 0);
+  // two players: a duel with no guards; a takedown scores, the other comes back, five wins
+  const v = L.makeGame(src, { players: 2, me: 1 });
+  v.tick(1 / 60, pad({}), pad({}));
+  ok("silvereye: two players make a duel, with no guards", f(v, "versus") === true && f(v, "agents").count() === 2 && f(v, "guards").count() === 0);
+  const face = () => { put(v, 0, { x: 8.5, y: 7.5, angle: 0 }); put(v, 1, { x: 12.5, y: 7.5, angle: Math.PI }); };
+  face(); for (let t = 0; t < 60; t++) v.tick(1 / 60, pad({ fire: true }), pad({}));
+  ok("silvereye: three shots take the other player down, and that scores", agent(v, 2).field("down-at") !== false && agent(v, 1).field("kills") === 1);
+  for (let t = 0; t < 160; t++) v.tick(1 / 60, pad({}), pad({}));
+  ok("silvereye: the one taken down comes back in a far corner", agent(v, 2).field("health") === 100 && agent(v, 2).field("down-at") === false && agent(v, 2).field("x") !== 12.5);
+  for (let r = 0; r < 4; r++) { face(); for (let t = 0; t < 60; t++) v.tick(1 / 60, pad({ fire: true }), pad({})); for (let t = 0; t < 160; t++) v.tick(1 / 60, pad({}), pad({})); }
+  const sees = n => { const o = L.makeGame(src, { players: 2, me: n }); o.setState(v.state, v.clock); return o.draw().filter(x => x[0] === "text").map(x => x[1][0]); };
+  ok("silvereye: five takedowns win, and each phone says who won", f(v, "over") === "p1" && sees(1).includes("YOU WIN") && sees(2).includes("YOU LOSE"), f(v, "over"));
+  ok("silvereye: each phone sees the duel from its own player", sees(1).includes("YOU 5 · 0 RIVAL") && sees(2).includes("YOU 0 · 5 RIVAL"));
+  for (let t = 0; t < 120; t++) v.tick(1 / 60, pad({ fire: true }), pad({}));
+  ok("silvereye: fire starts the duel again", f(v, "over") === "" && f(v, "versus") === true && agent(v, 1).field("kills") === 0);
+  // a mine laid by one player goes off under the other
+  const m = L.makeGame(src, { players: 2, me: 1 }); m.tick(1 / 60, pad({}), pad({}));
+  put(m, 0, { x: 4.5, y: 7.5, angle: 0 }); put(m, 1, { x: 2.5, y: 13.5, angle: 0 });
+  m.tick(1 / 60, pad({ mine: true }), pad({}));
+  put(m, 0, { x: 2.5, y: 2.5, angle: 0 });
+  for (let t = 0; t < 90; t++) m.tick(1 / 60, pad({}), pad({}));
+  put(m, 1, { x: 5.2, y: 7.5, angle: 0 });
+  for (let t = 0; t < 3; t++) m.tick(1 / 60, pad({}), pad({}));
+  ok("silvereye: a mine goes off under the other player", agent(m, 2).field("health") < 100 && f(m, "mines").count() === 0);
 }
 
 // ---------------- Swarm: thousands of drones in columns, turrets with a program

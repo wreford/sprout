@@ -14,8 +14,10 @@ const num = (v, d) => typeof v === "number" && isFinite(v) ? v : d;
 // Sprout's angles: 0 looks along +x, and they turn towards +z. three.js cameras look down -z, models face +z.
 const cameraYaw = a => -a - Math.PI / 2, modelYaw = a => Math.PI / 2 - a;
 
-export function makeView(canvas, base) {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+// opts.lowRes: draw this many pixels across and let the page stretch them, for a chunky old-console look
+export function makeView(canvas, base, opts) {
+  opts = opts || {};
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: !opts.lowRes, alpha: false });
   renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(70, 0.75, 0.05, 200);
@@ -101,6 +103,7 @@ export function makeView(canvas, base) {
   }
 
   function render(list, width, height, shakeX, shakeY) {
+    if (opts.lowRes) { const r = opts.lowRes / Math.max(1, width); if (renderer.getPixelRatio() !== r) renderer.setPixelRatio(r); }
     if (canvas.width !== Math.round(width * renderer.getPixelRatio()) || canvas.height !== Math.round(height * renderer.getPixelRatio())) renderer.setSize(width, height, false);
     camera.aspect = width / height;
     const seenBlocks = new Set(), counts = new Map(), holdCounts = new Map();

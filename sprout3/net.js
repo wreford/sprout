@@ -96,7 +96,9 @@ function begin(seed, src) {
   toast("Connected. You're player " + NET.me + (NET.me === 1 ? " (the first)" : " (the second)") + ".");
 }
 NET.input = ev => { NET.queue.push(ev); };
-const heldOf = keys => S.valueCellOf([], new Map(keys.map(k => [k, true])));
+// held keys go across as names; a held value that isn't just true (a stick's tilt, say) goes as [name, value]
+const heldOf = keys => S.valueCellOf([], new Map(keys.map(k => Array.isArray(k) ? k : [k, true])));
+const heldList = held => held.fieldNames().map(k => { const v = held.field(k); return v === true ? k : [k, v]; });
 NET.advance = function (dt, held) {
   if (!game) return;
   NET.acc = Math.min(NET.acc + dt, 0.25);
@@ -104,7 +106,7 @@ NET.advance = function (dt, held) {
   while (NET.acc >= STEP && steps < 4) {
     // this screen's input for a few frames ahead goes to both
     const ahead = NET.frame + DELAY, mine = NET.inputs[NET.me];
-    if (!mine.has(ahead)) { const msg = { ev: NET.queue.splice(0), held: held.fieldNames() }; mine.set(ahead, msg); send({ t: "in", f: ahead, ...msg }); }
+    if (!mine.has(ahead)) { const msg = { ev: NET.queue.splice(0), held: heldList(held) }; mine.set(ahead, msg); send({ t: "in", f: ahead, ...msg }); }
     const a = NET.inputs[1].get(NET.frame), b = NET.inputs[2].get(NET.frame);
     if (!a || !b) { NET.waiting = true; break; }
     NET.waiting = false;

@@ -10,13 +10,13 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 
 ```
 node test.js          # language tests (298)
-node game-tests.js    # game tests (112)
+node game-tests.js    # game tests (121)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 410 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 419 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4377,34 +4377,65 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   ok("silvereye 2d: your own mine goes off under you too", f(c, "hero").field("health") < 100 && f(c, "mines").count() === 0);
 }
 
-// ---------------- SilverEye: the same game, drawn with 3D words (decision 108)
+// ---------------- SilverEye: guards alone, a duel for two; a pocket console's stick and buttons arrive as held values
 {
-  const src = fs.readFileSync(__dirname + "/examples/silvereye.sp", "utf8"), held = ks => S.valueCellOf([], new Map(ks.map(k => [k, true])));
+  const src = fs.readFileSync(__dirname + "/examples/silvereye.sp", "utf8");
+  const pad = o => S.valueCellOf([], new Map(Object.entries(Object.assign({ shell: true }, o))));
+  const keys = ks => S.valueCellOf([], new Map(ks.map(k => [k, true])));
+  const put = (g, i, o) => { const m = new Map(S.fieldsOf(g.state)), ags = S.partsOf(m.get("agents")).slice(), a = new Map(S.fieldsOf(ags[i])); for (const k in o) a.set(k, o[k]); ags[i] = S.valueCellOf([], a); m.set("agents", S.valueCellOf(ags, new Map())); g.setState(S.valueCellOf([], m)); };
+  const agent = (g, n) => f(g, "agents").part(n);
   const fx = [], g = L.makeGame(src, { onEffect: e => fx.push(e[0] + ":" + e[1][0]) });
-  const place = hero => { const m = new Map(S.fieldsOf(g.state)); m.set("hero", S.valueCellOf([], new Map(Object.entries(hero)))); g.setState(S.valueCellOf([], m)); };
   g.tick(1 / 60);
   const d = g.draw(), count = w => d.filter(x => x[0] === w).length;
   ok("silvereye: a camera, the walls as blocks, the guards as models, the gun held", count("view") === 1 && count("block") > 100 && d.filter(x => x[0] === "model" && x[1][0] === "soldier").length === 6 && count("hold") === 1);
-  ok("silvereye: the overlay is still 2D words", count("text") > 0 && count("circle") > 0);
-  place({ x: 9.5, y: 7.5, angle: 0, health: 100 });
-  for (let t = 0; t < 240; t++) g.tick(1 / 60, held(t % 20 < 2 ? ["space"] : []));
+  ok("silvereye: the overlay is still 2D words, with touch buttons in the editor", count("text") > 0 && d.some(x => x[0] === "text" && x[1][0] === "MINE"));
+  // the stick walks and strafes, the look drag turns
+  const w = L.makeGame(src, {}); w.tick(1 / 60, pad({ look: 0 }));
+  for (let t = 0; t < 30; t++) w.tick(1 / 60, pad({ walk: 1, look: 0.5 }));
+  ok("silvereye: the stick walks and the look drag turns you by what it moved", agent(w, 1).field("x") > 2.7 && Math.abs(agent(w, 1).field("angle") - 1.1) < 1e-9, agent(w, 1).field("angle"));
+  ok("silvereye: on the console there are no touch buttons on the screen", !w.draw().some(x => x[0] === "text" && x[1][0] === "MINE"));
+  put(g, 0, { x: 9.5, y: 7.5, angle: 0 });
+  for (let t = 0; t < 240; t++) g.tick(1 / 60, keys(t % 20 < 2 ? ["space"] : []));
   const fallen = g.draw().filter(x => x[0] === "model" && x[1][0] === "soldier" && x[1][6] === "Death");
   ok("silvereye: a guard who is shot plays his fall, timed from when he fell", fallen.length >= 1 && fallen[0][1][7] >= 0 && fallen[0][1][7] < 4, fallen.map(x => x[1][7]));
   ok("silvereye: shots make a sound", fx.includes("sound:shoot"));
   // turrets: set one down and its program takes the guards on
-  const sentry = (code) => {
-    const t = L.makeGame(code, {}), m = new Map(S.fieldsOf(t.state));
-    m.set("hero", S.valueCellOf([], new Map(Object.entries({ x: 9.5, y: 7.5, angle: 0, health: 100 })))); t.setState(S.valueCellOf([], m));
-    for (let k = 0; k < 2; k++) t.tick(1 / 60, held(["t"]));
-    for (let k = 0; k < 300; k++) t.tick(1 / 60);
+  const sentry = code => {
+    const t = L.makeGame(code, {}); t.tick(1 / 60); put(t, 0, { x: 9.5, y: 7.5, angle: 0 });
+    for (let k = 0; k < 2; k++) t.tick(1 / 60, pad({ sentry: true }));
+    for (let k = 0; k < 300; k++) t.tick(1 / 60, pad({}));
     return t;
   };
   const s1 = sentry(src);
-  ok("silvereye: a turret is set down and one fewer is carried", f(s1, "turrets").count() === 1 && f(s1, "sentries-left") === 1);
+  ok("silvereye: a turret is set down and one fewer is carried", f(s1, "turrets").count() === 1 && agent(s1, 1).field("sentries-left") === 1);
   ok("silvereye: the turret's program shoots the guard it sees", f(s1, "turrets").part(1).field("shots") > 0 && f(s1, "guards").part(3).field("health") <= 0);
   ok("silvereye: the turret is drawn as a model", s1.draw().some(x => x[0] === "model" && x[1][0] === "turret"));
   const s2 = sentry(src.replace("fire : (t sees) and (t cool <= 0) and (off abs < 0.1)", "fire : false"));
   ok("silvereye: change turret-program and the turret changes", f(s2, "turrets").part(1).field("shots") === 0);
+  // two players: a duel with no guards; a takedown scores, the other comes back, five wins
+  const v = L.makeGame(src, { players: 2, me: 1 });
+  v.tick(1 / 60, pad({}), pad({}));
+  ok("silvereye: two players make a duel, with no guards", f(v, "versus") === true && f(v, "agents").count() === 2 && f(v, "guards").count() === 0);
+  const face = () => { put(v, 0, { x: 8.5, y: 7.5, angle: 0 }); put(v, 1, { x: 12.5, y: 7.5, angle: Math.PI }); };
+  face(); for (let t = 0; t < 60; t++) v.tick(1 / 60, pad({ fire: true }), pad({}));
+  ok("silvereye: three shots take the other player down, and that scores", agent(v, 2).field("down-at") !== false && agent(v, 1).field("kills") === 1);
+  for (let t = 0; t < 160; t++) v.tick(1 / 60, pad({}), pad({}));
+  ok("silvereye: the one taken down comes back in a far corner", agent(v, 2).field("health") === 100 && agent(v, 2).field("down-at") === false && agent(v, 2).field("x") !== 12.5);
+  for (let r = 0; r < 4; r++) { face(); for (let t = 0; t < 60; t++) v.tick(1 / 60, pad({ fire: true }), pad({})); for (let t = 0; t < 160; t++) v.tick(1 / 60, pad({}), pad({})); }
+  const sees = n => { const o = L.makeGame(src, { players: 2, me: n }); o.setState(v.state, v.clock); return o.draw().filter(x => x[0] === "text").map(x => x[1][0]); };
+  ok("silvereye: five takedowns win, and each phone says who won", f(v, "over") === "p1" && sees(1).includes("YOU WIN") && sees(2).includes("YOU LOSE"), f(v, "over"));
+  ok("silvereye: each phone sees the duel from its own player", sees(1).includes("YOU 5 · 0 RIVAL") && sees(2).includes("YOU 0 · 5 RIVAL"));
+  for (let t = 0; t < 120; t++) v.tick(1 / 60, pad({ fire: true }), pad({}));
+  ok("silvereye: fire starts the duel again", f(v, "over") === "" && f(v, "versus") === true && agent(v, 1).field("kills") === 0);
+  // a mine laid by one player goes off under the other
+  const m = L.makeGame(src, { players: 2, me: 1 }); m.tick(1 / 60, pad({}), pad({}));
+  put(m, 0, { x: 4.5, y: 7.5, angle: 0 }); put(m, 1, { x: 2.5, y: 13.5, angle: 0 });
+  m.tick(1 / 60, pad({ mine: true }), pad({}));
+  put(m, 0, { x: 2.5, y: 2.5, angle: 0 });
+  for (let t = 0; t < 90; t++) m.tick(1 / 60, pad({}), pad({}));
+  put(m, 1, { x: 5.2, y: 7.5, angle: 0 });
+  for (let t = 0; t < 3; t++) m.tick(1 / 60, pad({}), pad({}));
+  ok("silvereye: a mine goes off under the other player", agent(m, 2).field("health") < 100 && f(m, "mines").count() === 0);
 }
 
 // ---------------- Swarm: thousands of drones in columns, turrets with a program
@@ -9705,7 +9736,9 @@ function begin(seed, src) {
   toast("Connected. You're player " + NET.me + (NET.me === 1 ? " (the first)" : " (the second)") + ".");
 }
 NET.input = ev => { NET.queue.push(ev); };
-const heldOf = keys => S.valueCellOf([], new Map(keys.map(k => [k, true])));
+// held keys go across as names; a held value that isn't just true (a stick's tilt, say) goes as [name, value]
+const heldOf = keys => S.valueCellOf([], new Map(keys.map(k => Array.isArray(k) ? k : [k, true])));
+const heldList = held => held.fieldNames().map(k => { const v = held.field(k); return v === true ? k : [k, v]; });
 NET.advance = function (dt, held) {
   if (!game) return;
   NET.acc = Math.min(NET.acc + dt, 0.25);
@@ -9713,7 +9746,7 @@ NET.advance = function (dt, held) {
   while (NET.acc >= STEP && steps < 4) {
     // this screen's input for a few frames ahead goes to both
     const ahead = NET.frame + DELAY, mine = NET.inputs[NET.me];
-    if (!mine.has(ahead)) { const msg = { ev: NET.queue.splice(0), held: held.fieldNames() }; mine.set(ahead, msg); send({ t: "in", f: ahead, ...msg }); }
+    if (!mine.has(ahead)) { const msg = { ev: NET.queue.splice(0), held: heldList(held) }; mine.set(ahead, msg); send({ t: "in", f: ahead, ...msg }); }
     const a = NET.inputs[1].get(NET.frame), b = NET.inputs[2].get(NET.frame);
     if (!a || !b) { NET.waiting = true; break; }
     NET.waiting = false;
@@ -10229,8 +10262,10 @@ const num = (v, d) => typeof v === "number" && isFinite(v) ? v : d;
 // Sprout's angles: 0 looks along +x, and they turn towards +z. three.js cameras look down -z, models face +z.
 const cameraYaw = a => -a - Math.PI / 2, modelYaw = a => Math.PI / 2 - a;
 
-export function makeView(canvas, base) {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+// opts.lowRes: draw this many pixels across and let the page stretch them, for a chunky old-console look
+export function makeView(canvas, base, opts) {
+  opts = opts || {};
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: !opts.lowRes, alpha: false });
   renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(70, 0.75, 0.05, 200);
@@ -10316,6 +10351,7 @@ export function makeView(canvas, base) {
   }
 
   function render(list, width, height, shakeX, shakeY) {
+    if (opts.lowRes) { const r = opts.lowRes / Math.max(1, width); if (renderer.getPixelRatio() !== r) renderer.setPixelRatio(r); }
     if (canvas.width !== Math.round(width * renderer.getPixelRatio()) || canvas.height !== Math.round(height * renderer.getPixelRatio())) renderer.setSize(width, height, false);
     camera.aspect = width / height;
     const seenBlocks = new Set(), counts = new Map(), holdCounts = new Map();
@@ -10379,13 +10415,15 @@ export { WORDS };
 Bunker 3D: Bunker's game code with a draw in 3D words, CC0 models and textures (Games group)
 
 ````sprout
--- SilverEye: an underground lab, its guards, proximity mines and turrets, drawn in 3D with three.js and real models:
--- soldiers by Quaternius, a blaster from Kenney's Blaster Kit, textures by Screaming Brain Studios (all CC0).
--- Phone: drag to walk and turn, tap to fire, tap MINE to drop a mine, SENTRY to set down a turret.
--- Keys: arrows or WASD, space to fire, M for a mine, T for a turret.
--- The turrets run turret-program, written in Sprout: change it while you play and every turret thinks the new way.
--- The game is the same Sprout code as SilverEye 2D, plus the turrets; draw is new. Change the props, the fog or the colours too.
--- Play it on its own page: taskiap.com/silvereye
+-- SilverEye: an underground lab, proximity mines and turrets you program in Sprout, in low-poly 3D.
+-- Alone, sneak through and take down the six guards. With a friend it's a duel: send an invite by text (no server)
+-- and the first to five takedowns wins. Mines and turrets go for whoever comes near, so lay traps.
+-- On its own page (taskiap.com/silvereye) it plays on a pocket console: the stick moves and strafes (push it all the
+-- way up to run), drag the screen to look, hold A to fire, B drops a mine, C-up sets down a turret, C-down turns round.
+-- Keys: WASD to move and strafe, arrows to turn, space to fire, M for a mine, T for a turret.
+-- In the editor's player: drag above or below the middle to walk, left or right to turn, tap the middle to fire.
+-- The turrets run turret-program: change it while you play and every turret thinks the new way, on both phones.
+-- Soldiers and the turret by Quaternius, the blaster from Kenney's Blaster Kit, textures by Screaming Brain Studios (CC0).
 
 level : [
   "################"
@@ -10405,21 +10443,23 @@ level : [
   "#......#.......#"
   "################"
 ]
-fov : 1.05                 -- how wide you see, in radians
-columns : 72               -- rays across the screen: more is sharper and slower
 walk-speed : 2.6
+run-boost : 1.4            -- the stick pushed all the way up runs this much faster
 turn-speed : 2.4
 mine-arm : 1.2             -- seconds before a dropped mine is live
 mine-reach : 1.0           -- how close someone must come to set it off
 blast : 2.1                -- how far the blast reaches
+mines-each : 4             -- mines you carry
 sentries : 2               -- turrets you carry
 sentry-reach : 7           -- how far a turret can see
 sentry-turn : 2.5          -- how fast it can turn, in radians a second
 sentry-reload : 0.45       -- seconds between its shots
 sentry-damage : 34
-wall-colour : [208, 214, 196]
-floor-colour : "#2b2c27"
-ceiling-colour : "#1b1d22"
+shot-damage : 50           -- your shot at a guard
+duel-damage : 34           -- a shot at the other player
+fire-every : 0.25          -- hold fire and it fires this often
+frag-limit : 5             -- takedowns to win a duel
+respawn-after : 2.5        -- seconds before you're back in a duel
 
 -- ---------------------------------------------------------------- the map
 solid : [cx cy |
@@ -10459,11 +10499,19 @@ cast : [ox oy angle |
   ]
   march [cell-x, cell-y, cond [dx < 0, ox - cell-x * across, any, cell-x + 1 - ox * across], cond [dy < 0, oy - cell-y * along, any, cell-y + 1 - oy * along], 0]
 ]
+slide : [x y dx dy |
+  pad : 0.22
+  nx : solid [x + dx + (cond [dx < 0, 0 - pad, any, pad]), y] [x] else [x + dx]
+  ny : solid [nx, y + dy + (cond [dy < 0, 0 - pad, any, pad])] [y] else [y + dy]
+  [x : nx, y : ny]
+]
+distance : [ax ay bx by | bx - ax * (bx - ax) + (by - ay * (by - ay)) sqrt]
 
 -- ---------------------------------------------------------------- the turrets' program
 -- Each frame every turret is asked what to do. It sees: aim (where it points, in radians), cool (seconds until it can
--- fire), sees (is a guard in sight), dx and dy (to the nearest one in sight), far (how far that is) and count (how many
--- it can see). It answers with turn (-1 to 1) and fire (true or false). A shot hits if the turret points at the guard.
+-- fire), sees (is anyone in sight: a guard, or the player who didn't set it down), dx and dy (to the nearest one in
+-- sight), far (how far that is) and count (how many it can see). It answers with turn (-1 to 1) and fire (true or false).
+-- A shot hits if the turret points at its mark.
 turret-program : [t |
   want : t dy atan2 (t dx)
   off : wrap (want - (t aim))
@@ -10472,82 +10520,92 @@ turret-program : [t |
 
 -- ---------------------------------------------------------------- the people
 guard : [id gx gy tx ty | [id : id, x : gx, y : gy, angle : 0, health : 100, wait : 1, alert : false, home-x : gx, home-y : gy, to-x : tx, to-y : ty, fell : false]]
+spawns : [[2.5, 2.5, 0.6], [13.5, 13.5, -2.4], [13.5, 2.5, 2.4], [2.5, 13.5, -0.8]]
+agent : [id sx sy sa | [id : id, x : sx, y : sy, angle : sa, health : 100, carried : mines-each, sentries-left : sentries, fire-wait : 0, mine-wait : 0, turret-wait : 0, flash : 0, hurt : 0, kills : 0, down-at : false, look : false, moving : false, aimed : false, asks : false]]
 start :
-  hero : [x : 2.5, y : 2.5, angle : 0.6, health : 100]
+  agents : [agent [1, 2.5, 2.5, 0.6]]
   guards : [guard [1, 12.5, 2.5, 12.5, 4.5], guard [2, 3.5, 7.5, 6.5, 7.5], guard [3, 13.5, 7.5, 9.5, 7.5], guard [4, 2.5, 11.5, 2.5, 13.5], guard [5, 9.5, 12.5, 9.5, 12.5], guard [6, 13.5, 13.5, 13.5, 10.5]]
   mines : []
-  blasts : []
-  carried : 6
   turrets : []
-  sentries-left : sentries
-  drag : false
-  fire-wait : 0
-  mine-wait : 0
-  turret-wait : 0
-  flash : 0
-  hurt : 0
+  blasts : []
   over : ""
+  over-at : 0
+  versus : false
+  shell : false
   clock : 0
   dt : 0
+-- two players: the same lab with no guards, one player in each far corner
+duel : [agents : [agent [1, 2.5, 2.5, 0.6], agent [2, 13.5, 13.5, -2.4]], guards : [], mines : [], turrets : [], blasts : [], over : "", versus : true]
 
--- move from (x, y) by (dx, dy), sliding along walls
-slide : [x y dx dy |
-  pad : 0.22
-  nx : solid [x + dx + (cond [dx < 0, 0 - pad, any, pad]), y] [x] else [x + dx]
-  ny : solid [nx, y + dy + (cond [dy < 0, 0 - pad, any, pad])] [y] else [y + dy]
-  [x : nx, y : ny]
-]
-distance : [ax ay bx by | bx - ax * (bx - ax) + (by - ay * (by - ay)) sqrt]
+-- ---------------------------------------------------------------- controls
+-- what a player asks for this frame. On the console page the stick, the look drag and the buttons arrive as held
+-- values (walk, strafe, look, fire, mine, sentry); keys arrive as held keys; in the editor a finger does it all.
 near-mine-button : [tx ty | distance [tx, ty, W - 48, H - 48] < 40]
 near-turret-button : [tx ty | distance [tx, ty, W - 48, H - 128] < 40]
 near-button : [tx ty | (near-mine-button [tx, ty]) or (near-turret-button [tx, ty])]
+in-middle : [tx ty | ((tx - (W / 2)) abs < (W / 6)) and ((ty - (H / 2)) abs < (H / 8))]
+wants : [inp |
+  key : [k | inp held k else false]
+  on-console : inp held "shell" else false
+  finger : (on-console not) and (inp touching) and (near-button [inp touch-x, inp touch-y] not) and (in-middle [inp touch-x, inp touch-y] not)
+  tap : (on-console not) and (inp tapped)
+  walk : (inp held "walk" else 0) + (cond [(key "up") or (key "w"), 1, (key "down") or (key "s"), -1, finger, clamp [H / 2 - (inp touch-y) / (H / 4), -1, 1], any, 0])
+  strafe : (inp held "strafe" else 0) + (cond [key "d", 1, key "a", -1, any, 0])
+  turn : cond [key "left", -1, key "right", 1, finger, clamp [inp touch-x - (W / 2) / (W / 3), -1, 1], any, 0]
+  [
+    walk : clamp [walk, -1, run-boost], strafe : clamp [strafe, -1, 1], turn : turn, look : inp held "look" else false
+    fire : (inp held "fire" else false) or (key "space") or (tap and (in-middle [inp touch-x, inp touch-y]))
+    mine : (inp held "mine" else false) or (key "m") or (tap and (near-mine-button [inp touch-x, inp touch-y]))
+    sentry : (inp held "sentry" else false) or (key "t") or (tap and (near-turret-button [inp touch-x, inp touch-y]))
+    restart : (inp tapped) or (inp held "fire" else false) or (key "space")
+  ]
+]
+up : [a | a down-at = false]
+can-shoot : [a | (up a) and (a asks fire) and (a fire-wait <= 0)]
+can-drop : [a | (up a) and (a asks mine) and (a mine-wait <= 0) and (a carried > 0)]
+can-set : [a | (up a) and (a asks sentry) and (a turret-wait <= 0) and (a sentries-left > 0)]
 
 -- ---------------------------------------------------------------- one frame
 play : [game |
   dt : game dt
   now : game clock
-  i : game input
-  hero : game hero
-  -- a finger: where it went down, and how far it has moved since
-  finger : cond [i tapped, [x : i touch-x, y : i touch-y, at : now, last-x : i touch-x, last-y : i touch-y], i touching and (game drag != false), game drag with [last-x : i touch-x, last-y : i touch-y], any, game drag]
-  released : (i touching not) and (game drag != false)
-  quick-tap : released and (now - (game drag at) < 0.3) and ((game drag last-x - (game drag x)) abs < 14) and ((game drag last-y - (game drag y)) abs < 14)
-  touch-turn : cond [i touching and (finger != false), clamp [finger last-x - (finger x) / 110, -1, 1], any, 0]
-  touch-walk : cond [i touching and (finger != false) and (near-button [finger x, finger y] not), clamp [finger y - (finger last-y) / 80, -1, 1], any, 0]
-  key-turn : cond [(i held "left") or (i held "a"), -1, (i held "right") or (i held "d"), 1, any, 0]
-  key-walk : cond [(i held "up") or (i held "w"), 1, (i held "down") or (i held "s"), -1, any, 0]
-  turn : touch-turn + key-turn
-  walk : touch-walk + key-walk
-  wants-mine : (quick-tap and (near-mine-button [game drag x, game drag y])) or ((i held "m") and (game mine-wait <= 0))
-  wants-turret : (quick-tap and (near-turret-button [game drag x, game drag y])) or ((i held "t") and (game turret-wait <= 0))
-  wants-fire : (quick-tap and (near-button [game drag x, game drag y] not)) or ((i held "space") and (game fire-wait <= 0))
-  -- walking and turning
-  heading : hero angle + (turn * turn-speed * dt)
-  step : walk * walk-speed * dt
-  moved : slide [hero x, hero y, heading cos * step, heading sin * step]
-  -- firing: the nearest live guard near the middle of the view, nearer than the wall
-  centre-wall : cast [moved x, moved y, heading] far
-  target : game guards keep [g | g health > 0] keep [g |
-    gd : distance [moved x, moved y, g x, g y]
-    rel : wrap (g y - (moved y) atan2 (g x - (moved x)) - heading)
-    (rel abs < (0.05 + (0.22 / gd))) and (gd < centre-wall)
-  ] smallest-by [g | distance [moved x, moved y, g x, g y]]
-  shot : wants-fire and (target != false)
-  wants-fire [sound "shoot"]
-  -- dropping a mine just ahead
-  drop : wants-mine and (game carried > 0)
-  drop [beep [440, 0.05]]
-  mines : drop [game mines .. [[x : heading cos * 0.4 + (moved x), y : heading sin * 0.4 + (moved y), armed : now + mine-arm]]] else [game mines]
-  -- setting down a turret just ahead
-  set-down : wants-turret and (game sentries-left > 0)
-  set-down [beep [660, 0.06]]
-  placed : set-down [game turrets .. [[x : heading cos * 0.7 + (moved x), y : heading sin * 0.7 + (moved y), aim : heading, cool : 0.6, shots : 0, fired : false]]] else [game turrets]
-  -- guards: hit by the shot, then each one patrols, or turns on you once it sees you
-  hit-guards : game guards collect [g | shot and (g id = (target id)) [g with [health : g health - 50, alert : true]] else [g]]
-  -- each turret finds the nearest guard it can see, asks turret-program what to do, then turns and maybe fires
+  -- everyone moves: the stick walks and strafes, the look drag and the keys turn
+  moved-agents : game agents collect [a |
+    w : wants (a id = 2 [game input2] else [game input])
+    looked : cond [(w look = false) or (a look = false), 0, any, w look - (a look)]
+    heading : cond [up a, a angle + looked + (w turn * turn-speed * dt), any, a angle]
+    pace : cond [w walk > 1.05, walk-speed * run-boost, any, walk-speed] * dt
+    dx : heading cos * (w walk) - (heading sin * (w strafe)) * pace
+    dy : heading sin * (w walk) + (heading cos * (w strafe)) * pace
+    went : cond [up a, slide [a x, a y, dx, dy], any, [x : a x, y : a y]]
+    a with [x : went x, y : went y, angle : heading, look : w look, moving : (up a) and ((w walk abs) + (w strafe abs) > 0.1), asks : w]
+  ]
+  -- who could be shot: guards still standing, and players still up
+  marks : game guards keep [g | g health > 0] collect [g | [who : "guard", id : g id, x : g x, y : g y]] .. (moved-agents keep up collect [a | [who : "agent", id : a id, x : a x, y : a y]])
+  -- aiming: the nearest mark near the middle of your view, nearer than the wall (a little help, as on a pad)
+  aim-at : [a |
+    wall : cast [a x, a y, a angle] far
+    marks keep [m | (m who = "guard") or (m id != (a id))] keep [m |
+      gd : distance [a x, a y, m x, m y]
+      rel : wrap (m y - (a y) atan2 (m x - (a x)) - (a angle))
+      (rel abs < (0.05 + (0.22 / gd))) and (gd < wall)
+    ] smallest-by [m | distance [a x, a y, m x, m y]]
+  ]
+  ready : moved-agents collect [a | a with [aimed : cond [up a, aim-at a, any, false]]]
+  shooters : ready keep can-shoot
+  shot-keys : shooters keep [a | a aimed != false] collect [a | "[a aimed who] [a aimed id]"]
+  (shooters length > 0) [sound "shoot"]
+  -- mines and turrets, each with its owner
+  droppers : ready keep can-drop
+  setters : ready keep can-set
+  (droppers length > 0) [beep [440, 0.05]]
+  (setters length > 0) [beep [660, 0.06]]
+  all-mines : game mines .. (droppers collect [a | [x : a angle cos * 0.4 + (a x), y : a angle sin * 0.4 + (a y), armed : now + mine-arm, owner : a id]])
+  placed : game turrets .. (setters collect [a | [x : a angle cos * 0.7 + (a x), y : a angle sin * 0.7 + (a y), aim : a angle, cool : 0.6, shots : 0, fired : false, victim : "", owner : a id]])
+  -- each turret finds the nearest mark it can see (never its owner), asks turret-program what to do, turns, maybe fires
   thought : placed collect [t |
-    in-sight : hit-guards keep [g | (g health > 0) and (distance [t x, t y, g x, g y] < sentry-reach) and (clear-line [t x, t y, g x, g y])]
-    mark : in-sight smallest-by [g | distance [t x, t y, g x, g y]]
+    in-sight : marks keep [m | ((m who = "guard") or (m id != (t owner))) and (distance [t x, t y, m x, m y] < sentry-reach) and (clear-line [t x, t y, m x, m y])]
+    mark : in-sight smallest-by [m | distance [t x, t y, m x, m y]]
     sees : mark != false
     dx : sees [mark x - (t x)] else [t aim cos]
     dy : sees [mark y - (t y)] else [t aim sin]
@@ -10555,22 +10613,26 @@ play : [game |
     aim : wrap (clamp [said turn else 0, -1, 1] * sentry-turn * dt + (t aim))
     fires : (said fire else false) and (t cool <= 0)
     lands : fires and sees and (wrap (dy atan2 dx - aim) abs < 0.15)
-    t with [aim : aim, cool : cond [fires, sentry-reload, any, t cool - dt], fired : fires, victim : lands [mark id] else [0], shots : cond [fires, t shots + 1, any, t shots]]
+    t with [aim : aim, cool : cond [fires, sentry-reload, any, t cool - dt], fired : fires, victim : lands ["[mark who] [mark id]"] else [""], shots : cond [fires, t shots + 1, any, t shots]]
   ]
   thought any [t | t fired] [sound "shoot"]
-  zapped : hit-guards collect [g |
-    n : thought count [t | t victim = (g id)]
-    n > 0 [g with [health : g health - (n * sentry-damage), alert : true]] else [g]
+  struck : [k | shot-keys count [h | h = k]]
+  zapped : [k | thought count [t | t victim = k]]
+  -- guards (only when you play alone): hit by shots and turrets, then each one patrols, or turns on you once it sees you
+  hero : ready @ 1
+  hit-guards : game guards collect [g |
+    n : struck "guard [g id]" * shot-damage + (zapped "guard [g id]" * sentry-damage)
+    n > 0 [g with [health : g health - n, alert : true]] else [g]
   ]
-  thinking : zapped collect [g |
+  thinking : hit-guards collect [g |
     g health <= 0 [g] else [
-      gd : distance [g x, g y, moved x, moved y]
-      facing : g y - (moved y) atan2 (g x - (moved x)) + pi
+      gd : distance [g x, g y, hero x, hero y]
+      facing : g y - (hero y) atan2 (g x - (hero x)) + pi
       looking : wrap (facing - (g angle)) abs < 0.9
-      sees : (gd < 9) and ((g alert) or looking) and (clear-line [g x, g y, moved x, moved y])
+      sees : (up hero) and (gd < 9) and ((g alert) or looking) and (clear-line [g x, g y, hero x, hero y])
       alert : (g alert) or sees
-      goal-x : cond [alert, moved x, any, g to-x]
-      goal-y : cond [alert, moved y, any, g to-y]
+      goal-x : cond [alert, hero x, any, g to-x]
+      goal-y : cond [alert, hero y, any, g to-y]
       gap : distance [g x, g y, goal-x, goal-y]
       pace : cond [alert and (gd < 3), 0, alert, 1.2, any, 0.8]
       head : goal-y - (g y) atan2 (goal-x - (g x))
@@ -10591,49 +10653,89 @@ play : [game |
   ]
   pain : thinking count [g | g hits else false] * 9
   thinking any [g | g fired else false] [sound "hit"]
-  -- mines: an armed mine goes off when anyone comes near
-  armed : mines keep [m | now >= (m armed)]
-  goes-off : armed keep [m | (thinking any [g | (g health > 0) and (distance [m x, m y, g x, g y] < mine-reach)]) or (distance [m x, m y, moved x, moved y] < (mine-reach * 0.7))]
-  still : mines keep [m | (goes-off has m) not]
+  -- mines: an armed mine goes off when anyone comes near, whoever laid it
+  armed : all-mines keep [m | now >= (m armed)]
+  bodies : thinking keep [g | g health > 0] collect [g | [x : g x, y : g y]] .. (ready keep up collect [a | [x : a x, y : a y]])
+  goes-off : armed keep [m | bodies any [b | distance [m x, m y, b x, b y] < mine-reach]]
+  still : all-mines keep [m | (goes-off has m) not]
   (goes-off length > 0) [shake 10, sound "impact"]
   caught : [px py | goes-off collect [m | distance [m x, m y, px, py]] keep [d | d < blast]]
   blown : thinking collect [g | caught [g x, g y] length > 0 [g with [health : 0]] else [g]]
-  -- when each one fell, for the fall
-  guards : blown collect [g | g with [fell : cond [(g health <= 0) and (g fell = false), now, any, g fell]]]
-  blasted : caught [moved x, moved y] collect [d | blast - d * 60] sum
-  life : hero health - pain - blasted
-  (pain + blasted > 0) [sound "hurt"]
-  blasts : game blasts keep [b | now - (b at) < 0.6] .. (goes-off collect [m | [x : m x, y : m y, at : now]])
-  over : cond [life <= 0, "lost", guards all [g | g health <= 0], "won", any, ""]
+  fallen : blown collect [g | g with [fell : cond [(g health <= 0) and (g fell = false), now, any, g fell]]]
+  -- players: shots, turrets, guards and blasts hurt; one who goes down is out (alone) or back soon (a duel)
+  hurt-agents : ready collect [a |
+    k : "agent [a id]"
+    blasted : caught [a x, a y] collect [d | blast - d * 60] sum
+    total : cond [up a, struck k * duel-damage + (zapped k * sentry-damage) + (cond [a id = 1, pain, any, 0]) + blasted, any, 0]
+    life : a health - total
+    a with [
+      health : life max 0
+      down-at : cond [(up a) and (life <= 0), now, any, a down-at]
+      hurt : cond [total > 0, 0.25, any, a hurt - dt]
+      fire-wait : cond [can-shoot a, fire-every, any, a fire-wait - dt]
+      mine-wait : cond [can-drop a, 0.5, any, a mine-wait - dt]
+      turret-wait : cond [can-set a, 0.5, any, a turret-wait - dt]
+      flash : cond [can-shoot a, 0.08, any, a flash - dt]
+      carried : cond [can-drop a, a carried - 1, any, a carried]
+      sentries-left : cond [can-set a, a sentries-left - 1, any, a sentries-left]
+    ]
+  ]
+  (hurt-agents any [a | a hurt = 0.25]) [sound "hurt"]
+  went-down : hurt-agents keep [a | a down-at = now]
+  scored : hurt-agents collect [a | a with [kills : a kills + (went-down count [d | d id != (a id)])]]
+  -- in a duel you come back after a moment, at the corner farthest from the other player
+  back : scored collect [a |
+    due : (game versus) and ((up a) not) and (now - (a down-at else now) >= respawn-after)
+    others : scored keep [o | o id != (a id)]
+    spot : spawns smallest-by [s | 0 - (others collect [o | distance [s @ 1, s @ 2, o x, o y]] sum)]
+    due [agent [a id, spot @ 1, spot @ 2, spot @ 3] with [kills : a kills, look : a look]] else [a]
+  ]
+  champions : back keep [a | a kills >= frag-limit]
+  winner : champions length > 0 [champions @ 1 id] else [0]
+  over : cond [
+    game versus, winner > 0 ["p[winner]"] else [""]
+    (up (back @ 1)) not, "lost"
+    fallen all [g | g health <= 0], "won"
+    any, ""
+  ]
   game with [
-    hero : [x : moved x, y : moved y, angle : heading, health : life max 0]
-    guards : guards, mines : still, blasts : blasts
-    carried : drop [game carried - 1] else [game carried]
-    turrets : thought
-    sentries-left : set-down [game sentries-left - 1] else [game sentries-left]
-    turret-wait : cond [wants-turret, 0.5, any, game turret-wait - dt]
-    drag : cond [released, false, any, finger]
-    fire-wait : cond [wants-fire, 0.25, any, game fire-wait - dt]
-    mine-wait : cond [wants-mine, 0.5, any, game mine-wait - dt]
-    flash : cond [wants-fire, 0.08, any, game flash - dt]
-    hurt : cond [pain + blasted > 0, 0.25, any, game hurt - dt]
-    over : over
+    agents : back, guards : fallen, mines : still, turrets : thought
+    blasts : game blasts keep [b | now - (b at) < 0.6] .. (goes-off collect [m | [x : m x, y : m y, at : now]])
+    over : over, over-at : now
+    shell : game input held "shell" else false
   ]
 ]
 
-update : [game | game over = "" [play game] else [(game input tapped) [start] else [game]]]
+-- two phones turn a game for one into a duel; once it's over, fire (or a tap) starts again after a moment
+update : [game |
+  two : game has-field "input2"
+  g : (two and (game versus not)) [game with duel] else [game]
+  again : (wants (g input) restart) or (two [wants (g input2) restart] else [false])
+  g over = "" [play g] else [
+    (again and (g clock - (g over-at) > 1.5)) [two [g with duel] else [start]] else [g]
+  ]
+]
 
 -- ---------------------------------------------------------------- drawing, in 3D
 eye : 1.55                -- how high your eyes are, in metres
+fov : 74                  -- how much you see, top to bottom, in degrees
 gun-turn : 0.1            -- which way the gun points, in radians
 fog-colour : #14161c
 props : [["crate", 5.4, 1.6, 0.3, 0.8], ["barrels", 14.2, 1.7, 1.2, 0.9], ["generator_large", 9.0, 10.7, 0, 1.4], ["crate", 1.7, 14.2, 1.9, 0.8], ["barrels", 14.3, 12.4, 0.4, 0.9], ["generator", 5.8, 7.7, 1.6, 1.0], ["crate", 12.3, 8.3, 0.8, 0.8]]
+red : "#ff5a4f"
+cream : "#f4f1ea"
+cyan : "#9be7ff"
+gold : "#ffd166"
 
 draw : [game |
-  hero : game hero
   now : game clock
+  you-id : cond [game versus, me, any, 1]
+  you : game agents keep [a | a id = you-id] @ 1
+  rivals : game agents keep [a | a id != you-id]
+  down : up you not
+  -- the camera: your eyes, or the floor once you're down
   fog [fog-colour, 3, 15]
-  view [hero x, eye, hero y, hero angle, 0, 72]
+  view [you x, cond [down, 0.35, any, eye], you y, you angle, cond [down, 0.5, any, 0], fov]
   -- the lab: a floor, a ceiling, and a block for every wall cell of the map
   block [8, -0.05, 8, 16, 0.1, 16, "plate"]
   block [8, 2.55, 8, 16, 0.1, 16, "metal"]
@@ -10641,45 +10743,70 @@ draw : [game |
   props each [[name, px, pz, turn, size] | model [name, px, 0, pz, turn, size, false, 0]]
   -- the guards: running when they chase, aiming when they're close, falling when they're hit
   game guards each [g |
-    near : distance [g x, g y, hero x, hero y] < 3
+    near : distance [g x, g y, you x, you y] < 3
     clip : cond [g health <= 0, "Death", g alert and near, "Idle_Shoot", g alert, "Run_Gun", any, "Run"]
     time : cond [g health <= 0, now - (g fell else now), g alert, now, any, now * 0.55]
     model ["soldier", g x, 0, g y, g angle, 1.8, clip, time]
+  ]
+  -- the other player
+  rivals each [r |
+    clip : cond [up r not, "Death", r flash > 0, "Idle_Shoot", r moving, "Run_Gun", any, "Idle_Shoot"]
+    time : cond [up r not, now - (r down-at else now), any, now]
+    model ["soldier", r x, 0, r y, r angle, 1.8, clip, time]
+    (r flash > 0) [flash [r angle cos * 0.6 + (r x), 1.3, r angle sin * 0.6 + (r y), 0.08, "#ffd76a"]]
   ]
   -- mines on the floor, blinking once they're live
   game mines each [m |
     model ["grenade", m x, 0, m y, 0, 0.22, false, 0]
     (now >= (m armed)) and (now * 4 % 1 < 0.5) [flash [m x, 0.3, m y, 0.05, "#ff3b30"]]
   ]
+  game blasts each [b | age : now - (b at) / 0.6, flash [b x, 0.9, b y, 0.5 + (age * 1.4), "#ffb347"]]
   -- the turrets, turned the way their program points them, with a spark when they fire
   game turrets each [t |
     model ["turret", t x, 0, t y, t aim + pi, 0.6, false, 0]   -- the model's barrels point back, so it is turned round
-    t fired [flash [t aim cos * 0.45 + (t x), 0.55, t aim sin * 0.45 + (t y), 0.07, "#9be7ff"]]
+    t fired [flash [t aim cos * 0.45 + (t x), 0.55, t aim sin * 0.45 + (t y), 0.07, cyan]]
   ]
-  game blasts each [b | age : now - (b at) / 0.6, flash [b x, 0.9, b y, 0.5 + (age * 1.4), "#ffb347"]]
-  -- the gun, kicking back when it fires
-  kick : cond [game flash > 0, 0.05, any, 0]
-  hold ["blaster_g", 0.2, -0.21, -0.55 + kick, gun-turn, 0, 0.26]
-  (game flash > 0) [flash [hero angle cos * 0.7 + (hero x), 1.35, hero angle sin * 0.7 + (hero y), 0.08, "#ffd76a"]]
-  -- on top: the crosshair, the map, health, mines and the mine button
-  line [W / 2 - 8, H / 2, W / 2 + 8, H / 2, "#ffffffaa"]
-  line [W / 2, H / 2 - 8, W / 2, H / 2 + 8, "#ffffffaa"]
-  wall-cells each [[c, r] | rect [c * 4 + 2, r * 4 + 2, 4, 4, "#4a4d4588"]]
-  game guards keep [g | g health > 0] each [g | circle [g x * 4 + 6, g y * 4 + 6, 1.5, "#ff5a4f"]]
-  game mines each [m | circle [m x * 4 + 6, m y * 4 + 6, 1.3, "#ffd166"]]
-  game turrets each [t | rect [t x * 4 + 4, t y * 4 + 4, 4, 4, "#9be7ff"]]
-  circle [hero x * 4 + 6, hero y * 4 + 6, 1.8, "#ffffff"]
-  rect [W - 112, 12, 100, 8, "#00000088"]
-  rect [W - 112, 12, hero health, 8, cond [hero health > 35, "#7bd389", any, "#ff5a4f"]]
-  text ["mines [game carried]", W - 62, 36, 12, "#f4f1ea"]
-  circle [W - 48, H - 48, 34, "#00000066"]
-  text ["MINE", W - 48, H - 44, 13, "#ffd166"]
-  circle [W - 48, H - 128, 34, "#00000066"]
-  text ["SENTRY [game sentries-left]", W - 48, H - 124, 11, "#9be7ff"]
-  (game hurt > 0) [rect [0, 0, W, H, "#ff000040"]]
-  (now < 5) and (game over = "") [text ["drag to walk · tap to fire · MINE · SENTRY", W / 2, H - 140, 11, "#f4f1eacc"]]
-  game over = "won" [rect [0, H / 2 - 50, W, 100, "#000000aa"], text ["LAB CLEARED", W / 2, H / 2 - 6, 24, "#7bd389"], text ["tap to go again", W / 2, H / 2 + 24, 12, "#f4f1ea"]]
-  game over = "lost" [rect [0, H / 2 - 50, W, 100, "#000000aa"], text ["YOU WERE CAUGHT", W / 2, H / 2 - 6, 24, "#ff5a4f"], text ["tap to go again", W / 2, H / 2 + 24, 12, "#f4f1ea"]]
+  -- your gun, kicking back when it fires
+  kick : cond [you flash > 0, 0.05, any, 0]
+  down not [hold ["blaster_g", 0.2, -0.21, -0.55 + kick, gun-turn, 0, 0.26]]
+  (you flash > 0) [flash [you angle cos * 0.7 + (you x), 1.35, you angle sin * 0.7 + (you y), 0.08, "#ffd76a"]]
+  -- on top: the sight (red when it's on someone), the map, health, what you carry
+  sight : cond [you aimed != false, red, any, "#ffffffaa"]
+  line [W / 2 - 7, H / 2, W / 2 - 2, H / 2, sight]
+  line [W / 2 + 2, H / 2, W / 2 + 7, H / 2, sight]
+  line [W / 2, H / 2 - 7, W / 2, H / 2 - 2, sight]
+  line [W / 2, H / 2 + 2, W / 2, H / 2 + 7, sight]
+  wall-cells each [[c, r] | rect [c * 3 + 3, r * 3 + 3, 3, 3, "#4a4d4588"]]
+  game guards keep [g | g health > 0] each [g | circle [g x * 3 + 6, g y * 3 + 6, 1.4, red]]
+  rivals keep up each [r | circle [r x * 3 + 6, r y * 3 + 6, 1.6, red]]
+  game mines each [m | circle [m x * 3 + 6, m y * 3 + 6, 1.1, gold]]
+  game turrets each [t | rect [t x * 3 + 4.5, t y * 3 + 4.5, 3, 3, cyan]]
+  circle [you x * 3 + 6, you y * 3 + 6, 1.7, "#ffffff"]
+  range 10 each [k | rect [W - 12 - (11 - k * 9), 10, 7, 9, cond [you health > (k - 1 * 10), cond [you health > 35, "#7bd389", any, red], any, "#00000066"]]]
+  text ["MINES [you carried]   SENTRY [you sentries-left]", W - 52, 30, 9, cream]
+  -- in a duel: the score, and who just went down
+  game versus [
+    rival-kills : rivals collect [r | r kills] sum
+    text ["YOU [you kills] · [rival-kills] RIVAL", W / 2, H - 16, 12, cream]
+    rivals any [r | (up r not) and (now - (r down-at else now) < 1.6)] [text ["TAKEDOWN", W / 2, H / 2 - 40, 18, gold]]
+    down and (game over = "") [text ["DOWN · back in [respawn-after - (now - (you down-at else now)) max 0 ceil]", W / 2, H / 2 + 40, 12, cream]]
+  ]
+  -- the touch buttons, when there's no console around the screen
+  game shell not [
+    circle [W - 48, H - 48, 34, "#00000066"]
+    text ["MINE", W - 48, H - 44, 13, gold]
+    circle [W - 48, H - 128, 34, "#00000066"]
+    text ["SENTRY [you sentries-left]", W - 48, H - 124, 11, cyan]
+  ]
+  (you hurt > 0) [rect [0, 0, W, H, "#ff000040"]]
+  hint : cond [game shell, "stick to move · drag to look · hold A to fire", any, "drag to walk · tap the middle to fire"]
+  (now < 5) and (game over = "") [text [hint, W / 2, H - 40, 10, "#f4f1eacc"]]
+  again : cond [game shell, "press A to go again", any, "tap to go again"]
+  ending : [title colour | rect [0, H / 2 - 44, W, 88, "#000000aa"], text [title, W / 2, H / 2 - 8, 22, colour], text [again, W / 2, H / 2 + 22, 11, cream]]
+  game over = "won" [ending ["LAB CLEARED", "#7bd389"]]
+  game over = "lost" [ending ["YOU WERE CAUGHT", red]]
+  game over = "p[you-id]" [ending ["YOU WIN", "#7bd389"]]
+  (game versus) and (game over != "") and (game over != "p[you-id]") [ending ["YOU LOSE", red]]
 ]
 ````
 
@@ -11155,16 +11282,16 @@ body.t-out #out{display:block}body.t-st #st{display:block}
 <div id="modal"><div id="mBox"><div class="mh"><h2 id="mTitle"></h2><button class="x" data-close aria-label="Close">✕</button></div><div id="mBody"></div></div></div>
 <div id="moreMenu"><button data-m="net">Play with a friend</button><button data-m="lib">Library</button><button data-m="restart">Restart</button><button data-m="share">Share</button><button data-m="spec">Read the spec</button><a href="./">About Sprout</a></div><div id="toast"></div><div id="scrubTip"></div>
 
-<script src="sprout3.js?v=20261121q"></script>
-<script src="words.js?v=20261121q"></script>
-<script src="parse.js?v=20261121q"></script>
-<script src="stdlib.js?v=20261121q"></script>
-<script src="libs.js?v=20261121q"></script>
-<script src="kernels.js?v=20261121q"></script>
-<script src="live3.js?v=20261121q"></script>
-<script src="sqlite-web.js?v=20261121q"></script>
-<script src="gpu-paint.js?v=20261121q"></script>
-<script src="gpu-spork.js?v=20261121q"></script>
+<script src="sprout3.js?v=20261121r"></script>
+<script src="words.js?v=20261121r"></script>
+<script src="parse.js?v=20261121r"></script>
+<script src="stdlib.js?v=20261121r"></script>
+<script src="libs.js?v=20261121r"></script>
+<script src="kernels.js?v=20261121r"></script>
+<script src="live3.js?v=20261121r"></script>
+<script src="sqlite-web.js?v=20261121r"></script>
+<script src="gpu-paint.js?v=20261121r"></script>
+<script src="gpu-spork.js?v=20261121r"></script>
 <script>
 "use strict";
 const V="20261120m";
@@ -11187,7 +11314,7 @@ const EX=[
  ["terrain","tool","Terrain","A map made of smooth noise and coloured by scales, flying east: the simplex and chroma libraries, wrapped as Sprout modules. Change the sea level or the colours while it flies."],
  ["gears","tool","Gears","A parametric tool: two gears worked out from a few numbers. Change the teeth, the module or the speed while they turn, or press tweak and drag a number."],
  ["swarm","game","Swarm","Thousands of drones fly at the core and turrets you program in Sprout shoot them down. Change turret-program while it runs. Fused loops, a SIMD spork kernel and WebGPU drawing keep it fast."],
- ["silvereye","game","SilverEye","Sneak through an underground lab with proximity mines and turrets you program, in real 3D (also on its own page, taskiap.com/silvereye): three.js, Quaternius soldiers, a Kenney blaster, textured concrete and steel. Drag to walk, tap to fire, MINE to drop one."],
+ ["silvereye","game","SilverEye","A low-poly 3D shooter: sneak through a lab of guards with proximity mines and turrets you program. With Two players it becomes a duel, first to five. Best on its own page, taskiap.com/silvereye, on a pocket console with a stick"],
  ["silvereye-2d","game","SilverEye 2D","Sneak through an underground lab and take down the guards. Proximity mines arm after a moment and go off when anyone comes near, you included. Drag to walk, tap to fire, MINE to drop one."],
  ["volley","game","Volley","A game for two phones, no server: send an invite by text and each player drags their own paddle. Alone, the top paddle plays itself."],
  ["galaxy","game","Galaxy","Twenty thousand stars falling toward your finger. One fused loop moves them all, and WebGPU draws them in one call."],
@@ -11666,8 +11793,8 @@ $("bShare").onclick=share;$("bNet").onclick=()=>window.NET&&NET.invite();
  if(sv&&sv.code&&sv.code.trim()){curEx=sv.ex||"";dirty=!!sv.dirty;setCode(sv.code);build(sv.code,true);if(document.body.classList.contains("prog"))tab("out");thenOpen()}
  else loadEx("ace-board",true).then(thenOpen)})();
 </script>
-<script src="editor-tools.js?v=20261121q"></script>
-<script src="net.js?v=20261121q"></script>
+<script src="editor-tools.js?v=20261121r"></script>
+<script src="net.js?v=20261121r"></script>
 </body></html>
 ````
 
