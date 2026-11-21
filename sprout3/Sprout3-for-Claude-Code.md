@@ -10645,7 +10645,7 @@ export function makeView(canvas, base, opts) {
     if (!fogSet) { scene.fog = null; scene.background = new THREE.Color(0x101215); }
     renderer.render(scene, camera);
   }
-  return { render, has3d: list => list.some(d => WORDS.has(d[0])), loading: () => [...assets.values()].some(a => !a.ready && !a.failed) };
+  return { render, setLowRes: n => { opts.lowRes = n; }, has3d: list => list.some(d => WORDS.has(d[0])), loading: () => [...assets.values()].some(a => !a.ready && !a.failed) };
 }
 export { WORDS };
 ````
