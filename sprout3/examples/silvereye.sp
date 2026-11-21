@@ -732,9 +732,11 @@ draw : [game |
   game guards keep [g | gone (g fell) not] each [g |
     near : distance [g x, g y, you x, you y] < 3
     big : g boss else false
-    clip : cond [g health <= 0, "Death", big and (g alert) and near, "Shoot_Big", big and (g alert), "Run", big, "Walk", g alert and near, "Idle_Shoot", g alert, "Run_Gun", any, "Run"]
-    time : cond [g health <= 0, now - (g fell else now), g alert, now, any, now * 0.55]
-    model [cond [big, "mech", any, "soldier"], g x, 0, g y, g angle, cond [big, 2.5, any, 1.8] * (cond [tiny, 0.6, any, 1]), clip, time]
+    -- guards: Quaternius's adventurer in field gear, a blaster in his hand; walking his rounds, running and firing once
+    -- he's seen you, taking aim when he's close. The Warden is the mech.
+    clip : cond [g health <= 0, "Death", big and (g alert) and near, "Shoot_Big", big and (g alert), "Run", big, "Walk", (g fired else false), "Gun_Shoot", g alert and near, "Idle_Gun_Pointing", g alert, "Run_Shoot", any, "Walk"]
+    time : cond [g health <= 0, now - (g fell else now), g alert, now, any, now * 0.9]
+    model [cond [big, "mech", any, "adventurer"], g x, 0, g y, g angle, cond [big, 2.5, any, 1.8] * (cond [tiny, 0.6, any, 1]), clip, time, cond [big, false, any, "blaster_g"]]
   ]
   -- scientists, in their lab coats: walking their rounds, frozen when the alarm is up, falling if hit
   game scientists keep [c | gone (c fell) not] each [c |

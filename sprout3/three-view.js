@@ -97,6 +97,29 @@ export function makeView(canvas, base, opts) {
     }
     return pool[k];
   }
+  // a model can hold another in its right hand (model's ninth argument): it goes on the wrist bone, so it moves with
+  // every animation, and it's sized in the world (a fifth of the character's height) whatever the bone's own scale
+  const tmpScale = new THREE.Vector3();
+  function handOf(inst) {
+    if (inst.hand !== undefined) return inst.hand;
+    let h = null; inst.root.traverse(o => { if (!h && o.isBone && /(wrist|hand|palm)[._ ]?r(ight)?$|right.?hand/i.test(o.name)) h = o; });
+    return (inst.hand = h);
+  }
+  function carry(inst, heldName, size) {
+    if (!heldName) { if (inst.carried) inst.carried.pivot.visible = false; return; }
+    const ha = asset(heldName), hand = handOf(inst); if (!ha.ready || !hand) return;
+    if (!inst.carried || inst.carried.name !== heldName) {
+      if (inst.carried) hand.remove(inst.carried.pivot);
+      const obj = SkeletonUtils.clone(ha.scene), pivot = new THREE.Group(), turn = new THREE.Group();
+      obj.position.copy(ha.centre).multiplyScalar(-1); turn.add(obj); pivot.add(turn);
+      // the blasters' barrels run along their length: turned to run along the hand, out past the fingers
+      turn.rotation.set(-Math.PI / 2, 0, Math.PI / 2);
+      hand.add(pivot); inst.carried = { name: heldName, pivot, longest: ha.longest };
+    }
+    inst.root.updateMatrixWorld(true); hand.getWorldScale(tmpScale);
+    inst.carried.pivot.scale.setScalar(0.2 * size / (inst.carried.longest * (tmpScale.x || 1)));
+    inst.carried.pivot.visible = true;
+  }
   function pose(inst, name, clipName, time) {
     const a = asset(name); if (!inst.mixer || !clipName) return;
     let action = inst.actions.get(clipName);
@@ -142,6 +165,7 @@ export function makeView(canvas, base, opts) {
         if (inst.root.userData.blob) inst.root.userData.blob.position.y = (0.012 - num(a[2], 0)) / Math.max(0.01, num(a[5], 1));
         inst.root.rotation.y = modelYaw(num(a[4], 0)); inst.root.scale.setScalar(num(a[5], 1));
         pose(inst, name, a[6] === undefined || a[6] === false ? null : fmt(a[6]), a[7]);
+        carry(inst, a[8] === undefined || a[8] === false ? null : fmt(a[8]), num(a[5], 1));
       } else if (word === "hold") {
         const name = fmt(a[0]), k = holdCounts.get(name) || 0; holdCounts.set(name, k + 1);
         const inst = instance(name, k, holdGroup); if (!inst) continue;

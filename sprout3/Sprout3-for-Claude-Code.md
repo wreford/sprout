@@ -10,13 +10,13 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 
 ```
 node test.js          # language tests (303)
-node game-tests.js    # game tests (191)
+node game-tests.js    # game tests (192)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 494 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 495 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4400,7 +4400,7 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   const fx = [], g = L.makeGame(src, { onEffect: e => fx.push(e[0] + ":" + e[1][0]) });
   g.tick(1 / 60);
   const d = g.draw(), count = w => d.filter(x => x[0] === w).length;
-  ok("silvereye: a camera, the walls as blocks, the guards as models, the gun held", count("view") === 1 && count("block") > 100 && d.filter(x => x[0] === "model" && x[1][0] === "soldier").length === 6 && count("hold") === 1);
+  ok("silvereye: a camera, the walls as blocks, the guards as models, the gun held", count("view") === 1 && count("block") > 100 && d.filter(x => x[0] === "model" && x[1][0] === "adventurer").length === 6 && count("hold") === 1);
   ok("silvereye: the overlay is still 2D words, with touch buttons in the editor", count("text") > 0 && d.some(x => x[0] === "text" && x[1][0] === "MINE"));
   // the stick walks and strafes, the look drag turns
   const w = L.makeGame(src, {}); w.tick(1 / 60, pad({ look: 0 }));
@@ -4415,7 +4415,7 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     ok("silvereye: the health bar stays out of the way until you're hurt", bars === 0, bars); }
   put(g, 0, { x: 9.5, y: 7.5, angle: 0 });
   for (let t = 0; t < 240; t++) g.tick(1 / 60, keys(t % 20 < 2 ? ["space"] : []));
-  const fallen = g.draw().filter(x => x[0] === "model" && x[1][0] === "soldier" && x[1][6] === "Death");
+  const fallen = g.draw().filter(x => x[0] === "model" && x[1][0] === "adventurer" && x[1][6] === "Death");
   ok("silvereye: a guard who is shot plays his fall, timed from when he fell", fallen.length >= 1 && fallen[0][1][7] >= 0 && fallen[0][1][7] < 4, fallen.map(x => x[1][7]));
   ok("silvereye: shots make a sound", fx.includes("sound:shoot"));
   { const hs = L.makeGame(src, {}); hs.tick(1 / 60, pad({})); put(hs, 0, { x: 9.5, y: 7.5, angle: 0 }); hs.tick(1 / 60, pad({ fire: true }));
@@ -4636,7 +4636,7 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     ok("silvereye: the relay has the Warden, a mech with four times a guard's health", w && w.field("health") === 400 && wd.draw().some(x => x[0] === "model" && x[1][0] === "mech")); }
   { const bd = L.makeGame(src, {}); bd.tick(1 / 60, pad({})); put(bd, 0, { x: 9.5, y: 7.5, angle: 0 });
     for (let t = 0; t < 30; t++) bd.tick(1 / 60, pad({ fire: true }));
-    const soldiers = () => bd.draw().filter(x => x[0] === "model" && x[1][0] === "soldier").length, before = soldiers();
+    const soldiers = () => bd.draw().filter(x => x[0] === "model" && x[1][0] === "adventurer").length, before = soldiers();
     for (let t = 0; t < 60 * 7; t++) bd.tick(1 / 60, pad({}));
     ok("silvereye: a fallen guard is gone after a few seconds", f(bd, "guards").part(3).field("health") <= 0 && soldiers() === before - 1, [before, soldiers()]); }
   { const bh = L.makeGame(src, {}); bh.tick(1 / 60, pad({})); put(bh, 0, { x: 2.5, y: 2.5, angle: Math.PI });
@@ -4662,6 +4662,7 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     fc.tick(1 / 60, pad({})); const g3 = f(fc, "guards").part(3), toYou = Math.atan2(7.5 - g3.field("y"), 9.5 - g3.field("x"));
     const off = Math.abs(((g3.field("angle") - toYou) % (2 * Math.PI) + 3 * Math.PI) % (2 * Math.PI) - Math.PI);
     ok("silvereye: an alert guard turns to face you, not away", g3.field("alert") === true && off < 0.2, [g3.field("angle"), toYou]); }
+  ok("silvereye: guards are the adventurer, with a blaster in his hand", g.draw().filter(x => x[0] === "model" && x[1][0] === "adventurer" && x[1][8] === "blaster_g").length >= 5);
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });
@@ -10672,6 +10673,29 @@ export function makeView(canvas, base, opts) {
     }
     return pool[k];
   }
+  // a model can hold another in its right hand (model's ninth argument): it goes on the wrist bone, so it moves with
+  // every animation, and it's sized in the world (a fifth of the character's height) whatever the bone's own scale
+  const tmpScale = new THREE.Vector3();
+  function handOf(inst) {
+    if (inst.hand !== undefined) return inst.hand;
+    let h = null; inst.root.traverse(o => { if (!h && o.isBone && /(wrist|hand|palm)[._ ]?r(ight)?$|right.?hand/i.test(o.name)) h = o; });
+    return (inst.hand = h);
+  }
+  function carry(inst, heldName, size) {
+    if (!heldName) { if (inst.carried) inst.carried.pivot.visible = false; return; }
+    const ha = asset(heldName), hand = handOf(inst); if (!ha.ready || !hand) return;
+    if (!inst.carried || inst.carried.name !== heldName) {
+      if (inst.carried) hand.remove(inst.carried.pivot);
+      const obj = SkeletonUtils.clone(ha.scene), pivot = new THREE.Group(), turn = new THREE.Group();
+      obj.position.copy(ha.centre).multiplyScalar(-1); turn.add(obj); pivot.add(turn);
+      // the blasters' barrels run along their length: turned to run along the hand, out past the fingers
+      turn.rotation.set(-Math.PI / 2, 0, Math.PI / 2);
+      hand.add(pivot); inst.carried = { name: heldName, pivot, longest: ha.longest };
+    }
+    inst.root.updateMatrixWorld(true); hand.getWorldScale(tmpScale);
+    inst.carried.pivot.scale.setScalar(0.2 * size / (inst.carried.longest * (tmpScale.x || 1)));
+    inst.carried.pivot.visible = true;
+  }
   function pose(inst, name, clipName, time) {
     const a = asset(name); if (!inst.mixer || !clipName) return;
     let action = inst.actions.get(clipName);
@@ -10717,6 +10741,7 @@ export function makeView(canvas, base, opts) {
         if (inst.root.userData.blob) inst.root.userData.blob.position.y = (0.012 - num(a[2], 0)) / Math.max(0.01, num(a[5], 1));
         inst.root.rotation.y = modelYaw(num(a[4], 0)); inst.root.scale.setScalar(num(a[5], 1));
         pose(inst, name, a[6] === undefined || a[6] === false ? null : fmt(a[6]), a[7]);
+        carry(inst, a[8] === undefined || a[8] === false ? null : fmt(a[8]), num(a[5], 1));
       } else if (word === "hold") {
         const name = fmt(a[0]), k = holdCounts.get(name) || 0; holdCounts.set(name, k + 1);
         const inst = instance(name, k, holdGroup); if (!inst) continue;
@@ -11500,9 +11525,11 @@ draw : [game |
   game guards keep [g | gone (g fell) not] each [g |
     near : distance [g x, g y, you x, you y] < 3
     big : g boss else false
-    clip : cond [g health <= 0, "Death", big and (g alert) and near, "Shoot_Big", big and (g alert), "Run", big, "Walk", g alert and near, "Idle_Shoot", g alert, "Run_Gun", any, "Run"]
-    time : cond [g health <= 0, now - (g fell else now), g alert, now, any, now * 0.55]
-    model [cond [big, "mech", any, "soldier"], g x, 0, g y, g angle, cond [big, 2.5, any, 1.8] * (cond [tiny, 0.6, any, 1]), clip, time]
+    -- guards: Quaternius's adventurer in field gear, a blaster in his hand; walking his rounds, running and firing once
+    -- he's seen you, taking aim when he's close. The Warden is the mech.
+    clip : cond [g health <= 0, "Death", big and (g alert) and near, "Shoot_Big", big and (g alert), "Run", big, "Walk", (g fired else false), "Gun_Shoot", g alert and near, "Idle_Gun_Pointing", g alert, "Run_Shoot", any, "Walk"]
+    time : cond [g health <= 0, now - (g fell else now), g alert, now, any, now * 0.9]
+    model [cond [big, "mech", any, "adventurer"], g x, 0, g y, g angle, cond [big, 2.5, any, 1.8] * (cond [tiny, 0.6, any, 1]), clip, time, cond [big, false, any, "blaster_g"]]
   ]
   -- scientists, in their lab coats: walking their rounds, frozen when the alarm is up, falling if hit
   game scientists keep [c | gone (c fell) not] each [c |
