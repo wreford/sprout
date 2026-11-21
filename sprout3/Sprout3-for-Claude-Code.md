@@ -9908,7 +9908,7 @@ const seeded = seed => () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = 
 // ===================================================================== the connection
 const NET = window.NET = {
   active: false, me: 1, seed: 0, frame: 0, pc: null, dc: null, id: "", acc: 0, waiting: false,
-  inputs: { 1: new Map(), 2: new Map() }, queue: [], codeAt: new Map(), hashes: new Map(), theirs: new Map(), applying: false,
+  inputs: { 1: new Map(), 2: new Map() }, past: new Map(), queue: [], codeAt: new Map(), hashes: new Map(), theirs: new Map(), applying: false,
   gameOptions() { return this.active ? { players: 2, me: this.me, random: this.random } : {}; },
 };
 function send(msg) { if (NET.dc && NET.dc.readyState === "open") NET.dc.send(JSON.stringify(msg)); }
@@ -9949,7 +9949,7 @@ async function reply(offer) {
 // ===================================================================== lockstep
 function begin(seed, src) {
   NET.seed = seed; NET.random = seeded(seed); NET.active = true; NET.frame = 0; NET.acc = 0;
-  NET.inputs = { 1: new Map(), 2: new Map() }; NET.queue = []; NET.codeAt = new Map(); NET.hashes = new Map(); NET.theirs = new Map(); NET.checks = 0; NET.mismatches = 0;
+  NET.inputs = { 1: new Map(), 2: new Map() }; NET.queue = []; NET.codeAt = new Map(); NET.hashes = new Map(); NET.theirs = new Map(); NET.checks = 0; NET.mismatches = 0; NET.past = new Map();
   for (let f = 0; f < DELAY; f++) { NET.inputs[1].set(f, { ev: [], held: [] }); NET.inputs[2].set(f, { ev: [], held: [] }); }
   if (src !== code) setCode(src);
   NET.applying = true; try { build(src, true); } finally { NET.applying = false; }
@@ -9978,6 +9978,8 @@ NET.advance = function (dt, held) {
       if (e.kind === "down") game.down(e.x, e.y, p); else if (e.kind === "move") game.move(e.x, e.y, p); else game.up(p);
     }
     game.tick(STEP, heldOf(a.held), heldOf(b.held));
+    // used inputs are kept a couple of seconds, in case a resync sends this screen back a few frames
+    NET.past.set(NET.frame, { 1: a, 2: b }); NET.past.delete(NET.frame - 150);
     NET.inputs[1].delete(NET.frame); NET.inputs[2].delete(NET.frame);
     NET.frame++; NET.acc -= STEP; steps++;
     if (NET.frame % HASH_EVERY === 0) { const h = fnv(S.format(game.state)); NET.hashes.set(NET.frame, h); send({ t: "hash", f: NET.frame, h }); compare(NET.frame); }
@@ -10001,7 +10003,12 @@ function receive(m) {
     game.setState(fromWire(m.state), m.clock);
     for (const k of [...NET.inputs[1].keys()]) if (k < m.f) NET.inputs[1].delete(k);
     for (const k of [...NET.inputs[2].keys()]) if (k < m.f) NET.inputs[2].delete(k);
+    // this screen may already be past m.f: put back the inputs it used for those frames, so they can run again
+    for (let f = m.f; f < NET.frame; f++) { const used = NET.past.get(f); if (used) { if (!NET.inputs[1].has(f)) NET.inputs[1].set(f, used[1]); if (!NET.inputs[2].has(f)) NET.inputs[2].set(f, used[2]); } }
     NET.frame = m.f; NET.resyncs = (NET.resyncs || 0) + 1;
+    // the frames just ahead of the jump need this screen's input too, or both screens would wait for it forever:
+    // send an empty one for each that's missing (the inviter already has its own for them)
+    for (let f = m.f; f < m.f + DELAY; f++) if (!NET.inputs[NET.me].has(f)) { const msg = { ev: [], held: [] }; NET.inputs[NET.me].set(f, msg); send({ t: "in", f, ...msg }); }
   }
 }
 // an edit goes to both screens and is swapped in on the same frame
