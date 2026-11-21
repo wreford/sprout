@@ -75,11 +75,20 @@ body{background:radial-gradient(120% 80% at 50% 0%,#1d1d24 0%,var(--page) 70%)}
 #bZ{z-index:2;position:absolute;left:8px;top:4px;width:64px;height:26px;border-radius:13px 13px 6px 6px;font-size:13px;background:linear-gradient(180deg,#6a6a74,#45454d);color:#ddd}
 #bZ+.lbl{left:80px;top:13px}
 .menu button .val{float:right;color:#9be7ff}
+.menu button.locked{opacity:.35}
+.menu button small{display:block;font:600 9px/1.3 var(--sans);letter-spacing:.08em;color:#9aa3b5;margin-top:3px}
+.menu button.sel small{color:#3a2c00}
 .menu button.sel .val{color:#1a1300}
 #about,#help{justify-content:flex-start;background:#05060af4}
 /* a long menu (settings) is tighter and scrolls inside the screen */
 .screenUI{overflow:auto;-webkit-overflow-scrolling:touch}
 #settings{justify-content:flex-start;gap:6px}
+#title{gap:5px}
+#title .logo{font-size:28px}
+#title .menu{gap:3px;margin-top:6px}
+#title .menu button{padding:7px 10px;font-size:11px}
+#title .foot{margin-top:4px}
+#missions .menu button{padding:8px 10px;font-size:11px;text-align:left}
 #settings .logo{font-size:18px!important}
 #settings .menu{gap:3px;margin-top:4px}
 #settings .menu button{padding:7px 10px;font-size:10.5px}
@@ -150,7 +159,7 @@ body{background:radial-gradient(120% 80% at 50% 0%,#1d1d24 0%,var(--page) 70%)}
         <div class="logo">SILVEREYE</div>
         <div class="sub">A LAB · PROXIMITY MINES · TURRETS YOU PROGRAM</div>
         <div class="menu" id="titleMenu">
-          <button data-do="mission" class="sel">Mission</button>
+          <button data-do="campaign" class="sel">Campaign</button>
           <button data-do="sim">Combat sim</button>
           <button data-do="duel" id="tDuel">2 phones</button>
           <button data-do="settings">Settings</button>
@@ -159,6 +168,11 @@ body{background:radial-gradient(120% 80% at 50% 0%,#1d1d24 0%,var(--page) 70%)}
           <button data-do="about">About</button>
         </div>
         <div class="foot">STICK OR TAP TO CHOOSE · A TO START</div>
+      </div>
+      <div class="screenUI" id="missions">
+        <div class="logo" style="font-size:20px">CAMPAIGN</div>
+        <div class="menu" id="missionMenu"></div>
+        <div class="foot">BEAT A MISSION TO OPEN THE NEXT</div>
       </div>
       <div class="screenUI" id="settings">
         <div class="logo" style="font-size:22px">SETTINGS</div>
@@ -318,12 +332,15 @@ const original = {}, programs = store.get("silvereye.programs", {});
 const settings = Object.assign({ fov: 100, sims: 3, skill: 2, look: 1, buzz: true, shake: true, arena: "lab", two: "duel", turbo: false, sight: true, assist: "auto" }, store.get("silvereye.settings", {}));
 // the default view went from 90 to 100 degrees: anyone still on the old default moves up with it, once
 if (!store.get("silvereye.fov100", false)) { if (settings.fov === 90) settings.fov = 100; store.set("silvereye.fov100", true); store.set("silvereye.settings", settings); }
-let mode = "mission", tab = "turret";
+let mode = "mission", tab = "turret", stageNum = 1, campaignOn = false;
+// the campaign: which missions are open, and the best you've done in each
+const MISSIONS = ["THE LAB", "THE DEPOT", "THE RELAY"];
+const progress = () => store.get("silvereye.campaign", {});
 function compose(over) {
   const p = Object.assign({}, programs, over || {});
   let src = full;
   for (const k in PROGRAMS) if (p[k]) src = putCell(src, PROGRAMS[k], p[k]);
-  return src.replace(/^mode : .*$/m, 'mode : "' + mode + '"').replace(/^simulants : \d+/m, "simulants : " + settings.sims).replace(/^simulant-skill : \d+/m, "simulant-skill : " + settings.skill).replace(/^difficulty : \d+/m, "difficulty : " + settings.skill).replace(/^arena : .*$/m, 'arena : "' + settings.arena + '"').replace(/^two-phones : .*$/m, 'two-phones : "' + settings.two + '"').replace(/^turbo : \w+/m, "turbo : " + (settings.turbo && store.get("silvereye.turbo-unlocked", false))).replace(/^sight-always : \w+/m, "sight-always : " + settings.sight);
+  return src.replace(/^stage : \d+/m, "stage : " + stageNum).replace(/^campaign : \w+/m, "campaign : " + campaignOn).replace(/^mode : .*$/m, 'mode : "' + mode + '"').replace(/^simulants : \d+/m, "simulants : " + settings.sims).replace(/^simulant-skill : \d+/m, "simulant-skill : " + settings.skill).replace(/^difficulty : \d+/m, "difficulty : " + settings.skill).replace(/^arena : .*$/m, 'arena : "' + settings.arena + '"').replace(/^two-phones : .*$/m, 'two-phones : "' + settings.two + '"').replace(/^turbo : \w+/m, "turbo : " + (settings.turbo && store.get("silvereye.turbo-unlocked", false))).replace(/^sight-always : \w+/m, "sight-always : " + settings.sight);
 }
 function setErr(m) { if (m) say("Not yet: " + m.msg + " · the last one that worked keeps running.", true); }
 function setPaused(p) { paused = p; }
@@ -460,7 +477,7 @@ $("pReset").onclick = () => { ta.value = original[tab]; paintCode(); applyProgra
 // ---- the title, settings, about and pause screens, worked by tapping or by the stick and A
 const SKILLS = ["", "ROOKIE", "AGENT", "ACE"], FOVS = [80, 90, 100, 110, 120];
 let screen = "title", sel = 0;
-const SCREENS = ["title", "pause", "settings", "about", "help"];
+const SCREENS = ["title", "pause", "settings", "about", "help", "missions"];
 const menuOf = () => screen ? $(screen).querySelector(".menu") : null;
 const LOOKS = [0.6, 0.8, 1, 1.3, 1.6];
 // the scoreboard on the pause screen, in a match: takedowns and accuracy, best first
@@ -486,18 +503,32 @@ function showScreen(name) {
   for (const n of SCREENS) $(n).classList.toggle("on", n === name);
   $("mDuel").textContent = window.NET && NET.active ? "Linked · player " + NET.me : "Duel a friend";
   if (name === "pause") boardUI();
+  if (name === "missions") missionsUI();
   settingsUI(); highlight();
 }
 let back = "title";
 function closeScreens() { showScreen(""); }
 function highlight() { const m = menuOf(); if (!m) return; [...m.children].forEach((b, i) => b.classList.toggle("sel", i === sel)); }
-function start(m) { mode = m; store.set("silvereye.last", m); if (!(window.NET && NET.active)) build(compose(), true); closeScreens(); }
+function missionsUI() {
+  const box = $("missionMenu"), pr = progress(); box.innerHTML = "";
+  MISSIONS.forEach((name, i) => {
+    const n = i + 1, done = pr[n], open = n === 1 || pr[n - 1], b = document.createElement("button");
+    b.dataset.do = open ? "stage" + n : "locked"; if (!open) b.className = "locked";
+    const medals = done ? "★".repeat(done.medals) + "☆".repeat(3 - done.medals) + "  best " + Math.floor(done.best / 60) + ":" + String(Math.floor(done.best % 60)).padStart(2, "0") : open ? "not yet done" : "locked";
+    b.innerHTML = n + " · " + name + "<small>" + medals + "</small>"; box.appendChild(b);
+  });
+  const back = document.createElement("button"); back.dataset.do = "back"; back.textContent = "Back"; box.appendChild(back);
+}
+function start(m) { campaignOn = false; mode = m; store.set("silvereye.last", m); if (!(window.NET && NET.active)) build(compose(), true); closeScreens(); }
 function choose(what) {
   audio(); beep(880, 0.04);
   const linked = window.NET && NET.active;
   if (what === "mission") start("mission");
+  else if (what === "campaign") { back = "title"; showScreen("missions"); }
+  else if (/^stage\d$/.test(what)) { stageNum = +what.slice(5); mode = "mission"; campaignOn = true; store.set("silvereye.last", "campaign"); if (!linked) build(compose(), true); closeScreens(); }
+  else if (what === "locked") toast("Beat the mission before it first");
   else if (what === "sim") start("sim");
-  else if (what === "duel") { store.set("silvereye.last", "duel"); closeScreens(); if (!linked) { mode = settings.two === "coop" ? "mission" : "duel"; build(compose(), true); NET.invite(); } }
+  else if (what === "duel") { store.set("silvereye.last", "duel"); closeScreens(); if (!linked) { mode = settings.two === "coop" ? "mission" : "duel"; campaignOn = settings.two === "coop"; build(compose(), true); NET.invite(); } }
   else if (what === "program") openProgram(true);
   else if (what === "settings") { back = screen || "pause"; showScreen("settings"); }
   else if (what === "help") { back = screen || "title"; showScreen("help"); }
@@ -649,9 +680,29 @@ function paint(list) {
 let view = null, last = 0;
 // all three medals in one mission unlock Turbo, once
 let lastOver = "";
+let advanceAt = 0;
+function campaignStep(now) {
+  try {
+    const st = game.state; if (!campaignOn || st.field("over") !== "won") return;
+    const linked = window.NET && NET.active;
+    if (linked && NET.me !== 1) return;
+    const pressing = pad.fire || GP.fire || KEYS.has("space") || KEYS.has("enter");
+    if (!pressing || game.clock - st.field("over-at") < 1.5 || now - advanceAt < 1000 || stageNum >= MISSIONS.length) return;
+    advanceAt = now; stageNum++; window.build(compose(), false);
+  } catch (e) {}
+}
+function keepProgress() {
+  try {
+    const st = game.state; if (!campaignOn || st.field("over") !== "won") return;
+    const pr = progress(), me = st.field("agents").part(1), fired = me.field("shots-fired");
+    const began = st.fieldNames().includes("began") ? st.field("began") : 0, time = st.field("over-at") - began;
+    const medals = (time < 180 ? 1 : 0) + (fired && me.field("shots-hit") / fired >= 0.6 ? 1 : 0) + (me.field("damage-taken") === 0 ? 1 : 0);
+    const was = pr[stageNum]; if (!was || time < was.best || medals > was.medals) { pr[stageNum] = { best: was ? Math.min(was.best, time) : time, medals: Math.max(medals, was ? was.medals : 0) }; store.set("silvereye.campaign", pr); }
+  } catch (e) {}
+}
 function watchMedals() {
   try {
-    const st = game.state, over = st.field("over"); if (over === lastOver) return; lastOver = over;
+    const st = game.state, over = st.field("over"); if (over === lastOver) return; lastOver = over; keepProgress();
     if (over !== "won" || store.get("silvereye.turbo-unlocked", false)) return;
     const me = st.field("agents").part(1), fired = me.field("shots-fired");
     if (st.field("over-at") < 180 && fired && me.field("shots-hit") / fired >= 0.6 && me.field("damage-taken") === 0) { store.set("silvereye.turbo-unlocked", true); toast("All three medals: TURBO unlocked in Settings"); }
@@ -684,7 +735,7 @@ function frame(now) {
     try { game.swap(compose(good)); } catch (_) {}
     return;
   }
-  linkUI(); watchMedals();
+  linkUI(); watchMedals(); campaignStep(now);
   heartbeat(now);
   const list = game.draw();
   let ox = 0, oy = 0;

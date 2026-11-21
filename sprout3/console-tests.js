@@ -22,17 +22,17 @@ server.listen(0, async () => {
   try {
     const page = await (await browser.newContext(devices["iPhone 13"])).newPage(), errors = [];
     page.on("pageerror", e => errors.push(e.message));
-    await page.goto(url); await page.waitForTimeout(800);
+    await page.goto(url); await page.waitForSelector("#boot", { timeout: 5000 }).catch(() => {});
     ok("the console switches on with its POCKET64 screen", await page.isVisible("#boot"));
     await page.waitForTimeout(2600);
-    ok("then the title, with the modes", (await page.$$eval("#titleMenu button", bs => bs.map(b => b.dataset.do))).join() === "mission,sim,duel,settings,program,help,about");
+    ok("then the title, with the modes", (await page.$$eval("#titleMenu button", bs => bs.map(b => b.dataset.do))).join() === "campaign,sim,duel,settings,program,help,about");
     await page.click("#titleMenu button[data-do=about]");
     ok("About credits the games that inspired it", /GoldenEye 007/.test(await page.textContent("#about")) && /Perfect Dark/.test(await page.textContent("#about")) && /none of their work/.test(await page.textContent("#about")));
     await page.click("#about button[data-do=back]"); await page.click("#titleMenu button[data-do=settings]");
     const fov = await page.textContent("#vFov"); await page.click("#settingsMenu button[data-do=fov]");
     ok("Settings change the view", (await page.textContent("#vFov")) !== fov);
     await page.click("#settingsMenu button[data-do=back]");
-    await page.click("#titleMenu button[data-do=mission]"); await page.waitForTimeout(300);
+    await page.click("#titleMenu button[data-do=campaign]"); await page.click("#missionMenu button[data-do=stage1]"); await page.waitForTimeout(300);
     const at = () => page.evaluate(() => { const a = game.state.field("agents").part(1); return { x: a.field("x"), shots: a.field("shots-fired") }; });
     const before = await at();
     const zone = await (await page.$("#stickZone")).boundingBox();
@@ -48,6 +48,13 @@ server.listen(0, async () => {
     await page.click("#pClose");
     await page.click("#bStart"); await page.waitForTimeout(100);
     ok("Start pauses", await page.isVisible("#pause"));
+    await page.click("#pause button[data-do=resume]");
+    // win the mission, press A, and the campaign moves on to mission 2 (the page swaps in the next stage)
+    await page.evaluate(() => { const S = Sprout3, m = new Map(S.fieldsOf(game.state)); m.set("over", "won"); m.set("over-at", game.clock - 3); game.setState(S.valueCellOf([], m), game.clock); });
+    await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2); await page.mouse.down();
+    await page.waitForFunction(() => game.state.field("on-stage") === 2, null, { timeout: 8000 }).catch(() => {}); await page.mouse.up();
+    ok("A after a won mission starts the next one", await page.evaluate(() => game.state.field("on-stage") === 2 && game.state.field("guards").count() === 7 && game.state.field("over") === ""));
+    ok("the campaign remembers the mission you beat", await page.evaluate(() => !!JSON.parse(localStorage.getItem("silvereye.campaign") || "{}")[1]));
     ok("no errors on the page", errors.length === 0, errors);
   } catch (e) { fail++; console.log("FAIL the console tests stopped:", e.message); }
   await browser.close(); server.close();
