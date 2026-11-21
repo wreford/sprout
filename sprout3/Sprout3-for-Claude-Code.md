@@ -11215,6 +11215,8 @@ draw : [game |
     text ["SENTRY [you sentries-left]", W - 48, H - 124, 11, cyan]
   ]
   (you hurt > 0) [rect [0, 0, W, H, "#ff000040"]]
+  -- low on health: the edges pulse red, in time with a heartbeat
+  (up you) and (you health <= 35) and (now * 1.2 % 1 < 0.25) [rect [0, 0, W, 6, "#ff1a1a66"], rect [0, H - 6, W, 6, "#ff1a1a66"], rect [0, 0, 6, H, "#ff1a1a66"], rect [W - 6, 0, 6, H, "#ff1a1a66"]]
   -- a red mark at the edge, pointing to where the hurt came from
   (you hurt > -0.6) [
     toward-hurt : wrap (you hurt-y - (you y) atan2 (you hurt-x - (you x)) - (you angle))
