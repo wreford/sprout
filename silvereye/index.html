@@ -87,6 +87,8 @@ body{background:radial-gradient(120% 80% at 50% 0%,#1d1d24 0%,var(--page) 70%)}
 .about b{color:#fff}
 .about h3{font:900 italic 16px var(--sans);margin:0 0 6px;color:#fff}
 #tabs{display:flex;gap:6px;margin:0 0 6px}
+#examples{display:flex;gap:5px;flex-wrap:wrap;margin:0 0 7px}
+#examples button{appearance:none;border:1px solid #e9b90f55;background:#e9b90f14;color:#ffd166;font:700 10px/1 var(--sans);padding:6px 9px;border-radius:999px;cursor:pointer}
 #tabs button{appearance:none;border:1px solid #ffffff24;background:#26262d;color:#bbb;font:800 10px/1 var(--sans);letter-spacing:.1em;padding:7px 10px;border-radius:999px;cursor:pointer}
 #tabs button.on{background:var(--yellow);color:#1a1300;border-color:transparent}
 /* select and start, and the speaker */
@@ -240,6 +242,7 @@ body{background:radial-gradient(120% 80% at 50% 0%,#1d1d24 0%,var(--page) 70%)}
   <div id="prog" aria-label="Turret program">
     <div id="tabs"><button data-p="turret" class="on">TURRETS</button><button data-p="simulant">SIMULANTS</button></div>
     <p id="progHelp"></p>
+    <div id="examples"></div>
     <div id="codeBox"><pre id="srcHL" aria-hidden="true"></pre><textarea id="src" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off"></textarea></div>
     <div id="status"></div>
     <div class="row"><button id="pReset">Put the first one back</button><button id="pClose">Done</button></div>
@@ -357,9 +360,95 @@ function paintCode() { $("srcHL").innerHTML = ta.value.split("\n").map(l => Spro
 ta.addEventListener("scroll", () => { $("srcHL").scrollTop = ta.scrollTop; $("srcHL").scrollLeft = ta.scrollLeft; });
 ta.addEventListener("input", () => { paintCode(); clearTimeout(editT); editT = setTimeout(applyProgram, 300); });
 ta.addEventListener("keydown", e => { if (e.key === "Tab") { e.preventDefault(); ta.setRangeText("  ", ta.selectionStart, ta.selectionEnd, "end"); ta.dispatchEvent(new Event("input")); } e.stopPropagation(); });
+// example programs: each a small idea, explained in its comments; tap one and it runs at once
+const EXAMPLES = {
+  turret: {
+    "Sharpshooter": `-- Sharpshooter: turns slowly and only fires when dead on target.
+-- Fewer shots, but almost all of them land.
+turret-program : [t |
+  want : t dy atan2 (t dx)          -- the angle to the target
+  off : wrap (want - (t aim))       -- how far round it still has to turn
+  [turn : clamp [off * 2, -0.5, 0.5], fire : (t sees) and (t cool <= 0) and (off abs < 0.03)]
+]
+`,
+    "Sprayer": `-- Sprayer: swings round fast and fires the moment anyone is roughly in front.
+-- Lots of noise, some hits. Good at a doorway.
+turret-program : [t |
+  want : t dy atan2 (t dx)
+  off : wrap (want - (t aim))
+  [turn : clamp [off * 10, -1, 1], fire : (t sees) and (t cool <= 0) and (off abs < 0.35)]
+]
+`,
+    "Sweeper": `-- Sweeper: with nobody in sight it sweeps slowly round, like a searchlight;
+-- once it sees someone it locks on as usual.
+turret-program : [t |
+  want : t dy atan2 (t dx)
+  off : wrap (want - (t aim))
+  turn : cond [t sees, clamp [off * 4, -1, 1], any, 0.25]
+  [turn : turn, fire : (t sees) and (t cool <= 0) and (off abs < 0.1)]
+]
+`,
+    "Crowd only": `-- Crowd only: holds fire for one person and opens up when two or more are in sight.
+-- count is how many it can see.
+turret-program : [t |
+  want : t dy atan2 (t dx)
+  off : wrap (want - (t aim))
+  [turn : clamp [off * 4, -1, 1], fire : (t count >= 2) and (t cool <= 0) and (off abs < 0.15)]
+]
+`,
+  },
+  simulant: {
+    "Coward": `-- Coward: fights while healthy, then backs away firing once health drops below 50.
+simulant-program : [s |
+  want : cond [s sees, s dy atan2 (s dx), any, s goal-dy atan2 (s goal-dx)]
+  off : wrap (want - (s aim))
+  scared : s health < 50
+  [
+    turn : clamp [off * 3, -1, 1]
+    walk : cond [(s sees) and scared, -1, s sees, 0.5, any, 1 - (off abs) max 0]
+    strafe : cond [scared, s clock * 3 sin, any, 0]
+    fire : (s sees) and (off abs < 0.15)
+  ]
+]
+`,
+    "Berserker": `-- Berserker: runs straight at whoever it sees and never stops shooting.
+simulant-program : [s |
+  want : cond [s sees, s dy atan2 (s dx), any, s goal-dy atan2 (s goal-dx)]
+  off : wrap (want - (s aim))
+  [turn : clamp [off * 5, -1, 1], walk : 1, strafe : 0, fire : s sees]
+]
+`,
+    "Sniper": `-- Sniper: stands still once it sees you, takes its time, and only fires when the aim is true.
+simulant-program : [s |
+  want : cond [s sees, s dy atan2 (s dx), any, s goal-dy atan2 (s goal-dx)]
+  off : wrap (want - (s aim))
+  [
+    turn : clamp [off * 2, -1, 1]
+    walk : cond [s sees, 0, any, 1 - (off abs) max 0]
+    strafe : 0
+    fire : (s sees) and (off abs < 0.04)
+  ]
+]
+`,
+    "Dancer": `-- Dancer: circles whoever it sees, always strafing one way, hard to hit.
+-- id makes each dancer circle its own way round.
+simulant-program : [s |
+  want : cond [s sees, s dy atan2 (s dx), any, s goal-dy atan2 (s goal-dx)]
+  off : wrap (want - (s aim))
+  way : cond [s id % 2 = 0, 1, any, -1]
+  [turn : clamp [off * 3, -1, 1], walk : cond [s sees, 0.2, any, 1], strafe : cond [s sees, way, any, 0], fire : (s sees) and (off abs < 0.2)]
+]
+`,
+  },
+};
+function examplesUI() {
+  const box = $("examples"); box.innerHTML = "";
+  for (const name in EXAMPLES[tab]) { const b = document.createElement("button"); b.textContent = name; b.onclick = () => { ta.value = EXAMPLES[tab][name]; paintCode(); applyProgram(); }; box.appendChild(b); }
+}
 function showTab(k) {
   tab = k; ta.value = programs[k] || original[k]; paintCode(); $("progHelp").innerHTML = HELP[k] + " Change it and it thinks the new way at once, on both phones in a duel.";
   for (const b of $("tabs").children) b.classList.toggle("on", b.dataset.p === k);
+  examplesUI();
   say(k === "turret" ? "Set down a turret (C-up) and watch it think." : "Simulants play in Combat sim, and join a duel.");
 }
 $("tabs").addEventListener("click", e => { const b = e.target.closest("button"); if (b) showTab(b.dataset.p); });

@@ -536,6 +536,16 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     const spots = new Set(S.partsOf(f(seven, "agents")).map(a => a.field("x") + "," + a.field("y")));
     for (let t = 0; t < 300; t++) seven.tick(1 / 60, pad({}));
     ok("silvereye: seven simulants each start in their own place and play", f(seven, "agents").count() === 8 && spots.size === 8); }
+  // the example programs on the console's program sheet: each one runs in the game, with turrets and firing, and nothing warns
+  { const html = fs.readFileSync(__dirname + "/../silvereye/index.html", "utf8"), examples = [...html.matchAll(/`(-- [\s\S]*?)`/g)].map(m => m[1]);
+    const putCell = (code, name, text) => { const b = code.search(new RegExp("^" + name + " : \\[", "m")), e = code.indexOf("\n]\n", b); return code.slice(0, b) + text.trim() + code.slice(e + 2); };
+    const said = []; S.setLog(m => said.push(m));
+    for (const x of examples) {
+      const code = putCell(src.replace(/^mode : "mission"/m, 'mode : "sim"'), /turret-program/.test(x) ? "turret-program" : "simulant-program", x), w = L.makeGame(code, {});
+      for (let t = 0; t < 200; t++) w.tick(1 / 60, pad({ sentry: t < 2, fire: t % 20 < 5, walk: Math.sin(t / 20) }));
+    }
+    S.setLog(m => logs.push(m));
+    ok("silvereye: the eight example programs all run, and nothing warns", examples.length === 8 && said.length === 0, said.slice(0, 2)); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });

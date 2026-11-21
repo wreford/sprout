@@ -10,13 +10,13 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 
 ```
 node test.js          # language tests (303)
-node game-tests.js    # game tests (170)
+node game-tests.js    # game tests (171)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 473 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 474 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4571,6 +4571,16 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     const spots = new Set(S.partsOf(f(seven, "agents")).map(a => a.field("x") + "," + a.field("y")));
     for (let t = 0; t < 300; t++) seven.tick(1 / 60, pad({}));
     ok("silvereye: seven simulants each start in their own place and play", f(seven, "agents").count() === 8 && spots.size === 8); }
+  // the example programs on the console's program sheet: each one runs in the game, with turrets and firing, and nothing warns
+  { const html = fs.readFileSync(__dirname + "/../silvereye/index.html", "utf8"), examples = [...html.matchAll(/`(-- [\s\S]*?)`/g)].map(m => m[1]);
+    const putCell = (code, name, text) => { const b = code.search(new RegExp("^" + name + " : \\[", "m")), e = code.indexOf("\n]\n", b); return code.slice(0, b) + text.trim() + code.slice(e + 2); };
+    const said = []; S.setLog(m => said.push(m));
+    for (const x of examples) {
+      const code = putCell(src.replace(/^mode : "mission"/m, 'mode : "sim"'), /turret-program/.test(x) ? "turret-program" : "simulant-program", x), w = L.makeGame(code, {});
+      for (let t = 0; t < 200; t++) w.tick(1 / 60, pad({ sentry: t < 2, fire: t % 20 < 5, walk: Math.sin(t / 20) }));
+    }
+    S.setLog(m => logs.push(m));
+    ok("silvereye: the eight example programs all run, and nothing warns", examples.length === 8 && said.length === 0, said.slice(0, 2)); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });
@@ -10897,7 +10907,7 @@ play : [game |
   -- a mine is thrown up to 1.8 m ahead, and lands short of the wall
   throw : [a | 1.8 min (cast [a x, a y, a angle] far - 0.25) max 0.3]
   all-mines : game mines .. (droppers collect [a | [x : a angle cos * (throw a) + (a x), y : a angle sin * (throw a) + (a y), armed : now + mine-arm, owner : a id]])
-  placed : game turrets .. (setters collect [a | [id : "[a id]-[now]", health : 60, x : a angle cos * 0.7 + (a x), y : a angle sin * 0.7 + (a y), aim : a angle, cool : 0.6, shots : 0, fired : false, victim : "", owner : a id]])
+  placed : game turrets .. (setters collect [a | tag : "[a id]-[now]", [id : tag, health : 60, x : a angle cos * 0.7 + (a x), y : a angle sin * 0.7 + (a y), aim : a angle, cool : 0.6, shots : 0, fired : false, victim : "", owner : a id]])
   -- each turret finds the nearest mark it can see (never its owner), asks turret-program what to do, turns, maybe fires
   thought : placed collect [t |
     in-sight : marks keep [m | ((m who = "guard") or ((m who = "agent") and (m id != (t owner)))) and (distance [t x, t y, m x, m y] < sentry-reach) and (clear-line [t x, t y, m x, m y])]

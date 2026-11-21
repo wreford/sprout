@@ -295,7 +295,7 @@ play : [game |
   -- a mine is thrown up to 1.8 m ahead, and lands short of the wall
   throw : [a | 1.8 min (cast [a x, a y, a angle] far - 0.25) max 0.3]
   all-mines : game mines .. (droppers collect [a | [x : a angle cos * (throw a) + (a x), y : a angle sin * (throw a) + (a y), armed : now + mine-arm, owner : a id]])
-  placed : game turrets .. (setters collect [a | [id : "[a id]-[now]", health : 60, x : a angle cos * 0.7 + (a x), y : a angle sin * 0.7 + (a y), aim : a angle, cool : 0.6, shots : 0, fired : false, victim : "", owner : a id]])
+  placed : game turrets .. (setters collect [a | tag : "[a id]-[now]", [id : tag, health : 60, x : a angle cos * 0.7 + (a x), y : a angle sin * 0.7 + (a y), aim : a angle, cool : 0.6, shots : 0, fired : false, victim : "", owner : a id]])
   -- each turret finds the nearest mark it can see (never its owner), asks turret-program what to do, turns, maybe fires
   thought : placed collect [t |
     in-sight : marks keep [m | ((m who = "guard") or ((m who = "agent") and (m id != (t owner)))) and (distance [t x, t y, m x, m y] < sentry-reach) and (clear-line [t x, t y, m x, m y])]
