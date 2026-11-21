@@ -592,8 +592,8 @@ update : [game |
   ]
   again : (wants (g input) restart) or (two [wants (g input2) restart] else [false])
   g over = "" [play g] else [
-    -- in a campaign a won mission waits here for the next one (the page moves it on); the last one just ends
-    waits : campaign and (g over = "won") and (stage < (missions length))
+    -- in a campaign a won mission waits here: the page moves on to the next one, or rolls the credits after the last
+    waits : campaign and (g over = "won")
     (again and (waits not) and (g clock - (g over-at) > 1.5)) [cond [two and (coop not), g with duel with [match-start : g clock], two, start with [agents : [agent [1, mission start @ 1, mission start @ 2, mission start @ 3], agent [2, mission start @ 1, mission start @ 2 + 1, mission start @ 3]], input : g input, input2 : g input2], any, start]] else [g]
   ]
 ]
@@ -808,7 +808,7 @@ draw : [game |
   (game clock < (you safe-until)) [text ["PROTECTED", W / 2, H / 2 + 52, 9, cyan]]
   hint : cond [game shell, "stick to move · drag to look · hold A to fire", any, "drag to walk · tap the middle to fire"]
   (now < 5) and (game over = "") [text [hint, W / 2, H - 70, 10, "#f4f1eacc"]]
-  again : cond [campaign and (game over = "won") and (stage < (missions length)), "press A for the next mission", game shell, "press A to go again", any, "tap to go again"]
+  again : cond [campaign and (game over = "won") and (stage < (missions length)), "press A for the next mission", campaign and (game over = "won"), "press A for the credits", game shell, "press A to go again", any, "tap to go again"]
   -- the end: what happened, and how you did (time, accuracy, takedowns)
   taken : game over-at
   accuracy : cond [you shots-fired = 0, 0, any, you shots-hit / (you shots-fired) * 100 round]
