@@ -10,13 +10,13 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 
 ```
 node test.js          # language tests (303)
-node game-tests.js    # game tests (214)
+node game-tests.js    # game tests (215)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 517 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 518 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4434,7 +4434,9 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     const marks = texts(mk).filter(t => /^\d+m$/.test(t[0]));
     ok("silvereye: the two generators and the intel are marked, with how far", marks.filter(t => t[4] === "#ffd166cc").length === 2 && marks.filter(t => t[4] === "#ff7ab2cc").length === 1, marks);
     put(mk, 0, { angle: 0.6 + Math.PI }); mk.tick(1 / 60, pad({}));
-    ok("silvereye: a marker off to one side sits at the edge, pointing", texts(mk).filter(t => t[0] === "▶" || t[0] === "◀").length === 3); }
+    ok("silvereye: a marker off to one side sits at the edge, pointing", texts(mk).filter(t => t[0] === "▶" || t[0] === "◀").length === 3);
+    const edge = texts(mk).filter(t => t[0] === "▶" || t[0] === "◀");
+    ok("silvereye: and markers at the same edge don't sit on top of each other", edge.every((t, i) => edge.every((u, j) => i === j || t[1] !== u[1] || Math.abs(t[2] - u[2]) >= 20)), edge.map(t => t.slice(0, 3))); }
   { const mi = L.makeGame(src, {}); mi.tick(1 / 60, pad({})); put(mi, 0, { x: 2.5, y: 2.5, angle: Math.PI }); mi.tick(1 / 60, pad({ fire: true }));
     ok("silvereye: a missed shot sparks on the wall", mi.draw().filter(x => x[0] === "flash" && x[1][4] === "#fff2b3" && Math.abs(x[1][0] - 1.0) < 0.1).length === 1); }
   ok("silvereye: a guard who goes down drops ammo", f(g, "pickups").count() === 9 && f(g, "pickups").part(9).field("kind") === "ammo");
@@ -11805,21 +11807,22 @@ draw : [game |
     ]
   ]
   -- markers: where each objective is and how far, on the screen over it, or at the edge when it's off to one side
-  mark-at : [px py colour |
+  -- (each in its own row there, by slot, so two off the same way don't land on top of each other)
+  mark-at : [px py colour slot |
     gd : distance [you x, you y, px, py]
     rel : wrap (py - (you y) atan2 (px - (you x)) - (you angle))
     on : rel abs < (half-across * 0.9)
     depth : gd * (rel cos) max 0.5
     sx : cond [on, rel tan / (half-across tan) * (W / 2) + (W / 2), rel > 0, W - 10, any, 10]
-    sy : cond [on, H / 2 - (2.1 - eye / depth / (half-tall tan) * (H / 2)) max 30 min (H - 60), any, H / 2]
+    sy : cond [on, H / 2 - (2.1 - eye / depth / (half-tall tan) * (H / 2)) max 30 min (H - 60), any, slot * 26 + (H / 2 - 52)]
     text [cond [on, "◆", rel > 0, "▶", any, "◀"], sx, sy, cond [on, 8, any, 10], colour]
     text ["[gd round]m", sx, sy + 9, 7, colour]
   ]
   (mode = "mission") and (game versus not) and (game over = "") and (now - (game began) > 4.5) and (up you) [
-    game machines keep [m | m health > 0] each [m | mark-at [m x, m y, "#ffd166cc"]]
-    (game intel not) [mark-at [mission intel @ 1, mission intel @ 2, "#ff7ab2cc"]]
+    game machines keep [m | m health > 0] each [m | mark-at [m x, m y, "#ffd166cc", m id]]
+    (game intel not) [mark-at [mission intel @ 1, mission intel @ 2, "#ff7ab2cc", 0]]
     finished : (game guards all [g | g health <= 0]) and (game machines all [m | m health <= 0]) and (game intel)
-    finished [mark-at [mission exit @ 1, mission exit @ 2, "#7bd389"]]
+    finished [mark-at [mission exit @ 1, mission exit @ 2, "#7bd389", 2]]
   ]
   -- the other players' names over their heads, when they're in sight: codenames, or the simulants' own names
   -- (red for a rival, blue for a partner in a two-phone mission)
