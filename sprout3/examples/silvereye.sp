@@ -250,6 +250,7 @@ start :
   scientists : mode != "mission" [[]] else [mission scientists collect [[k, sx, sy, tx, ty] | scientist [k, sx, sy, tx, ty]]]
   machines : (mode != "mission") or (difficulty = 1) [[]] else [mission targets numbered collect [[k, spot] | [id : k, x : spot @ 1, y : spot @ 2, health : 100, model : spot @ 3, size : spot @ 4]]]
   intel : false
+  holes : []
   match-start : 0
   began : 0
   feed : []
@@ -347,6 +348,12 @@ play : [game |
   shooters : ready keep can-shoot
   shot-hits : shooters keep [a | a aimed != false] collect [a | [from : a id, key : "[a aimed who] [a aimed id]", steady : a zoomed, heavy : a weapon = "heavy"]]
   (shooters length > 0) [sound "shoot"]
+  -- a miss leaves a hole in the wall where it struck (the last 24 stay)
+  misses : shooters keep [a | a aimed = false] collect [a |
+    far : cast [a x, a y, a angle] far - 0.02
+    [x : a angle cos * far + (a x), y : a angle sin * far + (a y), h : noise [now * 13, a id] * 0.5 + 1.05]
+  ]
+  holes : (game holes else []) .. misses
   (ready any [a | (a asks fire) and (a clip = 0) and (a fire-wait <= 0) and (a reloading <= 0) and (a bot not)]) [beep [180, 0.03]]
   -- mines and turrets, each with its owner
   droppers : ready keep can-drop
@@ -551,6 +558,7 @@ play : [game |
     scientists : scientists, agents : back, guards : fallen, mines : still, turrets : standing, pickups : pickups, machines : machines, intel : intel
     feed : game feed .. (went-down collect [d | [by : d last-by, who : d id, at : now]]) keep [e | now - (e at) < 4]
     blasts : game blasts keep [b | now - (b at) < 0.6] .. (goes-off collect [m | [x : m x, y : m y, at : now]]) .. (gone-turrets collect [t | [x : t x, y : t y, at : now]])
+    holes : cond [holes length > 24, holes drop (holes length - 24), any, holes]
     over : over, over-at : now, ticked : done-count, ticked-at : cond [newly, now, any, game ticked-at else -10]
     shell : game input held "shell" else false
   ]
@@ -615,6 +623,8 @@ draw : [game |
   wall-cells each [[c, r] | block [c - 0.5, 1.25, r - 0.5, 1, 2.5, 1, cond [mode = "mission", mission walls, any, "concrete"]]]
   -- skirting at the foot of every wall
   wall-cells each [[c, r] | block [c - 0.5, 0.09, r - 0.5, 1.02, 0.18, 1.02, "#1a1c20"]]
+  -- bullet holes where shots struck the walls
+  (game holes else []) each [h | block [h x, h h, h y, 0.07, 0.07, 0.07, "#0b0b0d"]]
   -- the mission's targets, standing until wrecked
   game machines each [m | model [m model, m x, 0, m y, 0, m size, false, 0]]
   props each [[name, px, pz, turn, size] | model [name, px, 0, pz, turn, size, false, 0]]

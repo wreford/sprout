@@ -598,6 +598,10 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     const soldiers = () => bd.draw().filter(x => x[0] === "model" && x[1][0] === "soldier").length, before = soldiers();
     for (let t = 0; t < 60 * 7; t++) bd.tick(1 / 60, pad({}));
     ok("silvereye: a fallen guard is gone after a few seconds", f(bd, "guards").part(3).field("health") <= 0 && soldiers() === before - 1, [before, soldiers()]); }
+  { const bh = L.makeGame(src, {}); bh.tick(1 / 60, pad({})); put(bh, 0, { x: 2.5, y: 2.5, angle: Math.PI });
+    for (let t = 0; t < 60 * 10; t++) bh.tick(1 / 60, pad({ fire: t % 20 < 2, reload: t % 200 === 0 }));
+    const hs = S.partsOf(f(bh, "holes"));
+    ok("silvereye: misses leave holes in the wall, the last 24 kept", hs.length > 3 && hs.length <= 24 && hs.every(h => Math.abs(h.field("x") - 1.0) < 0.05), [hs.length, hs[0] && hs[0].field("x")]); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });

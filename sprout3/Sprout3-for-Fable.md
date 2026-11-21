@@ -64,7 +64,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
   - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
   - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
-- **Tests:** 489 pass, 303 for the language and 186 for the games.
+- **Tests:** 490 pass, 303 for the language and 187 for the games.
 
 ## Open questions for Troy
 
@@ -83,13 +83,13 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 
 ```
 node test.js          # language tests (303)
-node game-tests.js    # game tests (186)
+node game-tests.js    # game tests (187)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 489 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 490 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4706,6 +4706,10 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     const soldiers = () => bd.draw().filter(x => x[0] === "model" && x[1][0] === "soldier").length, before = soldiers();
     for (let t = 0; t < 60 * 7; t++) bd.tick(1 / 60, pad({}));
     ok("silvereye: a fallen guard is gone after a few seconds", f(bd, "guards").part(3).field("health") <= 0 && soldiers() === before - 1, [before, soldiers()]); }
+  { const bh = L.makeGame(src, {}); bh.tick(1 / 60, pad({})); put(bh, 0, { x: 2.5, y: 2.5, angle: Math.PI });
+    for (let t = 0; t < 60 * 10; t++) bh.tick(1 / 60, pad({ fire: t % 20 < 2, reload: t % 200 === 0 }));
+    const hs = S.partsOf(f(bh, "holes"));
+    ok("silvereye: misses leave holes in the wall, the last 24 kept", hs.length > 3 && hs.length <= 24 && hs.every(h => Math.abs(h.field("x") - 1.0) < 0.05), [hs.length, hs[0] && hs[0].field("x")]); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });
@@ -11004,6 +11008,7 @@ start :
   scientists : mode != "mission" [[]] else [mission scientists collect [[k, sx, sy, tx, ty] | scientist [k, sx, sy, tx, ty]]]
   machines : (mode != "mission") or (difficulty = 1) [[]] else [mission targets numbered collect [[k, spot] | [id : k, x : spot @ 1, y : spot @ 2, health : 100, model : spot @ 3, size : spot @ 4]]]
   intel : false
+  holes : []
   match-start : 0
   began : 0
   feed : []
@@ -11101,6 +11106,12 @@ play : [game |
   shooters : ready keep can-shoot
   shot-hits : shooters keep [a | a aimed != false] collect [a | [from : a id, key : "[a aimed who] [a aimed id]", steady : a zoomed, heavy : a weapon = "heavy"]]
   (shooters length > 0) [sound "shoot"]
+  -- a miss leaves a hole in the wall where it struck (the last 24 stay)
+  misses : shooters keep [a | a aimed = false] collect [a |
+    far : cast [a x, a y, a angle] far - 0.02
+    [x : a angle cos * far + (a x), y : a angle sin * far + (a y), h : noise [now * 13, a id] * 0.5 + 1.05]
+  ]
+  holes : (game holes else []) .. misses
   (ready any [a | (a asks fire) and (a clip = 0) and (a fire-wait <= 0) and (a reloading <= 0) and (a bot not)]) [beep [180, 0.03]]
   -- mines and turrets, each with its owner
   droppers : ready keep can-drop
@@ -11305,6 +11316,7 @@ play : [game |
     scientists : scientists, agents : back, guards : fallen, mines : still, turrets : standing, pickups : pickups, machines : machines, intel : intel
     feed : game feed .. (went-down collect [d | [by : d last-by, who : d id, at : now]]) keep [e | now - (e at) < 4]
     blasts : game blasts keep [b | now - (b at) < 0.6] .. (goes-off collect [m | [x : m x, y : m y, at : now]]) .. (gone-turrets collect [t | [x : t x, y : t y, at : now]])
+    holes : cond [holes length > 24, holes drop (holes length - 24), any, holes]
     over : over, over-at : now, ticked : done-count, ticked-at : cond [newly, now, any, game ticked-at else -10]
     shell : game input held "shell" else false
   ]
@@ -11369,6 +11381,8 @@ draw : [game |
   wall-cells each [[c, r] | block [c - 0.5, 1.25, r - 0.5, 1, 2.5, 1, cond [mode = "mission", mission walls, any, "concrete"]]]
   -- skirting at the foot of every wall
   wall-cells each [[c, r] | block [c - 0.5, 0.09, r - 0.5, 1.02, 0.18, 1.02, "#1a1c20"]]
+  -- bullet holes where shots struck the walls
+  (game holes else []) each [h | block [h x, h h, h y, 0.07, 0.07, 0.07, "#0b0b0d"]]
   -- the mission's targets, standing until wrecked
   game machines each [m | model [m model, m x, 0, m y, 0, m size, false, 0]]
   props each [[name, px, pz, turn, size] | model [name, px, 0, pz, turn, size, false, 0]]
