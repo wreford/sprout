@@ -121,9 +121,9 @@ The page and `bench.html` need a local web server, such as `python3 -m http.serv
 - `examples/terrain.sp`: Terrain: a map from simplex noise coloured by chroma scales, flying east (Tools group)
 - `net.js`: Two players, no server (decision 107): WebRTC with invite and reply links sent by text, lockstep with seeded random numbers, state fingerprints and resync, shared live coding
 - `examples/volley.sp`: Volley: the first game for two phones (Games group)
-- `examples/bunker.sp`: Bunker: a first-person raycaster in an underground lab, with guards and proximity mines (Games group)
+- `examples/silvereye-2d.sp`: SilverEye 2D: a first-person raycaster in an underground lab, with guards and proximity mines (Games group)
 - `three-view.js`: The 3D view (decision 108): view, block, model, hold, flash and fog drawn with three.js, objects kept between frames, models posed by the game's clock
-- `examples/bunker3d.sp`: Bunker 3D: Bunker's game code with a draw in 3D words, CC0 models and textures (Games group)
+- `examples/silvereye.sp`: SilverEye: SilverEye 2D's game code plus programmable turrets, with a draw in 3D words, CC0 models and textures (Games group); played on its own page, silvereye.html
 - `examples/swarm.sp`: Swarm: thousands of drones in columns against turrets programmed in Sprout; fused loops, a SIMD spork kernel, WebGPU drawing (Games group)
 - `examples/recipes.sp`: Recipes: quicksort, primes, FizzBuzz, a vector with its own + (prints; not a game)
 - `play.html`: The editor at taskiap.com/sprout3/play.html (opens #ex=name, #spec, #history): a library of examples with artwork, the running game shown like album art, live editing, a now-playing bar whose progress bar rewinds time, state, output and the spec; light and dark
@@ -4354,43 +4354,43 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   ok("volley alone: no input2, and the top paddle plays itself", alone.state.field("input2") === S.UNSET && f(alone, "far") !== 180);
 }
 
-// ---------------- Bunker: a raycaster with guards and proximity mines
+// ---------------- SilverEye 2D: a raycaster with guards and proximity mines
 {
-  const src = fs.readFileSync(__dirname + "/examples/bunker.sp", "utf8"), held = ks => S.valueCellOf([], new Map(ks.map(k => [k, true])));
+  const src = fs.readFileSync(__dirname + "/examples/silvereye-2d.sp", "utf8"), held = ks => S.valueCellOf([], new Map(ks.map(k => [k, true])));
   const fresh = () => L.makeGame(src, {});
   const place = (g, hero) => { const m = new Map(S.fieldsOf(g.state)); m.set("hero", S.valueCellOf([], new Map(Object.entries(hero)))); g.setState(S.valueCellOf([], m)); };
   const g = fresh(); g.tick(1 / 60);
   const walls = g.draw().filter(d => d[0] === "rect").slice(1, 73);
-  ok("bunker: a wall strip for every ray, nearer walls taller", walls.length === 72 && new Set(walls.map(d => Math.round(d[1][3]))).size > 5);
+  ok("silvereye 2d: a wall strip for every ray, nearer walls taller", walls.length === 72 && new Set(walls.map(d => Math.round(d[1][3]))).size > 5);
   for (let t = 0; t < 30; t++) g.tick(1 / 60, held(["up"]));
-  ok("bunker: walking moves you", f(g, "hero").field("x") > 2.6);
+  ok("silvereye 2d: walking moves you", f(g, "hero").field("x") > 2.6);
   const a = fresh(); place(a, { x: 9.5, y: 7.5, angle: 0, health: 100 });
   for (let t = 0; t < 240; t++) a.tick(1 / 60, held(t % 20 < 2 ? ["space"] : []));
-  ok("bunker: two hits take down a guard", f(a, "guards").part(3).field("health") <= 0);
+  ok("silvereye 2d: two hits take down a guard", f(a, "guards").part(3).field("health") <= 0);
   const b = fresh(); place(b, { x: 12.5, y: 3.6, angle: Math.PI / 2, health: 100 });
   for (let t = 0; t < 3; t++) b.tick(1 / 60, held(["m"]));
-  ok("bunker: a mine is dropped and one fewer is carried", f(b, "mines").count() === 1 && f(b, "carried") === 5);
+  ok("silvereye 2d: a mine is dropped and one fewer is carried", f(b, "mines").count() === 1 && f(b, "carried") === 5);
   for (let t = 0; t < 400; t++) b.tick(1 / 60);
-  ok("bunker: a guard who walks onto an armed mine is blown up", f(b, "guards").part(1).field("health") <= 0 && f(b, "mines").count() === 0);
+  ok("silvereye 2d: a guard who walks onto an armed mine is blown up", f(b, "guards").part(1).field("health") <= 0 && f(b, "mines").count() === 0);
   const c = fresh(); place(c, { x: 2.5, y: 2.5, angle: 0, health: 100 });
   c.tick(1 / 60, held(["m"])); for (let t = 0; t < 120; t++) c.tick(1 / 60);
-  ok("bunker: your own mine goes off under you too", f(c, "hero").field("health") < 100 && f(c, "mines").count() === 0);
+  ok("silvereye 2d: your own mine goes off under you too", f(c, "hero").field("health") < 100 && f(c, "mines").count() === 0);
 }
 
-// ---------------- Bunker 3D: the same game, drawn with 3D words (decision 108)
+// ---------------- SilverEye: the same game, drawn with 3D words (decision 108)
 {
-  const src = fs.readFileSync(__dirname + "/examples/bunker3d.sp", "utf8"), held = ks => S.valueCellOf([], new Map(ks.map(k => [k, true])));
+  const src = fs.readFileSync(__dirname + "/examples/silvereye.sp", "utf8"), held = ks => S.valueCellOf([], new Map(ks.map(k => [k, true])));
   const fx = [], g = L.makeGame(src, { onEffect: e => fx.push(e[0] + ":" + e[1][0]) });
   const place = hero => { const m = new Map(S.fieldsOf(g.state)); m.set("hero", S.valueCellOf([], new Map(Object.entries(hero)))); g.setState(S.valueCellOf([], m)); };
   g.tick(1 / 60);
   const d = g.draw(), count = w => d.filter(x => x[0] === w).length;
-  ok("bunker 3d: a camera, the walls as blocks, the guards as models, the gun held", count("view") === 1 && count("block") > 100 && d.filter(x => x[0] === "model" && x[1][0] === "soldier").length === 6 && count("hold") === 1);
-  ok("bunker 3d: the overlay is still 2D words", count("text") > 0 && count("circle") > 0);
+  ok("silvereye: a camera, the walls as blocks, the guards as models, the gun held", count("view") === 1 && count("block") > 100 && d.filter(x => x[0] === "model" && x[1][0] === "soldier").length === 6 && count("hold") === 1);
+  ok("silvereye: the overlay is still 2D words", count("text") > 0 && count("circle") > 0);
   place({ x: 9.5, y: 7.5, angle: 0, health: 100 });
   for (let t = 0; t < 240; t++) g.tick(1 / 60, held(t % 20 < 2 ? ["space"] : []));
   const fallen = g.draw().filter(x => x[0] === "model" && x[1][0] === "soldier" && x[1][6] === "Death");
-  ok("bunker 3d: a guard who is shot plays his fall, timed from when he fell", fallen.length >= 1 && fallen[0][1][7] >= 0 && fallen[0][1][7] < 4, fallen.map(x => x[1][7]));
-  ok("bunker 3d: shots make a sound", fx.includes("sound:shoot"));
+  ok("silvereye: a guard who is shot plays his fall, timed from when he fell", fallen.length >= 1 && fallen[0][1][7] >= 0 && fallen[0][1][7] < 4, fallen.map(x => x[1][7]));
+  ok("silvereye: shots make a sound", fx.includes("sound:shoot"));
   // turrets: set one down and its program takes the guards on
   const sentry = (code) => {
     const t = L.makeGame(code, {}), m = new Map(S.fieldsOf(t.state));
@@ -4400,11 +4400,11 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     return t;
   };
   const s1 = sentry(src);
-  ok("bunker 3d: a turret is set down and one fewer is carried", f(s1, "turrets").count() === 1 && f(s1, "sentries-left") === 1);
-  ok("bunker 3d: the turret's program shoots the guard it sees", f(s1, "turrets").part(1).field("shots") > 0 && f(s1, "guards").part(3).field("health") <= 0);
-  ok("bunker 3d: the turret is drawn as a model", s1.draw().some(x => x[0] === "model" && x[1][0] === "turret"));
+  ok("silvereye: a turret is set down and one fewer is carried", f(s1, "turrets").count() === 1 && f(s1, "sentries-left") === 1);
+  ok("silvereye: the turret's program shoots the guard it sees", f(s1, "turrets").part(1).field("shots") > 0 && f(s1, "guards").part(3).field("health") <= 0);
+  ok("silvereye: the turret is drawn as a model", s1.draw().some(x => x[0] === "model" && x[1][0] === "turret"));
   const s2 = sentry(src.replace("fire : (t sees) and (t cool <= 0) and (off abs < 0.1)", "fire : false"));
-  ok("bunker 3d: change turret-program and the turret changes", f(s2, "turrets").part(1).field("shots") === 0);
+  ok("silvereye: change turret-program and the turret changes", f(s2, "turrets").part(1).field("shots") === 0);
 }
 
 // ---------------- Swarm: thousands of drones in columns, turrets with a program
@@ -6413,7 +6413,7 @@ footer{margin-top:64px;color:var(--fg3);font-size:13px}
 <main>
 <h1>Sprout</h1>
 
-<p class="lede">Sprout is a small language for games and simulations. It runs in your browser, and you can change a program while it runs.</p>
+<p class="lede">Sprout is a small language for games and simulations. It runs in your browser, on a phone as well as a desk, and you can change a program while it runs.</p>
 <p><a class="go" href="play.html">Open the editor &rarr;</a></p>
 
 <h2>A taste</h2>
@@ -6430,6 +6430,12 @@ double : [n | n * 2]
 p : [x : 1, y : 2]
 p with [x : 5] print
 <span class="cm">-- prints [x : 5, y : 2]</span></pre>
+<p>And the brain of every turret in <a href="play.html#ex=swarm">Swarm</a>, which you can change while they fire:</p>
+<pre>turret-program : [t |
+  want : t dy atan2 (t dx)
+  off : wrap (want - (t aim))
+  [turn : clamp [off * 6, -1, 1], fire : (t far &lt; reach) and (t cool &lt;= 0) and (off abs &lt; 0.06)]
+]</pre>
 
 <h2>Ideas</h2>
 <ul>
@@ -6438,16 +6444,26 @@ p with [x : 5] print
 <li>No keywords for control. <code>else</code>, <code>times</code>, <code>match</code> and <code>cond</code> are ordinary cells in the library.</li>
 <li>Values never change in place, so a running game can be rewound, saved or compared at any moment.</li>
 <li>A game is three cells: <code>start</code>, <code>update</code> and <code>draw</code>.</li>
-<li>Pure loops are compiled ahead. <code>spork</code> runs a million Monte Carlo trials on WebAssembly SIMD or the GPU.</li>
+<li>Pure loops are compiled ahead. Loops over records of numbers are fused into one pass over columns, <code>spork</code> runs a million Monte Carlo trials on WebAssembly SIMD or the GPU, and WebGPU draws thousands of shapes in one call.</li>
+<li>Games can be 3D: <code>view</code>, <code>block</code>, <code>model</code> and <code>hold</code> draw a scene with three.js and real CC0 models, from the same draw cell.</li>
+<li>Two players, no server: send an invite by text, and two phones play in lockstep, peer to peer.</li>
+<li>Game logic you can rewrite mid-game: the turrets in Swarm and SilverEye run a <code>turret-program</code> cell you edit while they fire.</li>
 <li>Dates, times, money, sizes and colours are written as they are: <code>2026-11-20 + 30</code>, <code>$19.99 * 3</code>, <code>640x480 / 2</code>.</li>
 <li><code>parse</code> reads text and code with rules that are ordinary values, and a grammar is one cell.</li>
 <li>Code is data: <code>quote</code> it, change it, <code>eval</code> it.</li>
 <li>Scripts are coroutines that stay values, so a game can rewind through them.</li>
+<li>Popular JavaScript libraries are wrapped as Sprout modules: chroma, simplex noise, math.js, date-fns, Fuse, compromise, Tone and Turf.</li>
+<li>The editor is made for touch: a big code area, live values beside each line, drag a number to tweak it, and history to scrub back through.</li>
 <li>The core is about a thousand lines of JavaScript. The standard words, parse and speed live in libraries.</li>
 </ul>
 
 <h2>Try</h2>
 <ul class="list">
+<li><a href="play.html#ex=swarm">Swarm</a><span>Thousands of drones against turrets you program in Sprout.</span></li>
+<li><a href="silvereye.html">SilverEye</a><span>A 3D game on its own page: a lab of guards, proximity mines and turrets whose program you write as you play.</span></li>
+<li><a href="play.html#ex=volley">Volley</a><span>Two phones, one game, no server. The invite goes by text.</span></li>
+<li><a href="play.html#ex=gears">Gears</a><span>A parametric tool: two gears from a few numbers.</span></li>
+<li><a href="play.html#ex=terrain">Terrain</a><span>Smooth noise and colour scales, from wrapped libraries.</span></li>
 <li><a href="play.html#ex=galaxy">Galaxy</a><span>Twenty thousand stars falling toward your finger.</span></li>
 <li><a href="play.html#ex=fireflies">Fireflies</a><span>Four hundred lights that gather where you touch.</span></li>
 <li><a href="play.html#ex=orbit">Orbit</a><span>Throw moons round the sun.</span></li>
@@ -6457,7 +6473,7 @@ p with [x : 5] print
 
 <h2>Read</h2>
 <ul class="list">
-<li><a href="library.html">The library</a><span>Ten modules: ease, vec, stats, grid, seeded, format, shape, palette, csv, json.</span></li>
+<li><a href="library.html">The library</a><span>Ten modules of our own, from ease to json, and eight wrapped libraries.</span></li>
 <li><a href="compare.html">Sprout compared</a><span>Next to Python, Rebol, Clojure and Lua, each pair run.</span></li>
 <li><a href="play.html#spec">The spec</a><span>The language and every decision behind it.</span></li>
 <li><a href="bench.html">Benchmarks</a><span>Measured in your browser, on your device.</span></li>
@@ -9911,12 +9927,12 @@ draw : [game |
 ]
 ````
 
-## examples/bunker.sp
+## examples/silvereye-2d.sp
 
 Bunker: a first-person raycaster in an underground lab, with guards and proximity mines (Games group)
 
 ````sprout
--- Bunker: sneak through an underground lab, take down the guards, and use proximity mines.
+-- SilverEye 2D: sneak through an underground lab, take down the guards, and use proximity mines.
 -- A mine arms after a moment and goes off when anyone comes near it, you included.
 -- Phone: drag to walk and turn, tap to fire, tap MINE to drop a mine. Keys: arrows or WASD, space to fire, M for a mine.
 -- The view is a raycaster: one ray per column finds the nearest wall, and nearer walls are drawn taller.
@@ -10358,17 +10374,18 @@ export function makeView(canvas, base) {
 export { WORDS };
 ````
 
-## examples/bunker3d.sp
+## examples/silvereye.sp
 
 Bunker 3D: Bunker's game code with a draw in 3D words, CC0 models and textures (Games group)
 
 ````sprout
--- Bunker 3D: the same lab, guards and proximity mines as Bunker, drawn in 3D with three.js and real models:
+-- SilverEye: an underground lab, its guards, proximity mines and turrets, drawn in 3D with three.js and real models:
 -- soldiers by Quaternius, a blaster from Kenney's Blaster Kit, textures by Screaming Brain Studios (all CC0).
 -- Phone: drag to walk and turn, tap to fire, tap MINE to drop a mine, SENTRY to set down a turret.
 -- Keys: arrows or WASD, space to fire, M for a mine, T for a turret.
 -- The turrets run turret-program, written in Sprout: change it while you play and every turret thinks the new way.
--- The game is the same Sprout code as Bunker, plus the turrets; draw is new. Change the props, the fog or the colours too.
+-- The game is the same Sprout code as SilverEye 2D, plus the turrets; draw is new. Change the props, the fog or the colours too.
+-- Play it on its own page: silvereye.html
 
 level : [
   "################"
@@ -11138,16 +11155,16 @@ body.t-out #out{display:block}body.t-st #st{display:block}
 <div id="modal"><div id="mBox"><div class="mh"><h2 id="mTitle"></h2><button class="x" data-close aria-label="Close">✕</button></div><div id="mBody"></div></div></div>
 <div id="moreMenu"><button data-m="net">Play with a friend</button><button data-m="lib">Library</button><button data-m="restart">Restart</button><button data-m="share">Share</button><button data-m="spec">Read the spec</button><a href="./">About Sprout</a></div><div id="toast"></div><div id="scrubTip"></div>
 
-<script src="sprout3.js?v=20261121p"></script>
-<script src="words.js?v=20261121p"></script>
-<script src="parse.js?v=20261121p"></script>
-<script src="stdlib.js?v=20261121p"></script>
-<script src="libs.js?v=20261121p"></script>
-<script src="kernels.js?v=20261121p"></script>
-<script src="live3.js?v=20261121p"></script>
-<script src="sqlite-web.js?v=20261121p"></script>
-<script src="gpu-paint.js?v=20261121p"></script>
-<script src="gpu-spork.js?v=20261121p"></script>
+<script src="sprout3.js?v=20261121q"></script>
+<script src="words.js?v=20261121q"></script>
+<script src="parse.js?v=20261121q"></script>
+<script src="stdlib.js?v=20261121q"></script>
+<script src="libs.js?v=20261121q"></script>
+<script src="kernels.js?v=20261121q"></script>
+<script src="live3.js?v=20261121q"></script>
+<script src="sqlite-web.js?v=20261121q"></script>
+<script src="gpu-paint.js?v=20261121q"></script>
+<script src="gpu-spork.js?v=20261121q"></script>
 <script>
 "use strict";
 const V="20261120m";
@@ -11170,8 +11187,8 @@ const EX=[
  ["terrain","tool","Terrain","A map made of smooth noise and coloured by scales, flying east: the simplex and chroma libraries, wrapped as Sprout modules. Change the sea level or the colours while it flies."],
  ["gears","tool","Gears","A parametric tool: two gears worked out from a few numbers. Change the teeth, the module or the speed while they turn, or press tweak and drag a number."],
  ["swarm","game","Swarm","Thousands of drones fly at the core and turrets you program in Sprout shoot them down. Change turret-program while it runs. Fused loops, a SIMD spork kernel and WebGPU drawing keep it fast."],
- ["bunker3d","game","Bunker 3D","The same lab, guards and proximity mines as Bunker, in real 3D: three.js, Quaternius soldiers, a Kenney blaster, textured concrete and steel. Drag to walk, tap to fire, MINE to drop one."],
- ["bunker","game","Bunker","Sneak through an underground lab and take down the guards. Proximity mines arm after a moment and go off when anyone comes near, you included. Drag to walk, tap to fire, MINE to drop one."],
+ ["silvereye","game","SilverEye","Sneak through an underground lab with proximity mines and turrets you program, in real 3D (also on its own page, silvereye.html): three.js, Quaternius soldiers, a Kenney blaster, textured concrete and steel. Drag to walk, tap to fire, MINE to drop one."],
+ ["silvereye-2d","game","SilverEye 2D","Sneak through an underground lab and take down the guards. Proximity mines arm after a moment and go off when anyone comes near, you included. Drag to walk, tap to fire, MINE to drop one."],
  ["volley","game","Volley","A game for two phones, no server: send an invite by text and each player drags their own paddle. Alone, the top paddle plays itself."],
  ["galaxy","game","Galaxy","Twenty thousand stars falling toward your finger. One fused loop moves them all, and WebGPU draws them in one call."],
  ["sprout","game","Sprout","Catch the rain, dodge the bugs. The demo game."],
@@ -11639,6 +11656,7 @@ $("bShare").onclick=share;$("bNet").onclick=()=>window.NET&&NET.invite();
 (function boot(){
  fit();subUI();
  const named=location.hash.match(/^#(ex=([\w-]+)|spec|history)$/);
+ if(named&&named[2])named[2]=({bunker3d:"silvereye",bunker:"silvereye-2d"})[named[2]]||named[2];   // the old names still open
  if(named){history.replaceState(null,"",location.pathname);
   if(named[2]&&exOf(named[2])){loadEx(named[2],true);return}}
  const thenOpen=named&&named[1]==="spec"?openSpec:named&&named[1]==="history"?openHistory:()=>{};
@@ -11648,8 +11666,8 @@ $("bShare").onclick=share;$("bNet").onclick=()=>window.NET&&NET.invite();
  if(sv&&sv.code&&sv.code.trim()){curEx=sv.ex||"";dirty=!!sv.dirty;setCode(sv.code);build(sv.code,true);if(document.body.classList.contains("prog"))tab("out");thenOpen()}
  else loadEx("ace-board",true).then(thenOpen)})();
 </script>
-<script src="editor-tools.js?v=20261121p"></script>
-<script src="net.js?v=20261121p"></script>
+<script src="editor-tools.js?v=20261121q"></script>
+<script src="net.js?v=20261121q"></script>
 </body></html>
 ````
 
