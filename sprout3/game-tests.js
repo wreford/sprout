@@ -546,6 +546,21 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     }
     S.setLog(m => logs.push(m));
     ok("silvereye: the eight example programs all run, and nothing warns", examples.length === 8 && said.length === 0, said.slice(0, 2)); }
+  // the campaign: three missions, each with its own map, guards, targets and way out, all on open floor
+  { const mapOf = name => { const m = src.match(new RegExp("^" + name + " : \\[\\n([\\s\\S]*?)\\n\\]", "m")); return m[1].split("\n").map(l => l.trim().replace(/"/g, "")); };
+    const maps = { lab: mapOf("lab"), depot: mapOf("depot"), relay: mapOf("relay") }, said = []; S.setLog(m => said.push(m));
+    const counts = [];
+    for (const [stage, map, guards, targets] of [[1, "lab", 6, 2], [2, "depot", 7, 3], [3, "relay", 8, 2]]) {
+      const ms = L.makeGame(src.replace(/^stage : 1/m, "stage : " + stage), {}); ms.tick(1 / 60, pad({}));
+      const M = maps[map], open = (x, y) => (M[Math.floor(y)] || "")[Math.floor(x)] === ".";
+      const pts = [...S.partsOf(f(ms, "guards")).flatMap(g => [[g.field("x"), g.field("y")], [g.field("to-x"), g.field("to-y")]]), ...S.partsOf(f(ms, "machines")).map(m => [m.field("x"), m.field("y")]), ...S.partsOf(f(ms, "pickups")).map(p => [p.field("x"), p.field("y")]), [agent(ms, 1).field("x"), agent(ms, 1).field("y")]];
+      const walls = ms.draw().filter(x => x[0] === "block").length - 2, wallCount = M.join("").split("#").length - 1;
+      counts.push([stage, f(ms, "guards").count(), f(ms, "machines").count(), pts.filter(([x, y]) => !open(x, y)), walls === wallCount]);
+      for (let t = 0; t < 300; t++) ms.tick(1 / 60, pad({ walk: 1, look: t * 0.02, fire: t % 30 < 8 }));
+    }
+    S.setLog(m => logs.push(m));
+    ok("silvereye: three missions, each with its guards and targets on open floor of its own map", counts.every(([st, g, m, bad, walls], i) => g === [6, 7, 8][i] && m === [2, 3, 2][i] && bad.length === 0 && walls), counts);
+    ok("silvereye: every mission plays without a warning", said.length === 0, said.slice(0, 2)); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });

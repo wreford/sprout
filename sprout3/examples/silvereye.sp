@@ -31,6 +31,24 @@ depot : [
   "#......#.......#"
   "################"
 ]
+relay : [
+  "################"
+  "#..............#"
+  "#.####.##.####.#"
+  "#.#..........#.#"
+  "#.#.##....##.#.#"
+  "#...#......#...#"
+  "##..#.#..#.#..##"
+  "#.....#..#.....#"
+  "#.....#..#.....#"
+  "##..#.#..#.#..##"
+  "#...#......#...#"
+  "#.#.##....##.#.#"
+  "#.#..........#.#"
+  "#.####.##.####.#"
+  "#..............#"
+  "################"
+]
 lab : [
   "################"
   "#......#.......#"
@@ -76,9 +94,6 @@ fire-every : 0.25          -- hold fire and it fires this often
 clip-size : 8              -- shots before you reload
 ammo-each : 48             -- spare shots you start with
 reload-time : 1.1          -- seconds to reload
-machine-spots : [[9.0, 10.7], [5.8, 7.7]]   -- the generators to wreck, on a mission
-intel-spot : [14.5, 12.5]  -- where the intel case is
-lift : [2.5, 2.5]          -- where you leave from, once it's all done
 heavy-spot : [12.5, 9.5]   -- where the heavy blaster lies
 heavy-every : 0.6          -- the heavy blaster fires this often
 heavy-damage : 70          -- and hits this hard (110 on a guard)
@@ -90,8 +105,44 @@ par-time : 180             -- finish a mission inside this for the time medal
 time-limit : 300           -- a match ends after this many seconds; the most takedowns wins
 
 -- ---------------------------------------------------------------- the map
+-- ---------------------------------------------------------------- the campaign
+-- Three missions, each its own map, guards, targets and way out. On the console, winning one leads to the next
+-- (alone, or two phones in co-op). guards: [number, x, y, then where it patrols to]; targets: [x, y, model, size].
+stage : 1                  -- which mission (1 to 3)
+campaign : false           -- true on the console: a won mission waits for the next instead of starting again
+lab-props : [["crate", 5.4, 1.6, 0.3, 0.8], ["barrels", 14.2, 1.7, 1.2, 0.9], ["crate", 1.7, 14.2, 1.9, 0.8], ["barrels", 14.3, 12.4, 0.4, 0.9], ["crate", 12.3, 8.3, 0.8, 0.8]]
+depot-props : [["barrels", 7.5, 7.5, 0.3, 0.9], ["crate", 1.6, 1.6, 0.4, 0.8], ["crate", 14.4, 14.4, 1.2, 0.8], ["barrels", 14.3, 1.6, 2.0, 0.9], ["crate", 8.0, 9.4, 0, 0.7], ["barrels", 1.7, 14.3, 0.7, 0.9]]
+relay-props : [["barrels", 1.6, 1.6, 0.2, 0.9], ["crate", 14.4, 1.6, 0.9, 0.8], ["crate", 1.6, 14.4, 1.4, 0.8], ["barrels", 14.3, 14.3, 2.2, 0.9]]
+missions : [
+  [
+    name : "THE LAB", map : lab, props : lab-props, walls : "concrete", air : #14161c
+    start : [2.5, 2.5, 0.6], exit : [2.5, 2.5], exit-name : "BACK TO THE LIFT"
+    guards : [[1, 12.5, 2.5, 12.5, 4.5], [2, 3.5, 7.5, 6.5, 7.5], [3, 13.5, 7.5, 9.5, 7.5], [4, 2.5, 11.5, 2.5, 13.5], [5, 9.5, 12.5, 9.5, 12.5], [6, 13.5, 13.5, 13.5, 10.5]]
+    targets : [[9.0, 10.7, "generator_large", 1.4], [5.8, 7.7, "generator", 1.0]], target-name : "GENERATORS"
+    intel : [14.5, 12.5], intel-name : "INTEL CASE"
+    brief : ["An underground lab. Six guards.", "Wreck both generators, take the intel case,", "then get back to the lift."]
+  ]
+  [
+    name : "THE DEPOT", map : depot, props : depot-props, walls : "metal", air : #161712
+    start : [1.5, 1.5, 0.8], exit : [14.5, 14.5], exit-name : "TO THE LOADING BAY"
+    guards : [[1, 7.5, 7.5, 12.5, 7.5], [2, 4.5, 1.5, 10.5, 1.5], [3, 14.5, 5.5, 14.5, 10.5], [4, 1.5, 9.5, 1.5, 13.5], [5, 8.5, 13.5, 12.5, 13.5], [6, 11.5, 10.5, 11.5, 8.5], [7, 5.5, 5.5, 5.5, 8.5]]
+    targets : [[7.5, 9.5, "barrels", 1.1], [13.5, 7.5, "barrels", 1.1], [3.5, 13.5, "barrels", 1.1]], target-name : "FUEL STACKS"
+    intel : [14.5, 1.5], intel-name : "SHIPPING MANIFEST"
+    brief : ["A supply depot, rows of shelving, seven guards.", "Blow the three fuel stacks, find the manifest,", "and get out through the loading bay."]
+  ]
+  [
+    name : "THE RELAY", map : relay, props : relay-props, walls : "wall", air : #10141c
+    start : [14.5, 3.5, 3.1], exit : [14.5, 3.5], exit-name : "BACK TO THE HATCH"
+    guards : [[1, 7.5, 7.5, 8.5, 8.5], [2, 1.5, 1.5, 14.5, 1.5], [3, 14.5, 14.5, 1.5, 14.5], [4, 3.5, 7.5, 3.5, 10.5], [5, 12.5, 7.5, 12.5, 10.5], [6, 7.5, 3.5, 10.5, 3.5], [7, 7.5, 12.5, 10.5, 12.5], [8, 1.5, 7.5, 1.5, 10.5]]
+    targets : [[7.5, 5.5, "generator_large", 1.2], [8.5, 10.5, "generator_large", 1.2]], target-name : "TRANSMITTERS"
+    intel : [8.0, 7.5], intel-name : "CODEBOOK"
+    brief : ["A relay station: a ring round the transmitter hall.", "Silence both transmitters, take the codebook,", "and leave by the hatch you came in."]
+  ]
+]
+mission : missions @ (stage max 1 min (missions length))
 in-depot : (arena = "depot") and (mode != "mission")
-level : cond [in-depot, depot, any, lab]
+level : cond [mode = "mission", mission map, in-depot, depot, any, lab]
+props : cond [mode = "mission", mission props, in-depot, depot-props, any, lab-props]
 solid : [cx cy |
   row : level @ (cy floor + 1)
   cond [row = false, true, any, row @ (cx floor + 1) = "#"]
@@ -182,13 +233,13 @@ pickups-fresh : pickup-spots collect [[kind, px, py] | [kind : kind, x : px, y :
 simulant : [id | s : spawn-of id, agent [id, s @ 1, s @ 2, s @ 3] with [bot : true]]
 sims : [first | range simulants collect [k | simulant (first + k - 1)]]
 start :
-  agents : [agent [1, 2.5, 2.5, 0.6]] .. (cond [mode = "sim", sims 2, any, []])
+  agents : cond [mode = "mission", [agent [1, mission start @ 1, mission start @ 2, mission start @ 3]], any, [agent [1, 2.5, 2.5, 0.6]]] .. (cond [mode = "sim", sims 2, any, []])
   -- anything but a mission is a match: no guards, no objectives (a duel waits here for the second phone)
-  guards : mode != "mission" [[]] else [[guard [1, 12.5, 2.5, 12.5, 4.5], guard [2, 3.5, 7.5, 6.5, 7.5], guard [3, 13.5, 7.5, 9.5, 7.5], guard [4, 2.5, 11.5, 2.5, 13.5], guard [5, 9.5, 12.5, 9.5, 12.5], guard [6, 13.5, 13.5, 13.5, 10.5]]]
+  guards : mode != "mission" [[]] else [mission guards collect [[k, gx, gy, tx, ty] | guard [k, gx, gy, tx, ty]]]
   mines : []
   turrets : []
-  pickups : pickups-fresh .. (cond [mode != "mission", [], any, [[kind : "intel", x : intel-spot @ 1, y : intel-spot @ 2, back-at : 0]]])
-  machines : (mode != "mission") or (difficulty = 1) [[]] else [machine-spots numbered collect [[k, spot] | [id : k, x : spot @ 1, y : spot @ 2, health : 100]]]
+  pickups : pickups-fresh .. (cond [mode != "mission", [], any, [[kind : "intel", x : mission intel @ 1, y : mission intel @ 2, back-at : 0]]])
+  machines : (mode != "mission") or (difficulty = 1) [[]] else [mission targets numbered collect [[k, spot] | [id : k, x : spot @ 1, y : spot @ 2, health : 100, model : spot @ 3, size : spot @ 4]]]
   intel : false
   match-start : 0
   feed : []
@@ -457,7 +508,7 @@ play : [game |
   -- the mission: every guard down, both generators wrecked, the intel taken, then back to the lift
   intel : (game intel) or (takes any [t | t kind = "intel"])
   done : (fallen all [g | g health <= 0]) and (machines all [m | m health <= 0]) and intel
-  home : back any [a | (up a) and (distance [a x, a y, lift @ 1, lift @ 2] < 1)]
+  home : back any [a | (up a) and (distance [a x, a y, mission exit @ 1, mission exit @ 2] < 1)]
   over : cond [
     game versus, cond [winner > 0, "p[winner]", now - (game match-start) >= time-limit, time-up, any, ""]
     back all [a | up a not], "lost"
@@ -479,13 +530,13 @@ update : [game |
   -- two phones: a duel, or the mission together (the second player comes in beside the first)
   coop : two-phones = "coop"
   g : cond [
-    two and coop and (game agents length = 1) and (game versus not), game with [agents : game agents .. [agent [2, 3.5, 2.5, 0.6]]]
+    two and coop and (game agents length = 1) and (game versus not), game with [agents : game agents .. [agent [2, mission start @ 1, mission start @ 2 + 1, mission start @ 3]]]
     two and (coop not) and (game versus not), game with duel with [match-start : game clock]
     any, game
   ]
   again : (wants (g input) restart) or (two [wants (g input2) restart] else [false])
   g over = "" [play g] else [
-    (again and (g clock - (g over-at) > 1.5)) [cond [two and (coop not), g with duel with [match-start : g clock], two, start with [agents : [agent [1, 2.5, 2.5, 0.6], agent [2, 3.5, 2.5, 0.6]], input : g input, input2 : g input2], any, start]] else [g]
+    (again and (g clock - (g over-at) > 1.5)) [cond [two and (coop not), g with duel with [match-start : g clock], two, start with [agents : [agent [1, mission start @ 1, mission start @ 2, mission start @ 3], agent [2, mission start @ 1, mission start @ 2 + 1, mission start @ 3]], input : g input, input2 : g input2], any, start]] else [g]
   ]
 ]
 
@@ -493,9 +544,6 @@ update : [game |
 eye : 1.55                -- how high your eyes are, in metres
 gun-turn : 0.1            -- which way the gun points, in radians
 fog-colour : #14161c
-lab-props : [["crate", 5.4, 1.6, 0.3, 0.8], ["barrels", 14.2, 1.7, 1.2, 0.9], ["generator_large", 9.0, 10.7, 0, 1.4], ["crate", 1.7, 14.2, 1.9, 0.8], ["barrels", 14.3, 12.4, 0.4, 0.9], ["generator", 5.8, 7.7, 1.6, 1.0], ["crate", 12.3, 8.3, 0.8, 0.8]]
-depot-props : [["barrels", 7.5, 7.5, 0.3, 0.9], ["crate", 1.6, 1.6, 0.4, 0.8], ["crate", 14.4, 14.4, 1.2, 0.8], ["barrels", 14.3, 1.6, 2.0, 0.9], ["crate", 8.0, 9.4, 0, 0.7], ["barrels", 1.7, 14.3, 0.7, 0.9]]
-props : cond [in-depot, depot-props, any, lab-props]
 red : "#ff5a4f"
 cream : "#f4f1ea"
 cyan : "#9be7ff"
@@ -512,7 +560,7 @@ draw : [game |
   -- the camera: your eyes, or the floor once you're down
   -- the air turns red while the alarm is up
   alarm : game guards any [g | (g alert) and (g health > 0)]
-  fog [cond [alarm, cond [now * 2 % 1 < 0.5, "#3a1416", any, "#2a1012"], any, fog-colour], 3, 15]
+  fog [cond [alarm, cond [now * 2 % 1 < 0.5, "#3a1416", any, "#2a1012"], any, cond [mode = "mission", mission air, any, fog-colour]], 3, 15]
   -- the view is set by how wide it is across (the screen is taller than wide), and narrows while you aim
   across : you fov * (cond [you zoomed, zoom-view, any, 1])
   tall : across / 2 * pi / 180 tan * (H / W) atan * 2 * 180 / pi
@@ -520,7 +568,9 @@ draw : [game |
   -- the lab: a floor, a ceiling, and a block for every wall cell of the map
   block [8, -0.05, 8, 16, 0.1, 16, "plate"]
   block [8, 2.55, 8, 16, 0.1, 16, "metal"]
-  wall-cells each [[c, r] | block [c - 0.5, 1.25, r - 0.5, 1, 2.5, 1, "concrete"]]
+  wall-cells each [[c, r] | block [c - 0.5, 1.25, r - 0.5, 1, 2.5, 1, cond [mode = "mission", mission walls, any, "concrete"]]]
+  -- the mission's targets, standing until wrecked
+  game machines each [m | model [m model, m x, 0, m y, 0, m size, false, 0]]
   props each [[name, px, pz, turn, size] | model [name, px, 0, pz, turn, size, false, 0]]
   -- the guards: running when they chase, aiming when they're close, falling when they're hit
   game guards each [g |
@@ -561,10 +611,10 @@ draw : [game |
     wrecked : game machines count [m | m health <= 0]
     tick : [ok | cond [ok, "■", any, "□"]]
     text ["[tick (guards-down = (game guards length))] GUARDS [guards-down]/[game guards length]", 34, 64, 7, cream]
-    text ["[tick (wrecked = (game machines length))] GENERATORS [wrecked]/[game machines length]", 38, 74, 7, cream]
-    text ["[tick (game intel)] INTEL CASE", 31, 84, 7, cream]
+    text ["[tick (wrecked = (game machines length))] [mission target-name] [wrecked]/[game machines length]", 38, 74, 7, cream]
+    text ["[tick (game intel)] [mission intel-name]", 38, 84, 7, cream]
     all-done : (guards-down = (game guards length)) and (wrecked = (game machines length)) and (game intel)
-    all-done [flash [lift @ 1, 0.2, lift @ 2, 0.15 + (now * 4 sin * 0.05), "#7bd389"], text ["BACK TO THE LIFT", W / 2, 50, 11, "#7bd389"]]
+    all-done [flash [mission exit @ 1, 0.2, mission exit @ 2, 0.15 + (now * 4 sin * 0.05), "#7bd389"], text [mission exit-name, W / 2, 50, 11, "#7bd389"]]
   ]
   -- your gun, kicking back when it fires
   kick : cond [you flash > 0, 0.05, any, 0]
