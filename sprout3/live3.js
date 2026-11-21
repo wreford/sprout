@@ -7,8 +7,9 @@ const { ValueCell, Native, isCell, equal, UNSET } = S;
 
 const ev = fields => S.valueCellOf([], new Map(Object.entries(fields)));
 const NOKEYS = new ValueCell([]);
-const DRAW = { clear: 1, rect: 5, circle: 4, line: 5, text: 5 };
-const SOUND = { beep: 2, shake: 1 };
+// the 3D words (decision 108) are drawing words too: a page that can show 3D draws them, the 2D ones on top
+const DRAW = { clear: 1, rect: 5, circle: 4, line: 5, text: 5, view: 6, block: 7, model: 8, hold: 7, flash: 5, fog: 3 };
+const SOUND = { beep: 2, shake: 1, sound: 1 };
 
 function makeGame(src, opts) {
   opts = opts || {};

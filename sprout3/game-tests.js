@@ -347,5 +347,21 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   ok("bunker: your own mine goes off under you too", f(c, "hero").field("health") < 100 && f(c, "mines").count() === 0);
 }
 
+// ---------------- Bunker 3D: the same game, drawn with 3D words (decision 108)
+{
+  const src = fs.readFileSync(__dirname + "/examples/bunker3d.sp", "utf8"), held = ks => S.valueCellOf([], new Map(ks.map(k => [k, true])));
+  const fx = [], g = L.makeGame(src, { onEffect: e => fx.push(e[0] + ":" + e[1][0]) });
+  const place = hero => { const m = new Map(S.fieldsOf(g.state)); m.set("hero", S.valueCellOf([], new Map(Object.entries(hero)))); g.setState(S.valueCellOf([], m)); };
+  g.tick(1 / 60);
+  const d = g.draw(), count = w => d.filter(x => x[0] === w).length;
+  ok("bunker 3d: a camera, the walls as blocks, the guards as models, the gun held", count("view") === 1 && count("block") > 100 && d.filter(x => x[0] === "model" && x[1][0] === "soldier").length === 6 && count("hold") === 1);
+  ok("bunker 3d: the overlay is still 2D words", count("text") > 0 && count("circle") > 0);
+  place({ x: 9.5, y: 7.5, angle: 0, health: 100 });
+  for (let t = 0; t < 240; t++) g.tick(1 / 60, held(t % 20 < 2 ? ["space"] : []));
+  const fallen = g.draw().filter(x => x[0] === "model" && x[1][0] === "soldier" && x[1][6] === "Death");
+  ok("bunker 3d: a guard who is shot plays his fall, timed from when he fell", fallen.length >= 1 && fallen[0][1][7] >= 0 && fallen[0][1][7] < 4, fallen.map(x => x[1][7]));
+  ok("bunker 3d: shots make a sound", fx.includes("sound:shoot"));
+}
+
 console.log(pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

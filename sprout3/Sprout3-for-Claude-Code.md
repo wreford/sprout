@@ -10,13 +10,13 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 
 ```
 node test.js          # language tests (298)
-node game-tests.js    # game tests (98)
+node game-tests.js    # game tests (102)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 396 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 400 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -122,6 +122,8 @@ The page and `bench.html` need a local web server, such as `python3 -m http.serv
 - `net.js`: Two players, no server (decision 107): WebRTC with invite and reply links sent by text, lockstep with seeded random numbers, state fingerprints and resync, shared live coding
 - `examples/volley.sp`: Volley: the first game for two phones (Games group)
 - `examples/bunker.sp`: Bunker: a first-person raycaster in an underground lab, with guards and proximity mines (Games group)
+- `three-view.js`: The 3D view (decision 108): view, block, model, hold, flash and fog drawn with three.js, objects kept between frames, models posed by the game's clock
+- `examples/bunker3d.sp`: Bunker 3D: Bunker's game code with a draw in 3D words, CC0 models and textures (Games group)
 - `examples/recipes.sp`: Recipes: quicksort, primes, FizzBuzz, a vector with its own + (prints; not a game)
 - `play.html`: The editor at taskiap.com/sprout3/play.html (opens #ex=name, #spec, #history): a library of examples with artwork, the running game shown like album art, live editing, a now-playing bar whose progress bar rewinds time, state, output and the spec; light and dark
 - `bench.html`: Benchmarks in the browser: the language against plain JS, the games, particles up to 100,000 on Canvas 2D and WebGPU, and SQLite
@@ -757,6 +759,7 @@ These are marked in `sprout2.js` with "Sprout Live fix N" or "Sprout Live additi
 105. **The standard library (built; library, decision 80, from Troy's ask on 21 Nov).** Ten modules, each a global cell whose fields are its words, in every program: `ease` (easing curves, `progress`, `between`), `vec` (vectors as pairs: `size`, `unit`, `angle`, `rotate`, `dot`, `distance`, `mix`, `limit`, `reflect`), `stats` (`mean`, `median`, `mode`, `variance`, `spread`, `percentile`, `histogram`, `correlation`, `summary`), `grid` (lists of rows: `make`, `at`, `put`, `beside`, `around`, `count-around`, `cells`, `map`, `region`, `fill`, and `path`, the shortest way through), `seeded` (repeatable random choices from `noise`: `between`, `whole`, `chance`, `pick`, `shuffle`, `bell`, `in-circle`, `weighted`), `format` (`commas`, `places`, `percent`, `ordinal`, `plural`, `clock`, `wrap`, `centre`, `title`, `bar`), `shape` (points as pairs: `circle`, `polygon`, `star`, `box`, `edges`, `move`, `turn`, `grow`, `area`, `centre`, `bounds`, `holds`), `palette` (`hsl`, `along`, `wheel`, `grey`, and the sets `warm`, `cool`, `soft`), `csv` (`read`, `write`) and `json` (`read`, `write`, `pretty`). All but `json` are written in Sprout, one file each in `lib/`, so the library is also a set of worked examples; `json` is JavaScript in `words.js`. `node make-stdlib.js` turns `lib/*.sp` into `stdlib.js`, which Node and the pages load after `parse.js`, and writes `library.html`, the reference: each word's comment, its inputs, and its `-- e.g.` example run with the answer it gave. A module is compiled the first time a program uses it. Nothing in the library draws, since host words belong to each game; `shape edges` gives the sides for a program's own `each [[a, b] | line ...]`. A program's own names come first, so a program that binds `grid` or `format` keeps its own. Three words joined the built-in ones to make the modules short: `find-index`, `distinct-by` and `has-field` on lists and records, and `atan2` and `fixed` on numbers. The tests check that `stdlib.js` matches `lib/` and that every example runs without a message.
 106. **Wrapped libraries (built; library, decision 80, from Troy's ask on 21 Nov).** Eight popular JavaScript libraries are modules like the standard library's: `chroma` (chroma.js: colour scales, ColorBrewer palettes, contrast, Lab mixing, named colours, temperature), `simplex` (simplex-noise: smooth, seeded noise in 2D, 3D and fractal layers), `mathjs` (math.js: expressions with units, conversions, exact fractions, matrices, linear equations, derivatives, simplifying), `date-fns` (formatting with patterns, distances in words, parsing, weeks and months), `fuse` (Fuse.js: fuzzy search over text or records), `nlp` (compromise: nouns, verbs, people, places, sentences, plurals, tenses, numbers in words), `tone` (Tone.js: notes, chords and drums, as effects like `beep`; in the browser only) and `turf` (Turf: distances, bearings, areas and points along routes on the Earth). `libs.js` holds them all. Each library's file is kept in `vendor/` with its licence and served from the site, never from another server, and loaded only when a program names it: the page finds the names in the code and loads those first, showing "Loading chroma.js…", and Node runs the same files. Values cross over both ways: lists and arrays, records and objects, Sprout colours and hex text, Sprout dates and JavaScript dates. A library word that fails logs its message and gives false, like any other word. `library.html` lists every word with an example and the answer it gave. Decision 73 is refined: a field that has the same name as a global (a host word, a library module, `format` or `noise`) is read without a lint, since a module's words would clash with globals all the time; a field that has the same name as one the program binds still lints. `examples/terrain.sp` flies over a map made with `simplex fractal` and coloured with `chroma steps`.
 107. **Two players, no server (Troy, 21 Nov).** Two phones play one game, connected straight to each other with WebRTC; the details each needs to reach the other travel as links sent by text message. One player taps Two players and sends the invite (it carries the game's code); the friend opens it, taps Join and sends back the reply; tapping the reply in another tab hands it to the game's tab, or it can be pasted. A public STUN server helps the phones find each other across the internet; on the same Wi-Fi nothing else is needed, and networks that block direct connections can't be used. The game runs in lockstep: each phone sends only its touches and keys for the frame four ahead, both run the same frames with the same seeded random numbers, and a frame waits until both inputs are there. Every 120 frames they compare a fingerprint of the state, and if it differs (floating point can differ between browsers), the inviter's state is sent across exactly and both carry on from it. Code edits travel too, and both phones swap them in on the same frame, so two people can live-code one game. In the language: an event from player 2 carries `player : 2` and changes `input2`; the tick of a game for two carries player 2's held keys, so `game input2` is there only when two play (`game has-field "input2"`); and the host word `me` is which player this screen shows (1 alone), for draw to show each player at the bottom. Reading `me` in update would make the two games differ. Each game now sets its own random source at every tick, so a page making other games (cover art) can't take its random numbers. `examples/volley.sp` is the first game for two.
+108. **3D words (Troy, 21 Nov).** A game can draw in 3D with six more drawing words, and the 2D words go on top, for what sits on the screen: `view [x, y, z, yaw, pitch, fov]` is the camera, `block [x, y, z, sx, sy, sz, material]` a box with a texture name or a colour, `model [name, x, y, z, yaw, height, animation, time]` a glTF model, `hold [name, x, y, z, yaw, pitch, size]` a model held in front of the camera, `flash [x, y, z, radius, colour]` a light with a glow, and `fog [colour, near, far]`. Angles are Sprout's: 0 looks along +x and they turn towards +z, so a game's own `atan2` points a model the way it walks. As with 2D, the list is the whole scene each frame, and `three-view.js` (three.js) keeps the objects from frame to frame and only moves them. Models are scaled to the height asked for and stood on the floor whatever size they were made at; one held is measured by its longest side. An animation is posed from the time the game gives, never from the page's clock, so rewinding, replaying and two-player lockstep pose every model the same; Death and the like stop at their last frame. The page loads three.js the first time a draw list holds a 3D word. The effect word `sound "name"` plays a short sound from `vendor/sfx`. The models, textures and sounds are CC0, by Quaternius, Kenney and Screaming Brain Studios, credited in `vendor/models/README.md`. `examples/bunker3d.sp` is Bunker with the same Sprout game code and a new draw.
 ````
 
 ---
@@ -3021,8 +3024,9 @@ const { ValueCell, Native, isCell, equal, UNSET } = S;
 
 const ev = fields => S.valueCellOf([], new Map(Object.entries(fields)));
 const NOKEYS = new ValueCell([]);
-const DRAW = { clear: 1, rect: 5, circle: 4, line: 5, text: 5 };
-const SOUND = { beep: 2, shake: 1 };
+// the 3D words (decision 108) are drawing words too: a page that can show 3D draws them, the 2D ones on top
+const DRAW = { clear: 1, rect: 5, circle: 4, line: 5, text: 5, view: 6, block: 7, model: 8, hold: 7, flash: 5, fog: 3 };
+const SOUND = { beep: 2, shake: 1, sound: 1 };
 
 function makeGame(src, opts) {
   opts = opts || {};
@@ -4370,6 +4374,22 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   const c = fresh(); place(c, { x: 2.5, y: 2.5, angle: 0, health: 100 });
   c.tick(1 / 60, held(["m"])); for (let t = 0; t < 120; t++) c.tick(1 / 60);
   ok("bunker: your own mine goes off under you too", f(c, "hero").field("health") < 100 && f(c, "mines").count() === 0);
+}
+
+// ---------------- Bunker 3D: the same game, drawn with 3D words (decision 108)
+{
+  const src = fs.readFileSync(__dirname + "/examples/bunker3d.sp", "utf8"), held = ks => S.valueCellOf([], new Map(ks.map(k => [k, true])));
+  const fx = [], g = L.makeGame(src, { onEffect: e => fx.push(e[0] + ":" + e[1][0]) });
+  const place = hero => { const m = new Map(S.fieldsOf(g.state)); m.set("hero", S.valueCellOf([], new Map(Object.entries(hero)))); g.setState(S.valueCellOf([], m)); };
+  g.tick(1 / 60);
+  const d = g.draw(), count = w => d.filter(x => x[0] === w).length;
+  ok("bunker 3d: a camera, the walls as blocks, the guards as models, the gun held", count("view") === 1 && count("block") > 100 && d.filter(x => x[0] === "model" && x[1][0] === "soldier").length === 6 && count("hold") === 1);
+  ok("bunker 3d: the overlay is still 2D words", count("text") > 0 && count("circle") > 0);
+  place({ x: 9.5, y: 7.5, angle: 0, health: 100 });
+  for (let t = 0; t < 240; t++) g.tick(1 / 60, held(t % 20 < 2 ? ["space"] : []));
+  const fallen = g.draw().filter(x => x[0] === "model" && x[1][0] === "soldier" && x[1][6] === "Death");
+  ok("bunker 3d: a guard who is shot plays his fall, timed from when he fell", fallen.length >= 1 && fallen[0][1][7] >= 0 && fallen[0][1][7] < 4, fallen.map(x => x[1][7]));
+  ok("bunker 3d: shots make a sound", fx.includes("sound:shoot"));
 }
 
 console.log(pass + " passed, " + fail + " failed");
@@ -10141,6 +10161,424 @@ draw : [game |
 ]
 ````
 
+## three-view.js
+
+The 3D view (decision 108): view, block, model, hold, flash and fog drawn with three.js, objects kept between frames, models posed by the game's clock
+
+````js
+// The 3D view (decision 108): a game's draw list may hold 3D words, and this draws them with three.js.
+// Each frame the list is the whole scene, as with the 2D words: view (the camera), block (a box with a texture or a
+// colour), model (a glTF model, posed by the game's own clock), hold (a model held in front of the camera), flash (a
+// light with a glow) and fog. The scene objects are kept from frame to frame and reused, so a frame only moves them.
+// Models are scaled to the height asked for and stood on the floor, whatever size they were made at.
+import * as THREE from "./vendor/three/three.module.min.js";
+import { GLTFLoader } from "./vendor/three/addons/loaders/GLTFLoader.js";
+import { MeshoptDecoder } from "./vendor/three/addons/libs/meshopt_decoder.module.js";
+import * as SkeletonUtils from "./vendor/three/addons/utils/SkeletonUtils.js";
+
+const WORDS = new Set(["view", "block", "model", "hold", "flash", "fog"]);
+const fmt = v => typeof v === "string" ? v : window.Sprout3 ? Sprout3.format(v) : String(v);
+const num = (v, d) => typeof v === "number" && isFinite(v) ? v : d;
+// Sprout's angles: 0 looks along +x, and they turn towards +z. three.js cameras look down -z, models face +z.
+const cameraYaw = a => -a - Math.PI / 2, modelYaw = a => Math.PI / 2 - a;
+
+export function makeView(canvas, base) {
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(70, 0.75, 0.05, 200);
+  scene.add(camera);
+  scene.add(new THREE.HemisphereLight(0xdfe6f0, 0x2a2620, 1.1));
+  const sun = new THREE.DirectionalLight(0xffffff, 1.2); sun.position.set(4, 10, 3); scene.add(sun);
+  const holdGroup = new THREE.Group(); camera.add(holdGroup);
+  const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+  const textureLoader = new THREE.TextureLoader();
+
+  // ---- assets: models and textures, loaded once, by name
+  const assets = new Map();   // name -> { scene, clips, size, ready }
+  function asset(name) {
+    let a = assets.get(name);
+    if (!a) {
+      a = { ready: false };
+      assets.set(name, a);
+      loader.load(base + "vendor/models/" + name + ".glb", gltf => {
+        const box = new THREE.Box3().setFromObject(gltf.scene), size = box.getSize(new THREE.Vector3());
+        a.scene = gltf.scene; a.clips = gltf.animations; a.height = size.y || 1; a.longest = Math.max(size.x, size.y, size.z) || 1; a.floor = box.min.y; a.centre = box.getCenter(new THREE.Vector3()); a.ready = true;
+        gltf.scene.traverse(o => { if (o.isMesh) { o.castShadow = false; o.frustumCulled = false; } });
+      }, undefined, () => { a.failed = true; });
+    }
+    return a;
+  }
+  const textures = new Map(), materials = new Map();
+  function material(spec, sx, sy, sz) {
+    const name = fmt(spec), isColour = /^#|^rgb/.test(name), key = isColour ? name : name + " " + sx + " " + sy + " " + sz;
+    let m = materials.get(key);
+    if (m) return m;
+    if (isColour) m = new THREE.MeshStandardMaterial({ color: new THREE.Color(name.slice(0, 7)), roughness: 0.9 });
+    else {
+      // a texture repeats once a metre; each size needs its own copy, made once the image has arrived
+      m = new THREE.MeshStandardMaterial({ color: 0x8a8a86, roughness: 0.95 });
+      let t = textures.get(name);
+      if (!t) {
+        t = { image: null, waiting: [] }; textures.set(name, t);
+        textureLoader.load(base + "vendor/textures/" + name + ".png", tex => {
+          tex.colorSpace = THREE.SRGBColorSpace; tex.magFilter = THREE.NearestFilter; tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+          t.image = tex; for (const f of t.waiting.splice(0)) f(tex);
+        });
+      }
+      const give = tex => { const r = tex.clone(); r.repeat.set(Math.max(sx, sz), sy); m.map = r; m.color.set(0xffffff); m.needsUpdate = true; };
+      if (t.image) give(t.image); else t.waiting.push(give);
+    }
+    materials.set(key, m); return m;
+  }
+
+  // ---- objects kept between frames
+  const blocks = new Map(), unitBox = new THREE.BoxGeometry(1, 1, 1);
+  const pools = new Map();   // model name -> [{ root, mixer, actions }]
+  const holds = new Map();
+  const flashes = [], glow = new THREE.SphereGeometry(1, 16, 12);
+  function instance(name, k, parent) {
+    const a = asset(name); if (!a.ready) return null;
+    let pool = pools.get(name + (parent === holdGroup ? "@hold" : ""));
+    if (!pool) { pool = []; pools.set(name + (parent === holdGroup ? "@hold" : ""), pool); }
+    while (pool.length <= k) {
+      const root = new THREE.Group(), body = SkeletonUtils.clone(a.scene);
+      // a model in the world stands on the floor at its height; one held is centred and measured by its longest side
+      if (parent === holdGroup) { body.scale.setScalar(1 / a.longest); body.position.copy(a.centre).multiplyScalar(-1 / a.longest); }
+      else { body.scale.setScalar(1 / a.height); body.position.y = -a.floor / a.height; }
+      root.add(body); parent.add(root);
+      const mixer = a.clips.length ? new THREE.AnimationMixer(body) : null;
+      pool.push({ root, mixer, actions: new Map(), current: null });
+    }
+    return pool[k];
+  }
+  function pose(inst, name, clipName, time) {
+    const a = asset(name); if (!inst.mixer || !clipName) return;
+    let action = inst.actions.get(clipName);
+    if (!action) {
+      const want = String(clipName).toLowerCase();
+      const clip = a.clips.find(c => c.name.toLowerCase() === want) || a.clips.find(c => c.name.toLowerCase().split("|").pop() === want) || a.clips.find(c => c.name.toLowerCase().includes(want));
+      if (!clip) return;
+      action = inst.mixer.clipAction(clip); inst.actions.set(clipName, action);
+    }
+    if (inst.current !== action) { if (inst.current) inst.current.stop(); action.play(); inst.current = action; }
+    // the time comes from the game, so rewinding and replaying pose the same; death and the like stop at their end
+    const d = action.getClip().duration || 1, once = /death|die|land|hit/i.test(action.getClip().name);
+    action.time = once ? Math.min(num(time, 0), d - 0.001) : ((num(time, 0) % d) + d) % d;
+    inst.mixer.update(0);
+  }
+
+  function render(list, width, height, shakeX, shakeY) {
+    if (canvas.width !== Math.round(width * renderer.getPixelRatio()) || canvas.height !== Math.round(height * renderer.getPixelRatio())) renderer.setSize(width, height, false);
+    camera.aspect = width / height;
+    const seenBlocks = new Set(), counts = new Map(), holdCounts = new Map();
+    let flashCount = 0, fogSet = false;
+    for (const [word, a] of list) {
+      if (!WORDS.has(word)) continue;
+      if (word === "view") {
+        camera.position.set(num(a[0], 0), num(a[1], 1.6), num(a[2], 0));
+        camera.rotation.set(0, 0, 0); camera.rotation.order = "YXZ";
+        camera.rotation.y = cameraYaw(num(a[3], 0)); camera.rotation.x = num(a[4], 0);
+        camera.fov = num(a[5], 70); camera.updateProjectionMatrix();
+        camera.position.x += (shakeX || 0) * 0.004; camera.position.y += (shakeY || 0) * 0.004;
+      } else if (word === "block") {
+        const key = a.map(fmt).join(","); seenBlocks.add(key);
+        if (!blocks.has(key)) {
+          const [x, y, z, sx, sy, sz] = a.map((v, i) => i < 6 ? num(v, 1) : v);
+          const m = new THREE.Mesh(unitBox, material(a[6] === undefined ? "#888888" : a[6], sx, sy, sz));
+          m.position.set(x, y, z); m.scale.set(sx, sy, sz); scene.add(m); blocks.set(key, m);
+        }
+      } else if (word === "model") {
+        const name = fmt(a[0]), k = counts.get(name) || 0; counts.set(name, k + 1);
+        const inst = instance(name, k, scene); if (!inst) continue;
+        inst.root.visible = true; inst.root.position.set(num(a[1], 0), num(a[2], 0), num(a[3], 0));
+        inst.root.rotation.y = modelYaw(num(a[4], 0)); inst.root.scale.setScalar(num(a[5], 1));
+        pose(inst, name, a[6] === undefined || a[6] === false ? null : fmt(a[6]), a[7]);
+      } else if (word === "hold") {
+        const name = fmt(a[0]), k = holdCounts.get(name) || 0; holdCounts.set(name, k + 1);
+        const inst = instance(name, k, holdGroup); if (!inst) continue;
+        inst.root.visible = true; inst.root.position.set(num(a[1], 0.25), num(a[2], -0.25), num(a[3], -0.5));
+        inst.root.rotation.set(num(a[5], 0), num(a[4], 0), 0); inst.root.scale.setScalar(num(a[6], 0.3));
+      } else if (word === "flash") {
+        let f = flashes[flashCount];
+        if (!f) { f = { light: new THREE.PointLight(0xffaa55, 0, 0, 2), ball: new THREE.Mesh(glow, new THREE.MeshBasicMaterial({ color: 0xffaa55, transparent: true, opacity: 0.85 })) }; scene.add(f.light); scene.add(f.ball); flashes.push(f); }
+        const c = new THREE.Color(fmt(a[4]).slice(0, 7)), r = num(a[3], 0.3);
+        f.light.color.copy(c); f.light.intensity = 6 * r * r + 0.6; f.light.distance = r * 8 + 1; f.light.position.set(num(a[0], 0), num(a[1], 1), num(a[2], 0));
+        f.ball.material.color.copy(c); f.ball.position.copy(f.light.position); f.ball.scale.setScalar(r); f.light.visible = f.ball.visible = true;
+        flashCount++;
+      } else if (word === "fog") {
+        const c = new THREE.Color(fmt(a[0]).slice(0, 7));
+        if (!scene.fog) scene.fog = new THREE.Fog(c, 1, 20);
+        scene.fog.color.copy(c); scene.fog.near = num(a[1], 1); scene.fog.far = num(a[2], 20); scene.background = c; fogSet = true;
+      }
+    }
+    // what wasn't asked for this frame is put away
+    for (const [key, m] of blocks) if (!seenBlocks.has(key)) { scene.remove(m); blocks.delete(key); }
+    for (const [poolName, pool] of pools) {
+      const used = poolName.endsWith("@hold") ? holdCounts.get(poolName.slice(0, -5)) || 0 : counts.get(poolName) || 0;
+      pool.forEach((p, i) => { if (i >= used) p.root.visible = false; });
+    }
+    flashes.forEach((f, i) => { if (i >= flashCount) f.light.visible = f.ball.visible = false; });
+    if (!fogSet) { scene.fog = null; scene.background = new THREE.Color(0x101215); }
+    renderer.render(scene, camera);
+  }
+  return { render, has3d: list => list.some(d => WORDS.has(d[0])), loading: () => [...assets.values()].some(a => !a.ready && !a.failed) };
+}
+export { WORDS };
+````
+
+## examples/bunker3d.sp
+
+Bunker 3D: Bunker's game code with a draw in 3D words, CC0 models and textures (Games group)
+
+````sprout
+-- Bunker 3D: the same lab, guards and proximity mines as Bunker, drawn in 3D with three.js and real models:
+-- soldiers by Quaternius, a blaster from Kenney's Blaster Kit, textures by Screaming Brain Studios (all CC0).
+-- Phone: drag to walk and turn, tap to fire, tap MINE to drop a mine. Keys: arrows or WASD, space to fire, M for a mine.
+-- The game is the same Sprout code as Bunker; only draw is new. Change the props, the fog or the colours while you play.
+
+level : [
+  "################"
+  "#......#.......#"
+  "#......#.......#"
+  "#..##..#..###..#"
+  "#..##.....#....#"
+  "#......#..#....#"
+  "####.###..#.####"
+  "#......#.......#"
+  "#......#.......#"
+  "#.###..####..###"
+  "#...#..........#"
+  "#...#..#####...#"
+  "#......#...#...#"
+  "#..........#...#"
+  "#......#.......#"
+  "################"
+]
+fov : 1.05                 -- how wide you see, in radians
+columns : 72               -- rays across the screen: more is sharper and slower
+walk-speed : 2.6
+turn-speed : 2.4
+mine-arm : 1.2             -- seconds before a dropped mine is live
+mine-reach : 1.0           -- how close someone must come to set it off
+blast : 2.1                -- how far the blast reaches
+wall-colour : [208, 214, 196]
+floor-colour : "#2b2c27"
+ceiling-colour : "#1b1d22"
+
+-- ---------------------------------------------------------------- the map
+solid : [cx cy |
+  row : level @ (cy floor + 1)
+  cond [row = false, true, any, row @ (cx floor + 1) = "#"]
+]
+wall-cells : level numbered collect-flat [[r, row] | row chars numbered keep [[c, ch] | ch = "#"] collect [[c, ch] | [c, r]]]
+-- is the way from a to b clear of walls?
+clear-line : [ax ay bx by |
+  steps : (bx - ax * (bx - ax) + (by - ay * (by - ay)) sqrt * 4 ceil) max 1
+  range steps all [k | t : k / steps, (solid [bx - ax * t + ax, by - ay * t + ay]) not]
+]
+wrap : [a | cond [a > pi, a - (2 * pi), a < (0 - pi), a + (2 * pi), any, a]]
+
+-- one ray from ox, oy at an angle: how far to the wall, and which face it hit (DDA, grid cell by grid cell)
+cast : [ox oy angle |
+  dx : angle cos
+  dy : angle sin
+  step-x : cond [dx < 0, -1, any, 1]
+  step-y : cond [dy < 0, -1, any, 1]
+  across : cond [dx = 0, 1000000, any, 1 / dx abs]
+  along : cond [dy = 0, 1000000, any, 1 / dy abs]
+  cell-x : ox floor
+  cell-y : oy floor
+  march : [mx my sx sy n |
+    cond [
+      n > 40, [far : 30, side : 0]
+      sx < sy, (
+        nx : mx + step-x
+        solid [nx, my] [[far : sx, side : 0]] else [march [nx, my, sx + across, sy, n + 1]]
+      )
+      any, (
+        ny : my + step-y
+        solid [mx, ny] [[far : sy, side : 1]] else [march [mx, ny, sx, sy + along, n + 1]]
+      )
+    ]
+  ]
+  march [cell-x, cell-y, cond [dx < 0, ox - cell-x * across, any, cell-x + 1 - ox * across], cond [dy < 0, oy - cell-y * along, any, cell-y + 1 - oy * along], 0]
+]
+
+-- ---------------------------------------------------------------- the people
+guard : [id gx gy tx ty | [id : id, x : gx, y : gy, angle : 0, health : 100, wait : 1, alert : false, home-x : gx, home-y : gy, to-x : tx, to-y : ty, fell : false]]
+start :
+  hero : [x : 2.5, y : 2.5, angle : 0.6, health : 100]
+  guards : [guard [1, 12.5, 2.5, 12.5, 4.5], guard [2, 3.5, 7.5, 6.5, 7.5], guard [3, 13.5, 7.5, 9.5, 7.5], guard [4, 2.5, 11.5, 2.5, 13.5], guard [5, 9.5, 12.5, 9.5, 12.5], guard [6, 13.5, 13.5, 13.5, 10.5]]
+  mines : []
+  blasts : []
+  carried : 6
+  drag : false
+  fire-wait : 0
+  mine-wait : 0
+  flash : 0
+  hurt : 0
+  over : ""
+  clock : 0
+  dt : 0
+
+-- move from (x, y) by (dx, dy), sliding along walls
+slide : [x y dx dy |
+  pad : 0.22
+  nx : solid [x + dx + (cond [dx < 0, 0 - pad, any, pad]), y] [x] else [x + dx]
+  ny : solid [nx, y + dy + (cond [dy < 0, 0 - pad, any, pad])] [y] else [y + dy]
+  [x : nx, y : ny]
+]
+distance : [ax ay bx by | bx - ax * (bx - ax) + (by - ay * (by - ay)) sqrt]
+near-mine-button : [tx ty | distance [tx, ty, W - 48, H - 48] < 40]
+
+-- ---------------------------------------------------------------- one frame
+play : [game |
+  dt : game dt
+  now : game clock
+  i : game input
+  hero : game hero
+  -- a finger: where it went down, and how far it has moved since
+  finger : cond [i tapped, [x : i touch-x, y : i touch-y, at : now, last-x : i touch-x, last-y : i touch-y], i touching and (game drag != false), game drag with [last-x : i touch-x, last-y : i touch-y], any, game drag]
+  released : (i touching not) and (game drag != false)
+  quick-tap : released and (now - (game drag at) < 0.3) and ((game drag last-x - (game drag x)) abs < 14) and ((game drag last-y - (game drag y)) abs < 14)
+  touch-turn : cond [i touching and (finger != false), clamp [finger last-x - (finger x) / 110, -1, 1], any, 0]
+  touch-walk : cond [i touching and (finger != false) and (near-mine-button [finger x, finger y] not), clamp [finger y - (finger last-y) / 80, -1, 1], any, 0]
+  key-turn : cond [(i held "left") or (i held "a"), -1, (i held "right") or (i held "d"), 1, any, 0]
+  key-walk : cond [(i held "up") or (i held "w"), 1, (i held "down") or (i held "s"), -1, any, 0]
+  turn : touch-turn + key-turn
+  walk : touch-walk + key-walk
+  wants-mine : (quick-tap and (near-mine-button [game drag x, game drag y])) or ((i held "m") and (game mine-wait <= 0))
+  wants-fire : (quick-tap and (near-mine-button [game drag x, game drag y] not)) or ((i held "space") and (game fire-wait <= 0))
+  -- walking and turning
+  heading : hero angle + (turn * turn-speed * dt)
+  step : walk * walk-speed * dt
+  moved : slide [hero x, hero y, heading cos * step, heading sin * step]
+  -- firing: the nearest live guard near the middle of the view, nearer than the wall
+  centre-wall : cast [moved x, moved y, heading] far
+  target : game guards keep [g | g health > 0] keep [g |
+    gd : distance [moved x, moved y, g x, g y]
+    rel : wrap (g y - (moved y) atan2 (g x - (moved x)) - heading)
+    (rel abs < (0.05 + (0.22 / gd))) and (gd < centre-wall)
+  ] smallest-by [g | distance [moved x, moved y, g x, g y]]
+  shot : wants-fire and (target != false)
+  wants-fire [sound "shoot"]
+  -- dropping a mine just ahead
+  drop : wants-mine and (game carried > 0)
+  drop [beep [440, 0.05]]
+  mines : drop [game mines .. [[x : heading cos * 0.4 + (moved x), y : heading sin * 0.4 + (moved y), armed : now + mine-arm]]] else [game mines]
+  -- guards: hit by the shot, then each one patrols, or turns on you once it sees you
+  hit-guards : game guards collect [g | shot and (g id = (target id)) [g with [health : g health - 50, alert : true]] else [g]]
+  thinking : hit-guards collect [g |
+    g health <= 0 [g] else [
+      gd : distance [g x, g y, moved x, moved y]
+      facing : g y - (moved y) atan2 (g x - (moved x)) + pi
+      looking : wrap (facing - (g angle)) abs < 0.9
+      sees : (gd < 9) and ((g alert) or looking) and (clear-line [g x, g y, moved x, moved y])
+      alert : (g alert) or sees
+      goal-x : cond [alert, moved x, any, g to-x]
+      goal-y : cond [alert, moved y, any, g to-y]
+      gap : distance [g x, g y, goal-x, goal-y]
+      pace : cond [alert and (gd < 3), 0, alert, 1.2, any, 0.8]
+      head : goal-y - (g y) atan2 (goal-x - (g x))
+      went : cond [gap < 0.05, [x : g x, y : g y], any, slide [g x, g y, head cos * pace * dt, head sin * pace * dt]]
+      arrived : (alert not) and (gap < 0.3)
+      fires : sees and (g wait <= 0)
+      next-x : cond [arrived, g home-x, any, g to-x]
+      next-y : cond [arrived, g home-y, any, g to-y]
+      back-x : cond [arrived, g to-x, any, g home-x]
+      back-y : cond [arrived, g to-y, any, g home-y]
+      g with [
+        x : went x, y : went y, angle : cond [alert, facing - pi, any, head], alert : alert
+        wait : cond [fires, 0.9, any, g wait - dt]
+        to-x : next-x, to-y : next-y, home-x : back-x, home-y : back-y
+        fired : fires, hits : fires and (noise [now * 7, g id] < (0.5 - (gd * 0.035)))
+      ]
+    ]
+  ]
+  pain : thinking count [g | g hits else false] * 9
+  thinking any [g | g fired else false] [sound "hit"]
+  -- mines: an armed mine goes off when anyone comes near
+  armed : mines keep [m | now >= (m armed)]
+  goes-off : armed keep [m | (thinking any [g | (g health > 0) and (distance [m x, m y, g x, g y] < mine-reach)]) or (distance [m x, m y, moved x, moved y] < (mine-reach * 0.7))]
+  still : mines keep [m | (goes-off has m) not]
+  (goes-off length > 0) [shake 10, sound "impact"]
+  caught : [px py | goes-off collect [m | distance [m x, m y, px, py]] keep [d | d < blast]]
+  blown : thinking collect [g | caught [g x, g y] length > 0 [g with [health : 0]] else [g]]
+  -- when each one fell, for the fall
+  guards : blown collect [g | g with [fell : cond [(g health <= 0) and (g fell = false), now, any, g fell]]]
+  blasted : caught [moved x, moved y] collect [d | blast - d * 60] sum
+  life : hero health - pain - blasted
+  (pain + blasted > 0) [sound "hurt"]
+  blasts : game blasts keep [b | now - (b at) < 0.6] .. (goes-off collect [m | [x : m x, y : m y, at : now]])
+  over : cond [life <= 0, "lost", guards all [g | g health <= 0], "won", any, ""]
+  game with [
+    hero : [x : moved x, y : moved y, angle : heading, health : life max 0]
+    guards : guards, mines : still, blasts : blasts
+    carried : drop [game carried - 1] else [game carried]
+    drag : cond [released, false, any, finger]
+    fire-wait : cond [wants-fire, 0.25, any, game fire-wait - dt]
+    mine-wait : cond [wants-mine, 0.5, any, game mine-wait - dt]
+    flash : cond [wants-fire, 0.08, any, game flash - dt]
+    hurt : cond [pain + blasted > 0, 0.25, any, game hurt - dt]
+    over : over
+  ]
+]
+
+update : [game | game over = "" [play game] else [(game input tapped) [start] else [game]]]
+
+-- ---------------------------------------------------------------- drawing, in 3D
+eye : 1.55                -- how high your eyes are, in metres
+gun-turn : 0.1            -- which way the gun points, in radians
+fog-colour : #14161c
+props : [["crate", 5.4, 1.6, 0.3, 0.8], ["barrels", 14.2, 1.7, 1.2, 0.9], ["generator_large", 9.0, 10.7, 0, 1.4], ["crate", 1.7, 14.2, 1.9, 0.8], ["barrels", 14.3, 12.4, 0.4, 0.9], ["generator", 5.8, 7.7, 1.6, 1.0], ["crate", 12.3, 8.3, 0.8, 0.8]]
+
+draw : [game |
+  hero : game hero
+  now : game clock
+  fog [fog-colour, 3, 15]
+  view [hero x, eye, hero y, hero angle, 0, 72]
+  -- the lab: a floor, a ceiling, and a block for every wall cell of the map
+  block [8, -0.05, 8, 16, 0.1, 16, "plate"]
+  block [8, 2.55, 8, 16, 0.1, 16, "metal"]
+  wall-cells each [[c, r] | block [c - 0.5, 1.25, r - 0.5, 1, 2.5, 1, "concrete"]]
+  props each [[name, px, pz, turn, size] | model [name, px, 0, pz, turn, size, false, 0]]
+  -- the guards: running when they chase, aiming when they're close, falling when they're hit
+  game guards each [g |
+    near : distance [g x, g y, hero x, hero y] < 3
+    clip : cond [g health <= 0, "Death", g alert and near, "Idle_Shoot", g alert, "Run_Gun", any, "Run"]
+    time : cond [g health <= 0, now - (g fell else now), g alert, now, any, now * 0.55]
+    model ["soldier", g x, 0, g y, g angle, 1.8, clip, time]
+  ]
+  -- mines on the floor, blinking once they're live
+  game mines each [m |
+    model ["grenade", m x, 0, m y, 0, 0.22, false, 0]
+    (now >= (m armed)) and (now * 4 % 1 < 0.5) [flash [m x, 0.3, m y, 0.05, "#ff3b30"]]
+  ]
+  game blasts each [b | age : now - (b at) / 0.6, flash [b x, 0.9, b y, 0.5 + (age * 1.4), "#ffb347"]]
+  -- the gun, kicking back when it fires
+  kick : cond [game flash > 0, 0.05, any, 0]
+  hold ["blaster_g", 0.2, -0.21, -0.55 + kick, gun-turn, 0, 0.26]
+  (game flash > 0) [flash [hero angle cos * 0.7 + (hero x), 1.35, hero angle sin * 0.7 + (hero y), 0.08, "#ffd76a"]]
+  -- on top: the crosshair, the map, health, mines and the mine button
+  line [W / 2 - 8, H / 2, W / 2 + 8, H / 2, "#ffffffaa"]
+  line [W / 2, H / 2 - 8, W / 2, H / 2 + 8, "#ffffffaa"]
+  wall-cells each [[c, r] | rect [c * 4 + 2, r * 4 + 2, 4, 4, "#4a4d4588"]]
+  game guards keep [g | g health > 0] each [g | circle [g x * 4 + 6, g y * 4 + 6, 1.5, "#ff5a4f"]]
+  game mines each [m | circle [m x * 4 + 6, m y * 4 + 6, 1.3, "#ffd166"]]
+  circle [hero x * 4 + 6, hero y * 4 + 6, 1.8, "#ffffff"]
+  rect [W - 112, 12, 100, 8, "#00000088"]
+  rect [W - 112, 12, hero health, 8, cond [hero health > 35, "#7bd389", any, "#ff5a4f"]]
+  text ["mines [game carried]", W - 62, 36, 12, "#f4f1ea"]
+  circle [W - 48, H - 48, 34, "#00000066"]
+  text ["MINE", W - 48, H - 44, 13, "#ffd166"]
+  (game hurt > 0) [rect [0, 0, W, H, "#ff000040"]]
+  (now < 5) and (game over = "") [text ["drag to walk · tap to fire · MINE drops a mine", W / 2, H - 140, 11, "#f4f1eacc"]]
+  game over = "won" [rect [0, H / 2 - 50, W, 100, "#000000aa"], text ["LAB CLEARED", W / 2, H / 2 - 6, 24, "#7bd389"], text ["tap to go again", W / 2, H / 2 + 24, 12, "#f4f1ea"]]
+  game over = "lost" [rect [0, H / 2 - 50, W, 100, "#000000aa"], text ["YOU WERE CAUGHT", W / 2, H / 2 - 6, 24, "#ff5a4f"], text ["tap to go again", W / 2, H / 2 + 24, 12, "#f4f1ea"]]
+]
+````
+
 ## examples/recipes.sp
 
 Recipes: quicksort, primes, FizzBuzz, a vector with its own + (prints; not a game)
@@ -10426,7 +10864,7 @@ body.t-out #out{display:block}body.t-st #st{display:block}
 </aside>
 <main id="main">
  <canvas id="glow" width="36" height="48"></canvas>
- <div id="artcol"><div id="stage"><canvas id="gv" width="360" height="480"></canvas><canvas id="cv" width="360" height="480"></canvas><div id="noGame"><div id="noGameT">This one isn't a game: it has no <b>update</b>.<br>What it prints is under Output.</div></div></div></div>
+ <div id="artcol"><div id="stage"><canvas id="tv" width="360" height="480" style="position:absolute;inset:0;width:100%;height:100%;display:none"></canvas><canvas id="gv" width="360" height="480"></canvas><canvas id="cv" width="360" height="480"></canvas><div id="noGame"><div id="noGameT">This one isn't a game: it has no <b>update</b>.<br>What it prints is under Output.</div></div></div></div>
  <div id="grip" title="Drag to size the game; tap to make it small or big again"><i></i></div>
  <section id="detail">
   <div id="head">
@@ -10471,16 +10909,16 @@ body.t-out #out{display:block}body.t-st #st{display:block}
 <div id="modal"><div id="mBox"><div class="mh"><h2 id="mTitle"></h2><button class="x" data-close aria-label="Close">✕</button></div><div id="mBody"></div></div></div>
 <div id="moreMenu"><button data-m="net">Play with a friend</button><button data-m="lib">Library</button><button data-m="restart">Restart</button><button data-m="share">Share</button><button data-m="spec">Read the spec</button><a href="./">About Sprout</a></div><div id="toast"></div><div id="scrubTip"></div>
 
-<script src="sprout3.js?v=20261121m"></script>
-<script src="words.js?v=20261121m"></script>
-<script src="parse.js?v=20261121m"></script>
-<script src="stdlib.js?v=20261121m"></script>
-<script src="libs.js?v=20261121m"></script>
-<script src="kernels.js?v=20261121m"></script>
-<script src="live3.js?v=20261121m"></script>
-<script src="sqlite-web.js?v=20261121m"></script>
-<script src="gpu-paint.js?v=20261121m"></script>
-<script src="gpu-spork.js?v=20261121m"></script>
+<script src="sprout3.js?v=20261121n"></script>
+<script src="words.js?v=20261121n"></script>
+<script src="parse.js?v=20261121n"></script>
+<script src="stdlib.js?v=20261121n"></script>
+<script src="libs.js?v=20261121n"></script>
+<script src="kernels.js?v=20261121n"></script>
+<script src="live3.js?v=20261121n"></script>
+<script src="sqlite-web.js?v=20261121n"></script>
+<script src="gpu-paint.js?v=20261121n"></script>
+<script src="gpu-spork.js?v=20261121n"></script>
 <script>
 "use strict";
 const V="20261120m";
@@ -10502,6 +10940,7 @@ const EX=[
  ["ace-derive","ace","ACE Derive","The five kinds of atom, and done worked out to a fixed point."],
  ["terrain","tool","Terrain","A map made of smooth noise and coloured by scales, flying east: the simplex and chroma libraries, wrapped as Sprout modules. Change the sea level or the colours while it flies."],
  ["gears","tool","Gears","A parametric tool: two gears worked out from a few numbers. Change the teeth, the module or the speed while they turn, or press tweak and drag a number."],
+ ["bunker3d","game","Bunker 3D","The same lab, guards and proximity mines as Bunker, in real 3D: three.js, Quaternius soldiers, a Kenney blaster, textured concrete and steel. Drag to walk, tap to fire, MINE to drop one."],
  ["bunker","game","Bunker","Sneak through an underground lab and take down the guards. Proximity mines arm after a moment and go off when anyone comes near, you included. Drag to walk, tap to fire, MINE to drop one."],
  ["volley","game","Volley","A game for two phones, no server: send an invite by text and each player drags their own paddle. Alone, the top paddle plays itself."],
  ["galaxy","game","Galaxy","Twenty thousand stars falling toward your finger. One fused loop moves them all, and WebGPU draws them in one call."],
@@ -10534,7 +10973,13 @@ function tryBuild(src){logBuf=[];let ok=false;try{ok=build(src)}finally{const ke
 let AC=null,muted=LS.get("sprout3.mute",false),shakeAmt=0;
 function audio(){if(!AC){try{AC=new (window.AudioContext||window.webkitAudioContext)()}catch(e){}}if(AC&&AC.state==="suspended")AC.resume()}
 function beep(f,d){if(muted||!AC)return;try{const o=AC.createOscillator(),v=AC.createGain(),t=AC.currentTime;d=+d||.1;o.type="square";o.frequency.value=+f||440;v.gain.setValueAtTime(.08,t);v.gain.exponentialRampToValueAtTime(.001,t+d);o.connect(v).connect(AC.destination);o.start(t);o.stop(t+d+.02)}catch(e){}}
-function onEffect([name,a]){if(name==="beep")beep(a[0],a[1]);else if(name==="shake")shakeAmt=Math.max(shakeAmt,+a[0]||0)}
+function onEffect([name,a]){if(name==="beep")beep(a[0],a[1]);else if(name==="shake")shakeAmt=Math.max(shakeAmt,+a[0]||0);else if(name==="sound")playSound(S.format(a[0]))}
+// sound "shoot": a short recorded sound from vendor/sfx, decoded once; a beep where it can't play
+const SOUNDS=new Map();
+function playSound(name){if(muted)return;audio();if(!AC)return;let s=SOUNDS.get(name);
+ if(!s){s={buf:null};SOUNDS.set(name,s);fetch("vendor/sfx/"+name+".ogg").then(r=>{if(!r.ok)throw 0;return r.arrayBuffer()}).then(b=>AC.decodeAudioData(b)).then(buf=>{s.buf=buf;play(buf)},()=>{s.failed=true;beep(440,.06)});return}
+ if(s.buf)play(s.buf);else if(s.failed)beep(440,.06);
+ function play(buf){try{const n=AC.createBufferSource();n.buffer=buf;n.connect(AC.destination);n.start()}catch(e){}}}
 
 // ---------- the game
 let SPEED=1;   // slow motion and fast forward, from the Live sheet (editor-tools.js)
@@ -10641,6 +11086,7 @@ function paint(ctx,list){
 function drawText(ctx,a){ctx.fillStyle=col(a[4]);ctx.font="600 "+(+a[3]||16)+'px -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,"Segoe UI",sans-serif';ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(S.format(a[0]),a[1],a[2])}
 // WebGPU: shapes on the GPU canvas underneath in one draw call, text on the 2D canvas on top
 let GPU=null,useGpu=LS.get("sprout3.gpu",true);
+const WORDS3D=new Set(["view","block","model","hold","flash","fog"]);let VIEW3D=null,view3dLoading=false;
 function rendererUI(){const on=!!(GPU&&useGpu),b=$("bGpu");document.body.classList.toggle("gpu",on);b.hidden=!GPU;b.textContent=on?"WebGPU":"Canvas";b.classList.toggle("on",on)}
 $("bGpu").onclick=()=>{useGpu=!useGpu;LS.set("sprout3.gpu",useGpu);rendererUI();msAvg=0;toast(useGpu?"Drawing with WebGPU":"Drawing with Canvas 2D")};
 // WebGPU is used only once it has passed a self-test on this device; otherwise everything stays on Canvas 2D
@@ -10668,12 +11114,18 @@ function frame(now){requestAnimationFrame(frame);const dt=Math.min(.05,(now-last
   if(!paused&&window.NET&&NET.active)NET.advance(dt,heldCell());
   else if(!paused){game.tick(dt*SPEED,heldCell());if(swipeTicks>0)swipeTicks--;if(++goodTicks===30)goodSrc=running}
   const list=game.draw();
+  // 3D words: three.js draws them on the canvas underneath, and the 2D words go on top (three-view.js, decision 108)
+  const has3d=list.some(d=>WORDS3D.has(d[0]));
+  if(has3d&&!VIEW3D&&!view3dLoading){view3dLoading=true;import("./three-view.js?v="+V).then(m=>{VIEW3D=m.makeView($("tv"),"")},e=>setErr({line:0,msg:"3D couldn't start: "+msgOf(e)}))}
+  $("tv").style.display=has3d?"block":"none";
   let sx=0,sy=0;if(shakeAmt>.3&&!paused){sx=(Math.random()-.5)*shakeAmt;sy=(Math.random()-.5)*shakeAmt;shakeAmt*=Math.pow(.004,dt)}else if(!paused)shakeAmt=0;
   if(GPU&&useGpu&&++gpuFrames===10)checkShown();
   let texts=null;
-  if(GPU&&useGpu){try{texts=GPU.paint(list,GW,GH,sx,sy);if(texts)gpuMisses=0;else if(++gpuMisses>90||GPU.lost)gpuFail(GPU.lost?"the GPU was lost":"WebGPU had nothing to draw into")}catch(e){gpuFail(msgOf(e))}}
+  if(has3d){if(VIEW3D)try{VIEW3D.render(list,cv.clientWidth||GW,cv.clientHeight||GH,sx,sy)}catch(e){setErr({line:0,msg:"3D: "+msgOf(e)})}
+   g.clearRect(0,0,GW,GH);g.save();try{paint(g,list)}finally{g.restore()}texts=null}
+  else if(GPU&&useGpu){try{texts=GPU.paint(list,GW,GH,sx,sy);if(texts)gpuMisses=0;else if(++gpuMisses>90||GPU.lost)gpuFail(GPU.lost?"the GPU was lost":"WebGPU had nothing to draw into")}catch(e){gpuFail(msgOf(e))}}
   if(texts){g.clearRect(0,0,GW,GH);g.save();g.translate(sx,sy);for(const a of texts)drawText(g,a);g.restore()}
-  else{g.save();g.translate(sx,sy);try{paint(g,list)}finally{g.restore()}}
+  else if(!has3d){g.save();g.translate(sx,sy);try{paint(g,list)}finally{g.restore()}}
   msAvg=msAvg*.95+(performance.now()-t0)*.05;
  }catch(e){
   const m={line:lineOf(e),msg:msgOf(e)};
@@ -10966,8 +11418,8 @@ $("bShare").onclick=share;$("bNet").onclick=()=>window.NET&&NET.invite();
  if(sv&&sv.code&&sv.code.trim()){curEx=sv.ex||"";dirty=!!sv.dirty;setCode(sv.code);build(sv.code,true);if(document.body.classList.contains("prog"))tab("out");thenOpen()}
  else loadEx("ace-board",true).then(thenOpen)})();
 </script>
-<script src="editor-tools.js?v=20261121m"></script>
-<script src="net.js?v=20261121m"></script>
+<script src="editor-tools.js?v=20261121n"></script>
+<script src="net.js?v=20261121n"></script>
 </body></html>
 ````
 
