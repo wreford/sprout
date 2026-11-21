@@ -511,6 +511,10 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     ok("silvereye: co-op is the mission for two, guards and all", f(co, "versus") === false && f(co, "agents").count() === 2 && f(co, "guards").count() === 6 && co.draw().some(x => x[0] === "text" && /GUARDS/.test(x[1][0])));
     put(co, 0, { x: 2.5, y: 2.5, health: 0, "down-at": 0.01 }); co.tick(1 / 60, pad({}), pad({}));
     ok("silvereye: in co-op, one player down doesn't end the mission", f(co, "over") === ""); }
+  { const tb = L.makeGame(src.replace(/^turbo : false/m, "turbo : true"), {}), nt = L.makeGame(src, {});
+    tb.tick(1 / 60, pad({})); nt.tick(1 / 60, pad({}));
+    for (let t = 0; t < 20; t++) { tb.tick(1 / 60, pad({ walk: 1 })); nt.tick(1 / 60, pad({ walk: 1 })); }
+    ok("silvereye: turbo moves you half as fast again", Math.abs((agent(tb, 1).field("x") - 2.5) / (agent(nt, 1).field("x") - 2.5) - 1.5) < 0.05); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });

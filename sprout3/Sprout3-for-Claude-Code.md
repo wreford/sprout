@@ -10,13 +10,13 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 
 ```
 node test.js          # language tests (303)
-node game-tests.js    # game tests (163)
+node game-tests.js    # game tests (164)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 466 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 467 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4544,6 +4544,10 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     ok("silvereye: co-op is the mission for two, guards and all", f(co, "versus") === false && f(co, "agents").count() === 2 && f(co, "guards").count() === 6 && co.draw().some(x => x[0] === "text" && /GUARDS/.test(x[1][0])));
     put(co, 0, { x: 2.5, y: 2.5, health: 0, "down-at": 0.01 }); co.tick(1 / 60, pad({}), pad({}));
     ok("silvereye: in co-op, one player down doesn't end the mission", f(co, "over") === ""); }
+  { const tb = L.makeGame(src.replace(/^turbo : false/m, "turbo : true"), {}), nt = L.makeGame(src, {});
+    tb.tick(1 / 60, pad({})); nt.tick(1 / 60, pad({}));
+    for (let t = 0; t < 20; t++) { tb.tick(1 / 60, pad({ walk: 1 })); nt.tick(1 / 60, pad({ walk: 1 })); }
+    ok("silvereye: turbo moves you half as fast again", Math.abs((agent(tb, 1).field("x") - 2.5) / (agent(nt, 1).field("x") - 2.5) - 1.5) < 0.05); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });
@@ -10630,7 +10634,8 @@ simulant-skill : 2         -- 1 rookie, 2 agent, 3 ace
 difficulty : 2             -- a mission's guards: 1 rookie (no generators to wreck), 2 agent, 3 ace
 fov-across : 90            -- how wide you see, side to side, in degrees: wider than the old consoles
 zoom-view : 0.45           -- aiming (Z) narrows the view to this much
-walk-speed : 2.6
+turbo : false              -- unlocked by all three medals in one mission: everyone moves half as fast again
+walk-speed : 2.6 * (cond [turbo, 1.5, any, 1])
 run-boost : 1.4            -- the stick pushed all the way up runs this much faster
 turn-speed : 2.4
 mine-arm : 1.2             -- seconds before a dropped mine is live

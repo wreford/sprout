@@ -55,7 +55,8 @@ simulant-skill : 2         -- 1 rookie, 2 agent, 3 ace
 difficulty : 2             -- a mission's guards: 1 rookie (no generators to wreck), 2 agent, 3 ace
 fov-across : 90            -- how wide you see, side to side, in degrees: wider than the old consoles
 zoom-view : 0.45           -- aiming (Z) narrows the view to this much
-walk-speed : 2.6
+turbo : false              -- unlocked by all three medals in one mission: everyone moves half as fast again
+walk-speed : 2.6 * (cond [turbo, 1.5, any, 1])
 run-boost : 1.4            -- the stick pushed all the way up runs this much faster
 turn-speed : 2.4
 mine-arm : 1.2             -- seconds before a dropped mine is live
