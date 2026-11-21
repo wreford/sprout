@@ -1110,7 +1110,7 @@ const GLOBALS = Object.create(null);
 function defNative(name, fn, effect) { GLOBALS[name] = new Native(name, fn, effect); }
 GLOBALS.any = ANY;
 defNative("range", n => { const count = requireNumber(n); return new RangeCell(Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0); });
-// rand reads the recorded random source, like random, so it stays here; plain maths lives in the prelude (decision 97)
+// rand reads the recorded random source, like random, so it stays here; plain math lives in the prelude (decision 97)
 defNative("rand", a => { const [lo, hi] = argumentsOf(a, 2); return lo + randomSource() * (hi - lo); });
 defNative("print", a => { effect(() => printOutput(formatValue(a))); return a; }, true);
 // noise [sample, id]: a number from 0 up to 1 that is always the same for the same two inputs (decision 87)
@@ -1120,7 +1120,7 @@ let randomSource = Math.random, printOutput = s => { if (typeof console !== "und
 
 // ===================================================================== prelude, written in Sprout (decisions 30, 34, 35, 50)
 const PRELUDE = `
--- maths that used to be written in JavaScript (decision 97)
+-- math that used to be written in JavaScript (decision 97)
 clamp : [value low high | value < low [low] else [value > high [high] else [value]]]
 toward : [from to amount | to - from * amount + from]
 dist : [x1 y1 x2 y2 |

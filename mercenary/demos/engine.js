@@ -83,7 +83,7 @@ const fx={
  pop(el,txt,cls,box){if(!el)return;box=box||el.offsetParent||document.body;const r=el.getBoundingClientRect(),s=box.getBoundingClientRect(),d=document.createElement("div");d.className="flt "+(cls||"");d.textContent=txt;
   d.style.left=(r.left-s.left+r.width/2)+"px";d.style.top=(r.top-s.top+r.height*.2)+"px";box.appendChild(d);setTimeout(()=>d.remove(),900)}};
 
-// ---- turn-based combat maths every demo can agree on
+// ---- turn-based combat math every demo can agree on
 const combat={
  // chance to hit, 5..95
  hit:(acc,avo)=>Math.max(5,Math.min(95,acc-avo)),

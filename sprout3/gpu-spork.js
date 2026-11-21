@@ -1,5 +1,5 @@
 // Spork on the GPU (decision 93): a kernel worked out ahead (decision 91) as a WebGPU compute shader.
-// The GPU does 32-bit maths, so its answers can differ from WebAssembly and JavaScript in the last digits;
+// The GPU does 32-bit math, so its answers can differ from WebAssembly and JavaScript in the last digits;
 // the host chooses whether big sporks may use it.
 // A GPU answer comes back later, but Sprout runs straight through, so the page runs a program in passes:
 // a spork the GPU hasn't answered yet starts a job and stops the pass (SPORK_WAIT); when the jobs are done

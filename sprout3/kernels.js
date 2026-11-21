@@ -1,6 +1,6 @@
 // Sprout 3 kernels: the library that makes Sprout fast (decision 96). The core (sprout3.js) runs every program
 // on its own; this only finds faster ways to get the same answers.
-//   - the work-ahead pass (WorkAhead): a cell worked out as far as it can be without its input, down to number maths
+//   - the work-ahead pass (WorkAhead): a cell worked out as far as it can be without its input, down to number math
 //   - loop fusion: a run of collect, keep, fold, each and length in a chain, as one loop (decision 95)
 //   - spork kernels: a pure cell run for every input at once, on WebAssembly SIMD or in JavaScript (decision 91)
 //   - a radix sort for numbers (decision 92)
@@ -13,7 +13,7 @@ const { FUSED_OPERATORS, LAZY_OPERATORS, EVERY_VALUE_METHODS, GLOBALS, Native, n
 // ===================================================================== spork kernels (decision 47, step 3 of decision 79)
 // A cell given to spork is worked out once, when the program loads, as far as it can be without its input:
 // calls are inlined; lists, records, words and loops laidOver them are unrolled; a test that changes from run to run
-// becomes a choice made in each run. What is left is number maths on the input, a flat list of steps (the IR),
+// becomes a choice made in each run. What is left is number math on the input, a flat list of steps (the IR),
 // which runs as one tight loop: in JavaScript, in WebAssembly SIMD, or on the GPU.
 // If anything can't be worked out this way (a host word, a random read, keep with a test that changes from run
 // to run), there is no kernel and spork is collect, so a program can't tell which way it ran.
@@ -658,7 +658,7 @@ function runSpork(s, xs) {
   const outsideValues = s.outsideReads();
   for (let i = 0; i < outsideValues.length; i++) if (typeof outsideValues[i] !== "number") return null;
   const t0 = nowMs(); let outputs = null, how = "";
-  // the GPU (32-bit maths) only when the host allows it; else WebAssembly SIMD; else JavaScript. The last two give the same answer.
+  // the GPU (32-bit math) only when the host allows it; else WebAssembly SIMD; else JavaScript. The last two give the same answer.
   if (sporkState.gpu && !kernel.javascriptOnly) { outputs = sporkState.gpu(kernel, n, inputs, outsideValues) || null; if (outputs) how = "gpu"; }
   if (sporkState.wasm === undefined) sporkState.wasm = makeWasmRunner();
   if (!outputs && sporkState.wasm && !kernel.javascriptOnly && n >= 16) { outputs = sporkState.wasm(kernel, n, inputs, outsideValues); how = "simd"; if (!outputs) return null; }

@@ -48,7 +48,7 @@ ok("84 match only works out the answer it picks", val('match [1, [1, "one", 2, n
   ok("an unclosed ( too", lineOf("a : 1\nb : (2 + 3\nc : 4") === 2); }
 { const sp = S.load("xs : []\nf : [p | p x > 1]\na : xs collect [p | p with [x : p x + 1]]\nb : xs keep [p | p x > 1]\nc : xs keep [p | f p]\nd : xs collect [p | p with [x : rand [0, 1]]]\ne : xs keep [p | p name = \"a\"]").speedNotes;
   const at = l => sp.find(n => n.line === l);
-  ok("86 speed notes: a with of number maths runs over columns", at(3).fast && at(3).word === "collect" && at(4).fast && at(4).word === "keep");
+  ok("86 speed notes: a with of number math runs over columns", at(3).fast && at(3).word === "collect" && at(4).fast && at(4).word === "keep");
   ok("86 speed notes: say why a body runs item by item", at(5).fast && /random/.test(at(6).why) && !at(6).fast, sp.map(n => n.line + " " + n.why)); }
 // loop fusion (decision 95): a run of collect, keep, fold and length is one loop, with the same answer as the steps one by one
 { const both = src => { const a = S.format(S.load(src).field("result")); S.fastPaths(false); const b = S.format(S.load(src).field("result")); S.fastPaths(true); return [a, b]; };
@@ -121,7 +121,7 @@ ok("84 match only works out the answer it picks", val('match [1, [1, "one", 2, n
     return { same: S.format(simd) === want && S.format(js) === want && S.equal(simd, plain), how: [how1, how2], speed: c.speedNotes };
   };
   const kernels = {
-    "number maths and noise": "f : [n | noise [n, 7] * 10 floor + (n / 3 round) - (n sqrt)]",
+    "number math and noise": "f : [n | noise [n, 7] * 10 floor + (n / 3 round) - (n sqrt)]",
     "a test that changes from run to run": "f : [n | n > 150 [n * 2] else [0 - n]]",
     "else catching a false branch": "f : [n | n > 5 [n < 80] else [n = 2]]",
     "a record each run": "f : [n | [a : n * 2, b : noise [n, 1]]]",

@@ -160,7 +160,7 @@ const EVERY_WORDS = { kind: none(kindOf) };
 S.install({ methods: { cell: LIST_WORDS, text: TEXT_WORDS, number: NUMBER_WORDS, every: EVERY_WORDS } });
 
 // ===================================================================== Rebol's literals (decision 100)
-// Each kind is a small value with its own methods: maths that makes sense for it, and fields to read.
+// Each kind is a small value with its own methods: math that makes sense for it, and fields to read.
 const pad2 = n => String(n).padStart(2, "0");
 const sameKind = (a, b) => b !== null && typeof b === "object" && b.kind === a.kind;
 const cantCompare = (a, b, op) => logMiss("a " + a.kind + " can't be compared with " + I.describe(b) + " (" + op + ")");

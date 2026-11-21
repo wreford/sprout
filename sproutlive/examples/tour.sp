@@ -5,7 +5,7 @@ count : 0
 count := count + 1
 count print
 
--- maths reads left to right, with no precedence
+-- math reads left to right, with no precedence
 2 + 3 * 4 print
 2 + (3 * 4) print
 

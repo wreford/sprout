@@ -9,7 +9,7 @@
 --   gate      done when everything it requires is done (RFIs, constraints)
 --   rollup    done when all its children are done (areas, work packages)
 --
--- A tag carries no maths, except one: narrative-required. An atom with it isn't done,
+-- A tag carries no math, except one: narrative-required. An atom with it isn't done,
 -- however it was closed, until someone writes down what happened.
 
 atoms : [
