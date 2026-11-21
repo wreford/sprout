@@ -4807,7 +4807,7 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     for (let t = 0; t < 300; t++) yd.tick(1 / 60, pad({ fire: t % 30 < 5, walk: 1 }));
     ok("silvereye: and the simulants play there", S.partsOf(f(yd, "agents")).filter(a => a.field("bot")).every(a => onOpen(a.field("x"), a.field("y")))); }
   { const dy = L.makeGame(duelSrc.replace(/^mode : "mission"/m, 'mode : "duel"').replace(/^arena : "lab"/m, 'arena : "compound"'), { players: 2, me: 1 }); dy.tick(1 / 60, pad({}), pad({}));
-    ok("silvereye: a duel in the compound puts the two players in far corners", agent(dy, 1).field("x") === 2.5 && agent(dy, 1).field("y") === 21.5 && agent(dy, 2).field("x") === 21.5 && agent(dy, 2).field("y") === 1.5); }
+    ok("silvereye: a duel in the compound puts the two players in far corners", agent(dy, 1).field("x") === 2.5 && agent(dy, 1).field("y") === 21.5 && agent(dy, 2).field("x") === 20.5 && agent(dy, 2).field("y") === 1.5); }
   { const np = L.makeGame(duelSrc, { players: 2, me: 1 }); np.tick(1 / 60, pad({}), pad({ skin: 5, tag: "VIPER" }));
     put(np, 0, { x: 8.5, y: 7.5, angle: 0 }); put(np, 1, { x: 12.5, y: 7.5, angle: Math.PI }); np.tick(1 / 60, pad({}), pad({ skin: 5, tag: "VIPER" }));
     ok("silvereye: a rival's codename shows over their head, in red", np.draw().some(x => x[0] === "text" && x[1][0] === "VIPER" && x[1][4] === "#ff9b8f"));
@@ -11079,7 +11079,7 @@ campaign : false           -- true on the console: a won mission waits for the n
 lab-props : [["crate", 5.4, 1.6, 0.3, 0.8], ["barrels", 14.2, 1.7, 1.2, 0.9], ["crate", 1.7, 14.2, 1.9, 0.8], ["barrels", 14.3, 12.4, 0.4, 0.9], ["crate", 12.3, 8.3, 0.8, 0.8]]
 depot-props : [["barrels", 7.5, 7.5, 0.3, 0.9], ["crate", 1.6, 1.6, 0.4, 0.8], ["crate", 14.4, 14.4, 1.2, 0.8], ["barrels", 14.3, 1.6, 2.0, 0.9], ["crate", 8.0, 9.4, 0, 0.7], ["barrels", 1.7, 14.3, 0.7, 0.9], ["delivery_van", 12.4, 14.35, 0, 1.7]]
 relay-props : [["satellite_dish", 8.6, 5.4, 2.3, 1.5], ["column", 3.5, 3.5, 0, 2.5], ["column", 12.5, 3.5, 0, 2.5], ["column", 3.5, 12.5, 0, 2.5], ["column", 12.5, 12.5, 0, 2.5], ["barrels", 1.6, 1.6, 0.2, 0.9], ["crate", 14.4, 1.6, 0.9, 0.8], ["crate", 1.6, 14.4, 1.4, 0.8], ["barrels", 14.3, 14.3, 2.2, 0.9]]
-compound-props : [["tree_pine", 1.7, 1.7, 0, 3.4], ["tree_pine_tall", 22.3, 6.5, 0.6, 4.2], ["tree_oak", 1.8, 10.5, 0.3, 3], ["tree_oak", 22.2, 21.4, 1.1, 3], ["tree_pine", 15.6, 22.2, 0.2, 3.2], ["tree_pine", 10.5, 1.6, 0.9, 3.1], ["tree_oak", 9.0, 13.2, 2.1, 2.8], ["bush", 13.6, 11.2, 0, 0.9], ["bush", 4.2, 16.4, 0.7, 1], ["bush", 21.4, 15.3, 1.3, 0.9], ["rock_large", 18.2, 9.4, 0.5, 1.1], ["rock_large", 3.2, 19.6, 2.2, 0.9], ["delivery_van", 9.6, 22.3, 0, 1.7], ["crate", 16.4, 3.6, 0.4, 0.8], ["barrels", 22.3, 1.7, 0.2, 0.9], ["crate", 14.2, 19.4, 1.1, 0.8], ["barrels", 1.7, 22.3, 0.8, 0.9], ["generator", 10.5, 4.6, 1.6, 1.0]]
+compound-props : [["tree_pine", 1.7, 1.7, 0, 3.4], ["tree_pine_tall", 22.3, 6.5, 0.6, 4.2], ["tree_oak", 1.8, 10.5, 0.3, 3], ["tree_oak", 22.2, 21.4, 1.1, 3], ["tree_pine", 15.6, 22.2, 0.2, 3.2], ["tree_pine", 10.5, 1.6, 0.9, 3.1], ["tree_oak", 9.0, 13.2, 2.1, 2.8], ["bush", 13.6, 11.2, 0, 0.9], ["bush", 4.2, 16.4, 0.7, 1], ["bush", 21.4, 15.3, 1.3, 0.9], ["rock_large", 18.2, 9.4, 0.5, 1.1], ["rock_large", 6.8, 18.4, 2.2, 0.9], ["delivery_van", 9.6, 22.3, 0, 1.7], ["crate", 16.4, 3.6, 0.4, 0.8], ["barrels", 22.3, 1.7, 0.2, 0.9], ["crate", 14.2, 19.4, 1.1, 0.8], ["barrels", 1.7, 22.3, 0.8, 0.9], ["generator", 10.5, 4.6, 1.6, 1.0]]
 -- the compound's pickups (the heavy blaster waits in the HQ), for its mission and for matches out in the yard
 compound-spots : [["ammo", 8.5, 9.5], ["armour", 19.5, 10.5], ["ammo", 3.5, 13.5], ["ammo", 12.5, 20.5], ["armour", 17.5, 15.5], ["ammo", 18.5, 3.5]]
 compound-heavy : [5.5, 5.5]
@@ -11259,7 +11259,7 @@ guard : [id gx gy tx ty | [id : id, x : gx, y : gy, angle : 0, health : guard-he
 -- a scientist: unarmed, walks between two points, freezes once the alarm is up; hurting one fails the mission
 scientist : [id sx sy tx ty | [id : id, x : sx, y : sy, angle : 0, health : 30, home-x : sx, home-y : sy, to-x : tx, to-y : ty, fell : false]]
 -- where players start and come back in a match: indoors, and out in the yard
-yard-spawns : [[2.5, 21.5, -0.8], [21.5, 1.5, 2.4], [21.5, 21.5, -2.4], [1.5, 1.5, 0.8], [12.5, 12.5, 0], [17.5, 8.5, 3.1], [6.5, 9.5, 0], [10.5, 19.5, -1.6], [12.5, 1.5, 1.6], [1.5, 15.5, 0], [22.5, 12.5, 3.1], [6.5, 5.5, 0], [17.5, 16.5, 3.1], [11.5, 4.5, 1.6], [19.5, 3.5, 1.6]]
+yard-spawns : [[2.5, 21.5, -0.8], [20.5, 1.5, 2.4], [20.5, 21.5, -2.4], [3.5, 1.5, 0.8], [12.5, 12.5, 0], [16.5, 8.5, 3.1], [6.5, 9.5, 0], [10.5, 19.5, -1.6], [12.5, 1.5, 1.6], [1.5, 15.5, 0], [22.5, 12.5, 3.1], [6.5, 5.5, 0], [17.5, 16.5, 3.1], [12.5, 5.5, 1.6], [19.5, 3.5, 1.6]]
 room-spawns : [[2.5, 2.5, 0.6], [13.5, 13.5, -2.4], [13.5, 2.5, 2.4], [2.5, 13.5, -0.8], [7.5, 4.5, 1.6], [9.5, 10.5, -1.6], [6.5, 13.5, 0], [11.5, 5.5, 3.1], [14.5, 7.5, 3.1], [1.5, 12.5, 0], [8.5, 1.5, 1.6], [5.5, 4.5, 0], [12.5, 10.5, -1.6], [1.5, 7.5, 0], [14.5, 13.5, 3.1]]
 spawns : cond [in-yard, yard-spawns, any, room-spawns]
 spawn-of : [id | spawns @ (id - 1 % (spawns length) + 1)]
