@@ -55,6 +55,8 @@ function makeGame(src, opts) {
 
   const api = {
     get state() { return state; }, history,
+    // the program itself (its top-level names), for an editor that shows their values
+    get file() { return file; },
     // which collect, keep and each bodies can run over columns, from the compiler (decision 86)
     get speedNotes() { return file.speedNotes || []; },
     down(x, y) { send(ev({ kind: "down", x, y })); },
