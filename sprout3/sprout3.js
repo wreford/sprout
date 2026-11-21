@@ -1215,6 +1215,8 @@ const api = { lexLiteral, tokenize, parse, compile, load, format: formatValue, e
   ColumnCell, NumberList, fastPaths: on => { COLUMN_MIN_LENGTH = on ? 32 : Infinity; fastPathsOn = !!on; },
   // libraries: what they can see of the core, and how they plug in (decision 96)
   install, internals: null,
+  // every word Sprout knows right now: the globals and every kind's methods (for highlighting, completion, docs)
+  knownWords: () => new Set([...Object.keys(GLOBALS), ...Object.values(PROTOTYPES).flatMap(p => Object.keys(p))]),
   setLog: f => { logMessage = f; }, setOut: f => { printOutput = f; }, setRandom: f => { randomSource = f; }, defNative, partsOf, fieldsOf, UNSET, valueCellOf, effect, queueEffects, runEffects, dropEffects };
 // what a library sees of the core: the pieces a faster way needs, nothing it could change answers with
 api.internals = { FUSED_OPERATORS, LAZY_OPERATORS, EVERY_VALUE_METHODS, GLOBALS, Native, noiseHash, formatValue, isFieldsOnly, mentions, COMPILER_NOTE_KEYS, RangeCell, NumberList, ColumnCell, ValueCell, makeList, NO_FIELDS, shapeFor, asColumns, Cell, EMPTY, collect, isCell,

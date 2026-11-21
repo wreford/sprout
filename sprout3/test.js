@@ -424,5 +424,6 @@ ok("hot-swap takes a changed start value", g.state.field("height") === 99);
   ok("73 a field named like the program's own name still lints", logs.some(m => /both a field/.test(m)));
 }
 
+{ const known = S.knownWords(); ok("knownWords has globals and methods", ["print", "collect", "clock", "pad-left", "atan2", "cond"].every(w => known.has(w))); }
 console.log(pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

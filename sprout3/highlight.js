@@ -4,9 +4,11 @@
 (function (root) {
 "use strict";
 const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+let known = null;
 function line(s, WORDS) {
   const S = root.Sprout3;
-  WORDS = WORDS || new Set();
+  // with no list given, every word Sprout itself knows (asked once, then kept)
+  WORDS = WORDS || known || (known = S && S.knownWords ? S.knownWords() : new Set());
 let o="",i=0;const n=s.length;
  while(i<n){const c=s[i];
   if(c==="-"&&s[i+1]==="-"){o+='<i class="c">'+esc(s.slice(i))+"</i>";break}
