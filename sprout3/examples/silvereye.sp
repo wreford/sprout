@@ -514,7 +514,11 @@ draw : [game |
   -- your gun, kicking back when it fires
   kick : cond [you flash > 0, 0.05, any, 0]
   gun : cond [you weapon = "heavy", "blaster_e", any, "blaster_g"]
-  (down not) and (you zoomed not) [hold [gun, 0.2, -0.21, -0.55 + kick, gun-turn, 0, cond [you weapon = "heavy", 0.32, any, 0.26]]]
+  -- the gun sways as you walk, more as you run
+  stride : cond [you moving, now * cond [(you asks walk else 0) > 1.05, 14, any, 9], any, 0]
+  sway-x : cond [you moving, stride sin * 0.012, any, 0]
+  sway-y : cond [you moving, stride * 2 sin abs * 0.01, any, 0]
+  (down not) and (you zoomed not) [hold [gun, 0.2 + sway-x, -0.21 - sway-y, -0.55 + kick, gun-turn, 0, cond [you weapon = "heavy", 0.32, any, 0.26]]]
   (down not) and (you zoomed) [hold [gun, 0.0, -0.17, -0.42 + kick, 0, 0, 0.26]]
   (you flash > 0) [flash [you angle cos * 0.7 + (you x), 1.35, you angle sin * 0.7 + (you y), 0.08, "#ffd76a"]]
   -- on top: the sight (red when it's on someone, with a mark when a shot lands), the map, health, what you carry
