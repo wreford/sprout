@@ -64,7 +64,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
   - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
   - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
-- **Tests:** 500 pass, 303 for the language and 197 for the games.
+- **Tests:** 505 pass, 303 for the language and 202 for the games.
 
 ## Open questions for Troy
 
@@ -83,13 +83,13 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 
 ```
 node test.js          # language tests (303)
-node game-tests.js    # game tests (197)
+node game-tests.js    # game tests (202)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 500 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 505 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4495,6 +4495,19 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   ok("silvereye: shots make a sound", fx.includes("sound:shoot"));
   { const hs = L.makeGame(src, {}); hs.tick(1 / 60, pad({})); put(hs, 0, { x: 9.5, y: 7.5, angle: 0 }); hs.tick(1 / 60, pad({ fire: true }));
     ok("silvereye: a hit sparks on what it hit", hs.draw().some(x => x[0] === "flash" && x[1][4] === "#ffe08a" && Math.abs(x[1][0] - 13.5) < 0.5)); }
+  // objects: what's in your sight is named (with what it has left), objectives are marked, pickups say what you got
+  { const texts = g => g.draw().filter(x => x[0] === "text").map(x => x[1]);
+    const ai = L.makeGame(src, {}); ai.tick(1 / 60, pad({})); put(ai, 0, { x: 9.5, y: 7.5, angle: 0 }); ai.tick(1 / 60, pad({}));
+    ok("silvereye: a guard in your sight is named under it, with a health bar", texts(ai).some(t => t[0] === "GUARD") && ai.draw().some(x => x[0] === "rect" && x[1][3] === 2 && x[1][4] === "#00000099"));
+    const mi2 = L.makeGame(src, {}); mi2.tick(1 / 60, pad({})); put(mi2, 0, { x: 6.5, y: 7.7, angle: Math.PI }); mi2.tick(1 / 60, pad({}));
+    ok("silvereye: a target in your sight is named as one of the mission's", texts(mi2).some(t => t[0] === "GENERATOR"));
+    const pk = L.makeGame(src, {}); pk.tick(1 / 60, pad({})); put(pk, 0, { x: 5.5, y: 1.5, angle: 0 }); pk.tick(1 / 60, pad({}));
+    ok("silvereye: walking over ammo says so", texts(pk).some(t => t[0] === "+16 SHOTS"));
+    const mk = L.makeGame(src, {}); for (let k = 0; k < 300; k++) { mk.tick(1 / 60, pad({})); put(mk, 0, { x: 2.5, y: 2.5, angle: 0.6, health: 100 }); }
+    const marks = texts(mk).filter(t => /^\d+m$/.test(t[0]));
+    ok("silvereye: the two generators and the intel are marked, with how far", marks.filter(t => t[4] === "#ffd166cc").length === 2 && marks.filter(t => t[4] === "#ff7ab2cc").length === 1, marks);
+    put(mk, 0, { angle: 0.6 + Math.PI }); mk.tick(1 / 60, pad({}));
+    ok("silvereye: a marker off to one side sits at the edge, pointing", texts(mk).filter(t => t[0] === "▶" || t[0] === "◀").length === 3); }
   { const mi = L.makeGame(src, {}); mi.tick(1 / 60, pad({})); put(mi, 0, { x: 2.5, y: 2.5, angle: Math.PI }); mi.tick(1 / 60, pad({ fire: true }));
     ok("silvereye: a missed shot sparks on the wall", mi.draw().filter(x => x[0] === "flash" && x[1][4] === "#fff2b3" && Math.abs(x[1][0] - 1.0) < 0.1).length === 1); }
   ok("silvereye: a guard who goes down drops ammo", f(g, "pickups").count() === 9 && f(g, "pickups").part(9).field("kind") === "ammo");
@@ -11031,7 +11044,7 @@ missions : [
     name : "THE LAB", map : lab, props : lab-props, walls : "concrete", air : #2a3140, floor : "plate", ceiling : "metal", haze : 22, light : [#eef4ff, #5a4a38, #fff0d8, 1.25]
     spawn-at : [2.5, 2.5, 0.6], exit : [2.5, 2.5], exit-name : "BACK TO THE LIFT"
     guards : [[1, 12.5, 2.5, 12.5, 4.5], [2, 3.5, 7.5, 6.5, 7.5], [3, 13.5, 7.5, 9.5, 7.5], [4, 2.5, 11.5, 2.5, 13.5], [5, 9.5, 12.5, 9.5, 12.5], [6, 13.5, 13.5, 13.5, 10.5]]
-    targets : [[9.0, 10.7, "generator_large", 1.4], [5.8, 7.7, "generator", 1.0]], target-name : "GENERATORS"
+    targets : [[9.0, 10.7, "generator_large", 1.4], [5.8, 7.7, "generator", 1.0]], target-name : "GENERATORS", target-one : "GENERATOR"
     intel : [14.5, 12.5], intel-name : "INTEL CASE"
     scientists : [[1, 8.5, 1.5, 14.5, 1.5], [2, 1.5, 13.5, 10.5, 13.5]]
     brief : ["An underground lab. Six guards.", "Wreck both generators, take the intel case,", "then get back to the lift."]
@@ -11040,7 +11053,7 @@ missions : [
     name : "THE DEPOT", map : depot, props : depot-props, walls : "metal", air : #3a3528, floor : "wood", ceiling : "plate", haze : 28, light : [#fff6e2, #5e4a2e, #ffd9a0, 1.3]
     spawn-at : [1.5, 1.5, 0.8], exit : [14.5, 14.5], exit-name : "TO THE LOADING BAY"
     guards : [[1, 7.5, 7.5, 12.5, 7.5], [2, 4.5, 1.5, 10.5, 1.5], [3, 14.5, 5.5, 14.5, 10.5], [4, 1.5, 9.5, 1.5, 13.5], [5, 8.5, 13.5, 12.5, 13.5], [6, 11.5, 10.5, 11.5, 8.5], [7, 5.5, 5.5, 5.5, 8.5]]
-    targets : [[7.5, 9.5, "barrels", 1.1], [13.5, 7.5, "barrels", 1.1], [3.5, 13.5, "barrels", 1.1]], target-name : "FUEL STACKS"
+    targets : [[7.5, 9.5, "barrels", 1.1], [13.5, 7.5, "barrels", 1.1], [3.5, 13.5, "barrels", 1.1]], target-name : "FUEL STACKS", target-one : "FUEL STACK"
     intel : [14.5, 1.5], intel-name : "SHIPPING MANIFEST"
     scientists : [[1, 2.5, 7.5, 13.5, 7.5]]
     brief : ["A supply depot, rows of shelving, seven guards.", "Blow the three fuel stacks, find the manifest,", "and get out through the loading bay."]
@@ -11049,7 +11062,7 @@ missions : [
     name : "THE RELAY", map : relay, props : relay-props, walls : "wall", air : #1d2a3a, floor : "metal", ceiling : "plate", haze : 18, light : [#dff0ff, #2e3a4e, #c8e4ff, 1.2]
     spawn-at : [14.5, 3.5, 3.1], exit : [14.5, 3.5], exit-name : "BACK TO THE HATCH"
     guards : [[1, 7.5, 7.5, 8.5, 8.5], [2, 1.5, 1.5, 14.5, 1.5], [3, 14.5, 14.5, 1.5, 14.5], [4, 3.5, 7.5, 3.5, 10.5], [5, 12.5, 7.5, 12.5, 10.5], [6, 7.5, 3.5, 10.5, 3.5], [7, 7.5, 12.5, 10.5, 12.5], [8, 1.5, 7.5, 1.5, 10.5]]
-    targets : [[7.5, 5.5, "generator_large", 1.2], [8.5, 10.5, "generator_large", 1.2]], target-name : "TRANSMITTERS"
+    targets : [[7.5, 5.5, "generator_large", 1.2], [8.5, 10.5, "generator_large", 1.2]], target-name : "TRANSMITTERS", target-one : "TRANSMITTER"
     intel : [8.0, 7.5], intel-name : "CODEBOOK"
     scientists : [[1, 5.5, 14.5, 10.5, 14.5], [2, 5.5, 1.5, 10.5, 1.5]]
     warden : [9, 8.0, 8.0, 8.0, 7.0]
@@ -11060,7 +11073,7 @@ missions : [
     light : [#ffffff, #6e8a50, #fff2d8, 1.55], sky-top : #4f8fdc, ground : "grass"
     spawn-at : [2.5, 21.5, -0.8], exit : [12.5, 22.5], exit-name : "OUT THROUGH THE GATE"
     guards : [[1, 6.5, 9.5, 16.5, 9.5], [2, 12.5, 6.5, 12.5, 12.5], [3, 20.5, 8.5, 20.5, 13.5], [4, 9.5, 15.5, 9.5, 21.5], [5, 16.5, 20.5, 21.5, 20.5], [6, 3.5, 9.5, 3.5, 13.5], [7, 5.5, 4.5, 7.5, 5.5], [8, 18.5, 3.5, 18.5, 4.5], [9, 17.5, 16.5, 19.5, 16.5], [10, 15.5, 11.5, 10.5, 11.5]]
-    targets : [[12.5, 3.5, "satellite_dish", 1.7], [6.5, 18.5, "satellite_dish", 1.7]], target-name : "RADIO MASTS"
+    targets : [[12.5, 3.5, "satellite_dish", 1.7], [6.5, 18.5, "satellite_dish", 1.7]], target-name : "RADIO MASTS", target-one : "RADIO MAST"
     intel : [4.5, 4.5], intel-name : "FLIGHT PLANS"
     scientists : [[1, 16.5, 15.5, 19.5, 15.5]]
     spots : [["ammo", 8.5, 9.5], ["armour", 19.5, 10.5], ["ammo", 3.5, 13.5], ["ammo", 12.5, 20.5], ["armour", 17.5, 15.5], ["ammo", 18.5, 3.5]], heavy : [5.5, 5.5]
@@ -11475,6 +11488,7 @@ play : [game |
     -- who did it, for the score: the last to hurt you
     culprit : by-shot length > 0 [by-shot @ 1 from] else [by-turret length > 0 [by-turret @ 1 owner] else [by-mine length > 0 [by-mine @ 1 owner] else [a last-by]]]
     got : [wanted | takes count [t | (t by = (a id)) and (t kind = wanted)]]
+    took-now : takes keep [t | t by = (a id)] collect [t | t kind] @ 1 else ""
     -- where the hurt came from, for the marker at the edge of your screen
     shooter : by-shot length > 0 [ready keep [o | o id = (by-shot @ 1 from)] @ 1] else [false]
     guard-at : thinking keep [g | (g hits else false) and (g target = (a id))] @ 1 else false
@@ -11507,6 +11521,9 @@ play : [game |
       ammo : cond [(a reloading > 0) and (a reloading <= dt) and (a bot not), a ammo - (clip-size - (a clip) min (a ammo)), any, a ammo] + (got "ammo" * 16)
       reloading : cond [a reloading > 0, a reloading - dt, (up a) and ((a clip = 0) or (a asks reload)) and (a clip < clip-size) and (a ammo > 0), reload-time, any, 0]
       sentries-left : cond [can-set a, a sentries-left - 1, any, a sentries-left]
+      -- what you picked up last, and when (the screen says so for a moment)
+      took : cond [took-now != "", took-now, any, a took else ""]
+      took-at : cond [took-now != "", now, any, a took-at else -10]
     ]
   ]
   (hurt-agents any [a | a hurt = 0.25]) [sound "hurt"]
@@ -11793,6 +11810,49 @@ draw : [game |
     (rel abs < half-across) and (clear-line [you x, you y, g x, g y]) [
       text ["!", rel tan / (half-across tan) * (W / 2) + (W / 2), H / 2 - (2.15 - eye / gd / (half-tall tan) * (H / 2)), 16, gold]
     ]
+  ]
+  -- markers: where each objective is and how far, on the screen over it, or at the edge when it's off to one side
+  mark-at : [px py colour |
+    gd : distance [you x, you y, px, py]
+    rel : wrap (py - (you y) atan2 (px - (you x)) - (you angle))
+    on : rel abs < (half-across * 0.9)
+    depth : gd * (rel cos) max 0.5
+    sx : cond [on, rel tan / (half-across tan) * (W / 2) + (W / 2), rel > 0, W - 10, any, 10]
+    sy : cond [on, H / 2 - (2.1 - eye / depth / (half-tall tan) * (H / 2)) max 30 min (H - 60), any, H / 2]
+    text [cond [on, "◆", rel > 0, "▶", any, "◀"], sx, sy, cond [on, 8, any, 10], colour]
+    text ["[gd round]m", sx, sy + 9, 7, colour]
+  ]
+  (mode = "mission") and (game versus not) and (game over = "") and (now - (game began) > 4.5) and (up you) [
+    game machines keep [m | m health > 0] each [m | mark-at [m x, m y, "#ffd166cc"]]
+    (game intel not) [mark-at [mission intel @ 1, mission intel @ 2, "#ff7ab2cc"]]
+    finished : (game guards all [g | g health <= 0]) and (game machines all [m | m health <= 0]) and (game intel)
+    finished [mark-at [mission exit @ 1, mission exit @ 2, "#7bd389"]]
+  ]
+  -- what's in your sight: its name, and what it has left
+  sighted : you aimed
+  (up you) and (sighted != false) and (game over = "") [
+    foe : game guards keep [g | g id = (sighted id)] @ 1 else false
+    kit : game machines keep [m | m id = (sighted id)] @ 1 else false
+    -- (cond works out every item, so a field of something that may be false is read behind a guard: x [..] else [..])
+    warden : (foe != false) [foe boss else false] else [false]
+    named : cond [
+      sighted who = "guard", cond [warden, "THE WARDEN", any, "GUARD"]
+      sighted who = "machine", mission target-one else "TARGET"
+      sighted who = "scientist", "SCIENTIST · HOLD FIRE"
+      sighted who = "turret", "TURRET"
+      any, call (sighted id)
+    ]
+    foe-left : (foe != false) [foe health / (guard-health * (cond [warden, 4, any, 1]))] else [-1]
+    kit-left : (kit != false) [kit health / 100] else [-1]
+    remaining : cond [sighted who = "guard", foe-left, sighted who = "machine", kit-left, any, -1]
+    text [named, W / 2, H / 2 + 17, 7, cond [sighted who = "scientist", "#bfe3ff", any, red]]
+    (remaining >= 0) [rect [W / 2 - 14, H / 2 + 23, 28, 2, "#00000099"], rect [W / 2 - 14, H / 2 + 23, remaining max 0 min 1 * 28, 2, red]]
+  ]
+  -- what you just picked up, rising for a moment
+  since-took : now - (you took-at else -10)
+  (since-took < 1.5) [
+    what : you took else ""
+    text [cond [what = "ammo", "+16 SHOTS", what = "armour", "+50 ARMOUR", what = "heavy", "HEAVY BLASTER", what = "intel", mission intel-name else "INTEL", any, ""], W / 2, H / 2 + 70 - (since-took * 12), 10, cond [what = "armour", cyan, what = "intel", "#ff7ab2", any, gold]]
   ]
   -- the touch buttons, when there's no console around the screen
   game shell not [

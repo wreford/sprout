@@ -387,6 +387,19 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   ok("silvereye: shots make a sound", fx.includes("sound:shoot"));
   { const hs = L.makeGame(src, {}); hs.tick(1 / 60, pad({})); put(hs, 0, { x: 9.5, y: 7.5, angle: 0 }); hs.tick(1 / 60, pad({ fire: true }));
     ok("silvereye: a hit sparks on what it hit", hs.draw().some(x => x[0] === "flash" && x[1][4] === "#ffe08a" && Math.abs(x[1][0] - 13.5) < 0.5)); }
+  // objects: what's in your sight is named (with what it has left), objectives are marked, pickups say what you got
+  { const texts = g => g.draw().filter(x => x[0] === "text").map(x => x[1]);
+    const ai = L.makeGame(src, {}); ai.tick(1 / 60, pad({})); put(ai, 0, { x: 9.5, y: 7.5, angle: 0 }); ai.tick(1 / 60, pad({}));
+    ok("silvereye: a guard in your sight is named under it, with a health bar", texts(ai).some(t => t[0] === "GUARD") && ai.draw().some(x => x[0] === "rect" && x[1][3] === 2 && x[1][4] === "#00000099"));
+    const mi2 = L.makeGame(src, {}); mi2.tick(1 / 60, pad({})); put(mi2, 0, { x: 6.5, y: 7.7, angle: Math.PI }); mi2.tick(1 / 60, pad({}));
+    ok("silvereye: a target in your sight is named as one of the mission's", texts(mi2).some(t => t[0] === "GENERATOR"));
+    const pk = L.makeGame(src, {}); pk.tick(1 / 60, pad({})); put(pk, 0, { x: 5.5, y: 1.5, angle: 0 }); pk.tick(1 / 60, pad({}));
+    ok("silvereye: walking over ammo says so", texts(pk).some(t => t[0] === "+16 SHOTS"));
+    const mk = L.makeGame(src, {}); for (let k = 0; k < 300; k++) { mk.tick(1 / 60, pad({})); put(mk, 0, { x: 2.5, y: 2.5, angle: 0.6, health: 100 }); }
+    const marks = texts(mk).filter(t => /^\d+m$/.test(t[0]));
+    ok("silvereye: the two generators and the intel are marked, with how far", marks.filter(t => t[4] === "#ffd166cc").length === 2 && marks.filter(t => t[4] === "#ff7ab2cc").length === 1, marks);
+    put(mk, 0, { angle: 0.6 + Math.PI }); mk.tick(1 / 60, pad({}));
+    ok("silvereye: a marker off to one side sits at the edge, pointing", texts(mk).filter(t => t[0] === "▶" || t[0] === "◀").length === 3); }
   { const mi = L.makeGame(src, {}); mi.tick(1 / 60, pad({})); put(mi, 0, { x: 2.5, y: 2.5, angle: Math.PI }); mi.tick(1 / 60, pad({ fire: true }));
     ok("silvereye: a missed shot sparks on the wall", mi.draw().filter(x => x[0] === "flash" && x[1][4] === "#fff2b3" && Math.abs(x[1][0] - 1.0) < 0.1).length === 1); }
   ok("silvereye: a guard who goes down drops ammo", f(g, "pickups").count() === 9 && f(g, "pickups").part(9).field("kind") === "ammo");
