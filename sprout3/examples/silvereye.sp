@@ -115,7 +115,7 @@ depot-props : [["barrels", 7.5, 7.5, 0.3, 0.9], ["crate", 1.6, 1.6, 0.4, 0.8], [
 relay-props : [["satellite_dish", 8.6, 5.4, 2.3, 1.5], ["column", 3.5, 3.5, 0, 2.5], ["column", 12.5, 3.5, 0, 2.5], ["column", 3.5, 12.5, 0, 2.5], ["column", 12.5, 12.5, 0, 2.5], ["barrels", 1.6, 1.6, 0.2, 0.9], ["crate", 14.4, 1.6, 0.9, 0.8], ["crate", 1.6, 14.4, 1.4, 0.8], ["barrels", 14.3, 14.3, 2.2, 0.9]]
 missions : [
   [
-    name : "THE LAB", map : lab, props : lab-props, walls : "concrete", air : #14161c
+    name : "THE LAB", map : lab, props : lab-props, walls : "concrete", air : #14161c, floor : "plate", ceiling : "metal", haze : 15
     start : [2.5, 2.5, 0.6], exit : [2.5, 2.5], exit-name : "BACK TO THE LIFT"
     guards : [[1, 12.5, 2.5, 12.5, 4.5], [2, 3.5, 7.5, 6.5, 7.5], [3, 13.5, 7.5, 9.5, 7.5], [4, 2.5, 11.5, 2.5, 13.5], [5, 9.5, 12.5, 9.5, 12.5], [6, 13.5, 13.5, 13.5, 10.5]]
     targets : [[9.0, 10.7, "generator_large", 1.4], [5.8, 7.7, "generator", 1.0]], target-name : "GENERATORS"
@@ -124,7 +124,7 @@ missions : [
     brief : ["An underground lab. Six guards.", "Wreck both generators, take the intel case,", "then get back to the lift."]
   ]
   [
-    name : "THE DEPOT", map : depot, props : depot-props, walls : "metal", air : #161712
+    name : "THE DEPOT", map : depot, props : depot-props, walls : "metal", air : #161712, floor : "concrete", ceiling : "plate", haze : 19
     start : [1.5, 1.5, 0.8], exit : [14.5, 14.5], exit-name : "TO THE LOADING BAY"
     guards : [[1, 7.5, 7.5, 12.5, 7.5], [2, 4.5, 1.5, 10.5, 1.5], [3, 14.5, 5.5, 14.5, 10.5], [4, 1.5, 9.5, 1.5, 13.5], [5, 8.5, 13.5, 12.5, 13.5], [6, 11.5, 10.5, 11.5, 8.5], [7, 5.5, 5.5, 5.5, 8.5]]
     targets : [[7.5, 9.5, "barrels", 1.1], [13.5, 7.5, "barrels", 1.1], [3.5, 13.5, "barrels", 1.1]], target-name : "FUEL STACKS"
@@ -133,7 +133,7 @@ missions : [
     brief : ["A supply depot, rows of shelving, seven guards.", "Blow the three fuel stacks, find the manifest,", "and get out through the loading bay."]
   ]
   [
-    name : "THE RELAY", map : relay, props : relay-props, walls : "wall", air : #10141c
+    name : "THE RELAY", map : relay, props : relay-props, walls : "wall", air : #10141c, floor : "metal", ceiling : "plate", haze : 11
     start : [14.5, 3.5, 3.1], exit : [14.5, 3.5], exit-name : "BACK TO THE HATCH"
     guards : [[1, 7.5, 7.5, 8.5, 8.5], [2, 1.5, 1.5, 14.5, 1.5], [3, 14.5, 14.5, 1.5, 14.5], [4, 3.5, 7.5, 3.5, 10.5], [5, 12.5, 7.5, 12.5, 10.5], [6, 7.5, 3.5, 10.5, 3.5], [7, 7.5, 12.5, 10.5, 12.5], [8, 1.5, 7.5, 1.5, 10.5]]
     targets : [[7.5, 5.5, "generator_large", 1.2], [8.5, 10.5, "generator_large", 1.2]], target-name : "TRANSMITTERS"
@@ -618,7 +618,7 @@ draw : [game |
   -- the camera: your eyes, or the floor once you're down
   -- the air turns red while the alarm is up
   alarm : game guards any [g | (g alert) and (g health > 0)]
-  fog [cond [alarm, cond [now * 2 % 1 < 0.5, "#3a1416", any, "#2a1012"], any, cond [mode = "mission", mission air, any, fog-colour]], 3, 15]
+  fog [cond [alarm, cond [now * 2 % 1 < 0.5, "#3a1416", any, "#2a1012"], any, cond [mode = "mission", mission air, any, fog-colour]], 3, cond [mode = "mission", mission haze, any, 15]]
   -- the view is set by how wide it is across (the screen is taller than wide), and narrows while you aim
   across : you fov * (cond [you zoomed, zoom-view, any, 1])
   tall : across / 2 * pi / 180 tan * (H / W) atan * 2 * 180 / pi
@@ -630,8 +630,9 @@ draw : [game |
   back-y : you angle sin * (0 - room) * ease + (you y)
   view [back-x, cond [down, 0.35, any, eye] + (ease * 2.4), back-y, you angle + (ease * 0.6), cond [down, 0.5, any, 0] - (ease * 0.45), tall]
   -- the lab: a floor, a ceiling, and a block for every wall cell of the map
-  block [8, -0.05, 8, 16, 0.1, 16, "plate"]
-  block [8, 2.55, 8, 16, 0.1, 16, "metal"]
+  in-mission : mode = "mission"
+  block [8, -0.05, 8, 16, 0.1, 16, cond [in-mission, mission floor, any, "plate"]]
+  block [8, 2.55, 8, 16, 0.1, 16, cond [in-mission, mission ceiling, any, "metal"]]
   wall-cells each [[c, r] | block [c - 0.5, 1.25, r - 0.5, 1, 2.5, 1, cond [mode = "mission", mission walls, any, "concrete"]]]
   -- skirting at the foot of every wall
   wall-cells each [[c, r] | block [c - 0.5, 0.09, r - 0.5, 1.02, 0.18, 1.02, "#1a1c20"]]
