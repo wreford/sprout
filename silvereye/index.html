@@ -217,6 +217,7 @@ body.lefty #bZ{left:auto;right:8px}body.lefty #bZ+.lbl{left:auto;right:80px}
       <div class="screenUI" id="missions">
         <div class="logo" style="font-size:20px">CAMPAIGN</div>
         <div class="menu" id="missionMenu"></div>
+        <div class="foot" id="records"></div>
         <div class="foot">BEAT A MISSION TO OPEN THE NEXT</div>
       </div>
       <div class="screenUI" id="settings">
@@ -626,7 +627,26 @@ function showScreen(name) {
 let back = "title", quitToTitle = false;
 function closeScreens() { showScreen(""); }
 function highlight() { const m = menuOf(); if (!m) return; [...m.children].forEach((b, i) => b.classList.toggle("sel", i === sel)); }
+// lifetime records, kept on this console: time played, takedowns, shots and hits, missions won
+// one copy in memory, written back every couple of seconds (reading it afresh each frame lost what changed between saves)
+const REC = Object.assign({ time: 0, downs: 0, fired: 0, hit: 0, won: 0 }, store.get("silvereye.records", {}));
+const records = () => REC;
+let lastKills = 0, lastFired = 0, lastHit = 0, recT = 0;
+function keepRecords(now, dt) {
+  try {
+    const r = records(), me = S.partsOf(game.state.field("agents")).find(x => x.field("id") === (window.NET && NET.active ? NET.me : 1)); if (!me) return;
+    if (!screen) r.time += dt;
+    const downedGuards = S.partsOf(game.state.field("guards")).filter(g => g.field("health") <= 0).length, k = me.field("kills") + downedGuards;
+    if (k < lastKills) lastKills = 0;   // a new game started: count from nothing again
+    if (k > lastKills) r.downs += k - lastKills; lastKills = k;
+    const f = me.field("shots-fired"), h = me.field("shots-hit");
+    if (f > lastFired) r.fired += f - lastFired; if (h > lastHit) r.hit += h - lastHit; lastFired = f; lastHit = h;
+    if (now - recT > 2000) { recT = now; store.set("silvereye.records", r); }
+  } catch (e) {}
+}
 function missionsUI() {
+  const r = records(), stars = Object.values(progress()).reduce((a, m) => a + (m.medals || 0), 0);
+  $("records").textContent = "PLAYED " + Math.floor(r.time / 60) + " MIN · " + r.downs + " TAKEDOWNS · " + (r.fired ? Math.round(r.hit / r.fired * 100) : 0) + "% ON TARGET · " + r.won + " MISSIONS WON · " + stars + "★";
   const box = $("missionMenu"), pr = progress(); box.innerHTML = "";
   MISSIONS.forEach((name, i) => {
     const n = i + 1, done = pr[n], open = n === 1 || pr[n - 1], b = document.createElement("button");
@@ -845,6 +865,7 @@ function keepProgress() {
     const pr = progress(), me = st.field("agents").part(1), fired = me.field("shots-fired");
     const began = st.fieldNames().includes("began") ? st.field("began") : 0, time = st.field("over-at") - began;
     const medals = (time < 180 ? 1 : 0) + (fired && me.field("shots-hit") / fired >= 0.6 ? 1 : 0) + (me.field("damage-taken") === 0 ? 1 : 0);
+    REC.won++; store.set("silvereye.records", REC);
     const was = pr[stageNum]; if (!was || time < was.best || medals > was.medals) { pr[stageNum] = { best: was ? Math.min(was.best, time) : time, medals: Math.max(medals, was ? was.medals : 0) }; store.set("silvereye.campaign", pr); }
   } catch (e) {}
 }
@@ -911,7 +932,7 @@ function frame(now) {
     try { game.swap(compose(good)); } catch (_) {}
     return;
   }
-  linkUI(); watchMedals(); campaignStep(now);
+  linkUI(); watchMedals(); campaignStep(now); keepRecords(now, dt);
   heartbeat(now);
   footsteps(now);
   reloadSound();
