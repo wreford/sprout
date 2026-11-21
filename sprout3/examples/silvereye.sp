@@ -426,8 +426,8 @@ play : [game |
     goal-y : cond [a bot not, a goal-y, w hunt-y != (a goal-y), w hunt-y, fresh, pick @ 2, any, a goal-y]
     a with [x : went x, y : went y, angle : heading, look : w look, moving : (up a) and ((w walk abs) + (w strafe abs) > 0.1), asks : w, skin : w skin, tag : w tag, zoomed : (up a) and (w zoom), fov : w fov, goal-x : goal-x, goal-y : goal-y, stuck : stuck]
   ]
-  -- who could be shot: guards still standing, and players still up
-  marks : game guards keep [g | g health > 0] collect [g | [who : "guard", id : g id, owner : 0, x : g x, y : g y]] .. (moved-agents keep up collect [a | [who : "agent", id : a id, owner : a id, x : a x, y : a y]]) .. (game machines keep [m | m health > 0] collect [m | [who : "machine", id : m id, owner : 0, x : m x, y : m y]]) .. (game turrets collect [t | [who : "turret", id : t id, owner : t owner, x : t x, y : t y]]) .. (game scientists keep [c | c health > 0] collect [c | [who : "scientist", id : c id, owner : 0, x : c x, y : c y]])
+  -- who could be shot: guards still standing, and players still up (but not your partner in a two-phone mission)
+  marks : game guards keep [g | g health > 0] collect [g | [who : "guard", id : g id, owner : 0, x : g x, y : g y]] .. (moved-agents keep up keep [a | game versus] collect [a | [who : "agent", id : a id, owner : a id, x : a x, y : a y]]) .. (game machines keep [m | m health > 0] collect [m | [who : "machine", id : m id, owner : 0, x : m x, y : m y]]) .. (game turrets collect [t | [who : "turret", id : t id, owner : t owner, x : t x, y : t y]]) .. (game scientists keep [c | c health > 0] collect [c | [who : "scientist", id : c id, owner : 0, x : c x, y : c y]])
   -- aiming: the nearest mark near the middle of your view, nearer than the wall (a little help, as on a pad)
   aim-at : [a |
     wall : cast [a x, a y, a angle] far
@@ -854,7 +854,7 @@ draw : [game |
   rect [5, 5, 50, 50, "#000000a0"]
   wall-cells each [[c, r] | rect [c * mm + 3, r * mm + 3, mm, mm, "#6a6e6488"]]
   game guards keep [g | g health > 0] each [g | circle [g x * mm + 3 + mm, g y * mm + 3 + mm, 1.4, red]]
-  rivals keep up each [r | circle [r x * mm + 3 + mm, r y * mm + 3 + mm, 1.6, red]]
+  rivals keep up each [r | circle [r x * mm + 3 + mm, r y * mm + 3 + mm, 1.6, cond [game versus, red, any, "#5fa8ff"]]]
   game mines each [m | circle [m x * mm + 3 + mm, m y * mm + 3 + mm, 1.1, gold]]
   game scientists keep [c | c health > 0] each [c | circle [c x * mm + 3 + mm, c y * mm + 3 + mm, 1.2, "#bfe3ff"]]
   game turrets each [t | rect [t x * mm + 3 + (mm / 2), t y * mm + 3 + (mm / 2), mm, mm, cyan]]
@@ -932,6 +932,18 @@ draw : [game |
     finished : (game guards all [g | g health <= 0]) and (game machines all [m | m health <= 0]) and (game intel)
     finished [mark-at [mission exit @ 1, mission exit @ 2, "#7bd389"]]
   ]
+  -- the other players' names over their heads, when they're in sight: codenames, or the simulants' own names
+  -- (red for a rival, blue for a partner in a two-phone mission)
+  rivals keep up each [r |
+    gd : distance [you x, you y, r x, r y]
+    rel : wrap (r y - (you y) atan2 (r x - (you x)) - (you angle))
+    (rel abs < (half-across * 0.95)) and (gd < 14) and (gd > 0.8) and (clear-line [you x, you y, r x, r y]) [
+      depth : gd * (rel cos) max 0.5
+      look-name : (looks @ ((r skin else 1) max 1 min (looks length))) name
+      named : cond [call (r id) != "RIVAL", call (r id), any, look-name]
+      text [named, rel tan / (half-across tan) * (W / 2) + (W / 2), H / 2 - (2.2 - eye / depth / (half-tall tan) * (H / 2)), 7, cond [game versus, "#ff9b8f", any, "#9be7ff"]]
+    ]
+  ]
   -- what's in your sight: its name, and what it has left
   sighted : you aimed
   (up you) and (sighted != false) and (game over = "") [
@@ -949,7 +961,7 @@ draw : [game |
     foe-left : (foe != false) [foe health / (guard-health * (cond [warden, 4, any, 1]))] else [-1]
     kit-left : (kit != false) [kit health / 100] else [-1]
     remaining : cond [sighted who = "guard", foe-left, sighted who = "machine", kit-left, any, -1]
-    text [named, W / 2, H / 2 + 17, 7, cond [sighted who = "scientist", "#bfe3ff", any, red]]
+    text [named, W / 2, H / 2 + 17, 7, cond [sighted who = "scientist", "#bfe3ff", (sighted who = "agent") and (game versus not), "#9be7ff", any, red]]
     (remaining >= 0) [rect [W / 2 - 14, H / 2 + 23, 28, 2, "#00000099"], rect [W / 2 - 14, H / 2 + 23, remaining max 0 min 1 * 28, 2, red]]
   ]
   -- what you just picked up, rising for a moment

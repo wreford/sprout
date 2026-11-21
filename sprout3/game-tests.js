@@ -682,6 +682,16 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   const both = L.makeGame(src, { players: 2, me: 1 }); both.tick(1 / 60, pad({}), pad({}));
   ok("silvereye: simulants join a duel too", f(both, "agents").count() === 5 && agent(both, 3).field("bot") === true);
   ok("silvereye: simulants are drawn as robots, a player as their look (the operative by default)", both.draw().filter(x => x[0] === "model" && x[1][0] === "robot_gunner").length === 3 && both.draw().filter(x => x[0] === "model" && x[1][0] === "hooded_adventurer").length === 1);
+  { const np = L.makeGame(duelSrc, { players: 2, me: 1 }); np.tick(1 / 60, pad({}), pad({ skin: 5, tag: "VIPER" }));
+    put(np, 0, { x: 8.5, y: 7.5, angle: 0 }); put(np, 1, { x: 12.5, y: 7.5, angle: Math.PI }); np.tick(1 / 60, pad({}), pad({ skin: 5, tag: "VIPER" }));
+    ok("silvereye: a rival's codename shows over their head, in red", np.draw().some(x => x[0] === "text" && x[1][0] === "VIPER" && x[1][4] === "#ff9b8f"));
+    np.tick(1 / 60, pad({}), pad({ skin: 5, tag: "" }));
+    ok("silvereye: with no codename, it's the name of their look", np.draw().some(x => x[0] === "text" && x[1][0] === "TROOPER")); }
+  { const co = L.makeGame(src.replace(/^two-phones : "duel"/m, 'two-phones : "coop"'), { players: 2, me: 1 }); co.tick(1 / 60, pad({}), pad({ tag: "ACE" }));
+    put(co, 0, { x: 2.5, y: 2.5, angle: 0 }); put(co, 1, { x: 5.5, y: 2.5, angle: 0 }); co.tick(1 / 60, pad({}), pad({ tag: "ACE" }));
+    ok("silvereye: in a two-phone mission your partner is blue, on the map and over their head", co.draw().some(x => x[0] === "text" && x[1][0] === "ACE" && x[1][4] === "#9be7ff") && co.draw().some(x => x[0] === "circle" && x[1][2] === 1.6 && x[1][3] === "#5fa8ff"));
+    for (let t = 0; t < 40; t++) co.tick(1 / 60, pad({ fire: true }), pad({ tag: "ACE" }));
+    ok("silvereye: and your shots don't hurt them", agent(co, 2).field("health") === 100 && agent(co, 1).field("shots-fired") >= 3); }
   { const lk = L.makeGame(duelSrc, { players: 2, me: 1 }); lk.tick(1 / 60, pad({}), pad({ skin: 5, tag: "VIPER" }));
     put(lk, 0, { x: 8.5, y: 7.5, angle: 0 }); put(lk, 1, { x: 12.5, y: 7.5, angle: Math.PI });
     for (let t = 0; t < 60; t++) lk.tick(1 / 60, pad({ fire: true }), pad({ skin: 5, tag: "VIPER" }));
