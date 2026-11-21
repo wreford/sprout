@@ -10882,7 +10882,7 @@ missions : [
     brief : ["An underground lab. Six guards.", "Wreck both generators, take the intel case,", "then get back to the lift."]
   ]
   [
-    name : "THE DEPOT", map : depot, props : depot-props, walls : "metal", air : #3a3528, floor : "concrete", ceiling : "plate", haze : 28, light : [#fff6e2, #5e4a2e, #ffd9a0, 1.3]
+    name : "THE DEPOT", map : depot, props : depot-props, walls : "metal", air : #3a3528, floor : "wood", ceiling : "plate", haze : 28, light : [#fff6e2, #5e4a2e, #ffd9a0, 1.3]
     spawn-at : [1.5, 1.5, 0.8], exit : [14.5, 14.5], exit-name : "TO THE LOADING BAY"
     guards : [[1, 7.5, 7.5, 12.5, 7.5], [2, 4.5, 1.5, 10.5, 1.5], [3, 14.5, 5.5, 14.5, 10.5], [4, 1.5, 9.5, 1.5, 13.5], [5, 8.5, 13.5, 12.5, 13.5], [6, 11.5, 10.5, 11.5, 8.5], [7, 5.5, 5.5, 5.5, 8.5]]
     targets : [[7.5, 9.5, "barrels", 1.1], [13.5, 7.5, "barrels", 1.1], [3.5, 13.5, "barrels", 1.1]], target-name : "FUEL STACKS"

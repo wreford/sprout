@@ -8,6 +8,8 @@ asset's source page; its NOTICE is in NOTICE-netforge.txt and the CC0 legal code
   Quaternius (https://quaternius.com), CC0
 - models/blaster_g.glb, blaster_e.glb: Kenney, Blaster Kit 2.1 (https://kenney.nl/assets/blaster-kit), CC0
 - textures/concrete.png, plate.png, metal.png, wall.png: Screaming Brain Studios (OpenGameArt), CC0
+- textures/grass.png, dirt.png, gravel.png, stone.png, wood.png, bark.png: Screaming Brain Studios (OpenGameArt texture packs),
+  CC0, the 128 px editions in the same package's PS1 style
 - sfx/shoot.ogg, hit.ogg, hurt.ogg, impact.ogg, kill.ogg: from the same package's sound set, CC0
 
 three.js (vendor/three) is MIT licensed; its LICENSE is in vendor/three.
