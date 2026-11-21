@@ -64,7 +64,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
   - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
   - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
-- **Tests:** 460 pass, 303 for the language and 157 for the games.
+- **Tests:** 461 pass, 303 for the language and 158 for the games.
 
 ## Open questions for Troy
 
@@ -83,13 +83,13 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 
 ```
 node test.js          # language tests (303)
-node game-tests.js    # game tests (157)
+node game-tests.js    # game tests (158)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 460 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 461 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4626,6 +4626,10 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   for (let t = 0; t < 60 * 40; t++) c.tick(1 / 60, pad({}));
   const kills = [1, 2, 3, 4].map(n => agent(c, n).field("kills")), roamed = [2, 3, 4].some(n => agent(c, n).field("x") !== [0, 0, 13.5, 13.5, 2.5][n]);
   ok("silvereye: simulants roam the lab and take each other (and you) down", roamed && kills.slice(1).reduce((x, y) => x + y) > 0, kills);
+  { const st = L.makeGame(simSrc, {}); st.tick(1 / 60, pad({}));
+    put(st, 0, { x: 8.5, y: 7.5, angle: 0 }); put(st, 1, { x: 12.5, y: 7.5, angle: Math.PI }); put(st, 2, { x: 2.5, y: 13.5 }); put(st, 3, { x: 13.5, y: 2.5 });
+    for (let t = 0; t < 30; t++) st.tick(1 / 60, pad({}));
+    ok("silvereye: a camper simulant holds its ground when it sees you", Math.abs(agent(st, 2).field("x") - 12.5) < 1e-9, agent(st, 2).field("x")); }
   const both = L.makeGame(src, { players: 2, me: 1 }); both.tick(1 / 60, pad({}), pad({}));
   ok("silvereye: simulants join a duel too", f(both, "agents").count() === 4 && agent(both, 3).field("bot") === true);
   ok("silvereye: simulants are drawn as robots, players as soldiers", both.draw().filter(x => x[0] === "model" && x[1][0] === "robot_gunner").length === 2 && both.draw().filter(x => x[0] === "model" && x[1][0] === "soldier").length === 1);
@@ -10756,17 +10760,24 @@ turret-program : [t |
 -- ---------------------------------------------------------------- the simulants' program
 -- Each frame every simulant is asked what to do. It sees: aim (where it faces), sees (is anyone in sight), dx and dy
 -- (to the nearest one it can see), far (how far that is), health, goal-dx and goal-dy (to where it's heading when it
--- sees no one), clock and id. It answers walk and strafe (-1 to 1), turn (-1 to 1) and fire (true or false).
+-- sees no one), clock, id and style ("hunter", "flanker" or "camper"). It answers walk and strafe (-1 to 1),
+-- turn (-1 to 1) and fire (true or false). Hunters close in, flankers circle, campers hold their ground.
 simulant-program : [s |
   want : cond [s sees, s dy atan2 (s dx), any, s goal-dy atan2 (s goal-dx)]
   off : wrap (want - (s aim))
   [
     turn : clamp [off * 3, -1, 1]
-    walk : cond [(s sees) and (s far < 2.5), -0.3, s sees, 0.6, any, 1 - (off abs) max 0]
-    strafe : cond [s sees, s clock * 1.7 + (s id) sin, any, 0]
+    walk : cond [
+      (s sees) and (s style = "camper"), 0
+      (s sees) and (s far < 2.5), -0.3
+      s sees, cond [s style = "hunter", 1, any, 0.4]
+      any, 1 - (off abs) max 0
+    ]
+    strafe : cond [(s sees) and (s style = "flanker"), 1, (s sees) and (s style = "camper"), 0, s sees, s clock * 1.7 + (s id) sin, any, 0]
     fire : (s sees) and (off abs < 0.15)
   ]
 ]
+styles : ["hunter", "flanker", "camper"]
 
 -- ---------------------------------------------------------------- the people
 guard-health : cond [difficulty = 1, 70, difficulty = 3, 140, any, 100]
@@ -10838,9 +10849,10 @@ play : [game |
     foes : game agents keep [o | (o id != (a id)) and (up o) and (distance [a x, a y, o x, o y] < 12) and (clear-line [a x, a y, o x, o y])]
     foe : foes smallest-by [o | distance [a x, a y, o x, o y]]
     sees : foe != false
+    manner : styles @ (a id % 3 + 1)
     dx : sees [foe x - (a x)] else [0]
     dy : sees [foe y - (a y)] else [0]
-    said : simulant-program [aim : a angle, sees : sees, dx : dx, dy : dy, far : dx * dx + (dy * dy) sqrt, health : a health, goal-dx : a goal-x - (a x), goal-dy : a goal-y - (a y), clock : now, id : a id]
+    said : simulant-program [aim : a angle, sees : sees, dx : dx, dy : dy, far : dx * dx + (dy * dy) sqrt, health : a health, goal-dx : a goal-x - (a x), goal-dy : a goal-y - (a y), clock : now, id : a id, style : manner]
     [
       walk : clamp [said walk else 0, -1, 1], strafe : clamp [said strafe else 0, -1, 1], look : false
       turn : clamp [said turn else 0, -1, 1] * (simulant-skill * 0.25 + 0.5)

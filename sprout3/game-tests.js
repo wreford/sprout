@@ -520,6 +520,10 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   for (let t = 0; t < 60 * 40; t++) c.tick(1 / 60, pad({}));
   const kills = [1, 2, 3, 4].map(n => agent(c, n).field("kills")), roamed = [2, 3, 4].some(n => agent(c, n).field("x") !== [0, 0, 13.5, 13.5, 2.5][n]);
   ok("silvereye: simulants roam the lab and take each other (and you) down", roamed && kills.slice(1).reduce((x, y) => x + y) > 0, kills);
+  { const st = L.makeGame(simSrc, {}); st.tick(1 / 60, pad({}));
+    put(st, 0, { x: 8.5, y: 7.5, angle: 0 }); put(st, 1, { x: 12.5, y: 7.5, angle: Math.PI }); put(st, 2, { x: 2.5, y: 13.5 }); put(st, 3, { x: 13.5, y: 2.5 });
+    for (let t = 0; t < 30; t++) st.tick(1 / 60, pad({}));
+    ok("silvereye: a camper simulant holds its ground when it sees you", Math.abs(agent(st, 2).field("x") - 12.5) < 1e-9, agent(st, 2).field("x")); }
   const both = L.makeGame(src, { players: 2, me: 1 }); both.tick(1 / 60, pad({}), pad({}));
   ok("silvereye: simulants join a duel too", f(both, "agents").count() === 4 && agent(both, 3).field("bot") === true);
   ok("silvereye: simulants are drawn as robots, players as soldiers", both.draw().filter(x => x[0] === "model" && x[1][0] === "robot_gunner").length === 2 && both.draw().filter(x => x[0] === "model" && x[1][0] === "soldier").length === 1);

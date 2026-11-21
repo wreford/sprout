@@ -125,17 +125,24 @@ turret-program : [t |
 -- ---------------------------------------------------------------- the simulants' program
 -- Each frame every simulant is asked what to do. It sees: aim (where it faces), sees (is anyone in sight), dx and dy
 -- (to the nearest one it can see), far (how far that is), health, goal-dx and goal-dy (to where it's heading when it
--- sees no one), clock and id. It answers walk and strafe (-1 to 1), turn (-1 to 1) and fire (true or false).
+-- sees no one), clock, id and style ("hunter", "flanker" or "camper"). It answers walk and strafe (-1 to 1),
+-- turn (-1 to 1) and fire (true or false). Hunters close in, flankers circle, campers hold their ground.
 simulant-program : [s |
   want : cond [s sees, s dy atan2 (s dx), any, s goal-dy atan2 (s goal-dx)]
   off : wrap (want - (s aim))
   [
     turn : clamp [off * 3, -1, 1]
-    walk : cond [(s sees) and (s far < 2.5), -0.3, s sees, 0.6, any, 1 - (off abs) max 0]
-    strafe : cond [s sees, s clock * 1.7 + (s id) sin, any, 0]
+    walk : cond [
+      (s sees) and (s style = "camper"), 0
+      (s sees) and (s far < 2.5), -0.3
+      s sees, cond [s style = "hunter", 1, any, 0.4]
+      any, 1 - (off abs) max 0
+    ]
+    strafe : cond [(s sees) and (s style = "flanker"), 1, (s sees) and (s style = "camper"), 0, s sees, s clock * 1.7 + (s id) sin, any, 0]
     fire : (s sees) and (off abs < 0.15)
   ]
 ]
+styles : ["hunter", "flanker", "camper"]
 
 -- ---------------------------------------------------------------- the people
 guard-health : cond [difficulty = 1, 70, difficulty = 3, 140, any, 100]
@@ -207,9 +214,10 @@ play : [game |
     foes : game agents keep [o | (o id != (a id)) and (up o) and (distance [a x, a y, o x, o y] < 12) and (clear-line [a x, a y, o x, o y])]
     foe : foes smallest-by [o | distance [a x, a y, o x, o y]]
     sees : foe != false
+    manner : styles @ (a id % 3 + 1)
     dx : sees [foe x - (a x)] else [0]
     dy : sees [foe y - (a y)] else [0]
-    said : simulant-program [aim : a angle, sees : sees, dx : dx, dy : dy, far : dx * dx + (dy * dy) sqrt, health : a health, goal-dx : a goal-x - (a x), goal-dy : a goal-y - (a y), clock : now, id : a id]
+    said : simulant-program [aim : a angle, sees : sees, dx : dx, dy : dy, far : dx * dx + (dy * dy) sqrt, health : a health, goal-dx : a goal-x - (a x), goal-dy : a goal-y - (a y), clock : now, id : a id, style : manner]
     [
       walk : clamp [said walk else 0, -1, 1], strafe : clamp [said strafe else 0, -1, 1], look : false
       turn : clamp [said turn else 0, -1, 1] * (simulant-skill * 0.25 + 0.5)
