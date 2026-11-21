@@ -10,13 +10,13 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 
 ```
 node test.js          # language tests (298)
-node game-tests.js    # game tests (138)
+node game-tests.js    # game tests (139)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 436 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 437 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4458,6 +4458,10 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   ok("silvereye: picking up the case takes the intel, but the mission isn't over yet", f(ms, "intel") === true && f(ms, "over") === "");
   put(ms, 0, { x: 2.5, y: 2.6 }); ms.tick(1 / 60, pad({}));
   ok("silvereye: with everything done, the lift ends the mission", f(ms, "over") === "won", f(ms, "over"));
+  // difficulty: tougher guards and more to do at ace, fewer at rookie
+  const ace = L.makeGame(src.replace(/^difficulty : 2/m, "difficulty : 3"), {}), rookie = L.makeGame(src.replace(/^difficulty : 2/m, "difficulty : 1"), {});
+  ace.tick(1 / 60); rookie.tick(1 / 60);
+  ok("silvereye: an ace mission has tougher guards, a rookie one no generators", f(ace, "guards").part(1).field("health") === 140 && f(rookie, "guards").part(1).field("health") === 70 && f(rookie, "machines").count() === 0 && f(ace, "machines").count() === 2);
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });
@@ -10510,6 +10514,7 @@ level : [
 mode : "mission"           -- "mission": the lab and its guards · "sim": you against simulants
 simulants : 2              -- simulants in a combat sim, and joining a duel
 simulant-skill : 2         -- 1 rookie, 2 agent, 3 ace
+difficulty : 2             -- a mission's guards: 1 rookie (no generators to wreck), 2 agent, 3 ace
 fov-across : 90            -- how wide you see, side to side, in degrees: wider than the old consoles
 zoom-view : 0.45           -- aiming (Z) narrows the view to this much
 walk-speed : 2.6
@@ -10612,7 +10617,8 @@ simulant-program : [s |
 ]
 
 -- ---------------------------------------------------------------- the people
-guard : [id gx gy tx ty | [id : id, x : gx, y : gy, angle : 0, health : 100, wait : 1, alert : false, home-x : gx, home-y : gy, to-x : tx, to-y : ty, fell : false]]
+guard-health : cond [difficulty = 1, 70, difficulty = 3, 140, any, 100]
+guard : [id gx gy tx ty | [id : id, x : gx, y : gy, angle : 0, health : guard-health, wait : 1, alert : false, home-x : gx, home-y : gy, to-x : tx, to-y : ty, fell : false]]
 spawns : [[2.5, 2.5, 0.6], [13.5, 13.5, -2.4], [13.5, 2.5, 2.4], [2.5, 13.5, -0.8], [7.5, 4.5, 1.6], [9.5, 10.5, -1.6], [6.5, 13.5, 0]]
 spawn-of : [id | spawns @ (id - 1 % (spawns length) + 1)]
 open-cells : level numbered collect-flat [[r, row] | row chars numbered keep [[c, ch] | ch = "."] collect [[c, ch] | [c - 0.5, r - 0.5]]]
@@ -10626,7 +10632,7 @@ start :
   mines : []
   turrets : []
   pickups : pickups-fresh .. (cond [mode = "sim", [], any, [[kind : "intel", x : intel-spot @ 1, y : intel-spot @ 2, back-at : 0]]])
-  machines : mode = "sim" [[]] else [machine-spots numbered collect [[k, spot] | [id : k, x : spot @ 1, y : spot @ 2, health : 100]]]
+  machines : (mode = "sim") or (difficulty = 1) [[]] else [machine-spots numbered collect [[k, spot] | [id : k, x : spot @ 1, y : spot @ 2, health : 100]]]
   intel : false
   blasts : []
   over : ""
@@ -10770,9 +10776,9 @@ play : [game |
       back-y : cond [arrived, g to-y, any, g home-y]
       g with [
         x : went x, y : went y, angle : cond [alert, facing - pi, any, head], alert : alert
-        wait : cond [fires, 0.9, any, g wait - dt]
+        wait : cond [fires, 1.5 - (difficulty * 0.3), any, g wait - dt]
         to-x : next-x, to-y : next-y, home-x : back-x, home-y : back-y
-        fired : fires, hits : fires and (noise [now * 7, g id] < (0.5 - (gd * 0.035)))
+        fired : fires, hits : fires and (noise [now * 7, g id] < (0.5 - (gd * 0.035) * (difficulty * 0.35 + 0.3)))
       ]
     ]
   ]

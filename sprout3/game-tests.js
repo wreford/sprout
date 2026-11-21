@@ -428,6 +428,10 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   ok("silvereye: picking up the case takes the intel, but the mission isn't over yet", f(ms, "intel") === true && f(ms, "over") === "");
   put(ms, 0, { x: 2.5, y: 2.6 }); ms.tick(1 / 60, pad({}));
   ok("silvereye: with everything done, the lift ends the mission", f(ms, "over") === "won", f(ms, "over"));
+  // difficulty: tougher guards and more to do at ace, fewer at rookie
+  const ace = L.makeGame(src.replace(/^difficulty : 2/m, "difficulty : 3"), {}), rookie = L.makeGame(src.replace(/^difficulty : 2/m, "difficulty : 1"), {});
+  ace.tick(1 / 60); rookie.tick(1 / 60);
+  ok("silvereye: an ace mission has tougher guards, a rookie one no generators", f(ace, "guards").part(1).field("health") === 140 && f(rookie, "guards").part(1).field("health") === 70 && f(rookie, "machines").count() === 0 && f(ace, "machines").count() === 2);
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });

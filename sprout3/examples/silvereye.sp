@@ -31,6 +31,7 @@ level : [
 mode : "mission"           -- "mission": the lab and its guards · "sim": you against simulants
 simulants : 2              -- simulants in a combat sim, and joining a duel
 simulant-skill : 2         -- 1 rookie, 2 agent, 3 ace
+difficulty : 2             -- a mission's guards: 1 rookie (no generators to wreck), 2 agent, 3 ace
 fov-across : 90            -- how wide you see, side to side, in degrees: wider than the old consoles
 zoom-view : 0.45           -- aiming (Z) narrows the view to this much
 walk-speed : 2.6
@@ -133,7 +134,8 @@ simulant-program : [s |
 ]
 
 -- ---------------------------------------------------------------- the people
-guard : [id gx gy tx ty | [id : id, x : gx, y : gy, angle : 0, health : 100, wait : 1, alert : false, home-x : gx, home-y : gy, to-x : tx, to-y : ty, fell : false]]
+guard-health : cond [difficulty = 1, 70, difficulty = 3, 140, any, 100]
+guard : [id gx gy tx ty | [id : id, x : gx, y : gy, angle : 0, health : guard-health, wait : 1, alert : false, home-x : gx, home-y : gy, to-x : tx, to-y : ty, fell : false]]
 spawns : [[2.5, 2.5, 0.6], [13.5, 13.5, -2.4], [13.5, 2.5, 2.4], [2.5, 13.5, -0.8], [7.5, 4.5, 1.6], [9.5, 10.5, -1.6], [6.5, 13.5, 0]]
 spawn-of : [id | spawns @ (id - 1 % (spawns length) + 1)]
 open-cells : level numbered collect-flat [[r, row] | row chars numbered keep [[c, ch] | ch = "."] collect [[c, ch] | [c - 0.5, r - 0.5]]]
@@ -147,7 +149,7 @@ start :
   mines : []
   turrets : []
   pickups : pickups-fresh .. (cond [mode = "sim", [], any, [[kind : "intel", x : intel-spot @ 1, y : intel-spot @ 2, back-at : 0]]])
-  machines : mode = "sim" [[]] else [machine-spots numbered collect [[k, spot] | [id : k, x : spot @ 1, y : spot @ 2, health : 100]]]
+  machines : (mode = "sim") or (difficulty = 1) [[]] else [machine-spots numbered collect [[k, spot] | [id : k, x : spot @ 1, y : spot @ 2, health : 100]]]
   intel : false
   blasts : []
   over : ""
@@ -291,9 +293,9 @@ play : [game |
       back-y : cond [arrived, g to-y, any, g home-y]
       g with [
         x : went x, y : went y, angle : cond [alert, facing - pi, any, head], alert : alert
-        wait : cond [fires, 0.9, any, g wait - dt]
+        wait : cond [fires, 1.5 - (difficulty * 0.3), any, g wait - dt]
         to-x : next-x, to-y : next-y, home-x : back-x, home-y : back-y
-        fired : fires, hits : fires and (noise [now * 7, g id] < (0.5 - (gd * 0.035)))
+        fired : fires, hits : fires and (noise [now * 7, g id] < (0.5 - (gd * 0.035) * (difficulty * 0.35 + 0.3)))
       ]
     ]
   ]
