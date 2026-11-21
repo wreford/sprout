@@ -84,6 +84,10 @@ body{background:radial-gradient(120% 80% at 50% 0%,#1d1d24 0%,var(--page) 70%)}
 .screenUI{overflow:auto;-webkit-overflow-scrolling:touch}
 #settings{justify-content:flex-start;gap:6px}
 #title{gap:5px}
+#pressStart{display:none;font:900 italic 15px/1 var(--sans);letter-spacing:.22em;color:#ffd166;margin-top:26px;animation:blinkStart 1.1s steps(2) infinite}
+@keyframes blinkStart{50%{opacity:0}}
+#title.waiting .menu,#title.waiting .foot{display:none}
+#title.waiting #pressStart{display:block}
 #title .logo{font-size:28px}
 #title .menu{gap:3px;margin-top:6px}
 #title .menu button{padding:7px 10px;font-size:11px}
@@ -155,7 +159,7 @@ body{background:radial-gradient(120% 80% at 50% 0%,#1d1d24 0%,var(--page) 70%)}
     <div id="stage">
       <canvas id="tv"></canvas><canvas id="cv"></canvas>
       <div id="boot"><div class="mk">POCKET<b>64</b></div><div class="ln">SPROUT INSIDE · 3D LAB CARTRIDGE</div></div>
-      <div class="screenUI on" id="title">
+      <div class="screenUI on waiting" id="title">
         <div class="logo">SILVEREYE</div>
         <div class="sub">A LAB · PROXIMITY MINES · TURRETS YOU PROGRAM</div>
         <div class="menu" id="titleMenu">
@@ -168,6 +172,7 @@ body{background:radial-gradient(120% 80% at 50% 0%,#1d1d24 0%,var(--page) 70%)}
           <button data-do="about">About</button>
         </div>
         <div class="foot">STICK OR TAP TO CHOOSE · A TO START</div>
+        <div id="pressStart">PRESS START</div>
       </div>
       <div class="screenUI" id="missions">
         <div class="logo" style="font-size:20px">CAMPAIGN</div>
@@ -548,10 +553,11 @@ function showScreen(name) {
   for (const n of SCREENS) $(n).classList.toggle("on", n === name);
   $("mDuel").textContent = window.NET && NET.active ? "Linked · player " + NET.me : "Duel a friend";
   if (name === "pause") boardUI();
+  if (name === "title" && quitToTitle) { $("title").classList.add("waiting"); quitToTitle = false; }
   if (name === "missions") missionsUI();
   settingsUI(); highlight();
 }
-let back = "title";
+let back = "title", quitToTitle = false;
 function closeScreens() { showScreen(""); }
 function highlight() { const m = menuOf(); if (!m) return; [...m.children].forEach((b, i) => b.classList.toggle("sel", i === sel)); }
 function missionsUI() {
@@ -593,11 +599,15 @@ function choose(what) {
   else if (what === "resume") closeScreens();
   else if (what === "sound") { muted = !muted; store.set("silvereye.mute", muted); soundUI(); if (muted) MUSIC.stop(); else MUSIC.start(); }
   else if (what === "code") location.href = "/sprout3/play.html#ex=silvereye";
-  else if (what === "quit") { if (linked) { toast("You're linked: close the page to leave the duel."); return; } mode = "mission"; build(compose(), true); showScreen("title"); }
+  else if (what === "quit") { if (linked) { toast("You're linked: close the page to leave the duel."); return; } mode = "mission"; quitToTitle = true; build(compose(), true); showScreen("title"); }
 }
 for (const n of SCREENS) $(n).addEventListener("click", e => { const b = e.target.closest(".menu button"); if (b) { const m = menuOf(); if (m) sel = [...m.children].indexOf(b); choose(b.dataset.do); } });
-const menuStep = d => { const m = menuOf(); if (!m) return; sel = (sel + d + m.children.length) % m.children.length; highlight(); beep(520, 0.03); };
-const menuPick = () => { const m = menuOf(); if (m) choose(m.children[sel].dataset.do); };
+// the title waits on PRESS START; any button, key or tap brings up the menu
+const titleWaiting = () => screen === "title" && $("title").classList.contains("waiting");
+function pressStart() { $("title").classList.remove("waiting"); beep(988, 0.05); setTimeout(() => beep(1319, 0.08), 70); highlight(); }
+$("title").addEventListener("pointerdown", e => { if (titleWaiting()) { e.preventDefault(); e.stopPropagation(); audio(); pressStart(); } }, true);
+const menuStep = d => { if (titleWaiting()) return pressStart(); const m = menuOf(); if (!m) return; sel = (sel + d + m.children.length) % m.children.length; highlight(); beep(520, 0.03); };
+const menuPick = () => { if (titleWaiting()) return pressStart(); const m = menuOf(); if (m) choose(m.children[sel].dataset.do); };
 
 // ---- the controls: a floating stick on the left, look anywhere on the right or on the screen, A/B/C, Select, Start
 const pad = { walk: 0, strafe: 0, look: 0, fire: false, mine: false, sentry: false, zoom: false };

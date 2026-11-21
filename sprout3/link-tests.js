@@ -28,6 +28,7 @@ server.listen(0, async () => {
     };
     const A = await phone(true), B = await phone(false);
     await A.goto(url); await A.waitForFunction(() => window.NET && typeof game === "object" && game, null, { timeout: 15000 });
+    await A.waitForTimeout(2700); await A.click("#title");
     await A.click("#titleMenu button[data-do=duel]"); await A.waitForSelector("#nCopy:not([disabled])", { timeout: 15000 }); await A.click("#nCopy");
     const invite = await A.evaluate(() => navigator.clipboard.readText());
     await B.goto(invite); await B.waitForSelector("#nJoin", { timeout: 15000 }); await B.click("#nJoin");

@@ -25,6 +25,8 @@ server.listen(0, async () => {
     await page.goto(url); await page.waitForSelector("#boot", { timeout: 5000 }).catch(() => {});
     ok("the console switches on with its POCKET64 screen", await page.isVisible("#boot"));
     await page.waitForTimeout(2600);
+    ok("the title waits on PRESS START", await page.isVisible("#pressStart") && !(await page.isVisible("#titleMenu")));
+    await page.click("#title"); await page.waitForTimeout(150);
     ok("then the title, with the modes", (await page.$$eval("#titleMenu button", bs => bs.map(b => b.dataset.do))).join() === "campaign,sim,duel,settings,program,help,about");
     await page.click("#titleMenu button[data-do=about]");
     ok("About credits the games that inspired it", /GoldenEye 007/.test(await page.textContent("#about")) && /Perfect Dark/.test(await page.textContent("#about")) && /none of their work/.test(await page.textContent("#about")));
