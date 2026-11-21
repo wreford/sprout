@@ -154,6 +154,7 @@ start :
   pickups : pickups-fresh .. (cond [mode = "sim", [], any, [[kind : "intel", x : intel-spot @ 1, y : intel-spot @ 2, back-at : 0]]])
   machines : (mode = "sim") or (difficulty = 1) [[]] else [machine-spots numbered collect [[k, spot] | [id : k, x : spot @ 1, y : spot @ 2, health : 100]]]
   intel : false
+  feed : []
   blasts : []
   over : ""
   over-at : 0
@@ -162,7 +163,7 @@ start :
   clock : 0
   dt : 0
 -- two players: the same lab with no guards, one player in each far corner, and the simulants if there are any
-duel : [agents : [agent [1, 2.5, 2.5, 0.6], agent [2, 13.5, 13.5, -2.4]] .. (sims 3), guards : [], mines : [], turrets : [], pickups : pickups-fresh, machines : [], blasts : [], over : "", versus : true]
+duel : [agents : [agent [1, 2.5, 2.5, 0.6], agent [2, 13.5, 13.5, -2.4]] .. (sims 3), guards : [], mines : [], turrets : [], pickups : pickups-fresh, machines : [], feed : [], blasts : [], over : "", versus : true]
 
 -- ---------------------------------------------------------------- controls
 -- what a player asks for this frame. On the console page the stick, the look drag and the buttons arrive as held
@@ -404,6 +405,7 @@ play : [game |
   ]
   game with [
     agents : back, guards : fallen, mines : still, turrets : thought, pickups : pickups, machines : machines, intel : intel
+    feed : game feed .. (went-down collect [d | [by : d last-by, who : d id, at : now]]) keep [e | now - (e at) < 4]
     blasts : game blasts keep [b | now - (b at) < 0.6] .. (goes-off collect [m | [x : m x, y : m y, at : now]])
     over : over, over-at : now
     shell : game input held "shell" else false
@@ -530,6 +532,9 @@ draw : [game |
     rivals any [r | (up r not) and (r last-by = you-id) and (now - (r down-at else now) < 1.6)] [text ["TAKEDOWN", W / 2, H / 2 - 40, 18, gold]]
     down and (game over = "") [text ["DOWN · back in [respawn-after - (now - (you down-at else now)) max 0 ceil]", W / 2, H / 2 + 40, 12, cream]]
   ]
+  -- who took down whom, lately
+  call : [n | cond [n = you-id, "YOU", n = 0, "THE LAB", n <= 2, "RIVAL", any, "SIM [n]"]]
+  game versus [game feed numbered each [[k, e] | text [cond [(e by = (e who)) or (e by = 0), "[call (e who)] went down", any, "[call (e by)] took down [call (e who)]"], W / 2, k * 11 + 26, 8, cond [(e by = you-id) or (e who = you-id), gold, any, "#c9ccd4"]]]]
   -- the touch buttons, when there's no console around the screen
   game shell not [
     circle [W - 48, H - 48, 34, "#00000066"]

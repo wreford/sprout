@@ -64,7 +64,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
   - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
   - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
-- **Tests:** 444 pass, 298 for the language and 146 for the games.
+- **Tests:** 445 pass, 298 for the language and 147 for the games.
 
 ## Open questions for Troy
 
@@ -83,13 +83,13 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 
 ```
 node test.js          # language tests (298)
-node game-tests.js    # game tests (146)
+node game-tests.js    # game tests (147)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 444 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 445 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4499,6 +4499,12 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   { const back = agent(v, 2).field("safe-until"); ok("silvereye: coming back, you're protected for two seconds", back > f(v, "clock") - 1 && back <= f(v, "clock") + 2, back); }
   for (let r = 0; r < 4; r++) { for (let t = 0; t < 140; t++) v.tick(1 / 60, pad({}), pad({})); face(); for (let t = 0; t < 60; t++) v.tick(1 / 60, pad({ fire: true }), pad({})); for (let t = 0; t < 160; t++) v.tick(1 / 60, pad({}), pad({})); }
   const sees = n => { const o = L.makeGame(duelSrc, { players: 2, me: n }); o.setState(v.state, v.clock); return o.draw().filter(x => x[0] === "text").map(x => x[1][0]); };
+  { const fe = L.makeGame(duelSrc, { players: 2, me: 1 }); fe.tick(1 / 60, pad({}), pad({}));
+    const pf = (i, o) => { const m = new Map(S.fieldsOf(fe.state)), ags = S.partsOf(m.get("agents")).slice(), a = new Map(S.fieldsOf(ags[i])); for (const k in o) a.set(k, o[k]); ags[i] = S.valueCellOf([], a); m.set("agents", S.valueCellOf(ags, new Map())); fe.setState(S.valueCellOf([], m)); };
+    pf(0, { x: 8.5, y: 7.5, angle: 0 }); pf(1, { x: 12.5, y: 7.5, angle: Math.PI });
+    for (let t = 0; t < 60; t++) fe.tick(1 / 60, pad({ fire: true }), pad({}));
+    const said = o => { const w = L.makeGame(duelSrc, { players: 2, me: o }); w.setState(fe.state, fe.clock); return w.draw().filter(x => x[0] === "text").map(x => x[1][0]); };
+    ok("silvereye: the feed says who took down whom, from each phone's side", said(1).includes("YOU took down RIVAL") && said(2).includes("RIVAL took down YOU"), said(1)); }
   ok("silvereye: five takedowns win, and each phone says who won", f(v, "over") === "p1" && sees(1).includes("YOU WIN") && sees(2).includes("YOU LOSE"), f(v, "over"));
   ok("silvereye: each phone sees the duel from its own player", sees(1).includes("YOU 5 · 0 RIVAL") && sees(2).includes("YOU 0 · 5 RIVAL"));
   for (let t = 0; t < 120; t++) v.tick(1 / 60, pad({ fire: true }), pad({}));
@@ -10728,6 +10734,7 @@ start :
   pickups : pickups-fresh .. (cond [mode = "sim", [], any, [[kind : "intel", x : intel-spot @ 1, y : intel-spot @ 2, back-at : 0]]])
   machines : (mode = "sim") or (difficulty = 1) [[]] else [machine-spots numbered collect [[k, spot] | [id : k, x : spot @ 1, y : spot @ 2, health : 100]]]
   intel : false
+  feed : []
   blasts : []
   over : ""
   over-at : 0
@@ -10736,7 +10743,7 @@ start :
   clock : 0
   dt : 0
 -- two players: the same lab with no guards, one player in each far corner, and the simulants if there are any
-duel : [agents : [agent [1, 2.5, 2.5, 0.6], agent [2, 13.5, 13.5, -2.4]] .. (sims 3), guards : [], mines : [], turrets : [], pickups : pickups-fresh, machines : [], blasts : [], over : "", versus : true]
+duel : [agents : [agent [1, 2.5, 2.5, 0.6], agent [2, 13.5, 13.5, -2.4]] .. (sims 3), guards : [], mines : [], turrets : [], pickups : pickups-fresh, machines : [], feed : [], blasts : [], over : "", versus : true]
 
 -- ---------------------------------------------------------------- controls
 -- what a player asks for this frame. On the console page the stick, the look drag and the buttons arrive as held
@@ -10978,6 +10985,7 @@ play : [game |
   ]
   game with [
     agents : back, guards : fallen, mines : still, turrets : thought, pickups : pickups, machines : machines, intel : intel
+    feed : game feed .. (went-down collect [d | [by : d last-by, who : d id, at : now]]) keep [e | now - (e at) < 4]
     blasts : game blasts keep [b | now - (b at) < 0.6] .. (goes-off collect [m | [x : m x, y : m y, at : now]])
     over : over, over-at : now
     shell : game input held "shell" else false
@@ -11104,6 +11112,9 @@ draw : [game |
     rivals any [r | (up r not) and (r last-by = you-id) and (now - (r down-at else now) < 1.6)] [text ["TAKEDOWN", W / 2, H / 2 - 40, 18, gold]]
     down and (game over = "") [text ["DOWN · back in [respawn-after - (now - (you down-at else now)) max 0 ceil]", W / 2, H / 2 + 40, 12, cream]]
   ]
+  -- who took down whom, lately
+  call : [n | cond [n = you-id, "YOU", n = 0, "THE LAB", n <= 2, "RIVAL", any, "SIM [n]"]]
+  game versus [game feed numbered each [[k, e] | text [cond [(e by = (e who)) or (e by = 0), "[call (e who)] went down", any, "[call (e by)] took down [call (e who)]"], W / 2, k * 11 + 26, 8, cond [(e by = you-id) or (e who = you-id), gold, any, "#c9ccd4"]]]]
   -- the touch buttons, when there's no console around the screen
   game shell not [
     circle [W - 48, H - 48, 34, "#00000066"]
