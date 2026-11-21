@@ -116,7 +116,7 @@ relay-props : [["satellite_dish", 8.6, 5.4, 2.3, 1.5], ["column", 3.5, 3.5, 0, 2
 missions : [
   [
     name : "THE LAB", map : lab, props : lab-props, walls : "concrete", air : #14161c, floor : "plate", ceiling : "metal", haze : 15
-    start : [2.5, 2.5, 0.6], exit : [2.5, 2.5], exit-name : "BACK TO THE LIFT"
+    spawn-at : [2.5, 2.5, 0.6], exit : [2.5, 2.5], exit-name : "BACK TO THE LIFT"
     guards : [[1, 12.5, 2.5, 12.5, 4.5], [2, 3.5, 7.5, 6.5, 7.5], [3, 13.5, 7.5, 9.5, 7.5], [4, 2.5, 11.5, 2.5, 13.5], [5, 9.5, 12.5, 9.5, 12.5], [6, 13.5, 13.5, 13.5, 10.5]]
     targets : [[9.0, 10.7, "generator_large", 1.4], [5.8, 7.7, "generator", 1.0]], target-name : "GENERATORS"
     intel : [14.5, 12.5], intel-name : "INTEL CASE"
@@ -125,7 +125,7 @@ missions : [
   ]
   [
     name : "THE DEPOT", map : depot, props : depot-props, walls : "metal", air : #161712, floor : "concrete", ceiling : "plate", haze : 19
-    start : [1.5, 1.5, 0.8], exit : [14.5, 14.5], exit-name : "TO THE LOADING BAY"
+    spawn-at : [1.5, 1.5, 0.8], exit : [14.5, 14.5], exit-name : "TO THE LOADING BAY"
     guards : [[1, 7.5, 7.5, 12.5, 7.5], [2, 4.5, 1.5, 10.5, 1.5], [3, 14.5, 5.5, 14.5, 10.5], [4, 1.5, 9.5, 1.5, 13.5], [5, 8.5, 13.5, 12.5, 13.5], [6, 11.5, 10.5, 11.5, 8.5], [7, 5.5, 5.5, 5.5, 8.5]]
     targets : [[7.5, 9.5, "barrels", 1.1], [13.5, 7.5, "barrels", 1.1], [3.5, 13.5, "barrels", 1.1]], target-name : "FUEL STACKS"
     intel : [14.5, 1.5], intel-name : "SHIPPING MANIFEST"
@@ -134,7 +134,7 @@ missions : [
   ]
   [
     name : "THE RELAY", map : relay, props : relay-props, walls : "wall", air : #10141c, floor : "metal", ceiling : "plate", haze : 11
-    start : [14.5, 3.5, 3.1], exit : [14.5, 3.5], exit-name : "BACK TO THE HATCH"
+    spawn-at : [14.5, 3.5, 3.1], exit : [14.5, 3.5], exit-name : "BACK TO THE HATCH"
     guards : [[1, 7.5, 7.5, 8.5, 8.5], [2, 1.5, 1.5, 14.5, 1.5], [3, 14.5, 14.5, 1.5, 14.5], [4, 3.5, 7.5, 3.5, 10.5], [5, 12.5, 7.5, 12.5, 10.5], [6, 7.5, 3.5, 10.5, 3.5], [7, 7.5, 12.5, 10.5, 12.5], [8, 1.5, 7.5, 1.5, 10.5]]
     targets : [[7.5, 5.5, "generator_large", 1.2], [8.5, 10.5, "generator_large", 1.2]], target-name : "TRANSMITTERS"
     intel : [8.0, 7.5], intel-name : "CODEBOOK"
@@ -153,8 +153,8 @@ solid : [cx cy |
 ]
 wall-cells : level numbered collect-flat [[r, row] | row chars numbered keep [[c, ch] | ch = "#"] collect [[c, ch] | [c, r]]]
 -- doors: a D in a map is floor with a door in it; the door slides up as anyone comes near. across: walls left and
--- right, so the door spans the passage east to west (otherwise north to south)
-door-cells : level numbered collect-flat [[r, row] | row chars numbered keep [[c, ch] | ch = "D"] collect [[c, ch] | [x : c - 0.5, y : r - 0.5, across : row @ (c - 1) = "#"]]]
+-- right (spans-x), so the door spans the passage east to west (otherwise north to south)
+door-cells : level numbered collect-flat [[r, row] | row chars numbered keep [[c, ch] | ch = "D"] collect [[c, ch] | [x : c - 0.5, y : r - 0.5, spans-x : row @ (c - 1) = "#"]]]
 -- is the way from a to b clear of walls?
 clear-line : [ax ay bx by |
   steps : (bx - ax * (bx - ax) + (by - ay * (by - ay)) sqrt * 4 ceil) max 1
@@ -247,7 +247,7 @@ sims : [first | range simulants collect [k | simulant (first + k - 1)]]
 -- the Warden: a mech in the relay's hall, with four times the health of a guard, who hits twice as hard
 wardens : cond [(mode = "mission") and (mission has-field "warden"), [mission warden] collect [[k, gx, gy, tx, ty] | guard [k, gx, gy, tx, ty] with [boss : true, health : guard-health * 4]], any, []]
 start :
-  agents : cond [mode = "mission", [agent [1, mission start @ 1, mission start @ 2, mission start @ 3]], any, [agent [1, 2.5, 2.5, 0.6]]] .. (cond [mode = "sim", sims 2, any, []])
+  agents : cond [mode = "mission", [agent [1, mission spawn-at @ 1, mission spawn-at @ 2, mission spawn-at @ 3]], any, [agent [1, 2.5, 2.5, 0.6]]] .. (cond [mode = "sim", sims 2, any, []])
   -- anything but a mission is a match: no guards, no objectives (a duel waits here for the second phone)
   guards : mode != "mission" [[]] else [mission guards collect [[k, gx, gy, tx, ty] | guard [k, gx, gy, tx, ty]] .. wardens]
   mines : []
@@ -358,7 +358,7 @@ play : [game |
   -- a miss leaves a hole in the wall where it struck (the last 24 stay)
   misses : shooters keep [a | a aimed = false] collect [a |
     far : cast [a x, a y, a angle] far - 0.02
-    [x : a angle cos * far + (a x), y : a angle sin * far + (a y), h : noise [now * 13, a id] * 0.5 + 1.05]
+    [x : a angle cos * far + (a x), y : a angle sin * far + (a y), rise : noise [now * 13, a id] * 0.5 + 1.05]
   ]
   holes : (game holes else []) .. misses
   (ready any [a | (a asks fire) and (a clip = 0) and (a fire-wait <= 0) and (a reloading <= 0) and (a bot not)]) [beep [180, 0.03]]
@@ -587,7 +587,7 @@ update : [game |
   -- two phones: a duel, or the mission together (the second player comes in beside the first)
   coop : two-phones = "coop"
   g : cond [
-    two and coop and (game agents length = 1) and (game versus not), game with [agents : game agents .. [agent [2, mission start @ 1, mission start @ 2 + 1, mission start @ 3]]]
+    two and coop and (game agents length = 1) and (game versus not), game with [agents : game agents .. [agent [2, mission spawn-at @ 1, mission spawn-at @ 2 + 1, mission spawn-at @ 3]]]
     two and (coop not) and (game versus not), game with duel with [match-start : game clock]
     any, game
   ]
@@ -595,7 +595,7 @@ update : [game |
   g over = "" [play g] else [
     -- in a campaign a won mission waits here: the page moves on to the next one, or rolls the credits after the last
     waits : campaign and (g over = "won")
-    (again and (waits not) and (g clock - (g over-at) > 1.5)) [cond [two and (coop not), g with duel with [match-start : g clock], two, start with [agents : [agent [1, mission start @ 1, mission start @ 2, mission start @ 3], agent [2, mission start @ 1, mission start @ 2 + 1, mission start @ 3]], input : g input, input2 : g input2], any, start]] else [g]
+    (again and (waits not) and (g clock - (g over-at) > 1.5)) [cond [two and (coop not), g with duel with [match-start : g clock], two, start with [agents : [agent [1, mission spawn-at @ 1, mission spawn-at @ 2, mission spawn-at @ 3], agent [2, mission spawn-at @ 1, mission spawn-at @ 2 + 1, mission spawn-at @ 3]], input : g input, input2 : g input2], any, start]] else [g]
   ]
 ]
 
@@ -642,11 +642,11 @@ draw : [game |
   door-cells each [d |
     nearest : movers collect [m | distance [m x, m y, d x, d y]] smallest else 9
     lift-by : 1.9 - nearest / 0.9 max 0 min 1 * 2.3
-    block [d x, 1.25 + lift-by, d y, cond [d across, 1, any, 0.14], 2.5, cond [d across, 0.14, any, 1], "plate"]
-    block [d x, 2.47, d y, cond [d across, 1.04, any, 0.2], 0.06, cond [d across, 0.2, any, 1.04], "#d6a531"]
+    block [d x, 1.25 + lift-by, d y, cond [d spans-x, 1, any, 0.14], 2.5, cond [d spans-x, 0.14, any, 1], "plate"]
+    block [d x, 2.47, d y, cond [d spans-x, 1.04, any, 0.2], 0.06, cond [d spans-x, 0.2, any, 1.04], "#d6a531"]
   ]
   -- bullet holes where shots struck the walls
-  (game holes else []) each [h | block [h x, h h, h y, 0.07, 0.07, 0.07, "#0b0b0d"]]
+  (game holes else []) each [h | block [h x, h rise, h y, 0.07, 0.07, 0.07, "#0b0b0d"]]
   -- the mission's targets, standing until wrecked
   game machines each [m | model [m model, m x, 0, m y, 0, m size, false, 0]]
   props each [[name, px, pz, turn, size] | model [name, px, 0, pz, turn, size, false, 0]]
@@ -775,6 +775,8 @@ draw : [game |
     rect [W / 2 - 60, 50, 120, 4, "#00000099"]
     rect [W / 2 - 60, 50, g health / (guard-health * 4) * 120, 4, red]
   ]
+  -- the mission's clock, once the opening card has gone (gold while you're inside the par time)
+  (mode = "mission") and (game over = "") and (now - (game began) > 4.5) [text [now - (game began) clock, W / 2, 16, 10, cond [now - (game began) < par-time, gold, any, "#c9ccd4"]]]
   -- a mission opens with its title card and briefing, for a few seconds
   card : now - (game began)
   (mode = "mission") and (card < 4.5) and (game over = "") [

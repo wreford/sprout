@@ -350,8 +350,11 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
 // ---------------- SilverEye: guards alone, a duel for two; a pocket console's stick and buttons arrive as held values
 {
   const src = fs.readFileSync(__dirname + "/examples/silvereye.sp", "utf8");
-  { const before = logs.length; L.makeGame(src, {}); const lints = logs.slice(before).filter(m => /lint|isn't a word/.test(m));
-    ok("silvereye: the program loads with no lints or unknown words", lints.length === 0, lints); }
+  { const before = logs.length, first = L.makeGame(src, {}), padOn = S.valueCellOf([], new Map([["shell", true], ["walk", 1], ["fire", true]]));
+    // a frame and a draw too: some lints only show when the code they're in first runs
+    for (let t = 0; t < 30; t++) first.tick(1 / 60, padOn); first.draw();
+    const lints = logs.slice(before).filter(m => /lint|isn't a word/.test(m));
+    ok("silvereye: the program loads, runs and draws with no lints or unknown words", lints.length === 0, lints); }
   const pad = o => S.valueCellOf([], new Map(Object.entries(Object.assign({ shell: true }, o))));
   const keys = ks => S.valueCellOf([], new Map(ks.map(k => [k, true])));
   const put = (g, i, o) => { const m = new Map(S.fieldsOf(g.state)), ags = S.partsOf(m.get("agents")).slice(), a = new Map(S.fieldsOf(ags[i])); for (const k in o) a.set(k, o[k]); ags[i] = S.valueCellOf([], a); m.set("agents", S.valueCellOf(ags, new Map())); g.setState(S.valueCellOf([], m)); };
@@ -613,6 +616,8 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     pm(0, { x: 4.5, y: 7.5, angle: 0 }); pm(1, { x: 6.0, y: 7.3, health: 10 }); pm(2, { x: 6.0, y: 7.7, health: 10 });
     for (let t = 0; t < 40; t++) sk.tick(1 / 60, pad({ fire: true }));
     ok("silvereye: two takedowns in quick succession are a double", agent(sk, 1).field("streak") >= 2 && agent(sk, 1).field("kills") >= 2, [agent(sk, 1).field("streak"), agent(sk, 1).field("kills")]); }
+  { const mt = L.makeGame(src, {}); for (let t = 0; t < 60 * 6; t++) mt.tick(1 / 60, pad({}));
+    ok("silvereye: a mission shows its clock once the card has gone", mt.draw().some(x => x[0] === "text" && x[1][0] === "0:05")); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });
