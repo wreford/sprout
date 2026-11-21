@@ -10991,7 +10991,9 @@ draw : [game |
   rivals : game agents keep [a | a id != you-id]
   down : up you not
   -- the camera: your eyes, or the floor once you're down
-  fog [fog-colour, 3, 15]
+  -- the air turns red while the alarm is up
+  alarm : game guards any [g | (g alert) and (g health > 0)]
+  fog [cond [alarm, cond [now * 2 % 1 < 0.5, "#3a1416", any, "#2a1012"], any, fog-colour], 3, 15]
   -- the view is set by how wide it is across (the screen is taller than wide), and narrows while you aim
   across : you fov * (cond [you zoomed, zoom-view, any, 1])
   tall : across / 2 * pi / 180 tan * (H / W) atan * 2 * 180 / pi
@@ -11101,7 +11103,7 @@ draw : [game |
   (you hurt > 0) [rect [0, 0, W, H, "#ff000040"]]
   (game clock < (you safe-until)) [text ["PROTECTED", W / 2, H / 2 + 52, 9, cyan]]
   hint : cond [game shell, "stick to move · drag to look · hold A to fire", any, "drag to walk · tap the middle to fire"]
-  (now < 5) and (game over = "") [text [hint, W / 2, H - 40, 10, "#f4f1eacc"]]
+  (now < 5) and (game over = "") [text [hint, W / 2, H - 70, 10, "#f4f1eacc"]]
   again : cond [game shell, "press A to go again", any, "tap to go again"]
   -- the end: what happened, and how you did (time, accuracy, takedowns)
   taken : game over-at
