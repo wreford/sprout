@@ -6649,7 +6649,7 @@ p with [x : 5] print
 <li>Pure loops are compiled ahead. Loops over records of numbers are fused into one pass over columns, <code>spork</code> runs a million Monte Carlo trials on WebAssembly SIMD or the GPU, and WebGPU draws thousands of shapes in one call.</li>
 <li>Games can be 3D: <code>view</code>, <code>block</code>, <code>model</code> and <code>hold</code> draw a scene with three.js and real CC0 models, from the same draw cell.</li>
 <li>Two players, no server: send an invite by text, and two phones play in lockstep, peer to peer.</li>
-<li>Game logic you can rewrite mid-game: the turrets in Swarm and SilverEye run a <code>turret-program</code> cell you edit while they fire.</li>
+<li>Game logic you can rewrite mid-game: the turrets in Swarm and SilverEye run a <code>turret-program</code> cell you edit while they fire, and SilverEye's simulants run a <code>simulant-program</code>.</li>
 <li>Dates, times, money, sizes and colours are written as they are: <code>2026-11-20 + 30</code>, <code>$19.99 * 3</code>, <code>640x480 / 2</code>.</li>
 <li><code>parse</code> reads text and code with rules that are ordinary values, and a grammar is one cell.</li>
 <li>Code is data: <code>quote</code> it, change it, <code>eval</code> it.</li>
@@ -6662,7 +6662,7 @@ p with [x : 5] print
 <h2>Try</h2>
 <ul class="list">
 <li><a href="play.html#ex=swarm">Swarm</a><span>Thousands of drones against turrets you program in Sprout.</span></li>
-<li><a href="/silvereye/">SilverEye</a><span>A low-poly 3D shooter on a pocket console: a lab of guards, or a duel for two phones with no server. Proximity mines, and turrets you program as you play.</span></li>
+<li><a href="/silvereye/">SilverEye</a><span>A low-poly 3D shooter on the POCKET64 handheld: missions with objectives and medals, a combat sim against simulants, duel or co-op for two phones with no server, two maps. Turrets and simulants you program in Sprout as you play.</span></li>
 <li><a href="play.html#ex=volley">Volley</a><span>Two phones, one game, no server. The invite goes by text.</span></li>
 <li><a href="play.html#ex=gears">Gears</a><span>A parametric tool: two gears from a few numbers.</span></li>
 <li><a href="play.html#ex=terrain">Terrain</a><span>Smooth noise and colour scales, from wrapped libraries.</span></li>
@@ -11766,7 +11766,7 @@ const EX=[
  ["terrain","tool","Terrain","A map made of smooth noise and coloured by scales, flying east: the simplex and chroma libraries, wrapped as Sprout modules. Change the sea level or the colours while it flies."],
  ["gears","tool","Gears","A parametric tool: two gears worked out from a few numbers. Change the teeth, the module or the speed while they turn, or press tweak and drag a number."],
  ["swarm","game","Swarm","Thousands of drones fly at the core and turrets you program in Sprout shoot them down. Change turret-program while it runs. Fused loops, a SIMD spork kernel and WebGPU drawing keep it fast."],
- ["silvereye","game","SilverEye","A low-poly 3D shooter and a love letter to GoldenEye 007 and Perfect Dark: a lab of guards, a combat sim against simulants you program, or a duel for two phones. Proximity mines, aiming, turrets you program. Best on its own page, taskiap.com/silvereye, on a pocket console with a stick"],
+ ["silvereye","game","SilverEye","A low-poly 3D shooter and a love letter to GoldenEye 007 and Perfect Dark, with its own lab and art: missions with objectives and medals, a combat sim against simulants, duel or co-op for two phones, two maps, turrets and simulants you program. Best on its own page, taskiap.com/silvereye"],
  ["silvereye-2d","game","SilverEye 2D","Sneak through an underground lab and take down the guards. Proximity mines arm after a moment and go off when anyone comes near, you included. Drag to walk, tap to fire, MINE to drop one."],
  ["volley","game","Volley","A game for two phones, no server: send an invite by text and each player drags their own paddle. Alone, the top paddle plays itself."],
  ["galaxy","game","Galaxy","Twenty thousand stars falling toward your finger. One fused loop moves them all, and WebGPU draws them in one call."],
