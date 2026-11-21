@@ -10,13 +10,13 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 
 ```
 node test.js          # language tests (302)
-node game-tests.js    # game tests (153)
+node game-tests.js    # game tests (154)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 455 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 456 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4394,6 +4394,9 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   for (let t = 0; t < 30; t++) w.tick(1 / 60, pad({ walk: 1, look: 0.5 }));
   ok("silvereye: the stick walks and the look drag turns you by what it moved", agent(w, 1).field("x") > 2.7 && Math.abs(agent(w, 1).field("angle") - 1.1) < 1e-9, agent(w, 1).field("angle"));
   ok("silvereye: on the console there are no touch buttons on the screen", !w.draw().some(x => x[0] === "text" && x[1][0] === "MINE"));
+  { const sw = L.makeGame(src, {}); sw.tick(1 / 60, pad({})); const xs = [];
+    for (let t = 0; t < 20; t++) { sw.tick(1 / 60, pad({ walk: 1 })); xs.push(sw.draw().find(x => x[0] === "hold")[1][1]); }
+    ok("silvereye: the gun sways as you walk, and its place is always a number", xs.every(Number.isFinite) && new Set(xs.map(x => x.toFixed(4))).size > 5, xs.slice(0, 3)); }
   { const quiet = L.makeGame(src, {}); for (let t = 0; t < 400; t++) quiet.tick(1 / 60, pad({}));
     const bars = quiet.draw().filter(x => x[0] === "rect" && x[1][2] === 7 && x[1][3] === 9).length;
     ok("silvereye: the health bar stays out of the way until you're hurt", bars === 0, bars); }
@@ -11051,7 +11054,7 @@ draw : [game |
   kick : cond [you flash > 0, 0.05, any, 0]
   gun : cond [you weapon = "heavy", "blaster_e", any, "blaster_g"]
   -- the gun sways as you walk, more as you run
-  stride : cond [you moving, now * cond [(you asks walk else 0) > 1.05, 14, any, 9], any, 0]
+  stride : cond [you moving, now * (cond [(you asks walk else 0) > 1.05, 14, any, 9]), any, 0]
   sway-x : cond [you moving, stride sin * 0.012, any, 0]
   sway-y : cond [you moving, stride * 2 sin abs * 0.01, any, 0]
   (down not) and (you zoomed not) [hold [gun, 0.2 + sway-x, -0.21 - sway-y, -0.55 + kick, gun-turn, 0, cond [you weapon = "heavy", 0.32, any, 0.26]]]

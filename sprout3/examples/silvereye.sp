@@ -515,7 +515,7 @@ draw : [game |
   kick : cond [you flash > 0, 0.05, any, 0]
   gun : cond [you weapon = "heavy", "blaster_e", any, "blaster_g"]
   -- the gun sways as you walk, more as you run
-  stride : cond [you moving, now * cond [(you asks walk else 0) > 1.05, 14, any, 9], any, 0]
+  stride : cond [you moving, now * (cond [(you asks walk else 0) > 1.05, 14, any, 9]), any, 0]
   sway-x : cond [you moving, stride sin * 0.012, any, 0]
   sway-y : cond [you moving, stride * 2 sin abs * 0.01, any, 0]
   (down not) and (you zoomed not) [hold [gun, 0.2 + sway-x, -0.21 - sway-y, -0.55 + kick, gun-turn, 0, cond [you weapon = "heavy", 0.32, any, 0.26]]]
