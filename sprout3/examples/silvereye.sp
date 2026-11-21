@@ -53,7 +53,7 @@ mode : "mission"           -- "mission": the lab and its guards · "sim": you ag
 simulants : 2              -- simulants in a combat sim, and joining a duel
 simulant-skill : 2         -- 1 rookie, 2 agent, 3 ace
 difficulty : 2             -- a mission's guards: 1 rookie (no generators to wreck), 2 agent, 3 ace
-fov-across : 90            -- how wide you see, side to side, in degrees: wider than the old consoles
+fov-across : 100           -- how wide you see, side to side, in degrees: far wider than the old consoles
 sight-always : true        -- the sight on screen all the time, or only while you aim
 zoom-view : 0.45           -- aiming (Z) narrows the view to this much
 turbo : false              -- unlocked by all three medals in one mission: everyone moves half as fast again
