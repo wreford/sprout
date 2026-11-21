@@ -380,5 +380,25 @@ ok("hot-swap takes a changed start value", g.state.field("height") === 99);
   ok("the editor's literal matcher is the lexer's", S.lexLiteral("9:30 x", 0).length === 4 && S.lexLiteral("don't", 0) === null);
 }
 
+// ---------------- the standard library (decision 105)
+{
+  const libDir = __dirname + "/lib", files = fs.readdirSync(libDir).filter(f => f.endsWith(".sp")).sort();
+  ok("105 stdlib.js holds exactly what lib/ holds (run node make-stdlib.js)", JSON.stringify(Object.keys(S.stdlib.SOURCES).sort()) === JSON.stringify(files.map(f => f.slice(0, -3))) && files.every(f => S.stdlib.SOURCES[f.slice(0, -3)] === fs.readFileSync(libDir + "/" + f, "utf8")));
+  S.setLog(m => logs.push(m));
+  let examples = 0, quiet = true;
+  for (const name of S.stdlib.names) for (const m of S.stdlib.SOURCES[name].matchAll(/^-- e\.g\. (.*)$/gm)) { logs.length = 0; S.load("result : " + m[1]).field("result"); examples++; if (logs.some(l => !l.startsWith("lint"))) { quiet = false; console.log("   example logs:", m[1], logs); } }
+  ok("105 every example in lib/ runs without a message (" + examples + " of them)", quiet && examples > 80);
+  const W = [
+    ["ease out-cubic 0.5", "0.875"], ["ease between [ease out-cubic, 0, 300, 0.5]", "262.5"], ["vec size 3x4", "5"], ["vec rotate [1x0, 1.5707963267948966]", "0x1"],
+    ["stats median [7, 1, 3, 9]", "5"], ["stats spread [2, 4, 4, 4, 5, 5, 7, 9]", "2"], ["stats percentile [[15, 20, 35, 40, 50], 0.4]", "29"],
+    ["grid path [[[0, 0, 0], [1, 1, 0], [0, 0, 0]], [1, 1], [1, 3], [v | v = 0]] length", "7"], ["grid path [[[0, 1], [1, 0]], [1, 1], [2, 2], [v | v = 0]]", "false"],
+    ["grid fill [[[1, 1, 0], [0, 1, 0]], 1, 1, 7]", "[[7, 7, 0], [0, 7, 0]]"], ["seeded whole [1, 6, 42] = (seeded whole [1, 6, 42])", "true"],
+    ["format commas -1234567", "-1,234,567"], ["format ordinal 13", "13th"], ["format clock 65", "1:05"], ["shape area (shape box [0x0, 4x2])", "8"],
+    ["shape holds [shape box [0x0, 4x2], 5x1]", "false"], ["palette hsl [0, 1, 0.5]", "#ff0000"], ["csv read \"a,b\\n1,x\" @ 1 b", "x"],
+    ["json read (json write [a : [1, 2], b : \"t\"])", "[a : [1, 2], b : t]"],
+  ];
+  for (const [src, want] of W) { const got = val(src); ok("105 " + src + " gives " + want, got === want); if (got !== want) console.log("   got", got); }
+}
+
 console.log(pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

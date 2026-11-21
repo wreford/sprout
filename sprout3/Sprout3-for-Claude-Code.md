@@ -9,14 +9,14 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 **Run it (Node 22 or later):**
 
 ```
-node test.js          # language tests (262)
+node test.js          # language tests (283)
 node game-tests.js    # game tests (85)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 347 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 368 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -106,6 +106,16 @@ The page and `bench.html` need a local web server, such as `python3 -m http.serv
 - `sprout-vs-lua.html`: Sprout and Lua: tables, strings, patterns, coroutines, metatables and speed, each pair run in both
 - `compare.html`: Sprout compared: one page beside Python, Rebol, Clojure and Lua, with a switch between them and a speed table; every Sprout, Python, Clojure and Lua side run, the Rebol side from the documentation (the old sprout-vs-*.html pages forward to it)
 - `examples/gears.sp`: Gears: a parametric tool; two meshing gears worked out from a few numbers, changed live (Tools group)
+- `make-stdlib.js`: Makes stdlib.js and library.html from lib/*.sp (decision 105): node make-stdlib.js
+- `lib/csv.sp`: The standard library's csv module, in Sprout (decision 105)
+- `lib/ease.sp`: The standard library's ease module, in Sprout (decision 105)
+- `lib/format.sp`: The standard library's format module, in Sprout (decision 105)
+- `lib/grid.sp`: The standard library's grid module, in Sprout (decision 105)
+- `lib/palette.sp`: The standard library's palette module, in Sprout (decision 105)
+- `lib/seeded.sp`: The standard library's seeded module, in Sprout (decision 105)
+- `lib/shape.sp`: The standard library's shape module, in Sprout (decision 105)
+- `lib/stats.sp`: The standard library's stats module, in Sprout (decision 105)
+- `lib/vec.sp`: The standard library's vec module, in Sprout (decision 105)
 - `examples/recipes.sp`: Recipes: quicksort, primes, FizzBuzz, a vector with its own + (prints; not a game)
 - `play.html`: The editor at taskiap.com/sprout3/play.html (opens #ex=name, #spec, #history): a library of examples with artwork, the running game shown like album art, live editing, a now-playing bar whose progress bar rewinds time, state, output and the spec; light and dark
 - `bench.html`: Benchmarks in the browser: the language against plain JS, the games, particles up to 100,000 on Canvas 2D and WebGPU, and SQLite
@@ -738,6 +748,7 @@ These are marked in `sprout2.js` with "Sprout Live fix N" or "Sprout Live additi
 102. **Code as data (Troy, 20 Nov).** `quote [move 10, turn 90]` gives the code in the brackets as a value instead of running it, so a program can read, build and change code, as in Rebol and Clojure. The value is a block: a list of its items. An item of one term is that term's value (a number, text, a literal, or a word such as `'move`), an item of several terms is a phrase (a list of its terms), `x : 5` is a binding (`name` and `value`), `( )` is a group, and a block with inputs answers `inputs`. Each has a `kind`, every list word works on them, and they print as the code they came from: `quote [move 10, turn 90]` prints `[move 10, turn 90]`. `quote` works anywhere a value can go (`eval quote [1 + 2]`, `a = quote [x]`), unless a program names something `quote` itself. Every cell gives its own code: `[n | n * 2] code` is the block `[n | n * 2]`. `eval` runs code: a block that takes no input runs as a program and gives its last value, a block with inputs gives back a cell, text runs as the code it holds, and any value turns into code with `source` (the text that makes it). `eval` runs at the top level, so it sees host words and the prelude but not a program's own names. `eval-with [names, code]` hands it some, as fields of a record. `phrase [items]` builds a phrase, as in `eval-with [[double : double], phrase ['double, 21]]`. A compiled program is kept for the next eval of the same code. A dialect is a cell that walks a block: `program fold [start, [state [command, amount] | match [command, ['move, ..., 'turn, ...]]]]` runs a turtle program written as data.
 103. **parse (built; library, decision 80, from Troy's ask on 20 Nov to make Sprout better than Rebol at Rebol).** `parse.js` brings Rebol's parse dialect, and its rules are ordinary Sprout values, not a language inside strings. Text is a rule that matches itself, a list of rules matches each in turn, a cell with one input tests one character or item, and any other value (a word like `'move`, a number, a date) matches an item equal to it. The rule words are `some`, `maybe`, `maybe-some`, `repeat [n, rule]` and `repeat [least, most, rule]`, `one-of [rules]` (tried in order) and `one-of "abc"`, `none-of`, `to`, `thru`, `ahead`, `not-ahead`, `into` (one item that is a list, parsed all through) and `of-kind`, with `digit`, `letter`, `upper-letter`, `lower-letter`, `letter-or-digit`, `space`, `any-char`, `end`, `a-number`, `a-text` and `a-word`. Matching is PEG: a choice takes the first rule that matches, a repeat takes all it can, and nothing is tried again, so a rule's meaning is what it says. `rule as "name"` keeps what it matched, `rule as ["name", [t | t number]]` keeps what a cell makes of it, and `rule all-as "name"` keeps every match in a list. `text parse rule` gives true, or a record of what was kept, when the rule matches all of the text, and false when it doesn't. `find-all` gives every match, and `replace-all [rule, new]` replaces each, with text or with what a cell makes of the match. Lists parse the same way, item by item, so a block of quoted code (decision 102) is parsed like text, and a dialect is checked by a rule: `quote [move 10, turn 90] parse some one-of [into ['move, a-number], into ['turn, a-number]]`. Rule words given a rule word wait for the rule, so `some one-of [...]` reads as Rebol would read it. Names are still bound before use (decision 25), so a grammar that refers back to itself is one cell that names itself, with the rules it needs as its fields: `expr : [factor : one-of [some digit, ["(", expr, ")"]], ..., term, maybe-some [one-of "+-", term]]`. To make that work, a cell that mentions its own name is always lazy, even when it is a short list of values (`digits : [digit, maybe digits]`).
 104. **Scripts: coroutines that stay values (Troy, 20 Nov).** `script [| ... yield 1 ... x : yield 2 ...]` is a script, Lua's coroutine done Sprout's way. `s resume v` runs it on to its next `yield` and gives a new script whose `value` is what was yielded (or, once it finishes, what it gave back) and whose `done` says whether it has finished. `yield` gives back the value sent by the next resume, a script's input is the first value sent, and `s next` resumes with false. Unlike a Lua coroutine, a script never changes: `s` is the same after `s resume v`, so a game keeps its script in its state and rewinds, replays, saves and compares it like any other value. A resume works by running the cell again from the start with every value sent so far, so the code must be pure, as all Sprout code is. The steps already taken don't have their effects again (a `print` or a `beep` happens once), and `random` and `rand` give them the numbers they had the first time, so the run is the same run. A new step's random numbers are new, as anywhere. Running again costs time that grows with the steps taken; a game script of a few hundred steps resumes in microseconds. `take n` and `yields` give the values a script yields (a generator), and `wait seconds`, written in Sprout in `words.js`, waits inside a game script that is resumed with each frame's `dt`. A cell written with a bar and no inputs, `[| ...]`, is code: it runs when it is run, never when it is made, even when its parts look like simple values. An input named `left` is now linted, since `left` means a method's receiver.
+105. **The standard library (built; library, decision 80, from Troy's ask on 21 Nov).** Ten modules, each a global cell whose fields are its words, in every program: `ease` (easing curves, `progress`, `between`), `vec` (vectors as pairs: `size`, `unit`, `angle`, `rotate`, `dot`, `distance`, `mix`, `limit`, `reflect`), `stats` (`mean`, `median`, `mode`, `variance`, `spread`, `percentile`, `histogram`, `correlation`, `summary`), `grid` (lists of rows: `make`, `at`, `put`, `beside`, `around`, `count-around`, `cells`, `map`, `region`, `fill`, and `path`, the shortest way through), `seeded` (repeatable random choices from `noise`: `between`, `whole`, `chance`, `pick`, `shuffle`, `bell`, `in-circle`, `weighted`), `format` (`commas`, `places`, `percent`, `ordinal`, `plural`, `clock`, `wrap`, `centre`, `title`, `bar`), `shape` (points as pairs: `circle`, `polygon`, `star`, `box`, `edges`, `move`, `turn`, `grow`, `area`, `centre`, `bounds`, `holds`), `palette` (`hsl`, `along`, `wheel`, `grey`, and the sets `warm`, `cool`, `soft`), `csv` (`read`, `write`) and `json` (`read`, `write`, `pretty`). All but `json` are written in Sprout, one file each in `lib/`, so the library is also a set of worked examples; `json` is JavaScript in `words.js`. `node make-stdlib.js` turns `lib/*.sp` into `stdlib.js`, which Node and the pages load after `parse.js`, and writes `library.html`, the reference: each word's comment, its inputs, and its `-- e.g.` example run with the answer it gave. A module is compiled the first time a program uses it. Nothing in the library draws, since host words belong to each game; `shape edges` gives the sides for a program's own `each [[a, b] | line ...]`. A program's own names come first, so a program that binds `grid` or `format` keeps its own. Three words joined the built-in ones to make the modules short: `find-index`, `distinct-by` and `has-field` on lists and records, and `atan2` and `fixed` on numbers. The tests check that `stdlib.js` matches `lib/` and that every example runs without a message.
 ````
 
 ---
@@ -1969,6 +1980,7 @@ if (typeof module !== "undefined") {
   // the standard words always come along (decision 99)
   require("./words.js");
   require("./parse.js");
+  require("./stdlib.js");
   if (!process.env.SPROUT3_CORE_ONLY) try { require("./kernels.js"); } catch (e) { if (e.code !== "MODULE_NOT_FOUND") throw e; }
 } else root.Sprout3 = api;
 })(typeof window !== "undefined" ? window : globalThis);
@@ -3920,6 +3932,26 @@ ok("hot-swap takes a changed start value", g.state.field("height") === 99);
   logs.length = 0;
   ok("a date compared with money says so", val("2026-11-20 < $5.00") === "false" && logs.some(m => /a date can't be compared with \$5\.00/.test(m)));
   ok("the editor's literal matcher is the lexer's", S.lexLiteral("9:30 x", 0).length === 4 && S.lexLiteral("don't", 0) === null);
+}
+
+// ---------------- the standard library (decision 105)
+{
+  const libDir = __dirname + "/lib", files = fs.readdirSync(libDir).filter(f => f.endsWith(".sp")).sort();
+  ok("105 stdlib.js holds exactly what lib/ holds (run node make-stdlib.js)", JSON.stringify(Object.keys(S.stdlib.SOURCES).sort()) === JSON.stringify(files.map(f => f.slice(0, -3))) && files.every(f => S.stdlib.SOURCES[f.slice(0, -3)] === fs.readFileSync(libDir + "/" + f, "utf8")));
+  S.setLog(m => logs.push(m));
+  let examples = 0, quiet = true;
+  for (const name of S.stdlib.names) for (const m of S.stdlib.SOURCES[name].matchAll(/^-- e\.g\. (.*)$/gm)) { logs.length = 0; S.load("result : " + m[1]).field("result"); examples++; if (logs.some(l => !l.startsWith("lint"))) { quiet = false; console.log("   example logs:", m[1], logs); } }
+  ok("105 every example in lib/ runs without a message (" + examples + " of them)", quiet && examples > 80);
+  const W = [
+    ["ease out-cubic 0.5", "0.875"], ["ease between [ease out-cubic, 0, 300, 0.5]", "262.5"], ["vec size 3x4", "5"], ["vec rotate [1x0, 1.5707963267948966]", "0x1"],
+    ["stats median [7, 1, 3, 9]", "5"], ["stats spread [2, 4, 4, 4, 5, 5, 7, 9]", "2"], ["stats percentile [[15, 20, 35, 40, 50], 0.4]", "29"],
+    ["grid path [[[0, 0, 0], [1, 1, 0], [0, 0, 0]], [1, 1], [1, 3], [v | v = 0]] length", "7"], ["grid path [[[0, 1], [1, 0]], [1, 1], [2, 2], [v | v = 0]]", "false"],
+    ["grid fill [[[1, 1, 0], [0, 1, 0]], 1, 1, 7]", "[[7, 7, 0], [0, 7, 0]]"], ["seeded whole [1, 6, 42] = (seeded whole [1, 6, 42])", "true"],
+    ["format commas -1234567", "-1,234,567"], ["format ordinal 13", "13th"], ["format clock 65", "1:05"], ["shape area (shape box [0x0, 4x2])", "8"],
+    ["shape holds [shape box [0x0, 4x2], 5x1]", "false"], ["palette hsl [0, 1, 0.5]", "#ff0000"], ["csv read \"a,b\\n1,x\" @ 1 b", "x"],
+    ["json read (json write [a : [1, 2], b : \"t\"])", "[a : [1, 2], b : t]"],
+  ];
+  for (const [src, want] of W) { const got = val(src); ok("105 " + src + " gives " + want, got === want); if (got !== want) console.log("   got", got); }
 }
 
 console.log(pass + " passed, " + fail + " failed");
@@ -6263,6 +6295,7 @@ p with [x : 5] print
 
 <h2>Read</h2>
 <ul class="list">
+<li><a href="library.html">The library</a><span>Ten modules: ease, vec, stats, grid, seeded, format, shape, palette, csv, json.</span></li>
 <li><a href="compare.html">Sprout compared</a><span>Next to Python, Rebol, Clojure and Lua, each pair run.</span></li>
 <li><a href="play.html#spec">The spec</a><span>The language and every decision behind it.</span></li>
 <li><a href="bench.html">Benchmarks</a><span>Measured in your browser, on your device.</span></li>
@@ -6352,6 +6385,9 @@ const LIST_WORDS = {
   rest: none(xs => list(items(xs).slice(1))),
   "all-but-last": none(xs => list(items(xs).slice(0, -1))),
   reverse: none(xs => list(items(xs).slice().reverse())),
+  "distinct-by": one((xs, f) => { const out = [], seen = []; for (const v of items(xs)) { const k = callCell(f, v); if (!seen.some(o => valuesEqual(o, k))) { seen.push(k); out.push(v); } } return list(out); }),
+  "find-index": one((xs, test) => { const k = items(xs).findIndex(v => truthy(callCell(test, v), "find-index")); return k < 0 ? false : k + 1; }),
+  "has-field": one((r, name) => isCell(r) && r.field(keyText(name)) !== UNSET),
   distinct: none(xs => { const out = []; for (const v of items(xs)) if (!out.some(o => valuesEqual(o, v))) out.push(v); return list(out); }),
   sum: none(xs => { const ns = numbersOf(xs, "sum"); return ns ? ns.reduce((a, b) => a + b, 0) : false; }),
   product: none(xs => { const ns = numbersOf(xs, "product"); return ns ? ns.reduce((a, b) => a * b, 1) : false; }),
@@ -6422,6 +6458,8 @@ const TEXT_WORDS = {
 // ===================================================================== numbers
 const NUMBER_WORDS = {
   pow: one((a, b) => Math.pow(a, I.requireNumber(b))), exp: none(Math.exp), atan: none(Math.atan), sign: none(Math.sign),
+  // y atan2 x: the angle of the point (x, y); n fixed 2: the number as text with 2 places
+  atan2: one((y, x) => Math.atan2(y, I.requireNumber(x))), fixed: one((n, places) => n.toFixed(Math.max(0, Math.min(20, wholeNumber(places, "fixed"))))),
   even: none(a => a % 2 === 0), odd: none(a => Math.abs(a % 2) === 1),
   between: one((a, lowHigh) => { const [low, high] = argumentsOf(lowHigh, 2); return a >= low && a <= high; }),
   // 1 to 5 is [1, 2, 3, 4, 5]; 5 to 1 counts down
@@ -6740,6 +6778,31 @@ wait : [seconds |
 ]
 `);
 for (const name of SCRIPT_WORDS.fieldNames()) S.globals[name] = SCRIPT_WORDS.field(name);
+
+// ===================================================================== json (a module of the standard library, decision 105)
+// json read text: objects become records, arrays lists, null false; json write value: the other way, kinds as their text
+function fromJson(v) {
+  if (v === null) return false;
+  if (Array.isArray(v)) return list(v.map(fromJson));
+  if (typeof v === "object") { const keys = Object.keys(v); return record(keys, keys.map(k => fromJson(v[k]))); }
+  return v;
+}
+function toJson(v) {
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  if (typeof v === "string" || typeof v === "boolean") return v;
+  if (v instanceof Endless) { logMiss("an endless list can't be written as json"); return null; }
+  if (isCell(v) && !(v instanceof I.Cell && v.takesInput())) {
+    if (isRecord(v)) { const o = {}; for (const k of v.fieldNames()) o[k] = toJson(v.field(k)); return o; }
+    return partsOf(v).map(toJson);
+  }
+  return v && typeof v.sproutText === "function" ? v.sproutText() : formatValue(v);
+}
+const JSON_MODULE = record(["read", "write", "pretty"], [
+  new I.Native("read", t => { if (typeof t !== "string") return notUnderstood(t, "json read"); try { return fromJson(JSON.parse(t)); } catch (e) { return logMiss("json read: " + e.message); } }),
+  new I.Native("write", v => JSON.stringify(toJson(v))),
+  new I.Native("pretty", v => JSON.stringify(toJson(v), null, 2)),
+]);
+S.globals.json = JSON_MODULE;
 
 // ===================================================================== globals
 const define = (name, fn) => S.defNative(name, fn);
@@ -7861,6 +7924,684 @@ draw : [game |
 ]
 ````
 
+## make-stdlib.js
+
+Makes stdlib.js and library.html from lib/*.sp (decision 105): node make-stdlib.js
+
+````js
+// The standard library (decision 105): node make-stdlib.js turns lib/*.sp into stdlib.js, which every page and Node
+// load after words.js. Edit lib/, not stdlib.js; test.js checks the two agree.
+const fs = require("fs"), path = require("path");
+const dir = path.join(__dirname, "lib");
+const names = fs.readdirSync(dir).filter(f => f.endsWith(".sp")).map(f => f.slice(0, -3)).sort();
+const sources = {};
+for (const name of names) sources[name] = fs.readFileSync(path.join(dir, name + ".sp"), "utf8");
+const out = `// The standard library (decision 105), made by make-stdlib.js from lib/*.sp. Don't edit this file: edit lib/ and run
+// node make-stdlib.js. Each module is a global cell whose fields are its words, written in Sprout; it is compiled the
+// first time a program uses it.
+(function (root) {
+"use strict";
+const S = root.Sprout3 || (typeof module !== "undefined" ? require("./sprout3.js") : null);
+const SOURCES = ${JSON.stringify(sources, null, 1)};
+const loaded = {};
+for (const name in SOURCES)
+  Object.defineProperty(S.globals, name, { get: () => loaded[name] || (loaded[name] = S.load(SOURCES[name])), enumerable: true, configurable: true });
+S.stdlib = { SOURCES, names: Object.keys(SOURCES) };
+})(typeof window !== "undefined" ? window : globalThis);
+`;
+fs.writeFileSync(path.join(__dirname, "stdlib.js"), out);
+console.log("stdlib.js:", names.join(", "));
+
+// ---- library.html: the reference, made from each module's comments; every example is run and its answer shown
+const S = require("./sprout3.js");
+const logs = []; S.setLog(m => logs.push(m));
+const esc = t => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+// a module's own words: the comment lines above each top-level binding; "-- e.g." lines are examples
+function wordsOf(src) {
+  const lines = src.split("\n"), words = [], intro = [];
+  let comments = [], seenWord = false;
+  for (const line of lines) {
+    if (line.startsWith("-- ")) { comments.push(line.slice(3)); continue; }
+    const m = /^([a-z][\w-]*) : (.*)$/.exec(line);
+    if (m && comments.length) {
+      const inputs = /^\[([^|\[\]]*)\|/.exec(m[2]);
+      words.push({ name: m[1], inputs: inputs ? inputs[1].trim() : "", about: comments.filter(c => !c.startsWith("e.g. ")), examples: comments.filter(c => c.startsWith("e.g. ")).map(c => c.slice(5)) });
+      seenWord = true;
+    } else if (!seenWord && !m && line.trim() === "" && comments.length) intro.push(...comments);
+    comments = [];
+  }
+  return { intro, words };
+}
+const MODULES = names.map(name => ({ name, ...wordsOf(sources[name]) }));
+// json is written in JavaScript, in words.js; its entry is written here
+MODULES.push({ name: "json", intro: ["json: JSON text read into records and lists, and written back. null reads as false; dates, money and other kinds are written as their text."], words: [
+  { name: "read", inputs: "", about: ["records and lists from JSON text (put \\[ for a [ inside Sprout text)"], examples: ['json read "{\\"a\\": 1, \\"b\\": \\[true, null]}"'] },
+  { name: "write", inputs: "", about: ["a value as JSON text"], examples: ['json write [name : "Ada", due : 2026-11-20, tags : ["x"]]'] },
+  { name: "pretty", inputs: "", about: ["the same, set out on several lines"], examples: ["json pretty [a : 1]"] },
+] });
+MODULES.sort((a, b) => a.name < b.name ? -1 : 1);
+let failures = 0;
+const run = src => { logs.length = 0; let out; try { out = S.format(S.load("result : " + src).field("result")); } catch (e) { out = "error: " + e.message; } const bad = logs.filter(l => !l.startsWith("lint")); if (bad.length || out.startsWith("error")) { failures++; console.log("EXAMPLE FAILS:", src, "=>", out, bad.join(" | ")); } return out; };
+const section = mod => {
+  const plain = mod.intro.join(" ").replace(/^[\w-]+: /, ""), intro = plain.charAt(0).toUpperCase() + plain.slice(1);
+  return `<section id="${mod.name}">
+<h2>${mod.name}</h2>
+<p>${esc(intro)}</p>
+<dl>
+${mod.words.map(w => `<dt><code><b>${mod.name} ${w.name}</b>${w.inputs ? " [" + esc(w.inputs.split(/\s+/).join(", ")) + "]" : ""}</code></dt>
+<dd><p>${esc(w.about.join(" "))}</p>${w.examples.map(e => `<pre>${esc(e)}\n<span class="cm">-- ${esc(run(e)).replace(/\n/g, "\n-- ")}</span></pre>`).join("")}</dd>`).join("\n")}
+</dl>
+</section>`;
+};
+const style = fs.readFileSync(path.join(__dirname, "index.html"), "utf8").match(/<style>[\s\S]*?<\/style>/)[0]
+  .replace("</style>", "dl{margin:0}dt{margin:22px 0 4px}dt b{font-weight:600}dd{margin:0}dd p{color:var(--fg2);margin:0 0 8px}pre{margin:0 0 6px}\n.toc{display:flex;flex-wrap:wrap;gap:6px 14px;margin:0 0 8px}\nsection h2{font-size:15px;text-transform:none;letter-spacing:0;color:var(--fg);margin:56px 0 6px}\n</style>");
+const page = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="The Sprout standard library: every module and word, with an example and its answer.">
+<title>Sprout library</title>
+${style}</head><body>
+<main>
+<h1><a href="./">Sprout</a></h1>
+<p class="lede">The standard library: ${MODULES.length} modules, ${MODULES.reduce((n, m) => n + m.words.length, 0)} words, written in Sprout.</p>
+<p>Each module is a cell whose fields are its words, there in every program: <code>ease out-cubic 0.5</code>, <code>stats median xs</code>, <code>grid path [g, start, goal, open]</code>. The source is in <code>lib/</code>, one file a module, and is worth reading: every word is a few lines. Every example below was run, and the comment under it is what it gave.</p>
+<p class="toc">${MODULES.map(m => `<a href="#${m.name}">${m.name}</a>`).join(" ")}</p>
+<p>Built into every value as well: the list, record, text and number words, endless lists, the literals, <code>parse</code>, <code>quote</code> and <code>script</code>. They are in <a href="play.html#spec">the spec</a> (decisions 99 to 104).</p>
+${MODULES.map(section).join("\n")}
+<footer>Sprout 3 &middot; the standard library (decision 105) &middot; <a href="./">home</a></footer>
+</main>
+</body></html>
+`;
+fs.writeFileSync(path.join(__dirname, "library.html"), page);
+console.log("library.html:", MODULES.length, "modules,", MODULES.reduce((n, m) => n + m.words.length, 0), "words,", failures, "failing examples");
+if (failures) process.exitCode = 1;
+````
+
+## lib/csv.sp
+
+The standard library's csv module, in Sprout (decision 105)
+
+````sprout
+-- csv: tables in text, one row a line and commas between the values. The first line names the columns.
+-- Values that look like numbers become numbers. (Quoted values with commas inside aren't handled.)
+
+-- one value from text: a number if it looks like one
+cell-value : [t | t trim number else [t trim]]
+
+-- the rows as records, named by the first line
+-- e.g. csv read "name,age\nAda,36\nAlan,41"
+read : [csv-text |
+  rows : csv-text trim lines keep [l | l trim length > 0] collect [l | l split ","]
+  names : rows first collect [n | n trim]
+  rows rest collect [row | names zip row fold [[], [r [name, value] | r set-in [name, cell-value value]]]]
+]
+
+-- records as text, a line per record, with the first record's fields as the columns
+-- e.g. csv write [[name : "Ada", age : 36], [name : "Alan", age : 41]]
+write : [records |
+  names : records first keys
+  ([names join ","] .. (records collect [r | names collect [n | r get-in n] join ","])) join "\n"
+]
+````
+
+## lib/ease.sp
+
+The standard library's ease module, in Sprout (decision 105)
+
+````sprout
+-- ease: easing curves for animation. Each takes t, from 0 to 1, and gives a value that starts at 0 and ends at 1.
+-- Use one to move something smoothly: x : ease out-cubic (ease progress [elapsed, 2]) * 300
+
+-- straight along, at one speed
+-- e.g. ease linear 0.25
+linear : [t | t]
+
+-- starts slow, speeds up
+-- e.g. ease in-quad 0.5
+in-quad : [t | t * t]
+
+-- starts fast, slows down
+-- e.g. ease out-quad 0.5
+out-quad : [t | 2 - t * t]
+
+-- slow at both ends
+-- e.g. ease in-out-quad 0.25
+in-out-quad : [t | t < 0.5 [2 * t * t] else [4 - (2 * t) * t - 1]]
+
+-- starts slower still
+-- e.g. ease in-cubic 0.5
+in-cubic : [t | t * t * t]
+
+-- arrives gently: the usual choice for things that slide into place
+-- e.g. ease out-cubic 0.5
+out-cubic : [t | t - 1 * (t - 1) * (t - 1) + 1]
+
+-- slow at both ends, more so than in-out-quad
+-- e.g. ease in-out-cubic 0.75
+in-out-cubic : [t | t < 0.5 [4 * t * t * t] else [t - 1 * (2 * t - 2) * (2 * t - 2) + 1]]
+
+-- goes a little past the end, then settles back
+-- e.g. ease out-back 0.8
+out-back : [t |
+  past : 1.70158
+  u : t - 1
+  past + 1 * u * u * u + (past * u * u) + 1
+]
+
+-- springs past the end and wobbles to a stop
+-- e.g. ease out-elastic 0.3
+out-elastic : [t | cond [t <= 0, 0, t >= 1, 1, any, 2 pow (-10 * t) * (t * 10 - 0.75 * 2.0943951023931953 sin) + 1]]
+
+-- bounces like a dropped ball
+-- e.g. ease out-bounce 0.9
+out-bounce : [t |
+  n : 7.5625
+  cond [
+    t < (1 / 2.75), n * t * t
+    t < (2 / 2.75), t - (1.5 / 2.75) * n * (t - (1.5 / 2.75)) + 0.75
+    t < (2.5 / 2.75), t - (2.25 / 2.75) * n * (t - (2.25 / 2.75)) + 0.9375
+    any, t - (2.625 / 2.75) * n * (t - (2.625 / 2.75)) + 0.984375
+  ]
+]
+
+-- a soft S-curve, slow at both ends
+-- e.g. ease smooth 0.25
+smooth : [t | t * t * (3 - (2 * t))]
+
+-- how far through something is, from 0 to 1: elapsed seconds out of the whole
+-- e.g. ease progress [1.5, 2]
+progress : [elapsed seconds | clamp [elapsed / seconds, 0, 1]]
+
+-- t from 0 to 1 and back again, for things that go to and fro
+-- e.g. ease ping-pong 1.25
+ping-pong : [t | u : t % 2, u > 1 [2 - u] else [u]]
+
+-- a curve applied between two values: [curve, from, to, t]
+-- e.g. ease between [ease out-cubic, 0, 300, 0.5]
+between : [curve from to t | to - from * (curve t) + from]
+````
+
+## lib/format.sp
+
+The standard library's format module, in Sprout (decision 105)
+
+````sprout
+-- format: numbers and text made ready to show.
+
+-- a whole number with commas between the thousands
+-- e.g. format commas 1234567
+commas : [n |
+  groups : n abs round str reverse chars chunks 3 collect [g | g join "" reverse]
+  sign : n < 0 ["-"] else [""]
+  sign .. (groups reverse join ",")
+]
+
+-- a number with a fixed number of places after the point
+-- e.g. format places [3.14159, 2]
+places : [n count | n fixed count]
+
+-- a share from 0 to 1 as a percent
+-- e.g. format percent 0.256
+percent : [x | x * 100 round str .. "%"]
+
+-- 1st, 2nd, 3rd, 4th ... 11th, 12th, 13th, 21st
+-- e.g. format ordinal 22
+ordinal : [n |
+  tens : n % 100
+  ending : cond [tens between [11, 13], "th", n % 10 = 1, "st", n % 10 = 2, "nd", n % 10 = 3, "rd", any, "th"]
+  n str .. ending
+]
+
+-- a count and a word, with an s when there isn't exactly one
+-- e.g. format plural [3, "apple"]
+plural : [n word | n = 1 ["1 [word]"] else ["[n] [word]s"]]
+
+-- seconds as m:ss, or h:mm:ss past an hour
+-- e.g. format clock 3725
+clock : [seconds |
+  whole : seconds round
+  two : [n | n str pad-left [2, "0"]]
+  h : whole / 3600 floor
+  m : whole % 3600 / 60 floor
+  h > 0 ["[h]:[two m]:[two (whole % 60)]"] else ["[m]:[two (whole % 60)]"]
+]
+
+-- text broken into lines no longer than width, at spaces
+-- e.g. format wrap ["the quick brown fox jumps over the lazy dog", 12]
+wrap : [words-text width |
+  words-text words fold [[], [lines word |
+    lines length = 0 [[word]] else [
+      current : lines last
+      current length + 1 + (word length) <= width [lines all-but-last .. [current .. " " .. word]] else [lines .. [word]]
+    ]
+  ]]
+]
+
+-- text in the middle of a line width wide
+-- e.g. format centre ["hi", 6]
+centre : [line width |
+  room : width - (line length) max 0
+  " " repeat (room / 2 floor) .. line .. (" " repeat (room / 2 ceil))
+]
+
+-- Every Word Capitalized
+-- e.g. format title "the sprout standard library"
+title : [line | line words collect [w | w capitalize] join " "]
+
+-- a bar of blocks, value out of most, width wide
+-- e.g. format bar [3, 4, 8]
+bar : [value most width | filled : clamp [value / most * width round, 0, width], "#" repeat filled .. ("." repeat (width - filled))]
+````
+
+## lib/grid.sp
+
+The standard library's grid module, in Sprout (decision 105)
+
+````sprout
+-- grid: a grid is a list of rows, each a list of cells, counted from 1 like every Sprout list.
+-- Read and change cells by x (across) and y (down), find neighbours, flood-fill and find the shortest way through.
+
+-- a grid width by height with every cell the same
+-- e.g. grid make [3, 2, 0]
+make : [width height value | range height collect [row | range width collect [column | value]]]
+
+-- how wide and how tall, as a pair
+-- e.g. grid size (grid make [3, 2, 0])
+size : [g | pair [g @ 1 length, g length]]
+
+-- is x, y on the grid?
+-- e.g. grid inside [grid make [3, 2, 0], 3, 3]
+inside : [g x y | (x >= 1) and (y >= 1) and (y <= (g length)) and (x <= (g @ 1 length))]
+
+-- the cell at x, y (false off the grid)
+-- e.g. grid at [[[1, 2], [3, 4]], 2, 1]
+at : [g x y | inside [g, x, y] [g @ y @ x] else [false]]
+
+-- a new grid with the cell at x, y changed
+-- e.g. grid put [grid make [3, 2, 0], 2, 1, 9]
+put : [g x y value | g set-in [[y, x], value]]
+
+-- the four cells beside x, y (up, right, down, left) that are on the grid, as [x, y]
+-- e.g. grid beside [grid make [3, 3, 0], 1, 1]
+beside : [g x y | [[x, y - 1], [x + 1, y], [x, y + 1], [x - 1, y]] keep [[a, b] | inside [g, a, b]]]
+
+-- the eight cells round x, y that are on the grid, as [x, y]
+-- e.g. grid around [grid make [3, 3, 0], 1, 1] length
+around : [g x y | [[x - 1, y - 1], [x, y - 1], [x + 1, y - 1], [x - 1, y], [x + 1, y], [x - 1, y + 1], [x, y + 1], [x + 1, y + 1]] keep [[a, b] | inside [g, a, b]]]
+
+-- how many of the eight cells round x, y hold value (for Life and minesweeper)
+-- e.g. grid count-around [[[1, 1, 0], [0, 0, 0], [0, 1, 1]], 2, 2, 1]
+count-around : [g x y value | around [g, x, y] count [[a, b] | g @ b @ a = value]]
+
+-- every cell with where it is: a list of [x, y, value]
+-- e.g. grid cells [[1, 2], [3, 4]]
+cells : [g | g numbered collect-flat [[y, row] | row numbered collect [[x, value] | [x, y, value]]]]
+
+-- a new grid made by a cell given [x, y, value] for every cell
+-- e.g. grid map [[[1, 2], [3, 4]], [[x, y, v] | v * 10]]
+map : [g change | g numbered collect [[y, row] | row numbered collect [[x, value] | change [x, y, value]]]]
+
+-- the cells joined from x, y through cells of the same value, as [x, y]
+-- e.g. grid region [[[1, 1, 0], [0, 1, 0], [0, 1, 1]], 1, 1] length
+region : [g x y |
+  value : at [g, x, y]
+  grow : [found frontier |
+    frontier length = 0 [found] else [
+      next : frontier collect-flat [[a, b] | beside [g, a, b]] keep [[a, b] | at [g, a, b] = value] distinct keep [p | (found has p) not]
+      grow [found .. next, next]
+    ]
+  ]
+  grow [[[x, y]], [[x, y]]]
+]
+
+-- a new grid with the region at x, y changed to value
+-- e.g. grid fill [[[1, 1, 0], [0, 1, 0]], 1, 1, 7]
+fill : [g x y value | region [g, x, y] fold [g, [h [a, b] | put [h, a, b, value]]]]
+
+-- the shortest way from one cell to another, stepping only on cells that pass the test, as a list of [x, y]
+-- (false if there is no way)
+-- e.g. grid path [[[0, 0, 0], [1, 1, 0], [0, 0, 0]], [1, 1], [1, 3], [v | v = 0]]
+path : [g start goal open |
+  key : [[a, b] | "[a],[b]"]
+  search : [frontier came |
+    cond [
+      frontier length = 0, false
+      came has-field (key goal), came
+      any, (
+        steps : frontier collect-flat [p | beside [g, p @ 1, p @ 2] keep [q | open (at [g, q @ 1, q @ 2])] collect [q | [q, p]]]
+        fresh : steps keep [[q, p] | (came has-field (key q)) not] distinct-by [[q, p] | key q]
+        search [fresh collect [[q, p] | q], fresh fold [came, [c [q, p] | c set-in [key q, p]]]]
+      )
+    ]
+  ]
+  came : search [[start], [] set-in [key start, start]]
+  back : [p trail | p = start [[start] .. trail] else [back [came get-in [key p], [p] .. trail]]]
+  (came = false) not [back [goal, []]] else [false]
+]
+
+-- the grid as lines of text, one per row
+-- e.g. grid show [[1, 2], [3, 4]]
+show : [g | g collect [row | row collect [v | v str] join " "] join "\n"]
+````
+
+## lib/palette.sp
+
+The standard library's palette module, in Sprout (decision 105)
+
+````sprout
+-- palette: colours made from hue, saturation and lightness, colours mixed along a line, and a few sets that go together.
+
+-- a colour from hue (0 to 360), saturation and lightness (0 to 1)
+-- e.g. palette hsl [30, 0.8, 0.55]
+hsl : [hue sat light |
+  chroma : 1 - ((2 * light - 1) abs) * sat
+  h : hue / 60 % 6
+  second : 1 - ((h % 2 - 1) abs) * chroma
+  base : light - (chroma / 2)
+  [r, g, b] : cond [h < 1, [chroma, second, 0], h < 2, [second, chroma, 0], h < 3, [0, chroma, second], h < 4, [0, second, chroma], h < 5, [second, 0, chroma], any, [chroma, 0, second]]
+  colour [r + base * 255, g + base * 255, b + base * 255]
+]
+
+-- a colour part of the way along a list of colours: t of 0 is the first, 1 the last
+-- e.g. palette along [[#000000, #ff0000, #ffffff], 0.75]
+along : [stops t |
+  steps : stops length - 1
+  at : clamp [t, 0, 1] * steps
+  k : at floor min (steps - 1)
+  stops @ (k + 1) mix [stops @ (k + 2), at - k]
+]
+
+-- n colours evenly round the colour wheel
+-- e.g. palette wheel [4, 0.7, 0.5]
+wheel : [n sat light | range n collect [k | hsl [k - 1 * 360 / n, sat, light]]]
+
+-- a grey from 0 (black) to 1 (white)
+-- e.g. palette grey 0.5
+grey : [level | v : clamp [level, 0, 1] * 255, colour [v, v, v]]
+
+-- warm colours, for fire and sunsets
+-- e.g. palette warm length
+warm : [#2b1d0e, #7a2e12, #d9531e, #f39c33, #ffe08a]
+
+-- cool colours, for water and night
+-- e.g. palette cool @ 3
+cool : [#0b1d2a, #12395a, #1f6f8b, #4fb0c6, #c8eef0]
+
+-- soft colours that sit well together
+-- e.g. palette soft @ 1
+soft : [#f4b6c2, #f6d5a6, #c9e4c5, #b5d8eb, #d4c1ec]
+````
+
+## lib/seeded.sp
+
+The standard library's seeded module, in Sprout (decision 105)
+
+````sprout
+-- seeded: random choices you can repeat. Each one takes a seed (any number): the same seed always gives the
+-- same answer, on every machine, and a game that rewinds gets the same luck back. Use a different seed for each choice,
+-- such as the frame number, or a thing's number times 10 plus which choice it is.
+
+-- a number from 0 up to 1
+-- e.g. seeded number 42
+number : [seed | noise [seed, 0.618]]
+
+-- a number from low up to high
+-- e.g. seeded between [10, 20, 42]
+between : [low high seed | noise [seed, 0.618] * (high - low) + low]
+
+-- a whole number from low to high, both included
+-- e.g. seeded whole [1, 6, 42]
+whole : [low high seed | noise [seed, 0.618] * (high - low + 1) floor + low]
+
+-- true with chance p (from 0 to 1)
+-- e.g. seeded chance [0.5, 42]
+chance : [p seed | noise [seed, 0.314] < p]
+
+-- one item of a list
+-- e.g. seeded pick [["rock", "paper", "scissors"], 42]
+pick : [items seed | items @ (whole [1, items length, seed])]
+
+-- the list in a shuffled order
+-- e.g. seeded shuffle [[1, 2, 3, 4, 5], 42]
+shuffle : [items seed | items numbered sort-by [[k, item] | noise [seed, k]] collect [[k, item] | item]]
+
+-- a number from a bell curve: usually near mean, spread out by spread
+-- e.g. seeded bell [100, 15, 42] round
+bell : [mean spread seed |
+  u : noise [seed, 0.271] max 0.000001
+  v : noise [seed, 0.828]
+  u log * -2 sqrt * (v * 6.283185307179586 cos) * spread + mean
+]
+
+-- a point inside a circle of radius r round 0x0, spread evenly
+-- e.g. seeded in-circle [10, 42] x round
+in-circle : [r seed | angle : noise [seed, 0.11] * 6.283185307179586, far : noise [seed, 0.77] sqrt * r, pair [angle cos * far, angle sin * far]]
+
+-- n choices from a list, by their weights: [items, weights, seed]
+-- e.g. seeded weighted [["common", "rare"], [9, 1], 42]
+weighted : [items weights seed |
+  total : weights sum
+  target : noise [seed, 0.5] * total
+  marks : weights scan [0, [t w | t + w]] rest
+  items @ (marks find-index [m | m > target])
+]
+````
+
+## lib/shape.sp
+
+The standard library's shape module, in Sprout (decision 105)
+
+````sprout
+-- shape: the points of shapes, as lists of pairs, ready to draw or test. Nothing here draws: draw a shape's edges
+-- with line, as in  shape edges (shape polygon [180x240, 50, 6]) each [[a, b] | line [a x, a y, b x, b y, "#fff"]]
+
+-- n points evenly round a circle at centre c (a pair) with radius r
+-- e.g. shape circle [0x0, 10, 4] collect [p | p x round]
+circle : [c r n | range n collect [k | k - 1 * 6.283185307179586 / n] collect [a | c + (pair [a cos * r, a sin * r])]]
+
+-- a regular polygon with n sides, its first corner straight up
+-- e.g. shape polygon [0x0, 10, 3] length
+polygon : [c r sides | range sides collect [k | k - 1 * 6.283185307179586 / sides - 1.5707963267948966] collect [a | c + (pair [a cos * r, a sin * r])]]
+
+-- a star with n points, between radius outer and inner
+-- e.g. shape star [0x0, 10, 5, 5] length
+star : [c outer inner n |
+  range (n * 2) collect [k |
+    a : k - 1 * 3.141592653589793 / n - 1.5707963267948966
+    r : k % 2 = 1 [outer] else [inner]
+    c + (pair [a cos * r, a sin * r])
+  ]
+]
+
+-- the four corners of a box from its top-left corner and its size (both pairs)
+-- e.g. shape box [0x0, 4x2]
+box : [corner size | [corner, corner + (pair [size x, 0]), corner + size, corner + (pair [0, size y])]]
+
+-- the sides of a closed shape: each point with the next, the last with the first, as [a, b]
+-- e.g. shape edges [0x0, 1x0, 0x1] length
+edges : [points | points zip (points rest .. [points first])]
+
+-- the shape moved by a pair
+-- e.g. shape move [[0x0, 1x1], 5x5]
+move : [points by | points collect [p | p + by]]
+
+-- the shape turned round centre c by an angle in radians
+-- e.g. shape turn [[1x0], 0x0, 3.141592653589793] collect [p | p x round]
+turn : [points c angle |
+  points collect [p |
+    d : p - c
+    c + (pair [d x * (angle cos) - (d y * (angle sin)), d x * (angle sin) + (d y * (angle cos))])
+  ]
+]
+
+-- the shape grown or shrunk round centre c
+-- e.g. shape grow [[2x2], 1x1, 3]
+grow : [points c times-bigger | points collect [p | p - c * times-bigger + c]]
+
+-- the area inside a closed shape
+-- e.g. shape area (shape box [0x0, 4x2])
+area : [points | edges points collect [[a, b] | a x * (b y) - (b x * (a y))] sum / 2 abs]
+
+-- the middle of the points
+-- e.g. shape centre (shape box [0x0, 4x2])
+centre : [points | points fold [0x0, [t p | t + p]] / (points length)]
+
+-- the smallest box round the points, as [top-left, bottom-right]
+-- e.g. shape bounds [3x1, 0x4, 2x2]
+bounds : [points |
+  xs : points collect [p | p x]
+  ys : points collect [p | p y]
+  [pair [xs smallest, ys smallest], pair [xs largest, ys largest]]
+]
+
+-- is point p inside the closed shape?
+-- e.g. shape holds [shape box [0x0, 4x2], 1x1]
+holds : [points p |
+  crossings : edges points count [[a, b] |
+    ((a y > (p y)) != (b y > (p y))) and (p x < (b x - (a x) * (p y - (a y)) / (b y - (a y)) + (a x)))
+  ]
+  crossings % 2 = 1
+]
+````
+
+## lib/stats.sp
+
+The standard library's stats module, in Sprout (decision 105)
+
+````sprout
+-- stats: numbers that sum up a list of numbers.
+
+-- the average
+-- e.g. stats mean [2, 4, 9]
+mean : [xs | xs sum / (xs length)]
+
+-- the middle value once they are sorted (the average of the two middle ones for an even count)
+-- e.g. stats median [7, 1, 3, 9]
+median : [xs |
+  sorted : xs sort
+  n : sorted length
+  n % 2 = 1 [sorted @ (n + 1 / 2)] else [sorted @ (n / 2) + (sorted @ (n / 2 + 1)) / 2]
+]
+
+-- the value that comes up most often (the first of them, if several tie)
+-- e.g. stats mode [3, 1, 3, 2, 1, 3]
+mode : [xs | xs largest-by [x | xs count [y | y = x]]]
+
+-- how spread out the values are: the mean of the squared distances from the mean
+-- e.g. stats variance [2, 4, 4, 4, 5, 5, 7, 9]
+variance : [xs |
+  centre : mean xs
+  xs collect [x | x - centre * (x - centre)] sum / (xs length)
+]
+
+-- the standard deviation: the square root of the variance
+-- e.g. stats spread [2, 4, 4, 4, 5, 5, 7, 9]
+spread : [xs | variance xs sqrt]
+
+-- the value below which a share p of them fall, from 0 to 1 (between two values, part of the way)
+-- e.g. stats percentile [[15, 20, 35, 40, 50], 0.4]
+percentile : [xs p |
+  sorted : xs sort
+  rank : sorted length - 1 * p + 1
+  low : rank floor
+  above : rank - low
+  low >= (sorted length) [sorted last] else [sorted @ (low + 1) - (sorted @ low) * above + (sorted @ low)]
+]
+
+-- the smallest and largest, as a pair
+-- e.g. stats range-of [4, 9, 1]
+range-of : [xs | pair [xs smallest, xs largest]]
+
+-- each value placed between 0 (the smallest) and 1 (the largest)
+-- e.g. stats normalize [10, 15, 20]
+normalize : [xs |
+  low : xs smallest
+  width : xs largest - low
+  xs collect [x | width = 0 [0] else [x - low / width]]
+]
+
+-- how many values fall in each of n equal steps from the smallest to the largest
+-- e.g. stats histogram [[1, 2, 2, 3, 3, 3, 4], 3]
+histogram : [xs n |
+  low : xs smallest
+  width : xs largest - low / n
+  slot : [x | width = 0 [1] else [x - low / width floor + 1 min n]]
+  range n collect [k | xs count [x | slot x = k]]
+]
+
+-- how closely two lists rise and fall together, from -1 to 1
+-- e.g. stats correlation [[1, 2, 3, 4], [2, 4, 5, 8]]
+correlation : [xs ys |
+  mx : mean xs
+  my : mean ys
+  pairs : xs zip ys
+  top : pairs collect [[x, y] | x - mx * (y - my)] sum
+  bottom : xs collect [x | x - mx * (x - mx)] sum * (ys collect [y | y - my * (y - my)] sum) sqrt
+  top / bottom
+]
+
+-- a record of the usual numbers for a list
+-- e.g. stats summary [3, 1, 4, 1, 5, 9, 2, 6]
+summary : [xs | [n : xs length, mean : mean xs, median : median xs, spread : spread xs * 1000 round / 1000, smallest : xs smallest, largest : xs largest]]
+````
+
+## lib/vec.sp
+
+The standard library's vec module, in Sprout (decision 105)
+
+````sprout
+-- vec: two-dimensional vectors, written as pairs like 3x4. Pairs already add, take away, multiply and divide.
+-- These are the other things a game needs: length, direction, angle, rotation.
+
+-- a vector from two numbers
+-- e.g. vec of [3, 4]
+of : [x y | pair [x, y]]
+
+-- a vector one long, pointing at an angle (in radians)
+-- e.g. vec from-angle 0
+from-angle : [angle | pair [angle cos, angle sin]]
+
+-- how long a vector is
+-- e.g. vec size 3x4
+size : [v | v x * (v x) + (v y * (v y)) sqrt]
+
+-- the same direction, one long
+-- e.g. vec unit 3x4
+unit : [v | n : size v, n = 0 [v] else [v / n]]
+
+-- the angle a vector points at, in radians
+-- e.g. vec angle 0x1
+angle : [v | v y atan2 (v x)]
+
+-- turned round by an angle, in radians
+-- e.g. vec rotate [1x0, 1.5707963267948966]
+rotate : [v turn | pair [v x * (turn cos) - (v y * (turn sin)), v x * (turn sin) + (v y * (turn cos))]]
+
+-- how much two vectors point the same way
+-- e.g. vec dot [1x0, 0x1]
+dot : [a b | a x * (b x) + (a y * (b y))]
+
+-- the distance between two points
+-- e.g. vec distance [0x0, 3x4]
+distance : [a b | size (b - a)]
+
+-- part of the way from a to b: t of 0 is a, 1 is b
+-- e.g. vec mix [0x0, 10x20, 0.5]
+mix : [a b t | b - a * t + a]
+
+-- no longer than most, in the same direction
+-- e.g. vec limit [30x40, 5]
+limit : [v most | size v > most [unit v * most] else [v]]
+
+-- bounced off a surface facing the way of n (n one long)
+-- e.g. vec reflect [1x-1, 0x1]
+reflect : [v n | v - (n * (2 * (dot [v, n])))]
+
+-- turned a quarter to the left
+-- e.g. vec perpendicular 1x0
+perpendicular : [v | pair [0 - (v y), v x]]
+````
+
 ## examples/recipes.sp
 
 Recipes: quicksort, primes, FizzBuzz, a vector with its own + (prints; not a game)
@@ -8117,7 +8858,7 @@ body.t-out #out{display:block}body.t-st #st{display:block}
 <aside id="side">
  <a class="brand" href="/" title="All apps"><span class="logo">S</span><b>Sprout 3</b><small>library</small></a>
  <div id="lib"></div>
- <div class="sidefoot"><a class="pill" href="./">About Sprout</a> <button class="pill" id="bSpec2">Read the spec</button> <a class="pill" href="bench.html" target="_blank" rel="noopener">Benchmarks</a> <a class="pill" href="compare.html" target="_blank" rel="noopener">Sprout compared</a></div>
+ <div class="sidefoot"><a class="pill" href="./">About Sprout</a> <button class="pill" id="bSpec2">Read the spec</button> <a class="pill" href="bench.html" target="_blank" rel="noopener">Benchmarks</a> <a class="pill" href="library.html" target="_blank" rel="noopener">Library</a> <a class="pill" href="compare.html" target="_blank" rel="noopener">Sprout compared</a></div>
 </aside>
 <main id="main">
  <canvas id="glow" width="36" height="48"></canvas>
@@ -8164,14 +8905,15 @@ body.t-out #out{display:block}body.t-st #st{display:block}
 <div id="modal"><div id="mBox"><div class="mh"><h2 id="mTitle"></h2><button class="x" data-close aria-label="Close">✕</button></div><div id="mBody"></div></div></div>
 <div id="toast"></div><div id="scrubTip"></div>
 
-<script src="sprout3.js?v=20261120s"></script>
-<script src="words.js?v=20261120s"></script>
-<script src="parse.js?v=20261120s"></script>
-<script src="kernels.js?v=20261120s"></script>
-<script src="live3.js?v=20261120s"></script>
-<script src="sqlite-web.js?v=20261120s"></script>
-<script src="gpu-paint.js?v=20261120s"></script>
-<script src="gpu-spork.js?v=20261120s"></script>
+<script src="sprout3.js?v=20261121a"></script>
+<script src="words.js?v=20261121a"></script>
+<script src="parse.js?v=20261121a"></script>
+<script src="stdlib.js?v=20261121a"></script>
+<script src="kernels.js?v=20261121a"></script>
+<script src="live3.js?v=20261121a"></script>
+<script src="sqlite-web.js?v=20261121a"></script>
+<script src="gpu-paint.js?v=20261121a"></script>
+<script src="gpu-spork.js?v=20261121a"></script>
 <script>
 "use strict";
 const V="20261120m";
@@ -8390,7 +9132,7 @@ function vv(){const v=window.visualViewport;const h=v?v.height:innerHeight;$("ap
 if(window.visualViewport){visualViewport.addEventListener("resize",vv);visualViewport.addEventListener("scroll",vv)}vv();
 
 // ---------- the editor: a textarea over a highlighted copy (the same rules as Sprout 3's tokenizer)
-const WORDS=new Set("start update draw input dt clock touching tapped touch-x touch-y held W H clear rect circle line text beep shake print rand noise dist clamp toward range match cond take rgb rgba every wave frame any with else and or not collect keep each fold times length first last str min max abs floor round ceil sqrt sin cos tan log neg left right quote eval script yield wait parse find-all replace-all some maybe maybe-some one-of iterate sum group-by frequencies".split(" "));
+const WORDS=new Set("start update draw input dt clock touching tapped touch-x touch-y held W H clear rect circle line text beep shake print rand noise dist clamp toward range match cond take rgb rgba every wave frame any with else and or not collect keep each fold times length first last str min max abs floor round ceil sqrt sin cos tan log neg left right quote eval script yield wait parse find-all replace-all some maybe maybe-some one-of iterate sum group-by frequencies ease vec stats grid seeded format shape palette csv json".split(" "));
 function lineHTML(s){let o="",i=0;const n=s.length;
  while(i<n){const c=s[i];
   if(c==="-"&&s[i+1]==="-"){o+='<i class="c">'+esc(s.slice(i))+"</i>";break}
@@ -8685,14 +9427,15 @@ tr:last-child td{border-bottom:0}
 <div class="card"><table id="t-sql"><tr><th>work</th><th>ms</th><th>rows</th></tr></table></div>
 </main>
 
-<script src="sprout3.js?v=20261120s"></script>
-<script src="words.js?v=20261120s"></script>
-<script src="parse.js?v=20261120s"></script>
-<script src="kernels.js?v=20261120s"></script>
-<script src="live3.js?v=20261120s"></script>
-<script src="gpu-paint.js?v=20261120s"></script>
-<script src="sqlite-web.js?v=20261120s"></script>
-<script src="gpu-spork.js?v=20261120s"></script>
+<script src="sprout3.js?v=20261121a"></script>
+<script src="words.js?v=20261121a"></script>
+<script src="parse.js?v=20261121a"></script>
+<script src="stdlib.js?v=20261121a"></script>
+<script src="kernels.js?v=20261121a"></script>
+<script src="live3.js?v=20261121a"></script>
+<script src="gpu-paint.js?v=20261121a"></script>
+<script src="sqlite-web.js?v=20261121a"></script>
+<script src="gpu-spork.js?v=20261121a"></script>
 <script>
 "use strict";
 const $=id=>document.getElementById(id),S=window.Sprout3,L=window.Sprout3Live;
@@ -8727,7 +9470,7 @@ async function benchLang(){
 const GAMES=["galaxy","sprout","fireflies","orbit","hop","life","bounce","snake","breakout","particles","ace-board","ace-site","ace-crews"];
 async function benchGames(){
  for(const name of GAMES){status("games: "+name);await sleep(10);
-  const src=await (await fetch("examples/"+name+".sp?v=20261120s")).text();const g=L.makeGame(src,{W:GW,H:GH});
+  const src=await (await fetch("examples/"+name+".sp?v=20261121a")).text();const g=L.makeGame(src,{W:GW,H:GH});
   const play=n=>{for(let t=0;t<n;t++){if(t%50===0)g.down(100+(t%160),300);if(t%50===25)g.up();g.tick(1/60);g.draw()}};
   play(240);const [t]=best(()=>play(120),5);row("t-games",[name,ms(t/120),String(g.draw().length)])}}
 
@@ -8759,7 +9502,7 @@ async function benchParticles(){
 // ---------- SQLite
 async function benchSql(){
  status("SQLite: loading");
- await new Promise((ok,no)=>{const s=document.createElement("script");s.src="vendor/sqljs/sql-wasm.js?v=20261120s";s.onload=ok;s.onerror=no;document.head.appendChild(s)});
+ await new Promise((ok,no)=>{const s=document.createElement("script");s.src="vendor/sqljs/sql-wasm.js?v=20261121a";s.onload=ok;s.onerror=no;document.head.appendChild(s)});
  const db=await SproutSqlite.openSqlite({base:"vendor/sqljs/",name:"sprout3-bench",fresh:true});S.globals.db=db;const raw=db.raw();
  const N=10000;
  const [ti]=best(()=>{raw.run("drop table if exists t");raw.run("create table t (id integer primary key, zone integer, hours real, name text)");raw.run("begin");
@@ -8778,7 +9521,7 @@ async function benchSql(){
 
 // ---------- Monte Carlo: the ace-risk run, five ways
 async function benchMonteCarlo(){
- const src=(await (await fetch("examples/ace-risk.sp?v=20261120s")).text()).split("\nresults :")[0];
+ const src=(await (await fetch("examples/ace-risk.sp?v=20261121a")).text()).split("\nresults :")[0];
  const c=S.load(src+"\nA : [k | range k spork one-run]\nB : [k | range k collect one-run]"),A=c.field("A"),B=c.field("B");
  // the kernel itself, to hand straight to the GPU
  let K=null;S.sporkWays({gpu:k=>{K=k;return undefined}});A.run(16);S.sporkWays({gpu:null});

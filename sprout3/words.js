@@ -71,6 +71,9 @@ const LIST_WORDS = {
   rest: none(xs => list(items(xs).slice(1))),
   "all-but-last": none(xs => list(items(xs).slice(0, -1))),
   reverse: none(xs => list(items(xs).slice().reverse())),
+  "distinct-by": one((xs, f) => { const out = [], seen = []; for (const v of items(xs)) { const k = callCell(f, v); if (!seen.some(o => valuesEqual(o, k))) { seen.push(k); out.push(v); } } return list(out); }),
+  "find-index": one((xs, test) => { const k = items(xs).findIndex(v => truthy(callCell(test, v), "find-index")); return k < 0 ? false : k + 1; }),
+  "has-field": one((r, name) => isCell(r) && r.field(keyText(name)) !== UNSET),
   distinct: none(xs => { const out = []; for (const v of items(xs)) if (!out.some(o => valuesEqual(o, v))) out.push(v); return list(out); }),
   sum: none(xs => { const ns = numbersOf(xs, "sum"); return ns ? ns.reduce((a, b) => a + b, 0) : false; }),
   product: none(xs => { const ns = numbersOf(xs, "product"); return ns ? ns.reduce((a, b) => a * b, 1) : false; }),
@@ -141,6 +144,8 @@ const TEXT_WORDS = {
 // ===================================================================== numbers
 const NUMBER_WORDS = {
   pow: one((a, b) => Math.pow(a, I.requireNumber(b))), exp: none(Math.exp), atan: none(Math.atan), sign: none(Math.sign),
+  // y atan2 x: the angle of the point (x, y); n fixed 2: the number as text with 2 places
+  atan2: one((y, x) => Math.atan2(y, I.requireNumber(x))), fixed: one((n, places) => n.toFixed(Math.max(0, Math.min(20, wholeNumber(places, "fixed"))))),
   even: none(a => a % 2 === 0), odd: none(a => Math.abs(a % 2) === 1),
   between: one((a, lowHigh) => { const [low, high] = argumentsOf(lowHigh, 2); return a >= low && a <= high; }),
   // 1 to 5 is [1, 2, 3, 4, 5]; 5 to 1 counts down
@@ -459,6 +464,31 @@ wait : [seconds |
 ]
 `);
 for (const name of SCRIPT_WORDS.fieldNames()) S.globals[name] = SCRIPT_WORDS.field(name);
+
+// ===================================================================== json (a module of the standard library, decision 105)
+// json read text: objects become records, arrays lists, null false; json write value: the other way, kinds as their text
+function fromJson(v) {
+  if (v === null) return false;
+  if (Array.isArray(v)) return list(v.map(fromJson));
+  if (typeof v === "object") { const keys = Object.keys(v); return record(keys, keys.map(k => fromJson(v[k]))); }
+  return v;
+}
+function toJson(v) {
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  if (typeof v === "string" || typeof v === "boolean") return v;
+  if (v instanceof Endless) { logMiss("an endless list can't be written as json"); return null; }
+  if (isCell(v) && !(v instanceof I.Cell && v.takesInput())) {
+    if (isRecord(v)) { const o = {}; for (const k of v.fieldNames()) o[k] = toJson(v.field(k)); return o; }
+    return partsOf(v).map(toJson);
+  }
+  return v && typeof v.sproutText === "function" ? v.sproutText() : formatValue(v);
+}
+const JSON_MODULE = record(["read", "write", "pretty"], [
+  new I.Native("read", t => { if (typeof t !== "string") return notUnderstood(t, "json read"); try { return fromJson(JSON.parse(t)); } catch (e) { return logMiss("json read: " + e.message); } }),
+  new I.Native("write", v => JSON.stringify(toJson(v))),
+  new I.Native("pretty", v => JSON.stringify(toJson(v), null, 2)),
+]);
+S.globals.json = JSON_MODULE;
 
 // ===================================================================== globals
 const define = (name, fn) => S.defNative(name, fn);

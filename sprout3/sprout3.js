@@ -1218,6 +1218,7 @@ if (typeof module !== "undefined") {
   // the standard words always come along (decision 99)
   require("./words.js");
   require("./parse.js");
+  require("./stdlib.js");
   if (!process.env.SPROUT3_CORE_ONLY) try { require("./kernels.js"); } catch (e) { if (e.code !== "MODULE_NOT_FOUND") throw e; }
 } else root.Sprout3 = api;
 })(typeof window !== "undefined" ? window : globalThis);
