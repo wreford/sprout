@@ -116,6 +116,7 @@ sentry-reach : 7           -- how far a turret can see
 sentry-turn : 2.5          -- how fast it can turn, in radians a second
 sentry-reload : 0.45       -- seconds between its shots
 sentry-damage : 34         -- a turret's shot
+hearing : 7                -- how far off a guard hears your shot, through walls (the heavy blaster half as far again)
 shot-damage : 50           -- your shot at a guard
 duel-damage : 34           -- a shot at another player
 steady-damage : 50         -- the same shot while aiming
@@ -542,9 +543,10 @@ play : [game |
       ]
     ]
   ]
-  -- a guard who has seen you calls the others nearby
+  -- a guard who has seen you calls the others nearby, and a guard who hears a shot (through walls) comes to look
   callers : thinking keep [g | (g alert) and (g health > 0)]
-  called : thinking collect [g | cond [(g alert not) and (g health > 0) and (callers any [o | distance [o x, o y, g x, g y] < 6]), g with [alert : true, alert-at : now], any, g]]
+  heard : [g | shooters any [a | distance [a x, a y, g x, g y] < (cond [a weapon = "heavy", hearing * 1.5, any, hearing])]]
+  called : thinking collect [g | cond [(g alert not) and (g health > 0) and ((callers any [o | distance [o x, o y, g x, g y] < 6]) or (heard g)), g with [alert : true, alert-at : now], any, g]]
   (called count [g | g alert] > (thinking count [g | g alert])) [beep [760, 0.12]]
   pain : [who | thinking keep [g | (g hits else false) and (g target = who)] collect [g | cond [g boss else false, 18, any, 9]] sum]
   thinking any [g | g fired else false] [sound "hit"]

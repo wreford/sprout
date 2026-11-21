@@ -64,7 +64,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
   - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
   - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
-- **Tests:** 518 pass, 303 for the language and 215 for the games.
+- **Tests:** 520 pass, 303 for the language and 217 for the games.
 
 ## Open questions for Troy
 
@@ -83,13 +83,13 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 
 ```
 node test.js          # language tests (303)
-node game-tests.js    # game tests (215)
+node game-tests.js    # game tests (217)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 518 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 520 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4495,6 +4495,12 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   ok("silvereye: shots make a sound", fx.includes("sound:shoot"));
   { const hs = L.makeGame(src, {}); hs.tick(1 / 60, pad({})); put(hs, 0, { x: 9.5, y: 7.5, angle: 0 }); hs.tick(1 / 60, pad({ fire: true }));
     ok("silvereye: a hit sparks on what it hit", hs.draw().some(x => x[0] === "flash" && x[1][4] === "#ffe08a" && Math.abs(x[1][0] - 13.5) < 0.5)); }
+  // guards hear a shot through a wall and come on alert; a quiet player behind the same wall goes unnoticed
+  { const quiet = L.makeGame(src, {}), loud = L.makeGame(src, {});
+    for (const [gm, fire] of [[quiet, false], [loud, true]]) { gm.tick(1 / 60, pad({})); put(gm, 0, { x: 6.5, y: 1.5, angle: Math.PI }); for (let k = 0; k < 20; k++) gm.tick(1 / 60, pad({ fire })); }
+    const g1 = gm => S.partsOf(f(gm, "guards")).find(g => g.field("id") === 1);
+    ok("silvereye: a guard behind a wall doesn't notice a quiet player", g1(quiet).field("alert") === false);
+    ok("silvereye: but hears a shot fired there, and comes on alert", g1(loud).field("alert") === true); }
   // objects: what's in your sight is named (with what it has left), objectives are marked, pickups say what you got
   { const texts = g => g.draw().filter(x => x[0] === "text").map(x => x[1]);
     const ai = L.makeGame(src, {}); ai.tick(1 / 60, pad({})); put(ai, 0, { x: 9.5, y: 7.5, angle: 0 }); ai.tick(1 / 60, pad({}));
@@ -11059,6 +11065,7 @@ sentry-reach : 7           -- how far a turret can see
 sentry-turn : 2.5          -- how fast it can turn, in radians a second
 sentry-reload : 0.45       -- seconds between its shots
 sentry-damage : 34         -- a turret's shot
+hearing : 7                -- how far off a guard hears your shot, through walls (the heavy blaster half as far again)
 shot-damage : 50           -- your shot at a guard
 duel-damage : 34           -- a shot at another player
 steady-damage : 50         -- the same shot while aiming
@@ -11485,9 +11492,10 @@ play : [game |
       ]
     ]
   ]
-  -- a guard who has seen you calls the others nearby
+  -- a guard who has seen you calls the others nearby, and a guard who hears a shot (through walls) comes to look
   callers : thinking keep [g | (g alert) and (g health > 0)]
-  called : thinking collect [g | cond [(g alert not) and (g health > 0) and (callers any [o | distance [o x, o y, g x, g y] < 6]), g with [alert : true, alert-at : now], any, g]]
+  heard : [g | shooters any [a | distance [a x, a y, g x, g y] < (cond [a weapon = "heavy", hearing * 1.5, any, hearing])]]
+  called : thinking collect [g | cond [(g alert not) and (g health > 0) and ((callers any [o | distance [o x, o y, g x, g y] < 6]) or (heard g)), g with [alert : true, alert-at : now], any, g]]
   (called count [g | g alert] > (thinking count [g | g alert])) [beep [760, 0.12]]
   pain : [who | thinking keep [g | (g hits else false) and (g target = who)] collect [g | cond [g boss else false, 18, any, 9]] sum]
   thinking any [g | g fired else false] [sound "hit"]

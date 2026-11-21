@@ -387,6 +387,12 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   ok("silvereye: shots make a sound", fx.includes("sound:shoot"));
   { const hs = L.makeGame(src, {}); hs.tick(1 / 60, pad({})); put(hs, 0, { x: 9.5, y: 7.5, angle: 0 }); hs.tick(1 / 60, pad({ fire: true }));
     ok("silvereye: a hit sparks on what it hit", hs.draw().some(x => x[0] === "flash" && x[1][4] === "#ffe08a" && Math.abs(x[1][0] - 13.5) < 0.5)); }
+  // guards hear a shot through a wall and come on alert; a quiet player behind the same wall goes unnoticed
+  { const quiet = L.makeGame(src, {}), loud = L.makeGame(src, {});
+    for (const [gm, fire] of [[quiet, false], [loud, true]]) { gm.tick(1 / 60, pad({})); put(gm, 0, { x: 6.5, y: 1.5, angle: Math.PI }); for (let k = 0; k < 20; k++) gm.tick(1 / 60, pad({ fire })); }
+    const g1 = gm => S.partsOf(f(gm, "guards")).find(g => g.field("id") === 1);
+    ok("silvereye: a guard behind a wall doesn't notice a quiet player", g1(quiet).field("alert") === false);
+    ok("silvereye: but hears a shot fired there, and comes on alert", g1(loud).field("alert") === true); }
   // objects: what's in your sight is named (with what it has left), objectives are marked, pickups say what you got
   { const texts = g => g.draw().filter(x => x[0] === "text").map(x => x[1]);
     const ai = L.makeGame(src, {}); ai.tick(1 / 60, pad({})); put(ai, 0, { x: 9.5, y: 7.5, angle: 0 }); ai.tick(1 / 60, pad({}));
