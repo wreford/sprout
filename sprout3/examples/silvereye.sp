@@ -50,7 +50,7 @@ lab : [
   "################"
 ]
 mode : "mission"           -- "mission": the lab and its guards · "sim": you against simulants
-simulants : 2              -- simulants in a combat sim, and joining a duel
+simulants : 3              -- simulants in a combat sim, and joining a duel (up to 7)
 simulant-skill : 2         -- 1 rookie, 2 agent, 3 ace
 difficulty : 2             -- a mission's guards: 1 rookie (no generators to wreck), 2 agent, 3 ace
 fov-across : 100           -- how wide you see, side to side, in degrees: far wider than the old consoles
@@ -173,7 +173,8 @@ styles : ["hunter", "flanker", "camper"]
 -- ---------------------------------------------------------------- the people
 guard-health : cond [difficulty = 1, 70, difficulty = 3, 140, any, 100]
 guard : [id gx gy tx ty | [id : id, x : gx, y : gy, angle : 0, health : guard-health, wait : 1, alert : false, home-x : gx, home-y : gy, to-x : tx, to-y : ty, fell : false, stagger : 0, target : 1]]
-spawns : [[2.5, 2.5, 0.6], [13.5, 13.5, -2.4], [13.5, 2.5, 2.4], [2.5, 13.5, -0.8], [7.5, 4.5, 1.6], [9.5, 10.5, -1.6], [6.5, 13.5, 0]]
+-- where players and simulants start and come back: open floor in both maps, far corners first
+spawns : [[2.5, 2.5, 0.6], [13.5, 13.5, -2.4], [13.5, 2.5, 2.4], [2.5, 13.5, -0.8], [7.5, 4.5, 1.6], [9.5, 10.5, -1.6], [6.5, 13.5, 0], [11.5, 5.5, 3.1], [14.5, 7.5, 3.1], [1.5, 12.5, 0], [8.5, 1.5, 1.6], [5.5, 4.5, 0], [12.5, 10.5, -1.6], [1.5, 7.5, 0], [14.5, 13.5, 3.1]]
 spawn-of : [id | spawns @ (id - 1 % (spawns length) + 1)]
 open-cells : level numbered collect-flat [[r, row] | row chars numbered keep [[c, ch] | ch = "."] collect [[c, ch] | [c - 0.5, r - 0.5]]]
 agent : [id sx sy sa | [id : id, x : sx, y : sy, angle : sa, health : 100, carried : mines-each, sentries-left : sentries, fire-wait : 0, mine-wait : 0, turret-wait : 0, flash : 0, hurt : 0, kills : 0, hit-at : -10, down-at : false, look : false, moving : false, aimed : false, asks : false, zoomed : false, fov : fov-across, last-by : 0, bot : false, goal-x : sx, goal-y : sy, stuck : 0, clip : clip-size, ammo : ammo-each, reloading : 0, armour : 0, shots-fired : 0, shots-hit : 0, has-heavy : false, weapon : "blaster", swap-wait : 0, safe-until : 0, damage-taken : 0, hurt-x : 0, hurt-y : 0]]

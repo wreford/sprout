@@ -64,7 +64,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
   - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
   - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
-- **Tests:** 472 pass, 303 for the language and 169 for the games.
+- **Tests:** 473 pass, 303 for the language and 170 for the games.
 
 ## Open questions for Troy
 
@@ -83,13 +83,13 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 
 ```
 node test.js          # language tests (303)
-node game-tests.js    # game tests (169)
+node game-tests.js    # game tests (170)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 472 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 473 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4502,7 +4502,7 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   const s2 = sentry(src.replace("fire : (t sees) and (t cool <= 0) and (off abs < 0.1)", "fire : false"));
   ok("silvereye: change turret-program and the turret changes", f(s2, "turrets").part(1).field("shots") === 0);
   // two players: a duel with no guards; a takedown scores, the other comes back, five wins (no simulants here)
-  const duelSrc = src.replace(/^simulants : 2/m, "simulants : 0");
+  const duelSrc = src.replace(/^simulants : 3/m, "simulants : 0");
   const v = L.makeGame(duelSrc, { players: 2, me: 1 });
   v.tick(1 / 60, pad({}), pad({}));
   ok("silvereye: two players make a duel, with no guards", f(v, "versus") === true && f(v, "agents").count() === 2 && f(v, "guards").count() === 0);
@@ -4635,11 +4635,15 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     ok("silvereye: when you're hit, a red mark points to where it came from", agent(dd, 1).field("hurt-x") === 12.5 && mark && mark[1][0] > 300, mark && mark[1]); }
   { const ah = h => { const t = L.makeGame(src, {}); t.tick(1 / 60, pad({})); put(t, 0, { x: 9.5, y: 7.5, angle: 0.14 }); t.tick(1 / 60, pad({ assist: h })); return agent(t, 1).field("aimed") !== false; };
     ok("silvereye: aim help is set by each player: more help locks on from further off the middle", ah(1.6) === true && ah(1) === false && ah(0) === false); }
-  { const cs = L.makeGame(src.replace(/^mode : "mission"/m, 'mode : "sim"').replace(/^simulants : 2/m, "simulants : 1"), {}); cs.tick(1 / 60, pad({}));
+  { const cs = L.makeGame(src.replace(/^mode : "mission"/m, 'mode : "sim"').replace(/^simulants : 3/m, "simulants : 1"), {}); cs.tick(1 / 60, pad({}));
     put(cs, 0, { x: 12.5, y: 7.5, angle: Math.PI }); put(cs, 1, { x: 8.5, y: 7.5, angle: 0 });
     for (let t = 0; t < 120; t++) cs.tick(1 / 60, pad({ fire: true }));
     const texts = cs.draw().filter(x => x[0] === "text").map(x => x[1][0]);
     ok("silvereye: in a combat sim, player 2 is called a simulant, not a rival", texts.includes("YOU took down SIM 2") && !texts.some(t => /RIVAL$/.test(t) && /took down/.test(t)), texts); }
+  { const seven = L.makeGame(src.replace(/^mode : "mission"/m, 'mode : "sim"').replace(/^simulants : 3/m, "simulants : 7"), {}); seven.tick(1 / 60, pad({}));
+    const spots = new Set(S.partsOf(f(seven, "agents")).map(a => a.field("x") + "," + a.field("y")));
+    for (let t = 0; t < 300; t++) seven.tick(1 / 60, pad({}));
+    ok("silvereye: seven simulants each start in their own place and play", f(seven, "agents").count() === 8 && spots.size === 8); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });
@@ -4656,7 +4660,7 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   for (let t = 0; t < 10; t++) pk.tick(1 / 60, pad({}), pad({ fire: true }));
   ok("silvereye: armour takes the hits first", agent(pk, 1).field("health") === 100 && agent(pk, 1).field("armour") < 50, [agent(pk, 1).field("health"), agent(pk, 1).field("armour")]);
   // the combat sim: you against simulants, which hunt, shoot and score; the takedown goes to whoever did it
-  const simSrc = src.replace(/^mode : "mission"/m, 'mode : "sim"').replace(/^simulants : 2/m, "simulants : 3");
+  const simSrc = src.replace(/^mode : "mission"/m, 'mode : "sim"').replace(/^simulants : 3/m, "simulants : 3");
   const c = L.makeGame(simSrc, {}); c.tick(1 / 60, pad({}));
   ok("silvereye: a combat sim is you and the simulants, with no guards", f(c, "agents").count() === 4 && f(c, "guards").count() === 0 && f(c, "versus") === true && agent(c, 2).field("bot") === true);
   for (let t = 0; t < 60 * 40; t++) c.tick(1 / 60, pad({}));
@@ -4667,10 +4671,10 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     for (let t = 0; t < 30; t++) st.tick(1 / 60, pad({}));
     ok("silvereye: a camper simulant holds its ground when it sees you", Math.abs(agent(st, 2).field("x") - 12.5) < 1e-9, agent(st, 2).field("x")); }
   const both = L.makeGame(src, { players: 2, me: 1 }); both.tick(1 / 60, pad({}), pad({}));
-  ok("silvereye: simulants join a duel too", f(both, "agents").count() === 4 && agent(both, 3).field("bot") === true);
-  ok("silvereye: simulants are drawn as robots, players as soldiers", both.draw().filter(x => x[0] === "model" && x[1][0] === "robot_gunner").length === 2 && both.draw().filter(x => x[0] === "model" && x[1][0] === "soldier").length === 1);
+  ok("silvereye: simulants join a duel too", f(both, "agents").count() === 5 && agent(both, 3).field("bot") === true);
+  ok("silvereye: simulants are drawn as robots, players as soldiers", both.draw().filter(x => x[0] === "model" && x[1][0] === "robot_gunner").length === 3 && both.draw().filter(x => x[0] === "model" && x[1][0] === "soldier").length === 1);
   // credit: with three in the lab, a takedown counts only for the one who made it
-  const t3 = L.makeGame(src.replace(/^simulants : 2/m, "simulants : 1"), { players: 2, me: 1 }); t3.tick(1 / 60, pad({}), pad({}));
+  const t3 = L.makeGame(src.replace(/^simulants : 3/m, "simulants : 1"), { players: 2, me: 1 }); t3.tick(1 / 60, pad({}), pad({}));
   put(t3, 0, { x: 8.5, y: 7.5, angle: 0 }); put(t3, 1, { x: 12.5, y: 7.5, angle: Math.PI }); put(t3, 2, { x: 2.5, y: 13.5, angle: 0 });
   for (let t = 0; t < 60; t++) t3.tick(1 / 60, pad({ fire: true }), pad({}));
   ok("silvereye: the takedown is credited to the one who made it", agent(t3, 1).field("kills") === 1 && agent(t3, 3).field("kills") === 0 && agent(t3, 2).field("last-by") === 1);
@@ -10721,7 +10725,7 @@ lab : [
   "################"
 ]
 mode : "mission"           -- "mission": the lab and its guards · "sim": you against simulants
-simulants : 2              -- simulants in a combat sim, and joining a duel
+simulants : 3              -- simulants in a combat sim, and joining a duel (up to 7)
 simulant-skill : 2         -- 1 rookie, 2 agent, 3 ace
 difficulty : 2             -- a mission's guards: 1 rookie (no generators to wreck), 2 agent, 3 ace
 fov-across : 100           -- how wide you see, side to side, in degrees: far wider than the old consoles
@@ -10844,7 +10848,8 @@ styles : ["hunter", "flanker", "camper"]
 -- ---------------------------------------------------------------- the people
 guard-health : cond [difficulty = 1, 70, difficulty = 3, 140, any, 100]
 guard : [id gx gy tx ty | [id : id, x : gx, y : gy, angle : 0, health : guard-health, wait : 1, alert : false, home-x : gx, home-y : gy, to-x : tx, to-y : ty, fell : false, stagger : 0, target : 1]]
-spawns : [[2.5, 2.5, 0.6], [13.5, 13.5, -2.4], [13.5, 2.5, 2.4], [2.5, 13.5, -0.8], [7.5, 4.5, 1.6], [9.5, 10.5, -1.6], [6.5, 13.5, 0]]
+-- where players and simulants start and come back: open floor in both maps, far corners first
+spawns : [[2.5, 2.5, 0.6], [13.5, 13.5, -2.4], [13.5, 2.5, 2.4], [2.5, 13.5, -0.8], [7.5, 4.5, 1.6], [9.5, 10.5, -1.6], [6.5, 13.5, 0], [11.5, 5.5, 3.1], [14.5, 7.5, 3.1], [1.5, 12.5, 0], [8.5, 1.5, 1.6], [5.5, 4.5, 0], [12.5, 10.5, -1.6], [1.5, 7.5, 0], [14.5, 13.5, 3.1]]
 spawn-of : [id | spawns @ (id - 1 % (spawns length) + 1)]
 open-cells : level numbered collect-flat [[r, row] | row chars numbered keep [[c, ch] | ch = "."] collect [[c, ch] | [c - 0.5, r - 0.5]]]
 agent : [id sx sy sa | [id : id, x : sx, y : sy, angle : sa, health : 100, carried : mines-each, sentries-left : sentries, fire-wait : 0, mine-wait : 0, turret-wait : 0, flash : 0, hurt : 0, kills : 0, hit-at : -10, down-at : false, look : false, moving : false, aimed : false, asks : false, zoomed : false, fov : fov-across, last-by : 0, bot : false, goal-x : sx, goal-y : sy, stuck : 0, clip : clip-size, ammo : ammo-each, reloading : 0, armour : 0, shots-fired : 0, shots-hit : 0, has-heavy : false, weapon : "blaster", swap-wait : 0, safe-until : 0, damage-taken : 0, hurt-x : 0, hurt-y : 0]]
