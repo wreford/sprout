@@ -227,6 +227,9 @@ simulant-program : [s |
   ]
 ]
 styles : ["hunter", "flanker", "camper"]
+-- simulants' codenames, by number (players are 1 and 2, so the first simulant is usually 2 or 3)
+sim-names : ["ASTER", "BRAM", "CINDER", "DUSK", "EMBER", "FLINT", "GALE", "HALE", "IVO"]
+sim-name : [n | sim-names @ (n - 2 max 0 % (sim-names length) + 1)]
 
 -- ---------------------------------------------------------------- the people
 guard-health : cond [difficulty = 1, 70, difficulty = 3, 140, any, 100]
@@ -748,12 +751,12 @@ draw : [game |
     text ["YOU [you kills] · [best] [rest]", W / 2, H - 16, 12, cream]
     text [time-limit - (now - (game match-start)) max 0 clock, W / 2, 16, 10, "#c9ccd4"]
     rivals any [r | (up r not) and (r last-by = you-id) and (now - (r down-at else now) < 1.6)] [text ["TAKEDOWN", W / 2, H / 2 - 40, 18, gold]]
-    who-did : cond [(you last-by = you-id) or (you last-by = 0), "YOUR OWN TRAP", is-sim (you last-by), "SIM [you last-by]", any, "THE RIVAL"]
+    who-did : cond [(you last-by = you-id) or (you last-by = 0), "YOUR OWN TRAP", is-sim (you last-by), sim-name (you last-by), any, "THE RIVAL"]
     down and (game over = "") [text ["TAKEN DOWN BY [who-did]", W / 2, H / 2 + 22, 11, red]]
     down and (game over = "") [text ["DOWN · back in [respawn-after - (now - (you down-at else now)) max 0 ceil]", W / 2, H / 2 + 40, 12, cream]]
   ]
   -- who took down whom, lately
-  call : [n | cond [n = you-id, "YOU", n = 0, "THE LAB", is-sim n, "SIM [n]", any, "RIVAL"]]
+  call : [n | cond [n = you-id, "YOU", n = 0, "THE LAB", is-sim n, sim-name n, any, "RIVAL"]]
   game versus [game feed numbered each [[k, e] | text [cond [(e by = (e who)) or (e by = 0), "[call (e who)] went down", any, "[call (e by)] took down [call (e who)]"], W / 2, k * 11 + 26, 8, cond [(e by = you-id) or (e who = you-id), gold, any, "#c9ccd4"]]]]
   (game versus not) and (now - (game ticked-at else -10) < 2) and (game over = "") [text ["OBJECTIVE COMPLETE", W / 2, H / 2 - 64, 13, "#7bd389"]]
   -- the Warden's health, across the top, once he's on alert
@@ -821,7 +824,7 @@ draw : [game |
   game over = "lost" [ending ["YOU WERE CAUGHT", red]]
   game over = "civilian" [ending ["A SCIENTIST WAS HURT", red]]
   game over = "p[you-id]" [ending ["YOU WIN", "#7bd389"]]
-  verdict : [w | is-sim w ["SIM [w] WINS"] else ["YOU LOSE"]]
+  verdict : [w | is-sim w ["[sim-name w] WINS"] else ["YOU LOSE"]]
   champion : (game over != "") and (game over != "won") and (game over != "lost") and (game over != "draw") and (game over != "p[you-id]")
   winners : game agents keep [a | game over = "p[a id]"]
   (game versus) and champion [ending [verdict (winners @ 1 id), red]]

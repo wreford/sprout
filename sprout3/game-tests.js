@@ -533,7 +533,7 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     put(cs, 0, { x: 12.5, y: 7.5, angle: Math.PI }); put(cs, 1, { x: 8.5, y: 7.5, angle: 0 });
     for (let t = 0; t < 120; t++) cs.tick(1 / 60, pad({ fire: true }));
     const texts = cs.draw().filter(x => x[0] === "text").map(x => x[1][0]);
-    ok("silvereye: in a combat sim, player 2 is called a simulant, not a rival", texts.includes("YOU took down SIM 2") && !texts.some(t => /RIVAL$/.test(t) && /took down/.test(t)), texts); }
+    ok("silvereye: in a combat sim, player 2 is a simulant with a codename, not a rival", texts.includes("YOU took down ASTER") && !texts.some(t => /RIVAL$/.test(t) && /took down/.test(t)), texts); }
   { const seven = L.makeGame(src.replace(/^mode : "mission"/m, 'mode : "sim"').replace(/^simulants : 3/m, "simulants : 7"), {}); seven.tick(1 / 60, pad({}));
     const spots = new Set(S.partsOf(f(seven, "agents")).map(a => a.field("x") + "," + a.field("y")));
     for (let t = 0; t < 300; t++) seven.tick(1 / 60, pad({}));
