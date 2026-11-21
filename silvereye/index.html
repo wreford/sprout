@@ -425,12 +425,33 @@ addEventListener("keydown", e => {
 });
 addEventListener("keyup", e => KEYS.delete(KEYNAME[e.key] || e.key.toLowerCase()));
 addEventListener("blur", () => KEYS.clear());
+// a real controller (the Gamepad API): sticks to move and look, triggers and buttons as on the console
+const padWas = [];
+const GP = { walk: 0, strafe: 0, fire: false, mine: false, reload: false, swap: false, sentry: false, zoom: false };
+function pollGamepad(dt) {
+  const gp = navigator.getGamepads ? [...navigator.getGamepads()].find(g => g && g.connected) : null;
+  if (!gp) { for (const k in GP) GP[k] = typeof GP[k] === "number" ? 0 : false; return; }
+  const ax = i => { const v = gp.axes[i] || 0; return Math.abs(v) < 0.15 ? 0 : v; }, btn = i => !!(gp.buttons[i] && gp.buttons[i].pressed);
+  const pressed = i => { const now = btn(i), was = padWas[i]; padWas[i] = now; return now && !was; };
+  if (screen) {
+    if (pressed(12)) menuStep(-1); if (pressed(13)) menuStep(1); if (pressed(0)) menuPick();
+    if (pressed(1) && screen !== "title") { if (screen === "pause") closeScreens(); else showScreen(back); }
+    if (pressed(9) && screen === "pause") closeScreens();
+    return;
+  }
+  GP.strafe = ax(0); GP.walk = -ax(1) * (btn(10) ? 1.4 : 1);
+  pad.look += ax(2) * 2.6 * dt * (btn(6) ? 0.4 : 1);
+  GP.fire = btn(0) || btn(7); GP.mine = btn(1); GP.reload = btn(2); GP.swap = btn(3); GP.sentry = btn(4); GP.zoom = btn(6) || btn(5);
+  if (pressed(9)) showScreen("pause"); if (pressed(8)) openProgram(!$("prog").classList.contains("on"));
+}
+addEventListener("gamepadconnected", () => toast("Controller connected"));
 // what goes into each tick: the console's values, and any keys
 function held() {
   const m = new Map([["shell", true], ["look", pad.look], ["fov", settings.fov]]);
   if (screen) return S.valueCellOf([], m);
-  if (pad.walk) m.set("walk", pad.walk); if (pad.strafe) m.set("strafe", pad.strafe);
-  if (pad.fire) m.set("fire", true); if (pad.mine) m.set("mine", true); if (pad.sentry) m.set("sentry", true); if (pad.zoom) m.set("zoom", true); if (pad.reload) m.set("reload", true); if (pad.swap) m.set("swap", true);
+  const walk = pad.walk || GP.walk, strafe = pad.strafe || GP.strafe;
+  if (walk) m.set("walk", walk); if (strafe) m.set("strafe", strafe);
+  for (const k of ["fire", "mine", "sentry", "zoom", "reload", "swap"]) if (pad[k] || GP[k]) m.set(k, true);
   for (const k of KEYS) m.set(k, true);
   return S.valueCellOf([], m);
 }
@@ -457,7 +478,8 @@ function frame(now) {
   const dt = Math.min(.05, (now - last) / 1000 || 0); last = now;
   if (!game) return;
   try {
-    if (window.NET && NET.active) NET.advance(dt, held());
+    pollGamepad(dt);
+  if (window.NET && NET.active) NET.advance(dt, held());
     else if (!(paused || screen === "pause")) game.tick(dt, held());
   } catch (e) {
     // a program that loaded can still fail while running: back to the last one that worked
