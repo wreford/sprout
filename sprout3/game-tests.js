@@ -466,6 +466,15 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   { const tl = L.makeGame(duelSrc.replace(/^time-limit : 300/m, "time-limit : 2"), { players: 2, me: 1 }); tl.tick(1 / 60, pad({}), pad({}));
     for (let t = 0; t < 150; t++) tl.tick(1 / 60, pad({}), pad({}));
     ok("silvereye: when time runs out with no takedowns, it's a draw", f(tl, "over") === "draw", f(tl, "over")); }
+  // turrets can be shot down, but never by the one who set them
+  { const ts = L.makeGame(duelSrc.replace("fire : (t sees) and (t cool <= 0) and (off abs < 0.1)", "fire : false"), { players: 2, me: 1 }); ts.tick(1 / 60, pad({}), pad({}));
+    put(ts, 1, { x: 9.5, y: 7.5, angle: 0 }); put(ts, 0, { x: 2.5, y: 13.5 }); ts.tick(1 / 60, pad({}), pad({ sentry: true }));
+    put(ts, 1, { x: 2.5, y: 2.5 }); put(ts, 0, { x: 13.0, y: 7.5, angle: Math.PI });
+    for (let t = 0; t < 45; t++) ts.tick(1 / 60, pad({ fire: true }), pad({}));
+    ok("silvereye: two shots bring down someone else's turret", f(ts, "turrets").count() === 0);
+    put(ts, 1, { x: 9.5, y: 7.5, angle: 0 }); ts.tick(1 / 60, pad({}), pad({ sentry: true })); put(ts, 1, { x: 13.0, y: 7.5, angle: Math.PI });
+    for (let t = 0; t < 45; t++) ts.tick(1 / 60, pad({}), pad({ fire: true }));
+    ok("silvereye: your own turret isn't in your sights", f(ts, "turrets").count() === 1); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });

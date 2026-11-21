@@ -235,11 +235,11 @@ play : [game |
     a with [x : went x, y : went y, angle : heading, look : w look, moving : (up a) and ((w walk abs) + (w strafe abs) > 0.1), asks : w, zoomed : (up a) and (w zoom), fov : w fov, goal-x : goal-x, goal-y : goal-y, stuck : stuck]
   ]
   -- who could be shot: guards still standing, and players still up
-  marks : game guards keep [g | g health > 0] collect [g | [who : "guard", id : g id, x : g x, y : g y]] .. (moved-agents keep up collect [a | [who : "agent", id : a id, x : a x, y : a y]]) .. (game machines keep [m | m health > 0] collect [m | [who : "machine", id : m id, x : m x, y : m y]])
+  marks : game guards keep [g | g health > 0] collect [g | [who : "guard", id : g id, owner : 0, x : g x, y : g y]] .. (moved-agents keep up collect [a | [who : "agent", id : a id, owner : a id, x : a x, y : a y]]) .. (game machines keep [m | m health > 0] collect [m | [who : "machine", id : m id, owner : 0, x : m x, y : m y]]) .. (game turrets collect [t | [who : "turret", id : t id, owner : t owner, x : t x, y : t y]])
   -- aiming: the nearest mark near the middle of your view, nearer than the wall (a little help, as on a pad)
   aim-at : [a |
     wall : cast [a x, a y, a angle] far
-    marks keep [m | (m who != "agent") or (m id != (a id))] keep [m |
+    marks keep [m | m owner != (a id)] keep [m |
       gd : distance [a x, a y, m x, m y]
       rel : wrap (m y - (a y) atan2 (m x - (a x)) - (a angle))
       (rel abs < (cond [a zoomed, 0.03 + (0.12 / gd), any, 0.05 + (0.22 / gd)])) and (gd < wall)
@@ -258,7 +258,7 @@ play : [game |
   -- a mine is thrown up to 1.8 m ahead, and lands short of the wall
   throw : [a | 1.8 min (cast [a x, a y, a angle] far - 0.25) max 0.3]
   all-mines : game mines .. (droppers collect [a | [x : a angle cos * (throw a) + (a x), y : a angle sin * (throw a) + (a y), armed : now + mine-arm, owner : a id]])
-  placed : game turrets .. (setters collect [a | [x : a angle cos * 0.7 + (a x), y : a angle sin * 0.7 + (a y), aim : a angle, cool : 0.6, shots : 0, fired : false, victim : "", owner : a id]])
+  placed : game turrets .. (setters collect [a | [id : "[a id]-[now]", health : 60, x : a angle cos * 0.7 + (a x), y : a angle sin * 0.7 + (a y), aim : a angle, cool : 0.6, shots : 0, fired : false, victim : "", owner : a id]])
   -- each turret finds the nearest mark it can see (never its owner), asks turret-program what to do, turns, maybe fires
   thought : placed collect [t |
     in-sight : marks keep [m | ((m who = "guard") or ((m who = "agent") and (m id != (t owner)))) and (distance [t x, t y, m x, m y] < sentry-reach) and (clear-line [t x, t y, m x, m y])]
@@ -336,6 +336,11 @@ play : [game |
   -- pickups: walk over one to take it (ammo, or armour that takes hits before your health); in a match they come back
   near-pickup : [p | ready keep [a | (up a) and (distance [a x, a y, p x, p y] < 0.6)]]
   takes : game pickups keep [p | (now >= (p back-at)) and (near-pickup p length > 0)] collect [p | [kind : p kind, by : near-pickup p @ 1 id]]
+  -- turrets can be shot down (two shots) or blown up
+  hit-turrets : thought collect [t | t with [health : t health - (power ["turret [t id]", 34, 70]) - (caught [t x, t y] length * 100)]]
+  standing : hit-turrets keep [t | t health > 0]
+  gone-turrets : hit-turrets keep [t | t health <= 0]
+  (gone-turrets length > 0) [sound "impact"]
   -- the generators: shots and blasts wreck them
   machines : game machines collect [m |
     n : power ["machine [m id]", 25, 50] + (caught [m x, m y] length * 100)
@@ -412,9 +417,9 @@ play : [game |
     any, ""
   ]
   game with [
-    agents : back, guards : fallen, mines : still, turrets : thought, pickups : pickups, machines : machines, intel : intel
+    agents : back, guards : fallen, mines : still, turrets : standing, pickups : pickups, machines : machines, intel : intel
     feed : game feed .. (went-down collect [d | [by : d last-by, who : d id, at : now]]) keep [e | now - (e at) < 4]
-    blasts : game blasts keep [b | now - (b at) < 0.6] .. (goes-off collect [m | [x : m x, y : m y, at : now]])
+    blasts : game blasts keep [b | now - (b at) < 0.6] .. (goes-off collect [m | [x : m x, y : m y, at : now]]) .. (gone-turrets collect [t | [x : t x, y : t y, at : now]])
     over : over, over-at : now
     shell : game input held "shell" else false
   ]

@@ -64,7 +64,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
   - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
   - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
-- **Tests:** 452 pass, 302 for the language and 150 for the games.
+- **Tests:** 454 pass, 302 for the language and 152 for the games.
 
 ## Open questions for Troy
 
@@ -83,13 +83,13 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 
 ```
 node test.js          # language tests (302)
-node game-tests.js    # game tests (150)
+node game-tests.js    # game tests (152)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 452 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 454 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4569,6 +4569,15 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   { const tl = L.makeGame(duelSrc.replace(/^time-limit : 300/m, "time-limit : 2"), { players: 2, me: 1 }); tl.tick(1 / 60, pad({}), pad({}));
     for (let t = 0; t < 150; t++) tl.tick(1 / 60, pad({}), pad({}));
     ok("silvereye: when time runs out with no takedowns, it's a draw", f(tl, "over") === "draw", f(tl, "over")); }
+  // turrets can be shot down, but never by the one who set them
+  { const ts = L.makeGame(duelSrc.replace("fire : (t sees) and (t cool <= 0) and (off abs < 0.1)", "fire : false"), { players: 2, me: 1 }); ts.tick(1 / 60, pad({}), pad({}));
+    put(ts, 1, { x: 9.5, y: 7.5, angle: 0 }); put(ts, 0, { x: 2.5, y: 13.5 }); ts.tick(1 / 60, pad({}), pad({ sentry: true }));
+    put(ts, 1, { x: 2.5, y: 2.5 }); put(ts, 0, { x: 13.0, y: 7.5, angle: Math.PI });
+    for (let t = 0; t < 45; t++) ts.tick(1 / 60, pad({ fire: true }), pad({}));
+    ok("silvereye: two shots bring down someone else's turret", f(ts, "turrets").count() === 0);
+    put(ts, 1, { x: 9.5, y: 7.5, angle: 0 }); ts.tick(1 / 60, pad({}), pad({ sentry: true })); put(ts, 1, { x: 13.0, y: 7.5, angle: Math.PI });
+    for (let t = 0; t < 45; t++) ts.tick(1 / 60, pad({}), pad({ fire: true }));
+    ok("silvereye: your own turret isn't in your sights", f(ts, "turrets").count() === 1); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });
@@ -10831,11 +10840,11 @@ play : [game |
     a with [x : went x, y : went y, angle : heading, look : w look, moving : (up a) and ((w walk abs) + (w strafe abs) > 0.1), asks : w, zoomed : (up a) and (w zoom), fov : w fov, goal-x : goal-x, goal-y : goal-y, stuck : stuck]
   ]
   -- who could be shot: guards still standing, and players still up
-  marks : game guards keep [g | g health > 0] collect [g | [who : "guard", id : g id, x : g x, y : g y]] .. (moved-agents keep up collect [a | [who : "agent", id : a id, x : a x, y : a y]]) .. (game machines keep [m | m health > 0] collect [m | [who : "machine", id : m id, x : m x, y : m y]])
+  marks : game guards keep [g | g health > 0] collect [g | [who : "guard", id : g id, owner : 0, x : g x, y : g y]] .. (moved-agents keep up collect [a | [who : "agent", id : a id, owner : a id, x : a x, y : a y]]) .. (game machines keep [m | m health > 0] collect [m | [who : "machine", id : m id, owner : 0, x : m x, y : m y]]) .. (game turrets collect [t | [who : "turret", id : t id, owner : t owner, x : t x, y : t y]])
   -- aiming: the nearest mark near the middle of your view, nearer than the wall (a little help, as on a pad)
   aim-at : [a |
     wall : cast [a x, a y, a angle] far
-    marks keep [m | (m who != "agent") or (m id != (a id))] keep [m |
+    marks keep [m | m owner != (a id)] keep [m |
       gd : distance [a x, a y, m x, m y]
       rel : wrap (m y - (a y) atan2 (m x - (a x)) - (a angle))
       (rel abs < (cond [a zoomed, 0.03 + (0.12 / gd), any, 0.05 + (0.22 / gd)])) and (gd < wall)
@@ -10854,7 +10863,7 @@ play : [game |
   -- a mine is thrown up to 1.8 m ahead, and lands short of the wall
   throw : [a | 1.8 min (cast [a x, a y, a angle] far - 0.25) max 0.3]
   all-mines : game mines .. (droppers collect [a | [x : a angle cos * (throw a) + (a x), y : a angle sin * (throw a) + (a y), armed : now + mine-arm, owner : a id]])
-  placed : game turrets .. (setters collect [a | [x : a angle cos * 0.7 + (a x), y : a angle sin * 0.7 + (a y), aim : a angle, cool : 0.6, shots : 0, fired : false, victim : "", owner : a id]])
+  placed : game turrets .. (setters collect [a | [id : "[a id]-[now]", health : 60, x : a angle cos * 0.7 + (a x), y : a angle sin * 0.7 + (a y), aim : a angle, cool : 0.6, shots : 0, fired : false, victim : "", owner : a id]])
   -- each turret finds the nearest mark it can see (never its owner), asks turret-program what to do, turns, maybe fires
   thought : placed collect [t |
     in-sight : marks keep [m | ((m who = "guard") or ((m who = "agent") and (m id != (t owner)))) and (distance [t x, t y, m x, m y] < sentry-reach) and (clear-line [t x, t y, m x, m y])]
@@ -10932,6 +10941,11 @@ play : [game |
   -- pickups: walk over one to take it (ammo, or armour that takes hits before your health); in a match they come back
   near-pickup : [p | ready keep [a | (up a) and (distance [a x, a y, p x, p y] < 0.6)]]
   takes : game pickups keep [p | (now >= (p back-at)) and (near-pickup p length > 0)] collect [p | [kind : p kind, by : near-pickup p @ 1 id]]
+  -- turrets can be shot down (two shots) or blown up
+  hit-turrets : thought collect [t | t with [health : t health - (power ["turret [t id]", 34, 70]) - (caught [t x, t y] length * 100)]]
+  standing : hit-turrets keep [t | t health > 0]
+  gone-turrets : hit-turrets keep [t | t health <= 0]
+  (gone-turrets length > 0) [sound "impact"]
   -- the generators: shots and blasts wreck them
   machines : game machines collect [m |
     n : power ["machine [m id]", 25, 50] + (caught [m x, m y] length * 100)
@@ -11008,9 +11022,9 @@ play : [game |
     any, ""
   ]
   game with [
-    agents : back, guards : fallen, mines : still, turrets : thought, pickups : pickups, machines : machines, intel : intel
+    agents : back, guards : fallen, mines : still, turrets : standing, pickups : pickups, machines : machines, intel : intel
     feed : game feed .. (went-down collect [d | [by : d last-by, who : d id, at : now]]) keep [e | now - (e at) < 4]
-    blasts : game blasts keep [b | now - (b at) < 0.6] .. (goes-off collect [m | [x : m x, y : m y, at : now]])
+    blasts : game blasts keep [b | now - (b at) < 0.6] .. (goes-off collect [m | [x : m x, y : m y, at : now]]) .. (gone-turrets collect [t | [x : t x, y : t y, at : now]])
     over : over, over-at : now
     shell : game input held "shell" else false
   ]
