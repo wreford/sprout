@@ -516,8 +516,11 @@ draw : [game |
   game mines each [m | circle [m x * 3 + 6, m y * 3 + 6, 1.1, gold]]
   game turrets each [t | rect [t x * 3 + 4.5, t y * 3 + 4.5, 3, 3, cyan]]
   circle [you x * 3 + 6, you y * 3 + 6, 1.7, "#ffffff"]
+  -- health and armour show when you're hurt (and stay while you're low), then get out of the way
+  (you hurt > -3) or (you health <= 35) or (game clock < 4) [
   range 10 each [k | rect [W - 12 - (11 - k * 9), 10, 7, 9, cond [you health > (k - 1 * 10), cond [you health > 35, "#7bd389", any, red], any, "#00000066"]]]
   (you armour > 0) [rect [W - 102, 21, you armour * 0.9, 3, "#5fa8ff"]]
+  ]
   text ["MINES [you carried]   SENTRY [you sentries-left]", W - 52, 30, 9, cream]
   -- shots: what's in the clip, and spare; a bar while you reload
   text ["[you clip] | [you ammo]", W - 30, H - 40, 13, cond [you clip = 0, red, any, cream]]

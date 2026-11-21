@@ -364,6 +364,9 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   for (let t = 0; t < 30; t++) w.tick(1 / 60, pad({ walk: 1, look: 0.5 }));
   ok("silvereye: the stick walks and the look drag turns you by what it moved", agent(w, 1).field("x") > 2.7 && Math.abs(agent(w, 1).field("angle") - 1.1) < 1e-9, agent(w, 1).field("angle"));
   ok("silvereye: on the console there are no touch buttons on the screen", !w.draw().some(x => x[0] === "text" && x[1][0] === "MINE"));
+  { const quiet = L.makeGame(src, {}); for (let t = 0; t < 400; t++) quiet.tick(1 / 60, pad({}));
+    const bars = quiet.draw().filter(x => x[0] === "rect" && x[1][2] === 7 && x[1][3] === 9).length;
+    ok("silvereye: the health bar stays out of the way until you're hurt", bars === 0, bars); }
   put(g, 0, { x: 9.5, y: 7.5, angle: 0 });
   for (let t = 0; t < 240; t++) g.tick(1 / 60, keys(t % 20 < 2 ? ["space"] : []));
   const fallen = g.draw().filter(x => x[0] === "model" && x[1][0] === "soldier" && x[1][6] === "Death");

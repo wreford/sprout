@@ -64,7 +64,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
   - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
   - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
-- **Tests:** 445 pass, 298 for the language and 147 for the games.
+- **Tests:** 446 pass, 298 for the language and 148 for the games.
 
 ## Open questions for Troy
 
@@ -83,13 +83,13 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 
 ```
 node test.js          # language tests (298)
-node game-tests.js    # game tests (147)
+node game-tests.js    # game tests (148)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 445 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 446 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4467,6 +4467,9 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   for (let t = 0; t < 30; t++) w.tick(1 / 60, pad({ walk: 1, look: 0.5 }));
   ok("silvereye: the stick walks and the look drag turns you by what it moved", agent(w, 1).field("x") > 2.7 && Math.abs(agent(w, 1).field("angle") - 1.1) < 1e-9, agent(w, 1).field("angle"));
   ok("silvereye: on the console there are no touch buttons on the screen", !w.draw().some(x => x[0] === "text" && x[1][0] === "MINE"));
+  { const quiet = L.makeGame(src, {}); for (let t = 0; t < 400; t++) quiet.tick(1 / 60, pad({}));
+    const bars = quiet.draw().filter(x => x[0] === "rect" && x[1][2] === 7 && x[1][3] === 9).length;
+    ok("silvereye: the health bar stays out of the way until you're hurt", bars === 0, bars); }
   put(g, 0, { x: 9.5, y: 7.5, angle: 0 });
   for (let t = 0; t < 240; t++) g.tick(1 / 60, keys(t % 20 < 2 ? ["space"] : []));
   const fallen = g.draw().filter(x => x[0] === "model" && x[1][0] === "soldier" && x[1][6] === "Death");
@@ -11096,8 +11099,11 @@ draw : [game |
   game mines each [m | circle [m x * 3 + 6, m y * 3 + 6, 1.1, gold]]
   game turrets each [t | rect [t x * 3 + 4.5, t y * 3 + 4.5, 3, 3, cyan]]
   circle [you x * 3 + 6, you y * 3 + 6, 1.7, "#ffffff"]
+  -- health and armour show when you're hurt (and stay while you're low), then get out of the way
+  (you hurt > -3) or (you health <= 35) or (game clock < 4) [
   range 10 each [k | rect [W - 12 - (11 - k * 9), 10, 7, 9, cond [you health > (k - 1 * 10), cond [you health > 35, "#7bd389", any, red], any, "#00000066"]]]
   (you armour > 0) [rect [W - 102, 21, you armour * 0.9, 3, "#5fa8ff"]]
+  ]
   text ["MINES [you carried]   SENTRY [you sentries-left]", W - 52, 30, 9, cream]
   -- shots: what's in the clip, and spare; a bar while you reload
   text ["[you clip] | [you ammo]", W - 30, H - 40, 13, cond [you clip = 0, red, any, cream]]
