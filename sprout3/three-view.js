@@ -53,6 +53,8 @@ export function makeView(canvas, base, opts) {
     const name = fmt(spec), isColour = /^#|^rgb/.test(name), key = isColour ? name : name + " " + sx + " " + sy + " " + sz;
     let m = materials.get(key);
     if (m) return m;
+    // glow:#colour is lit from within: drawn at full brightness whatever the lights (lamps, screens, signs)
+    if (/^glow:/.test(name)) { m = new THREE.MeshBasicMaterial({ color: new THREE.Color(name.slice(5, 12)), toneMapped: false }); materials.set(key, m); return m; }
     if (isColour) m = new THREE.MeshStandardMaterial({ color: new THREE.Color(name.slice(0, 7)), roughness: 0.9 });
     else {
       // a texture repeats once a metre; each size needs its own copy, made once the image has arrived

@@ -153,6 +153,8 @@ solid : [cx cy |
   cond [row = false, true, any, row @ (cx floor + 1) = "#"]
 ]
 wall-cells : level numbered collect-flat [[r, row] | row chars numbered keep [[c, ch] | ch = "#"] collect [[c, ch] | [c, r]]]
+-- lamps in the ceiling, over every third open cell each way
+ceiling-lamps : level numbered collect-flat [[r, row] | row chars numbered keep [[c, ch] | (ch = ".") and (c % 3 = 2) and (r % 3 = 2)] collect [[c, ch] | [c - 0.5, r - 0.5]]]
 -- doors: a D in a map is floor with a door in it; the door slides up as anyone comes near. across: walls left and
 -- right (spans-x), so the door spans the passage east to west (otherwise north to south)
 door-cells : level numbered collect-flat [[r, row] | row chars numbered keep [[c, ch] | ch = "D"] collect [[c, ch] | [x : c - 0.5, y : r - 0.5, spans-x : row @ (c - 1) = "#"]]]
@@ -639,6 +641,8 @@ draw : [game |
   block [8, -0.05, 8, 16, 0.1, 16, cond [in-mission, mission floor, any, "plate"]]
   block [8, 2.55, 8, 16, 0.1, 16, cond [in-mission, mission ceiling, any, "metal"]]
   wall-cells each [[c, r] | block [c - 0.5, 1.25, r - 0.5, 1, 2.5, 1, cond [mode = "mission", mission walls, any, "concrete"]]]
+  -- lamps in the ceiling: lit panels over the floor (drawn glowing, so they're bright whatever the light)
+  ceiling-lamps each [[lx, lz] | block [lx, 2.485, lz, 0.62, 0.03, 0.62, "glow:#fff4d8"]]
   -- skirting at the foot of every wall
   wall-cells each [[c, r] | block [c - 0.5, 0.09, r - 0.5, 1.02, 0.18, 1.02, "#1a1c20"]]
   -- doors slide up as anyone comes near, and drop shut behind them
