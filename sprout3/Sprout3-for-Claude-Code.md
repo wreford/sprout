@@ -6491,7 +6491,7 @@ p with [x : 5] print
 <h2>Try</h2>
 <ul class="list">
 <li><a href="play.html#ex=swarm">Swarm</a><span>Thousands of drones against turrets you program in Sprout.</span></li>
-<li><a href="/silvereye/">SilverEye</a><span>A 3D game on its own page: a lab of guards, proximity mines and turrets whose program you write as you play.</span></li>
+<li><a href="/silvereye/">SilverEye</a><span>A low-poly 3D shooter on a pocket console: a lab of guards, or a duel for two phones with no server. Proximity mines, and turrets you program as you play.</span></li>
 <li><a href="play.html#ex=volley">Volley</a><span>Two phones, one game, no server. The invite goes by text.</span></li>
 <li><a href="play.html#ex=gears">Gears</a><span>A parametric tool: two gears from a few numbers.</span></li>
 <li><a href="play.html#ex=terrain">Terrain</a><span>Smooth noise and colour scales, from wrapped libraries.</span></li>
@@ -10521,7 +10521,7 @@ turret-program : [t |
 -- ---------------------------------------------------------------- the people
 guard : [id gx gy tx ty | [id : id, x : gx, y : gy, angle : 0, health : 100, wait : 1, alert : false, home-x : gx, home-y : gy, to-x : tx, to-y : ty, fell : false]]
 spawns : [[2.5, 2.5, 0.6], [13.5, 13.5, -2.4], [13.5, 2.5, 2.4], [2.5, 13.5, -0.8]]
-agent : [id sx sy sa | [id : id, x : sx, y : sy, angle : sa, health : 100, carried : mines-each, sentries-left : sentries, fire-wait : 0, mine-wait : 0, turret-wait : 0, flash : 0, hurt : 0, kills : 0, down-at : false, look : false, moving : false, aimed : false, asks : false]]
+agent : [id sx sy sa | [id : id, x : sx, y : sy, angle : sa, health : 100, carried : mines-each, sentries-left : sentries, fire-wait : 0, mine-wait : 0, turret-wait : 0, flash : 0, hurt : 0, kills : 0, hit-at : -10, down-at : false, look : false, moving : false, aimed : false, asks : false]]
 start :
   agents : [agent [1, 2.5, 2.5, 0.6]]
   guards : [guard [1, 12.5, 2.5, 12.5, 4.5], guard [2, 3.5, 7.5, 6.5, 7.5], guard [3, 13.5, 7.5, 9.5, 7.5], guard [4, 2.5, 11.5, 2.5, 13.5], guard [5, 9.5, 12.5, 9.5, 12.5], guard [6, 13.5, 13.5, 13.5, 10.5]]
@@ -10676,6 +10676,7 @@ play : [game |
       mine-wait : cond [can-drop a, 0.5, any, a mine-wait - dt]
       turret-wait : cond [can-set a, 0.5, any, a turret-wait - dt]
       flash : cond [can-shoot a, 0.08, any, a flash - dt]
+      hit-at : cond [(can-shoot a) and (a aimed != false), now, any, a hit-at]
       carried : cond [can-drop a, a carried - 1, any, a carried]
       sentries-left : cond [can-set a, a sentries-left - 1, any, a sentries-left]
     ]
@@ -10770,13 +10771,18 @@ draw : [game |
   kick : cond [you flash > 0, 0.05, any, 0]
   down not [hold ["blaster_g", 0.2, -0.21, -0.55 + kick, gun-turn, 0, 0.26]]
   (you flash > 0) [flash [you angle cos * 0.7 + (you x), 1.35, you angle sin * 0.7 + (you y), 0.08, "#ffd76a"]]
-  -- on top: the sight (red when it's on someone), the map, health, what you carry
+  -- on top: the sight (red when it's on someone, with a mark when a shot lands), the map, health, what you carry
   sight : cond [you aimed != false, red, any, "#ffffffaa"]
   line [W / 2 - 7, H / 2, W / 2 - 2, H / 2, sight]
   line [W / 2 + 2, H / 2, W / 2 + 7, H / 2, sight]
   line [W / 2, H / 2 - 7, W / 2, H / 2 - 2, sight]
   line [W / 2, H / 2 + 2, W / 2, H / 2 + 7, sight]
-  wall-cells each [[c, r] | rect [c * 3 + 3, r * 3 + 3, 3, 3, "#4a4d4588"]]
+  (now - (you hit-at) < 0.15) [
+    line [W / 2 - 10, H / 2 - 10, W / 2 - 5, H / 2 - 5, cream], line [W / 2 + 10, H / 2 - 10, W / 2 + 5, H / 2 - 5, cream]
+    line [W / 2 - 10, H / 2 + 10, W / 2 - 5, H / 2 + 5, cream], line [W / 2 + 10, H / 2 + 10, W / 2 + 5, H / 2 + 5, cream]
+  ]
+  rect [5, 5, 50, 50, "#000000a0"]
+  wall-cells each [[c, r] | rect [c * 3 + 3, r * 3 + 3, 3, 3, "#6a6e6488"]]
   game guards keep [g | g health > 0] each [g | circle [g x * 3 + 6, g y * 3 + 6, 1.4, red]]
   rivals keep up each [r | circle [r x * 3 + 6, r y * 3 + 6, 1.6, red]]
   game mines each [m | circle [m x * 3 + 6, m y * 3 + 6, 1.1, gold]]
