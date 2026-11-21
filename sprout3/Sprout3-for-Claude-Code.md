@@ -10,13 +10,13 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 
 ```
 node test.js          # language tests (303)
-node game-tests.js    # game tests (160)
+node game-tests.js    # game tests (162)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 463 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 465 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4538,6 +4538,11 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     ok("silvereye: the depot is its own map, and a match plays in it", walls !== labWalls && [2, 3, 4].some(n => agent(dp, n).field("kills") > 0 || agent(dp, n).field("x") !== 0), [walls, labWalls]);
     const dm = L.makeGame(src.replace(/^arena : "lab"/m, 'arena : "depot"'), {}); dm.tick(1 / 60, pad({}));
     ok("silvereye: a mission stays in the lab whatever the arena", dm.draw().filter(x => x[0] === "block").length === labWalls && f(dm, "guards").count() === 6); }
+  // co-op: two phones play the mission together; the guards go for whoever is nearer; it's lost only if both are down
+  { const coSrc = src.replace(/^two-phones : "duel"/m, 'two-phones : "coop"'), co = L.makeGame(coSrc, { players: 2, me: 2 }); co.tick(1 / 60, pad({}), pad({}));
+    ok("silvereye: co-op is the mission for two, guards and all", f(co, "versus") === false && f(co, "agents").count() === 2 && f(co, "guards").count() === 6 && co.draw().some(x => x[0] === "text" && /GUARDS/.test(x[1][0])));
+    put(co, 0, { x: 2.5, y: 2.5, health: 0, "down-at": 0.01 }); co.tick(1 / 60, pad({}), pad({}));
+    ok("silvereye: in co-op, one player down doesn't end the mission", f(co, "over") === ""); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });
@@ -10581,6 +10586,7 @@ Bunker 3D: Bunker's game code with a draw in 3D words, CC0 models and textures (
 
 -- two maps of our own: the lab (missions and matches) and the depot (matches): rows of shelving round a loading bay
 arena : "lab"              -- "lab" or "depot", for a combat sim or a duel; a mission is always in the lab
+two-phones : "duel"        -- what two phones play: "duel" (against each other) or "coop" (the mission, together)
 depot : [
   "################"
   "#..............#"
@@ -10737,7 +10743,7 @@ styles : ["hunter", "flanker", "camper"]
 
 -- ---------------------------------------------------------------- the people
 guard-health : cond [difficulty = 1, 70, difficulty = 3, 140, any, 100]
-guard : [id gx gy tx ty | [id : id, x : gx, y : gy, angle : 0, health : guard-health, wait : 1, alert : false, home-x : gx, home-y : gy, to-x : tx, to-y : ty, fell : false, stagger : 0]]
+guard : [id gx gy tx ty | [id : id, x : gx, y : gy, angle : 0, health : guard-health, wait : 1, alert : false, home-x : gx, home-y : gy, to-x : tx, to-y : ty, fell : false, stagger : 0, target : 1]]
 spawns : [[2.5, 2.5, 0.6], [13.5, 13.5, -2.4], [13.5, 2.5, 2.4], [2.5, 13.5, -0.8], [7.5, 4.5, 1.6], [9.5, 10.5, -1.6], [6.5, 13.5, 0]]
 spawn-of : [id | spawns @ (id - 1 % (spawns length) + 1)]
 open-cells : level numbered collect-flat [[r, row] | row chars numbered keep [[c, ch] | ch = "."] collect [[c, ch] | [c - 0.5, r - 0.5]]]
@@ -10877,13 +10883,14 @@ play : [game |
   power : [k normal heavy | shot-hits keep [h | h key = k] collect [h | cond [h heavy, heavy, any, normal]] sum]
   zapped : [k | thought count [t | t victim = k]]
   -- guards (only when you play alone): hit by shots and turrets, then each one patrols, or turns on you once it sees you
-  hero : ready @ 1
   hit-guards : game guards collect [g |
     n : power ["guard [g id]", shot-damage, 110] + (zapped "guard [g id]" * sentry-damage)
     n > 0 [g with [health : g health - n, alert : true, stagger : 0.35]] else [g]
   ]
   thinking : hit-guards collect [g |
     g health <= 0 [g] else [
+      -- each guard goes for the nearest player still standing
+      hero : ready keep up smallest-by [a | distance [a x, a y, g x, g y]] else [ready @ 1]
       gd : distance [g x, g y, hero x, hero y]
       facing : g y - (hero y) atan2 (g x - (hero x)) + pi
       looking : wrap (facing - (g angle)) abs < 0.9
@@ -10908,7 +10915,7 @@ play : [game |
         wait : cond [fires, 1.5 - (difficulty * 0.3), any, g wait - dt]
         stagger : (g stagger else 0) - dt
         to-x : next-x, to-y : next-y, home-x : back-x, home-y : back-y
-        fired : fires, hits : fires and (noise [now * 7, g id] < (0.5 - (gd * 0.035) * (difficulty * 0.35 + 0.3)))
+        target : hero id, fired : fires, hits : fires and (noise [now * 7, g id] < (0.5 - (gd * 0.035) * (difficulty * 0.35 + 0.3)))
       ]
     ]
   ]
@@ -10916,7 +10923,7 @@ play : [game |
   callers : thinking keep [g | (g alert) and (g health > 0)]
   called : thinking collect [g | cond [(g alert not) and (g health > 0) and (callers any [o | distance [o x, o y, g x, g y] < 6]), g with [alert : true], any, g]]
   (called count [g | g alert] > (thinking count [g | g alert])) [beep [760, 0.12]]
-  pain : thinking count [g | g hits else false] * 9
+  pain : [who | thinking count [g | (g hits else false) and (g target = who)] * 9]
   thinking any [g | g fired else false] [sound "hit"]
   -- mines: an armed mine goes off when anyone comes near, whoever laid it
   armed : all-mines keep [m | now >= (m armed)]
@@ -10962,7 +10969,7 @@ play : [game |
     by-mine : caught-by [a x, a y]
     shot-pain : by-shot collect [h | cond [h heavy, heavy-damage, h steady, steady-damage, any, duel-damage]] sum
     -- just back in a match: nothing hurts for a moment
-    total : cond [now < (a safe-until), 0, up a, shot-pain + (zapped k * sentry-damage) + (cond [a id = 1, pain, any, 0]) + blasted, any, 0]
+    total : cond [now < (a safe-until), 0, up a, shot-pain + (zapped k * sentry-damage) + (pain (a id)) + blasted, any, 0]
     -- who did it, for the score: the last to hurt you
     by : by-shot length > 0 [by-shot @ 1 from] else [by-turret length > 0 [by-turret @ 1 owner] else [by-mine length > 0 [by-mine @ 1 owner] else [a last-by]]]
     got : [kind | takes count [t | (t by = (a id)) and (t kind = kind)]]
@@ -11012,10 +11019,10 @@ play : [game |
   -- the mission: every guard down, both generators wrecked, the intel taken, then back to the lift
   intel : (game intel) or (takes any [t | t kind = "intel"])
   done : (fallen all [g | g health <= 0]) and (machines all [m | m health <= 0]) and intel
-  home : distance [(back @ 1) x, (back @ 1) y, lift @ 1, lift @ 2] < 1
+  home : back any [a | (up a) and (distance [a x, a y, lift @ 1, lift @ 2] < 1)]
   over : cond [
     game versus, cond [winner > 0, "p[winner]", now - (game match-start) >= time-limit, time-up, any, ""]
-    (up (back @ 1)) not, "lost"
+    back all [a | up a not], "lost"
     done and home, "won"
     any, ""
   ]
@@ -11031,10 +11038,16 @@ play : [game |
 -- two phones turn a game for one into a duel; once it's over, fire (or a tap) starts again after a moment
 update : [game |
   two : game has-field "input2"
-  g : (two and (game versus not)) [game with duel with [match-start : game clock]] else [game]
+  -- two phones: a duel, or the mission together (the second player comes in beside the first)
+  coop : two-phones = "coop"
+  g : cond [
+    two and coop and (game agents length = 1) and (game versus not), game with [agents : game agents .. [agent [2, 3.5, 2.5, 0.6]]]
+    two and (coop not) and (game versus not), game with duel with [match-start : game clock]
+    any, game
+  ]
   again : (wants (g input) restart) or (two [wants (g input2) restart] else [false])
   g over = "" [play g] else [
-    (again and (g clock - (g over-at) > 1.5)) [two [g with duel with [match-start : g clock]] else [start]] else [g]
+    (again and (g clock - (g over-at) > 1.5)) [cond [two and (coop not), g with duel with [match-start : g clock], two, start with [agents : [agent [1, 2.5, 2.5, 0.6], agent [2, 3.5, 2.5, 0.6]], input : g input, input2 : g input2], any, start]] else [g]
   ]
 ]
 

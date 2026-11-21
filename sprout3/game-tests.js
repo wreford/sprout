@@ -505,6 +505,11 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     ok("silvereye: the depot is its own map, and a match plays in it", walls !== labWalls && [2, 3, 4].some(n => agent(dp, n).field("kills") > 0 || agent(dp, n).field("x") !== 0), [walls, labWalls]);
     const dm = L.makeGame(src.replace(/^arena : "lab"/m, 'arena : "depot"'), {}); dm.tick(1 / 60, pad({}));
     ok("silvereye: a mission stays in the lab whatever the arena", dm.draw().filter(x => x[0] === "block").length === labWalls && f(dm, "guards").count() === 6); }
+  // co-op: two phones play the mission together; the guards go for whoever is nearer; it's lost only if both are down
+  { const coSrc = src.replace(/^two-phones : "duel"/m, 'two-phones : "coop"'), co = L.makeGame(coSrc, { players: 2, me: 2 }); co.tick(1 / 60, pad({}), pad({}));
+    ok("silvereye: co-op is the mission for two, guards and all", f(co, "versus") === false && f(co, "agents").count() === 2 && f(co, "guards").count() === 6 && co.draw().some(x => x[0] === "text" && /GUARDS/.test(x[1][0])));
+    put(co, 0, { x: 2.5, y: 2.5, health: 0, "down-at": 0.01 }); co.tick(1 / 60, pad({}), pad({}));
+    ok("silvereye: in co-op, one player down doesn't end the mission", f(co, "over") === ""); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });
