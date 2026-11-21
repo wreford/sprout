@@ -416,6 +416,14 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   for (let t = 0; t < 20; t++) r.tick(1 / 60, pad({ fire: true }));
   for (let t = 0; t < 80; t++) r.tick(1 / 60, pad({ reload: t < 2 }));
   ok("silvereye: you can reload a half-empty clip", agent(r, 1).field("clip") === 8 && agent(r, 1).field("ammo") < 40);
+  // pickups: ammo adds spare shots, armour takes hits before your health; in a match they come back later
+  const pk = L.makeGame(duelSrc, { players: 2, me: 1 }); pk.tick(1 / 60, pad({}), pad({}));
+  put(pk, 0, { x: 5.5, y: 1.5 }); pk.tick(1 / 60, pad({}), pad({}));
+  ok("silvereye: walking over ammo takes it, and it's gone for a while", agent(pk, 1).field("ammo") === 64 && f(pk, "pickups").part(1).field("back-at") > f(pk, "clock") + 10);
+  put(pk, 0, { x: 8.5, y: 5.5 }); pk.tick(1 / 60, pad({}), pad({}));
+  put(pk, 0, { x: 8.5, y: 7.5, angle: 0 }); put(pk, 1, { x: 12.5, y: 7.5, angle: Math.PI });
+  for (let t = 0; t < 10; t++) pk.tick(1 / 60, pad({}), pad({ fire: true }));
+  ok("silvereye: armour takes the hits first", agent(pk, 1).field("health") === 100 && agent(pk, 1).field("armour") < 50, [agent(pk, 1).field("health"), agent(pk, 1).field("armour")]);
   // the combat sim: you against simulants, which hunt, shoot and score; the takedown goes to whoever did it
   const simSrc = src.replace(/^mode : "mission"/m, 'mode : "sim"').replace(/^simulants : 2/m, "simulants : 3");
   const c = L.makeGame(simSrc, {}); c.tick(1 / 60, pad({}));

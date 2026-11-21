@@ -52,6 +52,8 @@ fire-every : 0.25          -- hold fire and it fires this often
 clip-size : 8              -- shots before you reload
 ammo-each : 48             -- spare shots you start with
 reload-time : 1.1          -- seconds to reload
+pickup-back : 20           -- seconds before a pickup is back, in a match
+pickup-spots : [["ammo", 5.5, 1.5], ["armour", 8.5, 5.5], ["ammo", 14.5, 8.5], ["armour", 3.5, 10.5], ["ammo", 9.5, 13.5], ["ammo", 1.5, 5.5]]
 frag-limit : 5             -- takedowns to win a duel
 respawn-after : 2.5        -- seconds before you're back in a duel
 
@@ -132,7 +134,8 @@ guard : [id gx gy tx ty | [id : id, x : gx, y : gy, angle : 0, health : 100, wai
 spawns : [[2.5, 2.5, 0.6], [13.5, 13.5, -2.4], [13.5, 2.5, 2.4], [2.5, 13.5, -0.8], [7.5, 4.5, 1.6], [9.5, 10.5, -1.6], [6.5, 13.5, 0]]
 spawn-of : [id | spawns @ (id - 1 % (spawns length) + 1)]
 open-cells : level numbered collect-flat [[r, row] | row chars numbered keep [[c, ch] | ch = "."] collect [[c, ch] | [c - 0.5, r - 0.5]]]
-agent : [id sx sy sa | [id : id, x : sx, y : sy, angle : sa, health : 100, carried : mines-each, sentries-left : sentries, fire-wait : 0, mine-wait : 0, turret-wait : 0, flash : 0, hurt : 0, kills : 0, hit-at : -10, down-at : false, look : false, moving : false, aimed : false, asks : false, zoomed : false, fov : fov-across, last-by : 0, bot : false, goal-x : sx, goal-y : sy, stuck : 0, clip : clip-size, ammo : ammo-each, reloading : 0]]
+agent : [id sx sy sa | [id : id, x : sx, y : sy, angle : sa, health : 100, carried : mines-each, sentries-left : sentries, fire-wait : 0, mine-wait : 0, turret-wait : 0, flash : 0, hurt : 0, kills : 0, hit-at : -10, down-at : false, look : false, moving : false, aimed : false, asks : false, zoomed : false, fov : fov-across, last-by : 0, bot : false, goal-x : sx, goal-y : sy, stuck : 0, clip : clip-size, ammo : ammo-each, reloading : 0, armour : 0]]
+pickups-fresh : pickup-spots collect [[kind, px, py] | [kind : kind, x : px, y : py, back-at : 0]]
 simulant : [id | s : spawn-of id, agent [id, s @ 1, s @ 2, s @ 3] with [bot : true]]
 sims : [first | range simulants collect [k | simulant (first + k - 1)]]
 start :
@@ -140,6 +143,7 @@ start :
   guards : mode = "sim" [[]] else [[guard [1, 12.5, 2.5, 12.5, 4.5], guard [2, 3.5, 7.5, 6.5, 7.5], guard [3, 13.5, 7.5, 9.5, 7.5], guard [4, 2.5, 11.5, 2.5, 13.5], guard [5, 9.5, 12.5, 9.5, 12.5], guard [6, 13.5, 13.5, 13.5, 10.5]]]
   mines : []
   turrets : []
+  pickups : pickups-fresh
   blasts : []
   over : ""
   over-at : 0
@@ -148,7 +152,7 @@ start :
   clock : 0
   dt : 0
 -- two players: the same lab with no guards, one player in each far corner, and the simulants if there are any
-duel : [agents : [agent [1, 2.5, 2.5, 0.6], agent [2, 13.5, 13.5, -2.4]] .. (sims 3), guards : [], mines : [], turrets : [], blasts : [], over : "", versus : true]
+duel : [agents : [agent [1, 2.5, 2.5, 0.6], agent [2, 13.5, 13.5, -2.4]] .. (sims 3), guards : [], mines : [], turrets : [], pickups : pickups-fresh, blasts : [], over : "", versus : true]
 
 -- ---------------------------------------------------------------- controls
 -- what a player asks for this frame. On the console page the stick, the look drag and the buttons arrive as held
@@ -300,6 +304,11 @@ play : [game |
   caught-by : [px py | goes-off keep [m | distance [m x, m y, px, py] < blast]]
   blown : thinking collect [g | caught [g x, g y] length > 0 [g with [health : 0]] else [g]]
   fallen : blown collect [g | g with [fell : cond [(g health <= 0) and (g fell = false), now, any, g fell]]]
+  -- pickups: walk over one to take it (ammo, or armour that takes hits before your health); in a match they come back
+  near-pickup : [p | ready keep [a | (up a) and (distance [a x, a y, p x, p y] < 0.6)]]
+  takes : game pickups keep [p | (now >= (p back-at)) and (near-pickup p length > 0)] collect [p | [kind : p kind, by : near-pickup p @ 1 id]]
+  pickups : game pickups collect [p | cond [(now >= (p back-at)) and (near-pickup p length > 0), p with [back-at : cond [game versus, now + pickup-back, any, 1000000]], any, p]]
+  (takes length > 0) [beep [990, 0.05]]
   -- players: shots, turrets, guards and blasts hurt; one who goes down is out (alone) or back soon (a duel)
   hurt-agents : ready collect [a |
     k : "agent [a id]"
@@ -311,9 +320,12 @@ play : [game |
     total : cond [up a, shot-pain + (zapped k * sentry-damage) + (cond [a id = 1, pain, any, 0]) + blasted, any, 0]
     -- who did it, for the score: the last to hurt you
     by : by-shot length > 0 [by-shot @ 1 from] else [by-turret length > 0 [by-turret @ 1 owner] else [by-mine length > 0 [by-mine @ 1 owner] else [a last-by]]]
-    life : a health - total
+    got : [kind | takes count [t | (t by = (a id)) and (t kind = kind)]]
+    soak : total min (a armour)
+    life : a health - (total - soak)
     a with [
       health : life max 0
+      armour : a armour - soak + (got "armour" * 50) min 100
       down-at : cond [(up a) and (life <= 0), now, any, a down-at]
       hurt : cond [total > 0, 0.25, any, a hurt - dt]
       last-by : by
@@ -325,7 +337,7 @@ play : [game |
       carried : cond [can-drop a, a carried - 1, any, a carried]
       -- a clip runs out, or you ask: a reload takes a moment, then fills the clip from your spare shots (simulants never run dry)
       clip : cond [can-shoot a, a clip - 1, (a reloading > 0) and (a reloading <= dt), a clip + (clip-size - (a clip) min (a ammo)), any, a clip]
-      ammo : cond [(a reloading > 0) and (a reloading <= dt) and (a bot not), a ammo - (clip-size - (a clip) min (a ammo)), any, a ammo]
+      ammo : cond [(a reloading > 0) and (a reloading <= dt) and (a bot not), a ammo - (clip-size - (a clip) min (a ammo)), any, a ammo] + (got "ammo" * 16)
       reloading : cond [a reloading > 0, a reloading - dt, (up a) and ((a clip = 0) or (a asks reload)) and (a clip < clip-size) and (a ammo > 0), reload-time, any, 0]
       sentries-left : cond [can-set a, a sentries-left - 1, any, a sentries-left]
     ]
@@ -349,7 +361,7 @@ play : [game |
     any, ""
   ]
   game with [
-    agents : back, guards : fallen, mines : still, turrets : thought
+    agents : back, guards : fallen, mines : still, turrets : thought, pickups : pickups
     blasts : game blasts keep [b | now - (b at) < 0.6] .. (goes-off collect [m | [x : m x, y : m y, at : now]])
     over : over, over-at : now
     shell : game input held "shell" else false
@@ -412,6 +424,11 @@ draw : [game |
     model ["grenade", m x, 0, m y, 0, 0.22, false, 0]
     (now >= (m armed)) and (now * 4 % 1 < 0.5) [flash [m x, 0.3, m y, 0.05, "#ff3b30"]]
   ]
+  -- pickups, turning slowly and glowing
+  game pickups keep [p | now >= (p back-at)] each [p |
+    model [cond [p kind = "armour", "chest", any, "crate"], p x, 0.05 + (now * 3 + (p x) sin * 0.04), p y, now, cond [p kind = "armour", 0.4, any, 0.3], false, 0]
+    flash [p x, 0.5, p y, 0.04, cond [p kind = "armour", cyan, any, gold]]
+  ]
   game blasts each [b | age : now - (b at) / 0.6, flash [b x, 0.9, b y, 0.5 + (age * 1.4), "#ffb347"]]
   -- the turrets, turned the way their program points them, with a spark when they fire
   game turrets each [t |
@@ -441,6 +458,7 @@ draw : [game |
   game turrets each [t | rect [t x * 3 + 4.5, t y * 3 + 4.5, 3, 3, cyan]]
   circle [you x * 3 + 6, you y * 3 + 6, 1.7, "#ffffff"]
   range 10 each [k | rect [W - 12 - (11 - k * 9), 10, 7, 9, cond [you health > (k - 1 * 10), cond [you health > 35, "#7bd389", any, red], any, "#00000066"]]]
+  (you armour > 0) [rect [W - 102, 21, you armour * 0.9, 3, "#5fa8ff"]]
   text ["MINES [you carried]   SENTRY [you sentries-left]", W - 52, 30, 9, cream]
   -- shots: what's in the clip, and spare; a bar while you reload
   text ["[you clip] | [you ammo]", W - 30, H - 40, 13, cond [you clip = 0, red, any, cream]]
