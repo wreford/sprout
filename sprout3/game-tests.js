@@ -498,6 +498,13 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     }
     S.setLog(m => logs.push(m));
     ok("silvereye: every mode plays with every control and Sprout warns about nothing", said.length === 0, said.slice(0, 3)); }
+  // the depot: a second map for matches; a mission stays in the lab
+  { const simHere = src.replace(/^mode : "mission"/m, 'mode : "sim"'); const dp = L.makeGame(simHere.replace(/^arena : "lab"/m, 'arena : "depot"'), {}); dp.tick(1 / 60, pad({}));
+    const walls = dp.draw().filter(x => x[0] === "block").length, labWalls = L.makeGame(simHere, {}).draw().filter(x => x[0] === "block").length;
+    for (let t = 0; t < 600; t++) dp.tick(1 / 60, pad({}));
+    ok("silvereye: the depot is its own map, and a match plays in it", walls !== labWalls && [2, 3, 4].some(n => agent(dp, n).field("kills") > 0 || agent(dp, n).field("x") !== 0), [walls, labWalls]);
+    const dm = L.makeGame(src.replace(/^arena : "lab"/m, 'arena : "depot"'), {}); dm.tick(1 / 60, pad({}));
+    ok("silvereye: a mission stays in the lab whatever the arena", dm.draw().filter(x => x[0] === "block").length === labWalls && f(dm, "guards").count() === 6); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });

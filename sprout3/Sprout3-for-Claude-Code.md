@@ -10,13 +10,13 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 
 ```
 node test.js          # language tests (303)
-node game-tests.js    # game tests (158)
+node game-tests.js    # game tests (160)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 461 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 463 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4531,6 +4531,13 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     }
     S.setLog(m => logs.push(m));
     ok("silvereye: every mode plays with every control and Sprout warns about nothing", said.length === 0, said.slice(0, 3)); }
+  // the depot: a second map for matches; a mission stays in the lab
+  { const simHere = src.replace(/^mode : "mission"/m, 'mode : "sim"'); const dp = L.makeGame(simHere.replace(/^arena : "lab"/m, 'arena : "depot"'), {}); dp.tick(1 / 60, pad({}));
+    const walls = dp.draw().filter(x => x[0] === "block").length, labWalls = L.makeGame(simHere, {}).draw().filter(x => x[0] === "block").length;
+    for (let t = 0; t < 600; t++) dp.tick(1 / 60, pad({}));
+    ok("silvereye: the depot is its own map, and a match plays in it", walls !== labWalls && [2, 3, 4].some(n => agent(dp, n).field("kills") > 0 || agent(dp, n).field("x") !== 0), [walls, labWalls]);
+    const dm = L.makeGame(src.replace(/^arena : "lab"/m, 'arena : "depot"'), {}); dm.tick(1 / 60, pad({}));
+    ok("silvereye: a mission stays in the lab whatever the arena", dm.draw().filter(x => x[0] === "block").length === labWalls && f(dm, "guards").count() === 6); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });
@@ -10572,7 +10579,27 @@ Bunker 3D: Bunker's game code with a draw in 3D words, CC0 models and textures (
 -- A love letter to GoldenEye 007 (Rare, 1997) and Perfect Dark (Rare, 2000): their ideas, our own lab and art.
 -- Soldiers and the turret by Quaternius, the blaster from Kenney's Blaster Kit, textures by Screaming Brain Studios (CC0).
 
-level : [
+-- two maps of our own: the lab (missions and matches) and the depot (matches): rows of shelving round a loading bay
+arena : "lab"              -- "lab" or "depot", for a combat sim or a duel; a mission is always in the lab
+depot : [
+  "################"
+  "#..............#"
+  "#..............#"
+  "#.##..#..#..##.#"
+  "#.##..#..#..##.#"
+  "#...........#..#"
+  "#..####.##.....#"
+  "#..............#"
+  "#.....#..#.....#"
+  "#.###........###"
+  "#.....#...#....#"
+  "#..##.......##.#"
+  "#..##.###.#.##.#"
+  "#..............#"
+  "#......#.......#"
+  "################"
+]
+lab : [
   "################"
   "#......#.......#"
   "#......#.......#"
@@ -10628,6 +10655,8 @@ respawn-after : 2.5        -- seconds before you're back in a duel
 time-limit : 300           -- a match ends after this many seconds; the most takedowns wins
 
 -- ---------------------------------------------------------------- the map
+in-depot : (arena = "depot") and (mode != "mission")
+level : cond [in-depot, depot, any, lab]
 solid : [cx cy |
   row : level @ (cy floor + 1)
   cond [row = false, true, any, row @ (cx floor + 1) = "#"]
@@ -10718,18 +10747,19 @@ simulant : [id | s : spawn-of id, agent [id, s @ 1, s @ 2, s @ 3] with [bot : tr
 sims : [first | range simulants collect [k | simulant (first + k - 1)]]
 start :
   agents : [agent [1, 2.5, 2.5, 0.6]] .. (cond [mode = "sim", sims 2, any, []])
-  guards : mode = "sim" [[]] else [[guard [1, 12.5, 2.5, 12.5, 4.5], guard [2, 3.5, 7.5, 6.5, 7.5], guard [3, 13.5, 7.5, 9.5, 7.5], guard [4, 2.5, 11.5, 2.5, 13.5], guard [5, 9.5, 12.5, 9.5, 12.5], guard [6, 13.5, 13.5, 13.5, 10.5]]]
+  -- anything but a mission is a match: no guards, no objectives (a duel waits here for the second phone)
+  guards : mode != "mission" [[]] else [[guard [1, 12.5, 2.5, 12.5, 4.5], guard [2, 3.5, 7.5, 6.5, 7.5], guard [3, 13.5, 7.5, 9.5, 7.5], guard [4, 2.5, 11.5, 2.5, 13.5], guard [5, 9.5, 12.5, 9.5, 12.5], guard [6, 13.5, 13.5, 13.5, 10.5]]]
   mines : []
   turrets : []
-  pickups : pickups-fresh .. (cond [mode = "sim", [], any, [[kind : "intel", x : intel-spot @ 1, y : intel-spot @ 2, back-at : 0]]])
-  machines : (mode = "sim") or (difficulty = 1) [[]] else [machine-spots numbered collect [[k, spot] | [id : k, x : spot @ 1, y : spot @ 2, health : 100]]]
+  pickups : pickups-fresh .. (cond [mode != "mission", [], any, [[kind : "intel", x : intel-spot @ 1, y : intel-spot @ 2, back-at : 0]]])
+  machines : (mode != "mission") or (difficulty = 1) [[]] else [machine-spots numbered collect [[k, spot] | [id : k, x : spot @ 1, y : spot @ 2, health : 100]]]
   intel : false
   match-start : 0
   feed : []
   blasts : []
   over : ""
   over-at : 0
-  versus : mode = "sim"
+  versus : mode != "mission"
   shell : false
   clock : 0
   dt : 0
@@ -11012,7 +11042,9 @@ update : [game |
 eye : 1.55                -- how high your eyes are, in metres
 gun-turn : 0.1            -- which way the gun points, in radians
 fog-colour : #14161c
-props : [["crate", 5.4, 1.6, 0.3, 0.8], ["barrels", 14.2, 1.7, 1.2, 0.9], ["generator_large", 9.0, 10.7, 0, 1.4], ["crate", 1.7, 14.2, 1.9, 0.8], ["barrels", 14.3, 12.4, 0.4, 0.9], ["generator", 5.8, 7.7, 1.6, 1.0], ["crate", 12.3, 8.3, 0.8, 0.8]]
+lab-props : [["crate", 5.4, 1.6, 0.3, 0.8], ["barrels", 14.2, 1.7, 1.2, 0.9], ["generator_large", 9.0, 10.7, 0, 1.4], ["crate", 1.7, 14.2, 1.9, 0.8], ["barrels", 14.3, 12.4, 0.4, 0.9], ["generator", 5.8, 7.7, 1.6, 1.0], ["crate", 12.3, 8.3, 0.8, 0.8]]
+depot-props : [["barrels", 7.5, 7.5, 0.3, 0.9], ["crate", 1.6, 1.6, 0.4, 0.8], ["crate", 14.4, 14.4, 1.2, 0.8], ["barrels", 14.3, 1.6, 2.0, 0.9], ["crate", 8.0, 9.4, 0, 0.7], ["barrels", 1.7, 14.3, 0.7, 0.9]]
+props : cond [in-depot, depot-props, any, lab-props]
 red : "#ff5a4f"
 cream : "#f4f1ea"
 cyan : "#9be7ff"
