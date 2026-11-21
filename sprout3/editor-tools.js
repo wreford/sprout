@@ -121,7 +121,9 @@ function keysUI() {
   current = suggestions();
   const lit = typeof caretLiteral === "function" ? caretLiteral() : null;
   const chip = lit ? `<button class="ctlchip" data-lit="1">${{ number: "Slide", colour: "Colour", pair: "Pad", bool: "Flip" }[lit.kind]} ${esc(lit.text.length > 9 ? lit.text.slice(0, 9) + "…" : lit.text)}</button>` : "";
-  const sug = chip + current.map((s, i) => `<button class="sug${i ? " dim" : ""}" data-s="${i}">${esc(s.w)}</button>`).join("");
+  const run = !autoRun ? `<button class="run" data-run="1">Run ▶</button>` : "";
+  const pv = probe ? `<button class="probe" data-probe="1">= ${esc(short(probe.value) || "[cell]")}</button>` : "";
+  const sug = run + pv + chip + current.map((s, i) => `<button class="sug${i ? " dim" : ""}" data-s="${i}">${esc(s.w)}</button>`).join("");
   k.innerHTML = (sug ? `<div class="grp">${sug}</div><span class="sep"></span>` : "") +
     `<div class="grp"><button class="ic" data-a="left" aria-label="left">◀</button><button class="ic" data-a="right" aria-label="right">▶</button>` +
     `<button class="ic" data-a="up" aria-label="line up">▲</button><button class="ic" data-a="down" aria-label="line down">▼</button>` +
@@ -147,6 +149,8 @@ $("keys").addEventListener("pointerdown", e => {
   const b = e.target.closest("button"); if (!b) return;
   e.preventDefault();   // the textarea keeps its focus, so the keyboard stays up
   if (b.dataset.s) { accept(current[+b.dataset.s]); return; }
+  if (b.dataset.run) { runCode(); return; }
+  if (b.dataset.probe) { if (probe) toast(probe.text + " = " + S.format(probe.value)); return; }
   if (b.dataset.lit) { const tok = caretLiteral(); if (tok) { const r = b.getBoundingClientRect(); openCtl(tok, r.left + r.width / 2, r.top - 260); } return; }
   if (b.dataset.k) { const k = b.dataset.k; insertText(k === ":" ? " : " : k === "|" ? " | " : k); return; }
   if (b.dataset.n) { const [, a, z] = SNIPPETS[+b.dataset.n]; const p = ta.selectionStart; insertText(a + z); ta.setSelectionRange(p + a.length, p + a.length); return; }
@@ -427,7 +431,105 @@ ta.addEventListener("pointerup", e => {
 // while typing, the literal at the caret can be opened from the key bar
 function caretLiteral() { if (ta.selectionStart !== ta.selectionEnd) return null; return literalAt(ta.selectionStart) || literalAt(ta.selectionStart - 1); }
 
-window.EditorTools = { literalAt, openCtl, closeCtl, showValues, valueLines, openMenu, LINE_ACTIONS, set values(on) { valsOn = on; LS.set("sprout3.values", on); showValues(); }, undo, redo, suggestions, keysUI, fontSize, get undoDepth() { return UNDO.length; } };
+// ===================================================================== the Live sheet: history, speed, run as you type
+css.textContent += `
+#liveSheet{position:fixed;z-index:47;left:50%;bottom:calc(var(--bar) + 12px);transform:translateX(-50%);display:none;width:min(420px,calc(100vw - 20px));padding:14px 16px 16px;border-radius:16px;background:var(--card);box-shadow:0 0 0 1px var(--line),0 16px 40px rgba(0,0,0,.25);font:500 14px var(--sans);color:var(--fg)}
+#liveSheet.on{display:block}
+#liveSheet h3{margin:0 0 2px;font:600 15px var(--sans);display:flex;justify-content:space-between;align-items:center}#liveSheet h3 button{font:600 13px var(--sans);color:var(--fg3)}
+#liveSheet .lbl{font:600 11px var(--sans);letter-spacing:.06em;text-transform:uppercase;color:var(--fg3);margin:14px 0 6px}
+#liveSheet .seg2{display:flex;gap:6px}#liveSheet .seg2 button{flex:1;height:36px;border-radius:9px;background:var(--card2);box-shadow:0 0 0 1px var(--line);font:600 14px var(--sans)}
+#liveSheet .seg2 button.on{background:var(--acc);color:#fff;box-shadow:none}
+#liveSheet input[type=range]{width:100%;accent-color:var(--acc);height:34px}
+#liveSheet .hist{font-size:13px;color:var(--fg2);min-height:18px}
+#liveSheet .sw{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-top:1px solid var(--line)}
+#liveSheet .sw:first-of-type{border-top:0}
+#liveSheet .tg{width:46px;height:28px;border-radius:14px;background:var(--line2);position:relative;flex:0 0 auto}
+#liveSheet .tg::after{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:left .15s}
+#liveSheet .tg.on{background:var(--acc)}#liveSheet .tg.on::after{left:21px}
+#bLive.on{background:var(--acc);color:#fff}
+#keys button.run{background:var(--acc);color:#fff;box-shadow:none;font:600 14px var(--sans);padding:0 14px}
+#keys button.probe{background:var(--card2);box-shadow:0 0 0 1.5px var(--fg3);font:500 13px var(--mono);padding:0 12px;max-width:62vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+`;
+const sheet = document.createElement("div"); sheet.id = "liveSheet"; document.body.appendChild(sheet);
+// every version that ran, kept for each example in this browser
+const VKEY = () => "sprout3.versions." + (curEx || "untitled");
+let versions = LS.get(VKEY(), []), versionsFor = curEx, browsing = -1;
+function rememberVersion() {
+  if (browsing >= 0) return;
+  if (versionsFor !== curEx) { versions = LS.get(VKEY(), []); versionsFor = curEx; }
+  const last = versions[versions.length - 1];
+  if (last && last.code === code) return;
+  versions.push({ code, at: Date.now() }); if (versions.length > 60) versions.shift();
+  LS.set(VKEY(), versions);
+}
+let autoRun = LS.get("sprout3.autoRun", true);
+const baseTryBuild = window.tryBuild;
+let runNow = false;
+window.tryBuild = function (src) {
+  // with run-as-you-type off, edits wait for the Run button; the touch controls still run at once
+  if (!autoRun && !runNow && !(ctlTok) && !document.body.classList.contains("scrubbing")) { keysUI(); return false; }
+  const ok = baseTryBuild(src); if (ok) rememberVersion(); return ok;
+};
+function runCode() { runNow = true; try { if (window.tryBuild(code)) flashLive(code); renderState(); } finally { runNow = false; } keysUI(); }
+const ago = t => { const s = Math.round((Date.now() - t) / 1000); return s < 60 ? s + " s ago" : s < 3600 ? Math.round(s / 60) + " min ago" : Math.round(s / 3600) + " h ago"; };
+function diffNote(a, b) { const A = new Set(a.split("\n")), B = new Set(b.split("\n")); let add = 0, del = 0; for (const l of B) if (!A.has(l)) add++; for (const l of A) if (!B.has(l)) del++; return "+" + add + " −" + del + " lines"; }
+function sheetUI() {
+  if (versionsFor !== curEx) { versions = LS.get(VKEY(), []); versionsFor = curEx; }
+  const n = versions.length, at = browsing >= 0 ? browsing : n - 1;
+  const v = versions[at];
+  sheet.innerHTML = `<h3>Live coding<button id="lsX">Done</button></h3>` +
+    `<div class="lbl">History</div>` +
+    (n > 1 ? `<input type="range" id="lsH" min="0" max="${n - 1}" value="${at}"><div class="hist">${browsing >= 0 ? "Version " + (at + 1) + " of " + n + " · " + ago(v.at) + " · " + diffNote(versions[n - 1].code, v.code) + " from now" : n + " versions so far · drag back to play an older one"}</div>` +
+      (browsing >= 0 ? `<div class="seg2" style="margin-top:8px"><button id="lsKeep">Keep this version</button><button id="lsNow" class="on">Back to now</button></div>` : "")
+      : `<div class="hist">Each version that runs is kept here. Change something to start.</div>`) +
+    `<div class="lbl">Speed</div><div class="seg2">${[0.25, 0.5, 1, 2].map(k => `<button data-sp="${k}" class="${SPEED === k ? "on" : ""}">${k === 0.25 ? "¼" : k === 0.5 ? "½" : k}×</button>`).join("")}</div>` +
+    `<div class="lbl">While you type</div>` +
+    `<div class="sw"><span>Run as I type</span><button class="tg${autoRun ? " on" : ""}" id="lsAuto" aria-label="run as I type"></button></div>` +
+    `<div class="sw"><span>Values beside the code</span><button class="tg${valsOn ? " on" : ""}" id="lsVals" aria-label="values beside the code"></button></div>`;
+  const h = $("lsH");
+  if (h) h.oninput = () => { const k = +h.value; if (k === versions.length - 1) { backToNow(); return; } browseTo(k); };
+  const on = (id, f) => { const e = $(id); if (e) e.onclick = f; };
+  on("lsX", closeSheet); on("lsNow", backToNow);
+  on("lsKeep", () => { const k = browsing; browsing = -1; versions.push({ code: versions[k].code, at: Date.now() }); LS.set(VKEY(), versions); toast("Kept version " + (k + 1)); sheetUI(); });
+  sheet.querySelectorAll("[data-sp]").forEach(b => b.onclick = () => { SPEED = +b.dataset.sp; toast(SPEED === 1 ? "Normal speed" : SPEED < 1 ? "Slow motion " + b.textContent : "Fast " + b.textContent); sheetUI(); });
+  on("lsAuto", () => { autoRun = !autoRun; LS.set("sprout3.autoRun", autoRun); if (autoRun) runCode(); sheetUI(); keysUI(); });
+  on("lsVals", () => { valsOn = !valsOn; LS.set("sprout3.values", valsOn); showValues(); sheetUI(); });
+}
+function setSource(src) { const st = ta.scrollTop; ta.value = src; code = src; ta.scrollTop = st; render(); queueSave(); runNow = true; try { if (window.tryBuild(src)) renderState(); } finally { runNow = false; } }
+function browseTo(k) { browsing = k; setSource(versions[k].code); sheetUI(); }
+function backToNow() { if (browsing < 0) return; browsing = -1; setSource(versions[versions.length - 1].code); sheetUI(); }
+function openSheet() { sheetUI(); sheet.classList.add("on"); $("bLive").classList.add("on"); }
+function closeSheet() { sheet.classList.remove("on"); $("bLive").classList.remove("on"); }
+$("bLive").addEventListener("pointerdown", e => { e.preventDefault(); sheet.classList.contains("on") ? closeSheet() : openSheet(); });
+document.addEventListener("pointerdown", e => { if (sheet.classList.contains("on") && !sheet.contains(e.target) && !e.target.closest("#bLive")) closeSheet(); }, true);
+
+// ===================================================================== the value of a selection
+// select an expression and the key bar shows its value, worked out with the program's names (and game, the state now)
+let probe = null, probeT = 0;
+function probeSelection() {
+  const a = ta.selectionStart, b = ta.selectionEnd, text = ta.value.slice(a, b).trim();
+  probe = null;
+  if (!text || text.length > 300 || b - a < 1) return;
+  const file = game ? game.file : lastProgram; if (!file) return;
+  const names = new Map();
+  for (const k of file.fieldNames()) if (!["update", "draw"].includes(k)) { try { names.set(k, file.field(k)); } catch (e) {} }
+  if (game) names.set("game", game.state);
+  let failed = false;
+  quietLog = true; S.setOut(() => {});
+  try {
+    const v = S.globals["eval-with"].fn(S.valueCellOf([S.valueCellOf([], names), text]));
+    probe = { text, value: v };
+  } catch (e) { failed = true; }
+  finally { quietLog = false; S.setOut(s => addOut(s, "print")); }
+  if (failed) probe = null;
+}
+document.addEventListener("selectionchange", () => {
+  if (document.activeElement !== ta) return;
+  clearTimeout(probeT);
+  probeT = setTimeout(() => { const had = !!probe; probeSelection(); if (had || probe) keysUI(); }, 180);
+});
+
+window.EditorTools = { openSheet, closeSheet, browseTo, backToNow, get versions() { return versions; }, runCode, get probe() { return probe; }, literalAt, openCtl, closeCtl, showValues, valueLines, openMenu, LINE_ACTIONS, set values(on) { valsOn = on; LS.set("sprout3.values", on); showValues(); }, undo, redo, suggestions, keysUI, fontSize, get undoDepth() { return UNDO.length; } };
 UNDO.push({ code, sel: [0, 0] });
 keysUI();
 })();
