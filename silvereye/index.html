@@ -361,7 +361,7 @@ const MUSIC = (() => {
   const lead = [0,0,62,0, 65,0,69,0, 0,67,0,65, 64,0,0,0,  62,0,0,62, 65,0,67,0, 69,0,72,0, 70,0,69,0,
                 0,0,70,0, 69,0,65,0, 0,67,0,62, 64,0,0,0,  61,0,64,0, 69,0,0,67, 64,0,61,0, 62,0,0,0];
   const kick = "x...x...x...x...", snare = "....x.......x...", hat = "x.x.x.x.x.x.x.xx";
-  let on = false, step = 0, next = 0, timer = 0, master = null, level = 0.5;
+  let on = false, step = 0, next = 0, timer = 0, master = null, level = 0.5, shift = 0, bpm = 128;
   function voice(t, f, len, type, gain, cutoff, out) {
     const o = AC.createOscillator(), g = AC.createGain(), flt = AC.createBiquadFilter();
     o.type = type; o.frequency.value = f; flt.type = "lowpass"; flt.frequency.value = cutoff;
@@ -376,11 +376,11 @@ const MUSIC = (() => {
   }
   function tick() {
     if (!on || !AC) return;
-    const beat = 60 / 128 / 4;
+    const beat = 60 / bpm / 4;
     while (next < AC.currentTime + 0.12) {
       const k = step % 64, b = step % 16;
-      if (bass[k]) voice(next, N(bass[k]), beat * 1.8, "triangle", 0.32, 900, master);
-      if (lead[k]) { voice(next, N(lead[k]), beat * 2.6, "square", 0.07, 2200, master); voice(next + 0.11, N(lead[k]), beat * 2, "square", 0.025, 1600, master); }
+      if (bass[k]) voice(next, N(bass[k] + shift), beat * 1.8, "triangle", 0.32, 900, master);
+      if (lead[k]) { voice(next, N(lead[k] + shift), beat * 2.6, "square", 0.07, 2200, master); voice(next + 0.11, N(lead[k] + shift), beat * 2, "square", 0.025, 1600, master); }
       if (kick[b] === "x") voice(next, 60, 0.18, "sine", 0.5, 400, master);
       if (snare[b] === "x") noise(next, 0.12, 0.18, 1200, master);
       if (hat[b] === "x") noise(next, 0.03, 0.05, 7000, master);
@@ -392,6 +392,8 @@ const MUSIC = (() => {
     stop() { on = false; clearInterval(timer); if (master) { const m = master; m.gain.setTargetAtTime(0, AC.currentTime, 0.1); setTimeout(() => m.disconnect(), 600); master = null; } },
     level(v) { level = v; if (master) master.gain.setTargetAtTime(v, AC.currentTime, 0.3); },
     get on() { return on; },
+    // each mission has its own take: a key and a tempo
+    tune(semitones, tempo) { shift = semitones; bpm = tempo; },
   };
 })();
 const buzz = ms => { if (typeof settings !== "undefined" && !settings.buzz) return; try { navigator.vibrate && navigator.vibrate(ms); } catch (e) {} };
@@ -622,13 +624,13 @@ function missionsUI() {
   });
   const back = document.createElement("button"); back.dataset.do = "back"; back.textContent = "Back"; box.appendChild(back);
 }
-function start(m) { campaignOn = false; mode = m; store.set("silvereye.last", m); if (!(window.NET && NET.active)) build(compose(), true); closeScreens(); }
+function start(m) { MUSIC.tune(0, 128); campaignOn = false; mode = m; store.set("silvereye.last", m); if (!(window.NET && NET.active)) build(compose(), true); closeScreens(); }
 function choose(what) {
   audio(); beep(880, 0.04);
   const linked = window.NET && NET.active;
   if (what === "mission") start("mission");
   else if (what === "campaign") { back = "title"; showScreen("missions"); }
-  else if (/^stage\d$/.test(what)) { stageNum = +what.slice(5); mode = "mission"; campaignOn = true; store.set("silvereye.last", "campaign"); if (!linked) build(compose(), true); closeScreens(); }
+  else if (/^stage\d$/.test(what)) { stageNum = +what.slice(5); tuneFor(stageNum); mode = "mission"; campaignOn = true; store.set("silvereye.last", "campaign"); if (!linked) build(compose(), true); closeScreens(); }
   else if (what === "locked") toast("Beat the mission before it first");
   else if (what === "sim") start("sim");
   else if (what === "duel") { store.set("silvereye.last", "duel"); closeScreens(); if (!linked) { mode = settings.two === "coop" ? "mission" : "duel"; campaignOn = settings.two === "coop"; build(compose(), true); NET.invite(); } }
@@ -803,6 +805,7 @@ function jingle(won) {
   MUSIC.level(0.05); setTimeout(() => MUSIC.level(screen ? 0.5 : 0.18), 1800);
 }
 let advanceAt = 0;
+const tuneFor = n => MUSIC.tune([0, 2, -3][n - 1] || 0, [128, 136, 118][n - 1] || 128);
 function campaignStep(now) {
   try {
     const st = game.state; if (!campaignOn || st.field("over") !== "won") return;
@@ -811,7 +814,7 @@ function campaignStep(now) {
     const pressing = pad.fire || GP.fire || KEYS.has("space") || KEYS.has("enter");
     if (pressing && stageNum >= MISSIONS.length && game.clock - st.field("over-at") > 1.5 && screen !== "credits" && now - advanceAt > 1000) { advanceAt = now; showScreen("credits"); return; }
     if (!pressing || game.clock - st.field("over-at") < 1.5 || now - advanceAt < 1000 || stageNum >= MISSIONS.length) return;
-    advanceAt = now; stageNum++; window.build(compose(), false);
+    advanceAt = now; stageNum++; tuneFor(stageNum); window.build(compose(), false);
   } catch (e) {}
 }
 function keepProgress() {
