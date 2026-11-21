@@ -139,7 +139,7 @@ async function makeGpuSpork(opts) {
     throw WAIT;
   }
   return {
-    hook, run, wgsl: shader, WAIT, device, adapter: [info.vendor, info.architecture || info.device].filter(Boolean).join(" ") || "available",
+    hook, run, wgsl: shader, WAIT, device, adapter: [...new Set([info.vendor, info.architecture || info.device].filter(Boolean))].join(" ") || "available",
     get last() { return last; },
     // the page's own passes: let a spork start a job and stop the pass, then wait for the jobs
     mayWait(on) { mayWait = !!on; if (on) jobs.length = 0; },

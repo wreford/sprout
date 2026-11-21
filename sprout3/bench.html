@@ -62,15 +62,15 @@ tr:last-child td{border-bottom:0}
 <div class="card"><table id="t-sql"><tr><th>work</th><th>ms</th><th>rows</th></tr></table></div>
 </main>
 
-<script src="sprout3.js?v=20261121a"></script>
-<script src="words.js?v=20261121a"></script>
-<script src="parse.js?v=20261121a"></script>
-<script src="stdlib.js?v=20261121a"></script>
-<script src="kernels.js?v=20261121a"></script>
-<script src="live3.js?v=20261121a"></script>
-<script src="gpu-paint.js?v=20261121a"></script>
-<script src="sqlite-web.js?v=20261121a"></script>
-<script src="gpu-spork.js?v=20261121a"></script>
+<script src="sprout3.js?v=20261121b"></script>
+<script src="words.js?v=20261121b"></script>
+<script src="parse.js?v=20261121b"></script>
+<script src="stdlib.js?v=20261121b"></script>
+<script src="kernels.js?v=20261121b"></script>
+<script src="live3.js?v=20261121b"></script>
+<script src="gpu-paint.js?v=20261121b"></script>
+<script src="sqlite-web.js?v=20261121b"></script>
+<script src="gpu-spork.js?v=20261121b"></script>
 <script>
 "use strict";
 const $=id=>document.getElementById(id),S=window.Sprout3,L=window.Sprout3Live;
@@ -105,7 +105,7 @@ async function benchLang(){
 const GAMES=["galaxy","sprout","fireflies","orbit","hop","life","bounce","snake","breakout","particles","ace-board","ace-site","ace-crews"];
 async function benchGames(){
  for(const name of GAMES){status("games: "+name);await sleep(10);
-  const src=await (await fetch("examples/"+name+".sp?v=20261121a")).text();const g=L.makeGame(src,{W:GW,H:GH});
+  const src=await (await fetch("examples/"+name+".sp?v=20261121b")).text();const g=L.makeGame(src,{W:GW,H:GH});
   const play=n=>{for(let t=0;t<n;t++){if(t%50===0)g.down(100+(t%160),300);if(t%50===25)g.up();g.tick(1/60);g.draw()}};
   play(240);const [t]=best(()=>play(120),5);row("t-games",[name,ms(t/120),String(g.draw().length)])}}
 
@@ -137,7 +137,7 @@ async function benchParticles(){
 // ---------- SQLite
 async function benchSql(){
  status("SQLite: loading");
- await new Promise((ok,no)=>{const s=document.createElement("script");s.src="vendor/sqljs/sql-wasm.js?v=20261121a";s.onload=ok;s.onerror=no;document.head.appendChild(s)});
+ await new Promise((ok,no)=>{const s=document.createElement("script");s.src="vendor/sqljs/sql-wasm.js?v=20261121b";s.onload=ok;s.onerror=no;document.head.appendChild(s)});
  const db=await SproutSqlite.openSqlite({base:"vendor/sqljs/",name:"sprout3-bench",fresh:true});S.globals.db=db;const raw=db.raw();
  const N=10000;
  const [ti]=best(()=>{raw.run("drop table if exists t");raw.run("create table t (id integer primary key, zone integer, hours real, name text)");raw.run("begin");
@@ -156,7 +156,7 @@ async function benchSql(){
 
 // ---------- Monte Carlo: the ace-risk run, five ways
 async function benchMonteCarlo(){
- const src=(await (await fetch("examples/ace-risk.sp?v=20261121a")).text()).split("\nresults :")[0];
+ const src=(await (await fetch("examples/ace-risk.sp?v=20261121b")).text()).split("\nresults :")[0];
  const c=S.load(src+"\nA : [k | range k spork one-run]\nB : [k | range k collect one-run]"),A=c.field("A"),B=c.field("B");
  // the kernel itself, to hand straight to the GPU
  let K=null;S.sporkWays({gpu:k=>{K=k;return undefined}});A.run(16);S.sporkWays({gpu:null});
@@ -171,9 +171,11 @@ async function benchMonteCarlo(){
   let tg=NaN,gap="";
   if(gs&&K){try{await gs.run(K,n,null,[]);const [t,O]=await bestAsync(()=>gs.run(K,n,null,[]),3);tg=t;
    // 32-bit maths: a risk roll right at its chance can come out the other way, so count the runs that differ, and compare P50 and P90
-   let off=0;const a=simd.cols[0],g=O[0];for(let i=0;i<n;i++)if(Math.abs(a[i]-g[i])>0.01)off++;
+   // the SIMD answer is a list of records in columns (decision 82); the GPU gives the same columns, in the same order
+   if(!O){gap="a check failed on the GPU, so SIMD's answer stands";throw 0}
+   let off=0;const a=simd.columns[0],g=O[0];for(let i=0;i<n;i++)if(Math.abs(a[i]-g[i])>0.01)off++;
    const sa=Float64Array.from(a).sort(),sg=Float64Array.from(g).sort(),q=p=>Math.abs(sa[Math.floor(p*n)]-sg[Math.floor(p*n)]);
-   gap=off+(off===1?" run differs":" runs differ")+"; P50 within "+q(0.5).toExponential(0)+", P90 within "+q(0.9).toExponential(0)+" days"}catch(e){gap=e.message||String(e)}}
+   gap=off+(off===1?" run differs":" runs differ")+"; P50 within "+q(0.5).toExponential(0)+", P90 within "+q(0.9).toExponential(0)+" days"}catch(e){if(e!==0)gap=e.message||String(e)}}
   row("t-mc",[n.toLocaleString(),ms(to*n/2000)+" (scaled)",ms(tj),ms(ts),isNaN(tg)?"—":ms(tg),gap])}}
 
 $("run").onclick=async()=>{$("run").disabled=true;RESULTS.length=0;

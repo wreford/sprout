@@ -165,7 +165,7 @@ async function makeGpuPainter(canvas) {
     return { cpu: cpu / k, total: total / k };
   }
   const info = adapter.info || {};
-  const painter = { paint, snapshot, timeFrames, device, name: "WebGPU", get lost() { return lost; }, adapter: [info.vendor, info.architecture].filter(Boolean).join(" "), done: () => device.queue.onSubmittedWorkDone() };
+  const painter = { paint, snapshot, timeFrames, device, name: "WebGPU", get lost() { return lost; }, adapter: [...new Set([info.vendor, info.architecture].filter(Boolean))].join(" "), done: () => device.queue.onSubmittedWorkDone() };
   await selfTest();
   return painter;
 }
