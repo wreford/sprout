@@ -11122,7 +11122,8 @@ play : [game |
   ready : moved-agents collect [a | a with [aimed : cond [up a, aim-at a, any, false]]]
   shooters : ready keep can-shoot
   shot-hits : shooters keep [a | a aimed != false] collect [a | [from : a id, key : "[a aimed who] [a aimed id]", steady : a zoomed, heavy : a weapon = "heavy"]]
-  (shooters length > 0) [sound "shoot"]
+  (shooters any [a | a weapon != "heavy"]) [sound "shoot"]
+  (shooters any [a | a weapon = "heavy"]) [sound "heavy"]
   -- a miss leaves a hole in the wall where it struck (the last 24 stay)
   misses : shooters keep [a | a aimed = false] collect [a |
     far : cast [a x, a y, a angle] far - 0.02
