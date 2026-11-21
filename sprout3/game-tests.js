@@ -435,6 +435,11 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   // the end screen: time, accuracy and takedowns
   { const e = L.makeGame(src, {}); e.tick(1 / 60, pad({})); const m3 = new Map(S.fieldsOf(e.state)); m3.set("over", "won"); m3.set("over-at", 75.4); e.setState(S.valueCellOf([], m3));
     ok("silvereye: a finished mission shows the time, accuracy and takedowns", e.draw().some(x => x[0] === "text" && x[1][0] === "TIME 1:15   ACCURACY 0%   TAKEDOWNS 0")); }
+  // the alarm: one guard who sees you brings the others close by
+  { const al = L.makeGame(src, {}); al.tick(1 / 60, pad({}));
+    const gm = new Map(S.fieldsOf(al.state)), gs = S.partsOf(gm.get("guards")).slice(), g1 = new Map(S.fieldsOf(gs[1])); g1.set("alert", true); gs[1] = S.valueCellOf([], g1); gm.set("guards", S.valueCellOf(gs, new Map())); al.setState(S.valueCellOf([], gm));
+    al.tick(1 / 60, pad({}));
+    ok("silvereye: a guard on alert calls the guards near them, not the far ones", f(al, "guards").part(4).field("alert") === true && f(al, "guards").part(1).field("alert") === false); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });

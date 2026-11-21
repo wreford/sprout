@@ -10,13 +10,13 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 
 ```
 node test.js          # language tests (298)
-node game-tests.js    # game tests (140)
+node game-tests.js    # game tests (141)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 438 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 439 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4465,6 +4465,11 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   // the end screen: time, accuracy and takedowns
   { const e = L.makeGame(src, {}); e.tick(1 / 60, pad({})); const m3 = new Map(S.fieldsOf(e.state)); m3.set("over", "won"); m3.set("over-at", 75.4); e.setState(S.valueCellOf([], m3));
     ok("silvereye: a finished mission shows the time, accuracy and takedowns", e.draw().some(x => x[0] === "text" && x[1][0] === "TIME 1:15   ACCURACY 0%   TAKEDOWNS 0")); }
+  // the alarm: one guard who sees you brings the others close by
+  { const al = L.makeGame(src, {}); al.tick(1 / 60, pad({}));
+    const gm = new Map(S.fieldsOf(al.state)), gs = S.partsOf(gm.get("guards")).slice(), g1 = new Map(S.fieldsOf(gs[1])); g1.set("alert", true); gs[1] = S.valueCellOf([], g1); gm.set("guards", S.valueCellOf(gs, new Map())); al.setState(S.valueCellOf([], gm));
+    al.tick(1 / 60, pad({}));
+    ok("silvereye: a guard on alert calls the guards near them, not the far ones", f(al, "guards").part(4).field("alert") === true && f(al, "guards").part(1).field("alert") === false); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });
@@ -10785,11 +10790,15 @@ play : [game |
       ]
     ]
   ]
+  -- a guard who has seen you calls the others nearby
+  callers : thinking keep [g | (g alert) and (g health > 0)]
+  called : thinking collect [g | cond [(g alert not) and (g health > 0) and (callers any [o | distance [o x, o y, g x, g y] < 6]), g with [alert : true], any, g]]
+  (called count [g | g alert] > (thinking count [g | g alert])) [beep [760, 0.12]]
   pain : thinking count [g | g hits else false] * 9
   thinking any [g | g fired else false] [sound "hit"]
   -- mines: an armed mine goes off when anyone comes near, whoever laid it
   armed : all-mines keep [m | now >= (m armed)]
-  bodies : thinking keep [g | g health > 0] collect [g | [x : g x, y : g y]] .. (ready keep up collect [a | [x : a x, y : a y]])
+  bodies : called keep [g | g health > 0] collect [g | [x : g x, y : g y]] .. (ready keep up collect [a | [x : a x, y : a y]])
   -- a shot that passes close to a mine sets it off, armed or not
   shot-mines : shooters collect-flat [a |
     wall : cast [a x, a y, a angle] far
@@ -10803,7 +10812,7 @@ play : [game |
   (goes-off length > 0) [shake 10, sound "impact"]
   caught : [px py | goes-off collect [m | distance [m x, m y, px, py]] keep [d | d < blast]]
   caught-by : [px py | goes-off keep [m | distance [m x, m y, px, py] < blast]]
-  blown : thinking collect [g | caught [g x, g y] length > 0 [g with [health : 0]] else [g]]
+  blown : called collect [g | caught [g x, g y] length > 0 [g with [health : 0]] else [g]]
   fallen : blown collect [g | g with [fell : cond [(g health <= 0) and (g fell = false), now, any, g fell]]]
   -- pickups: walk over one to take it (ammo, or armour that takes hits before your health); in a match they come back
   near-pickup : [p | ready keep [a | (up a) and (distance [a x, a y, p x, p y] < 0.6)]]

@@ -299,11 +299,15 @@ play : [game |
       ]
     ]
   ]
+  -- a guard who has seen you calls the others nearby
+  callers : thinking keep [g | (g alert) and (g health > 0)]
+  called : thinking collect [g | cond [(g alert not) and (g health > 0) and (callers any [o | distance [o x, o y, g x, g y] < 6]), g with [alert : true], any, g]]
+  (called count [g | g alert] > (thinking count [g | g alert])) [beep [760, 0.12]]
   pain : thinking count [g | g hits else false] * 9
   thinking any [g | g fired else false] [sound "hit"]
   -- mines: an armed mine goes off when anyone comes near, whoever laid it
   armed : all-mines keep [m | now >= (m armed)]
-  bodies : thinking keep [g | g health > 0] collect [g | [x : g x, y : g y]] .. (ready keep up collect [a | [x : a x, y : a y]])
+  bodies : called keep [g | g health > 0] collect [g | [x : g x, y : g y]] .. (ready keep up collect [a | [x : a x, y : a y]])
   -- a shot that passes close to a mine sets it off, armed or not
   shot-mines : shooters collect-flat [a |
     wall : cast [a x, a y, a angle] far
@@ -317,7 +321,7 @@ play : [game |
   (goes-off length > 0) [shake 10, sound "impact"]
   caught : [px py | goes-off collect [m | distance [m x, m y, px, py]] keep [d | d < blast]]
   caught-by : [px py | goes-off keep [m | distance [m x, m y, px, py] < blast]]
-  blown : thinking collect [g | caught [g x, g y] length > 0 [g with [health : 0]] else [g]]
+  blown : called collect [g | caught [g x, g y] length > 0 [g with [health : 0]] else [g]]
   fallen : blown collect [g | g with [fell : cond [(g health <= 0) and (g fell = false), now, any, g fell]]]
   -- pickups: walk over one to take it (ammo, or armour that takes hits before your health); in a match they come back
   near-pickup : [p | ready keep [a | (up a) and (distance [a x, a y, p x, p y] < 0.6)]]
