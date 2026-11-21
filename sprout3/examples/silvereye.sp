@@ -103,9 +103,10 @@ sight-always : true        -- the sight on screen all the time, or only while yo
 zoom-view : 0.45           -- aiming (Z) narrows the view to this much
 tiny : false               -- a secret: guards drawn at sixty per cent (only the look)
 turbo : false              -- unlocked by all three medals in one mission: everyone moves half as fast again
-walk-speed : 2.6 * (cond [turbo, 1.5, any, 1])
+walk-pace : 2.6             -- metres a second at a walk
+walk-speed : walk-pace * (cond [turbo, 1.5, any, 1])
 run-boost : 1.4            -- the stick pushed all the way up runs this much faster
-turn-speed : 2.4
+turn-speed : 2.4            -- how fast the keys and simulants turn, in radians a second
 mine-arm : 1.2             -- seconds before a dropped mine is live
 mine-reach : 1.0           -- how close someone must come to set it off
 blast : 2.1                -- how far the blast reaches
@@ -114,7 +115,7 @@ sentries : 2               -- turrets you carry
 sentry-reach : 7           -- how far a turret can see
 sentry-turn : 2.5          -- how fast it can turn, in radians a second
 sentry-reload : 0.45       -- seconds between its shots
-sentry-damage : 34
+sentry-damage : 34         -- a turret's shot
 shot-damage : 50           -- your shot at a guard
 duel-damage : 34           -- a shot at another player
 steady-damage : 50         -- the same shot while aiming
@@ -257,34 +258,39 @@ slide : [x y dx dy |
 distance : [ax ay bx by | bx - ax * (bx - ax) + (by - ay * (by - ay)) sqrt]
 
 -- ---------------------------------------------------------------- the turrets' program
--- Each frame every turret is asked what to do. It sees: aim (where it points, in radians), cool (seconds until it can
--- fire), sees (is anyone in sight: a guard, or the player who didn't set it down), dx and dy (to the nearest one in
--- sight), far (how far that is) and count (how many it can see). It answers with turn (-1 to 1) and fire (true or false).
--- A shot hits if the turret points at its mark.
-turret-program : [t |
-  want : t dy atan2 (t dx)
-  off : wrap (want - (t aim))
-  [turn : clamp [off * 4, -1, 1], fire : (t sees) and (t cool <= 0) and (off abs < 0.1)]
+-- Every frame each turret asks this what to do. What it knows:
+--   it sees-someone   true when a guard, or a player who didn't set it down, is in sight
+--   it off-target     how far round it must turn to face the nearest one (0 is dead on; the sign says which way)
+--   it how-far        how far away they are, in metres (99 when no one is in sight)
+--   it can-fire       true when it has reloaded
+--   it how-many       how many it can see
+-- What it answers: turn (-1 to 1, which way and how fast) and fire (true or false). A shot hits if it faces its mark.
+turret-program : [it |
+  [turn : it off-target * 4, fire : (it sees-someone) and (it can-fire) and (it off-target abs < 0.1)]
 ]
 
 -- ---------------------------------------------------------------- the simulants' program
--- Each frame every simulant is asked what to do. It sees: aim (where it faces), sees (is anyone in sight), dx and dy
--- (to the nearest one it can see), far (how far that is), health, goal-dx and goal-dy (to where it's heading when it
--- sees no one), clock, id and style ("hunter", "flanker" or "camper"). It answers walk and strafe (-1 to 1),
--- turn (-1 to 1) and fire (true or false). Hunters close in, flankers circle, campers hold their ground.
-simulant-program : [s |
-  want : cond [s sees, s dy atan2 (s dx), any, s goal-dy atan2 (s goal-dx)]
-  off : wrap (want - (s aim))
+-- Every frame each simulant asks this what to do. What it knows:
+--   it sees-someone   true when someone is in sight
+--   it off-target     how far round it must turn to face them (0 is dead on)
+--   it how-far        how far away they are, in metres (99 when no one is in sight)
+--   it off-path       how far round it must turn to face where it's heading when it sees no one
+--   it health         0 to 100
+--   it style          "hunter" (closes in), "flanker" (circles) or "camper" (holds its ground)
+--   it number         which simulant this is, and it clock, the seconds since the round began
+-- What it answers: walk and strafe (-1 to 1: back or forward, left or right), turn (-1 to 1) and fire (true or false).
+simulant-program : [it |
+  facing : cond [it sees-someone, it off-target, any, it off-path]
   [
-    turn : clamp [off * 3, -1, 1]
+    turn : facing * 3
     walk : cond [
-      (s sees) and (s style = "camper"), 0
-      (s sees) and (s far < 2.5), -0.3
-      s sees, cond [s style = "hunter", 1, any, 0.4]
-      any, 1 - (off abs) max 0
+      (it sees-someone) and (it style = "camper"), 0
+      (it sees-someone) and (it how-far < 2.5), -0.3
+      it sees-someone, cond [it style = "hunter", 1, any, 0.4]
+      any, 1 - (facing abs) max 0
     ]
-    strafe : cond [(s sees) and (s style = "flanker"), 1, (s sees) and (s style = "camper"), 0, s sees, s clock * 1.7 + (s id) sin, any, 0]
-    fire : (s sees) and (off abs < 0.15)
+    strafe : cond [(it sees-someone) and (it style = "flanker"), 1, (it sees-someone) and (it style = "camper"), 0, it sees-someone, it clock * 1.7 + (it number) sin, any, 0]
+    fire : (it sees-someone) and (it off-target abs < 0.15)
   ]
 ]
 styles : ["hunter", "flanker", "camper"]
@@ -387,12 +393,20 @@ play : [game |
     manner : styles @ (a id % 3 + 1)
     dx : sees [foe x - (a x)] else [0]
     dy : sees [foe y - (a y)] else [0]
-    said : simulant-program [aim : a angle, sees : sees, dx : dx, dy : dy, far : dx * dx + (dy * dy) sqrt, health : a health, goal-dx : a goal-x - (a x), goal-dy : a goal-y - (a y), clock : now, id : a id, style : manner]
+    path-dx : a goal-x - (a x)
+    path-dy : a goal-y - (a y)
+    -- what the program knows, in plain words (aim, sees, dx, dy, far, goal-dx, goal-dy and id are the older names, kept)
+    knows : [
+      sees-someone : sees, off-target : sees [wrap (dy atan2 dx - (a angle))] else [0], how-far : sees [dx * dx + (dy * dy) sqrt] else [99]
+      off-path : wrap (path-dy atan2 path-dx - (a angle)), health : a health, style : manner, number : a id, clock : now
+      aim : a angle, sees : sees, dx : dx, dy : dy, far : dx * dx + (dy * dy) sqrt, goal-dx : path-dx, goal-dy : path-dy, id : a id
+    ]
+    said : simulant-program knows
     [
       walk : clamp [said walk else 0, -1, 1], strafe : clamp [said strafe else 0, -1, 1], look : false
       turn : clamp [said turn else 0, -1, 1] * (simulant-skill * 0.25 + 0.5)
       fire : said fire else false, mine : false, sentry : false, reload : false, swap : false, assist : 1, skin : 7, tag : "", restart : false, zoom : false, fov : fov-across
-      hunt-x : sees [foe x] else [a goal-x], hunt-y : sees [foe y] else [a goal-y]
+      hunt-x : sees [foe x] else [a goal-x], hunt-y : sees [foe y] else [a goal-y], knows : knows
     ]
   ]
   -- everyone moves: the stick walks and strafes, the look drag and the keys turn
@@ -452,11 +466,17 @@ play : [game |
     sees : mark != false
     dx : sees [mark x - (t x)] else [t aim cos]
     dy : sees [mark y - (t y)] else [t aim sin]
-    said : turret-program [aim : t aim, cool : t cool, sees : sees, dx : dx, dy : dy, far : dx * dx + (dy * dy) sqrt, count : in-sight length]
+    -- what the program knows, in plain words (aim, cool, sees, dx, dy, far and count are the older names, kept)
+    knows : [
+      sees-someone : sees, off-target : sees [wrap (dy atan2 dx - (t aim))] else [0], how-far : sees [dx * dx + (dy * dy) sqrt] else [99]
+      can-fire : t cool <= 0, how-many : in-sight length
+      aim : t aim, cool : t cool, sees : sees, dx : dx, dy : dy, far : dx * dx + (dy * dy) sqrt, count : in-sight length
+    ]
+    said : turret-program knows
     aim : wrap (clamp [said turn else 0, -1, 1] * sentry-turn * dt + (t aim))
     fires : (said fire else false) and (t cool <= 0)
     lands : fires and sees and (wrap (dy atan2 dx - aim) abs < 0.15)
-    t with [aim : aim, cool : cond [fires, sentry-reload, any, t cool - dt], fired : fires, victim : lands ["[mark who] [mark id]"] else [""], shots : cond [fires, t shots + 1, any, t shots]]
+    t with [aim : aim, cool : cond [fires, sentry-reload, any, t cool - dt], fired : fires, victim : lands ["[mark who] [mark id]"] else [""], shots : cond [fires, t shots + 1, any, t shots], knows : knows]
   ]
   thought any [t | t fired] [sound "shoot"]
   struck : [k | shot-hits count [h | h key = k]]

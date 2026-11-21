@@ -114,6 +114,23 @@ body.soft #tv{image-rendering:auto;filter:blur(.45px) saturate(1.08)}
 #examples button{appearance:none;border:1px solid #e9b90f55;background:#e9b90f14;color:#ffd166;font:700 10px/1 var(--sans);padding:6px 9px;border-radius:999px;cursor:pointer}
 #tabs button{appearance:none;border:1px solid #ffffff24;background:#26262d;color:#bbb;font:800 10px/1 var(--sans);letter-spacing:.1em;padding:7px 10px;border-radius:999px;cursor:pointer}
 #tabs button.on{background:var(--yellow);color:#1a1300;border-color:transparent}
+/* what a program knows (blue, live, tap to put it in) and what it answers (gold) */
+#knows{display:flex;flex-wrap:wrap;gap:4px;margin:0 0 7px}
+#knows button{appearance:none;border:1px solid #8fd8ff38;background:#8fd8ff12;color:#8fd8ff;font:700 10.5px/1 var(--mono);padding:5px 7px;border-radius:6px;cursor:pointer}
+#knows button span{color:#ffd166;margin-left:5px;font-weight:600}
+#knows button.ans{border-color:#e9b90f50;background:#e9b90f14;color:#e9b90f}
+#knows button.ans span{color:#a99c7a}
+#knows .sep{flex-basis:100%;height:0}
+/* TUNE: every number the game is built on, on a slider */
+#tune{display:none;flex:1;min-height:0;overflow:auto;-webkit-overflow-scrolling:touch;border-top:1px solid #ffffff14}
+#prog.tuning #tune{display:block}
+#prog.tuning #codeBox,#prog.tuning #knows,#prog.tuning #examples{display:none}
+.knob{display:grid;grid-template-columns:1fr auto;gap:1px 8px;padding:6px 2px 7px;border-bottom:1px solid #ffffff10}
+.knob b{font:700 11.5px var(--mono);color:#8fd8ff}
+.knob output{font:800 12px var(--mono);color:#ffd166;text-align:right}
+.knob output.moved::after{content:" •";color:#ff7ab2}
+.knob small{grid-column:1/3;color:var(--ink2);font-size:10px;line-height:1.3}
+.knob input{grid-column:1/3;width:100%;margin:2px 0 0;accent-color:#e9b90f}
 /* left-handed: the stick on the right, the buttons on the left */
 body.lefty #stickZone{left:auto;right:0}
 body.lefty #look{right:auto;left:0}
@@ -331,9 +348,11 @@ body.lefty #bZ{left:auto;right:8px}body.lefty #bZ+.lbl{left:auto;right:80px}
     <div id="speaker"><i></i><i></i><i></i><i></i><i></i><i></i></div>
   </div>
   <div id="prog" aria-label="Turret program">
-    <div id="tabs"><button data-p="turret" class="on">TURRETS</button><button data-p="simulant">SIMULANTS</button></div>
+    <div id="tabs"><button data-p="turret" class="on">TURRETS</button><button data-p="simulant">SIMULANTS</button><button data-p="tune">TUNE</button></div>
     <p id="progHelp"></p>
     <div id="examples"></div>
+    <div id="knows"></div>
+    <div id="tune"></div>
     <div id="codeBox"><pre id="srcHL" aria-hidden="true"></pre><textarea id="src" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off"></textarea></div>
     <div id="status"></div>
     <div class="row"><button id="pReset">Put the first one back</button><button id="pClose">Done</button></div>
@@ -446,13 +465,23 @@ var ta = $("src");
 let full = "";
 const PROGRAMS = { turret: "turret-program", simulant: "simulant-program" };
 const HELP = {
-  turret: "Every turret runs this Sprout cell each frame. It sees <b>aim</b>, <b>cool</b>, <b>sees</b>, <b>dx</b>, <b>dy</b>, <b>far</b> and <b>count</b>, and answers <b>turn</b> (-1 to 1) and <b>fire</b>.",
-  simulant: "Every simulant runs this Sprout cell each frame. It sees <b>aim</b>, <b>sees</b>, <b>dx</b>, <b>dy</b>, <b>far</b>, <b>health</b>, <b>goal-dx</b>, <b>goal-dy</b>, <b>clock</b> and <b>id</b>, and answers <b>walk</b>, <b>strafe</b>, <b>turn</b> and <b>fire</b>.",
+  turret: "Each frame every turret asks this what to do. <b style=\"color:#8fd8ff\">Blue</b> is what it knows, live from the turret you set down last: tap one to put it in. <b style=\"color:#e9b90f\">Gold</b> is what it answers.",
+  simulant: "Each frame every simulant asks this what to do. <b style=\"color:#8fd8ff\">Blue</b> is what it knows, live: tap one to put it in. <b style=\"color:#e9b90f\">Gold</b> is what it answers.",
+  tune: "Every number SilverEye is built on, and what it does. Slide one and the game changes at once (on both phones when linked). The ones you start a round with put everyone back at the start.",
+};
+// what each program knows and answers, in the words the game gives it (see turret-program and simulant-program)
+const KNOWS = {
+  turret: [["sees-someone", "true when a guard, or a player who didn't set it down, is in sight"], ["off-target", "how far round it must turn to face the nearest one: 0 is dead on, and the sign says which way"], ["how-far", "how far away they are, in metres (99 when no one is in sight)"], ["can-fire", "true when it has reloaded"], ["how-many", "how many it can see"]],
+  simulant: [["sees-someone", "true when someone is in sight"], ["off-target", "how far round it must turn to face them: 0 is dead on"], ["how-far", "how far away they are, in metres (99 when no one is in sight)"], ["off-path", "how far round it must turn to face where it's heading when it sees no one"], ["health", "0 to 100"], ["style", "\"hunter\", \"flanker\" or \"camper\""], ["number", "which simulant this is"], ["clock", "seconds since the round began"]],
+};
+const ANSWERS = {
+  turret: [["turn", "-1…1", "which way to turn, and how fast (more than 1 counts as 1)"], ["fire", "yes/no", "true to fire, if it has reloaded"]],
+  simulant: [["walk", "-1…1", "forward (1) or back (-1)"], ["strafe", "-1…1", "step sideways, one way or the other"], ["turn", "-1…1", "which way to turn, and how fast"], ["fire", "yes/no", "true to fire"]],
 };
 const cellSpan = (src, name) => { const b = src.search(new RegExp("^" + name + " : \\[", "m")), e = b < 0 ? -1 : src.indexOf("\n]\n", b); return b < 0 || e < 0 ? null : [b, e + 2]; };
 const cellOf = (src, name) => { const sp = cellSpan(src, name); return sp ? src.slice(sp[0], sp[1]) : null; };
 const putCell = (src, name, text) => { const sp = cellSpan(src, name); return sp ? src.slice(0, sp[0]) + text.replace(/\s+$/, "") + src.slice(sp[1]) : src; };
-const original = {}, programs = store.get("silvereye.programs", {});
+const original = {}, programs = store.get("silvereye.programs", {}), tune = store.get("silvereye.tune", {});
 const settings = Object.assign({ fov: 110, sims: 3, skill: 2, look: 1, buzz: true, shake: true, arena: "lab", two: "duel", turbo: false, sight: true, assist: "auto", music: true, display: "sharp", hand: "right", tiny: false }, store.get("silvereye.settings", {}));
 // the default view went from 90 to 100 degrees: anyone still on the old default moves up with it, once
 if (!store.get("silvereye.fov100", false)) { if (settings.fov === 90) settings.fov = 100; store.set("silvereye.fov100", true); store.set("silvereye.settings", settings); }
@@ -467,6 +496,8 @@ function compose(over) {
   const p = Object.assign({}, programs, over || {});
   let src = full;
   for (const k in PROGRAMS) if (p[k]) src = putCell(src, PROGRAMS[k], p[k]);
+  // the numbers you tuned
+  for (const k in tune) src = src.replace(new RegExp("^" + k + " : -?[\\d.]+", "m"), k + " : " + tune[k]);
   return src.replace(/^stage : \d+/m, "stage : " + stageNum).replace(/^campaign : \w+/m, "campaign : " + campaignOn).replace(/^mode : .*$/m, 'mode : "' + mode + '"').replace(/^simulants : \d+/m, "simulants : " + settings.sims).replace(/^simulant-skill : \d+/m, "simulant-skill : " + settings.skill).replace(/^difficulty : \d+/m, "difficulty : " + settings.skill).replace(/^arena : .*$/m, 'arena : "' + settings.arena + '"').replace(/^two-phones : .*$/m, 'two-phones : "' + settings.two + '"').replace(/^turbo : \w+/m, "turbo : " + (settings.turbo && store.get("silvereye.turbo-unlocked", false))).replace(/^sight-always : \w+/m, "sight-always : " + settings.sight).replace(/^tiny : \w+/m, "tiny : " + (settings.tiny && store.get("silvereye.tiny-unlocked", false)));
 }
 function setErr(m) { if (m) say("Not yet: " + m.msg + " · the last one that worked keeps running.", true); }
@@ -474,7 +505,7 @@ function setPaused(p) { paused = p; }
 function setCode(src) {
   code = src;
   for (const k in PROGRAMS) { const c = cellOf(src, PROGRAMS[k]); if (c !== null) programs[k] = c; }
-  if (document.activeElement !== ta) { ta.value = programs[tab] || original[tab]; paintCode(); }
+  if (document.activeElement !== ta && tab !== "tune") { ta.value = programs[tab] || original[tab]; paintCode(); }
 }
 function build(src, fresh) {
   try {
@@ -510,78 +541,79 @@ const EXAMPLES = {
   turret: {
     "Sharpshooter": `-- Sharpshooter: turns slowly and only fires when dead on target.
 -- Fewer shots, but almost all of them land.
-turret-program : [t |
-  want : t dy atan2 (t dx)          -- the angle to the target
-  off : wrap (want - (t aim))       -- how far round it still has to turn
-  [turn : clamp [off * 2, -0.5, 0.5], fire : (t sees) and (t cool <= 0) and (off abs < 0.03)]
+turret-program : [it |
+  [turn : it off-target * 1.5, fire : (it sees-someone) and (it can-fire) and (it off-target abs < 0.03)]
 ]
 `,
     "Sprayer": `-- Sprayer: swings round fast and fires the moment anyone is roughly in front.
 -- Lots of noise, some hits. Good at a doorway.
-turret-program : [t |
-  want : t dy atan2 (t dx)
-  off : wrap (want - (t aim))
-  [turn : clamp [off * 10, -1, 1], fire : (t sees) and (t cool <= 0) and (off abs < 0.35)]
+turret-program : [it |
+  [turn : it off-target * 10, fire : (it sees-someone) and (it can-fire) and (it off-target abs < 0.35)]
 ]
 `,
     "Sweeper": `-- Sweeper: with nobody in sight it sweeps slowly round, like a searchlight;
 -- once it sees someone it locks on as usual.
-turret-program : [t |
-  want : t dy atan2 (t dx)
-  off : wrap (want - (t aim))
-  turn : cond [t sees, clamp [off * 4, -1, 1], any, 0.25]
-  [turn : turn, fire : (t sees) and (t cool <= 0) and (off abs < 0.1)]
+turret-program : [it |
+  turn : cond [it sees-someone, it off-target * 4, any, 0.25]
+  [turn : turn, fire : (it sees-someone) and (it can-fire) and (it off-target abs < 0.1)]
+]
+`,
+    "Doorman": `-- Doorman: lets anyone far off go by, and only fires at whoever comes within 4 metres.
+-- near is a name made up here: give a thing a name and use it below.
+turret-program : [it |
+  near : (it sees-someone) and (it how-far < 4)
+  [turn : cond [near, it off-target * 6, any, 0], fire : near and (it can-fire) and (it off-target abs < 0.2)]
 ]
 `,
     "Crowd only": `-- Crowd only: holds fire for one person and opens up when two or more are in sight.
--- count is how many it can see.
-turret-program : [t |
-  want : t dy atan2 (t dx)
-  off : wrap (want - (t aim))
-  [turn : clamp [off * 4, -1, 1], fire : (t count >= 2) and (t cool <= 0) and (off abs < 0.15)]
+turret-program : [it |
+  [turn : it off-target * 4, fire : (it how-many >= 2) and (it can-fire) and (it off-target abs < 0.15)]
 ]
 `,
   },
   simulant: {
     "Coward": `-- Coward: fights while healthy, then backs away firing once health drops below 50.
-simulant-program : [s |
-  want : cond [s sees, s dy atan2 (s dx), any, s goal-dy atan2 (s goal-dx)]
-  off : wrap (want - (s aim))
-  scared : s health < 50
+simulant-program : [it |
+  facing : cond [it sees-someone, it off-target, any, it off-path]
+  scared : it health < 50
   [
-    turn : clamp [off * 3, -1, 1]
-    walk : cond [(s sees) and scared, -1, s sees, 0.5, any, 1 - (off abs) max 0]
-    strafe : cond [scared, s clock * 3 sin, any, 0]
-    fire : (s sees) and (off abs < 0.15)
+    turn : facing * 3
+    walk : cond [(it sees-someone) and scared, -1, it sees-someone, 0.5, any, 1 - (facing abs) max 0]
+    strafe : cond [scared, it clock * 3 sin, any, 0]
+    fire : (it sees-someone) and (it off-target abs < 0.15)
   ]
 ]
 `,
     "Berserker": `-- Berserker: runs straight at whoever it sees and never stops shooting.
-simulant-program : [s |
-  want : cond [s sees, s dy atan2 (s dx), any, s goal-dy atan2 (s goal-dx)]
-  off : wrap (want - (s aim))
-  [turn : clamp [off * 5, -1, 1], walk : 1, strafe : 0, fire : s sees]
+simulant-program : [it |
+  facing : cond [it sees-someone, it off-target, any, it off-path]
+  [turn : facing * 5, walk : 1, strafe : 0, fire : it sees-someone]
 ]
 `,
     "Sniper": `-- Sniper: stands still once it sees you, takes its time, and only fires when the aim is true.
-simulant-program : [s |
-  want : cond [s sees, s dy atan2 (s dx), any, s goal-dy atan2 (s goal-dx)]
-  off : wrap (want - (s aim))
+simulant-program : [it |
+  facing : cond [it sees-someone, it off-target, any, it off-path]
   [
-    turn : clamp [off * 2, -1, 1]
-    walk : cond [s sees, 0, any, 1 - (off abs) max 0]
+    turn : facing * 2
+    walk : cond [it sees-someone, 0, any, 1 - (facing abs) max 0]
     strafe : 0
-    fire : (s sees) and (off abs < 0.04)
+    fire : (it sees-someone) and (it off-target abs < 0.04)
   ]
 ]
 `,
     "Dancer": `-- Dancer: circles whoever it sees, always strafing one way, hard to hit.
--- id makes each dancer circle its own way round.
-simulant-program : [s |
-  want : cond [s sees, s dy atan2 (s dx), any, s goal-dy atan2 (s goal-dx)]
-  off : wrap (want - (s aim))
-  way : cond [s id % 2 = 0, 1, any, -1]
-  [turn : clamp [off * 3, -1, 1], walk : cond [s sees, 0.2, any, 1], strafe : cond [s sees, way, any, 0], fire : (s sees) and (off abs < 0.2)]
+-- number makes each dancer circle its own way round.
+simulant-program : [it |
+  facing : cond [it sees-someone, it off-target, any, it off-path]
+  way : cond [it number % 2 = 0, 1, any, -1]
+  [turn : facing * 3, walk : cond [it sees-someone, 0.2, any, 1], strafe : cond [it sees-someone, way, any, 0], fire : (it sees-someone) and (it off-target abs < 0.2)]
+]
+`,
+    "Keeper": `-- Keeper: keeps its distance, about 5 metres: closer and it backs off, further and it comes in.
+simulant-program : [it |
+  facing : cond [it sees-someone, it off-target, any, it off-path]
+  gap : cond [it sees-someone, it how-far - 5, any, 1]
+  [turn : facing * 3, walk : gap max -1 min 1, strafe : 0, fire : (it sees-someone) and (it off-target abs < 0.12)]
 ]
 `,
   },
@@ -591,15 +623,79 @@ function examplesUI() {
   for (const name in EXAMPLES[tab]) { const b = document.createElement("button"); b.textContent = name; b.onclick = () => { ta.value = EXAMPLES[tab][name]; paintCode(); applyProgram(); }; box.appendChild(b); }
 }
 function showTab(k) {
-  tab = k; ta.value = programs[k] || original[k]; paintCode(); $("progHelp").innerHTML = HELP[k] + " Change it and it thinks the new way at once, on both phones in a duel.";
+  tab = k; $("prog").classList.toggle("tuning", k === "tune");
   for (const b of $("tabs").children) b.classList.toggle("on", b.dataset.p === k);
-  examplesUI();
-  say(k === "turret" ? "Set down a turret (C-up) and watch it think." : "Simulants play in Combat sim, and join a duel.");
+  $("pReset").textContent = k === "tune" ? "Put every number back" : "Put the first one back";
+  if (k === "tune") { $("progHelp").innerHTML = HELP.tune; tuneUI(); say(Object.keys(tune).length ? Object.keys(tune).length + " changed (marked •)." : "Nothing changed yet."); return; }
+  ta.value = programs[k] || original[k]; paintCode(); $("progHelp").innerHTML = HELP[k];
+  examplesUI(); knowsUI();
+  say(k === "turret" ? "Set down a turret (C-up) and watch what it knows change." : "Simulants play in Combat sim, and join a duel.");
+}
+// the knows strip: each word the program can read, with its value right now; tap one to put it in the program
+const showVal = v => v === true ? "yes" : v === false ? "no" : typeof v === "number" ? (Number.isInteger(v) || Math.abs(v) >= 10 ? String(Math.round(v)) : v.toFixed(2)) : v === undefined ? "–" : String(v);
+function knowsNow() {
+  try {
+    if (!game) return null;
+    if (tab === "turret") { const ts = S.partsOf(game.state.field("turrets")); const k = ts.length ? ts[ts.length - 1].field("knows") : S.UNSET; return k === S.UNSET ? null : k; }
+    const bot = S.partsOf(game.state.field("agents")).find(a => a.field("bot") === true); if (!bot) return null;
+    const k = bot.field("asks").field("knows"); return k === S.UNSET || !k ? null : k;
+  } catch (e) { return null; }
+}
+function knowsUI() {
+  const box = $("knows"); if (!KNOWS[tab]) return;
+  const k = knowsNow();
+  if (!box.dataset.tab || box.dataset.tab !== tab) {
+    box.dataset.tab = tab; box.innerHTML = "";
+    for (const [w, about] of KNOWS[tab]) { const b = document.createElement("button"); b.dataset.w = w; b.innerHTML = w + "<span>–</span>"; b.onclick = () => putWord(w, about); box.appendChild(b); }
+    const sep = document.createElement("i"); sep.className = "sep"; box.appendChild(sep);
+    for (const [w, range, about] of ANSWERS[tab]) { const b = document.createElement("button"); b.className = "ans"; b.innerHTML = w + "<span>" + range + "</span>"; b.onclick = () => say(w + ": " + about + "."); box.appendChild(b); }
+  }
+  for (const b of box.querySelectorAll("button[data-w]")) b.lastChild.textContent = k ? showVal(k.field(b.dataset.w)) : "–";
+}
+// a word from the strip goes in at the cursor, read from the program's own name for what it's asked about (it, t, s...)
+function putWord(w, about) {
+  const who = (ta.value.match(/^[a-z][a-z0-9-]* : \[([a-z][a-z0-9-]*) \|/m) || [])[1] || "it";
+  const at = ta.selectionStart, before = ta.value.slice(0, at), gap = /[\s(\[]$/.test(before) || !before ? "" : " ";
+  ta.setRangeText(gap + who + " " + w, at, ta.selectionEnd, "end"); ta.dispatchEvent(new Event("input"));
+  say(w + ": " + about + ".");
+}
+setInterval(() => { if ($("prog").classList.contains("on") && tab !== "tune") knowsUI(); }, 250);
+// TUNE: the game's own numbers, read from its source with the comment beside each, on sliders
+const TUNE_SKIP = new Set(["stage", "simulants", "simulant-skill", "difficulty", "fov-across"]);
+function knobs() {
+  const out = [];
+  for (const m of full.matchAll(/^([a-z][a-z0-9-]*) : (-?\d+(?:\.\d+)?)\s+-- (.*)$/gm)) if (!TUNE_SKIP.has(m[1])) out.push({ name: m[1], start: +m[2], about: m[3] });
+  return out;
+}
+function knobRange(name, v) {
+  if (Number.isInteger(v)) { const big = v >= 100; return { min: big ? 10 : /^(mines-each|sentries)$/.test(name) ? 0 : 1, max: Math.max(4, Math.ceil(v * 3)), step: big ? 10 : 1 }; }
+  const step = v >= 2 ? 0.1 : 0.05; return { min: step, max: +(Math.max(v * 3, 1)).toFixed(2), step };
+}
+let tuneT = 0;
+function tuneUI() {
+  const box = $("tune"); box.innerHTML = "";
+  for (const kn of knobs()) {
+    const r = knobRange(kn.name, kn.start), now = tune[kn.name] !== undefined ? tune[kn.name] : kn.start;
+    const row = document.createElement("label"); row.className = "knob";
+    row.innerHTML = "<b>" + kn.name + "</b><output></output><input type=range><small></small>";
+    const inp = row.querySelector("input"), out = row.querySelector("output");
+    Object.assign(inp, { min: r.min, max: r.max, step: r.step, value: now });
+    row.querySelector("small").textContent = kn.about;
+    const show = v => { out.textContent = String(+(+v).toFixed(2)); out.classList.toggle("moved", +v !== kn.start); };
+    show(now);
+    inp.oninput = () => { const v = +(+inp.value).toFixed(2); show(v); if (v === kn.start) delete tune[kn.name]; else tune[kn.name] = v; clearTimeout(tuneT); tuneT = setTimeout(applyTune, 250); };
+    box.appendChild(row);
+  }
+}
+function applyTune() {
+  store.set("silvereye.tune", tune);
+  const n = Object.keys(tune).length;
+  if (window.build(compose(), false)) say((n ? n + " changed (marked •)" : "All the numbers are as they were") + (window.NET && NET.active ? ", on both phones." : "."));
 }
 $("tabs").addEventListener("click", e => { const b = e.target.closest("button"); if (b) showTab(b.dataset.p); });
 const openProgram = on => { $("prog").classList.toggle("on", on); if (on) { closeScreens(); setTimeout(() => ta.focus({ preventScroll: true }), 50); } else ta.blur(); };
 $("pClose").onclick = () => openProgram(false);
-$("pReset").onclick = () => { ta.value = original[tab]; paintCode(); applyProgram(); };
+$("pReset").onclick = () => { if (tab === "tune") { for (const k in tune) delete tune[k]; tuneUI(); applyTune(); return; } ta.value = original[tab]; paintCode(); applyProgram(); };
 
 // ---- the title, settings, about and pause screens, worked by tapping or by the stick and A
 const SKILLS = ["", "ROOKIE", "AGENT", "ACE"], FOVS = [90, 100, 110, 120, 130];

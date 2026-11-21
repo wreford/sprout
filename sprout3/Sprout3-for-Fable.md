@@ -64,7 +64,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
   - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
   - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
-- **Tests:** 496 pass, 303 for the language and 193 for the games.
+- **Tests:** 500 pass, 303 for the language and 197 for the games.
 
 ## Open questions for Troy
 
@@ -83,13 +83,13 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 
 ```
 node test.js          # language tests (303)
-node game-tests.js    # game tests (193)
+node game-tests.js    # game tests (197)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 496 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 500 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4116,6 +4116,8 @@ const logs = []; S.setLog(m => logs.push(m));
 const game = (name, opts) => L.makeGame(fs.readFileSync(__dirname + "/examples/" + name + ".sp", "utf8"), opts);
 const held = keys => S.valueCellOf([], new Map(keys.map(k => [k, true])));
 const f = (g, k) => g.state.field(k);
+// putCell: the code with one top-level cell (name : [ ... ] ending in a "]" line) replaced by new text
+const putCell = (code, name, text) => { const b = code.search(new RegExp("^" + name + " : \\[", "m")), e = code.indexOf("\n]\n", b); return code.slice(0, b) + text.trim() + code.slice(e + 2); };
 
 // ---------------- Bounce
 {
@@ -4507,8 +4509,17 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   ok("silvereye: a turret is set down and one fewer is carried", f(s1, "turrets").count() === 1 && agent(s1, 1).field("sentries-left") === 1);
   ok("silvereye: the turret's program shoots the guard it sees", f(s1, "turrets").part(1).field("shots") > 0 && f(s1, "guards").part(3).field("health") <= 0);
   ok("silvereye: the turret is drawn as a model", s1.draw().some(x => x[0] === "model" && x[1][0] === "turret"));
-  const s2 = sentry(src.replace("fire : (t sees) and (t cool <= 0) and (off abs < 0.1)", "fire : false"));
-  ok("silvereye: change turret-program and the turret changes", f(s2, "turrets").part(1).field("shots") === 0);
+  const s2 = sentry(src.replace("fire : (it sees-someone) and (it can-fire) and (it off-target abs < 0.1)", "fire : false"));
+  ok("silvereye: change turret-program and the turret changes", src.includes("fire : (it sees-someone) and (it can-fire)") && f(s2, "turrets").part(1).field("shots") === 0);
+  { const t = L.makeGame(src, {}); t.tick(1 / 60); put(t, 0, { x: 9.5, y: 7.5, angle: 0 });
+    for (let k = 0; k < 2; k++) t.tick(1 / 60, pad({ sentry: true }));
+    for (let k = 0; k < 6; k++) t.tick(1 / 60, pad({}));
+    const k = f(t, "turrets").part(1).field("knows");
+    ok("silvereye: a turret keeps what its program knew, in plain words", k.field("sees-someone") === true && typeof k.field("off-target") === "number" && k.field("how-far") > 1 && k.field("how-far") < 7 && k.field("how-many") >= 1, S.format(k));
+    ok("silvereye: with no one in sight, how-far is far", f(s1, "turrets").part(1).field("knows").field("how-far") === 99); }
+  // a program written with the older names (dx, dy, aim, cool, sees) still works
+  const s3 = sentry(putCell(src, "turret-program", "turret-program : [t |\n  off : wrap (t dy atan2 (t dx) - (t aim))\n  [turn : clamp [off * 4, -1, 1], fire : (t sees) and (t cool <= 0) and (off abs < 0.1)]\n]\n"));
+  ok("silvereye: a turret program in the older names still shoots", f(s3, "turrets").part(1).field("shots") > 0);
   // two players: a duel with no guards; a takedown scores, the other comes back, five wins (no simulants here)
   const duelSrc = src.replace(/^simulants : 3/m, "simulants : 0");
   const v = L.makeGame(duelSrc, { players: 2, me: 1 });
@@ -4661,7 +4672,8 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
       for (let t = 0; t < 200; t++) w.tick(1 / 60, pad({ sentry: t < 2, fire: t % 20 < 5, walk: Math.sin(t / 20) }));
     }
     S.setLog(m => logs.push(m));
-    ok("silvereye: the eight example programs all run, and nothing warns", examples.length === 8 && said.length === 0, said.slice(0, 2)); }
+    ok("silvereye: the ten example programs all run, and nothing warns", examples.length === 10 && said.length === 0, said.slice(0, 2));
+    ok("silvereye: the example programs are written in the plain words", examples.every(x => /\[it \|/.test(x) && !/atan2|clamp/.test(x))); }
   // the campaign: three missions, each with its own map, guards, targets and way out, all on open floor
   { const mapOf = name => { const m = src.match(new RegExp("^" + name + " : \\[\\n([\\s\\S]*?)\\n\\]", "m")); return m[1].split("\n").map(l => l.trim().replace(/"/g, "")); };
     const maps = { lab: mapOf("lab"), depot: mapOf("depot"), relay: mapOf("relay"), compound: mapOf("compound") }, said = []; S.setLog(m => said.push(m));
@@ -10974,9 +10986,10 @@ sight-always : true        -- the sight on screen all the time, or only while yo
 zoom-view : 0.45           -- aiming (Z) narrows the view to this much
 tiny : false               -- a secret: guards drawn at sixty per cent (only the look)
 turbo : false              -- unlocked by all three medals in one mission: everyone moves half as fast again
-walk-speed : 2.6 * (cond [turbo, 1.5, any, 1])
+walk-pace : 2.6             -- metres a second at a walk
+walk-speed : walk-pace * (cond [turbo, 1.5, any, 1])
 run-boost : 1.4            -- the stick pushed all the way up runs this much faster
-turn-speed : 2.4
+turn-speed : 2.4            -- how fast the keys and simulants turn, in radians a second
 mine-arm : 1.2             -- seconds before a dropped mine is live
 mine-reach : 1.0           -- how close someone must come to set it off
 blast : 2.1                -- how far the blast reaches
@@ -10985,7 +10998,7 @@ sentries : 2               -- turrets you carry
 sentry-reach : 7           -- how far a turret can see
 sentry-turn : 2.5          -- how fast it can turn, in radians a second
 sentry-reload : 0.45       -- seconds between its shots
-sentry-damage : 34
+sentry-damage : 34         -- a turret's shot
 shot-damage : 50           -- your shot at a guard
 duel-damage : 34           -- a shot at another player
 steady-damage : 50         -- the same shot while aiming
@@ -11128,34 +11141,39 @@ slide : [x y dx dy |
 distance : [ax ay bx by | bx - ax * (bx - ax) + (by - ay * (by - ay)) sqrt]
 
 -- ---------------------------------------------------------------- the turrets' program
--- Each frame every turret is asked what to do. It sees: aim (where it points, in radians), cool (seconds until it can
--- fire), sees (is anyone in sight: a guard, or the player who didn't set it down), dx and dy (to the nearest one in
--- sight), far (how far that is) and count (how many it can see). It answers with turn (-1 to 1) and fire (true or false).
--- A shot hits if the turret points at its mark.
-turret-program : [t |
-  want : t dy atan2 (t dx)
-  off : wrap (want - (t aim))
-  [turn : clamp [off * 4, -1, 1], fire : (t sees) and (t cool <= 0) and (off abs < 0.1)]
+-- Every frame each turret asks this what to do. What it knows:
+--   it sees-someone   true when a guard, or a player who didn't set it down, is in sight
+--   it off-target     how far round it must turn to face the nearest one (0 is dead on; the sign says which way)
+--   it how-far        how far away they are, in metres (99 when no one is in sight)
+--   it can-fire       true when it has reloaded
+--   it how-many       how many it can see
+-- What it answers: turn (-1 to 1, which way and how fast) and fire (true or false). A shot hits if it faces its mark.
+turret-program : [it |
+  [turn : it off-target * 4, fire : (it sees-someone) and (it can-fire) and (it off-target abs < 0.1)]
 ]
 
 -- ---------------------------------------------------------------- the simulants' program
--- Each frame every simulant is asked what to do. It sees: aim (where it faces), sees (is anyone in sight), dx and dy
--- (to the nearest one it can see), far (how far that is), health, goal-dx and goal-dy (to where it's heading when it
--- sees no one), clock, id and style ("hunter", "flanker" or "camper"). It answers walk and strafe (-1 to 1),
--- turn (-1 to 1) and fire (true or false). Hunters close in, flankers circle, campers hold their ground.
-simulant-program : [s |
-  want : cond [s sees, s dy atan2 (s dx), any, s goal-dy atan2 (s goal-dx)]
-  off : wrap (want - (s aim))
+-- Every frame each simulant asks this what to do. What it knows:
+--   it sees-someone   true when someone is in sight
+--   it off-target     how far round it must turn to face them (0 is dead on)
+--   it how-far        how far away they are, in metres (99 when no one is in sight)
+--   it off-path       how far round it must turn to face where it's heading when it sees no one
+--   it health         0 to 100
+--   it style          "hunter" (closes in), "flanker" (circles) or "camper" (holds its ground)
+--   it number         which simulant this is, and it clock, the seconds since the round began
+-- What it answers: walk and strafe (-1 to 1: back or forward, left or right), turn (-1 to 1) and fire (true or false).
+simulant-program : [it |
+  facing : cond [it sees-someone, it off-target, any, it off-path]
   [
-    turn : clamp [off * 3, -1, 1]
+    turn : facing * 3
     walk : cond [
-      (s sees) and (s style = "camper"), 0
-      (s sees) and (s far < 2.5), -0.3
-      s sees, cond [s style = "hunter", 1, any, 0.4]
-      any, 1 - (off abs) max 0
+      (it sees-someone) and (it style = "camper"), 0
+      (it sees-someone) and (it how-far < 2.5), -0.3
+      it sees-someone, cond [it style = "hunter", 1, any, 0.4]
+      any, 1 - (facing abs) max 0
     ]
-    strafe : cond [(s sees) and (s style = "flanker"), 1, (s sees) and (s style = "camper"), 0, s sees, s clock * 1.7 + (s id) sin, any, 0]
-    fire : (s sees) and (off abs < 0.15)
+    strafe : cond [(it sees-someone) and (it style = "flanker"), 1, (it sees-someone) and (it style = "camper"), 0, it sees-someone, it clock * 1.7 + (it number) sin, any, 0]
+    fire : (it sees-someone) and (it off-target abs < 0.15)
   ]
 ]
 styles : ["hunter", "flanker", "camper"]
@@ -11258,12 +11276,20 @@ play : [game |
     manner : styles @ (a id % 3 + 1)
     dx : sees [foe x - (a x)] else [0]
     dy : sees [foe y - (a y)] else [0]
-    said : simulant-program [aim : a angle, sees : sees, dx : dx, dy : dy, far : dx * dx + (dy * dy) sqrt, health : a health, goal-dx : a goal-x - (a x), goal-dy : a goal-y - (a y), clock : now, id : a id, style : manner]
+    path-dx : a goal-x - (a x)
+    path-dy : a goal-y - (a y)
+    -- what the program knows, in plain words (aim, sees, dx, dy, far, goal-dx, goal-dy and id are the older names, kept)
+    knows : [
+      sees-someone : sees, off-target : sees [wrap (dy atan2 dx - (a angle))] else [0], how-far : sees [dx * dx + (dy * dy) sqrt] else [99]
+      off-path : wrap (path-dy atan2 path-dx - (a angle)), health : a health, style : manner, number : a id, clock : now
+      aim : a angle, sees : sees, dx : dx, dy : dy, far : dx * dx + (dy * dy) sqrt, goal-dx : path-dx, goal-dy : path-dy, id : a id
+    ]
+    said : simulant-program knows
     [
       walk : clamp [said walk else 0, -1, 1], strafe : clamp [said strafe else 0, -1, 1], look : false
       turn : clamp [said turn else 0, -1, 1] * (simulant-skill * 0.25 + 0.5)
       fire : said fire else false, mine : false, sentry : false, reload : false, swap : false, assist : 1, skin : 7, tag : "", restart : false, zoom : false, fov : fov-across
-      hunt-x : sees [foe x] else [a goal-x], hunt-y : sees [foe y] else [a goal-y]
+      hunt-x : sees [foe x] else [a goal-x], hunt-y : sees [foe y] else [a goal-y], knows : knows
     ]
   ]
   -- everyone moves: the stick walks and strafes, the look drag and the keys turn
@@ -11323,11 +11349,17 @@ play : [game |
     sees : mark != false
     dx : sees [mark x - (t x)] else [t aim cos]
     dy : sees [mark y - (t y)] else [t aim sin]
-    said : turret-program [aim : t aim, cool : t cool, sees : sees, dx : dx, dy : dy, far : dx * dx + (dy * dy) sqrt, count : in-sight length]
+    -- what the program knows, in plain words (aim, cool, sees, dx, dy, far and count are the older names, kept)
+    knows : [
+      sees-someone : sees, off-target : sees [wrap (dy atan2 dx - (t aim))] else [0], how-far : sees [dx * dx + (dy * dy) sqrt] else [99]
+      can-fire : t cool <= 0, how-many : in-sight length
+      aim : t aim, cool : t cool, sees : sees, dx : dx, dy : dy, far : dx * dx + (dy * dy) sqrt, count : in-sight length
+    ]
+    said : turret-program knows
     aim : wrap (clamp [said turn else 0, -1, 1] * sentry-turn * dt + (t aim))
     fires : (said fire else false) and (t cool <= 0)
     lands : fires and sees and (wrap (dy atan2 dx - aim) abs < 0.15)
-    t with [aim : aim, cool : cond [fires, sentry-reload, any, t cool - dt], fired : fires, victim : lands ["[mark who] [mark id]"] else [""], shots : cond [fires, t shots + 1, any, t shots]]
+    t with [aim : aim, cool : cond [fires, sentry-reload, any, t cool - dt], fired : fires, victim : lands ["[mark who] [mark id]"] else [""], shots : cond [fires, t shots + 1, any, t shots], knows : knows]
   ]
   thought any [t | t fired] [sound "shoot"]
   struck : [k | shot-hits count [h | h key = k]]

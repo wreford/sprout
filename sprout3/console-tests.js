@@ -56,6 +56,19 @@ server.listen(0, async () => {
     ok("holding A fires", (await at()).shots >= 2, await at());
     await page.click("#bSelect"); await page.waitForTimeout(200);
     ok("Select opens the program, coloured as Sprout", await page.isVisible("#prog") && (await page.$$("#srcHL i")).length > 5);
+    ok("the sheet shows what a turret knows (blue) and answers (gold)", (await page.$$("#knows button[data-w]")).length === 5 && (await page.$$("#knows button.ans")).length === 2);
+    await page.click("#knows button[data-w=how-far]");
+    ok("tapping one puts it in the program", /it how-far/.test(await page.inputValue("#src")));
+    await page.click("#pReset");
+    // TUNE: every number the game is built on, on a slider, taken at once
+    await page.click("#tabs button[data-p=tune]");
+    ok("TUNE lists the game's numbers with what each does", await page.evaluate(() => [...document.querySelectorAll(".knob b")].map(b => b.textContent).includes("walk-pace") && document.querySelectorAll(".knob").length > 20));
+    await page.evaluate(() => { const k = [...document.querySelectorAll(".knob")].find(k => k.querySelector("b").textContent === "walk-pace"), i = k.querySelector("input"); i.value = 4; i.dispatchEvent(new Event("input")); });
+    await page.waitForFunction(() => /^walk-pace : 4\b/m.test(code), null, { timeout: 4000 }).catch(() => {});
+    ok("sliding one changes the game at once", await page.evaluate(() => /^walk-pace : 4\b/m.test(code) && game.file.field("walk-pace") === 4));
+    await page.click("#pReset"); await page.waitForTimeout(100);
+    ok("and every number goes back", await page.evaluate(() => /^walk-pace : 2.6\b/m.test(code) && !Object.keys(JSON.parse(localStorage.getItem("silvereye.tune") || "{}")).length));
+    await page.click("#tabs button[data-p=turret]");
     await page.click("#pClose");
     await page.click("#bStart"); await page.waitForTimeout(100);
     ok("Start pauses", await page.isVisible("#pause"));

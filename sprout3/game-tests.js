@@ -8,6 +8,8 @@ const logs = []; S.setLog(m => logs.push(m));
 const game = (name, opts) => L.makeGame(fs.readFileSync(__dirname + "/examples/" + name + ".sp", "utf8"), opts);
 const held = keys => S.valueCellOf([], new Map(keys.map(k => [k, true])));
 const f = (g, k) => g.state.field(k);
+// putCell: the code with one top-level cell (name : [ ... ] ending in a "]" line) replaced by new text
+const putCell = (code, name, text) => { const b = code.search(new RegExp("^" + name + " : \\[", "m")), e = code.indexOf("\n]\n", b); return code.slice(0, b) + text.trim() + code.slice(e + 2); };
 
 // ---------------- Bounce
 {
@@ -399,8 +401,17 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   ok("silvereye: a turret is set down and one fewer is carried", f(s1, "turrets").count() === 1 && agent(s1, 1).field("sentries-left") === 1);
   ok("silvereye: the turret's program shoots the guard it sees", f(s1, "turrets").part(1).field("shots") > 0 && f(s1, "guards").part(3).field("health") <= 0);
   ok("silvereye: the turret is drawn as a model", s1.draw().some(x => x[0] === "model" && x[1][0] === "turret"));
-  const s2 = sentry(src.replace("fire : (t sees) and (t cool <= 0) and (off abs < 0.1)", "fire : false"));
-  ok("silvereye: change turret-program and the turret changes", f(s2, "turrets").part(1).field("shots") === 0);
+  const s2 = sentry(src.replace("fire : (it sees-someone) and (it can-fire) and (it off-target abs < 0.1)", "fire : false"));
+  ok("silvereye: change turret-program and the turret changes", src.includes("fire : (it sees-someone) and (it can-fire)") && f(s2, "turrets").part(1).field("shots") === 0);
+  { const t = L.makeGame(src, {}); t.tick(1 / 60); put(t, 0, { x: 9.5, y: 7.5, angle: 0 });
+    for (let k = 0; k < 2; k++) t.tick(1 / 60, pad({ sentry: true }));
+    for (let k = 0; k < 6; k++) t.tick(1 / 60, pad({}));
+    const k = f(t, "turrets").part(1).field("knows");
+    ok("silvereye: a turret keeps what its program knew, in plain words", k.field("sees-someone") === true && typeof k.field("off-target") === "number" && k.field("how-far") > 1 && k.field("how-far") < 7 && k.field("how-many") >= 1, S.format(k));
+    ok("silvereye: with no one in sight, how-far is far", f(s1, "turrets").part(1).field("knows").field("how-far") === 99); }
+  // a program written with the older names (dx, dy, aim, cool, sees) still works
+  const s3 = sentry(putCell(src, "turret-program", "turret-program : [t |\n  off : wrap (t dy atan2 (t dx) - (t aim))\n  [turn : clamp [off * 4, -1, 1], fire : (t sees) and (t cool <= 0) and (off abs < 0.1)]\n]\n"));
+  ok("silvereye: a turret program in the older names still shoots", f(s3, "turrets").part(1).field("shots") > 0);
   // two players: a duel with no guards; a takedown scores, the other comes back, five wins (no simulants here)
   const duelSrc = src.replace(/^simulants : 3/m, "simulants : 0");
   const v = L.makeGame(duelSrc, { players: 2, me: 1 });
@@ -553,7 +564,8 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
       for (let t = 0; t < 200; t++) w.tick(1 / 60, pad({ sentry: t < 2, fire: t % 20 < 5, walk: Math.sin(t / 20) }));
     }
     S.setLog(m => logs.push(m));
-    ok("silvereye: the eight example programs all run, and nothing warns", examples.length === 8 && said.length === 0, said.slice(0, 2)); }
+    ok("silvereye: the ten example programs all run, and nothing warns", examples.length === 10 && said.length === 0, said.slice(0, 2));
+    ok("silvereye: the example programs are written in the plain words", examples.every(x => /\[it \|/.test(x) && !/atan2|clamp/.test(x))); }
   // the campaign: three missions, each with its own map, guards, targets and way out, all on open floor
   { const mapOf = name => { const m = src.match(new RegExp("^" + name + " : \\[\\n([\\s\\S]*?)\\n\\]", "m")); return m[1].split("\n").map(l => l.trim().replace(/"/g, "")); };
     const maps = { lab: mapOf("lab"), depot: mapOf("depot"), relay: mapOf("relay"), compound: mapOf("compound") }, said = []; S.setLog(m => said.push(m));
