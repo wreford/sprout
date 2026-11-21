@@ -20,10 +20,13 @@ export function makeView(canvas, base, opts) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: !opts.lowRes, alpha: false });
   renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
+  // filmic tone mapping: brighter highlights roll off softly instead of clipping, and the darks keep their colour
+  renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.25;
   const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(70, 0.75, 0.05, 200);
   scene.add(camera);
-  scene.add(new THREE.HemisphereLight(0xdfe6f0, 0x2a2620, 1.1));
-  const sun = new THREE.DirectionalLight(0xffffff, 1.2); sun.position.set(4, 10, 3); scene.add(sun);
+  // a cool sky light from above and a warm bounce from the floor, with a key light from one side
+  scene.add(new THREE.HemisphereLight(0xdde6f5, 0x3a2e22, 1.25));
+  const sun = new THREE.DirectionalLight(0xfff1dc, 1.35); sun.position.set(4, 10, 3); scene.add(sun);
   const holdGroup = new THREE.Group(); camera.add(holdGroup);
   const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
   const textureLoader = new THREE.TextureLoader();
