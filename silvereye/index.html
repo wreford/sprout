@@ -105,8 +105,13 @@ body{background:radial-gradient(120% 80% at 50% 0%,#1d1d24 0%,var(--page) 70%)}
 #prog.on{display:flex}
 #prog h2{margin:0 0 4px;font:800 13px/1.2 var(--sans);letter-spacing:.06em}
 #prog p{margin:0 0 8px;color:var(--ink2);font-size:11.5px;line-height:1.4}
-#src{flex:1;min-height:0;width:100%;resize:none;background:#0b0b0e;color:#ececf0;border:1px solid #ffffff1c;border-radius:8px;padding:10px;font:12.5px/1.5 var(--mono);-webkit-user-select:text;user-select:text;tab-size:2}
-#src:focus{outline:none;border-color:#e9b90f88}
+#codeBox{position:relative;flex:1;min-height:0;background:#0b0b0e;border:1px solid #ffffff1c;border-radius:8px;overflow:hidden}
+#codeBox:focus-within{border-color:#e9b90f88}
+#src,#srcHL{position:absolute;inset:0;margin:0;padding:10px;font:12.5px/1.5 var(--mono);tab-size:2;white-space:pre;overflow:auto;border:0;font-variant-ligatures:none}
+#src{width:100%;height:100%;resize:none;background:transparent;color:transparent;caret-color:#ffd166;-webkit-user-select:text;user-select:text;z-index:1}
+#srcHL{color:#ececf0;pointer-events:none;overflow:hidden}
+#srcHL i{font-style:normal}#srcHL .c{color:#7d8597;font-style:italic}#srcHL .s{color:#9be7a0}#srcHL .n,#srcHL .l{color:#ffb86b}#srcHL .k{color:#ff7ab2}#srcHL .a{color:#8fd8ff}#srcHL .o{color:#e9b90f}#srcHL .tp{background:#ffffff14;border-radius:3px}
+#src:focus{outline:none}
 #status{margin:6px 0 0;font-size:11px;color:var(--ink2);min-height:1.3em}
 #status.bad{color:#ff7a6b}
 #prog .row{display:flex;gap:6px;margin-top:6px}
@@ -195,7 +200,7 @@ body{background:radial-gradient(120% 80% at 50% 0%,#1d1d24 0%,var(--page) 70%)}
   <div id="prog" aria-label="Turret program">
     <div id="tabs"><button data-p="turret" class="on">TURRETS</button><button data-p="simulant">SIMULANTS</button></div>
     <p id="progHelp"></p>
-    <textarea id="src" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off"></textarea>
+    <div id="codeBox"><pre id="srcHL" aria-hidden="true"></pre><textarea id="src" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off"></textarea></div>
     <div id="status"></div>
     <div class="row"><button id="pReset">Put the first one back</button><button id="pClose">Done</button></div>
   </div>
@@ -206,6 +211,7 @@ body{background:radial-gradient(120% 80% at 50% 0%,#1d1d24 0%,var(--page) 70%)}
 <script src="words.js?v=20261121s"></script>
 <script src="kernels.js?v=20261121s"></script>
 <script src="live3.js?v=20261121s"></script>
+<script src="highlight.js?v=20261121s"></script>
 <script>
 // SilverEye on a pocket console. The game is examples/silvereye.sp; this page is the console around it: the screen
 // (three.js drawn at a low resolution, the 2D words on top), the stick, the buttons, the menus, and the link to a
@@ -278,7 +284,7 @@ function setPaused(p) { paused = p; }
 function setCode(src) {
   code = src;
   for (const k in PROGRAMS) { const c = cellOf(src, PROGRAMS[k]); if (c !== null) programs[k] = c; }
-  if (document.activeElement !== ta) ta.value = programs[tab] || original[tab];
+  if (document.activeElement !== ta) { ta.value = programs[tab] || original[tab]; paintCode(); }
 }
 function build(src, fresh) {
   try {
@@ -302,17 +308,21 @@ function applyProgram() {
   try { S.load(src); } catch (e) { say("Not yet: " + msgOf(e) + " · the last one that worked keeps running.", true); return; }
   if (window.build(src, false)) { programs[tab] = ta.value; good = Object.assign({}, programs); store.set("silvereye.programs", programs); say(window.NET && NET.active ? "Running your program, on both phones." : "Running your program."); }
 }
-ta.addEventListener("input", () => { clearTimeout(editT); editT = setTimeout(applyProgram, 300); });
+// the program is coloured as you type: a highlighted copy sits under the textarea, scrolled with it
+const HLWORDS = new Set("cond any clamp wrap atan2 atan tan abs sin cos sqrt and or not max min else pi floor round".split(" "));
+function paintCode() { $("srcHL").innerHTML = ta.value.split("\n").map(l => Sprout3Highlight.line(l, HLWORDS)).join("\n") + "\n "; $("srcHL").scrollTop = ta.scrollTop; $("srcHL").scrollLeft = ta.scrollLeft; }
+ta.addEventListener("scroll", () => { $("srcHL").scrollTop = ta.scrollTop; $("srcHL").scrollLeft = ta.scrollLeft; });
+ta.addEventListener("input", () => { paintCode(); clearTimeout(editT); editT = setTimeout(applyProgram, 300); });
 ta.addEventListener("keydown", e => { if (e.key === "Tab") { e.preventDefault(); ta.setRangeText("  ", ta.selectionStart, ta.selectionEnd, "end"); ta.dispatchEvent(new Event("input")); } e.stopPropagation(); });
 function showTab(k) {
-  tab = k; ta.value = programs[k] || original[k]; $("progHelp").innerHTML = HELP[k] + " Change it and it thinks the new way at once, on both phones in a duel.";
+  tab = k; ta.value = programs[k] || original[k]; paintCode(); $("progHelp").innerHTML = HELP[k] + " Change it and it thinks the new way at once, on both phones in a duel.";
   for (const b of $("tabs").children) b.classList.toggle("on", b.dataset.p === k);
   say(k === "turret" ? "Set down a turret (C-up) and watch it think." : "Simulants play in Combat sim, and join a duel.");
 }
 $("tabs").addEventListener("click", e => { const b = e.target.closest("button"); if (b) showTab(b.dataset.p); });
 const openProgram = on => { $("prog").classList.toggle("on", on); if (on) { closeScreens(); setTimeout(() => ta.focus({ preventScroll: true }), 50); } else ta.blur(); };
 $("pClose").onclick = () => openProgram(false);
-$("pReset").onclick = () => { ta.value = original[tab]; applyProgram(); };
+$("pReset").onclick = () => { ta.value = original[tab]; paintCode(); applyProgram(); };
 
 // ---- the title, settings, about and pause screens, worked by tapping or by the stick and A
 const SKILLS = ["", "ROOKIE", "AGENT", "ACE"], FOVS = [75, 90, 100, 110];
