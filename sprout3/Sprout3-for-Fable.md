@@ -64,7 +64,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
   - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
   - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
-- **Tests:** 454 pass, 302 for the language and 152 for the games.
+- **Tests:** 455 pass, 302 for the language and 153 for the games.
 
 ## Open questions for Troy
 
@@ -83,13 +83,13 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 
 ```
 node test.js          # language tests (302)
-node game-tests.js    # game tests (152)
+node game-tests.js    # game tests (153)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 454 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 455 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4578,6 +4578,10 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     put(ts, 1, { x: 9.5, y: 7.5, angle: 0 }); ts.tick(1 / 60, pad({}), pad({ sentry: true })); put(ts, 1, { x: 13.0, y: 7.5, angle: Math.PI });
     for (let t = 0; t < 45; t++) ts.tick(1 / 60, pad({}), pad({ fire: true }));
     ok("silvereye: your own turret isn't in your sights", f(ts, "turrets").count() === 1); }
+  // a guard who is hit staggers for a moment
+  { const sg = L.makeGame(src, {}); sg.tick(1 / 60, pad({})); put(sg, 0, { x: 9.5, y: 7.5, angle: 0 });
+    sg.tick(1 / 60, pad({ fire: true })); const g3 = f(sg, "guards").part(3);
+    ok("silvereye: a guard who is hit staggers and can't fire back at once", g3.field("stagger") > 0.3 && g3.field("fired") === false); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });
@@ -10744,7 +10748,7 @@ simulant-program : [s |
 
 -- ---------------------------------------------------------------- the people
 guard-health : cond [difficulty = 1, 70, difficulty = 3, 140, any, 100]
-guard : [id gx gy tx ty | [id : id, x : gx, y : gy, angle : 0, health : guard-health, wait : 1, alert : false, home-x : gx, home-y : gy, to-x : tx, to-y : ty, fell : false]]
+guard : [id gx gy tx ty | [id : id, x : gx, y : gy, angle : 0, health : guard-health, wait : 1, alert : false, home-x : gx, home-y : gy, to-x : tx, to-y : ty, fell : false, stagger : 0]]
 spawns : [[2.5, 2.5, 0.6], [13.5, 13.5, -2.4], [13.5, 2.5, 2.4], [2.5, 13.5, -0.8], [7.5, 4.5, 1.6], [9.5, 10.5, -1.6], [6.5, 13.5, 0]]
 spawn-of : [id | spawns @ (id - 1 % (spawns length) + 1)]
 open-cells : level numbered collect-flat [[r, row] | row chars numbered keep [[c, ch] | ch = "."] collect [[c, ch] | [c - 0.5, r - 0.5]]]
@@ -10885,7 +10889,7 @@ play : [game |
   hero : ready @ 1
   hit-guards : game guards collect [g |
     n : power ["guard [g id]", shot-damage, 110] + (zapped "guard [g id]" * sentry-damage)
-    n > 0 [g with [health : g health - n, alert : true]] else [g]
+    n > 0 [g with [health : g health - n, alert : true, stagger : 0.35]] else [g]
   ]
   thinking : hit-guards collect [g |
     g health <= 0 [g] else [
@@ -10897,11 +10901,13 @@ play : [game |
       goal-x : cond [alert, hero x, any, g to-x]
       goal-y : cond [alert, hero y, any, g to-y]
       gap : distance [g x, g y, goal-x, goal-y]
-      pace : cond [alert and (gd < 3), 0, alert, 1.2, any, 0.8]
+      -- a guard who was just hit staggers: no step, no shot
+      staggered : (g stagger else 0) > 0
+      pace : cond [staggered, 0, alert and (gd < 3), 0, alert, 1.2, any, 0.8]
       head : goal-y - (g y) atan2 (goal-x - (g x))
       went : cond [gap < 0.05, [x : g x, y : g y], any, slide [g x, g y, head cos * pace * dt, head sin * pace * dt]]
       arrived : (alert not) and (gap < 0.3)
-      fires : sees and (g wait <= 0)
+      fires : sees and (g wait <= 0) and (staggered not)
       next-x : cond [arrived, g home-x, any, g to-x]
       next-y : cond [arrived, g home-y, any, g to-y]
       back-x : cond [arrived, g to-x, any, g home-x]
@@ -10909,6 +10915,7 @@ play : [game |
       g with [
         x : went x, y : went y, angle : cond [alert, facing - pi, any, head], alert : alert
         wait : cond [fires, 1.5 - (difficulty * 0.3), any, g wait - dt]
+        stagger : (g stagger else 0) - dt
         to-x : next-x, to-y : next-y, home-x : back-x, home-y : back-y
         fired : fires, hits : fires and (noise [now * 7, g id] < (0.5 - (gd * 0.035) * (difficulty * 0.35 + 0.3)))
       ]

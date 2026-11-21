@@ -475,6 +475,10 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     put(ts, 1, { x: 9.5, y: 7.5, angle: 0 }); ts.tick(1 / 60, pad({}), pad({ sentry: true })); put(ts, 1, { x: 13.0, y: 7.5, angle: Math.PI });
     for (let t = 0; t < 45; t++) ts.tick(1 / 60, pad({}), pad({ fire: true }));
     ok("silvereye: your own turret isn't in your sights", f(ts, "turrets").count() === 1); }
+  // a guard who is hit staggers for a moment
+  { const sg = L.makeGame(src, {}); sg.tick(1 / 60, pad({})); put(sg, 0, { x: 9.5, y: 7.5, angle: 0 });
+    sg.tick(1 / 60, pad({ fire: true })); const g3 = f(sg, "guards").part(3);
+    ok("silvereye: a guard who is hit staggers and can't fire back at once", g3.field("stagger") > 0.3 && g3.field("fired") === false); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });
