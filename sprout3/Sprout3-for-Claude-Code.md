@@ -4589,7 +4589,7 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
       const ms = L.makeGame(src.replace(/^stage : 1/m, "stage : " + stage), {}); ms.tick(1 / 60, pad({}));
       const M = maps[map], open = (x, y) => (M[Math.floor(y)] || "")[Math.floor(x)] === ".";
       const pts = [...S.partsOf(f(ms, "guards")).flatMap(g => [[g.field("x"), g.field("y")], [g.field("to-x"), g.field("to-y")]]), ...S.partsOf(f(ms, "machines")).map(m => [m.field("x"), m.field("y")]), ...S.partsOf(f(ms, "pickups")).map(p => [p.field("x"), p.field("y")]), [agent(ms, 1).field("x"), agent(ms, 1).field("y")]];
-      const walls = ms.draw().filter(x => x[0] === "block").length - 2, wallCount = M.join("").split("#").length - 1;
+      const walls = ms.draw().filter(x => x[0] === "block" && x[1][4] === 2.5).length, wallCount = M.join("").split("#").length - 1;
       counts.push([stage, f(ms, "guards").count(), f(ms, "machines").count(), pts.filter(([x, y]) => !open(x, y)), walls === wallCount]);
       for (let t = 0; t < 300; t++) ms.tick(1 / 60, pad({ walk: 1, look: t * 0.02, fire: t % 30 < 8 }));
     }
@@ -11230,6 +11230,8 @@ draw : [game |
   block [8, -0.05, 8, 16, 0.1, 16, "plate"]
   block [8, 2.55, 8, 16, 0.1, 16, "metal"]
   wall-cells each [[c, r] | block [c - 0.5, 1.25, r - 0.5, 1, 2.5, 1, cond [mode = "mission", mission walls, any, "concrete"]]]
+  -- skirting at the foot of every wall
+  wall-cells each [[c, r] | block [c - 0.5, 0.09, r - 0.5, 1.02, 0.18, 1.02, "#1a1c20"]]
   -- the mission's targets, standing until wrecked
   game machines each [m | model [m model, m x, 0, m y, 0, m size, false, 0]]
   props each [[name, px, pz, turn, size] | model [name, px, 0, pz, turn, size, false, 0]]
