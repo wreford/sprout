@@ -1109,7 +1109,7 @@ function argumentsOf(argument, count) { if (isCell(argument)) { const values = n
 const GLOBALS = Object.create(null);
 function defNative(name, fn, effect) { GLOBALS[name] = new Native(name, fn, effect); }
 GLOBALS.any = ANY;
-defNative("range", n => new RangeCell(Math.max(0, Math.floor(requireNumber(n)))));
+defNative("range", n => { const count = requireNumber(n); return new RangeCell(Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0); });
 // rand reads the recorded random source, like random, so it stays here; plain maths lives in the prelude (decision 97)
 defNative("rand", a => { const [lo, hi] = argumentsOf(a, 2); return lo + randomSource() * (hi - lo); });
 defNative("print", a => { effect(() => printOutput(formatValue(a))); return a; }, true);
