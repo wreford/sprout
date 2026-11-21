@@ -571,6 +571,9 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     ok("silvereye: the next stage starts fresh, in its own map, with its card", f(cg, "over") === "" && f(cg, "guards").count() === 7 && cg.draw().some(x => x[0] === "text" && x[1][0] === "MISSION 2 · THE DEPOT"), [f(cg, "over"), f(cg, "guards").count()]);
     const last = L.makeGame(camp.replace(/^stage : 1/m, "stage : 3"), {}); last.tick(1 / 60, pad({})); const m5 = new Map(S.fieldsOf(last.state)); m5.set("over", "won"); last.setState(S.valueCellOf([], m5));
     ok("silvereye: the last mission ends the campaign", last.draw().some(x => x[0] === "text" && x[1][0] === "CAMPAIGN COMPLETE")); }
+  { const fl = L.makeGame(src, {}); fl.tick(1 / 60, pad({})); const v0 = fl.draw().find(x => x[0] === "view")[1];
+    for (let t = 0; t < 200; t++) fl.tick(1 / 60, pad({})); const v1 = fl.draw().find(x => x[0] === "view")[1];
+    ok("silvereye: a mission opens with the camera sweeping down to your eyes", v0[1] > 3 && Math.abs(v1[1] - 1.55) < 1e-9 && Math.abs(v1[0] - agent(fl, 1).field("x")) < 1e-9, [v0.slice(0, 3), v1.slice(0, 3)]); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });

@@ -10,13 +10,13 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 
 ```
 node test.js          # language tests (303)
-node game-tests.js    # game tests (177)
+node game-tests.js    # game tests (178)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 480 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 481 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4606,6 +4606,9 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     ok("silvereye: the next stage starts fresh, in its own map, with its card", f(cg, "over") === "" && f(cg, "guards").count() === 7 && cg.draw().some(x => x[0] === "text" && x[1][0] === "MISSION 2 · THE DEPOT"), [f(cg, "over"), f(cg, "guards").count()]);
     const last = L.makeGame(camp.replace(/^stage : 1/m, "stage : 3"), {}); last.tick(1 / 60, pad({})); const m5 = new Map(S.fieldsOf(last.state)); m5.set("over", "won"); last.setState(S.valueCellOf([], m5));
     ok("silvereye: the last mission ends the campaign", last.draw().some(x => x[0] === "text" && x[1][0] === "CAMPAIGN COMPLETE")); }
+  { const fl = L.makeGame(src, {}); fl.tick(1 / 60, pad({})); const v0 = fl.draw().find(x => x[0] === "view")[1];
+    for (let t = 0; t < 200; t++) fl.tick(1 / 60, pad({})); const v1 = fl.draw().find(x => x[0] === "view")[1];
+    ok("silvereye: a mission opens with the camera sweeping down to your eyes", v0[1] > 3 && Math.abs(v1[1] - 1.55) < 1e-9 && Math.abs(v1[0] - agent(fl, 1).field("x")) < 1e-9, [v0.slice(0, 3), v1.slice(0, 3)]); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });
@@ -11216,7 +11219,13 @@ draw : [game |
   -- the view is set by how wide it is across (the screen is taller than wide), and narrows while you aim
   across : you fov * (cond [you zoomed, zoom-view, any, 1])
   tall : across / 2 * pi / 180 tan * (H / W) atan * 2 * 180 / pi
-  view [you x, cond [down, 0.35, any, eye], you y, you angle, cond [down, 0.5, any, 0], tall]
+  -- a mission opens with the camera sweeping down from high behind you into your eyes (three seconds, eased)
+  intro : cond [(mode = "mission") and (game over = ""), 1 - ((now - (game began)) / 3) max 0, any, 0]
+  ease : intro * intro * (3 - (intro * 2))
+  room : cond [ease > 0, cast [you x, you y, you angle + pi] far - 0.3 min 4.5 max 0, any, 0]
+  back-x : you angle cos * (0 - room) * ease + (you x)
+  back-y : you angle sin * (0 - room) * ease + (you y)
+  view [back-x, cond [down, 0.35, any, eye] + (ease * 2.4), back-y, you angle + (ease * 0.6), cond [down, 0.5, any, 0] - (ease * 0.45), tall]
   -- the lab: a floor, a ceiling, and a block for every wall cell of the map
   block [8, -0.05, 8, 16, 0.1, 16, "plate"]
   block [8, 2.55, 8, 16, 0.1, 16, "metal"]

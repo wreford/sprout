@@ -571,7 +571,13 @@ draw : [game |
   -- the view is set by how wide it is across (the screen is taller than wide), and narrows while you aim
   across : you fov * (cond [you zoomed, zoom-view, any, 1])
   tall : across / 2 * pi / 180 tan * (H / W) atan * 2 * 180 / pi
-  view [you x, cond [down, 0.35, any, eye], you y, you angle, cond [down, 0.5, any, 0], tall]
+  -- a mission opens with the camera sweeping down from high behind you into your eyes (three seconds, eased)
+  intro : cond [(mode = "mission") and (game over = ""), 1 - ((now - (game began)) / 3) max 0, any, 0]
+  ease : intro * intro * (3 - (intro * 2))
+  room : cond [ease > 0, cast [you x, you y, you angle + pi] far - 0.3 min 4.5 max 0, any, 0]
+  back-x : you angle cos * (0 - room) * ease + (you x)
+  back-y : you angle sin * (0 - room) * ease + (you y)
+  view [back-x, cond [down, 0.35, any, eye] + (ease * 2.4), back-y, you angle + (ease * 0.6), cond [down, 0.5, any, 0] - (ease * 0.45), tall]
   -- the lab: a floor, a ceiling, and a block for every wall cell of the map
   block [8, -0.05, 8, 16, 0.1, 16, "plate"]
   block [8, 2.55, 8, 16, 0.1, 16, "metal"]
