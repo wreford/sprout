@@ -554,9 +554,9 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     const counts = [];
     for (const [stage, map, guards, targets] of [[1, "lab", 6, 2], [2, "depot", 7, 3], [3, "relay", 9, 2]]) {
       const ms = L.makeGame(src.replace(/^stage : 1/m, "stage : " + stage), {}); ms.tick(1 / 60, pad({}));
-      const M = maps[map], open = (x, y) => (M[Math.floor(y)] || "")[Math.floor(x)] === ".";
+      const M = maps[map], open = (x, y) => (M[Math.floor(y)] || "")[Math.floor(x)] === "." && !(M[Math.floor(y)] || "").includes("D") || (M[Math.floor(y)] || "")[Math.floor(x)] === ".";
       const pts = [...S.partsOf(f(ms, "guards")).flatMap(g => [[g.field("x"), g.field("y")], [g.field("to-x"), g.field("to-y")]]), ...S.partsOf(f(ms, "machines")).map(m => [m.field("x"), m.field("y")]), ...S.partsOf(f(ms, "pickups")).map(p => [p.field("x"), p.field("y")]), [agent(ms, 1).field("x"), agent(ms, 1).field("y")]];
-      const walls = ms.draw().filter(x => x[0] === "block" && x[1][4] === 2.5).length, wallCount = M.join("").split("#").length - 1;
+      const walls = ms.draw().filter(x => x[0] === "block" && x[1][4] === 2.5 && x[1][6] !== "plate").length, wallCount = M.join("").split("#").length - 1;
       counts.push([stage, f(ms, "guards").count(), f(ms, "machines").count(), pts.filter(([x, y]) => !open(x, y)), walls === wallCount]);
       for (let t = 0; t < 300; t++) ms.tick(1 / 60, pad({ walk: 1, look: t * 0.02, fire: t % 30 < 8 }));
     }
@@ -602,6 +602,12 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     for (let t = 0; t < 60 * 10; t++) bh.tick(1 / 60, pad({ fire: t % 20 < 2, reload: t % 200 === 0 }));
     const hs = S.partsOf(f(bh, "holes"));
     ok("silvereye: misses leave holes in the wall, the last 24 kept", hs.length > 3 && hs.length <= 24 && hs.every(h => Math.abs(h.field("x") - 1.0) < 0.05), [hs.length, hs[0] && hs[0].field("x")]); }
+  // doors: shut when nobody is near, slid up when someone comes close; you can walk through a door's cell
+  { const dr = L.makeGame(src, {}); dr.tick(1 / 60, pad({}));
+    const door = () => dr.draw().filter(x => x[0] === "block" && x[1][6] === "plate" && x[1][4] === 2.5).find(x => Math.abs(x[1][0] - 7.5) < 0.01 && Math.abs(x[1][2] - 4.5) < 0.01);
+    const shut = door()[1][1]; put(dr, 0, { x: 6.2, y: 4.5, angle: 0 }); dr.tick(1 / 60, pad({})); const opened = door()[1][1];
+    for (let t = 0; t < 60; t++) dr.tick(1 / 60, pad({ walk: 1 }));
+    ok("silvereye: a door slides up as you come near, and you walk through", shut === 1.25 && opened > 2.5 && agent(dr, 1).field("x") > 8.5, [shut, opened, agent(dr, 1).field("x")]); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });

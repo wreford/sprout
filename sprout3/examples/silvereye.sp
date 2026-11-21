@@ -20,7 +20,7 @@ depot : [
   "#.##..#..#..##.#"
   "#.##..#..#..##.#"
   "#...........#..#"
-  "#..####.##.....#"
+  "#..####D##.....#"
   "#..............#"
   "#.....#..#.....#"
   "#.###........###"
@@ -34,7 +34,7 @@ depot : [
 relay : [
   "################"
   "#..............#"
-  "#.####.##.####.#"
+  "#.####D##D####.#"
   "#.#..........#.#"
   "#.#.##....##.#.#"
   "#...#......#...#"
@@ -54,12 +54,12 @@ lab : [
   "#......#.......#"
   "#......#.......#"
   "#..##..#..###..#"
-  "#..##.....#....#"
+  "#..##..D..#....#"
   "#......#..#....#"
-  "####.###..#.####"
+  "####D###..#D####"
   "#......#.......#"
   "#......#.......#"
-  "#.###..####..###"
+  "#D###..####..###"
   "#...#..........#"
   "#...#..#####...#"
   "#......#...#...#"
@@ -152,6 +152,9 @@ solid : [cx cy |
   cond [row = false, true, any, row @ (cx floor + 1) = "#"]
 ]
 wall-cells : level numbered collect-flat [[r, row] | row chars numbered keep [[c, ch] | ch = "#"] collect [[c, ch] | [c, r]]]
+-- doors: a D in a map is floor with a door in it; the door slides up as anyone comes near. across: walls left and
+-- right, so the door spans the passage east to west (otherwise north to south)
+door-cells : level numbered collect-flat [[r, row] | row chars numbered keep [[c, ch] | ch = "D"] collect [[c, ch] | [x : c - 0.5, y : r - 0.5, across : row @ (c - 1) = "#"]]]
 -- is the way from a to b clear of walls?
 clear-line : [ax ay bx by |
   steps : (bx - ax * (bx - ax) + (by - ay * (by - ay)) sqrt * 4 ceil) max 1
@@ -623,6 +626,14 @@ draw : [game |
   wall-cells each [[c, r] | block [c - 0.5, 1.25, r - 0.5, 1, 2.5, 1, cond [mode = "mission", mission walls, any, "concrete"]]]
   -- skirting at the foot of every wall
   wall-cells each [[c, r] | block [c - 0.5, 0.09, r - 0.5, 1.02, 0.18, 1.02, "#1a1c20"]]
+  -- doors slide up as anyone comes near, and drop shut behind them
+  movers : game agents keep up .. (game guards keep [g | g health > 0]) .. (game scientists keep [c | c health > 0])
+  door-cells each [d |
+    nearest : movers collect [m | distance [m x, m y, d x, d y]] smallest else 9
+    lift-by : 1.9 - nearest / 0.9 max 0 min 1 * 2.3
+    block [d x, 1.25 + lift-by, d y, cond [d across, 1, any, 0.14], 2.5, cond [d across, 0.14, any, 1], "plate"]
+    block [d x, 2.47, d y, cond [d across, 1.04, any, 0.2], 0.06, cond [d across, 0.2, any, 1.04], "#d6a531"]
+  ]
   -- bullet holes where shots struck the walls
   (game holes else []) each [h | block [h x, h h, h y, 0.07, 0.07, 0.07, "#0b0b0d"]]
   -- the mission's targets, standing until wrecked

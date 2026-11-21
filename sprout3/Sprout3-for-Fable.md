@@ -64,7 +64,7 @@ Nothing is summarised: every file is here in full, under a heading that gives it
   - **SQLite in the browser (decision 90):** `db query` and `db run` work on the page through sql.js, and the database is kept in the browser
   - **WebGPU (decision 90):** the game view can draw every shape in one instanced draw, with Canvas 2D as the fallback
   - **`bench.html`:** times the language, the games, particles up to 100,000 on both renderers, and SQLite
-- **Tests:** 490 pass, 303 for the language and 187 for the games.
+- **Tests:** 491 pass, 303 for the language and 188 for the games.
 
 ## Open questions for Troy
 
@@ -83,13 +83,13 @@ Nothing is summarised: every file is here in full, under a heading that gives it
 
 ```
 node test.js          # language tests (303)
-node game-tests.js    # game tests (187)
+node game-tests.js    # game tests (188)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 490 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 491 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4662,9 +4662,9 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     const counts = [];
     for (const [stage, map, guards, targets] of [[1, "lab", 6, 2], [2, "depot", 7, 3], [3, "relay", 9, 2]]) {
       const ms = L.makeGame(src.replace(/^stage : 1/m, "stage : " + stage), {}); ms.tick(1 / 60, pad({}));
-      const M = maps[map], open = (x, y) => (M[Math.floor(y)] || "")[Math.floor(x)] === ".";
+      const M = maps[map], open = (x, y) => (M[Math.floor(y)] || "")[Math.floor(x)] === "." && !(M[Math.floor(y)] || "").includes("D") || (M[Math.floor(y)] || "")[Math.floor(x)] === ".";
       const pts = [...S.partsOf(f(ms, "guards")).flatMap(g => [[g.field("x"), g.field("y")], [g.field("to-x"), g.field("to-y")]]), ...S.partsOf(f(ms, "machines")).map(m => [m.field("x"), m.field("y")]), ...S.partsOf(f(ms, "pickups")).map(p => [p.field("x"), p.field("y")]), [agent(ms, 1).field("x"), agent(ms, 1).field("y")]];
-      const walls = ms.draw().filter(x => x[0] === "block" && x[1][4] === 2.5).length, wallCount = M.join("").split("#").length - 1;
+      const walls = ms.draw().filter(x => x[0] === "block" && x[1][4] === 2.5 && x[1][6] !== "plate").length, wallCount = M.join("").split("#").length - 1;
       counts.push([stage, f(ms, "guards").count(), f(ms, "machines").count(), pts.filter(([x, y]) => !open(x, y)), walls === wallCount]);
       for (let t = 0; t < 300; t++) ms.tick(1 / 60, pad({ walk: 1, look: t * 0.02, fire: t % 30 < 8 }));
     }
@@ -4710,6 +4710,12 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     for (let t = 0; t < 60 * 10; t++) bh.tick(1 / 60, pad({ fire: t % 20 < 2, reload: t % 200 === 0 }));
     const hs = S.partsOf(f(bh, "holes"));
     ok("silvereye: misses leave holes in the wall, the last 24 kept", hs.length > 3 && hs.length <= 24 && hs.every(h => Math.abs(h.field("x") - 1.0) < 0.05), [hs.length, hs[0] && hs[0].field("x")]); }
+  // doors: shut when nobody is near, slid up when someone comes close; you can walk through a door's cell
+  { const dr = L.makeGame(src, {}); dr.tick(1 / 60, pad({}));
+    const door = () => dr.draw().filter(x => x[0] === "block" && x[1][6] === "plate" && x[1][4] === 2.5).find(x => Math.abs(x[1][0] - 7.5) < 0.01 && Math.abs(x[1][2] - 4.5) < 0.01);
+    const shut = door()[1][1]; put(dr, 0, { x: 6.2, y: 4.5, angle: 0 }); dr.tick(1 / 60, pad({})); const opened = door()[1][1];
+    for (let t = 0; t < 60; t++) dr.tick(1 / 60, pad({ walk: 1 }));
+    ok("silvereye: a door slides up as you come near, and you walk through", shut === 1.25 && opened > 2.5 && agent(dr, 1).field("x") > 8.5, [shut, opened, agent(dr, 1).field("x")]); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });
@@ -10778,7 +10784,7 @@ depot : [
   "#.##..#..#..##.#"
   "#.##..#..#..##.#"
   "#...........#..#"
-  "#..####.##.....#"
+  "#..####D##.....#"
   "#..............#"
   "#.....#..#.....#"
   "#.###........###"
@@ -10792,7 +10798,7 @@ depot : [
 relay : [
   "################"
   "#..............#"
-  "#.####.##.####.#"
+  "#.####D##D####.#"
   "#.#..........#.#"
   "#.#.##....##.#.#"
   "#...#......#...#"
@@ -10812,12 +10818,12 @@ lab : [
   "#......#.......#"
   "#......#.......#"
   "#..##..#..###..#"
-  "#..##.....#....#"
+  "#..##..D..#....#"
   "#......#..#....#"
-  "####.###..#.####"
+  "####D###..#D####"
   "#......#.......#"
   "#......#.......#"
-  "#.###..####..###"
+  "#D###..####..###"
   "#...#..........#"
   "#...#..#####...#"
   "#......#...#...#"
@@ -10910,6 +10916,9 @@ solid : [cx cy |
   cond [row = false, true, any, row @ (cx floor + 1) = "#"]
 ]
 wall-cells : level numbered collect-flat [[r, row] | row chars numbered keep [[c, ch] | ch = "#"] collect [[c, ch] | [c, r]]]
+-- doors: a D in a map is floor with a door in it; the door slides up as anyone comes near. across: walls left and
+-- right, so the door spans the passage east to west (otherwise north to south)
+door-cells : level numbered collect-flat [[r, row] | row chars numbered keep [[c, ch] | ch = "D"] collect [[c, ch] | [x : c - 0.5, y : r - 0.5, across : row @ (c - 1) = "#"]]]
 -- is the way from a to b clear of walls?
 clear-line : [ax ay bx by |
   steps : (bx - ax * (bx - ax) + (by - ay * (by - ay)) sqrt * 4 ceil) max 1
@@ -11381,6 +11390,14 @@ draw : [game |
   wall-cells each [[c, r] | block [c - 0.5, 1.25, r - 0.5, 1, 2.5, 1, cond [mode = "mission", mission walls, any, "concrete"]]]
   -- skirting at the foot of every wall
   wall-cells each [[c, r] | block [c - 0.5, 0.09, r - 0.5, 1.02, 0.18, 1.02, "#1a1c20"]]
+  -- doors slide up as anyone comes near, and drop shut behind them
+  movers : game agents keep up .. (game guards keep [g | g health > 0]) .. (game scientists keep [c | c health > 0])
+  door-cells each [d |
+    nearest : movers collect [m | distance [m x, m y, d x, d y]] smallest else 9
+    lift-by : 1.9 - nearest / 0.9 max 0 min 1 * 2.3
+    block [d x, 1.25 + lift-by, d y, cond [d across, 1, any, 0.14], 2.5, cond [d across, 0.14, any, 1], "plate"]
+    block [d x, 2.47, d y, cond [d across, 1.04, any, 0.2], 0.06, cond [d across, 0.2, any, 1.04], "#d6a531"]
+  ]
   -- bullet holes where shots struck the walls
   (game holes else []) each [h | block [h x, h h, h y, 0.07, 0.07, 0.07, "#0b0b0d"]]
   -- the mission's targets, standing until wrecked
