@@ -182,7 +182,122 @@ $("ed").addEventListener("touchmove", e => {
 $("ed").addEventListener("touchend", () => { if (pinch) { pinch = null; LS.set("sprout3.fontSize", fs); } });
 if (fs !== 13) applyFont();
 
-window.EditorTools = { undo, redo, suggestions, keysUI, fontSize, get undoDepth() { return UNDO.length; } };
+// ===================================================================== live values
+// each top-level name shows its value at the end of its line, and each field of start shows the game's value now
+css.textContent += `
+#vals{position:absolute;left:0;top:0;z-index:1;pointer-events:none;white-space:pre}
+#vals i{position:absolute;font:var(--FS,13px)/var(--LH) var(--mono);font-style:normal;color:var(--acc2);opacity:.85;white-space:pre}
+#vals i::before{content:"= ";opacity:.55}
+body.novals #vals{display:none}
+.lc{box-shadow:inset 0 -4px 0 var(--sw);border-radius:2px}
+`;
+const vals = document.createElement("div"); vals.id = "vals"; $("ed").appendChild(vals);
+const plain = /^(-?\d+(\.\d+)?|"[^"\[]*"|#[0-9a-f]{3,8}|\$[\d.]+|\d+x\d+|true|false|'[\w-]+)$/i;
+function valueLines() {
+  const lines = code.split("\n"), out = [];
+  let inStart = false, childIndent = -1;
+  lines.forEach((line, i) => {
+    const indent = line.match(/^ */)[0].length, m = /^\s*([a-z][\w-]*)\s*:\s*(.*?)\s*(--.*)?$/i.exec(line);
+    if (indent === 0) { inStart = /^start\s*:\s*$/.test(line); childIndent = -1; }
+    if (!m) return;
+    const [, name, expr] = m, codeEnd = line.replace(/\s*--.*$/, "").length;
+    if (indent === 0 && !["start", "update", "draw"].includes(name) && expr && !plain.test(expr) && !/^\[[^\]]*\|/.test(expr)) out.push({ i, name, from: "file", codeEnd, line });
+    else if (inStart && indent > 0) { if (childIndent < 0) childIndent = indent; if (indent === childIndent) out.push({ i, name, from: "state", codeEnd, line }); }
+  });
+  return out;
+}
+function short(v) {
+  if (v instanceof S.Cell && v.takesInput()) return null;
+  if (typeof v === "number") return Number.isInteger(v) ? String(v) : String(+v.toFixed(3));
+  let t; try { t = brief(v); } catch (e) { return null; }
+  return t.length > 34 ? t.slice(0, 34) + "…" : t;
+}
+let valsOn = LS.get("sprout3.values", true);
+function showValues() {
+  if (!valsOn || TAB !== "code") { vals.innerHTML = ""; return; }
+  const file = game ? game.file : lastProgram, state = game ? game.state : null;
+  if (!file) { vals.innerHTML = ""; return; }
+  const cw = charW(), lh = LH(), left = parseFloat(getComputedStyle(ta).paddingLeft);
+  let h = "";
+  for (const v of valueLines()) {
+    let value;
+    try { value = v.from === "state" ? (state ? state.field(v.name) : S.UNSET) : file.field(v.name); } catch (e) { continue; }
+    if (value === S.UNSET || value === undefined) continue;
+    const t = short(value); if (t === null) continue;
+    // after the code, or after the comment if the comment leaves no room
+    const comment = v.line.indexOf("--", v.codeEnd), room = comment < 0 ? Infinity : comment - v.codeEnd;
+    const col = room >= t.length + 5 ? v.codeEnd + 2 : v.line.length + 2;
+    h += `<i style="top:${PAD + v.i * lh}px;left:${left + col * cw}px">${esc(t)}</i>`;
+  }
+  if (vals._h !== h) { vals.innerHTML = h; vals._h = h; }
+}
+function placeValues() { vals.style.transform = `translate(${-ta.scrollLeft}px,${-ta.scrollTop}px)`; }
+ta.addEventListener("scroll", placeValues);
+setInterval(() => { if (!document.hidden) { showValues(); placeValues(); } }, 200);
+window.addEventListener("sprout-render", () => { showValues(); placeValues(); });
+
+// colours in the code are underlined in their own colour
+const baseLine = window.lineHTML;
+window.lineHTML = function (s) {
+  return baseLine(s)
+    .replace(/<i class="l">(#[0-9a-f]{3,8})<\/i>/gi, (m, c) => `<i class="l lc" style="--sw:${c}">${c}</i>`)
+    .replace(/<i class="s">(&quot;|")(#[0-9a-f]{3,8})(&quot;|")<\/i>/gi, (m, q1, c, q2) => `<i class="s"><span class="lc" style="--sw:${c}">${q1}${c}${q2}</span></i>`);
+};
+
+// ===================================================================== line actions: tap a line number
+css.textContent += `
+#gut{pointer-events:auto;cursor:pointer;-webkit-user-select:none;user-select:none}
+#lineMenu{position:fixed;z-index:45;display:none;flex-direction:column;min-width:170px;padding:6px;border-radius:12px;background:var(--card);box-shadow:0 0 0 1px var(--line),0 12px 32px rgba(0,0,0,.22)}
+#lineMenu.on{display:flex}
+#lineMenu b{font:600 11px var(--sans);letter-spacing:.06em;text-transform:uppercase;color:var(--fg3);padding:6px 10px 4px}
+#lineMenu button{text-align:left;font:500 15px var(--sans);padding:10px 12px;border-radius:8px;color:var(--fg)}
+#lineMenu button:active{background:var(--card2)}
+#lineMenu .row{display:flex;gap:4px}#lineMenu .row button{flex:1;text-align:center}
+`;
+const menu = document.createElement("div"); menu.id = "lineMenu"; document.body.appendChild(menu);
+let menuLine = 0;
+function lineAt(clientY) { const r = ta.getBoundingClientRect(); return Math.floor((clientY - r.top - PAD + ta.scrollTop) / LH()) + 1; }
+function editLines(change, caretLine) {
+  const lines = code.split("\n"); change(lines);
+  ta.value = lines.join("\n");
+  const n = Math.max(1, Math.min(lines.length, caretLine)); let p = 0; for (let k = 0; k < n - 1; k++) p += lines[k].length + 1;
+  ta.setSelectionRange(p + lines[n - 1].length, p + lines[n - 1].length);
+  ta.dispatchEvent(new Event("input"));
+}
+const LINE_ACTIONS = {
+  comment: n => editLines(L => { const l = L[n - 1]; L[n - 1] = /^\s*-- ?/.test(l) ? l.replace(/^(\s*)-- ?/, "$1") : l.replace(/^(\s*)/, "$1-- "); }, n),
+  duplicate: n => editLines(L => L.splice(n, 0, L[n - 1]), n + 1),
+  up: n => n > 1 && editLines(L => L.splice(n - 2, 2, L[n - 1], L[n - 2]), n - 1),
+  down: n => editLines(L => { if (n < L.length) L.splice(n - 1, 2, L[n], L[n - 1]); }, n + 1),
+  delete: n => editLines(L => L.splice(n - 1, 1), n),
+  select: n => { const L = code.split("\n"); let p = 0; for (let k = 0; k < n - 1; k++) p += L[k].length + 1; ta.focus(); ta.setSelectionRange(p, p + L[n - 1].length); },
+};
+function openMenu(n, x, y) {
+  const lines = code.split("\n"); if (n < 1 || n > lines.length) return;
+  menuLine = n;
+  const commented = /^\s*--/.test(lines[n - 1]);
+  menu.innerHTML = `<b>Line ${n}</b><button data-l="comment">${commented ? "Uncomment" : "Comment out"}</button><button data-l="duplicate">Duplicate</button>` +
+    `<div class="row"><button data-l="up" aria-label="move up">Move ▲</button><button data-l="down" aria-label="move down">Move ▼</button></div>` +
+    `<button data-l="select">Select</button><button data-l="delete" style="color:var(--bad)">Delete</button>`;
+  menu.classList.add("on");
+  const w = menu.offsetWidth, h = menu.offsetHeight;
+  menu.style.left = Math.max(8, Math.min(innerWidth - w - 8, x + 12)) + "px";
+  menu.style.top = Math.max(8, Math.min((visualViewport ? visualViewport.height : innerHeight) - h - 8, y - 20)) + "px";
+}
+function closeMenu() { menu.classList.remove("on"); }
+gut.addEventListener("pointerdown", e => { e.preventDefault(); const n = lineAt(e.clientY); openMenu(n, e.clientX, e.clientY); });
+menu.addEventListener("pointerdown", e => {
+  e.preventDefault();
+  const b = e.target.closest("button"); if (!b) return;
+  const a = b.dataset.l; LINE_ACTIONS[a](menuLine);
+  // moving keeps the menu open on the line, so a line can be moved several places in a row
+  if (a === "up" && menuLine > 1) { menuLine--; openMenu(menuLine, parseFloat(menu.style.left) - 12, parseFloat(menu.style.top) + 20 - LH()); }
+  else if (a === "down" && menuLine < code.split("\n").length) { menuLine++; openMenu(menuLine, parseFloat(menu.style.left) - 12, parseFloat(menu.style.top) + 20 + LH()); }
+  else closeMenu();
+});
+document.addEventListener("pointerdown", e => { if (menu.classList.contains("on") && !menu.contains(e.target) && e.target !== gut) closeMenu(); }, true);
+
+window.EditorTools = { showValues, valueLines, openMenu, LINE_ACTIONS, set values(on) { valsOn = on; LS.set("sprout3.values", on); showValues(); }, undo, redo, suggestions, keysUI, fontSize, get undoDepth() { return UNDO.length; } };
 UNDO.push({ code, sel: [0, 0] });
 keysUI();
 })();
