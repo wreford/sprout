@@ -10,13 +10,13 @@ This one file holds the whole Sprout 3 project: the design spec, the compiler an
 
 ```
 node test.js          # language tests (298)
-node game-tests.js    # game tests (142)
+node game-tests.js    # game tests (145)
 node frame-bench.js   # ms per frame for each game
 node bench.js         # speed against the old compiler and plain JS
 node run3.js examples/tour.sp
 ```
 
-All 440 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
+All 443 tests pass as of 20 November 2026. `test.js` uses `node:sqlite`, which prints an "experimental" warning; that is expected. `SPROUT3_CORE_ONLY=1` runs anything without `kernels.js`, the speed library: every example gives the same output, more slowly.
 
 The page and `bench.html` need a local web server, such as `python3 -m http.server` in the folder above `sprout3/`. SQLite in the browser needs sql.js 1.13.0 (MIT) in `sprout3/vendor/sqljs/`: `sql-wasm.js` and `sql-wasm.wasm` from the npm package `sql.js`. They are binary, so they aren't in this file.
 
@@ -4399,7 +4399,7 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   const fallen = g.draw().filter(x => x[0] === "model" && x[1][0] === "soldier" && x[1][6] === "Death");
   ok("silvereye: a guard who is shot plays his fall, timed from when he fell", fallen.length >= 1 && fallen[0][1][7] >= 0 && fallen[0][1][7] < 4, fallen.map(x => x[1][7]));
   ok("silvereye: shots make a sound", fx.includes("sound:shoot"));
-  ok("silvereye: a guard who goes down drops ammo", f(g, "pickups").count() === 8 && f(g, "pickups").part(8).field("kind") === "ammo");
+  ok("silvereye: a guard who goes down drops ammo", f(g, "pickups").count() === 9 && f(g, "pickups").part(9).field("kind") === "ammo");
   // turrets: set one down and its program takes the guards on
   const sentry = code => {
     const t = L.makeGame(code, {}); t.tick(1 / 60); put(t, 0, { x: 9.5, y: 7.5, angle: 0 });
@@ -4470,6 +4470,14 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     const gm = new Map(S.fieldsOf(al.state)), gs = S.partsOf(gm.get("guards")).slice(), g1 = new Map(S.fieldsOf(gs[1])); g1.set("alert", true); gs[1] = S.valueCellOf([], g1); gm.set("guards", S.valueCellOf(gs, new Map())); al.setState(S.valueCellOf([], gm));
     al.tick(1 / 60, pad({}));
     ok("silvereye: a guard on alert calls the guards near them, not the far ones", f(al, "guards").part(4).field("alert") === true && f(al, "guards").part(1).field("alert") === false); }
+  // the heavy blaster: pick it up and it's in your hands; it hits harder; swap back and forth
+  { const hv = L.makeGame(duelSrc, { players: 2, me: 1 }); hv.tick(1 / 60, pad({}), pad({}));
+    put(hv, 0, { x: 12.5, y: 9.5 }); hv.tick(1 / 60, pad({}), pad({}));
+    ok("silvereye: picking up the heavy blaster puts it in your hands", agent(hv, 1).field("weapon") === "heavy" && agent(hv, 1).field("has-heavy") === true);
+    put(hv, 0, { x: 8.5, y: 7.5, angle: 0 }); put(hv, 1, { x: 12.5, y: 7.5, angle: Math.PI }); hv.tick(1 / 60, pad({ fire: true }), pad({}));
+    ok("silvereye: a heavy shot hits harder", agent(hv, 2).field("health") === 30, agent(hv, 2).field("health"));
+    for (let t = 0; t < 2; t++) hv.tick(1 / 60, pad({ swap: true }), pad({}));
+    ok("silvereye: swap goes back to the blaster", agent(hv, 1).field("weapon") === "blaster"); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });
@@ -10548,6 +10556,9 @@ reload-time : 1.1          -- seconds to reload
 machine-spots : [[9.0, 10.7], [5.8, 7.7]]   -- the generators to wreck, on a mission
 intel-spot : [14.5, 12.5]  -- where the intel case is
 lift : [2.5, 2.5]          -- where you leave from, once it's all done
+heavy-spot : [12.5, 9.5]   -- where the heavy blaster lies
+heavy-every : 0.6          -- the heavy blaster fires this often
+heavy-damage : 70          -- and hits this hard (110 on a guard)
 pickup-back : 20           -- seconds before a pickup is back, in a match
 pickup-spots : [["ammo", 5.5, 1.5], ["armour", 8.5, 5.5], ["ammo", 14.5, 8.5], ["armour", 3.5, 10.5], ["ammo", 9.5, 13.5], ["ammo", 1.5, 5.5]]
 frag-limit : 5             -- takedowns to win a duel
@@ -10631,8 +10642,8 @@ guard : [id gx gy tx ty | [id : id, x : gx, y : gy, angle : 0, health : guard-he
 spawns : [[2.5, 2.5, 0.6], [13.5, 13.5, -2.4], [13.5, 2.5, 2.4], [2.5, 13.5, -0.8], [7.5, 4.5, 1.6], [9.5, 10.5, -1.6], [6.5, 13.5, 0]]
 spawn-of : [id | spawns @ (id - 1 % (spawns length) + 1)]
 open-cells : level numbered collect-flat [[r, row] | row chars numbered keep [[c, ch] | ch = "."] collect [[c, ch] | [c - 0.5, r - 0.5]]]
-agent : [id sx sy sa | [id : id, x : sx, y : sy, angle : sa, health : 100, carried : mines-each, sentries-left : sentries, fire-wait : 0, mine-wait : 0, turret-wait : 0, flash : 0, hurt : 0, kills : 0, hit-at : -10, down-at : false, look : false, moving : false, aimed : false, asks : false, zoomed : false, fov : fov-across, last-by : 0, bot : false, goal-x : sx, goal-y : sy, stuck : 0, clip : clip-size, ammo : ammo-each, reloading : 0, armour : 0, shots-fired : 0, shots-hit : 0]]
-pickups-fresh : pickup-spots collect [[kind, px, py] | [kind : kind, x : px, y : py, back-at : 0]]
+agent : [id sx sy sa | [id : id, x : sx, y : sy, angle : sa, health : 100, carried : mines-each, sentries-left : sentries, fire-wait : 0, mine-wait : 0, turret-wait : 0, flash : 0, hurt : 0, kills : 0, hit-at : -10, down-at : false, look : false, moving : false, aimed : false, asks : false, zoomed : false, fov : fov-across, last-by : 0, bot : false, goal-x : sx, goal-y : sy, stuck : 0, clip : clip-size, ammo : ammo-each, reloading : 0, armour : 0, shots-fired : 0, shots-hit : 0, has-heavy : false, weapon : "blaster", swap-wait : 0]]
+pickups-fresh : pickup-spots collect [[kind, px, py] | [kind : kind, x : px, y : py, back-at : 0]] .. [[kind : "heavy", x : heavy-spot @ 1, y : heavy-spot @ 2, back-at : 0]]
 simulant : [id | s : spawn-of id, agent [id, s @ 1, s @ 2, s @ 3] with [bot : true]]
 sims : [first | range simulants collect [k | simulant (first + k - 1)]]
 start :
@@ -10673,6 +10684,7 @@ wants : [inp |
     fire : (inp held "fire" else false) or (key "space") or (tap and (in-middle [inp touch-x, inp touch-y]))
     mine : (inp held "mine" else false) or (key "m") or (tap and (near-mine-button [inp touch-x, inp touch-y]))
     reload : (inp held "reload" else false) or (key "r")
+    swap : (inp held "swap" else false) or (key "q")
     sentry : (inp held "sentry" else false) or (key "t") or (tap and (near-turret-button [inp touch-x, inp touch-y]))
     restart : (inp tapped) or (inp held "fire" else false) or (key "space")
     zoom : (inp held "zoom" else false) or (key "z") or (key "shift"), fov : inp held "fov" else fov-across, hunt-x : false, hunt-y : false
@@ -10698,7 +10710,7 @@ play : [game |
     [
       walk : clamp [said walk else 0, -1, 1], strafe : clamp [said strafe else 0, -1, 1], look : false
       turn : clamp [said turn else 0, -1, 1] * (simulant-skill * 0.25 + 0.5)
-      fire : said fire else false, mine : false, sentry : false, reload : false, restart : false, zoom : false, fov : fov-across
+      fire : said fire else false, mine : false, sentry : false, reload : false, swap : false, restart : false, zoom : false, fov : fov-across
       hunt-x : sees [foe x] else [a goal-x], hunt-y : sees [foe y] else [a goal-y]
     ]
   ]
@@ -10732,7 +10744,7 @@ play : [game |
   ]
   ready : moved-agents collect [a | a with [aimed : cond [up a, aim-at a, any, false]]]
   shooters : ready keep can-shoot
-  shot-hits : shooters keep [a | a aimed != false] collect [a | [from : a id, key : "[a aimed who] [a aimed id]", steady : a zoomed]]
+  shot-hits : shooters keep [a | a aimed != false] collect [a | [from : a id, key : "[a aimed who] [a aimed id]", steady : a zoomed, heavy : a weapon = "heavy"]]
   (shooters length > 0) [sound "shoot"]
   (ready any [a | (a asks fire) and (a clip = 0) and (a fire-wait <= 0) and (a reloading <= 0) and (a bot not)]) [beep [180, 0.03]]
   -- mines and turrets, each with its owner
@@ -10757,11 +10769,12 @@ play : [game |
   ]
   thought any [t | t fired] [sound "shoot"]
   struck : [k | shot-hits count [h | h key = k]]
+  power : [k normal heavy | shot-hits keep [h | h key = k] collect [h | cond [h heavy, heavy, any, normal]] sum]
   zapped : [k | thought count [t | t victim = k]]
   -- guards (only when you play alone): hit by shots and turrets, then each one patrols, or turns on you once it sees you
   hero : ready @ 1
   hit-guards : game guards collect [g |
-    n : struck "guard [g id]" * shot-damage + (zapped "guard [g id]" * sentry-damage)
+    n : power ["guard [g id]", shot-damage, 110] + (zapped "guard [g id]" * sentry-damage)
     n > 0 [g with [health : g health - n, alert : true]] else [g]
   ]
   thinking : hit-guards collect [g |
@@ -10820,7 +10833,7 @@ play : [game |
   takes : game pickups keep [p | (now >= (p back-at)) and (near-pickup p length > 0)] collect [p | [kind : p kind, by : near-pickup p @ 1 id]]
   -- the generators: shots and blasts wreck them
   machines : game machines collect [m |
-    n : struck "machine [m id]" * 25 + (caught [m x, m y] length * 100)
+    n : power ["machine [m id]", 25, 50] + (caught [m x, m y] length * 100)
     m with [health : m health - n max 0]
   ]
   -- a guard who goes down drops what they carried
@@ -10834,7 +10847,7 @@ play : [game |
     by-shot : shot-hits keep [h | h key = k]
     by-turret : thought keep [t | t victim = k]
     by-mine : caught-by [a x, a y]
-    shot-pain : by-shot collect [h | cond [h steady, steady-damage, any, duel-damage]] sum
+    shot-pain : by-shot collect [h | cond [h heavy, heavy-damage, h steady, steady-damage, any, duel-damage]] sum
     total : cond [up a, shot-pain + (zapped k * sentry-damage) + (cond [a id = 1, pain, any, 0]) + blasted, any, 0]
     -- who did it, for the score: the last to hurt you
     by : by-shot length > 0 [by-shot @ 1 from] else [by-turret length > 0 [by-turret @ 1 owner] else [by-mine length > 0 [by-mine @ 1 owner] else [a last-by]]]
@@ -10847,7 +10860,11 @@ play : [game |
       down-at : cond [(up a) and (life <= 0), now, any, a down-at]
       hurt : cond [total > 0, 0.25, any, a hurt - dt]
       last-by : by
-      fire-wait : cond [can-shoot a, fire-every * (cond [a bot, 2.6 - (simulant-skill * 0.5), any, 1]), any, a fire-wait - dt]
+      fire-wait : cond [can-shoot a, cond [a weapon = "heavy", heavy-every, any, fire-every] * (cond [a bot, 2.6 - (simulant-skill * 0.5), any, 1]), any, a fire-wait - dt]
+      -- the heavy blaster: picked up, it's in your hands; C-right (or Q) swaps between the two
+      has-heavy : (a has-heavy) or (got "heavy" > 0)
+      weapon : cond [got "heavy" > 0, "heavy", (a asks swap) and (a has-heavy) and (a swap-wait <= 0), cond [a weapon = "heavy", "blaster", any, "heavy"], any, a weapon]
+      swap-wait : cond [a asks swap, 0.3, any, a swap-wait - dt]
       mine-wait : cond [can-drop a, 0.5, any, a mine-wait - dt]
       turret-wait : cond [can-set a, 0.5, any, a turret-wait - dt]
       flash : cond [can-shoot a, 0.08, any, a flash - dt]
@@ -10953,7 +10970,7 @@ draw : [game |
   game machines keep [m | (m health <= 0) and (now * 5 + (m id) % 1 < 0.35)] each [m | flash [m x, 1.0, m y, 0.12, "#ffb347"]]
   -- pickups, turning slowly and glowing
   game pickups keep [p | now >= (p back-at)] each [p |
-    model [cond [p kind = "armour", "chest", p kind = "intel", "chest", any, "crate"], p x, 0.05 + (now * 3 + (p x) sin * 0.04), p y, now, cond [p kind = "armour", 0.4, p kind = "intel", 0.3, any, 0.3], false, 0]
+    model [cond [p kind = "armour", "chest", p kind = "intel", "chest", p kind = "heavy", "blaster_e", any, "crate"], p x, 0.05 + (now * 3 + (p x) sin * 0.04), p y, now, cond [p kind = "armour", 0.4, p kind = "intel", 0.3, any, 0.3], false, 0]
     flash [p x, 0.5, p y, 0.04, cond [p kind = "armour", cyan, p kind = "intel", "#ff7ab2", any, gold]]
   ]
   game blasts each [b | age : now - (b at) / 0.6, flash [b x, 0.9, b y, 0.5 + (age * 1.4), "#ffb347"]]
@@ -10975,8 +10992,9 @@ draw : [game |
   ]
   -- your gun, kicking back when it fires
   kick : cond [you flash > 0, 0.05, any, 0]
-  (down not) and (you zoomed not) [hold ["blaster_g", 0.2, -0.21, -0.55 + kick, gun-turn, 0, 0.26]]
-  (down not) and (you zoomed) [hold ["blaster_g", 0.0, -0.17, -0.42 + kick, 0, 0, 0.26]]
+  gun : cond [you weapon = "heavy", "blaster_e", any, "blaster_g"]
+  (down not) and (you zoomed not) [hold [gun, 0.2, -0.21, -0.55 + kick, gun-turn, 0, cond [you weapon = "heavy", 0.32, any, 0.26]]]
+  (down not) and (you zoomed) [hold [gun, 0.0, -0.17, -0.42 + kick, 0, 0, 0.26]]
   (you flash > 0) [flash [you angle cos * 0.7 + (you x), 1.35, you angle sin * 0.7 + (you y), 0.08, "#ffd76a"]]
   -- on top: the sight (red when it's on someone, with a mark when a shot lands), the map, health, what you carry
   sight : cond [you aimed != false, red, any, "#ffffffaa"]
@@ -11000,6 +11018,7 @@ draw : [game |
   text ["MINES [you carried]   SENTRY [you sentries-left]", W - 52, 30, 9, cream]
   -- shots: what's in the clip, and spare; a bar while you reload
   text ["[you clip] | [you ammo]", W - 30, H - 40, 13, cond [you clip = 0, red, any, cream]]
+  text [cond [you weapon = "heavy", "HEAVY", any, "BLASTER"], W - 30, H - 26, 8, "#9aa3b5"]
   (you reloading > 0) [rect [W / 2 - 30, H / 2 + 22, 60, 4, "#00000088"], rect [W / 2 - 30, H / 2 + 22, 60 - (you reloading / reload-time * 60), 4, gold], text ["RELOADING", W / 2, H / 2 + 34, 9, gold]]
   (you zoomed) [rect [0, 0, W, 18, "#000000aa"], rect [0, H - 18, W, 18, "#000000aa"], text ["AIM", 22, H / 2, 9, gold]]
   -- in a match: the score, and a takedown that was yours

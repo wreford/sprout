@@ -369,7 +369,7 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
   const fallen = g.draw().filter(x => x[0] === "model" && x[1][0] === "soldier" && x[1][6] === "Death");
   ok("silvereye: a guard who is shot plays his fall, timed from when he fell", fallen.length >= 1 && fallen[0][1][7] >= 0 && fallen[0][1][7] < 4, fallen.map(x => x[1][7]));
   ok("silvereye: shots make a sound", fx.includes("sound:shoot"));
-  ok("silvereye: a guard who goes down drops ammo", f(g, "pickups").count() === 8 && f(g, "pickups").part(8).field("kind") === "ammo");
+  ok("silvereye: a guard who goes down drops ammo", f(g, "pickups").count() === 9 && f(g, "pickups").part(9).field("kind") === "ammo");
   // turrets: set one down and its program takes the guards on
   const sentry = code => {
     const t = L.makeGame(code, {}); t.tick(1 / 60); put(t, 0, { x: 9.5, y: 7.5, angle: 0 });
@@ -440,6 +440,14 @@ ok("no unexpected runtime messages", errs.length === 0, errs.slice(0, 5));
     const gm = new Map(S.fieldsOf(al.state)), gs = S.partsOf(gm.get("guards")).slice(), g1 = new Map(S.fieldsOf(gs[1])); g1.set("alert", true); gs[1] = S.valueCellOf([], g1); gm.set("guards", S.valueCellOf(gs, new Map())); al.setState(S.valueCellOf([], gm));
     al.tick(1 / 60, pad({}));
     ok("silvereye: a guard on alert calls the guards near them, not the far ones", f(al, "guards").part(4).field("alert") === true && f(al, "guards").part(1).field("alert") === false); }
+  // the heavy blaster: pick it up and it's in your hands; it hits harder; swap back and forth
+  { const hv = L.makeGame(duelSrc, { players: 2, me: 1 }); hv.tick(1 / 60, pad({}), pad({}));
+    put(hv, 0, { x: 12.5, y: 9.5 }); hv.tick(1 / 60, pad({}), pad({}));
+    ok("silvereye: picking up the heavy blaster puts it in your hands", agent(hv, 1).field("weapon") === "heavy" && agent(hv, 1).field("has-heavy") === true);
+    put(hv, 0, { x: 8.5, y: 7.5, angle: 0 }); put(hv, 1, { x: 12.5, y: 7.5, angle: Math.PI }); hv.tick(1 / 60, pad({ fire: true }), pad({}));
+    ok("silvereye: a heavy shot hits harder", agent(hv, 2).field("health") === 30, agent(hv, 2).field("health"));
+    for (let t = 0; t < 2; t++) hv.tick(1 / 60, pad({ swap: true }), pad({}));
+    ok("silvereye: swap goes back to the blaster", agent(hv, 1).field("weapon") === "blaster"); }
   // shooting a mine sets it off
   const sm = L.makeGame(duelSrc, { players: 2, me: 1 }); sm.tick(1 / 60, pad({}), pad({}));
   put(sm, 0, { x: 4.5, y: 7.5, angle: 0 }); put(sm, 1, { x: 2.5, y: 13.5 });
