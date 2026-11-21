@@ -4,7 +4,7 @@
 -- Keys: arrows or WASD, space to fire, M for a mine, T for a turret.
 -- The turrets run turret-program, written in Sprout: change it while you play and every turret thinks the new way.
 -- The game is the same Sprout code as SilverEye 2D, plus the turrets; draw is new. Change the props, the fog or the colours too.
--- Play it on its own page: silvereye.html
+-- Play it on its own page: taskiap.com/silvereye
 
 level : [
   "################"
